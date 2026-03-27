@@ -1,0 +1,68 @@
+# Binaries
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+/build/
+/dist/
+
+# Go
+/vendor/
+
+# Models (large files)
+*.bin
+*.ggml
+models/
+
+# Config with secrets
+config.toml
+!config.example.toml
+
+# Feedback database
+*.db
+*.db-journal
+*.db-wal
+audio/
+
+# Local tooling state
+.cache/
+logs/
+.beads/*.sock
+.beads/*.pid
+.beads/*.lock
+.beads/*.log
+.beads/config.yaml
+.beads/README.md
+.beads/*.db-shm
+.beads/.local_version
+.beads/last-touched
+.beads/metadata.json
+CLAUDE.md.backup-*
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# Wails
+frontend/node_modules/
+frontend/**/node_modules/
+frontend/dist/
+frontend/app/.git/
+frontend/app/.git.local-backup/
+
+# whisper.cpp binaries
+scripts/whisper-server/*.exe
+scripts/whisper-server/whisper-server
+
+# Doppler
+.env
+.env.*

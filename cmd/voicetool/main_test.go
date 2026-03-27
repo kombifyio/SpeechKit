@@ -1,0 +1,1677 @@
+package main
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"net/http"
+	"net/http/httptest"
+	"net/url"
+	"path/filepath"
+	"strconv"
+	"strings"
+	"testing"
+
+	"fmt"
+
+	"github.com/kombifyio/SpeechKit/internal/config"
+	"github.com/kombifyio/SpeechKit/internal/router"
+	"github.com/kombifyio/SpeechKit/internal/secrets"
+	"github.com/kombifyio/SpeechKit/internal/store"
+	"github.com/kombifyio/SpeechKit/internal/stt"
+	"github.com/kombifyio/SpeechKit/internal/tray"
+	"github.com/wailsapp/wails/v3/pkg/application"
+)
+
+type fakeOverlayWindow struct {
+	showCalls   int
+	hideCalls   int
+	visible     bool
+	scripts     []string
+	ignoreMouse []bool
+	positions   [][2]int
+}
+
+func (f *fakeOverlayWindow) Show() application.Window {
+	f.showCalls++
+	f.visible = true
+	return nil
+}
+
+func (f *fakeOverlayWindow) Hide() application.Window {
+	f.hideCalls++
+	f.visible = false
+	return nil
+}
+
+func (f *fakeOverlayWindow) IsVisible() bool {
+	return f.visible
+}
+
+func (f *fakeOverlayWindow) ExecJS(script string) {
+	f.scripts = append(f.scripts, script)
+}
+
+func (f *fakeOverlayWindow) SetIgnoreMouseEvents(ignore bool) application.Window {
+	f.ignoreMouse = append(f.ignoreMouse, ignore)
+	return nil
+}
+
+func (f *fakeOverlayWindow) SetPosition(x, y int) {
+	f.positions = append(f.positions, [2]int{x, y})
+}
+
+func (f *fakeOverlayWindow) SetSize(w, h int) application.Window {
+	return nil
+}
+
+type fakeSettingsWindow struct {
+	scripts         []string
+	visible         bool
+	showCalls       int
+	restoreCalls    int
+	unMinimiseCalls int
+	focusCalls      int
+}
+
+func (f *fakeSettingsWindow) ExecJS(script string) {
+	f.scripts = append(f.scripts, script)
+}
+
+func (f *fakeSettingsWindow) Show() application.Window {
+	f.showCalls++
+	f.visible = true
+	return nil
+}
+
+func (f *fakeSettingsWindow) IsVisible() bool { return f.visible }
+
+func (f *fakeSettingsWindow) Restore() {
+	f.restoreCalls++
+}
+
+func (f *fakeSettingsWindow) UnMinimise() {
+	f.unMinimiseCalls++
+}
+
+func (f *fakeSettingsWindow) Focus() {
+	f.focusCalls++
+}
+
+type fakeTray struct {
+	states []tray.State
+}
+
+func (f *fakeTray) SetState(state tray.State) {
+	f.states = append(f.states, state)
+}
+
+type fakeScreenLocator struct {
+	bounds screenBounds
+	ok     bool
+	calls  int
+}
+
+func (f *fakeScreenLocator) OverlayScreenBounds() (screenBounds, bool) {
+	f.calls++
+	return f.bounds, f.ok
+}
+
+func TestOverlayWindowOptionsKeepOverlayAboveApps(t *testing.T) {
+	opts := newOverlayWindowOptions()
+
+	if !opts.AlwaysOnTop {
+		t.Fatal("overlay must be configured as always-on-top")
+	}
+	if !opts.Hidden {
+		t.Fatal("overlay should start hidden")
+	}
+	if !opts.Frameless {
+		t.Fatal("overlay should be frameless")
+	}
+	if opts.BackgroundType != application.BackgroundTypeTransparent {
+		t.Fatalf("background type = %v, want transparent", opts.BackgroundType)
+	}
+	if opts.URL != "/overlay.html" {
+		t.Fatalf("overlay URL = %q", opts.URL)
+	}
+	if !opts.Windows.HiddenOnTaskbar {
+		t.Fatal("overlay should stay off the taskbar")
+	}
+	if opts.Width != overlayWindowSize {
+		t.Fatalf("overlay width = %d, want %d", opts.Width, overlayWindowSize)
+	}
+	if opts.Height != overlayWindowSize {
+		t.Fatalf("overlay height = %d, want %d", opts.Height, overlayWindowSize)
+	}
+}
+
+func TestOverlayWindowOptionsStartsCompact(t *testing.T) {
+	opts := newOverlayWindowOptions()
+
+	// Compact window: just the bubble, dynamically expanded on hover
+	if opts.Width != overlayWindowSize {
+		t.Fatalf("overlay width = %d, want %d (compact)", opts.Width, overlayWindowSize)
+	}
+	if opts.Height != overlayWindowSize {
+		t.Fatalf("overlay height = %d, want %d (compact)", opts.Height, overlayWindowSize)
+	}
+}
+
+func TestPillPanelWindowOptionsStayCompactAndLocked(t *testing.T) {
+	opts := newPillPanelWindowOptions()
+
+	if opts.Width >= 180 {
+		t.Fatalf("pill panel width = %d, want compact width under 180", opts.Width)
+	}
+	if opts.Height > 36 {
+		t.Fatalf("pill panel height = %d, want compact height up to 36", opts.Height)
+	}
+	if !opts.Frameless {
+		t.Fatal("pill panel should be frameless")
+	}
+	if !opts.DisableResize {
+		t.Fatal("pill panel should disable resizing")
+	}
+	if opts.Title != "" {
+		t.Fatalf("pill panel title = %q, want empty", opts.Title)
+	}
+}
+
+func TestDotAnchorWindowOptionsStayCompact(t *testing.T) {
+	opts := newDotAnchorWindowOptions()
+
+	if opts.Width > 24 {
+		t.Fatalf("dot anchor width = %d, want width up to 24", opts.Width)
+	}
+	if opts.Height > 24 {
+		t.Fatalf("dot anchor height = %d, want height up to 24", opts.Height)
+	}
+	if !opts.DisableResize {
+		t.Fatal("dot anchor should disable resizing")
+	}
+}
+
+func TestRadialMenuWindowOptionsStayCompact(t *testing.T) {
+	opts := newRadialMenuWindowOptions()
+
+	if opts.Width > 120 {
+		t.Fatalf("radial menu width = %d, want width up to 120", opts.Width)
+	}
+	if opts.Height > 120 {
+		t.Fatalf("radial menu height = %d, want height up to 120", opts.Height)
+	}
+	if !opts.DisableResize {
+		t.Fatal("radial menu should disable resizing")
+	}
+}
+
+func TestRadialMenuPositionCentersAroundDotAnchor(t *testing.T) {
+	bounds := screenBounds{X: 0, Y: 0, Width: 1920, Height: 1080}
+	dotX, dotY := dotAnchorPosition(bounds, "right")
+	radialX, radialY := radialMenuPosition(bounds, "right")
+
+	wantX := dotX + dotAnchorSize/2 - radialMenuSize/2
+	wantY := dotY + dotAnchorSize/2 - radialMenuSize/2
+	if radialX != wantX || radialY != wantY {
+		t.Fatalf("radial menu = (%d,%d), want centered around dot at (%d,%d)", radialX, radialY, wantX, wantY)
+	}
+}
+
+func TestOverlayWindowPositionTopCenter(t *testing.T) {
+	x, y := overlayWindowPosition(screenBounds{X: 1920, Y: 0, Width: 2560, Height: 1440}, "top", "pill")
+
+	wantX := 1920 + (2560-overlayWindowSize)/2
+	if x != wantX {
+		t.Fatalf("overlay x = %d, want %d", x, wantX)
+	}
+	if y != 0 {
+		t.Fatalf("overlay y = %d, want 0", y)
+	}
+}
+
+func TestPositionOverlayPlacesWindowAtTopCenter(t *testing.T) {
+	overlay := &fakeOverlayWindow{}
+	locator := &fakeScreenLocator{bounds: screenBounds{X: 1920, Y: 0, Width: 2560, Height: 1440}, ok: true}
+	state := &appState{
+		overlay:           overlay,
+		screenLocator:     locator,
+		overlayVisualizer: "pill",
+		overlayPosition:   "top",
+	}
+
+	state.positionOverlay()
+
+	if len(overlay.positions) != 1 {
+		t.Fatalf("expected one position update, got %d", len(overlay.positions))
+	}
+	wantX := 1920 + (2560-overlayWindowSize)/2
+	wantY := 0 // top of screen
+	if overlay.positions[0] != [2]int{wantX, wantY} {
+		t.Fatalf("overlay position = %v, want [%d %d]", overlay.positions[0], wantX, wantY)
+	}
+}
+
+func TestSetStateRecordingShowsOverlayAndUpdatesClients(t *testing.T) {
+	overlay := &fakeOverlayWindow{}
+	settings := &fakeSettingsWindow{visible: true}
+	appTray := &fakeTray{}
+	state := &appState{
+		overlay:        overlay,
+		settings:       settings,
+		appTray:        appTray,
+		overlayEnabled: true,
+		screenLocator:  &fakeScreenLocator{bounds: screenBounds{X: 1920, Y: 0, Width: 1600, Height: 900}, ok: true},
+	}
+
+	state.setState("recording", "Recording...")
+
+	if overlay.showCalls != 1 {
+		t.Fatalf("overlay show calls = %d, want 1", overlay.showCalls)
+	}
+	if len(overlay.positions) != 1 || overlay.positions[0] != [2]int{1920 + (1600-overlayWindowSize)/2, 0} {
+		t.Fatalf("overlay positions = %v", overlay.positions)
+	}
+	if len(overlay.scripts) != 0 {
+		t.Fatalf("overlay scripts = %v, want none", overlay.scripts)
+	}
+	// Dashboard is now polled via API, no ExecJS push
+	if len(appTray.states) != 1 || appTray.states[0] != tray.StateRecording {
+		t.Fatalf("tray states = %v", appTray.states)
+	}
+	snapshot := state.overlaySnapshot()
+	if snapshot.State != "recording" || snapshot.Text != "Recording..." {
+		t.Fatalf("overlay snapshot = %+v", snapshot)
+	}
+}
+
+func TestSetStateIdleKeepsOverlayVisibleInPassiveMode(t *testing.T) {
+	overlay := &fakeOverlayWindow{}
+	state := &appState{
+		overlay:        overlay,
+		overlayEnabled: true,
+		screenLocator:  &fakeScreenLocator{bounds: screenBounds{X: 1920, Y: 0, Width: 2560, Height: 1440}, ok: true},
+	}
+
+	state.setState("idle", "")
+
+	if overlay.showCalls != 1 {
+		t.Fatalf("overlay show calls = %d, want 1", overlay.showCalls)
+	}
+	if overlay.hideCalls != 0 {
+		t.Fatalf("overlay hide calls = %d, want 0", overlay.hideCalls)
+	}
+	if len(overlay.scripts) != 0 {
+		t.Fatalf("overlay scripts = %v, want none", overlay.scripts)
+	}
+	if len(overlay.positions) != 1 || overlay.positions[0] != [2]int{1920 + (2560-overlayWindowSize)/2, 0} {
+		t.Fatalf("overlay positions = %v", overlay.positions)
+	}
+	snapshot := state.overlaySnapshot()
+	if snapshot.State != "idle" || snapshot.Text != "" || !snapshot.Visible {
+		t.Fatalf("overlay snapshot = %+v", snapshot)
+	}
+}
+
+func TestSyncOverlayToActiveScreenRunsWhileOverlayEnabled(t *testing.T) {
+	overlay := &fakeOverlayWindow{}
+	locator := &fakeScreenLocator{bounds: screenBounds{X: 1920, Y: 0, Width: 2560, Height: 1440}, ok: true}
+	state := &appState{
+		overlay:        overlay,
+		overlayEnabled: true,
+		currentState:   "idle",
+		screenLocator:  locator,
+	}
+
+	state.syncOverlayToActiveScreen()
+
+	if locator.calls != 1 {
+		t.Fatalf("screen locator calls = %d, want 1", locator.calls)
+	}
+	if len(overlay.positions) != 1 {
+		t.Fatalf("overlay positions = %v", overlay.positions)
+	}
+
+	locator.calls = 0
+	overlay.positions = nil
+	state.currentState = "recording"
+	state.syncOverlayToActiveScreen()
+	if locator.calls != 1 {
+		t.Fatalf("screen locator should continue while recording, got %d calls", locator.calls)
+	}
+}
+
+func TestSetStateDoesNotPushIntoHiddenSettingsWindow(t *testing.T) {
+	overlay := &fakeOverlayWindow{}
+	settings := &fakeSettingsWindow{visible: false}
+	state := &appState{
+		overlay:        overlay,
+		settings:       settings,
+		overlayEnabled: true,
+		screenLocator:  &fakeScreenLocator{bounds: screenBounds{Width: 1600, Height: 900}, ok: true},
+	}
+
+	state.setState("recording", "Recording...")
+	state.addLog("test", "info")
+
+	if len(settings.scripts) != 0 {
+		t.Fatalf("settings scripts = %v, want none while hidden", settings.scripts)
+	}
+}
+
+func TestSetStateDoesNotReshowVisibleOverlay(t *testing.T) {
+	overlay := &fakeOverlayWindow{visible: true}
+	state := &appState{
+		overlay:        overlay,
+		overlayEnabled: true,
+		screenLocator:  &fakeScreenLocator{bounds: screenBounds{Width: 1600, Height: 900}, ok: true},
+	}
+
+	state.setState("idle", "")
+
+	if overlay.showCalls != 0 {
+		t.Fatalf("overlay show calls = %d, want 0 when already visible", overlay.showCalls)
+	}
+	if len(overlay.positions) != 1 {
+		t.Fatalf("overlay positions = %v", overlay.positions)
+	}
+}
+
+func TestShowSettingsWindowRestoresAndFocusesHiddenWindow(t *testing.T) {
+	settings := &fakeSettingsWindow{visible: false}
+
+	showSettingsWindow(settings)
+
+	if settings.restoreCalls != 1 {
+		t.Fatalf("restore calls = %d, want 1", settings.restoreCalls)
+	}
+	if settings.unMinimiseCalls != 1 {
+		t.Fatalf("unminimise calls = %d, want 1", settings.unMinimiseCalls)
+	}
+	if settings.showCalls != 1 {
+		t.Fatalf("show calls = %d, want 1", settings.showCalls)
+	}
+	if settings.focusCalls != 1 {
+		t.Fatalf("focus calls = %d, want 1", settings.focusCalls)
+	}
+}
+
+func TestShowSettingsWindowDoesNotReshowVisibleWindow(t *testing.T) {
+	settings := &fakeSettingsWindow{visible: true}
+
+	showSettingsWindow(settings)
+
+	if settings.showCalls != 0 {
+		t.Fatalf("show calls = %d, want 0 for visible window", settings.showCalls)
+	}
+	if settings.restoreCalls != 1 || settings.unMinimiseCalls != 1 || settings.focusCalls != 1 {
+		t.Fatalf("restore=%d unminimise=%d focus=%d", settings.restoreCalls, settings.unMinimiseCalls, settings.focusCalls)
+	}
+}
+
+func TestAssetHandlerServesBuiltOverlayShell(t *testing.T) {
+	cfg := defaultTestConfig()
+	handler := assetHandler(cfg, filepath.Join(t.TempDir(), "config.toml"), &appState{}, &router.Router{}, nil, &config.InstallState{Mode: config.InstallModeLocal})
+	req := httptest.NewRequest(http.MethodGet, "/overlay.html", nil)
+	rec := httptest.NewRecorder()
+
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", rec.Code, http.StatusOK)
+	}
+	if !strings.Contains(rec.Body.String(), `<div id="root"></div>`) {
+		t.Fatalf("overlay shell = %q", rec.Body.String())
+	}
+}
+
+func TestOverlayStateEndpointReturnsCurrentSnapshot(t *testing.T) {
+	cfg := defaultTestConfig()
+	state := &appState{
+		hotkey:            cfg.General.Hotkey,
+		currentState:      "recording",
+		overlayText:       msgRecording,
+		overlayLevel:      0.02,
+		overlayVisualizer: "circle",
+		overlayEnabled:    true,
+	}
+
+	handler := assetHandler(cfg, filepath.Join(t.TempDir(), "config.toml"), state, &router.Router{}, nil, &config.InstallState{Mode: config.InstallModeLocal})
+	req := httptest.NewRequest(http.MethodGet, "/overlay/state", nil)
+	rec := httptest.NewRecorder()
+
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", rec.Code, http.StatusOK)
+	}
+
+	var payload overlaySnapshot
+	if err := json.Unmarshal(rec.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("decode payload: %v", err)
+	}
+
+	if payload.State != "recording" || payload.Text != msgRecording || payload.Level <= 0.05 || payload.Phase != "speaking" || !payload.Visible || payload.Visualizer != "circle" {
+
+		t.Fatalf("overlay payload = %+v", payload)
+	}
+}
+
+func TestSettingsStateEndpointReturnsCurrentSettings(t *testing.T) {
+	cfg := defaultTestConfig()
+	state := &appState{
+		overlayEnabled:    true,
+		hotkey:            "win+alt",
+		overlayVisualizer: "pill",
+	}
+
+	handler := assetHandler(cfg, filepath.Join(t.TempDir(), "config.toml"), state, &router.Router{}, nil, &config.InstallState{Mode: config.InstallModeLocal})
+	req := httptest.NewRequest(http.MethodGet, "/settings/state", nil)
+	rec := httptest.NewRecorder()
+
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", rec.Code, http.StatusOK)
+	}
+
+	var payload settingsSnapshot
+	if err := json.Unmarshal(rec.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("decode payload: %v", err)
+	}
+	if payload.Hotkey != "win+alt" || payload.HFModel != cfg.HuggingFace.Model || payload.Visualizer != "pill" || !payload.OverlayEnabled || payload.HFEnabled != cfg.HuggingFace.Enabled {
+		t.Fatalf("settings payload = %+v", payload)
+	}
+	if payload.Design != "default" {
+		t.Fatalf("settings payload = %+v", payload)
+	}
+	if !payload.SaveAudio || payload.AudioRetentionDays != 7 {
+		t.Fatalf("settings payload = %+v", payload)
+	}
+	if payload.HFTokenSource != "none" || payload.HFHasUserToken || payload.HFHasInstallToken {
+		t.Fatalf("settings payload = %+v", payload)
+	}
+}
+
+func TestSettingsRoutesPersistAndClearUserHuggingFaceToken(t *testing.T) {
+	restore := secrets.UseMemoryStoreForTests()
+	defer restore()
+	prevFactory := newHuggingFaceProvider
+	newHuggingFaceProvider = func(model, token string) stt.STTProvider {
+		return &fakeProvider{name: "huggingface"}
+	}
+	defer func() { newHuggingFaceProvider = prevFactory }()
+
+	cfg := defaultTestConfig()
+	cfgPath := filepath.Join(t.TempDir(), "config.toml")
+	state := &appState{
+		overlayEnabled:    true,
+		overlayVisualizer: "pill",
+		overlayPosition:   "top",
+	}
+
+	handler := assetHandler(cfg, cfgPath, state, &router.Router{}, nil, &config.InstallState{Mode: config.InstallModeLocal})
+
+	setForm := url.Values{
+		"hf_token": {"user-token"},
+	}
+	setReq := httptest.NewRequest(http.MethodPost, "/settings/huggingface/token", strings.NewReader(setForm.Encode()))
+	setReq.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	setRec := httptest.NewRecorder()
+
+	handler.ServeHTTP(setRec, setReq)
+
+	if setRec.Code != http.StatusOK {
+		t.Fatalf("set status = %d, body=%s", setRec.Code, setRec.Body.String())
+	}
+
+	statusReq := httptest.NewRequest(http.MethodGet, "/settings/state", nil)
+	statusRec := httptest.NewRecorder()
+	handler.ServeHTTP(statusRec, statusReq)
+
+	if statusRec.Code != http.StatusOK {
+		t.Fatalf("state status = %d", statusRec.Code)
+	}
+
+	var payload settingsSnapshot
+	if err := json.Unmarshal(statusRec.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("decode state payload: %v", err)
+	}
+	if !payload.HFHasUserToken || payload.HFTokenSource != "user" {
+		t.Fatalf("settings payload = %+v", payload)
+	}
+
+	clearReq := httptest.NewRequest(http.MethodPost, "/settings/huggingface/token/clear", nil)
+	clearRec := httptest.NewRecorder()
+	handler.ServeHTTP(clearRec, clearReq)
+
+	if clearRec.Code != http.StatusOK {
+		t.Fatalf("clear status = %d, body=%s", clearRec.Code, clearRec.Body.String())
+	}
+
+	statusRec = httptest.NewRecorder()
+	handler.ServeHTTP(statusRec, statusReq)
+	if err := json.Unmarshal(statusRec.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("decode cleared state payload: %v", err)
+	}
+	if payload.HFHasUserToken || payload.HFTokenSource != "none" {
+		t.Fatalf("settings payload after clear = %+v", payload)
+	}
+}
+
+func TestSetLevelStoresOverlayMeterWhileRecording(t *testing.T) {
+	overlay := &fakeOverlayWindow{}
+	state := &appState{
+		overlay:        overlay,
+		currentState:   "recording",
+		overlayEnabled: true,
+	}
+
+	state.setLevel(0.42)
+
+	if len(overlay.scripts) != 0 {
+		t.Fatalf("overlay scripts = %v, want none", overlay.scripts)
+	}
+	snapshot := state.overlaySnapshot()
+	if snapshot.Level <= 0.42 || snapshot.Phase != "speaking" {
+		t.Fatalf("overlay snapshot = %+v", snapshot)
+	}
+}
+
+func TestSetLevelResetsSnapshotOutsideRecording(t *testing.T) {
+	overlay := &fakeOverlayWindow{}
+	state := &appState{
+		overlay:        overlay,
+		currentState:   "idle",
+		overlayEnabled: true,
+	}
+
+	state.setLevel(0.73)
+
+	if len(overlay.scripts) != 0 {
+		t.Fatalf("overlay scripts = %v, want none", overlay.scripts)
+	}
+	snapshot := state.overlaySnapshot()
+	if snapshot.Level != 0 {
+		t.Fatalf("overlay snapshot level = %.2f, want 0", snapshot.Level)
+	}
+}
+
+func defaultTestConfig() *config.Config {
+	return &config.Config{
+		General: config.GeneralConfig{
+			Hotkey:        "win+alt",
+			DictateHotkey: "win+alt",
+			AgentHotkey:   "ctrl+shift+k",
+			ActiveMode:    "dictate",
+		},
+		HuggingFace: config.HuggingFaceConfig{
+			Model: "openai/whisper-large-v3",
+		},
+		UI: config.UIConfig{
+			OverlayEnabled:  true,
+			OverlayPosition: "top",
+			Visualizer:      "pill",
+			Design:          "default",
+		},
+		Store: config.StoreConfig{
+			SaveAudio:          true,
+			AudioRetentionDays: 7,
+		},
+	}
+}
+
+type fakeProvider struct {
+	name      string
+	healthErr error
+}
+
+func (f *fakeProvider) Transcribe(ctx context.Context, audio []byte, opts stt.TranscribeOpts) (*stt.Result, error) {
+	return &stt.Result{Provider: f.name}, nil
+}
+
+func (f *fakeProvider) Name() string {
+	return f.name
+}
+
+func (f *fakeProvider) Health(ctx context.Context) error {
+	return f.healthErr
+}
+
+func TestSaveSettingsUpdatesConfigAndRuntime(t *testing.T) {
+	cfg := defaultTestConfig()
+	cfg.HuggingFace.Enabled = false
+	cfgPath := filepath.Join(t.TempDir(), "config.toml")
+	state := &appState{
+		overlayEnabled: true,
+	}
+	sttRouter := &router.Router{}
+
+	form := url.Values{
+		"hotkey":             {"ctrl+shift"},
+		"hf_enabled":         {"0"},
+		"hf_model":           {"openai/whisper-large-v3-turbo"},
+		"overlay_enabled":    {"1"},
+		"overlay_visualizer": {"circle"},
+		"overlay_design":     {"kombify"},
+	}
+	req := httptest.NewRequest(http.MethodPost, "/settings.html", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+
+	flash := saveSettings(context.Background(), req, cfgPath, cfg, state, sttRouter)
+
+	if !strings.Contains(flash, msgSaved) {
+		t.Fatalf("flash = %q", flash)
+	}
+	if cfg.General.Hotkey != "ctrl+shift" {
+		t.Fatalf("hotkey = %q", cfg.General.Hotkey)
+	}
+	if cfg.HuggingFace.Model != "openai/whisper-large-v3-turbo" {
+		t.Fatalf("model = %q", cfg.HuggingFace.Model)
+	}
+	if cfg.HuggingFace.Enabled {
+		t.Fatal("huggingface should stay disabled")
+	}
+	if !cfg.UI.OverlayEnabled {
+		t.Fatal("overlay should stay enabled")
+	}
+	if cfg.UI.Visualizer != "circle" {
+
+		t.Fatalf("visualizer = %q", cfg.UI.Visualizer)
+	}
+	if cfg.UI.Design != "kombify" {
+		t.Fatalf("design = %q", cfg.UI.Design)
+	}
+
+	reloaded, err := config.Load(cfgPath)
+	if err != nil {
+		t.Fatalf("Load saved config: %v", err)
+	}
+	if reloaded.General.Hotkey != "ctrl+shift" {
+		t.Fatalf("reloaded hotkey = %q", reloaded.General.Hotkey)
+	}
+	if reloaded.HuggingFace.Model != "openai/whisper-large-v3-turbo" {
+		t.Fatalf("reloaded model = %q", reloaded.HuggingFace.Model)
+	}
+	if reloaded.HuggingFace.Enabled {
+		t.Fatal("reloaded huggingface should stay disabled")
+	}
+	if reloaded.UI.Visualizer != "circle" {
+
+		t.Fatalf("reloaded visualizer = %q", reloaded.UI.Visualizer)
+	}
+	if reloaded.UI.Design != "kombify" {
+		t.Fatalf("reloaded design = %q", reloaded.UI.Design)
+	}
+}
+
+func TestSaveSettingsRejectsEnablingHFWithoutToken(t *testing.T) {
+	cfg := defaultTestConfig()
+	cfg.HuggingFace.Enabled = false
+	cfgPath := filepath.Join(t.TempDir(), "config.toml")
+	state := &appState{}
+	sttRouter := &router.Router{}
+
+	form := url.Values{
+		"hf_enabled":         {"1"},
+		"hf_model":           {"openai/whisper-large-v3"},
+		"overlay_enabled":    {"1"},
+		"overlay_visualizer": {"pill"},
+		"overlay_design":     {"default"},
+	}
+	req := httptest.NewRequest(http.MethodPost, "/settings.html", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+
+	t.Setenv("HF_TOKEN", "")
+
+	flash := saveSettings(context.Background(), req, cfgPath, cfg, state, sttRouter)
+
+	if !strings.Contains(flash, msgHFTokenMissing) {
+		t.Fatalf("flash = %q", flash)
+	}
+	if cfg.HuggingFace.Enabled {
+		t.Fatal("huggingface should remain disabled when enabling fails")
+	}
+}
+
+func TestSaveSettingsAllowsEnablingHFWithStoredUserToken(t *testing.T) {
+	restore := secrets.UseMemoryStoreForTests()
+	defer restore()
+	prevFactory := newHuggingFaceProvider
+	newHuggingFaceProvider = func(model, token string) stt.STTProvider {
+		return &fakeProvider{name: "huggingface"}
+	}
+	defer func() { newHuggingFaceProvider = prevFactory }()
+
+	if err := secrets.SetUserHuggingFaceToken("user-token"); err != nil {
+		t.Fatalf("set user token: %v", err)
+	}
+
+	cfg := defaultTestConfig()
+	cfg.HuggingFace.Enabled = false
+	cfgPath := filepath.Join(t.TempDir(), "config.toml")
+	state := &appState{}
+	sttRouter := &router.Router{}
+
+	form := url.Values{
+		"hf_enabled":         {"1"},
+		"hf_model":           {"openai/whisper-large-v3"},
+		"overlay_enabled":    {"1"},
+		"overlay_visualizer": {"pill"},
+		"overlay_design":     {"default"},
+	}
+	req := httptest.NewRequest(http.MethodPost, "/settings.html", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+
+	flash := saveSettings(context.Background(), req, cfgPath, cfg, state, sttRouter)
+
+	if !strings.Contains(flash, msgSaved) {
+		t.Fatalf("flash = %q", flash)
+	}
+	if !cfg.HuggingFace.Enabled {
+		t.Fatal("huggingface should be enabled when a stored user token exists")
+	}
+	if sttRouter.HuggingFace() == nil {
+		t.Fatal("expected huggingface provider to be configured from stored user token")
+	}
+}
+
+func TestSaveSettingsAllowsNonHFChangesWithoutHFValidation(t *testing.T) {
+	cfg := defaultTestConfig()
+	cfg.HuggingFace.Enabled = true
+	cfg.HuggingFace.TokenEnv = "TEST_SPEECHKIT_MISSING_HF_TOKEN"
+	cfg.HuggingFace.Model = "openai/whisper-large-v3"
+	cfgPath := filepath.Join(t.TempDir(), "config.toml")
+	state := &appState{overlayEnabled: true}
+	sttRouter := &router.Router{}
+
+	form := url.Values{
+		"hotkey":             {"ctrl+shift"},
+		"hf_enabled":         {"1"},
+		"hf_model":           {"openai/whisper-large-v3"},
+		"overlay_enabled":    {"1"},
+		"overlay_visualizer": {"circle"},
+		"overlay_design":     {"default"},
+	}
+	req := httptest.NewRequest(http.MethodPost, "/settings.html", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+
+	flash := saveSettings(context.Background(), req, cfgPath, cfg, state, sttRouter)
+
+	if !strings.Contains(flash, msgSaved) {
+		t.Fatalf("flash = %q", flash)
+	}
+	if cfg.General.Hotkey != "ctrl+shift" {
+		t.Fatalf("hotkey = %q", cfg.General.Hotkey)
+	}
+	if cfg.UI.Visualizer != "circle" {
+
+		t.Fatalf("visualizer = %q", cfg.UI.Visualizer)
+	}
+}
+
+func TestSaveSettingsKeepsManagedHFEnabledWhenBuildDefaultsAreActive(t *testing.T) {
+	cfg := defaultTestConfig()
+	cfg.HuggingFace.Enabled = false
+	cfg.Routing.Strategy = "cloud-only"
+	cfgPath := filepath.Join(t.TempDir(), "config.toml")
+	state := &appState{overlayEnabled: true}
+	sttRouter := &router.Router{}
+
+	form := url.Values{
+		"hf_enabled":         {"0"},
+		"hf_model":           {"openai/whisper-large-v3"},
+		"overlay_enabled":    {"1"},
+		"overlay_visualizer": {"pill"},
+		"overlay_design":     {"default"},
+	}
+	req := httptest.NewRequest(http.MethodPost, "/settings.html", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+
+	t.Setenv("SPEECHKIT_ENABLE_MANAGED_HF", "1")
+	t.Setenv("HF_TOKEN", "test-token")
+
+	flash := saveSettings(context.Background(), req, cfgPath, cfg, state, sttRouter)
+
+	if !strings.Contains(flash, msgSaved) {
+		t.Fatalf("flash = %q", flash)
+	}
+	if !cfg.HuggingFace.Enabled {
+		t.Fatal("managed huggingface should remain enabled in managed builds")
+	}
+	if sttRouter.HuggingFace() == nil {
+		t.Fatal("managed huggingface provider should stay configured")
+	}
+}
+
+func TestBuildRouterEnablesHFWhenConfiguredAndTokenAvailable(t *testing.T) {
+	cfg := defaultTestConfig()
+	cfg.HuggingFace.Enabled = true
+	cfg.HuggingFace.TokenEnv = "HF_TOKEN"
+	t.Setenv("HF_TOKEN", "test-token")
+
+	r, msgs := buildRouter(cfg)
+
+	if r.HuggingFace() == nil {
+		t.Fatal("expected huggingface provider to be configured")
+	}
+	if len(msgs) == 0 || !strings.Contains(strings.Join(msgs, " "), "HuggingFace:") {
+		t.Fatalf("provider log = %v", msgs)
+	}
+}
+
+func TestBuildRouterAutoEnablesManagedHFForCloudOnlyWhenExplicitlyEnabled(t *testing.T) {
+	cfg := defaultTestConfig()
+	cfg.HuggingFace.Enabled = false
+	cfg.Local.Enabled = false
+	cfg.VPS.Enabled = false
+	cfg.Routing.Strategy = "cloud-only"
+	t.Setenv("SPEECHKIT_ENABLE_MANAGED_HF", "1")
+	t.Setenv("HF_TOKEN", "test-token")
+
+	if !config.ApplyManagedIntegrationDefaults(cfg) {
+		t.Fatal("expected managed defaults to be applied")
+	}
+
+	r, _ := buildRouter(cfg)
+
+	if r.HuggingFace() == nil {
+		t.Fatal("expected huggingface provider after managed defaults")
+	}
+}
+
+func TestBuildRouterWarnsWhenHFConfiguredWithoutToken(t *testing.T) {
+	cfg := defaultTestConfig()
+	cfg.HuggingFace.Enabled = true
+	cfg.HuggingFace.TokenEnv = "TEST_SPEECHKIT_MISSING_HF_TOKEN"
+
+	r, msgs := buildRouter(cfg)
+
+	if r.HuggingFace() != nil {
+		t.Fatal("expected huggingface provider to stay nil without token")
+	}
+	if len(msgs) == 0 || !strings.Contains(strings.Join(msgs, " "), "TEST_SPEECHKIT_MISSING_HF_TOKEN not found") {
+		t.Fatalf("provider log = %v", msgs)
+	}
+}
+
+func TestBuildRouterPrefersStoredUserTokenOverEnvToken(t *testing.T) {
+	restore := secrets.UseMemoryStoreForTests()
+	defer restore()
+
+	if err := secrets.SetInstallHuggingFaceToken("install-token"); err != nil {
+		t.Fatalf("set install token: %v", err)
+	}
+	if err := secrets.SetUserHuggingFaceToken("user-token"); err != nil {
+		t.Fatalf("set user token: %v", err)
+	}
+
+	cfg := defaultTestConfig()
+	cfg.HuggingFace.Enabled = true
+	cfg.HuggingFace.TokenEnv = "HF_TOKEN"
+	t.Setenv("HF_TOKEN", "env-token")
+
+	r, msgs := buildRouter(cfg)
+
+	if r.HuggingFace() == nil {
+		t.Fatal("expected huggingface provider to be configured")
+	}
+	if len(msgs) == 0 || !strings.Contains(strings.Join(msgs, " "), "source: user") {
+		t.Fatalf("provider log = %v", msgs)
+	}
+}
+
+func TestSettingsSnapshotIncludesHuggingFaceTokenStatus(t *testing.T) {
+	restore := secrets.UseMemoryStoreForTests()
+	defer restore()
+
+	if err := secrets.SetInstallHuggingFaceToken("install-token"); err != nil {
+		t.Fatalf("set install token: %v", err)
+	}
+
+	cfg := defaultTestConfig()
+	state := &appState{
+		overlayEnabled:    true,
+		overlayPosition:   "top",
+		overlayVisualizer: "pill",
+		activeMode:        "dictate",
+	}
+
+	payload := state.settingsSnapshot(cfg)
+
+	if !payload.HFHasInstallToken {
+		t.Fatal("expected install token status in settings snapshot")
+	}
+	if payload.HFHasUserToken {
+		t.Fatal("did not expect user token status in settings snapshot")
+	}
+	if payload.HFTokenSource != string(secrets.TokenSourceInstall) {
+		t.Fatalf("token source = %q", payload.HFTokenSource)
+	}
+}
+
+func TestValidateCloudProvidersKeepsConfiguredProvidersAfterHealthFailure(t *testing.T) {
+	r := &router.Router{}
+	r.SetHuggingFace(&fakeProvider{name: "huggingface", healthErr: errors.New("temporary outage")})
+	r.SetVPS(&fakeProvider{name: "vps", healthErr: errors.New("temporary outage")})
+
+	msgs := validateCloudProviders(context.Background(), r)
+
+	if r.HuggingFace() == nil {
+		t.Fatal("huggingface provider should stay configured after failed startup health check")
+	}
+	if r.VPS() == nil {
+		t.Fatal("vps provider should stay configured after failed startup health check")
+	}
+	joined := strings.Join(msgs, " | ")
+	if !strings.Contains(joined, "HuggingFace unavailable") || !strings.Contains(joined, "VPS unavailable") {
+		t.Fatalf("messages = %q", joined)
+	}
+}
+
+func TestMissingProviderHintForCloudOnlyWithNoEnabledProviders(t *testing.T) {
+	cfg := defaultTestConfig()
+	cfg.HuggingFace.Enabled = false
+	cfg.VPS.Enabled = false
+	cfg.Local.Enabled = false
+	cfg.Routing.Strategy = "cloud-only"
+
+	hint := missingProviderHint(cfg)
+
+	if !strings.Contains(hint, "Cloud-only routing") {
+		t.Fatalf("hint = %q", hint)
+	}
+}
+
+func TestMissingProviderHintForHFWithoutToken(t *testing.T) {
+	cfg := defaultTestConfig()
+	cfg.HuggingFace.Enabled = true
+	cfg.HuggingFace.TokenEnv = "TEST_SPEECHKIT_MISSING_HF_TOKEN"
+	cfg.VPS.Enabled = false
+
+	hint := missingProviderHint(cfg)
+
+	if !strings.Contains(hint, "TEST_SPEECHKIT_MISSING_HF_TOKEN") {
+		t.Fatalf("hint = %q", hint)
+	}
+}
+
+func TestOverlayPositionBottom(t *testing.T) {
+	bounds := screenBounds{X: 0, Y: 0, Width: 1920, Height: 1080}
+	x, y := overlayWindowPosition(bounds, "bottom", "pill")
+
+	wantX := (1920 - overlayWindowSize) / 2
+	wantY := 1080 - overlayWindowSize
+	if x != wantX {
+		t.Fatalf("overlay x = %d, want %d", x, wantX)
+	}
+	if y != wantY {
+		t.Fatalf("overlay y = %d, want %d", y, wantY)
+	}
+}
+
+func TestComputeBubbleRegionBottomUsesWindowY(t *testing.T) {
+	bubble := computeBubbleRegion(810, 780, screenBounds{X: 0, Y: 0, Width: 1920, Height: 1080}, "bottom", "pill")
+
+	wantX := 810 + (overlayWindowSize-pillBubbleW)/2
+	wantY := 780 + overlayWindowSize - pillBubbleH - overlayEdgeMargin
+	if bubble.X != wantX || bubble.Y != wantY {
+		t.Fatalf("bottom bubble = %+v, want X=%d Y=%d", bubble, wantX, wantY)
+	}
+}
+
+func TestOverlayPositionLeft(t *testing.T) {
+	bounds := screenBounds{X: 0, Y: 0, Width: 2560, Height: 1440}
+	x, y := overlayWindowPosition(bounds, "left", "pill")
+
+	wantX := 0
+	wantY := (1440 - overlayWindowSize) / 2
+	if x != wantX {
+		t.Fatalf("overlay x = %d, want %d", x, wantX)
+	}
+	if y != wantY {
+		t.Fatalf("overlay y = %d, want %d", y, wantY)
+	}
+}
+
+func TestOverlayPositionRight(t *testing.T) {
+	bounds := screenBounds{X: 0, Y: 0, Width: 2560, Height: 1440}
+	x, y := overlayWindowPosition(bounds, "right", "pill")
+
+	wantX := 2560 - overlayWindowSize
+	wantY := (1440 - overlayWindowSize) / 2
+	if x != wantX {
+		t.Fatalf("overlay x = %d, want %d", x, wantX)
+	}
+	if y != wantY {
+		t.Fatalf("overlay y = %d, want %d", y, wantY)
+	}
+}
+
+func TestOverlayPositionDefaultsToTop(t *testing.T) {
+	bounds := screenBounds{X: 0, Y: 0, Width: 1920, Height: 1080}
+	xEmpty, yEmpty := overlayWindowPosition(bounds, "", "pill")
+	xTop, yTop := overlayWindowPosition(bounds, "top", "pill")
+
+	if xEmpty != xTop || yEmpty != yTop {
+		t.Fatalf("empty position (%d,%d) differs from top (%d,%d)", xEmpty, yEmpty, xTop, yTop)
+	}
+}
+
+func TestDashboardHistoryEndpoint(t *testing.T) {
+	dir := t.TempDir()
+	dbPath := filepath.Join(dir, "test.db")
+	s, err := store.New(store.StoreConfig{Backend: "sqlite", SQLitePath: dbPath, SaveAudio: true, MaxAudioStorageMB: 100})
+	if err != nil {
+		t.Fatalf("store.New: %v", err)
+	}
+	defer s.Close()
+
+	audio := []byte("fake wav bytes")
+	if err := s.SaveTranscription(context.Background(), "test text", "de", "hf", "openai/whisper-large-v3", 2400, 300, audio); err != nil {
+		t.Fatalf("store.SaveTranscription: %v", err)
+	}
+
+	cfg := defaultTestConfig()
+	state := &appState{}
+	handler := assetHandler(cfg, filepath.Join(t.TempDir(), "config.toml"), state, &router.Router{}, s, &config.InstallState{Mode: config.InstallModeLocal})
+
+	req := httptest.NewRequest(http.MethodGet, "/dashboard/history", nil)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", rec.Code, http.StatusOK)
+	}
+
+	var entries []struct {
+		ID         int64  `json:"id"`
+		Model      string `json:"model"`
+		DurationMs int64  `json:"durationMs"`
+		Audio      *struct {
+			StorageKind string `json:"storageKind"`
+			SizeBytes   int64  `json:"sizeBytes"`
+			DurationMs  int64  `json:"durationMs"`
+		} `json:"audio"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &entries); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if len(entries) == 0 {
+		t.Fatal("expected non-empty history array")
+	}
+	if entries[0].Model != "openai/whisper-large-v3" {
+		t.Fatalf("history model = %q, want %q", entries[0].Model, "openai/whisper-large-v3")
+	}
+	if entries[0].DurationMs != 2400 {
+		t.Fatalf("history duration = %d, want %d", entries[0].DurationMs, 2400)
+	}
+	if entries[0].Audio == nil {
+		t.Fatal("expected audio metadata in history entry")
+	}
+	if entries[0].Audio.StorageKind != "local-file" {
+		t.Fatalf("audio storage kind = %q, want %q", entries[0].Audio.StorageKind, "local-file")
+	}
+	if entries[0].Audio.SizeBytes != int64(len(audio)) {
+		t.Fatalf("audio size = %d, want %d", entries[0].Audio.SizeBytes, len(audio))
+	}
+}
+
+func TestDashboardHistoryEndpointFallsBackToConfiguredModelHints(t *testing.T) {
+	dir := t.TempDir()
+	dbPath := filepath.Join(dir, "test.db")
+	s, err := store.New(store.StoreConfig{
+		Backend:                 "sqlite",
+		SQLitePath:              dbPath,
+		SaveAudio:               true,
+		MaxAudioStorageMB:       100,
+		TranscriptionModelHints: map[string]string{"huggingface": "openai/whisper-large-v3", "hf": "openai/whisper-large-v3"},
+	})
+	if err != nil {
+		t.Fatalf("store.New: %v", err)
+	}
+	defer s.Close()
+
+	if err := s.SaveTranscription(context.Background(), "test text", "de", "hf", "", 2400, 300, nil); err != nil {
+		t.Fatalf("store.SaveTranscription: %v", err)
+	}
+
+	cfg := defaultTestConfig()
+	state := &appState{}
+	handler := assetHandler(cfg, filepath.Join(t.TempDir(), "config.toml"), state, &router.Router{}, s, &config.InstallState{Mode: config.InstallModeLocal})
+
+	req := httptest.NewRequest(http.MethodGet, "/dashboard/history", nil)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", rec.Code, http.StatusOK)
+	}
+
+	var entries []struct {
+		Model string `json:"model"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &entries); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if len(entries) != 1 {
+		t.Fatalf("entries = %d, want 1", len(entries))
+	}
+	if entries[0].Model != "openai/whisper-large-v3" {
+		t.Fatalf("history model = %q, want %q", entries[0].Model, "openai/whisper-large-v3")
+	}
+}
+
+func TestDashboardHistoryEndpointEmptyWhenNoStore(t *testing.T) {
+	cfg := defaultTestConfig()
+	state := &appState{}
+	handler := assetHandler(cfg, filepath.Join(t.TempDir(), "config.toml"), state, &router.Router{}, nil, &config.InstallState{Mode: config.InstallModeLocal})
+
+	req := httptest.NewRequest(http.MethodGet, "/dashboard/history", nil)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", rec.Code, http.StatusOK)
+	}
+
+	body := strings.TrimSpace(rec.Body.String())
+	if body != "[]" {
+		t.Fatalf("body = %q, want %q", body, "[]")
+	}
+}
+
+func TestDashboardStatsEndpoint(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "test.db")
+	s, err := store.New(store.StoreConfig{Backend: "sqlite", SQLitePath: dbPath, SaveAudio: true, AudioRetentionDays: 7, MaxAudioStorageMB: 100})
+	if err != nil {
+		t.Fatalf("store.New: %v", err)
+	}
+	defer s.Close()
+
+	if err := s.SaveTranscription(context.Background(), "one two three four", "de", "hf", "", 2400, 300, nil); err != nil {
+		t.Fatalf("store.SaveTranscription: %v", err)
+	}
+	if _, err := s.SaveQuickNote(context.Background(), "quick note body", "de", "capture", 1200, 180, nil); err != nil {
+		t.Fatalf("store.SaveQuickNote: %v", err)
+	}
+
+	cfg := defaultTestConfig()
+	state := &appState{}
+	handler := assetHandler(cfg, filepath.Join(t.TempDir(), "config.toml"), state, &router.Router{}, s, &config.InstallState{Mode: config.InstallModeLocal})
+
+	req := httptest.NewRequest(http.MethodGet, "/dashboard/stats", nil)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", rec.Code, http.StatusOK)
+	}
+
+	var payload struct {
+		Transcriptions        int     `json:"transcriptions"`
+		QuickNotes            int     `json:"quickNotes"`
+		TotalWords            int     `json:"totalWords"`
+		AverageWordsPerMinute float64 `json:"averageWordsPerMinute"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if payload.Transcriptions != 1 {
+		t.Fatalf("payload.Transcriptions = %d, want 1", payload.Transcriptions)
+	}
+	if payload.QuickNotes != 1 {
+		t.Fatalf("payload.QuickNotes = %d, want 1", payload.QuickNotes)
+	}
+	if payload.TotalWords < 7 {
+		t.Fatalf("payload.TotalWords = %d, want at least 7", payload.TotalWords)
+	}
+	if payload.AverageWordsPerMinute <= 0 {
+		t.Fatalf("payload.AverageWordsPerMinute = %f, want > 0", payload.AverageWordsPerMinute)
+	}
+}
+
+func TestDashboardQuickNotesEndpointIncludesAudioMetadata(t *testing.T) {
+	dir := t.TempDir()
+	dbPath := filepath.Join(dir, "test.db")
+	s, err := store.New(store.StoreConfig{Backend: "sqlite", SQLitePath: dbPath, SaveAudio: true, MaxAudioStorageMB: 100})
+	if err != nil {
+		t.Fatalf("store.New: %v", err)
+	}
+	defer s.Close()
+
+	audio := []byte("fake quick note wav")
+	if _, err := s.SaveQuickNote(context.Background(), "quick note body", "de", "capture", 1200, 180, audio); err != nil {
+		t.Fatalf("store.SaveQuickNote: %v", err)
+	}
+
+	cfg := defaultTestConfig()
+	state := &appState{}
+	handler := assetHandler(cfg, filepath.Join(t.TempDir(), "config.toml"), state, &router.Router{}, s, &config.InstallState{Mode: config.InstallModeLocal})
+
+	req := httptest.NewRequest(http.MethodGet, "/dashboard/quicknotes", nil)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", rec.Code, http.StatusOK)
+	}
+
+	var entries []struct {
+		ID         int64 `json:"id"`
+		DurationMs int64 `json:"durationMs"`
+		Audio      *struct {
+			StorageKind string `json:"storageKind"`
+			SizeBytes   int64  `json:"sizeBytes"`
+			DurationMs  int64  `json:"durationMs"`
+		} `json:"audio"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &entries); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if len(entries) != 1 {
+		t.Fatalf("entries = %d, want 1", len(entries))
+	}
+	if entries[0].DurationMs != 1200 {
+		t.Fatalf("quick note duration = %d, want %d", entries[0].DurationMs, 1200)
+	}
+	if entries[0].Audio == nil {
+		t.Fatal("expected audio metadata in quick note entry")
+	}
+	if entries[0].Audio.StorageKind != "local-file" {
+		t.Fatalf("audio storage kind = %q, want %q", entries[0].Audio.StorageKind, "local-file")
+	}
+	if entries[0].Audio.SizeBytes != int64(len(audio)) {
+		t.Fatalf("audio size = %d, want %d", entries[0].Audio.SizeBytes, len(audio))
+	}
+}
+
+func TestDashboardAudioDownloadEndpoint(t *testing.T) {
+	dir := t.TempDir()
+	dbPath := filepath.Join(dir, "test.db")
+	s, err := store.New(store.StoreConfig{Backend: "sqlite", SQLitePath: dbPath, SaveAudio: true, MaxAudioStorageMB: 100})
+	if err != nil {
+		t.Fatalf("store.New: %v", err)
+	}
+	defer s.Close()
+
+	audio := []byte("fake wav bytes")
+	if err := s.SaveTranscription(context.Background(), "test text", "de", "hf", "", 2400, 300, audio); err != nil {
+		t.Fatalf("store.SaveTranscription: %v", err)
+	}
+
+	cfg := defaultTestConfig()
+	state := &appState{}
+	handler := assetHandler(cfg, filepath.Join(t.TempDir(), "config.toml"), state, &router.Router{}, s, &config.InstallState{Mode: config.InstallModeLocal})
+
+	req := httptest.NewRequest(http.MethodGet, "/dashboard/audio?kind=transcription&id=1", nil)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", rec.Code, http.StatusOK)
+	}
+	if got := rec.Header().Get("Content-Type"); got != "audio/wav" {
+		t.Fatalf("content type = %q, want %q", got, "audio/wav")
+	}
+	if !strings.Contains(rec.Header().Get("Content-Disposition"), "transcription-1.wav") {
+		t.Fatalf("content disposition = %q, want transcription filename", rec.Header().Get("Content-Disposition"))
+	}
+	if got := rec.Body.Bytes(); string(got) != string(audio) {
+		t.Fatalf("body = %q, want %q", string(got), string(audio))
+	}
+}
+
+func TestDashboardAudioRevealEndpoint(t *testing.T) {
+	dir := t.TempDir()
+	dbPath := filepath.Join(dir, "test.db")
+	s, err := store.New(store.StoreConfig{Backend: "sqlite", SQLitePath: dbPath, SaveAudio: true, MaxAudioStorageMB: 100})
+	if err != nil {
+		t.Fatalf("store.New: %v", err)
+	}
+	defer s.Close()
+
+	audio := []byte("fake quick note wav")
+	id, err := s.SaveQuickNote(context.Background(), "quick note body", "de", "capture", 1200, 180, audio)
+	if err != nil {
+		t.Fatalf("store.SaveQuickNote: %v", err)
+	}
+
+	note, err := s.GetQuickNote(context.Background(), id)
+	if err != nil {
+		t.Fatalf("store.GetQuickNote: %v", err)
+	}
+
+	var revealedPath string
+	prevReveal := revealAudioFileInShell
+	revealAudioFileInShell = func(path string) error {
+		revealedPath = path
+		return nil
+	}
+	defer func() {
+		revealAudioFileInShell = prevReveal
+	}()
+
+	cfg := defaultTestConfig()
+	state := &appState{}
+	handler := assetHandler(cfg, filepath.Join(t.TempDir(), "config.toml"), state, &router.Router{}, s, &config.InstallState{Mode: config.InstallModeLocal})
+
+	form := url.Values{
+		"kind": {"quicknote"},
+		"id":   {strconv.FormatInt(id, 10)},
+	}
+	req := httptest.NewRequest(http.MethodPost, "/dashboard/audio/reveal", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", rec.Code, http.StatusOK)
+	}
+	if revealedPath != note.AudioPath {
+		t.Fatalf("revealed path = %q, want %q", revealedPath, note.AudioPath)
+	}
+}
+
+func TestDashboardLogsEndpoint(t *testing.T) {
+	cfg := defaultTestConfig()
+	state := &appState{}
+	state.addLog("test log message", "info")
+
+	handler := assetHandler(cfg, filepath.Join(t.TempDir(), "config.toml"), state, &router.Router{}, nil, &config.InstallState{Mode: config.InstallModeLocal})
+
+	req := httptest.NewRequest(http.MethodGet, "/dashboard/logs", nil)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", rec.Code, http.StatusOK)
+	}
+
+	var entries []logEntry
+	if err := json.Unmarshal(rec.Body.Bytes(), &entries); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+
+	found := false
+	for _, e := range entries {
+		if e.Message == "test log message" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("log entries = %+v, want entry with message %q", entries, "test log message")
+	}
+}
+
+func TestEscapeJS(t *testing.T) {
+	tests := []struct {
+		name  string
+		input string
+		check func(t *testing.T, result string)
+	}{
+		{
+			name:  "normal string",
+			input: "hello",
+			check: func(t *testing.T, result string) {
+				if result != "hello" {
+					t.Fatalf("escapeJS(%q) = %q, want %q", "hello", result, "hello")
+				}
+			},
+		},
+		{
+			name:  "string with quotes",
+			input: `he said "hi"`,
+			check: func(t *testing.T, result string) {
+				if !strings.Contains(result, `\"`) {
+					t.Fatalf("escapeJS(%q) = %q, want escaped quotes", `he said "hi"`, result)
+				}
+			},
+		},
+		{
+			name:  "string with backslash",
+			input: `path\to\file`,
+			check: func(t *testing.T, result string) {
+				if !strings.Contains(result, `\\`) {
+					t.Fatalf("escapeJS(%q) = %q, want escaped backslashes", `path\to\file`, result)
+				}
+			},
+		},
+		{
+			name:  "empty string",
+			input: "",
+			check: func(t *testing.T, result string) {
+				if result != "" {
+					t.Fatalf("escapeJS(%q) = %q, want empty", "", result)
+				}
+			},
+		},
+		{
+			name:  "string with newlines",
+			input: "line1\nline2",
+			check: func(t *testing.T, result string) {
+				if !strings.Contains(result, `\n`) {
+					t.Fatalf("escapeJS(%q) = %q, want escaped newline", "line1\nline2", result)
+				}
+			},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			tc.check(t, escapeJS(tc.input))
+		})
+	}
+}
+
+func TestOverlayPhase(t *testing.T) {
+	tests := []struct {
+		state string
+		level float64
+		want  string
+	}{
+		{"recording", 0.5, "speaking"},
+		{"recording", 0.01, "listening"},
+		{"processing", 0, "thinking"},
+		{"done", 0, "done"},
+		{"idle", 0, "idle"},
+		{"", 0, "idle"},
+	}
+
+	for _, tc := range tests {
+		t.Run(fmt.Sprintf("%s_%.2f", tc.state, tc.level), func(t *testing.T) {
+			got := overlayPhase(tc.state, tc.level)
+			if got != tc.want {
+				t.Fatalf("overlayPhase(%q, %.2f) = %q, want %q", tc.state, tc.level, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestNormalizeOverlayLevel(t *testing.T) {
+	tests := []struct {
+		name  string
+		input float64
+		check func(t *testing.T, result float64)
+	}{
+		{
+			name:  "zero",
+			input: 0,
+			check: func(t *testing.T, result float64) {
+				if result != 0 {
+					t.Fatalf("normalizeOverlayLevel(0) = %f, want 0", result)
+				}
+			},
+		},
+		{
+			name:  "negative",
+			input: -0.5,
+			check: func(t *testing.T, result float64) {
+				if result != 0 {
+					t.Fatalf("normalizeOverlayLevel(-0.5) = %f, want 0", result)
+				}
+			},
+		},
+		{
+			name:  "very small positive",
+			input: 0.001,
+			check: func(t *testing.T, result float64) {
+				if result <= 0 {
+					t.Fatalf("normalizeOverlayLevel(0.001) = %f, want > 0 (boosted above floor)", result)
+				}
+			},
+		},
+		{
+			name:  "max",
+			input: 1.0,
+			check: func(t *testing.T, result float64) {
+				if result > 1.0 {
+					t.Fatalf("normalizeOverlayLevel(1.0) = %f, want <= 1.0", result)
+				}
+			},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			tc.check(t, normalizeOverlayLevel(tc.input))
+		})
+	}
+}
+
+func TestAddLogCapsBufAt200(t *testing.T) {
+	state := &appState{}
+	for i := 0; i < 210; i++ {
+		state.addLog(fmt.Sprintf("entry %d", i), "info")
+	}
+
+	state.mu.Lock()
+	n := len(state.logEntries)
+	state.mu.Unlock()
+
+	if n != 200 {
+		t.Fatalf("log entries = %d, want 200", n)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Features & Auth endpoint tests
+// ---------------------------------------------------------------------------
+
+func TestFeaturesEndpoint_LocalMode(t *testing.T) {
+	cfg := defaultTestConfig()
+	handler := assetHandler(cfg, filepath.Join(t.TempDir(), "config.toml"), &appState{}, &router.Router{}, nil, &config.InstallState{Mode: config.InstallModeLocal})
+
+	req := httptest.NewRequest(http.MethodGet, "/features", nil)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", rec.Code, http.StatusOK)
+	}
+
+	var payload map[string]interface{}
+	if err := json.Unmarshal(rec.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if payload["cloudMode"] != false {
+		t.Fatalf("cloudMode = %v, want false", payload["cloudMode"])
+	}
+	if payload["installMode"] != "local" {
+		t.Fatalf("installMode = %v, want %q", payload["installMode"], "local")
+	}
+}
+
+func TestFeaturesEndpoint_CloudMode(t *testing.T) {
+	cfg := defaultTestConfig()
+	handler := assetHandler(cfg, filepath.Join(t.TempDir(), "config.toml"), &appState{}, &router.Router{}, nil, &config.InstallState{Mode: config.InstallModeCloud})
+
+	req := httptest.NewRequest(http.MethodGet, "/features", nil)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", rec.Code, http.StatusOK)
+	}
+
+	var payload map[string]interface{}
+	if err := json.Unmarshal(rec.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if payload["cloudMode"] != true {
+		t.Fatalf("cloudMode = %v, want true", payload["cloudMode"])
+	}
+	if payload["installMode"] != "cloud" {
+		t.Fatalf("installMode = %v, want %q", payload["installMode"], "cloud")
+	}
+}
+
+func TestAuthStatusEndpoint_NoProvider(t *testing.T) {
+	cfg := defaultTestConfig()
+	handler := assetHandler(cfg, filepath.Join(t.TempDir(), "config.toml"), &appState{}, &router.Router{}, nil, &config.InstallState{Mode: config.InstallModeLocal})
+
+	req := httptest.NewRequest(http.MethodGet, "/auth/status", nil)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", rec.Code, http.StatusOK)
+	}
+
+	var payload map[string]interface{}
+	if err := json.Unmarshal(rec.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if payload["available"] != false {
+		t.Fatalf("available = %v, want false", payload["available"])
+	}
+	if payload["loggedIn"] != false {
+		t.Fatalf("loggedIn = %v, want false", payload["loggedIn"])
+	}
+}
+
+func TestAuthLoginEndpoint_NoProvider(t *testing.T) {
+	cfg := defaultTestConfig()
+	handler := assetHandler(cfg, filepath.Join(t.TempDir(), "config.toml"), &appState{}, &router.Router{}, nil, &config.InstallState{Mode: config.InstallModeLocal})
+
+	req := httptest.NewRequest(http.MethodPost, "/auth/login", nil)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", rec.Code, http.StatusOK)
+	}
+
+	var payload map[string]string
+	if err := json.Unmarshal(rec.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if payload["error"] == "" {
+		t.Fatal("expected error message about auth not available")
+	}
+	if !strings.Contains(payload["error"], "not available") {
+		t.Fatalf("error = %q, want message about auth not available", payload["error"])
+	}
+}
+
+func TestAuthLogoutEndpoint(t *testing.T) {
+	cfg := defaultTestConfig()
+	handler := assetHandler(cfg, filepath.Join(t.TempDir(), "config.toml"), &appState{}, &router.Router{}, nil, &config.InstallState{Mode: config.InstallModeLocal})
+
+	req := httptest.NewRequest(http.MethodPost, "/auth/logout", nil)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", rec.Code, http.StatusOK)
+	}
+
+	var payload map[string]string
+	if err := json.Unmarshal(rec.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if payload["message"] != "Logged out" {
+		t.Fatalf("message = %q, want %q", payload["message"], "Logged out")
+	}
+}

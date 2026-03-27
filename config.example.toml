@@ -1,0 +1,56 @@
+[general]
+language = "de"           # Default transcription language
+hotkey = "win+alt"        # Push-to-Talk hotkey
+hotkey_mode = "push_to_talk"
+auto_stop_silence_ms = 500
+fast_mode_silence_ms = 1500
+
+[ui]
+overlay_enabled = true    # Show the top-center overlay
+overlay_position = "top"  # top, bottom, left, right
+visualizer = "pill"       # pill or circle
+design = "default"        # default or kombify
+
+[local]
+enabled = false
+model = "ggml-small.bin"
+model_path = ""           # Auto: %LOCALAPPDATA%/SpeechKit/models/
+port = 8080               # whisper-server port
+gpu = "auto"              # auto, cuda, vulkan, cpu
+
+[vps]
+enabled = false
+url = ""                  # Example: https://voice.your-vps.tld
+api_key_env = "VPS_API_KEY"  # Environment variable or Doppler secret name
+
+[huggingface]
+enabled = false           # Default off to avoid accidental cloud inference spend
+model = "openai/whisper-large-v3"
+token_env = "HF_TOKEN"    # Fallback env var when no stored host token exists; Doppler is internal/dev only
+
+[routing]
+strategy = "cloud-only"   # dynamic, local-only, cloud-only
+prefer_local_under_seconds = 10
+parallel_cloud = false    # Start cloud parallel to local
+replace_on_better = false # Silently replace with better result
+
+[feedback]
+save_audio = true         # Legacy compat only; [store] is the preferred config surface
+audio_retention_days = 7  # Mirrored from [store] while legacy readers still exist
+db_path = ""              # Auto: %APPDATA%/SpeechKit/feedback.db
+max_audio_storage_mb = 500
+
+[store]
+backend = "sqlite"        # Local mode default
+sqlite_path = ""          # Auto: %APPDATA%/SpeechKit/feedback.db (audio files live in sibling audio/)
+save_audio = true         # Persist raw WAV files locally
+audio_retention_days = 7  # 0 disables automatic deletion
+max_audio_storage_mb = 500
+
+# Future extension — not part of the current MVP
+# [livekit]
+# enabled = false
+# server_url = ""           # ws://localhost:7880 or wss://livekit.dein-vps.de
+# api_key_env = "LK_API_KEY"
+# api_secret_env = "LK_API_SECRET"
+# room_name = "voice-assistant"

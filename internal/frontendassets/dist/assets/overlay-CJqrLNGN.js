@@ -1,0 +1,1 @@
+import{E as e,O as t,T as n,k as r}from"./speechkit-CHy3OH8a.js";import{r as i}from"./overlay-surfaces-BNv1Aul_.js";var a=r(t(),1),o=e(),s=n();(0,o.createRoot)(document.getElementById(`root`)).render((0,s.jsx)(a.StrictMode,{children:(0,s.jsx)(i,{})}));

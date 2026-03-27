@@ -1,0 +1,91 @@
+param(
+    [string]$ProjectDir
+)
+
+$ErrorActionPreference = 'Stop'
+Set-StrictMode -Version Latest
+
+$scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
+if ([string]::IsNullOrWhiteSpace($ProjectDir)) {
+    $projectDir = Split-Path -Parent (Split-Path -Parent $scriptDir)
+} else {
+    $projectDir = $ProjectDir
+}
+
+$patterns = @(
+    'github.com/kombifyio/SpeechKit',
+    'https://github.com/kombifyio/SpeechKit',
+    'kombination-personal',
+    'Private --'
+)
+
+$searchRoots = @(
+    '.github',
+    'README.md',
+    'CHANGELOG.md',
+    'CONTRIBUTING.md',
+    'CODE_OF_CONDUCT.md',
+    'SECURITY.md',
+    'SUPPORT.md',
+    'config.example.toml',
+    'docs',
+    'frontend/app/README.md',
+    'frontend/app/src',
+    'installer',
+    'scripts'
+)
+
+$hits = @()
+Push-Location $projectDir
+try {
+    foreach ($root in $searchRoots) {
+        if (-not (Test-Path $root)) {
+            continue
+        }
+
+        $items = Get-Item $root
+        if ($items.PSIsContainer) {
+            $files = Get-ChildItem $root -Recurse -File
+        } else {
+            $files = @($items)
+        }
+
+        foreach ($file in $files) {
+            if ($file.FullName -like '*\docs\plans\*' -or $file.FullName -like '*\scripts\public\check-public-surface.*') {
+                continue
+            }
+            foreach ($pattern in $patterns) {
+                $matches = Select-String -Path $file.FullName -Pattern $pattern -SimpleMatch -ErrorAction SilentlyContinue
+                foreach ($match in $matches) {
+                    $hits += '{0}:{1}: {2}' -f $match.Path, $match.LineNumber, $match.Line.Trim()
+                }
+            }
+        }
+    }
+
+    $allExecutables = Get-ChildItem . -Recurse -File -Filter *.exe -ErrorAction SilentlyContinue
+    foreach ($exe in $allExecutables) {
+        $relativePath = Resolve-Path -Relative $exe.FullName
+        $normalized = $relativePath.TrimStart('.','\').Replace('\', '/')
+        if ($normalized -notlike 'dist/windows/*' -and $normalized -notlike 'installer/*') {
+            $hits += "unexpected exe outside release surface: $normalized"
+        }
+    }
+
+    foreach ($internalFile in @('AGENTS.md', 'CLAUDE.md')) {
+        if (Test-Path $internalFile) {
+            $hits += "internal-only file present: $internalFile"
+        }
+    }
+}
+finally {
+    Pop-Location
+}
+
+if ($hits.Count -gt 0) {
+    Write-Host 'Public surface check failed:'
+    $hits | ForEach-Object { Write-Host "  $_" }
+    exit 1
+}
+
+Write-Host 'Public surface check passed.'
