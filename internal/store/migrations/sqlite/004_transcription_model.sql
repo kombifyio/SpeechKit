@@ -1,0 +1,1 @@
+ALTER TABLE transcriptions ADD COLUMN model TEXT NOT NULL DEFAULT '';

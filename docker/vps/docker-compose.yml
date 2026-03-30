@@ -1,0 +1,21 @@
+version: "3.8"
+services:
+  whisper:
+    image: litongjava/whisper-cpp-server:1.0.0-large-v3
+    ports: ["127.0.0.1:8080:8080"]
+    volumes: ["./models:/models"]
+    command: >
+      --model /models/ggml-small.bin
+      --host 0.0.0.0 --port 8080
+      --threads 4
+      --inference-path /v1/audio/transcriptions
+
+  caddy:
+    image: caddy:2
+    ports: ["443:443"]
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile
+      - caddy-data:/data
+
+volumes:
+  caddy-data:
