@@ -146,9 +146,6 @@ func (p *Player) stopCurrent() {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	if p.current != nil {
-		if err := p.current.Close(); err != nil {
-			log.Printf("audio player: close error: %v", err)
-		}
 		p.current = nil
 		p.playing.Store(false)
 	}

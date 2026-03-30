@@ -26,7 +26,7 @@ import (
 )
 
 // AppVersion is the current release version. Updated at release time.
-var AppVersion = "0.1.0"
+var AppVersion = "0.1.3"
 
 var revealAudioFileInShell = func(path string) error {
 	return exec.Command("explorer.exe", "/select,", filepath.Clean(path)).Start()

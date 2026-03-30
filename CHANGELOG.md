@@ -6,6 +6,17 @@ The format is based on Keep a Changelog and this project is intended to ship und
 
 ## [Unreleased]
 
+## [0.1.3] - 2026-03-30
+
+### Fixed
+
+- Removed deprecated `oto` player Close call (staticcheck SA1019)
+- Removed unused `hideAssistBubble` method (staticcheck U1000)
+
+### Changed
+
+- Bumped version identifiers across all platforms to 0.1.3
+
 ## [0.1.0] - 2026-03-30
 
 First public release of SpeechKit as an open-source speech framework.

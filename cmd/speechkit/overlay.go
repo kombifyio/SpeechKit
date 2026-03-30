@@ -539,25 +539,6 @@ func (s *appState) showAssistBubble(text string) {
 	bubble.ExecJS(fmt.Sprintf(`if(window.__assistBubble){window.__assistBubble.show("%s")}`, escapedText))
 }
 
-func (s *appState) hideAssistBubble() {
-	if s == nil {
-		return
-	}
-	s.mu.Lock()
-	bubble := s.assistBubble
-	s.mu.Unlock()
-
-	if bubble == nil {
-		return
-	}
-
-	bubble.ExecJS(`if(window.__assistBubble){window.__assistBubble.hide()}`)
-	// The JS hide animation will take EXIT_DURATION ms. Hide the window after.
-	go func() {
-		time.Sleep(400 * time.Millisecond)
-		hideWindow(bubble)
-	}()
-}
 
 func (s *appState) doneResetDelayValue() time.Duration {
 	if s.doneResetDelay > 0 {

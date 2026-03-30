@@ -541,7 +541,7 @@ func TestAudioRetentionRemovesExpiredAudio(t *testing.T) {
 		SQLitePath:         dbPath,
 		SaveAudio:          true,
 		AudioRetentionDays: 7,
-		MaxAudioStorageMB:  100,
+		MaxAudioStorageMB:  0,
 	})
 	if err != nil {
 		t.Fatalf("NewSQLiteStore: %v", err)
@@ -552,6 +552,10 @@ func TestAudioRetentionRemovesExpiredAudio(t *testing.T) {
 	if err := sqliteStore.SaveTranscription(context.Background(), "expired clip", "de", "local", "", 1000, 100, audio); err != nil {
 		t.Fatalf("SaveTranscription: %v", err)
 	}
+
+	// Allow background goroutines triggered by SaveTranscription to finish
+	// before we call enforceAudioRetention directly, avoiding SQLITE_BUSY.
+	time.Sleep(300 * time.Millisecond)
 
 	records, err := sqliteStore.ListTranscriptions(context.Background(), ListOpts{Limit: 1})
 	if err != nil {

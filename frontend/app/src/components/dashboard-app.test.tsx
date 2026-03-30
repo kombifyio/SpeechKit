@@ -56,7 +56,7 @@ describe('DashboardApp', () => {
         })
       }
       if (url === '/app/version') {
-        return new Response(JSON.stringify({ version: '0.1.0' }), {
+        return new Response(JSON.stringify({ version: '0.1.3' }), {
           status: 200,
           headers: { 'Content-Type': 'application/json' },
         })
