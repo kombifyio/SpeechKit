@@ -1,0 +1,174 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- SpeechKit feature panel, shown in place of the keyboard. -->
+<ScrollView
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/speechkit_features_view"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:visibility="gone"
+    android:background="?android:attr/colorBackground"
+    android:padding="8dp">
+
+    <GridLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:columnCount="4"
+        android:rowCount="2"
+        android:useDefaultMargins="true">
+
+        <!-- Row 1 -->
+        <LinearLayout
+            android:id="@+id/speechkit_feature_dictate"
+            style="@style/SpeechKitFeatureItem"
+            android:layout_columnWeight="1">
+            <ImageView
+                android:layout_width="40dp"
+                android:layout_height="40dp"
+                android:src="@drawable/ic_speechkit_dictate"
+                android:padding="8dp"
+                android:background="@drawable/speechkit_feature_bg"
+                android:scaleType="centerInside" />
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Dictate"
+                android:textSize="11sp"
+                android:gravity="center" />
+        </LinearLayout>
+
+        <LinearLayout
+            android:id="@+id/speechkit_feature_assist"
+            style="@style/SpeechKitFeatureItem"
+            android:layout_columnWeight="1">
+            <ImageView
+                android:layout_width="40dp"
+                android:layout_height="40dp"
+                android:src="@drawable/ic_speechkit_assist"
+                android:padding="8dp"
+                android:background="@drawable/speechkit_feature_bg"
+                android:scaleType="centerInside" />
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Live"
+                android:textSize="11sp"
+                android:gravity="center" />
+        </LinearLayout>
+
+        <LinearLayout
+            android:id="@+id/speechkit_feature_translate"
+            style="@style/SpeechKitFeatureItem"
+            android:layout_columnWeight="1">
+            <ImageView
+                android:layout_width="40dp"
+                android:layout_height="40dp"
+                android:src="@android:drawable/ic_menu_manage"
+                android:padding="8dp"
+                android:background="@drawable/speechkit_feature_bg"
+                android:scaleType="centerInside" />
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Translate"
+                android:textSize="11sp"
+                android:gravity="center" />
+        </LinearLayout>
+
+        <LinearLayout
+            android:id="@+id/speechkit_feature_rewrite"
+            style="@style/SpeechKitFeatureItem"
+            android:layout_columnWeight="1">
+            <ImageView
+                android:layout_width="40dp"
+                android:layout_height="40dp"
+                android:src="@android:drawable/ic_menu_edit"
+                android:padding="8dp"
+                android:background="@drawable/speechkit_feature_bg"
+                android:scaleType="centerInside" />
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Rewrite"
+                android:textSize="11sp"
+                android:gravity="center" />
+        </LinearLayout>
+
+        <!-- Row 2 -->
+        <LinearLayout
+            android:id="@+id/speechkit_feature_summarize"
+            style="@style/SpeechKitFeatureItem"
+            android:layout_columnWeight="1">
+            <ImageView
+                android:layout_width="40dp"
+                android:layout_height="40dp"
+                android:src="@android:drawable/ic_menu_crop"
+                android:padding="8dp"
+                android:background="@drawable/speechkit_feature_bg"
+                android:scaleType="centerInside" />
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Summarize"
+                android:textSize="11sp"
+                android:gravity="center" />
+        </LinearLayout>
+
+        <LinearLayout
+            android:id="@+id/speechkit_feature_tone"
+            style="@style/SpeechKitFeatureItem"
+            android:layout_columnWeight="1">
+            <ImageView
+                android:layout_width="40dp"
+                android:layout_height="40dp"
+                android:src="@android:drawable/ic_menu_sort_by_size"
+                android:padding="8dp"
+                android:background="@drawable/speechkit_feature_bg"
+                android:scaleType="centerInside" />
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Tone"
+                android:textSize="11sp"
+                android:gravity="center" />
+        </LinearLayout>
+
+        <LinearLayout
+            android:id="@+id/speechkit_feature_quicknote"
+            style="@style/SpeechKitFeatureItem"
+            android:layout_columnWeight="1">
+            <ImageView
+                android:layout_width="40dp"
+                android:layout_height="40dp"
+                android:src="@android:drawable/ic_menu_agenda"
+                android:padding="8dp"
+                android:background="@drawable/speechkit_feature_bg"
+                android:scaleType="centerInside" />
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Quick Note"
+                android:textSize="11sp"
+                android:gravity="center" />
+        </LinearLayout>
+
+        <LinearLayout
+            android:id="@+id/speechkit_feature_settings"
+            style="@style/SpeechKitFeatureItem"
+            android:layout_columnWeight="1">
+            <ImageView
+                android:layout_width="40dp"
+                android:layout_height="40dp"
+                android:src="@drawable/sym_keyboard_settings_lxx"
+                android:padding="8dp"
+                android:background="@drawable/speechkit_feature_bg"
+                android:scaleType="centerInside" />
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Settings"
+                android:textSize="11sp"
+                android:gravity="center" />
+        </LinearLayout>
+
+    </GridLayout>
+</ScrollView>

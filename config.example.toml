@@ -1,0 +1,132 @@
+[general]
+language = "de"               # Default transcription language
+dictate_hotkey = "win+alt"    # Dictation Mode hotkey (push-to-talk)
+agent_hotkey = "ctrl+shift+k" # Assist / Voice Agent Mode hotkey
+agent_mode = "assist"         # "assist" or "voice_agent" — what agent_hotkey triggers
+hotkey = "win+alt"            # Legacy alias for dictate_hotkey
+hotkey_mode = "push_to_talk"
+auto_stop_silence_ms = 500
+fast_mode_silence_ms = 1500
+
+[ui]
+overlay_enabled = true    # Show the top-center overlay
+overlay_position = "top"  # top, bottom, left, right
+visualizer = "pill"       # pill or circle
+design = "default"        # default or kombify
+
+[local]
+enabled = false
+model = "ggml-small.bin"
+model_path = ""           # Auto: %LOCALAPPDATA%/SpeechKit/models/
+port = 8080               # whisper-server port
+gpu = "auto"              # auto, cuda, vulkan, cpu
+
+[vps]
+enabled = false
+url = ""                  # Example: https://voice.your-vps.tld
+api_key_env = "VPS_API_KEY"  # Environment variable or Doppler secret name
+
+[huggingface]
+enabled = false           # Legacy STT toggle for HF routed inference; dedicated HF Endpoints are modeled separately in the profile catalog
+model = "openai/whisper-large-v3" # Routed/shared provider model, not a dedicated endpoint deployment
+token_env = "HF_TOKEN"    # Fallback env var when no stored host token exists; Doppler is internal/dev only
+
+[routing]
+strategy = "cloud-only"   # dynamic, local-only, cloud-only
+prefer_local_under_seconds = 10
+parallel_cloud = false    # Start cloud parallel to local
+replace_on_better = false # Silently replace with better result
+
+[feedback]
+save_audio = true         # Legacy compat only; [store] is the preferred config surface
+audio_retention_days = 7  # Mirrored from [store] while legacy readers still exist
+db_path = ""              # Auto: %APPDATA%/SpeechKit/feedback.db
+max_audio_storage_mb = 500
+
+[store]
+backend = "sqlite"        # Local mode default
+sqlite_path = ""          # Auto: %APPDATA%/SpeechKit/feedback.db (audio files live in sibling audio/)
+postgres_dsn = ""         # Required when backend = "postgres"
+save_audio = true         # Persist raw WAV files locally
+audio_retention_days = 7  # 0 disables automatic deletion
+max_audio_storage_mb = 500
+
+# ──────────────────────────────────────────────
+# TTS — Text-to-Speech (Assist Mode)
+# Framework always returns Text + Audio. UI decides what to show.
+# ──────────────────────────────────────────────
+
+[tts]
+enabled = true
+strategy = "cloud-first"      # cloud-first, local-first, cloud-only, local-only
+speed = 1.0                   # 0.25 - 4.0
+format = "mp3"                # mp3, wav, opus, pcm
+
+[tts.openai]
+enabled = true
+model = "tts-1"               # tts-1 or tts-1-hd
+voice = "nova"                # alloy, echo, fable, onyx, nova, shimmer
+
+[tts.google]
+enabled = false
+voice = "de-DE-Neural2-B"     # Google Cloud TTS voice name
+
+[tts.huggingface]
+enabled = false
+model = "parler-tts/parler-tts-mini-multilingual-v1.1"  # Multilingual TTS via HF Inference API
+
+[tts.local]
+enabled = false
+model = "hexgrad/Kokoro-82M"
+model_path = ""
+port = 8081
+
+# ──────────────────────────────────────────────
+# Voice Agent — Real-Time Audio-to-Audio
+# Uses native models (Gemini Live, OpenAI Realtime) — no STT/TTS pipeline.
+# ──────────────────────────────────────────────
+
+[voice_agent]
+enabled = true
+model = "gemini-3.1-flash-live-preview"   # Primary real-time model
+fallback_model = "gpt-realtime-mini"       # Fallback if primary unavailable
+voice = "Kore"                             # Voice for real-time model
+reminder_after_idle_sec = 300              # Remind user after 5 min silence
+deactivate_after_idle_sec = 900            # Auto-deactivate after 15 min silence
+pipeline_fallback = true                   # Use STT+LLM+TTS as last resort
+
+# ──────────────────────────────────────────────
+# Provider Configuration
+# STT, LLM, TTS, and Realtime model assignments per provider.
+# API keys are resolved from environment variables or Doppler.
+# ──────────────────────────────────────────────
+
+# [providers.openai]
+# enabled = false
+# api_key_env = "OPENAI_API_KEY"
+# stt_model = "gpt-4o-transcribe"
+# utility_model = "gpt-5.4-nano"
+# agent_model = "gpt-5.4"
+# tts_model = "tts-1"
+# tts_voice = "nova"
+# realtime_model = "gpt-realtime-mini"
+
+# [providers.groq]
+# enabled = false
+# api_key_env = "GROQ_API_KEY"
+# stt_model = "whisper-large-v3-turbo"
+# utility_model = "llama-3.1-8b-instant"
+# agent_model = "llama-3.3-70b-versatile"
+
+# [providers.google]
+# enabled = false
+# api_key_env = "GOOGLE_API_KEY"
+# stt_model = "chirp_3"
+# utility_model = "gemini-3.1-flash-lite-preview"
+# agent_model = "gemini-3.1-pro-preview"
+
+# [providers.ollama]
+# enabled = false
+# base_url = "http://localhost:11434"
+# utility_model = "llama3.2"
+# agent_model = "llama3.1:70b"

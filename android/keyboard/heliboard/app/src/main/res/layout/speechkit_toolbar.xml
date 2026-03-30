@@ -1,0 +1,56 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- kombify SpeechKit voice toolbar. 36dp height. -->
+<LinearLayout
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/speechkit_toolbar"
+    android:layout_width="match_parent"
+    android:layout_height="36dp"
+    android:orientation="horizontal"
+    android:gravity="center_vertical"
+    android:paddingStart="8dp"
+    android:paddingEnd="8dp"
+    android:background="?android:attr/colorBackgroundFloating">
+
+    <!-- Mic Button -->
+    <ImageButton
+        android:id="@+id/speechkit_mic_button"
+        android:layout_width="32dp"
+        android:layout_height="32dp"
+        android:src="@android:drawable/ic_btn_speak_now"
+        android:background="?android:attr/selectableItemBackgroundBorderless"
+        android:contentDescription="@string/speechkit_mic_description"
+        android:scaleType="centerInside"
+        android:padding="4dp" />
+
+    <!-- Status text (shown during recording/processing) -->
+    <TextView
+        android:id="@+id/speechkit_status_text"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_weight="1"
+        android:layout_marginStart="8dp"
+        android:layout_marginEnd="8dp"
+        android:textSize="12sp"
+        android:singleLine="true"
+        android:ellipsize="end"
+        android:visibility="gone" />
+
+    <!-- Spacer -->
+    <View
+        android:layout_width="0dp"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:id="@+id/speechkit_spacer" />
+
+    <!-- Summarize Button -->
+    <ImageButton
+        android:id="@+id/speechkit_summarize_button"
+        android:layout_width="32dp"
+        android:layout_height="32dp"
+        android:src="@android:drawable/ic_menu_crop"
+        android:background="?android:attr/selectableItemBackgroundBorderless"
+        android:contentDescription="@string/speechkit_summarize_description"
+        android:scaleType="centerInside"
+        android:padding="4dp" />
+
+</LinearLayout>
