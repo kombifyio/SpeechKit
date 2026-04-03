@@ -27,11 +27,11 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 
 /**
  * Onboarding wizard for activating the SpeechKit keyboard (HeliBoard fork) and assistant.
@@ -242,11 +242,12 @@ private fun OnboardingStep(
  */
 object KeyboardSetupChecker {
     private const val IME_ID_SUFFIX = "helium314.keyboard.latin.LatinIME"
+    private const val ASSISTANT_COMPONENT = "io.kombify.speechkit.assistant.service.SpeechKitAssistant"
 
     fun isKeyboardEnabled(context: Context): Boolean {
         return try {
             val imm = context.getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager
-            imm.enabledInputMethodList.any { it.id.contains(IME_ID_SUFFIX) }
+            imm.enabledInputMethodList.any { isSpeechKitImeId(it.id) }
         } catch (e: Exception) {
             false
         }
@@ -254,8 +255,11 @@ object KeyboardSetupChecker {
 
     fun isKeyboardSelected(context: Context): Boolean {
         return try {
-            val imm = context.getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager
-            imm.enabledInputMethodList.any { it.id.contains(IME_ID_SUFFIX) }
+            val defaultIme = Settings.Secure.getString(
+                context.contentResolver,
+                Settings.Secure.DEFAULT_INPUT_METHOD,
+            )
+            isSpeechKitImeId(defaultIme)
         } catch (e: Exception) {
             false
         }
@@ -267,9 +271,15 @@ object KeyboardSetupChecker {
                 context.contentResolver,
                 "assistant",
             ) ?: return false
-            assistComponent.contains("speechkit")
+            isSpeechKitAssistantComponent(assistComponent)
         } catch (e: Exception) {
             false
         }
     }
+
+    internal fun isSpeechKitImeId(inputMethodId: String?): Boolean =
+        inputMethodId?.contains(IME_ID_SUFFIX) == true
+
+    internal fun isSpeechKitAssistantComponent(componentName: String?): Boolean =
+        componentName?.contains(ASSISTANT_COMPONENT) == true
 }

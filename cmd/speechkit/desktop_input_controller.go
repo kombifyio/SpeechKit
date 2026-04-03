@@ -98,7 +98,7 @@ func (c desktopInputController) handleHotkey(ctx context.Context, evt hotkey.Eve
 		// Voice Agent configured but session unavailable: warn user.
 		if c.cfg != nil && c.cfg.General.AgentMode == "voice_agent" && c.voiceAgentSession == nil {
 			if evt.Type == hotkey.EventKeyDown {
-				c.log("Voice Agent not available â€” check API key and config", "error")
+				c.log("Voice Agent not available — check API key and config", "error")
 			}
 			return
 		}
@@ -166,7 +166,7 @@ func (c desktopInputController) dispatch(ctx context.Context, command speechkit.
 
 func (c desktopInputController) toggleVoiceAgent(ctx context.Context) {
 	if c.voiceAgentSession == nil {
-		c.log("Voice Agent session not initialized â€” check config and API key", "error")
+		c.log("Voice Agent session not initialized — check config and API key", "error")
 		return
 	}
 

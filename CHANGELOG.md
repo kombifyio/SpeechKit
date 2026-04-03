@@ -6,6 +6,31 @@ The format is based on Keep a Changelog and this project is intended to ship und
 
 ## [Unreleased]
 
+## [0.14.1] - 2026-04-03
+
+### Fixed
+
+- Made the release workflow build from the requested Git tag during manual dispatch so published installers match the tagged source
+- Fixed the OSS publish workflow to use workspace-safe checkout paths, remove the legacy `.public-export-v8` gitlink blocker, and mirror installer assets into the public `kombifyio/SpeechKit` release
+
+## [0.14.0] - 2026-03-31
+
+### Added
+
+- Self-contained Windows release packaging that bundles `whisper-server`, required runtime DLLs, and the `ggml-small.bin` local model for installer and portable distributions
+- Changesets-based versioning workflow for future release PRs
+
+### Changed
+
+- Switched the canonical Windows install layout to `%LOCALAPPDATA%\\SpeechKit` so the installer, bundled local runtime, and default config paths resolve consistently
+- Updated shipped defaults and first-run local install behavior to prefer the bundled local runtime with dynamic routing
+- Bumped release identifiers across desktop, Android, installer metadata, and frontend artifacts to 0.14.0
+
+### Fixed
+
+- Hardened Android release readiness around assistant wiring, secure token storage, deep links, onboarding checks, and CI coverage
+- Replaced placeholder quick-note summary and email actions in the Windows host with working backend handlers
+
 ## [0.1.3] - 2026-03-30
 
 ### Fixed

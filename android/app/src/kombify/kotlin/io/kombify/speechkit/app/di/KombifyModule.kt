@@ -4,16 +4,14 @@ import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
 import dagger.hilt.components.SingletonComponent
-import io.kombify.speechkit.stt.HuggingFaceProvider
+import io.kombify.speechkit.app.stt.AndroidSttRouterConfigurator
 import io.kombify.speechkit.stt.SttRouter
 import javax.inject.Singleton
 
 /**
  * kombify product flavor DI bindings.
- * Includes cloud providers, auth, and hybrid routing.
- *
- * HF token is injected at runtime from Doppler/SecureStorage,
- * not hardcoded. This module sets up the router with cloud support.
+ * Uses the shared secure token store and keeps dynamic routing semantics
+ * so local/on-device STT can be reintroduced without rewiring callers.
  */
 @Module
 @InstallIn(SingletonComponent::class)
@@ -21,14 +19,6 @@ object KombifyModule {
 
     @Provides
     @Singleton
-    fun provideSttRouter(): SttRouter {
-        val router = SttRouter(
-            strategy = SttRouter.RoutingStrategy.DYNAMIC,
-            preferLocalUnderSecs = 10.0,
-            parallelCloud = false,
-        )
-        // Cloud providers are added at runtime when tokens become available.
-        // See SpeechKitEngineService for token resolution.
-        return router
-    }
+    fun provideSttRouter(configurator: AndroidSttRouterConfigurator): SttRouter =
+        configurator.createRouter(SttRouter.RoutingStrategy.DYNAMIC)
 }

@@ -469,6 +469,60 @@ func TestApplyManagedIntegrationDefaultsSkipsNonCloudOnly(t *testing.T) {
 	}
 }
 
+func TestApplyLocalInstallDefaultsEnablesBundledLocalRuntime(t *testing.T) {
+	cfg := defaults()
+	state := &InstallState{Mode: InstallModeLocal}
+
+	changed := ApplyLocalInstallDefaults(cfg, state)
+
+	if !changed {
+		t.Fatal("expected local install defaults to change config")
+	}
+	if !cfg.Local.Enabled {
+		t.Fatal("local provider should be enabled for pending local installs")
+	}
+	if cfg.Routing.Strategy != "dynamic" {
+		t.Fatalf("routing strategy = %q, want %q", cfg.Routing.Strategy, "dynamic")
+	}
+	if cfg.Local.Model != "ggml-small.bin" {
+		t.Fatalf("local model = %q, want %q", cfg.Local.Model, "ggml-small.bin")
+	}
+}
+
+func TestApplyLocalInstallDefaultsSkipsCompletedSetup(t *testing.T) {
+	cfg := defaults()
+	state := &InstallState{Mode: InstallModeLocal, SetupDone: true}
+
+	changed := ApplyLocalInstallDefaults(cfg, state)
+
+	if changed {
+		t.Fatal("expected completed setup to keep config unchanged")
+	}
+	if cfg.Local.Enabled {
+		t.Fatal("local provider should remain unchanged after setup is complete")
+	}
+	if cfg.Routing.Strategy != "cloud-only" {
+		t.Fatalf("routing strategy = %q, want %q", cfg.Routing.Strategy, "cloud-only")
+	}
+}
+
+func TestApplyLocalInstallDefaultsSkipsCloudInstalls(t *testing.T) {
+	cfg := defaults()
+	state := &InstallState{Mode: InstallModeCloud}
+
+	changed := ApplyLocalInstallDefaults(cfg, state)
+
+	if changed {
+		t.Fatal("expected cloud installs to keep config unchanged")
+	}
+	if cfg.Local.Enabled {
+		t.Fatal("local provider should remain disabled for cloud installs")
+	}
+	if cfg.Routing.Strategy != "cloud-only" {
+		t.Fatalf("routing strategy = %q, want %q", cfg.Routing.Strategy, "cloud-only")
+	}
+}
+
 // --- InstallMode tests ---
 
 func TestLoadInstallState_NoFile(t *testing.T) {

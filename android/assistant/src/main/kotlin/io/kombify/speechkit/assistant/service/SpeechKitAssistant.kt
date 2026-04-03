@@ -1,6 +1,5 @@
 package io.kombify.speechkit.assistant.service
 
-import android.os.Bundle
 import android.service.voice.VoiceInteractionService
 import dagger.hilt.android.AndroidEntryPoint
 import timber.log.Timber
@@ -14,7 +13,7 @@ import timber.log.Timber
  * - "Hey kombify" (future wake word)
  *
  * The service itself is lightweight -- it delegates all session handling
- * to [SpeechKitAssistantSession] which manages the actual voice interaction.
+ * to [SpeechKitAssistantSessionService] which manages the actual voice interaction.
  *
  * Android requires both VoiceInteractionService and VoiceInteractionSessionService
  * to be declared in the manifest with BIND_VOICE_INTERACTION permission.

@@ -271,17 +271,11 @@ class SpeechKitVoiceInput(private val ime: LatinIME) {
 
     /**
      * Resolve HuggingFace token.
-     * Priority: SharedPreferences > BuildConfig > environment.
+     * Reads the token from the shared secure store used by SpeechKit.
      */
     private fun resolveHfToken(): String {
-        // 1. Check SharedPreferences (set via SpeechKit settings UI)
-        val prefs = ime.getSharedPreferences("speechkit_config", 0)
-        val prefToken = prefs.getString("hf_token", null)
-        if (!prefToken.isNullOrBlank()) return prefToken
-
-        // 2. Hardcoded fallback for development (remove before release)
-        // Users must set their own token in settings
-        throw RuntimeException("HuggingFace Token nicht konfiguriert. Bitte in SpeechKit Settings eintragen.")
+        return SecureHuggingFaceTokenStore(ime).getToken()
+            ?: throw RuntimeException("HuggingFace Token nicht konfiguriert. Bitte in SpeechKit Settings eintragen.")
     }
 
     /**

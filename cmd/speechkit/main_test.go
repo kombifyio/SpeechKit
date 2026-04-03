@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -998,6 +999,36 @@ func TestBuildRouterWarnsWhenHFConfiguredWithoutToken(t *testing.T) {
 	}
 }
 
+func TestDefaultLocalModelPathPrefersBundleModelsDirectory(t *testing.T) {
+	exeDir := t.TempDir()
+	modelName := "ggml-small.bin"
+	want := filepath.Join(exeDir, "models", modelName)
+	if err := os.MkdirAll(filepath.Dir(want), 0755); err != nil {
+		t.Fatalf("mkdir models: %v", err)
+	}
+	if err := os.WriteFile(want, []byte("fake model"), 0644); err != nil {
+		t.Fatalf("write model: %v", err)
+	}
+
+	got := defaultLocalModelPath(exeDir, t.TempDir(), modelName)
+
+	if got != want {
+		t.Fatalf("model path = %q, want %q", got, want)
+	}
+}
+
+func TestDefaultLocalModelPathFallsBackToLocalAppData(t *testing.T) {
+	localAppData := t.TempDir()
+	modelName := "ggml-small.bin"
+	want := filepath.Join(localAppData, "SpeechKit", "models", modelName)
+
+	got := defaultLocalModelPath("", localAppData, modelName)
+
+	if got != want {
+		t.Fatalf("model path = %q, want %q", got, want)
+	}
+}
+
 func TestBuildRouterPrefersStoredUserTokenOverEnvToken(t *testing.T) {
 	restore := secrets.UseMemoryStoreForTests()
 	defer restore()
@@ -1567,6 +1598,115 @@ func TestQuickNoteRouteRecordModeDispatchesRuntimeCommand(t *testing.T) {
 	}
 	if got, want := commands[0].NoteID, int64(7); got != want {
 		t.Fatalf("commands[0].NoteID = %d, want %d", got, want)
+	}
+}
+
+func TestQuickNoteSummaryRouteReturnsGeneratedSummary(t *testing.T) {
+	dir := t.TempDir()
+	dbPath := filepath.Join(dir, "test.db")
+	s, err := store.New(store.StoreConfig{Backend: "sqlite", SQLitePath: dbPath, SaveAudio: true, MaxAudioStorageMB: 100})
+	if err != nil {
+		t.Fatalf("store.New: %v", err)
+	}
+	defer s.Close()
+
+	id, err := s.SaveQuickNote(
+		context.Background(),
+		"Meeting with the Android team. Finalise the manifest fix before release. Update CI so lint and tests run on every pull request.",
+		"de",
+		"manual",
+		0,
+		0,
+		nil,
+	)
+	if err != nil {
+		t.Fatalf("store.SaveQuickNote: %v", err)
+	}
+
+	cfg := defaultTestConfig()
+	state := &appState{}
+	handler := assetHandler(cfg, filepath.Join(t.TempDir(), "config.toml"), state, &router.Router{}, s, &config.InstallState{Mode: config.InstallModeLocal})
+
+	form := url.Values{"id": {strconv.FormatInt(id, 10)}}
+	req := httptest.NewRequest(http.MethodPost, "/quicknotes/summary", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", rec.Code, http.StatusOK)
+	}
+
+	var payload struct {
+		Summary string `json:"summary"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if payload.Summary == "" {
+		t.Fatal("expected summary text")
+	}
+	if strings.Contains(payload.Summary, "available soon") {
+		t.Fatalf("summary = %q, should not be placeholder", payload.Summary)
+	}
+	if !strings.Contains(payload.Summary, "manifest fix") {
+		t.Fatalf("summary = %q, want release detail from note", payload.Summary)
+	}
+}
+
+func TestQuickNoteEmailRouteReturnsDraft(t *testing.T) {
+	dir := t.TempDir()
+	dbPath := filepath.Join(dir, "test.db")
+	s, err := store.New(store.StoreConfig{Backend: "sqlite", SQLitePath: dbPath, SaveAudio: true, MaxAudioStorageMB: 100})
+	if err != nil {
+		t.Fatalf("store.New: %v", err)
+	}
+	defer s.Close()
+
+	id, err := s.SaveQuickNote(
+		context.Background(),
+		"Prepare Android release checklist. Verify assistant wiring. Share the rollout plan with QA and support.",
+		"de",
+		"manual",
+		0,
+		0,
+		nil,
+	)
+	if err != nil {
+		t.Fatalf("store.SaveQuickNote: %v", err)
+	}
+
+	cfg := defaultTestConfig()
+	state := &appState{}
+	handler := assetHandler(cfg, filepath.Join(t.TempDir(), "config.toml"), state, &router.Router{}, s, &config.InstallState{Mode: config.InstallModeLocal})
+
+	form := url.Values{"id": {strconv.FormatInt(id, 10)}}
+	req := httptest.NewRequest(http.MethodPost, "/quicknotes/email", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", rec.Code, http.StatusOK)
+	}
+
+	var payload struct {
+		Email string `json:"email"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if payload.Email == "" {
+		t.Fatal("expected email draft")
+	}
+	if strings.Contains(payload.Email, "available soon") {
+		t.Fatalf("email = %q, should not be placeholder", payload.Email)
+	}
+	if !strings.Contains(payload.Email, "Betreff:") {
+		t.Fatalf("email = %q, want subject line", payload.Email)
+	}
+	if !strings.Contains(payload.Email, "Android release checklist") {
+		t.Fatalf("email = %q, want note context in draft", payload.Email)
 	}
 }
 

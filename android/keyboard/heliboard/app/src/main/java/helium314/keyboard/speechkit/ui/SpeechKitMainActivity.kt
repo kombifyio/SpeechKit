@@ -28,6 +28,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import helium314.keyboard.latin.R
+import helium314.keyboard.speechkit.SecureHuggingFaceTokenStore
 
 class SpeechKitMainActivity : ComponentActivity() {
 
@@ -182,8 +183,8 @@ private fun ModeCard(title: String, description: String, requirement: String, av
 @Composable
 private fun HfTokenInput() {
     val context = LocalContext.current
-    val prefs = remember { context.getSharedPreferences("speechkit_config", Context.MODE_PRIVATE) }
-    var token by remember { mutableStateOf(prefs.getString("hf_token", "") ?: "") }
+    val tokenStore = remember { SecureHuggingFaceTokenStore(context.applicationContext) }
+    var token by remember { mutableStateOf(tokenStore.getToken().orEmpty()) }
     var saved by remember { mutableStateOf(false) }
 
     OutlinedTextField(
@@ -192,10 +193,27 @@ private fun HfTokenInput() {
         modifier = Modifier.fillMaxWidth(), singleLine = true,
     )
     Spacer(Modifier.height(8.dp))
-    Button(
-        onClick = { prefs.edit().putString("hf_token", token.trim()).apply(); saved = true },
-        enabled = token.startsWith("hf_") && token.length > 10,
-    ) { Text(if (saved) "Gespeichert" else "Speichern") }
+    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        Button(
+            onClick = {
+                tokenStore.saveToken(token.trim())
+                token = token.trim()
+                saved = true
+            },
+            enabled = token.startsWith("hf_") && token.length > 10,
+        ) { Text(if (saved) "Gespeichert" else "Speichern") }
+        if (token.isNotBlank()) {
+            OutlinedButton(
+                onClick = {
+                    tokenStore.clearToken()
+                    token = ""
+                    saved = false
+                },
+            ) {
+                Text("Entfernen")
+            }
+        }
+    }
     Text("Token erstellen: huggingface.co/settings/tokens (kostenlos)", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
 }
 

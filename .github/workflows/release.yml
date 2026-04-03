@@ -23,20 +23,28 @@ jobs:
     timeout-minutes: 40
 
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
       - name: Resolve version tag
         id: version
         shell: pwsh
         run: |
           if ('${{ github.event.inputs.tag }}' -ne '') {
             $tag = '${{ github.event.inputs.tag }}'
+            $checkoutRef = "refs/tags/$tag"
           } else {
             $tag = '${{ github.ref_name }}'
+            $checkoutRef = '${{ github.ref }}'
           }
           echo "tag=$tag" >> $env:GITHUB_OUTPUT
+          echo "checkout_ref=$checkoutRef" >> $env:GITHUB_OUTPUT
           echo "Release tag: $tag"
+          echo "Checkout ref: $checkoutRef"
+
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ steps.version.outputs.checkout_ref }}
+          fetch-depth: 0
+          fetch-tags: true
 
       - name: Setup Go
         uses: actions/setup-go@v5

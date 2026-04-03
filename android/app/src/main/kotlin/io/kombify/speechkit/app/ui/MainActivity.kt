@@ -21,6 +21,7 @@ import androidx.compose.runtime.*
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -32,6 +33,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import dagger.hilt.android.AndroidEntryPoint
+import io.kombify.speechkit.BuildConfig
 import io.kombify.speechkit.app.ui.theme.SpeechKitTheme
 import io.kombify.speechkit.app.ui.onboarding.KeyboardOnboardingWizard
 import io.kombify.speechkit.app.ui.onboarding.KeyboardSetupChecker
@@ -82,10 +84,10 @@ private fun SpeechKitApp(viewModel: MainViewModel = hiltViewModel()) {
     // Refresh store data when the app resumes (user may have dictated via keyboard).
     // Live-refresh keyboard status on resume from system settings.
     var isKeyboardEnabled by remember { mutableStateOf(KeyboardSetupChecker.isKeyboardEnabled(context)) }
-    val lifecycleOwner = androidx.compose.ui.platform.LocalLifecycleOwner.current
+    val lifecycleOwner = LocalLifecycleOwner.current
     DisposableEffect(lifecycleOwner) {
-        val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
-            if (event == androidx.lifecycle.Lifecycle.Event.ON_RESUME) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) {
                 isKeyboardEnabled = KeyboardSetupChecker.isKeyboardEnabled(context)
                 viewModel.refresh()
             }
@@ -133,6 +135,7 @@ private fun SpeechKitApp(viewModel: MainViewModel = hiltViewModel()) {
             if (!onboardingComplete) {
                 OnboardingFlow(
                     isKeyboardEnabled = isKeyboardEnabled,
+                    viewModel = viewModel,
                     onComplete = {
                         prefs.edit().putBoolean("onboarding_done", true).apply()
                         onboardingComplete = true
@@ -147,7 +150,7 @@ private fun SpeechKitApp(viewModel: MainViewModel = hiltViewModel()) {
                         onDeleteQuickNote = viewModel::deleteQuickNote,
                         onTogglePinQuickNote = viewModel::togglePinQuickNote,
                     )
-                    2 -> SettingsTab()
+                    2 -> SettingsTab(viewModel)
                 }
             }
         }
@@ -159,6 +162,7 @@ private fun SpeechKitApp(viewModel: MainViewModel = hiltViewModel()) {
 @Composable
 private fun OnboardingFlow(
     isKeyboardEnabled: Boolean,
+    viewModel: MainViewModel,
     onComplete: () -> Unit,
 ) {
     val context = LocalContext.current
@@ -226,8 +230,8 @@ private fun OnboardingFlow(
             }
             1 -> {
                 // Step 2: Keyboard Setup
-                val isSelected = remember { KeyboardSetupChecker.isKeyboardSelected(context) }
-                val isAssistant = remember { KeyboardSetupChecker.isAssistantSet(context) }
+                val isSelected = KeyboardSetupChecker.isKeyboardSelected(context)
+                val isAssistant = KeyboardSetupChecker.isAssistantSet(context)
 
                 KeyboardOnboardingWizard(
                     isKeyboardEnabled = isKeyboardEnabled,
@@ -255,7 +259,7 @@ private fun OnboardingFlow(
 
                 Spacer(Modifier.height(8.dp))
 
-                HfTokenInput()
+                HfTokenInput(viewModel)
 
                 Spacer(Modifier.height(16.dp))
 
@@ -339,29 +343,40 @@ private fun ModeCard(
 // --- HF Token Input ---
 
 @Composable
-private fun HfTokenInput() {
-    val context = LocalContext.current
-    val prefs = remember { context.getSharedPreferences("speechkit_config", Context.MODE_PRIVATE) }
-    var token by remember { mutableStateOf(prefs.getString("hf_token", "") ?: "") }
-    var saved by remember { mutableStateOf(false) }
+private fun HfTokenInput(viewModel: MainViewModel) {
+    val token by viewModel.hfToken.collectAsStateWithLifecycle()
+    val saved by viewModel.hfTokenSaved.collectAsStateWithLifecycle()
+    val error by viewModel.hfTokenError.collectAsStateWithLifecycle()
 
     OutlinedTextField(
         value = token,
-        onValueChange = { token = it; saved = false },
+        onValueChange = viewModel::updateHuggingFaceToken,
         label = { Text("HuggingFace Token") },
         placeholder = { Text("hf_...") },
         modifier = Modifier.fillMaxWidth(),
         singleLine = true,
     )
     Spacer(Modifier.height(8.dp))
-    Button(
-        onClick = {
-            prefs.edit().putString("hf_token", token.trim()).apply()
-            saved = true
-        },
-        enabled = token.startsWith("hf_") && token.length > 10,
-    ) {
-        Text(if (saved) "Gespeichert" else "Token speichern")
+    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        Button(
+            onClick = viewModel::saveHuggingFaceToken,
+            enabled = token.startsWith("hf_") && token.length > 10,
+        ) {
+            Text(if (saved) "Gespeichert" else "Token speichern")
+        }
+        if (token.isNotBlank()) {
+            OutlinedButton(onClick = viewModel::clearHuggingFaceToken) {
+                Text("Entfernen")
+            }
+        }
+    }
+    if (error != null) {
+        Spacer(Modifier.height(8.dp))
+        Text(
+            text = error ?: "",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.error,
+        )
     }
     Text(
         "Erstelle einen Token auf huggingface.co/settings/tokens (kostenlos, Read-Zugriff reicht).",
@@ -667,7 +682,7 @@ private fun formatDurationMs(ms: Long): String {
 // --- Settings Tab ---
 
 @Composable
-private fun SettingsTab() {
+private fun SettingsTab(viewModel: MainViewModel) {
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -682,7 +697,7 @@ private fun SettingsTab() {
             Column(modifier = Modifier.padding(16.dp)) {
                 Text("HuggingFace Token", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Medium)
                 Spacer(Modifier.height(8.dp))
-                HfTokenInput()
+                HfTokenInput(viewModel)
             }
         }
 
@@ -690,7 +705,7 @@ private fun SettingsTab() {
         Card(modifier = Modifier.fillMaxWidth()) {
             val settingsContext = LocalContext.current
             var enabled by remember { mutableStateOf(KeyboardSetupChecker.isKeyboardEnabled(settingsContext)) }
-            val settingsLifecycle = androidx.compose.ui.platform.LocalLifecycleOwner.current
+            val settingsLifecycle = LocalLifecycleOwner.current
             DisposableEffect(settingsLifecycle) {
                 val obs = LifecycleEventObserver { _, event ->
                     if (event == Lifecycle.Event.ON_RESUME) {
@@ -718,7 +733,7 @@ private fun SettingsTab() {
             Column(modifier = Modifier.padding(16.dp)) {
                 Text("Ueber", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Medium)
                 Spacer(Modifier.height(4.dp))
-                Text("kombify SpeechKit v0.7.0", style = MaterialTheme.typography.bodySmall)
+                Text("kombify SpeechKit v${BuildConfig.VERSION_NAME}", style = MaterialTheme.typography.bodySmall)
                 Text("AI-powered Voice Keyboard", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 Text("github.com/kombifyio/SpeechKit", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
             }

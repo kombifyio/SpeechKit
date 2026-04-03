@@ -6,6 +6,8 @@ import dagger.Provides
 import dagger.hilt.InstallIn
 import dagger.hilt.android.qualifiers.ApplicationContext
 import dagger.hilt.components.SingletonComponent
+import io.kombify.speechkit.app.config.AndroidKeystoreHuggingFaceTokenStore
+import io.kombify.speechkit.app.config.HuggingFaceTokenStore
 import io.kombify.speechkit.ai.LlmRegistry
 import io.kombify.speechkit.ai.TextActions
 import io.kombify.speechkit.audio.AndroidAudioSession
@@ -31,6 +33,12 @@ object AppModule {
     @Provides
     @Singleton
     fun provideStore(@ApplicationContext context: Context): Store = RoomStore(context)
+
+    @Provides
+    @Singleton
+    fun provideHuggingFaceTokenStore(
+        @ApplicationContext context: Context,
+    ): HuggingFaceTokenStore = AndroidKeystoreHuggingFaceTokenStore(context)
 
     @Provides
     @Singleton

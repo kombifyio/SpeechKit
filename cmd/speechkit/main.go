@@ -23,7 +23,6 @@ import (
 	"github.com/kombifyio/SpeechKit/internal/assist"
 	"github.com/kombifyio/SpeechKit/internal/audio"
 	"github.com/kombifyio/SpeechKit/internal/config"
-	"github.com/kombifyio/SpeechKit/internal/voiceagent"
 	"github.com/kombifyio/SpeechKit/internal/hotkey"
 	_ "github.com/kombifyio/SpeechKit/internal/kombify"
 	"github.com/kombifyio/SpeechKit/internal/models"
@@ -35,6 +34,7 @@ import (
 	"github.com/kombifyio/SpeechKit/internal/textactions"
 	"github.com/kombifyio/SpeechKit/internal/tray"
 	"github.com/kombifyio/SpeechKit/internal/tts"
+	"github.com/kombifyio/SpeechKit/internal/voiceagent"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit"
 )
 
@@ -196,9 +196,16 @@ func main() {
 		installState.Mode = config.InstallModeLocal
 		installState.SetupDone = false
 		_ = config.SaveInstallState(installState)
-		log.Println("Install mode: local (default, first run â€” setup wizard pending)")
+		log.Println("Install mode: local (default, first run — setup wizard pending)")
 	} else {
 		log.Printf("Install mode: %s", installState.Mode)
+	}
+	if config.ApplyLocalInstallDefaults(cfg, installState) {
+		if err := config.Save(cfgPath, cfg); err != nil {
+			log.Printf("WARN: save local install defaults: %v", err)
+		} else {
+			log.Printf("Local install defaults: enabled bundled local runtime")
+		}
 	}
 
 	if config.ApplyManagedIntegrationDefaults(cfg) {
@@ -355,7 +362,7 @@ func main() {
 		log.Println("Audio player: ready (24kHz mono)")
 	}
 
-	// Assist Pipeline: STT â†’ Codeword â†’ LLM â†’ TTS â†’ Result{Text, Audio}
+	// Assist Pipeline: STT → Codeword → LLM → TTS → Result{Text, Audio}
 	if state.assistFlow != nil {
 		state.assistPipeline = assist.NewPipeline(
 			state.assistFlow,
@@ -663,15 +670,15 @@ func main() {
 	// Unified event loop: handles PTT, Quick Capture auto-record, and silence auto-stop
 	go func() {
 		desktopInputController{
-			commands:            state.engine.Commands(),
-			recording:           recordingController,
-			state:               state,
-			hotkeyEvents:        hkManager.Events(),
-			silenceAutoStop:     silenceAutoStop,
-			autoStartInterval:   200 * time.Millisecond,
-			voiceAgentSession:   state.voiceAgentSession,
-			voiceAgentConfig:    &cfg.VoiceAgent,
-			cfg:                 cfg,
+			commands:          state.engine.Commands(),
+			recording:         recordingController,
+			state:             state,
+			hotkeyEvents:      hkManager.Events(),
+			silenceAutoStop:   silenceAutoStop,
+			autoStartInterval: 200 * time.Millisecond,
+			voiceAgentSession: state.voiceAgentSession,
+			voiceAgentConfig:  &cfg.VoiceAgent,
+			cfg:               cfg,
 		}.Run(ctx)
 	}()
 
@@ -713,9 +720,7 @@ func buildRouter(cfg *config.Config) (*router.Router, []string) {
 	if cfg.Local.Enabled {
 		modelPath := cfg.Local.ModelPath
 		if modelPath == "" {
-			if d := os.Getenv("LOCALAPPDATA"); d != "" {
-				modelPath = filepath.Join(d, "SpeechKit", "models", cfg.Local.Model)
-			}
+			modelPath = defaultLocalModelPath(executableDir(), os.Getenv("LOCALAPPDATA"), cfg.Local.Model)
 		}
 		r.SetLocal(stt.NewLocalProvider(cfg.Local.Port, modelPath, cfg.Local.GPU))
 		msgs = append(msgs, fmt.Sprintf("Local: %s (not started)", cfg.Local.Model))
@@ -747,6 +752,30 @@ func buildRouter(cfg *config.Config) (*router.Router, []string) {
 	}
 
 	return r, msgs
+}
+
+func executableDir() string {
+	exe, err := os.Executable()
+	if err != nil || exe == "" {
+		return ""
+	}
+	return filepath.Dir(exe)
+}
+
+func defaultLocalModelPath(exeDir string, localAppData string, modelName string) string {
+	if exeDir != "" && modelName != "" {
+		bundlePath := filepath.Join(exeDir, "models", modelName)
+		if _, err := os.Stat(bundlePath); err == nil {
+			return bundlePath
+		}
+	}
+	if localAppData != "" && modelName != "" {
+		return filepath.Join(localAppData, "SpeechKit", "models", modelName)
+	}
+	if exeDir != "" && modelName != "" {
+		return filepath.Join(exeDir, "models", modelName)
+	}
+	return ""
 }
 
 func buildGenkitConfig(cfg *config.Config) appai.Config {

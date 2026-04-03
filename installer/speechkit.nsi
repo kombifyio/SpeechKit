@@ -6,7 +6,7 @@
 Name "kombify SpeechKit"
 !define STAGE_DIR "..\dist\windows\SpeechKit"
 OutFile "..\dist\windows\SpeechKit-Setup.exe"
-InstallDir "$LOCALAPPDATA\kombify\SpeechKit"
+InstallDir "$LOCALAPPDATA\SpeechKit"
 RequestExecutionLevel user
 
 ; --- Interface ---
@@ -55,6 +55,8 @@ Section "SpeechKit" SecMain
 
   ; Main binary
   File "${STAGE_DIR}\SpeechKit.exe"
+  File "${STAGE_DIR}\whisper-server.exe"
+  File "${STAGE_DIR}\*.dll"
 
   ; Runtime config template
   File "/oname=config.default.toml" "${STAGE_DIR}\config.toml"
@@ -65,6 +67,10 @@ Section "SpeechKit" SecMain
 
   ; Create models directory
   CreateDirectory "$INSTDIR\models"
+  IfFileExists "$INSTDIR\models\ggml-small.bin" +3
+    SetOutPath "$INSTDIR\models"
+    File "${STAGE_DIR}\models\ggml-small.bin"
+  SetOutPath "$INSTDIR"
 
   ; Create Start Menu shortcuts
   CreateDirectory "$SMPROGRAMS\kombify SpeechKit"
@@ -79,7 +85,7 @@ Section "SpeechKit" SecMain
   WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\kombify SpeechKit" "UninstallString" '"$INSTDIR\uninstall.exe"'
   WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\kombify SpeechKit" "InstallLocation" "$INSTDIR"
   WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\kombify SpeechKit" "Publisher" "kombify"
-  WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\kombify SpeechKit" "DisplayVersion" "0.1.3"
+  WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\kombify SpeechKit" "DisplayVersion" "0.14.1"
   WriteRegDWORD HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\kombify SpeechKit" "NoModify" 1
   WriteRegDWORD HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\kombify SpeechKit" "NoRepair" 1
 
@@ -96,9 +102,13 @@ Section "Uninstall"
 
   ; Remove files
   Delete "$INSTDIR\SpeechKit.exe"
+  Delete "$INSTDIR\whisper-server.exe"
+  Delete "$INSTDIR\*.dll"
   Delete "$INSTDIR\config.toml"
   Delete "$INSTDIR\config.default.toml"
   Delete "$INSTDIR\uninstall.exe"
+  Delete "$INSTDIR\models\ggml-small.bin"
+  RMDir "$INSTDIR\models"
 
   ; Remove shortcuts
   Delete "$SMPROGRAMS\kombify SpeechKit\SpeechKit.lnk"

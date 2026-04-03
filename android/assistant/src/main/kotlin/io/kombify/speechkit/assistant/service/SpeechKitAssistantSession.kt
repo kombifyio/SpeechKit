@@ -6,6 +6,7 @@ import android.content.Context
 import android.os.Bundle
 import android.service.voice.VoiceInteractionSession
 import android.service.voice.VoiceInteractionSessionService
+import dagger.hilt.android.AndroidEntryPoint
 import io.kombify.speechkit.assistant.intent.IntentRouter
 import io.kombify.speechkit.assistant.intent.AssistantIntent
 import io.kombify.speechkit.audio.AudioSession
@@ -18,6 +19,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
 import timber.log.Timber
+import javax.inject.Inject
 
 /**
  * Session service that creates assistant sessions.
@@ -25,10 +27,21 @@ import timber.log.Timber
  * Android creates a new VoiceInteractionSession for each assistant activation.
  * We inject our dependencies and pass them to the session.
  */
+@AndroidEntryPoint
 class SpeechKitAssistantSessionService : VoiceInteractionSessionService() {
 
+    @Inject
+    lateinit var audioSession: AudioSession
+
+    @Inject
+    lateinit var sttRouter: SttRouter
+
     override fun onNewSession(args: Bundle?): VoiceInteractionSession {
-        return SpeechKitVoiceSession(this)
+        return SpeechKitVoiceSession(
+            context = this,
+            audioSession = audioSession,
+            sttRouter = sttRouter,
+        )
     }
 }
 
@@ -49,16 +62,13 @@ class SpeechKitAssistantSessionService : VoiceInteractionSessionService() {
  */
 class SpeechKitVoiceSession(
     context: Context,
+    private val audioSession: AudioSession,
+    private val sttRouter: SttRouter,
 ) : VoiceInteractionSession(context) {
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
     private val intentRouter = IntentRouter()
     private var listeningJob: Job? = null
-
-    // These would be injected via Hilt in production.
-    // For now, they're initialized lazily when the session starts.
-    private var audioSession: AudioSession? = null
-    private var sttRouter: SttRouter? = null
 
     override fun onShow(args: Bundle?, showFlags: Int) {
         super.onShow(args, showFlags)
@@ -71,6 +81,7 @@ class SpeechKitVoiceSession(
         startListening()
     }
 
+    @Deprecated("Framework callback remains deprecated but is still required for assist context delivery.")
     override fun onHandleAssist(
         data: Bundle?,
         structure: AssistStructure?,
@@ -92,7 +103,7 @@ class SpeechKitVoiceSession(
     override fun onHide() {
         listeningJob?.cancel()
         scope.launch {
-            audioSession?.stop()
+            audioSession.stop()
         }
         Timber.d("Assistant session hidden")
         super.onHide()
@@ -109,19 +120,13 @@ class SpeechKitVoiceSession(
                 Timber.d("Assistant: listening...")
                 updateUiState(AssistantUiState.Listening)
 
-                val audio = audioSession ?: run {
-                    Timber.w("AudioSession not available")
-                    updateUiState(AssistantUiState.Error("Mikrofon nicht verfuegbar"))
-                    return@launch
-                }
-
-                audio.start()
+                audioSession.start()
 
                 // Collect audio for a reasonable duration (up to 10 seconds)
                 // VAD would handle this in production
                 kotlinx.coroutines.delay(5000)
 
-                val pcmData = audio.stop()
+                val pcmData = audioSession.stop()
                 if (pcmData.isEmpty()) {
                     updateUiState(AssistantUiState.Error("Keine Sprache erkannt"))
                     return@launch
@@ -130,13 +135,7 @@ class SpeechKitVoiceSession(
                 // Transcribe
                 updateUiState(AssistantUiState.Processing)
 
-                val router = sttRouter ?: run {
-                    Timber.w("SttRouter not available")
-                    updateUiState(AssistantUiState.Error("STT nicht konfiguriert"))
-                    return@launch
-                }
-
-                val result = router.route(
+                val result = sttRouter.route(
                     audio = pcmData,
                     durationSecs = pcmData.size.toDouble() / (16000 * 2),
                     opts = TranscribeOpts(language = "de"),
@@ -183,12 +182,6 @@ class SpeechKitVoiceSession(
         // In production, this updates the Compose overlay UI.
         // For now, just log.
         Timber.d("UI State: $state")
-    }
-
-    /** Inject dependencies after construction (Hilt workaround for VoiceInteractionSession). */
-    fun inject(audioSession: AudioSession, sttRouter: SttRouter) {
-        this.audioSession = audioSession
-        this.sttRouter = sttRouter
     }
 }
 
