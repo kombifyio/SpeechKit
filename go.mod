@@ -5,7 +5,7 @@ go 1.25.0
 require (
 	github.com/BurntSushi/toml v1.6.0
 	github.com/ebitengine/oto/v3 v3.4.0
-	github.com/firebase/genkit/go v1.5.0
+	github.com/firebase/genkit/go v1.6.0
 	github.com/gen2brain/malgo v0.11.24
 	github.com/google/uuid v1.6.0
 	github.com/hajimehoshi/go-mp3 v0.3.4
