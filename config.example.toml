@@ -15,9 +15,9 @@ visualizer = "pill"       # pill or circle
 design = "default"        # default or kombify
 
 [local]
-enabled = false
+enabled = true
 model = "ggml-small.bin"
-model_path = ""           # Auto: %LOCALAPPDATA%/SpeechKit/models/
+model_path = ""           # Auto: ./models/ first, then %LOCALAPPDATA%/SpeechKit/models/
 port = 8080               # whisper-server port
 gpu = "auto"              # auto, cuda, vulkan, cpu
 
@@ -32,7 +32,7 @@ model = "openai/whisper-large-v3" # Routed/shared provider model, not a dedicate
 token_env = "HF_TOKEN"    # Fallback env var when no stored host token exists; Doppler is internal/dev only
 
 [routing]
-strategy = "cloud-only"   # dynamic, local-only, cloud-only
+strategy = "dynamic"      # dynamic, local-only, cloud-only
 prefer_local_under_seconds = 10
 parallel_cloud = false    # Start cloud parallel to local
 replace_on_better = false # Silently replace with better result

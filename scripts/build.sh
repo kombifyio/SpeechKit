@@ -11,6 +11,7 @@ BUNDLE_DIR="$DIST_DIR/SpeechKit"
 BUNDLE_EXE="$BUNDLE_DIR/SpeechKit.exe"
 INSTALLER_SCRIPT="$PROJECT_DIR/installer/speechkit.nsi"
 INSTALLER_EXE="$DIST_DIR/SpeechKit-Setup.exe"
+PREPARE_WHISPER_RUNTIME_SCRIPT="$SCRIPT_DIR/prepare-whisper-runtime.ps1"
 
 export PATH="/c/msys64/mingw64/bin:$PATH"
 export CGO_ENABLED=1
@@ -51,7 +52,9 @@ require_path "$FRONTEND_DIR" "Frontend source directory"
 require_path "$FRONTEND_DIR/package.json" "Frontend package manifest"
 require_path "$FRONTEND_DIR/src" "Frontend source tree"
 require_path "$INSTALLER_SCRIPT" "NSIS installer script"
+require_path "$PREPARE_WHISPER_RUNTIME_SCRIPT" "Whisper runtime prepare script"
 require_command "makensis" "NSIS compiler"
+require_command "powershell" "PowerShell"
 rm -rf "$BUNDLE_DIR"
 mkdir -p "$BUNDLE_DIR"
 
@@ -84,6 +87,9 @@ go build -ldflags "$GO_LDFLAGS" -o "$BUNDLE_EXE" ./cmd/speechkit/
 
 echo "Writing runtime config..."
 cp "$PROJECT_DIR/config.example.toml" "$BUNDLE_DIR/config.toml"
+
+echo "Bundling local whisper runtime..."
+powershell -ExecutionPolicy Bypass -File "$PREPARE_WHISPER_RUNTIME_SCRIPT" -BundleDir "$BUNDLE_DIR" -CacheDir "$PROJECT_DIR/.cache"
 
 echo "Building SpeechKit-Setup.exe..."
 makensis "$INSTALLER_SCRIPT"

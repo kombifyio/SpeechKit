@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"net/http"
@@ -19,14 +20,15 @@ import (
 	"github.com/kombifyio/SpeechKit/internal/frontendassets"
 	"github.com/kombifyio/SpeechKit/internal/models"
 	"github.com/kombifyio/SpeechKit/internal/router"
-	"github.com/kombifyio/SpeechKit/internal/stt"
 	"github.com/kombifyio/SpeechKit/internal/secrets"
 	"github.com/kombifyio/SpeechKit/internal/store"
+	"github.com/kombifyio/SpeechKit/internal/stt"
+	"github.com/kombifyio/SpeechKit/internal/textactions"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit"
 )
 
 // AppVersion is the current release version. Updated at release time.
-var AppVersion = "0.1.3"
+var AppVersion = "0.14.1"
 
 var revealAudioFileInShell = func(path string) error {
 	return exec.Command("explorer.exe", "/select,", filepath.Clean(path)).Start()
@@ -660,7 +662,14 @@ func registerQuickNoteRoutes(mux *http.ServeMux, cfg *config.Config, state *appS
 			return
 		}
 		w.Header().Set("Content-Type", "application/json; charset=utf-8")
-		_ = json.NewEncoder(w).Encode(map[string]string{"summary": "AI summary will be available soon."})
+		note, err := resolveQuickNoteFromRequest(r, feedbackStore)
+		if err != nil {
+			writeQuickNoteError(w, err)
+			return
+		}
+		_ = json.NewEncoder(w).Encode(map[string]string{
+			"summary": summarizeQuickNote(r.Context(), state, note.Text, note.Language),
+		})
 	})
 	mux.HandleFunc("/quicknotes/email", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
@@ -668,7 +677,15 @@ func registerQuickNoteRoutes(mux *http.ServeMux, cfg *config.Config, state *appS
 			return
 		}
 		w.Header().Set("Content-Type", "application/json; charset=utf-8")
-		_ = json.NewEncoder(w).Encode(map[string]string{"email": "Email draft generation will be available soon."})
+		note, err := resolveQuickNoteFromRequest(r, feedbackStore)
+		if err != nil {
+			writeQuickNoteError(w, err)
+			return
+		}
+		summary := summarizeQuickNote(r.Context(), state, note.Text, note.Language)
+		_ = json.NewEncoder(w).Encode(map[string]string{
+			"email": draftQuickNoteEmail(note.Text, summary),
+		})
 	})
 	mux.HandleFunc("/quicknotes/get", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
@@ -776,6 +793,188 @@ func registerQuickNoteRoutes(mux *http.ServeMux, cfg *config.Config, state *appS
 		}
 		_ = json.NewEncoder(w).Encode(map[string]string{"message": "Closed"})
 	})
+}
+
+type quickNoteRequestError struct {
+	message string
+	status  int
+}
+
+func (e quickNoteRequestError) Error() string {
+	return e.message
+}
+
+func resolveQuickNoteFromRequest(r *http.Request, feedbackStore store.Store) (*store.QuickNote, error) {
+	if feedbackStore == nil {
+		return nil, quickNoteRequestError{message: "Store not available", status: http.StatusServiceUnavailable}
+	}
+	if err := r.ParseForm(); err != nil {
+		return nil, quickNoteRequestError{message: msgFormParseError, status: http.StatusBadRequest}
+	}
+
+	id, err := strconv.ParseInt(strings.TrimSpace(r.FormValue("id")), 10, 64)
+	if err != nil || id <= 0 {
+		return nil, quickNoteRequestError{message: "Invalid ID", status: http.StatusBadRequest}
+	}
+
+	note, err := feedbackStore.GetQuickNote(r.Context(), id)
+	if err != nil {
+		return nil, quickNoteRequestError{message: "Quick Note not found", status: http.StatusNotFound}
+	}
+	return note, nil
+}
+
+func writeQuickNoteError(w http.ResponseWriter, err error) {
+	status := http.StatusInternalServerError
+	message := "Request failed"
+	var reqErr quickNoteRequestError
+	if errors.As(err, &reqErr) {
+		status = reqErr.status
+		message = reqErr.message
+	}
+	w.WriteHeader(status)
+	_ = json.NewEncoder(w).Encode(map[string]string{"message": message})
+}
+
+func summarizeQuickNote(ctx context.Context, state *appState, text string, language string) string {
+	input := textactions.ResolveSummarizeContext(textactions.SummarizeContext{
+		Selection: text,
+		Locale:    language,
+	})
+
+	if state != nil && state.summarizeFlow != nil {
+		summary, err := (&textactions.FlowSummarizer{Flow: state.summarizeFlow}).Summarize(ctx, input)
+		if err == nil {
+			trimmed := strings.TrimSpace(summary)
+			if trimmed != "" {
+				return trimmed
+			}
+		} else {
+			log.Printf("WARN: quick note summarize fallback: %v", err)
+		}
+	}
+
+	return fallbackQuickNoteSummary(input.Text)
+}
+
+func draftQuickNoteEmail(noteText string, summary string) string {
+	normalized := normalizeQuickNoteText(noteText)
+	if summary == "" {
+		summary = fallbackQuickNoteSummary(normalized)
+	}
+	highlights := quickNoteHighlights(normalized)
+	lines := []string{
+		fmt.Sprintf("Betreff: %s", quickNoteSubject(normalized)),
+		"",
+		"Hallo,",
+		"",
+		"hier ist die Zusammenfassung der Quick Note:",
+		summary,
+		"",
+		"Wichtige Punkte:",
+	}
+	for _, highlight := range highlights {
+		lines = append(lines, "- "+highlight)
+	}
+	lines = append(lines, "", "Viele Gruesse")
+	return strings.Join(lines, "\n")
+}
+
+func fallbackQuickNoteSummary(text string) string {
+	normalized := normalizeQuickNoteText(text)
+	if normalized == "" {
+		return ""
+	}
+
+	sentences := quickNoteHighlights(normalized)
+	switch len(sentences) {
+	case 0:
+		return ""
+	case 1:
+		return sentences[0]
+	default:
+		return strings.Join(sentences[:minInt(2, len(sentences))], " ")
+	}
+}
+
+func quickNoteSubject(text string) string {
+	normalized := normalizeQuickNoteText(text)
+	if normalized == "" {
+		return "Quick Note Follow-up"
+	}
+	words := strings.Fields(normalized)
+	if len(words) > 7 {
+		words = words[:7]
+	}
+	subject := strings.Join(words, " ")
+	if len(subject) > 64 {
+		subject = truncateAtWord(subject, 64)
+	}
+	return subject
+}
+
+func quickNoteHighlights(text string) []string {
+	normalized := normalizeQuickNoteText(text)
+	if normalized == "" {
+		return []string{"Keine Details verfuegbar"}
+	}
+
+	sentences := splitQuickNoteSentences(normalized)
+	if len(sentences) == 0 {
+		return []string{truncateAtWord(normalized, 160)}
+	}
+
+	highlights := make([]string, 0, minInt(3, len(sentences)))
+	for _, sentence := range sentences {
+		sentence = truncateAtWord(sentence, 160)
+		if sentence == "" {
+			continue
+		}
+		highlights = append(highlights, sentence)
+		if len(highlights) == 3 {
+			break
+		}
+	}
+	if len(highlights) == 0 {
+		return []string{truncateAtWord(normalized, 160)}
+	}
+	return highlights
+}
+
+func splitQuickNoteSentences(text string) []string {
+	replacer := strings.NewReplacer("!", ".", "?", ".", "\n", ".")
+	parts := strings.Split(replacer.Replace(text), ".")
+	sentences := make([]string, 0, len(parts))
+	for _, part := range parts {
+		normalized := normalizeQuickNoteText(part)
+		if normalized == "" {
+			continue
+		}
+		sentences = append(sentences, normalized)
+	}
+	return sentences
+}
+
+func normalizeQuickNoteText(text string) string {
+	return strings.Join(strings.Fields(strings.TrimSpace(text)), " ")
+}
+
+func truncateAtWord(text string, maxLen int) string {
+	if len(text) <= maxLen {
+		return text
+	}
+	truncated := text[:maxLen]
+	if idx := strings.LastIndex(truncated, " "); idx >= maxLen/2 {
+		truncated = truncated[:idx]
+	}
+	return strings.TrimSpace(truncated) + "..."
+}
+
+func minInt(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
 }
 
 func dispatchQuickNoteCommand(ctx context.Context, state *appState, command speechkit.Command) error {

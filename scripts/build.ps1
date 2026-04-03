@@ -9,6 +9,7 @@ $bundleDir = Join-Path $distDir 'SpeechKit'
 $bundleExe = Join-Path $bundleDir 'SpeechKit.exe'
 $installerScript = Join-Path $projectDir 'installer/speechkit.nsi'
 $installerExe = Join-Path $distDir 'SpeechKit-Setup.exe'
+$prepareWhisperRuntimeScript = Join-Path $scriptDir 'prepare-whisper-runtime.ps1'
 $cacheDir = Join-Path $projectDir '.cache'
 $goCacheDir = Join-Path $cacheDir 'go-build'
 $goTmpDir = Join-Path $cacheDir 'go-tmp'
@@ -257,6 +258,7 @@ Assert-PathExists -Path $frontendDir -Description 'Frontend source directory'
 Assert-PathExists -Path (Join-Path $frontendDir 'package.json') -Description 'Frontend package manifest'
 Assert-PathExists -Path (Join-Path $frontendDir 'src') -Description 'Frontend source tree'
 Assert-PathExists -Path $installerScript -Description 'NSIS installer script'
+Assert-PathExists -Path $prepareWhisperRuntimeScript -Description 'Whisper runtime prepare script'
 $nsisExe = Find-NSISExecutable
 if ([string]::IsNullOrWhiteSpace($nsisExe)) {
     throw 'NSIS makensis.exe not found. Install NSIS or add makensis to PATH.'
@@ -306,6 +308,9 @@ finally {
 Write-Host 'Writing runtime config...'
 $bundleConfig = Join-Path $bundleDir 'config.toml'
 Copy-Item -Path (Join-Path $projectDir 'config.example.toml') -Destination $bundleConfig -Force
+Invoke-Step 'Bundling local whisper runtime...' {
+    & powershell -ExecutionPolicy Bypass -File $prepareWhisperRuntimeScript -BundleDir $bundleDir -CacheDir $cacheDir
+}
 
 Invoke-Step 'Building SpeechKit-Setup.exe...' { & $nsisExe $installerScript }
 

@@ -6,6 +6,7 @@
 *.dylib
 /build/
 /dist/
+SpeechKit-Portable-v*.zip
 
 # Go
 /vendor/
@@ -14,6 +15,8 @@
 *.bin
 *.ggml
 /models/
+.public-export-dryrun/
+.public-export-v8/
 
 # Config with secrets
 config.toml
@@ -54,6 +57,7 @@ Thumbs.db
 Desktop.ini
 
 # Wails
+/node_modules/
 frontend/node_modules/
 frontend/**/node_modules/
 frontend/dist/

@@ -91,3 +91,38 @@ func IsFirstRun() bool {
 	_, err := os.Stat(installStatePath())
 	return os.IsNotExist(err)
 }
+
+// ApplyLocalInstallDefaults configures a pending local install to use the bundled
+// local runtime without requiring additional manual setup.
+func ApplyLocalInstallDefaults(cfg *Config, state *InstallState) bool {
+	if cfg == nil || state == nil {
+		return false
+	}
+	if state.Mode != InstallModeLocal || state.SetupDone {
+		return false
+	}
+
+	changed := false
+	if !cfg.Local.Enabled {
+		cfg.Local.Enabled = true
+		changed = true
+	}
+	if cfg.Routing.Strategy == "" || cfg.Routing.Strategy == "cloud-only" {
+		cfg.Routing.Strategy = "dynamic"
+		changed = true
+	}
+	if cfg.Local.Model == "" {
+		cfg.Local.Model = "ggml-small.bin"
+		changed = true
+	}
+	if cfg.Local.Port == 0 {
+		cfg.Local.Port = 8080
+		changed = true
+	}
+	if cfg.Local.GPU == "" {
+		cfg.Local.GPU = "auto"
+		changed = true
+	}
+
+	return changed
+}

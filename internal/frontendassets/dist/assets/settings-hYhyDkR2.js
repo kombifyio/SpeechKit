@@ -1,1 +1,0 @@
-import{a as e,i as t,n,t as r}from"./jsx-runtime-CCkEANVd.js";import{t as i}from"./settings-app-CFyIEfsp.js";var a=e(t(),1),o=n(),s=r();(0,o.createRoot)(document.getElementById(`root`)).render((0,s.jsx)(a.StrictMode,{children:(0,s.jsx)(i,{})}));
