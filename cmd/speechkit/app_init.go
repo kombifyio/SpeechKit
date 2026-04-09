@@ -295,6 +295,6 @@ func escapeJS(s string) string {
 	if err != nil {
 		return ""
 	}
-	// json.Marshal returns a "quoted string" â€” strip the surrounding quotes.
+	// json.Marshal returns a "quoted string" — strip the surrounding quotes.
 	return string(b[1 : len(b)-1])
 }

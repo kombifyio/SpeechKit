@@ -146,8 +146,8 @@ func (o desktopTranscriptOutput) Deliver(ctx context.Context, transcript speechk
 			return o.deliverAssist(ctx, transcript, target)
 		case "voice_agent":
 			// Voice Agent Mode uses real-time WebSocket, not this pipeline.
-			// If we reach here, the Voice Agent session isn't active â€” fall through to legacy agent.
-			slog.Warn("voice_agent mode active but no live session â€” falling back to agent flow")
+			// If we reach here, the Voice Agent session isn't active — fall through to legacy agent.
+			slog.Warn("voice_agent mode active but no live session — falling back to agent flow")
 		}
 
 		// Legacy/fallback agent flow.
@@ -170,16 +170,16 @@ func (o desktopTranscriptOutput) Deliver(ctx context.Context, transcript speechk
 	}, outputTarget)
 }
 
-// deliverAssist uses the Assist Pipeline: Codeword â†’ LLM â†’ TTS â†’ Text+Audio.
+// deliverAssist uses the Assist Pipeline: Codeword → LLM → TTS → Text+Audio.
 func (o desktopTranscriptOutput) deliverAssist(ctx context.Context, transcript speechkit.Transcript, target any) error {
 	assistPipeline := o.currentAssistPipeline()
 	if assistPipeline == nil {
-		// No assist pipeline â€” try legacy agent flow, or warn user.
+		// No assist pipeline — try legacy agent flow, or warn user.
 		if o.currentAgentFlow() != nil {
 			return o.deliverAgentFlow(ctx, transcript, target)
 		}
-		// Neither pipeline available â€” show feedback and fall back to clipboard paste.
-		slog.Warn("assist mode active but no LLM provider configured â€” falling back to dictation output")
+		// Neither pipeline available — show feedback and fall back to clipboard paste.
+		slog.Warn("assist mode active but no LLM provider configured — falling back to dictation output")
 		if o.onAssistText != nil {
 			o.onAssistText("No LLM provider configured. Check Settings > Provider.")
 		}
