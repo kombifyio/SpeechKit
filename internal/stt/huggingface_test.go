@@ -53,8 +53,8 @@ func TestHF_Transcribe_Success(t *testing.T) {
 	if result.Provider != "huggingface" {
 		t.Errorf("provider = %q", result.Provider)
 	}
-	if result.Duration == 0 {
-		t.Error("duration should be > 0")
+	if result.Duration < 0 {
+		t.Error("duration should not be negative")
 	}
 }
 

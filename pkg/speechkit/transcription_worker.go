@@ -4,8 +4,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"sync"
 	"time"
+	"unicode/utf8"
 )
 
 const DefaultProcessingMessage = "Recording stopped · Transcribing"
@@ -17,20 +19,27 @@ var (
 	ErrWorkerQueueFull    = errors.New("speechkit: transcription worker queue is full")
 )
 
+// TranscriptOutput delivers a completed [Transcript] to the host application
+// (e.g. clipboard injection or text-field paste).
 type TranscriptOutput interface {
 	Deliver(ctx context.Context, transcript Transcript, target any) error
 }
 
+// TranscriptInterceptor can handle a transcript before it reaches the normal
+// output path. Return (true, nil) to signal that the transcript was consumed.
 type TranscriptInterceptor interface {
 	Intercept(ctx context.Context, transcript Transcript, target any) (bool, error)
 }
 
+// TranscriptionObserver receives real-time status and log updates from a
+// [TranscriptionWorker] during processing.
 type TranscriptionObserver interface {
 	OnState(status, text string)
 	OnLog(message, kind string)
 	OnTranscriptCommitted(transcript Transcript, quickNote bool)
 }
 
+// TranscriptionJob pairs a [Submission] with its delivery target.
 type TranscriptionJob struct {
 	Submission
 	Target any
@@ -48,6 +57,8 @@ func (j TranscriptionJob) Clone() TranscriptionJob {
 	return clone
 }
 
+// TranscriptionWorkerConfig configures a [TranscriptionWorker].
+// Runner is required; all other fields are optional.
 type TranscriptionWorkerConfig struct {
 	Timeout     time.Duration
 	QueueSize   int
@@ -57,6 +68,9 @@ type TranscriptionWorkerConfig struct {
 	Observer    TranscriptionObserver
 }
 
+// TranscriptionWorker processes [TranscriptionJob] values from an internal
+// queue on a single goroutine. Start it with [TranscriptionWorker.Start] and
+// submit work with [TranscriptionWorker.Submit].
 type TranscriptionWorker struct {
 	timeout     time.Duration
 	runner      *TranscriptionRunner
@@ -127,15 +141,14 @@ func (w *TranscriptionWorker) Submit(job TranscriptionJob) error {
 	job = job.Clone()
 
 	w.mu.Lock()
+	defer w.mu.Unlock()
+
 	if w.closed {
-		w.mu.Unlock()
 		return ErrWorkerClosed
 	}
-	jobs := w.jobs
-	w.mu.Unlock()
 
 	select {
-	case jobs <- job:
+	case w.jobs <- job:
 		return nil
 	default:
 		return ErrWorkerQueueFull
@@ -192,7 +205,17 @@ func (w *TranscriptionWorker) handleJob(ctx context.Context, job TranscriptionJo
 	}
 
 	ms := completion.Transcript.Duration.Milliseconds()
-	w.onLog(fmt.Sprintf("[%s] %dms: %s", completion.Transcript.Provider, ms, completion.Transcript.Text), "success")
+	trimmedText := strings.TrimSpace(completion.Transcript.Text)
+	w.onLog(
+		fmt.Sprintf(
+			"[%s] %dms: transcript committed (%d chars, %d words)",
+			completion.Transcript.Provider,
+			ms,
+			utf8.RuneCountInString(trimmedText),
+			len(strings.Fields(trimmedText)),
+		),
+		"success",
+	)
 	w.onState("done", completion.Transcript.Text)
 	w.onTranscriptCommitted(completion.Transcript, job.QuickNote)
 

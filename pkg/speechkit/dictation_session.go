@@ -14,6 +14,8 @@ const (
 	DefaultDictationOverlap    = 200 * time.Millisecond
 )
 
+// DictationSegmenter implements [SegmentCollector] using VAD-based pause
+// detection to split continuous speech into discrete segments.
 type DictationSegmenter struct {
 	processor *dictation.Processor
 	segments  []dictation.Segment
@@ -70,6 +72,8 @@ func (s *DictationSegmenter) CollectStopSegments(fullPCM []byte) ([]dictation.Se
 	return segments, nil
 }
 
+// FallbackDictationSegments wraps all of fullPCM in a single segment.
+// Used when VAD-based segmentation is unavailable or produces no output.
 func FallbackDictationSegments(fullPCM []byte) []dictation.Segment {
 	if len(fullPCM) == 0 {
 		return nil

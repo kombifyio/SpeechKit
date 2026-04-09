@@ -3,7 +3,7 @@ package tts
 import (
 	"context"
 	"fmt"
-	"log"
+	"log/slog"
 	"sync"
 )
 
@@ -63,7 +63,7 @@ func (r *Router) Synthesize(ctx context.Context, text string, opts SynthesizeOpt
 		result, err := p.Synthesize(ctx, text, opts)
 		if err != nil {
 			lastErr = err
-			log.Printf("TTS router: provider %s failed: %v", p.Name(), err)
+			slog.Warn("TTS router: provider failed", "provider", p.Name(), "err", err)
 			continue
 		}
 		return result, nil

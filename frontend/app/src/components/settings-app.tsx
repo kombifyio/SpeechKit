@@ -205,6 +205,29 @@ export function SettingsApp() {
               </p>
             </Section>
 
+            <Section title="Vocabulary">
+              <label
+                htmlFor="vocabulary-dictionary-input"
+                className="block text-[11px] font-semibold uppercase tracking-[0.14em] text-white/35"
+              >
+                Vocabulary dictionary
+              </label>
+              <textarea
+                id="vocabulary-dictionary-input"
+                aria-label="Vocabulary dictionary"
+                value={settings.vocabularyDictionary}
+                onChange={(e) =>
+                  updateSettings({ vocabularyDictionary: e.target.value }, 250)
+                }
+                rows={5}
+                placeholder={'kombi fire => Kombify\nAcmeOS\nGemma'}
+                className="mt-2 w-full rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-xs leading-6 outline-none focus:border-orange-400/50"
+              />
+              <p className="mt-1.5 text-xs leading-relaxed text-white/40">
+                Add one term per line. Use <code>spoken =&gt; canonical</code> for corrections, or a single term to bias transcription hints for names and product words.
+              </p>
+            </Section>
+
             <Section title="Overlay">
               <Row
                 label="Show overlay"
@@ -260,6 +283,20 @@ export function SettingsApp() {
                       </Chip>
                     ))}
                   </div>
+                  <div className="mt-2">
+                    <Row
+                      label="Movable overlay"
+                      on={settings.overlayMovable}
+                      onToggle={() =>
+                        updateSettings({ overlayMovable: !settings.overlayMovable })
+                      }
+                    />
+                  </div>
+                  {settings.overlayMovable && settings.visualizer === 'pill' && (
+                    <p className="mt-1.5 text-xs leading-relaxed text-white/40">
+                      Drag the center bubble inside the pill panel to place it anywhere on the desktop.
+                    </p>
+                  )}
                 </>
               )}
             </Section>
@@ -399,7 +436,6 @@ export function SettingsApp() {
           <ProviderTab
             settings={settings}
             setSettings={setSettings}
-            updateSettings={updateSettings}
             showToast={showToast}
             hfToken={hfToken}
             setHFToken={setHFToken}
@@ -529,20 +565,19 @@ function HotkeyPicker({
   )
 }
 
-const MODALITY_TABS = [
-  { key: 'stt' as const, label: 'STT' },
-  { key: 'utility' as const, label: 'Utility' },
-  { key: 'agent' as const, label: 'Agent' },
-  { key: 'tts' as const, label: 'TTS' },
-  { key: 'embedding' as const, label: 'Embed' },
-] as const
+const MODALITY_LABELS = {
+  stt: 'STT',
+  utility: 'Utility',
+  agent: 'Agent',
+} as const
 
-type ModalityTabKey = (typeof MODALITY_TABS)[number]['key']
+type ModalityTabKey = keyof typeof MODALITY_LABELS
+
+const MODALITY_ORDER: ModalityTabKey[] = ['stt', 'utility', 'agent']
 
 function ProviderTab({
   settings,
   setSettings,
-  updateSettings,
   showToast,
   hfToken,
   setHFToken,
@@ -553,7 +588,6 @@ function ProviderTab({
 }: {
   settings: SpeechKitSettingsState
   setSettings: React.Dispatch<React.SetStateAction<SpeechKitSettingsState>>
-  updateSettings: (patch: Partial<SpeechKitSettingsState>, delay?: number) => void
   showToast: (msg: string) => void
   hfToken: string
   setHFToken: (v: string) => void
@@ -565,67 +599,72 @@ function ProviderTab({
   const [modalityTab, setModalityTab] = useState<ModalityTabKey>('stt')
 
   const profiles = settings.profiles ?? []
-  const filtered = profiles.filter((p) => p.modality === modalityTab)
-  const activeId = settings.activeProfiles?.[modalityTab]
+  const availableTabs = MODALITY_ORDER
+    .filter((key) => profiles.some((profile) => profile.modality === key))
+    .map((key) => ({ key, label: MODALITY_LABELS[key] }))
+  const selectedTab = availableTabs.some((tab) => tab.key === modalityTab)
+    ? modalityTab
+    : availableTabs[0]?.key
+  const filtered = selectedTab ? profiles.filter((p) => p.modality === selectedTab) : []
+  const activeId = selectedTab ? settings.activeProfiles?.[selectedTab] : undefined
 
   return (
     <div className="mt-4 flex flex-col gap-4">
-      <Section title="API Tokens">
-        <Row
-          label="Hugging Face Inference"
-          on={settings.hfEnabled}
-          onToggle={() => updateSettings({ hfEnabled: !settings.hfEnabled })}
-        />
-        <div className="mt-1.5 text-[11px] text-white/40">{tokenStatusLabel}</div>
-        <div className="mt-2 flex gap-2">
-          <input
-            aria-label="Hugging Face token"
-            type="password"
-            value={hfToken}
-            onChange={(e) => setHFToken(e.target.value)}
-            placeholder="hf_..."
-            className="h-8 flex-1 rounded-lg border border-white/10 bg-white/5 px-3 text-xs outline-none focus:border-orange-400/50"
-          />
-          <Chip
-            active={false}
-            onClick={() => { void onSaveHFToken() }}
-            className={hfTokenBusy ? 'pointer-events-none opacity-60' : ''}
-          >
-            Save
-          </Chip>
-          {settings.hfHasUserToken && (
+      {settings.hfAvailable && (
+        <Section title="API Tokens">
+          <div className="text-[11px] text-white/40">{tokenStatusLabel}</div>
+          <div className="mt-2 flex gap-2">
+            <input
+              aria-label="Hugging Face token"
+              type="password"
+              value={hfToken}
+              onChange={(e) => setHFToken(e.target.value)}
+              placeholder="hf_..."
+              className="h-8 flex-1 rounded-lg border border-white/10 bg-white/5 px-3 text-xs outline-none focus:border-orange-400/50"
+            />
             <Chip
               active={false}
-              onClick={() => { void onClearHFToken() }}
+              onClick={() => { void onSaveHFToken() }}
               className={hfTokenBusy ? 'pointer-events-none opacity-60' : ''}
             >
-              Clear
+              Save
             </Chip>
-          )}
-        </div>
-      </Section>
+            {settings.hfHasUserToken && (
+              <Chip
+                active={false}
+                onClick={() => { void onClearHFToken() }}
+                className={hfTokenBusy ? 'pointer-events-none opacity-60' : ''}
+              >
+                Clear
+              </Chip>
+            )}
+          </div>
+        </Section>
+      )}
 
       <Section title="Models">
-        <div className="flex gap-px rounded-lg bg-white/5 p-0.5">
-          {MODALITY_TABS.map((mt) => (
-            <button
-              key={mt.key}
-              type="button"
-              onClick={() => setModalityTab(mt.key)}
-              className={[
-                'flex-1 rounded-md px-2 py-1 text-[11px] font-medium transition-colors',
-                modalityTab === mt.key
-                  ? 'bg-white/10 text-white'
-                  : 'text-white/35 hover:text-white/55',
-              ].join(' ')}
-            >
-              {mt.label}
-            </button>
-          ))}
-        </div>
+        {availableTabs.length > 0 && (
+          <div className="flex gap-px rounded-lg bg-white/5 p-0.5">
+            {availableTabs.map((mt) => (
+              <button
+                key={mt.key}
+                type="button"
+                onClick={() => setModalityTab(mt.key)}
+                  className={[
+                    'flex-1 rounded-md px-2 py-1 text-[11px] font-medium transition-colors',
+                    selectedTab === mt.key
+                      ? 'bg-white/10 text-white'
+                      : 'text-white/35 hover:text-white/55',
+                  ].join(' ')}
+              >
+                {mt.label}
+              </button>
+            ))}
+          </div>
+        )}
 
         {filtered.length === 0 ? (
-          <p className="mt-3 text-xs text-white/30">No models configured for this category.</p>
+          <p className="mt-3 text-xs text-white/30">No live-switchable model profiles are exposed in this build.</p>
         ) : (
           <div className="mt-2">
             {filtered.map((profile) => {
@@ -642,9 +681,9 @@ function ProviderTab({
                     <div className="flex items-center gap-1.5">
                       <span className="truncate text-xs font-medium">{profile.name}</span>
                       {profile.executionMode === 'local' || profile.executionMode === 'ollama_local' ? (
-                        <span className="shrink-0 rounded bg-emerald-500/15 px-1 py-px text-[9px] text-emerald-300/80">local</span>
+                        <span className="shrink-0 rounded bg-emerald-500/15 px-1 py-px text-[9px] text-emerald-300/80">local runtime</span>
                       ) : profile.executionMode === 'hf_routed' ? (
-                        <span className="shrink-0 rounded bg-sky-500/15 px-1 py-px text-[9px] text-sky-300/80">free</span>
+                        <span className="shrink-0 rounded bg-sky-500/15 px-1 py-px text-[9px] text-sky-300/80">managed</span>
                       ) : (
                         <span className="shrink-0 rounded bg-amber-500/15 px-1 py-px text-[9px] text-amber-300/70">api key</span>
                       )}
@@ -652,6 +691,11 @@ function ProviderTab({
                     <div className="truncate text-[10px] text-white/25">
                       {profile.source ?? profile.executionMode ?? 'local'}
                     </div>
+                    {profile.description && (
+                      <div className="mt-1 text-[10px] leading-relaxed text-white/35">
+                        {profile.description}
+                      </div>
+                    )}
                   </div>
                   {isActive ? (
                     <span className="ml-2 shrink-0 text-[10px] font-medium text-orange-400">Active</span>
@@ -692,7 +736,7 @@ function ProviderTab({
       </Section>
 
       <p className="text-[11px] leading-relaxed text-white/25">
-        Audio is sent to external providers only when enabled. Local and self-hosted providers stay on your machine.
+        Only provider paths that the desktop backend can switch live are listed here. Local Ollama profiles still require the local runtime and pulled model to be present.
       </p>
     </div>
   )

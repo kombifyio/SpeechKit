@@ -3,7 +3,7 @@ package main
 import (
 	"fmt"
 	"io"
-	"log"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"sort"
@@ -17,31 +17,33 @@ const (
 )
 
 func initAppLogging() (string, func()) {
-	log.SetFlags(log.LstdFlags | log.Lmicroseconds)
-
 	exePath, err := os.Executable()
 	if err != nil {
-		log.Printf("WARN: resolve executable path for logging: %v", err)
+		slog.Warn("resolve executable path for logging", "err", err)
 		return "", func() {}
 	}
 
 	logDir := filepath.Join(filepath.Dir(exePath), "logs")
-	if err := os.MkdirAll(logDir, 0755); err != nil {
-		log.Printf("WARN: create log directory: %v", err)
+	if err := os.MkdirAll(logDir, 0700); err != nil {
+		slog.Warn("create log directory", "err", err)
 		return "", func() {}
 	}
 
 	logPath := filepath.Join(logDir, "speechkit.log")
 	rotateLogFile(logPath, logDir)
 
-	logFile, err := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
+	logFile, err := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0600)
 	if err != nil {
-		log.Printf("WARN: open log file: %v", err)
+		slog.Warn("open log file", "err", err)
 		return logPath, func() {}
 	}
 
-	log.SetOutput(io.MultiWriter(os.Stdout, logFile))
-	log.Printf("Logging to %s", logPath)
+	multiWriter := io.MultiWriter(os.Stdout, logFile)
+	opts := &slog.HandlerOptions{Level: slog.LevelDebug}
+	handler := slog.NewJSONHandler(multiWriter, opts)
+	slog.SetDefault(slog.New(handler))
+
+	slog.Info("logging initialized", "path", logPath)
 
 	return logPath, func() {
 		_ = logFile.Close()
@@ -58,7 +60,7 @@ func rotateLogFile(logPath, logDir string) {
 
 	rotated := fmt.Sprintf("speechkit-%s.log", time.Now().Format("20060102-150405"))
 	if err := os.Rename(logPath, filepath.Join(logDir, rotated)); err != nil {
-		log.Printf("WARN: rotate log file: %v", err)
+		slog.Warn("rotate log file", "err", err)
 		return
 	}
 

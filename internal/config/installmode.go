@@ -123,6 +123,22 @@ func ApplyLocalInstallDefaults(cfg *Config, state *InstallState) bool {
 		cfg.Local.GPU = "auto"
 		changed = true
 	}
+	if !cfg.Providers.Ollama.Enabled {
+		cfg.Providers.Ollama.Enabled = true
+		changed = true
+	}
+	if cfg.Providers.Ollama.BaseURL == "" {
+		cfg.Providers.Ollama.BaseURL = "http://localhost:11434"
+		changed = true
+	}
+	if cfg.Providers.Ollama.UtilityModel == "" {
+		cfg.Providers.Ollama.UtilityModel = "gemma4:e4b"
+		changed = true
+	}
+	if cfg.Providers.Ollama.AgentModel == "" {
+		cfg.Providers.Ollama.AgentModel = "gemma4:e4b"
+		changed = true
+	}
 
 	return changed
 }

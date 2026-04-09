@@ -132,6 +132,25 @@ func TestRouteDynamic_NoInternetUsesLocal(t *testing.T) {
 	}
 }
 
+func TestRouteDynamic_OfflineProbeStillAllowsCloud(t *testing.T) {
+	r := newTestRouter(
+		nil,
+		nil,
+		&mockProvider{name: "hf", text: "hf fallback", healthy: true},
+		StrategyDynamic,
+	)
+	r.internetOnline.Store(false)
+	r.internetAt.Store(time.Now().UnixNano())
+
+	result, err := r.Route(context.Background(), []byte("audio"), 12.0, stt.TranscribeOpts{Language: "de"})
+	if err != nil {
+		t.Fatalf("Route: %v", err)
+	}
+	if result.Provider != "hf" {
+		t.Errorf("expected cloud fallback despite offline probe, got %s", result.Provider)
+	}
+}
+
 func TestRouteLocalOnly(t *testing.T) {
 	r := newTestRouter(
 		&mockProvider{name: "local", text: "only local", healthy: true},
@@ -161,6 +180,24 @@ func TestRouteCloudOnly(t *testing.T) {
 	}
 	if result.Provider != "hf" {
 		t.Errorf("expected hf, got %s", result.Provider)
+	}
+}
+
+func TestPreferCloudMakesSelectedProviderPrimary(t *testing.T) {
+	r := newTestRouter(
+		nil,
+		&mockProvider{name: "vps", text: "vps result", healthy: true},
+		&mockProvider{name: "hf", text: "hf result", healthy: true},
+		StrategyCloudOnly,
+	)
+	r.PreferCloud("groq", &mockProvider{name: "groq", text: "groq result", healthy: true})
+
+	result, err := r.Route(context.Background(), []byte("audio"), 5.0, stt.TranscribeOpts{})
+	if err != nil {
+		t.Fatalf("Route: %v", err)
+	}
+	if result.Provider != "groq" {
+		t.Fatalf("expected groq to become the primary provider, got %s", result.Provider)
 	}
 }
 

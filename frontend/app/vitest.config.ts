@@ -18,5 +18,12 @@ export default defineConfig({
     environment: 'jsdom',
     globals: true,
     setupFiles: [setupFile],
+    // threads pool has startup-timeout issues on Node 25; forks is stable.
+    // singleFork avoids OOM when Vitest spawns multiple workers in constrained
+    // environments (PowerShell build scripts, CI runners).
+    pool: 'forks',
+    poolOptions: {
+      forks: { singleFork: true },
+    },
   },
 })

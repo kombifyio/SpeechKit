@@ -6,13 +6,14 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"log"
+	"log/slog"
 	"mime/multipart"
 	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"sync/atomic"
 	"time"
 )
@@ -73,7 +74,7 @@ func (p *LocalProvider) StartServer(ctx context.Context) error {
 	p.cmd.Stdout = os.Stderr // whisper-server logs to stdout
 	p.cmd.Stderr = os.Stderr
 
-	log.Printf("Starting whisper-server: %s %v", binaryPath, args)
+	slog.Info("starting whisper-server", "binary", binaryPath, "args", args)
 	if err := p.cmd.Start(); err != nil {
 		return fmt.Errorf("start whisper-server: %w", err)
 	}
@@ -84,7 +85,7 @@ func (p *LocalProvider) StartServer(ctx context.Context) error {
 	}
 
 	p.ready.Store(true)
-	log.Printf("whisper-server ready on %s", p.BaseURL)
+	slog.Info("whisper-server ready", "url", p.BaseURL)
 	return nil
 }
 
@@ -97,7 +98,11 @@ func (p *LocalProvider) waitForReady(ctx context.Context) error {
 		default:
 		}
 
-		resp, err := http.Get(healthURL)
+		req, reqErr := http.NewRequestWithContext(ctx, http.MethodGet, healthURL, nil)
+		if reqErr != nil {
+			return fmt.Errorf("create health request: %w", reqErr)
+		}
+		resp, err := p.client.Do(req)
 		if err == nil {
 			resp.Body.Close()
 			if resp.StatusCode == http.StatusOK {
@@ -133,13 +138,26 @@ func (p *LocalProvider) Transcribe(ctx context.Context, audio []byte, opts Trans
 	if err != nil {
 		return nil, fmt.Errorf("create form file: %w", err)
 	}
-	part.Write(audio)
+	if _, err := part.Write(audio); err != nil {
+		return nil, fmt.Errorf("write audio data: %w", err)
+	}
 
 	if opts.Language != "" && opts.Language != "auto" {
-		writer.WriteField("language", opts.Language)
+		if err := writer.WriteField("language", opts.Language); err != nil {
+			return nil, fmt.Errorf("write language field: %w", err)
+		}
 	}
-	writer.WriteField("model", "whisper-1")
-	writer.Close()
+	if err := writer.WriteField("model", "whisper-1"); err != nil {
+		return nil, fmt.Errorf("write model field: %w", err)
+	}
+	if opts.Prompt != "" {
+		if err := writer.WriteField("prompt", opts.Prompt); err != nil {
+			return nil, fmt.Errorf("write prompt field: %w", err)
+		}
+	}
+	if err := writer.Close(); err != nil {
+		return nil, fmt.Errorf("close multipart writer: %w", err)
+	}
 
 	req, err := http.NewRequestWithContext(ctx, "POST", endpoint, body)
 	if err != nil {
@@ -232,25 +250,7 @@ func findWhisperBinary() (string, error) {
 		names = []string{"whisper-server.exe"}
 	}
 
-	// Check PATH
-	for _, name := range names {
-		if path, err := exec.LookPath(name); err == nil {
-			return path, nil
-		}
-	}
-
-	// Check local app data
-	localAppData := os.Getenv("LOCALAPPDATA")
-	if localAppData != "" {
-		for _, name := range names {
-			path := filepath.Join(localAppData, "SpeechKit", "bin", name)
-			if _, err := os.Stat(path); err == nil {
-				return path, nil
-			}
-		}
-	}
-
-	// Check next to executable
+	// Check next to executable first (trusted bundle path).
 	exe, _ := os.Executable()
 	if exe != "" {
 		for _, name := range names {
@@ -261,5 +261,26 @@ func findWhisperBinary() (string, error) {
 		}
 	}
 
-	return "", fmt.Errorf("whisper-server binary not found in PATH or standard locations")
+	// Check managed install location next.
+	localAppData := os.Getenv("LOCALAPPDATA")
+	if localAppData != "" {
+		for _, name := range names {
+			path := filepath.Join(localAppData, "SpeechKit", "bin", name)
+			if _, err := os.Stat(path); err == nil {
+				return path, nil
+			}
+		}
+	}
+
+	// Optional developer escape hatch: allow PATH lookup explicitly.
+	if strings.EqualFold(strings.TrimSpace(os.Getenv("SPEECHKIT_ALLOW_WHISPER_PATH")), "1") {
+		for _, name := range names {
+			if path, err := exec.LookPath(name); err == nil {
+				slog.Warn("using whisper-server from PATH due to SPEECHKIT_ALLOW_WHISPER_PATH=1", "path", path)
+				return path, nil
+			}
+		}
+	}
+
+	return "", fmt.Errorf("whisper-server binary not found in bundle or managed install location")
 }

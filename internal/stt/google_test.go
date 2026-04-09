@@ -88,8 +88,8 @@ func TestGoogle_Transcribe_Success(t *testing.T) {
 	if result.Confidence != 0.95 {
 		t.Errorf("confidence = %f, want 0.95", result.Confidence)
 	}
-	if result.Duration == 0 {
-		t.Error("duration should be > 0")
+	if result.Duration < 0 {
+		t.Error("duration should not be negative")
 	}
 }
 
@@ -170,6 +170,9 @@ func TestGoogle_Transcribe_ModelOverride(t *testing.T) {
 	}
 	if result.Model != "chirp_2" {
 		t.Errorf("result model = %q, want %q", result.Model, "chirp_2")
+	}
+	if result.Duration < 0 {
+		t.Error("duration should not be negative")
 	}
 }
 

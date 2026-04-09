@@ -22,6 +22,7 @@ type STTProvider interface {
 type TranscribeOpts struct {
 	Language string // "de", "en", "auto"
 	Model    string // Optional: model override
+	Prompt   string // Optional: provider-specific hint prompt for better recognition
 }
 
 // Result holds the output of a transcription.

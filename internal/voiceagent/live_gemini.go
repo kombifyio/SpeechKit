@@ -3,7 +3,7 @@ package voiceagent
 import (
 	"context"
 	"fmt"
-	"log"
+	"log/slog"
 	"sync"
 
 	"google.golang.org/genai"
@@ -34,6 +34,9 @@ func (g *GeminiLive) Connect(ctx context.Context, cfg LiveConfig) error {
 	systemPrompt := cfg.SystemPrompt
 	if systemPrompt == "" {
 		systemPrompt = defaultSystemPrompt(cfg.Locale)
+	}
+	if cfg.VocabularyHint != "" {
+		systemPrompt += "\n\n" + cfg.VocabularyHint
 	}
 
 	voiceName := cfg.Voice
@@ -68,7 +71,7 @@ func (g *GeminiLive) Connect(ctx context.Context, cfg LiveConfig) error {
 	g.mu.Lock()
 	g.session = session
 	g.mu.Unlock()
-	log.Printf("Gemini Live: connected to %s (voice: %s)", model, voiceName)
+	slog.Info("Gemini Live connected", "model", model, "voice", voiceName)
 	return nil
 }
 

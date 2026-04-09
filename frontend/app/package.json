@@ -1,12 +1,12 @@
 {
   "name": "app",
   "private": true,
-  "version": "0.14.1",
+  "version": "0.14.6",
   "type": "module",
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build --configLoader native",
-    "test": "vitest run --config vitest.config.ts --configLoader native --pool threads --maxWorkers 1",
+    "test": "vitest run --config vitest.config.ts --configLoader native",
     "lint": "eslint .",
     "preview": "vite preview"
   },

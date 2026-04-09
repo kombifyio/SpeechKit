@@ -1,2 +1,0 @@
-include ':app'
-include ':tools:make-emoji-keys'

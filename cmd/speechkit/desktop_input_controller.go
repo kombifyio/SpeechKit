@@ -16,16 +16,16 @@ type recordingStatusReader interface {
 }
 
 type desktopInputController struct {
-	commands            speechkit.CommandBus
-	recording           recordingStatusReader
-	state               *appState
-	hotkeyEvents        <-chan hotkey.Event
-	silenceAutoStop     <-chan struct{}
-	autoStartInterval   time.Duration
-	voiceAgentSession   *voiceagent.Session
-	voiceAgentConfig    *config.VoiceAgentConfig
-	cfg                 *config.Config
-	audioCapturer       audioFrameStreamer
+	commands          speechkit.CommandBus
+	recording         recordingStatusReader
+	state             *appState
+	hotkeyEvents      <-chan hotkey.Event
+	silenceAutoStop   <-chan struct{}
+	autoStartInterval time.Duration
+	voiceAgentSession *voiceagent.Session
+	voiceAgentConfig  *config.VoiceAgentConfig
+	cfg               *config.Config
+	audioCapturer     audioFrameStreamer
 }
 
 type audioFrameStreamer interface {
@@ -214,11 +214,16 @@ func (c desktopInputController) toggleVoiceAgent(ctx context.Context) {
 	}
 
 	go func() {
+		vocabularyHint := ""
+		if c.cfg != nil {
+			vocabularyHint = buildVoiceAgentVocabularyHint(parseVocabularyDictionary(c.cfg.Vocabulary.Dictionary))
+		}
 		if err := c.voiceAgentSession.Start(ctx, voiceagent.LiveConfig{
-			Model:  model,
-			APIKey: apiKey,
-			Voice:  voice,
-			Locale: locale,
+			Model:          model,
+			APIKey:         apiKey,
+			Voice:          voice,
+			Locale:         locale,
+			VocabularyHint: vocabularyHint,
 		}, idleCfg); err != nil {
 			c.log(fmt.Sprintf("Voice Agent: start failed: %v", err), "error")
 			return

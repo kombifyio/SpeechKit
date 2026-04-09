@@ -3,7 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
-	"log"
+	"log/slog"
 
 	"github.com/firebase/genkit/go/core"
 
@@ -19,6 +19,7 @@ import (
 
 type routerTranscriber struct {
 	router *router.Router
+	state  *appState
 }
 
 func (t routerTranscriber) Transcribe(ctx context.Context, audio []byte, durationSecs float64, language string) (speechkit.Transcript, error) {
@@ -26,10 +27,22 @@ func (t routerTranscriber) Transcribe(ctx context.Context, audio []byte, duratio
 		return speechkit.Transcript{}, fmt.Errorf("router not configured")
 	}
 
-	result, err := t.router.Route(ctx, audio, durationSecs, stt.TranscribeOpts{Language: language})
+	rawDictionary := ""
+	if t.state != nil {
+		t.state.mu.Lock()
+		rawDictionary = t.state.vocabularyDictionary
+		t.state.mu.Unlock()
+	}
+	entries := parseVocabularyDictionary(rawDictionary)
+
+	result, err := t.router.Route(ctx, audio, durationSecs, stt.TranscribeOpts{
+		Language: language,
+		Prompt:   buildVocabularyPrompt(entries),
+	})
 	if err != nil {
 		return speechkit.Transcript{}, err
 	}
+	result.Text = applyVocabularyCorrections(result.Text, entries)
 
 	return speechkit.Transcript{
 		Text:       result.Text,
@@ -96,14 +109,12 @@ func (o speechkitCommitObserver) OnCommit(completion speechkit.Completion) {
 }
 
 type desktopTranscriptOutput struct {
-	handler        output.OutputHandler
-	interceptor    transcriptInterceptor
-	agentFlow      *core.Flow[flows.AgentInput, flows.AgentOutput, struct{}]
-	assistPipeline *assist.Pipeline
-	audioPlayer    *audio.Player
-	activeMode     func() string
-	agentMode      func() string // "assist" or "voice_agent"
-	onAssistText   func(text string) // Callback for UI (speech bubble)
+	state        *appState
+	handler      output.OutputHandler
+	interceptor  transcriptInterceptor
+	activeMode   func() string
+	agentMode    func() string     // "assist" or "voice_agent"
+	onAssistText func(text string) // Callback for UI (speech bubble)
 }
 
 func (o desktopTranscriptOutput) Deliver(ctx context.Context, transcript speechkit.Transcript, target any) error {
@@ -136,7 +147,7 @@ func (o desktopTranscriptOutput) Deliver(ctx context.Context, transcript speechk
 		case "voice_agent":
 			// Voice Agent Mode uses real-time WebSocket, not this pipeline.
 			// If we reach here, the Voice Agent session isn't active — fall through to legacy agent.
-			log.Printf("WARN: voice_agent mode active but no live session — falling back to agent flow")
+			slog.Warn("voice_agent mode active but no live session — falling back to agent flow")
 		}
 
 		// Legacy/fallback agent flow.
@@ -161,13 +172,14 @@ func (o desktopTranscriptOutput) Deliver(ctx context.Context, transcript speechk
 
 // deliverAssist uses the Assist Pipeline: Codeword → LLM → TTS → Text+Audio.
 func (o desktopTranscriptOutput) deliverAssist(ctx context.Context, transcript speechkit.Transcript, target any) error {
-	if o.assistPipeline == nil {
+	assistPipeline := o.currentAssistPipeline()
+	if assistPipeline == nil {
 		// No assist pipeline — try legacy agent flow, or warn user.
-		if o.agentFlow != nil {
+		if o.currentAgentFlow() != nil {
 			return o.deliverAgentFlow(ctx, transcript, target)
 		}
 		// Neither pipeline available — show feedback and fall back to clipboard paste.
-		log.Printf("WARN: Assist mode active but no LLM provider configured — falling back to dictation output")
+		slog.Warn("assist mode active but no LLM provider configured — falling back to dictation output")
 		if o.onAssistText != nil {
 			o.onAssistText("No LLM provider configured. Check Settings > Provider.")
 		}
@@ -183,11 +195,11 @@ func (o desktopTranscriptOutput) deliverAssist(ctx context.Context, transcript s
 		}, outputTarget)
 	}
 
-	result, err := o.assistPipeline.Process(ctx, transcript.Text, assist.ProcessOpts{
+	result, err := assistPipeline.Process(ctx, transcript.Text, assist.ProcessOpts{
 		Locale: transcript.Language,
 	})
 	if err != nil {
-		log.Printf("assist pipeline error: %v", err)
+		slog.Error("assist pipeline error", "err", err)
 		return err
 	}
 
@@ -201,19 +213,19 @@ func (o desktopTranscriptOutput) deliverAssist(ctx context.Context, transcript s
 	}
 
 	// Play TTS audio if available.
-	if o.audioPlayer != nil && len(result.Audio) > 0 {
+	if audioPlayer := o.currentAudioPlayer(); audioPlayer != nil && len(result.Audio) > 0 {
 		go func() {
 			var playErr error
 			switch result.Format {
 			case "mp3":
-				playErr = o.audioPlayer.PlayMP3(context.Background(), result.Audio)
+				playErr = audioPlayer.PlayMP3(context.Background(), result.Audio)
 			case "pcm", "wav":
-				playErr = o.audioPlayer.PlayPCM(context.Background(), result.Audio, 24000)
+				playErr = audioPlayer.PlayPCM(context.Background(), result.Audio, 24000)
 			default:
-				playErr = o.audioPlayer.PlayMP3(context.Background(), result.Audio)
+				playErr = audioPlayer.PlayMP3(context.Background(), result.Audio)
 			}
 			if playErr != nil {
-				log.Printf("TTS playback error: %v", playErr)
+				slog.Error("TTS playback error", "err", playErr)
 			}
 		}()
 	}
@@ -242,16 +254,17 @@ func (o desktopTranscriptOutput) deliverAssist(ctx context.Context, transcript s
 
 // deliverAgentFlow uses the legacy agent Genkit flow (no TTS).
 func (o desktopTranscriptOutput) deliverAgentFlow(ctx context.Context, transcript speechkit.Transcript, target any) error {
-	if o.agentFlow == nil {
+	agentFlow := o.currentAgentFlow()
+	if agentFlow == nil {
 		return nil
 	}
 
-	resp, err := o.agentFlow.Run(ctx, flows.AgentInput{
+	resp, err := agentFlow.Run(ctx, flows.AgentInput{
 		Utterance: transcript.Text,
 		Locale:    transcript.Language,
 	})
 	if err != nil {
-		log.Printf("agent flow error: %v", err)
+		slog.Error("agent flow error", "err", err)
 		return err
 	}
 	if resp.Text == "" || resp.Action == "silent" {
@@ -267,4 +280,31 @@ func (o desktopTranscriptOutput) deliverAgentFlow(ctx context.Context, transcrip
 		Duration: transcript.Duration,
 		Provider: "agent",
 	}, outputTarget)
+}
+
+func (o desktopTranscriptOutput) currentAssistPipeline() *assist.Pipeline {
+	if o.state == nil {
+		return nil
+	}
+	o.state.mu.Lock()
+	defer o.state.mu.Unlock()
+	return o.state.assistPipeline
+}
+
+func (o desktopTranscriptOutput) currentAgentFlow() *core.Flow[flows.AgentInput, flows.AgentOutput, struct{}] {
+	if o.state == nil {
+		return nil
+	}
+	o.state.mu.Lock()
+	defer o.state.mu.Unlock()
+	return o.state.agentFlow
+}
+
+func (o desktopTranscriptOutput) currentAudioPlayer() *audio.Player {
+	if o.state == nil {
+		return nil
+	}
+	o.state.mu.Lock()
+	defer o.state.mu.Unlock()
+	return o.state.audioPlayer
 }

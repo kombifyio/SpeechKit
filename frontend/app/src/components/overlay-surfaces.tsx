@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react'
+import type { CSSProperties, ReactNode } from 'react'
 import { ClipboardCopy, FileText, Bot, Mic, AudioLines } from 'lucide-react'
 
 import { AgentAudioVisualizerBar } from '@/components/agent-audio-visualizer-bar'
@@ -44,6 +44,7 @@ function OverlayActionButton({
       onClick={onClick}
       disabled={disabled}
       aria-label={title}
+      style={{ WebkitAppRegion: 'no-drag' } as CSSProperties}
       className={[
         'flex h-7 w-7 items-center justify-center rounded-full transition-colors',
         active
@@ -80,6 +81,7 @@ function OverlayModeAction({
       type="button"
       onClick={onClick}
       aria-label={label}
+      style={{ WebkitAppRegion: 'no-drag' } as CSSProperties}
       className={[
         'flex h-6 w-6 items-center justify-center rounded-full border transition-colors',
         active
@@ -113,12 +115,14 @@ function OverlayPillShell({
   tone,
   shellClassName,
   surface,
+  draggable = false,
   children,
 }: {
   snapshot: SpeechKitOverlayState
   tone: OverlayTone
   shellClassName: string
   surface: string
+  draggable?: boolean
   children: ReactNode
 }) {
   const showKombifyMark = snapshot.visualizer === 'pill' && snapshot.design === 'kombify'
@@ -133,6 +137,8 @@ function OverlayPillShell({
       data-active-mode={snapshot.activeMode}
       data-overlay-size={tone.size}
       data-overlay-color={tone.color}
+      data-overlay-draggable={draggable ? 'true' : 'false'}
+      style={draggable ? ({ WebkitAppRegion: 'drag' } as CSSProperties) : undefined}
       className={[
         'relative flex items-center justify-center transition-all duration-200 ease-out',
         shellClassName,
@@ -260,8 +266,12 @@ function PillPanelOverlayView({
           <OverlayPillShell
             snapshot={snapshot}
             tone={tone}
-            shellClassName={tone.shellClassName}
+            shellClassName={[
+              tone.shellClassName,
+              snapshot.movable ? 'cursor-move' : '',
+            ].join(' ')}
             surface="pill-panel-center"
+            draggable={snapshot.movable}
           >
             <AgentAudioVisualizerBar
               data-testid="pill-panel-visualizer"

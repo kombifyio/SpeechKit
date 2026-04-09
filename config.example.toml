@@ -11,6 +11,9 @@ fast_mode_silence_ms = 1500
 [ui]
 overlay_enabled = true    # Show the top-center overlay
 overlay_position = "top"  # top, bottom, left, right
+overlay_movable = false   # When true, the pill can be dragged away from its anchored side
+overlay_free_x = 0        # Center point in screen coordinates when overlay_movable = true
+overlay_free_y = 0        # Center point in screen coordinates when overlay_movable = true
 visualizer = "pill"       # pill or circle
 design = "default"        # default or kombify
 
@@ -50,6 +53,9 @@ postgres_dsn = ""         # Required when backend = "postgres"
 save_audio = true         # Persist raw WAV files locally
 audio_retention_days = 7  # 0 disables automatic deletion
 max_audio_storage_mb = 500
+
+[vocabulary]
+dictionary = ""           # One entry per line. Use "spoken => canonical" for corrections, or a single term as a recognition hint.
 
 # ──────────────────────────────────────────────
 # TTS — Text-to-Speech (Assist Mode)
@@ -128,5 +134,5 @@ pipeline_fallback = true                   # Use STT+LLM+TTS as last resort
 # [providers.ollama]
 # enabled = false
 # base_url = "http://localhost:11434"
-# utility_model = "llama3.2"
-# agent_model = "llama3.1:70b"
+# utility_model = "gemma4:e2b"   # Smaller edge profile for low-memory devices
+# agent_model = "gemma4:e4b"

@@ -5,7 +5,7 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"log"
+	"log/slog"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -79,7 +79,7 @@ func (p *Player) PlayMP3(ctx context.Context, data []byte) error {
 // 24kHz before calling this method, or use PlayMP3 which handles decoding.
 func (p *Player) PlayPCM(ctx context.Context, data []byte, sampleRate int) error {
 	if sampleRate != 0 && sampleRate != 24000 {
-		log.Printf("audio player: WARNING: PCM sample rate %dHz does not match oto context (24000Hz) — audio may play at wrong pitch", sampleRate)
+		slog.Warn("PCM sample rate does not match oto context — audio may play at wrong pitch", "sample_rate", sampleRate, "expected", 24000)
 	}
 	return p.playStream(ctx, bytes.NewReader(data), sampleRate)
 }

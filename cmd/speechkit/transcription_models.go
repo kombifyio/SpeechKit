@@ -13,9 +13,11 @@ func configuredTranscriptionModelHints(cfg *config.Config) map[string]string {
 	}
 
 	hints := map[string]string{}
-	if model := strings.TrimSpace(cfg.HuggingFace.Model); model != "" {
-		hints["huggingface"] = model
-		hints["hf"] = model
+	if config.ManagedHuggingFaceAvailableInBuild() {
+		if model := strings.TrimSpace(cfg.HuggingFace.Model); model != "" {
+			hints["huggingface"] = model
+			hints["hf"] = model
+		}
 	}
 	if model := configuredLocalTranscriptionModel(cfg); model != "" {
 		hints["local"] = model

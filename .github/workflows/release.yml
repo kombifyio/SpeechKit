@@ -8,6 +8,16 @@ on:
       tag:
         description: 'Release tag (e.g. v0.1.0)'
         required: true
+      release_windows_portable:
+        description: 'Attach the portable Windows bundle (.zip)'
+        required: true
+        default: true
+        type: boolean
+      release_windows_installer:
+        description: 'Attach the NSIS Windows installer (.exe)'
+        required: true
+        default: true
+        type: boolean
 
 permissions:
   contents: write
@@ -19,39 +29,83 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  prepare:
+    name: Resolve Release Plan
+    runs-on: ${{ vars.CI_RUNNER || 'blacksmith-4vcpu-ubuntu-2204' }}
+    outputs:
+      tag: ${{ steps.plan.outputs.tag }}
+      checkout_ref: ${{ steps.plan.outputs.checkout_ref }}
+      release_windows_portable: ${{ steps.plan.outputs.release_windows_portable }}
+      release_windows_installer: ${{ steps.plan.outputs.release_windows_installer }}
+      should_build_windows: ${{ steps.plan.outputs.should_build_windows }}
+
+    steps:
+      - name: Resolve release plan
+        id: plan
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            tag="${{ github.event.inputs.tag }}"
+            checkout_ref="refs/tags/$tag"
+            release_windows_portable="${{ github.event.inputs.release_windows_portable }}"
+            release_windows_installer="${{ github.event.inputs.release_windows_installer }}"
+          else
+            tag="${{ github.ref_name }}"
+            checkout_ref="${{ github.ref }}"
+            release_windows_portable=true
+            release_windows_installer=true
+          fi
+
+          should_build_windows=false
+          if [ "$release_windows_portable" = true ] || [ "$release_windows_installer" = true ]; then
+            should_build_windows=true
+          fi
+
+          {
+            echo "tag=$tag"
+            echo "checkout_ref=$checkout_ref"
+            echo "release_windows_portable=$release_windows_portable"
+            echo "release_windows_installer=$release_windows_installer"
+            echo "should_build_windows=$should_build_windows"
+          } >> "$GITHUB_OUTPUT"
+
+  create-release:
+    name: Create Source Release
+    needs: prepare
+    runs-on: ${{ vars.CI_RUNNER || 'blacksmith-4vcpu-ubuntu-2204' }}
+
+    steps:
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@153bb8e04406b158c6c84fc1615b65b24149a1fe
+        with:
+          tag_name: ${{ needs.prepare.outputs.tag }}
+          name: SpeechKit ${{ needs.prepare.outputs.tag }}
+          draft: false
+          prerelease: ${{ contains(needs.prepare.outputs.tag, '-alpha') || contains(needs.prepare.outputs.tag, '-beta') || contains(needs.prepare.outputs.tag, '-rc') }}
+          generate_release_notes: true
+
   build-and-release:
-    name: Build & Release
+    name: Build Windows Assets
+    needs:
+      - prepare
+      - create-release
+    if: needs.prepare.outputs.should_build_windows == 'true'
     runs-on: ${{ vars.WINDOWS_BUILD_RUNNER || 'blacksmith-4vcpu-windows-2025' }}
     timeout-minutes: 40
 
     steps:
-      - name: Resolve version tag
-        id: version
-        shell: pwsh
-        run: |
-          if ('${{ github.event.inputs.tag }}' -ne '') {
-            $tag = '${{ github.event.inputs.tag }}'
-            $checkoutRef = "refs/tags/$tag"
-          } else {
-            $tag = '${{ github.ref_name }}'
-            $checkoutRef = '${{ github.ref }}'
-          }
-          echo "tag=$tag" >> $env:GITHUB_OUTPUT
-          echo "checkout_ref=$checkoutRef" >> $env:GITHUB_OUTPUT
-          echo "Release tag: $tag"
-          echo "Checkout ref: $checkoutRef"
-
       - name: Checkout
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
         with:
-          ref: ${{ steps.version.outputs.checkout_ref }}
+          ref: ${{ needs.prepare.outputs.checkout_ref }}
           fetch-depth: 0
           fetch-tags: true
 
       - name: Setup Go
         uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff
         with:
-          go-version: '1.25.8'
+          go-version: '1.25.9'
           cache: true
 
       - name: Setup Node
@@ -69,46 +123,61 @@ jobs:
             mingw-w64-x86_64-gcc
 
       - name: Install NSIS
+        if: needs.prepare.outputs.release_windows_installer == 'true'
         shell: pwsh
         run: choco install nsis -y --no-progress
 
       - name: Build canonical Windows bundle
         shell: pwsh
-        run: powershell -ExecutionPolicy Bypass -File scripts/build.ps1
+        run: |
+          if ('${{ needs.prepare.outputs.release_windows_installer }}' -eq 'true') {
+            ./scripts/build.ps1
+          } else {
+            ./scripts/build.ps1 -SkipInstaller
+          }
 
       - name: Prepare release assets
+        id: assets
         shell: pwsh
         run: |
-          $tag = '${{ steps.version.outputs.tag }}'
-          Copy-Item "dist/windows/SpeechKit-Setup.exe" "SpeechKit-Setup-${tag}.exe"
-          Compress-Archive -Path "dist/windows/SpeechKit/*" -DestinationPath "SpeechKit-Portable-${tag}.zip"
-          $assets = @(
-            "SpeechKit-Setup-${tag}.exe",
-            "SpeechKit-Portable-${tag}.zip"
-          )
+          $tag = '${{ needs.prepare.outputs.tag }}'
+          $assets = @()
+          if ('${{ needs.prepare.outputs.release_windows_installer }}' -eq 'true') {
+            Copy-Item "dist/windows/SpeechKit-Setup.exe" "SpeechKit-Setup-${tag}.exe"
+            $assets += "SpeechKit-Setup-${tag}.exe"
+          }
+          if ('${{ needs.prepare.outputs.release_windows_portable }}' -eq 'true') {
+            Compress-Archive -Path "dist/windows/SpeechKit/*" -DestinationPath "SpeechKit-Portable-${tag}.zip" -Force
+            $assets += "SpeechKit-Portable-${tag}.zip"
+          }
           $checksums = foreach ($asset in $assets) {
             $hash = (Get-FileHash -Algorithm SHA256 -Path $asset).Hash.ToLowerInvariant()
             "$hash *$asset"
           }
           Set-Content -Path "SHA256SUMS.txt" -Value $checksums -Encoding ascii
 
+          $subjectPaths = @($assets)
+          $subjectPaths += 'SHA256SUMS.txt'
+
+          "subject_paths<<EOF" >> $env:GITHUB_OUTPUT
+          $subjectPaths | ForEach-Object { $_ >> $env:GITHUB_OUTPUT }
+          "EOF" >> $env:GITHUB_OUTPUT
+
+          "release_files<<EOF" >> $env:GITHUB_OUTPUT
+          $subjectPaths | ForEach-Object { $_ >> $env:GITHUB_OUTPUT }
+          "EOF" >> $env:GITHUB_OUTPUT
+
       - name: Attest release artifacts
         uses: actions/attest-build-provenance@96b4a1ef7235a096b17240c259729fdd70c83d45
         with:
-          subject-path: |
-            SpeechKit-Setup-${{ steps.version.outputs.tag }}.exe
-            SpeechKit-Portable-${{ steps.version.outputs.tag }}.zip
-            SHA256SUMS.txt
+          subject-path: ${{ steps.assets.outputs.subject_paths }}
 
-      - name: Create GitHub Release
+      - name: Upload Windows assets to GitHub Release
         uses: softprops/action-gh-release@153bb8e04406b158c6c84fc1615b65b24149a1fe
         with:
-          tag_name: ${{ steps.version.outputs.tag }}
-          name: SpeechKit ${{ steps.version.outputs.tag }}
+          tag_name: ${{ needs.prepare.outputs.tag }}
+          name: SpeechKit ${{ needs.prepare.outputs.tag }}
           draft: false
-          prerelease: ${{ contains(steps.version.outputs.tag, '-alpha') || contains(steps.version.outputs.tag, '-beta') || contains(steps.version.outputs.tag, '-rc') }}
+          prerelease: ${{ contains(needs.prepare.outputs.tag, '-alpha') || contains(needs.prepare.outputs.tag, '-beta') || contains(needs.prepare.outputs.tag, '-rc') }}
           generate_release_notes: true
-          files: |
-            SpeechKit-Setup-${{ steps.version.outputs.tag }}.exe
-            SpeechKit-Portable-${{ steps.version.outputs.tag }}.zip
-            SHA256SUMS.txt
+          files: ${{ steps.assets.outputs.release_files }}

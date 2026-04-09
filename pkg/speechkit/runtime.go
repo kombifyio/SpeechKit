@@ -1,3 +1,9 @@
+// Package speechkit provides the public SDK for embedding SpeechKit voice
+// capture and transcription into host applications.
+//
+// The central type is [Runtime], which manages shared state and event delivery.
+// An [Engine] is the full voice pipeline; [RecordingController] and
+// [TranscriptionWorker] can be composed independently for custom pipelines.
 package speechkit
 
 import (
@@ -7,8 +13,11 @@ import (
 	"time"
 )
 
+// ErrCommandHandlerUnavailable is returned by [CommandBus.Dispatch] when no
+// command handler has been configured on the [Runtime].
 var ErrCommandHandlerUnavailable = errors.New("speechkit: no command handler configured")
 
+// EventType identifies the kind of event published to the event channel.
 type EventType string
 
 const (
@@ -24,6 +33,9 @@ const (
 	EventShortcutMatched     EventType = "shortcut.matched"
 )
 
+// Event is a notification published to the event channel returned by
+// [Runtime.Events]. Consumers should switch on Type and inspect the
+// relevant fields.
 type Event struct {
 	Type      EventType
 	Time      time.Time
@@ -35,6 +47,8 @@ type Event struct {
 	Shortcut  string
 }
 
+// Snapshot is a point-in-time copy of the Runtime's observable state.
+// All slice and map fields are safe to read without holding any lock.
 type Snapshot struct {
 	Status                string
 	Text                  string
@@ -63,6 +77,7 @@ func (s Snapshot) Clone() Snapshot {
 	return clone
 }
 
+// CommandType identifies the action a [Command] requests.
 type CommandType string
 
 const (
@@ -79,6 +94,7 @@ const (
 	CommandSummarizeSelection      CommandType = "selection.summarize"
 )
 
+// Command is a request dispatched through the [CommandBus].
 type Command struct {
 	Type     CommandType
 	Text     string
@@ -98,10 +114,12 @@ func (c Command) Clone() Command {
 	return clone
 }
 
+// CommandBus delivers [Command] values to the registered handler.
 type CommandBus interface {
 	Dispatch(context.Context, Command) error
 }
 
+// Engine is the interface implemented by a full SpeechKit voice pipeline.
 type Engine interface {
 	Start(context.Context) error
 	Stop(context.Context) error
@@ -110,12 +128,17 @@ type Engine interface {
 	State() Snapshot
 }
 
+// Hooks are the lifecycle callbacks wired into a [Runtime].
+// Nil hooks are silently skipped.
 type Hooks struct {
 	Start         func(context.Context) error
 	Stop          func(context.Context) error
 	HandleCommand func(context.Context, Command) error
 }
 
+// Runtime manages shared observable state and event delivery for a SpeechKit
+// session. Create one with [NewRuntime] and wire it into the host application
+// via [Runtime.Events] and [Runtime.Commands].
 type Runtime struct {
 	mu       sync.RWMutex
 	snapshot Snapshot

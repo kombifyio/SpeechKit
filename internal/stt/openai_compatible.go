@@ -77,6 +77,11 @@ func (p *OpenAICompatibleProvider) Transcribe(ctx context.Context, audio []byte,
 	if err := writer.WriteField("model", model); err != nil {
 		return nil, fmt.Errorf("write model field: %w", err)
 	}
+	if opts.Prompt != "" {
+		if err := writer.WriteField("prompt", opts.Prompt); err != nil {
+			return nil, fmt.Errorf("write prompt field: %w", err)
+		}
+	}
 	if err := writer.Close(); err != nil {
 		return nil, fmt.Errorf("close multipart writer: %w", err)
 	}

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -180,5 +181,104 @@ func TestTranscriptionWorkerRequiresTranscriber(t *testing.T) {
 	})
 	if !errors.Is(err, ErrMissingTranscriber) {
 		t.Fatalf("NewTranscriptionWorker() error = %v, want %v", err, ErrMissingTranscriber)
+	}
+}
+
+func TestTranscriptionWorkerSubmitWhileClosingDoesNotPanic(t *testing.T) {
+	worker, err := NewTranscriptionWorker(TranscriptionWorkerConfig{
+		Timeout:   time.Second,
+		QueueSize: 8,
+		Runner: NewTranscriptionRunner(stubTranscriber{
+			transcript: Transcript{Text: "ok", Provider: "local", Duration: 10 * time.Millisecond},
+		}, nil),
+	})
+	if err != nil {
+		t.Fatalf("NewTranscriptionWorker() error = %v", err)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	worker.Start(ctx)
+
+	var panicCount atomic.Int64
+	var wg sync.WaitGroup
+	job := TranscriptionJob{
+		Submission: Submission{
+			PCM:          []byte(strings.Repeat("a", 6400)),
+			WAV:          []byte("wav"),
+			DurationSecs: 0.2,
+			Language:     "en",
+		},
+	}
+
+	for i := 0; i < 10; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for j := 0; j < 200; j++ {
+				func() {
+					defer func() {
+						if recover() != nil {
+							panicCount.Add(1)
+						}
+					}()
+					_ = worker.Submit(job)
+				}()
+			}
+		}()
+	}
+
+	time.Sleep(20 * time.Millisecond)
+	worker.Close()
+	wg.Wait()
+	worker.Wait()
+
+	if panicCount.Load() != 0 {
+		t.Fatalf("Submit panicked %d time(s)", panicCount.Load())
+	}
+}
+
+func TestTranscriptionWorkerSuccessLogRedactsTranscriptText(t *testing.T) {
+	observer := &recordingObserver{}
+	worker, err := NewTranscriptionWorker(TranscriptionWorkerConfig{
+		Timeout:   time.Second,
+		QueueSize: 1,
+		Runner: NewTranscriptionRunner(stubTranscriber{
+			transcript: Transcript{
+				Text:     "secret customer text",
+				Provider: "local",
+				Duration: 1500 * time.Millisecond,
+			},
+		}, nil),
+		Observer: observer,
+	})
+	if err != nil {
+		t.Fatalf("NewTranscriptionWorker() error = %v", err)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	worker.Start(ctx)
+
+	if err := worker.Submit(TranscriptionJob{
+		Submission: Submission{
+			PCM:          []byte(strings.Repeat("a", 6400)),
+			WAV:          []byte("wav"),
+			DurationSecs: 0.2,
+			Language:     "en",
+		},
+	}); err != nil {
+		t.Fatalf("Submit() error = %v", err)
+	}
+
+	worker.Close()
+	worker.Wait()
+
+	joined := strings.Join(observer.logs, "\n")
+	if strings.Contains(joined, "secret customer text") {
+		t.Fatalf("expected redacted success log, got logs: %s", joined)
+	}
+	if !strings.Contains(joined, "transcript committed") {
+		t.Fatalf("expected success log marker, got logs: %s", joined)
 	}
 }

@@ -6,7 +6,7 @@ package voiceagent
 import (
 	"context"
 	"fmt"
-	"log"
+	"log/slog"
 	"sync"
 	"sync/atomic"
 )
@@ -48,11 +48,12 @@ type LiveProvider interface {
 
 // LiveConfig configures a real-time session.
 type LiveConfig struct {
-	Model        string // e.g. "gemini-3.1-flash-live-preview"
-	APIKey       string
-	Voice        string // Voice name
-	SystemPrompt string
-	Locale       string
+	Model          string // e.g. "gemini-3.1-flash-live-preview"
+	APIKey         string
+	Voice          string // Voice name
+	SystemPrompt   string
+	VocabularyHint string
+	Locale         string
 }
 
 // LiveMessage is a message received from the real-time model.
@@ -65,8 +66,8 @@ type LiveMessage struct {
 // Callbacks are event handlers for UI integration.
 type Callbacks struct {
 	OnStateChange func(state State)
-	OnAudio       func(audio []byte)  // Audio chunk to play
-	OnText        func(text string)   // Text for display (speech bubble)
+	OnAudio       func(audio []byte) // Audio chunk to play
+	OnText        func(text string)  // Text for display (speech bubble)
 	OnError       func(err error)
 }
 
@@ -122,7 +123,7 @@ func (s *Session) Start(ctx context.Context, cfg LiveConfig, idleCfg IdleConfig)
 	s.setState(StateListening)
 	s.idleTimer.Reset()
 
-	log.Printf("Voice Agent: session started with %s (model: %s)", s.provider.Name(), cfg.Model)
+	slog.Info("voice agent session started", "provider", s.provider.Name(), "model", cfg.Model)
 	return nil
 }
 
@@ -131,12 +132,13 @@ func (s *Session) SendAudio(chunk []byte) error {
 	if s.currentState() == StateInactive || s.currentState() == StateDeactivating {
 		return nil
 	}
+	// Hold the lock across the Reset call to prevent a TOCTOU race with Stop(),
+	// which sets idleTimer to nil under the same lock.
 	s.mu.Lock()
-	timer := s.idleTimer
-	s.mu.Unlock()
-	if timer != nil {
-		timer.Reset()
+	if s.idleTimer != nil {
+		s.idleTimer.Reset()
 	}
+	s.mu.Unlock()
 	return s.provider.SendAudio(chunk)
 }
 
@@ -159,12 +161,12 @@ func (s *Session) Stop() {
 	}
 	if s.provider != nil {
 		if err := s.provider.Close(); err != nil {
-			log.Printf("Voice Agent: close error: %v", err)
+			slog.Error("voice agent close error", "err", err)
 		}
 	}
 
 	s.setState(StateInactive)
-	log.Printf("Voice Agent: session stopped")
+	slog.Info("voice agent session stopped")
 }
 
 // State returns the current session state.
@@ -196,7 +198,7 @@ func (s *Session) receiveLoop(ctx context.Context) {
 			if ctx.Err() != nil {
 				return // Context cancelled, normal shutdown.
 			}
-			log.Printf("Voice Agent: receive error: %v", err)
+			slog.Error("voice agent receive error", "err", err)
 			if s.callbacks.OnError != nil {
 				s.callbacks.OnError(err)
 			}
@@ -218,12 +220,12 @@ func (s *Session) receiveLoop(ctx context.Context) {
 
 		if msg.Done {
 			s.setState(StateListening)
+			// Hold the lock across Reset to prevent a TOCTOU race with Stop().
 			s.mu.Lock()
-			timer := s.idleTimer
-			s.mu.Unlock()
-			if timer != nil {
-				timer.Reset()
+			if s.idleTimer != nil {
+				s.idleTimer.Reset()
 			}
+			s.mu.Unlock()
 		}
 	}
 }

@@ -1,3 +1,7 @@
+param(
+    [switch]$SkipInstaller
+)
+
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 
@@ -10,11 +14,15 @@ $bundleExe = Join-Path $bundleDir 'SpeechKit.exe'
 $installerScript = Join-Path $projectDir 'installer/speechkit.nsi'
 $installerExe = Join-Path $distDir 'SpeechKit-Setup.exe'
 $prepareWhisperRuntimeScript = Join-Path $scriptDir 'prepare-whisper-runtime.ps1'
+$prepareWebView2RuntimeScript = Join-Path $scriptDir 'prepare-webview2-runtime.ps1'
 $cacheDir = Join-Path $projectDir '.cache'
 $goCacheDir = Join-Path $cacheDir 'go-build'
 $goTmpDir = Join-Path $cacheDir 'go-tmp'
 
-$env:PATH = "C:\msys64\mingw64\bin;$env:PATH"
+# MinGW DLLs (libstdc++, libwinpthread) conflict with Node worker forks.
+# Keep the original PATH for frontend steps; inject MinGW only for Go steps.
+$basePath = $env:PATH
+$mingwPath = "C:\msys64\mingw64\bin;$basePath"
 $env:CGO_ENABLED = '1'
 $env:GOCACHE = $goCacheDir
 $env:GOTMPDIR = $goTmpDir
@@ -30,25 +38,6 @@ function Get-EnvValue {
         return (Get-Item $envPath).Value
     }
     return ''
-}
-
-function Parse-BoolFlag {
-    param(
-        [string]$Value
-    )
-
-    $normalized = ''
-    if ($null -ne $Value) {
-        $normalized = $Value.Trim().ToLowerInvariant()
-    }
-
-    switch ($normalized) {
-        '1' { return $true }
-        'true' { return $true }
-        'yes' { return $true }
-        'on' { return $true }
-        default { return $false }
-    }
 }
 
 function Resolve-GoModulePath {
@@ -76,11 +65,6 @@ function Resolve-GoModulePath {
     return $modulePath
 }
 
-if (Test-Path Env:\SPEECHKIT_MANAGED_HF_DEFAULT) {
-    $managedHFDefault = $env:SPEECHKIT_MANAGED_HF_DEFAULT
-} else {
-    $managedHFDefault = ''
-}
 if (Test-Path Env:\SPEECHKIT_MANAGED_DOPPLER_PROJECT) {
     $managedDopplerProject = $env:SPEECHKIT_MANAGED_DOPPLER_PROJECT
 } else {
@@ -92,23 +76,52 @@ if (Test-Path Env:\SPEECHKIT_MANAGED_DOPPLER_CONFIG) {
     $managedDopplerConfig = ''
 }
 $modulePath = Resolve-GoModulePath -ProjectDir $projectDir
+$publicModulePath = 'github.com/kombifyio/SpeechKit'
+$isPublicModule = $modulePath -eq $publicModulePath
+if (Test-Path Env:\SPEECHKIT_MANAGED_HF_BUILD_ENABLED) {
+    $managedHFBuildEnabled = $env:SPEECHKIT_MANAGED_HF_BUILD_ENABLED
+} elseif ($isPublicModule) {
+    $managedHFBuildEnabled = '0'
+} else {
+    $managedHFBuildEnabled = '1'
+}
+if (Test-Path Env:\SPEECHKIT_MANAGED_HF_DEFAULT) {
+    $managedHFDefault = $env:SPEECHKIT_MANAGED_HF_DEFAULT
+} elseif ($isPublicModule) {
+    $managedHFDefault = '0'
+} else {
+    $managedHFDefault = '1'
+}
 $goLdflags = @(
     "-H windowsgui"
+    "-X $modulePath/internal/config.managedHFBuildEnabled=$managedHFBuildEnabled"
     "-X $modulePath/internal/config.managedHFDefaultOptIn=$managedHFDefault"
     "-X $modulePath/internal/config.managedDopplerDefaultProject=$managedDopplerProject"
     "-X $modulePath/internal/config.managedDopplerDefaultConfig=$managedDopplerConfig"
 ) -join ' '
+
+# Extract AppVersion from source so NSIS and Go binary always agree.
+$appVersionFile = Join-Path $projectDir 'cmd/speechkit/http_routes.go'
+$appVersion = '0.0.0'
+if (Test-Path $appVersionFile) {
+    $match = Select-String -Path $appVersionFile -Pattern '^var AppVersion\s*=\s*"([^"]+)"' | Select-Object -First 1
+    if ($null -ne $match -and $match.Matches.Count -gt 0) {
+        $appVersion = $match.Matches[0].Groups[1].Value
+    }
+}
 
 function Invoke-Step {
     param(
         [Parameter(Mandatory = $true)]
         [string]$Description,
         [Parameter(Mandatory = $true)]
-        [scriptblock]$Action
+        [string]$FilePath,
+        [Parameter()]
+        [string[]]$ArgumentList = @()
     )
 
     Write-Host $Description
-    & $Action
+    & $FilePath @ArgumentList
     if ($LASTEXITCODE -ne 0) {
         throw "$Description failed with exit code $LASTEXITCODE."
     }
@@ -125,49 +138,6 @@ function Assert-PathExists {
     if (-not (Test-Path $Path)) {
         throw "$Description missing: $Path"
     }
-}
-
-function Find-DopplerExecutable {
-    $command = Get-Command 'doppler' -ErrorAction SilentlyContinue
-    if ($null -ne $command -and -not [string]::IsNullOrWhiteSpace($command.Source)) {
-        return $command.Source
-    }
-
-    $candidates = @(
-        (Join-Path $env:LOCALAPPDATA 'Microsoft\WinGet\Links\doppler.exe'),
-        (Join-Path $env:LOCALAPPDATA 'Programs\Doppler\doppler.exe'),
-        (Join-Path $env:ProgramFiles 'Doppler\doppler.exe'),
-        (Join-Path ${env:ProgramFiles(x86)} 'Doppler\doppler.exe')
-    )
-    foreach ($candidate in $candidates) {
-        if (-not [string]::IsNullOrWhiteSpace($candidate) -and (Test-Path $candidate)) {
-            return $candidate
-        }
-    }
-
-    return ''
-}
-
-function Resolve-DopplerSecret {
-    param(
-        [Parameter(Mandatory = $true)]
-        [string]$SecretName,
-        [Parameter(Mandatory = $true)]
-        [string]$Project,
-        [Parameter(Mandatory = $true)]
-        [string]$Config
-    )
-
-    $dopplerPath = Find-DopplerExecutable
-    if ([string]::IsNullOrWhiteSpace($dopplerPath)) {
-        return ''
-    }
-
-    $resolved = & $dopplerPath secrets get $SecretName --plain --project $Project --config $Config --no-read-env 2>$null
-    if ($LASTEXITCODE -ne 0) {
-        return ''
-    }
-    return ($resolved | Out-String).Trim()
 }
 
 function Find-NSISExecutable {
@@ -189,79 +159,20 @@ function Find-NSISExecutable {
     return ''
 }
 
-function Resolve-DevBuildHuggingFaceToken {
-    $directToken = Get-EnvValue -Name 'SPEECHKIT_DEV_HF_TOKEN'
-    if (-not [string]::IsNullOrWhiteSpace($directToken)) {
-        return [pscustomobject]@{
-            Token   = $directToken.Trim()
-            Source  = 'SPEECHKIT_DEV_HF_TOKEN'
-            EnvName = 'HF_TOKEN'
-        }
-    }
-
-    $tokenEnvName = (Get-EnvValue -Name 'SPEECHKIT_DEV_HF_TOKEN_ENV').Trim()
-    if ([string]::IsNullOrWhiteSpace($tokenEnvName)) {
-        $tokenEnvName = 'HF_TOKEN'
-    }
-
-    $envToken = Get-EnvValue -Name $tokenEnvName
-    if (-not [string]::IsNullOrWhiteSpace($envToken)) {
-        return [pscustomobject]@{
-            Token   = $envToken.Trim()
-            Source  = "env:$tokenEnvName"
-            EnvName = $tokenEnvName
-        }
-    }
-
-    $dopplerProject = (Get-EnvValue -Name 'DOPPLER_PROJECT').Trim()
-    $dopplerConfig = (Get-EnvValue -Name 'DOPPLER_CONFIG').Trim()
-    if (-not [string]::IsNullOrWhiteSpace($dopplerProject) -and -not [string]::IsNullOrWhiteSpace($dopplerConfig)) {
-        $dopplerToken = Resolve-DopplerSecret -SecretName $tokenEnvName -Project $dopplerProject -Config $dopplerConfig
-        if (-not [string]::IsNullOrWhiteSpace($dopplerToken)) {
-            return [pscustomobject]@{
-                Token   = $dopplerToken
-                Source  = "doppler:$dopplerProject/$dopplerConfig"
-                EnvName = $tokenEnvName
-            }
-        }
-    }
-
-    return [pscustomobject]@{
-        Token   = ''
-        Source  = 'none'
-        EnvName = $tokenEnvName
-    }
-}
-
-function Set-PendingInstallHuggingFaceTokenBootstrap {
-    param(
-        [Parameter(Mandatory = $true)]
-        [string]$Token
-    )
-
-    $trimmed = $Token.Trim()
-    if ([string]::IsNullOrWhiteSpace($trimmed)) {
-        throw 'PendingHFInstallToken cannot be empty.'
-    }
-
-    $registryPath = 'HKCU:\Software\kombify\SpeechKit'
-    if (-not (Test-Path $registryPath)) {
-        New-Item -Path $registryPath -Force | Out-Null
-    }
-    New-ItemProperty -Path $registryPath -Name 'PendingHFInstallToken' -Value $trimmed -PropertyType String -Force | Out-Null
-}
-
-$seedDevBuildHFToken = Parse-BoolFlag -Value (Get-EnvValue -Name 'SPEECHKIT_DEV_SEED_HF_TOKEN')
-
 Write-Host 'Preparing clean Windows bundle...'
 Assert-PathExists -Path $frontendDir -Description 'Frontend source directory'
 Assert-PathExists -Path (Join-Path $frontendDir 'package.json') -Description 'Frontend package manifest'
 Assert-PathExists -Path (Join-Path $frontendDir 'src') -Description 'Frontend source tree'
-Assert-PathExists -Path $installerScript -Description 'NSIS installer script'
 Assert-PathExists -Path $prepareWhisperRuntimeScript -Description 'Whisper runtime prepare script'
-$nsisExe = Find-NSISExecutable
-if ([string]::IsNullOrWhiteSpace($nsisExe)) {
-    throw 'NSIS makensis.exe not found. Install NSIS or add makensis to PATH.'
+Assert-PathExists -Path $prepareWebView2RuntimeScript -Description 'WebView2 runtime prepare script'
+if (-not $SkipInstaller) {
+    Assert-PathExists -Path $installerScript -Description 'NSIS installer script'
+    $nsisExe = Find-NSISExecutable
+    if ([string]::IsNullOrWhiteSpace($nsisExe)) {
+        throw 'NSIS makensis.exe not found. Install NSIS or add makensis to PATH.'
+    }
+} else {
+    $nsisExe = ''
 }
 if (-not (Test-Path $cacheDir)) {
     New-Item -ItemType Directory -Path $cacheDir | Out-Null
@@ -277,54 +188,72 @@ if (Test-Path $bundleDir) {
 }
 New-Item -ItemType Directory -Path $bundleDir | Out-Null
 
+# --- Frontend (clean PATH — no MinGW DLLs) ---
+$env:PATH = $basePath
 Push-Location $frontendDir
 try {
     if ($env:CI -eq 'true' -or -not (Test-Path (Join-Path $frontendDir 'node_modules'))) {
-        Invoke-Step 'Installing frontend dependencies...' { npm ci }
+        Invoke-Step -Description 'Installing frontend dependencies...' -FilePath 'npm.cmd' -ArgumentList @('ci')
     } else {
         Write-Host 'Using existing frontend dependencies...'
     }
 
-    Invoke-Step 'Testing frontend...' { npm test }
-    Invoke-Step 'Linting frontend...' { npm run lint }
+    Invoke-Step -Description 'Testing frontend...' -FilePath 'npm.cmd' -ArgumentList @('test')
+    Invoke-Step -Description 'Linting frontend...' -FilePath 'npm.cmd' -ArgumentList @('run', 'lint')
 
-    Invoke-Step 'Building frontend assets...' { npm run build }
+    Invoke-Step -Description 'Building frontend assets...' -FilePath 'npm.cmd' -ArgumentList @('run', 'build')
 }
 finally {
     Pop-Location
 }
 
+# --- Go (MinGW on PATH for CGo) ---
+$env:PATH = $mingwPath
 Push-Location $projectDir
 try {
-    Invoke-Step 'Running Go vet...' { go vet ./... }
-    Invoke-Step 'Running Go tests...' { go test ./... }
-
-    Invoke-Step 'Building SpeechKit.exe...' { go build -ldflags $goLdflags -o $bundleExe ./cmd/speechkit/ }
+    Invoke-Step -Description 'Running Go vet...' -FilePath 'go' -ArgumentList @('vet', './...')
+    Invoke-Step -Description 'Running Go tests...' -FilePath 'go' -ArgumentList @('test', './...')
+    Invoke-Step -Description 'Running Go race tests...' -FilePath 'go' -ArgumentList @(
+        'test',
+        '-race',
+        './pkg/speechkit/...',
+        './internal/router/...',
+        './internal/voiceagent/...',
+        './internal/assist/...',
+        './internal/store/...',
+        './internal/secrets/...',
+        './internal/ai/...',
+        './internal/config/...',
+        './internal/stt/...',
+        './internal/tts/...',
+        './internal/shortcuts/...',
+        './internal/features/...',
+        './internal/models/...',
+        './internal/textactions/...'
+    )
+    Invoke-Step -Description 'Building SpeechKit.exe...' -FilePath 'go' -ArgumentList @('build', '-ldflags', $goLdflags, '-o', $bundleExe, './cmd/speechkit/')
 }
 finally {
     Pop-Location
+    $env:PATH = $basePath
 }
 
 Write-Host 'Writing runtime config...'
 $bundleConfig = Join-Path $bundleDir 'config.toml'
 Copy-Item -Path (Join-Path $projectDir 'config.example.toml') -Destination $bundleConfig -Force
-Invoke-Step 'Bundling local whisper runtime...' {
-    & powershell -ExecutionPolicy Bypass -File $prepareWhisperRuntimeScript -BundleDir $bundleDir -CacheDir $cacheDir
-}
+Invoke-Step -Description 'Bundling local whisper runtime...' -FilePath 'pwsh' -ArgumentList @('-ExecutionPolicy', 'Bypass', '-File', $prepareWhisperRuntimeScript, '-BundleDir', $bundleDir, '-CacheDir', $cacheDir)
+Invoke-Step -Description 'Bundling WebView2 bootstrapper...' -FilePath 'pwsh' -ArgumentList @('-ExecutionPolicy', 'Bypass', '-File', $prepareWebView2RuntimeScript, '-BundleDir', $bundleDir, '-CacheDir', $cacheDir)
 
-Invoke-Step 'Building SpeechKit-Setup.exe...' { & $nsisExe $installerScript }
-
-if ($seedDevBuildHFToken) {
-    Write-Host 'Seeding local Hugging Face install token bootstrap...'
-    $resolvedDevToken = Resolve-DevBuildHuggingFaceToken
-    if ([string]::IsNullOrWhiteSpace($resolvedDevToken.Token)) {
-        throw "SPEECHKIT_DEV_SEED_HF_TOKEN is enabled, but no token was found. Set SPEECHKIT_DEV_HF_TOKEN, $($resolvedDevToken.EnvName), or explicit DOPPLER_PROJECT/DOPPLER_CONFIG."
-    }
-    Set-PendingInstallHuggingFaceTokenBootstrap -Token $resolvedDevToken.Token
-    Write-Host "Seeded PendingHFInstallToken from $($resolvedDevToken.Source)."
+if ($SkipInstaller) {
+    Write-Host 'Skipping installer build (SkipInstaller specified).'
+} else {
+    Write-Host "Building installer for version $appVersion..."
+    Invoke-Step -Description 'Building SpeechKit-Setup.exe...' -FilePath $nsisExe -ArgumentList @("/DVERSION=$appVersion", $installerScript)
 }
 
 Write-Host ''
 Write-Host 'Artifacts complete:'
 Write-Host "  $bundleExe"
-Write-Host "  $installerExe"
+if (-not $SkipInstaller) {
+    Write-Host "  $installerExe"
+}

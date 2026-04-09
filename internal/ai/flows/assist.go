@@ -3,7 +3,7 @@ package flows
 import (
 	"context"
 	"fmt"
-	"log"
+	"log/slog"
 
 	"github.com/firebase/genkit/go/ai"
 	"github.com/firebase/genkit/go/core"
@@ -55,7 +55,7 @@ func DefineAssistFlow(g *genkit.Genkit, models []ai.Model) *core.Flow[AssistInpu
 			)
 			if err != nil {
 				lastErr = err
-				log.Printf("assist: model failed: %v", err)
+				slog.Warn("assist: model failed", "err", err)
 				continue
 			}
 

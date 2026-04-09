@@ -2,7 +2,7 @@ package ai
 
 import (
 	"context"
-	"log"
+	"log/slog"
 
 	"github.com/firebase/genkit/go/ai"
 	"github.com/firebase/genkit/go/core/api"
@@ -108,14 +108,14 @@ func Init(ctx context.Context, cfg Config) (*Runtime, error) {
 		}
 		m := genkit.LookupModel(g, spec.provider+"/"+spec.model)
 		if m == nil {
-			log.Printf("WARN: utility model %s/%s not found", spec.provider, spec.model)
+			slog.Warn("utility model not found", "provider", spec.provider, "model", spec.model)
 			continue
 		}
 		rt.utilityModels = append(rt.utilityModels, m)
 		id := spec.provider + "/" + spec.model
 		rt.allModels[id] = m
 		rt.modelInfos = append(rt.modelInfos, ModelInfo{ID: id, Provider: spec.provider, Name: spec.model, Tier: "utility"})
-		log.Printf("Utility model: %s/%s", spec.provider, spec.model)
+		slog.Info("utility model registered", "provider", spec.provider, "model", spec.model)
 	}
 
 	// Resolve agent models from config.
@@ -137,7 +137,7 @@ func Init(ctx context.Context, cfg Config) (*Runtime, error) {
 		}
 		m := genkit.LookupModel(g, spec.provider+"/"+spec.model)
 		if m == nil {
-			log.Printf("WARN: agent model %s/%s not found", spec.provider, spec.model)
+			slog.Warn("agent model not found", "provider", spec.provider, "model", spec.model)
 			continue
 		}
 		rt.agentModels = append(rt.agentModels, m)
@@ -154,7 +154,7 @@ func Init(ctx context.Context, cfg Config) (*Runtime, error) {
 			rt.allModels[id] = m
 			rt.modelInfos = append(rt.modelInfos, ModelInfo{ID: id, Provider: spec.provider, Name: spec.model, Tier: "agent"})
 		}
-		log.Printf("Agent model: %s/%s", spec.provider, spec.model)
+		slog.Info("agent model registered", "provider", spec.provider, "model", spec.model)
 	}
 
 	return rt, nil

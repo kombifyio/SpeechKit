@@ -2,15 +2,14 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
-	"log"
+	"log/slog"
 	"os"
 	"os/exec"
-	"path/filepath"
 	"strings"
 	"sync"
 	"time"
+	"unicode/utf8"
 
 	"github.com/wailsapp/wails/v3/pkg/application"
 	"github.com/wailsapp/wails/v3/pkg/events"
@@ -25,7 +24,6 @@ import (
 	"github.com/kombifyio/SpeechKit/internal/config"
 	"github.com/kombifyio/SpeechKit/internal/hotkey"
 	_ "github.com/kombifyio/SpeechKit/internal/kombify"
-	"github.com/kombifyio/SpeechKit/internal/models"
 	"github.com/kombifyio/SpeechKit/internal/output"
 	"github.com/kombifyio/SpeechKit/internal/router"
 	"github.com/kombifyio/SpeechKit/internal/secrets"
@@ -74,11 +72,15 @@ type appState struct {
 	overlayDesign         string
 	overlayEnabled        bool
 	overlayPosition       string
+	overlayMovable        bool
+	overlayFreeX          int
+	overlayFreeY          int
 	quickNoteMode         bool
 	quickCaptureMode      bool
 	quickCaptureAutoStart bool  // when true, next PTT event auto-starts + auto-stops recording
 	quickCaptureNoteID    int64 // the specific note ID this capture session writes to
 	lastTranscriptionText string
+	vocabularyDictionary  string
 	activeMode            string
 	audioDeviceID         string
 	activeProfiles        map[string]string
@@ -168,7 +170,7 @@ func (s *appState) addLog(msg, logType string) {
 		s.publishSpeechKitEvent(event)
 	}
 
-	log.Println(msg)
+	slog.Info(msg)
 }
 
 func main() {
@@ -178,61 +180,67 @@ func main() {
 	cfgPath := runtimeConfigPath()
 	cfg, err := config.Load(cfgPath)
 	if err != nil {
-		log.Fatalf("config: %v", err)
+		slog.Error("config load failed", "err", err)
+		os.Exit(1)
 	}
 	if migrated, err := secrets.MigrateInstallTokenBootstrap(); err != nil {
-		log.Printf("WARN: migrate install hugging face token: %v", err)
+		slog.Warn("migrate install hugging face token", "err", err)
 	} else if migrated {
-		log.Printf("Install token: migrated Hugging Face bootstrap token into secure storage")
+		slog.Info("install token migrated Hugging Face bootstrap token into secure storage")
 	}
 	// Load install state (local vs cloud mode)
 	installState, err := config.LoadInstallState()
 	if err != nil {
-		log.Printf("WARN: install state: %v", err)
+		slog.Warn("install state load failed", "err", err)
 		installState = &config.InstallState{Mode: config.InstallModeLocal}
 	}
 	if installState.Mode == "" {
 		// First run or not yet set -- default to local
 		installState.Mode = config.InstallModeLocal
 		installState.SetupDone = false
-		_ = config.SaveInstallState(installState)
-		log.Println("Install mode: local (default, first run — setup wizard pending)")
+		if err := config.SaveInstallState(installState); err != nil {
+			slog.Warn("save install state", "err", err)
+		}
+		slog.Info("install mode: local (default, first run — setup wizard pending)")
 	} else {
-		log.Printf("Install mode: %s", installState.Mode)
+		slog.Info("install mode", "mode", installState.Mode)
 	}
 	if config.ApplyLocalInstallDefaults(cfg, installState) {
 		if err := config.Save(cfgPath, cfg); err != nil {
-			log.Printf("WARN: save local install defaults: %v", err)
+			slog.Warn("save local install defaults", "err", err)
 		} else {
-			log.Printf("Local install defaults: enabled bundled local runtime")
+			slog.Info("local install defaults: enabled bundled local runtime")
 		}
 	}
 
 	if config.ApplyManagedIntegrationDefaults(cfg) {
-		log.Printf("Managed integration: Hugging Face enabled by explicit opt-in with resolved credentials")
+		slog.Info("managed integration: Hugging Face enabled by explicit opt-in with resolved credentials")
 	}
 
 	state := &appState{
-		hotkey:            cfg.General.DictateHotkey,
-		dictateHotkey:     cfg.General.DictateHotkey,
-		agentHotkey:       cfg.General.AgentHotkey,
-		activeMode:        cfg.General.ActiveMode,
-		audioDeviceID:     cfg.Audio.DeviceID,
-		activeProfiles:    defaultActiveProfiles(models.DefaultCatalog()),
-		providers:         []string{},
-		overlayEnabled:    cfg.UI.OverlayEnabled,
-		overlayPosition:   cfg.UI.OverlayPosition,
-		overlayVisualizer: cfg.UI.Visualizer,
-		overlayDesign:     cfg.UI.Design,
-		screenLocator:     newActiveWindowScreenLocator(),
+		hotkey:               cfg.General.DictateHotkey,
+		dictateHotkey:        cfg.General.DictateHotkey,
+		agentHotkey:          cfg.General.AgentHotkey,
+		activeMode:           cfg.General.ActiveMode,
+		audioDeviceID:        cfg.Audio.DeviceID,
+		activeProfiles:       activeProfilesFromConfig(cfg, filteredModelCatalog()),
+		providers:            []string{},
+		overlayEnabled:       cfg.UI.OverlayEnabled,
+		overlayPosition:      cfg.UI.OverlayPosition,
+		overlayMovable:       cfg.UI.OverlayMovable,
+		overlayFreeX:         cfg.UI.OverlayFreeX,
+		overlayFreeY:         cfg.UI.OverlayFreeY,
+		overlayVisualizer:    cfg.UI.Visualizer,
+		overlayDesign:        cfg.UI.Design,
+		vocabularyDictionary: cfg.Vocabulary.Dictionary,
+		screenLocator:        newActiveWindowScreenLocator(),
 	}
 
 	// Build router and track provider status
 	r, providerLog := buildRouter(cfg)
-	state.providers = r.AvailableProviders()
-	state.syncSpeechKitSnapshot()
+	syncRuntimeProviders(state, r)
 	for _, msg := range providerLog {
-		log.Println(msg)
+		slog.Info(msg)
 	}
 
 	// Audio capture
@@ -246,12 +254,13 @@ func main() {
 	}
 	capturer, err := newReconfigurableAudioSession(audioCfg, audio.Open)
 	if err != nil {
-		log.Fatalf("audio init failed: %v", err)
+		slog.Error("audio init failed", "err", err)
+		os.Exit(1)
 	}
 	state.audioSession = capturer
 	defer func() {
 		if err := capturer.Close(); err != nil {
-			log.Printf("WARN: audio close: %v", err)
+			slog.Warn("audio close", "err", err)
 		}
 	}()
 
@@ -274,7 +283,7 @@ func main() {
 
 	dictationVAD, closeDictationVAD, err := newDictationVAD()
 	if err != nil {
-		log.Printf("WARN: dictation VAD unavailable: %v", err)
+		slog.Warn("dictation VAD unavailable", "err", err)
 	} else {
 		if closeDictationVAD != nil {
 			defer closeDictationVAD()
@@ -326,7 +335,7 @@ func main() {
 	// Genkit AI initialization: replaces the old LLM registries.
 	genkitRT, err := appai.Init(ctx, buildGenkitConfig(cfg))
 	if err != nil {
-		log.Printf("WARN: genkit init: %v", err)
+		slog.Warn("genkit init", "err", err)
 	} else {
 		state.genkitRT = genkitRT
 
@@ -335,7 +344,7 @@ func main() {
 		state.agentFlow = flows.DefineAgentFlow(genkitRT.G, genkitRT.AgentModels())
 		state.assistFlow = flows.DefineAssistFlow(genkitRT.G, genkitRT.UtilityModels())
 
-		log.Printf("Genkit: %d utility models, %d agent models", len(genkitRT.UtilityModels()), len(genkitRT.AgentModels()))
+		slog.Info("genkit initialized", "utility_models", len(genkitRT.UtilityModels()), "agent_models", len(genkitRT.AgentModels()))
 	}
 
 	// TTS initialization for Assist Mode.
@@ -345,9 +354,9 @@ func main() {
 		healthResults := ttsRouter.HealthCheck(ctx)
 		for name, err := range healthResults {
 			if err != nil {
-				log.Printf("TTS: %s unavailable: %v", name, err)
+				slog.Warn("TTS provider unavailable", "provider", name, "err", err)
 			} else {
-				log.Printf("TTS: %s ready", name)
+				slog.Info("TTS provider ready", "provider", name)
 			}
 		}
 	}
@@ -355,11 +364,11 @@ func main() {
 	// Audio player for TTS output.
 	audioPlayer, err := audio.NewPlayer()
 	if err != nil {
-		log.Printf("WARN: audio player init: %v", err)
+		slog.Warn("audio player init", "err", err)
 	} else {
 		state.audioPlayer = audioPlayer
 		defer audioPlayer.Close()
-		log.Println("Audio player: ready (24kHz mono)")
+		slog.Info("audio player ready (24kHz mono)")
 	}
 
 	// Assist Pipeline: STT → Codeword → LLM → TTS → Result{Text, Audio}
@@ -369,7 +378,7 @@ func main() {
 			ttsRouter,
 			cfg.TTS.Enabled,
 		)
-		log.Println("Assist pipeline: ready")
+		slog.Info("assist pipeline ready")
 	}
 
 	// Voice Agent session (pre-created, started on demand via hotkey).
@@ -381,9 +390,11 @@ func main() {
 			},
 			OnAudio: func(audioData []byte) {
 				if state.audioPlayer != nil {
+					// Use the app-level ctx so playback is cancelled on shutdown,
+					// preventing goroutine leaks when the voice agent session stops.
 					go func() {
-						if err := state.audioPlayer.PlayPCM(context.Background(), audioData, 24000); err != nil {
-							log.Printf("Voice Agent playback error: %v", err)
+						if err := state.audioPlayer.PlayPCM(ctx, audioData, 24000); err != nil {
+							slog.Error("voice agent playback error", "err", err)
 						}
 					}()
 				}
@@ -395,15 +406,18 @@ func main() {
 				state.addLog(fmt.Sprintf("Voice Agent error: %v", err), "error")
 			},
 		})
-		log.Println("Voice Agent: session prepared (start via agent hotkey)")
+		slog.Info("voice agent session prepared (start via agent hotkey)")
 	}
 
 	// Clipboard output
 	clipHandler := output.NewClipboardHandler()
 	quickActions := newQuickActionCoordinator(state, clipHandler)
-	if state.genkitRT != nil && len(state.genkitRT.UtilityModels()) > 0 {
-		quickActions.summarizer.Summarizer = &textactions.FlowSummarizer{Flow: state.summarizeFlow}
-	}
+	quickActions.summarizer.Summarizer = textactions.SummarizerFunc(func(ctx context.Context, input textactions.Input) (string, error) {
+		state.mu.Lock()
+		flow := state.summarizeFlow
+		state.mu.Unlock()
+		return (&textactions.FlowSummarizer{Flow: flow}).Summarize(ctx, input)
+	})
 
 	// Hotkeys for Dictate and Agent mode
 	hkManager := newDualHotkeyManager(
@@ -429,14 +443,14 @@ func main() {
 		TranscriptionModelHints: configuredTranscriptionModelHints(cfg),
 	})
 	if err != nil {
-		log.Printf("WARN: store: %v", err)
+		slog.Warn("store init", "err", err)
 		feedbackStore = nil
 	} else {
 		defer feedbackStore.Close()
 		count, _ := feedbackStore.TranscriptionCount(context.Background())
 		state.transcriptions = count
 		state.syncSpeechKitSnapshot()
-		log.Printf("Store: %d records (backend: %s)", count, cfg.Store.Backend)
+		slog.Info("store ready", "records", count, "backend", cfg.Store.Backend)
 	}
 
 	var dashboardWin *application.WebviewWindow
@@ -462,7 +476,7 @@ func main() {
 		return win
 	}
 	showDashboard := func(source string) {
-		log.Printf("Dashboard requested via %s", source)
+		slog.Info("dashboard requested", "source", source)
 		application.InvokeSync(func() {
 			// Re-create window if it was destroyed
 			if dashboardWin == nil {
@@ -476,22 +490,25 @@ func main() {
 	app := application.New(application.Options{
 		Name: "kombify SpeechKit",
 		Icon: appassets.SpeechKitICO(),
+		Windows: application.WindowsOptions{
+			EnabledFeatures: []string{"msWebView2EnableDraggableRegions"},
+		},
 		Assets: application.AssetOptions{
 			Handler: assetHandler(cfg, cfgPath, state, r, feedbackStore, installState),
 		},
 		PanicHandler: func(details *application.PanicDetails) {
-			log.Printf("PANIC: %v\n%s", details.Error, details.StackTrace)
+			slog.Error("wails panic", "err", details.Error, "stack", details.StackTrace)
 		},
 		WarningHandler: func(message string) {
-			log.Printf("WAILS WARN: %s", message)
+			slog.Warn("wails warning", "message", message)
 		},
 		ErrorHandler: func(err error) {
-			log.Printf("WAILS ERROR: %v", err)
+			slog.Error("wails error", "err", err)
 		},
 		SingleInstance: &application.SingleInstanceOptions{
 			UniqueID: "com.kombify.speechkit",
 			OnSecondInstanceLaunch: func(data application.SecondInstanceData) {
-				log.Printf("Second instance launch blocked: cwd=%s args=%v", data.WorkingDir, data.Args)
+				slog.Info("second instance launch blocked", "cwd", data.WorkingDir, "args", data.Args)
 				if state.engine != nil {
 					_ = state.engine.Commands().Dispatch(context.Background(), speechkit.Command{
 						Type: speechkit.CommandShowDashboard,
@@ -509,11 +526,55 @@ func main() {
 	state.wailsApp = app
 
 	// Overlay windows
-	state.pillAnchor = app.Window.NewWithOptions(newPillAnchorWindowOptions())
-	state.pillPanel = app.Window.NewWithOptions(newPillPanelWindowOptions())
-	state.dotAnchor = app.Window.NewWithOptions(newDotAnchorWindowOptions())
-	state.radialMenu = app.Window.NewWithOptions(newRadialMenuWindowOptions())
-	state.assistBubble = app.Window.NewWithOptions(newAssistBubbleWindowOptions())
+	pillAnchorWindow := app.Window.NewWithOptions(newPillAnchorWindowOptions())
+	pillPanelWindow := app.Window.NewWithOptions(newPillPanelWindowOptions())
+	dotAnchorWindow := app.Window.NewWithOptions(newDotAnchorWindowOptions())
+	radialMenuWindow := app.Window.NewWithOptions(newRadialMenuWindowOptions())
+	assistBubbleWindow := app.Window.NewWithOptions(newAssistBubbleWindowOptions())
+
+	state.pillAnchor = pillAnchorWindow
+	state.pillPanel = pillPanelWindow
+	state.dotAnchor = dotAnchorWindow
+	state.radialMenu = radialMenuWindow
+	state.assistBubble = assistBubbleWindow
+
+	var overlayMoveSaveMu sync.Mutex
+	var overlayMoveSaveTimer *time.Timer
+	scheduleOverlayMoveSave := func() {
+		overlayMoveSaveMu.Lock()
+		defer overlayMoveSaveMu.Unlock()
+
+		if overlayMoveSaveTimer != nil {
+			overlayMoveSaveTimer.Stop()
+		}
+
+		overlayMoveSaveTimer = time.AfterFunc(250*time.Millisecond, func() {
+			centerX, centerY := state.overlayFreeCenter()
+
+			overlayMoveSaveMu.Lock()
+			defer overlayMoveSaveMu.Unlock()
+
+			cfg.UI.OverlayFreeX = centerX
+			cfg.UI.OverlayFreeY = centerY
+			if !cfg.UI.OverlayMovable {
+				return
+			}
+			if err := config.Save(cfgPath, cfg); err != nil {
+				slog.Warn("save free overlay position", "err", err)
+			}
+		})
+	}
+
+	pillPanelWindow.OnWindowEvent(events.Common.WindowDidMove, func(_ *application.WindowEvent) {
+		if !pillPanelWindow.IsVisible() {
+			return
+		}
+		x, y := pillPanelWindow.Position()
+		if !state.updateOverlayFreeCenterFromPanel(x, y) {
+			return
+		}
+		scheduleOverlayMoveSave()
+	})
 
 	// Dashboard: main product window (Dashboard/Settings/Logs tabs)
 	dashboardWin = createDashboardWindow(app)
@@ -551,22 +612,15 @@ func main() {
 	for _, msg := range validateCloudProviders(ctx, r) {
 		state.addLog(msg, "info")
 	}
-	state.providers = r.AvailableProviders()
-	state.syncSpeechKitSnapshot()
+	syncRuntimeProviders(state, r)
 
-	if localProvider, ok := r.Local().(*stt.LocalProvider); ok {
-		go func() {
-			state.addLog("Starting local STT...", "info")
-			if err := localProvider.StartServer(ctx); err != nil {
-				state.addLog(fmt.Sprintf("Local STT unavailable: %v", err), "warn")
-				return
-			}
-			state.addLog("Local STT ready", "success")
-		}()
+	if localProvider, ok := r.Local().(localProviderStarter); ok {
+		startLocalProviderAsync(ctx, state, r, localProvider)
 	}
 
 	if err := hkManager.Start(ctx); err != nil {
-		log.Fatalf("hotkey: %v", err)
+		slog.Error("hotkey start failed", "err", err)
+		os.Exit(1)
 	}
 	defer hkManager.Stop()
 
@@ -575,10 +629,14 @@ func main() {
 	state.addLog(fmt.Sprintf("Agent hotkey: %s", cfg.General.AgentHotkey), "info")
 	state.addLog(fmt.Sprintf("Providers: %s", strings.Join(state.providers, ", ")), "info")
 	if len(state.providers) == 0 {
-		if hint := missingProviderHint(cfg); hint != "" {
-			state.addLog(hint, "error")
+		if r.Local() != nil {
+			state.addLog("Waiting for local STT startup...", "info")
+		} else {
+			if hint := missingProviderHint(cfg); hint != "" {
+				state.addLog(hint, "error")
+			}
+			state.addLog("No STT provider ready", "error")
 		}
-		state.addLog("No STT provider ready", "error")
 	} else {
 		state.addLog("Ready", "success")
 	}
@@ -600,15 +658,13 @@ func main() {
 		Timeout:   30 * time.Second,
 		QueueSize: 4,
 		Runner: speechkit.NewTranscriptionRunner(
-			routerTranscriber{router: r},
+			routerTranscriber{router: r, state: state},
 			speechkitStoreAdapter{store: feedbackStore},
 		).WithObserver(speechkitCommitObserver{state: state}),
 		Output: desktopTranscriptOutput{
-			handler:        clipHandler,
-			interceptor:    quickActions,
-			agentFlow:      state.agentFlow,
-			assistPipeline: state.assistPipeline,
-			audioPlayer:    state.audioPlayer,
+			state:       state,
+			handler:     clipHandler,
+			interceptor: quickActions,
 			activeMode: func() string {
 				state.mu.Lock()
 				defer state.mu.Unlock()
@@ -618,14 +674,23 @@ func main() {
 				return cfg.General.AgentMode
 			},
 			onAssistText: func(text string) {
-				state.addLog(fmt.Sprintf("Assist: %s", text), "info")
+				trimmed := strings.TrimSpace(text)
+				state.addLog(
+					fmt.Sprintf(
+						"Assist response ready (%d chars, %d words)",
+						utf8.RuneCountInString(trimmed),
+						len(strings.Fields(trimmed)),
+					),
+					"info",
+				)
 				state.showAssistBubble(text)
 			},
 		},
 		Observer: state,
 	})
 	if err != nil {
-		log.Fatalf("transcription worker: %v", err)
+		slog.Error("transcription worker init failed", "err", err)
+		os.Exit(1)
 	}
 	transcriptionWorker.Start(ctx)
 	defer func() {
@@ -683,263 +748,13 @@ func main() {
 	}()
 
 	if err := app.Run(); err != nil {
-		log.Fatalf("app: %v", err)
+		slog.Error("app run failed", "err", err)
+		os.Exit(1)
 	}
 	cancel()
 }
 
-func buildRouter(cfg *config.Config) (*router.Router, []string) {
-	var msgs []string
-	r := &router.Router{
-		Strategy:             router.Strategy(cfg.Routing.Strategy),
-		PreferLocalUnderSecs: cfg.Routing.PreferLocalUnderSeconds,
-		ParallelCloud:        cfg.Routing.ParallelCloud,
-		ReplaceOnBetter:      cfg.Routing.ReplaceOnBetter,
-	}
+// buildRouter, buildGenkitConfig, buildTTSRouter, validateCloudProviders,
+// missingProviderHint, executableDir, defaultLocalModelPath, escapeJS, and
+// runtimeConfigPath are in app_init.go.
 
-	if cfg.HuggingFace.Enabled {
-		hfToken, tokenStatus, err := config.ResolveHuggingFaceToken(cfg)
-		if err != nil || hfToken == "" {
-			tokenEnv := config.HuggingFaceTokenEnvName(cfg)
-			if tokenEnv == "" {
-				tokenEnv = "HF_TOKEN"
-			}
-			msgs = append(msgs, fmt.Sprintf("WARN: %s not found in host secret store, env or Doppler", tokenEnv))
-		} else {
-			r.SetHuggingFace(newHuggingFaceProvider(cfg.HuggingFace.Model, hfToken))
-			msgs = append(msgs, fmt.Sprintf("HuggingFace: %s (source: %s)", cfg.HuggingFace.Model, tokenStatus.ActiveSource))
-		}
-	}
-
-	if cfg.VPS.Enabled && cfg.VPS.URL != "" {
-		apiKey := config.ResolveSecret(cfg.VPS.APIKeyEnv)
-		r.SetVPS(stt.NewVPSProvider(cfg.VPS.URL, apiKey))
-		msgs = append(msgs, fmt.Sprintf("VPS: %s", cfg.VPS.URL))
-	}
-
-	if cfg.Local.Enabled {
-		modelPath := cfg.Local.ModelPath
-		if modelPath == "" {
-			modelPath = defaultLocalModelPath(executableDir(), os.Getenv("LOCALAPPDATA"), cfg.Local.Model)
-		}
-		r.SetLocal(stt.NewLocalProvider(cfg.Local.Port, modelPath, cfg.Local.GPU))
-		msgs = append(msgs, fmt.Sprintf("Local: %s (not started)", cfg.Local.Model))
-	}
-
-	// Additional STT cloud providers
-	if cfg.Providers.Groq.Enabled {
-		apiKey := config.ResolveSecret(cfg.Providers.Groq.APIKeyEnv)
-		if apiKey != "" {
-			r.AddCloud(stt.NewGroqSTTProvider(apiKey))
-			msgs = append(msgs, "STT: Groq provider registered")
-		}
-	}
-
-	if cfg.Providers.OpenAI.Enabled {
-		apiKey := config.ResolveSecret(cfg.Providers.OpenAI.APIKeyEnv)
-		if apiKey != "" {
-			r.AddCloud(stt.NewOpenAISTTProvider(apiKey))
-			msgs = append(msgs, "STT: OpenAI provider registered")
-		}
-	}
-
-	if cfg.Providers.Google.Enabled {
-		apiKey := config.ResolveSecret(cfg.Providers.Google.APIKeyEnv)
-		if apiKey != "" {
-			r.AddCloud(stt.NewGoogleSTTProvider(apiKey, cfg.Providers.Google.STTModel))
-			msgs = append(msgs, "STT: Google provider registered")
-		}
-	}
-
-	return r, msgs
-}
-
-func executableDir() string {
-	exe, err := os.Executable()
-	if err != nil || exe == "" {
-		return ""
-	}
-	return filepath.Dir(exe)
-}
-
-func defaultLocalModelPath(exeDir string, localAppData string, modelName string) string {
-	if exeDir != "" && modelName != "" {
-		bundlePath := filepath.Join(exeDir, "models", modelName)
-		if _, err := os.Stat(bundlePath); err == nil {
-			return bundlePath
-		}
-	}
-	if localAppData != "" && modelName != "" {
-		return filepath.Join(localAppData, "SpeechKit", "models", modelName)
-	}
-	if exeDir != "" && modelName != "" {
-		return filepath.Join(exeDir, "models", modelName)
-	}
-	return ""
-}
-
-func buildGenkitConfig(cfg *config.Config) appai.Config {
-	var aiCfg appai.Config
-
-	if cfg.Providers.Google.Enabled {
-		aiCfg.GoogleAPIKey = config.ResolveSecret(cfg.Providers.Google.APIKeyEnv)
-		aiCfg.GoogleUtilityModel = cfg.Providers.Google.UtilityModel
-		aiCfg.GoogleAgentModel = cfg.Providers.Google.AgentModel
-	}
-
-	if cfg.Providers.OpenAI.Enabled {
-		aiCfg.OpenAIAPIKey = config.ResolveSecret(cfg.Providers.OpenAI.APIKeyEnv)
-		aiCfg.OpenAIUtilityModel = cfg.Providers.OpenAI.UtilityModel
-		aiCfg.OpenAIAgentModel = cfg.Providers.OpenAI.AgentModel
-	}
-
-	if cfg.Providers.Groq.Enabled {
-		aiCfg.GroqAPIKey = config.ResolveSecret(cfg.Providers.Groq.APIKeyEnv)
-		aiCfg.GroqUtilityModel = cfg.Providers.Groq.UtilityModel
-		aiCfg.GroqAgentModel = cfg.Providers.Groq.AgentModel
-	}
-
-	if cfg.HuggingFace.Enabled {
-		token, _, _ := config.ResolveHuggingFaceToken(cfg)
-		aiCfg.HuggingFaceToken = token
-		aiCfg.HFUtilityModel = "Qwen/Qwen3.5-9B"
-		aiCfg.HFAgentModel = "Qwen/Qwen3.5-32B"
-	}
-
-	if cfg.Providers.Ollama.Enabled {
-		aiCfg.OllamaBaseURL = cfg.Providers.Ollama.BaseURL
-		aiCfg.OllamaUtilityModel = cfg.Providers.Ollama.UtilityModel
-		aiCfg.OllamaAgentModel = cfg.Providers.Ollama.AgentModel
-	}
-
-	return aiCfg
-}
-
-func validateCloudProviders(ctx context.Context, r *router.Router) []string {
-	var msgs []string
-
-	if vps := r.VPS(); vps != nil {
-		checkCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
-		err := vps.Health(checkCtx)
-		cancel()
-		if err != nil {
-			msgs = append(msgs, fmt.Sprintf("VPS unavailable: %v", err))
-		} else {
-			msgs = append(msgs, "VPS ready")
-		}
-	}
-
-	if hf := r.HuggingFace(); hf != nil {
-		checkCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
-		err := hf.Health(checkCtx)
-		cancel()
-		if err != nil {
-			msgs = append(msgs, fmt.Sprintf("HuggingFace unavailable: %v", err))
-		} else {
-			msgs = append(msgs, "HuggingFace ready")
-		}
-	}
-
-	return msgs
-}
-
-// escapeJS returns s as a safe JavaScript string literal (without surrounding quotes).
-// Uses json.Marshal to handle all special characters including backticks, null bytes,
-// and unicode line/paragraph separators (U+2028, U+2029).
-func escapeJS(s string) string {
-	b, err := json.Marshal(s)
-	if err != nil {
-		return ""
-	}
-	// json.Marshal returns "quoted string" -- strip the surrounding quotes
-	return string(b[1 : len(b)-1])
-}
-
-func missingProviderHint(cfg *config.Config) string {
-	if cfg.Routing.Strategy == "cloud-only" && !cfg.HuggingFace.Enabled && !cfg.VPS.Enabled {
-		return "Cloud-only routing is active, but no cloud provider is enabled. Enable Hugging Face Inference or configure VPS."
-	}
-
-	if cfg.HuggingFace.Enabled && cfg.VPS.Enabled {
-		return ""
-	}
-
-	if cfg.HuggingFace.Enabled {
-		token, _, err := config.ResolveHuggingFaceToken(cfg)
-		if err == nil && token != "" {
-			return ""
-		}
-		tokenEnv := config.HuggingFaceTokenEnvName(cfg)
-		if tokenEnv == "" {
-			tokenEnv = "HF_TOKEN"
-		}
-		return fmt.Sprintf("Hugging Face Inference is enabled, but no token could be resolved from settings, install bootstrap, %s, env or Doppler.", tokenEnv)
-	}
-	if cfg.VPS.Enabled && cfg.VPS.URL == "" {
-		return "VPS provider is enabled, but no VPS URL is configured."
-	}
-
-	return ""
-}
-
-func runtimeConfigPath() string {
-	exe, err := os.Executable()
-	if err != nil {
-		return "config.toml"
-	}
-	return filepath.Join(filepath.Dir(exe), "config.toml")
-}
-
-func buildTTSRouter(cfg *config.Config) *tts.Router {
-	if !cfg.TTS.Enabled {
-		return nil
-	}
-
-	var providers []tts.Provider
-
-	if cfg.TTS.OpenAI.Enabled {
-		apiKey := config.ResolveSecret(cfg.Providers.OpenAI.APIKeyEnv)
-		if apiKey != "" {
-			model := cfg.TTS.OpenAI.Model
-			if model == "" {
-				model = cfg.Providers.OpenAI.TTSModel
-			}
-			voice := cfg.TTS.OpenAI.Voice
-			if voice == "" {
-				voice = cfg.Providers.OpenAI.TTSVoice
-			}
-			providers = append(providers, tts.NewOpenAI(tts.OpenAIOpts{
-				APIKey: apiKey,
-				Model:  model,
-				Voice:  voice,
-			}))
-		}
-	}
-
-	if cfg.TTS.Google.Enabled {
-		apiKey := config.ResolveSecret(cfg.Providers.Google.APIKeyEnv)
-		if apiKey != "" {
-			providers = append(providers, tts.NewGoogle(tts.GoogleOpts{
-				APIKey: apiKey,
-				Voice:  cfg.TTS.Google.Voice,
-			}))
-		}
-	}
-
-	if cfg.TTS.HuggingFace.Enabled {
-		token := config.ResolveSecret(cfg.HuggingFace.TokenEnv)
-		if token != "" {
-			model := cfg.TTS.HuggingFace.Model
-			providers = append(providers, tts.NewHuggingFace(tts.HuggingFaceOpts{
-				Token: token,
-				Model: model,
-			}))
-		}
-	}
-
-	if len(providers) == 0 {
-		return nil
-	}
-
-	return tts.NewRouter(tts.Strategy(cfg.TTS.Strategy), providers...)
-}

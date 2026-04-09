@@ -254,6 +254,41 @@ func TestPositionOverlayPlacesWindowAtTopCenter(t *testing.T) {
 	}
 }
 
+func TestPositionOverlayPlacesPillHostsAtSavedFreePoint(t *testing.T) {
+	pillAnchor := &fakeOverlayWindow{}
+	pillPanel := &fakeOverlayWindow{}
+	locator := &fakeScreenLocator{bounds: screenBounds{X: 0, Y: 0, Width: 1920, Height: 1080}, ok: true}
+	state := &appState{
+		pillAnchor:        pillAnchor,
+		pillPanel:         pillPanel,
+		screenLocator:     locator,
+		overlayVisualizer: "pill",
+		overlayPosition:   "top",
+		overlayMovable:    true,
+		overlayFreeX:      910,
+		overlayFreeY:      420,
+	}
+
+	state.positionOverlay()
+
+	if len(pillAnchor.positions) != 1 {
+		t.Fatalf("pill anchor positions = %v", pillAnchor.positions)
+	}
+	if len(pillPanel.positions) != 1 {
+		t.Fatalf("pill panel positions = %v", pillPanel.positions)
+	}
+
+	wantAnchor := [2]int{910 - pillAnchorWidth/2, 420 - pillAnchorHeight/2}
+	if pillAnchor.positions[0] != wantAnchor {
+		t.Fatalf("pill anchor position = %v, want %v", pillAnchor.positions[0], wantAnchor)
+	}
+
+	wantPanel := [2]int{910 - pillPanelWidth/2, 420 - pillPanelHeight/2}
+	if pillPanel.positions[0] != wantPanel {
+		t.Fatalf("pill panel position = %v, want %v", pillPanel.positions[0], wantPanel)
+	}
+}
+
 func TestSetStateRecordingShowsOverlayAndUpdatesClients(t *testing.T) {
 	overlay := &fakeOverlayWindow{}
 	settings := &fakeSettingsWindow{visible: true}
@@ -503,8 +538,69 @@ func TestSettingsStateEndpointReturnsCurrentSettings(t *testing.T) {
 	if payload.MaxAudioStorageMB != 500 {
 		t.Fatalf("settings payload = %+v", payload)
 	}
+	if payload.VocabularyDictionary != "" {
+		t.Fatalf("settings payload = %+v", payload)
+	}
 	if payload.HFTokenSource != "none" || payload.HFHasUserToken || payload.HFHasInstallToken {
 		t.Fatalf("settings payload = %+v", payload)
+	}
+}
+
+func TestSettingsRoutesPersistVocabularyDictionary(t *testing.T) {
+	cfg := defaultTestConfig()
+	cfgPath := filepath.Join(t.TempDir(), "config.toml")
+	state := &appState{
+		overlayEnabled:    true,
+		overlayVisualizer: "pill",
+		overlayPosition:   "top",
+	}
+	handler := assetHandler(cfg, cfgPath, state, &router.Router{}, nil, &config.InstallState{Mode: config.InstallModeLocal})
+
+	form := url.Values{
+		"dictate_hotkey":             {"win+alt"},
+		"agent_hotkey":               {"ctrl+shift+k"},
+		"active_mode":                {"dictate"},
+		"overlay_enabled":            {"1"},
+		"overlay_visualizer":         {"pill"},
+		"overlay_design":             {"default"},
+		"overlay_position":           {"top"},
+		"store_backend":              {"sqlite"},
+		"store_sqlite_path":          {cfg.Store.SQLitePath},
+		"store_save_audio":           {"1"},
+		"store_audio_retention_days": {"7"},
+		"store_max_audio_storage_mb": {"500"},
+		"vocabulary_dictionary":      {"kombi fire => Kombify\r\nAcmeOS"},
+	}
+	req := httptest.NewRequest(http.MethodPost, "/settings/update", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	rec := httptest.NewRecorder()
+
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, body=%s", rec.Code, rec.Body.String())
+	}
+	if got, want := cfg.Vocabulary.Dictionary, "kombi fire => Kombify\nAcmeOS"; got != want {
+		t.Fatalf("cfg.Vocabulary.Dictionary = %q, want %q", got, want)
+	}
+	if got, want := state.vocabularyDictionary, "kombi fire => Kombify\nAcmeOS"; got != want {
+		t.Fatalf("state.vocabularyDictionary = %q, want %q", got, want)
+	}
+
+	stateReq := httptest.NewRequest(http.MethodGet, "/settings/state", nil)
+	stateRec := httptest.NewRecorder()
+	handler.ServeHTTP(stateRec, stateReq)
+
+	if stateRec.Code != http.StatusOK {
+		t.Fatalf("settings/state status = %d", stateRec.Code)
+	}
+
+	var payload settingsSnapshot
+	if err := json.Unmarshal(stateRec.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("decode settings payload: %v", err)
+	}
+	if got, want := payload.VocabularyDictionary, "kombi fire => Kombify\nAcmeOS"; got != want {
+		t.Fatalf("payload.VocabularyDictionary = %q, want %q", got, want)
 	}
 }
 
@@ -539,6 +635,8 @@ func TestSettingsSnapshotExposesPostgresConfiguration(t *testing.T) {
 func TestSettingsRoutesPersistAndClearUserHuggingFaceToken(t *testing.T) {
 	restore := secrets.UseMemoryStoreForTests()
 	defer restore()
+	restoreBuild := config.OverrideManagedHuggingFaceBuildForTests("1")
+	defer restoreBuild()
 	prevFactory := newHuggingFaceProvider
 	newHuggingFaceProvider = func(model, token string) stt.STTProvider {
 		return &fakeProvider{name: "huggingface"}
@@ -599,6 +697,160 @@ func TestSettingsRoutesPersistAndClearUserHuggingFaceToken(t *testing.T) {
 	}
 	if payload.HFHasUserToken || payload.HFTokenSource != "none" {
 		t.Fatalf("settings payload after clear = %+v", payload)
+	}
+}
+
+func TestSettingsRoutesRejectUserHuggingFaceTokenInOSSBuild(t *testing.T) {
+	restore := secrets.UseMemoryStoreForTests()
+	defer restore()
+
+	cfg := defaultTestConfig()
+	cfgPath := filepath.Join(t.TempDir(), "config.toml")
+	state := &appState{
+		overlayEnabled:    true,
+		overlayVisualizer: "pill",
+		overlayPosition:   "top",
+	}
+
+	handler := assetHandler(cfg, cfgPath, state, &router.Router{}, nil, &config.InstallState{Mode: config.InstallModeLocal})
+
+	setForm := url.Values{
+		"hf_token": {"user-token"},
+	}
+	setReq := httptest.NewRequest(http.MethodPost, "/settings/huggingface/token", strings.NewReader(setForm.Encode()))
+	setReq.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	setRec := httptest.NewRecorder()
+
+	handler.ServeHTTP(setRec, setReq)
+
+	if setRec.Code != http.StatusOK {
+		t.Fatalf("set status = %d, body=%s", setRec.Code, setRec.Body.String())
+	}
+	if !strings.Contains(setRec.Body.String(), "Hugging Face is not available in this build") {
+		t.Fatalf("set response = %s", setRec.Body.String())
+	}
+
+	statusReq := httptest.NewRequest(http.MethodGet, "/settings/state", nil)
+	statusRec := httptest.NewRecorder()
+	handler.ServeHTTP(statusRec, statusReq)
+
+	if statusRec.Code != http.StatusOK {
+		t.Fatalf("state status = %d", statusRec.Code)
+	}
+
+	var payload settingsSnapshot
+	if err := json.Unmarshal(statusRec.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("decode state payload: %v", err)
+	}
+	if payload.HFHasUserToken || payload.HFTokenSource != "none" {
+		t.Fatalf("settings payload = %+v", payload)
+	}
+}
+
+func TestModelProfilesEndpointFiltersHFRoutedProfilesInOSSBuild(t *testing.T) {
+	cfg := defaultTestConfig()
+	handler := assetHandler(cfg, filepath.Join(t.TempDir(), "config.toml"), &appState{}, &router.Router{}, nil, &config.InstallState{Mode: config.InstallModeLocal})
+
+	req := httptest.NewRequest(http.MethodGet, "/models/profiles", nil)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", rec.Code, http.StatusOK)
+	}
+
+	var payload struct {
+		Profiles []struct {
+			ExecutionMode string `json:"executionMode"`
+		} `json:"profiles"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("decode payload: %v", err)
+	}
+	for _, profile := range payload.Profiles {
+		if profile.ExecutionMode == "hf_routed" {
+			t.Fatalf("expected hf_routed profiles to be filtered from OSS builds, payload=%s", rec.Body.String())
+		}
+	}
+}
+
+func TestModelProfilesEndpointReturnsOnlySwitchableModalities(t *testing.T) {
+	cfg := defaultTestConfig()
+	handler := assetHandler(cfg, filepath.Join(t.TempDir(), "config.toml"), &appState{}, &router.Router{}, nil, &config.InstallState{Mode: config.InstallModeLocal})
+
+	req := httptest.NewRequest(http.MethodGet, "/models/profiles", nil)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", rec.Code, http.StatusOK)
+	}
+
+	var payload struct {
+		Profiles []struct {
+			ID       string `json:"id"`
+			Modality string `json:"modality"`
+		} `json:"profiles"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("decode payload: %v", err)
+	}
+
+	if len(payload.Profiles) == 0 {
+		t.Fatal("expected switchable model profiles")
+	}
+
+	allowed := map[string]bool{"stt": true, "utility": true, "agent": true}
+	foundGemma := false
+	for _, profile := range payload.Profiles {
+		if !allowed[profile.Modality] {
+			t.Fatalf("unexpected modality %q in switchable catalog", profile.Modality)
+		}
+		if profile.ID == "utility.ollama.gemma4-e4b" {
+			foundGemma = true
+		}
+	}
+	if !foundGemma {
+		t.Fatal("expected Gemma 4 local utility profile in switchable catalog")
+	}
+}
+
+func TestActivateUtilityOllamaProfileUpdatesConfigAndRuntime(t *testing.T) {
+	cfg := defaultTestConfig()
+	cfg.Providers.Ollama.BaseURL = "http://localhost:11434"
+	cfgPath := filepath.Join(t.TempDir(), "config.toml")
+	state := &appState{
+		activeProfiles: map[string]string{},
+	}
+	handler := assetHandler(cfg, cfgPath, state, &router.Router{}, nil, &config.InstallState{Mode: config.InstallModeLocal})
+
+	form := url.Values{
+		"modality":   {"utility"},
+		"profile_id": {"utility.ollama.gemma4-e4b"},
+	}
+	req := httptest.NewRequest(http.MethodPost, "/models/profiles/activate", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	rec := httptest.NewRecorder()
+
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, body=%s", rec.Code, rec.Body.String())
+	}
+	if !cfg.Providers.Ollama.Enabled {
+		t.Fatal("expected ollama provider enabled")
+	}
+	if cfg.Providers.Ollama.UtilityModel != "gemma4:e4b" {
+		t.Fatalf("ollama utility model = %q, want %q", cfg.Providers.Ollama.UtilityModel, "gemma4:e4b")
+	}
+	if got := state.activeProfiles["utility"]; got != "utility.ollama.gemma4-e4b" {
+		t.Fatalf("active utility profile = %q, want %q", got, "utility.ollama.gemma4-e4b")
+	}
+	if state.genkitRT == nil {
+		t.Fatal("expected genkit runtime to be reloaded")
+	}
+	if state.summarizeFlow == nil {
+		t.Fatal("expected summarize flow to be reloaded")
 	}
 }
 
@@ -699,6 +951,10 @@ func TestSaveSettingsUpdatesConfigAndRuntime(t *testing.T) {
 		"overlay_enabled":            {"1"},
 		"overlay_visualizer":         {"circle"},
 		"overlay_design":             {"kombify"},
+		"overlay_position":           {"bottom"},
+		"overlay_movable":            {"1"},
+		"overlay_free_x":             {"884"},
+		"overlay_free_y":             {"412"},
 		"store_backend":              {"postgres"},
 		"store_postgres_dsn":         {"postgres://speechkit:secret@localhost:5432/speechkit?sslmode=disable"},
 		"store_audio_retention_days": {"30"},
@@ -706,6 +962,7 @@ func TestSaveSettingsUpdatesConfigAndRuntime(t *testing.T) {
 	}
 	req := httptest.NewRequest(http.MethodPost, "/settings.html", strings.NewReader(form.Encode()))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	t.Setenv("SPEECHKIT_ENABLE_MANAGED_HF", "1")
 
 	flash := saveSettings(context.Background(), req, cfgPath, cfg, state, sttRouter)
 
@@ -730,6 +987,15 @@ func TestSaveSettingsUpdatesConfigAndRuntime(t *testing.T) {
 	}
 	if cfg.UI.Design != "kombify" {
 		t.Fatalf("design = %q", cfg.UI.Design)
+	}
+	if cfg.UI.OverlayPosition != "bottom" {
+		t.Fatalf("overlay position = %q", cfg.UI.OverlayPosition)
+	}
+	if !cfg.UI.OverlayMovable {
+		t.Fatal("overlay movable = false")
+	}
+	if cfg.UI.OverlayFreeX != 884 || cfg.UI.OverlayFreeY != 412 {
+		t.Fatalf("free overlay coordinates = (%d,%d)", cfg.UI.OverlayFreeX, cfg.UI.OverlayFreeY)
 	}
 	if cfg.Store.Backend != "postgres" {
 		t.Fatalf("store backend = %q", cfg.Store.Backend)
@@ -764,6 +1030,15 @@ func TestSaveSettingsUpdatesConfigAndRuntime(t *testing.T) {
 	if reloaded.UI.Design != "kombify" {
 		t.Fatalf("reloaded design = %q", reloaded.UI.Design)
 	}
+	if reloaded.UI.OverlayPosition != "bottom" {
+		t.Fatalf("reloaded overlay position = %q", reloaded.UI.OverlayPosition)
+	}
+	if !reloaded.UI.OverlayMovable {
+		t.Fatal("reloaded overlay movable = false")
+	}
+	if reloaded.UI.OverlayFreeX != 884 || reloaded.UI.OverlayFreeY != 412 {
+		t.Fatalf("reloaded free overlay coordinates = (%d,%d)", reloaded.UI.OverlayFreeX, reloaded.UI.OverlayFreeY)
+	}
 	if reloaded.Store.Backend != "postgres" {
 		t.Fatalf("reloaded store backend = %q", reloaded.Store.Backend)
 	}
@@ -792,6 +1067,7 @@ func TestSaveSettingsRejectsPostgresBackendWithoutDSN(t *testing.T) {
 	}
 	req := httptest.NewRequest(http.MethodPost, "/settings.html", strings.NewReader(form.Encode()))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	t.Setenv("SPEECHKIT_ENABLE_MANAGED_HF", "1")
 
 	flash := saveSettings(context.Background(), req, cfgPath, cfg, state, sttRouter)
 
@@ -803,18 +1079,20 @@ func TestSaveSettingsRejectsPostgresBackendWithoutDSN(t *testing.T) {
 	}
 }
 
-func TestSaveSettingsRejectsEnablingHFWithoutToken(t *testing.T) {
+func TestSaveSettingsKeepsHFDisabledWithoutManagedToken(t *testing.T) {
 	restore := secrets.UseMemoryStoreForTests()
 	defer restore()
+	restoreBuild := config.OverrideManagedHuggingFaceBuildForTests("1")
+	defer restoreBuild()
 
 	cfg := defaultTestConfig()
 	cfg.HuggingFace.Enabled = false
+	cfg.Routing.Strategy = "cloud-only"
 	cfgPath := filepath.Join(t.TempDir(), "config.toml")
 	state := &appState{}
 	sttRouter := &router.Router{}
 
 	form := url.Values{
-		"hf_enabled":         {"1"},
 		"hf_model":           {"openai/whisper-large-v3"},
 		"overlay_enabled":    {"1"},
 		"overlay_visualizer": {"pill"},
@@ -827,17 +1105,19 @@ func TestSaveSettingsRejectsEnablingHFWithoutToken(t *testing.T) {
 
 	flash := saveSettings(context.Background(), req, cfgPath, cfg, state, sttRouter)
 
-	if !strings.Contains(flash, msgHFTokenMissing) {
+	if !strings.Contains(flash, msgSaved) {
 		t.Fatalf("flash = %q", flash)
 	}
 	if cfg.HuggingFace.Enabled {
-		t.Fatal("huggingface should remain disabled when enabling fails")
+		t.Fatal("huggingface should remain disabled without a managed token")
 	}
 }
 
-func TestSaveSettingsAllowsEnablingHFWithStoredUserToken(t *testing.T) {
+func TestSaveSettingsAppliesManagedHFWithStoredUserToken(t *testing.T) {
 	restore := secrets.UseMemoryStoreForTests()
 	defer restore()
+	restoreBuild := config.OverrideManagedHuggingFaceBuildForTests("1")
+	defer restoreBuild()
 	prevFactory := newHuggingFaceProvider
 	newHuggingFaceProvider = func(model, token string) stt.STTProvider {
 		return &fakeProvider{name: "huggingface"}
@@ -850,12 +1130,12 @@ func TestSaveSettingsAllowsEnablingHFWithStoredUserToken(t *testing.T) {
 
 	cfg := defaultTestConfig()
 	cfg.HuggingFace.Enabled = false
+	cfg.Routing.Strategy = "cloud-only"
 	cfgPath := filepath.Join(t.TempDir(), "config.toml")
 	state := &appState{}
 	sttRouter := &router.Router{}
 
 	form := url.Values{
-		"hf_enabled":         {"1"},
 		"hf_model":           {"openai/whisper-large-v3"},
 		"overlay_enabled":    {"1"},
 		"overlay_visualizer": {"pill"},
@@ -863,6 +1143,7 @@ func TestSaveSettingsAllowsEnablingHFWithStoredUserToken(t *testing.T) {
 	}
 	req := httptest.NewRequest(http.MethodPost, "/settings.html", strings.NewReader(form.Encode()))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	t.Setenv("SPEECHKIT_ENABLE_MANAGED_HF", "1")
 
 	flash := saveSettings(context.Background(), req, cfgPath, cfg, state, sttRouter)
 
@@ -878,6 +1159,9 @@ func TestSaveSettingsAllowsEnablingHFWithStoredUserToken(t *testing.T) {
 }
 
 func TestSaveSettingsAllowsNonHFChangesWithoutHFValidation(t *testing.T) {
+	restoreBuild := config.OverrideManagedHuggingFaceBuildForTests("1")
+	defer restoreBuild()
+
 	cfg := defaultTestConfig()
 	cfg.HuggingFace.Enabled = true
 	cfg.HuggingFace.TokenEnv = "TEST_SPEECHKIT_MISSING_HF_TOKEN"
@@ -912,6 +1196,9 @@ func TestSaveSettingsAllowsNonHFChangesWithoutHFValidation(t *testing.T) {
 }
 
 func TestSaveSettingsKeepsManagedHFEnabledWhenBuildDefaultsAreActive(t *testing.T) {
+	restoreBuild := config.OverrideManagedHuggingFaceBuildForTests("1")
+	defer restoreBuild()
+
 	cfg := defaultTestConfig()
 	cfg.HuggingFace.Enabled = false
 	cfg.Routing.Strategy = "cloud-only"
@@ -946,6 +1233,9 @@ func TestSaveSettingsKeepsManagedHFEnabledWhenBuildDefaultsAreActive(t *testing.
 }
 
 func TestBuildRouterEnablesHFWhenConfiguredAndTokenAvailable(t *testing.T) {
+	restoreBuild := config.OverrideManagedHuggingFaceBuildForTests("1")
+	defer restoreBuild()
+
 	cfg := defaultTestConfig()
 	cfg.HuggingFace.Enabled = true
 	cfg.HuggingFace.TokenEnv = "HF_TOKEN"
@@ -962,6 +1252,9 @@ func TestBuildRouterEnablesHFWhenConfiguredAndTokenAvailable(t *testing.T) {
 }
 
 func TestBuildRouterAutoEnablesManagedHFForCloudOnlyWhenExplicitlyEnabled(t *testing.T) {
+	restoreBuild := config.OverrideManagedHuggingFaceBuildForTests("1")
+	defer restoreBuild()
+
 	cfg := defaultTestConfig()
 	cfg.HuggingFace.Enabled = false
 	cfg.Local.Enabled = false
@@ -984,6 +1277,8 @@ func TestBuildRouterAutoEnablesManagedHFForCloudOnlyWhenExplicitlyEnabled(t *tes
 func TestBuildRouterWarnsWhenHFConfiguredWithoutToken(t *testing.T) {
 	restore := secrets.UseMemoryStoreForTests()
 	defer restore()
+	restoreBuild := config.OverrideManagedHuggingFaceBuildForTests("1")
+	defer restoreBuild()
 
 	cfg := defaultTestConfig()
 	cfg.HuggingFace.Enabled = true
@@ -1032,6 +1327,8 @@ func TestDefaultLocalModelPathFallsBackToLocalAppData(t *testing.T) {
 func TestBuildRouterPrefersStoredUserTokenOverEnvToken(t *testing.T) {
 	restore := secrets.UseMemoryStoreForTests()
 	defer restore()
+	restoreBuild := config.OverrideManagedHuggingFaceBuildForTests("1")
+	defer restoreBuild()
 
 	if err := secrets.SetInstallHuggingFaceToken("install-token"); err != nil {
 		t.Fatalf("set install token: %v", err)
@@ -1058,6 +1355,8 @@ func TestBuildRouterPrefersStoredUserTokenOverEnvToken(t *testing.T) {
 func TestSettingsSnapshotIncludesHuggingFaceTokenStatus(t *testing.T) {
 	restore := secrets.UseMemoryStoreForTests()
 	defer restore()
+	restoreBuild := config.OverrideManagedHuggingFaceBuildForTests("1")
+	defer restoreBuild()
 
 	if err := secrets.SetInstallHuggingFaceToken("install-token"); err != nil {
 		t.Fatalf("set install token: %v", err)
@@ -1120,6 +1419,8 @@ func TestMissingProviderHintForCloudOnlyWithNoEnabledProviders(t *testing.T) {
 func TestMissingProviderHintForHFWithoutToken(t *testing.T) {
 	restore := secrets.UseMemoryStoreForTests()
 	defer restore()
+	restoreBuild := config.OverrideManagedHuggingFaceBuildForTests("1")
+	defer restoreBuild()
 
 	cfg := defaultTestConfig()
 	cfg.HuggingFace.Enabled = true

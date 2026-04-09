@@ -6,7 +6,6 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
-	"syscall"
 
 	"github.com/BurntSushi/toml"
 	"github.com/kombifyio/SpeechKit/internal/secrets"
@@ -14,7 +13,8 @@ import (
 
 var (
 	dopplerLookPath              = exec.LookPath
-	dopplerSecretLookup          = defaultDopplerSecretLookup
+	dopplerSecretLookup          = secrets.DefaultDopplerSecretLookup
+	managedHFBuildEnabled        string
 	managedHFDefaultOptIn        string
 	managedDopplerDefaultProject string
 	managedDopplerDefaultConfig  string
@@ -24,6 +24,7 @@ type Config struct {
 	General     GeneralConfig     `toml:"general"`
 	Audio       AudioConfig       `toml:"audio"`
 	UI          UIConfig          `toml:"ui"`
+	Vocabulary  VocabularyConfig  `toml:"vocabulary"`
 	Local       LocalConfig       `toml:"local"`
 	VPS         VPSConfig         `toml:"vps"`
 	HuggingFace HuggingFaceConfig `toml:"huggingface"`
@@ -49,9 +50,9 @@ type GeneralConfig struct {
 	Hotkey            string `toml:"hotkey"`
 	DictateHotkey     string `toml:"dictate_hotkey"`
 	AgentHotkey       string `toml:"agent_hotkey"`
-	AgentMode         string `toml:"agent_mode"`   // "assist" or "voice_agent" — determines what agent_hotkey triggers
-	ActiveMode        string `toml:"active_mode"`   // legacy compat
-	HotkeyMode        string `toml:"hotkey_mode"`   // "push_to_talk" or "toggle"
+	AgentMode         string `toml:"agent_mode"`  // "assist" or "voice_agent" — determines what agent_hotkey triggers
+	ActiveMode        string `toml:"active_mode"` // legacy compat
+	HotkeyMode        string `toml:"hotkey_mode"` // "push_to_talk" or "toggle"
 	AutoStopSilenceMs int    `toml:"auto_stop_silence_ms"`
 	FastModeSilenceMs int    `toml:"fast_mode_silence_ms"` // silence threshold for Quick Capture auto-stop
 }
@@ -65,9 +66,16 @@ type AudioConfig struct {
 	LatencyHint string `toml:"latency_hint"`
 }
 
+type VocabularyConfig struct {
+	Dictionary string `toml:"dictionary"`
+}
+
 type UIConfig struct {
 	OverlayEnabled  bool   `toml:"overlay_enabled"`
 	OverlayPosition string `toml:"overlay_position"` // "top", "bottom", "left", "right"
+	OverlayMovable  bool   `toml:"overlay_movable"`
+	OverlayFreeX    int    `toml:"overlay_free_x"`
+	OverlayFreeY    int    `toml:"overlay_free_y"`
 	Visualizer      string `toml:"visualizer"`
 	Design          string `toml:"design"`
 }
@@ -87,9 +95,11 @@ type VPSConfig struct {
 }
 
 type HuggingFaceConfig struct {
-	Enabled  bool   `toml:"enabled"`
-	Model    string `toml:"model"`
-	TokenEnv string `toml:"token_env"`
+	Enabled      bool   `toml:"enabled"`
+	Model        string `toml:"model"`
+	UtilityModel string `toml:"utility_model"`
+	AgentModel   string `toml:"agent_model"`
+	TokenEnv     string `toml:"token_env"`
 }
 
 type RoutingConfig struct {
@@ -151,15 +161,15 @@ type OllamaProviderConfig struct {
 
 // TTSConfig configures text-to-speech for Assist Mode.
 type TTSConfig struct {
-	Enabled  bool        `toml:"enabled"`
-	Strategy string      `toml:"strategy"` // "cloud-first", "local-first", "cloud-only", "local-only"
-	Voice    string      `toml:"voice"`    // Global default voice override
-	Speed    float64     `toml:"speed"`    // Global speed 0.25-4.0, default 1.0
-	Format   string      `toml:"format"`   // "mp3", "wav", "opus", "pcm"
-	OpenAI       TTSOpenAI       `toml:"openai"`
-	Google       TTSGoogle       `toml:"google"`
-	HuggingFace  TTSHuggingFace  `toml:"huggingface"`
-	Local        TTSLocal        `toml:"local"`
+	Enabled     bool           `toml:"enabled"`
+	Strategy    string         `toml:"strategy"` // "cloud-first", "local-first", "cloud-only", "local-only"
+	Voice       string         `toml:"voice"`    // Global default voice override
+	Speed       float64        `toml:"speed"`    // Global speed 0.25-4.0, default 1.0
+	Format      string         `toml:"format"`   // "mp3", "wav", "opus", "pcm"
+	OpenAI      TTSOpenAI      `toml:"openai"`
+	Google      TTSGoogle      `toml:"google"`
+	HuggingFace TTSHuggingFace `toml:"huggingface"`
+	Local       TTSLocal       `toml:"local"`
 }
 
 type TTSOpenAI struct {
@@ -188,9 +198,9 @@ type TTSLocal struct {
 // VoiceAgentConfig configures the real-time Voice Agent Mode.
 type VoiceAgentConfig struct {
 	Enabled                bool   `toml:"enabled"`
-	Model                  string `toml:"model"`           // Real-time model ID (e.g. "gemini-3.1-flash-live-preview")
-	FallbackModel          string `toml:"fallback_model"`  // Fallback real-time model
-	Voice                  string `toml:"voice"`           // Voice name for real-time model
+	Model                  string `toml:"model"`          // Real-time model ID (e.g. "gemini-3.1-flash-live-preview")
+	FallbackModel          string `toml:"fallback_model"` // Fallback real-time model
+	Voice                  string `toml:"voice"`          // Voice name for real-time model
 	ReminderAfterIdleSec   int    `toml:"reminder_after_idle_sec"`
 	DeactivateAfterIdleSec int    `toml:"deactivate_after_idle_sec"`
 	PipelineFallback       bool   `toml:"pipeline_fallback"` // Use STT+LLM+TTS as last resort
@@ -277,9 +287,15 @@ func defaults() *Config {
 			FrameSizeMs: 32,
 			LatencyHint: "interactive",
 		},
+		Vocabulary: VocabularyConfig{
+			Dictionary: "",
+		},
 		UI: UIConfig{
 			OverlayEnabled:  true,
 			OverlayPosition: "top",
+			OverlayMovable:  false,
+			OverlayFreeX:    0,
+			OverlayFreeY:    0,
 			Visualizer:      "pill",
 			Design:          "default",
 		},
@@ -294,9 +310,11 @@ func defaults() *Config {
 			APIKeyEnv: "VPS_API_KEY",
 		},
 		HuggingFace: HuggingFaceConfig{
-			Enabled:  true,
-			Model:    "openai/whisper-large-v3",
-			TokenEnv: "HF_TOKEN",
+			Enabled:      ManagedHuggingFaceAvailableInBuild(),
+			Model:        "openai/whisper-large-v3",
+			UtilityModel: "",
+			AgentModel:   "",
+			TokenEnv:     "HF_TOKEN",
 		},
 		Routing: RoutingConfig{
 			Strategy:                "cloud-only",
@@ -372,8 +390,8 @@ func defaults() *Config {
 			},
 			Ollama: OllamaProviderConfig{
 				BaseURL:      "http://localhost:11434",
-				UtilityModel: "llama3.2",
-				AgentModel:   "llama3.1:70b",
+				UtilityModel: "gemma4:e4b",
+				AgentModel:   "gemma4:e4b",
 			},
 		},
 	}
@@ -442,29 +460,7 @@ func dopplerGet(key string) string {
 }
 
 func findDopplerExecutable() string {
-	if custom := strings.TrimSpace(os.Getenv("DOPPLER_PATH")); custom != "" && fileExists(custom) {
-		return custom
-	}
-
-	if resolved, err := dopplerLookPath("doppler"); err == nil && strings.TrimSpace(resolved) != "" {
-		return resolved
-	}
-
-	candidates := []string{
-		filepath.Join(os.Getenv("LOCALAPPDATA"), "Microsoft", "WinGet", "Links", "doppler.exe"),
-		filepath.Join(os.Getenv("USERPROFILE"), "AppData", "Local", "Microsoft", "WinGet", "Links", "doppler.exe"),
-		filepath.Join(os.Getenv("LOCALAPPDATA"), "Programs", "Doppler", "doppler.exe"),
-		filepath.Join(os.Getenv("ProgramFiles"), "Doppler", "doppler.exe"),
-		filepath.Join(os.Getenv("ProgramFiles(x86)"), "Doppler", "doppler.exe"),
-	}
-
-	for _, candidate := range candidates {
-		if fileExists(candidate) {
-			return candidate
-		}
-	}
-
-	return ""
+	return secrets.FindDopplerExecutable(dopplerLookPath)
 }
 
 func dopplerProjects() []string {
@@ -493,38 +489,18 @@ func dopplerConfigs() []string {
 	return nil
 }
 
-func defaultDopplerSecretLookup(dopplerPath, key, project, cfg string) (string, error) {
-	cmd := exec.Command(
-		dopplerPath, "secrets", "get", key,
-		"--plain",
-		"--project", project,
-		"--config", cfg,
-		"--no-read-env",
-	)
-	// Hide the console window on Windows (prevents terminal flash in GUI mode)
-	cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true}
-	out, err := cmd.Output()
-	if err != nil {
-		return "", err
-	}
-	return strings.TrimSpace(string(out)), nil
-}
-
-func fileExists(path string) bool {
-	if strings.TrimSpace(path) == "" {
-		return false
-	}
-	info, err := os.Stat(path)
-	return err == nil && !info.IsDir()
-}
-
 func resetDopplerHooksForTests() {
 	dopplerLookPath = exec.LookPath
-	dopplerSecretLookup = defaultDopplerSecretLookup
+	dopplerSecretLookup = secrets.DefaultDopplerSecretLookup
 }
 
 func ApplyManagedIntegrationDefaults(cfg *Config) bool {
 	if cfg == nil {
+		return false
+	}
+
+	if !ManagedHuggingFaceAvailableInBuild() {
+		cfg.HuggingFace.Enabled = false
 		return false
 	}
 
@@ -560,6 +536,18 @@ func managedHFOptInEnabled() bool {
 		return parseManagedBool(raw)
 	}
 	return parseManagedBool(managedHFDefaultOptIn)
+}
+
+func ManagedHuggingFaceAvailableInBuild() bool {
+	return parseManagedBool(managedHFBuildEnabled)
+}
+
+func OverrideManagedHuggingFaceBuildForTests(value string) func() {
+	previous := managedHFBuildEnabled
+	managedHFBuildEnabled = value
+	return func() {
+		managedHFBuildEnabled = previous
+	}
 }
 
 func parseManagedBool(value string) bool {

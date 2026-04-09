@@ -26,8 +26,8 @@ func TestLoadDefaults(t *testing.T) {
 	if cfg.Local.Enabled {
 		t.Error("local provider should be disabled by default")
 	}
-	if !cfg.HuggingFace.Enabled {
-		t.Error("HuggingFace should be enabled by default")
+	if cfg.HuggingFace.Enabled {
+		t.Error("HuggingFace should be disabled by default in OSS-safe builds")
 	}
 	if cfg.HuggingFace.Model != "openai/whisper-large-v3" {
 		t.Errorf("default HF model = %q", cfg.HuggingFace.Model)
@@ -317,9 +317,11 @@ func TestSaveRoundTrip(t *testing.T) {
 }
 
 func TestApplyManagedIntegrationDefaultsNoopWhenHFAlreadyEnabled(t *testing.T) {
-	// HuggingFace is now enabled by default, so ApplyManagedIntegrationDefaults
-	// should be a no-op (returns false).
+	restoreBuild := OverrideManagedHuggingFaceBuildForTests("1")
+	defer restoreBuild()
+
 	cfg := defaults()
+	cfg.HuggingFace.Enabled = true
 	t.Setenv("SPEECHKIT_ENABLE_MANAGED_HF", "1")
 	t.Setenv("HF_TOKEN", "test-token")
 
@@ -334,8 +336,9 @@ func TestApplyManagedIntegrationDefaultsNoopWhenHFAlreadyEnabled(t *testing.T) {
 }
 
 func TestApplyManagedIntegrationDefaultsEnablesHFWhenExplicitlyDisabled(t *testing.T) {
-	// When user explicitly disables HF, managed defaults can re-enable it
-	// (only if no other provider is active).
+	restoreBuild := OverrideManagedHuggingFaceBuildForTests("1")
+	defer restoreBuild()
+
 	cfg := defaults()
 	cfg.HuggingFace.Enabled = false
 	t.Setenv("SPEECHKIT_ENABLE_MANAGED_HF", "1")
@@ -352,6 +355,9 @@ func TestApplyManagedIntegrationDefaultsEnablesHFWhenExplicitlyDisabled(t *testi
 }
 
 func TestApplyManagedIntegrationDefaultsDoesNotOverrideExplicitProviderConfig(t *testing.T) {
+	restoreBuild := OverrideManagedHuggingFaceBuildForTests("1")
+	defer restoreBuild()
+
 	cfg := defaults()
 	cfg.HuggingFace.Enabled = false
 	cfg.Local.Enabled = true
@@ -380,6 +386,12 @@ func TestDefaultOverlayPosition(t *testing.T) {
 	if cfg.UI.OverlayPosition != "top" {
 		t.Fatalf("default OverlayPosition = %q, want %q", cfg.UI.OverlayPosition, "top")
 	}
+	if cfg.UI.OverlayMovable {
+		t.Fatal("default OverlayMovable = true, want false")
+	}
+	if cfg.UI.OverlayFreeX != 0 || cfg.UI.OverlayFreeY != 0 {
+		t.Fatalf("default free overlay coordinates = (%d,%d), want (0,0)", cfg.UI.OverlayFreeX, cfg.UI.OverlayFreeY)
+	}
 }
 
 func TestDefaultStoreAudioSettings(t *testing.T) {
@@ -402,6 +414,9 @@ func TestSaveRoundTripNewFields(t *testing.T) {
 	cfg := defaults()
 	cfg.General.HotkeyMode = "toggle"
 	cfg.UI.OverlayPosition = "bottom"
+	cfg.UI.OverlayMovable = true
+	cfg.UI.OverlayFreeX = 864
+	cfg.UI.OverlayFreeY = 512
 
 	if err := Save(path, cfg); err != nil {
 		t.Fatalf("Save: %v", err)
@@ -416,6 +431,12 @@ func TestSaveRoundTripNewFields(t *testing.T) {
 	}
 	if reloaded.UI.OverlayPosition != "bottom" {
 		t.Fatalf("OverlayPosition = %q, want %q", reloaded.UI.OverlayPosition, "bottom")
+	}
+	if !reloaded.UI.OverlayMovable {
+		t.Fatal("OverlayMovable = false, want true")
+	}
+	if reloaded.UI.OverlayFreeX != 864 || reloaded.UI.OverlayFreeY != 512 {
+		t.Fatalf("free overlay coordinates = (%d,%d), want (864,512)", reloaded.UI.OverlayFreeX, reloaded.UI.OverlayFreeY)
 	}
 }
 
@@ -453,6 +474,9 @@ design = "default"
 }
 
 func TestApplyManagedIntegrationDefaultsSkipsNonCloudOnly(t *testing.T) {
+	restoreBuild := OverrideManagedHuggingFaceBuildForTests("1")
+	defer restoreBuild()
+
 	cfg := defaults()
 	cfg.HuggingFace.Enabled = false // Explicitly disabled
 	cfg.Routing.Strategy = "dynamic"
@@ -486,6 +510,15 @@ func TestApplyLocalInstallDefaultsEnablesBundledLocalRuntime(t *testing.T) {
 	}
 	if cfg.Local.Model != "ggml-small.bin" {
 		t.Fatalf("local model = %q, want %q", cfg.Local.Model, "ggml-small.bin")
+	}
+	if !cfg.Providers.Ollama.Enabled {
+		t.Fatal("ollama provider should be enabled for pending local installs")
+	}
+	if cfg.Providers.Ollama.UtilityModel != "gemma4:e4b" {
+		t.Fatalf("ollama utility model = %q, want %q", cfg.Providers.Ollama.UtilityModel, "gemma4:e4b")
+	}
+	if cfg.Providers.Ollama.AgentModel != "gemma4:e4b" {
+		t.Fatalf("ollama agent model = %q, want %q", cfg.Providers.Ollama.AgentModel, "gemma4:e4b")
 	}
 }
 
