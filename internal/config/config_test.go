@@ -176,7 +176,7 @@ func TestResolveSecret_Missing(t *testing.T) {
 
 func TestResolveSecret_DopplerFallback(t *testing.T) {
 	t.Cleanup(resetDopplerHooksForTests)
-	t.Setenv("DOPPLER_PROJECT", "speechkit-private")
+	t.Setenv("DOPPLER_PROJECT", "test-project")
 	t.Setenv("DOPPLER_CONFIG", "stage")
 	dopplerLookPath = func(file string) (string, error) {
 		if file != "doppler" {
@@ -191,7 +191,7 @@ func TestResolveSecret_DopplerFallback(t *testing.T) {
 		if key != "TEST_DOPPLER_SECRET" {
 			t.Fatalf("key = %q", key)
 		}
-		if project == "speechkit-private" && cfg == "stage" {
+		if project == "test-project" && cfg == "stage" {
 			return "secret-from-doppler", nil
 		}
 		return "", errors.New("not found")
@@ -247,13 +247,13 @@ func TestFindDopplerExecutableFallsBackToWingetLink(t *testing.T) {
 }
 
 func TestDopplerProjectsAndConfigsRequireExplicitEnv(t *testing.T) {
-	t.Setenv("DOPPLER_PROJECT", "speechkit-private")
+	t.Setenv("DOPPLER_PROJECT", "test-project")
 	t.Setenv("DOPPLER_CONFIG", "stage")
 
 	projects := dopplerProjects()
 	configs := dopplerConfigs()
 
-	if len(projects) == 0 || projects[0] != "speechkit-private" {
+	if len(projects) == 0 || projects[0] != "test-project" {
 		t.Fatalf("projects = %v", projects)
 	}
 	if len(configs) == 0 || configs[0] != "stage" {

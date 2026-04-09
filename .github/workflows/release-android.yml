@@ -1,0 +1,98 @@
+name: Release Android
+
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: 'Git ref to build (branch, tag, or SHA)'
+        required: true
+        default: main
+      distribution:
+        description: 'Android distribution flavor to build'
+        required: true
+        default: oss
+        type: choice
+        options:
+          - oss
+          - kombify
+      build_apk:
+        description: 'Build release APK'
+        required: true
+        default: true
+        type: boolean
+      build_bundle:
+        description: 'Build release App Bundle (.aab)'
+        required: true
+        default: true
+        type: boolean
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-android-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build-android:
+    name: Build Android Release Artifacts
+    runs-on: ${{ vars.CI_RUNNER || 'blacksmith-4vcpu-ubuntu-2204' }}
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+        with:
+          ref: ${{ github.event.inputs.ref }}
+
+      - name: Setup Java
+        uses: actions/setup-java@c1e323688fd81a25caa38c78aa6df2d33d3e20d9
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: gradle
+
+      - name: Ensure Gradle wrapper is executable
+        working-directory: android
+        run: chmod +x gradlew
+
+      - name: Resolve Android variant
+        id: variant
+        shell: bash
+        run: |
+          set -euo pipefail
+          case "${{ github.event.inputs.distribution }}" in
+            oss) variant_name=Oss ;;
+            kombify) variant_name=Kombify ;;
+            *)
+              echo "Unsupported distribution: ${{ github.event.inputs.distribution }}" >&2
+              exit 1
+              ;;
+          esac
+          echo "variant_name=$variant_name" >> "$GITHUB_OUTPUT"
+
+      - name: Build Android release APK
+        if: github.event.inputs.build_apk == 'true'
+        working-directory: android
+        run: ./gradlew :app:assemble${{ steps.variant.outputs.variant_name }}Release
+
+      - name: Build Android release App Bundle
+        if: github.event.inputs.build_bundle == 'true'
+        working-directory: android
+        run: ./gradlew :app:bundle${{ steps.variant.outputs.variant_name }}Release
+
+      - name: Upload Android APK
+        if: github.event.inputs.build_apk == 'true'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: speechkit-android-${{ github.event.inputs.distribution }}-apk
+          path: android/app/build/outputs/apk/${{ github.event.inputs.distribution }}/release/*.apk
+          retention-days: 7
+
+      - name: Upload Android App Bundle
+        if: github.event.inputs.build_bundle == 'true'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: speechkit-android-${{ github.event.inputs.distribution }}-bundle
+          path: android/app/build/outputs/bundle/${{ github.event.inputs.distribution }}Release/*.aab
+          retention-days: 7

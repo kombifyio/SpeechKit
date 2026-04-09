@@ -1,0 +1,13 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- kombify SpeechKit: Microphone icon -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M54,20c-6.6,0 -12,5.4 -12,12v24c0,6.6 5.4,12 12,12s12,-5.4 12,-12v-24c0,-6.6 -5.4,-12 -12,-12z" />
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M74,56c0,11 -9,20 -20,20s-20,-9 -20,-20h-4c0,12.7 9.8,23.2 22,24.7V88h4V80.7c12.2,-1.5 22,-12 22,-24.7h-4z" />
+</vector>
