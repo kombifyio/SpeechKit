@@ -275,7 +275,7 @@ func rebuildAIRuntime(ctx context.Context, state *appState, cfg *config.Config) 
 func applyRealtimeVoiceProfile(cfgPath string, cfg *config.Config, state *appState, profile models.Profile) error {
 	apiKey := config.ResolveSecret(cfg.Providers.Google.APIKeyEnv)
 	if apiKey == "" {
-		return errors.New("google api key not configured — set it in the API Keys section below")
+		return errors.New("google api key not configured â€” set it in the API Keys section below")
 	}
 	cfg.VoiceAgent.Enabled = true
 	cfg.VoiceAgent.Model = profile.ModelID

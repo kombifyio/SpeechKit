@@ -34,8 +34,8 @@ Implement a handful of interfaces (`Transcriber`, `AudioRecorder`, `Persistence`
 
 Download the installer from the [Releases](https://github.com/kombifyio/SpeechKit/releases) page:
 
-- **SpeechKit-Setup-vX.Y.Z.exe** — Windows installer
-- **SpeechKit-Portable-vX.Y.Z.zip** — portable bundle (no install required)
+- **SpeechKit-Setup-vX.Y.Z.exe** â€” Windows installer
+- **SpeechKit-Portable-vX.Y.Z.zip** â€” portable bundle (no install required)
 
 ### As an Android App
 
