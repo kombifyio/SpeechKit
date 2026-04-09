@@ -563,3 +563,62 @@ export async function testProviderCredential(provider: string, secret: string) {
   if (!response.ok) throw new Error(`provider credential test failed: ${response.status}`)
   return (await response.json()) as { message?: string }
 }
+
+// ── Model Downloads ──────────────────────────────────────────────────────────
+
+export type DownloadKind = 'http' | 'ollama'
+export type DownloadStatus = 'pending' | 'running' | 'done' | 'failed' | 'cancelled'
+
+export type DownloadItem = {
+  id: string
+  profileId: string
+  name: string
+  description: string
+  sizeLabel: string
+  sizeBytes: number
+  kind: DownloadKind
+  url?: string
+  ollamaModel?: string
+  license: string
+  available: boolean
+  recommended?: boolean
+}
+
+export type DownloadJob = {
+  id: string
+  modelId: string
+  profileId: string
+  status: DownloadStatus
+  progress: number
+  bytesDone: number
+  totalBytes: number
+  statusText: string
+  error?: string
+}
+
+export async function fetchDownloadCatalog(): Promise<DownloadItem[]> {
+  const resp = await fetch('/models/downloads/catalog')
+  if (!resp.ok) throw new Error(`catalog fetch failed: ${resp.status}`)
+  return resp.json() as Promise<DownloadItem[]>
+}
+
+export async function fetchDownloadJobs(): Promise<DownloadJob[]> {
+  const resp = await fetch('/models/downloads/jobs')
+  if (!resp.ok) throw new Error(`jobs fetch failed: ${resp.status}`)
+  return resp.json() as Promise<DownloadJob[]>
+}
+
+export async function startModelDownload(modelId: string): Promise<DownloadJob> {
+  const body = new URLSearchParams({ model_id: modelId })
+  const resp = await fetch('/models/downloads/start', { method: 'POST', body })
+  if (!resp.ok) {
+    const err = await resp.text()
+    throw new Error(err || `start download failed: ${resp.status}`)
+  }
+  return resp.json() as Promise<DownloadJob>
+}
+
+export async function cancelModelDownload(jobId: string): Promise<void> {
+  const body = new URLSearchParams({ job_id: jobId })
+  await fetch('/models/downloads/cancel', { method: 'POST', body })
+}

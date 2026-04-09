@@ -23,6 +23,12 @@ Current repo contract:
    - `scripts/public/export-manifest.txt` defines what may enter the release repo
    - `AGENTS.md`, `CLAUDE.md`, personal notes, and runtime artifacts are excluded from the public surface
 
+5. Release selection is surface-based, not all-or-nothing:
+   - framework/source
+   - Windows portable client
+   - Windows installer
+   - Android artifacts
+
 This keeps SpeechKit aligned with the kombify rule from `kombify Core/internal-docs`:
 
 - GHCR / deploy workflows are the release artifact path for deployed services.
@@ -48,7 +54,15 @@ The boundary is:
 - GitHub Actions should call the same build path instead of maintaining a divergent release script
 - The staged output is `dist/windows/SpeechKit/`
 - The installer output is `dist/windows/SpeechKit-Setup.exe`
-- The build script must produce both outputs from the same source tree
+- The default build path produces both outputs from the same source tree
+- `scripts/build.ps1 -SkipInstaller` is allowed for portable-only release flows, but it must still build the same staged Windows bundle
+
+## Release Surfaces
+
+- Shared source and framework releases are always tag-driven and may ship without Windows binaries.
+- Windows portable and Windows installer are independent release attachments controlled per workflow run.
+- Android is a separate release surface and must not be version-bumped implicitly by the shared source release flow.
+- Release validation must match the selected surface, not a generic full-product checklist.
 
 ## Secret Handling
 

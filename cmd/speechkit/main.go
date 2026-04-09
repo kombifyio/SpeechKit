@@ -22,6 +22,7 @@ import (
 	"github.com/kombifyio/SpeechKit/internal/assist"
 	"github.com/kombifyio/SpeechKit/internal/audio"
 	"github.com/kombifyio/SpeechKit/internal/config"
+	"github.com/kombifyio/SpeechKit/internal/downloads"
 	"github.com/kombifyio/SpeechKit/internal/hotkey"
 	_ "github.com/kombifyio/SpeechKit/internal/kombify"
 	"github.com/kombifyio/SpeechKit/internal/output"
@@ -100,6 +101,7 @@ type appState struct {
 	wailsApp              *application.App
 	captureWin            *application.WebviewWindow
 	doneResetDelay        time.Duration
+	downloads             *downloads.Manager
 }
 
 func showSettingsWindow(window settingsWindow) {
@@ -234,6 +236,7 @@ func main() {
 		overlayDesign:        cfg.UI.Design,
 		vocabularyDictionary: cfg.Vocabulary.Dictionary,
 		screenLocator:        newActiveWindowScreenLocator(),
+		downloads:            downloads.NewManager(),
 	}
 
 	// Build router and track provider status
@@ -336,6 +339,7 @@ func main() {
 	genkitRT, err := appai.Init(ctx, buildGenkitConfig(cfg))
 	if err != nil {
 		slog.Warn("genkit init", "err", err)
+		state.addLog("AI providers unavailable — Assist and Voice Agent disabled", "warn")
 	} else {
 		state.genkitRT = genkitRT
 
@@ -365,6 +369,7 @@ func main() {
 	audioPlayer, err := audio.NewPlayer()
 	if err != nil {
 		slog.Warn("audio player init", "err", err)
+		state.addLog("TTS audio player unavailable — voice output disabled", "warn")
 	} else {
 		state.audioPlayer = audioPlayer
 		defer audioPlayer.Close()
@@ -757,4 +762,3 @@ func main() {
 // buildRouter, buildGenkitConfig, buildTTSRouter, validateCloudProviders,
 // missingProviderHint, executableDir, defaultLocalModelPath, escapeJS, and
 // runtimeConfigPath are in app_init.go.
-

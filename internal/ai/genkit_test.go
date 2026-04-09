@@ -36,8 +36,8 @@ func TestInit_CustomModelRegistration(t *testing.T) {
 	// Init with OpenAI key registers custom models; then LookupModel finds them.
 	rt, err := Init(context.Background(), Config{
 		OpenAIAPIKey:       "test-key",
-		OpenAIUtilityModel: "gpt-5.4-mini",
-		OpenAIAgentModel:   "gpt-5.4",
+		OpenAIUtilityModel: "gpt-4o-mini",
+		OpenAIAgentModel:   "gpt-4o",
 	})
 	if err != nil {
 		t.Fatalf("Init: %v", err)
@@ -54,11 +54,11 @@ func TestInit_CustomModelRegistration(t *testing.T) {
 	if len(rt.AllModels()) != 2 {
 		t.Errorf("all models = %d, want 2", len(rt.AllModels()))
 	}
-	if _, ok := rt.AllModels()["openai/gpt-5.4-mini"]; !ok {
-		t.Error("expected openai/gpt-5.4-mini in AllModels")
+	if _, ok := rt.AllModels()["openai/gpt-4o-mini"]; !ok {
+		t.Error("expected openai/gpt-4o-mini in AllModels")
 	}
-	if _, ok := rt.AllModels()["openai/gpt-5.4"]; !ok {
-		t.Error("expected openai/gpt-5.4 in AllModels")
+	if _, ok := rt.AllModels()["openai/gpt-4o"]; !ok {
+		t.Error("expected openai/gpt-4o in AllModels")
 	}
 
 	// ModelInfos should have correct tiers
@@ -71,13 +71,13 @@ func TestInit_CustomModelRegistration(t *testing.T) {
 			t.Errorf("provider = %q", info.Provider)
 		}
 		switch info.Name {
-		case "gpt-5.4-mini":
+		case "gpt-4o-mini":
 			if info.Tier != "utility" {
-				t.Errorf("gpt-5.4-mini tier = %q, want utility", info.Tier)
+				t.Errorf("gpt-4o-mini tier = %q, want utility", info.Tier)
 			}
-		case "gpt-5.4":
+		case "gpt-4o":
 			if info.Tier != "agent" {
-				t.Errorf("gpt-5.4 tier = %q, want agent", info.Tier)
+				t.Errorf("gpt-4o tier = %q, want agent", info.Tier)
 			}
 		default:
 			t.Errorf("unexpected model name %q", info.Name)
@@ -119,11 +119,11 @@ func TestInit_SameModelBothTiers(t *testing.T) {
 func TestInit_MultipleProviders(t *testing.T) {
 	rt, err := Init(context.Background(), Config{
 		OpenAIAPIKey:       "openai-key",
-		OpenAIUtilityModel: "gpt-5.4-mini",
+		OpenAIUtilityModel: "gpt-4o-mini",
 		GroqAPIKey:         "groq-key",
 		GroqAgentModel:     "llama-3.1-8b-instant",
 		HuggingFaceToken:   "hf-token",
-		HFUtilityModel:     "Qwen/Qwen3.5-9B",
+		HFUtilityModel:     "Qwen/Qwen2.5-7B-Instruct",
 	})
 	if err != nil {
 		t.Fatalf("Init: %v", err)
@@ -144,7 +144,7 @@ func TestInit_DisabledProviderIgnored(t *testing.T) {
 	// API key empty → provider disabled, model selection ignored.
 	rt, err := Init(context.Background(), Config{
 		OpenAIAPIKey:       "",
-		OpenAIUtilityModel: "gpt-5.4-mini",
+		OpenAIUtilityModel: "gpt-4o-mini",
 	})
 	if err != nil {
 		t.Fatalf("Init: %v", err)
@@ -163,7 +163,7 @@ func TestInit_LookupModelDirectly(t *testing.T) {
 	}
 
 	// All registered OpenAI models should be findable
-	for _, name := range []string{"gpt-5.4-mini", "gpt-5.4"} {
+	for _, name := range []string{"gpt-4o-mini", "gpt-4o"} {
 		m := genkit.LookupModel(rt.G, "openai/"+name)
 		if m == nil {
 			t.Errorf("LookupModel(%q) returned nil", "openai/"+name)
@@ -195,7 +195,7 @@ func TestInit_HFModelsRegistered(t *testing.T) {
 		t.Fatalf("Init: %v", err)
 	}
 
-	for _, name := range []string{"Qwen/Qwen3.5-9B", "Qwen/Qwen3.5-32B", "meta-llama/Llama-3.1-8B-Instruct"} {
+	for _, name := range []string{"Qwen/Qwen2.5-7B-Instruct", "Qwen/Qwen2.5-32B-Instruct", "meta-llama/Llama-3.1-8B-Instruct"} {
 		m := genkit.LookupModel(rt.G, "huggingface/"+name)
 		if m == nil {
 			t.Errorf("LookupModel(%q) returned nil", "huggingface/"+name)

@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/kombifyio/SpeechKit/internal/runtimepath"
 	_ "modernc.org/sqlite"
 )
 
@@ -44,11 +45,7 @@ var _ Store = (*SQLiteStore)(nil)
 func NewSQLiteStore(cfg StoreConfig) (*SQLiteStore, error) {
 	dbPath := cfg.SQLitePath
 	if dbPath == "" {
-		appData := os.Getenv("APPDATA")
-		if appData == "" {
-			appData = "."
-		}
-		dbPath = filepath.Join(appData, "SpeechKit", "feedback.db")
+		dbPath = filepath.Join(runtimepath.DataDir(), "feedback.db")
 	}
 
 	if err := os.MkdirAll(filepath.Dir(dbPath), 0755); err != nil {

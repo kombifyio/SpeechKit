@@ -26,6 +26,8 @@ func applyModelProfile(ctx context.Context, cfgPath string, cfg *config.Config, 
 		return applyUtilityProfile(ctx, cfgPath, cfg, state, profile)
 	case models.ModalityAgent:
 		return applyAgentProfile(ctx, cfgPath, cfg, state, profile)
+	case models.ModalityRealtimeVoice:
+		return applyRealtimeVoiceProfile(cfgPath, cfg, state, profile)
 	default:
 		return fmt.Errorf("unsupported modality %q", profile.Modality)
 	}
@@ -155,6 +157,7 @@ func clearUtilityModels(cfg *config.Config) {
 	cfg.Providers.Groq.UtilityModel = ""
 	cfg.Providers.Google.UtilityModel = ""
 	cfg.Providers.Ollama.UtilityModel = ""
+	cfg.Providers.OpenRouter.UtilityModel = ""
 	cfg.HuggingFace.UtilityModel = ""
 }
 
@@ -163,6 +166,7 @@ func clearAgentModels(cfg *config.Config) {
 	cfg.Providers.Groq.AgentModel = ""
 	cfg.Providers.Google.AgentModel = ""
 	cfg.Providers.Ollama.AgentModel = ""
+	cfg.Providers.OpenRouter.AgentModel = ""
 	cfg.HuggingFace.AgentModel = ""
 }
 
@@ -219,6 +223,16 @@ func configureLLMProfile(cfg *config.Config, profile models.Profile, utility boo
 		} else {
 			cfg.Providers.Ollama.AgentModel = profile.ModelID
 		}
+	case models.ExecutionModeOpenRouter:
+		if config.ResolveSecret(cfg.Providers.OpenRouter.APIKeyEnv) == "" {
+			return errors.New("openrouter api key not configured")
+		}
+		cfg.Providers.OpenRouter.Enabled = true
+		if utility {
+			cfg.Providers.OpenRouter.UtilityModel = profile.ModelID
+		} else {
+			cfg.Providers.OpenRouter.AgentModel = profile.ModelID
+		}
 	default:
 		return fmt.Errorf("unsupported execution mode %q", profile.ExecutionMode)
 	}
@@ -254,5 +268,24 @@ func rebuildAIRuntime(ctx context.Context, state *appState, cfg *config.Config) 
 	state.activeProfiles = activeProfilesFromConfig(cfg, filteredModelCatalog())
 	state.mu.Unlock()
 
+	return nil
+}
+
+// applyRealtimeVoiceProfile configures the Voice Agent for a real-time voice profile.
+func applyRealtimeVoiceProfile(cfgPath string, cfg *config.Config, state *appState, profile models.Profile) error {
+	apiKey := config.ResolveSecret(cfg.Providers.Google.APIKeyEnv)
+	if apiKey == "" {
+		return errors.New("google api key not configured — set it in the API Keys section below")
+	}
+	cfg.VoiceAgent.Enabled = true
+	cfg.VoiceAgent.Model = profile.ModelID
+	if err := config.Save(cfgPath, cfg); err != nil {
+		return fmt.Errorf("save config: %w", err)
+	}
+	if state != nil {
+		state.mu.Lock()
+		state.activeProfiles = activeProfilesFromConfig(cfg, filteredModelCatalog())
+		state.mu.Unlock()
+	}
 	return nil
 }

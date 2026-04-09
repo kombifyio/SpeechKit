@@ -130,6 +130,12 @@ func buildGenkitConfig(cfg *config.Config) appai.Config {
 		aiCfg.OllamaAgentModel = cfg.Providers.Ollama.AgentModel
 	}
 
+	if cfg.Providers.OpenRouter.Enabled {
+		aiCfg.OpenRouterAPIKey = config.ResolveSecret(cfg.Providers.OpenRouter.APIKeyEnv)
+		aiCfg.OpenRouterUtilityModel = cfg.Providers.OpenRouter.UtilityModel
+		aiCfg.OpenRouterAgentModel = cfg.Providers.OpenRouter.AgentModel
+	}
+
 	return aiCfg
 }
 

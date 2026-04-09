@@ -26,29 +26,29 @@ func TestDefaultCatalogIsLocalFirst(t *testing.T) {
 	if !ok {
 		t.Fatal("default TTS profile missing")
 	}
-	if ttsProfile.ModelID != "Qwen/Qwen3-TTS-12Hz-1.7B-VoiceDesign" {
+	if ttsProfile.ModelID != "tts-1" {
 		t.Fatalf("TTS default model = %q", ttsProfile.ModelID)
 	}
-	if ttsProfile.AllowInference {
-		t.Fatal("TTS default should not allow inference")
+	if !ttsProfile.AllowInference {
+		t.Fatal("TTS default should allow inference")
 	}
 
 	utilityProfile, ok := catalog.DefaultProfile(ModalityUtility)
 	if !ok {
 		t.Fatal("default utility profile missing")
 	}
-	if utilityProfile.ExecutionMode != ExecutionModeOpenAI {
-		t.Fatalf("utility default execution = %q, want %q", utilityProfile.ExecutionMode, ExecutionModeOpenAI)
+	if utilityProfile.ExecutionMode != ExecutionModeOllama {
+		t.Fatalf("utility default execution = %q, want %q", utilityProfile.ExecutionMode, ExecutionModeOllama)
 	}
 
 	agentProfile, ok := catalog.DefaultProfile(ModalityAgent)
 	if !ok {
 		t.Fatal("default agent profile missing")
 	}
-	if agentProfile.ExecutionMode != ExecutionModeOpenAI {
-		t.Fatalf("agent default execution = %q, want %q", agentProfile.ExecutionMode, ExecutionModeOpenAI)
+	if agentProfile.ExecutionMode != ExecutionModeOllama {
+		t.Fatalf("agent default execution = %q, want %q", agentProfile.ExecutionMode, ExecutionModeOllama)
 	}
-	if agentProfile.ModelID != "gpt-5.4" {
+	if agentProfile.ModelID != "gemma4:e4b" {
 		t.Fatalf("agent default model = %q", agentProfile.ModelID)
 	}
 
@@ -82,6 +82,7 @@ func TestDefaultCatalogIncludesMultiProviderProfiles(t *testing.T) {
 		ExecutionModeGroq,
 		ExecutionModeGoogle,
 		ExecutionModeOllama,
+		ExecutionModeOpenRouter,
 	}
 	for _, mode := range required {
 		if !modeFound[mode] {
@@ -102,12 +103,10 @@ func TestDefaultCatalogHasNoHFEndpointProfiles(t *testing.T) {
 func TestDefaultCatalogIncludesGemma4LocalProfiles(t *testing.T) {
 	catalog := DefaultCatalog()
 
+	// After catalog reduction: only e4b variants remain; e2b and 26b were removed.
 	required := map[string]string{
-		"utility.ollama.gemma4-e2b": "gemma4:e2b",
 		"utility.ollama.gemma4-e4b": "gemma4:e4b",
-		"agent.ollama.gemma4-e2b":   "gemma4:e2b",
 		"agent.ollama.gemma4-e4b":   "gemma4:e4b",
-		"agent.ollama.gemma4-26b":   "gemma4:26b",
 	}
 
 	found := map[string]string{}

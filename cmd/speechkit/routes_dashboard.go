@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"strconv"
 	"strings"
@@ -20,7 +21,8 @@ func registerDashboardRoutes(mux *http.ServeMux, state *appState, feedbackStore 
 		}
 		path, filename, err := resolveDashboardAudio(r.Context(), feedbackStore, r.URL.Query().Get("kind"), r.URL.Query().Get("id"))
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusNotFound)
+			slog.Warn("resolve dashboard audio", "err", err)
+			http.Error(w, "audio not found", http.StatusNotFound)
 			return
 		}
 		w.Header().Set("Content-Type", "audio/wav")
@@ -38,11 +40,13 @@ func registerDashboardRoutes(mux *http.ServeMux, state *appState, feedbackStore 
 		}
 		path, _, err := resolveDashboardAudio(r.Context(), feedbackStore, r.FormValue("kind"), r.FormValue("id"))
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusNotFound)
+			slog.Warn("resolve dashboard audio for reveal", "err", err)
+			http.Error(w, "audio not found", http.StatusNotFound)
 			return
 		}
 		if err := revealAudioFileInShell(path); err != nil {
-			http.Error(w, fmt.Sprintf("reveal audio: %v", err), http.StatusInternalServerError)
+			slog.Warn("reveal audio in shell", "err", err)
+			http.Error(w, "failed to reveal audio file", http.StatusInternalServerError)
 			return
 		}
 		w.Header().Set("Content-Type", "application/json; charset=utf-8")
@@ -212,4 +216,3 @@ func resolveDashboardAudio(ctx context.Context, feedbackStore store.Store, kind 
 		return "", "", fmt.Errorf("unsupported audio kind")
 	}
 }
-

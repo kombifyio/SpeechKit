@@ -2,6 +2,7 @@ package config
 
 import (
 	"fmt"
+	"log/slog"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -47,7 +48,7 @@ type StoreConfig struct {
 
 type GeneralConfig struct {
 	Language          string `toml:"language"`
-	Hotkey            string `toml:"hotkey"`
+	Hotkey            string `toml:"hotkey"` // Deprecated: legacy single-hotkey field kept for config file compat. Use DictateHotkey.
 	DictateHotkey     string `toml:"dictate_hotkey"`
 	AgentHotkey       string `toml:"agent_hotkey"`
 	AgentMode         string `toml:"agent_mode"`  // "assist" or "voice_agent" — determines what agent_hotkey triggers
@@ -118,10 +119,11 @@ type FeedbackConfig struct {
 
 // ProvidersConfig groups all external provider configurations.
 type ProvidersConfig struct {
-	OpenAI OpenAIProviderConfig `toml:"openai"`
-	Groq   GroqProviderConfig   `toml:"groq"`
-	Google GoogleProviderConfig `toml:"google"`
-	Ollama OllamaProviderConfig `toml:"ollama"`
+	OpenAI     OpenAIProviderConfig     `toml:"openai"`
+	Groq       GroqProviderConfig       `toml:"groq"`
+	Google     GoogleProviderConfig     `toml:"google"`
+	Ollama     OllamaProviderConfig     `toml:"ollama"`
+	OpenRouter OpenRouterProviderConfig `toml:"openrouter"`
 }
 
 type OpenAIProviderConfig struct {
@@ -155,6 +157,13 @@ type OllamaProviderConfig struct {
 	Enabled      bool   `toml:"enabled"`
 	BaseURL      string `toml:"base_url"`
 	STTModel     string `toml:"stt_model"`
+	UtilityModel string `toml:"utility_model"`
+	AgentModel   string `toml:"agent_model"`
+}
+
+type OpenRouterProviderConfig struct {
+	Enabled      bool   `toml:"enabled"`
+	APIKeyEnv    string `toml:"api_key_env"`
 	UtilityModel string `toml:"utility_model"`
 	AgentModel   string `toml:"agent_model"`
 }
@@ -224,7 +233,8 @@ func Load(path string) (*Config, error) {
 
 	meta, err := toml.Decode(string(data), cfg)
 	if err != nil {
-		return nil, fmt.Errorf("parse config: %w", err)
+		slog.Warn("malformed config.toml, using defaults", "err", err)
+		return defaults(), nil
 	}
 
 	// Bridge legacy [feedback] to [store] if store.backend is not explicitly set.
@@ -370,8 +380,8 @@ func defaults() *Config {
 			OpenAI: OpenAIProviderConfig{
 				APIKeyEnv:     "OPENAI_API_KEY",
 				STTModel:      "whisper-1", // Fallback only; HuggingFace is primary STT
-				UtilityModel:  "gpt-5.4-mini",
-				AgentModel:    "gpt-5.4",
+				UtilityModel:  "gpt-4o-mini",
+				AgentModel:    "gpt-4o",
 				TTSModel:      "tts-1",
 				TTSVoice:      "nova",
 				RealtimeModel: "gpt-realtime-mini",
@@ -392,6 +402,11 @@ func defaults() *Config {
 				BaseURL:      "http://localhost:11434",
 				UtilityModel: "gemma4:e4b",
 				AgentModel:   "gemma4:e4b",
+			},
+			OpenRouter: OpenRouterProviderConfig{
+				APIKeyEnv:    "OPENROUTER_API_KEY",
+				UtilityModel: "meta-llama/llama-3.1-8b-instruct",
+				AgentModel:   "google/gemini-2.5-flash",
 			},
 		},
 	}

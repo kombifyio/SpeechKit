@@ -98,17 +98,19 @@ $goLdflags = @(
     "-X $modulePath/internal/config.managedHFDefaultOptIn=$managedHFDefault"
     "-X $modulePath/internal/config.managedDopplerDefaultProject=$managedDopplerProject"
     "-X $modulePath/internal/config.managedDopplerDefaultConfig=$managedDopplerConfig"
-) -join ' '
+)
 
-# Extract AppVersion from source so NSIS and Go binary always agree.
-$appVersionFile = Join-Path $projectDir 'cmd/speechkit/http_routes.go'
+# Read canonical version from root package.json and inject via ldflags.
+$rootPackageJson = Join-Path $projectDir 'package.json'
 $appVersion = '0.0.0'
-if (Test-Path $appVersionFile) {
-    $match = Select-String -Path $appVersionFile -Pattern '^var AppVersion\s*=\s*"([^"]+)"' | Select-Object -First 1
-    if ($null -ne $match -and $match.Matches.Count -gt 0) {
-        $appVersion = $match.Matches[0].Groups[1].Value
+if (Test-Path $rootPackageJson) {
+    $pkg = Get-Content $rootPackageJson -Raw | ConvertFrom-Json
+    if ($pkg.version) {
+        $appVersion = $pkg.version
     }
 }
+$goLdflags += "-X main.AppVersion=$appVersion"
+$goLdflags = $goLdflags -join ' '
 
 function Invoke-Step {
     param(

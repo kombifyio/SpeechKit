@@ -10,7 +10,7 @@ class ResizeObserverStub {
   disconnect() {}
 }
 
-const { fetchSettingsStateMock, fetchModelProfilesMock, saveSettingsStateMock, saveProviderCredentialMock, clearProviderCredentialMock, testProviderCredentialMock, fetchAudioDevicesMock, setAudioDeviceMock } =
+const { fetchSettingsStateMock, fetchModelProfilesMock, saveSettingsStateMock, saveProviderCredentialMock, clearProviderCredentialMock, testProviderCredentialMock, fetchAudioDevicesMock, setAudioDeviceMock, fetchDownloadCatalogMock, fetchDownloadJobsMock, startModelDownloadMock, cancelModelDownloadMock } =
   vi.hoisted(() => ({
     fetchSettingsStateMock: vi.fn<() => Promise<SpeechKitSettingsState>>(),
     fetchModelProfilesMock: vi.fn<() => Promise<ModelProfile[]>>(),
@@ -20,6 +20,10 @@ const { fetchSettingsStateMock, fetchModelProfilesMock, saveSettingsStateMock, s
     testProviderCredentialMock: vi.fn<(provider: string, secret: string) => Promise<{ message?: string }>>(),
     fetchAudioDevicesMock: vi.fn(),
     setAudioDeviceMock: vi.fn<(deviceId: string) => Promise<string>>(),
+    fetchDownloadCatalogMock: vi.fn(),
+    fetchDownloadJobsMock: vi.fn(),
+    startModelDownloadMock: vi.fn(),
+    cancelModelDownloadMock: vi.fn(),
   }))
 
 vi.mock('@/lib/speechkit', () => ({
@@ -70,6 +74,10 @@ vi.mock('@/lib/speechkit', () => ({
   testProviderCredential: testProviderCredentialMock,
   fetchAudioDevices: fetchAudioDevicesMock,
   setAudioDevice: setAudioDeviceMock,
+  fetchDownloadCatalog: fetchDownloadCatalogMock,
+  fetchDownloadJobs: fetchDownloadJobsMock,
+  startModelDownload: startModelDownloadMock,
+  cancelModelDownload: cancelModelDownloadMock,
 }))
 
 vi.mock('@/components/ui/mic-selector', () => ({
@@ -153,6 +161,10 @@ describe('SettingsApp', () => {
     testProviderCredentialMock.mockReset()
     fetchAudioDevicesMock.mockReset()
     setAudioDeviceMock.mockReset()
+    fetchDownloadCatalogMock.mockReset()
+    fetchDownloadJobsMock.mockReset()
+    startModelDownloadMock.mockReset()
+    cancelModelDownloadMock.mockReset()
 
     fetchModelProfilesMock.mockResolvedValue([])
     fetchAudioDevicesMock.mockResolvedValue({
@@ -167,6 +179,10 @@ describe('SettingsApp', () => {
     clearProviderCredentialMock.mockResolvedValue({ message: 'Cleared' })
     testProviderCredentialMock.mockResolvedValue({ message: 'Key valid' })
     setAudioDeviceMock.mockResolvedValue('Selected')
+    fetchDownloadCatalogMock.mockResolvedValue([])
+    fetchDownloadJobsMock.mockResolvedValue([])
+    startModelDownloadMock.mockResolvedValue({ id: 'dl-1', modelId: 'test', profileId: 'test', status: 'pending', progress: 0, bytesDone: 0, totalBytes: 0, statusText: 'Starting…' })
+    cancelModelDownloadMock.mockResolvedValue(undefined)
   })
 
   afterEach(() => {

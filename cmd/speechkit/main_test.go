@@ -800,7 +800,7 @@ func TestModelProfilesEndpointReturnsOnlySwitchableModalities(t *testing.T) {
 		t.Fatal("expected switchable model profiles")
 	}
 
-	allowed := map[string]bool{"stt": true, "utility": true, "agent": true}
+	allowed := map[string]bool{"stt": true, "utility": true, "agent": true, "realtime_voice": true}
 	foundGemma := false
 	for _, profile := range payload.Profiles {
 		if !allowed[profile.Modality] {

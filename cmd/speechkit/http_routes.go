@@ -14,8 +14,13 @@ import (
 	"github.com/kombifyio/SpeechKit/internal/store"
 )
 
-// AppVersion is the current release version. Updated at release time.
-var AppVersion = "0.14.9"
+// AppVersion is injected at build time via -ldflags. Defaults to "dev" for
+// local development builds that skip the release toolchain.
+var AppVersion = "dev"
+
+// maxControlPlaneBodySize limits the request body for mutating control-plane
+// requests. All POST data is small form fields; 1 MB is generous headroom.
+const maxControlPlaneBodySize = 1 << 20 // 1 MB
 
 // revealAudioFileInShell opens the containing folder in Explorer and selects
 // the file. Only .wav files are accepted to prevent path-traversal abuse.
@@ -41,6 +46,7 @@ func assetHandler(cfg *config.Config, cfgPath string, state *appState, sttRouter
 	registerFeatureRoutes(mux, installState)
 	registerAuthRoutes(mux)
 	registerAppRoutes(mux, installState)
+	registerDownloadRoutes(mux, cfgPath, cfg, state)
 	mux.Handle("/", http.FileServer(http.FS(frontendassets.Files())))
 	return enforceControlPlaneRequestGuard(mux)
 }
@@ -53,6 +59,9 @@ func enforceControlPlaneRequestGuard(next http.Handler) http.Handler {
 			next.ServeHTTP(w, r)
 			return
 		}
+
+		// Limit request body size for mutating requests (defence in depth).
+		r.Body = http.MaxBytesReader(w, r.Body, maxControlPlaneBodySize)
 
 		if strings.EqualFold(strings.TrimSpace(r.Header.Get("Sec-Fetch-Site")), "cross-site") {
 			http.Error(w, "cross-site requests are not allowed", http.StatusForbidden)
