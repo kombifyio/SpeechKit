@@ -6,6 +6,20 @@ The format is based on Keep a Changelog and this project is intended to ship und
 
 ## [Unreleased]
 
+## [0.14.9] - 2026-04-09
+
+### Fixed
+
+- Credential saves were silently failing — frontend was sending `secret` but the backend `saveProviderCredential` and `testProviderCredential` routes expect `credential`; corrected both URLSearchParams calls
+- API Keys section in Settings → Providers was hidden when no keys were configured (filtered by `available: true`); changed to show all providers unconditionally
+- TypeScript TS2538 error: `executionMode` is optional on `ModelProfile`; guarded before using it as a `PROVIDER_FOR_EXECUTION_MODE` index
+
+### Changed
+
+- Settings → Providers tab restructured: Models section now appears first, API Keys section below (was reversed)
+- Each model profile row shows an inline amber cue ("API key required — configure below ↓") when the required provider key is missing
+- Added **Test** button to each API key row to validate a key before saving
+
 ## [0.14.8] - 2026-04-09
 
 ### Added

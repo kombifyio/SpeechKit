@@ -15,7 +15,7 @@ import (
 )
 
 // AppVersion is the current release version. Updated at release time.
-var AppVersion = "0.14.8"
+var AppVersion = "0.14.9"
 
 // revealAudioFileInShell opens the containing folder in Explorer and selects
 // the file. Only .wav files are accepted to prevent path-traversal abuse.

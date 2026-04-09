@@ -10,13 +10,14 @@ class ResizeObserverStub {
   disconnect() {}
 }
 
-const { fetchSettingsStateMock, fetchModelProfilesMock, saveSettingsStateMock, saveProviderCredentialMock, clearProviderCredentialMock, fetchAudioDevicesMock, setAudioDeviceMock } =
+const { fetchSettingsStateMock, fetchModelProfilesMock, saveSettingsStateMock, saveProviderCredentialMock, clearProviderCredentialMock, testProviderCredentialMock, fetchAudioDevicesMock, setAudioDeviceMock } =
   vi.hoisted(() => ({
     fetchSettingsStateMock: vi.fn<() => Promise<SpeechKitSettingsState>>(),
     fetchModelProfilesMock: vi.fn<() => Promise<ModelProfile[]>>(),
     saveSettingsStateMock: vi.fn<(state: SpeechKitSettingsState) => Promise<string>>(),
     saveProviderCredentialMock: vi.fn<(provider: string, secret: string) => Promise<{ message?: string }>>(),
     clearProviderCredentialMock: vi.fn<(provider: string) => Promise<{ message?: string }>>(),
+    testProviderCredentialMock: vi.fn<(provider: string, secret: string) => Promise<{ message?: string }>>(),
     fetchAudioDevicesMock: vi.fn(),
     setAudioDeviceMock: vi.fn<(deviceId: string) => Promise<string>>(),
   }))
@@ -66,6 +67,7 @@ vi.mock('@/lib/speechkit', () => ({
   saveSettingsState: saveSettingsStateMock,
   saveProviderCredential: saveProviderCredentialMock,
   clearProviderCredential: clearProviderCredentialMock,
+  testProviderCredential: testProviderCredentialMock,
   fetchAudioDevices: fetchAudioDevicesMock,
   setAudioDevice: setAudioDeviceMock,
 }))
@@ -148,6 +150,7 @@ describe('SettingsApp', () => {
     saveSettingsStateMock.mockReset()
     saveProviderCredentialMock.mockReset()
     clearProviderCredentialMock.mockReset()
+    testProviderCredentialMock.mockReset()
     fetchAudioDevicesMock.mockReset()
     setAudioDeviceMock.mockReset()
 
@@ -162,6 +165,7 @@ describe('SettingsApp', () => {
     saveSettingsStateMock.mockResolvedValue('Gespeichert')
     saveProviderCredentialMock.mockResolvedValue({ message: 'Saved' })
     clearProviderCredentialMock.mockResolvedValue({ message: 'Cleared' })
+    testProviderCredentialMock.mockResolvedValue({ message: 'Key valid' })
     setAudioDeviceMock.mockResolvedValue('Selected')
   })
 

@@ -8,6 +8,7 @@ import {
   fetchSettingsState,
   saveProviderCredential,
   saveSettingsState,
+  testProviderCredential,
   type ProviderCredentialState,
   type SpeechKitSettingsState,
 } from '@/lib/speechkit'
@@ -126,6 +127,20 @@ export function SettingsApp() {
       setSettings((prev) => ({ ...prev, providerCredentials: fresh.providerCredentials }))
     } catch (err) {
       showToast(err instanceof Error ? err.message : 'Clear failed')
+    } finally {
+      setProviderBusy((b) => ({ ...b, [provider]: false }))
+    }
+  }
+
+  const handleTestProviderCredential = async (provider: string) => {
+    const token = (providerTokens[provider] ?? '').trim()
+    if (!token) { showToast('Enter a key to test'); return }
+    setProviderBusy((b) => ({ ...b, [provider]: true }))
+    try {
+      const result = await testProviderCredential(provider, token)
+      showToast(result.message ?? 'Key valid')
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : 'Test failed')
     } finally {
       setProviderBusy((b) => ({ ...b, [provider]: false }))
     }
@@ -439,6 +454,7 @@ export function SettingsApp() {
             tokenStatusLabel={tokenStatusLabel}
             onSaveCredential={handleSaveProviderCredential}
             onClearCredential={handleClearProviderCredential}
+            onTestCredential={handleTestProviderCredential}
           />
         )}
       </div>
@@ -561,6 +577,13 @@ function HotkeyPicker({
   )
 }
 
+const PROVIDER_FOR_EXECUTION_MODE: Record<string, string | undefined> = {
+  hf_routed: 'huggingface',
+  openai_api: 'openai',
+  groq_api: 'groq',
+  google_api: 'google',
+}
+
 const MODALITY_LABELS = {
   stt: 'STT',
   utility: 'Utility',
@@ -581,6 +604,7 @@ function ProviderTab({
   tokenStatusLabel,
   onSaveCredential,
   onClearCredential,
+  onTestCredential,
 }: {
   settings: SpeechKitSettingsState
   setSettings: React.Dispatch<React.SetStateAction<SpeechKitSettingsState>>
@@ -591,6 +615,7 @@ function ProviderTab({
   tokenStatusLabel: (cred: ProviderCredentialState) => string
   onSaveCredential: (provider: string) => void
   onClearCredential: (provider: string) => void
+  onTestCredential: (provider: string) => void
 }) {
   const [modalityTab, setModalityTab] = useState<ModalityTabKey>('stt')
 
@@ -603,55 +628,12 @@ function ProviderTab({
     : availableTabs[0]?.key
   const filtered = selectedTab ? profiles.filter((p) => p.modality === selectedTab) : []
   const activeId = selectedTab ? settings.activeProfiles?.[selectedTab] : undefined
-  const credentials = settings.providerCredentials
-    ? Object.values(settings.providerCredentials).filter((c) => c.available)
+  const allCredentials = settings.providerCredentials
+    ? Object.values(settings.providerCredentials)
     : []
 
   return (
     <div className="mt-4 flex flex-col gap-4">
-      {credentials.length > 0 && (
-        <Section title="API Keys">
-          {credentials.map((cred) => {
-            const busy = providerBusy[cred.provider] ?? false
-            const token = providerTokens[cred.provider] ?? ''
-            return (
-              <div key={cred.provider} className="mt-3 first:mt-0">
-                <div className="mb-1 flex items-center justify-between">
-                  <span className="text-xs text-white/60">{cred.label}</span>
-                  <span className="text-[10px] text-white/30">{tokenStatusLabel(cred)}</span>
-                </div>
-                <div className="flex gap-2">
-                  <input
-                    aria-label={`${cred.label} API key`}
-                    type="password"
-                    value={token}
-                    onChange={(e) => setProviderTokens((t) => ({ ...t, [cred.provider]: e.target.value }))}
-                    placeholder={cred.envName || 'API key...'}
-                    className="h-8 flex-1 rounded-lg border border-white/10 bg-white/5 px-3 text-xs outline-none focus:border-orange-400/50"
-                  />
-                  <Chip
-                    active={false}
-                    onClick={() => { onSaveCredential(cred.provider) }}
-                    className={busy ? 'pointer-events-none opacity-60' : ''}
-                  >
-                    Save
-                  </Chip>
-                  {cred.hasStoredSecret && (
-                    <Chip
-                      active={false}
-                      onClick={() => { onClearCredential(cred.provider) }}
-                      className={busy ? 'pointer-events-none opacity-60' : ''}
-                    >
-                      Clear
-                    </Chip>
-                  )}
-                </div>
-              </div>
-            )
-          })}
-        </Section>
-      )}
-
       <Section title="Models">
         {availableTabs.length > 0 && (
           <div className="flex gap-px rounded-lg bg-white/5 p-0.5">
@@ -706,6 +688,18 @@ function ProviderTab({
                         {profile.description}
                       </div>
                     )}
+                    {(() => {
+                      if (!profile.executionMode) return null
+                      const provKey = PROVIDER_FOR_EXECUTION_MODE[profile.executionMode]
+                      if (!provKey) return null
+                      const cred = settings.providerCredentials?.[provKey]
+                      if (cred?.available) return null
+                      return (
+                        <div className="mt-1 text-[10px] text-amber-300/60">
+                          {cred?.label ?? 'API'} key required — configure below ↓
+                        </div>
+                      )
+                    })()}
                   </div>
                   {isActive ? (
                     <span className="ml-2 shrink-0 text-[10px] font-medium text-orange-400">Active</span>
@@ -744,6 +738,56 @@ function ProviderTab({
           </div>
         )}
       </Section>
+
+      {allCredentials.length > 0 && (
+        <Section title="API Keys">
+          {allCredentials.map((cred) => {
+            const busy = providerBusy[cred.provider] ?? false
+            const token = providerTokens[cred.provider] ?? ''
+            return (
+              <div key={cred.provider} className="mt-3 first:mt-0">
+                <div className="mb-1 flex items-center justify-between">
+                  <span className="text-xs text-white/60">{cred.label}</span>
+                  <span className="text-[10px] text-white/30">{tokenStatusLabel(cred)}</span>
+                </div>
+                <div className="flex gap-2">
+                  <input
+                    aria-label={`${cred.label} API key`}
+                    type="password"
+                    value={token}
+                    onChange={(e) => setProviderTokens((t) => ({ ...t, [cred.provider]: e.target.value }))}
+                    placeholder={cred.envName || 'API key...'}
+                    className="h-8 flex-1 rounded-lg border border-white/10 bg-white/5 px-3 text-xs outline-none focus:border-orange-400/50"
+                  />
+                  <Chip
+                    active={false}
+                    onClick={() => { onTestCredential(cred.provider) }}
+                    className={busy ? 'pointer-events-none opacity-60' : ''}
+                  >
+                    Test
+                  </Chip>
+                  <Chip
+                    active={false}
+                    onClick={() => { onSaveCredential(cred.provider) }}
+                    className={busy ? 'pointer-events-none opacity-60' : ''}
+                  >
+                    Save
+                  </Chip>
+                  {cred.hasStoredSecret && (
+                    <Chip
+                      active={false}
+                      onClick={() => { onClearCredential(cred.provider) }}
+                      className={busy ? 'pointer-events-none opacity-60' : ''}
+                    >
+                      Clear
+                    </Chip>
+                  )}
+                </div>
+              </div>
+            )
+          })}
+        </Section>
+      )}
 
       <p className="text-[11px] leading-relaxed text-white/25">
         Only provider paths that the desktop backend can switch live are listed here. Local Ollama profiles still require the local runtime and pulled model to be present.
