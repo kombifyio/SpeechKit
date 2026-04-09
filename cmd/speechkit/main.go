@@ -203,7 +203,7 @@ func main() {
 		if err := config.SaveInstallState(installState); err != nil {
 			slog.Warn("save install state", "err", err)
 		}
-		slog.Info("install mode: local (default, first run â€” setup wizard pending)")
+		slog.Info("install mode: local (default, first run — setup wizard pending)")
 	} else {
 		slog.Info("install mode", "mode", installState.Mode)
 	}
@@ -339,7 +339,7 @@ func main() {
 	genkitRT, err := appai.Init(ctx, buildGenkitConfig(cfg))
 	if err != nil {
 		slog.Warn("genkit init", "err", err)
-		state.addLog("AI providers unavailable â€” Assist and Voice Agent disabled", "warn")
+		state.addLog("AI providers unavailable — Assist and Voice Agent disabled", "warn")
 	} else {
 		state.genkitRT = genkitRT
 
@@ -369,14 +369,14 @@ func main() {
 	audioPlayer, err := audio.NewPlayer()
 	if err != nil {
 		slog.Warn("audio player init", "err", err)
-		state.addLog("TTS audio player unavailable â€” voice output disabled", "warn")
+		state.addLog("TTS audio player unavailable — voice output disabled", "warn")
 	} else {
 		state.audioPlayer = audioPlayer
 		defer audioPlayer.Close()
 		slog.Info("audio player ready (24kHz mono)")
 	}
 
-	// Assist Pipeline: STT â†’ Codeword â†’ LLM â†’ TTS â†’ Result{Text, Audio}
+	// Assist Pipeline: STT → Codeword → LLM → TTS → Result{Text, Audio}
 	if state.assistFlow != nil {
 		state.assistPipeline = assist.NewPipeline(
 			state.assistFlow,
