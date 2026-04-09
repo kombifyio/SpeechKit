@@ -17,7 +17,7 @@ concurrency:
 jobs:
   frontend-ci:
     name: Frontend Checks
-    runs-on: blacksmith-4vcpu-ubuntu-2404
+    runs-on: ${{ vars.CI_RUNNER || 'blacksmith-4vcpu-ubuntu-2204' }}
     timeout-minutes: 15
 
     defaults:
@@ -26,10 +26,10 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
 
       - name: Setup Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
         with:
           node-version: 22
           cache: npm
@@ -49,7 +49,7 @@ jobs:
 
   android-ci:
     name: Android Checks
-    runs-on: blacksmith-4vcpu-ubuntu-2404
+    runs-on: ${{ vars.CI_RUNNER || 'blacksmith-4vcpu-ubuntu-2204' }}
     timeout-minutes: 30
 
     defaults:
@@ -58,10 +58,10 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
 
       - name: Setup Java
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@c1e323688fd81a25caa38c78aa6df2d33d3e20d9
         with:
           distribution: temurin
           java-version: '17'
@@ -78,21 +78,21 @@ jobs:
 
   go-analysis:
     name: Go Analysis
-    runs-on: ${{ vars.WINDOWS_CI_RUNNER != '' && vars.WINDOWS_CI_RUNNER || 'windows-latest' }}
+    runs-on: ${{ vars.WINDOWS_CI_RUNNER || 'blacksmith-4vcpu-windows-2025' }}
     timeout-minutes: 30
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
 
       - name: Setup Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff
         with:
           go-version: '1.25.8'
           cache: true
 
       - name: Setup MinGW
-        uses: msys2/setup-msys2@v2
+        uses: msys2/setup-msys2@cafece8e6baf9247cf9b1bf95097b0b983cc558d
         with:
           update: true
           install: >-
@@ -101,6 +101,27 @@ jobs:
       - name: Run go vet
         shell: pwsh
         run: go vet ./...
+
+      - name: Run go race tests
+        shell: pwsh
+        # Covers all pure-logic packages. CGo-heavy packages (audio/vad) are
+        # excluded because they require physical hardware in CI.
+        run: >-
+          go test -race
+          ./pkg/speechkit/...
+          ./internal/router/...
+          ./internal/voiceagent/...
+          ./internal/assist/...
+          ./internal/store/...
+          ./internal/secrets/...
+          ./internal/ai/...
+          ./internal/config/...
+          ./internal/stt/...
+          ./internal/tts/...
+          ./internal/shortcuts/...
+          ./internal/features/...
+          ./internal/models/...
+          ./internal/textactions/...
 
       - name: Install Staticcheck
         shell: pwsh
@@ -126,35 +147,35 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
 
       - name: Dependency review
-        uses: actions/dependency-review-action@v4
+        uses: actions/dependency-review-action@2031cfc080254a8a887f58cffee85186f0e49e48
 
   windows-ci:
     name: Windows CI
-    runs-on: ${{ vars.WINDOWS_CI_RUNNER != '' && vars.WINDOWS_CI_RUNNER || 'windows-latest' }}
+    runs-on: ${{ vars.WINDOWS_CI_RUNNER || 'blacksmith-4vcpu-windows-2025' }}
     timeout-minutes: 30
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
 
       - name: Setup Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff
         with:
           go-version: '1.25.8'
           cache: true
 
       - name: Setup Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
         with:
           node-version: 22
           cache: npm
           cache-dependency-path: frontend/app/package-lock.json
 
       - name: Setup MinGW
-        uses: msys2/setup-msys2@v2
+        uses: msys2/setup-msys2@cafece8e6baf9247cf9b1bf95097b0b983cc558d
         with:
           update: true
           install: >-
@@ -170,7 +191,7 @@ jobs:
 
       - name: Upload embedded frontend assets
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: speechkit-frontend-assets
           path: internal/frontendassets/dist
