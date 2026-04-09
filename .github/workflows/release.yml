@@ -168,6 +168,7 @@ jobs:
           "EOF" >> $env:GITHUB_OUTPUT
 
       - name: Attest release artifacts
+        if: vars.ENABLE_BUILD_ATTESTATIONS == 'true'
         uses: actions/attest-build-provenance@96b4a1ef7235a096b17240c259729fdd70c83d45
         with:
           subject-path: ${{ steps.assets.outputs.subject_paths }}

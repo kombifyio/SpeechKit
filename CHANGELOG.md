@@ -6,6 +6,13 @@ The format is based on Keep a Changelog and this project is intended to ship und
 
 ## [Unreleased]
 
+## [0.14.7] - 2026-04-09
+
+### Fixed
+
+- Restored the OSS publish auth fallback so cross-repo source mirroring and release creation keep working without mandatory GitHub App credentials
+- Made OSS tag sync idempotent and exported the Windows runtime preparation scripts so public `kombifyio/SpeechKit` tags can build Windows release artifacts again
+
 ## [0.14.6] - 2026-04-09
 
 ### Fixed
