@@ -544,7 +544,7 @@ export async function clearHuggingFaceToken() {
 }
 
 export async function saveProviderCredential(provider: string, secret: string) {
-  const body = new URLSearchParams({ provider, secret })
+  const body = new URLSearchParams({ provider, credential: secret })
   const response = await fetch('/settings/provider-credentials/save', { method: 'POST', body })
   if (!response.ok) throw new Error(`provider credential save failed: ${response.status}`)
   return (await response.json()) as { message?: string }
@@ -558,7 +558,7 @@ export async function clearProviderCredential(provider: string) {
 }
 
 export async function testProviderCredential(provider: string, secret: string) {
-  const body = new URLSearchParams({ provider, secret })
+  const body = new URLSearchParams({ provider, credential: secret })
   const response = await fetch('/settings/provider-credentials/test', { method: 'POST', body })
   if (!response.ok) throw new Error(`provider credential test failed: ${response.status}`)
   return (await response.json()) as { message?: string }
