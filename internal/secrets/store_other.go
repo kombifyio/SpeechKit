@@ -6,6 +6,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/kombifyio/SpeechKit/internal/runtimepath"
 )
 
 func newDefaultStore() secretBackend {
@@ -68,9 +70,5 @@ func (s *fileStore) Delete(name string) error {
 }
 
 func secretFilePath(name string) (string, error) {
-	configDir, err := os.UserConfigDir()
-	if err != nil {
-		return "", err
-	}
-	return filepath.Join(configDir, "SpeechKit", "secrets", name+".bin"), nil
+	return filepath.Join(runtimepath.SecretsDir(), name+".bin"), nil
 }

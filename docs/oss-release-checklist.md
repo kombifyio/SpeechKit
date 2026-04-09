@@ -2,6 +2,7 @@
 
 Use this checklist before syncing to the release repository or cutting a public tag.
 
+- [ ] selected release surfaces are explicit for this run: source-only, Windows portable, Windows installer, Android
 - [ ] `LICENSE` exists and matches the intended public license
 - [ ] `README.md`, `CONTRIBUTING.md`, `CODE_OF_CONDUCT.md`, `SECURITY.md`, `SUPPORT.md`, and `CHANGELOG.md` are present and current
 - [ ] no tracked secrets or private credentials are committed
@@ -11,6 +12,10 @@ Use this checklist before syncing to the release repository or cutting a public 
 - [ ] `config.example.toml` is OSS-safe and documents only public runtime expectations
 - [ ] `frontend/app/README.md` is project-specific and not the stock Vite template
 - [ ] architecture docs do not claim unimplemented backends as shipped features
-- [ ] GitHub Actions secret `OSS_PUBLISH_TOKEN` or `GITHUB_PAT` in the development repo can read and write `kombifyio/SpeechKit`
+- [ ] `RELEASE_APP_ID` and `RELEASE_APP_PRIVATE_KEY` are configured for the source repo or source org before running the app-based release flow
+- [ ] `OSS_PUBLISH_TOKEN` exists only if the GitHub App bootstrap is still in progress and has not been fully cut over yet
 - [ ] canonical Windows build succeeds and emits `dist/windows/SpeechKit/` and `dist/windows/SpeechKit-Setup.exe`
+- [ ] if the release is source-only, Windows artifacts are explicitly disabled in the release workflow
+- [ ] if the release includes a Windows installer, installer smoke checks run on a clean Windows VM or Windows runner
+- [ ] if Android is part of the release, `npm run version:sync:android` was run intentionally and Android artifacts were built separately
 - [ ] release artifacts are built from the mirrored public tree

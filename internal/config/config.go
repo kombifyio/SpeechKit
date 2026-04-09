@@ -405,6 +405,19 @@ func defaultConfigPath() string {
 // ResolveSecret resolves a secret by name. Checks environment first, then Doppler CLI
 // when DOPPLER_PROJECT and DOPPLER_CONFIG are set explicitly.
 func ResolveSecret(envName string) string {
+	if strings.TrimSpace(envName) == "" {
+		return ""
+	}
+	value, _, err := secrets.ResolveNamedSecret(envName, func() string {
+		return ResolveSecretFromEnvironmentOrDoppler(envName)
+	})
+	if err == nil && strings.TrimSpace(value) != "" {
+		return strings.TrimSpace(value)
+	}
+	return ResolveSecretFromEnvironmentOrDoppler(envName)
+}
+
+func ResolveSecretFromEnvironmentOrDoppler(envName string) string {
 	if v := os.Getenv(envName); v != "" {
 		return v
 	}
@@ -424,14 +437,14 @@ func HuggingFaceTokenEnvName(cfg *Config) string {
 func HuggingFaceTokenStatus(cfg *Config) (secrets.TokenStatus, error) {
 	tokenEnv := HuggingFaceTokenEnvName(cfg)
 	return secrets.HuggingFaceTokenStatus(func() string {
-		return ResolveSecret(tokenEnv)
+		return ResolveSecretFromEnvironmentOrDoppler(tokenEnv)
 	})
 }
 
 func ResolveHuggingFaceToken(cfg *Config) (string, secrets.TokenStatus, error) {
 	tokenEnv := HuggingFaceTokenEnvName(cfg)
 	return secrets.ResolveHuggingFaceToken(func() string {
-		return ResolveSecret(tokenEnv)
+		return ResolveSecretFromEnvironmentOrDoppler(tokenEnv)
 	})
 }
 

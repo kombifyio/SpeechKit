@@ -15,6 +15,8 @@ const (
 	TokenSourceEnv     TokenSource = "env"
 )
 
+const genericSecretPrefix = "named-secret:"
+
 type TokenStatus struct {
 	HasUserToken    bool
 	HasInstallToken bool
@@ -60,6 +62,58 @@ func SetInstallHuggingFaceToken(token string) error {
 
 func ClearUserHuggingFaceToken() error {
 	return currentStore().Delete(huggingFaceUserKey)
+}
+
+func SetNamedSecret(name, value string) error {
+	return storeSecret(namedSecretKey(name), value)
+}
+
+func ClearNamedSecret(name string) error {
+	return currentStore().Delete(namedSecretKey(name))
+}
+
+func ResolveNamedSecret(name string, envResolver func() string) (string, TokenStatus, error) {
+	status, err := NamedSecretStatus(name, envResolver)
+	if err != nil {
+		return "", status, err
+	}
+
+	switch status.ActiveSource {
+	case TokenSourceUser:
+		value, _, err := currentStore().Load(namedSecretKey(name))
+		return strings.TrimSpace(value), status, err
+	case TokenSourceEnv:
+		if envResolver == nil {
+			return "", status, nil
+		}
+		return strings.TrimSpace(envResolver()), status, nil
+	default:
+		return "", status, nil
+	}
+}
+
+func NamedSecretStatus(name string, envResolver func() string) (TokenStatus, error) {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return TokenStatus{ActiveSource: TokenSourceNone}, nil
+	}
+	storedSecret, hasStoredSecret, err := currentStore().Load(namedSecretKey(name))
+	if err != nil {
+		return TokenStatus{}, err
+	}
+
+	status := TokenStatus{
+		HasUserToken: hasStoredSecret && strings.TrimSpace(storedSecret) != "",
+		ActiveSource: TokenSourceNone,
+	}
+	if status.HasUserToken {
+		status.ActiveSource = TokenSourceUser
+		return status, nil
+	}
+	if envResolver != nil && strings.TrimSpace(envResolver()) != "" {
+		status.ActiveSource = TokenSourceEnv
+	}
+	return status, nil
 }
 
 func ResolveHuggingFaceToken(envResolver func() string) (string, TokenStatus, error) {
@@ -125,6 +179,10 @@ func currentStore() secretBackend {
 	backendMu.RLock()
 	defer backendMu.RUnlock()
 	return currentBackend
+}
+
+func namedSecretKey(name string) string {
+	return genericSecretPrefix + strings.TrimSpace(name)
 }
 
 type memoryStore struct {

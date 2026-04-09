@@ -10,13 +10,13 @@ class ResizeObserverStub {
   disconnect() {}
 }
 
-const { fetchSettingsStateMock, fetchModelProfilesMock, saveSettingsStateMock, saveHuggingFaceTokenMock, clearHuggingFaceTokenMock, fetchAudioDevicesMock, setAudioDeviceMock } =
+const { fetchSettingsStateMock, fetchModelProfilesMock, saveSettingsStateMock, saveProviderCredentialMock, clearProviderCredentialMock, fetchAudioDevicesMock, setAudioDeviceMock } =
   vi.hoisted(() => ({
     fetchSettingsStateMock: vi.fn<() => Promise<SpeechKitSettingsState>>(),
     fetchModelProfilesMock: vi.fn<() => Promise<ModelProfile[]>>(),
     saveSettingsStateMock: vi.fn<(state: SpeechKitSettingsState) => Promise<string>>(),
-    saveHuggingFaceTokenMock: vi.fn<(token: string) => Promise<string>>(),
-    clearHuggingFaceTokenMock: vi.fn<() => Promise<string>>(),
+    saveProviderCredentialMock: vi.fn<(provider: string, secret: string) => Promise<{ message?: string }>>(),
+    clearProviderCredentialMock: vi.fn<(provider: string) => Promise<{ message?: string }>>(),
     fetchAudioDevicesMock: vi.fn(),
     setAudioDeviceMock: vi.fn<(deviceId: string) => Promise<string>>(),
   }))
@@ -50,12 +50,22 @@ vi.mock('@/lib/speechkit', () => ({
     hfHasInstallToken: false,
     hfTokenSource: 'none',
     activeProfiles: {},
+    providerCredentials: {
+      huggingface: {
+        provider: 'huggingface',
+        label: 'Hugging Face',
+        envName: 'HF_TOKEN',
+        available: true,
+        hasStoredSecret: false,
+        source: 'none',
+      },
+    },
   } satisfies SpeechKitSettingsState,
   fetchSettingsState: fetchSettingsStateMock,
   fetchModelProfiles: fetchModelProfilesMock,
   saveSettingsState: saveSettingsStateMock,
-  saveHuggingFaceToken: saveHuggingFaceTokenMock,
-  clearHuggingFaceToken: clearHuggingFaceTokenMock,
+  saveProviderCredential: saveProviderCredentialMock,
+  clearProviderCredential: clearProviderCredentialMock,
   fetchAudioDevices: fetchAudioDevicesMock,
   setAudioDevice: setAudioDeviceMock,
 }))
@@ -118,6 +128,16 @@ const baseSettings: SpeechKitSettingsState = {
       description: 'Default local STT profile',
     },
   ],
+  providerCredentials: {
+    huggingface: {
+      provider: 'huggingface',
+      label: 'Hugging Face',
+      envName: 'HF_TOKEN',
+      available: true,
+      hasStoredSecret: false,
+      source: 'none',
+    },
+  },
 }
 
 describe('SettingsApp', () => {
@@ -126,8 +146,8 @@ describe('SettingsApp', () => {
     fetchSettingsStateMock.mockReset()
     fetchModelProfilesMock.mockReset()
     saveSettingsStateMock.mockReset()
-    saveHuggingFaceTokenMock.mockReset()
-    clearHuggingFaceTokenMock.mockReset()
+    saveProviderCredentialMock.mockReset()
+    clearProviderCredentialMock.mockReset()
     fetchAudioDevicesMock.mockReset()
     setAudioDeviceMock.mockReset()
 
@@ -140,8 +160,8 @@ describe('SettingsApp', () => {
       selectedDeviceId: 'mic-1',
     })
     saveSettingsStateMock.mockResolvedValue('Gespeichert')
-    saveHuggingFaceTokenMock.mockResolvedValue('Token gespeichert')
-    clearHuggingFaceTokenMock.mockResolvedValue('Token entfernt')
+    saveProviderCredentialMock.mockResolvedValue({ message: 'Saved' })
+    clearProviderCredentialMock.mockResolvedValue({ message: 'Cleared' })
     setAudioDeviceMock.mockResolvedValue('Selected')
   })
 
@@ -414,15 +434,23 @@ describe('SettingsApp', () => {
   it('shows stored token status for the provider', async () => {
     fetchSettingsStateMock.mockResolvedValue({
       ...baseSettings,
-      hfHasInstallToken: true,
-      hfTokenSource: 'install',
+      providerCredentials: {
+        huggingface: {
+          provider: 'huggingface',
+          label: 'Hugging Face',
+          envName: 'HF_TOKEN',
+          available: true,
+          hasStoredSecret: true,
+          source: 'install',
+        },
+      },
     })
 
     render(<SettingsApp />)
 
     fireEvent.click(await screen.findByRole('button', { name: 'Provider' }))
 
-    expect(await screen.findByText(/install token active/i)).toBeInTheDocument()
+    expect(await screen.findByText(/install key active/i)).toBeInTheDocument()
   })
 
   it('does not render a hugging face switch in provider settings', async () => {
@@ -432,34 +460,42 @@ describe('SettingsApp', () => {
 
     fireEvent.click(await screen.findByRole('button', { name: 'Provider' }))
 
-    await screen.findByText('API Tokens')
+    await screen.findByText('API Keys')
     expect(
       screen.queryByRole('switch', { name: 'Hugging Face Inference' }),
     ).not.toBeInTheDocument()
   })
 
-  it('saves a user hugging face token explicitly', async () => {
+  it('saves a user provider credential explicitly', async () => {
     fetchSettingsStateMock.mockResolvedValue(baseSettings)
 
     render(<SettingsApp />)
 
     fireEvent.click(await screen.findByRole('button', { name: 'Provider' }))
 
-    fireEvent.change(await screen.findByLabelText('Hugging Face token'), {
+    fireEvent.change(await screen.findByLabelText('Hugging Face API key'), {
       target: { value: 'hf_user_token_123' },
     })
     fireEvent.click(screen.getByRole('button', { name: 'Save' }))
 
     await waitFor(() =>
-      expect(saveHuggingFaceTokenMock).toHaveBeenCalledWith('hf_user_token_123'),
+      expect(saveProviderCredentialMock).toHaveBeenCalledWith('huggingface', 'hf_user_token_123'),
     )
   })
 
-  it('clears a stored user token explicitly', async () => {
+  it('clears a stored provider credential explicitly', async () => {
     fetchSettingsStateMock.mockResolvedValue({
       ...baseSettings,
-      hfHasUserToken: true,
-      hfTokenSource: 'user',
+      providerCredentials: {
+        huggingface: {
+          provider: 'huggingface',
+          label: 'Hugging Face',
+          envName: 'HF_TOKEN',
+          available: true,
+          hasStoredSecret: true,
+          source: 'user',
+        },
+      },
     })
 
     render(<SettingsApp />)
@@ -467,6 +503,6 @@ describe('SettingsApp', () => {
     fireEvent.click(await screen.findByRole('button', { name: 'Provider' }))
     fireEvent.click(await screen.findByRole('button', { name: 'Clear' }))
 
-    await waitFor(() => expect(clearHuggingFaceTokenMock).toHaveBeenCalled())
+    await waitFor(() => expect(clearProviderCredentialMock).toHaveBeenCalledWith('huggingface'))
   })
 })

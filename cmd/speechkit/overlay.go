@@ -99,34 +99,35 @@ type overlaySnapshot struct {
 }
 
 type settingsSnapshot struct {
-	OverlayEnabled        bool              `json:"overlayEnabled"`
-	OverlayPosition       string            `json:"overlayPosition"`
-	OverlayMovable        bool              `json:"overlayMovable"`
-	OverlayFreeX          int               `json:"overlayFreeX"`
-	OverlayFreeY          int               `json:"overlayFreeY"`
-	StoreBackend          string            `json:"storeBackend"`
-	SQLitePath            string            `json:"sqlitePath"`
-	PostgresConfigured    bool              `json:"postgresConfigured"`
-	PostgresDSN           string            `json:"postgresDSN,omitempty"`
-	MaxAudioStorageMB     int               `json:"maxAudioStorageMB"`
-	HFAvailable           bool              `json:"hfAvailable"`
-	HFEnabled             bool              `json:"hfEnabled"`
-	HFHasUserToken        bool              `json:"hfHasUserToken"`
-	HFHasInstallToken     bool              `json:"hfHasInstallToken"`
-	HFTokenSource         string            `json:"hfTokenSource"`
-	Hotkey                string            `json:"hotkey"`
-	DictateHotkey         string            `json:"dictateHotkey"`
-	AgentHotkey           string            `json:"agentHotkey"`
-	ActiveMode            string            `json:"activeMode"`
-	HFModel               string            `json:"hfModel"`
-	Visualizer            string            `json:"visualizer"`
-	Design                string            `json:"design"`
-	VocabularyDictionary  string            `json:"vocabularyDictionary"`
-	SaveAudio             bool              `json:"saveAudio"`
-	AudioRetentionDays    int               `json:"audioRetentionDays"`
-	AudioDeviceID         string            `json:"audioDeviceId"`
-	SelectedAudioDeviceID string            `json:"selectedAudioDeviceId"`
-	ActiveProfiles        map[string]string `json:"activeProfiles"`
+	OverlayEnabled        bool                               `json:"overlayEnabled"`
+	OverlayPosition       string                             `json:"overlayPosition"`
+	OverlayMovable        bool                               `json:"overlayMovable"`
+	OverlayFreeX          int                                `json:"overlayFreeX"`
+	OverlayFreeY          int                                `json:"overlayFreeY"`
+	StoreBackend          string                             `json:"storeBackend"`
+	SQLitePath            string                             `json:"sqlitePath"`
+	PostgresConfigured    bool                               `json:"postgresConfigured"`
+	PostgresDSN           string                             `json:"postgresDSN,omitempty"`
+	MaxAudioStorageMB     int                                `json:"maxAudioStorageMB"`
+	HFAvailable           bool                               `json:"hfAvailable"`
+	HFEnabled             bool                               `json:"hfEnabled"`
+	HFHasUserToken        bool                               `json:"hfHasUserToken"`
+	HFHasInstallToken     bool                               `json:"hfHasInstallToken"`
+	HFTokenSource         string                             `json:"hfTokenSource"`
+	Hotkey                string                             `json:"hotkey"`
+	DictateHotkey         string                             `json:"dictateHotkey"`
+	AgentHotkey           string                             `json:"agentHotkey"`
+	ActiveMode            string                             `json:"activeMode"`
+	HFModel               string                             `json:"hfModel"`
+	Visualizer            string                             `json:"visualizer"`
+	Design                string                             `json:"design"`
+	VocabularyDictionary  string                             `json:"vocabularyDictionary"`
+	SaveAudio             bool                               `json:"saveAudio"`
+	AudioRetentionDays    int                                `json:"audioRetentionDays"`
+	AudioDeviceID         string                             `json:"audioDeviceId"`
+	SelectedAudioDeviceID string                             `json:"selectedAudioDeviceId"`
+	ActiveProfiles        map[string]string                  `json:"activeProfiles"`
+	ProviderCredentials   map[string]providerCredentialState `json:"providerCredentials"`
 }
 
 func newOverlayWindowOptions() application.WebviewWindowOptions {
@@ -838,6 +839,7 @@ func (s *appState) settingsSnapshot(cfg *config.Config) settingsSnapshot {
 		AudioDeviceID:         audioDeviceID,
 		SelectedAudioDeviceID: audioDeviceID,
 		ActiveProfiles:        cloneStringMap(s.activeProfiles),
+		ProviderCredentials:   providerCredentialStates(cfg),
 	}
 }
 

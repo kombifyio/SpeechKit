@@ -53,6 +53,15 @@ export type SpeechKitOverlayState = {
   activeProfiles: Partial<Record<Modality, string>>
 }
 
+export type ProviderCredentialState = {
+  provider: string
+  label: string
+  envName: string
+  available: boolean
+  hasStoredSecret: boolean
+  source: 'none' | 'user' | 'install' | 'env'
+}
+
 export type SpeechKitSettingsState = {
   overlayEnabled: boolean
   storeBackend: StoreBackend
@@ -82,6 +91,7 @@ export type SpeechKitSettingsState = {
   selectedAudioDeviceId: string
   profiles?: ModelProfile[]
   activeProfiles: Partial<Record<Modality, string>>
+  providerCredentials?: Record<string, ProviderCredentialState>
 }
 
 export const defaultOverlayState: SpeechKitOverlayState = {
@@ -186,6 +196,7 @@ function normalizeSettingsState(
     vocabularyDictionary: payload?.vocabularyDictionary ?? base.vocabularyDictionary,
     profiles: payload?.profiles ?? base.profiles,
     activeProfiles: payload?.activeProfiles ?? base.activeProfiles,
+    providerCredentials: payload?.providerCredentials ?? base.providerCredentials,
   }
 }
 
@@ -530,4 +541,25 @@ export async function clearHuggingFaceToken() {
 
   const payload = (await response.json()) as { message?: string }
   return payload.message ?? ''
+}
+
+export async function saveProviderCredential(provider: string, secret: string) {
+  const body = new URLSearchParams({ provider, secret })
+  const response = await fetch('/settings/provider-credentials/save', { method: 'POST', body })
+  if (!response.ok) throw new Error(`provider credential save failed: ${response.status}`)
+  return (await response.json()) as { message?: string }
+}
+
+export async function clearProviderCredential(provider: string) {
+  const body = new URLSearchParams({ provider })
+  const response = await fetch('/settings/provider-credentials/clear', { method: 'POST', body })
+  if (!response.ok) throw new Error(`provider credential clear failed: ${response.status}`)
+  return (await response.json()) as { message?: string }
+}
+
+export async function testProviderCredential(provider: string, secret: string) {
+  const body = new URLSearchParams({ provider, secret })
+  const response = await fetch('/settings/provider-credentials/test', { method: 'POST', body })
+  if (!response.ok) throw new Error(`provider credential test failed: ${response.status}`)
+  return (await response.json()) as { message?: string }
 }

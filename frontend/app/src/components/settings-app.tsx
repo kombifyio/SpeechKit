@@ -2,12 +2,13 @@ import { useEffect, useRef, useState } from 'react'
 
 import { MicSelector } from '@/components/ui/mic-selector'
 import {
-  clearHuggingFaceToken,
+  clearProviderCredential,
   defaultSettingsState,
   fetchModelProfiles,
   fetchSettingsState,
-  saveHuggingFaceToken,
+  saveProviderCredential,
   saveSettingsState,
+  type ProviderCredentialState,
   type SpeechKitSettingsState,
 } from '@/lib/speechkit'
 
@@ -17,8 +18,8 @@ const CTRL_SHIFT_SUFFIX_KEYS = ['d', 'j', 'k', 'space'] as const
 
 export function SettingsApp() {
   const [settings, setSettings] = useState(defaultSettingsState)
-  const [hfToken, setHFToken] = useState('')
-  const [hfTokenBusy, setHFTokenBusy] = useState(false)
+  const [providerTokens, setProviderTokens] = useState<Record<string, string>>({})
+  const [providerBusy, setProviderBusy] = useState<Record<string, boolean>>({})
   const [loaded, setLoaded] = useState(false)
   const [toast, setToast] = useState('')
   const [tab, setTab] = useState<Tab>('general')
@@ -86,52 +87,47 @@ export function SettingsApp() {
     queueSave({ ...settings, ...patch }, delay)
   }
 
-  const tokenStatusLabel = () => {
-    switch (settings.hfTokenSource) {
-      case 'user':
-        return 'User token active'
-      case 'install':
-        return 'Install token active'
-      case 'env':
-        return 'Environment token active'
-      default:
-        return 'No token configured'
+  const tokenStatusLabel = (cred: ProviderCredentialState) => {
+    switch (cred.source) {
+      case 'user': return 'User key active'
+      case 'install': return 'Install key active'
+      case 'env': return 'Environment key active'
+      default: return 'No key configured'
     }
   }
 
   const postgresReady =
     settings.postgresConfigured || settings.postgresDSN.trim().length > 0
 
-  const handleSaveHuggingFaceToken = async () => {
-    const trimmed = hfToken.trim()
-    if (!trimmed) {
-      showToast('Token required')
-      return
-    }
-    setHFTokenBusy(true)
+  const handleSaveProviderCredential = async (provider: string) => {
+    const token = (providerTokens[provider] ?? '').trim()
+    if (!token) { showToast('API key required'); return }
+    setProviderBusy((b) => ({ ...b, [provider]: true }))
     try {
-      const message = await saveHuggingFaceToken(trimmed)
-      await loadSettings()
-      setHFToken('')
-      showToast(message || 'Saved')
-    } catch {
-      showToast('Save failed')
+      const result = await saveProviderCredential(provider, token)
+      setProviderTokens((t) => ({ ...t, [provider]: '' }))
+      showToast(result.message ?? 'Saved')
+      const fresh = await fetchSettingsState()
+      setSettings((prev) => ({ ...prev, providerCredentials: fresh.providerCredentials }))
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : 'Save failed')
     } finally {
-      setHFTokenBusy(false)
+      setProviderBusy((b) => ({ ...b, [provider]: false }))
     }
   }
 
-  const handleClearHuggingFaceToken = async () => {
-    setHFTokenBusy(true)
+  const handleClearProviderCredential = async (provider: string) => {
+    setProviderBusy((b) => ({ ...b, [provider]: true }))
     try {
-      const message = await clearHuggingFaceToken()
-      await loadSettings()
-      setHFToken('')
-      showToast(message || 'Saved')
-    } catch {
-      showToast('Save failed')
+      const result = await clearProviderCredential(provider)
+      setProviderTokens((t) => ({ ...t, [provider]: '' }))
+      showToast(result.message ?? 'Cleared')
+      const fresh = await fetchSettingsState()
+      setSettings((prev) => ({ ...prev, providerCredentials: fresh.providerCredentials }))
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : 'Clear failed')
     } finally {
-      setHFTokenBusy(false)
+      setProviderBusy((b) => ({ ...b, [provider]: false }))
     }
   }
 
@@ -437,12 +433,12 @@ export function SettingsApp() {
             settings={settings}
             setSettings={setSettings}
             showToast={showToast}
-            hfToken={hfToken}
-            setHFToken={setHFToken}
-            hfTokenBusy={hfTokenBusy}
-            tokenStatusLabel={tokenStatusLabel()}
-            onSaveHFToken={handleSaveHuggingFaceToken}
-            onClearHFToken={handleClearHuggingFaceToken}
+            providerTokens={providerTokens}
+            setProviderTokens={setProviderTokens}
+            providerBusy={providerBusy}
+            tokenStatusLabel={tokenStatusLabel}
+            onSaveCredential={handleSaveProviderCredential}
+            onClearCredential={handleClearProviderCredential}
           />
         )}
       </div>
@@ -579,22 +575,22 @@ function ProviderTab({
   settings,
   setSettings,
   showToast,
-  hfToken,
-  setHFToken,
-  hfTokenBusy,
+  providerTokens,
+  setProviderTokens,
+  providerBusy,
   tokenStatusLabel,
-  onSaveHFToken,
-  onClearHFToken,
+  onSaveCredential,
+  onClearCredential,
 }: {
   settings: SpeechKitSettingsState
   setSettings: React.Dispatch<React.SetStateAction<SpeechKitSettingsState>>
   showToast: (msg: string) => void
-  hfToken: string
-  setHFToken: (v: string) => void
-  hfTokenBusy: boolean
-  tokenStatusLabel: string
-  onSaveHFToken: () => void
-  onClearHFToken: () => void
+  providerTokens: Record<string, string>
+  setProviderTokens: React.Dispatch<React.SetStateAction<Record<string, string>>>
+  providerBusy: Record<string, boolean>
+  tokenStatusLabel: (cred: ProviderCredentialState) => string
+  onSaveCredential: (provider: string) => void
+  onClearCredential: (provider: string) => void
 }) {
   const [modalityTab, setModalityTab] = useState<ModalityTabKey>('stt')
 
@@ -607,38 +603,52 @@ function ProviderTab({
     : availableTabs[0]?.key
   const filtered = selectedTab ? profiles.filter((p) => p.modality === selectedTab) : []
   const activeId = selectedTab ? settings.activeProfiles?.[selectedTab] : undefined
+  const credentials = settings.providerCredentials
+    ? Object.values(settings.providerCredentials).filter((c) => c.available)
+    : []
 
   return (
     <div className="mt-4 flex flex-col gap-4">
-      {settings.hfAvailable && (
-        <Section title="API Tokens">
-          <div className="text-[11px] text-white/40">{tokenStatusLabel}</div>
-          <div className="mt-2 flex gap-2">
-            <input
-              aria-label="Hugging Face token"
-              type="password"
-              value={hfToken}
-              onChange={(e) => setHFToken(e.target.value)}
-              placeholder="hf_..."
-              className="h-8 flex-1 rounded-lg border border-white/10 bg-white/5 px-3 text-xs outline-none focus:border-orange-400/50"
-            />
-            <Chip
-              active={false}
-              onClick={() => { void onSaveHFToken() }}
-              className={hfTokenBusy ? 'pointer-events-none opacity-60' : ''}
-            >
-              Save
-            </Chip>
-            {settings.hfHasUserToken && (
-              <Chip
-                active={false}
-                onClick={() => { void onClearHFToken() }}
-                className={hfTokenBusy ? 'pointer-events-none opacity-60' : ''}
-              >
-                Clear
-              </Chip>
-            )}
-          </div>
+      {credentials.length > 0 && (
+        <Section title="API Keys">
+          {credentials.map((cred) => {
+            const busy = providerBusy[cred.provider] ?? false
+            const token = providerTokens[cred.provider] ?? ''
+            return (
+              <div key={cred.provider} className="mt-3 first:mt-0">
+                <div className="mb-1 flex items-center justify-between">
+                  <span className="text-xs text-white/60">{cred.label}</span>
+                  <span className="text-[10px] text-white/30">{tokenStatusLabel(cred)}</span>
+                </div>
+                <div className="flex gap-2">
+                  <input
+                    aria-label={`${cred.label} API key`}
+                    type="password"
+                    value={token}
+                    onChange={(e) => setProviderTokens((t) => ({ ...t, [cred.provider]: e.target.value }))}
+                    placeholder={cred.envName || 'API key...'}
+                    className="h-8 flex-1 rounded-lg border border-white/10 bg-white/5 px-3 text-xs outline-none focus:border-orange-400/50"
+                  />
+                  <Chip
+                    active={false}
+                    onClick={() => { onSaveCredential(cred.provider) }}
+                    className={busy ? 'pointer-events-none opacity-60' : ''}
+                  >
+                    Save
+                  </Chip>
+                  {cred.hasStoredSecret && (
+                    <Chip
+                      active={false}
+                      onClick={() => { onClearCredential(cred.provider) }}
+                      className={busy ? 'pointer-events-none opacity-60' : ''}
+                    >
+                      Clear
+                    </Chip>
+                  )}
+                </div>
+              </div>
+            )
+          })}
         </Section>
       )}
 
