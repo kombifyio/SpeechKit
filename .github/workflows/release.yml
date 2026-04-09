@@ -11,6 +11,8 @@ on:
 
 permissions:
   contents: write
+  attestations: write
+  id-token: write
 
 concurrency:
   group: release-${{ github.ref }}
@@ -19,7 +21,7 @@ concurrency:
 jobs:
   build-and-release:
     name: Build & Release
-    runs-on: ${{ vars.WINDOWS_BUILD_RUNNER != '' && vars.WINDOWS_BUILD_RUNNER || 'windows-latest' }}
+    runs-on: ${{ vars.WINDOWS_BUILD_RUNNER || 'blacksmith-4vcpu-windows-2025' }}
     timeout-minutes: 40
 
     steps:
@@ -40,27 +42,27 @@ jobs:
           echo "Checkout ref: $checkoutRef"
 
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
         with:
           ref: ${{ steps.version.outputs.checkout_ref }}
           fetch-depth: 0
           fetch-tags: true
 
       - name: Setup Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff
         with:
           go-version: '1.25.8'
           cache: true
 
       - name: Setup Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
         with:
           node-version: 22
           cache: npm
           cache-dependency-path: frontend/app/package-lock.json
 
       - name: Setup MinGW
-        uses: msys2/setup-msys2@v2
+        uses: msys2/setup-msys2@cafece8e6baf9247cf9b1bf95097b0b983cc558d
         with:
           update: true
           install: >-
@@ -80,9 +82,26 @@ jobs:
           $tag = '${{ steps.version.outputs.tag }}'
           Copy-Item "dist/windows/SpeechKit-Setup.exe" "SpeechKit-Setup-${tag}.exe"
           Compress-Archive -Path "dist/windows/SpeechKit/*" -DestinationPath "SpeechKit-Portable-${tag}.zip"
+          $assets = @(
+            "SpeechKit-Setup-${tag}.exe",
+            "SpeechKit-Portable-${tag}.zip"
+          )
+          $checksums = foreach ($asset in $assets) {
+            $hash = (Get-FileHash -Algorithm SHA256 -Path $asset).Hash.ToLowerInvariant()
+            "$hash *$asset"
+          }
+          Set-Content -Path "SHA256SUMS.txt" -Value $checksums -Encoding ascii
+
+      - name: Attest release artifacts
+        uses: actions/attest-build-provenance@96b4a1ef7235a096b17240c259729fdd70c83d45
+        with:
+          subject-path: |
+            SpeechKit-Setup-${{ steps.version.outputs.tag }}.exe
+            SpeechKit-Portable-${{ steps.version.outputs.tag }}.zip
+            SHA256SUMS.txt
 
       - name: Create GitHub Release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@153bb8e04406b158c6c84fc1615b65b24149a1fe
         with:
           tag_name: ${{ steps.version.outputs.tag }}
           name: SpeechKit ${{ steps.version.outputs.tag }}
@@ -92,3 +111,4 @@ jobs:
           files: |
             SpeechKit-Setup-${{ steps.version.outputs.tag }}.exe
             SpeechKit-Portable-${{ steps.version.outputs.tag }}.zip
+            SHA256SUMS.txt
