@@ -5,8 +5,8 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_DIR="${1:-$(dirname "$(dirname "$SCRIPT_DIR")")}"
 
 patterns=(
-  "github.com/kombifyio/SpeechKit"
-  "https://github.com/kombifyio/SpeechKit"
+  "github.com/Soulcreek/kombify-SpeechKit"
+  "https://github.com/Soulcreek/kombify-SpeechKit"
   "kombination-personal"
   "kombination"
   "kombify.io"

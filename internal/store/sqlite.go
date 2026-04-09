@@ -5,7 +5,7 @@ import (
 	"database/sql"
 	_ "embed"
 	"fmt"
-	"log"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
@@ -68,19 +68,19 @@ func NewSQLiteStore(cfg StoreConfig) (*SQLiteStore, error) {
 	if _, err := db.Exec(sqliteMigration002); err != nil {
 		errMsg := err.Error()
 		if !strings.Contains(errMsg, "duplicate column") && !strings.Contains(errMsg, "already exists") {
-			log.Printf("WARN: migrate 002: %v", err)
+			slog.Warn("migrate 002", "err", err)
 		}
 	}
 	if _, err := db.Exec(sqliteMigration003); err != nil {
 		errMsg := err.Error()
 		if !strings.Contains(errMsg, "duplicate column") && !strings.Contains(errMsg, "already exists") {
-			log.Printf("WARN: migrate 003: %v", err)
+			slog.Warn("migrate 003", "err", err)
 		}
 	}
 	if _, err := db.Exec(sqliteMigration004); err != nil {
 		errMsg := err.Error()
 		if !strings.Contains(errMsg, "duplicate column") && !strings.Contains(errMsg, "already exists") {
-			log.Printf("WARN: migrate 004: %v", err)
+			slog.Warn("migrate 004", "err", err)
 		}
 	}
 
@@ -513,7 +513,7 @@ func (s *SQLiteStore) enforceStorageLimit() {
 
 	tx, err := s.db.Begin()
 	if err != nil {
-		log.Printf("store: begin cleanup tx: %v", err)
+		slog.Warn("store: begin cleanup tx", "err", err)
 		return
 	}
 	defer tx.Rollback()
@@ -535,7 +535,7 @@ func (s *SQLiteStore) enforceStorageLimit() {
 		var id int64
 		var path string
 		if err := rows.Scan(&kind, &id, &path); err != nil {
-			log.Printf("store: scan cleanup row: %v", err)
+			slog.Warn("store: scan cleanup row", "err", err)
 			continue
 		}
 		if path == "" {
@@ -548,7 +548,7 @@ func (s *SQLiteStore) enforceStorageLimit() {
 		}
 
 		if err := os.Remove(path); err != nil {
-			log.Printf("store: remove audio %s: %v", path, err)
+			slog.Warn("store: remove audio", "path", path, "err", err)
 			continue
 		}
 		totalSize -= info.Size()
@@ -557,12 +557,12 @@ func (s *SQLiteStore) enforceStorageLimit() {
 			query = `UPDATE quick_notes SET audio_path = '' WHERE id = ?`
 		}
 		if _, err := tx.Exec(query, id); err != nil {
-			log.Printf("store: clear %s audio_path for %d: %v", kind, id, err)
+			slog.Warn("store: clear audio_path", "kind", kind, "id", id, "err", err)
 		}
 	}
 
 	if err := tx.Commit(); err != nil {
-		log.Printf("store: commit cleanup tx: %v", err)
+		slog.Warn("store: commit cleanup tx", "err", err)
 	}
 }
 
@@ -574,7 +574,7 @@ func (s *SQLiteStore) enforceAudioRetention() {
 	cutoff := time.Now().Add(-time.Duration(s.audioRetentionDays) * 24 * time.Hour).Format("2006-01-02 15:04:05")
 	tx, err := s.db.Begin()
 	if err != nil {
-		log.Printf("store: begin retention tx: %v", err)
+		slog.Warn("store: begin retention tx", "err", err)
 		return
 	}
 	defer tx.Rollback()
@@ -588,7 +588,7 @@ func (s *SQLiteStore) enforceAudioRetention() {
 		cutoff, cutoff,
 	)
 	if err != nil {
-		log.Printf("store: query retention rows: %v", err)
+		slog.Warn("store: query retention rows", "err", err)
 		return
 	}
 	defer rows.Close()
@@ -598,14 +598,14 @@ func (s *SQLiteStore) enforceAudioRetention() {
 		var id int64
 		var path string
 		if err := rows.Scan(&kind, &id, &path); err != nil {
-			log.Printf("store: scan retention row: %v", err)
+			slog.Warn("store: scan retention row", "err", err)
 			continue
 		}
 		if path == "" {
 			continue
 		}
 		if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
-			log.Printf("store: remove retained audio %s: %v", path, err)
+			slog.Warn("store: remove retained audio", "path", path, "err", err)
 			continue
 		}
 		query := `UPDATE transcriptions SET audio_path = '' WHERE id = ?`
@@ -613,11 +613,11 @@ func (s *SQLiteStore) enforceAudioRetention() {
 			query = `UPDATE quick_notes SET audio_path = '' WHERE id = ?`
 		}
 		if _, err := tx.Exec(query, id); err != nil {
-			log.Printf("store: clear retained %s audio_path for %d: %v", kind, id, err)
+			slog.Warn("store: clear retained audio_path", "kind", kind, "id", id, "err", err)
 		}
 	}
 
 	if err := tx.Commit(); err != nil {
-		log.Printf("store: commit retention tx: %v", err)
+		slog.Warn("store: commit retention tx", "err", err)
 	}
 }

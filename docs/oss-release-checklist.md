@@ -11,5 +11,6 @@ Use this checklist before syncing to the release repository or cutting a public 
 - [ ] `config.example.toml` is OSS-safe and documents only public runtime expectations
 - [ ] `frontend/app/README.md` is project-specific and not the stock Vite template
 - [ ] architecture docs do not claim unimplemented backends as shipped features
+- [ ] GitHub Actions secret `OSS_PUBLISH_TOKEN` or `GITHUB_PAT` in the development repo can read and write `kombifyio/SpeechKit`
 - [ ] canonical Windows build succeeds and emits `dist/windows/SpeechKit/` and `dist/windows/SpeechKit-Setup.exe`
 - [ ] release artifacts are built from the mirrored public tree

@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/kombifyio/SpeechKit/internal/config"
+	"github.com/kombifyio/SpeechKit/internal/secrets"
 	"github.com/kombifyio/SpeechKit/internal/tray"
 	"github.com/wailsapp/wails/v3/pkg/application"
 )
@@ -87,6 +88,9 @@ type overlaySnapshot struct {
 	AgentHotkey           string            `json:"agentHotkey"`
 	ActiveMode            string            `json:"activeMode"`
 	Position              string            `json:"position"`
+	Movable               bool              `json:"movable"`
+	PositionFreeX         int               `json:"positionFreeX"`
+	PositionFreeY         int               `json:"positionFreeY"`
 	LastTranscription     string            `json:"lastTranscription"`
 	QuickNoteMode         bool              `json:"quickNoteMode"`
 	AudioDeviceID         string            `json:"audioDeviceId"`
@@ -97,11 +101,15 @@ type overlaySnapshot struct {
 type settingsSnapshot struct {
 	OverlayEnabled        bool              `json:"overlayEnabled"`
 	OverlayPosition       string            `json:"overlayPosition"`
+	OverlayMovable        bool              `json:"overlayMovable"`
+	OverlayFreeX          int               `json:"overlayFreeX"`
+	OverlayFreeY          int               `json:"overlayFreeY"`
 	StoreBackend          string            `json:"storeBackend"`
 	SQLitePath            string            `json:"sqlitePath"`
 	PostgresConfigured    bool              `json:"postgresConfigured"`
 	PostgresDSN           string            `json:"postgresDSN,omitempty"`
 	MaxAudioStorageMB     int               `json:"maxAudioStorageMB"`
+	HFAvailable           bool              `json:"hfAvailable"`
 	HFEnabled             bool              `json:"hfEnabled"`
 	HFHasUserToken        bool              `json:"hfHasUserToken"`
 	HFHasInstallToken     bool              `json:"hfHasInstallToken"`
@@ -113,6 +121,7 @@ type settingsSnapshot struct {
 	HFModel               string            `json:"hfModel"`
 	Visualizer            string            `json:"visualizer"`
 	Design                string            `json:"design"`
+	VocabularyDictionary  string            `json:"vocabularyDictionary"`
 	SaveAudio             bool              `json:"saveAudio"`
 	AudioRetentionDays    int               `json:"audioRetentionDays"`
 	AudioDeviceID         string            `json:"audioDeviceId"`
@@ -320,6 +329,43 @@ func radialMenuPosition(bounds screenBounds, position string) (int, int) {
 	return anchorX + dotAnchorSize/2 - radialMenuSize/2, anchorY + dotAnchorSize/2 - radialMenuSize/2
 }
 
+func clampInt(value, minValue, maxValue int) int {
+	if minValue > maxValue {
+		return value
+	}
+	if value < minValue {
+		return minValue
+	}
+	if value > maxValue {
+		return maxValue
+	}
+	return value
+}
+
+func defaultOverlayFreeCenter(bounds screenBounds, visualizer, position string) (int, int) {
+	if visualizer == "circle" {
+		x, y := dotAnchorPosition(bounds, position)
+		return x + dotAnchorSize/2, y + dotAnchorSize/2
+	}
+	x, y := pillAnchorPosition(bounds, position)
+	return x + pillAnchorWidth/2, y + pillAnchorHeight/2
+}
+
+func resolveOverlayFreeCenter(bounds screenBounds, visualizer, position string, centerX, centerY int) (int, int) {
+	if centerX == 0 && centerY == 0 {
+		return defaultOverlayFreeCenter(bounds, visualizer, position)
+	}
+	return centerX, centerY
+}
+
+func overlayFreeWindowPosition(bounds screenBounds, centerX, centerY, width, height int) (int, int) {
+	halfW := width / 2
+	halfH := height / 2
+	clampedX := clampInt(centerX, bounds.X+halfW, bounds.X+bounds.Width-halfW)
+	clampedY := clampInt(centerY, bounds.Y+halfH, bounds.Y+bounds.Height-halfH)
+	return clampedX - halfW, clampedY - halfH
+}
+
 func hasDedicatedOverlayWindows(host desktopHostState) bool {
 	return host.pillAnchor != nil || host.pillPanel != nil || host.dotAnchor != nil || host.radialMenu != nil
 }
@@ -367,6 +413,31 @@ func (s *appState) positionOverlay() {
 	}
 
 	if hasDedicatedOverlayWindows(host) {
+		if runtime.overlayMovable {
+			centerX, centerY := resolveOverlayFreeCenter(bounds, runtime.overlayVisualizer, runtime.overlayPosition, runtime.overlayFreeX, runtime.overlayFreeY)
+			if host.pillAnchor != nil {
+				x, y := overlayFreeWindowPosition(bounds, centerX, centerY, pillAnchorWidth, pillAnchorHeight)
+				host.pillAnchor.SetSize(pillAnchorWidth, pillAnchorHeight)
+				host.pillAnchor.SetPosition(x, y)
+			}
+			if host.pillPanel != nil {
+				x, y := overlayFreeWindowPosition(bounds, centerX, centerY, pillPanelWidth, pillPanelHeight)
+				host.pillPanel.SetSize(pillPanelWidth, pillPanelHeight)
+				host.pillPanel.SetPosition(x, y)
+			}
+			if host.dotAnchor != nil {
+				x, y := overlayFreeWindowPosition(bounds, centerX, centerY, dotAnchorSize, dotAnchorSize)
+				host.dotAnchor.SetSize(dotAnchorSize, dotAnchorSize)
+				host.dotAnchor.SetPosition(x, y)
+			}
+			if host.radialMenu != nil {
+				x, y := overlayFreeWindowPosition(bounds, centerX, centerY, radialMenuSize, radialMenuSize)
+				host.radialMenu.SetSize(radialMenuSize, radialMenuSize)
+				host.radialMenu.SetPosition(x, y)
+			}
+			return
+		}
+
 		if host.pillAnchor != nil {
 			x, y := pillAnchorPosition(bounds, runtime.overlayPosition)
 			host.pillAnchor.SetSize(pillAnchorWidth, pillAnchorHeight)
@@ -392,6 +463,12 @@ func (s *appState) positionOverlay() {
 
 	overlay := host.overlay
 	if overlay == nil {
+		return
+	}
+	if runtime.overlayMovable {
+		centerX, centerY := resolveOverlayFreeCenter(bounds, runtime.overlayVisualizer, runtime.overlayPosition, runtime.overlayFreeX, runtime.overlayFreeY)
+		wx, wy := overlayFreeWindowPosition(bounds, centerX, centerY, overlayWindowSize, overlayWindowSize)
+		overlay.SetPosition(wx, wy)
 		return
 	}
 	wx, wy := overlayWindowPosition(bounds, runtime.overlayPosition, runtime.overlayVisualizer)
@@ -539,7 +616,6 @@ func (s *appState) showAssistBubble(text string) {
 	bubble.ExecJS(fmt.Sprintf(`if(window.__assistBubble){window.__assistBubble.show("%s")}`, escapedText))
 }
 
-
 func (s *appState) doneResetDelayValue() time.Duration {
 	if s.doneResetDelay > 0 {
 		return s.doneResetDelay
@@ -649,6 +725,9 @@ func (s *appState) overlaySnapshot() overlaySnapshot {
 		AgentHotkey:           agentHotkey,
 		ActiveMode:            activeMode,
 		Position:              s.overlayPosition,
+		Movable:               s.overlayMovable,
+		PositionFreeX:         s.overlayFreeX,
+		PositionFreeY:         s.overlayFreeY,
 		LastTranscription:     s.lastTranscriptionText,
 		QuickNoteMode:         s.quickNoteMode,
 		AudioDeviceID:         audioDeviceID,
@@ -721,19 +800,28 @@ func (s *appState) settingsSnapshot(cfg *config.Config) settingsSnapshot {
 	if storeBackend == "" {
 		storeBackend = "sqlite"
 	}
-	tokenStatus, err := config.HuggingFaceTokenStatus(cfg)
-	if err != nil {
-		tokenStatus.ActiveSource = "none"
+	hfAvailable := config.ManagedHuggingFaceAvailableInBuild()
+	tokenStatus := secrets.TokenStatus{ActiveSource: secrets.TokenSourceNone}
+	if hfAvailable {
+		var err error
+		tokenStatus, err = config.HuggingFaceTokenStatus(cfg)
+		if err != nil {
+			tokenStatus.ActiveSource = "none"
+		}
 	}
 	return settingsSnapshot{
 		OverlayEnabled:        s.overlayEnabled,
 		OverlayPosition:       s.overlayPosition,
+		OverlayMovable:        s.overlayMovable,
+		OverlayFreeX:          s.overlayFreeX,
+		OverlayFreeY:          s.overlayFreeY,
 		StoreBackend:          storeBackend,
 		SQLitePath:            cfg.Store.SQLitePath,
 		PostgresConfigured:    strings.TrimSpace(cfg.Store.PostgresDSN) != "",
 		PostgresDSN:           cfg.Store.PostgresDSN,
 		MaxAudioStorageMB:     cfg.Store.MaxAudioStorageMB,
-		HFEnabled:             cfg.HuggingFace.Enabled,
+		HFAvailable:           hfAvailable,
+		HFEnabled:             hfAvailable && cfg.HuggingFace.Enabled,
 		HFHasUserToken:        tokenStatus.HasUserToken,
 		HFHasInstallToken:     tokenStatus.HasInstallToken,
 		HFTokenSource:         string(tokenStatus.ActiveSource),
@@ -744,10 +832,42 @@ func (s *appState) settingsSnapshot(cfg *config.Config) settingsSnapshot {
 		HFModel:               cfg.HuggingFace.Model,
 		Visualizer:            s.overlayVisualizer,
 		Design:                cfg.UI.Design,
+		VocabularyDictionary:  cfg.Vocabulary.Dictionary,
 		SaveAudio:             cfg.Store.SaveAudio,
 		AudioRetentionDays:    cfg.Store.AudioRetentionDays,
 		AudioDeviceID:         audioDeviceID,
 		SelectedAudioDeviceID: audioDeviceID,
 		ActiveProfiles:        cloneStringMap(s.activeProfiles),
 	}
+}
+
+func (s *appState) overlayFreeCenter() (int, int) {
+	if s == nil {
+		return 0, 0
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.overlayFreeX, s.overlayFreeY
+}
+
+func (s *appState) updateOverlayFreeCenter(centerX, centerY int) bool {
+	if s == nil {
+		return false
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if !s.overlayMovable {
+		return false
+	}
+
+	s.overlayFreeX = centerX
+	s.overlayFreeY = centerY
+	s.syncSpeechKitSnapshotLocked()
+	return true
+}
+
+func (s *appState) updateOverlayFreeCenterFromPanel(x, y int) bool {
+	return s.updateOverlayFreeCenter(x+pillPanelWidth/2, y+pillPanelHeight/2)
 }

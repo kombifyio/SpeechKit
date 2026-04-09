@@ -5,7 +5,7 @@ import (
 	"database/sql"
 	_ "embed"
 	"fmt"
-	"log"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
@@ -430,7 +430,7 @@ func (s *PostgresStore) enforceStorageLimit() {
 
 	tx, err := s.db.Begin()
 	if err != nil {
-		log.Printf("store: begin postgres cleanup tx: %v", err)
+		slog.Warn("store: begin postgres cleanup tx", "err", err)
 		return
 	}
 	defer tx.Rollback()
@@ -455,7 +455,7 @@ func (s *PostgresStore) enforceStorageLimit() {
 			path string
 		)
 		if err := rows.Scan(&kind, &id, &path); err != nil {
-			log.Printf("store: scan postgres cleanup row: %v", err)
+			slog.Warn("store: scan postgres cleanup row", "err", err)
 			continue
 		}
 		if path == "" {
@@ -466,7 +466,7 @@ func (s *PostgresStore) enforceStorageLimit() {
 			continue
 		}
 		if err := os.Remove(path); err != nil {
-			log.Printf("store: remove postgres audio %s: %v", path, err)
+			slog.Warn("store: remove postgres audio", "path", path, "err", err)
 			continue
 		}
 		totalSize -= info.Size()
@@ -475,12 +475,12 @@ func (s *PostgresStore) enforceStorageLimit() {
 			query = `UPDATE quick_notes SET audio_path = '' WHERE id = $1`
 		}
 		if _, err := tx.Exec(query, id); err != nil {
-			log.Printf("store: clear postgres %s audio_path for %d: %v", kind, id, err)
+			slog.Warn("store: clear postgres audio_path", "kind", kind, "id", id, "err", err)
 		}
 	}
 
 	if err := tx.Commit(); err != nil {
-		log.Printf("store: commit postgres cleanup tx: %v", err)
+		slog.Warn("store: commit postgres cleanup tx", "err", err)
 	}
 }
 
@@ -492,7 +492,7 @@ func (s *PostgresStore) enforceAudioRetention() {
 	cutoff := time.Now().Add(-time.Duration(s.audioRetentionDays) * 24 * time.Hour)
 	tx, err := s.db.Begin()
 	if err != nil {
-		log.Printf("store: begin postgres retention tx: %v", err)
+		slog.Warn("store: begin postgres retention tx", "err", err)
 		return
 	}
 	defer tx.Rollback()
@@ -506,7 +506,7 @@ func (s *PostgresStore) enforceAudioRetention() {
 		cutoff,
 	)
 	if err != nil {
-		log.Printf("store: query postgres retention rows: %v", err)
+		slog.Warn("store: query postgres retention rows", "err", err)
 		return
 	}
 	defer rows.Close()
@@ -518,14 +518,14 @@ func (s *PostgresStore) enforceAudioRetention() {
 			path string
 		)
 		if err := rows.Scan(&kind, &id, &path); err != nil {
-			log.Printf("store: scan postgres retention row: %v", err)
+			slog.Warn("store: scan postgres retention row", "err", err)
 			continue
 		}
 		if path == "" {
 			continue
 		}
 		if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
-			log.Printf("store: remove retained postgres audio %s: %v", path, err)
+			slog.Warn("store: remove retained postgres audio", "path", path, "err", err)
 			continue
 		}
 		query := `UPDATE transcriptions SET audio_path = '' WHERE id = $1`
@@ -533,12 +533,12 @@ func (s *PostgresStore) enforceAudioRetention() {
 			query = `UPDATE quick_notes SET audio_path = '' WHERE id = $1`
 		}
 		if _, err := tx.Exec(query, id); err != nil {
-			log.Printf("store: clear retained postgres %s audio_path for %d: %v", kind, id, err)
+			slog.Warn("store: clear retained postgres audio_path", "kind", kind, "id", id, "err", err)
 		}
 	}
 
 	if err := tx.Commit(); err != nil {
-		log.Printf("store: commit postgres retention tx: %v", err)
+		slog.Warn("store: commit postgres retention tx", "err", err)
 	}
 }
 

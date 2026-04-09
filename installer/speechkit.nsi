@@ -1,6 +1,5 @@
 !include "MUI2.nsh"
 !include "LogicLib.nsh"
-!include "nsDialogs.nsh"
 
 ; --- General ---
 Name "kombify SpeechKit"
@@ -9,18 +8,18 @@ OutFile "..\dist\windows\SpeechKit-Setup.exe"
 InstallDir "$LOCALAPPDATA\SpeechKit"
 RequestExecutionLevel user
 
+; VERSION can be overridden at compile time: makensis /DVERSION=x.y.z
+!ifndef VERSION
+  !define VERSION "0.14.6"
+!endif
+
 ; --- Interface ---
 !define MUI_ICON "speechkit.ico"
 !define MUI_ABORTWARNING
 
-Var HFTokenDialog
-Var HFTokenInput
-Var HFTokenValue
-
 ; --- Pages ---
 !insertmacro MUI_PAGE_WELCOME
 !insertmacro MUI_PAGE_DIRECTORY
-Page custom HFTokenPageCreate HFTokenPageLeave
 !insertmacro MUI_PAGE_INSTFILES
 !insertmacro MUI_PAGE_FINISH
 
@@ -30,25 +29,6 @@ Page custom HFTokenPageCreate HFTokenPageLeave
 !insertmacro MUI_LANGUAGE "German"
 !insertmacro MUI_LANGUAGE "English"
 
-Function HFTokenPageCreate
-  nsDialogs::Create 1018
-  Pop $HFTokenDialog
-  ${If} $HFTokenDialog == error
-    Abort
-  ${EndIf}
-
-  ${NSD_CreateLabel} 0 0 100% 24u "Optional: Enter a default Hugging Face token for this installation. It will be migrated into secure local storage on first app start."
-  Pop $0
-  ${NSD_CreatePassword} 0 30u 100% 12u ""
-  Pop $HFTokenInput
-
-  nsDialogs::Show
-FunctionEnd
-
-Function HFTokenPageLeave
-  ${NSD_GetText} $HFTokenInput $HFTokenValue
-FunctionEnd
-
 ; --- Install Section ---
 Section "SpeechKit" SecMain
   SetOutPath "$INSTDIR"
@@ -57,6 +37,7 @@ Section "SpeechKit" SecMain
   File "${STAGE_DIR}\SpeechKit.exe"
   File "${STAGE_DIR}\whisper-server.exe"
   File "${STAGE_DIR}\*.dll"
+  File "${STAGE_DIR}\MicrosoftEdgeWebview2Setup.exe"
 
   ; Runtime config template
   File "/oname=config.default.toml" "${STAGE_DIR}\config.toml"
@@ -64,6 +45,9 @@ Section "SpeechKit" SecMain
   ; Create default config if not exists
   IfFileExists "$INSTDIR\config.toml" +2
     CopyFiles "$INSTDIR\config.default.toml" "$INSTDIR\config.toml"
+
+  ; Ensure WebView2 runtime for Wails UI
+  Call EnsureWebView2Runtime
 
   ; Create models directory
   CreateDirectory "$INSTDIR\models"
@@ -85,25 +69,21 @@ Section "SpeechKit" SecMain
   WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\kombify SpeechKit" "UninstallString" '"$INSTDIR\uninstall.exe"'
   WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\kombify SpeechKit" "InstallLocation" "$INSTDIR"
   WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\kombify SpeechKit" "Publisher" "kombify"
-  WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\kombify SpeechKit" "DisplayVersion" "0.14.1"
+  WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\kombify SpeechKit" "DisplayVersion" "${VERSION}"
   WriteRegDWORD HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\kombify SpeechKit" "NoModify" 1
   WriteRegDWORD HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\kombify SpeechKit" "NoRepair" 1
 
-  ${If} $HFTokenValue != ""
-    WriteRegStr HKCU "Software\kombify\SpeechKit" "PendingHFInstallToken" "$HFTokenValue"
-  ${EndIf}
 SectionEnd
 
 ; --- Uninstall Section ---
 Section "Uninstall"
   ; Remove Add/Remove Programs entry
   DeleteRegKey HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\kombify SpeechKit"
-  DeleteRegValue HKCU "Software\kombify\SpeechKit" "PendingHFInstallToken"
-
   ; Remove files
   Delete "$INSTDIR\SpeechKit.exe"
   Delete "$INSTDIR\whisper-server.exe"
   Delete "$INSTDIR\*.dll"
+  Delete "$INSTDIR\MicrosoftEdgeWebview2Setup.exe"
   Delete "$INSTDIR\config.toml"
   Delete "$INSTDIR\config.default.toml"
   Delete "$INSTDIR\uninstall.exe"
@@ -118,3 +98,28 @@ Section "Uninstall"
   ; Remove install dir (only if empty or user confirms)
   RMDir "$INSTDIR"
 SectionEnd
+
+Function IsWebView2RuntimeInstalled
+  ReadRegStr $0 HKCU "Software\Microsoft\EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}" "pv"
+  ${If} $0 == ""
+    ReadRegStr $0 HKLM "Software\Microsoft\EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}" "pv"
+  ${EndIf}
+
+  ${If} $0 == ""
+    Push "0"
+  ${Else}
+    Push "1"
+  ${EndIf}
+FunctionEnd
+
+Function EnsureWebView2Runtime
+  Call IsWebView2RuntimeInstalled
+  Pop $0
+  ${If} $0 == "0"
+    DetailPrint "Installing Microsoft Edge WebView2 Runtime..."
+    ExecWait '"$INSTDIR\MicrosoftEdgeWebview2Setup.exe" /silent /install' $1
+    ${If} $1 != 0
+      MessageBox MB_ICONEXCLAMATION|MB_OK "WebView2 runtime could not be installed automatically. SpeechKit may require an internet connection on first launch."
+    ${EndIf}
+  ${EndIf}
+FunctionEnd

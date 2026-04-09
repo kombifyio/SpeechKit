@@ -5,7 +5,7 @@ package assist
 import (
 	"context"
 	"fmt"
-	"log"
+	"log/slog"
 
 	"github.com/kombifyio/SpeechKit/internal/ai/flows"
 	"github.com/kombifyio/SpeechKit/internal/shortcuts"
@@ -96,7 +96,7 @@ func (p *Pipeline) handleShortcut(ctx context.Context, res shortcuts.Resolution,
 
 	// Synthesize TTS for the response.
 	if err := p.synthesize(ctx, result); err != nil {
-		log.Printf("assist: TTS for shortcut failed (non-fatal): %v", err)
+		slog.Warn("assist: TTS for shortcut failed", "err", err)
 	}
 
 	return result, nil
@@ -126,7 +126,7 @@ func (p *Pipeline) handleLLM(ctx context.Context, transcript string, opts Proces
 
 	// Synthesize TTS for the LLM response.
 	if err := p.synthesize(ctx, result); err != nil {
-		log.Printf("assist: TTS failed (non-fatal): %v", err)
+		slog.Warn("assist: TTS failed", "err", err)
 	}
 
 	return result, nil

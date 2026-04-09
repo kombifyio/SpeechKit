@@ -6,6 +6,41 @@ The format is based on Keep a Changelog and this project is intended to ship und
 
 ## [Unreleased]
 
+## [0.14.6] - 2026-04-09
+
+### Fixed
+
+- Switched the OSS mirror workflow to dedicated `OSS_PUBLISH_TOKEN` HTTPS auth via `GIT_ASKPASS`, avoiding the failing inline credential path on the CI runner
+- Updated OpenTelemetry dependencies to `v1.40.0` so `govulncheck` no longer blocks CI on the current release line
+- Removed the zero-duration timing assumption from the STT HTTP provider tests so Windows release builds no longer fail on fast local test servers
+
+## [0.14.5] - 2026-04-09
+
+### Fixed
+
+- Switched the Windows build script to call `npm.cmd` directly so GitHub Actions no longer routes frontend steps through the broken PowerShell wrapper path
+- Moved CI and release workflows to Go `1.25.9` and updated `github.com/go-git/go-git/v5` to `v5.17.1` to clear the current `govulncheck` failures
+- Normalized the OSS publish token before git access and removed the stale duplicate release block that would have broken the release workflow after a successful build
+
+## [0.14.4] - 2026-04-09
+
+### Fixed
+
+- Switched Windows build entry points to `pwsh` so CI and tag builds no longer fall back to Windows PowerShell 5.1
+- Switched OSS mirroring to explicit git-over-HTTPS token auth instead of relying on the checkout action's failing cross-repo auth path
+- Cleared the current CI blockers in Staticcheck and Android lint for the `main` release path
+
+## [0.14.3] - 2026-04-09
+
+### Fixed
+
+- Replaced the strict-mode-unsafe PowerShell release build invocation so tagged Windows releases can build again
+- Hardened the OSS publish flow to validate mirror token access before checkout and reuse the same token source across mirror checkout and release upload
+
+### Changed
+
+- Bumped release identifiers across desktop, Android, installer metadata, and frontend artifacts to 0.14.3
+
 ## [0.14.1] - 2026-04-03
 
 ### Fixed

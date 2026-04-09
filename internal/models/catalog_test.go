@@ -18,7 +18,7 @@ func TestDefaultCatalogIsLocalFirst(t *testing.T) {
 	if sttProfile.AllowInference {
 		t.Fatal("STT default should not allow inference")
 	}
-	if sttProfile.ModelID != "Qwen/Qwen3-ASR-1.7B" {
+	if sttProfile.ModelID != "whisper.cpp" {
 		t.Fatalf("STT default model = %q", sttProfile.ModelID)
 	}
 
@@ -95,6 +95,33 @@ func TestDefaultCatalogHasNoHFEndpointProfiles(t *testing.T) {
 	for _, profile := range catalog.Profiles {
 		if profile.ExecutionMode == "hf_endpoint" {
 			t.Fatalf("catalog still contains HF endpoint profile %q; all endpoint profiles should be removed", profile.ID)
+		}
+	}
+}
+
+func TestDefaultCatalogIncludesGemma4LocalProfiles(t *testing.T) {
+	catalog := DefaultCatalog()
+
+	required := map[string]string{
+		"utility.ollama.gemma4-e2b": "gemma4:e2b",
+		"utility.ollama.gemma4-e4b": "gemma4:e4b",
+		"agent.ollama.gemma4-e2b":   "gemma4:e2b",
+		"agent.ollama.gemma4-e4b":   "gemma4:e4b",
+		"agent.ollama.gemma4-26b":   "gemma4:26b",
+	}
+
+	found := map[string]string{}
+	for _, profile := range catalog.Profiles {
+		if _, ok := required[profile.ID]; ok {
+			found[profile.ID] = profile.ModelID
+		}
+	}
+
+	for id, wantModel := range required {
+		if got, ok := found[id]; !ok {
+			t.Fatalf("missing profile %q", id)
+		} else if got != wantModel {
+			t.Fatalf("profile %q model = %q, want %q", id, got, wantModel)
 		}
 	}
 }

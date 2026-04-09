@@ -102,11 +102,47 @@ describe('DashboardApp', () => {
     expect(screen.getByRole('button', { name: 'Library' })).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Dashboard' })).not.toBeInTheDocument()
     expect(screen.getByText(/quick start/i)).toBeInTheDocument()
-    expect(await screen.findByText(/average wpm/i)).toBeInTheDocument()
-    expect(screen.getByText('82.7')).toBeInTheDocument()
+    expect(await screen.findByText('82.7')).toBeInTheDocument()
+    expect(screen.getByText(/average wpm/i)).toBeInTheDocument()
     expect(screen.getByText(/hold windows alt to talk/i)).toBeInTheDocument()
     expect(screen.getByText(/hover over the pill/i)).toBeInTheDocument()
     expect(screen.getByText(/say summarize/i)).toBeInTheDocument()
+  })
+
+  it('replaces onboarding with an activity home once transcriptions exist', async () => {
+    fetchHistoryMock.mockResolvedValue([
+      {
+        id: 2,
+        text: 'newer transcription',
+        language: 'de',
+        provider: 'local',
+        model: 'whisper.cpp',
+        latencyMs: 110,
+        createdAt: '2026-03-26T09:30:00',
+      },
+    ])
+    fetchQuickNotesMock.mockResolvedValue([
+      {
+        id: 11,
+        text: 'Call with AcmeOS team',
+        language: 'de',
+        provider: 'manual',
+        latencyMs: 0,
+        pinned: true,
+        createdAt: '2026-03-26T09:30:00',
+        updatedAt: '2026-03-26T09:30:00',
+      },
+    ])
+
+    render(<DashboardApp />)
+
+    expect(await screen.findByText(/recent activity/i)).toBeInTheDocument()
+    expect(screen.getByText(/latest transcription/i)).toBeInTheDocument()
+    expect(screen.getByText(/newer transcription/i)).toBeInTheDocument()
+    expect(screen.getByText(/pinned notes/i)).toBeInTheDocument()
+    expect(screen.getByText(/call with acmeos team/i)).toBeInTheDocument()
+    expect(screen.queryByText(/quick start/i)).not.toBeInTheDocument()
+    expect(screen.queryByText(/hold windows alt to talk/i)).not.toBeInTheDocument()
   })
 
   it('shows library entries sorted by newest date and includes absolute timestamps', async () => {

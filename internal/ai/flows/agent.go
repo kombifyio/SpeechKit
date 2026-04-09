@@ -3,7 +3,7 @@ package flows
 import (
 	"context"
 	"fmt"
-	"log"
+	"log/slog"
 
 	"github.com/firebase/genkit/go/ai"
 	"github.com/firebase/genkit/go/core"
@@ -54,7 +54,7 @@ func DefineAgentFlow(g *genkit.Genkit, models []ai.Model, tools ...ai.ToolRef) *
 			resp, err := genkit.Generate(ctx, g, opts...)
 			if err != nil {
 				lastErr = err
-				log.Printf("agent: model failed: %v", err)
+				slog.Warn("agent: model failed", "err", err)
 				continue
 			}
 

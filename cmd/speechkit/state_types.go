@@ -25,11 +25,15 @@ type runtimeState struct {
 	overlayDesign         string
 	overlayEnabled        bool
 	overlayPosition       string
+	overlayMovable        bool
+	overlayFreeX          int
+	overlayFreeY          int
 	quickNoteMode         bool
 	quickCaptureMode      bool
 	quickCaptureAutoStart bool
 	quickCaptureNoteID    int64
 	lastTranscriptionText string
+	vocabularyDictionary  string
 	activeMode            string
 	audioDeviceID         string
 	activeProfiles        map[string]string
@@ -64,11 +68,15 @@ func (s *appState) runtimeStateLocked() runtimeState {
 		overlayDesign:         s.overlayDesign,
 		overlayEnabled:        s.overlayEnabled,
 		overlayPosition:       s.overlayPosition,
+		overlayMovable:        s.overlayMovable,
+		overlayFreeX:          s.overlayFreeX,
+		overlayFreeY:          s.overlayFreeY,
 		quickNoteMode:         s.quickNoteMode,
 		quickCaptureMode:      s.quickCaptureMode,
 		quickCaptureAutoStart: s.quickCaptureAutoStart,
 		quickCaptureNoteID:    s.quickCaptureNoteID,
 		lastTranscriptionText: s.lastTranscriptionText,
+		vocabularyDictionary:  s.vocabularyDictionary,
 		activeMode:            s.activeMode,
 		audioDeviceID:         s.audioDeviceID,
 	}

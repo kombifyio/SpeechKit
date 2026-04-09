@@ -6,7 +6,7 @@ import (
 	"github.com/kombifyio/SpeechKit/internal/hotkey"
 )
 
-func (s *appState) applyRuntimeSettings(dictateHotkey, agentHotkey, activeMode, audioDeviceID string, providers []string, visualizerValue, designValue, overlayPosition string) string {
+func (s *appState) applyRuntimeSettings(dictateHotkey, agentHotkey, activeMode, audioDeviceID string, providers []string, visualizerValue, designValue, overlayPosition, vocabularyDictionary string, overlayMovable bool, overlayFreeX, overlayFreeY int) string {
 	if s == nil {
 		return ""
 	}
@@ -25,6 +25,10 @@ func (s *appState) applyRuntimeSettings(dictateHotkey, agentHotkey, activeMode, 
 	s.overlayVisualizer = visualizerValue
 	s.overlayDesign = designValue
 	s.overlayPosition = overlayPosition
+	s.overlayMovable = overlayMovable
+	s.overlayFreeX = overlayFreeX
+	s.overlayFreeY = overlayFreeY
+	s.vocabularyDictionary = vocabularyDictionary
 	s.hotkey = s.activeHotkeyLocked()
 	s.syncSpeechKitSnapshotLocked()
 	return oldHotkey

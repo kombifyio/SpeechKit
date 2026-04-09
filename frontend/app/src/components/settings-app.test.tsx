@@ -29,6 +29,7 @@ vi.mock('@/lib/speechkit', () => ({
     postgresConfigured: false,
     postgresDSN: '',
     maxAudioStorageMB: 500,
+    hfAvailable: true,
     hfEnabled: false,
     hotkey: 'win+alt',
     dictateHotkey: 'win+alt',
@@ -38,6 +39,10 @@ vi.mock('@/lib/speechkit', () => ({
     visualizer: 'pill',
     design: 'default',
     overlayPosition: 'top',
+    overlayMovable: false,
+    overlayFreeX: 0,
+    overlayFreeY: 0,
+    vocabularyDictionary: '',
     saveAudio: true,
     audioRetentionDays: 7,
     selectedAudioDeviceId: '',
@@ -83,6 +88,7 @@ const baseSettings: SpeechKitSettingsState = {
   postgresConfigured: false,
   postgresDSN: '',
   maxAudioStorageMB: 500,
+  hfAvailable: true,
   hfEnabled: false,
   hotkey: 'win+alt',
   dictateHotkey: 'win+alt',
@@ -92,6 +98,10 @@ const baseSettings: SpeechKitSettingsState = {
   visualizer: 'pill',
   design: 'default',
   overlayPosition: 'top',
+  overlayMovable: false,
+  overlayFreeX: 0,
+  overlayFreeY: 0,
+  vocabularyDictionary: '',
   saveAudio: true,
   audioRetentionDays: 7,
   selectedAudioDeviceId: 'mic-1',
@@ -153,6 +163,7 @@ describe('SettingsApp', () => {
     const modelsSection = await screen.findByText('Models')
     expect(modelsSection).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'STT' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'TTS' })).not.toBeInTheDocument()
   })
 
   it('saves model changes even while hugging face inference is off', async () => {
@@ -169,6 +180,30 @@ describe('SettingsApp', () => {
     await screen.findByText('Models')
     const activeLabel = screen.getByText('Active')
     expect(activeLabel).toBeInTheDocument()
+  })
+
+  it('renders model descriptions for live-switchable profiles', async () => {
+    fetchSettingsStateMock.mockResolvedValue({
+      ...baseSettings,
+      profiles: [
+        {
+          id: 'utility.ollama.gemma4-e4b',
+          modality: 'utility',
+          name: 'Gemma 4 E4B (Local)',
+          executionMode: 'ollama_local',
+          description: 'Laptop-friendly local model for summaries and quick actions.',
+        },
+      ],
+      activeProfiles: { utility: 'utility.ollama.gemma4-e4b' },
+    })
+
+    render(<SettingsApp />)
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Provider' }))
+
+    expect(await screen.findByRole('button', { name: 'Utility' })).toBeInTheDocument()
+    expect(screen.getByText(/laptop-friendly local model/i)).toBeInTheDocument()
+    expect(screen.getByText('local runtime')).toBeInTheDocument()
   })
 
   it('saves mode changes and separate hotkeys', async () => {
@@ -211,6 +246,26 @@ describe('SettingsApp', () => {
     expect(micButton).toBeInTheDocument()
   })
 
+  it('saves vocabulary dictionary changes', async () => {
+    fetchSettingsStateMock.mockResolvedValue({
+      ...baseSettings,
+      vocabularyDictionary: 'kombi fire => Kombify',
+    })
+
+    render(<SettingsApp />)
+
+    const input = await screen.findByLabelText('Vocabulary dictionary')
+    fireEvent.change(input, { target: { value: 'kombi fire => Kombify\nAcmeOS' } })
+
+    await waitFor(() =>
+      expect(saveSettingsStateMock).toHaveBeenCalledWith(
+        expect.objectContaining({
+          vocabularyDictionary: 'kombi fire => Kombify\nAcmeOS',
+        }),
+      ),
+    )
+  })
+
   it('saves overlay design changes', async () => {
     fetchSettingsStateMock.mockResolvedValue(baseSettings)
 
@@ -225,6 +280,24 @@ describe('SettingsApp', () => {
         expect.objectContaining({ design: 'kombify' }),
       ),
     )
+  })
+
+  it('allows enabling movable overlay while keeping the position chips', async () => {
+    fetchSettingsStateMock.mockResolvedValue(baseSettings)
+
+    render(<SettingsApp />)
+
+    fireEvent.click(await screen.findByRole('switch', { name: 'Movable overlay' }))
+
+    await waitFor(() =>
+      expect(saveSettingsStateMock).toHaveBeenCalledWith(
+        expect.objectContaining({ overlayMovable: true, overlayPosition: 'top' }),
+      ),
+    )
+
+    expect(
+      screen.getByText(/drag the center bubble inside the pill panel/i),
+    ).toBeInTheDocument()
   })
 
   it('saves local audio storage preferences', async () => {
@@ -350,6 +423,19 @@ describe('SettingsApp', () => {
     fireEvent.click(await screen.findByRole('button', { name: 'Provider' }))
 
     expect(await screen.findByText(/install token active/i)).toBeInTheDocument()
+  })
+
+  it('does not render a hugging face switch in provider settings', async () => {
+    fetchSettingsStateMock.mockResolvedValue(baseSettings)
+
+    render(<SettingsApp />)
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Provider' }))
+
+    await screen.findByText('API Tokens')
+    expect(
+      screen.queryByRole('switch', { name: 'Hugging Face Inference' }),
+    ).not.toBeInTheDocument()
   })
 
   it('saves a user hugging face token explicitly', async () => {

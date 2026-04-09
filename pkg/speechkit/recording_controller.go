@@ -2,6 +2,7 @@ package speechkit
 
 import (
 	"fmt"
+	"sync"
 
 	"github.com/kombifyio/SpeechKit/internal/audio"
 	"github.com/kombifyio/SpeechKit/internal/dictation"
@@ -9,12 +10,15 @@ import (
 
 const DefaultMinPCMBytes = 3200
 
+// AudioRecorder is the hardware abstraction for microphone capture.
 type AudioRecorder interface {
 	Start() error
 	Stop() ([]byte, error)
 	SetPCMHandler(func([]byte))
 }
 
+// SegmentCollector accumulates real-time PCM frames and splits them into
+// dictation segments when recording stops.
 type SegmentCollector interface {
 	FeedPCM([]byte) error
 	CollectStopSegments(fullPCM []byte) ([]dictation.Segment, error)
@@ -22,6 +26,7 @@ type SegmentCollector interface {
 
 type SegmentCollectorFactory func() SegmentCollector
 
+// JobSubmitter accepts a [TranscriptionJob] for async processing.
 type JobSubmitter interface {
 	Submit(TranscriptionJob) error
 }
@@ -43,6 +48,8 @@ type RecordingStopOptions struct {
 	Label string
 }
 
+// RecordingController manages the start/stop lifecycle of a single recording
+// session and hands audio segments to the submission queue.
 type RecordingController struct {
 	recorder         AudioRecorder
 	submitter        JobSubmitter
@@ -51,7 +58,9 @@ type RecordingController struct {
 	recordingMessage string
 	minPCMBytes      int
 
+	mu        sync.Mutex
 	recording bool
+	sessionID uint64
 	current   RecordingStartOptions
 	collector SegmentCollector
 }
@@ -68,26 +77,57 @@ func NewRecordingController(recorder AudioRecorder, submitter JobSubmitter, obse
 }
 
 func (c *RecordingController) IsRecording() bool {
-	return c != nil && c.recording
+	if c == nil {
+		return false
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.recording
 }
 
 func (c *RecordingController) Start(opts RecordingStartOptions) error {
 	if c == nil {
 		return fmt.Errorf("speechkit: recording controller not configured")
 	}
+
+	var (
+		collector SegmentCollector
+		sessionID uint64
+	)
+
+	c.mu.Lock()
 	c.recording = true
 	c.current = opts
 	c.collector = nil
+	c.sessionID++
+	sessionID = c.sessionID
 
 	if c.segmenterFactory != nil {
-		c.collector = c.segmenterFactory()
+		collector = c.segmenterFactory()
+		c.collector = collector
 	}
-	if c.collector != nil {
+	c.mu.Unlock()
+
+	if collector != nil {
 		c.recorder.SetPCMHandler(func(pcm []byte) {
-			if err := c.collector.FeedPCM(pcm); err != nil {
+			c.mu.Lock()
+			if c.sessionID != sessionID || !c.recording {
+				c.mu.Unlock()
+				return
+			}
+			activeCollector := c.collector
+			c.mu.Unlock()
+			if activeCollector == nil {
+				return
+			}
+			if err := activeCollector.FeedPCM(pcm); err != nil {
 				c.onLog(fmt.Sprintf("Dictation processor fallback: %v", err), "warn")
+				c.mu.Lock()
+				if c.sessionID == sessionID {
+					c.collector = nil
+				}
+				c.mu.Unlock()
 				c.recorder.SetPCMHandler(nil)
-				c.collector = nil
 			}
 		})
 	} else {
@@ -100,8 +140,12 @@ func (c *RecordingController) Start(opts RecordingStartOptions) error {
 	}
 
 	if err := c.recorder.Start(); err != nil {
-		c.recording = false
-		c.collector = nil
+		c.mu.Lock()
+		if c.sessionID == sessionID {
+			c.recording = false
+			c.collector = nil
+		}
+		c.mu.Unlock()
 		c.recorder.SetPCMHandler(nil)
 		c.onLog(fmt.Sprintf("Capture error: %v", err), "error")
 		c.onState("idle", "")
@@ -112,11 +156,21 @@ func (c *RecordingController) Start(opts RecordingStartOptions) error {
 }
 
 func (c *RecordingController) Stop(opts RecordingStopOptions) error {
-	if c == nil || !c.recording {
+	if c == nil {
 		return nil
 	}
 
+	c.mu.Lock()
+	if !c.recording {
+		c.mu.Unlock()
+		return nil
+	}
 	c.recording = false
+	current := c.current
+	collector := c.collector
+	c.collector = nil
+	c.mu.Unlock()
+
 	c.recorder.SetPCMHandler(nil)
 	pcm, stopErr := c.recorder.Stop()
 	if stopErr != nil {
@@ -134,15 +188,14 @@ func (c *RecordingController) Stop(opts RecordingStopOptions) error {
 	}
 
 	segments := FallbackDictationSegments(pcm)
-	if c.collector != nil {
-		collected, err := c.collector.CollectStopSegments(pcm)
+	if collector != nil {
+		collected, err := collector.CollectStopSegments(pcm)
 		if err != nil {
 			c.onLog(fmt.Sprintf("Dictation processor fallback: %v", err), "warn")
 		} else {
 			segments = collected
 		}
 	}
-	c.collector = nil
 
 	for _, segment := range segments {
 		prefix := ""
@@ -155,12 +208,12 @@ func (c *RecordingController) Stop(opts RecordingStopOptions) error {
 				PCM:          segment.PCM,
 				WAV:          audio.PCMToWAV(segment.PCM),
 				DurationSecs: audio.PCMDurationSecs(segment.PCM),
-				Language:     c.current.Language,
+				Language:     current.Language,
 				Prefix:       prefix,
-				QuickNote:    c.current.QuickNote,
-				QuickNoteID:  c.current.QuickNoteID,
+				QuickNote:    current.QuickNote,
+				QuickNoteID:  current.QuickNoteID,
 			},
-			Target: c.current.Target,
+			Target: current.Target,
 		}); err != nil {
 			c.onLog(fmt.Sprintf("Queue error: %v", err), "error")
 			c.onState("idle", "")

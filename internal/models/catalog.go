@@ -32,6 +32,7 @@ type Profile struct {
 	ExecutionMode  ExecutionMode `json:"executionMode,omitempty"`
 	ModelID        string        `json:"modelId,omitempty"`
 	Source         string        `json:"source,omitempty"`
+	Description    string        `json:"description,omitempty"`
 	License        string        `json:"license,omitempty"`
 	AllowInference bool          `json:"inferenceAllowed,omitempty"`
 	Default        bool          `json:"default,omitempty"`
@@ -47,25 +48,16 @@ func DefaultCatalog() Catalog {
 		Profiles: []Profile{
 			// --- STT: Local ---
 			{
-				ID:             "stt.local.qwen3asr17b",
-				Name:           "Qwen3 ASR 1.7B",
+				ID:             "stt.local.whispercpp",
+				Name:           "Whisper.cpp (Bundled Local)",
 				Modality:       ModalitySTT,
 				ExecutionMode:  ExecutionModeLocal,
-				ModelID:        "Qwen/Qwen3-ASR-1.7B",
-				Source:         "huggingface",
-				License:        "apache-2.0",
+				ModelID:        "whisper.cpp",
+				Source:         "Bundled local runtime",
+				Description:    "Offline Windows dictation with the bundled whisper-server runtime.",
+				License:        "mit",
 				AllowInference: false,
 				Default:        true,
-			},
-			{
-				ID:             "stt.local.qwen3asr06b",
-				Name:           "Qwen3 ASR 0.6B",
-				Modality:       ModalitySTT,
-				ExecutionMode:  ExecutionModeLocal,
-				ModelID:        "Qwen/Qwen3-ASR-0.6B",
-				Source:         "huggingface",
-				License:        "apache-2.0",
-				AllowInference: false,
 			},
 			// --- STT: HF Routed ---
 			{
@@ -226,12 +218,24 @@ func DefaultCatalog() Catalog {
 				AllowInference: true,
 			},
 			{
-				ID:             "utility.ollama.local",
-				Name:           "Ollama Local (small)",
+				ID:             "utility.ollama.gemma4-e2b",
+				Name:           "Gemma 4 E2B (Edge)",
 				Modality:       ModalityUtility,
 				ExecutionMode:  ExecutionModeOllama,
-				ModelID:        "llama3.2",
+				ModelID:        "gemma4:e2b",
 				Source:         "Local (Ollama)",
+				Description:    "Smallest Gemma 4 local profile for low-memory Windows devices and phone-class edge targets.",
+				License:        "varies",
+				AllowInference: true,
+			},
+			{
+				ID:             "utility.ollama.gemma4-e4b",
+				Name:           "Gemma 4 E4B (Local)",
+				Modality:       ModalityUtility,
+				ExecutionMode:  ExecutionModeOllama,
+				ModelID:        "gemma4:e4b",
+				Source:         "Local (Ollama)",
+				Description:    "Laptop-friendly Gemma 4 profile for summaries, transforms, and quick actions.",
 				License:        "varies",
 				AllowInference: true,
 			},
@@ -278,12 +282,35 @@ func DefaultCatalog() Catalog {
 				AllowInference: true,
 			},
 			{
-				ID:             "agent.ollama.local",
-				Name:           "Ollama Local (large)",
+				ID:             "agent.ollama.gemma4-e2b",
+				Name:           "Gemma 4 E2B (Edge)",
 				Modality:       ModalityAgent,
 				ExecutionMode:  ExecutionModeOllama,
-				ModelID:        "llama3.1:70b",
+				ModelID:        "gemma4:e2b",
 				Source:         "Local (Ollama)",
+				Description:    "Minimal local agent profile for thin devices, low-memory systems, and smartphone-adjacent edge footprints.",
+				License:        "varies",
+				AllowInference: true,
+			},
+			{
+				ID:             "agent.ollama.gemma4-e4b",
+				Name:           "Gemma 4 E4B (Local)",
+				Modality:       ModalityAgent,
+				ExecutionMode:  ExecutionModeOllama,
+				ModelID:        "gemma4:e4b",
+				Source:         "Local (Ollama)",
+				Description:    "Best default local agent profile when the app runs on typical Windows hardware.",
+				License:        "varies",
+				AllowInference: true,
+			},
+			{
+				ID:             "agent.ollama.gemma4-26b",
+				Name:           "Gemma 4 26B (Local Workstation)",
+				Modality:       ModalityAgent,
+				ExecutionMode:  ExecutionModeOllama,
+				ModelID:        "gemma4:26b",
+				Source:         "Local (Ollama)",
+				Description:    "Higher-quality local agent profile for workstation-class GPUs or high-memory systems.",
 				License:        "varies",
 				AllowInference: true,
 			},

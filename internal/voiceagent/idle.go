@@ -2,7 +2,7 @@ package voiceagent
 
 import (
 	"fmt"
-	"log"
+	"log/slog"
 	"sync"
 	"time"
 )
@@ -98,10 +98,10 @@ func (t *IdleTimer) onReminder() {
 
 	// Send a text prompt to the model asking it to remind the user.
 	prompt := reminderPrompt(locale)
-	log.Printf("Voice Agent: idle reminder triggered")
+	slog.Info("voice agent idle reminder triggered")
 
 	if err := t.session.provider.SendText(prompt); err != nil {
-		log.Printf("Voice Agent: failed to send idle reminder: %v", err)
+		slog.Warn("voice agent failed to send idle reminder", "err", err)
 	}
 }
 
@@ -114,12 +114,12 @@ func (t *IdleTimer) onDeactivate() {
 	locale := t.session.locale
 	t.mu.Unlock()
 
-	log.Printf("Voice Agent: idle deactivation triggered")
+	slog.Info("voice agent idle deactivation triggered")
 
 	// Ask the model to say goodbye before closing.
 	prompt := deactivatePrompt(locale)
 	if err := t.session.provider.SendText(prompt); err != nil {
-		log.Printf("Voice Agent: failed to send deactivation message: %v", err)
+		slog.Warn("voice agent failed to send deactivation message", "err", err)
 	}
 
 	// Give the model a moment to respond, then stop.

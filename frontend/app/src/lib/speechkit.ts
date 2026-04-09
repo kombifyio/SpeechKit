@@ -44,6 +44,9 @@ export type SpeechKitOverlayState = {
   agentHotkey: string
   activeMode: RuntimeMode
   position: 'top' | 'bottom' | 'left' | 'right'
+  movable: boolean
+  positionFreeX: number
+  positionFreeY: number
   lastTranscription: string
   quickNoteMode: boolean
   selectedAudioDeviceId: string
@@ -57,6 +60,7 @@ export type SpeechKitSettingsState = {
   postgresConfigured: boolean
   postgresDSN: string
   maxAudioStorageMB: number
+  hfAvailable: boolean
   hfEnabled: boolean
   hfHasUserToken: boolean
   hfHasInstallToken: boolean
@@ -69,6 +73,10 @@ export type SpeechKitSettingsState = {
   visualizer: OverlayMode
   design: OverlayDesign
   overlayPosition: 'top' | 'bottom' | 'left' | 'right'
+  overlayMovable: boolean
+  overlayFreeX: number
+  overlayFreeY: number
+  vocabularyDictionary: string
   saveAudio: boolean
   audioRetentionDays: number
   selectedAudioDeviceId: string
@@ -89,6 +97,9 @@ export const defaultOverlayState: SpeechKitOverlayState = {
   agentHotkey: 'ctrl+shift+k',
   activeMode: 'dictate',
   position: 'top',
+  movable: false,
+  positionFreeX: 0,
+  positionFreeY: 0,
   lastTranscription: '',
   quickNoteMode: false,
   selectedAudioDeviceId: '',
@@ -102,6 +113,7 @@ export const defaultSettingsState: SpeechKitSettingsState = {
   postgresConfigured: false,
   postgresDSN: '',
   maxAudioStorageMB: 500,
+  hfAvailable: false,
   hfEnabled: false,
   hfHasUserToken: false,
   hfHasInstallToken: false,
@@ -114,6 +126,10 @@ export const defaultSettingsState: SpeechKitSettingsState = {
   visualizer: 'pill',
   design: 'default',
   overlayPosition: 'top',
+  overlayMovable: false,
+  overlayFreeX: 0,
+  overlayFreeY: 0,
+  vocabularyDictionary: '',
   saveAudio: true,
   audioRetentionDays: 7,
   selectedAudioDeviceId: '',
@@ -167,6 +183,7 @@ function normalizeSettingsState(
       payload?.selectedAudioDeviceId ??
       (payload as { audioDeviceId?: string } | undefined)?.audioDeviceId ??
       base.selectedAudioDeviceId,
+    vocabularyDictionary: payload?.vocabularyDictionary ?? base.vocabularyDictionary,
     profiles: payload?.profiles ?? base.profiles,
     activeProfiles: payload?.activeProfiles ?? base.activeProfiles,
   }
@@ -449,7 +466,6 @@ export async function revealDashboardAudio(
 export async function saveSettingsState(nextState: SpeechKitSettingsState) {
   const body = new URLSearchParams({
     overlay_enabled: nextState.overlayEnabled ? '1' : '0',
-    hf_enabled: nextState.hfEnabled ? '1' : '0',
     overlay_visualizer: nextState.visualizer,
     overlay_design: nextState.design,
     hotkey: nextState.dictateHotkey ?? nextState.hotkey,
@@ -458,12 +474,16 @@ export async function saveSettingsState(nextState: SpeechKitSettingsState) {
     active_mode: nextState.activeMode,
     hf_model: nextState.hfModel,
     overlay_position: nextState.overlayPosition,
+    overlay_movable: nextState.overlayMovable ? '1' : '0',
+    overlay_free_x: String(nextState.overlayFreeX),
+    overlay_free_y: String(nextState.overlayFreeY),
     store_backend: nextState.storeBackend,
     store_sqlite_path: nextState.sqlitePath,
     store_postgres_dsn: nextState.postgresDSN,
     store_save_audio: nextState.saveAudio ? '1' : '0',
     store_audio_retention_days: String(nextState.audioRetentionDays),
     store_max_audio_storage_mb: String(nextState.maxAudioStorageMB),
+    vocabulary_dictionary: nextState.vocabularyDictionary,
     selected_audio_device_id: nextState.selectedAudioDeviceId,
     audio_device_id: nextState.selectedAudioDeviceId,
   })

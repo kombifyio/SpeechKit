@@ -3,7 +3,7 @@ package router
 import (
 	"context"
 	"fmt"
-	"log"
+	"log/slog"
 	"net"
 	"sync"
 	"sync/atomic"
@@ -33,6 +33,9 @@ type Router struct {
 	PreferLocalUnderSecs float64
 	ParallelCloud        bool
 	ReplaceOnBetter      bool
+	// ConnectivityProbe is the TCP address used to test internet connectivity.
+	// Defaults to "1.1.1.1:443" when empty.
+	ConnectivityProbe string
 
 	internetOnline atomic.Bool
 	internetAt     atomic.Int64 // UnixNano of last check
@@ -74,6 +77,26 @@ func (r *Router) SetCloud(name string, p stt.STTProvider) {
 	if p != nil {
 		r.cloud = append(r.cloud, p)
 	}
+}
+
+// PreferCloud sets/replaces a cloud provider and moves it to the front so it
+// becomes the next cloud provider used by routing, while keeping remaining
+// providers as fallbacks.
+func (r *Router) PreferCloud(name string, p stt.STTProvider) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	next := make([]stt.STTProvider, 0, len(r.cloud)+1)
+	if p != nil {
+		next = append(next, p)
+	}
+	for _, existing := range r.cloud {
+		if existing.Name() == name {
+			continue
+		}
+		next = append(next, existing)
+	}
+	r.cloud = next
 }
 
 // SetVPS sets/replaces the VPS cloud provider (backward-compatible convenience).
@@ -139,15 +162,27 @@ func (r *Router) Route(ctx context.Context, audio []byte, audioDurationSecs floa
 func (r *Router) transcribeDynamic(ctx context.Context, audio []byte, durationSecs float64, opts stt.TranscribeOpts) (*stt.Result, error) {
 	local, cloud := r.snapshot()
 	online := r.checkInternet()
-	cloudAvailable := online && len(cloud) > 0
+	cloudAvailable := len(cloud) > 0
 
-	// Case 1: No internet -- local only
+	// Case 1: Internet probe failed. Try local first, but still allow cloud as fallback
+	// because strict egress policies can block the probe target while provider APIs are reachable.
 	if !online {
+		slog.Info("internet probe unavailable; trying providers with local preference")
 		if local != nil {
-			log.Println("No internet, using local provider")
-			return local.Transcribe(ctx, audio, opts)
+			result, err := local.Transcribe(ctx, audio, opts)
+			if err == nil {
+				return result, nil
+			}
+			slog.Warn("local transcribe failed", "err", err)
 		}
-		return nil, fmt.Errorf("no internet and local provider not ready")
+		if cloudAvailable {
+			result, err := r.transcribeCloud(ctx, audio, opts)
+			if err == nil {
+				return result, nil
+			}
+			slog.Warn("cloud transcribe failed after offline probe", "err", err)
+		}
+		return nil, fmt.Errorf("no STT provider available")
 	}
 
 	// Case 2: Local ready and short audio -- use local, optionally parallel cloud
@@ -159,7 +194,7 @@ func (r *Router) transcribeDynamic(ctx context.Context, audio []byte, durationSe
 		if err == nil {
 			return result, nil
 		}
-		log.Printf("local transcribe failed: %v", err)
+		slog.Warn("local transcribe failed", "err", err)
 	}
 
 	// Case 3: No local or long audio -- prefer cloud
@@ -168,7 +203,7 @@ func (r *Router) transcribeDynamic(ctx context.Context, audio []byte, durationSe
 		if err == nil {
 			return result, nil
 		}
-		log.Printf("cloud transcribe failed: %v", err)
+		slog.Warn("cloud transcribe failed", "err", err)
 	}
 
 	// Case 4: Fallback to local
@@ -187,15 +222,20 @@ func (r *Router) checkInternet() bool {
 		return r.internetOnline.Load()
 	}
 
-	online := probeInternet()
+	online := r.probeInternet()
 	r.internetOnline.Store(online)
 	r.internetAt.Store(now)
 	return online
 }
 
 // probeInternet does a quick TCP check to detect connectivity.
-func probeInternet() bool {
-	conn, err := net.DialTimeout("tcp", "1.1.1.1:443", 2*time.Second)
+// Uses ConnectivityProbe address, defaulting to "1.1.1.1:443".
+func (r *Router) probeInternet() bool {
+	addr := r.ConnectivityProbe
+	if addr == "" {
+		addr = "1.1.1.1:443"
+	}
+	conn, err := net.DialTimeout("tcp", addr, 2*time.Second)
 	if err != nil {
 		return false
 	}
@@ -213,7 +253,7 @@ func (r *Router) transcribeCloud(ctx context.Context, audio []byte, opts stt.Tra
 		if err == nil {
 			return result, nil
 		}
-		log.Printf("%s transcribe failed: %v", p.Name(), err)
+		slog.Warn("provider transcribe failed", "provider", p.Name(), "err", err)
 	}
 
 	return nil, fmt.Errorf("no cloud provider available")

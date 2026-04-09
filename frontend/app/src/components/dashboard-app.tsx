@@ -117,7 +117,12 @@ export function DashboardApp() {
       </div>
 
       <div className="min-h-0 flex-1 overflow-hidden">
-        {tab === 'welcome' && <WelcomeTab onOpenLibrary={() => setTab('library')} />}
+        {tab === 'welcome' && (
+          <WelcomeTab
+            onOpenLibrary={() => setTab('library')}
+            onOpenSettings={() => setTab('settings')}
+          />
+        )}
         {tab === 'library' && <LibraryTab />}
         {tab === 'settings' && (
           <div className="h-full overflow-y-auto">
@@ -153,9 +158,17 @@ export function DashboardApp() {
 
 /* ── Welcome Tab ── */
 
-function WelcomeTab({ onOpenLibrary }: { onOpenLibrary: () => void }) {
+function WelcomeTab({
+  onOpenLibrary,
+  onOpenSettings,
+}: {
+  onOpenLibrary: () => void
+  onOpenSettings: () => void
+}) {
   const [stats, setStats] = useState<DashboardStats | null>(null)
   const [updateInfo, setUpdateInfo] = useState<{ latestVersion?: string; updateURL?: string } | null>(null)
+  const [history, setHistory] = useState<TranscriptionRecord[]>([])
+  const [quickNotes, setQuickNotes] = useState<QuickNote[]>([])
 
   useEffect(() => {
     let active = true
@@ -187,6 +200,184 @@ function WelcomeTab({ onOpenLibrary }: { onOpenLibrary: () => void }) {
       .catch(() => {})
     return () => { active = false }
   }, [])
+
+  useEffect(() => {
+    let active = true
+    void fetchHistory()
+      .then((records) => {
+        if (active) {
+          setHistory(records)
+        }
+      })
+      .catch(() => {
+        if (active) {
+          setHistory([])
+        }
+      })
+    void fetchQuickNotes()
+      .then((notes) => {
+        if (active) {
+          setQuickNotes(notes)
+        }
+      })
+      .catch(() => {
+        if (active) {
+          setQuickNotes([])
+        }
+      })
+    return () => { active = false }
+  }, [])
+
+  const sortedHistory = useMemo(() => sortByNewest(history, (record) => record.createdAt), [history])
+  const sortedQuickNotes = useMemo(() => sortByNewest(quickNotes, (note) => note.createdAt), [quickNotes])
+  const latestTranscription = sortedHistory[0] ?? null
+  const pinnedNotes = sortedQuickNotes.filter((note) => note.pinned)
+  const featuredNotes = pinnedNotes.length > 0
+    ? pinnedNotes.slice(0, 3)
+    : sortedQuickNotes.slice(0, 3)
+
+  if (latestTranscription || featuredNotes.length > 0) {
+    return (
+      <div data-testid="welcome-scroll" className="h-full overflow-y-auto px-5 pb-6 pt-4">
+        <div className="mx-auto flex min-h-full w-full max-w-[880px] flex-col gap-4">
+          <div className="rounded-[24px] border border-white/6 bg-[linear-gradient(180deg,rgba(255,255,255,0.05),rgba(255,255,255,0.02))] p-6 shadow-[0_20px_60px_rgba(0,0,0,0.24)]">
+            <div className="flex flex-wrap items-start justify-between gap-4">
+              <div>
+                <p className="text-[10px] font-semibold uppercase tracking-[0.22em] text-white/30">
+                  Home
+                </p>
+                <h1 className="mt-1 text-[24px] font-semibold tracking-tight text-white">
+                  Recent activity
+                </h1>
+                <p className="mt-3 max-w-[54ch] text-sm leading-6 text-white/60">
+                  Your latest dictation, saved notes, and voice workflow shortcuts stay here so the dashboard becomes operational after first setup instead of decorative.
+                </p>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  onClick={onOpenLibrary}
+                  className="rounded-full bg-orange-500/18 px-4 py-2 text-xs font-medium text-orange-100 transition-colors hover:bg-orange-500/28"
+                >
+                  Open Library
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    void fetch('/quicknotes/open-capture', { method: 'POST' })
+                  }}
+                  className="rounded-full border border-white/10 bg-white/[0.03] px-4 py-2 text-xs font-medium text-white/70 transition-colors hover:bg-white/[0.06]"
+                >
+                  Quick Note
+                </button>
+              </div>
+            </div>
+
+            <div data-testid="welcome-kpis" className="mt-5 flex flex-nowrap items-center gap-3 overflow-x-auto pb-1">
+              <InlineStat label="Transcriptions" value={formatStatNumber(stats?.transcriptions)} />
+              <InlineStat label="Quick Notes" value={formatStatNumber(stats?.quickNotes)} />
+              <InlineStat label="Average WPM" value={formatAverageWPM(stats?.averageWordsPerMinute)} />
+              <InlineStat label="Recorded Minutes" value={formatRecordedMinutes(stats?.totalAudioDurationMs)} />
+            </div>
+
+            <div className="mt-5 grid gap-3 md:grid-cols-3">
+              <HomeWorkflowCard
+                label="Dictate"
+                title="Paste straight into the active app"
+                description="Stay in your current window, hold the dictation hotkey, and use the library only when you need to recover or export something."
+              />
+              <HomeWorkflowCard
+                label="Assist"
+                title="Speak commands, not just text"
+                description="Use assist mode for summarize and transform flows when you need action-oriented output instead of raw transcription."
+              />
+              <HomeWorkflowCard
+                label="Vocabulary"
+                title="Protect names and product words"
+                description="Keep company terms, people, and shorthand in the dictionary so the same corrections feed your transcription path consistently."
+                actionLabel="Open Settings"
+                onAction={onOpenSettings}
+              />
+            </div>
+          </div>
+
+          <div className="grid gap-4 md:grid-cols-[1.35fr_0.95fr]">
+            <section className="rounded-[24px] border border-white/6 bg-white/[0.03] p-5">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-white/30">
+                    Latest transcription
+                  </p>
+                  <h2 className="mt-1 text-lg font-semibold tracking-tight text-white">
+                    Latest capture
+                  </h2>
+                </div>
+                {latestTranscription ? (
+                  <span className="rounded-full bg-emerald-500/10 px-2.5 py-1 text-[10px] font-medium text-emerald-200/90">
+                    {latestTranscription.provider}
+                  </span>
+                ) : null}
+              </div>
+
+              {latestTranscription ? (
+                <>
+                  <p className="mt-4 text-base leading-7 text-white/84">
+                    {latestTranscription.text}
+                  </p>
+                  <div className="mt-3 flex flex-wrap items-center gap-2 text-[11px] text-white/34">
+                    <span>{formatLibraryTimestamp(latestTranscription.createdAt)}</span>
+                    {latestTranscription.model ? (
+                      <span className="rounded bg-sky-500/12 px-1.5 py-0.5 text-sky-200/85">
+                        {formatTranscriptionModelLabel(latestTranscription.model)}
+                      </span>
+                    ) : null}
+                    {latestTranscription.audio ? (
+                      <span className="rounded bg-emerald-500/12 px-1.5 py-0.5 text-emerald-200/85">
+                        {formatAudioDuration(latestTranscription.audio.durationMs)}
+                      </span>
+                    ) : null}
+                  </div>
+                </>
+              ) : (
+                <p className="mt-4 text-sm leading-6 text-white/42">
+                  No transcription history is available yet.
+                </p>
+              )}
+            </section>
+
+            <section className="rounded-[24px] border border-white/6 bg-white/[0.03] p-5">
+              <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-white/30">
+                Pinned notes
+              </p>
+              <h2 className="mt-1 text-lg font-semibold tracking-tight text-white">
+                Fast recall
+              </h2>
+              <div className="mt-4 flex flex-col gap-2">
+                {featuredNotes.map((note) => (
+                  <div key={note.id} className="rounded-2xl border border-white/6 bg-black/18 px-4 py-3">
+                    <p className="line-clamp-3 text-sm leading-6 text-white/80">{note.text}</p>
+                    <div className="mt-2 flex items-center gap-2 text-[10px] text-white/30">
+                      <span>{formatLibraryTimestamp(note.createdAt)}</span>
+                      {note.pinned ? (
+                        <span className="rounded bg-orange-500/12 px-1.5 py-0.5 text-orange-200/85">
+                          Pinned
+                        </span>
+                      ) : null}
+                    </div>
+                  </div>
+                ))}
+                {featuredNotes.length === 0 ? (
+                  <p className="text-sm leading-6 text-white/42">
+                    Create a quick note to keep names, snippets, or follow-ups close to your voice workflow.
+                  </p>
+                ) : null}
+              </div>
+            </section>
+          </div>
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div data-testid="welcome-scroll" className="h-full overflow-y-auto px-5 pb-6 pt-4">
@@ -313,6 +504,37 @@ function WelcomeTab({ onOpenLibrary }: { onOpenLibrary: () => void }) {
           </div>
         </div>
       </div>
+    </div>
+  )
+}
+
+function HomeWorkflowCard({
+  label,
+  title,
+  description,
+  actionLabel,
+  onAction,
+}: {
+  label: string
+  title: string
+  description: string
+  actionLabel?: string
+  onAction?: () => void
+}) {
+  return (
+    <div className="rounded-[20px] border border-white/6 bg-black/18 px-4 py-4">
+      <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-white/30">{label}</p>
+      <h2 className="mt-2 text-sm font-semibold leading-6 text-white">{title}</h2>
+      <p className="mt-2 text-xs leading-6 text-white/45">{description}</p>
+      {actionLabel && onAction ? (
+        <button
+          type="button"
+          onClick={onAction}
+          className="mt-3 rounded-full border border-white/10 bg-white/[0.03] px-3 py-1.5 text-[11px] font-medium text-white/70 transition-colors hover:bg-white/[0.06]"
+        >
+          {actionLabel}
+        </button>
+      ) : null}
     </div>
   )
 }

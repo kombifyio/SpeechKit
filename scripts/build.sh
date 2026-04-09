@@ -22,10 +22,24 @@ if [ -z "$GO_MODULE_PATH" ]; then
   exit 1
 fi
 
-MANAGED_HF_DEFAULT="${SPEECHKIT_MANAGED_HF_DEFAULT-}"
+PUBLIC_MODULE_PATH="github.com/kombifyio/SpeechKit"
+if [ -n "${SPEECHKIT_MANAGED_HF_BUILD_ENABLED-}" ]; then
+  MANAGED_HF_BUILD_ENABLED="${SPEECHKIT_MANAGED_HF_BUILD_ENABLED}"
+elif [ "$GO_MODULE_PATH" = "$PUBLIC_MODULE_PATH" ]; then
+  MANAGED_HF_BUILD_ENABLED="0"
+else
+  MANAGED_HF_BUILD_ENABLED="1"
+fi
+if [ -n "${SPEECHKIT_MANAGED_HF_DEFAULT-}" ]; then
+  MANAGED_HF_DEFAULT="${SPEECHKIT_MANAGED_HF_DEFAULT}"
+elif [ "$GO_MODULE_PATH" = "$PUBLIC_MODULE_PATH" ]; then
+  MANAGED_HF_DEFAULT="0"
+else
+  MANAGED_HF_DEFAULT="1"
+fi
 MANAGED_DOPPLER_PROJECT="${SPEECHKIT_MANAGED_DOPPLER_PROJECT-}"
 MANAGED_DOPPLER_CONFIG="${SPEECHKIT_MANAGED_DOPPLER_CONFIG-}"
-GO_LDFLAGS="-H windowsgui -X ${GO_MODULE_PATH}/internal/config.managedHFDefaultOptIn=${MANAGED_HF_DEFAULT} -X ${GO_MODULE_PATH}/internal/config.managedDopplerDefaultProject=${MANAGED_DOPPLER_PROJECT} -X ${GO_MODULE_PATH}/internal/config.managedDopplerDefaultConfig=${MANAGED_DOPPLER_CONFIG}"
+GO_LDFLAGS="-H windowsgui -X ${GO_MODULE_PATH}/internal/config.managedHFBuildEnabled=${MANAGED_HF_BUILD_ENABLED} -X ${GO_MODULE_PATH}/internal/config.managedHFDefaultOptIn=${MANAGED_HF_DEFAULT} -X ${GO_MODULE_PATH}/internal/config.managedDopplerDefaultProject=${MANAGED_DOPPLER_PROJECT} -X ${GO_MODULE_PATH}/internal/config.managedDopplerDefaultConfig=${MANAGED_DOPPLER_CONFIG}"
 
 require_path() {
   local path="$1"

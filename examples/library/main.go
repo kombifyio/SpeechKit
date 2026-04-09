@@ -7,7 +7,7 @@ package main
 import (
 	"context"
 	"fmt"
-	"log"
+	"log/slog"
 	"os"
 	"os/signal"
 	"time"
@@ -109,7 +109,8 @@ func main() {
 		Observer:  observer,
 	})
 	if err != nil {
-		log.Fatal(err)
+		slog.Error("transcription worker init failed", "err", err)
+		os.Exit(1)
 	}
 	worker.Start(ctx)
 	defer worker.Close()
@@ -123,7 +124,8 @@ func main() {
 	fmt.Println()
 
 	if err := controller.Start(speechkit.RecordingStartOptions{Language: "en"}); err != nil {
-		log.Fatal(err)
+		slog.Error("recording start failed", "err", err)
+		os.Exit(1)
 	}
 
 	// In a real app, the user would speak and then stop recording.
@@ -131,7 +133,8 @@ func main() {
 	time.Sleep(2 * time.Second)
 
 	if err := controller.Stop(speechkit.RecordingStopOptions{}); err != nil {
-		log.Fatal(err)
+		slog.Error("recording stop failed", "err", err)
+		os.Exit(1)
 	}
 
 	// Wait for transcription to complete.

@@ -3,7 +3,7 @@ package flows
 import (
 	"context"
 	"fmt"
-	"log"
+	"log/slog"
 
 	"github.com/firebase/genkit/go/ai"
 	"github.com/firebase/genkit/go/core"
@@ -41,7 +41,7 @@ func DefineSummarizeFlow(g *genkit.Genkit, models []ai.Model) *core.Flow[Summari
 			)
 			if err != nil {
 				lastErr = err
-				log.Printf("summarize: model failed: %v", err)
+				slog.Warn("summarize: model failed", "err", err)
 				continue
 			}
 			return resp.Text(), nil

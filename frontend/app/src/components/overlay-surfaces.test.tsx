@@ -47,6 +47,9 @@ function snap(partial: Partial<SpeechKitOverlayState> = {}): SpeechKitOverlaySta
     agentHotkey: 'ctrl+shift+k',
     activeMode: 'dictate',
     position: 'top',
+    movable: false,
+    positionFreeX: 0,
+    positionFreeY: 0,
     lastTranscription: '',
     quickNoteMode: false,
     selectedAudioDeviceId: '',
@@ -94,7 +97,7 @@ describe('overlay surfaces', () => {
   })
 
   it('renders the pill actions panel with the expanded action set', async () => {
-    fetchOverlayStateMock.mockResolvedValue(snap({ quickNoteMode: true }))
+    fetchOverlayStateMock.mockResolvedValue(snap({ quickNoteMode: true, movable: true }))
 
     render(<PillActionsOverlay />)
 
@@ -108,6 +111,7 @@ describe('overlay surfaces', () => {
     expect(screen.getByRole('button', { name: /switch to agent/i })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /microphone settings/i })).toBeInTheDocument()
     expect(screen.getByTestId('pill-panel-status')).toHaveTextContent('Dictate ready')
+    expect(screen.getByTestId('pill-panel-center-shell')).toHaveAttribute('data-overlay-draggable', 'true')
   })
 
   it('returns from the pill panel host on mouse leave', async () => {

@@ -7,10 +7,12 @@ import (
 	"time"
 )
 
+// Transcriber converts raw WAV audio into a [Transcript].
 type Transcriber interface {
 	Transcribe(ctx context.Context, audio []byte, durationSecs float64, language string) (Transcript, error)
 }
 
+// Transcript holds the result of a single transcription call.
 type Transcript struct {
 	Text       string
 	Language   string
@@ -20,6 +22,7 @@ type Transcript struct {
 	Confidence float64
 }
 
+// QuickNoteStore persists and retrieves Quick Note records.
 type QuickNoteStore interface {
 	SaveQuickNote(ctx context.Context, text, language, provider string, durationMs, latencyMs int64, audioData []byte) (int64, error)
 	GetQuickNoteText(ctx context.Context, id int64) (string, error)
@@ -27,19 +30,24 @@ type QuickNoteStore interface {
 	UpdateQuickNoteCapture(ctx context.Context, id int64, text, provider string, durationMs, latencyMs int64, audioData []byte) error
 }
 
+// TranscriptionStore persists completed dictation transcriptions.
 type TranscriptionStore interface {
 	SaveTranscription(ctx context.Context, text, language, provider, model string, durationMs, latencyMs int64, audioData []byte) error
 }
 
+// Persistence combines [QuickNoteStore] and [TranscriptionStore].
 type Persistence interface {
 	QuickNoteStore
 	TranscriptionStore
 }
 
+// CommitObserver is notified after each successful [TranscriptionRunner.Commit].
 type CommitObserver interface {
 	OnCommit(completion Completion)
 }
 
+// Submission carries a single audio segment and its metadata into the
+// transcription pipeline.
 type Submission struct {
 	PCM          []byte
 	WAV          []byte
@@ -50,6 +58,7 @@ type Submission struct {
 	QuickNoteID  int64
 }
 
+// Completion describes the outcome of a [TranscriptionRunner.Commit] call.
 type Completion struct {
 	Transcript             Transcript
 	QuickNoteCommitted     bool
@@ -58,12 +67,16 @@ type Completion struct {
 	TranscriptionPersisted bool
 }
 
+// TranscriptionRunner transcribes audio submissions and persists results.
+// Create one with [NewTranscriptionRunner].
 type TranscriptionRunner struct {
 	transcriber Transcriber
 	store       Persistence
 	observer    CommitObserver
 }
 
+// NewTranscriptionRunner creates a TranscriptionRunner backed by the given
+// transcriber and persistence store. Either argument may be nil.
 func NewTranscriptionRunner(transcriber Transcriber, store Persistence) *TranscriptionRunner {
 	return &TranscriptionRunner{
 		transcriber: transcriber,

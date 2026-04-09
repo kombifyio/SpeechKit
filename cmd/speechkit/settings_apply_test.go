@@ -32,6 +32,10 @@ func TestAppStateApplyRuntimeSettingsUpdatesSnapshot(t *testing.T) {
 		"pill",
 		"default",
 		"bottom",
+		"kombi fire => Kombify",
+		true,
+		720,
+		360,
 	)
 
 	if got, want := oldHotkey, "win+alt"; got != want {
@@ -43,6 +47,18 @@ func TestAppStateApplyRuntimeSettingsUpdatesSnapshot(t *testing.T) {
 	}
 	if got, want := runtime.overlayPosition, "bottom"; got != want {
 		t.Fatalf("runtime.overlayPosition = %q, want %q", got, want)
+	}
+	if !runtime.overlayMovable {
+		t.Fatal("runtime.overlayMovable = false, want true")
+	}
+	if got, want := runtime.overlayFreeX, 720; got != want {
+		t.Fatalf("runtime.overlayFreeX = %d, want %d", got, want)
+	}
+	if got, want := runtime.overlayFreeY, 360; got != want {
+		t.Fatalf("runtime.overlayFreeY = %d, want %d", got, want)
+	}
+	if got, want := runtime.vocabularyDictionary, "kombi fire => Kombify"; got != want {
+		t.Fatalf("runtime.vocabularyDictionary = %q, want %q", got, want)
 	}
 	if got, want := len(runtime.providers), 2; got != want {
 		t.Fatalf("len(runtime.providers) = %d, want %d", got, want)

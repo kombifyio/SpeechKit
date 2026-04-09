@@ -79,19 +79,6 @@ func (s *appState) setAudioDevice(deviceID string) {
 	s.mu.Unlock()
 }
 
-func (s *appState) setActiveProfile(modality, profileID string) {
-	if s == nil || modality == "" || profileID == "" {
-		return
-	}
-	s.mu.Lock()
-	if s.activeProfiles == nil {
-		s.activeProfiles = make(map[string]string)
-	}
-	s.activeProfiles[modality] = profileID
-	s.syncSpeechKitSnapshotLocked()
-	s.mu.Unlock()
-}
-
 func (s *appState) activeHotkeyLocked() string {
 	switch s.activeMode {
 	case "agent":
