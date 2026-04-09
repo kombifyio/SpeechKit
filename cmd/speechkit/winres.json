@@ -9,7 +9,7 @@
       "0409": {
         "identity": {
           "name": "kombify.SpeechKit",
-          "version": "0.14.9.0"
+          "version": "0.15.0.0"
         },
         "description": "kombify SpeechKit",
         "minimum-os": "vista",

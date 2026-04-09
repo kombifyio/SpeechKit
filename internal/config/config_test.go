@@ -549,6 +549,27 @@ func TestApplyLocalInstallDefaultsSkipsCloudInstalls(t *testing.T) {
 
 // --- InstallMode tests ---
 
+func TestLoadMalformedTOMLFallsBackToDefaults(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.toml")
+
+	// Write garbage TOML that will fail to parse.
+	if err := os.WriteFile(path, []byte("{{{{not valid toml!!!!"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load should not error on malformed TOML, got: %v", err)
+	}
+	if cfg.General.Language != "de" {
+		t.Errorf("expected default language %q, got %q", "de", cfg.General.Language)
+	}
+	if cfg.General.Hotkey != "win+alt" {
+		t.Errorf("expected default hotkey %q, got %q", "win+alt", cfg.General.Hotkey)
+	}
+}
+
 func TestLoadInstallState_NoFile(t *testing.T) {
 	t.Setenv("APPDATA", t.TempDir())
 

@@ -19,16 +19,19 @@ type Config struct {
 	HuggingFaceToken string
 	OllamaBaseURL    string
 
-	GoogleUtilityModel  string
-	GoogleAgentModel    string
-	OpenAIUtilityModel  string
-	OpenAIAgentModel    string
-	GroqUtilityModel    string
-	GroqAgentModel      string
-	HFUtilityModel      string
-	HFAgentModel        string
-	OllamaUtilityModel  string
-	OllamaAgentModel    string
+	GoogleUtilityModel     string
+	GoogleAgentModel       string
+	OpenAIUtilityModel     string
+	OpenAIAgentModel       string
+	GroqUtilityModel       string
+	GroqAgentModel         string
+	HFUtilityModel         string
+	HFAgentModel           string
+	OllamaUtilityModel     string
+	OllamaAgentModel       string
+	OpenRouterAPIKey       string
+	OpenRouterUtilityModel string
+	OpenRouterAgentModel   string
 }
 
 // ModelInfo describes a registered model for the UI.
@@ -83,6 +86,9 @@ func Init(ctx context.Context, cfg Config) (*Runtime, error) {
 	if cfg.HuggingFaceToken != "" {
 		registerHFModels(g, cfg.HuggingFaceToken)
 	}
+	if cfg.OpenRouterAPIKey != "" {
+		registerOpenRouterModels(g, cfg.OpenRouterAPIKey)
+	}
 
 	rt := &Runtime{
 		G:         g,
@@ -100,6 +106,7 @@ func Init(ctx context.Context, cfg Config) (*Runtime, error) {
 		{"groq", cfg.GroqUtilityModel, cfg.GroqAPIKey != "" && cfg.GroqUtilityModel != ""},
 		{"huggingface", cfg.HFUtilityModel, cfg.HuggingFaceToken != "" && cfg.HFUtilityModel != ""},
 		{"ollama", cfg.OllamaUtilityModel, cfg.OllamaBaseURL != "" && cfg.OllamaUtilityModel != ""},
+		{"openrouter", cfg.OpenRouterUtilityModel, cfg.OpenRouterAPIKey != "" && cfg.OpenRouterUtilityModel != ""},
 	}
 
 	for _, spec := range utilitySpecs {
@@ -129,6 +136,7 @@ func Init(ctx context.Context, cfg Config) (*Runtime, error) {
 		{"groq", cfg.GroqAgentModel, cfg.GroqAPIKey != "" && cfg.GroqAgentModel != ""},
 		{"huggingface", cfg.HFAgentModel, cfg.HuggingFaceToken != "" && cfg.HFAgentModel != ""},
 		{"ollama", cfg.OllamaAgentModel, cfg.OllamaBaseURL != "" && cfg.OllamaAgentModel != ""},
+		{"openrouter", cfg.OpenRouterAgentModel, cfg.OpenRouterAPIKey != "" && cfg.OpenRouterAgentModel != ""},
 	}
 
 	for _, spec := range agentSpecs {

@@ -6,6 +6,20 @@ The format is based on Keep a Changelog and this project is intended to ship und
 
 ## [Unreleased]
 
+## [0.15.0] - 2026-04-10
+
+### Added
+
+- Production readiness audit and hardening for multi-user test rollout
+- Malformed `config.toml` now falls back to sane defaults instead of crashing on startup
+- UI log notifications when AI providers or TTS audio player fail to initialize (degradation visibility)
+- Test coverage for malformed config recovery path
+
+### Changed
+
+- Centralized data/config path resolution via `internal/runtimepath/` in store packages (SQLite, Postgres)
+- Audit phases 1–6: real model names in catalog, crypto/rand usage, error leakage guards, MaxBytesReader on HTTP handlers, AppVersion via ldflags, downloads extraction to `internal/downloads/`, saveSettings decomposition, randHex error handling, overlay_position validation, CI coverage alignment
+
 ## [0.14.9] - 2026-04-09
 
 ### Fixed

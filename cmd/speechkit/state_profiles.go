@@ -11,6 +11,7 @@ func defaultActiveProfiles(catalog models.Catalog) map[string]string {
 		models.ModalitySTT,
 		models.ModalityAgent,
 		models.ModalityUtility,
+		models.ModalityRealtimeVoice,
 	} {
 		if profile, ok := catalog.DefaultProfile(modality); ok {
 			profiles[string(modality)] = profile.ID
@@ -43,6 +44,8 @@ func profileMatchesConfig(cfg *config.Config, profile models.Profile) bool {
 		return utilityProfileMatchesConfig(cfg, profile)
 	case models.ModalityAgent:
 		return agentProfileMatchesConfig(cfg, profile)
+	case models.ModalityRealtimeVoice:
+		return realtimeVoiceProfileMatchesConfig(cfg, profile)
 	default:
 		return false
 	}
@@ -77,6 +80,8 @@ func utilityProfileMatchesConfig(cfg *config.Config, profile models.Profile) boo
 		return cfg.HuggingFace.Enabled && cfg.HuggingFace.UtilityModel == profile.ModelID && profileCredentialAvailable(cfg, profile)
 	case models.ExecutionModeOllama:
 		return cfg.Providers.Ollama.Enabled && cfg.Providers.Ollama.UtilityModel == profile.ModelID
+	case models.ExecutionModeOpenRouter:
+		return cfg.Providers.OpenRouter.Enabled && cfg.Providers.OpenRouter.UtilityModel == profile.ModelID && profileCredentialAvailable(cfg, profile)
 	default:
 		return false
 	}
@@ -94,7 +99,16 @@ func agentProfileMatchesConfig(cfg *config.Config, profile models.Profile) bool 
 		return cfg.HuggingFace.Enabled && cfg.HuggingFace.AgentModel == profile.ModelID && profileCredentialAvailable(cfg, profile)
 	case models.ExecutionModeOllama:
 		return cfg.Providers.Ollama.Enabled && cfg.Providers.Ollama.AgentModel == profile.ModelID
+	case models.ExecutionModeOpenRouter:
+		return cfg.Providers.OpenRouter.Enabled && cfg.Providers.OpenRouter.AgentModel == profile.ModelID && profileCredentialAvailable(cfg, profile)
 	default:
 		return false
 	}
+}
+
+func realtimeVoiceProfileMatchesConfig(cfg *config.Config, profile models.Profile) bool {
+	if !cfg.VoiceAgent.Enabled || cfg.VoiceAgent.Model != profile.ModelID {
+		return false
+	}
+	return profileCredentialAvailable(cfg, profile)
 }

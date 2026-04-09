@@ -252,7 +252,8 @@ func registerSettingsRoutes(mux *http.ServeMux, cfgPath string, cfg *config.Conf
 			return
 		}
 		if err := applyModelProfile(r.Context(), cfgPath, cfg, state, sttRouter, *profile); err != nil {
-			http.Error(w, err.Error(), http.StatusBadRequest)
+			slog.Warn("apply model profile", "profileId", profileID, "err", err)
+			http.Error(w, "failed to apply model profile", http.StatusBadRequest)
 			return
 		}
 		w.Header().Set("Content-Type", "application/json; charset=utf-8")
@@ -269,157 +270,12 @@ func saveSettings(ctx context.Context, req *http.Request, cfgPath string, cfg *c
 		return msgFormParseError
 	}
 
-	dictateHotkey := strings.TrimSpace(req.FormValue("dictate_hotkey"))
-	if dictateHotkey == "" {
-		dictateHotkey = strings.TrimSpace(req.FormValue("hotkey"))
-	}
-	if dictateHotkey == "" {
-		dictateHotkey = cfg.General.DictateHotkey
-	}
-	if dictateHotkey == "" {
-		dictateHotkey = "win+alt"
-	}
-	agentHotkey := strings.TrimSpace(req.FormValue("agent_hotkey"))
-	if agentHotkey == "" {
-		agentHotkey = cfg.General.AgentHotkey
-	}
-	if agentHotkey == "" {
-		agentHotkey = "ctrl+shift+k"
-	}
-	activeMode := strings.TrimSpace(req.FormValue("active_mode"))
-	if activeMode == "" {
-		activeMode = cfg.General.ActiveMode
-	}
-	if activeMode != "agent" {
-		activeMode = "dictate"
-	}
-	audioDeviceID := strings.TrimSpace(req.FormValue("audio_device_id"))
-	if audioDeviceID == "" {
-		audioDeviceID = strings.TrimSpace(req.FormValue("selected_audio_device_id"))
-	}
-	if audioDeviceID == "" {
-		audioDeviceID = cfg.Audio.DeviceID
-	}
-	modelValue := strings.TrimSpace(req.FormValue("hf_model"))
-	if modelValue == "" {
-		modelValue = cfg.HuggingFace.Model
-	}
-	hfAvailableInBuild := config.ManagedHuggingFaceAvailableInBuild()
-	if hfAvailableInBuild && !isSupportedHFModel(modelValue) {
-		return msgUnsupportedModel
+	form, errMsg := parseSettingsForm(req, cfg)
+	if errMsg != "" {
+		return errMsg
 	}
 
-	overlayEnabled := req.FormValue("overlay_enabled") == "1"
-	visualizerValue := strings.TrimSpace(req.FormValue("overlay_visualizer"))
-	if visualizerValue == "" {
-		visualizerValue = cfg.UI.Visualizer
-	}
-	if !isSupportedOverlayVisualizer(visualizerValue) {
-		return msgUnsupportedVis
-	}
-	designValue := strings.TrimSpace(req.FormValue("overlay_design"))
-	if designValue == "" {
-		designValue = cfg.UI.Design
-	}
-	if !isSupportedOverlayDesign(designValue) {
-		return msgUnsupportedDesign
-	}
-	overlayPosition := strings.TrimSpace(req.FormValue("overlay_position"))
-	if overlayPosition == "" {
-		overlayPosition = cfg.UI.OverlayPosition
-	}
-	if !isSupportedOverlayPosition(overlayPosition) {
-		overlayPosition = "top"
-	}
-	overlayMovable := cfg.UI.OverlayMovable
-	if raw := strings.TrimSpace(req.FormValue("overlay_movable")); raw != "" {
-		overlayMovable = raw == "1"
-	}
-	overlayFreeX := cfg.UI.OverlayFreeX
-	if raw := strings.TrimSpace(req.FormValue("overlay_free_x")); raw != "" {
-		if parsed, err := strconv.Atoi(raw); err == nil {
-			overlayFreeX = parsed
-		}
-	}
-	overlayFreeY := cfg.UI.OverlayFreeY
-	if raw := strings.TrimSpace(req.FormValue("overlay_free_y")); raw != "" {
-		if parsed, err := strconv.Atoi(raw); err == nil {
-			overlayFreeY = parsed
-		}
-	}
-	storeSaveAudioRaw := strings.TrimSpace(req.FormValue("store_save_audio"))
-	storeSaveAudio := cfg.Store.SaveAudio
-	if storeSaveAudioRaw != "" {
-		storeSaveAudio = storeSaveAudioRaw == "1"
-	}
-	storeBackend := strings.TrimSpace(req.FormValue("store_backend"))
-	if storeBackend == "" {
-		storeBackend = cfg.Store.Backend
-	}
-	if storeBackend == "" {
-		storeBackend = "sqlite"
-	}
-	switch storeBackend {
-	case "sqlite", "postgres":
-	default:
-		return msgUnsupportedStore
-	}
-	storeSQLitePath := strings.TrimSpace(req.FormValue("store_sqlite_path"))
-	if storeSQLitePath == "" {
-		storeSQLitePath = cfg.Store.SQLitePath
-	}
-	storePostgresDSN := strings.TrimSpace(req.FormValue("store_postgres_dsn"))
-	if storePostgresDSN == "" {
-		storePostgresDSN = cfg.Store.PostgresDSN
-	}
-	if storeBackend == "postgres" && storePostgresDSN == "" {
-		return msgPostgresDSNReq
-	}
-	storeAudioRetentionDays := cfg.Store.AudioRetentionDays
-	if raw := strings.TrimSpace(req.FormValue("store_audio_retention_days")); raw != "" {
-		if parsed, err := strconv.Atoi(raw); err == nil && parsed >= 0 {
-			storeAudioRetentionDays = parsed
-		}
-	}
-	storeMaxAudioStorageMB := cfg.Store.MaxAudioStorageMB
-	if raw := strings.TrimSpace(req.FormValue("store_max_audio_storage_mb")); raw != "" {
-		if parsed, err := strconv.Atoi(raw); err == nil && parsed >= 0 {
-			storeMaxAudioStorageMB = parsed
-		}
-	}
-	_, hasVocabularyDictionary := req.PostForm["vocabulary_dictionary"]
-	vocabularyDictionary := normalizeVocabularyDictionary(req.FormValue("vocabulary_dictionary"))
-	if !hasVocabularyDictionary {
-		vocabularyDictionary = cfg.Vocabulary.Dictionary
-	}
-
-	nextCfg := *cfg
-	nextCfg.General.Hotkey = dictateHotkey
-	nextCfg.General.DictateHotkey = dictateHotkey
-	nextCfg.General.AgentHotkey = agentHotkey
-	nextCfg.General.ActiveMode = activeMode
-	nextCfg.Audio.DeviceID = audioDeviceID
-	nextCfg.HuggingFace.Enabled = cfg.HuggingFace.Enabled && hfAvailableInBuild
-	nextCfg.HuggingFace.Model = modelValue
-	nextCfg.UI.OverlayEnabled = overlayEnabled
-	nextCfg.UI.OverlayPosition = overlayPosition
-	nextCfg.UI.OverlayMovable = overlayMovable
-	nextCfg.UI.OverlayFreeX = overlayFreeX
-	nextCfg.UI.OverlayFreeY = overlayFreeY
-	nextCfg.UI.Visualizer = visualizerValue
-	nextCfg.UI.Design = designValue
-	nextCfg.Store.Backend = storeBackend
-	nextCfg.Store.SQLitePath = storeSQLitePath
-	nextCfg.Store.PostgresDSN = storePostgresDSN
-	nextCfg.Store.SaveAudio = storeSaveAudio
-	nextCfg.Store.AudioRetentionDays = storeAudioRetentionDays
-	nextCfg.Store.MaxAudioStorageMB = storeMaxAudioStorageMB
-	nextCfg.Feedback.SaveAudio = storeSaveAudio
-	nextCfg.Feedback.AudioRetentionDays = storeAudioRetentionDays
-	if storeBackend == "sqlite" {
-		nextCfg.Feedback.DBPath = storeSQLitePath
-	}
-	nextCfg.Vocabulary.Dictionary = vocabularyDictionary
+	nextCfg := buildNextConfig(form, cfg)
 	oldDictateHotkey := cfg.General.DictateHotkey
 	oldAgentHotkey := cfg.General.AgentHotkey
 	oldAudioDeviceID := cfg.Audio.DeviceID
@@ -427,7 +283,7 @@ func saveSettings(ctx context.Context, req *http.Request, cfgPath string, cfg *c
 	managedHFEnabled := config.ApplyManagedIntegrationDefaults(&nextCfg)
 	needsHFRefresh := managedHFEnabled ||
 		!cfg.HuggingFace.Enabled ||
-		modelValue != cfg.HuggingFace.Model
+		form.HFModel != cfg.HuggingFace.Model
 	shouldValidateHF := nextCfg.HuggingFace.Enabled && needsHFRefresh
 	if shouldValidateHF {
 		if err := refreshHuggingFaceProvider(ctx, &nextCfg, sttRouter, managedHFEnabled); err != nil {
@@ -448,22 +304,210 @@ func saveSettings(ctx context.Context, req *http.Request, cfgPath string, cfg *c
 	}
 
 	state.applyRuntimeSettings(
-		dictateHotkey,
-		agentHotkey,
-		activeMode,
-		audioDeviceID,
+		form.DictateHotkey,
+		form.AgentHotkey,
+		form.ActiveMode,
+		form.AudioDeviceID,
 		runtimeAvailableProviders(sttRouter),
-		visualizerValue,
-		designValue,
-		overlayPosition,
-		vocabularyDictionary,
-		overlayMovable,
-		overlayFreeX,
-		overlayFreeY,
+		form.Visualizer,
+		form.Design,
+		form.OverlayPosition,
+		form.VocabularyDictionary,
+		form.OverlayMovable,
+		form.OverlayFreeX,
+		form.OverlayFreeY,
 	)
-	state.applyDesktopSettings(oldDictateHotkey, oldAgentHotkey, dictateHotkey, agentHotkey, oldAudioDeviceID, audioDeviceID, overlayEnabled)
+	state.applyDesktopSettings(oldDictateHotkey, oldAgentHotkey, form.DictateHotkey, form.AgentHotkey, oldAudioDeviceID, form.AudioDeviceID, form.OverlayEnabled)
 
 	return msgSaved
+}
+
+// settingsFormData holds parsed and validated form values from the settings page.
+type settingsFormData struct {
+	DictateHotkey        string
+	AgentHotkey          string
+	ActiveMode           string
+	AudioDeviceID        string
+	HFModel              string
+	OverlayEnabled       bool
+	Visualizer           string
+	Design               string
+	OverlayPosition      string
+	OverlayMovable       bool
+	OverlayFreeX         int
+	OverlayFreeY         int
+	StoreBackend         string
+	StoreSQLitePath      string
+	StorePostgresDSN     string
+	StoreSaveAudio       bool
+	StoreAudioRetention  int
+	StoreMaxAudioStorage int
+	VocabularyDictionary string
+}
+
+// parseSettingsForm extracts and validates all settings form values.
+// Returns the parsed data and an empty string on success, or an error message.
+func parseSettingsForm(req *http.Request, cfg *config.Config) (settingsFormData, string) {
+	var f settingsFormData
+
+	f.DictateHotkey = strings.TrimSpace(req.FormValue("dictate_hotkey"))
+	if f.DictateHotkey == "" {
+		f.DictateHotkey = strings.TrimSpace(req.FormValue("hotkey"))
+	}
+	if f.DictateHotkey == "" {
+		f.DictateHotkey = cfg.General.DictateHotkey
+	}
+	if f.DictateHotkey == "" {
+		f.DictateHotkey = "win+alt"
+	}
+	f.AgentHotkey = strings.TrimSpace(req.FormValue("agent_hotkey"))
+	if f.AgentHotkey == "" {
+		f.AgentHotkey = cfg.General.AgentHotkey
+	}
+	if f.AgentHotkey == "" {
+		f.AgentHotkey = "ctrl+shift+k"
+	}
+	f.ActiveMode = strings.TrimSpace(req.FormValue("active_mode"))
+	if f.ActiveMode == "" {
+		f.ActiveMode = cfg.General.ActiveMode
+	}
+	if f.ActiveMode != "agent" {
+		f.ActiveMode = "dictate"
+	}
+	f.AudioDeviceID = strings.TrimSpace(req.FormValue("audio_device_id"))
+	if f.AudioDeviceID == "" {
+		f.AudioDeviceID = strings.TrimSpace(req.FormValue("selected_audio_device_id"))
+	}
+	if f.AudioDeviceID == "" {
+		f.AudioDeviceID = cfg.Audio.DeviceID
+	}
+	f.HFModel = strings.TrimSpace(req.FormValue("hf_model"))
+	if f.HFModel == "" {
+		f.HFModel = cfg.HuggingFace.Model
+	}
+	hfAvailableInBuild := config.ManagedHuggingFaceAvailableInBuild()
+	if hfAvailableInBuild && !isSupportedHFModel(f.HFModel) {
+		return f, msgUnsupportedModel
+	}
+
+	f.OverlayEnabled = req.FormValue("overlay_enabled") == "1"
+	f.Visualizer = strings.TrimSpace(req.FormValue("overlay_visualizer"))
+	if f.Visualizer == "" {
+		f.Visualizer = cfg.UI.Visualizer
+	}
+	if !isSupportedOverlayVisualizer(f.Visualizer) {
+		return f, msgUnsupportedVis
+	}
+	f.Design = strings.TrimSpace(req.FormValue("overlay_design"))
+	if f.Design == "" {
+		f.Design = cfg.UI.Design
+	}
+	if !isSupportedOverlayDesign(f.Design) {
+		return f, msgUnsupportedDesign
+	}
+	f.OverlayPosition = strings.TrimSpace(req.FormValue("overlay_position"))
+	if f.OverlayPosition == "" {
+		f.OverlayPosition = cfg.UI.OverlayPosition
+	}
+	if !isSupportedOverlayPosition(f.OverlayPosition) {
+		return f, msgUnsupportedPos
+	}
+	f.OverlayMovable = cfg.UI.OverlayMovable
+	if raw := strings.TrimSpace(req.FormValue("overlay_movable")); raw != "" {
+		f.OverlayMovable = raw == "1"
+	}
+	f.OverlayFreeX = cfg.UI.OverlayFreeX
+	if raw := strings.TrimSpace(req.FormValue("overlay_free_x")); raw != "" {
+		if parsed, err := strconv.Atoi(raw); err == nil {
+			f.OverlayFreeX = parsed
+		}
+	}
+	f.OverlayFreeY = cfg.UI.OverlayFreeY
+	if raw := strings.TrimSpace(req.FormValue("overlay_free_y")); raw != "" {
+		if parsed, err := strconv.Atoi(raw); err == nil {
+			f.OverlayFreeY = parsed
+		}
+	}
+	storeSaveAudioRaw := strings.TrimSpace(req.FormValue("store_save_audio"))
+	f.StoreSaveAudio = cfg.Store.SaveAudio
+	if storeSaveAudioRaw != "" {
+		f.StoreSaveAudio = storeSaveAudioRaw == "1"
+	}
+	f.StoreBackend = strings.TrimSpace(req.FormValue("store_backend"))
+	if f.StoreBackend == "" {
+		f.StoreBackend = cfg.Store.Backend
+	}
+	if f.StoreBackend == "" {
+		f.StoreBackend = "sqlite"
+	}
+	switch f.StoreBackend {
+	case "sqlite", "postgres":
+	default:
+		return f, msgUnsupportedStore
+	}
+	f.StoreSQLitePath = strings.TrimSpace(req.FormValue("store_sqlite_path"))
+	if f.StoreSQLitePath == "" {
+		f.StoreSQLitePath = cfg.Store.SQLitePath
+	}
+	f.StorePostgresDSN = strings.TrimSpace(req.FormValue("store_postgres_dsn"))
+	if f.StorePostgresDSN == "" {
+		f.StorePostgresDSN = cfg.Store.PostgresDSN
+	}
+	if f.StoreBackend == "postgres" && f.StorePostgresDSN == "" {
+		return f, msgPostgresDSNReq
+	}
+	f.StoreAudioRetention = cfg.Store.AudioRetentionDays
+	if raw := strings.TrimSpace(req.FormValue("store_audio_retention_days")); raw != "" {
+		if parsed, err := strconv.Atoi(raw); err == nil && parsed >= 0 {
+			f.StoreAudioRetention = parsed
+		}
+	}
+	f.StoreMaxAudioStorage = cfg.Store.MaxAudioStorageMB
+	if raw := strings.TrimSpace(req.FormValue("store_max_audio_storage_mb")); raw != "" {
+		if parsed, err := strconv.Atoi(raw); err == nil && parsed >= 0 {
+			f.StoreMaxAudioStorage = parsed
+		}
+	}
+	_, hasVocabularyDictionary := req.PostForm["vocabulary_dictionary"]
+	f.VocabularyDictionary = normalizeVocabularyDictionary(req.FormValue("vocabulary_dictionary"))
+	if !hasVocabularyDictionary {
+		f.VocabularyDictionary = cfg.Vocabulary.Dictionary
+	}
+
+	return f, ""
+}
+
+// buildNextConfig creates a new Config from the parsed form values.
+func buildNextConfig(form settingsFormData, cfg *config.Config) config.Config {
+	hfAvailableInBuild := config.ManagedHuggingFaceAvailableInBuild()
+	nextCfg := *cfg
+	nextCfg.General.Hotkey = form.DictateHotkey // keep legacy field in sync
+	nextCfg.General.DictateHotkey = form.DictateHotkey
+	nextCfg.General.AgentHotkey = form.AgentHotkey
+	nextCfg.General.ActiveMode = form.ActiveMode
+	nextCfg.Audio.DeviceID = form.AudioDeviceID
+	nextCfg.HuggingFace.Enabled = cfg.HuggingFace.Enabled && hfAvailableInBuild
+	nextCfg.HuggingFace.Model = form.HFModel
+	nextCfg.UI.OverlayEnabled = form.OverlayEnabled
+	nextCfg.UI.OverlayPosition = form.OverlayPosition
+	nextCfg.UI.OverlayMovable = form.OverlayMovable
+	nextCfg.UI.OverlayFreeX = form.OverlayFreeX
+	nextCfg.UI.OverlayFreeY = form.OverlayFreeY
+	nextCfg.UI.Visualizer = form.Visualizer
+	nextCfg.UI.Design = form.Design
+	nextCfg.Store.Backend = form.StoreBackend
+	nextCfg.Store.SQLitePath = form.StoreSQLitePath
+	nextCfg.Store.PostgresDSN = form.StorePostgresDSN
+	nextCfg.Store.SaveAudio = form.StoreSaveAudio
+	nextCfg.Store.AudioRetentionDays = form.StoreAudioRetention
+	nextCfg.Store.MaxAudioStorageMB = form.StoreMaxAudioStorage
+	nextCfg.Feedback.SaveAudio = form.StoreSaveAudio
+	nextCfg.Feedback.AudioRetentionDays = form.StoreAudioRetention
+	if form.StoreBackend == "sqlite" {
+		nextCfg.Feedback.DBPath = form.StoreSQLitePath
+	}
+	nextCfg.Vocabulary.Dictionary = form.VocabularyDictionary
+	return nextCfg
 }
 
 func normalizeVocabularyDictionary(input string) string {
@@ -559,7 +603,7 @@ func filteredModelCatalog() models.Catalog {
 	filtered := make([]models.Profile, 0, len(catalog.Profiles))
 	for _, profile := range catalog.Profiles {
 		switch profile.Modality {
-		case models.ModalitySTT, models.ModalityUtility, models.ModalityAgent:
+		case models.ModalitySTT, models.ModalityUtility, models.ModalityAgent, models.ModalityRealtimeVoice:
 		default:
 			continue
 		}

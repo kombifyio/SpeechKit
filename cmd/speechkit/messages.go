@@ -11,6 +11,7 @@ const (
 	msgUnsupportedStore      = "The selected store backend is not supported."
 	msgUnsupportedVis        = "The selected visualizer is not supported."
 	msgUnsupportedDesign     = "The selected overlay design is not supported."
+	msgUnsupportedPos        = "The selected overlay position is not supported."
 	msgPostgresDSNReq        = "A PostgreSQL connection string is required for the postgres backend."
 	msgSummarizeInputMissing = "No text is available to summarize."
 	msgHFTokenMissing        = "HF_TOKEN missing. Could not activate model."

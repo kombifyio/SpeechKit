@@ -24,9 +24,10 @@ type providerCredentialState struct {
 
 func providerCredentialStates(cfg *config.Config) map[string]providerCredentialState {
 	states := map[string]providerCredentialState{
-		"openai": namedProviderCredentialState("openai", "OpenAI", cfg.Providers.OpenAI.APIKeyEnv),
-		"groq":   namedProviderCredentialState("groq", "Groq", cfg.Providers.Groq.APIKeyEnv),
-		"google": namedProviderCredentialState("google", "Google", cfg.Providers.Google.APIKeyEnv),
+		"openai":     namedProviderCredentialState("openai", "OpenAI", cfg.Providers.OpenAI.APIKeyEnv),
+		"groq":       namedProviderCredentialState("groq", "Groq", cfg.Providers.Groq.APIKeyEnv),
+		"google":     namedProviderCredentialState("google", "Google", cfg.Providers.Google.APIKeyEnv),
+		"openrouter": namedProviderCredentialState("openrouter", "OpenRouter", cfg.Providers.OpenRouter.APIKeyEnv),
 	}
 	if config.ManagedHuggingFaceAvailableInBuild() {
 		states["huggingface"] = huggingFaceCredentialState(cfg)
@@ -88,6 +89,8 @@ func profileCredentialAvailable(cfg *config.Config, profile models.Profile) bool
 		return strings.TrimSpace(config.ResolveSecret(cfg.Providers.Groq.APIKeyEnv)) != ""
 	case models.ExecutionModeGoogle:
 		return strings.TrimSpace(config.ResolveSecret(cfg.Providers.Google.APIKeyEnv)) != ""
+	case models.ExecutionModeOpenRouter:
+		return strings.TrimSpace(config.ResolveSecret(cfg.Providers.OpenRouter.APIKeyEnv)) != ""
 	default:
 		return false
 	}
@@ -103,6 +106,8 @@ func providerLabel(provider string) string {
 		return "Google"
 	case "huggingface":
 		return "Hugging Face"
+	case "openrouter":
+		return "OpenRouter"
 	default:
 		return "Provider"
 	}
@@ -116,6 +121,8 @@ func providerSecretEnvName(cfg *config.Config, provider string) string {
 		return cfg.Providers.Groq.APIKeyEnv
 	case "google":
 		return cfg.Providers.Google.APIKeyEnv
+	case "openrouter":
+		return cfg.Providers.OpenRouter.APIKeyEnv
 	default:
 		return ""
 	}

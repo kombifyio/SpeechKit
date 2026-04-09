@@ -2,13 +2,19 @@ import { useEffect, useRef, useState } from 'react'
 
 import { MicSelector } from '@/components/ui/mic-selector'
 import {
+  cancelModelDownload,
   clearProviderCredential,
   defaultSettingsState,
+  fetchDownloadCatalog,
+  fetchDownloadJobs,
   fetchModelProfiles,
   fetchSettingsState,
   saveProviderCredential,
   saveSettingsState,
+  startModelDownload,
   testProviderCredential,
+  type DownloadItem,
+  type DownloadJob,
   type ProviderCredentialState,
   type SpeechKitSettingsState,
 } from '@/lib/speechkit'
@@ -588,11 +594,12 @@ const MODALITY_LABELS = {
   stt: 'STT',
   utility: 'Utility',
   agent: 'Agent',
+  realtime_voice: 'Voice Agent',
 } as const
 
 type ModalityTabKey = keyof typeof MODALITY_LABELS
 
-const MODALITY_ORDER: ModalityTabKey[] = ['stt', 'utility', 'agent']
+const MODALITY_ORDER: ModalityTabKey[] = ['stt', 'utility', 'agent', 'realtime_voice']
 
 function ProviderTab({
   settings,
@@ -618,6 +625,34 @@ function ProviderTab({
   onTestCredential: (provider: string) => void
 }) {
   const [modalityTab, setModalityTab] = useState<ModalityTabKey>('stt')
+  const [dlCatalog, setDlCatalog] = useState<DownloadItem[]>([])
+  const [dlJobs, setDlJobs] = useState<DownloadJob[]>([])
+  const [confirmItem, setConfirmItem] = useState<DownloadItem | null>(null)
+  const [dlBusy, setDlBusy] = useState(false)
+
+  // Fetch download catalog once on mount.
+  useEffect(() => {
+    fetchDownloadCatalog().then(setDlCatalog).catch(() => {})
+  }, [])
+
+  // Poll jobs every 2 seconds while any download is active; re-fetch catalog when done.
+  useEffect(() => {
+    const hasActive = dlJobs.some((j) => j.status === 'pending' || j.status === 'running')
+    if (!hasActive) return
+    const timer = setInterval(() => {
+      fetchDownloadJobs()
+        .then((jobs) => {
+          setDlJobs(jobs)
+          const wasRunning = dlJobs.some((j) => j.status === 'running' || j.status === 'pending')
+          const nowDone = jobs.every((j) => j.status === 'done' || j.status === 'failed' || j.status === 'cancelled')
+          if (wasRunning && nowDone) {
+            fetchDownloadCatalog().then(setDlCatalog).catch(() => {})
+          }
+        })
+        .catch(() => {})
+    }, 2000)
+    return () => clearInterval(timer)
+  }, [dlJobs])
 
   const profiles = settings.profiles ?? []
   const availableTabs = MODALITY_ORDER
@@ -633,6 +668,7 @@ function ProviderTab({
     : []
 
   return (
+  <>
     <div className="mt-4 flex flex-col gap-4">
       <Section title="Models">
         {availableTabs.length > 0 && (
@@ -697,6 +733,79 @@ function ProviderTab({
                       return (
                         <div className="mt-1 text-[10px] text-amber-300/60">
                           {cred?.label ?? 'API'} key required — configure below ↓
+                        </div>
+                      )
+                    })()}
+                    {/* Downloadable model files for this profile */}
+                    {(() => {
+                      const items = dlCatalog.filter((d) => d.profileId === profile.id)
+                      if (items.length === 0) return null
+                      return (
+                        <div className="mt-2 space-y-1.5">
+                          {items.map((item) => {
+                            const job = dlJobs.find((j) => j.modelId === item.id)
+                            const isActive = job?.status === 'pending' || job?.status === 'running'
+                            const isReady = item.available || job?.status === 'done'
+                            return (
+                              <div
+                                key={item.id}
+                                className="flex items-center gap-2 rounded-md bg-white/[0.03] px-2 py-1.5"
+                              >
+                                <div className="min-w-0 flex-1">
+                                  <div className="flex flex-wrap items-center gap-1">
+                                    <span className="text-[10px] text-white/55">{item.name}</span>
+                                    {item.recommended && (
+                                      <span className="rounded bg-orange-500/15 px-1 py-px text-[8px] text-orange-300/70">
+                                        recommended
+                                      </span>
+                                    )}
+                                    {item.kind === 'ollama' && (
+                                      <span className="rounded bg-slate-500/15 px-1 py-px text-[8px] text-slate-300/60">
+                                        ollama
+                                      </span>
+                                    )}
+                                  </div>
+                                  {isActive && (
+                                    <div className="mt-1">
+                                      <div className="h-1 w-full overflow-hidden rounded-full bg-white/10">
+                                        <div
+                                          className="h-full rounded-full bg-orange-400/60 transition-all duration-500"
+                                          style={{ width: `${Math.round((job?.progress ?? 0) * 100)}%` }}
+                                        />
+                                      </div>
+                                      <div className="mt-0.5 text-[9px] text-white/30">{job?.statusText}</div>
+                                    </div>
+                                  )}
+                                  {job?.status === 'failed' && (
+                                    <div className="mt-0.5 text-[9px] text-red-400/60">{job.error ?? 'Download failed'}</div>
+                                  )}
+                                </div>
+                                <div className="shrink-0">
+                                  {isReady ? (
+                                    <span className="text-[9px] text-emerald-400/80">✓ ready</span>
+                                  ) : isActive ? (
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        if (job) cancelModelDownload(job.id).catch(() => {})
+                                      }}
+                                      className="text-[9px] text-white/30 hover:text-red-400/60"
+                                    >
+                                      cancel
+                                    </button>
+                                  ) : (
+                                    <button
+                                      type="button"
+                                      onClick={() => setConfirmItem(item)}
+                                      className="rounded border border-white/10 px-1.5 py-0.5 text-[9px] text-white/45 hover:border-orange-400/30 hover:text-orange-300/75"
+                                    >
+                                      Get {item.sizeLabel}
+                                    </button>
+                                  )}
+                                </div>
+                              </div>
+                            )
+                          })}
                         </div>
                       )
                     })()}
@@ -790,9 +899,60 @@ function ProviderTab({
       )}
 
       <p className="text-[11px] leading-relaxed text-white/25">
-        Only provider paths that the desktop backend can switch live are listed here. Local Ollama profiles still require the local runtime and pulled model to be present.
+        Only provider paths that the desktop backend can switch live are listed here. Local Ollama profiles require Ollama to be installed and the model pulled.
       </p>
     </div>
+
+    {/* ── Download confirmation modal ─────────────────────────────────────── */}
+    {confirmItem && (
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
+        <div className="w-80 rounded-xl border border-white/10 bg-[#0d1117] p-5 shadow-2xl">
+          <h3 className="text-sm font-semibold text-white">Download Model</h3>
+          <p className="mt-2 text-xs font-medium text-white/80">{confirmItem.name}</p>
+          <p className="mt-1 text-[11px] leading-relaxed text-white/40">{confirmItem.description}</p>
+          <div className="mt-3 flex flex-wrap gap-x-2 gap-y-0.5 text-[10px] text-white/30">
+            <span>{confirmItem.sizeLabel}</span>
+            <span>·</span>
+            <span>License: {confirmItem.license}</span>
+            {confirmItem.kind === 'ollama' && (
+              <>
+                <span>·</span>
+                <span className="text-amber-300/50">Requires Ollama running locally</span>
+              </>
+            )}
+          </div>
+          <div className="mt-4 flex gap-2">
+            <button
+              type="button"
+              disabled={dlBusy}
+              onClick={async () => {
+                setDlBusy(true)
+                try {
+                  const job = await startModelDownload(confirmItem.id)
+                  setDlJobs((prev) => [...prev.filter((j) => j.modelId !== confirmItem.id), job])
+                  setConfirmItem(null)
+                } catch (e) {
+                  showToast(e instanceof Error ? e.message : 'Download failed')
+                } finally {
+                  setDlBusy(false)
+                }
+              }}
+              className="flex-1 rounded-lg bg-orange-500/20 py-1.5 text-xs font-medium text-orange-200 hover:bg-orange-500/30 disabled:opacity-50"
+            >
+              {dlBusy ? 'Starting…' : 'Download'}
+            </button>
+            <button
+              type="button"
+              onClick={() => setConfirmItem(null)}
+              className="flex-1 rounded-lg border border-white/10 py-1.5 text-xs text-white/50 hover:border-white/20 hover:text-white/70"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      </div>
+    )}
+  </>
   )
 }
 

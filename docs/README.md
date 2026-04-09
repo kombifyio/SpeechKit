@@ -6,6 +6,12 @@
   Current product, framework, build, and runtime overview.
 - [deployment-standards.md](./deployment-standards.md)
   Canonical build, CI, packaging, and release rules.
+- [github-app-bootstrap.md](./github-app-bootstrap.md)
+  One-time bootstrap flow for the release GitHub App and org secret wiring.
+- [github-app-release-architecture.md](./github-app-release-architecture.md)
+  Target cross-org release architecture using one GitHub App for all release repositories.
+- [release-matrix.md](./release-matrix.md)
+  Release surfaces, workflow selection, and validation matrix for framework, Windows, and Android.
 - [oss-release-boundary.md](./oss-release-boundary.md)
   What belongs in the public release repo and what must stay private.
 - [oss-release-checklist.md](./oss-release-checklist.md)

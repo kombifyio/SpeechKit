@@ -31,3 +31,5 @@ SpeechKit is developed in a private upstream and mirrored into a separate releas
 - use the allowlist in [`scripts/public/export-manifest.txt`](../scripts/public/export-manifest.txt)
 - sanitize docs and metadata before mirroring
 - build the public release artifacts from the mirrored public tree, not from a mixed private worktree
+- public tags may be source-only or source plus selected Windows artifacts
+- Android artifact publication is a separate release surface and must not be implied by an OSS mirror sync

@@ -14,18 +14,19 @@ import (
 )
 
 const (
-	groqBaseURL = "https://api.groq.com/openai/v1"
-	hfBaseURL   = "https://router.huggingface.co/hf-inference/v1"
-	maxRespBody = 1 << 20 // 1 MB
+	groqBaseURL       = "https://api.groq.com/openai/v1"
+	hfBaseURL         = "https://router.huggingface.co/hf-inference/v1"
+	openRouterBaseURL = "https://openrouter.ai/api/v1"
+	maxRespBody       = 1 << 20 // 1 MB
 )
 
 // registerOpenAIModels registers OpenAI models as custom Genkit models.
 func registerOpenAIModels(g *genkit.Genkit, apiKey string) {
 	client := &http.Client{Timeout: 60 * time.Second}
 	models := []string{
-		"gpt-5.4-nano",
-		"gpt-5.4-mini",
-		"gpt-5.4",
+		"gpt-4o-mini",
+		"gpt-4o",
+		"gpt-4-turbo",
 	}
 
 	for _, name := range models {
@@ -55,13 +56,27 @@ func registerGroqModels(g *genkit.Genkit, apiKey string) {
 func registerHFModels(g *genkit.Genkit, token string) {
 	client := &http.Client{Timeout: 60 * time.Second}
 	models := []string{
-		"Qwen/Qwen3.5-9B",
-		"Qwen/Qwen3.5-32B",
+		"Qwen/Qwen2.5-7B-Instruct",
+		"Qwen/Qwen2.5-32B-Instruct",
 		"meta-llama/Llama-3.1-8B-Instruct",
 	}
 
 	for _, name := range models {
 		registerOpenAICompatibleModel(g, "huggingface", name, hfBaseURL, token, client, false)
+	}
+}
+
+// registerOpenRouterModels registers OpenRouter models as custom Genkit models.
+// OpenRouter uses an OpenAI-compatible API with a different base URL.
+func registerOpenRouterModels(g *genkit.Genkit, apiKey string) {
+	client := &http.Client{Timeout: 60 * time.Second}
+	models := []string{
+		"meta-llama/llama-3.1-8b-instruct",
+		"google/gemini-2.5-flash",
+	}
+
+	for _, name := range models {
+		registerOpenAICompatibleModel(g, "openrouter", name, openRouterBaseURL, apiKey, client, true)
 	}
 }
 

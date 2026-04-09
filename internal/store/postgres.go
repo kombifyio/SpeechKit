@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/kombifyio/SpeechKit/internal/runtimepath"
 	_ "github.com/jackc/pgx/v5/stdlib"
 )
 
@@ -543,9 +544,5 @@ func (s *PostgresStore) enforceAudioRetention() {
 }
 
 func defaultAudioDir() string {
-	appData := os.Getenv("APPDATA")
-	if appData == "" {
-		appData = "."
-	}
-	return filepath.Join(appData, "SpeechKit", "audio")
+	return filepath.Join(runtimepath.DataDir(), "audio")
 }

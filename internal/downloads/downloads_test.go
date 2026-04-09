@@ -1,0 +1,284 @@
+package downloads
+
+import (
+	"encoding/json"
+	"fmt"
+	"net/http"
+	"net/http/httptest"
+	"os"
+	"path/filepath"
+	"sync"
+	"testing"
+	"time"
+
+	"github.com/kombifyio/SpeechKit/internal/config"
+)
+
+func TestNewManager(t *testing.T) {
+	m := NewManager()
+	if m == nil {
+		t.Fatal("expected non-nil Manager")
+	}
+	jobs := m.AllJobs()
+	if len(jobs) != 0 {
+		t.Fatalf("expected 0 jobs, got %d", len(jobs))
+	}
+}
+
+func TestHTTPDownload(t *testing.T) {
+	content := []byte("fake-model-binary-data-for-test")
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Length", fmt.Sprintf("%d", len(content)))
+		w.Write(content)
+	}))
+	defer srv.Close()
+
+	dir := t.TempDir()
+	m := NewManager()
+
+	var done bool
+	var mu sync.Mutex
+	snap := m.Start(Item{
+		ID:        "test-model",
+		ProfileID: "test-profile",
+		Name:      "Test Model",
+		SizeBytes: int64(len(content)),
+		Kind:      KindHTTP,
+		URL:       srv.URL + "/model.bin",
+	}, dir, func(item Item) {
+		mu.Lock()
+		done = true
+		mu.Unlock()
+	})
+
+	if snap.ID == "" {
+		t.Fatal("expected non-empty job ID")
+	}
+	if snap.Status != StatusPending {
+		t.Fatalf("expected pending status, got %s", snap.Status)
+	}
+
+	// Wait for completion.
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		jobs := m.AllJobs()
+		if len(jobs) == 1 && jobs[0].Status == StatusDone {
+			break
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+
+	jobs := m.AllJobs()
+	if len(jobs) != 1 {
+		t.Fatalf("expected 1 job, got %d", len(jobs))
+	}
+	if jobs[0].Status != StatusDone {
+		t.Fatalf("expected done, got %s (error: %s)", jobs[0].Status, jobs[0].Error)
+	}
+
+	// Verify file was written.
+	got, err := os.ReadFile(filepath.Join(dir, "model.bin"))
+	if err != nil {
+		t.Fatalf("read downloaded file: %v", err)
+	}
+	if string(got) != string(content) {
+		t.Errorf("content mismatch: got %d bytes, want %d", len(got), len(content))
+	}
+
+	// Verify onDone callback fired.
+	mu.Lock()
+	if !done {
+		t.Error("expected onDone callback to have fired")
+	}
+	mu.Unlock()
+}
+
+func TestHTTPDownloadServerError(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	defer srv.Close()
+
+	m := NewManager()
+	m.Start(Item{
+		ID:   "fail-model",
+		Kind: KindHTTP,
+		URL:  srv.URL + "/model.bin",
+	}, t.TempDir(), nil)
+
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		jobs := m.AllJobs()
+		if len(jobs) == 1 && (jobs[0].Status == StatusDone || jobs[0].Status == StatusFailed) {
+			break
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+
+	jobs := m.AllJobs()
+	if len(jobs) != 1 || jobs[0].Status != StatusFailed {
+		t.Fatalf("expected failed status, got %v", jobs)
+	}
+}
+
+func TestCancelJob(t *testing.T) {
+	// Slow server that blocks until cancelled.
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Length", "999999999")
+		w.WriteHeader(http.StatusOK)
+		// Write a tiny bit then block.
+		w.Write([]byte("x"))
+		if f, ok := w.(http.Flusher); ok {
+			f.Flush()
+		}
+		<-r.Context().Done()
+	}))
+	defer srv.Close()
+
+	m := NewManager()
+	snap := m.Start(Item{
+		ID:        "cancel-model",
+		Kind:      KindHTTP,
+		URL:       srv.URL + "/model.bin",
+		SizeBytes: 999999999,
+	}, t.TempDir(), nil)
+
+	// Wait for running state.
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		jobs := m.AllJobs()
+		if len(jobs) == 1 && jobs[0].Status == StatusRunning {
+			break
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+
+	if !m.CancelJob(snap.ID) {
+		t.Fatal("CancelJob returned false")
+	}
+
+	// Wait for cancellation.
+	for time.Now().Before(deadline) {
+		jobs := m.AllJobs()
+		if len(jobs) == 1 && jobs[0].Status == StatusCancelled {
+			break
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+
+	jobs := m.AllJobs()
+	if len(jobs) != 1 || jobs[0].Status != StatusCancelled {
+		t.Fatalf("expected cancelled, got %v", jobs)
+	}
+}
+
+func TestCancelNonExistentJob(t *testing.T) {
+	m := NewManager()
+	if m.CancelJob("nonexistent") {
+		t.Error("expected false for nonexistent job")
+	}
+}
+
+func TestCatalogReturnsItems(t *testing.T) {
+	cfg := &config.Config{}
+	items := Catalog(cfg)
+	if len(items) == 0 {
+		t.Fatal("expected non-empty catalog")
+	}
+	// All items should have required fields.
+	for _, item := range items {
+		if item.ID == "" {
+			t.Error("item has empty ID")
+		}
+		if item.ProfileID == "" {
+			t.Errorf("item %s has empty ProfileID", item.ID)
+		}
+		if item.Kind != KindHTTP && item.Kind != KindOllama {
+			t.Errorf("item %s has unknown kind %q", item.ID, item.Kind)
+		}
+		if item.Kind == KindHTTP && item.URL == "" {
+			t.Errorf("HTTP item %s has empty URL", item.ID)
+		}
+		if item.Kind == KindOllama && item.OllamaModel == "" {
+			t.Errorf("Ollama item %s has empty OllamaModel", item.ID)
+		}
+	}
+}
+
+func TestResolveWhisperModelsDir(t *testing.T) {
+	t.Run("from config", func(t *testing.T) {
+		cfg := &config.Config{}
+		cfg.Local.ModelPath = filepath.Join("C:", "models", "ggml-small.bin")
+		got := ResolveWhisperModelsDir(cfg)
+		want := filepath.Join("C:", "models")
+		if got != want {
+			t.Errorf("got %q, want %q", got, want)
+		}
+	})
+	t.Run("nil config", func(t *testing.T) {
+		got := ResolveWhisperModelsDir(nil)
+		if got == "" {
+			t.Error("expected non-empty dir")
+		}
+	})
+}
+
+func TestFileIsPresent(t *testing.T) {
+	dir := t.TempDir()
+	present := filepath.Join(dir, "exists.bin")
+	os.WriteFile(present, []byte("x"), 0o644)
+
+	if !FileIsPresent(present) {
+		t.Error("expected present for existing file")
+	}
+	if FileIsPresent(filepath.Join(dir, "nope.bin")) {
+		t.Error("expected not present for missing file")
+	}
+	if FileIsPresent(dir) {
+		t.Error("expected not present for directory")
+	}
+}
+
+func TestOllamaModelPresentWhenOffline(t *testing.T) {
+	// When Ollama isn't running, should return false without error.
+	// Point OllamaBaseURL at an unreachable address so we don't hit real Ollama.
+	old := OllamaBaseURL
+	OllamaBaseURL = "http://127.0.0.1:1" // guaranteed-unreachable port
+	defer func() { OllamaBaseURL = old }()
+
+	result := OllamaModelPresent("nonexistent:latest")
+	if result {
+		t.Error("expected false when Ollama is unreachable")
+	}
+}
+
+func TestOllamaModelPresentWithMockServer(t *testing.T) {
+	models := []struct {
+		Name string `json:"name"`
+	}{
+		{Name: "gemma4:e4b"},
+		{Name: "llama3:latest"},
+	}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/tags" {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		json.NewEncoder(w).Encode(map[string]any{"models": models})
+	}))
+	defer srv.Close()
+
+	old := OllamaBaseURL
+	OllamaBaseURL = srv.URL
+	defer func() { OllamaBaseURL = old }()
+
+	if !OllamaModelPresent("gemma4:e4b") {
+		t.Error("expected true for exact match gemma4:e4b")
+	}
+	if !OllamaModelPresent("gemma4:other") {
+		t.Error("expected true for prefix match gemma4:other")
+	}
+	if OllamaModelPresent("nonexistent:latest") {
+		t.Error("expected false for nonexistent model")
+	}
+}
