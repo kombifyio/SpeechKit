@@ -6,6 +6,18 @@ The format is based on Keep a Changelog and this project is intended to ship und
 
 ## [Unreleased]
 
+## [0.14.8] - 2026-04-09
+
+### Added
+
+- Generic provider credential UI — users can now save, clear, and test API keys per provider (HuggingFace, OpenAI, Google, Groq) directly in Settings → Providers
+
+### Fixed
+
+- Replaced GitHub App auth in the OSS publish workflow with a direct `OSS_PUBLISH_TOKEN` PAT to eliminate intermittent token issuance failures
+- Removed the unused `providerCredentialProvider` helper that was blocking staticcheck
+- Updated releaseguard test to reflect the new OSS publish auth mechanism
+
 ## [0.14.7] - 2026-04-09
 
 ### Fixed

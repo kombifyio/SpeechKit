@@ -20,9 +20,9 @@ func defaultActiveProfiles(catalog models.Catalog) map[string]string {
 }
 
 func activeProfilesFromConfig(cfg *config.Config, catalog models.Catalog) map[string]string {
-	profiles := defaultActiveProfiles(catalog)
+	profiles := make(map[string]string)
 	if cfg == nil {
-		return profiles
+		return defaultActiveProfiles(catalog)
 	}
 
 	for _, profile := range catalog.Profiles {
@@ -53,13 +53,13 @@ func sttProfileMatchesConfig(cfg *config.Config, profile models.Profile) bool {
 	case models.ExecutionModeLocal:
 		return cfg.Local.Enabled && cfg.Routing.Strategy != "cloud-only"
 	case models.ExecutionModeHFRouted:
-		return cfg.HuggingFace.Enabled && cfg.HuggingFace.Model == profile.ModelID
+		return cfg.HuggingFace.Enabled && cfg.HuggingFace.Model == profile.ModelID && profileCredentialAvailable(cfg, profile)
 	case models.ExecutionModeOpenAI:
-		return cfg.Providers.OpenAI.Enabled && cfg.Providers.OpenAI.STTModel == profile.ModelID
+		return cfg.Providers.OpenAI.Enabled && cfg.Providers.OpenAI.STTModel == profile.ModelID && profileCredentialAvailable(cfg, profile)
 	case models.ExecutionModeGroq:
-		return cfg.Providers.Groq.Enabled && cfg.Providers.Groq.STTModel == profile.ModelID
+		return cfg.Providers.Groq.Enabled && cfg.Providers.Groq.STTModel == profile.ModelID && profileCredentialAvailable(cfg, profile)
 	case models.ExecutionModeGoogle:
-		return cfg.Providers.Google.Enabled && cfg.Providers.Google.STTModel == profile.ModelID
+		return cfg.Providers.Google.Enabled && cfg.Providers.Google.STTModel == profile.ModelID && profileCredentialAvailable(cfg, profile)
 	default:
 		return false
 	}
@@ -68,13 +68,13 @@ func sttProfileMatchesConfig(cfg *config.Config, profile models.Profile) bool {
 func utilityProfileMatchesConfig(cfg *config.Config, profile models.Profile) bool {
 	switch profile.ExecutionMode {
 	case models.ExecutionModeOpenAI:
-		return cfg.Providers.OpenAI.Enabled && cfg.Providers.OpenAI.UtilityModel == profile.ModelID
+		return cfg.Providers.OpenAI.Enabled && cfg.Providers.OpenAI.UtilityModel == profile.ModelID && profileCredentialAvailable(cfg, profile)
 	case models.ExecutionModeGroq:
-		return cfg.Providers.Groq.Enabled && cfg.Providers.Groq.UtilityModel == profile.ModelID
+		return cfg.Providers.Groq.Enabled && cfg.Providers.Groq.UtilityModel == profile.ModelID && profileCredentialAvailable(cfg, profile)
 	case models.ExecutionModeGoogle:
-		return cfg.Providers.Google.Enabled && cfg.Providers.Google.UtilityModel == profile.ModelID
+		return cfg.Providers.Google.Enabled && cfg.Providers.Google.UtilityModel == profile.ModelID && profileCredentialAvailable(cfg, profile)
 	case models.ExecutionModeHFRouted:
-		return cfg.HuggingFace.Enabled && cfg.HuggingFace.UtilityModel == profile.ModelID
+		return cfg.HuggingFace.Enabled && cfg.HuggingFace.UtilityModel == profile.ModelID && profileCredentialAvailable(cfg, profile)
 	case models.ExecutionModeOllama:
 		return cfg.Providers.Ollama.Enabled && cfg.Providers.Ollama.UtilityModel == profile.ModelID
 	default:
@@ -85,13 +85,13 @@ func utilityProfileMatchesConfig(cfg *config.Config, profile models.Profile) boo
 func agentProfileMatchesConfig(cfg *config.Config, profile models.Profile) bool {
 	switch profile.ExecutionMode {
 	case models.ExecutionModeOpenAI:
-		return cfg.Providers.OpenAI.Enabled && cfg.Providers.OpenAI.AgentModel == profile.ModelID
+		return cfg.Providers.OpenAI.Enabled && cfg.Providers.OpenAI.AgentModel == profile.ModelID && profileCredentialAvailable(cfg, profile)
 	case models.ExecutionModeGroq:
-		return cfg.Providers.Groq.Enabled && cfg.Providers.Groq.AgentModel == profile.ModelID
+		return cfg.Providers.Groq.Enabled && cfg.Providers.Groq.AgentModel == profile.ModelID && profileCredentialAvailable(cfg, profile)
 	case models.ExecutionModeGoogle:
-		return cfg.Providers.Google.Enabled && cfg.Providers.Google.AgentModel == profile.ModelID
+		return cfg.Providers.Google.Enabled && cfg.Providers.Google.AgentModel == profile.ModelID && profileCredentialAvailable(cfg, profile)
 	case models.ExecutionModeHFRouted:
-		return cfg.HuggingFace.Enabled && cfg.HuggingFace.AgentModel == profile.ModelID
+		return cfg.HuggingFace.Enabled && cfg.HuggingFace.AgentModel == profile.ModelID && profileCredentialAvailable(cfg, profile)
 	case models.ExecutionModeOllama:
 		return cfg.Providers.Ollama.Enabled && cfg.Providers.Ollama.AgentModel == profile.ModelID
 	default:

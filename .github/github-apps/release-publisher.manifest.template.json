@@ -1,0 +1,18 @@
+{
+  "name": "__APP_NAME__",
+  "url": "https://github.com/kombifyio",
+  "hook_attributes": {
+    "url": "https://github.com/kombifyio",
+    "active": false
+  },
+  "redirect_url": "__REDIRECT_URL__",
+  "description": "Cross-organization release publisher for kombify release repositories.",
+  "public": false,
+  "default_permissions": {
+    "contents": "write",
+    "metadata": "read"
+  },
+  "default_events": [],
+  "request_oauth_on_install": false,
+  "setup_on_update": false
+}

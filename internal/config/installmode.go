@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 
 	"github.com/BurntSushi/toml"
+	"github.com/kombifyio/SpeechKit/internal/runtimepath"
 	"github.com/google/uuid"
 )
 
@@ -28,11 +29,7 @@ type InstallState struct {
 
 // installStateDir returns the directory for install state (APPDATA/SpeechKit).
 func installStateDir() string {
-	appData := os.Getenv("APPDATA")
-	if appData == "" {
-		appData = "."
-	}
-	return filepath.Join(appData, "SpeechKit")
+	return runtimepath.DataDir()
 }
 
 // installStatePath returns the full path to install.toml.
@@ -121,22 +118,6 @@ func ApplyLocalInstallDefaults(cfg *Config, state *InstallState) bool {
 	}
 	if cfg.Local.GPU == "" {
 		cfg.Local.GPU = "auto"
-		changed = true
-	}
-	if !cfg.Providers.Ollama.Enabled {
-		cfg.Providers.Ollama.Enabled = true
-		changed = true
-	}
-	if cfg.Providers.Ollama.BaseURL == "" {
-		cfg.Providers.Ollama.BaseURL = "http://localhost:11434"
-		changed = true
-	}
-	if cfg.Providers.Ollama.UtilityModel == "" {
-		cfg.Providers.Ollama.UtilityModel = "gemma4:e4b"
-		changed = true
-	}
-	if cfg.Providers.Ollama.AgentModel == "" {
-		cfg.Providers.Ollama.AgentModel = "gemma4:e4b"
 		changed = true
 	}
 

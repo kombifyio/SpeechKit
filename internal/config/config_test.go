@@ -511,15 +511,6 @@ func TestApplyLocalInstallDefaultsEnablesBundledLocalRuntime(t *testing.T) {
 	if cfg.Local.Model != "ggml-small.bin" {
 		t.Fatalf("local model = %q, want %q", cfg.Local.Model, "ggml-small.bin")
 	}
-	if !cfg.Providers.Ollama.Enabled {
-		t.Fatal("ollama provider should be enabled for pending local installs")
-	}
-	if cfg.Providers.Ollama.UtilityModel != "gemma4:e4b" {
-		t.Fatalf("ollama utility model = %q, want %q", cfg.Providers.Ollama.UtilityModel, "gemma4:e4b")
-	}
-	if cfg.Providers.Ollama.AgentModel != "gemma4:e4b" {
-		t.Fatalf("ollama agent model = %q, want %q", cfg.Providers.Ollama.AgentModel, "gemma4:e4b")
-	}
 }
 
 func TestApplyLocalInstallDefaultsSkipsCompletedSetup(t *testing.T) {

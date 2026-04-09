@@ -8,6 +8,7 @@ import (
 	"strings"
 	"unsafe"
 
+	"github.com/kombifyio/SpeechKit/internal/runtimepath"
 	"golang.org/x/sys/windows"
 )
 
@@ -82,11 +83,7 @@ func (s *fileStore) Delete(name string) error {
 }
 
 func secretFilePath(name string) (string, error) {
-	configDir, err := os.UserConfigDir()
-	if err != nil {
-		return "", err
-	}
-	return filepath.Join(configDir, "SpeechKit", "secrets", name+".bin"), nil
+	return filepath.Join(runtimepath.SecretsDir(), name+".bin"), nil
 }
 
 func protectWithDPAPI(data []byte) ([]byte, error) {
