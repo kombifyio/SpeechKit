@@ -138,7 +138,7 @@ jobs:
           }
 
       - name: Ensure SignPath configuration for public Windows releases
-        if: github.repository == 'kombifyio/SpeechKit'
+        if: github.repository == 'kombifyio/SpeechKit' && vars.ALLOW_UNSIGNED_WINDOWS_RELEASES != 'true'
         shell: bash
         env:
           SIGNPATH_API_TOKEN: ${{ secrets.SIGNPATH_API_TOKEN }}
@@ -162,7 +162,7 @@ jobs:
           fi
 
       - name: Upload unsigned SpeechKit.exe
-        if: github.repository == 'kombifyio/SpeechKit'
+        if: github.repository == 'kombifyio/SpeechKit' && vars.ALLOW_UNSIGNED_WINDOWS_RELEASES != 'true'
         id: upload-speechkit-exe
         uses: actions/upload-artifact@v4
         with:
@@ -172,7 +172,7 @@ jobs:
           retention-days: 1
 
       - name: Sign SpeechKit.exe with SignPath
-        if: github.repository == 'kombifyio/SpeechKit'
+        if: github.repository == 'kombifyio/SpeechKit' && vars.ALLOW_UNSIGNED_WINDOWS_RELEASES != 'true'
         uses: signpath/github-action-submit-signing-request@v2
         with:
           api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
@@ -188,7 +188,7 @@ jobs:
             commit: "${{ github.sha }}"
 
       - name: Replace signed SpeechKit.exe
-        if: github.repository == 'kombifyio/SpeechKit'
+        if: github.repository == 'kombifyio/SpeechKit' && vars.ALLOW_UNSIGNED_WINDOWS_RELEASES != 'true'
         shell: pwsh
         run: |
           $signedExe = Get-ChildItem -Path "signed-speechkit-exe" -Recurse -Filter "SpeechKit.exe" | Select-Object -First 1
@@ -198,7 +198,7 @@ jobs:
           Copy-Item -Path $signedExe.FullName -Destination "dist/windows/SpeechKit/SpeechKit.exe" -Force
 
       - name: Upload unsigned SpeechKit-Setup.exe
-        if: github.repository == 'kombifyio/SpeechKit' && needs.prepare.outputs.release_windows_installer == 'true'
+        if: github.repository == 'kombifyio/SpeechKit' && vars.ALLOW_UNSIGNED_WINDOWS_RELEASES != 'true' && needs.prepare.outputs.release_windows_installer == 'true'
         id: upload-speechkit-setup
         uses: actions/upload-artifact@v4
         with:
@@ -208,7 +208,7 @@ jobs:
           retention-days: 1
 
       - name: Sign SpeechKit-Setup.exe with SignPath
-        if: github.repository == 'kombifyio/SpeechKit' && needs.prepare.outputs.release_windows_installer == 'true'
+        if: github.repository == 'kombifyio/SpeechKit' && vars.ALLOW_UNSIGNED_WINDOWS_RELEASES != 'true' && needs.prepare.outputs.release_windows_installer == 'true'
         uses: signpath/github-action-submit-signing-request@v2
         with:
           api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
@@ -224,7 +224,7 @@ jobs:
             commit: "${{ github.sha }}"
 
       - name: Replace signed SpeechKit-Setup.exe
-        if: github.repository == 'kombifyio/SpeechKit' && needs.prepare.outputs.release_windows_installer == 'true'
+        if: github.repository == 'kombifyio/SpeechKit' && vars.ALLOW_UNSIGNED_WINDOWS_RELEASES != 'true' && needs.prepare.outputs.release_windows_installer == 'true'
         shell: pwsh
         run: |
           $signedInstaller = Get-ChildItem -Path "signed-speechkit-setup" -Recurse -Filter "SpeechKit-Setup.exe" | Select-Object -First 1
@@ -234,7 +234,7 @@ jobs:
           Copy-Item -Path $signedInstaller.FullName -Destination "dist/windows/SpeechKit-Setup.exe" -Force
 
       - name: Validate signed Windows binaries
-        if: github.repository == 'kombifyio/SpeechKit'
+        if: github.repository == 'kombifyio/SpeechKit' && vars.ALLOW_UNSIGNED_WINDOWS_RELEASES != 'true'
         shell: pwsh
         run: |
           $validationArgs = @(
@@ -250,6 +250,18 @@ jobs:
             exit $LASTEXITCODE
           }
 
+      - name: Mark unsigned public Windows release
+        if: github.repository == 'kombifyio/SpeechKit' && vars.ALLOW_UNSIGNED_WINDOWS_RELEASES == 'true'
+        shell: pwsh
+        run: |
+          @'
+          WARNING: This Windows release is intentionally unsigned.
+
+          This is a temporary transition release published before SignPath
+          onboarding is complete. Windows SmartScreen and installation trust
+          warnings are expected for this build.
+          '@ | Set-Content -Path "UNSIGNED-WINDOWS-RELEASE.txt" -Encoding ascii
+
       - name: Prepare release assets
         id: assets
         shell: pwsh
@@ -263,6 +275,9 @@ jobs:
           if ('${{ needs.prepare.outputs.release_windows_portable }}' -eq 'true') {
             Compress-Archive -Path "dist/windows/SpeechKit/*" -DestinationPath "SpeechKit-Portable-${tag}.zip" -Force
             $assets += "SpeechKit-Portable-${tag}.zip"
+          }
+          if (Test-Path "UNSIGNED-WINDOWS-RELEASE.txt") {
+            $assets += "UNSIGNED-WINDOWS-RELEASE.txt"
           }
           $checksums = foreach ($asset in $assets) {
             $hash = (Get-FileHash -Algorithm SHA256 -Path $asset).Hash.ToLowerInvariant()
