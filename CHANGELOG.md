@@ -6,6 +6,19 @@ The format is based on Keep a Changelog and this project is intended to ship und
 
 ## [Unreleased]
 
+## [0.15.1] - 2026-04-10
+
+### Fixed
+
+- Simplified model setup to a maximum of four visible options per mode, with direct inline API key entry or local download actions on each model card
+- Removed stale Settings copy and dead Hugging Face credential helpers left behind by the provider UI redesign
+- Improved Windows installer metadata so setup and uninstall surfaces present clearer product information during the interim unsigned release
+
+### Changed
+
+- Moved the public OSS release path to `kombifyio/SpeechKit`, with GitHub-hosted workflows and SignPath-ready Windows release wiring prepared for the next signed release
+- Published the OSS code signing policy and public-repo operating model used for the upcoming SignPath Foundation onboarding
+
 ## [0.15.0] - 2026-04-10
 
 ### Added
