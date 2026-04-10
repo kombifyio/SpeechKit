@@ -13,7 +13,7 @@ require (
 	github.com/wailsapp/wails/v3 v3.0.0-alpha.74
 	github.com/yalue/onnxruntime_go v1.27.0
 	golang.org/x/sys v0.42.0
-	google.golang.org/genai v1.52.0
+	google.golang.org/genai v1.53.0
 	modernc.org/sqlite v1.47.0
 )
 
