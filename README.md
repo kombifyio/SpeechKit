@@ -154,6 +154,16 @@ Start with:
 - [`docs/deployment-standards.md`](./docs/deployment-standards.md)
 - [`docs/oss-release-boundary.md`](./docs/oss-release-boundary.md)
 - [`docs/oss-release-checklist.md`](./docs/oss-release-checklist.md)
+- [`docs/public-repo-operating-model.md`](./docs/public-repo-operating-model.md)
+
+## Code Signing
+
+Public Windows releases are expected to be built from `kombifyio/SpeechKit`, signed, and verified before publication.
+
+See:
+
+- [`docs/code-signing-policy.md`](./docs/code-signing-policy.md)
+- [`docs/signpath-oss-setup.md`](./docs/signpath-oss-setup.md)
 
 ## Contributing
 
