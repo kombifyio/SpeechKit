@@ -47,6 +47,7 @@ The boundary is:
 - Managed kombify integration may rely on environment variables or Doppler at build and runtime
 - Public OSS releases must not ship private repo assumptions, private project names, or managed secrets
 - Public OSS releases must document required variables explicitly, not embed them
+- Public OSS Windows releases are built and signed from the public repository release flow
 
 ## Canonical Build Rules
 
@@ -56,6 +57,13 @@ The boundary is:
 - The installer output is `dist/windows/SpeechKit-Setup.exe`
 - The default build path produces both outputs from the same source tree
 - `scripts/build.ps1 -SkipInstaller` is allowed for portable-only release flows, but it must still build the same staged Windows bundle
+
+## Public Windows Signing
+
+- `kombifyio/SpeechKit` is the public Windows release origin
+- public Windows signing is expected to run on GitHub-hosted runners
+- SignPath Foundation is the intended OSS signing path
+- the private upstream may export source to the public repo, but it must not publish public Windows binaries directly
 
 ## Release Surfaces
 

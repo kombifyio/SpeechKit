@@ -7,6 +7,8 @@ Name "kombify SpeechKit"
 OutFile "..\dist\windows\SpeechKit-Setup.exe"
 InstallDir "$LOCALAPPDATA\SpeechKit"
 RequestExecutionLevel user
+Caption "kombify SpeechKit Setup"
+BrandingText "kombify SpeechKit"
 
 ; VERSION can be overridden at compile time: makensis /DVERSION=x.y.z
 !ifndef VERSION
@@ -70,6 +72,10 @@ Section "SpeechKit" SecMain
   WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\kombify SpeechKit" "InstallLocation" "$INSTDIR"
   WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\kombify SpeechKit" "Publisher" "kombify"
   WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\kombify SpeechKit" "DisplayVersion" "${VERSION}"
+  WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\kombify SpeechKit" "DisplayIcon" "$INSTDIR\SpeechKit.exe"
+  WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\kombify SpeechKit" "URLInfoAbout" "https://github.com/kombifyio/SpeechKit"
+  WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\kombify SpeechKit" "HelpLink" "https://github.com/kombifyio/SpeechKit/issues"
+  WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\kombify SpeechKit" "Comments" "Windows-first voice toolkit for dictation, assist, and voice agent workflows."
   WriteRegDWORD HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\kombify SpeechKit" "NoModify" 1
   WriteRegDWORD HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\kombify SpeechKit" "NoRepair" 1
 

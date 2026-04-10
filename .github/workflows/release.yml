@@ -20,6 +20,7 @@ on:
         type: boolean
 
 permissions:
+  actions: read
   contents: write
   attestations: write
   id-token: write
@@ -31,7 +32,7 @@ concurrency:
 jobs:
   prepare:
     name: Resolve Release Plan
-    runs-on: ${{ vars.CI_RUNNER || 'blacksmith-4vcpu-ubuntu-2204' }}
+    runs-on: ${{ vars.CI_RUNNER || 'ubuntu-24.04' }}
     outputs:
       tag: ${{ steps.plan.outputs.tag }}
       checkout_ref: ${{ steps.plan.outputs.checkout_ref }}
@@ -73,7 +74,7 @@ jobs:
   create-release:
     name: Create Source Release
     needs: prepare
-    runs-on: ${{ vars.CI_RUNNER || 'blacksmith-4vcpu-ubuntu-2204' }}
+    runs-on: ${{ vars.CI_RUNNER || 'ubuntu-24.04' }}
 
     steps:
       - name: Create GitHub Release
@@ -91,7 +92,7 @@ jobs:
       - prepare
       - create-release
     if: needs.prepare.outputs.should_build_windows == 'true'
-    runs-on: ${{ vars.WINDOWS_BUILD_RUNNER || 'blacksmith-4vcpu-windows-2025' }}
+    runs-on: ${{ vars.WINDOWS_BUILD_RUNNER || 'windows-2025' }}
     timeout-minutes: 40
 
     steps:
@@ -134,6 +135,119 @@ jobs:
             ./scripts/build.ps1
           } else {
             ./scripts/build.ps1 -SkipInstaller
+          }
+
+      - name: Ensure SignPath configuration for public Windows releases
+        if: github.repository == 'kombifyio/SpeechKit'
+        shell: bash
+        env:
+          SIGNPATH_API_TOKEN: ${{ secrets.SIGNPATH_API_TOKEN }}
+          SIGNPATH_ORGANIZATION_ID: ${{ vars.SIGNPATH_ORGANIZATION_ID }}
+          SIGNPATH_PROJECT_SLUG: ${{ vars.SIGNPATH_PROJECT_SLUG }}
+          SIGNPATH_SIGNING_POLICY_SLUG: ${{ vars.SIGNPATH_SIGNING_POLICY_SLUG }}
+          SIGNPATH_ARTIFACT_CONFIGURATION_SLUG: ${{ vars.SIGNPATH_ARTIFACT_CONFIGURATION_SLUG }}
+          SIGNPATH_PUBLISHER_NAME: ${{ vars.SIGNPATH_PUBLISHER_NAME }}
+        run: |
+          set -euo pipefail
+          missing=()
+          [ -n "$SIGNPATH_API_TOKEN" ] || missing+=("SIGNPATH_API_TOKEN secret")
+          [ -n "$SIGNPATH_ORGANIZATION_ID" ] || missing+=("SIGNPATH_ORGANIZATION_ID variable")
+          [ -n "$SIGNPATH_PROJECT_SLUG" ] || missing+=("SIGNPATH_PROJECT_SLUG variable")
+          [ -n "$SIGNPATH_SIGNING_POLICY_SLUG" ] || missing+=("SIGNPATH_SIGNING_POLICY_SLUG variable")
+          [ -n "$SIGNPATH_ARTIFACT_CONFIGURATION_SLUG" ] || missing+=("SIGNPATH_ARTIFACT_CONFIGURATION_SLUG variable")
+          [ -n "$SIGNPATH_PUBLISHER_NAME" ] || missing+=("SIGNPATH_PUBLISHER_NAME variable")
+          if [ "${#missing[@]}" -gt 0 ]; then
+            printf '::error title=Missing SignPath configuration::%s\n' "$(IFS=', '; echo "${missing[*]}")"
+            exit 1
+          fi
+
+      - name: Upload unsigned SpeechKit.exe
+        if: github.repository == 'kombifyio/SpeechKit'
+        id: upload-speechkit-exe
+        uses: actions/upload-artifact@v4
+        with:
+          name: unsigned-speechkit-exe
+          path: dist/windows/SpeechKit/SpeechKit.exe
+          compression-level: 0
+          retention-days: 1
+
+      - name: Sign SpeechKit.exe with SignPath
+        if: github.repository == 'kombifyio/SpeechKit'
+        uses: signpath/github-action-submit-signing-request@v2
+        with:
+          api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
+          organization-id: ${{ vars.SIGNPATH_ORGANIZATION_ID }}
+          project-slug: ${{ vars.SIGNPATH_PROJECT_SLUG }}
+          signing-policy-slug: ${{ vars.SIGNPATH_SIGNING_POLICY_SLUG }}
+          artifact-configuration-slug: ${{ vars.SIGNPATH_ARTIFACT_CONFIGURATION_SLUG }}
+          github-artifact-id: ${{ steps.upload-speechkit-exe.outputs.artifact-id }}
+          wait-for-completion: true
+          output-artifact-directory: signed-speechkit-exe
+          parameters: |
+            version: "${{ needs.prepare.outputs.tag }}"
+            commit: "${{ github.sha }}"
+
+      - name: Replace signed SpeechKit.exe
+        if: github.repository == 'kombifyio/SpeechKit'
+        shell: pwsh
+        run: |
+          $signedExe = Get-ChildItem -Path "signed-speechkit-exe" -Recurse -Filter "SpeechKit.exe" | Select-Object -First 1
+          if ($null -eq $signedExe) {
+            throw 'Signed SpeechKit.exe not found in SignPath output.'
+          }
+          Copy-Item -Path $signedExe.FullName -Destination "dist/windows/SpeechKit/SpeechKit.exe" -Force
+
+      - name: Upload unsigned SpeechKit-Setup.exe
+        if: github.repository == 'kombifyio/SpeechKit' && needs.prepare.outputs.release_windows_installer == 'true'
+        id: upload-speechkit-setup
+        uses: actions/upload-artifact@v4
+        with:
+          name: unsigned-speechkit-setup
+          path: dist/windows/SpeechKit-Setup.exe
+          compression-level: 0
+          retention-days: 1
+
+      - name: Sign SpeechKit-Setup.exe with SignPath
+        if: github.repository == 'kombifyio/SpeechKit' && needs.prepare.outputs.release_windows_installer == 'true'
+        uses: signpath/github-action-submit-signing-request@v2
+        with:
+          api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
+          organization-id: ${{ vars.SIGNPATH_ORGANIZATION_ID }}
+          project-slug: ${{ vars.SIGNPATH_PROJECT_SLUG }}
+          signing-policy-slug: ${{ vars.SIGNPATH_SIGNING_POLICY_SLUG }}
+          artifact-configuration-slug: ${{ vars.SIGNPATH_ARTIFACT_CONFIGURATION_SLUG }}
+          github-artifact-id: ${{ steps.upload-speechkit-setup.outputs.artifact-id }}
+          wait-for-completion: true
+          output-artifact-directory: signed-speechkit-setup
+          parameters: |
+            version: "${{ needs.prepare.outputs.tag }}"
+            commit: "${{ github.sha }}"
+
+      - name: Replace signed SpeechKit-Setup.exe
+        if: github.repository == 'kombifyio/SpeechKit' && needs.prepare.outputs.release_windows_installer == 'true'
+        shell: pwsh
+        run: |
+          $signedInstaller = Get-ChildItem -Path "signed-speechkit-setup" -Recurse -Filter "SpeechKit-Setup.exe" | Select-Object -First 1
+          if ($null -eq $signedInstaller) {
+            throw 'Signed SpeechKit-Setup.exe not found in SignPath output.'
+          }
+          Copy-Item -Path $signedInstaller.FullName -Destination "dist/windows/SpeechKit-Setup.exe" -Force
+
+      - name: Validate signed Windows binaries
+        if: github.repository == 'kombifyio/SpeechKit'
+        shell: pwsh
+        run: |
+          $validationArgs = @(
+            '-DistDir', 'dist/windows',
+            '-RequireTimestamp',
+            '-ExpectedPublisher', '${{ vars.SIGNPATH_PUBLISHER_NAME }}'
+          )
+          if ('${{ needs.prepare.outputs.release_windows_installer }}' -eq 'true') {
+            $validationArgs += '-RequireInstaller'
+          }
+          & ./scripts/validate-windows-signing.ps1 @validationArgs
+          if ($LASTEXITCODE -ne 0) {
+            exit $LASTEXITCODE
           }
 
       - name: Prepare release assets

@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { vi } from 'vitest'
 
 import { SettingsApp } from '@/components/settings-app'
@@ -200,7 +200,7 @@ describe('SettingsApp', () => {
 
     fireEvent.click(await screen.findByRole('button', { name: 'Provider' }))
 
-    const modelsSection = await screen.findByText('Models')
+    const modelsSection = await screen.findByText('Model setup')
     expect(modelsSection).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'STT' })).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'TTS' })).not.toBeInTheDocument()
@@ -217,7 +217,7 @@ describe('SettingsApp', () => {
 
     fireEvent.click(await screen.findByRole('button', { name: 'Provider' }))
 
-    await screen.findByText('Models')
+    await screen.findByText('Model setup')
     const activeLabel = screen.getByText('Active')
     expect(activeLabel).toBeInTheDocument()
   })
@@ -243,7 +243,7 @@ describe('SettingsApp', () => {
 
     expect(await screen.findByRole('button', { name: 'Utility' })).toBeInTheDocument()
     expect(screen.getByText(/laptop-friendly local model/i)).toBeInTheDocument()
-    expect(screen.getByText('local runtime')).toBeInTheDocument()
+    expect(screen.getByText('local')).toBeInTheDocument()
   })
 
   it('saves mode changes and separate hotkeys', async () => {
@@ -454,6 +454,15 @@ describe('SettingsApp', () => {
   it('shows stored token status for the provider', async () => {
     fetchSettingsStateMock.mockResolvedValue({
       ...baseSettings,
+      profiles: [
+        {
+          id: 'stt.routed.whisper-large-v3',
+          modality: 'stt',
+          name: 'Whisper Large v3 (HuggingFace)',
+          executionMode: 'hf_routed',
+          description: 'Managed STT profile',
+        },
+      ],
       providerCredentials: {
         huggingface: {
           provider: 'huggingface',
@@ -473,39 +482,151 @@ describe('SettingsApp', () => {
     expect(await screen.findByText(/install key active/i)).toBeInTheDocument()
   })
 
-  it('does not render a hugging face switch in provider settings', async () => {
+  it('limits model choices to four cards per modality while keeping the active model visible', async () => {
     fetchSettingsStateMock.mockResolvedValue(baseSettings)
+
+    const utilityProfiles = Array.from({ length: 5 }, (_, index) => ({
+      id: `utility-model-${index + 1}`,
+      modality: 'utility' as const,
+      name: `Utility Model ${index + 1}`,
+      executionMode: 'groq_api' as const,
+      description: `Utility profile ${index + 1}`,
+    }))
+
+    fetchSettingsStateMock.mockResolvedValue({
+      ...baseSettings,
+      profiles: utilityProfiles,
+      activeProfiles: { utility: 'utility-model-5' },
+      providerCredentials: {
+        groq: {
+          provider: 'groq',
+          label: 'Groq',
+          envName: 'GROQ_API_KEY',
+          available: false,
+          hasStoredSecret: false,
+          source: 'none',
+        },
+      },
+    })
 
     render(<SettingsApp />)
 
     fireEvent.click(await screen.findByRole('button', { name: 'Provider' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Utility' }))
 
-    await screen.findByText('API Keys')
-    expect(
-      screen.queryByRole('switch', { name: 'Hugging Face Inference' }),
-    ).not.toBeInTheDocument()
+    expect(await screen.findByText('Utility Model 1')).toBeInTheDocument()
+    expect(screen.getByText('Utility Model 2')).toBeInTheDocument()
+    expect(screen.getByText('Utility Model 3')).toBeInTheDocument()
+    expect(screen.getByText('Utility Model 5')).toBeInTheDocument()
+    expect(screen.queryByText('Utility Model 4')).not.toBeInTheDocument()
   })
 
-  it('saves a user provider credential explicitly', async () => {
-    fetchSettingsStateMock.mockResolvedValue(baseSettings)
+  it('shows inline key entry on the model card when a provider key is missing', async () => {
+    fetchSettingsStateMock.mockResolvedValue({
+      ...baseSettings,
+      profiles: [
+        {
+          id: 'utility.groq.llama-3.1-8b',
+          modality: 'utility',
+          name: 'LLaMA 3.1 8B (Groq)',
+          executionMode: 'groq_api',
+          description: 'Fast cloud LLM',
+        },
+      ],
+      activeProfiles: {},
+      providerCredentials: {
+        groq: {
+          provider: 'groq',
+          label: 'Groq',
+          envName: 'GROQ_API_KEY',
+          available: false,
+          hasStoredSecret: false,
+          source: 'none',
+        },
+      },
+    })
+
+    render(<SettingsApp />)
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Provider' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Utility' }))
+
+    const keyInput = await screen.findByLabelText('LLaMA 3.1 8B (Groq) API key')
+    expect(keyInput).toBeInTheDocument()
+
+    fireEvent.change(keyInput, {
+      target: { value: 'groq_user_token_123' },
+    })
+    fireEvent.click(screen.getByRole('button', { name: 'Save key' }))
+
+    await waitFor(() =>
+      expect(saveProviderCredentialMock).toHaveBeenCalledWith('groq', 'groq_user_token_123'),
+    )
+  })
+
+  it('shows only providers that are relevant to the visible model options', async () => {
+    fetchSettingsStateMock.mockResolvedValue({
+      ...baseSettings,
+      profiles: [
+        {
+          id: 'utility.groq.llama-3.1-8b',
+          modality: 'utility',
+          name: 'LLaMA 3.1 8B (Groq)',
+          executionMode: 'groq_api',
+          description: 'Fast cloud LLM',
+        },
+        {
+          id: 'agent.openai.gpt-5.4-mini',
+          modality: 'agent',
+          name: 'GPT-5.4 Mini (OpenAI)',
+          executionMode: 'openai_api',
+          description: 'Agent profile',
+        },
+      ],
+      activeProfiles: {},
+      providerCredentials: {
+        openai: {
+          provider: 'openai',
+          label: 'OpenAI',
+          envName: 'OPENAI_API_KEY',
+          available: false,
+          hasStoredSecret: false,
+          source: 'none',
+        },
+        groq: {
+          provider: 'groq',
+          label: 'Groq',
+          envName: 'GROQ_API_KEY',
+          available: true,
+          hasStoredSecret: true,
+          source: 'user',
+        },
+      },
+    })
 
     render(<SettingsApp />)
 
     fireEvent.click(await screen.findByRole('button', { name: 'Provider' }))
 
-    fireEvent.change(await screen.findByLabelText('Hugging Face API key'), {
-      target: { value: 'hf_user_token_123' },
-    })
-    fireEvent.click(screen.getByRole('button', { name: 'Save' }))
-
-    await waitFor(() =>
-      expect(saveProviderCredentialMock).toHaveBeenCalledWith('huggingface', 'hf_user_token_123'),
-    )
+    const providersSection = await screen.findByText('Connected providers')
+    const section = providersSection.closest('section')
+    expect(section).not.toBeNull()
+    expect(within(section as HTMLElement).getByText('Groq')).toBeInTheDocument()
+    expect(within(section as HTMLElement).queryByText('OpenAI')).not.toBeInTheDocument()
   })
 
   it('clears a stored provider credential explicitly', async () => {
     fetchSettingsStateMock.mockResolvedValue({
       ...baseSettings,
+      profiles: [
+        {
+          id: 'stt.routed.whisper-large-v3',
+          modality: 'stt',
+          name: 'Whisper Large v3 (HuggingFace)',
+          executionMode: 'hf_routed',
+          description: 'Managed STT profile',
+        },
+      ],
       providerCredentials: {
         huggingface: {
           provider: 'huggingface',

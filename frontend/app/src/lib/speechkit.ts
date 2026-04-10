@@ -3,7 +3,7 @@ export type OverlayDesign = 'default' | 'kombify'
 export type RuntimeMode = 'dictate' | 'agent'
 export type StoreBackend = 'sqlite' | 'postgres'
 export type Modality = 'stt' | 'tts' | 'realtime_voice' | 'utility' | 'agent' | 'embedding' | 'reranker'
-export type ExecutionMode = 'local' | 'self_hosted_http' | 'hf_routed' | 'hf_inference' | 'openai_api' | 'groq_api' | 'google_api' | 'ollama_local'
+export type ExecutionMode = 'local' | 'self_hosted_http' | 'hf_routed' | 'hf_inference' | 'openai_api' | 'groq_api' | 'google_api' | 'ollama_local' | 'openrouter_api'
 export type LogType = 'info' | 'warn' | 'error' | 'success'
 
 export type AudioDevice = {
@@ -506,37 +506,6 @@ export async function saveSettingsState(nextState: SpeechKitSettingsState) {
 
   if (!response.ok) {
     throw new Error(`settings update failed: ${response.status}`)
-  }
-
-  const payload = (await response.json()) as { message?: string }
-  return payload.message ?? ''
-}
-
-export async function saveHuggingFaceToken(token: string) {
-  const body = new URLSearchParams({
-    hf_token: token,
-  })
-
-  const response = await fetch('/settings/huggingface/token', {
-    method: 'POST',
-    body,
-  })
-
-  if (!response.ok) {
-    throw new Error(`hugging face token save failed: ${response.status}`)
-  }
-
-  const payload = (await response.json()) as { message?: string }
-  return payload.message ?? ''
-}
-
-export async function clearHuggingFaceToken() {
-  const response = await fetch('/settings/huggingface/token/clear', {
-    method: 'POST',
-  })
-
-  if (!response.ok) {
-    throw new Error(`hugging face token clear failed: ${response.status}`)
   }
 
   const payload = (await response.json()) as { message?: string }

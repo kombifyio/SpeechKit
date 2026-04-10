@@ -140,7 +140,11 @@ export function SettingsApp() {
 
   const handleTestProviderCredential = async (provider: string) => {
     const token = (providerTokens[provider] ?? '').trim()
-    if (!token) { showToast('Enter a key to test'); return }
+    const storedCredential = settings.providerCredentials?.[provider]
+    if (!token && !storedCredential?.available) {
+      showToast('No key configured')
+      return
+    }
     setProviderBusy((b) => ({ ...b, [provider]: true }))
     try {
       const result = await testProviderCredential(provider, token)
@@ -588,6 +592,7 @@ const PROVIDER_FOR_EXECUTION_MODE: Record<string, string | undefined> = {
   openai_api: 'openai',
   groq_api: 'groq',
   google_api: 'google',
+  openrouter_api: 'openrouter',
 }
 
 const MODALITY_LABELS = {
@@ -600,6 +605,60 @@ const MODALITY_LABELS = {
 type ModalityTabKey = keyof typeof MODALITY_LABELS
 
 const MODALITY_ORDER: ModalityTabKey[] = ['stt', 'utility', 'agent', 'realtime_voice']
+
+function limitProfilesToVisibleOptions(
+  profiles: SpeechKitSettingsState['profiles'],
+  activeProfileID?: string,
+  maxOptions = 4,
+) {
+  const list = profiles ?? []
+  if (list.length <= maxOptions) {
+    return list
+  }
+
+  const next = list.slice(0, maxOptions)
+  if (!activeProfileID || next.some((profile) => profile.id === activeProfileID)) {
+    return next
+  }
+
+  const activeProfile = list.find((profile) => profile.id === activeProfileID)
+  if (!activeProfile) {
+    return next
+  }
+
+  return [...next.slice(0, maxOptions - 1), activeProfile]
+}
+
+function sourceBadge(profile: NonNullable<SpeechKitSettingsState['profiles']>[number]) {
+  switch (profile.executionMode) {
+    case 'local':
+    case 'ollama_local':
+      return {
+        label: 'local',
+        className: 'bg-emerald-500/15 text-emerald-300/80',
+      }
+    case 'hf_routed':
+      return {
+        label: 'managed',
+        className: 'bg-sky-500/15 text-sky-300/80',
+      }
+    default:
+      return {
+        label: 'api key',
+        className: 'bg-amber-500/15 text-amber-300/70',
+      }
+  }
+}
+
+function pickPrimaryDownloadItem(items: DownloadItem[]) {
+  return (
+    items.find((item) => item.available && item.recommended) ??
+    items.find((item) => item.available) ??
+    items.find((item) => item.recommended) ??
+    items[0] ??
+    null
+  )
+}
 
 function ProviderTab({
   settings,
@@ -630,9 +689,10 @@ function ProviderTab({
   const [confirmItem, setConfirmItem] = useState<DownloadItem | null>(null)
   const [dlBusy, setDlBusy] = useState(false)
 
-  // Fetch download catalog once on mount.
+  // Fetch download state once on mount.
   useEffect(() => {
     fetchDownloadCatalog().then(setDlCatalog).catch(() => {})
+    fetchDownloadJobs().then(setDlJobs).catch(() => {})
   }, [])
 
   // Poll jobs every 2 seconds while any download is active; re-fetch catalog when done.
@@ -663,14 +723,20 @@ function ProviderTab({
     : availableTabs[0]?.key
   const filtered = selectedTab ? profiles.filter((p) => p.modality === selectedTab) : []
   const activeId = selectedTab ? settings.activeProfiles?.[selectedTab] : undefined
-  const allCredentials = settings.providerCredentials
-    ? Object.values(settings.providerCredentials)
+  const visibleProfiles = limitProfilesToVisibleOptions(filtered, activeId)
+  const visibleProviderKeys = new Set(
+    visibleProfiles
+      .map((profile) => (profile.executionMode ? PROVIDER_FOR_EXECUTION_MODE[profile.executionMode] : undefined))
+      .filter((provider): provider is string => Boolean(provider)),
+  )
+  const visibleCredentials = settings.providerCredentials
+    ? Object.values(settings.providerCredentials).filter((credential) => visibleProviderKeys.has(credential.provider))
     : []
 
   return (
   <>
     <div className="mt-4 flex flex-col gap-4">
-      <Section title="Models">
+      <Section title="Model setup">
         {availableTabs.length > 0 && (
           <div className="flex gap-px rounded-lg bg-white/5 p-0.5">
             {availableTabs.map((mt) => (
@@ -691,156 +757,206 @@ function ProviderTab({
           </div>
         )}
 
-        {filtered.length === 0 ? (
+        {visibleProfiles.length === 0 ? (
           <p className="mt-3 text-xs text-white/30">No live-switchable model profiles are exposed in this build.</p>
         ) : (
-          <div className="mt-2">
-            {filtered.map((profile) => {
+          <div className="mt-3 grid gap-2">
+            {visibleProfiles.map((profile) => {
               const isActive = activeId === profile.id
+              const badge = sourceBadge(profile)
+              const providerKey = profile.executionMode ? PROVIDER_FOR_EXECUTION_MODE[profile.executionMode] : undefined
+              const providerCredential = providerKey ? settings.providerCredentials?.[providerKey] : undefined
+              const providerMissing = Boolean(providerKey && !providerCredential?.available)
+              const downloadItems = dlCatalog.filter((item) => item.profileId === profile.id)
+              const primaryDownload = pickPrimaryDownloadItem(downloadItems)
+              const downloadJob = primaryDownload
+                ? dlJobs.find((job) => job.modelId === primaryDownload.id)
+                : undefined
+              const downloadActive = downloadJob?.status === 'pending' || downloadJob?.status === 'running'
+              const downloadReady = Boolean(primaryDownload?.available || downloadJob?.status === 'done')
+              const needsDownload = Boolean(primaryDownload && !downloadReady && !downloadActive)
+              const readyToUse = !providerMissing && !needsDownload && !downloadActive
+              const statusLabel = isActive
+                ? 'Active'
+                : providerMissing
+                  ? `${providerCredential?.label ?? 'API'} key needed`
+                  : downloadActive
+                    ? 'Downloading'
+                    : needsDownload
+                      ? 'Download required'
+                      : 'Ready'
+              const statusClassName = isActive
+                ? 'border-orange-500/30 bg-orange-500/15 text-orange-200'
+                : providerMissing
+                  ? 'border-amber-500/20 bg-amber-500/10 text-amber-200/80'
+                  : downloadActive
+                    ? 'border-sky-500/20 bg-sky-500/10 text-sky-200/80'
+                    : needsDownload
+                      ? 'border-white/10 bg-white/5 text-white/60'
+                      : 'border-emerald-500/20 bg-emerald-500/10 text-emerald-200/80'
+
               return (
                 <div
                   key={profile.id}
                   className={[
-                    'flex items-center justify-between border-b border-white/5 py-2 last:border-0',
-                    isActive ? 'text-orange-200' : 'text-white/60',
+                    'rounded-xl border p-3 transition-colors',
+                    isActive
+                      ? 'border-orange-500/25 bg-orange-500/[0.07] text-orange-100'
+                      : 'border-white/8 bg-white/[0.03] text-white/70',
                   ].join(' ')}
                 >
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-1.5">
-                      <span className="truncate text-xs font-medium">{profile.name}</span>
-                      {profile.executionMode === 'local' || profile.executionMode === 'ollama_local' ? (
-                        <span className="shrink-0 rounded bg-emerald-500/15 px-1 py-px text-[9px] text-emerald-300/80">local runtime</span>
-                      ) : profile.executionMode === 'hf_routed' ? (
-                        <span className="shrink-0 rounded bg-sky-500/15 px-1 py-px text-[9px] text-sky-300/80">managed</span>
-                      ) : (
-                        <span className="shrink-0 rounded bg-amber-500/15 px-1 py-px text-[9px] text-amber-300/70">api key</span>
-                      )}
-                    </div>
-                    <div className="truncate text-[10px] text-white/25">
-                      {profile.source ?? profile.executionMode ?? 'local'}
+                  <div className="min-w-0">
+                    <div className="flex flex-wrap items-start justify-between gap-2">
+                      <div className="min-w-0 flex-1">
+                        <div className="flex flex-wrap items-center gap-1.5">
+                          <span className="truncate text-sm font-medium">{profile.name}</span>
+                          <span className={['shrink-0 rounded px-1.5 py-px text-[9px]', badge.className].join(' ')}>
+                            {badge.label}
+                          </span>
+                        </div>
+                        <div className="mt-1 truncate text-[10px] uppercase tracking-[0.14em] text-white/25">
+                          {profile.source ?? profile.executionMode ?? 'local'}
+                        </div>
+                      </div>
+                      <span className={['shrink-0 rounded-full border px-2 py-0.5 text-[10px]', statusClassName].join(' ')}>
+                        {statusLabel}
+                      </span>
                     </div>
                     {profile.description && (
-                      <div className="mt-1 text-[10px] leading-relaxed text-white/35">
+                      <div className="mt-2 text-[11px] leading-relaxed text-white/45">
                         {profile.description}
                       </div>
                     )}
-                    {(() => {
-                      if (!profile.executionMode) return null
-                      const provKey = PROVIDER_FOR_EXECUTION_MODE[profile.executionMode]
-                      if (!provKey) return null
-                      const cred = settings.providerCredentials?.[provKey]
-                      if (cred?.available) return null
-                      return (
-                        <div className="mt-1 text-[10px] text-amber-300/60">
-                          {cred?.label ?? 'API'} key required — configure below ↓
+                    {providerMissing && providerKey && providerCredential && (
+                      <div className="mt-3 rounded-lg border border-amber-500/15 bg-amber-500/5 p-2.5">
+                        <div className="text-[10px] font-medium uppercase tracking-[0.14em] text-amber-200/70">
+                          Add {providerCredential.label} key
                         </div>
-                      )
-                    })()}
-                    {/* Downloadable model files for this profile */}
-                    {(() => {
-                      const items = dlCatalog.filter((d) => d.profileId === profile.id)
-                      if (items.length === 0) return null
-                      return (
-                        <div className="mt-2 space-y-1.5">
-                          {items.map((item) => {
-                            const job = dlJobs.find((j) => j.modelId === item.id)
-                            const isActive = job?.status === 'pending' || job?.status === 'running'
-                            const isReady = item.available || job?.status === 'done'
-                            return (
+                        <div className="mt-2 flex gap-2">
+                          <input
+                            aria-label={`${profile.name} API key`}
+                            type="password"
+                            value={providerTokens[providerKey] ?? ''}
+                            onChange={(e) => setProviderTokens((tokens) => ({ ...tokens, [providerKey]: e.target.value }))}
+                            placeholder={providerCredential.envName || 'API key'}
+                            className="h-9 flex-1 rounded-lg border border-amber-500/15 bg-black/20 px-3 text-xs text-white/80 outline-none focus:border-orange-400/50"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => onSaveCredential(providerKey)}
+                            className={[
+                              'shrink-0 rounded-lg border px-3 text-xs font-medium',
+                              providerBusy[providerKey]
+                                ? 'pointer-events-none border-white/10 bg-white/5 text-white/30'
+                                : 'border-orange-500/25 bg-orange-500/15 text-orange-200 hover:bg-orange-500/25',
+                            ].join(' ')}
+                          >
+                            Save key
+                          </button>
+                        </div>
+                      </div>
+                    )}
+
+                    {primaryDownload && (
+                      <div className="mt-3 rounded-lg border border-white/8 bg-black/10 p-2.5">
+                        <div className="flex flex-wrap items-center gap-1.5">
+                          <span className="text-[11px] text-white/70">{primaryDownload.name}</span>
+                          {primaryDownload.recommended && (
+                            <span className="rounded bg-orange-500/15 px-1.5 py-px text-[9px] text-orange-300/70">
+                              recommended
+                            </span>
+                          )}
+                          <span className="text-[10px] text-white/30">{primaryDownload.sizeLabel}</span>
+                        </div>
+                        <div className="mt-1 text-[10px] leading-relaxed text-white/35">
+                          {primaryDownload.description}
+                        </div>
+                        {downloadActive && (
+                          <div className="mt-2">
+                            <div className="h-1.5 w-full overflow-hidden rounded-full bg-white/10">
                               <div
-                                key={item.id}
-                                className="flex items-center gap-2 rounded-md bg-white/[0.03] px-2 py-1.5"
-                              >
-                                <div className="min-w-0 flex-1">
-                                  <div className="flex flex-wrap items-center gap-1">
-                                    <span className="text-[10px] text-white/55">{item.name}</span>
-                                    {item.recommended && (
-                                      <span className="rounded bg-orange-500/15 px-1 py-px text-[8px] text-orange-300/70">
-                                        recommended
-                                      </span>
-                                    )}
-                                    {item.kind === 'ollama' && (
-                                      <span className="rounded bg-slate-500/15 px-1 py-px text-[8px] text-slate-300/60">
-                                        ollama
-                                      </span>
-                                    )}
-                                  </div>
-                                  {isActive && (
-                                    <div className="mt-1">
-                                      <div className="h-1 w-full overflow-hidden rounded-full bg-white/10">
-                                        <div
-                                          className="h-full rounded-full bg-orange-400/60 transition-all duration-500"
-                                          style={{ width: `${Math.round((job?.progress ?? 0) * 100)}%` }}
-                                        />
-                                      </div>
-                                      <div className="mt-0.5 text-[9px] text-white/30">{job?.statusText}</div>
-                                    </div>
-                                  )}
-                                  {job?.status === 'failed' && (
-                                    <div className="mt-0.5 text-[9px] text-red-400/60">{job.error ?? 'Download failed'}</div>
-                                  )}
-                                </div>
-                                <div className="shrink-0">
-                                  {isReady ? (
-                                    <span className="text-[9px] text-emerald-400/80">✓ ready</span>
-                                  ) : isActive ? (
-                                    <button
-                                      type="button"
-                                      onClick={() => {
-                                        if (job) cancelModelDownload(job.id).catch(() => {})
-                                      }}
-                                      className="text-[9px] text-white/30 hover:text-red-400/60"
-                                    >
-                                      cancel
-                                    </button>
-                                  ) : (
-                                    <button
-                                      type="button"
-                                      onClick={() => setConfirmItem(item)}
-                                      className="rounded border border-white/10 px-1.5 py-0.5 text-[9px] text-white/45 hover:border-orange-400/30 hover:text-orange-300/75"
-                                    >
-                                      Get {item.sizeLabel}
-                                    </button>
-                                  )}
-                                </div>
-                              </div>
-                            )
-                          })}
+                                className="h-full rounded-full bg-orange-400/60 transition-all duration-500"
+                                style={{ width: `${Math.round((downloadJob?.progress ?? 0) * 100)}%` }}
+                              />
+                            </div>
+                            <div className="mt-1 text-[10px] text-white/35">{downloadJob?.statusText}</div>
+                          </div>
+                        )}
+                        {downloadJob?.status === 'failed' && (
+                          <div className="mt-2 text-[10px] text-red-400/70">
+                            {downloadJob.error ?? 'Download failed'}
+                          </div>
+                        )}
+                        <div className="mt-2 flex items-center gap-2">
+                          {downloadReady ? (
+                            <span className="text-[10px] text-emerald-300/80">Ready on this device</span>
+                          ) : downloadActive ? (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                if (downloadJob) {
+                                  cancelModelDownload(downloadJob.id).catch(() => {})
+                                }
+                              }}
+                              className="rounded-lg border border-white/10 px-2.5 py-1 text-[10px] text-white/45 hover:border-red-400/25 hover:text-red-300/75"
+                            >
+                              Cancel download
+                            </button>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={() => setConfirmItem(primaryDownload)}
+                              className="rounded-lg border border-white/10 px-2.5 py-1 text-[10px] text-white/55 hover:border-orange-400/30 hover:text-orange-300/75"
+                            >
+                              Download
+                            </button>
+                          )}
                         </div>
-                      )
-                    })()}
+                      </div>
+                    )}
+
+                    <div className="mt-3 flex items-center gap-2">
+                      {isActive ? (
+                        <span className="text-[11px] font-medium text-orange-300">Currently active</span>
+                      ) : readyToUse ? (
+                        <button
+                          type="button"
+                          onClick={async () => {
+                            try {
+                              const body = new URLSearchParams({
+                                modality: profile.modality,
+                                profile_id: profile.id,
+                              })
+                              const resp = await fetch('/models/profiles/activate', { method: 'POST', body })
+                              if (!resp.ok) {
+                                const err = await resp.text()
+                                showToast(err || 'Switch failed')
+                                return
+                              }
+                              setSettings((prev) => ({
+                                ...prev,
+                                activeProfiles: { ...prev.activeProfiles, [profile.modality]: profile.id },
+                              }))
+                              showToast(`${profile.name} activated`)
+                            } catch {
+                              showToast('Switch failed')
+                            }
+                          }}
+                          className="rounded-lg border border-white/10 px-3 py-1.5 text-xs text-white/60 hover:border-white/20 hover:text-white/80"
+                        >
+                          Use model
+                        </button>
+                      ) : (
+                        <span className="text-[10px] text-white/35">
+                          {providerMissing
+                            ? 'Add the key above to unlock this model.'
+                            : needsDownload
+                              ? 'Download the local runtime before switching.'
+                              : 'Wait until the current download finishes.'}
+                        </span>
+                      )}
+                    </div>
                   </div>
-                  {isActive ? (
-                    <span className="ml-2 shrink-0 text-[10px] font-medium text-orange-400">Active</span>
-                  ) : (
-                    <button
-                      type="button"
-                      onClick={async () => {
-                        try {
-                          const body = new URLSearchParams({
-                            modality: profile.modality,
-                            profile_id: profile.id,
-                          })
-                          const resp = await fetch('/models/profiles/activate', { method: 'POST', body })
-                          if (!resp.ok) {
-                            const err = await resp.text()
-                            showToast(err || 'Switch failed')
-                            return
-                          }
-                          setSettings((prev) => ({
-                            ...prev,
-                            activeProfiles: { ...prev.activeProfiles, [profile.modality]: profile.id },
-                          }))
-                          showToast(`${profile.name} activated`)
-                        } catch {
-                          showToast('Switch failed')
-                        }
-                      }}
-                      className="ml-2 shrink-0 rounded border border-white/10 px-2 py-0.5 text-[10px] text-white/40 hover:border-white/20 hover:text-white/60"
-                    >
-                      Use
-                    </button>
-                  )}
                 </div>
               )
             })}
@@ -848,40 +964,29 @@ function ProviderTab({
         )}
       </Section>
 
-      {allCredentials.length > 0 && (
-        <Section title="API Keys">
-          {allCredentials.map((cred) => {
+      {visibleCredentials.length > 0 && (
+        <Section title="Connected providers">
+          {visibleCredentials.map((cred) => {
             const busy = providerBusy[cred.provider] ?? false
-            const token = providerTokens[cred.provider] ?? ''
             return (
-              <div key={cred.provider} className="mt-3 first:mt-0">
-                <div className="mb-1 flex items-center justify-between">
+              <div
+                key={cred.provider}
+                className="mt-2 flex items-center justify-between gap-3 rounded-lg border border-white/8 bg-white/[0.03] px-3 py-2 first:mt-0"
+              >
+                <div className="min-w-0">
                   <span className="text-xs text-white/60">{cred.label}</span>
-                  <span className="text-[10px] text-white/30">{tokenStatusLabel(cred)}</span>
+                  <div className="mt-0.5 text-[10px] text-white/30">{tokenStatusLabel(cred)}</div>
                 </div>
-                <div className="flex gap-2">
-                  <input
-                    aria-label={`${cred.label} API key`}
-                    type="password"
-                    value={token}
-                    onChange={(e) => setProviderTokens((t) => ({ ...t, [cred.provider]: e.target.value }))}
-                    placeholder={cred.envName || 'API key...'}
-                    className="h-8 flex-1 rounded-lg border border-white/10 bg-white/5 px-3 text-xs outline-none focus:border-orange-400/50"
-                  />
-                  <Chip
-                    active={false}
-                    onClick={() => { onTestCredential(cred.provider) }}
-                    className={busy ? 'pointer-events-none opacity-60' : ''}
-                  >
-                    Test
-                  </Chip>
-                  <Chip
-                    active={false}
-                    onClick={() => { onSaveCredential(cred.provider) }}
-                    className={busy ? 'pointer-events-none opacity-60' : ''}
-                  >
-                    Save
-                  </Chip>
+                <div className="flex shrink-0 gap-2">
+                  {cred.available && (
+                    <Chip
+                      active={false}
+                      onClick={() => { onTestCredential(cred.provider) }}
+                      className={busy ? 'pointer-events-none opacity-60' : ''}
+                    >
+                      Test
+                    </Chip>
+                  )}
                   {cred.hasStoredSecret && (
                     <Chip
                       active={false}
@@ -899,7 +1004,7 @@ function ProviderTab({
       )}
 
       <p className="text-[11px] leading-relaxed text-white/25">
-        Only provider paths that the desktop backend can switch live are listed here. Local Ollama profiles require Ollama to be installed and the model pulled.
+        Only live-switchable model paths are shown here. Cloud models ask for the needed key directly on the card, and local models expose download actions in place.
       </p>
     </div>
 

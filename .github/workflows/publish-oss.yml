@@ -31,6 +31,7 @@ concurrency:
 jobs:
   prepare:
     name: Resolve Publish Plan
+    if: github.repository == 'Soulcreek/kombify-SpeechKit'
     runs-on: ${{ vars.CI_RUNNER || 'blacksmith-4vcpu-ubuntu-2204' }}
     outputs:
       tag: ${{ steps.plan.outputs.tag }}
@@ -73,6 +74,7 @@ jobs:
   publish-source:
     name: Export & Push to kombifyio/SpeechKit
     needs: prepare
+    if: github.repository == 'Soulcreek/kombify-SpeechKit'
     runs-on: ${{ vars.CI_RUNNER || 'blacksmith-4vcpu-ubuntu-2204' }}
     timeout-minutes: 20
     env:
@@ -155,162 +157,13 @@ jobs:
             git push origin "refs/tags/$tag"
           fi
 
-  create-release:
-    name: Create OSS Source Release
-    needs: publish-source
-    runs-on: ${{ vars.CI_RUNNER || 'blacksmith-4vcpu-ubuntu-2204' }}
-    env:
-      OSS_REPO_OWNER: kombifyio
-      OSS_REPO_NAME: SpeechKit
-      OSS_REPO: kombifyio/SpeechKit
-      OSS_PUBLISH_TOKEN: ${{ secrets.OSS_PUBLISH_TOKEN }}
-
-    steps:
-      - name: Resolve release auth
-        id: release-auth
+      - name: Publish summary
         shell: bash
         run: |
-          set -euo pipefail
-          release_token="$(printf '%s' "$OSS_PUBLISH_TOKEN" | tr -d '\r\n')"
-          if [ -z "$release_token" ]; then
-            echo "::error title=Missing release credentials::Configure OSS_PUBLISH_TOKEN for this repository."
-            exit 1
-          fi
-          echo "::add-mask::$release_token"
-          echo "token=$release_token" >> "$GITHUB_OUTPUT"
-
-      - name: Create GitHub Release in kombifyio/SpeechKit
-        uses: softprops/action-gh-release@153bb8e04406b158c6c84fc1615b65b24149a1fe
-        with:
-          repository: ${{ env.OSS_REPO }}
-          token: ${{ steps.release-auth.outputs.token }}
-          tag_name: ${{ needs.publish-source.outputs.tag }}
-          name: SpeechKit ${{ needs.publish-source.outputs.tag }}
-          draft: false
-          prerelease: ${{ contains(needs.publish-source.outputs.tag, '-alpha') || contains(needs.publish-source.outputs.tag, '-beta') || contains(needs.publish-source.outputs.tag, '-rc') }}
-          generate_release_notes: true
-
-  build-and-release:
-    name: Build OSS Binaries & Release
-    needs:
-      - prepare
-      - publish-source
-      - create-release
-    if: needs.prepare.outputs.should_build_windows == 'true'
-    runs-on: ${{ vars.WINDOWS_BUILD_RUNNER || 'blacksmith-4vcpu-windows-2025' }}
-    timeout-minutes: 60
-    env:
-      OSS_REPO_OWNER: kombifyio
-      OSS_REPO_NAME: SpeechKit
-      OSS_REPO: kombifyio/SpeechKit
-      OSS_PUBLISH_TOKEN: ${{ secrets.OSS_PUBLISH_TOKEN }}
-
-    steps:
-      - name: Resolve release auth
-        id: release-auth
-        shell: bash
-        run: |
-          set -euo pipefail
-          release_token="$(printf '%s' "$OSS_PUBLISH_TOKEN" | tr -d '\r\n')"
-          if [ -z "$release_token" ]; then
-            echo "::error title=Missing release credentials::Configure OSS_PUBLISH_TOKEN for this repository."
-            exit 1
-          fi
-          echo "::add-mask::$release_token"
-          echo "token=$release_token" >> "$GITHUB_OUTPUT"
-
-      - name: Checkout kombifyio/SpeechKit tag
-        shell: bash
-        env:
-          RELEASE_AUTH_TOKEN: ${{ steps.release-auth.outputs.token }}
-        run: |
-          set -euo pipefail
-          rm -rf oss-repo
-          git clone "https://x-access-token:${RELEASE_AUTH_TOKEN}@github.com/${OSS_REPO}.git" oss-repo
-          cd oss-repo
-          git fetch --tags origin
-          git checkout "refs/tags/${{ needs.publish-source.outputs.tag }}"
-
-      - name: Setup Go
-        uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff
-        with:
-          go-version: '1.25.9'
-          cache: true
-
-      - name: Setup Node
-        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
-        with:
-          node-version: 22
-          cache: npm
-          cache-dependency-path: oss-repo/frontend/app/package-lock.json
-
-      - name: Setup MinGW
-        uses: msys2/setup-msys2@cafece8e6baf9247cf9b1bf95097b0b983cc558d
-        with:
-          update: true
-          install: >-
-            mingw-w64-x86_64-gcc
-
-      - name: Install NSIS
-        if: needs.prepare.outputs.release_windows_installer == 'true'
-        shell: pwsh
-        run: choco install nsis -y --no-progress
-
-      - name: Build canonical Windows bundle from OSS tag
-        shell: pwsh
-        working-directory: oss-repo
-        run: |
-          if ('${{ needs.prepare.outputs.release_windows_installer }}' -eq 'true') {
-            ./scripts/build.ps1
-          } else {
-            ./scripts/build.ps1 -SkipInstaller
-          }
-
-      - name: Prepare release assets
-        id: assets
-        shell: pwsh
-        run: |
-          $tag = '${{ needs.publish-source.outputs.tag }}'
-          $assets = @()
-          if ('${{ needs.prepare.outputs.release_windows_installer }}' -eq 'true') {
-            Copy-Item "oss-repo/dist/windows/SpeechKit-Setup.exe" "SpeechKit-Setup-${tag}.exe"
-            $assets += "SpeechKit-Setup-${tag}.exe"
-          }
-          if ('${{ needs.prepare.outputs.release_windows_portable }}' -eq 'true') {
-            Compress-Archive -Path "oss-repo/dist/windows/SpeechKit/*" -DestinationPath "SpeechKit-Portable-${tag}.zip" -Force
-            $assets += "SpeechKit-Portable-${tag}.zip"
-          }
-          $checksums = foreach ($asset in $assets) {
-            $hash = (Get-FileHash -Algorithm SHA256 -Path $asset).Hash.ToLowerInvariant()
-            "$hash *$asset"
-          }
-          Set-Content -Path "SHA256SUMS.txt" -Value $checksums -Encoding ascii
-
-          $subjectPaths = @($assets)
-          $subjectPaths += 'SHA256SUMS.txt'
-
-          "subject_paths<<EOF" >> $env:GITHUB_OUTPUT
-          $subjectPaths | ForEach-Object { $_ >> $env:GITHUB_OUTPUT }
-          "EOF" >> $env:GITHUB_OUTPUT
-
-          "release_files<<EOF" >> $env:GITHUB_OUTPUT
-          $subjectPaths | ForEach-Object { $_ >> $env:GITHUB_OUTPUT }
-          "EOF" >> $env:GITHUB_OUTPUT
-
-      - name: Attest OSS release artifacts
-        if: vars.ENABLE_BUILD_ATTESTATIONS == 'true'
-        uses: actions/attest-build-provenance@96b4a1ef7235a096b17240c259729fdd70c83d45
-        with:
-          subject-path: ${{ steps.assets.outputs.subject_paths }}
-
-      - name: Upload OSS Windows assets to GitHub Release
-        uses: softprops/action-gh-release@153bb8e04406b158c6c84fc1615b65b24149a1fe
-        with:
-          repository: ${{ env.OSS_REPO }}
-          token: ${{ steps.release-auth.outputs.token }}
-          tag_name: ${{ needs.publish-source.outputs.tag }}
-          name: SpeechKit ${{ needs.publish-source.outputs.tag }}
-          draft: false
-          prerelease: ${{ contains(needs.publish-source.outputs.tag, '-alpha') || contains(needs.publish-source.outputs.tag, '-beta') || contains(needs.publish-source.outputs.tag, '-rc') }}
-          generate_release_notes: true
-          files: ${{ steps.assets.outputs.release_files }}
+          {
+            echo "## OSS publish complete"
+            echo
+            echo "- Source export pushed to \`kombifyio/SpeechKit\`."
+            echo "- Tag \`${{ needs.prepare.outputs.tag }}\` pushed to the public repository."
+            echo "- Public repository workflows now own CI, signing, and GitHub Releases."
+          } >> "$GITHUB_STEP_SUMMARY"
