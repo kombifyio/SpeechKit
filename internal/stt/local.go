@@ -14,12 +14,13 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 )
 
 const (
-	whisperHealthRetries  = 30
+	whisperHealthRetries  = 120
 	whisperHealthInterval = 500 * time.Millisecond
 	localMaxResponseBytes = 1 << 20
 )
@@ -32,6 +33,8 @@ type LocalProvider struct {
 	GPU       string
 	cmd       *exec.Cmd
 	ready     atomic.Bool
+	startMu   sync.Mutex
+	startDone chan struct{} // closed when the current StartServer call completes (nil = never started)
 	client    *http.Client
 }
 
@@ -49,6 +52,13 @@ func NewLocalProvider(port int, modelPath, gpu string) *LocalProvider {
 
 // StartServer starts the whisper.cpp server subprocess. Blocks until ready or context cancelled.
 func (p *LocalProvider) StartServer(ctx context.Context) error {
+	// Create a fresh startup-done channel; Transcribe callers will wait on it.
+	done := make(chan struct{})
+	p.startMu.Lock()
+	p.startDone = done
+	p.startMu.Unlock()
+	defer close(done)
+
 	binaryPath, err := findWhisperBinary()
 	if err != nil {
 		return fmt.Errorf("whisper binary: %w", err)
@@ -126,7 +136,22 @@ func (p *LocalProvider) StopServer() {
 
 func (p *LocalProvider) Transcribe(ctx context.Context, audio []byte, opts TranscribeOpts) (*Result, error) {
 	if !p.ready.Load() {
-		return nil, fmt.Errorf("local whisper-server not ready")
+		// If startup is in progress, wait for it to complete before failing.
+		p.startMu.Lock()
+		done := p.startDone
+		p.startMu.Unlock()
+		if done != nil {
+			slog.Info("whisper-server: waiting for startup to complete...")
+			select {
+			case <-done:
+				// startup finished — check ready below
+			case <-ctx.Done():
+				return nil, fmt.Errorf("local whisper-server not ready: cancelled while waiting for startup")
+			}
+		}
+		if !p.ready.Load() {
+			return nil, fmt.Errorf("local whisper-server not ready")
+		}
 	}
 
 	endpoint := fmt.Sprintf("%s/v1/audio/transcriptions", p.BaseURL)

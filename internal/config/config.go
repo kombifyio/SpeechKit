@@ -207,7 +207,7 @@ type TTSLocal struct {
 // VoiceAgentConfig configures the real-time Voice Agent Mode.
 type VoiceAgentConfig struct {
 	Enabled                bool   `toml:"enabled"`
-	Model                  string `toml:"model"`          // Real-time model ID (e.g. "gemini-3.1-flash-live-preview")
+	Model                  string `toml:"model"`          // Real-time model ID (e.g. "gemini-2.5-flash-native-audio-preview-12-2025")
 	FallbackModel          string `toml:"fallback_model"` // Fallback real-time model
 	Voice                  string `toml:"voice"`          // Voice name for real-time model
 	ReminderAfterIdleSec   int    `toml:"reminder_after_idle_sec"`
@@ -369,7 +369,7 @@ func defaults() *Config {
 		},
 		VoiceAgent: VoiceAgentConfig{
 			Enabled:                true,
-			Model:                  "gemini-3.1-flash-live-preview",
+			Model:                  "gemini-2.5-flash-native-audio-preview-12-2025",
 			FallbackModel:          "gpt-realtime-mini",
 			Voice:                  "Kore",
 			ReminderAfterIdleSec:   300,
@@ -380,8 +380,8 @@ func defaults() *Config {
 			OpenAI: OpenAIProviderConfig{
 				APIKeyEnv:     "OPENAI_API_KEY",
 				STTModel:      "whisper-1", // Fallback only; HuggingFace is primary STT
-				UtilityModel:  "gpt-4o-mini",
-				AgentModel:    "gpt-4o",
+			UtilityModel:  "gpt-5.4-mini-2026-03-17",
+			AgentModel:    "gpt-5.4-2026-03-05",
 				TTSModel:      "tts-1",
 				TTSVoice:      "nova",
 				RealtimeModel: "gpt-realtime-mini",

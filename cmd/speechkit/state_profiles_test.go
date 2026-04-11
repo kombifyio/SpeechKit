@@ -22,7 +22,7 @@ func TestActiveProfilesFromConfigReflectsConfiguredProviders(t *testing.T) {
 	if got := profiles[string(models.ModalityUtility)]; got != "utility.ollama.gemma4-e4b" {
 		t.Fatalf("active utility profile = %q, want %q", got, "utility.ollama.gemma4-e4b")
 	}
-	if got := profiles[string(models.ModalityAgent)]; got != "agent.ollama.gemma4-e4b" {
-		t.Fatalf("active agent profile = %q, want %q", got, "agent.ollama.gemma4-e4b")
+	if got := profiles[string(models.ModalityAssist)]; got != "assist.ollama.gemma4-e4b" {
+		t.Fatalf("active assist profile = %q, want %q", got, "assist.ollama.gemma4-e4b")
 	}
 }

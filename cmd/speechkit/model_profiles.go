@@ -24,8 +24,8 @@ func applyModelProfile(ctx context.Context, cfgPath string, cfg *config.Config, 
 		return applySTTProfile(ctx, cfgPath, cfg, state, sttRouter, profile)
 	case models.ModalityUtility:
 		return applyUtilityProfile(ctx, cfgPath, cfg, state, profile)
-	case models.ModalityAgent:
-		return applyAgentProfile(ctx, cfgPath, cfg, state, profile)
+	case models.ModalityAssist:
+		return applyAssistProfile(ctx, cfgPath, cfg, state, profile)
 	case models.ModalityRealtimeVoice:
 		return applyRealtimeVoiceProfile(cfgPath, cfg, state, profile)
 	default:
@@ -137,8 +137,8 @@ func applyUtilityProfile(ctx context.Context, cfgPath string, cfg *config.Config
 	return nil
 }
 
-func applyAgentProfile(ctx context.Context, cfgPath string, cfg *config.Config, state *appState, profile models.Profile) error {
-	clearAgentModels(cfg)
+func applyAssistProfile(ctx context.Context, cfgPath string, cfg *config.Config, state *appState, profile models.Profile) error {
+	clearAssistModels(cfg)
 	if err := configureLLMProfile(cfg, profile, false); err != nil {
 		return err
 	}
@@ -148,7 +148,7 @@ func applyAgentProfile(ctx context.Context, cfgPath string, cfg *config.Config, 
 	if err := rebuildAIRuntime(ctx, state, cfg); err != nil {
 		return err
 	}
-	slog.Info("agent LLM profile activated", "name", profile.Name, "model", profile.ModelID)
+	slog.Info("assist LLM profile activated", "name", profile.Name, "model", profile.ModelID)
 	return nil
 }
 
@@ -161,7 +161,7 @@ func clearUtilityModels(cfg *config.Config) {
 	cfg.HuggingFace.UtilityModel = ""
 }
 
-func clearAgentModels(cfg *config.Config) {
+func clearAssistModels(cfg *config.Config) {
 	cfg.Providers.OpenAI.AgentModel = ""
 	cfg.Providers.Groq.AgentModel = ""
 	cfg.Providers.Google.AgentModel = ""

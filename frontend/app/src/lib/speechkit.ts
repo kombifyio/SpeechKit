@@ -2,7 +2,7 @@ export type OverlayMode = 'pill' | 'circle'
 export type OverlayDesign = 'default' | 'kombify'
 export type RuntimeMode = 'dictate' | 'agent'
 export type StoreBackend = 'sqlite' | 'postgres'
-export type Modality = 'stt' | 'tts' | 'realtime_voice' | 'utility' | 'agent' | 'embedding' | 'reranker'
+export type Modality = 'stt' | 'tts' | 'realtime_voice' | 'utility' | 'assist' | 'embedding' | 'reranker'
 export type ExecutionMode = 'local' | 'self_hosted_http' | 'hf_routed' | 'hf_inference' | 'openai_api' | 'groq_api' | 'google_api' | 'ollama_local' | 'openrouter_api'
 export type LogType = 'info' | 'warn' | 'error' | 'success'
 

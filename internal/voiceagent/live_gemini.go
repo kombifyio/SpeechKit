@@ -60,7 +60,7 @@ func (g *GeminiLive) Connect(ctx context.Context, cfg LiveConfig) error {
 
 	model := cfg.Model
 	if model == "" {
-		model = "gemini-3.1-flash-live-preview"
+		model = "gemini-2.5-flash-native-audio-preview-12-2025"
 	}
 
 	session, err := client.Live.Connect(ctx, model, connectCfg)

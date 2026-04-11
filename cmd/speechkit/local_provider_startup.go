@@ -14,7 +14,7 @@ const (
 	localProviderStartRetries = 4
 )
 
-var localProviderRetryDelay = 2 * time.Second
+var localProviderRetryDelay = 5 * time.Second
 
 type localProviderStarter interface {
 	stt.STTProvider

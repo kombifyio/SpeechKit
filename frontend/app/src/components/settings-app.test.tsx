@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { vi } from 'vitest'
 
 import { SettingsApp } from '@/components/settings-app'
@@ -198,7 +198,7 @@ describe('SettingsApp', () => {
 
     render(<SettingsApp />)
 
-    fireEvent.click(await screen.findByRole('button', { name: 'Provider' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'STT' }))
 
     const modelsSection = await screen.findByText('Model setup')
     expect(modelsSection).toBeInTheDocument()
@@ -215,7 +215,7 @@ describe('SettingsApp', () => {
 
     render(<SettingsApp />)
 
-    fireEvent.click(await screen.findByRole('button', { name: 'Provider' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'STT' }))
 
     await screen.findByText('Model setup')
     const activeLabel = screen.getByText('Active')
@@ -227,22 +227,22 @@ describe('SettingsApp', () => {
       ...baseSettings,
       profiles: [
         {
-          id: 'utility.ollama.gemma4-e4b',
-          modality: 'utility',
+          id: 'assist.ollama.gemma4-e4b',
+          modality: 'assist',
           name: 'Gemma 4 E4B (Local)',
           executionMode: 'ollama_local',
           description: 'Laptop-friendly local model for summaries and quick actions.',
         },
       ],
-      activeProfiles: { utility: 'utility.ollama.gemma4-e4b' },
+      activeProfiles: { assist: 'assist.ollama.gemma4-e4b' },
     })
 
     render(<SettingsApp />)
 
-    fireEvent.click(await screen.findByRole('button', { name: 'Provider' }))
+    const assistButtons = await screen.findAllByRole('button', { name: 'Assist' })
+    fireEvent.click(assistButtons[0])
 
-    expect(await screen.findByRole('button', { name: 'Utility' })).toBeInTheDocument()
-    expect(screen.getByText(/laptop-friendly local model/i)).toBeInTheDocument()
+    expect(await screen.findByText(/laptop-friendly local model/i)).toBeInTheDocument()
     expect(screen.getByText('local')).toBeInTheDocument()
   })
 
@@ -251,8 +251,10 @@ describe('SettingsApp', () => {
 
     render(<SettingsApp />)
 
-    const agentMode = await screen.findByRole('button', { name: 'Agent' })
-    fireEvent.click(agentMode)
+    // The "Assist" button in the Mode section (not the Assist tab in the nav)
+    const assistModeButtons = await screen.findAllByRole('button', { name: 'Assist' })
+    const assistMode = assistModeButtons[assistModeButtons.length - 1]
+    fireEvent.click(assistMode)
 
     await waitFor(() =>
       expect(saveSettingsStateMock).toHaveBeenCalledWith(
@@ -261,7 +263,7 @@ describe('SettingsApp', () => {
     )
 
     await screen.findByText('Dictate hotkey')
-    expect(screen.getByText('Agent hotkey')).toBeInTheDocument()
+    expect(screen.getByText('Assist hotkey')).toBeInTheDocument()
     const hotkeyButtons = screen.getAllByRole('button', { name: 'Ctrl + Win' })
     fireEvent.click(hotkeyButtons[0])
 
@@ -458,7 +460,7 @@ describe('SettingsApp', () => {
         {
           id: 'stt.routed.whisper-large-v3',
           modality: 'stt',
-          name: 'Whisper Large v3 (HuggingFace)',
+          name: 'Whisper Large v3 (Hugging Face)',
           executionMode: 'hf_routed',
           description: 'Managed STT profile',
         },
@@ -477,26 +479,26 @@ describe('SettingsApp', () => {
 
     render(<SettingsApp />)
 
-    fireEvent.click(await screen.findByRole('button', { name: 'Provider' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'STT' }))
 
-    expect(await screen.findByText(/install key active/i)).toBeInTheDocument()
+    expect(await screen.findByText(/install token active/i)).toBeInTheDocument()
   })
 
   it('limits model choices to four cards per modality while keeping the active model visible', async () => {
     fetchSettingsStateMock.mockResolvedValue(baseSettings)
 
-    const utilityProfiles = Array.from({ length: 5 }, (_, index) => ({
-      id: `utility-model-${index + 1}`,
-      modality: 'utility' as const,
-      name: `Utility Model ${index + 1}`,
+    const assistProfiles = Array.from({ length: 6 }, (_, index) => ({
+      id: `assist-model-${index + 1}`,
+      modality: 'assist' as const,
+      name: `Assist Model ${index + 1}`,
       executionMode: 'groq_api' as const,
-      description: `Utility profile ${index + 1}`,
+      description: `Assist profile ${index + 1}`,
     }))
 
     fetchSettingsStateMock.mockResolvedValue({
       ...baseSettings,
-      profiles: utilityProfiles,
-      activeProfiles: { utility: 'utility-model-5' },
+      profiles: assistProfiles,
+      activeProfiles: { assist: 'assist-model-6' },
       providerCredentials: {
         groq: {
           provider: 'groq',
@@ -511,14 +513,15 @@ describe('SettingsApp', () => {
 
     render(<SettingsApp />)
 
-    fireEvent.click(await screen.findByRole('button', { name: 'Provider' }))
-    fireEvent.click(await screen.findByRole('button', { name: 'Utility' }))
+    const assistNavButtons = await screen.findAllByRole('button', { name: 'Assist' })
+    fireEvent.click(assistNavButtons[0])
 
-    expect(await screen.findByText('Utility Model 1')).toBeInTheDocument()
-    expect(screen.getByText('Utility Model 2')).toBeInTheDocument()
-    expect(screen.getByText('Utility Model 3')).toBeInTheDocument()
-    expect(screen.getByText('Utility Model 5')).toBeInTheDocument()
-    expect(screen.queryByText('Utility Model 4')).not.toBeInTheDocument()
+    expect(await screen.findByText('Assist Model 1')).toBeInTheDocument()
+    expect(screen.getByText('Assist Model 2')).toBeInTheDocument()
+    expect(screen.getByText('Assist Model 3')).toBeInTheDocument()
+    expect(screen.getByText('Assist Model 6')).toBeInTheDocument()
+    expect(screen.queryByText('Assist Model 4')).not.toBeInTheDocument()
+    expect(screen.queryByText('Assist Model 5')).not.toBeInTheDocument()
   })
 
   it('shows inline key entry on the model card when a provider key is missing', async () => {
@@ -526,8 +529,8 @@ describe('SettingsApp', () => {
       ...baseSettings,
       profiles: [
         {
-          id: 'utility.groq.llama-3.1-8b',
-          modality: 'utility',
+          id: 'assist.groq.llama-3.1-8b',
+          modality: 'assist',
           name: 'LLaMA 3.1 8B (Groq)',
           executionMode: 'groq_api',
           description: 'Fast cloud LLM',
@@ -548,10 +551,10 @@ describe('SettingsApp', () => {
 
     render(<SettingsApp />)
 
-    fireEvent.click(await screen.findByRole('button', { name: 'Provider' }))
-    fireEvent.click(await screen.findByRole('button', { name: 'Utility' }))
+    const assistNavButtons = await screen.findAllByRole('button', { name: 'Assist' })
+    fireEvent.click(assistNavButtons[0])
 
-    const keyInput = await screen.findByLabelText('LLaMA 3.1 8B (Groq) API key')
+    const keyInput = await screen.findByLabelText('LLaMA 3.1 8B (Groq) Groq key')
     expect(keyInput).toBeInTheDocument()
 
     fireEvent.change(keyInput, {
@@ -564,65 +567,49 @@ describe('SettingsApp', () => {
     )
   })
 
-  it('shows only providers that are relevant to the visible model options', async () => {
-    fetchSettingsStateMock.mockResolvedValue({
-      ...baseSettings,
-      profiles: [
-        {
-          id: 'utility.groq.llama-3.1-8b',
-          modality: 'utility',
-          name: 'LLaMA 3.1 8B (Groq)',
-          executionMode: 'groq_api',
-          description: 'Fast cloud LLM',
-        },
-        {
-          id: 'agent.openai.gpt-5.4-mini',
-          modality: 'agent',
-          name: 'GPT-5.4 Mini (OpenAI)',
-          executionMode: 'openai_api',
-          description: 'Agent profile',
-        },
-      ],
-      activeProfiles: {},
-      providerCredentials: {
-        openai: {
-          provider: 'openai',
-          label: 'OpenAI',
-          envName: 'OPENAI_API_KEY',
-          available: false,
-          hasStoredSecret: false,
-          source: 'none',
-        },
-        groq: {
-          provider: 'groq',
-          label: 'Groq',
-          envName: 'GROQ_API_KEY',
-          available: true,
-          hasStoredSecret: true,
-          source: 'user',
-        },
-      },
-    })
-
-    render(<SettingsApp />)
-
-    fireEvent.click(await screen.findByRole('button', { name: 'Provider' }))
-
-    const providersSection = await screen.findByText('Connected providers')
-    const section = providersSection.closest('section')
-    expect(section).not.toBeNull()
-    expect(within(section as HTMLElement).getByText('Groq')).toBeInTheDocument()
-    expect(within(section as HTMLElement).queryByText('OpenAI')).not.toBeInTheDocument()
-  })
-
-  it('clears a stored provider credential explicitly', async () => {
+  it('keeps Hugging Face token setup directly on the model card', async () => {
     fetchSettingsStateMock.mockResolvedValue({
       ...baseSettings,
       profiles: [
         {
           id: 'stt.routed.whisper-large-v3',
           modality: 'stt',
-          name: 'Whisper Large v3 (HuggingFace)',
+          name: 'Whisper Large v3 (Hugging Face)',
+          executionMode: 'hf_routed',
+          description: 'Managed STT profile',
+        },
+      ],
+      activeProfiles: {},
+      providerCredentials: {
+        huggingface: {
+          provider: 'huggingface',
+          label: 'Hugging Face',
+          envName: 'HF_TOKEN',
+          available: false,
+          hasStoredSecret: false,
+          source: 'none',
+        },
+      },
+    })
+
+    render(<SettingsApp />)
+
+    fireEvent.click(await screen.findByRole('button', { name: 'STT' }))
+
+    expect(await screen.findByText('Whisper Large v3 (Hugging Face)')).toBeInTheDocument()
+    expect(screen.getByText('Add Hugging Face token')).toBeInTheDocument()
+    expect(screen.getByLabelText('Whisper Large v3 (Hugging Face) Hugging Face token')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Save token' })).toBeInTheDocument()
+  })
+
+  it('does not render the duplicated connected providers section', async () => {
+    fetchSettingsStateMock.mockResolvedValue({
+      ...baseSettings,
+      profiles: [
+        {
+          id: 'stt.routed.whisper-large-v3',
+          modality: 'stt',
+          name: 'Whisper Large v3 (Hugging Face)',
           executionMode: 'hf_routed',
           description: 'Managed STT profile',
         },
@@ -641,7 +628,39 @@ describe('SettingsApp', () => {
 
     render(<SettingsApp />)
 
-    fireEvent.click(await screen.findByRole('button', { name: 'Provider' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'STT' }))
+
+    expect(await screen.findByText('Whisper Large v3 (Hugging Face)')).toBeInTheDocument()
+    expect(screen.queryByText('Connected providers')).not.toBeInTheDocument()
+  })
+
+  it('clears a stored provider credential explicitly', async () => {
+    fetchSettingsStateMock.mockResolvedValue({
+      ...baseSettings,
+      profiles: [
+        {
+          id: 'stt.routed.whisper-large-v3',
+          modality: 'stt',
+          name: 'Whisper Large v3 (Hugging Face)',
+          executionMode: 'hf_routed',
+          description: 'Managed STT profile',
+        },
+      ],
+      providerCredentials: {
+        huggingface: {
+          provider: 'huggingface',
+          label: 'Hugging Face',
+          envName: 'HF_TOKEN',
+          available: true,
+          hasStoredSecret: true,
+          source: 'user',
+        },
+      },
+    })
+
+    render(<SettingsApp />)
+
+    fireEvent.click(await screen.findByRole('button', { name: 'STT' }))
     fireEvent.click(await screen.findByRole('button', { name: 'Clear' }))
 
     await waitFor(() => expect(clearProviderCredentialMock).toHaveBeenCalledWith('huggingface'))

@@ -19,9 +19,26 @@ import {
   type SpeechKitSettingsState,
 } from '@/lib/speechkit'
 
-type Tab = 'general' | 'provider'
+type Tab = 'general' | 'stt' | 'assist' | 'realtime_voice'
 
 const CTRL_SHIFT_SUFFIX_KEYS = ['d', 'j', 'k', 'space'] as const
+
+function providerSecretNoun(provider?: string) {
+  return provider === 'huggingface' ? 'token' : 'key'
+}
+
+function providerCredentialCopy(profileName: string, credential: ProviderCredentialState) {
+  const noun = providerSecretNoun(credential.provider)
+  const credentialLabel = `${credential.label} ${noun}`
+  return {
+    title: `Add ${credentialLabel}`,
+    inputLabel: `${profileName} ${credentialLabel}`,
+    placeholder: credential.envName || (noun === 'token' ? 'Token' : 'API key'),
+    saveLabel: `Save ${noun}`,
+    neededLabel: `${credentialLabel} needed`,
+    unlockLabel: `Add the ${noun} above to unlock this model.`,
+  }
+}
 
 export function SettingsApp() {
   const [settings, setSettings] = useState(defaultSettingsState)
@@ -30,6 +47,10 @@ export function SettingsApp() {
   const [loaded, setLoaded] = useState(false)
   const [toast, setToast] = useState('')
   const [tab, setTab] = useState<Tab>('general')
+  const [dlCatalog, setDlCatalog] = useState<DownloadItem[]>([])
+  const [dlJobs, setDlJobs] = useState<DownloadJob[]>([])
+  const [confirmItem, setConfirmItem] = useState<DownloadItem | null>(null)
+  const [dlBusy, setDlBusy] = useState(false)
   const saveTimer = useRef<number | null>(null)
   const toastTimer = useRef<number | null>(null)
 
@@ -56,12 +77,34 @@ export function SettingsApp() {
       setLoaded(true)
     })
 
+    fetchDownloadCatalog().then(setDlCatalog).catch(() => {})
+    fetchDownloadJobs().then(setDlJobs).catch(() => {})
+
     return () => {
       active = false
       if (saveTimer.current) window.clearTimeout(saveTimer.current)
       if (toastTimer.current) window.clearTimeout(toastTimer.current)
     }
   }, [])
+
+  // Poll jobs every 2 seconds while any download is active; re-fetch catalog when done.
+  useEffect(() => {
+    const hasActive = dlJobs.some((j) => j.status === 'pending' || j.status === 'running')
+    if (!hasActive) return
+    const timer = setInterval(() => {
+      fetchDownloadJobs()
+        .then((jobs) => {
+          setDlJobs(jobs)
+          const wasRunning = dlJobs.some((j) => j.status === 'running' || j.status === 'pending')
+          const nowDone = jobs.every((j) => j.status === 'done' || j.status === 'failed' || j.status === 'cancelled')
+          if (wasRunning && nowDone) {
+            fetchDownloadCatalog().then(setDlCatalog).catch(() => {})
+          }
+        })
+        .catch(() => {})
+    }, 2000)
+    return () => clearInterval(timer)
+  }, [dlJobs])
 
   const showToast = (message: string) => {
     if (toastTimer.current) window.clearTimeout(toastTimer.current)
@@ -94,12 +137,21 @@ export function SettingsApp() {
     queueSave({ ...settings, ...patch }, delay)
   }
 
+  const applyFreshSettings = (fresh: SpeechKitSettingsState) => {
+    setSettings((prev) => ({
+      ...prev,
+      ...fresh,
+      profiles: fresh.profiles?.length ? fresh.profiles : prev.profiles,
+    }))
+  }
+
   const tokenStatusLabel = (cred: ProviderCredentialState) => {
+    const noun = providerSecretNoun(cred.provider)
     switch (cred.source) {
-      case 'user': return 'User key active'
-      case 'install': return 'Install key active'
-      case 'env': return 'Environment key active'
-      default: return 'No key configured'
+      case 'user': return `User ${noun} active`
+      case 'install': return `Install ${noun} active`
+      case 'env': return `Environment ${noun} active`
+      default: return `No ${noun} configured`
     }
   }
 
@@ -108,14 +160,16 @@ export function SettingsApp() {
 
   const handleSaveProviderCredential = async (provider: string) => {
     const token = (providerTokens[provider] ?? '').trim()
-    if (!token) { showToast('API key required'); return }
+    const label = settings.providerCredentials?.[provider]?.label ?? 'API'
+    const noun = providerSecretNoun(provider)
+    if (!token) { showToast(`${label} ${noun} required`); return }
     setProviderBusy((b) => ({ ...b, [provider]: true }))
     try {
       const result = await saveProviderCredential(provider, token)
       setProviderTokens((t) => ({ ...t, [provider]: '' }))
       showToast(result.message ?? 'Saved')
       const fresh = await fetchSettingsState()
-      setSettings((prev) => ({ ...prev, providerCredentials: fresh.providerCredentials }))
+      applyFreshSettings(fresh)
     } catch (err) {
       showToast(err instanceof Error ? err.message : 'Save failed')
     } finally {
@@ -130,7 +184,7 @@ export function SettingsApp() {
       setProviderTokens((t) => ({ ...t, [provider]: '' }))
       showToast(result.message ?? 'Cleared')
       const fresh = await fetchSettingsState()
-      setSettings((prev) => ({ ...prev, providerCredentials: fresh.providerCredentials }))
+      applyFreshSettings(fresh)
     } catch (err) {
       showToast(err instanceof Error ? err.message : 'Clear failed')
     } finally {
@@ -142,7 +196,7 @@ export function SettingsApp() {
     const token = (providerTokens[provider] ?? '').trim()
     const storedCredential = settings.providerCredentials?.[provider]
     if (!token && !storedCredential?.available) {
-      showToast('No key configured')
+      showToast(`No ${providerSecretNoun(provider)} configured`)
       return
     }
     setProviderBusy((b) => ({ ...b, [provider]: true }))
@@ -157,26 +211,27 @@ export function SettingsApp() {
   }
 
   return (
-    <div className="min-h-screen bg-[#0b0f14] px-5 py-5 text-[13px] text-white/90">
-      <div className="mx-auto max-w-[560px]">
-        <h1 className="text-base font-semibold tracking-tight">
+    <div className="min-h-screen bg-[#0b0f14] px-6 py-4 text-[13px] text-white/90">
+      {/* ── Header row: title + tab bar inline ───────────────────────────── */}
+      <div className="mb-5 flex items-center gap-5">
+        <h1 className="shrink-0 text-sm font-semibold tracking-tight text-white">
           SpeechKit Settings
         </h1>
-
-        <div className="mt-3 flex gap-px rounded-lg bg-white/5 p-0.5">
-          <TabBtn active={tab === 'general'} onClick={() => setTab('general')}>
-            General
-          </TabBtn>
-          <TabBtn
-            active={tab === 'provider'}
-            onClick={() => setTab('provider')}
-          >
-            Provider
-          </TabBtn>
+        <div className="flex gap-px rounded-lg bg-white/5 p-0.5">
+          <TabBtn active={tab === 'general'} onClick={() => setTab('general')}>General</TabBtn>
+          <TabBtn active={tab === 'stt'} onClick={() => setTab('stt')}>STT</TabBtn>
+          <TabBtn active={tab === 'assist'} onClick={() => setTab('assist')}>Assist</TabBtn>
+          <TabBtn active={tab === 'realtime_voice'} onClick={() => setTab('realtime_voice')}>Voice Agent</TabBtn>
         </div>
+      </div>
 
-        {tab === 'general' && (
-          <div className="mt-4 flex flex-col gap-5">
+      {/* ── General tab — two-column desktop layout ───────────────────────── */}
+      {tab === 'general' && (
+        <div className="grid grid-cols-2 gap-x-10 gap-y-5">
+
+          {/* ── Left column: Mode · Hotkeys · Microphone ─────────────────── */}
+          <div className="flex flex-col gap-5">
+
             <Section title="Mode">
               <div className="flex flex-wrap gap-1.5">
                 <Chip
@@ -189,11 +244,11 @@ export function SettingsApp() {
                   active={settings.activeMode === 'agent'}
                   onClick={() => updateSettings({ activeMode: 'agent' })}
                 >
-                  Agent
+                  Assist
                 </Chip>
               </div>
-              <p className="mt-1.5 text-xs leading-relaxed text-white/40">
-                The active mode decides which action wins when hotkeys overlap.
+              <p className="mt-1 text-[11px] text-white/35">
+                Decides which action wins when hotkeys overlap.
               </p>
             </Section>
 
@@ -207,7 +262,7 @@ export function SettingsApp() {
               />
               <div className="mt-3" />
               <HotkeyPicker
-                label="Agent hotkey"
+                label="Assist hotkey"
                 value={settings.agentHotkey}
                 onChange={(value) => updateSettings({ agentHotkey: value })}
               />
@@ -221,45 +276,23 @@ export function SettingsApp() {
                 }
                 className="w-full"
               />
-              <p className="mt-1.5 text-xs leading-relaxed text-white/40">
-                The desktop backend applies the selected device immediately; no restart flow is needed.
-              </p>
             </Section>
 
-            <Section title="Vocabulary">
-              <label
-                htmlFor="vocabulary-dictionary-input"
-                className="block text-[11px] font-semibold uppercase tracking-[0.14em] text-white/35"
-              >
-                Vocabulary dictionary
-              </label>
-              <textarea
-                id="vocabulary-dictionary-input"
-                aria-label="Vocabulary dictionary"
-                value={settings.vocabularyDictionary}
-                onChange={(e) =>
-                  updateSettings({ vocabularyDictionary: e.target.value }, 250)
-                }
-                rows={5}
-                placeholder={'kombi fire => Kombify\nAcmeOS\nGemma'}
-                className="mt-2 w-full rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-xs leading-6 outline-none focus:border-orange-400/50"
-              />
-              <p className="mt-1.5 text-xs leading-relaxed text-white/40">
-                Add one term per line. Use <code>spoken =&gt; canonical</code> for corrections, or a single term to bias transcription hints for names and product words.
-              </p>
-            </Section>
+          </div>
+
+          {/* ── Right column: Overlay · Storage ──────────────────────────── */}
+          <div className="flex flex-col gap-5">
 
             <Section title="Overlay">
               <Row
                 label="Show overlay"
                 on={settings.overlayEnabled}
-                onToggle={() =>
-                  updateSettings({ overlayEnabled: !settings.overlayEnabled })
-                }
+                onToggle={() => updateSettings({ overlayEnabled: !settings.overlayEnabled })}
               />
               {settings.overlayEnabled && (
-                <>
-                  <div className="mt-2 flex flex-wrap gap-1.5">
+                <div className="mt-2 flex flex-col gap-2">
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    <span className="mr-1 text-[11px] text-white/30">Style</span>
                     <Chip
                       active={settings.visualizer === 'pill'}
                       onClick={() => updateSettings({ visualizer: 'pill' })}
@@ -274,7 +307,7 @@ export function SettingsApp() {
                     </Chip>
                     {settings.visualizer === 'pill' && (
                       <>
-                        <span className="mx-1 self-center text-white/20">|</span>
+                        <span className="mx-1 text-white/20">|</span>
                         <Chip
                           active={settings.design === 'default'}
                           onClick={() => updateSettings({ design: 'default' })}
@@ -290,10 +323,8 @@ export function SettingsApp() {
                       </>
                     )}
                   </div>
-                  <div className="mt-2 flex flex-wrap gap-1.5">
-                    <span className="mr-1 self-center text-[11px] text-white/35">
-                      Position
-                    </span>
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    <span className="mr-1 text-[11px] text-white/30">Position</span>
                     {(['top', 'bottom', 'left', 'right'] as const).map((pos) => (
                       <Chip
                         key={pos}
@@ -304,48 +335,41 @@ export function SettingsApp() {
                       </Chip>
                     ))}
                   </div>
-                  <div className="mt-2">
-                    <Row
-                      label="Movable overlay"
-                      on={settings.overlayMovable}
-                      onToggle={() =>
-                        updateSettings({ overlayMovable: !settings.overlayMovable })
-                      }
-                    />
-                  </div>
+                  <Row
+                    label="Movable overlay"
+                    on={settings.overlayMovable}
+                    onToggle={() => updateSettings({ overlayMovable: !settings.overlayMovable })}
+                  />
                   {settings.overlayMovable && settings.visualizer === 'pill' && (
-                    <p className="mt-1.5 text-xs leading-relaxed text-white/40">
+                    <p className="text-[11px] text-white/35">
                       Drag the center bubble inside the pill panel to place it anywhere on the desktop.
                     </p>
                   )}
-                </>
+                </div>
               )}
             </Section>
 
             <Section title="Storage">
-              <div>
-                <div className="mb-1.5 text-xs font-medium text-white/65">Backend</div>
-                <div className="flex flex-wrap gap-1.5">
-                  <Chip
-                    active={settings.storeBackend === 'sqlite'}
-                    onClick={() => updateSettings({ storeBackend: 'sqlite' })}
-                  >
-                    SQLite
-                  </Chip>
-                  <Chip
-                    active={settings.storeBackend === 'postgres'}
-                    onClick={() => updateSettings({ storeBackend: 'postgres' })}
-                  >
-                    PostgreSQL
-                  </Chip>
-                </div>
+              <div className="flex flex-wrap gap-1.5">
+                <Chip
+                  active={settings.storeBackend === 'sqlite'}
+                  onClick={() => updateSettings({ storeBackend: 'sqlite' })}
+                >
+                  SQLite
+                </Chip>
+                <Chip
+                  active={settings.storeBackend === 'postgres'}
+                  onClick={() => updateSettings({ storeBackend: 'postgres' })}
+                >
+                  PostgreSQL
+                </Chip>
               </div>
               <p
                 className={[
-                  'mt-2 rounded-lg border px-3 py-2 text-xs leading-relaxed',
+                  'mt-1.5 rounded border px-2.5 py-1.5 text-[11px]',
                   settings.storeBackend === 'postgres' && !postgresReady
-                    ? 'border-orange-500/20 bg-orange-500/5 text-orange-200/75'
-                    : 'border-white/10 bg-white/[0.03] text-white/50',
+                    ? 'border-orange-500/20 bg-orange-500/5 text-orange-200/70'
+                    : 'border-white/8 bg-white/2 text-white/40',
                 ].join(' ')}
               >
                 {settings.storeBackend === 'sqlite'
@@ -355,119 +379,116 @@ export function SettingsApp() {
                     : 'Add a PostgreSQL connection string before switching the metadata backend.'}
               </p>
               {settings.storeBackend === 'sqlite' ? (
-                <>
-                  <label
-                    htmlFor="sqlite-path-input"
-                    className="mt-2 block text-[11px] font-semibold uppercase tracking-[0.14em] text-white/35"
-                  >
-                    SQLite path
-                  </label>
-                  <input
-                    id="sqlite-path-input"
-                    aria-label="SQLite path"
-                    value={settings.sqlitePath}
-                    onChange={(e) =>
-                      updateSettings({ sqlitePath: e.target.value }, 350)
-                    }
-                    placeholder="%APPDATA%/SpeechKit/feedback.db"
-                    className="mt-2 h-9 w-full rounded-lg border border-white/10 bg-white/5 px-3 text-xs outline-none focus:border-orange-400/50"
-                  />
-                </>
+                <input
+                  id="sqlite-path-input"
+                  aria-label="SQLite path"
+                  value={settings.sqlitePath}
+                  onChange={(e) => updateSettings({ sqlitePath: e.target.value }, 350)}
+                  placeholder="%APPDATA%/SpeechKit/feedback.db"
+                  className="mt-1.5 h-8 w-full rounded border border-white/10 bg-white/5 px-2.5 text-xs outline-none focus:border-orange-400/50"
+                />
               ) : (
-                <>
-                  <label
-                    htmlFor="postgres-dsn-input"
-                    className="mt-2 block text-[11px] font-semibold uppercase tracking-[0.14em] text-white/35"
-                  >
-                    PostgreSQL connection string
-                  </label>
-                  <input
-                    id="postgres-dsn-input"
-                    aria-label="PostgreSQL connection string"
-                    value={settings.postgresDSN}
-                    onChange={(e) =>
-                      updateSettings({ postgresDSN: e.target.value }, 350)
-                    }
-                    placeholder="postgres://user:password@host:5432/speechkit?sslmode=disable"
-                    className="mt-2 h-9 w-full rounded-lg border border-white/10 bg-white/5 px-3 text-xs outline-none focus:border-orange-400/50"
-                  />
-                  <p className="mt-1.5 text-xs leading-relaxed text-white/40">
-                    The desktop host stores the connection string in the local config.
-                    Switching to PostgreSQL changes the backend on the next app start.
-                  </p>
-                </>
+                <input
+                  id="postgres-dsn-input"
+                  aria-label="PostgreSQL connection string"
+                  value={settings.postgresDSN}
+                  onChange={(e) => updateSettings({ postgresDSN: e.target.value }, 350)}
+                  placeholder="postgres://user:password@host:5432/speechkit?sslmode=disable"
+                  className="mt-1.5 h-8 w-full rounded border border-white/10 bg-white/5 px-2.5 text-xs outline-none focus:border-orange-400/50"
+                />
               )}
-              <Row
-                label="Save raw audio locally"
-                on={settings.saveAudio}
-                onToggle={() => updateSettings({ saveAudio: !settings.saveAudio })}
+              <div className="mt-2.5">
+                <Row
+                  label="Save raw audio locally"
+                  on={settings.saveAudio}
+                  onToggle={() => updateSettings({ saveAudio: !settings.saveAudio })}
+                />
+              </div>
+              <div className="mt-2 grid grid-cols-2 gap-3">
+                <div>
+                  <div className="mb-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-white/30">
+                    Audio retention
+                  </div>
+                  <select
+                    id="audio-retention-select"
+                    aria-label="Audio retention"
+                    value={String(settings.audioRetentionDays)}
+                    onChange={(e) => updateSettings({ audioRetentionDays: Number(e.target.value) })}
+                    className="h-8 w-full rounded border border-white/10 bg-white/5 px-2.5 text-xs outline-none focus:border-orange-400/50"
+                  >
+                    <option value="0">No automatic deletion</option>
+                    <option value="1">1 day</option>
+                    <option value="7">7 days</option>
+                    <option value="30">30 days</option>
+                    <option value="90">90 days</option>
+                  </select>
+                </div>
+                <div>
+                  <div className="mb-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-white/30">
+                    Max storage (MB)
+                  </div>
+                  <input
+                    id="max-audio-storage-input"
+                    aria-label="Max local audio storage (MB)"
+                    type="number"
+                    min="0"
+                    value={String(settings.maxAudioStorageMB)}
+                    onChange={(e) => {
+                      const nextValue = Number.parseInt(e.target.value, 10)
+                      if (Number.isNaN(nextValue) || nextValue < 0) return
+                      updateSettings({ maxAudioStorageMB: nextValue }, 250)
+                    }}
+                    className="h-8 w-full rounded border border-white/10 bg-white/5 px-2.5 text-xs outline-none focus:border-orange-400/50"
+                  />
+                </div>
+              </div>
+            </Section>
+
+          </div>
+
+          {/* ── Vocabulary — full width ───────────────────────────────────── */}
+          <div className="col-span-2">
+            <Section title="Vocabulary">
+              <textarea
+                id="vocabulary-dictionary-input"
+                aria-label="Vocabulary dictionary"
+                value={settings.vocabularyDictionary}
+                onChange={(e) => updateSettings({ vocabularyDictionary: e.target.value }, 250)}
+                rows={3}
+                placeholder={'kombi fire => Kombify\nAcmeOS\nGemma'}
+                className="w-full rounded border border-white/10 bg-white/5 px-3 py-2 text-xs leading-6 outline-none focus:border-orange-400/50"
               />
-              <label
-                htmlFor="audio-retention-select"
-                className="mt-2 block text-[11px] font-semibold uppercase tracking-[0.14em] text-white/35"
-              >
-                Audio retention
-              </label>
-              <select
-                id="audio-retention-select"
-                aria-label="Audio retention"
-                value={String(settings.audioRetentionDays)}
-                onChange={(e) =>
-                  updateSettings({ audioRetentionDays: Number(e.target.value) })
-                }
-                className="mt-2 h-9 w-full rounded-lg border border-white/10 bg-white/5 px-3 text-xs outline-none focus:border-orange-400/50"
-              >
-                <option value="0">No automatic deletion</option>
-                <option value="1">1 day</option>
-                <option value="7">7 days</option>
-                <option value="30">30 days</option>
-                <option value="90">90 days</option>
-              </select>
-              <label
-                htmlFor="max-audio-storage-input"
-                className="mt-2 block text-[11px] font-semibold uppercase tracking-[0.14em] text-white/35"
-              >
-                Max local audio storage (MB)
-              </label>
-              <input
-                id="max-audio-storage-input"
-                aria-label="Max local audio storage (MB)"
-                type="number"
-                min="0"
-                value={String(settings.maxAudioStorageMB)}
-                onChange={(e) => {
-                  const nextValue = Number.parseInt(e.target.value, 10)
-                  if (Number.isNaN(nextValue) || nextValue < 0) {
-                    return
-                  }
-                  updateSettings({ maxAudioStorageMB: nextValue }, 250)
-                }}
-                className="mt-2 h-9 w-full rounded-lg border border-white/10 bg-white/5 px-3 text-xs outline-none focus:border-orange-400/50"
-              />
-              <p className="mt-1.5 text-xs leading-relaxed text-white/40">
-                {settings.storeBackend === 'sqlite'
-                  ? 'SQLite keeps metadata locally. Audio stays as raw WAV files on disk and can be turned off or pruned automatically.'
-                  : 'PostgreSQL is configured as the metadata backend. Raw audio retention still applies locally until remote object storage is introduced.'}
+              <p className="mt-1 text-[11px] text-white/35">
+                One term per line. Use <code>spoken =&gt; canonical</code> for corrections, or a bare term to bias transcription.
               </p>
             </Section>
           </div>
-        )}
 
-        {tab === 'provider' && (
-          <ProviderTab
-            settings={settings}
-            setSettings={setSettings}
-            showToast={showToast}
-            providerTokens={providerTokens}
-            setProviderTokens={setProviderTokens}
-            providerBusy={providerBusy}
-            tokenStatusLabel={tokenStatusLabel}
-            onSaveCredential={handleSaveProviderCredential}
-            onClearCredential={handleClearProviderCredential}
-            onTestCredential={handleTestProviderCredential}
-          />
-        )}
-      </div>
+        </div>
+      )}
+
+      {(tab === 'stt' || tab === 'assist' || tab === 'realtime_voice') && (
+        <ModelPanel
+          modality={tab}
+          settings={settings}
+          setSettings={setSettings}
+          showToast={showToast}
+          providerTokens={providerTokens}
+          setProviderTokens={setProviderTokens}
+          providerBusy={providerBusy}
+          tokenStatusLabel={tokenStatusLabel}
+          onSaveCredential={handleSaveProviderCredential}
+          onClearCredential={handleClearProviderCredential}
+          onTestCredential={handleTestProviderCredential}
+          dlCatalog={dlCatalog}
+          dlJobs={dlJobs}
+          setDlJobs={setDlJobs}
+          confirmItem={confirmItem}
+          setConfirmItem={setConfirmItem}
+          dlBusy={dlBusy}
+          setDlBusy={setDlBusy}
+        />
+      )}
 
       <div
         className={[
@@ -508,24 +529,17 @@ function TabBtn({
 
 function Section({
   title,
-  badge,
   children,
 }: {
   title: string
-  badge?: string
   children: React.ReactNode
 }) {
   return (
     <section>
-      <div className="mb-1.5 flex items-center gap-2">
-        <span className="text-[11px] font-semibold uppercase tracking-[0.14em] text-white/35">
+      <div className="mb-1.5">
+        <span className="text-[10px] font-semibold uppercase tracking-[0.14em] text-white/30">
           {title}
         </span>
-        {badge && (
-          <span className="rounded bg-white/6 px-1.5 py-0.5 text-[10px] text-white/25">
-            {badge}
-          </span>
-        )}
       </div>
       {children}
     </section>
@@ -595,21 +609,12 @@ const PROVIDER_FOR_EXECUTION_MODE: Record<string, string | undefined> = {
   openrouter_api: 'openrouter',
 }
 
-const MODALITY_LABELS = {
-  stt: 'STT',
-  utility: 'Utility',
-  agent: 'Agent',
-  realtime_voice: 'Voice Agent',
-} as const
-
-type ModalityTabKey = keyof typeof MODALITY_LABELS
-
-const MODALITY_ORDER: ModalityTabKey[] = ['stt', 'utility', 'agent', 'realtime_voice']
+type ModalityTabKey = 'stt' | 'assist' | 'realtime_voice'
 
 function limitProfilesToVisibleOptions(
   profiles: SpeechKitSettingsState['profiles'],
   activeProfileID?: string,
-  maxOptions = 4,
+  maxOptions = 3,
 ) {
   const list = profiles ?? []
   if (list.length <= maxOptions) {
@@ -635,32 +640,23 @@ function sourceBadge(profile: NonNullable<SpeechKitSettingsState['profiles']>[nu
     case 'ollama_local':
       return {
         label: 'local',
-        className: 'bg-emerald-500/15 text-emerald-300/80',
+        className: 'bg-white/6 text-white/30',
       }
     case 'hf_routed':
       return {
-        label: 'managed',
-        className: 'bg-sky-500/15 text-sky-300/80',
+        label: 'hugging face',
+        className: 'bg-white/6 text-white/30',
       }
     default:
       return {
         label: 'api key',
-        className: 'bg-amber-500/15 text-amber-300/70',
+        className: 'bg-white/6 text-white/30',
       }
   }
 }
 
-function pickPrimaryDownloadItem(items: DownloadItem[]) {
-  return (
-    items.find((item) => item.available && item.recommended) ??
-    items.find((item) => item.available) ??
-    items.find((item) => item.recommended) ??
-    items[0] ??
-    null
-  )
-}
-
-function ProviderTab({
+function ModelPanel({
+  modality,
   settings,
   setSettings,
   showToast,
@@ -671,7 +667,15 @@ function ProviderTab({
   onSaveCredential,
   onClearCredential,
   onTestCredential,
+  dlCatalog,
+  dlJobs,
+  setDlJobs,
+  confirmItem,
+  setConfirmItem,
+  dlBusy,
+  setDlBusy,
 }: {
+  modality: ModalityTabKey
   settings: SpeechKitSettingsState
   setSettings: React.Dispatch<React.SetStateAction<SpeechKitSettingsState>>
   showToast: (msg: string) => void
@@ -682,333 +686,289 @@ function ProviderTab({
   onSaveCredential: (provider: string) => void
   onClearCredential: (provider: string) => void
   onTestCredential: (provider: string) => void
+  dlCatalog: DownloadItem[]
+  dlJobs: DownloadJob[]
+  setDlJobs: React.Dispatch<React.SetStateAction<DownloadJob[]>>
+  confirmItem: DownloadItem | null
+  setConfirmItem: React.Dispatch<React.SetStateAction<DownloadItem | null>>
+  dlBusy: boolean
+  setDlBusy: React.Dispatch<React.SetStateAction<boolean>>
 }) {
-  const [modalityTab, setModalityTab] = useState<ModalityTabKey>('stt')
-  const [dlCatalog, setDlCatalog] = useState<DownloadItem[]>([])
-  const [dlJobs, setDlJobs] = useState<DownloadJob[]>([])
-  const [confirmItem, setConfirmItem] = useState<DownloadItem | null>(null)
-  const [dlBusy, setDlBusy] = useState(false)
-
-  // Fetch download state once on mount.
-  useEffect(() => {
-    fetchDownloadCatalog().then(setDlCatalog).catch(() => {})
-    fetchDownloadJobs().then(setDlJobs).catch(() => {})
-  }, [])
-
-  // Poll jobs every 2 seconds while any download is active; re-fetch catalog when done.
-  useEffect(() => {
-    const hasActive = dlJobs.some((j) => j.status === 'pending' || j.status === 'running')
-    if (!hasActive) return
-    const timer = setInterval(() => {
-      fetchDownloadJobs()
-        .then((jobs) => {
-          setDlJobs(jobs)
-          const wasRunning = dlJobs.some((j) => j.status === 'running' || j.status === 'pending')
-          const nowDone = jobs.every((j) => j.status === 'done' || j.status === 'failed' || j.status === 'cancelled')
-          if (wasRunning && nowDone) {
-            fetchDownloadCatalog().then(setDlCatalog).catch(() => {})
-          }
-        })
-        .catch(() => {})
-    }, 2000)
-    return () => clearInterval(timer)
-  }, [dlJobs])
-
   const profiles = settings.profiles ?? []
-  const availableTabs = MODALITY_ORDER
-    .filter((key) => profiles.some((profile) => profile.modality === key))
-    .map((key) => ({ key, label: MODALITY_LABELS[key] }))
-  const selectedTab = availableTabs.some((tab) => tab.key === modalityTab)
-    ? modalityTab
-    : availableTabs[0]?.key
-  const filtered = selectedTab ? profiles.filter((p) => p.modality === selectedTab) : []
-  const activeId = selectedTab ? settings.activeProfiles?.[selectedTab] : undefined
-  const visibleProfiles = limitProfilesToVisibleOptions(filtered, activeId)
-  const visibleProviderKeys = new Set(
-    visibleProfiles
-      .map((profile) => (profile.executionMode ? PROVIDER_FOR_EXECUTION_MODE[profile.executionMode] : undefined))
-      .filter((provider): provider is string => Boolean(provider)),
-  )
-  const visibleCredentials = settings.providerCredentials
-    ? Object.values(settings.providerCredentials).filter((credential) => visibleProviderKeys.has(credential.provider))
-    : []
+  const filtered = profiles.filter((p) => p.modality === modality)
+  const activeId = settings.activeProfiles?.[modality]
+  const visibleProfiles = limitProfilesToVisibleOptions(filtered, activeId, 4)
 
   return (
   <>
-    <div className="mt-4 flex flex-col gap-4">
-      <Section title="Model setup">
-        {availableTabs.length > 0 && (
-          <div className="flex gap-px rounded-lg bg-white/5 p-0.5">
-            {availableTabs.map((mt) => (
-              <button
-                key={mt.key}
-                type="button"
-                onClick={() => setModalityTab(mt.key)}
-                  className={[
-                    'flex-1 rounded-md px-2 py-1 text-[11px] font-medium transition-colors',
-                    selectedTab === mt.key
-                      ? 'bg-white/10 text-white'
-                      : 'text-white/35 hover:text-white/55',
-                  ].join(' ')}
+    <div className="overflow-hidden rounded-xl border border-white/8">
+      {/* Panel header */}
+      <div className="flex items-center gap-3 border-b border-white/6 bg-white/2 px-4 py-2.5">
+        <span className="text-[10px] font-semibold uppercase tracking-[0.14em] text-white/30">
+          Model setup
+        </span>
+        <span className="text-[11px] text-white/20">
+          {modality === 'stt' ? 'Speech-to-Text' : modality === 'assist' ? 'Assist LLM' : 'Voice Agent'}
+        </span>
+      </div>
+
+      {visibleProfiles.length === 0 ? (
+        <p className="px-4 py-4 text-[11px] text-white/30">No live-switchable model profiles are exposed in this build.</p>
+      ) : (
+        <div className="divide-y divide-white/5">
+          {visibleProfiles.map((profile) => {
+            const isActive = activeId === profile.id
+            const badge = sourceBadge(profile)
+            const providerKey = profile.executionMode ? PROVIDER_FOR_EXECUTION_MODE[profile.executionMode] : undefined
+            const providerCredential = providerKey ? settings.providerCredentials?.[providerKey] : undefined
+            const providerMissing = Boolean(providerKey && !providerCredential?.available)
+            const providerCopy = providerCredential ? providerCredentialCopy(profile.name, providerCredential) : null
+            const providerReady = Boolean(providerKey && providerCredential?.available)
+            const providerIsBusy = providerKey ? (providerBusy[providerKey] ?? false) : false
+            const downloadItems = dlCatalog.filter((item) => item.profileId === profile.id)
+            const downloadActive = downloadItems.some((item) => {
+              const job = dlJobs.find((candidate) => candidate.modelId === item.id)
+              return job?.status === 'pending' || job?.status === 'running'
+            })
+            const downloadReady = downloadItems.some((item) => {
+              const job = dlJobs.find((candidate) => candidate.modelId === item.id)
+              return item.available || job?.status === 'done'
+            })
+            const needsDownload = downloadItems.length > 0 && !downloadReady && !downloadActive
+            const readyToUse = !providerMissing && !needsDownload && !downloadActive
+            const statusLabel = isActive
+              ? 'Active'
+              : providerMissing
+                ? providerCopy?.neededLabel ?? `${providerCredential?.label ?? 'API'} key needed`
+                : downloadActive
+                  ? 'Downloading'
+                  : needsDownload
+                    ? 'Download required'
+                    : 'Ready'
+            const statusClassName = isActive
+              ? 'border-orange-500/30 bg-orange-500/15 text-orange-200'
+              : 'border-white/10 bg-transparent text-white/35'
+
+            return (
+              <div
+                key={profile.id}
+                className={isActive ? 'bg-orange-500/4' : undefined}
               >
-                {mt.label}
-              </button>
-            ))}
-          </div>
-        )}
+                {/* ── Main identity row ─────────────────────────────────── */}
+                <div className="flex items-center gap-3 px-4 py-3">
+                  {/* Active dot */}
+                  <div className={[
+                    'size-2 shrink-0 rounded-full',
+                    isActive ? 'bg-orange-400' : 'bg-white/12',
+                  ].join(' ')} />
 
-        {visibleProfiles.length === 0 ? (
-          <p className="mt-3 text-xs text-white/30">No live-switchable model profiles are exposed in this build.</p>
-        ) : (
-          <div className="mt-3 grid gap-2">
-            {visibleProfiles.map((profile) => {
-              const isActive = activeId === profile.id
-              const badge = sourceBadge(profile)
-              const providerKey = profile.executionMode ? PROVIDER_FOR_EXECUTION_MODE[profile.executionMode] : undefined
-              const providerCredential = providerKey ? settings.providerCredentials?.[providerKey] : undefined
-              const providerMissing = Boolean(providerKey && !providerCredential?.available)
-              const downloadItems = dlCatalog.filter((item) => item.profileId === profile.id)
-              const primaryDownload = pickPrimaryDownloadItem(downloadItems)
-              const downloadJob = primaryDownload
-                ? dlJobs.find((job) => job.modelId === primaryDownload.id)
-                : undefined
-              const downloadActive = downloadJob?.status === 'pending' || downloadJob?.status === 'running'
-              const downloadReady = Boolean(primaryDownload?.available || downloadJob?.status === 'done')
-              const needsDownload = Boolean(primaryDownload && !downloadReady && !downloadActive)
-              const readyToUse = !providerMissing && !needsDownload && !downloadActive
-              const statusLabel = isActive
-                ? 'Active'
-                : providerMissing
-                  ? `${providerCredential?.label ?? 'API'} key needed`
-                  : downloadActive
-                    ? 'Downloading'
-                    : needsDownload
-                      ? 'Download required'
-                      : 'Ready'
-              const statusClassName = isActive
-                ? 'border-orange-500/30 bg-orange-500/15 text-orange-200'
-                : providerMissing
-                  ? 'border-amber-500/20 bg-amber-500/10 text-amber-200/80'
-                  : downloadActive
-                    ? 'border-sky-500/20 bg-sky-500/10 text-sky-200/80'
-                    : needsDownload
-                      ? 'border-white/10 bg-white/5 text-white/60'
-                      : 'border-emerald-500/20 bg-emerald-500/10 text-emerald-200/80'
-
-              return (
-                <div
-                  key={profile.id}
-                  className={[
-                    'rounded-xl border p-3 transition-colors',
-                    isActive
-                      ? 'border-orange-500/25 bg-orange-500/[0.07] text-orange-100'
-                      : 'border-white/8 bg-white/[0.03] text-white/70',
-                  ].join(' ')}
-                >
-                  <div className="min-w-0">
-                    <div className="flex flex-wrap items-start justify-between gap-2">
-                      <div className="min-w-0 flex-1">
-                        <div className="flex flex-wrap items-center gap-1.5">
-                          <span className="truncate text-sm font-medium">{profile.name}</span>
-                          <span className={['shrink-0 rounded px-1.5 py-px text-[9px]', badge.className].join(' ')}>
-                            {badge.label}
-                          </span>
-                        </div>
-                        <div className="mt-1 truncate text-[10px] uppercase tracking-[0.14em] text-white/25">
-                          {profile.source ?? profile.executionMode ?? 'local'}
-                        </div>
-                      </div>
-                      <span className={['shrink-0 rounded-full border px-2 py-0.5 text-[10px]', statusClassName].join(' ')}>
-                        {statusLabel}
-                      </span>
-                    </div>
+                  {/* Name + badge + source + description */}
+                  <div className="flex min-w-0 flex-1 flex-wrap items-center gap-x-2 gap-y-0.5">
+                    <span className={['text-[13px] font-medium', isActive ? 'text-orange-100' : 'text-white/85'].join(' ')}>
+                      {profile.name}
+                    </span>
+                    <span className={['shrink-0 rounded px-1.5 py-px text-[9px]', badge.className].join(' ')}>
+                      {badge.label}
+                    </span>
+                    <span className="text-[10px] text-white/25">
+                      {profile.source ?? profile.executionMode ?? 'local'}
+                    </span>
                     {profile.description && (
-                      <div className="mt-2 text-[11px] leading-relaxed text-white/45">
+                      <span className="truncate text-[11px] text-white/35">
                         {profile.description}
-                      </div>
+                      </span>
                     )}
-                    {providerMissing && providerKey && providerCredential && (
-                      <div className="mt-3 rounded-lg border border-amber-500/15 bg-amber-500/5 p-2.5">
-                        <div className="text-[10px] font-medium uppercase tracking-[0.14em] text-amber-200/70">
-                          Add {providerCredential.label} key
-                        </div>
-                        <div className="mt-2 flex gap-2">
-                          <input
-                            aria-label={`${profile.name} API key`}
-                            type="password"
-                            value={providerTokens[providerKey] ?? ''}
-                            onChange={(e) => setProviderTokens((tokens) => ({ ...tokens, [providerKey]: e.target.value }))}
-                            placeholder={providerCredential.envName || 'API key'}
-                            className="h-9 flex-1 rounded-lg border border-amber-500/15 bg-black/20 px-3 text-xs text-white/80 outline-none focus:border-orange-400/50"
-                          />
-                          <button
-                            type="button"
-                            onClick={() => onSaveCredential(providerKey)}
-                            className={[
-                              'shrink-0 rounded-lg border px-3 text-xs font-medium',
-                              providerBusy[providerKey]
-                                ? 'pointer-events-none border-white/10 bg-white/5 text-white/30'
-                                : 'border-orange-500/25 bg-orange-500/15 text-orange-200 hover:bg-orange-500/25',
-                            ].join(' ')}
-                          >
-                            Save key
-                          </button>
-                        </div>
-                      </div>
-                    )}
+                  </div>
 
-                    {primaryDownload && (
-                      <div className="mt-3 rounded-lg border border-white/8 bg-black/10 p-2.5">
-                        <div className="flex flex-wrap items-center gap-1.5">
-                          <span className="text-[11px] text-white/70">{primaryDownload.name}</span>
-                          {primaryDownload.recommended && (
+                  {/* Status badge + action button */}
+                  <div className="flex shrink-0 items-center gap-2">
+                    <span className={['rounded-full border px-2 py-0.5 text-[10px]', statusClassName].join(' ')}>
+                      {statusLabel}
+                    </span>
+                    {isActive ? (
+                      <span className="w-20 text-right text-[11px] font-medium text-orange-300/80">
+                        Currently active
+                      </span>
+                    ) : readyToUse ? (
+                      <button
+                        type="button"
+                        onClick={async () => {
+                          try {
+                            const body = new URLSearchParams({
+                              modality: profile.modality,
+                              profile_id: profile.id,
+                            })
+                            const resp = await fetch('/models/profiles/activate', { method: 'POST', body })
+                            if (!resp.ok) {
+                              const err = await resp.text()
+                              showToast(err || 'Switch failed')
+                              return
+                            }
+                            setSettings((prev) => ({
+                              ...prev,
+                              activeProfiles: { ...prev.activeProfiles, [profile.modality]: profile.id },
+                            }))
+                            showToast(`${profile.name} activated`)
+                          } catch {
+                            showToast('Switch failed')
+                          }
+                        }}
+                        className="w-20 rounded border border-white/10 px-2 py-1 text-[11px] text-white/55 hover:border-white/20 hover:text-white/80"
+                      >
+                        Use model
+                      </button>
+                    ) : (
+                      <span className="w-20 text-right text-[10px] text-white/30">
+                        {providerMissing
+                          ? providerCopy?.unlockLabel ?? 'Add the key above.'
+                          : needsDownload
+                            ? 'Download required.'
+                            : 'Downloading…'}
+                      </span>
+                    )}
+                  </div>
+                </div>
+
+                {/* ── Provider missing: inline key entry ───────────────── */}
+                {providerMissing && providerKey && providerCredential && (
+                  <div className="flex items-center gap-2 border-t border-amber-500/10 bg-amber-500/4 px-4 py-2">
+                    <span className="shrink-0 text-[10px] font-medium text-amber-200/60">
+                      {providerCopy?.title ?? `Add ${providerCredential.label} key`}
+                    </span>
+                    <input
+                      aria-label={providerCopy?.inputLabel ?? `${profile.name} API key`}
+                      type="password"
+                      value={providerTokens[providerKey] ?? ''}
+                      onChange={(e) => setProviderTokens((tokens) => ({ ...tokens, [providerKey]: e.target.value }))}
+                      placeholder={providerCopy?.placeholder ?? (providerCredential.envName || 'API key')}
+                      className="h-7 flex-1 rounded border border-amber-500/15 bg-black/20 px-2.5 text-[11px] text-white/80 outline-none focus:border-orange-400/50"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => onSaveCredential(providerKey)}
+                      disabled={providerIsBusy}
+                      className={[
+                        'shrink-0 rounded border px-3 py-1 text-[11px] font-medium',
+                        providerIsBusy
+                          ? 'border-white/10 bg-white/5 text-white/30'
+                          : 'border-orange-500/25 bg-orange-500/15 text-orange-200 hover:bg-orange-500/25',
+                      ].join(' ')}
+                    >
+                      {providerCopy?.saveLabel ?? 'Save key'}
+                    </button>
+                  </div>
+                )}
+
+                {/* ── Provider ready: token management row ─────────────── */}
+                {providerReady && providerKey && providerCredential && (
+                  <div className="flex items-center gap-2 border-t border-white/5 bg-black/5 px-4 py-2">
+                    <span className="shrink-0 text-[10px] text-white/35">
+                      {tokenStatusLabel(providerCredential)}
+                    </span>
+                    <input
+                      type="password"
+                      aria-label={`Update ${providerCredential.label} ${providerSecretNoun(providerCredential.provider)}`}
+                      placeholder={`Update ${providerSecretNoun(providerCredential.provider)}…`}
+                      value={providerTokens[providerKey] ?? ''}
+                      onChange={(e) => setProviderTokens((tokens) => ({ ...tokens, [providerKey]: e.target.value }))}
+                      className="h-6 min-w-0 flex-1 rounded border border-white/8 bg-black/15 px-2 text-[11px] text-white/70 outline-none focus:border-orange-400/40"
+                    />
+                    {(providerTokens[providerKey] ?? '').trim().length > 0 && (
+                      <button
+                        type="button"
+                        onClick={() => onSaveCredential(providerKey)}
+                        disabled={providerIsBusy}
+                        className="shrink-0 rounded px-2 py-0.5 text-[10px] text-orange-300/80 hover:text-orange-200"
+                      >
+                        Save
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => onTestCredential(providerKey)}
+                      disabled={providerIsBusy}
+                      className="shrink-0 text-[10px] text-white/40 hover:text-white/70"
+                    >
+                      Test
+                    </button>
+                    {providerCredential.hasStoredSecret && (
+                      <button
+                        type="button"
+                        onClick={() => onClearCredential(providerKey)}
+                        disabled={providerIsBusy}
+                        className="shrink-0 text-[10px] text-white/30 hover:text-red-300/75"
+                      >
+                        Clear
+                      </button>
+                    )}
+                  </div>
+                )}
+
+                {/* ── Download items ───────────────────────────────────── */}
+                {downloadItems.length > 0 && (
+                  <div className="space-y-1.5 border-t border-white/5 px-4 py-2">
+                    {downloadItems.map((item) => {
+                      const itemJob = dlJobs.find((candidate) => candidate.modelId === item.id)
+                      const itemDownloadActive = itemJob?.status === 'pending' || itemJob?.status === 'running'
+                      const itemDownloadReady = Boolean(item.available || itemJob?.status === 'done')
+
+                      return (
+                        <div key={item.id} className="flex items-center gap-2">
+                          <span className="text-[11px] text-white/65">{item.name}</span>
+                          {item.recommended && (
                             <span className="rounded bg-orange-500/15 px-1.5 py-px text-[9px] text-orange-300/70">
                               recommended
                             </span>
                           )}
-                          <span className="text-[10px] text-white/30">{primaryDownload.sizeLabel}</span>
-                        </div>
-                        <div className="mt-1 text-[10px] leading-relaxed text-white/35">
-                          {primaryDownload.description}
-                        </div>
-                        {downloadActive && (
-                          <div className="mt-2">
-                            <div className="h-1.5 w-full overflow-hidden rounded-full bg-white/10">
-                              <div
-                                className="h-full rounded-full bg-orange-400/60 transition-all duration-500"
-                                style={{ width: `${Math.round((downloadJob?.progress ?? 0) * 100)}%` }}
-                              />
-                            </div>
-                            <div className="mt-1 text-[10px] text-white/35">{downloadJob?.statusText}</div>
-                          </div>
-                        )}
-                        {downloadJob?.status === 'failed' && (
-                          <div className="mt-2 text-[10px] text-red-400/70">
-                            {downloadJob.error ?? 'Download failed'}
-                          </div>
-                        )}
-                        <div className="mt-2 flex items-center gap-2">
-                          {downloadReady ? (
+                          <span className="text-[10px] text-white/30">{item.sizeLabel}</span>
+                          {itemDownloadActive ? (
+                            <>
+                              <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-white/10">
+                                <div
+                                  className="h-full rounded-full bg-orange-400/60 transition-all duration-500"
+                                  style={{ width: `${Math.round((itemJob?.progress ?? 0) * 100)}%` }}
+                                />
+                              </div>
+                              <span className="shrink-0 text-[10px] text-white/30">{itemJob?.statusText}</span>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  if (itemJob) cancelModelDownload(itemJob.id).catch(() => {})
+                                }}
+                                className="shrink-0 text-[10px] text-white/40 hover:text-red-300/75"
+                              >
+                                Cancel download
+                              </button>
+                            </>
+                          ) : itemDownloadReady ? (
                             <span className="text-[10px] text-emerald-300/80">Ready on this device</span>
-                          ) : downloadActive ? (
-                            <button
-                              type="button"
-                              onClick={() => {
-                                if (downloadJob) {
-                                  cancelModelDownload(downloadJob.id).catch(() => {})
-                                }
-                              }}
-                              className="rounded-lg border border-white/10 px-2.5 py-1 text-[10px] text-white/45 hover:border-red-400/25 hover:text-red-300/75"
-                            >
-                              Cancel download
-                            </button>
                           ) : (
                             <button
                               type="button"
-                              onClick={() => setConfirmItem(primaryDownload)}
-                              className="rounded-lg border border-white/10 px-2.5 py-1 text-[10px] text-white/55 hover:border-orange-400/30 hover:text-orange-300/75"
+                              onClick={() => setConfirmItem(item)}
+                              className="rounded border border-white/10 px-2 py-0.5 text-[10px] text-white/50 hover:border-orange-400/30 hover:text-orange-300/75"
                             >
                               Download
                             </button>
                           )}
+                          {itemJob?.status === 'failed' && (
+                            <span className="ml-1 text-[10px] text-red-400/70">
+                              {itemJob.error ?? 'Download failed'}
+                            </span>
+                          )}
                         </div>
-                      </div>
-                    )}
-
-                    <div className="mt-3 flex items-center gap-2">
-                      {isActive ? (
-                        <span className="text-[11px] font-medium text-orange-300">Currently active</span>
-                      ) : readyToUse ? (
-                        <button
-                          type="button"
-                          onClick={async () => {
-                            try {
-                              const body = new URLSearchParams({
-                                modality: profile.modality,
-                                profile_id: profile.id,
-                              })
-                              const resp = await fetch('/models/profiles/activate', { method: 'POST', body })
-                              if (!resp.ok) {
-                                const err = await resp.text()
-                                showToast(err || 'Switch failed')
-                                return
-                              }
-                              setSettings((prev) => ({
-                                ...prev,
-                                activeProfiles: { ...prev.activeProfiles, [profile.modality]: profile.id },
-                              }))
-                              showToast(`${profile.name} activated`)
-                            } catch {
-                              showToast('Switch failed')
-                            }
-                          }}
-                          className="rounded-lg border border-white/10 px-3 py-1.5 text-xs text-white/60 hover:border-white/20 hover:text-white/80"
-                        >
-                          Use model
-                        </button>
-                      ) : (
-                        <span className="text-[10px] text-white/35">
-                          {providerMissing
-                            ? 'Add the key above to unlock this model.'
-                            : needsDownload
-                              ? 'Download the local runtime before switching.'
-                              : 'Wait until the current download finishes.'}
-                        </span>
-                      )}
-                    </div>
+                      )
+                    })}
                   </div>
-                </div>
-              )
-            })}
-          </div>
-        )}
-      </Section>
-
-      {visibleCredentials.length > 0 && (
-        <Section title="Connected providers">
-          {visibleCredentials.map((cred) => {
-            const busy = providerBusy[cred.provider] ?? false
-            return (
-              <div
-                key={cred.provider}
-                className="mt-2 flex items-center justify-between gap-3 rounded-lg border border-white/8 bg-white/[0.03] px-3 py-2 first:mt-0"
-              >
-                <div className="min-w-0">
-                  <span className="text-xs text-white/60">{cred.label}</span>
-                  <div className="mt-0.5 text-[10px] text-white/30">{tokenStatusLabel(cred)}</div>
-                </div>
-                <div className="flex shrink-0 gap-2">
-                  {cred.available && (
-                    <Chip
-                      active={false}
-                      onClick={() => { onTestCredential(cred.provider) }}
-                      className={busy ? 'pointer-events-none opacity-60' : ''}
-                    >
-                      Test
-                    </Chip>
-                  )}
-                  {cred.hasStoredSecret && (
-                    <Chip
-                      active={false}
-                      onClick={() => { onClearCredential(cred.provider) }}
-                      className={busy ? 'pointer-events-none opacity-60' : ''}
-                    >
-                      Clear
-                    </Chip>
-                  )}
-                </div>
+                )}
               </div>
             )
           })}
-        </Section>
+        </div>
       )}
-
-      <p className="text-[11px] leading-relaxed text-white/25">
-        Only live-switchable model paths are shown here. Cloud models ask for the needed key directly on the card, and local models expose download actions in place.
-      </p>
     </div>
 
-    {/* ── Download confirmation modal ─────────────────────────────────────── */}
+    {/* ── Download confirmation modal ───────────────────────────────────── */}
     {confirmItem && (
       <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
         <div className="w-80 rounded-xl border border-white/10 bg-[#0d1117] p-5 shadow-2xl">

@@ -104,8 +104,15 @@ func ApplyLocalInstallDefaults(cfg *Config, state *InstallState) bool {
 		cfg.Local.Enabled = true
 		changed = true
 	}
-	if cfg.Routing.Strategy == "" || cfg.Routing.Strategy == "cloud-only" {
-		cfg.Routing.Strategy = "dynamic"
+	// On a fresh local install whisper.cpp is the only STT provider.
+	// Disable HuggingFace and cloud routing so the user starts with a
+	// fully-offline, zero-config experience.
+	if cfg.Routing.Strategy == "" || cfg.Routing.Strategy == "cloud-only" || cfg.Routing.Strategy == "dynamic" {
+		cfg.Routing.Strategy = "local-only"
+		changed = true
+	}
+	if cfg.HuggingFace.Enabled {
+		cfg.HuggingFace.Enabled = false
 		changed = true
 	}
 	if cfg.Local.Model == "" {

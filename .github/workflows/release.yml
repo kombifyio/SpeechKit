@@ -167,7 +167,7 @@ jobs:
       - name: Upload unsigned SpeechKit.exe
         if: github.repository == 'kombifyio/SpeechKit' && vars.ALLOW_UNSIGNED_WINDOWS_RELEASES != 'true'
         id: upload-speechkit-exe
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: unsigned-speechkit-exe
           path: dist/windows/SpeechKit/SpeechKit.exe
@@ -176,7 +176,7 @@ jobs:
 
       - name: Sign SpeechKit.exe with SignPath
         if: github.repository == 'kombifyio/SpeechKit' && vars.ALLOW_UNSIGNED_WINDOWS_RELEASES != 'true'
-        uses: signpath/github-action-submit-signing-request@v2
+        uses: signpath/github-action-submit-signing-request@bc66d86b015a46e9c6d9700de73143a82f9570ff
         with:
           api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
           organization-id: ${{ vars.SIGNPATH_ORGANIZATION_ID }}
@@ -203,7 +203,7 @@ jobs:
       - name: Upload unsigned SpeechKit-Setup.exe
         if: github.repository == 'kombifyio/SpeechKit' && vars.ALLOW_UNSIGNED_WINDOWS_RELEASES != 'true' && needs.prepare.outputs.release_windows_installer == 'true'
         id: upload-speechkit-setup
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: unsigned-speechkit-setup
           path: dist/windows/SpeechKit-Setup.exe
@@ -212,7 +212,7 @@ jobs:
 
       - name: Sign SpeechKit-Setup.exe with SignPath
         if: github.repository == 'kombifyio/SpeechKit' && vars.ALLOW_UNSIGNED_WINDOWS_RELEASES != 'true' && needs.prepare.outputs.release_windows_installer == 'true'
-        uses: signpath/github-action-submit-signing-request@v2
+        uses: signpath/github-action-submit-signing-request@bc66d86b015a46e9c6d9700de73143a82f9570ff
         with:
           api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
           organization-id: ${{ vars.SIGNPATH_ORGANIZATION_ID }}

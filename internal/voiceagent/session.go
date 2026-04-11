@@ -48,7 +48,7 @@ type LiveProvider interface {
 
 // LiveConfig configures a real-time session.
 type LiveConfig struct {
-	Model          string // e.g. "gemini-3.1-flash-live-preview"
+	Model          string // e.g. "gemini-2.5-flash-native-audio-preview-12-2025"
 	APIKey         string
 	Voice          string // Voice name
 	SystemPrompt   string

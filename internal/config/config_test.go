@@ -32,6 +32,9 @@ func TestLoadDefaults(t *testing.T) {
 	if cfg.HuggingFace.Model != "openai/whisper-large-v3" {
 		t.Errorf("default HF model = %q", cfg.HuggingFace.Model)
 	}
+	if cfg.VoiceAgent.Model != "gemini-2.5-flash-native-audio-preview-12-2025" {
+		t.Errorf("default voice agent model = %q", cfg.VoiceAgent.Model)
+	}
 	if cfg.Routing.PreferLocalUnderSeconds != 10 {
 		t.Errorf("default prefer local = %f, want 10", cfg.Routing.PreferLocalUnderSeconds)
 	}
@@ -505,8 +508,11 @@ func TestApplyLocalInstallDefaultsEnablesBundledLocalRuntime(t *testing.T) {
 	if !cfg.Local.Enabled {
 		t.Fatal("local provider should be enabled for pending local installs")
 	}
-	if cfg.Routing.Strategy != "dynamic" {
-		t.Fatalf("routing strategy = %q, want %q", cfg.Routing.Strategy, "dynamic")
+	if cfg.Routing.Strategy != "local-only" {
+		t.Fatalf("routing strategy = %q, want %q", cfg.Routing.Strategy, "local-only")
+	}
+	if cfg.HuggingFace.Enabled {
+		t.Fatal("HuggingFace should be disabled on fresh local install — whisper.cpp is the default")
 	}
 	if cfg.Local.Model != "ggml-small.bin" {
 		t.Fatalf("local model = %q, want %q", cfg.Local.Model, "ggml-small.bin")

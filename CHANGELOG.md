@@ -6,6 +6,27 @@ The format is based on Keep a Changelog and this project is intended to ship und
 
 ## [Unreleased]
 
+## [0.16.0] - 2026-04-11
+
+### Fixed
+
+- Local whisper.cpp server startup: `Transcribe()` now blocks and waits for the server to finish loading instead of returning "not ready" immediately — hotkey presses during the first ~60 seconds after launch no longer silently fail
+
+### Changed
+
+- Fresh local installs now default to whisper.cpp (local-only routing) with HuggingFace disabled — users get an offline, zero-config experience out of the box without requiring a cloud token
+- Added regression tests covering the startup-wait behavior: all three paths (success, failed startup, context cancellation) are now verified in CI on Windows with the race detector
+
+## [0.15.2] - 2026-04-11
+
+### Changed
+
+- Renamed the internal `ModalityAgent` modality to `ModalityAssist` across backend and frontend to match the three user-facing modes: Dictate, Assist, Voice Agent
+- Replaced outdated catalog models: Qwen 2.5 7B/32B → Qwen 3.5 9B/27B, GPT-4o/GPT-4o mini → GPT-5.4/GPT-5.4 mini
+- Removed "Utility" from user-visible model setup tabs — utility models remain internal but are no longer a selectable category in the UI
+- Updated OpenAI provider defaults in config from gpt-4o-mini/gpt-4o to gpt-5.4-mini/gpt-5.4
+- Frontend mode button and hotkey label renamed from "Agent" to "Assist"
+
 ## [0.15.1] - 2026-04-10
 
 ### Fixed

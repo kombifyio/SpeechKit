@@ -188,7 +188,7 @@ func (c desktopInputController) toggleVoiceAgent(ctx context.Context) {
 		return
 	}
 
-	model := "gemini-3.1-flash-live-preview"
+	model := "gemini-2.5-flash-native-audio-preview-12-2025"
 	voice := "Kore"
 	locale := "en"
 	if c.voiceAgentConfig != nil {

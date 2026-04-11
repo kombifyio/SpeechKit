@@ -603,7 +603,7 @@ func filteredModelCatalog() models.Catalog {
 	filtered := make([]models.Profile, 0, len(catalog.Profiles))
 	for _, profile := range catalog.Profiles {
 		switch profile.Modality {
-		case models.ModalitySTT, models.ModalityUtility, models.ModalityAgent, models.ModalityRealtimeVoice:
+		case models.ModalitySTT, models.ModalityUtility, models.ModalityAssist, models.ModalityRealtimeVoice:
 		default:
 			continue
 		}

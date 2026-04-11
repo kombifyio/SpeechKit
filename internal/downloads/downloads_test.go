@@ -205,6 +205,31 @@ func TestCatalogReturnsItems(t *testing.T) {
 	}
 }
 
+func TestCatalogKeepsOnlyTwoWhisperCppChoices(t *testing.T) {
+	cfg := &config.Config{}
+	items := Catalog(cfg)
+
+	var whisperItems []Item
+	for _, item := range items {
+		if item.ProfileID == "stt.local.whispercpp" {
+			whisperItems = append(whisperItems, item)
+		}
+	}
+
+	if len(whisperItems) != 2 {
+		t.Fatalf("whisper.cpp download choices = %d, want 2", len(whisperItems))
+	}
+	if whisperItems[0].ID != "whisper.ggml-small" {
+		t.Fatalf("first whisper choice = %q, want %q", whisperItems[0].ID, "whisper.ggml-small")
+	}
+	if whisperItems[1].ID != "whisper.ggml-large-v3" {
+		t.Fatalf("second whisper choice = %q, want %q", whisperItems[1].ID, "whisper.ggml-large-v3")
+	}
+	if !whisperItems[0].Recommended {
+		t.Fatal("expected whisper small to stay recommended")
+	}
+}
+
 func TestResolveWhisperModelsDir(t *testing.T) {
 	t.Run("from config", func(t *testing.T) {
 		cfg := &config.Config{}

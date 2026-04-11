@@ -208,6 +208,7 @@ func (r *Router) transcribeDynamic(ctx context.Context, audio []byte, durationSe
 
 	// Case 4: Fallback to local
 	if local != nil {
+		slog.Warn("cloud providers unavailable; falling back to local STT")
 		return local.Transcribe(ctx, audio, opts)
 	}
 

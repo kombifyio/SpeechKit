@@ -9,7 +9,7 @@ func defaultActiveProfiles(catalog models.Catalog) map[string]string {
 	profiles := make(map[string]string)
 	for _, modality := range []models.Modality{
 		models.ModalitySTT,
-		models.ModalityAgent,
+		models.ModalityAssist,
 		models.ModalityUtility,
 		models.ModalityRealtimeVoice,
 	} {
@@ -42,8 +42,8 @@ func profileMatchesConfig(cfg *config.Config, profile models.Profile) bool {
 		return sttProfileMatchesConfig(cfg, profile)
 	case models.ModalityUtility:
 		return utilityProfileMatchesConfig(cfg, profile)
-	case models.ModalityAgent:
-		return agentProfileMatchesConfig(cfg, profile)
+	case models.ModalityAssist:
+		return assistProfileMatchesConfig(cfg, profile)
 	case models.ModalityRealtimeVoice:
 		return realtimeVoiceProfileMatchesConfig(cfg, profile)
 	default:
@@ -87,7 +87,7 @@ func utilityProfileMatchesConfig(cfg *config.Config, profile models.Profile) boo
 	}
 }
 
-func agentProfileMatchesConfig(cfg *config.Config, profile models.Profile) bool {
+func assistProfileMatchesConfig(cfg *config.Config, profile models.Profile) bool {
 	switch profile.ExecutionMode {
 	case models.ExecutionModeOpenAI:
 		return cfg.Providers.OpenAI.Enabled && cfg.Providers.OpenAI.AgentModel == profile.ModelID && profileCredentialAvailable(cfg, profile)
