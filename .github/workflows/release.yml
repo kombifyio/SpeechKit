@@ -269,15 +269,14 @@ jobs:
         id: assets
         shell: pwsh
         run: |
-          $tag = '${{ needs.prepare.outputs.tag }}'
           $assets = @()
           if ('${{ needs.prepare.outputs.release_windows_installer }}' -eq 'true') {
-            Copy-Item "dist/windows/SpeechKit-Setup.exe" "SpeechKit-Setup-${tag}.exe"
-            $assets += "SpeechKit-Setup-${tag}.exe"
+            Copy-Item "dist/windows/SpeechKit-Setup.exe" "SpeechKit-Setup.exe"
+            $assets += "SpeechKit-Setup.exe"
           }
           if ('${{ needs.prepare.outputs.release_windows_portable }}' -eq 'true') {
-            Compress-Archive -Path "dist/windows/SpeechKit/*" -DestinationPath "SpeechKit-Portable-${tag}.zip" -Force
-            $assets += "SpeechKit-Portable-${tag}.zip"
+            Compress-Archive -Path "dist/windows/SpeechKit/*" -DestinationPath "SpeechKit-Portable.zip" -Force
+            $assets += "SpeechKit-Portable.zip"
           }
           if (Test-Path "UNSIGNED-WINDOWS-RELEASE.txt") {
             $assets += "UNSIGNED-WINDOWS-RELEASE.txt"
