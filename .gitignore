@@ -71,3 +71,6 @@ scripts/whisper-server/whisper-server
 # Doppler
 .env
 .env.*
+
+# Android — local development only, not tracked in main repo
+/android/

@@ -14,6 +14,7 @@ type retryLocalProvider struct {
 	attempts  int
 	succeedAt int
 	ready     bool
+	installOK bool
 }
 
 func (p *retryLocalProvider) StartServer(context.Context) error {
@@ -27,6 +28,21 @@ func (p *retryLocalProvider) StartServer(context.Context) error {
 
 func (p *retryLocalProvider) IsReady() bool {
 	return p.ready
+}
+
+func (p *retryLocalProvider) VerifyInstallation() stt.InstallStatus {
+	if p.installOK {
+		return stt.InstallStatus{
+			BinaryFound: true,
+			BinaryPath:  "/fake/whisper-server",
+			ModelFound:  true,
+			ModelPath:   "/fake/models/ggml-small.bin",
+			ModelBytes:  484_264_096,
+		}
+	}
+	return stt.InstallStatus{
+		Problems: []string{"whisper-server binary not found"},
+	}
 }
 
 func (p *retryLocalProvider) Transcribe(context.Context, []byte, stt.TranscribeOpts) (*stt.Result, error) {
@@ -49,7 +65,7 @@ func TestStartLocalProviderWithRetryRecovers(t *testing.T) {
 	localProviderRetryDelay = time.Millisecond
 	defer func() { localProviderRetryDelay = previousDelay }()
 
-	provider := &retryLocalProvider{succeedAt: 2}
+	provider := &retryLocalProvider{succeedAt: 2, installOK: true}
 	r := &router.Router{}
 	r.SetLocal(provider)
 	state := &appState{}
@@ -69,7 +85,7 @@ func TestStartLocalProviderWithRetryExhaustsAttempts(t *testing.T) {
 	localProviderRetryDelay = time.Millisecond
 	defer func() { localProviderRetryDelay = previousDelay }()
 
-	provider := &retryLocalProvider{succeedAt: 10}
+	provider := &retryLocalProvider{succeedAt: 10, installOK: true}
 	r := &router.Router{}
 	r.SetLocal(provider)
 	state := &appState{}
@@ -92,5 +108,34 @@ func TestStartLocalProviderWithRetryExhaustsAttempts(t *testing.T) {
 	}
 	if !foundFailure {
 		t.Fatalf("expected failure log entry, logs=%v", state.logEntries)
+	}
+}
+
+func TestStartLocalProviderWithRetryAbortsMissingBinary(t *testing.T) {
+	previousDelay := localProviderRetryDelay
+	localProviderRetryDelay = time.Millisecond
+	defer func() { localProviderRetryDelay = previousDelay }()
+
+	provider := &retryLocalProvider{succeedAt: 1, installOK: false}
+	r := &router.Router{}
+	r.SetLocal(provider)
+	state := &appState{}
+
+	startLocalProviderWithRetry(context.Background(), state, r, provider, 4)
+
+	// Should NOT attempt startup at all when binary is missing.
+	if provider.attempts != 0 {
+		t.Fatalf("attempts = %d, want 0 (should abort before trying)", provider.attempts)
+	}
+
+	foundAbort := false
+	for _, entry := range state.logEntries {
+		if entry.Type == "error" {
+			foundAbort = true
+			break
+		}
+	}
+	if !foundAbort {
+		t.Fatalf("expected error log entry for missing binary, logs=%v", state.logEntries)
 	}
 }

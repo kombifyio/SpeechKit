@@ -20,6 +20,7 @@ type localProviderStarter interface {
 	stt.STTProvider
 	StartServer(context.Context) error
 	IsReady() bool
+	VerifyInstallation() stt.InstallStatus
 }
 
 func startLocalProviderAsync(ctx context.Context, state *appState, r *router.Router, provider localProviderStarter) {
@@ -39,9 +40,29 @@ func startLocalProviderWithRetry(ctx context.Context, state *appState, r *router
 		return
 	}
 
+	// Pre-flight: verify binary and model before attempting startup.
+	status := provider.VerifyInstallation()
+	if len(status.Problems) > 0 {
+		for _, problem := range status.Problems {
+			runtimeLog(state, fmt.Sprintf("Local STT: %s", problem), "warn")
+		}
+		if !status.BinaryFound {
+			runtimeLog(state, "Local STT unavailable: whisper-server binary missing. Re-install SpeechKit or download the model from Settings.", "error")
+			syncRuntimeProviders(state, r)
+			return
+		}
+		if !status.ModelFound {
+			runtimeLog(state, "Local STT unavailable: model file missing or corrupt. Download a model from Settings → STT.", "error")
+			syncRuntimeProviders(state, r)
+			return
+		}
+	} else {
+		runtimeLog(state, fmt.Sprintf("Local STT verified: binary=%s model=%s (%d MB)", status.BinaryPath, status.ModelPath, status.ModelBytes/1_000_000), "info")
+	}
+
 	for attempt := 1; attempt <= maxAttempts; attempt++ {
 		if attempt == 1 {
-			runtimeLog(state, "Starting local STT...", "info")
+			runtimeLog(state, "Waiting for local STT startup...", "info")
 		} else {
 			runtimeLog(state, fmt.Sprintf("Retrying local STT startup (%d/%d)...", attempt, maxAttempts), "warn")
 		}

@@ -12,8 +12,6 @@ scripts/prepare-whisper-runtime.ps1
 scripts/prepare-webview2-runtime.ps1
 scripts/public/export-manifest.txt
 .gitignore
-package.json
-package-lock.json
 CHANGELOG.md
 CODE_OF_CONDUCT.md
 CONTRIBUTING.md
@@ -34,4 +32,3 @@ docs/oss-release-checklist.md
 docs/public-repo-operating-model.md
 docs/signpath-oss-setup.md
 docs/speechkit-storage-architecture.md
-android/

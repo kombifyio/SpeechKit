@@ -6,6 +6,23 @@ The format is based on Keep a Changelog and this project is intended to ship und
 
 ## [Unreleased]
 
+## [0.17.0] - 2026-04-12
+
+### Added
+
+- Added the Cloudflare Pages marketing site source in `Website/`, including release-aware download links and public Getting Started / Architecture pages
+
+### Fixed
+
+- Local whisper.cpp startup now verifies that the runtime binary and model file are actually present before retrying startup, surfacing broken installs earlier instead of looping on a bad state
+- Whisper model downloads now verify SHA256 checksums before activation so corrupt downloads are rejected instead of silently persisting
+- Settings state now exposes whether the active Hugging Face credential comes from a user token, install token, or environment fallback
+
+### Changed
+
+- Refreshed the Dashboard and Settings surfaces and rebuilt the embedded frontend assets shipped with the desktop app
+- Updated the website copy to match the current local-first Windows setup, provider model, and secret handling path
+
 ## [0.16.0] - 2026-04-11
 
 ### Fixed

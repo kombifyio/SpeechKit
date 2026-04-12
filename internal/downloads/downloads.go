@@ -6,6 +6,8 @@ import (
 	"bytes"
 	"context"
 	"crypto/rand"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -45,6 +47,7 @@ type Item struct {
 	SizeBytes   int64  `json:"sizeBytes"`
 	Kind        Kind   `json:"kind"`
 	URL         string `json:"url,omitempty"`
+	SHA256      string `json:"sha256,omitempty"`
 	OllamaModel string `json:"ollamaModel,omitempty"`
 	License     string `json:"license"`
 	Available   bool   `json:"available"`
@@ -222,6 +225,7 @@ func httpDownload(ctx context.Context, j *job, item Item, destDir string) error 
 		return fmt.Errorf("create temp file: %w", err)
 	}
 
+	hasher := sha256.New()
 	buf := make([]byte, 64*1024)
 	var done int64
 	for {
@@ -232,6 +236,7 @@ func httpDownload(ctx context.Context, j *job, item Item, destDir string) error 
 				os.Remove(tmp)
 				return fmt.Errorf("write: %w", writeErr)
 			}
+			hasher.Write(buf[:n])
 			done += int64(n)
 			j.mu.Lock()
 			j.BytesDone = done
@@ -259,6 +264,16 @@ func httpDownload(ctx context.Context, j *job, item Item, destDir string) error 
 		}
 	}
 	f.Close()
+
+	// Verify SHA256 if catalog provides expected hash.
+	if item.SHA256 != "" {
+		got := hex.EncodeToString(hasher.Sum(nil))
+		if got != item.SHA256 {
+			os.Remove(tmp)
+			return fmt.Errorf("SHA256 mismatch: expected %s, got %s — file corrupt or tampered", item.SHA256, got)
+		}
+	}
+
 	return os.Rename(tmp, dest)
 }
 

@@ -343,6 +343,7 @@ type settingsFormData struct {
 	StoreAudioRetention  int
 	StoreMaxAudioStorage int
 	VocabularyDictionary string
+	Language             string
 }
 
 // parseSettingsForm extracts and validates all settings form values.
@@ -473,6 +474,13 @@ func parseSettingsForm(req *http.Request, cfg *config.Config) (settingsFormData,
 	if !hasVocabularyDictionary {
 		f.VocabularyDictionary = cfg.Vocabulary.Dictionary
 	}
+	f.Language = strings.TrimSpace(req.FormValue("language"))
+	if f.Language == "" {
+		f.Language = cfg.General.Language
+	}
+	if f.Language == "" {
+		f.Language = "de"
+	}
 
 	return f, ""
 }
@@ -507,6 +515,7 @@ func buildNextConfig(form settingsFormData, cfg *config.Config) config.Config {
 		nextCfg.Feedback.DBPath = form.StoreSQLitePath
 	}
 	nextCfg.Vocabulary.Dictionary = form.VocabularyDictionary
+	nextCfg.General.Language = form.Language
 	return nextCfg
 }
 

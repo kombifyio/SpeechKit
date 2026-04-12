@@ -1,6 +1,8 @@
 package downloads
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -305,5 +307,93 @@ func TestOllamaModelPresentWithMockServer(t *testing.T) {
 	}
 	if OllamaModelPresent("nonexistent:latest") {
 		t.Error("expected false for nonexistent model")
+	}
+}
+
+func TestHTTPDownloadSHA256Pass(t *testing.T) {
+	content := []byte("valid-model-data-for-sha256-test")
+	h := sha256.Sum256(content)
+	hash := hex.EncodeToString(h[:])
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Length", fmt.Sprintf("%d", len(content)))
+		w.Write(content)
+	}))
+	defer srv.Close()
+
+	dir := t.TempDir()
+	m := NewManager()
+
+	m.Start(Item{
+		ID:        "sha-pass",
+		Kind:      KindHTTP,
+		URL:       srv.URL + "/model.bin",
+		SizeBytes: int64(len(content)),
+		SHA256:    hash,
+	}, dir, nil)
+
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		jobs := m.AllJobs()
+		if len(jobs) == 1 && (jobs[0].Status == StatusDone || jobs[0].Status == StatusFailed) {
+			break
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+
+	jobs := m.AllJobs()
+	if len(jobs) != 1 || jobs[0].Status != StatusDone {
+		t.Fatalf("expected done, got %s (error: %s)", jobs[0].Status, jobs[0].Error)
+	}
+
+	got, _ := os.ReadFile(filepath.Join(dir, "model.bin"))
+	if string(got) != string(content) {
+		t.Error("content mismatch")
+	}
+}
+
+func TestHTTPDownloadSHA256Mismatch(t *testing.T) {
+	content := []byte("this-data-will-not-match-the-hash")
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Length", fmt.Sprintf("%d", len(content)))
+		w.Write(content)
+	}))
+	defer srv.Close()
+
+	dir := t.TempDir()
+	m := NewManager()
+
+	m.Start(Item{
+		ID:        "sha-fail",
+		Kind:      KindHTTP,
+		URL:       srv.URL + "/model.bin",
+		SizeBytes: int64(len(content)),
+		SHA256:    "0000000000000000000000000000000000000000000000000000000000000000",
+	}, dir, nil)
+
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		jobs := m.AllJobs()
+		if len(jobs) == 1 && (jobs[0].Status == StatusDone || jobs[0].Status == StatusFailed) {
+			break
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+
+	jobs := m.AllJobs()
+	if len(jobs) != 1 || jobs[0].Status != StatusFailed {
+		t.Fatalf("expected failed, got %s", jobs[0].Status)
+	}
+	if jobs[0].Error == "" {
+		t.Fatal("expected error message")
+	}
+
+	// Corrupt file should have been removed.
+	if _, err := os.Stat(filepath.Join(dir, "model.bin")); err == nil {
+		t.Error("expected file to be removed after SHA256 mismatch")
+	}
+	if _, err := os.Stat(filepath.Join(dir, "model.bin.download")); err == nil {
+		t.Error("expected temp file to be removed after SHA256 mismatch")
 	}
 }

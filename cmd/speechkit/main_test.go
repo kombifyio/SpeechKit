@@ -960,7 +960,7 @@ func TestSaveSettingsUpdatesConfigAndRuntime(t *testing.T) {
 		"store_audio_retention_days": {"30"},
 		"store_max_audio_storage_mb": {"1024"},
 	}
-	req := httptest.NewRequest(http.MethodPost, "/settings.html", strings.NewReader(form.Encode()))
+	req := httptest.NewRequest(http.MethodPost, "/settings/update", strings.NewReader(form.Encode()))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	t.Setenv("SPEECHKIT_ENABLE_MANAGED_HF", "1")
 
@@ -1065,7 +1065,7 @@ func TestSaveSettingsRejectsPostgresBackendWithoutDSN(t *testing.T) {
 		"overlay_visualizer": {"pill"},
 		"overlay_design":     {"default"},
 	}
-	req := httptest.NewRequest(http.MethodPost, "/settings.html", strings.NewReader(form.Encode()))
+	req := httptest.NewRequest(http.MethodPost, "/settings/update", strings.NewReader(form.Encode()))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	t.Setenv("SPEECHKIT_ENABLE_MANAGED_HF", "1")
 
@@ -1098,7 +1098,7 @@ func TestSaveSettingsKeepsHFDisabledWithoutManagedToken(t *testing.T) {
 		"overlay_visualizer": {"pill"},
 		"overlay_design":     {"default"},
 	}
-	req := httptest.NewRequest(http.MethodPost, "/settings.html", strings.NewReader(form.Encode()))
+	req := httptest.NewRequest(http.MethodPost, "/settings/update", strings.NewReader(form.Encode()))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 
 	t.Setenv("HF_TOKEN", "")
@@ -1141,7 +1141,7 @@ func TestSaveSettingsAppliesManagedHFWithStoredUserToken(t *testing.T) {
 		"overlay_visualizer": {"pill"},
 		"overlay_design":     {"default"},
 	}
-	req := httptest.NewRequest(http.MethodPost, "/settings.html", strings.NewReader(form.Encode()))
+	req := httptest.NewRequest(http.MethodPost, "/settings/update", strings.NewReader(form.Encode()))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	t.Setenv("SPEECHKIT_ENABLE_MANAGED_HF", "1")
 
@@ -1178,7 +1178,7 @@ func TestSaveSettingsAllowsNonHFChangesWithoutHFValidation(t *testing.T) {
 		"overlay_visualizer": {"circle"},
 		"overlay_design":     {"default"},
 	}
-	req := httptest.NewRequest(http.MethodPost, "/settings.html", strings.NewReader(form.Encode()))
+	req := httptest.NewRequest(http.MethodPost, "/settings/update", strings.NewReader(form.Encode()))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 
 	flash := saveSettings(context.Background(), req, cfgPath, cfg, state, sttRouter)
@@ -1213,7 +1213,7 @@ func TestSaveSettingsKeepsManagedHFEnabledWhenBuildDefaultsAreActive(t *testing.
 		"overlay_visualizer": {"pill"},
 		"overlay_design":     {"default"},
 	}
-	req := httptest.NewRequest(http.MethodPost, "/settings.html", strings.NewReader(form.Encode()))
+	req := httptest.NewRequest(http.MethodPost, "/settings/update", strings.NewReader(form.Encode()))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 
 	t.Setenv("SPEECHKIT_ENABLE_MANAGED_HF", "1")

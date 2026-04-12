@@ -81,7 +81,6 @@ export function QuickNoteApp() {
     try {
       let resolvedNoteId = noteId
 
-      // If note exists, save first so we have an ID
       if (text.trim() && !noteId) {
         const result = await createQuickNote(text.trim())
         setNoteId(result.id)
@@ -92,14 +91,12 @@ export function QuickNoteApp() {
       setRecording(true)
       showToast('Recording armed — press hotkey to dictate')
 
-      // Poll for the transcription result (checks latest quick note)
       const pollInterval = setInterval(async () => {
         try {
           const res = await fetch('/dashboard/quicknotes', { cache: 'no-store' })
           const notes = await res.json() as Array<{ id: number; text: string }>
           if (notes.length > 0) {
             const latest = notes[0]
-            // If a new note appeared or existing note was updated with transcribed text
             if (!noteId || latest.id !== noteId) {
               setNoteId(latest.id)
               setText((prev) => prev ? prev + '\n' + latest.text : latest.text)
@@ -111,7 +108,6 @@ export function QuickNoteApp() {
         } catch { /* ignore poll errors */ }
       }, 500)
 
-      // Stop polling after 30s
       setTimeout(() => {
         clearInterval(pollInterval)
         setRecording(false)
@@ -122,18 +118,18 @@ export function QuickNoteApp() {
   }
 
   return (
-    <div className="flex h-screen flex-col bg-[#0b0f14] text-[13px] text-white/90">
-      {/* Drag region */}
+    <div className="flex h-screen flex-col bg-[#131318] text-[13px] text-[#e4e1e9]">
+      {/* Drag region / header */}
       <div
-        className="flex flex-shrink-0 items-center justify-between px-4 pt-3 pb-2"
+        className="flex shrink-0 items-center justify-between border-b border-[#35343a]/20 px-4 pt-3 pb-2"
         style={{ WebkitAppRegion: 'drag' } as CSSProperties}
       >
-        <span className="text-xs font-semibold text-white/50">
+        <span className="text-xs font-semibold text-[#cabeff]">
           {noteId ? `Quick Note #${noteId}` : 'New Quick Note'}
         </span>
         {recording && (
-          <span className="flex items-center gap-1.5 text-[10px] text-orange-400">
-            <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-orange-400" />
+          <span className="flex items-center gap-1.5 text-[10px] text-red-400">
+            <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-red-400" />
             Recording armed
           </span>
         )}
@@ -145,49 +141,48 @@ export function QuickNoteApp() {
         value={text}
         onChange={(e) => setText(e.target.value)}
         placeholder="Start typing your note..."
-        className="mx-3 flex-1 resize-none rounded-lg border border-white/8 bg-white/[0.03] px-3 py-2 text-sm leading-relaxed text-white/85 outline-none placeholder:text-white/20 focus:border-orange-400/30"
+        className="mx-3 mt-3 flex-1 resize-none rounded-lg border border-[#484555]/50 bg-[#0e0e13] px-3 py-2 text-sm leading-relaxed text-[#e4e1e9]/85 outline-none placeholder:text-[#938ea1]/50 focus:border-[#947dff]/30"
       />
 
       {/* Summary section */}
       {summary && (
-        <div className="mx-3 mt-2 rounded-lg border border-white/6 bg-white/[0.02] px-3 py-2">
-          <span className="text-[10px] font-semibold uppercase tracking-wider text-white/30">
-            Summary
-          </span>
-          <p className="mt-1 text-xs leading-relaxed text-white/60">{summary}</p>
+        <div className="mx-3 mt-2 rounded-lg border border-[#484555]/40 bg-[#1f1f25] px-3 py-2">
+          <span className="text-[10px] font-semibold uppercase tracking-wider text-[#938ea1]">Summary</span>
+          <p className="mt-1 text-xs leading-relaxed text-[#c9c4d8]">{summary}</p>
         </div>
       )}
 
       {/* Toolbar */}
-      <div className="flex flex-shrink-0 items-center gap-2 px-3 py-2.5">
+      <div className="flex shrink-0 items-center gap-2 border-t border-[#35343a]/20 px-3 py-2.5">
         <button
           type="button"
           onClick={handleSave}
-          className="rounded-lg bg-orange-500/20 px-3 py-1.5 text-xs font-medium text-orange-200 hover:bg-orange-500/30"
+          className="rounded-lg signature-gradient px-4 py-1.5 text-xs font-bold text-[#2b0088] hover:opacity-90 transition-all"
         >
           Save
         </button>
         <button
           type="button"
           onClick={handleRecord}
-          className="rounded-lg border border-white/10 px-3 py-1.5 text-xs text-white/50 hover:bg-white/5 hover:text-white/70"
+          className="rounded-lg border border-[#484555]/50 px-3 py-1.5 text-xs text-[#938ea1] hover:bg-[#35343a]/50 hover:text-[#e4e1e9] transition-colors"
         >
           Record
         </button>
         <button
           type="button"
           onClick={handleSummary}
-          className="rounded-lg border border-white/10 px-3 py-1.5 text-xs text-white/50 hover:bg-white/5 hover:text-white/70"
+          className="rounded-lg border border-[#484555]/50 px-3 py-1.5 text-xs text-[#938ea1] hover:bg-[#35343a]/50 hover:text-[#e4e1e9] transition-colors"
         >
           Summary
         </button>
         <button
           type="button"
           onClick={handleEmail}
-          className="rounded-lg border border-white/10 px-3 py-1.5 text-xs text-white/50 hover:bg-white/5 hover:text-white/70"
+          className="rounded-lg border border-[#484555]/50 px-3 py-1.5 text-xs text-[#938ea1] hover:bg-[#35343a]/50 hover:text-[#e4e1e9] transition-colors"
         >
           Email
         </button>
+        <span className="ml-auto text-[10px] text-[#938ea1]/60">{text.split(/\s+/).filter(Boolean).length} words</span>
       </div>
 
       {/* Toast */}

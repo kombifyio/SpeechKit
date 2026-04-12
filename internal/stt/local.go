@@ -75,8 +75,10 @@ func (p *LocalProvider) StartServer(ctx context.Context) error {
 		"--threads", "4",
 		"--inference-path", "/v1/audio/transcriptions",
 	}
-	if p.GPU != "" && p.GPU != "cpu" {
-		args = append(args, "--gpu", p.GPU)
+	// whisper.cpp uses GPU by default; only pass --no-gpu when explicitly disabled.
+	// "auto" and "" mean let whisper.cpp decide (default behavior).
+	if p.GPU == "cpu" {
+		args = append(args, "--no-gpu")
 	}
 
 	p.cmd = exec.CommandContext(ctx, binaryPath, args...)
@@ -266,6 +268,54 @@ func (p *LocalProvider) Health(ctx context.Context) error {
 // IsReady returns true if the whisper-server subprocess is running and responding.
 func (p *LocalProvider) IsReady() bool {
 	return p.ready.Load()
+}
+
+// InstallStatus describes what's present and what's missing for local STT.
+type InstallStatus struct {
+	BinaryFound bool     `json:"binaryFound"`
+	BinaryPath  string   `json:"binaryPath"`
+	ModelFound  bool     `json:"modelFound"`
+	ModelPath   string   `json:"modelPath"`
+	ModelBytes  int64    `json:"modelBytes"`
+	ServerReady bool     `json:"serverReady"`
+	Problems    []string `json:"problems,omitempty"`
+}
+
+// MinWhisperModelBytes is the minimum file size we expect for a valid ggml model.
+// ggml-base.bin is ~150 MB; anything under 50 MB is clearly corrupt/truncated.
+const MinWhisperModelBytes = 50_000_000
+
+// VerifyInstallation checks binary and model availability without starting the server.
+func (p *LocalProvider) VerifyInstallation() InstallStatus {
+	status := InstallStatus{
+		ModelPath:   p.ModelPath,
+		ServerReady: p.ready.Load(),
+	}
+
+	// Check binary.
+	binaryPath, err := findWhisperBinary()
+	if err != nil {
+		status.Problems = append(status.Problems, "whisper-server binary not found")
+	} else {
+		status.BinaryFound = true
+		status.BinaryPath = binaryPath
+	}
+
+	// Check model file.
+	if p.ModelPath == "" {
+		status.Problems = append(status.Problems, "no model path configured")
+	} else if fi, err := os.Stat(p.ModelPath); err != nil {
+		status.Problems = append(status.Problems, fmt.Sprintf("model file missing: %s", p.ModelPath))
+	} else {
+		status.ModelBytes = fi.Size()
+		if fi.Size() < MinWhisperModelBytes {
+			status.Problems = append(status.Problems, fmt.Sprintf("model file too small (%d bytes) — likely corrupt or truncated", fi.Size()))
+		} else {
+			status.ModelFound = true
+		}
+	}
+
+	return status
 }
 
 // findWhisperBinary looks for the whisper-server executable in standard locations.

@@ -45,7 +45,6 @@ describe('DashboardApp', () => {
     window.history.replaceState({}, '', '/')
     window.sessionStorage.clear()
 
-    // Mock /app/setup-status to skip onboarding wizard in tests
     const originalFetch = window.fetch.bind(window)
     fetchSpy = vi.spyOn(window, 'fetch').mockImplementation(async (input, init) => {
       const url = typeof input === 'string' ? input : input instanceof URL ? input.toString() : (input as Request).url
@@ -93,14 +92,14 @@ describe('DashboardApp', () => {
     window.sessionStorage.clear()
   })
 
-  it('opens on a welcome page and labels the library tab correctly', async () => {
+  it('opens on a dashboard page with sidebar navigation and KPIs', async () => {
     render(<DashboardApp />)
 
     expect(await screen.findByText(/welcome to speechkit/i)).toBeInTheDocument()
     expect(screen.getByTestId('welcome-scroll')).toHaveClass('overflow-y-auto')
-    expect(screen.getByTestId('welcome-kpis')).toHaveClass('flex')
+    expect(screen.getByTestId('welcome-kpis')).toHaveClass('grid')
     expect(screen.getByRole('button', { name: 'Library' })).toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: 'Dashboard' })).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Dashboard' })).toBeInTheDocument()
     expect(screen.getByText(/quick start/i)).toBeInTheDocument()
     expect(await screen.findByText('82.7')).toBeInTheDocument()
     expect(screen.getByText(/average wpm/i)).toBeInTheDocument()
@@ -295,7 +294,7 @@ describe('DashboardApp', () => {
     expect(await screen.findByText('restored transcription')).toBeInTheDocument()
   })
 
-  it('opens quick capture from the welcome quick note action through the client wrapper', async () => {
+  it('opens quick capture from the dashboard quick note action through the client wrapper', async () => {
     render(<DashboardApp />)
 
     fireEvent.click(await screen.findByRole('button', { name: 'Quick Note' }))

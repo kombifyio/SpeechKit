@@ -121,6 +121,7 @@ type settingsSnapshot struct {
 	HFModel               string                             `json:"hfModel"`
 	Visualizer            string                             `json:"visualizer"`
 	Design                string                             `json:"design"`
+	Language              string                             `json:"language"`
 	VocabularyDictionary  string                             `json:"vocabularyDictionary"`
 	SaveAudio             bool                               `json:"saveAudio"`
 	AudioRetentionDays    int                                `json:"audioRetentionDays"`
@@ -833,6 +834,7 @@ func (s *appState) settingsSnapshot(cfg *config.Config) settingsSnapshot {
 		HFModel:               cfg.HuggingFace.Model,
 		Visualizer:            s.overlayVisualizer,
 		Design:                cfg.UI.Design,
+		Language:              cfg.General.Language,
 		VocabularyDictionary:  cfg.Vocabulary.Dictionary,
 		SaveAudio:             cfg.Store.SaveAudio,
 		AudioRetentionDays:    cfg.Store.AudioRetentionDays,

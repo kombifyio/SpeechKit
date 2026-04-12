@@ -124,37 +124,58 @@ body {
 }
 
 .dark {
-  --background: oklch(0.145 0 0);
-  --foreground: oklch(0.985 0 0);
-  --card: oklch(0.205 0 0);
-  --card-foreground: oklch(0.985 0 0);
-  --popover: oklch(0.205 0 0);
-  --popover-foreground: oklch(0.985 0 0);
-  --primary: oklch(0.922 0 0);
-  --primary-foreground: oklch(0.205 0 0);
-  --secondary: oklch(0.269 0 0);
-  --secondary-foreground: oklch(0.985 0 0);
-  --muted: oklch(0.269 0 0);
-  --muted-foreground: oklch(0.708 0 0);
-  --accent: oklch(0.269 0 0);
-  --accent-foreground: oklch(0.985 0 0);
-  --destructive: oklch(0.704 0.191 22.216);
-  --border: oklch(1 0 0 / 10%);
-  --input: oklch(1 0 0 / 15%);
-  --ring: oklch(0.556 0 0);
-  --chart-1: oklch(0.87 0 0);
-  --chart-2: oklch(0.556 0 0);
-  --chart-3: oklch(0.439 0 0);
-  --chart-4: oklch(0.371 0 0);
-  --chart-5: oklch(0.269 0 0);
-  --sidebar: oklch(0.205 0 0);
-  --sidebar-foreground: oklch(0.985 0 0);
-  --sidebar-primary: oklch(0.488 0.243 264.376);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.269 0 0);
-  --sidebar-accent-foreground: oklch(0.985 0 0);
-  --sidebar-border: oklch(1 0 0 / 10%);
-  --sidebar-ring: oklch(0.556 0 0);
+  /* M3 Dark Theme — SpeechKit Purple */
+  --background: #131318;
+  --foreground: #e4e1e9;
+  --card: #1f1f25;
+  --card-foreground: #e4e1e9;
+  --popover: #1f1f25;
+  --popover-foreground: #e4e1e9;
+  --primary: #cabeff;
+  --primary-foreground: #2b0088;
+  --secondary: #464553;
+  --secondary-foreground: #c7c5d6;
+  --muted: #2a292f;
+  --muted-foreground: #938ea1;
+  --accent: #2a292f;
+  --accent-foreground: #e4e1e9;
+  --destructive: #ffb4ab;
+  --border: #484555;
+  --input: #484555;
+  --ring: #947dff;
+  --chart-1: #cabeff;
+  --chart-2: #947dff;
+  --chart-3: #613de0;
+  --chart-4: #c7c5d6;
+  --chart-5: #b9c8de;
+  --sidebar: #1f1f25;
+  --sidebar-foreground: #e4e1e9;
+  --sidebar-primary: #cabeff;
+  --sidebar-primary-foreground: #2b0088;
+  --sidebar-accent: #2a292f;
+  --sidebar-accent-foreground: #e4e1e9;
+  --sidebar-border: #35343a;
+  --sidebar-ring: #947dff;
+  /* M3 Surface Scale */
+  --surface-lowest: #0e0e13;
+  --surface-low: #1b1b20;
+  --surface: #131318;
+  --surface-container: #1f1f25;
+  --surface-high: #2a292f;
+  --surface-highest: #35343a;
+  --surface-bright: #39383e;
+  --on-surface: #e4e1e9;
+  --on-surface-variant: #c9c4d8;
+  --outline: #938ea1;
+  --outline-variant: #484555;
+}
+
+/* M3 Utility Classes */
+.signature-gradient {
+  background: linear-gradient(135deg, #cabeff 0%, #947dff 100%);
+}
+.ambient-glow {
+  box-shadow: 0px 20px 40px rgba(202, 190, 255, 0.1);
 }
 
 @layer base {
