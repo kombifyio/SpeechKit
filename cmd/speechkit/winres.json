@@ -1,7 +1,7 @@
 {
   "RT_GROUP_ICON": {
     "#1": {
-      "0000": "../../installer/speechkit.ico"
+      "0000": "../../assets/speechkit.ico"
     }
   },
   "RT_MANIFEST": {
@@ -9,7 +9,7 @@
       "0409": {
         "identity": {
           "name": "kombify.SpeechKit",
-          "version": "0.17.0.0"
+          "version": "0.18.0.0"
         },
         "description": "kombify SpeechKit",
         "minimum-os": "vista",

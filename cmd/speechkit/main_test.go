@@ -462,6 +462,38 @@ func TestAssetHandlerServesBuiltOverlayShell(t *testing.T) {
 	}
 }
 
+func TestAssetHandlerServesBuiltDashboardShell(t *testing.T) {
+	cfg := defaultTestConfig()
+	handler := assetHandler(cfg, filepath.Join(t.TempDir(), "config.toml"), &appState{}, &router.Router{}, nil, &config.InstallState{Mode: config.InstallModeLocal})
+	req := httptest.NewRequest(http.MethodGet, "/dashboard.html", nil)
+	rec := httptest.NewRecorder()
+
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", rec.Code, http.StatusOK)
+	}
+	if !strings.Contains(rec.Body.String(), `<div id="root"></div>`) {
+		t.Fatalf("dashboard shell = %q", rec.Body.String())
+	}
+}
+
+func TestAssetHandlerServesBuiltSettingsShell(t *testing.T) {
+	cfg := defaultTestConfig()
+	handler := assetHandler(cfg, filepath.Join(t.TempDir(), "config.toml"), &appState{}, &router.Router{}, nil, &config.InstallState{Mode: config.InstallModeLocal})
+	req := httptest.NewRequest(http.MethodGet, "/settings.html", nil)
+	rec := httptest.NewRecorder()
+
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", rec.Code, http.StatusOK)
+	}
+	if !strings.Contains(rec.Body.String(), `<div id="root"></div>`) {
+		t.Fatalf("settings shell = %q", rec.Body.String())
+	}
+}
+
 func TestOverlayStateEndpointReturnsCurrentSnapshot(t *testing.T) {
 	cfg := defaultTestConfig()
 	state := &appState{
@@ -851,6 +883,45 @@ func TestActivateUtilityOllamaProfileUpdatesConfigAndRuntime(t *testing.T) {
 	}
 	if state.summarizeFlow == nil {
 		t.Fatal("expected summarize flow to be reloaded")
+	}
+}
+
+func TestActivateAssistOllamaProfileUpdatesConfigAndRuntime(t *testing.T) {
+	cfg := defaultTestConfig()
+	cfg.Providers.Ollama.BaseURL = "http://localhost:11434"
+	cfgPath := filepath.Join(t.TempDir(), "config.toml")
+	state := &appState{
+		activeProfiles: map[string]string{},
+	}
+	handler := assetHandler(cfg, cfgPath, state, &router.Router{}, nil, &config.InstallState{Mode: config.InstallModeLocal})
+
+	form := url.Values{
+		"modality":   {"assist"},
+		"profile_id": {"assist.ollama.gemma4-e4b"},
+	}
+	req := httptest.NewRequest(http.MethodPost, "/models/profiles/activate", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	rec := httptest.NewRecorder()
+
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, body=%s", rec.Code, rec.Body.String())
+	}
+	if !cfg.Providers.Ollama.Enabled {
+		t.Fatal("expected ollama provider enabled")
+	}
+	if cfg.Providers.Ollama.AssistModel != "gemma4:e4b" {
+		t.Fatalf("ollama assist model = %q, want %q", cfg.Providers.Ollama.AssistModel, "gemma4:e4b")
+	}
+	if got := state.activeProfiles["assist"]; got != "assist.ollama.gemma4-e4b" {
+		t.Fatalf("active assist profile = %q, want %q", got, "assist.ollama.gemma4-e4b")
+	}
+	if state.genkitRT == nil {
+		t.Fatal("expected genkit runtime to be reloaded")
+	}
+	if state.assistFlow == nil {
+		t.Fatal("expected assist flow to be reloaded")
 	}
 }
 

@@ -9,14 +9,14 @@ import (
 
 // IdleConfig configures the idle timer behavior.
 type IdleConfig struct {
-	ReminderAfter  time.Duration // Default: 5 minutes
+	ReminderAfter   time.Duration // Default: 5 minutes
 	DeactivateAfter time.Duration // Default: 15 minutes
 }
 
 // DefaultIdleConfig returns sensible defaults.
 func DefaultIdleConfig() IdleConfig {
 	return IdleConfig{
-		ReminderAfter:  5 * time.Minute,
+		ReminderAfter:   5 * time.Minute,
 		DeactivateAfter: 15 * time.Minute,
 	}
 }
@@ -94,10 +94,11 @@ func (t *IdleTimer) onReminder() {
 	}
 	t.reminded = true
 	locale := t.session.locale
+	reminderAfter := t.cfg.ReminderAfter
 	t.mu.Unlock()
 
 	// Send a text prompt to the model asking it to remind the user.
-	prompt := reminderPrompt(locale)
+	prompt := reminderPrompt(locale, reminderAfter)
 	slog.Info("voice agent idle reminder triggered")
 
 	if err := t.session.provider.SendText(prompt); err != nil {
@@ -130,14 +131,18 @@ func (t *IdleTimer) onDeactivate() {
 	t.mu.Unlock()
 }
 
-func reminderPrompt(locale string) string {
+func reminderPrompt(locale string, reminderAfter time.Duration) string {
+	minutes := int(reminderAfter.Minutes())
+	if minutes <= 0 {
+		minutes = int(DefaultIdleConfig().ReminderAfter.Minutes())
+	}
 	switch locale {
 	case "de", "de-DE":
 		return fmt.Sprintf("Der Nutzer ist seit %d Minuten still. Frage freundlich und kurz, ob er noch Aufgaben fuer dich hat.",
-			int(DefaultIdleConfig().ReminderAfter.Minutes()))
+			minutes)
 	default:
 		return fmt.Sprintf("The user has been silent for %d minutes. Briefly and friendly ask if they need anything.",
-			int(DefaultIdleConfig().ReminderAfter.Minutes()))
+			minutes)
 	}
 }
 

@@ -123,18 +123,7 @@ func (o desktopTranscriptOutput) Deliver(ctx context.Context, transcript speechk
 		mode = o.activeMode()
 	}
 
-	// 1. Codeword interception -- works in BOTH dictate and agent mode.
-	if o.interceptor != nil {
-		handled, err := o.interceptor.Intercept(ctx, transcript, target)
-		if err != nil {
-			return err
-		}
-		if handled {
-			return nil
-		}
-	}
-
-	// 2. Agent/Assist mode.
+	// 1. Agent/Assist mode owns its own routing.
 	if mode == "agent" {
 		agentMode := "assist"
 		if o.agentMode != nil {
@@ -152,6 +141,17 @@ func (o desktopTranscriptOutput) Deliver(ctx context.Context, transcript speechk
 
 		// Legacy/fallback agent flow.
 		return o.deliverAgentFlow(ctx, transcript, target)
+	}
+
+	// 2. Dictate mode may still use global quick actions before pass-through.
+	if o.interceptor != nil {
+		handled, err := o.interceptor.Intercept(ctx, transcript, target)
+		if err != nil {
+			return err
+		}
+		if handled {
+			return nil
+		}
 	}
 
 	// 3. Dictate mode -- pass through to clipboard.

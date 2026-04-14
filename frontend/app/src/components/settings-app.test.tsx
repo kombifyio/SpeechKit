@@ -10,7 +10,7 @@ class ResizeObserverStub {
   disconnect() {}
 }
 
-const { fetchSettingsStateMock, fetchModelProfilesMock, saveSettingsStateMock, saveProviderCredentialMock, clearProviderCredentialMock, testProviderCredentialMock, fetchAudioDevicesMock, setAudioDeviceMock, fetchDownloadCatalogMock, fetchDownloadJobsMock, startModelDownloadMock, cancelModelDownloadMock } =
+const { fetchSettingsStateMock, fetchModelProfilesMock, saveSettingsStateMock, saveProviderCredentialMock, clearProviderCredentialMock, testProviderCredentialMock, fetchAudioDevicesMock, setAudioDeviceMock, fetchDownloadCatalogMock, fetchDownloadJobsMock, startModelDownloadMock, cancelModelDownloadMock, selectDownloadedModelMock } =
   vi.hoisted(() => ({
     fetchSettingsStateMock: vi.fn<() => Promise<SpeechKitSettingsState>>(),
     fetchModelProfilesMock: vi.fn<() => Promise<ModelProfile[]>>(),
@@ -24,6 +24,7 @@ const { fetchSettingsStateMock, fetchModelProfilesMock, saveSettingsStateMock, s
     fetchDownloadJobsMock: vi.fn(),
     startModelDownloadMock: vi.fn(),
     cancelModelDownloadMock: vi.fn(),
+    selectDownloadedModelMock: vi.fn(),
   }))
 
 vi.mock('@/lib/speechkit', () => ({
@@ -78,6 +79,7 @@ vi.mock('@/lib/speechkit', () => ({
   fetchDownloadJobs: fetchDownloadJobsMock,
   startModelDownload: startModelDownloadMock,
   cancelModelDownload: cancelModelDownloadMock,
+  selectDownloadedModel: selectDownloadedModelMock,
 }))
 
 vi.mock('@/components/ui/mic-selector', () => ({
@@ -165,6 +167,7 @@ describe('SettingsApp', () => {
     fetchDownloadJobsMock.mockReset()
     startModelDownloadMock.mockReset()
     cancelModelDownloadMock.mockReset()
+    selectDownloadedModelMock.mockReset()
 
     fetchModelProfilesMock.mockResolvedValue([])
     fetchAudioDevicesMock.mockResolvedValue({
@@ -183,6 +186,7 @@ describe('SettingsApp', () => {
     fetchDownloadJobsMock.mockResolvedValue([])
     startModelDownloadMock.mockResolvedValue({ id: 'dl-1', modelId: 'test', profileId: 'test', status: 'pending', progress: 0, bytesDone: 0, totalBytes: 0, statusText: 'Starting…' })
     cancelModelDownloadMock.mockResolvedValue(undefined)
+    selectDownloadedModelMock.mockResolvedValue({ message: 'Selected' })
   })
 
   afterEach(() => {
@@ -198,11 +202,11 @@ describe('SettingsApp', () => {
 
     render(<SettingsApp />)
 
-    fireEvent.click(await screen.findByRole('button', { name: 'STT' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Transcribe' }))
 
     const modelsSection = await screen.findByText('Model setup')
     expect(modelsSection).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'STT' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Transcribe' })).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'TTS' })).not.toBeInTheDocument()
   })
 
@@ -215,7 +219,7 @@ describe('SettingsApp', () => {
 
     render(<SettingsApp />)
 
-    fireEvent.click(await screen.findByRole('button', { name: 'STT' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Transcribe' }))
 
     await screen.findByText('Model setup')
     const activeLabel = screen.getByText('Active')
@@ -479,7 +483,7 @@ describe('SettingsApp', () => {
 
     render(<SettingsApp />)
 
-    fireEvent.click(await screen.findByRole('button', { name: 'STT' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Transcribe' }))
 
     expect(await screen.findByText(/install token active/i)).toBeInTheDocument()
   })
@@ -594,7 +598,7 @@ describe('SettingsApp', () => {
 
     render(<SettingsApp />)
 
-    fireEvent.click(await screen.findByRole('button', { name: 'STT' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Transcribe' }))
 
     expect(await screen.findByText('Whisper Large v3 (Hugging Face)')).toBeInTheDocument()
     expect(screen.getByText('Add Hugging Face token')).toBeInTheDocument()
@@ -628,7 +632,7 @@ describe('SettingsApp', () => {
 
     render(<SettingsApp />)
 
-    fireEvent.click(await screen.findByRole('button', { name: 'STT' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Transcribe' }))
 
     expect(await screen.findByText('Whisper Large v3 (Hugging Face)')).toBeInTheDocument()
     expect(screen.queryByText('Connected providers')).not.toBeInTheDocument()
@@ -660,9 +664,132 @@ describe('SettingsApp', () => {
 
     render(<SettingsApp />)
 
-    fireEvent.click(await screen.findByRole('button', { name: 'STT' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Transcribe' }))
     fireEvent.click(await screen.findByRole('button', { name: 'Clear' }))
 
     await waitFor(() => expect(clearProviderCredentialMock).toHaveBeenCalledWith('huggingface'))
+  })
+
+  it('renames the STT settings tab to Transcribe', async () => {
+    fetchSettingsStateMock.mockResolvedValue(baseSettings)
+
+    render(<SettingsApp />)
+
+    expect(await screen.findByRole('button', { name: 'Transcribe' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'STT' })).not.toBeInTheDocument()
+  })
+
+  it('allows switching between available local whisper downloads', async () => {
+    const initialSettings: SpeechKitSettingsState = {
+      ...baseSettings,
+      profiles: [
+        {
+          id: 'stt.local.whispercpp',
+          modality: 'stt',
+          name: 'Whisper.cpp (Local)',
+          executionMode: 'local',
+          description: 'Offline Windows dictation with Whisper.cpp.',
+        },
+      ],
+      activeProfiles: { stt: 'stt.local.whispercpp' },
+    }
+    fetchSettingsStateMock
+      .mockResolvedValueOnce(initialSettings)
+      .mockResolvedValueOnce(initialSettings)
+    fetchDownloadCatalogMock
+      .mockResolvedValueOnce([
+        {
+          id: 'whisper.ggml-small',
+          profileId: 'stt.local.whispercpp',
+          name: 'Whisper Small Multilingual (466 MB)',
+          description: 'Small local model',
+          sizeLabel: '466 MB',
+          sizeBytes: 484264096,
+          kind: 'http',
+          license: 'mit',
+          available: true,
+          selected: true,
+        },
+        {
+          id: 'whisper.ggml-large-v3-turbo',
+          profileId: 'stt.local.whispercpp',
+          name: 'Whisper Large v3 Turbo',
+          description: 'Turbo local model',
+          sizeLabel: '~1.6 GB',
+          sizeBytes: 1624555275,
+          kind: 'http',
+          license: 'mit',
+          available: true,
+          recommended: true,
+          selected: false,
+        },
+        {
+          id: 'whisper.ggml-large-v3',
+          profileId: 'stt.local.whispercpp',
+          name: 'Whisper Large v3 (Open Source)',
+          description: 'Large local model',
+          sizeLabel: '~3.1 GB',
+          sizeBytes: 3100000000,
+          kind: 'http',
+          license: 'mit',
+          available: true,
+          selected: false,
+        },
+      ])
+      .mockResolvedValueOnce([
+        {
+          id: 'whisper.ggml-small',
+          profileId: 'stt.local.whispercpp',
+          name: 'Whisper Small Multilingual (466 MB)',
+          description: 'Small local model',
+          sizeLabel: '466 MB',
+          sizeBytes: 484264096,
+          kind: 'http',
+          license: 'mit',
+          available: true,
+          selected: false,
+        },
+        {
+          id: 'whisper.ggml-large-v3-turbo',
+          profileId: 'stt.local.whispercpp',
+          name: 'Whisper Large v3 Turbo',
+          description: 'Turbo local model',
+          sizeLabel: '~1.6 GB',
+          sizeBytes: 1624555275,
+          kind: 'http',
+          license: 'mit',
+          available: true,
+          recommended: true,
+          selected: true,
+        },
+        {
+          id: 'whisper.ggml-large-v3',
+          profileId: 'stt.local.whispercpp',
+          name: 'Whisper Large v3 (Open Source)',
+          description: 'Large local model',
+          sizeLabel: '~3.1 GB',
+          sizeBytes: 3100000000,
+          kind: 'http',
+          license: 'mit',
+          available: true,
+          selected: false,
+        },
+      ])
+
+    render(<SettingsApp />)
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Transcribe' }))
+
+    const switchButton = await screen.findByRole('button', {
+      name: 'Use Whisper Large v3 Turbo',
+    })
+    fireEvent.click(switchButton)
+
+    await waitFor(() =>
+      expect(selectDownloadedModelMock).toHaveBeenCalledWith('whisper.ggml-large-v3-turbo'),
+    )
+    expect(await screen.findByLabelText('Use Whisper Small Multilingual (466 MB)')).toBeInTheDocument()
+    expect(screen.getByText('Selected on this device')).toBeInTheDocument()
+    expect(screen.getByText('recommended')).toBeInTheDocument()
   })
 })

@@ -100,7 +100,7 @@ function BubbleGlyph() {
       data-testid="dot-anchor-glyph"
       aria-hidden="true"
       viewBox="0 0 24 24"
-      className="pointer-events-none absolute left-1/2 top-1/2 z-0 h-[11px] w-[11px] -translate-x-1/2 -translate-y-1/2 opacity-45"
+      className="pointer-events-none absolute left-1/2 top-1/2 z-0 h-2.75 w-2.75 -translate-x-1/2 -translate-y-1/2 opacity-45"
     >
       <path
         d="M12 2.5C7.03 2.5 3 6.08 3 10.5c0 2.18 1 4.16 2.63 5.6-.17 1.47-.78 3.08-1.88 4.4 2.35-.16 4.2-.93 5.54-2.02.83.21 1.7.32 2.71.32 4.97 0 9-3.58 9-8S16.97 2.5 12 2.5Z"
@@ -155,7 +155,7 @@ function OverlayPillShell({
             alt="kombify idle mark"
             data-testid={`${surface}-kombify-mark`}
             src="/idle-kombify.png"
-            className="pointer-events-none absolute left-1/2 top-1/2 z-0 h-[8px] w-auto -translate-x-1/2 -translate-y-1/2 opacity-55"
+            className="pointer-events-none absolute left-1/2 top-1/2 z-0 h-2 w-auto -translate-x-1/2 -translate-y-1/2 opacity-55"
           />
         ) : null}
       </div>

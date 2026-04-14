@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"log/slog"
 	"net/http"
+	"strings"
 
 	"github.com/kombifyio/SpeechKit/internal/auth"
 	"github.com/kombifyio/SpeechKit/internal/config"
@@ -109,7 +110,9 @@ func registerAuthRoutes(mux *http.ServeMux) {
 	})
 }
 
-func registerAppRoutes(mux *http.ServeMux, installState *config.InstallState) {
+func registerAppRoutes(mux *http.ServeMux, cfgPath string, state *appState, installState *config.InstallState) {
+	updateManager := ensureAppUpdateManager(state)
+
 	mux.HandleFunc("/app/version", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
 			w.WriteHeader(http.StatusMethodNotAllowed)
@@ -120,11 +123,105 @@ func registerAppRoutes(mux *http.ServeMux, installState *config.InstallState) {
 			"version": AppVersion,
 		}
 		// Check for updates (non-blocking, cached)
-		if latest, url, ok := cachedLatestRelease(); ok && latest != "" && latest != AppVersion {
-			resp["latestVersion"] = latest
-			resp["updateURL"] = url
+		if latest, ok := cachedLatestRelease(); ok && latest.Version != "" && isNewerReleaseVersion(latest.Version, AppVersion) {
+			resp["latestVersion"] = latest.Version
+			resp["updateURL"] = latest.ReleaseURL
+			if latest.DownloadURL != "" {
+				resp["downloadURL"] = latest.DownloadURL
+				resp["downloadSizeBytes"] = latest.DownloadSize
+				resp["assetName"] = latest.DownloadName
+			}
 		}
 		_ = json.NewEncoder(w).Encode(resp)
+	})
+
+	mux.HandleFunc("/app/update/jobs", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json; charset=utf-8")
+		_ = json.NewEncoder(w).Encode(updateManager.AllJobs())
+	})
+
+	mux.HandleFunc("/app/update/download", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+		if err := r.ParseForm(); err != nil {
+			http.Error(w, "bad request", http.StatusBadRequest)
+			return
+		}
+
+		latest, ok := cachedLatestRelease()
+		if !ok || latest.Version == "" || !isNewerReleaseVersion(latest.Version, AppVersion) {
+			http.Error(w, "no update available", http.StatusNotFound)
+			return
+		}
+		if strings.TrimSpace(latest.DownloadURL) == "" {
+			http.Error(w, "download unavailable for latest release", http.StatusNotFound)
+			return
+		}
+
+		requestedVersion := strings.TrimSpace(r.FormValue("version"))
+		if requestedVersion != "" && requestedVersion != latest.Version {
+			http.Error(w, "requested version is no longer current", http.StatusConflict)
+			return
+		}
+
+		job := updateManager.Start(latest, resolveAppUpdateDir(cfgPath))
+		w.Header().Set("Content-Type", "application/json; charset=utf-8")
+		_ = json.NewEncoder(w).Encode(job)
+	})
+
+	mux.HandleFunc("/app/update/cancel", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+		if err := r.ParseForm(); err != nil {
+			http.Error(w, "bad request", http.StatusBadRequest)
+			return
+		}
+		jobID := strings.TrimSpace(r.FormValue("job_id"))
+		if jobID == "" {
+			http.Error(w, "job_id required", http.StatusBadRequest)
+			return
+		}
+		if !updateManager.CancelJob(jobID) {
+			http.Error(w, "job not found or already completed", http.StatusNotFound)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json; charset=utf-8")
+		_ = json.NewEncoder(w).Encode(map[string]string{"message": "cancelled"})
+	})
+
+	mux.HandleFunc("/app/update/open", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+		if err := r.ParseForm(); err != nil {
+			http.Error(w, "bad request", http.StatusBadRequest)
+			return
+		}
+		jobID := strings.TrimSpace(r.FormValue("job_id"))
+		if jobID == "" {
+			http.Error(w, "job_id required", http.StatusBadRequest)
+			return
+		}
+		path, ok := updateManager.CompletedFile(jobID)
+		if !ok {
+			http.Error(w, "installer not ready", http.StatusConflict)
+			return
+		}
+		if err := openInstallerFileInShell(path); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json; charset=utf-8")
+		_ = json.NewEncoder(w).Encode(map[string]string{"message": "opened", "filePath": path})
 	})
 
 	mux.HandleFunc("/app/setup-status", func(w http.ResponseWriter, r *http.Request) {

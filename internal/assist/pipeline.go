@@ -8,7 +8,6 @@ import (
 	"log/slog"
 
 	"github.com/kombifyio/SpeechKit/internal/ai/flows"
-	"github.com/kombifyio/SpeechKit/internal/shortcuts"
 	"github.com/kombifyio/SpeechKit/internal/tts"
 	"github.com/firebase/genkit/go/core"
 )
@@ -27,18 +26,38 @@ type Result struct {
 
 // Pipeline orchestrates the Assist Mode flow.
 type Pipeline struct {
+	router     *Router
 	assistFlow *core.Flow[flows.AssistInput, flows.AssistOutput, struct{}]
+	executor   ToolExecutor
 	ttsRouter  *tts.Router
 	ttsEnabled bool
 }
 
+type PipelineOption func(*Pipeline)
+
+func WithRouter(router *Router) PipelineOption {
+	return func(p *Pipeline) {
+		if router != nil {
+			p.router = router
+		}
+	}
+}
+
 // NewPipeline creates an Assist Pipeline.
-func NewPipeline(assistFlow *core.Flow[flows.AssistInput, flows.AssistOutput, struct{}], ttsRouter *tts.Router, ttsEnabled bool) *Pipeline {
-	return &Pipeline{
+func NewPipeline(assistFlow *core.Flow[flows.AssistInput, flows.AssistOutput, struct{}], executor ToolExecutor, ttsRouter *tts.Router, ttsEnabled bool, opts ...PipelineOption) *Pipeline {
+	pipeline := &Pipeline{
+		router:     NewRouter(),
 		assistFlow: assistFlow,
+		executor:   executor,
 		ttsRouter:  ttsRouter,
 		ttsEnabled: ttsEnabled,
 	}
+	for _, opt := range opts {
+		if opt != nil {
+			opt(pipeline)
+		}
+	}
+	return pipeline
 }
 
 // Process takes a transcript and produces a Result with text and optional audio.
@@ -47,13 +66,11 @@ func (p *Pipeline) Process(ctx context.Context, transcript string, opts ProcessO
 		return nil, fmt.Errorf("assist: empty transcript")
 	}
 
-	// Step 1: Check for codeword/shortcut match.
-	resolution := shortcuts.Resolve(transcript)
-	if resolution.Intent != "" {
-		return p.handleShortcut(ctx, resolution, opts)
+	decision := p.router.Decide(transcript, opts)
+	if decision.Route == RouteToolIntent {
+		return p.handleTool(ctx, transcript, decision, opts)
 	}
 
-	// Step 2: No shortcut match — send to LLM.
 	return p.handleLLM(ctx, transcript, opts)
 }
 
@@ -64,39 +81,33 @@ type ProcessOpts struct {
 	Context   string // Additional context
 }
 
-func (p *Pipeline) handleShortcut(ctx context.Context, res shortcuts.Resolution, opts ProcessOpts) (*Result, error) {
+func (p *Pipeline) handleTool(ctx context.Context, transcript string, decision Decision, opts ProcessOpts) (*Result, error) {
+	if p.executor == nil {
+		return nil, fmt.Errorf("assist: no tool executor configured for intent %q", decision.Intent)
+	}
+
+	toolResult, err := p.executor.Execute(ctx, ToolCall{
+		Intent:     decision.Intent,
+		Payload:    decision.Payload,
+		Transcript: transcript,
+		Locale:     firstNonEmpty(decision.Locale, opts.Locale),
+		Selection:  opts.Selection,
+		Context:    opts.Context,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("assist: execute tool intent %q: %w", decision.Intent, err)
+	}
+
 	result := &Result{
-		Action:   "shortcut",
-		Shortcut: string(res.Intent),
-		Locale:   opts.Locale,
+		Text:      toolResult.Text,
+		SpeakText: firstNonEmpty(toolResult.SpeakText, toolResult.Text),
+		Action:    firstNonEmpty(toolResult.Action, "execute"),
+		Locale:    firstNonEmpty(toolResult.Locale, decision.Locale, opts.Locale),
+		Shortcut:  string(decision.Intent),
 	}
 
-	// Generate response text based on shortcut type.
-	switch res.Intent {
-	case shortcuts.IntentCopyLast:
-		result.Text = "Copied to clipboard."
-		if opts.Locale == "de" || opts.Locale == "de-DE" {
-			result.Text = "In die Zwischenablage kopiert."
-		}
-	case shortcuts.IntentInsertLast:
-		result.Text = "Inserted."
-		if opts.Locale == "de" || opts.Locale == "de-DE" {
-			result.Text = "Eingefuegt."
-		}
-	case shortcuts.IntentSummarize:
-		result.Text = "Summarizing..."
-		if opts.Locale == "de" || opts.Locale == "de-DE" {
-			result.Text = "Wird zusammengefasst..."
-		}
-	default:
-		result.Text = "Command recognized."
-	}
-
-	result.SpeakText = result.Text
-
-	// Synthesize TTS for the response.
 	if err := p.synthesize(ctx, result); err != nil {
-		slog.Warn("assist: TTS for shortcut failed", "err", err)
+		slog.Warn("assist: TTS for tool result failed", "err", err)
 	}
 
 	return result, nil
@@ -156,4 +167,13 @@ func (p *Pipeline) synthesize(ctx context.Context, result *Result) error {
 	result.Audio = ttsResult.Audio
 	result.Format = ttsResult.Format
 	return nil
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, value := range values {
+		if value != "" {
+			return value
+		}
+	}
+	return ""
 }

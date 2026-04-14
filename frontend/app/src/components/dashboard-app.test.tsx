@@ -9,6 +9,11 @@ const {
   fetchQuickNotesMock,
   fetchLogsMock,
   fetchDashboardStatsMock,
+  fetchDownloadCatalogMock,
+  fetchDownloadJobsMock,
+  startModelDownloadMock,
+  cancelModelDownloadMock,
+  selectDownloadedModelMock,
   revealDashboardAudioMock,
   openQuickNoteCaptureMock,
   openQuickNoteEditorMock,
@@ -17,6 +22,11 @@ const {
   fetchQuickNotesMock: vi.fn<() => Promise<QuickNote[]>>(),
   fetchLogsMock: vi.fn<() => Promise<LogEntry[]>>(),
   fetchDashboardStatsMock: vi.fn<() => Promise<import('@/lib/speechkit').DashboardStats>>(),
+  fetchDownloadCatalogMock: vi.fn(),
+  fetchDownloadJobsMock: vi.fn(),
+  startModelDownloadMock: vi.fn(),
+  cancelModelDownloadMock: vi.fn(),
+  selectDownloadedModelMock: vi.fn(),
   revealDashboardAudioMock: vi.fn<() => Promise<string>>(),
   openQuickNoteCaptureMock: vi.fn<() => Promise<string>>(),
   openQuickNoteEditorMock: vi.fn<(noteId?: number) => Promise<string>>(),
@@ -30,6 +40,11 @@ vi.mock('@/lib/speechkit', async () => {
     fetchQuickNotes: fetchQuickNotesMock,
     fetchLogs: fetchLogsMock,
     fetchDashboardStats: fetchDashboardStatsMock,
+    fetchDownloadCatalog: fetchDownloadCatalogMock,
+    fetchDownloadJobs: fetchDownloadJobsMock,
+    startModelDownload: startModelDownloadMock,
+    cancelModelDownload: cancelModelDownloadMock,
+    selectDownloadedModel: selectDownloadedModelMock,
     revealDashboardAudio: revealDashboardAudioMock,
     openQuickNoteCapture: openQuickNoteCaptureMock,
     openQuickNoteEditor: openQuickNoteEditorMock,
@@ -55,7 +70,28 @@ describe('DashboardApp', () => {
         })
       }
       if (url === '/app/version') {
-        return new Response(JSON.stringify({ version: '0.1.3' }), {
+        return new Response(JSON.stringify({ version: '0.18.0' }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        })
+      }
+      if (url === '/app/update/jobs') {
+        return new Response(JSON.stringify([]), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        })
+      }
+      if (url === '/app/update/download') {
+        return new Response(JSON.stringify({
+          id: 'update-job-1',
+          version: '0.19.0',
+          assetName: 'SpeechKit-Setup-v0.19.0.exe',
+          status: 'running',
+          progress: 0.42,
+          bytesDone: 42,
+          totalBytes: 100,
+          statusText: '42 / 100 MB',
+        }), {
           status: 200,
           headers: { 'Content-Type': 'application/json' },
         })
@@ -67,6 +103,11 @@ describe('DashboardApp', () => {
     fetchQuickNotesMock.mockReset()
     fetchLogsMock.mockReset()
     fetchDashboardStatsMock.mockReset()
+    fetchDownloadCatalogMock.mockReset()
+    fetchDownloadJobsMock.mockReset()
+    startModelDownloadMock.mockReset()
+    cancelModelDownloadMock.mockReset()
+    selectDownloadedModelMock.mockReset()
     revealDashboardAudioMock.mockReset()
     openQuickNoteCaptureMock.mockReset()
     openQuickNoteEditorMock.mockReset()
@@ -81,6 +122,20 @@ describe('DashboardApp', () => {
       averageWordsPerMinute: 82.7,
       averageLatencyMs: 410,
     })
+    fetchDownloadCatalogMock.mockResolvedValue([])
+    fetchDownloadJobsMock.mockResolvedValue([])
+    startModelDownloadMock.mockResolvedValue({
+      id: 'model-job-1',
+      modelId: 'whisper.ggml-large-v3-turbo',
+      profileId: 'stt.local.whispercpp',
+      status: 'running',
+      progress: 0.42,
+      bytesDone: 42,
+      totalBytes: 100,
+      statusText: '42 / 100 MB',
+    })
+    cancelModelDownloadMock.mockResolvedValue(undefined)
+    selectDownloadedModelMock.mockResolvedValue({ message: 'Selected' })
     revealDashboardAudioMock.mockResolvedValue('Opened')
     openQuickNoteCaptureMock.mockResolvedValue('Capture opened')
     openQuickNoteEditorMock.mockResolvedValue('Editor opened')
@@ -96,6 +151,7 @@ describe('DashboardApp', () => {
     render(<DashboardApp />)
 
     expect(await screen.findByText(/welcome to speechkit/i)).toBeInTheDocument()
+    expect(await screen.findByText('v0.18.0')).toBeInTheDocument()
     expect(screen.getByTestId('welcome-scroll')).toHaveClass('overflow-y-auto')
     expect(screen.getByTestId('welcome-kpis')).toHaveClass('grid')
     expect(screen.getByRole('button', { name: 'Library' })).toBeInTheDocument()
@@ -332,5 +388,252 @@ describe('DashboardApp', () => {
     await waitFor(() =>
       expect(fetchSpy).toHaveBeenCalledWith('/quicknotes/open-editor?id=11', { method: 'POST' }),
     )
+  })
+
+  it('shows an in-app update banner with change log link and download progress', async () => {
+    fetchSpy?.mockImplementation(async (input: RequestInfo | URL, _init?: RequestInit) => {
+      const url = typeof input === 'string' ? input : input instanceof URL ? input.toString() : (input as Request).url
+      if (url === '/app/setup-status') {
+        return new Response(JSON.stringify({ setupDone: true }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        })
+      }
+      if (url === '/app/version') {
+        return new Response(JSON.stringify({
+          version: '0.18.0',
+          latestVersion: '0.19.0',
+          updateURL: 'https://example.com/releases/tag/v0.19.0',
+          downloadURL: 'https://example.com/releases/download/v0.19.0/SpeechKit-Setup-v0.19.0.exe',
+          downloadSizeBytes: 100,
+        }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        })
+      }
+      if (url === '/app/update/jobs') {
+        return new Response(JSON.stringify([]), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        })
+      }
+      if (url === '/app/update/download') {
+        return new Response(JSON.stringify({
+          id: 'update-job-1',
+          version: '0.19.0',
+          assetName: 'SpeechKit-Setup-v0.19.0.exe',
+          status: 'running',
+          progress: 0.42,
+          bytesDone: 42,
+          totalBytes: 100,
+          statusText: '42 / 100 MB',
+        }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        })
+      }
+      return new Response('{}', {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      })
+    })
+
+    render(<DashboardApp />)
+
+    expect(await screen.findByText(/update available: v0.19.0/i)).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: /change log/i })).toHaveAttribute('href', 'https://example.com/releases/tag/v0.19.0')
+
+    fireEvent.click(screen.getByRole('button', { name: 'Download' }))
+
+    await waitFor(() =>
+      expect(fetchSpy).toHaveBeenCalledWith('/app/update/download', expect.objectContaining({ method: 'POST' })),
+    )
+    expect(await screen.findByText('42 / 100 MB')).toBeInTheDocument()
+    expect(screen.getAllByRole('button', { name: /cancel download/i })[0]).toBeInTheDocument()
+  })
+
+  it('offers local small and turbo downloads during onboarding and keeps progress visible', async () => {
+    fetchSpy?.mockImplementation(async (input: RequestInfo | URL) => {
+      const url = typeof input === 'string' ? input : input instanceof URL ? input.toString() : (input as Request).url
+      if (url === '/app/setup-status') {
+        return new Response(JSON.stringify({ setupDone: false }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        })
+      }
+      if (url === '/app/version') {
+        return new Response(JSON.stringify({ version: '0.18.0' }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        })
+      }
+      if (url === '/app/complete-setup') {
+        return new Response(JSON.stringify({ setupDone: true }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        })
+      }
+      if (url === '/settings/update') {
+        return new Response(JSON.stringify({ message: 'Saved' }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        })
+      }
+      return new Response('{}', {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      })
+    })
+
+    fetchDownloadCatalogMock.mockResolvedValue([
+      {
+        id: 'whisper.ggml-small',
+        profileId: 'stt.local.whispercpp',
+        name: 'Whisper Small Multilingual (466 MB)',
+        description: 'Small local model',
+        sizeLabel: '466 MB',
+        sizeBytes: 484264096,
+        kind: 'http',
+        license: 'mit',
+        available: false,
+        selected: false,
+      },
+      {
+        id: 'whisper.ggml-large-v3-turbo',
+        profileId: 'stt.local.whispercpp',
+        name: 'Whisper Large v3 Turbo',
+        description: 'Turbo local model',
+        sizeLabel: '~1.6 GB',
+        sizeBytes: 1624555275,
+        kind: 'http',
+        license: 'mit',
+        available: false,
+        recommended: true,
+        selected: false,
+      },
+    ])
+
+    render(<DashboardApp />)
+
+    fireEvent.click(await screen.findByRole('button', { name: /get started/i }))
+
+    expect(await screen.findByText('Whisper Large v3 Turbo')).toBeInTheDocument()
+    expect(screen.getByText('Whisper Small Multilingual (466 MB)')).toBeInTheDocument()
+    expect(screen.getByText('Recommended')).toBeInTheDocument()
+
+    const continueButton = screen.getByRole('button', { name: /^continue$/i })
+    expect(continueButton).toBeEnabled()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Download Whisper Large v3 Turbo' }))
+
+    await waitFor(() =>
+      expect(startModelDownloadMock).toHaveBeenCalledWith('whisper.ggml-large-v3-turbo'),
+    )
+    expect((await screen.findAllByText('42 / 100 MB')).length).toBeGreaterThan(0)
+    expect(screen.getAllByRole('button', { name: /cancel download/i }).length).toBeGreaterThan(0)
+    expect(screen.getByText('Chosen for setup')).toBeInTheDocument()
+  })
+
+  it('opens transcribe settings when the user wants to use a cloud token instead of a local model', async () => {
+    fetchSpy?.mockImplementation(async (input: RequestInfo | URL) => {
+      const url = typeof input === 'string' ? input : input instanceof URL ? input.toString() : (input as Request).url
+      if (url === '/app/setup-status') {
+        return new Response(JSON.stringify({ setupDone: false }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        })
+      }
+      if (url === '/app/version') {
+        return new Response(JSON.stringify({ version: '0.18.0' }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        })
+      }
+      if (url === '/app/complete-setup') {
+        return new Response(JSON.stringify({ setupDone: true }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        })
+      }
+      return new Response('{}', {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      })
+    })
+
+    fetchDownloadCatalogMock.mockResolvedValue([
+      {
+        id: 'whisper.ggml-small',
+        profileId: 'stt.local.whispercpp',
+        name: 'Whisper Small Multilingual (466 MB)',
+        description: 'Small local model',
+        sizeLabel: '466 MB',
+        sizeBytes: 484264096,
+        kind: 'http',
+        license: 'mit',
+        available: false,
+        selected: false,
+      },
+      {
+        id: 'whisper.ggml-large-v3-turbo',
+        profileId: 'stt.local.whispercpp',
+        name: 'Whisper Large v3 Turbo',
+        description: 'Turbo local model',
+        sizeLabel: '~1.6 GB',
+        sizeBytes: 1624555275,
+        kind: 'http',
+        license: 'mit',
+        recommended: true,
+        available: false,
+        selected: false,
+      },
+    ])
+
+    render(<DashboardApp />)
+
+    fireEvent.click(await screen.findByRole('button', { name: /get started/i }))
+    fireEvent.click(screen.getByRole('button', { name: /use hugging face token instead/i }))
+
+    await waitFor(() =>
+      expect(fetchSpy).toHaveBeenCalledWith('/app/complete-setup', { method: 'POST' }),
+    )
+    expect(await screen.findByText('Speech-to-Text')).toBeInTheDocument()
+  })
+
+  it('lets the user skip setup even before a local model is downloaded', async () => {
+    fetchSpy?.mockImplementation(async (input: RequestInfo | URL) => {
+      const url = typeof input === 'string' ? input : input instanceof URL ? input.toString() : (input as Request).url
+      if (url === '/app/setup-status') {
+        return new Response(JSON.stringify({ setupDone: false }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        })
+      }
+      if (url === '/app/version') {
+        return new Response(JSON.stringify({ version: '0.18.0' }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        })
+      }
+      if (url === '/app/complete-setup') {
+        return new Response(JSON.stringify({ setupDone: true }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        })
+      }
+      return new Response('{}', {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      })
+    })
+
+    render(<DashboardApp />)
+
+    fireEvent.click(await screen.findByRole('button', { name: /skip setup/i }))
+
+    await waitFor(() =>
+      expect(fetchSpy).toHaveBeenCalledWith('/app/complete-setup', { method: 'POST' }),
+    )
+    expect(await screen.findByRole('heading', { name: /dashboard/i })).toBeInTheDocument()
   })
 })

@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/kombifyio/SpeechKit/internal/output"
+	"github.com/kombifyio/SpeechKit/internal/shortcuts"
 	"github.com/kombifyio/SpeechKit/internal/stt"
 	"github.com/kombifyio/SpeechKit/internal/textactions"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit"
@@ -289,5 +290,33 @@ func TestQuickActionCoordinatorResolveDecisionFromTranscriptMatchesCommandSummar
 
 	if fromTranscript != fromCommand {
 		t.Fatalf("decision mismatch: transcript=%+v command=%+v", fromTranscript, fromCommand)
+	}
+}
+
+func TestQuickActionCoordinatorUsesInjectedResolver(t *testing.T) {
+	registry := shortcuts.NewRegistry()
+	registry.RegisterLeadingFillers("de", "bitte")
+	registry.RegisterLexicon(shortcuts.IntentLexicon{
+		Intent: shortcuts.IntentSummarize,
+		Locale: "de",
+		Phrases: []shortcuts.Phrase{
+			{Value: "kurzfassung", Prefix: true},
+		},
+	})
+
+	actions := newQuickActionCoordinator(&appState{}, nil, shortcuts.NewResolver(registry))
+
+	decision, ok := actions.resolveDecisionFromTranscript(speechkit.Transcript{
+		Text:     "Bitte Kurzfassung in drei Punkten",
+		Language: "de-DE",
+	})
+	if !ok {
+		t.Fatal("resolveDecisionFromTranscript() handled = false, want true")
+	}
+	if got, want := decision.kind, quickActionSummarize; got != want {
+		t.Fatalf("kind = %q, want %q", got, want)
+	}
+	if got, want := decision.instruction, "in drei punkten"; got != want {
+		t.Fatalf("instruction = %q, want %q", got, want)
 	}
 }

@@ -44,14 +44,21 @@ type quickActionCoordinator struct {
 	paster           transcriptPaster
 	summarizer       textactions.SummaryTool
 	captureSelection func(context.Context) (string, error)
+	resolver         *shortcuts.Resolver
 }
 
-func newQuickActionCoordinator(state *appState, paster transcriptPaster) *quickActionCoordinator {
+func newQuickActionCoordinator(state *appState, paster transcriptPaster, resolver ...*shortcuts.Resolver) *quickActionCoordinator {
+	currentResolver := shortcuts.DefaultResolver()
+	if len(resolver) > 0 && resolver[0] != nil {
+		currentResolver = resolver[0]
+	}
+
 	return &quickActionCoordinator{
 		state:            state,
 		paster:           paster,
 		summarizer:       textactions.SummaryTool{},
 		captureSelection: output.CaptureSelectedText,
+		resolver:         currentResolver,
 	}
 }
 
@@ -88,7 +95,12 @@ func (q *quickActionCoordinator) Execute(ctx context.Context, command speechkit.
 }
 
 func (q *quickActionCoordinator) resolveDecisionFromTranscript(transcript speechkit.Transcript) (quickActionDecision, bool) {
-	resolution := shortcuts.Resolve(transcript.Text)
+	resolver := shortcuts.DefaultResolver()
+	if q != nil && q.resolver != nil {
+		resolver = q.resolver
+	}
+
+	resolution := resolver.Resolve(transcript.Text, transcript.Language)
 	switch resolution.Intent {
 	case shortcuts.IntentCopyLast:
 		return quickActionDecision{kind: quickActionCopyLast}, true
@@ -176,14 +188,43 @@ func (q *quickActionCoordinator) summarizeSelection(ctx context.Context, transcr
 	if err != nil {
 		return fmt.Errorf("capture selection: %w", err)
 	}
-	return q.summarizeText(ctx, selection, target, instruction, transcript.Language)
+	_, err = q.summarizeAndPaste(ctx, selection, target, instruction, transcript.Language)
+	return err
 }
 
 func (q *quickActionCoordinator) summarizeText(ctx context.Context, selection string, target any, instruction, locale string) error {
+	_, err := q.summarizeAndPaste(ctx, selection, target, instruction, locale)
+	return err
+}
+
+func (q *quickActionCoordinator) summarizeAndPaste(ctx context.Context, selection string, target any, instruction, locale string) (string, error) {
 	if q.paster == nil {
-		return nil
+		return "", nil
 	}
 
+	summary, resolvedLocale, err := q.generateSummary(ctx, selection, instruction, locale)
+	if err != nil {
+		return "", err
+	}
+	if summary == "" {
+		return "", nil
+	}
+
+	err = q.paster.Handle(ctx, &stt.Result{
+		Text:       summary,
+		Language:   resolvedLocale,
+		Provider:   "local-summary",
+		Duration:   0,
+		Confidence: 0,
+	}, outputTarget(target))
+	if err != nil {
+		return "", err
+	}
+
+	return summary, nil
+}
+
+func (q *quickActionCoordinator) generateSummary(ctx context.Context, selection string, instruction, locale string) (string, string, error) {
 	ctxInput := textactions.ResolveSummarizeContext(textactions.SummarizeContext{
 		Selection:         selection,
 		LastTranscription: q.lastTranscription(),
@@ -196,27 +237,17 @@ func (q *quickActionCoordinator) summarizeText(ctx context.Context, selection st
 			if q.state != nil {
 				q.state.addLog(msgSummarizeInputMissing, "warn")
 			}
-			return nil
+			return "", ctxInput.Locale, nil
 		}
 		if errors.Is(err, textactions.ErrSummarizerNotConfigured) {
 			if q.state != nil {
 				q.state.addLog("Summary model not configured", "warn")
 			}
-			return nil
+			return "", ctxInput.Locale, nil
 		}
-		return fmt.Errorf("summarize: %w", err)
+		return "", ctxInput.Locale, fmt.Errorf("summarize: %w", err)
 	}
-	if summary == "" {
-		return nil
-	}
-
-	return q.paster.Handle(ctx, &stt.Result{
-		Text:       summary,
-		Language:   ctxInput.Locale,
-		Provider:   "local-summary",
-		Duration:   0,
-		Confidence: 0,
-	}, outputTarget(target))
+	return summary, ctxInput.Locale, nil
 }
 
 func (q *quickActionCoordinator) lastTranscription() string {

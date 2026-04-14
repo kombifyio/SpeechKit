@@ -11,6 +11,7 @@ import {
   fetchSettingsState,
   saveProviderCredential,
   saveSettingsState,
+  selectDownloadedModel,
   startModelDownload,
   testProviderCredential,
   type DownloadItem,
@@ -20,6 +21,7 @@ import {
 } from '@/lib/speechkit'
 
 type Tab = 'general' | 'stt' | 'assist' | 'realtime_voice'
+export type SettingsTab = Tab
 
 const CTRL_SHIFT_SUFFIX_KEYS = ['d', 'j', 'k', 'space'] as const
 
@@ -40,13 +42,13 @@ function providerCredentialCopy(profileName: string, credential: ProviderCredent
   }
 }
 
-export function SettingsApp() {
+export function SettingsApp({ initialTab = 'general' }: { initialTab?: Tab }) {
   const [settings, setSettings] = useState(defaultSettingsState)
   const [providerTokens, setProviderTokens] = useState<Record<string, string>>({})
   const [providerBusy, setProviderBusy] = useState<Record<string, boolean>>({})
   const [loaded, setLoaded] = useState(false)
   const [toast, setToast] = useState('')
-  const [tab, setTab] = useState<Tab>('general')
+  const [tab, setTab] = useState<Tab>(initialTab)
   const [dlCatalog, setDlCatalog] = useState<DownloadItem[]>([])
   const [dlJobs, setDlJobs] = useState<DownloadJob[]>([])
   const [confirmItem, setConfirmItem] = useState<DownloadItem | null>(null)
@@ -82,6 +84,10 @@ export function SettingsApp() {
       if (toastTimer.current) window.clearTimeout(toastTimer.current)
     }
   }, [])
+
+  useEffect(() => {
+    setTab(initialTab)
+  }, [initialTab])
 
   useEffect(() => {
     const hasActive = dlJobs.some((j) => j.status === 'pending' || j.status === 'running')
@@ -206,11 +212,11 @@ export function SettingsApp() {
   return (
     <div className="flex h-full bg-[#131318] text-[13px] text-[#e4e1e9]">
       {/* Settings sub-nav */}
-      <div className="w-[180px] shrink-0 border-r border-[#35343a]/20 bg-[#1b1b20] py-6 px-3">
+      <div className="w-45 shrink-0 border-r border-[#35343a]/20 bg-[#1b1b20] py-6 px-3">
         <h2 className="px-3 mb-5 text-xs font-bold uppercase tracking-widest text-[#938ea1]">Settings</h2>
         <nav className="space-y-0.5">
           <TabBtn active={tab === 'general'} onClick={() => setTab('general')}>General</TabBtn>
-          <TabBtn active={tab === 'stt'} onClick={() => setTab('stt')}>STT</TabBtn>
+          <TabBtn active={tab === 'stt'} onClick={() => setTab('stt')}>Transcribe</TabBtn>
           <TabBtn active={tab === 'assist'} onClick={() => setTab('assist')}>Assist</TabBtn>
           <TabBtn active={tab === 'realtime_voice'} onClick={() => setTab('realtime_voice')}>Voice Agent</TabBtn>
         </nav>
@@ -398,6 +404,7 @@ export function SettingsApp() {
             onClearCredential={handleClearProviderCredential}
             onTestCredential={handleTestProviderCredential}
             dlCatalog={dlCatalog}
+            setDlCatalog={setDlCatalog}
             dlJobs={dlJobs}
             setDlJobs={setDlJobs}
             confirmItem={confirmItem}
@@ -552,6 +559,7 @@ function ModelPanel({
   onClearCredential,
   onTestCredential,
   dlCatalog,
+  setDlCatalog,
   dlJobs,
   setDlJobs,
   confirmItem,
@@ -571,6 +579,7 @@ function ModelPanel({
   onClearCredential: (provider: string) => void
   onTestCredential: (provider: string) => void
   dlCatalog: DownloadItem[]
+  setDlCatalog: React.Dispatch<React.SetStateAction<DownloadItem[]>>
   dlJobs: DownloadJob[]
   setDlJobs: React.Dispatch<React.SetStateAction<DownloadJob[]>>
   confirmItem: DownloadItem | null
@@ -746,6 +755,7 @@ function ModelPanel({
                         const itemJob = dlJobs.find((candidate) => candidate.modelId === item.id)
                         const itemDownloadActive = itemJob?.status === 'pending' || itemJob?.status === 'running'
                         const itemDownloadReady = Boolean(item.available || itemJob?.status === 'done')
+                        const itemSelected = Boolean(item.selected)
 
                         return (
                           <div key={item.id} className="flex items-center gap-2">
@@ -763,7 +773,38 @@ function ModelPanel({
                                 <button type="button" onClick={() => { if (itemJob) cancelModelDownload(itemJob.id).catch(() => {}) }} className="shrink-0 text-[10px] text-[#938ea1] hover:text-red-300/75">Cancel download</button>
                               </>
                             ) : itemDownloadReady ? (
-                              <span className="text-[10px] text-emerald-300/80">Ready on this device</span>
+                              itemSelected ? (
+                                <span className="text-[10px] text-emerald-300/80">Selected on this device</span>
+                              ) : (
+                                <>
+                                  <span className="text-[10px] text-emerald-300/80">Ready on this device</span>
+                                  <button
+                                    type="button"
+                                    aria-label={`Use ${item.name}`}
+                                    onClick={async () => {
+                                      try {
+                                        const result = await selectDownloadedModel(item.id)
+                                        const [freshSettings, freshCatalog] = await Promise.all([
+                                          fetchSettingsState(),
+                                          fetchDownloadCatalog(),
+                                        ])
+                                        setSettings((prev) => ({
+                                          ...prev,
+                                          ...freshSettings,
+                                          profiles: freshSettings.profiles?.length ? freshSettings.profiles : prev.profiles,
+                                        }))
+                                        setDlCatalog(freshCatalog)
+                                        showToast(result.message ?? `${item.name} selected`)
+                                      } catch (error) {
+                                        showToast(error instanceof Error ? error.message : 'Switch failed')
+                                      }
+                                    }}
+                                    className="rounded border border-[#484555] px-2 py-0.5 text-[10px] text-[#938ea1] hover:border-[#cabeff]/30 hover:text-[#cabeff]"
+                                  >
+                                    Use model
+                                  </button>
+                                </>
+                              )
                             ) : (
                               <button type="button" onClick={() => setConfirmItem(item)} className="rounded border border-[#484555] px-2 py-0.5 text-[10px] text-[#938ea1] hover:border-[#cabeff]/30 hover:text-[#cabeff]">Download</button>
                             )}

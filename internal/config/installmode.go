@@ -89,8 +89,8 @@ func IsFirstRun() bool {
 	return os.IsNotExist(err)
 }
 
-// ApplyLocalInstallDefaults configures a pending local install to use the bundled
-// local runtime without requiring additional manual setup.
+// ApplyLocalInstallDefaults configures a pending local install to wait for the
+// onboarding download flow before enabling a local Whisper runtime.
 func ApplyLocalInstallDefaults(cfg *Config, state *InstallState) bool {
 	if cfg == nil || state == nil {
 		return false
@@ -100,15 +100,14 @@ func ApplyLocalInstallDefaults(cfg *Config, state *InstallState) bool {
 	}
 
 	changed := false
-	if !cfg.Local.Enabled {
-		cfg.Local.Enabled = true
+	if cfg.Local.Enabled {
+		cfg.Local.Enabled = false
 		changed = true
 	}
-	// On a fresh local install whisper.cpp is the only STT provider.
-	// Disable HuggingFace and cloud routing so the user starts with a
-	// fully-offline, zero-config experience.
-	if cfg.Routing.Strategy == "" || cfg.Routing.Strategy == "cloud-only" || cfg.Routing.Strategy == "dynamic" {
-		cfg.Routing.Strategy = "local-only"
+	// A fresh install no longer bundles a Whisper model. Keep routing neutral
+	// until the user downloads Small or Turbo during onboarding.
+	if cfg.Routing.Strategy == "" || cfg.Routing.Strategy == "local-only" || cfg.Routing.Strategy == "cloud-only" {
+		cfg.Routing.Strategy = "dynamic"
 		changed = true
 	}
 	if cfg.HuggingFace.Enabled {

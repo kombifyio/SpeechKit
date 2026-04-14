@@ -1,11 +1,14 @@
 package main
 
 import (
+	"context"
 	"fmt"
+	"log/slog"
 	"math"
 	"strings"
 	"time"
 
+	"github.com/kombifyio/SpeechKit/internal/audio"
 	"github.com/kombifyio/SpeechKit/internal/config"
 	"github.com/kombifyio/SpeechKit/internal/secrets"
 	"github.com/kombifyio/SpeechKit/internal/tray"
@@ -32,6 +35,9 @@ const (
 
 	assistBubbleWidth  = 450
 	assistBubbleHeight = 120
+
+	prompterWidth  = 420
+	prompterHeight = 500
 
 	overlaySpeakingThreshold = 0.18
 	overlayVisualizerGain    = 14.0
@@ -183,6 +189,32 @@ func newAssistBubbleWindowOptions() application.WebviewWindowOptions {
 func assistBubblePosition(bounds screenBounds) (int, int) {
 	x := bounds.X + (bounds.Width-assistBubbleWidth)/2
 	y := bounds.Y + 60 // Below the top overlay area
+	return x, y
+}
+
+func newPrompterWindowOptions() application.WebviewWindowOptions {
+	return application.WebviewWindowOptions{
+		Title:            "SpeechKit Voice Agent",
+		Width:            prompterWidth,
+		Height:           prompterHeight,
+		MinWidth:         320,
+		MinHeight:        300,
+		DisableResize:    false,
+		Frameless:        false,
+		AlwaysOnTop:      true,
+		Hidden:           true,
+		URL:              "/voiceagent-prompter.html",
+		BackgroundColour: application.NewRGBA(11, 15, 20, 255),
+		Windows: application.WindowsWindow{
+			HiddenOnTaskbar: false,
+			Theme:           application.Dark,
+		},
+	}
+}
+
+func prompterPosition(bounds screenBounds) (int, int) {
+	x := bounds.X + bounds.Width - prompterWidth - 20
+	y := bounds.Y + bounds.Height - prompterHeight - 60
 	return x, y
 }
 
@@ -616,6 +648,146 @@ func (s *appState) showAssistBubble(text string) {
 	bubble.SetIgnoreMouseEvents(false)
 	escapedText := escapeJS(text)
 	bubble.ExecJS(fmt.Sprintf(`if(window.__assistBubble){window.__assistBubble.show("%s")}`, escapedText))
+}
+
+func (s *appState) showPrompterWindow() {
+	if s == nil {
+		return
+	}
+	s.mu.Lock()
+	prompter := s.prompterWindow
+	locator := s.screenLocator
+	s.mu.Unlock()
+
+	if prompter == nil {
+		return
+	}
+
+	if locator != nil {
+		if bounds, ok := locator.OverlayScreenBounds(); ok {
+			x, y := prompterPosition(bounds)
+			prompter.SetPosition(x, y)
+		}
+	}
+
+	if !prompter.IsVisible() {
+		prompter.Show()
+	}
+}
+
+func (s *appState) hidePrompterWindow() {
+	if s == nil {
+		return
+	}
+	s.mu.Lock()
+	prompter := s.prompterWindow
+	s.mu.Unlock()
+
+	if prompter != nil {
+		prompter.Hide()
+	}
+}
+
+func (s *appState) sendPrompterMessage(role, text string, done bool) {
+	if s == nil {
+		return
+	}
+	s.mu.Lock()
+	prompter := s.prompterWindow
+	s.mu.Unlock()
+
+	if prompter == nil {
+		return
+	}
+
+	escapedText := escapeJS(text)
+	doneStr := "false"
+	if done {
+		doneStr = "true"
+	}
+	prompter.ExecJS(fmt.Sprintf(
+		`if(window.__prompter){window.__prompter.addMessage({role:"%s",text:"%s",done:%s})}`,
+		role, escapedText, doneStr,
+	))
+}
+
+func (s *appState) clearPrompterMessages() {
+	if s == nil {
+		return
+	}
+	s.mu.Lock()
+	prompter := s.prompterWindow
+	s.mu.Unlock()
+
+	if prompter == nil {
+		return
+	}
+
+	prompter.ExecJS(`if(window.__prompter){window.__prompter.clear()}`)
+}
+
+func (s *appState) updatePrompterState(state string) {
+	if s == nil {
+		return
+	}
+	s.mu.Lock()
+	prompter := s.prompterWindow
+	s.mu.Unlock()
+
+	if prompter == nil {
+		return
+	}
+
+	prompter.ExecJS(fmt.Sprintf(
+		`if(window.__prompter){window.__prompter.updateState("%s")}`,
+		escapeJS(state),
+	))
+}
+
+func (s *appState) startVoiceAgentStream(ctx context.Context) {
+	sp, err := audio.NewStreamPlayer()
+	if err != nil {
+		slog.Error("voice agent stream player init", "err", err)
+		return
+	}
+	s.mu.Lock()
+	old := s.streamPlayer
+	s.streamPlayer = sp
+	s.mu.Unlock()
+
+	if old != nil {
+		old.Close()
+	}
+	sp.Start(ctx)
+}
+
+func (s *appState) stopVoiceAgentStream() {
+	s.mu.Lock()
+	sp := s.streamPlayer
+	s.streamPlayer = nil
+	s.mu.Unlock()
+	if sp != nil {
+		sp.Close()
+	}
+}
+
+func (s *appState) interruptVoiceAgentStream(ctx context.Context) {
+	s.mu.Lock()
+	sp := s.streamPlayer
+	s.mu.Unlock()
+	if sp != nil {
+		sp.StopAndDrain()
+		sp.Start(ctx)
+	}
+}
+
+func (s *appState) writeVoiceAgentAudio(chunk []byte) {
+	s.mu.Lock()
+	sp := s.streamPlayer
+	s.mu.Unlock()
+	if sp != nil {
+		sp.WriteChunk(chunk)
+	}
 }
 
 func (s *appState) doneResetDelayValue() time.Duration {

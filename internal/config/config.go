@@ -26,6 +26,7 @@ type Config struct {
 	Audio       AudioConfig       `toml:"audio"`
 	UI          UIConfig          `toml:"ui"`
 	Vocabulary  VocabularyConfig  `toml:"vocabulary"`
+	Shortcuts   ShortcutsConfig   `toml:"shortcuts"`
 	Local       LocalConfig       `toml:"local"`
 	VPS         VPSConfig         `toml:"vps"`
 	HuggingFace HuggingFaceConfig `toml:"huggingface"`
@@ -71,6 +72,18 @@ type VocabularyConfig struct {
 	Dictionary string `toml:"dictionary"`
 }
 
+type ShortcutsConfig struct {
+	Locale map[string]ShortcutLocaleConfig `toml:"locale"`
+}
+
+type ShortcutLocaleConfig struct {
+	LeadingFillers []string `toml:"leading_fillers"`
+	CopyLast       []string `toml:"copy_last"`
+	InsertLast     []string `toml:"insert_last"`
+	Summarize      []string `toml:"summarize"`
+	QuickNote      []string `toml:"quick_note"`
+}
+
 type UIConfig struct {
 	OverlayEnabled  bool   `toml:"overlay_enabled"`
 	OverlayPosition string `toml:"overlay_position"` // "top", "bottom", "left", "right"
@@ -99,6 +112,7 @@ type HuggingFaceConfig struct {
 	Enabled      bool   `toml:"enabled"`
 	Model        string `toml:"model"`
 	UtilityModel string `toml:"utility_model"`
+	AssistModel  string `toml:"assist_model"`
 	AgentModel   string `toml:"agent_model"`
 	TokenEnv     string `toml:"token_env"`
 }
@@ -131,6 +145,7 @@ type OpenAIProviderConfig struct {
 	APIKeyEnv     string `toml:"api_key_env"`
 	STTModel      string `toml:"stt_model"`
 	UtilityModel  string `toml:"utility_model"`
+	AssistModel   string `toml:"assist_model"`
 	AgentModel    string `toml:"agent_model"`
 	TTSModel      string `toml:"tts_model"`
 	TTSVoice      string `toml:"tts_voice"`
@@ -142,6 +157,7 @@ type GroqProviderConfig struct {
 	APIKeyEnv    string `toml:"api_key_env"`
 	STTModel     string `toml:"stt_model"`
 	UtilityModel string `toml:"utility_model"`
+	AssistModel  string `toml:"assist_model"`
 	AgentModel   string `toml:"agent_model"`
 }
 
@@ -150,6 +166,7 @@ type GoogleProviderConfig struct {
 	APIKeyEnv    string `toml:"api_key_env"`
 	STTModel     string `toml:"stt_model"`
 	UtilityModel string `toml:"utility_model"`
+	AssistModel  string `toml:"assist_model"`
 	AgentModel   string `toml:"agent_model"`
 }
 
@@ -158,6 +175,7 @@ type OllamaProviderConfig struct {
 	BaseURL      string `toml:"base_url"`
 	STTModel     string `toml:"stt_model"`
 	UtilityModel string `toml:"utility_model"`
+	AssistModel  string `toml:"assist_model"`
 	AgentModel   string `toml:"agent_model"`
 }
 
@@ -165,6 +183,7 @@ type OpenRouterProviderConfig struct {
 	Enabled      bool   `toml:"enabled"`
 	APIKeyEnv    string `toml:"api_key_env"`
 	UtilityModel string `toml:"utility_model"`
+	AssistModel  string `toml:"assist_model"`
 	AgentModel   string `toml:"agent_model"`
 }
 
@@ -206,13 +225,32 @@ type TTSLocal struct {
 
 // VoiceAgentConfig configures the real-time Voice Agent Mode.
 type VoiceAgentConfig struct {
-	Enabled                bool   `toml:"enabled"`
-	Model                  string `toml:"model"`          // Real-time model ID (e.g. "gemini-2.5-flash-native-audio-preview-12-2025")
-	FallbackModel          string `toml:"fallback_model"` // Fallback real-time model
-	Voice                  string `toml:"voice"`          // Voice name for real-time model
-	ReminderAfterIdleSec   int    `toml:"reminder_after_idle_sec"`
-	DeactivateAfterIdleSec int    `toml:"deactivate_after_idle_sec"`
-	PipelineFallback       bool   `toml:"pipeline_fallback"` // Use STT+LLM+TTS as last resort
+	Enabled                         bool   `toml:"enabled"`
+	Model                           string `toml:"model"`          // Real-time model ID (e.g. "gemini-2.5-flash-native-audio-preview-12-2025")
+	FallbackModel                   string `toml:"fallback_model"` // Fallback real-time model
+	Voice                           string `toml:"voice"`          // Voice name for real-time model
+	Instruction                     string `toml:"instruction"`    // Optional host-supplied instruction or guide for the Voice Agent
+	ReminderAfterIdleSec            int    `toml:"reminder_after_idle_sec"`
+	DeactivateAfterIdleSec          int    `toml:"deactivate_after_idle_sec"`
+	PipelineFallback                bool   `toml:"pipeline_fallback"` // Use STT+LLM+TTS as last resort
+	ShowPrompter                    bool   `toml:"show_prompter"`     // Show live transcript prompter window
+	EnableInputTranscript           bool   `toml:"enable_input_transcript"`
+	EnableOutputTranscript          bool   `toml:"enable_output_transcript"`
+	EnableAffectiveDialog           bool   `toml:"enable_affective_dialog"`
+	ThinkingEnabled                 bool   `toml:"thinking_enabled"`
+	IncludeThoughts                 bool   `toml:"include_thoughts"`
+	ThinkingBudget                  int    `toml:"thinking_budget"`
+	ThinkingLevel                   string `toml:"thinking_level"`
+	ContextCompressionEnabled       bool   `toml:"context_compression_enabled"`
+	ContextCompressionTriggerTokens int64  `toml:"context_compression_trigger_tokens"`
+	ContextCompressionTargetTokens  int64  `toml:"context_compression_target_tokens"`
+	AutomaticActivityDetection      bool   `toml:"automatic_activity_detection"`
+	ActivityHandling                string `toml:"activity_handling"`
+	TurnCoverage                    string `toml:"turn_coverage"`
+	VADStartSensitivity             string `toml:"vad_start_sensitivity"`
+	VADEndSensitivity               string `toml:"vad_end_sensitivity"`
+	VADPrefixPaddingMs              int    `toml:"vad_prefix_padding_ms"`
+	VADSilenceDurationMs            int    `toml:"vad_silence_duration_ms"`
 }
 
 // Load reads config from the given path. Falls back to defaults if file not found.
@@ -253,7 +291,29 @@ func Load(path string) (*Config, error) {
 		}
 	}
 
+	backfillLegacyAssistModels(meta, cfg)
+
 	return cfg, nil
+}
+
+func backfillLegacyAssistModels(meta toml.MetaData, cfg *Config) {
+	if cfg == nil {
+		return
+	}
+
+	backfillLegacyAssistField(!meta.IsDefined("huggingface", "assist_model"), &cfg.HuggingFace.AssistModel, cfg.HuggingFace.AgentModel)
+	backfillLegacyAssistField(!meta.IsDefined("providers", "openai", "assist_model"), &cfg.Providers.OpenAI.AssistModel, cfg.Providers.OpenAI.AgentModel)
+	backfillLegacyAssistField(!meta.IsDefined("providers", "groq", "assist_model"), &cfg.Providers.Groq.AssistModel, cfg.Providers.Groq.AgentModel)
+	backfillLegacyAssistField(!meta.IsDefined("providers", "google", "assist_model"), &cfg.Providers.Google.AssistModel, cfg.Providers.Google.AgentModel)
+	backfillLegacyAssistField(!meta.IsDefined("providers", "ollama", "assist_model"), &cfg.Providers.Ollama.AssistModel, cfg.Providers.Ollama.AgentModel)
+	backfillLegacyAssistField(!meta.IsDefined("providers", "openrouter", "assist_model"), &cfg.Providers.OpenRouter.AssistModel, cfg.Providers.OpenRouter.AgentModel)
+}
+
+func backfillLegacyAssistField(assistMissing bool, assistValue *string, legacyAgentValue string) {
+	if !assistMissing || assistValue == nil || strings.TrimSpace(*assistValue) != "" {
+		return
+	}
+	*assistValue = strings.TrimSpace(legacyAgentValue)
 }
 
 func Save(path string, cfg *Config) error {
@@ -323,6 +383,7 @@ func defaults() *Config {
 			Enabled:      ManagedHuggingFaceAvailableInBuild(),
 			Model:        "openai/whisper-large-v3",
 			UtilityModel: "",
+			AssistModel:  "",
 			AgentModel:   "",
 			TokenEnv:     "HF_TOKEN",
 		},
@@ -368,20 +429,40 @@ func defaults() *Config {
 			},
 		},
 		VoiceAgent: VoiceAgentConfig{
-			Enabled:                true,
-			Model:                  "gemini-2.5-flash-native-audio-preview-12-2025",
-			FallbackModel:          "gpt-realtime-mini",
-			Voice:                  "Kore",
-			ReminderAfterIdleSec:   300,
-			DeactivateAfterIdleSec: 900,
-			PipelineFallback:       true,
+			Enabled:                         true,
+			Model:                           "gemini-2.5-flash-native-audio-preview-12-2025",
+			FallbackModel:                   "gpt-realtime-mini",
+			Voice:                           "Kore",
+			Instruction:                     "",
+			ReminderAfterIdleSec:            300,
+			DeactivateAfterIdleSec:          900,
+			PipelineFallback:                true,
+			ShowPrompter:                    true,
+			EnableInputTranscript:           true,
+			EnableOutputTranscript:          true,
+			EnableAffectiveDialog:           false,
+			ThinkingEnabled:                 false,
+			IncludeThoughts:                 false,
+			ThinkingBudget:                  0,
+			ThinkingLevel:                   "medium",
+			ContextCompressionEnabled:       true,
+			ContextCompressionTriggerTokens: 24000,
+			ContextCompressionTargetTokens:  12000,
+			AutomaticActivityDetection:      true,
+			ActivityHandling:                "start_of_activity_interrupts",
+			TurnCoverage:                    "turn_includes_only_activity",
+			VADStartSensitivity:             "low",
+			VADEndSensitivity:               "low",
+			VADPrefixPaddingMs:              100,
+			VADSilenceDurationMs:            700,
 		},
 		Providers: ProvidersConfig{
 			OpenAI: OpenAIProviderConfig{
 				APIKeyEnv:     "OPENAI_API_KEY",
 				STTModel:      "whisper-1", // Fallback only; HuggingFace is primary STT
-			UtilityModel:  "gpt-5.4-mini-2026-03-17",
-			AgentModel:    "gpt-5.4-2026-03-05",
+				UtilityModel:  "gpt-5.4-mini-2026-03-17",
+				AssistModel:   "gpt-5.4-2026-03-05",
+				AgentModel:    "gpt-5.4-2026-03-05",
 				TTSModel:      "tts-1",
 				TTSVoice:      "nova",
 				RealtimeModel: "gpt-realtime-mini",
@@ -390,22 +471,26 @@ func defaults() *Config {
 				APIKeyEnv:    "GROQ_API_KEY",
 				STTModel:     "whisper-large-v3-turbo",
 				UtilityModel: "llama-3.1-8b-instant",
+				AssistModel:  "llama-3.3-70b-versatile",
 				AgentModel:   "llama-3.3-70b-versatile",
 			},
 			Google: GoogleProviderConfig{
 				APIKeyEnv:    "GOOGLE_AI_API_KEY",
 				STTModel:     "chirp_3",
-				UtilityModel: "gemini-3.1-flash-lite-preview",
-				AgentModel:   "gemini-3.1-pro-preview",
+				UtilityModel: "gemini-2.5-flash-lite",
+				AssistModel:  "gemini-2.5-flash",
+				AgentModel:   "gemini-2.5-pro",
 			},
 			Ollama: OllamaProviderConfig{
 				BaseURL:      "http://localhost:11434",
 				UtilityModel: "gemma4:e4b",
+				AssistModel:  "gemma4:e4b",
 				AgentModel:   "gemma4:e4b",
 			},
 			OpenRouter: OpenRouterProviderConfig{
 				APIKeyEnv:    "OPENROUTER_API_KEY",
 				UtilityModel: "meta-llama/llama-3.1-8b-instruct",
+				AssistModel:  "google/gemini-2.5-flash",
 				AgentModel:   "google/gemini-2.5-flash",
 			},
 		},

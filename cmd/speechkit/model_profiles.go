@@ -46,64 +46,55 @@ func applySTTProfile(ctx context.Context, cfgPath string, cfg *config.Config, st
 	switch profile.ExecutionMode {
 	case models.ExecutionModeLocal:
 		cfg.Local.Enabled = true
-		if cfg.Routing.Strategy == "" || cfg.Routing.Strategy == "cloud-only" {
-			cfg.Routing.Strategy = "dynamic"
-		}
-		var localProvider localProviderStarter
-		if targetRouter != nil {
-			if previous, ok := targetRouter.Local().(*stt.LocalProvider); ok {
-				previous.StopServer()
-			}
-			modelPath := cfg.Local.ModelPath
-			if modelPath == "" {
-				modelPath = defaultLocalModelPath(executableDir(), os.Getenv("LOCALAPPDATA"), cfg.Local.Model)
-			}
-			localProvider = stt.NewLocalProvider(cfg.Local.Port, modelPath, cfg.Local.GPU)
-			targetRouter.SetLocal(localProvider)
-			targetRouter.Strategy = router.Strategy(cfg.Routing.Strategy)
-		}
-		if localProvider != nil {
-			launchLocalProvider(ctx, state, targetRouter, localProvider)
-		}
+		cfg.Routing.Strategy = "local-only"
+		syncConfiguredLocalProvider(ctx, cfg, state, targetRouter)
 	case models.ExecutionModeHFRouted:
 		token, _, err := config.ResolveHuggingFaceToken(cfg)
 		if err != nil || token == "" {
 			return errors.New("hugging face token not configured")
 		}
+		cfg.Routing.Strategy = "cloud-only"
 		cfg.HuggingFace.Enabled = true
 		cfg.HuggingFace.Model = profile.ModelID
 		if targetRouter != nil {
 			targetRouter.PreferCloud("huggingface", stt.NewHuggingFaceProvider(profile.ModelID, token))
+			syncConfiguredLocalProvider(ctx, cfg, state, targetRouter)
 		}
 	case models.ExecutionModeOpenAI:
 		apiKey := config.ResolveSecret(cfg.Providers.OpenAI.APIKeyEnv)
 		if apiKey == "" {
 			return errors.New("openai api key not configured")
 		}
+		cfg.Routing.Strategy = "cloud-only"
 		cfg.Providers.OpenAI.Enabled = true
 		cfg.Providers.OpenAI.STTModel = profile.ModelID
 		if targetRouter != nil {
 			targetRouter.PreferCloud("openai", stt.NewOpenAICompatibleProvider("openai", "https://api.openai.com", apiKey, profile.ModelID))
+			syncConfiguredLocalProvider(ctx, cfg, state, targetRouter)
 		}
 	case models.ExecutionModeGroq:
 		apiKey := config.ResolveSecret(cfg.Providers.Groq.APIKeyEnv)
 		if apiKey == "" {
 			return errors.New("groq api key not configured")
 		}
+		cfg.Routing.Strategy = "cloud-only"
 		cfg.Providers.Groq.Enabled = true
 		cfg.Providers.Groq.STTModel = profile.ModelID
 		if targetRouter != nil {
 			targetRouter.PreferCloud("groq", stt.NewOpenAICompatibleProvider("groq", "https://api.groq.com/openai", apiKey, profile.ModelID))
+			syncConfiguredLocalProvider(ctx, cfg, state, targetRouter)
 		}
 	case models.ExecutionModeGoogle:
 		apiKey := config.ResolveSecret(cfg.Providers.Google.APIKeyEnv)
 		if apiKey == "" {
 			return errors.New("google api key not configured")
 		}
+		cfg.Routing.Strategy = "cloud-only"
 		cfg.Providers.Google.Enabled = true
 		cfg.Providers.Google.STTModel = profile.ModelID
 		if targetRouter != nil {
 			targetRouter.PreferCloud("google", stt.NewGoogleSTTProvider(apiKey, profile.ModelID))
+			syncConfiguredLocalProvider(ctx, cfg, state, targetRouter)
 		}
 	default:
 		return fmt.Errorf("unsupported execution mode for STT")
@@ -122,9 +113,41 @@ func applySTTProfile(ctx context.Context, cfgPath string, cfg *config.Config, st
 	return nil
 }
 
+func syncConfiguredLocalProvider(ctx context.Context, cfg *config.Config, state *appState, sttRouter *router.Router) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+
+	targetRouter := sttRouter
+	if targetRouter == nil && state != nil {
+		targetRouter = state.sttRouter
+	}
+	if targetRouter == nil {
+		return
+	}
+
+	if previous, ok := targetRouter.Local().(*stt.LocalProvider); ok {
+		previous.StopServer()
+	}
+
+	targetRouter.Strategy = router.Strategy(cfg.Routing.Strategy)
+	if !cfg.Local.Enabled || cfg.Routing.Strategy == "cloud-only" {
+		targetRouter.SetLocal(nil)
+		return
+	}
+
+	modelPath := cfg.Local.ModelPath
+	if modelPath == "" {
+		modelPath = defaultLocalModelPath(executableDir(), os.Getenv("LOCALAPPDATA"), cfg.Local.Model)
+	}
+	localProvider := stt.NewLocalProvider(cfg.Local.Port, modelPath, cfg.Local.GPU)
+	targetRouter.SetLocal(localProvider)
+	launchLocalProvider(ctx, state, targetRouter, localProvider)
+}
+
 func applyUtilityProfile(ctx context.Context, cfgPath string, cfg *config.Config, state *appState, profile models.Profile) error {
 	clearUtilityModels(cfg)
-	if err := configureLLMProfile(cfg, profile, true); err != nil {
+	if err := configureLLMProfile(cfg, profile, models.ModalityUtility); err != nil {
 		return err
 	}
 	if err := config.Save(cfgPath, cfg); err != nil {
@@ -139,7 +162,7 @@ func applyUtilityProfile(ctx context.Context, cfgPath string, cfg *config.Config
 
 func applyAssistProfile(ctx context.Context, cfgPath string, cfg *config.Config, state *appState, profile models.Profile) error {
 	clearAssistModels(cfg)
-	if err := configureLLMProfile(cfg, profile, false); err != nil {
+	if err := configureLLMProfile(cfg, profile, models.ModalityAssist); err != nil {
 		return err
 	}
 	if err := config.Save(cfgPath, cfg); err != nil {
@@ -162,45 +185,45 @@ func clearUtilityModels(cfg *config.Config) {
 }
 
 func clearAssistModels(cfg *config.Config) {
-	cfg.Providers.OpenAI.AgentModel = ""
-	cfg.Providers.Groq.AgentModel = ""
-	cfg.Providers.Google.AgentModel = ""
-	cfg.Providers.Ollama.AgentModel = ""
-	cfg.Providers.OpenRouter.AgentModel = ""
-	cfg.HuggingFace.AgentModel = ""
+	cfg.Providers.OpenAI.AssistModel = ""
+	cfg.Providers.Groq.AssistModel = ""
+	cfg.Providers.Google.AssistModel = ""
+	cfg.Providers.Ollama.AssistModel = ""
+	cfg.Providers.OpenRouter.AssistModel = ""
+	cfg.HuggingFace.AssistModel = ""
 }
 
-func configureLLMProfile(cfg *config.Config, profile models.Profile, utility bool) error {
+func configureLLMProfile(cfg *config.Config, profile models.Profile, modality models.Modality) error {
 	switch profile.ExecutionMode {
 	case models.ExecutionModeOpenAI:
 		if config.ResolveSecret(cfg.Providers.OpenAI.APIKeyEnv) == "" {
 			return errors.New("openai api key not configured")
 		}
 		cfg.Providers.OpenAI.Enabled = true
-		if utility {
+		if modality == models.ModalityUtility {
 			cfg.Providers.OpenAI.UtilityModel = profile.ModelID
 		} else {
-			cfg.Providers.OpenAI.AgentModel = profile.ModelID
+			cfg.Providers.OpenAI.AssistModel = profile.ModelID
 		}
 	case models.ExecutionModeGroq:
 		if config.ResolveSecret(cfg.Providers.Groq.APIKeyEnv) == "" {
 			return errors.New("groq api key not configured")
 		}
 		cfg.Providers.Groq.Enabled = true
-		if utility {
+		if modality == models.ModalityUtility {
 			cfg.Providers.Groq.UtilityModel = profile.ModelID
 		} else {
-			cfg.Providers.Groq.AgentModel = profile.ModelID
+			cfg.Providers.Groq.AssistModel = profile.ModelID
 		}
 	case models.ExecutionModeGoogle:
 		if config.ResolveSecret(cfg.Providers.Google.APIKeyEnv) == "" {
 			return errors.New("google api key not configured")
 		}
 		cfg.Providers.Google.Enabled = true
-		if utility {
+		if modality == models.ModalityUtility {
 			cfg.Providers.Google.UtilityModel = profile.ModelID
 		} else {
-			cfg.Providers.Google.AgentModel = profile.ModelID
+			cfg.Providers.Google.AssistModel = profile.ModelID
 		}
 	case models.ExecutionModeHFRouted:
 		token, _, err := config.ResolveHuggingFaceToken(cfg)
@@ -208,30 +231,30 @@ func configureLLMProfile(cfg *config.Config, profile models.Profile, utility boo
 			return errors.New("hugging face token not configured")
 		}
 		cfg.HuggingFace.Enabled = true
-		if utility {
+		if modality == models.ModalityUtility {
 			cfg.HuggingFace.UtilityModel = profile.ModelID
 		} else {
-			cfg.HuggingFace.AgentModel = profile.ModelID
+			cfg.HuggingFace.AssistModel = profile.ModelID
 		}
 	case models.ExecutionModeOllama:
 		cfg.Providers.Ollama.Enabled = true
 		if cfg.Providers.Ollama.BaseURL == "" {
 			cfg.Providers.Ollama.BaseURL = "http://localhost:11434"
 		}
-		if utility {
+		if modality == models.ModalityUtility {
 			cfg.Providers.Ollama.UtilityModel = profile.ModelID
 		} else {
-			cfg.Providers.Ollama.AgentModel = profile.ModelID
+			cfg.Providers.Ollama.AssistModel = profile.ModelID
 		}
 	case models.ExecutionModeOpenRouter:
 		if config.ResolveSecret(cfg.Providers.OpenRouter.APIKeyEnv) == "" {
 			return errors.New("openrouter api key not configured")
 		}
 		cfg.Providers.OpenRouter.Enabled = true
-		if utility {
+		if modality == models.ModalityUtility {
 			cfg.Providers.OpenRouter.UtilityModel = profile.ModelID
 		} else {
-			cfg.Providers.OpenRouter.AgentModel = profile.ModelID
+			cfg.Providers.OpenRouter.AssistModel = profile.ModelID
 		}
 	default:
 		return fmt.Errorf("unsupported execution mode %q", profile.ExecutionMode)
@@ -252,11 +275,11 @@ func rebuildAIRuntime(ctx context.Context, state *appState, cfg *config.Config) 
 
 	summarizeFlow := flows.DefineSummarizeFlow(genkitRT.G, genkitRT.UtilityModels())
 	agentFlow := flows.DefineAgentFlow(genkitRT.G, genkitRT.AgentModels())
-	assistFlow := flows.DefineAssistFlow(genkitRT.G, genkitRT.UtilityModels())
+	assistFlow := flows.DefineAssistFlow(genkitRT.G, genkitRT.AssistModels())
 
 	var assistPipeline *assist.Pipeline
-	if state.ttsRouter != nil {
-		assistPipeline = assist.NewPipeline(assistFlow, state.ttsRouter, cfg.TTS.Enabled)
+	if state.ttsRouter != nil || state.assistExecutor != nil {
+		assistPipeline = assist.NewPipeline(assistFlow, state.assistExecutor, state.ttsRouter, cfg.TTS.Enabled)
 	}
 
 	state.mu.Lock()
@@ -275,7 +298,7 @@ func rebuildAIRuntime(ctx context.Context, state *appState, cfg *config.Config) 
 func applyRealtimeVoiceProfile(cfgPath string, cfg *config.Config, state *appState, profile models.Profile) error {
 	apiKey := config.ResolveSecret(cfg.Providers.Google.APIKeyEnv)
 	if apiKey == "" {
-        return errors.New("google api key not configured — add it on the model card in Settings")
+		return errors.New("google api key not configured — add it on the model card in Settings")
 	}
 	cfg.VoiceAgent.Enabled = true
 	cfg.VoiceAgent.Model = profile.ModelID

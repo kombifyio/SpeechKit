@@ -18,13 +18,14 @@ var OllamaBaseURL = "http://localhost:11434"
 // Catalog returns all downloadable models, marking which are already present.
 func Catalog(cfg *config.Config) []Item {
 	modelsDir := ResolveWhisperModelsDir(cfg)
+	selectedLocalModel := selectedWhisperModel(cfg)
 	return []Item{
 		// ── Whisper STT local models ─────────────────────────────────────────
 		{
 			ID:          "whisper.ggml-small",
 			ProfileID:   "stt.local.whispercpp",
 			Name:        "Whisper Small Multilingual (466 MB)",
-			Description: "Default local model. Good multilingual quality with a manageable download size.",
+			Description: "Lightweight fallback local model with good multilingual quality and the smallest download size.",
 			SizeLabel:   "466 MB",
 			SizeBytes:   484_264_096,
 			Kind:        KindHTTP,
@@ -32,6 +33,21 @@ func Catalog(cfg *config.Config) []Item {
 			SHA256:      "1be3a9b2063867b937e64e2ec7483364a79917e157fa98c5d94b5c1fffea987b",
 			License:     "mit",
 			Available:   FileIsPresent(filepath.Join(modelsDir, "ggml-small.bin")),
+			Selected:    selectedLocalModel == "ggml-small.bin",
+		},
+		{
+			ID:          "whisper.ggml-large-v3-turbo",
+			ProfileID:   "stt.local.whispercpp",
+			Name:        "Whisper Large v3 Turbo",
+			Description: "Recommended local Whisper.cpp model with a much better accuracy-speed balance than Small while staying lighter than full Large v3.",
+			SizeLabel:   "~1.6 GB",
+			SizeBytes:   1_624_555_275,
+			Kind:        KindHTTP,
+			URL:         "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-large-v3-turbo.bin",
+			SHA256:      "1fc70f774d38eb169993ac391eea357ef47c88757ef72ee5943879b7e8e2bc69",
+			License:     "mit",
+			Available:   FileIsPresent(filepath.Join(modelsDir, "ggml-large-v3-turbo.bin")),
+			Selected:    selectedLocalModel == "ggml-large-v3-turbo.bin",
 			Recommended: true,
 		},
 		{
@@ -46,6 +62,7 @@ func Catalog(cfg *config.Config) []Item {
 			SHA256:      "64d18257a82c05de9a8e4953fa0e3cdcc1f0822fca32c257fca5a4e1e06d8e2d",
 			License:     "mit",
 			Available:   FileIsPresent(filepath.Join(modelsDir, "ggml-large-v3.bin")),
+			Selected:    selectedLocalModel == "ggml-large-v3.bin",
 		},
 		// ── Ollama LLM models ─────────────────────────────────────────────────
 		{
@@ -74,6 +91,16 @@ func Catalog(cfg *config.Config) []Item {
 			Available:   OllamaModelPresent("gemma4:e4b"),
 		},
 	}
+}
+
+func selectedWhisperModel(cfg *config.Config) string {
+	if cfg == nil {
+		return ""
+	}
+	if modelPath := strings.TrimSpace(cfg.Local.ModelPath); modelPath != "" {
+		return filepath.Base(modelPath)
+	}
+	return strings.TrimSpace(cfg.Local.Model)
 }
 
 // ResolveWhisperModelsDir returns the directory where whisper model files live.

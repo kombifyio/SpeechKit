@@ -93,15 +93,19 @@ type appState struct {
 	summarizeFlow         *core.Flow[flows.SummarizeInput, string, struct{}]
 	agentFlow             *core.Flow[flows.AgentInput, flows.AgentOutput, struct{}]
 	assistFlow            *core.Flow[flows.AssistInput, flows.AssistOutput, struct{}]
+	assistExecutor        assist.ToolExecutor
 	assistPipeline        *assist.Pipeline
 	assistBubble          overlayWindow
+	prompterWindow        overlayWindow
 	ttsRouter             *tts.Router
 	audioPlayer           *audio.Player
 	voiceAgentSession     *voiceagent.Session
+	streamPlayer          *audio.StreamPlayer
 	wailsApp              *application.App
 	captureWin            *application.WebviewWindow
 	doneResetDelay        time.Duration
 	downloads             *downloads.Manager
+	appUpdates            *appUpdateManager
 }
 
 func showSettingsWindow(window settingsWindow) {
@@ -211,7 +215,7 @@ func main() {
 		if err := config.Save(cfgPath, cfg); err != nil {
 			slog.Warn("save local install defaults", "err", err)
 		} else {
-			slog.Info("local install defaults: enabled bundled local runtime")
+			slog.Info("local install defaults: onboarding will download a local model before enabling whisper.cpp")
 		}
 	}
 
@@ -237,6 +241,7 @@ func main() {
 		vocabularyDictionary: cfg.Vocabulary.Dictionary,
 		screenLocator:        newActiveWindowScreenLocator(),
 		downloads:            downloads.NewManager(),
+		appUpdates:           newAppUpdateManager(),
 	}
 
 	// Build router and track provider status
@@ -346,9 +351,13 @@ func main() {
 		// Define flows.
 		state.summarizeFlow = flows.DefineSummarizeFlow(genkitRT.G, genkitRT.UtilityModels())
 		state.agentFlow = flows.DefineAgentFlow(genkitRT.G, genkitRT.AgentModels())
-		state.assistFlow = flows.DefineAssistFlow(genkitRT.G, genkitRT.UtilityModels())
+		state.assistFlow = flows.DefineAssistFlow(genkitRT.G, genkitRT.AssistModels())
 
-		slog.Info("genkit initialized", "utility_models", len(genkitRT.UtilityModels()), "agent_models", len(genkitRT.AgentModels()))
+		slog.Info("genkit initialized",
+			"utility_models", len(genkitRT.UtilityModels()),
+			"assist_models", len(genkitRT.AssistModels()),
+			"agent_models", len(genkitRT.AgentModels()),
+		)
 	}
 
 	// TTS initialization for Assist Mode.
@@ -376,12 +385,26 @@ func main() {
 		slog.Info("audio player ready (24kHz mono)")
 	}
 
+	// Clipboard output and desktop quick actions.
+	clipHandler := output.NewClipboardHandler()
+	shortcutResolver := buildShortcutResolver(cfg)
+	quickActions := newQuickActionCoordinator(state, clipHandler, shortcutResolver)
+	quickActions.summarizer.Summarizer = textactions.SummarizerFunc(func(ctx context.Context, input textactions.Input) (string, error) {
+		state.mu.Lock()
+		flow := state.summarizeFlow
+		state.mu.Unlock()
+		return (&textactions.FlowSummarizer{Flow: flow}).Summarize(ctx, input)
+	})
+	state.assistExecutor = newAssistToolExecutor(quickActions)
+
 	// Assist Pipeline: STT → Codeword → LLM → TTS → Result{Text, Audio}
 	if state.assistFlow != nil {
 		state.assistPipeline = assist.NewPipeline(
 			state.assistFlow,
+			state.assistExecutor,
 			ttsRouter,
 			cfg.TTS.Enabled,
+			assist.WithRouter(assist.NewRouter(assist.WithResolver(shortcutResolver))),
 		)
 		slog.Info("assist pipeline ready")
 	}
@@ -392,17 +415,10 @@ func main() {
 		state.voiceAgentSession = voiceagent.NewSession(geminiProvider, voiceagent.Callbacks{
 			OnStateChange: func(vaState voiceagent.State) {
 				state.addLog(fmt.Sprintf("Voice Agent: %s", vaState), "info")
+				state.updatePrompterState(string(vaState))
 			},
 			OnAudio: func(audioData []byte) {
-				if state.audioPlayer != nil {
-					// Use the app-level ctx so playback is cancelled on shutdown,
-					// preventing goroutine leaks when the voice agent session stops.
-					go func() {
-						if err := state.audioPlayer.PlayPCM(ctx, audioData, 24000); err != nil {
-							slog.Error("voice agent playback error", "err", err)
-						}
-					}()
-				}
+				state.writeVoiceAgentAudio(audioData)
 			},
 			OnText: func(text string) {
 				state.showAssistBubble(text)
@@ -410,19 +426,41 @@ func main() {
 			OnError: func(err error) {
 				state.addLog(fmt.Sprintf("Voice Agent error: %v", err), "error")
 			},
+			OnInputTranscript: func(text string, done bool) {
+				state.sendPrompterMessage("user", text, done)
+			},
+			OnOutputTranscript: func(text string, done bool) {
+				state.sendPrompterMessage("assistant", text, done)
+			},
+			OnToolCall: func(call voiceagent.ToolCall) {
+				state.addLog(fmt.Sprintf("Voice Agent tool requested: %s", call.Name), "warn")
+				if state.voiceAgentSession != nil {
+					if err := state.voiceAgentSession.SendToolResponse(voiceagent.ToolResponse{
+						ID:   call.ID,
+						Name: call.Name,
+						Response: map[string]any{
+							"error": "tool not configured in desktop host",
+						},
+					}); err != nil {
+						state.addLog(fmt.Sprintf("Voice Agent tool response failed: %v", err), "error")
+					}
+				}
+			},
+			OnToolCallCancellation: func(ids []string) {
+				state.addLog(fmt.Sprintf("Voice Agent tool calls cancelled: %v", ids), "info")
+			},
+			OnInterrupted: func() {
+				state.interruptVoiceAgentStream(ctx)
+				state.sendPrompterMessage("system", "[interrupted]", true)
+			},
+			OnSessionEnd: func() {
+				state.stopVoiceAgentStream()
+				state.hidePrompterWindow()
+				state.addLog("Voice Agent session ended", "info")
+			},
 		})
 		slog.Info("voice agent session prepared (start via agent hotkey)")
 	}
-
-	// Clipboard output
-	clipHandler := output.NewClipboardHandler()
-	quickActions := newQuickActionCoordinator(state, clipHandler)
-	quickActions.summarizer.Summarizer = textactions.SummarizerFunc(func(ctx context.Context, input textactions.Input) (string, error) {
-		state.mu.Lock()
-		flow := state.summarizeFlow
-		state.mu.Unlock()
-		return (&textactions.FlowSummarizer{Flow: flow}).Summarize(ctx, input)
-	})
 
 	// Hotkeys for Dictate and Agent mode
 	hkManager := newDualHotkeyManager(
@@ -543,6 +581,12 @@ func main() {
 	state.radialMenu = radialMenuWindow
 	state.assistBubble = assistBubbleWindow
 
+	// Prompter window for Voice Agent transcript (created only when voice agent is enabled).
+	if cfg.VoiceAgent.Enabled && cfg.General.AgentMode == "voice_agent" && cfg.VoiceAgent.ShowPrompter {
+		prompterWin := app.Window.NewWithOptions(newPrompterWindowOptions())
+		state.prompterWindow = prompterWin
+	}
+
 	var overlayMoveSaveMu sync.Mutex
 	var overlayMoveSaveTimer *time.Timer
 	scheduleOverlayMoveSave := func() {
@@ -613,6 +657,18 @@ func main() {
 		state.positionOverlay()
 		state.setState("idle", "")
 	})
+
+	// Listen for prompter stop-button events.
+	if state.voiceAgentSession != nil {
+		app.Event.On("voiceagent:stop", func(_ *application.CustomEvent) {
+			if state.voiceAgentSession.CurrentState() != voiceagent.StateInactive {
+				slog.Info("voice agent stop requested from prompter")
+				state.voiceAgentSession.Stop()
+				state.stopVoiceAgentStream()
+				state.updatePrompterState("inactive")
+			}
+		})
+	}
 
 	for _, msg := range validateCloudProviders(ctx, r) {
 		state.addLog(msg, "info")
@@ -749,6 +805,7 @@ func main() {
 			voiceAgentSession: state.voiceAgentSession,
 			voiceAgentConfig:  &cfg.VoiceAgent,
 			cfg:               cfg,
+			audioCapturer:     capturer,
 		}.Run(ctx)
 	}()
 

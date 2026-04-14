@@ -10,7 +10,7 @@ RequestExecutionLevel user
 
 ; VERSION can be overridden at compile time: makensis /DVERSION=x.y.z
 !ifndef VERSION
-  !define VERSION "0.17.0"
+  !define VERSION "0.18.0"
 !endif
 
 ; --- Interface ---
@@ -49,11 +49,6 @@ Section "SpeechKit" SecMain
   ; Ensure WebView2 runtime for Wails UI
   Call EnsureWebView2Runtime
 
-  ; Create models directory
-  CreateDirectory "$INSTDIR\models"
-  IfFileExists "$INSTDIR\models\ggml-small.bin" +3
-    SetOutPath "$INSTDIR\models"
-    File "${STAGE_DIR}\models\ggml-small.bin"
   SetOutPath "$INSTDIR"
 
   ; Create Start Menu shortcuts
@@ -87,8 +82,7 @@ Section "Uninstall"
   Delete "$INSTDIR\config.toml"
   Delete "$INSTDIR\config.default.toml"
   Delete "$INSTDIR\uninstall.exe"
-  Delete "$INSTDIR\models\ggml-small.bin"
-  RMDir "$INSTDIR\models"
+  RMDir /r "$INSTDIR\models"
 
   ; Remove shortcuts
   Delete "$SMPROGRAMS\kombify SpeechKit\SpeechKit.lnk"

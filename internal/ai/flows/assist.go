@@ -12,7 +12,7 @@ import (
 
 // AssistInput is the input for the assist flow.
 type AssistInput struct {
-	Utterance string `json:"utterance"`          // The user's spoken text
+	Utterance string `json:"utterance"`           // The user's spoken text
 	Locale    string `json:"locale,omitempty"`    // "de", "en", etc.
 	Selection string `json:"selection,omitempty"` // Text currently selected in the active window
 	Context   string `json:"context,omitempty"`   // Additional context (last transcription, active app, etc.)
@@ -27,7 +27,7 @@ type AssistOutput struct {
 }
 
 // DefineAssistFlow creates the assist Genkit flow for single-turn voice interactions.
-// Optimized for speed: uses utility models, short responses, low temperature.
+// Optimized for speed: uses assist models, short responses, low temperature.
 func DefineAssistFlow(g *genkit.Genkit, models []ai.Model) *core.Flow[AssistInput, AssistOutput, struct{}] {
 	return genkit.DefineFlow(g, "assist", func(ctx context.Context, input AssistInput) (AssistOutput, error) {
 		if input.Utterance == "" {

@@ -29,7 +29,8 @@ type desktopInputController struct {
 }
 
 type audioFrameStreamer interface {
-	SetFrameHandler(fn func([]byte))
+	SetPCMHandler(fn func([]byte))
+	Start() error
 }
 
 func (c desktopInputController) Run(ctx context.Context) {
@@ -172,11 +173,25 @@ func (c desktopInputController) toggleVoiceAgent(ctx context.Context) {
 
 	if c.voiceAgentSession.CurrentState() != voiceagent.StateInactive {
 		c.log("Voice Agent: deactivating", "info")
+		// Remove mic handler before stopping to avoid sending to a closing session.
+		if c.audioCapturer != nil {
+			c.audioCapturer.SetPCMHandler(nil)
+		}
 		c.voiceAgentSession.Stop()
+		if c.state != nil {
+			c.state.updatePrompterState("inactive")
+			c.state.stopVoiceAgentStream()
+		}
 		return
 	}
 
 	c.log("Voice Agent: activating", "info")
+
+	// Show prompter window if configured.
+	if c.state != nil && c.voiceAgentConfig != nil && c.voiceAgentConfig.ShowPrompter {
+		c.state.clearPrompterMessages()
+		c.state.showPrompterWindow()
+	}
 
 	// Resolve API key.
 	apiKey := ""
@@ -215,29 +230,75 @@ func (c desktopInputController) toggleVoiceAgent(ctx context.Context) {
 
 	go func() {
 		vocabularyHint := ""
+		instruction := ""
+		policies := voiceagent.LivePolicies{}
 		if c.cfg != nil {
 			vocabularyHint = buildVoiceAgentVocabularyHint(parseVocabularyDictionary(c.cfg.Vocabulary.Dictionary))
 		}
+		if c.voiceAgentConfig != nil {
+			instruction = c.voiceAgentConfig.Instruction
+			policies = voiceagent.LivePolicies{
+				EnableInputAudioTranscription:  c.voiceAgentConfig.EnableInputTranscript,
+				EnableOutputAudioTranscription: c.voiceAgentConfig.EnableOutputTranscript,
+				EnableAffectiveDialog:          c.voiceAgentConfig.EnableAffectiveDialog,
+				Thinking: voiceagent.ThinkingPolicy{
+					Enabled:         c.voiceAgentConfig.ThinkingEnabled,
+					IncludeThoughts: c.voiceAgentConfig.IncludeThoughts,
+					ThinkingBudget:  int32(c.voiceAgentConfig.ThinkingBudget),
+					ThinkingLevel:   voiceagent.ThinkingLevel(c.voiceAgentConfig.ThinkingLevel),
+				},
+				ContextCompression: voiceagent.ContextCompressionPolicy{
+					Enabled:       c.voiceAgentConfig.ContextCompressionEnabled,
+					TriggerTokens: c.voiceAgentConfig.ContextCompressionTriggerTokens,
+					TargetTokens:  c.voiceAgentConfig.ContextCompressionTargetTokens,
+				},
+				ActivityDetection: voiceagent.ActivityDetectionPolicy{
+					Automatic:         c.voiceAgentConfig.AutomaticActivityDetection,
+					StartSensitivity:  voiceagent.StartSensitivity(c.voiceAgentConfig.VADStartSensitivity),
+					EndSensitivity:    voiceagent.EndSensitivity(c.voiceAgentConfig.VADEndSensitivity),
+					PrefixPaddingMs:   int32(c.voiceAgentConfig.VADPrefixPaddingMs),
+					SilenceDurationMs: int32(c.voiceAgentConfig.VADSilenceDurationMs),
+					ActivityHandling:  voiceagent.ActivityHandling(c.voiceAgentConfig.ActivityHandling),
+					TurnCoverage:      voiceagent.TurnCoverage(c.voiceAgentConfig.TurnCoverage),
+				},
+			}
+		}
+
+		// Start streaming audio output before connecting.
+		if c.state != nil {
+			c.state.startVoiceAgentStream(ctx)
+		}
+
 		if err := c.voiceAgentSession.Start(ctx, voiceagent.LiveConfig{
 			Model:          model,
 			APIKey:         apiKey,
 			Voice:          voice,
 			Locale:         locale,
+			Instruction:    instruction,
 			VocabularyHint: vocabularyHint,
+			Policies:       policies,
 		}, idleCfg); err != nil {
 			c.log(fmt.Sprintf("Voice Agent: start failed: %v", err), "error")
+			if c.state != nil {
+				c.state.stopVoiceAgentStream()
+			}
 			return
 		}
 
-		// Stream mic audio to the Voice Agent session.
+		// Stream mic audio to the Voice Agent session via the shared audio capturer.
 		c.log("Voice Agent: streaming audio", "info")
 		if c.audioCapturer != nil {
-			c.audioCapturer.SetFrameHandler(func(frame []byte) {
+			c.audioCapturer.SetPCMHandler(func(frame []byte) {
 				if c.voiceAgentSession.CurrentState() == voiceagent.StateInactive {
 					return
 				}
 				_ = c.voiceAgentSession.SendAudio(frame)
 			})
+
+			// Start the mic capture so frames flow to the handler.
+			if err := c.audioCapturer.Start(); err != nil {
+				c.log(fmt.Sprintf("Voice Agent: mic capture start failed: %v", err), "error")
+			}
 		}
 	}()
 }

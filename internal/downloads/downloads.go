@@ -51,6 +51,7 @@ type Item struct {
 	OllamaModel string `json:"ollamaModel,omitempty"`
 	License     string `json:"license"`
 	Available   bool   `json:"available"`
+	Selected    bool   `json:"selected"`
 	Recommended bool   `json:"recommended,omitempty"`
 }
 

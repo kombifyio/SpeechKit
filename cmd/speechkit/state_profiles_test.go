@@ -12,7 +12,7 @@ func TestActiveProfilesFromConfigReflectsConfiguredProviders(t *testing.T) {
 	cfg.Routing.Strategy = "dynamic"
 	cfg.Providers.Ollama.Enabled = true
 	cfg.Providers.Ollama.UtilityModel = "gemma4:e4b"
-	cfg.Providers.Ollama.AgentModel = "gemma4:e4b"
+	cfg.Providers.Ollama.AssistModel = "gemma4:e4b"
 
 	profiles := activeProfilesFromConfig(cfg, filteredModelCatalog())
 
@@ -24,5 +24,39 @@ func TestActiveProfilesFromConfigReflectsConfiguredProviders(t *testing.T) {
 	}
 	if got := profiles[string(models.ModalityAssist)]; got != "assist.ollama.gemma4-e4b" {
 		t.Fatalf("active assist profile = %q, want %q", got, "assist.ollama.gemma4-e4b")
+	}
+}
+
+func TestActiveProfilesFromConfigPrefersLocalSTTWhenDynamicCloudAlsoMatches(t *testing.T) {
+	cfg := defaultTestConfig()
+	cfg.Local.Enabled = true
+	cfg.Local.Model = "ggml-small.bin"
+	cfg.Routing.Strategy = "dynamic"
+	cfg.Providers.OpenAI.Enabled = true
+	cfg.Providers.OpenAI.APIKeyEnv = "SPEECHKIT_TEST_OPENAI_KEY"
+	cfg.Providers.OpenAI.STTModel = "whisper-1"
+	t.Setenv("SPEECHKIT_TEST_OPENAI_KEY", "test-key")
+
+	profiles := activeProfilesFromConfig(cfg, filteredModelCatalog())
+
+	if got := profiles[string(models.ModalitySTT)]; got != "stt.local.whispercpp" {
+		t.Fatalf("active stt profile = %q, want %q", got, "stt.local.whispercpp")
+	}
+}
+
+func TestActiveProfilesFromConfigUsesCloudSTTWhenRoutingCloudOnly(t *testing.T) {
+	cfg := defaultTestConfig()
+	cfg.Local.Enabled = true
+	cfg.Local.Model = "ggml-small.bin"
+	cfg.Routing.Strategy = "cloud-only"
+	cfg.Providers.OpenAI.Enabled = true
+	cfg.Providers.OpenAI.APIKeyEnv = "SPEECHKIT_TEST_OPENAI_KEY"
+	cfg.Providers.OpenAI.STTModel = "whisper-1"
+	t.Setenv("SPEECHKIT_TEST_OPENAI_KEY", "test-key")
+
+	profiles := activeProfilesFromConfig(cfg, filteredModelCatalog())
+
+	if got := profiles[string(models.ModalitySTT)]; got != "stt.openai.whisper-1" {
+		t.Fatalf("active stt profile = %q, want %q", got, "stt.openai.whisper-1")
 	}
 }

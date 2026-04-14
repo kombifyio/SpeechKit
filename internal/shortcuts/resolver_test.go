@@ -187,3 +187,70 @@ func TestResolveMultilingualQuickNote(t *testing.T) {
 		})
 	}
 }
+
+func TestResolveFrenchAccentedPrefix(t *testing.T) {
+	resolution := Resolve("S'il te plaît résumer ceci")
+
+	if resolution.Intent != IntentSummarize {
+		t.Fatalf("Intent = %q, want %q", resolution.Intent, IntentSummarize)
+	}
+	if got, want := resolution.Payload, "ceci"; got != want {
+		t.Fatalf("Payload = %q, want %q", got, want)
+	}
+}
+
+func TestResolveSpanishPunctuationPrefix(t *testing.T) {
+	resolution := Resolve("¿Resumir esto en dos puntos?")
+
+	if resolution.Intent != IntentSummarize {
+		t.Fatalf("Intent = %q, want %q", resolution.Intent, IntentSummarize)
+	}
+	if got, want := resolution.Payload, "en dos puntos"; got != want {
+		t.Fatalf("Payload = %q, want %q", got, want)
+	}
+}
+
+func TestResolverUsesRegisteredLexicon(t *testing.T) {
+	registry := NewRegistry()
+	registry.RegisterLeadingFillers("de", "bitte")
+	registry.RegisterLexicon(IntentLexicon{
+		Intent: IntentSummarize,
+		Locale: "de",
+		Phrases: []Phrase{
+			{Value: "kurzfassung", Prefix: true},
+		},
+	})
+
+	resolution := NewResolver(registry).Resolve("Bitte Kurzfassung in zwei saetzen", "de-DE")
+
+	if resolution.Intent != IntentSummarize {
+		t.Fatalf("Intent = %q, want %q", resolution.Intent, IntentSummarize)
+	}
+	if got, want := resolution.Alias, "kurzfassung"; got != want {
+		t.Fatalf("Alias = %q, want %q", got, want)
+	}
+	if got, want := resolution.Payload, "in zwei saetzen"; got != want {
+		t.Fatalf("Payload = %q, want %q", got, want)
+	}
+}
+
+func TestResolverFallsBackToBaseLocale(t *testing.T) {
+	registry := NewRegistry()
+	registry.RegisterLeadingFillers("de", "bitte")
+	registry.RegisterLexicon(IntentLexicon{
+		Intent: IntentSummarize,
+		Locale: "de",
+		Phrases: []Phrase{
+			{Value: "kurzfassung", Prefix: true},
+		},
+	})
+
+	resolution := NewResolver(registry).Resolve("Bitte Kurzfassung in drei Punkten", "de-AT")
+
+	if resolution.Intent != IntentSummarize {
+		t.Fatalf("Intent = %q, want %q", resolution.Intent, IntentSummarize)
+	}
+	if got, want := resolution.Payload, "in drei punkten"; got != want {
+		t.Fatalf("Payload = %q, want %q", got, want)
+	}
+}

@@ -1,17 +1,31 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
-import { SettingsApp } from '@/components/settings-app'
+import { SettingsApp, type SettingsTab } from '@/components/settings-app'
 import {
+  cancelModelDownload,
+  cancelAppUpdateDownload,
   dashboardAudioDownloadURL,
   deleteQuickNote,
+  fetchDownloadCatalog,
+  fetchDownloadJobs,
+  fetchAppUpdateJobs,
+  fetchAppVersion,
   fetchAudioDevices,
   fetchDashboardStats,
   fetchHistory,
   fetchLogs,
   fetchQuickNotes,
+  openAppUpdateInstaller,
+  selectDownloadedModel,
   setAudioDevice,
+  startModelDownload,
+  startAppUpdateDownload,
+  type AppUpdateJob,
+  type AppVersionInfo,
   type AudioDevice,
   type DashboardStats,
+  type DownloadItem,
+  type DownloadJob,
   pinQuickNote,
   type LogEntry,
   type QuickNote,
@@ -25,10 +39,13 @@ const DASHBOARD_TAB_STORAGE_KEY = 'speechkit.dashboard.tab'
 
 export function DashboardApp() {
   const [tab, setTab] = useState<Tab>(() => resolveInitialDashboardTab())
+  const [settingsTab, setSettingsTab] = useState<SettingsTab>('general')
+  const [appVersionInfo, setAppVersionInfo] = useState<AppVersionInfo | null>(null)
   const [showSetupWizard, setShowSetupWizard] = useState(false)
   const [setupChecked, setSetupChecked] = useState(false)
   const [toasts, setToasts] = useState<Array<{ id: number; message: string; type: 'error' | 'warn' | 'success' }>>([])
   const toastIdRef = useRef(0)
+  const modelDownloads = useModelDownloadState()
 
   useEffect(() => {
     let active = true
@@ -42,6 +59,22 @@ export function DashboardApp() {
       })
       .catch(() => {
         if (active) setSetupChecked(true)
+      })
+    return () => { active = false }
+  }, [])
+
+  useEffect(() => {
+    let active = true
+    void fetchAppVersion()
+      .then(next => {
+        if (active) {
+          setAppVersionInfo(next)
+        }
+      })
+      .catch(() => {
+        if (active) {
+          setAppVersionInfo(null)
+        }
       })
     return () => { active = false }
   }, [])
@@ -79,12 +112,30 @@ export function DashboardApp() {
 
   if (showSetupWizard && setupChecked) {
     return (
-      <SetupWizard
-        onComplete={() => {
-          void fetch('/app/complete-setup', { method: 'POST' })
-          setShowSetupWizard(false)
-        }}
-      />
+      <>
+        <SetupWizard
+          catalog={modelDownloads.catalog}
+          jobs={modelDownloads.jobs}
+          onStartDownload={modelDownloads.startDownload}
+          onCancelDownload={modelDownloads.cancelDownload}
+          onSelectDownloadedModel={modelDownloads.selectModel}
+          onComplete={(next) => {
+            void fetch('/app/complete-setup', { method: 'POST' })
+            if (next?.settingsTab) {
+              setSettingsTab(next.settingsTab)
+            }
+            if (next?.dashboardTab) {
+              setTab(next.dashboardTab)
+            }
+            setShowSetupWizard(false)
+          }}
+        />
+        <ModelDownloadDock
+          catalog={modelDownloads.catalog}
+          jobs={modelDownloads.jobs}
+          onCancel={modelDownloads.cancelDownload}
+        />
+      </>
     )
   }
 
@@ -98,7 +149,9 @@ export function DashboardApp() {
       <aside className="flex w-55 shrink-0 flex-col border-r border-[#35343a]/20 bg-[#1f1f25] py-6 px-4">
         <div className="mb-8 px-2">
           <span className="text-xl font-bold tracking-tighter text-[#cabeff]">SpeechKit</span>
-          <span className="block text-[10px] uppercase tracking-widest text-[#938ea1]/60 mt-0.5">v0.16.0</span>
+          <span className="block text-[10px] uppercase tracking-widest text-[#938ea1]/60 mt-0.5">
+            {formatAppVersionLabel(appVersionInfo?.version)}
+          </span>
         </div>
         <nav className="flex-1 space-y-1">
           <NavBtn active={tab === 'dashboard'} onClick={() => setTab('dashboard')}>
@@ -123,11 +176,17 @@ export function DashboardApp() {
       {/* Main content */}
       <main className="flex-1 flex flex-col min-w-0 overflow-hidden">
         <div className="flex-1 overflow-hidden">
-          {tab === 'dashboard' && <DashboardView onOpenLibrary={() => setTab('library')} onOpenSettings={() => setTab('settings')} />}
+          {tab === 'dashboard' && (
+            <DashboardView
+              appVersionInfo={appVersionInfo}
+              onOpenLibrary={() => setTab('library')}
+              onOpenSettings={() => setTab('settings')}
+            />
+          )}
           {tab === 'library' && <LibraryView />}
           {tab === 'settings' && (
             <div className="h-full overflow-y-auto">
-              <SettingsApp />
+              <SettingsApp initialTab={settingsTab} />
             </div>
           )}
           {tab === 'logs' && <LogsView />}
@@ -154,6 +213,12 @@ export function DashboardApp() {
           ))}
         </div>
       )}
+
+      <ModelDownloadDock
+        catalog={modelDownloads.catalog}
+        jobs={modelDownloads.jobs}
+        onCancel={modelDownloads.cancelDownload}
+      />
     </div>
   )
 }
@@ -161,14 +226,15 @@ export function DashboardApp() {
 /* ── Dashboard View ── */
 
 function DashboardView({
+  appVersionInfo,
   onOpenLibrary,
   onOpenSettings,
 }: {
+  appVersionInfo: AppVersionInfo | null
   onOpenLibrary: () => void
   onOpenSettings: () => void
 }) {
   const [stats, setStats] = useState<DashboardStats | null>(null)
-  const [updateInfo, setUpdateInfo] = useState<{ latestVersion?: string; updateURL?: string } | null>(null)
   const [history, setHistory] = useState<TranscriptionRecord[]>([])
   const [quickNotes, setQuickNotes] = useState<QuickNote[]>([])
 
@@ -177,19 +243,6 @@ function DashboardView({
     void fetchDashboardStats()
       .then(next => { if (active) setStats(next) })
       .catch(() => { if (active) setStats(null) })
-    return () => { active = false }
-  }, [])
-
-  useEffect(() => {
-    let active = true
-    void fetch('/app/version')
-      .then(r => r.json())
-      .then(data => {
-        if (active && data.latestVersion) {
-          setUpdateInfo({ latestVersion: data.latestVersion, updateURL: data.updateURL })
-        }
-      })
-      .catch(() => {})
     return () => { active = false }
   }, [])
 
@@ -227,20 +280,7 @@ function DashboardView({
       </header>
 
       <div className="p-8 space-y-8 pb-12">
-        {/* Update banner */}
-        {updateInfo && (
-          <div className="flex items-center gap-2 rounded-xl border border-[#cabeff]/20 bg-[#cabeff]/5 px-4 py-3 text-xs text-[#cabeff]">
-            <span>Update available: v{updateInfo.latestVersion}</span>
-            <a
-              href={updateInfo.updateURL}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="ml-auto rounded-full bg-[#cabeff]/20 px-3 py-1 font-medium text-[#cabeff] hover:bg-[#cabeff]/30 transition-colors"
-            >
-              Download
-            </a>
-          </div>
-        )}
+        <AppUpdateBanner appVersionInfo={appVersionInfo} />
 
         {/* KPI Row */}
         <div data-testid="welcome-kpis" className="grid grid-cols-4 gap-4">
@@ -359,6 +399,256 @@ function DashboardView({
       </div>
     </div>
   )
+}
+
+function AppUpdateBanner({ appVersionInfo }: { appVersionInfo: AppVersionInfo | null }) {
+  const latestVersion = appVersionInfo?.latestVersion
+  const updateURL = appVersionInfo?.updateURL
+  const downloadURL = appVersionInfo?.downloadURL
+  const [jobs, setJobs] = useState<AppUpdateJob[]>([])
+  const jobsRef = useRef<AppUpdateJob[]>([])
+  const [busyAction, setBusyAction] = useState<'download' | 'cancel' | 'open' | null>(null)
+  const [actionError, setActionError] = useState<string | null>(null)
+
+  useEffect(() => {
+    jobsRef.current = jobs
+  }, [jobs])
+
+  useEffect(() => {
+    setJobs([])
+    setActionError(null)
+    if (!latestVersion) return
+
+    let active = true
+    const loadJobs = async () => {
+      try {
+        const next = await fetchAppUpdateJobs()
+        if (!active) return
+        setJobs(next.filter(job => job.version === latestVersion))
+      } catch {
+        if (active) {
+          setJobs([])
+        }
+      }
+    }
+
+    void loadJobs()
+
+    const interval = window.setInterval(() => {
+      const hasRunningJob = jobsRef.current.some(job => job.status === 'pending' || job.status === 'running')
+      if (hasRunningJob) {
+        void loadJobs()
+      }
+    }, 1000)
+
+    return () => {
+      active = false
+      window.clearInterval(interval)
+    }
+  }, [latestVersion])
+
+  if (!latestVersion) return null
+
+  const latestJob = pickLatestAppUpdateJob(jobs)
+  const isRunning = latestJob?.status === 'pending' || latestJob?.status === 'running'
+  const isDone = latestJob?.status === 'done'
+  const showDownload = !isRunning && !isDone && !!downloadURL
+
+  const handleDownload = async () => {
+    if (!latestVersion) return
+    setBusyAction('download')
+    setActionError(null)
+    try {
+      const job = await startAppUpdateDownload(latestVersion)
+      setJobs(prev => upsertAppUpdateJob(prev, job))
+    } catch (error) {
+      setActionError(error instanceof Error ? error.message : 'Download failed')
+    } finally {
+      setBusyAction(null)
+    }
+  }
+
+  const handleCancel = async () => {
+    if (!latestJob) return
+    setBusyAction('cancel')
+    setActionError(null)
+    try {
+      await cancelAppUpdateDownload(latestJob.id)
+      setJobs(prev => prev.map(job => (
+        job.id === latestJob.id
+          ? { ...job, status: 'cancelled', statusText: 'Cancelled' }
+          : job
+      )))
+    } catch (error) {
+      setActionError(error instanceof Error ? error.message : 'Cancel failed')
+    } finally {
+      setBusyAction(null)
+    }
+  }
+
+  const handleOpen = async () => {
+    if (!latestJob) return
+    setBusyAction('open')
+    setActionError(null)
+    try {
+      await openAppUpdateInstaller(latestJob.id)
+    } catch (error) {
+      setActionError(error instanceof Error ? error.message : 'Installer launch failed')
+    } finally {
+      setBusyAction(null)
+    }
+  }
+
+  return (
+    <div className="rounded-xl border border-[#cabeff]/20 bg-[#cabeff]/5 px-4 py-3 text-xs text-[#cabeff]">
+      <div className="flex items-center gap-3">
+        <span>Update available: v{latestVersion}</span>
+        <div className="ml-auto flex items-center gap-2">
+          {updateURL && (
+            <a
+              href={updateURL}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="rounded-full border border-[#cabeff]/20 px-3 py-1 font-medium text-[#cabeff] hover:bg-[#cabeff]/10 transition-colors"
+            >
+              Change log
+            </a>
+          )}
+          {showDownload && (
+            <button
+              type="button"
+              onClick={() => void handleDownload()}
+              disabled={busyAction === 'download'}
+              className="rounded-full bg-[#cabeff]/20 px-3 py-1 font-medium text-[#cabeff] hover:bg-[#cabeff]/30 transition-colors disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              Download
+            </button>
+          )}
+          {isDone && (
+            <button
+              type="button"
+              onClick={() => void handleOpen()}
+              disabled={busyAction === 'open'}
+              className="rounded-full bg-[#cabeff]/20 px-3 py-1 font-medium text-[#cabeff] hover:bg-[#cabeff]/30 transition-colors disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              Open installer
+            </button>
+          )}
+        </div>
+      </div>
+
+      {(latestJob || actionError) && (
+        <div className="mt-3 flex flex-col gap-2">
+          {latestJob && (
+            <>
+              <div className="flex items-center gap-3 text-[11px] text-[#c9c4d8]">
+                <span className="truncate">{latestJob.assetName}</span>
+                <span className="ml-auto">{latestJob.statusText}</span>
+              </div>
+              <div className="flex items-center gap-3">
+                <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-[#cabeff]/10">
+                  <div
+                    className="h-full rounded-full bg-[#cabeff] transition-[width] duration-300"
+                    style={{ width: `${Math.max(0, Math.min(100, latestJob.progress * 100))}%` }}
+                  />
+                </div>
+                {isRunning && (
+                  <button
+                    type="button"
+                    onClick={() => void handleCancel()}
+                    disabled={busyAction === 'cancel'}
+                    className="rounded-full border border-[#cabeff]/20 px-3 py-1 text-[11px] font-medium text-[#cabeff] hover:bg-[#cabeff]/10 transition-colors disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    Cancel download
+                  </button>
+                )}
+              </div>
+              {latestJob.error && (
+                <p className="text-[11px] text-red-200">{latestJob.error}</p>
+              )}
+            </>
+          )}
+          {actionError && (
+            <p className="text-[11px] text-red-200">{actionError}</p>
+          )}
+        </div>
+      )}
+
+    </div>
+  )
+}
+
+function useModelDownloadState() {
+  const [catalog, setCatalog] = useState<DownloadItem[]>([])
+  const [jobs, setJobs] = useState<DownloadJob[]>([])
+
+  const refreshCatalog = useCallback(async () => {
+    const next = await fetchDownloadCatalog()
+    setCatalog(next)
+    return next
+  }, [])
+
+  const refreshJobs = useCallback(async () => {
+    const next = await fetchDownloadJobs()
+    setJobs(next)
+    return next
+  }, [])
+
+  useEffect(() => {
+    void Promise.allSettled([refreshCatalog(), refreshJobs()]).catch(() => {})
+  }, [refreshCatalog, refreshJobs])
+
+  useEffect(() => {
+    const hasActiveJob = jobs.some(job => job.status === 'pending' || job.status === 'running')
+    if (!hasActiveJob) return
+
+    let active = true
+    const interval = window.setInterval(() => {
+      void refreshJobs()
+        .then(nextJobs => {
+          if (!active) return
+          const stillRunning = nextJobs.some(job => job.status === 'pending' || job.status === 'running')
+          if (!stillRunning) {
+            void refreshCatalog().catch(() => {})
+          }
+        })
+        .catch(() => {})
+    }, 1000)
+
+    return () => {
+      active = false
+      window.clearInterval(interval)
+    }
+  }, [jobs, refreshCatalog, refreshJobs])
+
+  const startDownload = useCallback(async (itemId: string) => {
+    const job = await startModelDownload(itemId)
+    setJobs(prev => upsertModelDownloadJob(prev, job))
+    return job
+  }, [])
+
+  const cancelDownload = useCallback(async (jobId: string) => {
+    await cancelModelDownload(jobId)
+    setJobs(prev => prev.map(job => (
+      job.id === jobId
+        ? { ...job, status: 'cancelled', statusText: 'Cancelled' }
+        : job
+    )))
+  }, [])
+
+  const selectModel = useCallback(async (itemId: string) => {
+    const result = await selectDownloadedModel(itemId)
+    await refreshCatalog()
+    return result
+  }, [refreshCatalog])
+
+  return {
+    catalog,
+    jobs,
+    startDownload,
+    cancelDownload,
+    selectModel,
+  }
 }
 
 /* ── Library View ── */
@@ -578,13 +868,33 @@ function LogsView() {
 /* ── Setup Wizard ── */
 
 type WizardStep = 'welcome' | 'provider' | 'done'
+type SetupWizardCompletion = {
+  dashboardTab?: Tab
+  settingsTab?: SettingsTab
+}
 
-function SetupWizard({ onComplete }: { onComplete: () => void }) {
+function SetupWizard({
+  catalog,
+  jobs,
+  onStartDownload,
+  onCancelDownload,
+  onSelectDownloadedModel,
+  onComplete,
+}: {
+  catalog: DownloadItem[]
+  jobs: DownloadJob[]
+  onStartDownload: (itemId: string) => Promise<DownloadJob>
+  onCancelDownload: (jobId: string) => Promise<void>
+  onSelectDownloadedModel: (itemId: string) => Promise<{ message?: string }>
+  onComplete: (next?: SetupWizardCompletion) => void
+}) {
   const [step, setStep] = useState<WizardStep>('welcome')
   const [devices, setDevices] = useState<AudioDevice[]>([])
   const [selectedDevice, setSelectedDevice] = useState('')
-  const [selectedProvider, setSelectedProvider] = useState('local')
   const [loading, setLoading] = useState(false)
+  const [busyModelAction, setBusyModelAction] = useState<string | null>(null)
+  const [modelActionError, setModelActionError] = useState<string | null>(null)
+  const [preferredLocalModelId, setPreferredLocalModelId] = useState<string | null>(null)
 
   useEffect(() => {
     void fetchAudioDevices()
@@ -600,21 +910,117 @@ function SetupWizard({ onComplete }: { onComplete: () => void }) {
     void setAudioDevice(deviceId).catch(() => {})
   }
 
+  const localCatalogItems = useMemo(
+    () => catalog.filter(item => item.profileId === 'stt.local.whispercpp'),
+    [catalog],
+  )
+
+  const localModelChoices = useMemo(() => {
+    const onboardingIDs = ['whisper.ggml-large-v3-turbo', 'whisper.ggml-small']
+    return onboardingIDs
+      .map(id => catalog.find(item => item.id === id))
+      .filter((item): item is DownloadItem => Boolean(item))
+  }, [catalog])
+
+  useEffect(() => {
+    if (preferredLocalModelId) {
+      return
+    }
+    const selectedLocalModel = localCatalogItems.find(item => item.selected)
+    if (selectedLocalModel) {
+      setPreferredLocalModelId(selectedLocalModel.id)
+    }
+  }, [localCatalogItems, preferredLocalModelId])
+
+  const localModelIDs = useMemo(
+    () => new Set(localModelChoices.map(item => item.id)),
+    [localModelChoices],
+  )
+
+  const chosenLocalModel = useMemo(
+    () => localCatalogItems.find(item => item.id === preferredLocalModelId) ?? null,
+    [localCatalogItems, preferredLocalModelId],
+  )
+
+  const activeLocalJob = useMemo(
+    () => pickLatestModelDownloadJob(
+      jobs.filter(job => localModelIDs.has(job.modelId) && (job.status === 'pending' || job.status === 'running')),
+    ),
+    [jobs, localModelIDs],
+  )
+
+  const continueLabel = activeLocalJob ? 'Continue while model downloads' : 'Continue'
+
+  const handleModelDownload = async (item: DownloadItem) => {
+    setBusyModelAction(`download:${item.id}`)
+    setModelActionError(null)
+    setPreferredLocalModelId(item.id)
+    try {
+      await onStartDownload(item.id)
+    } catch (error) {
+      setModelActionError(error instanceof Error ? error.message : 'Download failed')
+    } finally {
+      setBusyModelAction(null)
+    }
+  }
+
+  const handleModelSelect = async (item: DownloadItem) => {
+    setBusyModelAction(`select:${item.id}`)
+    setModelActionError(null)
+    setPreferredLocalModelId(item.id)
+    try {
+      await onSelectDownloadedModel(item.id)
+    } catch (error) {
+      setModelActionError(error instanceof Error ? error.message : 'Model switch failed')
+    } finally {
+      setBusyModelAction(null)
+    }
+  }
+
   const handleFinish = async () => {
     setLoading(true)
     try {
+      setModelActionError(null)
+      if (chosenLocalModel?.available && !chosenLocalModel.selected) {
+        await onSelectDownloadedModel(chosenLocalModel.id)
+      }
       const body = new URLSearchParams()
       body.set('dictate_hotkey', 'ctrl+shift+d')
       body.set('audio_device_id', selectedDevice)
       await fetch('/settings/update', { method: 'POST', body })
-    } catch { /* ignore */ }
+    } catch (error) {
+      setLoading(false)
+      setModelActionError(error instanceof Error ? error.message : 'Setup could not be completed')
+      return
+    }
     onComplete()
+  }
+
+  const handleChooseModel = (itemId: string) => {
+    setPreferredLocalModelId(itemId)
+    setModelActionError(null)
+  }
+
+  const handleSkipSetup = () => {
+    setModelActionError(null)
+    onComplete()
+  }
+
+  const handleCloudSetup = (_provider: 'huggingface' | 'openai') => {
+    setModelActionError(null)
+    onComplete({
+      dashboardTab: 'settings',
+      settingsTab: 'stt',
+    })
   }
 
   const STEPS: WizardStep[] = ['welcome', 'provider', 'done']
 
   return (
-    <div className="flex h-screen flex-col items-center justify-center bg-[#131318] text-[#e4e1e9] px-6 relative overflow-hidden">
+    <div className={[
+      'flex h-screen flex-col items-center bg-[#131318] text-[#e4e1e9] px-6 relative',
+      step === 'provider' ? 'justify-start overflow-y-auto py-6' : 'justify-center overflow-hidden',
+    ].join(' ')}>
       {/* Ambient glow */}
       <div className="fixed top-[-10%] left-[-10%] w-[40%] h-[40%] rounded-full bg-[#cabeff]/5 blur-[120px] pointer-events-none" />
       <div className="fixed bottom-[-10%] right-[-10%] w-[40%] h-[40%] rounded-full bg-[#cabeff]/5 blur-[120px] pointer-events-none" />
@@ -650,7 +1056,7 @@ function SetupWizard({ onComplete }: { onComplete: () => void }) {
             </button>
             <button
               type="button"
-              onClick={() => void handleFinish()}
+              onClick={handleSkipSetup}
               className="text-[#b5b3c4] text-sm font-medium hover:text-[#e4e1e9] transition-colors"
             >
               Skip setup
@@ -660,65 +1066,69 @@ function SetupWizard({ onComplete }: { onComplete: () => void }) {
       )}
 
       {step === 'provider' && (
-        <div className="w-full max-w-140 space-y-10 z-10">
+        <div className="z-10 w-full max-w-128 space-y-5 pb-3">
           {/* Progress dots */}
-          <div className="flex justify-center items-center gap-4">
+          <div className="flex justify-center items-center gap-3">
             {STEPS.map((s, i) => (
               <div key={s} className={[
-                'w-3 h-3 rounded-full transition-all',
+                'w-2.5 h-2.5 rounded-full transition-all',
                 i <= STEPS.indexOf(step) ? 'bg-[#cabeff] shadow-[0_0_8px_rgba(202,190,255,0.4)]' : 'bg-[#484555]',
               ].join(' ')} />
             ))}
           </div>
 
-          <div className="text-center space-y-3">
-            <h2 className="text-3xl font-extrabold tracking-tight">Dictation Provider</h2>
-            <p className="text-[#b5b3c4] text-sm max-w-md mx-auto">
-              Choose how SpeechKit transcribes your voice in <span className="text-[#cabeff] font-semibold">Dictation</span> mode. You can change this later in Settings.
+          <div className="text-center space-y-2">
+            <h2 className="text-2xl font-extrabold tracking-tight">Local Dictation Setup</h2>
+            <p className="text-[#b5b3c4] text-[13px] max-w-xl mx-auto leading-6">
+              Choose the local Whisper model that SpeechKit should download first. You can always switch models later in Settings.
             </p>
           </div>
 
-          {/* Provider cards */}
-          <div className="space-y-4">
-            <ProviderCard
-              selected={selectedProvider === 'local'}
-              onClick={() => setSelectedProvider('local')}
-              title="Local (Whisper)"
-              desc="Runs offline on your device. Private and free."
-              recommended
-            />
-            <ProviderCard
-              selected={selectedProvider === 'openai'}
-              onClick={() => setSelectedProvider('openai')}
-              title="OpenAI Whisper API"
-              desc="Fast and accurate. Requires API key."
-            />
-            <ProviderCard
-              selected={selectedProvider === 'google'}
-              onClick={() => setSelectedProvider('google')}
-              title="Google Speech"
-              desc="High accuracy. Requires API key."
-            />
+          <div className="space-y-2.5">
+            {localModelChoices.map(item => {
+              const itemJob = jobs.find(job => job.modelId === item.id)
+              const itemDownloading = itemJob?.status === 'pending' || itemJob?.status === 'running'
+              const itemBusy = busyModelAction === `download:${item.id}` || busyModelAction === `select:${item.id}`
+              return (
+                <WizardLocalModelCard
+                  key={item.id}
+                  item={item}
+                  job={itemJob}
+                  busy={itemBusy}
+                  selectedForSetup={preferredLocalModelId === item.id || (!preferredLocalModelId && item.selected)}
+                  onDownload={() => void handleModelDownload(item)}
+                  onCancel={() => itemJob ? void onCancelDownload(itemJob.id) : undefined}
+                  onChooseModel={() => handleChooseModel(item.id)}
+                  onUseModel={() => void handleModelSelect(item)}
+                  downloading={itemDownloading}
+                />
+              )
+            })}
           </div>
 
-          {/* Hint for other modes */}
-          <div className="bg-[#1b1b20] rounded-xl px-5 py-4 flex items-start gap-3">
+          {modelActionError && (
+            <div className="rounded-xl border border-red-400/15 bg-red-500/8 px-4 py-3 text-xs text-red-200/85">
+              {modelActionError}
+            </div>
+          )}
+
+          <div className="bg-[#1b1b20] rounded-xl px-4 py-3 flex items-start gap-3">
             <svg className="w-5 h-5 text-[#947dff] shrink-0 mt-0.5" viewBox="0 0 24 24" fill="currentColor">
               <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z" />
             </svg>
             <p className="text-[#938ea1] text-xs leading-relaxed">
-              <span className="text-[#b5b3c4] font-semibold">AI Assist</span> and <span className="text-[#b5b3c4] font-semibold">Voice Agent</span> use separate models that you can configure in <span className="text-[#cabeff]">Settings → Assist / Voice Agent</span> after setup.
+              SpeechKit downloads local models in the background and automatically wires them into Whisper.cpp as soon as the transfer finishes. You can continue immediately and keep using the app while the overlay tracks progress.
             </p>
           </div>
 
           {/* Mic selection (compact) */}
           {devices.length > 0 && (
-            <div>
+            <div className="space-y-2">
               <label className="text-xs font-bold text-[#938ea1] uppercase tracking-widest mb-2 block">Microphone</label>
               <select
                 value={selectedDevice}
                 onChange={e => handleDeviceSelect(e.target.value)}
-                className="w-full bg-[#0e0e13] border-none rounded-lg px-4 py-3 text-sm text-[#e4e1e9] focus:ring-1 focus:ring-[#cabeff]/40 appearance-none"
+                className="w-full bg-[#0e0e13] border-none rounded-lg px-4 py-2.5 text-sm text-[#e4e1e9] focus:ring-1 focus:ring-[#cabeff]/40 appearance-none"
               >
                 {devices.map(d => (
                   <option key={d.deviceId} value={d.deviceId}>
@@ -729,15 +1139,18 @@ function SetupWizard({ onComplete }: { onComplete: () => void }) {
             </div>
           )}
 
-          <div className="pt-4 space-y-4">
+          <div className="sticky bottom-0 space-y-3 border-t border-[#35343a]/50 bg-[#131318]/95 pt-4 backdrop-blur-xl">
             <button
               type="button"
               onClick={() => setStep('done')}
-              className="w-full h-13 signature-gradient text-[#2b0088] font-bold rounded-full ambient-glow active:scale-[0.98] transition-all flex items-center justify-center gap-2"
+              className={[
+                'w-full h-12 rounded-full font-bold transition-all flex items-center justify-center gap-2',
+                'signature-gradient text-[#2b0088] ambient-glow active:scale-[0.98]',
+              ].join(' ')}
             >
-              Continue
+              {continueLabel}
             </button>
-            <div className="flex justify-center">
+            <div className="flex flex-wrap items-center justify-between gap-3">
               <button
                 type="button"
                 onClick={() => setStep('welcome')}
@@ -745,6 +1158,22 @@ function SetupWizard({ onComplete }: { onComplete: () => void }) {
               >
                 Back
               </button>
+              <div className="flex flex-wrap items-center justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => handleCloudSetup('huggingface')}
+                  className="rounded-full border border-[#484555] px-3 py-1.5 text-[11px] font-medium text-[#cabeff] hover:border-[#cabeff]/40"
+                >
+                  Use Hugging Face token instead
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleCloudSetup('openai')}
+                  className="rounded-full border border-[#484555] px-3 py-1.5 text-[11px] font-medium text-[#cabeff] hover:border-[#cabeff]/40"
+                >
+                  Use OpenAI key instead
+                </button>
+              </div>
             </div>
           </div>
         </div>
@@ -841,39 +1270,153 @@ function FeatureCard({ icon, title, desc }: { icon: string; title: string; desc:
   )
 }
 
-function ProviderCard({ selected, onClick, title, desc, recommended }: {
-  selected: boolean; onClick: () => void; title: string; desc: string; recommended?: boolean
+function WizardLocalModelCard({
+  item,
+  job,
+  busy,
+  selectedForSetup,
+  downloading,
+  onDownload,
+  onCancel,
+  onChooseModel,
+  onUseModel,
+}: {
+  item: DownloadItem
+  job?: DownloadJob
+  busy: boolean
+  selectedForSetup: boolean
+  downloading: boolean
+  onDownload: () => void
+  onCancel: () => void
+  onChooseModel: () => void
+  onUseModel: () => void
 }) {
+  const selected = item.selected
+  const ready = item.available || job?.status === 'done'
+  const chooseButtonLabel = selectedForSetup ? 'Chosen for setup' : ready ? 'Use after setup' : 'Choose'
+  const statusLabel = downloading ? 'Downloading' : selected ? 'Selected' : ready ? 'Ready' : 'Not downloaded'
+
   return (
-    <button
-      type="button"
-      onClick={onClick}
+    <div
       className={[
-        'w-full text-left p-6 rounded-xl transition-all',
-        selected
-          ? 'bg-[#2a292f] border-l-4 border-[#cabeff] ambient-glow'
-          : 'bg-[#1b1b20] hover:bg-[#2a292f] border-l-4 border-transparent',
+        'rounded-2xl border px-4 py-3.5 transition-all',
+        selectedForSetup
+          ? 'border-[#cabeff]/35 bg-[#cabeff]/8'
+          : 'border-[#35343a] bg-[#1b1b20]',
       ].join(' ')}
     >
-      <div className="flex items-start justify-between">
-        <div>
-          <h3 className="text-[#e4e1e9] font-semibold text-lg">{title}</h3>
-          <p className="text-[#b5b3c4] text-sm mt-1">{desc}</p>
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-center gap-2">
+            <h3 className="text-[#e4e1e9] font-semibold text-base leading-6">{item.name}</h3>
+            {item.recommended && (
+              <span className="rounded-full bg-[#cabeff]/15 px-2 py-1 text-[10px] font-bold uppercase tracking-widest text-[#cabeff]">
+                Recommended
+              </span>
+            )}
+            {selectedForSetup && (
+              <span className="rounded-full bg-emerald-500/10 px-2 py-1 text-[10px] font-bold uppercase tracking-widest text-emerald-200/85">
+                Starter model
+              </span>
+            )}
+          </div>
+          <p className="mt-1 text-[13px] leading-6 text-[#b5b3c4]">{item.description}</p>
+          <div className="mt-2 flex flex-wrap items-center gap-2 text-[10px] text-[#938ea1]">
+            <span>{item.sizeLabel}</span>
+            <span>License: {item.license}</span>
+            {selected && <span className="text-emerald-200/85">Selected on this device</span>}
+            {!selected && ready && <span className="text-emerald-200/85">Ready on this device</span>}
+          </div>
+          {downloading && job && (
+            <div className="mt-3 space-y-1.5">
+              <div className="h-1.5 overflow-hidden rounded-full bg-[#0e0e13]">
+                <div
+                  className="h-full rounded-full bg-[#cabeff] transition-all duration-500"
+                  style={{ width: `${Math.max(6, Math.round(job.progress * 100))}%` }}
+                />
+              </div>
+              <div className="text-[10px] text-[#938ea1]">{job.statusText}</div>
+            </div>
+          )}
         </div>
-        <div className="flex items-center gap-2">
-          {recommended && (
-            <span className="text-[10px] font-bold tracking-widest uppercase px-2 py-1 bg-[#cabeff]/20 text-[#cabeff] rounded-full">
-              Recommended
-            </span>
+        <div className="flex shrink-0 flex-col items-end gap-2">
+          <div className="rounded-full border border-[#484555] px-3 py-1 text-[10px] text-[#938ea1]">
+            {statusLabel}
+          </div>
+          {ready ? (
+            selected ? (
+              <button
+                type="button"
+                disabled
+                className="rounded-full border border-emerald-300/20 px-3 py-1.5 text-[11px] font-medium text-emerald-200/80 opacity-80"
+              >
+                Active on device
+              </button>
+            ) : (
+              <button
+                type="button"
+                aria-label={`Use ${item.name} after setup`}
+                onClick={onUseModel}
+                disabled={busy}
+                className={[
+                  'rounded-full border px-3 py-1.5 text-[11px] font-medium disabled:cursor-not-allowed disabled:opacity-70',
+                  selectedForSetup
+                    ? 'border-emerald-300/20 bg-emerald-500/10 text-emerald-200/85'
+                    : 'border-[#484555] text-[#cabeff] hover:border-[#cabeff]/40',
+                ].join(' ')}
+              >
+                {chooseButtonLabel}
+              </button>
+            )
+          ) : (
+            <>
+              <button
+                type="button"
+                aria-label={`Choose ${item.name} for setup`}
+                onClick={onChooseModel}
+                disabled={busy || selectedForSetup}
+                className={[
+                  'rounded-full border px-3 py-1.5 text-[11px] font-medium disabled:cursor-not-allowed disabled:opacity-70',
+                  selectedForSetup
+                    ? 'border-emerald-300/20 bg-emerald-500/10 text-emerald-200/85'
+                    : 'border-[#484555] text-[#cabeff] hover:border-[#cabeff]/40',
+                ].join(' ')}
+              >
+                {chooseButtonLabel}
+              </button>
+              {downloading ? (
+                <button
+                  type="button"
+                  onClick={onCancel}
+                  className="rounded border border-[#484555] px-2.5 py-1.5 text-[10px] text-[#938ea1] hover:border-red-300/40 hover:text-red-200"
+                >
+                  Cancel
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  aria-label={`Download ${item.name}`}
+                  onClick={onDownload}
+                  disabled={busy}
+                  className="rounded-full bg-[#cabeff]/20 px-3 py-1.5 text-[11px] font-bold text-[#cabeff] hover:bg-[#cabeff]/30 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  Download
+                </button>
+              )}
+            </>
           )}
           {selected && (
-            <svg className="w-5 h-5 text-[#cabeff]" viewBox="0 0 24 24" fill="currentColor">
-              <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z" />
-            </svg>
+            <span className="text-[10px] font-medium text-emerald-200/85">SpeechKit uses this model now.</span>
+          )}
+          {!selected && ready && selectedForSetup && (
+            <span className="text-[10px] font-medium text-emerald-200/85">SpeechKit will switch after setup.</span>
+          )}
+          {!ready && selectedForSetup && (
+            <span className="text-[10px] font-medium text-emerald-200/85">SpeechKit will prefer this model first.</span>
           )}
         </div>
       </div>
-    </button>
+    </div>
   )
 }
 
@@ -882,6 +1425,50 @@ function WizardFeatureCard({ title, desc }: { title: string; desc: string }) {
     <div className="bg-[#1b1b20] p-6 rounded-xl hover:bg-[#2a292f] transition-all flex flex-col items-center text-center">
       <h3 className="text-[#e4e1e9] font-bold mb-1">{title}</h3>
       <p className="text-[#b5b3c4] text-sm">{desc}</p>
+    </div>
+  )
+}
+
+function ModelDownloadDock({
+  catalog,
+  jobs,
+  onCancel,
+}: {
+  catalog: DownloadItem[]
+  jobs: DownloadJob[]
+  onCancel: (jobId: string) => Promise<void>
+}) {
+  const activeJob = pickLatestModelDownloadJob(jobs.filter(job => job.status === 'pending' || job.status === 'running'))
+  if (!activeJob) return null
+
+  const item = catalog.find(candidate => candidate.id === activeJob.modelId)
+
+  return (
+    <div className="fixed bottom-4 left-4 z-50 w-80 rounded-2xl border border-[#484555]/80 bg-[#131318]/95 p-4 shadow-2xl backdrop-blur-xl">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <p className="text-[10px] font-bold uppercase tracking-widest text-[#938ea1]">Model download</p>
+          <p className="mt-1 truncate text-sm font-medium text-[#e4e1e9]">{item?.name ?? activeJob.modelId}</p>
+        </div>
+        <button
+          type="button"
+          onClick={() => void onCancel(activeJob.id)}
+          className="rounded border border-[#484555] px-2 py-1 text-[10px] text-[#938ea1] hover:border-red-300/40 hover:text-red-200"
+        >
+          Cancel download
+        </button>
+      </div>
+
+      <div className="mt-3 h-2 overflow-hidden rounded-full bg-[#0e0e13]">
+        <div
+          className="h-full rounded-full bg-[#cabeff] transition-all duration-500"
+          style={{ width: `${Math.max(6, Math.round(activeJob.progress * 100))}%` }}
+        />
+      </div>
+      <div className="mt-2 flex items-center justify-between gap-3 text-[11px] text-[#938ea1]">
+        <span>{activeJob.statusText}</span>
+        <span>{Math.round(activeJob.progress * 100)}%</span>
+      </div>
     </div>
   )
 }
@@ -1071,6 +1658,30 @@ function sortByNewest<T>(items: T[], getDate: (item: T) => string): T[] {
   return [...items].sort((a, b) => new Date(getDate(b)).getTime() - new Date(getDate(a)).getTime())
 }
 
+function pickLatestAppUpdateJob(jobs: AppUpdateJob[]): AppUpdateJob | null {
+  return jobs[jobs.length - 1] ?? null
+}
+
+function upsertAppUpdateJob(jobs: AppUpdateJob[], nextJob: AppUpdateJob): AppUpdateJob[] {
+  const existingIndex = jobs.findIndex(job => job.id === nextJob.id)
+  if (existingIndex < 0) {
+    return [...jobs, nextJob]
+  }
+  return jobs.map(job => (job.id === nextJob.id ? nextJob : job))
+}
+
+function pickLatestModelDownloadJob(jobs: DownloadJob[]): DownloadJob | null {
+  return jobs[jobs.length - 1] ?? null
+}
+
+function upsertModelDownloadJob(jobs: DownloadJob[], nextJob: DownloadJob): DownloadJob[] {
+  const existingIndex = jobs.findIndex(job => job.id === nextJob.id)
+  if (existingIndex < 0) {
+    return [...jobs, nextJob]
+  }
+  return jobs.map(job => (job.id === nextJob.id ? nextJob : job))
+}
+
 function resolveInitialDashboardTab(): Tab {
   if (typeof window === 'undefined') return 'dashboard'
   const hashTab = parseDashboardTab(window.location.hash)
@@ -1100,6 +1711,11 @@ function formatLibraryTimestamp(iso: string): string {
     const time = new Intl.DateTimeFormat('en-GB', { hour: '2-digit', minute: '2-digit', hour12: false }).format(d)
     return `${date} · ${time}`
   } catch { return '' }
+}
+
+function formatAppVersionLabel(version?: string): string {
+  if (!version) return 'Version unavailable'
+  return version.startsWith('v') ? version : `v${version}`
 }
 
 function formatStatNumber(value?: number): string {

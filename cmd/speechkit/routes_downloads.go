@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"path/filepath"
@@ -65,12 +66,7 @@ func registerDownloadRoutes(mux *http.ServeMux, cfgPath string, cfg *config.Conf
 		snap := dm.Start(*found, destDir, func(item downloads.Item) {
 			// After an HTTP (whisper) download: apply the model path to config.
 			if item.Kind == downloads.KindHTTP {
-				filename := filepath.Base(item.URL)
-				cfg.Local.Model = filename
-				cfg.Local.ModelPath = filepath.Join(destDir, filename)
-				if cfgPath != "" {
-					_ = config.Save(cfgPath, cfg)
-				}
+				_ = selectDownloadedLocalModel(context.Background(), cfgPath, cfg, state, item)
 			}
 		})
 
@@ -96,4 +92,79 @@ func registerDownloadRoutes(mux *http.ServeMux, cfgPath string, cfg *config.Conf
 		w.Header().Set("Content-Type", "application/json; charset=utf-8")
 		_ = json.NewEncoder(w).Encode(map[string]string{"message": "cancelled"})
 	})
+
+	// POST /models/downloads/select — select an already-downloaded local model.
+	mux.HandleFunc("/models/downloads/select", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+		if err := r.ParseForm(); err != nil {
+			http.Error(w, "bad request", http.StatusBadRequest)
+			return
+		}
+		modelID := r.FormValue("model_id")
+		if modelID == "" {
+			http.Error(w, "model_id required", http.StatusBadRequest)
+			return
+		}
+
+		item, ok := downloadCatalogItem(cfg, modelID)
+		if !ok {
+			http.Error(w, "unknown model_id", http.StatusNotFound)
+			return
+		}
+		if item.Kind != downloads.KindHTTP {
+			http.Error(w, "model is not a local download", http.StatusBadRequest)
+			return
+		}
+		if !item.Available {
+			http.Error(w, "model not downloaded", http.StatusBadRequest)
+			return
+		}
+		if err := selectDownloadedLocalModel(r.Context(), cfgPath, cfg, state, item); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+
+		filename := filepath.Base(item.URL)
+		w.Header().Set("Content-Type", "application/json; charset=utf-8")
+		_ = json.NewEncoder(w).Encode(map[string]string{
+			"message": "selected",
+			"modelId": item.ID,
+			"model":   filename,
+		})
+	})
+}
+
+func downloadCatalogItem(cfg *config.Config, modelID string) (downloads.Item, bool) {
+	catalog := downloads.Catalog(cfg)
+	for i := range catalog {
+		if catalog[i].ID == modelID {
+			return catalog[i], true
+		}
+	}
+	return downloads.Item{}, false
+}
+
+func selectDownloadedLocalModel(ctx context.Context, cfgPath string, cfg *config.Config, state *appState, item downloads.Item) error {
+	destDir := downloads.ResolveWhisperModelsDir(cfg)
+	filename := filepath.Base(item.URL)
+	cfg.Local.Enabled = true
+	cfg.Routing.Strategy = "local-only"
+	cfg.Local.Model = filename
+	cfg.Local.ModelPath = filepath.Join(destDir, filename)
+	if cfgPath != "" {
+		if err := config.Save(cfgPath, cfg); err != nil {
+			return err
+		}
+	}
+	if state != nil {
+		syncConfiguredLocalProvider(ctx, cfg, state, nil)
+		state.mu.Lock()
+		state.activeProfiles = activeProfilesFromConfig(cfg, filteredModelCatalog())
+		state.mu.Unlock()
+		syncRuntimeProviders(state, state.sttRouter)
+	}
+	return nil
 }

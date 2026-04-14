@@ -15,3 +15,15 @@ type Resolution struct {
 	Payload string
 	Alias   string
 }
+
+type Phrase struct {
+	Value    string
+	Prefix   bool
+	Priority int
+}
+
+type IntentLexicon struct {
+	Intent  Intent
+	Locale  string
+	Phrases []Phrase
+}

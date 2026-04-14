@@ -35,6 +35,17 @@ var revealAudioFileInShell = func(path string) error {
 	return exec.Command("explorer.exe", "/select,", abs).Start()
 }
 
+var openInstallerFileInShell = func(path string) error {
+	abs, err := filepath.Abs(path)
+	if err != nil {
+		return fmt.Errorf("open installer: resolve path: %w", err)
+	}
+	if !isInstallerAssetName(abs) {
+		return fmt.Errorf("open installer: only .exe or .msi files are supported")
+	}
+	return exec.Command(abs).Start()
+}
+
 // assetHandler builds the unified HTTP mux for the Wails control plane.
 // Routes are registered by domain in dedicated routes_*.go files.
 func assetHandler(cfg *config.Config, cfgPath string, state *appState, sttRouter *router.Router, feedbackStore store.Store, installState *config.InstallState) http.Handler {
@@ -45,7 +56,7 @@ func assetHandler(cfg *config.Config, cfgPath string, state *appState, sttRouter
 	registerQuickNoteRoutes(mux, cfg, state, feedbackStore)
 	registerFeatureRoutes(mux, installState)
 	registerAuthRoutes(mux)
-	registerAppRoutes(mux, installState)
+	registerAppRoutes(mux, cfgPath, state, installState)
 	registerDownloadRoutes(mux, cfgPath, cfg, state)
 	mux.Handle("/", http.FileServer(http.FS(frontendassets.Files())))
 	return enforceControlPlaneRequestGuard(mux)

@@ -15,6 +15,7 @@ import (
 	appai "github.com/kombifyio/SpeechKit/internal/ai"
 	"github.com/kombifyio/SpeechKit/internal/config"
 	"github.com/kombifyio/SpeechKit/internal/router"
+	"github.com/kombifyio/SpeechKit/internal/shortcuts"
 	"github.com/kombifyio/SpeechKit/internal/stt"
 	"github.com/kombifyio/SpeechKit/internal/tts"
 )
@@ -102,18 +103,21 @@ func buildGenkitConfig(cfg *config.Config) appai.Config {
 	if cfg.Providers.Google.Enabled {
 		aiCfg.GoogleAPIKey = config.ResolveSecret(cfg.Providers.Google.APIKeyEnv)
 		aiCfg.GoogleUtilityModel = cfg.Providers.Google.UtilityModel
+		aiCfg.GoogleAssistModel = cfg.Providers.Google.AssistModel
 		aiCfg.GoogleAgentModel = cfg.Providers.Google.AgentModel
 	}
 
 	if cfg.Providers.OpenAI.Enabled {
 		aiCfg.OpenAIAPIKey = config.ResolveSecret(cfg.Providers.OpenAI.APIKeyEnv)
 		aiCfg.OpenAIUtilityModel = cfg.Providers.OpenAI.UtilityModel
+		aiCfg.OpenAIAssistModel = cfg.Providers.OpenAI.AssistModel
 		aiCfg.OpenAIAgentModel = cfg.Providers.OpenAI.AgentModel
 	}
 
 	if cfg.Providers.Groq.Enabled {
 		aiCfg.GroqAPIKey = config.ResolveSecret(cfg.Providers.Groq.APIKeyEnv)
 		aiCfg.GroqUtilityModel = cfg.Providers.Groq.UtilityModel
+		aiCfg.GroqAssistModel = cfg.Providers.Groq.AssistModel
 		aiCfg.GroqAgentModel = cfg.Providers.Groq.AgentModel
 	}
 
@@ -121,18 +125,21 @@ func buildGenkitConfig(cfg *config.Config) appai.Config {
 		token, _, _ := config.ResolveHuggingFaceToken(cfg)
 		aiCfg.HuggingFaceToken = token
 		aiCfg.HFUtilityModel = cfg.HuggingFace.UtilityModel
+		aiCfg.HFAssistModel = cfg.HuggingFace.AssistModel
 		aiCfg.HFAgentModel = cfg.HuggingFace.AgentModel
 	}
 
 	if cfg.Providers.Ollama.Enabled {
 		aiCfg.OllamaBaseURL = cfg.Providers.Ollama.BaseURL
 		aiCfg.OllamaUtilityModel = cfg.Providers.Ollama.UtilityModel
+		aiCfg.OllamaAssistModel = cfg.Providers.Ollama.AssistModel
 		aiCfg.OllamaAgentModel = cfg.Providers.Ollama.AgentModel
 	}
 
 	if cfg.Providers.OpenRouter.Enabled {
 		aiCfg.OpenRouterAPIKey = config.ResolveSecret(cfg.Providers.OpenRouter.APIKeyEnv)
 		aiCfg.OpenRouterUtilityModel = cfg.Providers.OpenRouter.UtilityModel
+		aiCfg.OpenRouterAssistModel = cfg.Providers.OpenRouter.AssistModel
 		aiCfg.OpenRouterAgentModel = cfg.Providers.OpenRouter.AgentModel
 	}
 
@@ -192,6 +199,44 @@ func buildTTSRouter(cfg *config.Config) *tts.Router {
 	}
 
 	return tts.NewRouter(tts.Strategy(cfg.TTS.Strategy), providers...)
+}
+
+func buildShortcutResolver(cfg *config.Config) *shortcuts.Resolver {
+	registry := shortcuts.DefaultRegistry()
+	if cfg == nil {
+		return shortcuts.NewResolver(registry)
+	}
+
+	for locale, localeCfg := range cfg.Shortcuts.Locale {
+		registry.RegisterLeadingFillers(locale, localeCfg.LeadingFillers...)
+		registerShortcutAliases(registry, locale, shortcuts.IntentCopyLast, localeCfg.CopyLast)
+		registerShortcutAliases(registry, locale, shortcuts.IntentInsertLast, localeCfg.InsertLast)
+		registerShortcutAliases(registry, locale, shortcuts.IntentSummarize, localeCfg.Summarize)
+		registerShortcutAliases(registry, locale, shortcuts.IntentQuickNote, localeCfg.QuickNote)
+	}
+
+	return shortcuts.NewResolver(registry)
+}
+
+func registerShortcutAliases(registry *shortcuts.Registry, locale string, intent shortcuts.Intent, aliases []string) {
+	if registry == nil || len(aliases) == 0 {
+		return
+	}
+
+	phrases := make([]shortcuts.Phrase, 0, len(aliases))
+	for _, alias := range aliases {
+		phrases = append(phrases, shortcuts.Phrase{
+			Value:    alias,
+			Prefix:   true,
+			Priority: 100,
+		})
+	}
+
+	registry.RegisterLexicon(shortcuts.IntentLexicon{
+		Intent:  intent,
+		Locale:  locale,
+		Phrases: phrases,
+	})
 }
 
 // validateCloudProviders runs a quick health check on all configured cloud

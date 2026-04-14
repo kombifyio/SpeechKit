@@ -207,7 +207,7 @@ func TestCatalogReturnsItems(t *testing.T) {
 	}
 }
 
-func TestCatalogKeepsOnlyTwoWhisperCppChoices(t *testing.T) {
+func TestCatalogExposesWhisperCppTurboAsRecommendedChoice(t *testing.T) {
 	cfg := &config.Config{}
 	items := Catalog(cfg)
 
@@ -218,18 +218,44 @@ func TestCatalogKeepsOnlyTwoWhisperCppChoices(t *testing.T) {
 		}
 	}
 
-	if len(whisperItems) != 2 {
-		t.Fatalf("whisper.cpp download choices = %d, want 2", len(whisperItems))
+	if len(whisperItems) != 3 {
+		t.Fatalf("whisper.cpp download choices = %d, want 3", len(whisperItems))
 	}
 	if whisperItems[0].ID != "whisper.ggml-small" {
 		t.Fatalf("first whisper choice = %q, want %q", whisperItems[0].ID, "whisper.ggml-small")
 	}
-	if whisperItems[1].ID != "whisper.ggml-large-v3" {
-		t.Fatalf("second whisper choice = %q, want %q", whisperItems[1].ID, "whisper.ggml-large-v3")
+	if whisperItems[1].ID != "whisper.ggml-large-v3-turbo" {
+		t.Fatalf("second whisper choice = %q, want %q", whisperItems[1].ID, "whisper.ggml-large-v3-turbo")
 	}
-	if !whisperItems[0].Recommended {
-		t.Fatal("expected whisper small to stay recommended")
+	if whisperItems[2].ID != "whisper.ggml-large-v3" {
+		t.Fatalf("third whisper choice = %q, want %q", whisperItems[2].ID, "whisper.ggml-large-v3")
 	}
+	if whisperItems[0].Recommended {
+		t.Fatal("expected whisper small to no longer be recommended")
+	}
+	if !whisperItems[1].Recommended {
+		t.Fatal("expected whisper turbo to be recommended")
+	}
+	if whisperItems[2].Recommended {
+		t.Fatal("expected whisper large v3 to stay non-recommended")
+	}
+}
+
+func TestCatalogMarksWhisperCppTurboSelectedFromConfig(t *testing.T) {
+	cfg := &config.Config{}
+	cfg.Local.Model = "ggml-large-v3-turbo.bin"
+
+	items := Catalog(cfg)
+	for _, item := range items {
+		if item.ID == "whisper.ggml-large-v3-turbo" {
+			if !item.Selected {
+				t.Fatal("expected whisper turbo to be selected from config")
+			}
+			return
+		}
+	}
+
+	t.Fatal("expected whisper turbo item in catalog")
 }
 
 func TestResolveWhisperModelsDir(t *testing.T) {
