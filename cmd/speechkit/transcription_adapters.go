@@ -118,32 +118,26 @@ type desktopTranscriptOutput struct {
 }
 
 func (o desktopTranscriptOutput) Deliver(ctx context.Context, transcript speechkit.Transcript, target any) error {
-	mode := ""
+	legacyAgentMode := modeAssist
+	if o.agentMode != nil {
+		legacyAgentMode = normalizeAgentMode(o.agentMode())
+	}
+	mode := modeNone
 	if o.activeMode != nil {
-		mode = o.activeMode()
+		mode = normalizeRuntimeMode(o.activeMode(), legacyAgentMode)
 	}
 
-	// 1. Agent/Assist mode owns its own routing.
-	if mode == "agent" {
-		agentMode := "assist"
-		if o.agentMode != nil {
-			agentMode = o.agentMode()
-		}
-
-		switch agentMode {
-		case "assist":
-			return o.deliverAssist(ctx, transcript, target)
-		case "voice_agent":
-			// Voice Agent Mode uses real-time WebSocket, not this pipeline.
-			// If we reach here, the Voice Agent session isn't active — fall through to legacy agent.
-			slog.Warn("voice_agent mode active but no live session — falling back to agent flow")
-		}
-
-		// Legacy/fallback agent flow.
+	switch mode {
+	case modeAssist:
+		return o.deliverAssist(ctx, transcript, target)
+	case modeVoiceAgent:
+		return o.deliverVoiceAgentFallback(ctx, transcript, target)
+	case modeDictate, modeNone:
+	default:
 		return o.deliverAgentFlow(ctx, transcript, target)
 	}
 
-	// 2. Dictate mode may still use global quick actions before pass-through.
+	// Dictate mode may still use global quick actions before pass-through.
 	if o.interceptor != nil {
 		handled, err := o.interceptor.Intercept(ctx, transcript, target)
 		if err != nil {
@@ -154,7 +148,7 @@ func (o desktopTranscriptOutput) Deliver(ctx context.Context, transcript speechk
 		}
 	}
 
-	// 3. Dictate mode -- pass through to clipboard.
+	// Dictate mode -- pass through to clipboard.
 	if o.handler == nil {
 		return nil
 	}
@@ -170,16 +164,43 @@ func (o desktopTranscriptOutput) Deliver(ctx context.Context, transcript speechk
 	}, outputTarget)
 }
 
-// deliverAssist uses the Assist Pipeline: Codeword → LLM → TTS → Text+Audio.
+func (o desktopTranscriptOutput) deliverVoiceAgentFallback(ctx context.Context, transcript speechkit.Transcript, target any) error {
+	if o.currentAgentFlow() != nil {
+		slog.Warn("voice_agent mode active without live session â€” using agent flow fallback")
+		return o.deliverAgentFlow(ctx, transcript, target)
+	}
+	if o.currentAssistPipeline() != nil {
+		slog.Warn("voice_agent mode active without live session â€” using assist pipeline fallback")
+		return o.deliverAssist(ctx, transcript, target)
+	}
+	slog.Warn("voice_agent mode active but no fallback pipeline configured â€” passing transcript through")
+	if o.onAssistText != nil {
+		o.onAssistText("Voice Agent fallback is not configured. Check Settings > Voice Agent.")
+	}
+	if o.handler == nil {
+		return nil
+	}
+	outputTarget, _ := target.(output.Target)
+	return o.handler.Handle(ctx, &stt.Result{
+		Text:       transcript.Text,
+		Language:   transcript.Language,
+		Duration:   transcript.Duration,
+		Provider:   transcript.Provider,
+		Model:      transcript.Model,
+		Confidence: transcript.Confidence,
+	}, outputTarget)
+}
+
+// deliverAssist uses the Assist Pipeline: Codeword â†’ LLM â†’ TTS â†’ Text+Audio.
 func (o desktopTranscriptOutput) deliverAssist(ctx context.Context, transcript speechkit.Transcript, target any) error {
 	assistPipeline := o.currentAssistPipeline()
 	if assistPipeline == nil {
-		// No assist pipeline — try legacy agent flow, or warn user.
+		// No assist pipeline â€” try legacy agent flow, or warn user.
 		if o.currentAgentFlow() != nil {
 			return o.deliverAgentFlow(ctx, transcript, target)
 		}
-		// Neither pipeline available — show feedback and fall back to clipboard paste.
-		slog.Warn("assist mode active but no LLM provider configured — falling back to dictation output")
+		// Neither pipeline available â€” show feedback and fall back to clipboard paste.
+		slog.Warn("assist mode active but no LLM provider configured â€” falling back to dictation output")
 		if o.onAssistText != nil {
 			o.onAssistText("No LLM provider configured. Check Settings > Provider.")
 		}

@@ -39,8 +39,16 @@ vi.mock('@/lib/speechkit', () => ({
     hfEnabled: false,
     hotkey: 'win+alt',
     dictateHotkey: 'win+alt',
-    agentHotkey: 'ctrl+shift+k',
-    activeMode: 'dictate',
+    assistHotkey: 'ctrl+shift+j',
+    voiceAgentHotkey: 'ctrl+shift+k',
+    agentHotkey: 'ctrl+shift+j',
+    agentMode: 'assist',
+    activeMode: 'none',
+    availableModes: {
+      dictate: true,
+      assist: true,
+      voice_agent: true,
+    },
     hfModel: 'openai/whisper-large-v3-turbo',
     visualizer: 'pill',
     design: 'default',
@@ -114,8 +122,16 @@ const baseSettings: SpeechKitSettingsState = {
   hfEnabled: false,
   hotkey: 'win+alt',
   dictateHotkey: 'win+alt',
-  agentHotkey: 'ctrl+shift+k',
-  activeMode: 'dictate',
+  assistHotkey: 'ctrl+shift+j',
+  voiceAgentHotkey: 'ctrl+shift+k',
+  agentHotkey: 'ctrl+shift+j',
+  agentMode: 'assist',
+  activeMode: 'none',
+  availableModes: {
+    dictate: true,
+    assist: true,
+    voice_agent: true,
+  },
   hfModel: 'openai/whisper-large-v3-turbo',
   visualizer: 'pill',
   design: 'default',
@@ -250,32 +266,35 @@ describe('SettingsApp', () => {
     expect(screen.getByText('local')).toBeInTheDocument()
   })
 
-  it('saves mode changes and separate hotkeys', async () => {
+  it('hides runtime mode selection and keeps only per-mode hotkeys in settings', async () => {
     fetchSettingsStateMock.mockResolvedValue(baseSettings)
 
     render(<SettingsApp />)
 
-    // The "Assist" button in the Mode section (not the Assist tab in the nav)
-    const assistModeButtons = await screen.findAllByRole('button', { name: 'Assist' })
-    const assistMode = assistModeButtons[assistModeButtons.length - 1]
-    fireEvent.click(assistMode)
-
-    await waitFor(() =>
-      expect(saveSettingsStateMock).toHaveBeenCalledWith(
-        expect.objectContaining({ activeMode: 'agent' }),
-      ),
-    )
-
     await screen.findByText('Dictate hotkey')
+    expect(screen.queryByText('Mode')).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Active mode Assist' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Active mode None' })).not.toBeInTheDocument()
     expect(screen.getByText('Assist hotkey')).toBeInTheDocument()
-    const hotkeyButtons = screen.getAllByRole('button', { name: 'Ctrl + Win' })
-    fireEvent.click(hotkeyButtons[0])
+    expect(screen.getByText('Voice Agent hotkey')).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Dictate hotkey Ctrl + Win' }))
 
     await waitFor(() =>
       expect(saveSettingsStateMock).toHaveBeenCalledWith(
         expect.objectContaining({
           dictateHotkey: 'ctrl+win',
           hotkey: 'ctrl+win',
+        }),
+      ),
+    )
+
+    fireEvent.click(screen.getByRole('button', { name: 'Voice Agent hotkey disabled' }))
+
+    await waitFor(() =>
+      expect(saveSettingsStateMock).toHaveBeenCalledWith(
+        expect.objectContaining({
+          voiceAgentHotkey: '',
         }),
       ),
     )
@@ -604,6 +623,41 @@ describe('SettingsApp', () => {
     expect(screen.getByText('Add Hugging Face token')).toBeInTheDocument()
     expect(screen.getByLabelText('Whisper Large v3 (Hugging Face) Hugging Face token')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Save token' })).toBeInTheDocument()
+  })
+
+  it('keeps Hugging Face-backed assist models selectable from the Assist tab', async () => {
+    fetchSettingsStateMock.mockResolvedValue({
+      ...baseSettings,
+      profiles: [
+        {
+          id: 'assist.hf.qwen3-coder',
+          modality: 'assist',
+          name: 'Qwen 3 Coder (Hugging Face)',
+          executionMode: 'hf_inference',
+          description: 'Managed coding assistant profile',
+        },
+      ],
+      activeProfiles: {},
+      providerCredentials: {
+        huggingface: {
+          provider: 'huggingface',
+          label: 'Hugging Face',
+          envName: 'HF_TOKEN',
+          available: true,
+          hasStoredSecret: true,
+          source: 'user',
+        },
+      },
+    })
+
+    render(<SettingsApp />)
+
+    const assistNavButtons = await screen.findAllByRole('button', { name: 'Assist' })
+    fireEvent.click(assistNavButtons[0])
+
+    expect(await screen.findByText('Qwen 3 Coder (Hugging Face)')).toBeInTheDocument()
+    expect(screen.getByText(/user token active/i)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Use model' })).toBeInTheDocument()
   })
 
   it('does not render the duplicated connected providers section', async () => {

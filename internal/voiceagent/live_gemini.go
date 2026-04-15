@@ -194,7 +194,6 @@ func (g *GeminiLive) SendToolResponse(response ToolResponse) error {
 }
 
 // Reconnect re-establishes the session using the stored resumption handle.
-// This enables transparent session continuity across the 15-min session limit.
 func (g *GeminiLive) Reconnect(ctx context.Context) error {
 	g.mu.RLock()
 	resumeHandle := g.lastResumeHandle
@@ -221,15 +220,10 @@ func (g *GeminiLive) Reconnect(ctx context.Context) error {
 		return fmt.Errorf("gemini live: reconnect create client: %w", err)
 	}
 
-	resumptionCfg := &genai.SessionResumptionConfig{Transparent: true}
-	if resumeHandle != "" {
-		resumptionCfg.Handle = resumeHandle
-	}
-
 	model := resolvedGeminiLiveModel(*lastCfg)
 
 	connectCfg := buildGeminiLiveConnectConfig(*lastCfg)
-	connectCfg.SessionResumption = resumptionCfg
+	connectCfg.SessionResumption = buildGeminiLiveSessionResumptionConfig(resumeHandle)
 
 	session, err := client.Live.Connect(ctx, model, connectCfg)
 	if err != nil {
@@ -281,9 +275,7 @@ func buildGeminiLiveConnectConfig(cfg LiveConfig) *genai.LiveConnectConfig {
 		SystemInstruction: &genai.Content{
 			Parts: []*genai.Part{genai.NewPartFromText(buildInstructionText(cfg))},
 		},
-		SessionResumption: &genai.SessionResumptionConfig{
-			Transparent: true,
-		},
+		SessionResumption: buildGeminiLiveSessionResumptionConfig(""),
 		RealtimeInputConfig: &genai.RealtimeInputConfig{
 			AutomaticActivityDetection: &genai.AutomaticActivityDetection{
 				Disabled:                 !policies.ActivityDetection.Automatic,
@@ -297,14 +289,10 @@ func buildGeminiLiveConnectConfig(cfg LiveConfig) *genai.LiveConnectConfig {
 	}
 
 	if policies.EnableInputAudioTranscription {
-		connectCfg.InputAudioTranscription = &genai.AudioTranscriptionConfig{
-			LanguageCodes: normalizeLanguageCodes(cfg.Locale),
-		}
+		connectCfg.InputAudioTranscription = &genai.AudioTranscriptionConfig{}
 	}
 	if policies.EnableOutputAudioTranscription {
-		connectCfg.OutputAudioTranscription = &genai.AudioTranscriptionConfig{
-			LanguageCodes: normalizeLanguageCodes(cfg.Locale),
-		}
+		connectCfg.OutputAudioTranscription = &genai.AudioTranscriptionConfig{}
 	}
 	if policies.EnableAffectiveDialog {
 		enable := true
@@ -343,6 +331,12 @@ func buildGeminiLiveConnectConfig(cfg LiveConfig) *genai.LiveConnectConfig {
 	}
 
 	return connectCfg
+}
+
+func buildGeminiLiveSessionResumptionConfig(handle string) *genai.SessionResumptionConfig {
+	return &genai.SessionResumptionConfig{
+		Handle: strings.TrimSpace(handle),
+	}
 }
 
 func buildInstructionText(cfg LiveConfig) string {
@@ -478,14 +472,6 @@ func toolDefinitionsToGenAI(defs []ToolDefinition) []*genai.Tool {
 		return nil
 	}
 	return []*genai.Tool{{FunctionDeclarations: functions}}
-}
-
-func normalizeLanguageCodes(locale string) []string {
-	locale = strings.TrimSpace(locale)
-	if locale == "" {
-		return nil
-	}
-	return []string{locale}
 }
 
 func resolvedGeminiLiveModel(cfg LiveConfig) string {

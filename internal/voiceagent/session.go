@@ -306,6 +306,19 @@ func (s *Session) SendAudio(chunk []byte) error {
 	return s.provider.SendAudio(chunk)
 }
 
+// SendText injects a user text turn into the live session.
+func (s *Session) SendText(text string) error {
+	if s.currentState() == StateInactive || s.currentState() == StateDeactivating {
+		return nil
+	}
+	s.mu.Lock()
+	if s.idleTimer != nil {
+		s.idleTimer.Reset()
+	}
+	s.mu.Unlock()
+	return s.provider.SendText(text)
+}
+
 // SendToolResponse forwards the result of a host-side tool invocation to the model.
 func (s *Session) SendToolResponse(response ToolResponse) error {
 	if s.currentState() == StateInactive || s.currentState() == StateDeactivating {

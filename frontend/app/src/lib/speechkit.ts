@@ -1,10 +1,12 @@
 export type OverlayMode = 'pill' | 'circle'
 export type OverlayDesign = 'default' | 'kombify'
-export type RuntimeMode = 'dictate' | 'agent'
+export type RuntimeMode = 'none' | 'dictate' | 'assist' | 'voice_agent'
+export type AgentMode = 'assist' | 'voice_agent'
 export type StoreBackend = 'sqlite' | 'postgres'
 export type Modality = 'stt' | 'tts' | 'realtime_voice' | 'utility' | 'assist' | 'embedding' | 'reranker'
 export type ExecutionMode = 'local' | 'self_hosted_http' | 'hf_routed' | 'hf_inference' | 'openai_api' | 'groq_api' | 'google_api' | 'ollama_local' | 'openrouter_api'
 export type LogType = 'info' | 'warn' | 'error' | 'success'
+export type AvailableModes = Record<'dictate' | 'assist' | 'voice_agent', boolean>
 
 export type AudioDevice = {
   deviceId: string
@@ -41,8 +43,11 @@ export type SpeechKitOverlayState = {
   design: OverlayDesign
   hotkey: string
   dictateHotkey: string
+  assistHotkey: string
+  voiceAgentHotkey: string
   agentHotkey: string
   activeMode: RuntimeMode
+  availableModes: AvailableModes
   position: 'top' | 'bottom' | 'left' | 'right'
   movable: boolean
   positionFreeX: number
@@ -76,8 +81,12 @@ export type SpeechKitSettingsState = {
   hfTokenSource: 'none' | 'user' | 'install' | 'env'
   hotkey: string
   dictateHotkey: string
+  assistHotkey: string
+  voiceAgentHotkey: string
   agentHotkey: string
+  agentMode: AgentMode
   activeMode: RuntimeMode
+  availableModes: AvailableModes
   hfModel: 'openai/whisper-large-v3-turbo' | 'openai/whisper-large-v3'
   visualizer: OverlayMode
   design: OverlayDesign
@@ -104,8 +113,15 @@ export const defaultOverlayState: SpeechKitOverlayState = {
   design: 'default',
   hotkey: 'win+alt',
   dictateHotkey: 'win+alt',
-  agentHotkey: 'ctrl+shift+k',
-  activeMode: 'dictate',
+  assistHotkey: 'ctrl+shift+j',
+  voiceAgentHotkey: 'ctrl+shift+k',
+  agentHotkey: 'ctrl+shift+j',
+  activeMode: 'none',
+  availableModes: {
+    dictate: true,
+    assist: true,
+    voice_agent: true,
+  },
   position: 'top',
   movable: false,
   positionFreeX: 0,
@@ -130,8 +146,16 @@ export const defaultSettingsState: SpeechKitSettingsState = {
   hfTokenSource: 'none',
   hotkey: 'win+alt',
   dictateHotkey: 'win+alt',
-  agentHotkey: 'ctrl+shift+k',
-  activeMode: 'dictate',
+  assistHotkey: 'ctrl+shift+j',
+  voiceAgentHotkey: 'ctrl+shift+k',
+  agentHotkey: 'ctrl+shift+j',
+  agentMode: 'assist',
+  activeMode: 'none',
+  availableModes: {
+    dictate: true,
+    assist: true,
+    voice_agent: true,
+  },
   hfModel: 'openai/whisper-large-v3-turbo',
   visualizer: 'pill',
   design: 'default',
@@ -146,20 +170,193 @@ export const defaultSettingsState: SpeechKitSettingsState = {
   activeProfiles: {},
 }
 
+function readStringField(
+  payload: Record<string, unknown> | null | undefined,
+  key: string,
+): string | undefined {
+  if (!payload || !(key in payload)) {
+    return undefined
+  }
+  const value = payload[key]
+  if (typeof value !== 'string') {
+    return ''
+  }
+  return value.trim()
+}
+
+function normalizeAvailableModes(
+  payload: Record<string, unknown> | null | undefined,
+  hotkeys: AvailableModes,
+): AvailableModes {
+  const raw = payload?.availableModes
+  if (!raw || typeof raw !== 'object') {
+    return hotkeys
+  }
+
+  const map = raw as Partial<Record<keyof AvailableModes, unknown>>
+  return {
+    dictate: typeof map.dictate === 'boolean' ? map.dictate : hotkeys.dictate,
+    assist: typeof map.assist === 'boolean' ? map.assist : hotkeys.assist,
+    voice_agent:
+      typeof map.voice_agent === 'boolean'
+        ? map.voice_agent
+        : hotkeys.voice_agent,
+  }
+}
+
+function resolveAssistHotkey(
+  payload: Record<string, unknown> | null | undefined,
+  fallback: string,
+): string {
+  if (!payload) {
+    return fallback
+  }
+
+  const explicit = readStringField(payload, 'assistHotkey')
+  if (explicit !== undefined) {
+    return explicit
+  }
+
+  const legacy = readStringField(payload, 'agentHotkey')
+  const legacyMode = readStringField(payload, 'agentMode')
+  if (legacy !== undefined && legacyMode !== 'voice_agent') {
+    return legacy
+  }
+
+  return ''
+}
+
+function resolveVoiceAgentHotkey(
+  payload: Record<string, unknown> | null | undefined,
+  fallback: string,
+): string {
+  if (!payload) {
+    return fallback
+  }
+
+  const explicit = readStringField(payload, 'voiceAgentHotkey')
+  if (explicit !== undefined) {
+    return explicit
+  }
+
+  const legacy = readStringField(payload, 'agentHotkey')
+  const legacyMode = readStringField(payload, 'agentMode')
+  if (legacy !== undefined && legacyMode === 'voice_agent') {
+    return legacy
+  }
+
+  return ''
+}
+
+function normalizeRuntimeMode(
+  rawMode: string | undefined,
+  availableModes: AvailableModes,
+  agentMode: AgentMode = 'assist',
+): RuntimeMode {
+  let mode: RuntimeMode
+  switch (rawMode) {
+    case 'dictate':
+    case 'assist':
+    case 'voice_agent':
+    case 'none':
+      mode = rawMode
+      break
+    case 'agent':
+      mode = agentMode === 'voice_agent' ? 'voice_agent' : 'assist'
+      break
+    default:
+      mode = 'none'
+      break
+  }
+
+  if (mode === 'dictate' && !availableModes.dictate) {
+    return 'none'
+  }
+  if (mode === 'assist' && !availableModes.assist) {
+    return 'none'
+  }
+  if (mode === 'voice_agent' && !availableModes.voice_agent) {
+    return 'none'
+  }
+  return mode
+}
+
+function deriveLegacyAgentMode(
+  assistHotkey: string,
+  voiceAgentHotkey: string,
+  activeMode: RuntimeMode,
+  fallback: AgentMode = 'assist',
+): AgentMode {
+  if (activeMode === 'voice_agent' && voiceAgentHotkey) {
+    return 'voice_agent'
+  }
+  if (activeMode === 'assist' && assistHotkey) {
+    return 'assist'
+  }
+  if (assistHotkey) {
+    return 'assist'
+  }
+  if (voiceAgentHotkey) {
+    return 'voice_agent'
+  }
+  return fallback === 'voice_agent' ? 'voice_agent' : 'assist'
+}
+
+function deriveLegacyAgentHotkey(
+  assistHotkey: string,
+  voiceAgentHotkey: string,
+  activeMode: RuntimeMode,
+): string {
+  if (activeMode === 'voice_agent' && voiceAgentHotkey) {
+    return voiceAgentHotkey
+  }
+  if (activeMode === 'assist' && assistHotkey) {
+    return assistHotkey
+  }
+  return assistHotkey || voiceAgentHotkey
+}
+
 function normalizeOverlayState(
   payload: Partial<SpeechKitOverlayState> | null | undefined,
 ): SpeechKitOverlayState {
   const base = { ...defaultOverlayState }
-  const hotkey = payload?.hotkey ?? payload?.dictateHotkey ?? base.hotkey
-  const dictateHotkey = payload?.dictateHotkey ?? hotkey
+  const record = (payload ?? null) as Record<string, unknown> | null
+  const hotkey =
+    readStringField(record, 'hotkey') ??
+    readStringField(record, 'dictateHotkey') ??
+    base.hotkey
+  const dictateHotkey =
+    readStringField(record, 'dictateHotkey') ??
+    readStringField(record, 'hotkey') ??
+    base.dictateHotkey
+  const assistHotkey = resolveAssistHotkey(record, base.assistHotkey)
+  const voiceAgentHotkey = resolveVoiceAgentHotkey(
+    record,
+    base.voiceAgentHotkey,
+  )
+  const availableModes = normalizeAvailableModes(record, {
+    dictate: dictateHotkey !== '',
+    assist: assistHotkey !== '',
+    voice_agent: voiceAgentHotkey !== '',
+  })
+  const activeMode = normalizeRuntimeMode(
+    readStringField(record, 'activeMode'),
+    availableModes,
+  )
+  const agentHotkey =
+    readStringField(record, 'agentHotkey') ??
+    deriveLegacyAgentHotkey(assistHotkey, voiceAgentHotkey, activeMode)
 
   return {
     ...base,
     ...(payload ?? {}),
     hotkey,
     dictateHotkey,
-    agentHotkey: payload?.agentHotkey ?? base.agentHotkey,
-    activeMode: payload?.activeMode ?? base.activeMode,
+    assistHotkey,
+    voiceAgentHotkey,
+    agentHotkey,
+    activeMode,
+    availableModes,
     selectedAudioDeviceId:
       payload?.selectedAudioDeviceId ??
       (payload as { audioDeviceId?: string } | undefined)?.audioDeviceId ??
@@ -172,8 +369,42 @@ function normalizeSettingsState(
   payload: Partial<SpeechKitSettingsState> | null | undefined,
 ): SpeechKitSettingsState {
   const base = { ...defaultSettingsState }
-  const hotkey = payload?.hotkey ?? payload?.dictateHotkey ?? base.hotkey
-  const dictateHotkey = payload?.dictateHotkey ?? hotkey
+  const record = (payload ?? null) as Record<string, unknown> | null
+  const hotkey =
+    readStringField(record, 'hotkey') ??
+    readStringField(record, 'dictateHotkey') ??
+    base.hotkey
+  const dictateHotkey =
+    readStringField(record, 'dictateHotkey') ??
+    readStringField(record, 'hotkey') ??
+    base.dictateHotkey
+  const assistHotkey = resolveAssistHotkey(record, base.assistHotkey)
+  const voiceAgentHotkey = resolveVoiceAgentHotkey(
+    record,
+    base.voiceAgentHotkey,
+  )
+  const availableModes = normalizeAvailableModes(record, {
+    dictate: dictateHotkey !== '',
+    assist: assistHotkey !== '',
+    voice_agent: voiceAgentHotkey !== '',
+  })
+  const agentMode =
+    readStringField(record, 'agentMode') === 'voice_agent'
+      ? 'voice_agent'
+      : deriveLegacyAgentMode(
+          assistHotkey,
+          voiceAgentHotkey,
+          'none',
+          base.agentMode,
+        )
+  const activeMode = normalizeRuntimeMode(
+    readStringField(record, 'activeMode'),
+    availableModes,
+    agentMode,
+  )
+  const agentHotkey =
+    readStringField(record, 'agentHotkey') ??
+    deriveLegacyAgentHotkey(assistHotkey, voiceAgentHotkey, activeMode)
   const storeBackend =
     payload?.storeBackend === 'postgres' ? 'postgres' : base.storeBackend
 
@@ -187,8 +418,12 @@ function normalizeSettingsState(
     maxAudioStorageMB: payload?.maxAudioStorageMB ?? base.maxAudioStorageMB,
     hotkey,
     dictateHotkey,
-    agentHotkey: payload?.agentHotkey ?? base.agentHotkey,
-    activeMode: payload?.activeMode ?? base.activeMode,
+    assistHotkey,
+    voiceAgentHotkey,
+    agentHotkey,
+    agentMode,
+    activeMode,
+    availableModes,
     selectedAudioDeviceId:
       payload?.selectedAudioDeviceId ??
       (payload as { audioDeviceId?: string } | undefined)?.audioDeviceId ??
@@ -540,13 +775,27 @@ export async function revealDashboardAudio(
 }
 
 export async function saveSettingsState(nextState: SpeechKitSettingsState) {
+  const legacyAgentMode = deriveLegacyAgentMode(
+    nextState.assistHotkey,
+    nextState.voiceAgentHotkey,
+    nextState.activeMode,
+    nextState.agentMode,
+  )
+  const legacyAgentHotkey = deriveLegacyAgentHotkey(
+    nextState.assistHotkey,
+    nextState.voiceAgentHotkey,
+    nextState.activeMode,
+  )
   const body = new URLSearchParams({
     overlay_enabled: nextState.overlayEnabled ? '1' : '0',
     overlay_visualizer: nextState.visualizer,
     overlay_design: nextState.design,
     hotkey: nextState.dictateHotkey ?? nextState.hotkey,
     dictate_hotkey: nextState.dictateHotkey ?? nextState.hotkey,
-    agent_hotkey: nextState.agentHotkey,
+    assist_hotkey: nextState.assistHotkey,
+    voice_agent_hotkey: nextState.voiceAgentHotkey,
+    agent_hotkey: legacyAgentHotkey,
+    agent_mode: legacyAgentMode,
     active_mode: nextState.activeMode,
     hf_model: nextState.hfModel,
     overlay_position: nextState.overlayPosition,

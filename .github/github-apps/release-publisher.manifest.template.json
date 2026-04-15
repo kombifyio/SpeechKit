@@ -10,6 +10,7 @@
   "public": false,
   "default_permissions": {
     "contents": "write",
+    "workflows": "write",
     "metadata": "read"
   },
   "default_events": [],

@@ -137,3 +137,45 @@ func TestSelectDownloadedLocalModelReactivatesLocalSTTAfterCloudSelection(t *tes
 		t.Fatalf("launchLocalProvider calls = %d, want 1", called)
 	}
 }
+
+func TestSelectDownloadedLocalModelDetachesCanceledContextForLocalStartup(t *testing.T) {
+	modelsDir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(modelsDir, "ggml-large-v3.bin"), []byte("large"), 0o644); err != nil {
+		t.Fatalf("write large model: %v", err)
+	}
+
+	cfg := defaultTestConfig()
+	cfg.Local.Enabled = true
+	cfg.Local.Port = 8080
+	cfg.Local.ModelPath = filepath.Join(modelsDir, "ggml-large-v3.bin")
+	cfg.Routing.Strategy = "local-only"
+	cfgPath := filepath.Join(t.TempDir(), "config.toml")
+
+	state := &appState{
+		activeProfiles: map[string]string{},
+		sttRouter:      &router.Router{},
+	}
+
+	item, ok := downloadCatalogItem(cfg, "whisper.ggml-large-v3")
+	if !ok {
+		t.Fatal("expected local download catalog item to exist")
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	var launchErr error
+	previousLauncher := launchLocalProvider
+	launchLocalProvider = func(ctx context.Context, state *appState, r *router.Router, provider localProviderStarter) {
+		launchErr = ctx.Err()
+	}
+	defer func() { launchLocalProvider = previousLauncher }()
+
+	if err := selectDownloadedLocalModel(ctx, cfgPath, cfg, state, item); err != nil {
+		t.Fatalf("selectDownloadedLocalModel: %v", err)
+	}
+
+	if launchErr != nil {
+		t.Fatalf("launch context err = %v, want nil", launchErr)
+	}
+}

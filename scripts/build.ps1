@@ -40,6 +40,61 @@ function Get-EnvValue {
     return ''
 }
 
+function Import-DotEnvFiles {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$ProjectDir
+    )
+
+    $allowedNames = @(
+        'SPEECHKIT_MANAGED_DOPPLER_PROJECT',
+        'SPEECHKIT_MANAGED_DOPPLER_CONFIG',
+        'SPEECHKIT_MANAGED_HF_BUILD_ENABLED',
+        'SPEECHKIT_MANAGED_HF_DEFAULT'
+    )
+
+    foreach ($fileName in @('.env', '.env.local')) {
+        $filePath = Join-Path $ProjectDir $fileName
+        if (-not (Test-Path $filePath)) {
+            continue
+        }
+
+        Write-Host "Loading environment defaults from $fileName..."
+        foreach ($rawLine in Get-Content $filePath) {
+            $line = $rawLine.Trim()
+            if ([string]::IsNullOrWhiteSpace($line) -or $line.StartsWith('#')) {
+                continue
+            }
+            if ($line.StartsWith('export ')) {
+                $line = $line.Substring(7).Trim()
+            }
+
+            $separatorIndex = $line.IndexOf('=')
+            if ($separatorIndex -lt 1) {
+                continue
+            }
+
+            $name = $line.Substring(0, $separatorIndex).Trim()
+            if ([string]::IsNullOrWhiteSpace($name) -or (Test-Path "Env:\$name")) {
+                continue
+            }
+            if ($name -notin $allowedNames) {
+                continue
+            }
+
+            $value = $line.Substring($separatorIndex + 1)
+            if ($value.Length -ge 2) {
+                $quote = $value[0]
+                if (($quote -eq '"' -or $quote -eq "'") -and $value[$value.Length - 1] -eq $quote) {
+                    $value = $value.Substring(1, $value.Length - 2)
+                }
+            }
+
+            Set-Item -Path "Env:\$name" -Value $value
+        }
+    }
+}
+
 function Resolve-GoModulePath {
     param(
         [Parameter(Mandatory = $true)]
@@ -64,6 +119,8 @@ function Resolve-GoModulePath {
 
     return $modulePath
 }
+
+Import-DotEnvFiles -ProjectDir $projectDir
 
 if (Test-Path Env:\SPEECHKIT_MANAGED_DOPPLER_PROJECT) {
     $managedDopplerProject = $env:SPEECHKIT_MANAGED_DOPPLER_PROJECT

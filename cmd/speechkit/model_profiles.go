@@ -17,6 +17,7 @@ import (
 )
 
 var launchLocalProvider = startLocalProviderAsync
+var reloadAIRuntime = rebuildAIRuntime
 
 func applyModelProfile(ctx context.Context, cfgPath string, cfg *config.Config, state *appState, sttRouter *router.Router, profile models.Profile) error {
 	switch profile.Modality {
@@ -27,7 +28,7 @@ func applyModelProfile(ctx context.Context, cfgPath string, cfg *config.Config, 
 	case models.ModalityAssist:
 		return applyAssistProfile(ctx, cfgPath, cfg, state, profile)
 	case models.ModalityRealtimeVoice:
-		return applyRealtimeVoiceProfile(cfgPath, cfg, state, profile)
+		return applyRealtimeVoiceProfile(ctx, cfgPath, cfg, state, profile)
 	default:
 		return fmt.Errorf("unsupported modality %q", profile.Modality)
 	}
@@ -142,7 +143,8 @@ func syncConfiguredLocalProvider(ctx context.Context, cfg *config.Config, state 
 	}
 	localProvider := stt.NewLocalProvider(cfg.Local.Port, modelPath, cfg.Local.GPU)
 	targetRouter.SetLocal(localProvider)
-	launchLocalProvider(ctx, state, targetRouter, localProvider)
+	// Local whisper startup must survive short-lived HTTP request contexts.
+	launchLocalProvider(context.WithoutCancel(ctx), state, targetRouter, localProvider)
 }
 
 func applyUtilityProfile(ctx context.Context, cfgPath string, cfg *config.Config, state *appState, profile models.Profile) error {
@@ -294,16 +296,45 @@ func rebuildAIRuntime(ctx context.Context, state *appState, cfg *config.Config) 
 	return nil
 }
 
+func clearAgentModels(cfg *config.Config) {
+	cfg.Providers.OpenAI.AgentModel = ""
+	cfg.Providers.Groq.AgentModel = ""
+	cfg.Providers.Google.AgentModel = ""
+	cfg.Providers.Ollama.AgentModel = ""
+	cfg.Providers.OpenRouter.AgentModel = ""
+	cfg.HuggingFace.AgentModel = ""
+}
+
 // applyRealtimeVoiceProfile configures the Voice Agent for a real-time voice profile.
-func applyRealtimeVoiceProfile(cfgPath string, cfg *config.Config, state *appState, profile models.Profile) error {
-	apiKey := config.ResolveSecret(cfg.Providers.Google.APIKeyEnv)
-	if apiKey == "" {
-		return errors.New("google api key not configured — add it on the model card in Settings")
+func applyRealtimeVoiceProfile(ctx context.Context, cfgPath string, cfg *config.Config, state *appState, profile models.Profile) error {
+	clearAgentModels(cfg)
+	switch profile.ExecutionMode {
+	case models.ExecutionModeGoogle:
+		apiKey := config.ResolveSecret(cfg.Providers.Google.APIKeyEnv)
+		if apiKey == "" {
+			return errors.New("google api key not configured â€” add it on the model card in Settings")
+		}
+		cfg.VoiceAgent.Enabled = true
+		cfg.VoiceAgent.Model = profile.ModelID
+		cfg.VoiceAgent.PipelineFallback = false
+	case models.ExecutionModeHFRouted:
+		token, _, err := config.ResolveHuggingFaceToken(cfg)
+		if err != nil || token == "" {
+			return errors.New("hugging face token not configured")
+		}
+		cfg.HuggingFace.Enabled = true
+		cfg.HuggingFace.AgentModel = profile.ModelID
+		cfg.VoiceAgent.Enabled = true
+		cfg.VoiceAgent.Model = profile.ModelID
+		cfg.VoiceAgent.PipelineFallback = true
+	default:
+		return fmt.Errorf("unsupported execution mode for realtime voice")
 	}
-	cfg.VoiceAgent.Enabled = true
-	cfg.VoiceAgent.Model = profile.ModelID
 	if err := config.Save(cfgPath, cfg); err != nil {
 		return fmt.Errorf("save config: %w", err)
+	}
+	if err := reloadAIRuntime(ctx, state, cfg); err != nil {
+		return err
 	}
 	if state != nil {
 		state.mu.Lock()

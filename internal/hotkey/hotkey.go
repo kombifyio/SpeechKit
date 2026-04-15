@@ -85,7 +85,7 @@ type Manager struct {
 
 // NewManager creates a PTT manager. combo is a list of VK codes that must ALL be pressed.
 func NewManager(combo []uint32) *Manager {
-	keys := normalizeCombo(combo)
+	keys := normalizeComboAllowEmpty(combo)
 	return &Manager{
 		keys:     keys,
 		events:   make(chan Event, 16),
@@ -98,7 +98,7 @@ func NewManager(combo []uint32) *Manager {
 // Reconfigure swaps the key combination while the hook is running.
 // The keyboard hook stays installed; only the combo tracker is replaced.
 func (m *Manager) Reconfigure(combo []uint32) {
-	keys := normalizeCombo(combo)
+	keys := normalizeComboAllowEmpty(combo)
 	tracker := newComboTracker(keys)
 
 	// Swap atomically under the implicit lock of the channel-based event system.
@@ -243,7 +243,7 @@ type comboTracker struct {
 }
 
 func newComboTracker(keys []uint32) *comboTracker {
-	keys = normalizeCombo(keys)
+	keys = normalizeComboAllowEmpty(keys)
 	set := make(map[uint32]struct{}, len(keys))
 	for _, key := range keys {
 		set[key] = struct{}{}
@@ -339,6 +339,17 @@ func (m *Manager) unhook() {
 }
 
 func normalizeCombo(keys []uint32) []uint32 {
+	normalized := normalizeComboAllowEmpty(keys)
+	if len(normalized) == 0 {
+		return ComboWinAlt()
+	}
+	if len(normalized) == 1 && normalized[0] == VkMenu {
+		return ComboWinAlt()
+	}
+	return normalized
+}
+
+func normalizeComboAllowEmpty(keys []uint32) []uint32 {
 	result := make([]uint32, 0, len(keys))
 	seen := make(map[uint32]struct{}, len(keys))
 	for _, key := range keys {
@@ -350,10 +361,7 @@ func normalizeCombo(keys []uint32) []uint32 {
 		result = append(result, key)
 	}
 	if len(result) == 0 {
-		return ComboWinAlt()
-	}
-	if len(result) == 1 && result[0] == VkMenu {
-		return ComboWinAlt()
+		return nil
 	}
 	return result
 }

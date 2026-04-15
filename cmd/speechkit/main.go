@@ -23,7 +23,6 @@ import (
 	"github.com/kombifyio/SpeechKit/internal/audio"
 	"github.com/kombifyio/SpeechKit/internal/config"
 	"github.com/kombifyio/SpeechKit/internal/downloads"
-	"github.com/kombifyio/SpeechKit/internal/hotkey"
 	_ "github.com/kombifyio/SpeechKit/internal/kombify"
 	"github.com/kombifyio/SpeechKit/internal/output"
 	"github.com/kombifyio/SpeechKit/internal/router"
@@ -64,6 +63,8 @@ type appState struct {
 	providers             []string
 	hotkey                string
 	dictateHotkey         string
+	assistHotkey          string
+	voiceAgentHotkey      string
 	agentHotkey           string
 	currentState          string
 	overlayText           string
@@ -76,6 +77,8 @@ type appState struct {
 	overlayMovable        bool
 	overlayFreeX          int
 	overlayFreeY          int
+	overlayMonitorKey     string
+	overlayMonitorCenters map[string]config.OverlayFreePosition
 	quickNoteMode         bool
 	quickCaptureMode      bool
 	quickCaptureAutoStart bool  // when true, next PTT event auto-starts + auto-stops recording
@@ -189,6 +192,7 @@ func main() {
 		slog.Error("config load failed", "err", err)
 		os.Exit(1)
 	}
+	normalizeConfigModes(cfg)
 	if migrated, err := secrets.MigrateInstallTokenBootstrap(); err != nil {
 		slog.Warn("migrate install hugging face token", "err", err)
 	} else if migrated {
@@ -207,7 +211,7 @@ func main() {
 		if err := config.SaveInstallState(installState); err != nil {
 			slog.Warn("save install state", "err", err)
 		}
-		slog.Info("install mode: local (default, first run — setup wizard pending)")
+		slog.Info("install mode: local (default, first run â€” setup wizard pending)")
 	} else {
 		slog.Info("install mode", "mode", installState.Mode)
 	}
@@ -224,24 +228,27 @@ func main() {
 	}
 
 	state := &appState{
-		hotkey:               cfg.General.DictateHotkey,
-		dictateHotkey:        cfg.General.DictateHotkey,
-		agentHotkey:          cfg.General.AgentHotkey,
-		activeMode:           cfg.General.ActiveMode,
-		audioDeviceID:        cfg.Audio.DeviceID,
-		activeProfiles:       activeProfilesFromConfig(cfg, filteredModelCatalog()),
-		providers:            []string{},
-		overlayEnabled:       cfg.UI.OverlayEnabled,
-		overlayPosition:      cfg.UI.OverlayPosition,
-		overlayMovable:       cfg.UI.OverlayMovable,
-		overlayFreeX:         cfg.UI.OverlayFreeX,
-		overlayFreeY:         cfg.UI.OverlayFreeY,
-		overlayVisualizer:    cfg.UI.Visualizer,
-		overlayDesign:        cfg.UI.Design,
-		vocabularyDictionary: cfg.Vocabulary.Dictionary,
-		screenLocator:        newActiveWindowScreenLocator(),
-		downloads:            downloads.NewManager(),
-		appUpdates:           newAppUpdateManager(),
+		hotkey:                cfg.General.DictateHotkey,
+		dictateHotkey:         cfg.General.DictateHotkey,
+		assistHotkey:          cfg.General.AssistHotkey,
+		voiceAgentHotkey:      cfg.General.VoiceAgentHotkey,
+		agentHotkey:           cfg.General.AgentHotkey,
+		activeMode:            cfg.General.ActiveMode,
+		audioDeviceID:         cfg.Audio.DeviceID,
+		activeProfiles:        activeProfilesFromConfig(cfg, filteredModelCatalog()),
+		providers:             []string{},
+		overlayEnabled:        cfg.UI.OverlayEnabled,
+		overlayPosition:       cfg.UI.OverlayPosition,
+		overlayMovable:        cfg.UI.OverlayMovable,
+		overlayFreeX:          cfg.UI.OverlayFreeX,
+		overlayFreeY:          cfg.UI.OverlayFreeY,
+		overlayMonitorCenters: cloneOverlayMonitorPositions(cfg.UI.OverlayMonitorPositions),
+		overlayVisualizer:     cfg.UI.Visualizer,
+		overlayDesign:         cfg.UI.Design,
+		vocabularyDictionary:  cfg.Vocabulary.Dictionary,
+		screenLocator:         newActiveWindowScreenLocator(),
+		downloads:             downloads.NewManager(),
+		appUpdates:            newAppUpdateManager(),
 	}
 
 	// Build router and track provider status
@@ -344,7 +351,7 @@ func main() {
 	genkitRT, err := appai.Init(ctx, buildGenkitConfig(cfg))
 	if err != nil {
 		slog.Warn("genkit init", "err", err)
-		state.addLog("AI providers unavailable — Assist and Voice Agent disabled", "warn")
+		state.addLog("AI providers unavailable â€” Assist and Voice Agent disabled", "warn")
 	} else {
 		state.genkitRT = genkitRT
 
@@ -378,7 +385,7 @@ func main() {
 	audioPlayer, err := audio.NewPlayer()
 	if err != nil {
 		slog.Warn("audio player init", "err", err)
-		state.addLog("TTS audio player unavailable — voice output disabled", "warn")
+		state.addLog("TTS audio player unavailable â€” voice output disabled", "warn")
 	} else {
 		state.audioPlayer = audioPlayer
 		defer audioPlayer.Close()
@@ -397,7 +404,7 @@ func main() {
 	})
 	state.assistExecutor = newAssistToolExecutor(quickActions)
 
-	// Assist Pipeline: STT → Codeword → LLM → TTS → Result{Text, Audio}
+	// Assist Pipeline: STT â†’ Codeword â†’ LLM â†’ TTS â†’ Result{Text, Audio}
 	if state.assistFlow != nil {
 		state.assistPipeline = assist.NewPipeline(
 			state.assistFlow,
@@ -410,68 +417,17 @@ func main() {
 	}
 
 	// Voice Agent session (pre-created, started on demand via hotkey).
-	if cfg.VoiceAgent.Enabled && cfg.General.AgentMode == "voice_agent" {
-		geminiProvider := voiceagent.NewGeminiLive()
-		state.voiceAgentSession = voiceagent.NewSession(geminiProvider, voiceagent.Callbacks{
-			OnStateChange: func(vaState voiceagent.State) {
-				state.addLog(fmt.Sprintf("Voice Agent: %s", vaState), "info")
-				state.updatePrompterState(string(vaState))
-			},
-			OnAudio: func(audioData []byte) {
-				state.writeVoiceAgentAudio(audioData)
-			},
-			OnText: func(text string) {
-				state.showAssistBubble(text)
-			},
-			OnError: func(err error) {
-				state.addLog(fmt.Sprintf("Voice Agent error: %v", err), "error")
-			},
-			OnInputTranscript: func(text string, done bool) {
-				state.sendPrompterMessage("user", text, done)
-			},
-			OnOutputTranscript: func(text string, done bool) {
-				state.sendPrompterMessage("assistant", text, done)
-			},
-			OnToolCall: func(call voiceagent.ToolCall) {
-				state.addLog(fmt.Sprintf("Voice Agent tool requested: %s", call.Name), "warn")
-				if state.voiceAgentSession != nil {
-					if err := state.voiceAgentSession.SendToolResponse(voiceagent.ToolResponse{
-						ID:   call.ID,
-						Name: call.Name,
-						Response: map[string]any{
-							"error": "tool not configured in desktop host",
-						},
-					}); err != nil {
-						state.addLog(fmt.Sprintf("Voice Agent tool response failed: %v", err), "error")
-					}
-				}
-			},
-			OnToolCallCancellation: func(ids []string) {
-				state.addLog(fmt.Sprintf("Voice Agent tool calls cancelled: %v", ids), "info")
-			},
-			OnInterrupted: func() {
-				state.interruptVoiceAgentStream(ctx)
-				state.sendPrompterMessage("system", "[interrupted]", true)
-			},
-			OnSessionEnd: func() {
-				state.stopVoiceAgentStream()
-				state.hidePrompterWindow()
-				state.addLog("Voice Agent session ended", "info")
-			},
-		})
-		slog.Info("voice agent session prepared (start via agent hotkey)")
+	if cfg.VoiceAgent.Enabled {
+		state.voiceAgentSession = prepareVoiceAgentSession(state)
+		slog.Info("voice agent session prepared")
 	}
 
-	// Hotkeys for Dictate and Agent mode
-	hkManager := newDualHotkeyManager(
-		hotkey.ParseCombo(cfg.General.DictateHotkey),
-		hotkey.ParseCombo(cfg.General.AgentHotkey),
-		func() string {
-			state.mu.Lock()
-			defer state.mu.Unlock()
-			return state.activeMode
-		},
-	)
+	// Hotkeys for Dictate, Assist and Voice Agent.
+	hkManager := newModeHotkeyManager(configuredModeCombos(
+		cfg.General.DictateHotkey,
+		cfg.General.AssistHotkey,
+		cfg.General.VoiceAgentHotkey,
+	))
 	state.hkManager = hkManager
 
 	// Store (interface-based, backend selected via config)
@@ -582,7 +538,7 @@ func main() {
 	state.assistBubble = assistBubbleWindow
 
 	// Prompter window for Voice Agent transcript (created only when voice agent is enabled).
-	if cfg.VoiceAgent.Enabled && cfg.General.AgentMode == "voice_agent" && cfg.VoiceAgent.ShowPrompter {
+	if cfg.VoiceAgent.Enabled && cfg.VoiceAgent.ShowPrompter {
 		prompterWin := app.Window.NewWithOptions(newPrompterWindowOptions())
 		state.prompterWindow = prompterWin
 	}
@@ -598,13 +554,14 @@ func main() {
 		}
 
 		overlayMoveSaveTimer = time.AfterFunc(250*time.Millisecond, func() {
-			centerX, centerY := state.overlayFreeCenter()
+			centerX, centerY, monitorPositions := state.overlayFreeCenterState()
 
 			overlayMoveSaveMu.Lock()
 			defer overlayMoveSaveMu.Unlock()
 
 			cfg.UI.OverlayFreeX = centerX
 			cfg.UI.OverlayFreeY = centerY
+			cfg.UI.OverlayMonitorPositions = monitorPositions
 			if !cfg.UI.OverlayMovable {
 				return
 			}
@@ -687,7 +644,12 @@ func main() {
 
 	state.setActiveMode(cfg.General.ActiveMode)
 	state.addLog(fmt.Sprintf("Dictate hotkey: %s", cfg.General.DictateHotkey), "info")
-	state.addLog(fmt.Sprintf("Agent hotkey: %s", cfg.General.AgentHotkey), "info")
+	if cfg.General.AssistHotkey != "" {
+		state.addLog(fmt.Sprintf("Assist hotkey: %s", cfg.General.AssistHotkey), "info")
+	}
+	if cfg.General.VoiceAgentHotkey != "" {
+		state.addLog(fmt.Sprintf("Voice Agent hotkey: %s", cfg.General.VoiceAgentHotkey), "info")
+	}
 	state.addLog(fmt.Sprintf("Providers: %s", strings.Join(state.providers, ", ")), "info")
 	if len(state.providers) == 0 {
 		if r.Local() != nil {
@@ -730,9 +692,6 @@ func main() {
 				state.mu.Lock()
 				defer state.mu.Unlock()
 				return state.activeMode
-			},
-			agentMode: func() string {
-				return cfg.General.AgentMode
 			},
 			onAssistText: func(text string) {
 				trimmed := strings.TrimSpace(text)

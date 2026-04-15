@@ -6,7 +6,7 @@ This document defines which repository owns which part of the SpeechKit release 
 
 ### Private Upstream
 
-Repository: `Soulcreek/kombify-SpeechKit`
+Repository: `KombiverseLabs/kombify-SpeechKit`
 
 Purpose:
 
@@ -68,19 +68,21 @@ Do not treat the private repo as the release origin for public Windows binaries.
 
 ### Public OSS Workflows
 
-The following workflows belong in `kombifyio/SpeechKit`:
+The public repository owns workflow execution and release state.
 
-- public CI
-- Windows build workflow
-- release workflow
-- SignPath signing workflow steps
-- post-signing verification
+The private upstream owns the canonical workflow source files for the public OSS repo. Those workflow files are exported as a curated allowlist during the mirror step:
+
+- `.github/workflows/build.yml`
+- `.github/workflows/changesets.yml`
+- `.github/workflows/ci.yml`
+- `.github/workflows/release.yml`
 
 This is required so that:
 
 - public releases are reproducible from the public source tree
 - SignPath OSS validation can use the public GitHub repository as the trusted build origin
 - GitHub-hosted runners can be used for the release path
+- the public workflow definitions do not silently drift away from the private upstream
 
 ## Signing Ownership
 
@@ -97,24 +99,25 @@ Expected sequence:
 
 ## Tagging And Releases
 
-Public tags must be created in `kombifyio/SpeechKit`.
+Public tags and GitHub Releases must resolve in `kombifyio/SpeechKit`.
 
 Recommended model:
 
-- private repo: development commits only
+- private repo: development commits plus curated export automation
 - public repo: exported commits intended for OSS publication
-- release tags: only in the public repo
-- GitHub Releases: only in the public repo
+- public workflow execution: only in the public repo
+- GitHub Releases: created or updated by the release GitHub App from the private upstream using `CHANGELOG.md`
+- public `release.yml`: attaches Windows assets and creates a fallback release only if the publisher has not already created one
 
-Do not cut a public release tag in the private upstream and then attempt to publish matching binaries elsewhere.
+Do not consider a release published until the public workflow has attached the expected assets and the website verification step has passed.
 
 ## Practical Decision
 
 For SpeechKit, the clean target model is:
 
 - private repo remains the internal upstream
+- private repo stays private and does not publish its own GitHub Releases on tag pushes
 - public repo becomes the only OSS release surface
 - public repo owns GitHub-hosted release workflows
 - public repo owns SignPath OSS integration
 - signed Windows installer and portable bundle are published only from the public repo
-

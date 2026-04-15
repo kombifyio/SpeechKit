@@ -23,7 +23,14 @@ import {
 type Tab = 'general' | 'stt' | 'assist' | 'realtime_voice'
 export type SettingsTab = Tab
 
-const CTRL_SHIFT_SUFFIX_KEYS = ['d', 'j', 'k', 'space'] as const
+const CTRL_SHIFT_SUFFIX_KEYS = ['d', 'j', 'k', 'v', 'space'] as const
+const MODE_HOTKEY_FIELDS = {
+  dictate: 'dictateHotkey',
+  assist: 'assistHotkey',
+  voice_agent: 'voiceAgentHotkey',
+} as const
+
+type ConfigurableMode = keyof typeof MODE_HOTKEY_FIELDS
 
 function providerSecretNoun(provider?: string) {
   return provider === 'huggingface' ? 'token' : 'key'
@@ -136,6 +143,30 @@ export function SettingsApp({ initialTab = 'general' }: { initialTab?: Tab }) {
     queueSave({ ...settings, ...patch }, delay)
   }
 
+  const updateModeHotkey = (
+    mode: ConfigurableMode,
+    value: string,
+  ) => {
+    const trimmedValue = value.trim()
+    const nextAvailableModes = {
+      ...settings.availableModes,
+      [mode]: trimmedValue.length > 0,
+    }
+    const patch: Partial<SpeechKitSettingsState> = {
+      [MODE_HOTKEY_FIELDS[mode]]: trimmedValue,
+      availableModes: nextAvailableModes,
+    }
+
+    if (mode === 'dictate') {
+      patch.hotkey = trimmedValue
+    }
+    if (settings.activeMode === mode && trimmedValue.length === 0) {
+      patch.activeMode = 'none'
+    }
+
+    updateSettings(patch)
+  }
+
   const applyFreshSettings = (fresh: SpeechKitSettingsState) => {
     setSettings((prev) => ({
       ...prev,
@@ -227,22 +258,29 @@ export function SettingsApp({ initialTab = 'general' }: { initialTab?: Tab }) {
         {/* General tab — two-column layout */}
         {tab === 'general' && (
           <div className="grid grid-cols-2 gap-x-10 gap-y-5">
-            {/* Left column: Mode · Hotkeys · Microphone */}
+            {/* Left column: Hotkeys · Microphone */}
             <div className="flex flex-col gap-5">
-              <Section title="Mode">
-                <div className="flex flex-wrap gap-1.5">
-                  <Chip active={settings.activeMode === 'dictate'} onClick={() => updateSettings({ activeMode: 'dictate' })}>Dictate</Chip>
-                  <Chip active={settings.activeMode === 'agent'} onClick={() => updateSettings({ activeMode: 'agent' })}>Assist</Chip>
-                </div>
-                <p className="mt-1 text-[11px] text-[#938ea1]/70">
-                  Decides which action wins when hotkeys overlap.
-                </p>
-              </Section>
-
               <Section title="Hotkeys">
-                <HotkeyPicker label="Dictate hotkey" value={settings.dictateHotkey} onChange={(value) => updateSettings({ dictateHotkey: value, hotkey: value })} />
+                <HotkeyPicker
+                  label="Dictate hotkey"
+                  value={settings.dictateHotkey}
+                  defaultCtrlShiftSuffix="d"
+                  onChange={(value) => updateModeHotkey('dictate', value)}
+                />
                 <div className="mt-3" />
-                <HotkeyPicker label="Assist hotkey" value={settings.agentHotkey} onChange={(value) => updateSettings({ agentHotkey: value })} />
+                <HotkeyPicker
+                  label="Assist hotkey"
+                  value={settings.assistHotkey}
+                  defaultCtrlShiftSuffix="j"
+                  onChange={(value) => updateModeHotkey('assist', value)}
+                />
+                <div className="mt-3" />
+                <HotkeyPicker
+                  label="Voice Agent hotkey"
+                  value={settings.voiceAgentHotkey}
+                  defaultCtrlShiftSuffix="k"
+                  onChange={(value) => updateModeHotkey('voice_agent', value)}
+                />
               </Section>
 
               <Section title="Microphone">
@@ -471,26 +509,36 @@ function Section({
 function HotkeyPicker({
   label,
   value,
+  defaultCtrlShiftSuffix,
   onChange,
 }: {
   label: string
   value: string
+  defaultCtrlShiftSuffix: (typeof CTRL_SHIFT_SUFFIX_KEYS)[number]
   onChange: (value: string) => void
 }) {
+  const isDisabled = value.trim().length === 0
   const isCtrlShift = value.startsWith('ctrl+shift+')
-  const ctrlShiftSuffix = isCtrlShift ? value.replace('ctrl+shift+', '') : 'd'
+  const ctrlShiftSuffix = isCtrlShift ? value.replace('ctrl+shift+', '') : defaultCtrlShiftSuffix
 
   return (
     <div>
       <div className="mb-1.5 text-xs font-medium text-[#c9c4d8]">{label}</div>
       <div className="flex flex-wrap gap-1.5">
-        <Chip active={value === 'win+alt'} onClick={() => onChange('win+alt')}>Win + Alt</Chip>
-        <Chip active={value === 'ctrl+win'} onClick={() => onChange('ctrl+win')}>Ctrl + Win</Chip>
+        <Chip active={isDisabled} ariaLabel={`${label} disabled`} onClick={() => onChange('')}>Disabled</Chip>
+        <Chip active={value === 'win+alt'} ariaLabel={`${label} Win + Alt`} onClick={() => onChange('win+alt')}>Win + Alt</Chip>
+        <Chip active={value === 'ctrl+win'} ariaLabel={`${label} Ctrl + Win`} onClick={() => onChange('ctrl+win')}>Ctrl + Win</Chip>
         <span className="flex items-center gap-0">
-          <Chip active={isCtrlShift} onClick={() => onChange(`ctrl+shift+${ctrlShiftSuffix}`)} className={isCtrlShift ? 'rounded-r-none' : ''}>
+          <Chip
+            active={isCtrlShift}
+            ariaLabel={`${label} Ctrl + Shift`}
+            onClick={() => onChange(`ctrl+shift+${ctrlShiftSuffix}`)}
+            className={isCtrlShift ? 'rounded-r-none' : ''}
+          >
             Ctrl + Shift +
           </Chip>
           <select
+            aria-label={`${label} suffix`}
             value={ctrlShiftSuffix}
             onChange={(e) => onChange(`ctrl+shift+${e.target.value}`)}
             className={[
@@ -512,6 +560,7 @@ function HotkeyPicker({
 
 const PROVIDER_FOR_EXECUTION_MODE: Record<string, string | undefined> = {
   hf_routed: 'huggingface',
+  hf_inference: 'huggingface',
   openai_api: 'openai',
   groq_api: 'groq',
   google_api: 'google',
@@ -540,6 +589,7 @@ function sourceBadge(profile: NonNullable<SpeechKitSettingsState['profiles']>[nu
     case 'ollama_local':
       return { label: 'local', className: 'bg-[#35343a]/60 text-[#938ea1]' }
     case 'hf_routed':
+    case 'hf_inference':
       return { label: 'hugging face', className: 'bg-[#35343a]/60 text-[#938ea1]' }
     default:
       return { label: 'api key', className: 'bg-[#35343a]/60 text-[#938ea1]' }
@@ -878,24 +928,32 @@ function ModelPanel({
 
 function Chip({
   active,
+  ariaLabel,
   onClick,
+  disabled = false,
   children,
   className = '',
 }: {
   active: boolean
+  ariaLabel?: string
   onClick?: () => void
+  disabled?: boolean
   children: React.ReactNode
   className?: string
 }) {
   return (
     <button
       type="button"
+      aria-label={ariaLabel}
+      disabled={disabled}
       onClick={onClick}
       className={[
         'h-8 rounded-lg border px-3 text-xs font-medium transition-all',
         active
           ? 'border-[#947dff]/60 bg-[#947dff]/20 text-[#cabeff]'
-          : 'border-[#484555] bg-[#0e0e13] text-[#938ea1] hover:border-[#cabeff]/30 hover:text-[#e4e1e9]',
+          : disabled
+            ? 'cursor-not-allowed border-[#35343a] bg-[#0e0e13] text-[#5d5a67]'
+            : 'border-[#484555] bg-[#0e0e13] text-[#938ea1] hover:border-[#cabeff]/30 hover:text-[#e4e1e9]',
         className,
       ].join(' ')}
     >

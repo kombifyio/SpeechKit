@@ -143,8 +143,8 @@ func TestDefaultCatalogUsesMinimalSwitcherChoices(t *testing.T) {
 	if got := len(gotByModality[ModalityAssist]); got != 3 {
 		t.Fatalf("assist profile count = %d, want 3", got)
 	}
-	if got := len(gotByModality[ModalityRealtimeVoice]); got != 1 {
-		t.Fatalf("realtime voice profile count = %d, want 1", got)
+	if got := len(gotByModality[ModalityRealtimeVoice]); got != 2 {
+		t.Fatalf("realtime voice profile count = %d, want 2", got)
 	}
 
 	realtimeProfile, ok := catalog.DefaultProfile(ModalityRealtimeVoice)

@@ -8,111 +8,162 @@ import (
 )
 
 type modeHotkeyReconfigurer interface {
-	ReconfigureModes(dictate, agent []uint32)
+	ReconfigureModes(bindings map[string][]uint32)
 }
 
-type dualHotkeyManager struct {
+type managedHotkeyManager interface {
+	Start(context.Context) error
+	Stop()
+	Events() <-chan hotkey.Event
+	Reconfigure([]uint32)
+}
+
+type modeHotkeyManager struct {
 	mu         sync.RWMutex
-	dictate    *hotkey.Manager
-	agent      *hotkey.Manager
-	dictateVKs []uint32
-	agentVKs   []uint32
+	managers   map[string]managedHotkeyManager
 	events     chan hotkey.Event
-	activeMode func() string
+	ctx        context.Context
+	newManager func([]uint32) managedHotkeyManager
 	cancel     context.CancelFunc
 	wg         sync.WaitGroup
 	stopOnce   sync.Once
 }
 
-func newDualHotkeyManager(dictate, agent []uint32, activeMode func() string) *dualHotkeyManager {
-	manager := &dualHotkeyManager{
+func newModeHotkeyManager(bindings map[string][]uint32) *modeHotkeyManager {
+	manager := &modeHotkeyManager{
 		events:     make(chan hotkey.Event, 32),
-		activeMode: activeMode,
+		newManager: func(combo []uint32) managedHotkeyManager { return hotkey.NewManager(combo) },
 	}
-	manager.rebuildLocked(dictate, agent)
+	manager.rebuildLocked(bindings)
 	return manager
 }
 
-func (m *dualHotkeyManager) Start(ctx context.Context) error {
+func (m *modeHotkeyManager) Start(ctx context.Context) error {
 	m.mu.Lock()
 	inner, cancel := context.WithCancel(ctx)
+	m.ctx = inner
 	m.cancel = cancel
-	dictate := m.dictate
-	agent := m.agent
+	managers := cloneHotkeyManagers(m.managers)
 	m.mu.Unlock()
 
-	if err := dictate.Start(inner); err != nil {
-		cancel()
-		return err
-	}
-	if err := agent.Start(inner); err != nil {
-		dictate.Stop()
-		cancel()
-		return err
+	started := make([]managedHotkeyManager, 0, len(managers))
+	for _, mode := range orderedRuntimeModes() {
+		manager := managers[mode]
+		if manager == nil {
+			continue
+		}
+		if err := manager.Start(inner); err != nil {
+			cancel()
+			m.mu.Lock()
+			m.ctx = nil
+			m.cancel = nil
+			m.mu.Unlock()
+			for _, startedManager := range started {
+				startedManager.Stop()
+			}
+			return err
+		}
+		started = append(started, manager)
+		m.wg.Add(1)
+		go m.forwardLoop(mode, manager.Events())
 	}
 
-	m.wg.Add(2)
-	go m.forwardLoop("dictate", dictate.Events())
-	go m.forwardLoop("agent", agent.Events())
 	return nil
 }
 
-func (m *dualHotkeyManager) Stop() {
+func (m *modeHotkeyManager) Stop() {
 	m.stopOnce.Do(func() {
 		m.mu.Lock()
 		cancel := m.cancel
-		dictate := m.dictate
-		agent := m.agent
+		managers := cloneHotkeyManagers(m.managers)
+		m.ctx = nil
+		m.cancel = nil
 		m.mu.Unlock()
 
 		if cancel != nil {
 			cancel()
 		}
-		if dictate != nil {
-			dictate.Stop()
-		}
-		if agent != nil {
-			agent.Stop()
+		for _, mode := range orderedRuntimeModes() {
+			if manager := managers[mode]; manager != nil {
+				manager.Stop()
+			}
 		}
 		m.wg.Wait()
 		close(m.events)
 	})
 }
 
-func (m *dualHotkeyManager) Events() <-chan hotkey.Event {
+func (m *modeHotkeyManager) Events() <-chan hotkey.Event {
 	return m.events
 }
 
-func (m *dualHotkeyManager) Reconfigure(combo []uint32) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	m.dictateVKs = append([]uint32(nil), combo...)
-	if m.dictate != nil {
-		m.dictate.Reconfigure(combo)
-	}
+func (m *modeHotkeyManager) Reconfigure(combo []uint32) {
+	m.ReconfigureModes(map[string][]uint32{
+		modeDictate: combo,
+	})
 }
 
-func (m *dualHotkeyManager) ReconfigureModes(dictate, agent []uint32) {
+func (m *modeHotkeyManager) ReconfigureModes(bindings map[string][]uint32) {
 	m.mu.Lock()
-	defer m.mu.Unlock()
-	m.dictateVKs = append([]uint32(nil), dictate...)
-	m.agentVKs = append([]uint32(nil), agent...)
-	if m.dictate != nil {
-		m.dictate.Reconfigure(dictate)
+	if m.managers == nil {
+		m.managers = make(map[string]managedHotkeyManager, len(bindings))
 	}
-	if m.agent != nil {
-		m.agent.Reconfigure(agent)
-	}
-}
 
-func (m *dualHotkeyManager) forwardLoop(binding string, source <-chan hotkey.Event) {
-	defer m.wg.Done()
-	for event := range source {
-		resolved := resolveBindingForActiveMode(m.sameCombo(), m.currentActiveMode(), binding)
-		if resolved == "" {
+	runtimeCtx := m.ctx
+	type pendingManagerStart struct {
+		mode    string
+		manager managedHotkeyManager
+	}
+	pendingStarts := make([]pendingManagerStart, 0, len(bindings))
+
+	for _, mode := range orderedRuntimeModes() {
+		combo, ok := bindings[mode]
+		manager := m.managers[mode]
+		switch {
+		case !ok && manager != nil:
+			manager.Reconfigure(nil)
+		case ok && manager != nil:
+			manager.Reconfigure(combo)
+		case ok && manager == nil:
+			manager = m.newManager(combo)
+			m.managers[mode] = manager
+			if runtimeCtx != nil {
+				pendingStarts = append(pendingStarts, pendingManagerStart{
+					mode:    mode,
+					manager: manager,
+				})
+			}
+		}
+	}
+	m.mu.Unlock()
+
+	for _, pending := range pendingStarts {
+		if err := pending.manager.Start(runtimeCtx); err != nil {
+			m.mu.Lock()
+			if m.managers[pending.mode] == pending.manager {
+				delete(m.managers, pending.mode)
+			}
+			m.mu.Unlock()
 			continue
 		}
-		event.Binding = resolved
+		m.wg.Add(1)
+		go m.forwardLoop(pending.mode, pending.manager.Events())
+	}
+}
+
+func (m *modeHotkeyManager) rebuildLocked(bindings map[string][]uint32) {
+	m.managers = make(map[string]managedHotkeyManager, len(bindings))
+	for _, mode := range orderedRuntimeModes() {
+		if combo, ok := bindings[mode]; ok {
+			m.managers[mode] = m.newManager(combo)
+		}
+	}
+}
+
+func (m *modeHotkeyManager) forwardLoop(binding string, source <-chan hotkey.Event) {
+	defer m.wg.Done()
+	for event := range source {
+		event.Binding = binding
 		select {
 		case m.events <- event:
 		default:
@@ -120,47 +171,13 @@ func (m *dualHotkeyManager) forwardLoop(binding string, source <-chan hotkey.Eve
 	}
 }
 
-func (m *dualHotkeyManager) currentActiveMode() string {
-	if m.activeMode == nil {
-		return "dictate"
+func cloneHotkeyManagers(input map[string]managedHotkeyManager) map[string]managedHotkeyManager {
+	if input == nil {
+		return nil
 	}
-	mode := m.activeMode()
-	if mode == "" {
-		return "dictate"
+	cloned := make(map[string]managedHotkeyManager, len(input))
+	for key, value := range input {
+		cloned[key] = value
 	}
-	return mode
-}
-
-func (m *dualHotkeyManager) sameCombo() bool {
-	m.mu.RLock()
-	defer m.mu.RUnlock()
-	if len(m.dictateVKs) != len(m.agentVKs) {
-		return false
-	}
-	for index := range m.dictateVKs {
-		if m.dictateVKs[index] != m.agentVKs[index] {
-			return false
-		}
-	}
-	return true
-}
-
-func (m *dualHotkeyManager) rebuildLocked(dictate, agent []uint32) {
-	m.dictateVKs = append([]uint32(nil), dictate...)
-	m.agentVKs = append([]uint32(nil), agent...)
-	m.dictate = hotkey.NewManager(dictate)
-	m.agent = hotkey.NewManager(agent)
-}
-
-func resolveBindingForActiveMode(sameCombo bool, activeMode, binding string) string {
-	if !sameCombo {
-		return binding
-	}
-	if activeMode == "" {
-		activeMode = "dictate"
-	}
-	if binding != activeMode {
-		return ""
-	}
-	return binding
+	return cloned
 }

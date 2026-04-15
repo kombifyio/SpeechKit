@@ -3,6 +3,7 @@ package main
 import (
 	"testing"
 
+	"github.com/kombifyio/SpeechKit/internal/config"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit"
 )
 
@@ -15,6 +16,17 @@ func (f *fakeHotkeyReconfigurer) Reconfigure(combo []uint32) {
 	f.combos = append(f.combos, cloned)
 }
 
+func (f *fakeHotkeyReconfigurer) ReconfigureModes(bindings map[string][]uint32) {
+	for _, mode := range orderedRuntimeModes() {
+		combo, ok := bindings[mode]
+		if !ok {
+			continue
+		}
+		cloned := append([]uint32(nil), combo...)
+		f.combos = append(f.combos, cloned)
+	}
+}
+
 func TestAppStateApplyRuntimeSettingsUpdatesSnapshot(t *testing.T) {
 	state := &appState{
 		hotkey:          "win+alt",
@@ -25,7 +37,8 @@ func TestAppStateApplyRuntimeSettingsUpdatesSnapshot(t *testing.T) {
 
 	oldHotkey := state.applyRuntimeSettings(
 		"ctrl+shift+d",
-		"ctrl+shift+k",
+		"ctrl+shift+j",
+		"ctrl+shift+v",
 		"dictate",
 		"mic-1",
 		[]string{"local", "hf"},
@@ -36,6 +49,9 @@ func TestAppStateApplyRuntimeSettingsUpdatesSnapshot(t *testing.T) {
 		true,
 		720,
 		360,
+		map[string]config.OverlayFreePosition{
+			"100,100,1920,1080": {X: 720, Y: 360},
+		},
 	)
 
 	if got, want := oldHotkey, "win+alt"; got != want {
@@ -73,16 +89,27 @@ func TestAppStateApplyRuntimeSettingsUpdatesSnapshot(t *testing.T) {
 func TestAppStateApplyDesktopSettingsReconfiguresHotkey(t *testing.T) {
 	hk := &fakeHotkeyReconfigurer{}
 	state := &appState{
-		hotkey:        "win+alt",
-		dictateHotkey: "win+alt",
-		agentHotkey:   "ctrl+shift+k",
-		audioDeviceID: "mic-1",
-		hkManager:     hk,
+		hotkey:           "win+alt",
+		dictateHotkey:    "win+alt",
+		assistHotkey:     "ctrl+shift+j",
+		voiceAgentHotkey: "ctrl+shift+v",
+		audioDeviceID:    "mic-1",
+		hkManager:        hk,
 	}
 
-	state.applyDesktopSettings("win+alt", "ctrl+shift+k", "ctrl+shift+d", "ctrl+shift+k", "mic-1", "mic-1", true)
+	state.applyDesktopSettings(
+		"win+alt",
+		"ctrl+shift+j",
+		"ctrl+shift+v",
+		"ctrl+shift+d",
+		"ctrl+shift+j",
+		"ctrl+shift+v",
+		"mic-1",
+		"mic-1",
+		true,
+	)
 
-	if got, want := len(hk.combos), 1; got != want {
+	if got, want := len(hk.combos), 3; got != want {
 		t.Fatalf("len(hk.combos) = %d, want %d", got, want)
 	}
 	if !state.overlayEnabled {

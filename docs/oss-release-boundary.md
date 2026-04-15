@@ -7,8 +7,20 @@ SpeechKit is developed in a private upstream and mirrored into a separate releas
 - framework and desktop host source under `cmd/`, `internal/`, `pkg/`, `frontend/`, `assets/`, and `installer/`
 - public-facing documentation under `README.md`, `docs/`, and governance files
 - canonical build scripts under `scripts/`
-- GitHub workflows and repo templates under `.github/`
+- release metadata and workflow inputs under `package.json`, `package-lock.json`, `.changeset/`, and `scripts/sync-version.mjs`
+- the curated public GitHub workflow set under `.github/workflows/{build,changesets,ci,release}.yml`
 - example configuration under `config.example.toml`
+
+## Intentional Extension Seams
+
+Some `internal/` packages are intentionally present even in the OSS release because they are the abstraction boundary for optional private modules:
+
+- `internal/kombify` is only a build-tag seam. In OSS builds it compiles to a no-op package.
+- `internal/auth` exposes the auth provider registry that a private kombify module may register into.
+- `internal/store` exposes backend registration so private or future public backends can plug in without forking the core.
+- `internal/features` only reports which optional capabilities are available at runtime.
+
+These packages are not evidence that private kombify runtime code is being shipped.
 
 ## What Does Not Ship
 
@@ -29,6 +41,7 @@ SpeechKit is developed in a private upstream and mirrored into a separate releas
 ## Mirror Contract
 
 - use the allowlist in [`scripts/public/export-manifest.txt`](../scripts/public/export-manifest.txt)
+- export only the curated public workflow subset; never copy private-only workflows such as website deploy or mirror automation into the OSS repo
 - sanitize docs and metadata before mirroring
 - build the public release artifacts from the mirrored public tree, not from a mixed private worktree
 - public tags may be source-only or source plus selected Windows artifacts

@@ -91,6 +91,8 @@ type overlaySnapshot struct {
 	Design                string            `json:"design"`
 	Hotkey                string            `json:"hotkey"`
 	DictateHotkey         string            `json:"dictateHotkey"`
+	AssistHotkey          string            `json:"assistHotkey"`
+	VoiceAgentHotkey      string            `json:"voiceAgentHotkey"`
 	AgentHotkey           string            `json:"agentHotkey"`
 	ActiveMode            string            `json:"activeMode"`
 	Position              string            `json:"position"`
@@ -122,7 +124,10 @@ type settingsSnapshot struct {
 	HFTokenSource         string                             `json:"hfTokenSource"`
 	Hotkey                string                             `json:"hotkey"`
 	DictateHotkey         string                             `json:"dictateHotkey"`
+	AssistHotkey          string                             `json:"assistHotkey"`
+	VoiceAgentHotkey      string                             `json:"voiceAgentHotkey"`
 	AgentHotkey           string                             `json:"agentHotkey"`
+	AgentMode             string                             `json:"agentMode"`
 	ActiveMode            string                             `json:"activeMode"`
 	HFModel               string                             `json:"hfModel"`
 	Visualizer            string                             `json:"visualizer"`
@@ -400,6 +405,30 @@ func overlayFreeWindowPosition(bounds screenBounds, centerX, centerY, width, hei
 	return clampedX - halfW, clampedY - halfH
 }
 
+func overlayMonitorKey(bounds screenBounds) string {
+	return fmt.Sprintf("%d,%d,%d,%d", bounds.X, bounds.Y, bounds.Width, bounds.Height)
+}
+
+func cloneOverlayMonitorPositions(input map[string]config.OverlayFreePosition) map[string]config.OverlayFreePosition {
+	if len(input) == 0 {
+		return map[string]config.OverlayFreePosition{}
+	}
+	cloned := make(map[string]config.OverlayFreePosition, len(input))
+	for key, value := range input {
+		cloned[key] = value
+	}
+	return cloned
+}
+
+func resolveOverlayFreeCenterForMonitor(bounds screenBounds, visualizer, position string, centerX, centerY int, positions map[string]config.OverlayFreePosition) (string, int, int) {
+	monitorKey := overlayMonitorKey(bounds)
+	if saved, ok := positions[monitorKey]; ok && (saved.X != 0 || saved.Y != 0) {
+		return monitorKey, saved.X, saved.Y
+	}
+	resolvedX, resolvedY := resolveOverlayFreeCenter(bounds, visualizer, position, centerX, centerY)
+	return monitorKey, resolvedX, resolvedY
+}
+
 func hasDedicatedOverlayWindows(host desktopHostState) bool {
 	return host.pillAnchor != nil || host.pillPanel != nil || host.dotAnchor != nil || host.radialMenu != nil
 }
@@ -448,7 +477,8 @@ func (s *appState) positionOverlay() {
 
 	if hasDedicatedOverlayWindows(host) {
 		if runtime.overlayMovable {
-			centerX, centerY := resolveOverlayFreeCenter(bounds, runtime.overlayVisualizer, runtime.overlayPosition, runtime.overlayFreeX, runtime.overlayFreeY)
+			monitorKey, centerX, centerY := resolveOverlayFreeCenterForMonitor(bounds, runtime.overlayVisualizer, runtime.overlayPosition, runtime.overlayFreeX, runtime.overlayFreeY, runtime.overlayMonitorCenters)
+			s.setOverlayMonitorKey(monitorKey)
 			if host.pillAnchor != nil {
 				x, y := overlayFreeWindowPosition(bounds, centerX, centerY, pillAnchorWidth, pillAnchorHeight)
 				host.pillAnchor.SetSize(pillAnchorWidth, pillAnchorHeight)
@@ -500,7 +530,8 @@ func (s *appState) positionOverlay() {
 		return
 	}
 	if runtime.overlayMovable {
-		centerX, centerY := resolveOverlayFreeCenter(bounds, runtime.overlayVisualizer, runtime.overlayPosition, runtime.overlayFreeX, runtime.overlayFreeY)
+		monitorKey, centerX, centerY := resolveOverlayFreeCenterForMonitor(bounds, runtime.overlayVisualizer, runtime.overlayPosition, runtime.overlayFreeX, runtime.overlayFreeY, runtime.overlayMonitorCenters)
+		s.setOverlayMonitorKey(monitorKey)
 		wx, wy := overlayFreeWindowPosition(bounds, centerX, centerY, overlayWindowSize, overlayWindowSize)
 		overlay.SetPosition(wx, wy)
 		return
@@ -866,14 +897,10 @@ func (s *appState) overlaySnapshot() overlaySnapshot {
 	if dictateHotkey == "" {
 		dictateHotkey = s.hotkey
 	}
-	agentHotkey := s.agentHotkey
-	if agentHotkey == "" {
-		agentHotkey = dictateHotkey
-	}
-	activeMode := s.activeMode
-	if activeMode == "" {
-		activeMode = "dictate"
-	}
+	assistHotkey := s.assistHotkey
+	voiceAgentHotkey := s.voiceAgentHotkey
+	agentHotkey := legacyAgentHotkeyFromModeBindings(assistHotkey, voiceAgentHotkey, modeAssist)
+	activeMode := normalizeRuntimeMode(s.activeMode, "")
 	audioDeviceID := s.audioDeviceID
 	activeProfiles := cloneStringMap(s.activeProfiles)
 	level := s.overlayLevel
@@ -896,6 +923,8 @@ func (s *appState) overlaySnapshot() overlaySnapshot {
 		Design:                s.overlayDesign,
 		Hotkey:                s.hotkey,
 		DictateHotkey:         dictateHotkey,
+		AssistHotkey:          assistHotkey,
+		VoiceAgentHotkey:      voiceAgentHotkey,
 		AgentHotkey:           agentHotkey,
 		ActiveMode:            activeMode,
 		Position:              s.overlayPosition,
@@ -950,21 +979,19 @@ func (s *appState) settingsSnapshot(cfg *config.Config) settingsSnapshot {
 			dictateHotkey = s.hotkey
 		}
 	}
-	agentHotkey := s.agentHotkey
-	if agentHotkey == "" {
-		if cfg.General.AgentHotkey != "" {
-			agentHotkey = cfg.General.AgentHotkey
-		} else {
-			agentHotkey = dictateHotkey
-		}
+	assistHotkey := strings.TrimSpace(s.assistHotkey)
+	if assistHotkey == "" {
+		assistHotkey = strings.TrimSpace(cfg.General.AssistHotkey)
 	}
-	activeMode := s.activeMode
-	if activeMode == "" {
-		if cfg.General.ActiveMode != "" {
-			activeMode = cfg.General.ActiveMode
-		} else {
-			activeMode = "dictate"
-		}
+	voiceAgentHotkey := strings.TrimSpace(s.voiceAgentHotkey)
+	if voiceAgentHotkey == "" {
+		voiceAgentHotkey = strings.TrimSpace(cfg.General.VoiceAgentHotkey)
+	}
+	agentMode := normalizeAgentMode(cfg.General.AgentMode)
+	agentHotkey := legacyAgentHotkeyFromModeBindings(assistHotkey, voiceAgentHotkey, agentMode)
+	activeMode := normalizeRuntimeMode(s.activeMode, agentMode)
+	if activeMode == modeNone {
+		activeMode = normalizeRuntimeMode(cfg.General.ActiveMode, agentMode)
 	}
 	audioDeviceID := s.audioDeviceID
 	if audioDeviceID == "" {
@@ -1001,7 +1028,10 @@ func (s *appState) settingsSnapshot(cfg *config.Config) settingsSnapshot {
 		HFTokenSource:         string(tokenStatus.ActiveSource),
 		Hotkey:                dictateHotkey,
 		DictateHotkey:         dictateHotkey,
+		AssistHotkey:          assistHotkey,
+		VoiceAgentHotkey:      voiceAgentHotkey,
 		AgentHotkey:           agentHotkey,
+		AgentMode:             agentMode,
 		ActiveMode:            activeMode,
 		HFModel:               cfg.HuggingFace.Model,
 		Visualizer:            s.overlayVisualizer,
@@ -1017,13 +1047,22 @@ func (s *appState) settingsSnapshot(cfg *config.Config) settingsSnapshot {
 	}
 }
 
-func (s *appState) overlayFreeCenter() (int, int) {
+func (s *appState) overlayFreeCenterState() (int, int, map[string]config.OverlayFreePosition) {
 	if s == nil {
-		return 0, 0
+		return 0, 0, map[string]config.OverlayFreePosition{}
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	return s.overlayFreeX, s.overlayFreeY
+	return s.overlayFreeX, s.overlayFreeY, cloneOverlayMonitorPositions(s.overlayMonitorCenters)
+}
+
+func (s *appState) setOverlayMonitorKey(key string) {
+	if s == nil {
+		return
+	}
+	s.mu.Lock()
+	s.overlayMonitorKey = key
+	s.mu.Unlock()
 }
 
 func (s *appState) updateOverlayFreeCenter(centerX, centerY int) bool {
@@ -1040,6 +1079,12 @@ func (s *appState) updateOverlayFreeCenter(centerX, centerY int) bool {
 
 	s.overlayFreeX = centerX
 	s.overlayFreeY = centerY
+	if s.overlayMonitorCenters == nil {
+		s.overlayMonitorCenters = make(map[string]config.OverlayFreePosition)
+	}
+	if key := strings.TrimSpace(s.overlayMonitorKey); key != "" {
+		s.overlayMonitorCenters[key] = config.OverlayFreePosition{X: centerX, Y: centerY}
+	}
 	s.syncSpeechKitSnapshotLocked()
 	return true
 }

@@ -17,6 +17,7 @@ The repository treats `frontend/app` as first-class source. The embedded `intern
 - host-managed credentials and secret storage
 - local SQLite default for zero-config usage
 - Windows-first release quality for the first public version
+- Gemini Live as the standard Voice Agent runtime with host-supplied instruction and session policy
 
 ## Three Ways to Use SpeechKit
 
@@ -34,8 +35,8 @@ Implement a handful of interfaces (`Transcriber`, `AudioRecorder`, `Persistence`
 
 Download the installer from the [Releases](https://github.com/kombifyio/SpeechKit/releases) page:
 
-- **SpeechKit-Setup-vX.Y.Z.exe** — Windows installer
-- **SpeechKit-Portable-vX.Y.Z.zip** — portable bundle (no install required)
+- **SpeechKit-Setup.exe** â€” Windows installer
+- **SpeechKit-Portable.zip** â€” portable bundle (no install required)
 
 ### As an Android App
 
@@ -48,6 +49,7 @@ The `android/` directory contains a Kotlin-based Android implementation with a c
 - six STT providers: local whisper.cpp, Hugging Face, OpenAI, Groq, Google, self-hosted VPS
 - assist mode with LLM-powered smart commands and TTS response
 - voice agent mode with real-time audio-to-audio (Gemini Live)
+- instruction-driven Voice Agent setup: host supplies API key plus optional prompt/guide and Gemini session policy
 - settings UI for provider, overlay, hotkey, and storage preferences
 
 ## Provider Credential Model
@@ -100,9 +102,34 @@ token_env = "HF_TOKEN"
 backend = "sqlite"
 save_audio = true
 audio_retention_days = 7
+
+[shortcuts.locale.de]
+summarize = ["kurzfassung", "briefing"]
+copy_last = ["kopier den letzten block"]
 ```
 
 Public OSS users should rely on explicit configuration and environment variables. Internal development may additionally use Doppler, but public artifacts must never depend on private Doppler defaults.
+
+Shortcut aliases are additive. SpeechKit keeps the built-in multilingual defaults and overlays any configured locale-specific aliases on top, so product teams can ship their own command words without changing Go code.
+
+Default mode hotkeys are `Win+Alt` for Dictation, `Ctrl+Shift+J` for Assist, and `Ctrl+Shift+K` for Voice Agent.
+
+## Voice Agent Live Test
+
+For the first end-to-end Voice Agent run, keep the setup minimal:
+
+1. Set `voice_agent_hotkey` in `config.toml` and keep `active_mode = "voice_agent"` only if you want Voice Agent preselected on startup.
+2. Provide a Gemini API key through the env var referenced by `[providers.google].api_key_env` (default: `GOOGLE_AI_API_KEY`).
+3. Keep `[voice_agent].instruction = ""` if you want the built-in default helper, or supply your own guide.
+4. Use `model = "gemini-2.5-flash-native-audio-preview-12-2025"` for the current recommended default Voice Agent runtime.
+5. Launch `SpeechKit.exe` and press the configured `voice_agent_hotkey` to start and stop the live session.
+
+Notes:
+
+- Native-audio Gemini Live sessions do not rely on `speechConfig.languageCode`; SpeechKit steers preferred language through the instruction layer and locale-aware defaults.
+- `enable_affective_dialog = true` automatically switches the Gemini Live client to `v1alpha` and is intended for Gemini 2.5 native-audio sessions, not Gemini 3.1 Flash Live.
+- Non-blocking tool behavior is available in the Voice Agent framework contract, but Gemini 3.1 Flash Live only supports sequential tool execution.
+- If a Voice Agent profile uses a non-live Hugging Face fallback model, SpeechKit keeps the `voice_agent` mode active but routes capture through the STT -> agent -> output pipeline instead of Gemini Live.
 
 ## Build and Verification
 

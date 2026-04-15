@@ -1,6 +1,10 @@
 package main
 
-import "time"
+import (
+	"time"
+
+	"github.com/kombifyio/SpeechKit/internal/config"
+)
 
 type hotkeyReconfigurer interface {
 	Reconfigure([]uint32)
@@ -16,6 +20,8 @@ type runtimeState struct {
 	providers             []string
 	hotkey                string
 	dictateHotkey         string
+	assistHotkey          string
+	voiceAgentHotkey      string
 	agentHotkey           string
 	currentState          string
 	overlayText           string
@@ -28,6 +34,8 @@ type runtimeState struct {
 	overlayMovable        bool
 	overlayFreeX          int
 	overlayFreeY          int
+	overlayMonitorKey     string
+	overlayMonitorCenters map[string]config.OverlayFreePosition
 	quickNoteMode         bool
 	quickCaptureMode      bool
 	quickCaptureAutoStart bool
@@ -59,6 +67,8 @@ func (s *appState) runtimeStateLocked() runtimeState {
 		providers:             append([]string(nil), s.providers...),
 		hotkey:                s.hotkey,
 		dictateHotkey:         s.dictateHotkey,
+		assistHotkey:          s.assistHotkey,
+		voiceAgentHotkey:      s.voiceAgentHotkey,
 		agentHotkey:           s.agentHotkey,
 		currentState:          s.currentState,
 		overlayText:           s.overlayText,
@@ -71,6 +81,7 @@ func (s *appState) runtimeStateLocked() runtimeState {
 		overlayMovable:        s.overlayMovable,
 		overlayFreeX:          s.overlayFreeX,
 		overlayFreeY:          s.overlayFreeY,
+		overlayMonitorKey:     s.overlayMonitorKey,
 		quickNoteMode:         s.quickNoteMode,
 		quickCaptureMode:      s.quickCaptureMode,
 		quickCaptureAutoStart: s.quickCaptureAutoStart,
@@ -84,6 +95,12 @@ func (s *appState) runtimeStateLocked() runtimeState {
 		state.activeProfiles = make(map[string]string, len(s.activeProfiles))
 		for key, value := range s.activeProfiles {
 			state.activeProfiles[key] = value
+		}
+	}
+	if s.overlayMonitorCenters != nil {
+		state.overlayMonitorCenters = make(map[string]config.OverlayFreePosition, len(s.overlayMonitorCenters))
+		for key, value := range s.overlayMonitorCenters {
+			state.overlayMonitorCenters[key] = value
 		}
 	}
 	return state

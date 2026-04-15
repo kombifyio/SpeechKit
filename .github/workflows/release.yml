@@ -35,6 +35,7 @@ concurrency:
 jobs:
   prepare:
     name: Resolve Release Plan
+    if: github.repository == 'kombifyio/SpeechKit'
     runs-on: ${{ vars.CI_RUNNER || 'ubuntu-24.04' }}
     outputs:
       tag: ${{ steps.plan.outputs.tag }}
@@ -74,26 +75,40 @@ jobs:
             echo "should_build_windows=$should_build_windows"
           } >> "$GITHUB_OUTPUT"
 
-  create-release:
-    name: Create Source Release
+  wait-for-publisher-release:
+    name: Wait For Publisher Draft
     needs: prepare
     runs-on: ${{ vars.CI_RUNNER || 'ubuntu-24.04' }}
 
     steps:
-      - name: Create GitHub Release
-        uses: softprops/action-gh-release@153bb8e04406b158c6c84fc1615b65b24149a1fe
-        with:
-          tag_name: ${{ needs.prepare.outputs.tag }}
-          name: SpeechKit ${{ needs.prepare.outputs.tag }}
-          draft: false
-          prerelease: ${{ contains(needs.prepare.outputs.tag, '-alpha') || contains(needs.prepare.outputs.tag, '-beta') || contains(needs.prepare.outputs.tag, '-rc') }}
-          generate_release_notes: true
+      - name: Wait for draft release created by the publisher app
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          tag="${{ needs.prepare.outputs.tag }}"
+
+          for attempt in $(seq 1 40); do
+            is_draft="$(gh release view "$tag" --json isDraft --jq '.isDraft' 2>/dev/null || true)"
+            if [ -n "$is_draft" ]; then
+              if [ "$is_draft" = "true" ]; then
+                exit 0
+              fi
+              echo "::error title=Release already published::Expected $tag to exist as a draft release from the private publisher flow."
+              exit 1
+            fi
+            sleep 15
+          done
+
+          echo "::error title=Missing draft release::No draft release for $tag was created by the publisher app."
+          exit 1
 
   build-and-release:
     name: Build Windows Assets
     needs:
       - prepare
-      - create-release
+      - wait-for-publisher-release
     if: needs.prepare.outputs.should_build_windows == 'true'
     runs-on: ${{ vars.WINDOWS_BUILD_RUNNER || 'windows-2025' }}
     timeout-minutes: 40
@@ -118,6 +133,15 @@ jobs:
           node-version: 22
           cache: npm
           cache-dependency-path: frontend/app/package-lock.json
+
+      - name: Render release notes from CHANGELOG
+        shell: bash
+        run: |
+          set -euo pipefail
+          node ./scripts/release/render-release-notes.mjs \
+            --version "${{ needs.prepare.outputs.tag }}" \
+            --repo-url "https://github.com/${{ github.repository }}" \
+            --output release-notes.md
 
       - name: Setup MinGW
         uses: msys2/setup-msys2@cafece8e6baf9247cf9b1bf95097b0b983cc558d
@@ -305,11 +329,79 @@ jobs:
           subject-path: ${{ steps.assets.outputs.subject_paths }}
 
       - name: Upload Windows assets to GitHub Release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          tag="${{ needs.prepare.outputs.tag }}"
+          title="SpeechKit $tag"
+          if gh release view "$tag" --repo "${{ github.repository }}" >/dev/null 2>&1; then
+            echo "Release $tag already exists; preserving publisher-managed notes."
+            exit 0
+          fi
+
+          args=(release create "$tag" --repo "${{ github.repository }}" --title "$title" --notes-file release-notes.md --verify-tag)
+          if [[ "$tag" == *-alpha* || "$tag" == *-beta* || "$tag" == *-rc* ]]; then
+            args+=(--prerelease)
+          fi
+
+          gh "${args[@]}"
+
+      - name: Attach Windows assets to GitHub Release
         uses: softprops/action-gh-release@153bb8e04406b158c6c84fc1615b65b24149a1fe
         with:
           tag_name: ${{ needs.prepare.outputs.tag }}
           name: SpeechKit ${{ needs.prepare.outputs.tag }}
-          draft: false
+          draft: true
           prerelease: ${{ contains(needs.prepare.outputs.tag, '-alpha') || contains(needs.prepare.outputs.tag, '-beta') || contains(needs.prepare.outputs.tag, '-rc') }}
-          generate_release_notes: true
           files: ${{ steps.assets.outputs.release_files }}
+
+  create-source-release:
+    name: Create Source Release
+    needs: prepare
+    if: needs.prepare.outputs.should_build_windows != 'true'
+    runs-on: ${{ vars.CI_RUNNER || 'ubuntu-24.04' }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          ref: ${{ needs.prepare.outputs.checkout_ref }}
+          fetch-depth: 0
+          fetch-tags: true
+
+      - name: Setup Node
+        uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f
+        with:
+          node-version: 22
+
+      - name: Render release notes from CHANGELOG
+        shell: bash
+        run: |
+          set -euo pipefail
+          node ./scripts/release/render-release-notes.mjs \
+            --version "${{ needs.prepare.outputs.tag }}" \
+            --repo-url "https://github.com/${{ github.repository }}" \
+            --output release-notes.md
+
+      - name: Create source release if the publisher has not already created it
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          tag="${{ needs.prepare.outputs.tag }}"
+          title="SpeechKit $tag"
+
+          if gh release view "$tag" --repo "${{ github.repository }}" >/dev/null 2>&1; then
+            echo "Release $tag already exists; preserving publisher-managed notes."
+            exit 0
+          fi
+
+          args=(release create "$tag" --repo "${{ github.repository }}" --title "$title" --notes-file release-notes.md --verify-tag)
+          if [[ "$tag" == *-alpha* || "$tag" == *-beta* || "$tag" == *-rc* ]]; then
+            args+=(--prerelease)
+          fi
+
+          gh "${args[@]}"

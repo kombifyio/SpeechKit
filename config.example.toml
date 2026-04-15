@@ -1,9 +1,12 @@
 [general]
-language = "de"               # Default transcription language
-dictate_hotkey = "win+alt"    # Dictation Mode hotkey (push-to-talk)
-agent_hotkey = "ctrl+shift+k" # Assist / Voice Agent Mode hotkey
-agent_mode = "assist"         # "assist" or "voice_agent" — what agent_hotkey triggers
-hotkey = "win+alt"            # Legacy alias for dictate_hotkey
+language = "de"                    # Default transcription language
+dictate_hotkey = "win+alt"         # Dictation Mode hotkey (push-to-talk)
+assist_hotkey = "ctrl+shift+j"     # Assist Mode hotkey (push-to-talk). Blank disables the mode.
+voice_agent_hotkey = "ctrl+shift+k" # Voice Agent Mode hotkey. Blank disables the mode.
+active_mode = "none"               # none, dictate, assist, voice_agent
+agent_hotkey = "ctrl+shift+j"      # Deprecated compatibility alias. SpeechKit now persists assist_hotkey + voice_agent_hotkey separately.
+agent_mode = "assist"              # Deprecated compatibility alias for legacy agent_hotkey readers.
+hotkey = "win+alt"                 # Legacy alias for dictate_hotkey
 hotkey_mode = "push_to_talk"
 auto_stop_silence_ms = 500
 fast_mode_silence_ms = 1500
@@ -14,6 +17,11 @@ overlay_position = "top"  # top, bottom, left, right
 overlay_movable = false   # When true, the pill can be dragged away from its anchored side
 overlay_free_x = 0        # Center point in screen coordinates when overlay_movable = true
 overlay_free_y = 0        # Center point in screen coordinates when overlay_movable = true
+# overlay_monitor_positions stores per-monitor movable overlay positions automatically.
+# Example:
+# [ui.overlay_monitor_positions."0,0,2560,1440"]
+# x = 1280
+# y = 180
 visualizer = "pill"       # pill or circle
 design = "default"        # default or kombify
 
@@ -35,7 +43,7 @@ model = "openai/whisper-large-v3" # Routed/shared provider model, not a dedicate
 token_env = "HF_TOKEN"    # Fallback env var when no stored host token exists; Doppler is internal/dev only
 # utility_model = "Qwen/Qwen3.5-9B"
 # assist_model = "Qwen/Qwen3.5-27B"
-# agent_model = "Qwen/Qwen3.5-27B" # Legacy fallback agent flow
+# agent_model = "Qwen/Qwen3.5-27B" # Voice Agent pipeline fallback / legacy agent flow
 
 [routing]
 strategy = "dynamic"      # dynamic, local-only, cloud-only
@@ -108,8 +116,8 @@ model_path = ""
 port = 8081
 
 # ──────────────────────────────────────────────
-# Voice Agent — Real-Time Audio-to-Audio
-# Uses native models (Gemini Live, OpenAI Realtime) — no STT/TTS pipeline.
+# Voice Agent — Live session or pipeline fallback
+# Gemini Live stays the native real-time path. Non-live profiles can use the STT + agent + TTS fallback pipeline.
 # ──────────────────────────────────────────────
 
 [voice_agent]

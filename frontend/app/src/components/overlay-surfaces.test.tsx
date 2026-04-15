@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { vi } from 'vitest'
 
 import type { SpeechKitOverlayState } from '@/lib/speechkit'
@@ -9,10 +9,9 @@ import {
   PillAnchorOverlay,
 } from '@/components/overlay-surfaces'
 
-const { fetchOverlayStateMock, setActiveModeMock, openQuickNoteCaptureMock } = vi.hoisted(() => ({
+const { fetchOverlayStateMock, setActiveModeMock } = vi.hoisted(() => ({
   fetchOverlayStateMock: vi.fn<() => Promise<SpeechKitOverlayState>>(),
   setActiveModeMock: vi.fn<() => Promise<string>>(),
-  openQuickNoteCaptureMock: vi.fn<() => Promise<string>>(),
 }))
 
 vi.mock('@/lib/speechkit', async () => {
@@ -21,17 +20,8 @@ vi.mock('@/lib/speechkit', async () => {
     ...actual,
     fetchOverlayState: fetchOverlayStateMock,
     setActiveMode: setActiveModeMock,
-    openQuickNoteCapture: openQuickNoteCaptureMock,
   }
 })
-
-vi.mock('@/components/ui/mic-selector', () => ({
-  MicSelector: ({ compact }: { compact?: boolean }) => (
-    <button type="button" aria-label={compact ? 'Microphone compact' : 'Microphone'}>
-      Mic
-    </button>
-  ),
-}))
 
 function snap(partial: Partial<SpeechKitOverlayState> = {}): SpeechKitOverlayState {
   return {
@@ -44,8 +34,15 @@ function snap(partial: Partial<SpeechKitOverlayState> = {}): SpeechKitOverlaySta
     design: 'default',
     hotkey: 'win+alt',
     dictateHotkey: 'win+alt',
-    agentHotkey: 'ctrl+shift+k',
-    activeMode: 'dictate',
+    assistHotkey: 'ctrl+shift+j',
+    voiceAgentHotkey: 'ctrl+shift+v',
+    agentHotkey: 'ctrl+shift+j',
+    activeMode: 'none',
+    availableModes: {
+      dictate: true,
+      assist: true,
+      voice_agent: true,
+    },
     position: 'top',
     movable: false,
     positionFreeX: 0,
@@ -62,9 +59,7 @@ describe('overlay surfaces', () => {
   beforeEach(() => {
     fetchOverlayStateMock.mockReset()
     setActiveModeMock.mockReset()
-    openQuickNoteCaptureMock.mockReset()
     setActiveModeMock.mockResolvedValue('')
-    openQuickNoteCaptureMock.mockResolvedValue('Capture opened')
     vi.restoreAllMocks()
   })
 
@@ -79,7 +74,7 @@ describe('overlay surfaces', () => {
     expect(screen.getByTestId('pill-anchor-stage')).toHaveClass('absolute', 'inset-0', 'flex', 'items-center', 'justify-center')
     expect(shell).toHaveAttribute('data-overlay-surface', 'pill-anchor')
     expect(shell).toHaveAttribute('data-overlay-mode', 'pill')
-    expect(screen.getByTestId('pill-anchor-status')).toHaveTextContent('Dictate ready')
+    expect(screen.getByTestId('pill-anchor-status')).toHaveTextContent('No mode ready')
   })
 
   it('opens the dedicated pill panel host on hover', async () => {
@@ -96,8 +91,33 @@ describe('overlay surfaces', () => {
     )
   })
 
-  it('renders the pill actions panel with the expanded action set', async () => {
-    fetchOverlayStateMock.mockResolvedValue(snap({ quickNoteMode: true, movable: true }))
+  it('shows the active mode badge on the pill while recording', async () => {
+    fetchOverlayStateMock.mockResolvedValue(
+      snap({
+        state: 'recording',
+        phase: 'listening',
+        activeMode: 'assist',
+      }),
+    )
+
+    render(<PillAnchorOverlay />)
+
+    expect(await screen.findByTitle('Active mode: Assist')).toBeInTheDocument()
+  })
+
+  it('renders only configured mode actions in the pill panel', async () => {
+    fetchOverlayStateMock.mockResolvedValue(
+      snap({
+        assistHotkey: '',
+        availableModes: {
+          dictate: true,
+          assist: false,
+          voice_agent: true,
+        },
+        quickNoteMode: true,
+        movable: true,
+      }),
+    )
 
     render(<PillActionsOverlay />)
 
@@ -108,9 +128,11 @@ describe('overlay surfaces', () => {
     expect(screen.getByTestId('pill-panel-center-shell')).toHaveAttribute('data-overlay-surface', 'pill-panel-center')
     expect(screen.getByRole('button', { name: /copy/i })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /note/i })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: /switch to agent/i })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Dictation' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Assist' })).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Voice Agent' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /microphone settings/i })).toBeInTheDocument()
-    expect(screen.getByTestId('pill-panel-status')).toHaveTextContent('Dictate ready')
+    expect(screen.getByTestId('pill-panel-status')).toHaveTextContent('No mode ready')
     expect(screen.getByTestId('pill-panel-center-shell')).toHaveAttribute('data-overlay-draggable', 'true')
   })
 
@@ -126,6 +148,16 @@ describe('overlay surfaces', () => {
     await waitFor(() =>
       expect(fetchSpy).toHaveBeenCalledWith('/overlay/pill-panel/hide', { method: 'POST' }),
     )
+  })
+
+  it('allows toggling an active mode back to none from the pill panel', async () => {
+    fetchOverlayStateMock.mockResolvedValue(snap({ activeMode: 'assist' }))
+    render(<PillActionsOverlay />)
+
+    const assistButton = await screen.findByRole('button', { name: 'Assist' })
+    fireEvent.click(assistButton)
+
+    await waitFor(() => expect(setActiveModeMock).toHaveBeenCalledWith('none'))
   })
 
   it('renders the dot anchor as a compact circular surface', async () => {
@@ -156,8 +188,18 @@ describe('overlay surfaces', () => {
     )
   })
 
-  it('renders the dot radial panel with the action ring', async () => {
-    fetchOverlayStateMock.mockResolvedValue(snap({ visualizer: 'circle' }))
+  it('lists configured tri-mode actions in the dot radial menu', async () => {
+    fetchOverlayStateMock.mockResolvedValue(
+      snap({
+        visualizer: 'circle',
+        voiceAgentHotkey: '',
+        availableModes: {
+          dictate: true,
+          assist: true,
+          voice_agent: false,
+        },
+      }),
+    )
 
     render(<DotRadialOverlay />)
 
@@ -166,9 +208,15 @@ describe('overlay surfaces', () => {
     const shell = await screen.findByTestId('dot-radial-shell')
     expect(screen.getByTestId('dot-radial-stage')).toHaveClass('absolute', 'inset-0', 'flex', 'items-center', 'justify-center')
     expect(shell).toHaveAttribute('data-overlay-surface', 'dot-radial')
-    expect(screen.queryByText(/dot menu/i)).not.toBeInTheDocument()
     expect(shell.querySelectorAll('path').length).toBeGreaterThan(0)
     expect(shell.querySelectorAll('foreignObject, foreignobject').length).toBeGreaterThan(0)
+
+    const labels = within(screen.getByTestId('dot-radial-item-labels'))
+    expect(labels.getByText('Copy')).toBeInTheDocument()
+    expect(labels.getByText('Note')).toBeInTheDocument()
+    expect(labels.getByText('Dictation')).toBeInTheDocument()
+    expect(labels.getByText('Assist')).toBeInTheDocument()
+    expect(labels.queryByText('Voice Agent')).not.toBeInTheDocument()
   })
 
   it('returns from the radial host on mouse leave', async () => {
@@ -185,40 +233,10 @@ describe('overlay surfaces', () => {
     )
   })
 
-  it('toggles the active mode from the pill panel', async () => {
-    fetchOverlayStateMock.mockResolvedValue(snap({ activeMode: 'dictate' }))
-    render(<PillActionsOverlay />)
-
-    const agentButton = await screen.findByRole('button', { name: /agent/i })
-    fireEvent.click(agentButton)
-
-    await waitFor(() => expect(setActiveModeMock).toHaveBeenCalledWith('agent'))
-  })
-
-  it('opens quick capture from overlay note actions through the client wrapper', async () => {
-    fetchOverlayStateMock.mockResolvedValue(snap({ visualizer: 'circle' }))
-    const fetchSpy = vi.spyOn(window, 'fetch').mockResolvedValue(new Response(null, { status: 200 }))
-
-    render(<DotRadialOverlay />)
-
-    const shell = await screen.findByTestId('dot-radial-shell')
-    // The radial menu renders SVG path wedges, not buttons.
-    // Items: [dummy, Copy, Note, mode, Microphone] -- Note is the third path (index 2).
-    const paths = shell.querySelectorAll('path.cursor-pointer')
-    expect(paths.length).toBeGreaterThanOrEqual(2)
-    fireEvent.click(paths[1]) // Note wedge
-
-    await waitFor(() =>
-      expect(fetchSpy).toHaveBeenCalledWith('/quicknotes/open-capture', { method: 'POST' }),
-    )
-
-    fetchSpy.mockRestore()
-  })
-
-  it('shows the current agent-mode status label on compact overlays', async () => {
+  it('shows the current tri-mode status label on compact overlays', async () => {
     fetchOverlayStateMock.mockResolvedValue(
       snap({
-        activeMode: 'agent',
+        activeMode: 'voice_agent',
         state: 'processing',
         phase: 'thinking',
         text: 'Summarizing selection',
@@ -227,6 +245,6 @@ describe('overlay surfaces', () => {
 
     render(<DotAnchorOverlay />)
 
-    expect(await screen.findByTestId('dot-anchor-status')).toHaveTextContent('Agent summarizing selection')
+    expect(await screen.findByTestId('dot-anchor-status')).toHaveTextContent('Voice Agent summarizing selection')
   })
 })

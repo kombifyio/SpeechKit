@@ -51,8 +51,10 @@ type GeneralConfig struct {
 	Language          string `toml:"language"`
 	Hotkey            string `toml:"hotkey"` // Deprecated: legacy single-hotkey field kept for config file compat. Use DictateHotkey.
 	DictateHotkey     string `toml:"dictate_hotkey"`
+	AssistHotkey      string `toml:"assist_hotkey"`
+	VoiceAgentHotkey  string `toml:"voice_agent_hotkey"`
 	AgentHotkey       string `toml:"agent_hotkey"`
-	AgentMode         string `toml:"agent_mode"`  // "assist" or "voice_agent" — determines what agent_hotkey triggers
+	AgentMode         string `toml:"agent_mode"`  // "assist" or "voice_agent" â€” determines what agent_hotkey triggers
 	ActiveMode        string `toml:"active_mode"` // legacy compat
 	HotkeyMode        string `toml:"hotkey_mode"` // "push_to_talk" or "toggle"
 	AutoStopSilenceMs int    `toml:"auto_stop_silence_ms"`
@@ -85,13 +87,19 @@ type ShortcutLocaleConfig struct {
 }
 
 type UIConfig struct {
-	OverlayEnabled  bool   `toml:"overlay_enabled"`
-	OverlayPosition string `toml:"overlay_position"` // "top", "bottom", "left", "right"
-	OverlayMovable  bool   `toml:"overlay_movable"`
-	OverlayFreeX    int    `toml:"overlay_free_x"`
-	OverlayFreeY    int    `toml:"overlay_free_y"`
-	Visualizer      string `toml:"visualizer"`
-	Design          string `toml:"design"`
+	OverlayEnabled          bool                           `toml:"overlay_enabled"`
+	OverlayPosition         string                         `toml:"overlay_position"` // "top", "bottom", "left", "right"
+	OverlayMovable          bool                           `toml:"overlay_movable"`
+	OverlayFreeX            int                            `toml:"overlay_free_x"`
+	OverlayFreeY            int                            `toml:"overlay_free_y"`
+	OverlayMonitorPositions map[string]OverlayFreePosition `toml:"overlay_monitor_positions"`
+	Visualizer              string                         `toml:"visualizer"`
+	Design                  string                         `toml:"design"`
+}
+
+type OverlayFreePosition struct {
+	X int `toml:"x"`
+	Y int `toml:"y"`
 }
 
 type LocalConfig struct {
@@ -292,8 +300,44 @@ func Load(path string) (*Config, error) {
 	}
 
 	backfillLegacyAssistModels(meta, cfg)
+	backfillLegacyModeHotkeys(meta, cfg)
 
 	return cfg, nil
+}
+
+func backfillLegacyModeHotkeys(meta toml.MetaData, cfg *Config) {
+	if cfg == nil {
+		return
+	}
+
+	if strings.TrimSpace(cfg.General.DictateHotkey) == "" {
+		cfg.General.DictateHotkey = strings.TrimSpace(cfg.General.Hotkey)
+	}
+	if strings.TrimSpace(cfg.General.DictateHotkey) == "" {
+		cfg.General.DictateHotkey = "win+alt"
+	}
+
+	legacyAgentHotkey := strings.TrimSpace(cfg.General.AgentHotkey)
+	legacyAgentMode := strings.TrimSpace(cfg.General.AgentMode)
+	if legacyAgentMode != "voice_agent" {
+		legacyAgentMode = "assist"
+	}
+
+	if !meta.IsDefined("general", "assist_hotkey") && strings.TrimSpace(cfg.General.AssistHotkey) == "" && legacyAgentMode == "assist" {
+		cfg.General.AssistHotkey = legacyAgentHotkey
+	}
+	if !meta.IsDefined("general", "voice_agent_hotkey") && strings.TrimSpace(cfg.General.VoiceAgentHotkey) == "" && legacyAgentMode == "voice_agent" {
+		cfg.General.VoiceAgentHotkey = legacyAgentHotkey
+	}
+
+	cfg.General.AssistHotkey = strings.TrimSpace(cfg.General.AssistHotkey)
+	cfg.General.VoiceAgentHotkey = strings.TrimSpace(cfg.General.VoiceAgentHotkey)
+	if cfg.General.AgentHotkey == "" {
+		cfg.General.AgentHotkey = cfg.LegacyAgentHotkey()
+	}
+	if cfg.General.AgentMode == "" {
+		cfg.General.AgentMode = legacyAgentMode
+	}
 }
 
 func backfillLegacyAssistModels(meta toml.MetaData, cfg *Config) {
@@ -343,9 +387,11 @@ func defaults() *Config {
 			Language:          "de",
 			Hotkey:            "win+alt",
 			DictateHotkey:     "win+alt",
-			AgentHotkey:       "ctrl+shift+k",
+			AssistHotkey:      "ctrl+shift+j",
+			VoiceAgentHotkey:  "ctrl+shift+k",
+			AgentHotkey:       "ctrl+shift+j",
 			AgentMode:         "assist",
-			ActiveMode:        "dictate",
+			ActiveMode:        "none",
 			HotkeyMode:        "push_to_talk",
 			AutoStopSilenceMs: 500,
 			FastModeSilenceMs: 1500,
@@ -361,13 +407,14 @@ func defaults() *Config {
 			Dictionary: "",
 		},
 		UI: UIConfig{
-			OverlayEnabled:  true,
-			OverlayPosition: "top",
-			OverlayMovable:  false,
-			OverlayFreeX:    0,
-			OverlayFreeY:    0,
-			Visualizer:      "pill",
-			Design:          "default",
+			OverlayEnabled:          true,
+			OverlayPosition:         "top",
+			OverlayMovable:          false,
+			OverlayFreeX:            0,
+			OverlayFreeY:            0,
+			OverlayMonitorPositions: map[string]OverlayFreePosition{},
+			Visualizer:              "pill",
+			Design:                  "default",
 		},
 		Local: LocalConfig{
 			Enabled: false,
@@ -502,8 +549,26 @@ func defaultConfigPath() string {
 	return filepath.Join(filepath.Dir(exe), "config.toml")
 }
 
+func (cfg *Config) LegacyAgentHotkey() string {
+	if cfg == nil {
+		return ""
+	}
+	return cfg.General.LegacyAgentHotkey()
+}
+
+func (g GeneralConfig) LegacyAgentHotkey() string {
+	if strings.TrimSpace(g.AgentHotkey) != "" {
+		return strings.TrimSpace(g.AgentHotkey)
+	}
+	if strings.TrimSpace(g.AgentMode) == "voice_agent" {
+		return strings.TrimSpace(g.VoiceAgentHotkey)
+	}
+	return strings.TrimSpace(g.AssistHotkey)
+}
+
 // ResolveSecret resolves a secret by name. Checks environment first, then Doppler CLI
-// when DOPPLER_PROJECT and DOPPLER_CONFIG are set explicitly.
+// using either explicit DOPPLER_PROJECT/DOPPLER_CONFIG env vars or build-embedded
+// managed Doppler defaults.
 func ResolveSecret(envName string) string {
 	if strings.TrimSpace(envName) == "" {
 		return ""

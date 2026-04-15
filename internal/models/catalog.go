@@ -206,6 +206,18 @@ func DefaultCatalog() Catalog {
 			},
 			// --- Realtime Voice: Google Gemini Live Native Audio ---
 			{
+				ID:             "realtime.hf.qwen35-27b",
+				Name:           "Qwen 3.5 27B Voice Fallback (Hugging Face)",
+				Modality:       ModalityRealtimeVoice,
+				ExecutionMode:  ExecutionModeHFRouted,
+				ModelID:        "Qwen/Qwen3.5-27B",
+				Source:         "Hugging Face",
+				Description:    "Voice Agent fallback over Hugging Face. SpeechKit uses the capture pipeline when Gemini Live is unavailable or not selected.",
+				License:        "apache-2.0",
+				AllowInference: true,
+				Experimental:   true,
+			},
+			{
 				ID:             "realtime.google.gemini-native-audio",
 				Name:           "Gemini Live Native Audio",
 				Modality:       ModalityRealtimeVoice,

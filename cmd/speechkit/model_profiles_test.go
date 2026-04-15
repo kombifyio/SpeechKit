@@ -92,3 +92,104 @@ func TestApplySTTProfileHuggingFaceForcesCloudOnlyAndClearsLocalProvider(t *test
 		t.Fatalf("active stt profile = %q, want %q", got, "stt.routed.whisper-large-v3")
 	}
 }
+
+func TestApplySTTProfileLocalDetachesCanceledContextForStartup(t *testing.T) {
+	cfg := defaultTestConfig()
+	cfg.Local.Port = 8080
+	cfg.Local.Model = "ggml-small.bin"
+	cfgPath := filepath.Join(t.TempDir(), "config.toml")
+
+	state := &appState{activeProfiles: map[string]string{}}
+	sttRouter := &router.Router{}
+	profile := models.Profile{
+		ID:            "stt.local.whispercpp",
+		Name:          "Whisper.cpp (Bundled Local)",
+		Modality:      models.ModalitySTT,
+		ExecutionMode: models.ExecutionModeLocal,
+		ModelID:       "whisper.cpp",
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	var launchErr error
+	previousLauncher := launchLocalProvider
+	launchLocalProvider = func(ctx context.Context, state *appState, r *router.Router, provider localProviderStarter) {
+		launchErr = ctx.Err()
+	}
+	defer func() { launchLocalProvider = previousLauncher }()
+
+	if err := applySTTProfile(ctx, cfgPath, cfg, state, sttRouter, profile); err != nil {
+		t.Fatalf("applySTTProfile: %v", err)
+	}
+
+	if launchErr != nil {
+		t.Fatalf("launch context err = %v, want nil", launchErr)
+	}
+}
+
+func TestApplyRealtimeVoiceProfileClearsPipelineFallbackWhenSelectingGoogle(t *testing.T) {
+	cfg := defaultTestConfig()
+	cfg.Providers.Google.APIKeyEnv = "GOOGLE_AI_API_KEY"
+	cfg.VoiceAgent.PipelineFallback = true
+	cfg.VoiceAgent.Model = "openai/whisper-large-v3"
+	cfg.HuggingFace.AgentModel = "openai/whisper-large-v3"
+	cfgPath := filepath.Join(t.TempDir(), "config.toml")
+
+	t.Setenv("GOOGLE_AI_API_KEY", "test-google-key")
+
+	profile := models.Profile{
+		ID:            "voice.google.gemini-live",
+		Name:          "Gemini Live",
+		Modality:      models.ModalityRealtimeVoice,
+		ExecutionMode: models.ExecutionModeGoogle,
+		ModelID:       "gemini-2.5-flash-native-audio-preview-12-2025",
+	}
+
+	if err := applyRealtimeVoiceProfile(context.Background(), cfgPath, cfg, nil, profile); err != nil {
+		t.Fatalf("applyRealtimeVoiceProfile: %v", err)
+	}
+
+	if cfg.VoiceAgent.PipelineFallback {
+		t.Fatal("expected google realtime voice profile to clear pipeline fallback")
+	}
+	if got, want := cfg.VoiceAgent.Model, profile.ModelID; got != want {
+		t.Fatalf("cfg.VoiceAgent.Model = %q, want %q", got, want)
+	}
+	if got := cfg.HuggingFace.AgentModel; got != "" {
+		t.Fatalf("cfg.HuggingFace.AgentModel = %q, want empty", got)
+	}
+}
+
+func TestApplyRealtimeVoiceProfileReloadsAIRuntimeForGoogleProfiles(t *testing.T) {
+	cfg := defaultTestConfig()
+	cfg.Providers.Google.APIKeyEnv = "GOOGLE_AI_API_KEY"
+	cfgPath := filepath.Join(t.TempDir(), "config.toml")
+
+	t.Setenv("GOOGLE_AI_API_KEY", "test-google-key")
+
+	state := &appState{activeProfiles: map[string]string{}}
+	profile := models.Profile{
+		ID:            "voice.google.gemini-live",
+		Name:          "Gemini Live",
+		Modality:      models.ModalityRealtimeVoice,
+		ExecutionMode: models.ExecutionModeGoogle,
+		ModelID:       "gemini-2.5-flash-native-audio-preview-12-2025",
+	}
+
+	reloadCalls := 0
+	previousReload := reloadAIRuntime
+	reloadAIRuntime = func(ctx context.Context, state *appState, cfg *config.Config) error {
+		reloadCalls++
+		return nil
+	}
+	defer func() { reloadAIRuntime = previousReload }()
+
+	if err := applyRealtimeVoiceProfile(context.Background(), cfgPath, cfg, state, profile); err != nil {
+		t.Fatalf("applyRealtimeVoiceProfile: %v", err)
+	}
+
+	if reloadCalls != 1 {
+		t.Fatalf("reloadAIRuntime calls = %d, want 1", reloadCalls)
+	}
+}

@@ -79,6 +79,30 @@ func (m *mockLiveProvider) Close() error {
 
 func (m *mockLiveProvider) Name() string { return "mock-live" }
 
+type dialogMockLiveProvider struct {
+	*mockLiveProvider
+	responseFactory func(turn string) *LiveMessage
+}
+
+func newDialogMockLiveProvider(responseFactory func(turn string) *LiveMessage) *dialogMockLiveProvider {
+	return &dialogMockLiveProvider{
+		mockLiveProvider: newMockLiveProvider(),
+		responseFactory:  responseFactory,
+	}
+}
+
+func (m *dialogMockLiveProvider) SendText(text string) error {
+	if err := m.mockLiveProvider.SendText(text); err != nil {
+		return err
+	}
+	if m.responseFactory != nil {
+		if msg := m.responseFactory(text); msg != nil {
+			m.messages <- msg
+		}
+	}
+	return nil
+}
+
 func TestSessionStartStop(t *testing.T) {
 	mock := newMockLiveProvider()
 	var stateChanges []State
@@ -160,6 +184,103 @@ func TestSessionSendAudio(t *testing.T) {
 	mock.mu.Unlock()
 
 	session.Stop()
+}
+
+func TestSessionSendTextRunsDialogThroughCallbacks(t *testing.T) {
+	mock := newDialogMockLiveProvider(func(turn string) *LiveMessage {
+		return &LiveMessage{
+			Audio:                []byte{0x01, 0x02, 0x03, 0x04},
+			Text:                 "Hallo, der Dialog laeuft.",
+			OutputTranscript:     "Hallo, der Dialog laeuft.",
+			OutputTranscriptDone: true,
+			Done:                 true,
+		}
+	})
+
+	var (
+		mu               sync.Mutex
+		stateChanges     []State
+		renderedTexts    []string
+		outputTranscript string
+		outputDone       bool
+		audioBytes       int
+	)
+
+	session := NewSession(mock, Callbacks{
+		OnStateChange: func(state State) {
+			mu.Lock()
+			stateChanges = append(stateChanges, state)
+			mu.Unlock()
+		},
+		OnText: func(text string) {
+			mu.Lock()
+			renderedTexts = append(renderedTexts, text)
+			mu.Unlock()
+		},
+		OnAudio: func(audio []byte) {
+			mu.Lock()
+			audioBytes += len(audio)
+			mu.Unlock()
+		},
+		OnOutputTranscript: func(text string, done bool) {
+			mu.Lock()
+			outputTranscript = text
+			outputDone = done
+			mu.Unlock()
+		},
+	})
+
+	if err := session.Start(context.Background(), LiveConfig{
+		Model:  "test-model",
+		APIKey: "test-key",
+		Locale: "de-DE",
+	}, IdleConfig{
+		ReminderAfter:   1 * time.Hour,
+		DeactivateAfter: 2 * time.Hour,
+	}); err != nil {
+		t.Fatalf("start: %v", err)
+	}
+	defer session.Stop()
+
+	if err := session.SendText("Bitte bestaetige kurz, dass der Dialog funktioniert."); err != nil {
+		t.Fatalf("send text: %v", err)
+	}
+
+	waitForCondition(t, 2*time.Second, func() bool {
+		mu.Lock()
+		defer mu.Unlock()
+		return audioBytes > 0 && outputDone && session.CurrentState() == StateListening
+	})
+
+	mock.mu.Lock()
+	if len(mock.sentTexts) != 1 {
+		t.Fatalf("sent texts = %d, want 1", len(mock.sentTexts))
+	}
+	if got, want := mock.sentTexts[0], "Bitte bestaetige kurz, dass der Dialog funktioniert."; got != want {
+		t.Fatalf("sent text = %q, want %q", got, want)
+	}
+	mock.mu.Unlock()
+
+	mu.Lock()
+	defer mu.Unlock()
+	if outputTranscript != "Hallo, der Dialog laeuft." {
+		t.Fatalf("output transcript = %q", outputTranscript)
+	}
+	if len(renderedTexts) == 0 || renderedTexts[0] != "Hallo, der Dialog laeuft." {
+		t.Fatalf("rendered texts = %#v", renderedTexts)
+	}
+	if audioBytes != 4 {
+		t.Fatalf("audio bytes = %d, want 4", audioBytes)
+	}
+	if !containsState(stateChanges, StateConnecting) {
+		t.Fatalf("state changes = %#v, want connecting transition", stateChanges)
+	}
+	if !containsState(stateChanges, StateSpeaking) {
+		t.Fatalf("state changes = %#v, want speaking transition", stateChanges)
+	}
+	if countState(stateChanges, StateListening) < 2 {
+		t.Fatalf("state changes = %#v, want listening before and after the model turn", stateChanges)
+	}
 }
 
 func TestSessionReceiveAudioAndText(t *testing.T) {
@@ -520,4 +641,37 @@ func TestSessionDeliversToolCallsToHost(t *testing.T) {
 	mu.Unlock()
 
 	session.Stop()
+}
+
+func waitForCondition(t *testing.T, timeout time.Duration, predicate func() bool) {
+	t.Helper()
+
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		if predicate() {
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+
+	t.Fatalf("condition not met within %s", timeout)
+}
+
+func containsState(states []State, want State) bool {
+	for _, state := range states {
+		if state == want {
+			return true
+		}
+	}
+	return false
+}
+
+func countState(states []State, want State) int {
+	count := 0
+	for _, state := range states {
+		if state == want {
+			count++
+		}
+	}
+	return count
 }

@@ -1,6 +1,7 @@
 package voiceagent
 
 import (
+	"encoding/json"
 	"strings"
 	"testing"
 
@@ -50,8 +51,14 @@ func TestBuildGeminiLiveConnectConfigUsesDefaultInstruction(t *testing.T) {
 	if connectCfg.InputAudioTranscription == nil {
 		t.Fatal("expected input audio transcription to be enabled by default")
 	}
+	if len(connectCfg.InputAudioTranscription.LanguageCodes) != 0 {
+		t.Fatalf("input transcription language codes = %#v, want none for Gemini API", connectCfg.InputAudioTranscription.LanguageCodes)
+	}
 	if connectCfg.OutputAudioTranscription == nil {
 		t.Fatal("expected output audio transcription to be enabled by default")
+	}
+	if len(connectCfg.OutputAudioTranscription.LanguageCodes) != 0 {
+		t.Fatalf("output transcription language codes = %#v, want none for Gemini API", connectCfg.OutputAudioTranscription.LanguageCodes)
 	}
 	if connectCfg.SpeechConfig == nil {
 		t.Fatal("expected speech config")
@@ -59,8 +66,14 @@ func TestBuildGeminiLiveConnectConfigUsesDefaultInstruction(t *testing.T) {
 	if connectCfg.SpeechConfig.LanguageCode != "" {
 		t.Fatalf("speech language code = %q, want empty for native audio live models", connectCfg.SpeechConfig.LanguageCode)
 	}
-	if connectCfg.SessionResumption == nil || !connectCfg.SessionResumption.Transparent {
-		t.Fatal("expected transparent session resumption by default")
+	if connectCfg.SessionResumption == nil {
+		t.Fatal("expected session resumption to be enabled by default")
+	}
+	if connectCfg.SessionResumption.Handle != "" {
+		t.Fatalf("session resumption handle = %q, want empty for a fresh session", connectCfg.SessionResumption.Handle)
+	}
+	if connectCfg.SessionResumption.Transparent {
+		t.Fatal("expected Gemini API session resumption to avoid transparent mode")
 	}
 	if connectCfg.ContextWindowCompression == nil {
 		t.Fatal("expected context window compression to be configured by default")
@@ -234,6 +247,61 @@ func TestGeminiLiveHTTPOptionsUseV1AlphaWhenRequired(t *testing.T) {
 				t.Fatalf("api version = %q, want %q", got.APIVersion, tt.want)
 			}
 		})
+	}
+}
+
+func TestBuildGeminiLiveSessionResumptionConfigUsesHandleWithoutTransparentMode(t *testing.T) {
+	tests := []struct {
+		name       string
+		handle     string
+		wantHandle string
+	}{
+		{
+			name:       "fresh session",
+			handle:     "",
+			wantHandle: "",
+		},
+		{
+			name:       "reconnect with resume handle",
+			handle:     "resume-handle-123",
+			wantHandle: "resume-handle-123",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := buildGeminiLiveSessionResumptionConfig(tt.handle)
+			if cfg == nil {
+				t.Fatal("expected session resumption config")
+			}
+			if cfg.Handle != tt.wantHandle {
+				t.Fatalf("handle = %q, want %q", cfg.Handle, tt.wantHandle)
+			}
+			if cfg.Transparent {
+				t.Fatal("expected transparent mode to stay disabled for Gemini API")
+			}
+		})
+	}
+}
+
+func TestBuildGeminiLiveConnectConfigOmitsGeminiAPIUnsupportedFields(t *testing.T) {
+	cfg := LiveConfig{
+		Model:  "gemini-2.5-flash-native-audio-preview-12-2025",
+		Locale: "de-DE",
+	}
+
+	connectCfg := buildGeminiLiveConnectConfig(cfg)
+	body, err := json.Marshal(connectCfg)
+	if err != nil {
+		t.Fatalf("marshal connect config: %v", err)
+	}
+
+	jsonBody := string(body)
+	if strings.Contains(jsonBody, "languageCodes") {
+		t.Fatalf("connect config JSON = %s, want no languageCodes for Gemini API", jsonBody)
+	}
+	if strings.Contains(jsonBody, "transparent") {
+		t.Fatalf("connect config JSON = %s, want no transparent session resumption for Gemini API", jsonBody)
 	}
 }
 

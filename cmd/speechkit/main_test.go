@@ -494,6 +494,22 @@ func TestAssetHandlerServesBuiltSettingsShell(t *testing.T) {
 	}
 }
 
+func TestAssetHandlerServesVoiceAgentPrompterShell(t *testing.T) {
+	cfg := defaultTestConfig()
+	handler := assetHandler(cfg, filepath.Join(t.TempDir(), "config.toml"), &appState{}, &router.Router{}, nil, &config.InstallState{Mode: config.InstallModeLocal})
+	req := httptest.NewRequest(http.MethodGet, "/voiceagent-prompter.html", nil)
+	rec := httptest.NewRecorder()
+
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", rec.Code, http.StatusOK)
+	}
+	if !strings.Contains(rec.Body.String(), `<div id="root"></div>`) {
+		t.Fatalf("voice agent prompter shell = %q", rec.Body.String())
+	}
+}
+
 func TestOverlayStateEndpointReturnsCurrentSnapshot(t *testing.T) {
 	cfg := defaultTestConfig()
 	state := &appState{
@@ -555,6 +571,9 @@ func TestSettingsStateEndpointReturnsCurrentSettings(t *testing.T) {
 	if payload.Hotkey != "win+alt" || payload.HFModel != cfg.HuggingFace.Model || payload.Visualizer != "pill" || !payload.OverlayEnabled || payload.HFEnabled != cfg.HuggingFace.Enabled {
 		t.Fatalf("settings payload = %+v", payload)
 	}
+	if payload.AgentMode != cfg.General.AgentMode {
+		t.Fatalf("settings payload = %+v", payload)
+	}
 	if payload.Design != "default" {
 		t.Fatalf("settings payload = %+v", payload)
 	}
@@ -575,6 +594,77 @@ func TestSettingsStateEndpointReturnsCurrentSettings(t *testing.T) {
 	}
 	if payload.HFTokenSource != "none" || payload.HFHasUserToken || payload.HFHasInstallToken {
 		t.Fatalf("settings payload = %+v", payload)
+	}
+	if payload.AssistHotkey != cfg.General.AssistHotkey {
+		t.Fatalf("settings payload = %+v", payload)
+	}
+	if payload.VoiceAgentHotkey != cfg.General.VoiceAgentHotkey {
+		t.Fatalf("settings payload = %+v", payload)
+	}
+}
+
+func TestSettingsUpdateRoundTripPersistsAgentMode(t *testing.T) {
+	cfg := defaultTestConfig()
+	cfg.General.AgentMode = "assist"
+	cfgPath := filepath.Join(t.TempDir(), "config.toml")
+	state := &appState{
+		overlayEnabled:    true,
+		overlayVisualizer: "pill",
+		overlayPosition:   "top",
+	}
+	handler := assetHandler(cfg, cfgPath, state, &router.Router{}, nil, &config.InstallState{Mode: config.InstallModeLocal})
+
+	form := url.Values{
+		"dictate_hotkey":             {"win+alt"},
+		"assist_hotkey":              {"ctrl+shift+j"},
+		"voice_agent_hotkey":         {"ctrl+shift+v"},
+		"active_mode":                {"voice_agent"},
+		"overlay_enabled":            {"1"},
+		"overlay_visualizer":         {"pill"},
+		"overlay_design":             {"default"},
+		"overlay_position":           {"top"},
+		"store_backend":              {"sqlite"},
+		"store_sqlite_path":          {cfg.Store.SQLitePath},
+		"store_save_audio":           {"1"},
+		"store_audio_retention_days": {"7"},
+		"store_max_audio_storage_mb": {"500"},
+	}
+	updateReq := httptest.NewRequest(http.MethodPost, "/settings/update", strings.NewReader(form.Encode()))
+	updateReq.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	updateRec := httptest.NewRecorder()
+
+	handler.ServeHTTP(updateRec, updateReq)
+
+	if updateRec.Code != http.StatusOK {
+		t.Fatalf("update status = %d, body=%s", updateRec.Code, updateRec.Body.String())
+	}
+	if got, want := cfg.General.AssistHotkey, "ctrl+shift+j"; got != want {
+		t.Fatalf("cfg.General.AssistHotkey = %q, want %q", got, want)
+	}
+	if got, want := cfg.General.VoiceAgentHotkey, "ctrl+shift+v"; got != want {
+		t.Fatalf("cfg.General.VoiceAgentHotkey = %q, want %q", got, want)
+	}
+
+	stateReq := httptest.NewRequest(http.MethodGet, "/settings/state", nil)
+	stateRec := httptest.NewRecorder()
+	handler.ServeHTTP(stateRec, stateReq)
+
+	if stateRec.Code != http.StatusOK {
+		t.Fatalf("state status = %d, body=%s", stateRec.Code, stateRec.Body.String())
+	}
+
+	var payload settingsSnapshot
+	if err := json.Unmarshal(stateRec.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("decode payload: %v", err)
+	}
+	if got, want := payload.AssistHotkey, "ctrl+shift+j"; got != want {
+		t.Fatalf("payload.AssistHotkey = %q, want %q", got, want)
+	}
+	if got, want := payload.VoiceAgentHotkey, "ctrl+shift+v"; got != want {
+		t.Fatalf("payload.VoiceAgentHotkey = %q, want %q", got, want)
+	}
+	if got, want := payload.ActiveMode, "voice_agent"; got != want {
+		t.Fatalf("payload.ActiveMode = %q, want %q", got, want)
 	}
 }
 
@@ -669,6 +759,9 @@ func TestSettingsRoutesPersistAndClearUserHuggingFaceToken(t *testing.T) {
 	defer restore()
 	restoreBuild := config.OverrideManagedHuggingFaceBuildForTests("1")
 	defer restoreBuild()
+	t.Setenv("HF_TOKEN", "")
+	t.Setenv("DOPPLER_PROJECT", "")
+	t.Setenv("DOPPLER_CONFIG", "")
 	prevFactory := newHuggingFaceProvider
 	newHuggingFaceProvider = func(model, token string) stt.STTProvider {
 		return &fakeProvider{name: "huggingface"}
@@ -966,10 +1059,13 @@ func TestSetLevelResetsSnapshotOutsideRecording(t *testing.T) {
 func defaultTestConfig() *config.Config {
 	return &config.Config{
 		General: config.GeneralConfig{
-			Hotkey:        "win+alt",
-			DictateHotkey: "win+alt",
-			AgentHotkey:   "ctrl+shift+k",
-			ActiveMode:    "dictate",
+			Hotkey:           "win+alt",
+			DictateHotkey:    "win+alt",
+			AssistHotkey:     "ctrl+shift+j",
+			VoiceAgentHotkey: "ctrl+shift+k",
+			AgentHotkey:      "ctrl+shift+j",
+			AgentMode:        "assist",
+			ActiveMode:       "none",
 		},
 		HuggingFace: config.HuggingFaceConfig{
 			Model: "openai/whisper-large-v3",

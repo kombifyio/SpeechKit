@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/kombifyio/SpeechKit/internal/config"
@@ -87,42 +88,66 @@ func (c desktopInputController) handleAutoStartTick(ctx context.Context) {
 }
 
 func (c desktopInputController) handleHotkey(ctx context.Context, evt hotkey.Event) {
-	if evt.Binding == "agent" {
-		// Voice Agent mode: toggle-based (not PTT).
-		if c.cfg != nil && c.cfg.General.AgentMode == "voice_agent" && c.voiceAgentSession != nil {
+	switch binding := c.resolveHotkeyBinding(evt.Binding); binding {
+	case modeVoiceAgent:
+		if c.shouldUseVoiceAgentPipelineFallback() {
 			if evt.Type == hotkey.EventKeyDown {
+				c.log("Voice Agent hotkey routed to pipeline fallback capture", "warn")
+				c.dispatch(ctx, speechkit.Command{
+					Type: speechkit.CommandSetActiveMode,
+					Metadata: map[string]string{
+						"mode": modeVoiceAgent,
+					},
+				}, "Set mode")
+			}
+			c.handlePushToTalk(ctx, evt)
+			return
+		}
+		if c.currentVoiceAgentSession() != nil {
+			if evt.Type == hotkey.EventKeyDown {
+				if evt.Binding == modeAgent {
+					c.log("Agent hotkey routed to Voice Agent toggle", "info")
+				} else {
+					c.log("Voice Agent hotkey routed to Voice Agent toggle", "info")
+				}
 				c.toggleVoiceAgent(ctx)
 			}
 			return
 		}
-
-		// Voice Agent configured but session unavailable: warn user.
-		if c.cfg != nil && c.cfg.General.AgentMode == "voice_agent" && c.voiceAgentSession == nil {
-			if evt.Type == hotkey.EventKeyDown {
-				c.log("Voice Agent not available — check API key and config", "error")
-			}
-			return
+		if evt.Type == hotkey.EventKeyDown {
+			c.log("Voice Agent not available â€” check API key and config", "error")
 		}
-
-		// Assist mode: set mode to agent, then fall through to PTT recording.
+		return
+	case modeAssist:
+		if evt.Type == hotkey.EventKeyDown {
+			if evt.Binding == modeAgent {
+				c.log("Agent hotkey routed to Assist capture", "info")
+			} else {
+				c.log("Assist hotkey routed to Assist capture", "info")
+			}
+			c.dispatch(ctx, speechkit.Command{
+				Type: speechkit.CommandSetActiveMode,
+				Metadata: map[string]string{
+					"mode": modeAssist,
+				},
+			}, "Set mode")
+		}
+	case modeDictate:
 		if evt.Type == hotkey.EventKeyDown {
 			c.dispatch(ctx, speechkit.Command{
 				Type: speechkit.CommandSetActiveMode,
 				Metadata: map[string]string{
-					"mode": "agent",
+					"mode": modeDictate,
 				},
 			}, "Set mode")
 		}
-		// Fall through to PTT logic below (don't return).
+	default:
+		return
 	}
-	if evt.Binding == "dictate" && evt.Type == hotkey.EventKeyDown {
-		c.dispatch(ctx, speechkit.Command{
-			Type: speechkit.CommandSetActiveMode,
-			Metadata: map[string]string{
-				"mode": "dictate",
-			},
-		}, "Set mode")
-	}
+	c.handlePushToTalk(ctx, evt)
+}
+
+func (c desktopInputController) handlePushToTalk(ctx context.Context, evt hotkey.Event) {
 	switch evt.Type {
 	case hotkey.EventKeyDown:
 		if c.recording != nil && c.recording.IsRecording() {
@@ -156,6 +181,36 @@ func (c desktopInputController) handleHotkey(ctx context.Context, evt hotkey.Eve
 	}
 }
 
+func (c desktopInputController) resolveHotkeyBinding(binding string) string {
+	trimmed := strings.TrimSpace(binding)
+	if trimmed == modeAgent {
+		legacyMode := modeAssist
+		if c.cfg != nil {
+			legacyMode = normalizeAgentMode(c.cfg.General.AgentMode)
+		}
+		return normalizeRuntimeMode(trimmed, legacyMode)
+	}
+	return normalizeRuntimeMode(trimmed, "")
+}
+
+func (c desktopInputController) voiceAgentAPIKey() string {
+	if c.cfg == nil {
+		return ""
+	}
+	return config.ResolveSecret(c.cfg.Providers.Google.APIKeyEnv)
+}
+
+func (c desktopInputController) shouldUseVoiceAgentPipelineFallback() bool {
+	if c.cfg == nil || !c.cfg.VoiceAgent.PipelineFallback {
+		return false
+	}
+	model := strings.ToLower(strings.TrimSpace(c.cfg.VoiceAgent.Model))
+	if model != "" && !strings.Contains(model, "gemini") {
+		return true
+	}
+	return c.voiceAgentAPIKey() == ""
+}
+
 func (c desktopInputController) dispatch(ctx context.Context, command speechkit.Command, action string) {
 	if c.commands == nil {
 		return
@@ -165,19 +220,44 @@ func (c desktopInputController) dispatch(ctx context.Context, command speechkit.
 	}
 }
 
+func (c desktopInputController) currentVoiceAgentSession() *voiceagent.Session {
+	if c.state != nil {
+		c.state.mu.Lock()
+		session := c.state.voiceAgentSession
+		c.state.mu.Unlock()
+		if session != nil {
+			return session
+		}
+
+		session = prepareVoiceAgentSession(c.state)
+		if session != nil {
+			c.state.mu.Lock()
+			if c.state.voiceAgentSession == nil {
+				c.state.voiceAgentSession = session
+			} else {
+				session = c.state.voiceAgentSession
+			}
+			c.state.mu.Unlock()
+			return session
+		}
+	}
+	return c.voiceAgentSession
+}
+
 func (c desktopInputController) toggleVoiceAgent(ctx context.Context) {
-	if c.voiceAgentSession == nil {
-		c.log("Voice Agent session not initialized — check config and API key", "error")
+	session := c.currentVoiceAgentSession()
+	if session == nil {
+		c.log("Voice Agent session not initialized â€” check config and API key", "error")
 		return
 	}
 
-	if c.voiceAgentSession.CurrentState() != voiceagent.StateInactive {
+	if session.CurrentState() != voiceagent.StateInactive {
 		c.log("Voice Agent: deactivating", "info")
 		// Remove mic handler before stopping to avoid sending to a closing session.
 		if c.audioCapturer != nil {
 			c.audioCapturer.SetPCMHandler(nil)
 		}
-		c.voiceAgentSession.Stop()
+		session.Stop()
 		if c.state != nil {
 			c.state.updatePrompterState("inactive")
 			c.state.stopVoiceAgentStream()
@@ -194,10 +274,7 @@ func (c desktopInputController) toggleVoiceAgent(ctx context.Context) {
 	}
 
 	// Resolve API key.
-	apiKey := ""
-	if c.cfg != nil {
-		apiKey = config.ResolveSecret(c.cfg.Providers.Google.APIKeyEnv)
-	}
+	apiKey := c.voiceAgentAPIKey()
 	if apiKey == "" {
 		c.log("Voice Agent: no Google API key configured", "error")
 		return
@@ -269,7 +346,7 @@ func (c desktopInputController) toggleVoiceAgent(ctx context.Context) {
 			c.state.startVoiceAgentStream(ctx)
 		}
 
-		if err := c.voiceAgentSession.Start(ctx, voiceagent.LiveConfig{
+		if err := session.Start(ctx, voiceagent.LiveConfig{
 			Model:          model,
 			APIKey:         apiKey,
 			Voice:          voice,
@@ -289,10 +366,10 @@ func (c desktopInputController) toggleVoiceAgent(ctx context.Context) {
 		c.log("Voice Agent: streaming audio", "info")
 		if c.audioCapturer != nil {
 			c.audioCapturer.SetPCMHandler(func(frame []byte) {
-				if c.voiceAgentSession.CurrentState() == voiceagent.StateInactive {
+				if session.CurrentState() == voiceagent.StateInactive {
 					return
 				}
-				_ = c.voiceAgentSession.SendAudio(frame)
+				_ = session.SendAudio(frame)
 			})
 
 			// Start the mic capture so frames flow to the handler.

@@ -595,8 +595,28 @@ function useModelDownloadState() {
   }, [])
 
   useEffect(() => {
-    void Promise.allSettled([refreshCatalog(), refreshJobs()]).catch(() => {})
-  }, [refreshCatalog, refreshJobs])
+    let active = true
+
+    void fetchDownloadCatalog()
+      .then(next => {
+        if (active) {
+          setCatalog(next)
+        }
+      })
+      .catch(() => {})
+
+    void fetchDownloadJobs()
+      .then(next => {
+        if (active) {
+          setJobs(next)
+        }
+      })
+      .catch(() => {})
+
+    return () => {
+      active = false
+    }
+  }, [])
 
   useEffect(() => {
     const hasActiveJob = jobs.some(job => job.status === 'pending' || job.status === 'running')
@@ -1006,7 +1026,7 @@ function SetupWizard({
     onComplete()
   }
 
-  const handleCloudSetup = (_provider: 'huggingface' | 'openai') => {
+  const handleCloudSetup = () => {
     setModelActionError(null)
     onComplete({
       dashboardTab: 'settings',
@@ -1161,14 +1181,14 @@ function SetupWizard({
               <div className="flex flex-wrap items-center justify-end gap-2">
                 <button
                   type="button"
-                  onClick={() => handleCloudSetup('huggingface')}
+                  onClick={handleCloudSetup}
                   className="rounded-full border border-[#484555] px-3 py-1.5 text-[11px] font-medium text-[#cabeff] hover:border-[#cabeff]/40"
                 >
                   Use Hugging Face token instead
                 </button>
                 <button
                   type="button"
-                  onClick={() => handleCloudSetup('openai')}
+                  onClick={handleCloudSetup}
                   className="rounded-full border border-[#484555] px-3 py-1.5 text-[11px] font-medium text-[#cabeff] hover:border-[#cabeff]/40"
                 >
                   Use OpenAI key instead

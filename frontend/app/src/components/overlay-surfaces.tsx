@@ -1,5 +1,13 @@
 import type { CSSProperties, ReactNode } from 'react'
-import { ClipboardCopy, FileText, Bot, Mic, AudioLines } from 'lucide-react'
+import {
+  AudioLines,
+  Bot,
+  ClipboardCopy,
+  FileText,
+  Headphones,
+  Mic,
+  type LucideIcon,
+} from 'lucide-react'
 
 import { AgentAudioVisualizerBar } from '@/components/agent-audio-visualizer-bar'
 import { AgentAudioVisualizerRadial } from '@/components/agent-audio-visualizer-radial'
@@ -14,6 +22,35 @@ import {
   type RuntimeMode,
   type SpeechKitOverlayState,
 } from '@/lib/speechkit'
+
+type ConfigurableMode = Exclude<RuntimeMode, 'none'>
+
+const MODE_ORDER: ConfigurableMode[] = ['dictate', 'assist', 'voice_agent']
+const MODE_HOTKEY_FIELDS = {
+  dictate: 'dictateHotkey',
+  assist: 'assistHotkey',
+  voice_agent: 'voiceAgentHotkey',
+} as const satisfies Record<ConfigurableMode, keyof SpeechKitOverlayState>
+const MODE_META: Record<
+  ConfigurableMode,
+  { label: string; statusLabel: string; icon: LucideIcon }
+> = {
+  dictate: {
+    label: 'Dictation',
+    statusLabel: 'Dictate',
+    icon: Mic,
+  },
+  assist: {
+    label: 'Assist',
+    statusLabel: 'Assist',
+    icon: Bot,
+  },
+  voice_agent: {
+    label: 'Voice Agent',
+    statusLabel: 'Voice Agent',
+    icon: Headphones,
+  },
+}
 
 function OverlaySurfaceFrame({
   children,
@@ -110,6 +147,58 @@ function BubbleGlyph() {
   )
 }
 
+function modeAvailable(snapshot: SpeechKitOverlayState, mode: ConfigurableMode) {
+  return snapshot.availableModes?.[mode] ?? (snapshot[MODE_HOTKEY_FIELDS[mode]].trim().length > 0)
+}
+
+function configuredModes(snapshot: SpeechKitOverlayState): ConfigurableMode[] {
+  return MODE_ORDER.filter((mode) => modeAvailable(snapshot, mode))
+}
+
+function modeStatusLabel(mode: RuntimeMode) {
+  if (mode === 'none') {
+    return 'No mode'
+  }
+  return MODE_META[mode].statusLabel
+}
+
+function activeModeTitle(mode: ConfigurableMode) {
+  return `Active mode: ${MODE_META[mode].label}`
+}
+
+function ModeGlyph({
+  mode,
+  className,
+  title,
+}: {
+  mode: ConfigurableMode
+  className?: string
+  title?: string
+}) {
+  const Icon = MODE_META[mode].icon
+
+  return (
+    <div
+      data-testid={`mode-glyph-${mode}`}
+      title={title}
+      className={[
+        'pointer-events-none flex h-5 w-5 items-center justify-center rounded-full bg-white/8 text-white/80',
+        className ?? '',
+      ].join(' ')}
+    >
+      <Icon className="h-3 w-3" />
+    </div>
+  )
+}
+
+function shouldShowActiveModeBadge(snapshot: SpeechKitOverlayState) {
+  return snapshot.activeMode !== 'none' && snapshot.state !== 'idle'
+}
+
+function toggleMode(mode: ConfigurableMode, snapshot: SpeechKitOverlayState) {
+  void setActiveMode(snapshot.activeMode === mode ? 'none' : mode)
+}
+
 function OverlayPillShell({
   snapshot,
   tone,
@@ -159,6 +248,14 @@ function OverlayPillShell({
           />
         ) : null}
       </div>
+      {shouldShowActiveModeBadge(snapshot) ? (
+        <div className="absolute right-1.5 top-1/2 -translate-y-1/2">
+          <ModeGlyph
+            mode={snapshot.activeMode as ConfigurableMode}
+            title={activeModeTitle(snapshot.activeMode as ConfigurableMode)}
+          />
+        </div>
+      ) : null}
       {snapshot.quickNoteMode ? <div className="absolute -top-1 -right-1"><OverlayQuickNoteDot /></div> : null}
     </div>
   )
@@ -207,6 +304,7 @@ function PillPanelOverlayView({
   snapshot: SpeechKitOverlayState
 }) {
   const tone = resolveOverlayTone(snapshot)
+  const modes = configuredModes(snapshot)
   const copyLast = () => {
     if (snapshot.lastTranscription) {
       void navigator.clipboard.writeText(snapshot.lastTranscription)
@@ -215,13 +313,6 @@ function PillPanelOverlayView({
 
   const openQuickCapture = () => {
     void fetch('/quicknotes/open-capture', { method: 'POST' })
-  }
-
-  const switchMode = (mode: RuntimeMode) => {
-    if (snapshot.activeMode === mode) {
-      return
-    }
-    void setActiveMode(mode)
   }
 
   return (
@@ -285,12 +376,18 @@ function PillPanelOverlayView({
           </OverlayPillShell>
 
           <div className="flex items-center gap-0.5">
-            <OverlayModeAction
-              label={snapshot.activeMode === 'agent' ? 'Switch to Dictate' : 'Switch to Agent'}
-              icon={snapshot.activeMode === 'agent' ? <Mic className="h-3 w-3" /> : <Bot className="h-3 w-3" />}
-              active={false}
-              onClick={() => switchMode(snapshot.activeMode === 'agent' ? 'dictate' : 'agent')}
-            />
+            {modes.map((mode) => {
+              const Icon = MODE_META[mode].icon
+              return (
+                <OverlayModeAction
+                  key={mode}
+                  label={MODE_META[mode].label}
+                  icon={<Icon className="h-3 w-3" />}
+                  active={snapshot.activeMode === mode}
+                  onClick={() => toggleMode(mode, snapshot)}
+                />
+              )
+            })}
             <OverlayModeAction
               label="Microphone settings"
               icon={<AudioLines className="h-3 w-3" />}
@@ -387,6 +484,11 @@ function DotRadialOverlayView({
           <span data-testid="dot-radial-status" className="sr-only">
             {overlayStatusLabel(snapshot)}
           </span>
+          <div className="sr-only" data-testid="dot-radial-item-labels">
+            {items.map((item) => (
+              <span key={item.id}>{item.label}</span>
+            ))}
+          </div>
           <div className="relative flex items-center justify-center">
             <DotRadialMenu
               screenEdge={snapshot.position}
@@ -412,8 +514,14 @@ export function PillAnchorOverlay() {
 }
 
 function buildDotMenuItems(snapshot: SpeechKitOverlayState): DotMenuItem[] {
-  const toggleMode = snapshot.activeMode === 'agent' ? 'dictate' : 'agent'
-  const modeLabel = snapshot.activeMode === 'agent' ? 'Dictate' : 'Agent'
+  const modeItems = configuredModes(snapshot).map((mode) => ({
+    id: mode,
+    label: MODE_META[mode].label,
+    icon: MODE_META[mode].icon,
+    onClick: () => {
+      toggleMode(mode, snapshot)
+    },
+  }))
 
   return [
     {
@@ -430,14 +538,7 @@ function buildDotMenuItems(snapshot: SpeechKitOverlayState): DotMenuItem[] {
         void fetch('/quicknotes/open-capture', { method: 'POST' })
       },
     },
-    {
-      id: 'mode',
-      label: modeLabel,
-      icon: snapshot.activeMode === 'agent' ? Mic : Bot,
-      onClick: () => {
-        void setActiveMode(toggleMode)
-      },
-    },
+    ...modeItems,
     {
       id: 'mic',
       label: 'Microphone',
@@ -494,7 +595,7 @@ export function OverlayApp() {
 export { PillPanelOverlay as PillActionsOverlay }
 
 function overlayStatusLabel(snapshot: SpeechKitOverlayState): string {
-  const mode = snapshot.activeMode === 'agent' ? 'Agent' : 'Dictate'
+  const mode = modeStatusLabel(snapshot.activeMode)
   const text = snapshot.text.trim()
   if (text) {
     return `${mode} ${decapitalize(text)}`
@@ -514,7 +615,7 @@ function overlayStatusLabel(snapshot: SpeechKitOverlayState): string {
   }
 }
 
-function decapitalize(value: string): string {
+function decapitalize(value: string) {
   if (!value) {
     return value
   }

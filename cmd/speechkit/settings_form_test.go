@@ -11,6 +11,7 @@ func TestParseSettingsFormDefaults(t *testing.T) {
 	cfg := defaultTestConfig()
 	cfg.General.DictateHotkey = "win+alt"
 	cfg.General.AgentHotkey = "ctrl+shift+k"
+	cfg.General.AgentMode = "assist"
 	cfg.General.ActiveMode = "dictate"
 	cfg.UI.Visualizer = "pill"
 	cfg.UI.Design = "default"
@@ -30,8 +31,11 @@ func TestParseSettingsFormDefaults(t *testing.T) {
 	if form.DictateHotkey != "win+alt" {
 		t.Errorf("DictateHotkey = %q, want %q", form.DictateHotkey, "win+alt")
 	}
-	if form.AgentHotkey != "ctrl+shift+k" {
-		t.Errorf("AgentHotkey = %q, want %q", form.AgentHotkey, "ctrl+shift+k")
+	if form.AgentHotkey != "ctrl+shift+j" {
+		t.Errorf("AgentHotkey = %q, want %q", form.AgentHotkey, "ctrl+shift+j")
+	}
+	if form.AgentMode != "assist" {
+		t.Errorf("AgentMode = %q, want %q", form.AgentMode, "assist")
 	}
 	if form.ActiveMode != "dictate" {
 		t.Errorf("ActiveMode = %q, want %q", form.ActiveMode, "dictate")
@@ -56,6 +60,7 @@ func TestParseSettingsFormOverrides(t *testing.T) {
 	formValues := url.Values{
 		"dictate_hotkey":     {"ctrl+space"},
 		"agent_hotkey":       {"ctrl+shift+j"},
+		"agent_mode":         {"voice_agent"},
 		"active_mode":        {"agent"},
 		"overlay_enabled":    {"1"},
 		"overlay_visualizer": {"pill"},
@@ -83,8 +88,11 @@ func TestParseSettingsFormOverrides(t *testing.T) {
 	if form.AgentHotkey != "ctrl+shift+j" {
 		t.Errorf("AgentHotkey = %q, want %q", form.AgentHotkey, "ctrl+shift+j")
 	}
-	if form.ActiveMode != "agent" {
-		t.Errorf("ActiveMode = %q, want %q", form.ActiveMode, "agent")
+	if form.AgentMode != "voice_agent" {
+		t.Errorf("AgentMode = %q, want %q", form.AgentMode, "voice_agent")
+	}
+	if form.ActiveMode != "voice_agent" {
+		t.Errorf("ActiveMode = %q, want %q", form.ActiveMode, "voice_agent")
 	}
 	if !form.OverlayEnabled {
 		t.Error("expected OverlayEnabled=true")
@@ -103,6 +111,140 @@ func TestParseSettingsFormOverrides(t *testing.T) {
 	}
 	if form.AudioDeviceID != "dev-123" {
 		t.Errorf("AudioDeviceID = %q, want %q", form.AudioDeviceID, "dev-123")
+	}
+}
+
+func TestParseSettingsFormSupportsIndependentModeHotkeysAndNone(t *testing.T) {
+	cfg := defaultTestConfig()
+	cfg.General.DictateHotkey = "win+alt"
+	cfg.UI.Visualizer = "pill"
+	cfg.UI.Design = "default"
+	cfg.UI.OverlayPosition = "top"
+	cfg.Store.Backend = "sqlite"
+
+	formValues := url.Values{
+		"dictate_hotkey":     {"ctrl+space"},
+		"assist_hotkey":      {"ctrl+shift+j"},
+		"voice_agent_hotkey": {"ctrl+shift+v"},
+		"active_mode":        {"none"},
+		"overlay_visualizer": {"pill"},
+		"overlay_design":     {"default"},
+		"overlay_position":   {"top"},
+		"store_backend":      {"sqlite"},
+	}
+
+	req, _ := http.NewRequest(http.MethodPost, "/settings/update", strings.NewReader(formValues.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.ParseForm()
+
+	form, errMsg := parseSettingsForm(req, cfg)
+	if errMsg != "" {
+		t.Fatalf("unexpected error: %s", errMsg)
+	}
+
+	if form.AssistHotkey != "ctrl+shift+j" {
+		t.Errorf("AssistHotkey = %q, want %q", form.AssistHotkey, "ctrl+shift+j")
+	}
+	if form.VoiceAgentHotkey != "ctrl+shift+v" {
+		t.Errorf("VoiceAgentHotkey = %q, want %q", form.VoiceAgentHotkey, "ctrl+shift+v")
+	}
+	if form.ActiveMode != "none" {
+		t.Errorf("ActiveMode = %q, want %q", form.ActiveMode, "none")
+	}
+}
+
+func TestParseSettingsFormMapsLegacyAgentHotkeyToAssistHotkey(t *testing.T) {
+	cfg := defaultTestConfig()
+	cfg.UI.Visualizer = "pill"
+	cfg.UI.Design = "default"
+	cfg.UI.OverlayPosition = "top"
+	cfg.Store.Backend = "sqlite"
+
+	formValues := url.Values{
+		"dictate_hotkey":     {"ctrl+space"},
+		"agent_hotkey":       {"ctrl+shift+j"},
+		"agent_mode":         {"assist"},
+		"overlay_visualizer": {"pill"},
+		"overlay_design":     {"default"},
+		"overlay_position":   {"top"},
+		"store_backend":      {"sqlite"},
+	}
+
+	req, _ := http.NewRequest(http.MethodPost, "/settings/update", strings.NewReader(formValues.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.ParseForm()
+
+	form, errMsg := parseSettingsForm(req, cfg)
+	if errMsg != "" {
+		t.Fatalf("unexpected error: %s", errMsg)
+	}
+
+	if form.AssistHotkey != "ctrl+shift+j" {
+		t.Errorf("AssistHotkey = %q, want %q", form.AssistHotkey, "ctrl+shift+j")
+	}
+	if form.VoiceAgentHotkey != "" {
+		t.Errorf("VoiceAgentHotkey = %q, want empty", form.VoiceAgentHotkey)
+	}
+}
+
+func TestParseSettingsFormMapsLegacyAgentHotkeyToVoiceAgentHotkey(t *testing.T) {
+	cfg := defaultTestConfig()
+	cfg.UI.Visualizer = "pill"
+	cfg.UI.Design = "default"
+	cfg.UI.OverlayPosition = "top"
+	cfg.Store.Backend = "sqlite"
+
+	formValues := url.Values{
+		"dictate_hotkey":     {"ctrl+space"},
+		"agent_hotkey":       {"ctrl+shift+v"},
+		"agent_mode":         {"voice_agent"},
+		"overlay_visualizer": {"pill"},
+		"overlay_design":     {"default"},
+		"overlay_position":   {"top"},
+		"store_backend":      {"sqlite"},
+	}
+
+	req, _ := http.NewRequest(http.MethodPost, "/settings/update", strings.NewReader(formValues.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.ParseForm()
+
+	form, errMsg := parseSettingsForm(req, cfg)
+	if errMsg != "" {
+		t.Fatalf("unexpected error: %s", errMsg)
+	}
+
+	if form.AssistHotkey != "" {
+		t.Errorf("AssistHotkey = %q, want empty", form.AssistHotkey)
+	}
+	if form.VoiceAgentHotkey != "ctrl+shift+v" {
+		t.Errorf("VoiceAgentHotkey = %q, want %q", form.VoiceAgentHotkey, "ctrl+shift+v")
+	}
+}
+
+func TestParseSettingsFormRejectsDuplicateIndependentModeHotkeys(t *testing.T) {
+	cfg := defaultTestConfig()
+	cfg.UI.Visualizer = "pill"
+	cfg.UI.Design = "default"
+	cfg.UI.OverlayPosition = "top"
+	cfg.Store.Backend = "sqlite"
+
+	formValues := url.Values{
+		"dictate_hotkey":     {"ctrl+space"},
+		"assist_hotkey":      {"ctrl+space"},
+		"voice_agent_hotkey": {"ctrl+shift+v"},
+		"overlay_visualizer": {"pill"},
+		"overlay_design":     {"default"},
+		"overlay_position":   {"top"},
+		"store_backend":      {"sqlite"},
+	}
+
+	req, _ := http.NewRequest(http.MethodPost, "/settings/update", strings.NewReader(formValues.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.ParseForm()
+
+	_, errMsg := parseSettingsForm(req, cfg)
+	if errMsg == "" {
+		t.Fatal("expected duplicate hotkey error")
 	}
 }
 
@@ -161,8 +303,31 @@ func TestParseSettingsFormActiveModeDefaultsToDictate(t *testing.T) {
 	if errMsg != "" {
 		t.Fatalf("unexpected error: %s", errMsg)
 	}
-	if form.ActiveMode != "dictate" {
-		t.Errorf("ActiveMode = %q, want %q", form.ActiveMode, "dictate")
+	if form.ActiveMode != "none" {
+		t.Errorf("ActiveMode = %q, want %q", form.ActiveMode, "none")
+	}
+}
+
+func TestParseSettingsFormAgentModeDefaultsToAssist(t *testing.T) {
+	cfg := defaultTestConfig()
+	cfg.General.AgentMode = "voice_agent"
+	cfg.UI.Visualizer = "pill"
+	cfg.UI.Design = "default"
+	cfg.Store.Backend = "sqlite"
+
+	formValues := url.Values{
+		"agent_mode": {"invalid"},
+	}
+	req, _ := http.NewRequest(http.MethodPost, "/settings/update", strings.NewReader(formValues.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.ParseForm()
+
+	form, errMsg := parseSettingsForm(req, cfg)
+	if errMsg != "" {
+		t.Fatalf("unexpected error: %s", errMsg)
+	}
+	if form.AgentMode != "assist" {
+		t.Errorf("AgentMode = %q, want %q", form.AgentMode, "assist")
 	}
 }
 
@@ -192,8 +357,11 @@ func TestBuildNextConfig(t *testing.T) {
 
 	form := settingsFormData{
 		DictateHotkey:        "ctrl+space",
+		AssistHotkey:         "ctrl+shift+j",
+		VoiceAgentHotkey:     "ctrl+shift+v",
 		AgentHotkey:          "ctrl+shift+k",
-		ActiveMode:           "agent",
+		AgentMode:            "voice_agent",
+		ActiveMode:           "voice_agent",
 		AudioDeviceID:        "dev-1",
 		HFModel:              "whisper-large",
 		OverlayEnabled:       true,
@@ -219,10 +387,19 @@ func TestBuildNextConfig(t *testing.T) {
 	if result.General.DictateHotkey != "ctrl+space" {
 		t.Errorf("DictateHotkey = %q", result.General.DictateHotkey)
 	}
-	if result.General.AgentHotkey != "ctrl+shift+k" {
+	if result.General.AssistHotkey != "ctrl+shift+j" {
+		t.Errorf("AssistHotkey = %q", result.General.AssistHotkey)
+	}
+	if result.General.VoiceAgentHotkey != "ctrl+shift+v" {
+		t.Errorf("VoiceAgentHotkey = %q", result.General.VoiceAgentHotkey)
+	}
+	if result.General.AgentHotkey != "ctrl+shift+v" {
 		t.Errorf("AgentHotkey = %q", result.General.AgentHotkey)
 	}
-	if result.General.ActiveMode != "agent" {
+	if result.General.AgentMode != "voice_agent" {
+		t.Errorf("AgentMode = %q", result.General.AgentMode)
+	}
+	if result.General.ActiveMode != "voice_agent" {
 		t.Errorf("ActiveMode = %q", result.General.ActiveMode)
 	}
 	if result.Audio.DeviceID != "dev-1" {
@@ -267,6 +444,7 @@ func TestBuildNextConfigPostgresDoesNotSetFeedbackDBPath(t *testing.T) {
 	form := settingsFormData{
 		DictateHotkey:    "win+alt",
 		AgentHotkey:      "ctrl+shift+k",
+		AgentMode:        "assist",
 		ActiveMode:       "dictate",
 		Visualizer:       "pill",
 		Design:           "default",

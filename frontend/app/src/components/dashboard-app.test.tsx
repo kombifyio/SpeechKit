@@ -391,7 +391,7 @@ describe('DashboardApp', () => {
   })
 
   it('shows an in-app update banner with change log link and download progress', async () => {
-    fetchSpy?.mockImplementation(async (input: RequestInfo | URL, _init?: RequestInit) => {
+    fetchSpy?.mockImplementation(async (input: RequestInfo | URL) => {
       const url = typeof input === 'string' ? input : input instanceof URL ? input.toString() : (input as Request).url
       if (url === '/app/setup-status') {
         return new Response(JSON.stringify({ setupDone: true }), {

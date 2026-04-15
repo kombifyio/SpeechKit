@@ -163,7 +163,7 @@ func registerSettingsRoutes(mux *http.ServeMux, cfgPath string, cfg *config.Conf
 		switch r.Method {
 		case http.MethodGet:
 			state.mu.Lock()
-			activeMode := state.activeMode
+			activeMode := normalizeRuntimeMode(state.activeMode, cfg.General.AgentMode)
 			state.mu.Unlock()
 			w.Header().Set("Content-Type", "application/json; charset=utf-8")
 			_ = json.NewEncoder(w).Encode(map[string]string{"activeMode": activeMode})
@@ -172,13 +172,30 @@ func registerSettingsRoutes(mux *http.ServeMux, cfgPath string, cfg *config.Conf
 				w.WriteHeader(http.StatusBadRequest)
 				return
 			}
-			mode := strings.TrimSpace(r.FormValue("mode"))
-			if mode != "dictate" && mode != "agent" {
+			requestedMode := strings.TrimSpace(r.FormValue("mode"))
+			state.mu.Lock()
+			dictateHotkey := strings.TrimSpace(state.dictateHotkey)
+			assistHotkey := strings.TrimSpace(state.assistHotkey)
+			voiceAgentHotkey := strings.TrimSpace(state.voiceAgentHotkey)
+			state.mu.Unlock()
+			if dictateHotkey == "" {
+				dictateHotkey = strings.TrimSpace(cfg.General.DictateHotkey)
+			}
+			if assistHotkey == "" {
+				assistHotkey = strings.TrimSpace(cfg.General.AssistHotkey)
+			}
+			if voiceAgentHotkey == "" {
+				voiceAgentHotkey = strings.TrimSpace(cfg.General.VoiceAgentHotkey)
+			}
+			mode := sanitizeActiveModeForBindings(requestedMode, cfg.General.AgentMode, dictateHotkey, assistHotkey, voiceAgentHotkey)
+			if requestedMode == "" || (mode == modeNone && normalizeRuntimeMode(requestedMode, cfg.General.AgentMode) != modeNone) {
 				w.WriteHeader(http.StatusBadRequest)
 				return
 			}
 			state.setActiveMode(mode)
 			cfg.General.ActiveMode = mode
+			cfg.General.AgentMode = deriveLegacyAgentModeFromBindings(cfg.General.AssistHotkey, cfg.General.VoiceAgentHotkey, mode, cfg.General.AgentMode)
+			cfg.General.AgentHotkey = legacyAgentHotkeyFromModeBindings(cfg.General.AssistHotkey, cfg.General.VoiceAgentHotkey, cfg.General.AgentMode)
 			if err := config.Save(cfgPath, cfg); err != nil {
 				slog.Warn("save active mode config", "err", err)
 			}
@@ -277,7 +294,8 @@ func saveSettings(ctx context.Context, req *http.Request, cfgPath string, cfg *c
 
 	nextCfg := buildNextConfig(form, cfg)
 	oldDictateHotkey := cfg.General.DictateHotkey
-	oldAgentHotkey := cfg.General.AgentHotkey
+	oldAssistHotkey := cfg.General.AssistHotkey
+	oldVoiceAgentHotkey := cfg.General.VoiceAgentHotkey
 	oldAudioDeviceID := cfg.Audio.DeviceID
 
 	managedHFEnabled := config.ApplyManagedIntegrationDefaults(&nextCfg)
@@ -305,7 +323,8 @@ func saveSettings(ctx context.Context, req *http.Request, cfgPath string, cfg *c
 
 	state.applyRuntimeSettings(
 		form.DictateHotkey,
-		form.AgentHotkey,
+		form.AssistHotkey,
+		form.VoiceAgentHotkey,
 		form.ActiveMode,
 		form.AudioDeviceID,
 		runtimeAvailableProviders(sttRouter),
@@ -316,34 +335,49 @@ func saveSettings(ctx context.Context, req *http.Request, cfgPath string, cfg *c
 		form.OverlayMovable,
 		form.OverlayFreeX,
 		form.OverlayFreeY,
+		form.OverlayMonitorPositions,
 	)
-	state.applyDesktopSettings(oldDictateHotkey, oldAgentHotkey, form.DictateHotkey, form.AgentHotkey, oldAudioDeviceID, form.AudioDeviceID, form.OverlayEnabled)
+	state.applyDesktopSettings(
+		oldDictateHotkey,
+		oldAssistHotkey,
+		oldVoiceAgentHotkey,
+		form.DictateHotkey,
+		form.AssistHotkey,
+		form.VoiceAgentHotkey,
+		oldAudioDeviceID,
+		form.AudioDeviceID,
+		form.OverlayEnabled,
+	)
 
 	return msgSaved
 }
 
 // settingsFormData holds parsed and validated form values from the settings page.
 type settingsFormData struct {
-	DictateHotkey        string
-	AgentHotkey          string
-	ActiveMode           string
-	AudioDeviceID        string
-	HFModel              string
-	OverlayEnabled       bool
-	Visualizer           string
-	Design               string
-	OverlayPosition      string
-	OverlayMovable       bool
-	OverlayFreeX         int
-	OverlayFreeY         int
-	StoreBackend         string
-	StoreSQLitePath      string
-	StorePostgresDSN     string
-	StoreSaveAudio       bool
-	StoreAudioRetention  int
-	StoreMaxAudioStorage int
-	VocabularyDictionary string
-	Language             string
+	DictateHotkey           string
+	AssistHotkey            string
+	VoiceAgentHotkey        string
+	AgentHotkey             string
+	AgentMode               string
+	ActiveMode              string
+	AudioDeviceID           string
+	HFModel                 string
+	OverlayEnabled          bool
+	Visualizer              string
+	Design                  string
+	OverlayPosition         string
+	OverlayMovable          bool
+	OverlayFreeX            int
+	OverlayFreeY            int
+	OverlayMonitorPositions map[string]config.OverlayFreePosition
+	StoreBackend            string
+	StoreSQLitePath         string
+	StorePostgresDSN        string
+	StoreSaveAudio          bool
+	StoreAudioRetention     int
+	StoreMaxAudioStorage    int
+	VocabularyDictionary    string
+	Language                string
 }
 
 // parseSettingsForm extracts and validates all settings form values.
@@ -351,29 +385,53 @@ type settingsFormData struct {
 func parseSettingsForm(req *http.Request, cfg *config.Config) (settingsFormData, string) {
 	var f settingsFormData
 
-	f.DictateHotkey = strings.TrimSpace(req.FormValue("dictate_hotkey"))
-	if f.DictateHotkey == "" {
+	_, hasDictateHotkey := req.PostForm["dictate_hotkey"]
+	if hasDictateHotkey {
+		f.DictateHotkey = strings.TrimSpace(req.FormValue("dictate_hotkey"))
+	} else {
 		f.DictateHotkey = strings.TrimSpace(req.FormValue("hotkey"))
+		if f.DictateHotkey == "" {
+			f.DictateHotkey = strings.TrimSpace(cfg.General.DictateHotkey)
+		}
+		if f.DictateHotkey == "" {
+			f.DictateHotkey = strings.TrimSpace(cfg.General.Hotkey)
+		}
 	}
-	if f.DictateHotkey == "" {
-		f.DictateHotkey = cfg.General.DictateHotkey
+	_, hasAssistHotkey := req.PostForm["assist_hotkey"]
+	_, hasVoiceAgentHotkey := req.PostForm["voice_agent_hotkey"]
+	f.AssistHotkey = strings.TrimSpace(req.FormValue("assist_hotkey"))
+	f.VoiceAgentHotkey = strings.TrimSpace(req.FormValue("voice_agent_hotkey"))
+	legacyAgentMode := strings.TrimSpace(req.FormValue("agent_mode"))
+	if legacyAgentMode == "" {
+		legacyAgentMode = cfg.General.AgentMode
 	}
-	if f.DictateHotkey == "" {
-		f.DictateHotkey = "win+alt"
-	}
+	f.AgentMode = normalizeAgentMode(legacyAgentMode)
 	f.AgentHotkey = strings.TrimSpace(req.FormValue("agent_hotkey"))
-	if f.AgentHotkey == "" {
-		f.AgentHotkey = cfg.General.AgentHotkey
+	legacyAgentHotkeyPosted := !hasAssistHotkey && !hasVoiceAgentHotkey && postFormIncludes(req, "agent_hotkey")
+	if legacyAgentHotkeyPosted {
+		f.AssistHotkey = ""
+		f.VoiceAgentHotkey = ""
+		switch f.AgentMode {
+		case modeVoiceAgent:
+			f.VoiceAgentHotkey = f.AgentHotkey
+		default:
+			f.AssistHotkey = f.AgentHotkey
+		}
 	}
-	if f.AgentHotkey == "" {
-		f.AgentHotkey = "ctrl+shift+k"
+	if !legacyAgentHotkeyPosted && !hasAssistHotkey && f.AssistHotkey == "" {
+		f.AssistHotkey = strings.TrimSpace(cfg.General.AssistHotkey)
 	}
-	f.ActiveMode = strings.TrimSpace(req.FormValue("active_mode"))
-	if f.ActiveMode == "" {
-		f.ActiveMode = cfg.General.ActiveMode
+	if !legacyAgentHotkeyPosted && !hasVoiceAgentHotkey && f.VoiceAgentHotkey == "" {
+		f.VoiceAgentHotkey = strings.TrimSpace(cfg.General.VoiceAgentHotkey)
 	}
-	if f.ActiveMode != "agent" {
-		f.ActiveMode = "dictate"
+	f.AgentHotkey = legacyAgentHotkeyFromModeBindings(f.AssistHotkey, f.VoiceAgentHotkey, f.AgentMode)
+	activeMode := strings.TrimSpace(req.FormValue("active_mode"))
+	if activeMode == "" && !postFormIncludes(req, "active_mode") {
+		activeMode = cfg.General.ActiveMode
+	}
+	f.ActiveMode = sanitizeActiveModeForBindings(activeMode, f.AgentMode, f.DictateHotkey, f.AssistHotkey, f.VoiceAgentHotkey)
+	if !validateDistinctModeHotkeys(f.DictateHotkey, f.AssistHotkey, f.VoiceAgentHotkey) {
+		return f, msgDuplicateHotkeys
 	}
 	f.AudioDeviceID = strings.TrimSpace(req.FormValue("audio_device_id"))
 	if f.AudioDeviceID == "" {
@@ -429,6 +487,7 @@ func parseSettingsForm(req *http.Request, cfg *config.Config) (settingsFormData,
 			f.OverlayFreeY = parsed
 		}
 	}
+	f.OverlayMonitorPositions = cloneOverlayMonitorPositions(cfg.UI.OverlayMonitorPositions)
 	storeSaveAudioRaw := strings.TrimSpace(req.FormValue("store_save_audio"))
 	f.StoreSaveAudio = cfg.Store.SaveAudio
 	if storeSaveAudioRaw != "" {
@@ -491,8 +550,11 @@ func buildNextConfig(form settingsFormData, cfg *config.Config) config.Config {
 	nextCfg := *cfg
 	nextCfg.General.Hotkey = form.DictateHotkey // keep legacy field in sync
 	nextCfg.General.DictateHotkey = form.DictateHotkey
-	nextCfg.General.AgentHotkey = form.AgentHotkey
-	nextCfg.General.ActiveMode = form.ActiveMode
+	nextCfg.General.AssistHotkey = form.AssistHotkey
+	nextCfg.General.VoiceAgentHotkey = form.VoiceAgentHotkey
+	nextCfg.General.ActiveMode = sanitizeActiveModeForBindings(form.ActiveMode, form.AgentMode, form.DictateHotkey, form.AssistHotkey, form.VoiceAgentHotkey)
+	nextCfg.General.AgentMode = deriveLegacyAgentModeFromBindings(form.AssistHotkey, form.VoiceAgentHotkey, nextCfg.General.ActiveMode, form.AgentMode)
+	nextCfg.General.AgentHotkey = legacyAgentHotkeyFromModeBindings(form.AssistHotkey, form.VoiceAgentHotkey, nextCfg.General.AgentMode)
 	nextCfg.Audio.DeviceID = form.AudioDeviceID
 	nextCfg.HuggingFace.Enabled = cfg.HuggingFace.Enabled && hfAvailableInBuild
 	nextCfg.HuggingFace.Model = form.HFModel
@@ -501,6 +563,7 @@ func buildNextConfig(form settingsFormData, cfg *config.Config) config.Config {
 	nextCfg.UI.OverlayMovable = form.OverlayMovable
 	nextCfg.UI.OverlayFreeX = form.OverlayFreeX
 	nextCfg.UI.OverlayFreeY = form.OverlayFreeY
+	nextCfg.UI.OverlayMonitorPositions = cloneOverlayMonitorPositions(form.OverlayMonitorPositions)
 	nextCfg.UI.Visualizer = form.Visualizer
 	nextCfg.UI.Design = form.Design
 	nextCfg.Store.Backend = form.StoreBackend
@@ -517,6 +580,14 @@ func buildNextConfig(form settingsFormData, cfg *config.Config) config.Config {
 	nextCfg.Vocabulary.Dictionary = form.VocabularyDictionary
 	nextCfg.General.Language = form.Language
 	return nextCfg
+}
+
+func postFormIncludes(req *http.Request, key string) bool {
+	if req == nil || req.PostForm == nil {
+		return false
+	}
+	_, ok := req.PostForm[key]
+	return ok
 }
 
 func normalizeVocabularyDictionary(input string) string {

@@ -20,6 +20,15 @@ func TestLoadDefaults(t *testing.T) {
 	if cfg.General.Hotkey != "win+alt" {
 		t.Errorf("default hotkey = %q, want %q", cfg.General.Hotkey, "win+alt")
 	}
+	if cfg.General.DictateHotkey != "win+alt" {
+		t.Errorf("default dictate hotkey = %q, want %q", cfg.General.DictateHotkey, "win+alt")
+	}
+	if cfg.General.AssistHotkey != "ctrl+shift+j" {
+		t.Errorf("default assist hotkey = %q, want %q", cfg.General.AssistHotkey, "ctrl+shift+j")
+	}
+	if cfg.General.VoiceAgentHotkey != "ctrl+shift+k" {
+		t.Errorf("default voice agent hotkey = %q, want %q", cfg.General.VoiceAgentHotkey, "ctrl+shift+k")
+	}
 	if cfg.General.AutoStopSilenceMs != 500 {
 		t.Errorf("default silence ms = %d, want 500", cfg.General.AutoStopSilenceMs)
 	}
@@ -296,7 +305,63 @@ func TestDopplerProjectsAndConfigsRequireExplicitEnv(t *testing.T) {
 	}
 }
 
+func TestDopplerProjectsAndConfigsFallBackToManagedDefaults(t *testing.T) {
+	previousProject := managedDopplerDefaultProject
+	previousConfig := managedDopplerDefaultConfig
+	managedDopplerDefaultProject = "managed-project"
+	managedDopplerDefaultConfig = "prd"
+	t.Cleanup(func() {
+		managedDopplerDefaultProject = previousProject
+		managedDopplerDefaultConfig = previousConfig
+	})
+
+	projects := dopplerProjects()
+	configs := dopplerConfigs()
+
+	if len(projects) != 1 || projects[0] != "managed-project" {
+		t.Fatalf("projects = %v", projects)
+	}
+	if len(configs) != 1 || configs[0] != "prd" {
+		t.Fatalf("configs = %v", configs)
+	}
+}
+
+func TestDopplerProjectsAndConfigsPreferExplicitEnvOverManagedDefaults(t *testing.T) {
+	previousProject := managedDopplerDefaultProject
+	previousConfig := managedDopplerDefaultConfig
+	managedDopplerDefaultProject = "managed-project"
+	managedDopplerDefaultConfig = "prd"
+	t.Cleanup(func() {
+		managedDopplerDefaultProject = previousProject
+		managedDopplerDefaultConfig = previousConfig
+	})
+
+	t.Setenv("DOPPLER_PROJECT", "dev-project")
+	t.Setenv("DOPPLER_CONFIG", "dev")
+
+	projects := dopplerProjects()
+	configs := dopplerConfigs()
+
+	if len(projects) != 1 || projects[0] != "dev-project" {
+		t.Fatalf("projects = %v", projects)
+	}
+	if len(configs) != 1 || configs[0] != "dev" {
+		t.Fatalf("configs = %v", configs)
+	}
+}
+
 func TestDopplerProjectsAndConfigsStayEmptyWithoutEnv(t *testing.T) {
+	previousProject := managedDopplerDefaultProject
+	previousConfig := managedDopplerDefaultConfig
+	managedDopplerDefaultProject = ""
+	managedDopplerDefaultConfig = ""
+	t.Cleanup(func() {
+		managedDopplerDefaultProject = previousProject
+		managedDopplerDefaultConfig = previousConfig
+	})
+	t.Setenv("DOPPLER_PROJECT", "")
+	t.Setenv("DOPPLER_CONFIG", "")
+
 	projects := dopplerProjects()
 	configs := dopplerConfigs()
 

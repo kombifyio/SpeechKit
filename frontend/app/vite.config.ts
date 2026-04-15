@@ -34,6 +34,7 @@ export default defineConfig(() => {
           dashboard: path.resolve(projectDir, 'dashboard.html'),
           quicknote: path.resolve(projectDir, 'quicknote.html'),
           quickcapture: path.resolve(projectDir, 'quickcapture.html'),
+          voiceagentPrompter: path.resolve(projectDir, 'voiceagent-prompter.html'),
         },
       },
     },

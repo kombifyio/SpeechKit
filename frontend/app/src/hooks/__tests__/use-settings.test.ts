@@ -18,8 +18,16 @@ vi.mock('@/lib/speechkit', () => ({
     hfTokenSource: 'none',
     hotkey: 'win+alt',
     dictateHotkey: 'win+alt',
-    agentHotkey: 'ctrl+shift+k',
-    activeMode: 'dictate',
+    assistHotkey: 'ctrl+shift+j',
+    voiceAgentHotkey: 'ctrl+shift+k',
+    agentHotkey: 'ctrl+shift+j',
+    agentMode: 'assist',
+    activeMode: 'none',
+    availableModes: {
+      dictate: true,
+      assist: true,
+      voice_agent: true,
+    },
     hfModel: 'openai/whisper-large-v3-turbo',
     visualizer: 'pill',
     design: 'default',
@@ -47,8 +55,16 @@ vi.mock('@/lib/speechkit', () => ({
     hfTokenSource: 'none',
     hotkey: 'win+alt',
     dictateHotkey: 'win+alt',
-    agentHotkey: 'ctrl+shift+k',
-    activeMode: 'dictate',
+    assistHotkey: 'ctrl+shift+j',
+    voiceAgentHotkey: 'ctrl+shift+k',
+    agentHotkey: 'ctrl+shift+j',
+    agentMode: 'assist',
+    activeMode: 'none',
+    availableModes: {
+      dictate: true,
+      assist: true,
+      voice_agent: true,
+    },
     hfModel: 'openai/whisper-large-v3-turbo',
     visualizer: 'pill',
     design: 'default',
@@ -104,8 +120,8 @@ describe('useSettings', () => {
 
     await waitFor(() => expect(result.current.loaded).toBe(true))
 
-    act(() => result.current.updateSettings({ activeMode: 'agent' }))
-    expect(result.current.settings.activeMode).toBe('agent')
+    act(() => result.current.updateSettings({ activeMode: 'assist' }))
+    expect(result.current.settings.activeMode).toBe('assist')
   })
 
   it('computes postgresReady', async () => {

@@ -59,7 +59,8 @@ func (s *appState) setActiveMode(mode string) {
 	if s == nil || mode == "" {
 		return
 	}
-	if mode != "dictate" && mode != "agent" {
+	mode = normalizeRuntimeMode(mode, "")
+	if !isRuntimeMode(mode) {
 		return
 	}
 	s.mu.Lock()
@@ -80,16 +81,7 @@ func (s *appState) setAudioDevice(deviceID string) {
 }
 
 func (s *appState) activeHotkeyLocked() string {
-	switch s.activeMode {
-	case "agent":
-		if s.agentHotkey != "" {
-			return s.agentHotkey
-		}
-	}
-	if s.dictateHotkey != "" {
-		return s.dictateHotkey
-	}
-	return s.hotkey
+	return activeModeHotkey(s.runtimeStateLocked())
 }
 
 func cloneStringMap(input map[string]string) map[string]string {

@@ -16,6 +16,47 @@ const (
 	maxLogFiles    = 3
 )
 
+type writerTarget struct {
+	name   string
+	writer io.Writer
+}
+
+type fanoutWriter struct {
+	writers []writerTarget
+}
+
+func (w fanoutWriter) Write(p []byte) (int, error) {
+	var (
+		successfulWrites int
+		firstErr         error
+	)
+
+	for _, target := range w.writers {
+		if target.writer == nil {
+			continue
+		}
+		n, err := target.writer.Write(p)
+		if err == nil && n == len(p) {
+			successfulWrites++
+			continue
+		}
+		if err == nil {
+			err = io.ErrShortWrite
+		}
+		if firstErr == nil {
+			firstErr = err
+		}
+	}
+
+	if successfulWrites > 0 {
+		return len(p), nil
+	}
+	if firstErr != nil {
+		return 0, firstErr
+	}
+	return len(p), nil
+}
+
 func initAppLogging() (string, func()) {
 	exePath, err := os.Executable()
 	if err != nil {
@@ -38,7 +79,12 @@ func initAppLogging() (string, func()) {
 		return logPath, func() {}
 	}
 
-	multiWriter := io.MultiWriter(os.Stdout, logFile)
+	multiWriter := fanoutWriter{
+		writers: []writerTarget{
+			{name: "stdout", writer: os.Stdout},
+			{name: "logfile", writer: logFile},
+		},
+	}
 	opts := &slog.HandlerOptions{Level: slog.LevelDebug}
 	handler := slog.NewJSONHandler(multiWriter, opts)
 	slog.SetDefault(slog.New(handler))

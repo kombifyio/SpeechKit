@@ -20,7 +20,7 @@ func Catalog(cfg *config.Config) []Item {
 	modelsDir := ResolveWhisperModelsDir(cfg)
 	selectedLocalModel := selectedWhisperModel(cfg)
 	return []Item{
-		// ── Whisper STT local models ─────────────────────────────────────────
+		// â”€â”€ Whisper STT local models â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 		{
 			ID:          "whisper.ggml-small",
 			ProfileID:   "stt.local.whispercpp",
@@ -64,11 +64,11 @@ func Catalog(cfg *config.Config) []Item {
 			Available:   FileIsPresent(filepath.Join(modelsDir, "ggml-large-v3.bin")),
 			Selected:    selectedLocalModel == "ggml-large-v3.bin",
 		},
-		// ── Ollama LLM models ─────────────────────────────────────────────────
+		// â”€â”€ Ollama LLM models â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 		{
 			ID:          "ollama.gemma4-e4b",
 			ProfileID:   "utility.ollama.gemma4-e4b",
-			Name:        "Gemma 4 E4B — Utility (3.3 GB)",
+			Name:        "Gemma 4 E4B â€” Utility (3.3 GB)",
 			Description: "Best local LLM for Assist Mode. Great quality on modern laptops. Requires Ollama.",
 			SizeLabel:   "~3.3 GB",
 			SizeBytes:   3_300_000_000,
@@ -81,7 +81,7 @@ func Catalog(cfg *config.Config) []Item {
 		{
 			ID:          "ollama.gemma4-e4b-assist",
 			ProfileID:   "assist.ollama.gemma4-e4b",
-			Name:        "Gemma 4 E4B — Assist (3.3 GB)",
+			Name:        "Gemma 4 E4B â€” Assist (3.3 GB)",
 			Description: "Local Assist model for reasoning and follow-ups. Same weights as Utility E4B.",
 			SizeLabel:   "~3.3 GB",
 			SizeBytes:   3_300_000_000,
