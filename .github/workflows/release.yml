@@ -90,7 +90,7 @@ jobs:
           tag="${{ needs.prepare.outputs.tag }}"
 
           for attempt in $(seq 1 40); do
-            is_draft="$(gh release view "$tag" --json isDraft --jq '.isDraft' 2>/dev/null || true)"
+            is_draft="$(gh release view "$tag" --repo "${{ github.repository }}" --json isDraft --jq '.isDraft' 2>/dev/null || true)"
             if [ -n "$is_draft" ]; then
               if [ "$is_draft" = "true" ]; then
                 exit 0
