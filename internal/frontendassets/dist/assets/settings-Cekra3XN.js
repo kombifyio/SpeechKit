@@ -1,0 +1,1 @@
+import{a as e,i as t,n,t as r}from"./jsx-runtime-msgIFlGQ.js";import{t as i}from"./settings-app-Dtc5WwKP.js";var a=e(t(),1),o=n(),s=r();(0,o.createRoot)(document.getElementById(`root`)).render((0,s.jsx)(a.StrictMode,{children:(0,s.jsx)(i,{})}));

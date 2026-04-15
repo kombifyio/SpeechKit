@@ -1,0 +1,189 @@
+[general]
+language = "de"                    # Default transcription language
+dictate_hotkey = "win+alt"         # Dictation Mode hotkey (push-to-talk)
+assist_hotkey = "ctrl+shift+j"     # Assist Mode hotkey (push-to-talk). Blank disables the mode.
+voice_agent_hotkey = "ctrl+shift+k" # Voice Agent Mode hotkey. Blank disables the mode.
+active_mode = "none"               # none, dictate, assist, voice_agent
+agent_hotkey = "ctrl+shift+j"      # Deprecated compatibility alias. SpeechKit now persists assist_hotkey + voice_agent_hotkey separately.
+agent_mode = "assist"              # Deprecated compatibility alias for legacy agent_hotkey readers.
+hotkey = "win+alt"                 # Legacy alias for dictate_hotkey
+hotkey_mode = "push_to_talk"
+auto_stop_silence_ms = 500
+fast_mode_silence_ms = 1500
+
+[ui]
+overlay_enabled = true    # Show the top-center overlay
+overlay_position = "top"  # top, bottom, left, right
+overlay_movable = false   # When true, the pill can be dragged away from its anchored side
+overlay_free_x = 0        # Center point in screen coordinates when overlay_movable = true
+overlay_free_y = 0        # Center point in screen coordinates when overlay_movable = true
+# overlay_monitor_positions stores per-monitor movable overlay positions automatically.
+# Example:
+# [ui.overlay_monitor_positions."0,0,2560,1440"]
+# x = 1280
+# y = 180
+visualizer = "pill"       # pill or circle
+design = "default"        # default or kombify
+
+[local]
+enabled = false
+model = "ggml-small.bin"
+model_path = ""           # Auto: ./models/ first, then %LOCALAPPDATA%/SpeechKit/models/
+port = 8080               # whisper-server port
+gpu = "auto"              # auto, cuda, vulkan, cpu
+
+[vps]
+enabled = false
+url = ""                  # Example: https://voice.your-vps.tld
+api_key_env = "VPS_API_KEY"  # Environment variable or Doppler secret name
+
+[huggingface]
+enabled = false           # Legacy STT toggle for HF routed inference; dedicated HF Endpoints are modeled separately in the profile catalog
+model = "openai/whisper-large-v3" # Routed/shared provider model, not a dedicated endpoint deployment
+token_env = "HF_TOKEN"    # Fallback env var when no stored host token exists; Doppler is internal/dev only
+# utility_model = "Qwen/Qwen3.5-9B"
+# assist_model = "Qwen/Qwen3.5-27B"
+# agent_model = "Qwen/Qwen3.5-27B" # Voice Agent pipeline fallback / legacy agent flow
+
+[routing]
+strategy = "dynamic"      # dynamic, local-only, cloud-only
+prefer_local_under_seconds = 10
+parallel_cloud = false    # Start cloud parallel to local
+replace_on_better = false # Silently replace with better result
+
+[feedback]
+save_audio = true         # Legacy compat only; [store] is the preferred config surface
+audio_retention_days = 7  # Mirrored from [store] while legacy readers still exist
+db_path = ""              # Auto: %APPDATA%/SpeechKit/feedback.db
+max_audio_storage_mb = 500
+
+[store]
+backend = "sqlite"        # Local mode default
+sqlite_path = ""          # Auto: %APPDATA%/SpeechKit/feedback.db (audio files live in sibling audio/)
+postgres_dsn = ""         # Required when backend = "postgres"
+save_audio = true         # Persist raw WAV files locally
+audio_retention_days = 7  # 0 disables automatic deletion
+max_audio_storage_mb = 500
+
+[vocabulary]
+dictionary = ""           # One entry per line. Use "spoken => canonical" for corrections, or a single term as a recognition hint.
+
+# ──────────────────────────────────────────────
+# Shortcuts — additive command aliases per locale
+# Extends the built-in OSS lexicon without patching Go code.
+# Use quoted locale keys for region-specific overrides like "de-at" or "en-us".
+# ──────────────────────────────────────────────
+
+# [shortcuts.locale.de]
+# leading_fillers = ["bitte", "hey speechkit"]
+# summarize = ["kurzfassung", "briefing"]
+# copy_last = ["kopier den letzten block"]
+# insert_last = ["setz das ein"]
+# quick_note = ["merkzettel"]
+
+# [shortcuts.locale.en]
+# leading_fillers = ["please", "hey speechkit"]
+# summarize = ["brief me", "tl dr"]
+
+# ──────────────────────────────────────────────
+# TTS — Text-to-Speech (Assist Mode)
+# Framework always returns Text + Audio. UI decides what to show.
+# ──────────────────────────────────────────────
+
+[tts]
+enabled = true
+strategy = "cloud-first"      # cloud-first, local-first, cloud-only, local-only
+speed = 1.0                   # 0.25 - 4.0
+format = "mp3"                # mp3, wav, opus, pcm
+
+[tts.openai]
+enabled = true
+model = "tts-1"               # tts-1 or tts-1-hd
+voice = "nova"                # alloy, echo, fable, onyx, nova, shimmer
+
+[tts.google]
+enabled = false
+voice = "de-DE-Neural2-B"     # Google Cloud TTS voice name
+
+[tts.huggingface]
+enabled = false
+model = "parler-tts/parler-tts-mini-multilingual-v1.1"  # Multilingual TTS via HF Inference API
+
+[tts.local]
+enabled = false
+model = "hexgrad/Kokoro-82M"
+model_path = ""
+port = 8081
+
+# ──────────────────────────────────────────────
+# Voice Agent — Live session or pipeline fallback
+# Gemini Live stays the native real-time path. Non-live profiles can use the STT + agent + TTS fallback pipeline.
+# ──────────────────────────────────────────────
+
+[voice_agent]
+enabled = true
+model = "gemini-2.5-flash-native-audio-preview-12-2025" # Recommended Voice Agent default
+fallback_model = "gpt-realtime-mini"       # Fallback if primary unavailable
+voice = "Kore"                             # Voice for real-time model
+instruction = ""                           # Optional host instruction / prompt guide. Empty = SpeechKit default general-help instruction.
+reminder_after_idle_sec = 300              # Remind user after 5 min silence
+deactivate_after_idle_sec = 900            # Auto-deactivate after 15 min silence
+pipeline_fallback = true                   # Use STT+LLM+TTS as last resort
+show_prompter = true                       # Show live transcript window during voice agent
+enable_input_transcript = true             # Server-side transcript of the user's speech
+enable_output_transcript = true            # Server-side transcript of the model's speech
+enable_affective_dialog = false            # Uses Gemini Live v1alpha; not supported on Gemini 3.1 Flash Live
+thinking_enabled = false                   # Enable Gemini thinking for harder tasks
+include_thoughts = false                   # Include thought traces when the model supports them
+thinking_budget = 0                        # Optional token budget for thinking
+thinking_level = "medium"                  # off, low, medium, high
+context_compression_enabled = true         # Keep long sessions healthy with server-side compression
+context_compression_trigger_tokens = 24000
+context_compression_target_tokens = 12000
+automatic_activity_detection = true        # Gemini Live server-side VAD / turn detection
+activity_handling = "start_of_activity_interrupts" # start_of_activity_interrupts, no_interrupt
+turn_coverage = "turn_includes_only_activity"      # turn_includes_only_activity, turn_includes_all_input, turn_includes_audio_activity
+vad_start_sensitivity = "low"              # low or high
+vad_end_sensitivity = "low"                # low or high
+vad_prefix_padding_ms = 100
+vad_silence_duration_ms = 700
+
+# ──────────────────────────────────────────────
+# Provider Configuration
+# STT, LLM, TTS, and Realtime model assignments per provider.
+# API keys are resolved from environment variables or Doppler.
+# ──────────────────────────────────────────────
+
+# [providers.openai]
+# enabled = false
+# api_key_env = "OPENAI_API_KEY"
+# stt_model = "gpt-4o-transcribe"
+# utility_model = "gpt-4o-mini"
+# assist_model = "gpt-4o"
+# agent_model = "gpt-4o"
+# tts_model = "tts-1"
+# tts_voice = "nova"
+# realtime_model = "gpt-realtime-mini"
+
+# [providers.groq]
+# enabled = false
+# api_key_env = "GROQ_API_KEY"
+# stt_model = "whisper-large-v3-turbo"
+# utility_model = "llama-3.1-8b-instant"
+# assist_model = "llama-3.3-70b-versatile"
+# agent_model = "llama-3.3-70b-versatile"
+
+# [providers.google]
+# enabled = false
+# api_key_env = "GOOGLE_API_KEY"
+# stt_model = "chirp_3"
+# utility_model = "gemini-2.5-flash-lite"
+# assist_model = "gemini-2.5-flash"
+# agent_model = "gemini-2.5-pro"
+
+# [providers.ollama]
+# enabled = false
+# base_url = "http://localhost:11434"
+# utility_model = "gemma4:e2b"   # Smaller edge profile for low-memory devices
+# assist_model = "gemma4:e4b"
+# agent_model = "gemma4:e4b"

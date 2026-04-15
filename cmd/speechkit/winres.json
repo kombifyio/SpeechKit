@@ -1,0 +1,20 @@
+{
+  "RT_GROUP_ICON": {
+    "#1": {
+      "0000": "../../assets/speechkit.ico"
+    }
+  },
+  "RT_MANIFEST": {
+    "#1": {
+      "0409": {
+        "identity": {
+          "name": "kombify.SpeechKit",
+          "version": "0.19.1.0"
+        },
+        "description": "kombify SpeechKit",
+        "minimum-os": "vista",
+        "dpi-awareness": "system"
+      }
+    }
+  }
+}

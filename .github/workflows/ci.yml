@@ -1,0 +1,252 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  frontend-ci:
+    name: Frontend Checks
+    runs-on: ${{ vars.CI_RUNNER || 'ubuntu-24.04' }}
+    timeout-minutes: 15
+
+    defaults:
+      run:
+        working-directory: frontend/app
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+
+      - name: Setup Node
+        uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/app/package-lock.json
+
+      - name: Install frontend dependencies
+        run: npm ci
+
+      - name: Run frontend tests
+        run: npm test
+
+      - name: Run frontend lint
+        run: npm run lint
+
+      - name: Build frontend
+        run: npm run build
+
+  android-ci:
+    name: Android Checks
+    runs-on: ${{ vars.CI_RUNNER || 'ubuntu-24.04' }}
+    timeout-minutes: 30
+
+    defaults:
+      run:
+        working-directory: android
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+
+      - name: Setup Java
+        uses: actions/setup-java@c1e323688fd81a25caa38c78aa6df2d33d3e20d9
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: gradle
+
+      - name: Ensure Gradle wrapper is executable
+        run: chmod +x gradlew
+
+      - name: Run Android unit tests
+        run: ./gradlew test
+
+      - name: Run Android lint
+        run: ./gradlew lint
+
+  go-analysis:
+    name: Go Analysis
+    runs-on: ${{ vars.WINDOWS_CI_RUNNER || 'windows-2025' }}
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+
+      - name: Setup Go
+        uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c
+        with:
+          go-version: '1.25.9'
+          cache: true
+
+      - name: Setup MinGW
+        uses: msys2/setup-msys2@cafece8e6baf9247cf9b1bf95097b0b983cc558d
+        with:
+          update: true
+          install: >-
+            mingw-w64-x86_64-gcc
+
+      - name: Run go vet
+        shell: pwsh
+        run: go vet ./...
+
+      - name: Run go race tests
+        shell: pwsh
+        # Covers all pure-logic packages. CGo-heavy packages (vad) are
+        # excluded because they require the ONNX runtime in CI.
+        run: >-
+          go test -race
+          ./cmd/speechkit/...
+          ./pkg/speechkit/...
+          ./internal/ai/...
+          ./internal/assist/...
+          ./internal/auth/...
+          ./internal/audio/...
+          ./internal/config/...
+          ./internal/dictation/...
+          ./internal/downloads/...
+          ./internal/features/...
+          ./internal/hotkey/...
+          ./internal/models/...
+          ./internal/output/...
+          ./internal/router/...
+          ./internal/secrets/...
+          ./internal/shortcuts/...
+          ./internal/store/...
+          ./internal/stt/...
+          ./internal/textactions/...
+          ./internal/tray/...
+          ./internal/tts/...
+          ./internal/voiceagent/...
+
+      - name: Coverage report
+        shell: pwsh
+        run: |
+          $packages = @(
+            './cmd/speechkit/...',
+            './pkg/speechkit/...',
+            './internal/ai/...',
+            './internal/assist/...',
+            './internal/auth/...',
+            './internal/audio/...',
+            './internal/config/...',
+            './internal/dictation/...',
+            './internal/downloads/...',
+            './internal/features/...',
+            './internal/hotkey/...',
+            './internal/models/...',
+            './internal/output/...',
+            './internal/router/...',
+            './internal/secrets/...',
+            './internal/shortcuts/...',
+            './internal/store/...',
+            './internal/stt/...',
+            './internal/textactions/...',
+            './internal/tray/...',
+            './internal/tts/...',
+            './internal/voiceagent/...'
+          )
+
+          & go test -coverprofile coverage.out -covermode atomic @packages
+          if ($LASTEXITCODE -ne 0) {
+            exit $LASTEXITCODE
+          }
+
+          $coverageReport = & go tool cover -func coverage.out
+          if ($LASTEXITCODE -ne 0) {
+            exit $LASTEXITCODE
+          }
+
+          $coverageReport | Select-String 'total:'
+          if ($LASTEXITCODE -ne 0) {
+            exit $LASTEXITCODE
+          }
+
+      - name: Install Staticcheck
+        shell: pwsh
+        run: go install honnef.co/go/tools/cmd/staticcheck@latest
+
+      - name: Run Staticcheck
+        shell: pwsh
+        run: staticcheck ./...
+
+      - name: Install govulncheck
+        shell: pwsh
+        run: go install golang.org/x/vuln/cmd/govulncheck@latest
+
+      - name: Run govulncheck
+        shell: pwsh
+        run: govulncheck ./...
+
+  dependency-review:
+    name: Dependency Review
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+
+      - name: Dependency review
+        uses: actions/dependency-review-action@2031cfc080254a8a887f58cffee85186f0e49e48
+
+  windows-ci:
+    name: Windows CI
+    runs-on: ${{ vars.WINDOWS_CI_RUNNER || 'windows-2025' }}
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+
+      - name: Setup Go
+        uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c
+        with:
+          go-version: '1.25.9'
+          cache: true
+
+      - name: Setup Node
+        uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/app/package-lock.json
+
+      - name: Setup MinGW
+        uses: msys2/setup-msys2@cafece8e6baf9247cf9b1bf95097b0b983cc558d
+        with:
+          update: true
+          install: >-
+            mingw-w64-x86_64-gcc
+
+      - name: Install NSIS
+        shell: pwsh
+        run: choco install nsis -y --no-progress
+
+      - name: Run canonical Windows bundle build
+        shell: pwsh
+        run: ./scripts/build.ps1
+
+      - name: Upload embedded frontend assets
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: speechkit-frontend-assets
+          path: internal/frontendassets/dist
+          retention-days: 1
