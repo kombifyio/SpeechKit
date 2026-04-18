@@ -881,8 +881,6 @@ func defaultManagedHuggingFaceForModule() bool {
 	}
 	switch strings.TrimSpace(info.MainPath) {
 	case "github.com/kombifyio/SpeechKit":
-		return true
-	case "github.com/kombifyio/SpeechKit":
 		return false
 	default:
 		return false
