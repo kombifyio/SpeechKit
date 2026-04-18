@@ -61,8 +61,8 @@ func TestLoadDefaults(t *testing.T) {
 	if cfg.Local.Enabled {
 		t.Error("local provider should be disabled by default")
 	}
-	if !cfg.HuggingFace.Enabled {
-		t.Error("HuggingFace should stay enabled by default for the private module build")
+	if cfg.HuggingFace.Enabled {
+		t.Error("HuggingFace should stay disabled by default for the public module build")
 	}
 	if cfg.HuggingFace.Model != "openai/whisper-large-v3" {
 		t.Errorf("default HF model = %q", cfg.HuggingFace.Model)
@@ -1063,7 +1063,7 @@ func TestInstallModeConstants(t *testing.T) {
 	}
 }
 
-func TestManagedHuggingFaceAvailableInBuild_DefaultsToPrivateModuleWhenUnset(t *testing.T) {
+func TestManagedHuggingFaceAvailableInBuild_PublicModuleFallbackDefaultsDisabled(t *testing.T) {
 	restoreBuild := OverrideManagedHuggingFaceBuildForTests("")
 	defer restoreBuild()
 
@@ -1075,8 +1075,8 @@ func TestManagedHuggingFaceAvailableInBuild_DefaultsToPrivateModuleWhenUnset(t *
 		readBuildInfo = prevReadBuildInfo
 	}()
 
-	if !ManagedHuggingFaceAvailableInBuild() {
-		t.Fatal("ManagedHuggingFaceAvailableInBuild() = false, want true for private module fallback")
+	if ManagedHuggingFaceAvailableInBuild() {
+		t.Fatal("ManagedHuggingFaceAvailableInBuild() = true, want false for public module fallback")
 	}
 }
 
