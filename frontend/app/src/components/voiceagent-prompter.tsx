@@ -1,10 +1,9 @@
-import { useCallback, useEffect, useRef, useState, type CSSProperties, type RefObject } from 'react'
+import { useCallback, useEffect, useRef, useState, type CSSProperties } from 'react'
 import { type AgentState } from '@livekit/components-react'
 import { Bot, ChevronDown, ChevronUp, Headphones, MessageSquareText, Play, Square, Waves } from 'lucide-react'
 
 import { AgentAudioVisualizerRadial } from '@/components/agent-audio-visualizer-radial'
 import { DesktopWindowFrame } from '@/components/desktop-window-frame'
-import { SpeechKitAuraOrb } from '@/components/speechkit-aura-orb'
 import { useDesktopTheme } from '@/lib/desktop-theme'
 
 type PrompterMode = 'assist' | 'voice_agent'
@@ -64,7 +63,7 @@ const modeChrome = {
   assist: {
     appLabel: 'Assist',
     title: 'Assist',
-    subtitle: 'One-shot output surface',
+    subtitle: 'Side panel',
     emptyText: 'Waiting for request...',
     icon: MessageSquareText,
     userIcon: Bot,
@@ -73,7 +72,7 @@ const modeChrome = {
   voice_agent: {
     appLabel: 'Voice Agent',
     title: 'Voice Agent',
-    subtitle: 'Realtime dialog surface',
+    subtitle: 'Live transcript',
     emptyText: 'Waiting for conversation...',
     icon: Headphones,
     userIcon: Headphones,
@@ -414,113 +413,48 @@ export function VoiceAgentPrompter() {
         </div>
       ) : mode === 'voice_agent' ? (
         <div className="flex h-full flex-col gap-4 overflow-y-auto px-4 py-4">
-          <ModeSurfaceHeader
-            mode={mode}
-            statusLabel={statusLabel}
-            detail={voiceAgentDetailForState(state, liveNotice)}
-          />
-
-          <SpeechKitAuraOrb
-            state={resolveVoiceAgentOrbState(state)}
-            userLevel={activityLevels.user}
-            assistantLevel={activityLevels.assistant}
-            className="mx-auto w-full max-w-[440px]"
-          />
+          {liveNotice ? (
+            <div className="flex justify-center">
+              <span className="rounded-full border border-[color:var(--sk-panel-border)] bg-[color:var(--sk-surface-2)] px-3 py-1 text-[11px] font-medium uppercase tracking-[0.18em] text-[color:var(--sk-text-muted)]/80">
+                {liveNotice}
+              </span>
+            </div>
+          ) : null}
 
           <LiveTurnSlot
             role="user"
             turn={liveTurns.user}
             state={state}
             level={activityLevels.user}
-            compact
           />
           <LiveTurnSlot
             role="assistant"
             turn={liveTurns.assistant}
             state={state}
             level={activityLevels.assistant}
-            compact
           />
         </div>
       ) : (
-        <AssistOutputView
-          chrome={chrome}
-          messages={messages}
-          scrollRef={scrollRef}
+        <div
+          ref={scrollRef}
           onScroll={onScroll}
-          icon={HeaderIcon}
-        />
+          className="flex h-full flex-col gap-3 overflow-y-auto px-4 py-4"
+        >
+          {messages.length === 0 ? (
+            <div className="flex flex-1 flex-col items-center justify-center gap-3 text-center">
+              <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-[color:var(--sk-accent-soft)] text-[color:var(--sk-accent)]">
+                <HeaderIcon className="h-6 w-6" />
+              </div>
+              <p className="text-sm italic text-[color:var(--sk-text-muted)]/80">{chrome.emptyText}</p>
+            </div>
+          ) : null}
+
+          {messages.map((message) => (
+            <PrompterBubble key={message.id} message={message} mode={mode} />
+          ))}
+        </div>
       )}
     </DesktopWindowFrame>
-  )
-}
-
-function ModeSurfaceHeader({
-  mode,
-  statusLabel,
-  detail,
-}: {
-  mode: PrompterMode
-  statusLabel: string
-  detail: string
-}) {
-  const chrome = modeChrome[mode]
-
-  return (
-    <div className="flex items-end justify-between gap-3 border-b border-[color:var(--sk-panel-border)] pb-3">
-      <div className="min-w-0">
-        <p className="text-[11px] font-semibold uppercase tracking-[0.24em] text-[color:var(--sk-text-muted)]/72">
-          {chrome.title}
-        </p>
-        <p className="mt-1 text-sm text-[color:var(--sk-text-muted)]/84">
-          {detail}
-        </p>
-      </div>
-      <div className="shrink-0 rounded-full border border-[color:var(--sk-panel-border)] bg-[color:var(--sk-surface-2)] px-3 py-1.5 text-[11px] font-medium text-[color:var(--sk-text-muted)]/84">
-        {statusLabel}
-      </div>
-    </div>
-  )
-}
-
-function AssistOutputView({
-  chrome,
-  messages,
-  scrollRef,
-  onScroll,
-  icon: HeaderIcon,
-}: {
-  chrome: (typeof modeChrome)['assist']
-  messages: PrompterMessage[]
-  scrollRef: RefObject<HTMLDivElement | null>
-  onScroll: () => void
-  icon: typeof Bot
-}) {
-  return (
-    <div
-      ref={scrollRef}
-      onScroll={onScroll}
-      className="flex h-full flex-col gap-3 overflow-y-auto px-4 py-4"
-    >
-      <ModeSurfaceHeader
-        mode="assist"
-        statusLabel={chrome.subtitle}
-        detail="One-shot utilities, code words, and output-ready text."
-      />
-
-      {messages.length === 0 ? (
-        <div className="flex flex-1 flex-col items-center justify-center gap-3 text-center">
-          <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-[color:var(--sk-accent-soft)] text-[color:var(--sk-accent)]">
-            <HeaderIcon className="h-6 w-6" />
-          </div>
-          <p className="text-sm italic text-[color:var(--sk-text-muted)]/80">{chrome.emptyText}</p>
-        </div>
-      ) : null}
-
-      {messages.map((message) => (
-        <PrompterBubble key={message.id} message={message} mode="assist" />
-      ))}
-    </div>
   )
 }
 
@@ -529,13 +463,11 @@ function LiveTurnSlot({
   turn,
   state,
   level,
-  compact = false,
 }: {
   role: LiveSpeakerRole
   turn: LiveTurn | null
   state: PrompterState
   level: number
-  compact?: boolean
 }) {
   const meta = liveSlotMeta[role]
   const active = liveSlotIsActive(role, state, level)
@@ -553,7 +485,7 @@ function LiveTurnSlot({
       }`}
     >
       <div className="flex items-start gap-4">
-        <div className={`flex shrink-0 items-center justify-center rounded-[22px] border border-[color:var(--sk-panel-border)] bg-[color:var(--sk-surface-1)] ${compact ? 'h-12 w-12' : 'h-16 w-16'}`}>
+        <div className="flex h-16 w-16 shrink-0 items-center justify-center rounded-[22px] border border-[color:var(--sk-panel-border)] bg-[color:var(--sk-surface-1)]">
           <AgentAudioVisualizerRadial
             size="sm"
             state={visualizerState}
@@ -587,53 +519,6 @@ function LiveTurnSlot({
       </div>
     </section>
   )
-}
-
-function voiceAgentDetailForState(state: PrompterState, liveNotice: string | null) {
-  if (liveNotice) {
-    return liveNotice
-  }
-
-  switch (state) {
-    case 'connecting':
-      return 'Bringing the realtime session online.'
-    case 'listening':
-      return 'Listening for the next idea.'
-    case 'processing':
-      return 'Thinking in realtime.'
-    case 'speaking':
-      return 'Responding live.'
-    case 'ready':
-      return 'The conversation is ready for the next turn.'
-    case 'deactivating':
-      return 'Shutting down the live dialog.'
-    case 'error':
-      return 'The voice session needs attention.'
-    case 'inactive':
-    default:
-      return 'Waiting for a voice session to begin.'
-  }
-}
-
-function resolveVoiceAgentOrbState(state: PrompterState) {
-  switch (state) {
-    case 'connecting':
-      return 'connecting'
-    case 'listening':
-      return 'listening'
-    case 'processing':
-      return 'processing'
-    case 'speaking':
-      return 'speaking'
-    case 'ready':
-    case 'deactivating':
-      return 'settling'
-    case 'error':
-      return 'error'
-    case 'inactive':
-    default:
-      return 'inactive'
-  }
 }
 
 function PrompterBubble({

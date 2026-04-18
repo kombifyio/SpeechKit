@@ -378,48 +378,6 @@ func TestDesktopInputControllerVoiceAgentKeyUpDoesNotDispatchPTTCommands(t *test
 	}
 }
 
-func TestDesktopInputControllerVoiceAgentDoesNotFallbackToCapturePipeline(t *testing.T) {
-	bus := &testDesktopCommandBus{}
-	state := &appState{}
-	controller := desktopInputController{
-		commands:  bus,
-		recording: testRecordingState{recording: false},
-		state:     state,
-		cfg: &config.Config{
-			VoiceAgent: config.VoiceAgentConfig{
-				PipelineFallback: true,
-			},
-		},
-	}
-
-	controller.handleHotkey(context.Background(), hotkey.Event{
-		Binding: modeVoiceAgent,
-		Type:    hotkey.EventKeyDown,
-	})
-
-	if got := len(bus.commands); got != 1 {
-		t.Fatalf("commands = %d, want 1 active-mode command when voice agent is unavailable", got)
-	}
-	if got, want := bus.commands[0].Type, speechkit.CommandSetActiveMode; got != want {
-		t.Fatalf("commands[0].Type = %q, want %q", got, want)
-	}
-	for _, command := range bus.commands {
-		if command.Type == speechkit.CommandStartDictation || command.Type == speechkit.CommandStopDictation {
-			t.Fatalf("unexpected capture pipeline command: %+v", command)
-		}
-	}
-
-	state.mu.Lock()
-	logEntries := append([]logEntry(nil), state.logEntries...)
-	state.mu.Unlock()
-	if len(logEntries) == 0 {
-		t.Fatal("expected unavailable voice agent log entry")
-	}
-	if got := logEntries[len(logEntries)-1].Message; got != "Voice Agent: no Google API key configured" {
-		t.Fatalf("last log message = %q, want missing Google API key guidance", got)
-	}
-}
-
 func TestDesktopInputControllerAssistHotkeyStartsDictationAndLogsRoute(t *testing.T) {
 	bus := &testDesktopCommandBus{}
 	recording := &mutableRecordingState{}

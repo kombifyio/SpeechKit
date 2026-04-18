@@ -90,6 +90,11 @@ func (c desktopInputController) handleAutoStartTick(ctx context.Context) {
 func (c desktopInputController) handleHotkey(ctx context.Context, evt hotkey.Event) {
 	switch binding := c.resolveHotkeyBinding(evt.Binding); binding {
 	case modeVoiceAgent:
+		if c.shouldUseVoiceAgentPipelineFallback() {
+			c.logVoiceAgentRoute(evt.Binding, "pipeline fallback capture", "warn", evt.Type)
+			c.routeCaptureHotkey(ctx, modeVoiceAgent, evt)
+			return
+		}
 		if c.currentVoiceAgentSession() != nil { //nolint:contextcheck // currentVoiceAgentSession is a stateful getter, not a context-passing call
 			c.routeVoiceAgentHotkey(ctx, evt)
 			return

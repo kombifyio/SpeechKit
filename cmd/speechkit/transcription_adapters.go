@@ -133,10 +133,34 @@ func (o desktopTranscriptOutput) Deliver(ctx context.Context, transcript speechk
 	case modeVoiceAgent:
 		return o.deliverVoiceAgentFallback(ctx, transcript, target)
 	case modeDictate, modeNone:
-		return o.deliverPassthrough(ctx, transcript, target)
 	default:
 		return o.deliverAgentFlow(ctx, transcript, modeAssist)
 	}
+
+	// Dictate mode may still use global quick actions before pass-through.
+	if o.interceptor != nil {
+		handled, err := o.interceptor.Intercept(ctx, transcript, target)
+		if err != nil {
+			return err
+		}
+		if handled {
+			return nil
+		}
+	}
+
+	// Dictate mode -- pass through to clipboard.
+	if o.handler == nil {
+		return nil
+	}
+
+	return o.handler.Handle(ctx, &stt.Result{
+		Text:       transcript.Text,
+		Language:   transcript.Language,
+		Duration:   transcript.Duration,
+		Provider:   transcript.Provider,
+		Model:      transcript.Model,
+		Confidence: transcript.Confidence,
+	}, outputTarget(target))
 }
 
 func (o desktopTranscriptOutput) currentMode() string {
@@ -186,15 +210,16 @@ func (o desktopTranscriptOutput) failConversation(mode, userText, errText string
 }
 
 func (o desktopTranscriptOutput) deliverVoiceAgentFallback(ctx context.Context, transcript speechkit.Transcript, target any) error {
-	_ = ctx
-	_ = target
-
-	slog.Warn("voice_agent mode received transcript on the capture pipeline; realtime session required")
-	o.failConversation(
-		modeVoiceAgent,
-		transcript.Text,
-		"Voice Agent requires a live realtime session. Start the Voice Agent session or check Settings > Voice Agent.",
-	)
+	if o.currentAgentFlow() != nil {
+		slog.Warn("voice_agent mode active without live session â€” using agent flow fallback")
+		return o.deliverAgentFlow(ctx, transcript, modeVoiceAgent)
+	}
+	if o.currentAssistPipeline() != nil {
+		slog.Warn("voice_agent mode active without live session â€” using assist pipeline fallback")
+		return o.deliverAssistForMode(ctx, transcript, modeVoiceAgent)
+	}
+	slog.Warn("voice_agent mode active but no fallback pipeline configured")
+	o.failConversation(modeVoiceAgent, transcript.Text, "Voice Agent fallback is not configured. Check Settings > Voice Agent.")
 	return nil
 }
 
@@ -275,21 +300,6 @@ func (o desktopTranscriptOutput) deliverAssistForMode(ctx context.Context, trans
 	}
 
 	return nil
-}
-
-func (o desktopTranscriptOutput) deliverPassthrough(ctx context.Context, transcript speechkit.Transcript, target any) error {
-	if o.handler == nil {
-		return nil
-	}
-
-	return o.handler.Handle(ctx, &stt.Result{
-		Text:       transcript.Text,
-		Language:   transcript.Language,
-		Duration:   transcript.Duration,
-		Provider:   transcript.Provider,
-		Model:      transcript.Model,
-		Confidence: transcript.Confidence,
-	}, outputTarget(target))
 }
 
 // deliverAgentFlow uses the legacy agent Genkit flow (no TTS).
