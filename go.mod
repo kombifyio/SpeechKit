@@ -16,7 +16,7 @@ require (
 	github.com/yalue/onnxruntime_go v1.27.0
 	golang.org/x/sys v0.42.0
 	golang.org/x/text v0.33.0
-	google.golang.org/genai v1.52.0
+	google.golang.org/genai v1.54.0
 	modernc.org/sqlite v1.47.0
 )
 
