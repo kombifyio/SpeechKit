@@ -7,17 +7,17 @@ toolchain go1.26.1
 require (
 	github.com/BurntSushi/toml v1.6.0
 	github.com/ebitengine/oto/v3 v3.4.0
-	github.com/firebase/genkit/go v1.5.0
+	github.com/firebase/genkit/go v1.6.1
 	github.com/gen2brain/malgo v0.11.24
 	github.com/google/uuid v1.6.0
 	github.com/hajimehoshi/go-mp3 v0.3.4
 	github.com/jackc/pgx/v5 v5.9.1
 	github.com/wailsapp/wails/v3 v3.0.0-alpha.74
 	github.com/yalue/onnxruntime_go v1.27.0
-	golang.org/x/sys v0.42.0
-	golang.org/x/text v0.33.0
-	google.golang.org/genai v1.52.0
-	modernc.org/sqlite v1.47.0
+	golang.org/x/sys v0.43.0
+	golang.org/x/text v0.36.0
+	google.golang.org/genai v1.54.0
+	modernc.org/sqlite v1.49.1
 )
 
 require (
@@ -92,13 +92,13 @@ require (
 	go.opentelemetry.io/otel/trace v1.40.0 // indirect
 	golang.org/x/crypto v0.47.0 // indirect
 	golang.org/x/net v0.49.0 // indirect
-	golang.org/x/sync v0.19.0 // indirect
+	golang.org/x/sync v0.20.0 // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20250603155806-513f23925822 // indirect
 	google.golang.org/grpc v1.73.0 // indirect
 	google.golang.org/protobuf v1.36.6 // indirect
 	gopkg.in/warnings.v0 v0.1.2 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
-	modernc.org/libc v1.70.0 // indirect
+	modernc.org/libc v1.72.0 // indirect
 	modernc.org/mathutil v1.7.1 // indirect
 	modernc.org/memory v1.11.0 // indirect
 )
