@@ -18,7 +18,28 @@ $prepareWebView2RuntimeScript = Join-Path $scriptDir 'prepare-webview2-runtime.p
 $cacheDir = Join-Path $projectDir '.cache'
 $goCacheDir = Join-Path $cacheDir 'go-build'
 $goTmpDir = Join-Path $cacheDir 'go-tmp'
-$mingwBinDir = 'C:\msys64\mingw64\bin'
+function Resolve-MinGWBinDir {
+    $defaultBinDir = 'C:\msys64\mingw64\bin'
+    if (Test-Path (Join-Path $defaultBinDir 'gcc.exe')) {
+        return $defaultBinDir
+    }
+
+    if (-not [string]::IsNullOrWhiteSpace($env:MSYSTEM_PREFIX)) {
+        $msystemBinDir = Join-Path $env:MSYSTEM_PREFIX 'bin'
+        if (Test-Path (Join-Path $msystemBinDir 'gcc.exe')) {
+            return $msystemBinDir
+        }
+    }
+
+    $gccCommand = Get-Command 'gcc.exe' -ErrorAction SilentlyContinue
+    if ($null -ne $gccCommand -and -not [string]::IsNullOrWhiteSpace($gccCommand.Source)) {
+        return (Split-Path -Parent $gccCommand.Source)
+    }
+
+    return $defaultBinDir
+}
+
+$mingwBinDir = Resolve-MinGWBinDir
 $mingwGcc = Join-Path $mingwBinDir 'gcc.exe'
 $mingwGxx = Join-Path $mingwBinDir 'g++.exe'
 
