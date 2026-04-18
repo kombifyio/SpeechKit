@@ -36,7 +36,7 @@ func startLocalProviderWithRetry(ctx context.Context, state *appState, r *router
 	}
 
 	if provider.IsReady() {
-		syncRuntimeProviders(state, r)
+		syncRuntimeProviders(ctx, state, r)
 		return
 	}
 
@@ -48,12 +48,12 @@ func startLocalProviderWithRetry(ctx context.Context, state *appState, r *router
 		}
 		if !status.BinaryFound {
 			runtimeLog(state, "Local STT unavailable: whisper-server binary missing. Re-install SpeechKit or download the model from Settings.", "error")
-			syncRuntimeProviders(state, r)
+			syncRuntimeProviders(ctx, state, r)
 			return
 		}
 		if !status.ModelFound {
-			runtimeLog(state, "Local STT unavailable: model file missing or corrupt. Download a model from Settings → STT.", "error")
-			syncRuntimeProviders(state, r)
+			runtimeLog(state, "Local STT unavailable: model file missing or corrupt. Download a model from Settings â†’ STT.", "error")
+			syncRuntimeProviders(ctx, state, r)
 			return
 		}
 	} else {
@@ -67,12 +67,12 @@ func startLocalProviderWithRetry(ctx context.Context, state *appState, r *router
 			runtimeLog(state, fmt.Sprintf("Retrying local STT startup (%d/%d)...", attempt, maxAttempts), "warn")
 		}
 
-		if err := provider.StartServer(ctx); err == nil {
-			runtimeLog(state, "Local STT ready", "success")
-			syncRuntimeProviders(state, r)
-			return
-		} else {
+		if err := provider.StartServer(ctx); err != nil {
 			runtimeLog(state, fmt.Sprintf("Local STT startup attempt %d/%d failed: %v", attempt, maxAttempts, err), "warn")
+		} else {
+			runtimeLog(state, "Local STT ready", "success")
+			syncRuntimeProviders(ctx, state, r)
+			return
 		}
 
 		if attempt == maxAttempts {
@@ -85,7 +85,7 @@ func startLocalProviderWithRetry(ctx context.Context, state *appState, r *router
 		}
 	}
 
-	syncRuntimeProviders(state, r)
+	syncRuntimeProviders(ctx, state, r)
 	runtimeLog(state, "Local STT unavailable after retries", "error")
 }
 

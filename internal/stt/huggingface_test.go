@@ -12,12 +12,11 @@ import (
 )
 
 func newTestHFProvider(serverURL string) *HuggingFaceProvider {
-	return &HuggingFaceProvider{
-		Model:   "test-model",
-		Token:   "test-token",
-		BaseURL: serverURL,
-		client:  &http.Client{Timeout: 5 * time.Second},
-	}
+	p := NewHuggingFaceProvider("test-model", "test-token")
+	p.BaseURL = serverURL
+	p.Validation = testValidation
+	p.client.Timeout = 5 * time.Second
+	return p
 }
 
 func TestHF_Transcribe_Success(t *testing.T) {

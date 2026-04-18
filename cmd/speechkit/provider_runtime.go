@@ -16,7 +16,7 @@ type readinessProvider interface {
 
 // runtimeAvailableProviders returns providers that are configured and currently usable.
 // Cloud providers are considered available when configured; local is only listed once ready.
-func runtimeAvailableProviders(r *router.Router) []string {
+func runtimeAvailableProviders(ctx context.Context, r *router.Router) []string {
 	if r == nil {
 		return nil
 	}
@@ -28,7 +28,7 @@ func runtimeAvailableProviders(r *router.Router) []string {
 
 	localReady := false
 	if local := r.Local(); local != nil {
-		localReady = providerReady(local)
+		localReady = providerReady(ctx, local)
 	}
 
 	providers := make([]string, 0, len(configured))
@@ -44,27 +44,26 @@ func runtimeAvailableProviders(r *router.Router) []string {
 	return providers
 }
 
-func syncRuntimeProviders(state *appState, r *router.Router) []string {
-	providers := runtimeAvailableProviders(r)
+func syncRuntimeProviders(ctx context.Context, state *appState, r *router.Router) {
+	providers := runtimeAvailableProviders(ctx, r)
 	if state == nil {
-		return providers
+		return
 	}
 
 	state.mu.Lock()
 	state.providers = append([]string(nil), providers...)
 	state.syncSpeechKitSnapshotLocked()
 	state.mu.Unlock()
-	return providers
 }
 
-func providerReady(provider stt.STTProvider) bool {
+func providerReady(ctx context.Context, provider stt.STTProvider) bool {
 	if provider == nil {
 		return false
 	}
 	if readyProvider, ok := provider.(readinessProvider); ok {
 		return readyProvider.IsReady()
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), providerHealthTimeout)
+	ctx, cancel := context.WithTimeout(ctx, providerHealthTimeout)
 	defer cancel()
 	return provider.Health(ctx) == nil
 }

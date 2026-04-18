@@ -71,6 +71,7 @@ func registerAuthRoutes(mux *http.ServeMux) {
 			_ = json.NewEncoder(w).Encode(map[string]string{"error": "Auth not available"})
 			return
 		}
+		r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
 		_ = r.ParseForm()
 		deviceCode := r.FormValue("device_code")
 		_, err := provider.PollDeviceCode(r.Context(), deviceCode)
@@ -123,7 +124,7 @@ func registerAppRoutes(mux *http.ServeMux, cfgPath string, state *appState, inst
 			"version": AppVersion,
 		}
 		// Check for updates (non-blocking, cached)
-		if latest, ok := cachedLatestRelease(); ok && latest.Version != "" && isNewerReleaseVersion(latest.Version, AppVersion) {
+		if latest, ok := cachedLatestRelease(); ok && latest.Version != "" && isNewerReleaseVersion(latest.Version, AppVersion) { //nolint:contextcheck // cachedLatestRelease triggers background refresh goroutine that must not be bound to request context
 			resp["latestVersion"] = latest.Version
 			resp["updateURL"] = latest.ReleaseURL
 			if latest.DownloadURL != "" {
@@ -149,12 +150,13 @@ func registerAppRoutes(mux *http.ServeMux, cfgPath string, state *appState, inst
 			w.WriteHeader(http.StatusMethodNotAllowed)
 			return
 		}
+		r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
 		if err := r.ParseForm(); err != nil {
 			http.Error(w, "bad request", http.StatusBadRequest)
 			return
 		}
 
-		latest, ok := cachedLatestRelease()
+		latest, ok := cachedLatestRelease() //nolint:contextcheck // background refresh goroutine must not be bound to request context
 		if !ok || latest.Version == "" || !isNewerReleaseVersion(latest.Version, AppVersion) {
 			http.Error(w, "no update available", http.StatusNotFound)
 			return
@@ -170,7 +172,7 @@ func registerAppRoutes(mux *http.ServeMux, cfgPath string, state *appState, inst
 			return
 		}
 
-		job := updateManager.Start(latest, resolveAppUpdateDir(cfgPath))
+		job := updateManager.Start(latest, resolveAppUpdateDir(cfgPath)) //nolint:contextcheck // download job runs in background and must not be bound to request context
 		w.Header().Set("Content-Type", "application/json; charset=utf-8")
 		_ = json.NewEncoder(w).Encode(job)
 	})
@@ -180,6 +182,7 @@ func registerAppRoutes(mux *http.ServeMux, cfgPath string, state *appState, inst
 			w.WriteHeader(http.StatusMethodNotAllowed)
 			return
 		}
+		r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
 		if err := r.ParseForm(); err != nil {
 			http.Error(w, "bad request", http.StatusBadRequest)
 			return
@@ -202,6 +205,7 @@ func registerAppRoutes(mux *http.ServeMux, cfgPath string, state *appState, inst
 			w.WriteHeader(http.StatusMethodNotAllowed)
 			return
 		}
+		r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
 		if err := r.ParseForm(); err != nil {
 			http.Error(w, "bad request", http.StatusBadRequest)
 			return

@@ -1,19 +1,19 @@
 package main
 
 import (
-	"context"
-	"fmt"
-	"log/slog"
-	"math"
-	"strings"
 	"time"
 
-	"github.com/kombifyio/SpeechKit/internal/audio"
-	"github.com/kombifyio/SpeechKit/internal/config"
-	"github.com/kombifyio/SpeechKit/internal/secrets"
-	"github.com/kombifyio/SpeechKit/internal/tray"
 	"github.com/wailsapp/wails/v3/pkg/application"
+
+	"github.com/kombifyio/SpeechKit/internal/models"
+	"github.com/kombifyio/SpeechKit/internal/tray"
 )
+
+// This file holds the shared types, constants, and interfaces for the overlay
+// subsystem. The implementation is split across overlay_layout.go (pure
+// geometry + window options), overlay_lifecycle.go (appState show/hide
+// methods), overlay_prompter.go (prompter + voice-agent stream), and
+// overlay_snapshot.go (state observation + snapshots).
 
 const (
 	// Legacy single-window overlay size. Kept for compatibility with older tests/helpers.
@@ -36,8 +36,8 @@ const (
 	assistBubbleWidth  = 450
 	assistBubbleHeight = 120
 
-	prompterWidth  = 420
-	prompterHeight = 500
+	prompterWidth  = 860
+	prompterHeight = 640
 
 	overlaySpeakingThreshold = 0.18
 	overlayVisualizerGain    = 14.0
@@ -51,10 +51,11 @@ type overlayHostMetrics struct {
 }
 
 var (
-	pillAnchorMetrics = overlayHostMetrics{Width: pillAnchorWidth, Height: pillAnchorHeight}
-	pillPanelMetrics  = overlayHostMetrics{Width: pillPanelWidth, Height: pillPanelHeight}
-	dotAnchorMetrics  = overlayHostMetrics{Width: dotAnchorSize, Height: dotAnchorSize}
-	radialMenuMetrics = overlayHostMetrics{Width: radialMenuSize, Height: radialMenuSize}
+	overlayWindowMetrics = overlayHostMetrics{Width: overlayWindowSize, Height: overlayWindowSize}
+	pillAnchorMetrics    = overlayHostMetrics{Width: pillAnchorWidth, Height: pillAnchorHeight}
+	pillPanelMetrics     = overlayHostMetrics{Width: pillPanelWidth, Height: pillPanelHeight}
+	dotAnchorMetrics     = overlayHostMetrics{Width: dotAnchorSize, Height: dotAnchorSize}
+	radialMenuMetrics    = overlayHostMetrics{Width: radialMenuSize, Height: radialMenuSize}
 )
 
 type screenBounds struct {
@@ -68,6 +69,7 @@ type overlayScreenLocator interface {
 type overlayWindow interface {
 	Show() application.Window
 	Hide() application.Window
+	Minimise() application.Window
 	IsVisible() bool
 	ExecJS(string)
 	SetIgnoreMouseEvents(bool) application.Window
@@ -88,988 +90,90 @@ type trayStateSetter interface {
 	SetState(tray.State)
 }
 
+type modeAvailabilitySnapshot struct {
+	Dictate    bool `json:"dictate"`
+	Assist     bool `json:"assist"`
+	VoiceAgent bool `json:"voice_agent"`
+}
+
 // bubbleRegion is retained for legacy tests only.
 type bubbleRegion struct {
 	X, Y, W, H int
 }
 
 type overlaySnapshot struct {
-	State                 string            `json:"state"`
-	Phase                 string            `json:"phase"`
-	Text                  string            `json:"text"`
-	Level                 float64           `json:"level"`
-	Visible               bool              `json:"visible"`
-	Visualizer            string            `json:"visualizer"`
-	Design                string            `json:"design"`
-	Hotkey                string            `json:"hotkey"`
-	DictateHotkey         string            `json:"dictateHotkey"`
-	AssistHotkey          string            `json:"assistHotkey"`
-	VoiceAgentHotkey      string            `json:"voiceAgentHotkey"`
-	AgentHotkey           string            `json:"agentHotkey"`
-	ActiveMode            string            `json:"activeMode"`
-	Position              string            `json:"position"`
-	Movable               bool              `json:"movable"`
-	PositionFreeX         int               `json:"positionFreeX"`
-	PositionFreeY         int               `json:"positionFreeY"`
-	LastTranscription     string            `json:"lastTranscription"`
-	QuickNoteMode         bool              `json:"quickNoteMode"`
-	AudioDeviceID         string            `json:"audioDeviceId"`
-	SelectedAudioDeviceID string            `json:"selectedAudioDeviceId"`
-	ActiveProfiles        map[string]string `json:"activeProfiles"`
+	State                    string                   `json:"state"`
+	Phase                    string                   `json:"phase"`
+	Text                     string                   `json:"text"`
+	Level                    float64                  `json:"level"`
+	Visible                  bool                     `json:"visible"`
+	Visualizer               string                   `json:"visualizer"`
+	Design                   string                   `json:"design"`
+	Hotkey                   string                   `json:"hotkey"`
+	DictateHotkey            string                   `json:"dictateHotkey"`
+	AssistHotkey             string                   `json:"assistHotkey"`
+	VoiceAgentHotkey         string                   `json:"voiceAgentHotkey"`
+	DictateHotkeyBehavior    string                   `json:"dictateHotkeyBehavior"`
+	AssistHotkeyBehavior     string                   `json:"assistHotkeyBehavior"`
+	VoiceAgentHotkeyBehavior string                   `json:"voiceAgentHotkeyBehavior"`
+	ModeEnabled              modeAvailabilitySnapshot `json:"modeEnabled"`
+	AvailableModes           modeAvailabilitySnapshot `json:"availableModes"`
+	AgentHotkey              string                   `json:"agentHotkey"`
+	ActiveMode               string                   `json:"activeMode"`
+	Position                 string                   `json:"position"`
+	Movable                  bool                     `json:"movable"`
+	PositionFreeX            int                      `json:"positionFreeX"`
+	PositionFreeY            int                      `json:"positionFreeY"`
+	LastTranscription        string                   `json:"lastTranscription"`
+	QuickNoteMode            bool                     `json:"quickNoteMode"`
+	AudioDeviceID            string                   `json:"audioDeviceId"`
+	SelectedAudioDeviceID    string                   `json:"selectedAudioDeviceId"`
+	ActiveProfiles           map[string]string        `json:"activeProfiles"`
 }
 
 type settingsSnapshot struct {
-	OverlayEnabled        bool                               `json:"overlayEnabled"`
-	OverlayPosition       string                             `json:"overlayPosition"`
-	OverlayMovable        bool                               `json:"overlayMovable"`
-	OverlayFreeX          int                                `json:"overlayFreeX"`
-	OverlayFreeY          int                                `json:"overlayFreeY"`
-	StoreBackend          string                             `json:"storeBackend"`
-	SQLitePath            string                             `json:"sqlitePath"`
-	PostgresConfigured    bool                               `json:"postgresConfigured"`
-	PostgresDSN           string                             `json:"postgresDSN,omitempty"`
-	MaxAudioStorageMB     int                                `json:"maxAudioStorageMB"`
-	HFAvailable           bool                               `json:"hfAvailable"`
-	HFEnabled             bool                               `json:"hfEnabled"`
-	HFHasUserToken        bool                               `json:"hfHasUserToken"`
-	HFHasInstallToken     bool                               `json:"hfHasInstallToken"`
-	HFTokenSource         string                             `json:"hfTokenSource"`
-	Hotkey                string                             `json:"hotkey"`
-	DictateHotkey         string                             `json:"dictateHotkey"`
-	AssistHotkey          string                             `json:"assistHotkey"`
-	VoiceAgentHotkey      string                             `json:"voiceAgentHotkey"`
-	AgentHotkey           string                             `json:"agentHotkey"`
-	AgentMode             string                             `json:"agentMode"`
-	ActiveMode            string                             `json:"activeMode"`
-	HFModel               string                             `json:"hfModel"`
-	Visualizer            string                             `json:"visualizer"`
-	Design                string                             `json:"design"`
-	Language              string                             `json:"language"`
-	VocabularyDictionary  string                             `json:"vocabularyDictionary"`
-	SaveAudio             bool                               `json:"saveAudio"`
-	AudioRetentionDays    int                                `json:"audioRetentionDays"`
-	AudioDeviceID         string                             `json:"audioDeviceId"`
-	SelectedAudioDeviceID string                             `json:"selectedAudioDeviceId"`
-	ActiveProfiles        map[string]string                  `json:"activeProfiles"`
-	ProviderCredentials   map[string]providerCredentialState `json:"providerCredentials"`
-}
-
-func newOverlayWindowOptions() application.WebviewWindowOptions {
-	return application.WebviewWindowOptions{
-		Title:          "SpeechKit",
-		Width:          overlayWindowSize,
-		Height:         overlayWindowSize,
-		Frameless:      true,
-		AlwaysOnTop:    true,
-		Hidden:         true,
-		BackgroundType: application.BackgroundTypeTransparent,
-		URL:            "/overlay.html",
-		Windows: application.WindowsWindow{
-			HiddenOnTaskbar: true,
-		},
-	}
-}
-
-func newPillAnchorWindowOptions() application.WebviewWindowOptions {
-	return newOverlayHostWindowOptions("/pill-anchor.html", pillAnchorMetrics)
-}
-
-func newPillPanelWindowOptions() application.WebviewWindowOptions {
-	return newOverlayHostWindowOptions("/pill-panel.html", pillPanelMetrics)
-}
-
-func newDotAnchorWindowOptions() application.WebviewWindowOptions {
-	return newOverlayHostWindowOptions("/dot-anchor.html", dotAnchorMetrics)
-}
-
-func newRadialMenuWindowOptions() application.WebviewWindowOptions {
-	return newOverlayHostWindowOptions("/dot-radial.html", radialMenuMetrics)
-}
-
-func newAssistBubbleWindowOptions() application.WebviewWindowOptions {
-	return application.WebviewWindowOptions{
-		Title:          "",
-		Width:          assistBubbleWidth,
-		Height:         assistBubbleHeight,
-		DisableResize:  true,
-		Frameless:      true,
-		AlwaysOnTop:    true,
-		Hidden:         true,
-		BackgroundType: application.BackgroundTypeTransparent,
-		URL:            "/assist-bubble.html",
-		Windows: application.WindowsWindow{
-			HiddenOnTaskbar: true,
-		},
-	}
-}
-
-func assistBubblePosition(bounds screenBounds) (int, int) {
-	x := bounds.X + (bounds.Width-assistBubbleWidth)/2
-	y := bounds.Y + 60 // Below the top overlay area
-	return x, y
-}
-
-func newPrompterWindowOptions() application.WebviewWindowOptions {
-	return application.WebviewWindowOptions{
-		Title:            "SpeechKit Voice Agent",
-		Width:            prompterWidth,
-		Height:           prompterHeight,
-		MinWidth:         320,
-		MinHeight:        300,
-		DisableResize:    false,
-		Frameless:        false,
-		AlwaysOnTop:      true,
-		Hidden:           true,
-		URL:              "/voiceagent-prompter.html",
-		BackgroundColour: application.NewRGBA(11, 15, 20, 255),
-		Windows: application.WindowsWindow{
-			HiddenOnTaskbar: false,
-			Theme:           application.Dark,
-		},
-	}
-}
-
-func prompterPosition(bounds screenBounds) (int, int) {
-	x := bounds.X + bounds.Width - prompterWidth - 20
-	y := bounds.Y + bounds.Height - prompterHeight - 60
-	return x, y
-}
-
-func newOverlayHostWindowOptions(url string, metrics overlayHostMetrics) application.WebviewWindowOptions {
-	return application.WebviewWindowOptions{
-		Title:          "",
-		Width:          metrics.Width,
-		Height:         metrics.Height,
-		DisableResize:  true,
-		Frameless:      true,
-		AlwaysOnTop:    true,
-		Hidden:         true,
-		BackgroundType: application.BackgroundTypeTransparent,
-		URL:            url,
-		Windows: application.WindowsWindow{
-			HiddenOnTaskbar: true,
-		},
-	}
-}
-
-// Legacy helper retained for compatibility with older tests.
-func overlayWindowPosition(bounds screenBounds, position, visualizer string) (int, int) {
-	half := overlayWindowSize / 2
-
-	if visualizer == "circle" {
-		switch position {
-		case "bottom":
-			cx := bounds.X + bounds.Width/2
-			cy := bounds.Y + bounds.Height - overlayEdgeMargin - dotBubbleH/2
-			return cx - half, cy - half
-		case "left":
-			cx := bounds.X + overlayEdgeMargin + dotBubbleW/2
-			cy := bounds.Y + bounds.Height/2
-			return cx - half, cy - half
-		case "right":
-			cx := bounds.X + bounds.Width - overlayEdgeMargin - dotBubbleW/2
-			cy := bounds.Y + bounds.Height/2
-			return cx - half, cy - half
-		default:
-			cx := bounds.X + bounds.Width/2
-			cy := bounds.Y + overlayEdgeMargin + dotBubbleH/2
-			return cx - half, cy - half
-		}
-	}
-
-	switch position {
-	case "bottom":
-		x := bounds.X + (bounds.Width-overlayWindowSize)/2
-		y := bounds.Y + bounds.Height - overlayWindowSize
-		return x, y
-	case "left":
-		x := bounds.X
-		y := bounds.Y + (bounds.Height-overlayWindowSize)/2
-		return x, y
-	case "right":
-		x := bounds.X + bounds.Width - overlayWindowSize
-		y := bounds.Y + (bounds.Height-overlayWindowSize)/2
-		return x, y
-	default:
-		x := bounds.X + (bounds.Width-overlayWindowSize)/2
-		y := bounds.Y
-		return x, y
-	}
-}
-
-// Legacy helper retained for compatibility with older tests.
-func computeBubbleRegion(wx, wy int, bounds screenBounds, position, visualizer string) bubbleRegion {
-	if visualizer == "circle" {
-		return bubbleRegion{
-			X: wx + (overlayWindowSize-dotBubbleW)/2,
-			Y: wy + (overlayWindowSize-dotBubbleH)/2,
-			W: dotBubbleW, H: dotBubbleH,
-		}
-	}
-
-	bw, bh := pillBubbleW, pillBubbleH
-	switch position {
-	case "bottom":
-		return bubbleRegion{
-			X: wx + (overlayWindowSize-bw)/2,
-			Y: wy + overlayWindowSize - bh - overlayEdgeMargin,
-			W: bw, H: bh,
-		}
-	case "left":
-		return bubbleRegion{
-			X: wx + overlayEdgeMargin,
-			Y: wy + (overlayWindowSize-bh)/2,
-			W: bw, H: bh,
-		}
-	case "right":
-		return bubbleRegion{
-			X: wx + overlayWindowSize - bw - overlayEdgeMargin,
-			Y: wy + (overlayWindowSize-bh)/2,
-			W: bw, H: bh,
-		}
-	default:
-		return bubbleRegion{
-			X: wx + (overlayWindowSize-bw)/2,
-			Y: wy + overlayEdgeMargin,
-			W: bw, H: bh,
-		}
-	}
-}
-
-func overlayAnchoredPosition(bounds screenBounds, position string, metrics overlayHostMetrics) (int, int) {
-	switch position {
-	case "bottom":
-		return bounds.X + (bounds.Width-metrics.Width)/2, bounds.Y + bounds.Height - metrics.Height - overlayEdgeMargin
-	case "left":
-		return bounds.X + overlayEdgeMargin, bounds.Y + (bounds.Height-metrics.Height)/2
-	case "right":
-		return bounds.X + bounds.Width - metrics.Width - overlayEdgeMargin, bounds.Y + (bounds.Height-metrics.Height)/2
-	default:
-		return bounds.X + (bounds.Width-metrics.Width)/2, bounds.Y + overlayEdgeMargin
-	}
-}
-
-func pillAnchorPosition(bounds screenBounds, position string) (int, int) {
-	return overlayAnchoredPosition(bounds, position, pillAnchorMetrics)
-}
-
-func pillPanelPosition(bounds screenBounds, position string) (int, int) {
-	return overlayAnchoredPosition(bounds, position, pillPanelMetrics)
-}
-
-func dotAnchorPosition(bounds screenBounds, position string) (int, int) {
-	return overlayAnchoredPosition(bounds, position, dotAnchorMetrics)
-}
-
-func radialMenuPosition(bounds screenBounds, position string) (int, int) {
-	anchorX, anchorY := dotAnchorPosition(bounds, position)
-	return anchorX + dotAnchorMetrics.Width/2 - radialMenuMetrics.Width/2, anchorY + dotAnchorMetrics.Height/2 - radialMenuMetrics.Height/2
-}
-
-func clampInt(value, minValue, maxValue int) int {
-	if minValue > maxValue {
-		return value
-	}
-	if value < minValue {
-		return minValue
-	}
-	if value > maxValue {
-		return maxValue
-	}
-	return value
-}
-
-func defaultOverlayFreeCenter(bounds screenBounds, visualizer, position string) (int, int) {
-	if visualizer == "circle" {
-		x, y := dotAnchorPosition(bounds, position)
-		return x + dotAnchorMetrics.Width/2, y + dotAnchorMetrics.Height/2
-	}
-	x, y := pillAnchorPosition(bounds, position)
-	return x + pillAnchorMetrics.Width/2, y + pillAnchorMetrics.Height/2
-}
-
-func resolveOverlayFreeCenter(bounds screenBounds, visualizer, position string, centerX, centerY int) (int, int) {
-	if centerX == 0 && centerY == 0 {
-		return defaultOverlayFreeCenter(bounds, visualizer, position)
-	}
-	return centerX, centerY
-}
-
-func overlayFreeWindowPosition(bounds screenBounds, centerX, centerY, width, height int) (int, int) {
-	halfW := width / 2
-	halfH := height / 2
-	clampedX := clampInt(centerX, bounds.X+halfW, bounds.X+bounds.Width-halfW)
-	clampedY := clampInt(centerY, bounds.Y+halfH, bounds.Y+bounds.Height-halfH)
-	return clampedX - halfW, clampedY - halfH
-}
-
-func overlayMonitorKey(bounds screenBounds) string {
-	return fmt.Sprintf("%d,%d,%d,%d", bounds.X, bounds.Y, bounds.Width, bounds.Height)
-}
-
-func cloneOverlayMonitorPositions(input map[string]config.OverlayFreePosition) map[string]config.OverlayFreePosition {
-	if len(input) == 0 {
-		return map[string]config.OverlayFreePosition{}
-	}
-	cloned := make(map[string]config.OverlayFreePosition, len(input))
-	for key, value := range input {
-		cloned[key] = value
-	}
-	return cloned
-}
-
-func resolveOverlayFreeCenterForMonitor(bounds screenBounds, visualizer, position string, centerX, centerY int, positions map[string]config.OverlayFreePosition) (string, int, int) {
-	monitorKey := overlayMonitorKey(bounds)
-	if saved, ok := positions[monitorKey]; ok && (saved.X != 0 || saved.Y != 0) {
-		return monitorKey, saved.X, saved.Y
-	}
-	resolvedX, resolvedY := resolveOverlayFreeCenter(bounds, visualizer, position, centerX, centerY)
-	return monitorKey, resolvedX, resolvedY
-}
-
-func hasDedicatedOverlayWindows(host desktopHostState) bool {
-	return host.pillAnchor != nil || host.pillPanel != nil || host.dotAnchor != nil || host.radialMenu != nil
-}
-
-func activeOverlayAnchor(host desktopHostState, visualizer string) overlayWindow {
-	if visualizer == "circle" {
-		if host.dotAnchor != nil {
-			return host.dotAnchor
-		}
-		return host.overlay
-	}
-	if host.pillAnchor != nil {
-		return host.pillAnchor
-	}
-	return host.overlay
-}
-
-func hideWindow(window overlayWindow) {
-	if window == nil {
-		return
-	}
-	window.Hide()
-}
-
-func showWindow(window overlayWindow) {
-	if window == nil || window.IsVisible() {
-		return
-	}
-	window.Show()
-}
-
-func setOverlayWindowFrame(window overlayWindow, x, y int, metrics overlayHostMetrics) {
-	if window == nil {
-		return
-	}
-	window.SetSize(metrics.Width, metrics.Height)
-	window.SetPosition(x, y)
-}
-
-func positionAnchoredOverlayWindow(window overlayWindow, bounds screenBounds, position string, metrics overlayHostMetrics) {
-	x, y := overlayAnchoredPosition(bounds, position, metrics)
-	setOverlayWindowFrame(window, x, y, metrics)
-}
-
-func positionFreeOverlayWindow(window overlayWindow, bounds screenBounds, centerX, centerY int, metrics overlayHostMetrics) {
-	x, y := overlayFreeWindowPosition(bounds, centerX, centerY, metrics.Width, metrics.Height)
-	setOverlayWindowFrame(window, x, y, metrics)
-}
-
-func (s *appState) positionOverlay() {
-	s.mu.Lock()
-	host := s.desktopHostStateLocked()
-	runtime := s.runtimeStateLocked()
-	s.mu.Unlock()
-
-	locator := host.screenLocator
-	if locator == nil {
-		return
-	}
-	bounds, ok := locator.OverlayScreenBounds()
-	if !ok {
-		return
-	}
-
-	if hasDedicatedOverlayWindows(host) {
-		if runtime.overlayMovable {
-			monitorKey, centerX, centerY := resolveOverlayFreeCenterForMonitor(bounds, runtime.overlayVisualizer, runtime.overlayPosition, runtime.overlayFreeX, runtime.overlayFreeY, runtime.overlayMonitorCenters)
-			s.setOverlayMonitorKey(monitorKey)
-			positionFreeOverlayWindow(host.pillAnchor, bounds, centerX, centerY, pillAnchorMetrics)
-			positionFreeOverlayWindow(host.pillPanel, bounds, centerX, centerY, pillPanelMetrics)
-			positionFreeOverlayWindow(host.dotAnchor, bounds, centerX, centerY, dotAnchorMetrics)
-			positionFreeOverlayWindow(host.radialMenu, bounds, centerX, centerY, radialMenuMetrics)
-			return
-		}
-
-		positionAnchoredOverlayWindow(host.pillAnchor, bounds, runtime.overlayPosition, pillAnchorMetrics)
-		positionAnchoredOverlayWindow(host.pillPanel, bounds, runtime.overlayPosition, pillPanelMetrics)
-		positionAnchoredOverlayWindow(host.dotAnchor, bounds, runtime.overlayPosition, dotAnchorMetrics)
-		if host.radialMenu != nil {
-			x, y := radialMenuPosition(bounds, runtime.overlayPosition)
-			setOverlayWindowFrame(host.radialMenu, x, y, radialMenuMetrics)
-		}
-		return
-	}
-
-	overlay := host.overlay
-	if overlay == nil {
-		return
-	}
-	if runtime.overlayMovable {
-		monitorKey, centerX, centerY := resolveOverlayFreeCenterForMonitor(bounds, runtime.overlayVisualizer, runtime.overlayPosition, runtime.overlayFreeX, runtime.overlayFreeY, runtime.overlayMonitorCenters)
-		s.setOverlayMonitorKey(monitorKey)
-		wx, wy := overlayFreeWindowPosition(bounds, centerX, centerY, overlayWindowSize, overlayWindowSize)
-		overlay.SetPosition(wx, wy)
-		return
-	}
-	wx, wy := overlayWindowPosition(bounds, runtime.overlayPosition, runtime.overlayVisualizer)
-	overlay.SetPosition(wx, wy)
-}
-
-func (s *appState) showActiveOverlayWindow() {
-	s.mu.Lock()
-	host := s.desktopHostStateLocked()
-	runtime := s.runtimeStateLocked()
-	s.mu.Unlock()
-
-	if !runtime.overlayEnabled {
-		s.hideAllOverlayWindows()
-		return
-	}
-
-	s.positionOverlay()
-
-	if hasDedicatedOverlayWindows(host) {
-		hideWindow(host.pillPanel)
-		hideWindow(host.radialMenu)
-		hideWindow(host.overlay)
-		active := activeOverlayAnchor(host, runtime.overlayVisualizer)
-
-		if runtime.overlayVisualizer == "circle" {
-			hideWindow(host.pillAnchor)
-			showWindow(active)
-			return
-		}
-
-		hideWindow(host.dotAnchor)
-		showWindow(active)
-		return
-	}
-
-	showWindow(host.overlay)
-}
-
-func (s *appState) hideAllOverlayWindows() {
-	s.mu.Lock()
-	host := s.desktopHostStateLocked()
-	s.mu.Unlock()
-
-	hideWindow(host.overlay)
-	hideWindow(host.pillAnchor)
-	hideWindow(host.pillPanel)
-	hideWindow(host.dotAnchor)
-	hideWindow(host.radialMenu)
-}
-
-func (s *appState) showPillPanel() {
-	s.positionOverlay()
-
-	s.mu.Lock()
-	host := s.desktopHostStateLocked()
-	runtime := s.runtimeStateLocked()
-	s.mu.Unlock()
-
-	if !runtime.overlayEnabled || runtime.overlayVisualizer == "circle" {
-		return
-	}
-
-	hideWindow(host.overlay)
-	hideWindow(host.pillAnchor)
-	hideWindow(host.dotAnchor)
-	hideWindow(host.radialMenu)
-	showWindow(host.pillPanel)
-}
-
-func (s *appState) hidePillPanel() {
-	s.mu.Lock()
-	host := s.desktopHostStateLocked()
-	runtime := s.runtimeStateLocked()
-	s.mu.Unlock()
-
-	hideWindow(host.pillPanel)
-	if runtime.overlayEnabled && runtime.overlayVisualizer != "circle" {
-		showWindow(activeOverlayAnchor(host, runtime.overlayVisualizer))
-	}
-}
-
-func (s *appState) showRadialMenu() {
-	s.positionOverlay()
-
-	s.mu.Lock()
-	host := s.desktopHostStateLocked()
-	runtime := s.runtimeStateLocked()
-	s.mu.Unlock()
-
-	if !runtime.overlayEnabled || runtime.overlayVisualizer != "circle" {
-		return
-	}
-
-	hideWindow(host.overlay)
-	hideWindow(host.pillAnchor)
-	hideWindow(host.pillPanel)
-	hideWindow(host.dotAnchor)
-	showWindow(host.radialMenu)
-}
-
-func (s *appState) hideRadialMenu() {
-	s.mu.Lock()
-	host := s.desktopHostStateLocked()
-	runtime := s.runtimeStateLocked()
-	s.mu.Unlock()
-
-	hideWindow(host.radialMenu)
-	if runtime.overlayEnabled && runtime.overlayVisualizer == "circle" {
-		showWindow(activeOverlayAnchor(host, runtime.overlayVisualizer))
-	}
-}
-
-func (s *appState) showAssistBubble(text string) {
-	if s == nil {
-		return
-	}
-	s.mu.Lock()
-	bubble := s.assistBubble
-	locator := s.screenLocator
-	s.mu.Unlock()
-
-	if bubble == nil {
-		return
-	}
-
-	// Position the bubble near the top center of the active screen.
-	if locator != nil {
-		if bounds, ok := locator.OverlayScreenBounds(); ok {
-			x, y := assistBubblePosition(bounds)
-			bubble.SetPosition(x, y)
-		}
-	}
-
-	// Show the window and inject text via JS.
-	showWindow(bubble)
-	bubble.SetIgnoreMouseEvents(false)
-	escapedText := escapeJS(text)
-	bubble.ExecJS(fmt.Sprintf(`if(window.__assistBubble){window.__assistBubble.show("%s")}`, escapedText))
-}
-
-func (s *appState) showPrompterWindow() {
-	if s == nil {
-		return
-	}
-	s.mu.Lock()
-	prompter := s.prompterWindow
-	locator := s.screenLocator
-	s.mu.Unlock()
-
-	if prompter == nil {
-		return
-	}
-
-	if locator != nil {
-		if bounds, ok := locator.OverlayScreenBounds(); ok {
-			x, y := prompterPosition(bounds)
-			prompter.SetPosition(x, y)
-		}
-	}
-
-	if !prompter.IsVisible() {
-		prompter.Show()
-	}
-}
-
-func (s *appState) hidePrompterWindow() {
-	if s == nil {
-		return
-	}
-	s.mu.Lock()
-	prompter := s.prompterWindow
-	s.mu.Unlock()
-
-	if prompter != nil {
-		prompter.Hide()
-	}
-}
-
-func (s *appState) sendPrompterMessage(role, text string, done bool) {
-	if s == nil {
-		return
-	}
-	s.mu.Lock()
-	prompter := s.prompterWindow
-	s.mu.Unlock()
-
-	if prompter == nil {
-		return
-	}
-
-	escapedText := escapeJS(text)
-	doneStr := "false"
-	if done {
-		doneStr = "true"
-	}
-	prompter.ExecJS(fmt.Sprintf(
-		`if(window.__prompter){window.__prompter.addMessage({role:"%s",text:"%s",done:%s})}`,
-		role, escapedText, doneStr,
-	))
-}
-
-func (s *appState) clearPrompterMessages() {
-	if s == nil {
-		return
-	}
-	s.mu.Lock()
-	prompter := s.prompterWindow
-	s.mu.Unlock()
-
-	if prompter == nil {
-		return
-	}
-
-	prompter.ExecJS(`if(window.__prompter){window.__prompter.clear()}`)
-}
-
-func (s *appState) updatePrompterState(state string) {
-	if s == nil {
-		return
-	}
-	s.mu.Lock()
-	prompter := s.prompterWindow
-	s.mu.Unlock()
-
-	if prompter == nil {
-		return
-	}
-
-	prompter.ExecJS(fmt.Sprintf(
-		`if(window.__prompter){window.__prompter.updateState("%s")}`,
-		escapeJS(state),
-	))
-}
-
-func (s *appState) startVoiceAgentStream(ctx context.Context) {
-	sp, err := audio.NewStreamPlayer()
-	if err != nil {
-		slog.Error("voice agent stream player init", "err", err)
-		return
-	}
-	s.mu.Lock()
-	old := s.streamPlayer
-	s.streamPlayer = sp
-	s.mu.Unlock()
-
-	if old != nil {
-		old.Close()
-	}
-	sp.Start(ctx)
-}
-
-func (s *appState) stopVoiceAgentStream() {
-	s.mu.Lock()
-	sp := s.streamPlayer
-	s.streamPlayer = nil
-	s.mu.Unlock()
-	if sp != nil {
-		sp.Close()
-	}
-}
-
-func (s *appState) interruptVoiceAgentStream(ctx context.Context) {
-	s.mu.Lock()
-	sp := s.streamPlayer
-	s.mu.Unlock()
-	if sp != nil {
-		sp.StopAndDrain()
-		sp.Start(ctx)
-	}
-}
-
-func (s *appState) writeVoiceAgentAudio(chunk []byte) {
-	s.mu.Lock()
-	sp := s.streamPlayer
-	s.mu.Unlock()
-	if sp != nil {
-		sp.WriteChunk(chunk)
-	}
-}
-
-func (s *appState) doneResetDelayValue() time.Duration {
-	if s.doneResetDelay > 0 {
-		return s.doneResetDelay
-	}
-	return defaultDoneResetDelay
-}
-
-func (s *appState) setLevel(level float64) {
-	var logMessage string
-
-	if level < 0 {
-		level = 0
-	}
-	if level > 1 {
-		level = 1
-	}
-
-	s.mu.Lock()
-	if s.currentState != "recording" {
-		level = 0
-	}
-	if level < s.overlayLevel {
-		level = s.overlayLevel * 0.82
-	}
-	s.overlayLevel = level
-	visualLevel := normalizeOverlayLevel(level)
-	phase := overlayPhase(s.currentState, visualLevel)
-	if phase != s.overlayPhase {
-		logMessage = fmt.Sprintf(
-			"Overlay audio: phase=%s raw=%.3f visual=%.3f",
-			phase, level, visualLevel,
-		)
-	}
-	s.overlayPhase = phase
-	s.syncSpeechKitSnapshotLocked()
-	s.mu.Unlock()
-
-	if logMessage != "" {
-		s.addLog(logMessage, "info")
-	}
-}
-
-func (s *appState) setOverlayEnabled(enabled bool) {
-	s.mu.Lock()
-	s.overlayEnabled = enabled
-	s.syncSpeechKitSnapshotLocked()
-	s.mu.Unlock()
-
-	if enabled {
-		s.setState("idle", "")
-		return
-	}
-
-	s.hideAllOverlayWindows()
-}
-
-func (s *appState) syncOverlayToActiveScreen() {
-	s.mu.Lock()
-	enabled := s.overlayEnabled
-	s.mu.Unlock()
-
-	if !enabled {
-		return
-	}
-
-	s.positionOverlay()
-}
-
-func (s *appState) overlaySnapshot() overlaySnapshot {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	dictateHotkey := s.dictateHotkey
-	if dictateHotkey == "" {
-		dictateHotkey = s.hotkey
-	}
-	assistHotkey := s.assistHotkey
-	voiceAgentHotkey := s.voiceAgentHotkey
-	agentHotkey := legacyAgentHotkeyFromModeBindings(assistHotkey, voiceAgentHotkey, modeAssist)
-	activeMode := normalizeRuntimeMode(s.activeMode, "")
-	audioDeviceID := s.audioDeviceID
-	activeProfiles := cloneStringMap(s.activeProfiles)
-	level := s.overlayLevel
-	if s.currentState != "recording" {
-		level = 0
-	}
-	level = normalizeOverlayLevel(level)
-	phase := s.overlayPhase
-	if phase == "" {
-		phase = overlayPhase(s.currentState, level)
-	}
-
-	return overlaySnapshot{
-		State:                 s.currentState,
-		Phase:                 phase,
-		Text:                  s.overlayText,
-		Level:                 level,
-		Visible:               s.overlayEnabled,
-		Visualizer:            s.overlayVisualizer,
-		Design:                s.overlayDesign,
-		Hotkey:                s.hotkey,
-		DictateHotkey:         dictateHotkey,
-		AssistHotkey:          assistHotkey,
-		VoiceAgentHotkey:      voiceAgentHotkey,
-		AgentHotkey:           agentHotkey,
-		ActiveMode:            activeMode,
-		Position:              s.overlayPosition,
-		Movable:               s.overlayMovable,
-		PositionFreeX:         s.overlayFreeX,
-		PositionFreeY:         s.overlayFreeY,
-		LastTranscription:     s.lastTranscriptionText,
-		QuickNoteMode:         s.quickNoteMode,
-		AudioDeviceID:         audioDeviceID,
-		SelectedAudioDeviceID: audioDeviceID,
-		ActiveProfiles:        activeProfiles,
-	}
-}
-
-func normalizeOverlayLevel(level float64) float64 {
-	if level <= 0 {
-		return 0
-	}
-
-	boosted := math.Pow(math.Min(1, level*overlayVisualizerGain), 0.72)
-	if boosted < overlayVisualizerFloor {
-		return overlayVisualizerFloor
-	}
-	return math.Min(1, boosted)
-}
-
-func overlayPhase(state string, level float64) string {
-	switch state {
-	case "recording":
-		if level >= overlaySpeakingThreshold {
-			return "speaking"
-		}
-		return "listening"
-	case "processing":
-		return "thinking"
-	case "done":
-		return "done"
-	default:
-		return "idle"
-	}
-}
-
-func (s *appState) settingsSnapshot(cfg *config.Config) settingsSnapshot {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	dictateHotkey := s.dictateHotkey
-	if dictateHotkey == "" {
-		if cfg.General.DictateHotkey != "" {
-			dictateHotkey = cfg.General.DictateHotkey
-		} else {
-			dictateHotkey = s.hotkey
-		}
-	}
-	assistHotkey := strings.TrimSpace(s.assistHotkey)
-	if assistHotkey == "" {
-		assistHotkey = strings.TrimSpace(cfg.General.AssistHotkey)
-	}
-	voiceAgentHotkey := strings.TrimSpace(s.voiceAgentHotkey)
-	if voiceAgentHotkey == "" {
-		voiceAgentHotkey = strings.TrimSpace(cfg.General.VoiceAgentHotkey)
-	}
-	agentMode := normalizeAgentMode(cfg.General.AgentMode)
-	agentHotkey := legacyAgentHotkeyFromModeBindings(assistHotkey, voiceAgentHotkey, agentMode)
-	activeMode := normalizeRuntimeMode(s.activeMode, agentMode)
-	if activeMode == modeNone {
-		activeMode = normalizeRuntimeMode(cfg.General.ActiveMode, agentMode)
-	}
-	audioDeviceID := s.audioDeviceID
-	if audioDeviceID == "" {
-		audioDeviceID = cfg.Audio.DeviceID
-	}
-	storeBackend := cfg.Store.Backend
-	if storeBackend == "" {
-		storeBackend = "sqlite"
-	}
-	hfAvailable := config.ManagedHuggingFaceAvailableInBuild()
-	tokenStatus := secrets.TokenStatus{ActiveSource: secrets.TokenSourceNone}
-	if hfAvailable {
-		var err error
-		tokenStatus, err = config.HuggingFaceTokenStatus(cfg)
-		if err != nil {
-			tokenStatus.ActiveSource = "none"
-		}
-	}
-	return settingsSnapshot{
-		OverlayEnabled:        s.overlayEnabled,
-		OverlayPosition:       s.overlayPosition,
-		OverlayMovable:        s.overlayMovable,
-		OverlayFreeX:          s.overlayFreeX,
-		OverlayFreeY:          s.overlayFreeY,
-		StoreBackend:          storeBackend,
-		SQLitePath:            cfg.Store.SQLitePath,
-		PostgresConfigured:    strings.TrimSpace(cfg.Store.PostgresDSN) != "",
-		PostgresDSN:           cfg.Store.PostgresDSN,
-		MaxAudioStorageMB:     cfg.Store.MaxAudioStorageMB,
-		HFAvailable:           hfAvailable,
-		HFEnabled:             hfAvailable && cfg.HuggingFace.Enabled,
-		HFHasUserToken:        tokenStatus.HasUserToken,
-		HFHasInstallToken:     tokenStatus.HasInstallToken,
-		HFTokenSource:         string(tokenStatus.ActiveSource),
-		Hotkey:                dictateHotkey,
-		DictateHotkey:         dictateHotkey,
-		AssistHotkey:          assistHotkey,
-		VoiceAgentHotkey:      voiceAgentHotkey,
-		AgentHotkey:           agentHotkey,
-		AgentMode:             agentMode,
-		ActiveMode:            activeMode,
-		HFModel:               cfg.HuggingFace.Model,
-		Visualizer:            s.overlayVisualizer,
-		Design:                cfg.UI.Design,
-		Language:              cfg.General.Language,
-		VocabularyDictionary:  cfg.Vocabulary.Dictionary,
-		SaveAudio:             cfg.Store.SaveAudio,
-		AudioRetentionDays:    cfg.Store.AudioRetentionDays,
-		AudioDeviceID:         audioDeviceID,
-		SelectedAudioDeviceID: audioDeviceID,
-		ActiveProfiles:        cloneStringMap(s.activeProfiles),
-		ProviderCredentials:   providerCredentialStates(cfg),
-	}
-}
-
-func (s *appState) overlayFreeCenterState() (int, int, map[string]config.OverlayFreePosition) {
-	if s == nil {
-		return 0, 0, map[string]config.OverlayFreePosition{}
-	}
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	return s.overlayFreeX, s.overlayFreeY, cloneOverlayMonitorPositions(s.overlayMonitorCenters)
-}
-
-func (s *appState) setOverlayMonitorKey(key string) {
-	if s == nil {
-		return
-	}
-	s.mu.Lock()
-	s.overlayMonitorKey = key
-	s.mu.Unlock()
-}
-
-func (s *appState) updateOverlayFreeCenter(centerX, centerY int) bool {
-	if s == nil {
-		return false
-	}
-
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	if !s.overlayMovable {
-		return false
-	}
-
-	s.overlayFreeX = centerX
-	s.overlayFreeY = centerY
-	if s.overlayMonitorCenters == nil {
-		s.overlayMonitorCenters = make(map[string]config.OverlayFreePosition)
-	}
-	if key := strings.TrimSpace(s.overlayMonitorKey); key != "" {
-		s.overlayMonitorCenters[key] = config.OverlayFreePosition{X: centerX, Y: centerY}
-	}
-	s.syncSpeechKitSnapshotLocked()
-	return true
-}
-
-func (s *appState) updateOverlayFreeCenterFromPanel(x, y int) bool {
-	return s.updateOverlayFreeCenter(x+pillPanelWidth/2, y+pillPanelHeight/2)
+	OverlayEnabled             bool                                  `json:"overlayEnabled"`
+	OverlayPosition            string                                `json:"overlayPosition"`
+	OverlayMovable             bool                                  `json:"overlayMovable"`
+	OverlayFreeX               int                                   `json:"overlayFreeX"`
+	OverlayFreeY               int                                   `json:"overlayFreeY"`
+	StoreBackend               string                                `json:"storeBackend"`
+	SQLitePath                 string                                `json:"sqlitePath"`
+	PostgresConfigured         bool                                  `json:"postgresConfigured"`
+	PostgresDSN                string                                `json:"postgresDSN,omitempty"`
+	MaxAudioStorageMB          int                                   `json:"maxAudioStorageMB"`
+	HFAvailable                bool                                  `json:"hfAvailable"`
+	HFEnabled                  bool                                  `json:"hfEnabled"`
+	HFHasUserToken             bool                                  `json:"hfHasUserToken"`
+	HFHasInstallToken          bool                                  `json:"hfHasInstallToken"`
+	HFTokenSource              string                                `json:"hfTokenSource"`
+	Hotkey                     string                                `json:"hotkey"`
+	DictateHotkey              string                                `json:"dictateHotkey"`
+	AssistHotkey               string                                `json:"assistHotkey"`
+	VoiceAgentHotkey           string                                `json:"voiceAgentHotkey"`
+	DictateHotkeyBehavior      string                                `json:"dictateHotkeyBehavior"`
+	AssistHotkeyBehavior       string                                `json:"assistHotkeyBehavior"`
+	VoiceAgentHotkeyBehavior   string                                `json:"voiceAgentHotkeyBehavior"`
+	VoiceAgentCloseBehavior    string                                `json:"voiceAgentCloseBehavior"`
+	VoiceAgentRefinementPrompt string                                `json:"voiceAgentRefinementPrompt"`
+	AutoStartOnLaunch          bool                                  `json:"autoStartOnLaunch"`
+	VoiceAgentAutoStart        bool                                  `json:"voiceAgentAutoStart,omitempty"`
+	ModeEnabled                modeAvailabilitySnapshot              `json:"modeEnabled"`
+	AvailableModes             modeAvailabilitySnapshot              `json:"availableModes"`
+	AgentHotkey                string                                `json:"agentHotkey"`
+	AgentMode                  string                                `json:"agentMode"`
+	ActiveMode                 string                                `json:"activeMode"`
+	HFModel                    string                                `json:"hfModel"`
+	Visualizer                 string                                `json:"visualizer"`
+	Design                     string                                `json:"design"`
+	Language                   string                                `json:"language"`
+	VocabularyDictionary       string                                `json:"vocabularyDictionary"`
+	SaveAudio                  bool                                  `json:"saveAudio"`
+	AudioRetentionDays         int                                   `json:"audioRetentionDays"`
+	AudioDeviceID              string                                `json:"audioDeviceId"`
+	SelectedAudioDeviceID      string                                `json:"selectedAudioDeviceId"`
+	Profiles                   []models.Profile                      `json:"profiles"`
+	ActiveProfiles             map[string]string                     `json:"activeProfiles"`
+	ModelSelections            map[string]modeModelSelectionSnapshot `json:"modelSelections"`
+	ProviderCredentials        map[string]providerCredentialState    `json:"providerCredentials"`
 }

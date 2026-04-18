@@ -5,14 +5,21 @@ import (
 	"net/url"
 	"strings"
 	"testing"
+
+	"github.com/kombifyio/SpeechKit/internal/config"
 )
 
 func TestParseSettingsFormDefaults(t *testing.T) {
 	cfg := defaultTestConfig()
 	cfg.General.DictateHotkey = "win+alt"
-	cfg.General.AgentHotkey = "ctrl+shift+k"
+	cfg.General.AssistHotkey = "ctrl+win"
+	cfg.General.VoiceAgentHotkey = "ctrl+shift"
+	cfg.General.AgentHotkey = "ctrl+win"
 	cfg.General.AgentMode = "assist"
-	cfg.General.ActiveMode = "dictate"
+	cfg.General.ActiveMode = "none"
+	cfg.General.DictateEnabled = true
+	cfg.General.AssistEnabled = true
+	cfg.General.VoiceAgentEnabled = true
 	cfg.UI.Visualizer = "pill"
 	cfg.UI.Design = "default"
 	cfg.UI.OverlayPosition = "top"
@@ -31,14 +38,23 @@ func TestParseSettingsFormDefaults(t *testing.T) {
 	if form.DictateHotkey != "win+alt" {
 		t.Errorf("DictateHotkey = %q, want %q", form.DictateHotkey, "win+alt")
 	}
-	if form.AgentHotkey != "ctrl+shift+j" {
-		t.Errorf("AgentHotkey = %q, want %q", form.AgentHotkey, "ctrl+shift+j")
+	if form.AssistHotkey != "ctrl+win" {
+		t.Errorf("AssistHotkey = %q, want %q", form.AssistHotkey, "ctrl+win")
+	}
+	if form.VoiceAgentHotkey != "ctrl+shift" {
+		t.Errorf("VoiceAgentHotkey = %q, want %q", form.VoiceAgentHotkey, "ctrl+shift")
+	}
+	if form.AgentHotkey != "ctrl+win" {
+		t.Errorf("AgentHotkey = %q, want %q", form.AgentHotkey, "ctrl+win")
 	}
 	if form.AgentMode != "assist" {
 		t.Errorf("AgentMode = %q, want %q", form.AgentMode, "assist")
 	}
-	if form.ActiveMode != "dictate" {
-		t.Errorf("ActiveMode = %q, want %q", form.ActiveMode, "dictate")
+	if form.ActiveMode != "none" {
+		t.Errorf("ActiveMode = %q, want %q", form.ActiveMode, "none")
+	}
+	if !form.DictateEnabled || !form.AssistEnabled || !form.VoiceAgentEnabled {
+		t.Fatal("expected all mode enabled flags to stay true by default")
 	}
 	if form.Visualizer != "pill" {
 		t.Errorf("Visualizer = %q, want %q", form.Visualizer, "pill")
@@ -46,31 +62,53 @@ func TestParseSettingsFormDefaults(t *testing.T) {
 	if form.StoreBackend != "sqlite" {
 		t.Errorf("StoreBackend = %q, want %q", form.StoreBackend, "sqlite")
 	}
+	if form.VoiceAgentHotkeyBehavior != config.HotkeyBehaviorPushToTalk {
+		t.Errorf("VoiceAgentHotkeyBehavior = %q, want %q", form.VoiceAgentHotkeyBehavior, config.HotkeyBehaviorPushToTalk)
+	}
+	if form.VoiceAgentCloseBehavior != config.VoiceAgentCloseBehaviorContinue {
+		t.Errorf("VoiceAgentCloseBehavior = %q, want %q", form.VoiceAgentCloseBehavior, config.VoiceAgentCloseBehaviorContinue)
+	}
+	if form.VoiceAgentRefinementPrompt != "" {
+		t.Errorf("VoiceAgentRefinementPrompt = %q, want empty", form.VoiceAgentRefinementPrompt)
+	}
+	if form.AutoStartOnLaunch {
+		t.Error("AutoStartOnLaunch = true, want false by default")
+	}
 }
 
 func TestParseSettingsFormOverrides(t *testing.T) {
 	cfg := defaultTestConfig()
 	cfg.General.DictateHotkey = "win+alt"
-	cfg.General.AgentHotkey = "ctrl+shift+k"
+	cfg.General.AssistHotkey = "ctrl+win"
+	cfg.General.VoiceAgentHotkey = "ctrl+shift"
+	cfg.General.AgentHotkey = "ctrl+win"
 	cfg.UI.Visualizer = "pill"
 	cfg.UI.Design = "default"
 	cfg.UI.OverlayPosition = "top"
 	cfg.Store.Backend = "sqlite"
 
 	formValues := url.Values{
-		"dictate_hotkey":     {"ctrl+space"},
-		"agent_hotkey":       {"ctrl+shift+j"},
-		"agent_mode":         {"voice_agent"},
-		"active_mode":        {"agent"},
-		"overlay_enabled":    {"1"},
-		"overlay_visualizer": {"pill"},
-		"overlay_design":     {"default"},
-		"overlay_position":   {"bottom"},
-		"overlay_movable":    {"1"},
-		"overlay_free_x":     {"100"},
-		"overlay_free_y":     {"200"},
-		"store_backend":      {"sqlite"},
-		"audio_device_id":    {"dev-123"},
+		"dictate_hotkey":                {"ctrl+shift+d"},
+		"assist_hotkey":                 {"ctrl+win+j"},
+		"voice_agent_hotkey":            {"win+alt+k"},
+		"agent_mode":                    {"voice_agent"},
+		"active_mode":                   {"none"},
+		"dictate_enabled":               {"1"},
+		"assist_enabled":                {"1"},
+		"voice_agent_enabled":           {"0"},
+		"overlay_enabled":               {"1"},
+		"overlay_visualizer":            {"pill"},
+		"overlay_design":                {"default"},
+		"overlay_position":              {"bottom"},
+		"overlay_movable":               {"1"},
+		"overlay_free_x":                {"100"},
+		"overlay_free_y":                {"200"},
+		"voice_agent_hotkey_behavior":   {"toggle"},
+		"voice_agent_close_behavior":    {"new_chat"},
+		"voice_agent_refinement_prompt": {"Address the user by first name."},
+		"auto_start_on_launch":          {"1"},
+		"store_backend":                 {"sqlite"},
+		"audio_device_id":               {"dev-123"},
 	}
 
 	req, _ := http.NewRequest(http.MethodPost, "/settings/update", strings.NewReader(formValues.Encode()))
@@ -82,17 +120,26 @@ func TestParseSettingsFormOverrides(t *testing.T) {
 		t.Fatalf("unexpected error: %s", errMsg)
 	}
 
-	if form.DictateHotkey != "ctrl+space" {
-		t.Errorf("DictateHotkey = %q, want %q", form.DictateHotkey, "ctrl+space")
+	if form.DictateHotkey != "ctrl+shift+d" {
+		t.Errorf("DictateHotkey = %q, want %q", form.DictateHotkey, "ctrl+shift+d")
 	}
-	if form.AgentHotkey != "ctrl+shift+j" {
-		t.Errorf("AgentHotkey = %q, want %q", form.AgentHotkey, "ctrl+shift+j")
+	if form.AssistHotkey != "ctrl+win+j" {
+		t.Errorf("AssistHotkey = %q, want %q", form.AssistHotkey, "ctrl+win+j")
+	}
+	if form.VoiceAgentHotkey != "win+alt+k" {
+		t.Errorf("VoiceAgentHotkey = %q, want %q", form.VoiceAgentHotkey, "win+alt+k")
+	}
+	if form.AgentHotkey != "win+alt+k" {
+		t.Errorf("AgentHotkey = %q, want %q", form.AgentHotkey, "win+alt+k")
 	}
 	if form.AgentMode != "voice_agent" {
 		t.Errorf("AgentMode = %q, want %q", form.AgentMode, "voice_agent")
 	}
-	if form.ActiveMode != "voice_agent" {
-		t.Errorf("ActiveMode = %q, want %q", form.ActiveMode, "voice_agent")
+	if form.ActiveMode != "none" {
+		t.Errorf("ActiveMode = %q, want %q", form.ActiveMode, "none")
+	}
+	if !form.DictateEnabled || !form.AssistEnabled || form.VoiceAgentEnabled {
+		t.Fatalf("unexpected mode enabled flags: %+v", form)
 	}
 	if !form.OverlayEnabled {
 		t.Error("expected OverlayEnabled=true")
@@ -109,6 +156,18 @@ func TestParseSettingsFormOverrides(t *testing.T) {
 	if form.OverlayFreeY != 200 {
 		t.Errorf("OverlayFreeY = %d, want %d", form.OverlayFreeY, 200)
 	}
+	if form.VoiceAgentHotkeyBehavior != config.HotkeyBehaviorToggle {
+		t.Errorf("VoiceAgentHotkeyBehavior = %q, want %q", form.VoiceAgentHotkeyBehavior, config.HotkeyBehaviorToggle)
+	}
+	if form.VoiceAgentCloseBehavior != config.VoiceAgentCloseBehaviorNewChat {
+		t.Errorf("VoiceAgentCloseBehavior = %q, want %q", form.VoiceAgentCloseBehavior, config.VoiceAgentCloseBehaviorNewChat)
+	}
+	if form.VoiceAgentRefinementPrompt != "Address the user by first name." {
+		t.Errorf("VoiceAgentRefinementPrompt = %q", form.VoiceAgentRefinementPrompt)
+	}
+	if !form.AutoStartOnLaunch {
+		t.Error("AutoStartOnLaunch = false, want true")
+	}
 	if form.AudioDeviceID != "dev-123" {
 		t.Errorf("AudioDeviceID = %q, want %q", form.AudioDeviceID, "dev-123")
 	}
@@ -123,9 +182,9 @@ func TestParseSettingsFormSupportsIndependentModeHotkeysAndNone(t *testing.T) {
 	cfg.Store.Backend = "sqlite"
 
 	formValues := url.Values{
-		"dictate_hotkey":     {"ctrl+space"},
-		"assist_hotkey":      {"ctrl+shift+j"},
-		"voice_agent_hotkey": {"ctrl+shift+v"},
+		"dictate_hotkey":     {"win+alt"},
+		"assist_hotkey":      {"ctrl+win"},
+		"voice_agent_hotkey": {"ctrl+shift"},
 		"active_mode":        {"none"},
 		"overlay_visualizer": {"pill"},
 		"overlay_design":     {"default"},
@@ -142,11 +201,11 @@ func TestParseSettingsFormSupportsIndependentModeHotkeysAndNone(t *testing.T) {
 		t.Fatalf("unexpected error: %s", errMsg)
 	}
 
-	if form.AssistHotkey != "ctrl+shift+j" {
-		t.Errorf("AssistHotkey = %q, want %q", form.AssistHotkey, "ctrl+shift+j")
+	if form.AssistHotkey != "ctrl+win" {
+		t.Errorf("AssistHotkey = %q, want %q", form.AssistHotkey, "ctrl+win")
 	}
-	if form.VoiceAgentHotkey != "ctrl+shift+v" {
-		t.Errorf("VoiceAgentHotkey = %q, want %q", form.VoiceAgentHotkey, "ctrl+shift+v")
+	if form.VoiceAgentHotkey != "ctrl+shift" {
+		t.Errorf("VoiceAgentHotkey = %q, want %q", form.VoiceAgentHotkey, "ctrl+shift")
 	}
 	if form.ActiveMode != "none" {
 		t.Errorf("ActiveMode = %q, want %q", form.ActiveMode, "none")
@@ -161,8 +220,8 @@ func TestParseSettingsFormMapsLegacyAgentHotkeyToAssistHotkey(t *testing.T) {
 	cfg.Store.Backend = "sqlite"
 
 	formValues := url.Values{
-		"dictate_hotkey":     {"ctrl+space"},
-		"agent_hotkey":       {"ctrl+shift+j"},
+		"dictate_hotkey":     {"win+alt"},
+		"agent_hotkey":       {"ctrl+win+j"},
 		"agent_mode":         {"assist"},
 		"overlay_visualizer": {"pill"},
 		"overlay_design":     {"default"},
@@ -179,8 +238,8 @@ func TestParseSettingsFormMapsLegacyAgentHotkeyToAssistHotkey(t *testing.T) {
 		t.Fatalf("unexpected error: %s", errMsg)
 	}
 
-	if form.AssistHotkey != "ctrl+shift+j" {
-		t.Errorf("AssistHotkey = %q, want %q", form.AssistHotkey, "ctrl+shift+j")
+	if form.AssistHotkey != "ctrl+win+j" {
+		t.Errorf("AssistHotkey = %q, want %q", form.AssistHotkey, "ctrl+win+j")
 	}
 	if form.VoiceAgentHotkey != "" {
 		t.Errorf("VoiceAgentHotkey = %q, want empty", form.VoiceAgentHotkey)
@@ -195,8 +254,8 @@ func TestParseSettingsFormMapsLegacyAgentHotkeyToVoiceAgentHotkey(t *testing.T) 
 	cfg.Store.Backend = "sqlite"
 
 	formValues := url.Values{
-		"dictate_hotkey":     {"ctrl+space"},
-		"agent_hotkey":       {"ctrl+shift+v"},
+		"dictate_hotkey":     {"win+alt"},
+		"agent_hotkey":       {"ctrl+shift+k"},
 		"agent_mode":         {"voice_agent"},
 		"overlay_visualizer": {"pill"},
 		"overlay_design":     {"default"},
@@ -216,12 +275,12 @@ func TestParseSettingsFormMapsLegacyAgentHotkeyToVoiceAgentHotkey(t *testing.T) 
 	if form.AssistHotkey != "" {
 		t.Errorf("AssistHotkey = %q, want empty", form.AssistHotkey)
 	}
-	if form.VoiceAgentHotkey != "ctrl+shift+v" {
-		t.Errorf("VoiceAgentHotkey = %q, want %q", form.VoiceAgentHotkey, "ctrl+shift+v")
+	if form.VoiceAgentHotkey != "ctrl+shift+k" {
+		t.Errorf("VoiceAgentHotkey = %q, want %q", form.VoiceAgentHotkey, "ctrl+shift+k")
 	}
 }
 
-func TestParseSettingsFormRejectsDuplicateIndependentModeHotkeys(t *testing.T) {
+func TestParseSettingsFormRejectsDuplicateModeBases(t *testing.T) {
 	cfg := defaultTestConfig()
 	cfg.UI.Visualizer = "pill"
 	cfg.UI.Design = "default"
@@ -229,9 +288,9 @@ func TestParseSettingsFormRejectsDuplicateIndependentModeHotkeys(t *testing.T) {
 	cfg.Store.Backend = "sqlite"
 
 	formValues := url.Values{
-		"dictate_hotkey":     {"ctrl+space"},
-		"assist_hotkey":      {"ctrl+space"},
-		"voice_agent_hotkey": {"ctrl+shift+v"},
+		"dictate_hotkey":     {"win+alt"},
+		"assist_hotkey":      {"win+alt+j"},
+		"voice_agent_hotkey": {"ctrl+shift"},
 		"overlay_visualizer": {"pill"},
 		"overlay_design":     {"default"},
 		"overlay_position":   {"top"},
@@ -245,6 +304,33 @@ func TestParseSettingsFormRejectsDuplicateIndependentModeHotkeys(t *testing.T) {
 	_, errMsg := parseSettingsForm(req, cfg)
 	if errMsg == "" {
 		t.Fatal("expected duplicate hotkey error")
+	}
+}
+
+func TestParseSettingsFormRejectsUnsupportedModeHotkeyPattern(t *testing.T) {
+	cfg := defaultTestConfig()
+	cfg.UI.Visualizer = "pill"
+	cfg.UI.Design = "default"
+	cfg.UI.OverlayPosition = "top"
+	cfg.Store.Backend = "sqlite"
+
+	formValues := url.Values{
+		"dictate_hotkey":     {"alt+space"},
+		"assist_hotkey":      {"ctrl+win"},
+		"voice_agent_hotkey": {"ctrl+shift"},
+		"overlay_visualizer": {"pill"},
+		"overlay_design":     {"default"},
+		"overlay_position":   {"top"},
+		"store_backend":      {"sqlite"},
+	}
+
+	req, _ := http.NewRequest(http.MethodPost, "/settings/update", strings.NewReader(formValues.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.ParseForm()
+
+	_, errMsg := parseSettingsForm(req, cfg)
+	if errMsg == "" {
+		t.Fatal("expected unsupported mode hotkey error")
 	}
 }
 
@@ -286,7 +372,7 @@ func TestParseSettingsFormRejectsPostgresWithoutDSN(t *testing.T) {
 	}
 }
 
-func TestParseSettingsFormActiveModeDefaultsToDictate(t *testing.T) {
+func TestParseSettingsFormActiveModeDefaultsToNone(t *testing.T) {
 	cfg := defaultTestConfig()
 	cfg.UI.Visualizer = "pill"
 	cfg.UI.Design = "default"
@@ -354,53 +440,68 @@ func TestBuildNextConfig(t *testing.T) {
 	cfg := defaultTestConfig()
 	cfg.General.Hotkey = "old"
 	cfg.Store.Backend = "sqlite"
+	cfg.VoiceAgent.FrameworkPrompt = "Framework prompt"
+	cfg.VoiceAgent.Instruction = "Framework prompt"
 
 	form := settingsFormData{
-		DictateHotkey:        "ctrl+space",
-		AssistHotkey:         "ctrl+shift+j",
-		VoiceAgentHotkey:     "ctrl+shift+v",
-		AgentHotkey:          "ctrl+shift+k",
-		AgentMode:            "voice_agent",
-		ActiveMode:           "voice_agent",
-		AudioDeviceID:        "dev-1",
-		HFModel:              "whisper-large",
-		OverlayEnabled:       true,
-		Visualizer:           "pill",
-		Design:               "default",
-		OverlayPosition:      "bottom",
-		OverlayMovable:       true,
-		OverlayFreeX:         50,
-		OverlayFreeY:         60,
-		StoreBackend:         "sqlite",
-		StoreSQLitePath:      "/tmp/new.db",
-		StoreSaveAudio:       true,
-		StoreAudioRetention:  30,
-		StoreMaxAudioStorage: 500,
-		VocabularyDictionary: "hello=hi",
+		DictateHotkey:              "ctrl+shift+d",
+		AssistHotkey:               "ctrl+win+j",
+		VoiceAgentHotkey:           "win+alt+k",
+		AgentHotkey:                "ctrl+win+j",
+		AgentMode:                  "voice_agent",
+		ActiveMode:                 "none",
+		DictateEnabled:             true,
+		AssistEnabled:              true,
+		VoiceAgentEnabled:          false,
+		VoiceAgentHotkeyBehavior:   config.HotkeyBehaviorToggle,
+		VoiceAgentCloseBehavior:    config.VoiceAgentCloseBehaviorNewChat,
+		VoiceAgentRefinementPrompt: "Refinement prompt",
+		AutoStartOnLaunch:          true,
+		AudioDeviceID:              "dev-1",
+		HFModel:                    "whisper-large",
+		OverlayEnabled:             true,
+		Visualizer:                 "pill",
+		Design:                     "default",
+		OverlayPosition:            "bottom",
+		OverlayMovable:             true,
+		OverlayFreeX:               50,
+		OverlayFreeY:               60,
+		StoreBackend:               "sqlite",
+		StoreSQLitePath:            "/tmp/new.db",
+		StoreSaveAudio:             true,
+		StoreAudioRetention:        30,
+		StoreMaxAudioStorage:       500,
+		VocabularyDictionary:       "hello=hi",
 	}
 
 	result := buildNextConfig(form, cfg)
 
-	if result.General.Hotkey != "ctrl+space" {
-		t.Errorf("Hotkey = %q, want %q", result.General.Hotkey, "ctrl+space")
+	if result.General.Hotkey != "ctrl+shift+d" {
+		t.Errorf("Hotkey = %q, want %q", result.General.Hotkey, "ctrl+shift+d")
 	}
-	if result.General.DictateHotkey != "ctrl+space" {
+	if result.General.DictateHotkey != "ctrl+shift+d" {
 		t.Errorf("DictateHotkey = %q", result.General.DictateHotkey)
 	}
-	if result.General.AssistHotkey != "ctrl+shift+j" {
+	if result.General.AssistHotkey != "ctrl+win+j" {
 		t.Errorf("AssistHotkey = %q", result.General.AssistHotkey)
 	}
-	if result.General.VoiceAgentHotkey != "ctrl+shift+v" {
+	if result.General.VoiceAgentHotkey != "win+alt+k" {
 		t.Errorf("VoiceAgentHotkey = %q", result.General.VoiceAgentHotkey)
 	}
-	if result.General.AgentHotkey != "ctrl+shift+v" {
+	if result.General.VoiceAgentHotkeyBehavior != config.HotkeyBehaviorToggle {
+		t.Errorf("VoiceAgentHotkeyBehavior = %q", result.General.VoiceAgentHotkeyBehavior)
+	}
+	if result.General.AgentHotkey != "ctrl+win+j" {
 		t.Errorf("AgentHotkey = %q", result.General.AgentHotkey)
 	}
-	if result.General.AgentMode != "voice_agent" {
+	if result.General.AgentMode != "assist" {
 		t.Errorf("AgentMode = %q", result.General.AgentMode)
 	}
-	if result.General.ActiveMode != "voice_agent" {
+	if result.General.ActiveMode != "none" {
 		t.Errorf("ActiveMode = %q", result.General.ActiveMode)
+	}
+	if !result.General.DictateEnabled || !result.General.AssistEnabled || result.General.VoiceAgentEnabled {
+		t.Fatalf("unexpected mode enabled flags: %+v", result.General)
 	}
 	if result.Audio.DeviceID != "dev-1" {
 		t.Errorf("DeviceID = %q", result.Audio.DeviceID)
@@ -410,6 +511,24 @@ func TestBuildNextConfig(t *testing.T) {
 	}
 	if result.UI.OverlayPosition != "bottom" {
 		t.Errorf("OverlayPosition = %q", result.UI.OverlayPosition)
+	}
+	if result.VoiceAgent.CloseBehavior != config.VoiceAgentCloseBehaviorNewChat {
+		t.Errorf("VoiceAgent.CloseBehavior = %q", result.VoiceAgent.CloseBehavior)
+	}
+	if result.VoiceAgent.FrameworkPrompt != "Framework prompt" {
+		t.Errorf("VoiceAgent.FrameworkPrompt = %q", result.VoiceAgent.FrameworkPrompt)
+	}
+	if result.VoiceAgent.RefinementPrompt != "Refinement prompt" {
+		t.Errorf("VoiceAgent.RefinementPrompt = %q", result.VoiceAgent.RefinementPrompt)
+	}
+	if result.VoiceAgent.Instruction != "Framework prompt" {
+		t.Errorf("VoiceAgent.Instruction = %q", result.VoiceAgent.Instruction)
+	}
+	if !result.General.AutoStartOnLaunch {
+		t.Error("General.AutoStartOnLaunch = false, want true")
+	}
+	if !result.VoiceAgent.AutoStartOnLaunch {
+		t.Error("VoiceAgent.AutoStartOnLaunch = false, want true")
 	}
 	if result.Store.Backend != "sqlite" {
 		t.Errorf("StoreBackend = %q", result.Store.Backend)
@@ -442,15 +561,20 @@ func TestBuildNextConfigPostgresDoesNotSetFeedbackDBPath(t *testing.T) {
 	cfg.Feedback.DBPath = "/old/path.db"
 
 	form := settingsFormData{
-		DictateHotkey:    "win+alt",
-		AgentHotkey:      "ctrl+shift+k",
-		AgentMode:        "assist",
-		ActiveMode:       "dictate",
-		Visualizer:       "pill",
-		Design:           "default",
-		OverlayPosition:  "top",
-		StoreBackend:     "postgres",
-		StorePostgresDSN: "postgres://localhost/test",
+		DictateHotkey:     "win+alt",
+		AssistHotkey:      "ctrl+win",
+		VoiceAgentHotkey:  "ctrl+shift",
+		AgentHotkey:       "ctrl+win",
+		AgentMode:         "assist",
+		ActiveMode:        "none",
+		DictateEnabled:    true,
+		AssistEnabled:     true,
+		VoiceAgentEnabled: true,
+		Visualizer:        "pill",
+		Design:            "default",
+		OverlayPosition:   "top",
+		StoreBackend:      "postgres",
+		StorePostgresDSN:  "postgres://localhost/test",
 	}
 
 	result := buildNextConfig(form, cfg)

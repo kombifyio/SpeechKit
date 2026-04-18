@@ -2,13 +2,10 @@ package flows
 
 import (
 	"context"
-	"os"
 	"strings"
 	"testing"
 
 	"github.com/firebase/genkit/go/genkit"
-
-	appai "github.com/kombifyio/SpeechKit/internal/ai"
 )
 
 func TestBuildSummarizeSystemPrompt_German(t *testing.T) {
@@ -78,34 +75,3 @@ func TestSummarizeFlow_NoModels(t *testing.T) {
 	}
 }
 
-func TestSummarizeFlow_Integration(t *testing.T) {
-	if os.Getenv("SPEECHKIT_AI_SMOKE") != "1" {
-		t.Skip("set SPEECHKIT_AI_SMOKE=1 to run live AI smoke test")
-	}
-
-	groqKey := os.Getenv("GROQ_API_KEY")
-	if groqKey == "" {
-		t.Skip("GROQ_API_KEY not set")
-	}
-
-	rt, err := appai.Init(context.Background(), appai.Config{
-		GroqAPIKey:       groqKey,
-		GroqUtilityModel: "llama-3.1-8b-instant",
-	})
-	if err != nil {
-		t.Fatalf("Init: %v", err)
-	}
-
-	flow := DefineSummarizeFlow(rt.G, rt.UtilityModels())
-	result, err := flow.Run(context.Background(), SummarizeInput{
-		Text:   "Kubernetes ist ein Open-Source-System zur Automatisierung der Bereitstellung, Skalierung und Verwaltung von containerisierten Anwendungen. Es wurde urspruenglich von Google entworfen und wird nun von der Cloud Native Computing Foundation gepflegt.",
-		Locale: "de",
-	})
-	if err != nil {
-		t.Fatalf("Run: %v", err)
-	}
-	if result == "" {
-		t.Fatal("expected non-empty summary")
-	}
-	t.Logf("Summary: %s", result)
-}

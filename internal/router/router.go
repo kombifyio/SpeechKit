@@ -58,6 +58,25 @@ func (r *Router) AddCloud(p stt.STTProvider) {
 	r.mu.Unlock()
 }
 
+// SetCloudProviders replaces the ordered cloud provider list.
+func (r *Router) SetCloudProviders(providers []stt.STTProvider) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	if len(providers) == 0 {
+		r.cloud = nil
+		return
+	}
+
+	next := make([]stt.STTProvider, 0, len(providers))
+	for _, provider := range providers {
+		if provider != nil {
+			next = append(next, provider)
+		}
+	}
+	r.cloud = next
+}
+
 // SetCloud replaces a cloud provider by name, or appends if not found.
 // Pass nil to remove the provider with that name.
 func (r *Router) SetCloud(name string, p stt.STTProvider) {
@@ -161,7 +180,7 @@ func (r *Router) Route(ctx context.Context, audio []byte, audioDurationSecs floa
 
 func (r *Router) transcribeDynamic(ctx context.Context, audio []byte, durationSecs float64, opts stt.TranscribeOpts) (*stt.Result, error) {
 	local, cloud := r.snapshot()
-	online := r.checkInternet()
+	online := r.checkInternet(ctx)
 	cloudAvailable := len(cloud) > 0
 
 	// Case 1: Internet probe failed. Try local first, but still allow cloud as fallback
@@ -216,14 +235,14 @@ func (r *Router) transcribeDynamic(ctx context.Context, audio []byte, durationSe
 }
 
 // checkInternet returns cached connectivity status, refreshing if stale.
-func (r *Router) checkInternet() bool {
+func (r *Router) checkInternet(ctx context.Context) bool {
 	now := time.Now().UnixNano()
 	lastCheck := r.internetAt.Load()
 	if now-lastCheck < int64(internetCacheTTL) {
 		return r.internetOnline.Load()
 	}
 
-	online := r.probeInternet()
+	online := r.probeInternet(ctx)
 	r.internetOnline.Store(online)
 	r.internetAt.Store(now)
 	return online
@@ -231,16 +250,18 @@ func (r *Router) checkInternet() bool {
 
 // probeInternet does a quick TCP check to detect connectivity.
 // Uses ConnectivityProbe address, defaulting to "1.1.1.1:443".
-func (r *Router) probeInternet() bool {
+func (r *Router) probeInternet(ctx context.Context) bool {
 	addr := r.ConnectivityProbe
 	if addr == "" {
 		addr = "1.1.1.1:443"
 	}
-	conn, err := net.DialTimeout("tcp", addr, 2*time.Second)
+	ctx, cancel := context.WithTimeout(ctx, 2*time.Second)
+	defer cancel()
+	conn, err := (&net.Dialer{}).DialContext(ctx, "tcp", addr)
 	if err != nil {
 		return false
 	}
-	conn.Close()
+	_ = conn.Close()
 	return true
 }
 

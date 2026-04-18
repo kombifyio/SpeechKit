@@ -32,7 +32,7 @@ var revealAudioFileInShell = func(path string) error {
 	if ext := strings.ToLower(filepath.Ext(abs)); ext != ".wav" {
 		return fmt.Errorf("reveal: only .wav files are supported (got %q)", ext)
 	}
-	return exec.Command("explorer.exe", "/select,", abs).Start()
+	return exec.Command("explorer.exe", "/select,", abs).Start() //nolint:gosec // subprocess path is application-controlled, not user input
 }
 
 var openInstallerFileInShell = func(path string) error {
@@ -43,14 +43,14 @@ var openInstallerFileInShell = func(path string) error {
 	if !isInstallerAssetName(abs) {
 		return fmt.Errorf("open installer: only .exe or .msi files are supported")
 	}
-	return exec.Command(abs).Start()
+	return exec.Command(abs).Start() //nolint:gosec // subprocess path is application-controlled, not user input
 }
 
 // assetHandler builds the unified HTTP mux for the Wails control plane.
 // Routes are registered by domain in dedicated routes_*.go files.
 func assetHandler(cfg *config.Config, cfgPath string, state *appState, sttRouter *router.Router, feedbackStore store.Store, installState *config.InstallState) http.Handler {
 	mux := http.NewServeMux()
-	registerOverlayRoutes(mux, cfg, state)
+	registerOverlayRoutes(mux, cfgPath, cfg, state)
 	registerSettingsRoutes(mux, cfgPath, cfg, state, sttRouter)
 	registerDashboardRoutes(mux, state, feedbackStore)
 	registerQuickNoteRoutes(mux, cfg, state, feedbackStore)

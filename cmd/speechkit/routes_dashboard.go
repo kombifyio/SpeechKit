@@ -34,6 +34,7 @@ func registerDashboardRoutes(mux *http.ServeMux, state *appState, feedbackStore 
 			w.WriteHeader(http.StatusMethodNotAllowed)
 			return
 		}
+		r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
 		if err := r.ParseForm(); err != nil {
 			http.Error(w, msgFormParseError, http.StatusBadRequest)
 			return
@@ -184,7 +185,7 @@ func registerDashboardRoutes(mux *http.ServeMux, state *appState, feedbackStore 
 	})
 }
 
-func resolveDashboardAudio(ctx context.Context, feedbackStore store.Store, kind string, idRaw string) (string, string, error) {
+func resolveDashboardAudio(ctx context.Context, feedbackStore store.Store, kind, idRaw string) (string, string, error) {
 	if feedbackStore == nil {
 		return "", "", fmt.Errorf("store not available")
 	}

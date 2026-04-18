@@ -3,13 +3,33 @@ import { vi } from 'vitest'
 
 import { QuickNoteApp } from '@/components/quicknote-app'
 
+function createMockStorage(): Storage {
+  const store = new Map<string, string>()
+  return {
+    get length() {
+      return store.size
+    },
+    clear: () => store.clear(),
+    getItem: (key: string) => store.get(key) ?? null,
+    key: (index: number) => Array.from(store.keys())[index] ?? null,
+    removeItem: (key: string) => { store.delete(key) },
+    setItem: (key: string, value: string) => { store.set(key, value) },
+  }
+}
+
 const {
+  windowMinimiseMock,
+  windowCloseMock,
+  windowIsMaximisedMock,
   createQuickNoteMock,
   updateQuickNoteMock,
   quickNoteSummaryMock,
   quickNoteEmailMock,
   armQuickNoteRecordingMock,
 } = vi.hoisted(() => ({
+  windowMinimiseMock: vi.fn<() => Promise<void>>(),
+  windowCloseMock: vi.fn<() => Promise<void>>(),
+  windowIsMaximisedMock: vi.fn<() => Promise<boolean>>(),
   createQuickNoteMock: vi.fn<(text: string) => Promise<{ id: number; message: string }>>(),
   updateQuickNoteMock: vi.fn<(id: number, text: string) => Promise<string>>(),
   quickNoteSummaryMock: vi.fn<(id: number) => Promise<string>>(),
@@ -25,8 +45,32 @@ vi.mock('@/lib/speechkit', () => ({
   armQuickNoteRecording: armQuickNoteRecordingMock,
 }))
 
+vi.mock('@wailsio/runtime', () => ({
+  Window: {
+    Minimise: windowMinimiseMock,
+    Close: windowCloseMock,
+    IsMaximised: windowIsMaximisedMock,
+    Maximise: vi.fn(),
+    Restore: vi.fn(),
+  },
+}))
+
 describe('QuickNoteApp', () => {
+  let storageMock: Storage
+
   beforeEach(() => {
+    storageMock = createMockStorage()
+    Object.defineProperty(window, 'localStorage', {
+      value: storageMock,
+      configurable: true,
+    })
+    storageMock.clear()
+    windowMinimiseMock.mockReset()
+    windowCloseMock.mockReset()
+    windowIsMaximisedMock.mockReset()
+    windowMinimiseMock.mockResolvedValue(undefined)
+    windowCloseMock.mockResolvedValue(undefined)
+    windowIsMaximisedMock.mockResolvedValue(false)
     createQuickNoteMock.mockReset()
     updateQuickNoteMock.mockReset()
     quickNoteSummaryMock.mockReset()
@@ -42,6 +86,10 @@ describe('QuickNoteApp', () => {
     })))
   })
 
+  afterEach(() => {
+    storageMock.clear()
+  })
+
   it('passes the created note id into the recording arm call', async () => {
     render(<QuickNoteApp />)
 
@@ -53,5 +101,23 @@ describe('QuickNoteApp', () => {
 
     await waitFor(() => expect(createQuickNoteMock).toHaveBeenCalledWith('Draft note'))
     await waitFor(() => expect(armQuickNoteRecordingMock).toHaveBeenCalledWith(42))
+  })
+
+  it('renders the shared chrome with theme and window controls', async () => {
+    render(<QuickNoteApp />)
+
+    expect(screen.getByText('New Quick Note')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: /switch to light mode/i }))
+
+    await waitFor(() => {
+      expect(document.documentElement.dataset.theme).toBe('light')
+      expect(storageMock.getItem('speechkit.desktop.theme')).toBe('light')
+    })
+
+    fireEvent.click(screen.getByRole('button', { name: /minimise window/i }))
+    fireEvent.click(screen.getByRole('button', { name: /close window/i }))
+
+    await waitFor(() => expect(windowMinimiseMock).toHaveBeenCalledTimes(1))
+    await waitFor(() => expect(windowCloseMock).toHaveBeenCalledTimes(1))
   })
 })

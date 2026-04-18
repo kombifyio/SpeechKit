@@ -239,7 +239,7 @@ func TestDesktopCommandHandlerStartDictationReusesExistingQuickNoteID(t *testing
 	if len(submitter.jobs) != 1 {
 		t.Fatalf("jobs = %d, want 1", len(submitter.jobs))
 	}
-	if got, want := submitter.jobs[0].Submission.QuickNoteID, int64(123); got != want {
+	if got, want := submitter.jobs[0].QuickNoteID, int64(123); got != want {
 		t.Fatalf("job quick note id = %d, want %d", got, want)
 	}
 }

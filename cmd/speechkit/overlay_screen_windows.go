@@ -20,7 +20,7 @@ var (
 func init() {
 	// Ensure the process is DPI-aware so GetMonitorInfoW returns correct pixel coords.
 	// This must happen before any window creation. Safe to call even if already DPI-aware.
-	procSetDPIAwareness.Call()
+	procSetDPIAwareness.Call() //nolint:errcheck // Windows API call, return value not meaningful
 }
 
 type activeWindowScreenLocator struct{}
@@ -55,7 +55,7 @@ func (activeWindowScreenLocator) OverlayScreenBounds() (screenBounds, bool) {
 	}
 
 	info := monitorInfo{CbSize: uint32(unsafe.Sizeof(monitorInfo{}))}
-	ok, _, _ := procOverlayMonitorInfo.Call(monitor, uintptr(unsafe.Pointer(&info)))
+	ok, _, _ := procOverlayMonitorInfo.Call(monitor, uintptr(unsafe.Pointer(&info))) //nolint:gosec // Windows API requires unsafe.Pointer
 	if ok == 0 {
 		return screenBounds{}, false
 	}

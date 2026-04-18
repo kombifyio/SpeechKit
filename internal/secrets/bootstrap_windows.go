@@ -3,6 +3,7 @@
 package secrets
 
 import (
+	"errors"
 	"strings"
 
 	"golang.org/x/sys/windows/registry"
@@ -39,16 +40,16 @@ func MigrateInstallTokenBootstrap() (bool, error) {
 func readInstallBootstrapTokenFromRegistry() (string, error) {
 	key, err := registry.OpenKey(registry.CURRENT_USER, bootstrapRegistryPath, registry.QUERY_VALUE)
 	if err != nil {
-		if err == registry.ErrNotExist {
+		if errors.Is(err, registry.ErrNotExist) {
 			return "", nil
 		}
 		return "", err
 	}
-	defer key.Close()
+	defer key.Close() //nolint:errcheck // Windows registry key close, error not actionable
 
 	value, _, err := key.GetStringValue(bootstrapRegistryValueName)
 	if err != nil {
-		if err == registry.ErrNotExist {
+		if errors.Is(err, registry.ErrNotExist) {
 			return "", nil
 		}
 		return "", err
@@ -59,14 +60,14 @@ func readInstallBootstrapTokenFromRegistry() (string, error) {
 func clearInstallBootstrapTokenFromRegistry() error {
 	key, err := registry.OpenKey(registry.CURRENT_USER, bootstrapRegistryPath, registry.SET_VALUE)
 	if err != nil {
-		if err == registry.ErrNotExist {
+		if errors.Is(err, registry.ErrNotExist) {
 			return nil
 		}
 		return err
 	}
-	defer key.Close()
+	defer key.Close() //nolint:errcheck // Windows registry key close, error not actionable
 
-	if err := key.DeleteValue(bootstrapRegistryValueName); err != nil && err != registry.ErrNotExist {
+	if err := key.DeleteValue(bootstrapRegistryValueName); err != nil && !errors.Is(err, registry.ErrNotExist) {
 		return err
 	}
 	return nil

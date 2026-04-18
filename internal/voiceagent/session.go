@@ -179,15 +179,17 @@ type LiveProvider interface {
 
 // LiveConfig configures a real-time session.
 type LiveConfig struct {
-	Model          string // e.g. "gemini-2.5-flash-native-audio-preview-12-2025"
-	APIKey         string
-	Voice          string // Voice name
-	Instruction    string
-	SystemPrompt   string // Deprecated: kept as compat alias, prefer Instruction.
-	VocabularyHint string
-	Locale         string
-	Policies       LivePolicies
-	Tools          []ToolDefinition
+	Model            string // e.g. "gemini-2.5-flash-native-audio-preview-12-2025"
+	APIKey           string
+	Voice            string // Voice name
+	FrameworkPrompt  string
+	RefinementPrompt string
+	Instruction      string // Deprecated: kept as compat alias for FrameworkPrompt.
+	SystemPrompt     string // Deprecated: kept as compat alias, prefer FrameworkPrompt.
+	VocabularyHint   string
+	Locale           string
+	Policies         LivePolicies
+	Tools            []ToolDefinition
 }
 
 // LiveMessage is a message received from the real-time model.
@@ -360,7 +362,7 @@ func (s *Session) CurrentState() State {
 }
 
 func (s *Session) currentState() State {
-	return s.state.Load().(State)
+	return s.state.Load().(State) //nolint:errcheck // atomic.Value always stores State; type assertion is safe
 }
 
 func (s *Session) setState(state State) {
@@ -493,7 +495,13 @@ func (s *Session) cleanupOnError() {
 		s.cancelFn()
 	}
 	if s.provider != nil {
-		_ = s.provider.Close()
+		if err := s.provider.Close(); err != nil {
+			// The session is already on an error path; we still want the
+			// provider close failure visible in logs for diagnosis (leaked
+			// WebSocket, stuck HTTP pool, etc.) instead of silently
+			// swallowed.
+			slog.Warn("voiceagent: provider close during cleanup returned error", "err", err)
+		}
 	}
 	s.mu.Unlock()
 

@@ -22,6 +22,12 @@ type runtimeState struct {
 	dictateHotkey         string
 	assistHotkey          string
 	voiceAgentHotkey      string
+	dictateHotkeyBehavior string
+	assistHotkeyBehavior  string
+	voiceAgentHotkeyBehavior string
+	dictateEnabled        bool
+	assistEnabled         bool
+	voiceAgentEnabled     bool
 	agentHotkey           string
 	currentState          string
 	overlayText           string
@@ -69,6 +75,12 @@ func (s *appState) runtimeStateLocked() runtimeState {
 		dictateHotkey:         s.dictateHotkey,
 		assistHotkey:          s.assistHotkey,
 		voiceAgentHotkey:      s.voiceAgentHotkey,
+		dictateHotkeyBehavior: s.dictateHotkeyBehavior,
+		assistHotkeyBehavior:  s.assistHotkeyBehavior,
+		voiceAgentHotkeyBehavior: s.voiceAgentHotkeyBehavior,
+		dictateEnabled:        s.dictateEnabled,
+		assistEnabled:         s.assistEnabled,
+		voiceAgentEnabled:     s.voiceAgentEnabled,
 		agentHotkey:           s.agentHotkey,
 		currentState:          s.currentState,
 		overlayText:           s.overlayText,

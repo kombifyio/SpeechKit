@@ -59,12 +59,58 @@ func (s *appState) setActiveMode(mode string) {
 	if s == nil || mode == "" {
 		return
 	}
-	mode = normalizeRuntimeMode(mode, "")
-	if !isRuntimeMode(mode) {
+	s.mu.Lock()
+	s.activeMode = sanitizeActiveModeForBindings(
+		mode,
+		"",
+		s.dictateEnabled,
+		s.assistEnabled,
+		s.voiceAgentEnabled,
+		s.dictateHotkey,
+		s.assistHotkey,
+		s.voiceAgentHotkey,
+	)
+	s.hotkey = s.activeHotkeyLocked()
+	s.syncSpeechKitSnapshotLocked()
+	s.mu.Unlock()
+}
+
+func (s *appState) setModeEnabled(mode string, enabled bool) {
+	if s == nil {
 		return
 	}
+
 	s.mu.Lock()
-	s.activeMode = mode
+	switch mode {
+	case modeDictate:
+		if strings.TrimSpace(s.dictateHotkey) == "" {
+			enabled = false
+		}
+		s.dictateEnabled = enabled
+	case modeAssist:
+		if strings.TrimSpace(s.assistHotkey) == "" {
+			enabled = false
+		}
+		s.assistEnabled = enabled
+	case modeVoiceAgent:
+		if strings.TrimSpace(s.voiceAgentHotkey) == "" {
+			enabled = false
+		}
+		s.voiceAgentEnabled = enabled
+	default:
+		s.mu.Unlock()
+		return
+	}
+	s.activeMode = sanitizeActiveModeForBindings(
+		s.activeMode,
+		"",
+		s.dictateEnabled,
+		s.assistEnabled,
+		s.voiceAgentEnabled,
+		s.dictateHotkey,
+		s.assistHotkey,
+		s.voiceAgentHotkey,
+	)
 	s.hotkey = s.activeHotkeyLocked()
 	s.syncSpeechKitSnapshotLocked()
 	s.mu.Unlock()

@@ -1,20 +1,24 @@
 {
   "name": "app",
   "private": true,
-  "version": "0.19.1",
+  "version": "0.21.1",
   "type": "module",
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build --configLoader native",
     "test": "vitest run --config vitest.config.ts --configLoader native",
     "lint": "eslint .",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "e2e": "playwright test",
+    "e2e:ui": "playwright test --ui",
+    "e2e:install": "playwright install chromium"
   },
   "dependencies": {
     "@base-ui-components/react": "^1.0.0-rc.0",
     "@fontsource-variable/geist": "^5.2.8",
     "@livekit/components-react": "^2.9.20",
     "@tailwindcss/vite": "^4.2.2",
+    "@wailsio/runtime": "^3.0.0-alpha.79",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "cmdk": "^1.1.1",
@@ -33,6 +37,7 @@
   },
   "devDependencies": {
     "@eslint/js": "^9.39.4",
+    "@playwright/test": "^1.59.1",
     "@testing-library/jest-dom": "^6.9.1",
     "@testing-library/react": "^16.3.2",
     "@types/node": "^24.12.0",

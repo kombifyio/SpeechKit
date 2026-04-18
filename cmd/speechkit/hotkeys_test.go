@@ -51,7 +51,7 @@ func (f *fakeManagedHotkey) Reconfigure(combo []uint32) {
 }
 
 func TestConfiguredModeBindingsSkipsDisabledModes(t *testing.T) {
-	bindings := configuredModeBindings("win+alt", "", "ctrl+shift+v")
+	bindings := configuredModeBindings(true, true, true, "win+alt", "", "ctrl+shift")
 
 	if got, want := bindings[modeDictate], "win+alt"; got != want {
 		t.Fatalf("bindings[%q] = %q, want %q", modeDictate, got, want)
@@ -59,26 +59,46 @@ func TestConfiguredModeBindingsSkipsDisabledModes(t *testing.T) {
 	if _, ok := bindings[modeAssist]; ok {
 		t.Fatalf("bindings unexpectedly contains %q", modeAssist)
 	}
-	if got, want := bindings[modeVoiceAgent], "ctrl+shift+v"; got != want {
+	if got, want := bindings[modeVoiceAgent], "ctrl+shift"; got != want {
 		t.Fatalf("bindings[%q] = %q, want %q", modeVoiceAgent, got, want)
 	}
 }
 
+func TestConfiguredModeBindingsSkipsExplicitlyDisabledModes(t *testing.T) {
+	bindings := configuredModeBindings(true, false, true, "win+alt", "ctrl+win", "ctrl+shift")
+
+	if _, ok := bindings[modeAssist]; ok {
+		t.Fatalf("bindings unexpectedly contains %q", modeAssist)
+	}
+	if got, want := bindings[modeDictate], "win+alt"; got != want {
+		t.Fatalf("bindings[%q] = %q, want %q", modeDictate, got, want)
+	}
+}
+
 func TestSanitizeActiveModeForBindingsDisablesUnavailableModes(t *testing.T) {
-	if got := sanitizeActiveModeForBindings(modeAssist, modeAssist, "win+alt", "", "ctrl+shift+v"); got != modeNone {
+	if got := sanitizeActiveModeForBindings(modeAssist, modeAssist, true, false, true, "win+alt", "", "ctrl+shift"); got != modeNone {
 		t.Fatalf("sanitizeActiveModeForBindings returned %q, want %q", got, modeNone)
 	}
-	if got := sanitizeActiveModeForBindings(modeVoiceAgent, modeAssist, "win+alt", "ctrl+shift+j", "ctrl+shift+v"); got != modeVoiceAgent {
+	if got := sanitizeActiveModeForBindings(modeVoiceAgent, modeAssist, true, true, true, "win+alt", "ctrl+win", "ctrl+shift"); got != modeVoiceAgent {
 		t.Fatalf("sanitizeActiveModeForBindings returned %q, want %q", got, modeVoiceAgent)
 	}
 }
 
 func TestDeriveLegacyAgentModeFromBindingsPrefersActiveMode(t *testing.T) {
-	if got := deriveLegacyAgentModeFromBindings("ctrl+shift+j", "ctrl+shift+v", modeVoiceAgent, modeAssist); got != modeVoiceAgent {
+	if got := deriveLegacyAgentModeFromBindings("ctrl+win", "ctrl+shift", modeVoiceAgent, modeAssist); got != modeVoiceAgent {
 		t.Fatalf("deriveLegacyAgentModeFromBindings returned %q, want %q", got, modeVoiceAgent)
 	}
-	if got := deriveLegacyAgentModeFromBindings("ctrl+shift+j", "", modeNone, modeVoiceAgent); got != modeAssist {
+	if got := deriveLegacyAgentModeFromBindings("ctrl+win", "", modeNone, modeVoiceAgent); got != modeAssist {
 		t.Fatalf("deriveLegacyAgentModeFromBindings returned %q, want %q", got, modeAssist)
+	}
+}
+
+func TestValidateDistinctModeHotkeysRejectsDuplicateTwoKeyBases(t *testing.T) {
+	if validateDistinctModeHotkeys(true, true, true, "win+alt", "win+alt+j", "ctrl+shift") {
+		t.Fatal("expected duplicate two-key base to be rejected")
+	}
+	if !validateDistinctModeHotkeys(true, true, true, "win+alt", "ctrl+win+j", "ctrl+shift") {
+		t.Fatal("expected distinct two-key bases to pass validation")
 	}
 }
 

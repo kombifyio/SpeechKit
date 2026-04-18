@@ -1,0 +1,28 @@
+# CODEOWNERS for kombify-SpeechKit
+# Syntax: https://docs.github.com/en/repositories/managing-your-repositories-settings-and-features/customizing-your-repository/about-code-owners
+#
+# Every PR requires review from the code owner of the touched area.
+# This file should be kept short; broaden ownership by adding teams later.
+
+# Default fallback — all files require owner review
+*                                       @Soulcreek
+
+# Security-sensitive areas — extra scrutiny
+/internal/secrets/                      @Soulcreek
+/internal/netsec/                       @Soulcreek
+/internal/stt/                          @Soulcreek
+/internal/tts/                          @Soulcreek
+/internal/ai/                           @Soulcreek
+/internal/voiceagent/                   @Soulcreek
+/internal/winapi/                       @Soulcreek
+/cmd/speechkit/desktop_input_controller.go  @Soulcreek
+
+# Release & CI
+/.github/                               @Soulcreek
+/scripts/                               @Soulcreek
+/installer/                             @Soulcreek
+
+# Docs
+/docs/                                  @Soulcreek
+/SECURITY.md                            @Soulcreek
+/PRIVACY.md                             @Soulcreek

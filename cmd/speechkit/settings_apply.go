@@ -7,7 +7,7 @@ import (
 	"github.com/kombifyio/SpeechKit/internal/hotkey"
 )
 
-func (s *appState) applyRuntimeSettings(dictateHotkey, assistHotkey, voiceAgentHotkey, activeMode, audioDeviceID string, providers []string, visualizerValue, designValue, overlayPosition, vocabularyDictionary string, overlayMovable bool, overlayFreeX, overlayFreeY int, overlayMonitorPositions map[string]config.OverlayFreePosition) string {
+func (s *appState) applyRuntimeSettings(dictateEnabled, assistEnabled, voiceAgentEnabled bool, dictateHotkey, assistHotkey, voiceAgentHotkey, dictateHotkeyBehavior, assistHotkeyBehavior, voiceAgentHotkeyBehavior, activeMode, audioDeviceID string, providers []string, visualizerValue, designValue, overlayPosition, vocabularyDictionary string, overlayMovable bool, overlayFreeX, overlayFreeY int, overlayMonitorPositions map[string]config.OverlayFreePosition) string {
 	if s == nil {
 		return ""
 	}
@@ -16,11 +16,18 @@ func (s *appState) applyRuntimeSettings(dictateHotkey, assistHotkey, voiceAgentH
 	defer s.mu.Unlock()
 
 	oldHotkey := s.hotkey
+	s.dictateEnabled = dictateEnabled
+	s.assistEnabled = assistEnabled
+	s.voiceAgentEnabled = voiceAgentEnabled
 	s.dictateHotkey = dictateHotkey
 	s.assistHotkey = assistHotkey
 	s.voiceAgentHotkey = voiceAgentHotkey
-	s.agentHotkey = legacyAgentHotkeyFromModeBindings(assistHotkey, voiceAgentHotkey, normalizeAgentMode(""))
-	s.activeMode = normalizeRuntimeMode(activeMode, "")
+	s.dictateHotkeyBehavior = config.NormalizeHotkeyBehavior(dictateHotkeyBehavior, config.HotkeyBehaviorPushToTalk)
+	s.assistHotkeyBehavior = config.NormalizeHotkeyBehavior(assistHotkeyBehavior, config.HotkeyBehaviorPushToTalk)
+	s.voiceAgentHotkeyBehavior = config.NormalizeHotkeyBehavior(voiceAgentHotkeyBehavior, config.HotkeyBehaviorPushToTalk)
+	legacyAgentMode := deriveLegacyAgentModeFromBindings(assistHotkey, voiceAgentHotkey, activeMode, modeAssist)
+	s.agentHotkey = legacyAgentHotkeyFromModeBindings(assistHotkey, voiceAgentHotkey, legacyAgentMode)
+	s.activeMode = sanitizeActiveModeForBindings(activeMode, "", dictateEnabled, assistEnabled, voiceAgentEnabled, dictateHotkey, assistHotkey, voiceAgentHotkey)
 	s.audioDeviceID = audioDeviceID
 	s.providers = append([]string(nil), providers...)
 	s.overlayVisualizer = visualizerValue
@@ -36,7 +43,7 @@ func (s *appState) applyRuntimeSettings(dictateHotkey, assistHotkey, voiceAgentH
 	return oldHotkey
 }
 
-func (s *appState) applyDesktopSettings(oldDictateHotkey, oldAssistHotkey, oldVoiceAgentHotkey, dictateHotkey, assistHotkey, voiceAgentHotkey, oldAudioDeviceID, audioDeviceID string, overlayEnabled bool) {
+func (s *appState) applyDesktopSettings(oldDictateEnabled, oldAssistEnabled, oldVoiceAgentEnabled bool, oldDictateHotkey, oldAssistHotkey, oldVoiceAgentHotkey string, dictateEnabled, assistEnabled, voiceAgentEnabled bool, dictateHotkey, assistHotkey, voiceAgentHotkey, oldAudioDeviceID, audioDeviceID string, overlayEnabled bool) {
 	if s == nil {
 		return
 	}
@@ -46,9 +53,9 @@ func (s *appState) applyDesktopSettings(oldDictateHotkey, oldAssistHotkey, oldVo
 	audioSession := s.audioSession
 	s.mu.Unlock()
 
-	if hkMgr != nil && (dictateHotkey != oldDictateHotkey || assistHotkey != oldAssistHotkey || voiceAgentHotkey != oldVoiceAgentHotkey) {
+	if hkMgr != nil && (dictateEnabled != oldDictateEnabled || assistEnabled != oldAssistEnabled || voiceAgentEnabled != oldVoiceAgentEnabled || dictateHotkey != oldDictateHotkey || assistHotkey != oldAssistHotkey || voiceAgentHotkey != oldVoiceAgentHotkey) {
 		if modeManager, ok := hkMgr.(modeHotkeyReconfigurer); ok {
-			modeManager.ReconfigureModes(configuredModeCombos(dictateHotkey, assistHotkey, voiceAgentHotkey))
+			modeManager.ReconfigureModes(configuredModeCombos(dictateEnabled, assistEnabled, voiceAgentEnabled, dictateHotkey, assistHotkey, voiceAgentHotkey))
 		} else if dictateHotkey != oldDictateHotkey {
 			hkMgr.Reconfigure(hotkey.ParseCombo(dictateHotkey))
 		}

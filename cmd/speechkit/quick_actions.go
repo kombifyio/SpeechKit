@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 
 	"github.com/kombifyio/SpeechKit/internal/output"
 	"github.com/kombifyio/SpeechKit/internal/shortcuts"
@@ -224,7 +225,7 @@ func (q *quickActionCoordinator) summarizeAndPaste(ctx context.Context, selectio
 	return summary, nil
 }
 
-func (q *quickActionCoordinator) generateSummary(ctx context.Context, selection string, instruction, locale string) (string, string, error) {
+func (q *quickActionCoordinator) generateSummary(ctx context.Context, selection, instruction, locale string) (string, string, error) {
 	ctxInput := textactions.ResolveSummarizeContext(textactions.SummarizeContext{
 		Selection:         selection,
 		LastTranscription: q.lastTranscription(),
@@ -260,8 +261,16 @@ func (q *quickActionCoordinator) lastTranscription() string {
 }
 
 func outputTarget(target any) output.Target {
+	if target == nil {
+		return output.Target{}
+	}
 	if typed, ok := target.(output.Target); ok {
 		return typed
 	}
+	// Wrong dynamic type is a caller-contract violation: the transcription
+	// pipeline is expected to pass an output.Target. Log so the bug is
+	// observable instead of silently degrading to a zero-value paste target.
+	slog.Warn("transcription target has unexpected type; using empty output target",
+		"got", fmt.Sprintf("%T", target))
 	return output.Target{}
 }

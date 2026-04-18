@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -128,7 +129,76 @@ func providerSecretEnvName(cfg *config.Config, provider string) string {
 	}
 }
 
-func saveProviderCredential(ctx context.Context, provider, secret string, cfg *config.Config, sttRouter *router.Router) (string, error) {
+func configuredOpenAIProvider(cfg *config.Config) stt.STTProvider {
+	if cfg == nil || !cfg.Providers.OpenAI.Enabled {
+		return nil
+	}
+	apiKey := strings.TrimSpace(config.ResolveSecret(cfg.Providers.OpenAI.APIKeyEnv))
+	if apiKey == "" {
+		return nil
+	}
+	modelID := strings.TrimSpace(cfg.Providers.OpenAI.STTModel)
+	if modelID == "" {
+		return stt.NewOpenAISTTProvider(apiKey)
+	}
+	return stt.NewOpenAICompatibleProvider("openai", "https://api.openai.com", apiKey, modelID)
+}
+
+func configuredGroqProvider(cfg *config.Config) stt.STTProvider {
+	if cfg == nil || !cfg.Providers.Groq.Enabled {
+		return nil
+	}
+	apiKey := strings.TrimSpace(config.ResolveSecret(cfg.Providers.Groq.APIKeyEnv))
+	if apiKey == "" {
+		return nil
+	}
+	modelID := strings.TrimSpace(cfg.Providers.Groq.STTModel)
+	if modelID == "" {
+		return stt.NewGroqSTTProvider(apiKey)
+	}
+	return stt.NewOpenAICompatibleProvider("groq", "https://api.groq.com/openai", apiKey, modelID)
+}
+
+func configuredGoogleProvider(cfg *config.Config) stt.STTProvider {
+	if cfg == nil || !cfg.Providers.Google.Enabled {
+		return nil
+	}
+	apiKey := strings.TrimSpace(config.ResolveSecret(cfg.Providers.Google.APIKeyEnv))
+	if apiKey == "" {
+		return nil
+	}
+	return stt.NewGoogleSTTProvider(apiKey, cfg.Providers.Google.STTModel)
+}
+
+func configuredVPSProvider(cfg *config.Config) stt.STTProvider {
+	if cfg == nil || !cfg.VPS.Enabled || strings.TrimSpace(cfg.VPS.URL) == "" {
+		return nil
+	}
+	apiKey := strings.TrimSpace(config.ResolveSecret(cfg.VPS.APIKeyEnv))
+	return stt.NewVPSProvider(cfg.VPS.URL, apiKey)
+}
+
+func refreshProviderRuntimes(ctx context.Context, cfg *config.Config, state *appState, sttRouter *router.Router) error {
+	if sttRouter == nil && state != nil {
+		sttRouter = state.sttRouter
+	}
+
+	applySelectedVoiceAgentProfile(cfg, filteredModelCatalog())
+	syncConfiguredSTTRouter(ctx, cfg, state, sttRouter)
+	if state != nil {
+		if err := reloadAIRuntime(ctx, state, cfg); err != nil {
+			return err
+		}
+		state.mu.Lock()
+		state.activeProfiles = activeProfilesFromConfig(cfg, filteredModelCatalog())
+		state.voiceAgentSession = nil
+		state.mu.Unlock()
+	}
+	syncRuntimeProviders(ctx, state, sttRouter)
+	return nil
+}
+
+func saveProviderCredential(ctx context.Context, provider, secret string, cfg *config.Config, state *appState, sttRouter *router.Router) (string, error) {
 	provider = strings.TrimSpace(strings.ToLower(provider))
 	secret = strings.TrimSpace(secret)
 	if provider == "" {
@@ -150,9 +220,12 @@ func saveProviderCredential(ctx context.Context, provider, secret string, cfg *c
 			cfg.HuggingFace.Model = "openai/whisper-large-v3"
 		}
 		if sttRouter != nil {
-			if err := refreshHuggingFaceProvider(ctx, cfg, sttRouter, true); err != nil && err != errMissingHuggingFaceToken {
+			if err := refreshHuggingFaceProvider(ctx, cfg, sttRouter, true); err != nil && !errors.Is(err, errMissingHuggingFaceToken) {
 				return "", err
 			}
+		}
+		if err := refreshProviderRuntimes(ctx, cfg, state, sttRouter); err != nil {
+			return "", err
 		}
 		return "Hugging Face token saved", nil
 	}
@@ -164,10 +237,13 @@ func saveProviderCredential(ctx context.Context, provider, secret string, cfg *c
 	if err := secrets.SetNamedSecret(envName, secret); err != nil {
 		return "", err
 	}
+	if err := refreshProviderRuntimes(ctx, cfg, state, sttRouter); err != nil {
+		return "", err
+	}
 	return fmt.Sprintf("%s API key saved", providerLabel(provider)), nil
 }
 
-func clearProviderCredential(ctx context.Context, provider string, cfg *config.Config, sttRouter *router.Router) (string, error) {
+func clearProviderCredential(ctx context.Context, provider string, cfg *config.Config, state *appState, sttRouter *router.Router) (string, error) {
 	provider = strings.TrimSpace(strings.ToLower(provider))
 	if provider == "" {
 		return "", fmt.Errorf("provider is required")
@@ -181,11 +257,14 @@ func clearProviderCredential(ctx context.Context, provider string, cfg *config.C
 			return "", err
 		}
 		if sttRouter != nil && cfg.HuggingFace.Enabled {
-			if err := refreshHuggingFaceProvider(ctx, cfg, sttRouter, true); err == errMissingHuggingFaceToken {
+			if err := refreshHuggingFaceProvider(ctx, cfg, sttRouter, true); errors.Is(err, errMissingHuggingFaceToken) {
 				sttRouter.SetHuggingFace(nil)
 			} else if err != nil {
 				return "", err
 			}
+		}
+		if err := refreshProviderRuntimes(ctx, cfg, state, sttRouter); err != nil {
+			return "", err
 		}
 		return "Hugging Face token cleared", nil
 	}
@@ -197,6 +276,9 @@ func clearProviderCredential(ctx context.Context, provider string, cfg *config.C
 	if err := secrets.ClearNamedSecret(envName); err != nil {
 		return "", err
 	}
+	if err := refreshProviderRuntimes(ctx, cfg, state, sttRouter); err != nil {
+		return "", err
+	}
 	return fmt.Sprintf("%s API key cleared", providerLabel(provider)), nil
 }
 
@@ -205,9 +287,6 @@ func testProviderCredential(ctx context.Context, provider, secret string, cfg *c
 	secret = strings.TrimSpace(secret)
 	if provider == "" {
 		return "", fmt.Errorf("provider is required")
-	}
-	if ctx == nil {
-		ctx = context.Background()
 	}
 	testCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()

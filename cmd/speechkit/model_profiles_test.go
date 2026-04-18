@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/kombifyio/SpeechKit/internal/config"
@@ -11,9 +12,14 @@ import (
 )
 
 func TestApplySTTProfileLocalLaunchesLocalProvider(t *testing.T) {
+	installTestWhisperBinary(t)
+	modelPath := filepath.Join(t.TempDir(), "ggml-small.bin")
+	writeValidWhisperModelFile(t, modelPath)
+
 	cfg := defaultTestConfig()
 	cfg.Local.Port = 8080
 	cfg.Local.Model = "ggml-small.bin"
+	cfg.Local.ModelPath = modelPath
 	cfgPath := filepath.Join(t.TempDir(), "config.toml")
 
 	state := &appState{activeProfiles: map[string]string{}}
@@ -94,9 +100,14 @@ func TestApplySTTProfileHuggingFaceForcesCloudOnlyAndClearsLocalProvider(t *test
 }
 
 func TestApplySTTProfileLocalDetachesCanceledContextForStartup(t *testing.T) {
+	installTestWhisperBinary(t)
+	modelPath := filepath.Join(t.TempDir(), "ggml-small.bin")
+	writeValidWhisperModelFile(t, modelPath)
+
 	cfg := defaultTestConfig()
 	cfg.Local.Port = 8080
 	cfg.Local.Model = "ggml-small.bin"
+	cfg.Local.ModelPath = modelPath
 	cfgPath := filepath.Join(t.TempDir(), "config.toml")
 
 	state := &appState{activeProfiles: map[string]string{}}
@@ -125,6 +136,44 @@ func TestApplySTTProfileLocalDetachesCanceledContextForStartup(t *testing.T) {
 
 	if launchErr != nil {
 		t.Fatalf("launch context err = %v, want nil", launchErr)
+	}
+}
+
+func TestApplySTTProfileLocalRejectsMissingWhisperBinary(t *testing.T) {
+	modelsDir := t.TempDir()
+	modelPath := filepath.Join(modelsDir, "ggml-small.bin")
+	writeValidWhisperModelFile(t, modelPath)
+
+	t.Setenv("LOCALAPPDATA", t.TempDir())
+
+	cfg := defaultTestConfig()
+	cfg.Local.Enabled = true
+	cfg.Local.Port = 8080
+	cfg.Local.Model = "ggml-small.bin"
+	cfg.Local.ModelPath = modelPath
+	cfg.Routing.Strategy = "local-only"
+	cfgPath := filepath.Join(t.TempDir(), "config.toml")
+
+	state := &appState{activeProfiles: map[string]string{}}
+	sttRouter := &router.Router{}
+	profile := models.Profile{
+		ID:            "stt.local.whispercpp",
+		Name:          "Whisper.cpp (Bundled Local)",
+		Modality:      models.ModalitySTT,
+		ExecutionMode: models.ExecutionModeLocal,
+		ModelID:       "whisper.cpp",
+	}
+
+	previousLauncher := launchLocalProvider
+	launchLocalProvider = func(ctx context.Context, state *appState, r *router.Router, provider localProviderStarter) {}
+	defer func() { launchLocalProvider = previousLauncher }()
+
+	err := applySTTProfile(context.Background(), cfgPath, cfg, state, sttRouter, profile)
+	if err == nil {
+		t.Fatal("expected error when whisper-server binary is missing")
+	}
+	if got := err.Error(); got == "" || !strings.Contains(strings.ToLower(got), "whisper-server binary missing") {
+		t.Fatalf("error = %q, want whisper-server binary missing", got)
 	}
 }
 

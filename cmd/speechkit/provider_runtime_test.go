@@ -56,7 +56,7 @@ func TestRuntimeAvailableProvidersFiltersUnreadyLocal(t *testing.T) {
 	r.SetLocal(&readyTestProvider{name: "local", ready: false})
 	r.SetHuggingFace(&readyTestProvider{name: "huggingface", ready: true})
 
-	got := runtimeAvailableProviders(r)
+	got := runtimeAvailableProviders(t.Context(), r)
 	want := []string{"huggingface"}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("runtime providers = %v, want %v", got, want)
@@ -68,7 +68,7 @@ func TestRuntimeAvailableProvidersIncludesReadyLocal(t *testing.T) {
 	r.SetLocal(&readyTestProvider{name: "local", ready: true})
 	r.SetHuggingFace(&readyTestProvider{name: "huggingface", ready: true})
 
-	got := runtimeAvailableProviders(r)
+	got := runtimeAvailableProviders(t.Context(), r)
 	want := []string{"local", "huggingface"}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("runtime providers = %v, want %v", got, want)
@@ -76,10 +76,10 @@ func TestRuntimeAvailableProvidersIncludesReadyLocal(t *testing.T) {
 }
 
 func TestProviderReadyFallsBackToHealth(t *testing.T) {
-	if !providerReady(&healthOnlyTestProvider{name: "local"}) {
+	if !providerReady(t.Context(), &healthOnlyTestProvider{name: "local"}) {
 		t.Fatal("expected health-based provider readiness check to pass")
 	}
-	if providerReady(&healthOnlyTestProvider{name: "local", healthErr: fmt.Errorf("down")}) {
+	if providerReady(t.Context(), &healthOnlyTestProvider{name: "local", healthErr: fmt.Errorf("down")}) {
 		t.Fatal("expected health-based provider readiness check to fail")
 	}
 }

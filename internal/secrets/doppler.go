@@ -11,7 +11,7 @@ import (
 // DefaultDopplerSecretLookup runs the Doppler CLI to retrieve a single secret value.
 // It hides the console window on Windows to avoid terminal flashes in GUI mode.
 func DefaultDopplerSecretLookup(dopplerPath, key, project, cfg string) (string, error) {
-	cmd := exec.Command(
+	cmd := exec.Command( //nolint:gosec,noctx // G204: dopplerPath is app-controlled binary; no context param in this public API
 		dopplerPath, "secrets", "get", key,
 		"--plain",
 		"--project", project,
@@ -60,6 +60,6 @@ func dopplerFileExists(path string) bool {
 	if strings.TrimSpace(path) == "" {
 		return false
 	}
-	info, err := os.Stat(path)
+	info, err := os.Stat(path) //nolint:gosec // G703: path is Doppler binary location from app config
 	return err == nil && !info.IsDir()
 }

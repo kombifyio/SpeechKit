@@ -33,6 +33,7 @@ func registerQuickNoteRoutes(mux *http.ServeMux, cfg *config.Config, state *appS
 			_ = json.NewEncoder(w).Encode(map[string]string{"message": "Store not available"})
 			return
 		}
+		r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
 		if err := r.ParseForm(); err != nil {
 			_ = json.NewEncoder(w).Encode(map[string]string{"message": msgFormParseError})
 			return
@@ -59,6 +60,7 @@ func registerQuickNoteRoutes(mux *http.ServeMux, cfg *config.Config, state *appS
 			_ = json.NewEncoder(w).Encode(map[string]string{"message": "Store not available"})
 			return
 		}
+		r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
 		if err := r.ParseForm(); err != nil {
 			_ = json.NewEncoder(w).Encode(map[string]string{"message": msgFormParseError})
 			return
@@ -86,6 +88,7 @@ func registerQuickNoteRoutes(mux *http.ServeMux, cfg *config.Config, state *appS
 			_ = json.NewEncoder(w).Encode(map[string]string{"message": "Store not available"})
 			return
 		}
+		r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
 		if err := r.ParseForm(); err != nil {
 			_ = json.NewEncoder(w).Encode(map[string]string{"message": msgFormParseError})
 			return
@@ -111,6 +114,7 @@ func registerQuickNoteRoutes(mux *http.ServeMux, cfg *config.Config, state *appS
 			_ = json.NewEncoder(w).Encode(map[string]string{"message": "Store not available"})
 			return
 		}
+		r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
 		if err := r.ParseForm(); err != nil {
 			_ = json.NewEncoder(w).Encode(map[string]string{"message": msgFormParseError})
 			return
@@ -218,8 +222,8 @@ func registerQuickNoteRoutes(mux *http.ServeMux, cfg *config.Config, state *appS
 			Type:   speechkit.CommandOpenQuickNote,
 			NoteID: noteID,
 		})
-		if err == speechkit.ErrCommandHandlerUnavailable {
-			err = service.OpenEditor(noteID)
+		if errors.Is(err, speechkit.ErrCommandHandlerUnavailable) {
+			err = service.OpenEditor(noteID) //nolint:contextcheck // OpenEditor is a Wails window operation that does not accept context
 		}
 		if err != nil {
 			_ = json.NewEncoder(w).Encode(map[string]string{"message": "Failed to open editor"})
@@ -236,7 +240,7 @@ func registerQuickNoteRoutes(mux *http.ServeMux, cfg *config.Config, state *appS
 		err := dispatchQuickNoteCommand(r.Context(), state, speechkit.Command{
 			Type: speechkit.CommandOpenQuickCapture,
 		})
-		if err == speechkit.ErrCommandHandlerUnavailable {
+		if errors.Is(err, speechkit.ErrCommandHandlerUnavailable) {
 			_, err = service.OpenCapture(r.Context())
 		}
 		if err != nil {
@@ -254,8 +258,8 @@ func registerQuickNoteRoutes(mux *http.ServeMux, cfg *config.Config, state *appS
 		err := dispatchQuickNoteCommand(r.Context(), state, speechkit.Command{
 			Type: speechkit.CommandCloseQuickCapture,
 		})
-		if err == speechkit.ErrCommandHandlerUnavailable {
-			err = service.CloseCapture()
+		if errors.Is(err, speechkit.ErrCommandHandlerUnavailable) {
+			err = service.CloseCapture() //nolint:contextcheck // CloseCapture is a Wails window operation that does not accept context
 		}
 		if err != nil {
 			_ = json.NewEncoder(w).Encode(map[string]string{"message": "Failed to close capture"})
@@ -317,7 +321,7 @@ func dispatchQuickNoteCommand(ctx context.Context, state *appState, command spee
 
 // --- QuickNote text helpers ---
 
-func summarizeQuickNote(ctx context.Context, state *appState, text string, language string) string {
+func summarizeQuickNote(ctx context.Context, state *appState, text, language string) string {
 	input := textactions.ResolveSummarizeContext(textactions.SummarizeContext{
 		Selection: text,
 		Locale:    language,
@@ -338,7 +342,7 @@ func summarizeQuickNote(ctx context.Context, state *appState, text string, langu
 	return fallbackQuickNoteSummary(input.Text)
 }
 
-func draftQuickNoteEmail(noteText string, summary string) string {
+func draftQuickNoteEmail(noteText, summary string) string {
 	normalized := normalizeQuickNoteText(noteText)
 	if summary == "" {
 		summary = fallbackQuickNoteSummary(normalized)

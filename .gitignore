@@ -15,8 +15,11 @@ SpeechKit-Portable-v*.zip
 *.bin
 *.ggml
 /models/
-.public-export-dryrun/
-.public-export-v8/
+.public-export*/
+
+# Hygiene / audit working artifacts
+AUDIT-REPORT.md
+_export/
 
 # Config with secrets
 config.toml
@@ -56,12 +59,21 @@ CLAUDE.md.backup-*
 Thumbs.db
 Desktop.ini
 
+# SBOMs (generated in release workflow, attached to GitHub Releases)
+*.sbom.json
+*.cdx.json
+
 # Wails
 /node_modules/
 frontend/node_modules/
 frontend/**/node_modules/
 frontend/dist/
 frontend/app/.git/
+
+# Playwright E2E artifacts
+frontend/app/test-results/
+frontend/app/playwright-report/
+frontend/app/.playwright-cache/
 frontend/app/.git.local-backup/
 
 # whisper.cpp binaries

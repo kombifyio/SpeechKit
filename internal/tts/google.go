@@ -8,21 +8,30 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"time"
+
+	"github.com/kombifyio/SpeechKit/internal/netsec"
 )
 
 const (
-	googleTTSEndpoint     = "https://texttospeech.googleapis.com/v1/text:synthesize"
+	googleTTSBaseURL      = "https://texttospeech.googleapis.com"
+	googleTTSPath         = "v1/text:synthesize"
 	googleDefaultVoice    = "en-US-Neural2-J"
 	googleDefaultLanguage = "en-US"
 	googleSampleRate      = 24000
 )
 
 // Google implements Provider using the Google Cloud Text-to-Speech API.
+//
+// BaseURL is configurable for testing. It is validated against Validation
+// on every request. Default Validation is strict (public https only).
 type Google struct {
-	apiKey string
-	voice  string
-	client *http.Client
+	apiKey     string
+	voice      string
+	BaseURL    string
+	Validation netsec.ValidationOptions
+	client     *http.Client
 }
 
 // GoogleOpts configures the Google TTS provider.
@@ -38,9 +47,11 @@ func NewGoogle(opts GoogleOpts) *Google {
 		voice = googleDefaultVoice
 	}
 	return &Google{
-		apiKey: opts.APIKey,
-		voice:  voice,
-		client: &http.Client{Timeout: 30 * time.Second},
+		apiKey:  opts.APIKey,
+		voice:   voice,
+		BaseURL: googleTTSBaseURL,
+		// Validation zero-value = strict: public https only.
+		client: netsec.NewSafeHTTPClient(netsec.ClientOptions{Timeout: 30 * time.Second}),
 	}
 }
 
@@ -127,6 +138,18 @@ func (g *Google) Synthesize(ctx context.Context, text string, opts SynthesizeOpt
 		return nil, fmt.Errorf("google tts: empty text")
 	}
 
+	base := g.BaseURL
+	if base == "" {
+		base = googleTTSBaseURL
+	}
+	validated, err := netsec.BuildEndpoint(base, googleTTSPath, g.Validation)
+	if err != nil {
+		return nil, fmt.Errorf("google tts: endpoint: %w", err)
+	}
+	q := url.Values{}
+	q.Set("key", g.apiKey)
+	endpoint := validated + "?" + q.Encode()
+
 	voice := opts.Voice
 	locale := opts.Locale
 	if locale == "" {
@@ -168,8 +191,7 @@ func (g *Google) Synthesize(ctx context.Context, text string, opts SynthesizeOpt
 		return nil, fmt.Errorf("google tts: marshal: %w", err)
 	}
 
-	url := googleTTSEndpoint + "?key=" + g.apiKey
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(bodyBytes))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(bodyBytes))
 	if err != nil {
 		return nil, fmt.Errorf("google tts: create request: %w", err)
 	}
@@ -179,7 +201,7 @@ func (g *Google) Synthesize(ctx context.Context, text string, opts SynthesizeOpt
 	if err != nil {
 		return nil, fmt.Errorf("google tts: request failed: %w", err)
 	}
-	defer resp.Body.Close()
+	defer resp.Body.Close() //nolint:errcheck // response body close error is not actionable
 
 	if resp.StatusCode != http.StatusOK {
 		errBody, _ := io.ReadAll(io.LimitReader(resp.Body, 1024))

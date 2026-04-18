@@ -8,20 +8,28 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"time"
+
+	"github.com/kombifyio/SpeechKit/internal/netsec"
 )
 
 const (
-	googleSTTBaseURL      = "https://speech.googleapis.com"
+	googleSTTBaseURL       = "https://speech.googleapis.com"
 	googleMaxResponseBytes = 1 << 20
 )
 
 // GoogleSTTProvider implements STTProvider for Google Cloud Speech-to-Text v1 REST API.
+//
+// BaseURL is user-configurable (for testing or regional endpoints). It is
+// validated against Validation on every request. Default Validation is strict
+// (public https only).
 type GoogleSTTProvider struct {
-	APIKey  string
-	Model   string // "chirp_3", "chirp_2", "latest_long"
-	BaseURL string // Override for testing; defaults to googleSTTBaseURL
-	client  *http.Client
+	APIKey     string
+	Model      string // "chirp_3", "chirp_2", "latest_long"
+	BaseURL    string // Override for testing; defaults to googleSTTBaseURL
+	Validation netsec.ValidationOptions
+	client     *http.Client
 }
 
 // NewGoogleSTTProvider creates a provider for Google Cloud Speech-to-Text.
@@ -34,7 +42,8 @@ func NewGoogleSTTProvider(apiKey, model string) *GoogleSTTProvider {
 		APIKey:  apiKey,
 		Model:   model,
 		BaseURL: googleSTTBaseURL,
-		client:  &http.Client{Timeout: 30 * time.Second},
+		// Validation zero-value = strict: public https only.
+		client: netsec.NewSafeHTTPClient(netsec.ClientOptions{Timeout: 30 * time.Second}),
 	}
 }
 
@@ -85,13 +94,27 @@ func mapLanguageCode(lang string) string {
 	}
 }
 
-// Transcribe sends audio to Google Cloud Speech-to-Text v1 REST API.
-func (p *GoogleSTTProvider) Transcribe(ctx context.Context, audio []byte, opts TranscribeOpts) (*Result, error) {
+// googleEndpoint builds a validated Google STT URL with an api-key query param.
+func (p *GoogleSTTProvider) googleEndpoint(path string) (string, error) {
 	base := p.BaseURL
 	if base == "" {
 		base = googleSTTBaseURL
 	}
-	endpoint := fmt.Sprintf("%s/v1/speech:recognize?key=%s", base, p.APIKey)
+	validated, err := netsec.BuildEndpoint(base, path, p.Validation)
+	if err != nil {
+		return "", fmt.Errorf("google endpoint: %w", err)
+	}
+	q := url.Values{}
+	q.Set("key", p.APIKey)
+	return validated + "?" + q.Encode(), nil
+}
+
+// Transcribe sends audio to Google Cloud Speech-to-Text v1 REST API.
+func (p *GoogleSTTProvider) Transcribe(ctx context.Context, audio []byte, opts TranscribeOpts) (*Result, error) {
+	endpoint, err := p.googleEndpoint("v1/speech:recognize")
+	if err != nil {
+		return nil, err
+	}
 
 	model := p.Model
 	if opts.Model != "" {
@@ -128,7 +151,7 @@ func (p *GoogleSTTProvider) Transcribe(ctx context.Context, audio []byte, opts T
 	if err != nil {
 		return nil, fmt.Errorf("google request: %w", err)
 	}
-	defer resp.Body.Close()
+	defer resp.Body.Close() //nolint:errcheck // response body close error is not actionable
 	duration := time.Since(start)
 
 	respBody, err := io.ReadAll(io.LimitReader(resp.Body, googleMaxResponseBytes))
@@ -177,13 +200,12 @@ func (p *GoogleSTTProvider) Name() string {
 
 // Health checks if the Google Speech API is reachable.
 func (p *GoogleSTTProvider) Health(ctx context.Context) error {
-	base := p.BaseURL
-	if base == "" {
-		base = googleSTTBaseURL
+	endpoint, err := p.googleEndpoint("v1/operations")
+	if err != nil {
+		return err
 	}
-	endpoint := fmt.Sprintf("%s/v1/operations?key=%s", base, p.APIKey)
 
-	req, err := http.NewRequestWithContext(ctx, "GET", endpoint, nil)
+	req, err := http.NewRequestWithContext(ctx, "GET", endpoint, http.NoBody)
 	if err != nil {
 		return err
 	}
@@ -192,7 +214,7 @@ func (p *GoogleSTTProvider) Health(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("google health: %w", err)
 	}
-	resp.Body.Close()
+	_ = resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("google health: status %d", resp.StatusCode)

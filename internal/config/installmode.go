@@ -43,7 +43,7 @@ func LoadInstallState() (*InstallState, error) {
 	path := installStatePath()
 	state := &InstallState{}
 
-	data, err := os.ReadFile(path)
+	data, err := os.ReadFile(path) //nolint:gosec // path is application config dir, not user-controlled input
 	if err != nil {
 		if os.IsNotExist(err) {
 			return state, nil
@@ -61,7 +61,7 @@ func LoadInstallState() (*InstallState, error) {
 // SaveInstallState writes the install state to disk.
 func SaveInstallState(state *InstallState) error {
 	dir := installStateDir()
-	if err := os.MkdirAll(dir, 0755); err != nil {
+	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return fmt.Errorf("create install state dir: %w", err)
 	}
 
@@ -70,11 +70,11 @@ func SaveInstallState(state *InstallState) error {
 	}
 
 	path := installStatePath()
-	file, err := os.Create(path)
+	file, err := os.Create(path) //nolint:gosec // path is application config dir, not user-controlled input
 	if err != nil {
 		return fmt.Errorf("create install state: %w", err)
 	}
-	defer file.Close()
+	defer file.Close() //nolint:errcheck // file close on write, error not actionable after encode
 
 	if err := toml.NewEncoder(file).Encode(state); err != nil {
 		return fmt.Errorf("encode install state: %w", err)

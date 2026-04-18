@@ -12,7 +12,7 @@ import (
 	"time"
 
 	"github.com/kombifyio/SpeechKit/internal/runtimepath"
-	_ "github.com/jackc/pgx/v5/stdlib"
+	_ "github.com/jackc/pgx/v5/stdlib" // register pgx as database/sql driver
 )
 
 //go:embed migrations/postgres/001_init.sql
@@ -41,12 +41,12 @@ func NewPostgresStore(cfg StoreConfig) (*PostgresStore, error) {
 	if err != nil {
 		return nil, fmt.Errorf("open postgres: %w", err)
 	}
-	if err := db.Ping(); err != nil {
-		db.Close()
+	if err := db.PingContext(context.Background()); err != nil {
+		_ = db.Close()
 		return nil, fmt.Errorf("connect postgres: %w", err)
 	}
-	if _, err := db.Exec(postgresMigration001); err != nil {
-		db.Close()
+	if _, err := db.ExecContext(context.Background(), postgresMigration001); err != nil {
+		_ = db.Close()
 		return nil, fmt.Errorf("migrate postgres: %w", err)
 	}
 
@@ -67,7 +67,7 @@ func NewPostgresStore(cfg StoreConfig) (*PostgresStore, error) {
 	return store, nil
 }
 
-func (s *PostgresStore) SaveTranscription(_ context.Context, text, language, provider, model string, durationMs, latencyMs int64, audioData []byte) error {
+func (s *PostgresStore) SaveTranscription(ctx context.Context, text, language, provider, model string, durationMs, latencyMs int64, audioData []byte) error {
 	audioPath, err := s.persistAudio(audioData, "", durationMs)
 	if err != nil {
 		return err
@@ -76,7 +76,7 @@ func (s *PostgresStore) SaveTranscription(_ context.Context, text, language, pro
 		model = s.transcriptionModelHint(provider)
 	}
 
-	_, err = s.db.Exec(
+	_, err = s.db.ExecContext(ctx,
 		`INSERT INTO transcriptions (text, language, provider, model, duration_ms, latency_ms, audio_path)
 		 VALUES ($1, $2, $3, $4, $5, $6, $7)`,
 		text, language, provider, model, durationMs, latencyMs, audioPath,
@@ -85,12 +85,12 @@ func (s *PostgresStore) SaveTranscription(_ context.Context, text, language, pro
 		return fmt.Errorf("insert transcription: %w", err)
 	}
 
-	s.scheduleMaintenance()
+	s.scheduleMaintenance() //nolint:contextcheck // maintenance goroutines must not be bound to request context
 	return nil
 }
 
-func (s *PostgresStore) GetTranscription(_ context.Context, id int64) (*Transcription, error) {
-	row := s.db.QueryRow(
+func (s *PostgresStore) GetTranscription(ctx context.Context, id int64) (*Transcription, error) {
+	row := s.db.QueryRowContext(ctx,
 		`SELECT id, text, language, provider, COALESCE(model, ''), COALESCE(duration_ms, 0), COALESCE(latency_ms, 0), COALESCE(audio_path, ''), created_at
 		 FROM transcriptions WHERE id = $1`,
 		id,
@@ -107,13 +107,13 @@ func (s *PostgresStore) GetTranscription(_ context.Context, id int64) (*Transcri
 	return &t, nil
 }
 
-func (s *PostgresStore) ListTranscriptions(_ context.Context, opts ListOpts) ([]Transcription, error) {
+func (s *PostgresStore) ListTranscriptions(ctx context.Context, opts ListOpts) ([]Transcription, error) {
 	limit := opts.Limit
 	if limit <= 0 {
 		limit = 20
 	}
 
-	rows, err := s.db.Query(
+	rows, err := s.db.QueryContext(ctx,
 		`SELECT id, text, language, provider, COALESCE(model, ''), COALESCE(duration_ms, 0), COALESCE(latency_ms, 0), COALESCE(audio_path, ''), created_at
 		 FROM transcriptions
 		 ORDER BY created_at DESC, id DESC
@@ -123,7 +123,7 @@ func (s *PostgresStore) ListTranscriptions(_ context.Context, opts ListOpts) ([]
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer rows.Close() //nolint:errcheck // deferred rows close, error not actionable
 
 	results := make([]Transcription, 0)
 	for rows.Next() {
@@ -140,20 +140,20 @@ func (s *PostgresStore) ListTranscriptions(_ context.Context, opts ListOpts) ([]
 	return results, rows.Err()
 }
 
-func (s *PostgresStore) TranscriptionCount(_ context.Context) (int, error) {
+func (s *PostgresStore) TranscriptionCount(ctx context.Context) (int, error) {
 	var count int
-	err := s.db.QueryRow(`SELECT COUNT(*) FROM transcriptions`).Scan(&count)
+	err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM transcriptions`).Scan(&count)
 	return count, err
 }
 
-func (s *PostgresStore) SaveQuickNote(_ context.Context, text, language, provider string, durationMs, latencyMs int64, audioData []byte) (int64, error) {
+func (s *PostgresStore) SaveQuickNote(ctx context.Context, text, language, provider string, durationMs, latencyMs int64, audioData []byte) (int64, error) {
 	audioPath, err := s.persistAudio(audioData, "qn_", durationMs)
 	if err != nil {
 		return 0, err
 	}
 
 	var id int64
-	err = s.db.QueryRow(
+	err = s.db.QueryRowContext(ctx,
 		`INSERT INTO quick_notes (text, language, provider, duration_ms, latency_ms, audio_path)
 		 VALUES ($1, $2, $3, $4, $5, $6)
 		 RETURNING id`,
@@ -163,12 +163,12 @@ func (s *PostgresStore) SaveQuickNote(_ context.Context, text, language, provide
 		return 0, fmt.Errorf("insert quick note: %w", err)
 	}
 
-	s.scheduleMaintenance()
+	s.scheduleMaintenance() //nolint:contextcheck // maintenance goroutines must not be bound to request context
 	return id, nil
 }
 
-func (s *PostgresStore) GetQuickNote(_ context.Context, id int64) (*QuickNote, error) {
-	row := s.db.QueryRow(
+func (s *PostgresStore) GetQuickNote(ctx context.Context, id int64) (*QuickNote, error) {
+	row := s.db.QueryRowContext(ctx,
 		`SELECT id, text, language, provider, COALESCE(duration_ms, 0), COALESCE(latency_ms, 0), COALESCE(audio_path, ''), pinned, created_at, updated_at
 		 FROM quick_notes WHERE id = $1`,
 		id,
@@ -182,13 +182,13 @@ func (s *PostgresStore) GetQuickNote(_ context.Context, id int64) (*QuickNote, e
 	return &n, nil
 }
 
-func (s *PostgresStore) ListQuickNotes(_ context.Context, opts ListOpts) ([]QuickNote, error) {
+func (s *PostgresStore) ListQuickNotes(ctx context.Context, opts ListOpts) ([]QuickNote, error) {
 	limit := opts.Limit
 	if limit <= 0 {
 		limit = 20
 	}
 
-	rows, err := s.db.Query(
+	rows, err := s.db.QueryContext(ctx,
 		`SELECT id, text, language, provider, COALESCE(duration_ms, 0), COALESCE(latency_ms, 0), COALESCE(audio_path, ''), pinned, created_at, updated_at
 		 FROM quick_notes
 		 ORDER BY pinned DESC, created_at DESC, id DESC
@@ -198,7 +198,7 @@ func (s *PostgresStore) ListQuickNotes(_ context.Context, opts ListOpts) ([]Quic
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer rows.Close() //nolint:errcheck // deferred rows close, error not actionable
 
 	results := make([]QuickNote, 0)
 	for rows.Next() {
@@ -212,8 +212,8 @@ func (s *PostgresStore) ListQuickNotes(_ context.Context, opts ListOpts) ([]Quic
 	return results, rows.Err()
 }
 
-func (s *PostgresStore) UpdateQuickNote(_ context.Context, id int64, text string) error {
-	result, err := s.db.Exec(`UPDATE quick_notes SET text = $1, updated_at = NOW() WHERE id = $2`, text, id)
+func (s *PostgresStore) UpdateQuickNote(ctx context.Context, id int64, text string) error {
+	result, err := s.db.ExecContext(ctx, `UPDATE quick_notes SET text = $1, updated_at = NOW() WHERE id = $2`, text, id)
 	if err != nil {
 		return fmt.Errorf("update quick note: %w", err)
 	}
@@ -224,9 +224,9 @@ func (s *PostgresStore) UpdateQuickNote(_ context.Context, id int64, text string
 	return nil
 }
 
-func (s *PostgresStore) UpdateQuickNoteCapture(_ context.Context, id int64, text, provider string, durationMs, latencyMs int64, audioData []byte) error {
+func (s *PostgresStore) UpdateQuickNoteCapture(ctx context.Context, id int64, text, provider string, durationMs, latencyMs int64, audioData []byte) error {
 	var currentAudioPath string
-	if err := s.db.QueryRow(`SELECT COALESCE(audio_path, '') FROM quick_notes WHERE id = $1`, id).Scan(&currentAudioPath); err != nil {
+	if err := s.db.QueryRowContext(ctx, `SELECT COALESCE(audio_path, '') FROM quick_notes WHERE id = $1`, id).Scan(&currentAudioPath); err != nil {
 		return fmt.Errorf("lookup quick note %d: %w", id, err)
 	}
 
@@ -238,7 +238,7 @@ func (s *PostgresStore) UpdateQuickNoteCapture(_ context.Context, id int64, text
 		nextAudioPath = currentAudioPath
 	}
 
-	result, err := s.db.Exec(
+	result, err := s.db.ExecContext(ctx,
 		`UPDATE quick_notes
 		 SET text = $1, provider = $2, duration_ms = $3, latency_ms = $4, audio_path = $5, updated_at = NOW()
 		 WHERE id = $6`,
@@ -255,12 +255,12 @@ func (s *PostgresStore) UpdateQuickNoteCapture(_ context.Context, id int64, text
 		_ = os.Remove(currentAudioPath)
 	}
 
-	s.scheduleMaintenance()
+	s.scheduleMaintenance() //nolint:contextcheck // maintenance goroutines must not be bound to request context
 	return nil
 }
 
-func (s *PostgresStore) PinQuickNote(_ context.Context, id int64, pinned bool) error {
-	result, err := s.db.Exec(`UPDATE quick_notes SET pinned = $1 WHERE id = $2`, pinned, id)
+func (s *PostgresStore) PinQuickNote(ctx context.Context, id int64, pinned bool) error {
+	result, err := s.db.ExecContext(ctx, `UPDATE quick_notes SET pinned = $1 WHERE id = $2`, pinned, id)
 	if err != nil {
 		return fmt.Errorf("pin quick note: %w", err)
 	}
@@ -271,11 +271,11 @@ func (s *PostgresStore) PinQuickNote(_ context.Context, id int64, pinned bool) e
 	return nil
 }
 
-func (s *PostgresStore) DeleteQuickNote(_ context.Context, id int64) error {
+func (s *PostgresStore) DeleteQuickNote(ctx context.Context, id int64) error {
 	var audioPath string
-	_ = s.db.QueryRow(`SELECT COALESCE(audio_path, '') FROM quick_notes WHERE id = $1`, id).Scan(&audioPath)
+	_ = s.db.QueryRowContext(ctx, `SELECT COALESCE(audio_path, '') FROM quick_notes WHERE id = $1`, id).Scan(&audioPath)
 
-	result, err := s.db.Exec(`DELETE FROM quick_notes WHERE id = $1`, id)
+	result, err := s.db.ExecContext(ctx, `DELETE FROM quick_notes WHERE id = $1`, id)
 	if err != nil {
 		return fmt.Errorf("delete quick note: %w", err)
 	}
@@ -289,22 +289,22 @@ func (s *PostgresStore) DeleteQuickNote(_ context.Context, id int64) error {
 	return nil
 }
 
-func (s *PostgresStore) QuickNoteCount(_ context.Context) (int, error) {
+func (s *PostgresStore) QuickNoteCount(ctx context.Context) (int, error) {
 	var count int
-	err := s.db.QueryRow(`SELECT COUNT(*) FROM quick_notes`).Scan(&count)
+	err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM quick_notes`).Scan(&count)
 	return count, err
 }
 
-func (s *PostgresStore) Stats(_ context.Context) (Stats, error) {
+func (s *PostgresStore) Stats(ctx context.Context) (Stats, error) {
 	var stats Stats
-	if err := s.db.QueryRow(`SELECT COUNT(*) FROM transcriptions`).Scan(&stats.Transcriptions); err != nil {
+	if err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM transcriptions`).Scan(&stats.Transcriptions); err != nil {
 		return Stats{}, err
 	}
-	if err := s.db.QueryRow(`SELECT COUNT(*) FROM quick_notes`).Scan(&stats.QuickNotes); err != nil {
+	if err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM quick_notes`).Scan(&stats.QuickNotes); err != nil {
 		return Stats{}, err
 	}
 
-	rows, err := s.db.Query(
+	rows, err := s.db.QueryContext(ctx,
 		`SELECT text, COALESCE(duration_ms, 0), COALESCE(latency_ms, 0) FROM (
 			SELECT text, duration_ms, latency_ms FROM transcriptions
 			UNION ALL
@@ -314,7 +314,7 @@ func (s *PostgresStore) Stats(_ context.Context) (Stats, error) {
 	if err != nil {
 		return Stats{}, err
 	}
-	defer rows.Close()
+	defer rows.Close() //nolint:errcheck // deferred rows close, error not actionable
 
 	var totalLatency int64
 	var latencyCount int64
@@ -375,12 +375,12 @@ func (s *PostgresStore) persistAudio(audioData []byte, prefix string, _ int64) (
 	if !s.saveAudio || len(audioData) == 0 {
 		return "", nil
 	}
-	if err := os.MkdirAll(s.audioDir, 0755); err != nil {
+	if err := os.MkdirAll(s.audioDir, 0o700); err != nil {
 		return "", fmt.Errorf("create audio dir: %w", err)
 	}
 	filename := fmt.Sprintf("%s%d.wav", prefix, time.Now().UnixNano())
 	audioPath := filepath.Join(s.audioDir, filename)
-	if err := os.WriteFile(audioPath, audioData, 0600); err != nil {
+	if err := os.WriteFile(audioPath, audioData, 0o600); err != nil {
 		return "", fmt.Errorf("save audio: %w", err)
 	}
 	return audioPath, nil
@@ -429,14 +429,14 @@ func (s *PostgresStore) enforceStorageLimit() {
 		return
 	}
 
-	tx, err := s.db.Begin()
+	tx, err := s.db.BeginTx(context.Background(), nil) //nolint:contextcheck // background goroutine should not be bound to request context
 	if err != nil {
 		slog.Warn("store: begin postgres cleanup tx", "err", err)
 		return
 	}
-	defer tx.Rollback()
+	defer tx.Rollback() //nolint:errcheck // deferred rollback, error not actionable
 
-	rows, err := tx.Query(
+	rows, err := tx.QueryContext(context.Background(), //nolint:contextcheck // background goroutine should not be bound to request context
 		`SELECT kind, id, audio_path FROM (
 			SELECT 'transcription' AS kind, id, audio_path, created_at FROM transcriptions WHERE audio_path <> ''
 			UNION ALL
@@ -447,7 +447,7 @@ func (s *PostgresStore) enforceStorageLimit() {
 	if err != nil {
 		return
 	}
-	defer rows.Close()
+	defer rows.Close() //nolint:errcheck // deferred rows close, error not actionable
 
 	for rows.Next() && totalSize > limitBytes {
 		var (
@@ -475,9 +475,12 @@ func (s *PostgresStore) enforceStorageLimit() {
 		if kind == "quick_note" {
 			query = `UPDATE quick_notes SET audio_path = '' WHERE id = $1`
 		}
-		if _, err := tx.Exec(query, id); err != nil {
+		if _, err := tx.ExecContext(context.Background(), query, id); err != nil { //nolint:contextcheck // background goroutine should not be bound to request context
 			slog.Warn("store: clear postgres audio_path", "kind", kind, "id", id, "err", err)
 		}
+	}
+	if err := rows.Err(); err != nil {
+		slog.Warn("store: postgres cleanup rows error", "err", err)
 	}
 
 	if err := tx.Commit(); err != nil {
@@ -491,14 +494,14 @@ func (s *PostgresStore) enforceAudioRetention() {
 	}
 
 	cutoff := time.Now().Add(-time.Duration(s.audioRetentionDays) * 24 * time.Hour)
-	tx, err := s.db.Begin()
+	tx, err := s.db.BeginTx(context.Background(), nil) //nolint:contextcheck // background goroutine should not be bound to request context
 	if err != nil {
 		slog.Warn("store: begin postgres retention tx", "err", err)
 		return
 	}
-	defer tx.Rollback()
+	defer tx.Rollback() //nolint:errcheck // deferred rollback, error not actionable
 
-	rows, err := tx.Query(
+	rows, err := tx.QueryContext(context.Background(), //nolint:contextcheck // background goroutine should not be bound to request context
 		`SELECT kind, id, audio_path FROM (
 			SELECT 'transcription' AS kind, id, audio_path, created_at FROM transcriptions WHERE audio_path <> '' AND created_at < $1
 			UNION ALL
@@ -510,7 +513,7 @@ func (s *PostgresStore) enforceAudioRetention() {
 		slog.Warn("store: query postgres retention rows", "err", err)
 		return
 	}
-	defer rows.Close()
+	defer rows.Close() //nolint:errcheck // deferred rows close, error not actionable
 
 	for rows.Next() {
 		var (
@@ -533,9 +536,12 @@ func (s *PostgresStore) enforceAudioRetention() {
 		if kind == "quick_note" {
 			query = `UPDATE quick_notes SET audio_path = '' WHERE id = $1`
 		}
-		if _, err := tx.Exec(query, id); err != nil {
+		if _, err := tx.ExecContext(context.Background(), query, id); err != nil { //nolint:contextcheck // background goroutine should not be bound to request context
 			slog.Warn("store: clear retained postgres audio_path", "kind", kind, "id", id, "err", err)
 		}
+	}
+	if err := rows.Err(); err != nil {
+		slog.Warn("store: postgres retention rows error", "err", err)
 	}
 
 	if err := tx.Commit(); err != nil {

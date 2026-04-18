@@ -42,7 +42,7 @@ func TestPillPanelWindowOptions(t *testing.T) {
 	}
 }
 
-func TestPillPanelWindowOptionsFitTriModeControls(t *testing.T) {
+func TestPillPanelWindowOptionsFitQuickControlsAndTriModeToggles(t *testing.T) {
 	const (
 		outerPaddingX      = 6
 		sectionGap         = 4
@@ -51,12 +51,12 @@ func TestPillPanelWindowOptionsFitTriModeControls(t *testing.T) {
 		activePillWidth    = 64
 	)
 
-	leftControlsWidth := controlButtonWidth*2 + inlineGap
-	rightControlsWidth := controlButtonWidth*4 + inlineGap*3
+	leftControlsWidth := controlButtonWidth*3 + inlineGap*2
+	rightControlsWidth := controlButtonWidth*3 + inlineGap*2
 	minPanelWidth := leftControlsWidth + sectionGap + activePillWidth + sectionGap + rightControlsWidth + outerPaddingX*2
 
 	if pillPanelWidth < minPanelWidth {
-		t.Fatalf("pill panel width = %d, want at least %d to fit tri-mode controls", pillPanelWidth, minPanelWidth)
+		t.Fatalf("pill panel width = %d, want at least %d to fit left quick controls plus tri-mode toggles", pillPanelWidth, minPanelWidth)
 	}
 }
 
@@ -97,6 +97,34 @@ func TestRadialMenuWindowOptions(t *testing.T) {
 	}
 	if opts.Width != radialMenuSize || opts.Height != radialMenuSize {
 		t.Fatalf("radial menu size = %dx%d, want %dx%d", opts.Width, opts.Height, radialMenuSize, radialMenuSize)
+	}
+}
+
+func TestPrompterWindowOptionsStartLargeEnoughForTranscriptControls(t *testing.T) {
+	opts := newPrompterWindowOptions()
+
+	if opts.Width != prompterWidth || opts.Height != prompterHeight {
+		t.Fatalf("prompter size = %dx%d, want %dx%d", opts.Width, opts.Height, prompterWidth, prompterHeight)
+	}
+	if opts.MinWidth < 620 {
+		t.Fatalf("prompter min width = %d, want at least 620", opts.MinWidth)
+	}
+	if opts.MinHeight < 420 {
+		t.Fatalf("prompter min height = %d, want at least 420", opts.MinHeight)
+	}
+	if !opts.Frameless {
+		t.Fatal("prompter should be frameless for shared custom chrome")
+	}
+}
+
+func TestPrompterPositionKeepsWindowInsideVisibleScreenArea(t *testing.T) {
+	x, y := prompterPosition(screenBounds{X: 0, Y: 0, Width: 800, Height: 600})
+
+	if x < 20 {
+		t.Fatalf("prompter x = %d, want at least 20", x)
+	}
+	if y < 20 {
+		t.Fatalf("prompter y = %d, want at least 20", y)
 	}
 }
 

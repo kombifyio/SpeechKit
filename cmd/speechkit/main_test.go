@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -14,8 +15,10 @@ import (
 	"testing"
 
 	"fmt"
+	"slices"
 
 	"github.com/kombifyio/SpeechKit/internal/config"
+	"github.com/kombifyio/SpeechKit/internal/models"
 	"github.com/kombifyio/SpeechKit/internal/router"
 	"github.com/kombifyio/SpeechKit/internal/secrets"
 	"github.com/kombifyio/SpeechKit/internal/store"
@@ -26,13 +29,14 @@ import (
 )
 
 type fakeOverlayWindow struct {
-	showCalls   int
-	hideCalls   int
-	visible     bool
-	scripts     []string
-	ignoreMouse []bool
-	positions   [][2]int
-	sizes       [][2]int
+	showCalls     int
+	hideCalls     int
+	minimiseCalls int
+	visible       bool
+	scripts       []string
+	ignoreMouse   []bool
+	positions     [][2]int
+	sizes         [][2]int
 }
 
 func (f *fakeOverlayWindow) Show() application.Window {
@@ -43,6 +47,12 @@ func (f *fakeOverlayWindow) Show() application.Window {
 
 func (f *fakeOverlayWindow) Hide() application.Window {
 	f.hideCalls++
+	f.visible = false
+	return nil
+}
+
+func (f *fakeOverlayWindow) Minimise() application.Window {
+	f.minimiseCalls++
 	f.visible = false
 	return nil
 }
@@ -119,6 +129,39 @@ type fakeScreenLocator struct {
 func (f *fakeScreenLocator) OverlayScreenBounds() (screenBounds, bool) {
 	f.calls++
 	return f.bounds, f.ok
+}
+
+func unsetEnvForTest(t *testing.T, name string) {
+	t.Helper()
+
+	value, ok := os.LookupEnv(name)
+	if err := os.Unsetenv(name); err != nil {
+		t.Fatalf("unset %s: %v", name, err)
+	}
+	t.Cleanup(func() {
+		var err error
+		if ok {
+			err = os.Setenv(name, value)
+		} else {
+			err = os.Unsetenv(name)
+		}
+		if err != nil {
+			t.Fatalf("restore %s: %v", name, err)
+		}
+	})
+}
+
+func isolateManagedHFEnvForTest(t *testing.T) {
+	t.Helper()
+
+	for _, name := range []string{
+		"HF_TOKEN",
+		"DOPPLER_PROJECT",
+		"DOPPLER_CONFIG",
+		"SPEECHKIT_ENABLE_MANAGED_HF",
+	} {
+		unsetEnvForTest(t, name)
+	}
 }
 
 func TestOverlayWindowOptionsKeepOverlayAboveApps(t *testing.T) {
@@ -222,6 +265,26 @@ func TestRadialMenuPositionCentersAroundDotAnchor(t *testing.T) {
 	}
 }
 
+func TestDashboardWindowOptionsUseCustomChrome(t *testing.T) {
+	opts := newDashboardWindowOptions()
+
+	if !opts.Frameless {
+		t.Fatal("dashboard should be frameless for custom chrome")
+	}
+	if opts.BackgroundType != application.BackgroundTypeTranslucent {
+		t.Fatalf("dashboard background type = %v, want translucent", opts.BackgroundType)
+	}
+	if opts.Windows.BackdropType != application.Mica {
+		t.Fatalf("dashboard backdrop = %v, want Mica", opts.Windows.BackdropType)
+	}
+	if opts.Windows.DisableIcon != true {
+		t.Fatal("dashboard titlebar icon should be disabled for the custom shell")
+	}
+	if opts.URL != "/dashboard.html" {
+		t.Fatalf("dashboard URL = %q, want /dashboard.html", opts.URL)
+	}
+}
+
 func TestOverlayWindowPositionTopCenter(t *testing.T) {
 	x, y := overlayWindowPosition(screenBounds{X: 1920, Y: 0, Width: 2560, Height: 1440}, "top", "pill")
 
@@ -288,6 +351,48 @@ func TestPositionOverlayPlacesPillHostsAtSavedFreePoint(t *testing.T) {
 	wantPanel := [2]int{910 - pillPanelWidth/2, 420 - pillPanelHeight/2}
 	if pillPanel.positions[0] != wantPanel {
 		t.Fatalf("pill panel position = %v, want %v", pillPanel.positions[0], wantPanel)
+	}
+}
+
+func TestPositionOverlayMapsSavedFreePointToMatchingRelativeSpotOnDifferentMonitor(t *testing.T) {
+	pillAnchor := &fakeOverlayWindow{}
+	pillPanel := &fakeOverlayWindow{}
+	sourceBounds := screenBounds{X: 0, Y: 0, Width: 1920, Height: 1080}
+	targetBounds := screenBounds{X: 1920, Y: 0, Width: 2560, Height: 1440}
+	centerX := sourceBounds.X + pillPanelWidth/2 + (sourceBounds.Width-pillPanelWidth)/4
+	centerY := sourceBounds.Y + pillPanelHeight/2 + (sourceBounds.Height-pillPanelHeight)/4
+	state := &appState{
+		pillAnchor:        pillAnchor,
+		pillPanel:         pillPanel,
+		screenLocator:     &fakeScreenLocator{bounds: targetBounds, ok: true},
+		overlayVisualizer: "pill",
+		overlayPosition:   "top",
+		overlayMovable:    true,
+		overlayFreeX:      centerX,
+		overlayFreeY:      centerY,
+		overlayMonitorCenters: map[string]config.OverlayFreePosition{
+			overlayMonitorKey(sourceBounds): {X: centerX, Y: centerY},
+		},
+	}
+
+	state.positionOverlay()
+
+	wantCenterX := targetBounds.X + pillPanelWidth/2 + (targetBounds.Width-pillPanelWidth)/4
+	wantCenterY := targetBounds.Y + pillPanelHeight/2 + (targetBounds.Height-pillPanelHeight)/4
+	wantAnchor := [2]int{wantCenterX - pillAnchorWidth/2, wantCenterY - pillAnchorHeight/2}
+	wantPanel := [2]int{wantCenterX - pillPanelWidth/2, wantCenterY - pillPanelHeight/2}
+
+	if len(pillAnchor.positions) != 1 || pillAnchor.positions[0] != wantAnchor {
+		t.Fatalf("pill anchor positions = %v, want [%v]", pillAnchor.positions, wantAnchor)
+	}
+	if len(pillPanel.positions) != 1 || pillPanel.positions[0] != wantPanel {
+		t.Fatalf("pill panel positions = %v, want [%v]", pillPanel.positions, wantPanel)
+	}
+	if state.overlayFreeX != wantCenterX || state.overlayFreeY != wantCenterY {
+		t.Fatalf("resolved free overlay center = (%d,%d), want (%d,%d)", state.overlayFreeX, state.overlayFreeY, wantCenterX, wantCenterY)
+	}
+	if got := state.overlayMonitorCenters[overlayMonitorKey(targetBounds)]; got != (config.OverlayFreePosition{X: wantCenterX, Y: wantCenterY}) {
+		t.Fatalf("target monitor saved center = %+v", got)
 	}
 }
 
@@ -451,7 +556,7 @@ func TestShowSettingsWindowDoesNotReshowVisibleWindow(t *testing.T) {
 func TestAssetHandlerServesBuiltOverlayShell(t *testing.T) {
 	cfg := defaultTestConfig()
 	handler := assetHandler(cfg, filepath.Join(t.TempDir(), "config.toml"), &appState{}, &router.Router{}, nil, &config.InstallState{Mode: config.InstallModeLocal})
-	req := httptest.NewRequest(http.MethodGet, "/overlay.html", nil)
+	req := httptest.NewRequest(http.MethodGet, "/overlay.html", http.NoBody)
 	rec := httptest.NewRecorder()
 
 	handler.ServeHTTP(rec, req)
@@ -467,7 +572,7 @@ func TestAssetHandlerServesBuiltOverlayShell(t *testing.T) {
 func TestAssetHandlerServesBuiltDashboardShell(t *testing.T) {
 	cfg := defaultTestConfig()
 	handler := assetHandler(cfg, filepath.Join(t.TempDir(), "config.toml"), &appState{}, &router.Router{}, nil, &config.InstallState{Mode: config.InstallModeLocal})
-	req := httptest.NewRequest(http.MethodGet, "/dashboard.html", nil)
+	req := httptest.NewRequest(http.MethodGet, "/dashboard.html", http.NoBody)
 	rec := httptest.NewRecorder()
 
 	handler.ServeHTTP(rec, req)
@@ -483,7 +588,7 @@ func TestAssetHandlerServesBuiltDashboardShell(t *testing.T) {
 func TestAssetHandlerServesBuiltSettingsShell(t *testing.T) {
 	cfg := defaultTestConfig()
 	handler := assetHandler(cfg, filepath.Join(t.TempDir(), "config.toml"), &appState{}, &router.Router{}, nil, &config.InstallState{Mode: config.InstallModeLocal})
-	req := httptest.NewRequest(http.MethodGet, "/settings.html", nil)
+	req := httptest.NewRequest(http.MethodGet, "/settings.html", http.NoBody)
 	rec := httptest.NewRecorder()
 
 	handler.ServeHTTP(rec, req)
@@ -499,7 +604,7 @@ func TestAssetHandlerServesBuiltSettingsShell(t *testing.T) {
 func TestAssetHandlerServesVoiceAgentPrompterShell(t *testing.T) {
 	cfg := defaultTestConfig()
 	handler := assetHandler(cfg, filepath.Join(t.TempDir(), "config.toml"), &appState{}, &router.Router{}, nil, &config.InstallState{Mode: config.InstallModeLocal})
-	req := httptest.NewRequest(http.MethodGet, "/voiceagent-prompter.html", nil)
+	req := httptest.NewRequest(http.MethodGet, "/voiceagent-prompter.html", http.NoBody)
 	rec := httptest.NewRecorder()
 
 	handler.ServeHTTP(rec, req)
@@ -524,7 +629,7 @@ func TestOverlayStateEndpointReturnsCurrentSnapshot(t *testing.T) {
 	}
 
 	handler := assetHandler(cfg, filepath.Join(t.TempDir(), "config.toml"), state, &router.Router{}, nil, &config.InstallState{Mode: config.InstallModeLocal})
-	req := httptest.NewRequest(http.MethodGet, "/overlay/state", nil)
+	req := httptest.NewRequest(http.MethodGet, "/overlay/state", http.NoBody)
 	rec := httptest.NewRecorder()
 
 	handler.ServeHTTP(rec, req)
@@ -547,9 +652,12 @@ func TestOverlayStateEndpointReturnsCurrentSnapshot(t *testing.T) {
 func TestSettingsStateEndpointReturnsCurrentSettings(t *testing.T) {
 	restore := secrets.UseMemoryStoreForTests()
 	defer restore()
+	isolateManagedHFEnvForTest(t)
 
 	cfg := defaultTestConfig()
 	cfg.Store.SQLitePath = "C:\\Users\\testuser\\AppData\\Roaming\\SpeechKit\\feedback.db"
+	cfg.VoiceAgent.FrameworkPrompt = "You are the durable framework prompt."
+	cfg.VoiceAgent.RefinementPrompt = "Address the user by first name."
 	state := &appState{
 		overlayEnabled:    true,
 		hotkey:            "win+alt",
@@ -557,7 +665,7 @@ func TestSettingsStateEndpointReturnsCurrentSettings(t *testing.T) {
 	}
 
 	handler := assetHandler(cfg, filepath.Join(t.TempDir(), "config.toml"), state, &router.Router{}, nil, &config.InstallState{Mode: config.InstallModeLocal})
-	req := httptest.NewRequest(http.MethodGet, "/settings/state", nil)
+	req := httptest.NewRequest(http.MethodGet, "/settings/state", http.NoBody)
 	rec := httptest.NewRecorder()
 
 	handler.ServeHTTP(rec, req)
@@ -569,6 +677,10 @@ func TestSettingsStateEndpointReturnsCurrentSettings(t *testing.T) {
 	var payload settingsSnapshot
 	if err := json.Unmarshal(rec.Body.Bytes(), &payload); err != nil {
 		t.Fatalf("decode payload: %v", err)
+	}
+	var rawPayload map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &rawPayload); err != nil {
+		t.Fatalf("decode raw payload: %v", err)
 	}
 	if payload.Hotkey != "win+alt" || payload.HFModel != cfg.HuggingFace.Model || payload.Visualizer != "pill" || !payload.OverlayEnabled || payload.HFEnabled != cfg.HuggingFace.Enabled {
 		t.Fatalf("settings payload = %+v", payload)
@@ -603,6 +715,15 @@ func TestSettingsStateEndpointReturnsCurrentSettings(t *testing.T) {
 	if payload.VoiceAgentHotkey != cfg.General.VoiceAgentHotkey {
 		t.Fatalf("settings payload = %+v", payload)
 	}
+	if payload.VoiceAgentRefinementPrompt != cfg.VoiceAgent.RefinementPrompt {
+		t.Fatalf("settings payload = %+v", payload)
+	}
+	if _, exists := rawPayload["voiceAgentFrameworkPrompt"]; exists {
+		t.Fatalf("settings payload unexpectedly exposed voiceAgentFrameworkPrompt: %+v", rawPayload)
+	}
+	if len(payload.Profiles) == 0 {
+		t.Fatalf("settings payload profiles = %+v, want embedded model profiles", payload.Profiles)
+	}
 }
 
 func TestSettingsUpdateRoundTripPersistsAgentMode(t *testing.T) {
@@ -618,7 +739,7 @@ func TestSettingsUpdateRoundTripPersistsAgentMode(t *testing.T) {
 
 	form := url.Values{
 		"dictate_hotkey":             {"win+alt"},
-		"assist_hotkey":              {"ctrl+shift+j"},
+		"assist_hotkey":              {"ctrl+win+j"},
 		"voice_agent_hotkey":         {"ctrl+shift+v"},
 		"active_mode":                {"voice_agent"},
 		"overlay_enabled":            {"1"},
@@ -640,14 +761,14 @@ func TestSettingsUpdateRoundTripPersistsAgentMode(t *testing.T) {
 	if updateRec.Code != http.StatusOK {
 		t.Fatalf("update status = %d, body=%s", updateRec.Code, updateRec.Body.String())
 	}
-	if got, want := cfg.General.AssistHotkey, "ctrl+shift+j"; got != want {
+	if got, want := cfg.General.AssistHotkey, "ctrl+win+j"; got != want {
 		t.Fatalf("cfg.General.AssistHotkey = %q, want %q", got, want)
 	}
 	if got, want := cfg.General.VoiceAgentHotkey, "ctrl+shift+v"; got != want {
 		t.Fatalf("cfg.General.VoiceAgentHotkey = %q, want %q", got, want)
 	}
 
-	stateReq := httptest.NewRequest(http.MethodGet, "/settings/state", nil)
+	stateReq := httptest.NewRequest(http.MethodGet, "/settings/state", http.NoBody)
 	stateRec := httptest.NewRecorder()
 	handler.ServeHTTP(stateRec, stateReq)
 
@@ -659,7 +780,7 @@ func TestSettingsUpdateRoundTripPersistsAgentMode(t *testing.T) {
 	if err := json.Unmarshal(stateRec.Body.Bytes(), &payload); err != nil {
 		t.Fatalf("decode payload: %v", err)
 	}
-	if got, want := payload.AssistHotkey, "ctrl+shift+j"; got != want {
+	if got, want := payload.AssistHotkey, "ctrl+win+j"; got != want {
 		t.Fatalf("payload.AssistHotkey = %q, want %q", got, want)
 	}
 	if got, want := payload.VoiceAgentHotkey, "ctrl+shift+v"; got != want {
@@ -711,7 +832,7 @@ func TestSettingsRoutesPersistVocabularyDictionary(t *testing.T) {
 		t.Fatalf("state.vocabularyDictionary = %q, want %q", got, want)
 	}
 
-	stateReq := httptest.NewRequest(http.MethodGet, "/settings/state", nil)
+	stateReq := httptest.NewRequest(http.MethodGet, "/settings/state", http.NoBody)
 	stateRec := httptest.NewRecorder()
 	handler.ServeHTTP(stateRec, stateReq)
 
@@ -793,7 +914,7 @@ func TestSettingsRoutesPersistAndClearUserHuggingFaceToken(t *testing.T) {
 		t.Fatalf("set status = %d, body=%s", setRec.Code, setRec.Body.String())
 	}
 
-	statusReq := httptest.NewRequest(http.MethodGet, "/settings/state", nil)
+	statusReq := httptest.NewRequest(http.MethodGet, "/settings/state", http.NoBody)
 	statusRec := httptest.NewRecorder()
 	handler.ServeHTTP(statusRec, statusReq)
 
@@ -809,7 +930,7 @@ func TestSettingsRoutesPersistAndClearUserHuggingFaceToken(t *testing.T) {
 		t.Fatalf("settings payload = %+v", payload)
 	}
 
-	clearReq := httptest.NewRequest(http.MethodPost, "/settings/huggingface/token/clear", nil)
+	clearReq := httptest.NewRequest(http.MethodPost, "/settings/huggingface/token/clear", http.NoBody)
 	clearRec := httptest.NewRecorder()
 	handler.ServeHTTP(clearRec, clearReq)
 
@@ -830,6 +951,8 @@ func TestSettingsRoutesPersistAndClearUserHuggingFaceToken(t *testing.T) {
 func TestSettingsRoutesRejectUserHuggingFaceTokenInOSSBuild(t *testing.T) {
 	restore := secrets.UseMemoryStoreForTests()
 	defer restore()
+	restoreBuild := config.OverrideManagedHuggingFaceBuildForTests("0")
+	defer restoreBuild()
 
 	cfg := defaultTestConfig()
 	cfgPath := filepath.Join(t.TempDir(), "config.toml")
@@ -857,7 +980,7 @@ func TestSettingsRoutesRejectUserHuggingFaceTokenInOSSBuild(t *testing.T) {
 		t.Fatalf("set response = %s", setRec.Body.String())
 	}
 
-	statusReq := httptest.NewRequest(http.MethodGet, "/settings/state", nil)
+	statusReq := httptest.NewRequest(http.MethodGet, "/settings/state", http.NoBody)
 	statusRec := httptest.NewRecorder()
 	handler.ServeHTTP(statusRec, statusReq)
 
@@ -875,10 +998,13 @@ func TestSettingsRoutesRejectUserHuggingFaceTokenInOSSBuild(t *testing.T) {
 }
 
 func TestModelProfilesEndpointFiltersHFRoutedProfilesInOSSBuild(t *testing.T) {
+	restoreBuild := config.OverrideManagedHuggingFaceBuildForTests("0")
+	defer restoreBuild()
+
 	cfg := defaultTestConfig()
 	handler := assetHandler(cfg, filepath.Join(t.TempDir(), "config.toml"), &appState{}, &router.Router{}, nil, &config.InstallState{Mode: config.InstallModeLocal})
 
-	req := httptest.NewRequest(http.MethodGet, "/models/profiles", nil)
+	req := httptest.NewRequest(http.MethodGet, "/models/profiles", http.NoBody)
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
 
@@ -905,7 +1031,7 @@ func TestModelProfilesEndpointReturnsOnlySwitchableModalities(t *testing.T) {
 	cfg := defaultTestConfig()
 	handler := assetHandler(cfg, filepath.Join(t.TempDir(), "config.toml"), &appState{}, &router.Router{}, nil, &config.InstallState{Mode: config.InstallModeLocal})
 
-	req := httptest.NewRequest(http.MethodGet, "/models/profiles", nil)
+	req := httptest.NewRequest(http.MethodGet, "/models/profiles", http.NoBody)
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
 
@@ -1061,13 +1187,22 @@ func TestSetLevelResetsSnapshotOutsideRecording(t *testing.T) {
 func defaultTestConfig() *config.Config {
 	return &config.Config{
 		General: config.GeneralConfig{
-			Hotkey:           "win+alt",
-			DictateHotkey:    "win+alt",
-			AssistHotkey:     "ctrl+shift+j",
-			VoiceAgentHotkey: "ctrl+shift+k",
-			AgentHotkey:      "ctrl+shift+j",
-			AgentMode:        "assist",
-			ActiveMode:       "none",
+			Hotkey:                   "win+alt",
+			DictateHotkey:            "win+alt",
+			AssistHotkey:             "ctrl+win",
+			VoiceAgentHotkey:         "ctrl+shift",
+			DictateHotkeyBehavior:    config.HotkeyBehaviorPushToTalk,
+			AssistHotkeyBehavior:     config.HotkeyBehaviorPushToTalk,
+			VoiceAgentHotkeyBehavior: config.HotkeyBehaviorPushToTalk,
+			DictateEnabled:           true,
+			AssistEnabled:            true,
+			VoiceAgentEnabled:        true,
+			AgentHotkey:              "ctrl+win",
+			AgentMode:                "assist",
+			ActiveMode:               "none",
+		},
+		VoiceAgent: config.VoiceAgentConfig{
+			CloseBehavior: config.VoiceAgentCloseBehaviorContinue,
 		},
 		HuggingFace: config.HuggingFaceConfig{
 			Model: "openai/whisper-large-v3",
@@ -1114,7 +1249,9 @@ func TestSaveSettingsUpdatesConfigAndRuntime(t *testing.T) {
 	sttRouter := &router.Router{}
 
 	form := url.Values{
-		"hotkey":                     {"ctrl+shift"},
+		"dictate_hotkey":             {"win+alt+d"},
+		"assist_hotkey":              {"ctrl+win+j"},
+		"voice_agent_hotkey":         {"ctrl+shift+k"},
 		"hf_enabled":                 {"0"},
 		"hf_model":                   {"openai/whisper-large-v3-turbo"},
 		"overlay_enabled":            {"1"},
@@ -1138,7 +1275,7 @@ func TestSaveSettingsUpdatesConfigAndRuntime(t *testing.T) {
 	if !strings.Contains(flash, msgSaved) {
 		t.Fatalf("flash = %q", flash)
 	}
-	if cfg.General.Hotkey != "ctrl+shift" {
+	if cfg.General.Hotkey != "win+alt+d" {
 		t.Fatalf("hotkey = %q", cfg.General.Hotkey)
 	}
 	if cfg.HuggingFace.Model != "openai/whisper-large-v3-turbo" {
@@ -1183,7 +1320,7 @@ func TestSaveSettingsUpdatesConfigAndRuntime(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Load saved config: %v", err)
 	}
-	if reloaded.General.Hotkey != "ctrl+shift" {
+	if reloaded.General.Hotkey != "win+alt+d" {
 		t.Fatalf("reloaded hotkey = %q", reloaded.General.Hotkey)
 	}
 	if reloaded.HuggingFace.Model != "openai/whisper-large-v3-turbo" {
@@ -1253,6 +1390,7 @@ func TestSaveSettingsKeepsHFDisabledWithoutManagedToken(t *testing.T) {
 	defer restore()
 	restoreBuild := config.OverrideManagedHuggingFaceBuildForTests("1")
 	defer restoreBuild()
+	isolateManagedHFEnvForTest(t)
 
 	cfg := defaultTestConfig()
 	cfg.HuggingFace.Enabled = false
@@ -1270,7 +1408,7 @@ func TestSaveSettingsKeepsHFDisabledWithoutManagedToken(t *testing.T) {
 	req := httptest.NewRequest(http.MethodPost, "/settings/update", strings.NewReader(form.Encode()))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 
-	t.Setenv("HF_TOKEN", "")
+	t.Setenv("SPEECHKIT_ENABLE_MANAGED_HF", "1")
 
 	flash := saveSettings(context.Background(), req, cfgPath, cfg, state, sttRouter)
 
@@ -1340,7 +1478,9 @@ func TestSaveSettingsAllowsNonHFChangesWithoutHFValidation(t *testing.T) {
 	sttRouter := &router.Router{}
 
 	form := url.Values{
-		"hotkey":             {"ctrl+shift"},
+		"dictate_hotkey":     {"win+alt+d"},
+		"assist_hotkey":      {"ctrl+win+j"},
+		"voice_agent_hotkey": {"ctrl+shift+k"},
 		"hf_enabled":         {"1"},
 		"hf_model":           {"openai/whisper-large-v3"},
 		"overlay_enabled":    {"1"},
@@ -1355,7 +1495,7 @@ func TestSaveSettingsAllowsNonHFChangesWithoutHFValidation(t *testing.T) {
 	if !strings.Contains(flash, msgSaved) {
 		t.Fatalf("flash = %q", flash)
 	}
-	if cfg.General.Hotkey != "ctrl+shift" {
+	if cfg.General.Hotkey != "win+alt+d" {
 		t.Fatalf("hotkey = %q", cfg.General.Hotkey)
 	}
 	if cfg.UI.Visualizer != "circle" {
@@ -1398,6 +1538,117 @@ func TestSaveSettingsKeepsManagedHFEnabledWhenBuildDefaultsAreActive(t *testing.
 	}
 	if sttRouter.HuggingFace() == nil {
 		t.Fatal("managed huggingface provider should stay configured")
+	}
+}
+
+func TestProviderCredentialSaveRefreshesRuntimeProvidersAndProfiles(t *testing.T) {
+	restore := secrets.UseMemoryStoreForTests()
+	defer restore()
+
+	cfg := defaultTestConfig()
+	cfg.Providers.OpenAI.Enabled = true
+	cfg.Providers.OpenAI.APIKeyEnv = "SPEECHKIT_TEST_OPENAI_KEY"
+	cfg.Providers.OpenAI.STTModel = "whisper-1"
+	cfg.Providers.OpenAI.UtilityModel = "gpt-5.4-mini-2026-03-17"
+	cfg.Providers.OpenAI.AssistModel = "gpt-5.4-2026-03-05"
+	cfgPath := filepath.Join(t.TempDir(), "config.toml")
+	state := &appState{
+		overlayEnabled: true,
+	}
+	sttRouter := &router.Router{}
+	handler := assetHandler(cfg, cfgPath, state, sttRouter, nil, &config.InstallState{Mode: config.InstallModeLocal})
+
+	form := url.Values{
+		"provider":   {"openai"},
+		"credential": {"test-openai-key"},
+	}
+	req := httptest.NewRequest(http.MethodPost, "/settings/provider-credentials/save", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	rec := httptest.NewRecorder()
+
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, body=%s", rec.Code, rec.Body.String())
+	}
+	if sttRouter.Cloud("openai") == nil {
+		t.Fatal("expected openai provider to be configured in the runtime router")
+	}
+	if !slices.Contains(runtimeAvailableProviders(t.Context(), sttRouter), "openai") {
+		t.Fatalf("runtime providers = %v, want openai to be available", runtimeAvailableProviders(t.Context(), sttRouter))
+	}
+	if !slices.Contains(state.providers, "openai") {
+		t.Fatalf("state.providers = %v, want openai", state.providers)
+	}
+	if got, want := state.activeProfiles[string(models.ModalitySTT)], "stt.openai.whisper-1"; got != want {
+		t.Fatalf("active STT profile = %q, want %q", got, want)
+	}
+	if got, want := state.activeProfiles[string(models.ModalityUtility)], "utility.openai.gpt-5.4-mini"; got != want {
+		t.Fatalf("active utility profile = %q, want %q", got, want)
+	}
+	if got, want := state.activeProfiles[string(models.ModalityAssist)], "assist.openai.gpt-5.4"; got != want {
+		t.Fatalf("active assist profile = %q, want %q", got, want)
+	}
+	if state.genkitRT == nil {
+		t.Fatal("expected genkit runtime to be rebuilt after saving provider credentials")
+	}
+	if len(state.genkitRT.ModelInfos()) == 0 {
+		t.Fatal("expected model infos to be available after rebuilding the runtime")
+	}
+}
+
+func TestSaveSettingsSwitchesActiveOverlayWindowToDotVisualizer(t *testing.T) {
+	cfg := defaultTestConfig()
+	cfgPath := filepath.Join(t.TempDir(), "config.toml")
+	pillAnchor := &fakeOverlayWindow{visible: true}
+	pillPanel := &fakeOverlayWindow{}
+	dotAnchor := &fakeOverlayWindow{}
+	radialMenu := &fakeOverlayWindow{}
+	state := &appState{
+		pillAnchor:        pillAnchor,
+		pillPanel:         pillPanel,
+		dotAnchor:         dotAnchor,
+		radialMenu:        radialMenu,
+		overlayEnabled:    true,
+		overlayVisualizer: "pill",
+		overlayPosition:   "top",
+		screenLocator:     &fakeScreenLocator{bounds: screenBounds{X: 0, Y: 0, Width: 1920, Height: 1080}, ok: true},
+	}
+	sttRouter := &router.Router{}
+
+	form := url.Values{
+		"dictate_hotkey":             {"win+alt"},
+		"assist_hotkey":              {"ctrl+win"},
+		"voice_agent_hotkey":         {"ctrl+shift"},
+		"dictate_enabled":            {"1"},
+		"assist_enabled":             {"1"},
+		"voice_agent_enabled":        {"1"},
+		"overlay_enabled":            {"1"},
+		"overlay_visualizer":         {"circle"},
+		"overlay_design":             {"default"},
+		"overlay_position":           {"top"},
+		"store_backend":              {"sqlite"},
+		"store_sqlite_path":          {cfg.Store.SQLitePath},
+		"store_save_audio":           {"1"},
+		"store_audio_retention_days": {"7"},
+		"store_max_audio_storage_mb": {"500"},
+	}
+	req := httptest.NewRequest(http.MethodPost, "/settings/update", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+
+	flash := saveSettings(context.Background(), req, cfgPath, cfg, state, sttRouter)
+
+	if !strings.Contains(flash, msgSaved) {
+		t.Fatalf("flash = %q", flash)
+	}
+	if got := state.overlaySnapshot().Visualizer; got != "circle" {
+		t.Fatalf("overlay visualizer = %q, want circle", got)
+	}
+	if dotAnchor.showCalls == 0 {
+		t.Fatal("dot anchor should be shown after switching to the dot visualizer")
+	}
+	if pillAnchor.hideCalls == 0 {
+		t.Fatal("pill anchor should be hidden after switching to the dot visualizer")
 	}
 }
 
@@ -1467,10 +1718,10 @@ func TestDefaultLocalModelPathPrefersBundleModelsDirectory(t *testing.T) {
 	exeDir := t.TempDir()
 	modelName := "ggml-small.bin"
 	want := filepath.Join(exeDir, "models", modelName)
-	if err := os.MkdirAll(filepath.Dir(want), 0755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(want), 0o755); err != nil {
 		t.Fatalf("mkdir models: %v", err)
 	}
-	if err := os.WriteFile(want, []byte("fake model"), 0644); err != nil {
+	if err := os.WriteFile(want, []byte("fake model"), 0o644); err != nil {
 		t.Fatalf("write model: %v", err)
 	}
 
@@ -1618,7 +1869,7 @@ func TestOverlayPositionBottom(t *testing.T) {
 }
 
 func TestComputeBubbleRegionBottomUsesWindowY(t *testing.T) {
-	bubble := computeBubbleRegion(810, 780, screenBounds{X: 0, Y: 0, Width: 1920, Height: 1080}, "bottom", "pill")
+	bubble := computeBubbleRegion(810, 780, "bottom", "pill")
 
 	wantX := 810 + (overlayWindowSize-pillBubbleW)/2
 	wantY := 780 + overlayWindowSize - pillBubbleH - overlayEdgeMargin
@@ -1683,7 +1934,7 @@ func TestDashboardHistoryEndpoint(t *testing.T) {
 	state := &appState{}
 	handler := assetHandler(cfg, filepath.Join(t.TempDir(), "config.toml"), state, &router.Router{}, s, &config.InstallState{Mode: config.InstallModeLocal})
 
-	req := httptest.NewRequest(http.MethodGet, "/dashboard/history", nil)
+	req := httptest.NewRequest(http.MethodGet, "/dashboard/history", http.NoBody)
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
 
@@ -1747,7 +1998,7 @@ func TestDashboardHistoryEndpointFallsBackToConfiguredModelHints(t *testing.T) {
 	state := &appState{}
 	handler := assetHandler(cfg, filepath.Join(t.TempDir(), "config.toml"), state, &router.Router{}, s, &config.InstallState{Mode: config.InstallModeLocal})
 
-	req := httptest.NewRequest(http.MethodGet, "/dashboard/history", nil)
+	req := httptest.NewRequest(http.MethodGet, "/dashboard/history", http.NoBody)
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
 
@@ -1774,7 +2025,7 @@ func TestDashboardHistoryEndpointEmptyWhenNoStore(t *testing.T) {
 	state := &appState{}
 	handler := assetHandler(cfg, filepath.Join(t.TempDir(), "config.toml"), state, &router.Router{}, nil, &config.InstallState{Mode: config.InstallModeLocal})
 
-	req := httptest.NewRequest(http.MethodGet, "/dashboard/history", nil)
+	req := httptest.NewRequest(http.MethodGet, "/dashboard/history", http.NoBody)
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
 
@@ -1807,7 +2058,7 @@ func TestDashboardStatsEndpoint(t *testing.T) {
 	state := &appState{}
 	handler := assetHandler(cfg, filepath.Join(t.TempDir(), "config.toml"), state, &router.Router{}, s, &config.InstallState{Mode: config.InstallModeLocal})
 
-	req := httptest.NewRequest(http.MethodGet, "/dashboard/stats", nil)
+	req := httptest.NewRequest(http.MethodGet, "/dashboard/stats", http.NoBody)
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
 
@@ -1856,7 +2107,7 @@ func TestDashboardQuickNotesEndpointIncludesAudioMetadata(t *testing.T) {
 	state := &appState{}
 	handler := assetHandler(cfg, filepath.Join(t.TempDir(), "config.toml"), state, &router.Router{}, s, &config.InstallState{Mode: config.InstallModeLocal})
 
-	req := httptest.NewRequest(http.MethodGet, "/dashboard/quicknotes", nil)
+	req := httptest.NewRequest(http.MethodGet, "/dashboard/quicknotes", http.NoBody)
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
 
@@ -1911,7 +2162,7 @@ func TestDashboardAudioDownloadEndpoint(t *testing.T) {
 	state := &appState{}
 	handler := assetHandler(cfg, filepath.Join(t.TempDir(), "config.toml"), state, &router.Router{}, s, &config.InstallState{Mode: config.InstallModeLocal})
 
-	req := httptest.NewRequest(http.MethodGet, "/dashboard/audio?kind=transcription&id=1", nil)
+	req := httptest.NewRequest(http.MethodGet, "/dashboard/audio?kind=transcription&id=1", http.NoBody)
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
 
@@ -1924,7 +2175,7 @@ func TestDashboardAudioDownloadEndpoint(t *testing.T) {
 	if !strings.Contains(rec.Header().Get("Content-Disposition"), "transcription-1.wav") {
 		t.Fatalf("content disposition = %q, want transcription filename", rec.Header().Get("Content-Disposition"))
 	}
-	if got := rec.Body.Bytes(); string(got) != string(audio) {
+	if got := rec.Body.Bytes(); !bytes.Equal(got, audio) {
 		t.Fatalf("body = %q, want %q", string(got), string(audio))
 	}
 }
@@ -1987,7 +2238,7 @@ func TestDashboardLogsEndpoint(t *testing.T) {
 
 	handler := assetHandler(cfg, filepath.Join(t.TempDir(), "config.toml"), state, &router.Router{}, nil, &config.InstallState{Mode: config.InstallModeLocal})
 
-	req := httptest.NewRequest(http.MethodGet, "/dashboard/logs", nil)
+	req := httptest.NewRequest(http.MethodGet, "/dashboard/logs", http.NoBody)
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
 
@@ -2024,7 +2275,7 @@ func TestQuickNoteRouteOpenCaptureDispatchesRuntimeCommand(t *testing.T) {
 	})
 
 	handler := assetHandler(cfg, filepath.Join(t.TempDir(), "config.toml"), state, &router.Router{}, nil, &config.InstallState{Mode: config.InstallModeLocal})
-	req := httptest.NewRequest(http.MethodPost, "/quicknotes/open-capture", nil)
+	req := httptest.NewRequest(http.MethodPost, "/quicknotes/open-capture", http.NoBody)
 	rec := httptest.NewRecorder()
 
 	handler.ServeHTTP(rec, req)
@@ -2052,7 +2303,7 @@ func TestQuickNoteRouteRecordModeDispatchesRuntimeCommand(t *testing.T) {
 	})
 
 	handler := assetHandler(cfg, filepath.Join(t.TempDir(), "config.toml"), state, &router.Router{}, nil, &config.InstallState{Mode: config.InstallModeLocal})
-	req := httptest.NewRequest(http.MethodPost, "/quicknotes/record-mode?id=7", nil)
+	req := httptest.NewRequest(http.MethodPost, "/quicknotes/record-mode?id=7", http.NoBody)
 	rec := httptest.NewRecorder()
 
 	handler.ServeHTTP(rec, req)
@@ -2338,7 +2589,7 @@ func TestFeaturesEndpoint_LocalMode(t *testing.T) {
 	cfg := defaultTestConfig()
 	handler := assetHandler(cfg, filepath.Join(t.TempDir(), "config.toml"), &appState{}, &router.Router{}, nil, &config.InstallState{Mode: config.InstallModeLocal})
 
-	req := httptest.NewRequest(http.MethodGet, "/features", nil)
+	req := httptest.NewRequest(http.MethodGet, "/features", http.NoBody)
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
 
@@ -2362,7 +2613,7 @@ func TestFeaturesEndpoint_CloudMode(t *testing.T) {
 	cfg := defaultTestConfig()
 	handler := assetHandler(cfg, filepath.Join(t.TempDir(), "config.toml"), &appState{}, &router.Router{}, nil, &config.InstallState{Mode: config.InstallModeCloud})
 
-	req := httptest.NewRequest(http.MethodGet, "/features", nil)
+	req := httptest.NewRequest(http.MethodGet, "/features", http.NoBody)
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
 
@@ -2386,7 +2637,7 @@ func TestAuthStatusEndpoint_NoProvider(t *testing.T) {
 	cfg := defaultTestConfig()
 	handler := assetHandler(cfg, filepath.Join(t.TempDir(), "config.toml"), &appState{}, &router.Router{}, nil, &config.InstallState{Mode: config.InstallModeLocal})
 
-	req := httptest.NewRequest(http.MethodGet, "/auth/status", nil)
+	req := httptest.NewRequest(http.MethodGet, "/auth/status", http.NoBody)
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
 
@@ -2410,7 +2661,7 @@ func TestAuthLoginEndpoint_NoProvider(t *testing.T) {
 	cfg := defaultTestConfig()
 	handler := assetHandler(cfg, filepath.Join(t.TempDir(), "config.toml"), &appState{}, &router.Router{}, nil, &config.InstallState{Mode: config.InstallModeLocal})
 
-	req := httptest.NewRequest(http.MethodPost, "/auth/login", nil)
+	req := httptest.NewRequest(http.MethodPost, "/auth/login", http.NoBody)
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
 
@@ -2434,7 +2685,7 @@ func TestAuthLogoutEndpoint(t *testing.T) {
 	cfg := defaultTestConfig()
 	handler := assetHandler(cfg, filepath.Join(t.TempDir(), "config.toml"), &appState{}, &router.Router{}, nil, &config.InstallState{Mode: config.InstallModeLocal})
 
-	req := httptest.NewRequest(http.MethodPost, "/auth/logout", nil)
+	req := httptest.NewRequest(http.MethodPost, "/auth/logout", http.NoBody)
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
 

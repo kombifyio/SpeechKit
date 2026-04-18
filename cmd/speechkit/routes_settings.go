@@ -35,7 +35,17 @@ func registerSettingsRoutes(mux *http.ServeMux, cfgPath string, cfg *config.Conf
 			w.WriteHeader(http.StatusMethodNotAllowed)
 			return
 		}
+		r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
 		message := saveSettings(r.Context(), r, cfgPath, cfg, state, sttRouter)
+		w.Header().Set("Content-Type", "application/json; charset=utf-8")
+		_ = json.NewEncoder(w).Encode(map[string]string{"message": message})
+	})
+	mux.HandleFunc("/settings/overlay-position/reset", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+		message := resetOverlayPosition(cfgPath, cfg, state)
 		w.Header().Set("Content-Type", "application/json; charset=utf-8")
 		_ = json.NewEncoder(w).Encode(map[string]string{"message": message})
 	})
@@ -44,7 +54,8 @@ func registerSettingsRoutes(mux *http.ServeMux, cfgPath string, cfg *config.Conf
 			w.WriteHeader(http.StatusMethodNotAllowed)
 			return
 		}
-		message := saveHuggingFaceToken(r.Context(), r, cfg, sttRouter)
+		r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
+		message := saveHuggingFaceToken(r.Context(), r, cfg, state, sttRouter)
 		w.Header().Set("Content-Type", "application/json; charset=utf-8")
 		_ = json.NewEncoder(w).Encode(map[string]string{"message": message})
 	})
@@ -53,7 +64,7 @@ func registerSettingsRoutes(mux *http.ServeMux, cfgPath string, cfg *config.Conf
 			w.WriteHeader(http.StatusMethodNotAllowed)
 			return
 		}
-		message := clearHuggingFaceToken(r.Context(), cfg, sttRouter)
+		message := clearHuggingFaceToken(r.Context(), cfg, state, sttRouter)
 		w.Header().Set("Content-Type", "application/json; charset=utf-8")
 		_ = json.NewEncoder(w).Encode(map[string]string{"message": message})
 	})
@@ -62,11 +73,12 @@ func registerSettingsRoutes(mux *http.ServeMux, cfgPath string, cfg *config.Conf
 			w.WriteHeader(http.StatusMethodNotAllowed)
 			return
 		}
+		r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
 		if err := r.ParseForm(); err != nil {
 			http.Error(w, msgFormParseError, http.StatusBadRequest)
 			return
 		}
-		message, err := saveProviderCredential(r.Context(), r.FormValue("provider"), r.FormValue("credential"), cfg, sttRouter)
+		message, err := saveProviderCredential(r.Context(), r.FormValue("provider"), r.FormValue("credential"), cfg, state, sttRouter)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
@@ -79,11 +91,12 @@ func registerSettingsRoutes(mux *http.ServeMux, cfgPath string, cfg *config.Conf
 			w.WriteHeader(http.StatusMethodNotAllowed)
 			return
 		}
+		r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
 		if err := r.ParseForm(); err != nil {
 			http.Error(w, msgFormParseError, http.StatusBadRequest)
 			return
 		}
-		message, err := clearProviderCredential(r.Context(), r.FormValue("provider"), cfg, sttRouter)
+		message, err := clearProviderCredential(r.Context(), r.FormValue("provider"), cfg, state, sttRouter)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
@@ -96,6 +109,7 @@ func registerSettingsRoutes(mux *http.ServeMux, cfgPath string, cfg *config.Conf
 			w.WriteHeader(http.StatusMethodNotAllowed)
 			return
 		}
+		r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
 		if err := r.ParseForm(); err != nil {
 			http.Error(w, msgFormParseError, http.StatusBadRequest)
 			return
@@ -138,6 +152,7 @@ func registerSettingsRoutes(mux *http.ServeMux, cfgPath string, cfg *config.Conf
 			w.WriteHeader(http.StatusMethodNotAllowed)
 			return
 		}
+		r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
 		if err := r.ParseForm(); err != nil {
 			w.WriteHeader(http.StatusBadRequest)
 			return
@@ -163,31 +178,44 @@ func registerSettingsRoutes(mux *http.ServeMux, cfgPath string, cfg *config.Conf
 		switch r.Method {
 		case http.MethodGet:
 			state.mu.Lock()
-			activeMode := normalizeRuntimeMode(state.activeMode, cfg.General.AgentMode)
+			activeMode := sanitizeActiveModeForBindings(
+				state.activeMode,
+				cfg.General.AgentMode,
+				state.dictateEnabled,
+				state.assistEnabled,
+				state.voiceAgentEnabled,
+				state.dictateHotkey,
+				state.assistHotkey,
+				state.voiceAgentHotkey,
+			)
 			state.mu.Unlock()
 			w.Header().Set("Content-Type", "application/json; charset=utf-8")
 			_ = json.NewEncoder(w).Encode(map[string]string{"activeMode": activeMode})
 		case http.MethodPost:
+			r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
 			if err := r.ParseForm(); err != nil {
 				w.WriteHeader(http.StatusBadRequest)
 				return
 			}
 			requestedMode := strings.TrimSpace(r.FormValue("mode"))
 			state.mu.Lock()
+			dictateEnabled := state.dictateEnabled
+			assistEnabled := state.assistEnabled
+			voiceAgentEnabled := state.voiceAgentEnabled
 			dictateHotkey := strings.TrimSpace(state.dictateHotkey)
 			assistHotkey := strings.TrimSpace(state.assistHotkey)
 			voiceAgentHotkey := strings.TrimSpace(state.voiceAgentHotkey)
 			state.mu.Unlock()
-			if dictateHotkey == "" {
-				dictateHotkey = strings.TrimSpace(cfg.General.DictateHotkey)
-			}
-			if assistHotkey == "" {
-				assistHotkey = strings.TrimSpace(cfg.General.AssistHotkey)
-			}
-			if voiceAgentHotkey == "" {
-				voiceAgentHotkey = strings.TrimSpace(cfg.General.VoiceAgentHotkey)
-			}
-			mode := sanitizeActiveModeForBindings(requestedMode, cfg.General.AgentMode, dictateHotkey, assistHotkey, voiceAgentHotkey)
+			mode := sanitizeActiveModeForBindings(
+				requestedMode,
+				cfg.General.AgentMode,
+				dictateEnabled,
+				assistEnabled,
+				voiceAgentEnabled,
+				dictateHotkey,
+				assistHotkey,
+				voiceAgentHotkey,
+			)
 			if requestedMode == "" || (mode == modeNone && normalizeRuntimeMode(requestedMode, cfg.General.AgentMode) != modeNone) {
 				w.WriteHeader(http.StatusBadRequest)
 				return
@@ -204,6 +232,83 @@ func registerSettingsRoutes(mux *http.ServeMux, cfgPath string, cfg *config.Conf
 		default:
 			w.WriteHeader(http.StatusMethodNotAllowed)
 		}
+	})
+	mux.HandleFunc("/mode/enabled", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+		r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
+		if err := r.ParseForm(); err != nil {
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+
+		mode := strings.TrimSpace(r.FormValue("mode"))
+		enabled := strings.TrimSpace(r.FormValue("enabled")) == "1"
+		oldDictateEnabled := cfg.General.DictateEnabled
+		oldAssistEnabled := cfg.General.AssistEnabled
+		oldVoiceAgentEnabled := cfg.General.VoiceAgentEnabled
+		oldDictateHotkey := cfg.General.DictateHotkey
+		oldAssistHotkey := cfg.General.AssistHotkey
+		oldVoiceAgentHotkey := cfg.General.VoiceAgentHotkey
+		state.mu.Lock()
+		audioDeviceID := state.audioDeviceID
+		overlayEnabled := state.overlayEnabled
+		state.mu.Unlock()
+		switch mode {
+		case modeDictate:
+			enabled = enabled && strings.TrimSpace(cfg.General.DictateHotkey) != ""
+			cfg.General.DictateEnabled = enabled
+		case modeAssist:
+			enabled = enabled && strings.TrimSpace(cfg.General.AssistHotkey) != ""
+			cfg.General.AssistEnabled = enabled
+		case modeVoiceAgent:
+			enabled = enabled && strings.TrimSpace(cfg.General.VoiceAgentHotkey) != ""
+			cfg.General.VoiceAgentEnabled = enabled
+		default:
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+
+		state.setModeEnabled(mode, enabled)
+		cfg.General.ActiveMode = sanitizeActiveModeForBindings(
+			cfg.General.ActiveMode,
+			cfg.General.AgentMode,
+			cfg.General.DictateEnabled,
+			cfg.General.AssistEnabled,
+			cfg.General.VoiceAgentEnabled,
+			cfg.General.DictateHotkey,
+			cfg.General.AssistHotkey,
+			cfg.General.VoiceAgentHotkey,
+		)
+		state.setActiveMode(cfg.General.ActiveMode)
+		state.applyDesktopSettings(
+			oldDictateEnabled,
+			oldAssistEnabled,
+			oldVoiceAgentEnabled,
+			oldDictateHotkey,
+			oldAssistHotkey,
+			oldVoiceAgentHotkey,
+			cfg.General.DictateEnabled,
+			cfg.General.AssistEnabled,
+			cfg.General.VoiceAgentEnabled,
+			cfg.General.DictateHotkey,
+			cfg.General.AssistHotkey,
+			cfg.General.VoiceAgentHotkey,
+			audioDeviceID,
+			audioDeviceID,
+			overlayEnabled,
+		)
+		if err := config.Save(cfgPath, cfg); err != nil {
+			slog.Warn("save mode enabled config", "err", err)
+		}
+
+		w.Header().Set("Content-Type", "application/json; charset=utf-8")
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"mode":    mode,
+			"enabled": enabled,
+		})
 	})
 	mux.HandleFunc("/models/available", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
@@ -240,6 +345,7 @@ func registerSettingsRoutes(mux *http.ServeMux, cfgPath string, cfg *config.Conf
 			w.WriteHeader(http.StatusMethodNotAllowed)
 			return
 		}
+		r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
 		if err := r.ParseForm(); err != nil {
 			w.WriteHeader(http.StatusBadRequest)
 			return
@@ -269,7 +375,7 @@ func registerSettingsRoutes(mux *http.ServeMux, cfgPath string, cfg *config.Conf
 			return
 		}
 		if err := applyModelProfile(r.Context(), cfgPath, cfg, state, sttRouter, *profile); err != nil {
-			slog.Warn("apply model profile", "profileId", profileID, "err", err)
+			slog.Warn("apply model profile", "profileId", profileID, "err", err) //nolint:gosec // G706: profileID is a model catalog ID, not user-controlled input
 			http.Error(w, "failed to apply model profile", http.StatusBadRequest)
 			return
 		}
@@ -293,6 +399,10 @@ func saveSettings(ctx context.Context, req *http.Request, cfgPath string, cfg *c
 	}
 
 	nextCfg := buildNextConfig(form, cfg)
+	applySelectedVoiceAgentProfile(&nextCfg, filteredModelCatalog())
+	oldDictateEnabled := cfg.General.DictateEnabled
+	oldAssistEnabled := cfg.General.AssistEnabled
+	oldVoiceAgentEnabled := cfg.General.VoiceAgentEnabled
 	oldDictateHotkey := cfg.General.DictateHotkey
 	oldAssistHotkey := cfg.General.AssistHotkey
 	oldVoiceAgentHotkey := cfg.General.VoiceAgentHotkey
@@ -305,7 +415,7 @@ func saveSettings(ctx context.Context, req *http.Request, cfgPath string, cfg *c
 	shouldValidateHF := nextCfg.HuggingFace.Enabled && needsHFRefresh
 	if shouldValidateHF {
 		if err := refreshHuggingFaceProvider(ctx, &nextCfg, sttRouter, managedHFEnabled); err != nil {
-			if err == errMissingHuggingFaceToken {
+			if errors.Is(err, errMissingHuggingFaceToken) {
 				return msgHFTokenMissing
 			}
 			return fmt.Sprintf(msgModelUnreachable, err)
@@ -315,6 +425,10 @@ func saveSettings(ctx context.Context, req *http.Request, cfgPath string, cfg *c
 		sttRouter.SetHuggingFace(nil)
 	}
 
+	if err := refreshProviderRuntimes(ctx, &nextCfg, state, sttRouter); err != nil {
+		return fmt.Sprintf(msgSaveFailed, err)
+	}
+
 	*cfg = nextCfg
 
 	if err := config.Save(cfgPath, cfg); err != nil {
@@ -322,12 +436,18 @@ func saveSettings(ctx context.Context, req *http.Request, cfgPath string, cfg *c
 	}
 
 	state.applyRuntimeSettings(
+		form.DictateEnabled,
+		form.AssistEnabled,
+		form.VoiceAgentEnabled,
 		form.DictateHotkey,
 		form.AssistHotkey,
 		form.VoiceAgentHotkey,
+		form.DictateHotkeyBehavior,
+		form.AssistHotkeyBehavior,
+		form.VoiceAgentHotkeyBehavior,
 		form.ActiveMode,
 		form.AudioDeviceID,
-		runtimeAvailableProviders(sttRouter),
+		runtimeAvailableProviders(ctx, sttRouter),
 		form.Visualizer,
 		form.Design,
 		form.OverlayPosition,
@@ -338,9 +458,15 @@ func saveSettings(ctx context.Context, req *http.Request, cfgPath string, cfg *c
 		form.OverlayMonitorPositions,
 	)
 	state.applyDesktopSettings(
+		oldDictateEnabled,
+		oldAssistEnabled,
+		oldVoiceAgentEnabled,
 		oldDictateHotkey,
 		oldAssistHotkey,
 		oldVoiceAgentHotkey,
+		form.DictateEnabled,
+		form.AssistEnabled,
+		form.VoiceAgentEnabled,
 		form.DictateHotkey,
 		form.AssistHotkey,
 		form.VoiceAgentHotkey,
@@ -352,32 +478,72 @@ func saveSettings(ctx context.Context, req *http.Request, cfgPath string, cfg *c
 	return msgSaved
 }
 
+func resetOverlayPosition(cfgPath string, cfg *config.Config, state *appState) string {
+	if cfg == nil || state == nil {
+		return fmt.Sprintf(msgSaveFailed, errors.New("settings state unavailable"))
+	}
+
+	cfg.UI.OverlayFreeX = 0
+	cfg.UI.OverlayFreeY = 0
+	cfg.UI.OverlayMonitorPositions = map[string]config.OverlayFreePosition{}
+
+	if err := config.Save(cfgPath, cfg); err != nil {
+		return fmt.Sprintf(msgSaveFailed, err)
+	}
+
+	state.mu.Lock()
+	state.overlayFreeX = 0
+	state.overlayFreeY = 0
+	state.overlayMonitorCenters = map[string]config.OverlayFreePosition{}
+	state.syncSpeechKitSnapshotLocked()
+	state.mu.Unlock()
+
+	state.refreshOverlayWindows()
+
+	return msgSaved
+}
+
 // settingsFormData holds parsed and validated form values from the settings page.
 type settingsFormData struct {
-	DictateHotkey           string
-	AssistHotkey            string
-	VoiceAgentHotkey        string
-	AgentHotkey             string
-	AgentMode               string
-	ActiveMode              string
-	AudioDeviceID           string
-	HFModel                 string
-	OverlayEnabled          bool
-	Visualizer              string
-	Design                  string
-	OverlayPosition         string
-	OverlayMovable          bool
-	OverlayFreeX            int
-	OverlayFreeY            int
-	OverlayMonitorPositions map[string]config.OverlayFreePosition
-	StoreBackend            string
-	StoreSQLitePath         string
-	StorePostgresDSN        string
-	StoreSaveAudio          bool
-	StoreAudioRetention     int
-	StoreMaxAudioStorage    int
-	VocabularyDictionary    string
-	Language                string
+	DictateEnabled             bool
+	AssistEnabled              bool
+	VoiceAgentEnabled          bool
+	DictateHotkey              string
+	AssistHotkey               string
+	VoiceAgentHotkey           string
+	DictateHotkeyBehavior      string
+	AssistHotkeyBehavior       string
+	VoiceAgentHotkeyBehavior   string
+	VoiceAgentCloseBehavior    string
+	VoiceAgentRefinementPrompt string
+	AutoStartOnLaunch          bool
+	AgentHotkey                string
+	AgentMode                  string
+	ActiveMode                 string
+	AudioDeviceID              string
+	HFModel                    string
+	OverlayEnabled             bool
+	Visualizer                 string
+	Design                     string
+	OverlayPosition            string
+	OverlayMovable             bool
+	OverlayFreeX               int
+	OverlayFreeY               int
+	OverlayMonitorPositions    map[string]config.OverlayFreePosition
+	StoreBackend               string
+	StoreSQLitePath            string
+	StorePostgresDSN           string
+	StoreSaveAudio             bool
+	StoreAudioRetention        int
+	StoreMaxAudioStorage       int
+	VocabularyDictionary       string
+	Language                   string
+	DictatePrimaryProfileID    string
+	DictateFallbackProfileID   string
+	AssistPrimaryProfileID     string
+	AssistFallbackProfileID    string
+	VoicePrimaryProfileID      string
+	VoiceFallbackProfileID     string
 }
 
 // parseSettingsForm extracts and validates all settings form values.
@@ -399,6 +565,18 @@ func parseSettingsForm(req *http.Request, cfg *config.Config) (settingsFormData,
 	}
 	_, hasAssistHotkey := req.PostForm["assist_hotkey"]
 	_, hasVoiceAgentHotkey := req.PostForm["voice_agent_hotkey"]
+	f.DictateEnabled = cfg.General.DictateEnabled
+	if raw := strings.TrimSpace(req.FormValue("dictate_enabled")); raw != "" {
+		f.DictateEnabled = raw == "1"
+	}
+	f.AssistEnabled = cfg.General.AssistEnabled
+	if raw := strings.TrimSpace(req.FormValue("assist_enabled")); raw != "" {
+		f.AssistEnabled = raw == "1"
+	}
+	f.VoiceAgentEnabled = cfg.General.VoiceAgentEnabled
+	if raw := strings.TrimSpace(req.FormValue("voice_agent_enabled")); raw != "" {
+		f.VoiceAgentEnabled = raw == "1"
+	}
 	f.AssistHotkey = strings.TrimSpace(req.FormValue("assist_hotkey"))
 	f.VoiceAgentHotkey = strings.TrimSpace(req.FormValue("voice_agent_hotkey"))
 	legacyAgentMode := strings.TrimSpace(req.FormValue("agent_mode"))
@@ -424,13 +602,72 @@ func parseSettingsForm(req *http.Request, cfg *config.Config) (settingsFormData,
 	if !legacyAgentHotkeyPosted && !hasVoiceAgentHotkey && f.VoiceAgentHotkey == "" {
 		f.VoiceAgentHotkey = strings.TrimSpace(cfg.General.VoiceAgentHotkey)
 	}
+	if strings.TrimSpace(f.DictateHotkey) == "" {
+		f.DictateEnabled = false
+	}
+	if strings.TrimSpace(f.AssistHotkey) == "" {
+		f.AssistEnabled = false
+	}
+	if strings.TrimSpace(f.VoiceAgentHotkey) == "" {
+		f.VoiceAgentEnabled = false
+	}
+	f.DictateHotkeyBehavior = config.NormalizeHotkeyBehavior(
+		req.FormValue("dictate_hotkey_behavior"),
+		config.NormalizeHotkeyBehavior(cfg.General.DictateHotkeyBehavior, config.HotkeyBehaviorPushToTalk),
+	)
+	f.AssistHotkeyBehavior = config.NormalizeHotkeyBehavior(
+		req.FormValue("assist_hotkey_behavior"),
+		config.NormalizeHotkeyBehavior(cfg.General.AssistHotkeyBehavior, config.HotkeyBehaviorPushToTalk),
+	)
+	f.VoiceAgentHotkeyBehavior = config.NormalizeHotkeyBehavior(
+		req.FormValue("voice_agent_hotkey_behavior"),
+		config.NormalizeHotkeyBehavior(cfg.General.VoiceAgentHotkeyBehavior, config.HotkeyBehaviorPushToTalk),
+	)
+	f.VoiceAgentCloseBehavior = config.NormalizeVoiceAgentCloseBehavior(
+		req.FormValue("voice_agent_close_behavior"),
+		config.NormalizeVoiceAgentCloseBehavior(cfg.VoiceAgent.CloseBehavior, config.VoiceAgentCloseBehaviorContinue),
+	)
+	f.VoiceAgentRefinementPrompt = normalizeVoiceAgentPrompt(req.FormValue("voice_agent_refinement_prompt"))
+	if !postFormIncludes(req, "voice_agent_refinement_prompt") {
+		f.VoiceAgentRefinementPrompt = strings.TrimSpace(cfg.VoiceAgent.RefinementPrompt)
+	}
+	f.AutoStartOnLaunch = cfg.General.AutoStartOnLaunch
+	if raw := strings.TrimSpace(req.FormValue("auto_start_on_launch")); raw != "" {
+		f.AutoStartOnLaunch = raw == "1"
+	} else if raw := strings.TrimSpace(req.FormValue("voice_agent_auto_start")); raw != "" {
+		f.AutoStartOnLaunch = raw == "1"
+	}
+	for _, binding := range []string{f.DictateHotkey, f.AssistHotkey, f.VoiceAgentHotkey} {
+		if strings.TrimSpace(binding) == "" {
+			continue
+		}
+		if _, err := parseModeHotkey(binding); err != nil {
+			return f, msgUnsupportedModeHotkey
+		}
+	}
 	f.AgentHotkey = legacyAgentHotkeyFromModeBindings(f.AssistHotkey, f.VoiceAgentHotkey, f.AgentMode)
 	activeMode := strings.TrimSpace(req.FormValue("active_mode"))
 	if activeMode == "" && !postFormIncludes(req, "active_mode") {
 		activeMode = cfg.General.ActiveMode
 	}
-	f.ActiveMode = sanitizeActiveModeForBindings(activeMode, f.AgentMode, f.DictateHotkey, f.AssistHotkey, f.VoiceAgentHotkey)
-	if !validateDistinctModeHotkeys(f.DictateHotkey, f.AssistHotkey, f.VoiceAgentHotkey) {
+	f.ActiveMode = sanitizeActiveModeForBindings(
+		activeMode,
+		f.AgentMode,
+		f.DictateEnabled,
+		f.AssistEnabled,
+		f.VoiceAgentEnabled,
+		f.DictateHotkey,
+		f.AssistHotkey,
+		f.VoiceAgentHotkey,
+	)
+	if !validateDistinctModeHotkeys(
+		f.DictateEnabled,
+		f.AssistEnabled,
+		f.VoiceAgentEnabled,
+		f.DictateHotkey,
+		f.AssistHotkey,
+		f.VoiceAgentHotkey,
+	) {
 		return f, msgDuplicateHotkeys
 	}
 	f.AudioDeviceID = strings.TrimSpace(req.FormValue("audio_device_id"))
@@ -541,6 +778,51 @@ func parseSettingsForm(req *http.Request, cfg *config.Config) (settingsFormData,
 		f.Language = "de"
 	}
 
+	f.DictatePrimaryProfileID = strings.TrimSpace(req.FormValue("dictate_primary_profile_id"))
+	if f.DictatePrimaryProfileID == "" {
+		f.DictatePrimaryProfileID = strings.TrimSpace(cfg.ModelSelection.Dictate.PrimaryProfileID)
+	}
+	f.DictateFallbackProfileID = strings.TrimSpace(req.FormValue("dictate_fallback_profile_id"))
+	if f.DictateFallbackProfileID == "" {
+		f.DictateFallbackProfileID = strings.TrimSpace(cfg.ModelSelection.Dictate.FallbackProfileID)
+	}
+	f.AssistPrimaryProfileID = strings.TrimSpace(req.FormValue("assist_primary_profile_id"))
+	if f.AssistPrimaryProfileID == "" {
+		f.AssistPrimaryProfileID = strings.TrimSpace(cfg.ModelSelection.Assist.PrimaryProfileID)
+	}
+	f.AssistFallbackProfileID = strings.TrimSpace(req.FormValue("assist_fallback_profile_id"))
+	if f.AssistFallbackProfileID == "" {
+		f.AssistFallbackProfileID = strings.TrimSpace(cfg.ModelSelection.Assist.FallbackProfileID)
+	}
+	f.VoicePrimaryProfileID = strings.TrimSpace(req.FormValue("voice_primary_profile_id"))
+	if f.VoicePrimaryProfileID == "" {
+		f.VoicePrimaryProfileID = strings.TrimSpace(cfg.ModelSelection.VoiceAgent.PrimaryProfileID)
+	}
+	f.VoiceFallbackProfileID = strings.TrimSpace(req.FormValue("voice_fallback_profile_id"))
+	if f.VoiceFallbackProfileID == "" {
+		f.VoiceFallbackProfileID = strings.TrimSpace(cfg.ModelSelection.VoiceAgent.FallbackProfileID)
+	}
+
+	catalog := filteredModelCatalog()
+	if err := validateModeSelection(cfg, catalog, modeDictate, config.ModeModelSelection{
+		PrimaryProfileID:  f.DictatePrimaryProfileID,
+		FallbackProfileID: f.DictateFallbackProfileID,
+	}); err != nil {
+		return f, err.Error()
+	}
+	if err := validateModeSelection(cfg, catalog, modeAssist, config.ModeModelSelection{
+		PrimaryProfileID:  f.AssistPrimaryProfileID,
+		FallbackProfileID: f.AssistFallbackProfileID,
+	}); err != nil {
+		return f, err.Error()
+	}
+	if err := validateModeSelection(cfg, catalog, modeVoiceAgent, config.ModeModelSelection{
+		PrimaryProfileID:  f.VoicePrimaryProfileID,
+		FallbackProfileID: f.VoiceFallbackProfileID,
+	}); err != nil {
+		return f, err.Error()
+	}
+
 	return f, ""
 }
 
@@ -552,9 +834,44 @@ func buildNextConfig(form settingsFormData, cfg *config.Config) config.Config {
 	nextCfg.General.DictateHotkey = form.DictateHotkey
 	nextCfg.General.AssistHotkey = form.AssistHotkey
 	nextCfg.General.VoiceAgentHotkey = form.VoiceAgentHotkey
-	nextCfg.General.ActiveMode = sanitizeActiveModeForBindings(form.ActiveMode, form.AgentMode, form.DictateHotkey, form.AssistHotkey, form.VoiceAgentHotkey)
+	nextCfg.General.DictateHotkeyBehavior = config.NormalizeHotkeyBehavior(form.DictateHotkeyBehavior, config.HotkeyBehaviorPushToTalk)
+	nextCfg.General.AssistHotkeyBehavior = config.NormalizeHotkeyBehavior(form.AssistHotkeyBehavior, config.HotkeyBehaviorPushToTalk)
+	nextCfg.General.VoiceAgentHotkeyBehavior = config.NormalizeHotkeyBehavior(form.VoiceAgentHotkeyBehavior, config.HotkeyBehaviorPushToTalk)
+	nextCfg.General.DictateEnabled = form.DictateEnabled
+	nextCfg.General.AssistEnabled = form.AssistEnabled
+	nextCfg.General.VoiceAgentEnabled = form.VoiceAgentEnabled
+	nextCfg.General.ActiveMode = sanitizeActiveModeForBindings(
+		form.ActiveMode,
+		form.AgentMode,
+		form.DictateEnabled,
+		form.AssistEnabled,
+		form.VoiceAgentEnabled,
+		form.DictateHotkey,
+		form.AssistHotkey,
+		form.VoiceAgentHotkey,
+	)
 	nextCfg.General.AgentMode = deriveLegacyAgentModeFromBindings(form.AssistHotkey, form.VoiceAgentHotkey, nextCfg.General.ActiveMode, form.AgentMode)
 	nextCfg.General.AgentHotkey = legacyAgentHotkeyFromModeBindings(form.AssistHotkey, form.VoiceAgentHotkey, nextCfg.General.AgentMode)
+	nextCfg.General.HotkeyMode = nextCfg.General.DictateHotkeyBehavior
+	nextCfg.ModelSelection.Dictate = normalizeModeSelection(config.ModeModelSelection{
+		PrimaryProfileID:  form.DictatePrimaryProfileID,
+		FallbackProfileID: form.DictateFallbackProfileID,
+	})
+	nextCfg.ModelSelection.Assist = normalizeModeSelection(config.ModeModelSelection{
+		PrimaryProfileID:  form.AssistPrimaryProfileID,
+		FallbackProfileID: form.AssistFallbackProfileID,
+	})
+	nextCfg.ModelSelection.VoiceAgent = normalizeModeSelection(config.ModeModelSelection{
+		PrimaryProfileID:  form.VoicePrimaryProfileID,
+		FallbackProfileID: form.VoiceFallbackProfileID,
+	})
+	nextCfg.VoiceAgent.RefinementPrompt = form.VoiceAgentRefinementPrompt
+	nextCfg.VoiceAgent.CloseBehavior = config.NormalizeVoiceAgentCloseBehavior(
+		form.VoiceAgentCloseBehavior,
+		config.NormalizeVoiceAgentCloseBehavior(cfg.VoiceAgent.CloseBehavior, config.VoiceAgentCloseBehaviorContinue),
+	)
+	nextCfg.General.AutoStartOnLaunch = form.AutoStartOnLaunch
+	nextCfg.VoiceAgent.AutoStartOnLaunch = form.AutoStartOnLaunch
 	nextCfg.Audio.DeviceID = form.AudioDeviceID
 	nextCfg.HuggingFace.Enabled = cfg.HuggingFace.Enabled && hfAvailableInBuild
 	nextCfg.HuggingFace.Model = form.HFModel
@@ -596,6 +913,12 @@ func normalizeVocabularyDictionary(input string) string {
 	return strings.TrimSpace(normalized)
 }
 
+func normalizeVoiceAgentPrompt(input string) string {
+	normalized := strings.ReplaceAll(input, "\r\n", "\n")
+	normalized = strings.ReplaceAll(normalized, "\r", "\n")
+	return strings.TrimSpace(normalized)
+}
+
 func refreshHuggingFaceProvider(ctx context.Context, cfg *config.Config, sttRouter *router.Router, skipHealthCheck bool) error {
 	if !config.ManagedHuggingFaceAvailableInBuild() {
 		return errHFUnavailableBuild
@@ -621,7 +944,7 @@ func refreshHuggingFaceProvider(ctx context.Context, cfg *config.Config, sttRout
 	return nil
 }
 
-func saveHuggingFaceToken(ctx context.Context, req *http.Request, cfg *config.Config, sttRouter *router.Router) string {
+func saveHuggingFaceToken(ctx context.Context, req *http.Request, cfg *config.Config, state *appState, sttRouter *router.Router) string {
 	if err := req.ParseForm(); err != nil {
 		return msgFormParseError
 	}
@@ -641,16 +964,19 @@ func saveHuggingFaceToken(ctx context.Context, req *http.Request, cfg *config.Co
 	}
 	if cfg.HuggingFace.Enabled {
 		if err := refreshHuggingFaceProvider(ctx, cfg, sttRouter, false); err != nil {
-			if err == errMissingHuggingFaceToken {
+			if errors.Is(err, errMissingHuggingFaceToken) {
 				return msgHFTokenMissing
 			}
 			return fmt.Sprintf(msgModelUnreachable, err)
 		}
 	}
+	if err := refreshProviderRuntimes(ctx, cfg, state, sttRouter); err != nil {
+		return fmt.Sprintf(msgSaveFailed, err)
+	}
 	return msgHFTokenSaved
 }
 
-func clearHuggingFaceToken(ctx context.Context, cfg *config.Config, sttRouter *router.Router) string {
+func clearHuggingFaceToken(ctx context.Context, cfg *config.Config, state *appState, sttRouter *router.Router) string {
 	if !config.ManagedHuggingFaceAvailableInBuild() {
 		return msgHFUnavailableBuild
 	}
@@ -659,12 +985,18 @@ func clearHuggingFaceToken(ctx context.Context, cfg *config.Config, sttRouter *r
 	}
 	if cfg.HuggingFace.Enabled {
 		if err := refreshHuggingFaceProvider(ctx, cfg, sttRouter, true); err != nil {
-			if err == errMissingHuggingFaceToken {
+			if errors.Is(err, errMissingHuggingFaceToken) {
 				sttRouter.SetHuggingFace(nil)
+				if refreshErr := refreshProviderRuntimes(ctx, cfg, state, sttRouter); refreshErr != nil {
+					return fmt.Sprintf(msgSaveFailed, refreshErr)
+				}
 				return msgHFTokenCleared
 			}
 			return fmt.Sprintf(msgModelUnreachable, err)
 		}
+	}
+	if err := refreshProviderRuntimes(ctx, cfg, state, sttRouter); err != nil {
+		return fmt.Sprintf(msgSaveFailed, err)
 	}
 	return msgHFTokenCleared
 }

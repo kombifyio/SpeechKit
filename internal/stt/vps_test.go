@@ -25,13 +25,7 @@ func TestVPS_Transcribe_Success(t *testing.T) {
 	}))
 	defer server.Close()
 
-	p := &VPSProvider{
-		name:    "vps",
-		BaseURL: server.URL,
-		APIKey:  "vps-key",
-		Model:   "whisper-1",
-		client:  &http.Client{Timeout: 5 * time.Second},
-	}
+	p := NewVPSProvider(server.URL, "vps-key")
 
 	result, err := p.Transcribe(context.Background(), []byte("wav"), TranscribeOpts{Language: "de"})
 	if err != nil {

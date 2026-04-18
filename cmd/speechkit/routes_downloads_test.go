@@ -5,7 +5,6 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
-	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -16,12 +15,9 @@ import (
 
 func TestSelectDownloadedLocalModelUpdatesConfigAndReloadsLocalProvider(t *testing.T) {
 	modelsDir := t.TempDir()
-	if err := os.WriteFile(filepath.Join(modelsDir, "ggml-small.bin"), []byte("small"), 0o644); err != nil {
-		t.Fatalf("write small model: %v", err)
-	}
-	if err := os.WriteFile(filepath.Join(modelsDir, "ggml-large-v3.bin"), []byte("large"), 0o644); err != nil {
-		t.Fatalf("write large model: %v", err)
-	}
+	installTestWhisperBinary(t)
+	writeValidWhisperModelFile(t, filepath.Join(modelsDir, "ggml-small.bin"))
+	writeValidWhisperModelFile(t, filepath.Join(modelsDir, "ggml-large-v3.bin"))
 
 	cfg := defaultTestConfig()
 	cfg.Local.Enabled = true
@@ -74,12 +70,9 @@ func TestSelectDownloadedLocalModelUpdatesConfigAndReloadsLocalProvider(t *testi
 
 func TestSelectDownloadedLocalModelReactivatesLocalSTTAfterCloudSelection(t *testing.T) {
 	modelsDir := t.TempDir()
-	if err := os.WriteFile(filepath.Join(modelsDir, "ggml-small.bin"), []byte("small"), 0o644); err != nil {
-		t.Fatalf("write small model: %v", err)
-	}
-	if err := os.WriteFile(filepath.Join(modelsDir, "ggml-large-v3.bin"), []byte("large"), 0o644); err != nil {
-		t.Fatalf("write large model: %v", err)
-	}
+	installTestWhisperBinary(t)
+	writeValidWhisperModelFile(t, filepath.Join(modelsDir, "ggml-small.bin"))
+	writeValidWhisperModelFile(t, filepath.Join(modelsDir, "ggml-large-v3.bin"))
 
 	cfg := defaultTestConfig()
 	cfg.Local.Enabled = false
@@ -140,9 +133,8 @@ func TestSelectDownloadedLocalModelReactivatesLocalSTTAfterCloudSelection(t *tes
 
 func TestSelectDownloadedLocalModelDetachesCanceledContextForLocalStartup(t *testing.T) {
 	modelsDir := t.TempDir()
-	if err := os.WriteFile(filepath.Join(modelsDir, "ggml-large-v3.bin"), []byte("large"), 0o644); err != nil {
-		t.Fatalf("write large model: %v", err)
-	}
+	installTestWhisperBinary(t)
+	writeValidWhisperModelFile(t, filepath.Join(modelsDir, "ggml-large-v3.bin"))
 
 	cfg := defaultTestConfig()
 	cfg.Local.Enabled = true
@@ -156,7 +148,7 @@ func TestSelectDownloadedLocalModelDetachesCanceledContextForLocalStartup(t *tes
 		sttRouter:      &router.Router{},
 	}
 
-	item, ok := downloadCatalogItem(cfg, "whisper.ggml-large-v3")
+	item, ok := downloadCatalogItem(t.Context(), cfg, "whisper.ggml-large-v3")
 	if !ok {
 		t.Fatal("expected local download catalog item to exist")
 	}
@@ -177,5 +169,44 @@ func TestSelectDownloadedLocalModelDetachesCanceledContextForLocalStartup(t *tes
 
 	if launchErr != nil {
 		t.Fatalf("launch context err = %v, want nil", launchErr)
+	}
+}
+
+func TestSelectDownloadedLocalModelRejectsMissingWhisperBinary(t *testing.T) {
+	modelsDir := t.TempDir()
+	writeValidWhisperModelFile(t, filepath.Join(modelsDir, "ggml-small.bin"))
+	writeValidWhisperModelFile(t, filepath.Join(modelsDir, "ggml-large-v3.bin"))
+
+	t.Setenv("LOCALAPPDATA", t.TempDir())
+
+	cfg := defaultTestConfig()
+	cfg.Local.Enabled = true
+	cfg.Local.Port = 8080
+	cfg.Local.Model = "ggml-small.bin"
+	cfg.Local.ModelPath = filepath.Join(modelsDir, "ggml-small.bin")
+	cfg.Routing.Strategy = "local-only"
+	cfgPath := filepath.Join(t.TempDir(), "config.toml")
+
+	state := &appState{
+		activeProfiles: map[string]string{},
+		sttRouter:      &router.Router{},
+	}
+	handler := assetHandler(cfg, cfgPath, state, state.sttRouter, nil, &config.InstallState{Mode: config.InstallModeLocal})
+
+	form := url.Values{"model_id": {"whisper.ggml-large-v3"}}
+	req := httptest.NewRequest(http.MethodPost, "/models/downloads/select", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	rec := httptest.NewRecorder()
+
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, body=%s", rec.Code, rec.Body.String())
+	}
+	if body := rec.Body.String(); !strings.Contains(strings.ToLower(body), "whisper-server binary missing") {
+		t.Fatalf("body = %q, want whisper-server binary missing", body)
+	}
+	if got := cfg.Local.Model; got != "ggml-small.bin" {
+		t.Fatalf("local model = %q, want unchanged %q", got, "ggml-small.bin")
 	}
 }

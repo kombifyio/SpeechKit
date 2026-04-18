@@ -12,9 +12,14 @@ BUNDLE_EXE="$BUNDLE_DIR/SpeechKit.exe"
 INSTALLER_SCRIPT="$PROJECT_DIR/installer/speechkit.nsi"
 INSTALLER_EXE="$DIST_DIR/SpeechKit-Setup.exe"
 PREPARE_WHISPER_RUNTIME_SCRIPT="$SCRIPT_DIR/prepare-whisper-runtime.ps1"
+MINGW_BIN_DIR="/c/msys64/mingw64/bin"
+MINGW_GCC="$MINGW_BIN_DIR/gcc"
+MINGW_GXX="$MINGW_BIN_DIR/g++"
 
-export PATH="/c/msys64/mingw64/bin:$PATH"
+export PATH="$MINGW_BIN_DIR:$PATH"
 export CGO_ENABLED=1
+export CC="$MINGW_GCC"
+export CXX="$MINGW_GXX"
 
 GO_MODULE_PATH="$(go list -m -f '{{.Path}}')"
 if [ -z "$GO_MODULE_PATH" ]; then
@@ -62,6 +67,8 @@ require_command() {
 cd "$PROJECT_DIR"
 
 echo "Preparing clean Windows bundle..."
+require_path "$MINGW_GCC" "MinGW gcc compiler"
+require_path "$MINGW_GXX" "MinGW g++ compiler"
 require_path "$FRONTEND_DIR" "Frontend source directory"
 require_path "$FRONTEND_DIR/package.json" "Frontend package manifest"
 require_path "$FRONTEND_DIR/src" "Frontend source tree"

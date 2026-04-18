@@ -5,7 +5,6 @@ package vad
 import (
 	"fmt"
 	"sync"
-	"time"
 
 	ort "github.com/yalue/onnxruntime_go"
 )
@@ -184,64 +183,3 @@ func (v *SileroVAD) destroyTensors() {
 	}
 }
 
-// Segmenter wraps VAD with silence-based auto-stop logic.
-type Segmenter struct {
-	vad              *SileroVAD
-	silenceThreshold time.Duration
-	speechThreshold  float32
-	onSpeechEnd      func()
-
-	silenceStart time.Time
-	speaking     bool
-}
-
-// NewSegmenter creates a VAD segmenter that calls onSpeechEnd after sustained silence.
-func NewSegmenter(vad *SileroVAD, silenceMs int, onSpeechEnd func()) *Segmenter {
-	return &Segmenter{
-		vad:              vad,
-		silenceThreshold: time.Duration(silenceMs) * time.Millisecond,
-		speechThreshold:  0.5,
-		onSpeechEnd:      onSpeechEnd,
-	}
-}
-
-// FeedPCM processes raw S16 PCM bytes from the audio capture buffer.
-// Automatically extracts FrameSize chunks and processes them.
-func (s *Segmenter) FeedPCM(pcmBytes []byte) {
-	bytesPerFrame := FrameSize * 2 // 2 bytes per S16 sample
-	for offset := 0; offset+bytesPerFrame <= len(pcmBytes); offset += bytesPerFrame {
-		frame := make([]int16, FrameSize)
-		for i := 0; i < FrameSize; i++ {
-			lo := pcmBytes[offset+i*2]
-			hi := pcmBytes[offset+i*2+1]
-			frame[i] = int16(lo) | int16(hi)<<8
-		}
-
-		prob, err := s.vad.ProcessFrame(frame)
-		if err != nil {
-			continue
-		}
-
-		if prob > s.speechThreshold {
-			s.speaking = true
-			s.silenceStart = time.Time{}
-		} else if s.speaking {
-			if s.silenceStart.IsZero() {
-				s.silenceStart = time.Now()
-			} else if time.Since(s.silenceStart) >= s.silenceThreshold {
-				s.speaking = false
-				s.silenceStart = time.Time{}
-				if s.onSpeechEnd != nil {
-					s.onSpeechEnd()
-				}
-			}
-		}
-	}
-}
-
-// Reset resets the segmenter state for a new recording.
-func (s *Segmenter) Reset() {
-	s.speaking = false
-	s.silenceStart = time.Time{}
-	s.vad.Reset()
-}

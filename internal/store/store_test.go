@@ -697,7 +697,7 @@ func TestFactory_UnknownBackend(t *testing.T) {
 // mockStore is a minimal Store implementation for testing RegisterBackend.
 type mockStore struct{}
 
-func (m *mockStore) SaveTranscription(_ context.Context, _, _, _, _ string, _ int64, _ int64, _ []byte) error {
+func (m *mockStore) SaveTranscription(_ context.Context, _, _, _, _ string, _, _ int64, _ []byte) error {
 	return nil
 }
 func (m *mockStore) GetTranscription(_ context.Context, _ int64) (*Transcription, error) {
@@ -707,7 +707,7 @@ func (m *mockStore) ListTranscriptions(_ context.Context, _ ListOpts) ([]Transcr
 	return nil, nil
 }
 func (m *mockStore) TranscriptionCount(_ context.Context) (int, error) { return 0, nil }
-func (m *mockStore) SaveQuickNote(_ context.Context, _, _, _ string, _ int64, _ int64, _ []byte) (int64, error) {
+func (m *mockStore) SaveQuickNote(_ context.Context, _, _, _ string, _, _ int64, _ []byte) (int64, error) {
 	return 0, nil
 }
 func (m *mockStore) GetQuickNote(_ context.Context, _ int64) (*QuickNote, error) {

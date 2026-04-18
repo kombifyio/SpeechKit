@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"path/filepath"
@@ -8,6 +9,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/kombifyio/SpeechKit/internal/netsec"
 )
 
 var (
@@ -50,8 +53,9 @@ func cachedLatestRelease() (latestReleaseInfo, bool) {
 		return info, true
 	}
 
-	// Trigger background refresh
-	go refreshLatestRelease()
+	// Trigger background refresh; must not inherit request context as the refresh
+	// should outlive the HTTP request that triggered it.
+	go refreshLatestRelease() //nolint:contextcheck // background refresh should not be bound to request context
 	return info, info.Version != ""
 }
 
@@ -63,12 +67,16 @@ func refreshLatestRelease() {
 	}
 	updateMu.Unlock()
 
-	client := &http.Client{Timeout: updateCheckTimeout}
-	resp, err := client.Get(releaseAPIURL)
+	client := netsec.NewSafeHTTPClient(netsec.ClientOptions{Timeout: updateCheckTimeout})
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, releaseAPIURL, http.NoBody)
 	if err != nil {
 		return
 	}
-	defer resp.Body.Close()
+	resp, err := client.Do(req)
+	if err != nil {
+		return
+	}
+	defer resp.Body.Close() //nolint:errcheck // response body close error is not actionable
 	if resp.StatusCode != http.StatusOK {
 		return
 	}
@@ -132,7 +140,7 @@ func selectWindowsInstallerAsset(assets []struct {
 	return bestName, bestURL, bestSize
 }
 
-func installerAssetScore(name string, contentType string) int {
+func installerAssetScore(name, contentType string) int {
 	base := strings.ToLower(filepath.Base(strings.TrimSpace(name)))
 	if base == "" {
 		return 0
@@ -161,11 +169,11 @@ func installerAssetScore(name string, contentType string) int {
 	return score
 }
 
-func isNewerReleaseVersion(latest string, current string) bool {
+func isNewerReleaseVersion(latest, current string) bool {
 	return compareSemanticVersions(latest, current) > 0
 }
 
-func compareSemanticVersions(left string, right string) int {
+func compareSemanticVersions(left, right string) int {
 	leftParts, leftOK := parseSemanticVersion(left)
 	rightParts, rightOK := parseSemanticVersion(right)
 	if !leftOK || !rightOK {

@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"os"
 	"os/exec"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -48,67 +49,74 @@ type logEntry struct {
 
 // appState holds shared state for UI updates.
 type appState struct {
-	mu                    sync.Mutex
-	overlay               overlayWindow
-	pillAnchor            overlayWindow
-	pillPanel             overlayWindow
-	dotAnchor             overlayWindow
-	radialMenu            overlayWindow
-	dashboard             settingsWindow
-	settings              settingsWindow
-	appTray               trayStateSetter
-	screenLocator         overlayScreenLocator
-	logEntries            []logEntry
-	transcriptions        int
-	providers             []string
-	hotkey                string
-	dictateHotkey         string
-	assistHotkey          string
-	voiceAgentHotkey      string
-	agentHotkey           string
-	currentState          string
-	overlayText           string
-	overlayLevel          float64
-	overlayPhase          string
-	overlayVisualizer     string
-	overlayDesign         string
-	overlayEnabled        bool
-	overlayPosition       string
-	overlayMovable        bool
-	overlayFreeX          int
-	overlayFreeY          int
-	overlayMonitorKey     string
-	overlayMonitorCenters map[string]config.OverlayFreePosition
-	quickNoteMode         bool
-	quickCaptureMode      bool
-	quickCaptureAutoStart bool  // when true, next PTT event auto-starts + auto-stops recording
-	quickCaptureNoteID    int64 // the specific note ID this capture session writes to
-	lastTranscriptionText string
-	vocabularyDictionary  string
-	activeMode            string
-	audioDeviceID         string
-	activeProfiles        map[string]string
-	hkManager             hotkeyReconfigurer
-	audioSession          audioDeviceReconfigurer
-	engine                *speechkit.Runtime
-	sttRouter             *router.Router
-	genkitRT              *appai.Runtime
-	summarizeFlow         *core.Flow[flows.SummarizeInput, string, struct{}]
-	agentFlow             *core.Flow[flows.AgentInput, flows.AgentOutput, struct{}]
-	assistFlow            *core.Flow[flows.AssistInput, flows.AssistOutput, struct{}]
-	assistExecutor        assist.ToolExecutor
-	assistPipeline        *assist.Pipeline
-	assistBubble          overlayWindow
-	prompterWindow        overlayWindow
-	ttsRouter             *tts.Router
-	audioPlayer           *audio.Player
-	voiceAgentSession     *voiceagent.Session
-	streamPlayer          *audio.StreamPlayer
-	wailsApp              *application.App
-	captureWin            *application.WebviewWindow
-	doneResetDelay        time.Duration
-	downloads             *downloads.Manager
-	appUpdates            *appUpdateManager
+	mu                       sync.Mutex
+	overlay                  overlayWindow
+	pillAnchor               overlayWindow
+	pillPanel                overlayWindow
+	dotAnchor                overlayWindow
+	radialMenu               overlayWindow
+	dashboard                settingsWindow
+	settings                 settingsWindow
+	appTray                  trayStateSetter
+	screenLocator            overlayScreenLocator
+	logEntries               []logEntry
+	transcriptions           int
+	providers                []string
+	hotkey                   string
+	dictateHotkey            string
+	assistHotkey             string
+	voiceAgentHotkey         string
+	dictateHotkeyBehavior    string
+	assistHotkeyBehavior     string
+	voiceAgentHotkeyBehavior string
+	dictateEnabled           bool
+	assistEnabled            bool
+	voiceAgentEnabled        bool
+	agentHotkey              string
+	currentState             string
+	overlayText              string
+	overlayLevel             float64
+	overlayPhase             string
+	overlayVisualizer        string
+	overlayDesign            string
+	overlayEnabled           bool
+	overlayPosition          string
+	overlayMovable           bool
+	overlayFreeX             int
+	overlayFreeY             int
+	overlayMonitorKey        string
+	overlayMonitorCenters    map[string]config.OverlayFreePosition
+	quickNoteMode            bool
+	quickCaptureMode         bool
+	quickCaptureAutoStart    bool  // when true, next PTT event auto-starts + auto-stops recording
+	quickCaptureNoteID       int64 // the specific note ID this capture session writes to
+	lastTranscriptionText    string
+	vocabularyDictionary     string
+	activeMode               string
+	prompterMode             string
+	audioDeviceID            string
+	activeProfiles           map[string]string
+	hkManager                hotkeyReconfigurer
+	audioSession             audioDeviceReconfigurer
+	engine                   *speechkit.Runtime
+	sttRouter                *router.Router
+	genkitRT                 *appai.Runtime
+	summarizeFlow            *core.Flow[flows.SummarizeInput, string, struct{}]
+	agentFlow                *core.Flow[flows.AgentInput, flows.AgentOutput, struct{}]
+	assistFlow               *core.Flow[flows.AssistInput, flows.AssistOutput, struct{}]
+	assistExecutor           assist.ToolExecutor
+	assistPipeline           *assist.Pipeline
+	assistBubble             overlayWindow
+	prompterWindow           overlayWindow
+	ttsRouter                *tts.Router
+	audioPlayer              *audio.Player
+	voiceAgentSession        *voiceagent.Session
+	streamPlayer             *audio.StreamPlayer
+	wailsApp                 *application.App
+	captureWin               *application.WebviewWindow
+	doneResetDelay           time.Duration
+	downloads                *downloads.Manager
+	appUpdates               *appUpdateManager
 }
 
 func showSettingsWindow(window settingsWindow) {
@@ -122,6 +130,38 @@ func showSettingsWindow(window settingsWindow) {
 		window.Show()
 	}
 	window.Focus()
+}
+
+func dashboardRefreshScript(source string) string {
+	return fmt.Sprintf(
+		`window.dispatchEvent(new CustomEvent("speechkit:dashboard-show",{detail:{source:%s}}));`,
+		strconv.Quote(source),
+	)
+}
+
+func (s *appState) showDashboardWindow(source string) {
+	if s == nil {
+		return
+	}
+
+	s.mu.Lock()
+	window := s.dashboard
+	app := s.wailsApp
+	s.mu.Unlock()
+
+	show := func() {
+		if window == nil {
+			return
+		}
+		showSettingsWindow(window)
+		window.ExecJS(dashboardRefreshScript(source))
+	}
+
+	if app != nil {
+		application.InvokeSync(show)
+		return
+	}
+	show()
 }
 
 func (s *appState) setState(state, text string) {
@@ -143,8 +183,7 @@ func (s *appState) setState(state, text string) {
 		appTray.SetState(tray.State(state))
 	}
 
-	switch state {
-	case "done":
+	if state == "done" {
 		go s.resetIdleAfter("done", s.doneResetDelayValue())
 	}
 }
@@ -190,9 +229,11 @@ func main() {
 	cfg, err := config.Load(cfgPath)
 	if err != nil {
 		slog.Error("config load failed", "err", err)
-		os.Exit(1)
+		closeLogFile()
+		os.Exit(1) //nolint:gocritic // exitAfterDefer: closeLogFile() called explicitly above before exit
 	}
 	normalizeConfigModes(cfg)
+	applySelectedVoiceAgentProfile(cfg, filteredModelCatalog())
 	if migrated, err := secrets.MigrateInstallTokenBootstrap(); err != nil {
 		slog.Warn("migrate install hugging face token", "err", err)
 	} else if migrated {
@@ -211,7 +252,7 @@ func main() {
 		if err := config.SaveInstallState(installState); err != nil {
 			slog.Warn("save install state", "err", err)
 		}
-		slog.Info("install mode: local (default, first run — setup wizard pending)")
+		slog.Info("install mode: local (default, first run â€” setup wizard pending)")
 	} else {
 		slog.Info("install mode", "mode", installState.Mode)
 	}
@@ -228,32 +269,39 @@ func main() {
 	}
 
 	state := &appState{
-		hotkey:                cfg.General.DictateHotkey,
-		dictateHotkey:         cfg.General.DictateHotkey,
-		assistHotkey:          cfg.General.AssistHotkey,
-		voiceAgentHotkey:      cfg.General.VoiceAgentHotkey,
-		agentHotkey:           cfg.General.AgentHotkey,
-		activeMode:            cfg.General.ActiveMode,
-		audioDeviceID:         cfg.Audio.DeviceID,
-		activeProfiles:        activeProfilesFromConfig(cfg, filteredModelCatalog()),
-		providers:             []string{},
-		overlayEnabled:        cfg.UI.OverlayEnabled,
-		overlayPosition:       cfg.UI.OverlayPosition,
-		overlayMovable:        cfg.UI.OverlayMovable,
-		overlayFreeX:          cfg.UI.OverlayFreeX,
-		overlayFreeY:          cfg.UI.OverlayFreeY,
-		overlayMonitorCenters: cloneOverlayMonitorPositions(cfg.UI.OverlayMonitorPositions),
-		overlayVisualizer:     cfg.UI.Visualizer,
-		overlayDesign:         cfg.UI.Design,
-		vocabularyDictionary:  cfg.Vocabulary.Dictionary,
-		screenLocator:         newActiveWindowScreenLocator(),
-		downloads:             downloads.NewManager(),
-		appUpdates:            newAppUpdateManager(),
+		hotkey:                   cfg.General.DictateHotkey,
+		dictateHotkey:            cfg.General.DictateHotkey,
+		assistHotkey:             cfg.General.AssistHotkey,
+		voiceAgentHotkey:         cfg.General.VoiceAgentHotkey,
+		dictateHotkeyBehavior:    cfg.General.DictateHotkeyBehavior,
+		assistHotkeyBehavior:     cfg.General.AssistHotkeyBehavior,
+		voiceAgentHotkeyBehavior: cfg.General.VoiceAgentHotkeyBehavior,
+		dictateEnabled:           cfg.General.DictateEnabled,
+		assistEnabled:            cfg.General.AssistEnabled,
+		voiceAgentEnabled:        cfg.General.VoiceAgentEnabled,
+		agentHotkey:              cfg.General.AgentHotkey,
+		activeMode:               cfg.General.ActiveMode,
+		prompterMode:             modeAssist,
+		audioDeviceID:            cfg.Audio.DeviceID,
+		activeProfiles:           activeProfilesFromConfig(cfg, filteredModelCatalog()),
+		providers:                []string{},
+		overlayEnabled:           cfg.UI.OverlayEnabled,
+		overlayPosition:          cfg.UI.OverlayPosition,
+		overlayMovable:           cfg.UI.OverlayMovable,
+		overlayFreeX:             cfg.UI.OverlayFreeX,
+		overlayFreeY:             cfg.UI.OverlayFreeY,
+		overlayMonitorCenters:    cloneOverlayMonitorPositions(cfg.UI.OverlayMonitorPositions),
+		overlayVisualizer:        cfg.UI.Visualizer,
+		overlayDesign:            cfg.UI.Design,
+		vocabularyDictionary:     cfg.Vocabulary.Dictionary,
+		screenLocator:            newActiveWindowScreenLocator(),
+		downloads:                downloads.NewManager(),
+		appUpdates:               newAppUpdateManager(),
 	}
 
 	// Build router and track provider status
 	r, providerLog := buildRouter(cfg)
-	syncRuntimeProviders(state, r)
+	syncRuntimeProviders(context.Background(), state, r) //nolint:contextcheck // ctx not yet created at startup initialization
 	for _, msg := range providerLog {
 		slog.Info(msg)
 	}
@@ -292,6 +340,8 @@ func main() {
 				if msg != "" {
 					state.addLog(fmt.Sprintf("Audio backend warning: %s", msg), "warn")
 				}
+			default:
+				// EventStarted, EventStopped â€” no log action needed.
 			}
 		}
 	}()
@@ -319,6 +369,18 @@ func main() {
 
 	capturer.SetLevelHandler(func(level float64) {
 		state.setLevel(level)
+
+		state.mu.Lock()
+		voiceSession := state.voiceAgentSession
+		state.mu.Unlock()
+		if voiceSession != nil {
+			switch voiceSession.CurrentState() {
+			case voiceagent.StateListening:
+				state.updatePrompterActivity("user", level)
+			case voiceagent.StateConnecting, voiceagent.StateProcessing, voiceagent.StateSpeaking, voiceagent.StateDeactivating:
+				state.updatePrompterActivity("user", 0)
+			}
+		}
 
 		// Only do silence detection when Quick Capture is active
 		if !state.quickCaptureModeActive() {
@@ -351,7 +413,7 @@ func main() {
 	genkitRT, err := appai.Init(ctx, buildGenkitConfig(cfg))
 	if err != nil {
 		slog.Warn("genkit init", "err", err)
-		state.addLog("AI providers unavailable — Assist and Voice Agent disabled", "warn")
+		state.addLog("AI providers unavailable â€” Assist and Voice Agent disabled", "warn")
 	} else {
 		state.genkitRT = genkitRT
 
@@ -385,7 +447,7 @@ func main() {
 	audioPlayer, err := audio.NewPlayer()
 	if err != nil {
 		slog.Warn("audio player init", "err", err)
-		state.addLog("TTS audio player unavailable — voice output disabled", "warn")
+		state.addLog("TTS audio player unavailable â€” voice output disabled", "warn")
 	} else {
 		state.audioPlayer = audioPlayer
 		defer audioPlayer.Close()
@@ -404,7 +466,7 @@ func main() {
 	})
 	state.assistExecutor = newAssistToolExecutor(quickActions)
 
-	// Assist Pipeline: STT → Codeword → LLM → TTS → Result{Text, Audio}
+	// Assist Pipeline: STT â†’ Codeword â†’ LLM â†’ TTS â†’ Result{Text, Audio}
 	if state.assistFlow != nil {
 		state.assistPipeline = assist.NewPipeline(
 			state.assistFlow,
@@ -418,12 +480,15 @@ func main() {
 
 	// Voice Agent session (pre-created, started on demand via hotkey).
 	if cfg.VoiceAgent.Enabled {
-		state.voiceAgentSession = prepareVoiceAgentSession(state)
+		state.voiceAgentSession = prepareVoiceAgentSession(state, cfg)
 		slog.Info("voice agent session prepared")
 	}
 
 	// Hotkeys for Dictate, Assist and Voice Agent.
 	hkManager := newModeHotkeyManager(configuredModeCombos(
+		cfg.General.DictateEnabled,
+		cfg.General.AssistEnabled,
+		cfg.General.VoiceAgentEnabled,
 		cfg.General.DictateHotkey,
 		cfg.General.AssistHotkey,
 		cfg.General.VoiceAgentHotkey,
@@ -445,7 +510,7 @@ func main() {
 		slog.Warn("store init", "err", err)
 		feedbackStore = nil
 	} else {
-		defer feedbackStore.Close()
+		defer func() { _ = feedbackStore.Close() }()
 		count, _ := feedbackStore.TranscriptionCount(context.Background())
 		state.transcriptions = count
 		state.syncSpeechKitSnapshot()
@@ -454,20 +519,7 @@ func main() {
 
 	var dashboardWin *application.WebviewWindow
 	createDashboardWindow := func(wailsApp *application.App) *application.WebviewWindow {
-		win := wailsApp.Window.NewWithOptions(application.WebviewWindowOptions{
-			Title:            "kombify SpeechKit",
-			Width:            1200,
-			Height:           820,
-			MinWidth:         900,
-			MinHeight:        650,
-			InitialPosition:  application.WindowCentered,
-			Hidden:           true,
-			URL:              "/dashboard.html",
-			BackgroundColour: application.NewRGBA(11, 15, 20, 255),
-			Windows: application.WindowsWindow{
-				Theme: application.Dark,
-			},
-		})
+		win := wailsApp.Window.NewWithOptions(newDashboardWindowOptions())
 		win.OnWindowEvent(events.Common.WindowClosing, func(event *application.WindowEvent) {
 			event.Cancel()
 			win.Hide()
@@ -476,13 +528,7 @@ func main() {
 	}
 	showDashboard := func(source string) {
 		slog.Info("dashboard requested", "source", source)
-		application.InvokeSync(func() {
-			// Re-create window if it was destroyed
-			if dashboardWin == nil {
-				return
-			}
-			showSettingsWindow(dashboardWin)
-		})
+		state.showDashboardWindow(source)
 	}
 
 	// Wails app
@@ -537,11 +583,17 @@ func main() {
 	state.radialMenu = radialMenuWindow
 	state.assistBubble = assistBubbleWindow
 
-	// Prompter window for Voice Agent transcript (created only when voice agent is enabled).
-	if cfg.VoiceAgent.Enabled && cfg.VoiceAgent.ShowPrompter {
-		prompterWin := app.Window.NewWithOptions(newPrompterWindowOptions())
-		state.prompterWindow = prompterWin
-	}
+	var inputController *desktopInputController
+	prompterWin := app.Window.NewWithOptions(newPrompterWindowOptions())
+	prompterWin.OnWindowEvent(events.Common.WindowClosing, func(event *application.WindowEvent) {
+		event.Cancel()
+		if inputController != nil {
+			inputController.closeVoiceAgentPrompter(ctx)
+			return
+		}
+		prompterWin.Hide()
+	})
+	state.prompterWindow = prompterWin
 
 	var overlayMoveSaveMu sync.Mutex
 	var overlayMoveSaveTimer *time.Timer
@@ -605,7 +657,7 @@ func main() {
 		showDashboard("tray")
 	})
 	appTray.OnFeedback = func() {
-		_ = exec.Command("explorer", "https://github.com/kombifyio/SpeechKit/issues").Start()
+		_ = exec.Command("explorer", "https://github.com/kombifyio/SpeechKit/issues").Start() //nolint:noctx // fire-and-forget browser open; no caller context available
 	}
 	state.appTray = appTray
 
@@ -613,24 +665,33 @@ func main() {
 	app.Event.OnApplicationEvent(events.Common.ApplicationStarted, func(event *application.ApplicationEvent) {
 		state.positionOverlay()
 		state.setState("idle", "")
+		maybeAutoStartVoiceAgentOnLaunch(ctx, cfg, inputController)
 	})
 
-	// Listen for prompter stop-button events.
-	if state.voiceAgentSession != nil {
-		app.Event.On("voiceagent:stop", func(_ *application.CustomEvent) {
-			if state.voiceAgentSession.CurrentState() != voiceagent.StateInactive {
-				slog.Info("voice agent stop requested from prompter")
-				state.voiceAgentSession.Stop()
-				state.stopVoiceAgentStream()
-				state.updatePrompterState("inactive")
-			}
-		})
-	}
+	// Listen for prompter controls.
+	app.Event.On("voiceagent:start", func(_ *application.CustomEvent) {
+		if inputController == nil {
+			return
+		}
+		inputController.activateVoiceAgent(ctx)
+	})
+	app.Event.On("voiceagent:stop", func(_ *application.CustomEvent) {
+		if inputController == nil {
+			return
+		}
+		inputController.deactivateVoiceAgent(ctx, true)
+	})
+	app.Event.On("voiceagent:close", func(_ *application.CustomEvent) {
+		if inputController == nil {
+			return
+		}
+		inputController.closeVoiceAgentPrompter(ctx)
+	})
 
 	for _, msg := range validateCloudProviders(ctx, r) {
 		state.addLog(msg, "info")
 	}
-	syncRuntimeProviders(state, r)
+	syncRuntimeProviders(ctx, state, r)
 
 	if localProvider, ok := r.Local().(localProviderStarter); ok {
 		startLocalProviderAsync(ctx, state, r, localProvider)
@@ -685,9 +746,11 @@ func main() {
 			speechkitStoreAdapter{store: feedbackStore},
 		).WithObserver(speechkitCommitObserver{state: state}),
 		Output: desktopTranscriptOutput{
+			cfg:         cfg,
 			state:       state,
 			handler:     clipHandler,
 			interceptor: quickActions,
+			playbackCtx: ctx,
 			activeMode: func() string {
 				state.mu.Lock()
 				defer state.mu.Unlock()
@@ -753,20 +816,19 @@ func main() {
 	state.syncSpeechKitSnapshot()
 
 	// Unified event loop: handles PTT, Quick Capture auto-record, and silence auto-stop
-	go func() {
-		desktopInputController{
-			commands:          state.engine.Commands(),
-			recording:         recordingController,
-			state:             state,
-			hotkeyEvents:      hkManager.Events(),
-			silenceAutoStop:   silenceAutoStop,
-			autoStartInterval: 200 * time.Millisecond,
-			voiceAgentSession: state.voiceAgentSession,
-			voiceAgentConfig:  &cfg.VoiceAgent,
-			cfg:               cfg,
-			audioCapturer:     capturer,
-		}.Run(ctx)
-	}()
+	inputController = &desktopInputController{
+		commands:          state.engine.Commands(),
+		recording:         recordingController,
+		state:             state,
+		hotkeyEvents:      hkManager.Events(),
+		silenceAutoStop:   silenceAutoStop,
+		autoStartInterval: 200 * time.Millisecond,
+		voiceAgentSession: state.voiceAgentSession,
+		voiceAgentConfig:  &cfg.VoiceAgent,
+		cfg:               cfg,
+		audioCapturer:     capturer,
+	}
+	go inputController.Run(ctx)
 
 	if err := app.Run(); err != nil {
 		slog.Error("app run failed", "err", err)

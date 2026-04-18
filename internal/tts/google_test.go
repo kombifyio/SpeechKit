@@ -1,6 +1,7 @@
 package tts
 
 import (
+	"bytes"
 	"context"
 	"encoding/base64"
 	"encoding/json"
@@ -8,7 +9,18 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+
+	"github.com/kombifyio/SpeechKit/internal/netsec"
 )
+
+var googleTestValidation = netsec.ValidationOptions{AllowLoopback: true, AllowHTTP: true}
+
+func newTestGoogleTTS(baseURL string) *Google {
+	g := NewGoogle(GoogleOpts{APIKey: "test-key"})
+	g.BaseURL = baseURL
+	g.Validation = googleTestValidation
+	return g
+}
 
 func TestGoogleSynthesize(t *testing.T) {
 	fakeAudio := []byte("fake-google-audio")
@@ -36,23 +48,7 @@ func TestGoogleSynthesize(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	g := &Google{
-		apiKey: "test-key",
-		voice:  googleDefaultVoice,
-		client: srv.Client(),
-	}
-	// Override the endpoint by using the test server client.
-	// Google provider builds its own URL, so we test via a custom request approach.
-	// For proper e2e mock we need to patch the URL. Since the struct doesn't expose
-	// the endpoint, we test by hijacking the client transport.
-	g.client = &http.Client{
-		Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
-			// Rewrite to the test server.
-			r.URL.Scheme = "http"
-			r.URL.Host = srv.Listener.Addr().String()
-			return http.DefaultTransport.RoundTrip(r)
-		}),
-	}
+	g := newTestGoogleTTS(srv.URL)
 
 	result, err := g.Synthesize(context.Background(), "Hallo Welt", SynthesizeOpts{
 		Locale: "de-DE",
@@ -61,7 +57,7 @@ func TestGoogleSynthesize(t *testing.T) {
 	if err != nil {
 		t.Fatalf("synthesize: %v", err)
 	}
-	if string(result.Audio) != string(fakeAudio) {
+	if !bytes.Equal(result.Audio, fakeAudio) {
 		t.Errorf("audio mismatch: got %d bytes", len(result.Audio))
 	}
 	if result.Format != "mp3" {
@@ -87,17 +83,7 @@ func TestGoogleSynthesizeWAV(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	g := &Google{
-		apiKey: "test-key",
-		voice:  googleDefaultVoice,
-		client: &http.Client{
-			Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
-				r.URL.Scheme = "http"
-				r.URL.Host = srv.Listener.Addr().String()
-				return http.DefaultTransport.RoundTrip(r)
-			}),
-		},
-	}
+	g := newTestGoogleTTS(srv.URL)
 
 	result, err := g.Synthesize(context.Background(), "test", SynthesizeOpts{Format: "wav"})
 	if err != nil {
@@ -137,17 +123,7 @@ func TestGoogleServerError(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	g := &Google{
-		apiKey: "test-key",
-		voice:  googleDefaultVoice,
-		client: &http.Client{
-			Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
-				r.URL.Scheme = "http"
-				r.URL.Host = srv.Listener.Addr().String()
-				return http.DefaultTransport.RoundTrip(r)
-			}),
-		},
-	}
+	g := newTestGoogleTTS(srv.URL)
 	_, err := g.Synthesize(context.Background(), "test", SynthesizeOpts{})
 	if err == nil {
 		t.Fatal("expected error for server error")
@@ -230,8 +206,3 @@ func TestRouterDefaultStrategy(t *testing.T) {
 		t.Errorf("expected cloud-first default, got %s", r.strategy)
 	}
 }
-
-// roundTripFunc adapts a function to http.RoundTripper for test URL rewriting.
-type roundTripFunc func(*http.Request) (*http.Response, error)
-
-func (f roundTripFunc) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }

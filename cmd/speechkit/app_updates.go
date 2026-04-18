@@ -10,7 +10,17 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/kombifyio/SpeechKit/internal/netsec"
 )
+
+// installerDownloadClient uses a hardened transport (TLS 1.2+, redacting
+// headers) with a long timeout for large installer downloads.
+var installerDownloadClient = netsec.NewSafeHTTPClient(netsec.ClientOptions{Timeout: 30 * time.Minute})
+
+// appInstallerURLValidation restricts installer download URLs. Strict by
+// default (public https only); tests may relax to allow loopback.
+var appInstallerURLValidation = netsec.ValidationOptions{}
 
 type appUpdateStatus string
 
@@ -102,14 +112,14 @@ func (m *appUpdateManager) AllJobs() []appUpdateJobView {
 
 func (m *appUpdateManager) Start(release latestReleaseInfo, destDir string) appUpdateJobView {
 	id := fmt.Sprintf("app-update-%d", time.Now().UnixMilli())
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(context.Background()) //nolint:gosec // cancel stored in struct field, called on job cancellation
 	job := &appUpdateJob{
 		ID:         id,
 		Version:    release.Version,
 		AssetName:  release.DownloadName,
 		Status:     appUpdateStatusPending,
 		TotalBytes: release.DownloadSize,
-		StatusText: "Starting…",
+		StatusText: "Startingâ€¦",
 		cancel:     cancel,
 	}
 
@@ -152,7 +162,7 @@ func (m *appUpdateManager) CompletedFile(jobID string) (string, bool) {
 func (m *appUpdateManager) run(ctx context.Context, job *appUpdateJob, release latestReleaseInfo, destDir string) {
 	job.mu.Lock()
 	job.Status = appUpdateStatusRunning
-	job.StatusText = "Downloading…"
+	job.StatusText = "Downloadingâ€¦"
 	job.mu.Unlock()
 
 	err := downloadAppInstaller(ctx, job, release, destDir)
@@ -183,7 +193,7 @@ func downloadAppInstaller(ctx context.Context, job *appUpdateJob, release latest
 	if strings.TrimSpace(release.DownloadURL) == "" {
 		return fmt.Errorf("download URL unavailable")
 	}
-	if err := os.MkdirAll(destDir, 0o755); err != nil {
+	if err := os.MkdirAll(destDir, 0o700); err != nil {
 		return fmt.Errorf("create update dir: %w", err)
 	}
 
@@ -195,16 +205,20 @@ func downloadAppInstaller(ctx context.Context, job *appUpdateJob, release latest
 	destPath := filepath.Join(destDir, filename)
 	tmpPath := destPath + ".download"
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, release.DownloadURL, nil)
+	if err := netsec.ValidateProviderURL(release.DownloadURL, appInstallerURLValidation); err != nil {
+		return fmt.Errorf("invalid installer url: %w", err)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, release.DownloadURL, http.NoBody)
 	if err != nil {
 		return fmt.Errorf("build download request: %w", err)
 	}
 
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := installerDownloadClient.Do(req)
 	if err != nil {
 		return fmt.Errorf("download installer: %w", err)
 	}
-	defer resp.Body.Close()
+	defer resp.Body.Close() //nolint:errcheck // response body close error is not actionable
 
 	if resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("installer download returned %d", resp.StatusCode)
@@ -216,7 +230,7 @@ func downloadAppInstaller(ctx context.Context, job *appUpdateJob, release latest
 		job.mu.Unlock()
 	}
 
-	file, err := os.Create(tmpPath)
+	file, err := os.Create(tmpPath) //nolint:gosec // path is application config dir, not user-controlled input
 	if err != nil {
 		return fmt.Errorf("create installer temp file: %w", err)
 	}

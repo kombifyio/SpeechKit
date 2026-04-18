@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 )
@@ -77,6 +79,27 @@ func TestLocal_Name(t *testing.T) {
 	p := NewLocalProvider(8080, "/model.bin", "cpu")
 	if p.Name() != "local" {
 		t.Errorf("Name() = %q", p.Name())
+	}
+}
+
+func TestFindWhisperBinary_FindsManagedInstallRootBinary(t *testing.T) {
+	localAppData := t.TempDir()
+	t.Setenv("LOCALAPPDATA", localAppData)
+
+	expected := filepath.Join(localAppData, "SpeechKit", "whisper-server.exe")
+	if err := os.MkdirAll(filepath.Dir(expected), 0o755); err != nil {
+		t.Fatalf("mkdir managed install dir: %v", err)
+	}
+	if err := os.WriteFile(expected, []byte("binary"), 0o644); err != nil {
+		t.Fatalf("write managed binary: %v", err)
+	}
+
+	got, err := findWhisperBinary()
+	if err != nil {
+		t.Fatalf("findWhisperBinary: %v", err)
+	}
+	if got != expected {
+		t.Fatalf("binary path = %q, want %q", got, expected)
 	}
 }
 

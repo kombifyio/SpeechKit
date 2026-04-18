@@ -8,6 +8,26 @@ import (
 	"testing"
 )
 
+func unsetEnvForTest(t *testing.T, name string) {
+	t.Helper()
+
+	value, ok := os.LookupEnv(name)
+	if err := os.Unsetenv(name); err != nil {
+		t.Fatalf("unset %s: %v", name, err)
+	}
+	t.Cleanup(func() {
+		var err error
+		if ok {
+			err = os.Setenv(name, value)
+		} else {
+			err = os.Unsetenv(name)
+		}
+		if err != nil {
+			t.Fatalf("restore %s: %v", name, err)
+		}
+	})
+}
+
 func TestLoadDefaults(t *testing.T) {
 	cfg, err := Load("/nonexistent/path/config.toml")
 	if err != nil {
@@ -23,26 +43,38 @@ func TestLoadDefaults(t *testing.T) {
 	if cfg.General.DictateHotkey != "win+alt" {
 		t.Errorf("default dictate hotkey = %q, want %q", cfg.General.DictateHotkey, "win+alt")
 	}
-	if cfg.General.AssistHotkey != "ctrl+shift+j" {
-		t.Errorf("default assist hotkey = %q, want %q", cfg.General.AssistHotkey, "ctrl+shift+j")
+	if cfg.General.AssistHotkey != "ctrl+win" {
+		t.Errorf("default assist hotkey = %q, want %q", cfg.General.AssistHotkey, "ctrl+win")
 	}
-	if cfg.General.VoiceAgentHotkey != "ctrl+shift+k" {
-		t.Errorf("default voice agent hotkey = %q, want %q", cfg.General.VoiceAgentHotkey, "ctrl+shift+k")
+	if cfg.General.VoiceAgentHotkey != "ctrl+shift" {
+		t.Errorf("default voice agent hotkey = %q, want %q", cfg.General.VoiceAgentHotkey, "ctrl+shift")
+	}
+	if !cfg.General.DictateEnabled || !cfg.General.AssistEnabled || !cfg.General.VoiceAgentEnabled {
+		t.Fatal("all three modes should be enabled by default")
 	}
 	if cfg.General.AutoStopSilenceMs != 500 {
 		t.Errorf("default silence ms = %d, want 500", cfg.General.AutoStopSilenceMs)
 	}
+	if cfg.General.AutoStartOnLaunch {
+		t.Fatal("general auto-start should be disabled by default")
+	}
 	if cfg.Local.Enabled {
 		t.Error("local provider should be disabled by default")
 	}
-	if cfg.HuggingFace.Enabled {
-		t.Error("HuggingFace should be disabled by default in OSS-safe builds")
+	if !cfg.HuggingFace.Enabled {
+		t.Error("HuggingFace should stay enabled by default for the private module build")
 	}
 	if cfg.HuggingFace.Model != "openai/whisper-large-v3" {
 		t.Errorf("default HF model = %q", cfg.HuggingFace.Model)
 	}
 	if cfg.VoiceAgent.Model != "gemini-2.5-flash-native-audio-preview-12-2025" {
 		t.Errorf("default voice agent model = %q", cfg.VoiceAgent.Model)
+	}
+	if cfg.VoiceAgent.FrameworkPrompt != "" {
+		t.Errorf("default voice agent framework prompt = %q, want empty", cfg.VoiceAgent.FrameworkPrompt)
+	}
+	if cfg.VoiceAgent.RefinementPrompt != "" {
+		t.Errorf("default voice agent refinement prompt = %q, want empty", cfg.VoiceAgent.RefinementPrompt)
 	}
 	if cfg.Routing.PreferLocalUnderSeconds != 10 {
 		t.Errorf("default prefer local = %f, want 10", cfg.Routing.PreferLocalUnderSeconds)
@@ -85,7 +117,7 @@ hotkey = "ctrl+f5"
 [huggingface]
 enabled = false
 `
-	if err := os.WriteFile(path, []byte(content), 0644); err != nil {
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
 		t.Fatal(err)
 	}
 
@@ -118,7 +150,7 @@ func TestLoadBackfillsAssistModelFromLegacyAgentModel(t *testing.T) {
 enabled = true
 agent_model = "gemma4:e4b"
 `
-	if err := os.WriteFile(path, []byte(content), 0644); err != nil {
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
 		t.Fatal(err)
 	}
 
@@ -135,6 +167,31 @@ agent_model = "gemma4:e4b"
 	}
 }
 
+func TestLoadBackfillsVoiceAgentFrameworkPromptFromLegacyInstruction(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.toml")
+
+	content := `
+[voice_agent]
+instruction = "Legacy framework prompt"
+`
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+
+	if got, want := cfg.VoiceAgent.FrameworkPrompt, "Legacy framework prompt"; got != want {
+		t.Fatalf("framework prompt = %q, want %q", got, want)
+	}
+	if got, want := cfg.VoiceAgent.Instruction, "Legacy framework prompt"; got != want {
+		t.Fatalf("legacy instruction = %q, want %q", got, want)
+	}
+}
+
 func TestLoadPrefersExplicitStoreSaveAudioOverLegacyFeedback(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "config.toml")
@@ -147,7 +204,7 @@ save_audio = true
 backend = "sqlite"
 save_audio = false
 `
-	if err := os.WriteFile(path, []byte(content), 0644); err != nil {
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
 		t.Fatal(err)
 	}
 
@@ -175,7 +232,7 @@ postgres_dsn = "postgres://speechkit:secret@localhost:5432/speechkit?sslmode=dis
 save_audio = false
 max_audio_storage_mb = 1024
 `
-	if err := os.WriteFile(path, []byte(content), 0644); err != nil {
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
 		t.Fatal(err)
 	}
 
@@ -249,7 +306,7 @@ func TestFindDopplerExecutableUsesEnvOverride(t *testing.T) {
 	}
 
 	fake := filepath.Join(t.TempDir(), "doppler.exe")
-	if err := os.WriteFile(fake, []byte("fake"), 0644); err != nil {
+	if err := os.WriteFile(fake, []byte("fake"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	t.Setenv("DOPPLER_PATH", fake)
@@ -270,10 +327,10 @@ func TestFindDopplerExecutableFallsBackToWingetLink(t *testing.T) {
 	localAppData := t.TempDir()
 	t.Setenv("LOCALAPPDATA", localAppData)
 	fake := filepath.Join(localAppData, "Microsoft", "WinGet", "Links", "doppler.exe")
-	if err := os.MkdirAll(filepath.Dir(fake), 0755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(fake), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(fake, []byte("fake"), 0644); err != nil {
+	if err := os.WriteFile(fake, []byte("fake"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 
@@ -314,6 +371,8 @@ func TestDopplerProjectsAndConfigsFallBackToManagedDefaults(t *testing.T) {
 		managedDopplerDefaultProject = previousProject
 		managedDopplerDefaultConfig = previousConfig
 	})
+	unsetEnvForTest(t, "DOPPLER_PROJECT")
+	unsetEnvForTest(t, "DOPPLER_CONFIG")
 
 	projects := dopplerProjects()
 	configs := dopplerConfigs()
@@ -456,7 +515,7 @@ copy_last = ["kopier den letzten block"]
 [shortcuts.locale.en]
 summarize = ["brief me"]
 `
-	if err := os.WriteFile(path, []byte(content), 0644); err != nil {
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
 		t.Fatal(err)
 	}
 
@@ -582,10 +641,22 @@ func TestApplyManagedIntegrationDefaultsDoesNotOverrideExplicitProviderConfig(t 
 	}
 }
 
-func TestDefaultHotkeyMode(t *testing.T) {
+func TestDefaultHotkeyBehaviors(t *testing.T) {
 	cfg := defaults()
-	if cfg.General.HotkeyMode != "push_to_talk" {
-		t.Fatalf("default HotkeyMode = %q, want %q", cfg.General.HotkeyMode, "push_to_talk")
+	if cfg.General.HotkeyMode != HotkeyBehaviorPushToTalk {
+		t.Fatalf("default HotkeyMode = %q, want %q", cfg.General.HotkeyMode, HotkeyBehaviorPushToTalk)
+	}
+	if cfg.General.DictateHotkeyBehavior != HotkeyBehaviorPushToTalk {
+		t.Fatalf("default DictateHotkeyBehavior = %q, want %q", cfg.General.DictateHotkeyBehavior, HotkeyBehaviorPushToTalk)
+	}
+	if cfg.General.AssistHotkeyBehavior != HotkeyBehaviorPushToTalk {
+		t.Fatalf("default AssistHotkeyBehavior = %q, want %q", cfg.General.AssistHotkeyBehavior, HotkeyBehaviorPushToTalk)
+	}
+	if cfg.General.VoiceAgentHotkeyBehavior != HotkeyBehaviorPushToTalk {
+		t.Fatalf("default VoiceAgentHotkeyBehavior = %q, want %q", cfg.General.VoiceAgentHotkeyBehavior, HotkeyBehaviorPushToTalk)
+	}
+	if cfg.VoiceAgent.CloseBehavior != VoiceAgentCloseBehaviorContinue {
+		t.Fatalf("default VoiceAgent.CloseBehavior = %q, want %q", cfg.VoiceAgent.CloseBehavior, VoiceAgentCloseBehaviorContinue)
 	}
 }
 
@@ -620,7 +691,10 @@ func TestSaveRoundTripNewFields(t *testing.T) {
 	path := filepath.Join(dir, "config.toml")
 
 	cfg := defaults()
-	cfg.General.HotkeyMode = "toggle"
+	cfg.General.HotkeyMode = HotkeyBehaviorToggle
+	cfg.General.DictateHotkeyBehavior = HotkeyBehaviorToggle
+	cfg.General.AssistHotkeyBehavior = HotkeyBehaviorPushToTalk
+	cfg.General.VoiceAgentHotkeyBehavior = HotkeyBehaviorToggle
 	cfg.UI.OverlayPosition = "bottom"
 	cfg.UI.OverlayMovable = true
 	cfg.UI.OverlayFreeX = 864
@@ -634,8 +708,17 @@ func TestSaveRoundTripNewFields(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
-	if reloaded.General.HotkeyMode != "toggle" {
-		t.Fatalf("HotkeyMode = %q, want %q", reloaded.General.HotkeyMode, "toggle")
+	if reloaded.General.HotkeyMode != HotkeyBehaviorToggle {
+		t.Fatalf("HotkeyMode = %q, want %q", reloaded.General.HotkeyMode, HotkeyBehaviorToggle)
+	}
+	if reloaded.General.DictateHotkeyBehavior != HotkeyBehaviorToggle {
+		t.Fatalf("DictateHotkeyBehavior = %q, want %q", reloaded.General.DictateHotkeyBehavior, HotkeyBehaviorToggle)
+	}
+	if reloaded.General.AssistHotkeyBehavior != HotkeyBehaviorPushToTalk {
+		t.Fatalf("AssistHotkeyBehavior = %q, want %q", reloaded.General.AssistHotkeyBehavior, HotkeyBehaviorPushToTalk)
+	}
+	if reloaded.General.VoiceAgentHotkeyBehavior != HotkeyBehaviorToggle {
+		t.Fatalf("VoiceAgentHotkeyBehavior = %q, want %q", reloaded.General.VoiceAgentHotkeyBehavior, HotkeyBehaviorToggle)
 	}
 	if reloaded.UI.OverlayPosition != "bottom" {
 		t.Fatalf("OverlayPosition = %q, want %q", reloaded.UI.OverlayPosition, "bottom")
@@ -663,7 +746,7 @@ overlay_enabled = true
 visualizer = "pill"
 design = "default"
 `
-	if err := os.WriteFile(path, []byte(content), 0644); err != nil {
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
 		t.Fatal(err)
 	}
 
@@ -673,11 +756,53 @@ design = "default"
 	}
 
 	// Fields absent from file should retain defaults.
-	if cfg.General.HotkeyMode != "push_to_talk" {
-		t.Fatalf("HotkeyMode = %q, want default %q", cfg.General.HotkeyMode, "push_to_talk")
+	if cfg.General.HotkeyMode != HotkeyBehaviorPushToTalk {
+		t.Fatalf("HotkeyMode = %q, want default %q", cfg.General.HotkeyMode, HotkeyBehaviorPushToTalk)
+	}
+	if cfg.General.DictateHotkeyBehavior != HotkeyBehaviorPushToTalk {
+		t.Fatalf("DictateHotkeyBehavior = %q, want default %q", cfg.General.DictateHotkeyBehavior, HotkeyBehaviorPushToTalk)
+	}
+	if cfg.General.AssistHotkeyBehavior != HotkeyBehaviorPushToTalk {
+		t.Fatalf("AssistHotkeyBehavior = %q, want default %q", cfg.General.AssistHotkeyBehavior, HotkeyBehaviorPushToTalk)
+	}
+	if cfg.General.VoiceAgentHotkeyBehavior != HotkeyBehaviorPushToTalk {
+		t.Fatalf("VoiceAgentHotkeyBehavior = %q, want default %q", cfg.General.VoiceAgentHotkeyBehavior, HotkeyBehaviorPushToTalk)
+	}
+	if cfg.VoiceAgent.CloseBehavior != VoiceAgentCloseBehaviorContinue {
+		t.Fatalf("VoiceAgent.CloseBehavior = %q, want default %q", cfg.VoiceAgent.CloseBehavior, VoiceAgentCloseBehaviorContinue)
 	}
 	if cfg.UI.OverlayPosition != "top" {
 		t.Fatalf("OverlayPosition = %q, want default %q", cfg.UI.OverlayPosition, "top")
+	}
+}
+
+func TestLoadBackfillsLegacyHotkeyModeIntoPerModeBehaviors(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.toml")
+
+	content := `[general]
+hotkey_mode = "toggle"
+dictate_hotkey = "win+alt"
+assist_hotkey = "ctrl+win"
+voice_agent_hotkey = "ctrl+shift"
+`
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+
+	if cfg.General.DictateHotkeyBehavior != HotkeyBehaviorToggle {
+		t.Fatalf("DictateHotkeyBehavior = %q, want %q", cfg.General.DictateHotkeyBehavior, HotkeyBehaviorToggle)
+	}
+	if cfg.General.AssistHotkeyBehavior != HotkeyBehaviorToggle {
+		t.Fatalf("AssistHotkeyBehavior = %q, want %q", cfg.General.AssistHotkeyBehavior, HotkeyBehaviorToggle)
+	}
+	if cfg.General.VoiceAgentHotkeyBehavior != HotkeyBehaviorToggle {
+		t.Fatalf("VoiceAgentHotkeyBehavior = %q, want %q", cfg.General.VoiceAgentHotkeyBehavior, HotkeyBehaviorToggle)
 	}
 }
 
@@ -698,6 +823,69 @@ func TestApplyManagedIntegrationDefaultsSkipsNonCloudOnly(t *testing.T) {
 	}
 	if cfg.HuggingFace.Enabled {
 		t.Fatal("huggingface should remain disabled when strategy is not cloud-only")
+	}
+}
+
+func TestLoadBackfillsGeneralAutoStartFromLegacyVoiceAgentSection(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.toml")
+
+	content := `
+[general]
+dictate_hotkey = "win+alt"
+assist_hotkey = "ctrl+win"
+voice_agent_hotkey = "ctrl+shift"
+
+[voice_agent]
+auto_start_on_launch = true
+`
+
+	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+
+	if !cfg.General.AutoStartOnLaunch {
+		t.Fatal("General.AutoStartOnLaunch = false, want true from legacy voice_agent section")
+	}
+	if !cfg.VoiceAgent.AutoStartOnLaunch {
+		t.Fatal("VoiceAgent.AutoStartOnLaunch = false, want true after sync")
+	}
+}
+
+func TestLoadPrefersGeneralAutoStartOverLegacyVoiceAgentSection(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.toml")
+
+	content := `
+[general]
+dictate_hotkey = "win+alt"
+assist_hotkey = "ctrl+win"
+voice_agent_hotkey = "ctrl+shift"
+auto_start_on_launch = false
+
+[voice_agent]
+auto_start_on_launch = true
+`
+
+	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+
+	if cfg.General.AutoStartOnLaunch {
+		t.Fatal("General.AutoStartOnLaunch = true, want explicit general setting to win")
+	}
+	if cfg.VoiceAgent.AutoStartOnLaunch {
+		t.Fatal("VoiceAgent.AutoStartOnLaunch = true, want sync from explicit general setting")
 	}
 }
 
@@ -765,7 +953,7 @@ func TestLoadMalformedTOMLFallsBackToDefaults(t *testing.T) {
 	path := filepath.Join(dir, "config.toml")
 
 	// Write garbage TOML that will fail to parse.
-	if err := os.WriteFile(path, []byte("{{{{not valid toml!!!!"), 0644); err != nil {
+	if err := os.WriteFile(path, []byte("{{{{not valid toml!!!!"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 
@@ -872,5 +1060,39 @@ func TestInstallModeConstants(t *testing.T) {
 	}
 	if InstallModeNotSet != "" {
 		t.Fatalf("InstallModeNotSet = %q, want empty", InstallModeNotSet)
+	}
+}
+
+func TestManagedHuggingFaceAvailableInBuild_DefaultsToPrivateModuleWhenUnset(t *testing.T) {
+	restoreBuild := OverrideManagedHuggingFaceBuildForTests("")
+	defer restoreBuild()
+
+	prevReadBuildInfo := readBuildInfo
+	readBuildInfo = func() (buildInfo, bool) {
+		return buildInfo{MainPath: "github.com/kombifyio/SpeechKit"}, true
+	}
+	defer func() {
+		readBuildInfo = prevReadBuildInfo
+	}()
+
+	if !ManagedHuggingFaceAvailableInBuild() {
+		t.Fatal("ManagedHuggingFaceAvailableInBuild() = false, want true for private module fallback")
+	}
+}
+
+func TestManagedHuggingFaceAvailableInBuild_PublicModuleFallbackStaysDisabled(t *testing.T) {
+	restoreBuild := OverrideManagedHuggingFaceBuildForTests("")
+	defer restoreBuild()
+
+	prevReadBuildInfo := readBuildInfo
+	readBuildInfo = func() (buildInfo, bool) {
+		return buildInfo{MainPath: "github.com/kombifyio/SpeechKit"}, true
+	}
+	defer func() {
+		readBuildInfo = prevReadBuildInfo
+	}()
+
+	if ManagedHuggingFaceAvailableInBuild() {
+		t.Fatal("ManagedHuggingFaceAvailableInBuild() = true, want false for public module fallback")
 	}
 }

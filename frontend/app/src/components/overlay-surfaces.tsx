@@ -1,4 +1,4 @@
-import type { CSSProperties, ReactNode } from 'react'
+import { useEffect, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react'
 import {
   AudioLines,
   Bot,
@@ -16,9 +16,10 @@ import {
   resolveOverlayTone,
   type OverlayTone,
 } from '@/components/overlay-tone'
+import { useAudioDevices } from '@/components/ui/use-audio-devices'
 import { useOverlaySnapshot } from '@/hooks/use-overlay-snapshot'
 import {
-  setActiveMode,
+  setModeEnabled,
   type RuntimeMode,
   type SpeechKitOverlayState,
 } from '@/lib/speechkit'
@@ -33,22 +34,25 @@ const MODE_HOTKEY_FIELDS = {
 } as const satisfies Record<ConfigurableMode, keyof SpeechKitOverlayState>
 const MODE_META: Record<
   ConfigurableMode,
-  { label: string; statusLabel: string; icon: LucideIcon }
+  { label: string; statusLabel: string; icon: LucideIcon; iconKey: string }
 > = {
   dictate: {
     label: 'Dictation',
     statusLabel: 'Dictate',
-    icon: Mic,
+    icon: AudioLines,
+    iconKey: 'audio-lines',
   },
   assist: {
     label: 'Assist',
     statusLabel: 'Assist',
     icon: Bot,
+    iconKey: 'bot',
   },
   voice_agent: {
     label: 'Voice Agent',
     statusLabel: 'Voice Agent',
     icon: Headphones,
+    iconKey: 'headphones',
   },
 }
 
@@ -105,12 +109,16 @@ function OverlayQuickNoteDot() {
 function OverlayModeAction({
   label,
   icon,
-  active,
+  enabled,
+  runtimeActive,
+  slashed,
   onClick,
 }: {
   label: string
   icon: ReactNode
-  active: boolean
+  enabled: boolean
+  runtimeActive: boolean
+  slashed: boolean
   onClick: () => void
 }) {
   return (
@@ -118,16 +126,111 @@ function OverlayModeAction({
       type="button"
       onClick={onClick}
       aria-label={label}
+      aria-pressed={enabled}
+      data-runtime-active={runtimeActive ? 'true' : 'false'}
       style={{ WebkitAppRegion: 'no-drag' } as CSSProperties}
-      className={[
-        'flex h-6 w-6 items-center justify-center rounded-full border transition-colors',
-        active
-          ? 'border-orange-400/35 bg-orange-500/20 text-orange-100'
-          : 'border-white/10 bg-white/6 text-white/55 hover:border-white/18 hover:text-white/80',
-      ].join(' ')}
+      className="relative"
+      data-testid={`mode-toggle-${label.toLowerCase().replace(/\s+/g, '-')}`}
     >
-      {icon}
+      <span
+        className={[
+          'flex h-6 w-6 items-center justify-center rounded-full border transition-colors',
+          enabled
+            ? 'border-white/18 bg-white/8 text-white/85 hover:border-white/28 hover:text-white'
+            : 'border-white/8 bg-white/[0.03] text-white/35 hover:border-white/12 hover:text-white/55',
+          runtimeActive ? 'ring-1 ring-orange-400/40 text-orange-100 border-orange-400/30 bg-orange-500/18' : '',
+        ].join(' ')}
+      >
+        {icon}
+      </span>
+      {slashed ? (
+        <span
+          data-testid={`mode-toggle-${label.toLowerCase().replace(/\s+/g, '-')}-slashed`}
+          aria-hidden="true"
+          className="pointer-events-none absolute left-1/2 top-1/2 h-0.5 w-5 -translate-x-1/2 -translate-y-1/2 rotate-[-35deg] rounded-full bg-white/45"
+        />
+      ) : null}
     </button>
+  )
+}
+
+function OverlayPanelSection({
+  testId,
+  className,
+  children,
+}: {
+  testId: string
+  className?: string
+  children: ReactNode
+}) {
+  return (
+    <div
+      data-testid={testId}
+      className={['flex items-center gap-0.5', className ?? ''].join(' ')}
+    >
+      {children}
+    </div>
+  )
+}
+
+function OverlayMicrophoneQuickSelect({
+  selectedDeviceId,
+}: {
+  selectedDeviceId: string
+}) {
+  const { devices, selectedDeviceId: detectedDeviceId, loading, setSelectedDevice } = useAudioDevices()
+  const [localSelectedDeviceId, setLocalSelectedDeviceId] = useState(selectedDeviceId)
+
+  useEffect(() => {
+    setLocalSelectedDeviceId(selectedDeviceId)
+  }, [selectedDeviceId])
+
+  const resolvedSelectedDeviceId =
+    localSelectedDeviceId || detectedDeviceId || devices[0]?.deviceId || ''
+  const currentDevice =
+    devices.find((device) => device.deviceId === resolvedSelectedDeviceId) ??
+    devices[0]
+
+  const handleDeviceChange = (nextDeviceId: string) => {
+    if (!nextDeviceId) {
+      return
+    }
+    setLocalSelectedDeviceId(nextDeviceId)
+    void setSelectedDevice(nextDeviceId).catch(() => {
+      setLocalSelectedDeviceId(selectedDeviceId || detectedDeviceId || '')
+    })
+  }
+
+  return (
+    <div
+      data-testid="pill-panel-mic-selector"
+      title={currentDevice?.label ?? 'Microphone quick select'}
+      className={[
+        'relative flex h-6 w-6 items-center justify-center overflow-hidden rounded-full border transition-colors',
+        loading || devices.length === 0
+          ? 'border-white/8 bg-white/4 text-white/25'
+          : 'border-white/10 bg-white/6 text-white/75 hover:border-white/18 hover:bg-white/15 hover:text-white/95',
+      ].join(' ')}
+      style={{ WebkitAppRegion: 'no-drag' } as CSSProperties}
+    >
+      <Mic className="h-3.5 w-3.5" data-testid="mic-selector-icon" data-icon="mic" />
+      <select
+        data-testid="pill-panel-mic-select"
+        aria-label="Microphone quick select"
+        value={resolvedSelectedDeviceId}
+        disabled={loading || devices.length === 0}
+        onChange={(event) => {
+          handleDeviceChange(event.target.value)
+        }}
+        className="absolute inset-0 cursor-pointer appearance-none opacity-0 disabled:cursor-not-allowed"
+      >
+        {devices.map((device) => (
+          <option key={device.deviceId} value={device.deviceId}>
+            {device.label}
+          </option>
+        ))}
+      </select>
+    </div>
   )
 }
 
@@ -151,8 +254,8 @@ function modeAvailable(snapshot: SpeechKitOverlayState, mode: ConfigurableMode) 
   return snapshot.availableModes?.[mode] ?? (snapshot[MODE_HOTKEY_FIELDS[mode]].trim().length > 0)
 }
 
-function configuredModes(snapshot: SpeechKitOverlayState): ConfigurableMode[] {
-  return MODE_ORDER.filter((mode) => modeAvailable(snapshot, mode))
+function modeEnabled(snapshot: SpeechKitOverlayState, mode: ConfigurableMode) {
+  return snapshot.modeEnabled?.[mode] ?? modeAvailable(snapshot, mode)
 }
 
 function modeStatusLabel(mode: RuntimeMode) {
@@ -196,7 +299,17 @@ function shouldShowActiveModeBadge(snapshot: SpeechKitOverlayState) {
 }
 
 function toggleMode(mode: ConfigurableMode, snapshot: SpeechKitOverlayState) {
-  void setActiveMode(snapshot.activeMode === mode ? 'none' : mode)
+  void setModeEnabled(mode, !modeEnabled(snapshot, mode))
+}
+
+function postOverlayFreeCenter(url: string, centerX: number, centerY: number) {
+  return fetch(url, {
+    method: 'POST',
+    body: new URLSearchParams({
+      center_x: String(Math.round(centerX)),
+      center_y: String(Math.round(centerY)),
+    }),
+  })
 }
 
 function OverlayPillShell({
@@ -205,6 +318,10 @@ function OverlayPillShell({
   shellClassName,
   surface,
   draggable = false,
+  onPointerDown,
+  onPointerMove,
+  onPointerUp,
+  onPointerCancel,
   children,
 }: {
   snapshot: SpeechKitOverlayState
@@ -212,6 +329,10 @@ function OverlayPillShell({
   shellClassName: string
   surface: string
   draggable?: boolean
+  onPointerDown?: (event: ReactPointerEvent<HTMLDivElement>) => void
+  onPointerMove?: (event: ReactPointerEvent<HTMLDivElement>) => void
+  onPointerUp?: (event: ReactPointerEvent<HTMLDivElement>) => void
+  onPointerCancel?: (event: ReactPointerEvent<HTMLDivElement>) => void
   children: ReactNode
 }) {
   const showKombifyMark = snapshot.visualizer === 'pill' && snapshot.design === 'kombify'
@@ -227,9 +348,12 @@ function OverlayPillShell({
       data-overlay-size={tone.size}
       data-overlay-color={tone.color}
       data-overlay-draggable={draggable ? 'true' : 'false'}
-      style={draggable ? ({ WebkitAppRegion: 'drag' } as CSSProperties) : undefined}
+      onPointerDown={onPointerDown}
+      onPointerMove={onPointerMove}
+      onPointerUp={onPointerUp}
+      onPointerCancel={onPointerCancel}
       className={[
-        'relative flex items-center justify-center transition-all duration-200 ease-out',
+        'relative flex select-none items-center justify-center transition-all duration-200 ease-out',
         shellClassName,
         tone.className,
       ].join(' ')}
@@ -304,7 +428,16 @@ function PillPanelOverlayView({
   snapshot: SpeechKitOverlayState
 }) {
   const tone = resolveOverlayTone(snapshot)
-  const modes = configuredModes(snapshot)
+  const dragStateRef = useRef<{
+    pointerId: number
+    startScreenX: number
+    startScreenY: number
+    startCenterX: number
+    startCenterY: number
+    lastCenterX: number
+    lastCenterY: number
+    moved: boolean
+  } | null>(null)
   const copyLast = () => {
     if (snapshot.lastTranscription) {
       void navigator.clipboard.writeText(snapshot.lastTranscription)
@@ -315,12 +448,82 @@ function PillPanelOverlayView({
     void fetch('/quicknotes/open-capture', { method: 'POST' })
   }
 
+  const beginPanelDrag = (event: ReactPointerEvent<HTMLDivElement>) => {
+    if (!snapshot.movable || event.button !== 0) {
+      return
+    }
+
+    dragStateRef.current = {
+      pointerId: event.pointerId,
+      startScreenX: event.screenX,
+      startScreenY: event.screenY,
+      startCenterX: snapshot.positionFreeX,
+      startCenterY: snapshot.positionFreeY,
+      lastCenterX: snapshot.positionFreeX,
+      lastCenterY: snapshot.positionFreeY,
+      moved: false,
+    }
+
+    if (typeof event.currentTarget.setPointerCapture === 'function') {
+      try {
+        event.currentTarget.setPointerCapture(event.pointerId)
+      } catch {
+        // JSDOM and some WebView edge cases do not fully support pointer capture.
+      }
+    }
+    event.preventDefault()
+  }
+
+  const movePanelDrag = (event: ReactPointerEvent<HTMLDivElement>) => {
+    const session = dragStateRef.current
+    if (!session || session.pointerId !== event.pointerId) {
+      return
+    }
+
+    const nextCenterX = session.startCenterX + Math.round(event.screenX - session.startScreenX)
+    const nextCenterY = session.startCenterY + Math.round(event.screenY - session.startScreenY)
+    if (nextCenterX === session.lastCenterX && nextCenterY === session.lastCenterY) {
+      return
+    }
+
+    session.lastCenterX = nextCenterX
+    session.lastCenterY = nextCenterY
+    session.moved = true
+
+    void postOverlayFreeCenter('/overlay/free-center', nextCenterX, nextCenterY)
+    event.preventDefault()
+  }
+
+  const endPanelDrag = (event: ReactPointerEvent<HTMLDivElement>) => {
+    const session = dragStateRef.current
+    if (!session || session.pointerId !== event.pointerId) {
+      return
+    }
+    dragStateRef.current = null
+
+    if (typeof event.currentTarget.releasePointerCapture === 'function') {
+      try {
+        event.currentTarget.releasePointerCapture(event.pointerId)
+      } catch {
+        // Pointer capture may already be gone; no action required.
+      }
+    }
+
+    if (session.moved) {
+      void postOverlayFreeCenter('/overlay/free-center/save', session.lastCenterX, session.lastCenterY)
+    }
+    event.preventDefault()
+  }
+
   return (
     <OverlaySurfaceFrame>
       <div
         data-testid="pill-panel-stage"
         className="pointer-events-auto absolute inset-0 flex items-center justify-center"
         onMouseLeave={() => {
+          if (dragStateRef.current) {
+            return
+          }
           void fetch('/overlay/pill-panel/hide', { method: 'POST' })
         }}
       >
@@ -334,12 +537,13 @@ function PillPanelOverlayView({
           data-overlay-size={tone.size}
           data-overlay-color={tone.color}
           aria-label={overlayStatusLabel(snapshot)}
-          className="relative flex items-center gap-1 rounded-full bg-neutral-950/84 px-1.5 py-0.5 shadow-[0_14px_28px_rgba(0,0,0,0.28)] backdrop-blur-xl"
+          className="relative grid grid-cols-[76px_auto_76px] items-center gap-1 rounded-full bg-neutral-950/84 px-1.5 py-0.5 shadow-[0_14px_28px_rgba(0,0,0,0.28)] backdrop-blur-xl"
         >
           <span data-testid="pill-panel-status" className="sr-only">
             {overlayStatusLabel(snapshot)}
           </span>
-          <div className="flex items-center gap-0.5">
+          <OverlayPanelSection testId="pill-panel-left-controls" className="w-[76px] justify-start">
+            <OverlayMicrophoneQuickSelect selectedDeviceId={snapshot.selectedAudioDeviceId} />
             <OverlayActionButton
               icon={<ClipboardCopy className="h-3.5 w-3.5" />}
               title="Copy"
@@ -352,7 +556,7 @@ function PillPanelOverlayView({
               onClick={openQuickCapture}
               className="h-6 w-6"
             />
-          </div>
+          </OverlayPanelSection>
 
           <OverlayPillShell
             snapshot={snapshot}
@@ -363,6 +567,10 @@ function PillPanelOverlayView({
             ].join(' ')}
             surface="pill-panel-center"
             draggable={snapshot.movable}
+            onPointerDown={beginPanelDrag}
+            onPointerMove={movePanelDrag}
+            onPointerUp={endPanelDrag}
+            onPointerCancel={endPanelDrag}
           >
             <AgentAudioVisualizerBar
               data-testid="pill-panel-visualizer"
@@ -375,26 +583,28 @@ function PillPanelOverlayView({
             />
           </OverlayPillShell>
 
-          <div className="flex items-center gap-0.5">
-            {modes.map((mode) => {
+          <OverlayPanelSection testId="pill-panel-mode-controls" className="w-[76px] justify-end">
+            {MODE_ORDER.map((mode) => {
               const Icon = MODE_META[mode].icon
               return (
                 <OverlayModeAction
                   key={mode}
                   label={MODE_META[mode].label}
-                  icon={<Icon className="h-3 w-3" />}
-                  active={snapshot.activeMode === mode}
+                  icon={(
+                    <Icon
+                      className="h-3 w-3"
+                      data-testid={`mode-icon-${MODE_META[mode].label.toLowerCase()}`}
+                      data-icon={MODE_META[mode].iconKey}
+                    />
+                  )}
+                  enabled={modeEnabled(snapshot, mode)}
+                  runtimeActive={snapshot.activeMode === mode}
+                  slashed={!modeEnabled(snapshot, mode) || !modeAvailable(snapshot, mode)}
                   onClick={() => toggleMode(mode, snapshot)}
                 />
               )
             })}
-            <OverlayModeAction
-              label="Microphone settings"
-              icon={<AudioLines className="h-3 w-3" />}
-              active={false}
-              onClick={() => { void fetch('/overlay/show-dashboard', { method: 'POST' }) }}
-            />
-          </div>
+          </OverlayPanelSection>
         </div>
       </div>
     </OverlaySurfaceFrame>
@@ -514,10 +724,13 @@ export function PillAnchorOverlay() {
 }
 
 function buildDotMenuItems(snapshot: SpeechKitOverlayState): DotMenuItem[] {
-  const modeItems = configuredModes(snapshot).map((mode) => ({
+  const modeItems = MODE_ORDER.map((mode) => ({
     id: mode,
     label: MODE_META[mode].label,
     icon: MODE_META[mode].icon,
+    pressed: modeEnabled(snapshot, mode),
+    runtimeActive: snapshot.activeMode === mode,
+    slashed: !modeEnabled(snapshot, mode) || !modeAvailable(snapshot, mode),
     onClick: () => {
       toggleMode(mode, snapshot)
     },
@@ -595,7 +808,9 @@ export function OverlayApp() {
 export { PillPanelOverlay as PillActionsOverlay }
 
 function overlayStatusLabel(snapshot: SpeechKitOverlayState): string {
-  const mode = modeStatusLabel(snapshot.activeMode)
+  const mode = snapshot.state === 'idle'
+    ? modeStatusLabel('none')
+    : modeStatusLabel(snapshot.activeMode)
   const text = snapshot.text.trim()
   if (text) {
     return `${mode} ${decapitalize(text)}`

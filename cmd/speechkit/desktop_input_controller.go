@@ -90,61 +90,22 @@ func (c desktopInputController) handleAutoStartTick(ctx context.Context) {
 func (c desktopInputController) handleHotkey(ctx context.Context, evt hotkey.Event) {
 	switch binding := c.resolveHotkeyBinding(evt.Binding); binding {
 	case modeVoiceAgent:
-		if c.shouldUseVoiceAgentPipelineFallback() {
-			if evt.Type == hotkey.EventKeyDown {
-				c.log("Voice Agent hotkey routed to pipeline fallback capture", "warn")
-				c.dispatch(ctx, speechkit.Command{
-					Type: speechkit.CommandSetActiveMode,
-					Metadata: map[string]string{
-						"mode": modeVoiceAgent,
-					},
-				}, "Set mode")
-			}
-			c.handlePushToTalk(ctx, evt)
-			return
-		}
-		if c.currentVoiceAgentSession() != nil {
-			if evt.Type == hotkey.EventKeyDown {
-				if evt.Binding == modeAgent {
-					c.log("Agent hotkey routed to Voice Agent toggle", "info")
-				} else {
-					c.log("Voice Agent hotkey routed to Voice Agent toggle", "info")
-				}
-				c.toggleVoiceAgent(ctx)
-			}
+		if c.currentVoiceAgentSession() != nil { //nolint:contextcheck // currentVoiceAgentSession is a stateful getter, not a context-passing call
+			c.routeVoiceAgentHotkey(ctx, evt)
 			return
 		}
 		if evt.Type == hotkey.EventKeyDown {
-			c.log("Voice Agent not available — check API key and config", "error")
+			c.log("Voice Agent not available â€” check API key and config", "error")
 		}
 		return
 	case modeAssist:
-		if evt.Type == hotkey.EventKeyDown {
-			if evt.Binding == modeAgent {
-				c.log("Agent hotkey routed to Assist capture", "info")
-			} else {
-				c.log("Assist hotkey routed to Assist capture", "info")
-			}
-			c.dispatch(ctx, speechkit.Command{
-				Type: speechkit.CommandSetActiveMode,
-				Metadata: map[string]string{
-					"mode": modeAssist,
-				},
-			}, "Set mode")
-		}
+		c.logModeRoute(modeAssist, evt.Binding, c.hotkeyBehavior(modeAssist), evt.Type)
+		c.routeCaptureHotkey(ctx, modeAssist, evt)
 	case modeDictate:
-		if evt.Type == hotkey.EventKeyDown {
-			c.dispatch(ctx, speechkit.Command{
-				Type: speechkit.CommandSetActiveMode,
-				Metadata: map[string]string{
-					"mode": modeDictate,
-				},
-			}, "Set mode")
-		}
+		c.routeCaptureHotkey(ctx, modeDictate, evt)
 	default:
 		return
 	}
-	c.handlePushToTalk(ctx, evt)
 }
 
 func (c desktopInputController) handlePushToTalk(ctx context.Context, evt hotkey.Event) {
@@ -179,6 +140,131 @@ func (c desktopInputController) handlePushToTalk(ctx context.Context, evt hotkey
 			},
 		}, "Stop")
 	}
+}
+
+func (c desktopInputController) handleToggleCapture(ctx context.Context, evt hotkey.Event) {
+	if evt.Type != hotkey.EventKeyDown {
+		return
+	}
+	if c.recording != nil && c.recording.IsRecording() {
+		c.dispatch(ctx, speechkit.Command{
+			Type: speechkit.CommandStopDictation,
+			Metadata: map[string]string{
+				"label": "Captured",
+			},
+		}, "Stop")
+		return
+	}
+	c.dispatch(ctx, speechkit.Command{
+		Type: speechkit.CommandStartDictation,
+		Metadata: map[string]string{
+			"label": "Recording started",
+		},
+	}, "Start")
+}
+
+func (c desktopInputController) routeCaptureHotkey(ctx context.Context, mode string, evt hotkey.Event) {
+	if evt.Type == hotkey.EventKeyDown {
+		c.dispatch(ctx, speechkit.Command{
+			Type: speechkit.CommandSetActiveMode,
+			Metadata: map[string]string{
+				"mode": mode,
+			},
+		}, "Set mode")
+	}
+
+	switch c.hotkeyBehavior(mode) {
+	case config.HotkeyBehaviorToggle:
+		c.handleToggleCapture(ctx, evt)
+	default:
+		c.handlePushToTalk(ctx, evt)
+	}
+}
+
+func (c desktopInputController) routeVoiceAgentHotkey(ctx context.Context, evt hotkey.Event) {
+	behavior := c.hotkeyBehavior(modeVoiceAgent)
+	switch behavior {
+	case config.HotkeyBehaviorPushToTalk:
+		switch evt.Type {
+		case hotkey.EventKeyDown:
+			c.logVoiceAgentRoute(evt.Binding, "push-to-talk", "info", evt.Type)
+			session := c.currentVoiceAgentSession() //nolint:contextcheck // getter, no context needed
+			if session == nil || session.CurrentState() == voiceagent.StateInactive {
+				c.toggleVoiceAgent(ctx)
+			}
+		case hotkey.EventKeyUp:
+			session := c.currentVoiceAgentSession() //nolint:contextcheck // getter, no context needed
+			if session == nil || session.CurrentState() == voiceagent.StateInactive {
+				return
+			}
+			c.toggleVoiceAgent(ctx)
+		}
+	default:
+		if evt.Type != hotkey.EventKeyDown {
+			return
+		}
+		c.logVoiceAgentRoute(evt.Binding, "toggle", "info", evt.Type)
+		c.toggleVoiceAgent(ctx)
+	}
+}
+
+func (c desktopInputController) hotkeyBehavior(mode string) string {
+	if c.cfg == nil {
+		return defaultHotkeyBehavior(mode)
+	}
+
+	switch mode {
+	case modeAssist:
+		return config.NormalizeHotkeyBehavior(
+			c.cfg.General.AssistHotkeyBehavior,
+			config.NormalizeHotkeyBehavior(c.cfg.General.HotkeyMode, defaultHotkeyBehavior(mode)),
+		)
+	case modeVoiceAgent:
+		return config.NormalizeHotkeyBehavior(
+			c.cfg.General.VoiceAgentHotkeyBehavior,
+			config.NormalizeHotkeyBehavior(c.cfg.General.HotkeyMode, defaultHotkeyBehavior(mode)),
+		)
+	default:
+		return config.NormalizeHotkeyBehavior(
+			c.cfg.General.DictateHotkeyBehavior,
+			config.NormalizeHotkeyBehavior(c.cfg.General.HotkeyMode, defaultHotkeyBehavior(mode)),
+		)
+	}
+}
+
+func defaultHotkeyBehavior(mode string) string {
+	return config.HotkeyBehaviorPushToTalk
+}
+
+func (c desktopInputController) logModeRoute(mode, binding, behavior string, evtType hotkey.EventType) {
+	if evtType != hotkey.EventKeyDown {
+		return
+	}
+	if mode == modeAssist {
+		if binding == modeAgent {
+			c.log(fmt.Sprintf("Agent hotkey routed to Assist %s", hotkeyBehaviorLabel(behavior)), "info")
+			return
+		}
+		c.log(fmt.Sprintf("Assist hotkey routed to Assist %s", hotkeyBehaviorLabel(behavior)), "info")
+	}
+}
+
+func (c desktopInputController) logVoiceAgentRoute(binding, route, level string, evtType hotkey.EventType) {
+	if evtType != hotkey.EventKeyDown {
+		return
+	}
+	if binding == modeAgent {
+		c.log(fmt.Sprintf("Agent hotkey routed to Voice Agent %s", route), level)
+		return
+	}
+	c.log(fmt.Sprintf("Voice Agent hotkey routed to Voice Agent %s", route), level)
+}
+
+func hotkeyBehaviorLabel(behavior string) string {
+	if behavior == config.HotkeyBehaviorToggle {
+		return "toggle"
+	}
+	return "capture"
 }
 
 func (c desktopInputController) resolveHotkeyBinding(binding string) string {
@@ -229,7 +315,7 @@ func (c desktopInputController) currentVoiceAgentSession() *voiceagent.Session {
 			return session
 		}
 
-		session = prepareVoiceAgentSession(c.state)
+		session = prepareVoiceAgentSession(c.state, c.cfg)
 		if session != nil {
 			c.state.mu.Lock()
 			if c.state.voiceAgentSession == nil {
@@ -245,32 +331,42 @@ func (c desktopInputController) currentVoiceAgentSession() *voiceagent.Session {
 }
 
 func (c desktopInputController) toggleVoiceAgent(ctx context.Context) {
-	session := c.currentVoiceAgentSession()
+	session := c.currentVoiceAgentSession() //nolint:contextcheck // getter, no context needed
 	if session == nil {
-		c.log("Voice Agent session not initialized — check config and API key", "error")
+		c.log("Voice Agent session not initialized â€” check config and API key", "error")
 		return
 	}
 
 	if session.CurrentState() != voiceagent.StateInactive {
-		c.log("Voice Agent: deactivating", "info")
-		// Remove mic handler before stopping to avoid sending to a closing session.
-		if c.audioCapturer != nil {
-			c.audioCapturer.SetPCMHandler(nil)
-		}
-		session.Stop()
-		if c.state != nil {
-			c.state.updatePrompterState("inactive")
-			c.state.stopVoiceAgentStream()
-		}
+		c.deactivateVoiceAgent(ctx, true)
 		return
 	}
+
+	c.activateVoiceAgent(ctx)
+}
+
+func (c desktopInputController) activateVoiceAgent(ctx context.Context) {
+	session := c.currentVoiceAgentSession() //nolint:contextcheck // getter, no context needed
+	if session == nil {
+		c.log("Voice Agent session not initialized â€” check config and API key", "error")
+		return
+	}
+	if session.CurrentState() != voiceagent.StateInactive {
+		return
+	}
+
+	c.dispatch(ctx, speechkit.Command{
+		Type: speechkit.CommandSetActiveMode,
+		Metadata: map[string]string{
+			"mode": modeVoiceAgent,
+		},
+	}, "Set mode")
 
 	c.log("Voice Agent: activating", "info")
 
 	// Show prompter window if configured.
 	if c.state != nil && c.voiceAgentConfig != nil && c.voiceAgentConfig.ShowPrompter {
-		c.state.clearPrompterMessages()
-		c.state.showPrompterWindow()
+		c.state.showPrompterWindowForMode(modeVoiceAgent, true)
 	}
 
 	// Resolve API key.
@@ -307,13 +403,18 @@ func (c desktopInputController) toggleVoiceAgent(ctx context.Context) {
 
 	go func() {
 		vocabularyHint := ""
-		instruction := ""
+		frameworkPrompt := ""
+		refinementPrompt := ""
 		policies := voiceagent.LivePolicies{}
 		if c.cfg != nil {
 			vocabularyHint = buildVoiceAgentVocabularyHint(parseVocabularyDictionary(c.cfg.Vocabulary.Dictionary))
 		}
 		if c.voiceAgentConfig != nil {
-			instruction = c.voiceAgentConfig.Instruction
+			frameworkPrompt = strings.TrimSpace(c.voiceAgentConfig.FrameworkPrompt)
+			if frameworkPrompt == "" {
+				frameworkPrompt = strings.TrimSpace(c.voiceAgentConfig.Instruction)
+			}
+			refinementPrompt = strings.TrimSpace(c.voiceAgentConfig.RefinementPrompt)
 			policies = voiceagent.LivePolicies{
 				EnableInputAudioTranscription:  c.voiceAgentConfig.EnableInputTranscript,
 				EnableOutputAudioTranscription: c.voiceAgentConfig.EnableOutputTranscript,
@@ -321,7 +422,7 @@ func (c desktopInputController) toggleVoiceAgent(ctx context.Context) {
 				Thinking: voiceagent.ThinkingPolicy{
 					Enabled:         c.voiceAgentConfig.ThinkingEnabled,
 					IncludeThoughts: c.voiceAgentConfig.IncludeThoughts,
-					ThinkingBudget:  int32(c.voiceAgentConfig.ThinkingBudget),
+					ThinkingBudget:  int32(c.voiceAgentConfig.ThinkingBudget), //nolint:gosec // Windows API integer conversion, value fits
 					ThinkingLevel:   voiceagent.ThinkingLevel(c.voiceAgentConfig.ThinkingLevel),
 				},
 				ContextCompression: voiceagent.ContextCompressionPolicy{
@@ -333,8 +434,8 @@ func (c desktopInputController) toggleVoiceAgent(ctx context.Context) {
 					Automatic:         c.voiceAgentConfig.AutomaticActivityDetection,
 					StartSensitivity:  voiceagent.StartSensitivity(c.voiceAgentConfig.VADStartSensitivity),
 					EndSensitivity:    voiceagent.EndSensitivity(c.voiceAgentConfig.VADEndSensitivity),
-					PrefixPaddingMs:   int32(c.voiceAgentConfig.VADPrefixPaddingMs),
-					SilenceDurationMs: int32(c.voiceAgentConfig.VADSilenceDurationMs),
+					PrefixPaddingMs:   int32(c.voiceAgentConfig.VADPrefixPaddingMs),   //nolint:gosec // Windows API integer conversion, value fits
+					SilenceDurationMs: int32(c.voiceAgentConfig.VADSilenceDurationMs), //nolint:gosec // Windows API integer conversion, value fits
 					ActivityHandling:  voiceagent.ActivityHandling(c.voiceAgentConfig.ActivityHandling),
 					TurnCoverage:      voiceagent.TurnCoverage(c.voiceAgentConfig.TurnCoverage),
 				},
@@ -347,13 +448,15 @@ func (c desktopInputController) toggleVoiceAgent(ctx context.Context) {
 		}
 
 		if err := session.Start(ctx, voiceagent.LiveConfig{
-			Model:          model,
-			APIKey:         apiKey,
-			Voice:          voice,
-			Locale:         locale,
-			Instruction:    instruction,
-			VocabularyHint: vocabularyHint,
-			Policies:       policies,
+			Model:            model,
+			APIKey:           apiKey,
+			Voice:            voice,
+			Locale:           locale,
+			FrameworkPrompt:  frameworkPrompt,
+			RefinementPrompt: refinementPrompt,
+			Instruction:      frameworkPrompt,
+			VocabularyHint:   vocabularyHint,
+			Policies:         policies,
 		}, idleCfg); err != nil {
 			c.log(fmt.Sprintf("Voice Agent: start failed: %v", err), "error")
 			if c.state != nil {
@@ -378,6 +481,63 @@ func (c desktopInputController) toggleVoiceAgent(ctx context.Context) {
 			}
 		}
 	}()
+}
+
+func (c desktopInputController) deactivateVoiceAgent(_ context.Context, keepPrompterVisible bool) {
+	session := c.currentVoiceAgentSession() //nolint:contextcheck // getter, no context needed
+	if session == nil || session.CurrentState() == voiceagent.StateInactive {
+		if c.state != nil && !keepPrompterVisible {
+			c.state.hidePrompterWindow()
+		}
+		return
+	}
+
+	c.log("Voice Agent: deactivating", "info")
+	if c.audioCapturer != nil {
+		c.audioCapturer.SetPCMHandler(nil)
+	}
+	session.Stop()
+	if c.state != nil {
+		c.state.updatePrompterActivity("user", 0)
+		c.state.updatePrompterActivity("assistant", 0)
+		c.state.updatePrompterState("inactive")
+		c.state.stopVoiceAgentStream()
+		if !keepPrompterVisible {
+			c.state.hidePrompterWindow()
+		}
+	}
+}
+
+func (c desktopInputController) closeVoiceAgentPrompter(ctx context.Context) {
+	if c.state == nil {
+		return
+	}
+
+	switch c.voiceAgentCloseBehavior() {
+	case config.VoiceAgentCloseBehaviorNewChat:
+		c.deactivateVoiceAgent(ctx, true)
+		c.state.clearPrompterMessages()
+		c.state.updatePrompterState("inactive")
+		c.state.hidePrompterWindow()
+	default:
+		c.state.minimisePrompterWindow()
+	}
+}
+
+func (c desktopInputController) voiceAgentCloseBehavior() string {
+	if c.voiceAgentConfig != nil {
+		return config.NormalizeVoiceAgentCloseBehavior(
+			c.voiceAgentConfig.CloseBehavior,
+			config.VoiceAgentCloseBehaviorContinue,
+		)
+	}
+	if c.cfg != nil {
+		return config.NormalizeVoiceAgentCloseBehavior(
+			c.cfg.VoiceAgent.CloseBehavior,
+			config.VoiceAgentCloseBehaviorContinue,
+		)
+	}
+	return config.VoiceAgentCloseBehaviorContinue
 }
 
 func (c desktopInputController) log(message, kind string) {

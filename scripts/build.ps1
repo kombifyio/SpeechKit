@@ -18,12 +18,17 @@ $prepareWebView2RuntimeScript = Join-Path $scriptDir 'prepare-webview2-runtime.p
 $cacheDir = Join-Path $projectDir '.cache'
 $goCacheDir = Join-Path $cacheDir 'go-build'
 $goTmpDir = Join-Path $cacheDir 'go-tmp'
+$mingwBinDir = 'C:\msys64\mingw64\bin'
+$mingwGcc = Join-Path $mingwBinDir 'gcc.exe'
+$mingwGxx = Join-Path $mingwBinDir 'g++.exe'
 
 # MinGW DLLs (libstdc++, libwinpthread) conflict with Node worker forks.
 # Keep the original PATH for frontend steps; inject MinGW only for Go steps.
 $basePath = $env:PATH
-$mingwPath = "C:\msys64\mingw64\bin;$basePath"
+$mingwPath = "$mingwBinDir;$basePath"
 $env:CGO_ENABLED = '1'
+$env:CC = $mingwGcc
+$env:CXX = $mingwGxx
 $env:GOCACHE = $goCacheDir
 $env:GOTMPDIR = $goTmpDir
 
@@ -218,7 +223,20 @@ function Find-NSISExecutable {
     return ''
 }
 
+function Find-PowerShellExecutable {
+    foreach ($candidate in @('pwsh', 'powershell.exe')) {
+        $command = Get-Command $candidate -ErrorAction SilentlyContinue
+        if ($null -ne $command -and -not [string]::IsNullOrWhiteSpace($command.Source)) {
+            return $command.Source
+        }
+    }
+
+    throw 'No PowerShell executable found. Expected pwsh or powershell.exe.'
+}
+
 Write-Host 'Preparing clean Windows bundle...'
+Assert-PathExists -Path $mingwGcc -Description 'MinGW gcc compiler'
+Assert-PathExists -Path $mingwGxx -Description 'MinGW g++ compiler'
 Assert-PathExists -Path $frontendDir -Description 'Frontend source directory'
 Assert-PathExists -Path (Join-Path $frontendDir 'package.json') -Description 'Frontend package manifest'
 Assert-PathExists -Path (Join-Path $frontendDir 'src') -Description 'Frontend source tree'
@@ -242,6 +260,7 @@ if (-not (Test-Path $goCacheDir)) {
 if (-not (Test-Path $goTmpDir)) {
     New-Item -ItemType Directory -Path $goTmpDir | Out-Null
 }
+$powershellExe = Find-PowerShellExecutable
 if (Test-Path $bundleDir) {
     Remove-Item -Recurse -Force $bundleDir
 }
@@ -270,6 +289,28 @@ finally {
 $env:PATH = $mingwPath
 Push-Location $projectDir
 try {
+    # Build-time defaults are resolved into ldflags above. The test suite
+    # should stay hermetic and must not inherit local provider or Doppler
+    # credentials from the caller environment.
+    foreach ($name in @(
+        'DOPPLER_PROJECT',
+        'DOPPLER_CONFIG',
+        'DOPPLER_PATH',
+        'HF_TOKEN',
+        'OPENAI_API_KEY',
+        'GOOGLE_AI_API_KEY',
+        'GROQ_API_KEY',
+        'OPENROUTER_API_KEY',
+        'VPS_API_KEY',
+        'SPEECHKIT_ENABLE_MANAGED_HF',
+        'SPEECHKIT_MANAGED_DOPPLER_PROJECT',
+        'SPEECHKIT_MANAGED_DOPPLER_CONFIG',
+        'SPEECHKIT_MANAGED_HF_BUILD_ENABLED',
+        'SPEECHKIT_MANAGED_HF_DEFAULT'
+    )) {
+        Remove-Item -Path "Env:\$name" -ErrorAction SilentlyContinue
+    }
+
     Invoke-Step -Description 'Running Go vet...' -FilePath 'go' -ArgumentList @('vet', './...')
     Invoke-Step -Description 'Running Go tests...' -FilePath 'go' -ArgumentList @('test', './...')
     Invoke-Step -Description 'Running Go race tests...' -FilePath 'go' -ArgumentList @(
@@ -300,8 +341,8 @@ finally {
 Write-Host 'Writing runtime config...'
 $bundleConfig = Join-Path $bundleDir 'config.toml'
 Copy-Item -Path (Join-Path $projectDir 'config.example.toml') -Destination $bundleConfig -Force
-Invoke-Step -Description 'Bundling local whisper runtime...' -FilePath 'pwsh' -ArgumentList @('-ExecutionPolicy', 'Bypass', '-File', $prepareWhisperRuntimeScript, '-BundleDir', $bundleDir, '-CacheDir', $cacheDir)
-Invoke-Step -Description 'Bundling WebView2 bootstrapper...' -FilePath 'pwsh' -ArgumentList @('-ExecutionPolicy', 'Bypass', '-File', $prepareWebView2RuntimeScript, '-BundleDir', $bundleDir, '-CacheDir', $cacheDir)
+Invoke-Step -Description 'Bundling local whisper runtime...' -FilePath $powershellExe -ArgumentList @('-ExecutionPolicy', 'Bypass', '-File', $prepareWhisperRuntimeScript, '-BundleDir', $bundleDir, '-CacheDir', $cacheDir)
+Invoke-Step -Description 'Bundling WebView2 bootstrapper...' -FilePath $powershellExe -ArgumentList @('-ExecutionPolicy', 'Bypass', '-File', $prepareWebView2RuntimeScript, '-BundleDir', $bundleDir, '-CacheDir', $cacheDir)
 
 if ($SkipInstaller) {
     Write-Host 'Skipping installer build (SkipInstaller specified).'

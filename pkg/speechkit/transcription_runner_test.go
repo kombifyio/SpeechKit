@@ -23,7 +23,7 @@ func (o *testCommitObserver) OnCommit(completion Completion) {
 	o.completions = append(o.completions, completion)
 }
 
-func (t *testStore) SaveQuickNote(_ context.Context, text string, _ string, _ string, _, _ int64, _ []byte) (int64, error) {
+func (t *testStore) SaveQuickNote(_ context.Context, text, _, _ string, _, _ int64, _ []byte) (int64, error) {
 	t.savedQuickNoteText = text
 	if t.savedQuickNoteID == 0 {
 		t.savedQuickNoteID = 42
@@ -45,7 +45,7 @@ func (t *testStore) UpdateQuickNoteCapture(_ context.Context, _ int64, text, _ s
 	return nil
 }
 
-func (t *testStore) SaveTranscription(_ context.Context, text string, _ string, _ string, model string, _, _ int64, _ []byte) error {
+func (t *testStore) SaveTranscription(_ context.Context, text, _, _, model string, _, _ int64, _ []byte) error {
 	t.savedTranscriptionText = text
 	t.savedTranscriptionModel = model
 	return nil

@@ -110,7 +110,7 @@ func (m *Manager) Reconfigure(combo []uint32) {
 
 // Start installs a low-level keyboard hook and emits key down/up events for the configured combo.
 func (m *Manager) Start(ctx context.Context) error {
-	inner, cancel := context.WithCancel(ctx)
+	inner, cancel := context.WithCancel(ctx) //nolint:gosec // cancel stored in struct field, called on job cancellation
 	m.cancel = cancel
 	ready := make(chan error, 1)
 
@@ -136,13 +136,13 @@ func (m *Manager) Start(ctx context.Context) error {
 
 		go func() {
 			<-inner.Done()
-			procPostThreadMsg.Call(uintptr(m.threadID), uintptr(wmQuit), 0, 0)
+			procPostThreadMsg.Call(uintptr(m.threadID), uintptr(wmQuit), 0, 0) //nolint:errcheck // Windows API call, return value not meaningful
 		}()
 
 		var msg winMessage
 		for {
-			ret, _, _ := procGetMessage.Call(uintptr(unsafe.Pointer(&msg)), 0, 0, 0)
-			switch int32(ret) {
+			ret, _, _ := procGetMessage.Call(uintptr(unsafe.Pointer(&msg)), 0, 0, 0) //nolint:gosec // Windows API requires unsafe.Pointer
+			switch int32(ret) { //nolint:gosec // Windows API integer conversion, value fits
 			case -1:
 				m.unhook()
 				return
@@ -150,8 +150,8 @@ func (m *Manager) Start(ctx context.Context) error {
 				m.unhook()
 				return
 			default:
-				procTranslateMessage.Call(uintptr(unsafe.Pointer(&msg)))
-				procDispatchMessage.Call(uintptr(unsafe.Pointer(&msg)))
+				procTranslateMessage.Call(uintptr(unsafe.Pointer(&msg))) //nolint:errcheck,gosec // Windows API requires unsafe.Pointer; return value not meaningful
+				procDispatchMessage.Call(uintptr(unsafe.Pointer(&msg))) //nolint:errcheck,gosec // Windows API requires unsafe.Pointer; return value not meaningful
 			}
 		}
 	}()
@@ -292,24 +292,24 @@ func (t *comboTracker) consumes(vk uint32) bool {
 	return ok
 }
 
-func (m *Manager) keyboardProc(nCode int, wParam uintptr, lParam uintptr) uintptr {
+func (m *Manager) keyboardProc(nCode int, wParam, lParam uintptr) uintptr {
 	if nCode < hcAction || lParam == 0 {
 		return m.callNext(nCode, wParam, lParam)
 	}
 
-	switch uint32(wParam) {
+	switch uint32(wParam) { //nolint:gosec // Windows API integer conversion, value fits
 	case wmKeyDown, wmSysKeyDown, wmKeyUp, wmSysKeyUp:
 	default:
 		return m.callNext(nCode, wParam, lParam)
 	}
 
 	var info kbdllHookStruct
-	procRtlMoveMemory.Call(
-		uintptr(unsafe.Pointer(&info)),
+	procRtlMoveMemory.Call( //nolint:errcheck // Windows API call, return value not meaningful
+		uintptr(unsafe.Pointer(&info)), //nolint:gosec // Windows API requires unsafe.Pointer
 		lParam,
 		unsafe.Sizeof(info),
 	)
-	down := uint32(wParam) == wmKeyDown || uint32(wParam) == wmSysKeyDown
+	down := uint32(wParam) == wmKeyDown || uint32(wParam) == wmSysKeyDown //nolint:gosec // G115: wParam is Windows message param, fits uint32
 
 	if event, ok := m.tracker.transition(info.VkCode, down); ok {
 		select {
@@ -325,8 +325,8 @@ func (m *Manager) keyboardProc(nCode int, wParam uintptr, lParam uintptr) uintpt
 	return m.callNext(nCode, wParam, lParam)
 }
 
-func (m *Manager) callNext(nCode int, wParam uintptr, lParam uintptr) uintptr {
-	ret, _, _ := procCallNextHookEx.Call(0, uintptr(nCode), wParam, lParam)
+func (m *Manager) callNext(nCode int, wParam, lParam uintptr) uintptr {
+	ret, _, _ := procCallNextHookEx.Call(0, uintptr(nCode), wParam, lParam) //nolint:gosec // G115: nCode is Windows hook code, value within bounds
 	return ret
 }
 
@@ -334,7 +334,7 @@ func (m *Manager) unhook() {
 	if m.hook == 0 {
 		return
 	}
-	procUnhookWindows.Call(uintptr(m.hook))
+	procUnhookWindows.Call(uintptr(m.hook)) //nolint:errcheck // Windows API call, return value not meaningful
 	m.hook = 0
 }
 

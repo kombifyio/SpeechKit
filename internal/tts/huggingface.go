@@ -7,22 +7,34 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"regexp"
 	"time"
+
+	"github.com/kombifyio/SpeechKit/internal/netsec"
 )
 
 const (
-	hfTTSEndpoint     = "https://router.huggingface.co/hf-inference/models/"
+	hfTTSBaseURL      = "https://router.huggingface.co/hf-inference/models"
 	hfDefaultTTSModel = "parler-tts/parler-tts-mini-multilingual-v1.1"
 	hfTTSSampleRate   = 24000
 	hfMaxResponseBody = 50 * 1024 * 1024 // 50 MB
 )
 
+// hfTTSModelPattern restricts HuggingFace model IDs to safe characters
+// (prevents path traversal via model names).
+var hfTTSModelPattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._\-]*(?:/[A-Za-z0-9._\-]+)?$`)
+
 // HuggingFace implements Provider using the HuggingFace Inference API
 // with text-to-speech models (e.g. parler-tts).
+//
+// BaseURL is configurable for testing. It is validated against Validation
+// on every request. Default Validation is strict (public https only).
 type HuggingFace struct {
-	token  string
-	model  string
-	client *http.Client
+	token      string
+	model      string
+	BaseURL    string
+	Validation netsec.ValidationOptions
+	client     *http.Client
 }
 
 // HuggingFaceOpts configures the HuggingFace TTS provider.
@@ -38,9 +50,11 @@ func NewHuggingFace(opts HuggingFaceOpts) *HuggingFace {
 		model = hfDefaultTTSModel
 	}
 	return &HuggingFace{
-		token:  opts.Token,
-		model:  model,
-		client: &http.Client{Timeout: 60 * time.Second},
+		token:   opts.Token,
+		model:   model,
+		BaseURL: hfTTSBaseURL,
+		// Validation zero-value = strict: public https only.
+		client: netsec.NewSafeHTTPClient(netsec.ClientOptions{Timeout: 60 * time.Second}),
 	}
 }
 
@@ -70,6 +84,19 @@ func (h *HuggingFace) Synthesize(ctx context.Context, text string, opts Synthesi
 		return nil, fmt.Errorf("huggingface tts: empty text")
 	}
 
+	if !hfTTSModelPattern.MatchString(h.model) {
+		return nil, fmt.Errorf("huggingface tts: invalid model id %q", h.model)
+	}
+
+	base := h.BaseURL
+	if base == "" {
+		base = hfTTSBaseURL
+	}
+	endpoint, err := netsec.BuildEndpoint(base, h.model, h.Validation)
+	if err != nil {
+		return nil, fmt.Errorf("huggingface tts: endpoint: %w", err)
+	}
+
 	reqBody := hfTTSRequest{
 		Inputs: text,
 	}
@@ -89,7 +116,6 @@ func (h *HuggingFace) Synthesize(ctx context.Context, text string, opts Synthesi
 		return nil, fmt.Errorf("huggingface tts: marshal: %w", err)
 	}
 
-	endpoint := hfTTSEndpoint + h.model
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(bodyBytes))
 	if err != nil {
 		return nil, fmt.Errorf("huggingface tts: create request: %w", err)
@@ -101,7 +127,7 @@ func (h *HuggingFace) Synthesize(ctx context.Context, text string, opts Synthesi
 	if err != nil {
 		return nil, fmt.Errorf("huggingface tts: request failed: %w", err)
 	}
-	defer resp.Body.Close()
+	defer resp.Body.Close() //nolint:errcheck // response body close error is not actionable
 
 	if resp.StatusCode != http.StatusOK {
 		errBody, _ := io.ReadAll(io.LimitReader(resp.Body, 1024))
@@ -117,12 +143,12 @@ func (h *HuggingFace) Synthesize(ctx context.Context, text string, opts Synthesi
 	// Detect format from Content-Type header.
 	format := "flac"
 	ct := resp.Header.Get("Content-Type")
-	switch {
-	case ct == "audio/wav" || ct == "audio/x-wav":
+	switch ct {
+	case "audio/wav", "audio/x-wav":
 		format = "wav"
-	case ct == "audio/mpeg":
+	case "audio/mpeg":
 		format = "mp3"
-	case ct == "audio/ogg":
+	case "audio/ogg":
 		format = "ogg"
 	}
 

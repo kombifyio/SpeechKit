@@ -1,4 +1,4 @@
-// Package downloads manages model downloads for SpeechKit — HTTP file
+// Package downloads manages model downloads for SpeechKit â€” HTTP file
 // downloads (whisper models) and Ollama model pulls with progress tracking.
 package downloads
 
@@ -16,7 +16,20 @@ import (
 	"path/filepath"
 	"sync"
 	"time"
+
+	"github.com/kombifyio/SpeechKit/internal/netsec"
 )
+
+// downloadClient fetches model files with a hardened TLS + redacting
+// transport and a long-running timeout for large downloads.
+var downloadClient = netsec.NewSafeHTTPClient(netsec.ClientOptions{Timeout: 30 * time.Minute})
+
+// ollamaPullClient is used for streaming Ollama pulls (local loopback).
+var ollamaPullClient = netsec.NewSafeHTTPClient(netsec.ClientOptions{Timeout: 30 * time.Minute})
+
+// DownloadURLValidation controls which URLs httpDownload accepts. Production
+// default is strict (public https only). Tests relax this to allow loopback.
+var DownloadURLValidation = netsec.ValidationOptions{}
 
 // Kind identifies the download mechanism.
 type Kind string
@@ -39,20 +52,22 @@ const (
 
 // Item describes a model that can be pulled into SpeechKit.
 type Item struct {
-	ID          string `json:"id"`
-	ProfileID   string `json:"profileId"`
-	Name        string `json:"name"`
-	Description string `json:"description"`
-	SizeLabel   string `json:"sizeLabel"`
-	SizeBytes   int64  `json:"sizeBytes"`
-	Kind        Kind   `json:"kind"`
-	URL         string `json:"url,omitempty"`
-	SHA256      string `json:"sha256,omitempty"`
-	OllamaModel string `json:"ollamaModel,omitempty"`
-	License     string `json:"license"`
-	Available   bool   `json:"available"`
-	Selected    bool   `json:"selected"`
-	Recommended bool   `json:"recommended,omitempty"`
+	ID             string `json:"id"`
+	ProfileID      string `json:"profileId"`
+	Name           string `json:"name"`
+	Description    string `json:"description"`
+	SizeLabel      string `json:"sizeLabel"`
+	SizeBytes      int64  `json:"sizeBytes"`
+	Kind           Kind   `json:"kind"`
+	URL            string `json:"url,omitempty"`
+	SHA256         string `json:"sha256,omitempty"`
+	OllamaModel    string `json:"ollamaModel,omitempty"`
+	License        string `json:"license"`
+	Available      bool   `json:"available"`
+	Selected       bool   `json:"selected"`
+	RuntimeReady   bool   `json:"runtimeReady,omitempty"`
+	RuntimeProblem string `json:"runtimeProblem,omitempty"`
+	Recommended    bool   `json:"recommended,omitempty"`
 }
 
 // JobView is the mutex-free snapshot used for JSON serialization.
@@ -125,14 +140,14 @@ func (m *Manager) AllJobs() []JobView {
 // Returns the initial job snapshot.
 func (m *Manager) Start(item Item, destDir string, onDone func(Item)) JobView {
 	id := fmt.Sprintf("dl-%d-%s", time.Now().UnixMilli(), randHex())
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(context.Background()) //nolint:gosec // cancel stored in struct field, called on job cancellation
 	j := &job{
 		ID:         id,
 		ModelID:    item.ID,
 		ProfileID:  item.ProfileID,
 		Status:     StatusPending,
 		TotalBytes: item.SizeBytes,
-		StatusText: "Starting…",
+		StatusText: "Startingâ€¦",
 		cancel:     cancel,
 	}
 	m.mu.Lock()
@@ -163,7 +178,7 @@ func (m *Manager) CancelJob(jobID string) bool {
 func (m *Manager) run(ctx context.Context, j *job, item Item, destDir string) {
 	j.mu.Lock()
 	j.Status = StatusRunning
-	j.StatusText = "Downloading…"
+	j.StatusText = "Downloadingâ€¦"
 	j.mu.Unlock()
 
 	var err error
@@ -195,22 +210,30 @@ func (m *Manager) run(ctx context.Context, j *job, item Item, destDir string) {
 }
 
 func httpDownload(ctx context.Context, j *job, item Item, destDir string) error {
-	if err := os.MkdirAll(destDir, 0o755); err != nil {
+	// Validate URL with strict defaults: only public https.
+	// Catalog URLs come from the hardcoded catalog or from a config source â€”
+	// we still verify here so a malformed or SSRF-redirected URL never reaches
+	// the HTTP layer.
+	if err := netsec.ValidateProviderURL(item.URL, DownloadURLValidation); err != nil {
+		return fmt.Errorf("invalid download url: %w", err)
+	}
+
+	if err := os.MkdirAll(destDir, 0o700); err != nil {
 		return fmt.Errorf("create model dir: %w", err)
 	}
 	filename := filepath.Base(item.URL)
 	dest := filepath.Join(destDir, filename)
 	tmp := dest + ".download"
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, item.URL, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, item.URL, http.NoBody)
 	if err != nil {
 		return fmt.Errorf("build request: %w", err)
 	}
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := downloadClient.Do(req)
 	if err != nil {
 		return fmt.Errorf("http get: %w", err)
 	}
-	defer resp.Body.Close()
+	defer resp.Body.Close() //nolint:errcheck // response body close error is not actionable
 	if resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("server returned %d for %s", resp.StatusCode, item.URL)
 	}
@@ -221,7 +244,7 @@ func httpDownload(ctx context.Context, j *job, item Item, destDir string) error 
 		j.mu.Unlock()
 	}
 
-	f, err := os.Create(tmp)
+	f, err := os.Create(tmp) //nolint:gosec // G304: tmp is app-controlled temp path, not user input
 	if err != nil {
 		return fmt.Errorf("create temp file: %w", err)
 	}
@@ -233,8 +256,8 @@ func httpDownload(ctx context.Context, j *job, item Item, destDir string) error 
 		n, readErr := resp.Body.Read(buf)
 		if n > 0 {
 			if _, writeErr := f.Write(buf[:n]); writeErr != nil {
-				f.Close()
-				os.Remove(tmp)
+				_ = f.Close()
+				_ = os.Remove(tmp)
 				return fmt.Errorf("write: %w", writeErr)
 			}
 			hasher.Write(buf[:n])
@@ -254,24 +277,24 @@ func httpDownload(ctx context.Context, j *job, item Item, destDir string) error 
 			break
 		}
 		if readErr != nil {
-			f.Close()
-			os.Remove(tmp)
+			_ = f.Close()
+			_ = os.Remove(tmp)
 			return fmt.Errorf("read: %w", readErr)
 		}
 		if ctx.Err() != nil {
-			f.Close()
-			os.Remove(tmp)
+			_ = f.Close()
+			_ = os.Remove(tmp)
 			return ctx.Err()
 		}
 	}
-	f.Close()
+	_ = f.Close()
 
 	// Verify SHA256 if catalog provides expected hash.
 	if item.SHA256 != "" {
 		got := hex.EncodeToString(hasher.Sum(nil))
 		if got != item.SHA256 {
-			os.Remove(tmp)
-			return fmt.Errorf("SHA256 mismatch: expected %s, got %s — file corrupt or tampered", item.SHA256, got)
+			_ = os.Remove(tmp)
+			return fmt.Errorf("SHA256 mismatch: expected %s, got %s â€” file corrupt or tampered", item.SHA256, got)
 		}
 	}
 
@@ -286,19 +309,23 @@ type ollamaLine struct {
 }
 
 func ollamaPull(ctx context.Context, j *job, item Item) error {
+	endpoint, err := netsec.BuildEndpoint(OllamaBaseURL, "api/pull", ollamaValidation)
+	if err != nil {
+		return fmt.Errorf("ollama endpoint: %w", err)
+	}
 	payload, _ := json.Marshal(map[string]any{"model": item.OllamaModel, "stream": true})
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, OllamaBaseURL+"/api/pull", bytes.NewReader(payload))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(payload))
 	if err != nil {
 		return fmt.Errorf("build request: %w", err)
 	}
 	req.Header.Set("Content-Type", "application/json")
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := ollamaPullClient.Do(req)
 	if err != nil {
-		return fmt.Errorf("ollama not reachable — is Ollama running? (%w)", err)
+		return fmt.Errorf("ollama not reachable â€” is Ollama running? (%w)", err)
 	}
-	defer resp.Body.Close()
+	defer resp.Body.Close() //nolint:errcheck // response body close error is not actionable
 	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("ollama returned %d — is Ollama installed and running?", resp.StatusCode)
+		return fmt.Errorf("ollama returned %d â€” is Ollama installed and running?", resp.StatusCode)
 	}
 
 	dec := json.NewDecoder(resp.Body)
@@ -317,7 +344,7 @@ func ollamaPull(ctx context.Context, j *job, item Item) error {
 			j.TotalBytes = line.Total
 			j.BytesDone = line.Completed
 			j.Progress = float64(line.Completed) / float64(line.Total)
-			j.StatusText = fmt.Sprintf("%s — %.0f%%", line.Status, j.Progress*100)
+			j.StatusText = fmt.Sprintf("%s â€” %.0f%%", line.Status, j.Progress*100)
 		} else if line.Status != "" {
 			j.StatusText = line.Status
 		}

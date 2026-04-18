@@ -28,7 +28,7 @@ jobs:
       - name: Setup Go
         uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff
         with:
-          go-version: '1.25.9'
+          go-version: '1.26.1'
           cache: true
 
       - name: Setup Node
@@ -55,6 +55,8 @@ jobs:
 
       - name: Upload Windows bundle
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: github.event_name == 'workflow_dispatch'
+        continue-on-error: true
         with:
           name: speechkit-windows-bundle
           path: dist/windows/SpeechKit
@@ -62,6 +64,8 @@ jobs:
 
       - name: Upload Windows installer
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: github.event_name == 'workflow_dispatch'
+        continue-on-error: true
         with:
           name: speechkit-windows-installer
           path: dist/windows/SpeechKit-Setup.exe

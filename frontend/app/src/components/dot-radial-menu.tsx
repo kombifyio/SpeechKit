@@ -14,6 +14,9 @@ export type DotMenuItem = {
   id: string
   label: string
   icon: LucideIcon
+  pressed?: boolean
+  runtimeActive?: boolean
+  slashed?: boolean
   onClick: () => void
 }
 
@@ -148,6 +151,8 @@ export function DotRadialMenu({
           const isDummy = slot.index === dummyIndex
           const isHovered = hoveredIndex === slot.index && !isDummy && item != null
           const Icon = item?.icon
+          const isPressed = Boolean(item?.pressed)
+          const isRuntimeActive = Boolean(item?.runtimeActive)
 
           return (
             <g key={slot.index}>
@@ -156,9 +161,13 @@ export function DotRadialMenu({
                 className={
                   isDummy
                     ? 'fill-white/[0.03] stroke-white/[0.06] stroke-[0.5]'
-                    : isHovered
-                      ? 'fill-white/20 stroke-white/25 stroke-[0.5] cursor-pointer'
-                      : 'fill-black/50 stroke-white/10 stroke-[0.5] cursor-pointer'
+                    : isRuntimeActive
+                      ? 'fill-orange-500/18 stroke-orange-400/30 stroke-[0.5] cursor-pointer'
+                      : isPressed
+                        ? 'fill-white/12 stroke-white/20 stroke-[0.5] cursor-pointer'
+                        : isHovered
+                          ? 'fill-white/20 stroke-white/25 stroke-[0.5] cursor-pointer'
+                          : 'fill-black/50 stroke-white/10 stroke-[0.5] cursor-pointer'
                 }
                 onMouseEnter={() => !isDummy && setHoveredIndex(slot.index)}
                 onMouseLeave={() => setHoveredIndex(null)}
@@ -179,14 +188,21 @@ export function DotRadialMenu({
                   height={20}
                   className="pointer-events-none"
                 >
-                  <div className="flex h-full w-full items-center justify-center">
+                  <div className="relative flex h-full w-full items-center justify-center">
                     <Icon
                       className={
-                        isHovered
+                        isRuntimeActive
+                          ? 'h-3 w-3 text-orange-100'
+                          : isHovered
                           ? 'h-3 w-3 text-white'
-                          : 'h-3 w-3 text-white/60'
+                          : isPressed
+                            ? 'h-3 w-3 text-white/85'
+                            : 'h-3 w-3 text-white/60'
                       }
                     />
+                    {item?.slashed ? (
+                      <span className="pointer-events-none absolute h-0.5 w-4 rotate-[-35deg] rounded-full bg-white/55" />
+                    ) : null}
                   </div>
                 </foreignObject>
               )}

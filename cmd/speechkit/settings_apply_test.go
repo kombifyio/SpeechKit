@@ -36,9 +36,15 @@ func TestAppStateApplyRuntimeSettingsUpdatesSnapshot(t *testing.T) {
 	state.engine = newSpeechKitRuntime(state, speechkit.Hooks{})
 
 	oldHotkey := state.applyRuntimeSettings(
+		true,
+		true,
+		true,
 		"ctrl+shift+d",
-		"ctrl+shift+j",
-		"ctrl+shift+v",
+		"ctrl+win+j",
+		"win+alt+k",
+		config.HotkeyBehaviorToggle,
+		config.HotkeyBehaviorPushToTalk,
+		config.HotkeyBehaviorToggle,
 		"dictate",
 		"mic-1",
 		[]string{"local", "hf"},
@@ -79,6 +85,15 @@ func TestAppStateApplyRuntimeSettingsUpdatesSnapshot(t *testing.T) {
 	if got, want := len(runtime.providers), 2; got != want {
 		t.Fatalf("len(runtime.providers) = %d, want %d", got, want)
 	}
+	if got, want := runtime.dictateHotkeyBehavior, config.HotkeyBehaviorToggle; got != want {
+		t.Fatalf("runtime.dictateHotkeyBehavior = %q, want %q", got, want)
+	}
+	if got, want := runtime.assistHotkeyBehavior, config.HotkeyBehaviorPushToTalk; got != want {
+		t.Fatalf("runtime.assistHotkeyBehavior = %q, want %q", got, want)
+	}
+	if got, want := runtime.voiceAgentHotkeyBehavior, config.HotkeyBehaviorToggle; got != want {
+		t.Fatalf("runtime.voiceAgentHotkeyBehavior = %q, want %q", got, want)
+	}
 
 	snapshot := state.engine.State()
 	if got, want := snapshot.Hotkey, "ctrl+shift+d"; got != want {
@@ -89,21 +104,30 @@ func TestAppStateApplyRuntimeSettingsUpdatesSnapshot(t *testing.T) {
 func TestAppStateApplyDesktopSettingsReconfiguresHotkey(t *testing.T) {
 	hk := &fakeHotkeyReconfigurer{}
 	state := &appState{
-		hotkey:           "win+alt",
-		dictateHotkey:    "win+alt",
-		assistHotkey:     "ctrl+shift+j",
-		voiceAgentHotkey: "ctrl+shift+v",
-		audioDeviceID:    "mic-1",
-		hkManager:        hk,
+		dictateEnabled:    true,
+		assistEnabled:     true,
+		voiceAgentEnabled: true,
+		hotkey:            "win+alt",
+		dictateHotkey:     "win+alt",
+		assistHotkey:      "ctrl+win+j",
+		voiceAgentHotkey:  "ctrl+shift",
+		audioDeviceID:     "mic-1",
+		hkManager:         hk,
 	}
 
 	state.applyDesktopSettings(
+		true,
+		true,
+		true,
 		"win+alt",
-		"ctrl+shift+j",
-		"ctrl+shift+v",
+		"ctrl+win+j",
+		"ctrl+shift",
+		true,
+		true,
+		true,
 		"ctrl+shift+d",
-		"ctrl+shift+j",
-		"ctrl+shift+v",
+		"ctrl+win+j",
+		"ctrl+shift",
 		"mic-1",
 		"mic-1",
 		true,

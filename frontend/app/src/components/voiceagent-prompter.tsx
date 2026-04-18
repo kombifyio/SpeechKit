@@ -1,7 +1,24 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState, type CSSProperties, type RefObject } from 'react'
+import { type AgentState } from '@livekit/components-react'
+import { Bot, ChevronDown, ChevronUp, Headphones, MessageSquareText, Play, Square, Waves } from 'lucide-react'
 
-type PrompterState = 'inactive' | 'connecting' | 'listening' | 'processing' | 'speaking' | 'deactivating'
+import { AgentAudioVisualizerRadial } from '@/components/agent-audio-visualizer-radial'
+import { DesktopWindowFrame } from '@/components/desktop-window-frame'
+import { SpeechKitAuraOrb } from '@/components/speechkit-aura-orb'
+import { useDesktopTheme } from '@/lib/desktop-theme'
+
+type PrompterMode = 'assist' | 'voice_agent'
+type PrompterState =
+  | 'inactive'
+  | 'connecting'
+  | 'listening'
+  | 'processing'
+  | 'speaking'
+  | 'ready'
+  | 'error'
+  | 'deactivating'
 type PrompterRole = 'user' | 'assistant' | 'system'
+type LiveSpeakerRole = Exclude<PrompterRole, 'system'>
 
 type PrompterMessage = {
   id: number
@@ -10,10 +27,17 @@ type PrompterMessage = {
   done: boolean
 }
 
+type LiveTurn = {
+  text: string
+  done: boolean
+}
+
 type PrompterAPI = {
   addMessage: (message: { role: PrompterRole; text: string; done: boolean }) => void
   clear: () => void
   updateState: (state: string) => void
+  setMode: (mode: string) => void
+  setActivity: (role: LiveSpeakerRole, level: number) => void
 }
 
 type WailsWindow = Window & {
@@ -25,17 +49,151 @@ type WailsWindow = Window & {
   }
 }
 
-const stateMeta: Record<PrompterState, { color: string; label: string }> = {
-  inactive: { color: 'bg-muted-foreground/40', label: 'Inactive' },
-  connecting: { color: 'bg-primary', label: 'Connecting...' },
-  listening: { color: 'bg-emerald-400', label: 'Listening' },
-  processing: { color: 'bg-amber-400', label: 'Processing' },
-  speaking: { color: 'bg-primary', label: 'Speaking' },
-  deactivating: { color: 'bg-muted-foreground/40', label: 'Stopping...' },
+const stateMeta: Record<PrompterState, { color: string; assistLabel: string; voiceLabel: string }> = {
+  inactive: { color: 'bg-muted-foreground/40', assistLabel: 'Ready', voiceLabel: 'Inactive' },
+  connecting: { color: 'bg-primary', assistLabel: 'Starting…', voiceLabel: 'Connecting…' },
+  listening: { color: 'bg-emerald-400', assistLabel: 'Listening', voiceLabel: 'Listening' },
+  processing: { color: 'bg-amber-400', assistLabel: 'Generating…', voiceLabel: 'Processing…' },
+  speaking: { color: 'bg-primary', assistLabel: 'Speaking', voiceLabel: 'Speaking' },
+  ready: { color: 'bg-emerald-400', assistLabel: 'Response ready', voiceLabel: 'Ready' },
+  error: { color: 'bg-red-400', assistLabel: 'Error', voiceLabel: 'Error' },
+  deactivating: { color: 'bg-muted-foreground/40', assistLabel: 'Closing…', voiceLabel: 'Stopping…' },
+}
+
+const modeChrome = {
+  assist: {
+    appLabel: 'Assist',
+    title: 'Assist',
+    subtitle: 'One-shot output surface',
+    emptyText: 'Waiting for request...',
+    icon: MessageSquareText,
+    userIcon: Bot,
+    assistantIcon: Waves,
+  },
+  voice_agent: {
+    appLabel: 'Voice Agent',
+    title: 'Voice Agent',
+    subtitle: 'Realtime dialog surface',
+    emptyText: 'Waiting for conversation...',
+    icon: Headphones,
+    userIcon: Headphones,
+    assistantIcon: Waves,
+  },
+} as const
+
+const liveSlotMeta: Record<
+  LiveSpeakerRole,
+  { label: string; idleText: string; color: `#${string}`; accentClassName: string; subtleClassName: string }
+> = {
+  user: {
+    label: 'You',
+    idleText: 'Waiting for you to speak',
+    color: '#8FA9FF',
+    accentClassName: 'text-sky-200',
+    subtleClassName: 'bg-sky-400/10 border-sky-300/10',
+  },
+  assistant: {
+    label: 'Voice Agent',
+    idleText: 'Waiting for the next answer',
+    color: '#47E3C1',
+    accentClassName: 'text-emerald-200',
+    subtleClassName: 'bg-emerald-400/10 border-emerald-300/10',
+  },
+}
+
+const defaultActivityLevels: Record<LiveSpeakerRole, number> = {
+  user: 0,
+  assistant: 0,
+}
+
+const noDragRegionStyle = {
+  ['--wails-draggable' as string]: 'no-drag',
+  WebkitAppRegion: 'no-drag',
+} as CSSProperties
+
+function labelForState(mode: PrompterMode, state: PrompterState) {
+  const meta = stateMeta[state]
+  return mode === 'assist' ? meta.assistLabel : meta.voiceLabel
+}
+
+function clampLevel(level: number) {
+  if (!Number.isFinite(level)) {
+    return 0
+  }
+  return Math.max(0, Math.min(1, level))
+}
+
+function resetDormantActivityLevels(
+  state: PrompterState,
+  current: Record<LiveSpeakerRole, number>,
+) {
+  let nextLevels = current
+
+  if (state !== 'listening' && nextLevels.user !== 0) {
+    nextLevels = { ...nextLevels, user: 0 }
+  }
+  if (state !== 'speaking' && nextLevels.assistant !== 0) {
+    nextLevels = { ...nextLevels, assistant: 0 }
+  }
+
+  return nextLevels
+}
+
+function liveSlotIsActive(role: LiveSpeakerRole, state: PrompterState, level: number) {
+  if (role === 'user') {
+    return state === 'listening' && level > 0.04
+  }
+  return state === 'speaking' && level > 0.04
+}
+
+function liveSlotVisualizerState(role: LiveSpeakerRole, state: PrompterState, active: boolean): AgentState {
+  if (state === 'connecting') {
+    return 'connecting'
+  }
+  if (state === 'processing') {
+    return role === 'assistant' ? 'thinking' : 'listening'
+  }
+  if (state === 'speaking') {
+    return role === 'assistant' && active ? 'speaking' : 'listening'
+  }
+  if (state === 'listening') {
+    return role === 'user' && active ? 'speaking' : 'listening'
+  }
+  return 'listening'
+}
+
+function liveSlotStatusLabel(role: LiveSpeakerRole, state: PrompterState, active: boolean) {
+  if (state === 'connecting') {
+    return 'Connecting'
+  }
+  if (state === 'processing') {
+    return role === 'assistant' ? 'Thinking' : 'Waiting'
+  }
+  if (role === 'user') {
+    if (active) {
+      return 'Talking'
+    }
+    return state === 'listening' ? 'Ready for you' : 'Paused'
+  }
+  if (active) {
+    return 'Speaking'
+  }
+  if (state === 'speaking') {
+    return 'Finishing'
+  }
+  return 'Standing by'
 }
 
 export function VoiceAgentPrompter() {
+  const { theme, toggleTheme } = useDesktopTheme('dark')
+  const [mode, setMode] = useState<PrompterMode>('voice_agent')
   const [messages, setMessages] = useState<PrompterMessage[]>([])
+  const [liveTurns, setLiveTurns] = useState<Record<LiveSpeakerRole, LiveTurn | null>>({
+    user: null,
+    assistant: null,
+  })
+  const [liveNotice, setLiveNotice] = useState<string | null>(null)
+  const [activityLevels, setActivityLevels] = useState<Record<LiveSpeakerRole, number>>(defaultActivityLevels)
   const [state, setState] = useState<PrompterState>('inactive')
   const [transcriptHidden, setTranscriptHidden] = useState(false)
   const scrollRef = useRef<HTMLDivElement | null>(null)
@@ -57,23 +215,46 @@ export function VoiceAgentPrompter() {
         setMessages((current) => [...current, { id, role: message.role, text: message.text, done: true }])
         activeUserMessageIdRef.current = null
         activeAssistantMessageIdRef.current = null
+        setLiveNotice(message.text)
         setTimeout(scrollToBottom, 16)
         return
       }
+
+      setLiveNotice(null)
+      const liveRole = message.role as LiveSpeakerRole
+      setLiveTurns((current) => {
+        const previousTurn = current[liveRole]
+        const nextText = previousTurn && !previousTurn.done
+          ? mergeStreamingText(previousTurn.text, message.text)
+          : message.text
+        return {
+          ...current,
+          [liveRole]: {
+            text: nextText,
+            done: message.done,
+          },
+        }
+      })
 
       const activeRef = message.role === 'user' ? activeUserMessageIdRef : activeAssistantMessageIdRef
       const otherActiveRef = message.role === 'user' ? activeAssistantMessageIdRef : activeUserMessageIdRef
 
       if (activeRef.current !== null && !message.done) {
+        const activeMessageId = activeRef.current
         setMessages((current) =>
           current.map((entry) =>
-            entry.id === activeRef.current ? { ...entry, text: message.text, done: false } : entry,
+            entry.id === activeMessageId
+              ? { ...entry, text: mergeStreamingText(entry.text, message.text), done: false }
+              : entry,
           ),
         )
       } else if (activeRef.current !== null && message.done) {
+        const activeMessageId = activeRef.current
         setMessages((current) =>
           current.map((entry) =>
-            entry.id === activeRef.current ? { ...entry, text: message.text, done: true } : entry,
+            entry.id === activeMessageId
+              ? { ...entry, text: mergeStreamingText(entry.text, message.text), done: true }
+              : entry,
           ),
         )
         activeRef.current = null
@@ -91,6 +272,13 @@ export function VoiceAgentPrompter() {
 
   const clear = useCallback(() => {
     setMessages([])
+    setLiveTurns({
+      user: null,
+      assistant: null,
+    })
+    setLiveNotice(null)
+    setActivityLevels(defaultActivityLevels)
+    setState('inactive')
     activeUserMessageIdRef.current = null
     activeAssistantMessageIdRef.current = null
     nextIdRef.current = 1
@@ -98,8 +286,29 @@ export function VoiceAgentPrompter() {
 
   const updateState = useCallback((nextState: string) => {
     if (nextState in stateMeta) {
-      setState(nextState as PrompterState)
+      const resolvedState = nextState as PrompterState
+      setState(resolvedState)
+      setActivityLevels((current) => resetDormantActivityLevels(resolvedState, current))
     }
+  }, [])
+
+  const updateMode = useCallback((nextMode: string) => {
+    if (nextMode === 'assist' || nextMode === 'voice_agent') {
+      setMode(nextMode)
+    }
+  }, [])
+
+  const setActivity = useCallback((role: LiveSpeakerRole, level: number) => {
+    const nextLevel = clampLevel(level)
+    setActivityLevels((current) => {
+      if (current[role] === nextLevel) {
+        return current
+      }
+      return {
+        ...current,
+        [role]: nextLevel,
+      }
+    })
   }, [])
 
   const onScroll = useCallback(() => {
@@ -112,80 +321,328 @@ export function VoiceAgentPrompter() {
 
   useEffect(() => {
     const win = window as WailsWindow
-    win.__prompter = { addMessage, clear, updateState }
+    win.__prompter = { addMessage, clear, updateState, setMode: updateMode, setActivity }
     return () => {
       delete win.__prompter
     }
-  }, [addMessage, clear, updateState])
+  }, [addMessage, clear, setActivity, updateMode, updateState])
 
   const stopVoiceAgent = useCallback(() => {
     const win = window as WailsWindow
     win.wails?.Events?.Emit?.('voiceagent:stop')
   }, [])
 
+  const startVoiceAgent = useCallback(() => {
+    const win = window as WailsWindow
+    win.wails?.Events?.Emit?.('voiceagent:start')
+  }, [])
+
+  const closePrompter = useCallback(() => {
+    const win = window as WailsWindow
+    win.wails?.Events?.Emit?.('voiceagent:close')
+  }, [])
+
+  const chrome = modeChrome[mode]
   const meta = stateMeta[state]
-  const showStopButton = state !== 'inactive'
+  const statusLabel = labelForState(mode, state)
+  const voiceAgentRunning =
+    mode === 'voice_agent' &&
+    ['connecting', 'listening', 'processing', 'speaking', 'ready', 'deactivating'].includes(state)
+  const HeaderIcon = chrome.icon
 
   return (
-    <div className="dark h-screen w-screen select-none bg-background font-sans text-foreground">
-      <div
-        className="flex items-center justify-between border-b border-outline-variant/20 bg-card px-4 py-2.5"
-        style={{ ['--wails-draggable' as string]: 'drag' }}
-      >
-        <div className="flex items-center gap-2.5">
-          <div className={`h-2.5 w-2.5 shrink-0 rounded-full ${meta.color}`} />
-          <span className="text-xs font-medium text-muted-foreground">{meta.label}</span>
-        </div>
-        <div className="flex items-center gap-1">
-          {showStopButton ? (
-            <button
-              type="button"
-              onClick={stopVoiceAgent}
-              className="rounded p-1 text-destructive transition-colors hover:bg-destructive/15"
-              title="Stop voice agent"
-            >
-              <span className="material-symbols-outlined text-base">stop_circle</span>
-            </button>
+    <DesktopWindowFrame
+      appLabel={chrome.appLabel}
+      title={chrome.title}
+      subtitle={chrome.subtitle}
+      icon={<HeaderIcon className="h-5 w-5" />}
+      theme={theme}
+      onToggleTheme={toggleTheme}
+      allowMaximise={false}
+      onClose={closePrompter}
+      contentClassName="bg-[color:var(--sk-surface-1)]/92"
+      actions={(
+        <>
+          <div className="hidden items-center gap-2 rounded-full border border-[color:var(--sk-panel-border)] bg-[color:var(--sk-surface-2)] px-3 py-2 md:flex">
+            <div className={`h-2.5 w-2.5 shrink-0 rounded-full ${meta.color}`} />
+            <span className="text-xs font-medium text-[color:var(--sk-text-muted)]">{statusLabel}</span>
+          </div>
+          {mode === 'voice_agent' ? (
+            voiceAgentRunning ? (
+              <button
+                type="button"
+                onClick={stopVoiceAgent}
+                style={noDragRegionStyle}
+                aria-label="Stop voice agent"
+                className="inline-flex items-center gap-2 rounded-full border border-red-400/18 bg-red-500/10 px-3 py-2 text-xs font-medium text-red-100 transition-colors hover:bg-red-500/16"
+                title="Stop voice agent"
+              >
+                <Square className="h-3.5 w-3.5 fill-current" />
+                Stop
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={startVoiceAgent}
+                style={noDragRegionStyle}
+                aria-label="Start voice agent"
+                className="inline-flex items-center gap-2 rounded-full border border-emerald-400/18 bg-emerald-500/10 px-3 py-2 text-xs font-medium text-emerald-100 transition-colors hover:bg-emerald-500/16"
+                title="Start voice agent"
+              >
+                <Play className="h-3.5 w-3.5 fill-current" />
+                Start
+              </button>
+            )
           ) : null}
           <button
             type="button"
             onClick={() => setTranscriptHidden((current) => !current)}
-            className="rounded p-1 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+            style={noDragRegionStyle}
+            className="sk-secondary-button inline-flex items-center gap-2 rounded-full px-3 py-2 text-xs font-medium transition-colors hover:bg-[color:var(--sk-surface-3)]"
             title={transcriptHidden ? 'Show transcript' : 'Hide transcript'}
+            aria-label={transcriptHidden ? 'Show transcript' : 'Hide transcript'}
           >
-            <span className="material-symbols-outlined text-base">
-              {transcriptHidden ? 'expand_more' : 'expand_less'}
-            </span>
+            {transcriptHidden ? <ChevronDown className="h-4 w-4" /> : <ChevronUp className="h-4 w-4" />}
+            {transcriptHidden ? 'Show transcript' : 'Hide transcript'}
           </button>
-        </div>
-      </div>
-
+        </>
+      )}
+    >
       {transcriptHidden ? (
-        <div className="flex h-[calc(100vh-50px)] items-center justify-center">
-          <p className="text-xs text-muted-foreground/50">Transcript hidden</p>
+        <div className="flex h-full items-center justify-center">
+          <p className="text-xs text-[color:var(--sk-text-muted)]/70">Transcript hidden</p>
+        </div>
+      ) : mode === 'voice_agent' ? (
+        <div className="flex h-full flex-col gap-4 overflow-y-auto px-4 py-4">
+          <ModeSurfaceHeader
+            mode={mode}
+            statusLabel={statusLabel}
+            detail={voiceAgentDetailForState(state, liveNotice)}
+          />
+
+          <SpeechKitAuraOrb
+            state={resolveVoiceAgentOrbState(state)}
+            userLevel={activityLevels.user}
+            assistantLevel={activityLevels.assistant}
+            className="mx-auto w-full max-w-[440px]"
+          />
+
+          <LiveTurnSlot
+            role="user"
+            turn={liveTurns.user}
+            state={state}
+            level={activityLevels.user}
+            compact
+          />
+          <LiveTurnSlot
+            role="assistant"
+            turn={liveTurns.assistant}
+            state={state}
+            level={activityLevels.assistant}
+            compact
+          />
         </div>
       ) : (
-        <div
-          ref={scrollRef}
+        <AssistOutputView
+          chrome={chrome}
+          messages={messages}
+          scrollRef={scrollRef}
           onScroll={onScroll}
-          className="flex h-[calc(100vh-50px)] flex-col gap-3 overflow-y-auto px-4 py-3"
-        >
-          {messages.length === 0 ? (
-            <div className="flex flex-1 items-center justify-center">
-              <p className="text-sm italic text-muted-foreground/50">Waiting for conversation...</p>
-            </div>
-          ) : null}
-
-          {messages.map((message) => (
-            <PrompterBubble key={message.id} message={message} />
-          ))}
-        </div>
+          icon={HeaderIcon}
+        />
       )}
+    </DesktopWindowFrame>
+  )
+}
+
+function ModeSurfaceHeader({
+  mode,
+  statusLabel,
+  detail,
+}: {
+  mode: PrompterMode
+  statusLabel: string
+  detail: string
+}) {
+  const chrome = modeChrome[mode]
+
+  return (
+    <div className="flex items-end justify-between gap-3 border-b border-[color:var(--sk-panel-border)] pb-3">
+      <div className="min-w-0">
+        <p className="text-[11px] font-semibold uppercase tracking-[0.24em] text-[color:var(--sk-text-muted)]/72">
+          {chrome.title}
+        </p>
+        <p className="mt-1 text-sm text-[color:var(--sk-text-muted)]/84">
+          {detail}
+        </p>
+      </div>
+      <div className="shrink-0 rounded-full border border-[color:var(--sk-panel-border)] bg-[color:var(--sk-surface-2)] px-3 py-1.5 text-[11px] font-medium text-[color:var(--sk-text-muted)]/84">
+        {statusLabel}
+      </div>
     </div>
   )
 }
 
-function PrompterBubble({ message }: { message: PrompterMessage }) {
+function AssistOutputView({
+  chrome,
+  messages,
+  scrollRef,
+  onScroll,
+  icon: HeaderIcon,
+}: {
+  chrome: (typeof modeChrome)['assist']
+  messages: PrompterMessage[]
+  scrollRef: RefObject<HTMLDivElement | null>
+  onScroll: () => void
+  icon: typeof Bot
+}) {
+  return (
+    <div
+      ref={scrollRef}
+      onScroll={onScroll}
+      className="flex h-full flex-col gap-3 overflow-y-auto px-4 py-4"
+    >
+      <ModeSurfaceHeader
+        mode="assist"
+        statusLabel={chrome.subtitle}
+        detail="One-shot utilities, code words, and output-ready text."
+      />
+
+      {messages.length === 0 ? (
+        <div className="flex flex-1 flex-col items-center justify-center gap-3 text-center">
+          <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-[color:var(--sk-accent-soft)] text-[color:var(--sk-accent)]">
+            <HeaderIcon className="h-6 w-6" />
+          </div>
+          <p className="text-sm italic text-[color:var(--sk-text-muted)]/80">{chrome.emptyText}</p>
+        </div>
+      ) : null}
+
+      {messages.map((message) => (
+        <PrompterBubble key={message.id} message={message} mode="assist" />
+      ))}
+    </div>
+  )
+}
+
+function LiveTurnSlot({
+  role,
+  turn,
+  state,
+  level,
+  compact = false,
+}: {
+  role: LiveSpeakerRole
+  turn: LiveTurn | null
+  state: PrompterState
+  level: number
+  compact?: boolean
+}) {
+  const meta = liveSlotMeta[role]
+  const active = liveSlotIsActive(role, state, level)
+  const visualizerState = liveSlotVisualizerState(role, state, active)
+  const statusLabel = liveSlotStatusLabel(role, state, active)
+
+  return (
+    <section
+      data-testid={`${role}-live-slot`}
+      data-active={active ? 'true' : 'false'}
+      className={`rounded-[28px] border px-4 py-4 transition-colors sm:px-5 ${
+        active
+          ? 'border-[color:var(--sk-border-strong)] bg-[color:var(--sk-surface-2)] shadow-[0_0_0_1px_rgba(255,255,255,0.03)]'
+          : `border-[color:var(--sk-panel-border)] bg-[color:var(--sk-surface-1)]/70 ${meta.subtleClassName}`
+      }`}
+    >
+      <div className="flex items-start gap-4">
+        <div className={`flex shrink-0 items-center justify-center rounded-[22px] border border-[color:var(--sk-panel-border)] bg-[color:var(--sk-surface-1)] ${compact ? 'h-12 w-12' : 'h-16 w-16'}`}>
+          <AgentAudioVisualizerRadial
+            size="sm"
+            state={visualizerState}
+            level={level}
+            color={meta.color}
+            className={active ? 'opacity-100' : 'opacity-70'}
+          />
+        </div>
+
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className={`text-[11px] font-semibold uppercase tracking-[0.22em] ${meta.accentClassName}`}>
+              {meta.label}
+            </span>
+            <span className="rounded-full border border-[color:var(--sk-panel-border)] bg-[color:var(--sk-surface-1)] px-2.5 py-1 text-[11px] font-medium text-[color:var(--sk-text-muted)]">
+              {statusLabel}
+            </span>
+          </div>
+
+          <p
+            className={`mt-3 whitespace-pre-wrap break-words text-sm leading-relaxed sm:text-[15px] ${
+              turn?.text ? 'text-[color:var(--sk-text)]' : 'italic text-[color:var(--sk-text-muted)]/78'
+            }`}
+          >
+            {turn?.text || meta.idleText}
+            {turn && !turn.done ? (
+              <span className="ml-1 inline-block h-4 w-1.5 animate-pulse rounded-sm bg-[color:var(--sk-accent)]/60 align-text-bottom" />
+            ) : null}
+          </p>
+        </div>
+      </div>
+    </section>
+  )
+}
+
+function voiceAgentDetailForState(state: PrompterState, liveNotice: string | null) {
+  if (liveNotice) {
+    return liveNotice
+  }
+
+  switch (state) {
+    case 'connecting':
+      return 'Bringing the realtime session online.'
+    case 'listening':
+      return 'Listening for the next idea.'
+    case 'processing':
+      return 'Thinking in realtime.'
+    case 'speaking':
+      return 'Responding live.'
+    case 'ready':
+      return 'The conversation is ready for the next turn.'
+    case 'deactivating':
+      return 'Shutting down the live dialog.'
+    case 'error':
+      return 'The voice session needs attention.'
+    case 'inactive':
+    default:
+      return 'Waiting for a voice session to begin.'
+  }
+}
+
+function resolveVoiceAgentOrbState(state: PrompterState) {
+  switch (state) {
+    case 'connecting':
+      return 'connecting'
+    case 'listening':
+      return 'listening'
+    case 'processing':
+      return 'processing'
+    case 'speaking':
+      return 'speaking'
+    case 'ready':
+    case 'deactivating':
+      return 'settling'
+    case 'error':
+      return 'error'
+    case 'inactive':
+    default:
+      return 'inactive'
+  }
+}
+
+function PrompterBubble({
+  message,
+  mode,
+}: {
+  message: PrompterMessage
+  mode: PrompterMode
+}) {
   if (message.role === 'system') {
     return (
       <div className="flex justify-center">
@@ -195,31 +652,54 @@ function PrompterBubble({ message }: { message: PrompterMessage }) {
   }
 
   const isUser = message.role === 'user'
+  const chrome = modeChrome[mode]
+  const RoleIcon = isUser ? chrome.userIcon : chrome.assistantIcon
 
   return (
     <div className={`flex ${isUser ? 'justify-start' : 'justify-end'}`}>
       <div
-        className={`max-w-[85%] rounded-2xl px-3.5 py-2 ${
-          isUser ? 'bg-secondary text-secondary-foreground' : 'bg-primary/20 text-foreground'
+        className={`w-fit max-w-[92%] rounded-[24px] px-4 py-2.5 ${
+          isUser ? 'bg-[color:var(--sk-surface-2)] text-[color:var(--sk-text)]' : 'bg-[color:var(--sk-accent-soft)] text-[color:var(--sk-text)]'
         }`}
       >
         <div className="flex items-start gap-2">
-          <span
-            className={`material-symbols-outlined mt-0.5 shrink-0 text-sm ${
-              isUser ? 'text-muted-foreground' : 'text-primary'
+          <RoleIcon
+            className={`mt-0.5 h-4 w-4 shrink-0 ${
+              isUser ? 'text-[color:var(--sk-text-muted)]' : 'text-[color:var(--sk-accent)]'
             }`}
-            style={{ fontVariationSettings: "'FILL' 1" }}
-          >
-            {isUser ? 'mic' : 'auto_awesome'}
-          </span>
-          <p className="break-words text-sm leading-relaxed">
+          />
+          <p className="whitespace-pre-wrap break-words text-sm leading-relaxed">
             {message.text}
             {!message.done ? (
-              <span className="ml-0.5 inline-block h-4 w-1.5 animate-pulse rounded-sm bg-primary/60 align-text-bottom" />
+              <span className="ml-0.5 inline-block h-4 w-1.5 animate-pulse rounded-sm bg-[color:var(--sk-accent)]/60 align-text-bottom" />
             ) : null}
           </p>
         </div>
       </div>
     </div>
   )
+}
+
+function mergeStreamingText(currentText: string, nextText: string) {
+  if (!currentText) {
+    return nextText
+  }
+  if (!nextText || nextText === currentText) {
+    return currentText
+  }
+  if (nextText.includes(currentText)) {
+    return nextText
+  }
+  if (currentText.includes(nextText)) {
+    return currentText
+  }
+
+  const maxOverlap = Math.min(currentText.length, nextText.length)
+  for (let overlap = maxOverlap; overlap > 0; overlap -= 1) {
+    if (currentText.slice(-overlap) === nextText.slice(0, overlap)) {
+      return currentText + nextText.slice(overlap)
+    }
+  }
+
+  return currentText + nextText
 }

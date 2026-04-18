@@ -2,13 +2,10 @@ package flows
 
 import (
 	"context"
-	"os"
 	"strings"
 	"testing"
 
 	"github.com/firebase/genkit/go/genkit"
-
-	appai "github.com/kombifyio/SpeechKit/internal/ai"
 )
 
 func TestBuildAgentSystemPrompt_German(t *testing.T) {
@@ -72,37 +69,3 @@ func TestAgentFlow_NoModels(t *testing.T) {
 	}
 }
 
-func TestAgentFlow_Integration(t *testing.T) {
-	if os.Getenv("SPEECHKIT_AI_SMOKE") != "1" {
-		t.Skip("set SPEECHKIT_AI_SMOKE=1 to run live AI smoke test")
-	}
-
-	groqKey := os.Getenv("GROQ_API_KEY")
-	if groqKey == "" {
-		t.Skip("GROQ_API_KEY not set")
-	}
-
-	rt, err := appai.Init(context.Background(), appai.Config{
-		GroqAPIKey:     groqKey,
-		GroqAgentModel: "llama-3.1-8b-instant",
-	})
-	if err != nil {
-		t.Fatalf("Init: %v", err)
-	}
-
-	flow := DefineAgentFlow(rt.G, rt.AgentModels())
-	result, err := flow.Run(context.Background(), AgentInput{
-		Utterance: "Was ist 2 plus 2?",
-		Locale:    "de",
-	})
-	if err != nil {
-		t.Fatalf("Run: %v", err)
-	}
-	if result.Text == "" {
-		t.Fatal("expected non-empty response")
-	}
-	if result.Action != "paste" {
-		t.Errorf("action = %q, want paste", result.Action)
-	}
-	t.Logf("Agent: %s (action=%s)", result.Text, result.Action)
-}

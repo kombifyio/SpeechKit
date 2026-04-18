@@ -79,6 +79,7 @@ func TestOpenAICompat_Transcribe_Success(t *testing.T) {
 	defer server.Close()
 
 	p := NewOpenAICompatibleProvider("test", server.URL, "test-key", "default-model")
+	p.Validation = testValidation
 	result, err := p.Transcribe(context.Background(), []byte("wav-data"), TranscribeOpts{Language: "de"})
 	if err != nil {
 		t.Fatalf("Transcribe: %v", err)
@@ -112,6 +113,7 @@ func TestOpenAICompat_Transcribe_ModelOverride(t *testing.T) {
 	defer server.Close()
 
 	p := NewOpenAICompatibleProvider("test", server.URL, "key", "default-model")
+	p.Validation = testValidation
 	result, err := p.Transcribe(context.Background(), []byte("wav"), TranscribeOpts{Model: "custom-model"})
 	if err != nil {
 		t.Fatalf("Transcribe: %v", err)
@@ -150,6 +152,7 @@ func TestOpenAICompat_Transcribe_LanguageField(t *testing.T) {
 			defer server.Close()
 
 			p := NewOpenAICompatibleProvider("test", server.URL, "key", "model")
+			p.Validation = testValidation
 			_, err := p.Transcribe(context.Background(), []byte("wav"), TranscribeOpts{Language: tt.lang})
 			if err != nil {
 				t.Fatalf("Transcribe: %v", err)
@@ -171,6 +174,7 @@ func TestOpenAICompat_Transcribe_DefaultLanguageInResult(t *testing.T) {
 	defer server.Close()
 
 	p := NewOpenAICompatibleProvider("test", server.URL, "key", "model")
+	p.Validation = testValidation
 	result, err := p.Transcribe(context.Background(), []byte("wav"), TranscribeOpts{})
 	if err != nil {
 		t.Fatalf("Transcribe: %v", err)
@@ -188,6 +192,7 @@ func TestOpenAICompat_Transcribe_ServerError(t *testing.T) {
 	defer server.Close()
 
 	p := NewOpenAICompatibleProvider("myapi", server.URL, "key", "model")
+	p.Validation = testValidation
 	_, err := p.Transcribe(context.Background(), []byte("wav"), TranscribeOpts{})
 	if err == nil {
 		t.Fatal("expected error")
@@ -207,6 +212,7 @@ func TestOpenAICompat_Transcribe_InvalidJSON(t *testing.T) {
 	defer server.Close()
 
 	p := NewOpenAICompatibleProvider("test", server.URL, "key", "model")
+	p.Validation = testValidation
 	_, err := p.Transcribe(context.Background(), []byte("wav"), TranscribeOpts{})
 	if err == nil {
 		t.Fatal("expected error for invalid JSON")
@@ -220,6 +226,7 @@ func TestOpenAICompat_Transcribe_ContextCancelled(t *testing.T) {
 	defer server.Close()
 
 	p := NewOpenAICompatibleProvider("test", server.URL, "key", "model")
+	p.Validation = testValidation
 	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
 	defer cancel()
 
@@ -241,6 +248,7 @@ func TestOpenAICompat_Health_HealthEndpoint(t *testing.T) {
 	defer server.Close()
 
 	p := NewOpenAICompatibleProvider("test", server.URL, "key", "model")
+	p.Validation = testValidation
 	if err := p.Health(context.Background()); err != nil {
 		t.Errorf("Health: %v", err)
 	}
@@ -262,6 +270,7 @@ func TestOpenAICompat_Health_FallbackToModels(t *testing.T) {
 	defer server.Close()
 
 	p := NewOpenAICompatibleProvider("test", server.URL, "key", "model")
+	p.Validation = testValidation
 	if err := p.Health(context.Background()); err != nil {
 		t.Errorf("Health: %v", err)
 	}
@@ -283,6 +292,7 @@ func TestOpenAICompat_Health_BothFail(t *testing.T) {
 	defer server.Close()
 
 	p := NewOpenAICompatibleProvider("myapi", server.URL, "key", "model")
+	p.Validation = testValidation
 	err := p.Health(context.Background())
 	if err == nil {
 		t.Fatal("expected error when both endpoints fail")
@@ -294,6 +304,7 @@ func TestOpenAICompat_Health_BothFail(t *testing.T) {
 
 func TestOpenAICompat_Health_Unreachable(t *testing.T) {
 	p := NewOpenAICompatibleProvider("test", "http://127.0.0.1:1", "key", "model")
+	p.Validation = testValidation
 	p.client.Timeout = 100 * time.Millisecond
 	err := p.Health(context.Background())
 	if err == nil {

@@ -42,7 +42,7 @@ func (s *fileStore) Load(name string) (string, bool, error) {
 	if err != nil {
 		return "", false, err
 	}
-	data, err := os.ReadFile(path)
+	data, err := os.ReadFile(path) //nolint:gosec // path is app-controlled secrets dir, not user input
 	if err != nil {
 		if os.IsNotExist(err) {
 			return "", false, nil
@@ -61,14 +61,14 @@ func (s *fileStore) Store(name, value string) error {
 	if err != nil {
 		return err
 	}
-	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return err
 	}
 	protected, err := s.protect([]byte(value))
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(path, protected, 0600)
+	return os.WriteFile(path, protected, 0o600)
 }
 
 func (s *fileStore) Delete(name string) error {
@@ -92,26 +92,26 @@ func protectWithDPAPI(data []byte) ([]byte, error) {
 	}
 
 	input := dataBlob{
-		cbData: uint32(len(data)),
+		cbData: uint32(len(data)), //nolint:gosec // G115: len fits in uint32 for in-memory secrets
 		pbData: &data[0],
 	}
 	var output dataBlob
 
 	result, _, err := procCryptProtectData.Call(
-		uintptr(unsafe.Pointer(&input)),
+		uintptr(unsafe.Pointer(&input)), //nolint:gosec // Windows API requires unsafe.Pointer
 		0,
 		0,
 		0,
 		0,
 		0,
-		uintptr(unsafe.Pointer(&output)),
+		uintptr(unsafe.Pointer(&output)), //nolint:gosec // Windows API requires unsafe.Pointer
 	)
 	if result == 0 {
 		return nil, err
 	}
-	defer procLocalFree.Call(uintptr(unsafe.Pointer(output.pbData)))
+	defer procLocalFree.Call(uintptr(unsafe.Pointer(output.pbData))) //nolint:gosec,errcheck // Windows API requires unsafe.Pointer; return value not meaningful
 
-	protected := unsafe.Slice(output.pbData, output.cbData)
+	protected := unsafe.Slice(output.pbData, output.cbData) //nolint:gosec // G103: DPAPI output buffer, audited
 	clone := make([]byte, len(protected))
 	copy(clone, protected)
 	return clone, nil
@@ -123,26 +123,26 @@ func unprotectWithDPAPI(data []byte) ([]byte, error) {
 	}
 
 	input := dataBlob{
-		cbData: uint32(len(data)),
+		cbData: uint32(len(data)), //nolint:gosec // G115: len fits in uint32 for in-memory secrets
 		pbData: &data[0],
 	}
 	var output dataBlob
 
 	result, _, err := procCryptUnprotectData.Call(
-		uintptr(unsafe.Pointer(&input)),
+		uintptr(unsafe.Pointer(&input)), //nolint:gosec // Windows API requires unsafe.Pointer
 		0,
 		0,
 		0,
 		0,
 		0,
-		uintptr(unsafe.Pointer(&output)),
+		uintptr(unsafe.Pointer(&output)), //nolint:gosec // Windows API requires unsafe.Pointer
 	)
 	if result == 0 {
 		return nil, err
 	}
-	defer procLocalFree.Call(uintptr(unsafe.Pointer(output.pbData)))
+	defer procLocalFree.Call(uintptr(unsafe.Pointer(output.pbData))) //nolint:gosec,errcheck // Windows API requires unsafe.Pointer; return value not meaningful
 
-	plain := unsafe.Slice(output.pbData, output.cbData)
+	plain := unsafe.Slice(output.pbData, output.cbData) //nolint:gosec // G103: DPAPI output buffer, audited
 	clone := make([]byte, len(plain))
 	copy(clone, plain)
 	return clone, nil

@@ -39,6 +39,15 @@ type Config struct {
 	OpenRouterUtilityModel string
 	OpenRouterAssistModel  string
 	OpenRouterAgentModel   string
+	OrderedAssistModels    []OrderedModelSelection
+	OrderedAgentModels     []OrderedModelSelection
+	UseOrderedAssistModels bool
+	UseOrderedAgentModels  bool
+}
+
+type OrderedModelSelection struct {
+	Provider string
+	Model    string
 }
 
 // ModelInfo describes a registered model for the UI.
@@ -134,8 +143,7 @@ func Init(ctx context.Context, cfg Config) (*Runtime, error) {
 		slog.Info("utility model registered", "provider", spec.provider, "model", spec.model)
 	}
 
-	// Resolve assist models from config.
-	assistSpecs := []struct {
+	resolveOrderedOrLegacyModels(rt, g, "assist", cfg.UseOrderedAssistModels, cfg.OrderedAssistModels, []struct {
 		provider string
 		model    string
 		enabled  bool
@@ -146,24 +154,11 @@ func Init(ctx context.Context, cfg Config) (*Runtime, error) {
 		{"huggingface", cfg.HFAssistModel, cfg.HuggingFaceToken != "" && cfg.HFAssistModel != ""},
 		{"ollama", cfg.OllamaAssistModel, cfg.OllamaBaseURL != "" && cfg.OllamaAssistModel != ""},
 		{"openrouter", cfg.OpenRouterAssistModel, cfg.OpenRouterAPIKey != "" && cfg.OpenRouterAssistModel != ""},
-	}
+	}, func(model ai.Model) {
+		rt.assistModels = append(rt.assistModels, model)
+	})
 
-	for _, spec := range assistSpecs {
-		if !spec.enabled {
-			continue
-		}
-		m := genkit.LookupModel(g, spec.provider+"/"+spec.model)
-		if m == nil {
-			slog.Warn("assist model not found", "provider", spec.provider, "model", spec.model)
-			continue
-		}
-		rt.assistModels = append(rt.assistModels, m)
-		registerModelInfo(rt, spec.provider, spec.model, m, "assist")
-		slog.Info("assist model registered", "provider", spec.provider, "model", spec.model)
-	}
-
-	// Resolve agent models from config.
-	agentSpecs := []struct {
+	resolveOrderedOrLegacyModels(rt, g, "agent", cfg.UseOrderedAgentModels, cfg.OrderedAgentModels, []struct {
 		provider string
 		model    string
 		enabled  bool
@@ -174,23 +169,57 @@ func Init(ctx context.Context, cfg Config) (*Runtime, error) {
 		{"huggingface", cfg.HFAgentModel, cfg.HuggingFaceToken != "" && cfg.HFAgentModel != ""},
 		{"ollama", cfg.OllamaAgentModel, cfg.OllamaBaseURL != "" && cfg.OllamaAgentModel != ""},
 		{"openrouter", cfg.OpenRouterAgentModel, cfg.OpenRouterAPIKey != "" && cfg.OpenRouterAgentModel != ""},
+	}, func(model ai.Model) {
+		rt.agentModels = append(rt.agentModels, model)
+	})
+
+	return rt, nil
+}
+
+func resolveOrderedOrLegacyModels(
+	rt *Runtime,
+	g *genkit.Genkit,
+	tier string,
+	useOrdered bool,
+	ordered []OrderedModelSelection,
+	legacy []struct {
+		provider string
+		model    string
+		enabled  bool
+	},
+	appendModel func(ai.Model),
+) {
+	if useOrdered {
+		for _, spec := range ordered {
+			registerResolvedModel(rt, g, spec.Provider, spec.Model, tier, appendModel)
+		}
+		return
 	}
 
-	for _, spec := range agentSpecs {
+	for _, spec := range legacy {
 		if !spec.enabled {
 			continue
 		}
-		m := genkit.LookupModel(g, spec.provider+"/"+spec.model)
-		if m == nil {
-			slog.Warn("agent model not found", "provider", spec.provider, "model", spec.model)
-			continue
-		}
-		rt.agentModels = append(rt.agentModels, m)
-		registerModelInfo(rt, spec.provider, spec.model, m, "agent")
-		slog.Info("agent model registered", "provider", spec.provider, "model", spec.model)
+		registerResolvedModel(rt, g, spec.provider, spec.model, tier, appendModel)
 	}
+}
 
-	return rt, nil
+func registerResolvedModel(
+	rt *Runtime,
+	g *genkit.Genkit,
+	provider string,
+	model string,
+	tier string,
+	appendModel func(ai.Model),
+) {
+	m := genkit.LookupModel(g, provider+"/"+model)
+	if m == nil {
+		slog.Warn(tier+" model not found", "provider", provider, "model", model)
+		return
+	}
+	appendModel(m)
+	registerModelInfo(rt, provider, model, m, tier)
+	slog.Info(tier+" model registered", "provider", provider, "model", model)
 }
 
 func registerModelInfo(rt *Runtime, provider, model string, m ai.Model, tier string) {

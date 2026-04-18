@@ -119,10 +119,10 @@ func restoreForegroundWindow(hwnd windows.Handle) {
 	attachInput(foregroundThread, targetThread, true)
 	defer attachInput(foregroundThread, targetThread, false)
 
-	procShowWindow.Call(uintptr(hwnd), uintptr(swRestore))
-	procBringWindowTop.Call(uintptr(hwnd))
-	procSetForeground.Call(uintptr(hwnd))
-	procSetFocus.Call(uintptr(hwnd))
+	procShowWindow.Call(uintptr(hwnd), uintptr(swRestore)) //nolint:errcheck // Windows API call, return value not meaningful
+	procBringWindowTop.Call(uintptr(hwnd))                 //nolint:errcheck // Windows API call, return value not meaningful
+	procSetForeground.Call(uintptr(hwnd))                  //nolint:errcheck // Windows API call, return value not meaningful
+	procSetFocus.Call(uintptr(hwnd))                       //nolint:errcheck // Windows API call, return value not meaningful
 }
 
 func windowThread(hwnd windows.Handle) uint32 {
@@ -130,7 +130,7 @@ func windowThread(hwnd windows.Handle) uint32 {
 		return 0
 	}
 	threadID, _, _ := procWindowThreadPID.Call(uintptr(hwnd), 0)
-	return uint32(threadID)
+	return uint32(threadID) //nolint:gosec // G115: Windows API thread ID fits uint32
 }
 
 func attachInput(fromThread, toThread uint32, attach bool) {
@@ -141,7 +141,7 @@ func attachInput(fromThread, toThread uint32, attach bool) {
 	if attach {
 		flag = 1
 	}
-	procAttachThread.Call(uintptr(fromThread), uintptr(toThread), flag)
+	procAttachThread.Call(uintptr(fromThread), uintptr(toThread), flag) //nolint:errcheck // Windows API call, return value not meaningful
 }
 
 func openClipboard() error {
@@ -153,7 +153,7 @@ func openClipboard() error {
 }
 
 func closeClipboard() {
-	procCloseClipboard.Call()
+	procCloseClipboard.Call() //nolint:errcheck // Windows API call, return value not meaningful
 }
 
 func getClipboardText() (string, bool) {
@@ -171,7 +171,7 @@ func getClipboardText() (string, bool) {
 	if ptr == 0 {
 		return "", false
 	}
-	defer procGlobalUnlock.Call(h)
+	defer procGlobalUnlock.Call(h) //nolint:errcheck // Windows API call, return value not meaningful
 
 	// Get string length via lstrlenW (avoids uintptr->unsafe.Pointer conversion)
 	length, _, _ := procLstrlenW.Call(ptr)
@@ -181,8 +181,8 @@ func getClipboardText() (string, bool) {
 
 	// Copy into Go-allocated buffer via RtlMoveMemory
 	buf := make([]uint16, length+1)
-	procRtlMoveMemory.Call(
-		uintptr(unsafe.Pointer(&buf[0])),
+	procRtlMoveMemory.Call( //nolint:errcheck // Windows API call, return value not meaningful
+		uintptr(unsafe.Pointer(&buf[0])), //nolint:gosec // Windows API requires unsafe.Pointer
 		ptr,
 		(length+1)*2,
 	)
@@ -195,7 +195,7 @@ func setClipboardText(text string) error {
 	}
 	defer closeClipboard()
 
-	procEmptyClipboard.Call()
+	procEmptyClipboard.Call() //nolint:errcheck // Windows API call, return value not meaningful
 
 	utf16, err := windows.UTF16FromString(text)
 	if err != nil {
@@ -210,22 +210,22 @@ func setClipboardText(text string) error {
 
 	ptr, _, err := procGlobalLock.Call(hMem)
 	if ptr == 0 {
-		procGlobalFree.Call(hMem)
+		procGlobalFree.Call(hMem) //nolint:errcheck // Windows API call, return value not meaningful
 		return fmt.Errorf("GlobalLock: %w", err)
 	}
 
 	// Copy UTF-16 data via RtlMoveMemory (avoids uintptr->unsafe.Pointer conversion)
-	procRtlMoveMemory.Call(
+	procRtlMoveMemory.Call( //nolint:errcheck // Windows API call, return value not meaningful
 		ptr,
-		uintptr(unsafe.Pointer(&utf16[0])),
+		uintptr(unsafe.Pointer(&utf16[0])), //nolint:gosec // Windows API requires unsafe.Pointer
 		size,
 	)
 
-	procGlobalUnlock.Call(hMem)
+	procGlobalUnlock.Call(hMem) //nolint:errcheck // Windows API call, return value not meaningful
 
 	r, _, err := procSetClipboardData.Call(cfUnicodeText, hMem)
 	if r == 0 {
-		procGlobalFree.Call(hMem)
+		procGlobalFree.Call(hMem) //nolint:errcheck // Windows API call, return value not meaningful
 		return fmt.Errorf("SetClipboardData: %w", err)
 	}
 
@@ -246,11 +246,11 @@ func simulateCtrlC() {
 }
 
 func simulateCtrlChord(vk uint8) {
-	procKeybdEvent.Call(vkControl, 0, 0, 0)
+	procKeybdEvent.Call(vkControl, 0, 0, 0)                   //nolint:errcheck // Windows API call, return value not meaningful
 	time.Sleep(2 * time.Millisecond)
-	procKeybdEvent.Call(uintptr(vk), 0, 0, 0)
+	procKeybdEvent.Call(uintptr(vk), 0, 0, 0)                 //nolint:errcheck // Windows API call, return value not meaningful
 	time.Sleep(2 * time.Millisecond)
-	procKeybdEvent.Call(uintptr(vk), 0, keyEventFKeyUp, 0)
+	procKeybdEvent.Call(uintptr(vk), 0, keyEventFKeyUp, 0)    //nolint:errcheck // Windows API call, return value not meaningful
 	time.Sleep(2 * time.Millisecond)
-	procKeybdEvent.Call(vkControl, 0, keyEventFKeyUp, 0)
+	procKeybdEvent.Call(vkControl, 0, keyEventFKeyUp, 0)       //nolint:errcheck // Windows API call, return value not meaningful
 }

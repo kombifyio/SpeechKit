@@ -35,10 +35,6 @@ func applyModelProfile(ctx context.Context, cfgPath string, cfg *config.Config, 
 }
 
 func applySTTProfile(ctx context.Context, cfgPath string, cfg *config.Config, state *appState, sttRouter *router.Router, profile models.Profile) error {
-	if ctx == nil {
-		ctx = context.Background()
-	}
-
 	targetRouter := sttRouter
 	if targetRouter == nil && state != nil {
 		targetRouter = state.sttRouter
@@ -46,6 +42,13 @@ func applySTTProfile(ctx context.Context, cfgPath string, cfg *config.Config, st
 
 	switch profile.ExecutionMode {
 	case models.ExecutionModeLocal:
+		modelPath := cfg.Local.ModelPath
+		if modelPath == "" {
+			modelPath = defaultLocalModelPath(executableDir(), os.Getenv("LOCALAPPDATA"), cfg.Local.Model)
+		}
+		if err := validateLocalProviderActivation(cfg, modelPath); err != nil {
+			return err
+		}
 		cfg.Local.Enabled = true
 		cfg.Routing.Strategy = "local-only"
 		syncConfiguredLocalProvider(ctx, cfg, state, targetRouter)
@@ -108,17 +111,13 @@ func applySTTProfile(ctx context.Context, cfgPath string, cfg *config.Config, st
 		state.mu.Lock()
 		state.activeProfiles = activeProfilesFromConfig(cfg, filteredModelCatalog())
 		state.mu.Unlock()
-		syncRuntimeProviders(state, targetRouter)
+		syncRuntimeProviders(ctx, state, targetRouter)
 	}
 	slog.Info("model profile activated", "name", profile.Name, "model", profile.ModelID)
 	return nil
 }
 
 func syncConfiguredLocalProvider(ctx context.Context, cfg *config.Config, state *appState, sttRouter *router.Router) {
-	if ctx == nil {
-		ctx = context.Background()
-	}
-
 	targetRouter := sttRouter
 	if targetRouter == nil && state != nil {
 		targetRouter = state.sttRouter
@@ -312,7 +311,7 @@ func applyRealtimeVoiceProfile(ctx context.Context, cfgPath string, cfg *config.
 	case models.ExecutionModeGoogle:
 		apiKey := config.ResolveSecret(cfg.Providers.Google.APIKeyEnv)
 		if apiKey == "" {
-			return errors.New("google api key not configured — add it on the model card in Settings")
+			return errors.New("google api key not configured â€” add it on the model card in Settings")
 		}
 		cfg.VoiceAgent.Enabled = true
 		cfg.VoiceAgent.Model = profile.ModelID

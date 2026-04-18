@@ -65,7 +65,7 @@ func initAppLogging() (string, func()) {
 	}
 
 	logDir := filepath.Join(filepath.Dir(exePath), "logs")
-	if err := os.MkdirAll(logDir, 0700); err != nil {
+	if err := os.MkdirAll(logDir, 0o700); err != nil {
 		slog.Warn("create log directory", "err", err)
 		return "", func() {}
 	}
@@ -73,7 +73,7 @@ func initAppLogging() (string, func()) {
 	logPath := filepath.Join(logDir, "speechkit.log")
 	rotateLogFile(logPath, logDir)
 
-	logFile, err := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0600)
+	logFile, err := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600) //nolint:gosec // path is application config dir, not user-controlled input
 	if err != nil {
 		slog.Warn("open log file", "err", err)
 		return logPath, func() {}
@@ -133,6 +133,6 @@ func pruneOldLogs(logDir string) {
 
 	sort.Strings(rotated)
 	for _, name := range rotated[:len(rotated)-maxLogFiles] {
-		os.Remove(filepath.Join(logDir, name))
+		_ = os.Remove(filepath.Join(logDir, name))
 	}
 }

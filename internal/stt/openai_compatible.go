@@ -9,34 +9,56 @@ import (
 	"mime/multipart"
 	"net/http"
 	"time"
+
+	"github.com/kombifyio/SpeechKit/internal/netsec"
 )
 
 const openAICompatMaxResponse = 1 << 20
 
 // OpenAICompatibleProvider implements STTProvider for any endpoint speaking
 // the OpenAI /v1/audio/transcriptions API (OpenAI, Groq, VPS whisper-server, etc.).
+//
+// BaseURL is user-supplied configuration. It is validated against Validation
+// on every request (Transcribe, Health). The default Validation is strict:
+// only public https:// endpoints are accepted. Self-hosted VPS and local
+// whisper-server require relaxing Validation â€” see NewVPSProvider.
 type OpenAICompatibleProvider struct {
-	name    string
-	BaseURL string
-	APIKey  string
-	Model   string
-	client  *http.Client
+	name       string
+	BaseURL    string
+	APIKey     string
+	Model      string
+	Validation netsec.ValidationOptions
+	client     *http.Client
 }
 
-// NewOpenAICompatibleProvider creates a provider for any OpenAI-compatible STT endpoint.
+// NewOpenAICompatibleProvider creates a provider for any OpenAI-compatible STT
+// endpoint. Default Validation is strict (public https only). Callers with a
+// non-public endpoint (loopback, RFC1918) must set Validation explicitly.
 func NewOpenAICompatibleProvider(name, baseURL, apiKey, model string) *OpenAICompatibleProvider {
 	return &OpenAICompatibleProvider{
 		name:    name,
 		BaseURL: baseURL,
 		APIKey:  apiKey,
 		Model:   model,
-		client:  &http.Client{Timeout: 30 * time.Second},
+		// Validation zero-value = strict: public https only, no loopback, no private IPs.
+		client: netsec.NewSafeHTTPClient(netsec.ClientOptions{Timeout: 30 * time.Second}),
 	}
 }
 
 // NewVPSProvider creates a provider for a self-hosted whisper-server.
+// Allows loopback, private IP ranges and plain http:// because self-hosted
+// deployments frequently run inside a VPN, on a home LAN, or on localhost.
 func NewVPSProvider(baseURL, apiKey string) *OpenAICompatibleProvider {
-	return NewOpenAICompatibleProvider("vps", baseURL, apiKey, "whisper-1")
+	p := NewOpenAICompatibleProvider("vps", baseURL, apiKey, "whisper-1")
+	p.Validation = netsec.ValidationOptions{
+		AllowLoopback: true,
+		AllowPrivate:  true,
+		AllowHTTP:     true,
+	}
+	// Rebuild the HTTP client with a longer timeout â€” self-hosted whisper
+	// may take longer to cold-start than managed cloud APIs.
+	p.client = netsec.NewSafeHTTPClient(netsec.ClientOptions{Timeout: 60 * time.Second})
+	return p
 }
 
 // NewOpenAISTTProvider creates a provider for the OpenAI Whisper API.
@@ -51,7 +73,10 @@ func NewGroqSTTProvider(apiKey string) *OpenAICompatibleProvider {
 
 // Transcribe sends audio to the OpenAI-compatible /v1/audio/transcriptions endpoint.
 func (p *OpenAICompatibleProvider) Transcribe(ctx context.Context, audio []byte, opts TranscribeOpts) (*Result, error) {
-	endpoint := fmt.Sprintf("%s/v1/audio/transcriptions", p.BaseURL)
+	endpoint, err := netsec.BuildEndpoint(p.BaseURL, "v1/audio/transcriptions", p.Validation)
+	if err != nil {
+		return nil, fmt.Errorf("%s endpoint: %w", p.name, err)
+	}
 
 	body := &bytes.Buffer{}
 	writer := multipart.NewWriter(body)
@@ -98,7 +123,7 @@ func (p *OpenAICompatibleProvider) Transcribe(ctx context.Context, audio []byte,
 	if err != nil {
 		return nil, fmt.Errorf("%s request: %w", p.name, err)
 	}
-	defer resp.Body.Close()
+	defer resp.Body.Close() //nolint:errcheck // response body close error is not actionable
 	duration := time.Since(start)
 
 	respBody, err := io.ReadAll(io.LimitReader(resp.Body, openAICompatMaxResponse))
@@ -139,9 +164,12 @@ func (p *OpenAICompatibleProvider) Name() string {
 // Health checks provider reachability. Tries GET /health first (whisper-server),
 // then falls back to GET /v1/models (OpenAI, Groq).
 func (p *OpenAICompatibleProvider) Health(ctx context.Context) error {
-	healthURL := fmt.Sprintf("%s/health", p.BaseURL)
+	healthURL, err := netsec.BuildEndpoint(p.BaseURL, "health", p.Validation)
+	if err != nil {
+		return fmt.Errorf("%s endpoint: %w", p.name, err)
+	}
 
-	req, err := http.NewRequestWithContext(ctx, "GET", healthURL, nil)
+	req, err := http.NewRequestWithContext(ctx, "GET", healthURL, http.NoBody)
 	if err != nil {
 		return err
 	}
@@ -151,16 +179,19 @@ func (p *OpenAICompatibleProvider) Health(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("%s health: %w", p.name, err)
 	}
-	resp.Body.Close()
+	_ = resp.Body.Close()
 
 	if resp.StatusCode == http.StatusOK {
 		return nil
 	}
 
 	// Fallback: try /v1/models (OpenAI, Groq don't have /health).
-	modelsURL := fmt.Sprintf("%s/v1/models", p.BaseURL)
+	modelsURL, err := netsec.BuildEndpoint(p.BaseURL, "v1/models", p.Validation)
+	if err != nil {
+		return fmt.Errorf("%s endpoint: %w", p.name, err)
+	}
 
-	req, err = http.NewRequestWithContext(ctx, "GET", modelsURL, nil)
+	req, err = http.NewRequestWithContext(ctx, "GET", modelsURL, http.NoBody)
 	if err != nil {
 		return err
 	}
@@ -170,7 +201,7 @@ func (p *OpenAICompatibleProvider) Health(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("%s health: %w", p.name, err)
 	}
-	resp.Body.Close()
+	_ = resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("%s health: status %d", p.name, resp.StatusCode)

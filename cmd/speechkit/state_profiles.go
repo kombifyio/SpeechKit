@@ -26,11 +26,18 @@ func activeProfilesFromConfig(cfg *config.Config, catalog models.Catalog) map[st
 		return defaultActiveProfiles(catalog)
 	}
 
+	for _, mode := range []string{modeDictate, modeAssist, modeVoiceAgent} {
+		if profile, ok := effectiveSelectedProfile(cfg, catalog, mode); ok {
+			profiles[string(modalityForMode(mode))] = profile.ID
+			continue
+		}
+		if profile, ok := activeProfileForModality(cfg, catalog, modalityForMode(mode)); ok {
+			profiles[string(modalityForMode(mode))] = profile.ID
+		}
+	}
+
 	for _, modality := range []models.Modality{
-		models.ModalitySTT,
 		models.ModalityUtility,
-		models.ModalityAssist,
-		models.ModalityRealtimeVoice,
 	} {
 		if profile, ok := activeProfileForModality(cfg, catalog, modality); ok {
 			profiles[string(modality)] = profile.ID

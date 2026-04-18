@@ -113,7 +113,10 @@ func (s desktopQuickNoteService) cleanupEmptyQuickCapture(ctx context.Context, n
 	}
 
 	note, err := s.feedbackStore.GetQuickNote(ctx, noteID)
-	if err != nil || note == nil {
+	if err != nil {
+		return err
+	}
+	if note == nil {
 		return nil
 	}
 	if note.Text != "" || note.AudioPath != "" || note.DurationMs > 0 {
@@ -143,15 +146,7 @@ func (h wailsQuickNoteHost) OpenEditor(noteID int64) error {
 	}
 
 	application.InvokeSync(func() {
-		noteWin := wApp.Window.NewWithOptions(application.WebviewWindowOptions{
-			Title:  "Quick Note",
-			Width:  440,
-			Height: 340,
-			URL:    "/quicknote.html" + idParam,
-			Windows: application.WindowsWindow{
-				Theme: application.Dark,
-			},
-		})
+		noteWin := wApp.Window.NewWithOptions(newQuickNoteWindowOptions("/quicknote.html" + idParam))
 		noteWin.Focus()
 	})
 	return nil
@@ -169,18 +164,7 @@ func (h wailsQuickNoteHost) OpenCapture(noteID int64) error {
 	}
 
 	application.InvokeSync(func() {
-		win := wApp.Window.NewWithOptions(application.WebviewWindowOptions{
-			Title:            "",
-			Width:            340,
-			Height:           200,
-			URL:              fmt.Sprintf("/quickcapture.html?noteId=%d", noteID),
-			Frameless:        true,
-			BackgroundType:   application.BackgroundTypeSolid,
-			BackgroundColour: application.NewRGBA(11, 15, 20, 255),
-			Windows: application.WindowsWindow{
-				Theme: application.Dark,
-			},
-		})
+		win := wApp.Window.NewWithOptions(newQuickCaptureWindowOptions(fmt.Sprintf("/quickcapture.html?noteId=%d", noteID)))
 		win.Focus()
 		h.state.mu.Lock()
 		h.state.captureWin = win

@@ -20,7 +20,6 @@ type StreamPlayer struct {
 	active bool
 	cancel context.CancelFunc
 	doneCh chan struct{}
-	onDone func()
 }
 
 // NewStreamPlayer creates a StreamPlayer that uses the shared oto context.

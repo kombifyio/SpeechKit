@@ -11,33 +11,49 @@ import (
 
 	"github.com/firebase/genkit/go/ai"
 	"github.com/firebase/genkit/go/genkit"
+
+	"github.com/kombifyio/SpeechKit/internal/netsec"
 )
 
 const (
+	openAIBaseURL     = "https://api.openai.com/v1"
 	groqBaseURL       = "https://api.groq.com/openai/v1"
 	hfBaseURL         = "https://router.huggingface.co/hf-inference/v1"
 	openRouterBaseURL = "https://openrouter.ai/api/v1"
+	chatCompletions   = "chat/completions"
 	maxRespBody       = 1 << 20 // 1 MB
 )
 
+// AICallValidation controls URL validation for OpenAI-compatible LLM calls.
+// Zero value = strict (public https only). Tests relax it to allow loopback.
+var AICallValidation = netsec.ValidationOptions{}
+
+// newAIClient builds a hardened HTTP client for LLM calls (TLS 1.2+,
+// redacting transport, long-running timeout).
+func newAIClient() *http.Client {
+	return netsec.NewSafeHTTPClient(netsec.ClientOptions{Timeout: 60 * time.Second})
+}
+
 // registerOpenAIModels registers OpenAI models as custom Genkit models.
 func registerOpenAIModels(g *genkit.Genkit, apiKey string) {
-	client := &http.Client{Timeout: 60 * time.Second}
+	client := newAIClient()
 	models := []string{
+		"gpt-5.4-mini-2026-03-17",
+		"gpt-5.4-2026-03-05",
 		"gpt-4o-mini",
 		"gpt-4o",
 		"gpt-4-turbo",
 	}
 
 	for _, name := range models {
-		registerOpenAICompatibleModel(g, "openai", name, "https://api.openai.com/v1", apiKey, client, true)
+		registerOpenAICompatibleModel(g, "openai", name, openAIBaseURL, apiKey, client, true)
 	}
 }
 
 // registerGroqModels registers Groq models as custom Genkit models.
 // Groq uses an OpenAI-compatible API.
 func registerGroqModels(g *genkit.Genkit, apiKey string) {
-	client := &http.Client{Timeout: 60 * time.Second}
+	client := newAIClient()
 	models := []string{
 		"llama-3.1-8b-instant",
 		"llama-3.3-70b-versatile",
@@ -54,8 +70,10 @@ func registerGroqModels(g *genkit.Genkit, apiKey string) {
 // registerHFModels registers HuggingFace Inference API models as custom Genkit models.
 // HF uses an OpenAI-compatible chat completions endpoint.
 func registerHFModels(g *genkit.Genkit, token string) {
-	client := &http.Client{Timeout: 60 * time.Second}
+	client := newAIClient()
 	models := []string{
+		"Qwen/Qwen3.5-9B",
+		"Qwen/Qwen3.5-27B",
 		"Qwen/Qwen2.5-7B-Instruct",
 		"Qwen/Qwen2.5-32B-Instruct",
 		"meta-llama/Llama-3.1-8B-Instruct",
@@ -69,7 +87,7 @@ func registerHFModels(g *genkit.Genkit, token string) {
 // registerOpenRouterModels registers OpenRouter models as custom Genkit models.
 // OpenRouter uses an OpenAI-compatible API with a different base URL.
 func registerOpenRouterModels(g *genkit.Genkit, apiKey string) {
-	client := &http.Client{Timeout: 60 * time.Second}
+	client := newAIClient()
 	models := []string{
 		"meta-llama/llama-3.1-8b-instruct",
 		"google/gemini-2.5-flash",
@@ -160,7 +178,10 @@ func callOpenAICompatible(ctx context.Context, client *http.Client, baseURL, aut
 		return nil, fmt.Errorf("marshal request: %w", err)
 	}
 
-	endpoint := baseURL + "/chat/completions"
+	endpoint, err := netsec.BuildEndpoint(baseURL, chatCompletions, AICallValidation)
+	if err != nil {
+		return nil, fmt.Errorf("%s endpoint: %w", model, err)
+	}
 	req, err := http.NewRequestWithContext(ctx, "POST", endpoint, bytes.NewReader(jsonBody))
 	if err != nil {
 		return nil, fmt.Errorf("create request: %w", err)
@@ -172,7 +193,7 @@ func callOpenAICompatible(ctx context.Context, client *http.Client, baseURL, aut
 	if err != nil {
 		return nil, fmt.Errorf("%s request: %w", model, err)
 	}
-	defer resp.Body.Close()
+	defer resp.Body.Close() //nolint:errcheck // response body close error is not actionable
 
 	body, err := io.ReadAll(io.LimitReader(resp.Body, maxRespBody))
 	if err != nil {

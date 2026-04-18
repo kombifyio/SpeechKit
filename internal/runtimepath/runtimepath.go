@@ -25,6 +25,9 @@ func IsPortable() bool {
 	if exeDir == "" {
 		return false
 	}
+	if looksLikeDevWorkspace(exeDir) {
+		return false
+	}
 	if pathExists(filepath.Join(exeDir, "uninstall.exe")) {
 		return false
 	}
@@ -32,7 +35,6 @@ func IsPortable() bool {
 		"config.toml",
 		"config.default.toml",
 		"whisper-server.exe",
-		"SpeechKit.exe",
 	}
 	for _, marker := range markers {
 		if pathExists(filepath.Join(exeDir, marker)) {
@@ -67,6 +69,16 @@ func LocalDataDir() string {
 	return filepath.Join(localAppData, "SpeechKit")
 }
 
+func ConfigFilePath() string {
+	if IsPortable() {
+		exeDir := ExecutableDir()
+		if exeDir != "" {
+			return filepath.Join(exeDir, "config.toml")
+		}
+	}
+	return filepath.Join(DataDir(), "config.toml")
+}
+
 func SecretsDir() string {
 	if IsPortable() {
 		return filepath.Join(DataDir(), "secrets")
@@ -84,4 +96,12 @@ func pathExists(path string) bool {
 	}
 	_, err := statPath(path)
 	return err == nil
+}
+
+func looksLikeDevWorkspace(exeDir string) bool {
+	if strings.TrimSpace(exeDir) == "" {
+		return false
+	}
+	return pathExists(filepath.Join(exeDir, "go.mod")) &&
+		pathExists(filepath.Join(exeDir, "frontend", "app", "package.json"))
 }

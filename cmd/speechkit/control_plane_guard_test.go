@@ -25,7 +25,7 @@ func newControlPlaneGuardTestHandler(t *testing.T) http.Handler {
 
 func TestControlPlaneGuardRejectsCrossSiteMutatingRequests(t *testing.T) {
 	handler := newControlPlaneGuardTestHandler(t)
-	req := httptest.NewRequest(http.MethodPost, "/auth/logout", nil)
+	req := httptest.NewRequest(http.MethodPost, "/auth/logout", http.NoBody)
 	req.Header.Set("Sec-Fetch-Site", "cross-site")
 	rec := httptest.NewRecorder()
 
@@ -38,7 +38,7 @@ func TestControlPlaneGuardRejectsCrossSiteMutatingRequests(t *testing.T) {
 
 func TestControlPlaneGuardRejectsUnknownOriginOnMutatingRequests(t *testing.T) {
 	handler := newControlPlaneGuardTestHandler(t)
-	req := httptest.NewRequest(http.MethodPost, "/auth/logout", nil)
+	req := httptest.NewRequest(http.MethodPost, "/auth/logout", http.NoBody)
 	req.Header.Set("Origin", "https://evil.example")
 	rec := httptest.NewRecorder()
 
@@ -51,7 +51,7 @@ func TestControlPlaneGuardRejectsUnknownOriginOnMutatingRequests(t *testing.T) {
 
 func TestControlPlaneGuardAllowsLocalhostOriginOnMutatingRequests(t *testing.T) {
 	handler := newControlPlaneGuardTestHandler(t)
-	req := httptest.NewRequest(http.MethodPost, "/auth/logout", nil)
+	req := httptest.NewRequest(http.MethodPost, "/auth/logout", http.NoBody)
 	req.Header.Set("Origin", "http://localhost")
 	rec := httptest.NewRecorder()
 
@@ -64,7 +64,7 @@ func TestControlPlaneGuardAllowsLocalhostOriginOnMutatingRequests(t *testing.T) 
 
 func TestControlPlaneGuardDoesNotBlockGetRoutes(t *testing.T) {
 	handler := newControlPlaneGuardTestHandler(t)
-	req := httptest.NewRequest(http.MethodGet, "/app/version", nil)
+	req := httptest.NewRequest(http.MethodGet, "/app/version", http.NoBody)
 	req.Header.Set("Sec-Fetch-Site", "cross-site")
 	rec := httptest.NewRecorder()
 

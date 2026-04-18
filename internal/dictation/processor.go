@@ -121,7 +121,7 @@ func (p *Processor) feedFrame(frame []byte) ([]Segment, error) {
 	samples := make([]int16, vad.FrameSize)
 	for i := 0; i < vad.FrameSize; i++ {
 		offset := i * vad.BytesPerSample
-		samples[i] = int16(binary.LittleEndian.Uint16(frame[offset : offset+vad.BytesPerSample]))
+		samples[i] = int16(binary.LittleEndian.Uint16(frame[offset : offset+vad.BytesPerSample])) //nolint:gosec // Windows API integer conversion, value fits
 	}
 
 	prob, err := p.vad.ProcessFrame(samples)
@@ -205,29 +205,29 @@ func (p *Processor) buildSegment(pcm []byte, final bool) *Segment {
 }
 
 func (p *Processor) appendPreRoll(frame []byte) {
-	if max := maxBytes(p.cfg.Padding, p.cfg.Overlap); max > 0 {
+	if limit := maxBytes(p.cfg.Padding, p.cfg.Overlap); limit > 0 {
 		p.preRoll = append(p.preRoll, frame...)
-		p.preRoll = trimLeft(p.preRoll, max)
+		p.preRoll = trimLeft(p.preRoll, limit)
 	}
 }
 
 func (p *Processor) appendOverlapTail(pcm []byte) {
-	max := bytesForDuration(p.cfg.Overlap)
-	if max <= 0 {
+	limit := bytesForDuration(p.cfg.Overlap)
+	if limit <= 0 {
 		p.preRoll = nil
 		return
 	}
-	p.preRoll = append(p.preRoll[:0], tailBytes(pcm, max)...)
+	p.preRoll = append(p.preRoll[:0], tailBytes(pcm, limit)...)
 }
 
 func (p *Processor) appendTailSilence(frame []byte) {
-	max := bytesForDuration(p.cfg.Padding)
-	if max <= 0 {
+	limit := bytesForDuration(p.cfg.Padding)
+	if limit <= 0 {
 		p.tailSilence = nil
 		return
 	}
 	p.tailSilence = append(p.tailSilence, frame...)
-	p.tailSilence = trimLeft(p.tailSilence, max)
+	p.tailSilence = trimLeft(p.tailSilence, limit)
 }
 
 func (p *Processor) resetSession() {
@@ -258,16 +258,16 @@ func maxBytes(a, b time.Duration) int {
 	return bytesForDuration(b)
 }
 
-func trimLeft(buf []byte, max int) []byte {
-	if max <= 0 || len(buf) <= max {
+func trimLeft(buf []byte, limit int) []byte {
+	if limit <= 0 || len(buf) <= limit {
 		return append([]byte(nil), buf...)
 	}
-	return append([]byte(nil), buf[len(buf)-max:]...)
+	return append([]byte(nil), buf[len(buf)-limit:]...)
 }
 
-func tailBytes(buf []byte, max int) []byte {
-	if max <= 0 || len(buf) <= max {
+func tailBytes(buf []byte, limit int) []byte {
+	if limit <= 0 || len(buf) <= limit {
 		return append([]byte(nil), buf...)
 	}
-	return append([]byte(nil), buf[len(buf)-max:]...)
+	return append([]byte(nil), buf[len(buf)-limit:]...)
 }

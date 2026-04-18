@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -12,8 +13,14 @@ import (
 	"time"
 
 	"github.com/kombifyio/SpeechKit/internal/config"
+	"github.com/kombifyio/SpeechKit/internal/netsec"
 	"github.com/kombifyio/SpeechKit/internal/router"
 )
+
+func init() {
+	// Tests use httptest loopback servers; relax installer URL validation.
+	appInstallerURLValidation = netsec.ValidationOptions{AllowLoopback: true, AllowHTTP: true}
+}
 
 func TestAppVersionRouteHidesOlderLatestRelease(t *testing.T) {
 	cfg := defaultTestConfig()
@@ -34,7 +41,7 @@ func TestAppVersionRouteHidesOlderLatestRelease(t *testing.T) {
 	updateMu.Unlock()
 	t.Cleanup(resetCachedLatestReleaseForTest)
 
-	req := httptest.NewRequest(http.MethodGet, "/app/version", nil)
+	req := httptest.NewRequest(http.MethodGet, "/app/version", http.NoBody)
 	rec := httptest.NewRecorder()
 
 	handler.ServeHTTP(rec, req)
@@ -116,7 +123,7 @@ func TestAppUpdateRoutesDownloadInstallerAndOpenIt(t *testing.T) {
 	}
 	deadline := time.Now().Add(500 * time.Millisecond)
 	for time.Now().Before(deadline) {
-		jobsReq := httptest.NewRequest(http.MethodGet, "/app/update/jobs", nil)
+		jobsReq := httptest.NewRequest(http.MethodGet, "/app/update/jobs", http.NoBody)
 		jobsRec := httptest.NewRecorder()
 		handler.ServeHTTP(jobsRec, jobsReq)
 		if jobsRec.Code != http.StatusOK {
@@ -144,7 +151,7 @@ func TestAppUpdateRoutesDownloadInstallerAndOpenIt(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read downloaded installer: %v", err)
 	}
-	if string(data) != string(payload) {
+	if !bytes.Equal(data, payload) {
 		t.Fatalf("downloaded payload = %q, want %q", string(data), string(payload))
 	}
 

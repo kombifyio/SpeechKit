@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime/debug"
 	"strings"
 
 	"github.com/BurntSushi/toml"
@@ -19,23 +20,37 @@ var (
 	managedHFDefaultOptIn        string
 	managedDopplerDefaultProject string
 	managedDopplerDefaultConfig  string
+	readBuildInfo                = defaultReadBuildInfo
+)
+
+type buildInfo struct {
+	MainPath string
+}
+
+const (
+	HotkeyBehaviorPushToTalk = "push_to_talk"
+	HotkeyBehaviorToggle     = "toggle"
+
+	VoiceAgentCloseBehaviorContinue = "continue"
+	VoiceAgentCloseBehaviorNewChat  = "new_chat"
 )
 
 type Config struct {
-	General     GeneralConfig     `toml:"general"`
-	Audio       AudioConfig       `toml:"audio"`
-	UI          UIConfig          `toml:"ui"`
-	Vocabulary  VocabularyConfig  `toml:"vocabulary"`
-	Shortcuts   ShortcutsConfig   `toml:"shortcuts"`
-	Local       LocalConfig       `toml:"local"`
-	VPS         VPSConfig         `toml:"vps"`
-	HuggingFace HuggingFaceConfig `toml:"huggingface"`
-	Routing     RoutingConfig     `toml:"routing"`
-	Feedback    FeedbackConfig    `toml:"feedback"` // legacy compat; prefer Store
-	Store       StoreConfig       `toml:"store"`
-	Providers   ProvidersConfig   `toml:"providers"`
-	TTS         TTSConfig         `toml:"tts"`
-	VoiceAgent  VoiceAgentConfig  `toml:"voice_agent"`
+	General        GeneralConfig        `toml:"general"`
+	Audio          AudioConfig          `toml:"audio"`
+	UI             UIConfig             `toml:"ui"`
+	Vocabulary     VocabularyConfig     `toml:"vocabulary"`
+	Shortcuts      ShortcutsConfig      `toml:"shortcuts"`
+	ModelSelection ModelSelectionConfig `toml:"model_selection"`
+	Local          LocalConfig          `toml:"local"`
+	VPS            VPSConfig            `toml:"vps"`
+	HuggingFace    HuggingFaceConfig    `toml:"huggingface"`
+	Routing        RoutingConfig        `toml:"routing"`
+	Feedback       FeedbackConfig       `toml:"feedback"` // legacy compat; prefer Store
+	Store          StoreConfig          `toml:"store"`
+	Providers      ProvidersConfig      `toml:"providers"`
+	TTS            TTSConfig            `toml:"tts"`
+	VoiceAgent     VoiceAgentConfig     `toml:"voice_agent"`
 }
 
 type StoreConfig struct {
@@ -48,17 +63,24 @@ type StoreConfig struct {
 }
 
 type GeneralConfig struct {
-	Language          string `toml:"language"`
-	Hotkey            string `toml:"hotkey"` // Deprecated: legacy single-hotkey field kept for config file compat. Use DictateHotkey.
-	DictateHotkey     string `toml:"dictate_hotkey"`
-	AssistHotkey      string `toml:"assist_hotkey"`
-	VoiceAgentHotkey  string `toml:"voice_agent_hotkey"`
-	AgentHotkey       string `toml:"agent_hotkey"`
-	AgentMode         string `toml:"agent_mode"`  // "assist" or "voice_agent" — determines what agent_hotkey triggers
-	ActiveMode        string `toml:"active_mode"` // legacy compat
-	HotkeyMode        string `toml:"hotkey_mode"` // "push_to_talk" or "toggle"
-	AutoStopSilenceMs int    `toml:"auto_stop_silence_ms"`
-	FastModeSilenceMs int    `toml:"fast_mode_silence_ms"` // silence threshold for Quick Capture auto-stop
+	Language                 string `toml:"language"`
+	Hotkey                   string `toml:"hotkey"` // Deprecated: legacy single-hotkey field kept for config file compat. Use DictateHotkey.
+	DictateHotkey            string `toml:"dictate_hotkey"`
+	AssistHotkey             string `toml:"assist_hotkey"`
+	VoiceAgentHotkey         string `toml:"voice_agent_hotkey"`
+	DictateHotkeyBehavior    string `toml:"dictate_hotkey_behavior"`
+	AssistHotkeyBehavior     string `toml:"assist_hotkey_behavior"`
+	VoiceAgentHotkeyBehavior string `toml:"voice_agent_hotkey_behavior"`
+	DictateEnabled           bool   `toml:"dictate_enabled"`
+	AssistEnabled            bool   `toml:"assist_enabled"`
+	VoiceAgentEnabled        bool   `toml:"voice_agent_enabled"`
+	AutoStartOnLaunch        bool   `toml:"auto_start_on_launch"`
+	AgentHotkey              string `toml:"agent_hotkey"`
+	AgentMode                string `toml:"agent_mode"`  // "assist" or "voice_agent" â€” determines what agent_hotkey triggers
+	ActiveMode               string `toml:"active_mode"` // legacy compat
+	HotkeyMode               string `toml:"hotkey_mode"` // legacy compat for single behavior setting
+	AutoStopSilenceMs        int    `toml:"auto_stop_silence_ms"`
+	FastModeSilenceMs        int    `toml:"fast_mode_silence_ms"` // silence threshold for Quick Capture auto-stop
 }
 
 type AudioConfig struct {
@@ -84,6 +106,17 @@ type ShortcutLocaleConfig struct {
 	InsertLast     []string `toml:"insert_last"`
 	Summarize      []string `toml:"summarize"`
 	QuickNote      []string `toml:"quick_note"`
+}
+
+type ModelSelectionConfig struct {
+	Dictate    ModeModelSelection `toml:"dictate"`
+	Assist     ModeModelSelection `toml:"assist"`
+	VoiceAgent ModeModelSelection `toml:"voice_agent"`
+}
+
+type ModeModelSelection struct {
+	PrimaryProfileID  string `toml:"primary_profile_id"`
+	FallbackProfileID string `toml:"fallback_profile_id"`
 }
 
 type UIConfig struct {
@@ -234,10 +267,14 @@ type TTSLocal struct {
 // VoiceAgentConfig configures the real-time Voice Agent Mode.
 type VoiceAgentConfig struct {
 	Enabled                         bool   `toml:"enabled"`
-	Model                           string `toml:"model"`          // Real-time model ID (e.g. "gemini-2.5-flash-native-audio-preview-12-2025")
-	FallbackModel                   string `toml:"fallback_model"` // Fallback real-time model
-	Voice                           string `toml:"voice"`          // Voice name for real-time model
-	Instruction                     string `toml:"instruction"`    // Optional host-supplied instruction or guide for the Voice Agent
+	Model                           string `toml:"model"`             // Real-time model ID (e.g. "gemini-2.5-flash-native-audio-preview-12-2025")
+	FallbackModel                   string `toml:"fallback_model"`    // Fallback real-time model
+	Voice                           string `toml:"voice"`             // Voice name for real-time model
+	FrameworkPrompt                 string `toml:"framework_prompt"`  // Durable host/framework instruction that defines the Voice Agent behavior
+	RefinementPrompt                string `toml:"refinement_prompt"` // User-specific refinement appended to the framework prompt
+	Instruction                     string `toml:"instruction"`       // Legacy alias for FrameworkPrompt
+	AutoStartOnLaunch               bool   `toml:"auto_start_on_launch"`
+	CloseBehavior                   string `toml:"close_behavior"` // "continue" keeps the conversation window in the taskbar; "new_chat" ends the current chat on close
 	ReminderAfterIdleSec            int    `toml:"reminder_after_idle_sec"`
 	DeactivateAfterIdleSec          int    `toml:"deactivate_after_idle_sec"`
 	PipelineFallback                bool   `toml:"pipeline_fallback"` // Use STT+LLM+TTS as last resort
@@ -269,12 +306,19 @@ func Load(path string) (*Config, error) {
 		path = defaultConfigPath()
 	}
 
-	data, err := os.ReadFile(path)
+	data, err := os.ReadFile(path) //nolint:gosec // path is application config dir, not user-controlled input
 	if err != nil {
 		if os.IsNotExist(err) {
 			return cfg, nil
 		}
 		return nil, fmt.Errorf("read config: %w", err)
+	}
+
+	// Warn (but do not block) when the config file is accessible to group or
+	// other users on POSIX systems. No-op on Windows where Go's os.FileMode
+	// does not reflect NTFS ACLs.
+	if warning, permErr := checkConfigFilePermissions(path); permErr == nil && warning != "" {
+		slog.Warn("config file permissions are loose", "msg", warning)
 	}
 
 	meta, err := toml.Decode(string(data), cfg)
@@ -301,6 +345,12 @@ func Load(path string) (*Config, error) {
 
 	backfillLegacyAssistModels(meta, cfg)
 	backfillLegacyModeHotkeys(meta, cfg)
+	backfillStartupBehavior(meta, cfg)
+	backfillVoiceAgentPromptLayers(meta, cfg)
+	cfg.VoiceAgent.CloseBehavior = NormalizeVoiceAgentCloseBehavior(
+		cfg.VoiceAgent.CloseBehavior,
+		VoiceAgentCloseBehaviorContinue,
+	)
 
 	return cfg, nil
 }
@@ -338,6 +388,67 @@ func backfillLegacyModeHotkeys(meta toml.MetaData, cfg *Config) {
 	if cfg.General.AgentMode == "" {
 		cfg.General.AgentMode = legacyAgentMode
 	}
+	if !meta.IsDefined("general", "dictate_enabled") {
+		cfg.General.DictateEnabled = strings.TrimSpace(cfg.General.DictateHotkey) != ""
+	}
+	if !meta.IsDefined("general", "assist_enabled") {
+		cfg.General.AssistEnabled = strings.TrimSpace(cfg.General.AssistHotkey) != ""
+	}
+	if !meta.IsDefined("general", "voice_agent_enabled") {
+		cfg.General.VoiceAgentEnabled = strings.TrimSpace(cfg.General.VoiceAgentHotkey) != ""
+	}
+
+	legacyHotkeyMode := NormalizeHotkeyBehavior(cfg.General.HotkeyMode, HotkeyBehaviorPushToTalk)
+	legacyHotkeyModeDefined := meta.IsDefined("general", "hotkey_mode")
+	if legacyHotkeyModeDefined && !meta.IsDefined("general", "dictate_hotkey_behavior") {
+		cfg.General.DictateHotkeyBehavior = legacyHotkeyMode
+	}
+	if legacyHotkeyModeDefined && !meta.IsDefined("general", "assist_hotkey_behavior") {
+		cfg.General.AssistHotkeyBehavior = legacyHotkeyMode
+	}
+	if legacyHotkeyModeDefined && !meta.IsDefined("general", "voice_agent_hotkey_behavior") {
+		cfg.General.VoiceAgentHotkeyBehavior = legacyHotkeyMode
+	}
+
+	cfg.General.DictateHotkeyBehavior = NormalizeHotkeyBehavior(cfg.General.DictateHotkeyBehavior, HotkeyBehaviorPushToTalk)
+	cfg.General.AssistHotkeyBehavior = NormalizeHotkeyBehavior(cfg.General.AssistHotkeyBehavior, HotkeyBehaviorPushToTalk)
+	cfg.General.VoiceAgentHotkeyBehavior = NormalizeHotkeyBehavior(cfg.General.VoiceAgentHotkeyBehavior, HotkeyBehaviorPushToTalk)
+	cfg.General.HotkeyMode = NormalizeHotkeyBehavior(cfg.General.HotkeyMode, cfg.General.DictateHotkeyBehavior)
+}
+
+func backfillStartupBehavior(meta toml.MetaData, cfg *Config) {
+	if cfg == nil {
+		return
+	}
+
+	switch {
+	case meta.IsDefined("general", "auto_start_on_launch"):
+		cfg.VoiceAgent.AutoStartOnLaunch = cfg.General.AutoStartOnLaunch
+	case meta.IsDefined("voice_agent", "auto_start_on_launch"):
+		cfg.General.AutoStartOnLaunch = cfg.VoiceAgent.AutoStartOnLaunch
+	default:
+		cfg.VoiceAgent.AutoStartOnLaunch = cfg.General.AutoStartOnLaunch
+	}
+}
+
+func backfillVoiceAgentPromptLayers(meta toml.MetaData, cfg *Config) {
+	if cfg == nil {
+		return
+	}
+
+	frameworkPrompt := strings.TrimSpace(cfg.VoiceAgent.FrameworkPrompt)
+	legacyInstruction := strings.TrimSpace(cfg.VoiceAgent.Instruction)
+
+	if frameworkPrompt == "" && !meta.IsDefined("voice_agent", "framework_prompt") {
+		frameworkPrompt = legacyInstruction
+	}
+	if legacyInstruction == "" && frameworkPrompt != "" {
+		legacyInstruction = frameworkPrompt
+	}
+
+	cfg.VoiceAgent.FrameworkPrompt = frameworkPrompt
+	cfg.VoiceAgent.RefinementPrompt = strings.TrimSpace(cfg.VoiceAgent.RefinementPrompt)
+	cfg.VoiceAgent.Instruction = legacyInstruction
 }
 
 func backfillLegacyAssistModels(meta toml.MetaData, cfg *Config) {
@@ -364,15 +475,15 @@ func Save(path string, cfg *Config) error {
 	if path == "" {
 		path = defaultConfigPath()
 	}
-	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return fmt.Errorf("create config dir: %w", err)
 	}
 
-	file, err := os.Create(path)
+	file, err := os.Create(path) //nolint:gosec // path is application config dir, not user-controlled input
 	if err != nil {
 		return fmt.Errorf("create config: %w", err)
 	}
-	defer file.Close()
+	defer file.Close() //nolint:errcheck // file close on write, error not actionable after encode
 
 	if err := toml.NewEncoder(file).Encode(cfg); err != nil {
 		return fmt.Errorf("encode config: %w", err)
@@ -384,17 +495,24 @@ func Save(path string, cfg *Config) error {
 func defaults() *Config {
 	return &Config{
 		General: GeneralConfig{
-			Language:          "de",
-			Hotkey:            "win+alt",
-			DictateHotkey:     "win+alt",
-			AssistHotkey:      "ctrl+shift+j",
-			VoiceAgentHotkey:  "ctrl+shift+k",
-			AgentHotkey:       "ctrl+shift+j",
-			AgentMode:         "assist",
-			ActiveMode:        "none",
-			HotkeyMode:        "push_to_talk",
-			AutoStopSilenceMs: 500,
-			FastModeSilenceMs: 1500,
+			Language:                 "de",
+			Hotkey:                   "win+alt",
+			DictateHotkey:            "win+alt",
+			AssistHotkey:             "ctrl+win",
+			VoiceAgentHotkey:         "ctrl+shift",
+			DictateHotkeyBehavior:    HotkeyBehaviorPushToTalk,
+			AssistHotkeyBehavior:     HotkeyBehaviorPushToTalk,
+			VoiceAgentHotkeyBehavior: HotkeyBehaviorPushToTalk,
+			DictateEnabled:           true,
+			AssistEnabled:            true,
+			VoiceAgentEnabled:        true,
+			AutoStartOnLaunch:        false,
+			AgentHotkey:              "ctrl+win",
+			AgentMode:                "assist",
+			ActiveMode:               "none",
+			HotkeyMode:               HotkeyBehaviorPushToTalk,
+			AutoStopSilenceMs:        500,
+			FastModeSilenceMs:        1500,
 		},
 		Audio: AudioConfig{
 			Backend:     "windows-wasapi-malgo",
@@ -406,6 +524,7 @@ func defaults() *Config {
 		Vocabulary: VocabularyConfig{
 			Dictionary: "",
 		},
+		ModelSelection: ModelSelectionConfig{},
 		UI: UIConfig{
 			OverlayEnabled:          true,
 			OverlayPosition:         "top",
@@ -432,7 +551,7 @@ func defaults() *Config {
 			UtilityModel: "",
 			AssistModel:  "",
 			AgentModel:   "",
-			TokenEnv:     "HF_TOKEN",
+			TokenEnv:     "HF_TOKEN", //nolint:gosec // not a credential, field name triggers false positive
 		},
 		Routing: RoutingConfig{
 			Strategy:                "cloud-only",
@@ -480,7 +599,11 @@ func defaults() *Config {
 			Model:                           "gemini-2.5-flash-native-audio-preview-12-2025",
 			FallbackModel:                   "gpt-realtime-mini",
 			Voice:                           "Kore",
+			FrameworkPrompt:                 "",
+			RefinementPrompt:                "",
 			Instruction:                     "",
+			AutoStartOnLaunch:               false,
+			CloseBehavior:                   VoiceAgentCloseBehaviorContinue,
 			ReminderAfterIdleSec:            300,
 			DeactivateAfterIdleSec:          900,
 			PipelineFallback:                true,
@@ -505,8 +628,8 @@ func defaults() *Config {
 		},
 		Providers: ProvidersConfig{
 			OpenAI: OpenAIProviderConfig{
-				APIKeyEnv:     "OPENAI_API_KEY",
-				STTModel:      "whisper-1", // Fallback only; HuggingFace is primary STT
+				APIKeyEnv:     "OPENAI_API_KEY", //nolint:gosec // not a credential, field name triggers false positive
+				STTModel:      "whisper-1",      // Fallback only; HuggingFace is primary STT
 				UtilityModel:  "gpt-5.4-mini-2026-03-17",
 				AssistModel:   "gpt-5.4-2026-03-05",
 				AgentModel:    "gpt-5.4-2026-03-05",
@@ -515,14 +638,14 @@ func defaults() *Config {
 				RealtimeModel: "gpt-realtime-mini",
 			},
 			Groq: GroqProviderConfig{
-				APIKeyEnv:    "GROQ_API_KEY",
+				APIKeyEnv:    "GROQ_API_KEY", //nolint:gosec // not a credential, field name triggers false positive
 				STTModel:     "whisper-large-v3-turbo",
 				UtilityModel: "llama-3.1-8b-instant",
 				AssistModel:  "llama-3.3-70b-versatile",
 				AgentModel:   "llama-3.3-70b-versatile",
 			},
 			Google: GoogleProviderConfig{
-				APIKeyEnv:    "GOOGLE_AI_API_KEY",
+				APIKeyEnv:    "GOOGLE_AI_API_KEY", //nolint:gosec // not a credential, field name triggers false positive
 				STTModel:     "chirp_3",
 				UtilityModel: "gemini-2.5-flash-lite",
 				AssistModel:  "gemini-2.5-flash",
@@ -535,7 +658,7 @@ func defaults() *Config {
 				AgentModel:   "gemma4:e4b",
 			},
 			OpenRouter: OpenRouterProviderConfig{
-				APIKeyEnv:    "OPENROUTER_API_KEY",
+				APIKeyEnv:    "OPENROUTER_API_KEY", //nolint:gosec // not a credential, field name triggers false positive
 				UtilityModel: "meta-llama/llama-3.1-8b-instruct",
 				AssistModel:  "google/gemini-2.5-flash",
 				AgentModel:   "google/gemini-2.5-flash",
@@ -713,11 +836,17 @@ func managedHFOptInEnabled() bool {
 	if raw, ok := os.LookupEnv("SPEECHKIT_ENABLE_MANAGED_HF"); ok {
 		return parseManagedBool(raw)
 	}
-	return parseManagedBool(managedHFDefaultOptIn)
+	if strings.TrimSpace(managedHFDefaultOptIn) != "" {
+		return parseManagedBool(managedHFDefaultOptIn)
+	}
+	return defaultManagedHuggingFaceForModule()
 }
 
 func ManagedHuggingFaceAvailableInBuild() bool {
-	return parseManagedBool(managedHFBuildEnabled)
+	if strings.TrimSpace(managedHFBuildEnabled) != "" {
+		return parseManagedBool(managedHFBuildEnabled)
+	}
+	return defaultManagedHuggingFaceForModule()
 }
 
 func OverrideManagedHuggingFaceBuildForTests(value string) func() {
@@ -734,5 +863,62 @@ func parseManagedBool(value string) bool {
 		return true
 	default:
 		return false
+	}
+}
+
+func defaultReadBuildInfo() (buildInfo, bool) {
+	info, ok := debug.ReadBuildInfo()
+	if !ok || info == nil {
+		return buildInfo{}, false
+	}
+	return buildInfo{MainPath: strings.TrimSpace(info.Main.Path)}, true
+}
+
+func defaultManagedHuggingFaceForModule() bool {
+	info, ok := readBuildInfo()
+	if !ok {
+		return false
+	}
+	switch strings.TrimSpace(info.MainPath) {
+	case "github.com/kombifyio/SpeechKit":
+		return true
+	case "github.com/kombifyio/SpeechKit":
+		return false
+	default:
+		return false
+	}
+}
+
+func NormalizeHotkeyBehavior(value, fallback string) string {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case HotkeyBehaviorPushToTalk:
+		return HotkeyBehaviorPushToTalk
+	case HotkeyBehaviorToggle:
+		return HotkeyBehaviorToggle
+	default:
+		if strings.TrimSpace(fallback) == "" {
+			return HotkeyBehaviorPushToTalk
+		}
+		if strings.EqualFold(strings.TrimSpace(fallback), value) {
+			return HotkeyBehaviorPushToTalk
+		}
+		return NormalizeHotkeyBehavior(fallback, HotkeyBehaviorPushToTalk)
+	}
+}
+
+func NormalizeVoiceAgentCloseBehavior(value, fallback string) string {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case VoiceAgentCloseBehaviorContinue:
+		return VoiceAgentCloseBehaviorContinue
+	case VoiceAgentCloseBehaviorNewChat:
+		return VoiceAgentCloseBehaviorNewChat
+	default:
+		if strings.TrimSpace(fallback) == "" {
+			return VoiceAgentCloseBehaviorContinue
+		}
+		if strings.EqualFold(strings.TrimSpace(fallback), value) {
+			return VoiceAgentCloseBehaviorContinue
+		}
+		return NormalizeVoiceAgentCloseBehavior(fallback, VoiceAgentCloseBehaviorContinue)
 	}
 }

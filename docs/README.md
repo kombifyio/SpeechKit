@@ -1,37 +1,34 @@
 # SpeechKit Docs
 
-## Start Here
+## Repo-Level
 
-- [README.md](../README.md)
-  Current product, framework, build, and runtime overview.
-- [deployment-standards.md](./deployment-standards.md)
-  Canonical build, CI, packaging, and release rules.
-- [github-app-bootstrap.md](./github-app-bootstrap.md)
-  One-time bootstrap flow for the release GitHub App and org secret wiring.
-- [github-app-release-architecture.md](./github-app-release-architecture.md)
-  Target cross-org release architecture using one GitHub App for all release repositories.
-- [release-matrix.md](./release-matrix.md)
-  Release surfaces, workflow selection, and validation matrix for framework, Windows, and Android.
-- [oss-release-boundary.md](./oss-release-boundary.md)
-  What belongs in the public release repo and what must stay private.
-- [oss-release-checklist.md](./oss-release-checklist.md)
-  Release gate before mirroring or tagging.
+- [../README.md](../README.md) — Produkt-, Framework-, Build- und Runtime-Uebersicht.
+- [../STATUS.md](../STATUS.md) — Ist-Zustand (Features, Production-Readiness, Tests).
+- [../ROADMAP.md](../ROADMAP.md) — Offene Arbeit, deferred Sprints, Cloud-Integration-Roadmap.
+- [../CHANGELOG.md](../CHANGELOG.md) — Keep-a-Changelog pro Release.
 
-## Architecture
+## Architektur
 
-- [speechkit-storage-architecture.md](./speechkit-storage-architecture.md)
-  Current storage model and future extension path.
+- [speechkit-architecture-v2.md](./speechkit-architecture-v2.md) — Drei-Modi-Framework (Dictation, Assist, Voice Agent).
+- [speechkit-storage-architecture.md](./speechkit-storage-architecture.md) — Storage-Modell (SQLite-Default, Postgres BYODB, Cloud-Hybrid geplant).
+- [voiceagent-session-fsm.md](./voiceagent-session-fsm.md) — Voice-Agent Session-FSM (States, Transitions, Error-Paths).
 
-## Planning
+## Integration (teilweise implementiert)
 
-- [plans/2026-03-27-public-oss-release.md](./plans/2026-03-27-public-oss-release.md)
-  OSS release hardening plan.
-- [plans/2026-03-27-hf-token-host-secrets.md](./plans/2026-03-27-hf-token-host-secrets.md)
-  Host-managed Hugging Face token work.
+- [speechkit-integration-plan.md](./speechkit-integration-plan.md) — DB + Auth + Install-Mode Integration (Cloud-Teil noch offen, siehe ROADMAP).
+- [kombify-toolauth-integration.md](./kombify-toolauth-integration.md) — `toolauth` Integrations-Referenz (Import pending, siehe ROADMAP).
 
-## Historical Material
+## Release & OSS-Betrieb
 
-- [archive/README.md](./archive/README.md)
-- [archive/voice-dictation-phase1-konzept-final.md](./archive/voice-dictation-phase1-konzept-final.md)
+- [deployment-standards.md](./deployment-standards.md) — Kanonische Build-, CI-, Packaging- und Release-Regeln.
+- [oss-release-boundary.md](./oss-release-boundary.md) — Was geht nach public, was bleibt privat.
+- [oss-release-checklist.md](./oss-release-checklist.md) — Release-Gate vor Mirror/Tag.
+- [release-matrix.md](./release-matrix.md) — Release-Surfaces, Workflow-Auswahl, Validierungs-Matrix.
+- [public-repo-operating-model.md](./public-repo-operating-model.md) — Operating-Model fuer Release-Repo.
 
-Treat archived material as background, not as the current contract.
+## GitHub App & Code-Signing
+
+- [github-app-bootstrap.md](./github-app-bootstrap.md) — Bootstrap-Flow fuer Release-GitHub-App.
+- [github-app-release-architecture.md](./github-app-release-architecture.md) — Cross-Org-Release-Architektur mit einer GitHub-App.
+- [code-signing-policy.md](./code-signing-policy.md) — Signing-Policy fuer Public-Releases.
+- [signpath-oss-setup.md](./signpath-oss-setup.md) — SignPath-Setup fuer OSS-Builds.

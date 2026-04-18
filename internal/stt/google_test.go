@@ -12,12 +12,11 @@ import (
 )
 
 func newTestGoogleProvider(serverURL string) *GoogleSTTProvider {
-	return &GoogleSTTProvider{
-		APIKey:  "test-api-key",
-		Model:   "latest_long",
-		BaseURL: serverURL,
-		client:  &http.Client{Timeout: 5 * time.Second},
-	}
+	p := NewGoogleSTTProvider("test-api-key", "latest_long")
+	p.BaseURL = serverURL
+	p.Validation = testValidation
+	p.client.Timeout = 5 * time.Second
+	return p
 }
 
 func TestGoogle_Transcribe_Success(t *testing.T) {
@@ -324,12 +323,10 @@ func TestGoogle_Health_Error(t *testing.T) {
 }
 
 func TestGoogle_Health_Unreachable(t *testing.T) {
-	p := &GoogleSTTProvider{
-		APIKey:  "key",
-		Model:   "latest_long",
-		BaseURL: "http://127.0.0.1:1",
-		client:  &http.Client{Timeout: 100 * time.Millisecond},
-	}
+	p := NewGoogleSTTProvider("key", "latest_long")
+	p.BaseURL = "http://127.0.0.1:1"
+	p.Validation = testValidation
+	p.client.Timeout = 100 * time.Millisecond
 	err := p.Health(context.Background())
 	if err == nil {
 		t.Error("expected error for unreachable host")

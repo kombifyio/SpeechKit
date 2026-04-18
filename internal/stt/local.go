@@ -12,12 +12,46 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"runtime"
 	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"github.com/kombifyio/SpeechKit/internal/netsec"
 )
+
+// whisperModelPattern restricts whisper.cpp model filenames to the
+// ggml-<variant>.bin naming convention. This blocks attempts to load
+// arbitrary binaries or paths containing shell metacharacters.
+var whisperModelPattern = regexp.MustCompile(`^ggml-[A-Za-z0-9._\-]+\.bin$`)
+
+// ValidateModelPath verifies that path points at a whisper.cpp ggml model
+// file with a safe filename. It rejects path traversal, non-absolute paths,
+// and filenames that don't match the ggml-*.bin pattern.
+func ValidateModelPath(path string) error {
+	if strings.TrimSpace(path) == "" {
+		return fmt.Errorf("whisper: model path is empty")
+	}
+	clean := filepath.Clean(path)
+	if clean != path && filepath.ToSlash(clean) != filepath.ToSlash(path) {
+		// filepath.Clean collapses ../ and double separators. A change
+		// means the caller supplied something suspicious.
+		return fmt.Errorf("whisper: model path must be in canonical form (got %q, want %q)", path, clean)
+	}
+	if strings.Contains(filepath.ToSlash(clean), "../") {
+		return fmt.Errorf("whisper: model path must not contain .. traversal: %s", clean)
+	}
+	if !filepath.IsAbs(clean) {
+		return fmt.Errorf("whisper: model path must be absolute: %s", clean)
+	}
+	base := filepath.Base(clean)
+	if !whisperModelPattern.MatchString(base) {
+		return fmt.Errorf("whisper: model filename %q does not match ggml-*.bin pattern", base)
+	}
+	return nil
+}
 
 const (
 	whisperHealthRetries  = 120
@@ -44,9 +78,7 @@ func NewLocalProvider(port int, modelPath, gpu string) *LocalProvider {
 		Port:      port,
 		ModelPath: modelPath,
 		GPU:       gpu,
-		client: &http.Client{
-			Timeout: 30 * time.Second,
-		},
+		client:    netsec.NewSafeHTTPClient(netsec.ClientOptions{Timeout: 30 * time.Second}),
 	}
 }
 
@@ -64,6 +96,9 @@ func (p *LocalProvider) StartServer(ctx context.Context) error {
 		return fmt.Errorf("whisper binary: %w", err)
 	}
 
+	if err := ValidateModelPath(p.ModelPath); err != nil {
+		return err
+	}
 	if _, err := os.Stat(p.ModelPath); err != nil {
 		return fmt.Errorf("model not found: %s", p.ModelPath)
 	}
@@ -81,7 +116,7 @@ func (p *LocalProvider) StartServer(ctx context.Context) error {
 		args = append(args, "--no-gpu")
 	}
 
-	p.cmd = exec.CommandContext(ctx, binaryPath, args...)
+	p.cmd = exec.CommandContext(ctx, binaryPath, args...) //nolint:gosec // G204: binaryPath from app data dir, not user input
 	configureHiddenProcess(p.cmd)
 	p.cmd.Stdout = os.Stderr // whisper-server logs to stdout
 	p.cmd.Stderr = os.Stderr
@@ -110,13 +145,13 @@ func (p *LocalProvider) waitForReady(ctx context.Context) error {
 		default:
 		}
 
-		req, reqErr := http.NewRequestWithContext(ctx, http.MethodGet, healthURL, nil)
+		req, reqErr := http.NewRequestWithContext(ctx, http.MethodGet, healthURL, http.NoBody)
 		if reqErr != nil {
 			return fmt.Errorf("create health request: %w", reqErr)
 		}
 		resp, err := p.client.Do(req)
 		if err == nil {
-			resp.Body.Close()
+			_ = resp.Body.Close()
 			if resp.StatusCode == http.StatusOK {
 				return nil
 			}
@@ -130,8 +165,8 @@ func (p *LocalProvider) waitForReady(ctx context.Context) error {
 func (p *LocalProvider) StopServer() {
 	p.ready.Store(false)
 	if p.cmd != nil && p.cmd.Process != nil {
-		p.cmd.Process.Kill()
-		p.cmd.Wait()
+		_ = p.cmd.Process.Kill()
+		_ = p.cmd.Wait()
 		p.cmd = nil
 	}
 }
@@ -146,7 +181,7 @@ func (p *LocalProvider) Transcribe(ctx context.Context, audio []byte, opts Trans
 			slog.Info("whisper-server: waiting for startup to complete...")
 			select {
 			case <-done:
-				// startup finished — check ready below
+				// startup finished â€” check ready below
 			case <-ctx.Done():
 				return nil, fmt.Errorf("local whisper-server not ready: cancelled while waiting for startup")
 			}
@@ -197,7 +232,7 @@ func (p *LocalProvider) Transcribe(ctx context.Context, audio []byte, opts Trans
 	if err != nil {
 		return nil, fmt.Errorf("local transcribe: %w", err)
 	}
-	defer resp.Body.Close()
+	defer resp.Body.Close() //nolint:errcheck // response body close error is not actionable
 	duration := time.Since(start)
 
 	respBody, err := io.ReadAll(io.LimitReader(resp.Body, localMaxResponseBytes))
@@ -247,7 +282,7 @@ func (p *LocalProvider) Health(ctx context.Context) error {
 	}
 
 	healthURL := fmt.Sprintf("%s/health", p.BaseURL)
-	req, err := http.NewRequestWithContext(ctx, "GET", healthURL, nil)
+	req, err := http.NewRequestWithContext(ctx, "GET", healthURL, http.NoBody)
 	if err != nil {
 		return err
 	}
@@ -257,7 +292,7 @@ func (p *LocalProvider) Health(ctx context.Context) error {
 		p.ready.Store(false)
 		return fmt.Errorf("local health: %w", err)
 	}
-	resp.Body.Close()
+	_ = resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("local health: status %d", resp.StatusCode)
@@ -304,18 +339,26 @@ func (p *LocalProvider) VerifyInstallation() InstallStatus {
 	// Check model file.
 	if p.ModelPath == "" {
 		status.Problems = append(status.Problems, "no model path configured")
+	} else if err := ValidateModelPath(p.ModelPath); err != nil {
+		status.Problems = append(status.Problems, err.Error())
 	} else if fi, err := os.Stat(p.ModelPath); err != nil {
 		status.Problems = append(status.Problems, fmt.Sprintf("model file missing: %s", p.ModelPath))
 	} else {
 		status.ModelBytes = fi.Size()
 		if fi.Size() < MinWhisperModelBytes {
-			status.Problems = append(status.Problems, fmt.Sprintf("model file too small (%d bytes) — likely corrupt or truncated", fi.Size()))
+			status.Problems = append(status.Problems, fmt.Sprintf("model file too small (%d bytes) â€” likely corrupt or truncated", fi.Size()))
 		} else {
 			status.ModelFound = true
 		}
 	}
 
 	return status
+}
+
+// FindWhisperBinary exposes the local whisper runtime lookup for callers that
+// need to reflect runtime readiness without starting the subprocess.
+func FindWhisperBinary() (string, error) {
+	return findWhisperBinary()
 }
 
 // findWhisperBinary looks for the whisper-server executable in standard locations.
@@ -330,7 +373,7 @@ func findWhisperBinary() (string, error) {
 	if exe != "" {
 		for _, name := range names {
 			path := filepath.Join(filepath.Dir(exe), name)
-			if _, err := os.Stat(path); err == nil {
+			if _, err := os.Stat(path); err == nil { //nolint:gosec // G703: path is app data dir, not user input
 				return path, nil
 			}
 		}
@@ -339,10 +382,16 @@ func findWhisperBinary() (string, error) {
 	// Check managed install location next.
 	localAppData := os.Getenv("LOCALAPPDATA")
 	if localAppData != "" {
-		for _, name := range names {
-			path := filepath.Join(localAppData, "SpeechKit", "bin", name)
-			if _, err := os.Stat(path); err == nil {
-				return path, nil
+		searchDirs := []string{
+			filepath.Join(localAppData, "SpeechKit"),
+			filepath.Join(localAppData, "SpeechKit", "bin"),
+		}
+		for _, dir := range searchDirs {
+			for _, name := range names {
+				path := filepath.Join(dir, name)
+				if _, err := os.Stat(path); err == nil { //nolint:gosec // G703: path is app data dir, not user input
+					return path, nil
+				}
 			}
 		}
 	}

@@ -19,18 +19,20 @@ type geminiLiveSession interface {
 
 // GeminiLive implements LiveProvider using the Google GenAI Live API.
 type GeminiLive struct {
-	mu               sync.RWMutex
-	client           *genai.Client
-	session          geminiLiveSession
-	lastResumeHandle string      // Session resumption handle for reconnection
-	lastConfig       *LiveConfig // Stored for reconnection
+	mu         sync.RWMutex
+	client     *genai.Client
+	session    geminiLiveSession
+	resume     *resumeHandle // Session resumption handle: DPAPI-at-rest on Windows, TTL-bounded everywhere.
+	lastConfig *LiveConfig   // Stored for reconnection
 }
 
 const defaultGeminiLiveModel = "gemini-2.5-flash-native-audio-preview-12-2025"
 
 // NewGeminiLive creates a Gemini Live provider.
 func NewGeminiLive() *GeminiLive {
-	return &GeminiLive{}
+	return &GeminiLive{
+		resume: newResumeHandle(),
+	}
 }
 
 func (g *GeminiLive) Connect(ctx context.Context, cfg LiveConfig) error {
@@ -150,10 +152,10 @@ func (g *GeminiLive) Receive(ctx context.Context) (*LiveMessage, error) {
 	}
 
 	// Session resumption: store handle for reconnection.
+	// The handle is kept in a DPAPI-protected container with a TTL so a stale
+	// memory dump cannot replay old sessions indefinitely.
 	if resp.SessionResumptionUpdate != nil && resp.SessionResumptionUpdate.NewHandle != "" {
-		g.mu.Lock()
-		g.lastResumeHandle = resp.SessionResumptionUpdate.NewHandle
-		g.mu.Unlock()
+		g.resume.Set(resp.SessionResumptionUpdate.NewHandle)
 	}
 
 	return msg, nil
@@ -194,11 +196,12 @@ func (g *GeminiLive) SendToolResponse(response ToolResponse) error {
 }
 
 // Reconnect re-establishes the session using the stored resumption handle.
+// If the handle has expired (TTL) or been cleared, a fresh session is opened.
 func (g *GeminiLive) Reconnect(ctx context.Context) error {
 	g.mu.RLock()
-	resumeHandle := g.lastResumeHandle
 	lastCfg := g.lastConfig
 	g.mu.RUnlock()
+	resumeHandleValue := g.resume.Get()
 
 	if lastCfg == nil {
 		return fmt.Errorf("gemini live: no stored config for reconnect")
@@ -207,8 +210,12 @@ func (g *GeminiLive) Reconnect(ctx context.Context) error {
 		return err
 	}
 
-	// Close existing session.
-	_ = g.Close()
+	// Close existing session. Log, but do not abort the reconnect — the old
+	// session may already be half-dead on the wire, and aborting here would
+	// leave the caller without a working session at all.
+	if err := g.Close(); err != nil {
+		slog.Warn("gemini live: close prior session during reconnect", "err", err)
+	}
 
 	// Re-create client.
 	client, err := genai.NewClient(ctx, &genai.ClientConfig{
@@ -223,7 +230,7 @@ func (g *GeminiLive) Reconnect(ctx context.Context) error {
 	model := resolvedGeminiLiveModel(*lastCfg)
 
 	connectCfg := buildGeminiLiveConnectConfig(*lastCfg)
-	connectCfg.SessionResumption = buildGeminiLiveSessionResumptionConfig(resumeHandle)
+	connectCfg.SessionResumption = buildGeminiLiveSessionResumptionConfig(resumeHandleValue)
 
 	session, err := client.Live.Connect(ctx, model, connectCfg)
 	if err != nil {
@@ -235,7 +242,7 @@ func (g *GeminiLive) Reconnect(ctx context.Context) error {
 	g.session = session
 	g.mu.Unlock()
 
-	slog.Info("Gemini Live reconnected", "model", model, "had_resume_handle", resumeHandle != "")
+	slog.Info("Gemini Live reconnected", "model", model, "had_resume_handle", resumeHandleValue != "")
 	return nil
 }
 
@@ -245,6 +252,14 @@ func (g *GeminiLive) Close() error {
 	g.session = nil
 	g.client = nil
 	g.mu.Unlock()
+
+	// Wipe the resumption handle on close. Any caller that intends to
+	// reconnect must have already captured it via Reconnect() before calling
+	// Close(); keeping it around after a completed session only widens the
+	// window for misuse if memory is later inspected.
+	if g.resume != nil {
+		g.resume.Clear()
+	}
 
 	if session != nil {
 		if err := session.Close(); err != nil {
@@ -340,18 +355,30 @@ func buildGeminiLiveSessionResumptionConfig(handle string) *genai.SessionResumpt
 }
 
 func buildInstructionText(cfg LiveConfig) string {
-	instruction := strings.TrimSpace(cfg.Instruction)
-	if instruction == "" {
-		instruction = strings.TrimSpace(cfg.SystemPrompt)
-	}
-	if instruction == "" {
-		instruction = defaultVoiceAgentInstruction(cfg.Locale)
+	instruction := resolvedFrameworkPrompt(cfg)
+	if refinement := strings.TrimSpace(cfg.RefinementPrompt); refinement != "" {
+		instruction += "\n\nPersonal refinement:\n" + refinement +
+			"\n\nApply this personal refinement when it does not conflict with higher-priority framework or host instructions."
 	}
 	if hint := strings.TrimSpace(cfg.VocabularyHint); hint != "" {
 		instruction += "\n\nVocabulary and proper nouns:\n" + hint
 	}
 	if localeGuide := preferredLocaleInstruction(cfg.Locale); localeGuide != "" {
 		instruction += "\n\n" + localeGuide
+	}
+	return instruction
+}
+
+func resolvedFrameworkPrompt(cfg LiveConfig) string {
+	instruction := strings.TrimSpace(cfg.FrameworkPrompt)
+	if instruction == "" {
+		instruction = strings.TrimSpace(cfg.Instruction)
+	}
+	if instruction == "" {
+		instruction = strings.TrimSpace(cfg.SystemPrompt)
+	}
+	if instruction == "" {
+		instruction = defaultVoiceAgentInstruction(cfg.Locale)
 	}
 	return instruction
 }

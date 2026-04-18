@@ -91,7 +91,7 @@ jobs:
       - name: Setup Go
         uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c
         with:
-          go-version: '1.25.9'
+          go-version: '1.26.1'
           cache: true
 
       - name: Setup MinGW
@@ -104,6 +104,28 @@ jobs:
       - name: Run go vet
         shell: pwsh
         run: go vet ./...
+
+      - name: Check gofmt
+        shell: pwsh
+        run: |
+          $fmtOut = & gofmt -s -l (Get-ChildItem -Recurse -Filter *.go -File |
+            Where-Object { $_.FullName -notmatch '\\(node_modules|frontend|Website|marketing-site-svelte|android|internal\\frontendassets|\.cache)\\' } |
+            Select-Object -ExpandProperty FullName)
+          if ($fmtOut) {
+            Write-Host "Files not gofmt'd:"
+            Write-Host $fmtOut
+            exit 1
+          }
+
+      - name: Install golangci-lint
+        shell: pwsh
+        run: |
+          $version = 'v2.11.4'
+          & go install "github.com/golangci/golangci-lint/v2/cmd/golangci-lint@$version"
+
+      - name: Run golangci-lint
+        shell: pwsh
+        run: golangci-lint run --timeout=5m ./...
 
       - name: Run go race tests
         shell: pwsh
@@ -177,6 +199,17 @@ jobs:
             exit $LASTEXITCODE
           }
 
+      # Upload coverage. If CODECOV_TOKEN is not configured, the step
+      # will warn but not fail CI. Pinned to SHA so supply-chain drift in
+      # third-party actions requires an explicit PR (dependabot bumps this).
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@b9fd7d16f6d7d1b5d2bec1a2887e65ceed900238 # v4
+        with:
+          files: coverage.out
+          flags: go
+          fail_ci_if_error: false
+          token: ${{ secrets.CODECOV_TOKEN }}
+
       - name: Install Staticcheck
         shell: pwsh
         run: go install honnef.co/go/tools/cmd/staticcheck@latest
@@ -218,7 +251,7 @@ jobs:
       - name: Setup Go
         uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c
         with:
-          go-version: '1.25.9'
+          go-version: '1.26.1'
           cache: true
 
       - name: Setup Node

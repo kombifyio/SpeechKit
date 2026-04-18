@@ -232,7 +232,7 @@ func (w *TranscriptionWorker) handleJob(ctx context.Context, job TranscriptionJo
 		return
 	}
 	if err := w.output.Deliver(ctx, completion.Transcript, job.Target); err != nil {
-		w.onLog(fmt.Sprintf("Paste error: %v", err), "error")
+		w.onLog(fmt.Sprintf("Output error: %v", err), "error")
 	}
 }
 

@@ -1,6 +1,7 @@
 package downloads
 
 import (
+	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -14,7 +15,13 @@ import (
 	"time"
 
 	"github.com/kombifyio/SpeechKit/internal/config"
+	"github.com/kombifyio/SpeechKit/internal/netsec"
 )
+
+func init() {
+	// Tests use httptest loopback servers; relax download URL validation.
+	DownloadURLValidation = netsec.ValidationOptions{AllowLoopback: true, AllowHTTP: true}
+}
 
 func TestNewManager(t *testing.T) {
 	m := NewManager()
@@ -83,7 +90,7 @@ func TestHTTPDownload(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read downloaded file: %v", err)
 	}
-	if string(got) != string(content) {
+	if !bytes.Equal(got, content) {
 		t.Errorf("content mismatch: got %d bytes, want %d", len(got), len(content))
 	}
 
@@ -183,7 +190,7 @@ func TestCancelNonExistentJob(t *testing.T) {
 
 func TestCatalogReturnsItems(t *testing.T) {
 	cfg := &config.Config{}
-	items := Catalog(cfg)
+	items := Catalog(t.Context(), cfg)
 	if len(items) == 0 {
 		t.Fatal("expected non-empty catalog")
 	}
@@ -209,7 +216,7 @@ func TestCatalogReturnsItems(t *testing.T) {
 
 func TestCatalogExposesWhisperCppTurboAsRecommendedChoice(t *testing.T) {
 	cfg := &config.Config{}
-	items := Catalog(cfg)
+	items := Catalog(t.Context(), cfg)
 
 	var whisperItems []Item
 	for _, item := range items {
@@ -245,7 +252,7 @@ func TestCatalogMarksWhisperCppTurboSelectedFromConfig(t *testing.T) {
 	cfg := &config.Config{}
 	cfg.Local.Model = "ggml-large-v3-turbo.bin"
 
-	items := Catalog(cfg)
+	items := Catalog(t.Context(), cfg)
 	for _, item := range items {
 		if item.ID == "whisper.ggml-large-v3-turbo" {
 			if !item.Selected {
@@ -299,7 +306,7 @@ func TestOllamaModelPresentWhenOffline(t *testing.T) {
 	OllamaBaseURL = "http://127.0.0.1:1" // guaranteed-unreachable port
 	defer func() { OllamaBaseURL = old }()
 
-	result := OllamaModelPresent("nonexistent:latest")
+	result := OllamaModelPresent(t.Context(), "nonexistent:latest")
 	if result {
 		t.Error("expected false when Ollama is unreachable")
 	}
@@ -325,13 +332,13 @@ func TestOllamaModelPresentWithMockServer(t *testing.T) {
 	OllamaBaseURL = srv.URL
 	defer func() { OllamaBaseURL = old }()
 
-	if !OllamaModelPresent("gemma4:e4b") {
+	if !OllamaModelPresent(t.Context(), "gemma4:e4b") {
 		t.Error("expected true for exact match gemma4:e4b")
 	}
-	if !OllamaModelPresent("gemma4:other") {
+	if !OllamaModelPresent(t.Context(), "gemma4:other") {
 		t.Error("expected true for prefix match gemma4:other")
 	}
-	if OllamaModelPresent("nonexistent:latest") {
+	if OllamaModelPresent(t.Context(), "nonexistent:latest") {
 		t.Error("expected false for nonexistent model")
 	}
 }
@@ -373,7 +380,7 @@ func TestHTTPDownloadSHA256Pass(t *testing.T) {
 	}
 
 	got, _ := os.ReadFile(filepath.Join(dir, "model.bin"))
-	if string(got) != string(content) {
+	if !bytes.Equal(got, content) {
 		t.Error("content mismatch")
 	}
 }

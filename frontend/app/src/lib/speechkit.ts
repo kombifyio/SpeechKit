@@ -1,207 +1,304 @@
-export type OverlayMode = 'pill' | 'circle'
-export type OverlayDesign = 'default' | 'kombify'
-export type RuntimeMode = 'none' | 'dictate' | 'assist' | 'voice_agent'
-export type AgentMode = 'assist' | 'voice_agent'
-export type StoreBackend = 'sqlite' | 'postgres'
-export type Modality = 'stt' | 'tts' | 'realtime_voice' | 'utility' | 'assist' | 'embedding' | 'reranker'
-export type ExecutionMode = 'local' | 'self_hosted_http' | 'hf_routed' | 'hf_inference' | 'openai_api' | 'groq_api' | 'google_api' | 'ollama_local' | 'openrouter_api'
-export type LogType = 'info' | 'warn' | 'error' | 'success'
-export type AvailableModes = Record<'dictate' | 'assist' | 'voice_agent', boolean>
+export type OverlayMode = "pill" | "circle";
+export type OverlayDesign = "default" | "kombify";
+export type RuntimeMode = "none" | "dictate" | "assist" | "voice_agent";
+export type AgentMode = "assist" | "voice_agent";
+export type HotkeyBehavior = "push_to_talk" | "toggle";
+export type VoiceAgentCloseBehavior = "continue" | "new_chat";
+export type StoreBackend = "sqlite" | "postgres";
+export type Modality =
+  | "stt"
+  | "tts"
+  | "realtime_voice"
+  | "utility"
+  | "assist"
+  | "embedding"
+  | "reranker";
+export type ExecutionMode =
+  | "local"
+  | "self_hosted_http"
+  | "hf_routed"
+  | "hf_inference"
+  | "openai_api"
+  | "groq_api"
+  | "google_api"
+  | "ollama_local"
+  | "openrouter_api";
+export type LogType = "info" | "warn" | "error" | "success";
+export type AvailableModes = Record<
+  "dictate" | "assist" | "voice_agent",
+  boolean
+>;
+export type ModeEnabled = Record<"dictate" | "assist" | "voice_agent", boolean>;
 
 export type AudioDevice = {
-  deviceId: string
-  label: string
-  groupId?: string
-  isDefault?: boolean
-}
+  deviceId: string;
+  label: string;
+  groupId?: string;
+  isDefault?: boolean;
+};
 
 export type AudioAsset = {
-  storageKind: string
-  mimeType?: string
-  sizeBytes: number
-  durationMs: number
-}
+  storageKind: string;
+  mimeType?: string;
+  sizeBytes: number;
+  durationMs: number;
+};
 
 export type ModelProfile = {
-  id: string
-  modality: Modality
-  name: string
-  executionMode?: ExecutionMode
-  source?: string
-  provider?: string
-  description?: string
-  experimental?: boolean
-}
+  id: string;
+  modality: Modality;
+  name: string;
+  executionMode?: ExecutionMode;
+  source?: string;
+  provider?: string;
+  description?: string;
+  experimental?: boolean;
+};
 
 export type SpeechKitOverlayState = {
-  state: 'idle' | 'recording' | 'processing' | 'done'
-  phase: 'idle' | 'listening' | 'speaking' | 'thinking' | 'done'
-  text: string
-  level: number
-  visible: boolean
-  visualizer: OverlayMode
-  design: OverlayDesign
-  hotkey: string
-  dictateHotkey: string
-  assistHotkey: string
-  voiceAgentHotkey: string
-  agentHotkey: string
-  activeMode: RuntimeMode
-  availableModes: AvailableModes
-  position: 'top' | 'bottom' | 'left' | 'right'
-  movable: boolean
-  positionFreeX: number
-  positionFreeY: number
-  lastTranscription: string
-  quickNoteMode: boolean
-  selectedAudioDeviceId: string
-  activeProfiles: Partial<Record<Modality, string>>
-}
+  state: "idle" | "recording" | "processing" | "done";
+  phase: "idle" | "listening" | "speaking" | "thinking" | "done";
+  text: string;
+  level: number;
+  visible: boolean;
+  visualizer: OverlayMode;
+  design: OverlayDesign;
+  hotkey: string;
+  dictateHotkey: string;
+  assistHotkey: string;
+  voiceAgentHotkey: string;
+  dictateHotkeyBehavior: HotkeyBehavior;
+  assistHotkeyBehavior: HotkeyBehavior;
+  voiceAgentHotkeyBehavior: HotkeyBehavior;
+  modeEnabled: ModeEnabled;
+  agentHotkey: string;
+  activeMode: RuntimeMode;
+  availableModes: AvailableModes;
+  position: "top" | "bottom" | "left" | "right";
+  movable: boolean;
+  positionFreeX: number;
+  positionFreeY: number;
+  lastTranscription: string;
+  quickNoteMode: boolean;
+  selectedAudioDeviceId: string;
+  activeProfiles: Partial<Record<Modality, string>>;
+};
 
 export type ProviderCredentialState = {
-  provider: string
-  label: string
-  envName: string
-  available: boolean
-  hasStoredSecret: boolean
-  source: 'none' | 'user' | 'install' | 'env'
-}
+  provider: string;
+  label: string;
+  envName: string;
+  available: boolean;
+  hasStoredSecret: boolean;
+  source: "none" | "user" | "install" | "env";
+};
+
+export type ModeModelSelectionState = {
+  primaryProfileId: string;
+  fallbackProfileId: string;
+};
+
+export type ModelSelectionsState = Record<
+  "dictate" | "assist" | "voice_agent",
+  ModeModelSelectionState
+>;
 
 export type SpeechKitSettingsState = {
-  overlayEnabled: boolean
-  storeBackend: StoreBackend
-  sqlitePath: string
-  postgresConfigured: boolean
-  postgresDSN: string
-  maxAudioStorageMB: number
-  hfAvailable: boolean
-  hfEnabled: boolean
-  hfHasUserToken: boolean
-  hfHasInstallToken: boolean
-  hfTokenSource: 'none' | 'user' | 'install' | 'env'
-  hotkey: string
-  dictateHotkey: string
-  assistHotkey: string
-  voiceAgentHotkey: string
-  agentHotkey: string
-  agentMode: AgentMode
-  activeMode: RuntimeMode
-  availableModes: AvailableModes
-  hfModel: 'openai/whisper-large-v3-turbo' | 'openai/whisper-large-v3'
-  visualizer: OverlayMode
-  design: OverlayDesign
-  overlayPosition: 'top' | 'bottom' | 'left' | 'right'
-  overlayMovable: boolean
-  overlayFreeX: number
-  overlayFreeY: number
-  vocabularyDictionary: string
-  saveAudio: boolean
-  audioRetentionDays: number
-  selectedAudioDeviceId: string
-  profiles?: ModelProfile[]
-  activeProfiles: Partial<Record<Modality, string>>
-  providerCredentials?: Record<string, ProviderCredentialState>
-}
+  overlayEnabled: boolean;
+  storeBackend: StoreBackend;
+  sqlitePath: string;
+  postgresConfigured: boolean;
+  postgresDSN: string;
+  maxAudioStorageMB: number;
+  hfAvailable: boolean;
+  hfEnabled: boolean;
+  hfHasUserToken: boolean;
+  hfHasInstallToken: boolean;
+  hfTokenSource: "none" | "user" | "install" | "env";
+  hotkey: string;
+  dictateHotkey: string;
+  assistHotkey: string;
+  voiceAgentHotkey: string;
+  dictateHotkeyBehavior: HotkeyBehavior;
+  assistHotkeyBehavior: HotkeyBehavior;
+  voiceAgentHotkeyBehavior: HotkeyBehavior;
+  voiceAgentCloseBehavior: VoiceAgentCloseBehavior;
+  voiceAgentRefinementPrompt: string;
+  autoStartOnLaunch: boolean;
+  modeEnabled: ModeEnabled;
+  agentHotkey: string;
+  agentMode: AgentMode;
+  activeMode: RuntimeMode;
+  availableModes: AvailableModes;
+  hfModel: "openai/whisper-large-v3-turbo" | "openai/whisper-large-v3";
+  visualizer: OverlayMode;
+  design: OverlayDesign;
+  overlayPosition: "top" | "bottom" | "left" | "right";
+  overlayMovable: boolean;
+  overlayFreeX: number;
+  overlayFreeY: number;
+  vocabularyDictionary: string;
+  saveAudio: boolean;
+  audioRetentionDays: number;
+  selectedAudioDeviceId: string;
+  profiles?: ModelProfile[];
+  activeProfiles: Partial<Record<Modality, string>>;
+  modelSelections: ModelSelectionsState;
+  providerCredentials?: Record<string, ProviderCredentialState>;
+};
 
 export const defaultOverlayState: SpeechKitOverlayState = {
-  state: 'idle',
-  phase: 'idle',
-  text: '',
+  state: "idle",
+  phase: "idle",
+  text: "",
   level: 0,
   visible: true,
-  visualizer: 'pill',
-  design: 'default',
-  hotkey: 'win+alt',
-  dictateHotkey: 'win+alt',
-  assistHotkey: 'ctrl+shift+j',
-  voiceAgentHotkey: 'ctrl+shift+k',
-  agentHotkey: 'ctrl+shift+j',
-  activeMode: 'none',
+  visualizer: "pill",
+  design: "default",
+  hotkey: "win+alt",
+  dictateHotkey: "win+alt",
+  assistHotkey: "ctrl+win",
+  voiceAgentHotkey: "ctrl+shift",
+  dictateHotkeyBehavior: "push_to_talk",
+  assistHotkeyBehavior: "push_to_talk",
+  voiceAgentHotkeyBehavior: "push_to_talk",
+  modeEnabled: {
+    dictate: true,
+    assist: true,
+    voice_agent: true,
+  },
+  agentHotkey: "ctrl+win",
+  activeMode: "none",
   availableModes: {
     dictate: true,
     assist: true,
     voice_agent: true,
   },
-  position: 'top',
+  position: "top",
   movable: false,
   positionFreeX: 0,
   positionFreeY: 0,
-  lastTranscription: '',
+  lastTranscription: "",
   quickNoteMode: false,
-  selectedAudioDeviceId: '',
+  selectedAudioDeviceId: "",
   activeProfiles: {},
-}
+};
 
 export const defaultSettingsState: SpeechKitSettingsState = {
   overlayEnabled: true,
-  storeBackend: 'sqlite',
-  sqlitePath: '',
+  storeBackend: "sqlite",
+  sqlitePath: "",
   postgresConfigured: false,
-  postgresDSN: '',
+  postgresDSN: "",
   maxAudioStorageMB: 500,
   hfAvailable: false,
   hfEnabled: false,
   hfHasUserToken: false,
   hfHasInstallToken: false,
-  hfTokenSource: 'none',
-  hotkey: 'win+alt',
-  dictateHotkey: 'win+alt',
-  assistHotkey: 'ctrl+shift+j',
-  voiceAgentHotkey: 'ctrl+shift+k',
-  agentHotkey: 'ctrl+shift+j',
-  agentMode: 'assist',
-  activeMode: 'none',
+  hfTokenSource: "none",
+  hotkey: "win+alt",
+  dictateHotkey: "win+alt",
+  assistHotkey: "ctrl+win",
+  voiceAgentHotkey: "ctrl+shift",
+  dictateHotkeyBehavior: "push_to_talk",
+  assistHotkeyBehavior: "push_to_talk",
+  voiceAgentHotkeyBehavior: "push_to_talk",
+  voiceAgentCloseBehavior: "continue",
+  voiceAgentRefinementPrompt: "",
+  autoStartOnLaunch: false,
+  modeEnabled: {
+    dictate: true,
+    assist: true,
+    voice_agent: true,
+  },
+  agentHotkey: "ctrl+win",
+  agentMode: "assist",
+  activeMode: "none",
   availableModes: {
     dictate: true,
     assist: true,
     voice_agent: true,
   },
-  hfModel: 'openai/whisper-large-v3-turbo',
-  visualizer: 'pill',
-  design: 'default',
-  overlayPosition: 'top',
+  hfModel: "openai/whisper-large-v3-turbo",
+  visualizer: "pill",
+  design: "default",
+  overlayPosition: "top",
   overlayMovable: false,
   overlayFreeX: 0,
   overlayFreeY: 0,
-  vocabularyDictionary: '',
+  vocabularyDictionary: "",
   saveAudio: true,
   audioRetentionDays: 7,
-  selectedAudioDeviceId: '',
+  selectedAudioDeviceId: "",
   activeProfiles: {},
-}
+  modelSelections: {
+    dictate: { primaryProfileId: "", fallbackProfileId: "" },
+    assist: { primaryProfileId: "", fallbackProfileId: "" },
+    voice_agent: { primaryProfileId: "", fallbackProfileId: "" },
+  },
+};
 
 function readStringField(
   payload: Record<string, unknown> | null | undefined,
   key: string,
 ): string | undefined {
   if (!payload || !(key in payload)) {
-    return undefined
+    return undefined;
   }
-  const value = payload[key]
-  if (typeof value !== 'string') {
-    return ''
+  const value = payload[key];
+  if (typeof value !== "string") {
+    return "";
   }
-  return value.trim()
+  return value.trim();
+}
+
+function normalizeHotkeyBehavior(
+  payload: Record<string, unknown> | null | undefined,
+  key: string,
+  fallback: HotkeyBehavior,
+): HotkeyBehavior {
+  const value = readStringField(payload, key);
+  if (value === "toggle") {
+    return "toggle";
+  }
+  if (value === "push_to_talk") {
+    return "push_to_talk";
+  }
+  return fallback;
+}
+
+function normalizeModeFlags(
+  payload: Record<string, unknown> | null | undefined,
+  key: "modeEnabled" | "availableModes",
+  fallback: AvailableModes,
+): AvailableModes {
+  const raw = payload?.[key];
+  if (!raw || typeof raw !== "object") {
+    return fallback;
+  }
+
+  const map = raw as Partial<Record<keyof AvailableModes, unknown>>;
+  return {
+    dictate: typeof map.dictate === "boolean" ? map.dictate : fallback.dictate,
+    assist: typeof map.assist === "boolean" ? map.assist : fallback.assist,
+    voice_agent:
+      typeof map.voice_agent === "boolean"
+        ? map.voice_agent
+        : fallback.voice_agent,
+  };
 }
 
 function normalizeAvailableModes(
   payload: Record<string, unknown> | null | undefined,
+  modeEnabled: AvailableModes,
   hotkeys: AvailableModes,
 ): AvailableModes {
-  const raw = payload?.availableModes
-  if (!raw || typeof raw !== 'object') {
-    return hotkeys
-  }
-
-  const map = raw as Partial<Record<keyof AvailableModes, unknown>>
-  return {
-    dictate: typeof map.dictate === 'boolean' ? map.dictate : hotkeys.dictate,
-    assist: typeof map.assist === 'boolean' ? map.assist : hotkeys.assist,
-    voice_agent:
-      typeof map.voice_agent === 'boolean'
-        ? map.voice_agent
-        : hotkeys.voice_agent,
-  }
+  const derived = {
+    dictate: modeEnabled.dictate && hotkeys.dictate,
+    assist: modeEnabled.assist && hotkeys.assist,
+    voice_agent: modeEnabled.voice_agent && hotkeys.voice_agent,
+  };
+  return normalizeModeFlags(payload, "availableModes", derived);
 }
 
 function resolveAssistHotkey(
@@ -209,21 +306,21 @@ function resolveAssistHotkey(
   fallback: string,
 ): string {
   if (!payload) {
-    return fallback
+    return fallback;
   }
 
-  const explicit = readStringField(payload, 'assistHotkey')
+  const explicit = readStringField(payload, "assistHotkey");
   if (explicit !== undefined) {
-    return explicit
+    return explicit;
   }
 
-  const legacy = readStringField(payload, 'agentHotkey')
-  const legacyMode = readStringField(payload, 'agentMode')
-  if (legacy !== undefined && legacyMode !== 'voice_agent') {
-    return legacy
+  const legacy = readStringField(payload, "agentHotkey");
+  const legacyMode = readStringField(payload, "agentMode");
+  if (legacy !== undefined && legacyMode !== "voice_agent") {
+    return legacy;
   }
 
-  return ''
+  return "";
 }
 
 function resolveVoiceAgentHotkey(
@@ -231,75 +328,75 @@ function resolveVoiceAgentHotkey(
   fallback: string,
 ): string {
   if (!payload) {
-    return fallback
+    return fallback;
   }
 
-  const explicit = readStringField(payload, 'voiceAgentHotkey')
+  const explicit = readStringField(payload, "voiceAgentHotkey");
   if (explicit !== undefined) {
-    return explicit
+    return explicit;
   }
 
-  const legacy = readStringField(payload, 'agentHotkey')
-  const legacyMode = readStringField(payload, 'agentMode')
-  if (legacy !== undefined && legacyMode === 'voice_agent') {
-    return legacy
+  const legacy = readStringField(payload, "agentHotkey");
+  const legacyMode = readStringField(payload, "agentMode");
+  if (legacy !== undefined && legacyMode === "voice_agent") {
+    return legacy;
   }
 
-  return ''
+  return "";
 }
 
 function normalizeRuntimeMode(
   rawMode: string | undefined,
   availableModes: AvailableModes,
-  agentMode: AgentMode = 'assist',
+  agentMode: AgentMode = "assist",
 ): RuntimeMode {
-  let mode: RuntimeMode
+  let mode: RuntimeMode;
   switch (rawMode) {
-    case 'dictate':
-    case 'assist':
-    case 'voice_agent':
-    case 'none':
-      mode = rawMode
-      break
-    case 'agent':
-      mode = agentMode === 'voice_agent' ? 'voice_agent' : 'assist'
-      break
+    case "dictate":
+    case "assist":
+    case "voice_agent":
+    case "none":
+      mode = rawMode;
+      break;
+    case "agent":
+      mode = agentMode === "voice_agent" ? "voice_agent" : "assist";
+      break;
     default:
-      mode = 'none'
-      break
+      mode = "none";
+      break;
   }
 
-  if (mode === 'dictate' && !availableModes.dictate) {
-    return 'none'
+  if (mode === "dictate" && !availableModes.dictate) {
+    return "none";
   }
-  if (mode === 'assist' && !availableModes.assist) {
-    return 'none'
+  if (mode === "assist" && !availableModes.assist) {
+    return "none";
   }
-  if (mode === 'voice_agent' && !availableModes.voice_agent) {
-    return 'none'
+  if (mode === "voice_agent" && !availableModes.voice_agent) {
+    return "none";
   }
-  return mode
+  return mode;
 }
 
 function deriveLegacyAgentMode(
   assistHotkey: string,
   voiceAgentHotkey: string,
   activeMode: RuntimeMode,
-  fallback: AgentMode = 'assist',
+  fallback: AgentMode = "assist",
 ): AgentMode {
-  if (activeMode === 'voice_agent' && voiceAgentHotkey) {
-    return 'voice_agent'
+  if (activeMode === "voice_agent" && voiceAgentHotkey) {
+    return "voice_agent";
   }
-  if (activeMode === 'assist' && assistHotkey) {
-    return 'assist'
+  if (activeMode === "assist" && assistHotkey) {
+    return "assist";
   }
   if (assistHotkey) {
-    return 'assist'
+    return "assist";
   }
   if (voiceAgentHotkey) {
-    return 'voice_agent'
+    return "voice_agent";
   }
-  return fallback === 'voice_agent' ? 'voice_agent' : 'assist'
+  return fallback === "voice_agent" ? "voice_agent" : "assist";
 }
 
 function deriveLegacyAgentHotkey(
@@ -307,45 +404,66 @@ function deriveLegacyAgentHotkey(
   voiceAgentHotkey: string,
   activeMode: RuntimeMode,
 ): string {
-  if (activeMode === 'voice_agent' && voiceAgentHotkey) {
-    return voiceAgentHotkey
+  if (activeMode === "voice_agent" && voiceAgentHotkey) {
+    return voiceAgentHotkey;
   }
-  if (activeMode === 'assist' && assistHotkey) {
-    return assistHotkey
+  if (activeMode === "assist" && assistHotkey) {
+    return assistHotkey;
   }
-  return assistHotkey || voiceAgentHotkey
+  return assistHotkey || voiceAgentHotkey;
 }
 
 function normalizeOverlayState(
   payload: Partial<SpeechKitOverlayState> | null | undefined,
 ): SpeechKitOverlayState {
-  const base = { ...defaultOverlayState }
-  const record = (payload ?? null) as Record<string, unknown> | null
+  const base = { ...defaultOverlayState };
+  const record = (payload ?? null) as Record<string, unknown> | null;
   const hotkey =
-    readStringField(record, 'hotkey') ??
-    readStringField(record, 'dictateHotkey') ??
-    base.hotkey
+    readStringField(record, "hotkey") ??
+    readStringField(record, "dictateHotkey") ??
+    base.hotkey;
   const dictateHotkey =
-    readStringField(record, 'dictateHotkey') ??
-    readStringField(record, 'hotkey') ??
-    base.dictateHotkey
-  const assistHotkey = resolveAssistHotkey(record, base.assistHotkey)
+    readStringField(record, "dictateHotkey") ??
+    readStringField(record, "hotkey") ??
+    base.dictateHotkey;
+  const assistHotkey = resolveAssistHotkey(record, base.assistHotkey);
   const voiceAgentHotkey = resolveVoiceAgentHotkey(
     record,
     base.voiceAgentHotkey,
-  )
-  const availableModes = normalizeAvailableModes(record, {
-    dictate: dictateHotkey !== '',
-    assist: assistHotkey !== '',
-    voice_agent: voiceAgentHotkey !== '',
-  })
+  );
+  const dictateHotkeyBehavior = normalizeHotkeyBehavior(
+    record,
+    "dictateHotkeyBehavior",
+    base.dictateHotkeyBehavior,
+  );
+  const assistHotkeyBehavior = normalizeHotkeyBehavior(
+    record,
+    "assistHotkeyBehavior",
+    base.assistHotkeyBehavior,
+  );
+  const voiceAgentHotkeyBehavior = normalizeHotkeyBehavior(
+    record,
+    "voiceAgentHotkeyBehavior",
+    base.voiceAgentHotkeyBehavior,
+  );
+  const hotkeyModes = {
+    dictate: dictateHotkey !== "",
+    assist: assistHotkey !== "",
+    voice_agent: voiceAgentHotkey !== "",
+  };
+  const modeEnabled = normalizeModeFlags(record, "modeEnabled", hotkeyModes);
+  const availableModes = normalizeAvailableModes(
+    record,
+    modeEnabled,
+    hotkeyModes,
+  );
   const activeMode = normalizeRuntimeMode(
-    readStringField(record, 'activeMode'),
+    readStringField(record, "activeMode"),
     availableModes,
-  )
+  );
   const agentHotkey =
-    readStringField(record, 'agentHotkey') ??
-    deriveLegacyAgentHotkey(assistHotkey, voiceAgentHotkey, activeMode)
+    readStringField(record, "agentHotkey") ??
+    deriveLegacyAgentHotkey(assistHotkey, voiceAgentHotkey, activeMode);
 
   return {
     ...base,
@@ -354,6 +472,10 @@ function normalizeOverlayState(
     dictateHotkey,
     assistHotkey,
     voiceAgentHotkey,
+    dictateHotkeyBehavior,
+    assistHotkeyBehavior,
+    voiceAgentHotkeyBehavior,
+    modeEnabled,
     agentHotkey,
     activeMode,
     availableModes,
@@ -362,55 +484,96 @@ function normalizeOverlayState(
       (payload as { audioDeviceId?: string } | undefined)?.audioDeviceId ??
       base.selectedAudioDeviceId,
     activeProfiles: payload?.activeProfiles ?? base.activeProfiles,
-  }
+  };
 }
 
 function normalizeSettingsState(
   payload: Partial<SpeechKitSettingsState> | null | undefined,
 ): SpeechKitSettingsState {
-  const base = { ...defaultSettingsState }
-  const record = (payload ?? null) as Record<string, unknown> | null
+  const base = { ...defaultSettingsState };
+  const record = (payload ?? null) as Record<string, unknown> | null;
   const hotkey =
-    readStringField(record, 'hotkey') ??
-    readStringField(record, 'dictateHotkey') ??
-    base.hotkey
+    readStringField(record, "hotkey") ??
+    readStringField(record, "dictateHotkey") ??
+    base.hotkey;
   const dictateHotkey =
-    readStringField(record, 'dictateHotkey') ??
-    readStringField(record, 'hotkey') ??
-    base.dictateHotkey
-  const assistHotkey = resolveAssistHotkey(record, base.assistHotkey)
+    readStringField(record, "dictateHotkey") ??
+    readStringField(record, "hotkey") ??
+    base.dictateHotkey;
+  const assistHotkey = resolveAssistHotkey(record, base.assistHotkey);
   const voiceAgentHotkey = resolveVoiceAgentHotkey(
     record,
     base.voiceAgentHotkey,
-  )
-  const availableModes = normalizeAvailableModes(record, {
-    dictate: dictateHotkey !== '',
-    assist: assistHotkey !== '',
-    voice_agent: voiceAgentHotkey !== '',
-  })
+  );
+  const dictateHotkeyBehavior = normalizeHotkeyBehavior(
+    record,
+    "dictateHotkeyBehavior",
+    base.dictateHotkeyBehavior,
+  );
+  const assistHotkeyBehavior = normalizeHotkeyBehavior(
+    record,
+    "assistHotkeyBehavior",
+    base.assistHotkeyBehavior,
+  );
+  const voiceAgentHotkeyBehavior = normalizeHotkeyBehavior(
+    record,
+    "voiceAgentHotkeyBehavior",
+    base.voiceAgentHotkeyBehavior,
+  );
+  const voiceAgentCloseBehavior =
+    readStringField(record, "voiceAgentCloseBehavior") === "new_chat"
+      ? "new_chat"
+      : "continue";
+  const voiceAgentRefinementPrompt =
+    readStringField(record, "voiceAgentRefinementPrompt") ?? "";
+  const autoStartOnLaunch =
+    typeof record?.autoStartOnLaunch === "boolean"
+      ? record.autoStartOnLaunch
+      : typeof record?.voiceAgentAutoStart === "boolean"
+        ? record.voiceAgentAutoStart
+        : base.autoStartOnLaunch;
+  const hotkeyModes = {
+    dictate: dictateHotkey !== "",
+    assist: assistHotkey !== "",
+    voice_agent: voiceAgentHotkey !== "",
+  };
+  const modeEnabled = normalizeModeFlags(record, "modeEnabled", hotkeyModes);
+  const availableModes = normalizeAvailableModes(
+    record,
+    modeEnabled,
+    hotkeyModes,
+  );
   const agentMode =
-    readStringField(record, 'agentMode') === 'voice_agent'
-      ? 'voice_agent'
+    readStringField(record, "agentMode") === "voice_agent"
+      ? "voice_agent"
       : deriveLegacyAgentMode(
           assistHotkey,
           voiceAgentHotkey,
-          'none',
+          "none",
           base.agentMode,
-        )
+        );
   const activeMode = normalizeRuntimeMode(
-    readStringField(record, 'activeMode'),
+    readStringField(record, "activeMode"),
     availableModes,
     agentMode,
-  )
+  );
   const agentHotkey =
-    readStringField(record, 'agentHotkey') ??
-    deriveLegacyAgentHotkey(assistHotkey, voiceAgentHotkey, activeMode)
+    readStringField(record, "agentHotkey") ??
+    deriveLegacyAgentHotkey(assistHotkey, voiceAgentHotkey, activeMode);
   const storeBackend =
-    payload?.storeBackend === 'postgres' ? 'postgres' : base.storeBackend
+    payload?.storeBackend === "postgres" ? "postgres" : base.storeBackend;
+  const activeProfiles = payload?.activeProfiles ?? base.activeProfiles;
+  const modelSelections = normalizeModelSelections(record, activeProfiles);
+
+  const sanitizedPayload = {
+    ...((payload ?? {}) as Record<string, unknown>),
+  };
+  delete sanitizedPayload.voiceAgentFrameworkPrompt;
+  delete sanitizedPayload.voiceAgentInstruction;
 
   return {
     ...base,
-    ...(payload ?? {}),
+    ...sanitizedPayload,
     storeBackend,
     sqlitePath: payload?.sqlitePath ?? base.sqlitePath,
     postgresConfigured: payload?.postgresConfigured ?? base.postgresConfigured,
@@ -420,6 +583,13 @@ function normalizeSettingsState(
     dictateHotkey,
     assistHotkey,
     voiceAgentHotkey,
+    dictateHotkeyBehavior,
+    assistHotkeyBehavior,
+    voiceAgentHotkeyBehavior,
+    voiceAgentCloseBehavior,
+    voiceAgentRefinementPrompt,
+    autoStartOnLaunch,
+    modeEnabled,
     agentHotkey,
     agentMode,
     activeMode,
@@ -428,59 +598,114 @@ function normalizeSettingsState(
       payload?.selectedAudioDeviceId ??
       (payload as { audioDeviceId?: string } | undefined)?.audioDeviceId ??
       base.selectedAudioDeviceId,
-    vocabularyDictionary: payload?.vocabularyDictionary ?? base.vocabularyDictionary,
+    vocabularyDictionary:
+      payload?.vocabularyDictionary ?? base.vocabularyDictionary,
     profiles: payload?.profiles ?? base.profiles,
-    activeProfiles: payload?.activeProfiles ?? base.activeProfiles,
-    providerCredentials: payload?.providerCredentials ?? base.providerCredentials,
+    activeProfiles,
+    modelSelections,
+    providerCredentials:
+      payload?.providerCredentials ?? base.providerCredentials,
+  };
+}
+
+function normalizeModeSelectionEntry(
+  value: unknown,
+  fallbackPrimary = "",
+): ModeModelSelectionState {
+  if (!value || typeof value !== "object") {
+    return { primaryProfileId: fallbackPrimary, fallbackProfileId: "" };
   }
+
+  const entry = value as {
+    primaryProfileId?: unknown;
+    fallbackProfileId?: unknown;
+  };
+  const primaryProfileId =
+    typeof entry.primaryProfileId === "string"
+      ? entry.primaryProfileId.trim()
+      : fallbackPrimary;
+  const fallbackProfileId =
+    typeof entry.fallbackProfileId === "string"
+      ? entry.fallbackProfileId.trim()
+      : "";
+
+  if (primaryProfileId !== "" && primaryProfileId === fallbackProfileId) {
+    return { primaryProfileId, fallbackProfileId: "" };
+  }
+
+  return { primaryProfileId, fallbackProfileId };
+}
+
+function normalizeModelSelections(
+  payload: Record<string, unknown> | null | undefined,
+  activeProfiles: Partial<Record<Modality, string>>,
+): ModelSelectionsState {
+  const raw = payload?.modelSelections;
+  const selections =
+    raw && typeof raw === "object" ? (raw as Record<string, unknown>) : {};
+
+  return {
+    dictate: normalizeModeSelectionEntry(
+      selections.dictate,
+      activeProfiles.stt ?? "",
+    ),
+    assist: normalizeModeSelectionEntry(
+      selections.assist,
+      activeProfiles.assist ?? "",
+    ),
+    voice_agent: normalizeModeSelectionEntry(
+      selections.voice_agent,
+      activeProfiles.realtime_voice ?? "",
+    ),
+  };
 }
 
 export async function fetchOverlayState() {
-  const response = await fetch('/overlay/state', { cache: 'no-store' })
+  const response = await fetch("/overlay/state", { cache: "no-store" });
   if (!response.ok) {
-    throw new Error(`overlay state request failed: ${response.status}`)
+    throw new Error(`overlay state request failed: ${response.status}`);
   }
   return normalizeOverlayState(
     (await response.json()) as Partial<SpeechKitOverlayState>,
-  )
+  );
 }
 
 export async function fetchSettingsState() {
-  const response = await fetch('/settings/state', { cache: 'no-store' })
+  const response = await fetch("/settings/state", { cache: "no-store" });
   if (!response.ok) {
-    throw new Error(`settings state request failed: ${response.status}`)
+    throw new Error(`settings state request failed: ${response.status}`);
   }
   return normalizeSettingsState(
     (await response.json()) as Partial<SpeechKitSettingsState>,
-  )
+  );
 }
 
 export type AudioDevicesResponse = {
-  devices: AudioDevice[]
-  selectedDeviceId: string
-}
+  devices: AudioDevice[];
+  selectedDeviceId: string;
+};
 
 export type AudioDeviceUpdateResponse = {
-  message?: string
-  selectedDeviceId?: string
-}
+  message?: string;
+  selectedDeviceId?: string;
+};
 
 export async function fetchAudioDevices(): Promise<AudioDevicesResponse> {
-  const response = await fetch('/audio/devices', { cache: 'no-store' })
+  const response = await fetch("/audio/devices", { cache: "no-store" });
   if (!response.ok) {
-    throw new Error(`audio devices request failed: ${response.status}`)
+    throw new Error(`audio devices request failed: ${response.status}`);
   }
 
   const payload = (await response.json()) as
     | AudioDevicesResponse
     | AudioDevice[]
     | {
-        devices?: AudioDevice[]
-        selectedDeviceId?: string
-        selectedAudioDeviceId?: string
-        deviceId?: string
-        currentDeviceId?: string
-      }
+        devices?: AudioDevice[];
+        selectedDeviceId?: string;
+        selectedAudioDeviceId?: string;
+        deviceId?: string;
+        currentDeviceId?: string;
+      };
 
   if (Array.isArray(payload)) {
     return {
@@ -488,17 +713,17 @@ export async function fetchAudioDevices(): Promise<AudioDevicesResponse> {
       selectedDeviceId:
         payload.find((device) => device.isDefault)?.deviceId ??
         payload[0]?.deviceId ??
-        '',
-    }
+        "",
+    };
   }
 
   const normalizedPayload = payload as {
-    devices?: AudioDevice[]
-    selectedDeviceId?: string
-    selectedAudioDeviceId?: string
-    deviceId?: string
-    currentDeviceId?: string
-  }
+    devices?: AudioDevice[];
+    selectedDeviceId?: string;
+    selectedAudioDeviceId?: string;
+    deviceId?: string;
+    currentDeviceId?: string;
+  };
 
   return {
     devices: normalizedPayload.devices ?? [],
@@ -507,8 +732,8 @@ export async function fetchAudioDevices(): Promise<AudioDevicesResponse> {
       normalizedPayload.selectedAudioDeviceId ??
       normalizedPayload.currentDeviceId ??
       normalizedPayload.deviceId ??
-      '',
-  }
+      "",
+  };
 }
 
 export async function setAudioDevice(deviceId: string): Promise<string> {
@@ -516,403 +741,520 @@ export async function setAudioDevice(deviceId: string): Promise<string> {
     device_id: deviceId,
     audio_device_id: deviceId,
     selected_audio_device_id: deviceId,
-  })
-  const response = await fetch('/audio/device', {
-    method: 'POST',
+  });
+  const response = await fetch("/audio/device", {
+    method: "POST",
     body,
-  })
+  });
 
   if (!response.ok) {
-    throw new Error(`set audio device failed: ${response.status}`)
+    throw new Error(`set audio device failed: ${response.status}`);
   }
 
-  const payload = (await response.json()) as AudioDeviceUpdateResponse
-  return payload.message ?? ''
+  const payload = (await response.json()) as AudioDeviceUpdateResponse;
+  return payload.message ?? "";
 }
 
 export async function setActiveMode(mode: RuntimeMode): Promise<string> {
-  const body = new URLSearchParams({ mode })
-  const response = await fetch('/mode/active', {
-    method: 'POST',
+  const body = new URLSearchParams({ mode });
+  const response = await fetch("/mode/active", {
+    method: "POST",
     body,
-  })
+  });
 
   if (!response.ok) {
-    throw new Error(`set mode failed: ${response.status}`)
+    throw new Error(`set mode failed: ${response.status}`);
   }
 
-  const payload = (await response.json()) as { message?: string }
-  return payload.message ?? ''
+  const payload = (await response.json()) as { message?: string };
+  return payload.message ?? "";
+}
+
+export async function setModeEnabled(
+  mode: Exclude<RuntimeMode, "none">,
+  enabled: boolean,
+): Promise<string> {
+  const body = new URLSearchParams({
+    mode,
+    enabled: enabled ? "1" : "0",
+  });
+  const response = await fetch("/mode/enabled", {
+    method: "POST",
+    body,
+  });
+
+  if (!response.ok) {
+    throw new Error(`set mode enabled failed: ${response.status}`);
+  }
+
+  const payload = (await response.json()) as { message?: string };
+  return payload.message ?? "";
 }
 
 export async function fetchModelProfiles(): Promise<ModelProfile[]> {
-  const response = await fetch('/models/profiles', { cache: 'no-store' })
+  const response = await fetch("/models/profiles", { cache: "no-store" });
   if (!response.ok) {
-    throw new Error(`model profiles request failed: ${response.status}`)
+    throw new Error(`model profiles request failed: ${response.status}`);
   }
 
   const payload = (await response.json()) as
     | ModelProfile[]
-    | { profiles?: ModelProfile[] }
-  return Array.isArray(payload) ? payload : payload.profiles ?? []
+    | { profiles?: ModelProfile[] };
+  return Array.isArray(payload) ? payload : (payload.profiles ?? []);
 }
 
 export type TranscriptionRecord = {
-  id: number
-  text: string
-  language: string
-  provider: string
-  model?: string
-  durationMs?: number
-  latencyMs: number
-  audio?: AudioAsset
-  createdAt: string
-}
+  id: number;
+  text: string;
+  language: string;
+  provider: string;
+  model?: string;
+  durationMs?: number;
+  latencyMs: number;
+  audio?: AudioAsset;
+  createdAt: string;
+};
 
 export type QuickNote = {
-  id: number
-  text: string
-  language: string
-  provider: string
-  durationMs?: number
-  latencyMs: number
-  audio?: AudioAsset
-  pinned: boolean
-  createdAt: string
-  updatedAt: string
-}
+  id: number;
+  text: string;
+  language: string;
+  provider: string;
+  durationMs?: number;
+  latencyMs: number;
+  audio?: AudioAsset;
+  pinned: boolean;
+  createdAt: string;
+  updatedAt: string;
+};
 
 export type DashboardStats = {
-  transcriptions: number
-  quickNotes: number
-  totalWords: number
-  totalAudioDurationMs: number
-  averageWordsPerMinute: number
-  averageLatencyMs: number
-}
+  transcriptions: number;
+  quickNotes: number;
+  totalWords: number;
+  totalAudioDurationMs: number;
+  averageWordsPerMinute: number;
+  averageLatencyMs: number;
+};
 
 export async function fetchHistory(): Promise<TranscriptionRecord[]> {
-  const response = await fetch('/dashboard/history', { cache: 'no-store' })
-  if (!response.ok) throw new Error(`history: ${response.status}`)
-  return (await response.json()) as TranscriptionRecord[]
+  const response = await fetch("/dashboard/history", { cache: "no-store" });
+  if (!response.ok) throw new Error(`history: ${response.status}`);
+  return (await response.json()) as TranscriptionRecord[];
 }
 
 export async function fetchDashboardStats(): Promise<DashboardStats> {
-  const response = await fetch('/dashboard/stats', { cache: 'no-store' })
-  if (!response.ok) throw new Error(`dashboard stats: ${response.status}`)
-  return (await response.json()) as DashboardStats
+  const response = await fetch("/dashboard/stats", { cache: "no-store" });
+  if (!response.ok) throw new Error(`dashboard stats: ${response.status}`);
+  return (await response.json()) as DashboardStats;
 }
 
 export type AppVersionInfo = {
-  version: string
-  latestVersion?: string
-  updateURL?: string
-  downloadURL?: string
-  downloadSizeBytes?: number
-  assetName?: string
-}
+  version: string;
+  latestVersion?: string;
+  updateURL?: string;
+  downloadURL?: string;
+  downloadSizeBytes?: number;
+  assetName?: string;
+};
 
-export type AppUpdateStatus = 'pending' | 'running' | 'done' | 'failed' | 'cancelled'
+export type AppUpdateStatus =
+  | "pending"
+  | "running"
+  | "done"
+  | "failed"
+  | "cancelled";
 
 export type AppUpdateJob = {
-  id: string
-  version: string
-  assetName: string
-  status: AppUpdateStatus
-  progress: number
-  bytesDone: number
-  totalBytes: number
-  statusText: string
-  filePath?: string
-  error?: string
-}
+  id: string;
+  version: string;
+  assetName: string;
+  status: AppUpdateStatus;
+  progress: number;
+  bytesDone: number;
+  totalBytes: number;
+  statusText: string;
+  filePath?: string;
+  error?: string;
+};
 
 export async function fetchAppVersion(): Promise<AppVersionInfo> {
-  const response = await fetch('/app/version', { cache: 'no-store' })
-  if (!response.ok) throw new Error(`app version: ${response.status}`)
-  return (await response.json()) as AppVersionInfo
+  const response = await fetch("/app/version", { cache: "no-store" });
+  if (!response.ok) throw new Error(`app version: ${response.status}`);
+  return (await response.json()) as AppVersionInfo;
 }
 
 export async function fetchAppUpdateJobs(): Promise<AppUpdateJob[]> {
-  const response = await fetch('/app/update/jobs', { cache: 'no-store' })
-  if (!response.ok) throw new Error(`app update jobs: ${response.status}`)
-  return (await response.json()) as AppUpdateJob[]
+  const response = await fetch("/app/update/jobs", { cache: "no-store" });
+  if (!response.ok) throw new Error(`app update jobs: ${response.status}`);
+  return (await response.json()) as AppUpdateJob[];
 }
 
-export async function startAppUpdateDownload(version: string): Promise<AppUpdateJob> {
-  const body = new URLSearchParams({ version })
-  const response = await fetch('/app/update/download', { method: 'POST', body })
+export async function startAppUpdateDownload(
+  version: string,
+): Promise<AppUpdateJob> {
+  const body = new URLSearchParams({ version });
+  const response = await fetch("/app/update/download", {
+    method: "POST",
+    body,
+  });
   if (!response.ok) {
-    const errorText = await response.text()
-    throw new Error(errorText || `app update download: ${response.status}`)
+    const errorText = await response.text();
+    throw new Error(errorText || `app update download: ${response.status}`);
   }
-  return (await response.json()) as AppUpdateJob
+  return (await response.json()) as AppUpdateJob;
 }
 
 export async function cancelAppUpdateDownload(jobId: string): Promise<void> {
-  const body = new URLSearchParams({ job_id: jobId })
-  const response = await fetch('/app/update/cancel', { method: 'POST', body })
+  const body = new URLSearchParams({ job_id: jobId });
+  const response = await fetch("/app/update/cancel", { method: "POST", body });
   if (!response.ok) {
-    const errorText = await response.text()
-    throw new Error(errorText || `app update cancel: ${response.status}`)
+    const errorText = await response.text();
+    throw new Error(errorText || `app update cancel: ${response.status}`);
   }
 }
 
-export async function openAppUpdateInstaller(jobId: string): Promise<{ message?: string; filePath?: string }> {
-  const body = new URLSearchParams({ job_id: jobId })
-  const response = await fetch('/app/update/open', { method: 'POST', body })
+export async function openAppUpdateInstaller(
+  jobId: string,
+): Promise<{ message?: string; filePath?: string }> {
+  const body = new URLSearchParams({ job_id: jobId });
+  const response = await fetch("/app/update/open", { method: "POST", body });
   if (!response.ok) {
-    const errorText = await response.text()
-    throw new Error(errorText || `app update open: ${response.status}`)
+    const errorText = await response.text();
+    throw new Error(errorText || `app update open: ${response.status}`);
   }
-  return (await response.json()) as { message?: string; filePath?: string }
+  return (await response.json()) as { message?: string; filePath?: string };
 }
 
 export type LogEntry = {
-  message: string
-  type: LogType
-  timestamp: string
-}
+  message: string;
+  type: LogType;
+  timestamp: string;
+};
 
 export async function fetchLogs(): Promise<LogEntry[]> {
-  const response = await fetch('/dashboard/logs', { cache: 'no-store' })
-  if (!response.ok) throw new Error(`logs: ${response.status}`)
-  return (await response.json()) as LogEntry[]
+  const response = await fetch("/dashboard/logs", { cache: "no-store" });
+  if (!response.ok) throw new Error(`logs: ${response.status}`);
+  return (await response.json()) as LogEntry[];
 }
 
 export async function fetchQuickNotes(): Promise<QuickNote[]> {
-  const response = await fetch('/dashboard/quicknotes', { cache: 'no-store' })
-  if (!response.ok) throw new Error(`quicknotes: ${response.status}`)
-  return (await response.json()) as QuickNote[]
+  const response = await fetch("/dashboard/quicknotes", { cache: "no-store" });
+  if (!response.ok) throw new Error(`quicknotes: ${response.status}`);
+  return (await response.json()) as QuickNote[];
 }
 
 export async function createQuickNote(
   text: string,
 ): Promise<{ id: number; message: string }> {
-  const body = new URLSearchParams({ text })
-  const response = await fetch('/quicknotes/create', { method: 'POST', body })
-  if (!response.ok) throw new Error(`create quicknote: ${response.status}`)
-  return (await response.json()) as { id: number; message: string }
+  const body = new URLSearchParams({ text });
+  const response = await fetch("/quicknotes/create", { method: "POST", body });
+  if (!response.ok) throw new Error(`create quicknote: ${response.status}`);
+  return (await response.json()) as { id: number; message: string };
 }
 
-export async function updateQuickNote(id: number, text: string): Promise<string> {
-  const body = new URLSearchParams({ id: String(id), text })
-  const response = await fetch('/quicknotes/update', { method: 'POST', body })
-  if (!response.ok) throw new Error(`update quicknote: ${response.status}`)
-  const payload = (await response.json()) as { message?: string }
-  return payload.message ?? ''
+export async function updateQuickNote(
+  id: number,
+  text: string,
+): Promise<string> {
+  const body = new URLSearchParams({ id: String(id), text });
+  const response = await fetch("/quicknotes/update", { method: "POST", body });
+  if (!response.ok) throw new Error(`update quicknote: ${response.status}`);
+  const payload = (await response.json()) as { message?: string };
+  return payload.message ?? "";
 }
 
 export async function pinQuickNote(
   id: number,
   pinned: boolean,
 ): Promise<string> {
-  const body = new URLSearchParams({ id: String(id), pinned: pinned ? '1' : '0' })
-  const response = await fetch('/quicknotes/pin', { method: 'POST', body })
-  if (!response.ok) throw new Error(`pin quicknote: ${response.status}`)
-  const payload = (await response.json()) as { message?: string }
-  return payload.message ?? ''
+  const body = new URLSearchParams({
+    id: String(id),
+    pinned: pinned ? "1" : "0",
+  });
+  const response = await fetch("/quicknotes/pin", { method: "POST", body });
+  if (!response.ok) throw new Error(`pin quicknote: ${response.status}`);
+  const payload = (await response.json()) as { message?: string };
+  return payload.message ?? "";
 }
 
 export async function deleteQuickNote(id: number): Promise<string> {
-  const body = new URLSearchParams({ id: String(id) })
-  const response = await fetch('/quicknotes/delete', { method: 'POST', body })
-  if (!response.ok) throw new Error(`delete quicknote: ${response.status}`)
-  const payload = (await response.json()) as { message?: string }
-  return payload.message ?? ''
+  const body = new URLSearchParams({ id: String(id) });
+  const response = await fetch("/quicknotes/delete", { method: "POST", body });
+  if (!response.ok) throw new Error(`delete quicknote: ${response.status}`);
+  const payload = (await response.json()) as { message?: string };
+  return payload.message ?? "";
 }
 
 export async function quickNoteSummary(id: number): Promise<string> {
-  const body = new URLSearchParams({ id: String(id) })
-  const response = await fetch('/quicknotes/summary', { method: 'POST', body })
-  if (!response.ok) throw new Error(`quicknote summary: ${response.status}`)
-  const payload = (await response.json()) as { summary: string }
-  return payload.summary
+  const body = new URLSearchParams({ id: String(id) });
+  const response = await fetch("/quicknotes/summary", { method: "POST", body });
+  if (!response.ok) throw new Error(`quicknote summary: ${response.status}`);
+  const payload = (await response.json()) as { summary: string };
+  return payload.summary;
 }
 
 export async function quickNoteEmail(id: number): Promise<string> {
-  const body = new URLSearchParams({ id: String(id) })
-  const response = await fetch('/quicknotes/email', { method: 'POST', body })
-  if (!response.ok) throw new Error(`quicknote email: ${response.status}`)
-  const payload = (await response.json()) as { email: string }
-  return payload.email
+  const body = new URLSearchParams({ id: String(id) });
+  const response = await fetch("/quicknotes/email", { method: "POST", body });
+  if (!response.ok) throw new Error(`quicknote email: ${response.status}`);
+  const payload = (await response.json()) as { email: string };
+  return payload.email;
 }
 
 export async function armQuickNoteRecording(noteId?: number): Promise<string> {
-  const suffix = typeof noteId === 'number' && noteId > 0 ? `?id=${noteId}` : ''
+  const suffix =
+    typeof noteId === "number" && noteId > 0 ? `?id=${noteId}` : "";
   const response = await fetch(`/quicknotes/record-mode${suffix}`, {
-    method: 'POST',
-  })
-  if (!response.ok) throw new Error(`arm quicknote: ${response.status}`)
-  const payload = (await response.json()) as { message: string }
-  return payload.message
+    method: "POST",
+  });
+  if (!response.ok) throw new Error(`arm quicknote: ${response.status}`);
+  const payload = (await response.json()) as { message: string };
+  return payload.message;
 }
 
 export function dashboardAudioDownloadURL(
-  kind: 'transcription' | 'quicknote',
+  kind: "transcription" | "quicknote",
   id: number,
 ) {
-  return `/dashboard/audio?kind=${kind}&id=${id}`
+  return `/dashboard/audio?kind=${kind}&id=${id}`;
 }
 
 export async function revealDashboardAudio(
-  kind: 'transcription' | 'quicknote',
+  kind: "transcription" | "quicknote",
   id: number,
 ): Promise<string> {
   const body = new URLSearchParams({
     kind,
     id: String(id),
-  })
-  const response = await fetch('/dashboard/audio/reveal', {
-    method: 'POST',
+  });
+  const response = await fetch("/dashboard/audio/reveal", {
+    method: "POST",
     body,
-  })
+  });
   if (!response.ok) {
-    throw new Error(`audio reveal: ${response.status}`)
+    throw new Error(`audio reveal: ${response.status}`);
   }
-  const payload = (await response.json()) as { message?: string }
-  return payload.message ?? ''
+  const payload = (await response.json()) as { message?: string };
+  return payload.message ?? "";
 }
 
 export async function saveSettingsState(nextState: SpeechKitSettingsState) {
+  let overlayFreeX = nextState.overlayFreeX;
+  let overlayFreeY = nextState.overlayFreeY;
+
+  if (nextState.overlayMovable) {
+    try {
+      const overlayState = await fetchOverlayState();
+      overlayFreeX = overlayState.positionFreeX;
+      overlayFreeY = overlayState.positionFreeY;
+    } catch {
+      // Preserve the caller-provided snapshot when the runtime overlay state
+      // cannot be refreshed.
+    }
+  }
+
   const legacyAgentMode = deriveLegacyAgentMode(
     nextState.assistHotkey,
     nextState.voiceAgentHotkey,
     nextState.activeMode,
     nextState.agentMode,
-  )
+  );
   const legacyAgentHotkey = deriveLegacyAgentHotkey(
     nextState.assistHotkey,
     nextState.voiceAgentHotkey,
     nextState.activeMode,
-  )
+  );
   const body = new URLSearchParams({
-    overlay_enabled: nextState.overlayEnabled ? '1' : '0',
+    overlay_enabled: nextState.overlayEnabled ? "1" : "0",
     overlay_visualizer: nextState.visualizer,
     overlay_design: nextState.design,
     hotkey: nextState.dictateHotkey ?? nextState.hotkey,
     dictate_hotkey: nextState.dictateHotkey ?? nextState.hotkey,
+    dictate_hotkey_behavior: nextState.dictateHotkeyBehavior,
+    dictate_enabled: nextState.modeEnabled.dictate ? "1" : "0",
     assist_hotkey: nextState.assistHotkey,
+    assist_hotkey_behavior: nextState.assistHotkeyBehavior,
+    assist_enabled: nextState.modeEnabled.assist ? "1" : "0",
     voice_agent_hotkey: nextState.voiceAgentHotkey,
+    voice_agent_hotkey_behavior: nextState.voiceAgentHotkeyBehavior,
+    voice_agent_close_behavior: nextState.voiceAgentCloseBehavior,
+    voice_agent_refinement_prompt: nextState.voiceAgentRefinementPrompt,
+    auto_start_on_launch: nextState.autoStartOnLaunch ? "1" : "0",
+    voice_agent_enabled: nextState.modeEnabled.voice_agent ? "1" : "0",
     agent_hotkey: legacyAgentHotkey,
     agent_mode: legacyAgentMode,
     active_mode: nextState.activeMode,
     hf_model: nextState.hfModel,
     overlay_position: nextState.overlayPosition,
-    overlay_movable: nextState.overlayMovable ? '1' : '0',
-    overlay_free_x: String(nextState.overlayFreeX),
-    overlay_free_y: String(nextState.overlayFreeY),
+    overlay_movable: nextState.overlayMovable ? "1" : "0",
+    overlay_free_x: String(overlayFreeX),
+    overlay_free_y: String(overlayFreeY),
     store_backend: nextState.storeBackend,
     store_sqlite_path: nextState.sqlitePath,
     store_postgres_dsn: nextState.postgresDSN,
-    store_save_audio: nextState.saveAudio ? '1' : '0',
+    store_save_audio: nextState.saveAudio ? "1" : "0",
     store_audio_retention_days: String(nextState.audioRetentionDays),
     store_max_audio_storage_mb: String(nextState.maxAudioStorageMB),
     vocabulary_dictionary: nextState.vocabularyDictionary,
     selected_audio_device_id: nextState.selectedAudioDeviceId,
     audio_device_id: nextState.selectedAudioDeviceId,
-  })
+    dictate_primary_profile_id:
+      nextState.modelSelections.dictate.primaryProfileId,
+    dictate_fallback_profile_id:
+      nextState.modelSelections.dictate.fallbackProfileId,
+    assist_primary_profile_id:
+      nextState.modelSelections.assist.primaryProfileId,
+    assist_fallback_profile_id:
+      nextState.modelSelections.assist.fallbackProfileId,
+    voice_primary_profile_id:
+      nextState.modelSelections.voice_agent.primaryProfileId,
+    voice_fallback_profile_id:
+      nextState.modelSelections.voice_agent.fallbackProfileId,
+  });
 
-  const response = await fetch('/settings/update', {
-    method: 'POST',
+  const response = await fetch("/settings/update", {
+    method: "POST",
     body,
-  })
+  });
 
   if (!response.ok) {
-    throw new Error(`settings update failed: ${response.status}`)
+    throw new Error(`settings update failed: ${response.status}`);
   }
 
-  const payload = (await response.json()) as { message?: string }
-  return payload.message ?? ''
+  const payload = (await response.json()) as { message?: string };
+  if (payload.message && payload.message !== "Saved") {
+    throw new Error(payload.message);
+  }
+  return payload.message ?? "";
+}
+
+export async function resetOverlayPosition() {
+  const response = await fetch("/settings/overlay-position/reset", {
+    method: "POST",
+  });
+
+  if (!response.ok) {
+    throw new Error(`overlay position reset failed: ${response.status}`);
+  }
+
+  const payload = (await response.json()) as { message?: string };
+  return payload.message ?? "";
 }
 
 export async function saveProviderCredential(provider: string, secret: string) {
-  const body = new URLSearchParams({ provider, credential: secret })
-  const response = await fetch('/settings/provider-credentials/save', { method: 'POST', body })
-  if (!response.ok) throw new Error(`provider credential save failed: ${response.status}`)
-  return (await response.json()) as { message?: string }
+  const body = new URLSearchParams({ provider, credential: secret });
+  const response = await fetch("/settings/provider-credentials/save", {
+    method: "POST",
+    body,
+  });
+  if (!response.ok)
+    throw new Error(`provider credential save failed: ${response.status}`);
+  return (await response.json()) as { message?: string };
 }
 
 export async function clearProviderCredential(provider: string) {
-  const body = new URLSearchParams({ provider })
-  const response = await fetch('/settings/provider-credentials/clear', { method: 'POST', body })
-  if (!response.ok) throw new Error(`provider credential clear failed: ${response.status}`)
-  return (await response.json()) as { message?: string }
+  const body = new URLSearchParams({ provider });
+  const response = await fetch("/settings/provider-credentials/clear", {
+    method: "POST",
+    body,
+  });
+  if (!response.ok)
+    throw new Error(`provider credential clear failed: ${response.status}`);
+  return (await response.json()) as { message?: string };
 }
 
 export async function testProviderCredential(provider: string, secret: string) {
-  const body = new URLSearchParams({ provider, credential: secret })
-  const response = await fetch('/settings/provider-credentials/test', { method: 'POST', body })
-  if (!response.ok) throw new Error(`provider credential test failed: ${response.status}`)
-  return (await response.json()) as { message?: string }
+  const body = new URLSearchParams({ provider, credential: secret });
+  const response = await fetch("/settings/provider-credentials/test", {
+    method: "POST",
+    body,
+  });
+  if (!response.ok)
+    throw new Error(`provider credential test failed: ${response.status}`);
+  return (await response.json()) as { message?: string };
 }
 
 // ── Model Downloads ──────────────────────────────────────────────────────────
 
-export type DownloadKind = 'http' | 'ollama'
-export type DownloadStatus = 'pending' | 'running' | 'done' | 'failed' | 'cancelled'
+export type DownloadKind = "http" | "ollama";
+export type DownloadStatus =
+  | "pending"
+  | "running"
+  | "done"
+  | "failed"
+  | "cancelled";
 
 export type DownloadItem = {
-  id: string
-  profileId: string
-  name: string
-  description: string
-  sizeLabel: string
-  sizeBytes: number
-  kind: DownloadKind
-  url?: string
-  ollamaModel?: string
-  license: string
-  available: boolean
-  selected: boolean
-  recommended?: boolean
-}
+  id: string;
+  profileId: string;
+  name: string;
+  description: string;
+  sizeLabel: string;
+  sizeBytes: number;
+  kind: DownloadKind;
+  url?: string;
+  ollamaModel?: string;
+  license: string;
+  available: boolean;
+  selected: boolean;
+  runtimeReady?: boolean;
+  runtimeProblem?: string;
+  recommended?: boolean;
+};
 
 export type DownloadJob = {
-  id: string
-  modelId: string
-  profileId: string
-  status: DownloadStatus
-  progress: number
-  bytesDone: number
-  totalBytes: number
-  statusText: string
-  error?: string
-}
+  id: string;
+  modelId: string;
+  profileId: string;
+  status: DownloadStatus;
+  progress: number;
+  bytesDone: number;
+  totalBytes: number;
+  statusText: string;
+  error?: string;
+};
 
 export async function fetchDownloadCatalog(): Promise<DownloadItem[]> {
-  const resp = await fetch('/models/downloads/catalog')
-  if (!resp.ok) throw new Error(`catalog fetch failed: ${resp.status}`)
-  return resp.json() as Promise<DownloadItem[]>
+  const resp = await fetch("/models/downloads/catalog");
+  if (!resp.ok) throw new Error(`catalog fetch failed: ${resp.status}`);
+  return resp.json() as Promise<DownloadItem[]>;
 }
 
 export async function fetchDownloadJobs(): Promise<DownloadJob[]> {
-  const resp = await fetch('/models/downloads/jobs')
-  if (!resp.ok) throw new Error(`jobs fetch failed: ${resp.status}`)
-  return resp.json() as Promise<DownloadJob[]>
+  const resp = await fetch("/models/downloads/jobs");
+  if (!resp.ok) throw new Error(`jobs fetch failed: ${resp.status}`);
+  return resp.json() as Promise<DownloadJob[]>;
 }
 
-export async function startModelDownload(modelId: string): Promise<DownloadJob> {
-  const body = new URLSearchParams({ model_id: modelId })
-  const resp = await fetch('/models/downloads/start', { method: 'POST', body })
+export async function startModelDownload(
+  modelId: string,
+): Promise<DownloadJob> {
+  const body = new URLSearchParams({ model_id: modelId });
+  const resp = await fetch("/models/downloads/start", { method: "POST", body });
   if (!resp.ok) {
-    const err = await resp.text()
-    throw new Error(err || `start download failed: ${resp.status}`)
+    const err = await resp.text();
+    throw new Error(err || `start download failed: ${resp.status}`);
   }
-  return resp.json() as Promise<DownloadJob>
+  return resp.json() as Promise<DownloadJob>;
 }
 
-export async function selectDownloadedModel(modelId: string): Promise<{ message?: string }> {
-  const body = new URLSearchParams({ model_id: modelId })
-  const resp = await fetch('/models/downloads/select', { method: 'POST', body })
+export async function selectDownloadedModel(
+  modelId: string,
+): Promise<{ message?: string }> {
+  const body = new URLSearchParams({ model_id: modelId });
+  const resp = await fetch("/models/downloads/select", {
+    method: "POST",
+    body,
+  });
   if (!resp.ok) {
-    const err = await resp.text()
-    throw new Error(err || `select model failed: ${resp.status}`)
+    const err = await resp.text();
+    throw new Error(err || `select model failed: ${resp.status}`);
   }
-  return resp.json() as Promise<{ message?: string }>
+  return resp.json() as Promise<{ message?: string }>;
 }
 
 export async function cancelModelDownload(jobId: string): Promise<void> {
-  const body = new URLSearchParams({ job_id: jobId })
-  await fetch('/models/downloads/cancel', { method: 'POST', body })
+  const body = new URLSearchParams({ job_id: jobId });
+  await fetch("/models/downloads/cancel", { method: "POST", body });
 }

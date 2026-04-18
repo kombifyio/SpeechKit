@@ -9,9 +9,18 @@ import {
   PillAnchorOverlay,
 } from '@/components/overlay-surfaces'
 
-const { fetchOverlayStateMock, setActiveModeMock } = vi.hoisted(() => ({
+  const {
+  fetchOverlayStateMock,
+  setActiveModeMock,
+  setModeEnabledMock,
+  fetchAudioDevicesMock,
+  setAudioDeviceMock,
+} = vi.hoisted(() => ({
   fetchOverlayStateMock: vi.fn<() => Promise<SpeechKitOverlayState>>(),
   setActiveModeMock: vi.fn<() => Promise<string>>(),
+  setModeEnabledMock: vi.fn<(mode: string, enabled: boolean) => Promise<string>>(),
+  fetchAudioDevicesMock: vi.fn(),
+  setAudioDeviceMock: vi.fn<(deviceId: string) => Promise<string>>(),
 }))
 
 vi.mock('@/lib/speechkit', async () => {
@@ -19,7 +28,10 @@ vi.mock('@/lib/speechkit', async () => {
   return {
     ...actual,
     fetchOverlayState: fetchOverlayStateMock,
+    fetchAudioDevices: fetchAudioDevicesMock,
+    setAudioDevice: setAudioDeviceMock,
     setActiveMode: setActiveModeMock,
+    setModeEnabled: setModeEnabledMock,
   }
 })
 
@@ -36,8 +48,16 @@ function snap(partial: Partial<SpeechKitOverlayState> = {}): SpeechKitOverlaySta
     dictateHotkey: 'win+alt',
     assistHotkey: 'ctrl+shift+j',
     voiceAgentHotkey: 'ctrl+shift+v',
+    dictateHotkeyBehavior: 'push_to_talk',
+    assistHotkeyBehavior: 'push_to_talk',
+    voiceAgentHotkeyBehavior: 'toggle',
     agentHotkey: 'ctrl+shift+j',
     activeMode: 'none',
+    modeEnabled: {
+      dictate: true,
+      assist: true,
+      voice_agent: true,
+    },
     availableModes: {
       dictate: true,
       assist: true,
@@ -59,7 +79,19 @@ describe('overlay surfaces', () => {
   beforeEach(() => {
     fetchOverlayStateMock.mockReset()
     setActiveModeMock.mockReset()
+    setModeEnabledMock.mockReset()
+    fetchAudioDevicesMock.mockReset()
+    setAudioDeviceMock.mockReset()
     setActiveModeMock.mockResolvedValue('')
+    setModeEnabledMock.mockResolvedValue('')
+    fetchAudioDevicesMock.mockResolvedValue({
+      devices: [
+        { deviceId: 'mic-1', label: 'Desk Mic' },
+        { deviceId: 'mic-2', label: 'Headset Mic' },
+      ],
+      selectedDeviceId: 'mic-1',
+    })
+    setAudioDeviceMock.mockResolvedValue('Selected')
     vi.restoreAllMocks()
   })
 
@@ -108,10 +140,15 @@ describe('overlay surfaces', () => {
     expect(await screen.findByTitle('Active mode: Assist')).toBeInTheDocument()
   })
 
-  it('renders only configured mode actions in the pill panel', async () => {
+  it('renders quick controls on the left and three independent module toggles on the right in the pill panel', async () => {
     fetchOverlayStateMock.mockResolvedValue(
       snap({
-        assistHotkey: '',
+        activeMode: 'voice_agent',
+        modeEnabled: {
+          dictate: true,
+          assist: false,
+          voice_agent: true,
+        },
         availableModes: {
           dictate: true,
           assist: false,
@@ -129,14 +166,103 @@ describe('overlay surfaces', () => {
     expect(screen.getByTestId('pill-panel-stage')).toHaveClass('absolute', 'inset-0', 'flex', 'items-center', 'justify-center')
     expect(screen.getByTestId('pill-panel-shell')).toHaveAttribute('data-overlay-surface', 'pill-panel')
     expect(screen.getByTestId('pill-panel-center-shell')).toHaveAttribute('data-overlay-surface', 'pill-panel-center')
-    expect(screen.getByRole('button', { name: /copy/i })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: /note/i })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Dictation' })).toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: 'Assist' })).not.toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Voice Agent' })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: /microphone settings/i })).toBeInTheDocument()
+    const leftControls = screen.getByTestId('pill-panel-left-controls')
+    const rightControls = screen.getByTestId('pill-panel-mode-controls')
+
+    expect(screen.getByTestId('pill-panel-shell')).toHaveClass('grid')
+    expect(leftControls).toHaveClass('w-[76px]')
+    expect(rightControls).toHaveClass('w-[76px]')
+    expect(within(leftControls).getByRole('combobox', { name: /microphone quick select/i })).toBeInTheDocument()
+    expect(within(leftControls).getByRole('button', { name: /copy/i })).toBeInTheDocument()
+    expect(within(leftControls).getByRole('button', { name: /note/i })).toBeInTheDocument()
+    expect(within(leftControls).getByTestId('mic-selector-icon')).toHaveAttribute('data-icon', 'mic')
+    expect(within(rightControls).getByRole('button', { name: 'Dictation' })).toBeInTheDocument()
+    expect(within(rightControls).getByRole('button', { name: 'Assist' })).toBeInTheDocument()
+    expect(within(rightControls).getByRole('button', { name: 'Voice Agent' })).toBeInTheDocument()
+    expect(within(rightControls).getByTestId('mode-icon-dictation')).toHaveAttribute('data-icon', 'audio-lines')
+    expect(within(rightControls).getAllByRole('button')).toHaveLength(3)
+    expect(screen.queryByRole('button', { name: /microphone settings/i })).not.toBeInTheDocument()
     expect(screen.getByTestId('pill-panel-status')).toHaveTextContent('No mode ready')
     expect(screen.getByTestId('pill-panel-center-shell')).toHaveAttribute('data-overlay-draggable', 'true')
+    expect(within(rightControls).getByRole('button', { name: 'Assist' })).toHaveAttribute('aria-pressed', 'false')
+    expect(within(rightControls).getByRole('button', { name: 'Voice Agent' })).toHaveAttribute('data-runtime-active', 'true')
+    expect(within(rightControls).getByTestId('mode-toggle-assist-slashed')).toBeInTheDocument()
+  })
+
+  it('switches the microphone from the pill panel quick selector', async () => {
+    fetchOverlayStateMock.mockResolvedValue(snap({ selectedAudioDeviceId: 'mic-1' }))
+
+    render(<PillActionsOverlay />)
+
+    const select = await screen.findByRole('combobox', { name: /microphone quick select/i })
+    await waitFor(() => expect(select).not.toBeDisabled())
+    fireEvent.change(select, { target: { value: 'mic-2' } })
+
+    await waitFor(() => expect(setAudioDeviceMock).toHaveBeenCalledWith('mic-2'))
+    expect(select).toHaveValue('mic-2')
+  })
+
+  it('moves the movable pill panel through overlay move routes instead of native drag regions', async () => {
+    fetchOverlayStateMock.mockResolvedValue(
+      snap({
+        movable: true,
+        positionFreeX: 640,
+        positionFreeY: 360,
+      }),
+    )
+    const fetchSpy = vi.spyOn(window, 'fetch').mockResolvedValue(new Response(null, { status: 200 }))
+
+    render(<PillActionsOverlay />)
+
+    const stage = await screen.findByTestId('pill-panel-stage')
+    const centerShell = screen.getByTestId('pill-panel-center-shell')
+
+    expect(centerShell.getAttribute('style') ?? '').not.toContain('drag')
+
+    fireEvent.pointerDown(centerShell, {
+      pointerId: 7,
+      button: 0,
+      screenX: 640,
+      screenY: 360,
+    })
+    fireEvent.mouseLeave(stage)
+    fireEvent.pointerMove(centerShell, {
+      pointerId: 7,
+      buttons: 1,
+      screenX: 684,
+      screenY: 392,
+    })
+    fireEvent.pointerUp(centerShell, {
+      pointerId: 7,
+      button: 0,
+      screenX: 684,
+      screenY: 392,
+    })
+
+    const moveCall = fetchSpy.mock.calls.find(([url]) => url === '/overlay/free-center')
+    expect(moveCall).toBeTruthy()
+    expect(moveCall?.[1]).toEqual(
+      expect.objectContaining({
+        method: 'POST',
+      }),
+    )
+    const moveBody = moveCall?.[1]?.body
+    expect(moveBody).toBeInstanceOf(URLSearchParams)
+    const moveParams = moveBody as URLSearchParams
+    expect(moveParams.get('center_x')).toBe('684')
+    expect(moveParams.get('center_y')).toBe('392')
+
+    const saveCall = fetchSpy.mock.calls.find(([url]) => url === '/overlay/free-center/save')
+    expect(saveCall).toBeTruthy()
+    const saveBody = saveCall?.[1]?.body
+    expect(saveBody).toBeInstanceOf(URLSearchParams)
+    const saveParams = saveBody as URLSearchParams
+    expect(saveParams.get('center_x')).toBe('684')
+    expect(saveParams.get('center_y')).toBe('392')
+
+    expect(
+      fetchSpy.mock.calls.some(([url]) => url === '/overlay/pill-panel/hide'),
+    ).toBe(false)
   })
 
   it('returns from the pill panel host on mouse leave', async () => {
@@ -153,14 +279,28 @@ describe('overlay surfaces', () => {
     )
   })
 
-  it('allows toggling an active mode back to none from the pill panel', async () => {
-    fetchOverlayStateMock.mockResolvedValue(snap({ activeMode: 'assist' }))
+  it('toggles a single module without changing the other module buttons', async () => {
+    fetchOverlayStateMock.mockResolvedValue(
+      snap({
+        modeEnabled: {
+          dictate: true,
+          assist: false,
+          voice_agent: true,
+        },
+        availableModes: {
+          dictate: true,
+          assist: false,
+          voice_agent: true,
+        },
+      }),
+    )
     render(<PillActionsOverlay />)
 
     const assistButton = await screen.findByRole('button', { name: 'Assist' })
     fireEvent.click(assistButton)
 
-    await waitFor(() => expect(setActiveModeMock).toHaveBeenCalledWith('none'))
+    await waitFor(() => expect(setModeEnabledMock).toHaveBeenCalledWith('assist', true))
+    expect(setActiveModeMock).not.toHaveBeenCalled()
   })
 
   it('renders the dot anchor as a compact circular surface', async () => {
@@ -192,11 +332,15 @@ describe('overlay surfaces', () => {
     )
   })
 
-  it('lists configured tri-mode actions in the dot radial menu', async () => {
+  it('lists all three module toggles in the dot radial menu and keeps disabled ones visible', async () => {
     fetchOverlayStateMock.mockResolvedValue(
       snap({
         visualizer: 'circle',
-        voiceAgentHotkey: '',
+        modeEnabled: {
+          dictate: true,
+          assist: true,
+          voice_agent: false,
+        },
         availableModes: {
           dictate: true,
           assist: true,
@@ -220,7 +364,7 @@ describe('overlay surfaces', () => {
     expect(labels.getByText('Note')).toBeInTheDocument()
     expect(labels.getByText('Dictation')).toBeInTheDocument()
     expect(labels.getByText('Assist')).toBeInTheDocument()
-    expect(labels.queryByText('Voice Agent')).not.toBeInTheDocument()
+    expect(labels.getByText('Voice Agent')).toBeInTheDocument()
   })
 
   it('returns from the radial host on mouse leave', async () => {

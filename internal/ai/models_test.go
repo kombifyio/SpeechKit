@@ -10,7 +10,14 @@ import (
 	"time"
 
 	"github.com/firebase/genkit/go/ai"
+
+	"github.com/kombifyio/SpeechKit/internal/netsec"
 )
+
+func init() {
+	// Tests use httptest loopback servers; relax LLM call validation.
+	AICallValidation = netsec.ValidationOptions{AllowLoopback: true, AllowHTTP: true}
+}
 
 func testClient() *http.Client {
 	return &http.Client{Timeout: 5 * time.Second}

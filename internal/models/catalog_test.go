@@ -131,6 +131,8 @@ func TestDefaultCatalogUsesMinimalSwitcherChoices(t *testing.T) {
 		switch profile.Modality {
 		case ModalitySTT, ModalityUtility, ModalityAssist, ModalityRealtimeVoice:
 			gotByModality[profile.Modality] = append(gotByModality[profile.Modality], profile)
+		default:
+			// TTS, Embedding, Reranker — not counted in this test.
 		}
 	}
 

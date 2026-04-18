@@ -70,7 +70,7 @@ func (p *Player) PlayMP3(ctx context.Context, data []byte) error {
 		return fmt.Errorf("mp3 decode: %w", err)
 	}
 
-	return p.playStream(ctx, decoder, decoder.SampleRate())
+	return p.playStream(ctx, decoder)
 }
 
 // PlayPCM plays raw PCM audio (16-bit signed int, little-endian, mono).
@@ -81,11 +81,11 @@ func (p *Player) PlayPCM(ctx context.Context, data []byte, sampleRate int) error
 	if sampleRate != 0 && sampleRate != 24000 {
 		slog.Warn("PCM sample rate does not match oto context — audio may play at wrong pitch", "sample_rate", sampleRate, "expected", 24000)
 	}
-	return p.playStream(ctx, bytes.NewReader(data), sampleRate)
+	return p.playStream(ctx, bytes.NewReader(data))
 }
 
 // playStream plays audio from a reader through oto.
-func (p *Player) playStream(ctx context.Context, reader io.Reader, sampleRate int) error {
+func (p *Player) playStream(ctx context.Context, reader io.Reader) error {
 	p.Stop() // Stop any current playback.
 
 	p.mu.Lock()

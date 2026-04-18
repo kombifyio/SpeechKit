@@ -1,3 +1,13 @@
+//go:build integration
+
+// Live smoke test against the Hugging Face Inference API.
+// Gated by the `integration` build tag so it is excluded from default
+// `go test ./...` runs. Additionally skips cleanly when HF_TOKEN is not
+// injected (e.g. OSS contributors without credentials).
+//
+// Run locally with a token in env:
+//   HF_TOKEN=... go test -tags=integration -run TestHF_IntegrationUploadSmoke ./internal/stt/
+
 package stt
 
 import (
@@ -9,13 +19,9 @@ import (
 )
 
 func TestHF_IntegrationUploadSmoke(t *testing.T) {
-	if os.Getenv("SPEECHKIT_HF_SMOKE") != "1" {
-		t.Skip("set SPEECHKIT_HF_SMOKE=1 to run live Hugging Face upload smoke test")
-	}
-
 	token := os.Getenv("HF_TOKEN")
 	if token == "" {
-		t.Skip("HF_TOKEN not set")
+		t.Skip("HF_TOKEN not set â€” integration test requires live Hugging Face credentials")
 	}
 
 	model := os.Getenv("HF_MODEL")

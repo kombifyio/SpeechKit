@@ -37,7 +37,7 @@ type Tray struct {
 }
 
 // New creates a system tray with menu and icons.
-func New(app *application.App, onQuit func(), onSettings func()) *Tray {
+func New(app *application.App, onQuit, onSettings func()) *Tray {
 	t := &Tray{
 		state:      StateIdle,
 		OnQuit:     onQuit,

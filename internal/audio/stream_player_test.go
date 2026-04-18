@@ -1,6 +1,7 @@
 package audio
 
 import (
+	"errors"
 	"io"
 	"sync"
 	"testing"
@@ -49,7 +50,7 @@ func TestStreamPipeClosedReturnsEOF(t *testing.T) {
 
 	buf := make([]byte, 10)
 	_, err := p.Read(buf)
-	if err != io.EOF {
+	if !errors.Is(err, io.EOF) {
 		t.Fatalf("expected io.EOF, got %v", err)
 	}
 }
@@ -70,7 +71,7 @@ func TestStreamPipeDrainsBeforeEOF(t *testing.T) {
 
 	// Next read should return EOF.
 	_, err = p.Read(buf)
-	if err != io.EOF {
+	if !errors.Is(err, io.EOF) {
 		t.Fatalf("expected io.EOF on second read, got %v", err)
 	}
 }
@@ -107,7 +108,7 @@ func TestStreamPipeCloseIdempotent(t *testing.T) {
 
 	buf := make([]byte, 10)
 	_, err := p.Read(buf)
-	if err != io.EOF {
+	if !errors.Is(err, io.EOF) {
 		t.Fatalf("expected io.EOF, got %v", err)
 	}
 }

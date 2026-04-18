@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"strings"
 
 	"github.com/kombifyio/SpeechKit/internal/config"
@@ -15,17 +16,25 @@ const (
 	modeAgent      = "agent"
 )
 
-func orderedRuntimeModes() []string {
-	return []string{modeDictate, modeAssist, modeVoiceAgent}
+var allowedModeHotkeyBases = []string{"win+alt", "ctrl+win", "ctrl+shift"}
+
+var allowedModeHotkeySuffixes = map[string]struct{}{
+	"":      {},
+	"d":     {},
+	"j":     {},
+	"k":     {},
+	"v":     {},
+	"space": {},
 }
 
-func isRuntimeMode(mode string) bool {
-	switch strings.TrimSpace(mode) {
-	case modeNone, modeDictate, modeAssist, modeVoiceAgent:
-		return true
-	default:
-		return false
-	}
+type parsedModeHotkey struct {
+	Base   string
+	Suffix string
+	Raw    string
+}
+
+func orderedRuntimeModes() []string {
+	return []string{modeDictate, modeAssist, modeVoiceAgent}
 }
 
 func normalizeAgentMode(mode string) string {
@@ -35,7 +44,7 @@ func normalizeAgentMode(mode string) string {
 	return modeAssist
 }
 
-func normalizeRuntimeMode(mode string, legacyAgentMode string) string {
+func normalizeRuntimeMode(mode, legacyAgentMode string) string {
 	trimmed := strings.TrimSpace(mode)
 	switch trimmed {
 	case modeDictate, modeAssist, modeVoiceAgent, modeNone:
@@ -45,14 +54,6 @@ func normalizeRuntimeMode(mode string, legacyAgentMode string) string {
 	default:
 		return modeNone
 	}
-}
-
-func normalizeActiveMode(mode string, legacyAgentMode string) string {
-	normalized := normalizeRuntimeMode(mode, legacyAgentMode)
-	if normalized == modeNone {
-		return modeDictate
-	}
-	return normalized
 }
 
 func deriveLegacyAgentModeFromBindings(assistHotkey, voiceAgentHotkey, activeMode, fallback string) string {
@@ -71,12 +72,12 @@ func deriveLegacyAgentModeFromBindings(assistHotkey, voiceAgentHotkey, activeMod
 	return normalizeAgentMode(fallback)
 }
 
-func sanitizeActiveModeForBindings(mode, legacyAgentMode, dictateHotkey, assistHotkey, voiceAgentHotkey string) string {
+func sanitizeActiveModeForBindings(mode, legacyAgentMode string, dictateEnabled, assistEnabled, voiceAgentEnabled bool, dictateHotkey, assistHotkey, voiceAgentHotkey string) string {
 	normalized := normalizeRuntimeMode(mode, legacyAgentMode)
 	if normalized == modeNone {
 		return modeNone
 	}
-	if _, ok := configuredModeBindings(dictateHotkey, assistHotkey, voiceAgentHotkey)[normalized]; !ok {
+	if _, ok := configuredModeBindings(dictateEnabled, assistEnabled, voiceAgentEnabled, dictateHotkey, assistHotkey, voiceAgentHotkey)[normalized]; !ok {
 		return modeNone
 	}
 	return normalized
@@ -102,22 +103,25 @@ func legacyAgentHotkeyFromModeBindings(assistHotkey, voiceAgentHotkey, legacyAge
 	return strings.TrimSpace(assistHotkey)
 }
 
-func configuredModeBindings(dictateHotkey, assistHotkey, voiceAgentHotkey string) map[string]string {
+func configuredModeBindings(dictateEnabled, assistEnabled, voiceAgentEnabled bool, dictateHotkey, assistHotkey, voiceAgentHotkey string) map[string]string {
 	bindings := make(map[string]string, 3)
-	if trimmed := strings.TrimSpace(dictateHotkey); trimmed != "" {
+	if modeBindingAvailable(dictateEnabled, dictateHotkey) {
+		trimmed := strings.TrimSpace(dictateHotkey)
 		bindings[modeDictate] = trimmed
 	}
-	if trimmed := strings.TrimSpace(assistHotkey); trimmed != "" {
+	if modeBindingAvailable(assistEnabled, assistHotkey) {
+		trimmed := strings.TrimSpace(assistHotkey)
 		bindings[modeAssist] = trimmed
 	}
-	if trimmed := strings.TrimSpace(voiceAgentHotkey); trimmed != "" {
+	if modeBindingAvailable(voiceAgentEnabled, voiceAgentHotkey) {
+		trimmed := strings.TrimSpace(voiceAgentHotkey)
 		bindings[modeVoiceAgent] = trimmed
 	}
 	return bindings
 }
 
-func configuredModeCombos(dictateHotkey, assistHotkey, voiceAgentHotkey string) map[string][]uint32 {
-	bindings := configuredModeBindings(dictateHotkey, assistHotkey, voiceAgentHotkey)
+func configuredModeCombos(dictateEnabled, assistEnabled, voiceAgentEnabled bool, dictateHotkey, assistHotkey, voiceAgentHotkey string) map[string][]uint32 {
+	bindings := configuredModeBindings(dictateEnabled, assistEnabled, voiceAgentEnabled, dictateHotkey, assistHotkey, voiceAgentHotkey)
 	combos := make(map[string][]uint32, len(bindings))
 	for mode, binding := range bindings {
 		combos[mode] = parseConfiguredHotkeyCombo(binding)
@@ -132,28 +136,26 @@ func parseConfiguredHotkeyCombo(binding string) []uint32 {
 	return hotkey.ParseCombo(binding)
 }
 
-func validateDistinctModeHotkeys(dictateHotkey, assistHotkey, voiceAgentHotkey string) bool {
+func validateDistinctModeHotkeys(_, _, _ bool, dictateHotkey, assistHotkey, voiceAgentHotkey string) bool {
 	seen := map[string]string{}
-	for mode, binding := range configuredModeBindings(dictateHotkey, assistHotkey, voiceAgentHotkey) {
-		if existingMode, ok := seen[binding]; ok && existingMode != mode {
+	for mode, binding := range map[string]string{
+		modeDictate:    strings.TrimSpace(dictateHotkey),
+		modeAssist:     strings.TrimSpace(assistHotkey),
+		modeVoiceAgent: strings.TrimSpace(voiceAgentHotkey),
+	} {
+		if strings.TrimSpace(binding) == "" {
+			continue
+		}
+		parsed, err := parseModeHotkey(binding)
+		if err != nil {
 			return false
 		}
-		seen[binding] = mode
+		if existingMode, ok := seen[parsed.Base]; ok && existingMode != mode {
+			return false
+		}
+		seen[parsed.Base] = mode
 	}
 	return true
-}
-
-func runtimeModeLabel(mode string) string {
-	switch mode {
-	case modeAssist:
-		return "Assist"
-	case modeVoiceAgent:
-		return "Voice Agent"
-	case modeNone:
-		return "None"
-	default:
-		return "Dictate"
-	}
 }
 
 func normalizeConfigModes(cfg *config.Config) {
@@ -162,5 +164,40 @@ func normalizeConfigModes(cfg *config.Config) {
 	}
 	cfg.General.AgentMode = normalizeAgentMode(cfg.General.AgentMode)
 	cfg.General.ActiveMode = normalizeRuntimeMode(cfg.General.ActiveMode, cfg.General.AgentMode)
+	cfg.General.DictateHotkeyBehavior = config.NormalizeHotkeyBehavior(cfg.General.DictateHotkeyBehavior, config.HotkeyBehaviorPushToTalk)
+	cfg.General.AssistHotkeyBehavior = config.NormalizeHotkeyBehavior(cfg.General.AssistHotkeyBehavior, config.HotkeyBehaviorPushToTalk)
+	cfg.General.VoiceAgentHotkeyBehavior = config.NormalizeHotkeyBehavior(cfg.General.VoiceAgentHotkeyBehavior, config.HotkeyBehaviorPushToTalk)
+	cfg.General.HotkeyMode = config.NormalizeHotkeyBehavior(cfg.General.HotkeyMode, cfg.General.DictateHotkeyBehavior)
 	cfg.General.AgentHotkey = legacyAgentHotkeyFromModeBindings(cfg.General.AssistHotkey, cfg.General.VoiceAgentHotkey, cfg.General.AgentMode)
+}
+
+func modeBindingAvailable(enabled bool, binding string) bool {
+	return enabled && strings.TrimSpace(binding) != ""
+}
+
+func normalizeModeHotkeyBinding(binding string) string {
+	return strings.ToLower(strings.ReplaceAll(strings.TrimSpace(binding), " ", ""))
+}
+
+func parseModeHotkey(binding string) (parsedModeHotkey, error) {
+	normalized := normalizeModeHotkeyBinding(binding)
+	if normalized == "" {
+		return parsedModeHotkey{}, nil
+	}
+
+	for _, base := range allowedModeHotkeyBases {
+		if normalized == base {
+			return parsedModeHotkey{Base: base, Raw: normalized}, nil
+		}
+		prefix := base + "+"
+		if strings.HasPrefix(normalized, prefix) {
+			suffix := strings.TrimPrefix(normalized, prefix)
+			if _, ok := allowedModeHotkeySuffixes[suffix]; !ok {
+				return parsedModeHotkey{}, fmt.Errorf("unsupported suffix")
+			}
+			return parsedModeHotkey{Base: base, Suffix: suffix, Raw: normalized}, nil
+		}
+	}
+
+	return parsedModeHotkey{}, fmt.Errorf("unsupported base")
 }

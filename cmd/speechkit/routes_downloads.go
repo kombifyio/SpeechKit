@@ -13,18 +13,18 @@ import (
 func registerDownloadRoutes(mux *http.ServeMux, cfgPath string, cfg *config.Config, state *appState) {
 	dm := state.downloads
 
-	// GET /models/downloads/catalog — list all downloadable models with availability.
+	// GET /models/downloads/catalog â€” list all downloadable models with availability.
 	mux.HandleFunc("/models/downloads/catalog", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
 			w.WriteHeader(http.StatusMethodNotAllowed)
 			return
 		}
-		catalog := downloads.Catalog(cfg)
+		catalog := downloads.Catalog(r.Context(), cfg)
 		w.Header().Set("Content-Type", "application/json; charset=utf-8")
 		_ = json.NewEncoder(w).Encode(catalog)
 	})
 
-	// GET /models/downloads/jobs — list active / recent download jobs.
+	// GET /models/downloads/jobs â€” list active / recent download jobs.
 	mux.HandleFunc("/models/downloads/jobs", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
 			w.WriteHeader(http.StatusMethodNotAllowed)
@@ -34,12 +34,13 @@ func registerDownloadRoutes(mux *http.ServeMux, cfgPath string, cfg *config.Conf
 		_ = json.NewEncoder(w).Encode(dm.AllJobs())
 	})
 
-	// POST /models/downloads/start — start a download by catalog model_id.
+	// POST /models/downloads/start â€” start a download by catalog model_id.
 	mux.HandleFunc("/models/downloads/start", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
 			w.WriteHeader(http.StatusMethodNotAllowed)
 			return
 		}
+		r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
 		if err := r.ParseForm(); err != nil {
 			http.Error(w, "bad request", http.StatusBadRequest)
 			return
@@ -49,7 +50,7 @@ func registerDownloadRoutes(mux *http.ServeMux, cfgPath string, cfg *config.Conf
 			http.Error(w, "model_id required", http.StatusBadRequest)
 			return
 		}
-		catalog := downloads.Catalog(cfg)
+		catalog := downloads.Catalog(r.Context(), cfg)
 		var found *downloads.Item
 		for i := range catalog {
 			if catalog[i].ID == modelID {
@@ -63,7 +64,7 @@ func registerDownloadRoutes(mux *http.ServeMux, cfgPath string, cfg *config.Conf
 		}
 
 		destDir := downloads.ResolveWhisperModelsDir(cfg)
-		snap := dm.Start(*found, destDir, func(item downloads.Item) {
+		snap := dm.Start(*found, destDir, func(item downloads.Item) { //nolint:contextcheck // completion callback runs after request context is gone; uses context.Background() internally
 			// After an HTTP (whisper) download: apply the model path to config.
 			if item.Kind == downloads.KindHTTP {
 				_ = selectDownloadedLocalModel(context.Background(), cfgPath, cfg, state, item)
@@ -74,12 +75,13 @@ func registerDownloadRoutes(mux *http.ServeMux, cfgPath string, cfg *config.Conf
 		_ = json.NewEncoder(w).Encode(snap)
 	})
 
-	// POST /models/downloads/cancel — cancel a download by job_id.
+	// POST /models/downloads/cancel â€” cancel a download by job_id.
 	mux.HandleFunc("/models/downloads/cancel", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
 			w.WriteHeader(http.StatusMethodNotAllowed)
 			return
 		}
+		r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
 		if err := r.ParseForm(); err != nil {
 			http.Error(w, "bad request", http.StatusBadRequest)
 			return
@@ -93,12 +95,13 @@ func registerDownloadRoutes(mux *http.ServeMux, cfgPath string, cfg *config.Conf
 		_ = json.NewEncoder(w).Encode(map[string]string{"message": "cancelled"})
 	})
 
-	// POST /models/downloads/select — select an already-downloaded local model.
+	// POST /models/downloads/select â€” select an already-downloaded local model.
 	mux.HandleFunc("/models/downloads/select", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
 			w.WriteHeader(http.StatusMethodNotAllowed)
 			return
 		}
+		r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
 		if err := r.ParseForm(); err != nil {
 			http.Error(w, "bad request", http.StatusBadRequest)
 			return
@@ -109,7 +112,7 @@ func registerDownloadRoutes(mux *http.ServeMux, cfgPath string, cfg *config.Conf
 			return
 		}
 
-		item, ok := downloadCatalogItem(cfg, modelID)
+		item, ok := downloadCatalogItem(r.Context(), cfg, modelID)
 		if !ok {
 			http.Error(w, "unknown model_id", http.StatusNotFound)
 			return
@@ -137,8 +140,8 @@ func registerDownloadRoutes(mux *http.ServeMux, cfgPath string, cfg *config.Conf
 	})
 }
 
-func downloadCatalogItem(cfg *config.Config, modelID string) (downloads.Item, bool) {
-	catalog := downloads.Catalog(cfg)
+func downloadCatalogItem(ctx context.Context, cfg *config.Config, modelID string) (downloads.Item, bool) {
+	catalog := downloads.Catalog(ctx, cfg)
 	for i := range catalog {
 		if catalog[i].ID == modelID {
 			return catalog[i], true
@@ -150,10 +153,15 @@ func downloadCatalogItem(cfg *config.Config, modelID string) (downloads.Item, bo
 func selectDownloadedLocalModel(ctx context.Context, cfgPath string, cfg *config.Config, state *appState, item downloads.Item) error {
 	destDir := downloads.ResolveWhisperModelsDir(cfg)
 	filename := filepath.Base(item.URL)
+	modelPath := filepath.Join(destDir, filename)
+	if err := validateLocalProviderActivation(cfg, modelPath); err != nil {
+		return err
+	}
+
 	cfg.Local.Enabled = true
 	cfg.Routing.Strategy = "local-only"
 	cfg.Local.Model = filename
-	cfg.Local.ModelPath = filepath.Join(destDir, filename)
+	cfg.Local.ModelPath = modelPath
 	if cfgPath != "" {
 		if err := config.Save(cfgPath, cfg); err != nil {
 			return err
@@ -164,7 +172,7 @@ func selectDownloadedLocalModel(ctx context.Context, cfgPath string, cfg *config
 		state.mu.Lock()
 		state.activeProfiles = activeProfilesFromConfig(cfg, filteredModelCatalog())
 		state.mu.Unlock()
-		syncRuntimeProviders(state, state.sttRouter)
+		syncRuntimeProviders(ctx, state, state.sttRouter)
 	}
 	return nil
 }

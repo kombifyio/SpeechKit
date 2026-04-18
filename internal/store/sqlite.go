@@ -12,7 +12,7 @@ import (
 	"time"
 
 	"github.com/kombifyio/SpeechKit/internal/runtimepath"
-	_ "modernc.org/sqlite"
+	_ "modernc.org/sqlite" // register modernc sqlite as database/sql driver
 )
 
 //go:embed migrations/sqlite/001_init.sql
@@ -48,7 +48,7 @@ func NewSQLiteStore(cfg StoreConfig) (*SQLiteStore, error) {
 		dbPath = filepath.Join(runtimepath.DataDir(), "feedback.db")
 	}
 
-	if err := os.MkdirAll(filepath.Dir(dbPath), 0755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(dbPath), 0o700); err != nil {
 		return nil, fmt.Errorf("create db dir: %w", err)
 	}
 
@@ -57,24 +57,24 @@ func NewSQLiteStore(cfg StoreConfig) (*SQLiteStore, error) {
 		return nil, fmt.Errorf("open db: %w", err)
 	}
 
-	if _, err := db.Exec(sqliteMigration001); err != nil {
-		db.Close()
+	if _, err := db.ExecContext(context.Background(), sqliteMigration001); err != nil {
+		_ = db.Close()
 		return nil, fmt.Errorf("migrate 001: %w", err)
 	}
 	// Migration 002: add pinned column (safe to ignore "duplicate column" error)
-	if _, err := db.Exec(sqliteMigration002); err != nil {
+	if _, err := db.ExecContext(context.Background(), sqliteMigration002); err != nil {
 		errMsg := err.Error()
 		if !strings.Contains(errMsg, "duplicate column") && !strings.Contains(errMsg, "already exists") {
 			slog.Warn("migrate 002", "err", err)
 		}
 	}
-	if _, err := db.Exec(sqliteMigration003); err != nil {
+	if _, err := db.ExecContext(context.Background(), sqliteMigration003); err != nil {
 		errMsg := err.Error()
 		if !strings.Contains(errMsg, "duplicate column") && !strings.Contains(errMsg, "already exists") {
 			slog.Warn("migrate 003", "err", err)
 		}
 	}
-	if _, err := db.Exec(sqliteMigration004); err != nil {
+	if _, err := db.ExecContext(context.Background(), sqliteMigration004); err != nil {
 		errMsg := err.Error()
 		if !strings.Contains(errMsg, "duplicate column") && !strings.Contains(errMsg, "already exists") {
 			slog.Warn("migrate 004", "err", err)
@@ -98,7 +98,7 @@ func NewSQLiteStore(cfg StoreConfig) (*SQLiteStore, error) {
 	return store, nil
 }
 
-func (s *SQLiteStore) SaveTranscription(_ context.Context, text, language, provider, model string, durationMs, latencyMs int64, audioData []byte) error {
+func (s *SQLiteStore) SaveTranscription(ctx context.Context, text, language, provider, model string, durationMs, latencyMs int64, audioData []byte) error {
 	var audioPath string
 	if strings.TrimSpace(model) == "" {
 		model = s.transcriptionModelHint(provider)
@@ -106,17 +106,17 @@ func (s *SQLiteStore) SaveTranscription(_ context.Context, text, language, provi
 
 	if s.saveAudio && len(audioData) > 0 {
 		audioDir := filepath.Join(filepath.Dir(s.path), "audio")
-		if err := os.MkdirAll(audioDir, 0755); err != nil {
+		if err := os.MkdirAll(audioDir, 0o700); err != nil {
 			return fmt.Errorf("create audio dir: %w", err)
 		}
 		filename := fmt.Sprintf("%d.wav", time.Now().UnixNano())
 		audioPath = filepath.Join(audioDir, filename)
-		if err := os.WriteFile(audioPath, audioData, 0600); err != nil {
+		if err := os.WriteFile(audioPath, audioData, 0o600); err != nil {
 			return fmt.Errorf("save audio: %w", err)
 		}
 	}
 
-	_, err := s.db.Exec(
+	_, err := s.db.ExecContext(ctx,
 		`INSERT INTO transcriptions (text, language, provider, model, duration_ms, latency_ms, audio_path) VALUES (?, ?, ?, ?, ?, ?, ?)`,
 		text, language, provider, model, durationMs, latencyMs, audioPath,
 	)
@@ -125,29 +125,29 @@ func (s *SQLiteStore) SaveTranscription(_ context.Context, text, language, provi
 	}
 
 	if s.saveAudio && s.maxStorageMB > 0 {
-		go s.enforceStorageLimit()
+		go s.enforceStorageLimit() //nolint:contextcheck,gosec // G118: maintenance goroutines must not be bound to request context
 	}
 	if s.saveAudio && s.audioRetentionDays > 0 {
-		go s.enforceAudioRetention()
+		go s.enforceAudioRetention() //nolint:contextcheck,gosec // G118: maintenance goroutines must not be bound to request context
 	}
 
 	return nil
 }
 
-func (s *SQLiteStore) ListTranscriptions(_ context.Context, opts ListOpts) ([]Transcription, error) {
+func (s *SQLiteStore) ListTranscriptions(ctx context.Context, opts ListOpts) ([]Transcription, error) {
 	limit := opts.Limit
 	if limit <= 0 {
 		limit = 20
 	}
 
-	rows, err := s.db.Query(
+	rows, err := s.db.QueryContext(ctx,
 		`SELECT id, text, language, provider, COALESCE(model, ''), COALESCE(duration_ms, 0), latency_ms, COALESCE(audio_path, ''), created_at
 		 FROM transcriptions ORDER BY created_at DESC LIMIT ? OFFSET ?`, limit, opts.Offset,
 	)
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer rows.Close() //nolint:errcheck // deferred rows close, error not actionable
 
 	results := make([]Transcription, 0)
 	for rows.Next() {
@@ -164,8 +164,8 @@ func (s *SQLiteStore) ListTranscriptions(_ context.Context, opts ListOpts) ([]Tr
 	return results, rows.Err()
 }
 
-func (s *SQLiteStore) GetTranscription(_ context.Context, id int64) (*Transcription, error) {
-	row := s.db.QueryRow(
+func (s *SQLiteStore) GetTranscription(ctx context.Context, id int64) (*Transcription, error) {
+	row := s.db.QueryRowContext(ctx,
 		`SELECT id, text, language, provider, COALESCE(model, ''), COALESCE(duration_ms, 0), latency_ms, COALESCE(audio_path, ''), created_at
 		 FROM transcriptions WHERE id = ?`, id,
 	)
@@ -221,28 +221,28 @@ func (s *SQLiteStore) transcriptionModelHint(provider string) string {
 	}
 }
 
-func (s *SQLiteStore) TranscriptionCount(_ context.Context) (int, error) {
+func (s *SQLiteStore) TranscriptionCount(ctx context.Context) (int, error) {
 	var count int
-	err := s.db.QueryRow(`SELECT COUNT(*) FROM transcriptions`).Scan(&count)
+	err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM transcriptions`).Scan(&count)
 	return count, err
 }
 
-func (s *SQLiteStore) SaveQuickNote(_ context.Context, text, language, provider string, durationMs, latencyMs int64, audioData []byte) (int64, error) {
+func (s *SQLiteStore) SaveQuickNote(ctx context.Context, text, language, provider string, durationMs, latencyMs int64, audioData []byte) (int64, error) {
 	var audioPath string
 
 	if s.saveAudio && len(audioData) > 0 {
 		audioDir := filepath.Join(filepath.Dir(s.path), "audio")
-		if err := os.MkdirAll(audioDir, 0755); err != nil {
+		if err := os.MkdirAll(audioDir, 0o700); err != nil {
 			return 0, fmt.Errorf("create audio dir: %w", err)
 		}
 		filename := fmt.Sprintf("qn_%d.wav", time.Now().UnixNano())
 		audioPath = filepath.Join(audioDir, filename)
-		if err := os.WriteFile(audioPath, audioData, 0600); err != nil {
+		if err := os.WriteFile(audioPath, audioData, 0o600); err != nil {
 			return 0, fmt.Errorf("save audio: %w", err)
 		}
 	}
 
-	result, err := s.db.Exec(
+	result, err := s.db.ExecContext(ctx,
 		`INSERT INTO quick_notes (text, language, provider, duration_ms, latency_ms, audio_path) VALUES (?, ?, ?, ?, ?, ?)`,
 		text, language, provider, durationMs, latencyMs, audioPath,
 	)
@@ -252,8 +252,8 @@ func (s *SQLiteStore) SaveQuickNote(_ context.Context, text, language, provider 
 	return result.LastInsertId()
 }
 
-func (s *SQLiteStore) GetQuickNote(_ context.Context, id int64) (*QuickNote, error) {
-	row := s.db.QueryRow(
+func (s *SQLiteStore) GetQuickNote(ctx context.Context, id int64) (*QuickNote, error) {
+	row := s.db.QueryRowContext(ctx,
 		`SELECT id, text, language, provider, COALESCE(duration_ms, 0), latency_ms, COALESCE(audio_path,''), pinned, created_at, updated_at
 		 FROM quick_notes WHERE id = ?`, id)
 	var n QuickNote
@@ -266,20 +266,20 @@ func (s *SQLiteStore) GetQuickNote(_ context.Context, id int64) (*QuickNote, err
 	return &n, nil
 }
 
-func (s *SQLiteStore) ListQuickNotes(_ context.Context, opts ListOpts) ([]QuickNote, error) {
+func (s *SQLiteStore) ListQuickNotes(ctx context.Context, opts ListOpts) ([]QuickNote, error) {
 	limit := opts.Limit
 	if limit <= 0 {
 		limit = 20
 	}
 
-	rows, err := s.db.Query(
+	rows, err := s.db.QueryContext(ctx,
 		`SELECT id, text, language, provider, COALESCE(duration_ms, 0), latency_ms, COALESCE(audio_path, ''), COALESCE(pinned, 0), created_at, updated_at
 		 FROM quick_notes ORDER BY pinned DESC, created_at DESC, id DESC LIMIT ? OFFSET ?`, limit, opts.Offset,
 	)
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer rows.Close() //nolint:errcheck // deferred rows close, error not actionable
 
 	results := make([]QuickNote, 0)
 	for rows.Next() {
@@ -295,8 +295,8 @@ func (s *SQLiteStore) ListQuickNotes(_ context.Context, opts ListOpts) ([]QuickN
 	return results, rows.Err()
 }
 
-func (s *SQLiteStore) UpdateQuickNote(_ context.Context, id int64, text string) error {
-	result, err := s.db.Exec(
+func (s *SQLiteStore) UpdateQuickNote(ctx context.Context, id int64, text string) error {
+	result, err := s.db.ExecContext(ctx,
 		`UPDATE quick_notes SET text = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
 		text, id,
 	)
@@ -310,30 +310,30 @@ func (s *SQLiteStore) UpdateQuickNote(_ context.Context, id int64, text string) 
 	return nil
 }
 
-func (s *SQLiteStore) UpdateQuickNoteCapture(_ context.Context, id int64, text, provider string, durationMs, latencyMs int64, audioData []byte) error {
+func (s *SQLiteStore) UpdateQuickNoteCapture(ctx context.Context, id int64, text, provider string, durationMs, latencyMs int64, audioData []byte) error {
 	var (
 		currentAudioPath string
 		nextAudioPath    string
 	)
 
-	if err := s.db.QueryRow(`SELECT COALESCE(audio_path, '') FROM quick_notes WHERE id = ?`, id).Scan(&currentAudioPath); err != nil {
+	if err := s.db.QueryRowContext(ctx, `SELECT COALESCE(audio_path, '') FROM quick_notes WHERE id = ?`, id).Scan(&currentAudioPath); err != nil {
 		return fmt.Errorf("lookup quick note %d: %w", id, err)
 	}
 
 	nextAudioPath = currentAudioPath
 	if s.saveAudio && len(audioData) > 0 {
 		audioDir := filepath.Join(filepath.Dir(s.path), "audio")
-		if err := os.MkdirAll(audioDir, 0755); err != nil {
+		if err := os.MkdirAll(audioDir, 0o700); err != nil {
 			return fmt.Errorf("create audio dir: %w", err)
 		}
 		filename := fmt.Sprintf("qn_%d.wav", time.Now().UnixNano())
 		nextAudioPath = filepath.Join(audioDir, filename)
-		if err := os.WriteFile(nextAudioPath, audioData, 0600); err != nil {
+		if err := os.WriteFile(nextAudioPath, audioData, 0o600); err != nil {
 			return fmt.Errorf("save audio: %w", err)
 		}
 	}
 
-	result, err := s.db.Exec(
+	result, err := s.db.ExecContext(ctx,
 		`UPDATE quick_notes
 		 SET text = ?, provider = ?, duration_ms = ?, latency_ms = ?, audio_path = ?, updated_at = CURRENT_TIMESTAMP
 		 WHERE id = ?`,
@@ -350,20 +350,20 @@ func (s *SQLiteStore) UpdateQuickNoteCapture(_ context.Context, id int64, text, 
 		_ = os.Remove(currentAudioPath)
 	}
 	if s.saveAudio && s.maxStorageMB > 0 {
-		go s.enforceStorageLimit()
+		go s.enforceStorageLimit() //nolint:contextcheck,gosec // G118: maintenance goroutines must not be bound to request context
 	}
 	if s.saveAudio && s.audioRetentionDays > 0 {
-		go s.enforceAudioRetention()
+		go s.enforceAudioRetention() //nolint:contextcheck,gosec // G118: maintenance goroutines must not be bound to request context
 	}
 	return nil
 }
 
-func (s *SQLiteStore) PinQuickNote(_ context.Context, id int64, pinned bool) error {
+func (s *SQLiteStore) PinQuickNote(ctx context.Context, id int64, pinned bool) error {
 	val := 0
 	if pinned {
 		val = 1
 	}
-	result, err := s.db.Exec(`UPDATE quick_notes SET pinned = ? WHERE id = ?`, val, id)
+	result, err := s.db.ExecContext(ctx, `UPDATE quick_notes SET pinned = ? WHERE id = ?`, val, id)
 	if err != nil {
 		return fmt.Errorf("pin quick note: %w", err)
 	}
@@ -374,11 +374,11 @@ func (s *SQLiteStore) PinQuickNote(_ context.Context, id int64, pinned bool) err
 	return nil
 }
 
-func (s *SQLiteStore) DeleteQuickNote(_ context.Context, id int64) error {
+func (s *SQLiteStore) DeleteQuickNote(ctx context.Context, id int64) error {
 	var audioPath string
-	_ = s.db.QueryRow(`SELECT COALESCE(audio_path, '') FROM quick_notes WHERE id = ?`, id).Scan(&audioPath)
+	_ = s.db.QueryRowContext(ctx, `SELECT COALESCE(audio_path, '') FROM quick_notes WHERE id = ?`, id).Scan(&audioPath)
 
-	result, err := s.db.Exec(`DELETE FROM quick_notes WHERE id = ?`, id)
+	result, err := s.db.ExecContext(ctx, `DELETE FROM quick_notes WHERE id = ?`, id)
 	if err != nil {
 		return fmt.Errorf("delete quick note: %w", err)
 	}
@@ -388,27 +388,27 @@ func (s *SQLiteStore) DeleteQuickNote(_ context.Context, id int64) error {
 	}
 
 	if audioPath != "" {
-		os.Remove(audioPath)
+		_ = os.Remove(audioPath)
 	}
 	return nil
 }
 
-func (s *SQLiteStore) QuickNoteCount(_ context.Context) (int, error) {
+func (s *SQLiteStore) QuickNoteCount(ctx context.Context) (int, error) {
 	var count int
-	err := s.db.QueryRow(`SELECT COUNT(*) FROM quick_notes`).Scan(&count)
+	err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM quick_notes`).Scan(&count)
 	return count, err
 }
 
-func (s *SQLiteStore) Stats(_ context.Context) (Stats, error) {
+func (s *SQLiteStore) Stats(ctx context.Context) (Stats, error) {
 	var stats Stats
-	if err := s.db.QueryRow(`SELECT COUNT(*) FROM transcriptions`).Scan(&stats.Transcriptions); err != nil {
+	if err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM transcriptions`).Scan(&stats.Transcriptions); err != nil {
 		return Stats{}, err
 	}
-	if err := s.db.QueryRow(`SELECT COUNT(*) FROM quick_notes`).Scan(&stats.QuickNotes); err != nil {
+	if err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM quick_notes`).Scan(&stats.QuickNotes); err != nil {
 		return Stats{}, err
 	}
 
-	rows, err := s.db.Query(
+	rows, err := s.db.QueryContext(ctx,
 		`SELECT text, COALESCE(duration_ms, 0), COALESCE(latency_ms, 0) FROM (
 			SELECT text, duration_ms, latency_ms FROM transcriptions
 			UNION ALL
@@ -418,7 +418,7 @@ func (s *SQLiteStore) Stats(_ context.Context) (Stats, error) {
 	if err != nil {
 		return Stats{}, err
 	}
-	defer rows.Close()
+	defer rows.Close() //nolint:errcheck // deferred rows close, error not actionable
 
 	var (
 		totalLatency int64
@@ -508,14 +508,14 @@ func (s *SQLiteStore) enforceStorageLimit() {
 		return
 	}
 
-	tx, err := s.db.Begin()
+	tx, err := s.db.BeginTx(context.Background(), nil)
 	if err != nil {
 		slog.Warn("store: begin cleanup tx", "err", err)
 		return
 	}
-	defer tx.Rollback()
+	defer tx.Rollback() //nolint:errcheck // deferred rollback, error not actionable
 
-	rows, err := tx.Query(
+	rows, err := tx.QueryContext(context.Background(),
 		`SELECT kind, id, audio_path FROM (
 			SELECT 'transcription' AS kind, id, audio_path, created_at FROM transcriptions WHERE audio_path != ''
 			UNION ALL
@@ -525,7 +525,7 @@ func (s *SQLiteStore) enforceStorageLimit() {
 	if err != nil {
 		return
 	}
-	defer rows.Close()
+	defer rows.Close() //nolint:errcheck // deferred rows close, error not actionable
 
 	for rows.Next() && totalSize > limitBytes {
 		var kind string
@@ -553,9 +553,12 @@ func (s *SQLiteStore) enforceStorageLimit() {
 		if kind == "quick_note" {
 			query = `UPDATE quick_notes SET audio_path = '' WHERE id = ?`
 		}
-		if _, err := tx.Exec(query, id); err != nil {
+		if _, err := tx.ExecContext(context.Background(), query, id); err != nil {
 			slog.Warn("store: clear audio_path", "kind", kind, "id", id, "err", err)
 		}
+	}
+	if err := rows.Err(); err != nil {
+		slog.Warn("store: cleanup rows error", "err", err)
 	}
 
 	if err := tx.Commit(); err != nil {
@@ -569,14 +572,14 @@ func (s *SQLiteStore) enforceAudioRetention() {
 	}
 
 	cutoff := time.Now().Add(-time.Duration(s.audioRetentionDays) * 24 * time.Hour).Format("2006-01-02 15:04:05")
-	tx, err := s.db.Begin()
+	tx, err := s.db.BeginTx(context.Background(), nil)
 	if err != nil {
 		slog.Warn("store: begin retention tx", "err", err)
 		return
 	}
-	defer tx.Rollback()
+	defer tx.Rollback() //nolint:errcheck // deferred rollback, error not actionable
 
-	rows, err := tx.Query(
+	rows, err := tx.QueryContext(context.Background(),
 		`SELECT kind, id, audio_path FROM (
 			SELECT 'transcription' AS kind, id, audio_path, created_at FROM transcriptions WHERE audio_path != '' AND created_at < ?
 			UNION ALL
@@ -588,7 +591,7 @@ func (s *SQLiteStore) enforceAudioRetention() {
 		slog.Warn("store: query retention rows", "err", err)
 		return
 	}
-	defer rows.Close()
+	defer rows.Close() //nolint:errcheck // deferred rows close, error not actionable
 
 	for rows.Next() {
 		var kind string
@@ -609,9 +612,12 @@ func (s *SQLiteStore) enforceAudioRetention() {
 		if kind == "quick_note" {
 			query = `UPDATE quick_notes SET audio_path = '' WHERE id = ?`
 		}
-		if _, err := tx.Exec(query, id); err != nil {
+		if _, err := tx.ExecContext(context.Background(), query, id); err != nil {
 			slog.Warn("store: clear retained audio_path", "kind", kind, "id", id, "err", err)
 		}
+	}
+	if err := rows.Err(); err != nil {
+		slog.Warn("store: retention rows error", "err", err)
 	}
 
 	if err := tx.Commit(); err != nil {

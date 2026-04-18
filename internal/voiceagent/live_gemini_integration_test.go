@@ -35,7 +35,7 @@ func TestGeminiLiveConnectIntegration(t *testing.T) {
 	if err != nil {
 		t.Fatalf("connect live Gemini session: %v", err)
 	}
-	defer func() {
+	defer func() { //nolint:gocritic // unnecessaryDefer: t.Fatalf inside closure cannot be in a plain defer
 		if err := provider.Close(); err != nil {
 			t.Fatalf("close live Gemini session: %v", err)
 		}

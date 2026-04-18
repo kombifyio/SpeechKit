@@ -1,7 +1,7 @@
 // Example: Using SpeechKit as a Go library for speech-to-text.
 //
 // This demonstrates how to use the SpeechKit framework without the
-// desktop UI — just the transcription pipeline as a Go library.
+// desktop UI â€” just the transcription pipeline as a Go library.
 package main
 
 import (
@@ -110,7 +110,8 @@ func main() {
 	})
 	if err != nil {
 		slog.Error("transcription worker init failed", "err", err)
-		os.Exit(1)
+		cancel()
+		os.Exit(1) //nolint:gocritic // exitAfterDefer: cancel() called explicitly above before exit
 	}
 	worker.Start(ctx)
 	defer worker.Close()

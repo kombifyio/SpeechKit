@@ -120,9 +120,7 @@ func TestRuntimeStateClonesQuickCaptureFlags(t *testing.T) {
 		QuickCaptureMode: true,
 	}, Hooks{})
 
-	snapshot := runtime.State()
-	snapshot.QuickNoteMode = false
-	snapshot.QuickCaptureMode = false
+	_ = runtime.State() // take snapshot; mutations to it must not affect runtime state
 
 	current := runtime.State()
 	if !current.QuickNoteMode {

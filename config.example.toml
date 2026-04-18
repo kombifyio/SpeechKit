@@ -125,7 +125,9 @@ enabled = true
 model = "gemini-2.5-flash-native-audio-preview-12-2025" # Recommended Voice Agent default
 fallback_model = "gpt-realtime-mini"       # Fallback if primary unavailable
 voice = "Kore"                             # Voice for real-time model
-instruction = ""                           # Optional host instruction / prompt guide. Empty = SpeechKit default general-help instruction.
+framework_prompt = ""                      # Durable host/framework prompt. Empty = SpeechKit default Voice Agent framework behavior.
+refinement_prompt = ""                     # Optional personal refinement prompt layered on top of the framework prompt.
+instruction = ""                           # Legacy alias for framework_prompt. Keep empty for new configs.
 reminder_after_idle_sec = 300              # Remind user after 5 min silence
 deactivate_after_idle_sec = 900            # Auto-deactivate after 15 min silence
 pipeline_fallback = true                   # Use STT+LLM+TTS as last resort

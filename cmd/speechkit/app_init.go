@@ -14,19 +14,16 @@ import (
 
 	appai "github.com/kombifyio/SpeechKit/internal/ai"
 	"github.com/kombifyio/SpeechKit/internal/config"
+	"github.com/kombifyio/SpeechKit/internal/runtimepath"
 	"github.com/kombifyio/SpeechKit/internal/router"
 	"github.com/kombifyio/SpeechKit/internal/shortcuts"
 	"github.com/kombifyio/SpeechKit/internal/stt"
 	"github.com/kombifyio/SpeechKit/internal/tts"
 )
 
-// runtimeConfigPath returns the path to config.toml, co-located with the binary.
+// runtimeConfigPath returns the active config file path.
 func runtimeConfigPath() string {
-	exe, err := os.Executable()
-	if err != nil {
-		return "config.toml"
-	}
-	return filepath.Join(filepath.Dir(exe), "config.toml")
+	return runtimepath.ConfigFilePath()
 }
 
 // buildRouter constructs the STT router from config and returns it together
@@ -99,6 +96,7 @@ func buildRouter(cfg *config.Config) (*router.Router, []string) {
 // buildGenkitConfig maps provider config into the appai.Config structure.
 func buildGenkitConfig(cfg *config.Config) appai.Config {
 	var aiCfg appai.Config
+	catalog := filteredModelCatalog()
 
 	if cfg.Providers.Google.Enabled {
 		aiCfg.GoogleAPIKey = config.ResolveSecret(cfg.Providers.Google.APIKeyEnv)
@@ -141,6 +139,16 @@ func buildGenkitConfig(cfg *config.Config) appai.Config {
 		aiCfg.OpenRouterUtilityModel = cfg.Providers.OpenRouter.UtilityModel
 		aiCfg.OpenRouterAssistModel = cfg.Providers.OpenRouter.AssistModel
 		aiCfg.OpenRouterAgentModel = cfg.Providers.OpenRouter.AgentModel
+	}
+
+	if assistSelections, explicit := selectedModelSpecsForMode(cfg, catalog, modeAssist); explicit {
+		aiCfg.OrderedAssistModels = assistSelections
+		aiCfg.UseOrderedAssistModels = true
+	}
+
+	if voiceSelections, explicit := selectedModelSpecsForMode(cfg, catalog, modeVoiceAgent); explicit {
+		aiCfg.OrderedAgentModels = voiceSelections
+		aiCfg.UseOrderedAgentModels = true
 	}
 
 	return aiCfg
@@ -316,7 +324,7 @@ func executableDir() string {
 
 // defaultLocalModelPath resolves where the local Whisper model file lives,
 // preferring bundle-adjacent paths and falling back to AppData.
-func defaultLocalModelPath(exeDir string, localAppData string, modelName string) string {
+func defaultLocalModelPath(exeDir, localAppData, modelName string) string {
 	if exeDir != "" && modelName != "" {
 		bundlePath := filepath.Join(exeDir, "models", modelName)
 		if _, err := os.Stat(bundlePath); err == nil {
@@ -340,6 +348,6 @@ func escapeJS(s string) string {
 	if err != nil {
 		return ""
 	}
-	// json.Marshal returns a "quoted string" — strip the surrounding quotes.
+	// json.Marshal returns a "quoted string" â€” strip the surrounding quotes.
 	return string(b[1 : len(b)-1])
 }

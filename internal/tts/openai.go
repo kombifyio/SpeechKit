@@ -8,10 +8,13 @@ import (
 	"io"
 	"net/http"
 	"time"
+
+	"github.com/kombifyio/SpeechKit/internal/netsec"
 )
 
 const (
-	openAITTSEndpoint    = "https://api.openai.com/v1/audio/speech"
+	openAITTSBaseURL     = "https://api.openai.com"
+	openAITTSPath        = "v1/audio/speech"
 	openAIDefaultModel   = "tts-1"
 	openAIDefaultVoice   = "nova"
 	openAIDefaultFormat  = "mp3"
@@ -20,11 +23,16 @@ const (
 )
 
 // OpenAI implements Provider using the OpenAI TTS API.
+//
+// BaseURL is configurable for testing. It is validated against Validation
+// on every request. Default Validation is strict (public https only).
 type OpenAI struct {
-	apiKey string
-	model  string
-	voice  string
-	client *http.Client
+	apiKey     string
+	model      string
+	voice      string
+	BaseURL    string
+	Validation netsec.ValidationOptions
+	client     *http.Client
 }
 
 // OpenAIOpts configures the OpenAI TTS provider.
@@ -45,10 +53,12 @@ func NewOpenAI(opts OpenAIOpts) *OpenAI {
 		voice = openAIDefaultVoice
 	}
 	return &OpenAI{
-		apiKey: opts.APIKey,
-		model:  model,
-		voice:  voice,
-		client: &http.Client{Timeout: 30 * time.Second},
+		apiKey:  opts.APIKey,
+		model:   model,
+		voice:   voice,
+		BaseURL: openAITTSBaseURL,
+		// Validation zero-value = strict: public https only.
+		client: netsec.NewSafeHTTPClient(netsec.ClientOptions{Timeout: 30 * time.Second}),
 	}
 }
 
@@ -65,6 +75,15 @@ func (o *OpenAI) Synthesize(ctx context.Context, text string, opts SynthesizeOpt
 		return nil, fmt.Errorf("openai tts: empty text")
 	}
 
+	base := o.BaseURL
+	if base == "" {
+		base = openAITTSBaseURL
+	}
+	endpoint, err := netsec.BuildEndpoint(base, openAITTSPath, o.Validation)
+	if err != nil {
+		return nil, fmt.Errorf("openai tts: endpoint: %w", err)
+	}
+
 	voice := opts.Voice
 	if voice == "" {
 		voice = o.voice
@@ -75,7 +94,7 @@ func (o *OpenAI) Synthesize(ctx context.Context, text string, opts SynthesizeOpt
 		format = openAIDefaultFormat
 	}
 	// Map generic formats to OpenAI-supported values.
-	responseFormat := format
+	var responseFormat string
 	switch format {
 	case "wav":
 		responseFormat = "wav"
@@ -114,7 +133,7 @@ func (o *OpenAI) Synthesize(ctx context.Context, text string, opts SynthesizeOpt
 		return nil, fmt.Errorf("openai tts: marshal request: %w", err)
 	}
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, openAITTSEndpoint, bytes.NewReader(bodyBytes))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(bodyBytes))
 	if err != nil {
 		return nil, fmt.Errorf("openai tts: create request: %w", err)
 	}
@@ -125,7 +144,7 @@ func (o *OpenAI) Synthesize(ctx context.Context, text string, opts SynthesizeOpt
 	if err != nil {
 		return nil, fmt.Errorf("openai tts: request failed: %w", err)
 	}
-	defer resp.Body.Close()
+	defer resp.Body.Close() //nolint:errcheck // response body close error is not actionable
 
 	if resp.StatusCode != http.StatusOK {
 		errBody, _ := io.ReadAll(io.LimitReader(resp.Body, 1024))

@@ -85,11 +85,12 @@ func TestBuildGeminiLiveConnectConfigUsesDefaultInstruction(t *testing.T) {
 
 func TestBuildGeminiLiveConnectConfigUsesCustomInstructionAndPolicies(t *testing.T) {
 	cfg := LiveConfig{
-		Model:          "gemini-2.5-flash-native-audio-preview-12-2025",
-		Locale:         "en",
-		Voice:          "Aoede",
-		Instruction:    "You moderate a cooperative game session. Keep turns short and clearly summarize decisions.",
-		VocabularyHint: "Important names: Kombi v AI, Soulcreek",
+		Model:            "gemini-2.5-flash-native-audio-preview-12-2025",
+		Locale:           "en",
+		Voice:            "Aoede",
+		FrameworkPrompt:  "You moderate a cooperative game session. Keep turns short and clearly summarize decisions.",
+		RefinementPrompt: "Address the user as captain and keep answers upbeat.",
+		VocabularyHint:   "Important names: Kombi v AI, Soulcreek",
 		Tools: []ToolDefinition{
 			{
 				Name:        "save_summary",
@@ -134,6 +135,15 @@ func TestBuildGeminiLiveConnectConfigUsesCustomInstructionAndPolicies(t *testing
 	if !strings.Contains(text, "cooperative game session") {
 		t.Fatalf("instruction = %q, want custom host instruction", text)
 	}
+	if !strings.Contains(text, "Address the user as captain") {
+		t.Fatalf("instruction = %q, want refinement prompt guidance", text)
+	}
+	if strings.Index(text, "cooperative game session") > strings.Index(text, "Address the user as captain") {
+		t.Fatalf("instruction = %q, want framework prompt before refinement prompt", text)
+	}
+	if !strings.Contains(text, "higher-priority framework") {
+		t.Fatalf("instruction = %q, want precedence guidance for the refinement prompt", text)
+	}
 	if !strings.Contains(text, "Kombi v AI") {
 		t.Fatalf("instruction = %q, want vocabulary hint merged into instruction", text)
 	}
@@ -157,6 +167,21 @@ func TestBuildGeminiLiveConnectConfigUsesCustomInstructionAndPolicies(t *testing
 	}
 	if got := connectCfg.Tools[0].FunctionDeclarations[0].Behavior; got != genai.BehaviorNonBlocking {
 		t.Fatalf("tool behavior = %q, want %q", got, genai.BehaviorNonBlocking)
+	}
+}
+
+func TestBuildGeminiLiveConnectConfigFallsBackToLegacyInstructionAsFrameworkPrompt(t *testing.T) {
+	cfg := LiveConfig{
+		Model:       "gemini-2.5-flash-native-audio-preview-12-2025",
+		Locale:      "en",
+		Instruction: "Legacy host instruction",
+	}
+
+	connectCfg := buildGeminiLiveConnectConfig(cfg)
+	text := joinContentText(connectCfg.SystemInstruction)
+
+	if !strings.Contains(text, "Legacy host instruction") {
+		t.Fatalf("instruction = %q, want legacy instruction to remain effective", text)
 	}
 }
 

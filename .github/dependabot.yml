@@ -1,10 +1,53 @@
 version: 2
 updates:
-  - package-ecosystem: "gomod"
-    directory: "/"
+  # Go modules
+  - package-ecosystem: gomod
+    directory: /
     schedule:
       interval: weekly
-  - package-ecosystem: "npm"
-    directory: "/frontend/app"
+    open-pull-requests-limit: 10
+    labels: [dependencies, go]
+    groups:
+      go-minor-patch:
+        update-types: [minor, patch]
+
+  # GitHub Actions (pins action SHAs)
+  - package-ecosystem: github-actions
+    directory: /
     schedule:
       interval: weekly
+    labels: [dependencies, ci]
+
+  # Frontend: canonical UI (wired into scripts/build.*, ci.yml, release.yml).
+  # frontend/app-v2/ is frozen — see frontend/app-v2/FROZEN.md.
+  - package-ecosystem: npm
+    directory: /frontend/app
+    schedule:
+      interval: weekly
+    labels: [dependencies, frontend]
+    groups:
+      npm-minor-patch:
+        update-types: [minor, patch]
+
+  # Marketing / docs sites
+  - package-ecosystem: npm
+    directory: /Website
+    schedule:
+      interval: weekly
+    labels: [dependencies, website]
+
+  - package-ecosystem: npm
+    directory: /marketing-site-svelte
+    schedule:
+      interval: weekly
+    labels: [dependencies, website]
+
+  # Android (Gradle)
+  - package-ecosystem: gradle
+    directory: /android
+    schedule:
+      interval: weekly
+    labels: [dependencies, android]
+    groups:
+      gradle-minor-patch:
+        update-types: [minor, patch]

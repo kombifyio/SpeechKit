@@ -1,6 +1,8 @@
 module github.com/kombifyio/SpeechKit
 
-go 1.25.0
+go 1.26
+
+toolchain go1.26.1
 
 require (
 	github.com/BurntSushi/toml v1.6.0
@@ -13,6 +15,7 @@ require (
 	github.com/wailsapp/wails/v3 v3.0.0-alpha.74
 	github.com/yalue/onnxruntime_go v1.27.0
 	golang.org/x/sys v0.42.0
+	golang.org/x/text v0.33.0
 	google.golang.org/genai v1.52.0
 	modernc.org/sqlite v1.47.0
 )
@@ -90,7 +93,6 @@ require (
 	golang.org/x/crypto v0.47.0 // indirect
 	golang.org/x/net v0.49.0 // indirect
 	golang.org/x/sync v0.19.0 // indirect
-	golang.org/x/text v0.33.0 // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20250603155806-513f23925822 // indirect
 	google.golang.org/grpc v1.73.0 // indirect
 	google.golang.org/protobuf v1.36.6 // indirect

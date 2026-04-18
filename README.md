@@ -17,7 +17,7 @@ The repository treats `frontend/app` as first-class source. The embedded `intern
 - host-managed credentials and secret storage
 - local SQLite default for zero-config usage
 - Windows-first release quality for the first public version
-- Gemini Live as the standard Voice Agent runtime with host-supplied instruction and session policy
+- Gemini Live as the standard Voice Agent runtime with a durable framework prompt, an optional personal refinement prompt, and session policy
 
 ## Three Ways to Use SpeechKit
 
@@ -35,8 +35,8 @@ Implement a handful of interfaces (`Transcriber`, `AudioRecorder`, `Persistence`
 
 Download the installer from the [Releases](https://github.com/kombifyio/SpeechKit/releases) page:
 
-- **SpeechKit-Setup.exe** — Windows installer
-- **SpeechKit-Portable.zip** — portable bundle (no install required)
+- **SpeechKit-Setup.exe** â€” Windows installer
+- **SpeechKit-Portable.zip** â€” portable bundle (no install required)
 
 ### As an Android App
 
@@ -49,7 +49,7 @@ The `android/` directory contains a Kotlin-based Android implementation with a c
 - six STT providers: local whisper.cpp, Hugging Face, OpenAI, Groq, Google, self-hosted VPS
 - assist mode with LLM-powered smart commands and TTS response
 - voice agent mode with real-time audio-to-audio (Gemini Live)
-- instruction-driven Voice Agent setup: host supplies API key plus optional prompt/guide and Gemini session policy
+- layered Voice Agent setup: host supplies API key, framework prompt, optional personal refinement prompt, and Gemini session policy
 - settings UI for provider, overlay, hotkey, and storage preferences
 
 ## Provider Credential Model
@@ -67,7 +67,7 @@ That keeps the public framework neutral while allowing host apps to choose their
 
 ## Prerequisites
 
-- Go `1.25+`
+- Go `1.26+`
 - Node.js `22+`
 - MinGW-w64 for CGo on Windows
 - NSIS for the canonical Windows build that emits the installer
@@ -120,16 +120,22 @@ For the first end-to-end Voice Agent run, keep the setup minimal:
 
 1. Set `voice_agent_hotkey` in `config.toml` and keep `active_mode = "voice_agent"` only if you want Voice Agent preselected on startup.
 2. Provide a Gemini API key through the env var referenced by `[providers.google].api_key_env` (default: `GOOGLE_AI_API_KEY`).
-3. Keep `[voice_agent].instruction = ""` if you want the built-in default helper, or supply your own guide.
-4. Use `model = "gemini-2.5-flash-native-audio-preview-12-2025"` for the current recommended default Voice Agent runtime.
-5. Launch `SpeechKit.exe` and press the configured `voice_agent_hotkey` to start and stop the live session.
+3. Keep `[voice_agent].framework_prompt = ""` if you want the built-in default helper, or supply your own durable framework prompt.
+4. Optionally add `[voice_agent].refinement_prompt` for personal preferences that should sharpen the framework prompt without replacing it.
+5. Use `model = "gemini-2.5-flash-native-audio-preview-12-2025"` for the current recommended default Voice Agent runtime.
+6. Launch `SpeechKit.exe` and press the configured `voice_agent_hotkey` to start and stop the live session.
 
 Notes:
 
-- Native-audio Gemini Live sessions do not rely on `speechConfig.languageCode`; SpeechKit steers preferred language through the instruction layer and locale-aware defaults.
+- Native-audio Gemini Live sessions do not rely on `speechConfig.languageCode`; SpeechKit steers preferred language through the layered prompt assembly and locale-aware defaults.
 - `enable_affective_dialog = true` automatically switches the Gemini Live client to `v1alpha` and is intended for Gemini 2.5 native-audio sessions, not Gemini 3.1 Flash Live.
 - Non-blocking tool behavior is available in the Voice Agent framework contract, but Gemini 3.1 Flash Live only supports sequential tool execution.
 - If a Voice Agent profile uses a non-live Hugging Face fallback model, SpeechKit keeps the `voice_agent` mode active but routes capture through the STT -> agent -> output pipeline instead of Gemini Live.
+
+The Voice Agent now combines two prompt layers on every session:
+
+1. `framework_prompt`: the durable host/framework instruction that defines the product behavior and fixed flows
+2. `refinement_prompt`: the user-level personalization layer that sharpens tone, brevity, naming, or other preferences without replacing the framework layer
 
 ## Build and Verification
 
