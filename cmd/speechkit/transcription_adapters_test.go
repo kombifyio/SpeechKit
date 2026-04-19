@@ -42,6 +42,19 @@ func (f *fakeOutputHandler) Handle(_ context.Context, result *stt.Result, _ outp
 	return nil
 }
 
+type fakeAssistExecutor struct {
+	calls  int
+	call   assist.ToolCall
+	result assist.ToolResult
+	err    error
+}
+
+func (f *fakeAssistExecutor) Execute(_ context.Context, call assist.ToolCall) (assist.ToolResult, error) {
+	f.calls++
+	f.call = call
+	return f.result, f.err
+}
+
 func fixedAssistFlow(t *testing.T, assistOutput flows.AssistOutput) *core.Flow[flows.AssistInput, flows.AssistOutput, struct{}] {
 	t.Helper()
 
@@ -115,7 +128,7 @@ func TestDesktopTranscriptOutput_AssistBypassesGlobalInterceptor(t *testing.T) {
 	}
 }
 
-func TestDesktopTranscriptOutput_DictateStillUsesGlobalInterceptor(t *testing.T) {
+func TestDesktopTranscriptOutput_DictateBypassesGlobalInterceptor(t *testing.T) {
 	interceptor := &fakeTranscriptInterceptor{handled: true}
 	handler := &fakeOutputHandler{}
 
@@ -134,11 +147,65 @@ func TestDesktopTranscriptOutput_DictateStillUsesGlobalInterceptor(t *testing.T)
 	if err != nil {
 		t.Fatalf("Deliver() error = %v", err)
 	}
-	if interceptor.calls != 1 {
-		t.Fatalf("global interceptor calls = %d, want 1 in dictate mode", interceptor.calls)
+	if interceptor.calls != 0 {
+		t.Fatalf("global interceptor calls = %d, want 0 in dictate mode", interceptor.calls)
+	}
+	if handler.calls != 1 {
+		t.Fatalf("output handler calls = %d, want 1 for dictate passthrough", handler.calls)
+	}
+	if handler.result == nil || handler.result.Text != "summarize this" {
+		t.Fatalf("output handler result = %#v, want dictate transcript passthrough", handler.result)
+	}
+}
+
+func TestDesktopTranscriptOutput_VoiceAgentDoesNotFallbackToAssistPipeline(t *testing.T) {
+	interceptor := &fakeTranscriptInterceptor{handled: true}
+	handler := &fakeOutputHandler{}
+	flow := fixedAssistFlow(t, flows.AssistOutput{
+		Text:      "Assist reply",
+		SpeakText: "Assist reply",
+		Action:    "respond",
+		Locale:    "en",
+	})
+
+	prompter := &fakeOverlayWindow{}
+	state := &appState{
+		assistPipeline: assist.NewPipeline(flow, nil, nil, false),
+		prompterWindow: prompter,
+	}
+
+	outputAdapter := desktopTranscriptOutput{
+		state:       state,
+		handler:     handler,
+		interceptor: interceptor,
+		activeMode: func() string {
+			return modeVoiceAgent
+		},
+	}
+
+	err := outputAdapter.Deliver(context.Background(), speechkit.Transcript{
+		Text:     "brainstorm mit mir die naechsten schritte",
+		Language: "de",
+	}, output.Target{})
+	if err != nil {
+		t.Fatalf("Deliver() error = %v", err)
+	}
+	if interceptor.calls != 0 {
+		t.Fatalf("global interceptor calls = %d, want 0 in voice agent mode", interceptor.calls)
 	}
 	if handler.calls != 0 {
-		t.Fatalf("output handler calls = %d, want 0 when interceptor handles dictate transcript", handler.calls)
+		t.Fatalf("output handler calls = %d, want 0 in voice agent mode", handler.calls)
+	}
+
+	combinedScripts := strings.Join(prompter.scripts, "\n")
+	if !strings.Contains(combinedScripts, `setMode("voice_agent")`) {
+		t.Fatalf("prompter scripts missing voice agent mode switch: %s", combinedScripts)
+	}
+	if strings.Contains(combinedScripts, `Assist reply`) {
+		t.Fatalf("prompter scripts leaked assist fallback response: %s", combinedScripts)
+	}
+	if !strings.Contains(combinedScripts, `Voice Agent requires a live realtime session`) {
+		t.Fatalf("prompter scripts missing realtime-session guidance: %s", combinedScripts)
 	}
 }
 
@@ -183,5 +250,95 @@ func TestDesktopTranscriptOutput_AssistExplainsQuotaFailureAndSuggestsFallback(t
 	}
 	if !strings.Contains(combinedScripts, `Configure a fallback model in Settings`) {
 		t.Fatalf("prompter scripts missing fallback guidance: %s", combinedScripts)
+	}
+}
+
+func TestDesktopTranscriptOutput_AssistExplainsUnsupportedHuggingFaceModel(t *testing.T) {
+	interceptor := &fakeTranscriptInterceptor{}
+	handler := &fakeOutputHandler{}
+	flow := failingAssistFlow(t, fmt.Errorf(`assist: LLM failed: assist: all models failed: Qwen/Qwen3.5-27B error (400): {"error":"Model not supported by provider hf-inference"}`))
+
+	prompter := &fakeOverlayWindow{}
+	state := &appState{
+		assistPipeline: assist.NewPipeline(flow, nil, nil, false),
+		prompterWindow: prompter,
+	}
+
+	outputAdapter := desktopTranscriptOutput{
+		state:       state,
+		handler:     handler,
+		interceptor: interceptor,
+		activeMode: func() string {
+			return modeAssist
+		},
+	}
+
+	err := outputAdapter.Deliver(context.Background(), speechkit.Transcript{
+		Text:     "antworte bitte kurz",
+		Language: "de",
+	}, output.Target{})
+	if err == nil {
+		t.Fatal("Deliver() error = nil, want assist failure")
+	}
+
+	combinedScripts := strings.Join(prompter.scripts, "\n")
+	if strings.Contains(combinedScripts, `Conversation failed. Check Settings and try again.`) {
+		t.Fatalf("prompter scripts still use generic failure: %s", combinedScripts)
+	}
+	if !strings.Contains(combinedScripts, `Qwen/Qwen3.5-27B`) {
+		t.Fatalf("prompter scripts missing failing model name: %s", combinedScripts)
+	}
+	if !strings.Contains(combinedScripts, `not supported by Hugging Face Inference`) {
+		t.Fatalf("prompter scripts missing provider support explanation: %s", combinedScripts)
+	}
+	if !strings.Contains(combinedScripts, `Settings`) || !strings.Contains(combinedScripts, `Models`) {
+		t.Fatalf("prompter scripts missing model settings guidance: %s", combinedScripts)
+	}
+}
+
+func TestDesktopTranscriptOutput_AssistActionAckSkipsPrompterPanel(t *testing.T) {
+	prompter := &fakeOverlayWindow{}
+	executor := &fakeAssistExecutor{
+		result: assist.ToolResult{
+			Text:      "Copied to clipboard.",
+			SpeakText: "Copied to clipboard.",
+			Action:    "execute",
+			Locale:    "en",
+			Surface:   assist.ResultSurfaceActionAck,
+			Kind:      assist.ResultKindUtilityAction,
+		},
+	}
+
+	var acknowledged string
+	state := &appState{
+		assistPipeline: assist.NewPipeline(nil, executor, nil, false),
+		prompterWindow: prompter,
+	}
+
+	outputAdapter := desktopTranscriptOutput{
+		state: state,
+		activeMode: func() string {
+			return modeAssist
+		},
+		onAssistText: func(text string) {
+			acknowledged = text
+		},
+	}
+
+	err := outputAdapter.Deliver(context.Background(), speechkit.Transcript{
+		Text:     "copy last",
+		Language: "en",
+	}, output.Target{})
+	if err != nil {
+		t.Fatalf("Deliver() error = %v", err)
+	}
+	if executor.calls != 1 {
+		t.Fatalf("executor calls = %d, want 1", executor.calls)
+	}
+	if acknowledged != "Copied to clipboard." {
+		t.Fatalf("acknowledged text = %q, want action acknowledgement", acknowledged)
+	}
+	if len(prompter.scripts) != 0 {
+		t.Fatalf("prompter scripts = %v, want no assist panel activity for action acknowledgement", prompter.scripts)
 	}
 }

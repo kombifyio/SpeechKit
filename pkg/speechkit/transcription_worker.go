@@ -174,7 +174,7 @@ func (w *TranscriptionWorker) handleJob(ctx context.Context, job TranscriptionJo
 	w.onState("processing", DefaultProcessingMessage)
 	w.onLog("Sending to STT...", "info")
 
-	transcribeCtx, cancel := context.WithTimeout(ctx, w.timeout)
+	transcribeCtx, cancel := context.WithTimeout(ctx, transcriptionTimeoutForDuration(w.timeout, job.DurationSecs))
 	transcript, err := w.runner.transcriber.Transcribe(transcribeCtx, job.WAV, job.DurationSecs, job.Language)
 	cancel()
 	if err != nil {
@@ -234,6 +234,26 @@ func (w *TranscriptionWorker) handleJob(ctx context.Context, job TranscriptionJo
 	if err := w.output.Deliver(ctx, completion.Transcript, job.Target); err != nil {
 		w.onLog(fmt.Sprintf("Output error: %v", err), "error")
 	}
+}
+
+func transcriptionTimeoutForDuration(base time.Duration, durationSecs float64) time.Duration {
+	if base <= 0 {
+		base = 30 * time.Second
+	}
+	timeout := base
+	if durationSecs > 0 {
+		scaled := 20*time.Second + time.Duration(durationSecs*3*float64(time.Second))
+		if scaled > timeout {
+			timeout = scaled
+		}
+	}
+	if timeout < 60*time.Second {
+		timeout = 60 * time.Second
+	}
+	if timeout > 5*time.Minute {
+		timeout = 5 * time.Minute
+	}
+	return timeout
 }
 
 func (w *TranscriptionWorker) onState(status, text string) {

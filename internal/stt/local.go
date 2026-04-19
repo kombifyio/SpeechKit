@@ -3,6 +3,7 @@ package stt
 import (
 	"bytes"
 	"context"
+	"encoding/binary"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -19,6 +20,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/kombifyio/SpeechKit/internal/audio"
 	"github.com/kombifyio/SpeechKit/internal/netsec"
 )
 
@@ -54,9 +56,14 @@ func ValidateModelPath(path string) error {
 }
 
 const (
-	whisperHealthRetries  = 120
-	whisperHealthInterval = 500 * time.Millisecond
-	localMaxResponseBytes = 1 << 20
+	whisperHealthRetries      = 120
+	whisperHealthInterval     = 500 * time.Millisecond
+	whisperWarmupRetries      = 180
+	whisperWarmupInterval     = 500 * time.Millisecond
+	whisperWarmupTimeout      = 90 * time.Second
+	localMinTranscribeTimeout = 60 * time.Second
+	localMaxTranscribeTimeout = 5 * time.Minute
+	localMaxResponseBytes     = 1 << 20
 )
 
 // LocalProvider implements STTProvider for Tier 1: localhost whisper.cpp server.
@@ -130,6 +137,10 @@ func (p *LocalProvider) StartServer(ctx context.Context) error {
 		p.StopServer()
 		return err
 	}
+	if err := p.waitForInferenceReady(ctx); err != nil {
+		p.StopServer()
+		return err
+	}
 
 	p.ready.Store(true)
 	slog.Info("whisper-server ready", "url", p.BaseURL)
@@ -161,6 +172,110 @@ func (p *LocalProvider) waitForReady(ctx context.Context) error {
 	return fmt.Errorf("whisper-server did not become ready after %v", time.Duration(whisperHealthRetries)*whisperHealthInterval)
 }
 
+func (p *LocalProvider) waitForInferenceReady(ctx context.Context) error {
+	warmupCtx, cancel := context.WithTimeout(ctx, whisperWarmupTimeout)
+	defer cancel()
+
+	warmupClient := netsec.NewSafeHTTPClient(netsec.ClientOptions{Timeout: whisperWarmupTimeout})
+	return p.waitForInferenceReadyWithClient(warmupCtx, warmupClient, whisperWarmupRetries, whisperWarmupInterval)
+}
+
+func (p *LocalProvider) waitForInferenceReadyWithRetry(ctx context.Context, retries int, interval time.Duration) error {
+	return p.waitForInferenceReadyWithClient(ctx, p.client, retries, interval)
+}
+
+func (p *LocalProvider) waitForInferenceReadyWithClient(ctx context.Context, client *http.Client, retries int, interval time.Duration) error {
+	if retries <= 0 {
+		retries = 1
+	}
+	if interval <= 0 {
+		interval = time.Millisecond
+	}
+	if client == nil {
+		client = netsec.NewSafeHTTPClient(netsec.ClientOptions{Timeout: 30 * time.Second})
+	}
+
+	endpoint := fmt.Sprintf("%s/v1/audio/transcriptions", p.BaseURL)
+	warmupAudio := buildWarmupWAV()
+	var lastErr error
+
+	for i := 0; i < retries; i++ {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		default:
+		}
+
+		if err := p.probeInferenceReady(ctx, client, endpoint, warmupAudio); err == nil {
+			return nil
+		} else {
+			lastErr = err
+		}
+
+		if i == retries-1 {
+			break
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(interval):
+		}
+	}
+
+	if lastErr == nil {
+		lastErr = fmt.Errorf("unknown warmup failure")
+	}
+	return fmt.Errorf("whisper-server inference not ready: %w", lastErr)
+}
+
+func (p *LocalProvider) probeInferenceReady(ctx context.Context, client *http.Client, endpoint string, audioData []byte) error {
+	body := &bytes.Buffer{}
+	writer := multipart.NewWriter(body)
+
+	part, err := writer.CreateFormFile("file", "warmup.wav")
+	if err != nil {
+		return fmt.Errorf("create warmup form file: %w", err)
+	}
+	if _, err := part.Write(audioData); err != nil {
+		return fmt.Errorf("write warmup audio: %w", err)
+	}
+	if err := writer.WriteField("model", "whisper-1"); err != nil {
+		return fmt.Errorf("write warmup model field: %w", err)
+	}
+	if err := writer.Close(); err != nil {
+		return fmt.Errorf("close warmup multipart writer: %w", err)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, body)
+	if err != nil {
+		return fmt.Errorf("create warmup request: %w", err)
+	}
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close() //nolint:errcheck // response body close error is not actionable
+
+	respBody, err := io.ReadAll(io.LimitReader(resp.Body, localMaxResponseBytes))
+	if err != nil {
+		return fmt.Errorf("read warmup response: %w", err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("warmup status %d: %s", resp.StatusCode, strings.TrimSpace(string(respBody)))
+	}
+
+	return nil
+}
+
+func buildWarmupWAV() []byte {
+	// 200ms of silence is enough to verify the inference route without
+	// adding noticeable startup cost or depending on user audio.
+	pcm := make([]byte, (audio.SampleRate/5)*audio.BytesPerSample)
+	return audio.PCMToWAV(pcm)
+}
+
 // StopServer terminates the whisper-server subprocess.
 func (p *LocalProvider) StopServer() {
 	p.ready.Store(false)
@@ -181,7 +296,7 @@ func (p *LocalProvider) Transcribe(ctx context.Context, audio []byte, opts Trans
 			slog.Info("whisper-server: waiting for startup to complete...")
 			select {
 			case <-done:
-				// startup finished â€” check ready below
+				// startup finished — check ready below
 			case <-ctx.Done():
 				return nil, fmt.Errorf("local whisper-server not ready: cancelled while waiting for startup")
 			}
@@ -221,14 +336,18 @@ func (p *LocalProvider) Transcribe(ctx context.Context, audio []byte, opts Trans
 		return nil, fmt.Errorf("close multipart writer: %w", err)
 	}
 
-	req, err := http.NewRequestWithContext(ctx, "POST", endpoint, body)
+	requestTimeout := localTranscribeTimeout(audio)
+	requestCtx, cancel := context.WithTimeout(ctx, requestTimeout)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(requestCtx, "POST", endpoint, body)
 	if err != nil {
 		return nil, fmt.Errorf("create request: %w", err)
 	}
 	req.Header.Set("Content-Type", writer.FormDataContentType())
 
 	start := time.Now()
-	resp, err := p.client.Do(req)
+	resp, err := transcribeHTTPClient(p.client, requestTimeout).Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("local transcribe: %w", err)
 	}
@@ -263,6 +382,48 @@ func (p *LocalProvider) Transcribe(ctx context.Context, audio []byte, opts Trans
 		Provider: p.Name(),
 		Model:    p.displayModel(),
 	}, nil
+}
+
+func localTranscribeTimeout(audioData []byte) time.Duration {
+	timeout := localMinTranscribeTimeout
+	if durationSecs := estimateWAVDurationSecs(audioData); durationSecs > 0 {
+		scaled := 20*time.Second + time.Duration(durationSecs*3*float64(time.Second))
+		if scaled > timeout {
+			timeout = scaled
+		}
+	}
+	if timeout > localMaxTranscribeTimeout {
+		return localMaxTranscribeTimeout
+	}
+	return timeout
+}
+
+func transcribeHTTPClient(base *http.Client, timeout time.Duration) *http.Client {
+	if timeout <= 0 {
+		timeout = localMinTranscribeTimeout
+	}
+	if base == nil {
+		return netsec.NewSafeHTTPClient(netsec.ClientOptions{Timeout: timeout + 5*time.Second})
+	}
+	cloned := *base
+	cloned.Timeout = timeout + 5*time.Second
+	return &cloned
+}
+
+func estimateWAVDurationSecs(audioData []byte) float64 {
+	if len(audioData) >= 44 &&
+		string(audioData[0:4]) == "RIFF" &&
+		string(audioData[8:12]) == "WAVE" {
+		channels := int(binary.LittleEndian.Uint16(audioData[22:24]))
+		sampleRate := int(binary.LittleEndian.Uint32(audioData[24:28]))
+		bitsPerSample := int(binary.LittleEndian.Uint16(audioData[34:36]))
+		dataSize := int(binary.LittleEndian.Uint32(audioData[40:44]))
+		bytesPerFrame := channels * (bitsPerSample / 8)
+		if sampleRate > 0 && bytesPerFrame > 0 && dataSize > 0 {
+			return float64(dataSize/bytesPerFrame) / float64(sampleRate)
+		}
+	}
+	return audio.PCMDurationSecs(audioData)
 }
 
 func (p *LocalProvider) Name() string {
@@ -346,7 +507,7 @@ func (p *LocalProvider) VerifyInstallation() InstallStatus {
 	} else {
 		status.ModelBytes = fi.Size()
 		if fi.Size() < MinWhisperModelBytes {
-			status.Problems = append(status.Problems, fmt.Sprintf("model file too small (%d bytes) â€” likely corrupt or truncated", fi.Size()))
+			status.Problems = append(status.Problems, fmt.Sprintf("model file too small (%d bytes) — likely corrupt or truncated", fi.Size()))
 		} else {
 			status.ModelFound = true
 		}

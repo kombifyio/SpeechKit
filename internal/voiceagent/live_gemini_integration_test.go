@@ -57,12 +57,12 @@ func TestGeminiLiveDialogIntegration(t *testing.T) {
 
 	provider := NewGeminiLive()
 	var (
-		mu              sync.Mutex
-		audioBytes      int
-		outputTexts     []string
-		stateChanges    []State
-		receivedError   error
-		sessionEnded    bool
+		mu            sync.Mutex
+		audioBytes    int
+		outputTexts   []string
+		stateChanges  []State
+		receivedError error
+		sessionEnded  bool
 	)
 
 	session := NewSession(provider, Callbacks{

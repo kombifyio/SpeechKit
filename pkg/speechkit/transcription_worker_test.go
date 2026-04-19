@@ -184,6 +184,17 @@ func TestTranscriptionWorkerRequiresTranscriber(t *testing.T) {
 	}
 }
 
+func TestTranscriptionTimeoutForDurationScalesBeyondDefault(t *testing.T) {
+	timeout := transcriptionTimeoutForDuration(30*time.Second, 90)
+
+	if timeout <= 30*time.Second {
+		t.Fatalf("timeout = %v, want more than legacy 30s default", timeout)
+	}
+	if timeout < 4*time.Minute {
+		t.Fatalf("timeout = %v, want enough headroom for long local STT captures", timeout)
+	}
+}
+
 func TestTranscriptionWorkerSubmitWhileClosingDoesNotPanic(t *testing.T) {
 	worker, err := NewTranscriptionWorker(TranscriptionWorkerConfig{
 		Timeout:   time.Second,

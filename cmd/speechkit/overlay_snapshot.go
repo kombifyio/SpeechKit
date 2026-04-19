@@ -88,6 +88,7 @@ func (s *appState) overlaySnapshot() overlaySnapshot {
 		voiceAgentHotkey,
 	)
 	audioDeviceID := s.audioDeviceID
+	audioOutputDeviceID := s.audioOutputDeviceID
 	activeProfiles := cloneStringMap(s.activeProfiles)
 	level := s.overlayLevel
 	if s.currentState != "recording" {
@@ -126,6 +127,8 @@ func (s *appState) overlaySnapshot() overlaySnapshot {
 		QuickNoteMode:            s.quickNoteMode,
 		AudioDeviceID:            audioDeviceID,
 		SelectedAudioDeviceID:    audioDeviceID,
+		AudioOutputDeviceID:      audioOutputDeviceID,
+		SelectedOutputDeviceID:   audioOutputDeviceID,
 		ActiveProfiles:           activeProfiles,
 	}
 }
@@ -206,6 +209,10 @@ func (s *appState) settingsSnapshot(cfg *config.Config) settingsSnapshot {
 	if audioDeviceID == "" {
 		audioDeviceID = cfg.Audio.DeviceID
 	}
+	audioOutputDeviceID := s.audioOutputDeviceID
+	if audioOutputDeviceID == "" {
+		audioOutputDeviceID = cfg.Audio.OutputDeviceID
+	}
 	storeBackend := cfg.Store.Backend
 	if storeBackend == "" {
 		storeBackend = "sqlite"
@@ -261,6 +268,8 @@ func (s *appState) settingsSnapshot(cfg *config.Config) settingsSnapshot {
 		AudioRetentionDays:         cfg.Store.AudioRetentionDays,
 		AudioDeviceID:              audioDeviceID,
 		SelectedAudioDeviceID:      audioDeviceID,
+		AudioOutputDeviceID:        audioOutputDeviceID,
+		SelectedOutputDeviceID:     audioOutputDeviceID,
 		Profiles:                   catalog.Profiles,
 		ActiveProfiles:             cloneStringMap(s.activeProfiles),
 		ModelSelections:            configuredModeModelSelections(cfg, catalog),

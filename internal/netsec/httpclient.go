@@ -12,14 +12,14 @@ import (
 // set are logged as the literal string "[REDACTED]" when DumpRequest /
 // DumpResponse is called with the Redact helper.
 var sensitiveHeaders = map[string]struct{}{
-	"authorization":       {},
-	"proxy-authorization": {},
-	"x-api-key":           {},
-	"x-auth-token":        {},
+	"authorization":        {},
+	"proxy-authorization":  {},
+	"x-api-key":            {},
+	"x-auth-token":         {},
 	"x-amz-security-token": {},
-	"cookie":              {},
-	"set-cookie":          {},
-	"x-goog-api-key":      {},
+	"cookie":               {},
+	"set-cookie":           {},
+	"x-goog-api-key":       {},
 }
 
 // ClientOptions configures a SpeechKit HTTP client.

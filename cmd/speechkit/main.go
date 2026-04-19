@@ -95,6 +95,7 @@ type appState struct {
 	activeMode               string
 	prompterMode             string
 	audioDeviceID            string
+	audioOutputDeviceID      string
 	activeProfiles           map[string]string
 	hkManager                hotkeyReconfigurer
 	audioSession             audioDeviceReconfigurer
@@ -112,11 +113,14 @@ type appState struct {
 	audioPlayer              *audio.Player
 	voiceAgentSession        *voiceagent.Session
 	streamPlayer             *audio.StreamPlayer
+	voiceAgentAudioSender    *voiceAgentAudioSender
+	voiceAgentEchoGuard      *voiceAgentEchoGuard
 	wailsApp                 *application.App
 	captureWin               *application.WebviewWindow
 	doneResetDelay           time.Duration
 	downloads                *downloads.Manager
 	appUpdates               *appUpdateManager
+	shuttingDown             bool
 }
 
 func showSettingsWindow(window settingsWindow) {
@@ -252,7 +256,7 @@ func main() {
 		if err := config.SaveInstallState(installState); err != nil {
 			slog.Warn("save install state", "err", err)
 		}
-		slog.Info("install mode: local (default, first run â€” setup wizard pending)")
+		slog.Info("install mode: local (default, first run — setup wizard pending)")
 	} else {
 		slog.Info("install mode", "mode", installState.Mode)
 	}
@@ -283,6 +287,7 @@ func main() {
 		activeMode:               cfg.General.ActiveMode,
 		prompterMode:             modeAssist,
 		audioDeviceID:            cfg.Audio.DeviceID,
+		audioOutputDeviceID:      cfg.Audio.OutputDeviceID,
 		activeProfiles:           activeProfilesFromConfig(cfg, filteredModelCatalog()),
 		providers:                []string{},
 		overlayEnabled:           cfg.UI.OverlayEnabled,
@@ -341,7 +346,7 @@ func main() {
 					state.addLog(fmt.Sprintf("Audio backend warning: %s", msg), "warn")
 				}
 			default:
-				// EventStarted, EventStopped â€” no log action needed.
+				// EventStarted, EventStopped — no log action needed.
 			}
 		}
 	}()
@@ -374,12 +379,7 @@ func main() {
 		voiceSession := state.voiceAgentSession
 		state.mu.Unlock()
 		if voiceSession != nil {
-			switch voiceSession.CurrentState() {
-			case voiceagent.StateListening:
-				state.updatePrompterActivity("user", level)
-			case voiceagent.StateConnecting, voiceagent.StateProcessing, voiceagent.StateSpeaking, voiceagent.StateDeactivating:
-				state.updatePrompterActivity("user", 0)
-			}
+			state.updatePrompterActivity("user", voiceAgentUserActivityLevel(voiceSession.CurrentState(), level, state.currentVoiceAgentEchoGuard()))
 		}
 
 		// Only do silence detection when Quick Capture is active
@@ -413,7 +413,7 @@ func main() {
 	genkitRT, err := appai.Init(ctx, buildGenkitConfig(cfg))
 	if err != nil {
 		slog.Warn("genkit init", "err", err)
-		state.addLog("AI providers unavailable â€” Assist and Voice Agent disabled", "warn")
+		state.addLog("AI providers unavailable — Assist and Voice Agent disabled", "warn")
 	} else {
 		state.genkitRT = genkitRT
 
@@ -447,7 +447,7 @@ func main() {
 	audioPlayer, err := audio.NewPlayer()
 	if err != nil {
 		slog.Warn("audio player init", "err", err)
-		state.addLog("TTS audio player unavailable â€” voice output disabled", "warn")
+		state.addLog("TTS audio player unavailable — voice output disabled", "warn")
 	} else {
 		state.audioPlayer = audioPlayer
 		defer audioPlayer.Close()
@@ -466,7 +466,7 @@ func main() {
 	})
 	state.assistExecutor = newAssistToolExecutor(quickActions)
 
-	// Assist Pipeline: STT â†’ Codeword â†’ LLM â†’ TTS â†’ Result{Text, Audio}
+	// Assist Pipeline: STT → Codeword → LLM → TTS → Result{Text, Audio}
 	if state.assistFlow != nil {
 		state.assistPipeline = assist.NewPipeline(
 			state.assistFlow,
@@ -520,7 +520,10 @@ func main() {
 	var dashboardWin *application.WebviewWindow
 	createDashboardWindow := func(wailsApp *application.App) *application.WebviewWindow {
 		win := wailsApp.Window.NewWithOptions(newDashboardWindowOptions())
-		win.OnWindowEvent(events.Common.WindowClosing, func(event *application.WindowEvent) {
+		win.RegisterHook(events.Common.WindowClosing, func(event *application.WindowEvent) {
+			if !state.shouldHideWindowOnClose() {
+				return
+			}
 			event.Cancel()
 			win.Hide()
 		})
@@ -549,6 +552,19 @@ func main() {
 		},
 		ErrorHandler: func(err error) {
 			slog.Error("wails error", "err", err)
+		},
+		ShouldQuit: func() bool {
+			state.beginShutdown()
+			return true
+		},
+		OnShutdown: func() {
+			state.beginShutdown()
+			cancel()
+			state.stopVoiceAgentAudioSender()
+			state.stopVoiceAgentStream()
+			if capturer != nil {
+				capturer.SetPCMHandler(nil)
+			}
 		},
 		SingleInstance: &application.SingleInstanceOptions{
 			UniqueID: "com.kombify.speechkit",
@@ -585,7 +601,10 @@ func main() {
 
 	var inputController *desktopInputController
 	prompterWin := app.Window.NewWithOptions(newPrompterWindowOptions())
-	prompterWin.OnWindowEvent(events.Common.WindowClosing, func(event *application.WindowEvent) {
+	prompterWin.RegisterHook(events.Common.WindowClosing, func(event *application.WindowEvent) {
+		if !state.shouldHideWindowOnClose() {
+			return
+		}
 		event.Cancel()
 		if inputController != nil {
 			inputController.closeVoiceAgentPrompter(ctx)
@@ -642,6 +661,7 @@ func main() {
 	// System tray
 	appTray := tray.New(app, func() {
 		state.addLog("Quit requested from tray", "info")
+		state.beginShutdown()
 		app.Quit()
 	}, func() {
 		state.addLog("Dashboard requested from tray", "info")
@@ -679,7 +699,7 @@ func main() {
 		if inputController == nil {
 			return
 		}
-		inputController.deactivateVoiceAgent(ctx, true)
+		inputController.deactivateVoiceAgentWithReason(ctx, true, "stop control")
 	})
 	app.Event.On("voiceagent:close", func(_ *application.CustomEvent) {
 		if inputController == nil {
@@ -826,6 +846,8 @@ func main() {
 		voiceAgentSession: state.voiceAgentSession,
 		voiceAgentConfig:  &cfg.VoiceAgent,
 		cfg:               cfg,
+		installState:      installState,
+		sttRouter:         r,
 		audioCapturer:     capturer,
 	}
 	go inputController.Run(ctx)

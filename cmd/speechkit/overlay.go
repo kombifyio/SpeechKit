@@ -36,8 +36,10 @@ const (
 	assistBubbleWidth  = 450
 	assistBubbleHeight = 120
 
-	prompterWidth  = 860
-	prompterHeight = 640
+	prompterWidth           = 390
+	prompterHeight          = 500
+	prompterCollapsedWidth  = 340
+	prompterCollapsedHeight = 132
 
 	overlaySpeakingThreshold = 0.18
 	overlayVisualizerGain    = 14.0
@@ -128,6 +130,8 @@ type overlaySnapshot struct {
 	QuickNoteMode            bool                     `json:"quickNoteMode"`
 	AudioDeviceID            string                   `json:"audioDeviceId"`
 	SelectedAudioDeviceID    string                   `json:"selectedAudioDeviceId"`
+	AudioOutputDeviceID      string                   `json:"audioOutputDeviceId"`
+	SelectedOutputDeviceID   string                   `json:"selectedOutputDeviceId"`
 	ActiveProfiles           map[string]string        `json:"activeProfiles"`
 }
 
@@ -172,6 +176,8 @@ type settingsSnapshot struct {
 	AudioRetentionDays         int                                   `json:"audioRetentionDays"`
 	AudioDeviceID              string                                `json:"audioDeviceId"`
 	SelectedAudioDeviceID      string                                `json:"selectedAudioDeviceId"`
+	AudioOutputDeviceID        string                                `json:"audioOutputDeviceId"`
+	SelectedOutputDeviceID     string                                `json:"selectedOutputDeviceId"`
 	Profiles                   []models.Profile                      `json:"profiles"`
 	ActiveProfiles             map[string]string                     `json:"activeProfiles"`
 	ModelSelections            map[string]modeModelSelectionSnapshot `json:"modelSelections"`

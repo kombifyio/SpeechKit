@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/kombifyio/SpeechKit/internal/assist"
 	"github.com/kombifyio/SpeechKit/internal/output"
@@ -34,9 +35,11 @@ func (e *assistToolExecutor) Execute(ctx context.Context, call assist.ToolCall) 
 			SpeakText: text,
 			Action:    "execute",
 			Locale:    call.Locale,
+			Surface:   assist.ResultSurfaceActionAck,
+			Kind:      assist.ResultKindUtilityAction,
 		}, nil
 	case shortcuts.IntentInsertLast:
-		if err := e.actions.insertLast(ctx, speechkit.Transcript{Language: call.Locale}, output.Target{}); err != nil {
+		if err := e.actions.insertLast(ctx, speechkit.Transcript{Language: call.Locale}, call.Target); err != nil {
 			return assist.ToolResult{}, err
 		}
 		text := localizedAssistActionText(call.Locale, call.Intent)
@@ -45,30 +48,66 @@ func (e *assistToolExecutor) Execute(ctx context.Context, call assist.ToolCall) 
 			SpeakText: text,
 			Action:    "execute",
 			Locale:    call.Locale,
+			Surface:   assist.ResultSurfaceActionAck,
+			Kind:      assist.ResultKindUtilityAction,
 		}, nil
 	case shortcuts.IntentSummarize:
-		if e.actions.captureSelection == nil {
-			e.actions.captureSelection = output.CaptureSelectedText
+		selection := strings.TrimSpace(call.Selection)
+		if selection == "" {
+			if e.actions.captureSelection == nil {
+				e.actions.captureSelection = output.CaptureSelectedText
+			}
+			capturedSelection, err := e.actions.captureSelection(ctx)
+			if err != nil {
+				return assist.ToolResult{}, fmt.Errorf("capture selection: %w", err)
+			}
+			selection = strings.TrimSpace(capturedSelection)
 		}
-		selection, err := e.actions.captureSelection(ctx)
-		if err != nil {
-			return assist.ToolResult{}, fmt.Errorf("capture selection: %w", err)
+
+		canInsertResult := selection != "" && outputTarget(call.Target).HWND != 0
+		if canInsertResult {
+			summary, err := e.actions.summarizeAndPaste(ctx, selection, call.Target, call.Payload, call.Locale)
+			if err != nil {
+				return assist.ToolResult{}, err
+			}
+			if summary == "" {
+				return assist.ToolResult{
+					Action:  "silent",
+					Locale:  call.Locale,
+					Surface: assist.ResultSurfaceSilent,
+					Kind:    assist.ResultKindUtilityAction,
+				}, nil
+			}
+			text := localizedAssistSummaryInsertedText(call.Locale)
+			return assist.ToolResult{
+				Text:      text,
+				SpeakText: text,
+				Action:    "execute",
+				Locale:    call.Locale,
+				Surface:   assist.ResultSurfaceActionAck,
+				Kind:      assist.ResultKindUtilityAction,
+			}, nil
 		}
-		summary, err := e.actions.summarizeAndPaste(ctx, selection, output.Target{}, call.Payload, call.Locale)
+
+		summary, resolvedLocale, err := e.actions.generateSummary(ctx, selection, call.Payload, call.Locale)
 		if err != nil {
 			return assist.ToolResult{}, err
 		}
 		if summary == "" {
 			return assist.ToolResult{
-				Action: "silent",
-				Locale: call.Locale,
+				Action:  "silent",
+				Locale:  call.Locale,
+				Surface: assist.ResultSurfaceSilent,
+				Kind:    assist.ResultKindWorkProduct,
 			}, nil
 		}
 		return assist.ToolResult{
 			Text:      summary,
 			SpeakText: summary,
-			Action:    "execute",
-			Locale:    call.Locale,
+			Action:    "respond",
+			Locale:    resolvedLocale,
+			Surface:   assist.ResultSurfacePanel,
+			Kind:      assist.ResultKindWorkProduct,
 		}, nil
 	default:
 		return assist.ToolResult{}, fmt.Errorf("unsupported assist intent %q", call.Intent)
@@ -101,5 +140,18 @@ func localizedAssistActionText(locale string, intent shortcuts.Intent) string {
 		}
 	default:
 		return ""
+	}
+}
+
+func localizedAssistSummaryInsertedText(locale string) string {
+	switch locale {
+	case "de", "de-DE":
+		return "Zusammenfassung eingefuegt."
+	case "fr", "fr-FR":
+		return "Resume insere."
+	case "es", "es-ES":
+		return "Resumen insertado."
+	default:
+		return "Summary inserted."
 	}
 }

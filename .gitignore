@@ -34,6 +34,11 @@ config.toml
 
 # Local tooling state
 .cache/
+.codex-tmp/
+.tmp-website-npm-ci/
+.release-src-v*/
+.public-oss-release/
+.public-release-notes-*.md
 logs/
 .beads/*.sock
 .beads/*.pid
@@ -64,7 +69,7 @@ Desktop.ini
 *.cdx.json
 
 # Wails
-/node_modules/
+node_modules/
 frontend/node_modules/
 frontend/**/node_modules/
 frontend/dist/

@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"sync"
 	"time"
 
 	"github.com/kombifyio/SpeechKit/internal/router"
@@ -16,6 +17,11 @@ const (
 
 var localProviderRetryDelay = 5 * time.Second
 
+var (
+	localProviderStartMu sync.Mutex
+	localProviderStarts  = map[string]struct{}{}
+)
+
 type localProviderStarter interface {
 	stt.STTProvider
 	StartServer(context.Context) error
@@ -27,7 +33,27 @@ func startLocalProviderAsync(ctx context.Context, state *appState, r *router.Rou
 	if provider == nil {
 		return
 	}
-	go startLocalProviderWithRetry(ctx, state, r, provider, localProviderStartRetries)
+	key := localProviderStartKey(provider)
+	if key == "" {
+		return
+	}
+
+	localProviderStartMu.Lock()
+	if _, exists := localProviderStarts[key]; exists {
+		localProviderStartMu.Unlock()
+		return
+	}
+	localProviderStarts[key] = struct{}{}
+	localProviderStartMu.Unlock()
+
+	go func() {
+		defer func() {
+			localProviderStartMu.Lock()
+			delete(localProviderStarts, key)
+			localProviderStartMu.Unlock()
+		}()
+		startLocalProviderWithRetry(ctx, state, r, provider, localProviderStartRetries)
+	}()
 }
 
 func startLocalProviderWithRetry(ctx context.Context, state *appState, r *router.Router, provider localProviderStarter, maxAttempts int) {
@@ -52,7 +78,7 @@ func startLocalProviderWithRetry(ctx context.Context, state *appState, r *router
 			return
 		}
 		if !status.ModelFound {
-			runtimeLog(state, "Local STT unavailable: model file missing or corrupt. Download a model from Settings â†’ STT.", "error")
+			runtimeLog(state, "Local STT unavailable: model file missing or corrupt. Download a model from Settings → STT.", "error")
 			syncRuntimeProviders(ctx, state, r)
 			return
 		}
@@ -95,4 +121,8 @@ func runtimeLog(state *appState, message, logType string) {
 		return
 	}
 	slog.Info(message, "type", logType)
+}
+
+func localProviderStartKey(provider localProviderStarter) string {
+	return fmt.Sprintf("%p", provider)
 }

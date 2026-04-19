@@ -58,7 +58,9 @@ func TestCallOpenAICompatible_Success(t *testing.T) {
 				FinishReason string `json:"finish_reason"`
 			}{
 				{
-					Message:      struct{ Content string `json:"content"` }{Content: "Hi there"},
+					Message: struct {
+						Content string `json:"content"`
+					}{Content: "Hi there"},
 					FinishReason: "stop",
 				},
 			},
@@ -116,7 +118,9 @@ func TestCallOpenAICompatible_ModelRoleMapping(t *testing.T) {
 				} `json:"message"`
 				FinishReason string `json:"finish_reason"`
 			}{
-				{Message: struct{ Content string `json:"content"` }{Content: "ok"}},
+				{Message: struct {
+					Content string `json:"content"`
+				}{Content: "ok"}},
 			},
 		})
 	}))
@@ -155,7 +159,9 @@ func TestCallOpenAICompatible_ConfigApplied(t *testing.T) {
 				} `json:"message"`
 				FinishReason string `json:"finish_reason"`
 			}{
-				{Message: struct{ Content string `json:"content"` }{Content: "ok"}},
+				{Message: struct {
+					Content string `json:"content"`
+				}{Content: "ok"}},
 			},
 		})
 	}))

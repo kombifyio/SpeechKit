@@ -11,9 +11,9 @@ import (
 
 func main() {
 	generate("idle.png", color.RGBA{120, 120, 120, 255})      // Gray
-	generate("idle-dark.png", color.RGBA{200, 200, 200, 255})  // Light gray for dark mode
-	generate("recording.png", color.RGBA{220, 40, 40, 255})    // Red
-	generate("processing.png", color.RGBA{220, 180, 40, 255})  // Yellow/amber
+	generate("idle-dark.png", color.RGBA{200, 200, 200, 255}) // Light gray for dark mode
+	generate("recording.png", color.RGBA{220, 40, 40, 255})   // Red
+	generate("processing.png", color.RGBA{220, 180, 40, 255}) // Yellow/amber
 }
 
 func generate(name string, c color.RGBA) {

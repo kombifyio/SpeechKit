@@ -12,7 +12,7 @@ type Strategy string
 
 const (
 	StrategyCloudFirst Strategy = "cloud-first" // Default: try cloud providers first
-	StrategyLocalFirst Strategy = "local-first"  // Try local (Kokoro) first, cloud fallback
+	StrategyLocalFirst Strategy = "local-first" // Try local (Kokoro) first, cloud fallback
 	StrategyCloudOnly  Strategy = "cloud-only"
 	StrategyLocalOnly  Strategy = "local-only"
 )

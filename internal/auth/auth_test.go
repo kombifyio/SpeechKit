@@ -17,9 +17,9 @@ func (m *mockProvider) PollDeviceCode(ctx context.Context, deviceCode string) (*
 	return nil, nil
 }
 func (m *mockProvider) GetAccessToken(ctx context.Context) (string, error) { return "", nil }
-func (m *mockProvider) GetIdentity(ctx context.Context) (*Identity, error)  { return nil, nil }
-func (m *mockProvider) Logout(ctx context.Context) error                    { return nil }
-func (m *mockProvider) IsLoggedIn() bool                                    { return m.loggedIn }
+func (m *mockProvider) GetIdentity(ctx context.Context) (*Identity, error) { return nil, nil }
+func (m *mockProvider) Logout(ctx context.Context) error                   { return nil }
+func (m *mockProvider) IsLoggedIn() bool                                   { return m.loggedIn }
 
 // resetRegistry clears the registered provider between tests.
 func resetRegistry() {

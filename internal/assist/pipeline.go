@@ -1,5 +1,5 @@
 // Package assist implements the Assist Mode pipeline:
-// STT transcript â†’ Codeword check â†’ LLM â†’ TTS â†’ Result with both text and audio.
+// STT transcript → Codeword check → LLM → TTS → Result with both text and audio.
 package assist
 
 import (
@@ -22,6 +22,8 @@ type Result struct {
 	Action    string // "respond", "execute", "silent", "shortcut"
 	Locale    string // Response language
 	Shortcut  string // Matched shortcut intent, if any
+	Surface   ResultSurface
+	Kind      ResultKind
 }
 
 // Pipeline orchestrates the Assist Mode flow.
@@ -79,6 +81,7 @@ type ProcessOpts struct {
 	Locale    string // "de", "en", etc.
 	Selection string // Currently selected text
 	Context   string // Additional context
+	Target    any    // Host-specific target for insertion/execution
 }
 
 func (p *Pipeline) handleTool(ctx context.Context, transcript string, decision Decision, opts ProcessOpts) (*Result, error) {
@@ -93,6 +96,7 @@ func (p *Pipeline) handleTool(ctx context.Context, transcript string, decision D
 		Locale:     firstNonEmpty(decision.Locale, opts.Locale),
 		Selection:  opts.Selection,
 		Context:    opts.Context,
+		Target:     opts.Target,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("assist: execute tool intent %q: %w", decision.Intent, err)
@@ -104,6 +108,8 @@ func (p *Pipeline) handleTool(ctx context.Context, transcript string, decision D
 		Action:    firstNonEmpty(toolResult.Action, "execute"),
 		Locale:    firstNonEmpty(toolResult.Locale, decision.Locale, opts.Locale),
 		Shortcut:  string(decision.Intent),
+		Surface:   firstNonEmptySurface(toolResult.Surface, ResultSurfaceActionAck),
+		Kind:      firstNonEmptyKind(toolResult.Kind, ResultKindUtilityAction),
 	}
 
 	if err := p.synthesize(ctx, result); err != nil {
@@ -133,6 +139,8 @@ func (p *Pipeline) handleLLM(ctx context.Context, transcript string, opts Proces
 		SpeakText: output.SpeakText,
 		Action:    output.Action,
 		Locale:    output.Locale,
+		Surface:   ResultSurfacePanel,
+		Kind:      ResultKindAnswer,
 	}
 
 	// Synthesize TTS for the LLM response.
@@ -176,4 +184,22 @@ func firstNonEmpty(values ...string) string {
 		}
 	}
 	return ""
+}
+
+func firstNonEmptySurface(values ...ResultSurface) ResultSurface {
+	for _, value := range values {
+		if value != "" {
+			return value
+		}
+	}
+	return ResultSurfacePanel
+}
+
+func firstNonEmptyKind(values ...ResultKind) ResultKind {
+	for _, value := range values {
+		if value != "" {
+			return value
+		}
+	}
+	return ResultKindAnswer
 }

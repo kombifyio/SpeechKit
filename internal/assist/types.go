@@ -14,6 +14,22 @@ const (
 	RouteClarify     Route = "clarify"
 )
 
+type ResultSurface string
+
+const (
+	ResultSurfacePanel     ResultSurface = "panel"
+	ResultSurfaceActionAck ResultSurface = "action_ack"
+	ResultSurfaceSilent    ResultSurface = "silent"
+)
+
+type ResultKind string
+
+const (
+	ResultKindAnswer        ResultKind = "answer"
+	ResultKindWorkProduct   ResultKind = "work_product"
+	ResultKindUtilityAction ResultKind = "utility_action"
+)
+
 type Decision struct {
 	Route   Route
 	Intent  shortcuts.Intent
@@ -28,6 +44,7 @@ type ToolCall struct {
 	Locale     string
 	Selection  string
 	Context    string
+	Target     any
 }
 
 type ToolResult struct {
@@ -35,6 +52,8 @@ type ToolResult struct {
 	SpeakText string
 	Action    string
 	Locale    string
+	Surface   ResultSurface
+	Kind      ResultKind
 }
 
 type ToolExecutor interface {

@@ -15,42 +15,42 @@ type audioDeviceReconfigurer interface {
 }
 
 type runtimeState struct {
-	logEntries            []logEntry
-	transcriptions        int
-	providers             []string
-	hotkey                string
-	dictateHotkey         string
-	assistHotkey          string
-	voiceAgentHotkey      string
-	dictateHotkeyBehavior string
-	assistHotkeyBehavior  string
+	logEntries               []logEntry
+	transcriptions           int
+	providers                []string
+	hotkey                   string
+	dictateHotkey            string
+	assistHotkey             string
+	voiceAgentHotkey         string
+	dictateHotkeyBehavior    string
+	assistHotkeyBehavior     string
 	voiceAgentHotkeyBehavior string
-	dictateEnabled        bool
-	assistEnabled         bool
-	voiceAgentEnabled     bool
-	agentHotkey           string
-	currentState          string
-	overlayText           string
-	overlayLevel          float64
-	overlayPhase          string
-	overlayVisualizer     string
-	overlayDesign         string
-	overlayEnabled        bool
-	overlayPosition       string
-	overlayMovable        bool
-	overlayFreeX          int
-	overlayFreeY          int
-	overlayMonitorKey     string
-	overlayMonitorCenters map[string]config.OverlayFreePosition
-	quickNoteMode         bool
-	quickCaptureMode      bool
-	quickCaptureAutoStart bool
-	quickCaptureNoteID    int64
-	lastTranscriptionText string
-	vocabularyDictionary  string
-	activeMode            string
-	audioDeviceID         string
-	activeProfiles        map[string]string
+	dictateEnabled           bool
+	assistEnabled            bool
+	voiceAgentEnabled        bool
+	agentHotkey              string
+	currentState             string
+	overlayText              string
+	overlayLevel             float64
+	overlayPhase             string
+	overlayVisualizer        string
+	overlayDesign            string
+	overlayEnabled           bool
+	overlayPosition          string
+	overlayMovable           bool
+	overlayFreeX             int
+	overlayFreeY             int
+	overlayMonitorKey        string
+	overlayMonitorCenters    map[string]config.OverlayFreePosition
+	quickNoteMode            bool
+	quickCaptureMode         bool
+	quickCaptureAutoStart    bool
+	quickCaptureNoteID       int64
+	lastTranscriptionText    string
+	vocabularyDictionary     string
+	activeMode               string
+	audioDeviceID            string
+	activeProfiles           map[string]string
 }
 
 type desktopHostState struct {
@@ -68,40 +68,40 @@ type desktopHostState struct {
 
 func (s *appState) runtimeStateLocked() runtimeState {
 	state := runtimeState{
-		logEntries:            append([]logEntry(nil), s.logEntries...),
-		transcriptions:        s.transcriptions,
-		providers:             append([]string(nil), s.providers...),
-		hotkey:                s.hotkey,
-		dictateHotkey:         s.dictateHotkey,
-		assistHotkey:          s.assistHotkey,
-		voiceAgentHotkey:      s.voiceAgentHotkey,
-		dictateHotkeyBehavior: s.dictateHotkeyBehavior,
-		assistHotkeyBehavior:  s.assistHotkeyBehavior,
+		logEntries:               append([]logEntry(nil), s.logEntries...),
+		transcriptions:           s.transcriptions,
+		providers:                append([]string(nil), s.providers...),
+		hotkey:                   s.hotkey,
+		dictateHotkey:            s.dictateHotkey,
+		assistHotkey:             s.assistHotkey,
+		voiceAgentHotkey:         s.voiceAgentHotkey,
+		dictateHotkeyBehavior:    s.dictateHotkeyBehavior,
+		assistHotkeyBehavior:     s.assistHotkeyBehavior,
 		voiceAgentHotkeyBehavior: s.voiceAgentHotkeyBehavior,
-		dictateEnabled:        s.dictateEnabled,
-		assistEnabled:         s.assistEnabled,
-		voiceAgentEnabled:     s.voiceAgentEnabled,
-		agentHotkey:           s.agentHotkey,
-		currentState:          s.currentState,
-		overlayText:           s.overlayText,
-		overlayLevel:          s.overlayLevel,
-		overlayPhase:          s.overlayPhase,
-		overlayVisualizer:     s.overlayVisualizer,
-		overlayDesign:         s.overlayDesign,
-		overlayEnabled:        s.overlayEnabled,
-		overlayPosition:       s.overlayPosition,
-		overlayMovable:        s.overlayMovable,
-		overlayFreeX:          s.overlayFreeX,
-		overlayFreeY:          s.overlayFreeY,
-		overlayMonitorKey:     s.overlayMonitorKey,
-		quickNoteMode:         s.quickNoteMode,
-		quickCaptureMode:      s.quickCaptureMode,
-		quickCaptureAutoStart: s.quickCaptureAutoStart,
-		quickCaptureNoteID:    s.quickCaptureNoteID,
-		lastTranscriptionText: s.lastTranscriptionText,
-		vocabularyDictionary:  s.vocabularyDictionary,
-		activeMode:            s.activeMode,
-		audioDeviceID:         s.audioDeviceID,
+		dictateEnabled:           s.dictateEnabled,
+		assistEnabled:            s.assistEnabled,
+		voiceAgentEnabled:        s.voiceAgentEnabled,
+		agentHotkey:              s.agentHotkey,
+		currentState:             s.currentState,
+		overlayText:              s.overlayText,
+		overlayLevel:             s.overlayLevel,
+		overlayPhase:             s.overlayPhase,
+		overlayVisualizer:        s.overlayVisualizer,
+		overlayDesign:            s.overlayDesign,
+		overlayEnabled:           s.overlayEnabled,
+		overlayPosition:          s.overlayPosition,
+		overlayMovable:           s.overlayMovable,
+		overlayFreeX:             s.overlayFreeX,
+		overlayFreeY:             s.overlayFreeY,
+		overlayMonitorKey:        s.overlayMonitorKey,
+		quickNoteMode:            s.quickNoteMode,
+		quickCaptureMode:         s.quickCaptureMode,
+		quickCaptureAutoStart:    s.quickCaptureAutoStart,
+		quickCaptureNoteID:       s.quickCaptureNoteID,
+		lastTranscriptionText:    s.lastTranscriptionText,
+		vocabularyDictionary:     s.vocabularyDictionary,
+		activeMode:               s.activeMode,
+		audioDeviceID:            s.audioDeviceID,
 	}
 	if s.activeProfiles != nil {
 		state.activeProfiles = make(map[string]string, len(s.activeProfiles))

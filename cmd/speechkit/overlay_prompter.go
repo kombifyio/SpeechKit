@@ -178,7 +178,11 @@ func (s *appState) updatePrompterActivity(role string, level float64) {
 }
 
 func (s *appState) startVoiceAgentStream(ctx context.Context) {
-	sp, err := audio.NewStreamPlayer()
+	s.mu.Lock()
+	outputDeviceID := s.audioOutputDeviceID
+	s.mu.Unlock()
+
+	sp, err := audio.NewStreamPlayerWithOutputDevice(outputDeviceID)
 	if err != nil {
 		slog.Error("voice agent stream player init", "err", err)
 		return

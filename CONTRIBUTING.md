@@ -10,7 +10,7 @@ SpeechKit is a Windows-first speech-to-text framework and desktop host. The repo
 
 ## Development Setup
 
-1. Install Go `1.25+`.
+1. Install Go `1.26+`.
 2. Install Node.js `22+`.
 3. Install MinGW-w64 and make sure `C:\msys64\mingw64\bin` is on `PATH` (the `vad` package uses CGo + ONNX Runtime).
 4. Install NSIS if you want the canonical Windows build to also emit the installer.
@@ -28,7 +28,7 @@ A quick orientation — details in [`docs/speechkit-architecture-v2.md`](./docs/
 | `internal/audio/` | WASAPI capture (malgo) + playback (oto) |
 | `internal/vad/` | Silero ONNX voice-activity detection (requires CGo) |
 | `internal/stt/` | STT providers (whisper.cpp, HuggingFace, OpenAI, Groq, Google, VPS) |
-| `internal/tts/` | TTS providers (OpenAI, Google, ElevenLabs, HuggingFace) |
+| `internal/tts/` | TTS providers (OpenAI, Google, Hugging Face) |
 | `internal/ai/` | Genkit runtime + LLM flows (assist, agent, summarize) |
 | `internal/voiceagent/` | Gemini Live real-time voice agent |
 | `internal/assist/` | STT → codeword/LLM → TTS pipeline |

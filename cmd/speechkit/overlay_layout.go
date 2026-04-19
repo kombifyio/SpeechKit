@@ -11,7 +11,7 @@ import (
 )
 
 // This file contains pure helpers for overlay window construction, geometry,
-// and visual-phase math. None of these touch appState â€” they are safe to call
+// and visual-phase math. None of these touch appState — they are safe to call
 // from tests without any runtime wiring.
 
 func newOverlayWindowOptions() application.WebviewWindowOptions {
@@ -74,8 +74,8 @@ func newPrompterWindowOptions() application.WebviewWindowOptions {
 		Title:            "SpeechKit Conversation",
 		Width:            prompterWidth,
 		Height:           prompterHeight,
-		MinWidth:         620,
-		MinHeight:        420,
+		MinWidth:         300,
+		MinHeight:        112,
 		DisableResize:    false,
 		Frameless:        true,
 		AlwaysOnTop:      true,

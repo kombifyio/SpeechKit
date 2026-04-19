@@ -11,6 +11,8 @@ type DesktopWindowFrameProps = {
   icon?: ReactNode;
   theme: DesktopTheme;
   onToggleTheme: () => void;
+  density?: "default" | "compact";
+  showThemeToggle?: boolean;
   sidebar?: ReactNode;
   actions?: ReactNode;
   contentClassName?: string;
@@ -26,6 +28,8 @@ export function DesktopWindowFrame({
   icon,
   theme,
   onToggleTheme,
+  density = "default",
+  showThemeToggle = true,
   sidebar,
   actions,
   contentClassName,
@@ -34,6 +38,7 @@ export function DesktopWindowFrame({
   children,
 }: DesktopWindowFrameProps) {
   const [isMaximised, setIsMaximised] = useState(false);
+  const compact = density === "compact";
 
   useEffect(() => {
     let active = true;
@@ -81,18 +86,30 @@ export function DesktopWindowFrame({
 
   return (
     <div className="desktop-shell-root flex h-screen w-screen flex-col overflow-hidden text-[color:var(--sk-text)]">
-      <header className="desktop-titlebar flex shrink-0 items-center justify-between gap-4 px-4 py-3">
+      <header
+        className={[
+          "desktop-titlebar flex shrink-0 items-center justify-between",
+          compact ? "gap-2 px-2.5 py-2" : "gap-4 px-4 py-3",
+        ].join(" ")}
+      >
         <div
-          className="flex min-w-0 items-center gap-3"
+          className={["flex min-w-0 items-center", compact ? "gap-2" : "gap-3"].join(" ")}
           style={{ WebkitAppRegion: "drag" } as CSSProperties}
         >
-          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl border border-[color:var(--sk-panel-border)] bg-[color:var(--sk-surface-2)] text-[color:var(--sk-accent)]">
+          <div
+            className={[
+              "flex shrink-0 items-center justify-center border border-[color:var(--sk-panel-border)] bg-[color:var(--sk-surface-2)] text-[color:var(--sk-accent)]",
+              compact ? "h-8 w-8 rounded-xl" : "h-10 w-10 rounded-2xl",
+            ].join(" ")}
+          >
             {icon}
           </div>
           <div className="min-w-0">
             <p className="sk-kicker">{appLabel}</p>
-            <h1 className="truncate text-lg font-semibold">{title}</h1>
-            {subtitle ? (
+            <h1 className={["truncate font-semibold", compact ? "text-sm" : "text-lg"].join(" ")}>
+              {title}
+            </h1>
+            {!compact && subtitle ? (
               <p className="truncate text-xs text-[color:var(--sk-text-muted)]">
                 {subtitle}
               </p>
@@ -101,53 +118,67 @@ export function DesktopWindowFrame({
         </div>
 
         <div
-          className="flex items-center gap-2"
+          className={["flex items-center", compact ? "gap-1" : "gap-2"].join(" ")}
           style={{ WebkitAppRegion: "no-drag" } as CSSProperties}
         >
           {actions}
-          <button
-            type="button"
-            onClick={onToggleTheme}
-            aria-label={theme === "dark" ? "Switch to light mode" : "Switch to dark mode"}
-            className="sk-secondary-button inline-flex h-10 w-10 items-center justify-center rounded-full transition-colors hover:bg-[color:var(--sk-surface-3)]"
-          >
-            {theme === "dark" ? (
-              <SunMedium className="h-4 w-4" />
-            ) : (
-              <MoonStar className="h-4 w-4" />
-            )}
-          </button>
+          {showThemeToggle ? (
+            <button
+              type="button"
+              onClick={onToggleTheme}
+              aria-label={theme === "dark" ? "Switch to light mode" : "Switch to dark mode"}
+              className={[
+                "sk-secondary-button inline-flex items-center justify-center rounded-full transition-colors hover:bg-[color:var(--sk-surface-3)]",
+                compact ? "h-8 w-8" : "h-10 w-10",
+              ].join(" ")}
+            >
+              {theme === "dark" ? (
+                <SunMedium className={compact ? "h-3.5 w-3.5" : "h-4 w-4"} />
+              ) : (
+                <MoonStar className={compact ? "h-3.5 w-3.5" : "h-4 w-4"} />
+              )}
+            </button>
+          ) : null}
           <button
             type="button"
             onClick={handleMinimise}
             aria-label="Minimise window"
-            className="sk-secondary-button inline-flex h-10 w-10 items-center justify-center rounded-full transition-colors hover:bg-[color:var(--sk-surface-3)]"
+            className={[
+              "sk-secondary-button inline-flex items-center justify-center rounded-full transition-colors hover:bg-[color:var(--sk-surface-3)]",
+              compact ? "h-8 w-8" : "h-10 w-10",
+            ].join(" ")}
           >
-            <span className="block h-0.5 w-4 rounded-full bg-current" />
+            <span className={["block h-0.5 rounded-full bg-current", compact ? "w-3.5" : "w-4"].join(" ")} />
           </button>
           {allowMaximise ? (
             <button
               type="button"
               onClick={handleMaximise}
               aria-label={isMaximised ? "Restore window" : "Maximise window"}
-              className="sk-secondary-button inline-flex h-10 w-10 items-center justify-center rounded-full transition-colors hover:bg-[color:var(--sk-surface-3)]"
+              className={[
+                "sk-secondary-button inline-flex items-center justify-center rounded-full transition-colors hover:bg-[color:var(--sk-surface-3)]",
+                compact ? "h-8 w-8" : "h-10 w-10",
+              ].join(" ")}
             >
-              <Square className="h-3.5 w-3.5" />
+              <Square className={compact ? "h-3 w-3" : "h-3.5 w-3.5"} />
             </button>
           ) : null}
           <button
             type="button"
             onClick={handleClose}
             aria-label="Close window"
-            className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-red-400/18 bg-red-500/10 text-red-100 transition-colors hover:bg-red-500/16"
+            className={[
+              "inline-flex items-center justify-center rounded-full border border-red-400/18 bg-red-500/10 text-red-100 transition-colors hover:bg-red-500/16",
+              compact ? "h-8 w-8" : "h-10 w-10",
+            ].join(" ")}
           >
-            <X className="h-4 w-4" />
+            <X className={compact ? "h-3.5 w-3.5" : "h-4 w-4"} />
           </button>
         </div>
       </header>
 
-      <div className="min-h-0 flex-1 px-4 pb-4">
-        <div className="flex h-full min-h-0 gap-4">
+      <div className={["desktop-content-wrap min-h-0 flex-1", compact ? "px-2.5 pb-2.5" : "px-4 pb-4"].join(" ")}>
+        <div className={["flex h-full min-h-0", compact ? "gap-2.5" : "gap-4"].join(" ")}>
           {sidebar ? (
             <aside className="desktop-sidebar-panel sk-panel hidden w-64 shrink-0 rounded-[28px] p-3 md:flex md:flex-col">
               {sidebar}
@@ -155,7 +186,8 @@ export function DesktopWindowFrame({
           ) : null}
           <section
             className={[
-              "desktop-content-panel sk-panel flex min-h-0 flex-1 flex-col overflow-hidden rounded-[28px]",
+              "desktop-content-panel sk-panel flex min-h-0 flex-1 flex-col overflow-hidden",
+              compact ? "rounded-[20px]" : "rounded-[28px]",
               contentClassName ?? "",
             ].join(" ")}
           >

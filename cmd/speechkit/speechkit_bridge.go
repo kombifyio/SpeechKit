@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"strings"
 
 	"github.com/kombifyio/SpeechKit/pkg/speechkit"
@@ -124,6 +125,21 @@ func (s *appState) setAudioDevice(deviceID string) {
 	s.audioDeviceID = strings.TrimSpace(deviceID)
 	s.syncSpeechKitSnapshotLocked()
 	s.mu.Unlock()
+}
+
+func (s *appState) setAudioOutputDevice(deviceID string) {
+	if s == nil {
+		return
+	}
+	s.mu.Lock()
+	s.audioOutputDeviceID = strings.TrimSpace(deviceID)
+	streamActive := s.streamPlayer != nil
+	s.syncSpeechKitSnapshotLocked()
+	s.mu.Unlock()
+
+	if streamActive {
+		s.startVoiceAgentStream(context.Background())
+	}
 }
 
 func (s *appState) activeHotkeyLocked() string {

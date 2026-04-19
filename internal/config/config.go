@@ -76,7 +76,7 @@ type GeneralConfig struct {
 	VoiceAgentEnabled        bool   `toml:"voice_agent_enabled"`
 	AutoStartOnLaunch        bool   `toml:"auto_start_on_launch"`
 	AgentHotkey              string `toml:"agent_hotkey"`
-	AgentMode                string `toml:"agent_mode"`  // "assist" or "voice_agent" â€” determines what agent_hotkey triggers
+	AgentMode                string `toml:"agent_mode"`  // "assist" or "voice_agent" — determines what agent_hotkey triggers
 	ActiveMode               string `toml:"active_mode"` // legacy compat
 	HotkeyMode               string `toml:"hotkey_mode"` // legacy compat for single behavior setting
 	AutoStopSilenceMs        int    `toml:"auto_stop_silence_ms"`
@@ -84,12 +84,13 @@ type GeneralConfig struct {
 }
 
 type AudioConfig struct {
-	Backend     string `toml:"backend"`
-	DeviceID    string `toml:"device_id"`
-	SampleRate  int    `toml:"sample_rate"`
-	Channels    int    `toml:"channels"`
-	FrameSizeMs int    `toml:"frame_size_ms"`
-	LatencyHint string `toml:"latency_hint"`
+	Backend        string `toml:"backend"`
+	DeviceID       string `toml:"device_id"`
+	OutputDeviceID string `toml:"output_device_id"`
+	SampleRate     int    `toml:"sample_rate"`
+	Channels       int    `toml:"channels"`
+	FrameSizeMs    int    `toml:"frame_size_ms"`
+	LatencyHint    string `toml:"latency_hint"`
 }
 
 type VocabularyConfig struct {
@@ -277,7 +278,7 @@ type VoiceAgentConfig struct {
 	CloseBehavior                   string `toml:"close_behavior"` // "continue" keeps the conversation window in the taskbar; "new_chat" ends the current chat on close
 	ReminderAfterIdleSec            int    `toml:"reminder_after_idle_sec"`
 	DeactivateAfterIdleSec          int    `toml:"deactivate_after_idle_sec"`
-	PipelineFallback                bool   `toml:"pipeline_fallback"` // Use STT+LLM+TTS as last resort
+	PipelineFallback                bool   `toml:"pipeline_fallback"` // Deprecated compatibility flag; Voice Agent V2 remains realtime-only
 	ShowPrompter                    bool   `toml:"show_prompter"`     // Show live transcript prompter window
 	EnableInputTranscript           bool   `toml:"enable_input_transcript"`
 	EnableOutputTranscript          bool   `toml:"enable_output_transcript"`
@@ -606,7 +607,7 @@ func defaults() *Config {
 			CloseBehavior:                   VoiceAgentCloseBehaviorContinue,
 			ReminderAfterIdleSec:            300,
 			DeactivateAfterIdleSec:          900,
-			PipelineFallback:                true,
+			PipelineFallback:                false,
 			ShowPrompter:                    true,
 			EnableInputTranscript:           true,
 			EnableOutputTranscript:          true,
@@ -616,8 +617,8 @@ func defaults() *Config {
 			ThinkingBudget:                  0,
 			ThinkingLevel:                   "medium",
 			ContextCompressionEnabled:       true,
-			ContextCompressionTriggerTokens: 24000,
-			ContextCompressionTargetTokens:  12000,
+			ContextCompressionTriggerTokens: 12000,
+			ContextCompressionTargetTokens:  6000,
 			AutomaticActivityDetection:      true,
 			ActivityHandling:                "start_of_activity_interrupts",
 			TurnCoverage:                    "turn_includes_only_activity",
@@ -880,6 +881,8 @@ func defaultManagedHuggingFaceForModule() bool {
 		return false
 	}
 	switch strings.TrimSpace(info.MainPath) {
+	case "github.com/kombifyio/SpeechKit":
+		return true
 	case "github.com/kombifyio/SpeechKit":
 		return false
 	default:

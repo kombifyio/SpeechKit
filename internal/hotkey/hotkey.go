@@ -142,7 +142,7 @@ func (m *Manager) Start(ctx context.Context) error {
 		var msg winMessage
 		for {
 			ret, _, _ := procGetMessage.Call(uintptr(unsafe.Pointer(&msg)), 0, 0, 0) //nolint:gosec // Windows API requires unsafe.Pointer
-			switch int32(ret) { //nolint:gosec // Windows API integer conversion, value fits
+			switch int32(ret) {                                                      //nolint:gosec // Windows API integer conversion, value fits
 			case -1:
 				m.unhook()
 				return
@@ -151,7 +151,7 @@ func (m *Manager) Start(ctx context.Context) error {
 				return
 			default:
 				procTranslateMessage.Call(uintptr(unsafe.Pointer(&msg))) //nolint:errcheck,gosec // Windows API requires unsafe.Pointer; return value not meaningful
-				procDispatchMessage.Call(uintptr(unsafe.Pointer(&msg))) //nolint:errcheck,gosec // Windows API requires unsafe.Pointer; return value not meaningful
+				procDispatchMessage.Call(uintptr(unsafe.Pointer(&msg)))  //nolint:errcheck,gosec // Windows API requires unsafe.Pointer; return value not meaningful
 			}
 		}
 	}()

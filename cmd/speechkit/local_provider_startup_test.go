@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"errors"
+	"sync"
 	"testing"
 	"time"
 
@@ -58,6 +59,70 @@ func (p *retryLocalProvider) Health(context.Context) error {
 		return nil
 	}
 	return errors.New("not ready")
+}
+
+type blockingLocalProvider struct {
+	mu        sync.Mutex
+	attempts  int
+	ready     bool
+	installOK bool
+	started   chan struct{}
+	release   chan struct{}
+	startOnce sync.Once
+}
+
+func (p *blockingLocalProvider) StartServer(context.Context) error {
+	p.mu.Lock()
+	p.attempts++
+	p.mu.Unlock()
+	p.startOnce.Do(func() {
+		close(p.started)
+	})
+	<-p.release
+	p.mu.Lock()
+	p.ready = true
+	p.mu.Unlock()
+	return nil
+}
+
+func (p *blockingLocalProvider) IsReady() bool {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.ready
+}
+
+func (p *blockingLocalProvider) VerifyInstallation() stt.InstallStatus {
+	if p.installOK {
+		return stt.InstallStatus{
+			BinaryFound: true,
+			BinaryPath:  "/fake/whisper-server",
+			ModelFound:  true,
+			ModelPath:   "/fake/models/ggml-small.bin",
+			ModelBytes:  484_264_096,
+		}
+	}
+	return stt.InstallStatus{Problems: []string{"whisper-server binary not found"}}
+}
+
+func (p *blockingLocalProvider) Transcribe(context.Context, []byte, stt.TranscribeOpts) (*stt.Result, error) {
+	return &stt.Result{Provider: "local"}, nil
+}
+
+func (p *blockingLocalProvider) Name() string {
+	return "local"
+}
+
+func (p *blockingLocalProvider) Health(context.Context) error {
+	if p.IsReady() {
+		return nil
+	}
+	return errors.New("not ready")
+}
+
+func (p *blockingLocalProvider) Attempts() int {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.attempts
 }
 
 func TestStartLocalProviderWithRetryRecovers(t *testing.T) {
@@ -138,4 +203,30 @@ func TestStartLocalProviderWithRetryAbortsMissingBinary(t *testing.T) {
 	if !foundAbort {
 		t.Fatalf("expected error log entry for missing binary, logs=%v", state.logEntries)
 	}
+}
+
+func TestStartLocalProviderAsyncDeduplicatesConcurrentStartsForSameProvider(t *testing.T) {
+	provider := &blockingLocalProvider{
+		installOK: true,
+		started:   make(chan struct{}),
+		release:   make(chan struct{}),
+	}
+	r := &router.Router{}
+	r.SetLocal(provider)
+	state := &appState{}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	startLocalProviderAsync(ctx, state, r, provider)
+	<-provider.started
+	startLocalProviderAsync(ctx, state, r, provider)
+
+	time.Sleep(25 * time.Millisecond)
+	if got := provider.Attempts(); got != 1 {
+		t.Fatalf("attempts = %d, want 1 while startup is already in progress", got)
+	}
+
+	close(provider.release)
+	time.Sleep(25 * time.Millisecond)
 }

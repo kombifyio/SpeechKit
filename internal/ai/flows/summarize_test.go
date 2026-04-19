@@ -74,4 +74,3 @@ func TestSummarizeFlow_NoModels(t *testing.T) {
 		t.Errorf("unexpected error: %v", err)
 	}
 }
-

@@ -3,16 +3,88 @@ package audio
 import (
 	"context"
 	"io"
+	"strings"
 	"sync"
 
 	"github.com/ebitengine/oto/v3"
 )
 
+const (
+	voiceAgentOutputSampleRate = 24000
+	voiceAgentOutputChannels   = 1
+)
+
+type streamPlaybackBackend interface {
+	Start(context.Context)
+	WriteChunk([]byte)
+	StopAndDrain()
+	IsActive() bool
+	Close()
+}
+
+type streamPlayerFactoryFunc func(outputDeviceID string) (streamPlaybackBackend, error)
+
+var streamPlayerFactory streamPlayerFactoryFunc = newOtoStreamPlayer
+
 // StreamPlayer plays a continuous stream of PCM audio chunks through a single
-// oto player instance. Unlike Player.PlayPCM which stops previous playback on
-// each call, StreamPlayer buffers chunks and plays them sequentially.
-// Designed for real-time voice agent audio output (Gemini Live, OpenAI Realtime).
+// playback backend. Unlike Player.PlayPCM which stops previous playback on each
+// call, StreamPlayer buffers chunks and plays them sequentially. Designed for
+// real-time voice agent audio output (Gemini Live, OpenAI Realtime).
 type StreamPlayer struct {
+	backend streamPlaybackBackend
+}
+
+// NewStreamPlayer creates a StreamPlayer using the system default output device.
+func NewStreamPlayer() (*StreamPlayer, error) {
+	return NewStreamPlayerWithOutputDevice("")
+}
+
+// NewStreamPlayerWithOutputDevice creates a StreamPlayer for the selected output device.
+// An empty device ID uses the system default output device.
+func NewStreamPlayerWithOutputDevice(outputDeviceID string) (*StreamPlayer, error) {
+	backend, err := streamPlayerFactory(strings.TrimSpace(outputDeviceID))
+	if err != nil {
+		return nil, err
+	}
+	return &StreamPlayer{backend: backend}, nil
+}
+
+func (sp *StreamPlayer) Start(ctx context.Context) {
+	if sp == nil || sp.backend == nil {
+		return
+	}
+	sp.backend.Start(ctx)
+}
+
+func (sp *StreamPlayer) WriteChunk(chunk []byte) {
+	if sp == nil || sp.backend == nil {
+		return
+	}
+	sp.backend.WriteChunk(chunk)
+}
+
+func (sp *StreamPlayer) StopAndDrain() {
+	if sp == nil || sp.backend == nil {
+		return
+	}
+	sp.backend.StopAndDrain()
+}
+
+func (sp *StreamPlayer) IsActive() bool {
+	if sp == nil || sp.backend == nil {
+		return false
+	}
+	return sp.backend.IsActive()
+}
+
+func (sp *StreamPlayer) Close() {
+	if sp == nil || sp.backend == nil {
+		return
+	}
+	sp.backend.Close()
+}
+
+type otoStreamPlayer struct {
 	mu     sync.Mutex
 	otoCtx *oto.Context
 	player *oto.Player
@@ -22,19 +94,19 @@ type StreamPlayer struct {
 	doneCh chan struct{}
 }
 
-// NewStreamPlayer creates a StreamPlayer that uses the shared oto context.
+// newOtoStreamPlayer creates a playback backend that uses the shared oto context.
 // The oto context must already be initialized (by NewPlayer or initOtoContext).
-func NewStreamPlayer() (*StreamPlayer, error) {
-	ctx, err := initOtoContext(24000, 1)
+func newOtoStreamPlayer(_ string) (streamPlaybackBackend, error) {
+	ctx, err := initOtoContext(voiceAgentOutputSampleRate, voiceAgentOutputChannels)
 	if err != nil {
 		return nil, err
 	}
-	return &StreamPlayer{otoCtx: ctx}, nil
+	return &otoStreamPlayer{otoCtx: ctx}, nil
 }
 
 // Start begins a new streaming playback session.
 // Any previous session is stopped first.
-func (sp *StreamPlayer) Start(ctx context.Context) {
+func (sp *otoStreamPlayer) Start(ctx context.Context) {
 	sp.StopAndDrain()
 
 	sp.mu.Lock()
@@ -65,7 +137,7 @@ func (sp *StreamPlayer) Start(ctx context.Context) {
 
 // WriteChunk appends a PCM audio chunk to the streaming buffer.
 // Safe to call from any goroutine. No-op if not active.
-func (sp *StreamPlayer) WriteChunk(chunk []byte) {
+func (sp *otoStreamPlayer) WriteChunk(chunk []byte) {
 	sp.mu.Lock()
 	pipe := sp.pipe
 	active := sp.active
@@ -78,7 +150,7 @@ func (sp *StreamPlayer) WriteChunk(chunk []byte) {
 
 // StopAndDrain stops playback immediately (barge-in).
 // Blocks briefly until the player goroutine exits.
-func (sp *StreamPlayer) StopAndDrain() {
+func (sp *otoStreamPlayer) StopAndDrain() {
 	sp.mu.Lock()
 	cancel := sp.cancel
 	pipe := sp.pipe
@@ -101,14 +173,14 @@ func (sp *StreamPlayer) StopAndDrain() {
 }
 
 // IsActive returns true if a streaming session is in progress.
-func (sp *StreamPlayer) IsActive() bool {
+func (sp *otoStreamPlayer) IsActive() bool {
 	sp.mu.Lock()
 	defer sp.mu.Unlock()
 	return sp.active
 }
 
 // Close releases resources.
-func (sp *StreamPlayer) Close() {
+func (sp *otoStreamPlayer) Close() {
 	sp.StopAndDrain()
 }
 
@@ -150,6 +222,18 @@ func (p *streamPipe) Read(dst []byte) (int, error) {
 	n := copy(dst, p.buf)
 	p.buf = p.buf[n:]
 	return n, nil
+}
+
+func (p *streamPipe) ReadAvailable(dst []byte) int {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if len(dst) == 0 || len(p.buf) == 0 {
+		return 0
+	}
+
+	n := copy(dst, p.buf)
+	p.buf = p.buf[n:]
+	return n
 }
 
 func (p *streamPipe) Close() {

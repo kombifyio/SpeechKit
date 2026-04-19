@@ -12,9 +12,18 @@ import (
 
 func init() {
 	captureDeviceLister = listCaptureDevicesFromContext
+	outputDeviceLister = listOutputDevicesFromContext
 }
 
 func listCaptureDevicesFromContext(cfg Config) ([]DeviceInfo, error) {
+	return listDevicesFromContext(cfg, malgo.Capture)
+}
+
+func listOutputDevicesFromContext(cfg Config) ([]DeviceInfo, error) {
+	return listDevicesFromContext(cfg, malgo.Playback)
+}
+
+func listDevicesFromContext(cfg Config, deviceType malgo.DeviceType) ([]DeviceInfo, error) {
 	backends, err := malgoBackendsForConfig(cfg)
 	if err != nil {
 		return nil, err
@@ -26,7 +35,7 @@ func listCaptureDevicesFromContext(cfg Config) ([]DeviceInfo, error) {
 	}
 	defer ctx.Free()
 
-	devices, err := ctx.Devices(malgo.Capture)
+	devices, err := ctx.Devices(deviceType)
 	if err != nil {
 		return nil, err
 	}
@@ -63,6 +72,25 @@ func resolveCaptureDeviceID(cfg Config) (malgo.DeviceID, bool, error) {
 	}
 
 	selected := selectCaptureDeviceID(requested, devices)
+	if selected == "" {
+		return malgo.DeviceID{}, false, nil
+	}
+
+	return deviceIDFromHexString(selected)
+}
+
+func resolveOutputDeviceID(cfg Config) (malgo.DeviceID, bool, error) {
+	requested := strings.TrimSpace(cfg.DeviceID)
+	if requested == "" {
+		return malgo.DeviceID{}, false, nil
+	}
+
+	devices, err := ListOutputDevices(cfg)
+	if err != nil {
+		return malgo.DeviceID{}, false, err
+	}
+
+	selected := selectOutputDeviceID(requested, devices)
 	if selected == "" {
 		return malgo.DeviceID{}, false, nil
 	}

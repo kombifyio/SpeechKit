@@ -8,10 +8,10 @@ import (
 
 // mockProvider is a test double for Provider.
 type mockProvider struct {
-	name    string
-	err     error
-	result  *Result
-	called  bool
+	name   string
+	err    error
+	result *Result
+	called bool
 }
 
 func (m *mockProvider) Synthesize(_ context.Context, text string, _ SynthesizeOpts) (*Result, error) {
@@ -29,7 +29,7 @@ func (m *mockProvider) Synthesize(_ context.Context, text string, _ SynthesizeOp
 	}, nil
 }
 
-func (m *mockProvider) Name() string               { return m.name }
+func (m *mockProvider) Name() string                   { return m.name }
 func (m *mockProvider) Health(_ context.Context) error { return m.err }
 
 func TestRouterFallback(t *testing.T) {

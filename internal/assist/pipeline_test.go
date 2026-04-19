@@ -28,7 +28,7 @@ func (m *mockTTSProvider) Synthesize(_ context.Context, text string, _ tts.Synth
 	}, nil
 }
 
-func (m *mockTTSProvider) Name() string                    { return "mock" }
+func (m *mockTTSProvider) Name() string                   { return "mock" }
 func (m *mockTTSProvider) Health(_ context.Context) error { return nil }
 
 type mockToolExecutor struct {
@@ -62,6 +62,8 @@ func TestProcessShortcut(t *testing.T) {
 			SpeakText: "Copied to clipboard.",
 			Action:    "execute",
 			Locale:    "en",
+			Surface:   ResultSurfaceActionAck,
+			Kind:      ResultKindUtilityAction,
 		},
 	}
 	pipeline := NewPipeline(nil, executor, router, true)
@@ -72,6 +74,12 @@ func TestProcessShortcut(t *testing.T) {
 	}
 	if result.Action != "execute" {
 		t.Errorf("expected action 'execute', got %s", result.Action)
+	}
+	if result.Surface != ResultSurfaceActionAck {
+		t.Errorf("expected action ack surface, got %s", result.Surface)
+	}
+	if result.Kind != ResultKindUtilityAction {
+		t.Errorf("expected utility result kind, got %s", result.Kind)
 	}
 	if result.Shortcut != "copy_last" {
 		t.Errorf("expected shortcut 'copy_last', got %s", result.Shortcut)
@@ -93,6 +101,8 @@ func TestProcessShortcutGerman(t *testing.T) {
 			SpeakText: "Wird zusammengefasst...",
 			Action:    "execute",
 			Locale:    "de",
+			Surface:   ResultSurfaceActionAck,
+			Kind:      ResultKindUtilityAction,
 		},
 	}
 	pipeline := NewPipeline(nil, executor, router, true)
@@ -116,6 +126,8 @@ func TestProcessNoTTS(t *testing.T) {
 			SpeakText: "Copied to clipboard.",
 			Action:    "execute",
 			Locale:    "en",
+			Surface:   ResultSurfaceActionAck,
+			Kind:      ResultKindUtilityAction,
 		},
 	}
 	pipeline := NewPipeline(nil, executor, nil, false)
@@ -172,6 +184,12 @@ func TestProcessDirectReplySkipsToolExecution(t *testing.T) {
 	if got, want := result.Action, "respond"; got != want {
 		t.Fatalf("result.Action = %q, want %q", got, want)
 	}
+	if got, want := result.Surface, ResultSurfacePanel; got != want {
+		t.Fatalf("result.Surface = %q, want %q", got, want)
+	}
+	if got, want := result.Kind, ResultKindAnswer; got != want {
+		t.Fatalf("result.Kind = %q, want %q", got, want)
+	}
 }
 
 func TestProcessCommandPrefixCallsToolExecutor(t *testing.T) {
@@ -181,6 +199,8 @@ func TestProcessCommandPrefixCallsToolExecutor(t *testing.T) {
 			SpeakText: "Kurzfassung",
 			Action:    "execute",
 			Locale:    "de",
+			Surface:   ResultSurfacePanel,
+			Kind:      ResultKindWorkProduct,
 		},
 	}
 	pipeline := NewPipeline(fixedAssistFlow(t, flows.AssistOutput{
@@ -190,7 +210,11 @@ func TestProcessCommandPrefixCallsToolExecutor(t *testing.T) {
 		Locale:    "de",
 	}), executor, nil, false)
 
-	result, err := pipeline.Process(context.Background(), "zusammenfassen in drei punkten", ProcessOpts{Locale: "de"})
+	result, err := pipeline.Process(context.Background(), "zusammenfassen in drei punkten", ProcessOpts{
+		Locale:    "de",
+		Selection: "Der markierte Text",
+		Target:    "target-window",
+	})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -203,11 +227,23 @@ func TestProcessCommandPrefixCallsToolExecutor(t *testing.T) {
 	if got, want := executor.call.Payload, "in drei punkten"; got != want {
 		t.Fatalf("executor payload = %q, want %q", got, want)
 	}
+	if got, want := executor.call.Selection, "Der markierte Text"; got != want {
+		t.Fatalf("executor selection = %q, want %q", got, want)
+	}
+	if got, want := executor.call.Target, "target-window"; got != want {
+		t.Fatalf("executor target = %#v, want %#v", got, want)
+	}
 	if got, want := result.Text, "Kurzfassung"; got != want {
 		t.Fatalf("result.Text = %q, want %q", got, want)
 	}
 	if got, want := result.Action, "execute"; got != want {
 		t.Fatalf("result.Action = %q, want %q", got, want)
+	}
+	if got, want := result.Surface, ResultSurfacePanel; got != want {
+		t.Fatalf("result.Surface = %q, want %q", got, want)
+	}
+	if got, want := result.Kind, ResultKindWorkProduct; got != want {
+		t.Fatalf("result.Kind = %q, want %q", got, want)
 	}
 }
 

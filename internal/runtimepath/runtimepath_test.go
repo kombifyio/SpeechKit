@@ -49,12 +49,12 @@ type fakeFileInfo struct {
 	name string
 }
 
-func (f fakeFileInfo) Name() string      { return f.name }
-func (f fakeFileInfo) Size() int64       { return 0 }
-func (f fakeFileInfo) Mode() os.FileMode { return 0 }
+func (f fakeFileInfo) Name() string       { return f.name }
+func (f fakeFileInfo) Size() int64        { return 0 }
+func (f fakeFileInfo) Mode() os.FileMode  { return 0 }
 func (f fakeFileInfo) ModTime() time.Time { return time.Time{} }
-func (f fakeFileInfo) IsDir() bool       { return false }
-func (f fakeFileInfo) Sys() any          { return nil }
+func (f fakeFileInfo) IsDir() bool        { return false }
+func (f fakeFileInfo) Sys() any           { return nil }
 
 func TestExecutableDir_ValidPath(t *testing.T) {
 	withMocks(t, mockExecutable(`C:\Program Files\SpeechKit\SpeechKit.exe`, nil), nil, nil)
@@ -185,9 +185,9 @@ func TestIsPortable_DevWorkspaceBinaryIsNotPortable(t *testing.T) {
 	withMocks(t,
 		mockExecutable(exe, nil),
 		mockStat(map[string]bool{
-			filepath.Join(exeDir, "config.toml"):                  true,
-			filepath.Join(exeDir, "SpeechKit.exe"):                true,
-			filepath.Join(exeDir, "go.mod"):                       true,
+			filepath.Join(exeDir, "config.toml"):                     true,
+			filepath.Join(exeDir, "SpeechKit.exe"):                   true,
+			filepath.Join(exeDir, "go.mod"):                          true,
 			filepath.Join(exeDir, "frontend", "app", "package.json"): true,
 		}),
 		nil,

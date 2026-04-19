@@ -9,8 +9,8 @@ import (
 type Backend string
 
 const (
-	BackendAuto               Backend = "auto"
-	BackendWindowsWASAPIMalgo Backend = "windows-wasapi-malgo"
+	BackendAuto                Backend = "auto"
+	BackendWindowsWASAPIMalgo  Backend = "windows-wasapi-malgo"
 	BackendWindowsWASAPINative Backend = "windows-wasapi-native"
 )
 

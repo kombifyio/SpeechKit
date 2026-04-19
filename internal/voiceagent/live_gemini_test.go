@@ -78,6 +78,14 @@ func TestBuildGeminiLiveConnectConfigUsesDefaultInstruction(t *testing.T) {
 	if connectCfg.ContextWindowCompression == nil {
 		t.Fatal("expected context window compression to be configured by default")
 	}
+	if connectCfg.ContextWindowCompression.TriggerTokens == nil || *connectCfg.ContextWindowCompression.TriggerTokens != 12000 {
+		t.Fatal("expected default context compression to trigger early for long-running voice dialogs")
+	}
+	if connectCfg.ContextWindowCompression.SlidingWindow == nil ||
+		connectCfg.ContextWindowCompression.SlidingWindow.TargetTokens == nil ||
+		*connectCfg.ContextWindowCompression.SlidingWindow.TargetTokens != 6000 {
+		t.Fatal("expected default context compression to keep a compact rolling voice context")
+	}
 	if connectCfg.RealtimeInputConfig == nil || connectCfg.RealtimeInputConfig.AutomaticActivityDetection == nil {
 		t.Fatal("expected realtime input config with automatic activity detection")
 	}

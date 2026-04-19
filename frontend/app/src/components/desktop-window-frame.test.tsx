@@ -62,4 +62,33 @@ describe("DesktopWindowFrame", () => {
     expect(contentPanel).toHaveClass("flex-col");
     expect(contentPanel).toHaveClass("overflow-hidden");
   });
+
+  it("renders compact chrome for small overlay windows", () => {
+    const { container, queryByText } = render(
+      <DesktopWindowFrame
+        appLabel="Voice Agent"
+        title="Voice Agent"
+        subtitle="Realtime dialog surface"
+        theme="dark"
+        onToggleTheme={() => {}}
+        allowMaximise={false}
+        density="compact"
+        showThemeToggle={false}
+      >
+        <main />
+      </DesktopWindowFrame>,
+    );
+
+    const titlebar = container.querySelector("header.desktop-titlebar");
+    const contentWrap = container.querySelector("div.desktop-content-wrap");
+    const contentPanel = container.querySelector("section.desktop-content-panel");
+
+    expect(titlebar).toHaveClass("gap-2");
+    expect(titlebar).toHaveClass("px-2.5");
+    expect(contentWrap).toHaveClass("px-2.5");
+    expect(contentPanel).toHaveClass("rounded-[20px]");
+    expect(queryByText("Realtime dialog surface")).not.toBeInTheDocument();
+    expect(container.querySelector("[aria-label='Switch to light mode']")).toBeNull();
+    expect(container.querySelector("[aria-label='Maximise window']")).toBeNull();
+  });
 });

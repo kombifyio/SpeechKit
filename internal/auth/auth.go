@@ -65,7 +65,7 @@ type AuthProvider interface {
 
 var (
 	registeredProvider AuthProvider
-	registryMu        sync.RWMutex
+	registryMu         sync.RWMutex
 )
 
 // RegisterAuthProvider is called from init() in external modules (e.g. kombify-speechkit).

@@ -13,7 +13,7 @@ import (
 func registerDownloadRoutes(mux *http.ServeMux, cfgPath string, cfg *config.Config, state *appState) {
 	dm := state.downloads
 
-	// GET /models/downloads/catalog â€” list all downloadable models with availability.
+	// GET /models/downloads/catalog — list all downloadable models with availability.
 	mux.HandleFunc("/models/downloads/catalog", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
 			w.WriteHeader(http.StatusMethodNotAllowed)
@@ -24,7 +24,7 @@ func registerDownloadRoutes(mux *http.ServeMux, cfgPath string, cfg *config.Conf
 		_ = json.NewEncoder(w).Encode(catalog)
 	})
 
-	// GET /models/downloads/jobs â€” list active / recent download jobs.
+	// GET /models/downloads/jobs — list active / recent download jobs.
 	mux.HandleFunc("/models/downloads/jobs", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
 			w.WriteHeader(http.StatusMethodNotAllowed)
@@ -34,7 +34,7 @@ func registerDownloadRoutes(mux *http.ServeMux, cfgPath string, cfg *config.Conf
 		_ = json.NewEncoder(w).Encode(dm.AllJobs())
 	})
 
-	// POST /models/downloads/start â€” start a download by catalog model_id.
+	// POST /models/downloads/start — start a download by catalog model_id.
 	mux.HandleFunc("/models/downloads/start", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
 			w.WriteHeader(http.StatusMethodNotAllowed)
@@ -75,7 +75,7 @@ func registerDownloadRoutes(mux *http.ServeMux, cfgPath string, cfg *config.Conf
 		_ = json.NewEncoder(w).Encode(snap)
 	})
 
-	// POST /models/downloads/cancel â€” cancel a download by job_id.
+	// POST /models/downloads/cancel — cancel a download by job_id.
 	mux.HandleFunc("/models/downloads/cancel", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
 			w.WriteHeader(http.StatusMethodNotAllowed)
@@ -95,7 +95,7 @@ func registerDownloadRoutes(mux *http.ServeMux, cfgPath string, cfg *config.Conf
 		_ = json.NewEncoder(w).Encode(map[string]string{"message": "cancelled"})
 	})
 
-	// POST /models/downloads/select â€” select an already-downloaded local model.
+	// POST /models/downloads/select — select an already-downloaded local model.
 	mux.HandleFunc("/models/downloads/select", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
 			w.WriteHeader(http.StatusMethodNotAllowed)

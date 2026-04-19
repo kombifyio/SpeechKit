@@ -449,10 +449,10 @@ func normalizeLivePolicies(policies LivePolicies) LivePolicies {
 		policies.ContextCompression.Enabled = true
 	}
 	if policies.ContextCompression.TriggerTokens == 0 {
-		policies.ContextCompression.TriggerTokens = 24000
+		policies.ContextCompression.TriggerTokens = 12000
 	}
 	if policies.ContextCompression.TargetTokens == 0 {
-		policies.ContextCompression.TargetTokens = 12000
+		policies.ContextCompression.TargetTokens = 6000
 	}
 	return policies
 }
@@ -463,8 +463,8 @@ func defaultLivePolicies() LivePolicies {
 		EnableOutputAudioTranscription: true,
 		ContextCompression: ContextCompressionPolicy{
 			Enabled:       true,
-			TriggerTokens: 24000,
-			TargetTokens:  12000,
+			TriggerTokens: 12000,
+			TargetTokens:  6000,
 		},
 		ActivityDetection: ActivityDetectionPolicy{
 			Automatic:         true,

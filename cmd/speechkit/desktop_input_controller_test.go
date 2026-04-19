@@ -2,12 +2,15 @@ package main
 
 import (
 	"context"
+	"strings"
 	"sync"
 	"testing"
 	"time"
 
 	"github.com/kombifyio/SpeechKit/internal/config"
 	"github.com/kombifyio/SpeechKit/internal/hotkey"
+	"github.com/kombifyio/SpeechKit/internal/router"
+	"github.com/kombifyio/SpeechKit/internal/stt"
 	"github.com/kombifyio/SpeechKit/internal/voiceagent"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit"
 )
@@ -35,6 +38,28 @@ type mutableRecordingState struct {
 
 func (r *mutableRecordingState) IsRecording() bool {
 	return r.recording
+}
+
+type availableSTTProvider struct {
+	name string
+}
+
+func (p availableSTTProvider) Transcribe(_ context.Context, _ []byte, _ stt.TranscribeOpts) (*stt.Result, error) {
+	return &stt.Result{
+		Text:     "ok",
+		Provider: p.Name(),
+	}, nil
+}
+
+func (p availableSTTProvider) Name() string {
+	if p.name != "" {
+		return p.name
+	}
+	return "cloud"
+}
+
+func (p availableSTTProvider) Health(_ context.Context) error {
+	return nil
 }
 
 func TestAppStateArmQuickCaptureSetsRuntimeCaptureMode(t *testing.T) {
@@ -171,6 +196,7 @@ type simpleMockLiveProvider struct {
 	connected bool
 	closed    bool
 	lastCfg   voiceagent.LiveConfig
+	sentAudio int
 	messages  chan *voiceagent.LiveMessage
 }
 
@@ -188,7 +214,12 @@ func (m *simpleMockLiveProvider) Connect(_ context.Context, cfg voiceagent.LiveC
 	return nil
 }
 
-func (m *simpleMockLiveProvider) SendAudio(_ []byte) error { return nil }
+func (m *simpleMockLiveProvider) SendAudio(_ []byte) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.sentAudio++
+	return nil
+}
 
 func (m *simpleMockLiveProvider) Receive(ctx context.Context) (*voiceagent.LiveMessage, error) {
 	select {
@@ -216,6 +247,12 @@ func (m *simpleMockLiveProvider) configSnapshot() voiceagent.LiveConfig {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	return m.lastCfg
+}
+
+func (m *simpleMockLiveProvider) sendAudioCount() int {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.sentAudio
 }
 
 func TestToggleVoiceAgentActivatesAndWiresMic(t *testing.T) {
@@ -258,6 +295,59 @@ func TestToggleVoiceAgentActivatesAndWiresMic(t *testing.T) {
 		t.Error("expected PCM handler to be set on audio capturer")
 	}
 	mockAudio.mu.Unlock()
+
+	session.Stop()
+}
+
+func TestVoiceAgentMicFramesAreSuppressedDuringAssistantEchoWindow(t *testing.T) {
+	mockAudio := &mockAudioFrameStreamer{}
+	mockProvider := newSimpleMockLiveProvider()
+	session := voiceagent.NewSession(mockProvider, voiceagent.Callbacks{})
+	now := time.Unix(100, 0)
+	echoGuard := newVoiceAgentEchoGuard(400 * time.Millisecond)
+	echoGuard.now = func() time.Time { return now }
+
+	controller := desktopInputController{
+		voiceAgentSession: session,
+		voiceAgentConfig:  &config.VoiceAgentConfig{},
+		cfg: &config.Config{
+			Providers: config.ProvidersConfig{
+				Google: config.GoogleProviderConfig{APIKeyEnv: "FAKE_KEY_FOR_ECHO_GUARD_TEST"},
+			},
+		},
+		audioCapturer:       mockAudio,
+		voiceAgentEchoGuard: echoGuard,
+	}
+
+	t.Setenv("FAKE_KEY_FOR_ECHO_GUARD_TEST", "test-api-key")
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	controller.activateVoiceAgent(ctx)
+	time.Sleep(300 * time.Millisecond)
+
+	handler := mockAudio.getHandler()
+	if handler == nil {
+		t.Fatal("expected microphone handler")
+	}
+
+	handler([]byte{1, 0, 1, 0})
+	waitForCondition(t, 2*time.Second, func() bool {
+		return mockProvider.sendAudioCount() == 1
+	})
+
+	echoGuard.markAssistantAudio()
+	handler([]byte{2, 0, 2, 0})
+	time.Sleep(50 * time.Millisecond)
+	if got := mockProvider.sendAudioCount(); got != 1 {
+		t.Fatalf("sent audio while echo guard active = %d, want 1", got)
+	}
+
+	now = now.Add(401 * time.Millisecond)
+	handler([]byte{3, 0, 3, 0})
+	waitForCondition(t, 2*time.Second, func() bool {
+		return mockProvider.sendAudioCount() == 2
+	})
 
 	session.Stop()
 }
@@ -312,7 +402,7 @@ func TestToggleVoiceAgentPassesFrameworkAndRefinementPromptsToRuntime(t *testing
 	session.Stop()
 }
 
-func TestToggleVoiceAgentDeactivateClearsMic(t *testing.T) {
+func TestDeactivateVoiceAgentClearsMic(t *testing.T) {
 	mockAudio := &mockAudioFrameStreamer{}
 	mockProvider := newSimpleMockLiveProvider()
 	session := voiceagent.NewSession(mockProvider, voiceagent.Callbacks{})
@@ -342,8 +432,7 @@ func TestToggleVoiceAgentDeactivateClearsMic(t *testing.T) {
 		t.Fatal("expected voice agent to be active before deactivation")
 	}
 
-	// Second toggle: deactivate.
-	controller.toggleVoiceAgent(ctx)
+	controller.deactivateVoiceAgent(ctx, true)
 
 	if session.CurrentState() != voiceagent.StateInactive {
 		t.Errorf("expected inactive after deactivation, got %s", session.CurrentState())
@@ -352,6 +441,32 @@ func TestToggleVoiceAgentDeactivateClearsMic(t *testing.T) {
 	// PCM handler should be cleared.
 	if h := mockAudio.getHandler(); h != nil {
 		t.Error("expected PCM handler to be nil after deactivation")
+	}
+}
+
+func TestDeactivateVoiceAgentLogsManualReason(t *testing.T) {
+	mockProvider := newSimpleMockLiveProvider()
+	session := voiceagent.NewSession(mockProvider, voiceagent.Callbacks{})
+	state := &appState{voiceAgentSession: session}
+	if err := session.Start(context.Background(), voiceagent.LiveConfig{}, voiceagent.DefaultIdleConfig()); err != nil {
+		t.Fatalf("session start failed: %v", err)
+	}
+
+	controller := desktopInputController{
+		state:             state,
+		voiceAgentSession: session,
+	}
+
+	controller.deactivateVoiceAgent(context.Background(), true)
+
+	state.mu.Lock()
+	logEntries := append([]logEntry(nil), state.logEntries...)
+	state.mu.Unlock()
+	if len(logEntries) == 0 {
+		t.Fatal("expected deactivation log entry")
+	}
+	if got := logEntries[len(logEntries)-1].Message; !strings.Contains(got, "manual control") {
+		t.Fatalf("last log message = %q, want deactivation reason", got)
 	}
 }
 
@@ -375,6 +490,137 @@ func TestDesktopInputControllerVoiceAgentKeyUpDoesNotDispatchPTTCommands(t *test
 
 	if got := len(bus.commands); got != 0 {
 		t.Fatalf("commands = %d, want 0 for voice agent key up", got)
+	}
+}
+
+func TestDesktopInputControllerVoiceAgentDoesNotFallbackToCapturePipeline(t *testing.T) {
+	bus := &testDesktopCommandBus{}
+	bubble := &fakeOverlayWindow{}
+	state := &appState{assistBubble: bubble}
+	controller := desktopInputController{
+		commands:  bus,
+		recording: testRecordingState{recording: false},
+		state:     state,
+		cfg: &config.Config{
+			VoiceAgent: config.VoiceAgentConfig{
+				PipelineFallback: true,
+			},
+		},
+	}
+
+	controller.handleHotkey(context.Background(), hotkey.Event{
+		Binding: modeVoiceAgent,
+		Type:    hotkey.EventKeyDown,
+	})
+
+	if got := len(bus.commands); got != 0 {
+		t.Fatalf("commands = %d, want 0 when voice agent preflight blocks startup", got)
+	}
+	for _, command := range bus.commands {
+		if command.Type == speechkit.CommandStartDictation || command.Type == speechkit.CommandStopDictation {
+			t.Fatalf("unexpected capture pipeline command: %+v", command)
+		}
+	}
+
+	state.mu.Lock()
+	logEntries := append([]logEntry(nil), state.logEntries...)
+	state.mu.Unlock()
+	if len(logEntries) == 0 {
+		t.Fatal("expected unavailable voice agent log entry")
+	}
+	if got := logEntries[len(logEntries)-1].Message; !strings.Contains(got, "Voice Agent can't start") {
+		t.Fatalf("last log message = %q, want immediate voice agent guidance", got)
+	}
+	if got := bubble.showCalls; got != 1 {
+		t.Fatalf("assist bubble show calls = %d, want 1", got)
+	}
+	if len(bubble.scripts) == 0 || !strings.Contains(bubble.scripts[len(bubble.scripts)-1], "Voice Agent can't start") {
+		t.Fatalf("bubble scripts = %v, want immediate voice agent guidance", bubble.scripts)
+	}
+}
+
+func TestDesktopInputControllerDictationHotkeyBlocksWhenLocalSetupPending(t *testing.T) {
+	bus := &testDesktopCommandBus{}
+	bubble := &fakeOverlayWindow{}
+	state := &appState{assistBubble: bubble}
+	controller := desktopInputController{
+		commands:  bus,
+		recording: &mutableRecordingState{},
+		state:     state,
+		cfg:       defaultTestConfig(),
+		installState: &config.InstallState{
+			Mode:      config.InstallModeLocal,
+			SetupDone: false,
+		},
+	}
+
+	controller.handleHotkey(context.Background(), hotkey.Event{
+		Binding: modeDictate,
+		Type:    hotkey.EventKeyDown,
+	})
+
+	if got := len(bus.commands); got != 0 {
+		t.Fatalf("commands = %d, want 0 when local setup is still pending", got)
+	}
+	state.mu.Lock()
+	logEntries := append([]logEntry(nil), state.logEntries...)
+	state.mu.Unlock()
+	if len(logEntries) == 0 {
+		t.Fatal("expected immediate guidance log entry")
+	}
+	if got := logEntries[len(logEntries)-1].Message; !strings.Contains(got, "local speech model") {
+		t.Fatalf("last log message = %q, want local model guidance", got)
+	}
+	if got := bubble.showCalls; got != 1 {
+		t.Fatalf("assist bubble show calls = %d, want 1", got)
+	}
+	if len(bubble.scripts) == 0 || !strings.Contains(bubble.scripts[len(bubble.scripts)-1], "local speech model") {
+		t.Fatalf("bubble scripts = %v, want local model guidance", bubble.scripts)
+	}
+}
+
+func TestDesktopInputControllerAssistHotkeyBlocksWhenAssistModelMissing(t *testing.T) {
+	bus := &testDesktopCommandBus{}
+	bubble := &fakeOverlayWindow{}
+	sttRouter := &router.Router{Strategy: router.StrategyDynamic}
+	sttRouter.AddCloud(availableSTTProvider{name: "openai"})
+	state := &appState{
+		assistBubble: bubble,
+		sttRouter:    sttRouter,
+	}
+	controller := desktopInputController{
+		commands:  bus,
+		recording: &mutableRecordingState{},
+		state:     state,
+		cfg:       defaultTestConfig(),
+		installState: &config.InstallState{
+			Mode:      config.InstallModeLocal,
+			SetupDone: true,
+		},
+	}
+
+	controller.handleHotkey(context.Background(), hotkey.Event{
+		Binding: modeAssist,
+		Type:    hotkey.EventKeyDown,
+	})
+
+	if got := len(bus.commands); got != 0 {
+		t.Fatalf("commands = %d, want 0 when Assist has no model configured", got)
+	}
+	state.mu.Lock()
+	logEntries := append([]logEntry(nil), state.logEntries...)
+	state.mu.Unlock()
+	if len(logEntries) == 0 {
+		t.Fatal("expected immediate Assist guidance log entry")
+	}
+	if got := logEntries[len(logEntries)-1].Message; !strings.Contains(got, "Assist model") {
+		t.Fatalf("last log message = %q, want Assist model guidance", got)
+	}
+	if got := bubble.showCalls; got != 1 {
+		t.Fatalf("assist bubble show calls = %d, want 1", got)
+	}
+	if len(bubble.scripts) == 0 || !strings.Contains(bubble.scripts[len(bubble.scripts)-1], "Assist model") {
+		t.Fatalf("bubble scripts = %v, want Assist model guidance", bubble.scripts)
 	}
 }
 
@@ -497,8 +743,11 @@ func TestDesktopInputControllerVoiceAgentHotkeyToggleDispatchesOnlyActiveModeOnS
 	if got := len(bus.commands); got != 1 {
 		t.Fatalf("commands = %d, want 1 after second voice agent key down", got)
 	}
-	if got, want := session.CurrentState(), voiceagent.StateInactive; got != want {
-		t.Fatalf("session state = %s, want %s after second key down", got, want)
+	if got := session.CurrentState(); got == voiceagent.StateInactive {
+		t.Fatal("expected voice agent to stay active after second key down")
+	}
+	if h := mockAudio.getHandler(); h == nil {
+		t.Fatal("expected microphone handler to remain attached after second key down")
 	}
 }
 
@@ -653,7 +902,7 @@ func TestDesktopInputControllerVoiceAgentBindingToggleDispatchesOnlyActiveModeOn
 	}
 }
 
-func TestDesktopInputControllerCloseVoiceAgentPrompterMinimisesWhenConfiguredToContinue(t *testing.T) {
+func TestDesktopInputControllerCloseVoiceAgentPrompterHidesWhenConfiguredToContinue(t *testing.T) {
 	prompter := &fakeOverlayWindow{visible: true}
 	state := &appState{prompterWindow: prompter}
 	controller := desktopInputController{
@@ -667,11 +916,11 @@ func TestDesktopInputControllerCloseVoiceAgentPrompterMinimisesWhenConfiguredToC
 
 	controller.closeVoiceAgentPrompter(context.Background())
 
-	if got := prompter.minimiseCalls; got != 1 {
-		t.Fatalf("prompter minimise calls = %d, want 1", got)
+	if got := prompter.hideCalls; got != 1 {
+		t.Fatalf("prompter hide calls = %d, want 1", got)
 	}
-	if got := prompter.hideCalls; got != 0 {
-		t.Fatalf("prompter hide calls = %d, want 0", got)
+	if got := prompter.minimiseCalls; got != 0 {
+		t.Fatalf("prompter minimise calls = %d, want 0", got)
 	}
 }
 
@@ -713,7 +962,7 @@ func TestDesktopInputControllerCloseVoiceAgentPrompterEndsChatWhenConfiguredForN
 	}
 }
 
-func TestDesktopInputControllerVoiceAgentPushToTalkStopsOnKeyUp(t *testing.T) {
+func TestDesktopInputControllerVoiceAgentPushToTalkKeepsRealtimeSessionOnKeyUp(t *testing.T) {
 	bus := &testDesktopCommandBus{}
 	mockAudio := &mockAudioFrameStreamer{}
 	mockProvider := newSimpleMockLiveProvider()
@@ -760,11 +1009,14 @@ func TestDesktopInputControllerVoiceAgentPushToTalkStopsOnKeyUp(t *testing.T) {
 		Type:    hotkey.EventKeyUp,
 	})
 
-	if got := session.CurrentState(); got != voiceagent.StateInactive {
-		t.Fatalf("session state after key up = %s, want %s", got, voiceagent.StateInactive)
+	if got := session.CurrentState(); got == voiceagent.StateInactive {
+		t.Fatal("expected voice agent to stay active after push-to-talk key up")
 	}
 	if got := len(bus.commands); got != 1 {
 		t.Fatalf("commands after key up = %d, want 1", got)
+	}
+	if h := mockAudio.getHandler(); h == nil {
+		t.Fatal("expected microphone handler to remain attached after key up")
 	}
 }
 
@@ -836,4 +1088,18 @@ func TestMaybeAutoStartVoiceAgentOnLaunchSkipsWhenDisabled(t *testing.T) {
 	if got := session.CurrentState(); got != voiceagent.StateInactive {
 		t.Fatalf("session state = %s, want inactive when auto-start is disabled", got)
 	}
+}
+
+func waitForCondition(t *testing.T, timeout time.Duration, predicate func() bool) {
+	t.Helper()
+
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		if predicate() {
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+
+	t.Fatalf("condition not met within %s", timeout)
 }

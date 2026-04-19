@@ -8,6 +8,7 @@ import (
 
 	"github.com/kombifyio/SpeechKit/internal/config"
 	"github.com/kombifyio/SpeechKit/internal/hotkey"
+	"github.com/kombifyio/SpeechKit/internal/router"
 	"github.com/kombifyio/SpeechKit/internal/voiceagent"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit"
 )
@@ -17,16 +18,19 @@ type recordingStatusReader interface {
 }
 
 type desktopInputController struct {
-	commands          speechkit.CommandBus
-	recording         recordingStatusReader
-	state             *appState
-	hotkeyEvents      <-chan hotkey.Event
-	silenceAutoStop   <-chan struct{}
-	autoStartInterval time.Duration
-	voiceAgentSession *voiceagent.Session
-	voiceAgentConfig  *config.VoiceAgentConfig
-	cfg               *config.Config
-	audioCapturer     audioFrameStreamer
+	commands            speechkit.CommandBus
+	recording           recordingStatusReader
+	state               *appState
+	hotkeyEvents        <-chan hotkey.Event
+	silenceAutoStop     <-chan struct{}
+	autoStartInterval   time.Duration
+	voiceAgentSession   *voiceagent.Session
+	voiceAgentConfig    *config.VoiceAgentConfig
+	cfg                 *config.Config
+	installState        *config.InstallState
+	sttRouter           *router.Router
+	audioCapturer       audioFrameStreamer
+	voiceAgentEchoGuard *voiceAgentEchoGuard
 }
 
 type audioFrameStreamer interface {
@@ -79,6 +83,9 @@ func (c desktopInputController) handleAutoStartTick(ctx context.Context) {
 	if c.state == nil || !c.state.consumeQuickCaptureAutoStart() {
 		return
 	}
+	if !c.preflightCaptureStart(modeDictate) {
+		return
+	}
 	c.dispatch(ctx, speechkit.Command{
 		Type: speechkit.CommandStartDictation,
 		Metadata: map[string]string{
@@ -90,19 +97,7 @@ func (c desktopInputController) handleAutoStartTick(ctx context.Context) {
 func (c desktopInputController) handleHotkey(ctx context.Context, evt hotkey.Event) {
 	switch binding := c.resolveHotkeyBinding(evt.Binding); binding {
 	case modeVoiceAgent:
-		if c.shouldUseVoiceAgentPipelineFallback() {
-			c.logVoiceAgentRoute(evt.Binding, "pipeline fallback capture", "warn", evt.Type)
-			c.routeCaptureHotkey(ctx, modeVoiceAgent, evt)
-			return
-		}
-		if c.currentVoiceAgentSession() != nil { //nolint:contextcheck // currentVoiceAgentSession is a stateful getter, not a context-passing call
-			c.routeVoiceAgentHotkey(ctx, evt)
-			return
-		}
-		if evt.Type == hotkey.EventKeyDown {
-			c.log("Voice Agent not available â€” check API key and config", "error")
-		}
-		return
+		c.routeVoiceAgentHotkey(ctx, evt)
 	case modeAssist:
 		c.logModeRoute(modeAssist, evt.Binding, c.hotkeyBehavior(modeAssist), evt.Type)
 		c.routeCaptureHotkey(ctx, modeAssist, evt)
@@ -170,6 +165,9 @@ func (c desktopInputController) handleToggleCapture(ctx context.Context, evt hot
 
 func (c desktopInputController) routeCaptureHotkey(ctx context.Context, mode string, evt hotkey.Event) {
 	if evt.Type == hotkey.EventKeyDown {
+		if (c.recording == nil || !c.recording.IsRecording()) && !c.preflightCaptureStart(mode) {
+			return
+		}
 		c.dispatch(ctx, speechkit.Command{
 			Type: speechkit.CommandSetActiveMode,
 			Metadata: map[string]string{
@@ -195,14 +193,10 @@ func (c desktopInputController) routeVoiceAgentHotkey(ctx context.Context, evt h
 			c.logVoiceAgentRoute(evt.Binding, "push-to-talk", "info", evt.Type)
 			session := c.currentVoiceAgentSession() //nolint:contextcheck // getter, no context needed
 			if session == nil || session.CurrentState() == voiceagent.StateInactive {
-				c.toggleVoiceAgent(ctx)
+				c.activateVoiceAgent(ctx)
 			}
 		case hotkey.EventKeyUp:
-			session := c.currentVoiceAgentSession() //nolint:contextcheck // getter, no context needed
-			if session == nil || session.CurrentState() == voiceagent.StateInactive {
-				return
-			}
-			c.toggleVoiceAgent(ctx)
+			return
 		}
 	default:
 		if evt.Type != hotkey.EventKeyDown {
@@ -338,12 +332,14 @@ func (c desktopInputController) currentVoiceAgentSession() *voiceagent.Session {
 func (c desktopInputController) toggleVoiceAgent(ctx context.Context) {
 	session := c.currentVoiceAgentSession() //nolint:contextcheck // getter, no context needed
 	if session == nil {
-		c.log("Voice Agent session not initialized â€” check config and API key", "error")
+		c.log("Voice Agent session not initialized — check config and API key", "error")
 		return
 	}
 
 	if session.CurrentState() != voiceagent.StateInactive {
-		c.deactivateVoiceAgent(ctx, true)
+		if c.state != nil && c.voiceAgentConfig != nil && c.voiceAgentConfig.ShowPrompter {
+			c.state.showPrompterWindowForMode(modeVoiceAgent, false)
+		}
 		return
 	}
 
@@ -351,9 +347,14 @@ func (c desktopInputController) toggleVoiceAgent(ctx context.Context) {
 }
 
 func (c desktopInputController) activateVoiceAgent(ctx context.Context) {
+	if msg := c.voiceAgentStartBlockedReason(); msg != "" {
+		c.presentPreflightHint(msg)
+		return
+	}
+
 	session := c.currentVoiceAgentSession() //nolint:contextcheck // getter, no context needed
 	if session == nil {
-		c.log("Voice Agent session not initialized â€” check config and API key", "error")
+		c.log("Voice Agent session not initialized — check config and API key", "error")
 		return
 	}
 	if session.CurrentState() != voiceagent.StateInactive {
@@ -368,6 +369,10 @@ func (c desktopInputController) activateVoiceAgent(ctx context.Context) {
 	}, "Set mode")
 
 	c.log("Voice Agent: activating", "info")
+	echoGuard := c.currentVoiceAgentEchoGuard()
+	if echoGuard != nil {
+		echoGuard.reset()
+	}
 
 	// Show prompter window if configured.
 	if c.state != nil && c.voiceAgentConfig != nil && c.voiceAgentConfig.ShowPrompter {
@@ -473,22 +478,47 @@ func (c desktopInputController) activateVoiceAgent(ctx context.Context) {
 		// Stream mic audio to the Voice Agent session via the shared audio capturer.
 		c.log("Voice Agent: streaming audio", "info")
 		if c.audioCapturer != nil {
-			c.audioCapturer.SetPCMHandler(func(frame []byte) {
-				if session.CurrentState() == voiceagent.StateInactive {
+			audioSender := newVoiceAgentAudioSender(session, defaultVoiceAgentAudioQueueSize)
+			sendErrorLogged := false
+			audioSender.onSendError = func(err error) {
+				if err == nil || sendErrorLogged {
 					return
 				}
-				_ = session.SendAudio(frame)
+				sendErrorLogged = true
+				c.log(fmt.Sprintf("Voice Agent: audio send failed: %v", err), "warn")
+				if c.state != nil {
+					c.state.sendPrompterMessage("system", "Voice Agent audio stream needs attention. Restart the Voice Agent if the next turn is not picked up.", true)
+				}
+			}
+			audioSender.Start(ctx)
+			if c.state != nil {
+				c.state.setVoiceAgentAudioSender(audioSender)
+			}
+			c.audioCapturer.SetPCMHandler(func(frame []byte) {
+				if !voiceAgentMicFrameAllowed(session.CurrentState(), echoGuard) {
+					return
+				}
+				_ = audioSender.Enqueue(frame)
 			})
 
 			// Start the mic capture so frames flow to the handler.
 			if err := c.audioCapturer.Start(); err != nil {
+				audioSender.Stop()
+				c.audioCapturer.SetPCMHandler(nil)
+				if c.state != nil {
+					c.state.stopVoiceAgentAudioSender()
+				}
 				c.log(fmt.Sprintf("Voice Agent: mic capture start failed: %v", err), "error")
 			}
 		}
 	}()
 }
 
-func (c desktopInputController) deactivateVoiceAgent(_ context.Context, keepPrompterVisible bool) {
+func (c desktopInputController) deactivateVoiceAgent(ctx context.Context, keepPrompterVisible bool) {
+	c.deactivateVoiceAgentWithReason(ctx, keepPrompterVisible, "manual control")
+}
+
+func (c desktopInputController) deactivateVoiceAgentWithReason(_ context.Context, keepPrompterVisible bool, reason string) {
 	session := c.currentVoiceAgentSession() //nolint:contextcheck // getter, no context needed
 	if session == nil || session.CurrentState() == voiceagent.StateInactive {
 		if c.state != nil && !keepPrompterVisible {
@@ -497,12 +527,22 @@ func (c desktopInputController) deactivateVoiceAgent(_ context.Context, keepProm
 		return
 	}
 
-	c.log("Voice Agent: deactivating", "info")
+	reason = strings.TrimSpace(reason)
+	if reason == "" {
+		reason = "unspecified"
+	}
+	c.log(fmt.Sprintf("Voice Agent: deactivating (%s)", reason), "info")
 	if c.audioCapturer != nil {
 		c.audioCapturer.SetPCMHandler(nil)
 	}
+	if c.state != nil {
+		c.state.resetVoiceAgentEchoGuard()
+	} else if c.voiceAgentEchoGuard != nil {
+		c.voiceAgentEchoGuard.reset()
+	}
 	session.Stop()
 	if c.state != nil {
+		c.state.stopVoiceAgentAudioSender()
 		c.state.updatePrompterActivity("user", 0)
 		c.state.updatePrompterActivity("assistant", 0)
 		c.state.updatePrompterState("inactive")
@@ -520,12 +560,12 @@ func (c desktopInputController) closeVoiceAgentPrompter(ctx context.Context) {
 
 	switch c.voiceAgentCloseBehavior() {
 	case config.VoiceAgentCloseBehaviorNewChat:
-		c.deactivateVoiceAgent(ctx, true)
+		c.deactivateVoiceAgentWithReason(ctx, true, "prompter close")
 		c.state.clearPrompterMessages()
 		c.state.updatePrompterState("inactive")
 		c.state.hidePrompterWindow()
 	default:
-		c.state.minimisePrompterWindow()
+		c.state.hidePrompterWindow()
 	}
 }
 
@@ -550,4 +590,185 @@ func (c desktopInputController) log(message, kind string) {
 		return
 	}
 	c.state.addLog(message, kind)
+}
+
+func (c desktopInputController) preflightCaptureStart(mode string) bool {
+	if msg := c.captureStartBlockedReason(mode); msg != "" {
+		c.presentPreflightHint(msg)
+		return false
+	}
+	if mode == modeAssist {
+		if msg := c.assistStartBlockedReason(); msg != "" {
+			c.presentPreflightHint(msg)
+			return false
+		}
+	}
+	return true
+}
+
+func (c desktopInputController) captureStartBlockedReason(mode string) string {
+	r := c.currentSTTRouter()
+	if r == nil && c.installState == nil {
+		return ""
+	}
+	strategy := router.StrategyDynamic
+	if c.cfg != nil && c.cfg.Routing.Strategy != "" {
+		strategy = router.Strategy(c.cfg.Routing.Strategy)
+	}
+
+	localReady := c.localSTTReady()
+	cloudReady := c.hasConfiguredCloudSTTProvider(r)
+
+	switch strategy {
+	case router.StrategyLocalOnly:
+		if localReady {
+			return ""
+		}
+		return c.localSTTBlockedReason(mode)
+	case router.StrategyCloudOnly:
+		if cloudReady {
+			return ""
+		}
+		return c.cloudSTTBlockedReason(mode)
+	default:
+		if localReady || cloudReady {
+			return ""
+		}
+		if msg := c.localSTTBlockedReason(mode); msg != "" {
+			return msg
+		}
+		if msg := c.cloudSTTBlockedReason(mode); msg != "" {
+			return msg
+		}
+		return fmt.Sprintf("%s can't start because no speech provider is configured. Open Settings > STT.", modeDisplayName(mode))
+	}
+}
+
+func (c desktopInputController) assistStartBlockedReason() string {
+	if c.state == nil {
+		return ""
+	}
+	if c.currentSTTRouter() == nil && c.installState == nil {
+		return ""
+	}
+	c.state.mu.Lock()
+	assistPipeline := c.state.assistPipeline
+	c.state.mu.Unlock()
+	if assistPipeline != nil {
+		return ""
+	}
+	return "Assist can't start because no Assist model is configured. Open Settings > Models and select an Assist model."
+}
+
+func (c desktopInputController) voiceAgentStartBlockedReason() string {
+	if strings.TrimSpace(c.voiceAgentAPIKey()) == "" {
+		return "Voice Agent can't start because no realtime provider/API key is configured. Open Settings > Voice Agent."
+	}
+	if c.currentVoiceAgentSession() == nil { //nolint:contextcheck // getter, no context needed
+		return "Voice Agent can't start because the realtime session is not ready. Open Settings > Voice Agent."
+	}
+	return ""
+}
+
+func (c desktopInputController) localSTTBlockedReason(mode string) string {
+	if c.installState != nil && c.installState.Mode == config.InstallModeLocal && !c.installState.SetupDone {
+		return fmt.Sprintf("%s can't start because no local speech model is configured yet. Open Settings > STT and download/select a model.", modeDisplayName(mode))
+	}
+
+	r := c.currentSTTRouter()
+	if r == nil || r.Local() == nil {
+		return ""
+	}
+
+	if provider, ok := r.Local().(localProviderStarter); ok {
+		status := provider.VerifyInstallation()
+		if !status.BinaryFound {
+			return fmt.Sprintf("%s can't start because the local speech runtime is missing. Reinstall SpeechKit or repair Local STT in Settings.", modeDisplayName(mode))
+		}
+		if !status.ModelFound {
+			return fmt.Sprintf("%s can't start because no local speech model is configured. Open Settings > STT and download/select a model.", modeDisplayName(mode))
+		}
+		if !provider.IsReady() {
+			return fmt.Sprintf("%s is waiting for Local STT to finish starting. Try again in a moment.", modeDisplayName(mode))
+		}
+		return ""
+	}
+
+	if !providerReady(context.Background(), r.Local()) { //nolint:contextcheck // preflight readiness check is intentionally independent from request lifecycle
+		return fmt.Sprintf("%s can't start because Local STT is unavailable right now. Check Settings > STT.", modeDisplayName(mode))
+	}
+	return ""
+}
+
+func (c desktopInputController) cloudSTTBlockedReason(mode string) string {
+	if c.cfg != nil {
+		if hint := missingProviderHint(c.cfg); hint != "" {
+			return fmt.Sprintf("%s can't start yet. %s", modeDisplayName(mode), hint)
+		}
+	}
+	if c.cfg == nil {
+		return fmt.Sprintf("%s can't start because no speech provider is configured. Open Settings > STT.", modeDisplayName(mode))
+	}
+	return fmt.Sprintf("%s can't start because no cloud speech provider is configured. Open Settings > Provider.", modeDisplayName(mode))
+}
+
+func (c desktopInputController) localSTTReady() bool {
+	r := c.currentSTTRouter()
+	if r == nil || r.Local() == nil {
+		return false
+	}
+	return providerReady(context.Background(), r.Local()) //nolint:contextcheck // preflight readiness check is intentionally independent from request lifecycle
+}
+
+func (c desktopInputController) hasConfiguredCloudSTTProvider(r *router.Router) bool {
+	if r == nil {
+		return false
+	}
+	for _, providerName := range r.AvailableProviders() {
+		if providerName != "local" {
+			return true
+		}
+	}
+	return false
+}
+
+func (c desktopInputController) currentSTTRouter() *router.Router {
+	if c.sttRouter != nil {
+		return c.sttRouter
+	}
+	if c.state == nil {
+		return nil
+	}
+	c.state.mu.Lock()
+	defer c.state.mu.Unlock()
+	return c.state.sttRouter
+}
+
+func (c desktopInputController) currentVoiceAgentEchoGuard() *voiceAgentEchoGuard {
+	if c.state != nil {
+		return c.state.currentVoiceAgentEchoGuard()
+	}
+	return c.voiceAgentEchoGuard
+}
+
+func (c desktopInputController) presentPreflightHint(message string) {
+	message = strings.TrimSpace(message)
+	if message == "" {
+		return
+	}
+	c.log(message, "warn")
+	if c.state != nil {
+		c.state.showAssistBubble(message)
+	}
+}
+
+func modeDisplayName(mode string) string {
+	switch normalizeRuntimeMode(mode, "") {
+	case modeAssist:
+		return "Assist"
+	case modeVoiceAgent:
+		return "Voice Agent"
+	default:
+		return "Dictation"
+	}
 }

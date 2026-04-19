@@ -100,17 +100,29 @@ func TestRadialMenuWindowOptions(t *testing.T) {
 	}
 }
 
-func TestPrompterWindowOptionsStartLargeEnoughForTranscriptControls(t *testing.T) {
+func TestPrompterWindowOptionsStartCompactForVoiceAgentSidePanel(t *testing.T) {
 	opts := newPrompterWindowOptions()
 
 	if opts.Width != prompterWidth || opts.Height != prompterHeight {
 		t.Fatalf("prompter size = %dx%d, want %dx%d", opts.Width, opts.Height, prompterWidth, prompterHeight)
 	}
-	if opts.MinWidth < 620 {
-		t.Fatalf("prompter min width = %d, want at least 620", opts.MinWidth)
+	if opts.Width > 400 {
+		t.Fatalf("prompter width = %d, want compact side panel <= 400", opts.Width)
 	}
-	if opts.MinHeight < 420 {
-		t.Fatalf("prompter min height = %d, want at least 420", opts.MinHeight)
+	if opts.Height > 520 {
+		t.Fatalf("prompter height = %d, want compact side panel <= 520", opts.Height)
+	}
+	if opts.MinWidth > 420 {
+		t.Fatalf("prompter min width = %d, want resizable compact width <= 420", opts.MinWidth)
+	}
+	if opts.MinHeight > 420 {
+		t.Fatalf("prompter min height = %d, want compact minimum height <= 420", opts.MinHeight)
+	}
+	if opts.MinWidth > prompterCollapsedWidth {
+		t.Fatalf("prompter min width = %d, want <= collapsed width %d", opts.MinWidth, prompterCollapsedWidth)
+	}
+	if opts.MinHeight > prompterCollapsedHeight {
+		t.Fatalf("prompter min height = %d, want <= collapsed height %d", opts.MinHeight, prompterCollapsedHeight)
 	}
 	if !opts.Frameless {
 		t.Fatal("prompter should be frameless for shared custom chrome")

@@ -122,12 +122,8 @@ func syncConfiguredLocalProvider(ctx context.Context, cfg *config.Config, state 
 	if targetRouter == nil && state != nil {
 		targetRouter = state.sttRouter
 	}
-	if targetRouter == nil {
+	if targetRouter == nil || cfg == nil {
 		return
-	}
-
-	if previous, ok := targetRouter.Local().(*stt.LocalProvider); ok {
-		previous.StopServer()
 	}
 
 	targetRouter.Strategy = router.Strategy(cfg.Routing.Strategy)
@@ -140,7 +136,18 @@ func syncConfiguredLocalProvider(ctx context.Context, cfg *config.Config, state 
 	if modelPath == "" {
 		modelPath = defaultLocalModelPath(executableDir(), os.Getenv("LOCALAPPDATA"), cfg.Local.Model)
 	}
+
+	if existing, ok := targetRouter.Local().(*stt.LocalProvider); ok && existing != nil {
+		if existing.Port == cfg.Local.Port && existing.ModelPath == modelPath && existing.GPU == cfg.Local.GPU {
+			launchLocalProvider(context.WithoutCancel(ctx), state, targetRouter, existing)
+			return
+		}
+	}
+
 	localProvider := stt.NewLocalProvider(cfg.Local.Port, modelPath, cfg.Local.GPU)
+	if previous, ok := targetRouter.Local().(*stt.LocalProvider); ok {
+		previous.StopServer()
+	}
 	targetRouter.SetLocal(localProvider)
 	// Local whisper startup must survive short-lived HTTP request contexts.
 	launchLocalProvider(context.WithoutCancel(ctx), state, targetRouter, localProvider)
@@ -311,7 +318,7 @@ func applyRealtimeVoiceProfile(ctx context.Context, cfgPath string, cfg *config.
 	case models.ExecutionModeGoogle:
 		apiKey := config.ResolveSecret(cfg.Providers.Google.APIKeyEnv)
 		if apiKey == "" {
-			return errors.New("google api key not configured â€” add it on the model card in Settings")
+			return errors.New("google api key not configured — add it on the model card in Settings")
 		}
 		cfg.VoiceAgent.Enabled = true
 		cfg.VoiceAgent.Model = profile.ModelID

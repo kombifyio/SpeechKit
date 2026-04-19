@@ -7,8 +7,11 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/kombifyio/SpeechKit/internal/audio"
 )
 
 func TestLocal_Transcribe_Success(t *testing.T) {
@@ -79,6 +82,19 @@ func TestLocal_Name(t *testing.T) {
 	p := NewLocalProvider(8080, "/model.bin", "cpu")
 	if p.Name() != "local" {
 		t.Errorf("Name() = %q", p.Name())
+	}
+}
+
+func TestLocal_TranscribeTimeoutScalesWithLongWAV(t *testing.T) {
+	wav := audio.PCMToWAV(make([]byte, audio.SampleRate*audio.BytesPerSample*90))
+
+	timeout := localTranscribeTimeout(wav)
+
+	if timeout <= 30*time.Second {
+		t.Fatalf("timeout = %v, want more than the legacy 30s cap", timeout)
+	}
+	if timeout < 4*time.Minute {
+		t.Fatalf("timeout = %v, want enough headroom for 90s local whisper inference", timeout)
 	}
 }
 
@@ -211,5 +227,52 @@ func TestLocal_Transcribe_ContextCancelledDuringStartupWait(t *testing.T) {
 		}
 	case <-time.After(2 * time.Second):
 		t.Fatal("Transcribe did not unblock after context cancellation")
+	}
+}
+
+func TestLocal_WaitForInferenceReady_RetriesUntilInferenceSucceeds(t *testing.T) {
+	var attempts atomic.Int32
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/audio/transcriptions" {
+			t.Fatalf("unexpected path %q", r.URL.Path)
+		}
+		if r.Method != http.MethodPost {
+			t.Fatalf("unexpected method %q", r.Method)
+		}
+
+		if err := r.ParseMultipartForm(1 << 20); err != nil {
+			t.Fatalf("ParseMultipartForm: %v", err)
+		}
+		if got := r.FormValue("model"); got != "whisper-1" {
+			t.Fatalf("model = %q, want whisper-1", got)
+		}
+		file, _, err := r.FormFile("file")
+		if err != nil {
+			t.Fatalf("FormFile(file): %v", err)
+		}
+		_ = file.Close()
+
+		if attempts.Add(1) < 3 {
+			http.Error(w, "warming", http.StatusServiceUnavailable)
+			return
+		}
+
+		if err := json.NewEncoder(w).Encode(map[string]string{"text": "warm"}); err != nil {
+			t.Fatalf("Encode: %v", err)
+		}
+	}))
+	defer server.Close()
+
+	p := &LocalProvider{
+		BaseURL: server.URL,
+		client:  &http.Client{Timeout: 2 * time.Second},
+	}
+
+	if err := p.waitForInferenceReadyWithRetry(context.Background(), 5, time.Millisecond); err != nil {
+		t.Fatalf("waitForInferenceReadyWithRetry: %v", err)
+	}
+	if got := attempts.Load(); got != 3 {
+		t.Fatalf("attempts = %d, want 3", got)
 	}
 }

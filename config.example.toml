@@ -1,8 +1,8 @@
 [general]
 language = "de"                    # Default transcription language
-dictate_hotkey = "win+alt"         # Dictation Mode hotkey (push-to-talk)
-assist_hotkey = "ctrl+shift+j"     # Assist Mode hotkey (push-to-talk). Blank disables the mode.
-voice_agent_hotkey = "ctrl+shift+k" # Voice Agent Mode hotkey. Blank disables the mode.
+dictate_hotkey = "win+alt"         # Dictation hotkey (push-to-talk, speech-to-text only)
+assist_hotkey = "ctrl+shift+j"     # Assist hotkey (one-shot utility mode). Blank disables the mode.
+voice_agent_hotkey = "ctrl+shift+k" # Voice Agent hotkey (realtime dialogue mode). Blank disables the mode.
 active_mode = "none"               # none, dictate, assist, voice_agent
 agent_hotkey = "ctrl+shift+j"      # Deprecated compatibility alias. SpeechKit now persists assist_hotkey + voice_agent_hotkey separately.
 agent_mode = "assist"              # Deprecated compatibility alias for legacy agent_hotkey readers.
@@ -87,7 +87,7 @@ dictionary = ""           # One entry per line. Use "spoken => canonical" for co
 
 # ──────────────────────────────────────────────
 # TTS — Text-to-Speech (Assist Mode)
-# Framework always returns Text + Audio. UI decides what to show.
+# Assist can return text plus optional audio. The host decides whether to play the result aloud.
 # ──────────────────────────────────────────────
 
 [tts]
@@ -116,8 +116,8 @@ model_path = ""
 port = 8081
 
 # ──────────────────────────────────────────────
-# Voice Agent — Live session or pipeline fallback
-# Gemini Live stays the native real-time path. Non-live profiles can use the STT + agent + TTS fallback pipeline.
+# Voice Agent — realtime live session
+# Gemini Live is the canonical Voice Agent runtime. The Voice Agent contract is realtime-first and separate from Assist.
 # ──────────────────────────────────────────────
 
 [voice_agent]
@@ -130,7 +130,7 @@ refinement_prompt = ""                     # Optional personal refinement prompt
 instruction = ""                           # Legacy alias for framework_prompt. Keep empty for new configs.
 reminder_after_idle_sec = 300              # Remind user after 5 min silence
 deactivate_after_idle_sec = 900            # Auto-deactivate after 15 min silence
-pipeline_fallback = true                   # Use STT+LLM+TTS as last resort
+pipeline_fallback = false                  # Deprecated compatibility flag. Voice Agent V2 stays realtime-only.
 show_prompter = true                       # Show live transcript window during voice agent
 enable_input_transcript = true             # Server-side transcript of the user's speech
 enable_output_transcript = true            # Server-side transcript of the model's speech
@@ -140,8 +140,8 @@ include_thoughts = false                   # Include thought traces when the mod
 thinking_budget = 0                        # Optional token budget for thinking
 thinking_level = "medium"                  # off, low, medium, high
 context_compression_enabled = true         # Keep long sessions healthy with server-side compression
-context_compression_trigger_tokens = 24000
-context_compression_target_tokens = 12000
+context_compression_trigger_tokens = 12000
+context_compression_target_tokens = 6000
 automatic_activity_detection = true        # Gemini Live server-side VAD / turn detection
 activity_handling = "start_of_activity_interrupts" # start_of_activity_interrupts, no_interrupt
 turn_coverage = "turn_includes_only_activity"      # turn_includes_only_activity, turn_includes_all_input, turn_includes_audio_activity

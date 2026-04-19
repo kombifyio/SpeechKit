@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/kombifyio/SpeechKit/internal/audio"
 	"github.com/kombifyio/SpeechKit/internal/config"
@@ -15,7 +16,11 @@ func prepareVoiceAgentSession(state *appState, cfg *config.Config) *voiceagent.S
 	}
 
 	geminiProvider := voiceagent.NewGeminiLive()
-	return voiceagent.NewSession(geminiProvider, voiceagent.Callbacks{
+	return voiceagent.NewSession(geminiProvider, buildVoiceAgentCallbacks(state, cfg))
+}
+
+func buildVoiceAgentCallbacks(state *appState, cfg *config.Config) voiceagent.Callbacks {
+	return voiceagent.Callbacks{
 		OnStateChange: func(vaState voiceagent.State) {
 			state.addLog(fmt.Sprintf("Voice Agent: %s", vaState), "info")
 			state.updatePrompterState(string(vaState))
@@ -27,11 +32,18 @@ func prepareVoiceAgentSession(state *appState, cfg *config.Config) *voiceagent.S
 			}
 		},
 		OnAudio: func(audioData []byte) {
+			state.markVoiceAgentAssistantAudio()
 			state.writeVoiceAgentAudio(audioData)
 			state.updatePrompterActivity("assistant", audio.PCMLevel(audioData))
 		},
 		OnText: func(text string) {
-			state.showAssistBubble(text)
+			if strings.TrimSpace(text) == "" {
+				return
+			}
+			if cfg != nil && cfg.VoiceAgent.EnableOutputTranscript {
+				return
+			}
+			state.sendPrompterMessage("assistant", text, false)
 		},
 		OnError: func(err error) {
 			state.addLog(fmt.Sprintf("Voice Agent error: %v", err), "error")
@@ -69,10 +81,11 @@ func prepareVoiceAgentSession(state *appState, cfg *config.Config) *voiceagent.S
 			state.sendPrompterMessage("system", "[interrupted]", true)
 		},
 		OnSessionEnd: func() {
+			state.stopVoiceAgentAudioSender()
 			state.stopVoiceAgentStream()
 			state.updatePrompterActivity("user", 0)
 			state.updatePrompterActivity("assistant", 0)
 			state.addLog("Voice Agent session ended", "info")
 		},
-	})
+	}
 }

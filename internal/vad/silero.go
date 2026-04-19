@@ -182,4 +182,3 @@ func (v *SileroVAD) destroyTensors() {
 		}
 	}
 }
-

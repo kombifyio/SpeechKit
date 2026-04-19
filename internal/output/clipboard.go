@@ -246,11 +246,11 @@ func simulateCtrlC() {
 }
 
 func simulateCtrlChord(vk uint8) {
-	procKeybdEvent.Call(vkControl, 0, 0, 0)                   //nolint:errcheck // Windows API call, return value not meaningful
+	procKeybdEvent.Call(vkControl, 0, 0, 0) //nolint:errcheck // Windows API call, return value not meaningful
 	time.Sleep(2 * time.Millisecond)
-	procKeybdEvent.Call(uintptr(vk), 0, 0, 0)                 //nolint:errcheck // Windows API call, return value not meaningful
+	procKeybdEvent.Call(uintptr(vk), 0, 0, 0) //nolint:errcheck // Windows API call, return value not meaningful
 	time.Sleep(2 * time.Millisecond)
-	procKeybdEvent.Call(uintptr(vk), 0, keyEventFKeyUp, 0)    //nolint:errcheck // Windows API call, return value not meaningful
+	procKeybdEvent.Call(uintptr(vk), 0, keyEventFKeyUp, 0) //nolint:errcheck // Windows API call, return value not meaningful
 	time.Sleep(2 * time.Millisecond)
-	procKeybdEvent.Call(vkControl, 0, keyEventFKeyUp, 0)       //nolint:errcheck // Windows API call, return value not meaningful
+	procKeybdEvent.Call(vkControl, 0, keyEventFKeyUp, 0) //nolint:errcheck // Windows API call, return value not meaningful
 }

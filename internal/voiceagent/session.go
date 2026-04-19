@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"sync"
 	"sync/atomic"
+	"time"
 )
 
 // State represents the current state of the Voice Agent session.
@@ -22,6 +23,8 @@ const (
 	StateSpeaking     State = "speaking"
 	StateDeactivating State = "deactivating"
 )
+
+const speakingSettleDelay = 900 * time.Millisecond
 
 // ThinkingLevel controls how much deliberate reasoning Gemini Live should spend.
 type ThinkingLevel string
@@ -366,13 +369,47 @@ func (s *Session) currentState() State {
 }
 
 func (s *Session) setState(state State) {
+	if s.currentState() == state {
+		return
+	}
 	s.state.Store(state)
 	if s.callbacks.OnStateChange != nil {
 		s.callbacks.OnStateChange(state)
 	}
 }
 
+func (s *Session) setProcessingUnlessSpeaking() {
+	if s.currentState() == StateSpeaking {
+		return
+	}
+	s.setState(StateProcessing)
+}
+
 func (s *Session) receiveLoop(ctx context.Context) {
+	var speakingSettleTimer *time.Timer
+	stopSpeakingSettleTimer := func() {
+		if speakingSettleTimer != nil {
+			speakingSettleTimer.Stop()
+			speakingSettleTimer = nil
+		}
+	}
+	scheduleSpeakingSettle := func() {
+		stopSpeakingSettleTimer()
+		speakingSettleTimer = time.AfterFunc(speakingSettleDelay, func() {
+			if s.currentState() != StateSpeaking {
+				return
+			}
+			slog.Warn("voice agent speaking turn did not emit completion; returning to listening")
+			s.setState(StateListening)
+			s.mu.Lock()
+			if s.idleTimer != nil {
+				s.idleTimer.Reset()
+			}
+			s.mu.Unlock()
+		})
+	}
+	defer stopSpeakingSettleTimer()
+
 	for {
 		select {
 		case <-ctx.Done():
@@ -408,22 +445,10 @@ func (s *Session) receiveLoop(ctx context.Context) {
 
 		// Barge-in: user interrupted model.
 		if msg.Interrupted {
+			stopSpeakingSettleTimer()
 			s.setState(StateListening)
 			if s.callbacks.OnInterrupted != nil {
 				s.callbacks.OnInterrupted()
-			}
-		}
-
-		if len(msg.Audio) > 0 {
-			s.setState(StateSpeaking)
-			if s.callbacks.OnAudio != nil {
-				s.callbacks.OnAudio(msg.Audio)
-			}
-		}
-
-		if msg.Text != "" {
-			if s.callbacks.OnText != nil {
-				s.callbacks.OnText(msg.Text)
 			}
 		}
 
@@ -432,6 +457,9 @@ func (s *Session) receiveLoop(ctx context.Context) {
 			if s.callbacks.OnInputTranscript != nil {
 				s.callbacks.OnInputTranscript(msg.InputTranscript, msg.InputTranscriptDone)
 			}
+			if msg.InputTranscriptDone && !msg.Done && len(msg.Audio) == 0 && msg.OutputTranscript == "" && msg.Text == "" {
+				s.setState(StateProcessing)
+			}
 		}
 
 		// Output transcription (model speech).
@@ -439,6 +467,26 @@ func (s *Session) receiveLoop(ctx context.Context) {
 			if s.callbacks.OnOutputTranscript != nil {
 				s.callbacks.OnOutputTranscript(msg.OutputTranscript, msg.OutputTranscriptDone)
 			}
+			if len(msg.Audio) == 0 && !msg.OutputTranscriptDone {
+				s.setProcessingUnlessSpeaking()
+			}
+		}
+
+		if msg.Text != "" {
+			if s.callbacks.OnText != nil {
+				s.callbacks.OnText(msg.Text)
+			}
+			if len(msg.Audio) == 0 {
+				s.setProcessingUnlessSpeaking()
+			}
+		}
+
+		if len(msg.Audio) > 0 {
+			s.setState(StateSpeaking)
+			if s.callbacks.OnAudio != nil {
+				s.callbacks.OnAudio(msg.Audio)
+			}
+			scheduleSpeakingSettle()
 		}
 
 		if len(msg.ToolCalls) > 0 && s.callbacks.OnToolCall != nil {
@@ -472,7 +520,8 @@ func (s *Session) receiveLoop(ctx context.Context) {
 			return
 		}
 
-		if msg.Done {
+		if msg.Done || (msg.OutputTranscriptDone && len(msg.Audio) == 0) {
+			stopSpeakingSettleTimer()
 			s.setState(StateListening)
 			// Hold the lock across Reset to prevent a TOCTOU race with Stop().
 			s.mu.Lock()

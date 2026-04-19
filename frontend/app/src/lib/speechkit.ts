@@ -81,6 +81,7 @@ export type SpeechKitOverlayState = {
   lastTranscription: string;
   quickNoteMode: boolean;
   selectedAudioDeviceId: string;
+  selectedOutputDeviceId?: string;
   activeProfiles: Partial<Record<Modality, string>>;
 };
 
@@ -141,6 +142,7 @@ export type SpeechKitSettingsState = {
   saveAudio: boolean;
   audioRetentionDays: number;
   selectedAudioDeviceId: string;
+  selectedOutputDeviceId?: string;
   profiles?: ModelProfile[];
   activeProfiles: Partial<Record<Modality, string>>;
   modelSelections: ModelSelectionsState;
@@ -181,6 +183,7 @@ export const defaultOverlayState: SpeechKitOverlayState = {
   lastTranscription: "",
   quickNoteMode: false,
   selectedAudioDeviceId: "",
+  selectedOutputDeviceId: "",
   activeProfiles: {},
 };
 
@@ -230,6 +233,7 @@ export const defaultSettingsState: SpeechKitSettingsState = {
   saveAudio: true,
   audioRetentionDays: 7,
   selectedAudioDeviceId: "",
+  selectedOutputDeviceId: "",
   activeProfiles: {},
   modelSelections: {
     dictate: { primaryProfileId: "", fallbackProfileId: "" },
@@ -483,6 +487,11 @@ function normalizeOverlayState(
       payload?.selectedAudioDeviceId ??
       (payload as { audioDeviceId?: string } | undefined)?.audioDeviceId ??
       base.selectedAudioDeviceId,
+    selectedOutputDeviceId:
+      payload?.selectedOutputDeviceId ??
+      (payload as { audioOutputDeviceId?: string } | undefined)
+        ?.audioOutputDeviceId ??
+      base.selectedOutputDeviceId,
     activeProfiles: payload?.activeProfiles ?? base.activeProfiles,
   };
 }
@@ -598,6 +607,11 @@ function normalizeSettingsState(
       payload?.selectedAudioDeviceId ??
       (payload as { audioDeviceId?: string } | undefined)?.audioDeviceId ??
       base.selectedAudioDeviceId,
+    selectedOutputDeviceId:
+      payload?.selectedOutputDeviceId ??
+      (payload as { audioOutputDeviceId?: string } | undefined)
+        ?.audioOutputDeviceId ??
+      base.selectedOutputDeviceId,
     vocabularyDictionary:
       payload?.vocabularyDictionary ?? base.vocabularyDictionary,
     profiles: payload?.profiles ?? base.profiles,
@@ -736,6 +750,52 @@ export async function fetchAudioDevices(): Promise<AudioDevicesResponse> {
   };
 }
 
+export async function fetchAudioOutputDevices(): Promise<AudioDevicesResponse> {
+  const response = await fetch("/audio/output/devices", { cache: "no-store" });
+  if (!response.ok) {
+    throw new Error(`audio output devices request failed: ${response.status}`);
+  }
+
+  const payload = (await response.json()) as
+    | AudioDevicesResponse
+    | AudioDevice[]
+    | {
+        devices?: AudioDevice[];
+        selectedDeviceId?: string;
+        selectedOutputDeviceId?: string;
+        deviceId?: string;
+        currentDeviceId?: string;
+      };
+
+  if (Array.isArray(payload)) {
+    return {
+      devices: payload,
+      selectedDeviceId:
+        payload.find((device) => device.isDefault)?.deviceId ??
+        payload[0]?.deviceId ??
+        "",
+    };
+  }
+
+  const normalizedPayload = payload as {
+    devices?: AudioDevice[];
+    selectedDeviceId?: string;
+    selectedOutputDeviceId?: string;
+    deviceId?: string;
+    currentDeviceId?: string;
+  };
+
+  return {
+    devices: normalizedPayload.devices ?? [],
+    selectedDeviceId:
+      normalizedPayload.selectedDeviceId ??
+      normalizedPayload.selectedOutputDeviceId ??
+      normalizedPayload.currentDeviceId ??
+      normalizedPayload.deviceId ??
+      "",
+  };
+}
+
 export async function setAudioDevice(deviceId: string): Promise<string> {
   const body = new URLSearchParams({
     device_id: deviceId,
@@ -749,6 +809,24 @@ export async function setAudioDevice(deviceId: string): Promise<string> {
 
   if (!response.ok) {
     throw new Error(`set audio device failed: ${response.status}`);
+  }
+
+  const payload = (await response.json()) as AudioDeviceUpdateResponse;
+  return payload.message ?? "";
+}
+
+export async function setAudioOutputDevice(deviceId: string): Promise<string> {
+  const body = new URLSearchParams({
+    device_id: deviceId,
+    selected_output_device_id: deviceId,
+  });
+  const response = await fetch("/audio/output/device", {
+    method: "POST",
+    body,
+  });
+
+  if (!response.ok) {
+    throw new Error(`set audio output device failed: ${response.status}`);
   }
 
   const payload = (await response.json()) as AudioDeviceUpdateResponse;
@@ -1099,6 +1177,8 @@ export async function saveSettingsState(nextState: SpeechKitSettingsState) {
     vocabulary_dictionary: nextState.vocabularyDictionary,
     selected_audio_device_id: nextState.selectedAudioDeviceId,
     audio_device_id: nextState.selectedAudioDeviceId,
+    selected_output_device_id: nextState.selectedOutputDeviceId ?? "",
+    audio_output_device_id: nextState.selectedOutputDeviceId ?? "",
     dictate_primary_profile_id:
       nextState.modelSelections.dictate.primaryProfileId,
     dictate_fallback_profile_id:

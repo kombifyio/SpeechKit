@@ -133,34 +133,10 @@ func (o desktopTranscriptOutput) Deliver(ctx context.Context, transcript speechk
 	case modeVoiceAgent:
 		return o.deliverVoiceAgentFallback(ctx, transcript, target)
 	case modeDictate, modeNone:
+		return o.deliverPassthrough(ctx, transcript, target)
 	default:
 		return o.deliverAgentFlow(ctx, transcript, modeAssist)
 	}
-
-	// Dictate mode may still use global quick actions before pass-through.
-	if o.interceptor != nil {
-		handled, err := o.interceptor.Intercept(ctx, transcript, target)
-		if err != nil {
-			return err
-		}
-		if handled {
-			return nil
-		}
-	}
-
-	// Dictate mode -- pass through to clipboard.
-	if o.handler == nil {
-		return nil
-	}
-
-	return o.handler.Handle(ctx, &stt.Result{
-		Text:       transcript.Text,
-		Language:   transcript.Language,
-		Duration:   transcript.Duration,
-		Provider:   transcript.Provider,
-		Model:      transcript.Model,
-		Confidence: transcript.Confidence,
-	}, outputTarget(target))
 }
 
 func (o desktopTranscriptOutput) currentMode() string {
@@ -210,29 +186,27 @@ func (o desktopTranscriptOutput) failConversation(mode, userText, errText string
 }
 
 func (o desktopTranscriptOutput) deliverVoiceAgentFallback(ctx context.Context, transcript speechkit.Transcript, target any) error {
-	if o.currentAgentFlow() != nil {
-		slog.Warn("voice_agent mode active without live session â€” using agent flow fallback")
-		return o.deliverAgentFlow(ctx, transcript, modeVoiceAgent)
-	}
-	if o.currentAssistPipeline() != nil {
-		slog.Warn("voice_agent mode active without live session â€” using assist pipeline fallback")
-		return o.deliverAssistForMode(ctx, transcript, modeVoiceAgent)
-	}
-	slog.Warn("voice_agent mode active but no fallback pipeline configured")
-	o.failConversation(modeVoiceAgent, transcript.Text, "Voice Agent fallback is not configured. Check Settings > Voice Agent.")
+	_ = ctx
+	_ = target
+
+	slog.Warn("voice_agent mode received transcript on the capture pipeline; realtime session required")
+	o.failConversation(
+		modeVoiceAgent,
+		transcript.Text,
+		"Voice Agent requires a live realtime session. Start the Voice Agent session or check Settings > Voice Agent.",
+	)
 	return nil
 }
 
-// deliverAssist uses the Assist Pipeline: Codeword â†’ LLM â†’ TTS â†’ Text+Audio.
+// deliverAssist uses the Assist Pipeline: Codeword → LLM → TTS → Text+Audio.
 func (o desktopTranscriptOutput) deliverAssist(ctx context.Context, transcript speechkit.Transcript, target any) error { //nolint:contextcheck // playbackCtx for TTS goroutine is app-scoped, not request ctx (goroutine outlives Deliver)
-	_ = target
-	return o.deliverAssistForMode(ctx, transcript, modeAssist)
+	return o.deliverAssistForMode(ctx, transcript, modeAssist, target)
 }
 
-func (o desktopTranscriptOutput) deliverAssistForMode(ctx context.Context, transcript speechkit.Transcript, mode string) error { //nolint:contextcheck // playbackCtx for TTS goroutine is app-scoped, not request ctx (goroutine outlives Deliver)
+func (o desktopTranscriptOutput) deliverAssistForMode(ctx context.Context, transcript speechkit.Transcript, mode string, target any) error { //nolint:contextcheck // playbackCtx for TTS goroutine is app-scoped, not request ctx (goroutine outlives Deliver)
 	assistPipeline := o.currentAssistPipeline()
 	if assistPipeline == nil {
-		// No assist pipeline â€” try legacy agent flow, or warn user.
+		// No assist pipeline — try legacy agent flow, or warn user.
 		if o.currentAgentFlow() != nil {
 			return o.deliverAgentFlow(ctx, transcript, mode)
 		}
@@ -241,9 +215,11 @@ func (o desktopTranscriptOutput) deliverAssistForMode(ctx context.Context, trans
 		return nil
 	}
 
-	o.startConversation(mode, transcript.Text)
+	selection := o.captureAssistSelection(ctx)
 	result, err := assistPipeline.Process(ctx, transcript.Text, assist.ProcessOpts{
-		Locale: transcript.Language,
+		Locale:    transcript.Language,
+		Selection: selection,
+		Target:    target,
 	})
 	if err != nil {
 		slog.Error("assist pipeline error", "err", err)
@@ -252,7 +228,6 @@ func (o desktopTranscriptOutput) deliverAssistForMode(ctx context.Context, trans
 	}
 
 	if result.Action == "silent" {
-		o.finishConversation("", "ready")
 		return nil
 	}
 
@@ -261,11 +236,17 @@ func (o desktopTranscriptOutput) deliverAssistForMode(ctx context.Context, trans
 		assistantText = fmt.Sprintf("Shortcut: %s", result.Shortcut)
 	}
 
-	nextState := "ready"
-	if len(result.Audio) > 0 {
-		nextState = "speaking"
+	panelSurface := result.Surface == "" || result.Surface == assist.ResultSurfacePanel
+	if panelSurface {
+		o.startConversation(mode, transcript.Text)
+		nextState := "ready"
+		if len(result.Audio) > 0 {
+			nextState = "speaking"
+		}
+		o.finishConversation(assistantText, nextState)
+	} else if assistantText != "" && o.onAssistText != nil {
+		o.onAssistText(assistantText)
 	}
-	o.finishConversation(assistantText, nextState)
 
 	// Play TTS audio if available. The goroutine outlives Deliver(), so it
 	// must not take the caller's ctx (which will be cancelled when Deliver
@@ -288,18 +269,42 @@ func (o desktopTranscriptOutput) deliverAssistForMode(ctx context.Context, trans
 			}
 			if playErr != nil && playCtx.Err() == nil {
 				slog.Error("TTS playback error", "err", playErr)
-				if o.state != nil {
+				if panelSurface && o.state != nil {
 					o.state.updatePrompterState("error")
 				}
 				return
 			}
-			if o.state != nil {
+			if panelSurface && o.state != nil {
 				o.state.updatePrompterState("ready")
 			}
 		}()
 	}
 
 	return nil
+}
+
+func (o desktopTranscriptOutput) captureAssistSelection(ctx context.Context) string {
+	selection, err := output.CaptureSelectedText(ctx)
+	if err != nil {
+		slog.Debug("assist selection capture failed", "err", err)
+		return ""
+	}
+	return selection
+}
+
+func (o desktopTranscriptOutput) deliverPassthrough(ctx context.Context, transcript speechkit.Transcript, target any) error {
+	if o.handler == nil {
+		return nil
+	}
+
+	return o.handler.Handle(ctx, &stt.Result{
+		Text:       transcript.Text,
+		Language:   transcript.Language,
+		Duration:   transcript.Duration,
+		Provider:   transcript.Provider,
+		Model:      transcript.Model,
+		Confidence: transcript.Confidence,
+	}, outputTarget(target))
 }
 
 // deliverAgentFlow uses the legacy agent Genkit flow (no TTS).

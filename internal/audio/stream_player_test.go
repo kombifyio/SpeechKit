@@ -119,3 +119,17 @@ func TestStreamPipeWriteAfterClose(t *testing.T) {
 	// Write after close is a no-op (should not panic).
 	p.Write([]byte{0x01})
 }
+
+func TestStreamPipeReadAvailableDoesNotBlockWhenEmpty(t *testing.T) {
+	p := newStreamPipe()
+	buf := make([]byte, 4)
+
+	if n := p.ReadAvailable(buf); n != 0 {
+		t.Fatalf("ReadAvailable() = %d, want 0 for empty open pipe", n)
+	}
+
+	p.Write([]byte{0x01, 0x02, 0x03})
+	if n := p.ReadAvailable(buf); n != 3 {
+		t.Fatalf("ReadAvailable() = %d, want 3 after write", n)
+	}
+}

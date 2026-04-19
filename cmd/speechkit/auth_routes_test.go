@@ -15,12 +15,12 @@ import (
 )
 
 type fakeAuthProvider struct {
-	startResp  *auth.DeviceCodeResponse
-	pollResp   *auth.TokenPair
-	pollErr    error
-	identity   *auth.Identity
+	startResp   *auth.DeviceCodeResponse
+	pollResp    *auth.TokenPair
+	pollErr     error
+	identity    *auth.Identity
 	identityErr error
-	loggedIn   bool
+	loggedIn    bool
 }
 
 func (f *fakeAuthProvider) StartDeviceCodeFlow(context.Context) (*auth.DeviceCodeResponse, error) {

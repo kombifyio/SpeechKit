@@ -17,6 +17,7 @@ The repository treats `frontend/app` as first-class source. The embedded `intern
 - host-managed credentials and secret storage
 - local SQLite default for zero-config usage
 - Windows-first release quality for the first public version
+- three strict product modes: Dictation, Assist, and Voice Agent
 - Gemini Live as the standard Voice Agent runtime with a durable framework prompt, an optional personal refinement prompt, and session policy
 
 ## Three Ways to Use SpeechKit
@@ -35,8 +36,8 @@ Implement a handful of interfaces (`Transcriber`, `AudioRecorder`, `Persistence`
 
 Download the installer from the [Releases](https://github.com/kombifyio/SpeechKit/releases) page:
 
-- **SpeechKit-Setup.exe** â€” Windows installer
-- **SpeechKit-Portable.zip** â€” portable bundle (no install required)
+- **SpeechKit-Setup.exe** — Windows installer
+- **SpeechKit-Portable.zip** — portable bundle (no install required)
 
 ### As an Android App
 
@@ -44,11 +45,11 @@ The `android/` directory contains a Kotlin-based Android implementation with a c
 
 ## Current Feature Set
 
-- push-to-talk dictation with overlay feedback
+- push-to-talk Dictation with lightweight overlay feedback and no AI/tool routing
 - local runtime state and history via SQLite
 - six STT providers: local whisper.cpp, Hugging Face, OpenAI, Groq, Google, self-hosted VPS
-- assist mode with LLM-powered smart commands and TTS response
-- voice agent mode with real-time audio-to-audio (Gemini Live)
+- Assist mode for one-shot utilities, rewrites, summaries, and answer panels with optional TTS
+- Voice Agent mode for realtime audio-to-audio dialogue (Gemini Live) with a dedicated live transcript surface and custom orb
 - layered Voice Agent setup: host supplies API key, framework prompt, optional personal refinement prompt, and Gemini session policy
 - settings UI for provider, overlay, hotkey, and storage preferences
 
@@ -130,12 +131,18 @@ Notes:
 - Native-audio Gemini Live sessions do not rely on `speechConfig.languageCode`; SpeechKit steers preferred language through the layered prompt assembly and locale-aware defaults.
 - `enable_affective_dialog = true` automatically switches the Gemini Live client to `v1alpha` and is intended for Gemini 2.5 native-audio sessions, not Gemini 3.1 Flash Live.
 - Non-blocking tool behavior is available in the Voice Agent framework contract, but Gemini 3.1 Flash Live only supports sequential tool execution.
-- If a Voice Agent profile uses a non-live Hugging Face fallback model, SpeechKit keeps the `voice_agent` mode active but routes capture through the STT -> agent -> output pipeline instead of Gemini Live.
+- Voice Agent is a realtime-dialog surface. If the live runtime is unavailable, SpeechKit now keeps the mode boundary explicit instead of silently dropping into the Assist capture pipeline.
 
 The Voice Agent now combines two prompt layers on every session:
 
 1. `framework_prompt`: the durable host/framework instruction that defines the product behavior and fixed flows
 2. `refinement_prompt`: the user-level personalization layer that sharpens tone, brevity, naming, or other preferences without replacing the framework layer
+
+## Mode Boundaries
+
+- **Dictation**: speech-to-text only, no codeword or utility routing
+- **Assist**: one-shot utility mode that either inserts directly when safe or opens a reusable result panel
+- **Voice Agent**: realtime spoken dialogue for brainstorming and quick clarification, not a work-product or insertion surface
 
 ## Build and Verification
 

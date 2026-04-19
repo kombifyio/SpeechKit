@@ -14,8 +14,8 @@ import (
 
 	appai "github.com/kombifyio/SpeechKit/internal/ai"
 	"github.com/kombifyio/SpeechKit/internal/config"
-	"github.com/kombifyio/SpeechKit/internal/runtimepath"
 	"github.com/kombifyio/SpeechKit/internal/router"
+	"github.com/kombifyio/SpeechKit/internal/runtimepath"
 	"github.com/kombifyio/SpeechKit/internal/shortcuts"
 	"github.com/kombifyio/SpeechKit/internal/stt"
 	"github.com/kombifyio/SpeechKit/internal/tts"
@@ -348,6 +348,6 @@ func escapeJS(s string) string {
 	if err != nil {
 		return ""
 	}
-	// json.Marshal returns a "quoted string" â€” strip the surrounding quotes.
+	// json.Marshal returns a "quoted string" — strip the surrounding quotes.
 	return string(b[1 : len(b)-1])
 }

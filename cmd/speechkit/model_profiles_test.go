@@ -9,6 +9,7 @@ import (
 	"github.com/kombifyio/SpeechKit/internal/config"
 	"github.com/kombifyio/SpeechKit/internal/models"
 	"github.com/kombifyio/SpeechKit/internal/router"
+	"github.com/kombifyio/SpeechKit/internal/stt"
 )
 
 func TestApplySTTProfileLocalLaunchesLocalProvider(t *testing.T) {
@@ -136,6 +137,35 @@ func TestApplySTTProfileLocalDetachesCanceledContextForStartup(t *testing.T) {
 
 	if launchErr != nil {
 		t.Fatalf("launch context err = %v, want nil", launchErr)
+	}
+}
+
+func TestSyncConfiguredLocalProviderReusesMatchingProvider(t *testing.T) {
+	cfg := defaultTestConfig()
+	cfg.Local.Enabled = true
+	cfg.Local.Port = 8080
+	cfg.Local.GPU = "auto"
+	cfg.Local.Model = "ggml-large-v3-turbo.bin"
+	cfg.Local.ModelPath = filepath.Join(t.TempDir(), "ggml-large-v3-turbo.bin")
+
+	existing := stt.NewLocalProvider(cfg.Local.Port, cfg.Local.ModelPath, cfg.Local.GPU)
+	sttRouter := &router.Router{}
+	sttRouter.SetLocal(existing)
+
+	launchCalls := 0
+	previousLauncher := launchLocalProvider
+	launchLocalProvider = func(ctx context.Context, state *appState, r *router.Router, provider localProviderStarter) {
+		launchCalls++
+	}
+	defer func() { launchLocalProvider = previousLauncher }()
+
+	syncConfiguredLocalProvider(context.Background(), cfg, &appState{}, sttRouter)
+
+	if got := sttRouter.Local(); got != existing {
+		t.Fatalf("local provider pointer changed, want existing provider to be reused")
+	}
+	if launchCalls != 1 {
+		t.Fatalf("launchLocalProvider calls = %d, want 1 for reused provider", launchCalls)
 	}
 }
 

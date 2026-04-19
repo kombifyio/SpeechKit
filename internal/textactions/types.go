@@ -4,7 +4,7 @@ import "context"
 import "strings"
 
 var (
-	ErrSummarizerNotConfigured = &summaryError{message: "summarizer not configured"}
+	ErrSummarizerNotConfigured   = &summaryError{message: "summarizer not configured"}
 	ErrSummarizeInputUnavailable = &summaryError{message: "summarize input unavailable"}
 )
 
