@@ -107,18 +107,30 @@ func DefaultCatalog() Catalog {
 				AllowInference: true,
 				Default:        true,
 			},
-			// --- Utility LLM: Local (Ollama download) ---
+			// --- Utility LLM: Local Built-in ---
 			{
-				ID:             "utility.ollama.gemma4-e4b",
-				Name:           "Gemma 4 E4B (Local)",
+				ID:             "utility.builtin.gemma4-e4b",
+				Name:           "Gemma 4 E4B (Local Built-in)",
 				Modality:       ModalityUtility,
-				ExecutionMode:  ExecutionModeOllama,
+				ExecutionMode:  ExecutionModeLocal,
 				ModelID:        "gemma4:e4b",
-				Source:         "Local (Ollama)",
-				Description:    "Local Gemma download for summaries, routing, and command follow-ups.",
+				Source:         "Local Built-in",
+				Description:    "SpeechKit-managed local Gemma runtime for summaries, routing, and command follow-ups.",
 				License:        "gemma",
 				AllowInference: true,
 				Default:        true,
+			},
+			// --- Utility LLM: Local Provider (Ollama) ---
+			{
+				ID:             "utility.ollama.gemma4-e4b",
+				Name:           "Gemma 4 E4B (Ollama)",
+				Modality:       ModalityUtility,
+				ExecutionMode:  ExecutionModeOllama,
+				ModelID:        "gemma4:e4b",
+				Source:         "Local Provider",
+				Description:    "Externally managed Ollama provider for summaries, routing, and command follow-ups.",
+				License:        "gemma",
+				AllowInference: true,
 			},
 			// --- Utility LLM: HuggingFace ---
 			{
@@ -144,18 +156,30 @@ func DefaultCatalog() Catalog {
 				License:        "proprietary",
 				AllowInference: true,
 			},
-			// --- Assist LLM: Local (Ollama download) ---
+			// --- Assist LLM: Local Built-in ---
 			{
-				ID:             "assist.ollama.gemma4-e4b",
-				Name:           "Gemma 4 E4B (Local)",
+				ID:             "assist.builtin.gemma4-e4b",
+				Name:           "Gemma 4 E4B (Local Built-in)",
 				Modality:       ModalityAssist,
-				ExecutionMode:  ExecutionModeOllama,
+				ExecutionMode:  ExecutionModeLocal,
 				ModelID:        "gemma4:e4b",
-				Source:         "Local (Ollama)",
-				Description:    "Local Gemma download for Assist Mode without leaving the device.",
+				Source:         "Local Built-in",
+				Description:    "SpeechKit-managed local Gemma runtime for Assist Mode without leaving the device.",
 				License:        "gemma",
 				AllowInference: true,
 				Default:        true,
+			},
+			// --- Assist LLM: Local Provider (Ollama) ---
+			{
+				ID:             "assist.ollama.gemma4-e4b",
+				Name:           "Gemma 4 E4B (Ollama)",
+				Modality:       ModalityAssist,
+				ExecutionMode:  ExecutionModeOllama,
+				ModelID:        "gemma4:e4b",
+				Source:         "Local Provider",
+				Description:    "Externally managed Ollama provider for Assist Mode.",
+				License:        "gemma",
+				AllowInference: true,
 			},
 			// --- Assist LLM: HuggingFace ---
 			{

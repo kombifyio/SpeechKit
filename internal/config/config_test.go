@@ -61,8 +61,17 @@ func TestLoadDefaults(t *testing.T) {
 	if cfg.Local.Enabled {
 		t.Error("local provider should be disabled by default")
 	}
-	if !cfg.HuggingFace.Enabled {
-		t.Error("HuggingFace should stay enabled by default for the private module build")
+	if cfg.LocalLLM.Enabled {
+		t.Error("built-in local LLM should be disabled by default")
+	}
+	if cfg.LocalLLM.BaseURL != "http://127.0.0.1:8082/v1" {
+		t.Errorf("default local LLM base URL = %q", cfg.LocalLLM.BaseURL)
+	}
+	if cfg.LocalLLM.UtilityModel != "gemma4:e4b" || cfg.LocalLLM.AssistModel != "gemma4:e4b" {
+		t.Errorf("default local LLM models = utility:%q assist:%q", cfg.LocalLLM.UtilityModel, cfg.LocalLLM.AssistModel)
+	}
+	if want := ManagedHuggingFaceAvailableInBuild(); cfg.HuggingFace.Enabled != want {
+		t.Errorf("default HuggingFace enabled = %v, want %v for this module build", cfg.HuggingFace.Enabled, want)
 	}
 	if cfg.HuggingFace.Model != "openai/whisper-large-v3" {
 		t.Errorf("default HF model = %q", cfg.HuggingFace.Model)
@@ -163,6 +172,32 @@ agent_model = "gemma4:e4b"
 		t.Fatalf("agent model = %q, want %q", got, want)
 	}
 	if got, want := cfg.Providers.Ollama.AssistModel, "gemma4:e4b"; got != want {
+		t.Fatalf("assist model = %q, want %q", got, want)
+	}
+}
+
+func TestLoadBackfillsLocalLLMAssistModelFromLegacyAgentModel(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.toml")
+
+	content := `
+[local_llm]
+enabled = true
+agent_model = "gemma4:e4b"
+`
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+
+	if got, want := cfg.LocalLLM.AgentModel, "gemma4:e4b"; got != want {
+		t.Fatalf("agent model = %q, want %q", got, want)
+	}
+	if got, want := cfg.LocalLLM.AssistModel, "gemma4:e4b"; got != want {
 		t.Fatalf("assist model = %q, want %q", got, want)
 	}
 }
@@ -477,6 +512,7 @@ func TestSaveRoundTripAssistModels(t *testing.T) {
 	cfg.Providers.OpenAI.AssistModel = "gpt-5.4-2026-03-05"
 	cfg.Providers.Google.AssistModel = "gemini-2.5-flash"
 	cfg.Providers.Ollama.AssistModel = "gemma4:e4b"
+	cfg.LocalLLM.AssistModel = "gemma4:e4b"
 	cfg.HuggingFace.AssistModel = "Qwen/Qwen3.5-27B"
 
 	if err := Save(path, cfg); err != nil {
@@ -496,6 +532,9 @@ func TestSaveRoundTripAssistModels(t *testing.T) {
 	}
 	if got, want := reloaded.Providers.Ollama.AssistModel, cfg.Providers.Ollama.AssistModel; got != want {
 		t.Fatalf("ollama assist model = %q, want %q", got, want)
+	}
+	if got, want := reloaded.LocalLLM.AssistModel, cfg.LocalLLM.AssistModel; got != want {
+		t.Fatalf("local LLM assist model = %q, want %q", got, want)
 	}
 	if got, want := reloaded.HuggingFace.AssistModel, cfg.HuggingFace.AssistModel; got != want {
 		t.Fatalf("huggingface assist model = %q, want %q", got, want)
@@ -1069,7 +1108,7 @@ func TestManagedHuggingFaceAvailableInBuild_DefaultsToPrivateModuleWhenUnset(t *
 
 	prevReadBuildInfo := readBuildInfo
 	readBuildInfo = func() (buildInfo, bool) {
-		return buildInfo{MainPath: "github.com/kombifyio/SpeechKit"}, true
+		return buildInfo{MainPath: privateModulePath()}, true
 	}
 	defer func() {
 		readBuildInfo = prevReadBuildInfo

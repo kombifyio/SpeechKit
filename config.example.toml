@@ -32,6 +32,17 @@ model_path = ""           # Auto: ./models/ first, then %LOCALAPPDATA%/SpeechKit
 port = 8080               # whisper-server port
 gpu = "auto"              # auto, cuda, vulkan, cpu
 
+[local_llm]
+enabled = false
+base_url = "http://127.0.0.1:8082/v1" # SpeechKit-managed local LLM runtime endpoint
+model = "gemma4:e4b"
+model_path = ""                      # Future built-in GGUF model path; blank = managed location
+port = 8082
+gpu = "auto"                         # auto, cuda, vulkan, cpu
+utility_model = "gemma4:e4b"
+assist_model = "gemma4:e4b"
+agent_model = "gemma4:e4b"
+
 [vps]
 enabled = false
 url = ""                  # Example: https://voice.your-vps.tld
@@ -183,9 +194,9 @@ vad_silence_duration_ms = 700
 # assist_model = "gemini-2.5-flash"
 # agent_model = "gemini-2.5-pro"
 
-# [providers.ollama]
+# [providers.ollama]        # Local Provider: externally managed Ollama, not SpeechKit Built-in
 # enabled = false
 # base_url = "http://localhost:11434"
-# utility_model = "gemma4:e2b"   # Smaller edge profile for low-memory devices
+# utility_model = "gemma4:e4b"
 # assist_model = "gemma4:e4b"
 # agent_model = "gemma4:e4b"

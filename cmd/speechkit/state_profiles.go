@@ -102,6 +102,8 @@ func sttProfileMatchesConfig(cfg *config.Config, profile models.Profile) bool {
 
 func utilityProfileMatchesConfig(cfg *config.Config, profile models.Profile) bool {
 	switch profile.ExecutionMode {
+	case models.ExecutionModeLocal:
+		return cfg.LocalLLM.Enabled && cfg.LocalLLM.UtilityModel == profile.ModelID
 	case models.ExecutionModeOpenAI:
 		return cfg.Providers.OpenAI.Enabled && cfg.Providers.OpenAI.UtilityModel == profile.ModelID && profileCredentialAvailable(cfg, profile)
 	case models.ExecutionModeGroq:
@@ -121,6 +123,8 @@ func utilityProfileMatchesConfig(cfg *config.Config, profile models.Profile) boo
 
 func assistProfileMatchesConfig(cfg *config.Config, profile models.Profile) bool {
 	switch profile.ExecutionMode {
+	case models.ExecutionModeLocal:
+		return cfg.LocalLLM.Enabled && cfg.LocalLLM.AssistModel == profile.ModelID
 	case models.ExecutionModeOpenAI:
 		return cfg.Providers.OpenAI.Enabled && cfg.Providers.OpenAI.AssistModel == profile.ModelID && profileCredentialAvailable(cfg, profile)
 	case models.ExecutionModeGroq:

@@ -37,16 +37,19 @@ func TestDefaultCatalogIsLocalFirst(t *testing.T) {
 	if !ok {
 		t.Fatal("default utility profile missing")
 	}
-	if utilityProfile.ExecutionMode != ExecutionModeOllama {
-		t.Fatalf("utility default execution = %q, want %q", utilityProfile.ExecutionMode, ExecutionModeOllama)
+	if utilityProfile.ExecutionMode != ExecutionModeLocal {
+		t.Fatalf("utility default execution = %q, want %q", utilityProfile.ExecutionMode, ExecutionModeLocal)
+	}
+	if utilityProfile.Source != "Local Built-in" {
+		t.Fatalf("utility default source = %q, want Local Built-in", utilityProfile.Source)
 	}
 
 	assistProfile, ok := catalog.DefaultProfile(ModalityAssist)
 	if !ok {
 		t.Fatal("default assist profile missing")
 	}
-	if assistProfile.ExecutionMode != ExecutionModeOllama {
-		t.Fatalf("assist default execution = %q, want %q", assistProfile.ExecutionMode, ExecutionModeOllama)
+	if assistProfile.ExecutionMode != ExecutionModeLocal {
+		t.Fatalf("assist default execution = %q, want %q", assistProfile.ExecutionMode, ExecutionModeLocal)
 	}
 	if assistProfile.ModelID != "gemma4:e4b" {
 		t.Fatalf("assist default model = %q", assistProfile.ModelID)
@@ -98,13 +101,15 @@ func TestDefaultCatalogHasNoHFEndpointProfiles(t *testing.T) {
 	}
 }
 
-func TestDefaultCatalogIncludesGemma4LocalProfiles(t *testing.T) {
+func TestDefaultCatalogIncludesGemma4BuiltInAndOllamaProfiles(t *testing.T) {
 	catalog := DefaultCatalog()
 
 	// After catalog reduction: only e4b variants remain; e2b and 26b were removed.
 	required := map[string]string{
-		"utility.ollama.gemma4-e4b": "gemma4:e4b",
-		"assist.ollama.gemma4-e4b":  "gemma4:e4b",
+		"utility.builtin.gemma4-e4b": "gemma4:e4b",
+		"assist.builtin.gemma4-e4b":  "gemma4:e4b",
+		"utility.ollama.gemma4-e4b":  "gemma4:e4b",
+		"assist.ollama.gemma4-e4b":   "gemma4:e4b",
 	}
 
 	found := map[string]string{}
@@ -139,11 +144,11 @@ func TestDefaultCatalogUsesMinimalSwitcherChoices(t *testing.T) {
 	if got := len(gotByModality[ModalitySTT]); got != 3 {
 		t.Fatalf("stt profile count = %d, want 3", got)
 	}
-	if got := len(gotByModality[ModalityUtility]); got != 3 {
-		t.Fatalf("utility profile count = %d, want 3", got)
+	if got := len(gotByModality[ModalityUtility]); got != 4 {
+		t.Fatalf("utility profile count = %d, want 4", got)
 	}
-	if got := len(gotByModality[ModalityAssist]); got != 3 {
-		t.Fatalf("assist profile count = %d, want 3", got)
+	if got := len(gotByModality[ModalityAssist]); got != 4 {
+		t.Fatalf("assist profile count = %d, want 4", got)
 	}
 	if got := len(gotByModality[ModalityRealtimeVoice]); got != 2 {
 		t.Fatalf("realtime voice profile count = %d, want 2", got)

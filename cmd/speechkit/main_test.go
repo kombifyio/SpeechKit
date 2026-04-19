@@ -1059,7 +1059,7 @@ func TestModelProfilesEndpointReturnsOnlySwitchableModalities(t *testing.T) {
 		if !allowed[profile.Modality] {
 			t.Fatalf("unexpected modality %q in switchable catalog", profile.Modality)
 		}
-		if profile.ID == "utility.ollama.gemma4-e4b" {
+		if profile.ID == "utility.builtin.gemma4-e4b" {
 			foundGemma = true
 		}
 	}
@@ -1068,9 +1068,9 @@ func TestModelProfilesEndpointReturnsOnlySwitchableModalities(t *testing.T) {
 	}
 }
 
-func TestActivateUtilityOllamaProfileUpdatesConfigAndRuntime(t *testing.T) {
+func TestActivateUtilityBuiltInLocalProfileUpdatesConfigAndRuntime(t *testing.T) {
 	cfg := defaultTestConfig()
-	cfg.Providers.Ollama.BaseURL = "http://localhost:11434"
+	cfg.LocalLLM.BaseURL = "http://127.0.0.1:8082/v1"
 	cfgPath := filepath.Join(t.TempDir(), "config.toml")
 	state := &appState{
 		activeProfiles: map[string]string{},
@@ -1079,7 +1079,7 @@ func TestActivateUtilityOllamaProfileUpdatesConfigAndRuntime(t *testing.T) {
 
 	form := url.Values{
 		"modality":   {"utility"},
-		"profile_id": {"utility.ollama.gemma4-e4b"},
+		"profile_id": {"utility.builtin.gemma4-e4b"},
 	}
 	req := httptest.NewRequest(http.MethodPost, "/models/profiles/activate", strings.NewReader(form.Encode()))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
@@ -1090,14 +1090,14 @@ func TestActivateUtilityOllamaProfileUpdatesConfigAndRuntime(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, body=%s", rec.Code, rec.Body.String())
 	}
-	if !cfg.Providers.Ollama.Enabled {
-		t.Fatal("expected ollama provider enabled")
+	if !cfg.LocalLLM.Enabled {
+		t.Fatal("expected built-in local LLM enabled")
 	}
-	if cfg.Providers.Ollama.UtilityModel != "gemma4:e4b" {
-		t.Fatalf("ollama utility model = %q, want %q", cfg.Providers.Ollama.UtilityModel, "gemma4:e4b")
+	if cfg.LocalLLM.UtilityModel != "gemma4:e4b" {
+		t.Fatalf("built-in local utility model = %q, want %q", cfg.LocalLLM.UtilityModel, "gemma4:e4b")
 	}
-	if got := state.activeProfiles["utility"]; got != "utility.ollama.gemma4-e4b" {
-		t.Fatalf("active utility profile = %q, want %q", got, "utility.ollama.gemma4-e4b")
+	if got := state.activeProfiles["utility"]; got != "utility.builtin.gemma4-e4b" {
+		t.Fatalf("active utility profile = %q, want %q", got, "utility.builtin.gemma4-e4b")
 	}
 	if state.genkitRT == nil {
 		t.Fatal("expected genkit runtime to be reloaded")
@@ -1107,7 +1107,46 @@ func TestActivateUtilityOllamaProfileUpdatesConfigAndRuntime(t *testing.T) {
 	}
 }
 
-func TestActivateAssistOllamaProfileUpdatesConfigAndRuntime(t *testing.T) {
+func TestActivateAssistBuiltInLocalProfileUpdatesConfigAndRuntime(t *testing.T) {
+	cfg := defaultTestConfig()
+	cfg.LocalLLM.BaseURL = "http://127.0.0.1:8082/v1"
+	cfgPath := filepath.Join(t.TempDir(), "config.toml")
+	state := &appState{
+		activeProfiles: map[string]string{},
+	}
+	handler := assetHandler(cfg, cfgPath, state, &router.Router{}, nil, &config.InstallState{Mode: config.InstallModeLocal})
+
+	form := url.Values{
+		"modality":   {"assist"},
+		"profile_id": {"assist.builtin.gemma4-e4b"},
+	}
+	req := httptest.NewRequest(http.MethodPost, "/models/profiles/activate", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	rec := httptest.NewRecorder()
+
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, body=%s", rec.Code, rec.Body.String())
+	}
+	if !cfg.LocalLLM.Enabled {
+		t.Fatal("expected built-in local LLM enabled")
+	}
+	if cfg.LocalLLM.AssistModel != "gemma4:e4b" {
+		t.Fatalf("built-in local assist model = %q, want %q", cfg.LocalLLM.AssistModel, "gemma4:e4b")
+	}
+	if got := state.activeProfiles["assist"]; got != "assist.builtin.gemma4-e4b" {
+		t.Fatalf("active assist profile = %q, want %q", got, "assist.builtin.gemma4-e4b")
+	}
+	if state.genkitRT == nil {
+		t.Fatal("expected genkit runtime to be reloaded")
+	}
+	if state.assistFlow == nil {
+		t.Fatal("expected assist flow to be reloaded")
+	}
+}
+
+func TestActivateAssistOllamaProfileUsesOllamaProviderBoundary(t *testing.T) {
 	cfg := defaultTestConfig()
 	cfg.Providers.Ollama.BaseURL = "http://localhost:11434"
 	cfgPath := filepath.Join(t.TempDir(), "config.toml")
@@ -1132,17 +1171,14 @@ func TestActivateAssistOllamaProfileUpdatesConfigAndRuntime(t *testing.T) {
 	if !cfg.Providers.Ollama.Enabled {
 		t.Fatal("expected ollama provider enabled")
 	}
+	if cfg.LocalLLM.Enabled {
+		t.Fatal("ollama profile must not enable the built-in local LLM runtime")
+	}
 	if cfg.Providers.Ollama.AssistModel != "gemma4:e4b" {
 		t.Fatalf("ollama assist model = %q, want %q", cfg.Providers.Ollama.AssistModel, "gemma4:e4b")
 	}
 	if got := state.activeProfiles["assist"]; got != "assist.ollama.gemma4-e4b" {
 		t.Fatalf("active assist profile = %q, want %q", got, "assist.ollama.gemma4-e4b")
-	}
-	if state.genkitRT == nil {
-		t.Fatal("expected genkit runtime to be reloaded")
-	}
-	if state.assistFlow == nil {
-		t.Fatal("expected assist flow to be reloaded")
 	}
 }
 

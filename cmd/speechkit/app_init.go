@@ -97,6 +97,12 @@ func buildRouter(cfg *config.Config) (*router.Router, []string) {
 func buildGenkitConfig(cfg *config.Config) appai.Config {
 	var aiCfg appai.Config
 	catalog := filteredModelCatalog()
+	assistSelections, explicitAssistSelections := selectedModelSpecsForMode(cfg, catalog, modeAssist)
+	voiceSelections, explicitVoiceSelections := selectedModelSpecsForMode(cfg, catalog, modeVoiceAgent)
+	selectedProvider := func(provider string) bool {
+		return orderedSelectionsContainProvider(assistSelections, provider) ||
+			orderedSelectionsContainProvider(voiceSelections, provider)
+	}
 
 	if cfg.Providers.Google.Enabled {
 		aiCfg.GoogleAPIKey = config.ResolveSecret(cfg.Providers.Google.APIKeyEnv)
@@ -127,8 +133,21 @@ func buildGenkitConfig(cfg *config.Config) appai.Config {
 		aiCfg.HFAgentModel = cfg.HuggingFace.AgentModel
 	}
 
-	if cfg.Providers.Ollama.Enabled {
+	if cfg.LocalLLM.Enabled || selectedProvider("local") {
+		aiCfg.LocalLLMBaseURL = cfg.LocalLLM.BaseURL
+		if aiCfg.LocalLLMBaseURL == "" {
+			aiCfg.LocalLLMBaseURL = config.DefaultLocalLLMBaseURL
+		}
+		aiCfg.LocalLLMUtilityModel = cfg.LocalLLM.UtilityModel
+		aiCfg.LocalLLMAssistModel = cfg.LocalLLM.AssistModel
+		aiCfg.LocalLLMAgentModel = cfg.LocalLLM.AgentModel
+	}
+
+	if cfg.Providers.Ollama.Enabled || selectedProvider("ollama") {
 		aiCfg.OllamaBaseURL = cfg.Providers.Ollama.BaseURL
+		if aiCfg.OllamaBaseURL == "" {
+			aiCfg.OllamaBaseURL = "http://localhost:11434"
+		}
 		aiCfg.OllamaUtilityModel = cfg.Providers.Ollama.UtilityModel
 		aiCfg.OllamaAssistModel = cfg.Providers.Ollama.AssistModel
 		aiCfg.OllamaAgentModel = cfg.Providers.Ollama.AgentModel
@@ -141,17 +160,26 @@ func buildGenkitConfig(cfg *config.Config) appai.Config {
 		aiCfg.OpenRouterAgentModel = cfg.Providers.OpenRouter.AgentModel
 	}
 
-	if assistSelections, explicit := selectedModelSpecsForMode(cfg, catalog, modeAssist); explicit {
+	if explicitAssistSelections {
 		aiCfg.OrderedAssistModels = assistSelections
 		aiCfg.UseOrderedAssistModels = true
 	}
 
-	if voiceSelections, explicit := selectedModelSpecsForMode(cfg, catalog, modeVoiceAgent); explicit {
+	if explicitVoiceSelections {
 		aiCfg.OrderedAgentModels = voiceSelections
 		aiCfg.UseOrderedAgentModels = true
 	}
 
 	return aiCfg
+}
+
+func orderedSelectionsContainProvider(selections []appai.OrderedModelSelection, provider string) bool {
+	for _, selection := range selections {
+		if selection.Provider == provider {
+			return true
+		}
+	}
+	return false
 }
 
 // buildTTSRouter constructs the TTS router from config. Returns nil if TTS is disabled

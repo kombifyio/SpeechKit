@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -10,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/kombifyio/SpeechKit/internal/config"
+	"github.com/kombifyio/SpeechKit/internal/downloads"
 	"github.com/kombifyio/SpeechKit/internal/router"
 )
 
@@ -128,6 +130,58 @@ func TestSelectDownloadedLocalModelReactivatesLocalSTTAfterCloudSelection(t *tes
 	}
 	if called != 1 {
 		t.Fatalf("launchLocalProvider calls = %d, want 1", called)
+	}
+}
+
+func TestSelectDownloadedOllamaModelActivatesLocalProviderProfile(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/tags" {
+			http.NotFound(w, r)
+			return
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"models": []map[string]string{{"name": "gemma4:e4b"}},
+		})
+	}))
+	defer srv.Close()
+
+	oldOllamaBaseURL := downloads.OllamaBaseURL
+	downloads.OllamaBaseURL = srv.URL
+	defer func() { downloads.OllamaBaseURL = oldOllamaBaseURL }()
+
+	cfg := defaultTestConfig()
+	cfg.Providers.Ollama.BaseURL = srv.URL
+	cfgPath := filepath.Join(t.TempDir(), "config.toml")
+	state := &appState{
+		activeProfiles: map[string]string{},
+		sttRouter:      &router.Router{},
+	}
+	handler := assetHandler(cfg, cfgPath, state, state.sttRouter, nil, &config.InstallState{Mode: config.InstallModeLocal})
+
+	form := url.Values{"model_id": {"ollama.gemma4-e4b-assist"}}
+	req := httptest.NewRequest(http.MethodPost, "/models/downloads/select", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	rec := httptest.NewRecorder()
+
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, body=%s", rec.Code, rec.Body.String())
+	}
+	if !cfg.Providers.Ollama.Enabled {
+		t.Fatal("expected Ollama provider to be enabled")
+	}
+	if cfg.LocalLLM.Enabled {
+		t.Fatal("Ollama selection must not enable built-in local LLM")
+	}
+	if got := cfg.Providers.Ollama.AssistModel; got != "gemma4:e4b" {
+		t.Fatalf("ollama assist model = %q, want %q", got, "gemma4:e4b")
+	}
+	if got := state.activeProfiles["assist"]; got != "assist.ollama.gemma4-e4b" {
+		t.Fatalf("active assist profile = %q, want %q", got, "assist.ollama.gemma4-e4b")
+	}
+	if state.genkitRT == nil {
+		t.Fatal("expected AI runtime to be reloaded")
 	}
 }
 

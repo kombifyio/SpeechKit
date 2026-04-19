@@ -19,6 +19,7 @@ type Config struct {
 	GroqAPIKey       string
 	HuggingFaceToken string
 	OllamaBaseURL    string
+	LocalLLMBaseURL  string
 
 	GoogleUtilityModel     string
 	GoogleAssistModel      string
@@ -32,6 +33,9 @@ type Config struct {
 	HFUtilityModel         string
 	HFAssistModel          string
 	HFAgentModel           string
+	LocalLLMUtilityModel   string
+	LocalLLMAssistModel    string
+	LocalLLMAgentModel     string
 	OllamaUtilityModel     string
 	OllamaAssistModel      string
 	OllamaAgentModel       string
@@ -109,6 +113,19 @@ func Init(ctx context.Context, cfg Config) (*Runtime, error) {
 	if cfg.OpenRouterAPIKey != "" {
 		registerOpenRouterModels(g, cfg.OpenRouterAPIKey)
 	}
+	if cfg.LocalLLMBaseURL != "" {
+		localModelNames := []string{
+			cfg.LocalLLMUtilityModel,
+			cfg.LocalLLMAssistModel,
+			cfg.LocalLLMAgentModel,
+		}
+		for _, spec := range append(cfg.OrderedAssistModels, cfg.OrderedAgentModels...) {
+			if strings.TrimSpace(spec.Provider) == "local" {
+				localModelNames = append(localModelNames, spec.Model)
+			}
+		}
+		registerLocalLLMModels(g, cfg.LocalLLMBaseURL, localModelNames)
+	}
 
 	rt := &Runtime{
 		G:         g,
@@ -125,6 +142,7 @@ func Init(ctx context.Context, cfg Config) (*Runtime, error) {
 		{"openai", cfg.OpenAIUtilityModel, cfg.OpenAIAPIKey != "" && cfg.OpenAIUtilityModel != ""},
 		{"groq", cfg.GroqUtilityModel, cfg.GroqAPIKey != "" && cfg.GroqUtilityModel != ""},
 		{"huggingface", cfg.HFUtilityModel, cfg.HuggingFaceToken != "" && cfg.HFUtilityModel != ""},
+		{"local", cfg.LocalLLMUtilityModel, cfg.LocalLLMBaseURL != "" && cfg.LocalLLMUtilityModel != ""},
 		{"ollama", cfg.OllamaUtilityModel, cfg.OllamaBaseURL != "" && cfg.OllamaUtilityModel != ""},
 		{"openrouter", cfg.OpenRouterUtilityModel, cfg.OpenRouterAPIKey != "" && cfg.OpenRouterUtilityModel != ""},
 	}
@@ -152,6 +170,7 @@ func Init(ctx context.Context, cfg Config) (*Runtime, error) {
 		{"openai", cfg.OpenAIAssistModel, cfg.OpenAIAPIKey != "" && cfg.OpenAIAssistModel != ""},
 		{"groq", cfg.GroqAssistModel, cfg.GroqAPIKey != "" && cfg.GroqAssistModel != ""},
 		{"huggingface", cfg.HFAssistModel, cfg.HuggingFaceToken != "" && cfg.HFAssistModel != ""},
+		{"local", cfg.LocalLLMAssistModel, cfg.LocalLLMBaseURL != "" && cfg.LocalLLMAssistModel != ""},
 		{"ollama", cfg.OllamaAssistModel, cfg.OllamaBaseURL != "" && cfg.OllamaAssistModel != ""},
 		{"openrouter", cfg.OpenRouterAssistModel, cfg.OpenRouterAPIKey != "" && cfg.OpenRouterAssistModel != ""},
 	}, func(model ai.Model) {
@@ -167,6 +186,7 @@ func Init(ctx context.Context, cfg Config) (*Runtime, error) {
 		{"openai", cfg.OpenAIAgentModel, cfg.OpenAIAPIKey != "" && cfg.OpenAIAgentModel != ""},
 		{"groq", cfg.GroqAgentModel, cfg.GroqAPIKey != "" && cfg.GroqAgentModel != ""},
 		{"huggingface", cfg.HFAgentModel, cfg.HuggingFaceToken != "" && cfg.HFAgentModel != ""},
+		{"local", cfg.LocalLLMAgentModel, cfg.LocalLLMBaseURL != "" && cfg.LocalLLMAgentModel != ""},
 		{"ollama", cfg.OllamaAgentModel, cfg.OllamaBaseURL != "" && cfg.OllamaAgentModel != ""},
 		{"openrouter", cfg.OpenRouterAgentModel, cfg.OpenRouterAPIKey != "" && cfg.OpenRouterAgentModel != ""},
 	}, func(model ai.Model) {

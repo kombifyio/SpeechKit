@@ -95,6 +95,41 @@ func TestCallOpenAICompatible_Success(t *testing.T) {
 	}
 }
 
+func TestCallOpenAICompatible_OmitsAuthorizationWhenTokenEmpty(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if got := r.Header.Get("Authorization"); got != "" {
+			t.Errorf("authorization header = %q, want empty", got)
+		}
+		json.NewEncoder(w).Encode(oaiResponse{
+			Choices: []struct {
+				Message struct {
+					Content string `json:"content"`
+				} `json:"message"`
+				FinishReason string `json:"finish_reason"`
+			}{
+				{Message: struct {
+					Content string `json:"content"`
+				}{Content: "local response"}},
+			},
+		})
+	}))
+	defer server.Close()
+
+	mr := &ai.ModelRequest{
+		Messages: []*ai.Message{
+			{Role: ai.RoleUser, Content: []*ai.Part{ai.NewTextPart("Hello")}},
+		},
+	}
+
+	resp, err := callOpenAICompatible(context.Background(), testClient(), server.URL, "", "local-model", mr)
+	if err != nil {
+		t.Fatalf("callOpenAICompatible: %v", err)
+	}
+	if got := resp.Text(); got != "local response" {
+		t.Fatalf("response text = %q, want %q", got, "local response")
+	}
+}
+
 func TestCallOpenAICompatible_ModelRoleMapping(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		body, _ := io.ReadAll(r.Body)

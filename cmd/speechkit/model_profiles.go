@@ -189,6 +189,7 @@ func clearUtilityModels(cfg *config.Config) {
 	cfg.Providers.Google.UtilityModel = ""
 	cfg.Providers.Ollama.UtilityModel = ""
 	cfg.Providers.OpenRouter.UtilityModel = ""
+	cfg.LocalLLM.UtilityModel = ""
 	cfg.HuggingFace.UtilityModel = ""
 }
 
@@ -198,11 +199,28 @@ func clearAssistModels(cfg *config.Config) {
 	cfg.Providers.Google.AssistModel = ""
 	cfg.Providers.Ollama.AssistModel = ""
 	cfg.Providers.OpenRouter.AssistModel = ""
+	cfg.LocalLLM.AssistModel = ""
 	cfg.HuggingFace.AssistModel = ""
 }
 
 func configureLLMProfile(cfg *config.Config, profile models.Profile, modality models.Modality) error {
 	switch profile.ExecutionMode {
+	case models.ExecutionModeLocal:
+		cfg.LocalLLM.Enabled = true
+		if cfg.LocalLLM.BaseURL == "" {
+			cfg.LocalLLM.BaseURL = config.DefaultLocalLLMBaseURL
+		}
+		if cfg.LocalLLM.Port == 0 {
+			cfg.LocalLLM.Port = 8082
+		}
+		if cfg.LocalLLM.Model == "" {
+			cfg.LocalLLM.Model = profile.ModelID
+		}
+		if modality == models.ModalityUtility {
+			cfg.LocalLLM.UtilityModel = profile.ModelID
+		} else {
+			cfg.LocalLLM.AssistModel = profile.ModelID
+		}
 	case models.ExecutionModeOpenAI:
 		if config.ResolveSecret(cfg.Providers.OpenAI.APIKeyEnv) == "" {
 			return errors.New("openai api key not configured")
@@ -308,6 +326,7 @@ func clearAgentModels(cfg *config.Config) {
 	cfg.Providers.Google.AgentModel = ""
 	cfg.Providers.Ollama.AgentModel = ""
 	cfg.Providers.OpenRouter.AgentModel = ""
+	cfg.LocalLLM.AgentModel = ""
 	cfg.HuggingFace.AgentModel = ""
 }
 

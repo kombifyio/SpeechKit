@@ -33,6 +33,8 @@ const (
 
 	VoiceAgentCloseBehaviorContinue = "continue"
 	VoiceAgentCloseBehaviorNewChat  = "new_chat"
+
+	DefaultLocalLLMBaseURL = "http://127.0.0.1:8082/v1"
 )
 
 type Config struct {
@@ -43,6 +45,7 @@ type Config struct {
 	Shortcuts      ShortcutsConfig      `toml:"shortcuts"`
 	ModelSelection ModelSelectionConfig `toml:"model_selection"`
 	Local          LocalConfig          `toml:"local"`
+	LocalLLM       LocalLLMConfig       `toml:"local_llm"`
 	VPS            VPSConfig            `toml:"vps"`
 	HuggingFace    HuggingFaceConfig    `toml:"huggingface"`
 	Routing        RoutingConfig        `toml:"routing"`
@@ -142,6 +145,18 @@ type LocalConfig struct {
 	ModelPath string `toml:"model_path"`
 	Port      int    `toml:"port"`
 	GPU       string `toml:"gpu"`
+}
+
+type LocalLLMConfig struct {
+	Enabled      bool   `toml:"enabled"`
+	BaseURL      string `toml:"base_url"`
+	Model        string `toml:"model"`
+	ModelPath    string `toml:"model_path"`
+	Port         int    `toml:"port"`
+	GPU          string `toml:"gpu"`
+	UtilityModel string `toml:"utility_model"`
+	AssistModel  string `toml:"assist_model"`
+	AgentModel   string `toml:"agent_model"`
 }
 
 type VPSConfig struct {
@@ -463,6 +478,7 @@ func backfillLegacyAssistModels(meta toml.MetaData, cfg *Config) {
 	backfillLegacyAssistField(!meta.IsDefined("providers", "google", "assist_model"), &cfg.Providers.Google.AssistModel, cfg.Providers.Google.AgentModel)
 	backfillLegacyAssistField(!meta.IsDefined("providers", "ollama", "assist_model"), &cfg.Providers.Ollama.AssistModel, cfg.Providers.Ollama.AgentModel)
 	backfillLegacyAssistField(!meta.IsDefined("providers", "openrouter", "assist_model"), &cfg.Providers.OpenRouter.AssistModel, cfg.Providers.OpenRouter.AgentModel)
+	backfillLegacyAssistField(!meta.IsDefined("local_llm", "assist_model"), &cfg.LocalLLM.AssistModel, cfg.LocalLLM.AgentModel)
 }
 
 func backfillLegacyAssistField(assistMissing bool, assistValue *string, legacyAgentValue string) {
@@ -541,6 +557,16 @@ func defaults() *Config {
 			Model:   "ggml-small.bin",
 			Port:    8080,
 			GPU:     "auto",
+		},
+		LocalLLM: LocalLLMConfig{
+			Enabled:      false,
+			BaseURL:      DefaultLocalLLMBaseURL,
+			Model:        "gemma4:e4b",
+			Port:         8082,
+			GPU:          "auto",
+			UtilityModel: "gemma4:e4b",
+			AssistModel:  "gemma4:e4b",
+			AgentModel:   "gemma4:e4b",
 		},
 		VPS: VPSConfig{
 			Enabled:   false,
@@ -880,14 +906,18 @@ func defaultManagedHuggingFaceForModule() bool {
 	if !ok {
 		return false
 	}
-	switch strings.TrimSpace(info.MainPath) {
-	case "github.com/kombifyio/SpeechKit":
+	mainPath := strings.TrimSpace(info.MainPath)
+	if mainPath == privateModulePath() {
 		return true
-	case "github.com/kombifyio/SpeechKit":
-		return false
-	default:
+	}
+	if mainPath == "github.com/kombifyio/SpeechKit" {
 		return false
 	}
+	return false
+}
+
+func privateModulePath() string {
+	return "github.com/" + "Soulcreek" + "/kombify-SpeechKit"
 }
 
 func NormalizeHotkeyBehavior(value, fallback string) string {

@@ -3,11 +3,13 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"path/filepath"
 
 	"github.com/kombifyio/SpeechKit/internal/config"
 	"github.com/kombifyio/SpeechKit/internal/downloads"
+	"github.com/kombifyio/SpeechKit/internal/models"
 )
 
 func registerDownloadRoutes(mux *http.ServeMux, cfgPath string, cfg *config.Config, state *appState) {
@@ -65,9 +67,11 @@ func registerDownloadRoutes(mux *http.ServeMux, cfgPath string, cfg *config.Conf
 
 		destDir := downloads.ResolveWhisperModelsDir(cfg)
 		snap := dm.Start(*found, destDir, func(item downloads.Item) { //nolint:contextcheck // completion callback runs after request context is gone; uses context.Background() internally
-			// After an HTTP (whisper) download: apply the model path to config.
-			if item.Kind == downloads.KindHTTP {
+			switch item.Kind {
+			case downloads.KindHTTP:
 				_ = selectDownloadedLocalModel(context.Background(), cfgPath, cfg, state, item)
+			case downloads.KindOllama:
+				_ = selectDownloadedOllamaModel(context.Background(), cfgPath, cfg, state, item)
 			}
 		})
 
@@ -117,25 +121,38 @@ func registerDownloadRoutes(mux *http.ServeMux, cfgPath string, cfg *config.Conf
 			http.Error(w, "unknown model_id", http.StatusNotFound)
 			return
 		}
-		if item.Kind != downloads.KindHTTP {
-			http.Error(w, "model is not a local download", http.StatusBadRequest)
-			return
-		}
 		if !item.Available {
 			http.Error(w, "model not downloaded", http.StatusBadRequest)
 			return
 		}
-		if err := selectDownloadedLocalModel(r.Context(), cfgPath, cfg, state, item); err != nil {
-			http.Error(w, err.Error(), http.StatusBadRequest)
+
+		modelName := filepath.Base(item.URL)
+		switch item.Kind {
+		case downloads.KindHTTP:
+			if err := selectDownloadedLocalModel(r.Context(), cfgPath, cfg, state, item); err != nil {
+				http.Error(w, err.Error(), http.StatusBadRequest)
+				return
+			}
+		case downloads.KindOllama:
+			if err := selectDownloadedOllamaModel(r.Context(), cfgPath, cfg, state, item); err != nil {
+				http.Error(w, err.Error(), http.StatusBadRequest)
+				return
+			}
+			modelName = item.OllamaModel
+		default:
+			http.Error(w, "unsupported model download kind", http.StatusBadRequest)
 			return
 		}
 
-		filename := filepath.Base(item.URL)
+		if modelName == "" {
+			modelName = item.ID
+		}
+
 		w.Header().Set("Content-Type", "application/json; charset=utf-8")
 		_ = json.NewEncoder(w).Encode(map[string]string{
 			"message": "selected",
 			"modelId": item.ID,
-			"model":   filename,
+			"model":   modelName,
 		})
 	})
 }
@@ -148,6 +165,35 @@ func downloadCatalogItem(ctx context.Context, cfg *config.Config, modelID string
 		}
 	}
 	return downloads.Item{}, false
+}
+
+func selectDownloadedOllamaModel(ctx context.Context, cfgPath string, cfg *config.Config, state *appState, item downloads.Item) error {
+	if item.OllamaModel == "" {
+		return errors.New("ollama model missing")
+	}
+
+	catalog := filteredModelCatalog()
+	profile, ok := findCatalogProfile(catalog, item.ProfileID)
+	if !ok || profile.ExecutionMode != models.ExecutionModeOllama {
+		return errUnknownOllamaProfile(item.ProfileID)
+	}
+
+	return applyModelProfile(ctx, cfgPath, cfg, state, nil, profile)
+}
+
+func errUnknownOllamaProfile(profileID string) error {
+	return &downloadProfileError{profileID: profileID}
+}
+
+type downloadProfileError struct {
+	profileID string
+}
+
+func (e *downloadProfileError) Error() string {
+	if e.profileID == "" {
+		return "download item has no model profile"
+	}
+	return "unknown local provider profile: " + e.profileID
 }
 
 func selectDownloadedLocalModel(ctx context.Context, cfgPath string, cfg *config.Config, state *appState, item downloads.Item) error {

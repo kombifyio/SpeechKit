@@ -132,6 +132,8 @@ func orderedSelectionFromProfile(profile models.Profile) (appai.OrderedModelSele
 
 	var provider string
 	switch profile.ExecutionMode {
+	case models.ExecutionModeLocal:
+		provider = "local"
 	case models.ExecutionModeGoogle:
 		provider = "googleai"
 	case models.ExecutionModeOpenAI:

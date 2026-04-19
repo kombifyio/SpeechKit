@@ -354,10 +354,19 @@ describe("SettingsApp", () => {
       ...baseSettings,
       profiles: [
         {
+          id: "assist.builtin.gemma4-e4b",
+          modality: "assist",
+          name: "Gemma 4 E4B (Local Built-in)",
+          executionMode: "local",
+          source: "Local Built-in",
+          description: "SpeechKit-managed local Gemma runtime.",
+        },
+        {
           id: "assist.ollama.gemma4-e4b",
           modality: "assist",
-          name: "Gemma 4 E4B (Local)",
+          name: "Gemma 4 E4B (Ollama)",
           executionMode: "ollama_local",
+          source: "Local Provider",
           description:
             "Laptop-friendly local model for summaries and quick actions.",
         },
@@ -375,7 +384,10 @@ describe("SettingsApp", () => {
     expect(
       await screen.findByText(/laptop-friendly local model/i),
     ).toBeInTheDocument();
-    expect(screen.getByText("local")).toBeInTheDocument();
+    expect(screen.getByText("built-in")).toBeInTheDocument();
+    expect(screen.getByText("Local Built-in")).toBeInTheDocument();
+    expect(screen.getByText("provider")).toBeInTheDocument();
+    expect(screen.getByText("Local Provider")).toBeInTheDocument();
   });
 
   it("keeps general settings separate from per-mode controls", async () => {

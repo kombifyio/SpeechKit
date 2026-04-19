@@ -1110,9 +1110,14 @@ function sourceBadge(
 ) {
   switch (profile.executionMode) {
     case "local":
+      return {
+        label: "built-in",
+        className:
+          "bg-[color:var(--sk-surface-2)] text-[color:var(--sk-text-muted)]",
+      };
     case "ollama_local":
       return {
-        label: "local",
+        label: "provider",
         className:
           "bg-[color:var(--sk-surface-2)] text-[color:var(--sk-text-muted)]",
       };
@@ -1691,7 +1696,7 @@ function ModelPanel({
                 <>
                   <span>·</span>
                   <span className="text-amber-300/50">
-                    Requires Ollama running locally
+                    Requires the Ollama local provider
                   </span>
                 </>
               )}

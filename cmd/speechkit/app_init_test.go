@@ -41,3 +41,53 @@ func TestBuildShortcutResolverKeepsDefaultCatalog(t *testing.T) {
 		t.Fatalf("Payload = %q, want %q", got, want)
 	}
 }
+
+func TestBuildGenkitConfigRegistersSelectedBuiltInLocalLLM(t *testing.T) {
+	cfg := defaultTestConfig()
+	cfg.LocalLLM.Enabled = false
+	cfg.LocalLLM.BaseURL = ""
+	cfg.ModelSelection.Assist.PrimaryProfileID = "assist.builtin.gemma4-e4b"
+
+	aiCfg := buildGenkitConfig(cfg)
+
+	if got, want := aiCfg.LocalLLMBaseURL, config.DefaultLocalLLMBaseURL; got != want {
+		t.Fatalf("local LLM base URL = %q, want %q", got, want)
+	}
+	if !aiCfg.UseOrderedAssistModels {
+		t.Fatal("expected ordered assist models to be enabled")
+	}
+	if len(aiCfg.OrderedAssistModels) != 1 {
+		t.Fatalf("ordered assist models = %d, want 1", len(aiCfg.OrderedAssistModels))
+	}
+	if got, want := aiCfg.OrderedAssistModels[0].Provider, "local"; got != want {
+		t.Fatalf("ordered provider = %q, want %q", got, want)
+	}
+	if got, want := aiCfg.OrderedAssistModels[0].Model, "gemma4:e4b"; got != want {
+		t.Fatalf("ordered model = %q, want %q", got, want)
+	}
+}
+
+func TestBuildGenkitConfigRegistersSelectedOllamaProvider(t *testing.T) {
+	cfg := defaultTestConfig()
+	cfg.Providers.Ollama.Enabled = false
+	cfg.Providers.Ollama.BaseURL = ""
+	cfg.ModelSelection.Assist.PrimaryProfileID = "assist.ollama.gemma4-e4b"
+
+	aiCfg := buildGenkitConfig(cfg)
+
+	if got, want := aiCfg.OllamaBaseURL, "http://localhost:11434"; got != want {
+		t.Fatalf("ollama base URL = %q, want %q", got, want)
+	}
+	if !aiCfg.UseOrderedAssistModels {
+		t.Fatal("expected ordered assist models to be enabled")
+	}
+	if len(aiCfg.OrderedAssistModels) != 1 {
+		t.Fatalf("ordered assist models = %d, want 1", len(aiCfg.OrderedAssistModels))
+	}
+	if got, want := aiCfg.OrderedAssistModels[0].Provider, "ollama"; got != want {
+		t.Fatalf("ordered provider = %q, want %q", got, want)
+	}
+	if got, want := aiCfg.OrderedAssistModels[0].Model, "gemma4:e4b"; got != want {
+		t.Fatalf("ordered model = %q, want %q", got, want)
+	}
+}

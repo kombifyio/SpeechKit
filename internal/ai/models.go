@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/firebase/genkit/go/ai"
@@ -27,6 +28,8 @@ const (
 // AICallValidation controls URL validation for OpenAI-compatible LLM calls.
 // Zero value = strict (public https only). Tests relax it to allow loopback.
 var AICallValidation = netsec.ValidationOptions{}
+
+var localLLMCallValidation = netsec.ValidationOptions{AllowLoopback: true, AllowHTTP: true}
 
 // newAIClient builds a hardened HTTP client for LLM calls (TLS 1.2+,
 // redacting transport, long-running timeout).
@@ -98,8 +101,36 @@ func registerOpenRouterModels(g *genkit.Genkit, apiKey string) {
 	}
 }
 
+// registerLocalLLMModels registers SpeechKit-managed local LLM models.
+// The runtime speaks the OpenAI-compatible chat completions API on loopback.
+func registerLocalLLMModels(g *genkit.Genkit, baseURL string, modelNames []string) {
+	client := newAIClient()
+	seen := map[string]bool{}
+	for _, rawName := range modelNames {
+		name := strings.TrimSpace(rawName)
+		if name == "" || seen[name] {
+			continue
+		}
+		seen[name] = true
+		registerOpenAICompatibleModelWithValidation(g, "local", name, baseURL, "", client, false, localLLMCallValidation)
+	}
+}
+
 // registerOpenAICompatibleModel registers a single model that speaks the OpenAI chat completions API.
 func registerOpenAICompatibleModel(g *genkit.Genkit, provider, name, baseURL, authToken string, client *http.Client, supportsTools bool) {
+	registerOpenAICompatibleModelWithValidation(g, provider, name, baseURL, authToken, client, supportsTools, AICallValidation)
+}
+
+func registerOpenAICompatibleModelWithValidation(
+	g *genkit.Genkit,
+	provider string,
+	name string,
+	baseURL string,
+	authToken string,
+	client *http.Client,
+	supportsTools bool,
+	validation netsec.ValidationOptions,
+) {
 	genkit.DefineModel(g, provider+"/"+name,
 		&ai.ModelOptions{
 			Label: provider + "/" + name,
@@ -111,7 +142,7 @@ func registerOpenAICompatibleModel(g *genkit.Genkit, provider, name, baseURL, au
 			},
 		},
 		func(ctx context.Context, mr *ai.ModelRequest, cb ai.ModelStreamCallback) (*ai.ModelResponse, error) {
-			return callOpenAICompatible(ctx, client, baseURL, authToken, name, mr)
+			return callOpenAICompatibleWithValidation(ctx, client, baseURL, authToken, name, mr, validation)
 		},
 	)
 }
@@ -143,6 +174,18 @@ type oaiResponse struct {
 }
 
 func callOpenAICompatible(ctx context.Context, client *http.Client, baseURL, authToken, model string, mr *ai.ModelRequest) (*ai.ModelResponse, error) {
+	return callOpenAICompatibleWithValidation(ctx, client, baseURL, authToken, model, mr, AICallValidation)
+}
+
+func callOpenAICompatibleWithValidation(
+	ctx context.Context,
+	client *http.Client,
+	baseURL string,
+	authToken string,
+	model string,
+	mr *ai.ModelRequest,
+	validation netsec.ValidationOptions,
+) (*ai.ModelResponse, error) {
 	var messages []oaiMessage
 	for _, m := range mr.Messages {
 		role := string(m.Role)
@@ -178,7 +221,7 @@ func callOpenAICompatible(ctx context.Context, client *http.Client, baseURL, aut
 		return nil, fmt.Errorf("marshal request: %w", err)
 	}
 
-	endpoint, err := netsec.BuildEndpoint(baseURL, chatCompletions, AICallValidation)
+	endpoint, err := netsec.BuildEndpoint(baseURL, chatCompletions, validation)
 	if err != nil {
 		return nil, fmt.Errorf("%s endpoint: %w", model, err)
 	}
@@ -187,7 +230,9 @@ func callOpenAICompatible(ctx context.Context, client *http.Client, baseURL, aut
 		return nil, fmt.Errorf("create request: %w", err)
 	}
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", "Bearer "+authToken)
+	if token := strings.TrimSpace(authToken); token != "" {
+		req.Header.Set("Authorization", "Bearer "+token)
+	}
 
 	resp, err := client.Do(req)
 	if err != nil {

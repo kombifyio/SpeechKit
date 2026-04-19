@@ -83,8 +83,8 @@ func Catalog(ctx context.Context, cfg *config.Config) []Item {
 		{
 			ID:          "ollama.gemma4-e4b",
 			ProfileID:   "utility.ollama.gemma4-e4b",
-			Name:        "Gemma 4 E4B — Utility (3.3 GB)",
-			Description: "Best local LLM for Assist Mode. Great quality on modern laptops. Requires Ollama.",
+			Name:        "Gemma 4 E4B — Utility (Ollama, 3.3 GB)",
+			Description: "Ollama-managed local provider model for utility routing and quick actions.",
 			SizeLabel:   "~3.3 GB",
 			SizeBytes:   3_300_000_000,
 			Kind:        KindOllama,
@@ -96,8 +96,8 @@ func Catalog(ctx context.Context, cfg *config.Config) []Item {
 		{
 			ID:          "ollama.gemma4-e4b-assist",
 			ProfileID:   "assist.ollama.gemma4-e4b",
-			Name:        "Gemma 4 E4B — Assist (3.3 GB)",
-			Description: "Local Assist model for reasoning and follow-ups. Same weights as Utility E4B.",
+			Name:        "Gemma 4 E4B — Assist (Ollama, 3.3 GB)",
+			Description: "Ollama-managed local provider model for Assist reasoning and follow-ups.",
 			SizeLabel:   "~3.3 GB",
 			SizeBytes:   3_300_000_000,
 			Kind:        KindOllama,

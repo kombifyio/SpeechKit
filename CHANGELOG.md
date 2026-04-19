@@ -17,6 +17,7 @@ The format is based on Keep a Changelog and this project is intended to ship und
 ### Added
 
 - **Voice Agent speaker selection**: the live Voice Agent prompter can now list and switch speaker/output devices, with the selected output persisted for the realtime playback stream
+- **Local LLM provider split**: Assist and utility LLM profiles now distinguish SpeechKit `Local Built-in` models from `Local Provider` integrations such as Ollama, keeping integrated runtimes and externally managed local providers on separate config paths
 - **Assist result metadata**: the Assist pipeline now models result surface and result kind, making panel-vs-action routing explicit in the runtime contract
 - **Voice Agent state tests**: added focused session tests for `processing` and `speaking` transitions plus frontend tests for the new orb/live-window rendering
 
@@ -35,6 +36,7 @@ The format is based on Keep a Changelog and this project is intended to ship und
 
 ### Fixed
 
+- **Ollama local-provider downloads**: downloaded Ollama models can now activate their matching Assist or utility profile instead of falling through the Whisper-only local model selector
 - **Voice Agent streaming stability**: mic frames now pass through a bounded non-blocking sender queue so realtime provider backpressure cannot block the audio capture callback
 - **Voice Agent collapsed transcript UX**: hiding the transcript now shrinks the prompter to a compact live-status shell instead of leaving a large empty panel
 - **Voice Agent follow-up turns**: user mic feedback now remains visible during active processing/speaking states, and sessions recover to `listening` when the provider does not emit a final turn-complete event

@@ -99,6 +99,44 @@ func TestInit_CustomModelRegistration(t *testing.T) {
 	}
 }
 
+func TestInit_BuiltInLocalModelsRegistered(t *testing.T) {
+	rt, err := Init(context.Background(), Config{
+		LocalLLMBaseURL:      "http://127.0.0.1:8082/v1",
+		LocalLLMUtilityModel: "gemma4:e4b",
+		LocalLLMAssistModel:  "gemma4:e4b",
+	})
+	if err != nil {
+		t.Fatalf("Init: %v", err)
+	}
+
+	if len(rt.UtilityModels()) != 1 {
+		t.Errorf("utility models = %d, want 1", len(rt.UtilityModels()))
+	}
+	if len(rt.AssistModels()) != 1 {
+		t.Errorf("assist models = %d, want 1", len(rt.AssistModels()))
+	}
+	if len(rt.AgentModels()) != 0 {
+		t.Errorf("agent models = %d, want 0", len(rt.AgentModels()))
+	}
+	if len(rt.AllModels()) != 1 {
+		t.Errorf("all models = %d, want 1", len(rt.AllModels()))
+	}
+	if _, ok := rt.AllModels()["local/gemma4:e4b"]; !ok {
+		t.Fatal("expected local/gemma4:e4b in AllModels")
+	}
+
+	infos := rt.ModelInfos()
+	if len(infos) != 1 {
+		t.Fatalf("model infos = %d, want 1", len(infos))
+	}
+	if infos[0].Provider != "local" {
+		t.Fatalf("provider = %q, want local", infos[0].Provider)
+	}
+	if infos[0].Tier != "utility+assist" {
+		t.Fatalf("tier = %q, want utility+assist", infos[0].Tier)
+	}
+}
+
 func TestInit_SameModelUtilityAndAssistTiers(t *testing.T) {
 	rt, err := Init(context.Background(), Config{
 		GroqAPIKey:       "test-key",
