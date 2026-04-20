@@ -15,8 +15,8 @@ export type OverlayTone = {
 export function resolveOverlayTone(snapshot: SpeechKitOverlayState): OverlayTone {
   const isCircle = snapshot.visualizer === 'circle'
   const kombifyPill = snapshot.visualizer === 'pill' && snapshot.design === 'kombify'
-  const activePillShell = 'h-[26px] rounded-full bg-black/68 pl-2.5 pr-[26px] shadow-[inset_0_0_0_1px_rgba(255,255,255,0.04)]'
-  const idlePillShell = 'h-[20px] w-[44px] rounded-full bg-black/60 px-2 shadow-[inset_0_0_0_1px_rgba(255,255,255,0.04)]'
+  const activePillShell = 'h-[26px] rounded-full border border-white/5 bg-black/68 pl-2.5 pr-[26px]'
+  const idlePillShell = 'h-[20px] w-[44px] rounded-full border border-white/5 bg-black/60 px-2'
 
   if (snapshot.phase === 'thinking') {
     return {

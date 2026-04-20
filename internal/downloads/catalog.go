@@ -26,10 +26,12 @@ var ollamaClient = netsec.NewSafeHTTPClient(netsec.ClientOptions{Timeout: 2 * ti
 // Catalog returns all downloadable models, marking which are already present.
 func Catalog(ctx context.Context, cfg *config.Config) []Item {
 	modelsDir := ResolveWhisperModelsDir(cfg)
+	llmModelsDir := ResolveLocalLLMModelsDir(cfg)
 	selectedLocalModel := selectedWhisperModel(cfg)
+	selectedLocalLLM := selectedLocalLLMModel(cfg)
 	localRuntimeReady, localRuntimeProblem := whisperRuntimeAvailability()
 	return []Item{
-		// ── Whisper STT local models ─────────────────────────────────────────
+		// â”€â”€ Whisper STT local models â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 		{
 			ID:             "whisper.ggml-small",
 			ProfileID:      "stt.local.whispercpp",
@@ -79,11 +81,53 @@ func Catalog(ctx context.Context, cfg *config.Config) []Item {
 			RuntimeReady:   localRuntimeReady,
 			RuntimeProblem: localRuntimeProblem,
 		},
-		// ── Ollama LLM models ─────────────────────────────────────────────────
+		// â”€â”€ llama.cpp local Assist models â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+		{
+			ID:          "llamacpp.gemma-3-4b-it-q4-k-m",
+			ProfileID:   "assist.builtin.gemma4-e4b",
+			Name:        "Gemma 3 4B IT Q4_K_M (GGUF)",
+			Description: "Recommended balanced local Assist model for the SpeechKit-managed llama.cpp runtime.",
+			SizeLabel:   "~2.5 GB",
+			SizeBytes:   2_490_000_000,
+			Kind:        KindHTTP,
+			URL:         "https://huggingface.co/ggml-org/gemma-3-4b-it-GGUF/resolve/main/gemma-3-4b-it-Q4_K_M.gguf",
+			SHA256:      "882e8d2db44dc554fb0ea5077cb7e4bc49e7342a1f0da57901c0802ea21a0863",
+			License:     "gemma",
+			Available:   FileIsPresent(filepath.Join(llmModelsDir, "gemma-3-4b-it-Q4_K_M.gguf")),
+			Selected:    selectedLocalLLM == "gemma-3-4b-it-Q4_K_M.gguf",
+			Recommended: true,
+		},
+		{
+			ID:          "llamacpp.gemma-3-4b-it-q8-0",
+			ProfileID:   "assist.builtin.gemma4-e4b",
+			Name:        "Gemma 3 4B IT Q8_0 (GGUF)",
+			Description: "Higher-fidelity local Assist model for the SpeechKit-managed llama.cpp runtime.",
+			SizeLabel:   "~4.1 GB",
+			SizeBytes:   4_130_000_000,
+			Kind:        KindHTTP,
+			URL:         "https://huggingface.co/ggml-org/gemma-3-4b-it-GGUF/resolve/main/gemma-3-4b-it-Q8_0.gguf",
+			SHA256:      "97b06383df48336e7d2f9b56b6ce545e0fa476407a62c0bd081b53447a58e644",
+			License:     "gemma",
+			Available:   FileIsPresent(filepath.Join(llmModelsDir, "gemma-3-4b-it-Q8_0.gguf")),
+			Selected:    selectedLocalLLM == "gemma-3-4b-it-Q8_0.gguf",
+		},
+		// â”€â”€ Ollama LLM models â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+		{
+			ID:          "ollama.gemma4-e4b-dictate",
+			ProfileID:   "stt.ollama.gemma4-e4b-transcribe",
+			Name:        "Gemma 4 E4B â€” Dictation (Ollama, 3.3 GB)",
+			Description: "Ollama-managed local provider model exposed through SpeechKit's Dictation transcription adapter.",
+			SizeLabel:   "~3.3 GB",
+			SizeBytes:   3_300_000_000,
+			Kind:        KindOllama,
+			OllamaModel: "gemma4:e4b",
+			License:     "gemma",
+			Available:   OllamaModelPresent(ctx, "gemma4:e4b"),
+		},
 		{
 			ID:          "ollama.gemma4-e4b",
 			ProfileID:   "utility.ollama.gemma4-e4b",
-			Name:        "Gemma 4 E4B — Utility (Ollama, 3.3 GB)",
+			Name:        "Gemma 4 E4B â€” Utility (Ollama, 3.3 GB)",
 			Description: "Ollama-managed local provider model for utility routing and quick actions.",
 			SizeLabel:   "~3.3 GB",
 			SizeBytes:   3_300_000_000,
@@ -96,8 +140,20 @@ func Catalog(ctx context.Context, cfg *config.Config) []Item {
 		{
 			ID:          "ollama.gemma4-e4b-assist",
 			ProfileID:   "assist.ollama.gemma4-e4b",
-			Name:        "Gemma 4 E4B — Assist (Ollama, 3.3 GB)",
+			Name:        "Gemma 4 E4B â€” Assist (Ollama, 3.3 GB)",
 			Description: "Ollama-managed local provider model for Assist reasoning and follow-ups.",
+			SizeLabel:   "~3.3 GB",
+			SizeBytes:   3_300_000_000,
+			Kind:        KindOllama,
+			OllamaModel: "gemma4:e4b",
+			License:     "gemma",
+			Available:   OllamaModelPresent(ctx, "gemma4:e4b"),
+		},
+		{
+			ID:          "ollama.gemma4-e4b-voice",
+			ProfileID:   "realtime.ollama.gemma4-e4b-pipeline",
+			Name:        "Gemma 4 E4B â€” Voice Agent (Ollama, 3.3 GB)",
+			Description: "Ollama-managed local provider model for the Voice Agent pipeline fallback and session summaries.",
 			SizeLabel:   "~3.3 GB",
 			SizeBytes:   3_300_000_000,
 			Kind:        KindOllama,
@@ -118,10 +174,45 @@ func selectedWhisperModel(cfg *config.Config) string {
 	return strings.TrimSpace(cfg.Local.Model)
 }
 
+func selectedLocalLLMModel(cfg *config.Config) string {
+	if cfg == nil {
+		return ""
+	}
+	if modelPath := strings.TrimSpace(cfg.LocalLLM.ModelPath); modelPath != "" {
+		return filepath.Base(modelPath)
+	}
+	if model := strings.TrimSpace(cfg.LocalLLM.AssistModel); model != "" {
+		return model
+	}
+	return strings.TrimSpace(cfg.LocalLLM.Model)
+}
+
 // ResolveWhisperModelsDir returns the directory where whisper model files live.
 func ResolveWhisperModelsDir(cfg *config.Config) string {
+	if cfg != nil {
+		if dir := strings.TrimSpace(cfg.General.ModelDownloadDir); dir != "" {
+			return filepath.Clean(dir)
+		}
+	}
 	if cfg != nil && cfg.Local.ModelPath != "" {
 		return filepath.Dir(cfg.Local.ModelPath)
+	}
+	lad := os.Getenv("LOCALAPPDATA")
+	if lad != "" {
+		return filepath.Join(lad, "SpeechKit", "models")
+	}
+	return "models"
+}
+
+// ResolveLocalLLMModelsDir returns the directory where local llama.cpp GGUF files live.
+func ResolveLocalLLMModelsDir(cfg *config.Config) string {
+	if cfg != nil {
+		if dir := strings.TrimSpace(cfg.General.ModelDownloadDir); dir != "" {
+			return filepath.Clean(dir)
+		}
+	}
+	if cfg != nil && cfg.LocalLLM.ModelPath != "" {
+		return filepath.Dir(cfg.LocalLLM.ModelPath)
 	}
 	lad := os.Getenv("LOCALAPPDATA")
 	if lad != "" {

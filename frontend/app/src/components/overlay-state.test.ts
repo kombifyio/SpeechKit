@@ -42,6 +42,8 @@ function makeSnapshot(
     selectedAudioDeviceId: '',
     activeProfiles: {},
     ...partial,
+    assistOverlayMode: partial.assistOverlayMode ?? 'small_feedback',
+    voiceAgentOverlayMode: partial.voiceAgentOverlayMode ?? 'small_feedback',
   }
 }
 

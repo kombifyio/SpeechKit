@@ -31,10 +31,15 @@ type runtimeState struct {
 	agentHotkey              string
 	currentState             string
 	overlayText              string
+	overlayFeedbackRole      string
+	overlayFeedbackText      string
+	overlayFeedbackDone      bool
 	overlayLevel             float64
 	overlayPhase             string
 	overlayVisualizer        string
 	overlayDesign            string
+	assistOverlayMode        string
+	voiceAgentOverlayMode    string
 	overlayEnabled           bool
 	overlayPosition          string
 	overlayMovable           bool
@@ -84,10 +89,15 @@ func (s *appState) runtimeStateLocked() runtimeState {
 		agentHotkey:              s.agentHotkey,
 		currentState:             s.currentState,
 		overlayText:              s.overlayText,
+		overlayFeedbackRole:      s.overlayFeedbackRole,
+		overlayFeedbackText:      s.overlayFeedbackText,
+		overlayFeedbackDone:      s.overlayFeedbackDone,
 		overlayLevel:             s.overlayLevel,
 		overlayPhase:             s.overlayPhase,
 		overlayVisualizer:        s.overlayVisualizer,
 		overlayDesign:            s.overlayDesign,
+		assistOverlayMode:        s.assistOverlayMode,
+		voiceAgentOverlayMode:    s.voiceAgentOverlayMode,
 		overlayEnabled:           s.overlayEnabled,
 		overlayPosition:          s.overlayPosition,
 		overlayMovable:           s.overlayMovable,

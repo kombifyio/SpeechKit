@@ -11,7 +11,7 @@ import (
 )
 
 // This file contains pure helpers for overlay window construction, geometry,
-// and visual-phase math. None of these touch appState — they are safe to call
+// and visual-phase math. None of these touch appState â€” they are safe to call
 // from tests without any runtime wiring.
 
 func newOverlayWindowOptions() application.WebviewWindowOptions {
@@ -123,14 +123,11 @@ func newOverlayHostWindowOptions(url string, metrics overlayHostMetrics) applica
 
 // Legacy helper retained for compatibility with older tests.
 func overlayWindowPosition(bounds screenBounds, position, visualizer string) (int, int) {
+	position = normalizeOverlayPosition(position)
 	half := overlayWindowSize / 2
 
 	if visualizer == "circle" {
 		switch position {
-		case "bottom":
-			cx := bounds.X + bounds.Width/2
-			cy := bounds.Y + bounds.Height - overlayEdgeMargin - dotBubbleH/2
-			return cx - half, cy - half
 		case "left":
 			cx := bounds.X + overlayEdgeMargin + dotBubbleW/2
 			cy := bounds.Y + bounds.Height/2
@@ -139,18 +136,18 @@ func overlayWindowPosition(bounds screenBounds, position, visualizer string) (in
 			cx := bounds.X + bounds.Width - overlayEdgeMargin - dotBubbleW/2
 			cy := bounds.Y + bounds.Height/2
 			return cx - half, cy - half
-		default:
+		case "top":
 			cx := bounds.X + bounds.Width/2
 			cy := bounds.Y + overlayEdgeMargin + dotBubbleH/2
+			return cx - half, cy - half
+		default:
+			cx := bounds.X + bounds.Width/2
+			cy := bounds.Y + bounds.Height - overlayEdgeMargin - dotBubbleH/2
 			return cx - half, cy - half
 		}
 	}
 
 	switch position {
-	case "bottom":
-		x := bounds.X + (bounds.Width-overlayWindowSize)/2
-		y := bounds.Y + bounds.Height - overlayWindowSize
-		return x, y
 	case "left":
 		x := bounds.X
 		y := bounds.Y + (bounds.Height-overlayWindowSize)/2
@@ -159,15 +156,20 @@ func overlayWindowPosition(bounds screenBounds, position, visualizer string) (in
 		x := bounds.X + bounds.Width - overlayWindowSize
 		y := bounds.Y + (bounds.Height-overlayWindowSize)/2
 		return x, y
-	default:
+	case "top":
 		x := bounds.X + (bounds.Width-overlayWindowSize)/2
 		y := bounds.Y
+		return x, y
+	default:
+		x := bounds.X + (bounds.Width-overlayWindowSize)/2
+		y := bounds.Y + bounds.Height - overlayWindowSize
 		return x, y
 	}
 }
 
 // Legacy helper retained for compatibility with older tests.
 func computeBubbleRegion(wx, wy int, position, visualizer string) bubbleRegion {
+	position = normalizeOverlayPosition(position)
 	if visualizer == "circle" {
 		return bubbleRegion{
 			X: wx + (overlayWindowSize-dotBubbleW)/2,
@@ -178,12 +180,6 @@ func computeBubbleRegion(wx, wy int, position, visualizer string) bubbleRegion {
 
 	bw, bh := pillBubbleW, pillBubbleH
 	switch position {
-	case "bottom":
-		return bubbleRegion{
-			X: wx + (overlayWindowSize-bw)/2,
-			Y: wy + overlayWindowSize - bh - overlayEdgeMargin,
-			W: bw, H: bh,
-		}
 	case "left":
 		return bubbleRegion{
 			X: wx + overlayEdgeMargin,
@@ -196,25 +192,58 @@ func computeBubbleRegion(wx, wy int, position, visualizer string) bubbleRegion {
 			Y: wy + (overlayWindowSize-bh)/2,
 			W: bw, H: bh,
 		}
-	default:
+	case "top":
 		return bubbleRegion{
 			X: wx + (overlayWindowSize-bw)/2,
 			Y: wy + overlayEdgeMargin,
+			W: bw, H: bh,
+		}
+	default:
+		return bubbleRegion{
+			X: wx + (overlayWindowSize-bw)/2,
+			Y: wy + overlayWindowSize - bh - overlayEdgeMargin,
 			W: bw, H: bh,
 		}
 	}
 }
 
 func overlayAnchoredPosition(bounds screenBounds, position string, metrics overlayHostMetrics) (int, int) {
+	position = normalizeOverlayPosition(position)
+	visibleW, visibleH := overlayVisibleMetrics(metrics)
+	centerX := bounds.X + bounds.Width/2
+	centerY := bounds.Y + bounds.Height/2
+
 	switch position {
-	case "bottom":
-		return bounds.X + (bounds.Width-metrics.Width)/2, bounds.Y + bounds.Height - metrics.Height - overlayEdgeMargin
 	case "left":
-		return bounds.X + overlayEdgeMargin, bounds.Y + (bounds.Height-metrics.Height)/2
+		centerX = bounds.X + overlayEdgeMargin + visibleW/2
 	case "right":
-		return bounds.X + bounds.Width - metrics.Width - overlayEdgeMargin, bounds.Y + (bounds.Height-metrics.Height)/2
+		centerX = bounds.X + bounds.Width - overlayEdgeMargin - visibleW/2
+	case "top":
+		centerY = bounds.Y + overlayEdgeMargin + visibleH/2
 	default:
-		return bounds.X + (bounds.Width-metrics.Width)/2, bounds.Y + overlayEdgeMargin
+		centerY = bounds.Y + bounds.Height - overlayEdgeMargin - visibleH/2
+	}
+
+	return centerX - metrics.Width/2, centerY - metrics.Height/2
+}
+
+func normalizeOverlayPosition(position string) string {
+	switch strings.TrimSpace(position) {
+	case "top", "bottom", "left", "right":
+		return strings.TrimSpace(position)
+	default:
+		return "bottom"
+	}
+}
+
+func overlayVisibleMetrics(metrics overlayHostMetrics) (int, int) {
+	switch metrics {
+	case pillAnchorMetrics, pillPanelMetrics:
+		return pillBubbleW, pillBubbleH
+	case dotAnchorMetrics:
+		return dotBubbleW, dotBubbleH
+	default:
+		return metrics.Width, metrics.Height
 	}
 }
 

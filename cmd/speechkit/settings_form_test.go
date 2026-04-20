@@ -3,6 +3,7 @@ package main
 import (
 	"net/http"
 	"net/url"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -22,6 +23,8 @@ func TestParseSettingsFormDefaults(t *testing.T) {
 	cfg.General.VoiceAgentEnabled = true
 	cfg.UI.Visualizer = "pill"
 	cfg.UI.Design = "default"
+	cfg.UI.AssistOverlayMode = config.OverlayFeedbackModeBigProductivity
+	cfg.UI.VoiceAgentOverlayMode = config.OverlayFeedbackModeSmallFeedback
 	cfg.UI.OverlayPosition = "top"
 	cfg.Store.Backend = "sqlite"
 	cfg.Store.SQLitePath = "/tmp/test.db"
@@ -59,6 +62,12 @@ func TestParseSettingsFormDefaults(t *testing.T) {
 	if form.Visualizer != "pill" {
 		t.Errorf("Visualizer = %q, want %q", form.Visualizer, "pill")
 	}
+	if form.AssistOverlayMode != config.OverlayFeedbackModeBigProductivity {
+		t.Errorf("AssistOverlayMode = %q, want %q", form.AssistOverlayMode, config.OverlayFeedbackModeBigProductivity)
+	}
+	if form.VoiceAgentOverlayMode != config.OverlayFeedbackModeSmallFeedback {
+		t.Errorf("VoiceAgentOverlayMode = %q, want %q", form.VoiceAgentOverlayMode, config.OverlayFeedbackModeSmallFeedback)
+	}
 	if form.StoreBackend != "sqlite" {
 		t.Errorf("StoreBackend = %q, want %q", form.StoreBackend, "sqlite")
 	}
@@ -70,6 +79,9 @@ func TestParseSettingsFormDefaults(t *testing.T) {
 	}
 	if form.VoiceAgentRefinementPrompt != "" {
 		t.Errorf("VoiceAgentRefinementPrompt = %q, want empty", form.VoiceAgentRefinementPrompt)
+	}
+	if !form.VoiceAgentSessionSummary {
+		t.Error("VoiceAgentSessionSummary = false, want true by default")
 	}
 	if form.AutoStartOnLaunch {
 		t.Error("AutoStartOnLaunch = true, want false by default")
@@ -99,6 +111,8 @@ func TestParseSettingsFormOverrides(t *testing.T) {
 		"overlay_enabled":               {"1"},
 		"overlay_visualizer":            {"pill"},
 		"overlay_design":                {"default"},
+		"assist_overlay_mode":           {config.OverlayFeedbackModeSmallFeedback},
+		"voice_agent_overlay_mode":      {config.OverlayFeedbackModeBigProductivity},
 		"overlay_position":              {"bottom"},
 		"overlay_movable":               {"1"},
 		"overlay_free_x":                {"100"},
@@ -106,6 +120,7 @@ func TestParseSettingsFormOverrides(t *testing.T) {
 		"voice_agent_hotkey_behavior":   {"toggle"},
 		"voice_agent_close_behavior":    {"new_chat"},
 		"voice_agent_refinement_prompt": {"Address the user by first name."},
+		"voice_agent_session_summary":   {"0"},
 		"auto_start_on_launch":          {"1"},
 		"store_backend":                 {"sqlite"},
 		"audio_device_id":               {"dev-123"},
@@ -144,6 +159,12 @@ func TestParseSettingsFormOverrides(t *testing.T) {
 	if !form.OverlayEnabled {
 		t.Error("expected OverlayEnabled=true")
 	}
+	if form.AssistOverlayMode != config.OverlayFeedbackModeSmallFeedback {
+		t.Errorf("AssistOverlayMode = %q, want %q", form.AssistOverlayMode, config.OverlayFeedbackModeSmallFeedback)
+	}
+	if form.VoiceAgentOverlayMode != config.OverlayFeedbackModeBigProductivity {
+		t.Errorf("VoiceAgentOverlayMode = %q, want %q", form.VoiceAgentOverlayMode, config.OverlayFeedbackModeBigProductivity)
+	}
 	if form.OverlayPosition != "bottom" {
 		t.Errorf("OverlayPosition = %q, want %q", form.OverlayPosition, "bottom")
 	}
@@ -165,11 +186,56 @@ func TestParseSettingsFormOverrides(t *testing.T) {
 	if form.VoiceAgentRefinementPrompt != "Address the user by first name." {
 		t.Errorf("VoiceAgentRefinementPrompt = %q", form.VoiceAgentRefinementPrompt)
 	}
+	if form.VoiceAgentSessionSummary {
+		t.Error("VoiceAgentSessionSummary = true, want false")
+	}
 	if !form.AutoStartOnLaunch {
 		t.Error("AutoStartOnLaunch = false, want true")
 	}
 	if form.AudioDeviceID != "dev-123" {
 		t.Errorf("AudioDeviceID = %q, want %q", form.AudioDeviceID, "dev-123")
+	}
+	next := buildNextConfig(form, cfg)
+	if next.UI.AssistOverlayMode != config.OverlayFeedbackModeSmallFeedback {
+		t.Errorf("next AssistOverlayMode = %q, want %q", next.UI.AssistOverlayMode, config.OverlayFeedbackModeSmallFeedback)
+	}
+	if next.UI.VoiceAgentOverlayMode != config.OverlayFeedbackModeBigProductivity {
+		t.Errorf("next VoiceAgentOverlayMode = %q, want %q", next.UI.VoiceAgentOverlayMode, config.OverlayFeedbackModeBigProductivity)
+	}
+}
+
+func TestParseSettingsFormModelDownloadDir(t *testing.T) {
+	cfg := defaultTestConfig()
+	cfg.General.ModelDownloadDir = filepath.Join("C:", "SpeechKit", "models")
+	cfg.UI.Visualizer = "pill"
+	cfg.UI.Design = "default"
+	cfg.UI.OverlayPosition = "top"
+	cfg.Store.Backend = "sqlite"
+
+	want := filepath.Join("D:", "AI", "SpeechKitModels")
+	formValues := url.Values{
+		"model_download_dir": {want},
+		"overlay_visualizer": {"pill"},
+		"overlay_design":     {"default"},
+		"overlay_position":   {"top"},
+		"store_backend":      {"sqlite"},
+	}
+
+	req, _ := http.NewRequest(http.MethodPost, "/settings/update", strings.NewReader(formValues.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.ParseForm()
+
+	form, errMsg := parseSettingsForm(req, cfg)
+	if errMsg != "" {
+		t.Fatalf("unexpected error: %s", errMsg)
+	}
+	if form.ModelDownloadDir != want {
+		t.Fatalf("ModelDownloadDir = %q, want %q", form.ModelDownloadDir, want)
+	}
+
+	next := buildNextConfig(form, cfg)
+	if next.General.ModelDownloadDir != want {
+		t.Fatalf("next General.ModelDownloadDir = %q, want %q", next.General.ModelDownloadDir, want)
 	}
 }
 
@@ -456,6 +522,7 @@ func TestBuildNextConfig(t *testing.T) {
 		VoiceAgentHotkeyBehavior:   config.HotkeyBehaviorToggle,
 		VoiceAgentCloseBehavior:    config.VoiceAgentCloseBehaviorNewChat,
 		VoiceAgentRefinementPrompt: "Refinement prompt",
+		VoiceAgentSessionSummary:   false,
 		AutoStartOnLaunch:          true,
 		AudioDeviceID:              "dev-1",
 		HFModel:                    "whisper-large",
@@ -520,6 +587,9 @@ func TestBuildNextConfig(t *testing.T) {
 	}
 	if result.VoiceAgent.RefinementPrompt != "Refinement prompt" {
 		t.Errorf("VoiceAgent.RefinementPrompt = %q", result.VoiceAgent.RefinementPrompt)
+	}
+	if result.VoiceAgent.EnableSessionSummary {
+		t.Error("VoiceAgent.EnableSessionSummary = true, want false")
 	}
 	if result.VoiceAgent.Instruction != "Framework prompt" {
 		t.Errorf("VoiceAgent.Instruction = %q", result.VoiceAgent.Instruction)

@@ -24,6 +24,7 @@ import (
 	"github.com/kombifyio/SpeechKit/internal/store"
 	"github.com/kombifyio/SpeechKit/internal/stt"
 	"github.com/kombifyio/SpeechKit/internal/tray"
+	"github.com/kombifyio/SpeechKit/internal/voiceagent"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit"
 	"github.com/wailsapp/wails/v3/pkg/application"
 )
@@ -205,14 +206,14 @@ func TestOverlayWindowOptionsStartsCompact(t *testing.T) {
 	}
 }
 
-func TestPillPanelWindowOptionsStayCompactAndLocked(t *testing.T) {
+func TestPillPanelWindowOptionsReservePanelSpaceAndStayLocked(t *testing.T) {
 	opts := newPillPanelWindowOptions()
 
-	if opts.Width >= 260 {
-		t.Fatalf("pill panel width = %d, want compact width under 260", opts.Width)
+	if opts.Width < 360 {
+		t.Fatalf("pill panel width = %d, want room for the compact feedback panel", opts.Width)
 	}
-	if opts.Height > 36 {
-		t.Fatalf("pill panel height = %d, want compact height up to 36", opts.Height)
+	if opts.Height < 96 {
+		t.Fatalf("pill panel height = %d, want room for the compact feedback panel", opts.Height)
 	}
 	if !opts.Frameless {
 		t.Fatal("pill panel should be frameless")
@@ -285,26 +286,46 @@ func TestDashboardWindowOptionsUseCustomChrome(t *testing.T) {
 	}
 }
 
-func TestOverlayWindowPositionTopCenter(t *testing.T) {
-	x, y := overlayWindowPosition(screenBounds{X: 1920, Y: 0, Width: 2560, Height: 1440}, "top", "pill")
+func TestQuickCaptureWindowOptionsUseTransparentCardHost(t *testing.T) {
+	opts := newQuickCaptureWindowOptions("/quickcapture.html?noteId=42")
+
+	if !opts.Frameless {
+		t.Fatal("quick capture should be frameless")
+	}
+	if opts.BackgroundType != application.BackgroundTypeTransparent {
+		t.Fatalf("quick capture background type = %v, want transparent", opts.BackgroundType)
+	}
+	if !opts.DisableResize {
+		t.Fatal("quick capture should disable resizing")
+	}
+	if !opts.Windows.HiddenOnTaskbar {
+		t.Fatal("quick capture should stay off the taskbar")
+	}
+	if opts.Windows.BackdropType != application.None {
+		t.Fatalf("quick capture backdrop = %v, want none", opts.Windows.BackdropType)
+	}
+}
+
+func TestOverlayWindowPositionDefaultsToBottomCenter(t *testing.T) {
+	x, y := overlayWindowPosition(screenBounds{X: 1920, Y: 0, Width: 2560, Height: 1440}, "", "pill")
 
 	wantX := 1920 + (2560-overlayWindowSize)/2
 	if x != wantX {
 		t.Fatalf("overlay x = %d, want %d", x, wantX)
 	}
-	if y != 0 {
-		t.Fatalf("overlay y = %d, want 0", y)
+	wantY := 1440 - overlayWindowSize
+	if y != wantY {
+		t.Fatalf("overlay y = %d, want %d", y, wantY)
 	}
 }
 
-func TestPositionOverlayPlacesWindowAtTopCenter(t *testing.T) {
+func TestPositionOverlayPlacesWindowAtBottomCenterByDefault(t *testing.T) {
 	overlay := &fakeOverlayWindow{}
 	locator := &fakeScreenLocator{bounds: screenBounds{X: 1920, Y: 0, Width: 2560, Height: 1440}, ok: true}
 	state := &appState{
 		overlay:           overlay,
 		screenLocator:     locator,
 		overlayVisualizer: "pill",
-		overlayPosition:   "top",
 	}
 
 	state.positionOverlay()
@@ -313,9 +334,38 @@ func TestPositionOverlayPlacesWindowAtTopCenter(t *testing.T) {
 		t.Fatalf("expected one position update, got %d", len(overlay.positions))
 	}
 	wantX := 1920 + (2560-overlayWindowSize)/2
-	wantY := 0 // top of screen
+	wantY := 1440 - overlayWindowSize
 	if overlay.positions[0] != [2]int{wantX, wantY} {
 		t.Fatalf("overlay position = %v, want [%d %d]", overlay.positions[0], wantX, wantY)
+	}
+}
+
+func TestDedicatedPillHostAnchorsVisiblePillNearBottomEdge(t *testing.T) {
+	bounds := screenBounds{X: 0, Y: 0, Width: 1920, Height: 1080}
+	x, y := pillAnchorPosition(bounds, "bottom")
+
+	wantX := (1920 - pillAnchorWidth) / 2
+	wantY := 1080 - overlayEdgeMargin - pillBubbleH/2 - pillAnchorHeight/2
+	if x != wantX || y != wantY {
+		t.Fatalf("pill anchor position = (%d,%d), want (%d,%d)", x, y, wantX, wantY)
+	}
+}
+
+func TestDedicatedDotAndRadialMenuShareVisibleDotCenter(t *testing.T) {
+	bounds := screenBounds{X: 0, Y: 0, Width: 1920, Height: 1080}
+	dotX, dotY := dotAnchorPosition(bounds, "bottom")
+	radialX, radialY := radialMenuPosition(bounds, "bottom")
+
+	dotCenterX := dotX + dotAnchorMetrics.Width/2
+	dotCenterY := dotY + dotAnchorMetrics.Height/2
+	if dotCenterX != 960 {
+		t.Fatalf("dot center x = %d, want 960", dotCenterX)
+	}
+	if got, want := dotCenterY, 1080-overlayEdgeMargin-dotBubbleH/2; got != want {
+		t.Fatalf("dot center y = %d, want %d", got, want)
+	}
+	if radialX+radialMenuMetrics.Width/2 != dotCenterX || radialY+radialMenuMetrics.Height/2 != dotCenterY {
+		t.Fatalf("radial center = (%d,%d), want dot center (%d,%d)", radialX+radialMenuMetrics.Width/2, radialY+radialMenuMetrics.Height/2, dotCenterX, dotCenterY)
 	}
 }
 
@@ -413,7 +463,7 @@ func TestSetStateRecordingShowsOverlayAndUpdatesClients(t *testing.T) {
 	if overlay.showCalls != 1 {
 		t.Fatalf("overlay show calls = %d, want 1", overlay.showCalls)
 	}
-	if len(overlay.positions) != 1 || overlay.positions[0] != [2]int{1920 + (1600-overlayWindowSize)/2, 0} {
+	if len(overlay.positions) != 1 || overlay.positions[0] != [2]int{1920 + (1600-overlayWindowSize)/2, 900 - overlayWindowSize} {
 		t.Fatalf("overlay positions = %v", overlay.positions)
 	}
 	if len(overlay.scripts) != 0 {
@@ -448,7 +498,7 @@ func TestSetStateIdleKeepsOverlayVisibleInPassiveMode(t *testing.T) {
 	if len(overlay.scripts) != 0 {
 		t.Fatalf("overlay scripts = %v, want none", overlay.scripts)
 	}
-	if len(overlay.positions) != 1 || overlay.positions[0] != [2]int{1920 + (2560-overlayWindowSize)/2, 0} {
+	if len(overlay.positions) != 1 || overlay.positions[0] != [2]int{1920 + (2560-overlayWindowSize)/2, 1440 - overlayWindowSize} {
 		t.Fatalf("overlay positions = %v", overlay.positions)
 	}
 	snapshot := state.overlaySnapshot()
@@ -849,6 +899,67 @@ func TestSettingsRoutesPersistVocabularyDictionary(t *testing.T) {
 	}
 }
 
+func TestSettingsRoutesSyncVocabularyDictionaryToUserDictionaryStore(t *testing.T) {
+	cfg := defaultTestConfig()
+	cfg.General.Language = "de-DE"
+	cfgPath := filepath.Join(t.TempDir(), "config.toml")
+	feedbackStore, err := store.New(store.StoreConfig{
+		Backend:           "sqlite",
+		SQLitePath:        filepath.Join(t.TempDir(), "feedback.db"),
+		MaxAudioStorageMB: 100,
+	})
+	if err != nil {
+		t.Fatalf("store.New: %v", err)
+	}
+	defer feedbackStore.Close()
+
+	state := &appState{
+		overlayEnabled:    true,
+		overlayVisualizer: "pill",
+		overlayPosition:   "top",
+	}
+	handler := assetHandler(cfg, cfgPath, state, &router.Router{}, feedbackStore, &config.InstallState{Mode: config.InstallModeLocal})
+
+	form := url.Values{
+		"dictate_hotkey":             {"win+alt"},
+		"agent_hotkey":               {"ctrl+shift+k"},
+		"active_mode":                {"dictate"},
+		"overlay_enabled":            {"1"},
+		"overlay_visualizer":         {"pill"},
+		"overlay_design":             {"default"},
+		"overlay_position":           {"top"},
+		"store_backend":              {"sqlite"},
+		"store_sqlite_path":          {cfg.Store.SQLitePath},
+		"store_save_audio":           {"1"},
+		"store_audio_retention_days": {"7"},
+		"store_max_audio_storage_mb": {"500"},
+		"vocabulary_dictionary":      {"kombi fire => Kombify\nAcmeOS"},
+	}
+	req := httptest.NewRequest(http.MethodPost, "/settings/update", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	rec := httptest.NewRecorder()
+
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, body=%s", rec.Code, rec.Body.String())
+	}
+	dictionaryStore := feedbackStore.(store.UserDictionaryStore)
+	entries, err := dictionaryStore.ListUserDictionaryEntries(context.Background(), "de")
+	if err != nil {
+		t.Fatalf("ListUserDictionaryEntries: %v", err)
+	}
+	if len(entries) != 2 {
+		t.Fatalf("dictionary entries = %d, want 2", len(entries))
+	}
+	if entries[0].Spoken != "kombi fire" || entries[0].Canonical != "Kombify" || entries[0].Language != "de" {
+		t.Fatalf("first dictionary entry = %+v", entries[0])
+	}
+	if entries[1].Canonical != "AcmeOS" {
+		t.Fatalf("second dictionary entry = %+v", entries[1])
+	}
+}
+
 func TestSettingsSnapshotExposesPostgresConfiguration(t *testing.T) {
 	cfg := defaultTestConfig()
 	cfg.Store.Backend = "postgres"
@@ -997,7 +1108,7 @@ func TestSettingsRoutesRejectUserHuggingFaceTokenInOSSBuild(t *testing.T) {
 	}
 }
 
-func TestModelProfilesEndpointFiltersHFRoutedProfilesInOSSBuild(t *testing.T) {
+func TestModelProfilesEndpointKeepsCloudProviderGroupWhenHFRuntimeUnavailable(t *testing.T) {
 	restoreBuild := config.OverrideManagedHuggingFaceBuildForTests("0")
 	defer restoreBuild()
 
@@ -1014,15 +1125,23 @@ func TestModelProfilesEndpointFiltersHFRoutedProfilesInOSSBuild(t *testing.T) {
 
 	var payload struct {
 		Profiles []struct {
-			ExecutionMode string `json:"executionMode"`
+			Modality     string `json:"modality"`
+			ProviderKind string `json:"providerKind"`
 		} `json:"profiles"`
 	}
 	if err := json.Unmarshal(rec.Body.Bytes(), &payload); err != nil {
 		t.Fatalf("decode payload: %v", err)
 	}
-	for _, profile := range payload.Profiles {
-		if profile.ExecutionMode == "hf_routed" {
-			t.Fatalf("expected hf_routed profiles to be filtered from OSS builds, payload=%s", rec.Body.String())
+	for _, modality := range []string{"stt", "assist", "realtime_voice"} {
+		found := false
+		for _, profile := range payload.Profiles {
+			if profile.Modality == modality && profile.ProviderKind == "cloud_provider" {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Fatalf("expected cloud provider group for %s even when HF runtime is unavailable, payload=%s", modality, rec.Body.String())
 		}
 	}
 }
@@ -1238,7 +1357,8 @@ func defaultTestConfig() *config.Config {
 			ActiveMode:               "none",
 		},
 		VoiceAgent: config.VoiceAgentConfig{
-			CloseBehavior: config.VoiceAgentCloseBehaviorContinue,
+			CloseBehavior:        config.VoiceAgentCloseBehaviorContinue,
+			EnableSessionSummary: true,
 		},
 		HuggingFace: config.HuggingFaceConfig{
 			Model: "openai/whisper-large-v3",
@@ -1306,7 +1426,7 @@ func TestSaveSettingsUpdatesConfigAndRuntime(t *testing.T) {
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	t.Setenv("SPEECHKIT_ENABLE_MANAGED_HF", "1")
 
-	flash := saveSettings(context.Background(), req, cfgPath, cfg, state, sttRouter)
+	flash := saveSettings(context.Background(), req, cfgPath, cfg, state, sttRouter, nil)
 
 	if !strings.Contains(flash, msgSaved) {
 		t.Fatalf("flash = %q", flash)
@@ -1395,6 +1515,57 @@ func TestSaveSettingsUpdatesConfigAndRuntime(t *testing.T) {
 	}
 }
 
+func TestSaveSettingsClearsStoredFreeOverlayPositionWhenMovableIsDisabled(t *testing.T) {
+	cfg := defaultTestConfig()
+	cfg.UI.OverlayMovable = true
+	cfg.UI.OverlayFreeX = 1021
+	cfg.UI.OverlayFreeY = 24
+	cfg.UI.OverlayMonitorPositions = map[string]config.OverlayFreePosition{
+		"0,0,1920,1032": {X: 1021, Y: 24},
+	}
+	cfgPath := filepath.Join(t.TempDir(), "config.toml")
+	state := &appState{
+		overlayMovable:        true,
+		overlayFreeX:          1021,
+		overlayFreeY:          24,
+		overlayMonitorCenters: cloneOverlayMonitorPositions(cfg.UI.OverlayMonitorPositions),
+	}
+	sttRouter := &router.Router{}
+
+	form := url.Values{
+		"overlay_enabled":    {"1"},
+		"overlay_visualizer": {"pill"},
+		"overlay_design":     {"default"},
+		"overlay_position":   {"top"},
+		"overlay_movable":    {"0"},
+		"overlay_free_x":     {"1021"},
+		"overlay_free_y":     {"24"},
+	}
+	req := httptest.NewRequest(http.MethodPost, "/settings/update", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+
+	flash := saveSettings(context.Background(), req, cfgPath, cfg, state, sttRouter, nil)
+
+	if !strings.Contains(flash, msgSaved) {
+		t.Fatalf("flash = %q", flash)
+	}
+	if cfg.UI.OverlayMovable {
+		t.Fatal("overlay movable = true")
+	}
+	if cfg.UI.OverlayFreeX != 0 || cfg.UI.OverlayFreeY != 0 {
+		t.Fatalf("free overlay coordinates = (%d,%d), want (0,0)", cfg.UI.OverlayFreeX, cfg.UI.OverlayFreeY)
+	}
+	if len(cfg.UI.OverlayMonitorPositions) != 0 {
+		t.Fatalf("monitor positions = %+v, want empty", cfg.UI.OverlayMonitorPositions)
+	}
+	if state.overlayFreeX != 0 || state.overlayFreeY != 0 {
+		t.Fatalf("runtime free overlay coordinates = (%d,%d), want (0,0)", state.overlayFreeX, state.overlayFreeY)
+	}
+	if len(state.overlayMonitorCenters) != 0 {
+		t.Fatalf("runtime monitor positions = %+v, want empty", state.overlayMonitorCenters)
+	}
+}
+
 func TestSaveSettingsRejectsPostgresBackendWithoutDSN(t *testing.T) {
 	cfg := defaultTestConfig()
 	cfgPath := filepath.Join(t.TempDir(), "config.toml")
@@ -1411,7 +1582,7 @@ func TestSaveSettingsRejectsPostgresBackendWithoutDSN(t *testing.T) {
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	t.Setenv("SPEECHKIT_ENABLE_MANAGED_HF", "1")
 
-	flash := saveSettings(context.Background(), req, cfgPath, cfg, state, sttRouter)
+	flash := saveSettings(context.Background(), req, cfgPath, cfg, state, sttRouter, nil)
 
 	if !strings.Contains(flash, msgPostgresDSNReq) {
 		t.Fatalf("flash = %q", flash)
@@ -1446,7 +1617,7 @@ func TestSaveSettingsKeepsHFDisabledWithoutManagedToken(t *testing.T) {
 
 	t.Setenv("SPEECHKIT_ENABLE_MANAGED_HF", "1")
 
-	flash := saveSettings(context.Background(), req, cfgPath, cfg, state, sttRouter)
+	flash := saveSettings(context.Background(), req, cfgPath, cfg, state, sttRouter, nil)
 
 	if !strings.Contains(flash, msgSaved) {
 		t.Fatalf("flash = %q", flash)
@@ -1488,7 +1659,7 @@ func TestSaveSettingsAppliesManagedHFWithStoredUserToken(t *testing.T) {
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	t.Setenv("SPEECHKIT_ENABLE_MANAGED_HF", "1")
 
-	flash := saveSettings(context.Background(), req, cfgPath, cfg, state, sttRouter)
+	flash := saveSettings(context.Background(), req, cfgPath, cfg, state, sttRouter, nil)
 
 	if !strings.Contains(flash, msgSaved) {
 		t.Fatalf("flash = %q", flash)
@@ -1526,7 +1697,7 @@ func TestSaveSettingsAllowsNonHFChangesWithoutHFValidation(t *testing.T) {
 	req := httptest.NewRequest(http.MethodPost, "/settings/update", strings.NewReader(form.Encode()))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 
-	flash := saveSettings(context.Background(), req, cfgPath, cfg, state, sttRouter)
+	flash := saveSettings(context.Background(), req, cfgPath, cfg, state, sttRouter, nil)
 
 	if !strings.Contains(flash, msgSaved) {
 		t.Fatalf("flash = %q", flash)
@@ -1564,7 +1735,7 @@ func TestSaveSettingsKeepsManagedHFEnabledWhenBuildDefaultsAreActive(t *testing.
 	t.Setenv("SPEECHKIT_ENABLE_MANAGED_HF", "1")
 	t.Setenv("HF_TOKEN", "test-token")
 
-	flash := saveSettings(context.Background(), req, cfgPath, cfg, state, sttRouter)
+	flash := saveSettings(context.Background(), req, cfgPath, cfg, state, sttRouter, nil)
 
 	if !strings.Contains(flash, msgSaved) {
 		t.Fatalf("flash = %q", flash)
@@ -1672,7 +1843,7 @@ func TestSaveSettingsSwitchesActiveOverlayWindowToDotVisualizer(t *testing.T) {
 	req := httptest.NewRequest(http.MethodPost, "/settings/update", strings.NewReader(form.Encode()))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 
-	flash := saveSettings(context.Background(), req, cfgPath, cfg, state, sttRouter)
+	flash := saveSettings(context.Background(), req, cfgPath, cfg, state, sttRouter, nil)
 
 	if !strings.Contains(flash, msgSaved) {
 		t.Fatalf("flash = %q", flash)
@@ -1730,6 +1901,29 @@ func TestBuildRouterAutoEnablesManagedHFForCloudOnlyWhenExplicitlyEnabled(t *tes
 	}
 }
 
+func TestBuildRouterUsesBuiltInDictateSelectionForDefaultConfig(t *testing.T) {
+	cfg, err := config.Load(filepath.Join(t.TempDir(), "missing-config.toml"))
+	if err != nil {
+		t.Fatalf("load default config: %v", err)
+	}
+	t.Setenv("LOCALAPPDATA", t.TempDir())
+
+	r, msgs := buildRouter(cfg)
+
+	if r.Local() == nil {
+		t.Fatal("expected default built-in dictate model selection to configure local STT")
+	}
+	if !cfg.Local.Enabled {
+		t.Fatal("expected local STT to be enabled from default model selection")
+	}
+	if got := cfg.Routing.Strategy; got != "local-only" {
+		t.Fatalf("routing strategy = %q, want local-only", got)
+	}
+	if len(msgs) == 0 || !strings.Contains(strings.Join(msgs, " "), "Local:") {
+		t.Fatalf("provider log = %v", msgs)
+	}
+}
+
 func TestBuildRouterWarnsWhenHFConfiguredWithoutToken(t *testing.T) {
 	restore := secrets.UseMemoryStoreForTests()
 	defer restore()
@@ -1776,6 +1970,17 @@ func TestDefaultLocalModelPathFallsBackToLocalAppData(t *testing.T) {
 	got := defaultLocalModelPath("", localAppData, modelName)
 
 	if got != want {
+		t.Fatalf("model path = %q, want %q", got, want)
+	}
+}
+
+func TestConfiguredLocalSTTModelPathUsesDefaultModelDownloadDir(t *testing.T) {
+	cfg := defaultTestConfig()
+	cfg.General.ModelDownloadDir = filepath.Join(t.TempDir(), "models")
+	cfg.Local.Model = "ggml-large-v3-turbo.bin"
+
+	want := filepath.Join(cfg.General.ModelDownloadDir, cfg.Local.Model)
+	if got := configuredLocalSTTModelPath(cfg); got != want {
 		t.Fatalf("model path = %q, want %q", got, want)
 	}
 }
@@ -1942,13 +2147,13 @@ func TestOverlayPositionRight(t *testing.T) {
 	}
 }
 
-func TestOverlayPositionDefaultsToTop(t *testing.T) {
+func TestOverlayPositionDefaultsToBottom(t *testing.T) {
 	bounds := screenBounds{X: 0, Y: 0, Width: 1920, Height: 1080}
 	xEmpty, yEmpty := overlayWindowPosition(bounds, "", "pill")
-	xTop, yTop := overlayWindowPosition(bounds, "top", "pill")
+	xBottom, yBottom := overlayWindowPosition(bounds, "bottom", "pill")
 
-	if xEmpty != xTop || yEmpty != yTop {
-		t.Fatalf("empty position (%d,%d) differs from top (%d,%d)", xEmpty, yEmpty, xTop, yTop)
+	if xEmpty != xBottom || yEmpty != yBottom {
+		t.Fatalf("empty position (%d,%d) differs from bottom (%d,%d)", xEmpty, yEmpty, xBottom, yBottom)
 	}
 }
 
@@ -2735,5 +2940,83 @@ func TestAuthLogoutEndpoint(t *testing.T) {
 	}
 	if payload["message"] != "Logged out" {
 		t.Fatalf("message = %q, want %q", payload["message"], "Logged out")
+	}
+}
+
+func TestShowPrompterWindowForModeHidesVoiceAgentPanelInSmallFeedback(t *testing.T) {
+	prompter := &fakeOverlayWindow{visible: true}
+	state := &appState{
+		prompterWindow:        prompter,
+		voiceAgentOverlayMode: config.OverlayFeedbackModeSmallFeedback,
+	}
+
+	state.showPrompterWindowForMode(modeVoiceAgent, true)
+
+	if prompter.showCalls != 0 {
+		t.Fatalf("prompter show calls = %d, want 0 in small feedback mode", prompter.showCalls)
+	}
+	if prompter.hideCalls != 1 {
+		t.Fatalf("prompter hide calls = %d, want 1 in small feedback mode", prompter.hideCalls)
+	}
+}
+
+func TestShowPrompterWindowForModeShowsVoiceAgentPanelInBigProductivity(t *testing.T) {
+	prompter := &fakeOverlayWindow{}
+	state := &appState{
+		prompterWindow:        prompter,
+		voiceAgentOverlayMode: config.OverlayFeedbackModeBigProductivity,
+	}
+
+	state.showPrompterWindowForMode(modeVoiceAgent, true)
+
+	if prompter.showCalls != 1 {
+		t.Fatalf("prompter show calls = %d, want 1 in big productivity mode", prompter.showCalls)
+	}
+}
+
+func TestVoiceAgentCallbacksKeepSmallFeedbackOverlayOutOfIdle(t *testing.T) {
+	state := &appState{
+		overlayEnabled:        true,
+		overlayVisualizer:     "pill",
+		voiceAgentOverlayMode: config.OverlayFeedbackModeSmallFeedback,
+		voiceAgentHotkey:      "ctrl+shift+v",
+		voiceAgentEnabled:     true,
+	}
+	callbacks := buildVoiceAgentCallbacks(state, &config.Config{})
+
+	callbacks.OnStateChange(voiceagent.StateListening)
+	callbacks.OnOutputTranscript("Ich habe dich verstanden.", true)
+
+	snapshot := state.overlaySnapshot()
+	if snapshot.ActiveMode != modeVoiceAgent {
+		t.Fatalf("active mode = %q, want %q", snapshot.ActiveMode, modeVoiceAgent)
+	}
+	if snapshot.State == "idle" {
+		t.Fatalf("overlay state = %q, want non-idle for small voice agent feedback", snapshot.State)
+	}
+	if snapshot.Text != "Ich habe dich verstanden." {
+		t.Fatalf("overlay text = %q", snapshot.Text)
+	}
+}
+
+func TestVoiceAgentSystemSummaryDisplaysInSmallFeedbackOverlay(t *testing.T) {
+	state := &appState{
+		overlayEnabled:        true,
+		overlayVisualizer:     "pill",
+		voiceAgentOverlayMode: config.OverlayFeedbackModeSmallFeedback,
+		activeMode:            modeVoiceAgent,
+		voiceAgentHotkey:      "ctrl+shift+v",
+		voiceAgentEnabled:     true,
+		currentState:          "idle",
+	}
+
+	state.sendPrompterMessage("system", "Session summary\nNaechster Schritt: testen.", true)
+
+	snapshot := state.overlaySnapshot()
+	if snapshot.State == "idle" {
+		t.Fatalf("overlay state = %q, want non-idle for voice agent system feedback", snapshot.State)
+	}
+	if !strings.Contains(snapshot.Text, "Naechster Schritt") {
+		t.Fatalf("overlay text = %q", snapshot.Text)
 	}
 }

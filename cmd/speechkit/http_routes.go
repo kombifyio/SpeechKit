@@ -1,6 +1,8 @@
 package main
 
 import (
+	"crypto/rand"
+	"encoding/hex"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -21,6 +23,11 @@ var AppVersion = "dev"
 // maxControlPlaneBodySize limits the request body for mutating control-plane
 // requests. All POST data is small form fields; 1 MB is generous headroom.
 const maxControlPlaneBodySize = 1 << 20 // 1 MB
+
+const (
+	controlPlaneTokenCookieName = "speechkit_control_plane"
+	controlPlaneTokenHeaderName = "X-SpeechKit-Control-Token"
+)
 
 // revealAudioFileInShell opens the containing folder in Explorer and selects
 // the file. Only .wav files are accepted to prevent path-traversal abuse.
@@ -51,7 +58,7 @@ var openInstallerFileInShell = func(path string) error {
 func assetHandler(cfg *config.Config, cfgPath string, state *appState, sttRouter *router.Router, feedbackStore store.Store, installState *config.InstallState) http.Handler {
 	mux := http.NewServeMux()
 	registerOverlayRoutes(mux, cfgPath, cfg, state)
-	registerSettingsRoutes(mux, cfgPath, cfg, state, sttRouter)
+	registerSettingsRoutes(mux, cfgPath, cfg, state, sttRouter, feedbackStore)
 	registerDashboardRoutes(mux, state, feedbackStore)
 	registerQuickNoteRoutes(mux, cfg, state, feedbackStore)
 	registerFeatureRoutes(mux, installState)
@@ -59,13 +66,17 @@ func assetHandler(cfg *config.Config, cfgPath string, state *appState, sttRouter
 	registerAppRoutes(mux, cfgPath, state, installState)
 	registerDownloadRoutes(mux, cfgPath, cfg, state)
 	mux.Handle("/", http.FileServer(http.FS(frontendassets.Files())))
-	return enforceControlPlaneRequestGuard(mux)
+	return enforceControlPlaneRequestGuard(mux, controlPlaneTokenFromState(state))
 }
 
 // enforceControlPlaneRequestGuard rejects cross-site and disallowed-origin
 // mutating requests. It is the primary CSRF defence for the local control plane.
-func enforceControlPlaneRequestGuard(next http.Handler) http.Handler {
+func enforceControlPlaneRequestGuard(next http.Handler, sessionToken string) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if sessionToken != "" {
+			setControlPlaneTokenCookie(w, sessionToken)
+		}
+
 		if !isMutatingMethod(r.Method) {
 			next.ServeHTTP(w, r)
 			return
@@ -85,8 +96,49 @@ func enforceControlPlaneRequestGuard(next http.Handler) http.Handler {
 			return
 		}
 
+		if sessionToken != "" && !hasValidControlPlaneToken(r, sessionToken) {
+			http.Error(w, "control-plane session token is invalid", http.StatusForbidden)
+			return
+		}
+
 		next.ServeHTTP(w, r)
 	})
+}
+
+func newControlPlaneToken() string {
+	var token [32]byte
+	if _, err := rand.Read(token[:]); err != nil {
+		panic(fmt.Sprintf("generate control-plane token: %v", err))
+	}
+	return hex.EncodeToString(token[:])
+}
+
+func controlPlaneTokenFromState(state *appState) string {
+	if state == nil {
+		return ""
+	}
+	return state.controlPlaneToken
+}
+
+func setControlPlaneTokenCookie(w http.ResponseWriter, token string) {
+	http.SetCookie(w, &http.Cookie{
+		Name:     controlPlaneTokenCookieName,
+		Value:    token,
+		Path:     "/",
+		HttpOnly: true,
+		SameSite: http.SameSiteStrictMode,
+	})
+}
+
+func hasValidControlPlaneToken(r *http.Request, expected string) bool {
+	if r.Header.Get(controlPlaneTokenHeaderName) == expected {
+		return true
+	}
+	cookie, err := r.Cookie(controlPlaneTokenCookieName)
+	if err != nil {
+		return false
+	}
+	return cookie.Value == expected
 }
 
 func isMutatingMethod(method string) bool {

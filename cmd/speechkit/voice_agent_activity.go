@@ -3,6 +3,9 @@ package main
 import "github.com/kombifyio/SpeechKit/internal/voiceagent"
 
 func voiceAgentUserActivityLevel(state voiceagent.State, level float64, guard *voiceAgentEchoGuard) float64 {
+	if state != voiceagent.StateListening {
+		return 0
+	}
 	if !voiceAgentMicFrameAllowed(state, guard) {
 		return 0
 	}

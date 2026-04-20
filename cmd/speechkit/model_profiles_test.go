@@ -100,6 +100,42 @@ func TestApplySTTProfileHuggingFaceForcesCloudOnlyAndClearsLocalProvider(t *test
 	}
 }
 
+func TestApplySTTProfileOllamaRegistersSelfHostedProvider(t *testing.T) {
+	cfg := defaultTestConfig()
+	cfg.Providers.Ollama.BaseURL = "http://127.0.0.1:11434"
+	cfgPath := filepath.Join(t.TempDir(), "config.toml")
+
+	state := &appState{activeProfiles: map[string]string{}}
+	sttRouter := &router.Router{}
+	profile := models.Profile{
+		ID:            "stt.ollama.gemma4-e4b-transcribe",
+		Name:          "Gemma 4 E4B Transcribe (Ollama)",
+		Modality:      models.ModalitySTT,
+		ExecutionMode: models.ExecutionModeOllama,
+		ModelID:       "gemma4:e4b",
+	}
+
+	if err := applySTTProfile(context.Background(), cfgPath, cfg, state, sttRouter, profile); err != nil {
+		t.Fatalf("applySTTProfile: %v", err)
+	}
+
+	if !cfg.Providers.Ollama.Enabled {
+		t.Fatal("expected Ollama provider to be enabled")
+	}
+	if got := cfg.Providers.Ollama.STTModel; got != "gemma4:e4b" {
+		t.Fatalf("ollama stt model = %q, want %q", got, "gemma4:e4b")
+	}
+	if got := cfg.Routing.Strategy; got != "cloud-only" {
+		t.Fatalf("routing strategy = %q, want %q", got, "cloud-only")
+	}
+	if provider := sttRouter.Cloud("ollama"); provider == nil {
+		t.Fatal("expected ollama STT provider to be configured on router")
+	}
+	if got := state.activeProfiles["stt"]; got != "stt.ollama.gemma4-e4b-transcribe" {
+		t.Fatalf("active stt profile = %q, want %q", got, "stt.ollama.gemma4-e4b-transcribe")
+	}
+}
+
 func TestApplySTTProfileLocalDetachesCanceledContextForStartup(t *testing.T) {
 	installTestWhisperBinary(t)
 	modelPath := filepath.Join(t.TempDir(), "ggml-small.bin")
@@ -237,6 +273,96 @@ func TestApplyRealtimeVoiceProfileClearsPipelineFallbackWhenSelectingGoogle(t *t
 	}
 	if got := cfg.HuggingFace.AgentModel; got != "" {
 		t.Fatalf("cfg.HuggingFace.AgentModel = %q, want empty", got)
+	}
+}
+
+func TestApplyRealtimeVoiceProfileOllamaUsesPipelineFallback(t *testing.T) {
+	cfg := defaultTestConfig()
+	cfg.Providers.Ollama.BaseURL = "http://127.0.0.1:11434"
+	cfgPath := filepath.Join(t.TempDir(), "config.toml")
+
+	state := &appState{activeProfiles: map[string]string{}}
+	profile := models.Profile{
+		ID:            "realtime.ollama.gemma4-e4b-pipeline",
+		Name:          "Gemma 4 E4B Voice Pipeline (Ollama)",
+		Modality:      models.ModalityRealtimeVoice,
+		ExecutionMode: models.ExecutionModeOllama,
+		ModelID:       "gemma4:e4b",
+	}
+
+	reloadCalls := 0
+	previousReload := reloadAIRuntime
+	reloadAIRuntime = func(ctx context.Context, state *appState, cfg *config.Config) error {
+		reloadCalls++
+		return nil
+	}
+	defer func() { reloadAIRuntime = previousReload }()
+
+	if err := applyRealtimeVoiceProfile(context.Background(), cfgPath, cfg, state, profile); err != nil {
+		t.Fatalf("applyRealtimeVoiceProfile: %v", err)
+	}
+
+	if !cfg.Providers.Ollama.Enabled {
+		t.Fatal("expected Ollama provider to be enabled")
+	}
+	if got := cfg.Providers.Ollama.AgentModel; got != "gemma4:e4b" {
+		t.Fatalf("ollama agent model = %q, want %q", got, "gemma4:e4b")
+	}
+	if !cfg.VoiceAgent.PipelineFallback {
+		t.Fatal("expected Ollama voice profile to use pipeline fallback")
+	}
+	if got := state.activeProfiles["realtime_voice"]; got != "realtime.ollama.gemma4-e4b-pipeline" {
+		t.Fatalf("active realtime voice profile = %q, want %q", got, "realtime.ollama.gemma4-e4b-pipeline")
+	}
+	if reloadCalls != 1 {
+		t.Fatalf("reloadAIRuntime calls = %d, want 1", reloadCalls)
+	}
+}
+
+func TestApplyRealtimeVoiceProfileBuiltInLocalUsesPipelineFallback(t *testing.T) {
+	cfg := defaultTestConfig()
+	cfg.LocalLLM.BaseURL = ""
+	cfg.LocalLLM.Port = 0
+	cfgPath := filepath.Join(t.TempDir(), "config.toml")
+
+	state := &appState{activeProfiles: map[string]string{}}
+	profile := models.Profile{
+		ID:            "realtime.builtin.pipeline",
+		Name:          "SpeechKit Voice Pipeline (Built-in)",
+		Modality:      models.ModalityRealtimeVoice,
+		ExecutionMode: models.ExecutionModeLocal,
+		ModelID:       "speechkit-local-voice-pipeline",
+	}
+
+	reloadCalls := 0
+	previousReload := reloadAIRuntime
+	reloadAIRuntime = func(ctx context.Context, state *appState, cfg *config.Config) error {
+		reloadCalls++
+		return nil
+	}
+	defer func() { reloadAIRuntime = previousReload }()
+
+	if err := applyRealtimeVoiceProfile(context.Background(), cfgPath, cfg, state, profile); err != nil {
+		t.Fatalf("applyRealtimeVoiceProfile: %v", err)
+	}
+
+	if !cfg.LocalLLM.Enabled {
+		t.Fatal("expected built-in local LLM to be enabled")
+	}
+	if got := cfg.LocalLLM.BaseURL; got != config.DefaultLocalLLMBaseURL {
+		t.Fatalf("local llm base url = %q, want %q", got, config.DefaultLocalLLMBaseURL)
+	}
+	if got := cfg.LocalLLM.AgentModel; got != "speechkit-local-voice-pipeline" {
+		t.Fatalf("local llm agent model = %q, want %q", got, "speechkit-local-voice-pipeline")
+	}
+	if !cfg.VoiceAgent.PipelineFallback {
+		t.Fatal("expected built-in local voice profile to use pipeline fallback")
+	}
+	if got := state.activeProfiles["realtime_voice"]; got != "realtime.builtin.pipeline" {
+		t.Fatalf("active realtime voice profile = %q, want %q", got, "realtime.builtin.pipeline")
+	}
+	if reloadCalls != 1 {
+		t.Fatalf("reloadAIRuntime calls = %d, want 1", reloadCalls)
 	}
 }
 

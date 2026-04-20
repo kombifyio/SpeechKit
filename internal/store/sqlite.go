@@ -27,6 +27,9 @@ var sqliteMigration003 string
 //go:embed migrations/sqlite/004_transcription_model.sql
 var sqliteMigration004 string
 
+//go:embed migrations/sqlite/005_user_dictionary.sql
+var sqliteMigration005 string
+
 // SQLiteStore implements Store using a local SQLite database.
 // Uses modernc.org/sqlite (pure Go, no CGo required).
 type SQLiteStore struct {
@@ -79,6 +82,9 @@ func NewSQLiteStore(cfg StoreConfig) (*SQLiteStore, error) {
 		if !strings.Contains(errMsg, "duplicate column") && !strings.Contains(errMsg, "already exists") {
 			slog.Warn("migrate 004", "err", err)
 		}
+	}
+	if _, err := db.ExecContext(context.Background(), sqliteMigration005); err != nil {
+		return nil, fmt.Errorf("migrate 005: %w", err)
 	}
 
 	store := &SQLiteStore{
@@ -219,6 +225,107 @@ func (s *SQLiteStore) transcriptionModelHint(provider string) string {
 	default:
 		return ""
 	}
+}
+
+func (s *SQLiteStore) ReplaceUserDictionaryEntries(ctx context.Context, language string, entries []UserDictionaryEntry) error {
+	language = normalizeDictionaryLanguage(language)
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		if err != nil {
+			_ = tx.Rollback()
+		}
+	}()
+
+	if _, err = tx.ExecContext(ctx,
+		`DELETE FROM user_dictionary_entries WHERE language = ? AND source = ?`,
+		language, userDictionarySettingsSource,
+	); err != nil {
+		return fmt.Errorf("clear user dictionary entries: %w", err)
+	}
+
+	stmt, err := tx.PrepareContext(ctx,
+		`INSERT INTO user_dictionary_entries (spoken, canonical, language, source, enabled)
+		 VALUES (?, ?, ?, ?, 1)
+		 ON CONFLICT(spoken, canonical, language, source)
+		 DO UPDATE SET enabled = 1, updated_at = CURRENT_TIMESTAMP`,
+	)
+	if err != nil {
+		return fmt.Errorf("prepare user dictionary insert: %w", err)
+	}
+	defer stmt.Close() //nolint:errcheck // statement close during transaction cleanup
+
+	for _, entry := range entries {
+		entry, ok := normalizeUserDictionaryEntry(entry, language)
+		if !ok {
+			continue
+		}
+		if _, err = stmt.ExecContext(ctx, entry.Spoken, entry.Canonical, entry.Language, entry.Source); err != nil {
+			return fmt.Errorf("insert user dictionary entry: %w", err)
+		}
+	}
+
+	if err = tx.Commit(); err != nil {
+		return fmt.Errorf("commit user dictionary entries: %w", err)
+	}
+	return nil
+}
+
+func (s *SQLiteStore) ListUserDictionaryEntries(ctx context.Context, language string) ([]UserDictionaryEntry, error) {
+	language = normalizeDictionaryLanguage(language)
+	rows, err := s.db.QueryContext(ctx,
+		`SELECT id, spoken, canonical, language, source, enabled, usage_count, created_at, updated_at
+		 FROM user_dictionary_entries
+		 WHERE enabled = 1 AND (? = '' OR language = ? OR language = '')
+		 ORDER BY id ASC`,
+		language, language,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close() //nolint:errcheck // deferred rows close, error not actionable
+
+	entries := make([]UserDictionaryEntry, 0)
+	for rows.Next() {
+		var entry UserDictionaryEntry
+		var enabledInt int
+		if err := rows.Scan(
+			&entry.ID,
+			&entry.Spoken,
+			&entry.Canonical,
+			&entry.Language,
+			&entry.Source,
+			&enabledInt,
+			&entry.UsageCount,
+			&entry.CreatedAt,
+			&entry.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		entry.Enabled = enabledInt != 0
+		entries = append(entries, entry)
+	}
+	return entries, rows.Err()
+}
+
+func (s *SQLiteStore) RecordUserDictionaryUsage(ctx context.Context, canonical, language string) error {
+	canonical = strings.TrimSpace(canonical)
+	language = normalizeDictionaryLanguage(language)
+	if canonical == "" {
+		return nil
+	}
+	_, err := s.db.ExecContext(ctx,
+		`UPDATE user_dictionary_entries
+		 SET usage_count = usage_count + 1, updated_at = CURRENT_TIMESTAMP
+		 WHERE enabled = 1 AND lower(canonical) = lower(?) AND (? = '' OR language = ? OR language = '')`,
+		canonical, language, language,
+	)
+	if err != nil {
+		return fmt.Errorf("record user dictionary usage: %w", err)
+	}
+	return nil
 }
 
 func (s *SQLiteStore) TranscriptionCount(ctx context.Context) (int, error) {

@@ -29,6 +29,8 @@ func (p *sessionTestProvider) Connect(_ context.Context, _ LiveConfig) error {
 
 func (p *sessionTestProvider) SendAudio(_ []byte) error { return nil }
 
+func (p *sessionTestProvider) SendAudioStreamEnd() error { return nil }
+
 func (p *sessionTestProvider) Receive(ctx context.Context) (*LiveMessage, error) {
 	select {
 	case msg := <-p.messages:

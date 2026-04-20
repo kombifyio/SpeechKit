@@ -1,8 +1,11 @@
 package main
 
 import (
+	"context"
 	"regexp"
 	"strings"
+
+	"github.com/kombifyio/SpeechKit/internal/store"
 )
 
 type vocabularyEntry struct {
@@ -69,15 +72,50 @@ func canonicalVocabularyTerms(entries []vocabularyEntry) []string {
 	return terms
 }
 
-func applyVocabularyCorrections(text string, entries []vocabularyEntry) string {
+func applyVocabularyCorrectionsWithMatches(text string, entries []vocabularyEntry) (string, []string) {
 	normalized := text
+	matchedTerms := make([]string, 0)
+	seen := map[string]struct{}{}
 	for _, entry := range entries {
 		if strings.EqualFold(entry.Spoken, entry.Canonical) {
 			continue
 		}
 		pattern := `(?i)\b` + regexp.QuoteMeta(entry.Spoken) + `\b`
 		re := regexp.MustCompile(pattern)
+		if re.MatchString(normalized) {
+			key := strings.ToLower(entry.Canonical)
+			if _, ok := seen[key]; !ok {
+				seen[key] = struct{}{}
+				matchedTerms = append(matchedTerms, entry.Canonical)
+			}
+		}
 		normalized = re.ReplaceAllString(normalized, entry.Canonical)
 	}
-	return normalized
+	return normalized, matchedTerms
+}
+
+func syncVocabularyDictionaryStore(ctx context.Context, feedbackStore store.Store, language, raw string) error {
+	dictionaryStore := userDictionaryStoreFromFeedbackStore(feedbackStore)
+	if dictionaryStore == nil {
+		return nil
+	}
+	entries := parseVocabularyDictionary(raw)
+	storeEntries := make([]store.UserDictionaryEntry, 0, len(entries))
+	for _, entry := range entries {
+		storeEntries = append(storeEntries, store.UserDictionaryEntry{
+			Spoken:    entry.Spoken,
+			Canonical: entry.Canonical,
+			Language:  language,
+			Source:    "settings",
+		})
+	}
+	return dictionaryStore.ReplaceUserDictionaryEntries(ctx, language, storeEntries)
+}
+
+func userDictionaryStoreFromFeedbackStore(feedbackStore store.Store) store.UserDictionaryStore {
+	dictionaryStore, ok := feedbackStore.(store.UserDictionaryStore)
+	if !ok {
+		return nil
+	}
+	return dictionaryStore
 }

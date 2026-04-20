@@ -4,6 +4,17 @@ import { renderHook, waitFor, act } from '@testing-library/react'
 import { useSetupWizard } from '../use-setup-wizard'
 
 vi.mock('@/lib/speechkit', () => ({
+  builtInPrimaryModelSelections: {
+    dictate: { primaryProfileId: 'stt.local.whispercpp', fallbackProfileId: '' },
+    assist: {
+      primaryProfileId: '',
+      fallbackProfileId: '',
+    },
+    voice_agent: {
+      primaryProfileId: 'realtime.google.gemini-native-audio',
+      fallbackProfileId: '',
+    },
+  },
   fetchAudioDevices: vi.fn().mockResolvedValue({
     devices: [
       { deviceId: 'mic-1', label: 'Built-in Mic', isDefault: true },
@@ -50,5 +61,20 @@ describe('useSetupWizard', () => {
 
     await act(() => result.current.finish())
     expect(onComplete).toHaveBeenCalled()
+  })
+
+  it('saves safe model selections when setup finishes without explicit model choice', async () => {
+    const onComplete = vi.fn()
+    const { result } = renderHook(() => useSetupWizard(onComplete))
+
+    await act(() => result.current.finish())
+
+    const [, init] = vi.mocked(fetch).mock.calls.at(-1) ?? []
+    const body = init?.body as URLSearchParams
+    expect(body.get('dictate_primary_profile_id')).toBe('stt.local.whispercpp')
+    expect(body.get('assist_primary_profile_id')).toBe('')
+    expect(body.get('voice_primary_profile_id')).toBe(
+      'realtime.google.gemini-native-audio',
+    )
   })
 })

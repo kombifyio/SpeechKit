@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -67,6 +68,53 @@ func TestSelectDownloadedLocalModelUpdatesConfigAndReloadsLocalProvider(t *testi
 	}
 	if got := state.activeProfiles["stt"]; got != "stt.local.whispercpp" {
 		t.Fatalf("active stt profile = %q, want %q", got, "stt.local.whispercpp")
+	}
+}
+
+func TestSelectDownloadedLocalModelUsesDefaultModelDownloadDir(t *testing.T) {
+	modelsDir := t.TempDir()
+	legacyDir := t.TempDir()
+	installTestWhisperBinary(t)
+	writeValidWhisperModelFile(t, filepath.Join(modelsDir, "ggml-large-v3.bin"))
+
+	cfg := defaultTestConfig()
+	cfg.General.ModelDownloadDir = modelsDir
+	cfg.Local.Enabled = true
+	cfg.Local.Port = 8080
+	cfg.Local.Model = "ggml-small.bin"
+	cfg.Local.ModelPath = filepath.Join(legacyDir, "ggml-small.bin")
+	cfg.Routing.Strategy = "dynamic"
+	cfgPath := filepath.Join(t.TempDir(), "config.toml")
+
+	state := &appState{
+		activeProfiles: map[string]string{},
+		sttRouter:      &router.Router{},
+	}
+	handler := assetHandler(cfg, cfgPath, state, state.sttRouter, nil, &config.InstallState{Mode: config.InstallModeLocal})
+
+	called := 0
+	previousLauncher := launchLocalProvider
+	launchLocalProvider = func(ctx context.Context, state *appState, r *router.Router, provider localProviderStarter) {
+		called++
+	}
+	defer func() { launchLocalProvider = previousLauncher }()
+
+	form := url.Values{"model_id": {"whisper.ggml-large-v3"}}
+	req := httptest.NewRequest(http.MethodPost, "/models/downloads/select", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	rec := httptest.NewRecorder()
+
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, body=%s", rec.Code, rec.Body.String())
+	}
+	wantPath := filepath.Join(modelsDir, "ggml-large-v3.bin")
+	if got := cfg.Local.ModelPath; got != wantPath {
+		t.Fatalf("local model path = %q, want %q", got, wantPath)
+	}
+	if called != 1 {
+		t.Fatalf("launchLocalProvider calls = %d, want 1", called)
 	}
 }
 
@@ -179,6 +227,112 @@ func TestSelectDownloadedOllamaModelActivatesLocalProviderProfile(t *testing.T) 
 	}
 	if got := state.activeProfiles["assist"]; got != "assist.ollama.gemma4-e4b" {
 		t.Fatalf("active assist profile = %q, want %q", got, "assist.ollama.gemma4-e4b")
+	}
+	if state.genkitRT == nil {
+		t.Fatal("expected AI runtime to be reloaded")
+	}
+}
+
+func TestSelectDownloadedOllamaDictationModelActivatesSTTProvider(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/tags" {
+			http.NotFound(w, r)
+			return
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"models": []map[string]string{{"name": "gemma4:e4b"}},
+		})
+	}))
+	defer srv.Close()
+
+	oldOllamaBaseURL := downloads.OllamaBaseURL
+	downloads.OllamaBaseURL = srv.URL
+	defer func() { downloads.OllamaBaseURL = oldOllamaBaseURL }()
+
+	cfg := defaultTestConfig()
+	cfg.Providers.Ollama.BaseURL = srv.URL
+	cfgPath := filepath.Join(t.TempDir(), "config.toml")
+	state := &appState{
+		activeProfiles: map[string]string{},
+		sttRouter:      &router.Router{},
+	}
+	handler := assetHandler(cfg, cfgPath, state, state.sttRouter, nil, &config.InstallState{Mode: config.InstallModeLocal})
+
+	form := url.Values{"model_id": {"ollama.gemma4-e4b-dictate"}}
+	req := httptest.NewRequest(http.MethodPost, "/models/downloads/select", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	rec := httptest.NewRecorder()
+
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, body=%s", rec.Code, rec.Body.String())
+	}
+	if !cfg.Providers.Ollama.Enabled {
+		t.Fatal("expected Ollama provider to be enabled")
+	}
+	if got := cfg.Providers.Ollama.STTModel; got != "gemma4:e4b" {
+		t.Fatalf("ollama stt model = %q, want %q", got, "gemma4:e4b")
+	}
+	if got := cfg.Routing.Strategy; got != "cloud-only" {
+		t.Fatalf("routing strategy = %q, want %q", got, "cloud-only")
+	}
+	if provider := state.sttRouter.Cloud("ollama"); provider == nil {
+		t.Fatal("expected ollama STT provider to be configured on router")
+	}
+	if got := state.activeProfiles["stt"]; got != "stt.ollama.gemma4-e4b-transcribe" {
+		t.Fatalf("active stt profile = %q, want %q", got, "stt.ollama.gemma4-e4b-transcribe")
+	}
+}
+
+func TestSelectDownloadedLlamaCppAssistModelUpdatesLocalLLMConfig(t *testing.T) {
+	modelsDir := t.TempDir()
+	modelFile := filepath.Join(modelsDir, "gemma-3-4b-it-Q4_K_M.gguf")
+	if err := os.WriteFile(modelFile, []byte("gguf"), 0o600); err != nil {
+		t.Fatalf("write model file: %v", err)
+	}
+
+	cfg := defaultTestConfig()
+	cfg.General.ModelDownloadDir = modelsDir
+	cfg.LocalLLM.Enabled = false
+	cfg.LocalLLM.Model = "gemma4:e4b"
+	cfg.LocalLLM.AssistModel = "gemma4:e4b"
+	cfg.Providers.Ollama.Enabled = true
+	cfg.Providers.Ollama.AssistModel = "gemma4:e4b"
+	cfgPath := filepath.Join(t.TempDir(), "config.toml")
+	state := &appState{
+		activeProfiles: map[string]string{},
+		sttRouter:      &router.Router{},
+	}
+	handler := assetHandler(cfg, cfgPath, state, state.sttRouter, nil, &config.InstallState{Mode: config.InstallModeLocal})
+
+	form := url.Values{"model_id": {"llamacpp.gemma-3-4b-it-q4-k-m"}}
+	req := httptest.NewRequest(http.MethodPost, "/models/downloads/select", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	rec := httptest.NewRecorder()
+
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, body=%s", rec.Code, rec.Body.String())
+	}
+	if !cfg.LocalLLM.Enabled {
+		t.Fatal("expected built-in local LLM to be enabled")
+	}
+	if got := cfg.LocalLLM.ModelPath; got != modelFile {
+		t.Fatalf("local LLM model path = %q, want %q", got, modelFile)
+	}
+	if got := cfg.LocalLLM.Model; got != "gemma-3-4b-it-Q4_K_M.gguf" {
+		t.Fatalf("local LLM model = %q, want downloaded GGUF filename", got)
+	}
+	if got := cfg.LocalLLM.AssistModel; got != "gemma-3-4b-it-Q4_K_M.gguf" {
+		t.Fatalf("local LLM assist model = %q, want downloaded GGUF filename", got)
+	}
+	if got := cfg.Providers.Ollama.AssistModel; got != "" {
+		t.Fatalf("ollama assist model = %q, want cleared", got)
+	}
+	if got := state.activeProfiles["assist"]; got != "assist.builtin.gemma4-e4b" {
+		t.Fatalf("active assist profile = %q, want %q", got, "assist.builtin.gemma4-e4b")
 	}
 	if state.genkitRT == nil {
 		t.Fatal("expected AI runtime to be reloaded")

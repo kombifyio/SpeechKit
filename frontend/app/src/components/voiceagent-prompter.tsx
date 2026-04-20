@@ -148,7 +148,7 @@ function liveSlotStatusLabel(role: LiveSpeakerRole, state: PrompterState, level:
     return 'Connecting'
   }
   if (state === 'processing') {
-    return role === 'assistant' ? 'Thinking' : 'Waiting'
+    return role === 'assistant' ? 'Thinking' : 'Paused'
   }
   if (role === 'user') {
     if (state === 'listening' && level >= 0.18) {
@@ -386,6 +386,10 @@ export function VoiceAgentPrompter() {
 
   const chrome = modeChrome[mode]
   const statusLabel = labelForState(mode, state)
+  const visibleActivityLevels = {
+    user: state === 'listening' ? activityLevels.user : 0,
+    assistant: state === 'speaking' ? activityLevels.assistant : 0,
+  }
   const voiceAgentRunning =
     mode === 'voice_agent' &&
     ['connecting', 'listening', 'processing', 'speaking', 'ready', 'deactivating'].includes(state)
@@ -448,12 +452,12 @@ export function VoiceAgentPrompter() {
     >
       {transcriptHidden ? (
         mode === 'voice_agent' ? (
-          <CollapsedVoiceAgentSurface
-            state={state}
-            statusLabel={statusLabel}
-            liveNotice={liveNotice}
-            activityLevels={activityLevels}
-          />
+            <CollapsedVoiceAgentSurface
+              state={state}
+              statusLabel={statusLabel}
+              liveNotice={liveNotice}
+              activityLevels={visibleActivityLevels}
+            />
         ) : (
           <CollapsedAssistSurface statusLabel={statusLabel} />
         )
@@ -487,8 +491,8 @@ export function VoiceAgentPrompter() {
             >
               <LazySpeechKitAuraOrb
                 state={resolveVoiceAgentOrbState(state)}
-                userLevel={activityLevels.user}
-                assistantLevel={activityLevels.assistant}
+                userLevel={visibleActivityLevels.user}
+                assistantLevel={visibleActivityLevels.assistant}
                 className="w-[76px]"
               />
             </Suspense>
@@ -506,14 +510,14 @@ export function VoiceAgentPrompter() {
               role="user"
               turn={liveTurns.user}
               state={state}
-              level={activityLevels.user}
+              level={visibleActivityLevels.user}
               compact
             />
             <LiveTurnSlot
               role="assistant"
               turn={liveTurns.assistant}
               state={state}
-              level={activityLevels.assistant}
+              level={visibleActivityLevels.assistant}
               compact
             />
           </div>
@@ -701,7 +705,7 @@ function VoiceAgentOrbFallback({
         className ?? '',
       ].join(' ')}
     >
-      <div className="h-5 w-5 rounded-full border border-white/15 bg-white/16 shadow-[0_0_28px_rgba(255,255,255,0.12)]" />
+      <div className="h-5 w-5 rounded-full border border-white/15 bg-white/16" />
     </div>
   )
 }
@@ -810,9 +814,9 @@ function voiceAgentDetailForState(state: PrompterState, liveNotice: string | nul
     case 'connecting':
       return 'Bringing the realtime session online.'
     case 'listening':
-      return 'Listening for the next idea.'
+      return 'Recording. Speak while the key is held.'
     case 'processing':
-      return 'Thinking in realtime.'
+      return 'Hold released. Finishing the answer.'
     case 'speaking':
       return 'Responding live.'
     case 'ready':

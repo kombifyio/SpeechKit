@@ -78,7 +78,7 @@ func startLocalProviderWithRetry(ctx context.Context, state *appState, r *router
 			return
 		}
 		if !status.ModelFound {
-			runtimeLog(state, "Local STT unavailable: model file missing or corrupt. Download a model from Settings → STT.", "error")
+			runtimeLog(state, "Local STT unavailable: model file missing or corrupt. Download a model from Settings â†’ STT.", "error")
 			syncRuntimeProviders(ctx, state, r)
 			return
 		}

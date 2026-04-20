@@ -1,5 +1,6 @@
 export type OverlayMode = "pill" | "circle";
 export type OverlayDesign = "default" | "kombify";
+export type OverlayFeedbackMode = "big_productivity" | "small_feedback";
 export type RuntimeMode = "none" | "dictate" | "assist" | "voice_agent";
 export type AgentMode = "assist" | "voice_agent";
 export type HotkeyBehavior = "push_to_talk" | "toggle";
@@ -23,6 +24,23 @@ export type ExecutionMode =
   | "google_api"
   | "ollama_local"
   | "openrouter_api";
+export type ProviderKind =
+  | "local_built_in"
+  | "local_provider"
+  | "cloud_provider"
+  | "direct_provider";
+export type ModelCapability =
+  | "transcription"
+  | "stt"
+  | "audio_input"
+  | "llm"
+  | "tts"
+  | "realtime_audio"
+  | "pipeline_fallback"
+  | "tool_calling"
+  | "dictionary_prompt"
+  | "dictionary_native_hints"
+  | "session_summary";
 export type LogType = "info" | "warn" | "error" | "success";
 export type AvailableModes = Record<
   "dictate" | "assist" | "voice_agent",
@@ -48,11 +66,24 @@ export type ModelProfile = {
   id: string;
   modality: Modality;
   name: string;
+  providerKind?: ProviderKind;
   executionMode?: ExecutionMode;
   source?: string;
   provider?: string;
   description?: string;
+  capabilities?: ModelCapability[];
+  adapterKind?: string;
+  variants?: ModelVariant[];
+  recommended?: boolean;
   experimental?: boolean;
+};
+
+export type ModelVariant = {
+  id: string;
+  name: string;
+  modelId: string;
+  description?: string;
+  recommended?: boolean;
 };
 
 export type SpeechKitOverlayState = {
@@ -63,6 +94,8 @@ export type SpeechKitOverlayState = {
   visible: boolean;
   visualizer: OverlayMode;
   design: OverlayDesign;
+  assistOverlayMode: OverlayFeedbackMode;
+  voiceAgentOverlayMode: OverlayFeedbackMode;
   hotkey: string;
   dictateHotkey: string;
   assistHotkey: string;
@@ -104,6 +137,18 @@ export type ModelSelectionsState = Record<
   ModeModelSelectionState
 >;
 
+export const builtInPrimaryModelSelections: ModelSelectionsState = {
+  dictate: { primaryProfileId: "stt.local.whispercpp", fallbackProfileId: "" },
+  assist: {
+    primaryProfileId: "",
+    fallbackProfileId: "",
+  },
+  voice_agent: {
+    primaryProfileId: "realtime.google.gemini-native-audio",
+    fallbackProfileId: "",
+  },
+};
+
 export type SpeechKitSettingsState = {
   overlayEnabled: boolean;
   storeBackend: StoreBackend;
@@ -111,6 +156,7 @@ export type SpeechKitSettingsState = {
   postgresConfigured: boolean;
   postgresDSN: string;
   maxAudioStorageMB: number;
+  modelDownloadDir: string;
   hfAvailable: boolean;
   hfEnabled: boolean;
   hfHasUserToken: boolean;
@@ -125,6 +171,7 @@ export type SpeechKitSettingsState = {
   voiceAgentHotkeyBehavior: HotkeyBehavior;
   voiceAgentCloseBehavior: VoiceAgentCloseBehavior;
   voiceAgentRefinementPrompt: string;
+  voiceAgentSessionSummary: boolean;
   autoStartOnLaunch: boolean;
   modeEnabled: ModeEnabled;
   agentHotkey: string;
@@ -134,6 +181,8 @@ export type SpeechKitSettingsState = {
   hfModel: "openai/whisper-large-v3-turbo" | "openai/whisper-large-v3";
   visualizer: OverlayMode;
   design: OverlayDesign;
+  assistOverlayMode: OverlayFeedbackMode;
+  voiceAgentOverlayMode: OverlayFeedbackMode;
   overlayPosition: "top" | "bottom" | "left" | "right";
   overlayMovable: boolean;
   overlayFreeX: number;
@@ -157,6 +206,8 @@ export const defaultOverlayState: SpeechKitOverlayState = {
   visible: true,
   visualizer: "pill",
   design: "default",
+  assistOverlayMode: "small_feedback",
+  voiceAgentOverlayMode: "small_feedback",
   hotkey: "win+alt",
   dictateHotkey: "win+alt",
   assistHotkey: "ctrl+win",
@@ -176,7 +227,7 @@ export const defaultOverlayState: SpeechKitOverlayState = {
     assist: true,
     voice_agent: true,
   },
-  position: "top",
+  position: "bottom",
   movable: false,
   positionFreeX: 0,
   positionFreeY: 0,
@@ -194,6 +245,7 @@ export const defaultSettingsState: SpeechKitSettingsState = {
   postgresConfigured: false,
   postgresDSN: "",
   maxAudioStorageMB: 500,
+  modelDownloadDir: "",
   hfAvailable: false,
   hfEnabled: false,
   hfHasUserToken: false,
@@ -208,6 +260,7 @@ export const defaultSettingsState: SpeechKitSettingsState = {
   voiceAgentHotkeyBehavior: "push_to_talk",
   voiceAgentCloseBehavior: "continue",
   voiceAgentRefinementPrompt: "",
+  voiceAgentSessionSummary: true,
   autoStartOnLaunch: false,
   modeEnabled: {
     dictate: true,
@@ -225,7 +278,9 @@ export const defaultSettingsState: SpeechKitSettingsState = {
   hfModel: "openai/whisper-large-v3-turbo",
   visualizer: "pill",
   design: "default",
-  overlayPosition: "top",
+  assistOverlayMode: "small_feedback",
+  voiceAgentOverlayMode: "small_feedback",
+  overlayPosition: "bottom",
   overlayMovable: false,
   overlayFreeX: 0,
   overlayFreeY: 0,
@@ -235,11 +290,7 @@ export const defaultSettingsState: SpeechKitSettingsState = {
   selectedAudioDeviceId: "",
   selectedOutputDeviceId: "",
   activeProfiles: {},
-  modelSelections: {
-    dictate: { primaryProfileId: "", fallbackProfileId: "" },
-    assist: { primaryProfileId: "", fallbackProfileId: "" },
-    voice_agent: { primaryProfileId: "", fallbackProfileId: "" },
-  },
+  modelSelections: builtInPrimaryModelSelections,
 };
 
 function readStringField(
@@ -267,6 +318,21 @@ function normalizeHotkeyBehavior(
   }
   if (value === "push_to_talk") {
     return "push_to_talk";
+  }
+  return fallback;
+}
+
+function normalizeOverlayFeedbackMode(
+  payload: Record<string, unknown> | null | undefined,
+  key: string,
+  fallback: OverlayFeedbackMode,
+): OverlayFeedbackMode {
+  const value = readStringField(payload, key);
+  if (value === "big_productivity") {
+    return "big_productivity";
+  }
+  if (value === "small_feedback") {
+    return "small_feedback";
   }
   return fallback;
 }
@@ -468,6 +534,16 @@ function normalizeOverlayState(
   const agentHotkey =
     readStringField(record, "agentHotkey") ??
     deriveLegacyAgentHotkey(assistHotkey, voiceAgentHotkey, activeMode);
+  const assistOverlayMode = normalizeOverlayFeedbackMode(
+    record,
+    "assistOverlayMode",
+    base.assistOverlayMode,
+  );
+  const voiceAgentOverlayMode = normalizeOverlayFeedbackMode(
+    record,
+    "voiceAgentOverlayMode",
+    base.voiceAgentOverlayMode,
+  );
 
   return {
     ...base,
@@ -483,6 +559,8 @@ function normalizeOverlayState(
     agentHotkey,
     activeMode,
     availableModes,
+    assistOverlayMode,
+    voiceAgentOverlayMode,
     selectedAudioDeviceId:
       payload?.selectedAudioDeviceId ??
       (payload as { audioDeviceId?: string } | undefined)?.audioDeviceId ??
@@ -535,6 +613,10 @@ function normalizeSettingsState(
       : "continue";
   const voiceAgentRefinementPrompt =
     readStringField(record, "voiceAgentRefinementPrompt") ?? "";
+  const voiceAgentSessionSummary =
+    typeof record?.voiceAgentSessionSummary === "boolean"
+      ? record.voiceAgentSessionSummary
+      : base.voiceAgentSessionSummary;
   const autoStartOnLaunch =
     typeof record?.autoStartOnLaunch === "boolean"
       ? record.autoStartOnLaunch
@@ -573,6 +655,16 @@ function normalizeSettingsState(
     payload?.storeBackend === "postgres" ? "postgres" : base.storeBackend;
   const activeProfiles = payload?.activeProfiles ?? base.activeProfiles;
   const modelSelections = normalizeModelSelections(record, activeProfiles);
+  const assistOverlayMode = normalizeOverlayFeedbackMode(
+    record,
+    "assistOverlayMode",
+    base.assistOverlayMode,
+  );
+  const voiceAgentOverlayMode = normalizeOverlayFeedbackMode(
+    record,
+    "voiceAgentOverlayMode",
+    base.voiceAgentOverlayMode,
+  );
 
   const sanitizedPayload = {
     ...((payload ?? {}) as Record<string, unknown>),
@@ -588,6 +680,7 @@ function normalizeSettingsState(
     postgresConfigured: payload?.postgresConfigured ?? base.postgresConfigured,
     postgresDSN: payload?.postgresDSN ?? base.postgresDSN,
     maxAudioStorageMB: payload?.maxAudioStorageMB ?? base.maxAudioStorageMB,
+    modelDownloadDir: payload?.modelDownloadDir ?? base.modelDownloadDir,
     hotkey,
     dictateHotkey,
     assistHotkey,
@@ -597,12 +690,15 @@ function normalizeSettingsState(
     voiceAgentHotkeyBehavior,
     voiceAgentCloseBehavior,
     voiceAgentRefinementPrompt,
+    voiceAgentSessionSummary,
     autoStartOnLaunch,
     modeEnabled,
     agentHotkey,
     agentMode,
     activeMode,
     availableModes,
+    assistOverlayMode,
+    voiceAgentOverlayMode,
     selectedAudioDeviceId:
       payload?.selectedAudioDeviceId ??
       (payload as { audioDeviceId?: string } | undefined)?.audioDeviceId ??
@@ -1147,6 +1243,8 @@ export async function saveSettingsState(nextState: SpeechKitSettingsState) {
     overlay_enabled: nextState.overlayEnabled ? "1" : "0",
     overlay_visualizer: nextState.visualizer,
     overlay_design: nextState.design,
+    assist_overlay_mode: nextState.assistOverlayMode,
+    voice_agent_overlay_mode: nextState.voiceAgentOverlayMode,
     hotkey: nextState.dictateHotkey ?? nextState.hotkey,
     dictate_hotkey: nextState.dictateHotkey ?? nextState.hotkey,
     dictate_hotkey_behavior: nextState.dictateHotkeyBehavior,
@@ -1158,6 +1256,7 @@ export async function saveSettingsState(nextState: SpeechKitSettingsState) {
     voice_agent_hotkey_behavior: nextState.voiceAgentHotkeyBehavior,
     voice_agent_close_behavior: nextState.voiceAgentCloseBehavior,
     voice_agent_refinement_prompt: nextState.voiceAgentRefinementPrompt,
+    voice_agent_session_summary: nextState.voiceAgentSessionSummary ? "1" : "0",
     auto_start_on_launch: nextState.autoStartOnLaunch ? "1" : "0",
     voice_agent_enabled: nextState.modeEnabled.voice_agent ? "1" : "0",
     agent_hotkey: legacyAgentHotkey,
@@ -1174,6 +1273,7 @@ export async function saveSettingsState(nextState: SpeechKitSettingsState) {
     store_save_audio: nextState.saveAudio ? "1" : "0",
     store_audio_retention_days: String(nextState.audioRetentionDays),
     store_max_audio_storage_mb: String(nextState.maxAudioStorageMB),
+    model_download_dir: nextState.modelDownloadDir,
     vocabulary_dictionary: nextState.vocabularyDictionary,
     selected_audio_device_id: nextState.selectedAudioDeviceId,
     audio_device_id: nextState.selectedAudioDeviceId,

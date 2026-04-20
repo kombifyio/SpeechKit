@@ -8,6 +8,7 @@ import (
 	"io"
 	"mime/multipart"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/kombifyio/SpeechKit/internal/netsec"
@@ -21,7 +22,7 @@ const openAICompatMaxResponse = 1 << 20
 // BaseURL is user-supplied configuration. It is validated against Validation
 // on every request (Transcribe, Health). The default Validation is strict:
 // only public https:// endpoints are accepted. Self-hosted VPS and local
-// whisper-server require relaxing Validation — see NewVPSProvider.
+// whisper-server require relaxing Validation â€” see NewVPSProvider.
 type OpenAICompatibleProvider struct {
 	name       string
 	BaseURL    string
@@ -55,8 +56,30 @@ func NewVPSProvider(baseURL, apiKey string) *OpenAICompatibleProvider {
 		AllowPrivate:  true,
 		AllowHTTP:     true,
 	}
-	// Rebuild the HTTP client with a longer timeout — self-hosted whisper
+	// Rebuild the HTTP client with a longer timeout â€” self-hosted whisper
 	// may take longer to cold-start than managed cloud APIs.
+	p.client = netsec.NewSafeHTTPClient(netsec.ClientOptions{Timeout: 60 * time.Second})
+	return p
+}
+
+// NewOllamaSTTProvider creates a provider for Ollama-compatible local
+// transcription endpoints. Ollama runs on loopback by default and can be
+// pointed at a user-managed self-hosted URL.
+func NewOllamaSTTProvider(baseURL, model string) *OpenAICompatibleProvider {
+	baseURL = strings.TrimSpace(baseURL)
+	if baseURL == "" {
+		baseURL = "http://localhost:11434"
+	}
+	model = strings.TrimSpace(model)
+	if model == "" {
+		model = "gemma4:e4b"
+	}
+	p := NewOpenAICompatibleProvider("ollama", baseURL, "", model)
+	p.Validation = netsec.ValidationOptions{
+		AllowLoopback: true,
+		AllowPrivate:  true,
+		AllowHTTP:     true,
+	}
 	p.client = netsec.NewSafeHTTPClient(netsec.ClientOptions{Timeout: 60 * time.Second})
 	return p
 }

@@ -220,6 +220,10 @@ func registerAppRoutes(mux *http.ServeMux, cfgPath string, state *appState, inst
 			http.Error(w, "installer not ready", http.StatusConflict)
 			return
 		}
+		if err := verifyInstallerBeforeOpen(path); err != nil {
+			http.Error(w, "installer verification failed: "+err.Error(), http.StatusConflict)
+			return
+		}
 		if err := openInstallerFileInShell(path); err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return

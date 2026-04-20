@@ -89,7 +89,7 @@ export function AssistBubble() {
           color: '#fafafa',
           fontSize: 13,
           lineHeight: 1.5,
-          boxShadow: '0 4px 24px rgba(0, 0, 0, 0.4), 0 0 0 1px rgba(255,255,255,0.04)',
+          boxShadow: 'none',
           opacity,
           transform: `translateY(${translateY}px)`,
           transition: `opacity ${bubbleState === 'entering' ? ENTER_DURATION : EXIT_DURATION}ms ease, transform ${bubbleState === 'entering' ? ENTER_DURATION : EXIT_DURATION}ms ease`,

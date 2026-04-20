@@ -34,7 +34,19 @@ const (
 	VoiceAgentCloseBehaviorContinue = "continue"
 	VoiceAgentCloseBehaviorNewChat  = "new_chat"
 
+	OverlayFeedbackModeBigProductivity = "big_productivity"
+	OverlayFeedbackModeSmallFeedback   = "small_feedback"
+
 	DefaultLocalLLMBaseURL = "http://127.0.0.1:8082/v1"
+
+	DefaultDictatePrimaryProfileID    = "stt.local.whispercpp"
+	DefaultAssistPrimaryProfileID     = ""
+	DefaultVoiceAgentPrimaryProfileID = "realtime.google.gemini-native-audio"
+
+	legacyUnbundledAssistProfileID     = "assist.builtin.gemma4-e4b"
+	legacyUnbundledVoiceAgentProfileID = "realtime.builtin.pipeline"
+	legacyLocalVoiceAgentModel         = "speechkit-local-voice-pipeline"
+	defaultGeminiNativeAudioModel      = "gemini-2.5-flash-native-audio-preview-12-2025"
 )
 
 type Config struct {
@@ -79,11 +91,12 @@ type GeneralConfig struct {
 	VoiceAgentEnabled        bool   `toml:"voice_agent_enabled"`
 	AutoStartOnLaunch        bool   `toml:"auto_start_on_launch"`
 	AgentHotkey              string `toml:"agent_hotkey"`
-	AgentMode                string `toml:"agent_mode"`  // "assist" or "voice_agent" — determines what agent_hotkey triggers
+	AgentMode                string `toml:"agent_mode"`  // "assist" or "voice_agent" â€” determines what agent_hotkey triggers
 	ActiveMode               string `toml:"active_mode"` // legacy compat
 	HotkeyMode               string `toml:"hotkey_mode"` // legacy compat for single behavior setting
 	AutoStopSilenceMs        int    `toml:"auto_stop_silence_ms"`
 	FastModeSilenceMs        int    `toml:"fast_mode_silence_ms"` // silence threshold for Quick Capture auto-stop
+	ModelDownloadDir         string `toml:"model_download_dir"`   // Default directory for downloaded local model files
 }
 
 type AudioConfig struct {
@@ -123,6 +136,47 @@ type ModeModelSelection struct {
 	FallbackProfileID string `toml:"fallback_profile_id"`
 }
 
+func BuiltInPrimaryModelSelectionDefaults() ModelSelectionConfig {
+	return ModelSelectionConfig{
+		Dictate: ModeModelSelection{
+			PrimaryProfileID: DefaultDictatePrimaryProfileID,
+		},
+		Assist: ModeModelSelection{
+			PrimaryProfileID: DefaultAssistPrimaryProfileID,
+		},
+		VoiceAgent: ModeModelSelection{
+			PrimaryProfileID: DefaultVoiceAgentPrimaryProfileID,
+		},
+	}
+}
+
+func applyBuiltInPrimaryModelSelectionDefaults(cfg *Config) bool {
+	if cfg == nil {
+		return false
+	}
+
+	changed := false
+	changed = applyBuiltInPrimaryModelSelectionDefault(&cfg.ModelSelection.Dictate, DefaultDictatePrimaryProfileID) || changed
+	changed = applyBuiltInPrimaryModelSelectionDefault(&cfg.ModelSelection.Assist, DefaultAssistPrimaryProfileID) || changed
+	changed = applyBuiltInPrimaryModelSelectionDefault(&cfg.ModelSelection.VoiceAgent, DefaultVoiceAgentPrimaryProfileID) || changed
+	return changed
+}
+
+func applyBuiltInPrimaryModelSelectionDefault(selection *ModeModelSelection, primaryProfileID string) bool {
+	if selection == nil {
+		return false
+	}
+	primaryProfileID = strings.TrimSpace(primaryProfileID)
+	if primaryProfileID == "" {
+		return false
+	}
+	if strings.TrimSpace(selection.PrimaryProfileID) != "" || strings.TrimSpace(selection.FallbackProfileID) != "" {
+		return false
+	}
+	selection.PrimaryProfileID = primaryProfileID
+	return true
+}
+
 type UIConfig struct {
 	OverlayEnabled          bool                           `toml:"overlay_enabled"`
 	OverlayPosition         string                         `toml:"overlay_position"` // "top", "bottom", "left", "right"
@@ -132,6 +186,8 @@ type UIConfig struct {
 	OverlayMonitorPositions map[string]OverlayFreePosition `toml:"overlay_monitor_positions"`
 	Visualizer              string                         `toml:"visualizer"`
 	Design                  string                         `toml:"design"`
+	AssistOverlayMode       string                         `toml:"assist_overlay_mode"`
+	VoiceAgentOverlayMode   string                         `toml:"voice_agent_overlay_mode"`
 }
 
 type OverlayFreePosition struct {
@@ -293,8 +349,9 @@ type VoiceAgentConfig struct {
 	CloseBehavior                   string `toml:"close_behavior"` // "continue" keeps the conversation window in the taskbar; "new_chat" ends the current chat on close
 	ReminderAfterIdleSec            int    `toml:"reminder_after_idle_sec"`
 	DeactivateAfterIdleSec          int    `toml:"deactivate_after_idle_sec"`
-	PipelineFallback                bool   `toml:"pipeline_fallback"` // Deprecated compatibility flag; Voice Agent V2 remains realtime-only
+	PipelineFallback                bool   `toml:"pipeline_fallback"` // Use STT -> Agent LLM -> optional TTS when the selected Voice Agent profile is not native realtime.
 	ShowPrompter                    bool   `toml:"show_prompter"`     // Show live transcript prompter window
+	EnableSessionSummary            bool   `toml:"enable_session_summary"`
 	EnableInputTranscript           bool   `toml:"enable_input_transcript"`
 	EnableOutputTranscript          bool   `toml:"enable_output_transcript"`
 	EnableAffectiveDialog           bool   `toml:"enable_affective_dialog"`
@@ -363,9 +420,19 @@ func Load(path string) (*Config, error) {
 	backfillLegacyModeHotkeys(meta, cfg)
 	backfillStartupBehavior(meta, cfg)
 	backfillVoiceAgentPromptLayers(meta, cfg)
+	backfillVoiceAgentSessionSummary(meta, cfg)
+	migrateLegacyUnbundledLocalLLMDefaults(cfg)
 	cfg.VoiceAgent.CloseBehavior = NormalizeVoiceAgentCloseBehavior(
 		cfg.VoiceAgent.CloseBehavior,
 		VoiceAgentCloseBehaviorContinue,
+	)
+	cfg.UI.AssistOverlayMode = NormalizeOverlayFeedbackMode(
+		cfg.UI.AssistOverlayMode,
+		OverlayFeedbackModeSmallFeedback,
+	)
+	cfg.UI.VoiceAgentOverlayMode = NormalizeOverlayFeedbackMode(
+		cfg.UI.VoiceAgentOverlayMode,
+		OverlayFeedbackModeSmallFeedback,
 	)
 
 	return cfg, nil
@@ -467,6 +534,15 @@ func backfillVoiceAgentPromptLayers(meta toml.MetaData, cfg *Config) {
 	cfg.VoiceAgent.Instruction = legacyInstruction
 }
 
+func backfillVoiceAgentSessionSummary(meta toml.MetaData, cfg *Config) {
+	if cfg == nil {
+		return
+	}
+	if !meta.IsDefined("voice_agent", "enable_session_summary") {
+		cfg.VoiceAgent.EnableSessionSummary = true
+	}
+}
+
 func backfillLegacyAssistModels(meta toml.MetaData, cfg *Config) {
 	if cfg == nil {
 		return
@@ -486,6 +562,29 @@ func backfillLegacyAssistField(assistMissing bool, assistValue *string, legacyAg
 		return
 	}
 	*assistValue = strings.TrimSpace(legacyAgentValue)
+}
+
+func migrateLegacyUnbundledLocalLLMDefaults(cfg *Config) {
+	if cfg == nil {
+		return
+	}
+	if cfg.LocalLLM.Enabled && strings.TrimSpace(cfg.LocalLLM.ModelPath) != "" {
+		return
+	}
+
+	if strings.TrimSpace(cfg.ModelSelection.Assist.PrimaryProfileID) == legacyUnbundledAssistProfileID {
+		cfg.ModelSelection.Assist.PrimaryProfileID = DefaultAssistPrimaryProfileID
+		cfg.ModelSelection.Assist.FallbackProfileID = ""
+	}
+
+	if strings.TrimSpace(cfg.ModelSelection.VoiceAgent.PrimaryProfileID) == legacyUnbundledVoiceAgentProfileID {
+		cfg.ModelSelection.VoiceAgent.PrimaryProfileID = DefaultVoiceAgentPrimaryProfileID
+		cfg.ModelSelection.VoiceAgent.FallbackProfileID = ""
+		cfg.VoiceAgent.PipelineFallback = false
+		if strings.TrimSpace(cfg.VoiceAgent.Model) == "" || strings.TrimSpace(cfg.VoiceAgent.Model) == legacyLocalVoiceAgentModel {
+			cfg.VoiceAgent.Model = defaultGeminiNativeAudioModel
+		}
+	}
 }
 
 func Save(path string, cfg *Config) error {
@@ -541,16 +640,18 @@ func defaults() *Config {
 		Vocabulary: VocabularyConfig{
 			Dictionary: "",
 		},
-		ModelSelection: ModelSelectionConfig{},
+		ModelSelection: BuiltInPrimaryModelSelectionDefaults(),
 		UI: UIConfig{
 			OverlayEnabled:          true,
-			OverlayPosition:         "top",
+			OverlayPosition:         "bottom",
 			OverlayMovable:          false,
 			OverlayFreeX:            0,
 			OverlayFreeY:            0,
 			OverlayMonitorPositions: map[string]OverlayFreePosition{},
 			Visualizer:              "pill",
 			Design:                  "default",
+			AssistOverlayMode:       OverlayFeedbackModeSmallFeedback,
+			VoiceAgentOverlayMode:   OverlayFeedbackModeSmallFeedback,
 		},
 		Local: LocalConfig{
 			Enabled: false,
@@ -623,7 +724,7 @@ func defaults() *Config {
 		},
 		VoiceAgent: VoiceAgentConfig{
 			Enabled:                         true,
-			Model:                           "gemini-2.5-flash-native-audio-preview-12-2025",
+			Model:                           defaultGeminiNativeAudioModel,
 			FallbackModel:                   "gpt-realtime-mini",
 			Voice:                           "Kore",
 			FrameworkPrompt:                 "",
@@ -635,6 +736,7 @@ func defaults() *Config {
 			DeactivateAfterIdleSec:          900,
 			PipelineFallback:                false,
 			ShowPrompter:                    true,
+			EnableSessionSummary:            true,
 			EnableInputTranscript:           true,
 			EnableOutputTranscript:          true,
 			EnableAffectiveDialog:           false,
@@ -951,5 +1053,22 @@ func NormalizeVoiceAgentCloseBehavior(value, fallback string) string {
 			return VoiceAgentCloseBehaviorContinue
 		}
 		return NormalizeVoiceAgentCloseBehavior(fallback, VoiceAgentCloseBehaviorContinue)
+	}
+}
+
+func NormalizeOverlayFeedbackMode(value, fallback string) string {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case OverlayFeedbackModeBigProductivity:
+		return OverlayFeedbackModeBigProductivity
+	case OverlayFeedbackModeSmallFeedback:
+		return OverlayFeedbackModeSmallFeedback
+	default:
+		if strings.TrimSpace(fallback) == "" {
+			return OverlayFeedbackModeSmallFeedback
+		}
+		if strings.EqualFold(strings.TrimSpace(fallback), value) {
+			return OverlayFeedbackModeSmallFeedback
+		}
+		return NormalizeOverlayFeedbackMode(fallback, OverlayFeedbackModeSmallFeedback)
 	}
 }

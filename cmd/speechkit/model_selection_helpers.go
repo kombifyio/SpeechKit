@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"strings"
 
@@ -104,9 +103,9 @@ func validateModeSelection(cfg *config.Config, catalog models.Catalog, mode stri
 			return fmt.Errorf("%s profile %q must use modality %s", mode, profileID, expectedModality)
 		}
 		if profile.ExecutionMode == models.ExecutionModeHFRouted && !config.ManagedHuggingFaceAvailableInBuild() {
-			return errors.New(msgHFUnavailableBuild)
+			return errHFUnavailableBuild
 		}
-		if profile.ExecutionMode == models.ExecutionModeHFRouted && profileCredentialAvailable(cfg, profile) == false {
+		if profile.ExecutionMode == models.ExecutionModeHFRouted && !profileCredentialAvailable(cfg, profile) {
 			// Allow saving routed selections without a configured token/API key.
 			continue
 		}
@@ -125,8 +124,9 @@ func effectiveSelectedProfile(cfg *config.Config, catalog models.Catalog, mode s
 	return models.Profile{}, false
 }
 
-func orderedSelectionFromProfile(profile models.Profile) (appai.OrderedModelSelection, bool) {
-	if strings.TrimSpace(profile.ModelID) == "" {
+func orderedSelectionFromProfile(cfg *config.Config, profile models.Profile) (appai.OrderedModelSelection, bool) {
+	modelID := selectedModelIDForProfile(cfg, profile)
+	if strings.TrimSpace(modelID) == "" {
 		return appai.OrderedModelSelection{}, false
 	}
 
@@ -152,8 +152,35 @@ func orderedSelectionFromProfile(profile models.Profile) (appai.OrderedModelSele
 
 	return appai.OrderedModelSelection{
 		Provider: provider,
-		Model:    profile.ModelID,
+		Model:    modelID,
 	}, true
+}
+
+func selectedModelIDForProfile(cfg *config.Config, profile models.Profile) string {
+	modelID := profile.ModelID
+	if cfg == nil || profile.ExecutionMode != models.ExecutionModeLocal || profile.ProviderKind != models.ProviderKindLocalBuiltIn {
+		return modelID
+	}
+
+	switch profile.Modality {
+	case models.ModalityUtility:
+		if configured := strings.TrimSpace(cfg.LocalLLM.UtilityModel); configured != "" {
+			return configured
+		}
+	case models.ModalityAssist:
+		if configured := strings.TrimSpace(cfg.LocalLLM.AssistModel); configured != "" {
+			return configured
+		}
+	case models.ModalityRealtimeVoice:
+		if configured := strings.TrimSpace(cfg.LocalLLM.AgentModel); configured != "" {
+			return configured
+		}
+	}
+
+	if configured := strings.TrimSpace(cfg.LocalLLM.Model); configured != "" {
+		return configured
+	}
+	return modelID
 }
 
 func selectedModelSpecsForMode(cfg *config.Config, catalog models.Catalog, mode string) ([]appai.OrderedModelSelection, bool) {
@@ -169,7 +196,7 @@ func selectedModelSpecsForMode(cfg *config.Config, catalog models.Catalog, mode 
 		if !ok {
 			continue
 		}
-		spec, ok := orderedSelectionFromProfile(profile)
+		spec, ok := orderedSelectionFromProfile(cfg, profile)
 		if !ok {
 			continue
 		}
@@ -227,6 +254,23 @@ func applySelectedVoiceAgentProfile(cfg *config.Config, catalog models.Catalog) 
 		cfg.HuggingFace.Enabled = true
 		cfg.HuggingFace.AgentModel = primary.ModelID
 		cfg.VoiceAgent.PipelineFallback = true
+	case models.ExecutionModeOllama:
+		cfg.Providers.Ollama.Enabled = true
+		if cfg.Providers.Ollama.BaseURL == "" {
+			cfg.Providers.Ollama.BaseURL = "http://localhost:11434"
+		}
+		cfg.Providers.Ollama.AgentModel = primary.ModelID
+		cfg.VoiceAgent.PipelineFallback = true
+	case models.ExecutionModeLocal:
+		cfg.LocalLLM.Enabled = true
+		if cfg.LocalLLM.BaseURL == "" {
+			cfg.LocalLLM.BaseURL = config.DefaultLocalLLMBaseURL
+		}
+		if cfg.LocalLLM.Port == 0 {
+			cfg.LocalLLM.Port = 8082
+		}
+		cfg.LocalLLM.AgentModel = primary.ModelID
+		cfg.VoiceAgent.PipelineFallback = true
 	default:
 		cfg.VoiceAgent.PipelineFallback = fallbackOK
 	}
@@ -256,6 +300,9 @@ func syncConfiguredSTTRouter(ctx context.Context, cfg *config.Config, state *app
 		}
 	}
 	if provider := configuredVPSProvider(cfg); provider != nil {
+		cloudProviders = append(cloudProviders, provider)
+	}
+	if provider := configuredOllamaSTTProvider(cfg); provider != nil {
 		cloudProviders = append(cloudProviders, provider)
 	}
 	if provider := configuredGroqProvider(cfg); provider != nil {

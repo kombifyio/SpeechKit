@@ -58,6 +58,22 @@ func TestNewGroqSTTProvider_Defaults(t *testing.T) {
 	}
 }
 
+func TestNewOllamaSTTProvider_Defaults(t *testing.T) {
+	p := NewOllamaSTTProvider("", "gemma4:e4b")
+	if p.Name() != "ollama" {
+		t.Errorf("Name() = %q, want %q", p.Name(), "ollama")
+	}
+	if p.BaseURL != "http://localhost:11434" {
+		t.Errorf("BaseURL = %q, want %q", p.BaseURL, "http://localhost:11434")
+	}
+	if p.Model != "gemma4:e4b" {
+		t.Errorf("Model = %q, want %q", p.Model, "gemma4:e4b")
+	}
+	if p.APIKey != "" {
+		t.Errorf("APIKey = %q, want empty", p.APIKey)
+	}
+}
+
 func TestOpenAICompat_Transcribe_Success(t *testing.T) {
 	var gotModel string
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

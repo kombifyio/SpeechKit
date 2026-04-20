@@ -63,6 +63,29 @@ describe("DesktopWindowFrame", () => {
     expect(contentPanel).toHaveClass("overflow-hidden");
   });
 
+  it("marks the custom titlebar as a Wails drag region while keeping controls interactive", () => {
+    const { container } = render(
+      <DesktopWindowFrame
+        appLabel="SpeechKit"
+        title="Dashboard"
+        theme="dark"
+        onToggleTheme={() => {}}
+      >
+        <main />
+      </DesktopWindowFrame>,
+    );
+
+    const titlebar = container.querySelector("header.desktop-titlebar");
+    const controls = titlebar?.children.item(1);
+    const titlebarStyle = titlebar?.getAttribute("style") ?? "";
+    const controlsStyle = controls?.getAttribute("style") ?? "";
+
+    expect(titlebar).not.toBeNull();
+    expect(titlebarStyle).toContain("--wails-draggable: drag");
+    expect(controls).not.toBeNull();
+    expect(controlsStyle).toContain("--wails-draggable: no-drag");
+  });
+
   it("renders compact chrome for small overlay windows", () => {
     const { container, queryByText } = render(
       <DesktopWindowFrame

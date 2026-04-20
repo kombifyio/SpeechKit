@@ -296,7 +296,7 @@ func (p *LocalProvider) Transcribe(ctx context.Context, audio []byte, opts Trans
 			slog.Info("whisper-server: waiting for startup to complete...")
 			select {
 			case <-done:
-				// startup finished — check ready below
+				// startup finished â€” check ready below
 			case <-ctx.Done():
 				return nil, fmt.Errorf("local whisper-server not ready: cancelled while waiting for startup")
 			}
@@ -507,7 +507,7 @@ func (p *LocalProvider) VerifyInstallation() InstallStatus {
 	} else {
 		status.ModelBytes = fi.Size()
 		if fi.Size() < MinWhisperModelBytes {
-			status.Problems = append(status.Problems, fmt.Sprintf("model file too small (%d bytes) — likely corrupt or truncated", fi.Size()))
+			status.Problems = append(status.Problems, fmt.Sprintf("model file too small (%d bytes) â€” likely corrupt or truncated", fi.Size()))
 		} else {
 			status.ModelFound = true
 		}

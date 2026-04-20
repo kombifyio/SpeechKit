@@ -36,6 +36,7 @@ func TestNewManager(t *testing.T) {
 
 func TestHTTPDownload(t *testing.T) {
 	content := []byte("fake-model-binary-data-for-test")
+	h := sha256.Sum256(content)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Length", fmt.Sprintf("%d", len(content)))
 		w.Write(content)
@@ -54,6 +55,7 @@ func TestHTTPDownload(t *testing.T) {
 		SizeBytes: int64(len(content)),
 		Kind:      KindHTTP,
 		URL:       srv.URL + "/model.bin",
+		SHA256:    hex.EncodeToString(h[:]),
 	}, dir, func(item Item) {
 		mu.Lock()
 		done = true
@@ -110,9 +112,10 @@ func TestHTTPDownloadServerError(t *testing.T) {
 
 	m := NewManager()
 	m.Start(Item{
-		ID:   "fail-model",
-		Kind: KindHTTP,
-		URL:  srv.URL + "/model.bin",
+		ID:     "fail-model",
+		Kind:   KindHTTP,
+		URL:    srv.URL + "/model.bin",
+		SHA256: "0000000000000000000000000000000000000000000000000000000000000000",
 	}, t.TempDir(), nil)
 
 	deadline := time.Now().Add(5 * time.Second)
@@ -150,6 +153,7 @@ func TestCancelJob(t *testing.T) {
 		Kind:      KindHTTP,
 		URL:       srv.URL + "/model.bin",
 		SizeBytes: 999999999,
+		SHA256:    "0000000000000000000000000000000000000000000000000000000000000000",
 	}, t.TempDir(), nil)
 
 	// Wait for running state.
@@ -208,6 +212,9 @@ func TestCatalogReturnsItems(t *testing.T) {
 		if item.Kind == KindHTTP && item.URL == "" {
 			t.Errorf("HTTP item %s has empty URL", item.ID)
 		}
+		if item.Kind == KindHTTP && item.SHA256 == "" {
+			t.Errorf("HTTP item %s has empty SHA256", item.ID)
+		}
 		if item.Kind == KindOllama && item.OllamaModel == "" {
 			t.Errorf("Ollama item %s has empty OllamaModel", item.ID)
 		}
@@ -248,6 +255,55 @@ func TestCatalogExposesWhisperCppTurboAsRecommendedChoice(t *testing.T) {
 	}
 }
 
+func TestCatalogExposesOllamaItemsForAllUserModes(t *testing.T) {
+	cfg := &config.Config{}
+	items := Catalog(t.Context(), cfg)
+
+	wantByProfile := map[string]string{
+		"stt.ollama.gemma4-e4b-transcribe":    "ollama.gemma4-e4b-dictate",
+		"assist.ollama.gemma4-e4b":            "ollama.gemma4-e4b-assist",
+		"realtime.ollama.gemma4-e4b-pipeline": "ollama.gemma4-e4b-voice",
+	}
+
+	seen := map[string]string{}
+	for _, item := range items {
+		if item.Kind == KindOllama {
+			seen[item.ProfileID] = item.ID
+		}
+	}
+
+	for profileID, itemID := range wantByProfile {
+		if got := seen[profileID]; got != itemID {
+			t.Fatalf("ollama download item for %s = %q, want %q", profileID, got, itemID)
+		}
+	}
+}
+
+func TestCatalogExposesLlamaCppAssistDownloadChoices(t *testing.T) {
+	cfg := &config.Config{}
+	items := Catalog(t.Context(), cfg)
+
+	var assistItems []Item
+	for _, item := range items {
+		if item.ProfileID == "assist.builtin.gemma4-e4b" && item.Kind == KindHTTP {
+			assistItems = append(assistItems, item)
+		}
+	}
+
+	if len(assistItems) < 2 {
+		t.Fatalf("llama.cpp assist download choices = %d, want at least 2", len(assistItems))
+	}
+	if assistItems[0].ID != "llamacpp.gemma-3-4b-it-q4-k-m" {
+		t.Fatalf("first llama.cpp assist choice = %q, want %q", assistItems[0].ID, "llamacpp.gemma-3-4b-it-q4-k-m")
+	}
+	if !assistItems[0].Recommended {
+		t.Fatal("expected Q4_K_M llama.cpp assist model to be recommended")
+	}
+	if assistItems[1].ID != "llamacpp.gemma-3-4b-it-q8-0" {
+		t.Fatalf("second llama.cpp assist choice = %q, want %q", assistItems[1].ID, "llamacpp.gemma-3-4b-it-q8-0")
+	}
+}
+
 func TestCatalogMarksWhisperCppTurboSelectedFromConfig(t *testing.T) {
 	cfg := &config.Config{}
 	cfg.Local.Model = "ggml-large-v3-turbo.bin"
@@ -265,7 +321,34 @@ func TestCatalogMarksWhisperCppTurboSelectedFromConfig(t *testing.T) {
 	t.Fatal("expected whisper turbo item in catalog")
 }
 
+func TestCatalogMarksLlamaCppAssistModelSelectedFromConfig(t *testing.T) {
+	cfg := &config.Config{}
+	cfg.LocalLLM.ModelPath = filepath.Join("C:", "SpeechKit", "models", "gemma-3-4b-it-Q4_K_M.gguf")
+
+	items := Catalog(t.Context(), cfg)
+	for _, item := range items {
+		if item.ID == "llamacpp.gemma-3-4b-it-q4-k-m" {
+			if !item.Selected {
+				t.Fatal("expected llama.cpp assist Q4_K_M model to be selected from config")
+			}
+			return
+		}
+	}
+
+	t.Fatal("expected llama.cpp assist Q4_K_M item in catalog")
+}
+
 func TestResolveWhisperModelsDir(t *testing.T) {
+	t.Run("from default model download dir", func(t *testing.T) {
+		cfg := &config.Config{}
+		cfg.General.ModelDownloadDir = filepath.Join("D:", "SpeechKit", "Models")
+		cfg.Local.ModelPath = filepath.Join("C:", "legacy", "ggml-small.bin")
+		got := ResolveWhisperModelsDir(cfg)
+		want := filepath.Join("D:", "SpeechKit", "Models")
+		if got != want {
+			t.Errorf("got %q, want %q", got, want)
+		}
+	})
 	t.Run("from config", func(t *testing.T) {
 		cfg := &config.Config{}
 		cfg.Local.ModelPath = filepath.Join("C:", "models", "ggml-small.bin")
@@ -382,6 +465,45 @@ func TestHTTPDownloadSHA256Pass(t *testing.T) {
 	got, _ := os.ReadFile(filepath.Join(dir, "model.bin"))
 	if !bytes.Equal(got, content) {
 		t.Error("content mismatch")
+	}
+}
+
+func TestHTTPDownloadRequiresSHA256(t *testing.T) {
+	content := []byte("model-data-without-hash")
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Length", fmt.Sprintf("%d", len(content)))
+		w.Write(content)
+	}))
+	defer srv.Close()
+
+	dir := t.TempDir()
+	m := NewManager()
+
+	m.Start(Item{
+		ID:        "sha-required",
+		Kind:      KindHTTP,
+		URL:       srv.URL + "/model.bin",
+		SizeBytes: int64(len(content)),
+	}, dir, nil)
+
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		jobs := m.AllJobs()
+		if len(jobs) == 1 && (jobs[0].Status == StatusDone || jobs[0].Status == StatusFailed) {
+			break
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+
+	jobs := m.AllJobs()
+	if len(jobs) != 1 || jobs[0].Status != StatusFailed {
+		t.Fatalf("expected failed, got %v", jobs)
+	}
+	if jobs[0].Error == "" {
+		t.Fatal("expected error message")
+	}
+	if _, err := os.Stat(filepath.Join(dir, "model.bin")); err == nil {
+		t.Error("expected unhashed file not to be written")
 	}
 }
 

@@ -140,6 +140,105 @@ func (s *PostgresStore) ListTranscriptions(ctx context.Context, opts ListOpts) (
 	return results, rows.Err()
 }
 
+func (s *PostgresStore) ReplaceUserDictionaryEntries(ctx context.Context, language string, entries []UserDictionaryEntry) error {
+	language = normalizeDictionaryLanguage(language)
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		if err != nil {
+			_ = tx.Rollback()
+		}
+	}()
+
+	if _, err = tx.ExecContext(ctx,
+		`DELETE FROM user_dictionary_entries WHERE language = $1 AND source = $2`,
+		language, userDictionarySettingsSource,
+	); err != nil {
+		return fmt.Errorf("clear user dictionary entries: %w", err)
+	}
+
+	stmt, err := tx.PrepareContext(ctx,
+		`INSERT INTO user_dictionary_entries (spoken, canonical, language, source, enabled)
+		 VALUES ($1, $2, $3, $4, TRUE)
+		 ON CONFLICT(spoken, canonical, language, source)
+		 DO UPDATE SET enabled = TRUE, updated_at = NOW()`,
+	)
+	if err != nil {
+		return fmt.Errorf("prepare user dictionary insert: %w", err)
+	}
+	defer stmt.Close() //nolint:errcheck // statement close during transaction cleanup
+
+	for _, entry := range entries {
+		entry, ok := normalizeUserDictionaryEntry(entry, language)
+		if !ok {
+			continue
+		}
+		if _, err = stmt.ExecContext(ctx, entry.Spoken, entry.Canonical, entry.Language, entry.Source); err != nil {
+			return fmt.Errorf("insert user dictionary entry: %w", err)
+		}
+	}
+
+	if err = tx.Commit(); err != nil {
+		return fmt.Errorf("commit user dictionary entries: %w", err)
+	}
+	return nil
+}
+
+func (s *PostgresStore) ListUserDictionaryEntries(ctx context.Context, language string) ([]UserDictionaryEntry, error) {
+	language = normalizeDictionaryLanguage(language)
+	rows, err := s.db.QueryContext(ctx,
+		`SELECT id, spoken, canonical, language, source, enabled, usage_count, created_at, updated_at
+		 FROM user_dictionary_entries
+		 WHERE enabled = TRUE AND ($1 = '' OR language = $2 OR language = '')
+		 ORDER BY id ASC`,
+		language, language,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close() //nolint:errcheck // deferred rows close, error not actionable
+
+	entries := make([]UserDictionaryEntry, 0)
+	for rows.Next() {
+		var entry UserDictionaryEntry
+		if err := rows.Scan(
+			&entry.ID,
+			&entry.Spoken,
+			&entry.Canonical,
+			&entry.Language,
+			&entry.Source,
+			&entry.Enabled,
+			&entry.UsageCount,
+			&entry.CreatedAt,
+			&entry.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		entries = append(entries, entry)
+	}
+	return entries, rows.Err()
+}
+
+func (s *PostgresStore) RecordUserDictionaryUsage(ctx context.Context, canonical, language string) error {
+	canonical = strings.TrimSpace(canonical)
+	language = normalizeDictionaryLanguage(language)
+	if canonical == "" {
+		return nil
+	}
+	_, err := s.db.ExecContext(ctx,
+		`UPDATE user_dictionary_entries
+		 SET usage_count = usage_count + 1, updated_at = NOW()
+		 WHERE enabled = TRUE AND lower(canonical) = lower($1) AND ($2 = '' OR language = $3 OR language = '')`,
+		canonical, language, language,
+	)
+	if err != nil {
+		return fmt.Errorf("record user dictionary usage: %w", err)
+	}
+	return nil
+}
+
 func (s *PostgresStore) TranscriptionCount(ctx context.Context) (int, error) {
 	var count int
 	err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM transcriptions`).Scan(&count)

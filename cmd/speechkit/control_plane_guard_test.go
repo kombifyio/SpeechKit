@@ -12,11 +12,16 @@ import (
 
 func newControlPlaneGuardTestHandler(t *testing.T) http.Handler {
 	t.Helper()
+	return newControlPlaneGuardTestHandlerWithState(t, &appState{})
+}
+
+func newControlPlaneGuardTestHandlerWithState(t *testing.T, state *appState) http.Handler {
+	t.Helper()
 	cfg := defaultTestConfig()
 	return assetHandler(
 		cfg,
 		filepath.Join(t.TempDir(), "config.toml"),
-		&appState{},
+		state,
 		&router.Router{},
 		nil,
 		&config.InstallState{Mode: config.InstallModeLocal},
@@ -59,6 +64,57 @@ func TestControlPlaneGuardAllowsLocalhostOriginOnMutatingRequests(t *testing.T) 
 
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want %d", rec.Code, http.StatusOK)
+	}
+}
+
+func TestControlPlaneGuardRejectsMissingSessionTokenWhenConfigured(t *testing.T) {
+	handler := newControlPlaneGuardTestHandlerWithState(t, &appState{controlPlaneToken: "test-token"})
+	req := httptest.NewRequest(http.MethodPost, "/auth/logout", http.NoBody)
+	rec := httptest.NewRecorder()
+
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("status = %d, want %d", rec.Code, http.StatusForbidden)
+	}
+}
+
+func TestControlPlaneGuardAllowsSessionCookieWhenConfigured(t *testing.T) {
+	handler := newControlPlaneGuardTestHandlerWithState(t, &appState{controlPlaneToken: "test-token"})
+	req := httptest.NewRequest(http.MethodPost, "/auth/logout", http.NoBody)
+	req.AddCookie(&http.Cookie{Name: controlPlaneTokenCookieName, Value: "test-token"})
+	rec := httptest.NewRecorder()
+
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", rec.Code, http.StatusOK)
+	}
+}
+
+func TestControlPlaneGuardSetsSessionCookieOnReadRequest(t *testing.T) {
+	handler := newControlPlaneGuardTestHandlerWithState(t, &appState{controlPlaneToken: "test-token"})
+	req := httptest.NewRequest(http.MethodGet, "/app/version", http.NoBody)
+	rec := httptest.NewRecorder()
+
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", rec.Code, http.StatusOK)
+	}
+	cookies := rec.Result().Cookies()
+	if len(cookies) != 1 {
+		t.Fatalf("cookie count = %d, want 1", len(cookies))
+	}
+	cookie := cookies[0]
+	if cookie.Name != controlPlaneTokenCookieName || cookie.Value != "test-token" {
+		t.Fatalf("cookie = %s=%q, want %s=%q", cookie.Name, cookie.Value, controlPlaneTokenCookieName, "test-token")
+	}
+	if !cookie.HttpOnly {
+		t.Fatal("control-plane token cookie is not HttpOnly")
+	}
+	if cookie.SameSite != http.SameSiteStrictMode {
+		t.Fatalf("SameSite = %v, want %v", cookie.SameSite, http.SameSiteStrictMode)
 	}
 }
 

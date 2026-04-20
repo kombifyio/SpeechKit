@@ -1,4 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  AudioLines,
+  Bot,
+  FolderOpen,
+  Headphones,
+  type LucideIcon,
+} from "lucide-react";
+import { Dialogs } from "@wailsio/runtime";
 
 import { MicSelector } from "@/components/ui/mic-selector";
 import {
@@ -20,6 +28,8 @@ import {
   type DownloadJob,
   type HotkeyBehavior,
   type ModeModelSelectionState,
+  type OverlayFeedbackMode,
+  type ProviderKind,
   type ProviderCredentialState,
   type SpeechKitSettingsState,
 } from "@/lib/speechkit";
@@ -37,6 +47,13 @@ const HOTKEY_BEHAVIOR_OPTIONS = [
   { value: "push_to_talk", label: "Hold to talk" },
   { value: "toggle", label: "Toggle on press" },
 ] as const;
+const OVERLAY_FEEDBACK_MODE_OPTIONS: {
+  value: OverlayFeedbackMode;
+  label: string;
+}[] = [
+  { value: "big_productivity", label: "Big Productivity" },
+  { value: "small_feedback", label: "Small Feedback" },
+];
 const MODE_DEFAULT_BASES = {
   dictate: "win+alt",
   assist: "ctrl+win",
@@ -57,6 +74,19 @@ const MODE_SELECTION_KEYS = {
   assist: "assist",
   realtime_voice: "voice_agent",
 } as const;
+const MODE_NAV_TABS: Record<
+  keyof typeof MODE_SELECTION_KEYS,
+  { label: string; icon: LucideIcon; iconKey: string }
+> = {
+  stt: { label: "Transcribe Mode", icon: AudioLines, iconKey: "audio-lines" },
+  assist: { label: "Assist Mode", icon: Bot, iconKey: "bot" },
+  realtime_voice: {
+    label: "Voice Agent Mode",
+    icon: Headphones,
+    iconKey: "headphones",
+  },
+};
+const DEFAULT_SQLITE_FILENAME = "feedback.db";
 
 type ConfigurableMode = keyof typeof MODE_HOTKEY_FIELDS;
 type HotkeyBase = (typeof HOTKEY_BASE_OPTIONS)[number]["value"];
@@ -144,6 +174,85 @@ function providerCredentialCopy(
     neededLabel: `${credentialLabel} needed`,
     unlockLabel: `Add the ${noun} above to unlock this model.`,
   };
+}
+
+function directoryFromPath(path: string) {
+  const trimmedPath = path.trim();
+  const lastSeparator = Math.max(
+    trimmedPath.lastIndexOf("/"),
+    trimmedPath.lastIndexOf("\\"),
+  );
+  if (lastSeparator <= 0) return "";
+  return trimmedPath.slice(0, lastSeparator);
+}
+
+function sqliteFilenameFromPath(path: string) {
+  const trimmedPath = path.trim();
+  const lastSeparator = Math.max(
+    trimmedPath.lastIndexOf("/"),
+    trimmedPath.lastIndexOf("\\"),
+  );
+  const filename =
+    lastSeparator >= 0 ? trimmedPath.slice(lastSeparator + 1) : trimmedPath;
+  return filename.includes(".") ? filename : DEFAULT_SQLITE_FILENAME;
+}
+
+function joinFolderAndFile(folder: string, filename: string) {
+  const trimmedFolder = folder.trim();
+  if (!trimmedFolder) return filename;
+  if (trimmedFolder.endsWith("/") || trimmedFolder.endsWith("\\")) {
+    return `${trimmedFolder}${filename}`;
+  }
+  const separator = trimmedFolder.includes("\\") ? "\\" : "/";
+  return `${trimmedFolder}${separator}${filename}`;
+}
+
+type DictionaryEntry = {
+  id: string;
+  spoken: string;
+  canonical: string;
+};
+
+function createDictionaryEntry(index: number): DictionaryEntry {
+  return {
+    id: `dictionary-entry-${Date.now()}-${index}`,
+    spoken: "",
+    canonical: "",
+  };
+}
+
+function parseDictionaryEntries(value: string): DictionaryEntry[] {
+  return value
+    .split(/\r?\n/)
+    .map((line, index) => {
+      const trimmed = line.trim();
+      if (!trimmed) return null;
+      const arrowIndex = trimmed.indexOf("=>");
+      const spoken =
+        arrowIndex >= 0 ? trimmed.slice(0, arrowIndex).trim() : trimmed;
+      const canonical =
+        arrowIndex >= 0 ? trimmed.slice(arrowIndex + 2).trim() : "";
+      if (!spoken) return null;
+      return {
+        id: `dictionary-entry-${index}-${spoken}-${canonical}`,
+        spoken,
+        canonical,
+      };
+    })
+    .filter((entry): entry is DictionaryEntry => Boolean(entry));
+}
+
+function serializeDictionaryEntries(entries: DictionaryEntry[]) {
+  return entries
+    .map((entry) => ({
+      spoken: entry.spoken.trim(),
+      canonical: entry.canonical.trim(),
+    }))
+    .filter((entry) => entry.spoken.length > 0)
+    .map((entry) =>
+      entry.canonical ? `${entry.spoken} => ${entry.canonical}` : entry.spoken,
+    )
+    .join("\n");
 }
 
 export function SettingsApp({ initialTab = "general" }: { initialTab?: Tab }) {
@@ -281,7 +390,7 @@ export function SettingsApp({ initialTab = "general" }: { initialTab?: Tab }) {
       [MODE_HOTKEY_FIELDS[mode]]: trimmedValue,
       modeEnabled: {
         ...settings.modeEnabled,
-        [mode]: settings.modeEnabled[mode] && trimmedValue.length > 0,
+        [mode]: trimmedValue.length > 0,
       },
     };
 
@@ -436,6 +545,42 @@ export function SettingsApp({ initialTab = "general" }: { initialTab?: Tab }) {
   const hasSavedOverlaySpot =
     settings.overlayFreeX !== 0 || settings.overlayFreeY !== 0;
 
+  const handleChooseStorageFolder = async (
+    target: "sqlite" | "model_downloads",
+  ) => {
+    const currentPath =
+      target === "sqlite" ? settings.sqlitePath : settings.modelDownloadDir;
+    try {
+      const folder = await Dialogs.OpenFile({
+        Title:
+          target === "sqlite"
+            ? "Select SQLite storage folder"
+            : "Select model download folder",
+        ButtonText: "Use folder",
+        CanChooseDirectories: true,
+        CanChooseFiles: false,
+        CanCreateDirectories: true,
+        AllowsMultipleSelection: false,
+        Directory:
+          target === "sqlite" ? directoryFromPath(currentPath) : currentPath,
+        Detached: true,
+      });
+      if (!folder) return;
+      if (target === "sqlite") {
+        updateSettings({
+          sqlitePath: joinFolderAndFile(
+            folder,
+            sqliteFilenameFromPath(settings.sqlitePath),
+          ),
+        });
+        return;
+      }
+      updateSettings({ modelDownloadDir: folder });
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : "Folder selection failed");
+    }
+  };
+
   return (
     <div
       data-testid="settings-layout"
@@ -450,18 +595,29 @@ export function SettingsApp({ initialTab = "general" }: { initialTab?: Tab }) {
           <TabBtn active={tab === "general"} onClick={() => setTab("general")}>
             General
           </TabBtn>
-          <TabBtn active={tab === "stt"} onClick={() => setTab("stt")}>
-            Transcribe
-          </TabBtn>
-          <TabBtn active={tab === "assist"} onClick={() => setTab("assist")}>
-            Assist
-          </TabBtn>
-          <TabBtn
-            active={tab === "realtime_voice"}
-            onClick={() => setTab("realtime_voice")}
-          >
-            Voice Agent
-          </TabBtn>
+          {(Object.keys(MODE_NAV_TABS) as Array<keyof typeof MODE_NAV_TABS>).map(
+            (modeTab) => {
+              const modeNav = MODE_NAV_TABS[modeTab];
+              const ModeIcon = modeNav.icon;
+              return (
+                <TabBtn
+                  key={modeTab}
+                  active={tab === modeTab}
+                  onClick={() => setTab(modeTab)}
+                >
+                  <span className="flex min-w-0 items-center gap-2">
+                    <ModeIcon
+                      className="h-3.5 w-3.5 shrink-0"
+                      aria-hidden="true"
+                      data-testid={`settings-mode-nav-icon-${modeTab}`}
+                      data-icon={modeNav.iconKey}
+                    />
+                    <span className="truncate">{modeNav.label}</span>
+                  </span>
+                </TabBtn>
+              );
+            },
+          )}
         </nav>
       </div>
 
@@ -472,7 +628,7 @@ export function SettingsApp({ initialTab = "general" }: { initialTab?: Tab }) {
       >
         {/* General tab — two-column layout */}
         {tab === "general" && (
-          <div className="grid grid-cols-2 gap-x-10 gap-y-5">
+          <div className="grid grid-cols-1 gap-y-5 xl:grid-cols-2 xl:gap-x-10">
             {/* Left column: Launch · Microphone */}
             <div className="flex flex-col gap-5">
               <Section title="Startup">
@@ -503,7 +659,7 @@ export function SettingsApp({ initialTab = "general" }: { initialTab?: Tab }) {
             </div>
 
             {/* Right column: Overlay · Storage */}
-            <div className="flex flex-col gap-5">
+            <div className="contents">
               <Section title="Overlay">
                 <Row
                   label="Show overlay"
@@ -578,6 +734,24 @@ export function SettingsApp({ initialTab = "general" }: { initialTab?: Tab }) {
                         ),
                       )}
                     </div>
+                    {settings.visualizer === "pill" && (
+                      <div className="flex flex-col gap-1.5">
+                        <OverlayFeedbackModePicker
+                          label="Assist Mode"
+                          value={settings.assistOverlayMode}
+                          onChange={(assistOverlayMode) =>
+                            updateSettings({ assistOverlayMode })
+                          }
+                        />
+                        <OverlayFeedbackModePicker
+                          label="Voice Agent Mode"
+                          value={settings.voiceAgentOverlayMode}
+                          onChange={(voiceAgentOverlayMode) =>
+                            updateSettings({ voiceAgentOverlayMode })
+                          }
+                        />
+                      </div>
+                    )}
                     <Row
                       label="Movable overlay"
                       on={settings.overlayMovable}
@@ -632,7 +806,7 @@ export function SettingsApp({ initialTab = "general" }: { initialTab?: Tab }) {
                 )}
               </Section>
 
-              <Section title="Storage">
+              <Section title="Storage" className="xl:col-span-2" testId="storage-settings-card">
                 <div className="flex flex-wrap gap-1.5">
                   <Chip
                     active={settings.storeBackend === "sqlite"}
@@ -662,16 +836,28 @@ export function SettingsApp({ initialTab = "general" }: { initialTab?: Tab }) {
                       : "Add a PostgreSQL connection string before switching the metadata backend."}
                 </p>
                 {settings.storeBackend === "sqlite" ? (
-                  <input
-                    id="sqlite-path-input"
-                    aria-label="SQLite path"
-                    value={settings.sqlitePath}
-                    onChange={(e) =>
-                      updateSettings({ sqlitePath: e.target.value }, 350)
-                    }
-                    placeholder="%APPDATA%/SpeechKit/feedback.db"
-                    className="sk-input mt-1.5 h-8 w-full rounded px-2.5 text-xs"
-                  />
+                  <div className="mt-1.5 flex gap-2">
+                    <input
+                      id="sqlite-path-input"
+                      aria-label="SQLite path"
+                      value={settings.sqlitePath}
+                      onChange={(e) =>
+                        updateSettings({ sqlitePath: e.target.value }, 350)
+                      }
+                      placeholder="%APPDATA%/SpeechKit/feedback.db"
+                      className="sk-input h-8 min-w-0 flex-1 rounded px-2.5 text-xs"
+                    />
+                    <button
+                      type="button"
+                      aria-label="Choose SQLite storage folder"
+                      title="Choose SQLite storage folder"
+                      onClick={() => void handleChooseStorageFolder("sqlite")}
+                      className="sk-secondary-button inline-flex h-8 shrink-0 items-center gap-1.5 rounded px-2.5 text-xs font-medium transition-colors hover:bg-[color:var(--sk-surface-3)]"
+                    >
+                      <FolderOpen className="h-3.5 w-3.5" />
+                      Browse
+                    </button>
+                  </div>
                 ) : (
                   <input
                     id="postgres-dsn-input"
@@ -684,6 +870,35 @@ export function SettingsApp({ initialTab = "general" }: { initialTab?: Tab }) {
                     className="sk-input mt-1.5 h-8 w-full rounded px-2.5 text-xs"
                   />
                 )}
+                <label className="mt-2.5 flex flex-col gap-1.5">
+                  <span className="text-[10px] font-semibold uppercase tracking-[0.14em] text-[#938ea1]">
+                    Model downloads
+                  </span>
+                  <div className="flex gap-2">
+                    <input
+                      id="model-download-dir-input"
+                      aria-label="Default model download folder"
+                      value={settings.modelDownloadDir}
+                      onChange={(e) =>
+                        updateSettings({ modelDownloadDir: e.target.value }, 350)
+                      }
+                      placeholder="%LOCALAPPDATA%/SpeechKit/models"
+                      className="sk-input h-8 min-w-0 flex-1 rounded px-2.5 text-xs"
+                    />
+                    <button
+                      type="button"
+                      aria-label="Choose model download folder"
+                      title="Choose model download folder"
+                      onClick={() =>
+                        void handleChooseStorageFolder("model_downloads")
+                      }
+                      className="sk-secondary-button inline-flex h-8 shrink-0 items-center gap-1.5 rounded px-2.5 text-xs font-medium transition-colors hover:bg-[color:var(--sk-surface-3)]"
+                    >
+                      <FolderOpen className="h-3.5 w-3.5" />
+                      Browse
+                    </button>
+                  </div>
+                </label>
                 <div className="mt-2.5">
                   <Row
                     label="Save raw audio locally"
@@ -738,34 +953,11 @@ export function SettingsApp({ initialTab = "general" }: { initialTab?: Tab }) {
               </Section>
             </div>
 
-            {/* Vocabulary — full width */}
-            <div className="col-span-2">
-              <Section title="Vocabulary">
-                <textarea
-                  id="vocabulary-dictionary-input"
-                  aria-label="Vocabulary dictionary"
-                  value={settings.vocabularyDictionary}
-                  onChange={(e) =>
-                    updateSettings(
-                      { vocabularyDictionary: e.target.value },
-                      250,
-                    )
-                  }
-                  rows={3}
-                  placeholder={"kombi fire => Kombify\nAcmeOS\nGemma"}
-                  className="w-full rounded border border-[#484555] bg-[#0e0e13] px-3 py-2 text-xs leading-6 text-[#e4e1e9] outline-none focus:border-[#947dff]/50"
-                />
-                <p className="mt-1 text-[11px] text-[#938ea1]/70">
-                  One term per line. Use <code>spoken =&gt; canonical</code> for
-                  corrections, or a bare term to bias transcription.
-                </p>
-              </Section>
-            </div>
           </div>
         )}
 
         {tab === "stt" && (
-          <div className="mb-5">
+          <div className="mb-5 grid gap-5 lg:grid-cols-2">
             <ModeSection
               title="Transcribe Controls"
               testId="transcribe-mode-controls"
@@ -780,6 +972,14 @@ export function SettingsApp({ initialTab = "general" }: { initialTab?: Tab }) {
                 onChange={(value) => updateModeHotkey("dictate", value)}
                 onChangeBehavior={(value) =>
                   updateModeHotkeyBehavior("dictate", value)
+                }
+              />
+            </ModeSection>
+            <ModeSection title="User Dictionary">
+              <DictionaryListEditor
+                value={settings.vocabularyDictionary}
+                onChange={(value) =>
+                  updateSettings({ vocabularyDictionary: value }, 250)
                 }
               />
             </ModeSection>
@@ -857,6 +1057,16 @@ export function SettingsApp({ initialTab = "general" }: { initialTab?: Tab }) {
                     </span>
                   </label>
                 </div>
+                <Row
+                  label="Session summary"
+                  on={settings.voiceAgentSessionSummary}
+                  onToggle={() =>
+                    updateSettings({
+                      voiceAgentSessionSummary:
+                        !settings.voiceAgentSessionSummary,
+                    })
+                  }
+                />
                 <div className="flex flex-wrap gap-1.5">
                   <Chip
                     active={settings.voiceAgentCloseBehavior === "continue"}
@@ -951,13 +1161,20 @@ function TabBtn({
 function Section({
   title,
   children,
+  className = "",
+  testId,
 }: {
   title: string;
   children: React.ReactNode;
+  className?: string;
+  testId?: string;
 }) {
   return (
-    <section className="sk-panel rounded-[24px] p-5">
-      <div className="mb-1.5">
+    <section
+      data-testid={testId}
+      className={["min-w-0 py-2", className].join(" ")}
+    >
+      <div className="mb-4 border-b border-[color:var(--sk-shell-divider)]/85 pb-3">
         <span className="text-[10px] font-semibold uppercase tracking-[0.14em] text-[color:var(--sk-text-muted)]">
           {title}
         </span>
@@ -979,7 +1196,7 @@ function ModeSection({
   return (
     <section
       data-testid={testId}
-      className="rounded-[24px] bg-transparent px-1 py-1"
+      className="min-w-0 bg-transparent py-1"
     >
       <div className="mb-4 border-b border-[color:var(--sk-shell-divider)]/85 pb-3">
         <span className="text-[10px] font-semibold uppercase tracking-[0.14em] text-[color:var(--sk-text-muted)]">
@@ -988,6 +1205,229 @@ function ModeSection({
       </div>
       {children}
     </section>
+  );
+}
+
+function DictionaryListEditor({
+  value,
+  onChange,
+}: {
+  value: string;
+  onChange: (value: string) => void;
+}) {
+  const entries = parseDictionaryEntries(value);
+  const previewEntries = entries.slice(-3).reverse();
+  const [open, setOpen] = useState(false);
+  const [draftEntries, setDraftEntries] = useState<DictionaryEntry[]>([]);
+
+  const openEditor = (appendBlank: boolean) => {
+    const parsedEntries = parseDictionaryEntries(value);
+    const nextEntries =
+      parsedEntries.length > 0 ? parsedEntries : [createDictionaryEntry(0)];
+    setDraftEntries(
+      appendBlank
+        ? [...nextEntries, createDictionaryEntry(nextEntries.length)]
+        : nextEntries,
+    );
+    setOpen(true);
+  };
+
+  const updateDraftEntry = (
+    index: number,
+    patch: Partial<Omit<DictionaryEntry, "id">>,
+  ) => {
+    setDraftEntries((current) =>
+      current.map((entry, entryIndex) =>
+        entryIndex === index ? { ...entry, ...patch } : entry,
+      ),
+    );
+  };
+
+  const removeDraftEntry = (index: number) => {
+    setDraftEntries((current) => {
+      const next = current.filter((_, entryIndex) => entryIndex !== index);
+      return next.length > 0 ? next : [createDictionaryEntry(0)];
+    });
+  };
+
+  const addDraftEntry = () => {
+    setDraftEntries((current) => [
+      ...current,
+      createDictionaryEntry(current.length),
+    ]);
+  };
+
+  const canSave = draftEntries.some((entry) => entry.spoken.trim().length > 0);
+
+  const saveDraft = () => {
+    if (!canSave) return;
+    onChange(serializeDictionaryEntries(draftEntries));
+    setOpen(false);
+  };
+
+  return (
+    <div>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <div className="text-sm font-medium text-[color:var(--sk-text)]">
+            Recent words
+          </div>
+          <p className="mt-1 text-[11px] leading-relaxed text-[color:var(--sk-text-muted)]/80">
+            Add hard-to-recognise words and optional preferred spellings.
+          </p>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <button
+            type="button"
+            onClick={() => openEditor(true)}
+            className="sk-secondary-button h-8 rounded-lg px-3 text-xs font-medium transition-colors hover:bg-[color:var(--sk-surface-3)]"
+          >
+            Add word
+          </button>
+          <button
+            type="button"
+            onClick={() => openEditor(false)}
+            className="sk-secondary-button h-8 rounded-lg px-3 text-xs font-medium transition-colors hover:bg-[color:var(--sk-surface-3)]"
+          >
+            Manage list
+          </button>
+        </div>
+      </div>
+
+      {previewEntries.length > 0 ? (
+        <div className="mt-3 grid gap-2">
+          {previewEntries.map((entry) => (
+            <div
+              key={entry.id}
+              className="flex min-h-9 items-center justify-between gap-3 border-b border-[color:var(--sk-shell-divider)]/70 py-2 last:border-b-0"
+            >
+              <span className="min-w-0 truncate text-sm text-[color:var(--sk-text)]">
+                {entry.canonical || entry.spoken}
+              </span>
+              {entry.canonical && (
+                <span className="min-w-0 truncate text-[11px] text-[color:var(--sk-text-muted)]">
+                  heard as {entry.spoken}
+                </span>
+              )}
+            </div>
+          ))}
+        </div>
+      ) : (
+        <button
+          type="button"
+          onClick={() => openEditor(true)}
+          className="mt-3 flex h-12 w-full items-center justify-center rounded-lg border border-dashed border-[color:var(--sk-panel-border)] text-xs font-medium text-[color:var(--sk-text-muted)] transition-colors hover:border-[color:var(--sk-accent)]/40 hover:text-[color:var(--sk-text)]"
+        >
+          Add your first dictionary word
+        </button>
+      )}
+
+      {open && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-label="Dictionary editor"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 px-6 py-6"
+        >
+          <div className="flex max-h-full w-full max-w-3xl flex-col rounded-[20px] border border-[color:var(--sk-panel-border)] bg-[color:var(--sk-surface-1)] shadow-2xl">
+            <div className="flex items-center justify-between gap-4 border-b border-[color:var(--sk-shell-divider)] px-5 py-4">
+              <div>
+                <h3 className="text-sm font-semibold text-[color:var(--sk-text)]">
+                  User Dictionary
+                </h3>
+                <p className="mt-1 text-[11px] text-[color:var(--sk-text-muted)]">
+                  One row per word. Preferred spelling is optional.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setOpen(false)}
+                className="sk-secondary-button h-8 rounded-lg px-3 text-xs font-medium transition-colors hover:bg-[color:var(--sk-surface-3)]"
+              >
+                Cancel
+              </button>
+            </div>
+
+            <div className="min-h-0 overflow-y-auto px-5 py-4">
+              <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] gap-2 text-[10px] font-semibold uppercase tracking-[0.14em] text-[color:var(--sk-text-muted)]">
+                <span>Word or phrase</span>
+                <span>Preferred spelling</span>
+                <span className="w-16 text-right">Remove</span>
+              </div>
+              <div className="mt-2 grid gap-2">
+                {draftEntries.map((entry, index) => (
+                  <div
+                    key={entry.id}
+                    className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] items-center gap-2"
+                  >
+                    <input
+                      aria-label={`Dictionary spoken word ${index + 1}`}
+                      value={entry.spoken}
+                      onChange={(event) =>
+                        updateDraftEntry(index, {
+                          spoken: event.target.value,
+                        })
+                      }
+                      placeholder="AcmeOS"
+                      className="sk-input h-9 min-w-0 rounded-lg px-3 text-xs"
+                    />
+                    <input
+                      aria-label={`Dictionary preferred spelling ${index + 1}`}
+                      value={entry.canonical}
+                      onChange={(event) =>
+                        updateDraftEntry(index, {
+                          canonical: event.target.value,
+                        })
+                      }
+                      placeholder="Optional"
+                      className="sk-input h-9 min-w-0 rounded-lg px-3 text-xs"
+                    />
+                    <button
+                      type="button"
+                      aria-label={`Remove dictionary word ${index + 1}`}
+                      onClick={() => removeDraftEntry(index)}
+                      className="sk-secondary-button h-9 w-16 rounded-lg px-2 text-xs font-medium transition-colors hover:bg-[color:var(--sk-surface-3)]"
+                    >
+                      Remove
+                    </button>
+                  </div>
+                ))}
+              </div>
+              <button
+                type="button"
+                onClick={addDraftEntry}
+                className="sk-secondary-button mt-3 h-8 rounded-lg px-3 text-xs font-medium transition-colors hover:bg-[color:var(--sk-surface-3)]"
+              >
+                Add row
+              </button>
+            </div>
+
+            <div className="flex items-center justify-end gap-2 border-t border-[color:var(--sk-shell-divider)] px-5 py-4">
+              <button
+                type="button"
+                onClick={() => setOpen(false)}
+                className="sk-secondary-button h-8 rounded-lg px-3 text-xs font-medium transition-colors hover:bg-[color:var(--sk-surface-3)]"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={!canSave}
+                onClick={saveDraft}
+                className={[
+                  "h-8 rounded-lg px-3 text-xs font-semibold transition-colors",
+                  canSave
+                    ? "bg-[color:var(--sk-accent)] text-white hover:bg-[color:var(--sk-accent-strong)]"
+                    : "cursor-not-allowed bg-[color:var(--sk-surface-2)] text-[color:var(--sk-text-subtle)]",
+                ].join(" ")}
+              >
+                Save dictionary
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -1079,35 +1519,43 @@ const PROVIDER_FOR_EXECUTION_MODE: Record<string, string | undefined> = {
   openrouter_api: "openrouter",
 };
 
+const PROVIDER_KIND_ORDER: ProviderKind[] = [
+  "local_built_in",
+  "local_provider",
+  "cloud_provider",
+  "direct_provider",
+];
+const PROVIDER_KIND_LABELS: Record<ProviderKind, string> = {
+  local_built_in: "Local Built-in",
+  local_provider: "Local Provider",
+  cloud_provider: "Cloud Provider",
+  direct_provider: "Direct Provider",
+};
+
 type ModalityTabKey = "stt" | "assist" | "realtime_voice";
+type SettingsModelProfile = NonNullable<
+  SpeechKitSettingsState["profiles"]
+>[number];
 
-function limitProfilesToVisibleOptions(
-  profiles: SpeechKitSettingsState["profiles"],
-  preferredProfileIDs: string[] = [],
-  maxOptions = 3,
-) {
-  const list = profiles ?? [];
-  if (list.length <= maxOptions) return list;
-  const next = list.slice(0, maxOptions);
-  const preferred = preferredProfileIDs
-    .map((profileID) => list.find((profile) => profile.id === profileID))
-    .filter((profile): profile is NonNullable<typeof profile> =>
-      Boolean(profile),
-    );
-
-  for (const profile of preferred) {
-    if (next.some((entry) => entry.id === profile.id)) {
-      continue;
-    }
-    next.splice(Math.max(next.length - 1, 0), 1, profile);
+function providerKindForProfile(profile: SettingsModelProfile): ProviderKind {
+  if (profile.providerKind) {
+    return profile.providerKind;
   }
-
-  return next;
+  switch (profile.executionMode) {
+    case "local":
+      return "local_built_in";
+    case "ollama_local":
+    case "self_hosted_http":
+      return "local_provider";
+    case "hf_routed":
+    case "hf_inference":
+      return "cloud_provider";
+    default:
+      return "direct_provider";
+  }
 }
 
-function sourceBadge(
-  profile: NonNullable<SpeechKitSettingsState["profiles"]>[number],
-) {
+function sourceBadge(profile: SettingsModelProfile) {
   switch (profile.executionMode) {
     case "local":
       return {
@@ -1211,15 +1659,13 @@ function ModelPanel({
   const activeId = settings.activeProfiles?.[modality];
   const selectionMode = MODE_SELECTION_KEYS[modality];
   const currentSelection = settings.modelSelections[selectionMode];
-  const visibleProfiles = limitProfilesToVisibleOptions(
-    filtered,
-    [
-      currentSelection.primaryProfileId,
-      currentSelection.fallbackProfileId,
-      activeId ?? "",
-    ].filter(Boolean),
-    4,
-  );
+  const providerGroups = PROVIDER_KIND_ORDER.map((kind) => ({
+    kind,
+    label: PROVIDER_KIND_LABELS[kind],
+    profiles: filtered.filter(
+      (profile) => providerKindForProfile(profile) === kind,
+    ),
+  }));
 
   return (
     <>
@@ -1238,13 +1684,34 @@ function ModelPanel({
           </span>
         </div>
 
-        {visibleProfiles.length === 0 ? (
+        {filtered.length === 0 ? (
           <p className="px-4 py-4 text-[11px] text-[color:var(--sk-text-muted)]">
             No live-switchable model profiles are exposed in this build.
           </p>
         ) : (
-          <div className="divide-y divide-[color:var(--sk-shell-divider)]">
-            {visibleProfiles.map((profile) => {
+          <div className="space-y-3 p-3">
+            {providerGroups.map((group) => (
+              <section
+                key={group.kind}
+                data-testid={`model-provider-group-${group.kind}`}
+                className="overflow-hidden rounded-xl border border-[color:var(--sk-shell-divider)] bg-[color:var(--sk-surface-0)]/45"
+              >
+                <div className="flex items-center justify-between gap-3 border-b border-[color:var(--sk-shell-divider)] px-4 py-2">
+                  <span className="text-[10px] font-semibold uppercase tracking-[0.14em] text-[color:var(--sk-text-muted)]">
+                    {group.label}
+                  </span>
+                  <span className="text-[10px] text-[color:var(--sk-text-muted)]">
+                    {group.profiles.length}{" "}
+                    {group.profiles.length === 1 ? "model" : "models"}
+                  </span>
+                </div>
+                {group.profiles.length === 0 ? (
+                  <p className="px-4 py-3 text-[11px] text-[color:var(--sk-text-muted)]">
+                    No supported model in this provider group.
+                  </p>
+                ) : (
+                  <div className="divide-y divide-[color:var(--sk-shell-divider)]">
+                    {group.profiles.map((profile) => {
               const isActive = activeId === profile.id;
               const isPrimarySelected =
                 currentSelection.primaryProfileId === profile.id;
@@ -1630,7 +2097,11 @@ function ModelPanel({
                   )}
                 </div>
               );
-            })}
+                    })}
+                  </div>
+                )}
+              </section>
+            ))}
           </div>
         )}
       </div>
@@ -1809,6 +2280,34 @@ function Chip({
     >
       {children}
     </button>
+  );
+}
+
+function OverlayFeedbackModePicker({
+  label,
+  value,
+  onChange,
+}: {
+  label: string;
+  value: OverlayFeedbackMode;
+  onChange: (value: OverlayFeedbackMode) => void;
+}) {
+  return (
+    <div className="flex flex-wrap items-center gap-1.5">
+      <span className="mr-1 text-[11px] text-[color:var(--sk-text-muted)]">
+        {label}
+      </span>
+      {OVERLAY_FEEDBACK_MODE_OPTIONS.map((option) => (
+        <Chip
+          key={option.value}
+          active={value === option.value}
+          ariaLabel={`${label} ${option.label}`}
+          onClick={() => onChange(option.value)}
+        >
+          {option.label}
+        </Chip>
+      ))}
+    </div>
   );
 }
 

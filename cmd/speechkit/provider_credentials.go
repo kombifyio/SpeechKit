@@ -170,6 +170,17 @@ func configuredGoogleProvider(cfg *config.Config) stt.STTProvider {
 	return stt.NewGoogleSTTProvider(apiKey, cfg.Providers.Google.STTModel)
 }
 
+func configuredOllamaSTTProvider(cfg *config.Config) stt.STTProvider {
+	if cfg == nil || !cfg.Providers.Ollama.Enabled {
+		return nil
+	}
+	modelID := strings.TrimSpace(cfg.Providers.Ollama.STTModel)
+	if modelID == "" {
+		return nil
+	}
+	return stt.NewOllamaSTTProvider(cfg.Providers.Ollama.BaseURL, modelID)
+}
+
 func configuredVPSProvider(cfg *config.Config) stt.STTProvider {
 	if cfg == nil || !cfg.VPS.Enabled || strings.TrimSpace(cfg.VPS.URL) == "" {
 		return nil

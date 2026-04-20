@@ -26,10 +26,10 @@ const (
 	dotBubbleW  = 20
 	dotBubbleH  = 20
 
-	pillAnchorWidth  = 88
-	pillAnchorHeight = 32
-	pillPanelWidth   = 240
-	pillPanelHeight  = 32
+	pillAnchorWidth  = 380
+	pillAnchorHeight = 128
+	pillPanelWidth   = 380
+	pillPanelHeight  = 128
 	dotAnchorSize    = 24
 	radialMenuSize   = 120
 
@@ -111,6 +111,8 @@ type overlaySnapshot struct {
 	Visible                  bool                     `json:"visible"`
 	Visualizer               string                   `json:"visualizer"`
 	Design                   string                   `json:"design"`
+	AssistOverlayMode        string                   `json:"assistOverlayMode"`
+	VoiceAgentOverlayMode    string                   `json:"voiceAgentOverlayMode"`
 	Hotkey                   string                   `json:"hotkey"`
 	DictateHotkey            string                   `json:"dictateHotkey"`
 	AssistHotkey             string                   `json:"assistHotkey"`
@@ -146,6 +148,7 @@ type settingsSnapshot struct {
 	PostgresConfigured         bool                                  `json:"postgresConfigured"`
 	PostgresDSN                string                                `json:"postgresDSN,omitempty"`
 	MaxAudioStorageMB          int                                   `json:"maxAudioStorageMB"`
+	ModelDownloadDir           string                                `json:"modelDownloadDir"`
 	HFAvailable                bool                                  `json:"hfAvailable"`
 	HFEnabled                  bool                                  `json:"hfEnabled"`
 	HFHasUserToken             bool                                  `json:"hfHasUserToken"`
@@ -160,6 +163,7 @@ type settingsSnapshot struct {
 	VoiceAgentHotkeyBehavior   string                                `json:"voiceAgentHotkeyBehavior"`
 	VoiceAgentCloseBehavior    string                                `json:"voiceAgentCloseBehavior"`
 	VoiceAgentRefinementPrompt string                                `json:"voiceAgentRefinementPrompt"`
+	VoiceAgentSessionSummary   bool                                  `json:"voiceAgentSessionSummary"`
 	AutoStartOnLaunch          bool                                  `json:"autoStartOnLaunch"`
 	VoiceAgentAutoStart        bool                                  `json:"voiceAgentAutoStart,omitempty"`
 	ModeEnabled                modeAvailabilitySnapshot              `json:"modeEnabled"`
@@ -170,6 +174,8 @@ type settingsSnapshot struct {
 	HFModel                    string                                `json:"hfModel"`
 	Visualizer                 string                                `json:"visualizer"`
 	Design                     string                                `json:"design"`
+	AssistOverlayMode          string                                `json:"assistOverlayMode"`
+	VoiceAgentOverlayMode      string                                `json:"voiceAgentOverlayMode"`
 	Language                   string                                `json:"language"`
 	VocabularyDictionary       string                                `json:"vocabularyDictionary"`
 	SaveAudio                  bool                                  `json:"saveAudio"`

@@ -6,6 +6,28 @@ The format is based on Keep a Changelog and this project is intended to ship und
 
 ## [Unreleased]
 
+## [0.22.4] - 2026-04-20
+
+### Fixed
+
+- **Bottom compact overlay placement**: The default overlay position is now the lower screen edge, and invalid or missing overlay positions fall back to the same bottom placement.
+- **Compact pill and dot anchoring**: Pill and dot host windows now anchor by the visible control surface, keeping the compact UI closer to the screen edge and centering the dot correctly.
+- **Dot radial menu alignment**: The dot context menu now opens around the visible dot center instead of the transparent host window center.
+- **Voice Agent Small Feedback mode**: Voice Agent state changes now drive the compact feedback overlay, so Small Feedback mode shows listening, processing, speaking, and final summary states consistently.
+- **Compact overlay feedback clipping**: Assist and Voice Agent pill feedback now renders as a separate compact panel above the pill/control surface, with native overlay host space reserved so the panel is fully visible instead of being truncated inside the pill.
+
+### Added
+
+- **V23 mode intelligence contracts**: Dictation is now documented and enforced as User Intelligence, Assist as Utility Intelligence, and Voice Agent as Brainstorming Intelligence with session summaries.
+- **Four-provider model standard**: Transcribe, Assist, and Voice Agent now expose Local Built-in, Local Provider, Cloud Provider, and Direct Provider groups with capability metadata and supported variants.
+- **Dictation user dictionary**: Settings vocabulary now syncs into structured store entries, feeds transcription hints, applies deterministic corrections, and records dictionary usage.
+- **Ollama across all modes**: Ollama Local Provider support now covers Dictation, Assist, and Voice Agent pipeline fallback, including download/pull catalog entries for each user mode.
+- **llama.cpp Built-in model selection**: Transcribe and Assist now show the Local Built-in provider as a runtime choice and keep concrete model selection in download options.
+
+### Changed
+
+- **Voice Agent fallback contract**: `pipeline_fallback` is now an intentional non-realtime Voice Agent path for Local Built-in, Ollama, and Hugging Face profiles instead of deprecated compatibility state.
+
 ## [0.22.1] - 2026-04-20
 
 ### Highlights
@@ -32,7 +54,7 @@ The format is based on Keep a Changelog and this project is intended to ship und
 - **Assist UX contract**: direct utility actions now stay on lightweight acknowledgements, while panel-worthy Assist results render through the dedicated one-shot Assist surface
 - **Voice Agent UX contract**: Voice Agent no longer writes into the Assist bubble surface and no longer drops into the capture/Assist fallback path when realtime voice is unavailable
 - **Voice Agent V2 orb**: The live Voice Agent window now uses a custom `SpeechKitAuraOrb` surface with clearer realtime state presentation for connecting, listening, processing, and speaking
-- **Voice Agent defaults**: `pipeline_fallback` is now treated as deprecated compatibility state and no longer represents the default Voice Agent contract
+- **Voice Agent defaults**: native realtime remains the default Direct Provider contract; non-realtime profiles use the explicit pipeline fallback path
 
 ### Fixed
 

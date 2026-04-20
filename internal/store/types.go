@@ -41,6 +41,14 @@ type Store interface {
 	Close() error
 }
 
+// UserDictionaryStore is an optional extension for stores that persist
+// user-specific dictation terms outside config.toml.
+type UserDictionaryStore interface {
+	ReplaceUserDictionaryEntries(ctx context.Context, language string, entries []UserDictionaryEntry) error
+	ListUserDictionaryEntries(ctx context.Context, language string) ([]UserDictionaryEntry, error)
+	RecordUserDictionaryUsage(ctx context.Context, canonical, language string) error
+}
+
 // SemanticCapabilityProvider is an optional extension for stores that can
 // advertise indexing/vector capabilities without forcing every backend to
 // implement semantic features immediately.
@@ -83,6 +91,18 @@ type Transcription struct {
 	AudioPath  string
 	Audio      *AudioAsset
 	CreatedAt  time.Time
+}
+
+type UserDictionaryEntry struct {
+	ID         int64
+	Spoken     string
+	Canonical  string
+	Language   string
+	Source     string
+	Enabled    bool
+	UsageCount int
+	CreatedAt  time.Time
+	UpdatedAt  time.Time
 }
 
 // QuickNote represents a user-created dictation note.

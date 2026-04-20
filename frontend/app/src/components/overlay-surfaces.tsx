@@ -302,6 +302,49 @@ function toggleMode(mode: ConfigurableMode, snapshot: SpeechKitOverlayState) {
   void setModeEnabled(mode, !modeEnabled(snapshot, mode))
 }
 
+function compactOverlayFeedback(snapshot: SpeechKitOverlayState) {
+  const feedbackMode = snapshot.activeMode === 'assist'
+    ? snapshot.assistOverlayMode
+    : snapshot.activeMode === 'voice_agent'
+      ? snapshot.voiceAgentOverlayMode
+      : 'big_productivity'
+
+  if (
+    snapshot.visualizer !== 'pill' ||
+    feedbackMode !== 'small_feedback' ||
+    (snapshot.activeMode !== 'assist' && snapshot.activeMode !== 'voice_agent') ||
+    snapshot.state === 'idle'
+  ) {
+    return ''
+  }
+  return snapshot.text.trim()
+}
+
+function CompactFeedbackStack({
+  surface,
+  onMouseEnter,
+  onMouseLeave,
+  children,
+}: {
+  surface: string
+  onMouseEnter?: () => void
+  onMouseLeave?: () => void
+  children: ReactNode
+}) {
+  return (
+    <div
+      data-testid={`${surface}-feedback-stack`}
+      onMouseEnter={onMouseEnter}
+      onMouseLeave={onMouseLeave}
+      className={[
+        'pointer-events-auto flex h-full w-full flex-col items-center justify-center px-2',
+      ].join(' ')}
+    >
+      {children}
+    </div>
+  )
+}
+
 function postOverlayFreeCenter(url: string, centerX: number, centerY: number) {
   return fetch(url, {
     method: 'POST',
@@ -336,6 +379,8 @@ function OverlayPillShell({
   children: ReactNode
 }) {
   const showKombifyMark = snapshot.visualizer === 'pill' && snapshot.design === 'kombify'
+  const feedback = compactOverlayFeedback(snapshot)
+  const hasCompactFeedback = feedback.length > 0
 
   return (
     <div
@@ -348,6 +393,8 @@ function OverlayPillShell({
       data-overlay-size={tone.size}
       data-overlay-color={tone.color}
       data-overlay-draggable={draggable ? 'true' : 'false'}
+      data-compact-feedback={hasCompactFeedback ? 'true' : 'false'}
+      style={hasCompactFeedback ? ({ minHeight: 36, height: 'auto' } as CSSProperties) : undefined}
       onPointerDown={onPointerDown}
       onPointerMove={onPointerMove}
       onPointerUp={onPointerUp}
@@ -355,14 +402,24 @@ function OverlayPillShell({
       className={[
         'relative flex select-none items-center justify-center transition-all duration-200 ease-out',
         shellClassName,
+        hasCompactFeedback ? 'min-w-[260px] max-w-[360px] py-1 pl-2.5 pr-[34px]' : '',
         tone.className,
       ].join(' ')}
     >
       <span data-testid={`${surface}-status`} className="sr-only">
         {overlayStatusLabel(snapshot)}
       </span>
-      <div className="relative flex items-center justify-center">
+      <div className="relative flex min-w-0 items-center justify-center gap-2">
         {children}
+        {hasCompactFeedback ? (
+          <p
+            data-testid={`${surface}-compact-feedback`}
+            role="status"
+            className="m-0 max-h-[72px] min-w-0 max-w-[278px] overflow-y-auto whitespace-normal break-words text-left text-[11px] font-medium leading-snug text-white/88"
+          >
+            {feedback}
+          </p>
+        ) : null}
         {showKombifyMark ? (
           <img
             alt="kombify idle mark"
@@ -396,27 +453,31 @@ function PillAnchorOverlayView({
     <OverlaySurfaceFrame>
       <div
         data-testid="pill-anchor-stage"
-        className="pointer-events-auto absolute inset-0 flex items-center justify-center"
-        onMouseEnter={() => {
-          void fetch('/overlay/pill-panel/show', { method: 'POST' })
-        }}
+        className="pointer-events-none absolute inset-0 flex items-center justify-center"
       >
-        <OverlayPillShell
-          snapshot={snapshot}
-          tone={tone}
-          shellClassName={tone.shellClassName}
+        <CompactFeedbackStack
           surface="pill-anchor"
+          onMouseEnter={() => {
+            void fetch('/overlay/pill-panel/show', { method: 'POST' })
+          }}
         >
-          <AgentAudioVisualizerBar
-            data-testid="pill-anchor-visualizer"
-            size={tone.size}
-            state={tone.state}
-            level={tone.level}
-            barCount={5}
-            color={tone.color}
-            className={['relative z-10 text-current', tone.visualizerClassName].join(' ')}
-          />
-        </OverlayPillShell>
+          <OverlayPillShell
+            snapshot={snapshot}
+            tone={tone}
+            shellClassName={tone.shellClassName}
+            surface="pill-anchor"
+          >
+            <AgentAudioVisualizerBar
+              data-testid="pill-anchor-visualizer"
+              size={tone.size}
+              state={tone.state}
+              level={tone.level}
+              barCount={5}
+              color={tone.color}
+              className={['relative z-10 text-current', tone.visualizerClassName].join(' ')}
+            />
+          </OverlayPillShell>
+        </CompactFeedbackStack>
       </div>
     </OverlaySurfaceFrame>
   )
@@ -519,14 +580,17 @@ function PillPanelOverlayView({
     <OverlaySurfaceFrame>
       <div
         data-testid="pill-panel-stage"
-        className="pointer-events-auto absolute inset-0 flex items-center justify-center"
-        onMouseLeave={() => {
-          if (dragStateRef.current) {
-            return
-          }
-          void fetch('/overlay/pill-panel/hide', { method: 'POST' })
-        }}
+        className="pointer-events-none absolute inset-0 flex items-center justify-center"
       >
+        <CompactFeedbackStack
+          surface="pill-panel"
+          onMouseLeave={() => {
+            if (dragStateRef.current) {
+              return
+            }
+            void fetch('/overlay/pill-panel/hide', { method: 'POST' })
+          }}
+        >
         <div
           data-testid="pill-panel-shell"
           data-overlay-surface="pill-panel"
@@ -537,7 +601,7 @@ function PillPanelOverlayView({
           data-overlay-size={tone.size}
           data-overlay-color={tone.color}
           aria-label={overlayStatusLabel(snapshot)}
-          className="relative grid grid-cols-[76px_auto_76px] items-center gap-1 rounded-full bg-neutral-950/84 px-1.5 py-0.5 shadow-[0_14px_28px_rgba(0,0,0,0.28)] backdrop-blur-xl"
+          className="relative grid grid-cols-[76px_auto_76px] items-center gap-1 rounded-full bg-neutral-950/84 px-1.5 py-0.5 shadow-none"
         >
           <span data-testid="pill-panel-status" className="sr-only">
             {overlayStatusLabel(snapshot)}
@@ -606,6 +670,7 @@ function PillPanelOverlayView({
             })}
           </OverlayPanelSection>
         </div>
+        </CompactFeedbackStack>
       </div>
     </OverlaySurfaceFrame>
   )

@@ -7,7 +7,7 @@ import (
 	"github.com/kombifyio/SpeechKit/internal/hotkey"
 )
 
-func (s *appState) applyRuntimeSettings(dictateEnabled, assistEnabled, voiceAgentEnabled bool, dictateHotkey, assistHotkey, voiceAgentHotkey, dictateHotkeyBehavior, assistHotkeyBehavior, voiceAgentHotkeyBehavior, activeMode, audioDeviceID string, providers []string, visualizerValue, designValue, overlayPosition, vocabularyDictionary string, overlayMovable bool, overlayFreeX, overlayFreeY int, overlayMonitorPositions map[string]config.OverlayFreePosition) string {
+func (s *appState) applyRuntimeSettings(dictateEnabled, assistEnabled, voiceAgentEnabled bool, dictateHotkey, assistHotkey, voiceAgentHotkey, dictateHotkeyBehavior, assistHotkeyBehavior, voiceAgentHotkeyBehavior, activeMode, audioDeviceID string, providers []string, visualizerValue, designValue, assistOverlayMode, voiceAgentOverlayMode, overlayPosition, vocabularyDictionary string, overlayMovable bool, overlayFreeX, overlayFreeY int, overlayMonitorPositions map[string]config.OverlayFreePosition) string {
 	if s == nil {
 		return ""
 	}
@@ -32,6 +32,8 @@ func (s *appState) applyRuntimeSettings(dictateEnabled, assistEnabled, voiceAgen
 	s.providers = append([]string(nil), providers...)
 	s.overlayVisualizer = visualizerValue
 	s.overlayDesign = designValue
+	s.assistOverlayMode = config.NormalizeOverlayFeedbackMode(assistOverlayMode, config.OverlayFeedbackModeSmallFeedback)
+	s.voiceAgentOverlayMode = config.NormalizeOverlayFeedbackMode(voiceAgentOverlayMode, config.OverlayFeedbackModeSmallFeedback)
 	s.overlayPosition = overlayPosition
 	s.overlayMovable = overlayMovable
 	s.overlayFreeX = overlayFreeX

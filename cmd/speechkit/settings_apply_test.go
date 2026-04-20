@@ -50,6 +50,8 @@ func TestAppStateApplyRuntimeSettingsUpdatesSnapshot(t *testing.T) {
 		[]string{"local", "hf"},
 		"pill",
 		"default",
+		config.OverlayFeedbackModeBigProductivity,
+		config.OverlayFeedbackModeSmallFeedback,
 		"bottom",
 		"kombi fire => Kombify",
 		true,
@@ -93,6 +95,12 @@ func TestAppStateApplyRuntimeSettingsUpdatesSnapshot(t *testing.T) {
 	}
 	if got, want := runtime.voiceAgentHotkeyBehavior, config.HotkeyBehaviorToggle; got != want {
 		t.Fatalf("runtime.voiceAgentHotkeyBehavior = %q, want %q", got, want)
+	}
+	if got, want := runtime.assistOverlayMode, config.OverlayFeedbackModeBigProductivity; got != want {
+		t.Fatalf("runtime.assistOverlayMode = %q, want %q", got, want)
+	}
+	if got, want := runtime.voiceAgentOverlayMode, config.OverlayFeedbackModeSmallFeedback; got != want {
+		t.Fatalf("runtime.voiceAgentOverlayMode = %q, want %q", got, want)
 	}
 
 	snapshot := state.engine.State()

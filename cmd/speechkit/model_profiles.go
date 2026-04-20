@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"os"
 
 	appai "github.com/kombifyio/SpeechKit/internal/ai"
 	"github.com/kombifyio/SpeechKit/internal/ai/flows"
@@ -14,6 +13,7 @@ import (
 	"github.com/kombifyio/SpeechKit/internal/models"
 	"github.com/kombifyio/SpeechKit/internal/router"
 	"github.com/kombifyio/SpeechKit/internal/stt"
+	"github.com/firebase/genkit/go/core"
 )
 
 var launchLocalProvider = startLocalProviderAsync
@@ -42,10 +42,7 @@ func applySTTProfile(ctx context.Context, cfgPath string, cfg *config.Config, st
 
 	switch profile.ExecutionMode {
 	case models.ExecutionModeLocal:
-		modelPath := cfg.Local.ModelPath
-		if modelPath == "" {
-			modelPath = defaultLocalModelPath(executableDir(), os.Getenv("LOCALAPPDATA"), cfg.Local.Model)
-		}
+		modelPath := configuredLocalSTTModelPath(cfg)
 		if err := validateLocalProviderActivation(cfg, modelPath); err != nil {
 			return err
 		}
@@ -100,6 +97,17 @@ func applySTTProfile(ctx context.Context, cfgPath string, cfg *config.Config, st
 			targetRouter.PreferCloud("google", stt.NewGoogleSTTProvider(apiKey, profile.ModelID))
 			syncConfiguredLocalProvider(ctx, cfg, state, targetRouter)
 		}
+	case models.ExecutionModeOllama:
+		cfg.Routing.Strategy = "cloud-only"
+		cfg.Providers.Ollama.Enabled = true
+		if cfg.Providers.Ollama.BaseURL == "" {
+			cfg.Providers.Ollama.BaseURL = "http://localhost:11434"
+		}
+		cfg.Providers.Ollama.STTModel = profile.ModelID
+		if targetRouter != nil {
+			targetRouter.PreferCloud("ollama", stt.NewOllamaSTTProvider(cfg.Providers.Ollama.BaseURL, profile.ModelID))
+			syncConfiguredLocalProvider(ctx, cfg, state, targetRouter)
+		}
 	default:
 		return fmt.Errorf("unsupported execution mode for STT")
 	}
@@ -132,10 +140,7 @@ func syncConfiguredLocalProvider(ctx context.Context, cfg *config.Config, state 
 		return
 	}
 
-	modelPath := cfg.Local.ModelPath
-	if modelPath == "" {
-		modelPath = defaultLocalModelPath(executableDir(), os.Getenv("LOCALAPPDATA"), cfg.Local.Model)
-	}
+	modelPath := configuredLocalSTTModelPath(cfg)
 
 	if existing, ok := targetRouter.Local().(*stt.LocalProvider); ok && existing != nil {
 		if existing.Port == cfg.Local.Port && existing.ModelPath == modelPath && existing.GPU == cfg.Local.GPU {
@@ -206,6 +211,10 @@ func clearAssistModels(cfg *config.Config) {
 func configureLLMProfile(cfg *config.Config, profile models.Profile, modality models.Modality) error {
 	switch profile.ExecutionMode {
 	case models.ExecutionModeLocal:
+		modelID := profile.ModelID
+		if profile.ProviderKind == models.ProviderKindLocalBuiltIn && cfg.LocalLLM.Model != "" {
+			modelID = cfg.LocalLLM.Model
+		}
 		cfg.LocalLLM.Enabled = true
 		if cfg.LocalLLM.BaseURL == "" {
 			cfg.LocalLLM.BaseURL = config.DefaultLocalLLMBaseURL
@@ -214,12 +223,12 @@ func configureLLMProfile(cfg *config.Config, profile models.Profile, modality mo
 			cfg.LocalLLM.Port = 8082
 		}
 		if cfg.LocalLLM.Model == "" {
-			cfg.LocalLLM.Model = profile.ModelID
+			cfg.LocalLLM.Model = modelID
 		}
 		if modality == models.ModalityUtility {
-			cfg.LocalLLM.UtilityModel = profile.ModelID
+			cfg.LocalLLM.UtilityModel = modelID
 		} else {
-			cfg.LocalLLM.AssistModel = profile.ModelID
+			cfg.LocalLLM.AssistModel = modelID
 		}
 	case models.ExecutionModeOpenAI:
 		if config.ResolveSecret(cfg.Providers.OpenAI.APIKeyEnv) == "" {
@@ -301,7 +310,10 @@ func rebuildAIRuntime(ctx context.Context, state *appState, cfg *config.Config) 
 
 	summarizeFlow := flows.DefineSummarizeFlow(genkitRT.G, genkitRT.UtilityModels())
 	agentFlow := flows.DefineAgentFlow(genkitRT.G, genkitRT.AgentModels())
-	assistFlow := flows.DefineAssistFlow(genkitRT.G, genkitRT.AssistModels())
+	var assistFlow *core.Flow[flows.AssistInput, flows.AssistOutput, struct{}]
+	if len(genkitRT.AssistModels()) > 0 {
+		assistFlow = flows.DefineAssistFlow(genkitRT.G, genkitRT.AssistModels())
+	}
 
 	var assistPipeline *assist.Pipeline
 	if state.ttsRouter != nil || state.assistExecutor != nil {
@@ -337,7 +349,7 @@ func applyRealtimeVoiceProfile(ctx context.Context, cfgPath string, cfg *config.
 	case models.ExecutionModeGoogle:
 		apiKey := config.ResolveSecret(cfg.Providers.Google.APIKeyEnv)
 		if apiKey == "" {
-			return errors.New("google api key not configured — add it on the model card in Settings")
+			return errors.New("google api key not configured â€” add it on the model card in Settings")
 		}
 		cfg.VoiceAgent.Enabled = true
 		cfg.VoiceAgent.Model = profile.ModelID
@@ -349,6 +361,27 @@ func applyRealtimeVoiceProfile(ctx context.Context, cfgPath string, cfg *config.
 		}
 		cfg.HuggingFace.Enabled = true
 		cfg.HuggingFace.AgentModel = profile.ModelID
+		cfg.VoiceAgent.Enabled = true
+		cfg.VoiceAgent.Model = profile.ModelID
+		cfg.VoiceAgent.PipelineFallback = true
+	case models.ExecutionModeOllama:
+		cfg.Providers.Ollama.Enabled = true
+		if cfg.Providers.Ollama.BaseURL == "" {
+			cfg.Providers.Ollama.BaseURL = "http://localhost:11434"
+		}
+		cfg.Providers.Ollama.AgentModel = profile.ModelID
+		cfg.VoiceAgent.Enabled = true
+		cfg.VoiceAgent.Model = profile.ModelID
+		cfg.VoiceAgent.PipelineFallback = true
+	case models.ExecutionModeLocal:
+		cfg.LocalLLM.Enabled = true
+		if cfg.LocalLLM.BaseURL == "" {
+			cfg.LocalLLM.BaseURL = config.DefaultLocalLLMBaseURL
+		}
+		if cfg.LocalLLM.Port == 0 {
+			cfg.LocalLLM.Port = 8082
+		}
+		cfg.LocalLLM.AgentModel = profile.ModelID
 		cfg.VoiceAgent.Enabled = true
 		cfg.VoiceAgent.Model = profile.ModelID
 		cfg.VoiceAgent.PipelineFallback = true

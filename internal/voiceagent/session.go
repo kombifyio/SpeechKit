@@ -163,6 +163,9 @@ type LiveProvider interface {
 	// Format: 16-bit signed int, little-endian, mono, 16kHz.
 	SendAudio(chunk []byte) error
 
+	// SendAudioStreamEnd signals that microphone input for the current turn ended.
+	SendAudioStreamEnd() error
+
 	// Receive blocks until the next server message arrives.
 	// Returns audio chunks and/or text from the model.
 	Receive(ctx context.Context) (*LiveMessage, error)
@@ -309,6 +312,21 @@ func (s *Session) SendAudio(chunk []byte) error {
 	}
 	s.mu.Unlock()
 	return s.provider.SendAudio(chunk)
+}
+
+// EndAudioStream tells the live provider that the current microphone stream ended.
+func (s *Session) EndAudioStream() error {
+	if s.currentState() == StateInactive || s.currentState() == StateDeactivating {
+		return nil
+	}
+	if s.provider == nil {
+		return nil
+	}
+	if err := s.provider.SendAudioStreamEnd(); err != nil {
+		return err
+	}
+	s.setProcessingUnlessSpeaking()
+	return nil
 }
 
 // SendText injects a user text turn into the live session.

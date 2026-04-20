@@ -236,6 +236,7 @@ describe("DashboardApp", () => {
     expect(
       screen.getByRole("button", { name: "Dashboard" }),
     ).toBeInTheDocument();
+    expect(screen.queryByText("Voice workflow desktop")).not.toBeInTheDocument();
     expect(screen.getByText(/quick start/i)).toBeInTheDocument();
     expect(await screen.findByText("82.7")).toBeInTheDocument();
     expect(screen.getByText(/average wpm/i)).toBeInTheDocument();
@@ -703,6 +704,82 @@ describe("DashboardApp", () => {
       screen.getAllByRole("button", { name: /cancel download/i }).length,
     ).toBeGreaterThan(0);
     expect(screen.getByText("Chosen for setup")).toBeInTheDocument();
+  });
+
+  it("shows and saves two-key defaults on the onboarding completion screen", async () => {
+    fetchSpy?.mockImplementation(
+      async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url =
+          typeof input === "string"
+            ? input
+            : input instanceof URL
+              ? input.toString()
+              : (input as Request).url;
+        if (url === "/app/setup-status") {
+          return new Response(JSON.stringify({ setupDone: false }), {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          });
+        }
+        if (url === "/app/version") {
+          return new Response(JSON.stringify({ version: "0.18.0" }), {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          });
+        }
+        if (url === "/settings/update") {
+          expect(init?.body).toBeInstanceOf(URLSearchParams);
+          return new Response(JSON.stringify({ message: "Saved" }), {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          });
+        }
+        if (url === "/app/complete-setup") {
+          return new Response(JSON.stringify({ setupDone: true }), {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          });
+        }
+        return new Response("{}", {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      },
+    );
+
+    render(<DashboardApp />);
+
+    fireEvent.click(
+      await screen.findByRole("button", { name: /get started/i }),
+    );
+    fireEvent.click(await screen.findByRole("button", { name: /^continue$/i }));
+
+    expect(await screen.findByText("Win+Alt")).toBeInTheDocument();
+    expect(screen.getByText("Ctrl+Win")).toBeInTheDocument();
+    expect(screen.getByText("Ctrl+Shift")).toBeInTheDocument();
+    expect(screen.queryByText("Ctrl+Shift+D")).not.toBeInTheDocument();
+    expect(screen.queryByText("Ctrl+Shift+A")).not.toBeInTheDocument();
+
+    fireEvent.click(
+      screen.getByRole("button", { name: /start using speechkit/i }),
+    );
+
+    await waitFor(() =>
+      expect(fetchSpy).toHaveBeenCalledWith(
+        "/settings/update",
+        expect.objectContaining({ method: "POST" }),
+      ),
+    );
+    const fetchCalls = fetchSpy?.mock.calls as
+      | Array<[RequestInfo | URL, RequestInit?]>
+      | undefined;
+    const settingsCall = fetchCalls?.find(
+      (call) => call[0] === "/settings/update",
+    );
+    const body = settingsCall?.[1]?.body as URLSearchParams;
+    expect(body.get("dictate_hotkey")).toBe("win+alt");
+    expect(body.get("assist_hotkey")).toBe("ctrl+win");
+    expect(body.get("voice_agent_hotkey")).toBe("ctrl+shift");
   });
 
   it("opens transcribe settings when the user wants to use a cloud token instead of a local model", async () => {

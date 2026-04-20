@@ -2,6 +2,9 @@ package main
 
 import (
 	"fmt"
+	"strings"
+
+	"github.com/kombifyio/SpeechKit/internal/config"
 )
 
 // This file contains appState methods that control show/hide of overlay
@@ -177,7 +180,16 @@ func (s *appState) showAssistBubble(text string) {
 	s.mu.Lock()
 	bubble := s.assistBubble
 	locator := s.screenLocator
+	assistMode := normalizeRuntimeOverlayFeedbackMode(s.assistOverlayMode)
 	s.mu.Unlock()
+
+	if assistMode == config.OverlayFeedbackModeSmallFeedback {
+		if bubble != nil {
+			bubble.Hide()
+		}
+		s.setOverlayFeedbackMessage("assistant", text, true)
+		return
+	}
 
 	if bubble == nil {
 		return
@@ -196,6 +208,84 @@ func (s *appState) showAssistBubble(text string) {
 	bubble.SetIgnoreMouseEvents(false)
 	escapedText := escapeJS(text)
 	bubble.ExecJS(fmt.Sprintf(`if(window.__assistBubble){window.__assistBubble.show(%q)}`, escapedText))
+}
+
+func (s *appState) primeOverlayForCapture(mode string) {
+	if s == nil {
+		return
+	}
+	s.mu.Lock()
+	s.activeMode = sanitizeActiveModeForBindings(
+		mode,
+		"",
+		s.dictateEnabled,
+		s.assistEnabled,
+		s.voiceAgentEnabled,
+		s.dictateHotkey,
+		s.assistHotkey,
+		s.voiceAgentHotkey,
+	)
+	s.hotkey = s.activeHotkeyLocked()
+	s.currentState = "recording"
+	s.overlayText = "Listening"
+	s.overlayFeedbackRole = ""
+	s.overlayFeedbackText = ""
+	s.overlayFeedbackDone = true
+	s.overlayPhase = "listening"
+	s.syncSpeechKitSnapshotLocked()
+	s.mu.Unlock()
+
+	s.showActiveOverlayWindow()
+}
+
+func (s *appState) setOverlayFeedbackMessage(role, text string, done bool) {
+	if s == nil {
+		return
+	}
+	s.mu.Lock()
+	nextText := text
+	if role == s.overlayFeedbackRole && !s.overlayFeedbackDone {
+		nextText = mergeOverlayStreamingText(s.overlayFeedbackText, text)
+	}
+	s.overlayFeedbackRole = role
+	s.overlayFeedbackText = nextText
+	s.overlayFeedbackDone = done
+	s.overlayText = nextText
+	if s.currentState == "idle" && (s.activeMode == modeAssist || s.activeMode == modeVoiceAgent) {
+		s.currentState = "done"
+		s.overlayPhase = "done"
+		s.overlayLevel = 0
+	}
+	s.syncSpeechKitSnapshotLocked()
+	s.mu.Unlock()
+
+	s.showActiveOverlayWindow()
+}
+
+func mergeOverlayStreamingText(currentText, nextText string) string {
+	if currentText == "" {
+		return nextText
+	}
+	if nextText == "" || nextText == currentText {
+		return currentText
+	}
+	if strings.Contains(nextText, currentText) {
+		return nextText
+	}
+	if strings.Contains(currentText, nextText) {
+		return currentText
+	}
+
+	maxOverlap := len(currentText)
+	if len(nextText) < maxOverlap {
+		maxOverlap = len(nextText)
+	}
+	for overlap := maxOverlap; overlap > 0; overlap-- {
+		if currentText[len(currentText)-overlap:] == nextText[:overlap] {
+			return currentText + nextText[overlap:]
+		}
+	}
+	return currentText + nextText
 }
 
 func (s *appState) setOverlayEnabled(enabled bool) {

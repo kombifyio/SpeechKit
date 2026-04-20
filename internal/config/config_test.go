@@ -70,6 +70,15 @@ func TestLoadDefaults(t *testing.T) {
 	if cfg.LocalLLM.UtilityModel != "gemma4:e4b" || cfg.LocalLLM.AssistModel != "gemma4:e4b" {
 		t.Errorf("default local LLM models = utility:%q assist:%q", cfg.LocalLLM.UtilityModel, cfg.LocalLLM.AssistModel)
 	}
+	if got, want := cfg.ModelSelection.Dictate.PrimaryProfileID, DefaultDictatePrimaryProfileID; got != want {
+		t.Errorf("default dictate primary profile = %q, want %q", got, want)
+	}
+	if got, want := cfg.ModelSelection.Assist.PrimaryProfileID, DefaultAssistPrimaryProfileID; got != want {
+		t.Errorf("default assist primary profile = %q, want %q", got, want)
+	}
+	if got, want := cfg.ModelSelection.VoiceAgent.PrimaryProfileID, DefaultVoiceAgentPrimaryProfileID; got != want {
+		t.Errorf("default voice agent primary profile = %q, want %q", got, want)
+	}
 	if want := ManagedHuggingFaceAvailableInBuild(); cfg.HuggingFace.Enabled != want {
 		t.Errorf("default HuggingFace enabled = %v, want %v for this module build", cfg.HuggingFace.Enabled, want)
 	}
@@ -100,6 +109,12 @@ func TestLoadDefaults(t *testing.T) {
 	if cfg.UI.Design != "default" {
 		t.Errorf("design = %q, want %q", cfg.UI.Design, "default")
 	}
+	if cfg.UI.AssistOverlayMode != OverlayFeedbackModeSmallFeedback {
+		t.Errorf("assist overlay mode = %q, want %q", cfg.UI.AssistOverlayMode, OverlayFeedbackModeSmallFeedback)
+	}
+	if cfg.UI.VoiceAgentOverlayMode != OverlayFeedbackModeSmallFeedback {
+		t.Errorf("voice agent overlay mode = %q, want %q", cfg.UI.VoiceAgentOverlayMode, OverlayFeedbackModeSmallFeedback)
+	}
 	if !cfg.Store.SaveAudio {
 		t.Error("store audio persistence should be enabled by default for local mode")
 	}
@@ -111,6 +126,90 @@ func TestLoadDefaults(t *testing.T) {
 	}
 	if cfg.Feedback.AudioRetentionDays != 7 {
 		t.Errorf("legacy feedback audio retention days = %d, want 7", cfg.Feedback.AudioRetentionDays)
+	}
+}
+
+func TestNormalizeOverlayFeedbackMode(t *testing.T) {
+	tests := []struct {
+		name     string
+		value    string
+		fallback string
+		want     string
+	}{
+		{name: "big", value: OverlayFeedbackModeBigProductivity, fallback: OverlayFeedbackModeSmallFeedback, want: OverlayFeedbackModeBigProductivity},
+		{name: "small", value: OverlayFeedbackModeSmallFeedback, fallback: OverlayFeedbackModeBigProductivity, want: OverlayFeedbackModeSmallFeedback},
+		{name: "fallback", value: "unknown", fallback: OverlayFeedbackModeBigProductivity, want: OverlayFeedbackModeBigProductivity},
+		{name: "empty fallback", value: "unknown", fallback: "", want: OverlayFeedbackModeSmallFeedback},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := NormalizeOverlayFeedbackMode(tt.value, tt.fallback); got != tt.want {
+				t.Fatalf("NormalizeOverlayFeedbackMode(%q, %q) = %q, want %q", tt.value, tt.fallback, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestApplyLocalInstallDefaultsBackfillsBuiltInPrimaryModels(t *testing.T) {
+	cfg := &Config{}
+	changed := ApplyLocalInstallDefaults(cfg, &InstallState{Mode: InstallModeLocal})
+
+	if !changed {
+		t.Fatal("ApplyLocalInstallDefaults should report changed when model defaults are missing")
+	}
+	if got, want := cfg.ModelSelection.Dictate.PrimaryProfileID, DefaultDictatePrimaryProfileID; got != want {
+		t.Errorf("dictate primary profile = %q, want %q", got, want)
+	}
+	if got, want := cfg.ModelSelection.Assist.PrimaryProfileID, DefaultAssistPrimaryProfileID; got != want {
+		t.Errorf("assist primary profile = %q, want %q", got, want)
+	}
+	if got, want := cfg.ModelSelection.VoiceAgent.PrimaryProfileID, DefaultVoiceAgentPrimaryProfileID; got != want {
+		t.Errorf("voice agent primary profile = %q, want %q", got, want)
+	}
+}
+
+func TestLoadMigratesLegacyUnbundledLocalLLMDefaults(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.toml")
+
+	content := `
+[model_selection.assist]
+primary_profile_id = "assist.builtin.gemma4-e4b"
+fallback_profile_id = ""
+
+[model_selection.voice_agent]
+primary_profile_id = "realtime.builtin.pipeline"
+fallback_profile_id = ""
+
+[local_llm]
+enabled = false
+model_path = ""
+
+[voice_agent]
+model = "speechkit-local-voice-pipeline"
+pipeline_fallback = true
+`
+	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+
+	if got := cfg.ModelSelection.Assist.PrimaryProfileID; got != "" {
+		t.Fatalf("assist primary profile = %q, want empty after migrating unbundled local LLM default", got)
+	}
+	if got, want := cfg.ModelSelection.VoiceAgent.PrimaryProfileID, "realtime.google.gemini-native-audio"; got != want {
+		t.Fatalf("voice agent primary profile = %q, want %q", got, want)
+	}
+	if cfg.VoiceAgent.PipelineFallback {
+		t.Fatal("voice agent pipeline fallback should be disabled after migrating unbundled local LLM default")
+	}
+	if got, want := cfg.VoiceAgent.Model, "gemini-2.5-flash-native-audio-preview-12-2025"; got != want {
+		t.Fatalf("voice agent model = %q, want %q", got, want)
 	}
 }
 
@@ -701,8 +800,8 @@ func TestDefaultHotkeyBehaviors(t *testing.T) {
 
 func TestDefaultOverlayPosition(t *testing.T) {
 	cfg := defaults()
-	if cfg.UI.OverlayPosition != "top" {
-		t.Fatalf("default OverlayPosition = %q, want %q", cfg.UI.OverlayPosition, "top")
+	if cfg.UI.OverlayPosition != "bottom" {
+		t.Fatalf("default OverlayPosition = %q, want %q", cfg.UI.OverlayPosition, "bottom")
 	}
 	if cfg.UI.OverlayMovable {
 		t.Fatal("default OverlayMovable = true, want false")
@@ -810,8 +909,8 @@ design = "default"
 	if cfg.VoiceAgent.CloseBehavior != VoiceAgentCloseBehaviorContinue {
 		t.Fatalf("VoiceAgent.CloseBehavior = %q, want default %q", cfg.VoiceAgent.CloseBehavior, VoiceAgentCloseBehaviorContinue)
 	}
-	if cfg.UI.OverlayPosition != "top" {
-		t.Fatalf("OverlayPosition = %q, want default %q", cfg.UI.OverlayPosition, "top")
+	if cfg.UI.OverlayPosition != "bottom" {
+		t.Fatalf("OverlayPosition = %q, want default %q", cfg.UI.OverlayPosition, "bottom")
 	}
 }
 

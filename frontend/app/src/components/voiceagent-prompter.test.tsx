@@ -151,6 +151,17 @@ describe('VoiceAgentPrompter', () => {
     expect(screen.getByRole('button', { name: /hide transcript/i })).toHaveClass('w-8')
   })
 
+  it('keeps the prompter overlay free of drop shadows', async () => {
+    render(<VoiceAgentPrompter />)
+
+    await waitFor(() => expect((window as PrompterWindow).__prompter).toBeDefined())
+
+    const frame = screen.getByTestId('desktop-window-frame')
+    expect(frame.className).not.toContain('shadow-')
+    expect(frame.className).not.toContain('drop-shadow')
+    expect(screen.getByTestId('voice-agent-surface').innerHTML).not.toContain('shadow-')
+  })
+
   it('uses panel fold icons for transcript visibility instead of a minimise icon', async () => {
     render(<VoiceAgentPrompter />)
 
@@ -207,6 +218,21 @@ describe('VoiceAgentPrompter', () => {
     expect(screen.getByTestId('voice-agent-live-user')).toHaveAttribute('data-active', 'true')
     expect(screen.getByTestId('voice-agent-live-user')).toHaveTextContent('Hearing you')
     expect(screen.queryAllByTestId('turn-visualizer')).toHaveLength(0)
+  })
+
+  it('shows clear hold-to-talk feedback when microphone input has ended', async () => {
+    render(<VoiceAgentPrompter />)
+
+    await waitFor(() => expect((window as PrompterWindow).__prompter).toBeDefined())
+
+    act(() => {
+      ;(window as PrompterWindow).__prompter?.updateState('processing')
+      ;(window as PrompterWindow).__prompter?.setActivity('user', 0.42)
+    })
+
+    expect(screen.getByText('Hold released. Finishing the answer.')).toBeInTheDocument()
+    expect(screen.getByTestId('voice-agent-live-user')).toHaveTextContent('Paused')
+    expect(screen.getByTestId('voice-agent-live-user')).toHaveAttribute('data-level', '0.00')
   })
 
   it('renders voice agent live turns as compact multiline rows without inner cards', async () => {

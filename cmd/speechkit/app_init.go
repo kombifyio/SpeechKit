@@ -10,10 +10,12 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	appai "github.com/kombifyio/SpeechKit/internal/ai"
 	"github.com/kombifyio/SpeechKit/internal/config"
+	"github.com/kombifyio/SpeechKit/internal/models"
 	"github.com/kombifyio/SpeechKit/internal/router"
 	"github.com/kombifyio/SpeechKit/internal/runtimepath"
 	"github.com/kombifyio/SpeechKit/internal/shortcuts"
@@ -57,11 +59,19 @@ func buildRouter(cfg *config.Config) (*router.Router, []string) {
 		msgs = append(msgs, fmt.Sprintf("VPS: %s", cfg.VPS.URL))
 	}
 
+	if provider := configuredOllamaSTTProvider(cfg); provider != nil {
+		r.AddCloud(provider)
+		msgs = append(msgs, fmt.Sprintf("STT: Ollama provider registered (%s)", cfg.Providers.Ollama.STTModel))
+	}
+
+	if selectedLocalBuiltInSTT(cfg) {
+		cfg.Local.Enabled = true
+		cfg.Routing.Strategy = "local-only"
+		r.Strategy = router.StrategyLocalOnly
+	}
+
 	if cfg.Local.Enabled {
-		modelPath := cfg.Local.ModelPath
-		if modelPath == "" {
-			modelPath = defaultLocalModelPath(executableDir(), os.Getenv("LOCALAPPDATA"), cfg.Local.Model)
-		}
+		modelPath := configuredLocalSTTModelPath(cfg)
 		r.SetLocal(stt.NewLocalProvider(cfg.Local.Port, modelPath, cfg.Local.GPU))
 		msgs = append(msgs, fmt.Sprintf("Local: %s (not started)", cfg.Local.Model))
 	}
@@ -91,6 +101,17 @@ func buildRouter(cfg *config.Config) (*router.Router, []string) {
 	}
 
 	return r, msgs
+}
+
+func selectedLocalBuiltInSTT(cfg *config.Config) bool {
+	if cfg == nil {
+		return false
+	}
+	profile, ok := effectiveSelectedProfile(cfg, filteredModelCatalog(), modeDictate)
+	return ok &&
+		profile.Modality == models.ModalitySTT &&
+		profile.ExecutionMode == models.ExecutionModeLocal &&
+		profile.ProviderKind == models.ProviderKindLocalBuiltIn
 }
 
 // buildGenkitConfig maps provider config into the appai.Config structure.
@@ -368,6 +389,23 @@ func defaultLocalModelPath(exeDir, localAppData, modelName string) string {
 	return ""
 }
 
+func configuredLocalSTTModelPath(cfg *config.Config) string {
+	if cfg == nil {
+		return ""
+	}
+	if modelPath := strings.TrimSpace(cfg.Local.ModelPath); modelPath != "" {
+		return modelPath
+	}
+	modelName := strings.TrimSpace(cfg.Local.Model)
+	if modelName == "" {
+		return ""
+	}
+	if downloadDir := strings.TrimSpace(cfg.General.ModelDownloadDir); downloadDir != "" {
+		return filepath.Join(downloadDir, modelName)
+	}
+	return defaultLocalModelPath(executableDir(), os.Getenv("LOCALAPPDATA"), modelName)
+}
+
 // escapeJS returns s as a safe JavaScript string literal (without surrounding quotes).
 // Uses json.Marshal to handle all special characters including backticks and
 // unicode line/paragraph separators (U+2028, U+2029).
@@ -376,6 +414,6 @@ func escapeJS(s string) string {
 	if err != nil {
 		return ""
 	}
-	// json.Marshal returns a "quoted string" — strip the surrounding quotes.
+	// json.Marshal returns a "quoted string" â€” strip the surrounding quotes.
 	return string(b[1 : len(b)-1])
 }

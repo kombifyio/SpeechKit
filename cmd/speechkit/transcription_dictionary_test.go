@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/kombifyio/SpeechKit/internal/router"
+	"github.com/kombifyio/SpeechKit/internal/store"
 	"github.com/kombifyio/SpeechKit/internal/stt"
 )
 
@@ -22,6 +23,23 @@ func (p *captureSTTProvider) Name() string { return "capture" }
 
 func (p *captureSTTProvider) Health(context.Context) error { return nil }
 
+type recordingUserDictionaryStore struct {
+	records []string
+}
+
+func (s *recordingUserDictionaryStore) ReplaceUserDictionaryEntries(context.Context, string, []store.UserDictionaryEntry) error {
+	return nil
+}
+
+func (s *recordingUserDictionaryStore) ListUserDictionaryEntries(context.Context, string) ([]store.UserDictionaryEntry, error) {
+	return nil, nil
+}
+
+func (s *recordingUserDictionaryStore) RecordUserDictionaryUsage(_ context.Context, canonical, language string) error {
+	s.records = append(s.records, canonical+"|"+language)
+	return nil
+}
+
 func TestRouterTranscriberAppliesVocabularyHintsAndCorrections(t *testing.T) {
 	provider := &captureSTTProvider{
 		result: &stt.Result{
@@ -33,9 +51,11 @@ func TestRouterTranscriberAppliesVocabularyHintsAndCorrections(t *testing.T) {
 	}
 	r := &router.Router{Strategy: router.StrategyLocalOnly}
 	r.SetLocal(provider)
+	dictionaryStore := &recordingUserDictionaryStore{}
 
 	transcriber := routerTranscriber{
-		router: r,
+		router:          r,
+		dictionaryStore: dictionaryStore,
 		state: &appState{
 			vocabularyDictionary: "kombi fire => Kombify\nAcmeOS\nGemma",
 		},
@@ -54,6 +74,9 @@ func TestRouterTranscriberAppliesVocabularyHintsAndCorrections(t *testing.T) {
 	}
 	if got, want := provider.opts.Prompt, "Prefer these terms when transcribing: Kombify, AcmeOS, Gemma."; got != want {
 		t.Fatalf("provider prompt = %q, want %q", got, want)
+	}
+	if got, want := dictionaryStore.records, []string{"Kombify|en"}; len(got) != len(want) || got[0] != want[0] {
+		t.Fatalf("dictionary usage records = %v, want %v", got, want)
 	}
 }
 

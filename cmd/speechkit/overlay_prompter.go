@@ -4,17 +4,15 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"strings"
 
 	"github.com/kombifyio/SpeechKit/internal/audio"
+	"github.com/kombifyio/SpeechKit/internal/config"
 )
 
 // This file groups the prompter (voice agent chat window) and the live
 // voice-agent audio stream player. Both concerns are tightly coupled to the
 // voice agent session; keeping them adjacent makes that grouping explicit.
-
-func (s *appState) showPrompterWindow() {
-	s.showPrompterWindowForMode("voice_agent", false)
-}
 
 func (s *appState) showPrompterWindowForMode(mode string, reset bool) {
 	if s == nil {
@@ -25,10 +23,15 @@ func (s *appState) showPrompterWindowForMode(mode string, reset bool) {
 	locator := s.screenLocator
 	previousMode := s.prompterMode
 	wasVisible := prompter != nil && prompter.IsVisible()
+	feedbackMode := s.feedbackModeForRuntimeModeLocked(mode)
 	s.prompterMode = mode
 	s.mu.Unlock()
 
 	if prompter == nil {
+		return
+	}
+	if feedbackMode == config.OverlayFeedbackModeSmallFeedback {
+		prompter.Hide()
 		return
 	}
 
@@ -49,6 +52,24 @@ func (s *appState) showPrompterWindowForMode(mode string, reset bool) {
 	}
 }
 
+func (s *appState) feedbackModeForRuntimeModeLocked(mode string) string {
+	switch mode {
+	case modeAssist:
+		return normalizeRuntimeOverlayFeedbackMode(s.assistOverlayMode)
+	case modeVoiceAgent:
+		return normalizeRuntimeOverlayFeedbackMode(s.voiceAgentOverlayMode)
+	default:
+		return config.OverlayFeedbackModeBigProductivity
+	}
+}
+
+func normalizeRuntimeOverlayFeedbackMode(value string) string {
+	if strings.TrimSpace(value) == "" {
+		return config.OverlayFeedbackModeBigProductivity
+	}
+	return config.NormalizeOverlayFeedbackMode(value, config.OverlayFeedbackModeSmallFeedback)
+}
+
 func (s *appState) hidePrompterWindow() {
 	if s == nil {
 		return
@@ -62,19 +83,6 @@ func (s *appState) hidePrompterWindow() {
 	}
 }
 
-func (s *appState) minimisePrompterWindow() {
-	if s == nil {
-		return
-	}
-	s.mu.Lock()
-	prompter := s.prompterWindow
-	s.mu.Unlock()
-
-	if prompter != nil {
-		prompter.Minimise()
-	}
-}
-
 func (s *appState) sendPrompterMessage(role, text string, done bool) {
 	if s == nil {
 		return
@@ -84,6 +92,9 @@ func (s *appState) sendPrompterMessage(role, text string, done bool) {
 	s.mu.Unlock()
 
 	if prompter == nil {
+		if role == "user" || role == "assistant" || role == "system" {
+			s.setOverlayFeedbackMessage(role, text, done)
+		}
 		return
 	}
 
@@ -96,6 +107,9 @@ func (s *appState) sendPrompterMessage(role, text string, done bool) {
 		`if(window.__prompter){window.__prompter.addMessage({role:%q,text:%q,done:%s})}`,
 		role, escapedText, doneStr,
 	))
+	if role == "user" || role == "assistant" || role == "system" {
+		s.setOverlayFeedbackMessage(role, text, done)
+	}
 }
 
 func (s *appState) clearPrompterMessages() {
@@ -147,6 +161,70 @@ func (s *appState) updatePrompterState(state string) {
 		`if(window.__prompter){window.__prompter.updateState(%q)}`,
 		escapeJS(state),
 	))
+}
+
+func (s *appState) updateOverlayForVoiceAgentState(state string) {
+	if s == nil {
+		return
+	}
+
+	overlayState := "idle"
+	overlayText := ""
+	overlayPhase := "idle"
+	switch strings.TrimSpace(state) {
+	case "connecting":
+		overlayState = "processing"
+		overlayText = "Connecting"
+		overlayPhase = "thinking"
+	case "listening":
+		overlayState = "recording"
+		overlayText = "Listening"
+		overlayPhase = "listening"
+	case "processing":
+		overlayState = "processing"
+		overlayText = "Thinking"
+		overlayPhase = "thinking"
+	case "speaking":
+		overlayState = "recording"
+		overlayText = "Speaking"
+		overlayPhase = "speaking"
+	case "deactivating":
+		overlayState = "processing"
+		overlayText = "Finishing"
+		overlayPhase = "thinking"
+	}
+
+	s.mu.Lock()
+	s.activeMode = modeVoiceAgent
+	s.hotkey = s.activeHotkeyLocked()
+	if overlayState == "idle" {
+		if s.currentState != "done" {
+			s.currentState = "idle"
+			s.overlayText = ""
+			s.overlayFeedbackRole = ""
+			s.overlayFeedbackText = ""
+			s.overlayFeedbackDone = true
+			s.overlayLevel = 0
+			s.overlayPhase = "idle"
+		}
+	} else {
+		s.currentState = overlayState
+		if strings.TrimSpace(s.overlayFeedbackText) == "" {
+			s.overlayText = overlayText
+		}
+		if overlayPhase == "speaking" {
+			s.overlayPhase = "speaking"
+		} else {
+			s.overlayPhase = overlayPhase
+		}
+		if overlayState != "recording" {
+			s.overlayLevel = 0
+		}
+	}
+	s.syncSpeechKitSnapshotLocked()
+	s.mu.Unlock()
+
+	s.showActiveOverlayWindow()
 }
 
 func (s *appState) updatePrompterActivity(role string, level float64) {

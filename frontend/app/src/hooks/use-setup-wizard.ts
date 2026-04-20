@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 
 import {
+  builtInPrimaryModelSelections,
   fetchAudioDevices,
   setAudioDevice,
   type AudioDevice,
@@ -37,6 +38,18 @@ export function useSetupWizard(onComplete: () => void) {
       const body = new URLSearchParams()
       body.set('dictate_hotkey', hotkey)
       body.set('audio_device_id', selectedDevice)
+      body.set(
+        'dictate_primary_profile_id',
+        builtInPrimaryModelSelections.dictate.primaryProfileId,
+      )
+      body.set(
+        'assist_primary_profile_id',
+        builtInPrimaryModelSelections.assist.primaryProfileId,
+      )
+      body.set(
+        'voice_primary_profile_id',
+        builtInPrimaryModelSelections.voice_agent.primaryProfileId,
+      )
       await fetch('/settings/update', { method: 'POST', body })
     } catch { /* ignore */ }
     onComplete()

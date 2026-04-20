@@ -125,6 +125,18 @@ func TestOverlayShowDashboardRouteRestoresWindowAndDispatchesRefreshEvent(t *tes
 	}
 }
 
+func TestOverlayFeedbackMergesStreamingPrompterText(t *testing.T) {
+	state := &appState{}
+
+	state.sendPrompterMessage("assistant", "Das ist", false)
+	state.sendPrompterMessage("assistant", " ist live", false)
+
+	snapshot := state.overlaySnapshot()
+	if got, want := snapshot.Text, "Das ist live"; got != want {
+		t.Fatalf("overlay feedback text = %q, want %q", got, want)
+	}
+}
+
 func TestOverlayFreeCenterRoutesUpdateRuntimeAndPersistSavedPosition(t *testing.T) {
 	cfg := defaultTestConfig()
 	cfg.UI.OverlayMovable = true

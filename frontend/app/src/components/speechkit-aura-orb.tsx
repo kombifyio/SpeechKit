@@ -176,7 +176,7 @@ export function SpeechKitAuraOrb({
 
         <motion.div
           aria-hidden="true"
-          className="absolute inset-[31%] rounded-full border border-white/14 bg-[radial-gradient(circle_at_50%_36%,rgba(255,255,255,0.78),rgba(255,255,255,0.16)_42%,rgba(255,255,255,0)_76%)] shadow-[inset_0_0_34px_rgba(255,255,255,0.13)]"
+          className="absolute inset-[31%] rounded-full border border-white/14 bg-[radial-gradient(circle_at_50%_36%,rgba(255,255,255,0.78),rgba(255,255,255,0.16)_42%,rgba(255,255,255,0)_76%)]"
           animate={{ scale: state === 'speaking' ? [0.98, 1.04, 1] : [1, 1.018, 1] }}
           transition={{ duration: state === 'processing' ? 1.6 : 1.8, repeat: Infinity, ease: 'easeInOut' }}
         >

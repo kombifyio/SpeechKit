@@ -13,8 +13,10 @@ import { useDesktopTheme } from "@/lib/desktop-theme";
 import {
   cancelModelDownload,
   cancelAppUpdateDownload,
+  builtInPrimaryModelSelections,
   dashboardAudioDownloadURL,
   deleteQuickNote,
+  defaultSettingsState,
   fetchDownloadCatalog,
   fetchDownloadJobs,
   fetchAppUpdateJobs,
@@ -63,6 +65,18 @@ const dashboardTabMeta: Record<Tab, { title: string; subtitle: string }> = {
     subtitle: "Application events and diagnostics",
   },
 };
+
+const onboardingHotkeys = {
+  dictate: defaultSettingsState.dictateHotkey,
+  assist: defaultSettingsState.assistHotkey,
+  voiceAgent: defaultSettingsState.voiceAgentHotkey,
+} as const;
+
+const onboardingHotkeyLabels = {
+  dictate: "Win+Alt",
+  assist: "Ctrl+Win",
+  voiceAgent: "Ctrl+Shift",
+} as const;
 
 export function DashboardApp() {
   const [tab, setTab] = useState<Tab>(() => resolveInitialDashboardTab());
@@ -1194,8 +1208,22 @@ function SetupWizard({
         await onSelectDownloadedModel(chosenLocalModel.id);
       }
       const body = new URLSearchParams();
-      body.set("dictate_hotkey", "ctrl+shift+d");
+      body.set("dictate_hotkey", onboardingHotkeys.dictate);
+      body.set("assist_hotkey", onboardingHotkeys.assist);
+      body.set("voice_agent_hotkey", onboardingHotkeys.voiceAgent);
       body.set("audio_device_id", selectedDevice);
+      body.set(
+        "dictate_primary_profile_id",
+        builtInPrimaryModelSelections.dictate.primaryProfileId,
+      );
+      body.set(
+        "assist_primary_profile_id",
+        builtInPrimaryModelSelections.assist.primaryProfileId,
+      );
+      body.set(
+        "voice_primary_profile_id",
+        builtInPrimaryModelSelections.voice_agent.primaryProfileId,
+      );
       await fetch("/settings/update", { method: "POST", body });
     } catch (error) {
       setLoading(false);
@@ -1475,13 +1503,16 @@ function SetupWizard({
           {/* Quick-start cards */}
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6 w-full mt-12 mb-12">
             <WizardFeatureCard
-              title="Ctrl+Shift+D"
+              title={onboardingHotkeyLabels.dictate}
               desc="Start dictation anywhere"
             />
-            <WizardFeatureCard title="Ctrl+Shift+A" desc="Activate AI Assist" />
             <WizardFeatureCard
-              title="Speak naturally"
-              desc="SpeechKit handles the rest"
+              title={onboardingHotkeyLabels.assist}
+              desc="Activate AI Assist"
+            />
+            <WizardFeatureCard
+              title={onboardingHotkeyLabels.voiceAgent}
+              desc="Start Voice Agent"
             />
           </div>
 
@@ -1530,22 +1561,6 @@ function DashboardSidebar({
 }) {
   return (
     <>
-      <div className="border-b border-[color:var(--sk-shell-divider)] px-5 py-5">
-        <div className="flex items-center gap-3">
-          <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-[color:var(--sk-accent-soft)] text-[color:var(--sk-accent)]">
-            <SpeechKitWindowIcon />
-          </div>
-          <div>
-            <p className="text-lg font-semibold tracking-tight text-[color:var(--sk-text)]">
-              SpeechKit
-            </p>
-            <p className="text-[11px] text-[color:var(--sk-text-muted)]">
-              Voice workflow desktop
-            </p>
-          </div>
-        </div>
-      </div>
-
       <nav className="flex-1 space-y-1 px-3 py-4">
         <NavBtn
           active={tab === "dashboard"}

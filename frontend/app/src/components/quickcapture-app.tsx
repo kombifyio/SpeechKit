@@ -1,10 +1,18 @@
-import { useEffect, useRef, useState, type CSSProperties } from 'react'
-import { Check, Mic, NotebookPen } from 'lucide-react'
+import { useEffect, useRef, useState, type CSSProperties, type MouseEvent } from 'react'
+import { Check, Mic } from 'lucide-react'
 
-import { DesktopWindowFrame } from '@/components/desktop-window-frame'
-import { useDesktopTheme } from '@/lib/desktop-theme'
 import { updateQuickNote } from '@/lib/speechkit'
 import { useAutoClose } from '@/hooks/use-auto-close'
+
+const dragRegionStyle = {
+  ['--wails-draggable' as string]: 'drag',
+  WebkitAppRegion: 'drag',
+} as CSSProperties
+
+const noDragRegionStyle = {
+  ['--wails-draggable' as string]: 'no-drag',
+  WebkitAppRegion: 'no-drag',
+} as CSSProperties
 
 /**
  * Quick Capture: minimal frameless notepad.
@@ -13,7 +21,6 @@ import { useAutoClose } from '@/hooks/use-auto-close'
  * Auto-stops on silence. Only UI: textarea + checkmark to save & close.
  */
 export function QuickCaptureApp() {
-  const { theme, toggleTheme } = useDesktopTheme('dark')
   const [text, setText] = useState('')
   const [noteId] = useState(() => {
     const params = new URLSearchParams(window.location.search)
@@ -28,16 +35,26 @@ export function QuickCaptureApp() {
     void fetch('/quicknotes/close-capture', { method: 'POST' })
   }
 
+  const saveCurrentText = async () => {
+    const trimmedText = text.trim()
+    if (!trimmedText || !noteId) return
+    await updateQuickNote(noteId, trimmedText)
+  }
+
+  const saveBeforeClose = async () => {
+    try {
+      await saveCurrentText()
+    } catch {
+      /* close anyway */
+    }
+  }
+
   // Auto-close on blur (user clicks elsewhere) or 60s idle
   useAutoClose({
     onClose: closeWindow,
-    onBeforeClose: () => {
-      if (text.trim() && noteId) {
-        void updateQuickNote(noteId, text.trim())
-      }
-    },
+    onBeforeClose: saveBeforeClose,
     idleTimeoutMs: 60_000,
-    enabled: !recording, // don't auto-close while recording
+    enabled: true,
   })
 
   useEffect(() => {
@@ -67,28 +84,32 @@ export function QuickCaptureApp() {
 
   const handleDone = async () => {
     // Save text if present, then always close
-    if (text.trim() && noteId) {
-      try {
-        await updateQuickNote(noteId, text.trim())
-        setSaved(true)
-      } catch { /* ignore */ }
+    try {
+      await saveCurrentText()
+      setSaved(true)
+    } catch {
+      /* ignore */
     }
     closeWindow()
   }
 
+  const handleSurfaceMouseDown = (event: MouseEvent<HTMLDivElement>) => {
+    if (event.target !== event.currentTarget) return
+    void saveBeforeClose().then(closeWindow)
+  }
+
   return (
-    <DesktopWindowFrame
-      appLabel="Quick Capture"
-      title="Create Quick Note"
-      subtitle={recording ? 'Listening for speech' : 'Edit and confirm the capture'}
-      icon={<NotebookPen className="h-5 w-5" />}
-      theme={theme}
-      onToggleTheme={toggleTheme}
-      allowMaximise={false}
-      onClose={closeWindow}
-      contentClassName="bg-[color:var(--sk-surface-1)]/92"
+    <div
+      data-testid="quick-capture-surface"
+      className="flex h-screen w-screen items-center justify-center bg-transparent p-2 text-[color:var(--sk-text)]"
+      onMouseDown={handleSurfaceMouseDown}
+      style={noDragRegionStyle}
     >
-      <div className="flex min-h-0 flex-1 flex-col text-[color:var(--sk-text)]">
+      <section
+        data-testid="quick-capture-card"
+        className="flex h-full w-full min-h-0 flex-col overflow-hidden rounded-[22px] border border-[color:var(--sk-panel-border)] bg-[color:var(--sk-surface-1)]/94 shadow-[0_18px_64px_rgba(0,0,0,0.34)]"
+        style={dragRegionStyle}
+      >
         <div className="flex items-center justify-between border-b border-[color:var(--sk-shell-divider)] px-4 py-3 text-xs text-[color:var(--sk-text-muted)]">
           <div className="flex items-center gap-2">
             <span className="rounded-full border border-[color:var(--sk-panel-border)] bg-[color:var(--sk-surface-2)] px-2.5 py-1">
@@ -113,8 +134,8 @@ export function QuickCaptureApp() {
           value={text}
           onChange={(e) => setText(e.target.value)}
           placeholder={recording ? 'Listening... stops automatically on silence' : 'Type or speak...'}
-          className="mx-4 mb-4 mt-4 flex-1 resize-none rounded-[22px] border border-[color:var(--sk-panel-border)] bg-transparent px-4 py-3 text-sm leading-relaxed text-[color:var(--sk-text)] outline-none placeholder:text-[color:var(--sk-text-muted)]/70"
-          style={{ WebkitAppRegion: 'no-drag' } as CSSProperties}
+          className="mx-4 mb-4 mt-4 flex-1 resize-none rounded-[18px] border border-[color:var(--sk-panel-border)] bg-transparent px-4 py-3 text-sm leading-relaxed text-[color:var(--sk-text)] outline-none placeholder:text-[color:var(--sk-text-muted)]/70"
+          style={noDragRegionStyle}
         />
 
         <div className="flex flex-shrink-0 justify-end px-4 pb-4">
@@ -130,13 +151,13 @@ export function QuickCaptureApp() {
                   : 'sk-secondary-button',
             ].join(' ')}
             title="Save & close"
-            style={{ WebkitAppRegion: 'no-drag' } as CSSProperties}
+            style={noDragRegionStyle}
           >
             <Check className="h-4 w-4" />
             Save & close
           </button>
         </div>
-      </div>
-    </DesktopWindowFrame>
+      </section>
+    </div>
   )
 }

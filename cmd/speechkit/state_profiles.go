@@ -1,6 +1,8 @@
 package main
 
 import (
+	"strings"
+
 	"github.com/kombifyio/SpeechKit/internal/config"
 	"github.com/kombifyio/SpeechKit/internal/models"
 )
@@ -95,6 +97,8 @@ func sttProfileMatchesConfig(cfg *config.Config, profile models.Profile) bool {
 		return cfg.Providers.Groq.Enabled && cfg.Providers.Groq.STTModel == profile.ModelID && profileCredentialAvailable(cfg, profile)
 	case models.ExecutionModeGoogle:
 		return cfg.Providers.Google.Enabled && cfg.Providers.Google.STTModel == profile.ModelID && profileCredentialAvailable(cfg, profile)
+	case models.ExecutionModeOllama:
+		return cfg.Providers.Ollama.Enabled && cfg.Providers.Ollama.STTModel == profile.ModelID
 	default:
 		return false
 	}
@@ -103,7 +107,7 @@ func sttProfileMatchesConfig(cfg *config.Config, profile models.Profile) bool {
 func utilityProfileMatchesConfig(cfg *config.Config, profile models.Profile) bool {
 	switch profile.ExecutionMode {
 	case models.ExecutionModeLocal:
-		return cfg.LocalLLM.Enabled && cfg.LocalLLM.UtilityModel == profile.ModelID
+		return localLLMProfileMatchesConfig(cfg, profile, cfg.LocalLLM.UtilityModel)
 	case models.ExecutionModeOpenAI:
 		return cfg.Providers.OpenAI.Enabled && cfg.Providers.OpenAI.UtilityModel == profile.ModelID && profileCredentialAvailable(cfg, profile)
 	case models.ExecutionModeGroq:
@@ -124,7 +128,7 @@ func utilityProfileMatchesConfig(cfg *config.Config, profile models.Profile) boo
 func assistProfileMatchesConfig(cfg *config.Config, profile models.Profile) bool {
 	switch profile.ExecutionMode {
 	case models.ExecutionModeLocal:
-		return cfg.LocalLLM.Enabled && cfg.LocalLLM.AssistModel == profile.ModelID
+		return localLLMProfileMatchesConfig(cfg, profile, cfg.LocalLLM.AssistModel)
 	case models.ExecutionModeOpenAI:
 		return cfg.Providers.OpenAI.Enabled && cfg.Providers.OpenAI.AssistModel == profile.ModelID && profileCredentialAvailable(cfg, profile)
 	case models.ExecutionModeGroq:
@@ -142,9 +146,37 @@ func assistProfileMatchesConfig(cfg *config.Config, profile models.Profile) bool
 	}
 }
 
+func localLLMProfileMatchesConfig(cfg *config.Config, profile models.Profile, configuredModel string) bool {
+	if !cfg.LocalLLM.Enabled {
+		return false
+	}
+	configuredModel = strings.TrimSpace(configuredModel)
+	if configuredModel == profile.ModelID {
+		return true
+	}
+	return profile.ProviderKind == models.ProviderKindLocalBuiltIn && configuredModel != ""
+}
+
 func realtimeVoiceProfileMatchesConfig(cfg *config.Config, profile models.Profile) bool {
 	if !cfg.VoiceAgent.Enabled || cfg.VoiceAgent.Model != profile.ModelID {
 		return false
 	}
-	return profileCredentialAvailable(cfg, profile)
+	switch profile.ExecutionMode {
+	case models.ExecutionModeLocal:
+		return cfg.LocalLLM.Enabled && cfg.LocalLLM.AgentModel == profile.ModelID
+	case models.ExecutionModeOllama:
+		return cfg.Providers.Ollama.Enabled && cfg.Providers.Ollama.AgentModel == profile.ModelID
+	case models.ExecutionModeHFRouted:
+		return cfg.HuggingFace.Enabled && cfg.HuggingFace.AgentModel == profile.ModelID && profileCredentialAvailable(cfg, profile)
+	case models.ExecutionModeGoogle:
+		return profileCredentialAvailable(cfg, profile)
+	case models.ExecutionModeOpenAI:
+		return cfg.Providers.OpenAI.Enabled && cfg.Providers.OpenAI.AgentModel == profile.ModelID && profileCredentialAvailable(cfg, profile)
+	case models.ExecutionModeGroq:
+		return cfg.Providers.Groq.Enabled && cfg.Providers.Groq.AgentModel == profile.ModelID && profileCredentialAvailable(cfg, profile)
+	case models.ExecutionModeOpenRouter:
+		return cfg.Providers.OpenRouter.Enabled && cfg.Providers.OpenRouter.AgentModel == profile.ModelID && profileCredentialAvailable(cfg, profile)
+	default:
+		return false
+	}
 }

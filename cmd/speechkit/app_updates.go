@@ -22,6 +22,10 @@ var installerDownloadClient = netsec.NewSafeHTTPClient(netsec.ClientOptions{Time
 // default (public https only); tests may relax to allow loopback.
 var appInstallerURLValidation = netsec.ValidationOptions{}
 
+// verifyInstallerBeforeOpen verifies the downloaded installer before the app
+// hands it to the OS shell. Tests replace this hook for unsigned fixtures.
+var verifyInstallerBeforeOpen = verifyInstallerSignature
+
 type appUpdateStatus string
 
 const (
@@ -119,7 +123,7 @@ func (m *appUpdateManager) Start(release latestReleaseInfo, destDir string) appU
 		AssetName:  release.DownloadName,
 		Status:     appUpdateStatusPending,
 		TotalBytes: release.DownloadSize,
-		StatusText: "Starting…",
+		StatusText: "Startingâ€¦",
 		cancel:     cancel,
 	}
 
@@ -162,7 +166,7 @@ func (m *appUpdateManager) CompletedFile(jobID string) (string, bool) {
 func (m *appUpdateManager) run(ctx context.Context, job *appUpdateJob, release latestReleaseInfo, destDir string) {
 	job.mu.Lock()
 	job.Status = appUpdateStatusRunning
-	job.StatusText = "Downloading…"
+	job.StatusText = "Downloadingâ€¦"
 	job.mu.Unlock()
 
 	err := downloadAppInstaller(ctx, job, release, destDir)

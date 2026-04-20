@@ -82,6 +82,19 @@ func (g *GeminiLive) SendAudio(chunk []byte) error {
 	})
 }
 
+func (g *GeminiLive) SendAudioStreamEnd() error {
+	g.mu.RLock()
+	session := g.session
+	g.mu.RUnlock()
+	if session == nil {
+		return fmt.Errorf("gemini live: not connected")
+	}
+
+	return session.SendRealtimeInput(genai.LiveRealtimeInput{
+		AudioStreamEnd: true,
+	})
+}
+
 func (g *GeminiLive) Receive(ctx context.Context) (*LiveMessage, error) {
 	g.mu.RLock()
 	session := g.session

@@ -44,6 +44,8 @@ function snap(partial: Partial<SpeechKitOverlayState> = {}): SpeechKitOverlaySta
     visible: true,
     visualizer: 'pill',
     design: 'default',
+    assistOverlayMode: 'small_feedback',
+    voiceAgentOverlayMode: 'small_feedback',
     hotkey: 'win+alt',
     dictateHotkey: 'win+alt',
     assistHotkey: 'ctrl+shift+j',
@@ -140,6 +142,73 @@ describe('overlay surfaces', () => {
     expect(await screen.findByTitle('Active mode: Assist')).toBeInTheDocument()
   })
 
+  it('renders small assist feedback as an expanded pill anchor', async () => {
+    const feedbackText = 'Schreibe eine kurze Antwort fuer den Kunden mit allen relevanten Details.'
+    fetchOverlayStateMock.mockResolvedValue(
+      snap({
+        state: 'processing',
+        phase: 'thinking',
+        activeMode: 'assist',
+        text: feedbackText,
+        assistOverlayMode: 'small_feedback',
+      }),
+    )
+
+    render(<PillAnchorOverlay />)
+
+    const shell = await screen.findByTestId('pill-anchor-shell')
+    const feedback = screen.getByTestId('pill-anchor-compact-feedback')
+
+    expect(shell).toHaveAttribute('data-compact-feedback', 'true')
+    expect(shell).toHaveClass('min-w-[260px]')
+    expect(feedback).toHaveTextContent(feedbackText)
+    expect(feedback).toHaveClass('whitespace-normal', 'break-words')
+    expect(feedback.className).not.toContain('truncate')
+  })
+
+  it('renders small voice agent feedback inside the expanded pill controls', async () => {
+    const feedbackText = 'Ich habe den Dialog verstanden und fasse die naechste Aktion sichtbar zusammen.'
+    fetchOverlayStateMock.mockResolvedValue(
+      snap({
+        state: 'processing',
+        phase: 'thinking',
+        activeMode: 'voice_agent',
+        text: feedbackText,
+        voiceAgentOverlayMode: 'small_feedback',
+      }),
+    )
+
+    render(<PillActionsOverlay />)
+
+    const panelShell = await screen.findByTestId('pill-panel-shell')
+    const centerShell = screen.getByTestId('pill-panel-center-shell')
+    const feedback = screen.getByTestId('pill-panel-center-compact-feedback')
+
+    expect(feedback).toHaveTextContent(feedbackText)
+    expect(feedback).toHaveClass('whitespace-normal', 'break-words')
+    expect(panelShell).toContainElement(feedback)
+    expect(centerShell).toHaveAttribute('data-compact-feedback', 'true')
+  })
+
+  it('keeps big productivity feedback off the compact pill surface', async () => {
+    fetchOverlayStateMock.mockResolvedValue(
+      snap({
+        state: 'processing',
+        phase: 'thinking',
+        activeMode: 'assist',
+        text: 'Long answer belongs in the productivity panel.',
+        assistOverlayMode: 'big_productivity',
+      }),
+    )
+
+    render(<PillAnchorOverlay />)
+
+    const shell = await screen.findByTestId('pill-anchor-shell')
+    expect(shell).toHaveAttribute('data-compact-feedback', 'false')
+    expect(screen.queryByTestId('pill-anchor-compact-feedback')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('pill-anchor-compact-feedback-panel')).not.toBeInTheDocument()
+  })
+
   it('renders quick controls on the left and three independent module toggles on the right in the pill panel', async () => {
     fetchOverlayStateMock.mockResolvedValue(
       snap({
@@ -187,6 +256,19 @@ describe('overlay surfaces', () => {
     expect(within(rightControls).getByRole('button', { name: 'Assist' })).toHaveAttribute('aria-pressed', 'false')
     expect(within(rightControls).getByRole('button', { name: 'Voice Agent' })).toHaveAttribute('data-runtime-active', 'true')
     expect(within(rightControls).getByTestId('mode-toggle-assist-slashed')).toBeInTheDocument()
+  })
+
+  it('keeps the hovered pill panel shell as a rounded pill without rectangular shadow chrome', async () => {
+    fetchOverlayStateMock.mockResolvedValue(snap())
+
+    render(<PillActionsOverlay />)
+
+    const shell = await screen.findByTestId('pill-panel-shell')
+
+    expect(shell).toHaveClass('rounded-full')
+    expect(shell).toHaveClass('bg-neutral-950/84')
+    expect(shell).toHaveClass('shadow-none')
+    expect(shell.className).not.toContain('backdrop-blur')
   })
 
   it('switches the microphone from the pill panel quick selector', async () => {

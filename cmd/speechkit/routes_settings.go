@@ -16,12 +16,13 @@ import (
 	"github.com/kombifyio/SpeechKit/internal/models"
 	"github.com/kombifyio/SpeechKit/internal/router"
 	"github.com/kombifyio/SpeechKit/internal/secrets"
+	"github.com/kombifyio/SpeechKit/internal/store"
 )
 
 var errMissingHuggingFaceToken = fmt.Errorf("missing hugging face token")
 var errHFUnavailableBuild = errors.New("hugging face is not available in this build")
 
-func registerSettingsRoutes(mux *http.ServeMux, cfgPath string, cfg *config.Config, state *appState, sttRouter *router.Router) {
+func registerSettingsRoutes(mux *http.ServeMux, cfgPath string, cfg *config.Config, state *appState, sttRouter *router.Router, feedbackStore store.Store) {
 	mux.HandleFunc("/settings/state", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
 			w.WriteHeader(http.StatusMethodNotAllowed)
@@ -36,7 +37,7 @@ func registerSettingsRoutes(mux *http.ServeMux, cfgPath string, cfg *config.Conf
 			return
 		}
 		r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
-		message := saveSettings(r.Context(), r, cfgPath, cfg, state, sttRouter)
+		message := saveSettings(r.Context(), r, cfgPath, cfg, state, sttRouter, feedbackStore)
 		w.Header().Set("Content-Type", "application/json; charset=utf-8")
 		_ = json.NewEncoder(w).Encode(map[string]string{"message": message})
 	})
@@ -438,7 +439,7 @@ func registerSettingsRoutes(mux *http.ServeMux, cfgPath string, cfg *config.Conf
 	})
 }
 
-func saveSettings(ctx context.Context, req *http.Request, cfgPath string, cfg *config.Config, state *appState, sttRouter *router.Router) string {
+func saveSettings(ctx context.Context, req *http.Request, cfgPath string, cfg *config.Config, state *appState, sttRouter *router.Router, feedbackStore store.Store) string {
 	if err := req.ParseForm(); err != nil {
 		return msgFormParseError
 	}
@@ -446,6 +447,11 @@ func saveSettings(ctx context.Context, req *http.Request, cfgPath string, cfg *c
 	form, errMsg := parseSettingsForm(req, cfg)
 	if errMsg != "" {
 		return errMsg
+	}
+	if !form.OverlayMovable {
+		form.OverlayFreeX = 0
+		form.OverlayFreeY = 0
+		form.OverlayMonitorPositions = map[string]config.OverlayFreePosition{}
 	}
 
 	nextCfg := buildNextConfig(form, cfg)
@@ -484,6 +490,9 @@ func saveSettings(ctx context.Context, req *http.Request, cfgPath string, cfg *c
 	if err := config.Save(cfgPath, cfg); err != nil {
 		return fmt.Sprintf(msgSaveFailed, err)
 	}
+	if err := syncVocabularyDictionaryStore(ctx, feedbackStore, form.Language, form.VocabularyDictionary); err != nil {
+		return fmt.Sprintf(msgSaveFailed, err)
+	}
 
 	state.applyRuntimeSettings(
 		form.DictateEnabled,
@@ -500,6 +509,8 @@ func saveSettings(ctx context.Context, req *http.Request, cfgPath string, cfg *c
 		runtimeAvailableProviders(ctx, sttRouter),
 		form.Visualizer,
 		form.Design,
+		form.AssistOverlayMode,
+		form.VoiceAgentOverlayMode,
 		form.OverlayPosition,
 		form.VocabularyDictionary,
 		form.OverlayMovable,
@@ -566,6 +577,7 @@ type settingsFormData struct {
 	VoiceAgentHotkeyBehavior   string
 	VoiceAgentCloseBehavior    string
 	VoiceAgentRefinementPrompt string
+	VoiceAgentSessionSummary   bool
 	AutoStartOnLaunch          bool
 	AgentHotkey                string
 	AgentMode                  string
@@ -575,6 +587,8 @@ type settingsFormData struct {
 	OverlayEnabled             bool
 	Visualizer                 string
 	Design                     string
+	AssistOverlayMode          string
+	VoiceAgentOverlayMode      string
 	OverlayPosition            string
 	OverlayMovable             bool
 	OverlayFreeX               int
@@ -586,6 +600,7 @@ type settingsFormData struct {
 	StoreSaveAudio             bool
 	StoreAudioRetention        int
 	StoreMaxAudioStorage       int
+	ModelDownloadDir           string
 	VocabularyDictionary       string
 	Language                   string
 	DictatePrimaryProfileID    string
@@ -681,6 +696,10 @@ func parseSettingsForm(req *http.Request, cfg *config.Config) (settingsFormData,
 	if !postFormIncludes(req, "voice_agent_refinement_prompt") {
 		f.VoiceAgentRefinementPrompt = strings.TrimSpace(cfg.VoiceAgent.RefinementPrompt)
 	}
+	f.VoiceAgentSessionSummary = cfg.VoiceAgent.EnableSessionSummary
+	if raw := strings.TrimSpace(req.FormValue("voice_agent_session_summary")); raw != "" {
+		f.VoiceAgentSessionSummary = raw == "1"
+	}
 	f.AutoStartOnLaunch = cfg.General.AutoStartOnLaunch
 	if raw := strings.TrimSpace(req.FormValue("auto_start_on_launch")); raw != "" {
 		f.AutoStartOnLaunch = raw == "1"
@@ -751,6 +770,14 @@ func parseSettingsForm(req *http.Request, cfg *config.Config) (settingsFormData,
 	if !isSupportedOverlayDesign(f.Design) {
 		return f, msgUnsupportedDesign
 	}
+	f.AssistOverlayMode = config.NormalizeOverlayFeedbackMode(
+		strings.TrimSpace(req.FormValue("assist_overlay_mode")),
+		config.NormalizeOverlayFeedbackMode(cfg.UI.AssistOverlayMode, config.OverlayFeedbackModeSmallFeedback),
+	)
+	f.VoiceAgentOverlayMode = config.NormalizeOverlayFeedbackMode(
+		strings.TrimSpace(req.FormValue("voice_agent_overlay_mode")),
+		config.NormalizeOverlayFeedbackMode(cfg.UI.VoiceAgentOverlayMode, config.OverlayFeedbackModeSmallFeedback),
+	)
 	f.OverlayPosition = strings.TrimSpace(req.FormValue("overlay_position"))
 	if f.OverlayPosition == "" {
 		f.OverlayPosition = cfg.UI.OverlayPosition
@@ -814,6 +841,11 @@ func parseSettingsForm(req *http.Request, cfg *config.Config) (settingsFormData,
 		if parsed, err := strconv.Atoi(raw); err == nil && parsed >= 0 {
 			f.StoreMaxAudioStorage = parsed
 		}
+	}
+	_, hasModelDownloadDir := req.PostForm["model_download_dir"]
+	f.ModelDownloadDir = normalizeModelDownloadDir(req.FormValue("model_download_dir"))
+	if !hasModelDownloadDir {
+		f.ModelDownloadDir = strings.TrimSpace(cfg.General.ModelDownloadDir)
 	}
 	_, hasVocabularyDictionary := req.PostForm["vocabulary_dictionary"]
 	f.VocabularyDictionary = normalizeVocabularyDictionary(req.FormValue("vocabulary_dictionary"))
@@ -916,6 +948,7 @@ func buildNextConfig(form settingsFormData, cfg *config.Config) config.Config {
 		FallbackProfileID: form.VoiceFallbackProfileID,
 	})
 	nextCfg.VoiceAgent.RefinementPrompt = form.VoiceAgentRefinementPrompt
+	nextCfg.VoiceAgent.EnableSessionSummary = form.VoiceAgentSessionSummary
 	nextCfg.VoiceAgent.CloseBehavior = config.NormalizeVoiceAgentCloseBehavior(
 		form.VoiceAgentCloseBehavior,
 		config.NormalizeVoiceAgentCloseBehavior(cfg.VoiceAgent.CloseBehavior, config.VoiceAgentCloseBehaviorContinue),
@@ -931,8 +964,15 @@ func buildNextConfig(form settingsFormData, cfg *config.Config) config.Config {
 	nextCfg.UI.OverlayFreeX = form.OverlayFreeX
 	nextCfg.UI.OverlayFreeY = form.OverlayFreeY
 	nextCfg.UI.OverlayMonitorPositions = cloneOverlayMonitorPositions(form.OverlayMonitorPositions)
+	if !form.OverlayMovable {
+		nextCfg.UI.OverlayFreeX = 0
+		nextCfg.UI.OverlayFreeY = 0
+		nextCfg.UI.OverlayMonitorPositions = map[string]config.OverlayFreePosition{}
+	}
 	nextCfg.UI.Visualizer = form.Visualizer
 	nextCfg.UI.Design = form.Design
+	nextCfg.UI.AssistOverlayMode = form.AssistOverlayMode
+	nextCfg.UI.VoiceAgentOverlayMode = form.VoiceAgentOverlayMode
 	nextCfg.Store.Backend = form.StoreBackend
 	nextCfg.Store.SQLitePath = form.StoreSQLitePath
 	nextCfg.Store.PostgresDSN = form.StorePostgresDSN
@@ -944,6 +984,7 @@ func buildNextConfig(form settingsFormData, cfg *config.Config) config.Config {
 	if form.StoreBackend == "sqlite" {
 		nextCfg.Feedback.DBPath = form.StoreSQLitePath
 	}
+	nextCfg.General.ModelDownloadDir = form.ModelDownloadDir
 	nextCfg.Vocabulary.Dictionary = form.VocabularyDictionary
 	nextCfg.General.Language = form.Language
 	return nextCfg
@@ -961,6 +1002,10 @@ func normalizeVocabularyDictionary(input string) string {
 	normalized := strings.ReplaceAll(input, "\r\n", "\n")
 	normalized = strings.ReplaceAll(normalized, "\r", "\n")
 	return strings.TrimSpace(normalized)
+}
+
+func normalizeModelDownloadDir(input string) string {
+	return strings.TrimSpace(input)
 }
 
 func normalizeVoiceAgentPrompt(input string) string {
@@ -1067,9 +1112,6 @@ func filteredModelCatalog() models.Catalog {
 		switch profile.Modality {
 		case models.ModalitySTT, models.ModalityUtility, models.ModalityAssist, models.ModalityRealtimeVoice:
 		default:
-			continue
-		}
-		if profile.ExecutionMode == models.ExecutionModeHFRouted && !config.ManagedHuggingFaceAvailableInBuild() {
 			continue
 		}
 		filtered = append(filtered, profile)

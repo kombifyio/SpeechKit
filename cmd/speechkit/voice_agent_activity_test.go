@@ -7,11 +7,9 @@ import (
 	"github.com/kombifyio/SpeechKit/internal/voiceagent"
 )
 
-func TestVoiceAgentUserActivityLevelStaysVisibleDuringActiveSession(t *testing.T) {
+func TestVoiceAgentUserActivityLevelStaysVisibleOnlyWhileListening(t *testing.T) {
 	for _, state := range []voiceagent.State{
-		voiceagent.StateConnecting,
 		voiceagent.StateListening,
-		voiceagent.StateProcessing,
 	} {
 		t.Run(string(state), func(t *testing.T) {
 			if got := voiceAgentUserActivityLevel(state, 0.42, nil); got != 0.42 {
@@ -21,9 +19,11 @@ func TestVoiceAgentUserActivityLevelStaysVisibleDuringActiveSession(t *testing.T
 	}
 }
 
-func TestVoiceAgentUserActivityLevelHidesWhenInactiveOrDeactivating(t *testing.T) {
+func TestVoiceAgentUserActivityLevelHidesWhenNotRecording(t *testing.T) {
 	for _, state := range []voiceagent.State{
 		voiceagent.StateInactive,
+		voiceagent.StateConnecting,
+		voiceagent.StateProcessing,
 		voiceagent.StateDeactivating,
 	} {
 		t.Run(string(state), func(t *testing.T) {

@@ -1,5 +1,5 @@
 // Package assist implements the Assist Mode pipeline:
-// STT transcript → Codeword check → LLM → TTS → Result with both text and audio.
+// STT transcript â†’ Codeword check â†’ LLM â†’ TTS â†’ Result with both text and audio.
 package assist
 
 import (
@@ -60,6 +60,24 @@ func NewPipeline(assistFlow *core.Flow[flows.AssistInput, flows.AssistOutput, st
 		}
 	}
 	return pipeline
+}
+
+// HasDirectReplyModel reports whether this pipeline can answer non-utility Assist requests.
+func (p *Pipeline) HasDirectReplyModel() bool {
+	return p != nil && p.assistFlow != nil
+}
+
+// CanHandleWithoutDirectReplyModel reports whether a transcript maps to a local
+// utility path that does not require an Assist LLM.
+func (p *Pipeline) CanHandleWithoutDirectReplyModel(transcript string, opts ProcessOpts) bool {
+	if p == nil || p.executor == nil {
+		return false
+	}
+	router := p.router
+	if router == nil {
+		router = NewRouter()
+	}
+	return router.Decide(transcript, opts).Route == RouteToolIntent
 }
 
 // Process takes a transcript and produces a Result with text and optional audio.

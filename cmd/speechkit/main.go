@@ -50,6 +50,7 @@ type logEntry struct {
 // appState holds shared state for UI updates.
 type appState struct {
 	mu                       sync.Mutex
+	controlPlaneToken        string
 	overlay                  overlayWindow
 	pillAnchor               overlayWindow
 	pillPanel                overlayWindow
@@ -75,10 +76,15 @@ type appState struct {
 	agentHotkey              string
 	currentState             string
 	overlayText              string
+	overlayFeedbackRole      string
+	overlayFeedbackText      string
+	overlayFeedbackDone      bool
 	overlayLevel             float64
 	overlayPhase             string
 	overlayVisualizer        string
 	overlayDesign            string
+	assistOverlayMode        string
+	voiceAgentOverlayMode    string
 	overlayEnabled           bool
 	overlayPosition          string
 	overlayMovable           bool
@@ -112,6 +118,8 @@ type appState struct {
 	ttsRouter                *tts.Router
 	audioPlayer              *audio.Player
 	voiceAgentSession        *voiceagent.Session
+	voiceAgentDialogTurns    []voiceAgentDialogTurn
+	voiceAgentSummaryTool    textactions.SummaryTool
 	streamPlayer             *audio.StreamPlayer
 	voiceAgentAudioSender    *voiceAgentAudioSender
 	voiceAgentEchoGuard      *voiceAgentEchoGuard
@@ -172,6 +180,11 @@ func (s *appState) setState(state, text string) {
 	s.mu.Lock()
 	s.currentState = state
 	s.overlayText = text
+	if state == "recording" || state == "idle" {
+		s.overlayFeedbackRole = ""
+		s.overlayFeedbackText = ""
+		s.overlayFeedbackDone = true
+	}
 	if state != "recording" {
 		s.overlayLevel = 0
 	}
@@ -256,7 +269,7 @@ func main() {
 		if err := config.SaveInstallState(installState); err != nil {
 			slog.Warn("save install state", "err", err)
 		}
-		slog.Info("install mode: local (default, first run — setup wizard pending)")
+		slog.Info("install mode: local (default, first run â€” setup wizard pending)")
 	} else {
 		slog.Info("install mode", "mode", installState.Mode)
 	}
@@ -273,6 +286,7 @@ func main() {
 	}
 
 	state := &appState{
+		controlPlaneToken:        newControlPlaneToken(),
 		hotkey:                   cfg.General.DictateHotkey,
 		dictateHotkey:            cfg.General.DictateHotkey,
 		assistHotkey:             cfg.General.AssistHotkey,
@@ -298,6 +312,8 @@ func main() {
 		overlayMonitorCenters:    cloneOverlayMonitorPositions(cfg.UI.OverlayMonitorPositions),
 		overlayVisualizer:        cfg.UI.Visualizer,
 		overlayDesign:            cfg.UI.Design,
+		assistOverlayMode:        config.NormalizeOverlayFeedbackMode(cfg.UI.AssistOverlayMode, config.OverlayFeedbackModeSmallFeedback),
+		voiceAgentOverlayMode:    config.NormalizeOverlayFeedbackMode(cfg.UI.VoiceAgentOverlayMode, config.OverlayFeedbackModeSmallFeedback),
 		vocabularyDictionary:     cfg.Vocabulary.Dictionary,
 		screenLocator:            newActiveWindowScreenLocator(),
 		downloads:                downloads.NewManager(),
@@ -346,7 +362,7 @@ func main() {
 					state.addLog(fmt.Sprintf("Audio backend warning: %s", msg), "warn")
 				}
 			default:
-				// EventStarted, EventStopped — no log action needed.
+				// EventStarted, EventStopped â€” no log action needed.
 			}
 		}
 	}()
@@ -413,14 +429,16 @@ func main() {
 	genkitRT, err := appai.Init(ctx, buildGenkitConfig(cfg))
 	if err != nil {
 		slog.Warn("genkit init", "err", err)
-		state.addLog("AI providers unavailable — Assist and Voice Agent disabled", "warn")
+		state.addLog("AI providers unavailable â€” Assist and Voice Agent disabled", "warn")
 	} else {
 		state.genkitRT = genkitRT
 
 		// Define flows.
 		state.summarizeFlow = flows.DefineSummarizeFlow(genkitRT.G, genkitRT.UtilityModels())
 		state.agentFlow = flows.DefineAgentFlow(genkitRT.G, genkitRT.AgentModels())
-		state.assistFlow = flows.DefineAssistFlow(genkitRT.G, genkitRT.AssistModels())
+		if len(genkitRT.AssistModels()) > 0 {
+			state.assistFlow = flows.DefineAssistFlow(genkitRT.G, genkitRT.AssistModels())
+		}
 
 		slog.Info("genkit initialized",
 			"utility_models", len(genkitRT.UtilityModels()),
@@ -447,7 +465,7 @@ func main() {
 	audioPlayer, err := audio.NewPlayer()
 	if err != nil {
 		slog.Warn("audio player init", "err", err)
-		state.addLog("TTS audio player unavailable — voice output disabled", "warn")
+		state.addLog("TTS audio player unavailable â€” voice output disabled", "warn")
 	} else {
 		state.audioPlayer = audioPlayer
 		defer audioPlayer.Close()
@@ -466,8 +484,8 @@ func main() {
 	})
 	state.assistExecutor = newAssistToolExecutor(quickActions)
 
-	// Assist Pipeline: STT → Codeword → LLM → TTS → Result{Text, Audio}
-	if state.assistFlow != nil {
+	// Assist Pipeline: STT â†’ Codeword â†’ LLM â†’ TTS â†’ Result{Text, Audio}
+	if state.assistFlow != nil || state.assistExecutor != nil {
 		state.assistPipeline = assist.NewPipeline(
 			state.assistFlow,
 			state.assistExecutor,
@@ -762,7 +780,11 @@ func main() {
 		Timeout:   30 * time.Second,
 		QueueSize: 4,
 		Runner: speechkit.NewTranscriptionRunner(
-			routerTranscriber{router: r, state: state},
+			routerTranscriber{
+				router:          r,
+				state:           state,
+				dictionaryStore: userDictionaryStoreFromFeedbackStore(feedbackStore),
+			},
 			speechkitStoreAdapter{store: feedbackStore},
 		).WithObserver(speechkitCommitObserver{state: state}),
 		Output: desktopTranscriptOutput{

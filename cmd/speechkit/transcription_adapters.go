@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"strings"
 
 	"github.com/firebase/genkit/go/core"
 
@@ -19,8 +20,9 @@ import (
 )
 
 type routerTranscriber struct {
-	router *router.Router
-	state  *appState
+	router          *router.Router
+	state           *appState
+	dictionaryStore store.UserDictionaryStore
 }
 
 func (t routerTranscriber) Transcribe(ctx context.Context, audioData []byte, durationSecs float64, language string) (speechkit.Transcript, error) {
@@ -43,7 +45,19 @@ func (t routerTranscriber) Transcribe(ctx context.Context, audioData []byte, dur
 	if err != nil {
 		return speechkit.Transcript{}, err
 	}
-	result.Text = applyVocabularyCorrections(result.Text, entries)
+	correctedText, correctedTerms := applyVocabularyCorrectionsWithMatches(result.Text, entries)
+	result.Text = correctedText
+	if t.dictionaryStore != nil {
+		languageForUsage := result.Language
+		if languageForUsage == "" {
+			languageForUsage = language
+		}
+		for _, term := range correctedTerms {
+			if err := t.dictionaryStore.RecordUserDictionaryUsage(ctx, term, languageForUsage); err != nil {
+				slog.Debug("record dictionary usage", "term", term, "err", err)
+			}
+		}
+	}
 
 	return speechkit.Transcript{
 		Text:       result.Text,
@@ -189,24 +203,32 @@ func (o desktopTranscriptOutput) deliverVoiceAgentFallback(ctx context.Context, 
 	_ = ctx
 	_ = target
 
-	slog.Warn("voice_agent mode received transcript on the capture pipeline; realtime session required")
-	o.failConversation(
-		modeVoiceAgent,
-		transcript.Text,
-		"Voice Agent requires a live realtime session. Start the Voice Agent session or check Settings > Voice Agent.",
-	)
-	return nil
+	if o.currentAgentFlow() == nil {
+		slog.Warn("voice agent pipeline fallback active but no agent flow configured")
+		o.failConversation(
+			modeVoiceAgent,
+			transcript.Text,
+			"No Voice Agent model configured. Check Settings > Models and select a Voice Agent model.",
+		)
+		return nil
+	}
+	return o.deliverAgentFlow(ctx, transcript, modeVoiceAgent)
 }
 
-// deliverAssist uses the Assist Pipeline: Codeword → LLM → TTS → Text+Audio.
+// deliverAssist uses the Assist Pipeline: Codeword â†’ LLM â†’ TTS â†’ Text+Audio.
 func (o desktopTranscriptOutput) deliverAssist(ctx context.Context, transcript speechkit.Transcript, target any) error { //nolint:contextcheck // playbackCtx for TTS goroutine is app-scoped, not request ctx (goroutine outlives Deliver)
 	return o.deliverAssistForMode(ctx, transcript, modeAssist, target)
 }
 
 func (o desktopTranscriptOutput) deliverAssistForMode(ctx context.Context, transcript speechkit.Transcript, mode string, target any) error { //nolint:contextcheck // playbackCtx for TTS goroutine is app-scoped, not request ctx (goroutine outlives Deliver)
+	if strings.TrimSpace(transcript.Text) == "" {
+		slog.Debug("assist mode ignored empty transcript")
+		return nil
+	}
+
 	assistPipeline := o.currentAssistPipeline()
 	if assistPipeline == nil {
-		// No assist pipeline — try legacy agent flow, or warn user.
+		// No assist pipeline â€” try legacy agent flow, or warn user.
 		if o.currentAgentFlow() != nil {
 			return o.deliverAgentFlow(ctx, transcript, mode)
 		}
@@ -216,11 +238,17 @@ func (o desktopTranscriptOutput) deliverAssistForMode(ctx context.Context, trans
 	}
 
 	selection := o.captureAssistSelection(ctx)
-	result, err := assistPipeline.Process(ctx, transcript.Text, assist.ProcessOpts{
+	processOpts := assist.ProcessOpts{
 		Locale:    transcript.Language,
 		Selection: selection,
 		Target:    target,
-	})
+	}
+	if !assistPipeline.HasDirectReplyModel() && !assistPipeline.CanHandleWithoutDirectReplyModel(transcript.Text, processOpts) {
+		o.presentAssistModelMissingHint()
+		return nil
+	}
+
+	result, err := assistPipeline.Process(ctx, transcript.Text, processOpts)
 	if err != nil {
 		slog.Error("assist pipeline error", "err", err)
 		o.failConversation(mode, "", friendlyConversationError(o.cfg, mode, err))
@@ -244,7 +272,7 @@ func (o desktopTranscriptOutput) deliverAssistForMode(ctx context.Context, trans
 			nextState = "speaking"
 		}
 		o.finishConversation(assistantText, nextState)
-	} else if assistantText != "" && o.onAssistText != nil {
+	} else if result.Kind != assist.ResultKindUtilityAction && assistantText != "" && o.onAssistText != nil {
 		o.onAssistText(assistantText)
 	}
 
@@ -283,6 +311,15 @@ func (o desktopTranscriptOutput) deliverAssistForMode(ctx context.Context, trans
 	return nil
 }
 
+func (o desktopTranscriptOutput) presentAssistModelMissingHint() {
+	const message = "Assist can't answer because no Assist model is configured. Open Settings > Models and select an Assist model."
+	slog.Warn("assist direct reply requested but no Assist model is configured")
+	if o.state != nil {
+		o.state.addLog(message, "warn")
+		o.state.showAssistBubble(message)
+	}
+}
+
 func (o desktopTranscriptOutput) captureAssistSelection(ctx context.Context) string {
 	selection, err := output.CaptureSelectedText(ctx)
 	if err != nil {
@@ -314,6 +351,9 @@ func (o desktopTranscriptOutput) deliverAgentFlow(ctx context.Context, transcrip
 		return nil
 	}
 
+	if mode == modeVoiceAgent && o.state != nil {
+		o.state.recordVoiceAgentDialogTurn("user", transcript.Text, true)
+	}
 	o.startConversation(mode, transcript.Text)
 	resp, err := agentFlow.Run(ctx, flows.AgentInput{
 		Utterance: transcript.Text,
@@ -327,6 +367,9 @@ func (o desktopTranscriptOutput) deliverAgentFlow(ctx context.Context, transcrip
 	if resp.Text == "" || resp.Action == "silent" {
 		o.finishConversation("", "ready")
 		return nil
+	}
+	if mode == modeVoiceAgent && o.state != nil {
+		o.state.recordVoiceAgentDialogTurn("assistant", resp.Text, true)
 	}
 	o.finishConversation(resp.Text, "ready")
 	return nil

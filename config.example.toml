@@ -1,15 +1,22 @@
 [general]
 language = "de"                    # Default transcription language
 dictate_hotkey = "win+alt"         # Dictation hotkey (push-to-talk, speech-to-text only)
-assist_hotkey = "ctrl+shift+j"     # Assist hotkey (one-shot utility mode). Blank disables the mode.
-voice_agent_hotkey = "ctrl+shift+k" # Voice Agent hotkey (realtime dialogue mode). Blank disables the mode.
+assist_hotkey = "ctrl+win"         # Assist hotkey (one-shot utility mode). Blank disables the mode.
+voice_agent_hotkey = "ctrl+shift"  # Voice Agent hotkey (realtime dialogue mode). Blank disables the mode.
+dictate_hotkey_behavior = "push_to_talk"
+assist_hotkey_behavior = "push_to_talk"
+voice_agent_hotkey_behavior = "push_to_talk"
+dictate_enabled = true
+assist_enabled = true
+voice_agent_enabled = true
 active_mode = "none"               # none, dictate, assist, voice_agent
-agent_hotkey = "ctrl+shift+j"      # Deprecated compatibility alias. SpeechKit now persists assist_hotkey + voice_agent_hotkey separately.
+agent_hotkey = "ctrl+win"          # Deprecated compatibility alias. SpeechKit now persists assist_hotkey + voice_agent_hotkey separately.
 agent_mode = "assist"              # Deprecated compatibility alias for legacy agent_hotkey readers.
 hotkey = "win+alt"                 # Legacy alias for dictate_hotkey
 hotkey_mode = "push_to_talk"
 auto_stop_silence_ms = 500
 fast_mode_silence_ms = 1500
+model_download_dir = ""            # Blank = %LOCALAPPDATA%/SpeechKit/models. Set a dedicated folder for local model downloads.
 
 [ui]
 overlay_enabled = true    # Show the top-center overlay
@@ -34,7 +41,7 @@ gpu = "auto"              # auto, cuda, vulkan, cpu
 
 [local_llm]
 enabled = false
-base_url = "http://127.0.0.1:8082/v1" # SpeechKit-managed local LLM runtime endpoint
+base_url = "http://127.0.0.1:8082/v1" # SpeechKit-managed OpenAI-compatible local LLM runtime endpoint
 model = "gemma4:e4b"
 model_path = ""                      # Future built-in GGUF model path; blank = managed location
 port = 8082
@@ -78,6 +85,18 @@ max_audio_storage_mb = 500
 
 [vocabulary]
 dictionary = ""           # One entry per line. Use "spoken => canonical" for corrections, or a single term as a recognition hint.
+
+[model_selection.dictate]
+primary_profile_id = "stt.local.whispercpp"    # Default local built-in primary. Alternatives: stt.ollama.gemma4-e4b-transcribe, stt.hf.whisper-large-v3, stt.openai.whisper-1
+fallback_profile_id = ""
+
+[model_selection.assist]
+primary_profile_id = ""                             # No implicit Assist LLM. Select a provider-backed Assist model in Settings > Models.
+fallback_profile_id = ""
+
+[model_selection.voice_agent]
+primary_profile_id = "realtime.google.gemini-native-audio" # Default realtime Voice Agent. Alternatives: realtime.ollama.gemma4-e4b-pipeline, realtime.hf.qwen3-27b-pipeline
+fallback_profile_id = ""
 
 # ──────────────────────────────────────────────
 # Shortcuts — additive command aliases per locale
@@ -141,8 +160,9 @@ refinement_prompt = ""                     # Optional personal refinement prompt
 instruction = ""                           # Legacy alias for framework_prompt. Keep empty for new configs.
 reminder_after_idle_sec = 300              # Remind user after 5 min silence
 deactivate_after_idle_sec = 900            # Auto-deactivate after 15 min silence
-pipeline_fallback = false                  # Deprecated compatibility flag. Voice Agent V2 stays realtime-only.
+pipeline_fallback = false                  # Uses STT -> Agent LLM -> optional TTS for non-realtime Voice Agent profiles.
 show_prompter = true                       # Show live transcript window during voice agent
+enable_session_summary = true              # Generate a structured dialogue summary when a session ends
 enable_input_transcript = true             # Server-side transcript of the user's speech
 enable_output_transcript = true            # Server-side transcript of the model's speech
 enable_affective_dialog = false            # Uses Gemini Live v1alpha; not supported on Gemini 3.1 Flash Live
@@ -197,6 +217,7 @@ vad_silence_duration_ms = 700
 # [providers.ollama]        # Local Provider: externally managed Ollama, not SpeechKit Built-in
 # enabled = false
 # base_url = "http://localhost:11434"
+# stt_model = "gemma4:e4b"
 # utility_model = "gemma4:e4b"
 # assist_model = "gemma4:e4b"
 # agent_model = "gemma4:e4b"

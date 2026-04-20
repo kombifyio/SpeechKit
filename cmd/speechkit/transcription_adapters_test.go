@@ -75,6 +75,16 @@ func failingAssistFlow(t *testing.T, flowErr error) *core.Flow[flows.AssistInput
 	})
 }
 
+func fixedAgentFlow(t *testing.T, text string) *core.Flow[flows.AgentInput, flows.AgentOutput, struct{}] {
+	t.Helper()
+
+	g := genkit.Init(context.Background())
+	name := "test_agent_" + strings.NewReplacer("/", "_", " ", "_").Replace(t.Name())
+	return genkit.DefineFlow(g, name, func(context.Context, flows.AgentInput) (flows.AgentOutput, error) {
+		return flows.AgentOutput{Text: text, Action: "display"}, nil
+	})
+}
+
 func TestDesktopTranscriptOutput_AssistBypassesGlobalInterceptor(t *testing.T) {
 	interceptor := &fakeTranscriptInterceptor{handled: true}
 	handler := &fakeOutputHandler{}
@@ -158,7 +168,7 @@ func TestDesktopTranscriptOutput_DictateBypassesGlobalInterceptor(t *testing.T) 
 	}
 }
 
-func TestDesktopTranscriptOutput_VoiceAgentDoesNotFallbackToAssistPipeline(t *testing.T) {
+func TestDesktopTranscriptOutput_VoiceAgentUsesBrainstormingAgentFlow(t *testing.T) {
 	interceptor := &fakeTranscriptInterceptor{handled: true}
 	handler := &fakeOutputHandler{}
 	flow := fixedAssistFlow(t, flows.AssistOutput{
@@ -171,6 +181,7 @@ func TestDesktopTranscriptOutput_VoiceAgentDoesNotFallbackToAssistPipeline(t *te
 	prompter := &fakeOverlayWindow{}
 	state := &appState{
 		assistPipeline: assist.NewPipeline(flow, nil, nil, false),
+		agentFlow:      fixedAgentFlow(t, "Agent brainstorm reply"),
 		prompterWindow: prompter,
 	}
 
@@ -201,11 +212,18 @@ func TestDesktopTranscriptOutput_VoiceAgentDoesNotFallbackToAssistPipeline(t *te
 	if !strings.Contains(combinedScripts, `setMode("voice_agent")`) {
 		t.Fatalf("prompter scripts missing voice agent mode switch: %s", combinedScripts)
 	}
-	if strings.Contains(combinedScripts, `Assist reply`) {
-		t.Fatalf("prompter scripts leaked assist fallback response: %s", combinedScripts)
+	if !strings.Contains(combinedScripts, `Agent brainstorm reply`) {
+		t.Fatalf("prompter scripts missing voice agent response: %s", combinedScripts)
 	}
-	if !strings.Contains(combinedScripts, `Voice Agent requires a live realtime session`) {
-		t.Fatalf("prompter scripts missing realtime-session guidance: %s", combinedScripts)
+	if strings.Contains(combinedScripts, `Assist reply`) {
+		t.Fatalf("prompter scripts leaked assist utility response: %s", combinedScripts)
+	}
+	sessionTranscript := state.voiceAgentSessionTranscript()
+	if !strings.Contains(sessionTranscript, "User: brainstorm mit mir die naechsten schritte") {
+		t.Fatalf("voice agent transcript missing user turn: %s", sessionTranscript)
+	}
+	if !strings.Contains(sessionTranscript, "Assistant: Agent brainstorm reply") {
+		t.Fatalf("voice agent transcript missing assistant turn: %s", sessionTranscript)
 	}
 }
 
@@ -335,10 +353,114 @@ func TestDesktopTranscriptOutput_AssistActionAckSkipsPrompterPanel(t *testing.T)
 	if executor.calls != 1 {
 		t.Fatalf("executor calls = %d, want 1", executor.calls)
 	}
-	if acknowledged != "Copied to clipboard." {
-		t.Fatalf("acknowledged text = %q, want action acknowledgement", acknowledged)
+	if acknowledged != "" {
+		t.Fatalf("acknowledged text = %q, want no bubble for utility acknowledgement", acknowledged)
 	}
 	if len(prompter.scripts) != 0 {
 		t.Fatalf("prompter scripts = %v, want no assist panel activity for action acknowledgement", prompter.scripts)
+	}
+}
+
+func TestDesktopTranscriptOutput_AssistDirectReplyWithoutModelShowsBubbleOnly(t *testing.T) {
+	prompter := &fakeOverlayWindow{}
+	bubble := &fakeOverlayWindow{}
+	executor := &fakeAssistExecutor{}
+	state := &appState{
+		assistPipeline:    assist.NewPipeline(nil, executor, nil, false),
+		prompterWindow:    prompter,
+		assistBubble:      bubble,
+		assistOverlayMode: config.OverlayFeedbackModeBigProductivity,
+	}
+
+	outputAdapter := desktopTranscriptOutput{
+		state: state,
+		activeMode: func() string {
+			return modeAssist
+		},
+	}
+
+	err := outputAdapter.Deliver(context.Background(), speechkit.Transcript{
+		Text:     "erklaer mir bitte die aktuelle auswahl",
+		Language: "de",
+	}, output.Target{})
+	if err != nil {
+		t.Fatalf("Deliver() error = %v, want nil for missing Assist model guidance", err)
+	}
+	if executor.calls != 0 {
+		t.Fatalf("executor calls = %d, want 0 for direct reply without model", executor.calls)
+	}
+	if prompter.showCalls != 0 || len(prompter.scripts) != 0 {
+		t.Fatalf("prompter show calls = %d scripts = %v, want no persistent Assist panel", prompter.showCalls, prompter.scripts)
+	}
+	if bubble.showCalls != 1 {
+		t.Fatalf("assist bubble show calls = %d, want 1", bubble.showCalls)
+	}
+	if len(bubble.scripts) == 0 || !strings.Contains(strings.Join(bubble.scripts, "\n"), "Assist model") {
+		t.Fatalf("assist bubble scripts = %v, want model guidance", bubble.scripts)
+	}
+}
+
+func TestDesktopTranscriptOutput_AssistDirectReplyWithoutModelUsesSmallFeedback(t *testing.T) {
+	prompter := &fakeOverlayWindow{}
+	bubble := &fakeOverlayWindow{}
+	executor := &fakeAssistExecutor{}
+	state := &appState{
+		assistPipeline:    assist.NewPipeline(nil, executor, nil, false),
+		prompterWindow:    prompter,
+		assistBubble:      bubble,
+		assistOverlayMode: config.OverlayFeedbackModeSmallFeedback,
+	}
+
+	outputAdapter := desktopTranscriptOutput{
+		state: state,
+		activeMode: func() string {
+			return modeAssist
+		},
+	}
+
+	err := outputAdapter.Deliver(context.Background(), speechkit.Transcript{
+		Text:     "erklaer mir bitte die aktuelle auswahl",
+		Language: "de",
+	}, output.Target{})
+	if err != nil {
+		t.Fatalf("Deliver() error = %v, want nil for missing Assist model guidance", err)
+	}
+	if bubble.showCalls != 0 {
+		t.Fatalf("assist bubble show calls = %d, want 0 in small feedback mode", bubble.showCalls)
+	}
+	if got := state.overlaySnapshot().Text; !strings.Contains(got, "Assist model") {
+		t.Fatalf("overlay feedback text = %q, want model guidance", got)
+	}
+}
+
+func TestDesktopTranscriptOutput_AssistEmptyTranscriptDoesNotOpenPrompter(t *testing.T) {
+	prompter := &fakeOverlayWindow{}
+	state := &appState{
+		assistPipeline: assist.NewPipeline(nil, nil, nil, false),
+		prompterWindow: prompter,
+	}
+
+	outputAdapter := desktopTranscriptOutput{
+		state: state,
+		activeMode: func() string {
+			return modeAssist
+		},
+		onAssistText: func(text string) {
+			t.Fatalf("onAssistText called for empty transcript: %q", text)
+		},
+	}
+
+	err := outputAdapter.Deliver(context.Background(), speechkit.Transcript{
+		Text:     "   ",
+		Language: "de",
+	}, output.Target{})
+	if err != nil {
+		t.Fatalf("Deliver() error = %v, want nil for empty assist transcript", err)
+	}
+	if len(prompter.scripts) != 0 {
+		t.Fatalf("prompter scripts = %v, want no assist panel activity for empty transcript", prompter.scripts)
+	}
+	if prompter.showCalls != 0 {
+		t.Fatalf("prompter show calls = %d, want 0 for empty transcript", prompter.showCalls)
 	}
 }

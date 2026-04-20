@@ -23,6 +23,7 @@ func buildVoiceAgentCallbacks(state *appState, cfg *config.Config) voiceagent.Ca
 	return voiceagent.Callbacks{
 		OnStateChange: func(vaState voiceagent.State) {
 			state.addLog(fmt.Sprintf("Voice Agent: %s", vaState), "info")
+			state.updateOverlayForVoiceAgentState(string(vaState))
 			state.updatePrompterState(string(vaState))
 			if vaState != voiceagent.StateListening {
 				state.updatePrompterActivity("user", 0)
@@ -44,6 +45,7 @@ func buildVoiceAgentCallbacks(state *appState, cfg *config.Config) voiceagent.Ca
 				return
 			}
 			state.sendPrompterMessage("assistant", text, false)
+			state.recordVoiceAgentDialogTurn("assistant", text, true)
 		},
 		OnError: func(err error) {
 			state.addLog(fmt.Sprintf("Voice Agent error: %v", err), "error")
@@ -54,9 +56,11 @@ func buildVoiceAgentCallbacks(state *appState, cfg *config.Config) voiceagent.Ca
 		},
 		OnInputTranscript: func(text string, done bool) {
 			state.sendPrompterMessage("user", text, done)
+			state.recordVoiceAgentDialogTurn("user", text, done)
 		},
 		OnOutputTranscript: func(text string, done bool) {
 			state.sendPrompterMessage("assistant", text, done)
+			state.recordVoiceAgentDialogTurn("assistant", text, done)
 		},
 		OnToolCall: func(call voiceagent.ToolCall) {
 			state.addLog(fmt.Sprintf("Voice Agent tool requested: %s", call.Name), "warn")
@@ -83,6 +87,7 @@ func buildVoiceAgentCallbacks(state *appState, cfg *config.Config) voiceagent.Ca
 		OnSessionEnd: func() {
 			state.stopVoiceAgentAudioSender()
 			state.stopVoiceAgentStream()
+			state.finishVoiceAgentSessionSummary(context.Background(), cfg) //nolint:contextcheck // event callback has no caller context
 			state.updatePrompterActivity("user", 0)
 			state.updatePrompterActivity("assistant", 0)
 			state.addLog("Voice Agent session ended", "info")

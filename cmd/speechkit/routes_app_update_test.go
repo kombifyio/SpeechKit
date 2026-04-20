@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -156,6 +157,11 @@ func TestAppUpdateRoutesDownloadInstallerAndOpenIt(t *testing.T) {
 	}
 
 	var openedPath string
+	prevVerify := verifyInstallerBeforeOpen
+	verifyInstallerBeforeOpen = func(path string) error {
+		return nil
+	}
+	defer func() { verifyInstallerBeforeOpen = prevVerify }()
 	prevOpen := openInstallerFileInShell
 	openInstallerFileInShell = func(path string) error {
 		openedPath = path
@@ -175,6 +181,50 @@ func TestAppUpdateRoutesDownloadInstallerAndOpenIt(t *testing.T) {
 	}
 	if openedPath != jobs[0].FilePath {
 		t.Fatalf("openedPath = %q, want %q", openedPath, jobs[0].FilePath)
+	}
+}
+
+func TestAppUpdateOpenRejectsInstallerWhenSignatureVerificationFails(t *testing.T) {
+	cfg := defaultTestConfig()
+	manager := newAppUpdateManager()
+	installerPath := filepath.Join(t.TempDir(), "SpeechKit-Setup-v0.19.1.exe")
+	if err := os.WriteFile(installerPath, []byte("unsigned-installer"), 0o600); err != nil {
+		t.Fatalf("write installer: %v", err)
+	}
+	manager.jobs["job-1"] = &appUpdateJob{
+		ID:       "job-1",
+		Status:   appUpdateStatusDone,
+		FilePath: installerPath,
+	}
+	state := &appState{appUpdates: manager}
+	handler := assetHandler(cfg, filepath.Join(t.TempDir(), "config.toml"), state, &router.Router{}, nil, &config.InstallState{Mode: config.InstallModeLocal})
+
+	prevVerify := verifyInstallerBeforeOpen
+	verifyInstallerBeforeOpen = func(path string) error {
+		return errors.New("signature invalid")
+	}
+	defer func() { verifyInstallerBeforeOpen = prevVerify }()
+
+	var opened bool
+	prevOpen := openInstallerFileInShell
+	openInstallerFileInShell = func(path string) error {
+		opened = true
+		return nil
+	}
+	defer func() { openInstallerFileInShell = prevOpen }()
+
+	form := url.Values{"job_id": {"job-1"}}
+	req := httptest.NewRequest(http.MethodPost, "/app/update/open", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	rec := httptest.NewRecorder()
+
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("status = %d, want %d; body=%s", rec.Code, http.StatusConflict, rec.Body.String())
+	}
+	if opened {
+		t.Fatal("installer was opened after failed signature verification")
 	}
 }
 

@@ -31,3 +31,19 @@ CREATE INDEX IF NOT EXISTS idx_quick_notes_created_at
 
 CREATE INDEX IF NOT EXISTS idx_quick_notes_pinned
     ON quick_notes(pinned DESC, created_at DESC, id DESC);
+
+CREATE TABLE IF NOT EXISTS user_dictionary_entries (
+    id          BIGSERIAL PRIMARY KEY,
+    spoken      TEXT NOT NULL,
+    canonical   TEXT NOT NULL,
+    language    TEXT NOT NULL DEFAULT '',
+    source      TEXT NOT NULL DEFAULT 'settings',
+    enabled     BOOLEAN NOT NULL DEFAULT TRUE,
+    usage_count BIGINT NOT NULL DEFAULT 0,
+    created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    UNIQUE(spoken, canonical, language, source)
+);
+
+CREATE INDEX IF NOT EXISTS idx_user_dictionary_language
+    ON user_dictionary_entries(language, enabled, id);

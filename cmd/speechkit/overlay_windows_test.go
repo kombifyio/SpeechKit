@@ -22,6 +22,17 @@ func TestPillAnchorWindowOptions(t *testing.T) {
 	}
 }
 
+func TestPillAnchorWindowOptionsReserveCompactFeedbackPanelSpace(t *testing.T) {
+	opts := newPillAnchorWindowOptions()
+
+	if opts.Width < 360 {
+		t.Fatalf("pill anchor width = %d, want room for compact feedback panel", opts.Width)
+	}
+	if opts.Height < 96 {
+		t.Fatalf("pill anchor height = %d, want room for compact feedback panel above the pill", opts.Height)
+	}
+}
+
 func TestPillPanelWindowOptions(t *testing.T) {
 	opts := newPillPanelWindowOptions()
 
@@ -39,6 +50,17 @@ func TestPillPanelWindowOptions(t *testing.T) {
 	}
 	if opts.Width != pillPanelWidth || opts.Height != pillPanelHeight {
 		t.Fatalf("pill panel size = %dx%d, want %dx%d", opts.Width, opts.Height, pillPanelWidth, pillPanelHeight)
+	}
+}
+
+func TestPillPanelWindowOptionsReserveCompactFeedbackPanelSpace(t *testing.T) {
+	opts := newPillPanelWindowOptions()
+
+	if opts.Width < 360 {
+		t.Fatalf("pill panel width = %d, want room for compact feedback panel", opts.Width)
+	}
+	if opts.Height < 96 {
+		t.Fatalf("pill panel height = %d, want room for compact feedback panel above the controls", opts.Height)
 	}
 }
 
@@ -233,15 +255,15 @@ func TestPositionOverlayAppliesDedicatedHostMetricsForAnchoredSurfaces(t *testin
 		t.Fatalf("radial menu sizes = %v, want [[%d %d]]", got, radialMenuSize, radialMenuSize)
 	}
 
-	wantPillAnchor := [2]int{100 + 1600 - pillAnchorWidth - overlayEdgeMargin, 50 + (900-pillAnchorHeight)/2}
+	wantPillAnchor := [2]int{100 + 1600 - overlayEdgeMargin - pillBubbleW/2 - pillAnchorWidth/2, 50 + (900-pillAnchorHeight)/2}
 	if got := pillAnchor.positions; len(got) != 1 || got[0] != wantPillAnchor {
 		t.Fatalf("pill anchor positions = %v, want [%v]", got, wantPillAnchor)
 	}
-	wantPillPanel := [2]int{100 + 1600 - pillPanelWidth - overlayEdgeMargin, 50 + (900-pillPanelHeight)/2}
+	wantPillPanel := [2]int{100 + 1600 - overlayEdgeMargin - pillBubbleW/2 - pillPanelWidth/2, 50 + (900-pillPanelHeight)/2}
 	if got := pillPanel.positions; len(got) != 1 || got[0] != wantPillPanel {
 		t.Fatalf("pill panel positions = %v, want [%v]", got, wantPillPanel)
 	}
-	wantDotAnchor := [2]int{100 + 1600 - dotAnchorSize - overlayEdgeMargin, 50 + (900-dotAnchorSize)/2}
+	wantDotAnchor := [2]int{100 + 1600 - overlayEdgeMargin - dotBubbleW/2 - dotAnchorSize/2, 50 + (900-dotAnchorSize)/2}
 	if got := dotAnchor.positions; len(got) != 1 || got[0] != wantDotAnchor {
 		t.Fatalf("dot anchor positions = %v, want [%v]", got, wantDotAnchor)
 	}

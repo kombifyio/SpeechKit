@@ -85,6 +85,55 @@ describe("speechkit frontend contract", () => {
     ).toBe(false);
   });
 
+  it("normalizes the default model download directory from settings payloads", async () => {
+    fetchMock.mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          modelDownloadDir: "D:/AI/SpeechKitModels",
+        }),
+        { status: 200 },
+      ),
+    );
+
+    const state = await fetchSettingsState();
+
+    expect(state.modelDownloadDir).toBe("D:/AI/SpeechKitModels");
+  });
+
+  it("keeps provider kind, capabilities, and variants on model profiles", async () => {
+    fetchMock.mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          profiles: [
+            {
+              id: "stt.local.whispercpp",
+              modality: "stt",
+              name: "Whisper.cpp (Local Built-in)",
+              providerKind: "local_built_in",
+              executionMode: "local",
+              capabilities: ["transcription", "dictionary_prompt"],
+              variants: [
+                {
+                  id: "whisper.ggml-large-v3-turbo",
+                  name: "Whisper Large v3 Turbo",
+                  modelId: "ggml-large-v3-turbo.bin",
+                  recommended: true,
+                },
+              ],
+            },
+          ],
+        }),
+        { status: 200 },
+      ),
+    );
+
+    const state = await fetchSettingsState();
+
+    expect(state.profiles?.[0]?.providerKind).toBe("local_built_in");
+    expect(state.profiles?.[0]?.capabilities).toContain("transcription");
+    expect(state.profiles?.[0]?.variants?.[0]?.recommended).toBe(true);
+  });
+
   it("coerces unavailable overlay modes back to none", async () => {
     fetchMock.mockResolvedValue(
       new Response(
@@ -138,6 +187,24 @@ describe("speechkit frontend contract", () => {
     expect(params.get("active_mode")).toBe("voice_agent");
     expect(params.get("agent_hotkey")).toBe("ctrl+shift+k");
     expect(params.get("agent_mode")).toBe("voice_agent");
+  });
+
+  it("posts the default model download directory with settings updates", async () => {
+    fetchMock.mockResolvedValue(
+      new Response(JSON.stringify({ message: "Saved" }), { status: 200 }),
+    );
+
+    await saveSettingsState({
+      ...defaultSettingsState,
+      modelDownloadDir: "D:/AI/SpeechKitModels",
+    });
+
+    const [, init] = fetchMock.mock.calls[0];
+    const body = init?.body;
+    expect(body).toBeInstanceOf(URLSearchParams);
+
+    const params = body as URLSearchParams;
+    expect(params.get("model_download_dir")).toBe("D:/AI/SpeechKitModels");
   });
 
   it("uses the live overlay coordinates when saving movable overlay settings", async () => {

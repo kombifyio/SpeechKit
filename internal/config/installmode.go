@@ -114,6 +114,9 @@ func ApplyLocalInstallDefaults(cfg *Config, state *InstallState) bool {
 		cfg.HuggingFace.Enabled = false
 		changed = true
 	}
+	if applyBuiltInPrimaryModelSelectionDefaults(cfg) {
+		changed = true
+	}
 	if cfg.Local.Model == "" {
 		cfg.Local.Model = "ggml-small.bin"
 		changed = true

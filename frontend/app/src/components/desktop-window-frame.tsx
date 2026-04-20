@@ -21,6 +21,16 @@ type DesktopWindowFrameProps = {
   children: ReactNode;
 };
 
+const desktopDragRegionStyle = {
+  ["--wails-draggable" as string]: "drag",
+  WebkitAppRegion: "drag",
+} as CSSProperties;
+
+const desktopNoDragRegionStyle = {
+  ["--wails-draggable" as string]: "no-drag",
+  WebkitAppRegion: "no-drag",
+} as CSSProperties;
+
 export function DesktopWindowFrame({
   appLabel,
   title,
@@ -91,10 +101,10 @@ export function DesktopWindowFrame({
           "desktop-titlebar flex shrink-0 items-center justify-between",
           compact ? "gap-2 px-2.5 py-2" : "gap-4 px-4 py-3",
         ].join(" ")}
+        style={desktopDragRegionStyle}
       >
         <div
           className={["flex min-w-0 items-center", compact ? "gap-2" : "gap-3"].join(" ")}
-          style={{ WebkitAppRegion: "drag" } as CSSProperties}
         >
           <div
             className={[
@@ -119,7 +129,7 @@ export function DesktopWindowFrame({
 
         <div
           className={["flex items-center", compact ? "gap-1" : "gap-2"].join(" ")}
-          style={{ WebkitAppRegion: "no-drag" } as CSSProperties}
+          style={desktopNoDragRegionStyle}
         >
           {actions}
           {showThemeToggle ? (
