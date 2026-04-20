@@ -206,7 +206,7 @@ func TestLocal_Transcribe_ContextCancelledDuringStartupWait(t *testing.T) {
 		BaseURL: "http://127.0.0.1:1",
 		client:  &http.Client{Timeout: 5 * time.Second},
 	}
-	done := make(chan struct{}) // never closed â€” startup hangs indefinitely
+	done := make(chan struct{}) // never closed — startup hangs indefinitely
 	p.startDone = done
 
 	ctx, cancel := context.WithCancel(context.Background())

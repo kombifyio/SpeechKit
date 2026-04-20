@@ -21,7 +21,7 @@ const openAICompatMaxResponse = 1 << 20
 // BaseURL is user-supplied configuration. It is validated against Validation
 // on every request (Transcribe, Health). The default Validation is strict:
 // only public https:// endpoints are accepted. Self-hosted VPS and local
-// whisper-server require relaxing Validation â€” see NewVPSProvider.
+// whisper-server require relaxing Validation — see NewVPSProvider.
 type OpenAICompatibleProvider struct {
 	name       string
 	BaseURL    string
@@ -55,7 +55,7 @@ func NewVPSProvider(baseURL, apiKey string) *OpenAICompatibleProvider {
 		AllowPrivate:  true,
 		AllowHTTP:     true,
 	}
-	// Rebuild the HTTP client with a longer timeout â€” self-hosted whisper
+	// Rebuild the HTTP client with a longer timeout — self-hosted whisper
 	// may take longer to cold-start than managed cloud APIs.
 	p.client = netsec.NewSafeHTTPClient(netsec.ClientOptions{Timeout: 60 * time.Second})
 	return p
