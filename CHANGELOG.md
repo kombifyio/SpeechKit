@@ -6,7 +6,7 @@ The format is based on Keep a Changelog and this project is intended to ship und
 
 ## [Unreleased]
 
-## [0.22.0] - 2026-04-19
+## [0.22.1] - 2026-04-20
 
 ### Highlights
 
