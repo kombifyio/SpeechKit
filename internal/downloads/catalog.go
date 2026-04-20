@@ -29,7 +29,7 @@ func Catalog(ctx context.Context, cfg *config.Config) []Item {
 	selectedLocalModel := selectedWhisperModel(cfg)
 	localRuntimeReady, localRuntimeProblem := whisperRuntimeAvailability()
 	return []Item{
-		// ── Whisper STT local models ─────────────────────────────────────────
+		// â”€â”€ Whisper STT local models â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 		{
 			ID:             "whisper.ggml-small",
 			ProfileID:      "stt.local.whispercpp",
@@ -79,11 +79,11 @@ func Catalog(ctx context.Context, cfg *config.Config) []Item {
 			RuntimeReady:   localRuntimeReady,
 			RuntimeProblem: localRuntimeProblem,
 		},
-		// ── Ollama LLM models ─────────────────────────────────────────────────
+		// â”€â”€ Ollama LLM models â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 		{
 			ID:          "ollama.gemma4-e4b",
 			ProfileID:   "utility.ollama.gemma4-e4b",
-			Name:        "Gemma 4 E4B — Utility (Ollama, 3.3 GB)",
+			Name:        "Gemma 4 E4B â€” Utility (Ollama, 3.3 GB)",
 			Description: "Ollama-managed local provider model for utility routing and quick actions.",
 			SizeLabel:   "~3.3 GB",
 			SizeBytes:   3_300_000_000,
@@ -96,7 +96,7 @@ func Catalog(ctx context.Context, cfg *config.Config) []Item {
 		{
 			ID:          "ollama.gemma4-e4b-assist",
 			ProfileID:   "assist.ollama.gemma4-e4b",
-			Name:        "Gemma 4 E4B — Assist (Ollama, 3.3 GB)",
+			Name:        "Gemma 4 E4B â€” Assist (Ollama, 3.3 GB)",
 			Description: "Ollama-managed local provider model for Assist reasoning and follow-ups.",
 			SizeLabel:   "~3.3 GB",
 			SizeBytes:   3_300_000_000,

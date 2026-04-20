@@ -79,7 +79,7 @@ type GeneralConfig struct {
 	VoiceAgentEnabled        bool   `toml:"voice_agent_enabled"`
 	AutoStartOnLaunch        bool   `toml:"auto_start_on_launch"`
 	AgentHotkey              string `toml:"agent_hotkey"`
-	AgentMode                string `toml:"agent_mode"`  // "assist" or "voice_agent" — determines what agent_hotkey triggers
+	AgentMode                string `toml:"agent_mode"`  // "assist" or "voice_agent" â€” determines what agent_hotkey triggers
 	ActiveMode               string `toml:"active_mode"` // legacy compat
 	HotkeyMode               string `toml:"hotkey_mode"` // legacy compat for single behavior setting
 	AutoStopSilenceMs        int    `toml:"auto_stop_silence_ms"`

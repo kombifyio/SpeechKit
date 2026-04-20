@@ -55,15 +55,23 @@ jobs:
     runs-on: ${{ vars.CI_RUNNER || 'ubuntu-24.04' }}
     timeout-minutes: 30
 
-    defaults:
-      run:
-        working-directory: android
-
     steps:
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
 
+      - name: Detect Android project
+        id: android-project
+        shell: bash
+        run: |
+          if [ -f android/gradlew ]; then
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "present=false" >> "$GITHUB_OUTPUT"
+            echo "No Android Gradle wrapper found; skipping Android checks."
+          fi
+
       - name: Setup Java
+        if: steps.android-project.outputs.present == 'true'
         uses: actions/setup-java@c1e323688fd81a25caa38c78aa6df2d33d3e20d9
         with:
           distribution: temurin
@@ -71,12 +79,18 @@ jobs:
           cache: gradle
 
       - name: Ensure Gradle wrapper is executable
+        if: steps.android-project.outputs.present == 'true'
+        working-directory: android
         run: chmod +x gradlew
 
       - name: Run Android unit tests
+        if: steps.android-project.outputs.present == 'true'
+        working-directory: android
         run: ./gradlew test
 
       - name: Run Android lint
+        if: steps.android-project.outputs.present == 'true'
+        working-directory: android
         run: ./gradlew lint
 
   go-analysis:

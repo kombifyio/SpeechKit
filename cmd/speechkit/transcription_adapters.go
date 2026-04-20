@@ -198,7 +198,7 @@ func (o desktopTranscriptOutput) deliverVoiceAgentFallback(ctx context.Context, 
 	return nil
 }
 
-// deliverAssist uses the Assist Pipeline: Codeword → LLM → TTS → Text+Audio.
+// deliverAssist uses the Assist Pipeline: Codeword â†’ LLM â†’ TTS â†’ Text+Audio.
 func (o desktopTranscriptOutput) deliverAssist(ctx context.Context, transcript speechkit.Transcript, target any) error { //nolint:contextcheck // playbackCtx for TTS goroutine is app-scoped, not request ctx (goroutine outlives Deliver)
 	return o.deliverAssistForMode(ctx, transcript, modeAssist, target)
 }
@@ -206,7 +206,7 @@ func (o desktopTranscriptOutput) deliverAssist(ctx context.Context, transcript s
 func (o desktopTranscriptOutput) deliverAssistForMode(ctx context.Context, transcript speechkit.Transcript, mode string, target any) error { //nolint:contextcheck // playbackCtx for TTS goroutine is app-scoped, not request ctx (goroutine outlives Deliver)
 	assistPipeline := o.currentAssistPipeline()
 	if assistPipeline == nil {
-		// No assist pipeline — try legacy agent flow, or warn user.
+		// No assist pipeline â€” try legacy agent flow, or warn user.
 		if o.currentAgentFlow() != nil {
 			return o.deliverAgentFlow(ctx, transcript, mode)
 		}

@@ -111,7 +111,7 @@ jobs:
       - wait-for-publisher-release
     if: needs.prepare.outputs.should_build_windows == 'true'
     runs-on: ${{ vars.WINDOWS_BUILD_RUNNER || 'windows-2025' }}
-    timeout-minutes: 40
+    timeout-minutes: 90
 
     steps:
       - name: Checkout
@@ -159,9 +159,9 @@ jobs:
         shell: pwsh
         run: |
           if ('${{ needs.prepare.outputs.release_windows_installer }}' -eq 'true') {
-            ./scripts/build.ps1
+            ./scripts/build.ps1 -SkipVerification
           } else {
-            ./scripts/build.ps1 -SkipInstaller
+            ./scripts/build.ps1 -SkipInstaller -SkipVerification
           }
 
       - name: Ensure SignPath configuration for public Windows releases

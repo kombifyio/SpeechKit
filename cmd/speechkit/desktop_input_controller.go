@@ -332,7 +332,7 @@ func (c desktopInputController) currentVoiceAgentSession() *voiceagent.Session {
 func (c desktopInputController) toggleVoiceAgent(ctx context.Context) {
 	session := c.currentVoiceAgentSession() //nolint:contextcheck // getter, no context needed
 	if session == nil {
-		c.log("Voice Agent session not initialized — check config and API key", "error")
+		c.log("Voice Agent session not initialized â€” check config and API key", "error")
 		return
 	}
 
@@ -354,7 +354,7 @@ func (c desktopInputController) activateVoiceAgent(ctx context.Context) {
 
 	session := c.currentVoiceAgentSession() //nolint:contextcheck // getter, no context needed
 	if session == nil {
-		c.log("Voice Agent session not initialized — check config and API key", "error")
+		c.log("Voice Agent session not initialized â€” check config and API key", "error")
 		return
 	}
 	if session.CurrentState() != voiceagent.StateInactive {

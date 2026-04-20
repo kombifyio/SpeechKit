@@ -1,4 +1,4 @@
-// Package downloads manages model downloads for SpeechKit — HTTP file
+// Package downloads manages model downloads for SpeechKit â€” HTTP file
 // downloads (whisper models) and Ollama model pulls with progress tracking.
 package downloads
 
@@ -147,7 +147,7 @@ func (m *Manager) Start(item Item, destDir string, onDone func(Item)) JobView {
 		ProfileID:  item.ProfileID,
 		Status:     StatusPending,
 		TotalBytes: item.SizeBytes,
-		StatusText: "Starting…",
+		StatusText: "Startingâ€¦",
 		cancel:     cancel,
 	}
 	m.mu.Lock()
@@ -178,7 +178,7 @@ func (m *Manager) CancelJob(jobID string) bool {
 func (m *Manager) run(ctx context.Context, j *job, item Item, destDir string) {
 	j.mu.Lock()
 	j.Status = StatusRunning
-	j.StatusText = "Downloading…"
+	j.StatusText = "Downloadingâ€¦"
 	j.mu.Unlock()
 
 	var err error
@@ -211,7 +211,7 @@ func (m *Manager) run(ctx context.Context, j *job, item Item, destDir string) {
 
 func httpDownload(ctx context.Context, j *job, item Item, destDir string) error {
 	// Validate URL with strict defaults: only public https.
-	// Catalog URLs come from the hardcoded catalog or from a config source —
+	// Catalog URLs come from the hardcoded catalog or from a config source â€”
 	// we still verify here so a malformed or SSRF-redirected URL never reaches
 	// the HTTP layer.
 	if err := netsec.ValidateProviderURL(item.URL, DownloadURLValidation); err != nil {
@@ -294,7 +294,7 @@ func httpDownload(ctx context.Context, j *job, item Item, destDir string) error 
 		got := hex.EncodeToString(hasher.Sum(nil))
 		if got != item.SHA256 {
 			_ = os.Remove(tmp)
-			return fmt.Errorf("SHA256 mismatch: expected %s, got %s — file corrupt or tampered", item.SHA256, got)
+			return fmt.Errorf("SHA256 mismatch: expected %s, got %s â€” file corrupt or tampered", item.SHA256, got)
 		}
 	}
 
@@ -321,11 +321,11 @@ func ollamaPull(ctx context.Context, j *job, item Item) error {
 	req.Header.Set("Content-Type", "application/json")
 	resp, err := ollamaPullClient.Do(req)
 	if err != nil {
-		return fmt.Errorf("ollama not reachable — is Ollama running? (%w)", err)
+		return fmt.Errorf("ollama not reachable â€” is Ollama running? (%w)", err)
 	}
 	defer resp.Body.Close() //nolint:errcheck // response body close error is not actionable
 	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("ollama returned %d — is Ollama installed and running?", resp.StatusCode)
+		return fmt.Errorf("ollama returned %d â€” is Ollama installed and running?", resp.StatusCode)
 	}
 
 	dec := json.NewDecoder(resp.Body)
@@ -344,7 +344,7 @@ func ollamaPull(ctx context.Context, j *job, item Item) error {
 			j.TotalBytes = line.Total
 			j.BytesDone = line.Completed
 			j.Progress = float64(line.Completed) / float64(line.Total)
-			j.StatusText = fmt.Sprintf("%s — %.0f%%", line.Status, j.Progress*100)
+			j.StatusText = fmt.Sprintf("%s â€” %.0f%%", line.Status, j.Progress*100)
 		} else if line.Status != "" {
 			j.StatusText = line.Status
 		}

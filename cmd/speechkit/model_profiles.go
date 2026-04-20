@@ -337,7 +337,7 @@ func applyRealtimeVoiceProfile(ctx context.Context, cfgPath string, cfg *config.
 	case models.ExecutionModeGoogle:
 		apiKey := config.ResolveSecret(cfg.Providers.Google.APIKeyEnv)
 		if apiKey == "" {
-			return errors.New("google api key not configured — add it on the model card in Settings")
+			return errors.New("google api key not configured â€” add it on the model card in Settings")
 		}
 		cfg.VoiceAgent.Enabled = true
 		cfg.VoiceAgent.Model = profile.ModelID

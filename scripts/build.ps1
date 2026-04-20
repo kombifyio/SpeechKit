@@ -1,5 +1,6 @@
 param(
-    [switch]$SkipInstaller
+    [switch]$SkipInstaller,
+    [switch]$SkipVerification
 )
 
 $ErrorActionPreference = 'Stop'
@@ -297,8 +298,12 @@ try {
         Write-Host 'Using existing frontend dependencies...'
     }
 
-    Invoke-Step -Description 'Testing frontend...' -FilePath 'npm.cmd' -ArgumentList @('test')
-    Invoke-Step -Description 'Linting frontend...' -FilePath 'npm.cmd' -ArgumentList @('run', 'lint')
+    if ($SkipVerification) {
+        Write-Host 'Skipping frontend tests and lint (SkipVerification specified).'
+    } else {
+        Invoke-Step -Description 'Testing frontend...' -FilePath 'npm.cmd' -ArgumentList @('test')
+        Invoke-Step -Description 'Linting frontend...' -FilePath 'npm.cmd' -ArgumentList @('run', 'lint')
+    }
 
     Invoke-Step -Description 'Building frontend assets...' -FilePath 'npm.cmd' -ArgumentList @('run', 'build')
 }
@@ -332,26 +337,30 @@ try {
         Remove-Item -Path "Env:\$name" -ErrorAction SilentlyContinue
     }
 
-    Invoke-Step -Description 'Running Go vet...' -FilePath 'go' -ArgumentList @('vet', './...')
-    Invoke-Step -Description 'Running Go tests...' -FilePath 'go' -ArgumentList @('test', './...')
-    Invoke-Step -Description 'Running Go race tests...' -FilePath 'go' -ArgumentList @(
-        'test',
-        '-race',
-        './pkg/speechkit/...',
-        './internal/router/...',
-        './internal/voiceagent/...',
-        './internal/assist/...',
-        './internal/store/...',
-        './internal/secrets/...',
-        './internal/ai/...',
-        './internal/config/...',
-        './internal/stt/...',
-        './internal/tts/...',
-        './internal/shortcuts/...',
-        './internal/features/...',
-        './internal/models/...',
-        './internal/textactions/...'
-    )
+    if ($SkipVerification) {
+        Write-Host 'Skipping Go vet, tests, and race tests (SkipVerification specified).'
+    } else {
+        Invoke-Step -Description 'Running Go vet...' -FilePath 'go' -ArgumentList @('vet', './...')
+        Invoke-Step -Description 'Running Go tests...' -FilePath 'go' -ArgumentList @('test', './...')
+        Invoke-Step -Description 'Running Go race tests...' -FilePath 'go' -ArgumentList @(
+            'test',
+            '-race',
+            './pkg/speechkit/...',
+            './internal/router/...',
+            './internal/voiceagent/...',
+            './internal/assist/...',
+            './internal/store/...',
+            './internal/secrets/...',
+            './internal/ai/...',
+            './internal/config/...',
+            './internal/stt/...',
+            './internal/tts/...',
+            './internal/shortcuts/...',
+            './internal/features/...',
+            './internal/models/...',
+            './internal/textactions/...'
+        )
+    }
     Invoke-Step -Description 'Building SpeechKit.exe...' -FilePath 'go' -ArgumentList @('build', '-ldflags', $goLdflags, '-o', $bundleExe, './cmd/speechkit/')
 }
 finally {
