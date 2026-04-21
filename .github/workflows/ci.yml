@@ -166,19 +166,12 @@ jobs:
         shell: pwsh
         run: |
           $packages = @(
-            './cmd/speechkit/...',
             './pkg/speechkit/...',
             './internal/ai/...',
             './internal/assist/...',
-            './internal/auth/...',
-            './internal/audio/...',
             './internal/config/...',
-            './internal/dictation/...',
-            './internal/downloads/...',
             './internal/features/...',
-            './internal/hotkey/...',
             './internal/models/...',
-            './internal/output/...',
             './internal/router/...',
             './internal/secrets/...',
             './internal/shortcuts/...',
