@@ -10,68 +10,36 @@ The format is based on Keep a Changelog and this project is intended to ship und
 
 ### Fixed
 
-- **Bottom compact overlay placement**: The default overlay position is now the lower screen edge, and invalid or missing overlay positions fall back to the same bottom placement.
-- **Compact pill and dot anchoring**: Pill and dot host windows now anchor by the visible control surface, keeping the compact UI closer to the screen edge and centering the dot correctly.
-- **Dot radial menu alignment**: The dot context menu now opens around the visible dot center instead of the transparent host window center.
-- **Voice Agent Small Feedback mode**: Voice Agent state changes now drive the compact feedback overlay, so Small Feedback mode shows listening, processing, speaking, and final summary states consistently.
-- **Compact overlay feedback clipping**: Assist and Voice Agent pill feedback now renders as a separate compact panel above the pill/control surface, with native overlay host space reserved so the panel is fully visible instead of being truncated inside the pill.
-
-### Added
-
-- **V23 mode intelligence contracts**: Dictation is now documented and enforced as User Intelligence, Assist as Utility Intelligence, and Voice Agent as Brainstorming Intelligence with session summaries.
-- **Four-provider model standard**: Transcribe, Assist, and Voice Agent now expose Local Built-in, Local Provider, Cloud Provider, and Direct Provider groups with capability metadata and supported variants.
-- **Dictation user dictionary**: Settings vocabulary now syncs into structured store entries, feeds transcription hints, applies deterministic corrections, and records dictionary usage.
-- **Ollama across all modes**: Ollama Local Provider support now covers Dictation, Assist, and Voice Agent pipeline fallback, including download/pull catalog entries for each user mode.
-- **llama.cpp Built-in model selection**: Transcribe and Assist now show the Local Built-in provider as a runtime choice and keep concrete model selection in download options.
-
-### Changed
-
-- **Voice Agent fallback contract**: `pipeline_fallback` is now an intentional non-realtime Voice Agent path for Local Built-in, Ollama, and Hugging Face profiles instead of deprecated compatibility state.
+- **Compact overlay placement**: Small Feedback now defaults to the lower screen edge, sits closer to the edge, and keeps the pill, dot, and dot menu correctly centered.
+- **Voice Agent Small Feedback**: Voice Agent state changes now drive the compact feedback overlay for listening, processing, speaking, and final summary states.
+- **Compact panel clipping**: Assist and Voice Agent feedback panels now reserve native host space so the compact panel is fully visible instead of being cut off.
 
 ## [0.22.1] - 2026-04-20
 
 ### Highlights
 
-- **Live Modes V2 release**: SpeechKit now enforces a stricter product split between Dictation, Assist, and Voice Agent, so each mode behaves like its own surface instead of a shared fallback stack
-- **Voice Agent realtime reliability**: the live Voice Agent now has a compact side panel, bounded mic streaming, speaker selection, echo suppression, and more stable listening/processing/speaking transitions
-- **Assist and Dictation boundary hardening**: Dictation stays passthrough-only, while Assist routes one-shot utilities, reusable result panels, and unsupported-provider guidance through its own surface contract
+- **Clearer mode separation**: Dictation, Assist, and Voice Agent now follow stricter runtime boundaries so each mode behaves more predictably.
+- **Voice Agent reliability**: Voice Agent now has a compact live panel, speaker selection, bounded mic streaming, echo suppression, and more stable listening/processing/speaking transitions.
+- **Assist result handling**: Assist now routes one-shot utilities, visible result panels, and unsupported-provider guidance through clearer result contracts.
 
 ### Added
 
-- **Voice Agent speaker selection**: the live Voice Agent prompter can now list and switch speaker/output devices, with the selected output persisted for the realtime playback stream
-- **Local LLM provider split**: Assist and utility LLM profiles now distinguish SpeechKit `Local Built-in` models from `Local Provider` integrations such as Ollama, keeping integrated runtimes and externally managed local providers on separate config paths
-- **Assist result metadata**: the Assist pipeline now models result surface and result kind, making panel-vs-action routing explicit in the runtime contract
-- **Voice Agent state tests**: added focused session tests for `processing` and `speaking` transitions plus frontend tests for the new orb/live-window rendering
+- **Voice Agent speaker selection**: the live Voice Agent panel can now list and switch output devices, with the selected speaker persisted.
+- **Local provider split**: Assist and utility LLM profiles now distinguish built-in local models from externally managed local providers such as Ollama.
+- **Assist result metadata**: Assist now models result surface and result kind, making panel-vs-action routing explicit.
 
 ### Changed
 
-- **Compact Voice Agent side panel**: the Voice Agent prompter now opens as a narrower, lower-friction side panel with compact window chrome, icon-only transcript controls, a cardless live transcript, and a lazy-loaded smaller ambient orb animation
-- **Voice Agent live transcript contract**: the prompter now shows only the latest user turn and latest agent turn instead of accumulating a visible chat history
-- **Voice Agent context compression**: Gemini Live context compression now starts earlier with a smaller rolling target to keep longer brainstorming sessions responsive
-- **Voice Agent hotkey lifecycle**: Voice Agent hotkeys are non-destructive while a realtime session is active; stopping the session is now limited to explicit stop/close controls
-- **Local STT timeout headroom**: local whisper transcription now scales its processing timeout with captured audio duration instead of failing at a fixed 30-second request limit
-- **Dictation boundary**: Dictation now stays passthrough-only and no longer runs the global Assist/codeword interceptor path
-- **Assist UX contract**: direct utility actions now stay on lightweight acknowledgements, while panel-worthy Assist results render through the dedicated one-shot Assist surface
-- **Voice Agent UX contract**: Voice Agent no longer writes into the Assist bubble surface and no longer drops into the capture/Assist fallback path when realtime voice is unavailable
-- **Voice Agent V2 orb**: The live Voice Agent window now uses a custom `SpeechKitAuraOrb` surface with clearer realtime state presentation for connecting, listening, processing, and speaking
-- **Voice Agent defaults**: native realtime remains the default Direct Provider contract; non-realtime profiles use the explicit pipeline fallback path
+- **Voice Agent panel UX**: the live panel is more compact, shows the latest user and agent turns, and keeps longer sessions more responsive.
+- **Mode boundaries**: Dictation stays passthrough-only, Assist uses its own result surfaces, and Voice Agent no longer falls back into Assist/capture surfaces.
+- **Local STT timeout headroom**: local whisper transcription now scales its processing timeout with captured audio duration.
 
 ### Fixed
 
-- **Ollama local-provider downloads**: downloaded Ollama models can now activate their matching Assist or utility profile instead of falling through the Whisper-only local model selector
-- **Voice Agent streaming stability**: mic frames now pass through a bounded non-blocking sender queue so realtime provider backpressure cannot block the audio capture callback
-- **Voice Agent collapsed transcript UX**: hiding the transcript now shrinks the prompter to a compact live-status shell instead of leaving a large empty panel
-- **Voice Agent follow-up turns**: user mic feedback now remains visible during active processing/speaking states, and sessions recover to `listening` when the provider does not emit a final turn-complete event
-- **Voice Agent audio diagnostics**: realtime audio-send failures are now surfaced through logs and the prompter instead of being silently ignored
-- **Voice Agent speaker echo guard**: mic uplink is now suppressed while assistant audio is playing and during a short playback tail, preventing the agent's own spoken response from being interpreted as the next user turn
-- **Voice Agent prompt follow-ups**: the speaker echo tail is now short enough to avoid clipping fast user follow-up turns after assistant playback
-- **Voice Agent transcript control icon**: the transcript visibility action now uses fold/open panel icons instead of a minus icon, so it no longer looks like the window minimize control
-- **Voice Agent transcript folding anchor**: collapsing or expanding the prompter now keeps the top edge and right edge fixed, so the window chrome remains under the cursor instead of jumping away
-- **Voice Agent deactivation diagnostics**: explicit stop, prompter-close, and manual deactivation paths now include a reason in logs to make unexpected session stops diagnosable
-- **Assist error guidance**: unsupported model/provider failures now surface the failing model and provider in the Assist panel instead of the generic conversation failure message
-- **Voice Agent turn completion**: output-transcript completion now returns the session to listening even when the provider omits a separate turn-complete event
-- **Voice Agent state stability**: output transcript partials no longer downgrade an active audio response from `speaking` back to `processing`, reducing prompter UI churn during live playback
-- **Prompter and app shutdown lifecycle**: Assist/Voice Agent close controls now hide the panel reliably, and tray Quit no longer lets hidden window close hooks block application shutdown
+- **Voice Agent streaming stability**: mic streaming, follow-up turns, echo handling, and turn completion are more robust.
+- **Voice Agent panel behavior**: transcript folding, activity feedback, and close/stop flows are more stable.
+- **Assist error guidance**: unsupported model/provider failures now show more actionable Assist panel feedback.
+- **Ollama local-provider downloads**: downloaded Ollama models can now activate their matching Assist or utility profile.
 
 ## [0.21.1] - 2026-04-18
 
