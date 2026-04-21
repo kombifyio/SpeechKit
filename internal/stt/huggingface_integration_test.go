@@ -21,7 +21,7 @@ import (
 func TestHF_IntegrationUploadSmoke(t *testing.T) {
 	token := os.Getenv("HF_TOKEN")
 	if token == "" {
-		t.Skip("HF_TOKEN not set — integration test requires live Hugging Face credentials")
+		t.Skip("HF_TOKEN not set â€” integration test requires live Hugging Face credentials")
 	}
 
 	model := os.Getenv("HF_MODEL")

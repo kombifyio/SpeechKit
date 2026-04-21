@@ -1,7 +1,7 @@
 // Example: Using SpeechKit as a Go library for speech-to-text.
 //
 // This demonstrates how to use the SpeechKit framework without the
-// desktop UI — just the transcription pipeline as a Go library.
+// desktop UI â€” just the transcription pipeline as a Go library.
 package main
 
 import (

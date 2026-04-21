@@ -6,8 +6,8 @@ import (
 	"path/filepath"
 
 	"github.com/BurntSushi/toml"
-	"github.com/kombifyio/SpeechKit/internal/runtimepath"
 	"github.com/google/uuid"
+	"github.com/kombifyio/SpeechKit/internal/runtimepath"
 )
 
 // InstallMode defines whether SpeechKit runs locally or connected to kombify Cloud.

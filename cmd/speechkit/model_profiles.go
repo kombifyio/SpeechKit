@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 
+	"github.com/firebase/genkit/go/core"
 	appai "github.com/kombifyio/SpeechKit/internal/ai"
 	"github.com/kombifyio/SpeechKit/internal/ai/flows"
 	"github.com/kombifyio/SpeechKit/internal/assist"
@@ -13,7 +14,6 @@ import (
 	"github.com/kombifyio/SpeechKit/internal/models"
 	"github.com/kombifyio/SpeechKit/internal/router"
 	"github.com/kombifyio/SpeechKit/internal/stt"
-	"github.com/firebase/genkit/go/core"
 )
 
 var launchLocalProvider = startLocalProviderAsync
@@ -349,7 +349,7 @@ func applyRealtimeVoiceProfile(ctx context.Context, cfgPath string, cfg *config.
 	case models.ExecutionModeGoogle:
 		apiKey := config.ResolveSecret(cfg.Providers.Google.APIKeyEnv)
 		if apiKey == "" {
-			return errors.New("google api key not configured — add it on the model card in Settings")
+			return errors.New("google api key not configured â€” add it on the model card in Settings")
 		}
 		cfg.VoiceAgent.Enabled = true
 		cfg.VoiceAgent.Model = profile.ModelID

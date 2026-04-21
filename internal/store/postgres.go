@@ -11,8 +11,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/kombifyio/SpeechKit/internal/runtimepath"
 	_ "github.com/jackc/pgx/v5/stdlib" // register pgx as database/sql driver
+	"github.com/kombifyio/SpeechKit/internal/runtimepath"
 )
 
 //go:embed migrations/postgres/001_init.sql
