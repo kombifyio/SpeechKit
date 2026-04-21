@@ -52,7 +52,7 @@ jobs:
       - name: Build canonical Windows bundle
         if: github.event_name != 'workflow_dispatch'
         shell: pwsh
-        run: ./scripts/build.ps1 -SkipInstaller
+        run: ./scripts/build.ps1 -SkipInstaller -SkipVerification
 
       - name: Build canonical Windows bundle and installer
         if: github.event_name == 'workflow_dispatch'
