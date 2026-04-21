@@ -14,7 +14,7 @@ env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
 
 concurrency:
-  group: ci-${{ github.ref }}
+  group: ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -291,7 +291,7 @@ jobs:
 
       - name: Run canonical Windows bundle build
         shell: pwsh
-        run: ./scripts/build.ps1
+        run: ./scripts/build.ps1 -SkipInstaller
 
       - name: Upload embedded frontend assets
         if: always()
