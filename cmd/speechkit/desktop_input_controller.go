@@ -88,7 +88,7 @@ func (c desktopInputController) handleAutoStartTick(ctx context.Context) {
 	if c.state == nil || !c.state.consumeQuickCaptureAutoStart() {
 		return
 	}
-	if !c.preflightCaptureStart(modeDictate) {
+	if !c.preflightCaptureStart(ctx, modeDictate) {
 		return
 	}
 	c.dispatch(ctx, speechkit.Command{
@@ -164,7 +164,7 @@ func (c desktopInputController) handleToggleCapture(ctx context.Context, evt hot
 
 func (c desktopInputController) routeCaptureHotkey(ctx context.Context, mode string, evt hotkey.Event) {
 	if evt.Type == hotkey.EventKeyDown {
-		if (c.recording == nil || !c.recording.IsRecording()) && !c.preflightCaptureStart(mode) {
+		if (c.recording == nil || !c.recording.IsRecording()) && !c.preflightCaptureStart(ctx, mode) {
 			return
 		}
 		c.primeOverlayForCapture(mode)
@@ -264,7 +264,7 @@ func (c desktopInputController) deactivateVoiceAgentAfterPushToTalkTurn(ctx cont
 			switch state := session.CurrentState(); state {
 			case voiceagent.StateInactive:
 				return
-			case voiceagent.StateProcessing, voiceagent.StateSpeaking, voiceagent.StateDeactivating:
+			case voiceagent.StateConnecting, voiceagent.StateProcessing, voiceagent.StateSpeaking, voiceagent.StateDeactivating:
 				seenTurnInFlight = true
 			case voiceagent.StateListening:
 				if seenTurnInFlight {
@@ -416,7 +416,7 @@ func (c desktopInputController) toggleVoiceAgent(ctx context.Context) {
 }
 
 func (c desktopInputController) activateVoiceAgent(ctx context.Context) {
-	if msg := c.voiceAgentStartBlockedReason(); msg != "" {
+	if msg := c.voiceAgentStartBlockedReason(); msg != "" { //nolint:contextcheck // realtime session readiness is independent from a request lifecycle
 		c.presentPreflightHint(msg)
 		return
 	}
@@ -666,8 +666,8 @@ func (c desktopInputController) log(message, kind string) {
 	c.state.addLog(message, kind)
 }
 
-func (c desktopInputController) preflightCaptureStart(mode string) bool {
-	if msg := c.captureStartBlockedReason(mode); msg != "" {
+func (c desktopInputController) preflightCaptureStart(ctx context.Context, mode string) bool {
+	if msg := c.captureStartBlockedReason(ctx, mode); msg != "" {
 		c.presentPreflightHint(msg)
 		return false
 	}
@@ -686,7 +686,7 @@ func (c desktopInputController) preflightCaptureStart(mode string) bool {
 	return true
 }
 
-func (c desktopInputController) captureStartBlockedReason(mode string) string {
+func (c desktopInputController) captureStartBlockedReason(ctx context.Context, mode string) string {
 	r := c.currentSTTRouter()
 	if r == nil && c.installState == nil {
 		return ""
@@ -696,7 +696,7 @@ func (c desktopInputController) captureStartBlockedReason(mode string) string {
 		strategy = router.Strategy(c.cfg.Routing.Strategy)
 	}
 
-	localReady := c.localSTTReady()
+	localReady := c.localSTTReady(ctx)
 	cloudReady := c.hasConfiguredCloudSTTProvider(r)
 
 	switch strategy {
@@ -704,7 +704,7 @@ func (c desktopInputController) captureStartBlockedReason(mode string) string {
 		if localReady {
 			return ""
 		}
-		return c.localSTTBlockedReason(mode)
+		return c.localSTTBlockedReason(ctx, mode)
 	case router.StrategyCloudOnly:
 		if cloudReady {
 			return ""
@@ -714,7 +714,7 @@ func (c desktopInputController) captureStartBlockedReason(mode string) string {
 		if localReady || cloudReady {
 			return ""
 		}
-		if msg := c.localSTTBlockedReason(mode); msg != "" {
+		if msg := c.localSTTBlockedReason(ctx, mode); msg != "" {
 			return msg
 		}
 		if msg := c.cloudSTTBlockedReason(mode); msg != "" {
@@ -740,7 +740,7 @@ func (c desktopInputController) assistStartBlockedReason() string {
 	return "Assist can't start because no Assist model is configured. Open Settings > Models and select an Assist model."
 }
 
-func (c desktopInputController) voiceAgentStartBlockedReason() string {
+func (c desktopInputController) voiceAgentStartBlockedReason() string { //nolint:contextcheck // realtime session readiness is independent from a request lifecycle
 	if c.shouldUseVoiceAgentPipelineFallback() {
 		return c.voiceAgentPipelineStartBlockedReason()
 	}
@@ -766,7 +766,7 @@ func (c desktopInputController) voiceAgentPipelineStartBlockedReason() string {
 	return "Voice Agent can't start because no Voice Agent model is configured. Open Settings > Models and select a Voice Agent model."
 }
 
-func (c desktopInputController) localSTTBlockedReason(mode string) string {
+func (c desktopInputController) localSTTBlockedReason(ctx context.Context, mode string) string {
 	if c.installState != nil && c.installState.Mode == config.InstallModeLocal && !c.installState.SetupDone {
 		return fmt.Sprintf("%s can't start because no local speech model is configured yet. Open Settings > STT and download/select a model.", modeDisplayName(mode))
 	}
@@ -790,7 +790,7 @@ func (c desktopInputController) localSTTBlockedReason(mode string) string {
 		return ""
 	}
 
-	if !providerReady(context.Background(), r.Local()) { //nolint:contextcheck // preflight readiness check is intentionally independent from request lifecycle
+	if !providerReady(ctx, r.Local()) {
 		return fmt.Sprintf("%s can't start because Local STT is unavailable right now. Check Settings > STT.", modeDisplayName(mode))
 	}
 	return ""
@@ -808,12 +808,12 @@ func (c desktopInputController) cloudSTTBlockedReason(mode string) string {
 	return fmt.Sprintf("%s can't start because no cloud speech provider is configured. Open Settings > Provider.", modeDisplayName(mode))
 }
 
-func (c desktopInputController) localSTTReady() bool {
+func (c desktopInputController) localSTTReady(ctx context.Context) bool {
 	r := c.currentSTTRouter()
 	if r == nil || r.Local() == nil {
 		return false
 	}
-	return providerReady(context.Background(), r.Local()) //nolint:contextcheck // preflight readiness check is intentionally independent from request lifecycle
+	return providerReady(ctx, r.Local())
 }
 
 func (c desktopInputController) hasConfiguredCloudSTTProvider(r *router.Router) bool {

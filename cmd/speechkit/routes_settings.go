@@ -218,7 +218,7 @@ func registerSettingsRoutes(mux *http.ServeMux, cfgPath string, cfg *config.Conf
 			deviceID = strings.TrimSpace(r.FormValue("selected_output_device_id"))
 		}
 		cfg.Audio.OutputDeviceID = deviceID
-		state.setAudioOutputDevice(deviceID)
+		state.setAudioOutputDevice(r.Context(), deviceID)
 		if err := config.Save(cfgPath, cfg); err != nil {
 			slog.Warn("save audio output device config", "err", err)
 		}

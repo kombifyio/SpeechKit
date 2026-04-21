@@ -49,7 +49,7 @@ func buildVoiceAgentCallbacks(state *appState, cfg *config.Config) voiceagent.Ca
 		},
 		OnError: func(err error) {
 			state.addLog(fmt.Sprintf("Voice Agent error: %v", err), "error")
-			state.sendPrompterMessage("assistant", friendlyConversationError(cfg, modeVoiceAgent, err), true)
+			state.sendPrompterMessage("assistant", friendlyConversationError(modeVoiceAgent, err), true)
 			state.updatePrompterState("error")
 			state.updatePrompterActivity("user", 0)
 			state.updatePrompterActivity("assistant", 0)

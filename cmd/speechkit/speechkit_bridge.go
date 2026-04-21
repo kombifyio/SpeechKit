@@ -127,7 +127,7 @@ func (s *appState) setAudioDevice(deviceID string) {
 	s.mu.Unlock()
 }
 
-func (s *appState) setAudioOutputDevice(deviceID string) {
+func (s *appState) setAudioOutputDevice(ctx context.Context, deviceID string) {
 	if s == nil {
 		return
 	}
@@ -138,7 +138,7 @@ func (s *appState) setAudioOutputDevice(deviceID string) {
 	s.mu.Unlock()
 
 	if streamActive {
-		s.startVoiceAgentStream(context.Background())
+		s.startVoiceAgentStream(ctx)
 	}
 }
 

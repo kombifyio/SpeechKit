@@ -36,11 +36,14 @@ func newVoiceAgentAudioSender(sink voiceAgentAudioSink, queueSize int) *voiceAge
 }
 
 func (s *voiceAgentAudioSender) Start(ctx context.Context) {
-	if s == nil || s.sink == nil || !s.started.CompareAndSwap(false, true) {
+	if s == nil || s.sink == nil {
 		return
 	}
 	if ctx == nil {
-		ctx = context.Background()
+		return
+	}
+	if !s.started.CompareAndSwap(false, true) {
+		return
 	}
 
 	go func() {

@@ -251,7 +251,7 @@ func (o desktopTranscriptOutput) deliverAssistForMode(ctx context.Context, trans
 	result, err := assistPipeline.Process(ctx, transcript.Text, processOpts)
 	if err != nil {
 		slog.Error("assist pipeline error", "err", err)
-		o.failConversation(mode, "", friendlyConversationError(o.cfg, mode, err))
+		o.failConversation(mode, "", friendlyConversationError(mode, err))
 		return err
 	}
 
@@ -361,7 +361,7 @@ func (o desktopTranscriptOutput) deliverAgentFlow(ctx context.Context, transcrip
 	})
 	if err != nil {
 		slog.Error("agent flow error", "err", err)
-		o.failConversation(mode, "", friendlyConversationError(o.cfg, mode, err))
+		o.failConversation(mode, "", friendlyConversationError(mode, err))
 		return err
 	}
 	if resp.Text == "" || resp.Action == "silent" {

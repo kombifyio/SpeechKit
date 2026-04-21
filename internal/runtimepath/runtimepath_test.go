@@ -212,13 +212,14 @@ func TestConfigFilePath_PortableUsesExecutableDir(t *testing.T) {
 }
 
 func TestConfigFilePath_NonPortableUsesDataDir(t *testing.T) {
-	t.Setenv("APPDATA", `C:\Users\test\AppData\Roaming`)
+	appData := `C:\Users\test\AppData\Roaming`
+	t.Setenv("APPDATA", appData)
 	withMocks(t,
 		mockExecutable(`C:\Users\test\AppData\Local\Programs\SpeechKit\SpeechKit.exe`, nil),
 		mockStat(map[string]bool{}),
 		nil,
 	)
-	want := filepath.Join(`C:\Users\test\AppData\Roaming`, "SpeechKit", "config.toml")
+	want := filepath.Join(appData, "SpeechKit", "config.toml")
 	if got := ConfigFilePath(); got != want {
 		t.Fatalf("ConfigFilePath() = %q, want %q", got, want)
 	}

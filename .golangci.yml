@@ -1,0 +1,146 @@
+# golangci-lint v2 config — requires golangci-lint >= v2.0.0.
+# Run locally:  golangci-lint run ./...
+# Auto-fix:     golangci-lint run --fix ./...
+#
+# Note: gofmt and goimports are run as separate steps in CI and lefthook,
+# not via golangci-lint (removed in v2). gosimple was merged into staticcheck.
+
+version: "2"
+
+run:
+  timeout: 5m
+  tests: true
+  build-tags:
+    - integration
+
+linters:
+  default: none
+  enable:
+    # Baseline correctness
+    - govet
+    - staticcheck      # includes former gosimple rules
+    - ineffassign
+    - unused
+    - errcheck
+    # Security
+    - gosec
+    # Error handling discipline
+    - errorlint
+    - bodyclose
+    - rowserrcheck
+    - noctx
+    # Style & defensive
+    - revive
+    - gocritic
+    - misspell
+    - unconvert
+    - unparam
+    - nilerr
+    - makezero
+    - contextcheck
+    - exhaustive
+
+  settings:
+    errcheck:
+      check-type-assertions: true
+      check-blank: false
+      exclude-functions:
+        # Flush/Sync on stdout/stderr is idiomatic to ignore
+        - (os.File).Sync
+        - (*os.File).Sync
+    gosec:
+      excludes:
+        # G104: "errors unhandled" — handled by errcheck with better reporting
+        - G104
+        # G101: "hardcoded credentials" — false positive: all hits are env var
+        # name fields like APIKeyEnv: "OPENAI_API_KEY", not actual secrets
+        - G101
+      config:
+        global:
+          audit: true
+    govet:
+      enable-all: true
+      disable:
+        - fieldalignment   # noisy; revisit for hot structs only
+        - shadow           # handled separately
+    revive:
+      rules:
+        - name: blank-imports
+        - name: context-as-argument
+        - name: context-keys-type
+        - name: dot-imports
+        - name: error-return
+        - name: error-strings
+        - name: error-naming
+        - name: exported
+          disabled: true   # godoc enforcement phased in; see Sprint 2
+        - name: if-return
+        - name: increment-decrement
+        - name: indent-error-flow
+        - name: package-comments
+          disabled: true   # phased in
+        - name: range
+        - name: receiver-naming
+        - name: redefines-builtin-id
+        - name: superfluous-else
+        - name: time-naming
+        - name: unexported-return
+        - name: unreachable-code
+        - name: unused-parameter
+          disabled: true   # too noisy pre-cleanup
+        - name: var-declaration
+        - name: var-naming
+    gocritic:
+      enabled-tags:
+        - diagnostic
+        - style
+        - performance
+      disabled-checks:
+        - ifElseChain
+        - hugeParam
+        - rangeValCopy
+        - unnamedResult
+    errorlint:
+      errorf: true
+      asserts: true
+      comparison: true
+    exhaustive:
+      # A switch with an explicit default branch is considered exhaustive —
+      # the author has already handled the "unknown value" case.
+      default-signifies-exhaustive: true
+
+  exclusions:
+    paths:
+      - frontend
+      - Website
+      - marketing-site-svelte
+      - android
+      - internal/frontendassets
+      - scripts
+      - installer
+      - docker
+      - docs
+    rules:
+      # Tests may use goroutines without context, use fmt.Printf for debug, and
+      # skip some error checks on assertion setup paths.
+      - path: _test\.go
+        linters:
+          - errcheck
+          - gosec
+          - noctx
+          - contextcheck
+          - bodyclose
+          - unparam
+          - rowserrcheck
+      # CGo wrapper packages have special conventions
+      - path: internal/winapi/
+        linters:
+          - revive
+          - gocritic
+      - path: internal/vad/
+        linters:
+          - revive
+
+issues:
+  max-same-issues: 0
+  max-issues-per-linter: 0

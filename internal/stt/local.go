@@ -206,11 +206,11 @@ func (p *LocalProvider) waitForInferenceReadyWithClient(ctx context.Context, cli
 		default:
 		}
 
-		if err := p.probeInferenceReady(ctx, client, endpoint, warmupAudio); err == nil {
+		err := p.probeInferenceReady(ctx, client, endpoint, warmupAudio)
+		if err == nil {
 			return nil
-		} else {
-			lastErr = err
 		}
+		lastErr = err
 
 		if i == retries-1 {
 			break
@@ -286,7 +286,7 @@ func (p *LocalProvider) StopServer() {
 	}
 }
 
-func (p *LocalProvider) Transcribe(ctx context.Context, audio []byte, opts TranscribeOpts) (*Result, error) {
+func (p *LocalProvider) Transcribe(ctx context.Context, audioData []byte, opts TranscribeOpts) (*Result, error) {
 	if !p.ready.Load() {
 		// If startup is in progress, wait for it to complete before failing.
 		p.startMu.Lock()
@@ -315,7 +315,7 @@ func (p *LocalProvider) Transcribe(ctx context.Context, audio []byte, opts Trans
 	if err != nil {
 		return nil, fmt.Errorf("create form file: %w", err)
 	}
-	if _, err := part.Write(audio); err != nil {
+	if _, err := part.Write(audioData); err != nil {
 		return nil, fmt.Errorf("write audio data: %w", err)
 	}
 
@@ -336,7 +336,7 @@ func (p *LocalProvider) Transcribe(ctx context.Context, audio []byte, opts Trans
 		return nil, fmt.Errorf("close multipart writer: %w", err)
 	}
 
-	requestTimeout := localTranscribeTimeout(audio)
+	requestTimeout := localTranscribeTimeout(audioData)
 	requestCtx, cancel := context.WithTimeout(ctx, requestTimeout)
 	defer cancel()
 

@@ -5,11 +5,9 @@ import (
 	"errors"
 	"fmt"
 	"strings"
-
-	"github.com/kombifyio/SpeechKit/internal/config"
 )
 
-func friendlyConversationError(cfg *config.Config, mode string, err error) string {
+func friendlyConversationError(mode string, err error) string {
 	if err == nil {
 		return "Conversation failed. Check Settings and try again."
 	}

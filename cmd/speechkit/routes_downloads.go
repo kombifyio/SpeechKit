@@ -174,6 +174,7 @@ func downloadDestinationDir(item downloads.Item, cfg *config.Config) string {
 		switch profile.Modality {
 		case models.ModalityAssist, models.ModalityUtility, models.ModalityRealtimeVoice:
 			return downloads.ResolveLocalLLMModelsDir(cfg)
+		default:
 		}
 	}
 	return downloads.ResolveWhisperModelsDir(cfg)
@@ -296,6 +297,7 @@ func selectDownloadedLocalLLMModel(ctx context.Context, cfgPath string, cfg *con
 		cfg.VoiceAgent.Enabled = true
 		cfg.VoiceAgent.Model = filename
 		cfg.VoiceAgent.PipelineFallback = true
+	default:
 	}
 
 	if cfgPath != "" {

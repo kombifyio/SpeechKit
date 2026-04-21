@@ -175,6 +175,7 @@ func selectedModelIDForProfile(cfg *config.Config, profile models.Profile) strin
 		if configured := strings.TrimSpace(cfg.LocalLLM.AgentModel); configured != "" {
 			return configured
 		}
+	default:
 	}
 
 	if configured := strings.TrimSpace(cfg.LocalLLM.Model); configured != "" {
