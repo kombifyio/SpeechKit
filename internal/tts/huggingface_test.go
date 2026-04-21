@@ -190,7 +190,7 @@ func TestHuggingFace_Synthesize_HTTPError(t *testing.T) {
 
 func TestHuggingFace_Synthesize_InvalidBaseURLRejected(t *testing.T) {
 	p := NewHuggingFace(HuggingFaceOpts{Token: "t"})
-	p.BaseURL = "http://169.254.169.254/latest/meta-data/" // AWS IMDS â€” blocked by strict validation
+	p.BaseURL = "http://169.254.169.254/latest/meta-data/" // AWS IMDS — blocked by strict validation
 	// Validation left at zero value (strict: no loopback, no http, no private nets)
 	_, err := p.Synthesize(context.Background(), "hi", SynthesizeOpts{})
 	if err == nil {

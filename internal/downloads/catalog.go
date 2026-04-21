@@ -31,7 +31,7 @@ func Catalog(ctx context.Context, cfg *config.Config) []Item {
 	selectedLocalLLM := selectedLocalLLMModel(cfg)
 	localRuntimeReady, localRuntimeProblem := whisperRuntimeAvailability()
 	return []Item{
-		// â”€â”€ Whisper STT local models â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+		// ── Whisper STT local models ─────────────────────────────────────────
 		{
 			ID:             "whisper.ggml-small",
 			ProfileID:      "stt.local.whispercpp",
@@ -81,7 +81,7 @@ func Catalog(ctx context.Context, cfg *config.Config) []Item {
 			RuntimeReady:   localRuntimeReady,
 			RuntimeProblem: localRuntimeProblem,
 		},
-		// â”€â”€ llama.cpp local Assist models â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+		// ── llama.cpp local Assist models ────────────────────────────────────
 		{
 			ID:          "llamacpp.gemma-3-4b-it-q4-k-m",
 			ProfileID:   "assist.builtin.gemma4-e4b",
@@ -111,11 +111,11 @@ func Catalog(ctx context.Context, cfg *config.Config) []Item {
 			Available:   FileIsPresent(filepath.Join(llmModelsDir, "gemma-3-4b-it-Q8_0.gguf")),
 			Selected:    selectedLocalLLM == "gemma-3-4b-it-Q8_0.gguf",
 		},
-		// â”€â”€ Ollama LLM models â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+		// ── Ollama LLM models ─────────────────────────────────────────────────
 		{
 			ID:          "ollama.gemma4-e4b-dictate",
 			ProfileID:   "stt.ollama.gemma4-e4b-transcribe",
-			Name:        "Gemma 4 E4B â€” Dictation (Ollama, 3.3 GB)",
+			Name:        "Gemma 4 E4B — Dictation (Ollama, 3.3 GB)",
 			Description: "Ollama-managed local provider model exposed through SpeechKit's Dictation transcription adapter.",
 			SizeLabel:   "~3.3 GB",
 			SizeBytes:   3_300_000_000,
@@ -127,7 +127,7 @@ func Catalog(ctx context.Context, cfg *config.Config) []Item {
 		{
 			ID:          "ollama.gemma4-e4b",
 			ProfileID:   "utility.ollama.gemma4-e4b",
-			Name:        "Gemma 4 E4B â€” Utility (Ollama, 3.3 GB)",
+			Name:        "Gemma 4 E4B — Utility (Ollama, 3.3 GB)",
 			Description: "Ollama-managed local provider model for utility routing and quick actions.",
 			SizeLabel:   "~3.3 GB",
 			SizeBytes:   3_300_000_000,
@@ -140,7 +140,7 @@ func Catalog(ctx context.Context, cfg *config.Config) []Item {
 		{
 			ID:          "ollama.gemma4-e4b-assist",
 			ProfileID:   "assist.ollama.gemma4-e4b",
-			Name:        "Gemma 4 E4B â€” Assist (Ollama, 3.3 GB)",
+			Name:        "Gemma 4 E4B — Assist (Ollama, 3.3 GB)",
 			Description: "Ollama-managed local provider model for Assist reasoning and follow-ups.",
 			SizeLabel:   "~3.3 GB",
 			SizeBytes:   3_300_000_000,
@@ -152,7 +152,7 @@ func Catalog(ctx context.Context, cfg *config.Config) []Item {
 		{
 			ID:          "ollama.gemma4-e4b-voice",
 			ProfileID:   "realtime.ollama.gemma4-e4b-pipeline",
-			Name:        "Gemma 4 E4B â€” Voice Agent (Ollama, 3.3 GB)",
+			Name:        "Gemma 4 E4B — Voice Agent (Ollama, 3.3 GB)",
 			Description: "Ollama-managed local provider model for the Voice Agent pipeline fallback and session summaries.",
 			SizeLabel:   "~3.3 GB",
 			SizeBytes:   3_300_000_000,
