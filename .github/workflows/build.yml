@@ -18,7 +18,7 @@ jobs:
   windows-bundle:
     name: Build Windows Bundle
     if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
-    runs-on: ${{ vars.WINDOWS_BUILD_RUNNER || 'blacksmith-4vcpu-windows-2025' }}
+    runs-on: ${{ vars.WINDOWS_BUILD_RUNNER || 'windows-2025' }}
     timeout-minutes: 40
 
     steps:
@@ -50,6 +50,12 @@ jobs:
         run: choco install nsis -y --no-progress
 
       - name: Build canonical Windows bundle
+        if: github.event_name != 'workflow_dispatch'
+        shell: pwsh
+        run: ./scripts/build.ps1 -SkipInstaller
+
+      - name: Build canonical Windows bundle and installer
+        if: github.event_name == 'workflow_dispatch'
         shell: pwsh
         run: ./scripts/build.ps1
 
