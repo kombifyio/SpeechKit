@@ -137,6 +137,10 @@ linters:
         linters:
           - revive
           - gocritic
+      - path: internal/audio/.*_windows_cgo\.go
+        linters:
+          - gocritic
+          - unconvert
       - path: internal/vad/
         linters:
           - revive

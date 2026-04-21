@@ -49,13 +49,13 @@ func NewSileroVAD(modelPath string) (*SileroVAD, error) {
 
 	v := &SileroVAD{}
 	if err := v.initTensors(); err != nil {
-		ort.DestroyEnvironment()
+		_ = ort.DestroyEnvironment()
 		return nil, err
 	}
 
 	if err := v.initSession(modelPath); err != nil {
 		v.destroyTensors()
-		ort.DestroyEnvironment()
+		_ = ort.DestroyEnvironment()
 		return nil, err
 	}
 
@@ -166,10 +166,10 @@ func (v *SileroVAD) Reset() {
 
 func (v *SileroVAD) Close() {
 	if v.session != nil {
-		v.session.Destroy()
+		_ = v.session.Destroy()
 	}
 	v.destroyTensors()
-	ort.DestroyEnvironment()
+	_ = ort.DestroyEnvironment()
 }
 
 func (v *SileroVAD) destroyTensors() {
@@ -178,7 +178,7 @@ func (v *SileroVAD) destroyTensors() {
 		v.outputTensor, v.hnTensor, v.cnTensor,
 	} {
 		if t != nil {
-			t.Destroy()
+			_ = t.Destroy()
 		}
 	}
 }

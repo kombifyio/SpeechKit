@@ -40,7 +40,7 @@ func newMalgoStreamPlayer(outputDeviceID string) (streamPlaybackBackend, error) 
 func (sp *malgoStreamPlayer) Start(ctx context.Context) {
 	sp.StopAndDrain()
 	if ctx == nil {
-		ctx = context.Background()
+		return
 	}
 
 	playCtx, cancel := context.WithCancel(ctx)
