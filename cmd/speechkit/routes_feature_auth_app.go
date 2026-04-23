@@ -114,6 +114,14 @@ func registerAuthRoutes(mux *http.ServeMux) {
 func registerAppRoutes(mux *http.ServeMux, cfgPath string, state *appState, installState *config.InstallState) {
 	updateManager := ensureAppUpdateManager(state)
 
+	mux.HandleFunc("/app/control-token", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
+	})
+
 	mux.HandleFunc("/app/version", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
 			w.WriteHeader(http.StatusMethodNotAllowed)

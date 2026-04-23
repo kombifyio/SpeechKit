@@ -68,25 +68,31 @@ const (
 
 // LocalProvider implements STTProvider for Tier 1: localhost whisper.cpp server.
 type LocalProvider struct {
-	BaseURL   string // e.g. "http://127.0.0.1:8080"
-	Port      int
-	ModelPath string
-	GPU       string
-	cmd       *exec.Cmd
-	ready     atomic.Bool
-	startMu   sync.Mutex
-	startDone chan struct{} // closed when the current StartServer call completes (nil = never started)
-	client    *http.Client
+	BaseURL    string // e.g. "http://127.0.0.1:8080"
+	Port       int
+	ModelPath  string
+	GPU        string
+	Validation netsec.ValidationOptions
+	cmd        *exec.Cmd
+	ready      atomic.Bool
+	startMu    sync.Mutex
+	startDone  chan struct{} // closed when the current StartServer call completes (nil = never started)
+	client     *http.Client
 }
 
 func NewLocalProvider(port int, modelPath, gpu string) *LocalProvider {
-	return &LocalProvider{
+	p := &LocalProvider{
 		BaseURL:   fmt.Sprintf("http://127.0.0.1:%d", port),
 		Port:      port,
 		ModelPath: modelPath,
 		GPU:       gpu,
-		client:    netsec.NewSafeHTTPClient(netsec.ClientOptions{Timeout: 30 * time.Second}),
+		Validation: netsec.ValidationOptions{
+			AllowLoopback: true,
+			AllowHTTP:     true,
+		},
 	}
+	p.client = netsec.NewSafeHTTPClient(netsec.ClientOptions{Timeout: 30 * time.Second, DialValidation: &p.Validation})
+	return p
 }
 
 // StartServer starts the whisper.cpp server subprocess. Blocks until ready or context cancelled.
@@ -176,7 +182,7 @@ func (p *LocalProvider) waitForInferenceReady(ctx context.Context) error {
 	warmupCtx, cancel := context.WithTimeout(ctx, whisperWarmupTimeout)
 	defer cancel()
 
-	warmupClient := netsec.NewSafeHTTPClient(netsec.ClientOptions{Timeout: whisperWarmupTimeout})
+	warmupClient := netsec.NewSafeHTTPClient(netsec.ClientOptions{Timeout: whisperWarmupTimeout, DialValidation: &p.Validation})
 	return p.waitForInferenceReadyWithClient(warmupCtx, warmupClient, whisperWarmupRetries, whisperWarmupInterval)
 }
 
@@ -192,7 +198,7 @@ func (p *LocalProvider) waitForInferenceReadyWithClient(ctx context.Context, cli
 		interval = time.Millisecond
 	}
 	if client == nil {
-		client = netsec.NewSafeHTTPClient(netsec.ClientOptions{Timeout: 30 * time.Second})
+		client = netsec.NewSafeHTTPClient(netsec.ClientOptions{Timeout: 30 * time.Second, DialValidation: &p.Validation})
 	}
 
 	endpoint := fmt.Sprintf("%s/v1/audio/transcriptions", p.BaseURL)
@@ -263,7 +269,7 @@ func (p *LocalProvider) probeInferenceReady(ctx context.Context, client *http.Cl
 		return fmt.Errorf("read warmup response: %w", err)
 	}
 	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("warmup status %d: %s", resp.StatusCode, strings.TrimSpace(string(respBody)))
+		return netsec.ProviderStatusError("local warmup", resp.StatusCode, respBody)
 	}
 
 	return nil
@@ -347,7 +353,7 @@ func (p *LocalProvider) Transcribe(ctx context.Context, audioData []byte, opts T
 	req.Header.Set("Content-Type", writer.FormDataContentType())
 
 	start := time.Now()
-	resp, err := transcribeHTTPClient(p.client, requestTimeout).Do(req)
+	resp, err := transcribeHTTPClient(p.client, requestTimeout, &p.Validation).Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("local transcribe: %w", err)
 	}
@@ -360,7 +366,7 @@ func (p *LocalProvider) Transcribe(ctx context.Context, audioData []byte, opts T
 	}
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("local error (%d): %s", resp.StatusCode, string(respBody))
+		return nil, netsec.ProviderStatusError("local", resp.StatusCode, respBody)
 	}
 
 	var result struct {
@@ -398,12 +404,16 @@ func localTranscribeTimeout(audioData []byte) time.Duration {
 	return timeout
 }
 
-func transcribeHTTPClient(base *http.Client, timeout time.Duration) *http.Client {
+func transcribeHTTPClient(base *http.Client, timeout time.Duration, validation *netsec.ValidationOptions) *http.Client {
 	if timeout <= 0 {
 		timeout = localMinTranscribeTimeout
 	}
 	if base == nil {
-		return netsec.NewSafeHTTPClient(netsec.ClientOptions{Timeout: timeout + 5*time.Second})
+		if validation == nil {
+			localValidation := netsec.ValidationOptions{AllowLoopback: true, AllowHTTP: true}
+			validation = &localValidation
+		}
+		return netsec.NewSafeHTTPClient(netsec.ClientOptions{Timeout: timeout + 5*time.Second, DialValidation: validation})
 	}
 	cloned := *base
 	cloned.Timeout = timeout + 5*time.Second

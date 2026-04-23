@@ -35,8 +35,6 @@ A quick orientation — details in [`docs/speechkit-architecture-v2.md`](./docs/
 | `internal/netsec/` | SSRF-safe HTTP client and URL validation (use for every outbound provider call) |
 | `internal/secrets/` | Token store (User > Install > Env hierarchy), DPAPI-wrapped on Windows |
 | `frontend/app/` | Canonical React UI (wired into `scripts/build.*`, CI, release) |
-| `frontend/app-v2/` | **Frozen** — see [`frontend/app-v2/FROZEN.md`](./frontend/app-v2/FROZEN.md) |
-| `android/` | Companion app (separate lifecycle, own CI job) |
 | `scripts/` | Build, release, public-export, runtime-prep scripts |
 | `docs/` | Architecture docs, audit plan, release policy |
 
@@ -86,7 +84,7 @@ The Go CI job (`go-analysis`) runs these — run them locally before pushing:
 
 ```powershell
 gofmt -s -l .                        # should print nothing
-golangci-lint run --timeout=5m ./... # pinned to v1.64.8 in CI
+golangci-lint run --timeout=5m ./... # pinned to v2.11.4 in CI
 staticcheck ./...
 govulncheck ./...
 ```
@@ -169,11 +167,10 @@ Releases cut from the public OSS mirror (`kombifyio/SpeechKit`). The private ups
    node scripts/sync-version.mjs <new-version>   # e.g. 0.20.0
    ```
 
-2. **Regenerate changelog + release notes** from commit history:
+2. **Update changelog + render release notes**:
 
    ```bash
-   node scripts/release/changelog.mjs
-   node scripts/release/render-release-notes.mjs
+   npm run release:notes -- --version v0.20.0 --output release-notes.md
    ```
 
 3. **Commit the version bump** on `main` and get explicit owner approval before pushing.
@@ -188,13 +185,15 @@ Releases cut from the public OSS mirror (`kombifyio/SpeechKit`). The private ups
 5. **CI does the rest**:
    - `.github/workflows/release.yml` triggers on `v*` tags against the OSS mirror.
    - Builds the portable Windows bundle (`.zip`) and NSIS installer (`.exe`).
+   - Signs Windows binaries only when SignPath configuration is complete and free to use.
+   - Otherwise publishes the documented no-cost unsigned Windows release path with `UNSIGNED-WINDOWS-RELEASE.txt`.
    - Generates a CycloneDX SBOM (`SpeechKit.sbom.json`) via `cyclonedx-gomod app`.
    - Attaches SLSA provenance attestations (`attestations: write` + `id-token: write`) over assets + SBOM + `SHA256SUMS.txt`.
    - Uploads assets to the GitHub Release.
 
-6. **Manual override**: the workflow also accepts `workflow_dispatch` with a tag and toggles for portable / installer artifacts — useful for hotfix reruns.
+6. **Manual override**: the workflow also accepts `workflow_dispatch` with a tag and toggles for portable / installer artifacts — useful for hotfix reruns. If private Actions minutes block the publisher workflow, maintainers can run `pwsh ./scripts/public/publish-public.ps1 -Tag v0.20.0` locally to export, push the public tag, and prepare the draft release.
 
-Authenticode signing of the Windows `.exe` is currently deferred pending the code-signing certificate (see [`docs/code-signing-policy.md`](./docs/code-signing-policy.md) and `AUDIT_PLAN.md` §4.1).
+Windows artifact trust requirements are documented in [`docs/code-signing-policy.md`](./docs/code-signing-policy.md).
 
 ## Release Boundary Rules
 
@@ -224,4 +223,3 @@ If you discover a vulnerability, do not open a public issue. Follow [`SECURITY.m
 | WebView2 missing on fresh Windows | Run `scripts/prepare-webview2-runtime.ps1`. |
 | `go test ./internal/vad/...` fails without CGo | Expected — the CGo-backed tests need the ONNX DLL. The `!cgo` stub tests still run. |
 | lefthook pre-commit rejects unrelated code | `golangci-lint` runs `--new-from-rev=HEAD~1`; rebase so only your own changes are diffed. |
-| Frontend build passes locally, fails in CI | Ensure `frontend/app-v2/` is not re-activated — it is frozen. Check [`frontend/app-v2/FROZEN.md`](./frontend/app-v2/FROZEN.md). |

@@ -31,14 +31,14 @@ Purpose:
 - public issues and pull requests
 - public tags and GitHub releases
 - GitHub-hosted CI for OSS release validation
-- SignPath OSS code signing integration
+- Windows artifact trust validation
 
 What must live here:
 
 - sanitized source exported from the private upstream
 - public governance docs and release docs
 - public workflows
-- public tags and signed release artifacts
+- public tags and release artifacts with either verified signing or the documented unsigned trust bundle
 
 ## Source Flow
 
@@ -80,22 +80,23 @@ The private upstream owns the canonical workflow source files for the public OSS
 This is required so that:
 
 - public releases are reproducible from the public source tree
-- SignPath OSS validation can use the public GitHub repository as the trusted build origin
+- release artifact trust can use the public GitHub repository as the build origin
 - GitHub-hosted runners can be used for the release path
 - the public workflow definitions do not silently drift away from the private upstream
 
-## Signing Ownership
+## Windows Artifact Trust Ownership
 
-Windows code signing belongs in the public repository release flow.
+Windows artifact trust belongs in the public repository release flow.
 
 Expected sequence:
 
 1. Build unsigned Windows artifacts in the public repository.
-2. Upload the unsigned artifact with `actions/upload-artifact@v4`.
-3. Submit the GitHub Actions artifact to SignPath from the public workflow.
-4. Download the signed artifact back into the workflow.
-5. Run `scripts/validate-windows-signing.ps1`.
-6. Attach only the signed artifacts to the GitHub release.
+2. If SignPath configuration is complete, submit the GitHub Actions artifact to SignPath.
+3. Download signed output and run `scripts/validate-windows-signing.ps1`.
+4. If SignPath is unavailable, attach `UNSIGNED-WINDOWS-RELEASE.txt`.
+5. Generate `SpeechKit.sbom.json` and `SHA256SUMS.txt`.
+6. Attach build provenance unless `ENABLE_BUILD_ATTESTATIONS=false` is set intentionally.
+7. Attach the verified asset set to the GitHub release.
 
 ## Tagging And Releases
 
@@ -119,5 +120,5 @@ For SpeechKit, the clean target model is:
 - private repo stays private and does not publish its own GitHub Releases on tag pushes
 - public repo becomes the only OSS release surface
 - public repo owns GitHub-hosted release workflows
-- public repo owns SignPath OSS integration
-- signed Windows installer and portable bundle are published only from the public repo
+- public repo owns Windows asset signing when a free signing path exists
+- unsigned Windows installer and portable bundle may be published only from the public repo with the documented trust bundle

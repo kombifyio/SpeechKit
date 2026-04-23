@@ -46,13 +46,14 @@ func NewGoogle(opts GoogleOpts) *Google {
 	if voice == "" {
 		voice = googleDefaultVoice
 	}
-	return &Google{
+	p := &Google{
 		apiKey:  opts.APIKey,
 		voice:   voice,
 		BaseURL: googleTTSBaseURL,
 		// Validation zero-value = strict: public https only.
-		client: netsec.NewSafeHTTPClient(netsec.ClientOptions{Timeout: 30 * time.Second}),
 	}
+	p.client = netsec.NewSafeHTTPClient(netsec.ClientOptions{Timeout: 30 * time.Second, DialValidation: &p.Validation})
+	return p
 }
 
 type googleTTSRequest struct {
@@ -205,7 +206,7 @@ func (g *Google) Synthesize(ctx context.Context, text string, opts SynthesizeOpt
 
 	if resp.StatusCode != http.StatusOK {
 		errBody, _ := io.ReadAll(io.LimitReader(resp.Body, 1024))
-		return nil, fmt.Errorf("google tts: HTTP %d: %s", resp.StatusCode, string(errBody))
+		return nil, netsec.ProviderStatusError("google tts", resp.StatusCode, errBody)
 	}
 
 	var ttsResp googleTTSResponse

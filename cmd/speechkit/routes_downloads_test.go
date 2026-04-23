@@ -328,6 +328,12 @@ func TestSelectDownloadedLlamaCppAssistModelUpdatesLocalLLMConfig(t *testing.T) 
 	if got := cfg.LocalLLM.AssistModel; got != "gemma-3-4b-it-Q4_K_M.gguf" {
 		t.Fatalf("local LLM assist model = %q, want downloaded GGUF filename", got)
 	}
+	if got := cfg.ModelSelection.Assist.PrimaryProfileID; got != "assist.builtin.gemma4-e4b" {
+		t.Fatalf("assist primary profile = %q, want %q", got, "assist.builtin.gemma4-e4b")
+	}
+	if got := cfg.ModelSelection.Assist.FallbackProfileID; got != "" {
+		t.Fatalf("assist fallback profile = %q, want empty", got)
+	}
 	if got := cfg.Providers.Ollama.AssistModel; got != "" {
 		t.Fatalf("ollama assist model = %q, want cleared", got)
 	}
@@ -336,6 +342,62 @@ func TestSelectDownloadedLlamaCppAssistModelUpdatesLocalLLMConfig(t *testing.T) 
 	}
 	if state.genkitRT == nil {
 		t.Fatal("expected AI runtime to be reloaded")
+	}
+}
+
+func TestSelectDownloadedLlamaCppVoiceModelUpdatesLocalPipelineConfig(t *testing.T) {
+	modelsDir := t.TempDir()
+	modelFile := filepath.Join(modelsDir, "gemma-3-4b-it-Q4_K_M.gguf")
+	if err := os.WriteFile(modelFile, []byte("gguf"), 0o600); err != nil {
+		t.Fatalf("write model file: %v", err)
+	}
+
+	cfg := defaultTestConfig()
+	cfg.General.ModelDownloadDir = modelsDir
+	cfg.LocalLLM.Enabled = false
+	cfg.LocalLLM.Model = "gemma4:e4b"
+	cfg.LocalLLM.AgentModel = "gemma4:e4b"
+	cfg.ModelSelection = config.BuiltInPrimaryModelSelectionDefaults()
+	cfgPath := filepath.Join(t.TempDir(), "config.toml")
+	state := &appState{
+		activeProfiles: map[string]string{},
+		sttRouter:      &router.Router{},
+	}
+	handler := assetHandler(cfg, cfgPath, state, state.sttRouter, nil, &config.InstallState{Mode: config.InstallModeLocal})
+
+	form := url.Values{"model_id": {"llamacpp.gemma-3-4b-it-q4-k-m-voice"}}
+	req := httptest.NewRequest(http.MethodPost, "/models/downloads/select", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	rec := httptest.NewRecorder()
+
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, body=%s", rec.Code, rec.Body.String())
+	}
+	if !cfg.LocalLLM.Enabled {
+		t.Fatal("expected built-in local LLM to be enabled")
+	}
+	if got := cfg.LocalLLM.ModelPath; got != modelFile {
+		t.Fatalf("local LLM model path = %q, want %q", got, modelFile)
+	}
+	if got := cfg.LocalLLM.AgentModel; got != "gemma-3-4b-it-Q4_K_M.gguf" {
+		t.Fatalf("local LLM agent model = %q, want downloaded GGUF filename", got)
+	}
+	if got := cfg.VoiceAgent.Model; got != "speechkit-local-voice-pipeline" {
+		t.Fatalf("voice agent model = %q, want stable local pipeline model", got)
+	}
+	if !cfg.VoiceAgent.PipelineFallback {
+		t.Fatal("expected Voice Agent pipeline fallback to be enabled")
+	}
+	if got := cfg.ModelSelection.VoiceAgent.PrimaryProfileID; got != "realtime.builtin.pipeline" {
+		t.Fatalf("voice agent primary profile = %q, want %q", got, "realtime.builtin.pipeline")
+	}
+	if got := cfg.ModelSelection.VoiceAgent.FallbackProfileID; got != "" {
+		t.Fatalf("voice agent fallback profile = %q, want empty", got)
+	}
+	if got := state.activeProfiles["realtime_voice"]; got != "realtime.builtin.pipeline" {
+		t.Fatalf("active realtime voice profile = %q, want %q", got, "realtime.builtin.pipeline")
 	}
 }
 

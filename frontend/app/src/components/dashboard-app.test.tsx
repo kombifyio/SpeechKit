@@ -31,6 +31,7 @@ const {
   windowIsMaximisedMock,
   fetchHistoryMock,
   fetchQuickNotesMock,
+  fetchAPIV1VoiceSessionsMock,
   fetchLogsMock,
   fetchDashboardStatsMock,
   fetchDownloadCatalogMock,
@@ -50,6 +51,7 @@ const {
   windowIsMaximisedMock: vi.fn<() => Promise<boolean>>(),
   fetchHistoryMock: vi.fn<() => Promise<TranscriptionRecord[]>>(),
   fetchQuickNotesMock: vi.fn<() => Promise<QuickNote[]>>(),
+  fetchAPIV1VoiceSessionsMock: vi.fn(),
   fetchLogsMock: vi.fn<() => Promise<LogEntry[]>>(),
   fetchDashboardStatsMock:
     vi.fn<() => Promise<import("@/lib/speechkit").DashboardStats>>(),
@@ -70,6 +72,7 @@ vi.mock("@/lib/speechkit", async () => {
     ...actual,
     fetchHistory: fetchHistoryMock,
     fetchQuickNotes: fetchQuickNotesMock,
+    fetchAPIV1VoiceSessions: fetchAPIV1VoiceSessionsMock,
     fetchLogs: fetchLogsMock,
     fetchDashboardStats: fetchDashboardStatsMock,
     fetchDownloadCatalog: fetchDownloadCatalogMock,
@@ -176,6 +179,7 @@ describe("DashboardApp", () => {
 
     fetchHistoryMock.mockReset();
     fetchQuickNotesMock.mockReset();
+    fetchAPIV1VoiceSessionsMock.mockReset();
     fetchLogsMock.mockReset();
     fetchDashboardStatsMock.mockReset();
     fetchDownloadCatalogMock.mockReset();
@@ -188,6 +192,7 @@ describe("DashboardApp", () => {
     openQuickNoteEditorMock.mockReset();
     fetchHistoryMock.mockResolvedValue([]);
     fetchQuickNotesMock.mockResolvedValue([]);
+    fetchAPIV1VoiceSessionsMock.mockResolvedValue([]);
     fetchLogsMock.mockResolvedValue([]);
     fetchDashboardStatsMock.mockResolvedValue({
       transcriptions: 12,
@@ -370,6 +375,46 @@ describe("DashboardApp", () => {
     );
     expect(quickNoteRows[0]).toHaveTextContent(/pinned/i);
     expect(screen.queryByText(/show all notes/i)).not.toBeInTheDocument();
+  });
+
+  it("shows saved voice agent session summaries in the library", async () => {
+    fetchAPIV1VoiceSessionsMock.mockResolvedValue([
+      {
+        id: 7,
+        startedAt: "2026-03-26T09:00:00",
+        endedAt: "2026-03-26T09:05:00",
+        createdAt: "2026-03-26T09:05:00",
+        language: "de",
+        runtimeKind: "pipeline_fallback",
+        turns: [
+          { role: "user", text: "brainstorm", createdAt: "2026-03-26T09:00:00" },
+          {
+            role: "assistant",
+            text: "next steps",
+            createdAt: "2026-03-26T09:01:00",
+          },
+        ],
+        summary: {
+          title: "Launch follow-up",
+          summary: "Discussed the next launch improvements.",
+          decisions: ["Ship the summary panel"],
+          nextSteps: ["Run a live smoke"],
+          openQuestions: ["Which endpoint is live?"],
+        },
+      },
+    ]);
+
+    render(<DashboardApp />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Library" }));
+
+    const rows = await screen.findAllByTestId("voice-session-row");
+    expect(rows[0]).toHaveTextContent("Launch follow-up");
+    expect(rows[0]).toHaveTextContent("Pipeline fallback");
+    expect(rows[0]).toHaveTextContent("Discussed the next launch improvements.");
+    expect(rows[0]).toHaveTextContent("Ship the summary panel");
+    expect(rows[0]).toHaveTextContent("Run a live smoke");
+    expect(rows[0]).toHaveTextContent("Which endpoint is live?");
   });
 
   it("shows audio actions for records with stored audio", async () => {
@@ -749,12 +794,22 @@ describe("DashboardApp", () => {
 
     render(<DashboardApp />);
 
+    expect(
+      await screen.findByText("Exact speech-to-text into the focused app"),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText("One-shot rewrites, summaries, and drafts"),
+    ).toBeInTheDocument();
+
     fireEvent.click(
-      await screen.findByRole("button", { name: /get started/i }),
+      screen.getByRole("button", { name: /get started/i }),
     );
     fireEvent.click(await screen.findByRole("button", { name: /^continue$/i }));
 
     expect(await screen.findByText("Win+Alt")).toBeInTheDocument();
+    expect(
+      screen.getByText("Open a text field, speak one sentence, then check the output"),
+    ).toBeInTheDocument();
     expect(screen.getByText("Ctrl+Win")).toBeInTheDocument();
     expect(screen.getByText("Ctrl+Shift")).toBeInTheDocument();
     expect(screen.queryByText("Ctrl+Shift+D")).not.toBeInTheDocument();

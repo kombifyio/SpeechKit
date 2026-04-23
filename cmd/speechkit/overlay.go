@@ -23,8 +23,10 @@ const (
 
 	pillBubbleW = 80
 	pillBubbleH = 36
-	dotBubbleW  = 20
-	dotBubbleH  = 20
+	// Keep aligned with frontend circle shell (`h-[18px] w-[18px]`) so
+	// edge anchoring uses the true visible dot footprint.
+	dotBubbleW = 18
+	dotBubbleH = 18
 
 	pillAnchorWidth  = 380
 	pillAnchorHeight = 128
@@ -35,6 +37,8 @@ const (
 
 	assistBubbleWidth  = 450
 	assistBubbleHeight = 120
+	assistPanelWidth   = 570
+	assistPanelHeight  = 360
 
 	prompterWidth           = 390
 	prompterHeight          = 500

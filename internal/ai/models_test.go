@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -224,9 +225,9 @@ func TestCallOpenAICompatible_ErrorStatus(t *testing.T) {
 		status int
 		body   string
 	}{
-		{"unauthorized", 401, `{"error":"invalid api key"}`},
-		{"rate limit", 429, `{"error":"rate limit"}`},
-		{"server error", 500, `{"error":"internal"}`},
+		{"unauthorized", 401, `{"error":"invalid api key sk-secret-body"}`},
+		{"rate limit", 429, `{"error":"rate limit for prompt secret-prompt"}`},
+		{"server error", 500, `{"error":"internal trace secret-trace"}`},
 	}
 
 	for _, tt := range tests {
@@ -246,6 +247,9 @@ func TestCallOpenAICompatible_ErrorStatus(t *testing.T) {
 			_, err := callOpenAICompatible(context.Background(), testClient(), server.URL, "k", "m", mr)
 			if err == nil {
 				t.Fatal("expected error")
+			}
+			if strings.Contains(err.Error(), "secret-") || strings.Contains(err.Error(), tt.body) {
+				t.Fatalf("provider response body leaked in error: %v", err)
 			}
 		})
 	}

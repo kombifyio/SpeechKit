@@ -37,13 +37,14 @@ type HuggingFaceProvider struct {
 }
 
 func NewHuggingFaceProvider(model, token string) *HuggingFaceProvider {
-	return &HuggingFaceProvider{
+	p := &HuggingFaceProvider{
 		Model:   model,
 		Token:   token,
 		BaseURL: hfBaseURL,
 		// Validation zero-value = strict: public https only.
-		client: netsec.NewSafeHTTPClient(netsec.ClientOptions{Timeout: 30 * time.Second}),
 	}
+	p.client = netsec.NewSafeHTTPClient(netsec.ClientOptions{Timeout: 30 * time.Second, DialValidation: &p.Validation})
+	return p
 }
 
 // hfEndpoint builds a validated HuggingFace inference URL for the given model.
@@ -90,18 +91,18 @@ func (p *HuggingFaceProvider) Transcribe(ctx context.Context, audio []byte, opts
 
 	switch {
 	case resp.StatusCode == 503:
-		return nil, fmt.Errorf("hf model loading (503): %s", string(respBody))
+		return nil, netsec.ProviderStatusError("hf", resp.StatusCode, respBody)
 	case resp.StatusCode == 429:
-		return nil, fmt.Errorf("hf rate limit (429): %s", string(respBody))
+		return nil, netsec.ProviderStatusError("hf", resp.StatusCode, respBody)
 	case resp.StatusCode != http.StatusOK:
-		return nil, fmt.Errorf("hf error (%d): %s", resp.StatusCode, string(respBody))
+		return nil, netsec.ProviderStatusError("hf", resp.StatusCode, respBody)
 	}
 
 	var hfResp struct {
 		Text string `json:"text"`
 	}
 	if err := json.Unmarshal(respBody, &hfResp); err != nil {
-		return nil, fmt.Errorf("parse response: %w (body: %s)", err, string(respBody))
+		return nil, fmt.Errorf("parse response: %w", err)
 	}
 
 	lang := opts.Language
@@ -145,7 +146,7 @@ func (p *HuggingFaceProvider) Health(ctx context.Context) error {
 		return fmt.Errorf("hf model loading")
 	}
 	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("hf health check failed: status %d: %s", resp.StatusCode, string(body))
+		return netsec.ProviderStatusError("hf health", resp.StatusCode, body)
 	}
 	return nil
 }

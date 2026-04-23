@@ -2,9 +2,13 @@ package netsec
 
 import (
 	"errors"
+	"io"
+	"net"
 	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestValidateProviderURL(t *testing.T) {
@@ -99,6 +103,39 @@ func TestBuildEndpoint(t *testing.T) {
 	}
 }
 
+func TestValidateResolvedIP(t *testing.T) {
+	cases := []struct {
+		name    string
+		ip      string
+		opts    ValidationOptions
+		wantErr error
+	}{
+		{"public IPv4 ok", "8.8.8.8", ValidationOptions{}, nil},
+		{"public IPv6 ok", "2001:4860:4860::8888", ValidationOptions{}, nil},
+		{"loopback blocked", "127.0.0.1", ValidationOptions{}, ErrLoopbackBlocked},
+		{"loopback allowed", "127.0.0.1", ValidationOptions{AllowLoopback: true}, nil},
+		{"private blocked", "192.168.1.10", ValidationOptions{}, ErrPrivateBlocked},
+		{"private allowed", "192.168.1.10", ValidationOptions{AllowPrivate: true}, nil},
+		{"link local blocked", "169.254.169.254", ValidationOptions{}, ErrPrivateBlocked},
+		{"invalid host", "", ValidationOptions{}, ErrInvalidHost},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			err := ValidateResolvedIP(net.ParseIP(tc.ip), tc.opts)
+			if tc.wantErr == nil {
+				if err != nil {
+					t.Fatalf("expected nil error, got %v", err)
+				}
+				return
+			}
+			if !errors.Is(err, tc.wantErr) {
+				t.Fatalf("expected error %v, got %v", tc.wantErr, err)
+			}
+		})
+	}
+}
+
 func TestRedactHeaders(t *testing.T) {
 	h := http.Header{}
 	h.Set("Authorization", "Bearer sk-secret-key-xxxx")
@@ -157,4 +194,84 @@ func TestNewSafeHTTPClient(t *testing.T) {
 	if rt.Base == nil {
 		t.Fatal("base transport must not be nil")
 	}
+}
+
+func TestNewSafeHTTPClientDialValidationBlocksResolvedLoopback(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Fatal("strict dial validation should block before the request reaches the server")
+	}))
+	defer server.Close()
+
+	validation := ValidationOptions{}
+	client := NewSafeHTTPClient(ClientOptions{Timeout: time.Second, DialValidation: &validation})
+
+	resp, err := client.Get(server.URL)
+	if resp != nil {
+		_ = resp.Body.Close()
+	}
+	if err == nil {
+		t.Fatal("expected loopback dial to be blocked")
+	}
+	if !errors.Is(err, ErrLoopbackBlocked) {
+		t.Fatalf("expected ErrLoopbackBlocked, got %v", err)
+	}
+}
+
+func TestNewSafeHTTPClientDialValidationAllowsLoopback(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer server.Close()
+
+	validation := ValidationOptions{AllowLoopback: true, AllowHTTP: true}
+	client := NewSafeHTTPClient(ClientOptions{Timeout: time.Second, DialValidation: &validation})
+
+	resp, err := client.Get(server.URL)
+	if err != nil {
+		t.Fatalf("unexpected request error: %v", err)
+	}
+	defer resp.Body.Close() //nolint:errcheck // test cleanup
+	if resp.StatusCode != http.StatusNoContent {
+		t.Fatalf("status = %d, want %d", resp.StatusCode, http.StatusNoContent)
+	}
+}
+
+func TestRedactingRoundTripperStoresRedactedHeaders(t *testing.T) {
+	rt := &RedactingRoundTripper{Base: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		redacted, ok := req.Context().Value(RedactedHeadersKey).(http.Header)
+		if !ok {
+			t.Fatal("redacted headers missing from request context")
+		}
+		if got := redacted.Get("Authorization"); got != "[REDACTED]" {
+			t.Fatalf("Authorization = %q, want redacted", got)
+		}
+		if got := redacted.Get("Content-Type"); got != "application/json" {
+			t.Fatalf("Content-Type = %q, want application/json", got)
+		}
+		if got := req.Header.Get("Authorization"); got != "Bearer real-token" {
+			t.Fatalf("outgoing Authorization was changed: %q", got)
+		}
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Header:     make(http.Header),
+			Body:       io.NopCloser(strings.NewReader("")),
+			Request:    req,
+		}, nil
+	})}
+
+	req := httptest.NewRequest(http.MethodPost, "https://example.com", http.NoBody)
+	req.Header.Set("Authorization", "Bearer real-token")
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := rt.RoundTrip(req)
+	if err != nil {
+		t.Fatalf("RoundTrip: %v", err)
+	}
+	_ = resp.Body.Close()
+}
+
+type roundTripFunc func(*http.Request) (*http.Response, error)
+
+func (f roundTripFunc) RoundTrip(req *http.Request) (*http.Response, error) {
+	return f(req)
 }

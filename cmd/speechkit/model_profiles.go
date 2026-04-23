@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"strings"
 
 	"github.com/firebase/genkit/go/core"
 	appai "github.com/kombifyio/SpeechKit/internal/ai"
@@ -112,6 +113,7 @@ func applySTTProfile(ctx context.Context, cfgPath string, cfg *config.Config, st
 		return fmt.Errorf("unsupported execution mode for STT")
 	}
 
+	setModeSelectionForProfile(cfg, profile)
 	if err := config.Save(cfgPath, cfg); err != nil {
 		return err
 	}
@@ -178,6 +180,7 @@ func applyAssistProfile(ctx context.Context, cfgPath string, cfg *config.Config,
 	if err := configureLLMProfile(cfg, profile, models.ModalityAssist); err != nil {
 		return err
 	}
+	setModeSelectionForProfile(cfg, profile)
 	if err := config.Save(cfgPath, cfg); err != nil {
 		return err
 	}
@@ -303,6 +306,8 @@ func rebuildAIRuntime(ctx context.Context, state *appState, cfg *config.Config) 
 		return nil
 	}
 
+	syncConfiguredLocalLLMRuntime(ctx, cfg, state)
+
 	genkitRT, err := appai.Init(ctx, buildGenkitConfig(cfg))
 	if err != nil {
 		return fmt.Errorf("reload genkit: %w", err)
@@ -374,6 +379,7 @@ func applyRealtimeVoiceProfile(ctx context.Context, cfgPath string, cfg *config.
 		cfg.VoiceAgent.Model = profile.ModelID
 		cfg.VoiceAgent.PipelineFallback = true
 	case models.ExecutionModeLocal:
+		modelID := selectedLocalBuiltInLLMModelID(cfg, profile.ModelID)
 		cfg.LocalLLM.Enabled = true
 		if cfg.LocalLLM.BaseURL == "" {
 			cfg.LocalLLM.BaseURL = config.DefaultLocalLLMBaseURL
@@ -381,13 +387,17 @@ func applyRealtimeVoiceProfile(ctx context.Context, cfgPath string, cfg *config.
 		if cfg.LocalLLM.Port == 0 {
 			cfg.LocalLLM.Port = 8082
 		}
-		cfg.LocalLLM.AgentModel = profile.ModelID
+		if cfg.LocalLLM.Model == "" || cfg.LocalLLM.Model == profile.ModelID {
+			cfg.LocalLLM.Model = modelID
+		}
+		cfg.LocalLLM.AgentModel = modelID
 		cfg.VoiceAgent.Enabled = true
 		cfg.VoiceAgent.Model = profile.ModelID
 		cfg.VoiceAgent.PipelineFallback = true
 	default:
 		return fmt.Errorf("unsupported execution mode for realtime voice")
 	}
+	setModeSelectionForProfile(cfg, profile)
 	if err := config.Save(cfgPath, cfg); err != nil {
 		return fmt.Errorf("save config: %w", err)
 	}
@@ -400,4 +410,21 @@ func applyRealtimeVoiceProfile(ctx context.Context, cfgPath string, cfg *config.
 		state.mu.Unlock()
 	}
 	return nil
+}
+
+func selectedLocalBuiltInLLMModelID(cfg *config.Config, fallback string) string {
+	if cfg != nil {
+		for _, candidate := range []string{
+			cfg.LocalLLM.AgentModel,
+			cfg.LocalLLM.AssistModel,
+			cfg.LocalLLM.UtilityModel,
+			cfg.LocalLLM.Model,
+		} {
+			candidate = strings.TrimSpace(candidate)
+			if candidate != "" && candidate != fallback && !strings.Contains(candidate, ":") {
+				return candidate
+			}
+		}
+	}
+	return strings.TrimSpace(fallback)
 }

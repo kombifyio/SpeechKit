@@ -1060,7 +1060,7 @@ func TestDesktopInputControllerVoiceAgentPushToTalkEndsRealtimeSessionOnKeyUp(t 
 	if h := mockAudio.getHandler(); h != nil {
 		t.Fatal("expected microphone handler to be detached after push-to-talk key up")
 	}
-	waitForCondition(t, 2*time.Second, func() bool {
+	waitForCondition(t, voiceAgentPushToTalkReleaseMaxWait+time.Second, func() bool {
 		return session.CurrentState() == voiceagent.StateInactive && mockProvider.isClosed()
 	})
 }

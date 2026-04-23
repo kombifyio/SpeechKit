@@ -29,6 +29,8 @@ const (
 	releaseAPIURL       = "https://api.github.com/repos/kombifyio/SpeechKit/releases/latest"
 )
 
+var releaseAPIURLValidation = netsec.ValidationOptions{}
+
 type latestReleaseInfo struct {
 	Version      string
 	ReleaseURL   string
@@ -67,7 +69,7 @@ func refreshLatestRelease() {
 	}
 	updateMu.Unlock()
 
-	client := netsec.NewSafeHTTPClient(netsec.ClientOptions{Timeout: updateCheckTimeout})
+	client := netsec.NewSafeHTTPClient(netsec.ClientOptions{Timeout: updateCheckTimeout, DialValidation: &releaseAPIURLValidation})
 	req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, releaseAPIURL, http.NoBody)
 	if err != nil {
 		return

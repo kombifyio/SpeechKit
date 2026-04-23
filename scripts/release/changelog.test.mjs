@@ -64,6 +64,21 @@ test('renderReleaseNotes returns the selected release body plus compare link', (
   assert.doesNotMatch(notes, /^## \[0\.18\.0\]/m)
 })
 
+test('renderReleaseNotes prefers an explicit compare URL', () => {
+  const notes = renderReleaseNotes({
+    markdown: sampleChangelog,
+    version: 'v0.18.0',
+    repoUrl: 'https://github.com/kombifyio/SpeechKit',
+    compareUrl: 'https://github.com/kombifyio/SpeechKit/compare/v0.16.0...v0.18.0',
+  })
+
+  assert.match(
+    notes,
+    /\*\*Full Changelog\*\*: https:\/\/github\.com\/kombifyio\/SpeechKit\/compare\/v0\.16\.0\.\.\.v0\.18\.0/,
+  )
+  assert.doesNotMatch(notes, /compare\/v0\.17\.0\.\.\.v0\.18\.0/)
+})
+
 test('extractLatestReleaseNotes prefers Highlights bullets and limits output', () => {
   const latest = extractLatestReleaseNotes(sampleChangelog)
 

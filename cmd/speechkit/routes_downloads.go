@@ -240,6 +240,9 @@ func selectDownloadedLocalModel(ctx context.Context, cfgPath string, cfg *config
 	cfg.Routing.Strategy = "local-only"
 	cfg.Local.Model = filename
 	cfg.Local.ModelPath = modelPath
+	if profile, ok := downloadProfileForItem(item); ok {
+		setModeSelectionForProfile(cfg, profile)
+	}
 	if cfgPath != "" {
 		if err := config.Save(cfgPath, cfg); err != nil {
 			return err
@@ -286,6 +289,7 @@ func selectDownloadedLocalLLMModel(ctx context.Context, cfgPath string, cfg *con
 	}
 	cfg.LocalLLM.Model = filename
 	cfg.LocalLLM.ModelPath = modelPath
+	setModeSelectionForProfile(cfg, profile)
 
 	switch profile.Modality {
 	case models.ModalityAssist:
@@ -295,7 +299,7 @@ func selectDownloadedLocalLLMModel(ctx context.Context, cfgPath string, cfg *con
 	case models.ModalityRealtimeVoice:
 		cfg.LocalLLM.AgentModel = filename
 		cfg.VoiceAgent.Enabled = true
-		cfg.VoiceAgent.Model = filename
+		cfg.VoiceAgent.Model = profile.ModelID
 		cfg.VoiceAgent.PipelineFallback = true
 	default:
 	}

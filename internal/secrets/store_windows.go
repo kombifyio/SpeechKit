@@ -38,10 +38,7 @@ type fileStore struct {
 }
 
 func (s *fileStore) Load(name string) (string, bool, error) {
-	path, err := secretFilePath(name)
-	if err != nil {
-		return "", false, err
-	}
+	path := secretFilePath(name)
 	data, err := os.ReadFile(path) //nolint:gosec // path is app-controlled secrets dir, not user input
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -57,10 +54,7 @@ func (s *fileStore) Load(name string) (string, bool, error) {
 }
 
 func (s *fileStore) Store(name, value string) error {
-	path, err := secretFilePath(name)
-	if err != nil {
-		return err
-	}
+	path := secretFilePath(name)
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return err
 	}
@@ -72,18 +66,15 @@ func (s *fileStore) Store(name, value string) error {
 }
 
 func (s *fileStore) Delete(name string) error {
-	path, err := secretFilePath(name)
-	if err != nil {
-		return err
-	}
+	path := secretFilePath(name)
 	if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
 		return err
 	}
 	return nil
 }
 
-func secretFilePath(name string) (string, error) {
-	return filepath.Join(runtimepath.SecretsDir(), name+".bin"), nil
+func secretFilePath(name string) string {
+	return filepath.Join(runtimepath.SecretsDir(), name+".bin")
 }
 
 func protectWithDPAPI(data []byte) ([]byte, error) {

@@ -203,7 +203,7 @@ func TestOpenAICompat_Transcribe_DefaultLanguageInResult(t *testing.T) {
 func TestOpenAICompat_Transcribe_ServerError(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(500)
-		w.Write([]byte("internal error"))
+		w.Write([]byte("internal error secret-body"))
 	}))
 	defer server.Close()
 
@@ -218,6 +218,9 @@ func TestOpenAICompat_Transcribe_ServerError(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "myapi") {
 		t.Errorf("expected provider name in error: %v", err)
+	}
+	if strings.Contains(err.Error(), "secret-body") || strings.Contains(err.Error(), "internal error") {
+		t.Fatalf("provider response body leaked in error: %v", err)
 	}
 }
 

@@ -33,6 +33,7 @@ const (
 type Decision struct {
 	Route   Route
 	Intent  shortcuts.Intent
+	Utility UtilityDefinition
 	Payload string
 	Locale  string
 }

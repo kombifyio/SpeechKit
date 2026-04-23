@@ -26,6 +26,12 @@ func friendlyConversationError(mode string, err error) string {
 	if strings.Contains(lower, "api key") || strings.Contains(lower, "token") || strings.Contains(lower, "credential") {
 		return "A provider credential is missing or invalid. Check Settings > Provider."
 	}
+	if isLocalLLMConnectionFailure(lower) {
+		if mode == modeVoiceAgent {
+			return "The local Voice Agent model runtime is not ready. Open Settings > Voice Agent Mode and download a local model or choose a cloud provider."
+		}
+		return "The local Assist model runtime is not ready. Open Settings > Assist Mode and download a local model or choose a cloud provider."
+	}
 	if strings.Contains(lower, "model not supported by provider") || strings.Contains(lower, "unsupported model") {
 		return unsupportedModelConversationError(mode, message, lower)
 	}
@@ -33,6 +39,12 @@ func friendlyConversationError(mode string, err error) string {
 		return "The selected model is unavailable. Check the model selection in Settings."
 	}
 	return "Conversation failed. Check Settings and try again."
+}
+
+func isLocalLLMConnectionFailure(lower string) bool {
+	return strings.Contains(lower, "127.0.0.1:8082") ||
+		strings.Contains(lower, "localhost:8082") ||
+		(strings.Contains(lower, "connectex") && strings.Contains(lower, "actively refused"))
 }
 
 func unsupportedModelConversationError(mode, message, lower string) string {

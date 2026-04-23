@@ -51,6 +51,24 @@ func modeSelectionForMode(cfg *config.Config, mode string) config.ModeModelSelec
 	}
 }
 
+func setModeSelectionForProfile(cfg *config.Config, profile models.Profile) {
+	if cfg == nil {
+		return
+	}
+	selection := normalizeModeSelection(config.ModeModelSelection{
+		PrimaryProfileID: profile.ID,
+	})
+	switch profile.Modality {
+	case models.ModalitySTT:
+		cfg.ModelSelection.Dictate = selection
+	case models.ModalityAssist:
+		cfg.ModelSelection.Assist = selection
+	case models.ModalityRealtimeVoice:
+		cfg.ModelSelection.VoiceAgent = selection
+	default:
+	}
+}
+
 func configuredModeModelSelections(cfg *config.Config, _ models.Catalog) map[string]modeModelSelectionSnapshot {
 	return map[string]modeModelSelectionSnapshot{
 		modeDictate: {
@@ -197,6 +215,9 @@ func selectedModelSpecsForMode(cfg *config.Config, catalog models.Catalog, mode 
 		if !ok {
 			continue
 		}
+		if !localBuiltInLLMProfileReady(cfg, profile) {
+			continue
+		}
 		spec, ok := orderedSelectionFromProfile(cfg, profile)
 		if !ok {
 			continue
@@ -263,6 +284,7 @@ func applySelectedVoiceAgentProfile(cfg *config.Config, catalog models.Catalog) 
 		cfg.Providers.Ollama.AgentModel = primary.ModelID
 		cfg.VoiceAgent.PipelineFallback = true
 	case models.ExecutionModeLocal:
+		modelID := selectedLocalBuiltInLLMModelID(cfg, primary.ModelID)
 		cfg.LocalLLM.Enabled = true
 		if cfg.LocalLLM.BaseURL == "" {
 			cfg.LocalLLM.BaseURL = config.DefaultLocalLLMBaseURL
@@ -270,7 +292,10 @@ func applySelectedVoiceAgentProfile(cfg *config.Config, catalog models.Catalog) 
 		if cfg.LocalLLM.Port == 0 {
 			cfg.LocalLLM.Port = 8082
 		}
-		cfg.LocalLLM.AgentModel = primary.ModelID
+		if cfg.LocalLLM.Model == "" || cfg.LocalLLM.Model == primary.ModelID {
+			cfg.LocalLLM.Model = modelID
+		}
+		cfg.LocalLLM.AgentModel = modelID
 		cfg.VoiceAgent.PipelineFallback = true
 	default:
 		cfg.VoiceAgent.PipelineFallback = fallbackOK

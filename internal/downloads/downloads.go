@@ -1,5 +1,5 @@
 // Package downloads manages model downloads for SpeechKit â€” HTTP file
-// downloads (whisper models) and Ollama model pulls with progress tracking.
+// downloads and Ollama model pulls with progress tracking.
 package downloads
 
 import (
@@ -21,16 +21,16 @@ import (
 	"github.com/kombifyio/SpeechKit/internal/netsec"
 )
 
-// downloadClient fetches model files with a hardened TLS + redacting
-// transport and a long-running timeout for large downloads.
-var downloadClient = netsec.NewSafeHTTPClient(netsec.ClientOptions{Timeout: 30 * time.Minute})
-
-// ollamaPullClient is used for streaming Ollama pulls (local loopback).
-var ollamaPullClient = netsec.NewSafeHTTPClient(netsec.ClientOptions{Timeout: 30 * time.Minute})
-
 // DownloadURLValidation controls which URLs httpDownload accepts. Production
 // default is strict (public https only). Tests relax this to allow loopback.
 var DownloadURLValidation = netsec.ValidationOptions{}
+
+// downloadClient fetches model files with a hardened TLS + redacting
+// transport and a long-running timeout for large downloads.
+var downloadClient = netsec.NewSafeHTTPClient(netsec.ClientOptions{Timeout: 30 * time.Minute, DialValidation: &DownloadURLValidation})
+
+// ollamaPullClient is used for streaming Ollama pulls (local loopback).
+var ollamaPullClient = netsec.NewSafeHTTPClient(netsec.ClientOptions{Timeout: 30 * time.Minute, DialValidation: &ollamaValidation})
 
 // Kind identifies the download mechanism.
 type Kind string

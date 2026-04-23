@@ -52,14 +52,15 @@ func NewOpenAI(opts OpenAIOpts) *OpenAI {
 	if voice == "" {
 		voice = openAIDefaultVoice
 	}
-	return &OpenAI{
+	p := &OpenAI{
 		apiKey:  opts.APIKey,
 		model:   model,
 		voice:   voice,
 		BaseURL: openAITTSBaseURL,
 		// Validation zero-value = strict: public https only.
-		client: netsec.NewSafeHTTPClient(netsec.ClientOptions{Timeout: 30 * time.Second}),
 	}
+	p.client = netsec.NewSafeHTTPClient(netsec.ClientOptions{Timeout: 30 * time.Second, DialValidation: &p.Validation})
+	return p
 }
 
 type openAIRequest struct {
@@ -148,7 +149,7 @@ func (o *OpenAI) Synthesize(ctx context.Context, text string, opts SynthesizeOpt
 
 	if resp.StatusCode != http.StatusOK {
 		errBody, _ := io.ReadAll(io.LimitReader(resp.Body, 1024))
-		return nil, fmt.Errorf("openai tts: HTTP %d: %s", resp.StatusCode, string(errBody))
+		return nil, netsec.ProviderStatusError("openai tts", resp.StatusCode, errBody)
 	}
 
 	const maxAudioSize = 50 * 1024 * 1024 // 50 MB

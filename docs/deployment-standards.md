@@ -27,7 +27,7 @@ Current repo contract:
    - framework/source
    - Windows portable client
    - Windows installer
-   - Android artifacts
+   - Android is outside the current public OSS release surface
 
 This keeps SpeechKit aligned with the kombify rule from `kombify Core/internal-docs`:
 
@@ -47,7 +47,8 @@ The boundary is:
 - Managed kombify integration may rely on environment variables or Doppler at build and runtime
 - Public OSS releases must not ship private repo assumptions, private project names, or managed secrets
 - Public OSS releases must document required variables explicitly, not embed them
-- Public OSS Windows releases are built and signed from the public repository release flow
+- Public OSS Windows releases are built from the public repository release flow
+- Windows artifacts are signed when a trusted free signing provider is configured; otherwise they use the documented unsigned no-cost path with checksums, SBOM, provenance when enabled, and an explicit unsigned notice
 
 ## Canonical Build Rules
 
@@ -58,18 +59,19 @@ The boundary is:
 - The default build path produces both outputs from the same source tree
 - `scripts/build.ps1 -SkipInstaller` is allowed for portable-only release flows, but it must still build the same staged Windows bundle
 
-## Public Windows Signing
+## Public Windows Artifact Trust
 
 - `kombifyio/SpeechKit` is the public Windows release origin
-- public Windows signing is expected to run on GitHub-hosted runners
-- SignPath Foundation is the intended OSS signing path
+- public Windows builds run on GitHub-hosted runners
+- SignPath Foundation is an optional future OSS signing path, not a release blocker
+- unsigned Windows artifacts are allowed only when the release includes `UNSIGNED-WINDOWS-RELEASE.txt`, `SHA256SUMS.txt`, `SpeechKit.sbom.json`, and GitHub provenance unless disabled explicitly
 - the private upstream may export source to the public repo, but it must not publish public Windows binaries directly
 
 ## Release Surfaces
 
 - Shared source and framework releases are always tag-driven and may ship without Windows binaries.
 - Windows portable and Windows installer are independent release attachments controlled per workflow run.
-- Android is a separate release surface and must not be version-bumped implicitly by the shared source release flow.
+- Android is not part of the current public OSS export or release surface.
 - Release validation must match the selected surface, not a generic full-product checklist.
 
 ## Secret Handling

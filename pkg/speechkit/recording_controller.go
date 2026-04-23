@@ -3,9 +3,6 @@ package speechkit
 import (
 	"fmt"
 	"sync"
-
-	"github.com/kombifyio/SpeechKit/internal/audio"
-	"github.com/kombifyio/SpeechKit/internal/dictation"
 )
 
 const DefaultMinPCMBytes = 3200
@@ -21,7 +18,7 @@ type AudioRecorder interface {
 // dictation segments when recording stops.
 type SegmentCollector interface {
 	FeedPCM([]byte) error
-	CollectStopSegments(fullPCM []byte) ([]dictation.Segment, error)
+	CollectStopSegments(fullPCM []byte) ([]AudioSegment, error)
 }
 
 type SegmentCollectorFactory func() SegmentCollector
@@ -177,7 +174,7 @@ func (c *RecordingController) Stop(opts RecordingStopOptions) error {
 		c.onLog(fmt.Sprintf("Capture stop warning: %v", stopErr), "warn")
 	}
 
-	dur := audio.PCMDurationSecs(pcm)
+	dur := PCMDurationSecs(pcm)
 	c.onLog(fmt.Sprintf("%s: %.1fs audio", opts.Label, dur), "info")
 
 	if len(pcm) < c.minPCMBytes {
@@ -206,8 +203,8 @@ func (c *RecordingController) Stop(opts RecordingStopOptions) error {
 		if err := c.submitter.Submit(TranscriptionJob{
 			Submission: Submission{
 				PCM:          segment.PCM,
-				WAV:          audio.PCMToWAV(segment.PCM),
-				DurationSecs: audio.PCMDurationSecs(segment.PCM),
+				WAV:          PCMToWAV(segment.PCM),
+				DurationSecs: PCMDurationSecs(segment.PCM),
 				Language:     current.Language,
 				Prefix:       prefix,
 				QuickNote:    current.QuickNote,

@@ -65,6 +65,7 @@ func assetHandler(cfg *config.Config, cfgPath string, state *appState, sttRouter
 	registerAuthRoutes(mux)
 	registerAppRoutes(mux, cfgPath, state, installState)
 	registerDownloadRoutes(mux, cfgPath, cfg, state)
+	registerAPIV1Routes(mux, cfgPath, cfg, state, sttRouter, feedbackStore)
 	mux.Handle("/", http.FileServer(http.FS(frontendassets.Files())))
 	return enforceControlPlaneRequestGuard(mux, controlPlaneTokenFromState(state))
 }
@@ -74,7 +75,7 @@ func assetHandler(cfg *config.Config, cfgPath string, state *appState, sttRouter
 func enforceControlPlaneRequestGuard(next http.Handler, sessionToken string) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if sessionToken != "" {
-			setControlPlaneTokenCookie(w, sessionToken)
+			setControlPlaneTokenBootstrap(w, sessionToken)
 		}
 
 		if !isMutatingMethod(r.Method) {
@@ -96,7 +97,7 @@ func enforceControlPlaneRequestGuard(next http.Handler, sessionToken string) htt
 			return
 		}
 
-		if sessionToken != "" && !hasValidControlPlaneToken(r, sessionToken) {
+		if sessionToken != "" && !hasValidControlPlaneTokenHeader(r, sessionToken) {
 			http.Error(w, "control-plane session token is invalid", http.StatusForbidden)
 			return
 		}
@@ -120,7 +121,8 @@ func controlPlaneTokenFromState(state *appState) string {
 	return state.controlPlaneToken
 }
 
-func setControlPlaneTokenCookie(w http.ResponseWriter, token string) {
+func setControlPlaneTokenBootstrap(w http.ResponseWriter, token string) {
+	w.Header().Set(controlPlaneTokenHeaderName, token)
 	http.SetCookie(w, &http.Cookie{
 		Name:     controlPlaneTokenCookieName,
 		Value:    token,
@@ -130,15 +132,8 @@ func setControlPlaneTokenCookie(w http.ResponseWriter, token string) {
 	})
 }
 
-func hasValidControlPlaneToken(r *http.Request, expected string) bool {
-	if r.Header.Get(controlPlaneTokenHeaderName) == expected {
-		return true
-	}
-	cookie, err := r.Cookie(controlPlaneTokenCookieName)
-	if err != nil {
-		return false
-	}
-	return cookie.Value == expected
+func hasValidControlPlaneTokenHeader(r *http.Request, expected string) bool {
+	return r.Header.Get(controlPlaneTokenHeaderName) == expected
 }
 
 func isMutatingMethod(method string) bool {

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 	"strings"
+	"time"
 
 	"github.com/firebase/genkit/go/core"
 
@@ -47,16 +48,12 @@ func (t routerTranscriber) Transcribe(ctx context.Context, audioData []byte, dur
 	}
 	correctedText, correctedTerms := applyVocabularyCorrectionsWithMatches(result.Text, entries)
 	result.Text = correctedText
-	if t.dictionaryStore != nil {
+	if t.dictionaryStore != nil && len(correctedTerms) > 0 {
 		languageForUsage := result.Language
 		if languageForUsage == "" {
 			languageForUsage = language
 		}
-		for _, term := range correctedTerms {
-			if err := t.dictionaryStore.RecordUserDictionaryUsage(ctx, term, languageForUsage); err != nil {
-				slog.Debug("record dictionary usage", "term", term, "err", err)
-			}
-		}
+		recordDictionaryUsageAsync(t.dictionaryStore, correctedTerms, languageForUsage)
 	}
 
 	return speechkit.Transcript{
@@ -67,6 +64,24 @@ func (t routerTranscriber) Transcribe(ctx context.Context, audioData []byte, dur
 		Model:      result.Model,
 		Confidence: result.Confidence,
 	}, nil
+}
+
+func recordDictionaryUsageAsync(dictionaryStore store.UserDictionaryStore, correctedTerms []string, language string) {
+	if dictionaryStore == nil || len(correctedTerms) == 0 {
+		return
+	}
+
+	terms := append([]string(nil), correctedTerms...)
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
+
+		for _, term := range terms {
+			if err := dictionaryStore.RecordUserDictionaryUsage(ctx, term, language); err != nil {
+				slog.Debug("record dictionary usage", "term", term, "err", err)
+			}
+		}
+	}()
 }
 
 type speechkitStoreAdapter struct {
@@ -208,7 +223,7 @@ func (o desktopTranscriptOutput) deliverVoiceAgentFallback(ctx context.Context, 
 		o.failConversation(
 			modeVoiceAgent,
 			transcript.Text,
-			"No Voice Agent model configured. Check Settings > Models and select a Voice Agent model.",
+			"No ready Voice Agent model is available. Open Settings > Voice Agent Mode and download a local model or choose a cloud provider.",
 		)
 		return nil
 	}
@@ -265,7 +280,13 @@ func (o desktopTranscriptOutput) deliverAssistForMode(ctx context.Context, trans
 	}
 
 	panelSurface := result.Surface == "" || result.Surface == assist.ResultSurfacePanel
-	if panelSurface {
+	assistPanelSurface := panelSurface && mode == modeAssist
+	prompterPanelSurface := panelSurface && !assistPanelSurface
+	if assistPanelSurface {
+		if o.state != nil && assistantText != "" {
+			o.state.showAssistPanel(transcript.Text, assistantText)
+		}
+	} else if prompterPanelSurface {
 		o.startConversation(mode, transcript.Text)
 		nextState := "ready"
 		if len(result.Audio) > 0 {
@@ -297,12 +318,12 @@ func (o desktopTranscriptOutput) deliverAssistForMode(ctx context.Context, trans
 			}
 			if playErr != nil && playCtx.Err() == nil {
 				slog.Error("TTS playback error", "err", playErr)
-				if panelSurface && o.state != nil {
+				if prompterPanelSurface && o.state != nil {
 					o.state.updatePrompterState("error")
 				}
 				return
 			}
-			if panelSurface && o.state != nil {
+			if prompterPanelSurface && o.state != nil {
 				o.state.updatePrompterState("ready")
 			}
 		}()
@@ -312,8 +333,8 @@ func (o desktopTranscriptOutput) deliverAssistForMode(ctx context.Context, trans
 }
 
 func (o desktopTranscriptOutput) presentAssistModelMissingHint() {
-	const message = "Assist can't answer because no Assist model is configured. Open Settings > Models and select an Assist model."
-	slog.Warn("assist direct reply requested but no Assist model is configured")
+	const message = "Assist can't answer because no ready Assist model is available. Open Settings > Assist Mode and download a local model or choose a cloud provider."
+	slog.Warn("assist direct reply requested but no ready Assist model is available")
 	if o.state != nil {
 		o.state.addLog(message, "warn")
 		o.state.showAssistBubble(message)

@@ -2,7 +2,9 @@ package main
 
 import (
 	"context"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/kombifyio/SpeechKit/internal/router"
 	"github.com/kombifyio/SpeechKit/internal/store"
@@ -24,6 +26,7 @@ func (p *captureSTTProvider) Name() string { return "capture" }
 func (p *captureSTTProvider) Health(context.Context) error { return nil }
 
 type recordingUserDictionaryStore struct {
+	mu      sync.Mutex
 	records []string
 }
 
@@ -36,8 +39,16 @@ func (s *recordingUserDictionaryStore) ListUserDictionaryEntries(context.Context
 }
 
 func (s *recordingUserDictionaryStore) RecordUserDictionaryUsage(_ context.Context, canonical, language string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	s.records = append(s.records, canonical+"|"+language)
 	return nil
+}
+
+func (s *recordingUserDictionaryStore) recordsSnapshot() []string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return append([]string(nil), s.records...)
 }
 
 func TestRouterTranscriberAppliesVocabularyHintsAndCorrections(t *testing.T) {
@@ -75,8 +86,18 @@ func TestRouterTranscriberAppliesVocabularyHintsAndCorrections(t *testing.T) {
 	if got, want := provider.opts.Prompt, "Prefer these terms when transcribing: Kombify, AcmeOS, Gemma."; got != want {
 		t.Fatalf("provider prompt = %q, want %q", got, want)
 	}
-	if got, want := dictionaryStore.records, []string{"Kombify|en"}; len(got) != len(want) || got[0] != want[0] {
-		t.Fatalf("dictionary usage records = %v, want %v", got, want)
+	wantRecords := []string{"Kombify|en"}
+	deadline := time.After(time.Second)
+	for {
+		got := dictionaryStore.recordsSnapshot()
+		if len(got) == len(wantRecords) && got[0] == wantRecords[0] {
+			break
+		}
+		select {
+		case <-deadline:
+			t.Fatalf("dictionary usage records = %v, want %v", got, wantRecords)
+		case <-time.After(5 * time.Millisecond):
+		}
 	}
 }
 

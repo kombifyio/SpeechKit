@@ -17,6 +17,7 @@ import {
   dashboardAudioDownloadURL,
   deleteQuickNote,
   defaultSettingsState,
+  fetchAPIV1VoiceSessions,
   fetchDownloadCatalog,
   fetchDownloadJobs,
   fetchAppUpdateJobs,
@@ -42,6 +43,7 @@ import {
   type QuickNote,
   revealDashboardAudio,
   type TranscriptionRecord,
+  type VoiceAgentSessionRecord,
 } from "@/lib/speechkit";
 
 type Tab = "dashboard" | "library" | "settings" | "logs";
@@ -54,7 +56,7 @@ const dashboardTabMeta: Record<Tab, { title: string; subtitle: string }> = {
   },
   library: {
     title: "Library",
-    subtitle: "Transcriptions and quick notes",
+    subtitle: "Transcriptions, notes, voice sessions",
   },
   settings: {
     title: "Settings",
@@ -554,10 +556,15 @@ function AppUpdateBanner({
       try {
         const next = await fetchAppUpdateJobs();
         if (!active) return;
-        setJobs(next.filter((job) => job.version === latestVersion));
+        setJobs((previous) =>
+          mergeAppUpdateJobs(
+            previous,
+            next.filter((job) => job.version === latestVersion),
+          ),
+        );
       } catch {
         if (active) {
-          setJobs([]);
+          setJobs((previous) => previous.filter(isActiveAppUpdateJob));
         }
       }
     };
@@ -829,6 +836,10 @@ function LibraryView() {
   const copyTimer = useRef<number | null>(null);
   const [quickNotes, setQuickNotes] = useState<QuickNote[]>([]);
   const [copiedNote, setCopiedNote] = useState<number | null>(null);
+  const [voiceSessions, setVoiceSessions] = useState<VoiceAgentSessionRecord[]>(
+    [],
+  );
+  const [voiceSessionsLoading, setVoiceSessionsLoading] = useState(true);
   const sortedHistory = useMemo(
     () => sortByNewest(history, (r) => r.createdAt),
     [history],
@@ -844,6 +855,10 @@ function LibraryView() {
   const recentQuickNotes = useMemo(
     () => sortedQuickNotes.filter((n) => !n.pinned),
     [sortedQuickNotes],
+  );
+  const sortedVoiceSessions = useMemo(
+    () => sortByNewest(voiceSessions, (session) => session.createdAt || session.endedAt || session.startedAt),
+    [voiceSessions],
   );
 
   useEffect(() => {
@@ -863,6 +878,15 @@ function LibraryView() {
         if (active) setQuickNotes(notes);
       })
       .catch(() => {});
+    void fetchAPIV1VoiceSessions(20)
+      .then((sessions) => {
+        if (!active) return;
+        setVoiceSessions(sessions);
+        setVoiceSessionsLoading(false);
+      })
+      .catch(() => {
+        if (active) setVoiceSessionsLoading(false);
+      });
     return () => {
       active = false;
       if (copyTimer.current) window.clearTimeout(copyTimer.current);
@@ -905,8 +929,7 @@ function LibraryView() {
 
   return (
     <div className="flex h-full flex-col">
-      {/* Two-column layout */}
-      <div className="flex min-h-0 flex-1 gap-4 px-8 py-8">
+      <div className="grid min-h-0 flex-1 gap-4 px-8 py-8 xl:grid-cols-[1.05fr_0.95fr_1.05fr]">
         {/* Left: Transcriptions */}
         <div className="flex min-h-0 flex-1 flex-col">
           <span className="mb-3 text-[10px] font-bold uppercase tracking-widest text-[color:var(--sk-text-muted)]">
@@ -1000,6 +1023,32 @@ function LibraryView() {
                 />
               ))}
             </div>
+          </div>
+        </div>
+
+        {/* Voice Agent sessions */}
+        <div className="flex min-h-0 flex-1 flex-col">
+          <span className="mb-3 text-[10px] font-bold uppercase tracking-widest text-[color:var(--sk-text-muted)]">
+            Voice Sessions
+          </span>
+          <div className="sk-panel flex-1 overflow-y-auto rounded-[24px] p-3">
+            {voiceSessionsLoading && (
+              <p className="py-4 text-center text-xs text-[color:var(--sk-text-muted)]">
+                Loading...
+              </p>
+            )}
+            {!voiceSessionsLoading && sortedVoiceSessions.length === 0 && (
+              <p className="py-8 text-center text-xs text-[color:var(--sk-text-muted)]">
+                No voice sessions yet.
+              </p>
+            )}
+            {!voiceSessionsLoading && sortedVoiceSessions.length > 0 && (
+              <div className="flex flex-col gap-1.5">
+                {sortedVoiceSessions.map((session) => (
+                  <VoiceSessionRow key={session.id} session={session} />
+                ))}
+              </div>
+            )}
           </div>
         </div>
       </div>
@@ -1294,17 +1343,17 @@ function SetupWizard({
             <FeatureCard
               icon="dictate"
               title="Dictation"
-              desc="Speech-to-text anywhere"
+              desc="Exact speech-to-text into the focused app"
             />
             <FeatureCard
               icon="sparkle"
               title="AI Assist"
-              desc="Voice-powered AI responses"
+              desc="One-shot rewrites, summaries, and drafts"
             />
             <FeatureCard
               icon="wave"
               title="Voice Agent"
-              desc="Real-time audio conversations"
+              desc="Live follow-ups with session summaries"
             />
           </div>
 
@@ -1504,15 +1553,15 @@ function SetupWizard({
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6 w-full mt-12 mb-12">
             <WizardFeatureCard
               title={onboardingHotkeyLabels.dictate}
-              desc="Start dictation anywhere"
+              desc="Open a text field, speak one sentence, then check the output"
             />
             <WizardFeatureCard
               title={onboardingHotkeyLabels.assist}
-              desc="Activate AI Assist"
+              desc="Select text and say summarize this or rewrite shorter"
             />
             <WizardFeatureCard
               title={onboardingHotkeyLabels.voiceAgent}
-              desc="Start Voice Agent"
+              desc="Ask a follow-up question and end the session for a summary"
             />
           </div>
 
@@ -1697,7 +1746,8 @@ function WizardLocalModelCard({
 }) {
   const selected = item.selected;
   const ready = item.available || job?.status === "done";
-  const runtimeMissing = ready && item.runtimeReady === false;
+  const runtimeMissing =
+    ready && (item.runtimeReady === false || Boolean(item.runtimeProblem));
   const readyToUse = ready && !runtimeMissing;
   const chooseButtonLabel = selectedForSetup
     ? "Chosen for setup"
@@ -1948,6 +1998,76 @@ function QuickStartCard({
   );
 }
 
+function VoiceSessionRow({ session }: { session: VoiceAgentSessionRecord }) {
+  const summary = session.summary;
+  const sessionTitle =
+    summary?.title?.trim() || `Voice session #${session.id}`;
+  const summaryText =
+    summary?.summary?.trim() || session.transcript?.trim() || "No summary saved.";
+  const timestamp = session.createdAt || session.endedAt || session.startedAt;
+  const turnCount = session.turns?.length ?? 0;
+
+  return (
+    <div
+      data-testid="voice-session-row"
+      className="rounded-[18px] border border-[color:var(--sk-panel-border)] bg-[color:var(--sk-surface-0)] px-3 py-2.5"
+    >
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <p className="truncate text-sm font-medium text-[color:var(--sk-text)]">
+            {sessionTitle}
+          </p>
+          <div className="mt-1 flex flex-wrap items-center gap-1.5">
+            <span className="rounded-full bg-[color:var(--sk-surface-2)] px-2 py-0.5 text-[10px] text-[color:var(--sk-text-muted)]">
+              {formatVoiceRuntimeKind(session.runtimeKind)}
+            </span>
+            {turnCount > 0 && (
+              <span className="rounded-full bg-[color:var(--sk-accent-soft)] px-2 py-0.5 text-[10px] text-[color:var(--sk-accent)]">
+                {turnCount} turns
+              </span>
+            )}
+          </div>
+        </div>
+        <span className="shrink-0 text-[10px] text-[color:var(--sk-text-muted)]">
+          {formatLibraryTimestamp(timestamp)}
+        </span>
+      </div>
+      <p className="mt-2 line-clamp-4 text-xs leading-relaxed text-[color:var(--sk-text)]/75">
+        {summaryText}
+      </p>
+      <VoiceSessionSummaryList label="Decisions" items={summary?.decisions} />
+      <VoiceSessionSummaryList label="Next" items={summary?.nextSteps} />
+      <VoiceSessionSummaryList label="Open" items={summary?.openQuestions} />
+    </div>
+  );
+}
+
+function VoiceSessionSummaryList({
+  label,
+  items,
+}: {
+  label: string;
+  items?: string[];
+}) {
+  const visibleItems = (items ?? []).filter(Boolean).slice(0, 2);
+  if (visibleItems.length === 0) return null;
+  return (
+    <div className="mt-2 flex flex-wrap gap-1.5">
+      <span className="rounded bg-[color:var(--sk-surface-2)] px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-[color:var(--sk-text-muted)]">
+        {label}
+      </span>
+      {visibleItems.map((item) => (
+        <span
+          key={`${label}-${item}`}
+          className="max-w-full truncate rounded bg-[color:var(--sk-surface-2)] px-1.5 py-0.5 text-[10px] text-[color:var(--sk-text-muted)]"
+        >
+          {item}
+        </span>
+      ))}
+    </div>
+  );
+}
+
 function QuickNoteRow({
   note,
   copied,
@@ -2164,6 +2284,10 @@ function pickLatestAppUpdateJob(jobs: AppUpdateJob[]): AppUpdateJob | null {
   return jobs[jobs.length - 1] ?? null;
 }
 
+function isActiveAppUpdateJob(job: AppUpdateJob): boolean {
+  return job.status === "pending" || job.status === "running";
+}
+
 function upsertAppUpdateJob(
   jobs: AppUpdateJob[],
   nextJob: AppUpdateJob,
@@ -2173,6 +2297,22 @@ function upsertAppUpdateJob(
     return [...jobs, nextJob];
   }
   return jobs.map((job) => (job.id === nextJob.id ? nextJob : job));
+}
+
+function mergeAppUpdateJobs(
+  previous: AppUpdateJob[],
+  next: AppUpdateJob[],
+): AppUpdateJob[] {
+  const nextByID = new Map(next.map((job) => [job.id, job]));
+  const merged = previous.flatMap((job) => {
+    const replacement = nextByID.get(job.id);
+    if (replacement) {
+      nextByID.delete(job.id);
+      return [replacement];
+    }
+    return isActiveAppUpdateJob(job) ? [job] : [];
+  });
+  return [...merged, ...nextByID.values()];
 }
 
 function pickLatestModelDownloadJob(jobs: DownloadJob[]): DownloadJob | null {
@@ -2267,6 +2407,17 @@ function formatTranscriptionModelLabel(model: string) {
   if (normalized.endsWith("whisper-large-v3")) return "large-v3";
   const leaf = normalized.split(/[\\/]/).pop() ?? normalized;
   return leaf.replace(/\.(bin|gguf|onnx)$/i, "");
+}
+
+function formatVoiceRuntimeKind(runtimeKind?: string) {
+  switch (runtimeKind) {
+    case "native_realtime":
+      return "Gemini Live";
+    case "pipeline_fallback":
+      return "Pipeline fallback";
+    default:
+      return runtimeKind?.trim() || "Voice Agent";
+  }
 }
 
 function formatLogTime(iso: string): string {

@@ -5,7 +5,6 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
-	"syscall"
 )
 
 // DefaultDopplerSecretLookup runs the Doppler CLI to retrieve a single secret value.
@@ -19,7 +18,7 @@ func DefaultDopplerSecretLookup(dopplerPath, key, project, cfg string) (string, 
 		"--no-read-env",
 	)
 	// Suppress console window in Wails/GUI context.
-	cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true}
+	configureDopplerCommand(cmd)
 	out, err := cmd.Output()
 	if err != nil {
 		return "", err

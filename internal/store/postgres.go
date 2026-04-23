@@ -18,6 +18,9 @@ import (
 //go:embed migrations/postgres/001_init.sql
 var postgresMigration001 string
 
+//go:embed migrations/postgres/002_voice_agent_sessions.sql
+var postgresMigration002 string
+
 // PostgresStore implements Store using PostgreSQL for metadata and the local
 // filesystem for optional raw WAV persistence.
 type PostgresStore struct {
@@ -48,6 +51,10 @@ func NewPostgresStore(cfg StoreConfig) (*PostgresStore, error) {
 	if _, err := db.ExecContext(context.Background(), postgresMigration001); err != nil {
 		_ = db.Close()
 		return nil, fmt.Errorf("migrate postgres: %w", err)
+	}
+	if _, err := db.ExecContext(context.Background(), postgresMigration002); err != nil {
+		_ = db.Close()
+		return nil, fmt.Errorf("migrate postgres voice sessions: %w", err)
 	}
 
 	store := &PostgresStore{

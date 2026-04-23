@@ -15,6 +15,7 @@ $bundleExe = Join-Path $bundleDir 'SpeechKit.exe'
 $installerScript = Join-Path $projectDir 'installer/speechkit.nsi'
 $installerExe = Join-Path $distDir 'SpeechKit-Setup.exe'
 $prepareWhisperRuntimeScript = Join-Path $scriptDir 'prepare-whisper-runtime.ps1'
+$prepareLlamaRuntimeScript = Join-Path $scriptDir 'prepare-llama-runtime.ps1'
 $prepareWebView2RuntimeScript = Join-Path $scriptDir 'prepare-webview2-runtime.ps1'
 $cacheDir = Join-Path $projectDir '.cache'
 $goCacheDir = Join-Path $cacheDir 'go-build'
@@ -263,6 +264,7 @@ Assert-PathExists -Path $frontendDir -Description 'Frontend source directory'
 Assert-PathExists -Path (Join-Path $frontendDir 'package.json') -Description 'Frontend package manifest'
 Assert-PathExists -Path (Join-Path $frontendDir 'src') -Description 'Frontend source tree'
 Assert-PathExists -Path $prepareWhisperRuntimeScript -Description 'Whisper runtime prepare script'
+Assert-PathExists -Path $prepareLlamaRuntimeScript -Description 'llama.cpp runtime prepare script'
 Assert-PathExists -Path $prepareWebView2RuntimeScript -Description 'WebView2 runtime prepare script'
 if (-not $SkipInstaller) {
     Assert-PathExists -Path $installerScript -Description 'NSIS installer script'
@@ -372,6 +374,7 @@ Write-Host 'Writing runtime config...'
 $bundleConfig = Join-Path $bundleDir 'config.toml'
 Copy-Item -Path (Join-Path $projectDir 'config.example.toml') -Destination $bundleConfig -Force
 Invoke-Step -Description 'Bundling local whisper runtime...' -FilePath $powershellExe -ArgumentList @('-ExecutionPolicy', 'Bypass', '-File', $prepareWhisperRuntimeScript, '-BundleDir', $bundleDir, '-CacheDir', $cacheDir)
+Invoke-Step -Description 'Bundling local llama.cpp runtime...' -FilePath $powershellExe -ArgumentList @('-ExecutionPolicy', 'Bypass', '-File', $prepareLlamaRuntimeScript, '-BundleDir', $bundleDir, '-CacheDir', $cacheDir)
 Invoke-Step -Description 'Bundling WebView2 bootstrapper...' -FilePath $powershellExe -ArgumentList @('-ExecutionPolicy', 'Bypass', '-File', $prepareWebView2RuntimeScript, '-BundleDir', $bundleDir, '-CacheDir', $cacheDir)
 
 if ($SkipInstaller) {

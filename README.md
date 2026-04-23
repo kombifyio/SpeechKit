@@ -24,13 +24,48 @@ The repository treats `frontend/app` as first-class source. The embedded `intern
 
 ### As a Go Library
 
-Use the framework in your own Go application without any UI:
+Use the framework backend in your own Go application without any UI:
 
 ```bash
 go get github.com/kombifyio/SpeechKit/pkg/speechkit
 ```
 
-Implement a handful of interfaces (`Transcriber`, `AudioRecorder`, `Persistence`) and the framework handles recording lifecycle, job queuing, and transcription routing. See [`examples/library/`](./examples/library/) for a working example.
+Implement a handful of interfaces (`Transcriber`, `AudioRecorder`, `Persistence`) and the framework handles recording lifecycle, job queuing, and transcription routing. See [`examples/library/`](./examples/library/) for a working dictation pipeline and [`examples/provider-catalog/`](./examples/provider-catalog/) for the three-mode provider contract.
+
+The public SDK owns and exposes the v23 framework catalog. Desktop and Windows-specific modules adapt this public catalog into their host runtime; they do not own the three-mode provider contract:
+
+- `speechkit.DefaultModeContracts()` declares the strict Dictation, Assist, and Voice Agent contracts.
+- `speechkit.DefaultProviderProfiles()` returns the reusable provider profile catalog for all three modes.
+- `speechkit.ProfilesForMode(mode)` and `speechkit.ProviderKindsForMode(mode)` let host apps build their own settings UI without importing desktop internals.
+- `speechkit.ValidateProfileForMode(profile, mode)` lets integrations reject profiles that would break a mode boundary.
+
+The three mode contracts are stable at the framework boundary:
+
+| Mode | Intelligence | Contract |
+|------|--------------|----------|
+| Dictation | User Intelligence | Audio in, text out. No LLM rewriting, no tool calling, no Assist utilities. |
+| Assist | Utility Intelligence | One-shot utility or LLM result with optional TTS and result surface metadata. |
+| Voice Agent | Brainstorming Intelligence | Realtime audio dialogue or explicit pipeline fallback with session summary support. |
+
+### Through the Local Control API
+
+The desktop host exposes a local HTTP control plane so external tools can configure and embed SpeechKit without linking Go code directly. Read-only introspection routes are available to local callers; mutating `PATCH` and `POST` routes require the control-plane token header or cookie.
+
+| Endpoint | Purpose |
+|----------|---------|
+| `GET /api/v1/modes` | Returns mode contracts plus current per-mode settings. |
+| `GET /api/v1/modes/{mode}/settings` | Returns one mode setting. `dictation`, `dictate`, `assist`, and `voice_agent` aliases are accepted. |
+| `PATCH /api/v1/modes/{mode}/settings` | Updates enablement, hotkey behavior, active provider profile, TTS, dictionary, or Voice Agent summary settings. |
+| `POST /api/v1/modes/{mode}/start` | Starts the selected mode through the framework command bus. |
+| `POST /api/v1/modes/{mode}/stop` | Stops the selected mode through the framework command bus. |
+| `GET /api/v1/providers/profiles` | Returns the provider catalog, active profiles, provider groups, and mode contracts. |
+| `GET /api/v1/providers/readiness` | Reports credential, runtime, and capability readiness for every provider profile. |
+| `GET /api/v1/providers/artifacts` | Returns Local Built-in and Local Provider artifacts plus current jobs. |
+| `POST /api/v1/providers/artifacts/{artifactId}/download` | Downloads or pulls a provider artifact. |
+| `POST /api/v1/providers/artifacts/{artifactId}/select` | Selects an already available provider artifact. |
+| `POST /api/v1/providers/{profileId}/activate` | Activates a provider profile for its mode. |
+
+This keeps SpeechKit reusable in existing software: a host can either embed the Go package or treat the Windows app as a local speech runtime with explicit mode and provider contracts. The Windows desktop app is one client implementation on top of the framework backend, not the source of truth for the framework catalog.
 
 ### As a Windows Desktop App
 
@@ -39,9 +74,7 @@ Download the installer from the [Releases](https://github.com/kombifyio/SpeechKi
 - **SpeechKit-Setup.exe** â€” Windows installer
 - **SpeechKit-Portable.zip** â€” portable bundle (no install required)
 
-### As an Android App
-
-The `android/` directory contains a Kotlin-based Android implementation with a custom keyboard (HeliBoard integration) and voice assistant service. Android support is under active development.
+Windows artifacts may be unsigned while SpeechKit has no available no-cost public code-signing path. Public releases include `SHA256SUMS.txt`, `SpeechKit.sbom.json`, and `UNSIGNED-WINDOWS-RELEASE.txt` so users can verify the build origin and hashes before running the app.
 
 ## Current Feature Set
 
@@ -51,6 +84,7 @@ The `android/` directory contains a Kotlin-based Android implementation with a c
 - Assist mode for one-shot utilities, rewrites, summaries, and answer panels with optional TTS
 - Voice Agent mode for realtime audio-to-audio dialogue (Gemini Live) with a dedicated live transcript surface and custom orb
 - layered Voice Agent setup: host supplies API key, framework prompt, optional personal refinement prompt, and Gemini session policy
+- Local Built-in Dictation model downloads via Whisper.cpp; Local Built-in Assist and Voice Agent use a bundled SpeechKit-managed llama.cpp server with downloadable GGUF model artifacts
 - settings UI for provider, overlay, hotkey, and storage preferences
 
 ## Provider Credential Model
@@ -178,7 +212,6 @@ internal/router/        Provider routing
 internal/store/         Local storage (SQLite / PostgreSQL)
 internal/secrets/       Host-side secret storage
 internal/frontendassets/ Generated embedded frontend assets
-android/                Android app and keyboard integration
 examples/               Library usage examples
 installer/              NSIS Windows installer
 scripts/                Build and release scripts
@@ -196,14 +229,14 @@ Start with:
 - [`docs/oss-release-checklist.md`](./docs/oss-release-checklist.md)
 - [`docs/public-repo-operating-model.md`](./docs/public-repo-operating-model.md)
 
-## Code Signing
+## Windows Artifact Trust
 
-Public Windows releases are expected to be built from `kombifyio/SpeechKit`, signed, and verified before publication.
+Public Windows releases are built from `kombifyio/SpeechKit`. If a trusted free signing provider is configured, the release workflow signs and verifies the Windows binaries. Until then, the supported no-cost path publishes unsigned Windows artifacts with checksums, SBOM, GitHub provenance when enabled, and an explicit unsigned-release notice.
 
 See:
 
 - [`docs/code-signing-policy.md`](./docs/code-signing-policy.md)
-- [`docs/signpath-oss-setup.md`](./docs/signpath-oss-setup.md)
+- [`docs/signpath-oss-setup.md`](./docs/signpath-oss-setup.md) for optional future SignPath setup
 
 ## Contributing
 

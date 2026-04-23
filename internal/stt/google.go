@@ -38,13 +38,14 @@ func NewGoogleSTTProvider(apiKey, model string) *GoogleSTTProvider {
 	if model == "" {
 		model = "chirp_3"
 	}
-	return &GoogleSTTProvider{
+	p := &GoogleSTTProvider{
 		APIKey:  apiKey,
 		Model:   model,
 		BaseURL: googleSTTBaseURL,
 		// Validation zero-value = strict: public https only.
-		client: netsec.NewSafeHTTPClient(netsec.ClientOptions{Timeout: 30 * time.Second}),
 	}
+	p.client = netsec.NewSafeHTTPClient(netsec.ClientOptions{Timeout: 30 * time.Second, DialValidation: &p.Validation})
+	return p
 }
 
 // googleRecognizeRequest is the request body for the v1 speech:recognize endpoint.
@@ -160,12 +161,12 @@ func (p *GoogleSTTProvider) Transcribe(ctx context.Context, audio []byte, opts T
 	}
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("google error (%d): %s", resp.StatusCode, string(respBody))
+		return nil, netsec.ProviderStatusError("google", resp.StatusCode, respBody)
 	}
 
 	var gResp googleRecognizeResponse
 	if err := json.Unmarshal(respBody, &gResp); err != nil {
-		return nil, fmt.Errorf("parse response: %w (body: %s)", err, string(respBody))
+		return nil, fmt.Errorf("parse response: %w", err)
 	}
 
 	// Concatenate all result transcripts.

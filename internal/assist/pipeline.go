@@ -126,8 +126,8 @@ func (p *Pipeline) handleTool(ctx context.Context, transcript string, decision D
 		Action:    firstNonEmpty(toolResult.Action, "execute"),
 		Locale:    firstNonEmpty(toolResult.Locale, decision.Locale, opts.Locale),
 		Shortcut:  string(decision.Intent),
-		Surface:   firstNonEmptySurface(toolResult.Surface, ResultSurfaceActionAck),
-		Kind:      firstNonEmptyKind(toolResult.Kind, ResultKindUtilityAction),
+		Surface:   firstNonEmptySurface(toolResult.Surface, decision.Utility.DefaultSurface, ResultSurfaceActionAck),
+		Kind:      firstNonEmptyKind(toolResult.Kind, decision.Utility.DefaultKind, ResultKindUtilityAction),
 	}
 
 	if err := p.synthesize(ctx, result); err != nil {

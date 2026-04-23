@@ -37,6 +37,7 @@ jobs:
     name: Resolve Release Plan
     if: github.repository == 'kombifyio/SpeechKit'
     runs-on: ${{ vars.CI_RUNNER || 'ubuntu-24.04' }}
+    timeout-minutes: 15
     outputs:
       tag: ${{ steps.plan.outputs.tag }}
       checkout_ref: ${{ steps.plan.outputs.checkout_ref }}
@@ -79,6 +80,7 @@ jobs:
     name: Wait For Publisher Draft
     needs: prepare
     runs-on: ${{ vars.CI_RUNNER || 'ubuntu-24.04' }}
+    timeout-minutes: 15
 
     steps:
       - name: Wait for draft release created by the publisher app
@@ -138,8 +140,9 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          tag="${{ needs.prepare.outputs.tag }}"
           node ./scripts/release/render-release-notes.mjs \
-            --version "${{ needs.prepare.outputs.tag }}" \
+            --version "$tag" \
             --repo-url "https://github.com/${{ github.repository }}" \
             --output release-notes.md
 
@@ -164,8 +167,8 @@ jobs:
             ./scripts/build.ps1 -SkipInstaller -SkipVerification
           }
 
-      - name: Ensure SignPath configuration for public Windows releases
-        if: github.repository == 'kombifyio/SpeechKit' && vars.ALLOW_UNSIGNED_WINDOWS_RELEASES != 'true'
+      - name: Resolve Windows signing mode
+        id: signing
         shell: bash
         env:
           SIGNPATH_API_TOKEN: ${{ secrets.SIGNPATH_API_TOKEN }}
@@ -174,6 +177,7 @@ jobs:
           SIGNPATH_SIGNING_POLICY_SLUG: ${{ vars.SIGNPATH_SIGNING_POLICY_SLUG }}
           SIGNPATH_ARTIFACT_CONFIGURATION_SLUG: ${{ vars.SIGNPATH_ARTIFACT_CONFIGURATION_SLUG }}
           SIGNPATH_PUBLISHER_NAME: ${{ vars.SIGNPATH_PUBLISHER_NAME }}
+          REQUIRE_SIGNED_WINDOWS_RELEASES: ${{ vars.REQUIRE_SIGNED_WINDOWS_RELEASES }}
         run: |
           set -euo pipefail
           missing=()
@@ -183,13 +187,32 @@ jobs:
           [ -n "$SIGNPATH_SIGNING_POLICY_SLUG" ] || missing+=("SIGNPATH_SIGNING_POLICY_SLUG variable")
           [ -n "$SIGNPATH_ARTIFACT_CONFIGURATION_SLUG" ] || missing+=("SIGNPATH_ARTIFACT_CONFIGURATION_SLUG variable")
           [ -n "$SIGNPATH_PUBLISHER_NAME" ] || missing+=("SIGNPATH_PUBLISHER_NAME variable")
-          if [ "${#missing[@]}" -gt 0 ]; then
-            printf '::error title=Missing SignPath configuration::%s\n' "$(IFS=', '; echo "${missing[*]}")"
+
+          if [ "${#missing[@]}" -eq 0 ]; then
+            echo "mode=signed" >> "$GITHUB_OUTPUT"
+            echo "publisher=$SIGNPATH_PUBLISHER_NAME" >> "$GITHUB_OUTPUT"
+            echo "Windows artifacts will be submitted to SignPath." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+
+          if [ "$REQUIRE_SIGNED_WINDOWS_RELEASES" = "true" ]; then
+            printf '::error title=Missing required signing configuration::%s\n' "$(IFS=', '; echo "${missing[*]}")"
             exit 1
           fi
 
+          echo "mode=unsigned" >> "$GITHUB_OUTPUT"
+          echo "publisher=" >> "$GITHUB_OUTPUT"
+          {
+            echo "Windows artifacts will be published unsigned."
+            echo
+            echo "Missing SignPath configuration:"
+            printf -- "- %s\n" "${missing[@]}"
+            echo
+            echo "This is the documented no-cost release path. The release will include checksums, SBOM, GitHub provenance when enabled, and an unsigned Windows notice."
+          } >> "$GITHUB_STEP_SUMMARY"
+
       - name: Upload unsigned SpeechKit.exe
-        if: github.repository == 'kombifyio/SpeechKit' && vars.ALLOW_UNSIGNED_WINDOWS_RELEASES != 'true'
+        if: steps.signing.outputs.mode == 'signed'
         id: upload-speechkit-exe
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
@@ -199,7 +222,7 @@ jobs:
           retention-days: 1
 
       - name: Sign SpeechKit.exe with SignPath
-        if: github.repository == 'kombifyio/SpeechKit' && vars.ALLOW_UNSIGNED_WINDOWS_RELEASES != 'true'
+        if: steps.signing.outputs.mode == 'signed'
         uses: signpath/github-action-submit-signing-request@bc66d86b015a46e9c6d9700de73143a82f9570ff
         with:
           api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
@@ -215,7 +238,7 @@ jobs:
             commit: "${{ github.sha }}"
 
       - name: Replace signed SpeechKit.exe
-        if: github.repository == 'kombifyio/SpeechKit' && vars.ALLOW_UNSIGNED_WINDOWS_RELEASES != 'true'
+        if: steps.signing.outputs.mode == 'signed'
         shell: pwsh
         run: |
           $signedExe = Get-ChildItem -Path "signed-speechkit-exe" -Recurse -Filter "SpeechKit.exe" | Select-Object -First 1
@@ -225,7 +248,7 @@ jobs:
           Copy-Item -Path $signedExe.FullName -Destination "dist/windows/SpeechKit/SpeechKit.exe" -Force
 
       - name: Upload unsigned SpeechKit-Setup.exe
-        if: github.repository == 'kombifyio/SpeechKit' && vars.ALLOW_UNSIGNED_WINDOWS_RELEASES != 'true' && needs.prepare.outputs.release_windows_installer == 'true'
+        if: steps.signing.outputs.mode == 'signed' && needs.prepare.outputs.release_windows_installer == 'true'
         id: upload-speechkit-setup
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
@@ -235,7 +258,7 @@ jobs:
           retention-days: 1
 
       - name: Sign SpeechKit-Setup.exe with SignPath
-        if: github.repository == 'kombifyio/SpeechKit' && vars.ALLOW_UNSIGNED_WINDOWS_RELEASES != 'true' && needs.prepare.outputs.release_windows_installer == 'true'
+        if: steps.signing.outputs.mode == 'signed' && needs.prepare.outputs.release_windows_installer == 'true'
         uses: signpath/github-action-submit-signing-request@bc66d86b015a46e9c6d9700de73143a82f9570ff
         with:
           api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
@@ -251,7 +274,7 @@ jobs:
             commit: "${{ github.sha }}"
 
       - name: Replace signed SpeechKit-Setup.exe
-        if: github.repository == 'kombifyio/SpeechKit' && vars.ALLOW_UNSIGNED_WINDOWS_RELEASES != 'true' && needs.prepare.outputs.release_windows_installer == 'true'
+        if: steps.signing.outputs.mode == 'signed' && needs.prepare.outputs.release_windows_installer == 'true'
         shell: pwsh
         run: |
           $signedInstaller = Get-ChildItem -Path "signed-speechkit-setup" -Recurse -Filter "SpeechKit-Setup.exe" | Select-Object -First 1
@@ -261,13 +284,13 @@ jobs:
           Copy-Item -Path $signedInstaller.FullName -Destination "dist/windows/SpeechKit-Setup.exe" -Force
 
       - name: Validate signed Windows binaries
-        if: github.repository == 'kombifyio/SpeechKit' && vars.ALLOW_UNSIGNED_WINDOWS_RELEASES != 'true'
+        if: steps.signing.outputs.mode == 'signed'
         shell: pwsh
         run: |
           $validationArgs = @(
             '-DistDir', 'dist/windows',
             '-RequireTimestamp',
-            '-ExpectedPublisher', '${{ vars.SIGNPATH_PUBLISHER_NAME }}'
+            '-ExpectedPublisher', '${{ steps.signing.outputs.publisher }}'
           )
           if ('${{ needs.prepare.outputs.release_windows_installer }}' -eq 'true') {
             $validationArgs += '-RequireInstaller'
@@ -278,15 +301,18 @@ jobs:
           }
 
       - name: Mark unsigned public Windows release
-        if: github.repository == 'kombifyio/SpeechKit' && vars.ALLOW_UNSIGNED_WINDOWS_RELEASES == 'true'
+        if: steps.signing.outputs.mode == 'unsigned'
         shell: pwsh
         run: |
           @'
-          WARNING: This Windows release is intentionally unsigned.
+          IMPORTANT: This Windows release is intentionally unsigned.
 
-          This is a temporary transition release published before SignPath
-          onboarding is complete. Windows SmartScreen and installation trust
-          warnings are expected for this build.
+          SpeechKit currently has no available no-cost public code-signing
+          path. Windows SmartScreen and installer trust warnings are expected.
+
+          Verify downloads through the release's SHA256SUMS.txt file and the
+          GitHub Actions provenance attached to the public release workflow
+          when repository attestations are enabled.
           '@ | Set-Content -Path "UNSIGNED-WINDOWS-RELEASE.txt" -Encoding ascii
 
       - name: Install cyclonedx-gomod
@@ -338,7 +364,7 @@ jobs:
           "EOF" >> $env:GITHUB_OUTPUT
 
       - name: Attest release artifacts
-        if: vars.ENABLE_BUILD_ATTESTATIONS == 'true'
+        if: vars.ENABLE_BUILD_ATTESTATIONS != 'false'
         uses: actions/attest-build-provenance@96b4a1ef7235a096b17240c259729fdd70c83d45
         with:
           subject-path: ${{ steps.assets.outputs.subject_paths }}
@@ -377,6 +403,7 @@ jobs:
     needs: prepare
     if: needs.prepare.outputs.should_build_windows != 'true'
     runs-on: ${{ vars.CI_RUNNER || 'ubuntu-24.04' }}
+    timeout-minutes: 15
 
     steps:
       - name: Checkout
@@ -395,8 +422,9 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          tag="${{ needs.prepare.outputs.tag }}"
           node ./scripts/release/render-release-notes.mjs \
-            --version "${{ needs.prepare.outputs.tag }}" \
+            --version "$tag" \
             --repo-url "https://github.com/${{ github.repository }}" \
             --output release-notes.md
 

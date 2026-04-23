@@ -163,6 +163,71 @@ func TestUserDictionaryEntriesReplaceListAndRecordUsage(t *testing.T) {
 	}
 }
 
+func TestVoiceAgentSessionsSaveAndList(t *testing.T) {
+	s, err := NewSQLiteStore(StoreConfig{
+		SQLitePath: filepath.Join(t.TempDir(), "feedback.db"),
+		SaveAudio:  false,
+	})
+	if err != nil {
+		t.Fatalf("NewSQLiteStore: %v", err)
+	}
+	defer s.Close()
+
+	sessionStore, ok := any(s).(VoiceAgentSessionStore)
+	if !ok {
+		t.Fatal("sqlite store does not implement VoiceAgentSessionStore")
+	}
+
+	startedAt := time.Now().UTC().Add(-2 * time.Minute).Truncate(time.Second)
+	endedAt := startedAt.Add(90 * time.Second)
+	id, err := sessionStore.SaveVoiceAgentSession(context.Background(), VoiceAgentSession{
+		StartedAt:         startedAt,
+		EndedAt:           endedAt,
+		Language:          "de",
+		ProviderProfileID: "realtime.google.gemini-native-audio",
+		RuntimeKind:       "native_realtime",
+		Transcript:        "User: Idee\nAssistant: Naechster Schritt",
+		Turns: []VoiceAgentTurn{
+			{Role: "user", Text: "Idee", CreatedAt: startedAt},
+			{Role: "assistant", Text: "Naechster Schritt", CreatedAt: endedAt},
+		},
+		Summary: VoiceAgentSessionSummary{
+			Summary:       "Plan fuer den naechsten Schritt.",
+			Ideas:         []string{"Produktreife"},
+			Decisions:     []string{"Live UX zuerst"},
+			OpenQuestions: []string{"Signing"},
+			NextSteps:     []string{"Build pruefen"},
+		},
+	})
+	if err != nil {
+		t.Fatalf("SaveVoiceAgentSession: %v", err)
+	}
+	if id == 0 {
+		t.Fatal("SaveVoiceAgentSession id = 0")
+	}
+
+	sessions, err := sessionStore.ListVoiceAgentSessions(context.Background(), ListOpts{Limit: 10})
+	if err != nil {
+		t.Fatalf("ListVoiceAgentSessions: %v", err)
+	}
+	if len(sessions) != 1 {
+		t.Fatalf("sessions = %d, want 1", len(sessions))
+	}
+	got := sessions[0]
+	if got.Summary.Summary != "Plan fuer den naechsten Schritt." {
+		t.Fatalf("summary = %q", got.Summary.Summary)
+	}
+	if got.Summary.Title == "" {
+		t.Fatal("summary title should be derived")
+	}
+	if len(got.Turns) != 2 || got.Turns[0].Role != "user" {
+		t.Fatalf("turns = %#v", got.Turns)
+	}
+	if len(got.Summary.NextSteps) != 1 || got.Summary.NextSteps[0] != "Build pruefen" {
+		t.Fatalf("next steps = %#v", got.Summary.NextSteps)
+	}
+}
+
 func TestSaveWithAudio(t *testing.T) {
 	dir := t.TempDir()
 	dbPath := filepath.Join(dir, "test.db")

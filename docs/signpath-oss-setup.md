@@ -1,6 +1,8 @@
 # SignPath OSS Setup
 
-This document is the operating checklist for enabling SignPath Foundation signing in the public SpeechKit repository.
+This document is the optional operating checklist for enabling SignPath Foundation signing in the public SpeechKit repository.
+
+SignPath is not required for the current no-cost public release path. When SignPath is unavailable, SpeechKit publishes unsigned Windows artifacts with `UNSIGNED-WINDOWS-RELEASE.txt`, `SHA256SUMS.txt`, `SpeechKit.sbom.json`, and GitHub provenance when enabled.
 
 ## What Must Be True Before Applying
 
@@ -43,7 +45,7 @@ Configure these in `kombifyio/SpeechKit`:
 - `SIGNPATH_ARTIFACT_CONFIGURATION_SLUG`
 - `SIGNPATH_PUBLISHER_NAME`
 
-## Workflow Behavior
+## Workflow Behavior When SignPath Is Configured
 
 The public release workflow is prepared to:
 
@@ -54,7 +56,9 @@ The public release workflow is prepared to:
 5. submit it to SignPath
 6. replace the unsigned binaries with the signed outputs
 7. verify signatures with `scripts/validate-windows-signing.ps1`
-8. publish only the signed artifacts to the GitHub Release
+8. publish the signed artifacts to the GitHub Release
+
+When SignPath configuration is incomplete, the same release workflow skips signing and publishes the documented unsigned asset set instead.
 
 ## Runner Requirement
 
@@ -71,10 +75,11 @@ Private upstream automation may still use different runners, but public release 
 
 1. export the current source into `kombifyio/SpeechKit`
 2. verify the public repo contains the updated workflows and docs
-3. submit the SignPath Foundation application
+3. submit the SignPath Foundation application if/when signing becomes available
 4. wait for approval and project setup details
 5. add the SignPath secret and repository variables to `kombifyio/SpeechKit`
-6. trigger a public tag-based release
+6. set `REQUIRE_SIGNED_WINDOWS_RELEASES=true` only after signed releases are mandatory
+7. trigger a public tag-based release
 
 ## When The Apply Form Is Ready
 
@@ -85,4 +90,3 @@ The apply form is ready once the public repository has:
 - the repository visible to the public
 
 The SignPath secret and project slugs are not required before submitting the application; they are added after approval.
-

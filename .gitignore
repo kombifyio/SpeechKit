@@ -20,6 +20,10 @@ SpeechKit-Portable-v*.zip
 # Hygiene / audit working artifacts
 AUDIT-REPORT.md
 _export/
+coverage
+/landing.html
+/getting_started.html
+/integrations.html
 
 # Config with secrets
 config.toml
@@ -30,6 +34,7 @@ config.toml
 *.db-journal
 *.db-wal
 /audio/
+/data/
 /internal/store/audio/
 
 # Local tooling state
@@ -73,6 +78,7 @@ node_modules/
 frontend/node_modules/
 frontend/**/node_modules/
 frontend/dist/
+/frontend/app-v2/
 frontend/app/.git/
 
 # Playwright E2E artifacts

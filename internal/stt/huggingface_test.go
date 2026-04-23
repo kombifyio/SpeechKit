@@ -77,7 +77,7 @@ func TestHF_Transcribe_503ModelLoading(t *testing.T) {
 func TestHF_Transcribe_429RateLimit(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(429)
-		w.Write([]byte(`{"error":"Rate limit exceeded"}`))
+		w.Write([]byte(`{"error":"Rate limit exceeded for secret-prompt"}`))
 	}))
 	defer server.Close()
 
@@ -89,11 +89,14 @@ func TestHF_Transcribe_429RateLimit(t *testing.T) {
 	if !strings.Contains(err.Error(), "429") {
 		t.Errorf("expected 429 in error: %v", err)
 	}
+	if strings.Contains(err.Error(), "secret-prompt") || strings.Contains(err.Error(), "Rate limit exceeded") {
+		t.Fatalf("provider response body leaked in error: %v", err)
+	}
 }
 
 func TestHF_Transcribe_InvalidJSON(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Write([]byte(`not json`))
+		w.Write([]byte(`not json secret-body`))
 	}))
 	defer server.Close()
 
@@ -101,6 +104,9 @@ func TestHF_Transcribe_InvalidJSON(t *testing.T) {
 	_, err := p.Transcribe(context.Background(), []byte("wav"), TranscribeOpts{})
 	if err == nil {
 		t.Fatal("expected error for invalid JSON")
+	}
+	if strings.Contains(err.Error(), "secret-body") || strings.Contains(err.Error(), "not json") {
+		t.Fatalf("provider response body leaked in parse error: %v", err)
 	}
 }
 

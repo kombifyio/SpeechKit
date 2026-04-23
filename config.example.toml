@@ -43,7 +43,7 @@ gpu = "auto"              # auto, cuda, vulkan, cpu
 enabled = false
 base_url = "http://127.0.0.1:8082/v1" # SpeechKit-managed OpenAI-compatible local LLM runtime endpoint
 model = "gemma4:e4b"
-model_path = ""                      # Future built-in GGUF model path; blank = managed location
+model_path = ""                      # Downloaded GGUF model path; blank = managed model directory
 port = 8082
 gpu = "auto"                         # auto, cuda, vulkan, cpu
 utility_model = "gemma4:e4b"
@@ -86,16 +86,22 @@ max_audio_storage_mb = 500
 [vocabulary]
 dictionary = ""           # One entry per line. Use "spoken => canonical" for corrections, or a single term as a recognition hint.
 
+# ──────────────────────────────────────────────
+# Mode Model Selection — same per-mode provider settings exposed by /api/v1/modes/{mode}/settings
+# Every mode supports the four V23 provider groups: local built-in, local provider, cloud provider, direct provider.
+# Use GET /api/v1/providers/profiles and GET /api/v1/providers/readiness for host-managed setup flows.
+# ──────────────────────────────────────────────
+
 [model_selection.dictate]
-primary_profile_id = "stt.local.whispercpp"    # Default local built-in primary. Alternatives: stt.ollama.gemma4-e4b-transcribe, stt.hf.whisper-large-v3, stt.openai.whisper-1
+primary_profile_id = "stt.local.whispercpp"    # Default local built-in primary. Alternatives: stt.ollama.gemma4-e4b-transcribe, stt.routed.whisper-large-v3, stt.openai.whisper-1
 fallback_profile_id = ""
 
 [model_selection.assist]
-primary_profile_id = ""                             # No implicit Assist LLM. Select a provider-backed Assist model in Settings > Models.
+primary_profile_id = "assist.builtin.gemma4-e4b"    # Default local built-in Assist LLM. Alternatives: assist.ollama.gemma4-e4b, assist.openai.gpt-5.4
 fallback_profile_id = ""
 
 [model_selection.voice_agent]
-primary_profile_id = "realtime.google.gemini-native-audio" # Default realtime Voice Agent. Alternatives: realtime.ollama.gemma4-e4b-pipeline, realtime.hf.qwen3-27b-pipeline
+primary_profile_id = "realtime.google.gemini-native-audio" # Default realtime Voice Agent. Alternatives: realtime.ollama.gemma4-e4b-pipeline, realtime.hf.qwen35-27b
 fallback_profile_id = ""
 
 # ──────────────────────────────────────────────
@@ -208,7 +214,7 @@ vad_silence_duration_ms = 700
 
 # [providers.google]
 # enabled = false
-# api_key_env = "GOOGLE_API_KEY"
+# api_key_env = "GOOGLE_AI_API_KEY"
 # stt_model = "chirp_3"
 # utility_model = "gemini-2.5-flash-lite"
 # assist_model = "gemini-2.5-flash"

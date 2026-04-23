@@ -6,14 +6,17 @@ import (
 	"fmt"
 	"log/slog"
 	"strings"
+	"time"
 
 	"github.com/kombifyio/SpeechKit/internal/config"
+	"github.com/kombifyio/SpeechKit/internal/store"
 	"github.com/kombifyio/SpeechKit/internal/textactions"
 )
 
 type voiceAgentDialogTurn struct {
-	Role string
-	Text string
+	Role      string
+	Text      string
+	CreatedAt time.Time
 }
 
 func (s *appState) resetVoiceAgentSessionSummary() {
@@ -22,6 +25,8 @@ func (s *appState) resetVoiceAgentSessionSummary() {
 	}
 	s.mu.Lock()
 	s.voiceAgentDialogTurns = nil
+	s.voiceAgentSessionStarted = time.Now().UTC()
+	s.voiceAgentSummaryDone = false
 	s.mu.Unlock()
 }
 
@@ -44,8 +49,9 @@ func (s *appState) recordVoiceAgentDialogTurn(role, text string, done bool) {
 		}
 	}
 	s.voiceAgentDialogTurns = append(s.voiceAgentDialogTurns, voiceAgentDialogTurn{
-		Role: role,
-		Text: text,
+		Role:      role,
+		Text:      text,
+		CreatedAt: time.Now().UTC(),
 	})
 	if len(s.voiceAgentDialogTurns) > 80 {
 		s.voiceAgentDialogTurns = s.voiceAgentDialogTurns[len(s.voiceAgentDialogTurns)-80:]
@@ -67,8 +73,12 @@ func (s *appState) finishVoiceAgentSessionSummary(ctx context.Context, cfg *conf
 		return ""
 	}
 
-	transcript := s.voiceAgentSessionTranscript()
+	turns := s.voiceAgentDialogTurnSnapshot()
+	transcript := formatVoiceAgentDialogTurns(turns)
 	if strings.TrimSpace(transcript) == "" {
+		return ""
+	}
+	if !s.claimVoiceAgentSessionSummaryFinalization() {
 		return ""
 	}
 
@@ -105,8 +115,85 @@ func (s *appState) finishVoiceAgentSessionSummary(ctx context.Context, cfg *conf
 	}
 
 	s.sendPrompterMessage("system", fmt.Sprintf("Session summary\n%s", summary), true)
+	s.persistVoiceAgentSessionSummary(ctx, cfg, turns, transcript, summary)
 	s.addLog("Voice Agent session summary created", "success")
 	return summary
+}
+
+func (s *appState) claimVoiceAgentSessionSummaryFinalization() bool {
+	if s == nil {
+		return false
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.voiceAgentSummaryDone {
+		return false
+	}
+	s.voiceAgentSummaryDone = true
+	return true
+}
+
+func (s *appState) voiceAgentDialogTurnSnapshot() []voiceAgentDialogTurn {
+	if s == nil {
+		return nil
+	}
+	s.mu.Lock()
+	turns := append([]voiceAgentDialogTurn(nil), s.voiceAgentDialogTurns...)
+	s.mu.Unlock()
+	return turns
+}
+
+func (s *appState) persistVoiceAgentSessionSummary(ctx context.Context, cfg *config.Config, turns []voiceAgentDialogTurn, transcript, summary string) {
+	if s == nil || s.voiceAgentStore == nil {
+		return
+	}
+
+	s.mu.Lock()
+	startedAt := s.voiceAgentSessionStarted
+	activeProfiles := cloneStringMap(s.activeProfiles)
+	s.mu.Unlock()
+	if startedAt.IsZero() {
+		startedAt = time.Now().UTC()
+	}
+
+	language := "en"
+	if cfg != nil && strings.TrimSpace(cfg.General.Language) != "" {
+		language = strings.TrimSpace(cfg.General.Language)
+	}
+	runtimeKind := "native_realtime"
+	if cfg != nil && cfg.VoiceAgent.PipelineFallback {
+		runtimeKind = "pipeline_fallback"
+	}
+	profileID := activeProfiles["realtime_voice"]
+	if profileID == "" && cfg != nil {
+		profileID = cfg.ModelSelection.VoiceAgent.PrimaryProfileID
+	}
+
+	storeTurns := make([]store.VoiceAgentTurn, 0, len(turns))
+	for _, turn := range turns {
+		storeTurns = append(storeTurns, store.VoiceAgentTurn{
+			Role:      turn.Role,
+			Text:      turn.Text,
+			CreatedAt: turn.CreatedAt,
+		})
+	}
+	_, err := s.voiceAgentStore.SaveVoiceAgentSession(ctx, store.VoiceAgentSession{
+		StartedAt:         startedAt,
+		EndedAt:           time.Now().UTC(),
+		Language:          language,
+		ProviderProfileID: profileID,
+		RuntimeKind:       runtimeKind,
+		Transcript:        transcript,
+		Turns:             storeTurns,
+		Summary: store.VoiceAgentSessionSummary{
+			Title:   voiceAgentSummaryTitle(summary),
+			Summary: summary,
+			RawText: summary,
+		},
+	})
+	if err != nil {
+		slog.Warn("voice agent session summary persistence failed", "err", err)
+	}
 }
 
 func voiceAgentSessionSummaryEnabled(cfg *config.Config) bool {
@@ -146,6 +233,17 @@ func formatVoiceAgentDialogTurns(turns []voiceAgentDialogTurn) string {
 		builder.WriteString(strings.Join(strings.Fields(text), " "))
 	}
 	return builder.String()
+}
+
+func voiceAgentSummaryTitle(summary string) string {
+	words := strings.Fields(summary)
+	if len(words) == 0 {
+		return "Voice Agent session"
+	}
+	if len(words) > 8 {
+		words = words[:8]
+	}
+	return strings.Join(words, " ")
 }
 
 func voiceAgentSummaryInstruction(locale string) string {

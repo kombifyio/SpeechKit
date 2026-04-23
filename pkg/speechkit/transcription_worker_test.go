@@ -43,6 +43,56 @@ func (o *recordingOutput) Deliver(_ context.Context, transcript Transcript, targ
 	return nil
 }
 
+func (o *recordingOutput) snapshot() []deliveredTranscript {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	return append([]deliveredTranscript(nil), o.delivered...)
+}
+
+type blockingPersistence struct {
+	started     chan struct{}
+	release     chan struct{}
+	done        chan struct{}
+	startedOnce sync.Once
+	doneOnce    sync.Once
+}
+
+func newBlockingPersistence() *blockingPersistence {
+	return &blockingPersistence{
+		started: make(chan struct{}),
+		release: make(chan struct{}),
+		done:    make(chan struct{}),
+	}
+}
+
+func (s *blockingPersistence) SaveQuickNote(context.Context, string, string, string, int64, int64, []byte) (int64, error) {
+	return 0, nil
+}
+
+func (s *blockingPersistence) GetQuickNoteText(context.Context, int64) (string, error) {
+	return "", nil
+}
+
+func (s *blockingPersistence) UpdateQuickNote(context.Context, int64, string) error {
+	return nil
+}
+
+func (s *blockingPersistence) UpdateQuickNoteCapture(context.Context, int64, string, string, int64, int64, []byte) error {
+	return nil
+}
+
+func (s *blockingPersistence) SaveTranscription(ctx context.Context, _ string, _ string, _ string, _ string, _ int64, _ int64, _ []byte) error {
+	s.startedOnce.Do(func() { close(s.started) })
+	defer s.doneOnce.Do(func() { close(s.done) })
+
+	select {
+	case <-s.release:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
+
 type recordingObserver struct {
 	mu         sync.Mutex
 	states     []string
@@ -175,6 +225,87 @@ func TestTranscriptionWorkerHandlesTranscriberErrors(t *testing.T) {
 	}
 }
 
+func TestTranscriptionWorkerDeliversBeforeHistoryPersistence(t *testing.T) {
+	store := newBlockingPersistence()
+	output := &recordingOutput{}
+	commitObserver := &testCommitObserver{}
+	runner := NewTranscriptionRunner(stubTranscriber{
+		transcript: Transcript{
+			Text:     "  fast dictation  ",
+			Language: "en",
+			Provider: "local",
+			Model:    "ggml-large-v3-turbo.bin",
+			Duration: 250 * time.Millisecond,
+		},
+	}, store).WithObserver(commitObserver)
+
+	worker, err := NewTranscriptionWorker(TranscriptionWorkerConfig{
+		Timeout:   time.Second,
+		QueueSize: 1,
+		Runner:    runner,
+		Output:    output,
+	})
+	if err != nil {
+		t.Fatalf("NewTranscriptionWorker() error = %v", err)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	worker.Start(ctx)
+
+	if err := worker.Submit(TranscriptionJob{
+		Submission: Submission{
+			WAV:          []byte("wav"),
+			DurationSecs: 0.2,
+			Language:     "en",
+			Prefix:       "\n\n",
+		},
+		Target: "editor",
+	}); err != nil {
+		t.Fatalf("Submit() error = %v", err)
+	}
+	worker.Close()
+
+	var delivered []deliveredTranscript
+	deadline := time.After(time.Second)
+	for {
+		delivered = output.snapshot()
+		if len(delivered) == 1 {
+			break
+		}
+		select {
+		case <-deadline:
+			t.Fatal("output was not delivered before history persistence finished")
+		case <-time.After(5 * time.Millisecond):
+		}
+	}
+
+	if got, want := delivered[0].transcript.Text, "\n\nfast dictation"; got != want {
+		t.Fatalf("delivered transcript = %q, want %q", got, want)
+	}
+
+	select {
+	case <-store.started:
+	case <-time.After(time.Second):
+		t.Fatal("history persistence did not start")
+	}
+
+	close(store.release)
+	worker.Wait()
+
+	select {
+	case <-store.done:
+	default:
+		t.Fatal("history persistence did not finish")
+	}
+	if len(commitObserver.completions) != 1 {
+		t.Fatalf("commit observer completions = %d, want 1", len(commitObserver.completions))
+	}
+	if !commitObserver.completions[0].TranscriptionPersisted {
+		t.Fatal("transcription persistence notification missing")
+	}
+}
+
 func TestTranscriptionWorkerRequiresTranscriber(t *testing.T) {
 	_, err := NewTranscriptionWorker(TranscriptionWorkerConfig{
 		Runner: NewTranscriptionRunner(nil, nil),
@@ -289,7 +420,7 @@ func TestTranscriptionWorkerSuccessLogRedactsTranscriptText(t *testing.T) {
 	if strings.Contains(joined, "secret customer text") {
 		t.Fatalf("expected redacted success log, got logs: %s", joined)
 	}
-	if !strings.Contains(joined, "transcript committed") {
+	if !strings.Contains(joined, "transcript ready") {
 		t.Fatalf("expected success log marker, got logs: %s", joined)
 	}
 }

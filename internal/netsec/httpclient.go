@@ -1,16 +1,17 @@
 package netsec
 
 import (
+	"context"
 	"crypto/tls"
+	"fmt"
 	"net"
 	"net/http"
 	"strings"
 	"time"
 )
 
-// Default header allowlist for RedactingRoundTripper. Headers NOT in this
-// set are logged as the literal string "[REDACTED]" when DumpRequest /
-// DumpResponse is called with the Redact helper.
+// Headers in this set are logged as the literal string "[REDACTED]" when
+// callers use RedactHeaders or the RedactedHeadersKey context value.
 var sensitiveHeaders = map[string]struct{}{
 	"authorization":        {},
 	"proxy-authorization":  {},
@@ -36,11 +37,16 @@ type ClientOptions struct {
 
 	// DisableKeepAlives turns off connection reuse. Leave false for best perf.
 	DisableKeepAlives bool
+
+	// DialValidation, when non-nil, validates the actual resolved target IP
+	// before opening a TCP connection. Use this for any client that might reach
+	// user-configurable provider, model download, or update URLs.
+	DialValidation *ValidationOptions
 }
 
 // NewSafeHTTPClient returns an *http.Client with explicit TLS 1.2+ minimum,
-// sensible timeouts, and a RedactingRoundTripper wrapper so that any
-// subsequent call to httputil.DumpRequest will not leak Authorization headers.
+// sensible timeouts, optional dial-target validation, and a transport wrapper
+// that stores redacted request headers in context for logging paths that opt in.
 //
 // The client is safe to share across goroutines.
 func NewSafeHTTPClient(opts ClientOptions) *http.Client {
@@ -55,12 +61,21 @@ func NewSafeHTTPClient(opts ClientOptions) *http.Client {
 
 	inner := opts.InnerTransport
 	if inner == nil {
+		dialer := &net.Dialer{
+			Timeout:   10 * time.Second,
+			KeepAlive: 30 * time.Second,
+		}
+		dialContext := dialer.DialContext
+		proxy := http.ProxyFromEnvironment
+		if opts.DialValidation != nil {
+			dialContext = restrictedDialContext(dialer, opts.DialValidation)
+			// Environment proxies resolve the target host outside this process,
+			// which would bypass resolve-time IP validation.
+			proxy = nil
+		}
 		inner = &http.Transport{
-			Proxy: http.ProxyFromEnvironment,
-			DialContext: (&net.Dialer{
-				Timeout:   10 * time.Second,
-				KeepAlive: 30 * time.Second,
-			}).DialContext,
+			Proxy:                 proxy,
+			DialContext:           dialContext,
 			ForceAttemptHTTP2:     true,
 			MaxIdleConns:          100,
 			IdleConnTimeout:       90 * time.Second,
@@ -76,6 +91,51 @@ func NewSafeHTTPClient(opts ClientOptions) *http.Client {
 	return &http.Client{
 		Timeout:   timeout,
 		Transport: &RedactingRoundTripper{Base: inner},
+	}
+}
+
+func restrictedDialContext(dialer *net.Dialer, validation *ValidationOptions) func(context.Context, string, string) (net.Conn, error) {
+	return func(ctx context.Context, network, address string) (net.Conn, error) {
+		if validation == nil {
+			return dialer.DialContext(ctx, network, address)
+		}
+
+		host, port, err := net.SplitHostPort(address)
+		if err != nil {
+			return nil, fmt.Errorf("netsec: split dial address %q: %w", address, err)
+		}
+
+		opts := *validation
+		if ip := net.ParseIP(host); ip != nil {
+			if err := ValidateResolvedIP(ip, opts); err != nil {
+				return nil, fmt.Errorf("netsec: dial target %s: %w", address, err)
+			}
+			return dialer.DialContext(ctx, network, address)
+		}
+
+		resolved, err := net.DefaultResolver.LookupIPAddr(ctx, host)
+		if err != nil {
+			return nil, fmt.Errorf("netsec: resolve %s: %w", host, err)
+		}
+		if len(resolved) == 0 {
+			return nil, fmt.Errorf("%w: host=%s", ErrInvalidHost, host)
+		}
+
+		for _, addr := range resolved {
+			if err := ValidateResolvedIP(addr.IP, opts); err != nil {
+				return nil, fmt.Errorf("netsec: resolved %s to %s: %w", host, addr.String(), err)
+			}
+		}
+
+		var lastErr error
+		for _, addr := range resolved {
+			conn, err := dialer.DialContext(ctx, network, net.JoinHostPort(addr.String(), port))
+			if err == nil {
+				return conn, nil
+			}
+			lastErr = err
+		}
+		return nil, fmt.Errorf("netsec: dial %s: %w", address, lastErr)
 	}
 }
 
@@ -103,6 +163,7 @@ func (r *RedactingRoundTripper) RoundTrip(req *http.Request) (*http.Response, er
 	if base == nil {
 		base = http.DefaultTransport
 	}
+	req = req.WithContext(context.WithValue(req.Context(), RedactedHeadersKey, RedactHeaders(req.Header)))
 	return base.RoundTrip(req)
 }
 

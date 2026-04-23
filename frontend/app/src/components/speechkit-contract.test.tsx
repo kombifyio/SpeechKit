@@ -3,8 +3,13 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   defaultOverlayState,
   defaultSettingsState,
+  fetchAPIV1Modes,
+  fetchAPIV1ProviderArtifacts,
+  fetchAPIV1Profiles,
+  fetchAPIV1Readiness,
   fetchOverlayState,
   fetchSettingsState,
+  patchAPIV1ModeSettings,
   saveSettingsState,
   type SpeechKitSettingsState,
 } from "@/lib/speechkit";
@@ -34,6 +39,9 @@ describe("speechkit frontend contract", () => {
     expect(defaultSettingsState.voiceAgentHotkey).toBe("ctrl+shift");
     expect(defaultSettingsState.voiceAgentRefinementPrompt).toBe("");
     expect(defaultSettingsState.activeMode).toBe("none");
+    expect(defaultSettingsState.modelSelections.assist.primaryProfileId).toBe(
+      "assist.builtin.gemma4-e4b",
+    );
     expect(defaultSettingsState.modeEnabled).toEqual({
       dictate: true,
       assist: true,
@@ -134,6 +142,188 @@ describe("speechkit frontend contract", () => {
     expect(state.profiles?.[0]?.variants?.[0]?.recommended).toBe(true);
   });
 
+  it("fetches the versioned v23 mode control plane contract", async () => {
+    fetchMock.mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          contracts: [
+            {
+              mode: "dictation",
+              intelligence: "user",
+              input: "audio",
+              output: "text",
+              allowed: ["transcription"],
+              forbidden: ["tool_calling", "llm"],
+            },
+          ],
+          settings: {
+            dictation: {
+              enabled: true,
+              hotkey: "win+alt",
+              primaryProfileId: "stt.local.whispercpp",
+              dictionaryEnabled: true,
+            },
+            assist: {
+              enabled: true,
+              hotkey: "ctrl+win",
+              ttsEnabled: true,
+              utilityRegistry: "default",
+            },
+            voiceAgent: {
+              enabled: true,
+              hotkey: "ctrl+shift",
+              sessionSummary: true,
+              pipelineFallback: false,
+            },
+          },
+        }),
+        { status: 200 },
+      ),
+    );
+
+    const payload = await fetchAPIV1Modes();
+
+    expect(fetchMock).toHaveBeenCalledWith("/api/v1/modes", {
+      cache: "no-store",
+    });
+    expect(payload.contracts[0].intelligence).toBe("user");
+    expect(payload.settings.dictation.primaryProfileId).toBe(
+      "stt.local.whispercpp",
+    );
+    expect(payload.settings.voiceAgent.sessionSummary).toBe(true);
+  });
+
+  it("fetches v23 provider profiles and readiness", async () => {
+    fetchMock
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            profiles: [
+              {
+                id: "assist.ollama.gemma4-e4b",
+                modality: "assist",
+                name: "Gemma 4 E4B (Ollama)",
+                providerKind: "local_provider",
+                capabilities: ["llm", "tool_calling"],
+              },
+            ],
+            activeProfiles: { assist: "assist.ollama.gemma4-e4b" },
+            groups: {
+              "assist:local_provider": ["assist.ollama.gemma4-e4b"],
+            },
+            contracts: [],
+          }),
+          { status: 200 },
+        ),
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify([
+            {
+              profileId: "assist.ollama.gemma4-e4b",
+              mode: "assist",
+              providerKind: "local_provider",
+              executionMode: "ollama_local",
+              active: true,
+              default: false,
+              configured: true,
+              credentialsReady: true,
+              runtimeReady: true,
+              capabilityReady: true,
+              ready: true,
+              requirements: [
+                {
+                  id: "runtime.ollama_base_url",
+                  label: "Ollama base URL",
+                  category: "runtime",
+                  required: true,
+                  ready: true,
+                },
+              ],
+            },
+          ]),
+          { status: 200 },
+        ),
+      );
+
+    const profiles = await fetchAPIV1Profiles();
+    const readiness = await fetchAPIV1Readiness();
+
+    expect(profiles.groups["assist:local_provider"]).toEqual([
+      "assist.ollama.gemma4-e4b",
+    ]);
+    expect(readiness[0].ready).toBe(true);
+    expect(readiness[0].requirements?.[0]?.id).toBe("runtime.ollama_base_url");
+  });
+
+  it("fetches v23 provider artifacts for local built-in setup", async () => {
+    fetchMock.mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          artifacts: [
+            {
+              id: "llamacpp.gemma-3-4b-it-q4-k-m-voice",
+              profileId: "realtime.builtin.pipeline",
+              name: "Gemma 3 4B IT Q4_K_M - Voice Agent (GGUF)",
+              description: "Voice Agent local model",
+              sizeLabel: "~2.5 GB",
+              sizeBytes: 2490000000,
+              kind: "http",
+              license: "gemma",
+              available: false,
+              selected: false,
+              recommended: true,
+            },
+          ],
+          jobs: [],
+        }),
+        { status: 200 },
+      ),
+    );
+
+    const payload = await fetchAPIV1ProviderArtifacts();
+
+    expect(fetchMock).toHaveBeenCalledWith("/api/v1/providers/artifacts", {
+      cache: "no-store",
+    });
+    expect(payload.artifacts[0].profileId).toBe("realtime.builtin.pipeline");
+    expect(payload.artifacts[0].recommended).toBe(true);
+    expect(payload.jobs).toEqual([]);
+  });
+
+  it("patches per-mode v23 settings through the control plane", async () => {
+    fetchMock.mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          enabled: false,
+          hotkey: "ctrl+win+j",
+          hotkeyBehavior: "toggle",
+          ttsEnabled: false,
+        }),
+        { status: 200 },
+      ),
+    );
+
+    const result = await patchAPIV1ModeSettings("assist", {
+      enabled: false,
+      hotkey: "ctrl+win+j",
+      hotkeyBehavior: "toggle",
+      ttsEnabled: false,
+    });
+
+    expect(fetchMock).toHaveBeenCalledWith("/api/v1/modes/assist/settings", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        enabled: false,
+        hotkey: "ctrl+win+j",
+        hotkeyBehavior: "toggle",
+        ttsEnabled: false,
+      }),
+    });
+    expect(result.hotkeyBehavior).toBe("toggle");
+  });
+
   it("coerces unavailable overlay modes back to none", async () => {
     fetchMock.mockResolvedValue(
       new Response(
@@ -182,7 +372,9 @@ describe("speechkit frontend contract", () => {
     expect(params.get("dictate_hotkey")).toBe("win+alt");
     expect(params.get("assist_hotkey")).toBe("");
     expect(params.get("voice_agent_hotkey")).toBe("ctrl+shift+k");
-    expect(params.get("voice_agent_refinement_prompt")).toBe("Refinement prompt");
+    expect(params.get("voice_agent_refinement_prompt")).toBe(
+      "Refinement prompt",
+    );
     expect(params.has("voice_agent_framework_prompt")).toBe(false);
     expect(params.get("active_mode")).toBe("voice_agent");
     expect(params.get("agent_hotkey")).toBe("ctrl+shift+k");

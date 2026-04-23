@@ -169,7 +169,7 @@ func TestApplyLocalInstallDefaultsBackfillsBuiltInPrimaryModels(t *testing.T) {
 	}
 }
 
-func TestLoadMigratesLegacyUnbundledLocalLLMDefaults(t *testing.T) {
+func TestLoadPreservesConfiguredLocalLLMProfilesWithoutModelPath(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "config.toml")
 
@@ -199,16 +199,16 @@ pipeline_fallback = true
 		t.Fatalf("Load: %v", err)
 	}
 
-	if got := cfg.ModelSelection.Assist.PrimaryProfileID; got != "" {
-		t.Fatalf("assist primary profile = %q, want empty after migrating unbundled local LLM default", got)
+	if got := cfg.ModelSelection.Assist.PrimaryProfileID; got != "assist.builtin.gemma4-e4b" {
+		t.Fatalf("assist primary profile = %q, want local built-in profile", got)
 	}
-	if got, want := cfg.ModelSelection.VoiceAgent.PrimaryProfileID, "realtime.google.gemini-native-audio"; got != want {
+	if got, want := cfg.ModelSelection.VoiceAgent.PrimaryProfileID, "realtime.builtin.pipeline"; got != want {
 		t.Fatalf("voice agent primary profile = %q, want %q", got, want)
 	}
-	if cfg.VoiceAgent.PipelineFallback {
-		t.Fatal("voice agent pipeline fallback should be disabled after migrating unbundled local LLM default")
+	if !cfg.VoiceAgent.PipelineFallback {
+		t.Fatal("voice agent pipeline fallback should stay enabled")
 	}
-	if got, want := cfg.VoiceAgent.Model, "gemini-2.5-flash-native-audio-preview-12-2025"; got != want {
+	if got, want := cfg.VoiceAgent.Model, "speechkit-local-voice-pipeline"; got != want {
 		t.Fatalf("voice agent model = %q, want %q", got, want)
 	}
 }

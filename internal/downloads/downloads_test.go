@@ -338,6 +338,112 @@ func TestCatalogMarksLlamaCppAssistModelSelectedFromConfig(t *testing.T) {
 	t.Fatal("expected llama.cpp assist Q4_K_M item in catalog")
 }
 
+func TestCatalogMarksLocalLLMRuntimeRequiredWhenBundledServerMissing(t *testing.T) {
+	t.Setenv("LOCALAPPDATA", t.TempDir())
+	t.Setenv("SPEECHKIT_ALLOW_LLAMA_PATH", "0")
+
+	cfg := &config.Config{}
+	cfg.LocalLLM.BaseURL = "http://127.0.0.1:1/v1"
+
+	items := CatalogWithStatus(t.Context(), cfg, StatusOptions{ProbeRuntimes: true})
+	for _, item := range items {
+		if item.ID == "llamacpp.gemma-3-4b-it-q4-k-m" {
+			if item.RuntimeReady {
+				t.Fatal("expected local LLM runtime to be unavailable")
+			}
+			if item.RuntimeProblem == "" {
+				t.Fatal("expected local LLM runtime problem")
+			}
+			return
+		}
+	}
+
+	t.Fatal("expected llama.cpp assist Q4_K_M item in catalog")
+}
+
+func TestCatalogMarksLocalLLMRuntimeReadyWhenBundledServerPresent(t *testing.T) {
+	localAppData := t.TempDir()
+	t.Setenv("LOCALAPPDATA", localAppData)
+	t.Setenv("SPEECHKIT_ALLOW_LLAMA_PATH", "0")
+	managedDir := filepath.Join(localAppData, "SpeechKit", "llama")
+	if err := os.MkdirAll(managedDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(managedDir, "llama-server.exe"), []byte("fake"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg := &config.Config{}
+
+	items := CatalogWithStatus(t.Context(), cfg, StatusOptions{ProbeRuntimes: true})
+	for _, item := range items {
+		if item.ID == "llamacpp.gemma-3-4b-it-q4-k-m" {
+			if !item.RuntimeReady {
+				t.Fatalf("expected local LLM runtime to be ready: %s", item.RuntimeProblem)
+			}
+			if item.RuntimeProblem != "" {
+				t.Fatalf("expected no runtime problem, got %q", item.RuntimeProblem)
+			}
+			return
+		}
+	}
+
+	t.Fatal("expected llama.cpp assist Q4_K_M item in catalog")
+}
+
+func TestCatalogMarksLocalLLMArtifactsSelectedPerProfile(t *testing.T) {
+	cfg := &config.Config{}
+	cfg.LocalLLM.ModelPath = filepath.Join("C:", "SpeechKit", "models", "gemma-3-4b-it-Q4_K_M.gguf")
+	cfg.LocalLLM.AssistModel = "gemma-3-4b-it-Q4_K_M.gguf"
+	cfg.LocalLLM.AgentModel = "gemma-3-4b-it-Q8_0.gguf"
+
+	items := CatalogWithStatus(t.Context(), cfg, StatusOptions{})
+	selected := map[string]bool{}
+	for _, item := range items {
+		selected[item.ID] = item.Selected
+	}
+
+	if !selected["llamacpp.gemma-3-4b-it-q4-k-m"] {
+		t.Fatal("expected assist Q4_K_M artifact to be selected")
+	}
+	if selected["llamacpp.gemma-3-4b-it-q4-k-m-voice"] {
+		t.Fatal("did not expect voice Q4_K_M artifact to be selected from assist model")
+	}
+	if !selected["llamacpp.gemma-3-4b-it-q8-0-voice"] {
+		t.Fatal("expected voice Q8_0 artifact to be selected")
+	}
+}
+
+func TestReadinessStatusOptionsSkipOllamaProbe(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/tags" {
+			http.NotFound(w, r)
+			return
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"models": []map[string]string{{"name": "gemma4:e4b"}},
+		})
+	}))
+	defer srv.Close()
+
+	old := OllamaBaseURL
+	OllamaBaseURL = srv.URL
+	defer func() { OllamaBaseURL = old }()
+
+	cfg := &config.Config{}
+	items := CatalogWithStatus(t.Context(), cfg, ReadinessStatusOptions)
+	for _, item := range items {
+		if item.Kind == KindOllama && item.ID == "ollama.gemma4-e4b-assist" {
+			if item.Available {
+				t.Fatal("readiness catalog should not probe Ollama availability")
+			}
+			return
+		}
+	}
+
+	t.Fatal("expected Ollama assist item in catalog")
+}
+
 func TestResolveWhisperModelsDir(t *testing.T) {
 	t.Run("from default model download dir", func(t *testing.T) {
 		cfg := &config.Config{}

@@ -27,6 +27,8 @@ const {
   testProviderCredentialMock,
   fetchAudioDevicesMock,
   setAudioDeviceMock,
+  fetchAPIV1DictionaryMock,
+  importAPIV1DictionaryMock,
   fetchDownloadCatalogMock,
   fetchDownloadJobsMock,
   startModelDownloadMock,
@@ -52,6 +54,8 @@ const {
     >(),
   fetchAudioDevicesMock: vi.fn(),
   setAudioDeviceMock: vi.fn<(deviceId: string) => Promise<string>>(),
+  fetchAPIV1DictionaryMock: vi.fn(),
+  importAPIV1DictionaryMock: vi.fn(),
   fetchDownloadCatalogMock: vi.fn(),
   fetchDownloadJobsMock: vi.fn(),
   startModelDownloadMock: vi.fn(),
@@ -67,6 +71,20 @@ vi.mock("@wailsio/runtime", () => ({
 }));
 
 vi.mock("@/lib/speechkit", () => ({
+  builtInPrimaryModelSelections: {
+    dictate: {
+      primaryProfileId: "stt.local.whispercpp",
+      fallbackProfileId: "",
+    },
+    assist: {
+      primaryProfileId: "assist.builtin.gemma4-e4b",
+      fallbackProfileId: "",
+    },
+    voice_agent: {
+      primaryProfileId: "realtime.google.gemini-native-audio",
+      fallbackProfileId: "",
+    },
+  },
   defaultSettingsState: {
     overlayEnabled: true,
     storeBackend: "sqlite",
@@ -124,7 +142,7 @@ vi.mock("@/lib/speechkit", () => ({
         fallbackProfileId: "",
       },
       assist: {
-        primaryProfileId: "",
+        primaryProfileId: "assist.builtin.gemma4-e4b",
         fallbackProfileId: "",
       },
       voice_agent: {
@@ -153,6 +171,8 @@ vi.mock("@/lib/speechkit", () => ({
   testProviderCredential: testProviderCredentialMock,
   fetchAudioDevices: fetchAudioDevicesMock,
   setAudioDevice: setAudioDeviceMock,
+  fetchAPIV1Dictionary: fetchAPIV1DictionaryMock,
+  importAPIV1Dictionary: importAPIV1DictionaryMock,
   fetchDownloadCatalog: fetchDownloadCatalogMock,
   fetchDownloadJobs: fetchDownloadJobsMock,
   startModelDownload: startModelDownloadMock,
@@ -234,8 +254,14 @@ const baseSettings: SpeechKitSettingsState = {
   activeProfiles: { stt: "stt-local" },
   modelSelections: {
     dictate: { primaryProfileId: "stt-local", fallbackProfileId: "" },
-    assist: { primaryProfileId: "", fallbackProfileId: "" },
-    voice_agent: { primaryProfileId: "", fallbackProfileId: "" },
+    assist: {
+      primaryProfileId: "assist.builtin.gemma4-e4b",
+      fallbackProfileId: "",
+    },
+    voice_agent: {
+      primaryProfileId: "realtime.google.gemini-native-audio",
+      fallbackProfileId: "",
+    },
   },
   profiles: [
     {
@@ -271,6 +297,8 @@ describe("SettingsApp", () => {
     testProviderCredentialMock.mockReset();
     fetchAudioDevicesMock.mockReset();
     setAudioDeviceMock.mockReset();
+    fetchAPIV1DictionaryMock.mockReset();
+    importAPIV1DictionaryMock.mockReset();
     fetchDownloadCatalogMock.mockReset();
     fetchDownloadJobsMock.mockReset();
     startModelDownloadMock.mockReset();
@@ -327,6 +355,16 @@ describe("SettingsApp", () => {
     clearProviderCredentialMock.mockResolvedValue({ message: "Cleared" });
     testProviderCredentialMock.mockResolvedValue({ message: "Key valid" });
     setAudioDeviceMock.mockResolvedValue("Selected");
+    fetchAPIV1DictionaryMock.mockResolvedValue({
+      language: "en",
+      entries: [],
+    });
+    importAPIV1DictionaryMock.mockImplementation(
+      async (language: string, entries: unknown[]) => ({
+        language,
+        entries,
+      }),
+    );
     fetchDownloadCatalogMock.mockResolvedValue([]);
     fetchDownloadJobsMock.mockResolvedValue([]);
     startModelDownloadMock.mockResolvedValue({
@@ -369,6 +407,37 @@ describe("SettingsApp", () => {
     ).not.toBeInTheDocument();
   });
 
+  it("shows user dictionary usage counts from the API", async () => {
+    fetchSettingsStateMock.mockResolvedValue(baseSettings);
+    fetchAPIV1DictionaryMock.mockResolvedValue({
+      language: "de",
+      entries: [
+        {
+          id: 1,
+          spoken: "kombi fire",
+          canonical: "Kombify",
+          language: "de",
+          source: "settings",
+          enabled: true,
+          usageCount: 7,
+        },
+      ],
+    });
+
+    render(<SettingsApp initialTab="stt" />);
+
+    expect(await screen.findByText("Kombify")).toBeInTheDocument();
+    expect(screen.getByText("7 uses")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Manage list" }));
+
+    expect(
+      await screen.findByLabelText("Dictionary usage count 1"),
+    ).toHaveTextContent("7");
+    expect(screen.getByRole("button", { name: "Import" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Export" })).toBeInTheDocument();
+  });
+
   it("saves model changes even while hugging face inference is off", async () => {
     fetchSettingsStateMock.mockResolvedValue({
       ...baseSettings,
@@ -382,6 +451,43 @@ describe("SettingsApp", () => {
 
     await screen.findByText("Model setup");
     expect(screen.getByText("Primary")).toBeInTheDocument();
+  });
+
+  it("places routing controls above model setup without a card and defaults primary", async () => {
+    fetchSettingsStateMock.mockResolvedValue({
+      ...baseSettings,
+      profiles: [
+        {
+          id: "assist.builtin.gemma4-e4b",
+          modality: "assist",
+          name: "llama.cpp (Local Built-in)",
+          providerKind: "local_built_in",
+          executionMode: "local",
+          source: "Local Built-in",
+          description: "SpeechKit-managed llama.cpp runtime.",
+        },
+      ],
+      activeProfiles: {},
+      modelSelections: {
+        ...baseSettings.modelSelections,
+        assist: { primaryProfileId: "", fallbackProfileId: "" },
+      },
+    });
+
+    render(<SettingsApp initialTab="assist" />);
+
+    const routing = await screen.findByTestId("model-routing-controls");
+    const modelSetup = screen.getByText("Model setup");
+
+    expect(
+      routing.compareDocumentPosition(modelSetup) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    expect(routing.className).not.toContain("bg-[color:var(--sk-surface-1)]");
+    expect(screen.getByLabelText("Primary model")).toHaveValue(
+      "assist.builtin.gemma4-e4b",
+    );
+    expect(within(routing).getByText("Primary & fallback")).toBeInTheDocument();
   });
 
   it("renders model descriptions for live-switchable profiles", async () => {
@@ -545,6 +651,15 @@ describe("SettingsApp", () => {
     expect(screen.queryByText("Dictate hotkey")).not.toBeInTheDocument();
     expect(screen.queryByText("Assist hotkey")).not.toBeInTheDocument();
     expect(screen.queryByText("Voice Agent hotkey")).not.toBeInTheDocument();
+    expect(screen.queryByText("Overlay feedback")).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Assist Mode Big Productivity" }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", {
+        name: "Voice Agent Mode Small Feedback",
+      }),
+    ).not.toBeInTheDocument();
     expect(
       screen.getByRole("switch", { name: "Auto-start on app launch" }),
     ).toHaveAttribute("aria-checked", "false");
@@ -597,6 +712,35 @@ describe("SettingsApp", () => {
           voiceAgentHotkey: "ctrl+shift",
         }),
       ),
+    );
+  });
+
+  it("shows compact usage guidance on each mode settings page", async () => {
+    fetchSettingsStateMock.mockResolvedValue(baseSettings);
+
+    render(<SettingsApp initialTab="stt" />);
+
+    expect(await screen.findByTestId("mode-guide-stt")).toHaveTextContent(
+      "Use this for exact text output",
+    );
+    expect(screen.getByTestId("mode-guide-stt")).toHaveTextContent(
+      "without Assist utilities.",
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Assist Mode" }));
+    expect(screen.getByTestId("mode-guide-assist")).toHaveTextContent(
+      "Use this for one-shot transformations",
+    );
+    expect(screen.getByTestId("mode-guide-assist")).toHaveTextContent(
+      "summarize this in three bullets",
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Voice Agent Mode" }));
+    expect(screen.getByTestId("mode-guide-realtime_voice")).toHaveTextContent(
+      "Use this for live follow-up thinking",
+    );
+    expect(screen.getByTestId("mode-guide-realtime_voice")).toHaveTextContent(
+      "help me decide the next release slice",
     );
   });
 
@@ -941,9 +1085,20 @@ describe("SettingsApp", () => {
 
     render(<SettingsApp />);
 
+    await screen.findByText("Storage");
+    expect(
+      screen.queryByRole("button", { name: "Assist Mode Big Productivity" }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", {
+        name: "Voice Agent Mode Small Feedback",
+      }),
+    ).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Assist Mode" }));
     fireEvent.click(
       await screen.findByRole("button", {
-        name: "Assist Mode Big Productivity",
+        name: "Overlay feedback Big Productivity",
       }),
     );
     await waitFor(() =>
@@ -955,9 +1110,11 @@ describe("SettingsApp", () => {
       ),
     );
 
+    fireEvent.click(screen.getByRole("button", { name: "Voice Agent Mode" }));
+    await screen.findByText("Voice Agent hotkey");
     fireEvent.click(
       await screen.findByRole("button", {
-        name: "Voice Agent Mode Small Feedback",
+        name: "Overlay feedback Small Feedback",
       }),
     );
     await waitFor(() =>
@@ -1773,7 +1930,6 @@ describe("SettingsApp", () => {
         available: true,
         selected: false,
         recommended: true,
-        runtimeReady: false,
         runtimeProblem: "Local runtime missing: whisper-server binary missing.",
       },
     ]);

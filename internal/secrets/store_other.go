@@ -2,73 +2,20 @@
 
 package secrets
 
-import (
-	"os"
-	"path/filepath"
-	"strings"
-
-	"github.com/kombifyio/SpeechKit/internal/runtimepath"
-)
-
 func newDefaultStore() secretBackend {
-	return &fileStore{
-		protect: func(data []byte) ([]byte, error) { return data, nil },
-		unprotect: func(data []byte) ([]byte, error) {
-			return data, nil
-		},
-	}
+	return unsupportedStore{}
 }
 
-type fileStore struct {
-	protect   func([]byte) ([]byte, error)
-	unprotect func([]byte) ([]byte, error)
+type unsupportedStore struct{}
+
+func (unsupportedStore) Load(name string) (string, bool, error) {
+	return "", false, nil
 }
 
-func (s *fileStore) Load(name string) (string, bool, error) {
-	path, err := secretFilePath(name)
-	if err != nil {
-		return "", false, err
-	}
-	data, err := os.ReadFile(path)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return "", false, nil
-		}
-		return "", false, err
-	}
-	plain, err := s.unprotect(data)
-	if err != nil {
-		return "", false, err
-	}
-	return strings.TrimSpace(string(plain)), true, nil
+func (unsupportedStore) Store(name, value string) error {
+	return ErrSecureStoreUnavailable
 }
 
-func (s *fileStore) Store(name, value string) error {
-	path, err := secretFilePath(name)
-	if err != nil {
-		return err
-	}
-	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
-		return err
-	}
-	protected, err := s.protect([]byte(value))
-	if err != nil {
-		return err
-	}
-	return os.WriteFile(path, protected, 0600)
-}
-
-func (s *fileStore) Delete(name string) error {
-	path, err := secretFilePath(name)
-	if err != nil {
-		return err
-	}
-	if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
-		return err
-	}
+func (unsupportedStore) Delete(name string) error {
 	return nil
-}
-
-func secretFilePath(name string) (string, error) {
-	return filepath.Join(runtimepath.SecretsDir(), name+".bin"), nil
 }

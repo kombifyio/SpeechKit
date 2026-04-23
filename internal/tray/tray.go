@@ -80,6 +80,15 @@ func New(app *application.App, onQuit, onSettings func()) *Tray {
 	return t
 }
 
+// tooltipFor resolves the display tooltip for a tray state, with a stable
+// fallback when the state is unrecognized.
+func tooltipFor(state State) string {
+	if tooltip, ok := stateTooltips[state]; ok && tooltip != "" {
+		return tooltip
+	}
+	return "SpeechKit"
+}
+
 // SetState updates the tray tooltip to reflect the current state.
 func (t *Tray) SetState(state State) {
 	t.mu.Lock()
@@ -90,9 +99,5 @@ func (t *Tray) SetState(state State) {
 	}
 	t.state = state
 
-	tooltip := stateTooltips[state]
-	if tooltip == "" {
-		tooltip = "SpeechKit"
-	}
-	t.systray.SetTooltip(tooltip)
+	t.systray.SetTooltip(tooltipFor(state))
 }

@@ -78,11 +78,12 @@ type TranscriptionWorker struct {
 	interceptor TranscriptInterceptor
 	observer    TranscriptionObserver
 
-	mu      sync.Mutex
-	jobs    chan TranscriptionJob
-	done    chan struct{}
-	started bool
-	closed  bool
+	mu        sync.Mutex
+	persistWG sync.WaitGroup
+	jobs      chan TranscriptionJob
+	done      chan struct{}
+	started   bool
+	closed    bool
 }
 
 func NewTranscriptionWorker(cfg TranscriptionWorkerConfig) (*TranscriptionWorker, error) {
@@ -168,6 +169,7 @@ func (w *TranscriptionWorker) Close() {
 
 func (w *TranscriptionWorker) Wait() {
 	<-w.done
+	w.persistWG.Wait()
 }
 
 func (w *TranscriptionWorker) handleJob(ctx context.Context, job TranscriptionJob) {
@@ -197,43 +199,93 @@ func (w *TranscriptionWorker) handleJob(ctx context.Context, job TranscriptionJo
 		}
 	}
 
-	completion, err := w.runner.Commit(ctx, job.Submission, transcript)
-	if err != nil {
-		w.onLog(fmt.Sprintf("Commit error: %v", err), "error")
-		w.onState("idle", "")
-		return
+	if job.QuickNote {
+		completion, err := w.runner.Commit(ctx, job.Submission, transcript)
+		if err != nil {
+			w.onLog(fmt.Sprintf("Commit error: %v", err), "error")
+			w.onState("idle", "")
+			return
+		}
+
+		w.logTranscriptReady(completion.Transcript, "transcript committed")
+		w.onState("done", completion.Transcript.Text)
+		w.onTranscriptCommitted(completion.Transcript, job.QuickNote)
+
+		if completion.QuickNoteCommitted {
+			if completion.QuickNoteCreated {
+				w.onLog("Quick Note saved", "success")
+			} else {
+				w.onLog(fmt.Sprintf("Quick Note #%d updated", completion.QuickNoteID), "success")
+			}
+			return
+		}
+
+		transcript = completion.Transcript
+	} else {
+		transcript.Text = normalizeTranscriptText(transcript.Text, job.Prefix)
+		w.logTranscriptReady(transcript, "transcript ready")
+		w.onState("done", transcript.Text)
+		w.onTranscriptCommitted(transcript, false)
 	}
 
-	ms := completion.Transcript.Duration.Milliseconds()
-	trimmedText := strings.TrimSpace(completion.Transcript.Text)
+	if w.output == nil {
+		if !job.QuickNote {
+			w.persistTranscriptionAsync(job.Submission, transcript)
+		}
+		return
+	}
+	if err := w.output.Deliver(ctx, transcript, job.Target); err != nil {
+		w.onLog(fmt.Sprintf("Output error: %v", err), "error")
+	}
+	if !job.QuickNote {
+		w.persistTranscriptionAsync(job.Submission, transcript)
+	}
+}
+
+func (w *TranscriptionWorker) logTranscriptReady(transcript Transcript, marker string) {
+	ms := transcript.Duration.Milliseconds()
+	trimmedText := strings.TrimSpace(transcript.Text)
 	w.onLog(
 		fmt.Sprintf(
-			"[%s] %dms: transcript committed (%d chars, %d words)",
-			completion.Transcript.Provider,
+			"[%s] %dms: %s (%d chars, %d words)",
+			transcript.Provider,
 			ms,
+			marker,
 			utf8.RuneCountInString(trimmedText),
 			len(strings.Fields(trimmedText)),
 		),
 		"success",
 	)
-	w.onState("done", completion.Transcript.Text)
-	w.onTranscriptCommitted(completion.Transcript, job.QuickNote)
+}
 
-	if completion.QuickNoteCommitted {
-		if completion.QuickNoteCreated {
-			w.onLog("Quick Note saved", "success")
-		} else {
-			w.onLog(fmt.Sprintf("Quick Note #%d updated", completion.QuickNoteID), "success")
+func (w *TranscriptionWorker) persistTranscriptionAsync(submission Submission, transcript Transcript) {
+	if w.runner == nil {
+		return
+	}
+	if w.runner.store == nil {
+		w.runner.notifyCommit(Completion{Transcript: transcript})
+		return
+	}
+
+	w.persistWG.Add(1)
+	go func() {
+		defer w.persistWG.Done()
+
+		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+		defer cancel()
+
+		durationMs := int64(submission.DurationSecs * 1000)
+		latencyMs := transcript.Duration.Milliseconds()
+		if err := w.runner.store.SaveTranscription(ctx, transcript.Text, transcript.Language, transcript.Provider, transcript.Model, durationMs, latencyMs, submission.WAV); err != nil {
+			w.onLog(fmt.Sprintf("Transcription history error: %v", err), "warn")
+			return
 		}
-		return
-	}
 
-	if w.output == nil {
-		return
-	}
-	if err := w.output.Deliver(ctx, completion.Transcript, job.Target); err != nil {
-		w.onLog(fmt.Sprintf("Output error: %v", err), "error")
-	}
+		w.runner.notifyCommit(Completion{
+			Transcript:             transcript,
+			TranscriptionPersisted: true,
+		})
+	}()
 }
 
 func transcriptionTimeoutForDuration(base time.Duration, durationSecs float64) time.Duration {

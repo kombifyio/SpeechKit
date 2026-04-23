@@ -1,33 +1,58 @@
-# Code Signing Policy
+# Windows Artifact Trust Policy
 
 This policy applies to public Windows release artifacts for SpeechKit published from `kombifyio/SpeechKit`.
 
 ## Scope
 
-The following public Windows artifacts must be Authenticode-signed before publication:
+The policy covers:
 
 - `SpeechKit.exe`
 - `SpeechKit-Setup.exe`
+- `SpeechKit-Portable.zip`
+- `SHA256SUMS.txt`
+- `SpeechKit.sbom.json`
+- `UNSIGNED-WINDOWS-RELEASE.txt` when the release is unsigned
 
-Portable archives may only contain signed Windows binaries.
+## Release Origin
 
-Unsigned Windows binaries must not be attached to public GitHub Releases.
-
-## Signing Service
-
-SpeechKit uses the SignPath Foundation service for open-source code signing once the project is approved.
-
-Public Windows releases are expected to be built in GitHub Actions from the public repository and submitted to SignPath from that trusted build.
-
-## Build Origin
-
-Public signed binaries must originate from:
+Public Windows artifacts must originate from:
 
 - repository: `https://github.com/kombifyio/SpeechKit`
 - release tags in the public repository
 - GitHub-hosted runners in the public repository release workflow
 
-The private upstream repository is not a public release origin.
+The private upstream repository may prepare and export source, but it is not a public Windows binary origin.
+
+## Signing Policy
+
+SpeechKit signs Windows artifacts when a trusted no-cost signing path is configured for the public repository.
+
+If SignPath or another trusted free signing provider is unavailable, SpeechKit may publish unsigned Windows artifacts only through the documented no-cost path:
+
+- the build runs in `kombifyio/SpeechKit`
+- the release includes `UNSIGNED-WINDOWS-RELEASE.txt`
+- the release includes `SHA256SUMS.txt`
+- the release includes `SpeechKit.sbom.json`
+- GitHub build provenance is attached unless `ENABLE_BUILD_ATTESTATIONS=false` is set intentionally
+- the release remains a draft until the private publisher verifies the public workflow and asset set
+
+Unsigned Windows artifacts are expected to trigger Windows SmartScreen or installer trust warnings. That is acceptable only when the unsigned notice and verification artifacts are attached.
+
+## Required Verification
+
+Signed releases must pass:
+
+```powershell
+pwsh ./scripts/validate-windows-signing.ps1 -RequireInstaller -RequireTimestamp -ExpectedPublisher "<publisher>"
+```
+
+Unsigned releases must verify:
+
+- the installer and portable bundle are built by the public release workflow
+- `UNSIGNED-WINDOWS-RELEASE.txt` is attached
+- `SHA256SUMS.txt` contains every release asset hash
+- `SpeechKit.sbom.json` is attached
+- provenance attestations exist unless disabled intentionally
 
 ## Roles
 
@@ -35,48 +60,28 @@ Current project roles:
 
 - Committer and maintainer: `@Soulcreek`
 - Release approver: `@Soulcreek`
-- SignPath approval authority: `@Soulcreek`
+- Signing approval authority, when signing is available: `@Soulcreek`
 
-Additional maintainers may be added later through the public repository permission model and corresponding SignPath project roles.
+Additional maintainers may be added later through the public repository permission model and corresponding signing provider roles.
 
-## Approval Rules
-
-- Signing requests for public releases require explicit approval in SignPath.
-- Only maintainers assigned as release approvers may approve a signing request.
-- The signed output must match the public tag and the public release workflow run that produced it.
-
-## Verification
-
-Before public publication, Windows artifacts must pass:
-
-```powershell
-pwsh ./scripts/validate-windows-signing.ps1 -RequireInstaller -RequireTimestamp -ExpectedPublisher "<publisher>"
-```
-
-At minimum, verification must confirm:
-
-- valid Authenticode signature
-- trusted timestamp
-- expected publisher name
-
-## Private Keys And Secrets
+## Secrets
 
 - Private signing keys are not stored in this repository.
-- Signing credentials are managed in SignPath and public-repo secrets/configuration.
+- Signing credentials are managed by the public repository's signing provider configuration.
 - No contributor may commit raw certificate files, exported private keys, or signing secrets to source control.
 
 ## Incident Handling
 
-If an incorrect or suspicious signature is detected:
+If a suspicious artifact, bad signature, wrong hash, or missing provenance is detected:
 
 1. stop the release
-2. revoke or disable the signing configuration if necessary
+2. keep or return the GitHub Release to draft
 3. investigate the affected workflow run and artifact lineage
-4. publish corrected signed binaries only after the issue is understood
+4. rebuild from the public tag
+5. publish corrected artifacts only after the issue is understood
 
 ## Privacy
 
-SpeechKit release signing uses repository metadata, release tags, workflow run context, and artifact metadata required for trusted-build signing.
+SpeechKit release trust uses repository metadata, release tags, workflow run context, and artifact metadata.
 
-No end-user audio or runtime data is intentionally submitted for code signing.
-
+No end-user audio or runtime data is intentionally submitted for signing, hashing, SBOM generation, or provenance.

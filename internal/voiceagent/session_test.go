@@ -14,6 +14,11 @@ type sessionTestProvider struct {
 	messages  chan *LiveMessage
 }
 
+type reconnectingSessionTestProvider struct {
+	*sessionTestProvider
+	reconnects int
+}
+
 func newSessionTestProvider() *sessionTestProvider {
 	return &sessionTestProvider{
 		messages: make(chan *LiveMessage, 8),
@@ -47,6 +52,13 @@ func (p *sessionTestProvider) Close() error {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	p.closed = true
+	return nil
+}
+
+func (p *reconnectingSessionTestProvider) Reconnect(context.Context) error {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.reconnects++
 	return nil
 }
 
@@ -249,6 +261,32 @@ func TestSessionReturnsToListeningWhenAudioTurnDoesNotSendDone(t *testing.T) {
 	provider.messages <- &LiveMessage{Audio: []byte{1, 2, 3, 4}}
 	waitForState(t, stateChanges, StateSpeaking)
 	waitForState(t, stateChanges, StateListening)
+}
+
+func TestSessionShowsRecoveringStateDuringGoAwayReconnect(t *testing.T) {
+	provider := &reconnectingSessionTestProvider{sessionTestProvider: newSessionTestProvider()}
+	stateChanges := make(chan State, 16)
+	session := NewSession(provider, Callbacks{
+		OnStateChange: func(state State) {
+			stateChanges <- state
+		},
+	})
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	if err := session.Start(ctx, LiveConfig{Model: "gemini-live-test"}, IdleConfig{}); err != nil {
+		t.Fatalf("start session: %v", err)
+	}
+	defer session.Stop()
+	drainStateChanges(stateChanges)
+
+	provider.messages <- &LiveMessage{GoAway: true}
+	waitForState(t, stateChanges, StateRecovering)
+	waitForState(t, stateChanges, StateListening)
+
+	if provider.reconnects != 1 {
+		t.Fatalf("reconnects = %d, want 1", provider.reconnects)
+	}
 }
 
 func drainStateChanges(ch <-chan State) {

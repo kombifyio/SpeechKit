@@ -45,4 +45,4 @@ These packages are not evidence that private kombify runtime code is being shipp
 - sanitize docs and metadata before mirroring
 - build the public release artifacts from the mirrored public tree, not from a mixed private worktree
 - public tags may be source-only or source plus selected Windows artifacts
-- Android artifact publication is a separate release surface and must not be implied by an OSS mirror sync
+- non-exported surfaces are separate release lines and must not be implied by an OSS mirror sync

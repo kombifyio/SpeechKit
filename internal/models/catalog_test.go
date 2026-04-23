@@ -1,6 +1,10 @@
 package models
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/kombifyio/SpeechKit/pkg/speechkit"
+)
 
 func TestDefaultCatalogExposesFourProviderKindsPerUserMode(t *testing.T) {
 	catalog := DefaultCatalog()
@@ -104,4 +108,34 @@ func TestAssistProfilesExposeUtilityToolCapability(t *testing.T) {
 			t.Fatalf("assist profile %s missing %s capability", profile.ID, CapabilityToolCalling)
 		}
 	}
+}
+
+func TestDefaultCatalogAdaptsStrictProfilesFromFrameworkCatalog(t *testing.T) {
+	catalog := DefaultCatalog()
+	frameworkProfiles := speechkit.DefaultProviderProfiles()
+
+	for _, frameworkProfile := range frameworkProfiles {
+		internalProfile, ok := findProfile(catalog, frameworkProfile.ID)
+		if !ok {
+			t.Fatalf("internal catalog missing framework profile %q", frameworkProfile.ID)
+		}
+		if got, want := internalProfile.ModelID, frameworkProfile.ModelID; got != want {
+			t.Fatalf("%s model ID = %q, want %q", frameworkProfile.ID, got, want)
+		}
+		if got, want := string(internalProfile.ProviderKind), string(frameworkProfile.ProviderKind); got != want {
+			t.Fatalf("%s provider kind = %q, want %q", frameworkProfile.ID, got, want)
+		}
+		if got, want := string(internalProfile.ExecutionMode), string(frameworkProfile.ExecutionMode); got != want {
+			t.Fatalf("%s execution mode = %q, want %q", frameworkProfile.ID, got, want)
+		}
+	}
+}
+
+func findProfile(catalog Catalog, profileID string) (Profile, bool) {
+	for _, profile := range catalog.Profiles {
+		if profile.ID == profileID {
+			return profile, true
+		}
+	}
+	return Profile{}, false
 }

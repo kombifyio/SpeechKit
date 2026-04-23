@@ -96,7 +96,7 @@ export function extractLatestReleaseNotes(markdown, options = {}) {
   }
 }
 
-export function renderReleaseNotes({ markdown, version, repoUrl }) {
+export function renderReleaseNotes({ markdown, version, repoUrl, compareUrl }) {
   const sections = parseChangelogSections(markdown)
   const normalizedVersion = normalizeVersion(version)
   const sectionIndex = sections.findIndex(section => section.version === normalizedVersion)
@@ -109,7 +109,9 @@ export function renderReleaseNotes({ markdown, version, repoUrl }) {
   const previousSection = sections[sectionIndex + 1]
   const notes = [stripFullChangelogLink(section.body)]
 
-  if (repoUrl && previousSection) {
+  if (compareUrl) {
+    notes.push(`**Full Changelog**: ${compareUrl}`)
+  } else if (repoUrl && previousSection) {
     notes.push(
       `**Full Changelog**: ${repoUrl}/compare/v${previousSection.version}...v${section.version}`,
     )

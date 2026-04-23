@@ -369,6 +369,12 @@ func TestDedicatedDotAndRadialMenuShareVisibleDotCenter(t *testing.T) {
 	}
 }
 
+func TestDotVisibleFootprintMatchesCircleShell(t *testing.T) {
+	if dotBubbleW != 18 || dotBubbleH != 18 {
+		t.Fatalf("dot visible footprint = %dx%d, want 18x18 to match circle shell", dotBubbleW, dotBubbleH)
+	}
+}
+
 func TestPositionOverlayPlacesPillHostsAtSavedFreePoint(t *testing.T) {
 	pillAnchor := &fakeOverlayWindow{}
 	pillPanel := &fakeOverlayWindow{}
@@ -1229,6 +1235,12 @@ func TestActivateUtilityBuiltInLocalProfileUpdatesConfigAndRuntime(t *testing.T)
 func TestActivateAssistBuiltInLocalProfileUpdatesConfigAndRuntime(t *testing.T) {
 	cfg := defaultTestConfig()
 	cfg.LocalLLM.BaseURL = "http://127.0.0.1:8082/v1"
+	modelPath := filepath.Join(t.TempDir(), "gemma-3-4b-it-Q4_K_M.gguf")
+	if err := os.WriteFile(modelPath, []byte("gguf"), 0o600); err != nil {
+		t.Fatalf("write local llm model: %v", err)
+	}
+	cfg.LocalLLM.Model = filepath.Base(modelPath)
+	cfg.LocalLLM.ModelPath = modelPath
 	cfgPath := filepath.Join(t.TempDir(), "config.toml")
 	state := &appState{
 		activeProfiles: map[string]string{},
@@ -1251,8 +1263,8 @@ func TestActivateAssistBuiltInLocalProfileUpdatesConfigAndRuntime(t *testing.T) 
 	if !cfg.LocalLLM.Enabled {
 		t.Fatal("expected built-in local LLM enabled")
 	}
-	if cfg.LocalLLM.AssistModel != "gemma4:e4b" {
-		t.Fatalf("built-in local assist model = %q, want %q", cfg.LocalLLM.AssistModel, "gemma4:e4b")
+	if cfg.LocalLLM.AssistModel != filepath.Base(modelPath) {
+		t.Fatalf("built-in local assist model = %q, want %q", cfg.LocalLLM.AssistModel, filepath.Base(modelPath))
 	}
 	if got := state.activeProfiles["assist"]; got != "assist.builtin.gemma4-e4b" {
 		t.Fatalf("active assist profile = %q, want %q", got, "assist.builtin.gemma4-e4b")

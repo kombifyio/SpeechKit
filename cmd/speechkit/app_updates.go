@@ -14,13 +14,13 @@ import (
 	"github.com/kombifyio/SpeechKit/internal/netsec"
 )
 
-// installerDownloadClient uses a hardened transport (TLS 1.2+, redacting
-// headers) with a long timeout for large installer downloads.
-var installerDownloadClient = netsec.NewSafeHTTPClient(netsec.ClientOptions{Timeout: 30 * time.Minute})
-
 // appInstallerURLValidation restricts installer download URLs. Strict by
 // default (public https only); tests may relax to allow loopback.
 var appInstallerURLValidation = netsec.ValidationOptions{}
+
+// installerDownloadClient uses a hardened transport (TLS 1.2+, redacting
+// headers) with a long timeout for large installer downloads.
+var installerDownloadClient = netsec.NewSafeHTTPClient(netsec.ClientOptions{Timeout: 30 * time.Minute, DialValidation: &appInstallerURLValidation})
 
 // verifyInstallerBeforeOpen verifies the downloaded installer before the app
 // hands it to the OS shell. Tests replace this hook for unsigned fixtures.

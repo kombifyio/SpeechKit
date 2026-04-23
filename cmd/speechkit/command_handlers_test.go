@@ -185,6 +185,114 @@ func TestDesktopCommandHandlerStopDictationClearsQuickNoteState(t *testing.T) {
 	}
 }
 
+func TestDesktopCommandHandlerStartVoiceAgentUsesRealtimeRuntime(t *testing.T) {
+	recorder := &testCommandRecorder{}
+	submitter := &testCommandSubmitter{}
+	controller := speechkit.NewRecordingController(recorder, submitter, testCommandObserver{}, nil)
+	state := &appState{
+		dictateEnabled:    true,
+		assistEnabled:     true,
+		voiceAgentEnabled: true,
+		dictateHotkey:     "win+alt",
+		assistHotkey:      "ctrl+win+j",
+		voiceAgentHotkey:  "ctrl+shift",
+	}
+	startCalls := 0
+	handler := desktopCommandHandler{
+		cfg:                 &config.Config{General: config.GeneralConfig{Language: "en", AgentMode: modeAssist}},
+		state:               state,
+		recordingController: controller,
+		startVoiceAgent: func(context.Context) error {
+			startCalls++
+			return nil
+		},
+		voiceAgentFallback: func() bool { return false },
+	}
+
+	if err := handler.Handle(context.Background(), speechkit.Command{
+		Type:     speechkit.CommandStartMode,
+		Metadata: map[string]string{"mode": "voice_agent"},
+	}); err != nil {
+		t.Fatalf("Handle(start voice agent) error = %v", err)
+	}
+	if startCalls != 1 {
+		t.Fatalf("startVoiceAgent calls = %d, want 1", startCalls)
+	}
+	if controller.IsRecording() {
+		t.Fatal("controller.IsRecording() = true, want false for native voice agent")
+	}
+}
+
+func TestDesktopCommandHandlerStartVoiceAgentFallbackUsesCapture(t *testing.T) {
+	recorder := &testCommandRecorder{}
+	submitter := &testCommandSubmitter{}
+	controller := speechkit.NewRecordingController(recorder, submitter, testCommandObserver{}, nil)
+	state := &appState{
+		dictateEnabled:    true,
+		assistEnabled:     true,
+		voiceAgentEnabled: true,
+		dictateHotkey:     "win+alt",
+		assistHotkey:      "ctrl+win+j",
+		voiceAgentHotkey:  "ctrl+shift",
+	}
+	startCalls := 0
+	handler := desktopCommandHandler{
+		cfg:                 &config.Config{General: config.GeneralConfig{Language: "en", AgentMode: modeAssist}},
+		state:               state,
+		recordingController: controller,
+		startVoiceAgent: func(context.Context) error {
+			startCalls++
+			return nil
+		},
+		voiceAgentFallback: func() bool { return true },
+	}
+
+	if err := handler.Handle(context.Background(), speechkit.Command{
+		Type:     speechkit.CommandStartMode,
+		Metadata: map[string]string{"mode": "voice_agent"},
+	}); err != nil {
+		t.Fatalf("Handle(start voice agent fallback) error = %v", err)
+	}
+	if startCalls != 0 {
+		t.Fatalf("startVoiceAgent calls = %d, want 0", startCalls)
+	}
+	if !controller.IsRecording() {
+		t.Fatal("controller.IsRecording() = false, want true for fallback voice agent")
+	}
+}
+
+func TestDesktopCommandHandlerStopVoiceAgentUsesRealtimeRuntime(t *testing.T) {
+	state := &appState{
+		activeMode:        modeVoiceAgent,
+		dictateEnabled:    true,
+		assistEnabled:     true,
+		voiceAgentEnabled: true,
+		dictateHotkey:     "win+alt",
+		assistHotkey:      "ctrl+win+j",
+		voiceAgentHotkey:  "ctrl+shift",
+	}
+	stopCalls := 0
+	handler := desktopCommandHandler{
+		cfg:   &config.Config{General: config.GeneralConfig{Language: "en", AgentMode: modeAssist}},
+		state: state,
+		stopVoiceAgent: func(context.Context) error {
+			stopCalls++
+			return nil
+		},
+		voiceAgentFallback: func() bool { return false },
+	}
+
+	if err := handler.Handle(context.Background(), speechkit.Command{
+		Type:     speechkit.CommandStopMode,
+		Metadata: map[string]string{"mode": "voice_agent"},
+	}); err != nil {
+		t.Fatalf("Handle(stop voice agent) error = %v", err)
+	}
+	if stopCalls != 1 {
+		t.Fatalf("stopVoiceAgent calls = %d, want 1", stopCalls)
+	}
+}
+
 func TestDesktopCommandHandlerShowDashboard(t *testing.T) {
 	called := ""
 	handler := desktopCommandHandler{

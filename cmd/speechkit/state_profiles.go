@@ -158,23 +158,49 @@ func localLLMProfileMatchesConfig(cfg *config.Config, profile models.Profile, co
 }
 
 func realtimeVoiceProfileMatchesConfig(cfg *config.Config, profile models.Profile) bool {
-	if !cfg.VoiceAgent.Enabled || cfg.VoiceAgent.Model != profile.ModelID {
+	if !cfg.VoiceAgent.Enabled {
 		return false
 	}
 	switch profile.ExecutionMode {
 	case models.ExecutionModeLocal:
-		return cfg.LocalLLM.Enabled && cfg.LocalLLM.AgentModel == profile.ModelID
+		if !cfg.LocalLLM.Enabled || !cfg.VoiceAgent.PipelineFallback {
+			return false
+		}
+		if cfg.VoiceAgent.Model == profile.ModelID && strings.TrimSpace(cfg.LocalLLM.AgentModel) != "" {
+			return true
+		}
+		return profile.ProviderKind == models.ProviderKindLocalBuiltIn &&
+			strings.TrimSpace(cfg.LocalLLM.AgentModel) != "" &&
+			cfg.VoiceAgent.Model == cfg.LocalLLM.AgentModel
 	case models.ExecutionModeOllama:
+		if cfg.VoiceAgent.Model != profile.ModelID {
+			return false
+		}
 		return cfg.Providers.Ollama.Enabled && cfg.Providers.Ollama.AgentModel == profile.ModelID
 	case models.ExecutionModeHFRouted:
+		if cfg.VoiceAgent.Model != profile.ModelID {
+			return false
+		}
 		return cfg.HuggingFace.Enabled && cfg.HuggingFace.AgentModel == profile.ModelID && profileCredentialAvailable(cfg, profile)
 	case models.ExecutionModeGoogle:
+		if cfg.VoiceAgent.Model != profile.ModelID {
+			return false
+		}
 		return profileCredentialAvailable(cfg, profile)
 	case models.ExecutionModeOpenAI:
+		if cfg.VoiceAgent.Model != profile.ModelID {
+			return false
+		}
 		return cfg.Providers.OpenAI.Enabled && cfg.Providers.OpenAI.AgentModel == profile.ModelID && profileCredentialAvailable(cfg, profile)
 	case models.ExecutionModeGroq:
+		if cfg.VoiceAgent.Model != profile.ModelID {
+			return false
+		}
 		return cfg.Providers.Groq.Enabled && cfg.Providers.Groq.AgentModel == profile.ModelID && profileCredentialAvailable(cfg, profile)
 	case models.ExecutionModeOpenRouter:
+		if cfg.VoiceAgent.Model != profile.ModelID {
+			return false
+		}
 		return cfg.Providers.OpenRouter.Enabled && cfg.Providers.OpenRouter.AgentModel == profile.ModelID && profileCredentialAvailable(cfg, profile)
 	default:
 		return false

@@ -183,8 +183,11 @@ func TestHuggingFace_Synthesize_HTTPError(t *testing.T) {
 	if !strings.Contains(err.Error(), "503") {
 		t.Errorf("err = %v, want contains '503'", err)
 	}
-	if !strings.Contains(err.Error(), "model loading") {
-		t.Errorf("err = %v, want contains body 'model loading'", err)
+	if strings.Contains(err.Error(), "model loading") {
+		t.Fatalf("provider response body leaked in error: %v", err)
+	}
+	if !strings.Contains(err.Error(), "provider temporarily unavailable") {
+		t.Errorf("err = %v, want safe unavailable reason", err)
 	}
 }
 

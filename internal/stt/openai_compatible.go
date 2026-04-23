@@ -36,14 +36,15 @@ type OpenAICompatibleProvider struct {
 // endpoint. Default Validation is strict (public https only). Callers with a
 // non-public endpoint (loopback, RFC1918) must set Validation explicitly.
 func NewOpenAICompatibleProvider(name, baseURL, apiKey, model string) *OpenAICompatibleProvider {
-	return &OpenAICompatibleProvider{
+	p := &OpenAICompatibleProvider{
 		name:    name,
 		BaseURL: baseURL,
 		APIKey:  apiKey,
 		Model:   model,
 		// Validation zero-value = strict: public https only, no loopback, no private IPs.
-		client: netsec.NewSafeHTTPClient(netsec.ClientOptions{Timeout: 30 * time.Second}),
 	}
+	p.client = netsec.NewSafeHTTPClient(netsec.ClientOptions{Timeout: 30 * time.Second, DialValidation: &p.Validation})
+	return p
 }
 
 // NewVPSProvider creates a provider for a self-hosted whisper-server.
@@ -58,7 +59,7 @@ func NewVPSProvider(baseURL, apiKey string) *OpenAICompatibleProvider {
 	}
 	// Rebuild the HTTP client with a longer timeout â€” self-hosted whisper
 	// may take longer to cold-start than managed cloud APIs.
-	p.client = netsec.NewSafeHTTPClient(netsec.ClientOptions{Timeout: 60 * time.Second})
+	p.client = netsec.NewSafeHTTPClient(netsec.ClientOptions{Timeout: 60 * time.Second, DialValidation: &p.Validation})
 	return p
 }
 
@@ -80,7 +81,7 @@ func NewOllamaSTTProvider(baseURL, model string) *OpenAICompatibleProvider {
 		AllowPrivate:  true,
 		AllowHTTP:     true,
 	}
-	p.client = netsec.NewSafeHTTPClient(netsec.ClientOptions{Timeout: 60 * time.Second})
+	p.client = netsec.NewSafeHTTPClient(netsec.ClientOptions{Timeout: 60 * time.Second, DialValidation: &p.Validation})
 	return p
 }
 
@@ -155,7 +156,7 @@ func (p *OpenAICompatibleProvider) Transcribe(ctx context.Context, audio []byte,
 	}
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("%s error (%d): %s", p.name, resp.StatusCode, string(respBody))
+		return nil, netsec.ProviderStatusError(p.name, resp.StatusCode, respBody)
 	}
 
 	var result struct {

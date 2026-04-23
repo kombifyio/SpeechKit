@@ -6,6 +6,93 @@ The format is based on Keep a Changelog and this project is intended to ship und
 
 ## [Unreleased]
 
+## [0.24.0] - 2026-04-23
+
+### Added
+
+- Embeddable Dictation-only runtime under `pkg/speechkit/dictation` for host products that only need strict STT.
+- Public Assist and Voice Agent service constructors under `pkg/speechkit/assist` and `pkg/speechkit/voiceagent`.
+- `RuntimePolicy` for constraining enabled modes, allowed provider profiles, fixed profiles, fallback behavior, and Clean vs Intelligence mode behavior.
+- Public framework modularity implementation plan in `docs/plans/2026-04-23-framework-modularity-plan.md`.
+
+### Changed
+
+- `pkg/speechkit` no longer exposes `internal/*` types through the public Dictation recording and segmenting contracts.
+- The library example now uses the new Dictation runtime builder with a fixed provider profile policy.
+- Framework API docs now document the embeddable mode constructors and policy-based provider/model constraints.
+
+## [0.23.2] - 2026-04-23
+
+### Added
+
+- Mode-scoped public service contracts for Dictation, Assist, and Voice Agent in `pkg/speechkit`.
+- Assist utility registry with explicit utility IDs, input requirements, capability gates, and surface defaults.
+- Voice Agent session persistence with stored turns, transcript, summaries, and `/api/v1/voice-sessions`.
+- Dictionary import/export API with usage counts at `/api/v1/dictionary`.
+
+### Changed
+
+- Voice Agent GoAway reconnects now surface a visible `recovering` state in the session FSM and prompter UI.
+- Assist tool routing now uses the registry contract for exact codeword utilities before LLM routing.
+- Assist and Voice Agent overlay feedback controls now live in their dedicated mode settings instead of the general appearance settings.
+
+### Fixed
+
+- Assist no longer routes direct replies to the SpeechKit-managed local LLM endpoint when no downloaded GGUF model is selected and present.
+- Local LLM connection failures now surface actionable Assist/Voice Agent guidance instead of raw loopback `connectex` errors.
+- Restored the missing Beads parent issues `SK-002`, `SK-003`, and `SK-004` so the local backlog can import again.
+
+## [0.23.1] - 2026-04-21
+
+### Added
+
+- **Versioned provider artifacts API**: `/api/v1/providers/artifacts`, `/api/v1/providers/artifacts/jobs`, and `/api/v1/providers/artifacts/{artifactId}/download|select` now expose Local Built-in model downloads and provider pulls through the same control plane as provider activation.
+- **Structured provider readiness**: `/api/v1/providers/readiness` now includes `schemaVersion`, active/default flags, execution metadata, structured requirements, setup actions, and local model artifacts for external integrations.
+- **Local Built-in model artifacts**: Dictation exposes Whisper.cpp downloads, while Assist and Voice Agent expose GGUF model artifacts for SpeechKit's bundled OpenAI-compatible llama.cpp runtime.
+
+### Changed
+
+- **Framework-owned provider catalog**: `pkg/speechkit` now owns the reusable three-mode provider catalog, while the Windows runtime adapts it and appends host-only support profiles.
+- **Modular API v1 control plane**: mode settings, provider readiness, and artifact actions are split out of route registration into focused backend modules.
+- **Separated artifact status resolution**: downloadable artifact metadata is now static by default, with file, runtime, and Ollama availability resolved through an explicit status layer.
+- **Local Built-in Voice Agent selection**: pipeline fallback can now use a concrete downloaded local GGUF model while still reporting the stable `realtime.builtin.pipeline` profile.
+
+### Fixed
+
+- **Local Built-in profile selection**: selecting downloaded Dictation, Assist, or Voice Agent artifacts now persists the matching per-mode `ModelSelection`, so Voice Agent no longer remains active on the Gemini default after choosing the local pipeline.
+
+### Security
+
+- **Resolved HTTP target validation**: provider, download, and update requests now validate the resolved network target before dialing, closing SSRF paths that could bypass URL-only validation.
+- **Plaintext secret fallback disabled**: non-Windows builds no longer fall back to a plaintext file secret store; unsupported secret-store access now fails closed.
+- **Control-plane and provider error hardening**: frontend API calls attach the local control-plane token consistently, and provider-facing errors are redacted before surfacing to UI or logs.
+
+### Removed
+
+- **Frozen local artifacts**: removed the obsolete `frontend/app-v2` scaffold, tracked coverage/audio/install artifacts, and old static HTML prototypes from the release surface.
+
+## [0.23.0] - 2026-04-21
+
+### Highlights
+
+- **API-first mode framework**: Dictation, Assist, and Voice Agent now expose reusable v23 mode contracts, provider profiles, provider groups, readiness models, and per-mode settings for SDK and API consumers.
+- **Local control plane**: External tools can configure providers, inspect readiness, patch mode settings, and start or stop the three modes through the versioned `/api/v1` API.
+- **Open-source framework boundary**: Public-safe framework API documentation and export coverage prepare the v23 surface for the `kombifyio/SpeechKit` release repository.
+- **Versioned API contract**: The local `/api/v1` control plane now ships with a public OpenAPI contract for external integrations.
+
+### Added
+
+- **V23 API-first framework boundary**: `pkg/speechkit` now exposes strict Dictation, Assist, and Voice Agent contracts, reusable provider profiles, provider groups, mode settings, readiness models, and profile validation for host applications.
+- **Versioned local control API**: The desktop host now exposes `/api/v1/modes`, `/api/v1/modes/{mode}/settings`, `/api/v1/modes/{mode}/start|stop`, `/api/v1/providers/profiles`, `/api/v1/providers/readiness`, and `/api/v1/providers/{profileId}/activate` for external tool integration.
+- **Mode command bus controls**: Runtime commands can now start and stop Dictation, Assist, and Voice Agent explicitly through `mode.start` and `mode.stop`.
+- **Public framework API documentation**: `docs/speechkit-framework-api.md` documents the v23 SDK and local API boundary for the public OSS export.
+- **OpenAPI contract**: `docs/api/openapi.v1.yaml` describes the `/api/v1` mode and provider control-plane endpoints.
+
+### Changed
+
+- **Provider catalog contract tests**: The public framework catalog now verifies that every main mode exposes the four V23 provider groups and that Dictation profiles remain text-only without LLM or tool-calling capabilities.
+- **OSS export boundary**: The public export allowlist now includes the public v23 framework API documentation without exposing internal architecture notes.
+
 ## [0.22.4] - 2026-04-20
 
 ### Fixed

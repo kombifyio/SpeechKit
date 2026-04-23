@@ -84,6 +84,8 @@ const (
 	CommandShowDashboard           CommandType = "dashboard.show"
 	CommandStartDictation          CommandType = "dictation.start"
 	CommandStopDictation           CommandType = "dictation.stop"
+	CommandStartMode               CommandType = "mode.start"
+	CommandStopMode                CommandType = "mode.stop"
 	CommandSetActiveMode           CommandType = "mode.set_active"
 	CommandOpenQuickNote           CommandType = "quicknote.open"
 	CommandOpenQuickCapture        CommandType = "quicknote.capture.open"

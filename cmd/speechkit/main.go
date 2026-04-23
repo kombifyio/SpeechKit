@@ -117,8 +117,12 @@ type appState struct {
 	prompterWindow           overlayWindow
 	ttsRouter                *tts.Router
 	audioPlayer              *audio.Player
+	localLLMRuntime          localLLMRuntimeStarter
 	voiceAgentSession        *voiceagent.Session
 	voiceAgentDialogTurns    []voiceAgentDialogTurn
+	voiceAgentSessionStarted time.Time
+	voiceAgentSummaryDone    bool
+	voiceAgentStore          store.VoiceAgentSessionStore
 	voiceAgentSummaryTool    textactions.SummaryTool
 	streamPlayer             *audio.StreamPlayer
 	voiceAgentAudioSender    *voiceAgentAudioSender
@@ -424,8 +428,10 @@ func main() {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
+	defer stopConfiguredLocalLLMRuntime(state)
 
 	// Genkit AI initialization: replaces the old LLM registries.
+	syncConfiguredLocalLLMRuntime(ctx, cfg, state)
 	genkitRT, err := appai.Init(ctx, buildGenkitConfig(cfg))
 	if err != nil {
 		slog.Warn("genkit init", "err", err)
@@ -528,6 +534,9 @@ func main() {
 		slog.Warn("store init", "err", err)
 		feedbackStore = nil
 	} else {
+		if voiceStore, ok := feedbackStore.(store.VoiceAgentSessionStore); ok {
+			state.voiceAgentStore = voiceStore
+		}
 		defer func() { _ = feedbackStore.Close() }()
 		count, _ := feedbackStore.TranscriptionCount(context.Background())
 		state.transcriptions = count
@@ -852,6 +861,26 @@ func main() {
 			showDashboard:       showDashboard,
 			quickNotes:          quickNoteService,
 			actions:             quickActions,
+			startVoiceAgent: func(ctx context.Context) error {
+				if inputController == nil {
+					return fmt.Errorf("voice agent runtime not configured")
+				}
+				inputController.activateVoiceAgent(ctx)
+				return nil
+			},
+			stopVoiceAgent: func(ctx context.Context) error {
+				if inputController == nil {
+					return fmt.Errorf("voice agent runtime not configured")
+				}
+				inputController.deactivateVoiceAgentWithReason(ctx, true, "API control")
+				return nil
+			},
+			voiceAgentFallback: func() bool {
+				if inputController == nil {
+					return true
+				}
+				return inputController.shouldUseVoiceAgentPipelineFallback()
+			},
 		}.Handle,
 	})
 	defer state.engine.Close()

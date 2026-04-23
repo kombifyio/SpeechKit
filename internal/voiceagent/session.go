@@ -21,6 +21,7 @@ const (
 	StateListening    State = "listening"
 	StateProcessing   State = "processing"
 	StateSpeaking     State = "speaking"
+	StateRecovering   State = "recovering"
 	StateDeactivating State = "deactivating"
 )
 
@@ -521,6 +522,7 @@ func (s *Session) receiveLoop(ctx context.Context) {
 		if msg.GoAway {
 			if reconnector, ok := s.provider.(LiveReconnector); ok {
 				slog.Info("voice agent: GoAway received, attempting reconnect")
+				s.setState(StateRecovering)
 				if err := reconnector.Reconnect(ctx); err != nil {
 					slog.Error("voice agent reconnect failed", "err", err)
 					if s.callbacks.OnError != nil {
@@ -530,6 +532,7 @@ func (s *Session) receiveLoop(ctx context.Context) {
 					return
 				}
 				slog.Info("voice agent: reconnected successfully")
+				s.setState(StateListening)
 				continue // Resume receive loop with reconnected session.
 			}
 			// Provider doesn't support reconnect — treat as fatal.

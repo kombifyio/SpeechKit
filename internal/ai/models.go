@@ -32,14 +32,14 @@ var AICallValidation = netsec.ValidationOptions{}
 var localLLMCallValidation = netsec.ValidationOptions{AllowLoopback: true, AllowHTTP: true}
 
 // newAIClient builds a hardened HTTP client for LLM calls (TLS 1.2+,
-// redacting transport, long-running timeout).
-func newAIClient() *http.Client {
-	return netsec.NewSafeHTTPClient(netsec.ClientOptions{Timeout: 60 * time.Second})
+// redacting transport, resolve-time IP validation, long-running timeout).
+func newAIClient(validation *netsec.ValidationOptions) *http.Client {
+	return netsec.NewSafeHTTPClient(netsec.ClientOptions{Timeout: 60 * time.Second, DialValidation: validation})
 }
 
 // registerOpenAIModels registers OpenAI models as custom Genkit models.
 func registerOpenAIModels(g *genkit.Genkit, apiKey string) {
-	client := newAIClient()
+	client := newAIClient(&AICallValidation)
 	models := []string{
 		"gpt-5.4-mini-2026-03-17",
 		"gpt-5.4-2026-03-05",
@@ -56,7 +56,7 @@ func registerOpenAIModels(g *genkit.Genkit, apiKey string) {
 // registerGroqModels registers Groq models as custom Genkit models.
 // Groq uses an OpenAI-compatible API.
 func registerGroqModels(g *genkit.Genkit, apiKey string) {
-	client := newAIClient()
+	client := newAIClient(&AICallValidation)
 	models := []string{
 		"llama-3.1-8b-instant",
 		"llama-3.3-70b-versatile",
@@ -73,7 +73,7 @@ func registerGroqModels(g *genkit.Genkit, apiKey string) {
 // registerHFModels registers HuggingFace Inference API models as custom Genkit models.
 // HF uses an OpenAI-compatible chat completions endpoint.
 func registerHFModels(g *genkit.Genkit, token string) {
-	client := newAIClient()
+	client := newAIClient(&AICallValidation)
 	models := []string{
 		"Qwen/Qwen3.5-9B",
 		"Qwen/Qwen3.5-27B",
@@ -90,7 +90,7 @@ func registerHFModels(g *genkit.Genkit, token string) {
 // registerOpenRouterModels registers OpenRouter models as custom Genkit models.
 // OpenRouter uses an OpenAI-compatible API with a different base URL.
 func registerOpenRouterModels(g *genkit.Genkit, apiKey string) {
-	client := newAIClient()
+	client := newAIClient(&AICallValidation)
 	models := []string{
 		"meta-llama/llama-3.1-8b-instruct",
 		"google/gemini-2.5-flash",
@@ -104,7 +104,7 @@ func registerOpenRouterModels(g *genkit.Genkit, apiKey string) {
 // registerLocalLLMModels registers SpeechKit-managed local LLM models.
 // The runtime speaks the OpenAI-compatible chat completions API on loopback.
 func registerLocalLLMModels(g *genkit.Genkit, baseURL string, modelNames []string) {
-	client := newAIClient()
+	client := newAIClient(&localLLMCallValidation)
 	seen := map[string]bool{}
 	for _, rawName := range modelNames {
 		name := strings.TrimSpace(rawName)
@@ -246,7 +246,7 @@ func callOpenAICompatibleWithValidation(
 	}
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("%s error (%d): %s", model, resp.StatusCode, string(body))
+		return nil, netsec.ProviderStatusError(model, resp.StatusCode, body)
 	}
 
 	var oaiResp oaiResponse

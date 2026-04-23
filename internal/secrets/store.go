@@ -1,6 +1,7 @@
 package secrets
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 	"sync"
@@ -16,6 +17,11 @@ const (
 )
 
 const genericSecretPrefix = "named-secret:"
+
+// ErrSecureStoreUnavailable means the current OS has no supported encrypted
+// secret store implementation. Callers should use environment variables or
+// Doppler-managed install credentials instead of persisting local secrets.
+var ErrSecureStoreUnavailable = errors.New("secrets: secure secret storage unavailable on this OS")
 
 type TokenStatus struct {
 	HasUserToken    bool

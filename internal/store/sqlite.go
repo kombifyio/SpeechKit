@@ -30,6 +30,9 @@ var sqliteMigration004 string
 //go:embed migrations/sqlite/005_user_dictionary.sql
 var sqliteMigration005 string
 
+//go:embed migrations/sqlite/006_voice_agent_sessions.sql
+var sqliteMigration006 string
+
 // SQLiteStore implements Store using a local SQLite database.
 // Uses modernc.org/sqlite (pure Go, no CGo required).
 type SQLiteStore struct {
@@ -85,6 +88,9 @@ func NewSQLiteStore(cfg StoreConfig) (*SQLiteStore, error) {
 	}
 	if _, err := db.ExecContext(context.Background(), sqliteMigration005); err != nil {
 		return nil, fmt.Errorf("migrate 005: %w", err)
+	}
+	if _, err := db.ExecContext(context.Background(), sqliteMigration006); err != nil {
+		return nil, fmt.Errorf("migrate 006: %w", err)
 	}
 
 	store := &SQLiteStore{

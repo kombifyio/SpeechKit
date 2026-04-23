@@ -14,6 +14,7 @@ export type SpeechKitAuraOrbState =
   | 'listening'
   | 'processing'
   | 'speaking'
+  | 'recovering'
   | 'settling'
   | 'error'
 
@@ -62,6 +63,12 @@ const ORB_COPY: Record<SpeechKitAuraOrbState, OrbCopy> = {
     color: '#fb7185',
     ring: 'rgba(251, 113, 133, 0.26)',
   },
+  recovering: {
+    label: 'Recovering',
+    detail: 'Reconnecting the live voice session.',
+    color: '#67e8f9',
+    ring: 'rgba(103, 232, 249, 0.22)',
+  },
   settling: {
     label: 'Settling',
     detail: 'The dialog is cooling down.',
@@ -82,6 +89,7 @@ const VISUALIZER_STATE: Record<SpeechKitAuraOrbState, AgentState> = {
   listening: 'listening',
   processing: 'thinking',
   speaking: 'speaking',
+  recovering: 'connecting',
   settling: 'listening',
   error: 'listening',
 }
@@ -92,6 +100,7 @@ const ROOT_MOTION = {
   listening: { scale: [1, 1.01, 1], opacity: 0.98 },
   processing: { scale: [1, 1.02, 0.995], rotate: [0, -1.25, 0], opacity: 0.98 },
   speaking: { scale: [1, 1.03, 1.01], opacity: 1 },
+  recovering: { scale: [0.99, 1.018, 0.995], rotate: [0, 2, 0], opacity: [0.82, 1, 0.86] },
   settling: { scale: [1, 1.008, 1], opacity: [0.92, 1, 0.92] },
   error: { scale: [1, 0.992, 1], opacity: [0.88, 1, 0.88] },
 } satisfies Record<SpeechKitAuraOrbState, object>

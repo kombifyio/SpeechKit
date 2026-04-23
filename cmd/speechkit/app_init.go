@@ -120,6 +120,7 @@ func buildGenkitConfig(cfg *config.Config) appai.Config {
 	catalog := filteredModelCatalog()
 	assistSelections, explicitAssistSelections := selectedModelSpecsForMode(cfg, catalog, modeAssist)
 	voiceSelections, explicitVoiceSelections := selectedModelSpecsForMode(cfg, catalog, modeVoiceAgent)
+	localLLMReady := localLLMRuntimeModelReady(cfg)
 	selectedProvider := func(provider string) bool {
 		return orderedSelectionsContainProvider(assistSelections, provider) ||
 			orderedSelectionsContainProvider(voiceSelections, provider)
@@ -154,7 +155,7 @@ func buildGenkitConfig(cfg *config.Config) appai.Config {
 		aiCfg.HFAgentModel = cfg.HuggingFace.AgentModel
 	}
 
-	if cfg.LocalLLM.Enabled || selectedProvider("local") {
+	if (cfg.LocalLLM.Enabled || selectedProvider("local")) && localLLMReady {
 		aiCfg.LocalLLMBaseURL = cfg.LocalLLM.BaseURL
 		if aiCfg.LocalLLMBaseURL == "" {
 			aiCfg.LocalLLMBaseURL = config.DefaultLocalLLMBaseURL
@@ -192,6 +193,30 @@ func buildGenkitConfig(cfg *config.Config) appai.Config {
 	}
 
 	return aiCfg
+}
+
+func localBuiltInLLMProfileReady(cfg *config.Config, profile models.Profile) bool {
+	if profile.ExecutionMode != models.ExecutionModeLocal ||
+		profile.ProviderKind != models.ProviderKindLocalBuiltIn {
+		return true
+	}
+	switch profile.Modality {
+	case models.ModalityAssist, models.ModalityRealtimeVoice, models.ModalityUtility:
+		return localLLMRuntimeModelReady(cfg)
+	default:
+		return true
+	}
+}
+
+func localLLMRuntimeModelReady(cfg *config.Config) bool {
+	modelPath := strings.TrimSpace(configuredLocalLLMModelPath(cfg))
+	if modelPath == "" {
+		return false
+	}
+	if _, err := os.Stat(modelPath); err != nil {
+		return false
+	}
+	return true
 }
 
 func orderedSelectionsContainProvider(selections []appai.OrderedModelSelection, provider string) bool {

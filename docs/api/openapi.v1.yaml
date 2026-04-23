@@ -1,0 +1,914 @@
+openapi: 3.1.0
+info:
+  title: SpeechKit Local Control API
+  version: 1.0.0
+  summary: Versioned local control plane for SpeechKit v23 mode and provider orchestration.
+  description: >
+    SpeechKit exposes this API from the local desktop host so external tools can
+    inspect mode contracts, manage per-mode settings, select provider profiles,
+    check readiness, and start or stop the three strict modes. Read-only GET
+    routes are local introspection surfaces; mutating PATCH and POST routes
+    declare ControlPlaneHeader or ControlPlaneCookie security.
+servers:
+  - url: http://127.0.0.1:{port}
+    description: Local SpeechKit desktop host
+    variables:
+      port:
+        default: "0"
+        description: Runtime-assigned local control-plane port.
+security: []
+tags:
+  - name: Modes
+  - name: Providers
+  - name: Data
+paths:
+  /api/v1/modes:
+    get:
+      tags: [Modes]
+      operationId: getModes
+      summary: List mode contracts and current settings.
+      responses:
+        "200":
+          description: Mode contracts and settings.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ModesResponse"
+  /api/v1/modes/{mode}/settings:
+    parameters:
+      - $ref: "#/components/parameters/Mode"
+    get:
+      tags: [Modes]
+      operationId: getModeSettings
+      summary: Read one mode's settings.
+      responses:
+        "200":
+          description: Mode-specific settings.
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: "#/components/schemas/DictationSetting"
+                  - $ref: "#/components/schemas/AssistSetting"
+                  - $ref: "#/components/schemas/VoiceAgentSetting"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    patch:
+      tags: [Modes]
+      operationId: patchModeSettings
+      summary: Update one mode's settings.
+      security:
+        - ControlPlaneHeader: []
+        - ControlPlaneCookie: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ModeSettingsPatch"
+      responses:
+        "200":
+          description: Updated mode-specific settings.
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: "#/components/schemas/DictationSetting"
+                  - $ref: "#/components/schemas/AssistSetting"
+                  - $ref: "#/components/schemas/VoiceAgentSetting"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /api/v1/modes/{mode}/start:
+    parameters:
+      - $ref: "#/components/parameters/Mode"
+    post:
+      tags: [Modes]
+      operationId: startMode
+      summary: Start the selected mode through the command bus.
+      security:
+        - ControlPlaneHeader: []
+        - ControlPlaneCookie: []
+      responses:
+        "200":
+          description: Command accepted.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CommandAccepted"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+  /api/v1/modes/{mode}/stop:
+    parameters:
+      - $ref: "#/components/parameters/Mode"
+    post:
+      tags: [Modes]
+      operationId: stopMode
+      summary: Stop the selected mode through the command bus.
+      security:
+        - ControlPlaneHeader: []
+        - ControlPlaneCookie: []
+      responses:
+        "200":
+          description: Command accepted.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CommandAccepted"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+  /api/v1/providers/profiles:
+    get:
+      tags: [Providers]
+      operationId: getProviderProfiles
+      summary: List provider profiles, active selections, groups, and mode contracts.
+      responses:
+        "200":
+          description: Provider profile catalog.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProviderProfilesResponse"
+  /api/v1/providers/readiness:
+    get:
+      tags: [Providers]
+      operationId: getProviderReadiness
+      summary: List provider readiness for every profile.
+      responses:
+        "200":
+          description: Provider readiness list.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Readiness"
+  /api/v1/dictionary:
+    get:
+      tags: [Data]
+      operationId: getDictionary
+      summary: Export user dictionary entries with usage counts.
+      parameters:
+        - name: language
+          in: query
+          required: false
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Current dictionary entries.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DictionaryResponse"
+    post:
+      tags: [Data]
+      operationId: importDictionary
+      summary: Import dictionary entries and persist them to settings/store.
+      security:
+        - ControlPlaneHeader: []
+        - ControlPlaneCookie: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DictionaryImportRequest"
+      responses:
+        "200":
+          description: Updated dictionary entries.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DictionaryResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+  /api/v1/voice-sessions:
+    get:
+      tags: [Data]
+      operationId: getVoiceSessions
+      summary: List persisted Voice Agent session summaries.
+      parameters:
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+      responses:
+        "200":
+          description: Voice Agent session summaries.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/VoiceAgentSession"
+  /api/v1/providers/artifacts:
+    get:
+      tags: [Providers]
+      operationId: getProviderArtifacts
+      summary: List downloadable or pullable provider artifacts and current jobs.
+      responses:
+        "200":
+          description: Provider artifact catalog and download jobs.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProviderArtifactsResponse"
+  /api/v1/providers/artifacts/jobs:
+    get:
+      tags: [Providers]
+      operationId: getProviderArtifactJobs
+      summary: List provider artifact download jobs.
+      responses:
+        "200":
+          description: Provider artifact jobs.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/DownloadJob"
+  /api/v1/providers/artifacts/{artifactId}/download:
+    parameters:
+      - $ref: "#/components/parameters/ArtifactId"
+    post:
+      tags: [Providers]
+      operationId: downloadProviderArtifact
+      summary: Start downloading or pulling a provider artifact.
+      security:
+        - ControlPlaneHeader: []
+        - ControlPlaneCookie: []
+      responses:
+        "200":
+          description: Download job accepted.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DownloadJob"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+  /api/v1/providers/artifacts/{artifactId}/select:
+    parameters:
+      - $ref: "#/components/parameters/ArtifactId"
+    post:
+      tags: [Providers]
+      operationId: selectProviderArtifact
+      summary: Select an already available provider artifact for its profile.
+      security:
+        - ControlPlaneHeader: []
+        - ControlPlaneCookie: []
+      responses:
+        "200":
+          description: Provider artifact selected.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SelectedArtifact"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /api/v1/providers/{profileId}/activate:
+    parameters:
+      - name: profileId
+        in: path
+        required: true
+        schema:
+          type: string
+        description: Stable provider profile ID.
+    post:
+      tags: [Providers]
+      operationId: activateProviderProfile
+      summary: Activate a provider profile for its mode.
+      security:
+        - ControlPlaneHeader: []
+        - ControlPlaneCookie: []
+      responses:
+        "200":
+          description: Activated profile.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ActivatedProfile"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+components:
+  securitySchemes:
+    ControlPlaneHeader:
+      type: apiKey
+      in: header
+      name: X-SpeechKit-Control-Token
+      description: Required for mutating requests when the desktop host has issued a control-plane token.
+    ControlPlaneCookie:
+      type: apiKey
+      in: cookie
+      name: speechkit_control_plane
+      description: HttpOnly same-site cookie issued by the local desktop host.
+  parameters:
+    Mode:
+      name: mode
+      in: path
+      required: true
+      schema:
+        type: string
+        enum:
+          - dictation
+          - dictate
+          - transcribe
+          - assist
+          - voice_agent
+          - voiceAgent
+          - voice-agent
+      description: Mode name or accepted alias.
+    ArtifactId:
+      name: artifactId
+      in: path
+      required: true
+      schema:
+        type: string
+      description: Stable provider artifact ID from `/api/v1/providers/artifacts`.
+  responses:
+    BadRequest:
+      description: Invalid request or unsupported profile selection.
+      content:
+        text/plain:
+          schema:
+            type: string
+    Forbidden:
+      description: Control-plane guard rejected the request.
+      content:
+        text/plain:
+          schema:
+            type: string
+    NotFound:
+      description: Route, mode, or profile not found.
+    Unavailable:
+      description: Runtime command bus unavailable.
+      content:
+        text/plain:
+          schema:
+            type: string
+  schemas:
+    Mode:
+      type: string
+      enum: [none, dictation, assist, voice_agent]
+    RuntimeMode:
+      type: string
+      enum: [none, dictate, assist, voice_agent]
+    IntelligenceKind:
+      type: string
+      enum: [user, utility, brainstorming]
+    ProviderKind:
+      type: string
+      enum: [local_built_in, local_provider, cloud_provider, direct_provider]
+    ExecutionMode:
+      type: string
+      enum: [local, self_hosted_http, hf_routed, openai_api, groq_api, google_api, ollama_local, openrouter_api]
+    Capability:
+      type: string
+      enum:
+        - transcription
+        - stt
+        - audio_input
+        - llm
+        - tts
+        - realtime_audio
+        - pipeline_fallback
+        - tool_calling
+        - dictionary_prompt
+        - dictionary_native_hints
+        - session_summary
+    ModeContract:
+      type: object
+      required: [mode, intelligence, input, output, allowed, forbidden]
+      properties:
+        mode:
+          $ref: "#/components/schemas/Mode"
+        intelligence:
+          $ref: "#/components/schemas/IntelligenceKind"
+        input:
+          type: string
+        output:
+          type: string
+        allowed:
+          type: array
+          items:
+            $ref: "#/components/schemas/Capability"
+        forbidden:
+          type: array
+          items:
+            $ref: "#/components/schemas/Capability"
+    BaseModeSetting:
+      type: object
+      required: [enabled]
+      properties:
+        enabled:
+          type: boolean
+        hotkey:
+          type: string
+        hotkeyBehavior:
+          type: string
+          enum: [push_to_talk, toggle]
+        primaryProfileId:
+          type: string
+        fallbackProfileId:
+          type: string
+    DictationSetting:
+      allOf:
+        - $ref: "#/components/schemas/BaseModeSetting"
+        - type: object
+          required: [dictionaryEnabled]
+          properties:
+            dictionaryEnabled:
+              type: boolean
+    AssistSetting:
+      allOf:
+        - $ref: "#/components/schemas/BaseModeSetting"
+        - type: object
+          required: [ttsEnabled]
+          properties:
+            ttsEnabled:
+              type: boolean
+            utilityRegistry:
+              type: string
+    VoiceAgentSetting:
+      allOf:
+        - $ref: "#/components/schemas/BaseModeSetting"
+        - type: object
+          required: [sessionSummary, pipelineFallback]
+          properties:
+            sessionSummary:
+              type: boolean
+            pipelineFallback:
+              type: boolean
+            closeBehavior:
+              type: string
+    ModeSettings:
+      type: object
+      required: [dictation, assist, voiceAgent]
+      properties:
+        dictation:
+          $ref: "#/components/schemas/DictationSetting"
+        assist:
+          $ref: "#/components/schemas/AssistSetting"
+        voiceAgent:
+          $ref: "#/components/schemas/VoiceAgentSetting"
+    ModeSettingsPatch:
+      type: object
+      additionalProperties: false
+      properties:
+        enabled:
+          type: boolean
+        hotkey:
+          type: string
+        hotkeyBehavior:
+          type: string
+          enum: [push_to_talk, toggle]
+        primaryProfileId:
+          type: string
+        fallbackProfileId:
+          type: string
+        dictionaryEnabled:
+          type: boolean
+        ttsEnabled:
+          type: boolean
+        sessionSummary:
+          type: boolean
+        pipelineFallback:
+          type: boolean
+        closeBehavior:
+          type: string
+    ModesResponse:
+      type: object
+      required: [contracts, settings]
+      properties:
+        contracts:
+          type: array
+          items:
+            $ref: "#/components/schemas/ModeContract"
+        settings:
+          $ref: "#/components/schemas/ModeSettings"
+    ModelVariant:
+      type: object
+      required: [id, name, modelId]
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        modelId:
+          type: string
+        description:
+          type: string
+        recommended:
+          type: boolean
+    ProviderProfile:
+      type: object
+      required: [id, name, providerKind]
+      properties:
+        id:
+          type: string
+        mode:
+          $ref: "#/components/schemas/RuntimeMode"
+        name:
+          type: string
+        providerKind:
+          $ref: "#/components/schemas/ProviderKind"
+        executionMode:
+          $ref: "#/components/schemas/ExecutionMode"
+        modelId:
+          type: string
+        source:
+          type: string
+        description:
+          type: string
+        license:
+          type: string
+        capabilities:
+          type: array
+          items:
+            $ref: "#/components/schemas/Capability"
+        adapterKind:
+          type: string
+        variants:
+          type: array
+          items:
+            $ref: "#/components/schemas/ModelVariant"
+        inferenceAllowed:
+          type: boolean
+        default:
+          type: boolean
+        recommended:
+          type: boolean
+        experimental:
+          type: boolean
+    ProviderProfilesResponse:
+      type: object
+      required: [profiles, activeProfiles, groups, contracts]
+      properties:
+        profiles:
+          type: array
+          items:
+            $ref: "#/components/schemas/ProviderProfile"
+        activeProfiles:
+          type: object
+          additionalProperties:
+            type: string
+        groups:
+          type: object
+          additionalProperties:
+            type: array
+            items:
+              type: string
+        contracts:
+          type: array
+          items:
+            $ref: "#/components/schemas/ModeContract"
+    Readiness:
+      type: object
+      required: [profileId, mode, providerKind, active, default, configured, credentialsReady, runtimeReady, capabilityReady, ready]
+      properties:
+        schemaVersion:
+          type: string
+          enum: [provider-readiness.v1]
+        profileId:
+          type: string
+        mode:
+          $ref: "#/components/schemas/Mode"
+        providerKind:
+          $ref: "#/components/schemas/ProviderKind"
+        executionMode:
+          $ref: "#/components/schemas/ExecutionMode"
+        modelId:
+          type: string
+        source:
+          type: string
+        active:
+          type: boolean
+        default:
+          type: boolean
+        configured:
+          type: boolean
+        credentialsReady:
+          type: boolean
+        runtimeReady:
+          type: boolean
+        capabilityReady:
+          type: boolean
+        ready:
+          type: boolean
+        missing:
+          type: array
+          items:
+            type: string
+        requirements:
+          type: array
+          items:
+            $ref: "#/components/schemas/ReadinessRequirement"
+        actions:
+          type: array
+          items:
+            $ref: "#/components/schemas/ReadinessAction"
+        artifacts:
+          type: array
+          items:
+            $ref: "#/components/schemas/ReadinessArtifact"
+    ReadinessRequirement:
+      type: object
+      required: [id, label, category, required, ready]
+      properties:
+        id:
+          type: string
+        label:
+          type: string
+        category:
+          type: string
+          enum: [credential, runtime, capability, model]
+        required:
+          type: boolean
+        ready:
+          type: boolean
+        missing:
+          type: string
+    ReadinessAction:
+      type: object
+      required: [id, label, kind]
+      properties:
+        id:
+          type: string
+        label:
+          type: string
+        kind:
+          type: string
+          enum: [configure_credential, configure_provider, configure_runtime, download_artifact, select_artifact, install_runtime]
+        target:
+          type: string
+    ReadinessArtifact:
+      type: object
+      required: [id, name, kind, available, selected]
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        kind:
+          type: string
+          enum: [http, ollama]
+        sizeLabel:
+          type: string
+        sizeBytes:
+          type: integer
+          format: int64
+        available:
+          type: boolean
+        selected:
+          type: boolean
+        runtimeReady:
+          type: boolean
+        runtimeProblem:
+          type: string
+        recommended:
+          type: boolean
+    ProviderArtifact:
+      type: object
+      required: [id, profileId, name, description, sizeLabel, sizeBytes, kind, license, available, selected]
+      properties:
+        id:
+          type: string
+        profileId:
+          type: string
+        name:
+          type: string
+        description:
+          type: string
+        sizeLabel:
+          type: string
+        sizeBytes:
+          type: integer
+          format: int64
+        kind:
+          type: string
+          enum: [http, ollama]
+        url:
+          type: string
+        sha256:
+          type: string
+        ollamaModel:
+          type: string
+        license:
+          type: string
+        available:
+          type: boolean
+        selected:
+          type: boolean
+        runtimeReady:
+          type: boolean
+        runtimeProblem:
+          type: string
+        recommended:
+          type: boolean
+    DownloadJob:
+      type: object
+      required: [id, modelId, profileId, status, progress, bytesDone, totalBytes, statusText]
+      properties:
+        id:
+          type: string
+        modelId:
+          type: string
+        profileId:
+          type: string
+        status:
+          type: string
+          enum: [pending, running, done, failed, cancelled]
+        progress:
+          type: number
+        bytesDone:
+          type: integer
+          format: int64
+        totalBytes:
+          type: integer
+          format: int64
+        statusText:
+          type: string
+        error:
+          type: string
+    ProviderArtifactsResponse:
+      type: object
+      required: [artifacts, jobs]
+      properties:
+        artifacts:
+          type: array
+          items:
+            $ref: "#/components/schemas/ProviderArtifact"
+        jobs:
+          type: array
+          items:
+            $ref: "#/components/schemas/DownloadJob"
+    DictionaryEntry:
+      type: object
+      required: [spoken, canonical, enabled, usageCount]
+      properties:
+        id:
+          type: integer
+          format: int64
+        spoken:
+          type: string
+        canonical:
+          type: string
+        language:
+          type: string
+        source:
+          type: string
+        enabled:
+          type: boolean
+        usageCount:
+          type: integer
+    DictionaryResponse:
+      type: object
+      required: [language, entries]
+      properties:
+        language:
+          type: string
+        entries:
+          type: array
+          items:
+            $ref: "#/components/schemas/DictionaryEntry"
+    DictionaryImportRequest:
+      type: object
+      required: [entries]
+      properties:
+        language:
+          type: string
+        entries:
+          type: array
+          items:
+            $ref: "#/components/schemas/DictionaryEntry"
+    VoiceAgentTurn:
+      type: object
+      required: [role, text]
+      properties:
+        role:
+          type: string
+          enum: [user, assistant]
+        text:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+    VoiceAgentSessionSummary:
+      type: object
+      required: [summary]
+      properties:
+        title:
+          type: string
+        summary:
+          type: string
+        ideas:
+          type: array
+          items:
+            type: string
+        decisions:
+          type: array
+          items:
+            type: string
+        openQuestions:
+          type: array
+          items:
+            type: string
+        nextSteps:
+          type: array
+          items:
+            type: string
+        rawText:
+          type: string
+    VoiceAgentSession:
+      type: object
+      required: [id, startedAt, endedAt, summary]
+      properties:
+        id:
+          type: integer
+          format: int64
+        startedAt:
+          type: string
+          format: date-time
+        endedAt:
+          type: string
+          format: date-time
+        language:
+          type: string
+        providerProfileId:
+          type: string
+        runtimeKind:
+          type: string
+          enum: [native_realtime, pipeline_fallback]
+        transcript:
+          type: string
+        turns:
+          type: array
+          items:
+            $ref: "#/components/schemas/VoiceAgentTurn"
+        summary:
+          $ref: "#/components/schemas/VoiceAgentSessionSummary"
+        createdAt:
+          type: string
+          format: date-time
+    SelectedArtifact:
+      type: object
+      required: [message, artifactId, profileId]
+      properties:
+        message:
+          type: string
+        artifactId:
+          type: string
+        profileId:
+          type: string
+    CommandAccepted:
+      type: object
+      required: [mode, status]
+      properties:
+        mode:
+          $ref: "#/components/schemas/RuntimeMode"
+        status:
+          type: string
+          enum: [accepted]
+    ActivatedProfile:
+      type: object
+      required: [profileId, mode, model]
+      properties:
+        profileId:
+          type: string
+        mode:
+          $ref: "#/components/schemas/RuntimeMode"
+        model:
+          type: string

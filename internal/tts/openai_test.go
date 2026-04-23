@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/kombifyio/SpeechKit/internal/netsec"
@@ -74,6 +75,26 @@ func TestOpenAIEmptyText(t *testing.T) {
 	_, err := p.Synthesize(context.Background(), "", SynthesizeOpts{})
 	if err == nil {
 		t.Fatal("expected error for empty text")
+	}
+}
+
+func TestOpenAISynthesizeErrorDoesNotLeakProviderBody(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusUnauthorized)
+		_, _ = w.Write([]byte(`{"error":"invalid api key sk-secret-body"}`))
+	}))
+	defer server.Close()
+
+	p := NewOpenAI(OpenAIOpts{APIKey: "test-key"})
+	p.BaseURL = server.URL
+	p.Validation = netsec.ValidationOptions{AllowLoopback: true, AllowHTTP: true}
+
+	_, err := p.Synthesize(context.Background(), "Hallo", SynthesizeOpts{})
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	if strings.Contains(err.Error(), "sk-secret-body") || strings.Contains(err.Error(), "invalid api key") {
+		t.Fatalf("provider response body leaked in error: %v", err)
 	}
 }
 

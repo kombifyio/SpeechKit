@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type ChangeEvent } from "react";
 import {
   AudioLines,
   Bot,
@@ -10,20 +10,24 @@ import { Dialogs } from "@wailsio/runtime";
 
 import { MicSelector } from "@/components/ui/mic-selector";
 import {
+  builtInPrimaryModelSelections,
   cancelModelDownload,
   clearProviderCredential,
   defaultSettingsState,
+  fetchAPIV1Dictionary,
   fetchDownloadCatalog,
   fetchDownloadJobs,
   fetchOverlayState,
   fetchModelProfiles,
   fetchSettingsState,
+  importAPIV1Dictionary,
   resetOverlayPosition,
   saveProviderCredential,
   saveSettingsState,
   selectDownloadedModel,
   startModelDownload,
   testProviderCredential,
+  type DictionaryEntry as APIV1DictionaryEntry,
   type DownloadItem,
   type DownloadJob,
   type HotkeyBehavior,
@@ -86,6 +90,44 @@ const MODE_NAV_TABS: Record<
     iconKey: "headphones",
   },
 };
+const MODE_GUIDES = {
+  stt: {
+    label: "Dictation",
+    title: "Use this for exact text output",
+    summary:
+      "Dictation should be the fastest path: record, transcribe, apply your dictionary, and type into the focused app without Assist utilities.",
+    checks: [
+      "Test in a plain text field before long writing sessions.",
+      "Add product names, people, and acronyms after the first miss.",
+      "Keep one primary STT model ready before relying on the hotkey.",
+    ],
+    tryThis: "Hold the trigger, say one complete sentence, release, then check whether the text landed where the cursor was.",
+  },
+  assist: {
+    label: "Assist",
+    title: "Use this for one-shot transformations",
+    summary:
+      "Assist works best when you want one result: summarize, rewrite, draft, copy, insert, or save a quick note.",
+    checks: [
+      "Select editable text when you expect a direct replacement.",
+      "Use exact utility phrases before relying on open-ended prompts.",
+      "Long or uncertain results stay in the Assist panel for review.",
+    ],
+    tryThis: "Select a paragraph and say: summarize this in three bullets.",
+  },
+  realtime_voice: {
+    label: "Voice Agent",
+    title: "Use this for live follow-up thinking",
+    summary:
+      "Voice Agent is a realtime session for dialogue, interruption, summaries, and decisions. It is intentionally separate from direct text insertion.",
+    checks: [
+      "Pick a low-latency realtime provider before long sessions.",
+      "Keep session summaries enabled when decisions matter.",
+      "Use close behavior to choose between parking and ending a chat.",
+    ],
+    tryThis: "Start a session and ask: help me decide the next release slice, then interrupt with a follow-up.",
+  },
+} as const;
 const DEFAULT_SQLITE_FILENAME = "feedback.db";
 
 type ConfigurableMode = keyof typeof MODE_HOTKEY_FIELDS;
@@ -207,24 +249,30 @@ function joinFolderAndFile(folder: string, filename: string) {
   return `${trimmedFolder}${separator}${filename}`;
 }
 
-type DictionaryEntry = {
+type DictionaryDraftEntry = {
   id: string;
   spoken: string;
   canonical: string;
+  language?: string;
+  source?: string;
+  enabled?: boolean;
+  usageCount?: number;
 };
 
-function createDictionaryEntry(index: number): DictionaryEntry {
+function createDictionaryEntry(index: number): DictionaryDraftEntry {
   return {
     id: `dictionary-entry-${Date.now()}-${index}`,
     spoken: "",
     canonical: "",
+    enabled: true,
+    usageCount: 0,
   };
 }
 
-function parseDictionaryEntries(value: string): DictionaryEntry[] {
+function parseDictionaryEntries(value: string): DictionaryDraftEntry[] {
   return value
     .split(/\r?\n/)
-    .map((line, index) => {
+    .map((line, index): DictionaryDraftEntry | null => {
       const trimmed = line.trim();
       if (!trimmed) return null;
       const arrowIndex = trimmed.indexOf("=>");
@@ -237,12 +285,14 @@ function parseDictionaryEntries(value: string): DictionaryEntry[] {
         id: `dictionary-entry-${index}-${spoken}-${canonical}`,
         spoken,
         canonical,
+        enabled: true,
+        usageCount: 0,
       };
     })
-    .filter((entry): entry is DictionaryEntry => Boolean(entry));
+    .filter((entry): entry is DictionaryDraftEntry => Boolean(entry));
 }
 
-function serializeDictionaryEntries(entries: DictionaryEntry[]) {
+function serializeDictionaryEntries(entries: DictionaryDraftEntry[]) {
   return entries
     .map((entry) => ({
       spoken: entry.spoken.trim(),
@@ -250,9 +300,85 @@ function serializeDictionaryEntries(entries: DictionaryEntry[]) {
     }))
     .filter((entry) => entry.spoken.length > 0)
     .map((entry) =>
-      entry.canonical ? `${entry.spoken} => ${entry.canonical}` : entry.spoken,
+      entry.canonical && entry.canonical.toLowerCase() !== entry.spoken.toLowerCase()
+        ? `${entry.spoken} => ${entry.canonical}`
+        : entry.spoken,
     )
     .join("\n");
+}
+
+function draftEntriesFromAPIV1(
+  entries: APIV1DictionaryEntry[],
+): DictionaryDraftEntry[] {
+  return entries.map((entry, index) => ({
+    id: `dictionary-entry-api-${entry.id ?? index}-${entry.spoken}-${entry.canonical}`,
+    spoken: entry.spoken,
+    canonical: entry.canonical,
+    language: entry.language,
+    source: entry.source,
+    enabled: entry.enabled,
+    usageCount: entry.usageCount,
+  }));
+}
+
+function apiEntriesFromDraft(
+  entries: DictionaryDraftEntry[],
+  language: string,
+): APIV1DictionaryEntry[] {
+  return entries
+    .map((entry) => {
+      const spoken = entry.spoken.trim();
+      const canonical = entry.canonical.trim() || spoken;
+      return {
+        spoken,
+        canonical,
+        language: entry.language || language,
+        source: entry.source || "settings",
+        enabled: entry.enabled ?? true,
+        usageCount: entry.usageCount ?? 0,
+      };
+    })
+    .filter((entry) => entry.spoken.length > 0);
+}
+
+function parseDictionaryImportPayload(
+  text: string,
+): { language: string; entries: APIV1DictionaryEntry[] } {
+  const payload = JSON.parse(text) as
+    | APIV1DictionaryEntry[]
+    | { language?: string; entries?: APIV1DictionaryEntry[] };
+  if (Array.isArray(payload)) {
+    return { language: "", entries: payload };
+  }
+  if (!payload || !Array.isArray(payload.entries)) {
+    throw new Error("Dictionary import needs an entries array.");
+  }
+  return {
+    language: typeof payload.language === "string" ? payload.language : "",
+    entries: payload.entries,
+  };
+}
+
+function downloadDictionaryExport(language: string, entries: APIV1DictionaryEntry[]) {
+  const blob = new Blob(
+    [
+      JSON.stringify(
+        {
+          language,
+          entries,
+        },
+        null,
+        2,
+      ),
+    ],
+    { type: "application/json" },
+  );
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = `speechkit-dictionary-${language || "default"}.json`;
+  anchor.click();
+  URL.revokeObjectURL(url);
 }
 
 export function SettingsApp({ initialTab = "general" }: { initialTab?: Tab }) {
@@ -412,17 +538,12 @@ export function SettingsApp({ initialTab = "general" }: { initialTab?: Tab }) {
 
   const updateModelSelection = (
     mode: keyof SpeechKitSettingsState["modelSelections"],
-    field: keyof ModeModelSelectionState,
-    value: string,
+    next: ModeModelSelectionState,
   ) => {
     updateSettings({
       modelSelections: {
         ...settings.modelSelections,
-        [mode]: normalizeModeSelectionUpdate(
-          settings.modelSelections[mode],
-          field,
-          value,
-        ),
+        [mode]: next,
       },
     });
   };
@@ -734,24 +855,6 @@ export function SettingsApp({ initialTab = "general" }: { initialTab?: Tab }) {
                         ),
                       )}
                     </div>
-                    {settings.visualizer === "pill" && (
-                      <div className="flex flex-col gap-1.5">
-                        <OverlayFeedbackModePicker
-                          label="Assist Mode"
-                          value={settings.assistOverlayMode}
-                          onChange={(assistOverlayMode) =>
-                            updateSettings({ assistOverlayMode })
-                          }
-                        />
-                        <OverlayFeedbackModePicker
-                          label="Voice Agent Mode"
-                          value={settings.voiceAgentOverlayMode}
-                          onChange={(voiceAgentOverlayMode) =>
-                            updateSettings({ voiceAgentOverlayMode })
-                          }
-                        />
-                      </div>
-                    )}
                     <Row
                       label="Movable overlay"
                       on={settings.overlayMovable}
@@ -957,37 +1060,41 @@ export function SettingsApp({ initialTab = "general" }: { initialTab?: Tab }) {
         )}
 
         {tab === "stt" && (
-          <div className="mb-5 grid gap-5 lg:grid-cols-2">
-            <ModeSection
-              title="Transcribe Controls"
-              testId="transcribe-mode-controls"
-            >
-              <HotkeyPicker
-                label="Dictate hotkey"
-                enabled={settings.modeEnabled.dictate}
-                value={settings.dictateHotkey}
-                behavior={settings.dictateHotkeyBehavior}
-                defaultBase={MODE_DEFAULT_BASES.dictate}
-                onToggleEnabled={() => toggleModeEnabled("dictate")}
-                onChange={(value) => updateModeHotkey("dictate", value)}
-                onChangeBehavior={(value) =>
-                  updateModeHotkeyBehavior("dictate", value)
-                }
-              />
-            </ModeSection>
-            <ModeSection title="User Dictionary">
-              <DictionaryListEditor
-                value={settings.vocabularyDictionary}
-                onChange={(value) =>
-                  updateSettings({ vocabularyDictionary: value }, 250)
-                }
-              />
-            </ModeSection>
+          <div className="mb-5">
+            <ModeGuidePanel mode="stt" />
+            <div className="grid gap-5 lg:grid-cols-2">
+              <ModeSection
+                title="Transcribe Controls"
+                testId="transcribe-mode-controls"
+              >
+                <HotkeyPicker
+                  label="Dictate hotkey"
+                  enabled={settings.modeEnabled.dictate}
+                  value={settings.dictateHotkey}
+                  behavior={settings.dictateHotkeyBehavior}
+                  defaultBase={MODE_DEFAULT_BASES.dictate}
+                  onToggleEnabled={() => toggleModeEnabled("dictate")}
+                  onChange={(value) => updateModeHotkey("dictate", value)}
+                  onChangeBehavior={(value) =>
+                    updateModeHotkeyBehavior("dictate", value)
+                  }
+                />
+              </ModeSection>
+              <ModeSection title="User Dictionary">
+                <DictionaryListEditor
+                  value={settings.vocabularyDictionary}
+                  onChange={(value) =>
+                    updateSettings({ vocabularyDictionary: value }, 250)
+                  }
+                />
+              </ModeSection>
+            </div>
           </div>
         )}
 
         {tab === "assist" && (
           <div className="mb-5">
+            <ModeGuidePanel mode="assist" />
             <ModeSection title="Assist Controls" testId="assist-mode-controls">
               <HotkeyPicker
                 label="Assist hotkey"
@@ -1001,96 +1108,121 @@ export function SettingsApp({ initialTab = "general" }: { initialTab?: Tab }) {
                   updateModeHotkeyBehavior("assist", value)
                 }
               />
+              {settings.visualizer === "pill" && (
+                <div className="mt-3 border-t border-[color:var(--sk-shell-divider)] pt-3">
+                  <OverlayFeedbackModePicker
+                    label="Overlay feedback"
+                    value={settings.assistOverlayMode}
+                    onChange={(assistOverlayMode) =>
+                      updateSettings({ assistOverlayMode })
+                    }
+                  />
+                </div>
+              )}
             </ModeSection>
           </div>
         )}
 
         {tab === "realtime_voice" && (
-          <div className="mb-5 grid gap-5 lg:grid-cols-2">
-            <ModeSection
-              title="Voice Agent Controls"
-              testId="voice-agent-mode-controls"
-            >
-              <HotkeyPicker
-                label="Voice Agent hotkey"
-                enabled={settings.modeEnabled.voice_agent}
-                value={settings.voiceAgentHotkey}
-                behavior={settings.voiceAgentHotkeyBehavior}
-                defaultBase={MODE_DEFAULT_BASES.voice_agent}
-                onToggleEnabled={() => toggleModeEnabled("voice_agent")}
-                onChange={(value) => updateModeHotkey("voice_agent", value)}
-                onChangeBehavior={(value) =>
-                  updateModeHotkeyBehavior("voice_agent", value)
-                }
-              />
-            </ModeSection>
-
-            <ModeSection title="Conversation">
-              <div className="flex flex-col gap-2">
-                <p className="text-[11px] leading-relaxed text-[color:var(--sk-text-muted)]">
-                  Add your personal preferences on top of the built-in
-                  Voice Agent framework, then choose what the transcript
-                  window close button should do. Minimise always keeps the
-                  current conversation available in the taskbar.
-                </p>
-                <div className="grid gap-3">
-                  <label className="flex flex-col gap-1.5">
-                    <span className="text-[11px] font-medium text-[color:var(--sk-text)]">
-                      Personal refinement prompt
-                    </span>
-                    <textarea
-                      aria-label="Voice Agent personal refinement prompt"
-                      value={settings.voiceAgentRefinementPrompt}
-                      onChange={(e) =>
-                        updateSettings(
-                          { voiceAgentRefinementPrompt: e.target.value },
-                          250,
-                        )
-                      }
-                      rows={4}
-                      placeholder="Prefer concise answers, call me Mako, and keep follow-up questions short."
-                      className="sk-input min-h-24 w-full rounded-[18px] px-3 py-2 text-xs leading-6"
-                    />
-                    <span className="text-[11px] text-[color:var(--sk-text-muted)]/80">
-                      This adds personal preferences on top of the internal
-                      framework prompt without replacing it.
-                    </span>
-                  </label>
-                </div>
-                <Row
-                  label="Session summary"
-                  on={settings.voiceAgentSessionSummary}
-                  onToggle={() =>
-                    updateSettings({
-                      voiceAgentSessionSummary:
-                        !settings.voiceAgentSessionSummary,
-                    })
+          <div className="mb-5">
+            <ModeGuidePanel mode="realtime_voice" />
+            <div className="grid gap-5 lg:grid-cols-2">
+              <ModeSection
+                title="Voice Agent Controls"
+                testId="voice-agent-mode-controls"
+              >
+                <HotkeyPicker
+                  label="Voice Agent hotkey"
+                  enabled={settings.modeEnabled.voice_agent}
+                  value={settings.voiceAgentHotkey}
+                  behavior={settings.voiceAgentHotkeyBehavior}
+                  defaultBase={MODE_DEFAULT_BASES.voice_agent}
+                  onToggleEnabled={() => toggleModeEnabled("voice_agent")}
+                  onChange={(value) => updateModeHotkey("voice_agent", value)}
+                  onChangeBehavior={(value) =>
+                    updateModeHotkeyBehavior("voice_agent", value)
                   }
                 />
-                <div className="flex flex-wrap gap-1.5">
-                  <Chip
-                    active={settings.voiceAgentCloseBehavior === "continue"}
-                    onClick={() =>
-                      updateSettings({ voiceAgentCloseBehavior: "continue" })
+                {settings.visualizer === "pill" && (
+                  <div className="mt-3 border-t border-[color:var(--sk-shell-divider)] pt-3">
+                    <OverlayFeedbackModePicker
+                      label="Overlay feedback"
+                      value={settings.voiceAgentOverlayMode}
+                      onChange={(voiceAgentOverlayMode) =>
+                        updateSettings({ voiceAgentOverlayMode })
+                      }
+                    />
+                  </div>
+                )}
+              </ModeSection>
+
+              <ModeSection title="Conversation">
+                <div className="flex flex-col gap-2">
+                  <p className="text-[11px] leading-relaxed text-[color:var(--sk-text-muted)]">
+                    Add your personal preferences on top of the built-in
+                    Voice Agent framework, then choose what the transcript
+                    window close button should do. Minimise always keeps the
+                    current conversation available in the taskbar.
+                  </p>
+                  <div className="grid gap-3">
+                    <label className="flex flex-col gap-1.5">
+                      <span className="text-[11px] font-medium text-[color:var(--sk-text)]">
+                        Personal refinement prompt
+                      </span>
+                      <textarea
+                        aria-label="Voice Agent personal refinement prompt"
+                        value={settings.voiceAgentRefinementPrompt}
+                        onChange={(e) =>
+                          updateSettings(
+                            { voiceAgentRefinementPrompt: e.target.value },
+                            250,
+                          )
+                        }
+                        rows={4}
+                        placeholder="Prefer concise answers, call me Mako, and keep follow-up questions short."
+                        className="sk-input min-h-24 w-full rounded-[18px] px-3 py-2 text-xs leading-6"
+                      />
+                      <span className="text-[11px] text-[color:var(--sk-text-muted)]/80">
+                        This adds personal preferences on top of the internal
+                        framework prompt without replacing it.
+                      </span>
+                    </label>
+                  </div>
+                  <Row
+                    label="Session summary"
+                    on={settings.voiceAgentSessionSummary}
+                    onToggle={() =>
+                      updateSettings({
+                        voiceAgentSessionSummary:
+                          !settings.voiceAgentSessionSummary,
+                      })
                     }
-                  >
-                    Minimise and keep chat
-                  </Chip>
-                  <Chip
-                    active={settings.voiceAgentCloseBehavior === "new_chat"}
-                    onClick={() =>
-                      updateSettings({ voiceAgentCloseBehavior: "new_chat" })
-                    }
-                  >
-                    End chat on close
-                  </Chip>
+                  />
+                  <div className="flex flex-wrap gap-1.5">
+                    <Chip
+                      active={settings.voiceAgentCloseBehavior === "continue"}
+                      onClick={() =>
+                        updateSettings({ voiceAgentCloseBehavior: "continue" })
+                      }
+                    >
+                      Minimise and keep chat
+                    </Chip>
+                    <Chip
+                      active={settings.voiceAgentCloseBehavior === "new_chat"}
+                      onClick={() =>
+                        updateSettings({ voiceAgentCloseBehavior: "new_chat" })
+                      }
+                    >
+                      End chat on close
+                    </Chip>
+                  </div>
+                  <p className="text-[11px] text-[color:var(--sk-text-muted)]/80">
+                    Use the close button to either park the current session or
+                    reset it cleanly before the next start.
+                  </p>
                 </div>
-                <p className="text-[11px] text-[color:var(--sk-text-muted)]/80">
-                  Use the close button to either park the current session or
-                  reset it cleanly before the next start.
-                </p>
-              </div>
-            </ModeSection>
+              </ModeSection>
+            </div>
           </div>
         )}
 
@@ -1158,6 +1290,49 @@ function TabBtn({
   );
 }
 
+function ModeGuidePanel({ mode }: { mode: keyof typeof MODE_GUIDES }) {
+  const guide = MODE_GUIDES[mode];
+  return (
+    <section
+      data-testid={`mode-guide-${mode}`}
+      className="mb-5 rounded-[22px] border border-[color:var(--sk-panel-border)] bg-[color:var(--sk-surface-1)] px-4 py-3.5"
+    >
+      <div className="grid gap-4 xl:grid-cols-[1.05fr_1.35fr_0.9fr] xl:items-start">
+        <div>
+          <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-[color:var(--sk-accent)]">
+            {guide.label} guide
+          </p>
+          <h3 className="mt-1 text-sm font-semibold text-[color:var(--sk-text)]">
+            {guide.title}
+          </h3>
+          <p className="mt-1.5 text-[11px] leading-relaxed text-[color:var(--sk-text-muted)]">
+            {guide.summary}
+          </p>
+        </div>
+        <div className="grid gap-2 sm:grid-cols-3 xl:grid-cols-1">
+          {guide.checks.map((check) => (
+            <div
+              key={check}
+              className="flex items-start gap-2 text-[11px] leading-relaxed text-[color:var(--sk-text-muted)]"
+            >
+              <span className="mt-1 h-1.5 w-1.5 shrink-0 rounded-full bg-[color:var(--sk-accent)]" />
+              <span>{check}</span>
+            </div>
+          ))}
+        </div>
+        <div className="rounded-[16px] border border-[color:var(--sk-panel-border)] bg-[color:var(--sk-surface-0)] px-3 py-2.5">
+          <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-[color:var(--sk-text-subtle)]">
+            Try next
+          </p>
+          <p className="mt-1.5 text-[11px] leading-relaxed text-[color:var(--sk-text)]/80">
+            {guide.tryThis}
+          </p>
+        </div>
+      </div>
+    </section>
+  );
+}
+
 function Section({
   title,
   children,
@@ -1215,15 +1390,47 @@ function DictionaryListEditor({
   value: string;
   onChange: (value: string) => void;
 }) {
-  const entries = parseDictionaryEntries(value);
-  const previewEntries = entries.slice(-3).reverse();
   const [open, setOpen] = useState(false);
-  const [draftEntries, setDraftEntries] = useState<DictionaryEntry[]>([]);
+  const [draftEntries, setDraftEntries] = useState<DictionaryDraftEntry[]>([]);
+  const [apiLanguage, setApiLanguage] = useState("");
+  const [apiEntries, setApiEntries] = useState<DictionaryDraftEntry[] | null>(
+    null,
+  );
+  const [apiError, setApiError] = useState("");
+  const [syncing, setSyncing] = useState(false);
+  const importInputRef = useRef<HTMLInputElement | null>(null);
+  const fallbackEntries = parseDictionaryEntries(value);
+  const entries = apiEntries ?? fallbackEntries;
+  const previewEntries = entries.slice(-3).reverse();
+
+  useEffect(() => {
+    let active = true;
+    setSyncing(true);
+    void fetchAPIV1Dictionary()
+      .then((response) => {
+        if (!active) return;
+        const nextEntries = draftEntriesFromAPIV1(response.entries);
+        setApiLanguage(response.language);
+        setApiEntries(nextEntries.length > 0 ? nextEntries : null);
+        setApiError("");
+      })
+      .catch(() => {
+        if (active) {
+          setApiEntries(null);
+          setApiError("Dictionary API unavailable; editing local settings only.");
+        }
+      })
+      .finally(() => {
+        if (active) setSyncing(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
 
   const openEditor = (appendBlank: boolean) => {
-    const parsedEntries = parseDictionaryEntries(value);
-    const nextEntries =
-      parsedEntries.length > 0 ? parsedEntries : [createDictionaryEntry(0)];
+    const sourceEntries = entries.length > 0 ? entries : fallbackEntries;
+    const nextEntries = sourceEntries.length > 0 ? sourceEntries : [createDictionaryEntry(0)];
     setDraftEntries(
       appendBlank
         ? [...nextEntries, createDictionaryEntry(nextEntries.length)]
@@ -1234,7 +1441,7 @@ function DictionaryListEditor({
 
   const updateDraftEntry = (
     index: number,
-    patch: Partial<Omit<DictionaryEntry, "id">>,
+    patch: Partial<Omit<DictionaryDraftEntry, "id">>,
   ) => {
     setDraftEntries((current) =>
       current.map((entry, entryIndex) =>
@@ -1259,10 +1466,78 @@ function DictionaryListEditor({
 
   const canSave = draftEntries.some((entry) => entry.spoken.trim().length > 0);
 
-  const saveDraft = () => {
+  const saveDraft = async () => {
     if (!canSave) return;
-    onChange(serializeDictionaryEntries(draftEntries));
-    setOpen(false);
+    setSyncing(true);
+    setApiError("");
+    const nextAPIEntries = apiEntriesFromDraft(draftEntries, apiLanguage);
+    try {
+      const response = await importAPIV1Dictionary(apiLanguage, nextAPIEntries);
+      const nextDraftEntries = draftEntriesFromAPIV1(response.entries);
+      setApiLanguage(response.language);
+      setApiEntries(nextDraftEntries);
+      onChange(serializeDictionaryEntries(nextDraftEntries));
+      setOpen(false);
+    } catch (error) {
+      setApiEntries(draftEntries);
+      onChange(serializeDictionaryEntries(draftEntries));
+      setApiError(
+        error instanceof Error
+          ? `${error.message}; saved local settings only.`
+          : "Dictionary API import failed; saved local settings only.",
+      );
+      setOpen(false);
+    } finally {
+      setSyncing(false);
+    }
+  };
+
+  const handleExport = () => {
+    downloadDictionaryExport(
+      apiLanguage,
+      apiEntriesFromDraft(entries, apiLanguage),
+    );
+  };
+
+  const handleImportFile = async (
+    event: ChangeEvent<HTMLInputElement>,
+  ) => {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file) return;
+
+    let parsed: { language: string; entries: APIV1DictionaryEntry[] };
+    try {
+      parsed = parseDictionaryImportPayload(await file.text());
+    } catch (error) {
+      setApiError(
+        error instanceof Error ? error.message : "Dictionary import failed.",
+      );
+      return;
+    }
+
+    const language = parsed.language || apiLanguage;
+    const importedDraftEntries = draftEntriesFromAPIV1(parsed.entries);
+    setSyncing(true);
+    setApiError("");
+    try {
+      const response = await importAPIV1Dictionary(language, parsed.entries);
+      const nextDraftEntries = draftEntriesFromAPIV1(response.entries);
+      setApiLanguage(response.language);
+      setApiEntries(nextDraftEntries);
+      onChange(serializeDictionaryEntries(nextDraftEntries));
+    } catch (error) {
+      setApiLanguage(language);
+      setApiEntries(importedDraftEntries);
+      onChange(serializeDictionaryEntries(importedDraftEntries));
+      setApiError(
+        error instanceof Error
+          ? `${error.message}; imported local settings only.`
+          : "Dictionary API import failed; imported local settings only.",
+      );
+    } finally {
+      setSyncing(false);
+    }
   };
 
   return (
@@ -1273,10 +1548,41 @@ function DictionaryListEditor({
             Recent words
           </div>
           <p className="mt-1 text-[11px] leading-relaxed text-[color:var(--sk-text-muted)]/80">
-            Add hard-to-recognise words and optional preferred spellings.
+            Add hard-to-recognise words and track which corrections are active.
           </p>
+          <p className="mt-1 text-[10px] text-[color:var(--sk-text-subtle)]">
+            {syncing ? "Syncing dictionary..." : `${entries.length} entries`}
+            {apiLanguage ? ` · ${apiLanguage}` : ""}
+          </p>
+          {apiError && (
+            <p className="mt-1 text-[10px] leading-relaxed text-amber-300/90">
+              {apiError}
+            </p>
+          )}
         </div>
         <div className="flex flex-wrap gap-2">
+          <input
+            ref={importInputRef}
+            type="file"
+            accept="application/json,.json"
+            className="hidden"
+            aria-label="Import dictionary file"
+            onChange={handleImportFile}
+          />
+          <button
+            type="button"
+            onClick={() => importInputRef.current?.click()}
+            className="sk-secondary-button h-8 rounded-lg px-3 text-xs font-medium transition-colors hover:bg-[color:var(--sk-surface-3)]"
+          >
+            Import
+          </button>
+          <button
+            type="button"
+            onClick={handleExport}
+            className="sk-secondary-button h-8 rounded-lg px-3 text-xs font-medium transition-colors hover:bg-[color:var(--sk-surface-3)]"
+          >
+            Export
+          </button>
           <button
             type="button"
             onClick={() => openEditor(true)}
@@ -1304,11 +1610,14 @@ function DictionaryListEditor({
               <span className="min-w-0 truncate text-sm text-[color:var(--sk-text)]">
                 {entry.canonical || entry.spoken}
               </span>
-              {entry.canonical && (
-                <span className="min-w-0 truncate text-[11px] text-[color:var(--sk-text-muted)]">
-                  heard as {entry.spoken}
+              <span className="flex shrink-0 items-center gap-2 text-[11px] text-[color:var(--sk-text-muted)]">
+                {entry.canonical && (
+                  <span className="max-w-44 truncate">heard as {entry.spoken}</span>
+                )}
+                <span className="rounded-full bg-[color:var(--sk-surface-2)] px-2 py-0.5 text-[10px]">
+                  {entry.usageCount ?? 0} uses
                 </span>
-              )}
+              </span>
             </div>
           ))}
         </div>
@@ -1349,16 +1658,17 @@ function DictionaryListEditor({
             </div>
 
             <div className="min-h-0 overflow-y-auto px-5 py-4">
-              <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] gap-2 text-[10px] font-semibold uppercase tracking-[0.14em] text-[color:var(--sk-text-muted)]">
+              <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_72px_auto] gap-2 text-[10px] font-semibold uppercase tracking-[0.14em] text-[color:var(--sk-text-muted)]">
                 <span>Word or phrase</span>
                 <span>Preferred spelling</span>
+                <span className="text-right">Uses</span>
                 <span className="w-16 text-right">Remove</span>
               </div>
               <div className="mt-2 grid gap-2">
                 {draftEntries.map((entry, index) => (
                   <div
                     key={entry.id}
-                    className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] items-center gap-2"
+                    className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_72px_auto] items-center gap-2"
                   >
                     <input
                       aria-label={`Dictionary spoken word ${index + 1}`}
@@ -1382,6 +1692,12 @@ function DictionaryListEditor({
                       placeholder="Optional"
                       className="sk-input h-9 min-w-0 rounded-lg px-3 text-xs"
                     />
+                    <div
+                      className="h-9 rounded-lg border border-[color:var(--sk-panel-border)] bg-[color:var(--sk-surface-0)] px-3 text-right text-xs leading-9 text-[color:var(--sk-text-muted)]"
+                      aria-label={`Dictionary usage count ${index + 1}`}
+                    >
+                      {entry.usageCount ?? 0}
+                    </div>
                     <button
                       type="button"
                       aria-label={`Remove dictionary word ${index + 1}`}
@@ -1412,16 +1728,16 @@ function DictionaryListEditor({
               </button>
               <button
                 type="button"
-                disabled={!canSave}
-                onClick={saveDraft}
+                disabled={!canSave || syncing}
+                onClick={() => void saveDraft()}
                 className={[
                   "h-8 rounded-lg px-3 text-xs font-semibold transition-colors",
-                  canSave
+                  canSave && !syncing
                     ? "bg-[color:var(--sk-accent)] text-white hover:bg-[color:var(--sk-accent-strong)]"
                     : "cursor-not-allowed bg-[color:var(--sk-surface-2)] text-[color:var(--sk-text-subtle)]",
                 ].join(" ")}
               >
-                Save dictionary
+                {syncing ? "Saving..." : "Save dictionary"}
               </button>
             </div>
           </div>
@@ -1605,6 +1921,43 @@ function normalizeModeSelectionUpdate(
   return next;
 }
 
+function resolvePrimaryProfileId(
+  selectionMode: keyof SpeechKitSettingsState["modelSelections"],
+  current: ModeModelSelectionState,
+  activeId: string | undefined,
+  profiles: SettingsModelProfile[],
+) {
+  const currentPrimary = current.primaryProfileId.trim();
+  if (
+    currentPrimary &&
+    profiles.some((profile) => profile.id === currentPrimary)
+  ) {
+    return currentPrimary;
+  }
+
+  const builtInPrimary =
+    builtInPrimaryModelSelections[selectionMode]?.primaryProfileId ?? "";
+  if (
+    builtInPrimary &&
+    profiles.some((profile) => profile.id === builtInPrimary)
+  ) {
+    return builtInPrimary;
+  }
+
+  if (activeId && profiles.some((profile) => profile.id === activeId)) {
+    return activeId;
+  }
+
+  return (
+    profiles.find((profile) => profile.recommended)?.id ??
+    profiles.find((profile) =>
+      profile.variants?.some((variant) => variant.recommended),
+    )?.id ??
+    profiles[0]?.id ??
+    currentPrimary
+  );
+}
+
 function ModelPanel({
   modality,
   settings,
@@ -1641,8 +1994,7 @@ function ModelPanel({
   onTestCredential: (provider: string) => void;
   onUpdateSelection: (
     mode: keyof SpeechKitSettingsState["modelSelections"],
-    field: keyof ModeModelSelectionState,
-    value: string,
+    next: ModeModelSelectionState,
   ) => void;
   onRefreshSettings: () => Promise<void>;
   dlCatalog: DownloadItem[];
@@ -1658,7 +2010,16 @@ function ModelPanel({
   const filtered = profiles.filter((p) => p.modality === modality);
   const activeId = settings.activeProfiles?.[modality];
   const selectionMode = MODE_SELECTION_KEYS[modality];
-  const currentSelection = settings.modelSelections[selectionMode];
+  const rawSelection = settings.modelSelections[selectionMode];
+  const currentSelection = {
+    ...rawSelection,
+    primaryProfileId: resolvePrimaryProfileId(
+      selectionMode,
+      rawSelection,
+      activeId,
+      filtered,
+    ),
+  };
   const providerGroups = PROVIDER_KIND_ORDER.map((kind) => ({
     kind,
     label: PROVIDER_KIND_LABELS[kind],
@@ -1669,6 +2030,57 @@ function ModelPanel({
 
   return (
     <>
+      {filtered.length > 0 ? (
+        <section
+          data-testid="model-routing-controls"
+          className="mb-4 border-b border-[color:var(--sk-shell-divider)] pb-4"
+        >
+          <div className="mb-3 flex items-end justify-between gap-3">
+            <div>
+              <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-[color:var(--sk-text-muted)]">
+                Primary & fallback
+              </p>
+              <p className="mt-1 text-[11px] text-[color:var(--sk-text-muted)]">
+                Choose the default model before tuning provider details below.
+              </p>
+            </div>
+          </div>
+          <div className="grid gap-3 md:grid-cols-2">
+            <SelectionField
+              label="Primary model"
+              value={currentSelection.primaryProfileId}
+              options={filtered}
+              onChange={(value) =>
+                onUpdateSelection(
+                  selectionMode,
+                  normalizeModeSelectionUpdate(
+                    currentSelection,
+                    "primaryProfileId",
+                    value,
+                  ),
+                )
+              }
+            />
+            <SelectionField
+              label="Fallback model"
+              value={currentSelection.fallbackProfileId}
+              options={filtered}
+              onChange={(value) =>
+                onUpdateSelection(
+                  selectionMode,
+                  normalizeModeSelectionUpdate(
+                    currentSelection,
+                    "fallbackProfileId",
+                    value,
+                  ),
+                )
+              }
+              allowEmptyLabel="No fallback"
+            />
+          </div>
+        </section>
+      ) : null}
+
       <div className="overflow-hidden rounded-[24px] border border-[color:var(--sk-panel-border)] bg-[color:var(--sk-surface-1)]">
         {/* Panel header */}
         <div className="flex items-center gap-3 border-b border-[color:var(--sk-shell-divider)] bg-[color:var(--sk-surface-2)] px-4 py-2.5">
@@ -1739,10 +2151,14 @@ function ModelPanel({
               const downloadItems = dlCatalog.filter(
                 (item) => item.profileId === profile.id,
               );
-              const localRuntimeProblem = downloadItems.find(
-                (item) => item.kind === "http" && item.runtimeReady === false,
-              )?.runtimeProblem;
-              const localRuntimeMissing = Boolean(localRuntimeProblem);
+              const localRuntimeIssue = downloadItems.find(
+                (item) =>
+                  item.kind === "http" &&
+                  (item.runtimeReady === false ||
+                    Boolean(item.runtimeProblem)),
+              );
+              const localRuntimeProblem = localRuntimeIssue?.runtimeProblem;
+              const localRuntimeMissing = Boolean(localRuntimeIssue);
               const downloadActive = downloadItems.some((item) => {
                 const job = dlJobs.find(
                   (candidate) => candidate.modelId === item.id,
@@ -1981,7 +2397,9 @@ function ModelPanel({
                         );
                         const itemSelected = Boolean(item.selected);
                         const itemRuntimeMissing =
-                          itemDownloadReady && item.runtimeReady === false;
+                          itemDownloadReady &&
+                          (item.runtimeReady === false ||
+                            Boolean(item.runtimeProblem));
 
                         return (
                           <div
@@ -2106,46 +2524,6 @@ function ModelPanel({
         )}
       </div>
 
-      {filtered.length > 0 ? (
-        <div className="mt-4 rounded-[24px] border border-[color:var(--sk-panel-border)] bg-[color:var(--sk-surface-1)] px-4 py-4">
-          <div className="mb-3 flex items-center justify-between gap-3">
-            <div>
-              <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-[color:var(--sk-text-muted)]">
-                Model routing
-              </p>
-              <p className="mt-1 text-[11px] text-[color:var(--sk-text-muted)]">
-                Choose a primary model and one fallback for{" "}
-                {modality === "stt"
-                  ? "Transcribe"
-                  : modality === "assist"
-                    ? "Assist"
-                    : "Voice Agent"}
-                .
-              </p>
-            </div>
-          </div>
-          <div className="grid gap-3 md:grid-cols-2">
-            <SelectionField
-              label="Primary model"
-              value={currentSelection.primaryProfileId}
-              options={filtered}
-              onChange={(value) =>
-                onUpdateSelection(selectionMode, "primaryProfileId", value)
-              }
-            />
-            <SelectionField
-              label="Fallback model"
-              value={currentSelection.fallbackProfileId}
-              options={filtered}
-              onChange={(value) =>
-                onUpdateSelection(selectionMode, "fallbackProfileId", value)
-              }
-              allowEmptyLabel="No fallback"
-            />
-          </div>
-        </div>
-      ) : null}
-
       {/* Download confirmation modal */}
       {confirmItem && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
@@ -2217,7 +2595,7 @@ function SelectionField({
   value,
   options,
   onChange,
-  allowEmptyLabel = "None",
+  allowEmptyLabel,
 }: {
   label: string;
   value: string;
@@ -2235,7 +2613,7 @@ function SelectionField({
         onChange={(event) => onChange(event.target.value)}
         className="sk-input h-10 rounded-xl px-3 text-sm"
       >
-        <option value="">{allowEmptyLabel}</option>
+        {allowEmptyLabel ? <option value="">{allowEmptyLabel}</option> : null}
         {options.map((profile) => (
           <option key={profile.id} value={profile.id}>
             {profile.name}

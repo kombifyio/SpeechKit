@@ -49,13 +49,14 @@ func NewHuggingFace(opts HuggingFaceOpts) *HuggingFace {
 	if model == "" {
 		model = hfDefaultTTSModel
 	}
-	return &HuggingFace{
+	p := &HuggingFace{
 		token:   opts.Token,
 		model:   model,
 		BaseURL: hfTTSBaseURL,
 		// Validation zero-value = strict: public https only.
-		client: netsec.NewSafeHTTPClient(netsec.ClientOptions{Timeout: 60 * time.Second}),
 	}
+	p.client = netsec.NewSafeHTTPClient(netsec.ClientOptions{Timeout: 60 * time.Second, DialValidation: &p.Validation})
+	return p
 }
 
 // hfTTSRequest is the JSON body for the HF Inference API text-to-speech task.
@@ -131,7 +132,7 @@ func (h *HuggingFace) Synthesize(ctx context.Context, text string, opts Synthesi
 
 	if resp.StatusCode != http.StatusOK {
 		errBody, _ := io.ReadAll(io.LimitReader(resp.Body, 1024))
-		return nil, fmt.Errorf("huggingface tts: HTTP %d: %s", resp.StatusCode, string(errBody))
+		return nil, netsec.ProviderStatusError("huggingface tts", resp.StatusCode, errBody)
 	}
 
 	// HF Inference API returns raw audio bytes (FLAC by default for TTS models).

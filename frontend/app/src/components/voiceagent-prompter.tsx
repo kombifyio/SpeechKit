@@ -13,6 +13,7 @@ type PrompterState =
   | 'listening'
   | 'processing'
   | 'speaking'
+  | 'recovering'
   | 'ready'
   | 'error'
   | 'deactivating'
@@ -49,6 +50,7 @@ const stateMeta: Record<PrompterState, { color: string; assistLabel: string; voi
   listening: { color: 'bg-emerald-400', assistLabel: 'Listening', voiceLabel: 'Listening' },
   processing: { color: 'bg-amber-400', assistLabel: 'Generating…', voiceLabel: 'Processing…' },
   speaking: { color: 'bg-primary', assistLabel: 'Speaking', voiceLabel: 'Speaking' },
+  recovering: { color: 'bg-cyan-300', assistLabel: 'Recovering…', voiceLabel: 'Recovering…' },
   ready: { color: 'bg-emerald-400', assistLabel: 'Response ready', voiceLabel: 'Ready' },
   error: { color: 'bg-red-400', assistLabel: 'Error', voiceLabel: 'Error' },
   deactivating: { color: 'bg-muted-foreground/40', assistLabel: 'Closing…', voiceLabel: 'Stopping…' },
@@ -149,6 +151,9 @@ function liveSlotStatusLabel(role: LiveSpeakerRole, state: PrompterState, level:
   }
   if (state === 'processing') {
     return role === 'assistant' ? 'Thinking' : 'Paused'
+  }
+  if (state === 'recovering') {
+    return 'Reconnecting'
   }
   if (role === 'user') {
     if (state === 'listening' && level >= 0.18) {
@@ -392,7 +397,7 @@ export function VoiceAgentPrompter() {
   }
   const voiceAgentRunning =
     mode === 'voice_agent' &&
-    ['connecting', 'listening', 'processing', 'speaking', 'ready', 'deactivating'].includes(state)
+    ['connecting', 'listening', 'processing', 'speaking', 'recovering', 'ready', 'deactivating'].includes(state)
   const HeaderIcon = chrome.icon
 
   return (
@@ -819,6 +824,8 @@ function voiceAgentDetailForState(state: PrompterState, liveNotice: string | nul
       return 'Hold released. Finishing the answer.'
     case 'speaking':
       return 'Responding live.'
+    case 'recovering':
+      return 'Reconnecting the realtime session.'
     case 'ready':
       return 'The conversation is ready for the next turn.'
     case 'deactivating':
@@ -841,6 +848,8 @@ function resolveVoiceAgentOrbState(state: PrompterState) {
       return 'processing'
     case 'speaking':
       return 'speaking'
+    case 'recovering':
+      return 'recovering'
     case 'ready':
     case 'deactivating':
       return 'settling'

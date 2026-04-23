@@ -8,4 +8,4 @@ Use `npm run changeset` to add a release note and `npm run version` to apply the
 - frontend package metadata
 - Windows host metadata and installer version
 
-Android versioning is explicit on purpose. Only run `npm run version:sync:android` when the Android release surface should move as part of the current release.
+Surfaces outside the current public OSS export are versioned explicitly and are not moved by the default release flow.

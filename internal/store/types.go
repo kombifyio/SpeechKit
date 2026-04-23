@@ -49,6 +49,13 @@ type UserDictionaryStore interface {
 	RecordUserDictionaryUsage(ctx context.Context, canonical, language string) error
 }
 
+// VoiceAgentSessionStore is an optional extension for backends that persist
+// Voice Agent dialogue summaries.
+type VoiceAgentSessionStore interface {
+	SaveVoiceAgentSession(ctx context.Context, session VoiceAgentSession) (int64, error)
+	ListVoiceAgentSessions(ctx context.Context, opts ListOpts) ([]VoiceAgentSession, error)
+}
+
 // SemanticCapabilityProvider is an optional extension for stores that can
 // advertise indexing/vector capabilities without forcing every backend to
 // implement semantic features immediately.
@@ -118,6 +125,35 @@ type QuickNote struct {
 	Pinned     bool
 	CreatedAt  time.Time
 	UpdatedAt  time.Time
+}
+
+type VoiceAgentTurn struct {
+	Role      string    `json:"role"`
+	Text      string    `json:"text"`
+	CreatedAt time.Time `json:"createdAt,omitempty"`
+}
+
+type VoiceAgentSessionSummary struct {
+	Title         string   `json:"title,omitempty"`
+	Summary       string   `json:"summary"`
+	Ideas         []string `json:"ideas,omitempty"`
+	Decisions     []string `json:"decisions,omitempty"`
+	OpenQuestions []string `json:"openQuestions,omitempty"`
+	NextSteps     []string `json:"nextSteps,omitempty"`
+	RawText       string   `json:"rawText,omitempty"`
+}
+
+type VoiceAgentSession struct {
+	ID                int64                    `json:"id"`
+	StartedAt         time.Time                `json:"startedAt"`
+	EndedAt           time.Time                `json:"endedAt"`
+	Language          string                   `json:"language"`
+	ProviderProfileID string                   `json:"providerProfileId,omitempty"`
+	RuntimeKind       string                   `json:"runtimeKind,omitempty"`
+	Transcript        string                   `json:"transcript,omitempty"`
+	Turns             []VoiceAgentTurn         `json:"turns,omitempty"`
+	Summary           VoiceAgentSessionSummary `json:"summary"`
+	CreatedAt         time.Time                `json:"createdAt"`
 }
 
 type Stats struct {

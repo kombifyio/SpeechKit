@@ -52,9 +52,9 @@ var (
 
 // ValidateProviderURL parses raw and rejects URLs that would expose the
 // caller to SSRF. It does not make network calls — hostnames that are
-// not IP literals are accepted as public, on the assumption that DNS
-// resolution happens inside the stdlib http.Transport. If you need
-// resolve-time protection, combine with a RestrictedDialer (see httpclient.go).
+// not IP literals are checked by NewSafeHTTPClient when DialValidation is set.
+// Provider, download and update clients should combine URL validation with
+// resolve-time dial validation.
 func ValidateProviderURL(raw string, opts ValidationOptions) error {
 	if strings.TrimSpace(raw) == "" {
 		return ErrEmptyURL
@@ -89,7 +89,7 @@ func ValidateProviderURL(raw string, opts ValidationOptions) error {
 
 	ip := net.ParseIP(host)
 	isLoopback := ip != nil && ip.IsLoopback()
-	if host == "localhost" {
+	if strings.EqualFold(host, "localhost") {
 		isLoopback = true
 	}
 
@@ -111,6 +111,24 @@ func ValidateProviderURL(raw string, opts ValidationOptions) error {
 		return fmt.Errorf("%w: host=%s", ErrInsecureHTTP, host)
 	}
 
+	return nil
+}
+
+// ValidateResolvedIP applies SSRF range restrictions to a concrete IP address
+// returned by DNS resolution or visible on a dial target.
+func ValidateResolvedIP(ip net.IP, opts ValidationOptions) error {
+	if ip == nil {
+		return ErrInvalidHost
+	}
+	if ip.IsLoopback() {
+		if !opts.AllowLoopback {
+			return fmt.Errorf("%w: ip=%s", ErrLoopbackBlocked, ip.String())
+		}
+		return nil
+	}
+	if isPrivateIP(ip) && !opts.AllowPrivate {
+		return fmt.Errorf("%w: ip=%s", ErrPrivateBlocked, ip.String())
+	}
 	return nil
 }
 

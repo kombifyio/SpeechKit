@@ -18,6 +18,9 @@ type desktopCommandHandler struct {
 	showDashboard       func(string)
 	quickNotes          quickNoteCommandService
 	actions             *quickActionCoordinator
+	startVoiceAgent     func(context.Context) error
+	stopVoiceAgent      func(context.Context) error
+	voiceAgentFallback  func() bool
 }
 
 type quickNoteCommandService interface {
@@ -42,6 +45,10 @@ func (h desktopCommandHandler) Handle(ctx context.Context, command speechkit.Com
 		return h.startDictation(ctx, command)
 	case speechkit.CommandStopDictation:
 		return h.stopDictation(command)
+	case speechkit.CommandStartMode:
+		return h.startMode(ctx, command)
+	case speechkit.CommandStopMode:
+		return h.stopMode(ctx, command)
 	case speechkit.CommandSetActiveMode:
 		mode := command.Metadata["mode"]
 		if mode == "" {
@@ -79,6 +86,73 @@ func (h desktopCommandHandler) Handle(ctx context.Context, command speechkit.Com
 	default:
 		return fmt.Errorf("unsupported command: %s", command.Type)
 	}
+}
+
+func (h desktopCommandHandler) startMode(ctx context.Context, command speechkit.Command) error {
+	legacyAgentMode := modeAssist
+	if h.cfg != nil {
+		legacyAgentMode = h.cfg.General.AgentMode
+	}
+	mode := normalizeRuntimeMode(command.Metadata["mode"], legacyAgentMode)
+	if mode == modeNone {
+		return fmt.Errorf("mode missing")
+	}
+	if h.state != nil {
+		h.state.setActiveMode(mode)
+	}
+	if mode == modeVoiceAgent && !h.shouldUseVoiceAgentFallback() {
+		if h.startVoiceAgent == nil {
+			return fmt.Errorf("voice agent runtime not configured")
+		}
+		return h.startVoiceAgent(ctx)
+	}
+	label := command.Metadata["label"]
+	if label == "" {
+		label = fmt.Sprintf("%s recording started", modeDisplayName(mode))
+	}
+	return h.startDictation(ctx, speechkit.Command{
+		Type: speechkit.CommandStartDictation,
+		Metadata: map[string]string{
+			"label": label,
+		},
+		Target: command.Target,
+	})
+}
+
+func (h desktopCommandHandler) stopMode(ctx context.Context, command speechkit.Command) error {
+	legacyAgentMode := modeAssist
+	if h.cfg != nil {
+		legacyAgentMode = h.cfg.General.AgentMode
+	}
+	mode := normalizeRuntimeMode(command.Metadata["mode"], legacyAgentMode)
+	if mode == modeNone && h.state != nil {
+		h.state.mu.Lock()
+		mode = normalizeRuntimeMode(h.state.activeMode, legacyAgentMode)
+		h.state.mu.Unlock()
+	}
+	if mode == modeVoiceAgent && !h.shouldUseVoiceAgentFallback() {
+		if h.stopVoiceAgent == nil {
+			return fmt.Errorf("voice agent runtime not configured")
+		}
+		return h.stopVoiceAgent(ctx)
+	}
+	label := command.Metadata["label"]
+	if label == "" {
+		label = modeDisplayName(mode)
+	}
+	return h.stopDictation(speechkit.Command{
+		Type: speechkit.CommandStopDictation,
+		Metadata: map[string]string{
+			"label": label,
+		},
+	})
+}
+
+func (h desktopCommandHandler) shouldUseVoiceAgentFallback() bool {
+	if h.voiceAgentFallback == nil {
+		return true
+	}
+	return h.voiceAgentFallback()
 }
 
 func (h desktopCommandHandler) startDictation(ctx context.Context, command speechkit.Command) error {

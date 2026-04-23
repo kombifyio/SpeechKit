@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"strings"
 
@@ -206,8 +207,43 @@ func (s *appState) showAssistBubble(text string) {
 	// Show the window and inject text via JS.
 	showWindow(bubble)
 	bubble.SetIgnoreMouseEvents(false)
+	bubble.SetSize(assistBubbleWidth, assistBubbleHeight)
 	escapedText := escapeJS(text)
 	bubble.ExecJS(fmt.Sprintf(`if(window.__assistBubble){window.__assistBubble.show(%q)}`, escapedText))
+}
+
+func (s *appState) showAssistPanel(inputText, resultText string) {
+	if s == nil {
+		return
+	}
+	s.mu.Lock()
+	panel := s.assistBubble
+	locator := s.screenLocator
+	s.mu.Unlock()
+
+	if panel == nil || strings.TrimSpace(resultText) == "" {
+		return
+	}
+
+	if locator != nil {
+		if bounds, ok := locator.OverlayScreenBounds(); ok {
+			x, y := assistPanelPosition(bounds)
+			panel.SetPosition(x, y)
+		}
+	}
+
+	showWindow(panel)
+	panel.SetIgnoreMouseEvents(false)
+	panel.SetSize(assistPanelWidth, assistPanelHeight)
+	payload, err := json.Marshal(map[string]string{
+		"title":     "Assist result",
+		"inputText": inputText,
+		"text":      resultText,
+	})
+	if err != nil {
+		return
+	}
+	panel.ExecJS(fmt.Sprintf(`if(window.__assistBubble&&window.__assistBubble.showPanel){window.__assistBubble.showPanel(%s)}`, string(payload)))
 }
 
 func (s *appState) primeOverlayForCapture(mode string) {

@@ -96,9 +96,11 @@ func TestDesktopTranscriptOutput_AssistBypassesGlobalInterceptor(t *testing.T) {
 	})
 
 	prompter := &fakeOverlayWindow{}
+	bubble := &fakeOverlayWindow{}
 	state := &appState{
 		assistPipeline: assist.NewPipeline(flow, nil, nil, false),
 		prompterWindow: prompter,
+		assistBubble:   bubble,
 	}
 
 	outputAdapter := desktopTranscriptOutput{
@@ -126,15 +128,18 @@ func TestDesktopTranscriptOutput_AssistBypassesGlobalInterceptor(t *testing.T) {
 	if handler.calls != 0 {
 		t.Fatalf("output handler calls = %d, want 0 for assist side-panel delivery", handler.calls)
 	}
-	combinedScripts := strings.Join(prompter.scripts, "\n")
-	if !strings.Contains(combinedScripts, `setMode("assist")`) {
-		t.Fatalf("prompter scripts missing assist mode switch: %s", combinedScripts)
+	if len(prompter.scripts) != 0 {
+		t.Fatalf("prompter scripts = %v, want no voice-agent shell for assist result", prompter.scripts)
 	}
-	if !strings.Contains(combinedScripts, `role:"user",text:"erklaer mir kurz die aenderung",done:true`) {
-		t.Fatalf("prompter scripts missing user transcript: %s", combinedScripts)
+	combinedScripts := strings.Join(bubble.scripts, "\n")
+	if !strings.Contains(combinedScripts, `showPanel`) {
+		t.Fatalf("assist panel scripts missing showPanel call: %s", combinedScripts)
 	}
-	if !strings.Contains(combinedScripts, `role:"assistant",text:"Assist reply",done:true`) {
-		t.Fatalf("prompter scripts missing assistant response: %s", combinedScripts)
+	if !strings.Contains(combinedScripts, `erklaer mir kurz die aenderung`) {
+		t.Fatalf("assist panel scripts missing user transcript: %s", combinedScripts)
+	}
+	if !strings.Contains(combinedScripts, `Assist reply`) {
+		t.Fatalf("assist panel scripts missing assistant response: %s", combinedScripts)
 	}
 }
 

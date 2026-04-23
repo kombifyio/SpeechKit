@@ -41,6 +41,7 @@ export type ModelCapability =
   | "dictionary_prompt"
   | "dictionary_native_hints"
   | "session_summary";
+export type IntelligenceKind = "user" | "utility" | "brainstorming";
 export type LogType = "info" | "warn" | "error" | "success";
 export type AvailableModes = Record<
   "dictate" | "assist" | "voice_agent",
@@ -137,10 +138,160 @@ export type ModelSelectionsState = Record<
   ModeModelSelectionState
 >;
 
+export type ModeContract = {
+  mode: "dictation" | "assist" | "voice_agent";
+  intelligence: IntelligenceKind;
+  input: string;
+  output: string;
+  allowed: ModelCapability[];
+  forbidden: ModelCapability[];
+};
+
+export type APIV1ModeSettings = {
+  dictation: ModeModelSetting & {
+    dictionaryEnabled: boolean;
+  };
+  assist: ModeModelSetting & {
+    ttsEnabled: boolean;
+    utilityRegistry?: string;
+  };
+  voiceAgent: ModeModelSetting & {
+    sessionSummary: boolean;
+    pipelineFallback: boolean;
+    closeBehavior?: VoiceAgentCloseBehavior;
+  };
+};
+
+export type ModeModelSetting = {
+  enabled: boolean;
+  hotkey?: string;
+  hotkeyBehavior?: HotkeyBehavior;
+  primaryProfileId?: string;
+  fallbackProfileId?: string;
+};
+
+export type APIV1ModesResponse = {
+  contracts: ModeContract[];
+  settings: APIV1ModeSettings;
+};
+
+export type ReadinessRequirement = {
+  id: string;
+  label: string;
+  category: "credential" | "runtime" | "capability" | "model" | string;
+  required: boolean;
+  ready: boolean;
+  missing?: string;
+};
+
+export type ReadinessAction = {
+  id: string;
+  label: string;
+  kind:
+    | "configure_credential"
+    | "configure_provider"
+    | "configure_runtime"
+    | "download_artifact"
+    | "select_artifact"
+    | "install_runtime"
+    | string;
+  target?: string;
+};
+
+export type ReadinessArtifact = {
+  id: string;
+  name: string;
+  kind: DownloadKind | string;
+  sizeLabel?: string;
+  sizeBytes?: number;
+  available: boolean;
+  selected: boolean;
+  runtimeReady?: boolean;
+  runtimeProblem?: string;
+  recommended?: boolean;
+};
+
+export type ProviderReadiness = {
+  schemaVersion?: "provider-readiness.v1" | string;
+  profileId: string;
+  mode: "dictation" | "assist" | "voice_agent";
+  providerKind: ProviderKind;
+  executionMode?: ExecutionMode;
+  modelId?: string;
+  source?: string;
+  active: boolean;
+  default: boolean;
+  configured: boolean;
+  credentialsReady: boolean;
+  runtimeReady: boolean;
+  capabilityReady: boolean;
+  ready: boolean;
+  missing?: string[];
+  requirements?: ReadinessRequirement[];
+  actions?: ReadinessAction[];
+  artifacts?: ReadinessArtifact[];
+};
+
+export type APIV1ProviderArtifactsResponse = {
+  artifacts: DownloadItem[];
+  jobs: DownloadJob[];
+};
+
+export type DictionaryEntry = {
+  id?: number;
+  spoken: string;
+  canonical: string;
+  language?: string;
+  source?: string;
+  enabled: boolean;
+  usageCount: number;
+};
+
+export type APIV1DictionaryResponse = {
+  language: string;
+  entries: DictionaryEntry[];
+};
+
+export type VoiceAgentTurnRecord = {
+  role: "user" | "assistant";
+  text: string;
+  createdAt?: string;
+};
+
+export type VoiceAgentSessionSummary = {
+  title?: string;
+  summary: string;
+  ideas?: string[];
+  decisions?: string[];
+  openQuestions?: string[];
+  nextSteps?: string[];
+  rawText?: string;
+};
+
+export type VoiceAgentSessionRecord = {
+  id: number;
+  startedAt: string;
+  endedAt: string;
+  language: string;
+  providerProfileId?: string;
+  runtimeKind?: "native_realtime" | "pipeline_fallback" | string;
+  transcript?: string;
+  turns?: VoiceAgentTurnRecord[];
+  summary: VoiceAgentSessionSummary;
+  createdAt: string;
+};
+
+export type APIV1ProfilesResponse = {
+  profiles: ModelProfile[];
+  activeProfiles: Partial<Record<Modality, string>>;
+  groups: Record<string, string[]>;
+  contracts: ModeContract[];
+};
+
 export const builtInPrimaryModelSelections: ModelSelectionsState = {
   dictate: { primaryProfileId: "stt.local.whispercpp", fallbackProfileId: "" },
   assist: {
-    primaryProfileId: "",
+    primaryProfileId: "assist.builtin.gemma4-e4b",
     fallbackProfileId: "",
   },
   voice_agent: {
@@ -730,10 +881,12 @@ function normalizeModeSelectionEntry(
     primaryProfileId?: unknown;
     fallbackProfileId?: unknown;
   };
-  const primaryProfileId =
+  const rawPrimaryProfileId =
     typeof entry.primaryProfileId === "string"
       ? entry.primaryProfileId.trim()
-      : fallbackPrimary;
+      : "";
+  const primaryProfileId =
+    rawPrimaryProfileId !== "" ? rawPrimaryProfileId : fallbackPrimary;
   const fallbackProfileId =
     typeof entry.fallbackProfileId === "string"
       ? entry.fallbackProfileId.trim()
@@ -757,15 +910,18 @@ function normalizeModelSelections(
   return {
     dictate: normalizeModeSelectionEntry(
       selections.dictate,
-      activeProfiles.stt ?? "",
+      activeProfiles.stt ??
+        builtInPrimaryModelSelections.dictate.primaryProfileId,
     ),
     assist: normalizeModeSelectionEntry(
       selections.assist,
-      activeProfiles.assist ?? "",
+      activeProfiles.assist ??
+        builtInPrimaryModelSelections.assist.primaryProfileId,
     ),
     voice_agent: normalizeModeSelectionEntry(
       selections.voice_agent,
-      activeProfiles.realtime_voice ?? "",
+      activeProfiles.realtime_voice ??
+        builtInPrimaryModelSelections.voice_agent.primaryProfileId,
     ),
   };
 }
@@ -975,6 +1131,181 @@ export async function fetchModelProfiles(): Promise<ModelProfile[]> {
     | ModelProfile[]
     | { profiles?: ModelProfile[] };
   return Array.isArray(payload) ? payload : (payload.profiles ?? []);
+}
+
+export async function fetchAPIV1Modes(): Promise<APIV1ModesResponse> {
+  const response = await fetch("/api/v1/modes", { cache: "no-store" });
+  if (!response.ok) {
+    throw new Error(`api v1 modes request failed: ${response.status}`);
+  }
+  return (await response.json()) as APIV1ModesResponse;
+}
+
+export async function fetchAPIV1Profiles(): Promise<APIV1ProfilesResponse> {
+  const response = await fetch("/api/v1/providers/profiles", {
+    cache: "no-store",
+  });
+  if (!response.ok) {
+    throw new Error(`api v1 profiles request failed: ${response.status}`);
+  }
+  return (await response.json()) as APIV1ProfilesResponse;
+}
+
+export async function fetchAPIV1Readiness(): Promise<ProviderReadiness[]> {
+  const response = await fetch("/api/v1/providers/readiness", {
+    cache: "no-store",
+  });
+  if (!response.ok) {
+    throw new Error(`api v1 readiness request failed: ${response.status}`);
+  }
+  return (await response.json()) as ProviderReadiness[];
+}
+
+export async function fetchAPIV1ProviderArtifacts(): Promise<APIV1ProviderArtifactsResponse> {
+  const response = await fetch("/api/v1/providers/artifacts", {
+    cache: "no-store",
+  });
+  if (!response.ok) {
+    throw new Error(
+      `api v1 provider artifacts request failed: ${response.status}`,
+    );
+  }
+  return (await response.json()) as APIV1ProviderArtifactsResponse;
+}
+
+export async function fetchAPIV1Dictionary(
+  language?: string,
+): Promise<APIV1DictionaryResponse> {
+  const suffix = language ? `?language=${encodeURIComponent(language)}` : "";
+  const response = await fetch(`/api/v1/dictionary${suffix}`, {
+    cache: "no-store",
+  });
+  if (!response.ok) {
+    throw new Error(`api v1 dictionary request failed: ${response.status}`);
+  }
+  return (await response.json()) as APIV1DictionaryResponse;
+}
+
+export async function importAPIV1Dictionary(
+  language: string,
+  entries: DictionaryEntry[],
+): Promise<APIV1DictionaryResponse> {
+  const response = await fetch("/api/v1/dictionary", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ language, entries }),
+  });
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(errorText || `api v1 dictionary import failed: ${response.status}`);
+  }
+  return (await response.json()) as APIV1DictionaryResponse;
+}
+
+export async function fetchAPIV1VoiceSessions(
+  limit = 20,
+): Promise<VoiceAgentSessionRecord[]> {
+  const response = await fetch(`/api/v1/voice-sessions?limit=${limit}`, {
+    cache: "no-store",
+  });
+  if (!response.ok) {
+    throw new Error(`api v1 voice sessions request failed: ${response.status}`);
+  }
+  return (await response.json()) as VoiceAgentSessionRecord[];
+}
+
+export async function fetchAPIV1ProviderArtifactJobs(): Promise<DownloadJob[]> {
+  const response = await fetch("/api/v1/providers/artifacts/jobs", {
+    cache: "no-store",
+  });
+  if (!response.ok) {
+    throw new Error(
+      `api v1 provider artifact jobs request failed: ${response.status}`,
+    );
+  }
+  return (await response.json()) as DownloadJob[];
+}
+
+export async function startAPIV1ProviderArtifactDownload(
+  artifactId: string,
+): Promise<DownloadJob> {
+  const response = await fetch(
+    `/api/v1/providers/artifacts/${artifactId}/download`,
+    { method: "POST" },
+  );
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(
+      errorText ||
+        `api v1 provider artifact download failed: ${response.status}`,
+    );
+  }
+  return (await response.json()) as DownloadJob;
+}
+
+export async function selectAPIV1ProviderArtifact(
+  artifactId: string,
+): Promise<{ message?: string; artifactId: string; profileId: string }> {
+  const response = await fetch(
+    `/api/v1/providers/artifacts/${artifactId}/select`,
+    { method: "POST" },
+  );
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(
+      errorText || `api v1 provider artifact select failed: ${response.status}`,
+    );
+  }
+  return (await response.json()) as {
+    message?: string;
+    artifactId: string;
+    profileId: string;
+  };
+}
+
+export async function patchAPIV1ModeSettings(
+  mode: "dictation" | "assist" | "voice_agent",
+  patch: Partial<
+    ModeModelSetting & {
+      dictionaryEnabled: boolean;
+      ttsEnabled: boolean;
+      sessionSummary: boolean;
+      pipelineFallback: boolean;
+      closeBehavior: VoiceAgentCloseBehavior;
+    }
+  >,
+): Promise<ModeModelSetting> {
+  const response = await fetch(`/api/v1/modes/${mode}/settings`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(patch),
+  });
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(
+      errorText || `api v1 mode settings failed: ${response.status}`,
+    );
+  }
+  return (await response.json()) as ModeModelSetting;
+}
+
+export async function activateAPIV1ProviderProfile(
+  profileId: string,
+): Promise<{ profileId: string; mode: RuntimeMode; model?: string }> {
+  const response = await fetch(`/api/v1/providers/${profileId}/activate`, {
+    method: "POST",
+  });
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(
+      errorText || `api v1 profile activation failed: ${response.status}`,
+    );
+  }
+  return (await response.json()) as {
+    profileId: string;
+    mode: RuntimeMode;
+    model?: string;
+  };
 }
 
 export type TranscriptionRecord = {

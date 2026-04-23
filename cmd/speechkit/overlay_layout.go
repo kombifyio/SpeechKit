@@ -69,6 +69,12 @@ func assistBubblePosition(bounds screenBounds) (int, int) {
 	return x, y
 }
 
+func assistPanelPosition(bounds screenBounds) (int, int) {
+	x := bounds.X + (bounds.Width-assistPanelWidth)/2
+	y := bounds.Y + 60
+	return x, y
+}
+
 func newPrompterWindowOptions() application.WebviewWindowOptions {
 	return application.WebviewWindowOptions{
 		Title:            "SpeechKit Conversation",

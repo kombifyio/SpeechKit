@@ -40,13 +40,10 @@ const (
 	DefaultLocalLLMBaseURL = "http://127.0.0.1:8082/v1"
 
 	DefaultDictatePrimaryProfileID    = "stt.local.whispercpp"
-	DefaultAssistPrimaryProfileID     = ""
+	DefaultAssistPrimaryProfileID     = "assist.builtin.gemma4-e4b"
 	DefaultVoiceAgentPrimaryProfileID = "realtime.google.gemini-native-audio"
 
-	legacyUnbundledAssistProfileID     = "assist.builtin.gemma4-e4b"
-	legacyUnbundledVoiceAgentProfileID = "realtime.builtin.pipeline"
-	legacyLocalVoiceAgentModel         = "speechkit-local-voice-pipeline"
-	defaultGeminiNativeAudioModel      = "gemini-2.5-flash-native-audio-preview-12-2025"
+	defaultGeminiNativeAudioModel = "gemini-2.5-flash-native-audio-preview-12-2025"
 )
 
 type Config struct {
@@ -421,7 +418,6 @@ func Load(path string) (*Config, error) {
 	backfillStartupBehavior(meta, cfg)
 	backfillVoiceAgentPromptLayers(meta, cfg)
 	backfillVoiceAgentSessionSummary(meta, cfg)
-	migrateLegacyUnbundledLocalLLMDefaults(cfg)
 	cfg.VoiceAgent.CloseBehavior = NormalizeVoiceAgentCloseBehavior(
 		cfg.VoiceAgent.CloseBehavior,
 		VoiceAgentCloseBehaviorContinue,
@@ -562,29 +558,6 @@ func backfillLegacyAssistField(assistMissing bool, assistValue *string, legacyAg
 		return
 	}
 	*assistValue = strings.TrimSpace(legacyAgentValue)
-}
-
-func migrateLegacyUnbundledLocalLLMDefaults(cfg *Config) {
-	if cfg == nil {
-		return
-	}
-	if cfg.LocalLLM.Enabled && strings.TrimSpace(cfg.LocalLLM.ModelPath) != "" {
-		return
-	}
-
-	if strings.TrimSpace(cfg.ModelSelection.Assist.PrimaryProfileID) == legacyUnbundledAssistProfileID {
-		cfg.ModelSelection.Assist.PrimaryProfileID = DefaultAssistPrimaryProfileID
-		cfg.ModelSelection.Assist.FallbackProfileID = ""
-	}
-
-	if strings.TrimSpace(cfg.ModelSelection.VoiceAgent.PrimaryProfileID) == legacyUnbundledVoiceAgentProfileID {
-		cfg.ModelSelection.VoiceAgent.PrimaryProfileID = DefaultVoiceAgentPrimaryProfileID
-		cfg.ModelSelection.VoiceAgent.FallbackProfileID = ""
-		cfg.VoiceAgent.PipelineFallback = false
-		if strings.TrimSpace(cfg.VoiceAgent.Model) == "" || strings.TrimSpace(cfg.VoiceAgent.Model) == legacyLocalVoiceAgentModel {
-			cfg.VoiceAgent.Model = defaultGeminiNativeAudioModel
-		}
-	}
 }
 
 func Save(path string, cfg *Config) error {

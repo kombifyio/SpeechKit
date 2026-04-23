@@ -235,6 +235,20 @@ describe('VoiceAgentPrompter', () => {
     expect(screen.getByTestId('voice-agent-live-user')).toHaveAttribute('data-level', '0.00')
   })
 
+  it('surfaces realtime reconnect recovery as its own state', async () => {
+    render(<VoiceAgentPrompter />)
+
+    await waitFor(() => expect((window as PrompterWindow).__prompter).toBeDefined())
+
+    act(() => {
+      ;(window as PrompterWindow).__prompter?.updateState('recovering')
+    })
+
+    expect(screen.getByText('Reconnecting the realtime session.')).toBeInTheDocument()
+    expect(screen.getByTestId('voice-agent-orb')).toHaveAttribute('data-state', 'recovering')
+    expect(screen.getByTestId('voice-agent-live-user')).toHaveTextContent('Reconnecting')
+  })
+
   it('renders voice agent live turns as compact multiline rows without inner cards', async () => {
     render(<VoiceAgentPrompter />)
 

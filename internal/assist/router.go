@@ -3,14 +3,16 @@ package assist
 import "github.com/kombifyio/SpeechKit/internal/shortcuts"
 
 type Router struct {
-	resolver *shortcuts.Resolver
+	resolver  *shortcuts.Resolver
+	utilities *UtilityRegistry
 }
 
 type RouterOption func(*Router)
 
 func NewRouter(opts ...RouterOption) *Router {
 	router := &Router{
-		resolver: shortcuts.DefaultResolver(),
+		resolver:  shortcuts.DefaultResolver(),
+		utilities: DefaultUtilityRegistry(),
 	}
 	for _, opt := range opts {
 		if opt != nil {
@@ -28,6 +30,14 @@ func WithResolver(resolver *shortcuts.Resolver) RouterOption {
 	}
 }
 
+func WithUtilityRegistry(registry *UtilityRegistry) RouterOption {
+	return func(router *Router) {
+		if registry != nil {
+			router.utilities = registry
+		}
+	}
+}
+
 func (r *Router) Decide(transcript string, opts ProcessOpts) Decision {
 	decision := Decision{
 		Route:  RouteDirectReply,
@@ -40,21 +50,18 @@ func (r *Router) Decide(transcript string, opts ProcessOpts) Decision {
 	}
 
 	resolution := resolver.Resolve(transcript, opts.Locale)
-	if resolution.Intent == shortcuts.IntentNone || !supportsToolIntent(resolution.Intent) {
+	registry := DefaultUtilityRegistry()
+	if r != nil && r.utilities != nil {
+		registry = r.utilities
+	}
+	utility, ok := registry.Definition(resolution.Intent)
+	if resolution.Intent == shortcuts.IntentNone || !ok {
 		return decision
 	}
 
 	decision.Route = RouteToolIntent
 	decision.Intent = resolution.Intent
+	decision.Utility = utility
 	decision.Payload = resolution.Payload
 	return decision
-}
-
-func supportsToolIntent(intent shortcuts.Intent) bool {
-	switch intent {
-	case shortcuts.IntentCopyLast, shortcuts.IntentInsertLast, shortcuts.IntentSummarize:
-		return true
-	default:
-		return false
-	}
 }

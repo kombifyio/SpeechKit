@@ -10,9 +10,11 @@ import (
 	"log/slog"
 	"os"
 	"os/signal"
+	"strings"
 	"time"
 
 	"github.com/kombifyio/SpeechKit/pkg/speechkit"
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/dictation"
 )
 
 // --- Step 1: Implement the Transcriber interface ---
@@ -21,8 +23,7 @@ import (
 type exampleTranscriber struct{}
 
 func (t *exampleTranscriber) Transcribe(ctx context.Context, audio []byte, durationSecs float64, language string) (speechkit.Transcript, error) {
-	// Replace this with a real STT provider call.
-	// SpeechKit ships providers in internal/stt/ that you can reference.
+	// Replace this with a real STT provider call or a host-side adapter.
 	return speechkit.Transcript{
 		Text:     "[transcribed text would appear here]",
 		Language: language,
@@ -52,6 +53,9 @@ func (r *exampleRecorder) Stop() ([]byte, error) {
 	fmt.Println("Recording stopped.")
 	// Return captured PCM audio (16kHz, 16-bit, mono).
 	// In production, use malgo or another audio library.
+	if len(r.pcm) == 0 {
+		r.pcm = []byte(strings.Repeat("a", 6400))
+	}
 	return r.pcm, nil
 }
 
@@ -96,35 +100,31 @@ func main() {
 	observer := &exampleObserver{}
 	output := &exampleOutput{}
 
-	// Create the transcription runner (handles commit + persistence).
-	// Pass nil for store if you don't need persistence.
-	runner := speechkit.NewTranscriptionRunner(transcriber, nil)
-
-	// Create the transcription worker (async job queue).
-	worker, err := speechkit.NewTranscriptionWorker(speechkit.TranscriptionWorkerConfig{
-		Timeout:   30 * time.Second,
-		QueueSize: 4,
-		Runner:    runner,
-		Output:    output,
-		Observer:  observer,
+	runtime, err := dictation.NewRuntime(dictation.Options{
+		Recorder:    recorder,
+		Transcriber: transcriber,
+		Output:      output,
+		Language:    "en",
+		Policy: speechkit.RuntimePolicy{
+			EnabledModes: []speechkit.Mode{speechkit.ModeDictation},
+			FixedProfiles: map[speechkit.Mode]string{
+				speechkit.ModeDictation: "stt.openai.whisper-1",
+			},
+		},
 	})
 	if err != nil {
-		slog.Error("transcription worker init failed", "err", err)
+		slog.Error("dictation runtime init failed", "err", err)
 		cancel()
 		os.Exit(1) //nolint:gocritic // exitAfterDefer: cancel() called explicitly above before exit
 	}
-	worker.Start(ctx)
-	defer worker.Close()
-
-	// Create the recording controller.
-	controller := speechkit.NewRecordingController(recorder, worker, observer, nil)
 
 	// Simulate a recording session.
 	fmt.Println("SpeechKit Library Example")
 	fmt.Println("Press Ctrl+C to exit.")
 	fmt.Println()
 
-	if err := controller.Start(speechkit.RecordingStartOptions{Language: "en"}); err != nil {
+	observer.OnState("recording", "Speak now")
+	if err := runtime.Start(ctx); err != nil {
 		slog.Error("recording start failed", "err", err)
 		os.Exit(1)
 	}
@@ -133,12 +133,11 @@ func main() {
 	// Here we simulate a short recording.
 	time.Sleep(2 * time.Second)
 
-	if err := controller.Stop(speechkit.RecordingStopOptions{}); err != nil {
+	run, err := runtime.Stop(ctx)
+	if err != nil {
 		slog.Error("recording stop failed", "err", err)
 		os.Exit(1)
 	}
-
-	// Wait for transcription to complete.
-	worker.Wait()
+	observer.OnTranscriptCommitted(run.Transcript, false)
 	fmt.Println("Done.")
 }

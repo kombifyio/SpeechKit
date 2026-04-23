@@ -4,8 +4,6 @@ import (
 	"errors"
 	"strings"
 	"testing"
-
-	"github.com/kombifyio/SpeechKit/internal/dictation"
 )
 
 type fakeRecorder struct {
@@ -73,10 +71,10 @@ func (c *fakeCollector) FeedPCM(_ []byte) error {
 	return c.feedErr
 }
 
-func (c *fakeCollector) CollectStopSegments(_ []byte) ([]dictation.Segment, error) {
-	segments := make([]dictation.Segment, 0, len(c.segments))
+func (c *fakeCollector) CollectStopSegments(_ []byte) ([]AudioSegment, error) {
+	segments := make([]AudioSegment, 0, len(c.segments))
 	for _, segment := range c.segments {
-		segments = append(segments, dictation.Segment{PCM: segment.pcm, Paragraph: segment.paragraph})
+		segments = append(segments, AudioSegment{PCM: segment.pcm, Paragraph: segment.paragraph})
 	}
 	return segments, nil
 }

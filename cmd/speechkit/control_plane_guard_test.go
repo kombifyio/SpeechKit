@@ -79,10 +79,23 @@ func TestControlPlaneGuardRejectsMissingSessionTokenWhenConfigured(t *testing.T)
 	}
 }
 
-func TestControlPlaneGuardAllowsSessionCookieWhenConfigured(t *testing.T) {
+func TestControlPlaneGuardRejectsSessionCookieWithoutHeaderWhenConfigured(t *testing.T) {
 	handler := newControlPlaneGuardTestHandlerWithState(t, &appState{controlPlaneToken: "test-token"})
 	req := httptest.NewRequest(http.MethodPost, "/auth/logout", http.NoBody)
 	req.AddCookie(&http.Cookie{Name: controlPlaneTokenCookieName, Value: "test-token"})
+	rec := httptest.NewRecorder()
+
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("status = %d, want %d", rec.Code, http.StatusForbidden)
+	}
+}
+
+func TestControlPlaneGuardAllowsSessionHeaderWhenConfigured(t *testing.T) {
+	handler := newControlPlaneGuardTestHandlerWithState(t, &appState{controlPlaneToken: "test-token"})
+	req := httptest.NewRequest(http.MethodPost, "/auth/logout", http.NoBody)
+	req.Header.Set(controlPlaneTokenHeaderName, "test-token")
 	rec := httptest.NewRecorder()
 
 	handler.ServeHTTP(rec, req)
@@ -115,6 +128,24 @@ func TestControlPlaneGuardSetsSessionCookieOnReadRequest(t *testing.T) {
 	}
 	if cookie.SameSite != http.SameSiteStrictMode {
 		t.Fatalf("SameSite = %v, want %v", cookie.SameSite, http.SameSiteStrictMode)
+	}
+	if got := rec.Header().Get(controlPlaneTokenHeaderName); got != "test-token" {
+		t.Fatalf("%s = %q, want %q", controlPlaneTokenHeaderName, got, "test-token")
+	}
+}
+
+func TestControlPlaneTokenEndpointBootstrapsHeader(t *testing.T) {
+	handler := newControlPlaneGuardTestHandlerWithState(t, &appState{controlPlaneToken: "test-token"})
+	req := httptest.NewRequest(http.MethodGet, "/app/control-token", http.NoBody)
+	rec := httptest.NewRecorder()
+
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("status = %d, want %d", rec.Code, http.StatusNoContent)
+	}
+	if got := rec.Header().Get(controlPlaneTokenHeaderName); got != "test-token" {
+		t.Fatalf("%s = %q, want %q", controlPlaneTokenHeaderName, got, "test-token")
 	}
 }
 

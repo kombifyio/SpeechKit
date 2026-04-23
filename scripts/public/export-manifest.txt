@@ -1,4 +1,3 @@
-.github/
 assets/
 cmd/
 docker/
@@ -9,6 +8,7 @@ pkg/
 scripts/build.ps1
 scripts/build.sh
 scripts/prepare-whisper-runtime.ps1
+scripts/prepare-llama-runtime.ps1
 scripts/prepare-webview2-runtime.ps1
 scripts/sync-version.mjs
 scripts/release/
@@ -32,10 +32,12 @@ go.mod
 go.sum
 examples/
 docs/README.md
+docs/api/openapi.v1.yaml
 docs/code-signing-policy.md
 docs/deployment-standards.md
 docs/oss-release-boundary.md
 docs/oss-release-checklist.md
 docs/public-repo-operating-model.md
 docs/signpath-oss-setup.md
+docs/speechkit-framework-api.md
 docs/speechkit-storage-architecture.md
