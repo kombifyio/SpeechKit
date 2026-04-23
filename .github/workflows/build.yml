@@ -56,7 +56,7 @@ jobs:
         run: ./scripts/build.ps1
 
       - name: Upload Windows bundle
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         if: github.event_name == 'workflow_dispatch'
         continue-on-error: true
         with:
@@ -65,7 +65,7 @@ jobs:
           retention-days: 1
 
       - name: Upload Windows installer
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         if: github.event_name == 'workflow_dispatch'
         continue-on-error: true
         with:
