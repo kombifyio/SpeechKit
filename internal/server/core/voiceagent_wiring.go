@@ -29,7 +29,7 @@ const (
 // /readyz surfaces the selected provider's state; the handler is always
 // mounted so POST /v1/voiceagent/sessions works even when the provider
 // itself is degraded (clients get a `provider_connect_failed` error at WS
-// upgrade rather than a 404 at session creation â€” operators can then read
+// upgrade rather than a 404 at session creation — operators can then read
 // /readyz to see why).
 func buildVoiceAgentHandler(ctx context.Context, cfg *config.Config, app *App) (*vsserver.Handler, string, error) {
 	provider := strings.ToLower(strings.TrimSpace(cfg.VoiceAgent.Provider))
@@ -123,7 +123,7 @@ func buildProviderFactory(ctx context.Context, cfg *config.Config, app *App, pro
 	}
 }
 
-// â”€â”€ persona resolver â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── persona resolver ────────────────────────────────────────────────────────
 
 // personaResolver implements vsserver.PersonaResolver by composing a
 // LiveConfigFrame from three layers, in order of precedence:
@@ -162,7 +162,7 @@ func (r *personaResolver) Resolve(start vsserver.StartFrame) (vsserver.LiveConfi
 	}
 
 	// Layer (2): persona + role + sequence. Only applied when a persona_id
-	// is present â€” clients that don't pick a persona get pure config
+	// is present — clients that don't pick a persona get pure config
 	// defaults, preserving backward compatibility with M4.
 	personaID := strings.TrimSpace(start.PersonaID)
 	if personaID != "" && r.registry != nil {
@@ -183,7 +183,7 @@ func (r *personaResolver) Resolve(start vsserver.StartFrame) (vsserver.LiveConfi
 			frame.RefinementPrompt = resolved.RefinementPrompt
 		}
 		// Role VAD/activity fields override config defaults only when they
-		// are non-empty â€” this keeps roles minimal without wiping server
+		// are non-empty — this keeps roles minimal without wiping server
 		// defaults that the admin cares about.
 		if resolved.AutomaticVAD {
 			frame.Automatic = true
@@ -234,7 +234,7 @@ func (r *personaResolver) Resolve(start vsserver.StartFrame) (vsserver.LiveConfi
 	return frame, nil
 }
 
-// â”€â”€ Gemini Live provider factory + bridge â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── Gemini Live provider factory + bridge ───────────────────────────────────
 
 type geminiProviderFactory struct{}
 
@@ -308,7 +308,7 @@ func (b *geminiLiveBridge) Receive(ctx context.Context) (*vsserver.LiveMessage, 
 	}, nil
 }
 
-// â”€â”€ Cascaded provider factory â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── Cascaded provider factory ───────────────────────────────────────────────
 
 // cascadedProviderFactory produces CascadedProvider instances backed by the
 // shared AI deps held on App. Each session gets its own provider so

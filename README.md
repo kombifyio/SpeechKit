@@ -71,8 +71,8 @@ This keeps SpeechKit reusable in existing software: a host can either embed the 
 
 Download the installer from the [Releases](https://github.com/kombifyio/SpeechKit/releases) page:
 
-- **SpeechKit-Setup.exe** â€” Windows installer
-- **SpeechKit-Portable.zip** â€” portable bundle (no install required)
+- **SpeechKit-Setup.exe** — Windows installer
+- **SpeechKit-Portable.zip** — portable bundle (no install required)
 
 Windows artifacts may be unsigned while SpeechKit has no available no-cost public code-signing path. Public releases include `SHA256SUMS.txt`, `SpeechKit.sbom.json`, and `UNSIGNED-WINDOWS-RELEASE.txt` so users can verify the build origin and hashes before running the app.
 

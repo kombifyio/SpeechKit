@@ -263,7 +263,9 @@ func (m *SessionManager) mintTicket(sessionID string, expiry time.Time) string {
 	binary.BigEndian.PutUint64(buf[:8], uint64(expiry.UTC().Unix()))
 	copy(buf[8:], sessionID)
 	mac := m.hmacTicket(buf)
-	out := append(buf, mac...)
+	out := make([]byte, len(buf)+len(mac))
+	copy(out, buf)
+	copy(out[len(buf):], mac)
 	return base64.RawURLEncoding.EncodeToString(out)
 }
 

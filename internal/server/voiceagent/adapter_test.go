@@ -22,15 +22,14 @@ import (
 // Messages enqueued via Push are returned from Receive in order; client
 // pushes are recorded for assertion.
 type fakeProvider struct {
-	mu              sync.Mutex
-	connectErr      error
-	connectCfg      *LiveConfigFrame
-	receiveQueue    chan *LiveMessage
-	sentAudio       [][]byte
-	sentText        []string
-	streamEndCalls  int
-	closed          bool
-	receiveBlocking bool // when true, Receive blocks until ctx canceled OR Push
+	mu             sync.Mutex
+	connectErr     error
+	connectCfg     *LiveConfigFrame
+	receiveQueue   chan *LiveMessage
+	sentAudio      [][]byte
+	sentText       []string
+	streamEndCalls int
+	closed         bool
 }
 
 func newFakeProvider() *fakeProvider {

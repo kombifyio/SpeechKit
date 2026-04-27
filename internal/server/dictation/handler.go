@@ -61,7 +61,7 @@ func (h *Handler) Mount(mux *http.ServeMux) {
 	mux.Handle("/v1/dictation/transcribe", h)
 }
 
-// response body shape â€” kept stable across versions so kombify-AI and future
+// response body shape — kept stable across versions so kombify-AI and future
 // OSS consumers can pin to this contract.
 type transcribeResponse struct {
 	Text       string      `json:"text"`

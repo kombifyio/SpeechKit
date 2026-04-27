@@ -2,11 +2,11 @@
 
 // Package main is the canonical kombify SpeechKit Linux container
 // server. It exposes all three modes (Dictation, Assist, Voice Agent)
-// over HTTP / WebSocket. For voice-only deployments â€” same Framework
+// over HTTP / WebSocket. For voice-only deployments — same Framework
 // kernel, smaller resource footprint, no Dictation/Assist HTTP routes
-// â€” use `cmd/speechkit-voice` instead.
+// — use `cmd/speechkit-voice` instead.
 //
-// This binary is intentionally Linux-only â€” the Windows desktop app
+// This binary is intentionally Linux-only — the Windows desktop app
 // lives under `cmd/speechkit` and shares the same internal packages.
 // The build tag above ensures `go build ./...` on Windows skips this
 // file and does not break the Wails desktop build.
@@ -27,7 +27,7 @@ func main() {
 	cli.Run(cli.Options{
 		Banner:  "speechkit-server",
 		Version: version,
-		// Empty default â†’ Run() leaves cfg.Server.Modes as it came
+		// Empty default → Run() leaves cfg.Server.Modes as it came
 		// from config.toml, which itself defaults to nil = all three
 		// modes enabled. This is the "kitchen sink" deploy.
 		DefaultModes: nil,

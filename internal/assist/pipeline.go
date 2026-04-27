@@ -1,5 +1,5 @@
 // Package assist implements the Assist Mode pipeline:
-// STT transcript â†’ Codeword check â†’ LLM â†’ TTS â†’ Result with both text and audio.
+// STT transcript → Codeword check → LLM → TTS → Result with both text and audio.
 package assist
 
 import (

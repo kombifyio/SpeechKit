@@ -27,7 +27,7 @@ type VoiceAgentProvider struct {
 
 	// Optional Persona/Role/Sequence IDs propagated as fields on the
 	// initial Start frame. The kernel-side Session only knows about
-	// LiveConfig fields (Voice, Locale, â€¦); applications that want richer
+	// LiveConfig fields (Voice, Locale, …); applications that want richer
 	// catalog selection set these at construction time.
 	personaID  string
 	roleID     string
@@ -220,7 +220,7 @@ func (p *VoiceAgentProvider) SendToolResponse(response voiceagent.ToolResponse) 
 	return p.sendJSON(frame)
 }
 
-// Close terminates the WebSocket session. Idempotent â€” a second Close
+// Close terminates the WebSocket session. Idempotent — a second Close
 // call returns nil.
 func (p *VoiceAgentProvider) Close() error {
 	p.closeMu.Lock()
@@ -274,7 +274,7 @@ func (p *VoiceAgentProvider) Receive(ctx context.Context) (*voiceagent.LiveMessa
 			}
 			return msg, nil
 		default:
-			// Unknown WS frame types â€” defensive loop.
+			// Unknown WS frame types — defensive loop.
 			continue
 		}
 	}
@@ -314,7 +314,7 @@ func translateTextFrame(data []byte) (*voiceagent.LiveMessage, bool, error) {
 	case "session_end":
 		// Reason "go_away" means upstream signalled migrate; the kernel's
 		// reconnect hook (if registered) will handle it. Other reasons are
-		// terminal â€” propagate as GoAway too so Session emits a clean
+		// terminal — propagate as GoAway too so Session emits a clean
 		// session_end to the UI.
 		_ = env.Reason
 		return &voiceagent.LiveMessage{GoAway: true}, false, nil
@@ -339,7 +339,7 @@ func translateTextFrame(data []byte) (*voiceagent.LiveMessage, bool, error) {
 		}, false, nil
 	case "error":
 		return nil, false, &ServerError{
-			Status:  0, // not an HTTP status â€” provider-level error frame
+			Status:  0, // not an HTTP status — provider-level error frame
 			Code:    env.Code,
 			Message: env.Message,
 		}
@@ -347,7 +347,7 @@ func translateTextFrame(data []byte) (*voiceagent.LiveMessage, bool, error) {
 		// Status-only frames the kernel doesn't model; swallow.
 		return nil, true, nil
 	default:
-		// Unknown frame types â€” be forward-compatible and swallow rather
+		// Unknown frame types — be forward-compatible and swallow rather
 		// than fail. Server may grow new control messages.
 		return nil, true, nil
 	}

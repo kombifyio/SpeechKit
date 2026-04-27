@@ -24,7 +24,7 @@ import (
 
 // serverDelegates holds per-mode adapters that delegate to a remote
 // speechkit-server. A nil field means that mode runs locally (the
-// pre-0.26 behaviour). The struct itself may also be nil â€” checked by
+// pre-0.26 behaviour). The struct itself may also be nil — checked by
 // callers via (*serverDelegates).hasDictation() etc.
 type serverDelegates struct {
 	client *serverclient.Client
@@ -53,7 +53,7 @@ type serverDelegates struct {
 // buildServerDelegates inspects cfg and constructs a serverDelegates
 // instance with the appropriate adapters wired up. Returns (nil, nil)
 // when no mode opts into server execution OR when ServerConnection is
-// disabled â€” both cases mean "stay fully local". Returns (nil, err) for
+// disabled — both cases mean "stay fully local". Returns (nil, err) for
 // hard misconfigurations (e.g. enabled + missing URL); callers should log
 // the error and proceed with the local kernel.
 func buildServerDelegates(cfg *config.Config) (*serverDelegates, error) {
@@ -185,7 +185,7 @@ func (c *compositeTranscriber) Route(ctx context.Context, audio []byte, audioDur
 		return nil, err
 	}
 	// Only fall back on transport-class errors. Typed *ServerError with a
-	// non-empty Code is an application error â€” surface it.
+	// non-empty Code is an application error — surface it.
 	var se *serverclient.ServerError
 	if errors.As(err, &se) && se != nil && se.Code != "" {
 		return nil, err

@@ -19,7 +19,7 @@ import (
 // Storage is the in-memory Registry; when a Persister is attached
 // (M5b SQLite, optional Postgres later), writes round-trip through it
 // before committing to memory and persistence failures are propagated
-// to the HTTP response (T22 â€” caller sees 500, not silent 200).
+// to the HTTP response (T22 — caller sees 500, not silent 200).
 type Handler struct {
 	registry *Registry
 	// AllowWrites lets deployments disable mutation entirely (useful when
@@ -76,7 +76,7 @@ func (h *Handler) Mount(mux *http.ServeMux) {
 	mux.HandleFunc("/v1/sequences/", h.dispatchSequenceItem)
 }
 
-// â”€â”€ Personas â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── Personas ────────────────────────────────────────────────────────────────
 
 func (h *Handler) dispatchPersonas(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
@@ -145,7 +145,7 @@ func (h *Handler) dispatchPersonaItem(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// â”€â”€ Roles â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── Roles ───────────────────────────────────────────────────────────────────
 
 func (h *Handler) dispatchRoles(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
@@ -213,7 +213,7 @@ func (h *Handler) dispatchRoleItem(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// â”€â”€ Sequences â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── Sequences ───────────────────────────────────────────────────────────────
 
 func (h *Handler) dispatchSequences(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
@@ -281,7 +281,7 @@ func (h *Handler) dispatchSequenceItem(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// â”€â”€ helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── helpers ─────────────────────────────────────────────────────────────────
 
 func (h *Handler) requireWrite(w http.ResponseWriter, r *http.Request) bool {
 	if !h.allowWrites {

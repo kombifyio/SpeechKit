@@ -16,7 +16,7 @@ import (
 // DictationProvider implements stt.STTProvider against a remote
 // SpeechKit Server-Target's POST /v1/dictation/transcribe endpoint. It is
 // a drop-in replacement for any local stt.STTProvider in the kernel's
-// router â€” when ModelSelection.Dictate.ModeSource = "server", the device
+// router — when ModelSelection.Dictate.ModeSource = "server", the device
 // app constructs one of these instead of the in-process whisper.cpp /
 // HuggingFace / etc. provider.
 type DictationProvider struct {
@@ -77,7 +77,7 @@ type transcribeRequest struct {
 
 // transcribeResponse mirrors the server's wire response. Unmarshalling
 // breaks if the server adds required fields, but the test suite catches
-// this â€” see dictation_test.go.
+// this — see dictation_test.go.
 type transcribeResponse struct {
 	Text       string  `json:"text"`
 	Language   string  `json:"language"`

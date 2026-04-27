@@ -72,7 +72,7 @@ func TestDecode_WebMOpus_RoundTrip(t *testing.T) {
 		t.Fatalf("DurationMs = %d, want ~500", got.DurationMs)
 	}
 	// PCM should be ~16 000 samples = 32 000 bytes.
-	if got.PCM == nil || len(got.PCM) < 16000 || len(got.PCM) > 48000 {
+	if len(got.PCM) < 16000 || len(got.PCM) > 48000 {
 		t.Fatalf("PCM length = %d bytes, expected ~32 000", len(got.PCM))
 	}
 }

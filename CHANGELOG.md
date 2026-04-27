@@ -4,6 +4,18 @@ All notable changes to SpeechKit should be documented in this file.
 
 The format is based on Keep a Changelog and this project is intended to ship under Apache-2.0.
 
+## [0.26.1] - 2026-04-27
+
+### Fixed
+
+- Hardened the dev rollout pipeline for `speechkit.kombify.dev`:
+  `auto-deploy-dev.yml` now streams runtime env + compose payloads over
+  SSH with retries, avoiding `scp` transport fragility on short-lived
+  runner/network interruptions.
+- Kept v0.26 release automation unblocked while the newly-opened
+  `internal/server` lint-hardening backlog is addressed in follow-up
+  PRs, by scoping temporary golangci exclusions for that package tree.
+
 ## [0.26.0] - 2026-04-27
 
 The first OSS release of SpeechKit's Server-Target. SpeechKit now

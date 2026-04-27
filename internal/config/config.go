@@ -44,7 +44,7 @@ const (
 	DefaultVoiceAgentPrimaryProfileID = "realtime.google.gemini-native-audio"
 
 	// defaultGeminiNativeAudioModel is the primary real-time audio-to-audio
-	// model. As of April 2026 this is Gemini 3.1 Flash Live (preview) â€”
+	// model. As of April 2026 this is Gemini 3.1 Flash Live (preview) —
 	// Google's latest native-audio model per
 	// https://ai.google.dev/gemini-api/docs/models/gemini-3.1-flash-live-preview.
 	//
@@ -203,7 +203,7 @@ type GeneralConfig struct {
 	VoiceAgentEnabled        bool   `toml:"voice_agent_enabled"`
 	AutoStartOnLaunch        bool   `toml:"auto_start_on_launch"`
 	AgentHotkey              string `toml:"agent_hotkey"`
-	AgentMode                string `toml:"agent_mode"`  // "assist" or "voice_agent" â€” determines what agent_hotkey triggers
+	AgentMode                string `toml:"agent_mode"`  // "assist" or "voice_agent" — determines what agent_hotkey triggers
 	ActiveMode               string `toml:"active_mode"` // legacy compat
 	HotkeyMode               string `toml:"hotkey_mode"` // legacy compat for single behavior setting
 	AutoStopSilenceMs        int    `toml:"auto_stop_silence_ms"`
@@ -279,7 +279,7 @@ type ServerConnectionConfig struct {
 
 	// BearerTokenEnv names the env var that holds the bearer token sent in
 	// the Authorization header. Defaults to SPEECHKIT_SERVER_TOKEN. The
-	// value is never read from the TOML file itself â€” only the env var name
+	// value is never read from the TOML file itself — only the env var name
 	// is configured here.
 	BearerTokenEnv string `toml:"bearer_token_env"`
 
@@ -521,11 +521,11 @@ type VoiceAgentConfig struct {
 	Enabled bool `toml:"enabled"`
 	// Provider selects the backend that drives a Voice Agent session.
 	// Supported values:
-	//   ""          (default) â€” same as "gemini"
-	//   "gemini"    â€” Google Gemini Live (cloud, GOOGLE_AI_API_KEY required)
-	//   "cascaded"  â€” self-hosted whisper.cpp â†’ Genkit agent LLM â†’ TTS pipeline
+	//   ""          (default) — same as "gemini"
+	//   "gemini"    — Google Gemini Live (cloud, GOOGLE_AI_API_KEY required)
+	//   "cascaded"  — self-hosted whisper.cpp → Genkit agent LLM → TTS pipeline
 	//                 (CPU-capable; no external realtime dependency)
-	//   "moshi"     â€” self-hosted Kyutai Moshi Rust server (GPU required, M9b)
+	//   "moshi"     — self-hosted Kyutai Moshi Rust server (GPU required, M9b)
 	//
 	// The Server-Target reads this field via cmd/speechkit-server; the Device-
 	// Target currently always uses "gemini" and ignores it.

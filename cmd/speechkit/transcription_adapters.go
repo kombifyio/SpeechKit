@@ -20,7 +20,7 @@ import (
 )
 
 // routerTranscriber adapts the kernel's STT router (or a server-delegated
-// equivalent â€” see server_delegates.go) to the speechkit.Transcript
+// equivalent — see server_delegates.go) to the speechkit.Transcript
 // interface the orchestration code expects. The `router` field is typed
 // as the small Transcriber interface so a *router.Router (in-process,
 // pre-0.26 behaviour) and a *compositeTranscriber (server-first with
@@ -235,7 +235,7 @@ func (o desktopTranscriptOutput) deliverVoiceAgentFallback(ctx context.Context, 
 	return o.deliverAgentFlow(ctx, transcript, modeVoiceAgent)
 }
 
-// deliverAssist uses the Assist Pipeline: Codeword â†’ LLM â†’ TTS â†’ Text+Audio.
+// deliverAssist uses the Assist Pipeline: Codeword → LLM → TTS → Text+Audio.
 func (o desktopTranscriptOutput) deliverAssist(ctx context.Context, transcript speechkit.Transcript, target any) error { //nolint:contextcheck // playbackCtx for TTS goroutine is app-scoped, not request ctx (goroutine outlives Deliver)
 	return o.deliverAssistForMode(ctx, transcript, modeAssist, target)
 }
@@ -263,7 +263,7 @@ func (o desktopTranscriptOutput) deliverAssistForMode(ctx context.Context, trans
 
 	assistPipeline := o.currentAssistPipeline()
 	if assistPipeline == nil {
-		// No assist pipeline â€” try legacy agent flow, or warn user.
+		// No assist pipeline — try legacy agent flow, or warn user.
 		if o.currentAgentFlow() != nil {
 			return o.deliverAgentFlow(ctx, transcript, mode)
 		}
@@ -455,7 +455,7 @@ func (o desktopTranscriptOutput) currentServerAssistDelegate() assistServerDeleg
 
 // assistServerDelegate is the small interface every server-delegated
 // Assist processor satisfies. Re-declared here so this file does not
-// depend on internal/serverclient's concrete type â€” easier to mock in
+// depend on internal/serverclient's concrete type — easier to mock in
 // tests and prevents accidental import cycles.
 type assistServerDelegate interface {
 	Process(ctx context.Context, transcript string, opts assist.ProcessOpts) (*assist.Result, error)

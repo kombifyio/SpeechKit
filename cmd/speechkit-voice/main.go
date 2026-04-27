@@ -1,6 +1,6 @@
 //go:build linux
 
-// Package main is the kombify SpeechKit Voice Server â€” a focused
+// Package main is the kombify SpeechKit Voice Server — a focused
 // Linux container that exposes ONLY the Voice Agent mode (real-time
 // audio-to-audio dialogue over WebSocket). Same Framework kernel and
 // same code path as `speechkit-server`; the only difference is the
@@ -9,10 +9,10 @@
 //
 // When to use which:
 //
-//	speechkit-server  â†’ all three modes; one container handles
+//	speechkit-server  → all three modes; one container handles
 //	                    Dictation REST, Assist REST, Voice Agent WS.
 //	                    Choose for single-pod deployments.
-//	speechkit-voice   â†’ only Voice Agent WS. Choose when scaling
+//	speechkit-voice   → only Voice Agent WS. Choose when scaling
 //	                    voice independently from REST traffic, or
 //	                    when running a stateful voice tier on
 //	                    beefier nodes (GPU, more memory) than the

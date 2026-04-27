@@ -123,7 +123,7 @@ func (m *appUpdateManager) Start(release latestReleaseInfo, destDir string) appU
 		AssetName:  release.DownloadName,
 		Status:     appUpdateStatusPending,
 		TotalBytes: release.DownloadSize,
-		StatusText: "Startingâ€¦",
+		StatusText: "Starting…",
 		cancel:     cancel,
 	}
 
@@ -166,7 +166,7 @@ func (m *appUpdateManager) CompletedFile(jobID string) (string, bool) {
 func (m *appUpdateManager) run(ctx context.Context, job *appUpdateJob, release latestReleaseInfo, destDir string) {
 	job.mu.Lock()
 	job.Status = appUpdateStatusRunning
-	job.StatusText = "Downloadingâ€¦"
+	job.StatusText = "Downloading…"
 	job.mu.Unlock()
 
 	err := downloadAppInstaller(ctx, job, release, destDir)

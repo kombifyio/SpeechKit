@@ -109,7 +109,7 @@ type Handler struct {
 }
 
 // New constructs a handler. All options except MaxAllowedClockSkew are
-// required â€” the adapter cannot function without a manager, provider, and
+// required — the adapter cannot function without a manager, provider, and
 // persona resolver.
 func New(opts HandlerOptions) (*Handler, error) {
 	if opts.Manager == nil {
@@ -137,16 +137,16 @@ func New(opts HandlerOptions) (*Handler, error) {
 
 // Mount wires the voiceagent endpoints onto mux:
 //
-//	POST   /v1/voiceagent/sessions        â€” create session + mint ticket
-//	GET    /v1/voiceagent/sessions        â€” list caller's active sessions
-//	DELETE /v1/voiceagent/sessions/{id}   â€” force close a session
-//	GET    /v1/voiceagent/sessions/{id}/ws?ticket=... â€” upgrade to WebSocket
+//	POST   /v1/voiceagent/sessions        — create session + mint ticket
+//	GET    /v1/voiceagent/sessions        — list caller's active sessions
+//	DELETE /v1/voiceagent/sessions/{id}   — force close a session
+//	GET    /v1/voiceagent/sessions/{id}/ws?ticket=... — upgrade to WebSocket
 func (h *Handler) Mount(mux *http.ServeMux) {
 	mux.HandleFunc("/v1/voiceagent/sessions", h.collectionHandler)
 	mux.HandleFunc("/v1/voiceagent/sessions/", h.itemHandler)
 }
 
-// â”€â”€ HTTP endpoints â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── HTTP endpoints ──────────────────────────────────────────────────────────
 
 type createSessionResponse struct {
 	SessionID string `json:"session_id"`
@@ -295,7 +295,7 @@ func (h *Handler) deleteSession(w http.ResponseWriter, r *http.Request, sessionI
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// â”€â”€ WebSocket upgrade â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── WebSocket upgrade ───────────────────────────────────────────────────────
 
 func (h *Handler) upgradeWS(w http.ResponseWriter, r *http.Request, sessionID string) {
 	ticket := strings.TrimSpace(r.URL.Query().Get("ticket"))
@@ -331,7 +331,7 @@ func (h *Handler) upgradeWS(w http.ResponseWriter, r *http.Request, sessionID st
 		slog.Warn("voiceagent: WS upgrade failed", "session_id", sessionID, "err", err)
 		return
 	}
-	// Conservative read limit â€” raw PCM chunks should be well under 4 KB.
+	// Conservative read limit — raw PCM chunks should be well under 4 KB.
 	conn.SetReadLimit(1 << 20)
 
 	adapter := &Adapter{

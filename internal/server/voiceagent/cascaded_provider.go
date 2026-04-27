@@ -19,7 +19,7 @@ import (
 	"github.com/kombifyio/SpeechKit/internal/tts"
 )
 
-// CascadedProvider implements LiveProviderAdapter as a turn-based STT â†’ LLM â†’
+// CascadedProvider implements LiveProviderAdapter as a turn-based STT → LLM →
 // TTS pipeline. It is the self-hosted-friendly alternative to real-time
 // providers like Gemini Live and Moshi.
 //
@@ -29,7 +29,7 @@ import (
 // silence heuristic.
 //
 // The provider is intentionally self-contained and testable with pure
-// fakes â€” CascadedSTT, CascadedAgent, and CascadedTTS are narrow interfaces
+// fakes — CascadedSTT, CascadedAgent, and CascadedTTS are narrow interfaces
 // the bootstrap wires production implementations into.
 type CascadedProvider struct {
 	stt   CascadedSTT
@@ -59,14 +59,14 @@ type CascadedProvider struct {
 // CascadedConfig tunes turn detection and processing. Zero values are filled
 // by NewCascadedProvider with sensible defaults.
 type CascadedConfig struct {
-	// SilenceRMSThreshold is the RMS level (0.0â€“1.0) below which a frame is
+	// SilenceRMSThreshold is the RMS level (0.0–1.0) below which a frame is
 	// considered silence. Default 0.02.
 	SilenceRMSThreshold float64
 	// SilenceTurnMs is the minimum silence duration before we commit the
 	// current turn. Default 800 ms.
 	SilenceTurnMs int
 	// MinTurnMs is the minimum accumulated non-silence needed to treat a
-	// buffer as a real turn. Default 300 ms â€” filters coughs and clicks.
+	// buffer as a real turn. Default 300 ms — filters coughs and clicks.
 	MinTurnMs int
 	// MaxTurnMs caps a runaway turn before forcing processing. Default
 	// 30 000 ms.
@@ -159,7 +159,7 @@ func (p *CascadedProvider) Connect(ctx context.Context, cfg LiveConfigFrame) err
 		return errors.New("cascaded: Agent flow not configured (no LLM models available)")
 	}
 	if p.tts == nil {
-		// TTS is optional for cascaded â€” without it we still return
+		// TTS is optional for cascaded — without it we still return
 		// OutputTranscript text frames so the client can render subtitles
 		// or speak via its own TTS stack.
 		slog.Info("cascaded: TTS not configured; sessions will be text-only")
@@ -243,7 +243,7 @@ func (p *CascadedProvider) Close() error {
 // Name returns the provider identifier used in logs + /admin/status.
 func (p *CascadedProvider) Name() string { return "cascaded" }
 
-// â”€â”€ internals â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── internals ───────────────────────────────────────────────────────────────
 
 // maybeTriggerLocked fires a turn-end trigger when the silence threshold or
 // max-duration threshold is exceeded. Caller must hold p.mu.
@@ -305,7 +305,7 @@ func (p *CascadedProvider) processOneTurn(ctx context.Context) {
 		return
 	}
 	if sttResult == nil || strings.TrimSpace(sttResult.Text) == "" {
-		// Silent/empty turn â€” drop quietly.
+		// Silent/empty turn — drop quietly.
 		return
 	}
 	emit(&LiveMessage{InputTranscript: sttResult.Text, InputTranscriptDone: true})
@@ -359,7 +359,7 @@ func (p *CascadedProvider) runTurn(ctx context.Context, userText string, skipInp
 		if ttsResult != nil && len(ttsResult.Audio) > 0 {
 			// Stream TTS audio in ~40 ms chunks so the client can start
 			// playback before the full synthesis lands. For mp3/wav we
-			// stream as-is (no frame boundaries to respect) â€” the client
+			// stream as-is (no frame boundaries to respect) — the client
 			// concatenates and hands the result to its own decoder.
 			for _, frag := range chunkAudio(ttsResult.Audio, 8192) {
 				select {
@@ -413,9 +413,9 @@ func (p *CascadedProvider) emitError(code, message string) {
 	}
 }
 
-// â”€â”€ helpers (pure, testable) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── helpers (pure, testable) ────────────────────────────────────────────────
 
-// chunkRMS computes the RMS level (0.0â€“1.0) of an S16LE PCM buffer. Matches
+// chunkRMS computes the RMS level (0.0–1.0) of an S16LE PCM buffer. Matches
 // the formula in internal/audio/pcm.PCMLevel; duplicated here to avoid a
 // dependency on internal/audio from the Server-Target build (that package
 // carries the oto/v3 cgo linkage).
@@ -441,7 +441,7 @@ func chunkRMS(pcm []byte) float64 {
 }
 
 func pcmDurationMs(pcm []byte) int64 {
-	// 16 kHz S16 mono â†’ 32 000 bytes per second.
+	// 16 kHz S16 mono → 32 000 bytes per second.
 	return int64(len(pcm)) * 1000 / 32000
 }
 

@@ -34,7 +34,7 @@ func buildSTTRouter(cfg *config.Config) (*router.Router, []namedProvider, []stri
 		ParallelCloud:        cfg.Routing.ParallelCloud,
 		ReplaceOnBetter:      cfg.Routing.ReplaceOnBetter,
 	}
-	// Default to cloud-only when config leaves the field blank â€” the server
+	// Default to cloud-only when config leaves the field blank — the server
 	// deployment target typically relies on managed cloud APIs even when a
 	// local whisper.cpp is present.
 	if r.Strategy == "" {
@@ -103,7 +103,7 @@ func buildSTTRouter(cfg *config.Config) (*router.Router, []namedProvider, []stri
 	}
 
 	// Local whisper.cpp. We DO register the provider so the router has a
-	// local target, but lifecycle (StartServer) is managed separately â€” see
+	// local target, but lifecycle (StartServer) is managed separately — see
 	// MaybeStartLocalSTT. This keeps the server usable with cloud-only
 	// providers while still surfacing a local option.
 	if cfg.Local.Enabled && strings.TrimSpace(cfg.Local.ModelPath) != "" {
