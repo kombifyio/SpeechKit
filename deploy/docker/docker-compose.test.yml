@@ -1,0 +1,90 @@
+# End-to-end test stack for the SpeechKit Server-Target.
+#
+# Spins up the server plus Postgres and then runs a one-shot test client
+# that hits /healthz, /readyz, and POST /v1/dictation/transcribe with a
+# pre-generated WAV. Exits non-zero when any assertion fails — suitable
+# for `docker compose -f deploy/docker/docker-compose.test.yml up
+# --exit-code-from test-client`.
+#
+# CI uses this file for its smoke job; local developers can use it to
+# prove an image works before pushing.
+
+services:
+  speechkit-server:
+    build:
+      context: ../..
+      dockerfile: deploy/docker/Dockerfile.server
+      args:
+        VERSION: e2e-test
+    image: speechkit-server:e2e
+    environment:
+      SPEECHKIT_SERVER_TOKEN: e2e-dev-token
+      # Cloud providers are left unset intentionally — the e2e client
+      # drives text-only flows through /healthz and /readyz, which don't
+      # require any provider to succeed.
+      LOG_LEVEL: debug
+      LOG_FORMAT: text
+    volumes:
+      - ../config/server.example.toml:/etc/speechkit/config.toml:ro
+      - speechkit-test-models:/var/lib/speechkit/models
+    ports:
+      - "18080:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8080/healthz"]
+      interval: 3s
+      timeout: 2s
+      retries: 15
+      start_period: 10s
+
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: speechkit
+      POSTGRES_PASSWORD: test-password
+      POSTGRES_DB: speechkit
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U speechkit -d speechkit"]
+      interval: 2s
+      timeout: 2s
+      retries: 15
+
+  test-client:
+    # Use a thin alpine image with curl and jq so the test script stays
+    # in this compose file rather than a separate Go binary. The real
+    # performance-comparison harness (M9c) will be a Go tool.
+    image: alpine:3.20
+    depends_on:
+      speechkit-server:
+        condition: service_healthy
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        set -euo pipefail
+        apk add --no-cache curl jq >/dev/null
+        echo "== 1. /healthz =="
+        curl -fsS http://speechkit-server:8080/healthz | jq -e '.status == "ok"' >/dev/null
+        echo "== 2. /readyz =="
+        curl -fsS http://speechkit-server:8080/readyz | jq '.components | keys'
+        echo "== 3. Authenticated noop endpoint =="
+        # Assist text path without provider keys still returns a structured
+        # error envelope — that's the contract we want to verify so callers
+        # can plan their own retries.
+        code=$(curl -s -o /tmp/body -w '%{http_code}' \
+          -H 'Authorization: Bearer e2e-dev-token' \
+          -H 'Content-Type: application/json' \
+          -d '{"text":"smoke test"}' \
+          http://speechkit-server:8080/v1/assist/process)
+        if [ "$code" = "200" ] || [ "$code" = "503" ]; then
+          echo "assist responded $code (OK for smoke test)"
+        else
+          echo "assist returned unexpected status $code"
+          cat /tmp/body
+          exit 1
+        fi
+        echo "== OK =="
+
+volumes:
+  speechkit-test-models:

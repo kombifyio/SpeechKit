@@ -1,0 +1,159 @@
+# SpeechKit — multi-stage Linux container build.
+#
+# Two targets share one Dockerfile because the binaries share a Framework
+# kernel. Pick one with `--target`:
+#
+#   docker build -f deploy/docker/Dockerfile.server \
+#     --target speechkit-server -t speechkit-server:dev .
+#   docker build -f deploy/docker/Dockerfile.server \
+#     --target speechkit-voice  -t speechkit-voice:dev  .
+#
+# - speechkit-server: all three modes (Dictation REST + Assist REST +
+#                     Voice Agent WS). Single-pod deployments.
+# - speechkit-voice:  only Voice Agent WS. Use when scaling voice
+#                     independently from REST traffic, or for a
+#                     beefier voice tier (more memory, optional GPU).
+#
+# Both binaries come from the same Go source under `internal/server/cli`
+# — only the default mode set differs at the entry point.
+#
+# Run locally (with secrets injected via Doppler wrapper):
+#   doppler run --project <project> --config <config> -- \
+#     docker run --rm -p 8080:8080 \
+#       -e SPEECHKIT_SERVER_TOKEN \
+#       -e GOOGLE_AI_API_KEY \
+#       -v speechkit-models:/var/lib/speechkit/models \
+#       -v "$(pwd)/deploy/config/server.example.toml:/etc/speechkit/config.toml:ro" \
+#       speechkit-server:dev
+
+# ── Stage 1: Go builder ──────────────────────────────────────────────────────
+FROM golang:1.26-bookworm AS builder
+
+# ONNX Runtime, oto/v3 (ALSA on Linux via pkg-config), and any future CGo
+# dependencies need a host compiler plus ALSA development headers at build
+# time. The actual libonnxruntime.so is copied into the runtime stage, not
+# here.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+        gcc \
+        libc6-dev \
+        libasound2-dev \
+        pkg-config \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /src
+
+# Pre-cache modules for faster iterative builds.
+COPY go.mod go.sum ./
+RUN go mod download
+
+# Pull in the full source tree — we rely on the `//go:build linux` tag on the
+# server-target files to skip any Windows-only files during compile.
+COPY . .
+
+# Static-ish build with stripped symbols. CGO is enabled because the Framework
+# kernel pulls in the Silero VAD ONNX runtime.
+ARG VERSION=dev
+ENV CGO_ENABLED=1 \
+    GOOS=linux \
+    GOARCH=amd64
+
+RUN go build \
+        -tags=server \
+        -ldflags="-s -w -X main.version=${VERSION}" \
+        -o /out/speechkit-server \
+        ./cmd/speechkit-server \
+    && go build \
+        -tags=server \
+        -ldflags="-s -w -X main.version=${VERSION}" \
+        -o /out/speechkit-voice \
+        ./cmd/speechkit-voice
+
+# ── Stage 2: Shared runtime base ─────────────────────────────────────────────
+# Both targets below copy this base verbatim. Keeping it as a separate stage
+# means the apt + ONNX + Doppler installs are cached once and reused.
+FROM debian:bookworm-slim AS runtime-base
+
+# Runtime dependencies:
+#  - ca-certificates: TLS trust for all cloud provider calls
+#  - ffmpeg: audio format decode for WebM-Opus / OGG-Opus ingress
+#  - libgomp1: OpenMP runtime required by ONNX Runtime + whisper.cpp
+#  - libasound2: ALSA runtime. oto/v3 links against libasound at build time
+#                via cgo; even though the server never plays audio locally,
+#                the linker requires the .so to resolve symbols at start.
+#  - curl: for optional model download on first boot and health probes
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+        ca-certificates \
+        ffmpeg \
+        libgomp1 \
+        libasound2 \
+        curl \
+    && rm -rf /var/lib/apt/lists/*
+
+# Optional: Doppler CLI for `doppler run --` entrypoints in managed deployments.
+# Omitting the CLI at build-time still lets you inject secrets as env vars from
+# any orchestrator (Render, Kubernetes, Docker Compose with an env_file).
+RUN curl -Ls https://cli.doppler.com/install.sh | sh -s -- --no-package-manager \
+    && doppler --version
+
+# ONNX Runtime shared lib for the Silero VAD kernel. Pinned version must stay
+# in sync with `github.com/yalue/onnxruntime_go` in go.mod.
+ARG ONNX_VERSION=1.17.1
+RUN curl -Ls "https://github.com/microsoft/onnxruntime/releases/download/v${ONNX_VERSION}/onnxruntime-linux-x64-${ONNX_VERSION}.tgz" \
+      | tar -xz -C /tmp \
+    && cp -a "/tmp/onnxruntime-linux-x64-${ONNX_VERSION}/lib/." /usr/local/lib/ \
+    && ldconfig \
+    && rm -rf "/tmp/onnxruntime-linux-x64-${ONNX_VERSION}"
+
+# Non-root runtime user with a fixed UID so persistent volumes keep stable
+# ownership across container restarts.
+RUN groupadd -r speechkit --gid 2000 \
+    && useradd -r -g speechkit --uid 2000 -m -d /home/speechkit speechkit \
+    && mkdir -p /etc/speechkit /var/lib/speechkit/models \
+    && chown -R speechkit:speechkit /etc/speechkit /var/lib/speechkit
+
+# whisper.cpp binary is expected at /usr/local/bin/whisper-server; it is
+# intentionally NOT baked into this image so that the OSS container stays
+# small and license-clean. Operators provide whisper.cpp via a sidecar or
+# compose-service (see deploy/docker/docker-compose.yml).
+
+USER speechkit
+WORKDIR /home/speechkit
+
+EXPOSE 8080
+
+HEALTHCHECK --interval=30s --timeout=3s --start-period=10s --retries=3 \
+  CMD curl -fsS http://localhost:8080/healthz || exit 1
+
+# ── Stage 3: speechkit-server (all three modes) ──────────────────────────────
+FROM runtime-base AS speechkit-server
+
+LABEL org.opencontainers.image.title="SpeechKit Server"
+LABEL org.opencontainers.image.description="SpeechKit Framework — full server (Dictation, Assist, Voice Agent over HTTP/WebSocket)."
+LABEL org.opencontainers.image.source="https://github.com/kombifyio/SpeechKit"
+LABEL org.opencontainers.image.licenses="Apache-2.0"
+
+COPY --from=builder /out/speechkit-server /app/speechkit-server
+
+# Operators typically override this to `doppler run -- /app/speechkit-server`
+# when using Doppler for secrets; the plain entrypoint works with any env-var
+# injector.
+ENTRYPOINT ["/app/speechkit-server"]
+CMD ["--config=/etc/speechkit/config.toml"]
+
+# ── Stage 4: speechkit-voice (Voice Agent WS only) ───────────────────────────
+FROM runtime-base AS speechkit-voice
+
+LABEL org.opencontainers.image.title="SpeechKit Voice Server"
+LABEL org.opencontainers.image.description="SpeechKit Framework — Voice Agent only (real-time WebSocket)."
+LABEL org.opencontainers.image.source="https://github.com/kombifyio/SpeechKit"
+LABEL org.opencontainers.image.licenses="Apache-2.0"
+
+COPY --from=builder /out/speechkit-voice /app/speechkit-voice
+
+# The binary's built-in default already restricts modes to ["voiceagent"];
+# operators can still override via config.toml's `[server].modes` or
+# --modes=… if they want to repurpose this container as a generic server.
+ENTRYPOINT ["/app/speechkit-voice"]
+CMD ["--config=/etc/speechkit/config.toml"]

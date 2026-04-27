@@ -1,0 +1,55 @@
+# Local development stack for the SpeechKit Server-Target.
+#
+# Brings up the server plus an optional whisper.cpp sidecar and a PostgreSQL
+# backing store. Secrets are expected to come from the environment — copy
+# `.env.example` to `.env` or use `doppler run -- docker compose up`.
+#
+# This is the reference dev compose file. Production deployments (Render,
+# Kubernetes, etc.) use their own manifests and inject the same env vars.
+
+services:
+  speechkit-server:
+    build:
+      context: ../..
+      dockerfile: deploy/docker/Dockerfile.server
+      args:
+        VERSION: dev-compose
+    image: speechkit-server:dev
+    environment:
+      # Populate these in your .env file or via `doppler run --`.
+      SPEECHKIT_SERVER_TOKEN: ${SPEECHKIT_SERVER_TOKEN:?set SPEECHKIT_SERVER_TOKEN}
+      EDGE_AUTH_SECRET: ${EDGE_AUTH_SECRET:-}
+      HF_TOKEN: ${HF_TOKEN:-}
+      GOOGLE_AI_API_KEY: ${GOOGLE_AI_API_KEY:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      GROQ_API_KEY: ${GROQ_API_KEY:-}
+    volumes:
+      - ../config/server.example.toml:/etc/speechkit/config.toml:ro
+      - speechkit-models:/var/lib/speechkit/models
+    ports:
+      - "8080:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: speechkit
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-dev-insecure-password}
+      POSTGRES_DB: speechkit
+    volumes:
+      - speechkit-postgres:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U speechkit -d speechkit"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+
+volumes:
+  speechkit-models:
+  speechkit-postgres:

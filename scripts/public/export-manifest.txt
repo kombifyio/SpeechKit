@@ -1,6 +1,7 @@
 assets/
 cmd/
 docker/
+deploy/
 frontend/app/
 installer/
 internal/

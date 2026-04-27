@@ -31,7 +31,7 @@ Use this checklist before syncing to the release repository or cutting a public 
 - [ ] Android is outside the current public OSS release surface and is not exported
 - [ ] release artifacts are built from the mirrored public tree
 - [ ] the public repo does not overwrite publisher-managed release notes or create an alternate release path for publisher-managed releases
-- [ ] the exported public workflow set is exactly `build.yml`, `changesets.yml`, `ci.yml`, and `release.yml`
+- [ ] the exported public workflow set is exactly `build.yml`, `changesets.yml`, `ci.yml`, `release.yml`, `server-linux.yml`, `release-server-docker.yml`, and `windows-build.yml`
 - [ ] `speechkit.pages.dev` and the canonical public domain both serve the current version and the stable `releases/latest/download/SpeechKit-Setup.exe` link after deployment
 - [ ] the private upstream repository is private and remains an internal development surface only
 - [ ] the private upstream no longer publishes public GitHub Releases or public Windows binaries directly

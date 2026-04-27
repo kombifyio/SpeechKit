@@ -1,0 +1,238 @@
+# SpeechKit Server-Target — reference configuration.
+#
+# Copy this file to /etc/speechkit/config.toml (or pass --config <path>) and
+# adjust for your deployment. All fields are optional; the defaults baked into
+# internal/config produce a working server when the required secrets are
+# injected as environment variables.
+#
+# Secret values NEVER live in this file. Instead, this file refers to the ENV
+# VAR NAMES that hold them; the server reads those at boot (and gracefully
+# degrades when a secret is absent, logging which capability is off).
+
+[general]
+language = "en"
+
+[server]
+listen_addr            = ":8080"
+# modes: leave empty or omit to enable all three. Comment out individual
+# entries to disable a mode for a given deployment (e.g. a Dictation-only
+# pool).
+modes                  = ["dictation", "assist", "voiceagent"]
+auth_mode              = "bearer"               # "bearer" | "edge_hmac" | "bearer_or_edge"
+bearer_token_env       = "SPEECHKIT_SERVER_TOKEN"
+edge_auth_secret_env   = "EDGE_AUTH_SECRET"
+cors_allowed_origins   = []                      # e.g. ["https://app.example.com"]
+rate_limit_rps         = 10.0
+rate_limit_burst       = 20
+max_upload_mb          = 25
+max_voiceagent_sessions = 100
+max_sessions_per_user   = 3
+ticket_ttl_sec          = 30
+# Server-side idle timeout for Voice Agent WS sessions (seconds).
+# Default 900 (15 min). Set to 0 for the implicit default, negative to
+# disable the watchdog entirely.
+voiceagent_idle_timeout_sec = 900
+whisper_binary          = "/usr/local/bin/whisper-server"
+whisper_port            = 8180
+model_dir               = "/var/lib/speechkit/models"
+log_format              = "json"                 # "json" | "text"
+log_level               = "info"                 # "debug" | "info" | "warn" | "error"
+
+# ── STT / TTS / LLM providers ─────────────────────────────────────────────────
+# Enable whatever the deployment should support. Disabled providers are simply
+# skipped by the router.
+
+[huggingface]
+enabled   = true
+model     = "openai/whisper-large-v3"
+token_env = "HF_TOKEN"
+
+[providers.openai]
+enabled        = true
+api_key_env    = "OPENAI_API_KEY"
+stt_model      = "whisper-1"
+utility_model  = "gpt-4o-mini"
+assist_model   = "gpt-4o"
+agent_model    = "gpt-4o"
+tts_model      = "tts-1"
+tts_voice      = "nova"
+
+[providers.google]
+enabled        = true
+api_key_env    = "GOOGLE_AI_API_KEY"
+stt_model      = "chirp_3"
+utility_model  = "gemini-2.5-flash-lite"
+assist_model   = "gemini-2.5-flash"
+agent_model    = "gemini-2.5-pro"
+
+[providers.groq]
+enabled        = false
+api_key_env    = "GROQ_API_KEY"
+stt_model      = "whisper-large-v3-turbo"
+
+[tts]
+enabled  = true
+strategy = "cloud-first"
+format   = "mp3"
+speed    = 1.0
+
+[tts.openai]
+enabled = true
+model   = "tts-1"
+voice   = "nova"
+
+[tts.google]
+enabled = false
+voice   = "en-US-Neural2-C"
+
+[voice_agent]
+enabled = true
+# provider selects the backend:
+#   "gemini"   (default) — Google Gemini Live cloud realtime
+#   "cascaded" — self-hosted whisper.cpp → Genkit agent LLM → TTS pipeline
+#                (requires STT + at least one agent-capable LLM + optional TTS;
+#                 no Google API key needed)
+#   "moshi"    — self-hosted Kyutai Moshi realtime Rust server (M9b, pending)
+provider = "gemini"
+# Primary: Gemini 3.1 Flash Live (preview as of April 2026). Reverts to the
+# 2.5-native-audio model below if the preview endpoint becomes unavailable.
+model          = "gemini-3.1-flash-live-preview"
+fallback_model = "gemini-2.5-flash-native-audio-preview-12-2025"
+voice          = "Kore"
+framework_prompt                = """
+You are a helpful, concise voice assistant. Always respond in the user's language.
+Keep turns short. Confirm ambiguous requests before acting.
+"""
+automatic_activity_detection    = true
+vad_start_sensitivity           = "medium"
+vad_end_sensitivity             = "medium"
+enable_input_transcript         = true
+enable_output_transcript        = true
+reminder_after_idle_sec         = 300
+deactivate_after_idle_sec       = 900
+
+# ── Voice Agent Personas / Roles / Sequences ─────────────────────────────────
+# These are TOML-seeded defaults. DB-stored entries with the same ID override
+# these at runtime. The examples below are generic framework samples, not
+# tied to any specific product or organization.
+
+[[personas]]
+id           = "default"
+display_name = "Default Assistant"
+description  = "Generic, polite, concise assistant with no specific domain focus."
+voice        = "Kore"
+locale       = "en"
+default_role = "default-role"
+tags         = ["generic"]
+
+[[personas]]
+id           = "discovery-call"
+display_name = "Discovery Call Host"
+description  = "Guides a structured discovery conversation: greet, explore needs, summarize, confirm, close."
+voice        = "Aoede"
+locale       = "en"
+default_role = "discovery-role"
+tags         = ["sales", "structured"]
+
+[[personas]]
+id           = "support-triage"
+display_name = "Support Triage Agent"
+description  = "Identifies the caller, triages their issue, resolves or escalates."
+voice        = "Charon"
+locale       = "en"
+default_role = "support-role"
+tags         = ["support", "structured"]
+
+# ── Roles ────────────────────────────────────────────────────────────────────
+
+[[roles]]
+id            = "default-role"
+display_name  = "Default Behavior"
+system_prompt = """
+You are a helpful voice assistant. Be concise. Respond in the user's language.
+"""
+temperature                 = 0.6
+automatic_activity_detection = true
+vad_start_sensitivity       = "medium"
+vad_end_sensitivity         = "medium"
+
+[[roles]]
+id            = "discovery-role"
+display_name  = "Discovery Conversation Host"
+system_prompt = """
+You are hosting a discovery conversation. Follow the active sequence step.
+Ask one question at a time. Paraphrase what you hear before asking the next
+question. Never invent details.
+"""
+temperature                 = 0.4
+automatic_activity_detection = true
+vad_start_sensitivity       = "low"
+vad_end_sensitivity         = "medium"
+
+[[roles]]
+id            = "support-role"
+display_name  = "Support Triage Specialist"
+system_prompt = """
+You are a support triage specialist. Identify the caller's issue, classify
+severity, and either propose a next step or hand off to a human. Never make
+promises about timelines without evidence.
+"""
+temperature                 = 0.3
+automatic_activity_detection = true
+vad_start_sensitivity       = "medium"
+vad_end_sensitivity         = "medium"
+
+# ── Sequences ────────────────────────────────────────────────────────────────
+
+[[sequences]]
+id           = "discovery-call"
+display_name = "Classic Discovery Call"
+description  = "Five-step discovery conversation."
+completion   = "explicit_close"
+
+  [[sequences.steps]]
+  id           = "greet"
+  instruction  = "Greet the caller warmly and explain that you will ask a few questions to understand their needs."
+  exit_criteria = "The caller has acknowledged and is ready to proceed."
+
+  [[sequences.steps]]
+  id           = "ask-needs"
+  instruction  = "Ask open-ended questions to understand the caller's current situation, desired outcome, and constraints. Listen before speaking."
+  exit_criteria = "You have a clear picture of the caller's situation and goals."
+  max_turns    = 8
+
+  [[sequences.steps]]
+  id           = "summarize"
+  instruction  = "Summarize what you have heard in 2-3 sentences and ask the caller to correct anything you got wrong."
+  exit_criteria = "The caller confirms the summary is accurate."
+
+  [[sequences.steps]]
+  id           = "confirm"
+  instruction  = "Confirm the next concrete action and who is responsible."
+  exit_criteria = "A specific next action is agreed."
+
+  [[sequences.steps]]
+  id           = "close"
+  instruction  = "Thank the caller and close the conversation politely."
+  exit_criteria = "The caller says goodbye or the conversation naturally ends."
+
+[[sequences]]
+id           = "support-triage"
+display_name = "Support Triage"
+description  = "Three-step support call triage."
+completion   = "explicit_close"
+
+  [[sequences.steps]]
+  id           = "identify"
+  instruction  = "Identify the caller and their account reference, if any."
+  exit_criteria = "The caller has been identified or has declined to identify themselves."
+
+  [[sequences.steps]]
+  id           = "triage"
+  instruction  = "Classify the issue: bug / question / feature request / billing. Assess urgency."
+  exit_criteria = "The issue category and urgency are clear."
+
+  [[sequences.steps]]
+  id           = "resolve-or-escalate"
+  instruction  = "If you can resolve the issue directly, do so. Otherwise, explain the escalation path clearly."
+  exit_criteria = "The caller has a clear next step, either resolution or escalation ticket."
