@@ -6,6 +6,8 @@ import (
 	"os/exec"
 	"path/filepath"
 	"testing"
+
+	"github.com/kombifyio/SpeechKit/internal/secrets"
 )
 
 func unsetEnvForTest(t *testing.T, name string) {
@@ -26,6 +28,12 @@ func unsetEnvForTest(t *testing.T, name string) {
 			t.Fatalf("restore %s: %v", name, err)
 		}
 	})
+}
+
+func useMemorySecretStoreForTest(t *testing.T) {
+	t.Helper()
+	restore := secrets.UseMemoryStoreForTests()
+	t.Cleanup(restore)
 }
 
 func TestLoadDefaults(t *testing.T) {
@@ -79,14 +87,44 @@ func TestLoadDefaults(t *testing.T) {
 	if got, want := cfg.ModelSelection.VoiceAgent.PrimaryProfileID, DefaultVoiceAgentPrimaryProfileID; got != want {
 		t.Errorf("default voice agent primary profile = %q, want %q", got, want)
 	}
+	for _, sel := range []struct {
+		name string
+		got  string
+	}{
+		{"dictate", cfg.ModelSelection.Dictate.ModeSource},
+		{"assist", cfg.ModelSelection.Assist.ModeSource},
+		{"voice_agent", cfg.ModelSelection.VoiceAgent.ModeSource},
+	} {
+		if sel.got != ModeSourceLocal {
+			t.Errorf("default %s mode_source = %q, want %q", sel.name, sel.got, ModeSourceLocal)
+		}
+	}
+	if cfg.ServerConnection.Enabled {
+		t.Error("server connection should be disabled by default")
+	}
+	if cfg.ServerConnection.URL != "" {
+		t.Errorf("default server URL = %q, want empty", cfg.ServerConnection.URL)
+	}
+	if cfg.ServerConnection.BearerTokenEnv != "SPEECHKIT_SERVER_TOKEN" {
+		t.Errorf("default server bearer token env = %q, want SPEECHKIT_SERVER_TOKEN", cfg.ServerConnection.BearerTokenEnv)
+	}
+	if !cfg.ServerConnection.FallbackToLocal {
+		t.Error("server connection should fall back to local by default")
+	}
+	if cfg.ServerConnection.RequestTimeoutSec != 30 {
+		t.Errorf("default server request timeout = %d, want 30", cfg.ServerConnection.RequestTimeoutSec)
+	}
 	if want := ManagedHuggingFaceAvailableInBuild(); cfg.HuggingFace.Enabled != want {
 		t.Errorf("default HuggingFace enabled = %v, want %v for this module build", cfg.HuggingFace.Enabled, want)
 	}
 	if cfg.HuggingFace.Model != "openai/whisper-large-v3" {
 		t.Errorf("default HF model = %q", cfg.HuggingFace.Model)
 	}
-	if cfg.VoiceAgent.Model != "gemini-2.5-flash-native-audio-preview-12-2025" {
-		t.Errorf("default voice agent model = %q", cfg.VoiceAgent.Model)
+	if cfg.VoiceAgent.Model != "gemini-3.1-flash-live-preview" {
+		t.Errorf("default voice agent model = %q, want gemini-3.1-flash-live-preview", cfg.VoiceAgent.Model)
+	}
+	if cfg.VoiceAgent.FallbackModel != "gemini-2.5-flash-native-audio-preview-12-2025" {
+		t.Errorf("default voice agent fallback model = %q, want gemini-2.5-flash-native-audio-preview-12-2025", cfg.VoiceAgent.FallbackModel)
 	}
 	if cfg.VoiceAgent.FrameworkPrompt != "" {
 		t.Errorf("default voice agent framework prompt = %q, want empty", cfg.VoiceAgent.FrameworkPrompt)
@@ -126,6 +164,87 @@ func TestLoadDefaults(t *testing.T) {
 	}
 	if cfg.Feedback.AudioRetentionDays != 7 {
 		t.Errorf("legacy feedback audio retention days = %d, want 7", cfg.Feedback.AudioRetentionDays)
+	}
+}
+
+func TestLoadServerConnectionFromTOML(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.toml")
+	body := `
+[model_selection.dictate]
+primary_profile_id = "stt.local.whispercpp"
+mode_source = "server"
+
+[model_selection.assist]
+primary_profile_id = "assist.builtin.gemma4-e4b"
+mode_source = "local"
+
+[model_selection.voice_agent]
+primary_profile_id = "realtime.google.gemini-native-audio"
+mode_source = "server"
+
+[server_connection]
+enabled = true
+url = "https://speechkit.test"
+bearer_token_env = "MY_TOKEN"
+fallback_to_local = false
+request_timeout_sec = 5
+`
+	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
+		t.Fatalf("write toml: %v", err)
+	}
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if got := cfg.ModelSelection.Dictate.ResolvedModeSource(); got != ModeSourceServer {
+		t.Errorf("dictate mode_source = %q, want server", got)
+	}
+	if got := cfg.ModelSelection.Assist.ResolvedModeSource(); got != ModeSourceLocal {
+		t.Errorf("assist mode_source = %q, want local", got)
+	}
+	if got := cfg.ModelSelection.VoiceAgent.ResolvedModeSource(); got != ModeSourceServer {
+		t.Errorf("voice_agent mode_source = %q, want server", got)
+	}
+	if !cfg.ServerConnection.Enabled {
+		t.Error("server_connection.enabled = false, want true")
+	}
+	if cfg.ServerConnection.URL != "https://speechkit.test" {
+		t.Errorf("server_connection.url = %q", cfg.ServerConnection.URL)
+	}
+	if cfg.ServerConnection.BearerTokenEnv != "MY_TOKEN" {
+		t.Errorf("server_connection.bearer_token_env = %q, want MY_TOKEN", cfg.ServerConnection.BearerTokenEnv)
+	}
+	if cfg.ServerConnection.FallbackToLocal {
+		t.Error("server_connection.fallback_to_local = true, want false")
+	}
+	if cfg.ServerConnection.RequestTimeoutSec != 5 {
+		t.Errorf("server_connection.request_timeout_sec = %d, want 5", cfg.ServerConnection.RequestTimeoutSec)
+	}
+}
+
+func TestResolvedModeSource(t *testing.T) {
+	tests := []struct {
+		name string
+		in   string
+		want string
+	}{
+		{name: "empty defaults to local", in: "", want: ModeSourceLocal},
+		{name: "explicit local", in: "local", want: ModeSourceLocal},
+		{name: "explicit server", in: "server", want: ModeSourceServer},
+		{name: "uppercase server", in: "SERVER", want: ModeSourceServer},
+		{name: "mixed case server", in: "Server", want: ModeSourceServer},
+		{name: "padded server", in: "  server  ", want: ModeSourceServer},
+		{name: "garbage falls back to local", in: "remote", want: ModeSourceLocal},
+		{name: "uppercase local", in: "LOCAL", want: ModeSourceLocal},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			sel := ModeModelSelection{ModeSource: tt.in}
+			if got := sel.ResolvedModeSource(); got != tt.want {
+				t.Fatalf("ResolvedModeSource(%q) = %q, want %q", tt.in, got, tt.want)
+			}
+		})
 	}
 }
 
@@ -722,6 +841,7 @@ func TestSaveRoundTripShortcutLocaleAliases(t *testing.T) {
 }
 
 func TestApplyManagedIntegrationDefaultsNoopWhenHFAlreadyEnabled(t *testing.T) {
+	useMemorySecretStoreForTest(t)
 	restoreBuild := OverrideManagedHuggingFaceBuildForTests("1")
 	defer restoreBuild()
 
@@ -741,6 +861,7 @@ func TestApplyManagedIntegrationDefaultsNoopWhenHFAlreadyEnabled(t *testing.T) {
 }
 
 func TestApplyManagedIntegrationDefaultsEnablesHFWhenExplicitlyDisabled(t *testing.T) {
+	useMemorySecretStoreForTest(t)
 	restoreBuild := OverrideManagedHuggingFaceBuildForTests("1")
 	defer restoreBuild()
 
@@ -760,6 +881,7 @@ func TestApplyManagedIntegrationDefaultsEnablesHFWhenExplicitlyDisabled(t *testi
 }
 
 func TestApplyManagedIntegrationDefaultsDoesNotOverrideExplicitProviderConfig(t *testing.T) {
+	useMemorySecretStoreForTest(t)
 	restoreBuild := OverrideManagedHuggingFaceBuildForTests("1")
 	defer restoreBuild()
 
@@ -945,6 +1067,7 @@ voice_agent_hotkey = "ctrl+shift"
 }
 
 func TestApplyManagedIntegrationDefaultsSkipsNonCloudOnly(t *testing.T) {
+	useMemorySecretStoreForTest(t)
 	restoreBuild := OverrideManagedHuggingFaceBuildForTests("1")
 	defer restoreBuild()
 

@@ -133,6 +133,11 @@ type appState struct {
 	downloads                *downloads.Manager
 	appUpdates               *appUpdateManager
 	shuttingDown             bool
+
+	// serverDelegates holds optional per-mode adapters that delegate to a
+	// remote SpeechKit Server-Target. Nil when every mode runs locally
+	// (the pre-0.26 default). See server_delegates.go.
+	serverDelegates *serverDelegates
 }
 
 func showSettingsWindow(window settingsWindow) {
@@ -329,6 +334,35 @@ func main() {
 	syncRuntimeProviders(context.Background(), state, r) //nolint:contextcheck // ctx not yet created at startup initialization
 	for _, msg := range providerLog {
 		slog.Info(msg)
+	}
+
+	// Build optional server delegates for any mode that opts into
+	// server-side execution via [server_connection]. A nil result means
+	// every mode runs locally (the pre-0.26 default). Misconfigurations
+	// log a warning and fall through to local â€” we never block startup
+	// on a misconfigured server toggle.
+	serverDel, serverDelErr := buildServerDelegates(cfg)
+	if serverDelErr != nil {
+		slog.Warn("server delegates init failed; running modes locally", "err", serverDelErr)
+		serverDel = nil
+	}
+	if serverDel != nil {
+		state.mu.Lock()
+		state.serverDelegates = serverDel
+		state.mu.Unlock()
+		var modes []string
+		if serverDel.hasDictation() {
+			modes = append(modes, "dictation")
+		}
+		if serverDel.hasAssist() {
+			modes = append(modes, "assist")
+		}
+		if serverDel.hasVoiceAgent() {
+			modes = append(modes, "voice_agent")
+		}
+		slog.Info("server delegates active",
+			"modes", strings.Join(modes, ","),
+			"fallback_to_local", serverDel.shouldFallback())
 	}
 
 	// Audio capture
@@ -790,7 +824,7 @@ func main() {
 		QueueSize: 4,
 		Runner: speechkit.NewTranscriptionRunner(
 			routerTranscriber{
-				router:          r,
+				router:          dictationTranscriber(r, serverDel),
 				state:           state,
 				dictionaryStore: userDictionaryStoreFromFeedbackStore(feedbackStore),
 			},

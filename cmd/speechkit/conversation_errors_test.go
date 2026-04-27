@@ -7,6 +7,7 @@ import (
 )
 
 func TestFriendlyConversationErrorForLocalLLMConnectionRefused(t *testing.T) {
+	//nolint:revive,staticcheck // simulating a real upstream error string verbatim; capitalization and trailing period are from the wrapped system error, not our style
 	err := errors.New(`assist: LLM failed: assist: all models failed: gemma4:e4b request: Post "http://127.0.0.1:8082/v1/chat/completions": dial tcp 127.0.0.1:8082: connectex: No connection could be made because the target machine actively refused it.`)
 
 	message := friendlyConversationError(modeAssist, err)

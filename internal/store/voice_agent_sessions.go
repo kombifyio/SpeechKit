@@ -13,7 +13,7 @@ var _ VoiceAgentSessionStore = (*PostgresStore)(nil)
 
 func (s *SQLiteStore) SaveVoiceAgentSession(ctx context.Context, session VoiceAgentSession) (int64, error) {
 	session = normalizeVoiceAgentSession(session)
-	turnsJSON, ideasJSON, decisionsJSON, questionsJSON, stepsJSON, err := marshalVoiceAgentSessionJSON(session)
+	j, err := marshalVoiceAgentSessionJSON(session)
 	if err != nil {
 		return 0, err
 	}
@@ -30,11 +30,11 @@ func (s *SQLiteStore) SaveVoiceAgentSession(ctx context.Context, session VoiceAg
 		session.Language,
 		session.ProviderProfileID,
 		session.RuntimeKind,
-		turnsJSON,
-		ideasJSON,
-		decisionsJSON,
-		questionsJSON,
-		stepsJSON,
+		j.Turns,
+		j.Ideas,
+		j.Decisions,
+		j.Questions,
+		j.Steps,
 		session.StartedAt,
 		session.EndedAt,
 	)
@@ -50,7 +50,7 @@ func (s *SQLiteStore) ListVoiceAgentSessions(ctx context.Context, opts ListOpts)
 		limit = 20
 	}
 
-	rows, err := s.db.QueryContext(ctx,
+	rows, err := s.db.QueryContext(ctx, //nolint:rowserrcheck // rows.Err() is checked inside scanVoiceAgentSessions
 		`SELECT id, title, summary, raw_summary, transcript, language, provider_profile_id, runtime_kind,
 			turns_json, ideas_json, decisions_json, open_questions_json, next_steps_json, started_at, ended_at, created_at
 		 FROM voice_agent_sessions
@@ -68,7 +68,7 @@ func (s *SQLiteStore) ListVoiceAgentSessions(ctx context.Context, opts ListOpts)
 
 func (s *PostgresStore) SaveVoiceAgentSession(ctx context.Context, session VoiceAgentSession) (int64, error) {
 	session = normalizeVoiceAgentSession(session)
-	turnsJSON, ideasJSON, decisionsJSON, questionsJSON, stepsJSON, err := marshalVoiceAgentSessionJSON(session)
+	j, err := marshalVoiceAgentSessionJSON(session)
 	if err != nil {
 		return 0, err
 	}
@@ -87,11 +87,11 @@ func (s *PostgresStore) SaveVoiceAgentSession(ctx context.Context, session Voice
 		session.Language,
 		session.ProviderProfileID,
 		session.RuntimeKind,
-		turnsJSON,
-		ideasJSON,
-		decisionsJSON,
-		questionsJSON,
-		stepsJSON,
+		j.Turns,
+		j.Ideas,
+		j.Decisions,
+		j.Questions,
+		j.Steps,
 		session.StartedAt,
 		session.EndedAt,
 	).Scan(&id)
@@ -107,7 +107,7 @@ func (s *PostgresStore) ListVoiceAgentSessions(ctx context.Context, opts ListOpt
 		limit = 20
 	}
 
-	rows, err := s.db.QueryContext(ctx,
+	rows, err := s.db.QueryContext(ctx, //nolint:rowserrcheck // rows.Err() is checked inside scanVoiceAgentSessions
 		`SELECT id, title, summary, raw_summary, transcript, language, provider_profile_id, runtime_kind,
 			turns_json::text, ideas_json::text, decisions_json::text, open_questions_json::text, next_steps_json::text,
 			started_at, ended_at, created_at
@@ -195,28 +195,41 @@ func normalizeVoiceAgentSession(session VoiceAgentSession) VoiceAgentSession {
 	return session
 }
 
-func marshalVoiceAgentSessionJSON(session VoiceAgentSession) (turns, ideas, decisions, questions, steps string, err error) {
-	turns, err = marshalJSON(session.Turns)
+// voiceAgentSessionJSON bundles the five JSON-serialized facets of a
+// VoiceAgentSession into a single value so callers do not have to unpack
+// five return values.
+type voiceAgentSessionJSON struct {
+	Turns     string
+	Ideas     string
+	Decisions string
+	Questions string
+	Steps     string
+}
+
+func marshalVoiceAgentSessionJSON(session VoiceAgentSession) (voiceAgentSessionJSON, error) {
+	var j voiceAgentSessionJSON
+	var err error
+	j.Turns, err = marshalJSON(session.Turns)
 	if err != nil {
-		return "", "", "", "", "", fmt.Errorf("marshal voice agent turns: %w", err)
+		return voiceAgentSessionJSON{}, fmt.Errorf("marshal voice agent turns: %w", err)
 	}
-	ideas, err = marshalJSON(session.Summary.Ideas)
+	j.Ideas, err = marshalJSON(session.Summary.Ideas)
 	if err != nil {
-		return "", "", "", "", "", fmt.Errorf("marshal voice agent ideas: %w", err)
+		return voiceAgentSessionJSON{}, fmt.Errorf("marshal voice agent ideas: %w", err)
 	}
-	decisions, err = marshalJSON(session.Summary.Decisions)
+	j.Decisions, err = marshalJSON(session.Summary.Decisions)
 	if err != nil {
-		return "", "", "", "", "", fmt.Errorf("marshal voice agent decisions: %w", err)
+		return voiceAgentSessionJSON{}, fmt.Errorf("marshal voice agent decisions: %w", err)
 	}
-	questions, err = marshalJSON(session.Summary.OpenQuestions)
+	j.Questions, err = marshalJSON(session.Summary.OpenQuestions)
 	if err != nil {
-		return "", "", "", "", "", fmt.Errorf("marshal voice agent open questions: %w", err)
+		return voiceAgentSessionJSON{}, fmt.Errorf("marshal voice agent open questions: %w", err)
 	}
-	steps, err = marshalJSON(session.Summary.NextSteps)
+	j.Steps, err = marshalJSON(session.Summary.NextSteps)
 	if err != nil {
-		return "", "", "", "", "", fmt.Errorf("marshal voice agent next steps: %w", err)
+		return voiceAgentSessionJSON{}, fmt.Errorf("marshal voice agent next steps: %w", err)
 	}
-	return turns, ideas, decisions, questions, steps, nil
+	return j, nil
 }
 
 func marshalJSON(value any) (string, error) {

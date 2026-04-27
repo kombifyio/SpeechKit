@@ -124,6 +124,11 @@ type ModeSetting struct {
 	HotkeyBehavior    string `json:"hotkeyBehavior,omitempty"`
 	PrimaryProfileID  string `json:"primaryProfileId,omitempty"`
 	FallbackProfileID string `json:"fallbackProfileId,omitempty"`
+	// ModeSource is "local" (default) or "server". When "server", this mode
+	// runs against the speechkit-server pointed to by ServerConnection
+	// instead of the in-process Framework kernel. Empty/missing is treated
+	// as "local" for backwards compatibility with pre-0.26 hosts.
+	ModeSource string `json:"modeSource,omitempty"`
 }
 
 type DictationSetting struct {
@@ -145,9 +150,22 @@ type VoiceAgentSetting struct {
 }
 
 type ModeSettings struct {
-	Dictation  DictationSetting  `json:"dictation"`
-	Assist     AssistSetting     `json:"assist"`
-	VoiceAgent VoiceAgentSetting `json:"voiceAgent"`
+	Dictation        DictationSetting        `json:"dictation"`
+	Assist           AssistSetting           `json:"assist"`
+	VoiceAgent       VoiceAgentSetting       `json:"voiceAgent"`
+	ServerConnection ServerConnectionSetting `json:"serverConnection"`
+}
+
+// ServerConnectionSetting exposes the [server_connection] config section
+// to the control-plane API + frontend. The bearer token is never sent
+// across this boundary — only the env var name + connection metadata.
+type ServerConnectionSetting struct {
+	Enabled           bool   `json:"enabled"`
+	URL               string `json:"url"`
+	BearerTokenEnv    string `json:"bearerTokenEnv,omitempty"`
+	BearerTokenSet    bool   `json:"bearerTokenSet"`
+	FallbackToLocal   bool   `json:"fallbackToLocal"`
+	RequestTimeoutSec int    `json:"requestTimeoutSec"`
 }
 
 const ReadinessSchemaVersion = "provider-readiness.v1"

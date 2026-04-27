@@ -26,7 +26,17 @@ type GeminiLive struct {
 	lastConfig *LiveConfig   // Stored for reconnection
 }
 
-const defaultGeminiLiveModel = "gemini-2.5-flash-native-audio-preview-12-2025"
+// defaultGeminiLiveModel is the kernel-level default for realtime sessions
+// when the caller does not specify a Model in LiveConfig. It tracks the
+// current Gemini Live family primary model.
+//
+// As of April 2026 this is gemini-3.1-flash-live-preview. When Google
+// promotes a model to GA or publishes a newer preview, bump this constant
+// and update both defaults in internal/config/config.go
+// (defaultGeminiNativeAudioModel / fallbackGeminiNativeAudioModel) so the
+// whole Framework picks up the new default without breaking running
+// deployments that pinned an explicit LiveConfig.Model.
+const defaultGeminiLiveModel = "gemini-3.1-flash-live-preview"
 
 // NewGeminiLive creates a Gemini Live provider.
 func NewGeminiLive() *GeminiLive {
@@ -50,20 +60,59 @@ func (g *GeminiLive) Connect(ctx context.Context, cfg LiveConfig) error {
 	}
 	g.client = client
 
-	model := resolvedGeminiLiveModel(cfg)
-
 	connectCfg := buildGeminiLiveConnectConfig(cfg)
-	session, err := client.Live.Connect(ctx, model, connectCfg)
-	if err != nil {
-		return fmt.Errorf("gemini live: connect to %s: %w", model, err)
+
+	// Build the candidate list: primary model first, then optional fallback.
+	// shouldTryFallback decides whether the fallback is distinct enough from
+	// the primary to be worth attempting; the function is tested in isolation
+	// because the genai SDK is awkward to mock end-to-end.
+	primary := resolvedGeminiLiveModel(cfg)
+	candidates := []string{primary}
+	if fallback := strings.TrimSpace(cfg.FallbackModel); shouldTryFallback(primary, fallback) {
+		candidates = append(candidates, fallback)
 	}
 
-	g.mu.Lock()
-	g.session = session
-	g.lastConfig = &cfg
-	g.mu.Unlock()
-	slog.Info("Gemini Live connected", "model", model, "voice", connectCfg.SpeechConfig.VoiceConfig.PrebuiltVoiceConfig.VoiceName)
-	return nil
+	var lastErr error
+	for i, model := range candidates {
+		session, err := client.Live.Connect(ctx, model, connectCfg)
+		if err == nil {
+			g.mu.Lock()
+			g.session = session
+			g.lastConfig = &cfg
+			g.mu.Unlock()
+			if i == 0 {
+				slog.Info("Gemini Live connected", "model", model, "voice", connectCfg.SpeechConfig.VoiceConfig.PrebuiltVoiceConfig.VoiceName)
+			} else {
+				slog.Warn("Gemini Live connected via fallback model",
+					"primary", candidates[0],
+					"fallback", model,
+					"primary_err", lastErr,
+					"voice", connectCfg.SpeechConfig.VoiceConfig.PrebuiltVoiceConfig.VoiceName,
+				)
+			}
+			return nil
+		}
+		lastErr = err
+		if i+1 < len(candidates) {
+			slog.Warn("Gemini Live primary connect failed; trying fallback",
+				"primary", model,
+				"err", err,
+			)
+		}
+	}
+	return fmt.Errorf("gemini live: connect to %v: %w", candidates, lastErr)
+}
+
+// shouldTryFallback reports whether a fallback model is worth attempting
+// when the primary fails. The fallback must be non-empty and different
+// from the primary; otherwise the second attempt would just re-trigger
+// the same failure.
+func shouldTryFallback(primary, fallback string) bool {
+	fallback = strings.TrimSpace(fallback)
+	if fallback == "" {
+		return false
+	}
+	return strings.TrimSpace(primary) != fallback
 }
 
 func (g *GeminiLive) SendAudio(chunk []byte) error {

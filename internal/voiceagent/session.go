@@ -186,7 +186,12 @@ type LiveProvider interface {
 
 // LiveConfig configures a real-time session.
 type LiveConfig struct {
-	Model            string // e.g. "gemini-2.5-flash-native-audio-preview-12-2025"
+	Model string // e.g. "gemini-3.1-flash-live-preview"
+	// FallbackModel is tried when the primary Model's Connect fails. Empty
+	// disables the fallback. Typical pairing in 2026: a preview model as
+	// Model + the last GA model as FallbackModel, so transient preview
+	// outages don't take down a Voice Agent deployment.
+	FallbackModel    string
 	APIKey           string
 	Voice            string // Voice name
 	FrameworkPrompt  string

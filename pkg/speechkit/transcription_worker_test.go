@@ -81,7 +81,7 @@ func (s *blockingPersistence) UpdateQuickNoteCapture(context.Context, int64, str
 	return nil
 }
 
-func (s *blockingPersistence) SaveTranscription(ctx context.Context, _ string, _ string, _ string, _ string, _ int64, _ int64, _ []byte) error {
+func (s *blockingPersistence) SaveTranscription(ctx context.Context, _, _, _, _ string, _, _ int64, _ []byte) error {
 	s.startedOnce.Do(func() { close(s.started) })
 	defer s.doneOnce.Do(func() { close(s.done) })
 

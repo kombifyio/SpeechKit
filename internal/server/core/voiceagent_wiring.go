@@ -1,0 +1,366 @@
+//go:build linux
+
+package core
+
+import (
+	"context"
+	"errors"
+	"log/slog"
+	"strings"
+	"time"
+
+	"github.com/kombifyio/SpeechKit/internal/config"
+	"github.com/kombifyio/SpeechKit/internal/server/persona"
+	vsserver "github.com/kombifyio/SpeechKit/internal/server/voiceagent"
+	vskernel "github.com/kombifyio/SpeechKit/internal/voiceagent"
+)
+
+// Supported provider strings for cfg.VoiceAgent.Provider.
+const (
+	ProviderGemini   = "gemini"
+	ProviderCascaded = "cascaded"
+	ProviderMoshi    = "moshi"
+)
+
+// buildVoiceAgentHandler wires the server-target Voice Agent handler,
+// dispatching between Gemini Live, Cascaded, and Moshi providers based on
+// cfg.VoiceAgent.Provider.
+//
+// /readyz surfaces the selected provider's state; the handler is always
+// mounted so POST /v1/voiceagent/sessions works even when the provider
+// itself is degraded (clients get a `provider_connect_failed` error at WS
+// upgrade rather than a 404 at session creation â€” operators can then read
+// /readyz to see why).
+func buildVoiceAgentHandler(ctx context.Context, cfg *config.Config, app *App) (*vsserver.Handler, string, error) {
+	provider := strings.ToLower(strings.TrimSpace(cfg.VoiceAgent.Provider))
+	if provider == "" {
+		provider = ProviderGemini
+	}
+
+	factory, status, err := buildProviderFactory(ctx, cfg, app, provider)
+	if err != nil {
+		return nil, status, err
+	}
+
+	manager, err := vsserver.NewSessionManager(vsserver.Options{
+		TicketTTL:              0,
+		MaxGlobalSessions:      cfg.Server.MaxVoiceAgentSessions,
+		MaxPerIdentitySessions: cfg.Server.MaxSessionsPerUser,
+	})
+	if err != nil {
+		return nil, status, err
+	}
+
+	resolver := &personaResolver{
+		cfg:      cfg,
+		apiKey:   strings.TrimSpace(config.ResolveSecret(cfg.Providers.Google.APIKeyEnv)),
+		registry: app.PersonaRegistry,
+	}
+
+	idleTimeout := time.Duration(cfg.Server.VoiceAgentIdleTimeoutSec) * time.Second
+	if cfg.Server.VoiceAgentIdleTimeoutSec < 0 {
+		// Negative value disables the watchdog explicitly. Pass through
+		// untouched; vsserver.New treats negatives as "disabled".
+		idleTimeout = -1
+	}
+
+	h, err := vsserver.New(vsserver.HandlerOptions{
+		Manager:     manager,
+		Provider:    factory,
+		Persona:     resolver,
+		IdleTimeout: idleTimeout,
+	})
+	if err != nil {
+		return nil, status, err
+	}
+	return h, status, nil
+}
+
+// buildProviderFactory constructs the ProviderFactory matching the configured
+// provider string. Returns a human-readable status for /readyz.
+func buildProviderFactory(ctx context.Context, cfg *config.Config, app *App, provider string) (vsserver.ProviderFactory, string, error) {
+	switch provider {
+	case ProviderGemini:
+		apiKey := strings.TrimSpace(config.ResolveSecret(cfg.Providers.Google.APIKeyEnv))
+		status := "ready (gemini)"
+		if apiKey == "" {
+			status = "degraded: no Google API key; Gemini Live sessions will fail at upgrade"
+		}
+		return &geminiProviderFactory{}, status, nil
+
+	case ProviderCascaded:
+		ensureSharedAIDeps(ctx, app)
+		if app.STTRouter == nil {
+			return nil, "degraded: cascaded provider needs STT router", errors.New("voiceagent: cascaded provider requires STT router (check provider keys)")
+		}
+		if app.AgentFlow == nil {
+			return nil, "degraded: no Genkit agent models configured", errors.New("voiceagent: cascaded provider requires at least one Genkit agent model")
+		}
+		status := "ready (cascaded)"
+		if !app.TTSEnabled {
+			status = "partial: cascaded provider running without TTS (transcript-only)"
+		}
+		var ttsImpl vsserver.CascadedTTS
+		if app.TTSRouter != nil {
+			ttsImpl = app.TTSRouter
+		}
+		factory := &cascadedProviderFactory{
+			stt:   app.STTRouter,
+			agent: vsserver.NewAgentFlowAdapter(app.AgentFlow),
+			tts:   ttsImpl,
+			cfg:   cfg,
+		}
+		return factory, status, nil
+
+	case ProviderMoshi:
+		// M9b implements this; ship a stub factory that produces helpful
+		// errors so operators discover the misconfiguration at session
+		// creation rather than silently succeeding and failing at upgrade.
+		return &moshiStubFactory{}, "unavailable: moshi provider is not yet implemented (pending M9b)", nil
+
+	default:
+		return nil, "unknown provider", errors.New("voiceagent: unsupported provider " + provider)
+	}
+}
+
+// â”€â”€ persona resolver â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+
+// personaResolver implements vsserver.PersonaResolver by composing a
+// LiveConfigFrame from three layers, in order of precedence:
+//
+//  1. explicit fields on the client-sent StartFrame (highest priority)
+//  2. the resolved persona + role + sequence step from the registry
+//  3. the server-wide [voice_agent] config (lowest)
+//
+// This preserves the previous behaviour when no persona_id is supplied
+// (falls straight to config defaults) while giving clients full control
+// when they do pick a persona.
+type personaResolver struct {
+	cfg      *config.Config
+	apiKey   string
+	registry *persona.Registry
+}
+
+func (r *personaResolver) Resolve(start vsserver.StartFrame) (vsserver.LiveConfigFrame, error) {
+	va := r.cfg.VoiceAgent
+
+	frame := vsserver.LiveConfigFrame{
+		Model:             firstNonEmpty(start.Model, va.Model),
+		FallbackModel:     va.FallbackModel,
+		APIKey:            r.apiKey,
+		Voice:             firstNonEmpty(start.Voice, va.Voice),
+		SystemPrompt:      firstNonEmpty(start.SystemPromptOverride, va.FrameworkPrompt),
+		RefinementPrompt:  va.RefinementPrompt,
+		Locale:            firstNonEmpty(start.Locale, r.cfg.General.Language, "en"),
+		Automatic:         va.AutomaticActivityDetection,
+		StartSensitivity:  va.VADStartSensitivity,
+		EndSensitivity:    va.VADEndSensitivity,
+		PrefixPaddingMs:   int32(va.VADPrefixPaddingMs),
+		SilenceDurationMs: int32(va.VADSilenceDurationMs),
+		ActivityHandling:  va.ActivityHandling,
+		TurnCoverage:      va.TurnCoverage,
+	}
+
+	// Layer (2): persona + role + sequence. Only applied when a persona_id
+	// is present â€” clients that don't pick a persona get pure config
+	// defaults, preserving backward compatibility with M4.
+	personaID := strings.TrimSpace(start.PersonaID)
+	if personaID != "" && r.registry != nil {
+		resolved, err := r.registry.Resolve(personaID, start.RoleID, start.SequenceID, 0)
+		if err != nil {
+			return vsserver.LiveConfigFrame{}, err
+		}
+		if strings.TrimSpace(start.Voice) == "" && resolved.Voice != "" {
+			frame.Voice = resolved.Voice
+		}
+		if strings.TrimSpace(start.Locale) == "" && resolved.Locale != "" {
+			frame.Locale = resolved.Locale
+		}
+		if strings.TrimSpace(start.SystemPromptOverride) == "" && resolved.SystemPrompt != "" {
+			frame.SystemPrompt = resolved.SystemPrompt
+		}
+		if resolved.RefinementPrompt != "" {
+			frame.RefinementPrompt = resolved.RefinementPrompt
+		}
+		// Role VAD/activity fields override config defaults only when they
+		// are non-empty â€” this keeps roles minimal without wiping server
+		// defaults that the admin cares about.
+		if resolved.AutomaticVAD {
+			frame.Automatic = true
+		}
+		if resolved.StartSensitivity != "" {
+			frame.StartSensitivity = resolved.StartSensitivity
+		}
+		if resolved.EndSensitivity != "" {
+			frame.EndSensitivity = resolved.EndSensitivity
+		}
+		if resolved.PrefixPaddingMs != 0 {
+			frame.PrefixPaddingMs = resolved.PrefixPaddingMs
+		}
+		if resolved.SilenceDurationMs != 0 {
+			frame.SilenceDurationMs = resolved.SilenceDurationMs
+		}
+		if resolved.ActivityHandling != "" {
+			frame.ActivityHandling = resolved.ActivityHandling
+		}
+		if resolved.TurnCoverage != "" {
+			frame.TurnCoverage = resolved.TurnCoverage
+		}
+	}
+
+	// Layer (1): explicit client activity-detection override.
+	if start.ActivityDetection != nil {
+		ad := start.ActivityDetection
+		frame.Automatic = ad.Automatic
+		if ad.StartSensitivity != "" {
+			frame.StartSensitivity = ad.StartSensitivity
+		}
+		if ad.EndSensitivity != "" {
+			frame.EndSensitivity = ad.EndSensitivity
+		}
+		if ad.PrefixPaddingMs != 0 {
+			frame.PrefixPaddingMs = ad.PrefixPaddingMs
+		}
+		if ad.SilenceDurationMs != 0 {
+			frame.SilenceDurationMs = ad.SilenceDurationMs
+		}
+		if ad.ActivityHandling != "" {
+			frame.ActivityHandling = ad.ActivityHandling
+		}
+		if ad.TurnCoverage != "" {
+			frame.TurnCoverage = ad.TurnCoverage
+		}
+	}
+	return frame, nil
+}
+
+// â”€â”€ Gemini Live provider factory + bridge â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+
+type geminiProviderFactory struct{}
+
+func (f *geminiProviderFactory) NewProvider() vsserver.LiveProviderAdapter {
+	return &geminiLiveBridge{inner: vskernel.NewGeminiLive()}
+}
+
+// geminiLiveBridge adapts the Framework kernel's Gemini Live implementation
+// to the narrow interface the WebSocket handler consumes. The translation
+// is mostly field-for-field; kernel enum types are rebuilt from the string
+// fields on vsserver.LiveConfigFrame.
+type geminiLiveBridge struct {
+	inner *vskernel.GeminiLive
+}
+
+func (b *geminiLiveBridge) Connect(ctx context.Context, cfg vsserver.LiveConfigFrame) error {
+	if cfg.APIKey == "" {
+		return errors.New("voiceagent: no Google API key configured for this deployment")
+	}
+	liveCfg := vskernel.LiveConfig{
+		Model:            cfg.Model,
+		FallbackModel:    cfg.FallbackModel,
+		APIKey:           cfg.APIKey,
+		Voice:            cfg.Voice,
+		FrameworkPrompt:  cfg.SystemPrompt,
+		RefinementPrompt: cfg.RefinementPrompt,
+		Locale:           cfg.Locale,
+		Policies: vskernel.LivePolicies{
+			EnableInputAudioTranscription:  true,
+			EnableOutputAudioTranscription: true,
+			ActivityDetection: vskernel.ActivityDetectionPolicy{
+				Automatic:         cfg.Automatic,
+				StartSensitivity:  vskernel.StartSensitivity(strings.ToLower(cfg.StartSensitivity)),
+				EndSensitivity:    vskernel.EndSensitivity(strings.ToLower(cfg.EndSensitivity)),
+				PrefixPaddingMs:   cfg.PrefixPaddingMs,
+				SilenceDurationMs: cfg.SilenceDurationMs,
+				ActivityHandling:  vskernel.ActivityHandling(strings.ToLower(cfg.ActivityHandling)),
+				TurnCoverage:      vskernel.TurnCoverage(strings.ToLower(cfg.TurnCoverage)),
+			},
+		},
+	}
+	if err := b.inner.Connect(ctx, liveCfg); err != nil {
+		slog.Warn("voiceagent: Gemini Live connect failed", "err", err)
+		return err
+	}
+	return nil
+}
+
+func (b *geminiLiveBridge) SendAudio(chunk []byte) error { return b.inner.SendAudio(chunk) }
+func (b *geminiLiveBridge) SendAudioStreamEnd() error    { return b.inner.SendAudioStreamEnd() }
+func (b *geminiLiveBridge) SendText(text string) error   { return b.inner.SendText(text) }
+func (b *geminiLiveBridge) Close() error                 { return b.inner.Close() }
+func (b *geminiLiveBridge) Name() string                 { return b.inner.Name() }
+
+func (b *geminiLiveBridge) Receive(ctx context.Context) (*vsserver.LiveMessage, error) {
+	msg, err := b.inner.Receive(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if msg == nil {
+		return nil, nil
+	}
+	return &vsserver.LiveMessage{
+		Audio:                msg.Audio,
+		InputTranscript:      msg.InputTranscript,
+		InputTranscriptDone:  msg.InputTranscriptDone,
+		OutputTranscript:     msg.OutputTranscript,
+		OutputTranscriptDone: msg.OutputTranscriptDone,
+		Interrupted:          msg.Interrupted,
+		GoAway:               msg.GoAway,
+	}, nil
+}
+
+// â”€â”€ Cascaded provider factory â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+
+// cascadedProviderFactory produces CascadedProvider instances backed by the
+// shared AI deps held on App. Each session gets its own provider so
+// turn-state (buffer, conversation history, in-flight STT/LLM/TTS) is
+// isolated between concurrent sessions. The STT router, agent flow, and
+// TTS router themselves are stateless/thread-safe and are reused across
+// sessions.
+type cascadedProviderFactory struct {
+	stt   vsserver.CascadedSTT
+	agent vsserver.CascadedAgent
+	tts   vsserver.CascadedTTS
+	cfg   *config.Config
+}
+
+func (f *cascadedProviderFactory) NewProvider() vsserver.LiveProviderAdapter {
+	return vsserver.NewCascadedProvider(vsserver.CascadedDeps{
+		STT:   f.stt,
+		Agent: f.agent,
+		TTS:   f.tts,
+		Config: vsserver.CascadedConfig{
+			TTSFormat: firstNonEmpty(f.cfg.TTS.Format, "mp3"),
+			TTSSpeed:  nonZeroFloat(f.cfg.TTS.Speed, 1.0),
+		},
+	})
+}
+
+// moshiStubFactory returns providers that report a clear "not implemented"
+// error at Connect time. Used until M9b wires the real Moshi client.
+type moshiStubFactory struct{}
+
+func (moshiStubFactory) NewProvider() vsserver.LiveProviderAdapter {
+	return &moshiStubProvider{}
+}
+
+type moshiStubProvider struct{}
+
+func (moshiStubProvider) Connect(_ context.Context, _ vsserver.LiveConfigFrame) error {
+	return errors.New("voiceagent: moshi provider not yet implemented (pending M9b)")
+}
+func (moshiStubProvider) SendAudio([]byte) error    { return nil }
+func (moshiStubProvider) SendAudioStreamEnd() error { return nil }
+func (moshiStubProvider) SendText(string) error     { return nil }
+func (moshiStubProvider) Close() error              { return nil }
+func (moshiStubProvider) Name() string              { return "moshi-stub" }
+func (moshiStubProvider) Receive(ctx context.Context) (*vsserver.LiveMessage, error) {
+	<-ctx.Done()
+	return nil, ctx.Err()
+}
+
+func nonZeroFloat(v, fallback float64) float64 {
+	if v > 0 {
+		return v
+	}
+	return fallback
+}

@@ -1,0 +1,120 @@
+name: Windows Build
+
+# Windows-only canonical bundle build. Lives in its own file (instead
+# of being a job inside ci.yml) so a Windows runner is NEVER the
+# silent fallback for a generic CI runner — the previous shape
+# (`runs-on: ${{ vars.WINDOWS_CI_RUNNER || 'windows-2025' }}` inside
+# CI) burned metered Windows minutes on the private dev repo every
+# time WINDOWS_CI_RUNNER wasn't explicitly set.
+#
+# Where this workflow runs:
+#
+#   * On the OSS public repo (kombifyio/SpeechKit): GitHub-hosted
+#     Windows runners are unmetered for public repositories, so the
+#     `windows-2025` fallback is fine. The `if:` guard below admits
+#     this path explicitly.
+#
+#   * On the private dev repo (KombiverseLabs/kombify-SpeechKit):
+#     ONLY runs when the operator has wired a self-hosted Windows
+#     runner via `vars.WINDOWS_CI_RUNNER`. If the variable is unset,
+#     the `if:` guard skips the whole job — no accidental fallback
+#     onto metered GitHub-hosted Windows.
+#
+# The Wails Windows bundle is genuinely Windows-only (CGo + MinGW +
+# NSIS + the Windows-specific malgo/wails/winapi packages), so this
+# workflow can't be moved to Linux. But it's quarantined here, away
+# from cross-platform Go analysis that has no business being on
+# Windows.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'cmd/speechkit/**'
+      - 'internal/audio/**'
+      - 'internal/hotkey/**'
+      - 'internal/output/**'
+      - 'internal/tray/**'
+      - 'internal/winapi/**'
+      - 'frontend/**'
+      - 'scripts/build.ps1'
+      - 'wails.json'
+      - 'go.mod'
+      - 'go.sum'
+      - '.github/workflows/windows-build.yml'
+  pull_request:
+    paths:
+      - 'cmd/speechkit/**'
+      - 'internal/audio/**'
+      - 'internal/hotkey/**'
+      - 'internal/output/**'
+      - 'internal/tray/**'
+      - 'internal/winapi/**'
+      - 'frontend/**'
+      - 'scripts/build.ps1'
+      - 'wails.json'
+      - 'go.mod'
+      - 'go.sum'
+      - '.github/workflows/windows-build.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: windows-build-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
+
+jobs:
+  windows-bundle:
+    name: Windows Bundle
+    # See header comment for the full rationale. Short version: never
+    # let `windows-2025` be a silent fallback on the dev repo.
+    if: >-
+      github.repository == 'kombifyio/SpeechKit' ||
+      vars.WINDOWS_CI_RUNNER != ''
+    runs-on: ${{ vars.WINDOWS_CI_RUNNER || 'windows-2025' }}
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+
+      - name: Setup Go
+        uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c
+        with:
+          go-version: '1.26.2'
+          cache: true
+
+      - name: Setup Node
+        uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/app/package-lock.json
+
+      - name: Setup MinGW
+        uses: msys2/setup-msys2@cafece8e6baf9247cf9b1bf95097b0b983cc558d
+        with:
+          update: true
+          install: >-
+            mingw-w64-x86_64-gcc
+
+      - name: Install NSIS
+        shell: pwsh
+        run: choco install nsis -y --no-progress
+
+      - name: Run canonical Windows bundle build
+        shell: pwsh
+        run: ./scripts/build.ps1 -SkipInstaller -SkipVerification
+
+      - name: Upload embedded frontend assets
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: speechkit-frontend-assets
+          path: internal/frontendassets/dist
+          retention-days: 1

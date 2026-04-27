@@ -90,19 +90,43 @@ dictionary = ""           # One entry per line. Use "spoken => canonical" for co
 # Mode Model Selection — same per-mode provider settings exposed by /api/v1/modes/{mode}/settings
 # Every mode supports the four V23 provider groups: local built-in, local provider, cloud provider, direct provider.
 # Use GET /api/v1/providers/profiles and GET /api/v1/providers/readiness for host-managed setup flows.
+#
+# Each mode also has an optional `mode_source` field:
+#   "local"  — run the mode against the in-process Framework kernel (default).
+#   "server" — route the mode through [server_connection] to a remote
+#              speechkit-server. Requires server_connection.enabled = true.
+# Empty / missing is treated as "local" so existing configs keep their
+# pre-0.26 behaviour.
 # ──────────────────────────────────────────────
 
 [model_selection.dictate]
 primary_profile_id = "stt.local.whispercpp"    # Default local built-in primary. Alternatives: stt.ollama.gemma4-e4b-transcribe, stt.routed.whisper-large-v3, stt.openai.whisper-1
 fallback_profile_id = ""
+mode_source = "local"  # "local" | "server"
 
 [model_selection.assist]
 primary_profile_id = "assist.builtin.gemma4-e4b"    # Default local built-in Assist LLM. Alternatives: assist.ollama.gemma4-e4b, assist.openai.gpt-5.4
 fallback_profile_id = ""
+mode_source = "local"
 
 [model_selection.voice_agent]
 primary_profile_id = "realtime.google.gemini-native-audio" # Default realtime Voice Agent. Alternatives: realtime.ollama.gemma4-e4b-pipeline, realtime.hf.qwen35-27b
 fallback_profile_id = ""
+mode_source = "local"
+
+# ──────────────────────────────────────────────
+# Server Connection — points the desktop app at a remote speechkit-server.
+# Only consulted when at least one mode has mode_source = "server".
+# The server itself ignores this section; this is a device/local-target
+# concern only.
+# ──────────────────────────────────────────────
+
+[server_connection]
+enabled = false                              # Master switch. When false, every mode forces back to local.
+url = ""                                     # e.g. "https://speechkit.example.com" or "http://localhost:8080"
+bearer_token_env = "SPEECHKIT_SERVER_TOKEN"  # Env var name. The token value is never read from this file.
+fallback_to_local = true                     # If a server call fails, retry against the in-process kernel.
+request_timeout_sec = 30                     # Caps non-streaming HTTP calls. WebSocket sessions are unaffected.
 
 # ──────────────────────────────────────────────
 # Shortcuts — additive command aliases per locale

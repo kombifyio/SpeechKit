@@ -39,6 +39,8 @@ config.toml
 
 # Local tooling state
 .cache/
+.claude/settings.local.json
+.claude/scheduled_tasks.lock
 .codex-tmp/
 .tmp-website-npm-ci/
 .release-src-v*/

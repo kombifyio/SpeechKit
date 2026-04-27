@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"os"
 	"strings"
 
 	"github.com/kombifyio/SpeechKit/internal/config"
@@ -23,6 +24,10 @@ type apiV1ModeSettingsPatch struct {
 	SessionSummary    *bool   `json:"sessionSummary"`
 	PipelineFallback  *bool   `json:"pipelineFallback"`
 	CloseBehavior     *string `json:"closeBehavior"`
+	// ModeSource gates per-mode local-vs-server execution. Accepted
+	// values are "local" and "server"; anything else is treated as
+	// "local" so rogue clients can't accidentally send remote calls.
+	ModeSource *string `json:"modeSource"`
 }
 
 type apiV1UserError string
@@ -103,13 +108,16 @@ func applyAPIV1ModeSettingsPatch(ctx context.Context, cfgPath string, cfg *confi
 			cfg.General.VoiceAgentHotkeyBehavior = behavior
 		}
 	}
-	if patch.PrimaryProfileID != nil || patch.FallbackProfileID != nil {
+	if patch.PrimaryProfileID != nil || patch.FallbackProfileID != nil || patch.ModeSource != nil {
 		selection := modeSelectionForMode(cfg, mode)
 		if patch.PrimaryProfileID != nil {
 			selection.PrimaryProfileID = strings.TrimSpace(*patch.PrimaryProfileID)
 		}
 		if patch.FallbackProfileID != nil {
 			selection.FallbackProfileID = strings.TrimSpace(*patch.FallbackProfileID)
+		}
+		if patch.ModeSource != nil {
+			selection.ModeSource = normaliseModeSourcePatch(*patch.ModeSource)
 		}
 		selection = normalizeModeSelection(selection)
 		if err := validateModeSelection(cfg, filteredModelCatalog(), mode, selection); err != nil {
@@ -231,6 +239,7 @@ func apiV1ModeSettingsFromConfig(cfg *config.Config) speechkit.ModeSettings {
 				HotkeyBehavior:    cfg.General.DictateHotkeyBehavior,
 				PrimaryProfileID:  dictateSelection.PrimaryProfileID,
 				FallbackProfileID: dictateSelection.FallbackProfileID,
+				ModeSource:        dictateSelection.ResolvedModeSource(),
 			},
 			DictionaryEnabled: strings.TrimSpace(cfg.Vocabulary.Dictionary) != "",
 		},
@@ -241,6 +250,7 @@ func apiV1ModeSettingsFromConfig(cfg *config.Config) speechkit.ModeSettings {
 				HotkeyBehavior:    cfg.General.AssistHotkeyBehavior,
 				PrimaryProfileID:  assistSelection.PrimaryProfileID,
 				FallbackProfileID: assistSelection.FallbackProfileID,
+				ModeSource:        assistSelection.ResolvedModeSource(),
 			},
 			TTSEnabled:      cfg.TTS.Enabled,
 			UtilityRegistry: "default",
@@ -252,11 +262,45 @@ func apiV1ModeSettingsFromConfig(cfg *config.Config) speechkit.ModeSettings {
 				HotkeyBehavior:    cfg.General.VoiceAgentHotkeyBehavior,
 				PrimaryProfileID:  voiceSelection.PrimaryProfileID,
 				FallbackProfileID: voiceSelection.FallbackProfileID,
+				ModeSource:        voiceSelection.ResolvedModeSource(),
 			},
 			SessionSummary:   cfg.VoiceAgent.EnableSessionSummary,
 			PipelineFallback: cfg.VoiceAgent.PipelineFallback,
 			CloseBehavior:    cfg.VoiceAgent.CloseBehavior,
 		},
+		ServerConnection: serverConnectionSettingFromConfig(cfg.ServerConnection),
+	}
+}
+
+// serverConnectionSettingFromConfig copies the [server_connection]
+// config into the public surface, never including the bearer-token
+// value itself (only the env var name + a "is the env var set" boolean
+// so the UI can render a "missing token" warning).
+func serverConnectionSettingFromConfig(cfg config.ServerConnectionConfig) speechkit.ServerConnectionSetting {
+	tokenSet := false
+	if env := strings.TrimSpace(cfg.BearerTokenEnv); env != "" {
+		tokenSet = strings.TrimSpace(os.Getenv(env)) != ""
+	}
+	return speechkit.ServerConnectionSetting{
+		Enabled:           cfg.Enabled,
+		URL:               cfg.URL,
+		BearerTokenEnv:    cfg.BearerTokenEnv,
+		BearerTokenSet:    tokenSet,
+		FallbackToLocal:   cfg.FallbackToLocal,
+		RequestTimeoutSec: cfg.RequestTimeoutSec,
+	}
+}
+
+// normaliseModeSourcePatch is the trust boundary for ModeSource patches:
+// only the two known values are accepted; anything else collapses to
+// "local" so a rogue or buggy frontend can't accidentally route traffic
+// to a server that the user didn't approve.
+func normaliseModeSourcePatch(in string) string {
+	switch strings.TrimSpace(strings.ToLower(in)) {
+	case config.ModeSourceServer:
+		return config.ModeSourceServer
+	default:
+		return config.ModeSourceLocal
 	}
 }
 

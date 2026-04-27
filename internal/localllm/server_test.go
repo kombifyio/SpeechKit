@@ -19,7 +19,7 @@ func TestValidateModelPathRejectsUnsafeNames(t *testing.T) {
 	for _, path := range []string{
 		"",
 		"gemma-3-4b-it-Q4_K_M.gguf",
-		dir + string(os.PathSeparator) + ".." + string(os.PathSeparator) + "model.gguf",
+		dir + string(os.PathSeparator) + ".." + string(os.PathSeparator) + "model.gguf", //nolint:gocritic // intentional un-joined path — filepath.Join would collapse ".." and defeat the traversal test
 		filepath.Join(t.TempDir(), "model.bin"),
 		filepath.Join(t.TempDir(), "-bad.gguf"),
 	} {

@@ -15,8 +15,29 @@ func prepareVoiceAgentSession(state *appState, cfg *config.Config) *voiceagent.S
 		return nil
 	}
 
-	geminiProvider := voiceagent.NewGeminiLive()
-	return voiceagent.NewSession(geminiProvider, buildVoiceAgentCallbacks(state, cfg))
+	provider := selectVoiceAgentProvider(state, cfg)
+	if provider == nil {
+		// Fall back to the in-process Gemini Live provider â€” preserves
+		// pre-0.26 behaviour when the server delegate is unavailable.
+		provider = voiceagent.NewGeminiLive()
+	}
+	return voiceagent.NewSession(provider, buildVoiceAgentCallbacks(state, cfg))
+}
+
+// selectVoiceAgentProvider returns the server-delegated LiveProvider when
+// the user opted Voice Agent into server-side execution; nil otherwise.
+// nil tells the caller to keep the in-process provider.
+func selectVoiceAgentProvider(state *appState, cfg *config.Config) voiceagent.LiveProvider {
+	if state == nil {
+		return nil
+	}
+	state.mu.Lock()
+	delegates := state.serverDelegates
+	state.mu.Unlock()
+	if !delegates.hasVoiceAgent() {
+		return nil
+	}
+	return delegates.newVoiceAgentProvider(cfg)
 }
 
 func buildVoiceAgentCallbacks(state *appState, cfg *config.Config) voiceagent.Callbacks {

@@ -1724,6 +1724,9 @@ func TestSaveSettingsAllowsNonHFChangesWithoutHFValidation(t *testing.T) {
 }
 
 func TestSaveSettingsKeepsManagedHFEnabledWhenBuildDefaultsAreActive(t *testing.T) {
+	restoreSecrets := secrets.UseMemoryStoreForTests()
+	defer restoreSecrets()
+
 	restoreBuild := config.OverrideManagedHuggingFaceBuildForTests("1")
 	defer restoreBuild()
 
@@ -1872,6 +1875,9 @@ func TestSaveSettingsSwitchesActiveOverlayWindowToDotVisualizer(t *testing.T) {
 }
 
 func TestBuildRouterEnablesHFWhenConfiguredAndTokenAvailable(t *testing.T) {
+	restoreSecrets := secrets.UseMemoryStoreForTests()
+	defer restoreSecrets()
+
 	restoreBuild := config.OverrideManagedHuggingFaceBuildForTests("1")
 	defer restoreBuild()
 
@@ -1891,6 +1897,9 @@ func TestBuildRouterEnablesHFWhenConfiguredAndTokenAvailable(t *testing.T) {
 }
 
 func TestBuildRouterAutoEnablesManagedHFForCloudOnlyWhenExplicitlyEnabled(t *testing.T) {
+	restoreSecrets := secrets.UseMemoryStoreForTests()
+	defer restoreSecrets()
+
 	restoreBuild := config.OverrideManagedHuggingFaceBuildForTests("1")
 	defer restoreBuild()
 

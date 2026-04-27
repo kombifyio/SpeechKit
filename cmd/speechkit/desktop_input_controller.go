@@ -264,7 +264,10 @@ func (c desktopInputController) deactivateVoiceAgentAfterPushToTalkTurn(ctx cont
 			switch state := session.CurrentState(); state {
 			case voiceagent.StateInactive:
 				return
-			case voiceagent.StateConnecting, voiceagent.StateProcessing, voiceagent.StateSpeaking, voiceagent.StateDeactivating:
+			case voiceagent.StateConnecting, voiceagent.StateProcessing, voiceagent.StateSpeaking, voiceagent.StateDeactivating, voiceagent.StateRecovering:
+				// StateRecovering is treated like an in-flight turn: the user's speech
+				// went somewhere, but the session is reconnecting to retrieve the reply.
+				// Keep polling rather than cutting the push-to-talk short.
 				seenTurnInFlight = true
 			case voiceagent.StateListening:
 				if seenTurnInFlight {
@@ -459,7 +462,7 @@ func (c desktopInputController) activateVoiceAgent(ctx context.Context) {
 		return
 	}
 
-	model := "gemini-2.5-flash-native-audio-preview-12-2025"
+	model := "gemini-3.1-flash-live-preview"
 	voice := "Kore"
 	locale := "en"
 	if c.voiceAgentConfig != nil {

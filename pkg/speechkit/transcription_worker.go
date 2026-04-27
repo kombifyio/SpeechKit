@@ -230,7 +230,7 @@ func (w *TranscriptionWorker) handleJob(ctx context.Context, job TranscriptionJo
 
 	if w.output == nil {
 		if !job.QuickNote {
-			w.persistTranscriptionAsync(job.Submission, transcript)
+			w.persistTranscriptionAsync(job.Submission, transcript) //nolint:contextcheck // fire-and-forget history write; uses its own 15s timeout context
 		}
 		return
 	}
@@ -238,7 +238,7 @@ func (w *TranscriptionWorker) handleJob(ctx context.Context, job TranscriptionJo
 		w.onLog(fmt.Sprintf("Output error: %v", err), "error")
 	}
 	if !job.QuickNote {
-		w.persistTranscriptionAsync(job.Submission, transcript)
+		w.persistTranscriptionAsync(job.Submission, transcript) //nolint:contextcheck // fire-and-forget history write; uses its own 15s timeout context
 	}
 }
 

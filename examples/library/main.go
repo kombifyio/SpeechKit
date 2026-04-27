@@ -77,7 +77,11 @@ func (o *exampleObserver) OnLog(message, kind string) {
 }
 
 func (o *exampleObserver) OnTranscriptCommitted(transcript speechkit.Transcript, quickNote bool) {
-	fmt.Printf("[result] %s (provider: %s, model: %s)\n", transcript.Text, transcript.Provider, transcript.Model)
+	label := "result"
+	if quickNote {
+		label = "quick-note"
+	}
+	fmt.Printf("[%s] %s (provider: %s, model: %s)\n", label, transcript.Text, transcript.Provider, transcript.Model)
 }
 
 // --- Step 4: Implement output delivery ---

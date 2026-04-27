@@ -33,6 +33,9 @@ var sqliteMigration005 string
 //go:embed migrations/sqlite/006_voice_agent_sessions.sql
 var sqliteMigration006 string
 
+//go:embed migrations/sqlite/007_personas.sql
+var sqliteMigration007 string
+
 // SQLiteStore implements Store using a local SQLite database.
 // Uses modernc.org/sqlite (pure Go, no CGo required).
 type SQLiteStore struct {
@@ -92,6 +95,9 @@ func NewSQLiteStore(cfg StoreConfig) (*SQLiteStore, error) {
 	if _, err := db.ExecContext(context.Background(), sqliteMigration006); err != nil {
 		return nil, fmt.Errorf("migrate 006: %w", err)
 	}
+	if _, err := db.ExecContext(context.Background(), sqliteMigration007); err != nil {
+		return nil, fmt.Errorf("migrate 007: %w", err)
+	}
 
 	store := &SQLiteStore{
 		db:                      db,
@@ -109,6 +115,13 @@ func NewSQLiteStore(cfg StoreConfig) (*SQLiteStore, error) {
 	}
 	return store, nil
 }
+
+// DB exposes the underlying *sql.DB so adjacent packages can build their
+// own table-scoped persisters (e.g. the persona catalog in
+// internal/server/persona) without the base Store interface needing to
+// enumerate every optional capability. Callers must treat the returned
+// handle as read-mostly: it is owned by the Store and must not be closed.
+func (s *SQLiteStore) DB() *sql.DB { return s.db }
 
 func (s *SQLiteStore) SaveTranscription(ctx context.Context, text, language, provider, model string, durationMs, latencyMs int64, audioData []byte) error {
 	var audioPath string

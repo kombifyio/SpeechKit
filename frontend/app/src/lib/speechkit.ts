@@ -160,7 +160,10 @@ export type APIV1ModeSettings = {
     pipelineFallback: boolean;
     closeBehavior?: VoiceAgentCloseBehavior;
   };
+  serverConnection: ServerConnectionSetting;
 };
+
+export type ModeSource = "local" | "server";
 
 export type ModeModelSetting = {
   enabled: boolean;
@@ -168,6 +171,23 @@ export type ModeModelSetting = {
   hotkeyBehavior?: HotkeyBehavior;
   primaryProfileId?: string;
   fallbackProfileId?: string;
+  /**
+   * "local" runs the mode against the in-process Framework kernel
+   * (default, pre-0.26 behaviour). "server" routes the mode through
+   * the configured ServerConnection. Empty/missing is treated as
+   * "local" by the backend.
+   */
+  modeSource?: ModeSource;
+};
+
+export type ServerConnectionSetting = {
+  enabled: boolean;
+  url: string;
+  bearerTokenEnv?: string;
+  /** True iff the env var named by bearerTokenEnv is set in the host process. */
+  bearerTokenSet: boolean;
+  fallbackToLocal: boolean;
+  requestTimeoutSec: number;
 };
 
 export type APIV1ModesResponse = {
@@ -1272,6 +1292,7 @@ export async function patchAPIV1ModeSettings(
       sessionSummary: boolean;
       pipelineFallback: boolean;
       closeBehavior: VoiceAgentCloseBehavior;
+      modeSource: ModeSource;
     }
   >,
 ): Promise<ModeModelSetting> {
@@ -1287,6 +1308,45 @@ export async function patchAPIV1ModeSettings(
     );
   }
   return (await response.json()) as ModeModelSetting;
+}
+
+/**
+ * Fetches the [server_connection] device-target settings. The bearer
+ * token value never crosses this boundary — only the env var name
+ * + a "is the env var set" boolean so the UI can show a hint.
+ */
+export async function fetchAPIV1ServerConnection(): Promise<ServerConnectionSetting> {
+  const resp = await fetch("/api/v1/server-connection", { cache: "no-store" });
+  if (!resp.ok) {
+    const errorText = await resp.text();
+    throw new Error(
+      errorText || `server-connection fetch failed: ${resp.status}`,
+    );
+  }
+  return (await resp.json()) as ServerConnectionSetting;
+}
+
+export async function patchAPIV1ServerConnection(
+  patch: Partial<{
+    enabled: boolean;
+    url: string;
+    bearerTokenEnv: string;
+    fallbackToLocal: boolean;
+    requestTimeoutSec: number;
+  }>,
+): Promise<ServerConnectionSetting> {
+  const resp = await fetch("/api/v1/server-connection", {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(patch),
+  });
+  if (!resp.ok) {
+    const errorText = await resp.text();
+    throw new Error(
+      errorText || `server-connection patch failed: ${resp.status}`,
+    );
+  }
+  return (await resp.json()) as ServerConnectionSetting;
 }
 
 export async function activateAPIV1ProviderProfile(

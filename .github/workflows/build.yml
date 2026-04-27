@@ -13,7 +13,15 @@ concurrency:
 jobs:
   windows-bundle:
     name: Build Windows Bundle
-    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
+    # Same Windows-fallback guard as windows-build.yml: never let
+    # `windows-2025` be a silent fallback on the private dev repo. On
+    # the OSS public repo Windows runners are unmetered; on the dev
+    # repo the operator must wire WINDOWS_BUILD_RUNNER to a self-
+    # hosted Windows runner explicitly. Otherwise the manual
+    # workflow_dispatch becomes a no-op.
+    if: >-
+      (github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success') &&
+      (github.repository == 'kombifyio/SpeechKit' || vars.WINDOWS_BUILD_RUNNER != '')
     runs-on: ${{ vars.WINDOWS_BUILD_RUNNER || 'windows-2025' }}
     timeout-minutes: 40
 

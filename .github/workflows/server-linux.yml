@@ -1,0 +1,142 @@
+name: server-linux
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "cmd/speechkit-server/**"
+      - "cmd/speechkit-voice/**"
+      - "internal/server/**"
+      - "internal/config/**"
+      - "deploy/docker/**"
+      - "deploy/config/**"
+      - "go.mod"
+      - "go.sum"
+      - ".github/workflows/server-linux.yml"
+  pull_request:
+    paths:
+      - "cmd/speechkit-server/**"
+      - "cmd/speechkit-voice/**"
+      - "internal/server/**"
+      - "internal/config/**"
+      - "deploy/docker/**"
+      - "deploy/config/**"
+      - "go.mod"
+      - "go.sum"
+      - ".github/workflows/server-linux.yml"
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: build-and-vet
+    # On the private dev repo (KombiverseLabs/kombify-SpeechKit) this
+    # falls through to vars.CI_RUNNER, which is wired to a self-hosted
+    # Linux runner so push CI doesn't burn private-repo Actions
+    # minutes. On the OSS repo (kombifyio/SpeechKit) the variable is
+    # unset and we land on ubuntu-latest, which is unmetered for
+    # public repos. Either way the Linux toolchain step below works
+    # the same.
+    runs-on: ${{ vars.CI_RUNNER || 'ubuntu-latest' }}
+    env:
+      CGO_ENABLED: "1"
+      GOOS: linux
+      GOARCH: amd64
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.26.x"
+          cache: true
+
+      - name: Install native toolchain for cgo
+        # oto/v3 links against ALSA on Linux (via pkg-config) and the Silero
+        # VAD ONNX runtime will be pulled in once M4 lands. ffmpeg is
+        # required by the audio-ingress WebM/Opus + OGG/Opus paths (T4) so
+        # the corresponding tests run in CI rather than skip. The runtime
+        # Dockerfile installs the same set, keeping CI honest about
+        # production parity.
+        #
+        # Retries the apt invocations to survive `/var/lib/dpkg/lock-
+        # frontend` contention when this workflow shares a self-hosted
+        # runner with ci.yml's Go Analysis job. Same pattern is used
+        # there.
+        run: |
+          set -eu
+          tries=0
+          until sudo apt-get update; do
+            tries=$((tries + 1))
+            if [ "$tries" -ge 12 ]; then
+              echo "apt-get update kept failing after $tries tries; giving up" >&2
+              exit 1
+            fi
+            echo "apt locked, retry $tries in 5s…"
+            sleep 5
+          done
+          tries=0
+          until sudo apt-get install -y --no-install-recommends \
+              gcc libc6-dev libasound2-dev pkg-config ffmpeg; do
+            tries=$((tries + 1))
+            if [ "$tries" -ge 12 ]; then
+              echo "apt-get install kept failing after $tries tries; giving up" >&2
+              exit 1
+            fi
+            echo "apt locked, retry $tries in 5s…"
+            sleep 5
+          done
+
+      - name: go mod verify
+        run: go mod verify
+
+      - name: go vet (server-target packages)
+        run: |
+          go vet ./cmd/speechkit-server/...
+          go vet ./cmd/speechkit-voice/...
+          go vet ./internal/server/...
+          go vet ./internal/config/...
+
+      - name: go build (server + voice)
+        run: |
+          go build -o /tmp/speechkit-server ./cmd/speechkit-server
+          go build -o /tmp/speechkit-voice  ./cmd/speechkit-voice
+          /tmp/speechkit-server --version
+          /tmp/speechkit-voice  --version
+
+      - name: go test (server-target)
+        run: |
+          go test -race ./internal/server/...
+
+  docker:
+    name: docker-build (${{ matrix.target }})
+    # Same runner-selection rationale as the build job above.
+    runs-on: ${{ vars.CI_RUNNER || 'ubuntu-latest' }}
+    needs: build
+    strategy:
+      fail-fast: false
+      matrix:
+        target: [speechkit-server, speechkit-voice]
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f
+
+      - name: Build ${{ matrix.target }} image (no push)
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8
+        with:
+          context: .
+          file: deploy/docker/Dockerfile.server
+          target: ${{ matrix.target }}
+          push: false
+          load: true
+          tags: ${{ matrix.target }}:ci
+          cache-from: type=gha,scope=${{ matrix.target }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.target }}
+          build-args: |
+            VERSION=${{ github.sha }}
+
+      - name: Smoke test the image
+        run: docker run --rm ${{ matrix.target }}:ci --version

@@ -43,7 +43,20 @@ const (
 	DefaultAssistPrimaryProfileID     = "assist.builtin.gemma4-e4b"
 	DefaultVoiceAgentPrimaryProfileID = "realtime.google.gemini-native-audio"
 
-	defaultGeminiNativeAudioModel = "gemini-2.5-flash-native-audio-preview-12-2025"
+	// defaultGeminiNativeAudioModel is the primary real-time audio-to-audio
+	// model. As of April 2026 this is Gemini 3.1 Flash Live (preview) â€”
+	// Google's latest native-audio model per
+	// https://ai.google.dev/gemini-api/docs/models/gemini-3.1-flash-live-preview.
+	//
+	// Note: "preview" means the model ID may change; the stable 2.5 model
+	// below is kept as a same-provider fallback so deployments never break
+	// when 3.1 has upstream hiccups.
+	defaultGeminiNativeAudioModel = "gemini-3.1-flash-live-preview"
+
+	// fallbackGeminiNativeAudioModel is the last-GA Gemini Live model, used
+	// as primary fallback when gemini-3.1-flash-live-preview is unavailable
+	// or the preview endpoint returns an error.
+	fallbackGeminiNativeAudioModel = "gemini-2.5-flash-native-audio-preview-12-2025"
 )
 
 type Config struct {
@@ -53,16 +66,118 @@ type Config struct {
 	Vocabulary     VocabularyConfig     `toml:"vocabulary"`
 	Shortcuts      ShortcutsConfig      `toml:"shortcuts"`
 	ModelSelection ModelSelectionConfig `toml:"model_selection"`
-	Local          LocalConfig          `toml:"local"`
-	LocalLLM       LocalLLMConfig       `toml:"local_llm"`
-	VPS            VPSConfig            `toml:"vps"`
-	HuggingFace    HuggingFaceConfig    `toml:"huggingface"`
-	Routing        RoutingConfig        `toml:"routing"`
-	Feedback       FeedbackConfig       `toml:"feedback"` // legacy compat; prefer Store
-	Store          StoreConfig          `toml:"store"`
-	Providers      ProvidersConfig      `toml:"providers"`
-	TTS            TTSConfig            `toml:"tts"`
-	VoiceAgent     VoiceAgentConfig     `toml:"voice_agent"`
+
+	// ServerConnection points the device/local-target at a remote SpeechKit
+	// Server-Target. Only consulted when at least one mode in ModelSelection
+	// has mode_source = "server". Disabled by default; the desktop app runs
+	// fully self-contained until a user opts a mode into server-side
+	// execution (typically via onboarding or settings).
+	ServerConnection ServerConnectionConfig `toml:"server_connection"`
+
+	Local       LocalConfig       `toml:"local"`
+	LocalLLM    LocalLLMConfig    `toml:"local_llm"`
+	VPS         VPSConfig         `toml:"vps"`
+	HuggingFace HuggingFaceConfig `toml:"huggingface"`
+	Routing     RoutingConfig     `toml:"routing"`
+	Feedback    FeedbackConfig    `toml:"feedback"` // legacy compat; prefer Store
+	Store       StoreConfig       `toml:"store"`
+	Providers   ProvidersConfig   `toml:"providers"`
+	TTS         TTSConfig         `toml:"tts"`
+	VoiceAgent  VoiceAgentConfig  `toml:"voice_agent"`
+
+	// Server configures the standalone Linux server binary (cmd/speechkit-server).
+	// All fields are optional; the desktop app (cmd/speechkit) ignores them entirely.
+	Server    ServerConfig     `toml:"server"`
+	Personas  []PersonaConfig  `toml:"personas"`
+	Roles     []RoleConfig     `toml:"roles"`
+	Sequences []SequenceConfig `toml:"sequences"`
+}
+
+// ServerConfig configures the standalone Linux server binary. Used only by
+// cmd/speechkit-server; the desktop app never reads these values.
+type ServerConfig struct {
+	ListenAddr            string   `toml:"listen_addr"`          // e.g. ":8080"
+	Modes                 []string `toml:"modes"`                // subset of ["dictation","assist","voiceagent"]; empty = all
+	AuthMode              string   `toml:"auth_mode"`            // "bearer" | "edge_hmac" | "bearer_or_edge"
+	BearerTokenEnv        string   `toml:"bearer_token_env"`     // env var name holding the bearer token
+	EdgeAuthSecretEnv     string   `toml:"edge_auth_secret_env"` // env var name holding the HMAC secret
+	CORSAllowedOrigins    []string `toml:"cors_allowed_origins"`
+	RateLimitRPS          float64  `toml:"rate_limit_rps"`
+	RateLimitBurst        int      `toml:"rate_limit_burst"`
+	MaxUploadMB           int      `toml:"max_upload_mb"`
+	MaxVoiceAgentSessions int      `toml:"max_voiceagent_sessions"` // global cap
+	MaxSessionsPerUser    int      `toml:"max_sessions_per_user"`
+	TicketTTLSec          int      `toml:"ticket_ttl_sec"` // Voice Agent WS ticket TTL
+	// VoiceAgentIdleTimeoutSec terminates a Voice Agent WebSocket session
+	// after N seconds without any client- or provider-side activity.
+	// Defaults to 900 (15 min). Set to 0 to disable the server-side idle
+	// timeout (kernel-level idle handling stays in effect either way).
+	VoiceAgentIdleTimeoutSec int    `toml:"voiceagent_idle_timeout_sec"`
+	WhisperBinary            string `toml:"whisper_binary"` // absolute path inside container
+	WhisperPort              int    `toml:"whisper_port"`   // loopback port for whisper.cpp server
+	ModelDir                 string `toml:"model_dir"`      // persistent volume, e.g. /var/lib/speechkit/models
+	LogFormat                string `toml:"log_format"`     // "json" | "text"
+	LogLevel                 string `toml:"log_level"`      // "debug" | "info" | "warn" | "error"
+}
+
+// PersonaConfig is a TOML-seeded Voice Agent persona. DB entries with the same
+// ID override the TOML seed at runtime.
+type PersonaConfig struct {
+	ID          string            `toml:"id"`
+	DisplayName string            `toml:"display_name"`
+	Description string            `toml:"description"`
+	Voice       string            `toml:"voice"`
+	Locale      string            `toml:"locale"`
+	DefaultRole string            `toml:"default_role"`
+	Tags        []string          `toml:"tags"`
+	Metadata    map[string]string `toml:"metadata"`
+}
+
+// RoleConfig is a TOML-seeded Voice Agent role. Roles are referenced from
+// Personas via ID and compose the LiveConfig prompt layers.
+type RoleConfig struct {
+	ID                          string   `toml:"id"`
+	DisplayName                 string   `toml:"display_name"`
+	SystemPrompt                string   `toml:"system_prompt"`
+	RefinementPrompt            string   `toml:"refinement_prompt"`
+	Locale                      string   `toml:"locale"`
+	VocabularyHint              string   `toml:"vocabulary_hint"`
+	ToolAllowlist               []string `toml:"tool_allowlist"`
+	Temperature                 float64  `toml:"temperature"`
+	ThinkingEnabled             bool     `toml:"thinking_enabled"`
+	ThinkingLevel               string   `toml:"thinking_level"`
+	IncludeThoughts             bool     `toml:"include_thoughts"`
+	ThinkingBudget              int      `toml:"thinking_budget"`
+	AutomaticActivityDetection  bool     `toml:"automatic_activity_detection"`
+	VADStartSensitivity         string   `toml:"vad_start_sensitivity"`
+	VADEndSensitivity           string   `toml:"vad_end_sensitivity"`
+	VADPrefixPaddingMs          int      `toml:"vad_prefix_padding_ms"`
+	VADSilenceDurationMs        int      `toml:"vad_silence_duration_ms"`
+	ActivityHandling            string   `toml:"activity_handling"`
+	TurnCoverage                string   `toml:"turn_coverage"`
+	ContextCompressionEnabled   bool     `toml:"context_compression_enabled"`
+	ContextCompressionTriggerTk int64    `toml:"context_compression_trigger_tokens"`
+	ContextCompressionTargetTk  int64    `toml:"context_compression_target_tokens"`
+	EnableAffectiveDialog       bool     `toml:"enable_affective_dialog"`
+}
+
+// SequenceConfig is a TOML-seeded multi-step Voice Agent workflow.
+type SequenceConfig struct {
+	ID          string               `toml:"id"`
+	DisplayName string               `toml:"display_name"`
+	Description string               `toml:"description"`
+	Completion  string               `toml:"completion"` // "all_steps" | "explicit_close" | "max_turns"
+	MaxTurns    int                  `toml:"max_turns"`
+	Steps       []SequenceStepConfig `toml:"steps"`
+}
+
+// SequenceStepConfig is a single step inside a SequenceConfig.
+type SequenceStepConfig struct {
+	ID           string   `toml:"id"`
+	Instruction  string   `toml:"instruction"`
+	ExitCriteria string   `toml:"exit_criteria"`
+	RequireTools []string `toml:"require_tools"`
+	MaxTurns     int      `toml:"max_turns"`
 }
 
 type StoreConfig struct {
@@ -128,21 +243,71 @@ type ModelSelectionConfig struct {
 	VoiceAgent ModeModelSelection `toml:"voice_agent"`
 }
 
+// Mode source values for ModeModelSelection.ModeSource. "local" means the
+// desktop app runs the mode against the in-process Framework kernel (default,
+// preserves all pre-0.26 behaviour). "server" routes the mode through
+// ServerConnection to a remote speechkit-server.
+const (
+	ModeSourceLocal  = "local"
+	ModeSourceServer = "server"
+)
+
 type ModeModelSelection struct {
 	PrimaryProfileID  string `toml:"primary_profile_id"`
 	FallbackProfileID string `toml:"fallback_profile_id"`
+
+	// ModeSource selects whether this mode runs locally (Framework kernel
+	// in-process, default) or against a remote SpeechKit Server-Target
+	// configured under [server_connection]. Empty string is treated as
+	// ModeSourceLocal so existing configs keep behaving as before.
+	ModeSource string `toml:"mode_source"`
+}
+
+// ServerConnectionConfig describes how the device/local-target reaches a
+// remote SpeechKit server. Read by cmd/speechkit (and any embedded library
+// caller) when a ModeModelSelection has mode_source = "server"; the
+// Server-Target itself ignores this section.
+type ServerConnectionConfig struct {
+	// Enabled gates the entire server connection. When false, every mode is
+	// forced to run locally regardless of its mode_source. Lets users keep
+	// their server URL in config but temporarily flip back to fully local.
+	Enabled bool `toml:"enabled"`
+
+	// URL is the base URL of the speechkit-server, e.g.
+	// "https://speechkit.example.com" or "http://localhost:8080".
+	URL string `toml:"url"`
+
+	// BearerTokenEnv names the env var that holds the bearer token sent in
+	// the Authorization header. Defaults to SPEECHKIT_SERVER_TOKEN. The
+	// value is never read from the TOML file itself â€” only the env var name
+	// is configured here.
+	BearerTokenEnv string `toml:"bearer_token_env"`
+
+	// FallbackToLocal makes the device app fall back to the in-process
+	// Framework kernel if a server call fails or the server is unreachable.
+	// Useful for laptop deployments that may be offline; should be false
+	// for kiosks that must never silently downgrade to local processing.
+	FallbackToLocal bool `toml:"fallback_to_local"`
+
+	// RequestTimeoutSec caps non-streaming HTTP calls (Dictation, Assist).
+	// 0 means no explicit timeout (the underlying http.Client default
+	// applies). Voice Agent WebSocket sessions are not affected.
+	RequestTimeoutSec int `toml:"request_timeout_sec"`
 }
 
 func BuiltInPrimaryModelSelectionDefaults() ModelSelectionConfig {
 	return ModelSelectionConfig{
 		Dictate: ModeModelSelection{
 			PrimaryProfileID: DefaultDictatePrimaryProfileID,
+			ModeSource:       ModeSourceLocal,
 		},
 		Assist: ModeModelSelection{
 			PrimaryProfileID: DefaultAssistPrimaryProfileID,
+			ModeSource:       ModeSourceLocal,
 		},
 		VoiceAgent: ModeModelSelection{
 			PrimaryProfileID: DefaultVoiceAgentPrimaryProfileID,
+			ModeSource:       ModeSourceLocal,
 		},
 	}
 }
@@ -163,15 +328,33 @@ func applyBuiltInPrimaryModelSelectionDefault(selection *ModeModelSelection, pri
 	if selection == nil {
 		return false
 	}
+	changed := false
+	if strings.TrimSpace(selection.ModeSource) == "" {
+		selection.ModeSource = ModeSourceLocal
+		changed = true
+	}
 	primaryProfileID = strings.TrimSpace(primaryProfileID)
 	if primaryProfileID == "" {
-		return false
+		return changed
 	}
 	if strings.TrimSpace(selection.PrimaryProfileID) != "" || strings.TrimSpace(selection.FallbackProfileID) != "" {
-		return false
+		return changed
 	}
 	selection.PrimaryProfileID = primaryProfileID
 	return true
+}
+
+// ResolvedModeSource returns the effective ModeSource for this mode,
+// normalising the empty default to ModeSourceLocal. Use this everywhere
+// instead of reading sel.ModeSource directly so a missing TOML field does
+// not silently mean "server".
+func (sel ModeModelSelection) ResolvedModeSource() string {
+	switch strings.TrimSpace(strings.ToLower(sel.ModeSource)) {
+	case ModeSourceServer:
+		return ModeSourceServer
+	default:
+		return ModeSourceLocal
+	}
 }
 
 type UIConfig struct {
@@ -335,8 +518,19 @@ type TTSLocal struct {
 
 // VoiceAgentConfig configures the real-time Voice Agent Mode.
 type VoiceAgentConfig struct {
-	Enabled                         bool   `toml:"enabled"`
-	Model                           string `toml:"model"`             // Real-time model ID (e.g. "gemini-2.5-flash-native-audio-preview-12-2025")
+	Enabled bool `toml:"enabled"`
+	// Provider selects the backend that drives a Voice Agent session.
+	// Supported values:
+	//   ""          (default) â€” same as "gemini"
+	//   "gemini"    â€” Google Gemini Live (cloud, GOOGLE_AI_API_KEY required)
+	//   "cascaded"  â€” self-hosted whisper.cpp â†’ Genkit agent LLM â†’ TTS pipeline
+	//                 (CPU-capable; no external realtime dependency)
+	//   "moshi"     â€” self-hosted Kyutai Moshi Rust server (GPU required, M9b)
+	//
+	// The Server-Target reads this field via cmd/speechkit-server; the Device-
+	// Target currently always uses "gemini" and ignores it.
+	Provider                        string `toml:"provider"`
+	Model                           string `toml:"model"`             // Real-time model ID (e.g. "gemini-3.1-flash-live-preview")
 	FallbackModel                   string `toml:"fallback_model"`    // Fallback real-time model
 	Voice                           string `toml:"voice"`             // Voice name for real-time model
 	FrameworkPrompt                 string `toml:"framework_prompt"`  // Durable host/framework instruction that defines the Voice Agent behavior
@@ -614,6 +808,13 @@ func defaults() *Config {
 			Dictionary: "",
 		},
 		ModelSelection: BuiltInPrimaryModelSelectionDefaults(),
+		ServerConnection: ServerConnectionConfig{
+			Enabled:           false,
+			URL:               "",
+			BearerTokenEnv:    "SPEECHKIT_SERVER_TOKEN", //nolint:gosec // env var name, not a credential
+			FallbackToLocal:   true,
+			RequestTimeoutSec: 30,
+		},
 		UI: UIConfig{
 			OverlayEnabled:          true,
 			OverlayPosition:         "bottom",
@@ -696,9 +897,13 @@ func defaults() *Config {
 			},
 		},
 		VoiceAgent: VoiceAgentConfig{
-			Enabled:                         true,
-			Model:                           defaultGeminiNativeAudioModel,
-			FallbackModel:                   "gpt-realtime-mini",
+			Enabled: true,
+			Model:   defaultGeminiNativeAudioModel,
+			// Same-provider Gemini fallback keeps Voice Agent up when the 3.1
+			// preview endpoint has transient issues. Cross-provider fallbacks
+			// (OpenAI gpt-realtime-mini) can be configured explicitly per
+			// deployment via the separate model_selection section.
+			FallbackModel:                   fallbackGeminiNativeAudioModel,
 			Voice:                           "Kore",
 			FrameworkPrompt:                 "",
 			RefinementPrompt:                "",
@@ -765,6 +970,26 @@ func defaults() *Config {
 				AssistModel:  "google/gemini-2.5-flash",
 				AgentModel:   "google/gemini-2.5-flash",
 			},
+		},
+		Server: ServerConfig{
+			ListenAddr:               ":8080",
+			Modes:                    nil, // nil = all three modes enabled
+			AuthMode:                 "bearer",
+			BearerTokenEnv:           "SPEECHKIT_SERVER_TOKEN", //nolint:gosec // env var name, not a credential
+			EdgeAuthSecretEnv:        "EDGE_AUTH_SECRET",       //nolint:gosec // env var name, not a credential
+			CORSAllowedOrigins:       []string{},
+			RateLimitRPS:             10,
+			RateLimitBurst:           20,
+			MaxUploadMB:              25,
+			MaxVoiceAgentSessions:    100,
+			MaxSessionsPerUser:       3,
+			TicketTTLSec:             30,
+			VoiceAgentIdleTimeoutSec: 900,
+			WhisperBinary:            "/usr/local/bin/whisper-server",
+			WhisperPort:              8180,
+			ModelDir:                 "/var/lib/speechkit/models",
+			LogFormat:                "json",
+			LogLevel:                 "info",
 		},
 	}
 }

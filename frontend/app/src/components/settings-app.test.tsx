@@ -178,6 +178,56 @@ vi.mock("@/lib/speechkit", () => ({
   startModelDownload: startModelDownloadMock,
   cancelModelDownload: cancelModelDownloadMock,
   selectDownloadedModel: selectDownloadedModelMock,
+  // ModeSource UI surface (Phase 5). The tests don't drive these
+  // panels, so safe stubs that resolve to defaults are enough — the
+  // components render a loading skeleton when the fetches haven't
+  // returned yet.
+  fetchAPIV1Modes: vi.fn(() =>
+    Promise.resolve({
+      contracts: [],
+      settings: {
+        dictation: { enabled: true, modeSource: "local", dictionaryEnabled: false },
+        assist: { enabled: true, modeSource: "local", ttsEnabled: true },
+        voiceAgent: {
+          enabled: true,
+          modeSource: "local",
+          sessionSummary: true,
+          pipelineFallback: false,
+        },
+        serverConnection: {
+          enabled: false,
+          url: "",
+          bearerTokenEnv: "SPEECHKIT_SERVER_TOKEN",
+          bearerTokenSet: false,
+          fallbackToLocal: true,
+          requestTimeoutSec: 30,
+        },
+      },
+    }),
+  ),
+  patchAPIV1ModeSettings: vi.fn(() =>
+    Promise.resolve({ enabled: true, modeSource: "local" }),
+  ),
+  fetchAPIV1ServerConnection: vi.fn(() =>
+    Promise.resolve({
+      enabled: false,
+      url: "",
+      bearerTokenEnv: "SPEECHKIT_SERVER_TOKEN",
+      bearerTokenSet: false,
+      fallbackToLocal: true,
+      requestTimeoutSec: 30,
+    }),
+  ),
+  patchAPIV1ServerConnection: vi.fn(() =>
+    Promise.resolve({
+      enabled: false,
+      url: "",
+      bearerTokenEnv: "SPEECHKIT_SERVER_TOKEN",
+      bearerTokenSet: false,
+      fallbackToLocal: true,
+      requestTimeoutSec: 30,
+    }),
+  ),
 }));
 
 vi.mock("@/components/ui/mic-selector", () => ({

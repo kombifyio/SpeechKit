@@ -30,13 +30,13 @@ func installSelectionStubs(t *testing.T) (
 	calls := 0
 	get := func() (string, bool) { return "", false }
 	set := func(string) error { return nil }
-	copy := func() {}
+	triggerCopy := func() {}
 	pause := func(time.Duration) {}
 	selectionGetClipboardText = func() (string, bool) { calls++; return get() }
 	selectionSetClipboardText = func(s string) error { return set(s) }
-	selectionTriggerCopy = func() { copy() }
+	selectionTriggerCopy = func() { triggerCopy() }
 	selectionPause = func(d time.Duration) { pause(d) }
-	return &calls, &get, &set, &copy, &pause
+	return &calls, &get, &set, &triggerCopy, &pause
 }
 
 func TestCaptureSelectedTextNoClipboardBackup(t *testing.T) {

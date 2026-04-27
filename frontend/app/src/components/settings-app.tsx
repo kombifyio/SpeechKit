@@ -9,6 +9,8 @@ import {
 import { Dialogs } from "@wailsio/runtime";
 
 import { MicSelector } from "@/components/ui/mic-selector";
+import { ServerConnectionCard } from "@/components/server-connection-card";
+import { ModeSourceSection } from "@/components/mode-source-section";
 import {
   builtInPrimaryModelSelections,
   cancelModelDownload,
@@ -1056,6 +1058,12 @@ export function SettingsApp({ initialTab = "general" }: { initialTab?: Tab }) {
               </Section>
             </div>
 
+            <div className="xl:col-span-2">
+              <ServerConnectionCard />
+            </div>
+            <div className="xl:col-span-2">
+              <ModeSourceSection />
+            </div>
           </div>
         )}
 

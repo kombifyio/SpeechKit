@@ -9,6 +9,7 @@ import (
 	"github.com/kombifyio/SpeechKit/internal/config"
 	"github.com/kombifyio/SpeechKit/internal/models"
 	"github.com/kombifyio/SpeechKit/internal/router"
+	"github.com/kombifyio/SpeechKit/internal/secrets"
 	"github.com/kombifyio/SpeechKit/internal/stt"
 )
 
@@ -59,6 +60,9 @@ func TestApplySTTProfileLocalLaunchesLocalProvider(t *testing.T) {
 }
 
 func TestApplySTTProfileHuggingFaceForcesCloudOnlyAndClearsLocalProvider(t *testing.T) {
+	restoreSecrets := secrets.UseMemoryStoreForTests()
+	defer restoreSecrets()
+
 	restoreBuild := config.OverrideManagedHuggingFaceBuildForTests("1")
 	defer restoreBuild()
 

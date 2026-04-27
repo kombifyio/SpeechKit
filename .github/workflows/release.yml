@@ -111,7 +111,15 @@ jobs:
     needs:
       - prepare
       - wait-for-publisher-release
-    if: needs.prepare.outputs.should_build_windows == 'true'
+    # The whole release.yml workflow is already gated on the OSS repo
+    # by the prepare job. This extra guard mirrors windows-build.yml
+    # and build.yml so the Windows-fallback policy is identical
+    # everywhere: only run on OSS (unmetered) or with an explicit
+    # self-hosted runner; never silently fall back to a metered
+    # GitHub-hosted Windows runner.
+    if: >-
+      needs.prepare.outputs.should_build_windows == 'true' &&
+      (github.repository == 'kombifyio/SpeechKit' || vars.WINDOWS_BUILD_RUNNER != '')
     runs-on: ${{ vars.WINDOWS_BUILD_RUNNER || 'windows-2025' }}
     timeout-minutes: 90
 

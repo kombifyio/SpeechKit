@@ -1,3 +1,6 @@
+//go:build !linux || cgo
+
+// Streaming audio player — see player.go for the rationale behind the build tag.
 package audio
 
 import (

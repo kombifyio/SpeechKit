@@ -97,8 +97,15 @@ jobs:
         run: ./gradlew lint
 
   go-analysis:
+    # Cross-platform Go analysis: vet, fmt, golangci-lint, race tests,
+    # coverage, staticcheck, govulncheck. None of these need Windows —
+    # the kernel + server-target packages are pure Go (or CGo-tagged
+    # behind `//go:build linux|windows`, which Linux skips cleanly).
+    # Windows-specific packages (cmd/speechkit Wails bundle, internal/
+    # winapi, *_windows_cgo.go) are covered by the dedicated Windows
+    # bundle workflow (windows-build.yml), not here.
     name: Go Analysis
-    runs-on: ${{ vars.WINDOWS_CI_RUNNER || 'windows-2025' }}
+    runs-on: ${{ vars.CI_RUNNER || 'ubuntu-24.04' }}
     timeout-minutes: 30
 
     steps:
@@ -111,43 +118,141 @@ jobs:
           go-version: '1.26.2'
           cache: true
 
-      - name: Setup MinGW
-        uses: msys2/setup-msys2@cafece8e6baf9247cf9b1bf95097b0b983cc558d
-        with:
-          update: true
-          install: >-
-            mingw-w64-x86_64-gcc
+      - name: Install native toolchain for cgo-tagged tests
+        # The race-tested package set below imports oto/v3 transitively
+        # via `internal/audio` (which is gated behind `//go:build !linux
+        # || cgo`). On Linux runners the package compiles only when ALSA
+        # headers and a working cc are present — install both up front
+        # so the race step doesn't fail on missing -lasound.
+        #
+        # Retry the apt invocations because this workflow shares a
+        # self-hosted runner pool with `server-linux.yml`; if both
+        # jobs land on the same runner concurrently they fight over
+        # /var/lib/dpkg/lock-frontend. The retry burns at most ~30 s
+        # in the contended case and is a no-op when there's no
+        # contention.
+        run: |
+          set -eu
+          tries=0
+          until sudo apt-get update; do
+            tries=$((tries + 1))
+            if [ "$tries" -ge 12 ]; then
+              echo "apt-get update kept failing after $tries tries; giving up" >&2
+              exit 1
+            fi
+            echo "apt locked, retry $tries in 5s…"
+            sleep 5
+          done
+          tries=0
+          until sudo apt-get install -y --no-install-recommends \
+              gcc libc6-dev libasound2-dev pkg-config; do
+            tries=$((tries + 1))
+            if [ "$tries" -ge 12 ]; then
+              echo "apt-get install kept failing after $tries tries; giving up" >&2
+              exit 1
+            fi
+            echo "apt locked, retry $tries in 5s…"
+            sleep 5
+          done
+
+      - name: Compute cross-platform package set
+        # Linux CI runs against an explicit allow-list of cross-
+        # platform packages. The list excludes:
+        #
+        #   * cmd/speechkit (Wails Windows entry point) +
+        #     internal/{hotkey,output,winapi} — transitively need
+        #     golang.org/x/sys/windows.
+        #   * internal/tray — imports github.com/wailsapp/wails/v3/
+        #     pkg/application, which pulls GTK3 + webkit2gtk on
+        #     Linux. Wails is Device-Target-only.
+        #
+        # All four exclusions are covered by `windows-build.yml`'s
+        # canonical Wails build. The list is kept hand-curated rather
+        # than `go list ./... | grep -v ...` because golangci-lint
+        # only accepts directory-relative patterns (`./pkg/...`),
+        # not module-qualified import paths — and shoving import
+        # paths at it produces "directory not found" errors. The
+        # explicit `./pkg/...`-style entries work for vet, lint,
+        # staticcheck, govulncheck, and `go test` alike.
+        id: pkgs
+        run: |
+          set -euo pipefail
+          packages=(
+            ./pkg/...
+            ./cmd/sk-e2e/...
+            ./cmd/speechkit-server/...
+            ./cmd/speechkit-voice/...
+            ./examples/...
+            ./internal/ai/...
+            ./internal/assist/...
+            ./internal/audio/...
+            ./internal/auth/...
+            ./internal/config/...
+            ./internal/dictation/...
+            ./internal/downloads/...
+            ./internal/features/...
+            ./internal/frontendassets/...
+            ./internal/kombify/...
+            ./internal/localllm/...
+            ./internal/models/...
+            ./internal/netsec/...
+            ./internal/router/...
+            ./internal/runtimepath/...
+            ./internal/secrets/...
+            ./internal/server/...
+            ./internal/serverclient/...
+            ./internal/shortcuts/...
+            ./internal/store/...
+            ./internal/stt/...
+            ./internal/textactions/...
+            ./internal/tts/...
+            ./internal/vad/...
+            ./internal/voiceagent/...
+            ./tools/releaseguard/...
+          )
+          echo "list=${packages[*]}" >> "$GITHUB_OUTPUT"
+          echo "Cross-platform package set:"
+          printf '  %s\n' "${packages[@]}"
 
       - name: Run go vet
-        shell: pwsh
-        run: go vet ./...
+        run: go vet ${{ steps.pkgs.outputs.list }}
 
       - name: Check gofmt
-        shell: pwsh
         run: |
-          $fmtOut = & gofmt -s -l (Get-ChildItem -Recurse -Filter *.go -File |
-            Where-Object { $_.FullName -notmatch '\\(node_modules|frontend|Website|marketing-site-svelte|android|internal\\frontendassets|\.cache)\\' } |
-            Select-Object -ExpandProperty FullName)
-          if ($fmtOut) {
-            Write-Host "Files not gofmt'd:"
-            Write-Host $fmtOut
+          mapfile -t files < <(find . -type f -name '*.go' \
+            -not -path './node_modules/*' \
+            -not -path './frontend/*' \
+            -not -path './Website/*' \
+            -not -path './marketing-site-svelte/*' \
+            -not -path './android/*' \
+            -not -path './internal/frontendassets/*' \
+            -not -path './.cache/*')
+          if [ "${#files[@]}" -eq 0 ]; then
+            echo "no go files found, skipping gofmt"
+            exit 0
+          fi
+          out=$(gofmt -s -l "${files[@]}")
+          if [ -n "$out" ]; then
+            echo "Files not gofmt'd:"
+            echo "$out"
             exit 1
-          }
+          fi
 
       - name: Install golangci-lint
-        shell: pwsh
-        run: |
-          $version = 'v2.11.4'
-          & go install "github.com/golangci/golangci-lint/v2/cmd/golangci-lint@$version"
+        run: go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.11.4
 
       - name: Run golangci-lint
-        shell: pwsh
-        run: golangci-lint run --timeout=5m ./...
+        # Lint the same cross-platform package set so the Windows-only
+        # entry points don't fail the lint with "build constraints
+        # exclude all Go files".
+        run: golangci-lint run --timeout=5m ${{ steps.pkgs.outputs.list }}
 
       - name: Run go race tests
-        shell: pwsh
-        # Covers pure-logic packages. Desktop/CGo-heavy packages are covered
-        # by normal tests and the Windows bundle build.
+        # Covers pure-logic packages. Desktop/CGo-heavy packages
+        # (internal/tray Wails, internal/audio oto/v3, internal/vad
+        # ONNX, internal/{hotkey,output,winapi}) are covered by the
+        # Windows bundle build instead — they need GTK / webkit2gtk /
+        # ONNX / Windows headers that aren't worth setting up here.
         run: >-
           go test -race
           ./pkg/speechkit/...
@@ -158,53 +263,43 @@ jobs:
           ./internal/models/...
           ./internal/router/...
           ./internal/secrets/...
+          ./internal/server/...
+          ./internal/serverclient/...
           ./internal/shortcuts/...
           ./internal/store/...
           ./internal/stt/...
           ./internal/textactions/...
-          ./internal/tray/...
           ./internal/tts/...
           ./internal/voiceagent/...
 
       - name: Coverage report
-        shell: pwsh
         run: |
-          $packages = @(
-            './pkg/speechkit/...',
-            './internal/ai/...',
-            './internal/assist/...',
-            './internal/config/...',
-            './internal/features/...',
-            './internal/models/...',
-            './internal/router/...',
-            './internal/secrets/...',
-            './internal/shortcuts/...',
-            './internal/store/...',
-            './internal/stt/...',
-            './internal/textactions/...',
-            './internal/tray/...',
-            './internal/tts/...',
-            './internal/voiceagent/...'
+          set -euo pipefail
+          packages=(
+            ./pkg/speechkit/...
+            ./internal/ai/...
+            ./internal/assist/...
+            ./internal/config/...
+            ./internal/features/...
+            ./internal/models/...
+            ./internal/router/...
+            ./internal/secrets/...
+            ./internal/server/...
+            ./internal/serverclient/...
+            ./internal/shortcuts/...
+            ./internal/store/...
+            ./internal/stt/...
+            ./internal/textactions/...
+            ./internal/tts/...
+            ./internal/voiceagent/...
           )
-
-          & go test -coverprofile coverage.out -covermode atomic @packages
-          if ($LASTEXITCODE -ne 0) {
-            exit $LASTEXITCODE
-          }
-
-          $coverageReport = & go tool cover -func coverage.out
-          if ($LASTEXITCODE -ne 0) {
-            exit $LASTEXITCODE
-          }
-
-          $coverageReport | Select-String 'total:'
-          if ($LASTEXITCODE -ne 0) {
-            exit $LASTEXITCODE
-          }
+          go test -coverprofile coverage.out -covermode atomic "${packages[@]}"
+          go tool cover -func coverage.out | grep '^total:'
 
       # Upload coverage. If CODECOV_TOKEN is not configured, the step
-      # will warn but not fail CI. Pinned to SHA so supply-chain drift in
-      # third-party actions requires an explicit PR (dependabot bumps this).
+      # will warn but not fail CI. Pinned to SHA so supply-chain drift
+      # in third-party actions requires an explicit PR (dependabot
+      # bumps this).
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@b9fd7d16f6d7d1b5d2bec1a2887e65ceed900238 # v4
         with:
@@ -214,25 +309,21 @@ jobs:
           token: ${{ secrets.CODECOV_TOKEN }}
 
       - name: Install Staticcheck
-        shell: pwsh
         run: go install honnef.co/go/tools/cmd/staticcheck@latest
 
       - name: Run Staticcheck
-        shell: pwsh
-        run: staticcheck ./...
+        run: staticcheck ${{ steps.pkgs.outputs.list }}
 
       - name: Install govulncheck
-        shell: pwsh
         run: go install golang.org/x/vuln/cmd/govulncheck@latest
 
       - name: Run govulncheck
-        shell: pwsh
-        run: govulncheck ./...
+        run: govulncheck ${{ steps.pkgs.outputs.list }}
 
   dependency-review:
     name: Dependency Review
     if: github.event_name == 'pull_request'
-    runs-on: ubuntu-24.04
+    runs-on: ${{ vars.CI_RUNNER || 'ubuntu-24.04' }}
     timeout-minutes: 10
 
     steps:
@@ -241,48 +332,3 @@ jobs:
 
       - name: Dependency review
         uses: actions/dependency-review-action@2031cfc080254a8a887f58cffee85186f0e49e48
-
-  windows-ci:
-    name: Windows CI
-    runs-on: ${{ vars.WINDOWS_CI_RUNNER || 'windows-2025' }}
-    timeout-minutes: 30
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
-
-      - name: Setup Go
-        uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c
-        with:
-          go-version: '1.26.2'
-          cache: true
-
-      - name: Setup Node
-        uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f
-        with:
-          node-version: 22
-          cache: npm
-          cache-dependency-path: frontend/app/package-lock.json
-
-      - name: Setup MinGW
-        uses: msys2/setup-msys2@cafece8e6baf9247cf9b1bf95097b0b983cc558d
-        with:
-          update: true
-          install: >-
-            mingw-w64-x86_64-gcc
-
-      - name: Install NSIS
-        shell: pwsh
-        run: choco install nsis -y --no-progress
-
-      - name: Run canonical Windows bundle build
-        shell: pwsh
-        run: ./scripts/build.ps1 -SkipInstaller -SkipVerification
-
-      - name: Upload embedded frontend assets
-        if: failure()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
-        with:
-          name: speechkit-frontend-assets
-          path: internal/frontendassets/dist
-          retention-days: 1

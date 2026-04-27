@@ -394,3 +394,57 @@ func joinContentText(content *genai.Content) string {
 	}
 	return strings.Join(parts, "\n")
 }
+
+func TestShouldTryFallback(t *testing.T) {
+	tests := []struct {
+		name     string
+		primary  string
+		fallback string
+		want     bool
+	}{
+		{
+			name:     "fallback is empty",
+			primary:  "gemini-3.1-flash-live-preview",
+			fallback: "",
+			want:     false,
+		},
+		{
+			name:     "fallback is whitespace",
+			primary:  "gemini-3.1-flash-live-preview",
+			fallback: "   ",
+			want:     false,
+		},
+		{
+			name:     "fallback equals primary",
+			primary:  "gemini-3.1-flash-live-preview",
+			fallback: "gemini-3.1-flash-live-preview",
+			want:     false,
+		},
+		{
+			name:     "fallback equals primary with surrounding whitespace",
+			primary:  "gemini-3.1-flash-live-preview",
+			fallback: "  gemini-3.1-flash-live-preview  ",
+			want:     false,
+		},
+		{
+			name:     "GA fallback distinct from preview primary",
+			primary:  "gemini-3.1-flash-live-preview",
+			fallback: "gemini-2.5-flash-native-audio-preview-12-2025",
+			want:     true,
+		},
+		{
+			name:     "primary blank but fallback set",
+			primary:  "",
+			fallback: "gemini-2.5-flash-native-audio-preview-12-2025",
+			want:     true,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := shouldTryFallback(tt.primary, tt.fallback); got != tt.want {
+				t.Fatalf("shouldTryFallback(%q, %q) = %v; want %v",
+					tt.primary, tt.fallback, got, tt.want)
+			}
+		})
+	}
+}

@@ -14,14 +14,19 @@ import (
 	"github.com/kombifyio/SpeechKit/internal/audio"
 	"github.com/kombifyio/SpeechKit/internal/config"
 	"github.com/kombifyio/SpeechKit/internal/output"
-	"github.com/kombifyio/SpeechKit/internal/router"
 	"github.com/kombifyio/SpeechKit/internal/store"
 	"github.com/kombifyio/SpeechKit/internal/stt"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit"
 )
 
+// routerTranscriber adapts the kernel's STT router (or a server-delegated
+// equivalent â€” see server_delegates.go) to the speechkit.Transcript
+// interface the orchestration code expects. The `router` field is typed
+// as the small Transcriber interface so a *router.Router (in-process,
+// pre-0.26 behaviour) and a *compositeTranscriber (server-first with
+// optional local fallback) are both accepted.
 type routerTranscriber struct {
-	router          *router.Router
+	router          Transcriber
 	state           *appState
 	dictionaryStore store.UserDictionaryStore
 }
@@ -53,7 +58,7 @@ func (t routerTranscriber) Transcribe(ctx context.Context, audioData []byte, dur
 		if languageForUsage == "" {
 			languageForUsage = language
 		}
-		recordDictionaryUsageAsync(t.dictionaryStore, correctedTerms, languageForUsage)
+		recordDictionaryUsageAsync(t.dictionaryStore, correctedTerms, languageForUsage) //nolint:contextcheck // fire-and-forget usage write; uses its own 2s timeout context
 	}
 
 	return speechkit.Transcript{
@@ -241,6 +246,21 @@ func (o desktopTranscriptOutput) deliverAssistForMode(ctx context.Context, trans
 		return nil
 	}
 
+	selection := o.captureAssistSelection(ctx)
+	processOpts := assist.ProcessOpts{
+		Locale:    transcript.Language,
+		Selection: selection,
+		Target:    target,
+	}
+
+	// Server delegate path: when [server_connection] is enabled and Assist
+	// has mode_source = "server", route through internal/serverclient
+	// instead of the in-process Pipeline. The remote server runs its own
+	// codeword/LLM/TTS pipeline and returns the same Result shape.
+	if serverAssist := o.currentServerAssistDelegate(); serverAssist != nil {
+		return o.deliverAssistViaServer(ctx, transcript, mode, processOpts, serverAssist)
+	}
+
 	assistPipeline := o.currentAssistPipeline()
 	if assistPipeline == nil {
 		// No assist pipeline â€” try legacy agent flow, or warn user.
@@ -252,12 +272,6 @@ func (o desktopTranscriptOutput) deliverAssistForMode(ctx context.Context, trans
 		return nil
 	}
 
-	selection := o.captureAssistSelection(ctx)
-	processOpts := assist.ProcessOpts{
-		Locale:    transcript.Language,
-		Selection: selection,
-		Target:    target,
-	}
 	if !assistPipeline.HasDirectReplyModel() && !assistPipeline.CanHandleWithoutDirectReplyModel(transcript.Text, processOpts) {
 		o.presentAssistModelMissingHint()
 		return nil
@@ -421,4 +435,97 @@ func (o desktopTranscriptOutput) currentAudioPlayer() *audio.Player {
 	o.state.mu.Lock()
 	defer o.state.mu.Unlock()
 	return o.state.audioPlayer
+}
+
+// currentServerAssistDelegate returns the server-delegated Assist
+// processor when one is configured (mode_source = "server"), nil
+// otherwise. The orchestration code branches on this to skip the
+// in-process Pipeline entirely.
+func (o desktopTranscriptOutput) currentServerAssistDelegate() assistServerDelegate {
+	if o.state == nil {
+		return nil
+	}
+	o.state.mu.Lock()
+	defer o.state.mu.Unlock()
+	if o.state.serverDelegates == nil || !o.state.serverDelegates.hasAssist() {
+		return nil
+	}
+	return o.state.serverDelegates.assist
+}
+
+// assistServerDelegate is the small interface every server-delegated
+// Assist processor satisfies. Re-declared here so this file does not
+// depend on internal/serverclient's concrete type â€” easier to mock in
+// tests and prevents accidental import cycles.
+type assistServerDelegate interface {
+	Process(ctx context.Context, transcript string, opts assist.ProcessOpts) (*assist.Result, error)
+}
+
+// deliverAssistViaServer executes the Assist call against a remote
+// SpeechKit server. The Result shape is identical to the local pipeline
+// so the post-Process surface logic (panel display, TTS playback, etc.)
+// is shared via the same downstream helpers. Errors are surfaced through
+// the same conversation-error UI path the local pipeline uses.
+func (o desktopTranscriptOutput) deliverAssistViaServer(ctx context.Context, transcript speechkit.Transcript, mode string, processOpts assist.ProcessOpts, server assistServerDelegate) error { //nolint:contextcheck // playbackCtx is app-scoped, intentionally not request ctx
+	result, err := server.Process(ctx, transcript.Text, processOpts)
+	if err != nil {
+		slog.Error("server-delegated assist error", "err", err)
+		o.failConversation(mode, "", friendlyConversationError(mode, err))
+		return err
+	}
+	if result.Action == "silent" {
+		return nil
+	}
+
+	assistantText := result.Text
+	if assistantText == "" && result.Shortcut != "" {
+		assistantText = fmt.Sprintf("Shortcut: %s", result.Shortcut)
+	}
+
+	panelSurface := result.Surface == "" || result.Surface == assist.ResultSurfacePanel
+	assistPanelSurface := panelSurface && mode == modeAssist
+	prompterPanelSurface := panelSurface && !assistPanelSurface
+	if assistPanelSurface {
+		if o.state != nil && assistantText != "" {
+			o.state.showAssistPanel(transcript.Text, assistantText)
+		}
+	} else if prompterPanelSurface {
+		o.startConversation(mode, transcript.Text)
+		nextState := "ready"
+		if len(result.Audio) > 0 {
+			nextState = "speaking"
+		}
+		o.finishConversation(assistantText, nextState)
+	} else if result.Kind != assist.ResultKindUtilityAction && assistantText != "" && o.onAssistText != nil {
+		o.onAssistText(assistantText)
+	}
+
+	if audioPlayer := o.currentAudioPlayer(); audioPlayer != nil && len(result.Audio) > 0 {
+		playCtx := o.playbackCtx
+		if playCtx == nil {
+			playCtx = context.Background()
+		}
+		audioData := result.Audio
+		audioFormat := result.Format
+		go func() { //nolint:contextcheck // playbackCtx is app-scoped and intentionally not the request ctx
+			var playErr error
+			switch audioFormat {
+			case "pcm", "wav":
+				playErr = audioPlayer.PlayPCM(playCtx, audioData, 24000)
+			default:
+				playErr = audioPlayer.PlayMP3(playCtx, audioData)
+			}
+			if playErr != nil && playCtx.Err() == nil {
+				slog.Error("TTS playback error (server delegate)", "err", playErr)
+				if prompterPanelSurface && o.state != nil {
+					o.state.updatePrompterState("error")
+				}
+				return
+			}
+			if prompterPanelSurface && o.state != nil {
+				o.state.updatePrompterState("ready")
+			}
+		}()
+	}
+	return nil
 }

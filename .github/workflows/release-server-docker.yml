@@ -1,0 +1,182 @@
+name: release-server-docker
+
+# Publishes the SpeechKit Server-Target container image to the GitHub
+# Container Registry on every `v*` tag. Stays separate from the existing
+# Windows-oriented release.yml so the two pipelines can fail / succeed
+# independently.
+#
+# v0.25.x: dormant — the `if:` guard skips the whole job until a tag with
+#   MINOR >= 26 is pushed, keeping v0.25 release machinery prepared but
+#   quiet.
+# v0.26.x: active — publishes ghcr.io/kombifyio/speechkit-server:<tag>
+#   and ghcr.io/kombifyio/speechkit-server:latest.
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Release tag (e.g. v0.26.0)'
+        required: true
+      force_publish:
+        description: 'Publish even if the tag is below v0.26 (M7 smoke tests)'
+        required: true
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+  packages: write
+  id-token: write
+  attestations: write
+
+concurrency:
+  group: release-server-docker-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  plan:
+    name: Resolve Docker Release Plan
+    # Releases happen ONLY on the OSS repo. publish-oss.yml syncs the
+    # source from KombiverseLabs/kombify-SpeechKit (private dev) to
+    # kombifyio/SpeechKit (public) and pushes the v* tag there; this
+    # workflow then runs in the public repo, where GitHub-hosted
+    # runners are unmetered. A tag pushed in the dev repo by mistake
+    # must NOT trigger a publish.
+    if: github.repository == 'kombifyio/SpeechKit'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      tag: ${{ steps.plan.outputs.tag }}
+      semver: ${{ steps.plan.outputs.semver }}
+      checkout_ref: ${{ steps.plan.outputs.checkout_ref }}
+      should_publish: ${{ steps.plan.outputs.should_publish }}
+
+    steps:
+      - name: Resolve tag gate
+        id: plan
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            tag="${{ inputs.tag }}"
+            checkout_ref="refs/tags/$tag"
+            force_publish="${{ inputs.force_publish }}"
+          else
+            tag="${GITHUB_REF_NAME}"
+            checkout_ref="${GITHUB_REF}"
+            force_publish=false
+          fi
+
+          if [[ ! "$tag" =~ ^v([0-9]+)\.([0-9]+)\.([0-9]+)([-+][0-9A-Za-z.-]+)?$ ]]; then
+            echo "::error title=Invalid release tag::$tag is not a vMAJOR.MINOR.PATCH tag."
+            exit 1
+          fi
+
+          semver="${tag#v}"
+          major="${BASH_REMATCH[1]}"
+          minor="${BASH_REMATCH[2]}"
+          should_publish=false
+          if [ "$force_publish" = "true" ] || [ "$major" -gt 0 ] || [ "$minor" -ge 26 ]; then
+            should_publish=true
+          fi
+
+          {
+            echo "tag=$tag"
+            echo "semver=$semver"
+            echo "checkout_ref=$checkout_ref"
+            echo "should_publish=$should_publish"
+          } >> "$GITHUB_OUTPUT"
+
+  publish:
+    name: Build & Publish ${{ matrix.image }}
+    needs: plan
+    # Within the OSS repo: skip automatically on < v0.26 tags unless
+    # the operator force-publishes. This keeps v0.25.x release
+    # machinery in place without actually shipping a Server-Target
+    # image before the code goes OSS.
+    if: needs.plan.outputs.should_publish == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        # Two images from one Dockerfile, selected by --target. Both
+        # come from the same Go source tree; the difference is which
+        # main package becomes ENTRYPOINT and which built-in default
+        # mode set the binary uses. See deploy/docker/Dockerfile.server
+        # for the full target rationale.
+        include:
+          - image: speechkit-server
+            target: speechkit-server
+            title: "SpeechKit Server"
+            description: "SpeechKit Framework — full server (Dictation REST + Assist REST + Voice Agent WS)."
+          - image: speechkit-voice
+            target: speechkit-voice
+            title: "SpeechKit Voice Server"
+            description: "SpeechKit Framework — Voice Agent only (real-time WebSocket)."
+    env:
+      REGISTRY: ghcr.io
+      # Pin to the kombifyio org by default; on a non-canonical repo
+      # the namespace falls through to `kombify/<image>` so a fork's
+      # GHCR push doesn't shadow the canonical tag.
+      IMAGE: ${{ github.repository_owner == 'kombifyio' && format('kombifyio/{0}', matrix.image) || format('kombify/{0}', matrix.image) }}
+
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+        with:
+          ref: ${{ needs.plan.outputs.checkout_ref }}
+          fetch-depth: 0
+          fetch-tags: true
+
+      - name: Log in to GHCR
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f
+
+      - name: Build & push image
+        id: build
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8
+        with:
+          context: .
+          file: deploy/docker/Dockerfile.server
+          target: ${{ matrix.target }}
+          push: true
+          platforms: linux/amd64
+          tags: |
+            ${{ env.REGISTRY }}/${{ env.IMAGE }}:${{ needs.plan.outputs.tag }}
+            ${{ env.REGISTRY }}/${{ env.IMAGE }}:latest
+          labels: |
+            org.opencontainers.image.title=${{ matrix.title }}
+            org.opencontainers.image.description=${{ matrix.description }}
+            org.opencontainers.image.version=${{ needs.plan.outputs.semver }}
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+          build-args: |
+            VERSION=${{ needs.plan.outputs.tag }}
+          # Per-target cache scope so the two matrix legs don't fight
+          # each other for cache-write slots when they run in parallel.
+          cache-from: type=gha,scope=${{ matrix.target }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.target }}
+
+      - name: Attest provenance
+        uses: actions/attest-build-provenance@92c65d2898f1f53cfdc910b962cecff86e7f8fcc
+        with:
+          subject-name: ${{ env.REGISTRY }}/${{ env.IMAGE }}
+          subject-digest: ${{ steps.build.outputs.digest }}
+          push-to-registry: true
+
+      - name: Summary
+        shell: bash
+        run: |
+          echo "### ${{ matrix.title }} published" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "- \`${{ env.REGISTRY }}/${{ env.IMAGE }}:${{ needs.plan.outputs.tag }}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- \`${{ env.REGISTRY }}/${{ env.IMAGE }}:latest\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- digest: \`${{ steps.build.outputs.digest }}\`" >> "$GITHUB_STEP_SUMMARY"

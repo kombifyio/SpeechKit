@@ -4,7 +4,152 @@ All notable changes to SpeechKit should be documented in this file.
 
 The format is based on Keep a Changelog and this project is intended to ship under Apache-2.0.
 
-## [Unreleased]
+## [0.26.0] - 2026-04-27
+
+The first OSS release of SpeechKit's Server-Target. SpeechKit now
+ships in three deployment shapes — Device-Target (Windows reference
+UI), Local-Target (library/CLI), and Server-Target (containerized
+HTTP/WebSocket service) — all backed by the same Framework kernel.
+The Server-Target itself comes in two flavours from one source tree:
+the full `speechkit-server` and the focused `speechkit-voice`.
+
+### Added
+
+- **Server-Target (first OSS release).** `cmd/speechkit-server` plus
+  `internal/server/{core,middleware,dictation,assist,voiceagent,
+  persona,audio,httpx,cli}`, `deploy/docker/Dockerfile.server`, the
+  dev/test docker-compose stacks under `deploy/docker/`, and the
+  operator guide + OpenAPI 3.1 reference under `docs/server/`.
+  Single Linux binary exposes the same Framework kernel as the
+  device/local-targets over HTTP + WebSocket. Three modes
+  (Dictation, Assist, Voice Agent), `/healthz` / `/readyz`,
+  bearer + Cloudflare-edge-HMAC auth, rate limiting, persona/role/
+  sequence catalog with TOML seeds + DB overrides, and a SQLite
+  persister behind a clean `Persister` interface for Postgres
+  to follow.
+
+- **Voice Server (`cmd/speechkit-voice`, `ghcr.io/kombifyio/
+  speechkit-voice`).** A focused container that exposes only the
+  Voice Agent WebSocket endpoint. Same Go source tree as
+  `speechkit-server`; the only difference is the built-in default
+  mode set (`["voiceagent"]` instead of all three). Useful for
+  running voice on its own pod when you want stateful WebSocket
+  traffic on beefier nodes than your stateless REST tier needs.
+  Both binaries share `internal/server/cli` so future bootstrap
+  changes touch one place.
+  - Multi-target Dockerfile: `docker build --target speechkit-server`
+    and `--target speechkit-voice` produce the two images from one
+    file, with shared apt + ONNX + Doppler base layers cached once.
+  - Release pipeline (`release-server-docker.yml`) publishes both
+    images on a v* tag via a build matrix, each with its own GHCR
+    cache scope so the matrix legs don't fight for cache slots.
+  - `deploy/docker/docker-compose.voice.yml` for local dev parity
+    testing; sits alongside the existing full-server compose file.
+
+- **Self-hosted Voice Agent provider — Cascaded.** `cascaded`
+  provider in `internal/server/voiceagent` runs whisper.cpp + Genkit
+  + TTS as a CPU-only realtime alternative to Gemini Live. Selected
+  via `[voice_agent].provider = "cascaded"` in `config.toml`.
+
+- **End-to-end harness.** `cmd/sk-e2e` driving the running server
+  with four scenarios (`health`, `dictation`, `assist`, `voiceagent`),
+  plus `scripts/test-e2e-local.sh` and `scripts/test-e2e-local.ps1`
+  helpers that bring the dev docker-compose stack up, wait for
+  `/healthz`, run the smoke client, and tear the stack down again.
+
+- **ModeSource architecture (foundation for v0.26.1).** Optional
+  per-mode toggle that lets the device-target run any subset of
+  Dictation, Assist, and Voice Agent against a remote SpeechKit
+  Server-Target instead of the in-process kernel. Ships as four
+  layers:
+  - `[server_connection]` config section + `mode_source` field on
+    each `[model_selection.<mode>]`. Both default to "off"/"local",
+    so existing configs keep behaving exactly as before.
+  - `internal/serverclient` transport adapter — typed HTTP/WS client
+    that satisfies the same Go interfaces (`stt.STTProvider`,
+    `assistpkg.Processor`, `voiceagent.LiveProvider`) the kernel
+    already uses. Drop-in replacement at construction time.
+  - Routing in `cmd/speechkit/server_delegates.go` with a
+    `compositeTranscriber` that does server-first with optional
+    fallback to local on transport-class errors. Application errors
+    (typed `*ServerError` with a code) propagate as-is.
+  - Settings UI in the General tab: `ServerConnectionCard` for the
+    connection metadata + `ModeSourceSection` with three per-mode
+    toggles. Server pill auto-disables (with hint) when the
+    connection is off or the bearer-token env var is missing.
+  - Per-mode `ModeSource` makes the split deployment shape
+    invisible to end users: Dictation/Assist can point at the full
+    server while Voice Agent points at `speechkit-voice`, and the
+    desktop UI picks the right URL automatically.
+
+### Changed
+
+- **`cmd/speechkit-server/main.go` is now a one-line wrapper** around
+  `internal/server/cli.Run()`. The shared CLI handles flag parsing,
+  config loading, logger setup, and the lifecycle handoff to
+  `internal/server/core`. `cmd/speechkit-voice/main.go` is the
+  second wrapper, identical except for the banner + default mode
+  set. No behavioural change for existing operators.
+
+- **`pkg/speechkit.ModeSetting`** gains an optional `modeSource`
+  field; `ModeSettings` adds a `serverConnection` block that strips
+  the bearer-token value before crossing the API boundary (only the
+  env var name + a `bearerTokenSet` boolean travel).
+
+- **CI runner policy.** `Go Analysis` moved from Windows to Linux
+  (it does pure Go analysis — vet, fmt, golangci-lint, race,
+  staticcheck, govulncheck — none of which need Windows). The Wails
+  Windows bundle build moved out of `ci.yml` into its own
+  `windows-build.yml`, gated by a guard that prevents
+  GitHub-hosted `windows-2025` from being a silent fallback on the
+  private dev repo. Tag-release workflows
+  (`release-server-docker.yml`, `release.yml`) are now repo-pinned
+  to `kombifyio/SpeechKit` so a misplaced tag in the dev repo
+  cannot trigger a publish.
+
+### OSS notes
+
+- The v0.25 sync exclusions for `cmd/speechkit-server`,
+  `internal/server`, `deploy/`, `docs/server`, and the docker
+  publish workflow are removed for this release. External users can
+  pull `ghcr.io/kombifyio/speechkit-server:v0.26.0` and
+  `ghcr.io/kombifyio/speechkit-voice:v0.26.0` once the tag ships.
+- See `docs/server/MIGRATION-v0.25-to-v0.26.md` for the upgrade path
+  + the new "Backend vs. Voice Server" decision guide.
+- ModeSource defaults to "local" everywhere, so OSS users see no
+  behaviour change after upgrade until they explicitly enable
+  `[server_connection]`.
+
+## [0.25.0] - 2026-04-26
+
+### Added
+
+- Same-provider Gemini Live fallback. `LiveConfig.FallbackModel` is honored
+  by `GeminiLive.Connect` — when the primary `Model` returns a connect
+  error, the kernel automatically retries with the fallback before
+  surfacing the error. Decision logic isolated in `shouldTryFallback`
+  for direct unit testing.
+
+### Changed
+
+- Default Voice Agent realtime model bumped to
+  `gemini-3.1-flash-live-preview`. Google released the 3.1 Flash Live
+  preview endpoint on April 15, 2026 and recommends it for new
+  integrations. The previous `gemini-2.5-flash-native-audio-preview-12-2025`
+  model is now the default `FallbackModel`, so deployments
+  automatically degrade to the last GA Gemini Live model when the
+  preview endpoint has transient issues.
+- `cmd/speechkit` reference UI fallback string aligned with the
+  Framework default; the device-target host now requests 3.1 Flash
+  Live by default when no explicit model is configured.
+
+### Notes
+
+- v0.25 is a preparation release ahead of v0.26's first OSS Server-
+  Target. Server-Target source (`cmd/speechkit-server`,
+  `internal/server`, `deploy/`, `docs/server`) and the
+  `release-server-docker.yml` workflow are intentionally excluded from
+  the v0.25 OSS export and become public in v0.26.
 
 ## [0.24.0] - 2026-04-23
 

@@ -1,0 +1,128 @@
+//go:build linux
+
+package voiceagent
+
+// Wire protocol constants and shapes for the Voice Agent WebSocket.
+//
+// Control frames are JSON text messages with a required "type" field.
+// Audio frames are binary messages containing raw PCM 16kHz S16 mono
+// (client → server) or 24kHz S16 mono (server → client, Gemini Live native
+// output rate). The first frame a client sends must be a "start" message.
+
+// Client-to-server message types.
+const (
+	MsgStart        = "start"
+	MsgAudioEnd     = "audio_end"
+	MsgText         = "text"
+	MsgToolResponse = "tool_response"
+	MsgPing         = "ping"
+	MsgStop         = "stop"
+	MsgAdvanceStep  = "advance_step"
+)
+
+// Server-to-client message types.
+const (
+	MsgState            = "state"
+	MsgInputTranscript  = "input_transcript"
+	MsgOutputTranscript = "output_transcript"
+	MsgToolCall         = "tool_call"
+	MsgSequenceStep     = "sequence_step"
+	MsgInterrupted      = "interrupted"
+	MsgError            = "error"
+	MsgSessionEnd       = "session_end"
+	MsgPong             = "pong"
+)
+
+// StartFrame is the mandatory first client frame. Fields marked optional
+// fall back to persona/role defaults when omitted.
+type StartFrame struct {
+	Type       string `json:"type"` // must be "start"
+	PersonaID  string `json:"persona_id,omitempty"`
+	RoleID     string `json:"role_id,omitempty"`
+	SequenceID string `json:"sequence_id,omitempty"`
+	Voice      string `json:"voice,omitempty"`
+	Locale     string `json:"locale,omitempty"`
+	Model      string `json:"model,omitempty"`
+	Thinking   string `json:"thinking,omitempty"` // "off" | "low" | "medium" | "high"
+	// Raw activity-detection policy override. Pipeline translates these to
+	// the kernel's internal enums.
+	ActivityDetection *ActivityDetectionFrame `json:"activity_detection,omitempty"`
+	// Optional durable instruction layered on top of the role's prompt.
+	SystemPromptOverride string `json:"system_prompt_override,omitempty"`
+}
+
+// ActivityDetectionFrame maps to voiceagent.ActivityDetectionPolicy.
+type ActivityDetectionFrame struct {
+	Automatic         bool   `json:"automatic"`
+	StartSensitivity  string `json:"start_sensitivity,omitempty"`
+	EndSensitivity    string `json:"end_sensitivity,omitempty"`
+	PrefixPaddingMs   int32  `json:"prefix_padding_ms,omitempty"`
+	SilenceDurationMs int32  `json:"silence_duration_ms,omitempty"`
+	ActivityHandling  string `json:"activity_handling,omitempty"`
+	TurnCoverage      string `json:"turn_coverage,omitempty"`
+}
+
+// TextFrame carries an injected text turn from the client.
+type TextFrame struct {
+	Type string `json:"type"` // "text"
+	Text string `json:"text"`
+}
+
+// ToolResponseFrame resolves a tool call issued by the server.
+type ToolResponseFrame struct {
+	Type     string         `json:"type"` // "tool_response"
+	ID       string         `json:"id"`
+	Name     string         `json:"name"`
+	Response map[string]any `json:"response"`
+}
+
+// ── server → client ─────────────────────────────────────────────────────────
+
+type StateFrame struct {
+	Type  string `json:"type"` // "state"
+	State string `json:"state"`
+}
+
+type TranscriptFrame struct {
+	Type string `json:"type"` // "input_transcript" | "output_transcript"
+	Text string `json:"text"`
+	Done bool   `json:"done"`
+}
+
+type ToolCallFrame struct {
+	Type string         `json:"type"` // "tool_call"
+	ID   string         `json:"id"`
+	Name string         `json:"name"`
+	Args map[string]any `json:"args,omitempty"`
+}
+
+type SequenceStepFrame struct {
+	Type   string `json:"type"` // "sequence_step"
+	StepID string `json:"step_id"`
+	Status string `json:"status"` // "entered" | "completed"
+}
+
+type InterruptedFrame struct {
+	Type string `json:"type"` // "interrupted"
+}
+
+type ErrorFrame struct {
+	Type    string `json:"type"` // "error"
+	Code    string `json:"code"`
+	Message string `json:"message"`
+}
+
+type SessionEndFrame struct {
+	Type   string `json:"type"`   // "session_end"
+	Reason string `json:"reason"` // "idle" | "go_away" | "client" | "error" | "shutdown"
+}
+
+type PongFrame struct {
+	Type string `json:"type"` // "pong"
+}
+
+// envelope is a lightweight struct for peeking at incoming frames before
+// fully decoding them.
+type envelope struct {
+	Type string `json:"type"`
+}

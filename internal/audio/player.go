@@ -1,3 +1,12 @@
+//go:build !linux || cgo
+
+// Audio playback via ebitengine/oto only requires cgo on Linux (ALSA/PulseAudio);
+// the Windows and Darwin backends are pure-Go via purego. The build tag lets
+// plain-Go cross-compiles for Linux skip this file, which is relevant when
+// developer machines don't have a Linux C toolchain. Production server
+// builds (Dockerfile.server) enable cgo, so this file compiles in — even
+// though the Server-Target never plays audio locally, transitive imports
+// from internal/stt must stay safe.
 package audio
 
 import (
