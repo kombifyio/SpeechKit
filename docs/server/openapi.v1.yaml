@@ -1,0 +1,828 @@
+openapi: 3.1.0
+info:
+  title: SpeechKit Server-Target API
+  version: 1.0.0
+  description: |
+    Stable v1 HTTP and WebSocket contract for the SpeechKit Server-Target.
+    All endpoints under `/v1/` are covered by the same backwards-compatibility
+    guarantees as the Framework's public `pkg/speechkit` packages — fields are
+    additive across minor releases; no rename or removal without a version bump.
+
+    Ships with the container image
+    `ghcr.io/kombifyio/speechkit-server:v0.26.0` and later. Earlier images
+    expose the same surface but were Server-Target-internal pre-v0.26.
+
+  contact:
+    url: https://github.com/kombifyio/SpeechKit
+  license:
+    name: Apache-2.0
+    url: https://www.apache.org/licenses/LICENSE-2.0
+
+servers:
+  - url: https://speechkit.example.com
+    description: Replace with your deployment's URL.
+
+# ── Auth ────────────────────────────────────────────────────────────────────
+security:
+  - bearer: []
+  - edgeHmac: []
+
+paths:
+
+  # ── Health ──────────────────────────────────────────────────────────────
+  /healthz:
+    get:
+      summary: Liveness probe
+      description: |
+        Always returns 200 while the process is up. Public — no auth required.
+      tags: [health]
+      security: []
+      responses:
+        '200':
+          description: Process is alive.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    enum: [ok]
+                  version:
+                    type: string
+
+  /readyz:
+    get:
+      summary: Readiness probe
+      description: |
+        Returns 200 only when every registered component reports OK. Returns
+        503 with the same component map otherwise. Public — no auth required.
+      tags: [health]
+      security: []
+      responses:
+        '200': { $ref: '#/components/responses/Readiness' }
+        '503': { $ref: '#/components/responses/Readiness' }
+
+  # ── Dictation ───────────────────────────────────────────────────────────
+  /v1/dictation/transcribe:
+    post:
+      summary: Transcribe audio to text
+      description: |
+        Routes audio through the configured STT provider and returns the
+        resulting transcript. Accepts either a multipart upload or JSON
+        with base64-encoded audio.
+
+        Supported audio formats: WAV (PCM 16-bit), MP3, raw PCM 16 kHz S16
+        mono, WebM/Opus, OGG/Opus. WebM and OGG require ffmpeg in the
+        container (default for Dockerfile.server).
+      tags: [dictation]
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [audio]
+              properties:
+                audio:
+                  type: string
+                  format: binary
+                language:
+                  type: string
+                  description: BCP-47 hint, e.g. "de", "en", "auto".
+                model:
+                  type: string
+                prompt:
+                  type: string
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DictateJSONRequest'
+      responses:
+        '200':
+          description: Transcription succeeded.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DictateResponse' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '413': { $ref: '#/components/responses/PayloadTooLarge' }
+        '415': { $ref: '#/components/responses/UnsupportedMediaType' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+        '503': { $ref: '#/components/responses/ProviderUnavailable' }
+
+  # ── Assist ──────────────────────────────────────────────────────────────
+  /v1/assist/process:
+    post:
+      summary: STT → codeword/utility/LLM → optional TTS
+      description: |
+        Accepts either an audio payload (transcribed via STT first) or a
+        text transcript directly. Runs the Framework's Assist pipeline,
+        which routes to a tool intent or the LLM agent flow, and returns
+        the result plus optional TTS audio as base64 in the JSON response.
+
+        Tool execution is NOT done server-side; clients receive an
+        `action: "execute"` signal plus the matched shortcut name and
+        perform the action themselves.
+      tags: [assist]
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                audio:
+                  type: string
+                  format: binary
+                text:
+                  type: string
+                locale:
+                  type: string
+                selection:
+                  type: string
+                context:
+                  type: string
+                tts:
+                  type: string
+                  description: '"true"/"false" — opt out of TTS audio in the response.'
+                tts_format:
+                  type: string
+                  enum: [mp3, wav, opus]
+                tts_voice:
+                  type: string
+          application/json:
+            schema: { $ref: '#/components/schemas/AssistJSONRequest' }
+      responses:
+        '200':
+          description: Pipeline succeeded.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AssistResponse' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '413': { $ref: '#/components/responses/PayloadTooLarge' }
+        '415': { $ref: '#/components/responses/UnsupportedMediaType' }
+        '422':
+          description: STT returned an empty transcript (audio contained no speech).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+        '503': { $ref: '#/components/responses/ProviderUnavailable' }
+
+  # ── Voice Agent ─────────────────────────────────────────────────────────
+  /v1/voiceagent/sessions:
+    post:
+      summary: Create a Voice Agent session and ticket
+      description: |
+        Creates a session record and returns a one-time HMAC ticket the
+        client uses to upgrade the WebSocket. Tickets expire (default 30 s)
+        and are bound to the session ID — they cannot be replayed against
+        a different session.
+
+        The WebSocket upgrade itself happens at
+        `GET /v1/voiceagent/sessions/{id}/ws?ticket=...` and is documented
+        separately because OpenAPI 3.1 has no first-class WebSocket
+        primitive.
+      tags: [voiceagent]
+      responses:
+        '201':
+          description: Session created.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CreateSessionResponse' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '409':
+          description: Per-identity session limit exceeded.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '503':
+          description: Global session limit reached.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+    get:
+      summary: List the caller's active sessions
+      tags: [voiceagent]
+      responses:
+        '200':
+          description: List returned (possibly empty).
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  sessions:
+                    type: array
+                    items: { $ref: '#/components/schemas/ListedSession' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+
+  /v1/voiceagent/sessions/{id}:
+    delete:
+      summary: Force close a session
+      tags: [voiceagent]
+      parameters:
+        - { $ref: '#/components/parameters/SessionID' }
+      responses:
+        '204': { description: Closed. }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403':
+          description: Caller does not own the session and is not admin.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '404':
+          description: Session not found or already closed.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+
+  # ── Personas ────────────────────────────────────────────────────────────
+  /v1/personas:
+    get:
+      summary: List personas
+      tags: [persona]
+      responses:
+        '200':
+          description: List of personas (TOML seeds + admin overrides merged).
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  personas:
+                    type: array
+                    items: { $ref: '#/components/schemas/Persona' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+    post:
+      summary: Create a persona (admin)
+      tags: [persona]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/Persona' }
+      responses:
+        '201':
+          description: Created.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Persona' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/AdminRequired' }
+        '500': { $ref: '#/components/responses/PersistFailed' }
+
+  /v1/personas/{id}:
+    parameters:
+      - { $ref: '#/components/parameters/PersonaID' }
+    get:
+      summary: Get a persona by id
+      tags: [persona]
+      responses:
+        '200':
+          description: Persona found.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Persona' }
+        '404':
+          description: Persona not found.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+    patch:
+      summary: Update a persona (admin)
+      tags: [persona]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/Persona' }
+      responses:
+        '200':
+          description: Updated.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Persona' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/AdminRequired' }
+        '500': { $ref: '#/components/responses/PersistFailed' }
+    delete:
+      summary: Delete a persona (admin)
+      tags: [persona]
+      responses:
+        '204': { description: Deleted. }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/AdminRequired' }
+        '404':
+          description: Not found.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '500': { $ref: '#/components/responses/PersistFailed' }
+
+  /v1/roles:
+    get:
+      summary: List roles
+      tags: [persona]
+      responses:
+        '200':
+          description: Roles list.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  roles:
+                    type: array
+                    items: { $ref: '#/components/schemas/Role' }
+    post:
+      summary: Create a role (admin)
+      tags: [persona]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/Role' }
+      responses:
+        '201':
+          description: Created.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Role' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/AdminRequired' }
+        '500': { $ref: '#/components/responses/PersistFailed' }
+
+  /v1/roles/{id}:
+    parameters:
+      - { $ref: '#/components/parameters/RoleID' }
+    get:
+      summary: Get role
+      tags: [persona]
+      responses:
+        '200':
+          description: Role.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Role' }
+        '404':
+          description: Not found.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+    patch:
+      summary: Update role (admin)
+      tags: [persona]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/Role' }
+      responses:
+        '200':
+          description: Updated.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Role' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '403': { $ref: '#/components/responses/AdminRequired' }
+        '500': { $ref: '#/components/responses/PersistFailed' }
+    delete:
+      summary: Delete role (admin)
+      tags: [persona]
+      responses:
+        '204':
+          description: Deleted.
+        '403': { $ref: '#/components/responses/AdminRequired' }
+        '404':
+          description: Not found.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '500': { $ref: '#/components/responses/PersistFailed' }
+
+  /v1/sequences:
+    get:
+      summary: List sequences
+      tags: [persona]
+      responses:
+        '200':
+          description: Sequences list.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  sequences:
+                    type: array
+                    items: { $ref: '#/components/schemas/Sequence' }
+    post:
+      summary: Create sequence (admin)
+      tags: [persona]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/Sequence' }
+      responses:
+        '201':
+          description: Created.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Sequence' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '403': { $ref: '#/components/responses/AdminRequired' }
+        '500': { $ref: '#/components/responses/PersistFailed' }
+
+  /v1/sequences/{id}:
+    parameters:
+      - { $ref: '#/components/parameters/SequenceID' }
+    get:
+      summary: Get sequence
+      tags: [persona]
+      responses:
+        '200':
+          description: Sequence.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Sequence' }
+        '404':
+          description: Not found.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+    patch:
+      summary: Update sequence (admin)
+      tags: [persona]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/Sequence' }
+      responses:
+        '200':
+          description: Updated.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Sequence' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '403': { $ref: '#/components/responses/AdminRequired' }
+        '500': { $ref: '#/components/responses/PersistFailed' }
+    delete:
+      summary: Delete sequence (admin)
+      tags: [persona]
+      responses:
+        '204':
+          description: Deleted.
+        '403': { $ref: '#/components/responses/AdminRequired' }
+        '404':
+          description: Not found.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '500': { $ref: '#/components/responses/PersistFailed' }
+
+# ── Components ──────────────────────────────────────────────────────────────
+components:
+  securitySchemes:
+    bearer:
+      type: http
+      scheme: bearer
+      description: |
+        Static deployment-wide token from `$SPEECHKIT_SERVER_TOKEN`. The
+        identity attached to the request context is `service@default/internal`.
+        Suitable for internal service-to-service callers (e.g. kombify-AI ↔
+        SpeechKit on a private network).
+    edgeHmac:
+      type: apiKey
+      in: header
+      name: X-Edge-Auth-Hmac
+      description: |
+        HMAC-SHA256 of `userID + "\n" + orgID + "\n" + plan` using
+        `$EDGE_AUTH_SECRET`. Must be sent alongside `X-Edge-User-Id`,
+        `X-Edge-Org-Id`, `X-Edge-Plan`, optional `X-Edge-Role`. Used
+        when fronted by a Cloudflare Worker / reverse proxy that has
+        already validated a user JWT.
+
+  parameters:
+    SessionID:
+      name: id
+      in: path
+      required: true
+      schema: { type: string }
+    PersonaID:
+      name: id
+      in: path
+      required: true
+      schema: { type: string }
+    RoleID:
+      name: id
+      in: path
+      required: true
+      schema: { type: string }
+    SequenceID:
+      name: id
+      in: path
+      required: true
+      schema: { type: string }
+
+  responses:
+    Readiness:
+      description: Component health snapshot.
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              status:
+                type: string
+                enum: [ok, starting, degraded, unavailable]
+              components:
+                type: object
+                additionalProperties:
+                  type: object
+                  properties:
+                    status:
+                      type: string
+                      enum: [ok, starting, degraded, unavailable]
+                    detail: { type: string }
+                    updated_at: { type: string, format: date-time }
+              uptime_seconds: { type: integer }
+              version: { type: string }
+    BadRequest:
+      description: The request body could not be decoded or failed validation.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    Unauthenticated:
+      description: Missing or invalid credentials.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    AdminRequired:
+      description: Caller's identity does not have role=admin.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    PayloadTooLarge:
+      description: Request body exceeds the configured maximum upload size.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    UnsupportedMediaType:
+      description: Content-Type is not one this endpoint accepts.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    RateLimited:
+      description: Rate limit exceeded. Honour the `Retry-After` header.
+      headers:
+        Retry-After:
+          schema: { type: integer }
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    ProviderUnavailable:
+      description: |
+        No upstream provider was able to satisfy the request. Typical for
+        STT/Genkit/TTS outages, or when the deployment has no provider
+        keys configured for the requested mode.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    PersistFailed:
+      description: |
+        The durable storage layer rejected the write. The in-memory state
+        is unchanged so the next read returns the previous value.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+
+  schemas:
+    Error:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: object
+          required: [code, message]
+          properties:
+            code:
+              type: string
+              description: Stable machine-readable identifier.
+            message:
+              type: string
+            details:
+              type: object
+              additionalProperties: true
+
+    DictateJSONRequest:
+      type: object
+      required: [audio_base64]
+      properties:
+        audio_base64: { type: string }
+        format:
+          type: string
+          enum: [wav, mp3, pcm16]
+        language: { type: string }
+        model: { type: string }
+        prompt: { type: string }
+
+    DictateResponse:
+      type: object
+      properties:
+        text: { type: string }
+        language: { type: string }
+        duration_ms: { type: integer }
+        latency_ms: { type: integer }
+        provider: { type: string }
+        model: { type: string }
+        confidence:
+          type: number
+          format: double
+        source:
+          $ref: '#/components/schemas/SourceMeta'
+
+    AssistJSONRequest:
+      type: object
+      properties:
+        text: { type: string }
+        audio_base64: { type: string }
+        format:
+          type: string
+          enum: [wav, mp3, pcm16]
+        locale: { type: string }
+        selection: { type: string }
+        context: { type: string }
+        tts: { type: boolean }
+        tts_format:
+          type: string
+          enum: [mp3, wav, opus]
+        tts_voice: { type: string }
+        tts_speed:
+          type: number
+          format: double
+
+    AssistResponse:
+      type: object
+      properties:
+        text: { type: string }
+        speak_text: { type: string }
+        action:
+          type: string
+          enum: [respond, execute, silent, shortcut]
+        locale: { type: string }
+        shortcut: { type: string }
+        surface: { type: string }
+        kind: { type: string }
+        transcript: { type: string }
+        audio_base64: { type: string }
+        audio_format: { type: string }
+        latency_ms: { type: integer }
+        source:
+          $ref: '#/components/schemas/SourceMeta'
+
+    CreateSessionResponse:
+      type: object
+      properties:
+        session_id: { type: string }
+        ws_url:
+          type: string
+          format: uri
+          description: |
+            Use this exact URL (already includes the `?ticket=…` query
+            param) to open the WebSocket. Tickets are HMAC-bound to the
+            session id and expire after the configured TTL (default 30 s).
+        ticket: { type: string }
+        expires_at:
+          type: string
+          format: date-time
+
+    ListedSession:
+      type: object
+      properties:
+        session_id: { type: string }
+        state:
+          type: string
+          enum: [pending_ws, active, closed]
+        created_at:
+          type: string
+          format: date-time
+        has_ws_client: { type: boolean }
+
+    SourceMeta:
+      type: object
+      properties:
+        format: { type: string }
+        sample_rate: { type: integer }
+        channels: { type: integer }
+        duration_ms: { type: integer }
+
+    Persona:
+      type: object
+      required: [id, display_name]
+      properties:
+        id: { type: string }
+        display_name: { type: string }
+        description: { type: string }
+        voice: { type: string }
+        locale: { type: string }
+        default_role: { type: string }
+        tags:
+          type: array
+          items: { type: string }
+        metadata:
+          type: object
+          additionalProperties: { type: string }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+        source:
+          type: string
+          enum: [toml, store]
+
+    Role:
+      type: object
+      required: [id, display_name, system_prompt]
+      properties:
+        id: { type: string }
+        display_name: { type: string }
+        system_prompt: { type: string }
+        refinement_prompt: { type: string }
+        locale: { type: string }
+        vocabulary_hint: { type: string }
+        tool_allowlist:
+          type: array
+          items: { type: string }
+        temperature:
+          type: number
+          format: double
+        thinking_enabled: { type: boolean }
+        thinking_level:
+          type: string
+          enum: [off, low, medium, high]
+        include_thoughts: { type: boolean }
+        thinking_budget: { type: integer }
+        automatic_activity_detection: { type: boolean }
+        vad_start_sensitivity:
+          type: string
+          enum: [low, medium, high]
+        vad_end_sensitivity:
+          type: string
+          enum: [low, medium, high]
+        vad_prefix_padding_ms: { type: integer }
+        vad_silence_duration_ms: { type: integer }
+        activity_handling: { type: string }
+        turn_coverage: { type: string }
+        context_compression_enabled: { type: boolean }
+        context_compression_trigger_tokens: { type: integer }
+        context_compression_target_tokens: { type: integer }
+        enable_affective_dialog: { type: boolean }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+        source:
+          type: string
+          enum: [toml, store]
+
+    Sequence:
+      type: object
+      required: [id, display_name, steps]
+      properties:
+        id: { type: string }
+        display_name: { type: string }
+        description: { type: string }
+        completion:
+          type: string
+          enum: [all_steps, explicit_close, max_turns]
+        max_turns: { type: integer }
+        steps:
+          type: array
+          minItems: 1
+          items: { $ref: '#/components/schemas/SequenceStep' }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+        source:
+          type: string
+          enum: [toml, store]
+
+    SequenceStep:
+      type: object
+      required: [id, instruction]
+      properties:
+        id: { type: string }
+        instruction: { type: string }
+        exit_criteria: { type: string }
+        require_tools:
+          type: array
+          items: { type: string }
+        max_turns: { type: integer }
+
+# ── WebSocket protocol (informational) ───────────────────────────────────
+# OpenAPI 3.1 has no first-class WebSocket primitive; the path under
+# /v1/voiceagent/sessions/{id}/ws is documented via tags + the
+# CreateSessionResponse.ws_url field above. The full protocol is described
+# in docs/server/README.md and the wire types in
+# internal/server/voiceagent/protocol.go.

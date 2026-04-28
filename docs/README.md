@@ -11,6 +11,13 @@
 - [api/openapi.v1.yaml](./api/openapi.v1.yaml) — OpenAPI-Vertrag fuer die lokale `/api/v1` Control Plane.
 - [speechkit-storage-architecture.md](./speechkit-storage-architecture.md) — Storage-Modell (SQLite-Default, Postgres BYODB, Cloud-Hybrid geplant).
 
+## Server-Target & Voice Server
+
+- [server/README.md](./server/README.md) — Server-Target Uebersicht, `speechkit-server`, `speechkit-voice`, Modi, Auth und Split-Deployments.
+- [server/DEPLOY.md](./server/DEPLOY.md) — Docker Compose, Render und generische OCI Deployments.
+- [server/openapi.v1.yaml](./server/openapi.v1.yaml) — OpenAPI 3.1 Vertrag fuer Server-Target HTTP und Voice Agent WebSocket.
+- [server/MIGRATION-v0.25-to-v0.26.md](./server/MIGRATION-v0.25-to-v0.26.md) — Migration vom v0.25 Local/Device-Only Stand zum Server-Target Release.
+
 ## Release & OSS-Betrieb
 
 - [deployment-standards.md](./deployment-standards.md) — Kanonische Build-, CI-, Packaging- und Release-Regeln.

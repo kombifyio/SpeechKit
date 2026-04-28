@@ -1,131 +1,108 @@
 # SpeechKit
 
-SpeechKit is a Windows-first speech-to-text framework with a desktop host application. It is designed to be embedded into tools that want local-first dictation, optional cloud providers, and a clean host-managed credential model.
+SpeechKit is a Windows-first speech framework with a desktop reference app,
+an embeddable Go API, and a containerized Server-Target. It is built for
+products that need strict speech modes, local-first defaults, optional cloud
+providers, and host-managed credentials.
 
-The repository treats `frontend/app` as first-class source. The embedded `internal/frontendassets/dist` output is generated from that source and should not be edited manually.
+The repository treats `frontend/app` as first-class source. The embedded
+`internal/frontendassets/dist` output is generated from that source and should
+not be edited manually.
 
-## What SpeechKit Is
+## What You Get
 
-- a Go framework for speech capture, routing, transcription, and desktop integration
-- a Wails-based Windows desktop host that exercises the framework end to end
-- a local-first runtime with optional provider integrations such as Hugging Face and self-hosted VPS endpoints
+| Variant | Use it when | Ships |
+| --- | --- | --- |
+| Device-Target | You want the Windows reference app | Wails desktop host, local overlay, global hotkeys, Settings UI |
+| Local-Target | You embed SpeechKit into a Go app | `pkg/speechkit`, examples, mode contracts, provider catalog |
+| Server-Target | You expose SpeechKit over HTTP/WebSocket | `speechkit-server`, REST endpoints, Voice Agent WebSocket |
+| Voice Server | You scale Voice Agent separately | `speechkit-voice`, Voice Agent WebSocket only |
 
-## Framework Principles
+All variants share the same framework kernel. The Windows app is a reference
+client, not the source of truth for the framework contract.
 
-- provider-agnostic core
-- tokenless framework layer
-- host-managed credentials and secret storage
-- local SQLite default for zero-config usage
-- Windows-first release quality for the first public version
+## Core Features
+
 - three strict product modes: Dictation, Assist, and Voice Agent
-- Gemini Live as the standard Voice Agent runtime with a durable framework prompt, an optional personal refinement prompt, and session policy
+- local-first Dictation with whisper.cpp support and optional cloud STT
+- six STT provider paths: whisper.cpp, Hugging Face, OpenAI, Groq, Google, and self-hosted VPS
+- Assist utilities for rewrites, summaries, answers, drafts, optional TTS, and visible result panels
+- Voice Agent realtime dialogue through Gemini Live or an explicit pipeline fallback
+- layered Voice Agent prompts: host/framework prompt plus optional personal refinement prompt
+- local SQLite state by default, with storage contracts prepared for server deployments
+- host-managed credentials; the framework core does not embed provider tokens
+- public control-plane and server OpenAPI contracts for integrations
 
-## Three Ways to Use SpeechKit
+## Mode Boundaries
 
-### As a Go Library
+| Mode | Intelligence | Contract |
+| --- | --- | --- |
+| Dictation | User Intelligence | Audio in, text out. No LLM rewriting, no tools, no Assist routing. |
+| Assist | Utility Intelligence | One-shot utility or LLM result with optional TTS and result surface metadata. |
+| Voice Agent | Brainstorming Intelligence | Realtime spoken dialogue or explicit pipeline fallback with session summary support. |
 
-Use the framework backend in your own Go application without any UI:
+Default mode hotkeys in the Windows reference app are `Win+Alt` for
+Dictation, `Ctrl+Shift+J` for Assist, and `Ctrl+Shift+K` for Voice Agent.
+
+## Start Here
+
+- [Framework API](./docs/speechkit-framework-api.md) - embeddable Go API, mode contracts, provider catalog, and local control API.
+- [Server-Target guide](./docs/server/README.md) - `speechkit-server`, `speechkit-voice`, mode endpoints, auth, and split deployments.
+- [Server deploy guide](./docs/server/DEPLOY.md) - Docker Compose, Render, and generic OCI deployment notes.
+- [Local OpenAPI](./docs/api/openapi.v1.yaml) - desktop control-plane contract.
+- [Server OpenAPI](./docs/server/openapi.v1.yaml) - HTTP and WebSocket contract for the Server-Target.
+- [Examples](./examples/README.md) - library and provider-catalog examples.
+- [Docs index](./docs/README.md) - architecture, release, trust, and runbook links.
+
+## Quick Start
+
+### Windows App
+
+Download the latest Windows artifacts from
+[GitHub Releases](https://github.com/kombifyio/SpeechKit/releases):
+
+- `SpeechKit-Setup.exe` - installer
+- `SpeechKit-Portable.zip` - portable bundle
+
+Public Windows releases include `SHA256SUMS.txt`, `SpeechKit.sbom.json`, and
+`UNSIGNED-WINDOWS-RELEASE.txt` when the no-cost unsigned release path is
+active.
+
+### Go Library
 
 ```bash
 go get github.com/kombifyio/SpeechKit/pkg/speechkit
 ```
 
-Implement a handful of interfaces (`Transcriber`, `AudioRecorder`, `Persistence`) and the framework handles recording lifecycle, job queuing, and transcription routing. See [`examples/library/`](./examples/library/) for a working dictation pipeline and [`examples/provider-catalog/`](./examples/provider-catalog/) for the three-mode provider contract.
+Use the framework backend in your own Go application by implementing the
+small host interfaces for audio recording, transcription, persistence, and
+output delivery. See [`examples/library/`](./examples/library/) for a minimal
+dictation pipeline and [`examples/provider-catalog/`](./examples/provider-catalog/)
+for the three-mode provider contract.
 
-The public SDK owns and exposes the v23 framework catalog. Desktop and Windows-specific modules adapt this public catalog into their host runtime; they do not own the three-mode provider contract:
+Key public API entry points:
 
-- `speechkit.DefaultModeContracts()` declares the strict Dictation, Assist, and Voice Agent contracts.
-- `speechkit.DefaultProviderProfiles()` returns the reusable provider profile catalog for all three modes.
-- `speechkit.ProfilesForMode(mode)` and `speechkit.ProviderKindsForMode(mode)` let host apps build their own settings UI without importing desktop internals.
-- `speechkit.ValidateProfileForMode(profile, mode)` lets integrations reject profiles that would break a mode boundary.
+- `speechkit.DefaultModeContracts()`
+- `speechkit.DefaultProviderProfiles()`
+- `speechkit.ProfilesForMode(mode)`
+- `speechkit.ProviderKindsForMode(mode)`
+- `speechkit.ValidateProfileForMode(profile, mode)`
 
-The three mode contracts are stable at the framework boundary:
-
-| Mode | Intelligence | Contract |
-|------|--------------|----------|
-| Dictation | User Intelligence | Audio in, text out. No LLM rewriting, no tool calling, no Assist utilities. |
-| Assist | Utility Intelligence | One-shot utility or LLM result with optional TTS and result surface metadata. |
-| Voice Agent | Brainstorming Intelligence | Realtime audio dialogue or explicit pipeline fallback with session summary support. |
-
-### Through the Local Control API
-
-The desktop host exposes a local HTTP control plane so external tools can configure and embed SpeechKit without linking Go code directly. Read-only introspection routes are available to local callers; mutating `PATCH` and `POST` routes require the control-plane token header or cookie.
-
-| Endpoint | Purpose |
-|----------|---------|
-| `GET /api/v1/modes` | Returns mode contracts plus current per-mode settings. |
-| `GET /api/v1/modes/{mode}/settings` | Returns one mode setting. `dictation`, `dictate`, `assist`, and `voice_agent` aliases are accepted. |
-| `PATCH /api/v1/modes/{mode}/settings` | Updates enablement, hotkey behavior, active provider profile, TTS, dictionary, or Voice Agent summary settings. |
-| `POST /api/v1/modes/{mode}/start` | Starts the selected mode through the framework command bus. |
-| `POST /api/v1/modes/{mode}/stop` | Stops the selected mode through the framework command bus. |
-| `GET /api/v1/providers/profiles` | Returns the provider catalog, active profiles, provider groups, and mode contracts. |
-| `GET /api/v1/providers/readiness` | Reports credential, runtime, and capability readiness for every provider profile. |
-| `GET /api/v1/providers/artifacts` | Returns Local Built-in and Local Provider artifacts plus current jobs. |
-| `POST /api/v1/providers/artifacts/{artifactId}/download` | Downloads or pulls a provider artifact. |
-| `POST /api/v1/providers/artifacts/{artifactId}/select` | Selects an already available provider artifact. |
-| `POST /api/v1/providers/{profileId}/activate` | Activates a provider profile for its mode. |
-
-This keeps SpeechKit reusable in existing software: a host can either embed the Go package or treat the Windows app as a local speech runtime with explicit mode and provider contracts. The Windows desktop app is one client implementation on top of the framework backend, not the source of truth for the framework catalog.
-
-### As a Windows Desktop App
-
-Download the installer from the [Releases](https://github.com/kombifyio/SpeechKit/releases) page:
-
-- **SpeechKit-Setup.exe** — Windows installer
-- **SpeechKit-Portable.zip** — portable bundle (no install required)
-
-Windows artifacts may be unsigned while SpeechKit has no available no-cost public code-signing path. Public releases include `SHA256SUMS.txt`, `SpeechKit.sbom.json`, and `UNSIGNED-WINDOWS-RELEASE.txt` so users can verify the build origin and hashes before running the app.
-
-## Current Feature Set
-
-- push-to-talk Dictation with lightweight overlay feedback and no AI/tool routing
-- local runtime state and history via SQLite
-- six STT providers: local whisper.cpp, Hugging Face, OpenAI, Groq, Google, self-hosted VPS
-- Assist mode for one-shot utilities, rewrites, summaries, and answer panels with optional TTS
-- Voice Agent mode for realtime audio-to-audio dialogue (Gemini Live) with a dedicated live transcript surface and custom orb
-- layered Voice Agent setup: host supplies API key, framework prompt, optional personal refinement prompt, and Gemini session policy
-- Local Built-in Dictation model downloads via Whisper.cpp; Local Built-in Assist and Voice Agent use a bundled SpeechKit-managed llama.cpp server with downloadable GGUF model artifacts
-- settings UI for provider, overlay, hotkey, and storage preferences
-
-## Provider Credential Model
-
-The framework core does not embed provider tokens.
-
-For Hugging Face, the current host resolution order is:
-
-1. user token stored from Settings
-2. install token seeded by the installer and migrated on first start
-3. environment variable fallback via `token_env`
-4. explicit Doppler fallback for internal development only
-
-That keeps the public framework neutral while allowing host apps to choose their own policy.
-
-## Prerequisites
-
-- Go `1.26+`
-- Node.js `22+`
-- MinGW-w64 for CGo on Windows
-- NSIS for the canonical Windows build that emits the installer
-- optional: ONNX Runtime DLL for Silero VAD
-- optional: whisper.cpp server binary for local STT
-- optional: Doppler CLI for internal development flows
-
-## Quick Start
+### Server-Target
 
 ```bash
-git clone https://github.com/kombifyio/SpeechKit.git
-cd SpeechKit
-powershell -ExecutionPolicy Bypass -File scripts/build.ps1
+docker pull ghcr.io/kombifyio/speechkit-server:latest
+docker pull ghcr.io/kombifyio/speechkit-voice:latest
 ```
 
-The canonical Windows build produces:
-
-- `dist/windows/SpeechKit/SpeechKit.exe`
-- `dist/windows/SpeechKit-Setup.exe`
+Use `speechkit-server` for Dictation REST, Assist REST, and Voice Agent
+WebSocket from one container. Use `speechkit-voice` when Voice Agent should run
+on its own scaling tier. See [`docs/server/README.md`](./docs/server/README.md).
 
 ## Runtime Configuration
 
-The staged bundle includes `config.toml` next to `SpeechKit.exe`. For custom setups, start from `config.example.toml`.
+The staged Windows bundle includes `config.toml` next to `SpeechKit.exe`. For
+custom setups, start from `config.example.toml`.
 
 ```toml
 [huggingface]
@@ -143,100 +120,90 @@ summarize = ["kurzfassung", "briefing"]
 copy_last = ["kopier den letzten block"]
 ```
 
-Public OSS users should rely on explicit configuration and environment variables. Internal development may additionally use Doppler, but public artifacts must never depend on private Doppler defaults.
+Public OSS users should rely on explicit configuration and environment
+variables. Internal development may use private secret managers, but public
+artifacts must never depend on private defaults.
 
-Shortcut aliases are additive. SpeechKit keeps the built-in multilingual defaults and overlays any configured locale-specific aliases on top, so product teams can ship their own command words without changing Go code.
+## Provider Credentials
 
-Default mode hotkeys are `Win+Alt` for Dictation, `Ctrl+Shift+J` for Assist, and `Ctrl+Shift+K` for Voice Agent.
+SpeechKit's framework core is tokenless. Hosts decide how credentials are
+stored and injected.
 
-## Voice Agent Live Test
+The Windows reference host resolves Hugging Face credentials in this order:
 
-For the first end-to-end Voice Agent run, keep the setup minimal:
+1. user token stored from Settings
+2. install token seeded by the installer and migrated on first start
+3. environment variable fallback via `token_env`
+4. internal development fallback only when explicitly configured
 
-1. Set `voice_agent_hotkey` in `config.toml` and keep `active_mode = "voice_agent"` only if you want Voice Agent preselected on startup.
-2. Provide a Gemini API key through the env var referenced by `[providers.google].api_key_env` (default: `GOOGLE_AI_API_KEY`).
-3. Keep `[voice_agent].framework_prompt = ""` if you want the built-in default helper, or supply your own durable framework prompt.
-4. Optionally add `[voice_agent].refinement_prompt` for personal preferences that should sharpen the framework prompt without replacing it.
-5. Use `model = "gemini-2.5-flash-native-audio-preview-12-2025"` for the current recommended default Voice Agent runtime.
-6. Launch `SpeechKit.exe` and press the configured `voice_agent_hotkey` to start and stop the live session.
+Server deployments read secret values only from environment variables whose
+names are configured in TOML.
 
-Notes:
+## Build And Verification
 
-- Native-audio Gemini Live sessions do not rely on `speechConfig.languageCode`; SpeechKit steers preferred language through the layered prompt assembly and locale-aware defaults.
-- `enable_affective_dialog = true` automatically switches the Gemini Live client to `v1alpha` and is intended for Gemini 2.5 native-audio sessions, not Gemini 3.1 Flash Live.
-- Non-blocking tool behavior is available in the Voice Agent framework contract, but Gemini 3.1 Flash Live only supports sequential tool execution.
-- Voice Agent is a realtime-dialog surface. If the live runtime is unavailable, SpeechKit now keeps the mode boundary explicit instead of silently dropping into the Assist capture pipeline.
+Prerequisites:
 
-The Voice Agent now combines two prompt layers on every session:
+- Go `1.26+`
+- Node.js `22+`
+- MinGW-w64 for CGo on Windows
+- NSIS for installer builds
+- optional: ONNX Runtime DLL for Silero VAD
+- optional: whisper.cpp server binary for local STT
 
-1. `framework_prompt`: the durable host/framework instruction that defines the product behavior and fixed flows
-2. `refinement_prompt`: the user-level personalization layer that sharpens tone, brevity, naming, or other preferences without replacing the framework layer
-
-## Mode Boundaries
-
-- **Dictation**: speech-to-text only, no codeword or utility routing
-- **Assist**: one-shot utility mode that either inserts directly when safe or opens a reusable result panel
-- **Voice Agent**: realtime spoken dialogue for brainstorming and quick clarification, not a work-product or insertion surface
-
-## Build and Verification
+Canonical Windows app build:
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File scripts/build.ps1
+powershell -ExecutionPolicy Bypass -File scripts/build.ps1 -SkipInstaller
 ```
 
-This is the canonical verification path. It runs:
+Common checks:
 
-- frontend tests
-- frontend lint
-- frontend production build
-- `go vet`
-- `go test ./...`
-- bundle build
-- installer build
+```powershell
+go test ./...
+go vet ./...
+npm --prefix frontend/app run test
+npm --prefix frontend/app run build
+npm --prefix Website run test
+npm --prefix Website run build
+```
 
 ## Project Structure
 
 ```text
-pkg/speechkit/          Framework-level orchestration (public API)
+pkg/speechkit/          Public framework orchestration API
 cmd/speechkit/          Wails desktop host application
-frontend/app/           React/Vite UI sources
-internal/audio/         Audio capture (WASAPI)
-internal/stt/           STT provider implementations (6 providers)
+cmd/speechkit-server/   Linux Server-Target entry point
+cmd/speechkit-voice/    Linux Voice Server entry point
+frontend/app/           React/Vite Windows UI sources
+Website/                Svelte/Vite public website
+internal/audio/         WASAPI capture and playback
+internal/stt/           STT provider implementations
 internal/tts/           TTS provider implementations
-internal/ai/            LLM integration via Genkit
-internal/assist/        Assist mode pipeline (STT -> LLM -> TTS)
-internal/voiceagent/    Voice agent (Gemini Live WebSocket)
-internal/vad/           Voice activity detection (Silero ONNX)
-internal/config/        Runtime config and secret resolution
-internal/router/        Provider routing
-internal/store/         Local storage (SQLite / PostgreSQL)
-internal/secrets/       Host-side secret storage
-internal/frontendassets/ Generated embedded frontend assets
+internal/ai/            LLM integration
+internal/assist/        Assist mode pipeline
+internal/voiceagent/    Voice Agent runtime
+internal/server/        Server-Target HTTP/WebSocket adapters
+internal/serverclient/  Device-to-server transport adapters
+internal/store/         SQLite/Postgres storage contracts
+deploy/                 Docker, Render, and server config
+docs/                   Architecture, release, server, and runbook docs
 examples/               Library usage examples
 installer/              NSIS Windows installer
-scripts/                Build and release scripts
-docs/                   Architecture and contributor docs
+scripts/                Build, release, export, and verification scripts
 ```
 
-## OSS Release Hygiene
+## Release And Trust
 
-SpeechKit is prepared in a private upstream and mirrored into a separate release repository. Public publication is allowlist-based.
+SpeechKit is prepared in a private upstream and mirrored into
+`kombifyio/SpeechKit` through an allowlisted public export.
 
 Start with:
 
-- [`docs/deployment-standards.md`](./docs/deployment-standards.md)
-- [`docs/oss-release-boundary.md`](./docs/oss-release-boundary.md)
-- [`docs/oss-release-checklist.md`](./docs/oss-release-checklist.md)
-- [`docs/public-repo-operating-model.md`](./docs/public-repo-operating-model.md)
-
-## Windows Artifact Trust
-
-Public Windows releases are built from `kombifyio/SpeechKit`. If a trusted free signing provider is configured, the release workflow signs and verifies the Windows binaries. Until then, the supported no-cost path publishes unsigned Windows artifacts with checksums, SBOM, GitHub provenance when enabled, and an explicit unsigned-release notice.
-
-See:
-
-- [`docs/code-signing-policy.md`](./docs/code-signing-policy.md)
-- [`docs/signpath-oss-setup.md`](./docs/signpath-oss-setup.md) for optional future SignPath setup
+- [deployment standards](./docs/deployment-standards.md)
+- [OSS release boundary](./docs/oss-release-boundary.md)
+- [OSS release checklist](./docs/oss-release-checklist.md)
+- [public repo operating model](./docs/public-repo-operating-model.md)
+- [code signing policy](./docs/code-signing-policy.md)
 
 ## Contributing
 

@@ -5,7 +5,7 @@ SpeechKit is developed in a private upstream and mirrored into a separate releas
 ## What Ships in the OSS Release
 
 - framework and desktop host source under `cmd/`, `internal/`, `pkg/`, `frontend/`, `assets/`, and `installer/`
-- public-facing documentation under `README.md`, `docs/`, and governance files
+- public-facing documentation under `README.md`, `docs/`, `docs/server/`, and governance files
 - canonical build scripts under `scripts/`
 - release metadata and workflow inputs under `package.json`, `package-lock.json`, `.changeset/`, and `scripts/sync-version.mjs`
 - the curated public GitHub workflow set under `.github/workflows/{build,changesets,ci,release}.yml`

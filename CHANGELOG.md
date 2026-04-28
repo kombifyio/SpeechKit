@@ -4,6 +4,50 @@ All notable changes to SpeechKit should be documented in this file.
 
 The format is based on Keep a Changelog and this project is intended to ship under Apache-2.0.
 
+## [0.27.0] - 2026-04-27
+
+### Highlights
+
+- **Public Server-Target docs restored**: The OSS export now includes
+  `docs/server/`, so the Server-Target guide, deploy guide, migration
+  guide, and Server OpenAPI contract ship with the public repo.
+- **Release verification hardened**: The publish flow now waits for
+  both `ghcr.io/kombifyio/speechkit-server` and
+  `ghcr.io/kombifyio/speechkit-voice`, and treats stale website
+  deployment as a release blocker unless an explicit emergency bypass
+  is selected.
+- **Public start page simplified**: The root README now summarizes the
+  Device-Target, Local-Target, Server-Target, and Voice Server variants
+  up front, then links to deeper docs instead of embedding every API
+  detail on the landing page.
+
+### Fixed
+
+- Added required public-surface checks for `docs/server/README.md`,
+  `docs/server/DEPLOY.md`,
+  `docs/server/MIGRATION-v0.25-to-v0.26.md`, and
+  `docs/server/openapi.v1.yaml` so future exports fail before a release
+  can hide Voice Server documentation again.
+- Sanitized the Server-Target deploy guide so public docs no longer
+  reference private Doppler project names or internal deployment
+  coordinates.
+
+### Changed
+
+- `publish-oss.yml` now verifies both Server-Target container packages
+  in GHCR before triggering the website deploy.
+- Website deploy triggering now fails closed when the deploy workflow is
+  unavailable or cannot be dispatched.
+
+### Docs
+
+- Reworked `README.md` into a concise public overview with a deployment
+  variant matrix, key feature list, quick-start paths, and links to the
+  framework, server, OpenAPI, examples, release, and trust docs.
+- Added `docs/server/` links to the docs index and refreshed website
+  copy/tests for `speechkit-server`, `speechkit-voice`, and the Voice
+  Server release surface.
+
 ## [0.26.1] - 2026-04-27
 
 ### Fixed

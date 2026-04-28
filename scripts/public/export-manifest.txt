@@ -42,3 +42,4 @@ docs/public-repo-operating-model.md
 docs/signpath-oss-setup.md
 docs/speechkit-framework-api.md
 docs/speechkit-storage-architecture.md
+docs/server/
