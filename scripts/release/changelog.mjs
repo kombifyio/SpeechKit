@@ -26,6 +26,34 @@ function getSubsectionBody(body, heading) {
   return afterHeading.slice(0, nextHeadingMatch.index).trim()
 }
 
+function extractBulletBlocks(body) {
+  const bullets = []
+  let current = ''
+
+  for (const line of body.split('\n')) {
+    const trimmed = line.trim()
+    if (trimmed.startsWith('- ')) {
+      if (current) {
+        bullets.push(current)
+      }
+      current = trimmed
+      continue
+    }
+
+    if (!current || !trimmed || trimmed.startsWith('### ')) {
+      continue
+    }
+
+    current = `${current} ${trimmed}`
+  }
+
+  if (current) {
+    bullets.push(current)
+  }
+
+  return bullets
+}
+
 function toReleaseNote(rawLine, index) {
   const raw = rawLine.slice(2).trim()
   const boldMatch = raw.match(/^\*\*(.+?)\*\*:\s*(.+)$/)
@@ -84,11 +112,7 @@ export function extractLatestReleaseNotes(markdown, options = {}) {
   const latest = sections[0]
   const highlightsBody = getSubsectionBody(latest.body, 'Highlights')
   const sourceBody = highlightsBody || latest.body
-  const bulletLines = sourceBody
-    .split('\n')
-    .map(line => line.trim())
-    .filter(line => line.startsWith('- '))
-    .slice(0, limit)
+  const bulletLines = extractBulletBlocks(sourceBody).slice(0, limit)
 
   return {
     version: latest.version,

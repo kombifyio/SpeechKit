@@ -6,87 +6,75 @@ The format is based on Keep a Changelog and this project is intended to ship und
 
 ## [0.27.0] - 2026-04-27
 
-v0.27.0 is the public release that makes the v0.26 Server-Target work
-visible and usable. v0.26 introduced the implementation, but the Voice
-Server and server docs were not surfaced correctly in the public repo
-and website. This release republishes that work as the primary release
-story and hardens the gates that keep it visible.
+v0.27.0 is the public release that makes the large v0.26 server work
+visible and usable. The main story is the dedicated Voice Server,
+clearer server deployment options, and documentation that explains the
+new modular architecture without requiring private project context.
 
 ### Highlights
 
-- **Voice Server is now public**: SpeechKit now ships
-  `cmd/speechkit-voice` and `ghcr.io/kombifyio/speechkit-voice`, a
-  focused Voice Agent WebSocket server for realtime audio dialogue
-  that can run separately from the full REST/WebSocket server.
-- **Server-Target docs are first-class**: The public repo now includes
-  `docs/server/`, the deploy guide, migration guide, and OpenAPI 3.1
-  contract, so operators can install, configure, and integrate the full
-  server and Voice Server without private project context.
-- **Modular target architecture**: Device-Target, Local-Target,
-  Server-Target, and Voice Server now share the same Framework kernel
-  while keeping Dictation, Assist, and Voice Agent boundaries explicit
-  across local, embedded, and remote deployments.
+- **Voice Server is now public**: SpeechKit now includes a dedicated
+  Voice Server for realtime Voice Agent conversations. It can run
+  separately from the full server when voice workloads need their own
+  scaling or deployment path.
+- **Server deployment docs are first-class**: The public docs now
+  explain the Windows app, Go framework, full server, and dedicated
+  Voice Server, with setup and API guidance for operators.
+- **Modular architecture is clearer**: Dictation, Assist, and Voice
+  Agent share one framework core while staying cleanly separated across
+  local, desktop, embedded, and server deployments.
 
 ### Added
 
-- **Voice Server release surface.** The OSS release now documents and
-  publishes the focused `speechkit-voice` target alongside the full
-  `speechkit-server`. Both are built from the same source tree and
-  Dockerfile, but the Voice Server defaults to the Voice Agent mode set
-  for realtime WebSocket workloads.
-- **Server-Target public surface.** `cmd/speechkit-server`,
-  `cmd/speechkit-voice`, `internal/server/*`, `deploy/docker/*`, and
-  `docs/server/*` are part of the public framework story: HTTP
-  Dictation, HTTP Assist, Voice Agent WebSocket, health/readiness
-  endpoints, auth middleware, rate limiting, persona/catalog support,
-  and SQLite-backed persistence interfaces.
-- **ModeSource split deployment architecture.** Device builds can route
+- **Dedicated Voice Server.** The release now documents and publishes
+  the focused `speechkit-voice` target alongside the full
+  `speechkit-server`. It is built for realtime Voice Agent WebSocket
+  workloads and can be deployed independently.
+- **Full server release surface.** SpeechKit can now be deployed as a
+  server for HTTP Dictation, HTTP Assist, realtime Voice Agent
+  WebSocket, health/readiness checks, auth middleware, rate limiting,
+  personas/catalogs, and persistence-backed operation.
+- **Split deployment routing.** Desktop and device builds can route
   Dictation, Assist, and Voice Agent independently to local providers or
-  remote SpeechKit Server targets, so teams can keep lightweight local
-  use cases on-device while moving heavier REST or realtime voice
-  workloads to server infrastructure.
-- **Self-hosted Voice Agent provider foundation.** The cascaded Voice
-  Agent path is documented as the CPU-friendly server alternative that
-  combines STT, LLM orchestration, and TTS when Gemini Live is not the
+  remote SpeechKit servers, so teams can keep light work local and move
+  heavier workloads to server infrastructure.
+- **Self-hosted Voice Agent option.** The cascaded Voice Agent path is
+  documented as a CPU-friendly alternative that combines speech-to-text,
+  model orchestration, and text-to-speech when Gemini Live is not the
   desired realtime provider.
-- **Server E2E harness.** The release documents the `sk-e2e` smoke
-  scenarios for `health`, `dictation`, `assist`, and `voiceagent`, plus
-  local compose helpers for validating the server stack.
+- **Server smoke testing.** The release includes documented smoke
+  scenarios for health, dictation, assist, and voice-agent flows so
+  operators can validate a running server stack.
 
 ### Changed
 
-- The public README now starts with the actual framework variants:
-  Device-Target, Local-Target, Server-Target, and Voice Server. It keeps
-  the start page concise and links to deeper docs instead of embedding
-  every server/API detail.
-- Website release copy now surfaces the same story: SpeechKit is not
-  only a Windows app, but a framework with `speechkit-server` and the
-  dedicated `speechkit-voice` Voice Server.
-- The release workflow now verifies the public release, the public
-  server-image workflow, and the website deploy before a release is
-  treated as complete.
+- The public README now starts with the actual product variants:
+  Windows app, embeddable Go framework, full server, and dedicated Voice
+  Server. It keeps the start page concise and links to deeper docs
+  instead of embedding every server/API detail.
+- Website release copy now tells the same story as the release notes and
+  surfaces the Voice Server as a first-class option.
+- The release workflow now verifies the public release, the server image
+  workflow, and the website deploy before a release is treated as
+  complete.
 
 ### Docs
 
-- Reworked `README.md` into a concise public overview with a deployment
+- Reworked the public README into a concise overview with a deployment
   variant matrix, key feature list, quick-start paths, and links to the
-  framework, server, OpenAPI, examples, release, and trust docs.
-- Restored and linked `docs/server/README.md`,
-  `docs/server/DEPLOY.md`,
-  `docs/server/MIGRATION-v0.25-to-v0.26.md`, and
-  `docs/server/openapi.v1.yaml` from the public docs index.
+  deeper framework, server, API, examples, release, and trust docs.
+- Restored and linked the server documentation, including deployment,
+  migration, and API guidance for the full server and Voice Server.
 - Sanitized the Server-Target deploy guide so public docs no longer
-  reference private Doppler project names or internal deployment
-  coordinates.
+  reference private infrastructure details.
 
 ### Fixed
 
-- Added required public-surface checks for the Server-Target and Voice
-  Server docs so future exports fail before a release can hide the
-  server documentation again.
-- Fixed the website/release pipeline path that let stale website
-  release content survive after the public source and assets were
-  already updated.
+- Added public-surface checks so future exports fail before server or
+  Voice Server documentation can disappear from a release.
+- Fixed the website/release pipeline path that allowed stale website
+  release content to remain visible after the public source and assets
+  were already updated.
 
 ## [0.26.1] - 2026-04-27
 

@@ -15,7 +15,8 @@ const sampleChangelog = `# Changelog
 
 ### Highlights
 
-- **Local onboarding**: Continue while downloads run in the background.
+- **Local onboarding**: Continue while downloads run in the
+  background.
 - **Recommended local model**: Whisper Large v3 Turbo is now the default recommendation.
 - **Release surface automation**: Website surfaces now derive data directly from the changelog.
 
