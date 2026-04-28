@@ -14,9 +14,9 @@ reads values from `os.Getenv(<name from config>)`.
 
 ## Image contract
 
-The Server-Target is distributed as a single Docker image built from
-`deploy/docker/Dockerfile.server`. Tags follow the repository's semver
-tags (e.g. `ghcr.io/kombifyio/speechkit-server:v0.26.0`). Every image:
+The Server-Target is distributed as OCI images built from the same Dockerfile.
+Tags follow the repository's semver tags, for example
+`ghcr.io/kombifyio/speechkit-server:v0.27.0`. Every image:
 
 - listens on port `8080` over plain HTTP (add TLS at the edge)
 - exposes `/healthz` (liveness) and `/readyz` (readiness + component map)

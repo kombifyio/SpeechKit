@@ -15,8 +15,7 @@ not be edited manually.
 | --- | --- | --- |
 | Device-Target | You want the Windows reference app | Wails desktop host, local overlay, global hotkeys, Settings UI |
 | Local-Target | You embed SpeechKit into a Go app | `pkg/speechkit`, examples, mode contracts, provider catalog |
-| Server-Target | You expose SpeechKit over HTTP/WebSocket | `speechkit-server`, REST endpoints, Voice Agent WebSocket |
-| Voice Server | You scale Voice Agent separately | `speechkit-voice`, Voice Agent WebSocket only |
+| Server-Target | You expose SpeechKit over HTTP/WebSocket | containerized server runtime, REST endpoints, realtime Voice Agent WebSocket |
 
 All variants share the same framework kernel. The Windows app is a reference
 client, not the source of truth for the framework contract.
@@ -42,12 +41,12 @@ client, not the source of truth for the framework contract.
 | Voice Agent | Brainstorming Intelligence | Realtime spoken dialogue or explicit pipeline fallback with session summary support. |
 
 Default mode hotkeys in the Windows reference app are `Win+Alt` for
-Dictation, `Ctrl+Shift+J` for Assist, and `Ctrl+Shift+K` for Voice Agent.
+Dictation, `Ctrl+Win` for Assist, and `Ctrl+Shift` for Voice Agent.
 
 ## Start Here
 
 - [Framework API](./docs/speechkit-framework-api.md) - embeddable Go API, mode contracts, provider catalog, and local control API.
-- [Server-Target guide](./docs/server/README.md) - `speechkit-server`, `speechkit-voice`, mode endpoints, auth, and split deployments.
+- [Server-Target guide](./docs/server/README.md) - server runtime, mode endpoints, auth, and deployment profiles.
 - [Server deploy guide](./docs/server/DEPLOY.md) - Docker Compose, Render, and generic OCI deployment notes.
 - [Local OpenAPI](./docs/api/openapi.v1.yaml) - desktop control-plane contract.
 - [Server OpenAPI](./docs/server/openapi.v1.yaml) - HTTP and WebSocket contract for the Server-Target.
@@ -92,12 +91,11 @@ Key public API entry points:
 
 ```bash
 docker pull ghcr.io/kombifyio/speechkit-server:latest
-docker pull ghcr.io/kombifyio/speechkit-voice:latest
 ```
 
-Use `speechkit-server` for Dictation REST, Assist REST, and Voice Agent
-WebSocket from one container. Use `speechkit-voice` when Voice Agent should run
-on its own scaling tier. See [`docs/server/README.md`](./docs/server/README.md).
+Use the Server-Target for Dictation REST, Assist REST, and realtime Voice Agent
+WebSocket from a containerized deployment. See
+[`docs/server/README.md`](./docs/server/README.md).
 
 ## Runtime Configuration
 
@@ -173,7 +171,7 @@ npm --prefix Website run build
 pkg/speechkit/          Public framework orchestration API
 cmd/speechkit/          Wails desktop host application
 cmd/speechkit-server/   Linux Server-Target entry point
-cmd/speechkit-voice/    Linux Voice Server entry point
+cmd/speechkit-voice/    Linux voice-only server entry point
 frontend/app/           React/Vite Windows UI sources
 Website/                Svelte/Vite public website
 internal/audio/         WASAPI capture and playback

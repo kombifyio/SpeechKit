@@ -70,13 +70,13 @@ shape; copy or wrap as needed.
 
 ## Server-Target onboarding
 
-v0.26 ships **two images** from the same Go source tree. Pick the
-shape that matches your deployment plan:
+v0.26 ships the Server-Target with two deployment profiles. Pick the
+profile that matches your deployment plan:
 
 | Image | What it serves | Use when |
 |---|---|---|
 | `ghcr.io/kombifyio/speechkit-server` | All three modes — Dictation REST + Assist REST + Voice Agent WS | You want one URL, simple ops, single-pod deploy. Default. |
-| `ghcr.io/kombifyio/speechkit-voice` | Voice Agent WS only | You're scaling voice independently from REST traffic, or running voice on beefier nodes (more memory, optional GPU) than REST needs. |
+| `ghcr.io/kombifyio/speechkit-voice` | Voice Agent WS | You run realtime voice traffic on its own service while keeping the same Server-Target contract. |
 
 Both images:
 
@@ -84,11 +84,9 @@ Both images:
   `deploy/config/server.example.toml`).
 - Take secrets from environment variables — `SPEECHKIT_SERVER_TOKEN`
   is the only required one; provider keys are per-mode optional.
-- Speak the same v1 contract; clients can't tell which one they're
-  talking to (and shouldn't need to).
+- Speak the same v1 contract.
 
-See the "Backend vs. Voice Server" decision guide in
-`docs/server/README.md` if you're unsure.
+See the deployment profile guide in `docs/server/README.md`.
 
 ### Single-pod deploy (full server)
 
@@ -123,7 +121,7 @@ curl -fsS -H "Authorization: Bearer $SPEECHKIT_SERVER_TOKEN" \
   http://localhost:8080/v1/personas
 ```
 
-### Split deploy (REST tier + Voice tier)
+### Split deploy (REST modes + voice profile)
 
 ```bash
 # Backend tier: speechkit-server with REST modes only.
@@ -136,7 +134,7 @@ docker run -d --name speechkit-backend \
   ghcr.io/kombifyio/speechkit-server:v0.26.0 \
   --modes=dictation,assist
 
-# Voice tier: speechkit-voice — voice WS only by default.
+# Voice profile: speechkit-voice
 docker run -d --name speechkit-voice \
   -p 8090:8080 \
   -v /etc/speechkit:/etc/speechkit:ro \

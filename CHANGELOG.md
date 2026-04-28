@@ -7,29 +7,30 @@ The format is based on Keep a Changelog and this project is intended to ship und
 ## [0.27.0] - 2026-04-27
 
 v0.27.0 is the public release that makes the large v0.26 server work
-visible and usable. The main story is the dedicated Voice Server,
-clearer server deployment options, and documentation that explains the
-new modular architecture without requiring private project context.
+visible and usable. The main story is the Server-Target release
+surface, realtime Voice Agent WebSocket support, clearer deployment
+options, and documentation that explains the new modular architecture
+without requiring private project context.
 
 ### Highlights
 
-- **Voice Server is now public**: SpeechKit now includes a dedicated
-  Voice Server for realtime Voice Agent conversations. It can run
-  separately from the full server when voice workloads need their own
-  scaling or deployment path.
+- **Realtime voice is part of Server-Target**: SpeechKit now includes a
+  server deployment profile for realtime Voice Agent conversations.
+  Teams can run voice workloads through the same Server-Target contract
+  and deploy them with their own scaling path.
 - **Server deployment docs are first-class**: The public docs now
-  explain the Windows app, Go framework, full server, and dedicated
-  Voice Server, with setup and API guidance for operators.
+  explain the Windows app, Go framework, and Server-Target, with setup
+  and API guidance for operators.
 - **Modular architecture is clearer**: Dictation, Assist, and Voice
   Agent share one framework core while staying cleanly separated across
   local, desktop, embedded, and server deployments.
 
 ### Added
 
-- **Dedicated Voice Server.** The release now documents and publishes
-  the focused `speechkit-voice` target alongside the full
-  `speechkit-server`. It is built for realtime Voice Agent WebSocket
-  workloads and can be deployed independently.
+- **Realtime voice deployment profile.** The release now documents and
+  publishes the `speechkit-voice` profile alongside the default
+  `speechkit-server` profile. It is built for realtime Voice Agent
+  WebSocket workloads.
 - **Full server release surface.** SpeechKit can now be deployed as a
   server for HTTP Dictation, HTTP Assist, realtime Voice Agent
   WebSocket, health/readiness checks, auth middleware, rate limiting,
@@ -49,11 +50,11 @@ new modular architecture without requiring private project context.
 ### Changed
 
 - The public README now starts with the actual product variants:
-  Windows app, embeddable Go framework, full server, and dedicated Voice
-  Server. It keeps the start page concise and links to deeper docs
-  instead of embedding every server/API detail.
+  Windows app, embeddable Go framework, and Server-Target. It keeps the
+  start page concise and links to deeper docs instead of embedding every
+  server/API detail.
 - Website release copy now tells the same story as the release notes and
-  surfaces the Voice Server as a first-class option.
+  surfaces realtime voice as part of the Server-Target.
 - The release workflow now verifies the public release, the server image
   workflow, and the website deploy before a release is treated as
   complete.
@@ -64,14 +65,14 @@ new modular architecture without requiring private project context.
   variant matrix, key feature list, quick-start paths, and links to the
   deeper framework, server, API, examples, release, and trust docs.
 - Restored and linked the server documentation, including deployment,
-  migration, and API guidance for the full server and Voice Server.
+  migration, and API guidance for the Server-Target.
 - Sanitized the Server-Target deploy guide so public docs no longer
   reference private infrastructure details.
 
 ### Fixed
 
-- Added public-surface checks so future exports fail before server or
-  Voice Server documentation can disappear from a release.
+- Added public-surface checks so future exports fail before server
+  documentation can disappear from a release.
 - Fixed the website/release pipeline path that allowed stale website
   release content to remain visible after the public source and assets
   were already updated.

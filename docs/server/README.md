@@ -1,40 +1,39 @@
 # SpeechKit Server-Target
 
-The Server-Target is one of three first-class deployment forms for the SpeechKit
-Framework, alongside the **Device-Target** (e.g. the Windows reference UI under
-`cmd/speechkit`) and the **Local-Target** (direct library/CLI use). All three
-share the same Framework kernel under `internal/{ai,assist,dictation,models,
-router,shortcuts,stt,tts,vad,voiceagent}`; the Server-Target is purely an HTTP
-/ WebSocket adapter that exposes the Framework to remote callers.
+The Server-Target is the network deployment form of the SpeechKit Framework. It
+exposes Dictation, Assist, and Voice Agent over HTTP/WebSocket while using the
+same mode contracts as the Windows app and embeddable Go API.
 
-> **SpeechKit is the Framework, not the client.** The Windows desktop app is a
-> reference UI that demonstrates how to integrate SpeechKit into a device-local
-> application. Server-Target exists so teams can embed the same Framework into
-> their own products over a network without shipping the Framework inside
-> their own binary.
+The Windows app, the Go API, and the Server-Target are three ways to host the
+same framework core:
 
-## Deployment at a glance
+| Target | Use it when | Surface |
+|---|---|---|
+| Device-Target | You want the Windows reference app | Desktop UI, overlay, settings, global hotkeys |
+| Local-Target | You embed SpeechKit into a Go product | Go API, mode contracts, provider catalog |
+| Server-Target | You expose SpeechKit to remote clients | Containerized HTTP/WebSocket service |
 
-The Server-Target ships in **two flavours** built from one source tree:
+## Deployment profiles
+
+The Server-Target publishes two deployment profiles:
 
 | Binary / image | Modes exposed | Docker target | When to choose |
 |---|---|---|---|
 | `speechkit-server` (`ghcr.io/kombifyio/speechkit-server`) | Dictation REST + Assist REST + Voice Agent WS | `--target speechkit-server` | Single-pod deployments. One URL, all three modes. Default. |
-| `speechkit-voice` (`ghcr.io/kombifyio/speechkit-voice`) | Voice Agent WS only | `--target speechkit-voice` | Run voice on its own pod when scaling stateful WebSocket traffic separately from stateless REST, or when voice needs different node sizing (more memory, optional GPU) than REST. |
+| `speechkit-voice` (`ghcr.io/kombifyio/speechkit-voice`) | Voice Agent WS | `--target speechkit-voice` | Realtime voice traffic on its own service, with the same Server-Target contract. |
 
 Both binaries:
 
 - Are Linux-only (`//go:build linux`).
 - Build from `deploy/docker/Dockerfile.server` via the `--target` flag.
 - Read `/etc/speechkit/config.toml` (copy `deploy/config/server.example.toml`).
-- Take secrets from environment variables — names referenced from config; no
-  secret values are ever read from the config file.
-- Share the same kernel. The Voice Server is **not** a different product —
-  it's a deploy-time decision about which modes the binary serves.
+- Take secrets from environment variables whose names are referenced from
+  config.
+- Share the same Server-Target settings, auth model, health checks, and API
+  conventions.
 
-The split is invisible to the desktop: the device-target's
-`[server_connection]` + per-mode `mode_source` config (see Phase 4 below)
-lets Dictation/Assist hit one URL and Voice Agent hit another.
+The desktop can route each mode to a server through `[server_connection]` and
+per-mode `mode_source` settings.
 
 ## Quick start (local dev)
 
@@ -43,7 +42,7 @@ lets Dictation/Assist hit one URL and Voice Agent hit another.
 docker build -f deploy/docker/Dockerfile.server \
   --target speechkit-server -t speechkit-server:dev .
 
-# Optional: build the voice-only image too
+# Optional: build the voice profile too
 docker build -f deploy/docker/Dockerfile.server \
   --target speechkit-voice  -t speechkit-voice:dev  .
 
@@ -58,8 +57,7 @@ docker compose -f deploy/docker/docker-compose.yml up -d
 curl -fsS http://localhost:8080/healthz
 curl -fsS http://localhost:8080/readyz
 
-# 4. Optional: also bring up a voice-only instance on :8090 for split-
-#    deployment parity testing.
+# 4. Optional: also bring up the voice profile on :8090 for deployment testing.
 docker compose -f deploy/docker/docker-compose.voice.yml up -d
 ```
 
@@ -86,46 +84,40 @@ across minor bumps; renames or removals require a major version bump.
 | Personas API | HTTP CRUD     | `/v1/personas`, `/v1/roles`, `/v1/sequences` | ✅ ships in v0.26 |
 | Health       | HTTP GET      | `/healthz`, `/readyz`                   | ✅ |
 
-The mode set the binary serves is decided at startup from
-`[server].modes` in `config.toml` or the `--modes=` CLI flag. The two
-published images set sensible defaults so most operators never touch
-the flag:
+The mode set the binary serves is decided at startup from `[server].modes` in
+`config.toml` or the `--modes=` CLI flag. The published images set defaults for
+their deployment profile:
 
 - `speechkit-server`: defaults to all three modes.
 - `speechkit-voice`: defaults to `voiceagent` only.
 
-## Backend vs. Voice Server — when to split
+## Voice profile
 
-You don't have to. The full `speechkit-server` image handles all three
-modes from one container, and that's the simplest deploy. Pick the
-two-pod split when at least one of these is true:
+The `speechkit-voice` profile is useful when realtime Voice Agent sessions get
+their own infrastructure. Typical reasons:
 
 - **Different scaling axes.** Dictation + Assist are stateless REST
   calls; horizontally scale-out is trivial and instances are
   interchangeable. Voice Agent holds long-lived WebSocket sessions
   with state (Persona/Role/Sequence, Gemini Live connection, idle
-  watchdog); scaling it is more about pinning sessions to instances
-  than spinning up new ones. The two scaling characteristics fight
-  each other if you put them on the same pod.
+  watchdog); scaling it focuses on session placement and connection
+  stability.
 - **Different node sizing.** REST traffic is happy on lean nodes;
   Voice Agent benefits from more memory (concurrent sessions),
   optionally a GPU (the cascaded provider's local LLM), and tighter
   network latency to the upstream voice provider. Putting voice on
   its own pod lets you size each tier honestly.
-- **Different blast radius.** A bad Gemini Live deploy that breaks
-  Voice Agent shouldn't take Dictation/Assist down. Two pods give
-  you that isolation for free.
+- **Different blast radius.** Isolating realtime voice keeps
+  Dictation and Assist on their own rollout path during voice-provider
+  changes.
 - **Different release cadence.** Voice Agent providers churn faster
   than STT/Assist (Gemini 3.1 preview, Moshi/Kyutai, the cascaded
   provider). Splitting lets you upgrade the voice tier without
   re-rolling the REST tier.
 
-The device-target is fully prepared for the split: each mode has its
-own `mode_source` switch (`local` | `server`) and the
-`[server_connection]` URL is shared but you can run two SpeechKit
-servers on different hostnames and have the desktop app point
-Dictation/Assist at one and Voice Agent at the other. The split is
-invisible to end users — they just talk and type.
+The Device-Target can route modes independently through `mode_source`
+(`local` | `server`) and server connection settings, so Dictation, Assist, and
+Voice Agent can use the deployment profile that fits the workload.
 
 ## Authentication
 
@@ -145,8 +137,7 @@ credentials.
 
 ## Relation to the Framework kernel
 
-The Server-Target contains **no business logic**. Every substantive operation
-delegates to the Framework packages:
+Every substantive operation delegates to the shared Framework packages:
 
 | Server handler        | Delegates to                         |
 |-----------------------|--------------------------------------|
@@ -155,8 +146,8 @@ delegates to the Framework packages:
 | Voice Agent session   | `internal/voiceagent.Session` + `internal/voiceagent.GeminiLive` |
 | Persona compose       | reads TOML seeds + store-backed overrides, composes `voiceagent.LiveConfig` |
 
-Adding a fourth deployment target (for instance an Android binding) follows the
-same pattern: a thin adapter directory that talks to the same Framework kernel.
+Adding another deployment target follows the same pattern: a thin adapter around
+the same Framework kernel.
 
 ## Directory layout
 
@@ -170,14 +161,13 @@ deploy/config/                 # Reference config.toml
 docs/server/                   # This document + API reference
 ```
 
-## What M1 delivers
+## Current server surface
 
-- Binary boots, parses CLI flags, loads `config.toml`, sets up structured logs.
+- CLI flags and TOML configuration.
 - HTTP listener with graceful shutdown on SIGINT/SIGTERM.
-- `/healthz` (always 200 while the process is up) and `/readyz` (component
-  health snapshot; 503 until every registered component is OK).
-- Middleware chain: recover → logging → CORS → auth.
-- Reference Dockerfile and docker-compose for local development.
-- CI workflow that builds, vets, tests, and smoke-tests the image.
-
-Subsequent milestones (M2–M6) flesh out the modes and the deploy pipeline.
+- Liveness and readiness endpoints.
+- Middleware chain for recover, logging, CORS, and auth.
+- Dictation REST, Assist REST, Voice Agent WebSocket, personas, roles,
+  sequences, and health endpoints.
+- Reference Dockerfile and docker-compose files for local development.
+- CI workflow that builds, vets, tests, and smoke-tests the server image.
