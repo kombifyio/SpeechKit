@@ -29,7 +29,7 @@ const (
 // Zero value = strict (public https only). Tests relax it to allow loopback.
 var AICallValidation = netsec.ValidationOptions{}
 
-var localLLMCallValidation = netsec.ValidationOptions{AllowLoopback: true, AllowHTTP: true}
+var localLLMCallValidation = netsec.ValidationOptions{AllowLoopback: true, AllowPrivate: true, AllowHTTP: true}
 
 // newAIClient builds a hardened HTTP client for LLM calls (TLS 1.2+,
 // redacting transport, resolve-time IP validation, long-running timeout).

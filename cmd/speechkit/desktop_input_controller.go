@@ -508,7 +508,7 @@ func (c desktopInputController) activateVoiceAgent(ctx context.Context) {
 				Thinking: voiceagent.ThinkingPolicy{
 					Enabled:         c.voiceAgentConfig.ThinkingEnabled,
 					IncludeThoughts: c.voiceAgentConfig.IncludeThoughts,
-					ThinkingBudget:  int32(c.voiceAgentConfig.ThinkingBudget), //nolint:gosec // Windows API integer conversion, value fits
+					ThinkingBudget:  int32(c.voiceAgentConfig.ThinkingBudget), // #nosec G115 -- config normalization bounds Gemini thinking budgets before use.
 					ThinkingLevel:   voiceagent.ThinkingLevel(c.voiceAgentConfig.ThinkingLevel),
 				},
 				ContextCompression: voiceagent.ContextCompressionPolicy{
@@ -520,8 +520,8 @@ func (c desktopInputController) activateVoiceAgent(ctx context.Context) {
 					Automatic:         c.voiceAgentConfig.AutomaticActivityDetection,
 					StartSensitivity:  voiceagent.StartSensitivity(c.voiceAgentConfig.VADStartSensitivity),
 					EndSensitivity:    voiceagent.EndSensitivity(c.voiceAgentConfig.VADEndSensitivity),
-					PrefixPaddingMs:   int32(c.voiceAgentConfig.VADPrefixPaddingMs),   //nolint:gosec // Windows API integer conversion, value fits
-					SilenceDurationMs: int32(c.voiceAgentConfig.VADSilenceDurationMs), //nolint:gosec // Windows API integer conversion, value fits
+					PrefixPaddingMs:   int32(c.voiceAgentConfig.VADPrefixPaddingMs),   // #nosec G115 -- VAD millisecond settings are bounded by config normalization.
+					SilenceDurationMs: int32(c.voiceAgentConfig.VADSilenceDurationMs), // #nosec G115 -- VAD millisecond settings are bounded by config normalization.
 					ActivityHandling:  voiceagent.ActivityHandling(c.voiceAgentConfig.ActivityHandling),
 					TurnCoverage:      voiceagent.TurnCoverage(c.voiceAgentConfig.TurnCoverage),
 				},

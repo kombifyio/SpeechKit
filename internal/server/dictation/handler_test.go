@@ -192,6 +192,37 @@ func TestHandler_JSONBase64HappyPath(t *testing.T) {
 	}
 }
 
+func TestHandler_DefaultPromptFeedsDictionaryHint(t *testing.T) {
+	fake := &fakeRouter{result: okResult()}
+	h, err := New(Options{
+		Router:        fake,
+		MaxUploadMB:   25,
+		DefaultPrompt: "Prefer these dictionary terms: Kombify, AcmeOS.",
+	})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+
+	pcm := synthSine(16000, 1, 440.0, 100)
+	wav := wrapWAV(pcm, 16000, 1)
+	body, _ := json.Marshal(map[string]string{
+		"audio_base64": base64.StdEncoding.EncodeToString(wav),
+		"format":       "wav",
+	})
+
+	req := httptest.NewRequest(http.MethodPost, "/v1/dictation/transcribe", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d body=%s", rec.Code, rec.Body.String())
+	}
+	if fake.lastOpts.Prompt != "Prefer these dictionary terms: Kombify, AcmeOS." {
+		t.Fatalf("prompt = %q", fake.lastOpts.Prompt)
+	}
+}
+
 func TestHandler_JSONInvalidBase64(t *testing.T) {
 	h := mustHandler(t, &fakeRouter{result: okResult()})
 	body := []byte(`{"audio_base64":"!!!not-base64!!!", "format":"wav"}`)

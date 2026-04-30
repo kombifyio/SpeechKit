@@ -268,3 +268,46 @@ func TestComboTrackerDoubleDownNoRefire(t *testing.T) {
 		t.Fatalf("expected no event on duplicate Alt down, got %#v", event)
 	}
 }
+
+func TestManagerSetActiveDeduplicatesPollingAndHookSignals(t *testing.T) {
+	m := NewManager(ParseCombo("ctrl+shift"))
+
+	m.setActive(true)
+	m.setActive(true)
+	m.setActive(false)
+	m.setActive(false)
+
+	first := <-m.Events()
+	if first.Type != EventKeyDown {
+		t.Fatalf("first event = %v, want EventKeyDown", first.Type)
+	}
+	second := <-m.Events()
+	if second.Type != EventKeyUp {
+		t.Fatalf("second event = %v, want EventKeyUp", second.Type)
+	}
+
+	select {
+	case event := <-m.Events():
+		t.Fatalf("unexpected duplicate event: %#v", event)
+	default:
+	}
+}
+
+func TestManagerReconfigureEmitsKeyUpWhenActive(t *testing.T) {
+	m := NewManager(ParseCombo("win+alt"))
+
+	m.setActive(true)
+	if event := <-m.Events(); event.Type != EventKeyDown {
+		t.Fatalf("first event = %v, want EventKeyDown", event.Type)
+	}
+
+	m.Reconfigure(nil)
+
+	event := <-m.Events()
+	if event.Type != EventKeyUp {
+		t.Fatalf("reconfigure event = %v, want EventKeyUp", event.Type)
+	}
+	if m.comboPressed() {
+		t.Fatal("disabled combo should not report pressed")
+	}
+}

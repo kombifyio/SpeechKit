@@ -102,7 +102,20 @@ func runOnce(opts Options) int {
 		cfg.Server.ListenAddr = trimmed
 	}
 
+	defaultNotes := config.ApplyServerRuntimeDefaults(cfg)
+	settingsNotes, err := config.ApplyServerModelSettingsFile(cfg)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "%s: load server model settings: %v\n", banner, err)
+		return 2
+	}
+
 	setupLogger(cfg)
+	for _, note := range defaultNotes {
+		slog.Info("server runtime default", "msg", note)
+	}
+	for _, note := range settingsNotes {
+		slog.Info("server model setting", "msg", note)
+	}
 
 	slog.Info(banner+" starting",
 		"version", version,

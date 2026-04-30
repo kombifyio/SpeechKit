@@ -150,10 +150,12 @@ func (s *SQLiteStore) SaveTranscription(ctx context.Context, text, language, pro
 	}
 
 	if s.saveAudio && s.maxStorageMB > 0 {
-		go s.enforceStorageLimit() //nolint:contextcheck,gosec // G118: maintenance goroutines must not be bound to request context
+		//nolint:contextcheck // maintenance cleanup must not be cancelled with the request.
+		go s.enforceStorageLimit() // #nosec G118 -- bounded retention cleanup, not request-scoped work.
 	}
 	if s.saveAudio && s.audioRetentionDays > 0 {
-		go s.enforceAudioRetention() //nolint:contextcheck,gosec // G118: maintenance goroutines must not be bound to request context
+		//nolint:contextcheck // maintenance cleanup must not be cancelled with the request.
+		go s.enforceAudioRetention() // #nosec G118 -- bounded retention cleanup, not request-scoped work.
 	}
 
 	return nil
@@ -476,10 +478,12 @@ func (s *SQLiteStore) UpdateQuickNoteCapture(ctx context.Context, id int64, text
 		_ = os.Remove(currentAudioPath)
 	}
 	if s.saveAudio && s.maxStorageMB > 0 {
-		go s.enforceStorageLimit() //nolint:contextcheck,gosec // G118: maintenance goroutines must not be bound to request context
+		//nolint:contextcheck // maintenance cleanup must not be cancelled with the request.
+		go s.enforceStorageLimit() // #nosec G118 -- bounded retention cleanup, not request-scoped work.
 	}
 	if s.saveAudio && s.audioRetentionDays > 0 {
-		go s.enforceAudioRetention() //nolint:contextcheck,gosec // G118: maintenance goroutines must not be bound to request context
+		//nolint:contextcheck // maintenance cleanup must not be cancelled with the request.
+		go s.enforceAudioRetention() // #nosec G118 -- bounded retention cleanup, not request-scoped work.
 	}
 	return nil
 }

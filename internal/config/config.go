@@ -38,6 +38,7 @@ const (
 	OverlayFeedbackModeSmallFeedback   = "small_feedback"
 
 	DefaultLocalLLMBaseURL = "http://127.0.0.1:8082/v1"
+	DefaultLocalLLMModel   = "ggml-org/gemma-4-E4B-it-GGUF:Q4_K_M"
 
 	DefaultDictatePrimaryProfileID    = "stt.local.whispercpp"
 	DefaultAssistPrimaryProfileID     = "assist.builtin.gemma4-e4b"
@@ -64,6 +65,7 @@ type Config struct {
 	Audio          AudioConfig          `toml:"audio"`
 	UI             UIConfig             `toml:"ui"`
 	Vocabulary     VocabularyConfig     `toml:"vocabulary"`
+	Assist         AssistConfig         `toml:"assist"`
 	Shortcuts      ShortcutsConfig      `toml:"shortcuts"`
 	ModelSelection ModelSelectionConfig `toml:"model_selection"`
 
@@ -98,7 +100,7 @@ type Config struct {
 type ServerConfig struct {
 	ListenAddr            string   `toml:"listen_addr"`          // e.g. ":8080"
 	Modes                 []string `toml:"modes"`                // subset of ["dictation","assist","voiceagent"]; empty = all
-	AuthMode              string   `toml:"auth_mode"`            // "bearer" | "edge_hmac" | "bearer_or_edge"
+	AuthMode              string   `toml:"auth_mode"`            // "none" | "bearer" | "edge_hmac" | "bearer_or_edge"
 	BearerTokenEnv        string   `toml:"bearer_token_env"`     // env var name holding the bearer token
 	EdgeAuthSecretEnv     string   `toml:"edge_auth_secret_env"` // env var name holding the HMAC secret
 	CORSAllowedOrigins    []string `toml:"cors_allowed_origins"`
@@ -223,6 +225,10 @@ type AudioConfig struct {
 
 type VocabularyConfig struct {
 	Dictionary string `toml:"dictionary"`
+}
+
+type AssistConfig struct {
+	EnabledTools []string `toml:"enabled_tools"`
 }
 
 type ShortcutsConfig struct {
@@ -398,6 +404,7 @@ type LocalLLMConfig struct {
 type VPSConfig struct {
 	Enabled   bool   `toml:"enabled"`
 	URL       string `toml:"url"`
+	Model     string `toml:"model"`
 	APIKeyEnv string `toml:"api_key_env"`
 }
 
@@ -570,7 +577,7 @@ func Load(path string) (*Config, error) {
 		path = defaultConfigPath()
 	}
 
-	data, err := os.ReadFile(path) //nolint:gosec // path is application config dir, not user-controlled input
+	data, err := os.ReadFile(path) // #nosec G304 -- path is the application config path supplied by startup/config plumbing.
 	if err != nil {
 		if os.IsNotExist(err) {
 			return cfg, nil
@@ -738,20 +745,22 @@ func backfillLegacyAssistModels(meta toml.MetaData, cfg *Config) {
 		return
 	}
 
-	backfillLegacyAssistField(!meta.IsDefined("huggingface", "assist_model"), &cfg.HuggingFace.AssistModel, cfg.HuggingFace.AgentModel)
-	backfillLegacyAssistField(!meta.IsDefined("providers", "openai", "assist_model"), &cfg.Providers.OpenAI.AssistModel, cfg.Providers.OpenAI.AgentModel)
-	backfillLegacyAssistField(!meta.IsDefined("providers", "groq", "assist_model"), &cfg.Providers.Groq.AssistModel, cfg.Providers.Groq.AgentModel)
-	backfillLegacyAssistField(!meta.IsDefined("providers", "google", "assist_model"), &cfg.Providers.Google.AssistModel, cfg.Providers.Google.AgentModel)
-	backfillLegacyAssistField(!meta.IsDefined("providers", "ollama", "assist_model"), &cfg.Providers.Ollama.AssistModel, cfg.Providers.Ollama.AgentModel)
-	backfillLegacyAssistField(!meta.IsDefined("providers", "openrouter", "assist_model"), &cfg.Providers.OpenRouter.AssistModel, cfg.Providers.OpenRouter.AgentModel)
-	backfillLegacyAssistField(!meta.IsDefined("local_llm", "assist_model"), &cfg.LocalLLM.AssistModel, cfg.LocalLLM.AgentModel)
+	backfillLegacyAssistField(!meta.IsDefined("huggingface", "assist_model"), meta.IsDefined("huggingface", "agent_model"), &cfg.HuggingFace.AssistModel, cfg.HuggingFace.AgentModel)
+	backfillLegacyAssistField(!meta.IsDefined("providers", "openai", "assist_model"), meta.IsDefined("providers", "openai", "agent_model"), &cfg.Providers.OpenAI.AssistModel, cfg.Providers.OpenAI.AgentModel)
+	backfillLegacyAssistField(!meta.IsDefined("providers", "groq", "assist_model"), meta.IsDefined("providers", "groq", "agent_model"), &cfg.Providers.Groq.AssistModel, cfg.Providers.Groq.AgentModel)
+	backfillLegacyAssistField(!meta.IsDefined("providers", "google", "assist_model"), meta.IsDefined("providers", "google", "agent_model"), &cfg.Providers.Google.AssistModel, cfg.Providers.Google.AgentModel)
+	backfillLegacyAssistField(!meta.IsDefined("providers", "ollama", "assist_model"), meta.IsDefined("providers", "ollama", "agent_model"), &cfg.Providers.Ollama.AssistModel, cfg.Providers.Ollama.AgentModel)
+	backfillLegacyAssistField(!meta.IsDefined("providers", "openrouter", "assist_model"), meta.IsDefined("providers", "openrouter", "agent_model"), &cfg.Providers.OpenRouter.AssistModel, cfg.Providers.OpenRouter.AgentModel)
+	backfillLegacyAssistField(!meta.IsDefined("local_llm", "assist_model"), meta.IsDefined("local_llm", "agent_model"), &cfg.LocalLLM.AssistModel, cfg.LocalLLM.AgentModel)
 }
 
-func backfillLegacyAssistField(assistMissing bool, assistValue *string, legacyAgentValue string) {
-	if !assistMissing || assistValue == nil || strings.TrimSpace(*assistValue) != "" {
+func backfillLegacyAssistField(assistMissing, legacyAgentDefined bool, assistValue *string, legacyAgentValue string) {
+	if !assistMissing || !legacyAgentDefined || assistValue == nil {
 		return
 	}
-	*assistValue = strings.TrimSpace(legacyAgentValue)
+	if legacyAgentValue = strings.TrimSpace(legacyAgentValue); legacyAgentValue != "" {
+		*assistValue = legacyAgentValue
+	}
 }
 
 func Save(path string, cfg *Config) error {
@@ -762,7 +771,7 @@ func Save(path string, cfg *Config) error {
 		return fmt.Errorf("create config dir: %w", err)
 	}
 
-	file, err := os.Create(path) //nolint:gosec // path is application config dir, not user-controlled input
+	file, err := os.Create(path) // #nosec G304 -- path is the application config path supplied by startup/config plumbing.
 	if err != nil {
 		return fmt.Errorf("create config: %w", err)
 	}
@@ -836,12 +845,12 @@ func defaults() *Config {
 		LocalLLM: LocalLLMConfig{
 			Enabled:      false,
 			BaseURL:      DefaultLocalLLMBaseURL,
-			Model:        "gemma4:e4b",
+			Model:        DefaultLocalLLMModel,
 			Port:         8082,
 			GPU:          "auto",
-			UtilityModel: "gemma4:e4b",
-			AssistModel:  "gemma4:e4b",
-			AgentModel:   "gemma4:e4b",
+			UtilityModel: DefaultLocalLLMModel,
+			AssistModel:  DefaultLocalLLMModel,
+			AgentModel:   DefaultLocalLLMModel,
 		},
 		VPS: VPSConfig{
 			Enabled:   false,
@@ -884,7 +893,7 @@ func defaults() *Config {
 			},
 			Google: TTSGoogle{
 				Enabled: false,
-				Voice:   "de-DE-Neural2-B",
+				Voice:   "en-US-Neural2-J",
 			},
 			HuggingFace: TTSHuggingFace{
 				Enabled: false,
@@ -974,7 +983,7 @@ func defaults() *Config {
 		Server: ServerConfig{
 			ListenAddr:               ":8080",
 			Modes:                    nil, // nil = all three modes enabled
-			AuthMode:                 "bearer",
+			AuthMode:                 "none",
 			BearerTokenEnv:           "SPEECHKIT_SERVER_TOKEN", //nolint:gosec // env var name, not a credential
 			EdgeAuthSecretEnv:        "EDGE_AUTH_SECRET",       //nolint:gosec // env var name, not a credential
 			CORSAllowedOrigins:       []string{},

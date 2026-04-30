@@ -206,7 +206,7 @@ func supportProfiles() []Profile {
 			Modality:       ModalityUtility,
 			ProviderKind:   ProviderKindLocalBuiltIn,
 			ExecutionMode:  ExecutionModeLocal,
-			ModelID:        "gemma4:e4b",
+			ModelID:        speechkit.DefaultLocalBuiltInLLMModel,
 			Source:         "Local Built-in",
 			Description:    "SpeechKit-managed llama.cpp runtime for summaries, routing, and command follow-ups.",
 			License:        "gemma",

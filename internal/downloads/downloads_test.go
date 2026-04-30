@@ -293,14 +293,14 @@ func TestCatalogExposesLlamaCppAssistDownloadChoices(t *testing.T) {
 	if len(assistItems) < 2 {
 		t.Fatalf("llama.cpp assist download choices = %d, want at least 2", len(assistItems))
 	}
-	if assistItems[0].ID != "llamacpp.gemma-3-4b-it-q4-k-m" {
-		t.Fatalf("first llama.cpp assist choice = %q, want %q", assistItems[0].ID, "llamacpp.gemma-3-4b-it-q4-k-m")
+	if assistItems[0].ID != "llamacpp.gemma-4-e4b-it-q4-k-m" {
+		t.Fatalf("first llama.cpp assist choice = %q, want %q", assistItems[0].ID, "llamacpp.gemma-4-e4b-it-q4-k-m")
 	}
 	if !assistItems[0].Recommended {
-		t.Fatal("expected Q4_K_M llama.cpp assist model to be recommended")
+		t.Fatal("expected Gemma 4 E4B Q4_K_M llama.cpp assist model to be recommended")
 	}
-	if assistItems[1].ID != "llamacpp.gemma-3-4b-it-q8-0" {
-		t.Fatalf("second llama.cpp assist choice = %q, want %q", assistItems[1].ID, "llamacpp.gemma-3-4b-it-q8-0")
+	if assistItems[1].ID != "llamacpp.gemma-4-e2b-it-q8-0" {
+		t.Fatalf("second llama.cpp assist choice = %q, want %q", assistItems[1].ID, "llamacpp.gemma-4-e2b-it-q8-0")
 	}
 }
 
@@ -323,11 +323,11 @@ func TestCatalogMarksWhisperCppTurboSelectedFromConfig(t *testing.T) {
 
 func TestCatalogMarksLlamaCppAssistModelSelectedFromConfig(t *testing.T) {
 	cfg := &config.Config{}
-	cfg.LocalLLM.ModelPath = filepath.Join("C:", "SpeechKit", "models", "gemma-3-4b-it-Q4_K_M.gguf")
+	cfg.LocalLLM.ModelPath = filepath.Join("C:", "SpeechKit", "models", "gemma-4-E4B-it-Q4_K_M.gguf")
 
 	items := Catalog(t.Context(), cfg)
 	for _, item := range items {
-		if item.ID == "llamacpp.gemma-3-4b-it-q4-k-m" {
+		if item.ID == "llamacpp.gemma-4-e4b-it-q4-k-m" {
 			if !item.Selected {
 				t.Fatal("expected llama.cpp assist Q4_K_M model to be selected from config")
 			}
@@ -347,7 +347,7 @@ func TestCatalogMarksLocalLLMRuntimeRequiredWhenBundledServerMissing(t *testing.
 
 	items := CatalogWithStatus(t.Context(), cfg, StatusOptions{ProbeRuntimes: true})
 	for _, item := range items {
-		if item.ID == "llamacpp.gemma-3-4b-it-q4-k-m" {
+		if item.ID == "llamacpp.gemma-4-e4b-it-q4-k-m" {
 			if item.RuntimeReady {
 				t.Fatal("expected local LLM runtime to be unavailable")
 			}
@@ -377,7 +377,7 @@ func TestCatalogMarksLocalLLMRuntimeReadyWhenBundledServerPresent(t *testing.T) 
 
 	items := CatalogWithStatus(t.Context(), cfg, StatusOptions{ProbeRuntimes: true})
 	for _, item := range items {
-		if item.ID == "llamacpp.gemma-3-4b-it-q4-k-m" {
+		if item.ID == "llamacpp.gemma-4-e4b-it-q4-k-m" {
 			if !item.RuntimeReady {
 				t.Fatalf("expected local LLM runtime to be ready: %s", item.RuntimeProblem)
 			}
@@ -393,9 +393,9 @@ func TestCatalogMarksLocalLLMRuntimeReadyWhenBundledServerPresent(t *testing.T) 
 
 func TestCatalogMarksLocalLLMArtifactsSelectedPerProfile(t *testing.T) {
 	cfg := &config.Config{}
-	cfg.LocalLLM.ModelPath = filepath.Join("C:", "SpeechKit", "models", "gemma-3-4b-it-Q4_K_M.gguf")
-	cfg.LocalLLM.AssistModel = "gemma-3-4b-it-Q4_K_M.gguf"
-	cfg.LocalLLM.AgentModel = "gemma-3-4b-it-Q8_0.gguf"
+	cfg.LocalLLM.ModelPath = filepath.Join("C:", "SpeechKit", "models", "gemma-4-E4B-it-Q4_K_M.gguf")
+	cfg.LocalLLM.AssistModel = "gemma-4-E4B-it-Q4_K_M.gguf"
+	cfg.LocalLLM.AgentModel = "gemma-4-E2B-it-Q8_0.gguf"
 
 	items := CatalogWithStatus(t.Context(), cfg, StatusOptions{})
 	selected := map[string]bool{}
@@ -403,14 +403,14 @@ func TestCatalogMarksLocalLLMArtifactsSelectedPerProfile(t *testing.T) {
 		selected[item.ID] = item.Selected
 	}
 
-	if !selected["llamacpp.gemma-3-4b-it-q4-k-m"] {
+	if !selected["llamacpp.gemma-4-e4b-it-q4-k-m"] {
 		t.Fatal("expected assist Q4_K_M artifact to be selected")
 	}
-	if selected["llamacpp.gemma-3-4b-it-q4-k-m-voice"] {
+	if selected["llamacpp.gemma-4-e4b-it-q4-k-m-voice"] {
 		t.Fatal("did not expect voice Q4_K_M artifact to be selected from assist model")
 	}
-	if !selected["llamacpp.gemma-3-4b-it-q8-0-voice"] {
-		t.Fatal("expected voice Q8_0 artifact to be selected")
+	if !selected["llamacpp.gemma-4-e2b-it-q8-0-voice"] {
+		t.Fatal("expected voice E2B Q8_0 artifact to be selected")
 	}
 }
 

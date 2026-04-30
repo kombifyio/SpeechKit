@@ -43,7 +43,7 @@ func LoadInstallState() (*InstallState, error) {
 	path := installStatePath()
 	state := &InstallState{}
 
-	data, err := os.ReadFile(path) //nolint:gosec // path is application config dir, not user-controlled input
+	data, err := os.ReadFile(path) // #nosec G304 -- installStatePath is scoped to the SpeechKit data directory.
 	if err != nil {
 		if os.IsNotExist(err) {
 			return state, nil
@@ -70,7 +70,7 @@ func SaveInstallState(state *InstallState) error {
 	}
 
 	path := installStatePath()
-	file, err := os.Create(path) //nolint:gosec // path is application config dir, not user-controlled input
+	file, err := os.Create(path) // #nosec G304 -- installStatePath is scoped to the SpeechKit data directory.
 	if err != nil {
 		return fmt.Errorf("create install state: %w", err)
 	}

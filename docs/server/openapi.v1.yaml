@@ -4,9 +4,11 @@ info:
   version: 1.0.0
   description: |
     Stable v1 HTTP and WebSocket contract for the SpeechKit Server-Target.
-    All endpoints under `/v1/` are covered by the same backwards-compatibility
-    guarantees as the Framework's public `pkg/speechkit` packages — fields are
-    additive across minor releases; no rename or removal without a version bump.
+    The canonical browser-facing API prefix is `/api/v1/`; `/v1/` remains
+    available as a legacy alias. These endpoints are covered by the same
+    backwards-compatibility guarantees as the Framework's public
+    `pkg/speechkit` packages — fields are additive across minor releases; no
+    rename or removal without a version bump.
 
     Ships with the container image
     `ghcr.io/kombifyio/speechkit-server:v0.26.0` and later. Earlier images
@@ -23,7 +25,10 @@ servers:
     description: Replace with your deployment's URL.
 
 # ── Auth ────────────────────────────────────────────────────────────────────
+# Default deployments are public (`auth_mode = "none"`). Bearer or edge-HMAC
+# auth can be enabled by the framework user in front of, or inside, the server.
 security:
+  - {}
   - bearer: []
   - edgeHmac: []
 
@@ -64,7 +69,7 @@ paths:
         '503': { $ref: '#/components/responses/Readiness' }
 
   # ── Dictation ───────────────────────────────────────────────────────────
-  /v1/dictation/transcribe:
+  /api/v1/dictation/transcribe:
     post:
       summary: Transcribe audio to text
       description: |
@@ -111,7 +116,7 @@ paths:
         '503': { $ref: '#/components/responses/ProviderUnavailable' }
 
   # ── Assist ──────────────────────────────────────────────────────────────
-  /v1/assist/process:
+  /api/v1/assist/process:
     post:
       summary: STT → codeword/utility/LLM → optional TTS
       description: |
@@ -171,7 +176,7 @@ paths:
         '503': { $ref: '#/components/responses/ProviderUnavailable' }
 
   # ── Voice Agent ─────────────────────────────────────────────────────────
-  /v1/voiceagent/sessions:
+  /api/v1/voiceagent/sessions:
     post:
       summary: Create a Voice Agent session and ticket
       description: |
@@ -181,7 +186,7 @@ paths:
         a different session.
 
         The WebSocket upgrade itself happens at
-        `GET /v1/voiceagent/sessions/{id}/ws?ticket=...` and is documented
+        `GET /api/v1/voiceagent/sessions/{id}/ws?ticket=...` and is documented
         separately because OpenAPI 3.1 has no first-class WebSocket
         primitive.
       tags: [voiceagent]
@@ -218,7 +223,7 @@ paths:
                     items: { $ref: '#/components/schemas/ListedSession' }
         '401': { $ref: '#/components/responses/Unauthenticated' }
 
-  /v1/voiceagent/sessions/{id}:
+  /api/v1/voiceagent/sessions/{id}:
     delete:
       summary: Force close a session
       tags: [voiceagent]
@@ -239,7 +244,7 @@ paths:
               schema: { $ref: '#/components/schemas/Error' }
 
   # ── Personas ────────────────────────────────────────────────────────────
-  /v1/personas:
+  /api/v1/personas:
     get:
       summary: List personas
       tags: [persona]
@@ -274,7 +279,7 @@ paths:
         '403': { $ref: '#/components/responses/AdminRequired' }
         '500': { $ref: '#/components/responses/PersistFailed' }
 
-  /v1/personas/{id}:
+  /api/v1/personas/{id}:
     parameters:
       - { $ref: '#/components/parameters/PersonaID' }
     get:
@@ -323,7 +328,7 @@ paths:
               schema: { $ref: '#/components/schemas/Error' }
         '500': { $ref: '#/components/responses/PersistFailed' }
 
-  /v1/roles:
+  /api/v1/roles:
     get:
       summary: List roles
       tags: [persona]
@@ -357,7 +362,7 @@ paths:
         '403': { $ref: '#/components/responses/AdminRequired' }
         '500': { $ref: '#/components/responses/PersistFailed' }
 
-  /v1/roles/{id}:
+  /api/v1/roles/{id}:
     parameters:
       - { $ref: '#/components/parameters/RoleID' }
     get:
@@ -405,7 +410,7 @@ paths:
               schema: { $ref: '#/components/schemas/Error' }
         '500': { $ref: '#/components/responses/PersistFailed' }
 
-  /v1/sequences:
+  /api/v1/sequences:
     get:
       summary: List sequences
       tags: [persona]
@@ -438,7 +443,7 @@ paths:
         '403': { $ref: '#/components/responses/AdminRequired' }
         '500': { $ref: '#/components/responses/PersistFailed' }
 
-  /v1/sequences/{id}:
+  /api/v1/sequences/{id}:
     parameters:
       - { $ref: '#/components/parameters/SequenceID' }
     get:
@@ -822,7 +827,7 @@ components:
 
 # ── WebSocket protocol (informational) ───────────────────────────────────
 # OpenAPI 3.1 has no first-class WebSocket primitive; the path under
-# /v1/voiceagent/sessions/{id}/ws is documented via tags + the
+# /api/v1/voiceagent/sessions/{id}/ws is documented via tags + the
 # CreateSessionResponse.ws_url field above. The full protocol is described
 # in docs/server/README.md and the wire types in
 # internal/server/voiceagent/protocol.go.

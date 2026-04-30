@@ -108,6 +108,114 @@ export async function mockBackendRoutes(page: Page): Promise<void> {
     }),
   )
 
+  const serverConnection = {
+    enabled: false,
+    url: '',
+    bearerTokenEnv: 'SPEECHKIT_SERVER_TOKEN',
+    bearerTokenSet: false,
+    fallbackToLocal: true,
+    requestTimeoutSec: 20,
+  }
+
+  await page.route('**/api/v1/server-connection', (route: Route) =>
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify(serverConnection),
+    }),
+  )
+
+  await page.route('**/api/v1/modes', (route: Route) =>
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        contracts: [],
+        settings: {
+          dictation: {
+            enabled: true,
+            hotkey: 'win+alt',
+            hotkeyBehavior: 'push_to_talk',
+            primaryProfileId: 'stt.local.whispercpp',
+            fallbackProfileId: '',
+            modeSource: 'local',
+            dictionaryEnabled: true,
+          },
+          assist: {
+            enabled: true,
+            hotkey: 'ctrl+win',
+            hotkeyBehavior: 'push_to_talk',
+            primaryProfileId: 'assist.builtin.gemma4-e4b',
+            fallbackProfileId: '',
+            modeSource: 'local',
+            ttsEnabled: false,
+            utilityRegistry: 'built-in',
+          },
+          voiceAgent: {
+            enabled: true,
+            hotkey: 'ctrl+shift',
+            hotkeyBehavior: 'toggle',
+            primaryProfileId: 'realtime.builtin.pipeline',
+            fallbackProfileId: '',
+            modeSource: 'local',
+            sessionSummary: true,
+            pipelineFallback: true,
+            closeBehavior: 'minimize',
+          },
+          serverConnection,
+        },
+      }),
+    }),
+  )
+
+  await page.route('**/api/v1/providers/profiles', (route: Route) =>
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ profiles: [] }),
+    }),
+  )
+
+  await page.route('**/api/v1/providers/readiness', (route: Route) =>
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify([]),
+    }),
+  )
+
+  await page.route('**/api/v1/providers/artifacts', (route: Route) =>
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ artifacts: [], jobs: [] }),
+    }),
+  )
+
+  await page.route('**/api/v1/providers/artifacts/jobs', (route: Route) =>
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify([]),
+    }),
+  )
+
+  await page.route('**/api/v1/dictionary**', (route: Route) =>
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ language: 'default', entries: [] }),
+    }),
+  )
+
+  await page.route('**/api/v1/voice-sessions**', (route: Route) =>
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify([]),
+    }),
+  )
+
   // Download catalog + jobs
   await page.route('**/models/downloads/catalog', (route: Route) =>
     route.fulfill({

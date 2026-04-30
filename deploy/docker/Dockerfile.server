@@ -20,7 +20,6 @@
 # Run locally (with secrets injected via Doppler wrapper):
 #   doppler run --project <project> --config <config> -- \
 #     docker run --rm -p 8080:8080 \
-#       -e SPEECHKIT_SERVER_TOKEN \
 #       -e GOOGLE_AI_API_KEY \
 #       -v speechkit-models:/var/lib/speechkit/models \
 #       -v "$(pwd)/deploy/config/server.example.toml:/etc/speechkit/config.toml:ro" \
@@ -110,7 +109,7 @@ RUN curl -Ls "https://github.com/microsoft/onnxruntime/releases/download/v${ONNX
 # ownership across container restarts.
 RUN groupadd -r speechkit --gid 2000 \
     && useradd -r -g speechkit --uid 2000 -m -d /home/speechkit speechkit \
-    && mkdir -p /etc/speechkit /var/lib/speechkit/models \
+    && mkdir -p /etc/speechkit /var/lib/speechkit/data /var/lib/speechkit/models \
     && chown -R speechkit:speechkit /etc/speechkit /var/lib/speechkit
 
 # whisper.cpp binary is expected at /usr/local/bin/whisper-server; it is

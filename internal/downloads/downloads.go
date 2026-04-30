@@ -250,7 +250,7 @@ func httpDownload(ctx context.Context, j *job, item Item, destDir string) error 
 		j.mu.Unlock()
 	}
 
-	f, err := os.Create(tmp) //nolint:gosec // G304: tmp is app-controlled temp path, not user input
+	f, err := os.Create(tmp) // #nosec G304 -- tmp is derived from validated download metadata under the caller's model directory.
 	if err != nil {
 		return fmt.Errorf("create temp file: %w", err)
 	}

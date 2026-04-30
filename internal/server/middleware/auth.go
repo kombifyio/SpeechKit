@@ -20,7 +20,7 @@ type Identity struct {
 	OrgID  string `json:"org_id"`
 	Plan   string `json:"plan"`
 	Role   string `json:"role,omitempty"` // "admin" | "" (default)
-	Source string `json:"source"`         // "bearer" | "edge_hmac"
+	Source string `json:"source"`         // "none" | "bearer" | "edge_hmac"
 }
 
 type identityCtxKey struct{}
@@ -38,6 +38,10 @@ func IdentityFromContext(ctx context.Context) Identity {
 type AuthMode string
 
 const (
+	// AuthModeNone disables built-in server authentication. The request still
+	// receives a stable anonymous identity so mode handlers can apply session
+	// ownership and rate-limit logic without requiring an upstream auth layer.
+	AuthModeNone AuthMode = "none"
 	// AuthModeBearer requires a static bearer token from the configured env
 	// var. Minimum viable auth; suitable for same-network service-to-service
 	// calls (e.g. kombify-AI → speechkit over Render private network).
@@ -55,10 +59,16 @@ const (
 
 // AuthOptions configures the Auth middleware.
 type AuthOptions struct {
-	Mode             string
-	BearerTokenEnv   string
-	EdgeSecretEnv    string
-	AllowPublicPaths []string // exact path matches that skip auth entirely (e.g. /healthz)
+	Mode              string
+	BearerTokenEnv    string
+	EdgeSecretEnv     string
+	AllowPublicPaths  []string // exact path matches that skip auth entirely (e.g. /healthz)
+	AllowPublicRoutes []PublicRoute
+}
+
+type PublicRoute struct {
+	Path    string
+	Methods []string
 }
 
 // Auth validates credentials according to the configured mode and attaches the
@@ -67,7 +77,7 @@ type AuthOptions struct {
 func Auth(opts AuthOptions) Middleware {
 	mode := AuthMode(strings.TrimSpace(strings.ToLower(opts.Mode)))
 	if mode == "" {
-		mode = AuthModeBearer
+		mode = AuthModeNone
 	}
 	bearerToken := strings.TrimSpace(os.Getenv(strings.TrimSpace(opts.BearerTokenEnv)))
 	edgeSecret := strings.TrimSpace(os.Getenv(strings.TrimSpace(opts.EdgeSecretEnv)))
@@ -77,12 +87,35 @@ func Auth(opts AuthOptions) Middleware {
 			publicSet[trimmed] = struct{}{}
 		}
 	}
+	publicRoutes := make(map[string]map[string]struct{}, len(opts.AllowPublicRoutes))
+	for _, route := range opts.AllowPublicRoutes {
+		path := strings.TrimSpace(route.Path)
+		if path == "" {
+			continue
+		}
+		methods := publicRoutes[path]
+		if methods == nil {
+			methods = map[string]struct{}{}
+			publicRoutes[path] = methods
+		}
+		for _, method := range route.Methods {
+			if normalized := strings.ToUpper(strings.TrimSpace(method)); normalized != "" {
+				methods[normalized] = struct{}{}
+			}
+		}
+	}
 
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			if _, public := publicSet[r.URL.Path]; public {
 				next.ServeHTTP(w, r)
 				return
+			}
+			if methods, public := publicRoutes[r.URL.Path]; public {
+				if _, allowed := methods[r.Method]; allowed {
+					next.ServeHTTP(w, r)
+					return
+				}
 			}
 
 			id, ok := verify(mode, r, bearerToken, edgeSecret)
@@ -98,6 +131,13 @@ func Auth(opts AuthOptions) Middleware {
 
 func verify(mode AuthMode, r *http.Request, bearerToken, edgeSecret string) (Identity, bool) {
 	switch mode {
+	case AuthModeNone:
+		return Identity{
+			UserID: "anonymous",
+			OrgID:  "public",
+			Plan:   "public",
+			Source: "none",
+		}, true
 	case AuthModeBearer:
 		return verifyBearer(r, bearerToken)
 	case AuthModeEdgeHMAC:
@@ -108,7 +148,7 @@ func verify(mode AuthMode, r *http.Request, bearerToken, edgeSecret string) (Ide
 		}
 		return verifyEdgeHMAC(r, edgeSecret)
 	default:
-		return verifyBearer(r, bearerToken)
+		return Identity{}, false
 	}
 }
 

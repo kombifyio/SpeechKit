@@ -2,6 +2,8 @@ package speechkit
 
 import "sort"
 
+const DefaultLocalBuiltInLLMModel = "ggml-org/gemma-4-E4B-it-GGUF:Q4_K_M"
+
 // DefaultProviderProfiles returns the built-in framework provider catalog for
 // the three strict SpeechKit modes. The Windows desktop host adapts this
 // public catalog into its internal runtime model; the catalog itself belongs to
@@ -80,15 +82,15 @@ func DefaultProviderProfiles() []ProviderProfile {
 			Name:          "llama.cpp (Local Built-in)",
 			ProviderKind:  ProviderKindLocalBuiltIn,
 			ExecutionMode: ExecutionModeLocal,
-			ModelID:       "gemma4:e4b",
+			ModelID:       DefaultLocalBuiltInLLMModel,
 			Source:        "Local Built-in",
 			Description:   "SpeechKit-managed llama.cpp runtime for Assist. Download options provide concrete GGUF model files.",
 			License:       "gemma",
 			Capabilities:  []Capability{CapabilityLLM, CapabilityToolCalling, CapabilitySessionSummary},
 			AdapterKind:   "genkit_llm",
 			Variants: []ModelVariant{
-				{ID: "llamacpp.gemma-3-4b-it-q4-k-m", Name: "Gemma 3 4B IT Q4_K_M", ModelID: "gemma-3-4b-it-Q4_K_M.gguf", Description: "Balanced GGUF model for local Assist usage.", Recommended: true},
-				{ID: "llamacpp.gemma-3-4b-it-q8-0", Name: "Gemma 3 4B IT Q8_0", ModelID: "gemma-3-4b-it-Q8_0.gguf", Description: "Larger GGUF model when local quality is more important than disk and memory use."},
+				{ID: "llamacpp.gemma-4-e4b-it-q4-k-m", Name: "Gemma 4 E4B IT Q4_K_M", ModelID: "gemma-4-E4B-it-Q4_K_M.gguf", Description: "Recommended balanced GGUF model for local Assist usage.", Recommended: true},
+				{ID: "llamacpp.gemma-4-e2b-it-q8-0", Name: "Gemma 4 E2B IT Q8_0", ModelID: "gemma-4-E2B-it-Q8_0.gguf", Description: "Smaller Gemma 4 GGUF model for lighter local Assist usage."},
 			},
 			AllowInference: true,
 			Default:        true,
@@ -152,8 +154,8 @@ func DefaultProviderProfiles() []ProviderProfile {
 			Capabilities:  []Capability{CapabilityAudioInput, CapabilityPipelineFallback, CapabilitySessionSummary},
 			AdapterKind:   "voice_pipeline",
 			Variants: []ModelVariant{
-				{ID: "llamacpp.gemma-3-4b-it-q4-k-m-voice", Name: "Gemma 3 4B IT Q4_K_M", ModelID: "gemma-3-4b-it-Q4_K_M.gguf", Description: "Balanced GGUF model for local Voice Agent pipeline fallback.", Recommended: true},
-				{ID: "llamacpp.gemma-3-4b-it-q8-0-voice", Name: "Gemma 3 4B IT Q8_0", ModelID: "gemma-3-4b-it-Q8_0.gguf", Description: "Larger GGUF model for local Voice Agent pipeline fallback."},
+				{ID: "llamacpp.gemma-4-e4b-it-q4-k-m-voice", Name: "Gemma 4 E4B IT Q4_K_M", ModelID: "gemma-4-E4B-it-Q4_K_M.gguf", Description: "Recommended balanced GGUF model for local Voice Agent pipeline fallback.", Recommended: true},
+				{ID: "llamacpp.gemma-4-e2b-it-q8-0-voice", Name: "Gemma 4 E2B IT Q8_0", ModelID: "gemma-4-E2B-it-Q8_0.gguf", Description: "Smaller Gemma 4 GGUF model for local Voice Agent pipeline fallback."},
 			},
 			AllowInference: true,
 			Experimental:   true,

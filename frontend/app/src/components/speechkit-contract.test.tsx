@@ -262,12 +262,12 @@ describe("speechkit frontend contract", () => {
         JSON.stringify({
           artifacts: [
             {
-              id: "llamacpp.gemma-3-4b-it-q4-k-m-voice",
+              id: "llamacpp.gemma-4-e4b-it-q4-k-m-voice",
               profileId: "realtime.builtin.pipeline",
-              name: "Gemma 3 4B IT Q4_K_M - Voice Agent (GGUF)",
+              name: "Gemma 4 E4B IT Q4_K_M - Voice Agent (GGUF)",
               description: "Voice Agent local model",
-              sizeLabel: "~2.5 GB",
-              sizeBytes: 2490000000,
+              sizeLabel: "~5.3 GB",
+              sizeBytes: 5335289824,
               kind: "http",
               license: "gemma",
               available: false,

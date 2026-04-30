@@ -32,10 +32,8 @@ services:
         value: json
 
       # --- Secrets (populated by Doppler at deploy time) ---
-      # Render dashboard shows these as "required" until a value is set.
-      # Use the Render CLI with --value-from-file to inject via Doppler:
-      #   doppler secrets get SPEECHKIT_SERVER_TOKEN --plain \
-      #     | render env set --service-name speechkit-server SPEECHKIT_SERVER_TOKEN
+      # Optional auth secret. Set this only when config.toml uses
+      # auth_mode = "bearer" or "bearer_or_edge".
       - key: SPEECHKIT_SERVER_TOKEN
         sync: false
       - key: EDGE_AUTH_SECRET

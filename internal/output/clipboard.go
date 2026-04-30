@@ -130,7 +130,7 @@ func windowThread(hwnd windows.Handle) uint32 {
 		return 0
 	}
 	threadID, _, _ := procWindowThreadPID.Call(uintptr(hwnd), 0)
-	return uint32(threadID) //nolint:gosec // G115: Windows API thread ID fits uint32
+	return uint32(threadID) // #nosec G115 -- GetWindowThreadProcessId returns a DWORD thread id.
 }
 
 func attachInput(fromThread, toThread uint32, attach bool) {

@@ -39,7 +39,7 @@ var revealAudioFileInShell = func(path string) error {
 	if ext := strings.ToLower(filepath.Ext(abs)); ext != ".wav" {
 		return fmt.Errorf("reveal: only .wav files are supported (got %q)", ext)
 	}
-	return exec.Command("explorer.exe", "/select,", abs).Start() //nolint:gosec // subprocess path is application-controlled, not user input
+	return exec.Command("explorer.exe", "/select,", abs).Start() // #nosec G204 -- executable is fixed; abs is passed as an Explorer argument after .wav validation.
 }
 
 var openInstallerFileInShell = func(path string) error {
@@ -50,7 +50,7 @@ var openInstallerFileInShell = func(path string) error {
 	if !isInstallerAssetName(abs) {
 		return fmt.Errorf("open installer: only .exe or .msi files are supported")
 	}
-	return exec.Command(abs).Start() //nolint:gosec // subprocess path is application-controlled, not user input
+	return exec.Command(abs).Start() // #nosec G204 -- abs is restricted to installer asset extensions before launch.
 }
 
 // assetHandler builds the unified HTTP mux for the Wails control plane.
@@ -128,6 +128,7 @@ func setControlPlaneTokenBootstrap(w http.ResponseWriter, token string) {
 		Value:    token,
 		Path:     "/",
 		HttpOnly: true,
+		Secure:   true,
 		SameSite: http.SameSiteStrictMode,
 	})
 }

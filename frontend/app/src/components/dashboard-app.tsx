@@ -145,7 +145,24 @@ export function DashboardApp() {
 
   const lastLogCountRef = useRef(0);
   useEffect(() => {
+    if (!setupChecked || showSetupWizard) return;
+
+    let active = true;
+    let primed = false;
+    void fetchLogs()
+      .then((logs) => {
+        if (active) {
+          lastLogCountRef.current = logs.length;
+          primed = true;
+        }
+      })
+      .catch(() => {
+        primed = true;
+        /* ignore */
+      });
+
     const interval = setInterval(async () => {
+      if (!primed) return;
       try {
         const logs = await fetchLogs();
         if (logs.length > lastLogCountRef.current) {
@@ -159,8 +176,11 @@ export function DashboardApp() {
         /* ignore */
       }
     }, 3000);
-    return () => clearInterval(interval);
-  }, [addToast]);
+    return () => {
+      active = false;
+      clearInterval(interval);
+    };
+  }, [addToast, setupChecked, showSetupWizard]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;

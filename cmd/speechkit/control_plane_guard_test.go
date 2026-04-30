@@ -126,6 +126,9 @@ func TestControlPlaneGuardSetsSessionCookieOnReadRequest(t *testing.T) {
 	if !cookie.HttpOnly {
 		t.Fatal("control-plane token cookie is not HttpOnly")
 	}
+	if !cookie.Secure {
+		t.Fatal("control-plane token cookie is not Secure")
+	}
 	if cookie.SameSite != http.SameSiteStrictMode {
 		t.Fatalf("SameSite = %v, want %v", cookie.SameSite, http.SameSiteStrictMode)
 	}

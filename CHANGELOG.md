@@ -4,6 +4,42 @@ All notable changes to SpeechKit should be documented in this file.
 
 The format is based on Keep a Changelog and this project is intended to ship under Apache-2.0.
 
+## [0.28.0] - 2026-04-30
+
+v0.28.0 is the production-hardening release. It tightens the release
+gates around security scanning, CI coverage, server authentication, and
+Windows release verification before the next public rollout.
+
+### Added
+
+- Added a dedicated security workflow covering secret scanning,
+  dependency vulnerability checks, container scanning, Go vulnerability
+  scanning, static analysis, and gosec.
+- Added releaseguard checks for the security workflow, pinned GitHub
+  Actions, branch-protection documentation, Website CI coverage, and
+  production-safe server auth defaults.
+- Added a 60% focused coverage gate for the release-critical Go package
+  set.
+
+### Changed
+
+- Server examples and deployment docs now default production deployments
+  to bearer or edge-HMAC authentication; `auth_mode = "none"` is
+  documented only as an explicit local-development choice.
+- Website dependency locking was refreshed to remove the PostCSS audit
+  finding and keep Website checks reproducible.
+- CI now runs the Website check/test path explicitly and keeps
+  Dependabot coverage aligned with existing package roots.
+
+### Fixed
+
+- Fixed the hotkey nil-error path and tightened F-key lookup behavior.
+- Hardened audited Windows, subprocess, path, and secret-store code
+  paths so lint and gosec findings are either fixed or documented with
+  scoped justifications.
+- Stabilized the generated frontend asset set for the updated dashboard
+  bundle.
+
 ## [0.27.0] - 2026-04-27
 
 v0.27.0 is the public release that makes the large v0.26 server work

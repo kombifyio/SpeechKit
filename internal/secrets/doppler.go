@@ -1,6 +1,7 @@
 package secrets
 
 import (
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -10,7 +11,11 @@ import (
 // DefaultDopplerSecretLookup runs the Doppler CLI to retrieve a single secret value.
 // It hides the console window on Windows to avoid terminal flashes in GUI mode.
 func DefaultDopplerSecretLookup(dopplerPath, key, project, cfg string) (string, error) {
-	cmd := exec.Command( //nolint:gosec,noctx // G204: dopplerPath is app-controlled binary; no context param in this public API
+	if err := validateDopplerExecutablePath(dopplerPath); err != nil {
+		return "", err
+	}
+	//nolint:noctx // no context parameter exists in this public lookup hook.
+	cmd := exec.Command( // #nosec G204 -- dopplerPath is validated to the Doppler executable name before launch.
 		dopplerPath, "secrets", "get", key,
 		"--plain",
 		"--project", project,
@@ -24,6 +29,14 @@ func DefaultDopplerSecretLookup(dopplerPath, key, project, cfg string) (string, 
 		return "", err
 	}
 	return strings.TrimSpace(string(out)), nil
+}
+
+func validateDopplerExecutablePath(path string) error {
+	base := strings.ToLower(filepath.Base(strings.TrimSpace(path)))
+	if base != "doppler" && base != "doppler.exe" {
+		return fmt.Errorf("doppler executable path must point to doppler, got %q", path)
+	}
+	return nil
 }
 
 // FindDopplerExecutable locates the doppler CLI binary.
@@ -59,6 +72,6 @@ func dopplerFileExists(path string) bool {
 	if strings.TrimSpace(path) == "" {
 		return false
 	}
-	info, err := os.Stat(path) //nolint:gosec // G703: path is Doppler binary location from app config
+	info, err := os.Stat(path) // #nosec G703 -- path is Doppler binary location from app config.
 	return err == nil && !info.IsDir()
 }

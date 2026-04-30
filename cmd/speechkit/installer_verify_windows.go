@@ -10,7 +10,7 @@ import (
 )
 
 func verifyInstallerSignature(path string) error {
-	cmd := exec.Command(
+	cmd := exec.Command( // #nosec G204 -- PowerShell executable and command are fixed; installer path is passed as an argument.
 		"powershell.exe",
 		"-NoProfile",
 		"-NonInteractive",

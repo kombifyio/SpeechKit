@@ -847,6 +847,49 @@ func TestSettingsUpdateRoundTripPersistsAgentMode(t *testing.T) {
 	}
 }
 
+func TestModeEnabledEndpointDoesNotEnableModeWithoutHotkey(t *testing.T) {
+	cfg := defaultTestConfig()
+	cfg.General.AssistHotkey = ""
+	cfg.General.AssistEnabled = false
+	cfgPath := filepath.Join(t.TempDir(), "config.toml")
+	state := &appState{
+		assistHotkey:      "",
+		assistEnabled:     false,
+		overlayEnabled:    true,
+		overlayVisualizer: "pill",
+	}
+	handler := assetHandler(cfg, cfgPath, state, &router.Router{}, nil, &config.InstallState{Mode: config.InstallModeLocal})
+
+	form := url.Values{
+		"mode":    {modeAssist},
+		"enabled": {"1"},
+	}
+	req := httptest.NewRequest(http.MethodPost, "/mode/enabled", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	rec := httptest.NewRecorder()
+
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, body=%s", rec.Code, rec.Body.String())
+	}
+	var payload map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("decode payload: %v", err)
+	}
+	if payload["enabled"] != false {
+		t.Fatalf("payload enabled = %v, want false", payload["enabled"])
+	}
+	if cfg.General.AssistEnabled {
+		t.Fatal("cfg.General.AssistEnabled = true, want false")
+	}
+	state.mu.Lock()
+	defer state.mu.Unlock()
+	if state.assistEnabled {
+		t.Fatal("state.assistEnabled = true, want false")
+	}
+}
+
 func TestSettingsRoutesPersistVocabularyDictionary(t *testing.T) {
 	cfg := defaultTestConfig()
 	cfgPath := filepath.Join(t.TempDir(), "config.toml")
@@ -1218,8 +1261,8 @@ func TestActivateUtilityBuiltInLocalProfileUpdatesConfigAndRuntime(t *testing.T)
 	if !cfg.LocalLLM.Enabled {
 		t.Fatal("expected built-in local LLM enabled")
 	}
-	if cfg.LocalLLM.UtilityModel != "gemma4:e4b" {
-		t.Fatalf("built-in local utility model = %q, want %q", cfg.LocalLLM.UtilityModel, "gemma4:e4b")
+	if cfg.LocalLLM.UtilityModel != speechkit.DefaultLocalBuiltInLLMModel {
+		t.Fatalf("built-in local utility model = %q, want %q", cfg.LocalLLM.UtilityModel, speechkit.DefaultLocalBuiltInLLMModel)
 	}
 	if got := state.activeProfiles["utility"]; got != "utility.builtin.gemma4-e4b" {
 		t.Fatalf("active utility profile = %q, want %q", got, "utility.builtin.gemma4-e4b")
@@ -1235,7 +1278,7 @@ func TestActivateUtilityBuiltInLocalProfileUpdatesConfigAndRuntime(t *testing.T)
 func TestActivateAssistBuiltInLocalProfileUpdatesConfigAndRuntime(t *testing.T) {
 	cfg := defaultTestConfig()
 	cfg.LocalLLM.BaseURL = "http://127.0.0.1:8082/v1"
-	modelPath := filepath.Join(t.TempDir(), "gemma-3-4b-it-Q4_K_M.gguf")
+	modelPath := filepath.Join(t.TempDir(), "gemma-4-E4B-it-Q4_K_M.gguf")
 	if err := os.WriteFile(modelPath, []byte("gguf"), 0o600); err != nil {
 		t.Fatalf("write local llm model: %v", err)
 	}

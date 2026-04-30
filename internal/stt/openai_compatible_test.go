@@ -3,6 +3,7 @@ package stt
 import (
 	"context"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -76,6 +77,7 @@ func TestNewOllamaSTTProvider_Defaults(t *testing.T) {
 
 func TestOpenAICompat_Transcribe_Success(t *testing.T) {
 	var gotModel string
+	var gotAudio []byte
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != "POST" {
 			t.Errorf("expected POST, got %s", r.Method)
@@ -88,6 +90,15 @@ func TestOpenAICompat_Transcribe_Success(t *testing.T) {
 		}
 		if err := r.ParseMultipartForm(1 << 20); err != nil {
 			t.Fatalf("parse multipart: %v", err)
+		}
+		file, _, err := r.FormFile("file")
+		if err != nil {
+			t.Fatalf("form file: %v", err)
+		}
+		defer file.Close() //nolint:errcheck // test cleanup
+		gotAudio, err = io.ReadAll(file)
+		if err != nil {
+			t.Fatalf("read form file: %v", err)
 		}
 		gotModel = r.FormValue("model")
 		json.NewEncoder(w).Encode(map[string]string{"text": "transcribed text"})
@@ -112,8 +123,41 @@ func TestOpenAICompat_Transcribe_Success(t *testing.T) {
 	if gotModel != "default-model" {
 		t.Errorf("sent model = %q, want %q", gotModel, "default-model")
 	}
+	if len(gotAudio) < 44 || string(gotAudio[:4]) != "RIFF" || string(gotAudio[8:12]) != "WAVE" {
+		t.Fatalf("raw PCM upload should be wrapped as WAV, got %q", string(gotAudio[:min(len(gotAudio), 12)]))
+	}
 	if result.Duration < 0 {
 		t.Error("duration should not be negative")
+	}
+}
+
+func TestOpenAICompat_Transcribe_PreservesWAVInput(t *testing.T) {
+	wav := []byte("RIFFxxxxWAVEfmt data")
+	var gotAudio []byte
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if err := r.ParseMultipartForm(1 << 20); err != nil {
+			t.Fatalf("parse multipart: %v", err)
+		}
+		file, _, err := r.FormFile("file")
+		if err != nil {
+			t.Fatalf("form file: %v", err)
+		}
+		defer file.Close() //nolint:errcheck // test cleanup
+		gotAudio, err = io.ReadAll(file)
+		if err != nil {
+			t.Fatalf("read form file: %v", err)
+		}
+		json.NewEncoder(w).Encode(map[string]string{"text": "ok"})
+	}))
+	defer server.Close()
+
+	p := NewOpenAICompatibleProvider("test", server.URL, "key", "model")
+	p.Validation = testValidation
+	if _, err := p.Transcribe(context.Background(), wav, TranscribeOpts{}); err != nil {
+		t.Fatalf("Transcribe: %v", err)
+	}
+	if string(gotAudio) != string(wav) {
+		t.Fatalf("WAV input should pass through unchanged: got %q want %q", gotAudio, wav)
 	}
 }
 

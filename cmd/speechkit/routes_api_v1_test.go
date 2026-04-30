@@ -146,7 +146,7 @@ func TestAPIV1ReadinessExposesLocalBuiltInArtifacts(t *testing.T) {
 		if len(item.Artifacts) < 2 {
 			t.Fatalf("voice local built-in artifacts = %d, want at least 2", len(item.Artifacts))
 		}
-		if item.Artifacts[0].ID != "llamacpp.gemma-3-4b-it-q4-k-m-voice" {
+		if item.Artifacts[0].ID != "llamacpp.gemma-4-e4b-it-q4-k-m-voice" {
 			t.Fatalf("first voice local artifact = %q", item.Artifacts[0].ID)
 		}
 	}
@@ -177,7 +177,7 @@ func TestAPIV1ProviderArtifactsEndpointReturnsCatalogAndJobs(t *testing.T) {
 		switch artifact.ID {
 		case "whisper.ggml-large-v3-turbo":
 			seenWhisper = true
-		case "llamacpp.gemma-3-4b-it-q4-k-m-voice":
+		case "llamacpp.gemma-4-e4b-it-q4-k-m-voice":
 			seenVoice = true
 		}
 	}

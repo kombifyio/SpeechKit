@@ -16,7 +16,7 @@ services:
       dockerfile: deploy/docker/Dockerfile.server
       args:
         VERSION: e2e-test
-    image: speechkit-server:e2e
+    image: ${SPEECHKIT_SERVER_IMAGE:-speechkit-server:e2e}
     environment:
       SPEECHKIT_SERVER_TOKEN: e2e-dev-token
       # Cloud providers are left unset intentionally — the e2e client
@@ -67,20 +67,26 @@ services:
         echo "== 1. /healthz =="
         curl -fsS http://speechkit-server:8080/healthz | jq -e '.status == "ok"' >/dev/null
         echo "== 2. /readyz =="
-        curl -fsS http://speechkit-server:8080/readyz | jq '.components | keys'
+        ready_code=$$(curl -sS -o /tmp/readyz -w '%{http_code}' http://speechkit-server:8080/readyz)
+        if [ "$$ready_code" != "200" ] && [ "$$ready_code" != "503" ]; then
+          echo "readyz returned unexpected status $$ready_code"
+          cat /tmp/readyz
+          exit 1
+        fi
+        jq '.components | keys' /tmp/readyz
         echo "== 3. Authenticated noop endpoint =="
         # Assist text path without provider keys still returns a structured
         # error envelope — that's the contract we want to verify so callers
         # can plan their own retries.
-        code=$(curl -s -o /tmp/body -w '%{http_code}' \
+        code=$$(curl -s -o /tmp/body -w '%{http_code}' \
           -H 'Authorization: Bearer e2e-dev-token' \
           -H 'Content-Type: application/json' \
           -d '{"text":"smoke test"}' \
           http://speechkit-server:8080/v1/assist/process)
-        if [ "$code" = "200" ] || [ "$code" = "503" ]; then
-          echo "assist responded $code (OK for smoke test)"
+        if [ "$$code" = "200" ] || [ "$$code" = "503" ]; then
+          echo "assist responded $$code (OK for smoke test)"
         else
-          echo "assist returned unexpected status $code"
+          echo "assist returned unexpected status $$code"
           cat /tmp/body
           exit 1
         fi

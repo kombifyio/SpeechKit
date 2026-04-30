@@ -67,6 +67,16 @@ Public Windows releases include `SHA256SUMS.txt`, `SpeechKit.sbom.json`, and
 `UNSIGNED-WINDOWS-RELEASE.txt` when the no-cost unsigned release path is
 active.
 
+For local development on Windows, start the local bundle from this repository:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\start-dev.ps1
+```
+
+If the bundle is missing, the launcher builds it first via the canonical
+Windows build script. Use `npm run app:dev:detached` when you want to start it
+without keeping the terminal attached.
+
 ### Go Library
 
 ```bash

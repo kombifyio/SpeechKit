@@ -60,6 +60,19 @@ func TestLocalBuiltInDictationAllowsMultipleVariants(t *testing.T) {
 	t.Fatal("local built-in dictation profile missing")
 }
 
+func TestLocalBuiltInAssistUsesConcreteGemmaGGUFModel(t *testing.T) {
+	for _, profile := range ProfilesForMode(ModeAssist) {
+		if profile.ProviderKind != ProviderKindLocalBuiltIn {
+			continue
+		}
+		if got := profile.ModelID; got != DefaultLocalBuiltInLLMModel {
+			t.Fatalf("local built-in assist model ID = %q, want %q", got, DefaultLocalBuiltInLLMModel)
+		}
+		return
+	}
+	t.Fatal("local built-in assist profile missing")
+}
+
 func TestFrameworkCatalogDoesNotImportDesktopInternals(t *testing.T) {
 	body, err := os.ReadFile("catalog.go")
 	if err != nil {

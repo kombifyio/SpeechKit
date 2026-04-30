@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -27,7 +29,11 @@ func registerDashboardRoutes(mux *http.ServeMux, state *appState, feedbackStore 
 		}
 		w.Header().Set("Content-Type", "audio/wav")
 		w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%q", filename))
-		http.ServeFile(w, r, path)
+		if err := serveDashboardAudioFile(w, r, path, filename); err != nil {
+			slog.Warn("serve dashboard audio", "err", err)
+			http.Error(w, "audio not found", http.StatusNotFound)
+			return
+		}
 	})
 	mux.HandleFunc("/dashboard/audio/reveal", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
@@ -183,6 +189,32 @@ func registerDashboardRoutes(mux *http.ServeMux, state *appState, feedbackStore 
 			"averageLatencyMs":      stats.AverageLatencyMs,
 		})
 	})
+}
+
+func serveDashboardAudioFile(w http.ResponseWriter, r *http.Request, path, filename string) error {
+	abs, err := filepath.Abs(path)
+	if err != nil {
+		return err
+	}
+	if !strings.EqualFold(filepath.Ext(abs), ".wav") {
+		return fmt.Errorf("unsupported audio extension")
+	}
+	file, err := os.Open(abs) // #nosec G304 G703 -- resolved store path is restricted to existing WAV assets and served via ServeContent.
+	if err != nil {
+		return err
+	}
+	defer func() {
+		_ = file.Close()
+	}()
+	info, err := file.Stat()
+	if err != nil {
+		return err
+	}
+	if info.IsDir() {
+		return fmt.Errorf("audio path is a directory")
+	}
+	http.ServeContent(w, r, filename, info.ModTime(), file)
+	return nil
 }
 
 func resolveDashboardAudio(ctx context.Context, feedbackStore store.Store, kind, idRaw string) (string, string, error) {

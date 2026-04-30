@@ -5,7 +5,9 @@ package core
 import (
 	"context"
 	"log/slog"
+	"net/http"
 	"strings"
+	"time"
 
 	"github.com/firebase/genkit/go/core"
 	"github.com/kombifyio/SpeechKit/internal/ai"
@@ -42,18 +44,69 @@ func ensureSharedAIDeps(ctx context.Context, app *App) []string {
 		app.AgentFlow = agentFlowFromRuntime(genkitRT)
 		app.Health.SetReady("genkit", StatusOK, "ready")
 	}
+	registerLocalLLMHealth(app)
 
 	ttsRouter, ttsEnabled, ttsNotes := buildTTSRouter(app.Cfg)
 	notes = append(notes, ttsNotes...)
 	app.TTSRouter = ttsRouter
 	app.TTSEnabled = ttsEnabled
-	if ttsEnabled {
+	switch {
+	case ttsEnabled:
 		app.Health.SetReady("tts", StatusOK, "enabled")
-	} else {
-		app.Health.SetReady("tts", StatusStarting, "disabled or no providers")
+	case !app.Cfg.TTS.Enabled:
+		app.Health.SetReady("tts", StatusOK, "disabled")
+	default:
+		app.Health.SetReady("tts", StatusDegraded, "enabled but no providers configured")
 	}
 
 	return notes
+}
+
+func registerLocalLLMHealth(app *App) {
+	if app == nil || app.Cfg == nil || !app.Cfg.LocalLLM.Enabled || strings.TrimSpace(app.Cfg.LocalLLM.BaseURL) == "" {
+		return
+	}
+	healthURL := localLLMHealthURL(app.Cfg.LocalLLM.BaseURL)
+	app.Health.SetReady("llm.local", StatusStarting, "probing")
+	go func() {
+		client := &http.Client{Timeout: 5 * time.Second}
+		deadline := time.Now().Add(15 * time.Minute)
+		var lastErr error
+		for {
+			req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, healthURL, http.NoBody)
+			if err == nil {
+				resp, err := client.Do(req)
+				if err == nil {
+					_ = resp.Body.Close()
+					if resp.StatusCode == http.StatusOK {
+						app.Health.SetReady("llm.local", StatusOK, "ready")
+						return
+					}
+					lastErr = errStatus(resp.StatusCode)
+				} else {
+					lastErr = err
+				}
+			} else {
+				lastErr = err
+			}
+
+			if time.Now().After(deadline) {
+				detail := "local LLM did not become ready"
+				if lastErr != nil {
+					detail = lastErr.Error()
+				}
+				app.Health.SetReady("llm.local", StatusDegraded, detail)
+				return
+			}
+			time.Sleep(10 * time.Second)
+		}
+	}()
+}
+
+func localLLMHealthURL(baseURL string) string {
+	baseURL = strings.TrimRight(strings.TrimSpace(baseURL), "/")
+	baseURL = strings.TrimSuffix(baseURL, "/v1")
+	return baseURL + "/health"
 }
 
 // buildAssistPipeline assembles the Assist mode pipeline from the shared AI
@@ -68,12 +121,67 @@ func buildAssistPipeline(ctx context.Context, cfg *config.Config, app *App) (*as
 
 	pipeline := assist.NewPipeline(
 		app.AssistFlow,
-		nil, // Server-Target does not execute host-side tools; clients receive action=execute and act on it.
+		serverAssistToolExecutor{}, // Server-Target does not execute host-side tools; clients receive action=execute and act on it.
 		app.TTSRouter,
 		app.TTSEnabled,
-		assist.WithRouter(assist.NewRouter(assist.WithResolver(shortcutResolver))),
+		assist.WithRouter(assist.NewRouter(
+			assist.WithResolver(shortcutResolver),
+			assist.WithUtilityRegistry(buildAssistUtilityRegistry(cfg)),
+		)),
 	)
 	return pipeline, notes, nil
+}
+
+type serverAssistToolExecutor struct{}
+
+func (serverAssistToolExecutor) Execute(_ context.Context, call assist.ToolCall) (assist.ToolResult, error) {
+	text := serverAssistToolText(call)
+	return assist.ToolResult{
+		Text:      text,
+		SpeakText: text,
+		Action:    "execute",
+		Locale:    call.Locale,
+	}, nil
+}
+
+func serverAssistToolText(call assist.ToolCall) string {
+	switch call.Intent {
+	case shortcuts.IntentCopyLast:
+		return "Copy last transcription."
+	case shortcuts.IntentInsertLast:
+		return "Insert last transcription."
+	case shortcuts.IntentSummarize:
+		return "Summarize selection."
+	case shortcuts.IntentQuickNote:
+		return "Create quick note."
+	default:
+		return "Execute Assist tool."
+	}
+}
+
+func buildAssistUtilityRegistry(cfg *config.Config) *assist.UtilityRegistry {
+	base := assist.DefaultUtilityRegistry()
+	if cfg == nil || cfg.Assist.EnabledTools == nil {
+		return base
+	}
+
+	enabled := map[assist.UtilityID]bool{}
+	for _, id := range cfg.Assist.EnabledTools {
+		id = strings.TrimSpace(id)
+		if id == "" {
+			continue
+		}
+		enabled[assist.UtilityID(id)] = true
+	}
+
+	filtered := assist.NewUtilityRegistry()
+	for _, def := range base.List() {
+		if enabled[def.ID] {
+			def.Enabled = true
+			filtered.Register(def)
+		}
+	}
+	return filtered
 }
 
 // agentFlowFromRuntime mirrors assistFlowFromRuntime for the agent flow that

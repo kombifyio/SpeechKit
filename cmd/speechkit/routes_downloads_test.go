@@ -287,7 +287,7 @@ func TestSelectDownloadedOllamaDictationModelActivatesSTTProvider(t *testing.T) 
 
 func TestSelectDownloadedLlamaCppAssistModelUpdatesLocalLLMConfig(t *testing.T) {
 	modelsDir := t.TempDir()
-	modelFile := filepath.Join(modelsDir, "gemma-3-4b-it-Q4_K_M.gguf")
+	modelFile := filepath.Join(modelsDir, "gemma-4-E4B-it-Q4_K_M.gguf")
 	if err := os.WriteFile(modelFile, []byte("gguf"), 0o600); err != nil {
 		t.Fatalf("write model file: %v", err)
 	}
@@ -306,7 +306,7 @@ func TestSelectDownloadedLlamaCppAssistModelUpdatesLocalLLMConfig(t *testing.T) 
 	}
 	handler := assetHandler(cfg, cfgPath, state, state.sttRouter, nil, &config.InstallState{Mode: config.InstallModeLocal})
 
-	form := url.Values{"model_id": {"llamacpp.gemma-3-4b-it-q4-k-m"}}
+	form := url.Values{"model_id": {"llamacpp.gemma-4-e4b-it-q4-k-m"}}
 	req := httptest.NewRequest(http.MethodPost, "/models/downloads/select", strings.NewReader(form.Encode()))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	rec := httptest.NewRecorder()
@@ -322,10 +322,10 @@ func TestSelectDownloadedLlamaCppAssistModelUpdatesLocalLLMConfig(t *testing.T) 
 	if got := cfg.LocalLLM.ModelPath; got != modelFile {
 		t.Fatalf("local LLM model path = %q, want %q", got, modelFile)
 	}
-	if got := cfg.LocalLLM.Model; got != "gemma-3-4b-it-Q4_K_M.gguf" {
+	if got := cfg.LocalLLM.Model; got != "gemma-4-E4B-it-Q4_K_M.gguf" {
 		t.Fatalf("local LLM model = %q, want downloaded GGUF filename", got)
 	}
-	if got := cfg.LocalLLM.AssistModel; got != "gemma-3-4b-it-Q4_K_M.gguf" {
+	if got := cfg.LocalLLM.AssistModel; got != "gemma-4-E4B-it-Q4_K_M.gguf" {
 		t.Fatalf("local LLM assist model = %q, want downloaded GGUF filename", got)
 	}
 	if got := cfg.ModelSelection.Assist.PrimaryProfileID; got != "assist.builtin.gemma4-e4b" {
@@ -347,7 +347,7 @@ func TestSelectDownloadedLlamaCppAssistModelUpdatesLocalLLMConfig(t *testing.T) 
 
 func TestSelectDownloadedLlamaCppVoiceModelUpdatesLocalPipelineConfig(t *testing.T) {
 	modelsDir := t.TempDir()
-	modelFile := filepath.Join(modelsDir, "gemma-3-4b-it-Q4_K_M.gguf")
+	modelFile := filepath.Join(modelsDir, "gemma-4-E4B-it-Q4_K_M.gguf")
 	if err := os.WriteFile(modelFile, []byte("gguf"), 0o600); err != nil {
 		t.Fatalf("write model file: %v", err)
 	}
@@ -365,7 +365,7 @@ func TestSelectDownloadedLlamaCppVoiceModelUpdatesLocalPipelineConfig(t *testing
 	}
 	handler := assetHandler(cfg, cfgPath, state, state.sttRouter, nil, &config.InstallState{Mode: config.InstallModeLocal})
 
-	form := url.Values{"model_id": {"llamacpp.gemma-3-4b-it-q4-k-m-voice"}}
+	form := url.Values{"model_id": {"llamacpp.gemma-4-e4b-it-q4-k-m-voice"}}
 	req := httptest.NewRequest(http.MethodPost, "/models/downloads/select", strings.NewReader(form.Encode()))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	rec := httptest.NewRecorder()
@@ -381,7 +381,7 @@ func TestSelectDownloadedLlamaCppVoiceModelUpdatesLocalPipelineConfig(t *testing
 	if got := cfg.LocalLLM.ModelPath; got != modelFile {
 		t.Fatalf("local LLM model path = %q, want %q", got, modelFile)
 	}
-	if got := cfg.LocalLLM.AgentModel; got != "gemma-3-4b-it-Q4_K_M.gguf" {
+	if got := cfg.LocalLLM.AgentModel; got != "gemma-4-E4B-it-Q4_K_M.gguf" {
 		t.Fatalf("local LLM agent model = %q, want downloaded GGUF filename", got)
 	}
 	if got := cfg.VoiceAgent.Model; got != "speechkit-local-voice-pipeline" {

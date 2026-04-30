@@ -242,7 +242,11 @@ func (h *Handler) createSession(w http.ResponseWriter, r *http.Request) {
 	if fwd := r.Header.Get("X-Forwarded-Host"); fwd != "" {
 		host = fwd
 	}
-	wsURL := fmt.Sprintf("%s://%s/v1/voiceagent/sessions/%s/ws?ticket=%s", scheme, host, session.ID, ticket)
+	apiPrefix := strings.TrimSpace(r.Header.Get(httpx.APIPrefixHeader))
+	if apiPrefix != "/api" {
+		apiPrefix = ""
+	}
+	wsURL := fmt.Sprintf("%s://%s%s/v1/voiceagent/sessions/%s/ws?ticket=%s", scheme, host, apiPrefix, session.ID, ticket)
 	expires := h.manager.opts.Clock().Add(h.manager.opts.TicketTTL).UTC().Format(time.RFC3339)
 
 	w.Header().Set("Content-Type", "application/json")

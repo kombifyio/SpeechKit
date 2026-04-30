@@ -7,6 +7,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 	"unsafe"
 
 	"golang.org/x/sys/windows"
@@ -57,6 +58,8 @@ const (
 	wmQuit       = 0x0012
 )
 
+const pollInterval = 20 * time.Millisecond
+
 type EventType int
 
 const (
@@ -71,15 +74,18 @@ type Event struct {
 
 // Manager captures a push-to-talk key combination through a low-level keyboard hook.
 type Manager struct {
+	mu       sync.Mutex
 	keys     []uint32
 	events   chan Event
 	cancel   context.CancelFunc
 	done     chan struct{}
+	pollDone chan struct{}
 	threadID uint32
 	hook     windows.Handle
 	callback uintptr
 	suppress bool
 	tracker  *comboTracker
+	active   bool
 	stopOnce sync.Once
 }
 
@@ -90,6 +96,7 @@ func NewManager(combo []uint32) *Manager {
 		keys:     keys,
 		events:   make(chan Event, 16),
 		done:     make(chan struct{}),
+		pollDone: make(chan struct{}),
 		suppress: false,
 		tracker:  newComboTracker(keys),
 	}
@@ -101,11 +108,19 @@ func (m *Manager) Reconfigure(combo []uint32) {
 	keys := normalizeComboAllowEmpty(combo)
 	tracker := newComboTracker(keys)
 
-	// Swap atomically under the implicit lock of the channel-based event system.
-	// The keyboardProc callback reads m.tracker on every key event.
-	// This is safe because tracker assignment is a pointer-width write (atomic on x86-64).
+	wasActive := false
+	m.mu.Lock()
+	if m.active {
+		wasActive = true
+		m.active = false
+	}
 	m.keys = keys
 	m.tracker = tracker
+	m.mu.Unlock()
+
+	if wasActive {
+		m.emit(Event{Type: EventKeyUp})
+	}
 }
 
 // Start installs a low-level keyboard hook and emits key down/up events for the configured combo.
@@ -113,6 +128,7 @@ func (m *Manager) Start(ctx context.Context) error {
 	inner, cancel := context.WithCancel(ctx) //nolint:gosec // cancel stored in struct field, called on job cancellation
 	m.cancel = cancel
 	ready := make(chan error, 1)
+	go m.pollLoop(inner)
 
 	go func() {
 		runtime.LockOSThread()
@@ -142,7 +158,7 @@ func (m *Manager) Start(ctx context.Context) error {
 		var msg winMessage
 		for {
 			ret, _, _ := procGetMessage.Call(uintptr(unsafe.Pointer(&msg)), 0, 0, 0) //nolint:gosec // Windows API requires unsafe.Pointer
-			switch int32(ret) {                                                      //nolint:gosec // Windows API integer conversion, value fits
+			switch int32(ret) {                                                      // #nosec G115 -- GetMessageW returns -1, 0, or a positive BOOL-compatible value.
 			case -1:
 				m.unhook()
 				return
@@ -156,7 +172,13 @@ func (m *Manager) Start(ctx context.Context) error {
 		}
 	}()
 
-	return <-ready
+	if err := <-ready; err != nil {
+		// Keep running on the polling fallback. Modifier-only combinations like
+		// Win+Alt cannot use RegisterHotKey reliably, and the poller gives us a
+		// second global signal when Windows declines or starves the low-level hook.
+		return nil //nolint:nilerr // non-fatal: polling fallback is already running and handles this combo
+	}
+	return nil
 }
 
 func (m *Manager) Events() <-chan Event {
@@ -169,6 +191,7 @@ func (m *Manager) Stop() {
 			m.cancel()
 		}
 		<-m.done
+		<-m.pollDone
 		close(m.events)
 	})
 }
@@ -297,7 +320,7 @@ func (m *Manager) keyboardProc(nCode int, wParam, lParam uintptr) uintptr {
 		return m.callNext(nCode, wParam, lParam)
 	}
 
-	switch uint32(wParam) { //nolint:gosec // Windows API integer conversion, value fits
+	switch uint32(wParam) { // #nosec G115 -- keyboard message IDs are DWORD-compatible values.
 	case wmKeyDown, wmSysKeyDown, wmKeyUp, wmSysKeyUp:
 	default:
 		return m.callNext(nCode, wParam, lParam)
@@ -309,20 +332,91 @@ func (m *Manager) keyboardProc(nCode int, wParam, lParam uintptr) uintptr {
 		lParam,
 		unsafe.Sizeof(info),
 	)
-	down := uint32(wParam) == wmKeyDown || uint32(wParam) == wmSysKeyDown //nolint:gosec // G115: wParam is Windows message param, fits uint32
+	down := uint32(wParam) == wmKeyDown || uint32(wParam) == wmSysKeyDown // #nosec G115 -- keyboard message IDs are DWORD-compatible values.
 
-	if event, ok := m.tracker.transition(info.VkCode, down); ok {
-		select {
-		case m.events <- event:
-		default:
-		}
+	m.mu.Lock()
+	event, ok := m.tracker.transition(info.VkCode, down)
+	consume := m.suppress && m.tracker.consumes(info.VkCode)
+	m.mu.Unlock()
+
+	if ok {
+		m.setActive(event.Type == EventKeyDown)
 	}
 
-	if m.suppress && m.tracker.consumes(info.VkCode) {
+	if consume {
 		return 1
 	}
 
 	return m.callNext(nCode, wParam, lParam)
+}
+
+func (m *Manager) pollLoop(ctx context.Context) {
+	defer close(m.pollDone)
+	ticker := time.NewTicker(pollInterval)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			m.setActive(false)
+			return
+		case <-ticker.C:
+			m.setActive(m.comboPressed())
+		}
+	}
+}
+
+func (m *Manager) comboPressed() bool {
+	m.mu.Lock()
+	keys := append([]uint32(nil), m.keys...)
+	m.mu.Unlock()
+	if len(keys) == 0 {
+		return false
+	}
+	for _, key := range keys {
+		if !isNormalizedKeyDown(key) {
+			return false
+		}
+	}
+	return true
+}
+
+func isNormalizedKeyDown(vk uint32) bool {
+	switch normalizeVK(vk) {
+	case VkShift:
+		return isKeyDown(VkShift) || isKeyDown(VkLShift) || isKeyDown(VkRShift)
+	case VkControl:
+		return isKeyDown(VkControl) || isKeyDown(VkLControl) || isKeyDown(VkRControl)
+	case VkMenu:
+		return isKeyDown(VkMenu) || isKeyDown(VkLMenu) || isKeyDown(VkRMenu)
+	case VkLWin:
+		return isKeyDown(VkLWin) || isKeyDown(VkRWin)
+	default:
+		return isKeyDown(vk)
+	}
+}
+
+func (m *Manager) setActive(active bool) {
+	m.mu.Lock()
+	if m.active == active {
+		m.mu.Unlock()
+		return
+	}
+	m.active = active
+	m.mu.Unlock()
+
+	if active {
+		m.emit(Event{Type: EventKeyDown})
+		return
+	}
+	m.emit(Event{Type: EventKeyUp})
+}
+
+func (m *Manager) emit(event Event) {
+	select {
+	case m.events <- event:
+	default:
+	}
 }
 
 func (m *Manager) callNext(nCode int, wParam, lParam uintptr) uintptr {
@@ -399,11 +493,17 @@ func parseToken(token string) (uint32, bool) {
 	if strings.HasPrefix(token, "f") && len(token) <= 3 {
 		n, err := strconv.Atoi(token[1:])
 		if err == nil && n >= 1 && n <= 24 {
-			return uint32(0x6F + n), true
+			return functionKeyVirtualKeys[n-1], true
 		}
 	}
 
 	return 0, false
+}
+
+var functionKeyVirtualKeys = [...]uint32{
+	0x70, 0x71, 0x72, 0x73, 0x74, 0x75, 0x76, 0x77,
+	0x78, 0x79, 0x7A, 0x7B, 0x7C, 0x7D, 0x7E, 0x7F,
+	0x80, 0x81, 0x82, 0x83, 0x84, 0x85, 0x86, 0x87,
 }
 
 var tokenVirtualKeys = map[string]uint32{

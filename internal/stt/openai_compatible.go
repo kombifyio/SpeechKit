@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	audiofmt "github.com/kombifyio/SpeechKit/internal/audio"
 	"github.com/kombifyio/SpeechKit/internal/netsec"
 )
 
@@ -51,7 +52,15 @@ func NewOpenAICompatibleProvider(name, baseURL, apiKey, model string) *OpenAICom
 // Allows loopback, private IP ranges and plain http:// because self-hosted
 // deployments frequently run inside a VPN, on a home LAN, or on localhost.
 func NewVPSProvider(baseURL, apiKey string) *OpenAICompatibleProvider {
-	p := NewOpenAICompatibleProvider("vps", baseURL, apiKey, "whisper-1")
+	return NewVPSProviderWithModel(baseURL, apiKey, "whisper-1")
+}
+
+func NewVPSProviderWithModel(baseURL, apiKey, model string) *OpenAICompatibleProvider {
+	model = strings.TrimSpace(model)
+	if model == "" {
+		model = "whisper-1"
+	}
+	p := NewOpenAICompatibleProvider("vps", baseURL, apiKey, model)
 	p.Validation = netsec.ValidationOptions{
 		AllowLoopback: true,
 		AllowPrivate:  true,
@@ -109,7 +118,7 @@ func (p *OpenAICompatibleProvider) Transcribe(ctx context.Context, audio []byte,
 	if err != nil {
 		return nil, fmt.Errorf("create form file: %w", err)
 	}
-	if _, err := part.Write(audio); err != nil {
+	if _, err := part.Write(ensureTranscriptionWAV(audio)); err != nil {
 		return nil, fmt.Errorf("write audio data: %w", err)
 	}
 
@@ -231,4 +240,17 @@ func (p *OpenAICompatibleProvider) Health(ctx context.Context) error {
 		return fmt.Errorf("%s health: status %d", p.name, resp.StatusCode)
 	}
 	return nil
+}
+
+func ensureTranscriptionWAV(raw []byte) []byte {
+	if isWAV(raw) {
+		return raw
+	}
+	return audiofmt.PCMToWAV(raw)
+}
+
+func isWAV(raw []byte) bool {
+	return len(raw) >= 12 &&
+		string(raw[0:4]) == "RIFF" &&
+		string(raw[8:12]) == "WAVE"
 }

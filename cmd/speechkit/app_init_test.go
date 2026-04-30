@@ -64,7 +64,7 @@ func TestBuildGenkitConfigSkipsSelectedBuiltInLocalLLMWithoutModelFile(t *testin
 }
 
 func TestBuildGenkitConfigRegistersSelectedBuiltInLocalLLMWithModelFile(t *testing.T) {
-	modelPath := filepath.Join(t.TempDir(), "gemma-3-4b-it-Q4_K_M.gguf")
+	modelPath := filepath.Join(t.TempDir(), "gemma-4-E4B-it-Q4_K_M.gguf")
 	if err := os.WriteFile(modelPath, []byte("gguf"), 0o600); err != nil {
 		t.Fatalf("write local llm model: %v", err)
 	}

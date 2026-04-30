@@ -15,7 +15,7 @@ func protectResumeHandle(data []byte) ([]byte, error) {
 	if len(data) == 0 {
 		return nil, nil
 	}
-	input := rhDataBlob{cbData: uint32(len(data)), pbData: &data[0]} //nolint:gosec // Windows API integer conversion, value fits
+	input := rhDataBlob{cbData: uint32(len(data)), pbData: &data[0]} // #nosec G115 -- resume handles are small in-memory DPAPI payloads.
 	var output rhDataBlob
 	result, _, err := procCryptProtectDataRH.Call(
 		uintptr(unsafe.Pointer(&input)), //nolint:gosec // Windows API requires unsafe.Pointer
@@ -37,7 +37,7 @@ func unprotectResumeHandle(data []byte) ([]byte, error) {
 	if len(data) == 0 {
 		return nil, nil
 	}
-	input := rhDataBlob{cbData: uint32(len(data)), pbData: &data[0]} //nolint:gosec // Windows API integer conversion, value fits
+	input := rhDataBlob{cbData: uint32(len(data)), pbData: &data[0]} // #nosec G115 -- resume handles are small in-memory DPAPI payloads.
 	var output rhDataBlob
 	result, _, err := procCryptUnprotectDataRH.Call(
 		uintptr(unsafe.Pointer(&input)), //nolint:gosec // Windows API requires unsafe.Pointer

@@ -88,6 +88,66 @@ func TestAuth_PublicPathBypassesCheck(t *testing.T) {
 	}
 }
 
+func TestAuth_PublicRouteBypassesOnlyConfiguredMethods(t *testing.T) {
+	t.Setenv("TEST_BEARER", "correct-horse-battery-staple")
+	handler := Auth(AuthOptions{
+		Mode:           "bearer",
+		BearerTokenEnv: "TEST_BEARER",
+		AllowPublicRoutes: []PublicRoute{
+			{Path: "/v1/server/settings", Methods: []string{http.MethodGet, http.MethodHead}},
+		},
+	})(
+		http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusOK) }),
+	)
+
+	readReq := httptest.NewRequest(http.MethodGet, "/v1/server/settings", nil)
+	readRec := httptest.NewRecorder()
+	handler.ServeHTTP(readRec, readReq)
+	if readRec.Code != http.StatusOK {
+		t.Fatalf("settings GET should bypass auth; got %d", readRec.Code)
+	}
+
+	writeReq := httptest.NewRequest(http.MethodPatch, "/v1/server/settings", nil)
+	writeRec := httptest.NewRecorder()
+	handler.ServeHTTP(writeRec, writeReq)
+	if writeRec.Code != http.StatusUnauthorized {
+		t.Fatalf("settings PATCH without auth should be rejected; got %d", writeRec.Code)
+	}
+
+	authorizedWrite := httptest.NewRequest(http.MethodPatch, "/v1/server/settings", nil)
+	authorizedWrite.Header.Set("Authorization", "Bearer correct-horse-battery-staple")
+	authorizedRec := httptest.NewRecorder()
+	handler.ServeHTTP(authorizedRec, authorizedWrite)
+	if authorizedRec.Code != http.StatusOK {
+		t.Fatalf("settings PATCH with auth should pass; got %d", authorizedRec.Code)
+	}
+}
+
+func TestAuth_NoneAllowsRequestAndAttachesAnonymousIdentity(t *testing.T) {
+	called := false
+	handler := Auth(AuthOptions{Mode: "none"})(
+		http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			called = true
+			id := IdentityFromContext(r.Context())
+			if id.UserID != "anonymous" || id.OrgID != "public" || id.Plan != "public" || id.Source != "none" {
+				t.Fatalf("unexpected anonymous identity: %+v", id)
+			}
+			w.WriteHeader(http.StatusOK)
+		}),
+	)
+
+	req := httptest.NewRequest(http.MethodPost, "/v1/voiceagent/sessions", nil)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if !called {
+		t.Fatalf("inner handler should have been invoked")
+	}
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d body=%s", rec.Code, rec.Body.String())
+	}
+}
+
 func TestAuth_BearerEmptyTokenFailsClosed(t *testing.T) {
 	// Env var not set → token empty → every request must be rejected.
 	handler := Auth(AuthOptions{Mode: "bearer", BearerTokenEnv: "UNDEFINED_BEARER_VAR"})(

@@ -3,8 +3,11 @@
 package secrets
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"unsafe"
 
@@ -39,7 +42,7 @@ type fileStore struct {
 
 func (s *fileStore) Load(name string) (string, bool, error) {
 	path := secretFilePath(name)
-	data, err := os.ReadFile(path) //nolint:gosec // path is app-controlled secrets dir, not user input
+	data, err := os.ReadFile(path) // #nosec G304 -- secretFilePath maps names to a scoped secrets-dir filename.
 	if err != nil {
 		if os.IsNotExist(err) {
 			return "", false, nil
@@ -74,7 +77,18 @@ func (s *fileStore) Delete(name string) error {
 }
 
 func secretFilePath(name string) string {
-	return filepath.Join(runtimepath.SecretsDir(), name+".bin")
+	return filepath.Join(runtimepath.SecretsDir(), secretFileName(name))
+}
+
+var safeSecretFileNamePattern = regexp.MustCompile(`^[A-Za-z0-9._-]+$`)
+
+func secretFileName(name string) string {
+	name = strings.TrimSpace(name)
+	if safeSecretFileNamePattern.MatchString(name) {
+		return name + ".bin"
+	}
+	sum := sha256.Sum256([]byte(name))
+	return "secret-" + hex.EncodeToString(sum[:]) + ".bin"
 }
 
 func protectWithDPAPI(data []byte) ([]byte, error) {
@@ -83,7 +97,7 @@ func protectWithDPAPI(data []byte) ([]byte, error) {
 	}
 
 	input := dataBlob{
-		cbData: uint32(len(data)), //nolint:gosec // G115: len fits in uint32 for in-memory secrets
+		cbData: uint32(len(data)), // #nosec G115 -- secrets are small in-memory DPAPI payloads.
 		pbData: &data[0],
 	}
 	var output dataBlob
@@ -114,7 +128,7 @@ func unprotectWithDPAPI(data []byte) ([]byte, error) {
 	}
 
 	input := dataBlob{
-		cbData: uint32(len(data)), //nolint:gosec // G115: len fits in uint32 for in-memory secrets
+		cbData: uint32(len(data)), // #nosec G115 -- secrets are small in-memory DPAPI payloads.
 		pbData: &data[0],
 	}
 	var output dataBlob

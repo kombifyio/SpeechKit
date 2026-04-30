@@ -11,7 +11,7 @@ const (
 
 // PCMToWAV wraps raw 16kHz S16 mono PCM data in a WAV header.
 func PCMToWAV(pcm []byte) []byte {
-	dataSize := uint32(len(pcm)) //nolint:gosec // PCM buffers are bounded by capture duration.
+	dataSize := uint32(len(pcm)) // #nosec G115 -- PCM buffers are bounded by capture duration.
 	out := make([]byte, 44+len(pcm))
 
 	copy(out[0:], "RIFF")

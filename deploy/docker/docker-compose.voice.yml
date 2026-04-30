@@ -20,7 +20,7 @@ services:
         VERSION: dev-compose
     image: speechkit-voice:dev
     environment:
-      SPEECHKIT_SERVER_TOKEN: ${SPEECHKIT_SERVER_TOKEN:?set SPEECHKIT_SERVER_TOKEN}
+      SPEECHKIT_SERVER_TOKEN: ${SPEECHKIT_SERVER_TOKEN:-}
       EDGE_AUTH_SECRET: ${EDGE_AUTH_SECRET:-}
       # Voice Agent leans on Gemini Live (default) or the cascaded provider
       # (whisper.cpp + Genkit + TTS). The cascaded provider is opt-in via

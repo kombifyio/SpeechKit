@@ -121,7 +121,7 @@ func (p *Processor) feedFrame(frame []byte) ([]Segment, error) {
 	samples := make([]int16, vad.FrameSize)
 	for i := 0; i < vad.FrameSize; i++ {
 		offset := i * vad.BytesPerSample
-		samples[i] = int16(binary.LittleEndian.Uint16(frame[offset : offset+vad.BytesPerSample])) //nolint:gosec // Windows API integer conversion, value fits
+		samples[i] = int16(binary.LittleEndian.Uint16(frame[offset : offset+vad.BytesPerSample])) // #nosec G115 -- PCM S16LE decoding reinterprets identical-width sample bits.
 	}
 
 	prob, err := p.vad.ProcessFrame(samples)

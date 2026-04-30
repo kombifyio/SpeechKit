@@ -234,7 +234,7 @@ func downloadAppInstaller(ctx context.Context, job *appUpdateJob, release latest
 		job.mu.Unlock()
 	}
 
-	file, err := os.Create(tmpPath) //nolint:gosec // path is application config dir, not user-controlled input
+	file, err := os.Create(tmpPath) // #nosec G304 -- tmpPath is derived from a validated installer asset name under the update directory.
 	if err != nil {
 		return fmt.Errorf("create installer temp file: %w", err)
 	}

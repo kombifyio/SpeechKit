@@ -13,10 +13,14 @@ import (
 	"github.com/kombifyio/SpeechKit/internal/stt"
 )
 
-// probeTimeout caps each provider's startup Health() probe. Cloud-API probes
-// are usually sub-second; we allow a generous window so a sluggish DNS lookup
-// or TLS handshake doesn't mark a perfectly fine provider as degraded.
-const probeTimeout = 8 * time.Second
+// probeTimeout caps each provider Health() attempt. Cloud-API probes are
+// usually sub-second; we allow a generous window so a sluggish DNS lookup or
+// TLS handshake doesn't mark a perfectly fine provider as degraded.
+const (
+	probeTimeout  = 8 * time.Second
+	probeDeadline = 2 * time.Minute
+	probeInterval = 5 * time.Second
+)
 
 // buildSTTRouter constructs the STT router from config. It mirrors the
 // essential parts of cmd/speechkit/app_init.go:buildRouter but is leaner:
@@ -96,10 +100,10 @@ func buildSTTRouter(cfg *config.Config) (*router.Router, []namedProvider, []stri
 	// VPS (self-hosted OpenAI-compatible).
 	if cfg.VPS.Enabled && strings.TrimSpace(cfg.VPS.URL) != "" {
 		key := config.ResolveSecret(cfg.VPS.APIKeyEnv)
-		p := stt.NewVPSProvider(cfg.VPS.URL, key)
+		p := stt.NewVPSProviderWithModel(cfg.VPS.URL, key, cfg.VPS.Model)
 		r.AddCloud(p)
 		providers = append(providers, namedProvider{name: "stt.vps", provider: p})
-		notes = append(notes, "VPS STT registered (url="+cfg.VPS.URL+")")
+		notes = append(notes, "VPS STT registered (url="+cfg.VPS.URL+", model="+p.Model+")")
 	}
 
 	// Local whisper.cpp. We DO register the provider so the router has a
@@ -131,24 +135,32 @@ type namedProvider struct {
 func registerProviderHealth(app *App, providers []namedProvider) {
 	for _, np := range providers {
 		app.Health.SetReady(np.name, StatusStarting, "probing")
+		go probeProviderHealth(app, np)
 	}
+}
 
-	go func() {
-		for _, np := range providers {
-			ctx, cancel := context.WithTimeout(context.Background(), probeTimeout)
-			err := np.provider.Health(ctx)
-			cancel()
-			if err != nil {
-				slog.Warn("STT provider health probe failed",
-					"component", np.name,
-					"provider", np.provider.Name(),
-					"err", err,
-				)
-				app.Health.SetReady(np.name, StatusDegraded, err.Error())
-				continue
-			}
+func probeProviderHealth(app *App, np namedProvider) {
+	deadline := time.Now().Add(probeDeadline)
+	var lastErr error
+	for {
+		ctx, cancel := context.WithTimeout(context.Background(), probeTimeout)
+		err := np.provider.Health(ctx)
+		cancel()
+		if err == nil {
 			slog.Info("STT provider ready", "component", np.name, "provider", np.provider.Name())
 			app.Health.SetReady(np.name, StatusOK, "ready")
+			return
 		}
-	}()
+		lastErr = err
+		slog.Warn("STT provider health probe failed",
+			"component", np.name,
+			"provider", np.provider.Name(),
+			"err", err,
+		)
+		if time.Now().After(deadline) {
+			app.Health.SetReady(np.name, StatusDegraded, lastErr.Error())
+			return
+		}
+		time.Sleep(probeInterval)
+	}
 }

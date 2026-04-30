@@ -73,7 +73,7 @@ func initAppLogging() (string, func()) {
 	logPath := filepath.Join(logDir, "speechkit.log")
 	rotateLogFile(logPath, logDir)
 
-	logFile, err := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600) //nolint:gosec // path is application config dir, not user-controlled input
+	logFile, err := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600) // #nosec G304 -- logPath is scoped under the executable's logs directory.
 	if err != nil {
 		slog.Warn("open log file", "err", err)
 		return logPath, func() {}

@@ -59,6 +59,21 @@ The boundary is:
 - The default build path produces both outputs from the same source tree
 - `scripts/build.ps1 -SkipInstaller` is allowed for portable-only release flows, but it must still build the same staged Windows bundle
 
+## Branch Protection
+
+The `main` branch is protected. Production changes must land through pull requests with CODEOWNERS review, resolved conversations, up-to-date required checks, and no direct pushes except documented release automation.
+
+Required status checks:
+
+- `Go Analysis`
+- `Frontend Checks`
+- `Website Checks`
+- `Dependency Review`
+- `security-passed`
+- `Windows Bundle` when a Windows runner is configured for the private repo or when running in the public OSS repo
+
+The security workflow is a release gate, not an advisory report. `security-passed` aggregates TruffleHog, OSV, Trivy, `govulncheck`, `staticcheck`, and `gosec`; a failed or cancelled required gate blocks merge until fixed or documented with an owner, date, and removal criterion.
+
 ## Public Windows Artifact Trust
 
 - `kombifyio/SpeechKit` is the public Windows release origin

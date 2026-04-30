@@ -1925,12 +1925,12 @@ describe("SettingsApp", () => {
     });
     fetchDownloadCatalogMock.mockResolvedValue([
       {
-        id: "llamacpp.gemma-3-4b-it-q4-k-m",
+        id: "llamacpp.gemma-4-e4b-it-q4-k-m",
         profileId: "assist.builtin.gemma4-e4b",
-        name: "Gemma 3 4B IT Q4_K_M (GGUF)",
+        name: "Gemma 4 E4B IT Q4_K_M (GGUF)",
         description: "Balanced local Assist model",
-        sizeLabel: "~2.5 GB",
-        sizeBytes: 2490000000,
+        sizeLabel: "~5.3 GB",
+        sizeBytes: 5335289824,
         kind: "http",
         license: "gemma",
         available: false,
@@ -1947,7 +1947,7 @@ describe("SettingsApp", () => {
       (await screen.findAllByText("llama.cpp (Local Built-in)")).length,
     ).toBeGreaterThan(0);
     expect(
-      screen.getByText("Gemma 3 4B IT Q4_K_M (GGUF)"),
+      screen.getByText("Gemma 4 E4B IT Q4_K_M (GGUF)"),
     ).toBeInTheDocument();
     expect(screen.getByText("recommended")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Download" })).toBeInTheDocument();

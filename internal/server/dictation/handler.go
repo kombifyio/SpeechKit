@@ -33,14 +33,16 @@ type Transcriber interface {
 
 // Options configures a single handler instance.
 type Options struct {
-	Router      Transcriber
-	MaxUploadMB int // request body ceiling; 0 disables the limit (discouraged)
+	Router        Transcriber
+	MaxUploadMB   int    // request body ceiling; 0 disables the limit (discouraged)
+	DefaultPrompt string // applied when the request does not provide a prompt
 }
 
 // Handler implements the dictation HTTP surface.
 type Handler struct {
-	router   Transcriber
-	maxBytes int64
+	router        Transcriber
+	maxBytes      int64
+	defaultPrompt string
 }
 
 // New constructs a Handler. The router must be non-nil; a zero maxBytes
@@ -53,7 +55,11 @@ func New(opts Options) (*Handler, error) {
 	if opts.MaxUploadMB > 0 {
 		maxBytes = int64(opts.MaxUploadMB) << 20
 	}
-	return &Handler{router: opts.Router, maxBytes: maxBytes}, nil
+	return &Handler{
+		router:        opts.Router,
+		maxBytes:      maxBytes,
+		defaultPrompt: strings.TrimSpace(opts.DefaultPrompt),
+	}, nil
 }
 
 // Mount registers the handler on the given mux at /v1/dictation/transcribe.
@@ -140,6 +146,7 @@ func (h *Handler) handleMultipart(w http.ResponseWriter, r *http.Request) {
 		Model:    strings.TrimSpace(r.FormValue("model")),
 		Prompt:   strings.TrimSpace(r.FormValue("prompt")),
 	}
+	opts.Prompt = h.resolvePrompt(opts.Prompt)
 	h.transcribeAndReply(w, r.Context(), file, partCT, opts)
 }
 
@@ -189,8 +196,17 @@ func (h *Handler) handleJSON(w http.ResponseWriter, r *http.Request) {
 		Model:    strings.TrimSpace(body.Model),
 		Prompt:   strings.TrimSpace(body.Prompt),
 	}
+	opts.Prompt = h.resolvePrompt(opts.Prompt)
 
 	h.transcribeBytes(w, r.Context(), raw, formatHint, opts)
+}
+
+func (h *Handler) resolvePrompt(prompt string) string {
+	prompt = strings.TrimSpace(prompt)
+	if prompt != "" {
+		return prompt
+	}
+	return h.defaultPrompt
 }
 
 // transcribeAndReply buffers the reader, decodes, and hands off.

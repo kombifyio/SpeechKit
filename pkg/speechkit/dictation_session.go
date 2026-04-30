@@ -143,7 +143,7 @@ func (s *DictationSegmenter) feedFrame(frame []byte) ([]AudioSegment, error) {
 	samples := make([]int16, dictationFrameSize)
 	for i := 0; i < dictationFrameSize; i++ {
 		offset := i * AudioBytesPerSample
-		samples[i] = int16(binary.LittleEndian.Uint16(frame[offset : offset+AudioBytesPerSample])) //nolint:gosec // PCM sample conversion.
+		samples[i] = int16(binary.LittleEndian.Uint16(frame[offset : offset+AudioBytesPerSample])) // #nosec G115 -- PCM S16LE decoding reinterprets identical-width sample bits.
 	}
 
 	prob, err := s.detector.ProcessFrame(samples)

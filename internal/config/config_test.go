@@ -75,7 +75,7 @@ func TestLoadDefaults(t *testing.T) {
 	if cfg.LocalLLM.BaseURL != "http://127.0.0.1:8082/v1" {
 		t.Errorf("default local LLM base URL = %q", cfg.LocalLLM.BaseURL)
 	}
-	if cfg.LocalLLM.UtilityModel != "gemma4:e4b" || cfg.LocalLLM.AssistModel != "gemma4:e4b" {
+	if cfg.LocalLLM.UtilityModel != DefaultLocalLLMModel || cfg.LocalLLM.AssistModel != DefaultLocalLLMModel {
 		t.Errorf("default local LLM models = utility:%q assist:%q", cfg.LocalLLM.UtilityModel, cfg.LocalLLM.AssistModel)
 	}
 	if got, want := cfg.ModelSelection.Dictate.PrimaryProfileID, DefaultDictatePrimaryProfileID; got != want {
@@ -113,6 +113,9 @@ func TestLoadDefaults(t *testing.T) {
 	}
 	if cfg.ServerConnection.RequestTimeoutSec != 30 {
 		t.Errorf("default server request timeout = %d, want 30", cfg.ServerConnection.RequestTimeoutSec)
+	}
+	if cfg.Server.AuthMode != "none" {
+		t.Errorf("default server auth_mode = %q, want none", cfg.Server.AuthMode)
 	}
 	if want := ManagedHuggingFaceAvailableInBuild(); cfg.HuggingFace.Enabled != want {
 		t.Errorf("default HuggingFace enabled = %v, want %v for this module build", cfg.HuggingFace.Enabled, want)

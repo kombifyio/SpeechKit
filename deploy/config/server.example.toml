@@ -1,9 +1,11 @@
 # SpeechKit Server-Target — reference configuration.
 #
 # Copy this file to /etc/speechkit/config.toml (or pass --config <path>) and
-# adjust for your deployment. All fields are optional; the defaults baked into
-# internal/config produce a working server when the required secrets are
-# injected as environment variables.
+# adjust for your deployment. The reference profile is production-oriented:
+# API routes require bearer auth by default, while health and setup routes stay
+# public. For a local-only demo you may set auth_mode = "none" explicitly.
+# Provider secrets are optional; missing secrets degrade only the modes that
+# need them.
 #
 # Secret values NEVER live in this file. Instead, this file refers to the ENV
 # VAR NAMES that hold them; the server reads those at boot (and gracefully
@@ -18,7 +20,7 @@ listen_addr            = ":8080"
 # entries to disable a mode for a given deployment (e.g. a Dictation-only
 # pool).
 modes                  = ["dictation", "assist", "voiceagent"]
-auth_mode              = "bearer"               # "bearer" | "edge_hmac" | "bearer_or_edge"
+auth_mode              = "bearer"               # Production default. Use "none" only for local-only demos.
 bearer_token_env       = "SPEECHKIT_SERVER_TOKEN"
 edge_auth_secret_env   = "EDGE_AUTH_SECRET"
 cors_allowed_origins   = []                      # e.g. ["https://app.example.com"]

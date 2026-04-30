@@ -124,7 +124,7 @@ func (s *Server) StartServer(ctx context.Context) error {
 		args = append(args, "--n-gpu-layers", "0")
 	}
 
-	s.cmd = exec.CommandContext(ctx, binaryPath, args...) //nolint:gosec // G204: binaryPath is resolved from trusted bundle locations.
+	s.cmd = exec.CommandContext(ctx, binaryPath, args...) // #nosec G204 -- binaryPath is resolved by FindServerBinary from bundle/managed locations or explicit dev opt-in.
 	configureHiddenProcess(s.cmd)
 	s.cmd.Stdout = os.Stderr
 	s.cmd.Stderr = os.Stderr
@@ -291,7 +291,7 @@ func findServerBinary() (string, error) {
 		} {
 			for _, name := range names {
 				path := filepath.Join(dir, name)
-				if _, err := os.Stat(path); err == nil { //nolint:gosec // G703: path is managed app directory, not user input.
+				if _, err := os.Stat(path); err == nil { // #nosec G703 -- path is managed app directory, not user input.
 					return path, nil
 				}
 			}

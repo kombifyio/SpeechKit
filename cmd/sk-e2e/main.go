@@ -6,7 +6,7 @@
 //
 // Usage:
 //
-//	sk-e2e --server http://localhost:8080 --token dev-bearer-token
+//	sk-e2e --server http://localhost:8080
 //	sk-e2e --server $URL --token $TOKEN --scenarios health,dictation
 //
 // Exit codes:
@@ -37,6 +37,8 @@ import (
 	"os"
 	"strings"
 	"time"
+
+	"github.com/coder/websocket"
 )
 
 func main() {
@@ -54,11 +56,6 @@ func main() {
 	if bearer == "" {
 		bearer = strings.TrimSpace(os.Getenv("SPEECHKIT_SERVER_TOKEN"))
 	}
-	if bearer == "" {
-		fmt.Fprintln(os.Stderr, "sk-e2e: missing --token (or $SPEECHKIT_SERVER_TOKEN)")
-		os.Exit(2)
-	}
-
 	c := &client{
 		base:    strings.TrimRight(*server, "/"),
 		token:   bearer,
@@ -202,7 +199,7 @@ func scenarioDictation(c *client, opts *scenarioOpts) error {
 		return err
 	}
 
-	resp, respBody, err := c.do(http.MethodPost, "/v1/dictation/transcribe", mw.FormDataContentType(), body.Bytes(), true)
+	resp, respBody, err := c.do(http.MethodPost, "/api/v1/dictation/transcribe", mw.FormDataContentType(), body.Bytes(), true)
 	if err != nil {
 		return fmt.Errorf("dictation request: %w", err)
 	}
@@ -238,50 +235,95 @@ func scenarioDictation(c *client, opts *scenarioOpts) error {
 }
 
 func scenarioAssist(c *client, opts *scenarioOpts) error {
-	payload := map[string]any{
-		"text":   "what time is it",
-		"locale": "en",
-		"tts":    false, // skip TTS — we don't want to depend on the deployment having TTS keys
+	checks := []struct {
+		name         string
+		payload      map[string]any
+		wantAction   string
+		allowDegrade bool
+	}{
+		{
+			name: "direct",
+			payload: map[string]any{
+				"text":   "what time is it",
+				"locale": "en",
+				"tts":    false, // skip TTS — we don't want to depend on the deployment having TTS keys
+			},
+			allowDegrade: true,
+		},
+		{
+			name:       "copy_last",
+			wantAction: "execute",
+			payload: map[string]any{
+				"text":   "copy last",
+				"locale": "en",
+				"tts":    false,
+			},
+		},
+		{
+			name:       "insert_last",
+			wantAction: "execute",
+			payload: map[string]any{
+				"text":   "insert last",
+				"locale": "en",
+				"tts":    false,
+			},
+		},
+		{
+			name:       "summarize",
+			wantAction: "execute",
+			payload: map[string]any{
+				"text":      "summarize this",
+				"locale":    "en",
+				"selection": "Deploy smoke source text. It exercises the Assist summarize codeword after release.",
+				"tts":       false,
+			},
+		},
 	}
-	bodyBytes, _ := json.Marshal(payload)
-	resp, respBody, err := c.do(http.MethodPost, "/v1/assist/process", "application/json", bodyBytes, true)
-	if err != nil {
-		return fmt.Errorf("assist request: %w", err)
+
+	for _, check := range checks {
+		bodyBytes, _ := json.Marshal(check.payload)
+		resp, respBody, err := c.do(http.MethodPost, "/api/v1/assist/process", "application/json", bodyBytes, true)
+		if err != nil {
+			return fmt.Errorf("assist %s request: %w", check.name, err)
+		}
+		switch resp.StatusCode {
+		case http.StatusOK:
+			var ar struct {
+				Text      string `json:"text"`
+				Action    string `json:"action"`
+				LatencyMs int64  `json:"latency_ms"`
+			}
+			if err := json.Unmarshal(respBody, &ar); err != nil {
+				return fmt.Errorf("assist %s response parse: %w body=%s", check.name, err, respBody)
+			}
+			if ar.Action == "" {
+				return fmt.Errorf("assist %s: empty action field; body=%s", check.name, respBody)
+			}
+			if check.wantAction != "" && ar.Action != check.wantAction {
+				return fmt.Errorf("assist %s: action = %q, want %q; body=%s", check.name, ar.Action, check.wantAction, respBody)
+			}
+			if c.verbose {
+				fmt.Printf("    assist %s action=%s text=%q latency_ms=%d\n", check.name, ar.Action, ar.Text, ar.LatencyMs)
+			}
+		case http.StatusServiceUnavailable:
+			if !check.allowDegrade {
+				return fmt.Errorf("assist %s unexpectedly unavailable; body=%s", check.name, respBody)
+			}
+			if !hasErrorEnvelope(respBody) {
+				return fmt.Errorf("assist %s 503 missing error envelope; body=%s", check.name, respBody)
+			}
+			fmt.Printf("    assist %s: deployment lacks required provider (503 with envelope) — treating as smoke-pass\n", check.name)
+		default:
+			return fmt.Errorf("assist %s status = %d; body=%s", check.name, resp.StatusCode, respBody)
+		}
 	}
-	switch resp.StatusCode {
-	case http.StatusOK:
-		var ar struct {
-			Text      string `json:"text"`
-			Action    string `json:"action"`
-			LatencyMs int64  `json:"latency_ms"`
-		}
-		if err := json.Unmarshal(respBody, &ar); err != nil {
-			return fmt.Errorf("assist response parse: %w body=%s", err, respBody)
-		}
-		if ar.Action == "" {
-			return fmt.Errorf("assist: empty action field; body=%s", respBody)
-		}
-		if c.verbose {
-			fmt.Printf("    assist action=%s text=%q latency_ms=%d\n", ar.Action, ar.Text, ar.LatencyMs)
-		}
-		return nil
-	case http.StatusServiceUnavailable:
-		if !hasErrorEnvelope(respBody) {
-			return fmt.Errorf("assist 503 missing error envelope; body=%s", respBody)
-		}
-		fmt.Printf("    assist: server has no Genkit/TTS keys configured (503 with envelope) — treating as smoke-pass\n")
-		return nil
-	default:
-		return fmt.Errorf("assist status = %d; body=%s", resp.StatusCode, respBody)
-	}
+	return nil
 }
 
 func scenarioVoiceAgentCreate(c *client, opts *scenarioOpts) error {
-	// We only test session creation here; the WS upgrade is exercised by
-	// the in-process adapter tests. This scenario validates the ticket
-	// envelope contract and that the server URL the client gets is
-	// well-formed.
-	resp, respBody, err := c.do(http.MethodPost, "/v1/voiceagent/sessions", "application/json", []byte(`{}`), true)
+	// Validate the session ticket envelope and exercise the public WebSocket
+	// upgrade path without sending audio frames.
+	resp, respBody, err := c.do(http.MethodPost, "/api/v1/voiceagent/sessions", "application/json", []byte(`{}`), true)
 	if err != nil {
 		return fmt.Errorf("voiceagent create: %w", err)
 	}
@@ -306,14 +348,23 @@ func scenarioVoiceAgentCreate(c *client, opts *scenarioOpts) error {
 	if c.verbose {
 		fmt.Printf("    voiceagent session_id=%s expires_at=%s\n", sr.SessionID, sr.ExpiresAt)
 	}
+	ctx, cancel := context.WithTimeout(context.Background(), c.timeout)
+	defer cancel()
+	if err := c.verifyVoiceAgentWebSocket(ctx, sr.WSURL); err != nil {
+		return fmt.Errorf("voiceagent websocket: %w", err)
+	}
+	if c.verbose {
+		fmt.Printf("    voiceagent websocket connected and closed cleanly\n")
+	}
 
 	// Clean up the session — leaving it dangling would slowly use up the
-	// server's per-identity quota across repeated runs.
-	delResp, delBody, delErr := c.do(http.MethodDelete, "/v1/voiceagent/sessions/"+sr.SessionID, "", nil, true)
+	// server's per-identity quota across repeated runs. A successful WS
+	// close may already remove the session server-side, so 404 is also OK.
+	delResp, delBody, delErr := c.do(http.MethodDelete, "/api/v1/voiceagent/sessions/"+sr.SessionID, "", nil, true)
 	if delErr != nil {
 		return fmt.Errorf("voiceagent delete: %w", delErr)
 	}
-	if delResp.StatusCode != http.StatusNoContent {
+	if delResp.StatusCode != http.StatusNoContent && delResp.StatusCode != http.StatusNotFound {
 		return fmt.Errorf("voiceagent delete status = %d; body=%s", delResp.StatusCode, delBody)
 	}
 	return nil
@@ -326,6 +377,27 @@ type client struct {
 	token   string
 	timeout time.Duration
 	verbose bool
+}
+
+func (c *client) verifyVoiceAgentWebSocket(ctx context.Context, rawURL string) error {
+	wsURL := strings.TrimSpace(rawURL)
+	if wsURL == "" {
+		return errors.New("ws_url is empty")
+	}
+	opts := &websocket.DialOptions{}
+	if c.token != "" {
+		opts.HTTPHeader = http.Header{}
+		opts.HTTPHeader.Set("Authorization", "Bearer "+c.token)
+	}
+	conn, resp, err := websocket.Dial(ctx, wsURL, opts)
+	if resp != nil && resp.Body != nil {
+		defer func() { _ = resp.Body.Close() }()
+	}
+	if err != nil {
+		return err
+	}
+	defer func() { _ = conn.CloseNow() }()
+	return conn.Close(websocket.StatusNormalClosure, "speechkit e2e smoke complete")
 }
 
 // doResp captures the small amount of HTTP response metadata the
@@ -353,7 +425,7 @@ func (c *client) do(method, path, contentType string, body []byte, auth bool) (*
 	if contentType != "" {
 		req.Header.Set("Content-Type", contentType)
 	}
-	if auth {
+	if auth && c.token != "" {
 		req.Header.Set("Authorization", "Bearer "+c.token)
 	}
 	if c.verbose && body != nil && contentType == "application/json" {
@@ -397,7 +469,7 @@ func synthSine(rate int, hz float64, ms int) []byte {
 		// Reinterpret the signed sample as the equivalent unsigned bit
 		// pattern. Same width, no information lost — gosec's G115 is
 		// over-eager here.
-		binary.LittleEndian.PutUint16(out[f*2:], uint16(v)) //nolint:gosec // signed-to-unsigned reinterpret of identical-width int16 sample
+		binary.LittleEndian.PutUint16(out[f*2:], uint16(v)) // #nosec G115 -- signed-to-unsigned reinterpret of identical-width int16 sample.
 	}
 	return out
 }
@@ -408,7 +480,7 @@ func wrapWAV(pcm []byte, rate, channels int) []byte {
 	// widths by definition (channels=1, rate=16000). gosec G115 is
 	// flagging the implicit widening conversion which can't overflow
 	// in practice — silence the noise with explicit nolint comments.
-	dataSize := uint32(len(pcm)) //nolint:gosec // bounded by the test fixture size
+	dataSize := uint32(len(pcm)) // #nosec G115 -- bounded by the test fixture size.
 	buf := make([]byte, 44+len(pcm))
 	copy(buf[0:], "RIFF")
 	binary.LittleEndian.PutUint32(buf[4:], 36+dataSize)
@@ -416,10 +488,10 @@ func wrapWAV(pcm []byte, rate, channels int) []byte {
 	copy(buf[12:], "fmt ")
 	binary.LittleEndian.PutUint32(buf[16:], 16)
 	binary.LittleEndian.PutUint16(buf[20:], 1)
-	binary.LittleEndian.PutUint16(buf[22:], uint16(channels))        //nolint:gosec // header value, channels=1 in this harness
-	binary.LittleEndian.PutUint32(buf[24:], uint32(rate))            //nolint:gosec // header value, rate=16000 in this harness
-	binary.LittleEndian.PutUint32(buf[28:], uint32(rate*channels*2)) //nolint:gosec // computed from constants
-	binary.LittleEndian.PutUint16(buf[32:], uint16(channels*2))      //nolint:gosec // computed from constants
+	binary.LittleEndian.PutUint16(buf[22:], uint16(channels))        // #nosec G115 -- header value, channels=1 in this harness.
+	binary.LittleEndian.PutUint32(buf[24:], uint32(rate))            // #nosec G115 -- header value, rate=16000 in this harness.
+	binary.LittleEndian.PutUint32(buf[28:], uint32(rate*channels*2)) // #nosec G115 -- computed from constants.
+	binary.LittleEndian.PutUint16(buf[32:], uint16(channels*2))      // #nosec G115 -- computed from constants.
 	binary.LittleEndian.PutUint16(buf[34:], 16)
 	copy(buf[36:], "data")
 	binary.LittleEndian.PutUint32(buf[40:], dataSize)

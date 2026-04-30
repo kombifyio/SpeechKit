@@ -27,11 +27,11 @@ Tags follow the repository's semver tags, for example
 - writes models + an optional SQLite fallback to `/var/lib/speechkit/models`
   (mount a 10+ GB volume)
 
-Minimum provider secret for a useful deployment:
+Minimum provider secrets for useful mode coverage:
 
 | Env var | Purpose |
 |---|---|
-| `SPEECHKIT_SERVER_TOKEN` | bearer token for `/v1/*` (required) |
+| `SPEECHKIT_SERVER_TOKEN` | optional bearer token when `[server].auth_mode` is `bearer` or `bearer_or_edge` |
 | `GOOGLE_AI_API_KEY` | Gemini Live Voice Agent + Google STT/TTS |
 | `OPENAI_API_KEY` | OpenAI Whisper / GPT / TTS fallback |
 | `HF_TOKEN` | HuggingFace STT fallback |
@@ -42,7 +42,6 @@ Minimum provider secret for a useful deployment:
 Reference stack for day-to-day development:
 
 ```bash
-export SPEECHKIT_SERVER_TOKEN="dev-bearer-token"
 export GOOGLE_AI_API_KEY="..."  # optional
 export OPENAI_API_KEY="..."     # optional
 docker compose -f deploy/docker/docker-compose.yml up -d
@@ -59,7 +58,7 @@ docker compose -f deploy/docker/docker-compose.test.yml up \
 ```
 
 The test-client container curls `/healthz`, `/readyz`, and a minimal
-`/v1/assist/process` request, and asserts the response contract — it
+`/api/v1/assist/process` request, and asserts the response contract — it
 exits non-zero when anything is off. CI wires this into the
 `server-linux.yml` workflow.
 
@@ -100,12 +99,6 @@ Dev compose stacks commonly run the SpeechKit server behind a small edge
 proxy. Use release tags for public/stable environments and `git-{sha}` images
 only for private staging or dogfood systems.
 
-Required runtime key:
-
-| Env var | Purpose |
-|---|---|
-| `SPEECHKIT_SERVER_TOKEN` | bearer token for `/v1/*` |
-
 Recommended provider keys:
 
 | Env var | Purpose |
@@ -124,8 +117,8 @@ missing; `/healthz` is the deployment gate.
 # One-time blueprint apply:
 render blueprint create deploy/render.yaml
 
-# Inject secrets from your secret manager (repeat for every key in deploy/render.yaml):
-for key in SPEECHKIT_SERVER_TOKEN GOOGLE_AI_API_KEY OPENAI_API_KEY HF_TOKEN; do
+# Inject provider secrets from your secret manager (repeat for every key you need):
+for key in GOOGLE_AI_API_KEY OPENAI_API_KEY HF_TOKEN; do
   value="$(your-secret-manager read "$key")"
   render env set --service-name speechkit-server "$key" "$value"
 done

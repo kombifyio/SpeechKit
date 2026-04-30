@@ -85,6 +85,31 @@ type App struct {
 	aiDepsOnce bool
 }
 
+func dictationPromptFromDictionary(dictionary string) string {
+	dictionary = strings.ReplaceAll(dictionary, "\r\n", "\n")
+	dictionary = strings.ReplaceAll(dictionary, "\r", "\n")
+	terms := make([]string, 0)
+	for _, line := range strings.Split(dictionary, "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		if before, after, ok := strings.Cut(line, "=>"); ok {
+			line = strings.TrimSpace(after)
+			if line == "" {
+				line = strings.TrimSpace(before)
+			}
+		}
+		if line != "" {
+			terms = append(terms, line)
+		}
+	}
+	if len(terms) == 0 {
+		return ""
+	}
+	return "Prefer these dictionary terms in transcription: " + strings.Join(terms, ", ") + "."
+}
+
 // Run boots the server, blocks until ctx is cancelled or the listener fails,
 // and performs graceful shutdown. The caller is responsible for cancelling ctx
 // on SIGTERM/SIGINT (see NotifySignals).
@@ -102,6 +127,9 @@ func Run(ctx context.Context, cfg *config.Config, opts RunOptions) error {
 	}
 
 	registerHealth(app)
+	registerTestUI(app)
+	registerServerSettings(app)
+	registerAPIAlias(app.Mux)
 
 	// Build the STT router and register dictation/assist/voiceagent handlers
 	// for whichever modes are enabled. The router is shared across all three
@@ -121,8 +149,9 @@ func Run(ctx context.Context, cfg *config.Config, opts RunOptions) error {
 			app.Health.SetReady("mode.dictation", StatusUnavailable, "STT router not initialized")
 		} else {
 			h, err := dictation.New(dictation.Options{
-				Router:      app.STTRouter,
-				MaxUploadMB: cfg.Server.MaxUploadMB,
+				Router:        app.STTRouter,
+				MaxUploadMB:   cfg.Server.MaxUploadMB,
+				DefaultPrompt: dictationPromptFromDictionary(cfg.Vocabulary.Dictionary),
 			})
 			if err != nil {
 				return fmt.Errorf("core.Run: build dictation handler: %w", err)
@@ -188,7 +217,7 @@ func Run(ctx context.Context, cfg *config.Config, opts RunOptions) error {
 		case strings.HasPrefix(status, "degraded"), strings.HasPrefix(status, "unavailable"):
 			app.Health.SetReady("mode.voiceagent", StatusDegraded, status)
 		case strings.HasPrefix(status, "partial"):
-			app.Health.SetReady("mode.voiceagent", StatusDegraded, status)
+			app.Health.SetReady("mode.voiceagent", StatusOK, "listening: "+status)
 		default:
 			app.Health.SetReady("mode.voiceagent", StatusOK, "listening: "+status)
 		}
@@ -212,6 +241,8 @@ func Run(ctx context.Context, cfg *config.Config, opts RunOptions) error {
 	// OPTIONS bypasses the bearer check, Auth attaches Identity to the
 	// context, and RateLimit reads that Identity to bucket per-user
 	// rather than per-IP.
+	publicPaths := serverPublicPaths()
+	publicRoutes := serverPublicRoutes()
 	chain := middleware.Chain(
 		middleware.Recover(),
 		middleware.Logging(),
@@ -222,7 +253,8 @@ func Run(ctx context.Context, cfg *config.Config, opts RunOptions) error {
 			EdgeSecretEnv:  cfg.Server.EdgeAuthSecretEnv,
 			// Health endpoints are always public so external probes (Render,
 			// Kubernetes) can hit them without credentials.
-			AllowPublicPaths: []string{"/healthz", "/readyz"},
+			AllowPublicPaths:  publicPaths,
+			AllowPublicRoutes: publicRoutes,
 		}),
 		middleware.RateLimit(middleware.RateLimitOptions{
 			RequestsPerSecond: cfg.Server.RateLimitRPS,
@@ -230,7 +262,7 @@ func Run(ctx context.Context, cfg *config.Config, opts RunOptions) error {
 			// Health probes must never be rate-limited; otherwise a busy
 			// neighbour could starve out Render's readiness checks during
 			// real outages.
-			AllowPublicPaths: []string{"/healthz", "/readyz"},
+			AllowPublicPaths: publicPaths,
 		}),
 	)
 

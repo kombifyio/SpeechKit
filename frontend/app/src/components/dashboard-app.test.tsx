@@ -837,6 +837,82 @@ describe("DashboardApp", () => {
     expect(body.get("voice_agent_hotkey")).toBe("ctrl+shift");
   });
 
+  it("does not toast historical model errors after continuing while onboarding download runs", async () => {
+    fetchSpy?.mockImplementation(
+      async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url =
+          typeof input === "string"
+            ? input
+            : input instanceof URL
+              ? input.toString()
+              : (input as Request).url;
+        if (url === "/app/setup-status") {
+          return new Response(JSON.stringify({ setupDone: false }), {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          });
+        }
+        if (url === "/app/version") {
+          return new Response(JSON.stringify({ version: "0.18.0" }), {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          });
+        }
+        if (url === "/settings/update") {
+          expect(init?.body).toBeInstanceOf(URLSearchParams);
+          return new Response(JSON.stringify({ message: "Saved" }), {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          });
+        }
+        if (url === "/app/complete-setup") {
+          return new Response(JSON.stringify({ setupDone: true }), {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          });
+        }
+        return new Response("{}", {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      },
+    );
+    fetchLogsMock.mockResolvedValue([
+      {
+        message: "Local STT unavailable: model file missing",
+        type: "error",
+        timestamp: "2026-04-29T12:00:00Z",
+      },
+    ]);
+    fetchDownloadJobsMock.mockResolvedValue([
+      {
+        id: "model-job-1",
+        modelId: "whisper.ggml-large-v3-turbo",
+        profileId: "stt.local.whispercpp",
+        status: "running",
+        progress: 0.42,
+        bytesDone: 42,
+        totalBytes: 100,
+        statusText: "42 / 100 MB",
+      },
+    ]);
+
+    render(<DashboardApp />);
+
+    fireEvent.click(
+      await screen.findByRole("button", { name: /get started/i }),
+    );
+    fireEvent.click(await screen.findByRole("button", { name: /^continue/i }));
+    fireEvent.click(
+      await screen.findByRole("button", { name: /start using speechkit/i }),
+    );
+
+    await waitFor(() => expect(fetchLogsMock).toHaveBeenCalled());
+    expect(
+      screen.queryByText("Local STT unavailable: model file missing"),
+    ).not.toBeInTheDocument();
+  });
+
   it("opens transcribe settings when the user wants to use a cloud token instead of a local model", async () => {
     fetchSpy?.mockImplementation(async (input: RequestInfo | URL) => {
       const url =

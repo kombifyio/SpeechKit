@@ -129,7 +129,7 @@ func (p *LocalProvider) StartServer(ctx context.Context) error {
 		args = append(args, "--no-gpu")
 	}
 
-	p.cmd = exec.CommandContext(ctx, binaryPath, args...) //nolint:gosec // G204: binaryPath from app data dir, not user input
+	p.cmd = exec.CommandContext(ctx, binaryPath, args...) // #nosec G204 -- binaryPath is resolved by findWhisperBinary from bundle/managed locations or explicit dev opt-in.
 	configureHiddenProcess(p.cmd)
 	p.cmd.Stdout = os.Stderr // whisper-server logs to stdout
 	p.cmd.Stderr = os.Stderr
@@ -560,7 +560,7 @@ func findWhisperBinary() (string, error) {
 		for _, dir := range searchDirs {
 			for _, name := range names {
 				path := filepath.Join(dir, name)
-				if _, err := os.Stat(path); err == nil { //nolint:gosec // G703: path is app data dir, not user input
+				if _, err := os.Stat(path); err == nil { // #nosec G703 -- path is app data dir, not user input.
 					return path, nil
 				}
 			}

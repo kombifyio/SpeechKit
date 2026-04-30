@@ -47,15 +47,17 @@ docker build -f deploy/docker/Dockerfile.server \
   --target speechkit-voice  -t speechkit-voice:dev  .
 
 # 2. Bring the dev stack up
-export SPEECHKIT_SERVER_TOKEN="dev-bearer-token-change-me"
 export GOOGLE_AI_API_KEY="..."   # optional, enables Voice Agent + Google STT/TTS
 export OPENAI_API_KEY="..."      # optional
 export HF_TOKEN="..."            # optional, enables HF STT
+export SPEECHKIT_SERVER_TOKEN="dev-local-token"
 docker compose -f deploy/docker/docker-compose.yml up -d
 
 # 3. Verify
 curl -fsS http://localhost:8080/healthz
 curl -fsS http://localhost:8080/readyz
+# Browser smoke test UI
+# http://localhost:8080/
 
 # 4. Optional: also bring up the voice profile on :8090 for deployment testing.
 docker compose -f deploy/docker/docker-compose.voice.yml up -d
@@ -73,16 +75,19 @@ Render it with any OpenAPI viewer (Swagger UI, Stoplight, Redoc) or
 generate a typed client with `openapi-generator`. The contract is
 considered stable across v0.26.x patch releases — fields are additive
 across minor bumps; renames or removals require a major version bump.
+The canonical browser-facing API prefix is `/api/v1`; the original `/v1`
+paths remain available for compatibility.
 
 ## Modes
 
 | Mode         | Transport     | Entry path                              | Status |
 |--------------|---------------|-----------------------------------------|--------|
-| Dictation    | HTTP POST     | `/v1/dictation/transcribe`              | ✅ ships in v0.26 |
-| Assist       | HTTP POST     | `/v1/assist/process`                    | ✅ ships in v0.26 |
-| Voice Agent  | HTTP + WS     | `/v1/voiceagent/sessions` + `/ws`       | ✅ ships in v0.26 |
-| Personas API | HTTP CRUD     | `/v1/personas`, `/v1/roles`, `/v1/sequences` | ✅ ships in v0.26 |
+| Dictation    | HTTP POST     | `/api/v1/dictation/transcribe`              | ✅ ships in v0.26 |
+| Assist       | HTTP POST     | `/api/v1/assist/process`                    | ✅ ships in v0.26 |
+| Voice Agent  | HTTP + WS     | `/api/v1/voiceagent/sessions` + `/ws`       | ✅ ships in v0.26 |
+| Personas API | HTTP CRUD     | `/api/v1/personas`, `/api/v1/roles`, `/api/v1/sequences` | ✅ ships in v0.26 |
 | Health       | HTTP GET      | `/healthz`, `/readyz`                   | ✅ |
+| Test UI      | HTTP GET      | `/`                                     | browser smoke-test surface |
 
 The mode set the binary serves is decided at startup from `[server].modes` in
 `config.toml` or the `--modes=` CLI flag. The published images set defaults for
@@ -121,18 +126,24 @@ Voice Agent can use the deployment profile that fits the workload.
 
 ## Authentication
 
-Three auth modes are supported via `[server].auth_mode`:
+Built-in auth is configured via `[server].auth_mode`:
 
-- `bearer` (default) — single static token from `$SPEECHKIT_SERVER_TOKEN`.
-  Appropriate for internal service-to-service calls on a trusted network.
+- `bearer` (production default) — single static token from
+  `$SPEECHKIT_SERVER_TOKEN`. Appropriate for internal service-to-service calls
+  on a trusted network.
 - `edge_hmac` — trusts HMAC-signed headers from an authenticated edge (e.g. a
   Cloudflare Worker that has already validated a user JWT). Expected headers:
   `X-Edge-Auth-Hmac`, `X-Edge-User-Id`, `X-Edge-Org-Id`, `X-Edge-Plan`,
   optionally `X-Edge-Role`.
 - `bearer_or_edge` — accepts either, useful when one deployment serves both
   internal and browser-originated traffic.
+- `none` — local development only, or a private demo behind an upstream layer
+  that fully owns authentication. Do not expose a `none` deployment to the
+  public internet.
 
-`/healthz` and `/readyz` are always public so external probes work without
+`/healthz`, `/readyz`, `/`, and `/setup` are always public so probes, browser
+smoke tests, and first-run onboarding can load without credentials. When auth is
+enabled, only the `/api/v1/*` and compatibility `/v1/*` calls require
 credentials.
 
 ## Relation to the Framework kernel
@@ -169,5 +180,8 @@ docs/server/                   # This document + API reference
 - Middleware chain for recover, logging, CORS, and auth.
 - Dictation REST, Assist REST, Voice Agent WebSocket, personas, roles,
   sequences, and health endpoints.
+- Root `/` smoke UI for manual Dictation, Assist, and Voice Agent endpoint tests
+  against the current server configuration.
+- `/setup` onboarding UI for provider, model, and key configuration.
 - Reference Dockerfile and docker-compose files for local development.
 - CI workflow that builds, vets, tests, and smoke-tests the server image.

@@ -96,6 +96,9 @@ func TestDefaultCatalogKeepsAssistBuiltInOnLlamaCpp(t *testing.T) {
 	if localBuiltIn.Name != "llama.cpp (Local Built-in)" {
 		t.Fatalf("local built-in assist profile name = %q, want llama.cpp (Local Built-in)", localBuiltIn.Name)
 	}
+	if localBuiltIn.ModelID != speechkit.DefaultLocalBuiltInLLMModel {
+		t.Fatalf("local built-in assist model ID = %q, want %q", localBuiltIn.ModelID, speechkit.DefaultLocalBuiltInLLMModel)
+	}
 }
 
 func TestAssistProfilesExposeUtilityToolCapability(t *testing.T) {

@@ -12,6 +12,7 @@ type sessionTestProvider struct {
 	connected bool
 	closed    bool
 	messages  chan *LiveMessage
+	sentText  []string
 }
 
 type reconnectingSessionTestProvider struct {
@@ -45,7 +46,12 @@ func (p *sessionTestProvider) Receive(ctx context.Context) (*LiveMessage, error)
 	}
 }
 
-func (p *sessionTestProvider) SendText(_ string) error               { return nil }
+func (p *sessionTestProvider) SendText(text string) error {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.sentText = append(p.sentText, text)
+	return nil
+}
 func (p *sessionTestProvider) SendToolResponse(_ ToolResponse) error { return nil }
 func (p *sessionTestProvider) Name() string                          { return "session-test" }
 func (p *sessionTestProvider) Close() error {
@@ -287,6 +293,90 @@ func TestSessionShowsRecoveringStateDuringGoAwayReconnect(t *testing.T) {
 	if provider.reconnects != 1 {
 		t.Fatalf("reconnects = %d, want 1", provider.reconnects)
 	}
+}
+
+func TestSessionHandlesMultiTurnTextDialog(t *testing.T) {
+	provider := newSessionTestProvider()
+	events := make(chan dialogueEvent, 16)
+	session := NewSession(provider, Callbacks{
+		OnInputTranscript: func(text string, done bool) {
+			if done {
+				events <- dialogueEvent{side: "user", text: text}
+			}
+		},
+		OnOutputTranscript: func(text string, done bool) {
+			if done {
+				events <- dialogueEvent{side: "agent", text: text}
+			}
+		},
+	})
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	if err := session.Start(ctx, LiveConfig{Model: "gemini-live-test"}, IdleConfig{}); err != nil {
+		t.Fatalf("start session: %v", err)
+	}
+	defer session.Stop()
+
+	dialog := []struct {
+		user  string
+		agent string
+	}{
+		{user: "Ping one: collect three naming ideas.", agent: "Pong one: I have three concise options."},
+		{user: "Ping two: make the strongest one warmer.", agent: "Pong two: the warm version is ready."},
+		{user: "Ping three: compare it with the direct variant.", agent: "Pong three: the warmer option is friendlier."},
+		{user: "Ping four: give me the final choice.", agent: "Pong four: choose the warm concise version."},
+	}
+
+	for _, turn := range dialog {
+		if err := session.SendText(turn.user); err != nil {
+			t.Fatalf("send text %q: %v", turn.user, err)
+		}
+		provider.messages <- &LiveMessage{InputTranscript: turn.user, InputTranscriptDone: true}
+		waitForDialogueEvent(t, events, "user", turn.user)
+
+		provider.messages <- &LiveMessage{OutputTranscript: turn.agent, OutputTranscriptDone: true}
+		waitForDialogueEvent(t, events, "agent", turn.agent)
+	}
+
+	sentText := providerSentText(provider)
+	if len(sentText) != len(dialog) {
+		t.Fatalf("sent text turns = %d, want %d: %#v", len(sentText), len(dialog), sentText)
+	}
+	for i, turn := range dialog {
+		if sentText[i] != turn.user {
+			t.Fatalf("sent text[%d] = %q, want %q", i, sentText[i], turn.user)
+		}
+	}
+	if totalInteractions := len(dialog) * 2; totalInteractions <= 6 {
+		t.Fatalf("dialog interactions = %d, want > 6", totalInteractions)
+	}
+	if session.CurrentState() != StateListening {
+		t.Fatalf("current state = %s, want %s", session.CurrentState(), StateListening)
+	}
+}
+
+type dialogueEvent struct {
+	side string
+	text string
+}
+
+func waitForDialogueEvent(t *testing.T, ch <-chan dialogueEvent, side, text string) {
+	t.Helper()
+	select {
+	case event := <-ch:
+		if event.side != side || event.text != text {
+			t.Fatalf("dialogue event = %#v, want side=%q text=%q", event, side, text)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatalf("timed out waiting for %s dialogue event %q", side, text)
+	}
+}
+
+func providerSentText(provider *sessionTestProvider) []string {
+	provider.mu.Lock()
+	defer provider.mu.Unlock()
+	return append([]string(nil), provider.sentText...)
 }
 
 func drainStateChanges(ch <-chan State) {
