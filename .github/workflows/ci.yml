@@ -76,6 +76,7 @@ jobs:
 
   website-ci:
     name: Website Checks
+    if: ${{ hashFiles('Website/package.json') != '' }}
     runs-on: ${{ github.repository == 'kombifyio/SpeechKit' && 'ubuntu-24.04' || 'blacksmith-4vcpu-ubuntu-2204' }}
     timeout-minutes: 15
 
@@ -260,8 +261,10 @@ jobs:
             ./internal/tts/...
             ./internal/vad/...
             ./internal/voiceagent/...
-            ./tools/releaseguard/...
           )
+          if [ -d tools/releaseguard ]; then
+            packages+=(./tools/releaseguard/...)
+          fi
           echo "list=${packages[*]}" >> "$GITHUB_OUTPUT"
           echo "Cross-platform package set:"
           printf '  %s\n' "${packages[@]}"
