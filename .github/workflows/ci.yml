@@ -76,7 +76,7 @@ jobs:
 
   website-ci:
     name: Website Checks
-    if: ${{ hashFiles('Website/package.json') != '' }}
+    if: ${{ github.repository != 'kombifyio/SpeechKit' }}
     runs-on: ${{ github.repository == 'kombifyio/SpeechKit' && 'ubuntu-24.04' || 'blacksmith-4vcpu-ubuntu-2204' }}
     timeout-minutes: 15
 
