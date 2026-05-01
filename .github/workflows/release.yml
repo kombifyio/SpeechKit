@@ -373,7 +373,7 @@ jobs:
 
       - name: Attest release artifacts
         if: vars.ENABLE_BUILD_ATTESTATIONS != 'false'
-        uses: actions/attest-build-provenance@96b4a1ef7235a096b17240c259729fdd70c83d45
+        uses: actions/attest-build-provenance@ef244123eb79f2f7a7e75d99086184180e6d0018
         with:
           subject-path: ${{ steps.assets.outputs.subject_paths }}
 
