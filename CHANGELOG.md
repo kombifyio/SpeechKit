@@ -4,6 +4,41 @@ All notable changes to SpeechKit should be documented in this file.
 
 The format is based on Keep a Changelog and this project is intended to ship under Apache-2.0.
 
+## [0.28.1] - 2026-05-01
+
+v0.28.1 cleans up the server deployment contract after the v0.28 hardening
+release. SpeechKit now documents and ships one central server image, with Voice
+Agent as a normal mode of that server rather than a second deployment variant.
+
+### Highlights
+
+- **One central server image**: `ghcr.io/kombifyio/speechkit-server` is the only
+  published server image. Dictation, Assist, and Voice Agent all live behind the
+  same HTTP/WebSocket adapter.
+- **Simpler installs**: the server installer now offers `--onboarding` and
+  `--ready` setup modes for the same stack instead of `server` versus `voice`
+  profiles.
+- **Deployment guardrails**: CI, release Docker publishing, dev deploy, and
+  releaseguard checks now reject legacy split-server artifacts before they can
+  be built or deployed.
+
+### Changed
+
+- Removed the `cmd/speechkit-voice` binary, the `speechkit-voice` Docker target,
+  voice-only Compose files, voice image environment contract, and GHCR release
+  matrix entry.
+- Rewrote server docs, OpenAPI naming, website copy, and deployment contract
+  language around the central SpeechKit Server architecture.
+- Kept `pkg/speechkit/*` unchanged; the reusable framework boundary remains the
+  public Go surface, while the server stays a thin HTTP/WebSocket adapter and
+  the Windows app stays a UI/client.
+- Bumped Windows/frontend release metadata to `0.28.1`.
+
+### Fixed
+
+- Hardened the Windows control-plane origin guard so mutating requests reject
+  non-HTTP origins.
+
 ## [0.28.0] - 2026-04-30
 
 v0.28.0 is the production-hardening release. It tightens the release
@@ -63,10 +98,9 @@ without requiring private project context.
 
 ### Added
 
-- **Realtime voice deployment profile.** The release now documents and
-  publishes the `speechkit-voice` profile alongside the default
-  `speechkit-server` profile. It is built for realtime Voice Agent
-  WebSocket workloads.
+- **Realtime voice on the central server.** The release now documents
+  Voice Agent WebSocket workloads as part of the central
+  `speechkit-server` contract.
 - **Full server release surface.** SpeechKit can now be deployed as a
   server for HTTP Dictation, HTTP Assist, realtime Voice Agent
   WebSocket, health/readiness checks, auth middleware, rate limiting,
@@ -131,8 +165,7 @@ The first OSS release of SpeechKit's Server-Target. SpeechKit now
 ships in three deployment shapes — Device-Target (Windows reference
 UI), Local-Target (library/CLI), and Server-Target (containerized
 HTTP/WebSocket service) — all backed by the same Framework kernel.
-The Server-Target itself comes in two flavours from one source tree:
-the full `speechkit-server` and the focused `speechkit-voice`.
+The Server-Target publishes one central image, `speechkit-server`.
 
 ### Added
 
@@ -148,24 +181,6 @@ the full `speechkit-server` and the focused `speechkit-voice`.
   sequence catalog with TOML seeds + DB overrides, and a SQLite
   persister behind a clean `Persister` interface for Postgres
   to follow.
-
-- **Voice Server (`cmd/speechkit-voice`, `ghcr.io/kombifyio/
-  speechkit-voice`).** A focused container that exposes only the
-  Voice Agent WebSocket endpoint. Same Go source tree as
-  `speechkit-server`; the only difference is the built-in default
-  mode set (`["voiceagent"]` instead of all three). Useful for
-  running voice on its own pod when you want stateful WebSocket
-  traffic on beefier nodes than your stateless REST tier needs.
-  Both binaries share `internal/server/cli` so future bootstrap
-  changes touch one place.
-  - Multi-target Dockerfile: `docker build --target speechkit-server`
-    and `--target speechkit-voice` produce the two images from one
-    file, with shared apt + ONNX + Doppler base layers cached once.
-  - Release pipeline (`release-server-docker.yml`) publishes both
-    images on a v* tag via a build matrix, each with its own GHCR
-    cache scope so the matrix legs don't fight for cache slots.
-  - `deploy/docker/docker-compose.voice.yml` for local dev parity
-    testing; sits alongside the existing full-server compose file.
 
 - **Self-hosted Voice Agent provider — Cascaded.** `cascaded`
   provider in `internal/server/voiceagent` runs whisper.cpp + Genkit
@@ -198,19 +213,15 @@ the full `speechkit-server` and the focused `speechkit-voice`.
     connection metadata + `ModeSourceSection` with three per-mode
     toggles. Server pill auto-disables (with hint) when the
     connection is off or the bearer-token env var is missing.
-  - Per-mode `ModeSource` makes the split deployment shape
-    invisible to end users: Dictation/Assist can point at the full
-    server while Voice Agent points at `speechkit-voice`, and the
-    desktop UI picks the right URL automatically.
+  - Per-mode `ModeSource` lets end users choose which modes run
+    locally and which modes call the central SpeechKit Server.
 
 ### Changed
 
-- **`cmd/speechkit-server/main.go` is now a one-line wrapper** around
-  `internal/server/cli.Run()`. The shared CLI handles flag parsing,
-  config loading, logger setup, and the lifecycle handoff to
-  `internal/server/core`. `cmd/speechkit-voice/main.go` is the
-  second wrapper, identical except for the banner + default mode
-  set. No behavioural change for existing operators.
+- **`cmd/speechkit-server/main.go` is now a thin wrapper** around
+  `internal/server/cli.Run()`. The CLI handles flag parsing, config
+  loading, logger setup, and the lifecycle handoff to
+  `internal/server/core`.
 
 - **`pkg/speechkit.ModeSetting`** gains an optional `modeSource`
   field; `ModeSettings` adds a `serverConnection` block that strips
@@ -233,10 +244,9 @@ the full `speechkit-server` and the focused `speechkit-voice`.
 - The v0.25 sync exclusions for `cmd/speechkit-server`,
   `internal/server`, `deploy/`, `docs/server`, and the docker
   publish workflow are removed for this release. External users can
-  pull `ghcr.io/kombifyio/speechkit-server:v0.26.0` and
-  `ghcr.io/kombifyio/speechkit-voice:v0.26.0` once the tag ships.
+  pull `ghcr.io/kombifyio/speechkit-server:v0.26.0` once the tag ships.
 - See `docs/server/MIGRATION-v0.25-to-v0.26.md` for the upgrade path
-  + the new "Backend vs. Voice Server" decision guide.
+  and central server onboarding guide.
 - ModeSource defaults to "local" everywhere, so OSS users see no
   behaviour change after upgrade until they explicitly enable
   `[server_connection]`.

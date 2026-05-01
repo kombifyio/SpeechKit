@@ -151,6 +151,9 @@ func isAllowedControlPlaneOrigin(origin string) bool {
 	if err != nil || parsed.Hostname() == "" {
 		return false
 	}
+	if parsed.Scheme != "http" && parsed.Scheme != "https" {
+		return false
+	}
 	host := strings.ToLower(parsed.Hostname())
 	if host == "localhost" || host == "127.0.0.1" || host == "::1" {
 		return true

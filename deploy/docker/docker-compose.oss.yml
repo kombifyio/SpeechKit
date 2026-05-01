@@ -5,18 +5,11 @@
 # Use this when you want to try SpeechKit without cloning the
 # repository first.
 #
-# Two services are defined:
+# One service is defined:
 #
 #   speechkit-server (port 8080):
-#     The full server — Dictation REST + Assist REST + Voice Agent WS
-#     in one container. Choose this for single-pod deployments where
-#     you want all three modes against one URL.
-#
-#   speechkit-voice (port 8090, commented out by default):
-#     Voice-Agent-only WebSocket server. Uncomment when you want to
-#     scale voice independently from REST traffic, or when the device-
-#     target's per-mode `mode_source` config points Dictation/Assist
-#     at one URL and Voice Agent at another.
+#     The central Framework server — Dictation REST + Assist REST +
+#     Voice Agent WS in one container under one URL.
 #
 # Quick start:
 #   1. Copy .env.example to .env and fill in whichever provider keys
@@ -26,9 +19,9 @@
 #   2. docker compose -f docker-compose.oss.yml up -d
 #   3. curl -fsS http://localhost:8080/healthz
 #
-# By default this file pins both images to the latest stable tag —
-# override with the IMAGE_TAG env var when you want a specific
-# release: IMAGE_TAG=v0.26.0 docker compose ... up -d.
+# By default this file pins the server image to the latest stable tag.
+# Override with IMAGE_TAG when you want a specific release:
+# IMAGE_TAG=v0.26.0 docker compose ... up -d.
 
 services:
   speechkit-server:
@@ -60,34 +53,6 @@ services:
       timeout: 5s
       retries: 3
       start_period: 30s
-
-  # Voice-only deployment, ships under the same release tag as
-  # speechkit-server. Uncomment when you want to run the Voice Agent
-  # tier on its own pod / port — typical reason: stateful WebSocket
-  # connections (long-lived, beefier nodes) versus stateless REST
-  # traffic (horizontally scaled, lean nodes). The device-target's
-  # `[server_connection]` accepts a separate URL per mode, so the
-  # split is invisible to end users.
-  #
-  # speechkit-voice:
-  #   image: ghcr.io/kombifyio/speechkit-voice:${IMAGE_TAG:-latest}
-  #   environment:
-  #     SPEECHKIT_SERVER_TOKEN: ${SPEECHKIT_SERVER_TOKEN:-}
-  #     GOOGLE_AI_API_KEY: ${GOOGLE_AI_API_KEY:-}
-  #     OPENAI_API_KEY: ${OPENAI_API_KEY:-}
-  #     HF_TOKEN: ${HF_TOKEN:-}
-  #   volumes:
-  #     - ./config/config.toml:/etc/speechkit/config.toml:ro
-  #     - speechkit-models:/var/lib/speechkit/models
-  #   ports:
-  #     - "8090:8080"
-  #   restart: unless-stopped
-  #   healthcheck:
-  #     test: ["CMD", "curl", "-fsS", "http://localhost:8080/healthz"]
-  #     interval: 30s
-  #     timeout: 5s
-  #     retries: 3
-  #     start_period: 30s
 
   # Postgres is optional — SQLite (the default) writes to a file
   # inside the container and works fine for single-instance deploys.

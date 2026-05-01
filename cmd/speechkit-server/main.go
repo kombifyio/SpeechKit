@@ -2,9 +2,7 @@
 
 // Package main is the canonical kombify SpeechKit Linux container
 // server. It exposes all three modes (Dictation, Assist, Voice Agent)
-// over HTTP / WebSocket. For voice-only deployments — same Framework
-// kernel, smaller resource footprint, no Dictation/Assist HTTP routes
-// — use `cmd/speechkit-voice` instead.
+// over HTTP / WebSocket.
 //
 // This binary is intentionally Linux-only — the Windows desktop app
 // lives under `cmd/speechkit` and shares the same internal packages.

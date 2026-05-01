@@ -1,9 +1,9 @@
 openapi: 3.1.0
 info:
-  title: SpeechKit Server-Target API
+  title: SpeechKit Server API
   version: 1.0.0
   description: |
-    Stable v1 HTTP and WebSocket contract for the SpeechKit Server-Target.
+    Stable v1 HTTP and WebSocket contract for the SpeechKit Server.
     The canonical browser-facing API prefix is `/api/v1/`; `/v1/` remains
     available as a legacy alias. These endpoints are covered by the same
     backwards-compatibility guarantees as the Framework's public
@@ -12,7 +12,7 @@ info:
 
     Ships with the container image
     `ghcr.io/kombifyio/speechkit-server:v0.26.0` and later. Earlier images
-    expose the same surface but were Server-Target-internal pre-v0.26.
+    expose the same surface but were Server-internal pre-v0.26.
 
   contact:
     url: https://github.com/kombifyio/SpeechKit

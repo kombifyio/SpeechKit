@@ -13,7 +13,7 @@ Use this checklist before syncing to the release repository or cutting a public 
 - [ ] `config.example.toml` is OSS-safe and documents only public runtime expectations
 - [ ] `frontend/app/README.md` is project-specific and not the stock Vite template
 - [ ] architecture docs do not claim unimplemented backends as shipped features
-- [ ] public export includes `docs/server/README.md`, `docs/server/DEPLOY.md`, `docs/server/MIGRATION-v0.25-to-v0.26.md`, and `docs/server/openapi.v1.yaml` so Server-Target docs are visible in the release repo
+- [ ] public export includes `docs/server/README.md`, `docs/server/DEPLOY.md`, `docs/server/MIGRATION-v0.25-to-v0.26.md`, and `docs/server/openapi.v1.yaml` so SpeechKit Server docs are visible in the release repo
 - [ ] `RELEASE_APP_ID` and `RELEASE_APP_PRIVATE_KEY` are configured at a scope the source workflow can actually read; for private repos on GitHub Free that means repo scope, not org scope
 - [ ] the release GitHub App also has `Workflows: Read and write`, otherwise public workflow-file sync will be rejected
 - [ ] `OSS_PUBLISH_TOKEN` exists only if the GitHub App bootstrap is still in progress and has not been fully cut over yet

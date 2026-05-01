@@ -1,162 +1,75 @@
 # SpeechKit
 
-SpeechKit is a Windows-first speech framework with a desktop reference app,
-an embeddable Go API, and a containerized Server-Target. It is built for
-products that need strict speech modes, local-first defaults, optional cloud
-providers, and host-managed credentials.
+SpeechKit is a Windows-first voice system built around three products:
 
-The repository treats `frontend/app` as first-class source. The embedded
-`internal/frontendassets/dist` output is generated from that source and should
-not be edited manually.
-
-## What You Get
-
-| Variant | Use it when | Ships |
+| Product | What it is | Start here |
 | --- | --- | --- |
-| Device-Target | You want the Windows reference app | Wails desktop host, local overlay, global hotkeys, Settings UI |
-| Local-Target | You embed SpeechKit into a Go app | `pkg/speechkit`, examples, mode contracts, provider catalog |
-| Server-Target | You expose SpeechKit over HTTP/WebSocket | containerized server runtime, REST endpoints, realtime Voice Agent WebSocket |
+| Go Voice Framework | Embeddable Go APIs for Dictation, Assist, Voice Agent, provider routing, and mode contracts. | [Framework API](./docs/speechkit-framework-api.md) |
+| Local Windows Client | Wails desktop app with global hotkeys, local-first dictation, settings, overlays, and optional cloud providers. | [Windows app](#local-windows-client) |
+| SpeechKit Server | Containerized HTTP/WebSocket service for remote Dictation, Assist, and realtime Voice Agent workloads. | [Server docs](./docs/server/README.md) |
 
-All variants share the same framework kernel. The Windows app is a reference
-client, not the source of truth for the framework contract.
+The shared rule is simple: Dictation only transcribes, Assist returns one-shot
+utility or LLM output, and Voice Agent is realtime dialogue.
 
-## Core Features
+## Products
 
-- three strict product modes: Dictation, Assist, and Voice Agent
-- local-first Dictation with whisper.cpp support and optional cloud STT
-- six STT provider paths: whisper.cpp, Hugging Face, OpenAI, Groq, Google, and self-hosted VPS
-- Assist utilities for rewrites, summaries, answers, drafts, optional TTS, and visible result panels
-- Voice Agent realtime dialogue through Gemini Live or an explicit pipeline fallback
-- layered Voice Agent prompts: host/framework prompt plus optional personal refinement prompt
-- local SQLite state by default, with storage contracts prepared for server deployments
-- host-managed credentials; the framework core does not embed provider tokens
-- public control-plane and server OpenAPI contracts for integrations
+### Go Voice Framework
 
-## Mode Boundaries
-
-| Mode | Intelligence | Contract |
-| --- | --- | --- |
-| Dictation | User Intelligence | Audio in, text out. No LLM rewriting, no tools, no Assist routing. |
-| Assist | Utility Intelligence | One-shot utility or LLM result with optional TTS and result surface metadata. |
-| Voice Agent | Brainstorming Intelligence | Realtime spoken dialogue or explicit pipeline fallback with session summary support. |
-
-Default mode hotkeys in the Windows reference app are `Win+Alt` for
-Dictation, `Ctrl+Win` for Assist, and `Ctrl+Shift` for Voice Agent.
-
-## Start Here
-
-- [Framework API](./docs/speechkit-framework-api.md) - embeddable Go API, mode contracts, provider catalog, and local control API.
-- [Server-Target guide](./docs/server/README.md) - server runtime, mode endpoints, auth, and deployment profiles.
-- [Server deploy guide](./docs/server/DEPLOY.md) - Docker Compose, Render, and generic OCI deployment notes.
-- [Local OpenAPI](./docs/api/openapi.v1.yaml) - desktop control-plane contract.
-- [Server OpenAPI](./docs/server/openapi.v1.yaml) - HTTP and WebSocket contract for the Server-Target.
-- [Examples](./examples/README.md) - library and provider-catalog examples.
-- [Docs index](./docs/README.md) - architecture, release, trust, and runbook links.
-
-## Quick Start
-
-### Windows App
-
-Download the latest Windows artifacts from
-[GitHub Releases](https://github.com/kombifyio/SpeechKit/releases):
-
-- `SpeechKit-Setup.exe` - installer
-- `SpeechKit-Portable.zip` - portable bundle
-
-Public Windows releases include `SHA256SUMS.txt`, `SpeechKit.sbom.json`, and
-`UNSIGNED-WINDOWS-RELEASE.txt` when the no-cost unsigned release path is
-active.
-
-For local development on Windows, start the local bundle from this repository:
-
-```powershell
-powershell -ExecutionPolicy Bypass -File .\start-dev.ps1
-```
-
-If the bundle is missing, the launcher builds it first via the canonical
-Windows build script. Use `npm run app:dev:detached` when you want to start it
-without keeping the terminal attached.
-
-### Go Library
+Use `pkg/speechkit` when you want SpeechKit inside another Go product.
 
 ```bash
 go get github.com/kombifyio/SpeechKit/pkg/speechkit
 ```
 
-Use the framework backend in your own Go application by implementing the
-small host interfaces for audio recording, transcription, persistence, and
-output delivery. See [`examples/library/`](./examples/library/) for a minimal
-dictation pipeline and [`examples/provider-catalog/`](./examples/provider-catalog/)
-for the three-mode provider contract.
-
-Key public API entry points:
+Useful entry points:
 
 - `speechkit.DefaultModeContracts()`
 - `speechkit.DefaultProviderProfiles()`
 - `speechkit.ProfilesForMode(mode)`
-- `speechkit.ProviderKindsForMode(mode)`
 - `speechkit.ValidateProfileForMode(profile, mode)`
 
-### Server-Target
+Examples live in [examples/](./examples/README.md).
+
+### Local Windows Client
+
+Download the latest Windows installer or portable bundle from
+[GitHub Releases](https://github.com/kombifyio/SpeechKit/releases).
+
+Default hotkeys:
+
+- Dictation: `Win+Alt`
+- Assist: `Ctrl+Win`
+- Voice Agent: `Ctrl+Shift`
+
+Local development:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\start-dev.ps1
+```
+
+### SpeechKit Server
+
+Use the SpeechKit Server when SpeechKit should run behind an HTTP/WebSocket API.
 
 ```bash
 docker pull ghcr.io/kombifyio/speechkit-server:latest
 ```
 
-Use the Server-Target for Dictation REST, Assist REST, and realtime Voice Agent
-WebSocket from a containerized deployment. See
-[`docs/server/README.md`](./docs/server/README.md).
+Read [docs/server/README.md](./docs/server/README.md) for endpoints, auth,
+deployment setup, and OpenAPI links.
 
-## Runtime Configuration
+## Documentation
 
-The staged Windows bundle includes `config.toml` next to `SpeechKit.exe`. For
-custom setups, start from `config.example.toml`.
+This README is intentionally short. Jump into the detailed docs when needed:
 
-```toml
-[huggingface]
-enabled = false
-model = "openai/whisper-large-v3"
-token_env = "HF_TOKEN"
+- [Docs index](./docs/README.md)
+- [Local OpenAPI](./docs/api/openapi.v1.yaml)
+- [SpeechKit Server OpenAPI](./docs/server/openapi.v1.yaml)
+- [Deployment standards](./docs/deployment-standards.md)
+- [OSS release boundary](./docs/oss-release-boundary.md)
+- [Changelog](./CHANGELOG.md)
 
-[store]
-backend = "sqlite"
-save_audio = true
-audio_retention_days = 7
-
-[shortcuts.locale.de]
-summarize = ["kurzfassung", "briefing"]
-copy_last = ["kopier den letzten block"]
-```
-
-Public OSS users should rely on explicit configuration and environment
-variables. Internal development may use private secret managers, but public
-artifacts must never depend on private defaults.
-
-## Provider Credentials
-
-SpeechKit's framework core is tokenless. Hosts decide how credentials are
-stored and injected.
-
-The Windows reference host resolves Hugging Face credentials in this order:
-
-1. user token stored from Settings
-2. install token seeded by the installer and migrated on first start
-3. environment variable fallback via `token_env`
-4. internal development fallback only when explicitly configured
-
-Server deployments read secret values only from environment variables whose
-names are configured in TOML.
-
-## Build And Verification
-
-Prerequisites:
-
-- Go `1.26+`
-- Node.js `22+`
-- MinGW-w64 for CGo on Windows
-- NSIS for installer builds
-- optional: ONNX Runtime DLL for Silero VAD
-- optional: whisper.cpp server binary for local STT
+## Build
 
 Canonical Windows app build:
 
@@ -175,54 +88,27 @@ npm --prefix Website run test
 npm --prefix Website run build
 ```
 
-## Project Structure
+## Repository Layout
 
 ```text
-pkg/speechkit/          Public framework orchestration API
-cmd/speechkit/          Wails desktop host application
-cmd/speechkit-server/   Linux Server-Target entry point
-cmd/speechkit-voice/    Linux voice-only server entry point
-frontend/app/           React/Vite Windows UI sources
-Website/                Svelte/Vite public website
-internal/audio/         WASAPI capture and playback
-internal/stt/           STT provider implementations
-internal/tts/           TTS provider implementations
-internal/ai/            LLM integration
-internal/assist/        Assist mode pipeline
-internal/voiceagent/    Voice Agent runtime
-internal/server/        Server-Target HTTP/WebSocket adapters
-internal/serverclient/  Device-to-server transport adapters
-internal/store/         SQLite/Postgres storage contracts
+pkg/speechkit/          Go Voice Framework
+cmd/speechkit/          Local Windows Client
+cmd/speechkit-server/   SpeechKit Server entry point
+frontend/app/           Windows UI source
+Website/                Public website
+internal/               Product internals
+docs/                   Detailed documentation
 deploy/                 Docker, Render, and server config
-docs/                   Architecture, release, server, and runbook docs
-examples/               Library usage examples
-installer/              NSIS Windows installer
+installer/              Windows installer
 scripts/                Build, release, export, and verification scripts
 ```
 
-## Release And Trust
+## Trust
 
-SpeechKit is prepared in a private upstream and mirrored into
-`kombifyio/SpeechKit` through an allowlisted public export.
-
-Start with:
-
-- [deployment standards](./docs/deployment-standards.md)
-- [OSS release boundary](./docs/oss-release-boundary.md)
-- [OSS release checklist](./docs/oss-release-checklist.md)
-- [public repo operating model](./docs/public-repo-operating-model.md)
-- [code signing policy](./docs/code-signing-policy.md)
-
-## Contributing
-
-See:
-
-- [`CONTRIBUTING.md`](./CONTRIBUTING.md)
-- [`CODE_OF_CONDUCT.md`](./CODE_OF_CONDUCT.md)
-- [`SECURITY.md`](./SECURITY.md)
-- [`SUPPORT.md`](./SUPPORT.md)
-- [`CHANGELOG.md`](./CHANGELOG.md)
+Public releases include checksums, an SBOM, and an unsigned Windows notice while
+the no-cost unsigned release path is active. Download only from the official
+[kombifyio/SpeechKit releases](https://github.com/kombifyio/SpeechKit/releases).
 
 ## License
 
-Apache-2.0. See [`LICENSE`](./LICENSE).
+Apache-2.0. See [LICENSE](./LICENSE).

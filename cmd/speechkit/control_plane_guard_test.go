@@ -54,6 +54,19 @@ func TestControlPlaneGuardRejectsUnknownOriginOnMutatingRequests(t *testing.T) {
 	}
 }
 
+func TestControlPlaneGuardRejectsNonHTTPOriginOnMutatingRequests(t *testing.T) {
+	handler := newControlPlaneGuardTestHandler(t)
+	req := httptest.NewRequest(http.MethodPost, "/auth/logout", http.NoBody)
+	req.Header.Set("Origin", "ftp://localhost")
+	rec := httptest.NewRecorder()
+
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("status = %d, want %d", rec.Code, http.StatusForbidden)
+	}
+}
+
 func TestControlPlaneGuardAllowsLocalhostOriginOnMutatingRequests(t *testing.T) {
 	handler := newControlPlaneGuardTestHandler(t)
 	req := httptest.NewRequest(http.MethodPost, "/auth/logout", http.NoBody)

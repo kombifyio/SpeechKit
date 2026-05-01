@@ -1,21 +1,10 @@
 # SpeechKit — multi-stage Linux container build.
 #
-# Two targets share one Dockerfile because the binaries share a Framework
-# kernel. Pick one with `--target`:
-#
 #   docker build -f deploy/docker/Dockerfile.server \
 #     --target speechkit-server -t speechkit-server:dev .
-#   docker build -f deploy/docker/Dockerfile.server \
-#     --target speechkit-voice  -t speechkit-voice:dev  .
 #
-# - speechkit-server: all three modes (Dictation REST + Assist REST +
-#                     Voice Agent WS). Single-pod deployments.
-# - speechkit-voice:  only Voice Agent WS. Use when scaling voice
-#                     independently from REST traffic, or for a
-#                     beefier voice tier (more memory, optional GPU).
-#
-# Both binaries come from the same Go source under `internal/server/cli`
-# — only the default mode set differs at the entry point.
+# The server is the central Framework wrapper: Dictation REST, Assist REST,
+# and Voice Agent WebSocket are exposed by one reusable HTTP/WebSocket adapter.
 #
 # Run locally (with secrets injected via Doppler wrapper):
 #   doppler run --project <project> --config <config> -- \
@@ -61,16 +50,11 @@ RUN go build \
         -tags=server \
         -ldflags="-s -w -X main.version=${VERSION}" \
         -o /out/speechkit-server \
-        ./cmd/speechkit-server \
-    && go build \
-        -tags=server \
-        -ldflags="-s -w -X main.version=${VERSION}" \
-        -o /out/speechkit-voice \
-        ./cmd/speechkit-voice
+        ./cmd/speechkit-server
 
 # ── Stage 2: Shared runtime base ─────────────────────────────────────────────
-# Both targets below copy this base verbatim. Keeping it as a separate stage
-# means the apt + ONNX + Doppler installs are cached once and reused.
+# Keeping this as a separate stage keeps apt + ONNX + Doppler install layers
+# stable across rebuilds.
 FROM debian:bookworm-slim AS runtime-base
 
 # Runtime dependencies:
@@ -139,20 +123,4 @@ COPY --from=builder /out/speechkit-server /app/speechkit-server
 # when using Doppler for secrets; the plain entrypoint works with any env-var
 # injector.
 ENTRYPOINT ["/app/speechkit-server"]
-CMD ["--config=/etc/speechkit/config.toml"]
-
-# ── Stage 4: speechkit-voice (Voice Agent WS only) ───────────────────────────
-FROM runtime-base AS speechkit-voice
-
-LABEL org.opencontainers.image.title="SpeechKit Voice Server"
-LABEL org.opencontainers.image.description="SpeechKit Framework — Voice Agent only (real-time WebSocket)."
-LABEL org.opencontainers.image.source="https://github.com/kombifyio/SpeechKit"
-LABEL org.opencontainers.image.licenses="Apache-2.0"
-
-COPY --from=builder /out/speechkit-voice /app/speechkit-voice
-
-# The binary's built-in default already restricts modes to ["voiceagent"];
-# operators can still override via config.toml's `[server].modes` or
-# --modes=… if they want to repurpose this container as a generic server.
-ENTRYPOINT ["/app/speechkit-voice"]
 CMD ["--config=/etc/speechkit/config.toml"]

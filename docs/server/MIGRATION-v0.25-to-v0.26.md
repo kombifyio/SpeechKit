@@ -1,37 +1,24 @@
 # Migration guide — v0.25 → v0.26
 
-v0.25 was a preparation release: the Framework kernel + Windows
-reference UI shipped to OSS, but the Server-Target was held back so
-it could be hardened in the private development repo. v0.26 is the
-first release that includes the Server-Target on the public OSS
-side.
+v0.25 was a preparation release: the Framework kernel and Windows reference UI
+shipped to OSS, while the server runtime was hardened in the private development
+repo. v0.26 adds the central SpeechKit Server as the network deployment shape.
 
-This guide walks you through the upgrade. **TL;DR for existing
-deployments:** nothing breaks; you just inherit a new optional
-deployment surface and a new optional config section. Read on if
-you actually want to use them.
+**TL;DR for existing deployments:** desktop and Go SDK users keep compiling and
+running as before. You only need new configuration when you want the Windows
+Client or another app to call a remote SpeechKit Server.
 
 ## Who needs to read which section
 
-- **You only use the Windows desktop reference UI** —
-  Skim *Inherited config additions* and stop. Your install upgrades
-  cleanly with no behaviour change.
-
-- **You embed `pkg/speechkit/{dictation,assist,voiceagent}` as a
-  Go library** — Read *SDK additions*; nothing on the existing
-  surface changed, but `ModeSetting` and `ModeSettings` grew new
-  fields you may want to consume.
-
-- **You want to run SpeechKit as a network service** — Read
-  *Server-Target onboarding*. This is the new deployment shape.
-
-- **You want to delegate one or more modes from your desktop to a
-  remote SpeechKit server** — Read *ModeSource onboarding*. This is
-  the hybrid configuration ModeSource ships in 0.26.
+- **Windows desktop reference UI only** — skim *Inherited config additions*.
+- **Go library consumers** — read *SDK additions*.
+- **Network service operators** — read *SpeechKit Server onboarding*.
+- **Hybrid desktop/server users** — read *ModeSource onboarding*.
 
 ## Inherited config additions
 
-`internal/config/config.go` gained two additive sections:
+`internal/config/config.go` gained additive server connection and mode source
+fields:
 
 ```toml
 [server_connection]
@@ -42,7 +29,7 @@ fallback_to_local = true
 request_timeout_sec = 30
 
 [model_selection.dictate]
-mode_source = "local"   # new — "local" or "server"
+mode_source = "local"
 
 [model_selection.assist]
 mode_source = "local"
@@ -51,60 +38,44 @@ mode_source = "local"
 mode_source = "local"
 ```
 
-Both sections are optional. Empty / missing is treated as the
-defaults shown above, so a `config.toml` written by v0.25 keeps
-behaving identically on v0.26.
+Both sections are optional. Empty or missing config keeps v0.25 behavior.
 
 ## SDK additions
 
-`pkg/speechkit.ModeSetting` gained an optional `ModeSource` field
-and `ModeSettings` gained a `ServerConnection` block. Both fields
-use `omitempty`, so old SDK consumers see no breakage.
+`pkg/speechkit.ModeSetting` gained an optional `ModeSource` field and
+`ModeSettings` gained a `ServerConnection` block. Both fields use `omitempty`,
+so existing SDK consumers remain source-compatible.
 
-If you fan ModeSettings out to a UI, the new fields are live —
-serve them, persist them, and route per `ResolvedModeSource()` on
-the Go side. The reference Settings panel under
-`frontend/app/src/components/{server-connection-card,
-mode-source-section,mode-source-toggle}.tsx` shows the canonical
-shape; copy or wrap as needed.
+If you expose ModeSettings through your own UI, persist the new fields and route
+per `ResolvedModeSource()` on the Go side. The reference Settings panel under
+`frontend/app/src/components` shows the canonical shape.
 
-## Server-Target onboarding
+## SpeechKit Server onboarding
 
-v0.26 ships the Server-Target with two deployment profiles. Pick the
-profile that matches your deployment plan:
+The server publishes one image:
 
 | Image | What it serves | Use when |
 |---|---|---|
-| `ghcr.io/kombifyio/speechkit-server` | All three modes — Dictation REST + Assist REST + Voice Agent WS | You want one URL, simple ops, single-pod deploy. Default. |
-| `ghcr.io/kombifyio/speechkit-voice` | Voice Agent WS | You run realtime voice traffic on its own service while keeping the same Server-Target contract. |
+| `ghcr.io/kombifyio/speechkit-server` | Dictation REST + Assist REST + Voice Agent WS | You want the central Framework server behind one URL. |
 
-Both images:
+The server:
 
-- Read `/etc/speechkit/config.toml` (start from
-  `deploy/config/server.example.toml`).
-- Take secrets from environment variables — `SPEECHKIT_SERVER_TOKEN`
-  is the only required one; provider keys are per-mode optional.
-- Speak the same v1 contract.
-
-See the deployment profile guide in `docs/server/README.md`.
-
-### Single-pod deploy (full server)
+- Reads `/etc/speechkit/config.toml` (start from `deploy/config/server.example.toml`).
+- Takes secrets from environment variables.
+- Speaks the stable v1 HTTP/WebSocket contract.
+- Can narrow modes with `[server].modes` or `--modes`, but Voice Agent remains a mode of this same server.
 
 ```bash
-# 1. Pull:
 docker pull ghcr.io/kombifyio/speechkit-server:v0.26.0
 
-# 2. Copy the reference config:
 cp deploy/config/server.example.toml /etc/speechkit/config.toml
 $EDITOR /etc/speechkit/config.toml
 
-# 3. Export bearer token + provider keys:
-export SPEECHKIT_SERVER_TOKEN="…"          # required
-export GOOGLE_AI_API_KEY="…"               # optional, enables Voice Agent
-export OPENAI_API_KEY="…"                  # optional
-export HF_TOKEN="…"                        # optional, enables HF STT
+export SPEECHKIT_SERVER_TOKEN="..."
+export GOOGLE_AI_API_KEY="..."  # optional, enables Voice Agent
+export OPENAI_API_KEY="..."     # optional
+export HF_TOKEN="..."           # optional
 
-# 4. Run:
 docker run -d --name speechkit-server \
   -p 8080:8080 \
   -v /etc/speechkit:/etc/speechkit:ro \
@@ -115,73 +86,25 @@ docker run -d --name speechkit-server \
   -e HF_TOKEN \
   ghcr.io/kombifyio/speechkit-server:v0.26.0
 
-# 5. Verify:
 curl -fsS http://localhost:8080/healthz
-curl -fsS -H "Authorization: Bearer $SPEECHKIT_SERVER_TOKEN" \
-  http://localhost:8080/v1/personas
 ```
-
-### Split deploy (REST modes + voice profile)
-
-```bash
-# Backend tier: speechkit-server with REST modes only.
-docker run -d --name speechkit-backend \
-  -p 8080:8080 \
-  -v /etc/speechkit:/etc/speechkit:ro \
-  -e SPEECHKIT_SERVER_TOKEN \
-  -e OPENAI_API_KEY \
-  -e HF_TOKEN \
-  ghcr.io/kombifyio/speechkit-server:v0.26.0 \
-  --modes=dictation,assist
-
-# Voice profile: speechkit-voice
-docker run -d --name speechkit-voice \
-  -p 8090:8080 \
-  -v /etc/speechkit:/etc/speechkit:ro \
-  -e SPEECHKIT_SERVER_TOKEN \
-  -e GOOGLE_AI_API_KEY \
-  ghcr.io/kombifyio/speechkit-voice:v0.26.0
-
-# Verify both:
-curl -fsS http://localhost:8080/healthz
-curl -fsS http://localhost:8090/healthz
-```
-
-The desktop client points at both URLs via per-mode `mode_source`:
-Dictation/Assist → `http://backend.example.com:8080`, Voice Agent →
-`http://voice.example.com:8090`. The end user sees one app.
-
-`docs/server/openapi.v1.yaml` is the canonical API reference. Load
-it in Swagger UI, Stoplight, or Redoc — or feed it to
-`openapi-generator` to scaffold a typed client in the language of
-your choice. The contract is stable across v0.26.x patch releases
-(additive changes only).
 
 For local development:
 
 ```bash
-# Dev stack (server + Postgres):
 docker compose -f deploy/docker/docker-compose.yml up -d
-
-# Test stack (server + whisper.cpp sidecar + e2e client):
 docker compose -f deploy/docker/docker-compose.test.yml up
 ```
 
-The two scripts/test-e2e-local.{sh,ps1} are the canonical "run a
-smoke against this" entry points — they spin up the dev stack, wait
-for `/healthz`, run `cmd/sk-e2e` against it, and tear down.
-
 ## ModeSource onboarding
 
-Once you have a Server-Target running, the Windows desktop UI can
-optionally route any subset of its three modes through it. From
-the Settings dialog → General tab:
+Once you have a SpeechKit Server running, the Windows desktop UI can optionally
+route any subset of its three modes through it. From Settings:
 
-1. **Server Connection card** — paste your server URL, set the
-   bearer-token env var name, choose whether transient errors
-   should fall back to the local kernel.
-2. **Mode Source section** — flip Dictation / Assist / Voice Agent
-   from "Local" to "Server" individually.
+1. **Server Connection card** — paste your server URL, set the bearer-token env
+   var name, choose whether transient errors should fall back to the local kernel.
+2. **Mode Source section** — flip Dictation / Assist / Voice Agent from `local`
+   to `server` individually.
 
 Alternatively edit `config.toml` directly:
 
@@ -194,41 +117,29 @@ fallback_to_local = true
 request_timeout_sec = 30
 
 [model_selection.dictate]
-primary_profile_id = "stt.local.whispercpp"
-mode_source = "local"             # keep dictation snappy locally
+mode_source = "local"
 
 [model_selection.assist]
-primary_profile_id = "assist.builtin.gemma4-e4b"
-mode_source = "server"            # route Assist to the server
+mode_source = "server"
 
 [model_selection.voice_agent]
-primary_profile_id = "realtime.google.gemini-native-audio"
-mode_source = "server"            # route Voice Agent to the server
+mode_source = "server"
 ```
 
-Settings take effect on next app start. The runtime intentionally
-doesn't migrate in-flight sessions when `[server_connection]`
-changes — that keeps the invariant trivial.
+Settings take effect on next app start. The runtime intentionally does not
+migrate in-flight sessions when `[server_connection]` changes.
 
 ## Things that did NOT change
 
 - `cmd/speechkit/**`, `internal/hotkey/**`, `internal/output/**`,
-  `internal/tray/**`, `internal/winapi/**`, the platform-specific
-  files under `internal/audio/*_windows_cgo.go`, and the existing
-  shape of `pkg/speechkit/{dictation,assist,voiceagent}` are all
-  untouched on the wire / interface side. v0.25 callers compile
-  unchanged.
-- `release.yml`, the existing `dist-windows/**` artifacts, and the
-  Wails-built Windows installer pipeline are untouched. v0.26 ships
-  alongside the new server pipeline (`release-server-docker.yml`),
-  not in place of it.
+  `internal/tray/**`, `internal/winapi/**`, platform-specific audio files, and
+  `pkg/speechkit/{dictation,assist,voiceagent}` are unchanged on the public
+  wire/interface side.
+- `release.yml`, the Windows artifacts, and the Wails-built Windows installer
+  pipeline remain separate from the server image workflow.
 
 ## If something breaks
 
-- Open an issue at <https://github.com/kombifyio/SpeechKit/issues>
-  with the output of `speechkit --version`, the relevant config
-  section, and the failing log line.
-- The release workflow auto-publishes both the Windows build
-  (`release.yml`) and the Linux server image
-  (`release-server-docker.yml`); double-check both completed by
-  visiting the release page on GitHub.
+Open an issue at <https://github.com/kombifyio/SpeechKit/issues> with the
+output of `speechkit --version`, the relevant config section, and the failing
+log line.

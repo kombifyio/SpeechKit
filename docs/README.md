@@ -1,35 +1,29 @@
 # SpeechKit Docs
 
-## Repo-Level
+Start with the product you are working on, then jump into the detailed docs.
 
-- [../README.md](../README.md) — Produkt-, Framework-, Build- und Runtime-Uebersicht.
-- [../CHANGELOG.md](../CHANGELOG.md) — Keep-a-Changelog pro Release.
+## Products
 
-## Architektur
+- [../README.md](../README.md) — short product overview.
+- [speechkit-framework-api.md](./speechkit-framework-api.md) — Go Voice Framework API, mode contracts, provider catalog, and local control API.
+- [server/README.md](./server/README.md) — SpeechKit Server runtime, modes, auth, and deployment setup.
+- [../CHANGELOG.md](../CHANGELOG.md) — release history.
 
-- [speechkit-framework-api.md](./speechkit-framework-api.md) — V23 API-first Framework Boundary fuer SDK und lokale Control API.
-- [api/openapi.v1.yaml](./api/openapi.v1.yaml) — OpenAPI-Vertrag fuer die lokale `/api/v1` Control Plane.
-- [speechkit-storage-architecture.md](./speechkit-storage-architecture.md) — Storage-Modell (SQLite-Default, Postgres BYODB, Cloud-Hybrid geplant).
+## Contracts
 
-## Server-Target
+- [api/openapi.v1.yaml](./api/openapi.v1.yaml) — Local Windows Client control-plane OpenAPI.
+- [server/openapi.v1.yaml](./server/openapi.v1.yaml) — SpeechKit Server HTTP and WebSocket OpenAPI.
 
-- [server/README.md](./server/README.md) — Server-Target Uebersicht, Modi, Auth und Deployment-Profile.
-- [server/DEPLOY.md](./server/DEPLOY.md) — Docker Compose, Render und generische OCI Deployments.
-- [server/openapi.v1.yaml](./server/openapi.v1.yaml) — OpenAPI 3.1 Vertrag fuer Server-Target HTTP und Voice Agent WebSocket.
-- [server/MIGRATION-v0.25-to-v0.26.md](./server/MIGRATION-v0.25-to-v0.26.md) — Migration vom v0.25 Local/Device-Only Stand zum Server-Target Release.
+## Operations
 
-## Release & OSS-Betrieb
+- [server/DEPLOY.md](./server/DEPLOY.md) — SpeechKit Server Docker Compose, Render, and generic OCI deployments.
+- [deployment-standards.md](./deployment-standards.md) — build, CI, packaging, and release rules.
+- [runbooks/README.md](./runbooks/README.md) — incident playbooks.
 
-- [deployment-standards.md](./deployment-standards.md) — Kanonische Build-, CI-, Packaging- und Release-Regeln.
-- [oss-release-boundary.md](./oss-release-boundary.md) — Was geht nach public, was bleibt privat.
-- [oss-release-checklist.md](./oss-release-checklist.md) — Release-Gate vor Mirror/Tag.
-- [public-repo-operating-model.md](./public-repo-operating-model.md) — Operating-Model fuer Release-Repo.
+## Release And Trust
 
-## Windows Artifact Trust
-
-- [code-signing-policy.md](./code-signing-policy.md) — Trust-Policy fuer Public Windows Releases.
-- [signpath-oss-setup.md](./signpath-oss-setup.md) — Optionales SignPath-Setup fuer OSS-Builds.
-
-## Runbooks
-
-- [runbooks/README.md](./runbooks/README.md) — Incident playbooks (model download, STT outage, VAD init, Voice Agent reconnect).
+- [oss-release-boundary.md](./oss-release-boundary.md) — public/private repo boundary.
+- [oss-release-checklist.md](./oss-release-checklist.md) — release gate before mirror/tag.
+- [public-repo-operating-model.md](./public-repo-operating-model.md) — public repo operating model.
+- [code-signing-policy.md](./code-signing-policy.md) — Windows artifact trust policy.
+- [signpath-oss-setup.md](./signpath-oss-setup.md) — optional SignPath setup.

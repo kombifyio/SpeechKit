@@ -1,12 +1,9 @@
 //go:build linux
 
-// Package cli holds the small amount of CLI-level glue the
-// speechkit-server and speechkit-voice binaries share. Each binary
-// keeps its own `cmd/<name>/main.go` (so go install + ldflags work
-// the conventional way), but the actual flag parsing, config loading,
-// logger wiring, and lifecycle handoff to internal/server/core lives
-// here. That keeps the two mains essentially boilerplate — they
-// differ only in the default mode set and the log banner.
+// Package cli holds the small amount of CLI-level glue for the Linux
+// SpeechKit Server entry point. The actual flag parsing, config loading,
+// logger wiring, and lifecycle handoff to internal/server/core lives here so
+// the command remains a thin adapter around the shared Framework kernel.
 package cli
 
 import (
@@ -21,10 +18,10 @@ import (
 	"github.com/kombifyio/SpeechKit/internal/server/core"
 )
 
-// Options describes the per-binary defaults each main supplies.
+// Options describes the command defaults main supplies.
 type Options struct {
 	// Banner is the short program name printed in startup logs and the
-	// CLI usage line. "speechkit-server" or "speechkit-voice".
+	// CLI usage line.
 	Banner string
 
 	// Version is set at build time via -ldflags="-X main.version=...".
@@ -32,9 +29,8 @@ type Options struct {
 	Version string
 
 	// DefaultModes is the mode set used when neither `[server].modes`
-	// in config nor the `--modes` flag are provided. The full server
-	// passes nil (= "all three"); the voice-only binary passes
-	// []string{"voiceagent"}.
+	// in config nor the `--modes` flag are provided. nil means all
+	// server modes: Dictation, Assist, and Voice Agent.
 	DefaultModes []string
 }
 
@@ -67,7 +63,7 @@ func runOnce(opts Options) int {
 
 	fs := flag.NewFlagSet(banner, flag.ExitOnError)
 	configPath := fs.String("config", defaultConfigPath(), "path to config.toml")
-	modesFlag := fs.String("modes", "", "comma-separated list of enabled modes (dictation,assist,voiceagent); empty = built-in default for this binary")
+	modesFlag := fs.String("modes", "", "comma-separated list of enabled modes (dictation,assist,voiceagent); empty = built-in server default")
 	listenArg := fs.String("listen", "", "override server.listen_addr, e.g. :8080")
 	printVer := fs.Bool("version", false, "print version and exit")
 	if err := fs.Parse(os.Args[1:]); err != nil {
@@ -90,8 +86,8 @@ func runOnce(opts Options) int {
 	}
 
 	// CLI flags > config > built-in default. The CLI flag is the
-	// trump card so an operator can override the per-binary default
-	// without editing config.toml.
+	// trump card so an operator can narrow or expand the central
+	// server without editing config.toml.
 	switch {
 	case strings.TrimSpace(*modesFlag) != "":
 		cfg.Server.Modes = splitModes(*modesFlag)
