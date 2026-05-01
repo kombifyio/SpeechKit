@@ -1,6 +1,6 @@
 name: release-server-docker
 
-# Publishes the SpeechKit Server-Target container image to the GitHub
+# Publishes the SpeechKit Server container image to the GitHub
 # Container Registry on every `v*` tag. Stays separate from the existing
 # Windows-oriented release.yml so the two pipelines can fail / succeed
 # independently.
@@ -90,38 +90,21 @@ jobs:
           } >> "$GITHUB_OUTPUT"
 
   publish:
-    name: Build & Publish ${{ matrix.image }}
+    name: Build & Publish speechkit-server
     needs: plan
     # Within the OSS repo: skip automatically on < v0.26 tags unless
     # the operator force-publishes. This keeps v0.25.x release
-    # machinery in place without actually shipping a Server-Target
+    # machinery in place without actually shipping a server
     # image before the code goes OSS.
     if: needs.plan.outputs.should_publish == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 30
-    strategy:
-      fail-fast: false
-      matrix:
-        # Two images from one Dockerfile, selected by --target. Both
-        # come from the same Go source tree; the difference is which
-        # main package becomes ENTRYPOINT and which built-in default
-        # mode set the binary uses. See deploy/docker/Dockerfile.server
-        # for the full target rationale.
-        include:
-          - image: speechkit-server
-            target: speechkit-server
-            title: "SpeechKit Server"
-            description: "SpeechKit Framework — full server (Dictation REST + Assist REST + Voice Agent WS)."
-          - image: speechkit-voice
-            target: speechkit-voice
-            title: "SpeechKit Voice Server"
-            description: "SpeechKit Framework — Voice Agent only (real-time WebSocket)."
     env:
       REGISTRY: ghcr.io
       # Pin to the kombifyio org by default; on a non-canonical repo
       # the namespace falls through to `kombify/<image>` so a fork's
       # GHCR push doesn't shadow the canonical tag.
-      IMAGE: ${{ github.repository_owner == 'kombifyio' && format('kombifyio/{0}', matrix.image) || format('kombify/{0}', matrix.image) }}
+      IMAGE: ${{ github.repository_owner == 'kombifyio' && 'kombifyio/speechkit-server' || 'kombify/speechkit-server' }}
 
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
@@ -146,24 +129,33 @@ jobs:
         with:
           context: .
           file: deploy/docker/Dockerfile.server
-          target: ${{ matrix.target }}
+          target: speechkit-server
           push: true
           platforms: linux/amd64
           tags: |
             ${{ env.REGISTRY }}/${{ env.IMAGE }}:${{ needs.plan.outputs.tag }}
             ${{ env.REGISTRY }}/${{ env.IMAGE }}:latest
           labels: |
-            org.opencontainers.image.title=${{ matrix.title }}
-            org.opencontainers.image.description=${{ matrix.description }}
+            org.opencontainers.image.title=SpeechKit Server
+            org.opencontainers.image.description=SpeechKit Framework — central server (Dictation REST + Assist REST + Voice Agent WS).
             org.opencontainers.image.version=${{ needs.plan.outputs.semver }}
             org.opencontainers.image.source=https://github.com/${{ github.repository }}
             org.opencontainers.image.revision=${{ github.sha }}
           build-args: |
             VERSION=${{ needs.plan.outputs.tag }}
-          # Per-target cache scope so the two matrix legs don't fight
-          # each other for cache-write slots when they run in parallel.
-          cache-from: type=gha,scope=${{ matrix.target }}
-          cache-to: type=gha,mode=max,scope=${{ matrix.target }}
+          cache-from: type=gha,scope=speechkit-server
+          cache-to: type=gha,mode=max,scope=speechkit-server
+
+      - name: Scan image with Trivy
+        uses: aquasecurity/trivy-action@57a97c7e7821a5776cebc9bb87c984fa69cba8f1
+        with:
+          scan-type: image
+          image-ref: ${{ env.REGISTRY }}/${{ env.IMAGE }}:${{ needs.plan.outputs.tag }}
+          scanners: vuln,misconfig,secret
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          exit-code: "1"
+          hide-progress: true
 
       - name: Attest provenance
         uses: actions/attest-build-provenance@92c65d2898f1f53cfdc910b962cecff86e7f8fcc
@@ -175,7 +167,7 @@ jobs:
       - name: Summary
         shell: bash
         run: |
-          echo "### ${{ matrix.title }} published" >> "$GITHUB_STEP_SUMMARY"
+          echo "### SpeechKit Server published" >> "$GITHUB_STEP_SUMMARY"
           echo "" >> "$GITHUB_STEP_SUMMARY"
           echo "- \`${{ env.REGISTRY }}/${{ env.IMAGE }}:${{ needs.plan.outputs.tag }}\`" >> "$GITHUB_STEP_SUMMARY"
           echo "- \`${{ env.REGISTRY }}/${{ env.IMAGE }}:latest\`" >> "$GITHUB_STEP_SUMMARY"

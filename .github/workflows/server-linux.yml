@@ -5,7 +5,6 @@ on:
     branches: [main]
     paths:
       - "cmd/speechkit-server/**"
-      - "cmd/speechkit-voice/**"
       - "internal/server/**"
       - "internal/config/**"
       - "deploy/docker/**"
@@ -16,7 +15,6 @@ on:
   pull_request:
     paths:
       - "cmd/speechkit-server/**"
-      - "cmd/speechkit-voice/**"
       - "internal/server/**"
       - "internal/config/**"
       - "deploy/docker/**"
@@ -26,12 +24,17 @@ on:
       - ".github/workflows/server-linux.yml"
   workflow_dispatch: {}
 
+concurrency:
+  group: server-linux-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 permissions:
   contents: read
 
 jobs:
   build:
     name: build-and-vet
+    timeout-minutes: 15
     # On the private dev repo (KombiverseLabs/kombify-SpeechKit) this
     # falls through to vars.CI_RUNNER, which is wired to a self-hosted
     # Linux runner so push CI doesn't burn private-repo Actions
@@ -39,7 +42,7 @@ jobs:
     # unset and we land on ubuntu-latest, which is unmetered for
     # public repos. Either way the Linux toolchain step below works
     # the same.
-    runs-on: ${{ vars.CI_RUNNER || 'ubuntu-latest' }}
+    runs-on: ${{ github.repository == 'kombifyio/SpeechKit' && 'ubuntu-latest' || 'blacksmith-4vcpu-ubuntu-2204' }}
     env:
       CGO_ENABLED: "1"
       GOOS: linux
@@ -47,7 +50,7 @@ jobs:
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
 
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff
         with:
           go-version: "1.26.x"
           cache: true
@@ -91,52 +94,50 @@ jobs:
       - name: go mod verify
         run: go mod verify
 
-      - name: go vet (server-target packages)
+      - name: go vet (SpeechKit Server packages)
         run: |
           go vet ./cmd/speechkit-server/...
-          go vet ./cmd/speechkit-voice/...
           go vet ./internal/server/...
           go vet ./internal/config/...
 
-      - name: go build (server + voice)
+      - name: go build (server)
         run: |
           go build -o /tmp/speechkit-server ./cmd/speechkit-server
-          go build -o /tmp/speechkit-voice  ./cmd/speechkit-voice
           /tmp/speechkit-server --version
-          /tmp/speechkit-voice  --version
 
-      - name: go test (server-target)
+      - name: go test (SpeechKit Server)
         run: |
           go test -race ./internal/server/...
 
   docker:
-    name: docker-build (${{ matrix.target }})
+    name: docker-build-and-smoke
     # Same runner-selection rationale as the build job above.
-    runs-on: ${{ vars.CI_RUNNER || 'ubuntu-latest' }}
+    runs-on: ${{ github.repository == 'kombifyio/SpeechKit' && 'ubuntu-latest' || 'blacksmith-4vcpu-ubuntu-2204' }}
     needs: build
-    strategy:
-      fail-fast: false
-      matrix:
-        target: [speechkit-server, speechkit-voice]
+    timeout-minutes: 75
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
 
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f
+      - name: Build speechkit-server image
+        run: |
+          DOCKER_BUILDKIT=0 docker build \
+            --file deploy/docker/Dockerfile.server \
+            --target speechkit-server \
+            --build-arg "VERSION=${{ github.sha }}" \
+            --tag speechkit-server:ci \
+            .
 
-      - name: Build ${{ matrix.target }} image (no push)
-        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8
-        with:
-          context: .
-          file: deploy/docker/Dockerfile.server
-          target: ${{ matrix.target }}
-          push: false
-          load: true
-          tags: ${{ matrix.target }}:ci
-          cache-from: type=gha,scope=${{ matrix.target }}
-          cache-to: type=gha,mode=max,scope=${{ matrix.target }}
-          build-args: |
-            VERSION=${{ github.sha }}
+      - name: Smoke test speechkit-server image
+        run: docker run --rm speechkit-server:ci --version
 
-      - name: Smoke test the image
-        run: docker run --rm ${{ matrix.target }}:ci --version
+      - name: Compose smoke test
+        env:
+          SPEECHKIT_SERVER_IMAGE: speechkit-server:ci
+        run: |
+          docker compose -f deploy/docker/docker-compose.test.yml up \
+            --abort-on-container-exit \
+            --exit-code-from test-client
+
+      - name: Tear down compose smoke stack
+        if: always()
+        run: docker compose -f deploy/docker/docker-compose.test.yml down -v
