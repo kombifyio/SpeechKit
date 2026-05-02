@@ -77,8 +77,8 @@ const onboardingHotkeys = {
 } as const;
 
 const onboardingHotkeyLabels = {
-  dictate: "Win+Alt",
-  assist: "Ctrl+Win",
+  dictate: "Ctrl+Win",
+  assist: "Win+Alt",
   voiceAgent: "Ctrl+Shift",
 } as const;
 

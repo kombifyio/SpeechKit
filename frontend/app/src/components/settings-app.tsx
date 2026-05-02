@@ -63,8 +63,8 @@ const OVERLAY_FEEDBACK_MODE_OPTIONS: {
   { value: "small_feedback", label: "Small Feedback" },
 ];
 const MODE_DEFAULT_BASES = {
-  dictate: "win+alt",
-  assist: "ctrl+win",
+  dictate: "ctrl+win",
+  assist: "win+alt",
   voice_agent: "ctrl+shift",
 } as const;
 const MODE_HOTKEY_FIELDS = {

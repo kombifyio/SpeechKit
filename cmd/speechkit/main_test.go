@@ -744,7 +744,7 @@ func TestSettingsStateEndpointReturnsCurrentSettings(t *testing.T) {
 	if err := json.Unmarshal(rec.Body.Bytes(), &rawPayload); err != nil {
 		t.Fatalf("decode raw payload: %v", err)
 	}
-	if payload.Hotkey != "win+alt" || payload.HFModel != cfg.HuggingFace.Model || payload.Visualizer != "pill" || !payload.OverlayEnabled || payload.HFEnabled != cfg.HuggingFace.Enabled {
+	if payload.Hotkey != cfg.General.Hotkey || payload.HFModel != cfg.HuggingFace.Model || payload.Visualizer != "pill" || !payload.OverlayEnabled || payload.HFEnabled != cfg.HuggingFace.Enabled {
 		t.Fatalf("settings payload = %+v", payload)
 	}
 	if payload.AgentMode != cfg.General.AgentMode {
@@ -1403,9 +1403,9 @@ func TestSetLevelResetsSnapshotOutsideRecording(t *testing.T) {
 func defaultTestConfig() *config.Config {
 	return &config.Config{
 		General: config.GeneralConfig{
-			Hotkey:                   "win+alt",
-			DictateHotkey:            "win+alt",
-			AssistHotkey:             "ctrl+win",
+			Hotkey:                   "ctrl+win",
+			DictateHotkey:            "ctrl+win",
+			AssistHotkey:             "win+alt",
 			VoiceAgentHotkey:         "ctrl+shift",
 			DictateHotkeyBehavior:    config.HotkeyBehaviorPushToTalk,
 			AssistHotkeyBehavior:     config.HotkeyBehaviorPushToTalk,
@@ -1413,7 +1413,7 @@ func defaultTestConfig() *config.Config {
 			DictateEnabled:           true,
 			AssistEnabled:            true,
 			VoiceAgentEnabled:        true,
-			AgentHotkey:              "ctrl+win",
+			AgentHotkey:              "win+alt",
 			AgentMode:                "assist",
 			ActiveMode:               "none",
 		},

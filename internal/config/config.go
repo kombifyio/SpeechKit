@@ -655,7 +655,7 @@ func backfillLegacyModeHotkeys(meta toml.MetaData, cfg *Config) {
 		cfg.General.DictateHotkey = strings.TrimSpace(cfg.General.Hotkey)
 	}
 	if strings.TrimSpace(cfg.General.DictateHotkey) == "" {
-		cfg.General.DictateHotkey = "win+alt"
+		cfg.General.DictateHotkey = "ctrl+win"
 	}
 
 	legacyAgentHotkey := strings.TrimSpace(cfg.General.AgentHotkey)
@@ -799,9 +799,9 @@ func defaults() *Config {
 	cfg := &Config{
 		General: GeneralConfig{
 			Language:                 "de",
-			Hotkey:                   "win+alt",
-			DictateHotkey:            "win+alt",
-			AssistHotkey:             "ctrl+win",
+			Hotkey:                   "ctrl+win",
+			DictateHotkey:            "ctrl+win",
+			AssistHotkey:             "win+alt",
 			VoiceAgentHotkey:         "ctrl+shift",
 			DictateHotkeyBehavior:    HotkeyBehaviorPushToTalk,
 			AssistHotkeyBehavior:     HotkeyBehaviorPushToTalk,
@@ -810,7 +810,7 @@ func defaults() *Config {
 			AssistEnabled:            true,
 			VoiceAgentEnabled:        true,
 			AutoStartOnLaunch:        false,
-			AgentHotkey:              "ctrl+win",
+			AgentHotkey:              "win+alt",
 			AgentMode:                "assist",
 			ActiveMode:               "none",
 			HotkeyMode:               HotkeyBehaviorPushToTalk,

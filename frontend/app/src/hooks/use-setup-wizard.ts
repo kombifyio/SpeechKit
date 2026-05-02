@@ -13,7 +13,7 @@ export function useSetupWizard(onComplete: () => void) {
   const [step, setStep] = useState<WizardStep>('welcome')
   const [devices, setDevices] = useState<AudioDevice[]>([])
   const [selectedDevice, setSelectedDevice] = useState('')
-  const [hotkey, setHotkey] = useState('win+alt')
+  const [hotkey, setHotkey] = useState('ctrl+win')
   const [loading, setLoading] = useState(false)
 
   useEffect(() => {

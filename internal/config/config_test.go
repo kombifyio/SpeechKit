@@ -46,14 +46,14 @@ func TestLoadDefaults(t *testing.T) {
 	if cfg.General.Language != "de" {
 		t.Errorf("default language = %q, want %q", cfg.General.Language, "de")
 	}
-	if cfg.General.Hotkey != "win+alt" {
-		t.Errorf("default hotkey = %q, want %q", cfg.General.Hotkey, "win+alt")
+	if cfg.General.Hotkey != "ctrl+win" {
+		t.Errorf("default hotkey = %q, want %q", cfg.General.Hotkey, "ctrl+win")
 	}
-	if cfg.General.DictateHotkey != "win+alt" {
-		t.Errorf("default dictate hotkey = %q, want %q", cfg.General.DictateHotkey, "win+alt")
+	if cfg.General.DictateHotkey != "ctrl+win" {
+		t.Errorf("default dictate hotkey = %q, want %q", cfg.General.DictateHotkey, "ctrl+win")
 	}
-	if cfg.General.AssistHotkey != "ctrl+win" {
-		t.Errorf("default assist hotkey = %q, want %q", cfg.General.AssistHotkey, "ctrl+win")
+	if cfg.General.AssistHotkey != "win+alt" {
+		t.Errorf("default assist hotkey = %q, want %q", cfg.General.AssistHotkey, "win+alt")
 	}
 	if cfg.General.VoiceAgentHotkey != "ctrl+shift" {
 		t.Errorf("default voice agent hotkey = %q, want %q", cfg.General.VoiceAgentHotkey, "ctrl+shift")
@@ -1038,8 +1038,17 @@ func TestDefaultOverlayPosition(t *testing.T) {
 
 func TestDefaultStoreAudioSettings(t *testing.T) {
 	cfg := defaults()
-	if cfg.General.Hotkey != "win+alt" {
-		t.Fatalf("default Hotkey = %q, want %q", cfg.General.Hotkey, "win+alt")
+	if cfg.General.Hotkey != "ctrl+win" {
+		t.Fatalf("default Hotkey = %q, want %q", cfg.General.Hotkey, "ctrl+win")
+	}
+	if cfg.General.DictateHotkey != "ctrl+win" {
+		t.Fatalf("default DictateHotkey = %q, want %q", cfg.General.DictateHotkey, "ctrl+win")
+	}
+	if cfg.General.AssistHotkey != "win+alt" {
+		t.Fatalf("default AssistHotkey = %q, want %q", cfg.General.AssistHotkey, "win+alt")
+	}
+	if cfg.General.AgentHotkey != "win+alt" {
+		t.Fatalf("default AgentHotkey = %q, want %q", cfg.General.AgentHotkey, "win+alt")
 	}
 	if !cfg.Store.SaveAudio {
 		t.Fatal("default Store.SaveAudio = false, want true")
@@ -1328,8 +1337,8 @@ func TestLoadMalformedTOMLFallsBackToDefaults(t *testing.T) {
 	if cfg.General.Language != "de" {
 		t.Errorf("expected default language %q, got %q", "de", cfg.General.Language)
 	}
-	if cfg.General.Hotkey != "win+alt" {
-		t.Errorf("expected default hotkey %q, got %q", "win+alt", cfg.General.Hotkey)
+	if cfg.General.Hotkey != "ctrl+win" {
+		t.Errorf("expected default hotkey %q, got %q", "ctrl+win", cfg.General.Hotkey)
 	}
 }
 

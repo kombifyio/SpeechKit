@@ -255,7 +255,7 @@ func TestAPIV1PatchModeSettingsUpdatesConfig(t *testing.T) {
 	}
 	defer func() { reloadAIRuntime = previousReload }()
 
-	body := `{"enabled":false,"hotkey":"ctrl+win+j","hotkeyBehavior":"toggle","ttsEnabled":false}`
+	body := `{"enabled":false,"hotkey":"win+alt+j","hotkeyBehavior":"toggle","ttsEnabled":false}`
 	req := httptest.NewRequest(http.MethodPatch, "/api/v1/modes/assist/settings", strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	rec := httptest.NewRecorder()
@@ -267,8 +267,8 @@ func TestAPIV1PatchModeSettingsUpdatesConfig(t *testing.T) {
 	if cfg.General.AssistEnabled {
 		t.Fatal("assist enabled = true, want false")
 	}
-	if got := cfg.General.AssistHotkey; got != "ctrl+win+j" {
-		t.Fatalf("assist hotkey = %q, want ctrl+win+j", got)
+	if got := cfg.General.AssistHotkey; got != "win+alt+j" {
+		t.Fatalf("assist hotkey = %q, want win+alt+j", got)
 	}
 	if got := cfg.General.AssistHotkeyBehavior; got != config.HotkeyBehaviorToggle {
 		t.Fatalf("assist hotkey behavior = %q, want toggle", got)

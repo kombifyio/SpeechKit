@@ -838,11 +838,11 @@ describe("DashboardApp", () => {
 
     fireEvent.click(screen.getByRole("button", { name: /^continue$/i }));
 
-    expect(await screen.findByText("Win+Alt")).toBeInTheDocument();
+    expect(await screen.findByText("Ctrl+Win")).toBeInTheDocument();
     expect(
       screen.getByText("Open a text field, speak one sentence, then check the output"),
     ).toBeInTheDocument();
-    expect(screen.getByText("Ctrl+Win")).toBeInTheDocument();
+    expect(screen.getByText("Win+Alt")).toBeInTheDocument();
     expect(screen.getByText("Ctrl+Shift")).toBeInTheDocument();
     expect(screen.queryByText("Ctrl+Shift+D")).not.toBeInTheDocument();
     expect(screen.queryByText("Ctrl+Shift+A")).not.toBeInTheDocument();
@@ -864,8 +864,8 @@ describe("DashboardApp", () => {
       (call) => call[0] === "/settings/update",
     );
     const body = settingsCall?.[1]?.body as URLSearchParams;
-    expect(body.get("dictate_hotkey")).toBe("win+alt");
-    expect(body.get("assist_hotkey")).toBe("ctrl+win");
+    expect(body.get("dictate_hotkey")).toBe("ctrl+win");
+    expect(body.get("assist_hotkey")).toBe("win+alt");
     expect(body.get("voice_agent_hotkey")).toBe("ctrl+shift");
     expect(body.get("voice_primary_profile_id")).toBe("realtime.builtin.pipeline");
   });

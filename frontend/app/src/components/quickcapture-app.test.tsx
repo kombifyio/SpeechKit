@@ -3,12 +3,17 @@ import { vi } from 'vitest'
 
 import { QuickCaptureApp } from '@/components/quickcapture-app'
 
-const { updateQuickNoteMock } = vi.hoisted(() => ({
+const { updateQuickNoteMock, useAutoCloseMock } = vi.hoisted(() => ({
   updateQuickNoteMock: vi.fn<(id: number, text: string) => Promise<string>>(),
+  useAutoCloseMock: vi.fn(),
 }))
 
 vi.mock('@/lib/speechkit', () => ({
   updateQuickNote: updateQuickNoteMock,
+}))
+
+vi.mock('@/hooks/use-auto-close', () => ({
+  useAutoClose: useAutoCloseMock,
 }))
 
 describe('QuickCaptureApp', () => {
@@ -18,6 +23,7 @@ describe('QuickCaptureApp', () => {
     window.history.pushState({}, '', '/quickcapture.html?noteId=42')
     updateQuickNoteMock.mockReset()
     updateQuickNoteMock.mockResolvedValue('updated')
+    useAutoCloseMock.mockReset()
     fetchMock = vi.fn(() => Promise.resolve({
       json: () => Promise.resolve({}),
     }))
@@ -26,6 +32,7 @@ describe('QuickCaptureApp', () => {
 
   afterEach(() => {
     vi.unstubAllGlobals()
+    vi.useRealTimers()
   })
 
   it('renders quick capture as a single card without desktop controls', () => {
@@ -53,15 +60,27 @@ describe('QuickCaptureApp', () => {
     await waitFor(() => expect(fetchMock).toHaveBeenCalledWith('/quicknotes/close-capture', { method: 'POST' }))
   })
 
-  it('closes when clicking the transparent surface outside the card', async () => {
+  it('keeps the capture open when clicking the transparent surface around the card', async () => {
     render(<QuickCaptureApp />)
 
     fireEvent.change(screen.getByRole('textbox'), {
-      target: { value: 'Close from outside' },
+      target: { value: 'Do not close from surface focus' },
     })
     fireEvent.mouseDown(screen.getByTestId('quick-capture-surface'))
 
-    await waitFor(() => expect(updateQuickNoteMock).toHaveBeenCalledWith(42, 'Close from outside'))
-    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith('/quicknotes/close-capture', { method: 'POST' }))
+    await Promise.resolve()
+    expect(updateQuickNoteMock).not.toHaveBeenCalled()
+    expect(fetchMock).not.toHaveBeenCalledWith('/quicknotes/close-capture', { method: 'POST' })
+  })
+
+  it('keeps auto-close disabled while recording is still active', () => {
+    render(<QuickCaptureApp />)
+
+    expect(useAutoCloseMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        enabled: false,
+        idleTimeoutMs: 60_000,
+      }),
+    )
   })
 })

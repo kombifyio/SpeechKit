@@ -27,16 +27,20 @@ describe("speechkit frontend contract", () => {
   });
 
   it("defaults to tri-mode hotkeys with no active mode selected", () => {
-    expect(defaultOverlayState.assistHotkey).toBe("ctrl+win");
+    expect(defaultOverlayState.dictateHotkey).toBe("ctrl+win");
+    expect(defaultOverlayState.assistHotkey).toBe("win+alt");
     expect(defaultOverlayState.voiceAgentHotkey).toBe("ctrl+shift");
+    expect(defaultOverlayState.agentHotkey).toBe("win+alt");
     expect(defaultOverlayState.activeMode).toBe("none");
     expect(defaultOverlayState.modeEnabled).toEqual({
       dictate: true,
       assist: true,
       voice_agent: true,
     });
-    expect(defaultSettingsState.assistHotkey).toBe("ctrl+win");
+    expect(defaultSettingsState.dictateHotkey).toBe("ctrl+win");
+    expect(defaultSettingsState.assistHotkey).toBe("win+alt");
     expect(defaultSettingsState.voiceAgentHotkey).toBe("ctrl+shift");
+    expect(defaultSettingsState.agentHotkey).toBe("win+alt");
     expect(defaultSettingsState.voiceAgentProfileId).toBe("default");
     expect(defaultSettingsState.voiceAgentProfiles.map((profile) => profile.id)).toEqual([
       "default",

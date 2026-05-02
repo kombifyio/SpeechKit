@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type CSSProperties, type MouseEvent } from 'react'
+import { useEffect, useRef, useState, type CSSProperties } from 'react'
 import { Check, Mic } from 'lucide-react'
 
 import { updateQuickNote } from '@/lib/speechkit'
@@ -54,7 +54,7 @@ export function QuickCaptureApp() {
     onClose: closeWindow,
     onBeforeClose: saveBeforeClose,
     idleTimeoutMs: 60_000,
-    enabled: true,
+    enabled: !recording,
   })
 
   useEffect(() => {
@@ -93,16 +93,10 @@ export function QuickCaptureApp() {
     closeWindow()
   }
 
-  const handleSurfaceMouseDown = (event: MouseEvent<HTMLDivElement>) => {
-    if (event.target !== event.currentTarget) return
-    void saveBeforeClose().then(closeWindow)
-  }
-
   return (
     <div
       data-testid="quick-capture-surface"
       className="flex h-screen w-screen items-center justify-center bg-transparent p-2 text-[color:var(--sk-text)]"
-      onMouseDown={handleSurfaceMouseDown}
       style={noDragRegionStyle}
     >
       <section
