@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/kombifyio/SpeechKit/internal/config"
+	"github.com/kombifyio/SpeechKit/internal/secrets"
 )
 
 func TestNewRejectsInvalidBaseURL(t *testing.T) {
@@ -87,6 +88,28 @@ func TestNewFromConfigSuccess(t *testing.T) {
 	}
 	if c.timeoutOnReq.Seconds() != 7 {
 		t.Errorf("timeoutOnReq = %v, want 7s", c.timeoutOnReq)
+	}
+}
+
+func TestNewFromConfigResolvesNamedSecretToken(t *testing.T) {
+	restore := secrets.UseMemoryStoreForTests()
+	defer restore()
+	t.Setenv("SC_TEST_STORED_TOKEN", "")
+	if err := secrets.SetNamedSecret("SC_TEST_STORED_TOKEN", "stored-secret-value"); err != nil {
+		t.Fatalf("set named secret: %v", err)
+	}
+
+	c, err := NewFromConfig(config.ServerConnectionConfig{
+		Enabled:           true,
+		URL:               "http://localhost:8080",
+		BearerTokenEnv:    "SC_TEST_STORED_TOKEN",
+		RequestTimeoutSec: 7,
+	})
+	if err != nil {
+		t.Fatalf("NewFromConfig: %v", err)
+	}
+	if c.BearerToken() != "stored-secret-value" {
+		t.Errorf("BearerToken = %q, want stored-secret-value", c.BearerToken())
 	}
 }
 

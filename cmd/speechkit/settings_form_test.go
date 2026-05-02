@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/kombifyio/SpeechKit/internal/config"
+	"github.com/kombifyio/SpeechKit/internal/voiceagentprofile"
 )
 
 func TestParseSettingsFormDefaults(t *testing.T) {
@@ -80,6 +81,9 @@ func TestParseSettingsFormDefaults(t *testing.T) {
 	if form.VoiceAgentRefinementPrompt != "" {
 		t.Errorf("VoiceAgentRefinementPrompt = %q, want empty", form.VoiceAgentRefinementPrompt)
 	}
+	if form.VoiceAgentProfileID != voiceagentprofile.DefaultID {
+		t.Errorf("VoiceAgentProfileID = %q, want %q", form.VoiceAgentProfileID, voiceagentprofile.DefaultID)
+	}
 	if !form.VoiceAgentSessionSummary {
 		t.Error("VoiceAgentSessionSummary = false, want true by default")
 	}
@@ -119,6 +123,7 @@ func TestParseSettingsFormOverrides(t *testing.T) {
 		"overlay_free_y":                {"200"},
 		"voice_agent_hotkey_behavior":   {"toggle"},
 		"voice_agent_close_behavior":    {"new_chat"},
+		"voice_agent_profile_id":        {voiceagentprofile.BrainstormingCompanionID},
 		"voice_agent_refinement_prompt": {"Address the user by first name."},
 		"voice_agent_session_summary":   {"0"},
 		"auto_start_on_launch":          {"1"},
@@ -185,6 +190,9 @@ func TestParseSettingsFormOverrides(t *testing.T) {
 	}
 	if form.VoiceAgentRefinementPrompt != "Address the user by first name." {
 		t.Errorf("VoiceAgentRefinementPrompt = %q", form.VoiceAgentRefinementPrompt)
+	}
+	if form.VoiceAgentProfileID != voiceagentprofile.BrainstormingCompanionID {
+		t.Errorf("VoiceAgentProfileID = %q", form.VoiceAgentProfileID)
 	}
 	if form.VoiceAgentSessionSummary {
 		t.Error("VoiceAgentSessionSummary = true, want false")
@@ -521,6 +529,7 @@ func TestBuildNextConfig(t *testing.T) {
 		VoiceAgentEnabled:          false,
 		VoiceAgentHotkeyBehavior:   config.HotkeyBehaviorToggle,
 		VoiceAgentCloseBehavior:    config.VoiceAgentCloseBehaviorNewChat,
+		VoiceAgentProfileID:        voiceagentprofile.SupportCompanionID,
 		VoiceAgentRefinementPrompt: "Refinement prompt",
 		VoiceAgentSessionSummary:   false,
 		AutoStartOnLaunch:          true,
@@ -587,6 +596,9 @@ func TestBuildNextConfig(t *testing.T) {
 	}
 	if result.VoiceAgent.RefinementPrompt != "Refinement prompt" {
 		t.Errorf("VoiceAgent.RefinementPrompt = %q", result.VoiceAgent.RefinementPrompt)
+	}
+	if result.VoiceAgent.AgentProfileID != voiceagentprofile.SupportCompanionID {
+		t.Errorf("VoiceAgent.AgentProfileID = %q", result.VoiceAgent.AgentProfileID)
 	}
 	if result.VoiceAgent.EnableSessionSummary {
 		t.Error("VoiceAgent.EnableSessionSummary = true, want false")

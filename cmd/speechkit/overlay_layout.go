@@ -244,13 +244,45 @@ func normalizeOverlayPosition(position string) string {
 
 func overlayVisibleMetrics(metrics overlayHostMetrics) (int, int) {
 	switch metrics {
-	case pillAnchorMetrics, pillPanelMetrics:
+	case pillAnchorMetrics, pillPanelMetrics, pillFeedbackMetrics:
 		return pillBubbleW, pillBubbleH
 	case dotAnchorMetrics:
 		return dotBubbleW, dotBubbleH
 	default:
 		return metrics.Width, metrics.Height
 	}
+}
+
+func runtimeShowsCompactPillFeedback(runtime runtimeState) bool {
+	if runtime.overlayVisualizer != "pill" {
+		return false
+	}
+	if strings.TrimSpace(runtime.overlayText) == "" || runtime.currentState == "idle" {
+		return false
+	}
+
+	switch runtime.activeMode {
+	case modeAssist:
+		return normalizeRuntimeOverlayFeedbackMode(runtime.assistOverlayMode) == config.OverlayFeedbackModeSmallFeedback
+	case modeVoiceAgent:
+		return normalizeRuntimeOverlayFeedbackMode(runtime.voiceAgentOverlayMode) == config.OverlayFeedbackModeSmallFeedback
+	default:
+		return false
+	}
+}
+
+func pillAnchorMetricsForRuntime(runtime runtimeState) overlayHostMetrics {
+	if runtimeShowsCompactPillFeedback(runtime) {
+		return pillFeedbackMetrics
+	}
+	return pillAnchorMetrics
+}
+
+func pillPanelMetricsForRuntime(runtime runtimeState) overlayHostMetrics {
+	if runtimeShowsCompactPillFeedback(runtime) {
+		return pillFeedbackMetrics
+	}
+	return pillPanelMetrics
 }
 
 func pillAnchorPosition(bounds screenBounds, position string) (int, int) {

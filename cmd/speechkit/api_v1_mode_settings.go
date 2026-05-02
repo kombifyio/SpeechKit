@@ -5,11 +5,11 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
-	"os"
 	"strings"
 
 	"github.com/kombifyio/SpeechKit/internal/config"
 	"github.com/kombifyio/SpeechKit/internal/router"
+	"github.com/kombifyio/SpeechKit/internal/voiceagentprofile"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit"
 )
 
@@ -24,6 +24,8 @@ type apiV1ModeSettingsPatch struct {
 	SessionSummary    *bool   `json:"sessionSummary"`
 	PipelineFallback  *bool   `json:"pipelineFallback"`
 	CloseBehavior     *string `json:"closeBehavior"`
+	AgentProfileID    *string `json:"agentProfileId"`
+	AgentSequenceID   *string `json:"agentSequenceId"`
 	// ModeSource gates per-mode local-vs-server execution. Accepted
 	// values are "local" and "server"; anything else is treated as
 	// "local" so rogue clients can't accidentally send remote calls.
@@ -66,6 +68,8 @@ func applyAPIV1ModeSettingsPatch(ctx context.Context, cfgPath string, cfg *confi
 	oldDictateHotkey := cfg.General.DictateHotkey
 	oldAssistHotkey := cfg.General.AssistHotkey
 	oldVoiceAgentHotkey := cfg.General.VoiceAgentHotkey
+	oldVoiceAgentProfileID := voiceagentprofile.NormalizeID(cfg.VoiceAgent.AgentProfileID)
+	oldVoiceAgentSequenceID := strings.TrimSpace(cfg.VoiceAgent.AgentSequenceID)
 	oldAudioDeviceID := cfg.Audio.DeviceID
 	oldOverlayEnabled := cfg.UI.OverlayEnabled
 
@@ -148,6 +152,18 @@ func applyAPIV1ModeSettingsPatch(ctx context.Context, cfgPath string, cfg *confi
 		if patch.CloseBehavior != nil {
 			cfg.VoiceAgent.CloseBehavior = config.NormalizeVoiceAgentCloseBehavior(*patch.CloseBehavior, config.VoiceAgentCloseBehaviorContinue)
 		}
+		if patch.AgentProfileID != nil {
+			cfg.VoiceAgent.AgentProfileID = voiceagentprofile.NormalizeID(*patch.AgentProfileID)
+		}
+		if patch.AgentSequenceID != nil {
+			cfg.VoiceAgent.AgentSequenceID = strings.TrimSpace(*patch.AgentSequenceID)
+		}
+	}
+	if patch.ModeSource != nil {
+		cfg.ServerConnection.Enabled = anyServerModeSelected(cfg)
+		if cfg.ServerConnection.Enabled {
+			config.ApplyManagedDevServerDefaults(cfg)
+		}
 	}
 
 	if !validateDistinctModeHotkeys(cfg.General.DictateEnabled, cfg.General.AssistEnabled, cfg.General.VoiceAgentEnabled, cfg.General.DictateHotkey, cfg.General.AssistHotkey, cfg.General.VoiceAgentHotkey) {
@@ -168,6 +184,13 @@ func applyAPIV1ModeSettingsPatch(ctx context.Context, cfgPath string, cfg *confi
 
 	if err := refreshProviderRuntimes(ctx, cfg, state, sttRouter); err != nil {
 		return err
+	}
+	voiceAgentProfileChanged := oldVoiceAgentProfileID != voiceagentprofile.NormalizeID(cfg.VoiceAgent.AgentProfileID)
+	voiceAgentSequenceChanged := oldVoiceAgentSequenceID != strings.TrimSpace(cfg.VoiceAgent.AgentSequenceID)
+	if patch.PrimaryProfileID != nil || patch.FallbackProfileID != nil || patch.ModeSource != nil || voiceAgentProfileChanged || voiceAgentSequenceChanged {
+		if err := refreshServerDelegates(cfg, state); err != nil {
+			return err
+		}
 	}
 	if err := config.Save(cfgPath, cfg); err != nil {
 		return err
@@ -197,6 +220,9 @@ func applyAPIV1ModeSettingsPatch(ctx context.Context, cfgPath string, cfg *confi
 			cfg.UI.OverlayFreeY,
 			cfg.UI.OverlayMonitorPositions,
 		)
+		if voiceAgentProfileChanged || voiceAgentSequenceChanged {
+			resetInactiveVoiceAgentSession(state)
+		}
 		state.applyDesktopSettings(
 			oldDictateEnabled,
 			oldAssistEnabled,
@@ -267,6 +293,8 @@ func apiV1ModeSettingsFromConfig(cfg *config.Config) speechkit.ModeSettings {
 			SessionSummary:   cfg.VoiceAgent.EnableSessionSummary,
 			PipelineFallback: cfg.VoiceAgent.PipelineFallback,
 			CloseBehavior:    cfg.VoiceAgent.CloseBehavior,
+			AgentProfileID:   voiceagentprofile.NormalizeID(cfg.VoiceAgent.AgentProfileID),
+			AgentSequenceID:  strings.TrimSpace(cfg.VoiceAgent.AgentSequenceID),
 		},
 		ServerConnection: serverConnectionSettingFromConfig(cfg.ServerConnection),
 	}
@@ -279,7 +307,7 @@ func apiV1ModeSettingsFromConfig(cfg *config.Config) speechkit.ModeSettings {
 func serverConnectionSettingFromConfig(cfg config.ServerConnectionConfig) speechkit.ServerConnectionSetting {
 	tokenSet := false
 	if env := strings.TrimSpace(cfg.BearerTokenEnv); env != "" {
-		tokenSet = strings.TrimSpace(os.Getenv(env)) != ""
+		tokenSet = strings.TrimSpace(config.ResolveSecret(env)) != ""
 	}
 	return speechkit.ServerConnectionSetting{
 		Enabled:           cfg.Enabled,

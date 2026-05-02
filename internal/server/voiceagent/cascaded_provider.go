@@ -165,12 +165,35 @@ func (p *CascadedProvider) Connect(ctx context.Context, cfg LiveConfigFrame) err
 		slog.Info("cascaded: TTS not configured; sessions will be text-only")
 	}
 
+	p.mu.Lock()
 	p.locale = firstNonEmptyCascaded(cfg.Locale, "en")
 	p.voice = cfg.Voice
 	p.systemPrompt = firstNonEmptyCascaded(cfg.SystemPrompt, "")
 	p.refinement = cfg.RefinementPrompt
+	p.mu.Unlock()
 
 	go p.processorLoop(ctx)
+	return nil
+}
+
+// UpdateInstructions changes future-turn host instructions without creating a
+// synthetic user turn. This is the cascaded counterpart to live provider
+// system-instruction updates.
+func (p *CascadedProvider) UpdateInstructions(_ context.Context, cfg LiveConfigFrame) error {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if cfg.Locale != "" {
+		p.locale = cfg.Locale
+	}
+	if cfg.Voice != "" {
+		p.voice = cfg.Voice
+	}
+	if cfg.SystemPrompt != "" {
+		p.systemPrompt = cfg.SystemPrompt
+	}
+	if cfg.RefinementPrompt != "" {
+		p.refinement = cfg.RefinementPrompt
+	}
 	return nil
 }
 
@@ -324,12 +347,14 @@ func (p *CascadedProvider) runTurn(ctx context.Context, userText string, skipInp
 		}
 	}
 
+	locale, voice, systemPrompt := p.currentInstructionSnapshot()
 	historyBlurb := p.renderHistory()
 	agentInput := flows.AgentInput{
 		Utterance:         userText,
-		Locale:            p.locale,
+		Locale:            locale,
 		Selection:         "",
 		LastTranscription: historyBlurb,
+		SystemPrompt:      systemPrompt,
 	}
 	if out, err := p.agent.Run(ctx, agentInput); err == nil {
 		responseText := strings.TrimSpace(out.Text)
@@ -348,8 +373,8 @@ func (p *CascadedProvider) runTurn(ctx context.Context, userText string, skipInp
 			return nil
 		}
 		ttsResult, err := p.tts.Synthesize(ctx, responseText, tts.SynthesizeOpts{
-			Locale: p.locale,
-			Voice:  p.voice,
+			Locale: locale,
+			Voice:  voice,
 			Speed:  p.cfg.TTSSpeed,
 			Format: p.cfg.TTSFormat,
 		})
@@ -373,6 +398,12 @@ func (p *CascadedProvider) runTurn(ctx context.Context, userText string, skipInp
 	} else {
 		return fmt.Errorf("agent: %w", err)
 	}
+}
+
+func (p *CascadedProvider) currentInstructionSnapshot() (locale string, voice string, systemPrompt string) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.locale, p.voice, renderCascadedSystemPrompt(p.systemPrompt, p.refinement)
 }
 
 func (p *CascadedProvider) appendHistory(user, assistant string) {
@@ -467,6 +498,18 @@ func firstNonEmptyCascaded(values ...string) string {
 		}
 	}
 	return ""
+}
+
+func renderCascadedSystemPrompt(systemPrompt, refinement string) string {
+	systemPrompt = strings.TrimSpace(systemPrompt)
+	refinement = strings.TrimSpace(refinement)
+	if refinement == "" {
+		return systemPrompt
+	}
+	if systemPrompt == "" {
+		return refinement
+	}
+	return systemPrompt + "\n\nPersonal refinement:\n" + refinement
 }
 
 // agentFlowAdapter lets the bootstrap pass a Genkit *core.Flow into the

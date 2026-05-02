@@ -1,4 +1,10 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import {
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import { vi } from "vitest";
 
 import { DashboardApp } from "@/components/dashboard-app";
@@ -729,6 +735,16 @@ describe("DashboardApp", () => {
       screen.getByText("Whisper Small Multilingual (466 MB)"),
     ).toBeInTheDocument();
     expect(screen.getByText("Recommended")).toBeInTheDocument();
+    expect(
+      await within(
+        screen.getByTestId("local-model-card-whisper.ggml-large-v3-turbo"),
+      ).findByText("Starter model"),
+    ).toBeInTheDocument();
+    expect(
+      within(
+        screen.getByTestId("local-model-card-whisper.ggml-small"),
+      ).queryByText("Starter model"),
+    ).not.toBeInTheDocument();
 
     const continueButton = screen.getByRole("button", { name: /^continue$/i });
     expect(continueButton).toBeEnabled();
@@ -806,6 +822,22 @@ describe("DashboardApp", () => {
     );
     fireEvent.click(await screen.findByRole("button", { name: /^continue$/i }));
 
+    expect(await screen.findByText("Integrations")).toBeInTheDocument();
+    expect(screen.getByText("Hugging Face")).toBeInTheDocument();
+    expect(screen.getByText("OpenRouter")).toBeInTheDocument();
+    expect(screen.getByText("Gemini / Google AI")).toBeInTheDocument();
+    const openRouterCard = screen
+      .getAllByTestId("onboarding-integration-card")
+      .find((card) => within(card).queryByText("OpenRouter"));
+    expect(openRouterCard).toBeTruthy();
+    expect(
+      within(openRouterCard as HTMLElement)
+        .getAllByTestId("integration-mode-tag")
+        .map((tag) => tag.textContent),
+    ).toEqual(["Dictation", "Assist", "Voice Agent"]);
+
+    fireEvent.click(screen.getByRole("button", { name: /^continue$/i }));
+
     expect(await screen.findByText("Win+Alt")).toBeInTheDocument();
     expect(
       screen.getByText("Open a text field, speak one sentence, then check the output"),
@@ -835,6 +867,97 @@ describe("DashboardApp", () => {
     expect(body.get("dictate_hotkey")).toBe("win+alt");
     expect(body.get("assist_hotkey")).toBe("ctrl+win");
     expect(body.get("voice_agent_hotkey")).toBe("ctrl+shift");
+    expect(body.get("voice_primary_profile_id")).toBe("realtime.builtin.pipeline");
+  });
+
+  it("activates multiple onboarding integrations and saves entered tokens", async () => {
+    const postedCalls: Array<[string, URLSearchParams]> = [];
+    fetchSpy?.mockImplementation(
+      async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url =
+          typeof input === "string"
+            ? input
+            : input instanceof URL
+              ? input.toString()
+              : (input as Request).url;
+        if (url === "/app/setup-status") {
+          return new Response(JSON.stringify({ setupDone: false }), {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          });
+        }
+        if (url === "/app/version") {
+          return new Response(JSON.stringify({ version: "0.18.0" }), {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          });
+        }
+        if (
+          url === "/settings/update" ||
+          url === "/settings/provider-credentials/save" ||
+          url === "/settings/provider-integrations/update"
+        ) {
+          postedCalls.push([url, init?.body as URLSearchParams]);
+          return new Response(JSON.stringify({ message: "Saved" }), {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          });
+        }
+        if (url === "/app/complete-setup") {
+          return new Response(JSON.stringify({ setupDone: true }), {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          });
+        }
+        return new Response("{}", {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      },
+    );
+
+    render(<DashboardApp />);
+
+    fireEvent.click(
+      await screen.findByRole("button", { name: /get started/i }),
+    );
+    fireEvent.click(await screen.findByRole("button", { name: /^continue$/i }));
+
+    fireEvent.click(
+      await screen.findByRole("switch", {
+        name: "Enable Hugging Face integration",
+      }),
+    );
+    fireEvent.change(screen.getByLabelText("Hugging Face token"), {
+      target: { value: "hf-test-token" },
+    });
+    fireEvent.click(
+      screen.getByRole("switch", { name: "Enable OpenRouter integration" }),
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: /^continue$/i }));
+    fireEvent.click(
+      await screen.findByRole("button", { name: /start using speechkit/i }),
+    );
+
+    await waitFor(() =>
+      expect(fetchSpy).toHaveBeenCalledWith(
+        "/app/complete-setup",
+        expect.objectContaining({ method: "POST" }),
+      ),
+    );
+    const hfCredential = postedCalls.find(
+      ([url, body]) =>
+        url === "/settings/provider-credentials/save" &&
+        body.get("provider") === "huggingface",
+    )?.[1];
+    expect(hfCredential?.get("credential")).toBe("hf-test-token");
+    const openRouterActivation = postedCalls.find(
+      ([url, body]) =>
+        url === "/settings/provider-integrations/update" &&
+        body.get("provider") === "openrouter",
+    )?.[1];
+    expect(openRouterActivation?.get("enabled")).toBe("1");
   });
 
   it("does not toast historical model errors after continuing while onboarding download runs", async () => {
@@ -903,6 +1026,7 @@ describe("DashboardApp", () => {
       await screen.findByRole("button", { name: /get started/i }),
     );
     fireEvent.click(await screen.findByRole("button", { name: /^continue/i }));
+    fireEvent.click(await screen.findByRole("button", { name: /^continue$/i }));
     fireEvent.click(
       await screen.findByRole("button", { name: /start using speechkit/i }),
     );
@@ -913,7 +1037,7 @@ describe("DashboardApp", () => {
     ).not.toBeInTheDocument();
   });
 
-  it("opens transcribe settings when the user wants to use a cloud token instead of a local model", async () => {
+  it("moves cloud setup into the onboarding integrations step", async () => {
     fetchSpy?.mockImplementation(async (input: RequestInfo | URL) => {
       const url =
         typeof input === "string"
@@ -978,16 +1102,81 @@ describe("DashboardApp", () => {
     fireEvent.click(
       await screen.findByRole("button", { name: /get started/i }),
     );
-    fireEvent.click(
-      screen.getByRole("button", { name: /use hugging face token instead/i }),
+    fireEvent.click(screen.getByRole("button", { name: /^continue$/i }));
+
+    expect(await screen.findByText("Integrations")).toBeInTheDocument();
+    expect(
+      screen.getByText("Want more performance than local models? Add a provider."),
+    ).toBeInTheDocument();
+    expect(screen.queryByText("Gateways first")).not.toBeInTheDocument();
+    expect(screen.queryByText("No pressure")).not.toBeInTheDocument();
+    expect(
+      screen.getByText("Want one key for everything? Start with a gateway."),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText("Already use a provider? Plug in your key."),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText("Want to test models on your own machine? Use Ollama."),
+    ).toBeInTheDocument();
+
+    expect(screen.getByTestId("onboarding-navigation")).toHaveClass(
+      "shrink-0",
     );
 
-    await waitFor(() =>
-      expect(fetchSpy).toHaveBeenCalledWith("/app/complete-setup", {
-        method: "POST",
+    const cards = screen.getAllByTestId("onboarding-integration-card");
+    expect(
+      cards.map((card) =>
+        within(card).getByTestId("provider-brand-name").textContent,
+      ),
+    ).toEqual([
+      "Hugging Face",
+      "OpenRouter",
+      "OpenAI",
+      "Gemini / Google AI",
+      "Groq",
+      "Ollama",
+    ]);
+
+    expect(
+      within(cards[0]).getByText(
+        "All modes with one gateway key.",
+      ),
+    ).toBeInTheDocument();
+    expect(
+      within(cards[0]).queryByText(/a single gateway can cover/i),
+    ).not.toBeInTheDocument();
+    expect(within(cards[0]).getByAltText("Hugging Face logo")).toHaveAttribute(
+      "src",
+      "/integrations/huggingface.svg",
+    );
+    expect(
+      within(cards[3])
+        .getAllByTestId("integration-mode-tag")
+        .map((tag) => tag.textContent),
+    ).toEqual(["Dictation", "Assist", "Voice Agent"]);
+
+    const hfLink = within(cards[0]).getByRole("link", {
+      name: /create hugging face token/i,
+    });
+    expect(hfLink).toHaveAttribute(
+      "href",
+      "https://huggingface.co/settings/tokens",
+    );
+    expect(hfLink).toHaveAttribute(
+      "title",
+      "https://huggingface.co/settings/tokens",
+    );
+    expect(
+      within(cards[0]).getByText("huggingface.co/settings/tokens"),
+    ).toBeInTheDocument();
+
+    fireEvent.click(
+      screen.getByRole("switch", {
+        name: "Enable Hugging Face integration",
       }),
     );
-    expect(await screen.findByText("Speech-to-Text")).toBeInTheDocument();
+    expect(screen.getByLabelText("Hugging Face token")).toBeInTheDocument();
   });
 
   it("lets the user skip setup even before a local model is downloaded", async () => {

@@ -14,12 +14,14 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"strings"
 
 	"github.com/kombifyio/SpeechKit/internal/config"
 	"github.com/kombifyio/SpeechKit/internal/router"
 	"github.com/kombifyio/SpeechKit/internal/serverclient"
 	"github.com/kombifyio/SpeechKit/internal/stt"
 	"github.com/kombifyio/SpeechKit/internal/voiceagent"
+	"github.com/kombifyio/SpeechKit/internal/voiceagentprofile"
 )
 
 // serverDelegates holds per-mode adapters that delegate to a remote
@@ -60,13 +62,15 @@ func buildServerDelegates(cfg *config.Config) (*serverDelegates, error) {
 	if cfg == nil {
 		return nil, nil
 	}
-	anyServerMode := cfg.ModelSelection.Dictate.ResolvedModeSource() == config.ModeSourceServer ||
-		cfg.ModelSelection.Assist.ResolvedModeSource() == config.ModeSourceServer ||
-		cfg.ModelSelection.VoiceAgent.ResolvedModeSource() == config.ModeSourceServer
-	if !anyServerMode {
+	if !anyServerModeSelected(cfg) {
 		return nil, nil
 	}
-	client, err := serverclient.NewFromConfig(cfg.ServerConnection)
+	serverCfg := cfg.ServerConnection
+	// ModeSource is the source of truth for local-vs-server execution. The
+	// legacy enabled flag is kept in config/API responses for compatibility,
+	// but it must not become a second gate after a mode opts into server.
+	serverCfg.Enabled = true
+	client, err := serverclient.NewFromConfig(serverCfg)
 	if err != nil {
 		if errors.Is(err, serverclient.ErrServerConnectionDisabled) {
 			// Some mode is configured for "server" but the connection is
@@ -102,6 +106,15 @@ func buildServerDelegates(cfg *config.Config) (*serverDelegates, error) {
 	return d, nil
 }
 
+func anyServerModeSelected(cfg *config.Config) bool {
+	if cfg == nil {
+		return false
+	}
+	return cfg.ModelSelection.Dictate.ResolvedModeSource() == config.ModeSourceServer ||
+		cfg.ModelSelection.Assist.ResolvedModeSource() == config.ModeSourceServer ||
+		cfg.ModelSelection.VoiceAgent.ResolvedModeSource() == config.ModeSourceServer
+}
+
 // hasDictation reports whether Dictation should run server-side. nil-safe.
 func (d *serverDelegates) hasDictation() bool { return d != nil && d.dictation != nil }
 
@@ -115,6 +128,29 @@ func (d *serverDelegates) hasVoiceAgent() bool { return d != nil && d.voiceAgent
 // against the in-process kernel. nil-safe (returns false).
 func (d *serverDelegates) shouldFallback() bool { return d != nil && d.fallbackToLocal }
 
+func currentServerDelegates(state *appState) *serverDelegates {
+	if state == nil {
+		return nil
+	}
+	state.mu.Lock()
+	defer state.mu.Unlock()
+	return state.serverDelegates
+}
+
+func refreshServerDelegates(cfg *config.Config, state *appState) error {
+	if state == nil {
+		return nil
+	}
+	delegates, err := buildServerDelegates(cfg)
+	if err != nil {
+		return err
+	}
+	state.mu.Lock()
+	state.serverDelegates = delegates
+	state.mu.Unlock()
+	return nil
+}
+
 // newVoiceAgentProvider constructs a fresh server-backed LiveProvider.
 // Each Voice Agent session creates one; the provider owns the underlying
 // websocket so it cannot be reused across sessions.
@@ -122,16 +158,34 @@ func (d *serverDelegates) newVoiceAgentProvider(cfg *config.Config) voiceagent.L
 	if !d.hasVoiceAgent() {
 		return nil
 	}
-	// Persona/Role/Sequence IDs are not yet exposed in the device UI;
-	// callers can plumb them later via WithPersona/WithRole/WithSequence.
-	// For 0.26.1 we let the server's default persona handle the session.
-	_ = cfg
-	provider, err := serverclient.NewVoiceAgent(d.client)
+	options := []serverclient.VoiceAgentOption{}
+	if cfg != nil {
+		profileID, sequenceID := voiceAgentServerCatalogSelection(cfg)
+		if profileID != "" {
+			options = append(options, serverclient.WithPersona(profileID))
+		}
+		if sequenceID != "" {
+			options = append(options, serverclient.WithSequence(sequenceID))
+		}
+	}
+	provider, err := serverclient.NewVoiceAgent(d.client, options...)
 	if err != nil {
 		slog.Error("server-delegated Voice Agent provider construction failed", "err", err)
 		return nil
 	}
 	return provider
+}
+
+func voiceAgentServerCatalogSelection(cfg *config.Config) (personaID, sequenceID string) {
+	if cfg == nil {
+		return "", ""
+	}
+	personaID = voiceagentprofile.NormalizeID(cfg.VoiceAgent.AgentProfileID)
+	sequenceID = strings.TrimSpace(cfg.VoiceAgent.AgentSequenceID)
+	if personaID == voiceagentprofile.DefaultID && sequenceID == "" {
+		return "", ""
+	}
+	return personaID, sequenceID
 }
 
 // compositeTranscriber wraps a server-side stt.STTProvider with an
@@ -170,6 +224,23 @@ func dictationTranscriber(local *router.Router, d *serverDelegates) Transcriber 
 		return local
 	}
 	return newCompositeTranscriber(d.dictation, local, d.shouldFallback())
+}
+
+type runtimeDictationTranscriber struct {
+	local *router.Router
+	state *appState
+}
+
+func newRuntimeDictationTranscriber(local *router.Router, state *appState) Transcriber {
+	return runtimeDictationTranscriber{local: local, state: state}
+}
+
+func (t runtimeDictationTranscriber) Route(ctx context.Context, audio []byte, audioDurationSecs float64, opts stt.TranscribeOpts) (*stt.Result, error) {
+	transcriber := dictationTranscriber(t.local, currentServerDelegates(t.state))
+	if transcriber == nil {
+		return nil, errors.New("no dictation transcriber configured")
+	}
+	return transcriber.Route(ctx, audio, audioDurationSecs, opts)
 }
 
 // Route satisfies the Transcriber interface routerTranscriber expects.

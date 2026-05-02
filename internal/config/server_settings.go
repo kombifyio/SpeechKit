@@ -7,6 +7,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/kombifyio/SpeechKit/internal/voiceagentprofile"
 )
 
 const (
@@ -15,12 +17,16 @@ const (
 	ServerOnboardingUIEnv  = "SPEECHKIT_SERVER_ONBOARDING_UI"
 
 	defaultServerSettingsPath = "/var/lib/speechkit/data/server-settings.json"
+
+	ServerAuthModeManagedBearer = "managed_bearer"
+	ServerAuthModeSelfManaged   = "self_managed"
 )
 
 type ServerModelSettings struct {
 	Version            int                        `json:"version,omitempty"`
 	OnboardingComplete bool                       `json:"onboarding_complete,omitempty"`
 	OnboardingVersion  string                     `json:"onboarding_version,omitempty"`
+	ServerAuth         ServerAuthSettings         `json:"server_auth,omitempty"`
 	Modes              ServerModeProviderSettings `json:"modes,omitempty"`
 	Credentials        ServerCredentialSettings   `json:"credentials,omitempty"`
 	Dictation          ServerDictationSettings    `json:"dictation,omitempty"`
@@ -29,6 +35,13 @@ type ServerModelSettings struct {
 	LLM                ServerLLMSettings          `json:"llm,omitempty"`
 	VoiceAgent         ServerVoiceAgentSettings   `json:"voice_agent,omitempty"`
 	TTS                ServerOptionalTTSSettings  `json:"tts,omitempty"`
+}
+
+type ServerAuthSettings struct {
+	Mode           string `json:"mode,omitempty"`
+	BearerTokenEnv string `json:"bearer_token_env,omitempty"`
+	GenerateToken  *bool  `json:"generate_token,omitempty"`
+	TokenValue     string `json:"token_value,omitempty"`
 }
 
 type ServerModeProviderSettings struct {
@@ -82,8 +95,10 @@ type ServerLLMSettings struct {
 }
 
 type ServerVoiceAgentSettings struct {
-	Provider       string  `json:"provider,omitempty"`
-	PromptTemplate *string `json:"prompt_template,omitempty"`
+	Provider        string  `json:"provider,omitempty"`
+	AgentProfileID  string  `json:"agent_profile_id,omitempty"`
+	AgentSequenceID string  `json:"agent_sequence_id,omitempty"`
+	PromptTemplate  *string `json:"prompt_template,omitempty"`
 }
 
 type ServerOptionalTTSSettings struct {
@@ -151,6 +166,8 @@ func SaveServerModelSettings(path string, settings ServerModelSettings) error {
 
 func SanitizeServerModelSettings(settings ServerModelSettings) ServerModelSettings {
 	settings = NormalizeServerModelSettings(settings)
+	settings.ServerAuth.GenerateToken = nil
+	settings.ServerAuth.TokenValue = ""
 	settings.Credentials.OpenAI.Value = ""
 	settings.Credentials.Groq.Value = ""
 	settings.Credentials.Google.Value = ""
@@ -160,6 +177,9 @@ func SanitizeServerModelSettings(settings ServerModelSettings) ServerModelSettin
 }
 
 func NormalizeServerModelSettings(settings ServerModelSettings) ServerModelSettings {
+	settings.ServerAuth.Mode = strings.ToLower(strings.TrimSpace(settings.ServerAuth.Mode))
+	settings.ServerAuth.BearerTokenEnv = strings.TrimSpace(settings.ServerAuth.BearerTokenEnv)
+	settings.ServerAuth.TokenValue = strings.TrimSpace(settings.ServerAuth.TokenValue)
 	settings.LLM.UtilityModel = normalizeServerModelValue(settings.LLM.UtilityModel)
 	settings.LLM.AssistModel = normalizeServerModelValue(settings.LLM.AssistModel)
 	settings.LLM.AgentModel = normalizeServerModelValue(settings.LLM.AgentModel)
@@ -172,6 +192,9 @@ func NormalizeServerModelSettings(settings ServerModelSettings) ServerModelSetti
 	if settings.VoiceAgent.PromptTemplate != nil {
 		value := normalizeServerMultiline(*settings.VoiceAgent.PromptTemplate)
 		settings.VoiceAgent.PromptTemplate = &value
+	}
+	if strings.TrimSpace(settings.VoiceAgent.AgentProfileID) != "" {
+		settings.VoiceAgent.AgentProfileID = voiceagentprofile.NormalizeID(settings.VoiceAgent.AgentProfileID)
 	}
 	settings.Assist.EnabledTools = normalizeServerStringList(settings.Assist.EnabledTools)
 	return settings
@@ -202,6 +225,7 @@ func ApplyServerModelSettings(cfg *Config, settings ServerModelSettings) []strin
 		return nil
 	}
 	var notes []string
+	notes = append(notes, ApplyServerAuthSettings(cfg, settings.ServerAuth)...)
 	notes = append(notes, applyServerCredentialSettings(cfg, settings.Credentials)...)
 	notes = append(notes, applyServerModeProviderSettings(cfg, settings.Modes)...)
 	if settings.Dictation.Dictionary != nil {
@@ -250,6 +274,14 @@ func ApplyServerModelSettings(cfg *Config, settings ServerModelSettings) []strin
 		cfg.VoiceAgent.Provider = strings.ToLower(value)
 		notes = append(notes, "server settings: voice agent provider updated")
 	}
+	if value := cleanSetting(settings.VoiceAgent.AgentProfileID); value != "" {
+		cfg.VoiceAgent.AgentProfileID = voiceagentprofile.NormalizeID(value)
+		notes = append(notes, "server settings: voice agent profile updated")
+	}
+	if value := cleanSetting(settings.VoiceAgent.AgentSequenceID); value != "" {
+		cfg.VoiceAgent.AgentSequenceID = value
+		notes = append(notes, "server settings: voice agent sequence updated")
+	}
 	if settings.VoiceAgent.PromptTemplate != nil {
 		cfg.VoiceAgent.FrameworkPrompt = *settings.VoiceAgent.PromptTemplate
 		notes = append(notes, "server settings: voice agent prompt template updated")
@@ -257,6 +289,36 @@ func ApplyServerModelSettings(cfg *Config, settings ServerModelSettings) []strin
 	if settings.TTS.Enabled != nil {
 		cfg.TTS.Enabled = *settings.TTS.Enabled
 		notes = append(notes, "server settings: TTS enabled updated")
+	}
+	return notes
+}
+
+func ApplyServerAuthSettings(cfg *Config, auth ServerAuthSettings) []string {
+	if cfg == nil {
+		return nil
+	}
+	var notes []string
+	mode := cleanSetting(auth.Mode)
+	envName := cleanSetting(auth.BearerTokenEnv)
+	if envName == "" {
+		envName = "SPEECHKIT_SERVER_TOKEN"
+	}
+	switch mode {
+	case ServerAuthModeManagedBearer:
+		cfg.Server.AuthMode = "bearer"
+		cfg.Server.BearerTokenEnv = envName
+		notes = append(notes, "server settings: bearer auth managed by setup")
+	case ServerAuthModeSelfManaged:
+		if cleanSetting(auth.BearerTokenEnv) != "" {
+			cfg.Server.BearerTokenEnv = envName
+			notes = append(notes, "server settings: bearer token env updated")
+		}
+	default:
+		return notes
+	}
+	if value := cleanSetting(auth.TokenValue); value != "" {
+		setCredentialEnv(cfg.Server.BearerTokenEnv, "SPEECHKIT_SERVER_TOKEN", value)
+		notes = append(notes, "server settings: bearer token value loaded")
 	}
 	return notes
 }
@@ -390,9 +452,17 @@ func applyDictationModeSetting(cfg *Config, mode ServerModeSetting) []string {
 		notes = append(notes, "server settings: Dictation uses direct provider")
 	case "cloud_provider":
 		cfg.VPS.Enabled = false
-		cfg.HuggingFace.Enabled = true
-		if model != "" {
-			cfg.HuggingFace.Model = model
+		if strings.Contains(strings.ToLower(mode.ProfileID), "openrouter") {
+			cfg.HuggingFace.Enabled = false
+			cfg.Providers.OpenRouter.Enabled = true
+			if model != "" {
+				cfg.Providers.OpenRouter.STTModel = model
+			}
+		} else {
+			cfg.HuggingFace.Enabled = true
+			if model != "" {
+				cfg.HuggingFace.Model = model
+			}
 		}
 		notes = append(notes, "server settings: Dictation uses cloud provider")
 	case "local_provider":
@@ -443,9 +513,17 @@ func applyAssistModeSetting(cfg *Config, mode ServerModeSetting) []string {
 		notes = append(notes, "server settings: Assist uses direct provider")
 	case "cloud_provider":
 		cfg.LocalLLM.Enabled = false
-		cfg.HuggingFace.Enabled = true
-		if model != "" {
-			cfg.HuggingFace.AssistModel = model
+		if strings.Contains(strings.ToLower(mode.ProfileID), "openrouter") {
+			cfg.HuggingFace.Enabled = false
+			cfg.Providers.OpenRouter.Enabled = true
+			if model != "" {
+				cfg.Providers.OpenRouter.AssistModel = model
+			}
+		} else {
+			cfg.HuggingFace.Enabled = true
+			if model != "" {
+				cfg.HuggingFace.AssistModel = model
+			}
 		}
 		notes = append(notes, "server settings: Assist uses cloud provider")
 	case "local_provider":
@@ -486,9 +564,17 @@ func applyVoiceAgentModeSetting(cfg *Config, mode ServerModeSetting) []string {
 		notes = append(notes, "server settings: Voice Agent uses direct provider")
 	case "cloud_provider":
 		cfg.VoiceAgent.Provider = "cascaded"
-		cfg.HuggingFace.Enabled = true
-		if model != "" {
-			cfg.HuggingFace.AgentModel = model
+		if strings.Contains(strings.ToLower(mode.ProfileID), "openrouter") {
+			cfg.HuggingFace.Enabled = false
+			cfg.Providers.OpenRouter.Enabled = true
+			if model != "" {
+				cfg.Providers.OpenRouter.AgentModel = model
+			}
+		} else {
+			cfg.HuggingFace.Enabled = true
+			if model != "" {
+				cfg.HuggingFace.AgentModel = model
+			}
 		}
 		notes = append(notes, "server settings: Voice Agent uses cloud fallback provider")
 	case "local_provider":
@@ -511,6 +597,8 @@ func applyVoiceAgentModeSetting(cfg *Config, mode ServerModeSetting) []string {
 
 func validateServerModelSettings(settings ServerModelSettings) error {
 	for name, value := range map[string]string{
+		"server_auth.mode":  settings.ServerAuth.Mode,
+		"server_auth.env":   settings.ServerAuth.BearerTokenEnv,
 		"stt.url":           settings.STT.URL,
 		"stt.model":         settings.STT.Model,
 		"llm.base_url":      settings.LLM.BaseURL,
@@ -519,6 +607,7 @@ func validateServerModelSettings(settings ServerModelSettings) error {
 		"llm.agent_model":   settings.LLM.AgentModel,
 		"llm.hf_repo":       settings.LLM.HFRepo,
 		"voice.provider":    settings.VoiceAgent.Provider,
+		"voice.agent":       settings.VoiceAgent.AgentProfileID,
 		"dictation.profile": settings.Modes.Dictation.ProfileID,
 		"dictation.model":   settings.Modes.Dictation.Model,
 		"assist.profile":    settings.Modes.Assist.ProfileID,
@@ -535,6 +624,17 @@ func validateServerModelSettings(settings ServerModelSettings) error {
 	}
 	if settings.VoiceAgent.PromptTemplate != nil && len(*settings.VoiceAgent.PromptTemplate) > 8192 {
 		return fmt.Errorf("voice_agent.prompt_template is too long")
+	}
+	if len(settings.ServerAuth.TokenValue) > 4096 {
+		return fmt.Errorf("server_auth.token_value is too long")
+	}
+	switch strings.ToLower(strings.TrimSpace(settings.ServerAuth.Mode)) {
+	case "", ServerAuthModeManagedBearer, ServerAuthModeSelfManaged:
+	default:
+		return fmt.Errorf("server_auth.mode must be managed_bearer or self_managed")
+	}
+	if settings.ServerAuth.BearerTokenEnv != "" && !validEnvName(settings.ServerAuth.BearerTokenEnv) {
+		return fmt.Errorf("server_auth.bearer_token_env must be a valid environment variable name")
 	}
 	for _, tool := range settings.Assist.EnabledTools {
 		if !validServerToolID(tool) {

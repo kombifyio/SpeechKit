@@ -1,6 +1,10 @@
 package main
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/kombifyio/SpeechKit/internal/config"
+)
 
 func TestPillAnchorWindowOptions(t *testing.T) {
 	opts := newPillAnchorWindowOptions()
@@ -22,14 +26,14 @@ func TestPillAnchorWindowOptions(t *testing.T) {
 	}
 }
 
-func TestPillAnchorWindowOptionsReserveCompactFeedbackPanelSpace(t *testing.T) {
+func TestPillAnchorWindowOptionsStartWithCompactClickTarget(t *testing.T) {
 	opts := newPillAnchorWindowOptions()
 
-	if opts.Width < 360 {
-		t.Fatalf("pill anchor width = %d, want room for compact feedback panel", opts.Width)
+	if opts.Width > pillBubbleW {
+		t.Fatalf("pill anchor width = %d, want no wider than visible pill footprint %d", opts.Width, pillBubbleW)
 	}
-	if opts.Height < 96 {
-		t.Fatalf("pill anchor height = %d, want room for compact feedback panel above the pill", opts.Height)
+	if opts.Height > pillBubbleH {
+		t.Fatalf("pill anchor height = %d, want no taller than visible pill footprint %d", opts.Height, pillBubbleH)
 	}
 }
 
@@ -53,17 +57,6 @@ func TestPillPanelWindowOptions(t *testing.T) {
 	}
 }
 
-func TestPillPanelWindowOptionsReserveCompactFeedbackPanelSpace(t *testing.T) {
-	opts := newPillPanelWindowOptions()
-
-	if opts.Width < 360 {
-		t.Fatalf("pill panel width = %d, want room for compact feedback panel", opts.Width)
-	}
-	if opts.Height < 96 {
-		t.Fatalf("pill panel height = %d, want room for compact feedback panel above the controls", opts.Height)
-	}
-}
-
 func TestPillPanelWindowOptionsFitQuickControlsAndTriModeToggles(t *testing.T) {
 	const (
 		outerPaddingX      = 6
@@ -79,6 +72,34 @@ func TestPillPanelWindowOptionsFitQuickControlsAndTriModeToggles(t *testing.T) {
 
 	if pillPanelWidth < minPanelWidth {
 		t.Fatalf("pill panel width = %d, want at least %d to fit left quick controls plus tri-mode toggles", pillPanelWidth, minPanelWidth)
+	}
+}
+
+func TestPillHostsExpandOnlyWhenCompactFeedbackIsVisible(t *testing.T) {
+	idleRuntime := runtimeState{
+		overlayVisualizer: "pill",
+		currentState:      "idle",
+		activeMode:        modeAssist,
+	}
+	if got := pillAnchorMetricsForRuntime(idleRuntime); got != pillAnchorMetrics {
+		t.Fatalf("idle pill anchor metrics = %+v, want %+v", got, pillAnchorMetrics)
+	}
+	if got := pillPanelMetricsForRuntime(idleRuntime); got != pillPanelMetrics {
+		t.Fatalf("idle pill panel metrics = %+v, want %+v", got, pillPanelMetrics)
+	}
+
+	feedbackRuntime := runtimeState{
+		overlayVisualizer: "pill",
+		currentState:      "processing",
+		activeMode:        modeAssist,
+		overlayText:       "Kundennotiz",
+		assistOverlayMode: config.OverlayFeedbackModeSmallFeedback,
+	}
+	if got := pillAnchorMetricsForRuntime(feedbackRuntime); got != pillFeedbackMetrics {
+		t.Fatalf("feedback pill anchor metrics = %+v, want %+v", got, pillFeedbackMetrics)
+	}
+	if got := pillPanelMetricsForRuntime(feedbackRuntime); got != pillFeedbackMetrics {
+		t.Fatalf("feedback pill panel metrics = %+v, want %+v", got, pillFeedbackMetrics)
 	}
 }
 
@@ -273,6 +294,55 @@ func TestPositionOverlayAppliesDedicatedHostMetricsForAnchoredSurfaces(t *testin
 	}
 	if got := radialMenu.positions; len(got) != 1 || got[0] != wantRadial {
 		t.Fatalf("radial menu positions = %v, want [%v]", got, wantRadial)
+	}
+}
+
+func TestPositionOverlayKeepsIdlePillHoverPanelHitAreaCompact(t *testing.T) {
+	locator := &fakeScreenLocator{bounds: screenBounds{X: 0, Y: 0, Width: 1920, Height: 1080}, ok: true}
+	pillAnchor := &fakeOverlayWindow{}
+	pillPanel := &fakeOverlayWindow{}
+	state := &appState{
+		pillAnchor:        pillAnchor,
+		pillPanel:         pillPanel,
+		screenLocator:     locator,
+		overlayVisualizer: "pill",
+		overlayPosition:   "bottom",
+		currentState:      "idle",
+	}
+
+	state.positionOverlay()
+
+	if got := pillAnchor.sizes; len(got) != 1 || got[0][0] > pillBubbleW || got[0][1] > pillBubbleH {
+		t.Fatalf("pill anchor sizes = %v, want compact visible footprint no larger than %dx%d", got, pillBubbleW, pillBubbleH)
+	}
+	if got := pillPanel.sizes; len(got) != 1 || got[0][0] > 260 || got[0][1] > 48 {
+		t.Fatalf("pill panel sizes = %v, want compact hover controls no larger than 260x48 without feedback text", got)
+	}
+}
+
+func TestPositionOverlayExpandsPillHostForCompactFeedback(t *testing.T) {
+	locator := &fakeScreenLocator{bounds: screenBounds{X: 0, Y: 0, Width: 1920, Height: 1080}, ok: true}
+	pillAnchor := &fakeOverlayWindow{}
+	pillPanel := &fakeOverlayWindow{}
+	state := &appState{
+		pillAnchor:        pillAnchor,
+		pillPanel:         pillPanel,
+		screenLocator:     locator,
+		overlayVisualizer: "pill",
+		overlayPosition:   "bottom",
+		currentState:      "processing",
+		activeMode:        modeAssist,
+		overlayText:       "Kundennotiz",
+		assistOverlayMode: config.OverlayFeedbackModeSmallFeedback,
+	}
+
+	state.positionOverlay()
+
+	if got := pillAnchor.sizes; len(got) != 1 || got[0] != [2]int{pillFeedbackWidth, pillFeedbackHeight} {
+		t.Fatalf("pill anchor sizes = %v, want compact feedback host %dx%d", got, pillFeedbackWidth, pillFeedbackHeight)
+	}
+	if got := pillPanel.sizes; len(got) != 1 || got[0] != [2]int{pillFeedbackWidth, pillFeedbackHeight} {
+		t.Fatalf("pill panel sizes = %v, want compact feedback host %dx%d", got, pillFeedbackWidth, pillFeedbackHeight)
 	}
 }
 

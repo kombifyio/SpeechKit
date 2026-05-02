@@ -189,6 +189,15 @@ paths:
         `GET /api/v1/voiceagent/sessions/{id}/ws?ticket=...` and is documented
         separately because OpenAPI 3.1 has no first-class WebSocket
         primitive.
+
+        WebSocket control frames are JSON text messages. The first client
+        frame must be `{"type":"start"}` and may include `persona_id`,
+        `role_id`, `sequence_id`, `voice`, `locale`, `model`,
+        `activity_detection`, and `system_prompt_override`. During a workflow,
+        clients send `{"type":"advance_step","reason":"host"}` to move to the
+        next sequence step. The server emits `sequence_step` frames with
+        `status` values `entered`, `completed`, and `sequence_completed`.
+        Tool calls use `tool_call` and `tool_response`.
       tags: [voiceagent]
       responses:
         '201':
@@ -737,6 +746,9 @@ components:
         voice: { type: string }
         locale: { type: string }
         default_role: { type: string }
+        default_sequence:
+          type: string
+          description: Optional sequence started when the persona is selected without an explicit sequence_id.
         tags:
           type: array
           items: { type: string }

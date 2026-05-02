@@ -4,6 +4,8 @@ package core
 
 import (
 	"bytes"
+	"crypto/rand"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"io"
@@ -13,6 +15,7 @@ import (
 
 	assistpkg "github.com/kombifyio/SpeechKit/internal/assist"
 	"github.com/kombifyio/SpeechKit/internal/config"
+	"github.com/kombifyio/SpeechKit/internal/voiceagentprofile"
 	framework "github.com/kombifyio/SpeechKit/pkg/speechkit"
 )
 
@@ -89,6 +92,23 @@ func handleServerSettingsPatch(w http.ResponseWriter, r *http.Request, app *App)
 	if next.OnboardingComplete {
 		next.OnboardingVersion = app.Version
 	}
+	generatedToken := ""
+	if shouldGenerateServerToken(patch.ServerAuth) {
+		token, err := generateServerBearerToken()
+		if err != nil {
+			w.WriteHeader(http.StatusInternalServerError)
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"error": map[string]any{"code": "token_generation_failed", "message": err.Error()},
+			})
+			return
+		}
+		generatedToken = token
+		next.ServerAuth.Mode = config.ServerAuthModeManagedBearer
+		if strings.TrimSpace(next.ServerAuth.BearerTokenEnv) == "" {
+			next.ServerAuth.BearerTokenEnv = "SPEECHKIT_SERVER_TOKEN"
+		}
+		next.ServerAuth.TokenValue = token
+	}
 	if err := config.SaveServerModelSettings(path, next); err != nil {
 		w.WriteHeader(http.StatusBadRequest)
 		_ = json.NewEncoder(w).Encode(map[string]any{
@@ -96,15 +116,25 @@ func handleServerSettingsPatch(w http.ResponseWriter, r *http.Request, app *App)
 		})
 		return
 	}
+	applyRuntimeServerAuth(app, next.ServerAuth)
 
-	w.WriteHeader(http.StatusOK)
-	_ = json.NewEncoder(w).Encode(map[string]any{
+	response := map[string]any{
 		"status":           "saved",
 		"restart_required": true,
 		"message":          "saved; restart/recreate the server stack to apply model runtime changes",
 		"desired":          config.SanitizeServerModelSettings(next),
 		"settings":         serverSettingsSnapshot(app),
-	})
+	}
+	if generatedToken != "" {
+		response["generated_token"] = map[string]any{
+			"token":       generatedToken,
+			"env":         firstNonEmpty(next.ServerAuth.BearerTokenEnv, "SPEECHKIT_SERVER_TOKEN"),
+			"auth_mode":   "bearer",
+			"header_name": "Authorization",
+		}
+	}
+	w.WriteHeader(http.StatusOK)
+	_ = json.NewEncoder(w).Encode(response)
 }
 
 func serverSettingsSnapshot(app *App) map[string]any {
@@ -156,6 +186,11 @@ func serverSettingsSnapshot(app *App) map[string]any {
 			"settings_persisted":   settingsPersisted,
 			"restart_required":     restartRequired,
 		},
+		"auth": map[string]any{
+			"mode":             cfg.Server.AuthMode,
+			"bearer_token_env": firstNonEmpty(cfg.Server.BearerTokenEnv, "SPEECHKIT_SERVER_TOKEN"),
+			"bearer_token_set": envPresent(firstNonEmpty(cfg.Server.BearerTokenEnv, "SPEECHKIT_SERVER_TOKEN")),
+		},
 		"stt": map[string]any{
 			"strategy":  cfg.Routing.Strategy,
 			"providers": providers,
@@ -188,7 +223,9 @@ func serverSettingsSnapshot(app *App) map[string]any {
 			},
 		},
 		"voice_agent": map[string]any{
-			"provider": effectiveVoiceAgentProvider(cfg),
+			"provider":         effectiveVoiceAgentProvider(cfg),
+			"agent_profile_id": voiceagentprofile.NormalizeID(cfg.VoiceAgent.AgentProfileID),
+			"agent_profiles":   voiceAgentProfileCatalog(),
 			"gemini": map[string]any{
 				"configured": providerConfigured(true, cfg.Providers.Google.APIKeyEnv)["configured"],
 				"model":      cfg.VoiceAgent.Model,
@@ -206,8 +243,8 @@ func serverSettingsSnapshot(app *App) map[string]any {
 			"mode":    "optional",
 		},
 		"personas": map[string]any{
-			"seeded":    len(cfg.Personas),
-			"roles":     len(cfg.Roles),
+			"seeded":    len(cfg.Personas) + len(voiceagentprofile.BuiltInProfiles()),
+			"roles":     len(cfg.Roles) + builtInVoiceAgentRoleCount(),
 			"sequences": len(cfg.Sequences),
 		},
 		"editable": map[string]any{
@@ -231,6 +268,40 @@ func enabledModeNames(app *App) []string {
 	return modes
 }
 
+func serverSettingsBootstrapWriteAllowed(app *App) bool {
+	if app == nil {
+		return false
+	}
+	if !envBool(config.ServerSettingsWriteEnv) {
+		return false
+	}
+	mode := ""
+	token := ""
+	if app.AuthState != nil {
+		mode = app.AuthState.Mode()
+		token = app.AuthState.BearerToken()
+	} else if app.Cfg != nil {
+		mode = app.Cfg.Server.AuthMode
+		token = strings.TrimSpace(os.Getenv(strings.TrimSpace(app.Cfg.Server.BearerTokenEnv)))
+	}
+	mode = strings.ToLower(strings.TrimSpace(mode))
+	if mode != "bearer" && mode != "bearer_or_edge" {
+		return false
+	}
+	if strings.TrimSpace(token) != "" {
+		return false
+	}
+	settingsPath := config.ServerSettingsPath(app.Cfg)
+	stored, ok, err := config.LoadServerModelSettings(settingsPath)
+	if err != nil {
+		return false
+	}
+	if !ok {
+		return true
+	}
+	return !(stored.OnboardingComplete && strings.TrimSpace(stored.OnboardingVersion) == strings.TrimSpace(app.Version))
+}
+
 func providerConfigured(enabled bool, envName string) map[string]any {
 	return map[string]any{
 		"enabled":    enabled,
@@ -246,6 +317,45 @@ func effectiveVoiceAgentProvider(cfg *config.Config) string {
 		return strings.ToLower(provider)
 	}
 	return "gemini"
+}
+
+func activeServerAuthSettings(cfg *config.Config) config.ServerAuthSettings {
+	if cfg == nil {
+		return config.ServerAuthSettings{}
+	}
+	mode := config.ServerAuthModeSelfManaged
+	if strings.EqualFold(strings.TrimSpace(cfg.Server.AuthMode), "bearer") && envPresent(firstNonEmpty(cfg.Server.BearerTokenEnv, "SPEECHKIT_SERVER_TOKEN")) {
+		mode = config.ServerAuthModeManagedBearer
+	}
+	return config.ServerAuthSettings{
+		Mode:           mode,
+		BearerTokenEnv: firstNonEmpty(cfg.Server.BearerTokenEnv, "SPEECHKIT_SERVER_TOKEN"),
+	}
+}
+
+func voiceAgentProfileCatalog() []map[string]any {
+	profiles := voiceagentprofile.BuiltInProfiles()
+	out := make([]map[string]any, 0, len(profiles))
+	for _, profile := range profiles {
+		out = append(out, map[string]any{
+			"id":           profile.ID,
+			"display_name": profile.DisplayName,
+			"description":  profile.Description,
+			"voice":        profile.Voice,
+			"built_in":     profile.BuiltIn,
+		})
+	}
+	return out
+}
+
+func builtInVoiceAgentRoleCount() int {
+	count := 0
+	for _, profile := range voiceagentprofile.BuiltInProfiles() {
+		if profile.RoleID != "" && profile.FrameworkPrompt != "" {
+			count++
+		}
+	}
+	return count
 }
 
 func envBool(name string) bool {
@@ -274,6 +384,7 @@ func activeServerModelSettings(cfg *config.Config) config.ServerModelSettings {
 	}
 	return config.ServerModelSettings{
 		Version:     1,
+		ServerAuth:  activeServerAuthSettings(cfg),
 		Modes:       activeServerModeSettings(cfg),
 		Credentials: activeServerCredentialSettings(cfg),
 		Dictation: config.ServerDictationSettings{
@@ -297,6 +408,7 @@ func activeServerModelSettings(cfg *config.Config) config.ServerModelSettings {
 		},
 		VoiceAgent: config.ServerVoiceAgentSettings{
 			Provider:       effectiveVoiceAgentProvider(cfg),
+			AgentProfileID: voiceagentprofile.NormalizeID(cfg.VoiceAgent.AgentProfileID),
 			PromptTemplate: stringPtr(cfg.VoiceAgent.FrameworkPrompt),
 		},
 		TTS: config.ServerOptionalTTSSettings{
@@ -313,6 +425,7 @@ func mergeServerModelSettings(base, patch config.ServerModelSettings) config.Ser
 	if value := strings.TrimSpace(patch.OnboardingVersion); value != "" {
 		base.OnboardingVersion = value
 	}
+	base.ServerAuth = mergeServerAuthSetting(base.ServerAuth, patch.ServerAuth)
 	base.Modes.Dictation = mergeServerModeSetting(base.Modes.Dictation, patch.Modes.Dictation)
 	base.Modes.Assist = mergeServerModeSetting(base.Modes.Assist, patch.Modes.Assist)
 	base.Modes.VoiceAgent = mergeServerModeSetting(base.Modes.VoiceAgent, patch.Modes.VoiceAgent)
@@ -357,6 +470,9 @@ func mergeServerModelSettings(base, patch config.ServerModelSettings) config.Ser
 	if value := strings.TrimSpace(patch.VoiceAgent.Provider); value != "" {
 		base.VoiceAgent.Provider = strings.ToLower(value)
 	}
+	if value := strings.TrimSpace(patch.VoiceAgent.AgentProfileID); value != "" {
+		base.VoiceAgent.AgentProfileID = voiceagentprofile.NormalizeID(value)
+	}
 	if patch.VoiceAgent.PromptTemplate != nil {
 		base.VoiceAgent.PromptTemplate = patch.VoiceAgent.PromptTemplate
 	}
@@ -364,6 +480,49 @@ func mergeServerModelSettings(base, patch config.ServerModelSettings) config.Ser
 		base.TTS.Enabled = patch.TTS.Enabled
 	}
 	return base
+}
+
+func mergeServerAuthSetting(base, patch config.ServerAuthSettings) config.ServerAuthSettings {
+	if value := strings.TrimSpace(patch.Mode); value != "" {
+		base.Mode = strings.ToLower(value)
+	}
+	if value := strings.TrimSpace(patch.BearerTokenEnv); value != "" {
+		base.BearerTokenEnv = value
+	}
+	if patch.GenerateToken != nil {
+		base.GenerateToken = patch.GenerateToken
+	}
+	if value := strings.TrimSpace(patch.TokenValue); value != "" {
+		base.TokenValue = value
+	}
+	return base
+}
+
+func shouldGenerateServerToken(auth config.ServerAuthSettings) bool {
+	return strings.EqualFold(strings.TrimSpace(auth.Mode), config.ServerAuthModeManagedBearer) &&
+		auth.GenerateToken != nil &&
+		*auth.GenerateToken
+}
+
+func generateServerBearerToken() (string, error) {
+	var random [32]byte
+	if _, err := rand.Read(random[:]); err != nil {
+		return "", err
+	}
+	return "sk-server-" + base64.RawURLEncoding.EncodeToString(random[:]), nil
+}
+
+func applyRuntimeServerAuth(app *App, auth config.ServerAuthSettings) {
+	if app == nil || app.Cfg == nil {
+		return
+	}
+	notes := config.ApplyServerAuthSettings(app.Cfg, auth)
+	if len(notes) == 0 {
+		return
+	}
+	if app.AuthState != nil {
+		app.AuthState.Set(app.Cfg.Server.AuthMode, app.Cfg.Server.BearerTokenEnv, app.Cfg.Server.EdgeAuthSecretEnv)
+	}
 }
 
 func serverModelSettingsEqual(a, b config.ServerModelSettings) bool {

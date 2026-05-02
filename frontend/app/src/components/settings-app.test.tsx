@@ -25,6 +25,7 @@ const {
   saveProviderCredentialMock,
   clearProviderCredentialMock,
   testProviderCredentialMock,
+  updateProviderIntegrationMock,
   fetchAudioDevicesMock,
   setAudioDeviceMock,
   fetchAPIV1DictionaryMock,
@@ -52,6 +53,8 @@ const {
     vi.fn<
       (provider: string, secret: string) => Promise<{ message?: string }>
     >(),
+  updateProviderIntegrationMock:
+    vi.fn<(provider: string, enabled: boolean) => Promise<{ message?: string }>>(),
   fetchAudioDevicesMock: vi.fn(),
   setAudioDeviceMock: vi.fn<(deviceId: string) => Promise<string>>(),
   fetchAPIV1DictionaryMock: vi.fn(),
@@ -102,6 +105,32 @@ vi.mock("@/lib/speechkit", () => ({
     assistHotkeyBehavior: "push_to_talk",
     voiceAgentHotkeyBehavior: "push_to_talk",
     voiceAgentCloseBehavior: "continue",
+    voiceAgentProfileId: "default",
+    voiceAgentProfiles: [
+      {
+        id: "default",
+        displayName: "Default Voice Agent",
+        description: "Current Voice Mode behavior.",
+      },
+      {
+        id: "brainstorming_companion",
+        displayName: "Brainstorming Companion",
+        description: "Critical, creative ideation partner.",
+        voice: "Aoede",
+      },
+      {
+        id: "humor_companion",
+        displayName: "Humor Companion",
+        description: "Playful conversation profile.",
+        voice: "Puck",
+      },
+      {
+        id: "support_companion",
+        displayName: "Support Companion",
+        description: "Warm, solution-oriented helper.",
+        voice: "Charon",
+      },
+    ],
     voiceAgentRefinementPrompt: "",
     voiceAgentSessionSummary: true,
     autoStartOnLaunch: false,
@@ -169,6 +198,7 @@ vi.mock("@/lib/speechkit", () => ({
   saveProviderCredential: saveProviderCredentialMock,
   clearProviderCredential: clearProviderCredentialMock,
   testProviderCredential: testProviderCredentialMock,
+  updateProviderIntegration: updateProviderIntegrationMock,
   fetchAudioDevices: fetchAudioDevicesMock,
   setAudioDevice: setAudioDeviceMock,
   fetchAPIV1Dictionary: fetchAPIV1DictionaryMock,
@@ -268,6 +298,32 @@ const baseSettings: SpeechKitSettingsState = {
   assistHotkeyBehavior: "push_to_talk",
   voiceAgentHotkeyBehavior: "push_to_talk",
   voiceAgentCloseBehavior: "continue",
+  voiceAgentProfileId: "default",
+  voiceAgentProfiles: [
+    {
+      id: "default",
+      displayName: "Default Voice Agent",
+      description: "Current Voice Mode behavior.",
+    },
+    {
+      id: "brainstorming_companion",
+      displayName: "Brainstorming Companion",
+      description: "Critical, creative ideation partner.",
+      voice: "Aoede",
+    },
+    {
+      id: "humor_companion",
+      displayName: "Humor Companion",
+      description: "Playful conversation profile.",
+      voice: "Puck",
+    },
+    {
+      id: "support_companion",
+      displayName: "Support Companion",
+      description: "Warm, solution-oriented helper.",
+      voice: "Charon",
+    },
+  ],
   voiceAgentRefinementPrompt: "",
   voiceAgentSessionSummary: true,
   autoStartOnLaunch: false,
@@ -342,6 +398,7 @@ describe("SettingsApp", () => {
     saveSettingsStateMock.mockReset();
     fetchOverlayStateMock.mockReset();
     resetOverlayPositionMock.mockReset();
+    updateProviderIntegrationMock.mockReset();
     saveProviderCredentialMock.mockReset();
     clearProviderCredentialMock.mockReset();
     testProviderCredentialMock.mockReset();
@@ -404,6 +461,7 @@ describe("SettingsApp", () => {
     saveProviderCredentialMock.mockResolvedValue({ message: "Saved" });
     clearProviderCredentialMock.mockResolvedValue({ message: "Cleared" });
     testProviderCredentialMock.mockResolvedValue({ message: "Key valid" });
+    updateProviderIntegrationMock.mockResolvedValue({ message: "Saved" });
     setAudioDeviceMock.mockResolvedValue("Selected");
     fetchAPIV1DictionaryMock.mockResolvedValue({
       language: "en",
@@ -765,6 +823,248 @@ describe("SettingsApp", () => {
     );
   });
 
+  it("shows provider integrations in General settings and toggles them", async () => {
+    fetchSettingsStateMock.mockResolvedValue({
+      ...baseSettings,
+      providerIntegrations: {
+        ollama: {
+          provider: "ollama",
+          label: "Ollama",
+          enabled: false,
+          providerKind: "local_provider",
+          integrationKind: "local_provider",
+          credentialRequired: false,
+          available: true,
+          hasStoredSecret: false,
+          source: "none",
+          setupUrl: "https://ollama.com/download",
+          supportedModes: ["voice_agent", "assist", "dictate"],
+        },
+        groq: {
+          provider: "groq",
+          label: "Groq",
+          enabled: false,
+          providerKind: "direct_provider",
+          integrationKind: "direct_api",
+          credentialRequired: true,
+          available: false,
+          hasStoredSecret: false,
+          source: "none",
+          envName: "GROQ_API_KEY",
+          setupUrl: "https://console.groq.com/keys",
+          supportedModes: ["assist", "dictate"],
+        },
+        huggingface: {
+          provider: "huggingface",
+          label: "Hugging Face",
+          enabled: false,
+          providerKind: "cloud_provider",
+          integrationKind: "cloud_gateway",
+          credentialRequired: true,
+          available: false,
+          hasStoredSecret: false,
+          source: "none",
+          envName: "HF_TOKEN",
+          setupUrl: "https://huggingface.co/settings/tokens",
+          supportedModes: ["voice_agent", "assist", "dictate"],
+        },
+        openai: {
+          provider: "openai",
+          label: "OpenAI",
+          enabled: false,
+          providerKind: "direct_provider",
+          integrationKind: "direct_api",
+          credentialRequired: true,
+          available: false,
+          hasStoredSecret: false,
+          source: "none",
+          envName: "OPENAI_API_KEY",
+          setupUrl: "https://platform.openai.com/api-keys",
+          supportedModes: ["assist", "dictate"],
+        },
+        google: {
+          provider: "google",
+          label: "Gemini / Google AI",
+          enabled: true,
+          providerKind: "direct_provider",
+          integrationKind: "direct_api",
+          credentialRequired: true,
+          available: false,
+          hasStoredSecret: false,
+          source: "none",
+          envName: "GOOGLE_AI_API_KEY",
+          setupUrl: "https://aistudio.google.com/apikey",
+          supportedModes: ["voice_agent", "assist", "dictate"],
+        },
+        openrouter: {
+          provider: "openrouter",
+          label: "OpenRouter",
+          enabled: false,
+          providerKind: "cloud_provider",
+          integrationKind: "cloud_gateway",
+          credentialRequired: true,
+          available: false,
+          hasStoredSecret: false,
+          source: "none",
+          envName: "OPENROUTER_API_KEY",
+          setupUrl: "https://openrouter.ai/settings/keys",
+          supportedModes: ["dictate", "assist", "voice_agent"],
+        },
+      },
+    });
+
+    render(<SettingsApp />);
+
+    expect(await screen.findByText("Integrations")).toBeInTheDocument();
+    const cards = screen.getAllByTestId("settings-integration-card");
+    expect(
+      cards.map((card) =>
+        within(card).getByTestId("provider-brand-name").textContent,
+      ),
+    ).toEqual([
+      "Hugging Face",
+      "OpenRouter",
+      "OpenAI",
+      "Gemini / Google AI",
+      "Groq",
+      "Ollama",
+    ]);
+    expect(screen.getAllByText("Cloud Router / Gateway").length).toBeGreaterThan(1);
+    expect(
+      within(cards[3])
+        .getAllByTestId("integration-mode-tag")
+        .map((tag) => tag.textContent),
+    ).toEqual(["Dictation", "Assist", "Voice Agent"]);
+    expect(within(cards[1]).getByAltText("OpenRouter logo")).toHaveAttribute(
+      "src",
+      "/integrations/openrouter.svg",
+    );
+    expect(
+      within(cards[1])
+        .getAllByTestId("integration-mode-tag")
+        .map((tag) => tag.textContent),
+    ).toEqual(["Dictation", "Assist", "Voice Agent"]);
+    const openRouterLink = within(cards[1]).getByRole("link", {
+      name: /create api key/i,
+    });
+    expect(openRouterLink).toHaveAttribute(
+      "href",
+      "https://openrouter.ai/settings/keys",
+    );
+    expect(openRouterLink).toHaveAttribute(
+      "title",
+      "https://openrouter.ai/settings/keys",
+    );
+    expect(
+      within(cards[1]).getByText("openrouter.ai/settings/keys"),
+    ).toBeInTheDocument();
+
+    fireEvent.click(
+      screen.getByRole("switch", { name: "Enable OpenRouter integration" }),
+    );
+
+    await waitFor(() =>
+      expect(updateProviderIntegrationMock).toHaveBeenCalledWith(
+        "openrouter",
+        true,
+      ),
+    );
+  });
+
+  it("hides disabled integration profiles but shows enabled missing-key profiles", async () => {
+    fetchSettingsStateMock.mockResolvedValue({
+      ...baseSettings,
+      profiles: [
+        {
+          id: "stt.local.whispercpp",
+          modality: "stt",
+          name: "Whisper.cpp (Local Built-in)",
+          providerKind: "local_built_in",
+          executionMode: "local",
+        },
+        {
+          id: "stt.openai.whisper-1",
+          modality: "stt",
+          name: "Whisper-1 (OpenAI)",
+          providerKind: "direct_provider",
+          executionMode: "openai_api",
+        },
+        {
+          id: "stt.google.chirp-3",
+          modality: "stt",
+          name: "Chirp 3 (Google)",
+          providerKind: "direct_provider",
+          executionMode: "google_api",
+        },
+      ],
+      activeProfiles: { stt: "stt.local.whispercpp" },
+      modelSelections: {
+        ...baseSettings.modelSelections,
+        dictate: {
+          primaryProfileId: "stt.local.whispercpp",
+          fallbackProfileId: "",
+        },
+      },
+      providerIntegrations: {
+        openai: {
+          provider: "openai",
+          label: "OpenAI",
+          enabled: false,
+          providerKind: "direct_provider",
+          integrationKind: "direct_api",
+          credentialRequired: true,
+          available: true,
+          hasStoredSecret: true,
+          source: "user",
+          envName: "OPENAI_API_KEY",
+          setupUrl: "https://platform.openai.com/api-keys",
+          supportedModes: ["dictate", "assist"],
+        },
+        google: {
+          provider: "google",
+          label: "Gemini / Google AI",
+          enabled: true,
+          providerKind: "direct_provider",
+          integrationKind: "direct_api",
+          credentialRequired: true,
+          available: false,
+          hasStoredSecret: false,
+          source: "none",
+          envName: "GOOGLE_AI_API_KEY",
+          setupUrl: "https://aistudio.google.com/apikey",
+          supportedModes: ["dictate", "assist", "voice_agent"],
+        },
+      },
+      providerCredentials: {
+        openai: {
+          provider: "openai",
+          label: "OpenAI",
+          envName: "OPENAI_API_KEY",
+          available: true,
+          hasStoredSecret: true,
+          source: "user",
+        },
+        google: {
+          provider: "google",
+          label: "Gemini / Google AI",
+          envName: "GOOGLE_AI_API_KEY",
+          available: false,
+          hasStoredSecret: false,
+          source: "none",
+        },
+      },
+    });
+
+    render(<SettingsApp initialTab="stt" />);
+
+    expect(
+      (await screen.findAllByText("Whisper.cpp (Local Built-in)")).length,
+    ).toBeGreaterThan(0);
+    expect(screen.queryByText("Whisper-1 (OpenAI)")).not.toBeInTheDocument();
+    expect(screen.getAllByText("Chirp 3 (Google)").length).toBeGreaterThan(0);
+    expect(screen.getByText("Add Gemini / Google AI key")).toBeInTheDocument();
+  });
+
   it("shows compact usage guidance on each mode settings page", async () => {
     fetchSettingsStateMock.mockResolvedValue(baseSettings);
 
@@ -928,6 +1228,29 @@ describe("SettingsApp", () => {
       expect(saveSettingsStateMock).toHaveBeenCalledWith(
         expect.objectContaining({
           voiceAgentRefinementPrompt: "Keep answers concise and warm.",
+        }),
+      ),
+    );
+  });
+
+  it("saves the selected voice agent profile", async () => {
+    fetchSettingsStateMock.mockResolvedValue(baseSettings);
+
+    render(<SettingsApp initialTab="realtime_voice" />);
+
+    const agentProfile = await screen.findByLabelText(
+      "Voice Agent agent profile",
+    );
+    expect(agentProfile).toHaveValue("default");
+
+    fireEvent.change(agentProfile, {
+      target: { value: "brainstorming_companion" },
+    });
+
+    await waitFor(() =>
+      expect(saveSettingsStateMock).toHaveBeenCalledWith(
+        expect.objectContaining({
+          voiceAgentProfileId: "brainstorming_companion",
         }),
       ),
     );

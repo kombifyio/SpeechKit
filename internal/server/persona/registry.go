@@ -339,10 +339,14 @@ func (r *Registry) Resolve(personaID, roleID, sequenceID string, stepIndex int) 
 
 	var seq *Sequence
 	var currentStep *SequenceStep
-	if strings.TrimSpace(sequenceID) != "" {
-		seq, ok = r.sequences[sequenceID]
+	effectiveSequenceID := strings.TrimSpace(sequenceID)
+	if effectiveSequenceID == "" {
+		effectiveSequenceID = strings.TrimSpace(persona.DefaultSequence)
+	}
+	if effectiveSequenceID != "" {
+		seq, ok = r.sequences[effectiveSequenceID]
 		if !ok {
-			return ResolvedSession{}, fmt.Errorf("%w: %q", ErrSequenceNotFound, sequenceID)
+			return ResolvedSession{}, fmt.Errorf("%w: %q", ErrSequenceNotFound, effectiveSequenceID)
 		}
 		if stepIndex < 0 || stepIndex >= len(seq.Steps) {
 			return ResolvedSession{}, fmt.Errorf("%w: index %d out of range for sequence %q (%d steps)", ErrStepNotFound, stepIndex, sequenceID, len(seq.Steps))
@@ -362,6 +366,16 @@ func (r *Registry) Resolve(personaID, roleID, sequenceID string, stepIndex int) 
 	}
 	if seq != nil {
 		result.SequenceID = seq.ID
+		result.SequenceCompletion = seq.Completion
+		result.SequenceMaxTurns = seq.MaxTurns
+		result.StepIndex = stepIndex
+		result.StepCount = len(seq.Steps)
+		if currentStep != nil {
+			result.StepID = currentStep.ID
+			result.StepInstruction = currentStep.Instruction
+			result.StepExitCriteria = currentStep.ExitCriteria
+			result.StepMaxTurns = currentStep.MaxTurns
+		}
 	}
 
 	if role != nil {

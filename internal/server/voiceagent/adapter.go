@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"log/slog"
+	"strings"
 	"sync"
 	"time"
 
@@ -40,6 +41,7 @@ type Adapter struct {
 	writeMu sync.Mutex
 	closed  atomicBool
 	idle    *idleWatchdog
+	flow    *SequenceRunner
 }
 
 // Run blocks until the session ends. The first frame from the client MUST be
@@ -74,6 +76,14 @@ func (a *Adapter) Run(parent context.Context) {
 	}()
 
 	a.sendJSON(StateFrame{Type: MsgState, State: "listening"})
+	if stepResolver, ok := a.Persona.(StepResolver); ok {
+		a.flow = NewSequenceRunner(start, cfg, stepResolver)
+	} else {
+		a.flow = NewSequenceRunner(start, cfg, nil)
+	}
+	if entered := a.flow.InitialEnteredFrame(); entered != nil {
+		a.sendJSON(*entered)
+	}
 
 	a.idle = newIdleWatchdog(a.IdleTimeout)
 	defer a.idle.Stop()
@@ -165,17 +175,39 @@ func (a *Adapter) readPump(ctx context.Context, done chan<- struct{}) {
 						slog.Warn("voiceagent: text upstream failed", "err", err)
 					}
 				}
+			case MsgToolResponse:
+				var tr ToolResponseFrame
+				if err := json.Unmarshal(data, &tr); err != nil {
+					a.sendError("invalid_frame", err.Error())
+					continue
+				}
+				responder, ok := a.Provider.(LiveToolResponder)
+				if !ok {
+					a.sendError("tool_response_unsupported", "provider does not accept tool responses")
+					continue
+				}
+				if err := responder.SendToolResponse(tr); err != nil {
+					slog.Warn("voiceagent: tool response upstream failed", "err", err)
+					a.sendError("tool_response_failed", err.Error())
+				}
 			case MsgPing:
 				a.sendJSON(PongFrame{Type: MsgPong})
 			case MsgStop:
 				a.sendJSON(SessionEndFrame{Type: MsgSessionEnd, Reason: "client"})
 				return
 			case MsgAdvanceStep:
-				// M5 will hook the persona resolver here to update the
-				// live system prompt with the next sequence step. For
-				// M4 the frame is accepted and echoed as a
-				// sequence_step transition so clients can prototype UIs.
-				a.sendJSON(SequenceStepFrame{Type: MsgSequenceStep, StepID: "", Status: "completed"})
+				var advance AdvanceStepFrame
+				if err := json.Unmarshal(data, &advance); err != nil {
+					a.sendError("invalid_frame", err.Error())
+					continue
+				}
+				if advance.Reason == "" {
+					advance.Reason = "client"
+				}
+				if err := a.advanceWorkflowStep(ctx, advance); err != nil {
+					slog.Warn("voiceagent: advance_step failed", "err", err)
+					a.sendError("advance_step_failed", err.Error())
+				}
 			default:
 				// Unknown frames are tolerated (forward-compat); we log
 				// and ignore so a newer client doesn't break older servers.
@@ -212,9 +244,15 @@ func (a *Adapter) writePump(ctx context.Context, done chan<- struct{}) {
 		}
 		if msg.InputTranscript != "" {
 			a.sendJSON(TranscriptFrame{Type: MsgInputTranscript, Text: msg.InputTranscript, Done: msg.InputTranscriptDone})
+			if msg.InputTranscriptDone {
+				a.recordUserTurn(ctx)
+			}
 		}
 		if msg.OutputTranscript != "" {
 			a.sendJSON(TranscriptFrame{Type: MsgOutputTranscript, Text: msg.OutputTranscript, Done: msg.OutputTranscriptDone})
+		}
+		for _, call := range msg.ToolCalls {
+			a.sendJSON(ToolCallFrame{Type: MsgToolCall, ID: call.ID, Name: call.Name, Args: call.Args})
 		}
 		if msg.Interrupted {
 			a.sendJSON(InterruptedFrame{Type: MsgInterrupted})
@@ -224,6 +262,80 @@ func (a *Adapter) writePump(ctx context.Context, done chan<- struct{}) {
 			return
 		}
 	}
+}
+
+func (a *Adapter) recordUserTurn(ctx context.Context) {
+	if a.flow == nil || !a.flow.RecordUserTurn() {
+		return
+	}
+	if err := a.advanceWorkflowStep(ctx, AdvanceStepFrame{Type: MsgAdvanceStep, Reason: "max_turns"}); err != nil {
+		slog.Warn("voiceagent: max-turn workflow advance failed", "err", err)
+		a.sendError("advance_step_failed", err.Error())
+	}
+}
+
+func (a *Adapter) advanceWorkflowStep(ctx context.Context, frame AdvanceStepFrame) error {
+	if a.flow == nil || !a.flow.Active() {
+		return nil
+	}
+	transition, err := a.flow.Advance(ctx, frame)
+	if err != nil {
+		return err
+	}
+	if transition.Completed != nil {
+		a.sendJSON(*transition.Completed)
+	}
+	if transition.SequenceCompleted {
+		current := a.flow.Current()
+		a.sendJSON(sequenceCompletedFrame(current, frame.Reason))
+		return nil
+	}
+	if transition.Entered != nil {
+		if err := a.applyInstructionUpdate(ctx, transition.NextConfig); err != nil {
+			slog.Warn("voiceagent: workflow instruction update failed", "err", err)
+			a.sendError("instruction_update_failed", err.Error())
+		}
+		a.sendJSON(*transition.Entered)
+	}
+	return nil
+}
+
+func (a *Adapter) applyInstructionUpdate(ctx context.Context, cfg LiveConfigFrame) error {
+	if updater, ok := a.Provider.(LiveInstructionUpdater); ok {
+		return updater.UpdateInstructions(ctx, cfg)
+	}
+	text := RenderHostInstructionUpdate(cfg)
+	if text == "" {
+		return nil
+	}
+	return a.Provider.SendText(text)
+}
+
+func RenderHostInstructionUpdate(cfg LiveConfigFrame) string {
+	var b strings.Builder
+	if strings.TrimSpace(cfg.StepID) == "" && strings.TrimSpace(cfg.SystemPrompt) == "" {
+		return ""
+	}
+	b.WriteString("Host instruction update: the active Voice Agent workflow step has changed.")
+	if cfg.SequenceID != "" || cfg.StepID != "" {
+		b.WriteString("\nSequence: ")
+		b.WriteString(cfg.SequenceID)
+		b.WriteString("\nStep: ")
+		b.WriteString(cfg.StepID)
+	}
+	if strings.TrimSpace(cfg.StepInstruction) != "" {
+		b.WriteString("\nStep instruction:\n")
+		b.WriteString(strings.TrimSpace(cfg.StepInstruction))
+	}
+	if strings.TrimSpace(cfg.StepExitCriteria) != "" {
+		b.WriteString("\nExit criteria:\n")
+		b.WriteString(strings.TrimSpace(cfg.StepExitCriteria))
+	}
+	if strings.TrimSpace(cfg.SystemPrompt) != "" {
+		b.WriteString("\nComposed behavior prompt:\n")
+		b.WriteString(strings.TrimSpace(cfg.SystemPrompt))
+	}
+	return b.String()
 }
 
 // ── helpers ─────────────────────────────────────────────────────────────────

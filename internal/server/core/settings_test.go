@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -144,6 +145,78 @@ func TestRegisterServerSettings_PatchSavesProviderMatrixWithoutLeakingCredential
 		if !strings.Contains(get.Body.String(), want) {
 			t.Fatalf("GET response should contain %s, body=%s", want, get.Body.String())
 		}
+	}
+}
+
+func TestRegisterServerSettings_PatchGeneratesWriteOnlyServerToken(t *testing.T) {
+	t.Setenv(config.ServerSettingsWriteEnv, "true")
+	t.Setenv(config.ServerSettingsPathEnv, filepath.Join(t.TempDir(), "server-settings.json"))
+	t.Setenv("SPEECHKIT_SERVER_TOKEN", "")
+
+	app := &App{
+		Cfg:     &config.Config{},
+		Mux:     http.NewServeMux(),
+		Health:  NewHealthRegistry(),
+		Version: "test-version",
+	}
+	app.Cfg.Server.AuthMode = "none"
+	app.Cfg.Server.BearerTokenEnv = "SPEECHKIT_SERVER_TOKEN"
+
+	registerServerSettings(app)
+
+	payload := []byte(`{
+		"onboarding_complete": true,
+		"server_auth": {
+			"mode": "managed_bearer",
+			"bearer_token_env": "SPEECHKIT_SERVER_TOKEN",
+			"generate_token": true
+		}
+	}`)
+	rec := httptest.NewRecorder()
+	app.Mux.ServeHTTP(rec, httptest.NewRequest(http.MethodPatch, "/v1/server/settings", bytes.NewReader(payload)))
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("PATCH /v1/server/settings = %d body=%s", rec.Code, rec.Body.String())
+	}
+	var body struct {
+		GeneratedToken struct {
+			Token    string `json:"token"`
+			Env      string `json:"env"`
+			AuthMode string `json:"auth_mode"`
+		} `json:"generated_token"`
+		Desired config.ServerModelSettings `json:"desired"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("settings response JSON: %v", err)
+	}
+	if body.GeneratedToken.Token == "" {
+		t.Fatal("expected one-time generated token in response")
+	}
+	if body.GeneratedToken.Env != "SPEECHKIT_SERVER_TOKEN" || body.GeneratedToken.AuthMode != "bearer" {
+		t.Fatalf("generated token metadata = env %q auth %q", body.GeneratedToken.Env, body.GeneratedToken.AuthMode)
+	}
+	if strings.Contains(rec.Body.String(), `"token_value"`) {
+		t.Fatal("PATCH response must not expose server auth token_value")
+	}
+	if body.Desired.ServerAuth.TokenValue != "" || body.Desired.ServerAuth.GenerateToken != nil {
+		t.Fatalf("desired settings should hide write-only auth fields: %+v", body.Desired.ServerAuth)
+	}
+	if got := os.Getenv("SPEECHKIT_SERVER_TOKEN"); got != body.GeneratedToken.Token {
+		t.Fatalf("runtime bearer token env = %q, want generated token", got)
+	}
+	if app.Cfg.Server.AuthMode != "bearer" {
+		t.Fatalf("runtime auth mode = %q, want bearer", app.Cfg.Server.AuthMode)
+	}
+
+	stored, ok, err := config.LoadServerModelSettings(config.ServerSettingsPath(app.Cfg))
+	if err != nil {
+		t.Fatalf("LoadServerModelSettings: %v", err)
+	}
+	if !ok {
+		t.Fatal("expected saved settings")
+	}
+	if stored.ServerAuth.TokenValue != "" || stored.ServerAuth.GenerateToken != nil {
+		t.Fatalf("stored settings should hide write-only auth fields: %+v", stored.ServerAuth)
 	}
 }
 

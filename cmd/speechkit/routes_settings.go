@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"strings"
 	"time"
@@ -20,7 +21,7 @@ var errHFUnavailableBuild = errors.New("hugging face is not available in this bu
 
 func registerSettingsRoutes(mux *http.ServeMux, cfgPath string, cfg *config.Config, state *appState, sttRouter *router.Router, feedbackStore store.Store) {
 	registerSettingsCoreRoutes(mux, cfgPath, cfg, state, sttRouter, feedbackStore)
-	registerSettingsCredentialRoutes(mux, cfg, state, sttRouter)
+	registerSettingsCredentialRoutes(mux, cfgPath, cfg, state, sttRouter)
 	registerAudioDeviceRoutes(mux, cfgPath, cfg, state)
 	registerModeRoutes(mux, cfgPath, cfg, state)
 	registerModelRoutes(mux, cfgPath, cfg, state, sttRouter)
@@ -49,6 +50,7 @@ func saveSettings(ctx context.Context, req *http.Request, cfgPath string, cfg *c
 	oldDictateHotkey := cfg.General.DictateHotkey
 	oldAssistHotkey := cfg.General.AssistHotkey
 	oldVoiceAgentHotkey := cfg.General.VoiceAgentHotkey
+	oldVoiceAgentProfileID := cfg.VoiceAgent.AgentProfileID
 	oldAudioDeviceID := cfg.Audio.DeviceID
 
 	managedHFEnabled := config.ApplyManagedIntegrationDefaults(&nextCfg)
@@ -73,6 +75,7 @@ func saveSettings(ctx context.Context, req *http.Request, cfgPath string, cfg *c
 	}
 
 	*cfg = nextCfg
+	voiceAgentProfileChanged := oldVoiceAgentProfileID != cfg.VoiceAgent.AgentProfileID
 
 	if err := config.Save(cfgPath, cfg); err != nil {
 		return fmt.Sprintf(msgSaveFailed, err)
@@ -105,6 +108,12 @@ func saveSettings(ctx context.Context, req *http.Request, cfgPath string, cfg *c
 		form.OverlayFreeY,
 		form.OverlayMonitorPositions,
 	)
+	if voiceAgentProfileChanged {
+		resetInactiveVoiceAgentSession(state)
+		if err := refreshServerDelegates(cfg, state); err != nil {
+			slog.Warn("refresh server delegates after voice agent profile change", "err", err)
+		}
+	}
 	state.applyDesktopSettings(
 		oldDictateEnabled,
 		oldAssistEnabled,

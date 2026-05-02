@@ -824,7 +824,7 @@ func main() {
 		QueueSize: 4,
 		Runner: speechkit.NewTranscriptionRunner(
 			routerTranscriber{
-				router:          dictationTranscriber(r, serverDel),
+				router:          newRuntimeDictationTranscriber(r, state),
 				state:           state,
 				dictionaryStore: userDictionaryStoreFromFeedbackStore(feedbackStore),
 			},

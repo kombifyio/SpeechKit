@@ -98,6 +98,18 @@ func applySTTProfile(ctx context.Context, cfgPath string, cfg *config.Config, st
 			targetRouter.PreferCloud("google", stt.NewGoogleSTTProvider(apiKey, profile.ModelID))
 			syncConfiguredLocalProvider(ctx, cfg, state, targetRouter)
 		}
+	case models.ExecutionModeOpenRouter:
+		apiKey := config.ResolveSecret(cfg.Providers.OpenRouter.APIKeyEnv)
+		if apiKey == "" {
+			return errors.New("openrouter api key not configured")
+		}
+		cfg.Routing.Strategy = "cloud-only"
+		cfg.Providers.OpenRouter.Enabled = true
+		cfg.Providers.OpenRouter.STTModel = profile.ModelID
+		if targetRouter != nil {
+			targetRouter.PreferCloud("openrouter", stt.NewOpenRouterSTTProvider(apiKey, profile.ModelID))
+			syncConfiguredLocalProvider(ctx, cfg, state, targetRouter)
+		}
 	case models.ExecutionModeOllama:
 		cfg.Routing.Strategy = "cloud-only"
 		cfg.Providers.Ollama.Enabled = true
@@ -366,6 +378,16 @@ func applyRealtimeVoiceProfile(ctx context.Context, cfgPath string, cfg *config.
 		}
 		cfg.HuggingFace.Enabled = true
 		cfg.HuggingFace.AgentModel = profile.ModelID
+		cfg.VoiceAgent.Enabled = true
+		cfg.VoiceAgent.Model = profile.ModelID
+		cfg.VoiceAgent.PipelineFallback = true
+	case models.ExecutionModeOpenRouter:
+		apiKey := config.ResolveSecret(cfg.Providers.OpenRouter.APIKeyEnv)
+		if apiKey == "" {
+			return errors.New("openrouter api key not configured")
+		}
+		cfg.Providers.OpenRouter.Enabled = true
+		cfg.Providers.OpenRouter.AgentModel = profile.ModelID
 		cfg.VoiceAgent.Enabled = true
 		cfg.VoiceAgent.Model = profile.ModelID
 		cfg.VoiceAgent.PipelineFallback = true

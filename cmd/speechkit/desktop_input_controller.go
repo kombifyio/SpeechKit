@@ -10,6 +10,8 @@ import (
 	"github.com/kombifyio/SpeechKit/internal/hotkey"
 	"github.com/kombifyio/SpeechKit/internal/router"
 	"github.com/kombifyio/SpeechKit/internal/voiceagent"
+	"github.com/kombifyio/SpeechKit/internal/voiceagentprofile"
+	"github.com/kombifyio/SpeechKit/internal/voicebehavior"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit"
 )
 
@@ -527,6 +529,16 @@ func (c desktopInputController) activateVoiceAgent(ctx context.Context) {
 				},
 			}
 		}
+		var workflow *voiceagent.WorkflowConfig
+		voice, frameworkPrompt, workflow = applyVoiceAgentProfileSelection(
+			voiceAgentProfileID(c.voiceAgentConfig),
+			voiceAgentSequenceID(c.voiceAgentConfig),
+			voice,
+			frameworkPrompt,
+		)
+		if session.ProviderName() == "server-voiceagent" {
+			workflow = nil
+		}
 
 		// Start streaming audio output before connecting.
 		if c.state != nil {
@@ -543,6 +555,7 @@ func (c desktopInputController) activateVoiceAgent(ctx context.Context) {
 			Instruction:      frameworkPrompt,
 			VocabularyHint:   vocabularyHint,
 			Policies:         policies,
+			Workflow:         workflow,
 		}, idleCfg); err != nil {
 			c.log(fmt.Sprintf("Voice Agent: start failed: %v", err), "error")
 			if c.state != nil {
@@ -588,6 +601,72 @@ func (c desktopInputController) activateVoiceAgent(ctx context.Context) {
 			}
 		}
 	}()
+}
+
+func voiceAgentProfileID(cfg *config.VoiceAgentConfig) string {
+	if cfg == nil {
+		return voiceagentprofile.DefaultID
+	}
+	return cfg.AgentProfileID
+}
+
+func voiceAgentSequenceID(cfg *config.VoiceAgentConfig) string {
+	if cfg == nil {
+		return ""
+	}
+	return strings.TrimSpace(cfg.AgentSequenceID)
+}
+
+func applyVoiceAgentProfileSelection(profileID, sequenceID, voice, frameworkPrompt string) (string, string, *voiceagent.WorkflowConfig) {
+	profileID = voiceagentprofile.NormalizeID(profileID)
+	profile, ok := voiceagentprofile.Resolve(profileID)
+	if !ok {
+		return voice, frameworkPrompt, nil
+	}
+	if profileID != voiceagentprofile.DefaultID {
+		if selectedVoice := strings.TrimSpace(profile.Voice); selectedVoice != "" {
+			voice = selectedVoice
+		}
+		if selectedPrompt := strings.TrimSpace(profile.FrameworkPrompt); selectedPrompt != "" {
+			frameworkPrompt = selectedPrompt
+		}
+	}
+	if sequenceID = strings.TrimSpace(sequenceID); sequenceID == "" {
+		sequenceID = strings.TrimSpace(profile.DefaultSequenceID)
+	}
+	workflow := builtInWorkflowConfig(profileID, sequenceID, frameworkPrompt)
+	return voice, frameworkPrompt, workflow
+}
+
+func builtInWorkflowConfig(profileID, sequenceID, basePrompt string) *voiceagent.WorkflowConfig {
+	if strings.TrimSpace(sequenceID) == "" {
+		return nil
+	}
+	catalog := voicebehavior.BuiltInCatalog()
+	if _, err := catalog.Resolve(profileID, "", sequenceID, 0); err != nil {
+		return nil
+	}
+	sequence, ok := catalog.Sequence(sequenceID)
+	if !ok || len(sequence.Steps) == 0 {
+		return nil
+	}
+	workflow := &voiceagent.WorkflowConfig{
+		SequenceID: sequence.ID,
+		Completion: sequence.Completion,
+		MaxTurns:   sequence.MaxTurns,
+		BasePrompt: strings.TrimSpace(basePrompt),
+		Steps:      make([]voiceagent.WorkflowStep, 0, len(sequence.Steps)),
+	}
+	for _, step := range sequence.Steps {
+		workflow.Steps = append(workflow.Steps, voiceagent.WorkflowStep{
+			ID:           step.ID,
+			Instruction:  step.Instruction,
+			ExitCriteria: step.ExitCriteria,
+			RequireTools: append([]string(nil), step.RequireTools...),
+			MaxTurns:     step.MaxTurns,
+		})
+	}
+	return workflow
 }
 
 func (c desktopInputController) deactivateVoiceAgent(ctx context.Context, keepPrompterVisible bool) {
@@ -694,6 +773,9 @@ func (c desktopInputController) captureStartBlockedReason(ctx context.Context, m
 	if r == nil && c.installState == nil {
 		return ""
 	}
+	if c.serverDictationReady() {
+		return ""
+	}
 	strategy := router.StrategyDynamic
 	if c.cfg != nil && c.cfg.Routing.Strategy != "" {
 		strategy = router.Strategy(c.cfg.Routing.Strategy)
@@ -736,11 +818,12 @@ func (c desktopInputController) assistStartBlockedReason() string {
 	}
 	c.state.mu.Lock()
 	assistPipeline := c.state.assistPipeline
+	serverAssistReady := c.state.serverDelegates.hasAssist()
 	c.state.mu.Unlock()
-	if assistPipeline != nil {
+	if serverAssistReady || assistPipeline.HasDirectReplyModel() {
 		return ""
 	}
-	return "Assist can't start because no Assist model is configured. Open Settings > Models and select an Assist model."
+	return "Assist can't start because no ready Assist model is available. Open Settings > Assist Mode and download a local model or choose a provider integration."
 }
 
 func (c desktopInputController) voiceAgentStartBlockedReason() string { //nolint:contextcheck // realtime session readiness is independent from a request lifecycle
@@ -809,6 +892,14 @@ func (c desktopInputController) cloudSTTBlockedReason(mode string) string {
 		return fmt.Sprintf("%s can't start because no speech provider is configured. Open Settings > STT.", modeDisplayName(mode))
 	}
 	return fmt.Sprintf("%s can't start because no cloud speech provider is configured. Open Settings > Provider.", modeDisplayName(mode))
+}
+
+func (c desktopInputController) serverDictationReady() bool {
+	if c.state == nil {
+		return false
+	}
+	delegates := currentServerDelegates(c.state)
+	return delegates.hasDictation()
 }
 
 func (c desktopInputController) localSTTReady(ctx context.Context) bool {

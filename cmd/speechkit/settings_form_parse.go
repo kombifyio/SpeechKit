@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/kombifyio/SpeechKit/internal/config"
+	"github.com/kombifyio/SpeechKit/internal/voiceagentprofile"
 )
 
 // settingsFormData holds parsed and validated form values from the settings page.
@@ -20,6 +21,7 @@ type settingsFormData struct {
 	AssistHotkeyBehavior       string
 	VoiceAgentHotkeyBehavior   string
 	VoiceAgentCloseBehavior    string
+	VoiceAgentProfileID        string
 	VoiceAgentRefinementPrompt string
 	VoiceAgentSessionSummary   bool
 	AutoStartOnLaunch          bool
@@ -167,6 +169,10 @@ func parseVoiceAgentSettingsForm(req *http.Request, cfg *config.Config, f *setti
 		req.FormValue("voice_agent_close_behavior"),
 		config.NormalizeVoiceAgentCloseBehavior(cfg.VoiceAgent.CloseBehavior, config.VoiceAgentCloseBehaviorContinue),
 	)
+	f.VoiceAgentProfileID = voiceagentprofile.NormalizeID(trimmedFormValue(req, "voice_agent_profile_id"))
+	if !postFormIncludes(req, "voice_agent_profile_id") {
+		f.VoiceAgentProfileID = voiceagentprofile.NormalizeID(cfg.VoiceAgent.AgentProfileID)
+	}
 	f.VoiceAgentRefinementPrompt = normalizeVoiceAgentPrompt(req.FormValue("voice_agent_refinement_prompt"))
 	if !postFormIncludes(req, "voice_agent_refinement_prompt") {
 		f.VoiceAgentRefinementPrompt = strings.TrimSpace(cfg.VoiceAgent.RefinementPrompt)
@@ -373,6 +379,7 @@ func buildNextConfig(form settingsFormData, cfg *config.Config) config.Config {
 		FallbackProfileID: form.VoiceFallbackProfileID,
 	})
 	nextCfg.VoiceAgent.RefinementPrompt = form.VoiceAgentRefinementPrompt
+	nextCfg.VoiceAgent.AgentProfileID = voiceagentprofile.NormalizeID(form.VoiceAgentProfileID)
 	nextCfg.VoiceAgent.EnableSessionSummary = form.VoiceAgentSessionSummary
 	nextCfg.VoiceAgent.CloseBehavior = config.NormalizeVoiceAgentCloseBehavior(
 		form.VoiceAgentCloseBehavior,

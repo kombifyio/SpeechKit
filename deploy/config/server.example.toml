@@ -125,6 +125,7 @@ description  = "Generic, polite, concise assistant with no specific domain focus
 voice        = "Kore"
 locale       = "en"
 default_role = "default-role"
+default_sequence = ""
 tags         = ["generic"]
 
 [[personas]]
@@ -134,6 +135,7 @@ description  = "Guides a structured discovery conversation: greet, explore needs
 voice        = "Aoede"
 locale       = "en"
 default_role = "discovery-role"
+default_sequence = "discovery-call"
 tags         = ["sales", "structured"]
 
 [[personas]]
@@ -143,6 +145,7 @@ description  = "Identifies the caller, triages their issue, resolves or escalate
 voice        = "Charon"
 locale       = "en"
 default_role = "support-role"
+default_sequence = "support-triage"
 tags         = ["support", "structured"]
 
 # ── Roles ────────────────────────────────────────────────────────────────────

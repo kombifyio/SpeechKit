@@ -6,6 +6,7 @@ import (
 	"log/slog"
 
 	"github.com/kombifyio/SpeechKit/internal/config"
+	"github.com/kombifyio/SpeechKit/internal/voicebehavior"
 )
 
 // LoadSeeds populates the registry from the TOML [[personas]], [[roles]],
@@ -20,18 +21,20 @@ func LoadSeeds(reg *Registry, cfg *config.Config) []string {
 		return nil
 	}
 	var notes []string
+	notes = append(notes, loadBuiltInVoiceAgentProfiles(reg)...)
 
 	for _, raw := range cfg.Personas {
 		p := Persona{
-			ID:          raw.ID,
-			DisplayName: raw.DisplayName,
-			Description: raw.Description,
-			Voice:       raw.Voice,
-			Locale:      raw.Locale,
-			DefaultRole: raw.DefaultRole,
-			Tags:        append([]string(nil), raw.Tags...),
-			Metadata:    cloneStringMap(raw.Metadata),
-			Source:      "toml",
+			ID:              raw.ID,
+			DisplayName:     raw.DisplayName,
+			Description:     raw.Description,
+			Voice:           raw.Voice,
+			Locale:          raw.Locale,
+			DefaultRole:     raw.DefaultRole,
+			DefaultSequence: raw.DefaultSequence,
+			Tags:            append([]string(nil), raw.Tags...),
+			Metadata:        cloneStringMap(raw.Metadata),
+			Source:          "toml",
 		}
 		if _, err := reg.UpsertPersona(p); err != nil {
 			slog.Warn("persona: seed invalid", "id", raw.ID, "err", err)
@@ -104,6 +107,80 @@ func LoadSeeds(reg *Registry, cfg *config.Config) []string {
 		notes = append(notes, "sequence seeded: "+raw.ID)
 	}
 
+	return notes
+}
+
+func loadBuiltInVoiceAgentProfiles(reg *Registry) []string {
+	var notes []string
+	catalog := voicebehavior.BuiltInCatalog()
+	for _, profile := range catalog.Personas {
+		p := Persona{
+			ID:              profile.ID,
+			DisplayName:     profile.DisplayName,
+			Description:     profile.Description,
+			Voice:           profile.Voice,
+			DefaultRole:     profile.DefaultRole,
+			DefaultSequence: profile.DefaultSequence,
+			Tags:            append([]string(nil), profile.Tags...),
+			Metadata: map[string]string{
+				"builtin": "true",
+			},
+			Source: "toml",
+		}
+		if _, err := reg.UpsertPersona(p); err != nil {
+			slog.Warn("persona: built-in profile seed invalid", "id", profile.ID, "err", err)
+			notes = append(notes, "built-in persona skipped: "+profile.ID+" ("+err.Error()+")")
+			continue
+		}
+		notes = append(notes, "built-in persona seeded: "+profile.ID)
+
+		if profile.DefaultRole == "" {
+			continue
+		}
+		role, ok := catalog.Role(profile.DefaultRole)
+		if !ok || role.SystemPrompt == "" {
+			continue
+		}
+		r := Role{
+			ID:           role.ID,
+			DisplayName:  profile.DisplayName,
+			SystemPrompt: role.SystemPrompt,
+			Source:       "toml",
+		}
+		if _, err := reg.UpsertRole(r); err != nil {
+			slog.Warn("persona: built-in profile role seed invalid", "id", role.ID, "err", err)
+			notes = append(notes, "built-in role skipped: "+role.ID+" ("+err.Error()+")")
+			continue
+		}
+		notes = append(notes, "built-in role seeded: "+role.ID)
+	}
+	for _, raw := range catalog.Sequences {
+		steps := make([]SequenceStep, 0, len(raw.Steps))
+		for _, step := range raw.Steps {
+			steps = append(steps, SequenceStep{
+				ID:           step.ID,
+				Instruction:  step.Instruction,
+				ExitCriteria: step.ExitCriteria,
+				RequireTools: append([]string(nil), step.RequireTools...),
+				MaxTurns:     step.MaxTurns,
+			})
+		}
+		seq := Sequence{
+			ID:          raw.ID,
+			DisplayName: raw.DisplayName,
+			Description: raw.Description,
+			Completion:  raw.Completion,
+			MaxTurns:    raw.MaxTurns,
+			Steps:       steps,
+			Source:      "toml",
+		}
+		if _, err := reg.UpsertSequence(seq); err != nil {
+			slog.Warn("persona: built-in profile sequence seed invalid", "id", raw.ID, "err", err)
+			notes = append(notes, "built-in sequence skipped: "+raw.ID+" ("+err.Error()+")")
+			continue
+		}
+		notes = append(notes, "built-in sequence seeded: "+raw.ID)
+	}
 	return notes
 }
 

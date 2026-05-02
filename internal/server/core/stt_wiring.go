@@ -61,6 +61,18 @@ func buildSTTRouter(cfg *config.Config) (*router.Router, []namedProvider, []stri
 		}
 	}
 
+	// OpenRouter speech-to-text (cloud gateway).
+	if cfg.Providers.OpenRouter.Enabled {
+		if key := strings.TrimSpace(config.ResolveSecret(cfg.Providers.OpenRouter.APIKeyEnv)); key != "" {
+			p := stt.NewOpenRouterSTTProvider(key, cfg.Providers.OpenRouter.STTModel)
+			r.AddCloud(p)
+			providers = append(providers, namedProvider{name: "stt.openrouter", provider: p})
+			notes = append(notes, "OpenRouter STT registered (model="+p.Model+")")
+		} else {
+			notes = append(notes, "OpenRouter STT disabled ("+cfg.Providers.OpenRouter.APIKeyEnv+" not set)")
+		}
+	}
+
 	// OpenAI Whisper (cloud).
 	if cfg.Providers.OpenAI.Enabled {
 		if key := strings.TrimSpace(config.ResolveSecret(cfg.Providers.OpenAI.APIKeyEnv)); key != "" {

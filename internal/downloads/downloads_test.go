@@ -255,6 +255,30 @@ func TestCatalogExposesWhisperCppTurboAsRecommendedChoice(t *testing.T) {
 	}
 }
 
+func TestCatalogMarksPendingLocalInstallTurboAsSelected(t *testing.T) {
+	cfg := &config.Config{}
+	config.ApplyLocalInstallDefaults(cfg, &config.InstallState{Mode: config.InstallModeLocal})
+
+	items := CatalogWithStatus(t.Context(), cfg, StatusOptions{})
+
+	var smallSelected, turboSelected bool
+	for _, item := range items {
+		switch item.ID {
+		case "whisper.ggml-small":
+			smallSelected = item.Selected
+		case "whisper.ggml-large-v3-turbo":
+			turboSelected = item.Selected
+		}
+	}
+
+	if smallSelected {
+		t.Fatal("whisper small should not be selected for a pending local install")
+	}
+	if !turboSelected {
+		t.Fatal("whisper turbo should be selected for a pending local install")
+	}
+}
+
 func TestCatalogExposesOllamaItemsForAllUserModes(t *testing.T) {
 	cfg := &config.Config{}
 	items := Catalog(t.Context(), cfg)

@@ -206,14 +206,20 @@ func TestOverlayWindowOptionsStartsCompact(t *testing.T) {
 	}
 }
 
-func TestPillPanelWindowOptionsReservePanelSpaceAndStayLocked(t *testing.T) {
+func TestPillPanelWindowOptionsStartsCompactAndStayLocked(t *testing.T) {
 	opts := newPillPanelWindowOptions()
 
-	if opts.Width < 360 {
-		t.Fatalf("pill panel width = %d, want room for the compact feedback panel", opts.Width)
+	if opts.Width > 260 {
+		t.Fatalf("pill panel width = %d, want compact hover controls <= 260", opts.Width)
 	}
-	if opts.Height < 96 {
-		t.Fatalf("pill panel height = %d, want room for the compact feedback panel", opts.Height)
+	if opts.Height > 48 {
+		t.Fatalf("pill panel height = %d, want compact hover controls <= 48", opts.Height)
+	}
+	if pillFeedbackMetrics.Width < 360 {
+		t.Fatalf("pill feedback width = %d, want room for the compact feedback panel", pillFeedbackMetrics.Width)
+	}
+	if pillFeedbackMetrics.Height < 96 {
+		t.Fatalf("pill feedback height = %d, want room for the compact feedback panel", pillFeedbackMetrics.Height)
 	}
 	if !opts.Frameless {
 		t.Fatal("pill panel should be frameless")

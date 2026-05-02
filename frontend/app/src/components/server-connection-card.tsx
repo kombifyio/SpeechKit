@@ -108,21 +108,15 @@ export function ServerConnectionCard({
     );
   }
 
-  const tokenStatusBadge = setting.enabled
-    ? setting.bearerTokenSet
-      ? (
-        <span className="inline-flex items-center rounded-full bg-emerald-500/10 px-2 py-0.5 text-xs font-medium text-emerald-600 dark:text-emerald-400">
-          token set
-        </span>
-      )
-      : (
-        <span className="inline-flex items-center rounded-full bg-amber-500/10 px-2 py-0.5 text-xs font-medium text-amber-600 dark:text-amber-400">
-          token missing
-        </span>
-      )
+  const tokenStatusBadge = setting.bearerTokenSet
+    ? (
+      <span className="inline-flex items-center rounded-full bg-emerald-500/10 px-2 py-0.5 text-xs font-medium text-emerald-600 dark:text-emerald-400">
+        token set
+      </span>
+    )
     : (
-      <span className="inline-flex items-center rounded-full bg-muted px-2 py-0.5 text-xs font-medium text-muted-foreground">
-        disabled
+      <span className="inline-flex items-center rounded-full bg-amber-500/10 px-2 py-0.5 text-xs font-medium text-amber-600 dark:text-amber-400">
+        token missing
       </span>
     );
 
@@ -137,43 +131,15 @@ export function ServerConnectionCard({
       <header className="flex items-start justify-between gap-3">
         <div>
           <h3 className="text-base font-semibold text-foreground">
-            Server Connection
+            Server Target
           </h3>
           <p className="text-sm text-muted-foreground">
-            Optional remote SpeechKit server. When enabled, individual modes
-            can be routed through it via their per-mode source toggle.
-            Settings take effect on next app start.
+            Connection details for the SpeechKit server used by the global
+            runtime switch and per-mode overrides.
           </p>
         </div>
         {tokenStatusBadge}
       </header>
-
-      <div className="flex items-center justify-between gap-3 rounded-md bg-muted/50 px-3 py-2">
-        <div>
-          <p className="text-sm font-medium">Enable server connection</p>
-          <p className="text-xs text-muted-foreground">
-            Off keeps every mode strictly local regardless of per-mode source.
-          </p>
-        </div>
-        <button
-          type="button"
-          role="switch"
-          aria-checked={setting.enabled}
-          disabled={busy}
-          onClick={() => submitPatch({ enabled: !setting.enabled })}
-          className={cn(
-            "inline-flex h-6 w-11 items-center rounded-full transition-colors",
-            setting.enabled ? "bg-foreground" : "bg-muted-foreground/30",
-          )}
-        >
-          <span
-            className={cn(
-              "h-5 w-5 transform rounded-full bg-background transition-transform",
-              setting.enabled ? "translate-x-5" : "translate-x-0.5",
-            )}
-          />
-        </button>
-      </div>
 
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         <label className="flex flex-col gap-1.5 text-sm">

@@ -147,6 +147,8 @@ type VoiceAgentSetting struct {
 	SessionSummary   bool   `json:"sessionSummary"`
 	PipelineFallback bool   `json:"pipelineFallback"`
 	CloseBehavior    string `json:"closeBehavior,omitempty"`
+	AgentProfileID   string `json:"agentProfileId,omitempty"`
+	AgentSequenceID  string `json:"agentSequenceId,omitempty"`
 }
 
 type ModeSettings struct {

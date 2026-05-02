@@ -124,7 +124,7 @@ func TestRegistry_ResolveFullChain(t *testing.T) {
 	r := NewRegistry()
 	_, _ = r.UpsertPersona(Persona{
 		ID: "host", DisplayName: "Host", Voice: "Kore", Locale: "de",
-		DefaultRole: "discovery",
+		DefaultRole: "discovery", DefaultSequence: "call",
 	})
 	_, _ = r.UpsertRole(Role{
 		ID: "discovery", DisplayName: "Discovery",
@@ -156,8 +156,70 @@ func TestRegistry_ResolveFullChain(t *testing.T) {
 	if resolved.CurrentStep == nil || resolved.CurrentStep.ID != "ask" {
 		t.Fatalf("expected step index 1 = 'ask'; got %+v", resolved.CurrentStep)
 	}
+	if resolved.StepIndex != 1 || resolved.StepCount != 2 {
+		t.Fatalf("step metadata = index %d count %d, want 1/2", resolved.StepIndex, resolved.StepCount)
+	}
+	if resolved.SequenceCompletion != "" || resolved.SequenceMaxTurns != 0 {
+		t.Fatalf("unexpected sequence completion metadata: %+v", resolved)
+	}
+	if resolved.StepInstruction != "Ask needs." {
+		t.Fatalf("StepInstruction = %q, want Ask needs.", resolved.StepInstruction)
+	}
 	if !resolved.AutomaticVAD || resolved.StartSensitivity != "medium" {
 		t.Fatalf("role fields not propagated: %+v", resolved)
+	}
+}
+
+func TestRegistry_ResolveUsesPersonaDefaultSequence(t *testing.T) {
+	r := NewRegistry()
+	_, _ = r.UpsertPersona(Persona{
+		ID: "host", DisplayName: "Host", DefaultRole: "moderator", DefaultSequence: "meeting",
+	})
+	_, _ = r.UpsertRole(Role{ID: "moderator", DisplayName: "Moderator", SystemPrompt: "Moderate."})
+	_, _ = r.UpsertSequence(Sequence{
+		ID: "meeting", DisplayName: "Meeting",
+		Steps: []SequenceStep{
+			{ID: "open", Instruction: "Open the meeting."},
+			{ID: "close", Instruction: "Close the meeting."},
+		},
+	})
+
+	resolved, err := r.Resolve("host", "", "", 0)
+	if err != nil {
+		t.Fatalf("Resolve: %v", err)
+	}
+	if resolved.SequenceID != "meeting" || resolved.StepID != "open" {
+		t.Fatalf("default sequence not applied: %+v", resolved)
+	}
+	if !strings.Contains(resolved.SystemPrompt, "Open the meeting.") {
+		t.Fatalf("system prompt missing default sequence step: %q", resolved.SystemPrompt)
+	}
+}
+
+func TestRegistry_ResolveSequenceMetadata(t *testing.T) {
+	r := NewRegistry()
+	_, _ = r.UpsertPersona(Persona{ID: "host", DisplayName: "Host", DefaultRole: "moderator"})
+	_, _ = r.UpsertRole(Role{ID: "moderator", DisplayName: "Moderator", SystemPrompt: "Run the meeting."})
+	_, _ = r.UpsertSequence(Sequence{
+		ID: "meeting", DisplayName: "Meeting", Completion: "all_steps", MaxTurns: 10,
+		Steps: []SequenceStep{
+			{ID: "open", Instruction: "Open.", ExitCriteria: "Everyone is oriented.", MaxTurns: 1},
+			{ID: "decide", Instruction: "Drive decisions.", ExitCriteria: "Decision is clear.", MaxTurns: 4},
+		},
+	})
+
+	resolved, err := r.Resolve("host", "", "meeting", 1)
+	if err != nil {
+		t.Fatalf("Resolve: %v", err)
+	}
+	if resolved.SequenceCompletion != "all_steps" || resolved.SequenceMaxTurns != 10 {
+		t.Fatalf("sequence metadata lost: %+v", resolved)
+	}
+	if resolved.StepID != "decide" || resolved.StepIndex != 1 || resolved.StepCount != 2 {
+		t.Fatalf("step identity metadata lost: %+v", resolved)
+	}
+	if resolved.StepInstruction != "Drive decisions." || resolved.StepExitCriteria != "Decision is clear." || resolved.StepMaxTurns != 4 {
+		t.Fatalf("step behavior metadata lost: %+v", resolved)
 	}
 }
 

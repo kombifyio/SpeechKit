@@ -28,7 +28,7 @@ describe("ModeSourceToggle", () => {
     expect(onChange).toHaveBeenCalledWith("server");
   });
 
-  it("disables the server pill and shows hint when ServerConnection is disabled", () => {
+  it("allows server selection even when the legacy ServerConnection enabled flag is false", () => {
     const onChange = vi.fn();
     render(
       <ModeSourceToggle
@@ -39,26 +39,22 @@ describe("ModeSourceToggle", () => {
       />,
     );
     const serverButton = screen.getByRole("radio", { name: /server/i });
-    expect(serverButton).toBeDisabled();
     fireEvent.click(serverButton);
-    expect(onChange).not.toHaveBeenCalled();
-    expect(
-      screen.getByText(/Enable Server Connection/i),
-    ).toBeInTheDocument();
+    expect(onChange).toHaveBeenCalledWith("server");
   });
 
-  it("disables the server pill when bearer token env var is missing", () => {
+  it("shows a hint when bearer token env var is missing", () => {
     const onChange = vi.fn();
     render(
       <ModeSourceToggle
         modeLabel="Voice Agent"
-        value="local"
+        value="server"
         onChange={onChange}
         serverConnection={{ ...baseConn, bearerTokenSet: false }}
       />,
     );
     const serverButton = screen.getByRole("radio", { name: /server/i });
-    expect(serverButton).toBeDisabled();
+    expect(serverButton).not.toBeDisabled();
     expect(
       screen.getByText(/SPEECHKIT_SERVER_TOKEN/i),
     ).toBeInTheDocument();

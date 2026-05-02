@@ -17,6 +17,7 @@ import {
   fetchAPIV1Modes,
   fetchAPIV1ServerConnection,
   patchAPIV1ModeSettings,
+  patchAPIV1ServerConnection,
   type APIV1ModeSettings,
   type ModeSource,
   type ServerConnectionSetting,
@@ -42,6 +43,8 @@ const SETTINGS_KEY: Record<ModeKey, SettingsKey> = {
   voice_agent: "voiceAgent",
 };
 
+const MODE_KEYS: ModeKey[] = ["dictation", "assist", "voice_agent"];
+
 export type ModeSourceSectionProps = {
   className?: string;
   /**
@@ -57,6 +60,7 @@ export function ModeSourceSection({ className, serverConnection: externalServerC
   const [fetchedServerConnection, setFetchedServerConnection] =
     useState<ServerConnectionSetting | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
 
   // Derived state: when the parent passes a serverConnection prop, we
   // mirror it directly without going through useState. Only the
@@ -102,7 +106,13 @@ export function ModeSourceSection({ className, serverConnection: externalServerC
 
   const updateMode = useCallback(
     async (mode: ModeKey, next: ModeSource) => {
+      setBusy(true);
+      setError(null);
       try {
+        if (next === "server" && !serverConnection?.enabled) {
+          const nextConnection = await patchAPIV1ServerConnection({ enabled: true });
+          setFetchedServerConnection(nextConnection);
+        }
         const updated = await patchAPIV1ModeSettings(mode, { modeSource: next });
         const settingsKey = SETTINGS_KEY[mode];
         setModes((prev) => {
@@ -114,9 +124,50 @@ export function ModeSourceSection({ className, serverConnection: externalServerC
         });
       } catch (err) {
         setError(String((err as Error)?.message ?? err));
+      } finally {
+        setBusy(false);
       }
     },
-    [],
+    [serverConnection?.enabled],
+  );
+
+  const updateAllModes = useCallback(
+    async (next: ModeSource) => {
+      if (!modes) return;
+      setBusy(true);
+      setError(null);
+      try {
+        if (next === "server" && !serverConnection?.enabled) {
+          const nextConnection = await patchAPIV1ServerConnection({ enabled: true });
+          setFetchedServerConnection(nextConnection);
+        }
+        const updates = await Promise.all(
+          MODE_KEYS.map(async (mode) => {
+            const updated = await patchAPIV1ModeSettings(mode, { modeSource: next });
+            return [mode, updated] as const;
+          }),
+        );
+        setModes((prev) => {
+          if (!prev) return prev;
+          return updates.reduce<APIV1ModeSettings>((acc, [mode, updated]) => {
+            const settingsKey = SETTINGS_KEY[mode];
+            return {
+              ...acc,
+              [settingsKey]: { ...acc[settingsKey], ...updated },
+            };
+          }, prev);
+        });
+        if (next === "local") {
+          const nextConnection = await patchAPIV1ServerConnection({ enabled: false });
+          setFetchedServerConnection(nextConnection);
+        }
+      } catch (err) {
+        setError(String((err as Error)?.message ?? err));
+      } finally {
+        setBusy(false);
+      }
+    },
+    [modes, serverConnection],
   );
 
   if (error && !modes) {
@@ -140,6 +191,13 @@ export function ModeSourceSection({ className, serverConnection: externalServerC
     );
   }
 
+  const currentSources = MODE_KEYS.map(
+    (mode) => modes[SETTINGS_KEY[mode]]?.modeSource ?? "local",
+  );
+  const allLocal = currentSources.every((value) => value !== "server");
+  const allServer = currentSources.every((value) => value === "server");
+  const globalSourceLabel = allServer ? "Server" : allLocal ? "Local" : "Custom";
+
   return (
     <section
       className={cn(
@@ -150,13 +208,54 @@ export function ModeSourceSection({ className, serverConnection: externalServerC
       <header>
         <h3 className="text-base font-semibold text-foreground">Mode Source</h3>
         <p className="text-sm text-muted-foreground">
-          Choose for each mode whether it runs against the in-process Framework
-          (default) or routes through the configured Server Connection.
-          Changes take effect on next app start.
+          Switch all modes between the local Framework runtime and the configured
+          SpeechKit server, then override individual modes below.
         </p>
       </header>
+      <div className="flex flex-col gap-2 rounded-lg border border-border/60 bg-muted/40 p-3 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <p className="text-sm font-medium text-foreground">Global runtime</p>
+          <p className="text-xs text-muted-foreground">Current: {globalSourceLabel}</p>
+        </div>
+        <div
+          role="radiogroup"
+          aria-label="Global mode source"
+          className="inline-flex w-fit items-center rounded-md border border-border bg-background p-0.5"
+        >
+          <button
+            type="button"
+            role="radio"
+            aria-checked={allLocal}
+            disabled={busy}
+            onClick={() => updateAllModes("local")}
+            className={cn(
+              "rounded-sm px-3 py-1 text-xs font-medium transition-colors",
+              allLocal
+                ? "bg-foreground text-background"
+                : "text-muted-foreground hover:text-foreground",
+            )}
+          >
+            Local
+          </button>
+          <button
+            type="button"
+            role="radio"
+            aria-checked={allServer}
+            disabled={busy}
+            onClick={() => updateAllModes("server")}
+            className={cn(
+              "rounded-sm px-3 py-1 text-xs font-medium transition-colors",
+              allServer
+                ? "bg-foreground text-background"
+                : "text-muted-foreground hover:text-foreground",
+            )}
+          >
+            Server
+          </button>
+        </div>
+      </div>
       <div className="grid grid-cols-1 gap-2.5">
-        {(Object.keys(MODE_LABELS) as ModeKey[]).map((mode) => {
+        {MODE_KEYS.map((mode) => {
           const value = modes[SETTINGS_KEY[mode]]?.modeSource ?? "local";
           return (
             <ModeSourceToggle

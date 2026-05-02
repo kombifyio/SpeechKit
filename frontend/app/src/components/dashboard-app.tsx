@@ -42,7 +42,9 @@ import {
   type LogEntry,
   type QuickNote,
   revealDashboardAudio,
+  saveProviderCredential,
   type TranscriptionRecord,
+  updateProviderIntegration,
   type VoiceAgentSessionRecord,
 } from "@/lib/speechkit";
 
@@ -1142,11 +1144,164 @@ function LogsView() {
 
 /* ── Setup Wizard ── */
 
-type WizardStep = "welcome" | "provider" | "done";
+type WizardStep = "welcome" | "local_model" | "integrations" | "done";
 type SetupWizardCompletion = {
   dashboardTab?: Tab;
   settingsTab?: SettingsTab;
 };
+
+type OnboardingIntegration = {
+  provider: string;
+  label: string;
+  category: "Cloud Router / Gateway" | "Direct Provider" | "Local Provider";
+  modes: IntegrationMode[];
+  credentialLabel?: string;
+  setupUrl: string;
+  setupLabel: string;
+  headline: string;
+  summary: string;
+};
+
+type IntegrationMode = "dictate" | "assist" | "voice_agent";
+
+const integrationModeOrder: IntegrationMode[] = [
+  "dictate",
+  "assist",
+  "voice_agent",
+];
+const integrationModeLabels: Record<IntegrationMode, string> = {
+  dictate: "Dictation",
+  assist: "Assist",
+  voice_agent: "Voice Agent",
+};
+
+const onboardingIntegrations: OnboardingIntegration[] = [
+  {
+    provider: "huggingface",
+    label: "Hugging Face",
+    category: "Cloud Router / Gateway",
+    modes: ["dictate", "assist", "voice_agent"],
+    credentialLabel: "Hugging Face token",
+    setupUrl: "https://huggingface.co/settings/tokens",
+    setupLabel: "Create Hugging Face token",
+    headline: "One key for every mode.",
+    summary: "All modes with one gateway key.",
+  },
+  {
+    provider: "openrouter",
+    label: "OpenRouter",
+    category: "Cloud Router / Gateway",
+    modes: ["dictate", "assist", "voice_agent"],
+    credentialLabel: "OpenRouter API key",
+    setupUrl: "https://openrouter.ai/settings/keys",
+    setupLabel: "Create OpenRouter API key",
+    headline: "One router for every mode.",
+    summary: "Dictation, Assist, and Voice Agent through OpenRouter.",
+  },
+  {
+    provider: "openai",
+    label: "OpenAI",
+    category: "Direct Provider",
+    modes: ["dictate", "assist"],
+    credentialLabel: "OpenAI API key",
+    setupUrl: "https://platform.openai.com/api-keys",
+    setupLabel: "Create OpenAI API key",
+    headline: "Use your OpenAI key.",
+    summary: "Use OpenAI for Dictation and Assist.",
+  },
+  {
+    provider: "google",
+    label: "Gemini / Google AI",
+    category: "Direct Provider",
+    modes: ["dictate", "assist", "voice_agent"],
+    credentialLabel: "Gemini / Google AI API key",
+    setupUrl: "https://aistudio.google.com/apikey",
+    setupLabel: "Create Gemini API key",
+    headline: "Gemini for Voice Agent.",
+    summary: "Native Voice Agent plus Google profiles.",
+  },
+  {
+    provider: "groq",
+    label: "Groq",
+    category: "Direct Provider",
+    modes: ["dictate", "assist"],
+    credentialLabel: "Groq API key",
+    setupUrl: "https://console.groq.com/keys",
+    setupLabel: "Create Groq API key",
+    headline: "Groq for fast turns.",
+    summary: "Fast Direct Provider for Dictation and Assist.",
+  },
+  {
+    provider: "ollama",
+    label: "Ollama",
+    category: "Local Provider",
+    modes: ["dictate", "assist", "voice_agent"],
+    setupUrl: "https://ollama.com/download",
+    setupLabel: "Download Ollama",
+    headline: "Run models locally.",
+    summary: "Run optional local models yourself.",
+  },
+];
+
+const onboardingIntegrationGroups = [
+  {
+    id: "gateways",
+    headline: "Want one key for everything? Start with a gateway.",
+    summary:
+      "Hugging Face and OpenRouter unlock more model choice without managing every vendor.",
+    providers: ["huggingface", "openrouter"],
+    gridClass: "md:grid-cols-2",
+  },
+  {
+    id: "direct",
+    headline: "Already use a provider? Plug in your key.",
+    summary:
+      "OpenAI, Gemini, and Groq are best when your team already has an API account.",
+    providers: ["openai", "google", "groq"],
+    gridClass: "md:grid-cols-3",
+  },
+  {
+    id: "local",
+    headline: "Want to test models on your own machine? Use Ollama.",
+    summary: "Keep experimenting locally while SpeechKit stays local-first by default.",
+    providers: ["ollama"],
+    gridClass: "md:grid-cols-2",
+  },
+];
+
+const integrationLogoSrc: Record<string, string> = {
+  huggingface: "/integrations/huggingface.svg",
+  openrouter: "/integrations/openrouter.svg",
+  openai: "/integrations/openai.svg",
+  google: "/integrations/gemini.svg",
+  groq: "/integrations/groq.svg",
+  ollama: "/integrations/ollama.svg",
+};
+
+const logoFrameClass: Record<string, string> = {
+  huggingface: "bg-[#ffd84d]",
+  openrouter: "bg-[#0f1117]",
+  openai: "bg-white",
+  google: "bg-white",
+  groq: "bg-white",
+  ollama: "bg-white",
+};
+
+function orderedIntegrationModeLabels(modes: IntegrationMode[]) {
+  const enabledModes = new Set(modes);
+  return integrationModeOrder
+    .filter((mode) => enabledModes.has(mode))
+    .map((mode) => integrationModeLabels[mode]);
+}
+
+function setupDisplayUrl(setupUrl: string) {
+  try {
+    const parsed = new URL(setupUrl);
+    return `${parsed.host}${parsed.pathname}`.replace(/\/$/, "");
+  } catch {
+    return setupUrl;
+  }
+}
 
 function SetupWizard({
   catalog,
@@ -1172,6 +1327,12 @@ function SetupWizard({
   const [preferredLocalModelId, setPreferredLocalModelId] = useState<
     string | null
   >(null);
+  const [selectedIntegrations, setSelectedIntegrations] = useState<
+    Record<string, boolean>
+  >({});
+  const [integrationTokens, setIntegrationTokens] = useState<
+    Record<string, string>
+  >({});
 
   useEffect(() => {
     void fetchAudioDevices()
@@ -1206,10 +1367,15 @@ function SetupWizard({
       return;
     }
     const selectedLocalModel = localCatalogItems.find((item) => item.selected);
-    if (selectedLocalModel) {
-      setPreferredLocalModelId(selectedLocalModel.id);
+    const recommendedLocalModel =
+      localModelChoices.find((item) => item.recommended) ??
+      localModelChoices.find((item) => item.id === "whisper.ggml-large-v3-turbo") ??
+      localModelChoices[0];
+    const defaultLocalModel = selectedLocalModel ?? recommendedLocalModel;
+    if (defaultLocalModel) {
+      setPreferredLocalModelId(defaultLocalModel.id);
     }
-  }, [localCatalogItems, preferredLocalModelId]);
+  }, [localCatalogItems, localModelChoices, preferredLocalModelId]);
 
   const localModelIDs = useMemo(
     () => new Set(localModelChoices.map((item) => item.id)),
@@ -1294,6 +1460,17 @@ function SetupWizard({
         builtInPrimaryModelSelections.voice_agent.primaryProfileId,
       );
       await fetch("/settings/update", { method: "POST", body });
+      for (const integration of onboardingIntegrations) {
+        if (!selectedIntegrations[integration.provider]) {
+          continue;
+        }
+        const token = (integrationTokens[integration.provider] ?? "").trim();
+        if (integration.credentialLabel && token) {
+          await saveProviderCredential(integration.provider, token);
+          continue;
+        }
+        await updateProviderIntegration(integration.provider, true);
+      }
     } catch (error) {
       setLoading(false);
       setModelActionError(
@@ -1314,22 +1491,27 @@ function SetupWizard({
     onComplete();
   };
 
-  const handleCloudSetup = () => {
+  const toggleIntegration = (provider: string) => {
+    setSelectedIntegrations((current) => ({
+      ...current,
+      [provider]: !current[provider],
+    }));
     setModelActionError(null);
-    onComplete({
-      dashboardTab: "settings",
-      settingsTab: "stt",
-    });
   };
 
-  const STEPS: WizardStep[] = ["welcome", "provider", "done"];
+  const STEPS: WizardStep[] = [
+    "welcome",
+    "local_model",
+    "integrations",
+    "done",
+  ];
 
   return (
     <div
       className={[
         "flex h-screen flex-col items-center bg-[#131318] text-[#e4e1e9] px-6 relative",
-        step === "provider"
-          ? "justify-start overflow-y-auto py-6"
+        step === "local_model" || step === "integrations"
+          ? "justify-start overflow-hidden py-0"
           : "justify-center overflow-hidden",
       ].join(" ")}
     >
@@ -1380,7 +1562,7 @@ function SetupWizard({
           <div className="flex flex-col items-center space-y-4 mt-16">
             <button
               type="button"
-              onClick={() => setStep("provider")}
+              onClick={() => setStep("local_model")}
               className="signature-gradient ambient-glow text-[#2b0088] font-bold text-lg px-12 h-14 rounded-full transition-all active:scale-95 hover:opacity-90"
             >
               Get Started
@@ -1396,110 +1578,116 @@ function SetupWizard({
         </div>
       )}
 
-      {step === "provider" && (
-        <div className="z-10 w-full max-w-128 space-y-5 pb-3">
-          {/* Progress dots */}
-          <div className="flex justify-center items-center gap-3">
-            {STEPS.map((s, i) => (
-              <div
-                key={s}
-                className={[
-                  "w-2.5 h-2.5 rounded-full transition-all",
-                  i <= STEPS.indexOf(step)
-                    ? "bg-[#cabeff] shadow-[0_0_8px_rgba(202,190,255,0.4)]"
-                    : "bg-[#484555]",
-                ].join(" ")}
-              />
-            ))}
-          </div>
-
-          <div className="text-center space-y-2">
-            <h2 className="text-2xl font-extrabold tracking-tight">
-              Local Dictation Setup
-            </h2>
-            <p className="text-[#b5b3c4] text-[13px] max-w-xl mx-auto leading-6">
-              Choose the local Whisper model that SpeechKit should download
-              first. You can always switch models later in Settings.
-            </p>
-          </div>
-
-          <div className="space-y-2.5">
-            {localModelChoices.map((item) => {
-              const itemJob = jobs.find((job) => job.modelId === item.id);
-              const itemDownloading =
-                itemJob?.status === "pending" || itemJob?.status === "running";
-              const itemBusy =
-                busyModelAction === `download:${item.id}` ||
-                busyModelAction === `select:${item.id}`;
-              return (
-                <WizardLocalModelCard
-                  key={item.id}
-                  item={item}
-                  job={itemJob}
-                  busy={itemBusy}
-                  selectedForSetup={
-                    preferredLocalModelId === item.id ||
-                    (!preferredLocalModelId && item.selected)
-                  }
-                  onDownload={() => void handleModelDownload(item)}
-                  onCancel={() =>
-                    itemJob ? void onCancelDownload(itemJob.id) : undefined
-                  }
-                  onChooseModel={() => handleChooseModel(item.id)}
-                  onUseModel={() => void handleModelSelect(item)}
-                  downloading={itemDownloading}
+      {step === "local_model" && (
+        <div className="z-10 flex h-full w-full max-w-128 flex-col py-6">
+          <div className="min-h-0 flex-1 space-y-5 overflow-y-auto pb-4">
+            {/* Progress dots */}
+            <div className="flex justify-center items-center gap-3">
+              {STEPS.map((s, i) => (
+                <div
+                  key={s}
+                  className={[
+                    "w-2.5 h-2.5 rounded-full transition-all",
+                    i <= STEPS.indexOf(step)
+                      ? "bg-[#cabeff] shadow-[0_0_8px_rgba(202,190,255,0.4)]"
+                      : "bg-[#484555]",
+                  ].join(" ")}
                 />
-              );
-            })}
-          </div>
-
-          {modelActionError && (
-            <div className="rounded-xl border border-red-400/15 bg-red-500/8 px-4 py-3 text-xs text-red-200/85">
-              {modelActionError}
+              ))}
             </div>
-          )}
 
-          <div className="bg-[#1b1b20] rounded-xl px-4 py-3 flex items-start gap-3">
-            <svg
-              className="w-5 h-5 text-[#947dff] shrink-0 mt-0.5"
-              viewBox="0 0 24 24"
-              fill="currentColor"
-            >
-              <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z" />
-            </svg>
-            <p className="text-[#938ea1] text-xs leading-relaxed">
-              SpeechKit downloads local models in the background and
-              automatically wires them into Whisper.cpp as soon as the transfer
-              finishes. You can continue immediately and keep using the app
-              while the overlay tracks progress.
-            </p>
-          </div>
+            <div className="text-center space-y-2">
+              <h2 className="text-2xl font-extrabold tracking-tight">
+                Local Dictation Setup
+              </h2>
+              <p className="text-[#b5b3c4] text-[13px] max-w-xl mx-auto leading-6">
+                Choose the local Whisper model that SpeechKit should download
+                first. You can always switch models later in Settings.
+              </p>
+            </div>
 
-          {/* Mic selection (compact) */}
-          {devices.length > 0 && (
-            <div className="space-y-2">
-              <label className="text-xs font-bold text-[#938ea1] uppercase tracking-widest mb-2 block">
-                Microphone
-              </label>
-              <select
-                value={selectedDevice}
-                onChange={(e) => handleDeviceSelect(e.target.value)}
-                className="w-full bg-[#0e0e13] border-none rounded-lg px-4 py-2.5 text-sm text-[#e4e1e9] focus:ring-1 focus:ring-[#cabeff]/40 appearance-none"
+            <div className="space-y-2.5">
+              {localModelChoices.map((item) => {
+                const itemJob = jobs.find((job) => job.modelId === item.id);
+                const itemDownloading =
+                  itemJob?.status === "pending" ||
+                  itemJob?.status === "running";
+                const itemBusy =
+                  busyModelAction === `download:${item.id}` ||
+                  busyModelAction === `select:${item.id}`;
+                return (
+                  <WizardLocalModelCard
+                    key={item.id}
+                    item={item}
+                    job={itemJob}
+                    busy={itemBusy}
+                    selectedForSetup={
+                      preferredLocalModelId === item.id ||
+                      (!preferredLocalModelId && item.selected)
+                    }
+                    onDownload={() => void handleModelDownload(item)}
+                    onCancel={() =>
+                      itemJob ? void onCancelDownload(itemJob.id) : undefined
+                    }
+                    onChooseModel={() => handleChooseModel(item.id)}
+                    onUseModel={() => void handleModelSelect(item)}
+                    downloading={itemDownloading}
+                  />
+                );
+              })}
+            </div>
+
+            {modelActionError && (
+              <div className="rounded-xl border border-red-400/15 bg-red-500/8 px-4 py-3 text-xs text-red-200/85">
+                {modelActionError}
+              </div>
+            )}
+
+            <div className="bg-[#1b1b20] rounded-xl px-4 py-3 flex items-start gap-3">
+              <svg
+                className="w-5 h-5 text-[#947dff] shrink-0 mt-0.5"
+                viewBox="0 0 24 24"
+                fill="currentColor"
               >
-                {devices.map((d) => (
-                  <option key={d.deviceId} value={d.deviceId}>
-                    {d.label}
-                    {d.isDefault ? " (Default)" : ""}
-                  </option>
-                ))}
-              </select>
+                <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z" />
+              </svg>
+              <p className="text-[#938ea1] text-xs leading-relaxed">
+                SpeechKit downloads local models in the background and
+                automatically wires them into Whisper.cpp as soon as the
+                transfer finishes. You can continue immediately and keep using
+                the app while the overlay tracks progress.
+              </p>
             </div>
-          )}
 
-          <div className="sticky bottom-0 space-y-3 border-t border-[#35343a]/50 bg-[#131318]/95 pt-4 backdrop-blur-xl">
+            {/* Mic selection (compact) */}
+            {devices.length > 0 && (
+              <div className="space-y-2">
+                <label className="text-xs font-bold text-[#938ea1] uppercase tracking-widest mb-2 block">
+                  Microphone
+                </label>
+                <select
+                  value={selectedDevice}
+                  onChange={(e) => handleDeviceSelect(e.target.value)}
+                  className="w-full bg-[#0e0e13] border-none rounded-lg px-4 py-2.5 text-sm text-[#e4e1e9] focus:ring-1 focus:ring-[#cabeff]/40 appearance-none"
+                >
+                  {devices.map((d) => (
+                    <option key={d.deviceId} value={d.deviceId}>
+                      {d.label}
+                      {d.isDefault ? " (Default)" : ""}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
+          </div>
+
+          <div
+            data-testid="onboarding-navigation"
+            className="shrink-0 space-y-3 border-t border-[#35343a]/50 bg-[#131318]/95 pt-4 backdrop-blur-xl"
+          >
             <button
               type="button"
-              onClick={() => setStep("done")}
+              onClick={() => setStep("integrations")}
               className={[
                 "w-full h-12 rounded-full font-bold transition-all flex items-center justify-center gap-2",
                 "signature-gradient text-[#2b0088] ambient-glow active:scale-[0.98]",
@@ -1515,23 +1703,191 @@ function SetupWizard({
               >
                 Back
               </button>
-              <div className="flex flex-wrap items-center justify-end gap-2">
-                <button
-                  type="button"
-                  onClick={handleCloudSetup}
-                  className="rounded-full border border-[#484555] px-3 py-1.5 text-[11px] font-medium text-[#cabeff] hover:border-[#cabeff]/40"
-                >
-                  Use Hugging Face token instead
-                </button>
-                <button
-                  type="button"
-                  onClick={handleCloudSetup}
-                  className="rounded-full border border-[#484555] px-3 py-1.5 text-[11px] font-medium text-[#cabeff] hover:border-[#cabeff]/40"
-                >
-                  Use OpenAI key instead
-                </button>
-              </div>
+              <span className="text-[11px] text-[#938ea1]">
+                Optional integrations are next.
+              </span>
             </div>
+          </div>
+        </div>
+      )}
+
+      {step === "integrations" && (
+        <div className="z-10 flex h-full w-full max-w-5xl flex-col pb-6 pt-5">
+          <div className="min-h-0 flex-1 overflow-y-auto pb-3">
+            <div className="flex justify-center items-center gap-3">
+              {STEPS.map((s, i) => (
+                <div
+                  key={s}
+                  className={[
+                    "w-2.5 h-2.5 rounded-full transition-all",
+                    i <= STEPS.indexOf(step)
+                      ? "bg-[#cabeff] shadow-[0_0_8px_rgba(202,190,255,0.4)]"
+                      : "bg-[#484555]",
+                  ].join(" ")}
+                />
+              ))}
+            </div>
+
+            <div className="mx-auto mt-3 max-w-2xl text-center">
+              <h2 className="text-3xl font-extrabold tracking-tight">
+                Integrations
+              </h2>
+              <p className="mt-1.5 text-base font-bold leading-6 text-[#e4e1e9]">
+                Want more performance than local models? Add a provider.
+              </p>
+            </div>
+
+            <div className="mt-4 space-y-4">
+              {onboardingIntegrationGroups.map((group) => (
+                <section key={group.id} className="space-y-2">
+                  <div>
+                    <h3 className="text-base font-extrabold tracking-tight text-[#e4e1e9]">
+                      {group.headline}
+                    </h3>
+                    <p className="mt-0.5 text-xs leading-4 text-[#b5b3c4]">
+                      {group.summary}
+                    </p>
+                  </div>
+                  <div className={["grid gap-3", group.gridClass].join(" ")}>
+                    {group.providers.map((provider) => {
+                      const integration = onboardingIntegrations.find(
+                        (item) => item.provider === provider,
+                      );
+                      if (!integration) {
+                        return null;
+                      }
+                      const selected = Boolean(
+                        selectedIntegrations[integration.provider],
+                      );
+                      const setupTarget = setupDisplayUrl(integration.setupUrl);
+                      return (
+                        <div
+                          key={integration.provider}
+                          data-testid="onboarding-integration-card"
+                          className={[
+                            "rounded-xl border bg-[#1b1b20] p-2.5 transition-colors",
+                            selected
+                              ? "border-[#cabeff]/40"
+                              : "border-[#35343a]/80",
+                          ].join(" ")}
+                        >
+                          <div className="flex items-start justify-between gap-3">
+                            <ProviderLogo provider={integration.provider} />
+                            <button
+                              type="button"
+                              role="switch"
+                              aria-label={`Enable ${integration.label} integration`}
+                              aria-checked={selected}
+                              onClick={() =>
+                                toggleIntegration(integration.provider)
+                              }
+                              className={[
+                                "relative inline-flex h-5.5 w-9.5 shrink-0 cursor-pointer items-center rounded-full transition-colors",
+                                selected ? "bg-[#cabeff]" : "bg-[#484555]",
+                              ].join(" ")}
+                            >
+                              <span
+                                className={[
+                                  "inline-block h-4 w-4 rounded-full bg-white shadow transition-transform",
+                                  selected
+                                    ? "translate-x-4.75"
+                                    : "translate-x-0.75",
+                                ].join(" ")}
+                              />
+                            </button>
+                          </div>
+
+                          <p className="mt-1.5 text-sm font-extrabold leading-5 text-[#e4e1e9]">
+                            {integration.headline}
+                          </p>
+                          <p className="mt-0.5 text-xs leading-4 text-[#b5b3c4]">
+                            {integration.summary}
+                          </p>
+                          <div className="mt-1.5 flex flex-wrap gap-1.5">
+                            <span className="rounded border border-[#484555] px-2 py-0.5 text-[9px] font-semibold uppercase tracking-[0.12em] text-[#cabeff]">
+                              {integration.category}
+                            </span>
+                            {orderedIntegrationModeLabels(
+                              integration.modes,
+                            ).map((mode) => (
+                              <span
+                                key={mode}
+                                data-testid="integration-mode-tag"
+                                className="rounded bg-[#2a292f] px-2 py-0.5 text-[9px] text-[#b5b3c4]"
+                              >
+                                {mode}
+                              </span>
+                            ))}
+                          </div>
+
+                          {selected && integration.credentialLabel && (
+                            <label className="mt-3 block space-y-1.5">
+                              <span className="text-[10px] font-semibold uppercase tracking-[0.14em] text-[#938ea1]">
+                                {integration.credentialLabel}
+                              </span>
+                              <input
+                                aria-label={integration.credentialLabel}
+                                type="password"
+                                value={
+                                  integrationTokens[integration.provider] ?? ""
+                                }
+                                onChange={(event) =>
+                                  setIntegrationTokens((tokens) => ({
+                                    ...tokens,
+                                    [integration.provider]: event.target.value,
+                                  }))
+                                }
+                                placeholder="Paste key or continue without it"
+                                className="w-full rounded-lg border border-[#35343a] bg-[#0e0e13] px-3 py-2 text-xs text-[#e4e1e9] outline-none focus:border-[#cabeff]/50"
+                              />
+                            </label>
+                          )}
+
+                          <a
+                            href={integration.setupUrl}
+                            target="_blank"
+                            rel="noreferrer"
+                            title={integration.setupUrl}
+                            className="group/setup mt-1.5 inline-flex max-w-full flex-wrap items-center gap-x-1 text-xs font-semibold text-[#cabeff] hover:text-[#e4e1e9]"
+                          >
+                            <span>{integration.setupLabel}</span>
+                            <span className="hidden max-w-full truncate text-xs font-medium text-[#938ea1] group-hover/setup:inline">
+                              {setupTarget}
+                            </span>
+                          </a>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </section>
+              ))}
+            </div>
+
+            {modelActionError && (
+              <div className="mt-4 rounded-xl border border-red-400/15 bg-red-500/8 px-4 py-3 text-xs text-red-200/85">
+                {modelActionError}
+              </div>
+            )}
+          </div>
+
+          <div
+            data-testid="onboarding-navigation"
+            className="shrink-0 flex items-center justify-between gap-3 border-t border-[#35343a]/50 bg-[#131318]/95 pt-4 backdrop-blur-xl"
+          >
+            <button
+              type="button"
+              onClick={() => setStep("local_model")}
+              className="text-[#b5b3c4] hover:text-[#e4e1e9] text-sm font-medium transition-colors"
+            >
+              Back
+            </button>
+            <button
+              type="button"
+              onClick={() => setStep("done")}
+              className="signature-gradient text-[#2b0088] h-12 rounded-full px-8 font-bold transition-all ambient-glow active:scale-[0.98]"
+            >
+              Continue
+            </button>
           </div>
         </div>
       )}
@@ -1713,6 +2069,38 @@ function KPICard({ label, value }: { label: string; value: string }) {
   );
 }
 
+function ProviderLogo({ provider }: { provider: string }) {
+  const label =
+    onboardingIntegrations.find(
+      (integration) => integration.provider === provider,
+    )?.label ?? "Provider";
+  const src = integrationLogoSrc[provider] ?? "";
+  const frameClass = logoFrameClass[provider] ?? "bg-white";
+
+  return (
+    <div className="flex min-w-0 items-center gap-2.5">
+      <span
+        className={[
+          "flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border border-[#35343a] p-1",
+          frameClass,
+        ].join(" ")}
+      >
+        <img
+          src={src}
+          alt={`${label} logo`}
+          className="h-full w-full object-contain"
+        />
+      </span>
+      <span
+        data-testid="provider-brand-name"
+        className="min-w-0 truncate text-[13px] font-bold text-[#e4e1e9]"
+      >
+        {label}
+      </span>
+    </div>
+  );
+}
+
 function FeatureCard({
   icon,
   title,
@@ -1786,6 +2174,7 @@ function WizardLocalModelCard({
 
   return (
     <div
+      data-testid={`local-model-card-${item.id}`}
       className={[
         "rounded-2xl border px-4 py-3.5 transition-all",
         selectedForSetup

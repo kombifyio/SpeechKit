@@ -85,6 +85,12 @@ func TestSaveServerModelSettings_DropsWriteOnlyCredentialValues(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "server-settings.json")
 	settings := ServerModelSettings{
 		OnboardingComplete: true,
+		ServerAuth: ServerAuthSettings{
+			Mode:           "managed_bearer",
+			BearerTokenEnv: "SPEECHKIT_SERVER_TOKEN",
+			GenerateToken:  boolPtrForTest(true),
+			TokenValue:     "server-secret-token",
+		},
 		Credentials: ServerCredentialSettings{
 			Google: ServerProviderCredentialSettings{
 				Enabled: boolPtrForTest(true),
@@ -107,8 +113,43 @@ func TestSaveServerModelSettings_DropsWriteOnlyCredentialValues(t *testing.T) {
 	if got := loaded.Credentials.Google.Value; got != "" {
 		t.Fatalf("stored google key should be empty, got %q", got)
 	}
+	if got := loaded.ServerAuth.TokenValue; got != "" {
+		t.Fatalf("stored server auth token should be empty, got %q", got)
+	}
+	if loaded.ServerAuth.GenerateToken != nil {
+		t.Fatal("stored server auth generate flag should be empty")
+	}
 	if sanitized := SanitizeServerModelSettings(loaded); sanitized.Credentials.Google.Value != "" {
 		t.Fatal("sanitized settings should remove raw credential values")
+	}
+}
+
+func TestApplyServerModelSettings_AppliesManagedServerAuthToken(t *testing.T) {
+	t.Setenv("SPEECHKIT_SERVER_TOKEN", "")
+
+	cfg := defaults()
+	cfg.Server.AuthMode = "none"
+	settings := ServerModelSettings{
+		ServerAuth: ServerAuthSettings{
+			Mode:           "managed_bearer",
+			BearerTokenEnv: "SPEECHKIT_SERVER_TOKEN",
+			TokenValue:     "generated-server-token",
+		},
+	}
+
+	notes := ApplyServerModelSettings(cfg, settings)
+
+	if cfg.Server.AuthMode != "bearer" {
+		t.Fatalf("server auth mode = %q, want bearer", cfg.Server.AuthMode)
+	}
+	if cfg.Server.BearerTokenEnv != "SPEECHKIT_SERVER_TOKEN" {
+		t.Fatalf("bearer token env = %q", cfg.Server.BearerTokenEnv)
+	}
+	if got := os.Getenv("SPEECHKIT_SERVER_TOKEN"); got != "generated-server-token" {
+		t.Fatalf("generated bearer env = %q", got)
+	}
+	if len(notes) == 0 {
+		t.Fatal("expected auth application notes")
 	}
 }
 

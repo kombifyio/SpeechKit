@@ -20,16 +20,17 @@ import "time"
 // (e.g. kombify-AI selects a persona_id when creating a Voice Agent
 // session).
 type Persona struct {
-	ID          string            `json:"id"`
-	DisplayName string            `json:"display_name"`
-	Description string            `json:"description,omitempty"`
-	Voice       string            `json:"voice,omitempty"`
-	Locale      string            `json:"locale,omitempty"`
-	DefaultRole string            `json:"default_role,omitempty"`
-	Tags        []string          `json:"tags,omitempty"`
-	Metadata    map[string]string `json:"metadata,omitempty"`
-	CreatedAt   time.Time         `json:"created_at"`
-	UpdatedAt   time.Time         `json:"updated_at"`
+	ID              string            `json:"id"`
+	DisplayName     string            `json:"display_name"`
+	Description     string            `json:"description,omitempty"`
+	Voice           string            `json:"voice,omitempty"`
+	Locale          string            `json:"locale,omitempty"`
+	DefaultRole     string            `json:"default_role,omitempty"`
+	DefaultSequence string            `json:"default_sequence,omitempty"`
+	Tags            []string          `json:"tags,omitempty"`
+	Metadata        map[string]string `json:"metadata,omitempty"`
+	CreatedAt       time.Time         `json:"created_at"`
+	UpdatedAt       time.Time         `json:"updated_at"`
 	// Source records where the entry came from ("toml" or "store"). Clients
 	// can use this to distinguish deploy-time defaults from admin-authored
 	// overrides.
@@ -98,21 +99,29 @@ type SequenceStep struct {
 // internal/server/voiceagent.LiveConfigFrame but stays in this package so
 // the persona layer has no dependency on the voiceagent adapter.
 type ResolvedSession struct {
-	PersonaID         string
-	RoleID            string
-	SequenceID        string
-	Voice             string
-	Locale            string
-	Model             string
-	SystemPrompt      string
-	RefinementPrompt  string
-	Thinking          string
-	AutomaticVAD      bool
-	StartSensitivity  string
-	EndSensitivity    string
-	PrefixPaddingMs   int32
-	SilenceDurationMs int32
-	ActivityHandling  string
-	TurnCoverage      string
-	CurrentStep       *SequenceStep
+	PersonaID          string
+	RoleID             string
+	SequenceID         string
+	SequenceCompletion string
+	SequenceMaxTurns   int
+	Voice              string
+	Locale             string
+	Model              string
+	SystemPrompt       string
+	RefinementPrompt   string
+	Thinking           string
+	AutomaticVAD       bool
+	StartSensitivity   string
+	EndSensitivity     string
+	PrefixPaddingMs    int32
+	SilenceDurationMs  int32
+	ActivityHandling   string
+	TurnCoverage       string
+	CurrentStep        *SequenceStep
+	StepID             string
+	StepIndex          int
+	StepCount          int
+	StepInstruction    string
+	StepExitCriteria   string
+	StepMaxTurns       int
 }

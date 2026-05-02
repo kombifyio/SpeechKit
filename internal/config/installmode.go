@@ -105,7 +105,7 @@ func ApplyLocalInstallDefaults(cfg *Config, state *InstallState) bool {
 		changed = true
 	}
 	// A fresh install no longer bundles a Whisper model. Keep routing neutral
-	// until the user downloads Small or Turbo during onboarding.
+	// until the user downloads the selected onboarding model.
 	if cfg.Routing.Strategy == "" || cfg.Routing.Strategy == "local-only" || cfg.Routing.Strategy == "cloud-only" {
 		cfg.Routing.Strategy = "dynamic"
 		changed = true
@@ -118,7 +118,7 @@ func ApplyLocalInstallDefaults(cfg *Config, state *InstallState) bool {
 		changed = true
 	}
 	if cfg.Local.Model == "" {
-		cfg.Local.Model = "ggml-small.bin"
+		cfg.Local.Model = DefaultLocalSTTModel
 		changed = true
 	}
 	if cfg.Local.Port == 0 {

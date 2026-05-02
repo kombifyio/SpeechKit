@@ -15,6 +15,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"runtime"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -116,11 +117,12 @@ func (p *LocalProvider) StartServer(ctx context.Context) error {
 		return fmt.Errorf("model not found: %s", p.ModelPath)
 	}
 
+	threads := defaultWhisperThreads()
 	args := []string{
 		"--model", p.ModelPath,
 		"--host", "127.0.0.1",
 		"--port", fmt.Sprintf("%d", p.Port),
-		"--threads", "4",
+		"--threads", strconv.Itoa(threads),
 		"--inference-path", "/v1/audio/transcriptions",
 	}
 	// whisper.cpp uses GPU by default; only pass --no-gpu when explicitly disabled.
@@ -134,7 +136,7 @@ func (p *LocalProvider) StartServer(ctx context.Context) error {
 	p.cmd.Stdout = os.Stderr // whisper-server logs to stdout
 	p.cmd.Stderr = os.Stderr
 
-	slog.Info("starting whisper-server", "binary", binaryPath, "args", args)
+	slog.Info("starting whisper-server", "binary", binaryPath, "args", args, "threads", threads)
 	if err := p.cmd.Start(); err != nil {
 		return fmt.Errorf("start whisper-server: %w", err)
 	}
@@ -151,6 +153,22 @@ func (p *LocalProvider) StartServer(ctx context.Context) error {
 	p.ready.Store(true)
 	slog.Info("whisper-server ready", "url", p.BaseURL)
 	return nil
+}
+
+func defaultWhisperThreads() int {
+	if raw := strings.TrimSpace(os.Getenv("SPEECHKIT_WHISPER_THREADS")); raw != "" {
+		if n, err := strconv.Atoi(raw); err == nil && n > 0 {
+			return n
+		}
+	}
+	n := runtime.NumCPU()
+	if n < 1 {
+		return 1
+	}
+	if n > 8 {
+		return 8
+	}
+	return n
 }
 
 func (p *LocalProvider) waitForReady(ctx context.Context) error {

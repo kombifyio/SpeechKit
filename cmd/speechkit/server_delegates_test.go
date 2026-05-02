@@ -3,6 +3,8 @@ package main
 import (
 	"context"
 	"errors"
+	"net/http"
+	"net/http/httptest"
 	"testing"
 
 	"github.com/kombifyio/SpeechKit/internal/config"
@@ -51,17 +53,22 @@ func TestBuildServerDelegatesAllLocal(t *testing.T) {
 	}
 }
 
-func TestBuildServerDelegatesDisabledConnection(t *testing.T) {
+func TestBuildServerDelegatesLegacyDisabledConnectionStillUsesServerMode(t *testing.T) {
+	t.Setenv("SC_TEST_DISABLED_COMPAT_TOKEN", "secret")
 	cfg := &config.Config{}
 	cfg.ModelSelection.Dictate.ModeSource = config.ModeSourceServer
-	cfg.ServerConnection = config.ServerConnectionConfig{Enabled: false}
+	cfg.ServerConnection = config.ServerConnectionConfig{
+		Enabled:        false,
+		URL:            "http://localhost:8080",
+		BearerTokenEnv: "SC_TEST_DISABLED_COMPAT_TOKEN",
+	}
 
 	d, err := buildServerDelegates(cfg)
 	if err != nil {
 		t.Fatalf("buildServerDelegates: %v", err)
 	}
-	if d != nil {
-		t.Fatalf("expected nil when mode wants server but ServerConnection disabled, got %+v", d)
+	if d == nil || !d.hasDictation() {
+		t.Fatalf("expected server delegate when mode wants server even if legacy enabled flag is false, got %+v", d)
 	}
 }
 
@@ -130,6 +137,111 @@ func TestDictationTranscriberPicksComposite(t *testing.T) {
 	got := dictationTranscriber(r, d)
 	if _, ok := got.(*compositeTranscriber); !ok {
 		t.Errorf("expected *compositeTranscriber, got %T", got)
+	}
+}
+
+func TestRefreshServerDelegatesUpdatesState(t *testing.T) {
+	t.Setenv("SC_TEST_REFRESH_TOKEN", "secret")
+	cfg := &config.Config{}
+	cfg.ModelSelection.Assist.ModeSource = config.ModeSourceServer
+	cfg.ServerConnection = config.ServerConnectionConfig{
+		Enabled:        true,
+		URL:            "http://localhost:8080",
+		BearerTokenEnv: "SC_TEST_REFRESH_TOKEN",
+	}
+	state := &appState{}
+
+	if err := refreshServerDelegates(cfg, state); err != nil {
+		t.Fatalf("refreshServerDelegates: %v", err)
+	}
+	if !currentServerDelegates(state).hasAssist() {
+		t.Fatal("expected refreshed state to include Assist server delegate")
+	}
+
+	cfg.ModelSelection.Assist.ModeSource = config.ModeSourceLocal
+	if err := refreshServerDelegates(cfg, state); err != nil {
+		t.Fatalf("refreshServerDelegates local: %v", err)
+	}
+	if got := currentServerDelegates(state); got != nil {
+		t.Fatalf("delegates = %+v, want nil after switching back to local", got)
+	}
+}
+
+func TestVoiceAgentServerCatalogSelectionIncludesExplicitSequence(t *testing.T) {
+	cfg := &config.Config{
+		VoiceAgent: config.VoiceAgentConfig{
+			AgentProfileID:  "unknown",
+			AgentSequenceID: " custom_sequence ",
+		},
+	}
+
+	personaID, sequenceID := voiceAgentServerCatalogSelection(cfg)
+	if got, want := personaID, "default"; got != want {
+		t.Fatalf("personaID = %q, want %q", got, want)
+	}
+	if got, want := sequenceID, "custom_sequence"; got != want {
+		t.Fatalf("sequenceID = %q, want %q", got, want)
+	}
+}
+
+func TestVoiceAgentServerCatalogSelectionPreservesNonDefaultPersona(t *testing.T) {
+	cfg := &config.Config{
+		VoiceAgent: config.VoiceAgentConfig{
+			AgentProfileID:  "brainstorming_companion",
+			AgentSequenceID: " discovery_call ",
+		},
+	}
+
+	personaID, sequenceID := voiceAgentServerCatalogSelection(cfg)
+	if got, want := personaID, "brainstorming_companion"; got != want {
+		t.Fatalf("personaID = %q, want %q", got, want)
+	}
+	if got, want := sequenceID, "discovery_call"; got != want {
+		t.Fatalf("sequenceID = %q, want %q", got, want)
+	}
+}
+
+func TestRuntimeDictationTranscriberUsesLatestServerDelegate(t *testing.T) {
+	t.Setenv("SC_TEST_RUNTIME_TOKEN", "secret")
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/dictation/transcribe" {
+			t.Fatalf("unexpected path %s", r.URL.Path)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"text":"from server","language":"en","duration_ms":1000,"latency_ms":12,"provider":"server","model":"remote","confidence":0.9}`))
+	}))
+	defer server.Close()
+
+	localRouter := &router.Router{Strategy: router.StrategyLocalOnly}
+	localRouter.SetLocal(&fakeProvider{name: "local"})
+	state := &appState{}
+	transcriber := newRuntimeDictationTranscriber(localRouter, state)
+
+	localResult, err := transcriber.Route(context.Background(), []byte{0x01}, 1.0, stt.TranscribeOpts{})
+	if err != nil {
+		t.Fatalf("local Route: %v", err)
+	}
+	if localResult.Provider != "local" {
+		t.Fatalf("provider = %q, want local before server delegate exists", localResult.Provider)
+	}
+
+	cfg := &config.Config{}
+	cfg.ModelSelection.Dictate.ModeSource = config.ModeSourceServer
+	cfg.ServerConnection = config.ServerConnectionConfig{
+		Enabled:        true,
+		URL:            server.URL,
+		BearerTokenEnv: "SC_TEST_RUNTIME_TOKEN",
+	}
+	if err := refreshServerDelegates(cfg, state); err != nil {
+		t.Fatalf("refreshServerDelegates: %v", err)
+	}
+
+	serverResult, err := transcriber.Route(context.Background(), []byte{0x01}, 1.0, stt.TranscribeOpts{})
+	if err != nil {
+		t.Fatalf("server Route: %v", err)
+	}
+	if serverResult.Provider != "server" {
+		t.Fatalf("provider = %q, want server after delegate refresh", serverResult.Provider)
 	}
 }
 

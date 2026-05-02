@@ -140,6 +140,40 @@ func TestApplySTTProfileOllamaRegistersSelfHostedProvider(t *testing.T) {
 	}
 }
 
+func TestApplySTTProfileOpenRouterRegistersCloudGatewayProvider(t *testing.T) {
+	cfg := defaultTestConfig()
+	cfg.Providers.OpenRouter.APIKeyEnv = "OPENROUTER_API_KEY"
+	cfgPath := filepath.Join(t.TempDir(), "config.toml")
+	t.Setenv("OPENROUTER_API_KEY", "test-openrouter-key")
+
+	state := &appState{activeProfiles: map[string]string{}}
+	sttRouter := &router.Router{}
+	profile, ok := findCatalogProfile(filteredModelCatalog(), "stt.openrouter.whisper-1")
+	if !ok {
+		t.Fatal("missing OpenRouter STT profile")
+	}
+
+	if err := applySTTProfile(context.Background(), cfgPath, cfg, state, sttRouter, profile); err != nil {
+		t.Fatalf("applySTTProfile: %v", err)
+	}
+
+	if !cfg.Providers.OpenRouter.Enabled {
+		t.Fatal("expected OpenRouter provider to be enabled")
+	}
+	if got := cfg.Providers.OpenRouter.STTModel; got != "openai/whisper-1" {
+		t.Fatalf("openrouter stt model = %q, want %q", got, "openai/whisper-1")
+	}
+	if got := cfg.Routing.Strategy; got != "cloud-only" {
+		t.Fatalf("routing strategy = %q, want %q", got, "cloud-only")
+	}
+	if provider := sttRouter.Cloud("openrouter"); provider == nil {
+		t.Fatal("expected OpenRouter STT provider to be configured on router")
+	}
+	if got := state.activeProfiles["stt"]; got != "stt.openrouter.whisper-1" {
+		t.Fatalf("active stt profile = %q, want %q", got, "stt.openrouter.whisper-1")
+	}
+}
+
 func TestApplySTTProfileLocalDetachesCanceledContextForStartup(t *testing.T) {
 	installTestWhisperBinary(t)
 	modelPath := filepath.Join(t.TempDir(), "ggml-small.bin")
@@ -317,6 +351,47 @@ func TestApplyRealtimeVoiceProfileOllamaUsesPipelineFallback(t *testing.T) {
 	}
 	if got := state.activeProfiles["realtime_voice"]; got != "realtime.ollama.gemma4-e4b-pipeline" {
 		t.Fatalf("active realtime voice profile = %q, want %q", got, "realtime.ollama.gemma4-e4b-pipeline")
+	}
+	if reloadCalls != 1 {
+		t.Fatalf("reloadAIRuntime calls = %d, want 1", reloadCalls)
+	}
+}
+
+func TestApplyRealtimeVoiceProfileOpenRouterUsesPipelineFallback(t *testing.T) {
+	cfg := defaultTestConfig()
+	cfg.Providers.OpenRouter.APIKeyEnv = "OPENROUTER_API_KEY"
+	cfgPath := filepath.Join(t.TempDir(), "config.toml")
+	t.Setenv("OPENROUTER_API_KEY", "test-openrouter-key")
+
+	state := &appState{activeProfiles: map[string]string{}}
+	profile, ok := findCatalogProfile(filteredModelCatalog(), "realtime.openrouter.gemini-2.5-flash-pipeline")
+	if !ok {
+		t.Fatal("missing OpenRouter realtime voice profile")
+	}
+
+	reloadCalls := 0
+	previousReload := reloadAIRuntime
+	reloadAIRuntime = func(ctx context.Context, state *appState, cfg *config.Config) error {
+		reloadCalls++
+		return nil
+	}
+	defer func() { reloadAIRuntime = previousReload }()
+
+	if err := applyRealtimeVoiceProfile(context.Background(), cfgPath, cfg, state, profile); err != nil {
+		t.Fatalf("applyRealtimeVoiceProfile: %v", err)
+	}
+
+	if !cfg.Providers.OpenRouter.Enabled {
+		t.Fatal("expected OpenRouter provider to be enabled")
+	}
+	if got := cfg.Providers.OpenRouter.AgentModel; got != "google/gemini-2.5-flash" {
+		t.Fatalf("openrouter agent model = %q, want %q", got, "google/gemini-2.5-flash")
+	}
+	if !cfg.VoiceAgent.PipelineFallback {
+		t.Fatal("expected OpenRouter voice profile to use pipeline fallback")
+	}
+	if got := state.activeProfiles["realtime_voice"]; got != "realtime.openrouter.gemini-2.5-flash-pipeline" {
+		t.Fatalf("active realtime voice profile = %q, want %q", got, "realtime.openrouter.gemini-2.5-flash-pipeline")
 	}
 	if reloadCalls != 1 {
 		t.Fatalf("reloadAIRuntime calls = %d, want 1", reloadCalls)

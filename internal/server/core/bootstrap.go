@@ -61,6 +61,7 @@ type App struct {
 	Health         *HealthRegistry
 	Modes          map[Mode]bool
 	Version        string
+	AuthState      *middleware.AuthState
 	STTRouter      *router.Router
 	AssistPipeline *assistpkg.Pipeline
 
@@ -241,6 +242,7 @@ func Run(ctx context.Context, cfg *config.Config, opts RunOptions) error {
 	// OPTIONS bypasses the bearer check, Auth attaches Identity to the
 	// context, and RateLimit reads that Identity to bucket per-user
 	// rather than per-IP.
+	app.AuthState = middleware.NewAuthState(cfg.Server.AuthMode, cfg.Server.BearerTokenEnv, cfg.Server.EdgeAuthSecretEnv)
 	publicPaths := serverPublicPaths()
 	publicRoutes := serverPublicRoutes()
 	chain := middleware.Chain(
@@ -248,13 +250,17 @@ func Run(ctx context.Context, cfg *config.Config, opts RunOptions) error {
 		middleware.Logging(),
 		middleware.CORS(cfg.Server.CORSAllowedOrigins),
 		middleware.Auth(middleware.AuthOptions{
-			Mode:           cfg.Server.AuthMode,
-			BearerTokenEnv: cfg.Server.BearerTokenEnv,
-			EdgeSecretEnv:  cfg.Server.EdgeAuthSecretEnv,
+			ModeProvider:        app.AuthState.Mode,
+			BearerTokenProvider: app.AuthState.BearerToken,
+			EdgeSecretProvider:  app.AuthState.EdgeSecret,
 			// Health endpoints are always public so external probes (Render,
 			// Kubernetes) can hit them without credentials.
-			AllowPublicPaths:  publicPaths,
-			AllowPublicRoutes: publicRoutes,
+			AllowPublicPaths:     publicPaths,
+			AllowPublicRoutes:    publicRoutes,
+			AllowBootstrapRoutes: serverBootstrapAuthRoutes(),
+			BootstrapAllowed: func(r *http.Request) bool {
+				return serverSettingsBootstrapWriteAllowed(app)
+			},
 		}),
 		middleware.RateLimit(middleware.RateLimitOptions{
 			RequestsPerSecond: cfg.Server.RateLimitRPS,

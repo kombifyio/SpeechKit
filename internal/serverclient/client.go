@@ -7,7 +7,6 @@ import (
 	"io"
 	"net/http"
 	"net/url"
-	"os"
 	"strings"
 	"time"
 
@@ -116,7 +115,7 @@ func NewFromConfig(cfg config.ServerConnectionConfig) (*Client, error) {
 	if envName == "" {
 		envName = "SPEECHKIT_SERVER_TOKEN"
 	}
-	token := strings.TrimSpace(os.Getenv(envName))
+	token := strings.TrimSpace(config.ResolveSecret(envName))
 	if token == "" {
 		return nil, fmt.Errorf("serverclient: env var %q is empty; cannot authenticate", envName)
 	}

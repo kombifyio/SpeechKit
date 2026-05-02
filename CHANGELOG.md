@@ -4,6 +4,60 @@ All notable changes to SpeechKit should be documented in this file.
 
 The format is based on Keep a Changelog and this project is intended to ship under Apache-2.0.
 
+## [0.28.2] - 2026-05-03
+
+v0.28.2 closes the setup and Voice Agent polish tranche after the v0.28
+server hardening work. The release focuses on first-run server usability,
+managed API-token setup, safer dev defaults, and the next layer of structured
+Voice Agent workflows.
+
+### Highlights
+
+- **Setup-managed server API tokens**: the server setup page can now generate a
+  bearer token for Windows clients and API callers, show it once, load it into
+  the running process, and keep the raw value out of `server-settings.json`.
+- **Self-managed auth stays possible**: operators can turn setup-managed token
+  generation off when bearer tokens, edge auth, or local-only access are handled
+  outside the setup UI.
+- **Voice Agent workflow behavior**: built-in Voice Agent behavior profiles,
+  sequence defaults, step transitions, and transcript checks now share one
+  catalog between the Windows runtime and the central server.
+- **Safer dev-server defaults**: local development now routes modes to the dev
+  server by default and keeps Whisper Large v3 Turbo selected as the standard
+  local STT model.
+
+### Added
+
+- Added server settings support for `server_auth` with managed bearer mode,
+  self-managed mode, write-only token generation, and runtime auth refresh.
+- Added a bootstrap-only settings-write auth bypass so first-run setup can
+  create the initial token when bearer auth is enabled but no token exists yet.
+- Added setup UI controls for generating the server API token, choosing the
+  bearer env var, copying the one-time token, and reviewing API-auth state.
+- Added Voice Agent sequence/workflow state for local and server sessions,
+  including entered/completed step frames and deterministic workflow transcript
+  evaluation helpers.
+
+### Changed
+
+- Auth middleware now resolves mode and bearer token dynamically per request so
+  setup-generated tokens are accepted without rebuilding the middleware chain.
+- Server settings snapshots now expose safe auth metadata, including auth mode,
+  bearer env var, and whether a token is configured, without returning secrets.
+- Voice Agent persona/profile defaults now flow through the shared behavior
+  catalog, including default sequences and step instructions.
+- Release metadata is bumped to `0.28.2` across root package metadata,
+  frontend package metadata, Windows manifest, and installer metadata.
+
+### Fixed
+
+- Fixed the first-run server setup loop where bearer auth could be enabled but
+  no usable token had been generated for the Windows client yet.
+- Fixed dev startup/configuration defaults that could leave the dev server
+  unselected and fall back to the small local model instead of Turbo.
+- Tightened overlay surface layout behavior and mode-source test coverage for
+  the updated runtime routing experience.
+
 ## [0.28.1] - 2026-05-01
 
 v0.28.1 cleans up the server deployment contract after the v0.28 hardening

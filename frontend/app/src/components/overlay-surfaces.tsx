@@ -337,7 +337,7 @@ function CompactFeedbackStack({
       onMouseEnter={onMouseEnter}
       onMouseLeave={onMouseLeave}
       className={[
-        'pointer-events-auto flex h-full w-full flex-col items-center justify-center px-2',
+        'pointer-events-auto inline-flex max-h-full max-w-full flex-col items-center justify-center',
       ].join(' ')}
     >
       {children}
@@ -591,85 +591,85 @@ function PillPanelOverlayView({
             void fetch('/overlay/pill-panel/hide', { method: 'POST' })
           }}
         >
-        <div
-          data-testid="pill-panel-shell"
-          data-overlay-surface="pill-panel"
-          data-overlay-mode="pill"
-          data-overlay-state={snapshot.state}
-          data-overlay-phase={snapshot.phase}
-          data-active-mode={snapshot.activeMode}
-          data-overlay-size={tone.size}
-          data-overlay-color={tone.color}
-          aria-label={overlayStatusLabel(snapshot)}
-          className="relative grid grid-cols-[76px_auto_76px] items-center gap-1 rounded-full bg-neutral-950/84 px-1.5 py-0.5 shadow-none"
-        >
-          <span data-testid="pill-panel-status" className="sr-only">
-            {overlayStatusLabel(snapshot)}
-          </span>
-          <OverlayPanelSection testId="pill-panel-left-controls" className="w-[76px] justify-start">
-            <OverlayMicrophoneQuickSelect selectedDeviceId={snapshot.selectedAudioDeviceId} />
-            <OverlayActionButton
-              icon={<ClipboardCopy className="h-3.5 w-3.5" />}
-              title="Copy"
-              onClick={copyLast}
-              className="h-6 w-6"
-            />
-            <OverlayActionButton
-              icon={<FileText className="h-3.5 w-3.5" />}
-              title="Note"
-              onClick={openQuickCapture}
-              className="h-6 w-6"
-            />
-          </OverlayPanelSection>
-
-          <OverlayPillShell
-            snapshot={snapshot}
-            tone={tone}
-            shellClassName={[
-              tone.shellClassName,
-              snapshot.movable ? 'cursor-move' : '',
-            ].join(' ')}
-            surface="pill-panel-center"
-            draggable={snapshot.movable}
-            onPointerDown={beginPanelDrag}
-            onPointerMove={movePanelDrag}
-            onPointerUp={endPanelDrag}
-            onPointerCancel={endPanelDrag}
+          <div
+            data-testid="pill-panel-shell"
+            data-overlay-surface="pill-panel"
+            data-overlay-mode="pill"
+            data-overlay-state={snapshot.state}
+            data-overlay-phase={snapshot.phase}
+            data-active-mode={snapshot.activeMode}
+            data-overlay-size={tone.size}
+            data-overlay-color={tone.color}
+            aria-label={overlayStatusLabel(snapshot)}
+            className="relative grid grid-cols-[76px_auto_76px] items-center gap-1 rounded-full bg-neutral-950/84 px-1.5 py-0.5 shadow-none"
           >
-            <AgentAudioVisualizerBar
-              data-testid="pill-panel-visualizer"
-              size={tone.size}
-              state={tone.state}
-              level={tone.level}
-              barCount={5}
-              color={tone.color}
-              className={['relative z-10 text-current', tone.visualizerClassName].join(' ')}
-            />
-          </OverlayPillShell>
+            <span data-testid="pill-panel-status" className="sr-only">
+              {overlayStatusLabel(snapshot)}
+            </span>
+            <OverlayPanelSection testId="pill-panel-left-controls" className="w-[76px] justify-start">
+              <OverlayMicrophoneQuickSelect selectedDeviceId={snapshot.selectedAudioDeviceId} />
+              <OverlayActionButton
+                icon={<ClipboardCopy className="h-3.5 w-3.5" />}
+                title="Copy"
+                onClick={copyLast}
+                className="h-6 w-6"
+              />
+              <OverlayActionButton
+                icon={<FileText className="h-3.5 w-3.5" />}
+                title="Note"
+                onClick={openQuickCapture}
+                className="h-6 w-6"
+              />
+            </OverlayPanelSection>
 
-          <OverlayPanelSection testId="pill-panel-mode-controls" className="w-[76px] justify-end">
-            {MODE_ORDER.map((mode) => {
-              const Icon = MODE_META[mode].icon
-              return (
-                <OverlayModeAction
-                  key={mode}
-                  label={MODE_META[mode].label}
-                  icon={(
-                    <Icon
-                      className="h-3 w-3"
-                      data-testid={`mode-icon-${MODE_META[mode].label.toLowerCase()}`}
-                      data-icon={MODE_META[mode].iconKey}
-                    />
-                  )}
-                  enabled={modeEnabled(snapshot, mode)}
-                  runtimeActive={snapshot.activeMode === mode}
-                  slashed={!modeEnabled(snapshot, mode) || !modeAvailable(snapshot, mode)}
-                  onClick={() => toggleMode(mode, snapshot)}
-                />
-              )
-            })}
-          </OverlayPanelSection>
-        </div>
+            <OverlayPillShell
+              snapshot={snapshot}
+              tone={tone}
+              shellClassName={[
+                tone.shellClassName,
+                snapshot.movable ? 'cursor-move' : '',
+              ].join(' ')}
+              surface="pill-panel-center"
+              draggable={snapshot.movable}
+              onPointerDown={beginPanelDrag}
+              onPointerMove={movePanelDrag}
+              onPointerUp={endPanelDrag}
+              onPointerCancel={endPanelDrag}
+            >
+              <AgentAudioVisualizerBar
+                data-testid="pill-panel-visualizer"
+                size={tone.size}
+                state={tone.state}
+                level={tone.level}
+                barCount={5}
+                color={tone.color}
+                className={['relative z-10 text-current', tone.visualizerClassName].join(' ')}
+              />
+            </OverlayPillShell>
+
+            <OverlayPanelSection testId="pill-panel-mode-controls" className="w-[76px] justify-end">
+              {MODE_ORDER.map((mode) => {
+                const Icon = MODE_META[mode].icon
+                return (
+                  <OverlayModeAction
+                    key={mode}
+                    label={MODE_META[mode].label}
+                    icon={(
+                      <Icon
+                        className="h-3 w-3"
+                        data-testid={`mode-icon-${MODE_META[mode].label.toLowerCase()}`}
+                        data-icon={MODE_META[mode].iconKey}
+                      />
+                    )}
+                    enabled={modeEnabled(snapshot, mode)}
+                    runtimeActive={snapshot.activeMode === mode}
+                    slashed={!modeEnabled(snapshot, mode) || !modeAvailable(snapshot, mode)}
+                    onClick={() => toggleMode(mode, snapshot)}
+                  />
+                )
+              })}
+            </OverlayPanelSection>
+          </div>
         </CompactFeedbackStack>
       </div>
     </OverlaySurfaceFrame>

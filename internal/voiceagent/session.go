@@ -184,6 +184,12 @@ type LiveProvider interface {
 	Name() string
 }
 
+// LiveInstructionUpdater is optionally implemented by providers that can
+// refresh active host instructions without treating the update as a user turn.
+type LiveInstructionUpdater interface {
+	UpdateInstructions(ctx context.Context, cfg LiveConfig) error
+}
+
 // LiveConfig configures a real-time session.
 type LiveConfig struct {
 	Model string // e.g. "gemini-3.1-flash-live-preview"
@@ -202,6 +208,7 @@ type LiveConfig struct {
 	Locale           string
 	Policies         LivePolicies
 	Tools            []ToolDefinition
+	Workflow         *WorkflowConfig
 }
 
 // LiveMessage is a message received from the real-time model.
@@ -252,6 +259,7 @@ type Session struct {
 	locale    string
 	lastCfg   LiveConfig // Stored for reconnection
 	lastIdle  IdleConfig // Stored for reconnection
+	workflow  *workflowState
 }
 
 // NewSession creates a Voice Agent session with the given provider.
@@ -278,6 +286,7 @@ func (s *Session) Start(ctx context.Context, cfg LiveConfig, idleCfg IdleConfig)
 	s.cancelFn = cancel
 	s.mu.Unlock()
 
+	cfg, workflow := prepareWorkflowStart(cfg)
 	if err := s.provider.Connect(sessionCtx, cfg); err != nil {
 		s.setState(StateInactive)
 		cancel()
@@ -288,6 +297,7 @@ func (s *Session) Start(ctx context.Context, cfg LiveConfig, idleCfg IdleConfig)
 	s.mu.Lock()
 	s.lastCfg = cfg
 	s.lastIdle = idleCfg
+	s.workflow = workflow
 	s.mu.Unlock()
 
 	// Start idle timer.
@@ -356,6 +366,24 @@ func (s *Session) SendToolResponse(response ToolResponse) error {
 	return s.provider.SendToolResponse(response)
 }
 
+// AdvanceWorkflowStep moves a configured local workflow to its next step and
+// updates the active provider instructions. It returns nil when no workflow is
+// active or the workflow has already completed.
+func (s *Session) AdvanceWorkflowStep(ctx context.Context, reason string) error {
+	next, ok := s.prepareWorkflowAdvance(reason)
+	if !ok {
+		return nil
+	}
+	if updater, ok := s.provider.(LiveInstructionUpdater); ok {
+		return updater.UpdateInstructions(ctx, next)
+	}
+	text := RenderHostInstructionUpdate(next)
+	if text == "" {
+		return nil
+	}
+	return s.provider.SendText(text)
+}
+
 // Stop deactivates the Voice Agent session.
 func (s *Session) Stop() {
 	s.mu.Lock()
@@ -378,6 +406,7 @@ func (s *Session) Stop() {
 			slog.Error("voice agent close error", "err", err)
 		}
 	}
+	s.workflow = nil
 
 	s.setState(StateInactive)
 	slog.Info("voice agent session stopped")
@@ -386,6 +415,18 @@ func (s *Session) Stop() {
 // State returns the current session state.
 func (s *Session) CurrentState() State {
 	return s.currentState()
+}
+
+func (s *Session) ProviderName() string {
+	if s == nil {
+		return ""
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.provider == nil {
+		return ""
+	}
+	return s.provider.Name()
 }
 
 func (s *Session) currentState() State {
@@ -481,6 +522,9 @@ func (s *Session) receiveLoop(ctx context.Context) {
 			if s.callbacks.OnInputTranscript != nil {
 				s.callbacks.OnInputTranscript(msg.InputTranscript, msg.InputTranscriptDone)
 			}
+			if msg.InputTranscriptDone {
+				s.recordWorkflowUserTurn(ctx)
+			}
 			if msg.InputTranscriptDone && !msg.Done && len(msg.Audio) == 0 && msg.OutputTranscript == "" && msg.Text == "" {
 				s.setState(StateProcessing)
 			}
@@ -569,6 +613,7 @@ func (s *Session) cleanupOnError() {
 	if s.cancelFn != nil {
 		s.cancelFn()
 	}
+	s.workflow = nil
 	if s.provider != nil {
 		if err := s.provider.Close(); err != nil {
 			// The session is already on an error path; we still want the

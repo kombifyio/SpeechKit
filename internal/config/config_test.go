@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/kombifyio/SpeechKit/internal/secrets"
+	"github.com/kombifyio/SpeechKit/internal/voiceagentprofile"
 )
 
 func unsetEnvForTest(t *testing.T, name string) {
@@ -102,8 +103,12 @@ func TestLoadDefaults(t *testing.T) {
 	if cfg.ServerConnection.Enabled {
 		t.Error("server connection should be disabled by default")
 	}
-	if cfg.ServerConnection.URL != "" {
-		t.Errorf("default server URL = %q, want empty", cfg.ServerConnection.URL)
+	expectedServerURL := ""
+	if ManagedDevServerAvailableInBuild() {
+		expectedServerURL = ManagedDevServerURL
+	}
+	if cfg.ServerConnection.URL != expectedServerURL {
+		t.Errorf("default server URL = %q, want %q", cfg.ServerConnection.URL, expectedServerURL)
 	}
 	if cfg.ServerConnection.BearerTokenEnv != "SPEECHKIT_SERVER_TOKEN" {
 		t.Errorf("default server bearer token env = %q, want SPEECHKIT_SERVER_TOKEN", cfg.ServerConnection.BearerTokenEnv)
@@ -134,6 +139,9 @@ func TestLoadDefaults(t *testing.T) {
 	}
 	if cfg.VoiceAgent.RefinementPrompt != "" {
 		t.Errorf("default voice agent refinement prompt = %q, want empty", cfg.VoiceAgent.RefinementPrompt)
+	}
+	if cfg.VoiceAgent.AgentProfileID != voiceagentprofile.DefaultID {
+		t.Errorf("default voice agent profile = %q, want %q", cfg.VoiceAgent.AgentProfileID, voiceagentprofile.DefaultID)
 	}
 	if cfg.Routing.PreferLocalUnderSeconds != 10 {
 		t.Errorf("default prefer local = %f, want 10", cfg.Routing.PreferLocalUnderSeconds)
@@ -167,6 +175,63 @@ func TestLoadDefaults(t *testing.T) {
 	}
 	if cfg.Feedback.AudioRetentionDays != 7 {
 		t.Errorf("legacy feedback audio retention days = %d, want 7", cfg.Feedback.AudioRetentionDays)
+	}
+}
+
+func TestLoadVoiceAgentAgentProfileID(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.toml")
+	body := `
+[voice_agent]
+agent_profile_id = "humor_companion"
+`
+	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
+		t.Fatalf("write toml: %v", err)
+	}
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if got, want := cfg.VoiceAgent.AgentProfileID, voiceagentprofile.HumorCompanionID; got != want {
+		t.Fatalf("voice_agent.agent_profile_id = %q, want %q", got, want)
+	}
+}
+
+func TestLoadVoiceAgentAgentProfileIDFallsBackToDefault(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.toml")
+	body := `
+[voice_agent]
+agent_profile_id = "unknown"
+`
+	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
+		t.Fatalf("write toml: %v", err)
+	}
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if got, want := cfg.VoiceAgent.AgentProfileID, voiceagentprofile.DefaultID; got != want {
+		t.Fatalf("voice_agent.agent_profile_id = %q, want %q", got, want)
+	}
+}
+
+func TestLoadVoiceAgentAgentSequenceID(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.toml")
+	body := `
+[voice_agent]
+agent_sequence_id = "  custom_discovery_flow  "
+`
+	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
+		t.Fatalf("write toml: %v", err)
+	}
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if got, want := cfg.VoiceAgent.AgentSequenceID, "custom_discovery_flow"; got != want {
+		t.Fatalf("voice_agent.agent_sequence_id = %q, want %q", got, want)
 	}
 }
 
@@ -223,6 +288,41 @@ request_timeout_sec = 5
 	}
 	if cfg.ServerConnection.RequestTimeoutSec != 5 {
 		t.Errorf("server_connection.request_timeout_sec = %d, want 5", cfg.ServerConnection.RequestTimeoutSec)
+	}
+}
+
+func TestLoadBackfillsManagedDevServerURLForPrivateBuild(t *testing.T) {
+	restoreBuild := OverrideManagedDevServerBuildForTests("1")
+	defer restoreBuild()
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.toml")
+	if err := os.WriteFile(path, []byte(`
+[server_connection]
+enabled = false
+url = ""
+bearer_token_env = ""
+fallback_to_local = true
+request_timeout_sec = 0
+`), 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+
+	if cfg.ServerConnection.Enabled {
+		t.Fatal("managed dev server should be available but not enabled by default")
+	}
+	if got, want := cfg.ServerConnection.URL, ManagedDevServerURL; got != want {
+		t.Fatalf("server_connection.url = %q, want %q", got, want)
+	}
+	if got, want := cfg.ServerConnection.BearerTokenEnv, "SPEECHKIT_SERVER_TOKEN"; got != want {
+		t.Fatalf("server_connection.bearer_token_env = %q, want %q", got, want)
+	}
+	if got, want := cfg.ServerConnection.RequestTimeoutSec, 30; got != want {
+		t.Fatalf("server_connection.request_timeout_sec = %d, want %d", got, want)
 	}
 }
 
@@ -1171,8 +1271,8 @@ func TestApplyLocalInstallDefaultsPreparesPendingLocalInstallForOnboardingDownlo
 	if cfg.HuggingFace.Enabled {
 		t.Fatal("HuggingFace should be disabled on fresh local install while onboarding is pending")
 	}
-	if cfg.Local.Model != "ggml-small.bin" {
-		t.Fatalf("local model = %q, want %q", cfg.Local.Model, "ggml-small.bin")
+	if cfg.Local.Model != "ggml-large-v3-turbo.bin" {
+		t.Fatalf("local model = %q, want %q", cfg.Local.Model, "ggml-large-v3-turbo.bin")
 	}
 }
 
@@ -1358,5 +1458,52 @@ func TestManagedHuggingFaceAvailableInBuild_PublicModuleFallbackStaysDisabled(t 
 
 	if ManagedHuggingFaceAvailableInBuild() {
 		t.Fatal("ManagedHuggingFaceAvailableInBuild() = true, want false for public module fallback")
+	}
+}
+
+func TestManagedDevServerAvailableInBuild_DefaultsToPrivateModuleWhenUnset(t *testing.T) {
+	restoreBuild := OverrideManagedDevServerBuildForTests("")
+	defer restoreBuild()
+
+	prevReadBuildInfo := readBuildInfo
+	readBuildInfo = func() (buildInfo, bool) {
+		return buildInfo{MainPath: privateModulePath()}, true
+	}
+	defer func() {
+		readBuildInfo = prevReadBuildInfo
+	}()
+
+	if !ManagedDevServerAvailableInBuild() {
+		t.Fatal("ManagedDevServerAvailableInBuild() = false, want true for private module fallback")
+	}
+}
+
+func TestManagedDevServerAvailableInBuild_PublicModuleFallbackStaysDisabled(t *testing.T) {
+	restoreBuild := OverrideManagedDevServerBuildForTests("")
+	defer restoreBuild()
+
+	prevReadBuildInfo := readBuildInfo
+	readBuildInfo = func() (buildInfo, bool) {
+		return buildInfo{MainPath: "github.com/kombifyio/SpeechKit"}, true
+	}
+	defer func() {
+		readBuildInfo = prevReadBuildInfo
+	}()
+
+	if ManagedDevServerAvailableInBuild() {
+		t.Fatal("ManagedDevServerAvailableInBuild() = true, want false for public module fallback")
+	}
+}
+
+func TestApplyManagedDevServerDefaultsKeepsPublicBuildBlank(t *testing.T) {
+	restoreBuild := OverrideManagedDevServerBuildForTests("0")
+	defer restoreBuild()
+
+	cfg := &Config{}
+	if ApplyManagedDevServerDefaults(cfg) {
+		t.Fatal("ApplyManagedDevServerDefaults() changed public build config, want no-op")
+	}
+	if cfg.ServerConnection.URL != "" {
+		t.Fatalf("server_connection.url = %q, want empty for public build", cfg.ServerConnection.URL)
 	}
 }

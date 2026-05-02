@@ -20,6 +20,13 @@ func serverPublicRoutes() []middleware.PublicRoute {
 	}
 }
 
+func serverBootstrapAuthRoutes() []middleware.PublicRoute {
+	return []middleware.PublicRoute{
+		{Path: "/v1/server/settings", Methods: []string{http.MethodPatch}},
+		{Path: "/api/v1/server/settings", Methods: []string{http.MethodPatch}},
+	}
+}
+
 func registerTestUI(app *App) {
 	if app == nil || app.Mux == nil {
 		return
@@ -1110,6 +1117,47 @@ const setupOnlyUIHTML = `<!doctype html>
       background: #12151a;
     }
 
+    .server-auth-card {
+      grid-column: 1 / -1;
+    }
+
+    .auth-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+
+    .token-output {
+      display: grid;
+      gap: 8px;
+      border: 1px solid rgba(115, 210, 141, .35);
+      border-radius: 6px;
+      padding: 10px;
+      background: #0f1b13;
+    }
+
+    .token-output.hidden {
+      display: none;
+    }
+
+    .token-output code {
+      display: block;
+      overflow-wrap: anywhere;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      background: #0b0d11;
+      padding: 8px 10px;
+      color: var(--ok);
+      line-height: 1.45;
+    }
+
+    .token-output small {
+      color: var(--muted);
+      line-height: 1.35;
+    }
+
     .badge {
       display: inline-flex;
       align-items: center;
@@ -1339,6 +1387,9 @@ const setupOnlyUIHTML = `<!doctype html>
             </div>
             <div class="mode-option-card">
               <h3>Voice Agent Prompt Template</h3>
+              <label for="voiceAgentAgentProfile">Agent profile
+                <select id="voiceAgentAgentProfile"></select>
+              </label>
               <label for="voiceAgentPromptTemplate">System prompt
                 <textarea id="voiceAgentPromptTemplate" autocomplete="off" placeholder="You are a concise voice assistant."></textarea>
               </label>
@@ -1348,6 +1399,22 @@ const setupOnlyUIHTML = `<!doctype html>
         </section>
 
         <section class="step-panel hidden" data-step-panel="credentials">
+        <div class="credential-card server-auth-card">
+          <div class="auth-row">
+            <label class="inline"><input id="serverTokenManaged" type="checkbox" checked> Generate server API token</label>
+            <span class="badge warn" id="serverTokenState">Token pending</span>
+          </div>
+          <p class="intro-copy">Keep this on to generate a bearer token for Windows clients and API callers. Turn it off when authentication is handled outside SpeechKit or the API should stay available with the current server auth mode.</p>
+          <label for="serverTokenEnv">Bearer token env
+            <input id="serverTokenEnv" autocomplete="off" value="SPEECHKIT_SERVER_TOKEN">
+          </label>
+          <div class="token-output hidden" id="serverTokenOutput">
+            <strong>Generated server API token</strong>
+            <code id="generatedServerToken">-</code>
+            <button id="copyGeneratedServerToken" class="secondary" type="button">Copy Token</button>
+            <small id="generatedServerTokenHint">Store this token in the Windows client environment and send it as Authorization: Bearer.</small>
+          </div>
+        </div>
         <div class="credential-grid">
           <div class="credential-card">
             <label class="inline"><input id="openAIEnabled" type="checkbox"> OpenAI</label>
@@ -1415,6 +1482,11 @@ const setupOnlyUIHTML = `<!doctype html>
               <strong id="reviewVoice">-</strong>
               <small id="reviewVoiceModel">-</small>
             </div>
+            <div class="metric">
+              <span>API Auth</span>
+              <strong id="reviewServerAuth">-</strong>
+              <small id="reviewServerAuthDetail">-</small>
+            </div>
           </div>
         </section>
 
@@ -1436,6 +1508,8 @@ const setupOnlyUIHTML = `<!doctype html>
     let currentStep = 0;
     let lastSettings = null;
     let setupMode = "onboarding";
+    let generatedServerToken = "";
+    let forceServerTokenGeneration = false;
 
     function byId(id) {
       return document.getElementById(id);
@@ -1458,6 +1532,35 @@ const setupOnlyUIHTML = `<!doctype html>
     function selectedText(id) {
       const select = byId(id);
       return select && select.selectedOptions.length ? select.selectedOptions[0].textContent : "-";
+    }
+
+    function voiceAgentProfiles() {
+      const voice = lastSettings && lastSettings.voice_agent ? lastSettings.voice_agent : {};
+      const profiles = Array.isArray(voice.agent_profiles) ? voice.agent_profiles : [];
+      return profiles.length ? profiles : [
+        { id: "default", display_name: "Default Voice Agent" },
+        { id: "brainstorming_companion", display_name: "Brainstorming Companion", voice: "Aoede" },
+        { id: "humor_companion", display_name: "Humor Companion", voice: "Puck" },
+        { id: "support_companion", display_name: "Support Companion", voice: "Charon" }
+      ];
+    }
+
+    function populateVoiceAgentProfiles(selectedID) {
+      const select = byId("voiceAgentAgentProfile");
+      if (!select) return;
+      const profiles = voiceAgentProfiles();
+      const current = selectedID || select.value || "default";
+      select.innerHTML = "";
+      profiles.forEach(function (profile) {
+        const option = document.createElement("option");
+        option.value = profile.id;
+        option.textContent = profile.display_name || profile.displayName || profile.id;
+        if (profile.voice) {
+          option.textContent += " (" + profile.voice + ")";
+        }
+        select.appendChild(option);
+      });
+      select.value = profiles.some(function (profile) { return profile.id === current; }) ? current : "default";
     }
 
     function assistTools() {
@@ -1497,6 +1600,74 @@ const setupOnlyUIHTML = `<!doctype html>
       }).map(function (input) {
         return input.value;
       });
+    }
+
+    function serverBearerTokenSet() {
+      const auth = lastSettings && lastSettings.auth ? lastSettings.auth : {};
+      return Boolean(auth.bearer_token_set);
+    }
+
+    function updateServerAuthUI() {
+      const managed = byId("serverTokenManaged").checked;
+      const tokenSet = serverBearerTokenSet();
+      const envName = byId("serverTokenEnv").value.trim() || "SPEECHKIT_SERVER_TOKEN";
+      const state = byId("serverTokenState");
+      if (!managed) {
+        state.textContent = "Self-managed";
+        state.className = "badge";
+      } else if (forceServerTokenGeneration || !tokenSet) {
+        state.textContent = "Token will be generated";
+        state.className = "badge warn";
+      } else {
+        state.textContent = "Token configured";
+        state.className = "badge ok";
+      }
+      byId("reviewServerAuth").textContent = managed ? "Managed bearer token" : "Self-managed";
+      byId("reviewServerAuthDetail").textContent = managed
+        ? "Env: " + envName + (forceServerTokenGeneration || !tokenSet ? " / new token on save" : " / existing token")
+        : "Setup will not generate a server API token.";
+    }
+
+    function applyServerAuthToForm(settings) {
+      settings = settings || {};
+      const editable = settings.editable || {};
+      const desired = editable.desired || {};
+      const desiredAuth = desired.server_auth || {};
+      const runtime = settings.runtime || {};
+      const runtimeAuth = settings.auth || {};
+      const mode = runtime.settings_persisted && desiredAuth.mode ? desiredAuth.mode : "managed_bearer";
+      byId("serverTokenManaged").checked = mode !== "self_managed";
+      byId("serverTokenEnv").value = desiredAuth.bearer_token_env || runtimeAuth.bearer_token_env || "SPEECHKIT_SERVER_TOKEN";
+      forceServerTokenGeneration = byId("serverTokenManaged").checked && !Boolean(runtimeAuth.bearer_token_set);
+      updateServerAuthUI();
+    }
+
+    function serverAuthPayload() {
+      const managed = byId("serverTokenManaged").checked;
+      const payload = {
+        mode: managed ? "managed_bearer" : "self_managed",
+        bearer_token_env: byId("serverTokenEnv").value.trim() || "SPEECHKIT_SERVER_TOKEN"
+      };
+      if (managed && (forceServerTokenGeneration || !serverBearerTokenSet())) {
+        payload.generate_token = true;
+      }
+      return payload;
+    }
+
+    function renderGeneratedServerToken(generated) {
+      generated = generated || {};
+      if (!generated.token) {
+        if (!generatedServerToken) {
+          byId("serverTokenOutput").classList.add("hidden");
+        }
+        return;
+      }
+      generatedServerToken = generated.token;
+      forceServerTokenGeneration = false;
+      byId("generatedServerToken").textContent = generated.token;
+      byId("generatedServerTokenHint").textContent = "Store this in " + (generated.env || "SPEECHKIT_SERVER_TOKEN") + " on the Windows client. API calls must send Authorization: Bearer <token>.";
+      byId("serverTokenOutput").classList.remove("hidden");
+      updateServerAuthUI();
     }
 
     function renderSettingsPanels() {
@@ -1562,6 +1733,11 @@ const setupOnlyUIHTML = `<!doctype html>
         byId(pair[0]).textContent = selectedText(pair[2]);
         byId(pair[1]).textContent = byId(pair[3]).value || "-";
       });
+      const agentProfile = selectedText("voiceAgentAgentProfile");
+      if (agentProfile !== "-") {
+        byId("reviewVoiceModel").textContent = (byId("reviewVoiceModel").textContent || "-") + " / Agent " + agentProfile;
+      }
+      updateServerAuthUI();
     }
 
     function profilesFor(mode, kind) {
@@ -1630,6 +1806,7 @@ const setupOnlyUIHTML = `<!doctype html>
       const voice = desired.voice_agent || {};
       byId("dictationDictionary").value = typeof dictation.dictionary === "string" ? dictation.dictionary : "";
       renderAssistTools(Array.isArray(assist.enabled_tools) ? assist.enabled_tools : defaultAssistToolIDs());
+      populateVoiceAgentProfiles(voice.agent_profile_id || (settings.voice_agent || {}).agent_profile_id || "default");
       byId("voiceAgentPromptTemplate").value = typeof voice.prompt_template === "string" ? voice.prompt_template : "";
     }
 
@@ -1653,6 +1830,7 @@ const setupOnlyUIHTML = `<!doctype html>
       applyCredentialForm(credentials.google, "googleEnabled", "googleEnv");
       applyCredentialForm(credentials.huggingface, "hfEnabled", "hfEnv");
       applyCredentialForm(credentials.openrouter, "openRouterEnabled", "openRouterEnv");
+      applyServerAuthToForm(lastSettings);
       applyModeOptionsToForm(lastSettings);
 
       const runtime = lastSettings.runtime || {};
@@ -1704,6 +1882,7 @@ const setupOnlyUIHTML = `<!doctype html>
       byId("assistModel").value = defaultLocalLLMModel;
       byId("voiceAgentModel").value = defaultLocalLLMModel;
       renderAssistTools(defaultAssistToolIDs());
+      populateVoiceAgentProfiles("default");
       byId("settingsSaveStatus").textContent = "Local defaults selected.";
       updateReview();
     }
@@ -1724,6 +1903,7 @@ const setupOnlyUIHTML = `<!doctype html>
       return {
         onboarding_complete: true,
         onboarding_version: lastSettings && lastSettings.version ? lastSettings.version : "",
+        server_auth: serverAuthPayload(),
         modes: {
           dictation: {
             provider_kind: byId("dictationKind").value,
@@ -1748,6 +1928,7 @@ const setupOnlyUIHTML = `<!doctype html>
           enabled_tools: selectedAssistToolIDs()
         },
         voice_agent: {
+          agent_profile_id: byId("voiceAgentAgentProfile").value || "default",
           prompt_template: byId("voiceAgentPromptTemplate").value.trim()
         },
         credentials: {
@@ -1778,8 +1959,10 @@ const setupOnlyUIHTML = `<!doctype html>
         ["openAIKey", "groqKey", "googleKey", "hfKey", "openRouterKey"].forEach(function (id) {
           byId(id).value = "";
         });
+        const generated = result.body && result.body.generated_token ? result.body.generated_token : null;
         const message = result.body && result.body.message ? result.body.message : "Saved.";
         await loadServerSettings({ preserveStatus: true });
+        renderGeneratedServerToken(generated);
         byId("settingsSaveStatus").textContent = message;
         setSetupStatus("Saved", "ok");
       } catch (err) {
@@ -1816,6 +1999,13 @@ const setupOnlyUIHTML = `<!doctype html>
 
     async function request(path, opts) {
       opts = opts || {};
+      if (generatedServerToken && opts.method && opts.method !== "GET" && path.indexOf("/server/settings") !== -1) {
+        const headers = new Headers(opts.headers || {});
+        if (!headers.has("Authorization")) {
+          headers.set("Authorization", "Bearer " + generatedServerToken);
+        }
+        opts = Object.assign({}, opts, { headers: headers });
+      }
       const response = await fetch(path, opts);
       const text = await response.text();
       let body = text;
@@ -1894,6 +2084,21 @@ const setupOnlyUIHTML = `<!doctype html>
       byId("voiceAgentModel").value = "";
       syncModelForProfile("voice_agent", "voiceAgentProfile");
       updateReview();
+    });
+    byId("voiceAgentAgentProfile").addEventListener("change", updateReview);
+    byId("serverTokenManaged").addEventListener("change", function () {
+      forceServerTokenGeneration = byId("serverTokenManaged").checked && !serverBearerTokenSet();
+      updateServerAuthUI();
+    });
+    byId("serverTokenEnv").addEventListener("input", updateServerAuthUI);
+    byId("copyGeneratedServerToken").addEventListener("click", async function () {
+      if (!generatedServerToken) return;
+      try {
+        await navigator.clipboard.writeText(generatedServerToken);
+        byId("settingsSaveStatus").textContent = "Token copied.";
+      } catch (_) {
+        byId("settingsSaveStatus").textContent = "Copy failed; select the token manually.";
+      }
     });
 
     ["dictationModel", "assistModel", "voiceAgentModel"].forEach(function (id) {

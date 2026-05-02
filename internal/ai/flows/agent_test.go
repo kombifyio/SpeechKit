@@ -36,6 +36,19 @@ func TestBuildAgentSystemPrompt_WithLastTranscription(t *testing.T) {
 	}
 }
 
+func TestBuildAgentSystemPrompt_WithHostSystemPrompt(t *testing.T) {
+	p := buildAgentSystemPrompt(AgentInput{
+		Locale:       "en",
+		SystemPrompt: "You are moderating a structured meeting.",
+	})
+	if !strings.Contains(p, "You are moderating a structured meeting.") {
+		t.Errorf("expected host system prompt in prompt: %q", p)
+	}
+	if !strings.Contains(p, "helpful voice-activated AI assistant") {
+		t.Errorf("expected base speech guidance to remain in prompt: %q", p)
+	}
+}
+
 func TestBuildAgentUserPrompt(t *testing.T) {
 	p := buildAgentUserPrompt(AgentInput{Utterance: "What time is it?"})
 	if p != "What time is it?" {

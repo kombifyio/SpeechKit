@@ -50,7 +50,7 @@ func applyAPIV1ServerConnectionPatch(cfgPath string, cfg *config.Config, state *
 		return apiV1UserError("config unavailable")
 	}
 	if patch.Enabled != nil {
-		cfg.ServerConnection.Enabled = *patch.Enabled
+		cfg.ServerConnection.Enabled = *patch.Enabled || anyServerModeSelected(cfg)
 	}
 	if patch.URL != nil {
 		cfg.ServerConnection.URL = strings.TrimSpace(*patch.URL)
@@ -76,16 +76,12 @@ func applyAPIV1ServerConnectionPatch(cfgPath string, cfg *config.Config, state *
 		}
 		cfg.ServerConnection.RequestTimeoutSec = v
 	}
+	config.ApplyManagedDevServerDefaults(cfg)
 	if err := config.Save(cfgPath, cfg); err != nil {
 		return err
 	}
-	// The runtime serverDelegates struct is built once at startup. A
-	// changed [server_connection] only takes effect on the next launch
-	// — the settings page surfaces this as a "restart required" hint.
-	// We deliberately do NOT mutate state.serverDelegates here: that
-	// would require migrating in-flight sessions on the fly, which
-	// adds complexity for very little gain. The reload-on-restart
-	// contract keeps the runtime invariant trivial.
-	_ = state
+	if err := refreshServerDelegates(cfg, state); err != nil {
+		return err
+	}
 	return nil
 }

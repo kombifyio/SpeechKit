@@ -258,6 +258,18 @@ func TestVoiceAgentSendAudio(t *testing.T) {
 	case <-time.After(2 * time.Second):
 		t.Fatal("timeout waiting for text frame")
 	}
+
+	if err := p.AdvanceStep("host"); err != nil {
+		t.Fatalf("AdvanceStep: %v", err)
+	}
+	select {
+	case got := <-env.gotJSON:
+		if !strings.Contains(got, `"type":"advance_step"`) || !strings.Contains(got, `"reason":"host"`) {
+			t.Errorf("expected advance_step JSON, got %q", got)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("timeout waiting for advance_step JSON")
+	}
 }
 
 func TestVoiceAgentReceiveErrorFrame(t *testing.T) {

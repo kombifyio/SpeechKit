@@ -6,7 +6,6 @@ import (
 )
 
 // STTProvider defines the interface for all speech-to-text backends.
-// All implementations speak the OpenAI-compatible /v1/audio/transcriptions API.
 type STTProvider interface {
 	// Transcribe sends audio data to the STT backend and returns the transcription.
 	Transcribe(ctx context.Context, audio []byte, opts TranscribeOpts) (*Result, error)

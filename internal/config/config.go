@@ -11,12 +11,14 @@ import (
 
 	"github.com/BurntSushi/toml"
 	"github.com/kombifyio/SpeechKit/internal/secrets"
+	"github.com/kombifyio/SpeechKit/internal/voiceagentprofile"
 )
 
 var (
 	dopplerLookPath              = exec.LookPath
 	dopplerSecretLookup          = secrets.DefaultDopplerSecretLookup
 	managedHFBuildEnabled        string
+	managedDevServerBuildEnabled string
 	managedHFDefaultOptIn        string
 	managedDopplerDefaultProject string
 	managedDopplerDefaultConfig  string
@@ -39,10 +41,12 @@ const (
 
 	DefaultLocalLLMBaseURL = "http://127.0.0.1:8082/v1"
 	DefaultLocalLLMModel   = "ggml-org/gemma-4-E4B-it-GGUF:Q4_K_M"
+	DefaultLocalSTTModel   = "ggml-large-v3-turbo.bin"
+	ManagedDevServerURL    = "https://speechkit.kombify.dev"
 
 	DefaultDictatePrimaryProfileID    = "stt.local.whispercpp"
 	DefaultAssistPrimaryProfileID     = "assist.builtin.gemma4-e4b"
-	DefaultVoiceAgentPrimaryProfileID = "realtime.google.gemini-native-audio"
+	DefaultVoiceAgentPrimaryProfileID = "realtime.builtin.pipeline"
 
 	// defaultGeminiNativeAudioModel is the primary real-time audio-to-audio
 	// model. As of April 2026 this is Gemini 3.1 Flash Live (preview) —
@@ -125,14 +129,15 @@ type ServerConfig struct {
 // PersonaConfig is a TOML-seeded Voice Agent persona. DB entries with the same
 // ID override the TOML seed at runtime.
 type PersonaConfig struct {
-	ID          string            `toml:"id"`
-	DisplayName string            `toml:"display_name"`
-	Description string            `toml:"description"`
-	Voice       string            `toml:"voice"`
-	Locale      string            `toml:"locale"`
-	DefaultRole string            `toml:"default_role"`
-	Tags        []string          `toml:"tags"`
-	Metadata    map[string]string `toml:"metadata"`
+	ID              string            `toml:"id"`
+	DisplayName     string            `toml:"display_name"`
+	Description     string            `toml:"description"`
+	Voice           string            `toml:"voice"`
+	Locale          string            `toml:"locale"`
+	DefaultRole     string            `toml:"default_role"`
+	DefaultSequence string            `toml:"default_sequence"`
+	Tags            []string          `toml:"tags"`
+	Metadata        map[string]string `toml:"metadata"`
 }
 
 // RoleConfig is a TOML-seeded Voice Agent role. Roles are referenced from
@@ -482,6 +487,7 @@ type OllamaProviderConfig struct {
 type OpenRouterProviderConfig struct {
 	Enabled      bool   `toml:"enabled"`
 	APIKeyEnv    string `toml:"api_key_env"`
+	STTModel     string `toml:"stt_model"`
 	UtilityModel string `toml:"utility_model"`
 	AssistModel  string `toml:"assist_model"`
 	AgentModel   string `toml:"agent_model"`
@@ -540,6 +546,8 @@ type VoiceAgentConfig struct {
 	Model                           string `toml:"model"`             // Real-time model ID (e.g. "gemini-3.1-flash-live-preview")
 	FallbackModel                   string `toml:"fallback_model"`    // Fallback real-time model
 	Voice                           string `toml:"voice"`             // Voice name for real-time model
+	AgentProfileID                  string `toml:"agent_profile_id"`  // Built-in Voice Agent profile ID; "default" preserves current behavior.
+	AgentSequenceID                 string `toml:"agent_sequence_id"` // Optional workflow sequence ID; empty uses the selected persona default.
 	FrameworkPrompt                 string `toml:"framework_prompt"`  // Durable host/framework instruction that defines the Voice Agent behavior
 	RefinementPrompt                string `toml:"refinement_prompt"` // User-specific refinement appended to the framework prompt
 	Instruction                     string `toml:"instruction"`       // Legacy alias for FrameworkPrompt
@@ -619,6 +627,8 @@ func Load(path string) (*Config, error) {
 	backfillStartupBehavior(meta, cfg)
 	backfillVoiceAgentPromptLayers(meta, cfg)
 	backfillVoiceAgentSessionSummary(meta, cfg)
+	cfg.VoiceAgent.AgentProfileID = voiceagentprofile.NormalizeID(cfg.VoiceAgent.AgentProfileID)
+	cfg.VoiceAgent.AgentSequenceID = strings.TrimSpace(cfg.VoiceAgent.AgentSequenceID)
 	cfg.VoiceAgent.CloseBehavior = NormalizeVoiceAgentCloseBehavior(
 		cfg.VoiceAgent.CloseBehavior,
 		VoiceAgentCloseBehaviorContinue,
@@ -631,6 +641,7 @@ func Load(path string) (*Config, error) {
 		cfg.UI.VoiceAgentOverlayMode,
 		OverlayFeedbackModeSmallFeedback,
 	)
+	ApplyManagedDevServerDefaults(cfg)
 
 	return cfg, nil
 }
@@ -785,7 +796,7 @@ func Save(path string, cfg *Config) error {
 }
 
 func defaults() *Config {
-	return &Config{
+	cfg := &Config{
 		General: GeneralConfig{
 			Language:                 "de",
 			Hotkey:                   "win+alt",
@@ -838,7 +849,7 @@ func defaults() *Config {
 		},
 		Local: LocalConfig{
 			Enabled: false,
-			Model:   "ggml-small.bin",
+			Model:   DefaultLocalSTTModel,
 			Port:    8080,
 			GPU:     "auto",
 		},
@@ -914,6 +925,8 @@ func defaults() *Config {
 			// deployment via the separate model_selection section.
 			FallbackModel:                   fallbackGeminiNativeAudioModel,
 			Voice:                           "Kore",
+			AgentProfileID:                  voiceagentprofile.DefaultID,
+			AgentSequenceID:                 "",
 			FrameworkPrompt:                 "",
 			RefinementPrompt:                "",
 			Instruction:                     "",
@@ -975,6 +988,7 @@ func defaults() *Config {
 			},
 			OpenRouter: OpenRouterProviderConfig{
 				APIKeyEnv:    "OPENROUTER_API_KEY", //nolint:gosec // not a credential, field name triggers false positive
+				STTModel:     "openai/whisper-1",
 				UtilityModel: "meta-llama/llama-3.1-8b-instruct",
 				AssistModel:  "google/gemini-2.5-flash",
 				AgentModel:   "google/gemini-2.5-flash",
@@ -1001,6 +1015,8 @@ func defaults() *Config {
 			LogLevel:                 "info",
 		},
 	}
+	ApplyManagedDevServerDefaults(cfg)
+	return cfg
 }
 
 func defaultConfigPath() string {
@@ -1168,6 +1184,27 @@ func ApplyManagedIntegrationDefaults(cfg *Config) bool {
 	return true
 }
 
+func ApplyManagedDevServerDefaults(cfg *Config) bool {
+	if cfg == nil || !ManagedDevServerAvailableInBuild() {
+		return false
+	}
+
+	changed := false
+	if strings.TrimSpace(cfg.ServerConnection.URL) == "" {
+		cfg.ServerConnection.URL = ManagedDevServerURL
+		changed = true
+	}
+	if strings.TrimSpace(cfg.ServerConnection.BearerTokenEnv) == "" {
+		cfg.ServerConnection.BearerTokenEnv = "SPEECHKIT_SERVER_TOKEN"
+		changed = true
+	}
+	if cfg.ServerConnection.RequestTimeoutSec <= 0 {
+		cfg.ServerConnection.RequestTimeoutSec = 30
+		changed = true
+	}
+	return changed
+}
+
 func managedHFOptInEnabled() bool {
 	if raw, ok := os.LookupEnv("SPEECHKIT_ENABLE_MANAGED_HF"); ok {
 		return parseManagedBool(raw)
@@ -1185,11 +1222,26 @@ func ManagedHuggingFaceAvailableInBuild() bool {
 	return defaultManagedHuggingFaceForModule()
 }
 
+func ManagedDevServerAvailableInBuild() bool {
+	if strings.TrimSpace(managedDevServerBuildEnabled) != "" {
+		return parseManagedBool(managedDevServerBuildEnabled)
+	}
+	return defaultManagedPrivateFeatureForModule()
+}
+
 func OverrideManagedHuggingFaceBuildForTests(value string) func() {
 	previous := managedHFBuildEnabled
 	managedHFBuildEnabled = value
 	return func() {
 		managedHFBuildEnabled = previous
+	}
+}
+
+func OverrideManagedDevServerBuildForTests(value string) func() {
+	previous := managedDevServerBuildEnabled
+	managedDevServerBuildEnabled = value
+	return func() {
+		managedDevServerBuildEnabled = previous
 	}
 }
 
@@ -1211,6 +1263,10 @@ func defaultReadBuildInfo() (buildInfo, bool) {
 }
 
 func defaultManagedHuggingFaceForModule() bool {
+	return defaultManagedPrivateFeatureForModule()
+}
+
+func defaultManagedPrivateFeatureForModule() bool {
 	info, ok := readBuildInfo()
 	if !ok {
 		return false

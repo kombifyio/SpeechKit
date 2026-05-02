@@ -27,7 +27,7 @@ func providerCredentialStates(cfg *config.Config) map[string]providerCredentialS
 	states := map[string]providerCredentialState{
 		"openai":     namedProviderCredentialState("openai", "OpenAI", cfg.Providers.OpenAI.APIKeyEnv),
 		"groq":       namedProviderCredentialState("groq", "Groq", cfg.Providers.Groq.APIKeyEnv),
-		"google":     namedProviderCredentialState("google", "Google", cfg.Providers.Google.APIKeyEnv),
+		"google":     namedProviderCredentialState("google", "Gemini / Google AI", cfg.Providers.Google.APIKeyEnv),
 		"openrouter": namedProviderCredentialState("openrouter", "OpenRouter", cfg.Providers.OpenRouter.APIKeyEnv),
 	}
 	if config.ManagedHuggingFaceAvailableInBuild() {
@@ -104,7 +104,7 @@ func providerLabel(provider string) string {
 	case "groq":
 		return "Groq"
 	case "google":
-		return "Google"
+		return "Gemini / Google AI"
 	case "huggingface":
 		return "Hugging Face"
 	case "openrouter":
@@ -168,6 +168,17 @@ func configuredGoogleProvider(cfg *config.Config) stt.STTProvider {
 		return nil
 	}
 	return stt.NewGoogleSTTProvider(apiKey, cfg.Providers.Google.STTModel)
+}
+
+func configuredOpenRouterProvider(cfg *config.Config) stt.STTProvider {
+	if cfg == nil || !cfg.Providers.OpenRouter.Enabled {
+		return nil
+	}
+	apiKey := strings.TrimSpace(config.ResolveSecret(cfg.Providers.OpenRouter.APIKeyEnv))
+	if apiKey == "" {
+		return nil
+	}
+	return stt.NewOpenRouterSTTProvider(apiKey, cfg.Providers.OpenRouter.STTModel)
 }
 
 func configuredOllamaSTTProvider(cfg *config.Config) stt.STTProvider {
@@ -246,6 +257,9 @@ func saveProviderCredential(ctx context.Context, provider, secret string, cfg *c
 		return "", fmt.Errorf("unsupported provider %q", provider)
 	}
 	if err := secrets.SetNamedSecret(envName, secret); err != nil {
+		return "", err
+	}
+	if err := setProviderIntegrationEnabled(cfg, provider, true); err != nil {
 		return "", err
 	}
 	if err := refreshProviderRuntimes(ctx, cfg, state, sttRouter); err != nil {
@@ -330,6 +344,8 @@ func testProviderCredential(ctx context.Context, provider, secret string, cfg *c
 		providerClient = stt.NewOpenAICompatibleProvider("groq", "https://api.groq.com/openai", secret, cfg.Providers.Groq.STTModel)
 	case "google":
 		providerClient = stt.NewGoogleSTTProvider(secret, cfg.Providers.Google.STTModel)
+	case "openrouter":
+		providerClient = stt.NewOpenRouterSTTProvider(secret, cfg.Providers.OpenRouter.STTModel)
 	default:
 		return "", fmt.Errorf("unsupported provider %q", provider)
 	}

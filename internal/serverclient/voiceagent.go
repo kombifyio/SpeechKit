@@ -220,8 +220,22 @@ func (p *VoiceAgentProvider) SendToolResponse(response voiceagent.ToolResponse) 
 	return p.sendJSON(frame)
 }
 
-// Close terminates the WebSocket session. Idempotent — a second Close
-// call returns nil.
+// AdvanceStep asks a server-side Voice Agent workflow to move to the next
+// sequence step. It is intentionally outside voiceagent.LiveProvider because
+// local realtime providers do not own server-side workflow state.
+func (p *VoiceAgentProvider) AdvanceStep(reason string) error {
+	frame := map[string]string{
+		"type":   "advance_step",
+		"reason": strings.TrimSpace(reason),
+	}
+	if frame["reason"] == "" {
+		delete(frame, "reason")
+	}
+	return p.sendJSON(frame)
+}
+
+// Close terminates the WebSocket session. Idempotent; a second Close call
+// returns nil.
 func (p *VoiceAgentProvider) Close() error {
 	p.closeMu.Lock()
 	defer p.closeMu.Unlock()

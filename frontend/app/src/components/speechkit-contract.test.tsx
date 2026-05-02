@@ -37,6 +37,13 @@ describe("speechkit frontend contract", () => {
     });
     expect(defaultSettingsState.assistHotkey).toBe("ctrl+win");
     expect(defaultSettingsState.voiceAgentHotkey).toBe("ctrl+shift");
+    expect(defaultSettingsState.voiceAgentProfileId).toBe("default");
+    expect(defaultSettingsState.voiceAgentProfiles.map((profile) => profile.id)).toEqual([
+      "default",
+      "brainstorming_companion",
+      "humor_companion",
+      "support_companion",
+    ]);
     expect(defaultSettingsState.voiceAgentRefinementPrompt).toBe("");
     expect(defaultSettingsState.activeMode).toBe("none");
     expect(defaultSettingsState.modelSelections.assist.primaryProfileId).toBe(
@@ -91,6 +98,43 @@ describe("speechkit frontend contract", () => {
     expect(
       Object.prototype.hasOwnProperty.call(state, "voiceAgentFrameworkPrompt"),
     ).toBe(false);
+  });
+
+  it("normalizes voice-agent profile settings from settings payloads", async () => {
+    fetchMock.mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          voiceAgentProfileId: "support_companion",
+          voiceAgentProfiles: [
+            {
+              id: "default",
+              displayName: "Default Voice Agent",
+            },
+            {
+              id: "support_companion",
+              displayName: "Support Companion",
+              voice: "Charon",
+            },
+          ],
+        }),
+        { status: 200 },
+      ),
+    );
+
+    const state = await fetchSettingsState();
+
+    expect(state.voiceAgentProfileId).toBe("support_companion");
+    expect(state.voiceAgentProfiles).toEqual([
+      {
+        id: "default",
+        displayName: "Default Voice Agent",
+      },
+      {
+        id: "support_companion",
+        displayName: "Support Companion",
+        voice: "Charon",
+      },
+    ]);
   });
 
   it("normalizes the default model download directory from settings payloads", async () => {
@@ -357,6 +401,7 @@ describe("speechkit frontend contract", () => {
       dictateHotkey: "win+alt",
       assistHotkey: "",
       voiceAgentHotkey: "ctrl+shift+k",
+      voiceAgentProfileId: "support_companion",
       voiceAgentRefinementPrompt: "Refinement prompt",
       activeMode: "voice_agent",
     };
@@ -375,6 +420,7 @@ describe("speechkit frontend contract", () => {
     expect(params.get("voice_agent_refinement_prompt")).toBe(
       "Refinement prompt",
     );
+    expect(params.get("voice_agent_profile_id")).toBe("support_companion");
     expect(params.has("voice_agent_framework_prompt")).toBe(false);
     expect(params.get("active_mode")).toBe("voice_agent");
     expect(params.get("agent_hotkey")).toBe("ctrl+shift+k");

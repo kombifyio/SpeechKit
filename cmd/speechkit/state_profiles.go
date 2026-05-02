@@ -97,6 +97,8 @@ func sttProfileMatchesConfig(cfg *config.Config, profile models.Profile) bool {
 		return cfg.Providers.Groq.Enabled && cfg.Providers.Groq.STTModel == profile.ModelID && profileCredentialAvailable(cfg, profile)
 	case models.ExecutionModeGoogle:
 		return cfg.Providers.Google.Enabled && cfg.Providers.Google.STTModel == profile.ModelID && profileCredentialAvailable(cfg, profile)
+	case models.ExecutionModeOpenRouter:
+		return cfg.Providers.OpenRouter.Enabled && cfg.Providers.OpenRouter.STTModel == profile.ModelID && profileCredentialAvailable(cfg, profile)
 	case models.ExecutionModeOllama:
 		return cfg.Providers.Ollama.Enabled && cfg.Providers.Ollama.STTModel == profile.ModelID
 	default:

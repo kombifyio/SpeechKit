@@ -2,16 +2,19 @@ package main
 
 import (
 	"context"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
 	"time"
 
+	"github.com/kombifyio/SpeechKit/internal/assist"
 	"github.com/kombifyio/SpeechKit/internal/config"
 	"github.com/kombifyio/SpeechKit/internal/hotkey"
 	"github.com/kombifyio/SpeechKit/internal/router"
 	"github.com/kombifyio/SpeechKit/internal/stt"
 	"github.com/kombifyio/SpeechKit/internal/voiceagent"
+	"github.com/kombifyio/SpeechKit/internal/voiceagentprofile"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit"
 )
 
@@ -38,6 +41,35 @@ type mutableRecordingState struct {
 
 func (r *mutableRecordingState) IsRecording() bool {
 	return r.recording
+}
+
+func TestCaptureStartAllowsServerDictationDelegate(t *testing.T) {
+	t.Setenv("SC_TEST_INPUT_SERVER_TOKEN", "secret")
+	cfg := defaultTestConfig()
+	cfg.Routing.Strategy = string(router.StrategyLocalOnly)
+	cfg.ModelSelection.Dictate.ModeSource = config.ModeSourceServer
+	cfg.ServerConnection = config.ServerConnectionConfig{
+		Enabled:        true,
+		URL:            "http://localhost:8080",
+		BearerTokenEnv: "SC_TEST_INPUT_SERVER_TOKEN",
+	}
+
+	state := &appState{}
+	if err := refreshServerDelegates(cfg, state); err != nil {
+		t.Fatalf("refreshServerDelegates: %v", err)
+	}
+
+	r := &router.Router{Strategy: router.StrategyLocalOnly}
+	r.SetLocal(stt.NewLocalProvider(8080, filepath.Join(t.TempDir(), "ggml-small.bin"), "cpu"))
+	controller := desktopInputController{
+		cfg:       cfg,
+		state:     state,
+		sttRouter: r,
+	}
+
+	if got := controller.captureStartBlockedReason(context.Background(), modeAssist); got != "" {
+		t.Fatalf("captureStartBlockedReason = %q, want empty with server dictation delegate", got)
+	}
 }
 
 type availableSTTProvider struct {
@@ -207,6 +239,7 @@ func (m *mockAudioFrameStreamer) getHandler() func([]byte) {
 // simpleMockLiveProvider implements voiceagent.LiveProvider for controller tests.
 type simpleMockLiveProvider struct {
 	mu        sync.Mutex
+	name      string
 	connected bool
 	closed    bool
 	lastCfg   voiceagent.LiveConfig
@@ -217,6 +250,7 @@ type simpleMockLiveProvider struct {
 
 func newSimpleMockLiveProvider() *simpleMockLiveProvider {
 	return &simpleMockLiveProvider{
+		name:     "simple-mock",
 		messages: make(chan *voiceagent.LiveMessage, 10),
 	}
 }
@@ -264,7 +298,7 @@ func (m *simpleMockLiveProvider) Close() error {
 	return nil
 }
 
-func (m *simpleMockLiveProvider) Name() string { return "simple-mock" }
+func (m *simpleMockLiveProvider) Name() string { return m.name }
 
 func (m *simpleMockLiveProvider) configSnapshot() voiceagent.LiveConfig {
 	m.mu.Lock()
@@ -432,6 +466,108 @@ func TestToggleVoiceAgentPassesFrameworkAndRefinementPromptsToRuntime(t *testing
 	}
 	if got := liveCfg.VocabularyHint; got == "" {
 		t.Fatal("expected vocabulary hint to still be passed into the runtime config")
+	}
+
+	session.Stop()
+}
+
+func TestToggleVoiceAgentAppliesSelectedAgentProfile(t *testing.T) {
+	mockAudio := &mockAudioFrameStreamer{}
+	mockProvider := newSimpleMockLiveProvider()
+	session := voiceagent.NewSession(mockProvider, voiceagent.Callbacks{})
+
+	controller := desktopInputController{
+		voiceAgentSession: session,
+		voiceAgentConfig: &config.VoiceAgentConfig{
+			AgentProfileID:         voiceagentprofile.BrainstormingCompanionID,
+			FrameworkPrompt:        "This should be replaced by the selected built-in profile.",
+			RefinementPrompt:       "Keep answers concise.",
+			Voice:                  "Kore",
+			EnableInputTranscript:  true,
+			EnableOutputTranscript: true,
+		},
+		cfg: &config.Config{
+			General: config.GeneralConfig{
+				Language: "de-DE",
+			},
+			Providers: config.ProvidersConfig{
+				Google: config.GoogleProviderConfig{APIKeyEnv: "FAKE_KEY_FOR_AGENT_PROFILE_TEST"},
+			},
+		},
+		audioCapturer: mockAudio,
+	}
+
+	t.Setenv("FAKE_KEY_FOR_AGENT_PROFILE_TEST", "test-api-key")
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	controller.toggleVoiceAgent(ctx)
+	time.Sleep(300 * time.Millisecond)
+
+	liveCfg := mockProvider.configSnapshot()
+	if !strings.Contains(strings.ToLower(liveCfg.FrameworkPrompt), "blind spot") {
+		t.Fatalf("FrameworkPrompt = %q, want brainstorming profile prompt", liveCfg.FrameworkPrompt)
+	}
+	if !strings.Contains(liveCfg.FrameworkPrompt, "[Current step: frame]") {
+		t.Fatalf("FrameworkPrompt = %q, want brainstorming default workflow step", liveCfg.FrameworkPrompt)
+	}
+	if liveCfg.Workflow == nil {
+		t.Fatal("Workflow = nil, want built-in profile default sequence")
+	}
+	if got, want := liveCfg.Workflow.SequenceID, "brainstorming_companion_sequence"; got != want {
+		t.Fatalf("Workflow.SequenceID = %q, want %q", got, want)
+	}
+	if got := liveCfg.RefinementPrompt; got != "Keep answers concise." {
+		t.Fatalf("RefinementPrompt = %q, want user refinement preserved", got)
+	}
+	if got, want := liveCfg.Voice, "Aoede"; got != want {
+		t.Fatalf("Voice = %q, want %q", got, want)
+	}
+
+	session.Stop()
+}
+
+func TestToggleVoiceAgentLeavesWorkflowToServerProvider(t *testing.T) {
+	mockAudio := &mockAudioFrameStreamer{}
+	mockProvider := newSimpleMockLiveProvider()
+	mockProvider.name = "server-voiceagent"
+	session := voiceagent.NewSession(mockProvider, voiceagent.Callbacks{})
+
+	controller := desktopInputController{
+		voiceAgentSession: session,
+		voiceAgentConfig: &config.VoiceAgentConfig{
+			AgentProfileID:         voiceagentprofile.BrainstormingCompanionID,
+			Voice:                  "Kore",
+			EnableInputTranscript:  true,
+			EnableOutputTranscript: true,
+		},
+		cfg: &config.Config{
+			General: config.GeneralConfig{Language: "de-DE"},
+			Providers: config.ProvidersConfig{
+				Google: config.GoogleProviderConfig{APIKeyEnv: "FAKE_KEY_FOR_SERVER_AGENT_PROFILE_TEST"},
+			},
+		},
+		audioCapturer: mockAudio,
+	}
+
+	t.Setenv("FAKE_KEY_FOR_SERVER_AGENT_PROFILE_TEST", "test-api-key")
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	controller.toggleVoiceAgent(ctx)
+	time.Sleep(300 * time.Millisecond)
+
+	liveCfg := mockProvider.configSnapshot()
+	if !strings.Contains(strings.ToLower(liveCfg.FrameworkPrompt), "blind spot") {
+		t.Fatalf("FrameworkPrompt = %q, want selected profile prompt", liveCfg.FrameworkPrompt)
+	}
+	if strings.Contains(liveCfg.FrameworkPrompt, "[Current step:") {
+		t.Fatalf("FrameworkPrompt = %q, want server to compose workflow step", liveCfg.FrameworkPrompt)
+	}
+	if liveCfg.Workflow != nil {
+		t.Fatalf("Workflow = %+v, want nil for server-backed provider", liveCfg.Workflow)
 	}
 
 	session.Stop()
@@ -663,6 +799,49 @@ func TestDesktopInputControllerAssistHotkeyBlocksWhenAssistModelMissing(t *testi
 	}
 	if len(bubble.scripts) == 0 || !strings.Contains(bubble.scripts[len(bubble.scripts)-1], "Assist model") {
 		t.Fatalf("bubble scripts = %v, want Assist model guidance", bubble.scripts)
+	}
+}
+
+func TestDesktopInputControllerAssistHotkeyBlocksWhenOnlyUtilityPipelineExists(t *testing.T) {
+	bus := &testDesktopCommandBus{}
+	bubble := &fakeOverlayWindow{}
+	sttRouter := &router.Router{Strategy: router.StrategyDynamic}
+	sttRouter.AddCloud(availableSTTProvider{name: "openai"})
+	state := &appState{
+		assistBubble:   bubble,
+		assistPipeline: assist.NewPipeline(nil, nil, nil, false),
+		sttRouter:      sttRouter,
+	}
+	controller := desktopInputController{
+		commands:  bus,
+		recording: &mutableRecordingState{},
+		state:     state,
+		cfg:       defaultTestConfig(),
+		installState: &config.InstallState{
+			Mode:      config.InstallModeLocal,
+			SetupDone: true,
+		},
+	}
+
+	controller.handleHotkey(context.Background(), hotkey.Event{
+		Binding: modeAssist,
+		Type:    hotkey.EventKeyDown,
+	})
+
+	if got := len(bus.commands); got != 0 {
+		t.Fatalf("commands = %d, want 0 when Assist has no ready direct reply model", got)
+	}
+	state.mu.Lock()
+	logEntries := append([]logEntry(nil), state.logEntries...)
+	state.mu.Unlock()
+	if len(logEntries) == 0 {
+		t.Fatal("expected immediate Assist guidance log entry")
+	}
+	if got := logEntries[len(logEntries)-1].Message; !strings.Contains(got, "Assist model") {
+		t.Fatalf("last log message = %q, want Assist model guidance", got)
+	}
+	if got := bubble.showCalls; got != 1 {
+		t.Fatalf("assist bubble show calls = %d, want 1", got)
 	}
 }
 

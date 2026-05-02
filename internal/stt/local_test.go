@@ -98,6 +98,22 @@ func TestLocal_TranscribeTimeoutScalesWithLongWAV(t *testing.T) {
 	}
 }
 
+func TestDefaultWhisperThreadsHonorsEnvOverride(t *testing.T) {
+	t.Setenv("SPEECHKIT_WHISPER_THREADS", "12")
+
+	if got := defaultWhisperThreads(); got != 12 {
+		t.Fatalf("defaultWhisperThreads = %d, want env override 12", got)
+	}
+}
+
+func TestDefaultWhisperThreadsIgnoresInvalidEnvOverride(t *testing.T) {
+	t.Setenv("SPEECHKIT_WHISPER_THREADS", "nope")
+
+	if got := defaultWhisperThreads(); got < 1 || got > 8 {
+		t.Fatalf("defaultWhisperThreads = %d, want fallback in range 1..8", got)
+	}
+}
+
 func TestFindWhisperBinary_FindsManagedInstallRootBinary(t *testing.T) {
 	localAppData := t.TempDir()
 	t.Setenv("LOCALAPPDATA", localAppData)

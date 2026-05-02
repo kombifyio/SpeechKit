@@ -28,22 +28,24 @@ func (s *appState) positionOverlay() {
 	}
 
 	if hasDedicatedOverlayWindows(host) {
-		referenceMetrics := pillPanelMetrics
+		pillAnchorHostMetrics := pillAnchorMetricsForRuntime(runtime)
+		pillPanelHostMetrics := pillPanelMetricsForRuntime(runtime)
+		referenceMetrics := pillPanelHostMetrics
 		if runtime.overlayVisualizer == "circle" {
 			referenceMetrics = dotAnchorMetrics
 		}
 		if runtime.overlayMovable {
 			monitorKey, centerX, centerY := resolveOverlayFreeCenterForMonitor(bounds, referenceMetrics, runtime.overlayVisualizer, runtime.overlayPosition, runtime.overlayFreeX, runtime.overlayFreeY, runtime.overlayMonitorCenters)
 			s.syncResolvedOverlayFreeCenter(monitorKey, centerX, centerY)
-			positionFreeOverlayWindow(host.pillAnchor, bounds, centerX, centerY, pillAnchorMetrics)
-			positionFreeOverlayWindow(host.pillPanel, bounds, centerX, centerY, pillPanelMetrics)
+			positionFreeOverlayWindow(host.pillAnchor, bounds, centerX, centerY, pillAnchorHostMetrics)
+			positionFreeOverlayWindow(host.pillPanel, bounds, centerX, centerY, pillPanelHostMetrics)
 			positionFreeOverlayWindow(host.dotAnchor, bounds, centerX, centerY, dotAnchorMetrics)
 			positionFreeOverlayWindow(host.radialMenu, bounds, centerX, centerY, radialMenuMetrics)
 			return
 		}
 
-		positionAnchoredOverlayWindow(host.pillAnchor, bounds, runtime.overlayPosition, pillAnchorMetrics)
-		positionAnchoredOverlayWindow(host.pillPanel, bounds, runtime.overlayPosition, pillPanelMetrics)
+		positionAnchoredOverlayWindow(host.pillAnchor, bounds, runtime.overlayPosition, pillAnchorHostMetrics)
+		positionAnchoredOverlayWindow(host.pillPanel, bounds, runtime.overlayPosition, pillPanelHostMetrics)
 		positionAnchoredOverlayWindow(host.dotAnchor, bounds, runtime.overlayPosition, dotAnchorMetrics)
 		if host.radialMenu != nil {
 			x, y := radialMenuPosition(bounds, runtime.overlayPosition)

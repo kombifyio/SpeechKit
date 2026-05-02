@@ -53,6 +53,11 @@ func buildRouter(cfg *config.Config) (*router.Router, []string) {
 		}
 	}
 
+	if provider := configuredOpenRouterProvider(cfg); provider != nil {
+		r.AddCloud(provider)
+		msgs = append(msgs, fmt.Sprintf("STT: OpenRouter provider registered (%s)", cfg.Providers.OpenRouter.STTModel))
+	}
+
 	if cfg.VPS.Enabled && cfg.VPS.URL != "" {
 		apiKey := config.ResolveSecret(cfg.VPS.APIKeyEnv)
 		r.SetVPS(stt.NewVPSProvider(cfg.VPS.URL, apiKey))
@@ -175,7 +180,7 @@ func buildGenkitConfig(cfg *config.Config) appai.Config {
 		aiCfg.OllamaAgentModel = cfg.Providers.Ollama.AgentModel
 	}
 
-	if cfg.Providers.OpenRouter.Enabled {
+	if cfg.Providers.OpenRouter.Enabled || selectedProvider("openrouter") {
 		aiCfg.OpenRouterAPIKey = config.ResolveSecret(cfg.Providers.OpenRouter.APIKeyEnv)
 		aiCfg.OpenRouterUtilityModel = cfg.Providers.OpenRouter.UtilityModel
 		aiCfg.OpenRouterAssistModel = cfg.Providers.OpenRouter.AssistModel

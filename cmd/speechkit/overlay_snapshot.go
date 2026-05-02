@@ -7,6 +7,7 @@ import (
 
 	"github.com/kombifyio/SpeechKit/internal/config"
 	"github.com/kombifyio/SpeechKit/internal/secrets"
+	"github.com/kombifyio/SpeechKit/internal/voiceagentprofile"
 )
 
 // This file groups appState state-observation methods: audio-level updates,
@@ -172,6 +173,7 @@ func (s *appState) settingsSnapshot(cfg *config.Config) settingsSnapshot {
 		config.VoiceAgentCloseBehaviorContinue,
 	)
 	voiceAgentRefinementPrompt := strings.TrimSpace(cfg.VoiceAgent.RefinementPrompt)
+	voiceAgentProfileID := voiceagentprofile.NormalizeID(cfg.VoiceAgent.AgentProfileID)
 	agentMode := normalizeAgentMode(cfg.General.AgentMode)
 	agentHotkey := legacyAgentHotkeyFromModeBindings(assistHotkey, voiceAgentHotkey, agentMode)
 	dictateEnabled := s.dictateEnabled
@@ -254,6 +256,9 @@ func (s *appState) settingsSnapshot(cfg *config.Config) settingsSnapshot {
 		AssistHotkeyBehavior:       assistHotkeyBehavior,
 		VoiceAgentHotkeyBehavior:   voiceAgentHotkeyBehavior,
 		VoiceAgentCloseBehavior:    voiceAgentCloseBehavior,
+		VoiceAgentProfileID:        voiceAgentProfileID,
+		VoiceAgentSequenceID:       strings.TrimSpace(cfg.VoiceAgent.AgentSequenceID),
+		VoiceAgentProfiles:         voiceAgentProfileSnapshots(),
 		VoiceAgentRefinementPrompt: voiceAgentRefinementPrompt,
 		VoiceAgentSessionSummary:   cfg.VoiceAgent.EnableSessionSummary,
 		AutoStartOnLaunch:          cfg.General.AutoStartOnLaunch,
@@ -280,6 +285,7 @@ func (s *appState) settingsSnapshot(cfg *config.Config) settingsSnapshot {
 		ActiveProfiles:             cloneStringMap(s.activeProfiles),
 		ModelSelections:            configuredModeModelSelections(cfg, catalog),
 		ProviderCredentials:        providerCredentialStates(cfg),
+		ProviderIntegrations:       providerIntegrationStates(cfg),
 	}
 }
 
@@ -358,7 +364,14 @@ func (s *appState) updateOverlayFreeCenter(centerX, centerY int) bool {
 }
 
 func (s *appState) updateOverlayFreeCenterFromPanel(x, y int) bool {
-	return s.updateOverlayFreeCenter(x+pillPanelWidth/2, y+pillPanelHeight/2)
+	if s == nil {
+		return false
+	}
+	s.mu.Lock()
+	runtime := s.runtimeStateLocked()
+	s.mu.Unlock()
+	metrics := pillPanelMetricsForRuntime(runtime)
+	return s.updateOverlayFreeCenter(x+metrics.Width/2, y+metrics.Height/2)
 }
 
 func (s *appState) moveOverlayFreeCenter(centerX, centerY int) bool {

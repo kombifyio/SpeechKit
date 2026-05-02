@@ -53,6 +53,33 @@ func TestAuth_BearerAcceptsMatch(t *testing.T) {
 	}
 }
 
+func TestAuth_BearerReadsTokenProviderPerRequest(t *testing.T) {
+	token := ""
+	handler := Auth(AuthOptions{
+		Mode:                "bearer",
+		BearerTokenProvider: func() string { return token },
+	})(
+		http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusOK) }),
+	)
+
+	reqBefore := httptest.NewRequest(http.MethodGet, "/v1/any", nil)
+	reqBefore.Header.Set("Authorization", "Bearer generated-token")
+	recBefore := httptest.NewRecorder()
+	handler.ServeHTTP(recBefore, reqBefore)
+	if recBefore.Code != http.StatusUnauthorized {
+		t.Fatalf("empty generated token should fail closed, got %d", recBefore.Code)
+	}
+
+	token = "generated-token"
+	reqAfter := httptest.NewRequest(http.MethodGet, "/v1/any", nil)
+	reqAfter.Header.Set("Authorization", "Bearer generated-token")
+	recAfter := httptest.NewRecorder()
+	handler.ServeHTTP(recAfter, reqAfter)
+	if recAfter.Code != http.StatusOK {
+		t.Fatalf("updated generated token should authenticate, got %d", recAfter.Code)
+	}
+}
+
 func TestAuth_BearerRejectsWrongToken(t *testing.T) {
 	t.Setenv("TEST_BEARER", "correct-horse-battery-staple")
 	handler := Auth(AuthOptions{Mode: "bearer", BearerTokenEnv: "TEST_BEARER"})(
@@ -85,6 +112,34 @@ func TestAuth_PublicPathBypassesCheck(t *testing.T) {
 
 	if rec.Code != http.StatusOK {
 		t.Fatalf("healthz should bypass auth; got %d", rec.Code)
+	}
+}
+
+func TestAuth_BootstrapRouteBypassesOnlyWhenAllowed(t *testing.T) {
+	bootstrapAllowed := true
+	handler := Auth(AuthOptions{
+		Mode: "bearer",
+		AllowBootstrapRoutes: []PublicRoute{
+			{Path: "/v1/server/settings", Methods: []string{http.MethodPatch}},
+		},
+		BootstrapAllowed: func(*http.Request) bool { return bootstrapAllowed },
+	})(
+		http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusOK) }),
+	)
+
+	bootstrapReq := httptest.NewRequest(http.MethodPatch, "/v1/server/settings", nil)
+	bootstrapRec := httptest.NewRecorder()
+	handler.ServeHTTP(bootstrapRec, bootstrapReq)
+	if bootstrapRec.Code != http.StatusOK {
+		t.Fatalf("bootstrap settings write should bypass auth, got %d", bootstrapRec.Code)
+	}
+
+	bootstrapAllowed = false
+	rejectedReq := httptest.NewRequest(http.MethodPatch, "/v1/server/settings", nil)
+	rejectedRec := httptest.NewRecorder()
+	handler.ServeHTTP(rejectedRec, rejectedReq)
+	if rejectedRec.Code != http.StatusUnauthorized {
+		t.Fatalf("bootstrap settings write should require auth after bootstrap, got %d", rejectedRec.Code)
 	}
 }
 

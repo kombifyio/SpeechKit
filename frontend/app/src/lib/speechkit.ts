@@ -5,6 +5,13 @@ export type RuntimeMode = "none" | "dictate" | "assist" | "voice_agent";
 export type AgentMode = "assist" | "voice_agent";
 export type HotkeyBehavior = "push_to_talk" | "toggle";
 export type VoiceAgentCloseBehavior = "continue" | "new_chat";
+export type VoiceAgentProfile = {
+  id: string;
+  displayName: string;
+  description?: string;
+  voice?: string;
+  builtIn?: boolean;
+};
 export type StoreBackend = "sqlite" | "postgres";
 export type Modality =
   | "stt"
@@ -128,6 +135,26 @@ export type ProviderCredentialState = {
   source: "none" | "user" | "install" | "env";
 };
 
+export type ProviderIntegrationKind =
+  | "cloud_gateway"
+  | "direct_api"
+  | "local_provider";
+
+export type ProviderIntegrationState = {
+  provider: string;
+  label: string;
+  enabled: boolean;
+  providerKind: ProviderKind;
+  integrationKind: ProviderIntegrationKind;
+  credentialRequired: boolean;
+  available: boolean;
+  hasStoredSecret: boolean;
+  source: "none" | "user" | "install" | "env";
+  envName?: string;
+  setupUrl?: string;
+  supportedModes: Array<"dictate" | "assist" | "voice_agent">;
+};
+
 export type ModeModelSelectionState = {
   primaryProfileId: string;
   fallbackProfileId: string;
@@ -159,6 +186,7 @@ export type APIV1ModeSettings = {
     sessionSummary: boolean;
     pipelineFallback: boolean;
     closeBehavior?: VoiceAgentCloseBehavior;
+    agentProfileId?: string;
   };
   serverConnection: ServerConnectionSetting;
 };
@@ -315,10 +343,40 @@ export const builtInPrimaryModelSelections: ModelSelectionsState = {
     fallbackProfileId: "",
   },
   voice_agent: {
-    primaryProfileId: "realtime.google.gemini-native-audio",
+    primaryProfileId: "realtime.builtin.pipeline",
     fallbackProfileId: "",
   },
 };
+
+export const defaultVoiceAgentProfiles: VoiceAgentProfile[] = [
+  {
+    id: "default",
+    displayName: "Default Voice Agent",
+    description: "Current Voice Mode behavior.",
+    builtIn: true,
+  },
+  {
+    id: "brainstorming_companion",
+    displayName: "Brainstorming Companion",
+    description: "Creative sparring partner for broader, critical thinking.",
+    voice: "Aoede",
+    builtIn: true,
+  },
+  {
+    id: "humor_companion",
+    displayName: "Humor Companion",
+    description: "Playful, entertaining voice conversation.",
+    voice: "Puck",
+    builtIn: true,
+  },
+  {
+    id: "support_companion",
+    displayName: "Support Companion",
+    description: "Warm, solution-oriented help with emotional awareness.",
+    voice: "Charon",
+    builtIn: true,
+  },
+];
 
 export type SpeechKitSettingsState = {
   overlayEnabled: boolean;
@@ -341,6 +399,8 @@ export type SpeechKitSettingsState = {
   assistHotkeyBehavior: HotkeyBehavior;
   voiceAgentHotkeyBehavior: HotkeyBehavior;
   voiceAgentCloseBehavior: VoiceAgentCloseBehavior;
+  voiceAgentProfileId: string;
+  voiceAgentProfiles: VoiceAgentProfile[];
   voiceAgentRefinementPrompt: string;
   voiceAgentSessionSummary: boolean;
   autoStartOnLaunch: boolean;
@@ -367,6 +427,7 @@ export type SpeechKitSettingsState = {
   activeProfiles: Partial<Record<Modality, string>>;
   modelSelections: ModelSelectionsState;
   providerCredentials?: Record<string, ProviderCredentialState>;
+  providerIntegrations?: Record<string, ProviderIntegrationState>;
 };
 
 export const defaultOverlayState: SpeechKitOverlayState = {
@@ -430,6 +491,8 @@ export const defaultSettingsState: SpeechKitSettingsState = {
   assistHotkeyBehavior: "push_to_talk",
   voiceAgentHotkeyBehavior: "push_to_talk",
   voiceAgentCloseBehavior: "continue",
+  voiceAgentProfileId: "default",
+  voiceAgentProfiles: defaultVoiceAgentProfiles,
   voiceAgentRefinementPrompt: "",
   voiceAgentSessionSummary: true,
   autoStartOnLaunch: false,
@@ -654,6 +717,80 @@ function deriveLegacyAgentHotkey(
   return assistHotkey || voiceAgentHotkey;
 }
 
+function cloneVoiceAgentProfiles(
+  profiles: VoiceAgentProfile[],
+): VoiceAgentProfile[] {
+  return profiles.map((profile) => ({ ...profile }));
+}
+
+function normalizeVoiceAgentProfileRecord(
+  value: unknown,
+): VoiceAgentProfile | null {
+  if (!value || typeof value !== "object") {
+    return null;
+  }
+
+  const record = value as Record<string, unknown>;
+  const id = typeof record.id === "string" ? record.id.trim() : "";
+  if (!id) {
+    return null;
+  }
+
+  const rawDisplayName = record.displayName ?? record.display_name;
+  const displayName =
+    typeof rawDisplayName === "string" && rawDisplayName.trim()
+      ? rawDisplayName.trim()
+      : id;
+  const profile: VoiceAgentProfile = { id, displayName };
+  if (typeof record.description === "string" && record.description.trim()) {
+    profile.description = record.description.trim();
+  }
+  if (typeof record.voice === "string" && record.voice.trim()) {
+    profile.voice = record.voice.trim();
+  }
+  const rawBuiltIn = record.builtIn ?? record.built_in ?? record.builtin;
+  if (typeof rawBuiltIn === "boolean") {
+    profile.builtIn = rawBuiltIn;
+  }
+  return profile;
+}
+
+function normalizeVoiceAgentProfiles(
+  payload: Record<string, unknown> | null | undefined,
+  fallback: VoiceAgentProfile[],
+): VoiceAgentProfile[] {
+  const fallbackProfiles = fallback.length
+    ? fallback
+    : defaultVoiceAgentProfiles;
+  const raw = payload?.voiceAgentProfiles;
+  if (!Array.isArray(raw)) {
+    return cloneVoiceAgentProfiles(fallbackProfiles);
+  }
+
+  const profiles = raw
+    .map((profile) => normalizeVoiceAgentProfileRecord(profile))
+    .filter((profile): profile is VoiceAgentProfile => profile !== null);
+  return profiles.length ? profiles : cloneVoiceAgentProfiles(fallbackProfiles);
+}
+
+function normalizeVoiceAgentProfileId(
+  value: string | undefined,
+  profiles: VoiceAgentProfile[],
+  fallback: string,
+): string {
+  const candidate = value?.trim() ?? "";
+  if (candidate && profiles.some((profile) => profile.id === candidate)) {
+    return candidate;
+  }
+  if (fallback && profiles.some((profile) => profile.id === fallback)) {
+    return fallback;
+  }
+  if (profiles.some((profile) => profile.id === "default")) {
+    return "default";
+  }
+  return profiles[0]?.id ?? "default";
+}
+
 function normalizeOverlayState(
   payload: Partial<SpeechKitOverlayState> | null | undefined,
 ): SpeechKitOverlayState {
@@ -782,6 +919,15 @@ function normalizeSettingsState(
     readStringField(record, "voiceAgentCloseBehavior") === "new_chat"
       ? "new_chat"
       : "continue";
+  const voiceAgentProfiles = normalizeVoiceAgentProfiles(
+    record,
+    base.voiceAgentProfiles,
+  );
+  const voiceAgentProfileId = normalizeVoiceAgentProfileId(
+    readStringField(record, "voiceAgentProfileId"),
+    voiceAgentProfiles,
+    base.voiceAgentProfileId,
+  );
   const voiceAgentRefinementPrompt =
     readStringField(record, "voiceAgentRefinementPrompt") ?? "";
   const voiceAgentSessionSummary =
@@ -860,6 +1006,8 @@ function normalizeSettingsState(
     assistHotkeyBehavior,
     voiceAgentHotkeyBehavior,
     voiceAgentCloseBehavior,
+    voiceAgentProfileId,
+    voiceAgentProfiles,
     voiceAgentRefinementPrompt,
     voiceAgentSessionSummary,
     autoStartOnLaunch,
@@ -886,6 +1034,8 @@ function normalizeSettingsState(
     modelSelections,
     providerCredentials:
       payload?.providerCredentials ?? base.providerCredentials,
+    providerIntegrations:
+      payload?.providerIntegrations ?? base.providerIntegrations,
   };
 }
 
@@ -1292,6 +1442,7 @@ export async function patchAPIV1ModeSettings(
       sessionSummary: boolean;
       pipelineFallback: boolean;
       closeBehavior: VoiceAgentCloseBehavior;
+      agentProfileId: string;
       modeSource: ModeSource;
     }
   >,
@@ -1646,6 +1797,7 @@ export async function saveSettingsState(nextState: SpeechKitSettingsState) {
     voice_agent_hotkey: nextState.voiceAgentHotkey,
     voice_agent_hotkey_behavior: nextState.voiceAgentHotkeyBehavior,
     voice_agent_close_behavior: nextState.voiceAgentCloseBehavior,
+    voice_agent_profile_id: nextState.voiceAgentProfileId,
     voice_agent_refinement_prompt: nextState.voiceAgentRefinementPrompt,
     voice_agent_session_summary: nextState.voiceAgentSessionSummary ? "1" : "0",
     auto_start_on_launch: nextState.autoStartOnLaunch ? "1" : "0",
@@ -1721,6 +1873,23 @@ export async function saveProviderCredential(provider: string, secret: string) {
   });
   if (!response.ok)
     throw new Error(`provider credential save failed: ${response.status}`);
+  return (await response.json()) as { message?: string };
+}
+
+export async function updateProviderIntegration(
+  provider: string,
+  enabled: boolean,
+) {
+  const body = new URLSearchParams({
+    provider,
+    enabled: enabled ? "1" : "0",
+  });
+  const response = await fetch("/settings/provider-integrations/update", {
+    method: "POST",
+    body,
+  });
+  if (!response.ok)
+    throw new Error(`provider integration update failed: ${response.status}`);
   return (await response.json()) as { message?: string };
 }
 

@@ -17,7 +17,7 @@ plain local `.env` file all work because the server only reads values from
 
 The SpeechKit Server is distributed as one OCI image:
 `ghcr.io/kombifyio/speechkit-server`. Tags follow the repository's semver tags,
-for example `ghcr.io/kombifyio/speechkit-server:v0.28.0`. The image:
+for example `ghcr.io/kombifyio/speechkit-server:v0.28.2`. The image:
 
 - listens on port `8080` over plain HTTP (add TLS at the edge)
 - exposes `/healthz` and `/readyz`

@@ -325,6 +325,37 @@ func TestCascaded_HistoryIsFedToAgent(t *testing.T) {
 	}
 }
 
+func TestCascaded_UpdateInstructionsAffectsFutureAgentTurns(t *testing.T) {
+	sttFake := &fakeSTT{}
+	agent := &fakeAgent{response: "roger"}
+	p := NewCascadedProvider(CascadedDeps{STT: sttFake, Agent: agent})
+	if err := p.Connect(context.Background(), LiveConfigFrame{Locale: "en", SystemPrompt: "Original role."}); err != nil {
+		t.Fatalf("Connect: %v", err)
+	}
+	t.Cleanup(func() { _ = p.Close() })
+
+	if err := p.UpdateInstructions(context.Background(), LiveConfigFrame{
+		Locale:       "en",
+		SystemPrompt: "Workflow role.\n\n[Current step: decide]\nDrive a decision.",
+	}); err != nil {
+		t.Fatalf("UpdateInstructions: %v", err)
+	}
+	if agent.calls != 0 {
+		t.Fatalf("UpdateInstructions should not call the agent; got %d calls", agent.calls)
+	}
+
+	if err := p.SendText("next"); err != nil {
+		t.Fatalf("SendText: %v", err)
+	}
+	_ = collectMessages(t, p, 1*time.Second)
+
+	agent.mu.Lock()
+	defer agent.mu.Unlock()
+	if !contains(agent.lastIn.SystemPrompt, "Drive a decision.") {
+		t.Fatalf("SystemPrompt not passed to agent: %+v", agent.lastIn)
+	}
+}
+
 func TestCascaded_TTSAbsentStillReturnsTranscript(t *testing.T) {
 	sttFake := &fakeSTT{text: "hi"}
 	agent := &fakeAgent{response: "hello"}

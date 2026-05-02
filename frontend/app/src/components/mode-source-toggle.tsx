@@ -1,12 +1,5 @@
 /**
  * Per-mode "run locally vs route to a SpeechKit server" toggle.
- *
- * Renders a compact two-state pill aligned with the rest of the
- * settings panel chrome. Disabled (with an explanatory hint) when the
- * device-target's [server_connection] block is not enabled or the
- * bearer-token env var is missing — choosing "server" without those is
- * a no-op from the user's perspective and we don't want a misleading
- * ON state.
  */
 
 import { useId } from "react";
@@ -41,20 +34,12 @@ export function ModeSourceToggle({
   const headingId = useId();
   const resolved: ModeSource = value === "server" ? "server" : "local";
 
-  const serverDisabled = !serverConnection?.enabled;
-  const tokenMissing =
-    !!serverConnection && serverConnection.enabled && !serverConnection.bearerTokenSet;
-  const serverButtonDisabled = serverDisabled || tokenMissing;
-
-  let hint: string | null = null;
-  if (serverDisabled) {
-    hint =
-      "Enable Server Connection in this dialog before routing this mode to a remote server.";
-  } else if (tokenMissing) {
-    hint = `Set ${
-      serverConnection?.bearerTokenEnv ?? "the bearer-token env var"
-    } in the host environment so the device can authenticate.`;
-  }
+  const tokenMissing = !!serverConnection && !serverConnection.bearerTokenSet;
+  const hint = tokenMissing
+    ? `Set ${
+        serverConnection?.bearerTokenEnv ?? "the bearer-token env var"
+      } in the host environment so the device can authenticate.`
+    : null;
 
   return (
     <div
@@ -73,7 +58,7 @@ export function ModeSourceToggle({
             {modeLabel} runs on
           </h4>
           <p className="text-xs text-muted-foreground">
-            Per-mode override; takes effect on next app start.
+            Per-mode override; applies immediately.
           </p>
         </div>
         <div
@@ -99,19 +84,12 @@ export function ModeSourceToggle({
             type="button"
             role="radio"
             aria-checked={resolved === "server"}
-            disabled={serverButtonDisabled}
-            onClick={() => {
-              if (serverButtonDisabled) {
-                return;
-              }
-              onChange("server");
-            }}
+            onClick={() => onChange("server")}
             className={cn(
               "rounded-sm px-3 py-1 text-xs font-medium transition-colors",
               resolved === "server"
                 ? "bg-foreground text-background"
                 : "text-muted-foreground hover:text-foreground",
-              serverButtonDisabled && "cursor-not-allowed opacity-50",
             )}
             title={hint ?? undefined}
           >
@@ -119,7 +97,7 @@ export function ModeSourceToggle({
           </button>
         </div>
       </div>
-      {hint && resolved === "local" ? (
+      {hint && resolved === "server" ? (
         <p className="text-xs text-muted-foreground">{hint}</p>
       ) : null}
     </div>

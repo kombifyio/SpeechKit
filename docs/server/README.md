@@ -102,6 +102,41 @@ The mode set is decided at startup from `[server].modes` in `config.toml` or
 the `--modes=` CLI flag. Empty means all three modes. Voice Agent remains a
 mode of this server, not a separate image or deployment tier.
 
+## Voice Agent workflows
+
+Voice Agent behavior is authored through the shared behavior catalog:
+
+- `personas` define stable identities, voices, locales, default roles, and
+  optional `default_sequence` values.
+- `roles` define durable behavior prompts, thinking, VAD, and tool policy.
+- `sequences` define ordered workflow steps with instructions, exit criteria,
+  optional required tools, and `max_turns`.
+
+The built-in desktop personas (`brainstorming_companion`, `humor_companion`,
+`support_companion`) are seeded into the same catalog as personas, roles, and
+default sequences. Local installs use `[voice_agent].agent_profile_id` plus the
+optional `[voice_agent].agent_sequence_id`; server clients use `persona_id` and
+`sequence_id` in the WebSocket `start` frame. If no explicit sequence is sent,
+the selected persona's `default_sequence` is used.
+
+At WebSocket startup, the first client text frame must be `start`. It may carry
+`persona_id`, `role_id`, and `sequence_id`. When a sequence is active, the
+server resolves step 0, connects the provider with the composed prompt, and
+emits `sequence_step` with `status="entered"`.
+
+Clients can advance the workflow by sending:
+
+```json
+{"type":"advance_step","reason":"host"}
+```
+
+The server emits `sequence_step` frames for `completed`, `entered`, and
+`sequence_completed`. If a step defines `max_turns`, the server advances after
+that many completed user turns. Provider tool calls are emitted as `tool_call`;
+clients answer with `tool_response`. Provider implementations can update live
+instructions natively; otherwise the adapter injects a host-instruction update
+as text.
+
 ## Authentication
 
 Built-in auth is configured via `[server].auth_mode`:
@@ -115,6 +150,18 @@ Built-in auth is configured via `[server].auth_mode`:
 `/healthz`, `/readyz`, `/`, and `/setup` are always public so probes, browser
 smoke tests, and first-run onboarding can load without credentials. When auth is
 enabled, only `/api/v1/*` and compatibility `/v1/*` calls require credentials.
+The setup page can generate a server API token during onboarding. The generated
+value is shown once, loaded into the running server process, and omitted from
+`server-settings.json`; persist it in the deployment environment as
+`SPEECHKIT_SERVER_TOKEN` so it survives restarts. Clients then send:
+
+```http
+Authorization: Bearer <token>
+```
+
+If setup auth is switched to self-managed, SpeechKit does not generate a token
+or change the current server auth mode; the deployment owner must provide
+external auth, a bearer env var, or an explicit local-only `auth_mode = "none"`.
 
 ## Relation to the Framework kernel
 

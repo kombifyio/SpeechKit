@@ -276,6 +276,10 @@ func applySelectedVoiceAgentProfile(cfg *config.Config, catalog models.Catalog) 
 		cfg.HuggingFace.Enabled = true
 		cfg.HuggingFace.AgentModel = primary.ModelID
 		cfg.VoiceAgent.PipelineFallback = true
+	case models.ExecutionModeOpenRouter:
+		cfg.Providers.OpenRouter.Enabled = true
+		cfg.Providers.OpenRouter.AgentModel = primary.ModelID
+		cfg.VoiceAgent.PipelineFallback = true
 	case models.ExecutionModeOllama:
 		cfg.Providers.Ollama.Enabled = true
 		if cfg.Providers.Ollama.BaseURL == "" {
@@ -326,6 +330,9 @@ func syncConfiguredSTTRouter(ctx context.Context, cfg *config.Config, state *app
 		}
 	}
 	if provider := configuredVPSProvider(cfg); provider != nil {
+		cloudProviders = append(cloudProviders, provider)
+	}
+	if provider := configuredOpenRouterProvider(cfg); provider != nil {
 		cloudProviders = append(cloudProviders, provider)
 	}
 	if provider := configuredOllamaSTTProvider(cfg); provider != nil {

@@ -32,6 +32,7 @@ CREATE TABLE voice_agent_personas (
     voice          TEXT NOT NULL DEFAULT '',
     locale         TEXT NOT NULL DEFAULT '',
     default_role   TEXT NOT NULL DEFAULT '',
+    default_sequence TEXT NOT NULL DEFAULT '',
     tags_json      TEXT NOT NULL DEFAULT '[]',
     metadata_json  TEXT NOT NULL DEFAULT '{}',
     created_at     DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -88,9 +89,9 @@ func TestSQLitePersister_RoundTripsPersona(t *testing.T) {
 	in := Persona{
 		ID: "host", DisplayName: "Host",
 		Description: "Conversation host", Voice: "Kore", Locale: "de",
-		DefaultRole: "discovery",
-		Tags:        []string{"sales", "structured"},
-		Metadata:    map[string]string{"team": "go-to-market"},
+		DefaultRole: "discovery", DefaultSequence: "discovery-call",
+		Tags:     []string{"sales", "structured"},
+		Metadata: map[string]string{"team": "go-to-market"},
 	}
 	if err := p.SavePersona(ctx, in); err != nil {
 		t.Fatalf("SavePersona: %v", err)
@@ -106,6 +107,9 @@ func TestSQLitePersister_RoundTripsPersona(t *testing.T) {
 	got := loaded[0]
 	if got.ID != "host" || got.Voice != "Kore" || got.Locale != "de" {
 		t.Fatalf("basic fields lost: %+v", got)
+	}
+	if got.DefaultSequence != "discovery-call" {
+		t.Fatalf("default sequence lost: %+v", got)
 	}
 	if len(got.Tags) != 2 || got.Tags[0] != "sales" || got.Tags[1] != "structured" {
 		t.Fatalf("tags lost: %+v", got.Tags)

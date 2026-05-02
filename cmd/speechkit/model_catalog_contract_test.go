@@ -91,6 +91,68 @@ func TestFilteredModelCatalogKeepsProviderVariants(t *testing.T) {
 	t.Fatal("missing local dictation profile")
 }
 
+func TestFilteredModelCatalogExposesOptionalIntegrationProfiles(t *testing.T) {
+	catalog := filteredModelCatalog()
+
+	required := map[string]struct {
+		modality      models.Modality
+		providerKind  models.ProviderKind
+		executionMode models.ExecutionMode
+	}{
+		"stt.google.chirp-3": {
+			modality:      models.ModalitySTT,
+			providerKind:  models.ProviderKindDirectProvider,
+			executionMode: models.ExecutionModeGoogle,
+		},
+		"assist.google.gemini-2.5-flash": {
+			modality:      models.ModalityAssist,
+			providerKind:  models.ProviderKindDirectProvider,
+			executionMode: models.ExecutionModeGoogle,
+		},
+		"assist.openrouter.gemini-2.5-flash": {
+			modality:      models.ModalityAssist,
+			providerKind:  models.ProviderKindCloudProvider,
+			executionMode: models.ExecutionModeOpenRouter,
+		},
+		"stt.openrouter.whisper-1": {
+			modality:      models.ModalitySTT,
+			providerKind:  models.ProviderKindCloudProvider,
+			executionMode: models.ExecutionModeOpenRouter,
+		},
+		"realtime.openrouter.gemini-2.5-flash-pipeline": {
+			modality:      models.ModalityRealtimeVoice,
+			providerKind:  models.ProviderKindCloudProvider,
+			executionMode: models.ExecutionModeOpenRouter,
+		},
+		"assist.groq.llama-3.3-70b": {
+			modality:      models.ModalityAssist,
+			providerKind:  models.ProviderKindDirectProvider,
+			executionMode: models.ExecutionModeGroq,
+		},
+		"utility.openrouter.llama-3.1-8b": {
+			modality:      models.ModalityUtility,
+			providerKind:  models.ProviderKindCloudProvider,
+			executionMode: models.ExecutionModeOpenRouter,
+		},
+	}
+
+	for profileID, expected := range required {
+		profile, ok := findCatalogProfile(catalog, profileID)
+		if !ok {
+			t.Fatalf("missing integration profile %q", profileID)
+		}
+		if profile.Modality != expected.modality {
+			t.Fatalf("%s modality = %q, want %q", profileID, profile.Modality, expected.modality)
+		}
+		if profile.ProviderKind != expected.providerKind {
+			t.Fatalf("%s provider kind = %q, want %q", profileID, profile.ProviderKind, expected.providerKind)
+		}
+		if profile.ExecutionMode != expected.executionMode {
+			t.Fatalf("%s execution mode = %q, want %q", profileID, profile.ExecutionMode, expected.executionMode)
+		}
+	}
+}
+
 func TestBuiltInTranscribeAndAssistProfilesUseRuntimeSelectionLabels(t *testing.T) {
 	catalog := filteredModelCatalog()
 

@@ -28,12 +28,14 @@ const (
 	dotBubbleW = 18
 	dotBubbleH = 18
 
-	pillAnchorWidth  = 380
-	pillAnchorHeight = 128
-	pillPanelWidth   = 380
-	pillPanelHeight  = 128
-	dotAnchorSize    = 24
-	radialMenuSize   = 120
+	pillAnchorWidth    = pillBubbleW
+	pillAnchorHeight   = pillBubbleH
+	pillPanelWidth     = 240
+	pillPanelHeight    = 40
+	pillFeedbackWidth  = 380
+	pillFeedbackHeight = 128
+	dotAnchorSize      = 24
+	radialMenuSize     = 120
 
 	assistBubbleWidth  = 450
 	assistBubbleHeight = 120
@@ -60,6 +62,7 @@ var (
 	overlayWindowMetrics = overlayHostMetrics{Width: overlayWindowSize, Height: overlayWindowSize}
 	pillAnchorMetrics    = overlayHostMetrics{Width: pillAnchorWidth, Height: pillAnchorHeight}
 	pillPanelMetrics     = overlayHostMetrics{Width: pillPanelWidth, Height: pillPanelHeight}
+	pillFeedbackMetrics  = overlayHostMetrics{Width: pillFeedbackWidth, Height: pillFeedbackHeight}
 	dotAnchorMetrics     = overlayHostMetrics{Width: dotAnchorSize, Height: dotAnchorSize}
 	radialMenuMetrics    = overlayHostMetrics{Width: radialMenuSize, Height: radialMenuSize}
 )
@@ -100,6 +103,15 @@ type modeAvailabilitySnapshot struct {
 	Dictate    bool `json:"dictate"`
 	Assist     bool `json:"assist"`
 	VoiceAgent bool `json:"voice_agent"`
+}
+
+type voiceAgentProfileSnapshot struct {
+	ID                string `json:"id"`
+	DisplayName       string `json:"displayName"`
+	Description       string `json:"description,omitempty"`
+	Voice             string `json:"voice,omitempty"`
+	DefaultSequenceID string `json:"defaultSequenceId,omitempty"`
+	BuiltIn           bool   `json:"builtIn,omitempty"`
 }
 
 // bubbleRegion is retained for legacy tests only.
@@ -166,6 +178,9 @@ type settingsSnapshot struct {
 	AssistHotkeyBehavior       string                                `json:"assistHotkeyBehavior"`
 	VoiceAgentHotkeyBehavior   string                                `json:"voiceAgentHotkeyBehavior"`
 	VoiceAgentCloseBehavior    string                                `json:"voiceAgentCloseBehavior"`
+	VoiceAgentProfileID        string                                `json:"voiceAgentProfileId"`
+	VoiceAgentSequenceID       string                                `json:"voiceAgentSequenceId,omitempty"`
+	VoiceAgentProfiles         []voiceAgentProfileSnapshot           `json:"voiceAgentProfiles"`
 	VoiceAgentRefinementPrompt string                                `json:"voiceAgentRefinementPrompt"`
 	VoiceAgentSessionSummary   bool                                  `json:"voiceAgentSessionSummary"`
 	AutoStartOnLaunch          bool                                  `json:"autoStartOnLaunch"`
@@ -192,4 +207,5 @@ type settingsSnapshot struct {
 	ActiveProfiles             map[string]string                     `json:"activeProfiles"`
 	ModelSelections            map[string]modeModelSelectionSnapshot `json:"modelSelections"`
 	ProviderCredentials        map[string]providerCredentialState    `json:"providerCredentials"`
+	ProviderIntegrations       map[string]providerIntegrationState   `json:"providerIntegrations"`
 }

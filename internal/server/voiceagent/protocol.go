@@ -76,6 +76,15 @@ type ToolResponseFrame struct {
 	Response map[string]any `json:"response"`
 }
 
+// AdvanceStepFrame asks the server-side workflow runner to move from the
+// active sequence step to the next step. StepID is reserved for future direct
+// jumps; v1 advances linearly through the authored sequence.
+type AdvanceStepFrame struct {
+	Type   string `json:"type"` // "advance_step"
+	StepID string `json:"step_id,omitempty"`
+	Reason string `json:"reason,omitempty"`
+}
+
 // ── server → client ─────────────────────────────────────────────────────────
 
 type StateFrame struct {
@@ -97,9 +106,12 @@ type ToolCallFrame struct {
 }
 
 type SequenceStepFrame struct {
-	Type   string `json:"type"` // "sequence_step"
-	StepID string `json:"step_id"`
-	Status string `json:"status"` // "entered" | "completed"
+	Type       string `json:"type"` // "sequence_step"
+	SequenceID string `json:"sequence_id,omitempty"`
+	StepID     string `json:"step_id"`
+	StepIndex  int    `json:"step_index,omitempty"`
+	Status     string `json:"status"` // "entered" | "completed" | "sequence_completed"
+	Reason     string `json:"reason,omitempty"`
 }
 
 type InterruptedFrame struct {

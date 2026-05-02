@@ -33,14 +33,15 @@ func NewSQLitePersister(db *sql.DB) *SQLitePersister {
 
 const personaUpsertSQL = `
 INSERT INTO voice_agent_personas
-    (id, display_name, description, voice, locale, default_role, tags_json, metadata_json, created_at, updated_at)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    (id, display_name, description, voice, locale, default_role, default_sequence, tags_json, metadata_json, created_at, updated_at)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 ON CONFLICT(id) DO UPDATE SET
     display_name  = excluded.display_name,
     description   = excluded.description,
     voice         = excluded.voice,
     locale        = excluded.locale,
     default_role  = excluded.default_role,
+    default_sequence = excluded.default_sequence,
     tags_json     = excluded.tags_json,
     metadata_json = excluded.metadata_json,
     updated_at    = excluded.updated_at
@@ -63,7 +64,7 @@ func (p *SQLitePersister) SavePersona(ctx context.Context, entity Persona) error
 	}
 	_, err = p.db.ExecContext(ctx, personaUpsertSQL,
 		entity.ID, entity.DisplayName, entity.Description, entity.Voice, entity.Locale,
-		entity.DefaultRole, string(tagsJSON), string(metaJSON),
+		entity.DefaultRole, entity.DefaultSequence, string(tagsJSON), string(metaJSON),
 		entity.CreatedAt.UTC(), entity.UpdatedAt.UTC(),
 	)
 	return err
@@ -76,7 +77,7 @@ func (p *SQLitePersister) DeletePersona(ctx context.Context, id string) error {
 
 func (p *SQLitePersister) LoadPersonas(ctx context.Context) ([]Persona, error) {
 	rows, err := p.db.QueryContext(ctx, `
-		SELECT id, display_name, description, voice, locale, default_role,
+		SELECT id, display_name, description, voice, locale, default_role, default_sequence,
 		       tags_json, metadata_json, created_at, updated_at
 		FROM voice_agent_personas
 	`)
@@ -93,7 +94,7 @@ func (p *SQLitePersister) LoadPersonas(ctx context.Context) ([]Persona, error) {
 		)
 		if err := rows.Scan(
 			&e.ID, &e.DisplayName, &e.Description, &e.Voice, &e.Locale, &e.DefaultRole,
-			&tagsJSON, &metaJSON, &e.CreatedAt, &e.UpdatedAt,
+			&e.DefaultSequence, &tagsJSON, &metaJSON, &e.CreatedAt, &e.UpdatedAt,
 		); err != nil {
 			return nil, err
 		}

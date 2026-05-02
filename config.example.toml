@@ -34,7 +34,7 @@ design = "default"        # default or kombify
 
 [local]
 enabled = false
-model = "ggml-small.bin"
+model = "ggml-large-v3-turbo.bin"
 model_path = ""           # Auto: ./models/ first, then %LOCALAPPDATA%/SpeechKit/models/
 port = 8080               # whisper-server port
 gpu = "auto"              # auto, cuda, vulkan, cpu
@@ -110,7 +110,7 @@ fallback_profile_id = ""
 mode_source = "local"
 
 [model_selection.voice_agent]
-primary_profile_id = "realtime.google.gemini-native-audio" # Default realtime Voice Agent. Alternatives: realtime.ollama.gemma4-e4b-pipeline, realtime.hf.qwen35-27b
+primary_profile_id = "realtime.builtin.pipeline" # Default local Voice Agent pipeline. Enable Gemini / Google AI to use realtime.google.gemini-native-audio.
 fallback_profile_id = ""
 mode_source = "local"
 
@@ -185,6 +185,8 @@ enabled = true
 model = "gemini-2.5-flash-native-audio-preview-12-2025" # Recommended Voice Agent default
 fallback_model = "gpt-realtime-mini"       # Fallback if primary unavailable
 voice = "Kore"                             # Voice for real-time model
+agent_profile_id = "default"               # default, brainstorming_companion, humor_companion, support_companion
+agent_sequence_id = ""                     # Optional workflow sequence override. Empty = selected profile/persona default.
 framework_prompt = ""                      # Durable host/framework prompt. Empty = SpeechKit default Voice Agent framework behavior.
 refinement_prompt = ""                     # Optional personal refinement prompt layered on top of the framework prompt.
 instruction = ""                           # Legacy alias for framework_prompt. Keep empty for new configs.

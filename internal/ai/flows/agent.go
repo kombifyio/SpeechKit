@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"strings"
 
 	"github.com/firebase/genkit/go/ai"
 	"github.com/firebase/genkit/go/core"
@@ -16,6 +17,7 @@ type AgentInput struct {
 	Locale            string `json:"locale,omitempty"`
 	Selection         string `json:"selection,omitempty"`
 	LastTranscription string `json:"lastTranscription,omitempty"`
+	SystemPrompt      string `json:"systemPrompt,omitempty"`
 }
 
 // AgentOutput is the output of the agent flow.
@@ -85,6 +87,10 @@ func buildAgentSystemPrompt(input AgentInput) string {
 	prompt := fmt.Sprintf(`You are a helpful voice-activated AI assistant. Respond in %s unless the user requests otherwise.
 You receive voice transcriptions from the user. Interpret them as instructions and respond helpfully.
 Be concise and direct. Output only the answer or result.`, lang)
+
+	if hostPrompt := strings.TrimSpace(input.SystemPrompt); hostPrompt != "" {
+		prompt = hostPrompt + "\n\nSpeechKit voice behavior:\n" + prompt
+	}
 
 	if input.Selection != "" {
 		prompt += fmt.Sprintf("\n\nThe user currently has the following text selected:\n%s", input.Selection)

@@ -113,6 +113,19 @@ describe('overlay surfaces', () => {
     expect(screen.getByTestId('pill-anchor-status')).toHaveTextContent('No mode ready')
   })
 
+  it('keeps the pill anchor hover target on the visible surface only', async () => {
+    fetchOverlayStateMock.mockResolvedValue(snap())
+
+    render(<PillAnchorOverlay />)
+
+    await screen.findByTestId('pill-anchor-shell')
+    const stack = screen.getByTestId('pill-anchor-feedback-stack')
+    const classes = stack.className.split(/\s+/)
+
+    expect(classes).not.toContain('h-full')
+    expect(classes).not.toContain('w-full')
+  })
+
   it('opens the dedicated pill panel host on hover', async () => {
     fetchOverlayStateMock.mockResolvedValue(snap())
     const fetchSpy = vi.spyOn(window, 'fetch').mockResolvedValue(new Response(null, { status: 200 }))

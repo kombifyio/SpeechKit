@@ -11,6 +11,7 @@ CREATE TABLE IF NOT EXISTS voice_agent_personas (
     voice          TEXT NOT NULL DEFAULT '',
     locale         TEXT NOT NULL DEFAULT '',
     default_role   TEXT NOT NULL DEFAULT '',
+    default_sequence TEXT NOT NULL DEFAULT '',
     tags_json      TEXT NOT NULL DEFAULT '[]',
     metadata_json  TEXT NOT NULL DEFAULT '{}',
     created_at     DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,

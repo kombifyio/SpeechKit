@@ -13,6 +13,7 @@ import (
 	"github.com/kombifyio/SpeechKit/internal/config"
 	"github.com/kombifyio/SpeechKit/internal/downloads"
 	"github.com/kombifyio/SpeechKit/internal/router"
+	"github.com/kombifyio/SpeechKit/internal/secrets"
 	"github.com/kombifyio/SpeechKit/internal/store"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit"
 )
@@ -43,6 +44,56 @@ func TestAPIV1ModesReturnsContractsAndSettings(t *testing.T) {
 	}
 	if payload.Settings.VoiceAgent.SessionSummary != cfg.VoiceAgent.EnableSessionSummary {
 		t.Fatal("voice agent session summary setting did not reflect config")
+	}
+}
+
+func TestAPIV1ServerConnectionEnableBackfillsManagedDevServerURL(t *testing.T) {
+	restoreBuild := config.OverrideManagedDevServerBuildForTests("1")
+	defer restoreBuild()
+	cfg := defaultTestConfig()
+	cfg.ServerConnection.URL = ""
+	cfg.ServerConnection.Enabled = false
+	cfg.ServerConnection.BearerTokenEnv = ""
+	cfg.ServerConnection.RequestTimeoutSec = 0
+	cfgPath := filepath.Join(t.TempDir(), "config.toml")
+
+	enabled := true
+	if err := applyAPIV1ServerConnectionPatch(cfgPath, cfg, &appState{}, apiV1ServerConnectionPatch{
+		Enabled: &enabled,
+	}); err != nil {
+		t.Fatalf("applyAPIV1ServerConnectionPatch: %v", err)
+	}
+
+	if !cfg.ServerConnection.Enabled {
+		t.Fatal("server connection enabled = false, want true")
+	}
+	if got, want := cfg.ServerConnection.URL, config.ManagedDevServerURL; got != want {
+		t.Fatalf("server connection URL = %q, want %q", got, want)
+	}
+	if got, want := cfg.ServerConnection.BearerTokenEnv, "SPEECHKIT_SERVER_TOKEN"; got != want {
+		t.Fatalf("bearer token env = %q, want %q", got, want)
+	}
+	if got, want := cfg.ServerConnection.RequestTimeoutSec, 30; got != want {
+		t.Fatalf("request timeout = %d, want %d", got, want)
+	}
+}
+
+func TestServerConnectionSettingMarksStoredTokenAsSet(t *testing.T) {
+	restore := secrets.UseMemoryStoreForTests()
+	defer restore()
+	t.Setenv("SC_TEST_STORED_SERVER_TOKEN", "")
+	if err := secrets.SetNamedSecret("SC_TEST_STORED_SERVER_TOKEN", "stored-token"); err != nil {
+		t.Fatalf("set named secret: %v", err)
+	}
+
+	setting := serverConnectionSettingFromConfig(config.ServerConnectionConfig{
+		Enabled:        false,
+		URL:            "https://speechkit.example.com",
+		BearerTokenEnv: "SC_TEST_STORED_SERVER_TOKEN",
+	})
+
+	if !setting.BearerTokenSet {
+		t.Fatal("BearerTokenSet = false, want true for stored named secret")
 	}
 }
 
@@ -224,6 +275,43 @@ func TestAPIV1PatchModeSettingsUpdatesConfig(t *testing.T) {
 	}
 	if cfg.TTS.Enabled {
 		t.Fatal("tts enabled = true, want false")
+	}
+}
+
+func TestAPIV1PatchVoiceAgentSequenceUpdatesConfig(t *testing.T) {
+	cfg := defaultTestConfig()
+	cfgPath := filepath.Join(t.TempDir(), "config.toml")
+	state := &appState{activeProfiles: map[string]string{}}
+	handler := assetHandler(cfg, cfgPath, state, &router.Router{}, nil, &config.InstallState{Mode: config.InstallModeLocal})
+
+	previousReload := reloadAIRuntime
+	reloadAIRuntime = func(ctx context.Context, state *appState, cfg *config.Config) error {
+		return nil
+	}
+	defer func() { reloadAIRuntime = previousReload }()
+
+	body := `{"agentProfileId":"support_companion","agentSequenceId":"support_companion_sequence"}`
+	req := httptest.NewRequest(http.MethodPatch, "/api/v1/modes/voice_agent/settings", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body=%s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+	if got, want := cfg.VoiceAgent.AgentProfileID, "support_companion"; got != want {
+		t.Fatalf("agent profile = %q, want %q", got, want)
+	}
+	if got, want := cfg.VoiceAgent.AgentSequenceID, "support_companion_sequence"; got != want {
+		t.Fatalf("agent sequence = %q, want %q", got, want)
+	}
+
+	var payload speechkit.VoiceAgentSetting
+	if err := json.Unmarshal(rec.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if got, want := payload.AgentSequenceID, "support_companion_sequence"; got != want {
+		t.Fatalf("response agent sequence = %q, want %q", got, want)
 	}
 }
 

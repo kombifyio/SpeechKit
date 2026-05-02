@@ -13,6 +13,7 @@ import (
 	"github.com/kombifyio/SpeechKit/internal/server/persona"
 	vsserver "github.com/kombifyio/SpeechKit/internal/server/voiceagent"
 	vskernel "github.com/kombifyio/SpeechKit/internal/voiceagent"
+	"github.com/kombifyio/SpeechKit/internal/voiceagentprofile"
 )
 
 // Supported provider strings for cfg.VoiceAgent.Provider.
@@ -132,9 +133,9 @@ func buildProviderFactory(ctx context.Context, cfg *config.Config, app *App, pro
 //  2. the resolved persona + role + sequence step from the registry
 //  3. the server-wide [voice_agent] config (lowest)
 //
-// This preserves the previous behaviour when no persona_id is supplied
-// (falls straight to config defaults) while giving clients full control
-// when they do pick a persona.
+// This preserves the previous behaviour when no persona_id and no configured
+// agent profile are supplied, while giving clients full control when they do
+// pick a persona.
 type personaResolver struct {
 	cfg      *config.Config
 	apiKey   string
@@ -142,6 +143,14 @@ type personaResolver struct {
 }
 
 func (r *personaResolver) Resolve(start vsserver.StartFrame) (vsserver.LiveConfigFrame, error) {
+	return r.resolve(start, 0)
+}
+
+func (r *personaResolver) ResolveStep(start vsserver.StartFrame, stepIndex int) (vsserver.LiveConfigFrame, error) {
+	return r.resolve(start, stepIndex)
+}
+
+func (r *personaResolver) resolve(start vsserver.StartFrame, stepIndex int) (vsserver.LiveConfigFrame, error) {
 	va := r.cfg.VoiceAgent
 
 	frame := vsserver.LiveConfigFrame{
@@ -161,15 +170,31 @@ func (r *personaResolver) Resolve(start vsserver.StartFrame) (vsserver.LiveConfi
 		TurnCoverage:      va.TurnCoverage,
 	}
 
-	// Layer (2): persona + role + sequence. Only applied when a persona_id
-	// is present — clients that don't pick a persona get pure config
-	// defaults, preserving backward compatibility with M4.
+	// Layer (2): persona + role + sequence. Explicit start-frame personas win;
+	// otherwise a non-default server-wide agent profile acts as the default
+	// persona for clients that do not send persona_id yet.
 	personaID := strings.TrimSpace(start.PersonaID)
+	if personaID == "" {
+		if configured := voiceagentprofile.NormalizeID(va.AgentProfileID); configured != voiceagentprofile.DefaultID {
+			personaID = configured
+		}
+	}
 	if personaID != "" && r.registry != nil {
-		resolved, err := r.registry.Resolve(personaID, start.RoleID, start.SequenceID, 0)
+		resolved, err := r.registry.Resolve(personaID, start.RoleID, start.SequenceID, stepIndex)
 		if err != nil {
 			return vsserver.LiveConfigFrame{}, err
 		}
+		frame.PersonaID = resolved.PersonaID
+		frame.RoleID = resolved.RoleID
+		frame.SequenceID = resolved.SequenceID
+		frame.SequenceCompletion = resolved.SequenceCompletion
+		frame.SequenceMaxTurns = resolved.SequenceMaxTurns
+		frame.StepID = resolved.StepID
+		frame.StepIndex = resolved.StepIndex
+		frame.StepCount = resolved.StepCount
+		frame.StepInstruction = resolved.StepInstruction
+		frame.StepExitCriteria = resolved.StepExitCriteria
+		frame.StepMaxTurns = resolved.StepMaxTurns
 		if strings.TrimSpace(start.Voice) == "" && resolved.Voice != "" {
 			frame.Voice = resolved.Voice
 		}
@@ -178,6 +203,8 @@ func (r *personaResolver) Resolve(start vsserver.StartFrame) (vsserver.LiveConfi
 		}
 		if strings.TrimSpace(start.SystemPromptOverride) == "" && resolved.SystemPrompt != "" {
 			frame.SystemPrompt = resolved.SystemPrompt
+		} else if strings.TrimSpace(start.SystemPromptOverride) != "" && resolved.StepInstruction != "" {
+			frame.SystemPrompt = composeStartOverrideWithStep(start.SystemPromptOverride, resolved.StepID, resolved.StepInstruction)
 		}
 		if resolved.RefinementPrompt != "" {
 			frame.RefinementPrompt = resolved.RefinementPrompt
@@ -232,6 +259,18 @@ func (r *personaResolver) Resolve(start vsserver.StartFrame) (vsserver.LiveConfi
 		}
 	}
 	return frame, nil
+}
+
+func composeStartOverrideWithStep(prompt, stepID, stepInstruction string) string {
+	prompt = strings.TrimSpace(prompt)
+	stepInstruction = strings.TrimSpace(stepInstruction)
+	if stepInstruction == "" {
+		return prompt
+	}
+	if prompt == "" {
+		return stepInstruction
+	}
+	return prompt + "\n\n[Current step: " + stepID + "]\n" + stepInstruction
 }
 
 // ── Gemini Live provider factory + bridge ───────────────────────────────────
@@ -289,6 +328,22 @@ func (b *geminiLiveBridge) SendText(text string) error   { return b.inner.SendTe
 func (b *geminiLiveBridge) Close() error                 { return b.inner.Close() }
 func (b *geminiLiveBridge) Name() string                 { return b.inner.Name() }
 
+func (b *geminiLiveBridge) UpdateInstructions(_ context.Context, cfg vsserver.LiveConfigFrame) error {
+	text := vsserver.RenderHostInstructionUpdate(cfg)
+	if text == "" {
+		return nil
+	}
+	return b.inner.SendText(text)
+}
+
+func (b *geminiLiveBridge) SendToolResponse(frame vsserver.ToolResponseFrame) error {
+	return b.inner.SendToolResponse(vskernel.ToolResponse{
+		ID:       frame.ID,
+		Name:     frame.Name,
+		Response: frame.Response,
+	})
+}
+
 func (b *geminiLiveBridge) Receive(ctx context.Context) (*vsserver.LiveMessage, error) {
 	msg, err := b.inner.Receive(ctx)
 	if err != nil {
@@ -303,9 +358,25 @@ func (b *geminiLiveBridge) Receive(ctx context.Context) (*vsserver.LiveMessage, 
 		InputTranscriptDone:  msg.InputTranscriptDone,
 		OutputTranscript:     msg.OutputTranscript,
 		OutputTranscriptDone: msg.OutputTranscriptDone,
+		ToolCalls:            mapKernelToolCalls(msg.ToolCalls),
 		Interrupted:          msg.Interrupted,
 		GoAway:               msg.GoAway,
 	}, nil
+}
+
+func mapKernelToolCalls(calls []vskernel.ToolCall) []vsserver.ToolCall {
+	if len(calls) == 0 {
+		return nil
+	}
+	out := make([]vsserver.ToolCall, 0, len(calls))
+	for _, call := range calls {
+		out = append(out, vsserver.ToolCall{
+			ID:   call.ID,
+			Name: call.Name,
+			Args: call.Args,
+		})
+	}
+	return out
 }
 
 // ── Cascaded provider factory ───────────────────────────────────────────────

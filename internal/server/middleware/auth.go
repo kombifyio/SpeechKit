@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"os"
 	"strings"
+	"sync"
 )
 
 // Identity is attached to the request context by Auth and consumed by mode
@@ -64,6 +65,16 @@ type AuthOptions struct {
 	EdgeSecretEnv     string
 	AllowPublicPaths  []string // exact path matches that skip auth entirely (e.g. /healthz)
 	AllowPublicRoutes []PublicRoute
+	// Dynamic providers are evaluated for every request. They let first-run
+	// setup generate a token without rebuilding the middleware chain.
+	ModeProvider        func() string
+	BearerTokenProvider func() string
+	EdgeSecretProvider  func() string
+	// Bootstrap routes are public only while BootstrapAllowed returns true.
+	// The server uses this for the first settings write when bearer auth is
+	// configured but no bearer token exists yet.
+	AllowBootstrapRoutes []PublicRoute
+	BootstrapAllowed     func(*http.Request) bool
 }
 
 type PublicRoute struct {
@@ -71,39 +82,98 @@ type PublicRoute struct {
 	Methods []string
 }
 
+// AuthState is a concurrency-safe view of the mutable auth config used by the
+// server setup flow. It stores env var names, not secret values.
+type AuthState struct {
+	mu             sync.RWMutex
+	mode           string
+	bearerTokenEnv string
+	edgeSecretEnv  string
+}
+
+func NewAuthState(mode, bearerTokenEnv, edgeSecretEnv string) *AuthState {
+	return &AuthState{
+		mode:           strings.TrimSpace(mode),
+		bearerTokenEnv: strings.TrimSpace(bearerTokenEnv),
+		edgeSecretEnv:  strings.TrimSpace(edgeSecretEnv),
+	}
+}
+
+func (s *AuthState) Mode() string {
+	if s == nil {
+		return ""
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.mode
+}
+
+func (s *AuthState) BearerTokenEnv() string {
+	if s == nil {
+		return ""
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.bearerTokenEnv
+}
+
+func (s *AuthState) BearerToken() string {
+	return strings.TrimSpace(os.Getenv(strings.TrimSpace(s.BearerTokenEnv())))
+}
+
+func (s *AuthState) EdgeSecret() string {
+	if s == nil {
+		return ""
+	}
+	s.mu.RLock()
+	envName := s.edgeSecretEnv
+	s.mu.RUnlock()
+	return strings.TrimSpace(os.Getenv(strings.TrimSpace(envName)))
+}
+
+func (s *AuthState) Set(mode, bearerTokenEnv, edgeSecretEnv string) {
+	if s == nil {
+		return
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if value := strings.TrimSpace(mode); value != "" {
+		s.mode = value
+	}
+	if value := strings.TrimSpace(bearerTokenEnv); value != "" {
+		s.bearerTokenEnv = value
+	}
+	if value := strings.TrimSpace(edgeSecretEnv); value != "" {
+		s.edgeSecretEnv = value
+	}
+}
+
 // Auth validates credentials according to the configured mode and attaches the
 // resolved Identity to the request context. Unauthenticated requests receive
 // 401 with a JSON error envelope.
 func Auth(opts AuthOptions) Middleware {
-	mode := AuthMode(strings.TrimSpace(strings.ToLower(opts.Mode)))
-	if mode == "" {
-		mode = AuthModeNone
+	modeProvider := opts.ModeProvider
+	if modeProvider == nil {
+		modeProvider = func() string { return opts.Mode }
 	}
-	bearerToken := strings.TrimSpace(os.Getenv(strings.TrimSpace(opts.BearerTokenEnv)))
-	edgeSecret := strings.TrimSpace(os.Getenv(strings.TrimSpace(opts.EdgeSecretEnv)))
+	bearerTokenProvider := opts.BearerTokenProvider
+	if bearerTokenProvider == nil {
+		envName := strings.TrimSpace(opts.BearerTokenEnv)
+		bearerTokenProvider = func() string { return strings.TrimSpace(os.Getenv(envName)) }
+	}
+	edgeSecretProvider := opts.EdgeSecretProvider
+	if edgeSecretProvider == nil {
+		envName := strings.TrimSpace(opts.EdgeSecretEnv)
+		edgeSecretProvider = func() string { return strings.TrimSpace(os.Getenv(envName)) }
+	}
 	publicSet := make(map[string]struct{}, len(opts.AllowPublicPaths))
 	for _, p := range opts.AllowPublicPaths {
 		if trimmed := strings.TrimSpace(p); trimmed != "" {
 			publicSet[trimmed] = struct{}{}
 		}
 	}
-	publicRoutes := make(map[string]map[string]struct{}, len(opts.AllowPublicRoutes))
-	for _, route := range opts.AllowPublicRoutes {
-		path := strings.TrimSpace(route.Path)
-		if path == "" {
-			continue
-		}
-		methods := publicRoutes[path]
-		if methods == nil {
-			methods = map[string]struct{}{}
-			publicRoutes[path] = methods
-		}
-		for _, method := range route.Methods {
-			if normalized := strings.ToUpper(strings.TrimSpace(method)); normalized != "" {
-				methods[normalized] = struct{}{}
-			}
-		}
-	}
+	publicRoutes := routeSet(opts.AllowPublicRoutes)
+	bootstrapRoutes := routeSet(opts.AllowBootstrapRoutes)
 
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -111,14 +181,20 @@ func Auth(opts AuthOptions) Middleware {
 				next.ServeHTTP(w, r)
 				return
 			}
-			if methods, public := publicRoutes[r.URL.Path]; public {
-				if _, allowed := methods[r.Method]; allowed {
-					next.ServeHTTP(w, r)
-					return
-				}
+			if routeAllowed(publicRoutes, r.URL.Path, r.Method) {
+				next.ServeHTTP(w, r)
+				return
+			}
+			if routeAllowed(bootstrapRoutes, r.URL.Path, r.Method) && opts.BootstrapAllowed != nil && opts.BootstrapAllowed(r) {
+				next.ServeHTTP(w, r)
+				return
 			}
 
-			id, ok := verify(mode, r, bearerToken, edgeSecret)
+			mode := AuthMode(strings.TrimSpace(strings.ToLower(modeProvider())))
+			if mode == "" {
+				mode = AuthModeNone
+			}
+			id, ok := verify(mode, r, strings.TrimSpace(bearerTokenProvider()), strings.TrimSpace(edgeSecretProvider()))
 			if !ok {
 				writeAuthError(w)
 				return
@@ -127,6 +203,36 @@ func Auth(opts AuthOptions) Middleware {
 			next.ServeHTTP(w, r.WithContext(ctx))
 		})
 	}
+}
+
+func routeSet(routes []PublicRoute) map[string]map[string]struct{} {
+	out := make(map[string]map[string]struct{}, len(routes))
+	for _, route := range routes {
+		path := strings.TrimSpace(route.Path)
+		if path == "" {
+			continue
+		}
+		methods := out[path]
+		if methods == nil {
+			methods = map[string]struct{}{}
+			out[path] = methods
+		}
+		for _, method := range route.Methods {
+			if normalized := strings.ToUpper(strings.TrimSpace(method)); normalized != "" {
+				methods[normalized] = struct{}{}
+			}
+		}
+	}
+	return out
+}
+
+func routeAllowed(routes map[string]map[string]struct{}, path, method string) bool {
+	methods, ok := routes[path]
+	if !ok {
+		return false
+	}
+	_, ok = methods[method]
+	return ok
 }
 
 func verify(mode AuthMode, r *http.Request, bearerToken, edgeSecret string) (Identity, bool) {
