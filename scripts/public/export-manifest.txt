@@ -6,6 +6,7 @@ frontend/app/
 installer/
 internal/
 pkg/
+tools/releaseguard/
 scripts/build.ps1
 scripts/build.sh
 scripts/prepare-whisper-runtime.ps1
