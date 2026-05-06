@@ -87,4 +87,35 @@ describe("ModeSourceSection", () => {
       expect(screen.queryByText(/SPEECHKIT_SERVER_TOKEN/)).not.toBeInTheDocument();
     });
   });
+
+  it("notifies the parent when enabling server mode updates shared connection state", async () => {
+    mocks.patchAPIV1ModeSettings.mockResolvedValue({
+      enabled: true,
+      modeSource: "server",
+    });
+    const onServerConnectionChange = vi.fn();
+
+    render(
+      <ModeSourceSection
+        serverConnection={serverConnection}
+        onServerConnectionChange={onServerConnectionChange}
+      />,
+    );
+
+    const dictationGroup = await screen.findByRole("radiogroup", {
+      name: "Dictation mode source",
+    });
+    fireEvent.click(within(dictationGroup).getByRole("radio", { name: /server/i }));
+
+    await waitFor(() => {
+      expect(mocks.patchAPIV1ServerConnection).toHaveBeenCalledWith({
+        enabled: true,
+      });
+      expect(onServerConnectionChange).toHaveBeenCalledWith({
+        ...serverConnection,
+        enabled: true,
+      });
+    });
+    expect(mocks.fetchAPIV1ServerConnection).not.toHaveBeenCalled();
+  });
 });

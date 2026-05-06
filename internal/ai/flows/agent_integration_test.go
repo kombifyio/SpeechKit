@@ -19,7 +19,7 @@ import (
 func TestAgentFlow_Integration(t *testing.T) {
 	groqKey := os.Getenv("GROQ_API_KEY")
 	if groqKey == "" {
-		t.Skip("GROQ_API_KEY not set — integration test requires live Groq credentials")
+		t.Skip("GROQ_API_KEY not set â€” integration test requires live Groq credentials")
 	}
 
 	rt, err := appai.Init(context.Background(), appai.Config{

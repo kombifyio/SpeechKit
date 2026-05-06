@@ -41,7 +41,7 @@ env:
 jobs:
   frontend-ci:
     name: Frontend Checks
-    runs-on: ${{ github.repository == 'kombifyio/SpeechKit' && 'ubuntu-24.04' || 'blacksmith-4vcpu-ubuntu-2204' }}
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
 
     defaults:
@@ -74,10 +74,15 @@ jobs:
       - name: Build frontend
         run: npm run build
 
+      - name: Verify frontend build is reproducible
+        working-directory: ${{ github.workspace }}
+        run: |
+          git diff --check
+          git diff --exit-code -- internal/frontendassets/dist
+
   website-ci:
     name: Website Checks
-    if: ${{ github.repository != 'kombifyio/SpeechKit' }}
-    runs-on: ${{ github.repository == 'kombifyio/SpeechKit' && 'ubuntu-24.04' || 'blacksmith-4vcpu-ubuntu-2204' }}
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
 
     defaults:
@@ -109,7 +114,7 @@ jobs:
 
   android-ci:
     name: Android Checks
-    runs-on: ${{ github.repository == 'kombifyio/SpeechKit' && 'ubuntu-24.04' || 'blacksmith-4vcpu-ubuntu-2204' }}
+    runs-on: ubuntu-24.04
     timeout-minutes: 30
 
     steps:
@@ -159,7 +164,7 @@ jobs:
     # winapi, *_windows_cgo.go) are covered by the dedicated Windows
     # bundle workflow (windows-build.yml), not here.
     name: Go Analysis
-    runs-on: ${{ github.repository == 'kombifyio/SpeechKit' && 'ubuntu-24.04' || 'blacksmith-4vcpu-ubuntu-2204' }}
+    runs-on: ubuntu-24.04
     timeout-minutes: 30
 
     steps:
@@ -179,10 +184,8 @@ jobs:
         # headers and a working cc are present — install both up front
         # so the race step doesn't fail on missing -lasound.
         #
-        # Retry the apt invocations because this workflow shares a
-        # self-hosted runner pool with `server-linux.yml`; if both
-        # jobs land on the same runner concurrently they fight over
-        # /var/lib/dpkg/lock-frontend. The retry burns at most ~30 s
+        # Retry the apt invocations in case hosted runners start with a
+        # transient apt/dpkg lock. The retry burns at most ~30 s
         # in the contended case and is a no-op when there's no
         # contention.
         run: |
@@ -261,16 +264,19 @@ jobs:
             ./internal/tts/...
             ./internal/vad/...
             ./internal/voiceagent/...
+            ./tools/releaseguard/...
           )
-          if [ -d tools/releaseguard ]; then
-            packages+=(./tools/releaseguard/...)
-          fi
           echo "list=${packages[*]}" >> "$GITHUB_OUTPUT"
           echo "Cross-platform package set:"
           printf '  %s\n' "${packages[@]}"
 
       - name: Run go vet
-        run: go vet ${{ steps.pkgs.outputs.list }}
+        # `no_embed_frontend` selects internal/frontendassets/assets_stub.go
+        # so vet doesn't require the gitignored dist/ to be materialised.
+        # The Wails canonical build (windows-build.yml → scripts/build.ps1)
+        # builds without this tag, so production binaries embed the real
+        # dist/.
+        run: go vet -tags=no_embed_frontend ${{ steps.pkgs.outputs.list }}
 
       - name: Check gofmt
         run: |
@@ -299,8 +305,9 @@ jobs:
       - name: Run golangci-lint
         # Lint the same cross-platform package set so the Windows-only
         # entry points don't fail the lint with "build constraints
-        # exclude all Go files".
-        run: golangci-lint run --timeout=5m ${{ steps.pkgs.outputs.list }}
+        # exclude all Go files". `no_embed_frontend` selects the
+        # frontendassets stub so lint doesn't require dist/ materialised.
+        run: golangci-lint run --build-tags=no_embed_frontend --timeout=5m ${{ steps.pkgs.outputs.list }}
 
       - name: Run go race tests
         # Covers pure-logic packages. Desktop/CGo-heavy packages
@@ -309,7 +316,7 @@ jobs:
         # Windows bundle build instead — they need GTK / webkit2gtk /
         # ONNX / Windows headers that aren't worth setting up here.
         run: >-
-          go test -race
+          go test -race -tags=no_embed_frontend
           ./pkg/speechkit/...
           ./internal/ai/...
           ./internal/assist/...
@@ -348,7 +355,7 @@ jobs:
             ./internal/tts/...
             ./internal/voiceagent/...
           )
-          go test -coverprofile coverage.out -covermode atomic "${packages[@]}"
+          go test -tags=no_embed_frontend -coverprofile coverage.out -covermode atomic "${packages[@]}"
           cover_report="$(go tool cover -func coverage.out)"
           echo "$cover_report"
           total="$(printf '%s\n' "$cover_report" | awk '/^total:/ { gsub(/%/, "", $NF); print $NF }')"
@@ -376,18 +383,18 @@ jobs:
         run: go install honnef.co/go/tools/cmd/staticcheck@v0.7.0
 
       - name: Run Staticcheck
-        run: staticcheck ${{ steps.pkgs.outputs.list }}
+        run: staticcheck -tags=no_embed_frontend ${{ steps.pkgs.outputs.list }}
 
       - name: Install govulncheck
         run: go install golang.org/x/vuln/cmd/govulncheck@v1.3.0
 
       - name: Run govulncheck
-        run: govulncheck ${{ steps.pkgs.outputs.list }}
+        run: govulncheck -tags=no_embed_frontend ${{ steps.pkgs.outputs.list }}
 
   dependency-review:
     name: Dependency Review
     if: github.event_name == 'pull_request'
-    runs-on: ${{ github.repository == 'kombifyio/SpeechKit' && 'ubuntu-24.04' || 'blacksmith-4vcpu-ubuntu-2204' }}
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
 
     steps:

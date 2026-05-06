@@ -317,6 +317,10 @@ jobs:
 
           SpeechKit currently has no available no-cost public code-signing
           path. Windows SmartScreen and installer trust warnings are expected.
+          This is a manual-only Windows release.
+          Auto-update requires signed Windows installers.
+          The in-app updater will not offer this installer as a verified
+          installable download.
 
           Verify downloads through the release's SHA256SUMS.txt file and the
           GitHub Actions provenance attached to the public release workflow
@@ -325,7 +329,7 @@ jobs:
 
       - name: Install cyclonedx-gomod
         shell: pwsh
-        run: go install github.com/CycloneDX/cyclonedx-gomod/cmd/cyclonedx-gomod@latest
+        run: go install github.com/CycloneDX/cyclonedx-gomod/cmd/cyclonedx-gomod@v1.10.0
 
       - name: Generate CycloneDX SBOM
         shell: pwsh

@@ -320,7 +320,7 @@ func (p *LocalProvider) Transcribe(ctx context.Context, audioData []byte, opts T
 			slog.Info("whisper-server: waiting for startup to complete...")
 			select {
 			case <-done:
-				// startup finished — check ready below
+				// startup finished â€” check ready below
 			case <-ctx.Done():
 				return nil, fmt.Errorf("local whisper-server not ready: cancelled while waiting for startup")
 			}
@@ -535,7 +535,7 @@ func (p *LocalProvider) VerifyInstallation() InstallStatus {
 	} else {
 		status.ModelBytes = fi.Size()
 		if fi.Size() < MinWhisperModelBytes {
-			status.Problems = append(status.Problems, fmt.Sprintf("model file too small (%d bytes) — likely corrupt or truncated", fi.Size()))
+			status.Problems = append(status.Problems, fmt.Sprintf("model file too small (%d bytes) â€” likely corrupt or truncated", fi.Size()))
 		} else {
 			status.ModelFound = true
 		}
@@ -551,11 +551,14 @@ func FindWhisperBinary() (string, error) {
 }
 
 // findWhisperBinary looks for the whisper-server executable in standard locations.
+//
+// Per the kernel/adapter discipline in CLAUDE.md, this kernel function
+// must stay platform-neutral. Windows-specific binary names and
+// install locations live in local_search_windows.go;
+// local_search_unix.go is the no-op fallback for Linux/macOS where
+// the Server-Target reads its whisper path from server settings.
 func findWhisperBinary() (string, error) {
-	names := []string{"whisper-server", "whisper-server.exe"}
-	if runtime.GOOS == "windows" {
-		names = []string{"whisper-server.exe"}
-	}
+	names := whisperBinaryNames()
 
 	// Check next to executable first (trusted bundle path).
 	exe, _ := os.Executable()
@@ -568,19 +571,12 @@ func findWhisperBinary() (string, error) {
 		}
 	}
 
-	// Check managed install location next.
-	localAppData := os.Getenv("LOCALAPPDATA")
-	if localAppData != "" {
-		searchDirs := []string{
-			filepath.Join(localAppData, "SpeechKit"),
-			filepath.Join(localAppData, "SpeechKit", "bin"),
-		}
-		for _, dir := range searchDirs {
-			for _, name := range names {
-				path := filepath.Join(dir, name)
-				if _, err := os.Stat(path); err == nil { // #nosec G703 -- path is app data dir, not user input.
-					return path, nil
-				}
+	// Check platform-specific managed install locations.
+	for _, dir := range platformWhisperSearchDirs() {
+		for _, name := range names {
+			path := filepath.Join(dir, name)
+			if _, err := os.Stat(path); err == nil { // #nosec G703 -- path is app data dir, not user input.
+				return path, nil
 			}
 		}
 	}

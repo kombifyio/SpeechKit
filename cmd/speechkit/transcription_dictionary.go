@@ -38,6 +38,32 @@ func parseVocabularyDictionary(raw string) []vocabularyEntry {
 	return entries
 }
 
+func vocabularyEntriesFromStore(ctx context.Context, dictionaryStore store.UserDictionaryStore, language string) ([]vocabularyEntry, error) {
+	if dictionaryStore == nil {
+		return nil, nil
+	}
+	storeEntries, err := dictionaryStore.ListUserDictionaryEntries(ctx, language)
+	if err != nil {
+		return nil, err
+	}
+	entries := make([]vocabularyEntry, 0, len(storeEntries))
+	for _, entry := range storeEntries {
+		if !entry.Enabled {
+			continue
+		}
+		spoken := strings.TrimSpace(entry.Spoken)
+		canonical := strings.TrimSpace(entry.Canonical)
+		if spoken == "" || canonical == "" {
+			continue
+		}
+		entries = append(entries, vocabularyEntry{
+			Spoken:    spoken,
+			Canonical: canonical,
+		})
+	}
+	return entries, nil
+}
+
 func buildVocabularyPrompt(entries []vocabularyEntry) string {
 	terms := canonicalVocabularyTerms(entries)
 	if len(terms) == 0 {

@@ -45,6 +45,7 @@ describe('useSetupWizard', () => {
     const onComplete = vi.fn()
     const { result } = renderHook(() => useSetupWizard(onComplete))
 
+    await waitFor(() => expect(result.current.devices).toHaveLength(2))
     act(() => result.current.setStep('microphone'))
     expect(result.current.step).toBe('microphone')
 
@@ -59,6 +60,7 @@ describe('useSetupWizard', () => {
     const onComplete = vi.fn()
     const { result } = renderHook(() => useSetupWizard(onComplete))
 
+    await waitFor(() => expect(result.current.devices).toHaveLength(2))
     await act(() => result.current.finish())
     expect(onComplete).toHaveBeenCalled()
   })
@@ -67,6 +69,7 @@ describe('useSetupWizard', () => {
     const onComplete = vi.fn()
     const { result } = renderHook(() => useSetupWizard(onComplete))
 
+    await waitFor(() => expect(result.current.devices).toHaveLength(2))
     await act(() => result.current.finish())
 
     const [, init] = vi.mocked(fetch).mock.calls.at(-1) ?? []

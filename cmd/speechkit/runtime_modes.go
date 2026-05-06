@@ -5,15 +5,16 @@ import (
 	"strings"
 
 	"github.com/kombifyio/SpeechKit/internal/config"
+	desktopruntime "github.com/kombifyio/SpeechKit/internal/desktop/runtime"
 	"github.com/kombifyio/SpeechKit/internal/hotkey"
 )
 
 const (
-	modeNone       = "none"
-	modeDictate    = "dictate"
-	modeAssist     = "assist"
-	modeVoiceAgent = "voice_agent"
-	modeAgent      = "agent"
+	modeNone       = desktopruntime.ModeNone
+	modeDictate    = desktopruntime.ModeDictate
+	modeAssist     = desktopruntime.ModeAssist
+	modeVoiceAgent = desktopruntime.ModeVoiceAgent
+	modeAgent      = desktopruntime.ModeAgent
 )
 
 var allowedModeHotkeyBases = []string{"win+alt", "ctrl+win", "ctrl+shift"}
@@ -34,42 +35,19 @@ type parsedModeHotkey struct {
 }
 
 func orderedRuntimeModes() []string {
-	return []string{modeDictate, modeAssist, modeVoiceAgent}
+	return desktopruntime.OrderedModes()
 }
 
 func normalizeAgentMode(mode string) string {
-	if strings.TrimSpace(mode) == modeVoiceAgent {
-		return modeVoiceAgent
-	}
-	return modeAssist
+	return desktopruntime.NormalizeAgentMode(mode)
 }
 
 func normalizeRuntimeMode(mode, legacyAgentMode string) string {
-	trimmed := strings.TrimSpace(mode)
-	switch trimmed {
-	case modeDictate, modeAssist, modeVoiceAgent, modeNone:
-		return trimmed
-	case modeAgent:
-		return normalizeAgentMode(legacyAgentMode)
-	default:
-		return modeNone
-	}
+	return desktopruntime.NormalizeMode(mode, legacyAgentMode)
 }
 
 func deriveLegacyAgentModeFromBindings(assistHotkey, voiceAgentHotkey, activeMode, fallback string) string {
-	if activeMode == modeVoiceAgent && strings.TrimSpace(voiceAgentHotkey) != "" {
-		return modeVoiceAgent
-	}
-	if activeMode == modeAssist && strings.TrimSpace(assistHotkey) != "" {
-		return modeAssist
-	}
-	if strings.TrimSpace(assistHotkey) != "" {
-		return modeAssist
-	}
-	if strings.TrimSpace(voiceAgentHotkey) != "" {
-		return modeVoiceAgent
-	}
-	return normalizeAgentMode(fallback)
+	return desktopruntime.DeriveLegacyAgentMode(assistHotkey, voiceAgentHotkey, activeMode, fallback)
 }
 
 func sanitizeActiveModeForBindings(mode, legacyAgentMode string, dictateEnabled, assistEnabled, voiceAgentEnabled bool, dictateHotkey, assistHotkey, voiceAgentHotkey string) string {
@@ -97,10 +75,7 @@ func activeModeHotkey(state runtimeState) string {
 }
 
 func legacyAgentHotkeyFromModeBindings(assistHotkey, voiceAgentHotkey, legacyAgentMode string) string {
-	if normalizeAgentMode(legacyAgentMode) == modeVoiceAgent {
-		return strings.TrimSpace(voiceAgentHotkey)
-	}
-	return strings.TrimSpace(assistHotkey)
+	return desktopruntime.LegacyAgentHotkey(assistHotkey, voiceAgentHotkey, legacyAgentMode)
 }
 
 func configuredModeBindings(dictateEnabled, assistEnabled, voiceAgentEnabled bool, dictateHotkey, assistHotkey, voiceAgentHotkey string) map[string]string {

@@ -509,16 +509,16 @@ components:
       description: |
         Static deployment-wide token from `$SPEECHKIT_SERVER_TOKEN`. The
         identity attached to the request context is `service@default/internal`.
-        Suitable for internal service-to-service callers (e.g. kombify-AI ↔
-        SpeechKit on a private network).
+        Suitable for internal service-to-service callers, product backends, or
+        automation services on a private network.
     edgeHmac:
       type: apiKey
       in: header
       name: X-Edge-Auth-Hmac
       description: |
-        HMAC-SHA256 of `userID + "\n" + orgID + "\n" + plan` using
+        HMAC-SHA256 of `userID + "\n" + orgID + "\n" + plan + "\n" + role` using
         `$EDGE_AUTH_SECRET`. Must be sent alongside `X-Edge-User-Id`,
-        `X-Edge-Org-Id`, `X-Edge-Plan`, optional `X-Edge-Role`. Used
+        `X-Edge-Org-Id`, `X-Edge-Plan`, and optional `X-Edge-Role`. Used
         when fronted by a Cloudflare Worker / reverse proxy that has
         already validated a user JWT.
 

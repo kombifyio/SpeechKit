@@ -77,7 +77,7 @@ func TestDefaultCatalogKeepsMultipleBuiltInDictationVariants(t *testing.T) {
 	}
 }
 
-func TestDefaultCatalogKeepsAssistBuiltInOnLlamaCpp(t *testing.T) {
+func TestDefaultCatalogRecommendsGemma4ForBuiltInAssist(t *testing.T) {
 	catalog := DefaultCatalog()
 
 	var localBuiltIn Profile
@@ -93,11 +93,14 @@ func TestDefaultCatalogKeepsAssistBuiltInOnLlamaCpp(t *testing.T) {
 	if localBuiltIn.ID != "assist.builtin.gemma4-e4b" {
 		t.Fatalf("local built-in assist profile ID = %q, want assist.builtin.gemma4-e4b", localBuiltIn.ID)
 	}
-	if localBuiltIn.Name != "llama.cpp (Local Built-in)" {
-		t.Fatalf("local built-in assist profile name = %q, want llama.cpp (Local Built-in)", localBuiltIn.Name)
+	if localBuiltIn.Name != "Gemma 4 E4B (Local Built-in)" {
+		t.Fatalf("local built-in assist profile name = %q, want Gemma 4 E4B (Local Built-in)", localBuiltIn.Name)
 	}
 	if localBuiltIn.ModelID != speechkit.DefaultLocalBuiltInLLMModel {
 		t.Fatalf("local built-in assist model ID = %q, want %q", localBuiltIn.ModelID, speechkit.DefaultLocalBuiltInLLMModel)
+	}
+	if !localBuiltIn.Recommended {
+		t.Fatal("local built-in assist profile should be recommended")
 	}
 }
 

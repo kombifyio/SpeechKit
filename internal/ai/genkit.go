@@ -89,43 +89,8 @@ func (r *Runtime) ModelInfos() []ModelInfo { return r.modelInfos }
 
 // Init creates a Genkit instance with all configured providers and returns a Runtime.
 func Init(ctx context.Context, cfg Config) (*Runtime, error) {
-	var plugins []api.Plugin
-
-	if cfg.GoogleAPIKey != "" {
-		plugins = append(plugins, &googlegenai.GoogleAI{APIKey: cfg.GoogleAPIKey})
-	}
-	if cfg.OllamaBaseURL != "" {
-		plugins = append(plugins, &ollama.Ollama{ServerAddress: cfg.OllamaBaseURL})
-	}
-
-	g := genkit.Init(ctx, genkit.WithPlugins(plugins...))
-
-	// Register custom models for OpenAI-compatible providers.
-	if cfg.OpenAIAPIKey != "" {
-		registerOpenAIModels(g, cfg.OpenAIAPIKey)
-	}
-	if cfg.GroqAPIKey != "" {
-		registerGroqModels(g, cfg.GroqAPIKey)
-	}
-	if cfg.HuggingFaceToken != "" {
-		registerHFModels(g, cfg.HuggingFaceToken)
-	}
-	if cfg.OpenRouterAPIKey != "" {
-		registerOpenRouterModels(g, cfg.OpenRouterAPIKey)
-	}
-	if cfg.LocalLLMBaseURL != "" {
-		localModelNames := []string{
-			cfg.LocalLLMUtilityModel,
-			cfg.LocalLLMAssistModel,
-			cfg.LocalLLMAgentModel,
-		}
-		for _, spec := range append(cfg.OrderedAssistModels, cfg.OrderedAgentModels...) {
-			if strings.TrimSpace(spec.Provider) == "local" {
-				localModelNames = append(localModelNames, spec.Model)
-			}
-		}
-		registerLocalLLMModels(g, cfg.LocalLLMBaseURL, localModelNames)
-	}
+	g := genkit.Init(ctx, genkit.WithPlugins(configuredPlugins(cfg)...))
+	registerConfiguredProviderModels(g, cfg)
 
 	rt := &Runtime{
 		G:         g,
@@ -194,6 +159,49 @@ func Init(ctx context.Context, cfg Config) (*Runtime, error) {
 	})
 
 	return rt, nil
+}
+
+func configuredPlugins(cfg Config) []api.Plugin {
+	var plugins []api.Plugin
+	if cfg.GoogleAPIKey != "" {
+		plugins = append(plugins, &googlegenai.GoogleAI{APIKey: cfg.GoogleAPIKey})
+	}
+	if cfg.OllamaBaseURL != "" {
+		plugins = append(plugins, &ollama.Ollama{ServerAddress: cfg.OllamaBaseURL})
+	}
+	return plugins
+}
+
+func registerConfiguredProviderModels(g *genkit.Genkit, cfg Config) {
+	if cfg.OpenAIAPIKey != "" {
+		registerOpenAIModels(g, cfg.OpenAIAPIKey)
+	}
+	if cfg.GroqAPIKey != "" {
+		registerGroqModels(g, cfg.GroqAPIKey)
+	}
+	if cfg.HuggingFaceToken != "" {
+		registerHFModels(g, cfg.HuggingFaceToken)
+	}
+	if cfg.OpenRouterAPIKey != "" {
+		registerOpenRouterModels(g, cfg.OpenRouterAPIKey)
+	}
+	if cfg.LocalLLMBaseURL != "" {
+		registerLocalLLMModels(g, cfg.LocalLLMBaseURL, localLLMModelNames(cfg))
+	}
+}
+
+func localLLMModelNames(cfg Config) []string {
+	names := []string{
+		cfg.LocalLLMUtilityModel,
+		cfg.LocalLLMAssistModel,
+		cfg.LocalLLMAgentModel,
+	}
+	for _, spec := range append(cfg.OrderedAssistModels, cfg.OrderedAgentModels...) {
+		if strings.TrimSpace(spec.Provider) == "local" {
+			names = append(names, spec.Model)
+		}
+	}
+	return names
 }
 
 func resolveOrderedOrLegacyModels(

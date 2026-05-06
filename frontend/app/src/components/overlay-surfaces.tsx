@@ -258,6 +258,10 @@ function modeEnabled(snapshot: SpeechKitOverlayState, mode: ConfigurableMode) {
   return snapshot.modeEnabled?.[mode] ?? modeAvailable(snapshot, mode)
 }
 
+function modeVisible(snapshot: SpeechKitOverlayState, mode: ConfigurableMode) {
+  return modeEnabled(snapshot, mode)
+}
+
 function modeStatusLabel(mode: RuntimeMode) {
   if (mode === 'none') {
     return 'No mode'
@@ -295,7 +299,12 @@ function ModeGlyph({
 }
 
 function shouldShowActiveModeBadge(snapshot: SpeechKitOverlayState) {
-  return snapshot.activeMode !== 'none' && snapshot.state !== 'idle'
+  return (
+    snapshot.activeMode !== 'none' &&
+    modeVisible(snapshot, snapshot.activeMode) &&
+    modeAvailable(snapshot, snapshot.activeMode) &&
+    snapshot.state !== 'idle'
+  )
 }
 
 function toggleMode(mode: ConfigurableMode, snapshot: SpeechKitOverlayState) {
@@ -303,16 +312,26 @@ function toggleMode(mode: ConfigurableMode, snapshot: SpeechKitOverlayState) {
 }
 
 function compactOverlayFeedback(snapshot: SpeechKitOverlayState) {
+  if (
+    snapshot.activeMode !== 'assist' &&
+    snapshot.activeMode !== 'voice_agent'
+  ) {
+    return ''
+  }
+  if (
+    !modeVisible(snapshot, snapshot.activeMode) ||
+    !modeAvailable(snapshot, snapshot.activeMode)
+  ) {
+    return ''
+  }
+
   const feedbackMode = snapshot.activeMode === 'assist'
     ? snapshot.assistOverlayMode
-    : snapshot.activeMode === 'voice_agent'
-      ? snapshot.voiceAgentOverlayMode
-      : 'big_productivity'
+    : snapshot.voiceAgentOverlayMode
 
   if (
     snapshot.visualizer !== 'pill' ||
     feedbackMode !== 'small_feedback' ||
-    (snapshot.activeMode !== 'assist' && snapshot.activeMode !== 'voice_agent') ||
     snapshot.state === 'idle'
   ) {
     return ''
@@ -489,6 +508,7 @@ function PillPanelOverlayView({
   snapshot: SpeechKitOverlayState
 }) {
   const tone = resolveOverlayTone(snapshot)
+  const visibleModes = MODE_ORDER.filter((mode) => modeVisible(snapshot, mode))
   const dragStateRef = useRef<{
     pointerId: number
     startScreenX: number
@@ -648,7 +668,7 @@ function PillPanelOverlayView({
             </OverlayPillShell>
 
             <OverlayPanelSection testId="pill-panel-mode-controls" className="w-[76px] justify-end">
-              {MODE_ORDER.map((mode) => {
+              {visibleModes.map((mode) => {
                 const Icon = MODE_META[mode].icon
                 return (
                   <OverlayModeAction
@@ -789,17 +809,19 @@ export function PillAnchorOverlay() {
 }
 
 function buildDotMenuItems(snapshot: SpeechKitOverlayState): DotMenuItem[] {
-  const modeItems = MODE_ORDER.map((mode) => ({
-    id: mode,
-    label: MODE_META[mode].label,
-    icon: MODE_META[mode].icon,
-    pressed: modeEnabled(snapshot, mode),
-    runtimeActive: snapshot.activeMode === mode,
-    slashed: !modeEnabled(snapshot, mode) || !modeAvailable(snapshot, mode),
-    onClick: () => {
-      toggleMode(mode, snapshot)
-    },
-  }))
+  const modeItems = MODE_ORDER.filter((mode) => modeVisible(snapshot, mode)).map(
+    (mode) => ({
+      id: mode,
+      label: MODE_META[mode].label,
+      icon: MODE_META[mode].icon,
+      pressed: modeEnabled(snapshot, mode),
+      runtimeActive: snapshot.activeMode === mode,
+      slashed: !modeAvailable(snapshot, mode),
+      onClick: () => {
+        toggleMode(mode, snapshot)
+      },
+    }),
+  )
 
   return [
     {
@@ -873,7 +895,11 @@ export function OverlayApp() {
 export { PillPanelOverlay as PillActionsOverlay }
 
 function overlayStatusLabel(snapshot: SpeechKitOverlayState): string {
-  const mode = snapshot.state === 'idle'
+  const hasVisibleActiveMode =
+    snapshot.activeMode !== 'none' &&
+    modeVisible(snapshot, snapshot.activeMode) &&
+    modeAvailable(snapshot, snapshot.activeMode)
+  const mode = snapshot.state === 'idle' || !hasVisibleActiveMode
     ? modeStatusLabel('none')
     : modeStatusLabel(snapshot.activeMode)
   const text = snapshot.text.trim()

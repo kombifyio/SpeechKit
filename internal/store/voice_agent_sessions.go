@@ -18,7 +18,13 @@ func (s *SQLiteStore) SaveVoiceAgentSession(ctx context.Context, session VoiceAg
 		return 0, err
 	}
 
-	result, err := s.db.ExecContext(ctx,
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return 0, err
+	}
+	defer tx.Rollback() //nolint:errcheck // deferred rollback is harmless after commit and not actionable.
+
+	result, err := tx.ExecContext(ctx,
 		`INSERT INTO voice_agent_sessions (
 			title, summary, raw_summary, transcript, language, provider_profile_id, runtime_kind,
 			turns_json, ideas_json, decisions_json, open_questions_json, next_steps_json, started_at, ended_at
@@ -41,22 +47,38 @@ func (s *SQLiteStore) SaveVoiceAgentSession(ctx context.Context, session VoiceAg
 	if err != nil {
 		return 0, fmt.Errorf("insert voice agent session: %w", err)
 	}
-	return result.LastInsertId()
+	id, err := result.LastInsertId()
+	if err != nil {
+		return 0, err
+	}
+	if err = replaceVoiceAgentSessionChildren(ctx, tx, "sqlite", id, session); err != nil {
+		return 0, fmt.Errorf("insert voice agent session children: %w", err)
+	}
+	if err := tx.Commit(); err != nil {
+		return 0, err
+	}
+	return id, nil
 }
 
 func (s *SQLiteStore) ListVoiceAgentSessions(ctx context.Context, opts ListOpts) ([]VoiceAgentSession, error) {
-	limit := opts.Limit
-	if limit <= 0 {
-		limit = 20
+	limit, offset := normalizedListPagination(opts)
+
+	query := `SELECT id, title, summary, raw_summary, transcript, language, provider_profile_id, runtime_kind,
+			turns_json, ideas_json, decisions_json, open_questions_json, next_steps_json, started_at, ended_at, created_at
+		 FROM voice_agent_sessions`
+	args := make([]any, 0, 4)
+	clauses := make([]string, 0, 2)
+	clauses, args = appendSQLiteNormalizedLanguageFilter(clauses, args, opts.Language)
+	if !opts.After.IsZero() {
+		clauses = append(clauses, "created_at > ?")
+		args = append(args, sqliteTime(opts.After))
 	}
+	query += buildWhereClause(clauses) // #nosec G202 -- audited choke-point; see SECURITY INVARIANT in query_filters.go.
+	query += " ORDER BY created_at DESC, id DESC LIMIT ? OFFSET ?"
+	args = append(args, limit, offset)
 
 	rows, err := s.db.QueryContext(ctx, //nolint:rowserrcheck // rows.Err() is checked inside scanVoiceAgentSessions
-		`SELECT id, title, summary, raw_summary, transcript, language, provider_profile_id, runtime_kind,
-			turns_json, ideas_json, decisions_json, open_questions_json, next_steps_json, started_at, ended_at, created_at
-		 FROM voice_agent_sessions
-		 ORDER BY created_at DESC, id DESC
-		 LIMIT ? OFFSET ?`,
-		limit, opts.Offset,
+		query, args...,
 	)
 	if err != nil {
 		return nil, err
@@ -73,8 +95,14 @@ func (s *PostgresStore) SaveVoiceAgentSession(ctx context.Context, session Voice
 		return 0, err
 	}
 
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return 0, err
+	}
+	defer tx.Rollback() //nolint:errcheck // deferred rollback is harmless after commit and not actionable.
+
 	var id int64
-	err = s.db.QueryRowContext(ctx,
+	err = tx.QueryRowContext(ctx,
 		`INSERT INTO voice_agent_sessions (
 			title, summary, raw_summary, transcript, language, provider_profile_id, runtime_kind,
 			turns_json, ideas_json, decisions_json, open_questions_json, next_steps_json, started_at, ended_at
@@ -98,23 +126,38 @@ func (s *PostgresStore) SaveVoiceAgentSession(ctx context.Context, session Voice
 	if err != nil {
 		return 0, fmt.Errorf("insert voice agent session: %w", err)
 	}
+	if err = replaceVoiceAgentSessionChildren(ctx, tx, "postgres", id, session); err != nil {
+		return 0, fmt.Errorf("insert voice agent session children: %w", err)
+	}
+	if err := tx.Commit(); err != nil {
+		return 0, err
+	}
 	return id, nil
 }
 
 func (s *PostgresStore) ListVoiceAgentSessions(ctx context.Context, opts ListOpts) ([]VoiceAgentSession, error) {
-	limit := opts.Limit
-	if limit <= 0 {
-		limit = 20
-	}
+	limit, offset := normalizedListPagination(opts)
 
-	rows, err := s.db.QueryContext(ctx, //nolint:rowserrcheck // rows.Err() is checked inside scanVoiceAgentSessions
-		`SELECT id, title, summary, raw_summary, transcript, language, provider_profile_id, runtime_kind,
+	query := `SELECT id, title, summary, raw_summary, transcript, language, provider_profile_id, runtime_kind,
 			turns_json::text, ideas_json::text, decisions_json::text, open_questions_json::text, next_steps_json::text,
 			started_at, ended_at, created_at
-		 FROM voice_agent_sessions
-		 ORDER BY created_at DESC, id DESC
-		 LIMIT $1 OFFSET $2`,
-		limit, opts.Offset,
+		 FROM voice_agent_sessions`
+	args := make([]any, 0, 4)
+	clauses := make([]string, 0, 2)
+	clauses, args = appendPostgresNormalizedLanguageFilter(clauses, args, opts.Language)
+	if !opts.After.IsZero() {
+		args = append(args, opts.After.UTC())
+		clauses = append(clauses, fmt.Sprintf("created_at > $%d", len(args)))
+	}
+	query += buildWhereClause(clauses) // #nosec G202 -- audited choke-point; see SECURITY INVARIANT in query_filters.go.
+	args = append(args, limit)
+	limitParam := len(args)
+	args = append(args, offset)
+	offsetParam := len(args)
+	query += fmt.Sprintf(" ORDER BY created_at DESC, id DESC LIMIT $%d OFFSET $%d", limitParam, offsetParam) // #nosec G202 -- limit/offset positions are derived from argument indexes.
+
+	rows, err := s.db.QueryContext(ctx, //nolint:rowserrcheck // rows.Err() is checked inside scanVoiceAgentSessions
+		query, args...,
 	)
 	if err != nil {
 		return nil, err
@@ -122,6 +165,79 @@ func (s *PostgresStore) ListVoiceAgentSessions(ctx context.Context, opts ListOpt
 	defer rows.Close() //nolint:errcheck // deferred rows close, error not actionable
 
 	return scanVoiceAgentSessions(rows)
+}
+
+func replaceVoiceAgentSessionChildren(ctx context.Context, db execContexter, dialect string, sessionID int64, session VoiceAgentSession) error {
+	deleteTurns := `DELETE FROM voice_agent_session_turns WHERE session_id = ?`
+	deleteItems := `DELETE FROM voice_agent_session_summary_items WHERE session_id = ?`
+	if dialect == "postgres" {
+		deleteTurns = `DELETE FROM voice_agent_session_turns WHERE session_id = $1`
+		deleteItems = `DELETE FROM voice_agent_session_summary_items WHERE session_id = $1`
+	}
+	if _, err := db.ExecContext(ctx, deleteTurns, sessionID); err != nil {
+		return err
+	}
+	if _, err := db.ExecContext(ctx, deleteItems, sessionID); err != nil {
+		return err
+	}
+
+	turnQuery := `INSERT INTO voice_agent_session_turns
+		(session_id, turn_index, role, text, created_at)
+		VALUES (?, ?, ?, ?, ?)`
+	itemQuery := `INSERT INTO voice_agent_session_summary_items
+		(session_id, item_type, item_index, text)
+		VALUES (?, ?, ?, ?)`
+	if dialect == "postgres" {
+		turnQuery = `INSERT INTO voice_agent_session_turns
+			(session_id, turn_index, role, text, created_at)
+			VALUES ($1, $2, $3, $4, $5)`
+		itemQuery = `INSERT INTO voice_agent_session_summary_items
+			(session_id, item_type, item_index, text)
+			VALUES ($1, $2, $3, $4)`
+	}
+
+	for i, turn := range session.Turns {
+		if _, err := db.ExecContext(ctx, turnQuery,
+			sessionID,
+			i,
+			strings.TrimSpace(turn.Role),
+			strings.TrimSpace(turn.Text),
+			nullableVoiceAgentTime(turn.CreatedAt),
+		); err != nil {
+			return err
+		}
+	}
+
+	if err := insertVoiceAgentSummaryItems(ctx, db, itemQuery, sessionID, "idea", session.Summary.Ideas); err != nil {
+		return err
+	}
+	if err := insertVoiceAgentSummaryItems(ctx, db, itemQuery, sessionID, "decision", session.Summary.Decisions); err != nil {
+		return err
+	}
+	if err := insertVoiceAgentSummaryItems(ctx, db, itemQuery, sessionID, "open_question", session.Summary.OpenQuestions); err != nil {
+		return err
+	}
+	return insertVoiceAgentSummaryItems(ctx, db, itemQuery, sessionID, "next_step", session.Summary.NextSteps)
+}
+
+func insertVoiceAgentSummaryItems(ctx context.Context, db execContexter, query string, sessionID int64, itemType string, values []string) error {
+	for i, value := range values {
+		text := strings.TrimSpace(value)
+		if text == "" {
+			continue
+		}
+		if _, err := db.ExecContext(ctx, query, sessionID, itemType, i, text); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func nullableVoiceAgentTime(value time.Time) any {
+	if value.IsZero() {
+		return nil
+	}
+	return value.UTC()
 }
 
 type voiceAgentSessionRows interface {

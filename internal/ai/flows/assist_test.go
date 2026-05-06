@@ -68,6 +68,26 @@ func TestBuildAssistSystemPrompt_SelectionAppended(t *testing.T) {
 	}
 }
 
+func TestBuildAssistSystemPrompt_SelectedTextWorkProductGuidance(t *testing.T) {
+	p := buildAssistSystemPrompt("en", AssistInput{
+		Utterance: "make this an email",
+		Selection: "rough customer update",
+	})
+	lower := strings.ToLower(p)
+	for _, want := range []string{
+		"rewrite",
+		"summarize",
+		"email",
+		"selected text",
+		"finished text",
+		"not an explanation",
+	} {
+		if !strings.Contains(lower, want) {
+			t.Fatalf("prompt missing %q guidance: %q", want, p)
+		}
+	}
+}
+
 func TestBuildAssistSystemPrompt_ContextAppended(t *testing.T) {
 	p := buildAssistSystemPrompt("en", AssistInput{
 		Utterance: "summarize",

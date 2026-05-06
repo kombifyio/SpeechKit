@@ -17,7 +17,7 @@ func prepareVoiceAgentSession(state *appState, cfg *config.Config) *voiceagent.S
 
 	provider := selectVoiceAgentProvider(state, cfg)
 	if provider == nil {
-		// Fall back to the in-process Gemini Live provider — preserves
+		// Fall back to the in-process Gemini Live provider â€” preserves
 		// pre-0.26 behaviour when the server delegate is unavailable.
 		provider = voiceagent.NewGeminiLive()
 	}

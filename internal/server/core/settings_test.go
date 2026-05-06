@@ -13,7 +13,18 @@ import (
 	"testing"
 
 	"github.com/kombifyio/SpeechKit/internal/config"
+	"github.com/kombifyio/SpeechKit/internal/server/middleware"
 )
+
+func serveServerSettingsWithBearer(app *App, req *http.Request) *httptest.ResponseRecorder {
+	req.Header.Set("Authorization", "Bearer test-token")
+	rec := httptest.NewRecorder()
+	middleware.Auth(middleware.AuthOptions{
+		Mode:                "bearer",
+		BearerTokenProvider: func() string { return "test-token" },
+	})(app.Mux).ServeHTTP(rec, req)
+	return rec
+}
 
 func TestRegisterServerSettings_ServesSafeSnapshot(t *testing.T) {
 	t.Setenv("OPENAI_API_KEY", "secret-value")
@@ -34,8 +45,7 @@ func TestRegisterServerSettings_ServesSafeSnapshot(t *testing.T) {
 
 	registerServerSettings(app)
 
-	rec := httptest.NewRecorder()
-	app.Mux.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/v1/server/settings", nil))
+	rec := serveServerSettingsWithBearer(app, httptest.NewRequest(http.MethodGet, "/v1/server/settings", nil))
 
 	if rec.Code != http.StatusOK {
 		t.Fatalf("GET /v1/server/settings = %d body=%s", rec.Code, rec.Body.String())
@@ -52,6 +62,61 @@ func TestRegisterServerSettings_ServesSafeSnapshot(t *testing.T) {
 	}
 	if _, ok := body["catalog"].(map[string]any); !ok {
 		t.Fatalf("settings response should include provider catalog, got %#v", body["catalog"])
+	}
+}
+
+func TestRegisterServerSettings_ServesMinimalBootstrapSnapshotWithoutAuth(t *testing.T) {
+	t.Setenv("OPENAI_API_KEY", "secret-value")
+
+	app := &App{
+		Cfg:     &config.Config{},
+		Mux:     http.NewServeMux(),
+		Health:  NewHealthRegistry(),
+		Version: "test-version",
+	}
+	app.Cfg.Server.ModelDir = "/var/lib/speechkit/private-models"
+	app.Cfg.Server.AuthMode = "bearer"
+	app.Cfg.Server.BearerTokenEnv = "SPEECHKIT_SERVER_TOKEN"
+	app.Cfg.VPS.Enabled = true
+	app.Cfg.VPS.URL = "http://internal-whisper:8080"
+	app.Cfg.LocalLLM.Enabled = true
+	app.Cfg.LocalLLM.BaseURL = "http://internal-llm:11434"
+	app.Cfg.Providers.OpenAI.Enabled = true
+	app.Cfg.Providers.OpenAI.APIKeyEnv = "OPENAI_API_KEY"
+
+	registerServerSettings(app)
+
+	rec := httptest.NewRecorder()
+	app.Mux.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/v1/server/settings", nil))
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("GET /v1/server/settings = %d body=%s", rec.Code, rec.Body.String())
+	}
+	var body map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("settings JSON: %v", err)
+	}
+	for _, want := range []string{"version", "status", "onboarding", "catalog", "editable"} {
+		if _, ok := body[want]; !ok {
+			t.Fatalf("bootstrap settings response should include %q, got %#v", want, body)
+		}
+	}
+	for _, forbidden := range []string{"modes", "components", "runtime", "auth", "stt", "llm", "voice_agent", "tts", "personas"} {
+		if _, ok := body[forbidden]; ok {
+			t.Fatalf("bootstrap settings response should not include %q: %#v", forbidden, body[forbidden])
+		}
+	}
+	for _, forbidden := range []string{
+		"/var/lib/speechkit/private-models",
+		"http://internal-whisper:8080",
+		"http://internal-llm:11434",
+		"OPENAI_API_KEY",
+		"SPEECHKIT_SERVER_TOKEN",
+		"secret-value",
+	} {
+		if strings.Contains(rec.Body.String(), forbidden) {
+			t.Fatalf("bootstrap settings response leaked %q: %s", forbidden, rec.Body.String())
+		}
 	}
 }
 
@@ -132,8 +197,7 @@ func TestRegisterServerSettings_PatchSavesProviderMatrixWithoutLeakingCredential
 		t.Fatalf("stored voice prompt template = %#v", stored.VoiceAgent.PromptTemplate)
 	}
 
-	get := httptest.NewRecorder()
-	app.Mux.ServeHTTP(get, httptest.NewRequest(http.MethodGet, "/v1/server/settings", nil))
+	get := serveServerSettingsWithBearer(app, httptest.NewRequest(http.MethodGet, "/v1/server/settings", nil))
 	if strings.Contains(get.Body.String(), "google-secret") {
 		t.Fatal("GET response leaked raw credential")
 	}
@@ -200,6 +264,12 @@ func TestRegisterServerSettings_PatchGeneratesWriteOnlyServerToken(t *testing.T)
 	}
 	if body.Desired.ServerAuth.TokenValue != "" || body.Desired.ServerAuth.GenerateToken != nil {
 		t.Fatalf("desired settings should hide write-only auth fields: %+v", body.Desired.ServerAuth)
+	}
+	if body.Desired.ServerAuth.BearerTokenEnv != "" {
+		t.Fatalf("bootstrap desired settings should hide bearer token env, got %q", body.Desired.ServerAuth.BearerTokenEnv)
+	}
+	if strings.Contains(rec.Body.String(), `"settings"`) || strings.Contains(rec.Body.String(), `"message"`) {
+		t.Fatalf("bootstrap PATCH response should not include full settings/message: %s", rec.Body.String())
 	}
 	if got := os.Getenv("SPEECHKIT_SERVER_TOKEN"); got != body.GeneratedToken.Token {
 		t.Fatalf("runtime bearer token env = %q, want generated token", got)

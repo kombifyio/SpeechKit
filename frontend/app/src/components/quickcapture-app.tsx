@@ -3,6 +3,7 @@ import { Check, Mic } from 'lucide-react'
 
 import { updateQuickNote } from '@/lib/speechkit'
 import { useAutoClose } from '@/hooks/use-auto-close'
+import { useDesktopTheme } from '@/lib/desktop-theme'
 
 const dragRegionStyle = {
   ['--wails-draggable' as string]: 'drag',
@@ -21,6 +22,7 @@ const noDragRegionStyle = {
  * Auto-stops on silence. Only UI: textarea + checkmark to save & close.
  */
 export function QuickCaptureApp() {
+  useDesktopTheme('dark')
   const [text, setText] = useState('')
   const [noteId] = useState(() => {
     const params = new URLSearchParams(window.location.search)

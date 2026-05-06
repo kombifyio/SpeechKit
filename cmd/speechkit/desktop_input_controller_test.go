@@ -165,6 +165,9 @@ func TestDesktopInputControllerAutoStartConsumesPendingFlag(t *testing.T) {
 	if got, want := bus.commands[0].Type, speechkit.CommandStartDictation; got != want {
 		t.Fatalf("commands[0].Type = %q, want %q", got, want)
 	}
+	if got := bus.commands[0].Metadata["label"]; !strings.Contains(got, "Quick Capture: auto-recording started") {
+		t.Fatalf("commands[0].Metadata[label] = %q, want Quick Capture auto-start label", got)
+	}
 
 	runtime := state.runtimeStateLocked()
 	if runtime.quickCaptureAutoStart {
@@ -172,6 +175,40 @@ func TestDesktopInputControllerAutoStartConsumesPendingFlag(t *testing.T) {
 	}
 	if !runtime.quickCaptureMode {
 		t.Fatal("runtime.quickCaptureMode = false, want true")
+	}
+}
+
+func TestDesktopInputControllerAutoStartsArmedQuickNoteRecording(t *testing.T) {
+	state := &appState{}
+	state.armQuickNoteRecording(7)
+	bus := &testDesktopCommandBus{}
+	controller := desktopInputController{
+		commands:  bus,
+		recording: testRecordingState{recording: false},
+		state:     state,
+	}
+
+	controller.handleAutoStartTick(context.Background())
+
+	if got := len(bus.commands); got != 1 {
+		t.Fatalf("commands = %d, want 1", got)
+	}
+	if got, want := bus.commands[0].Type, speechkit.CommandStartDictation; got != want {
+		t.Fatalf("commands[0].Type = %q, want %q", got, want)
+	}
+	if got := bus.commands[0].Metadata["label"]; !strings.Contains(got, "Quick Note: auto-recording started") {
+		t.Fatalf("commands[0].Metadata[label] = %q, want Quick Note auto-start label", got)
+	}
+
+	runtime := state.runtimeStateLocked()
+	if runtime.quickCaptureAutoStart {
+		t.Fatal("runtime.quickCaptureAutoStart = true, want false")
+	}
+	if !runtime.quickNoteMode {
+		t.Fatal("runtime.quickNoteMode = false, want true")
+	}
+	if runtime.quickCaptureMode {
+		t.Fatal("runtime.quickCaptureMode = true, want false for editor recording")
 	}
 }
 

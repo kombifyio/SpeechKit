@@ -35,20 +35,15 @@ jobs:
   build:
     name: build-and-vet
     timeout-minutes: 15
-    # On the private dev repo (KombiverseLabs/kombify-SpeechKit) this
-    # falls through to vars.CI_RUNNER, which is wired to a self-hosted
-    # Linux runner so push CI doesn't burn private-repo Actions
-    # minutes. On the OSS repo (kombifyio/SpeechKit) the variable is
-    # unset and we land on ubuntu-latest, which is unmetered for
-    # public repos. Either way the Linux toolchain step below works
-    # the same.
-    runs-on: ${{ github.repository == 'kombifyio/SpeechKit' && 'ubuntu-latest' || 'blacksmith-4vcpu-ubuntu-2204' }}
+    # Keep Linux server CI on GitHub-hosted by default in both the private
+    # dev repo and the OSS mirror.
+    runs-on: ubuntu-24.04
     env:
       CGO_ENABLED: "1"
       GOOS: linux
       GOARCH: amd64
     steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
 
       - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff
         with:
@@ -112,11 +107,11 @@ jobs:
   docker:
     name: docker-build-and-smoke
     # Same runner-selection rationale as the build job above.
-    runs-on: ${{ github.repository == 'kombifyio/SpeechKit' && 'ubuntu-latest' || 'blacksmith-4vcpu-ubuntu-2204' }}
+    runs-on: ubuntu-24.04
     needs: build
     timeout-minutes: 75
     steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
 
       - name: Build speechkit-server image
         run: |

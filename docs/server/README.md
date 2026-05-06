@@ -4,13 +4,13 @@ The SpeechKit Server is the network deployment form of the SpeechKit Framework.
 It exposes Dictation, Assist, and Voice Agent over HTTP/WebSocket while using
 the same mode contracts as the Windows app and embeddable Go API.
 
-SpeechKit ships as three products:
+SpeechKit ships as three modules:
 
-| Product | Use it when | Surface |
+| Module | Use it when | Surface |
 |---|---|---|
-| Local Windows Client | You want the desktop app | Desktop UI, overlay, settings, global hotkeys |
-| Go Voice Framework | You embed SpeechKit into a Go product | Go API, mode contracts, provider catalog |
-| SpeechKit Server | You expose SpeechKit to remote clients | Containerized HTTP/WebSocket service |
+| Local-first Go backend | You embed SpeechKit into a Go product or internal tool | Go API, mode contracts, provider catalog |
+| SpeechKit Server | You expose SpeechKit to remote clients | Linux HTTP/WebSocket service |
+| Windows Client | You want the desktop app, local tests, or a server-connected workstation | Desktop UI, overlay, settings, global hotkeys |
 
 ## Deployment contract
 
@@ -44,7 +44,8 @@ docker build -f deploy/docker/Dockerfile.server \
 export GOOGLE_AI_API_KEY="..."   # optional, enables Voice Agent + Google STT/TTS
 export OPENAI_API_KEY="..."      # optional
 export HF_TOKEN="..."            # optional, enables HF STT
-export SPEECHKIT_SERVER_TOKEN="dev-local-token"
+export SPEECHKIT_SERVER_TOKEN="replace-with-a-local-dev-token"
+export POSTGRES_PASSWORD="replace-with-a-local-dev-password"
 docker compose -f deploy/docker/docker-compose.yml up -d
 
 # 3. Verify.
@@ -54,7 +55,9 @@ curl -fsS http://localhost:8080/readyz
 
 Secrets can equivalently be injected via `doppler run -- docker compose up`;
 the Framework has no opinion on the secret manager, only on where values are
-read (`os.Getenv(<name from config>)`).
+read (`os.Getenv(<name from config>)`). The example values above are local
+development placeholders only; production Compose runs must provide real
+secrets explicitly.
 
 ## Installer setup modes
 
@@ -158,6 +161,23 @@ value is shown once, loaded into the running server process, and omitted from
 ```http
 Authorization: Bearer <token>
 ```
+
+For `edge_hmac`, the edge signs the exact string
+`user_id + "\n" + org_id + "\n" + plan + "\n" + role` with the shared secret
+from `EDGE_AUTH_SECRET`. `role` may be empty, but the trailing newline remains
+part of the signature base.
+
+## Public URL and WebSocket origins
+
+Set `[server].public_url` when the server is behind a reverse proxy or mounted
+under a prefix such as `/api`. Voice Agent session creation uses it to generate
+the returned `ws_url`; otherwise SpeechKit derives the URL from the sanitized
+request host and ignores `X-Forwarded-Host`.
+
+Browser WebSocket clients must send an `Origin` that exactly matches
+`[server].cors_allowed_origins`, or the server rejects the upgrade with `403`.
+Native clients that send no `Origin` are allowed. Use `["*"]` only for local
+OSS/dev mode.
 
 If setup auth is switched to self-managed, SpeechKit does not generate a token
 or change the current server auth mode; the deployment owner must provide

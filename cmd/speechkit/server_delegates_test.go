@@ -120,6 +120,18 @@ func TestDictationTranscriberPicksLocal(t *testing.T) {
 	}
 }
 
+func TestRuntimeDictationTranscriberNilLocalWithoutDelegateReturnsConfiguredError(t *testing.T) {
+	transcriber := newRuntimeDictationTranscriber(nil, &appState{})
+
+	_, err := transcriber.Route(context.Background(), []byte{0x01}, 1.0, stt.TranscribeOpts{})
+	if err == nil {
+		t.Fatal("Route error = nil, want missing transcriber error")
+	}
+	if got, want := err.Error(), "no dictation transcriber configured"; got != want {
+		t.Fatalf("Route error = %q, want %q", got, want)
+	}
+}
+
 func TestDictationTranscriberPicksComposite(t *testing.T) {
 	t.Setenv("SC_TEST_COMP_TOKEN", "ok")
 	cfg := &config.Config{}
@@ -290,6 +302,16 @@ func TestCompositeTranscriberNoFallbackOnAppError(t *testing.T) {
 	}
 	if local.called != 0 {
 		t.Errorf("local called %d times, want 0 (app error must not fall back)", local.called)
+	}
+}
+
+func TestCompositeTranscriberWithNilLocalDoesNotFallback(t *testing.T) {
+	server := &stubSTT{err: errors.New("connection refused")}
+	c := newCompositeTranscriber(server, nil, true)
+
+	_, err := c.Route(context.Background(), []byte{0x01}, 1.0, stt.TranscribeOpts{})
+	if err == nil {
+		t.Fatal("Route error = nil, want server error without nil-local fallback")
 	}
 }
 

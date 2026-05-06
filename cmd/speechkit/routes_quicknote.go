@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 
@@ -17,256 +18,280 @@ import (
 )
 
 func registerQuickNoteRoutes(mux *http.ServeMux, cfg *config.Config, state *appState, feedbackStore store.Store) {
-	service := desktopQuickNoteService{
+	routes := newQuickNoteRouteHandlers(cfg, state, feedbackStore)
+	mux.HandleFunc("/quicknotes/create", routes.create)
+	mux.HandleFunc("/quicknotes/update", routes.update)
+	mux.HandleFunc("/quicknotes/delete", routes.delete)
+	mux.HandleFunc("/quicknotes/pin", routes.pin)
+	mux.HandleFunc("/quicknotes/summary", routes.summary)
+	mux.HandleFunc("/quicknotes/email", routes.email)
+	mux.HandleFunc("/quicknotes/get", routes.get)
+	mux.HandleFunc("/quicknotes/record-mode", routes.recordMode)
+	mux.HandleFunc("/quicknotes/open-editor", routes.openEditor)
+	mux.HandleFunc("/quicknotes/open-capture", routes.openCapture)
+	mux.HandleFunc("/quicknotes/close-capture", routes.closeCapture)
+}
+
+type quickNoteRouteHandlers struct {
+	cfg           *config.Config
+	state         *appState
+	feedbackStore store.Store
+	service       desktopQuickNoteService
+}
+
+func newQuickNoteRouteHandlers(cfg *config.Config, state *appState, feedbackStore store.Store) quickNoteRouteHandlers {
+	return quickNoteRouteHandlers{
 		cfg:           cfg,
 		state:         state,
 		feedbackStore: feedbackStore,
-		host:          wailsQuickNoteHost{state: state},
+		service: desktopQuickNoteService{
+			cfg:           cfg,
+			state:         state,
+			feedbackStore: feedbackStore,
+			host:          wailsQuickNoteHost{state: state},
+		},
 	}
-	mux.HandleFunc("/quicknotes/create", func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodPost {
-			w.WriteHeader(http.StatusMethodNotAllowed)
-			return
-		}
-		w.Header().Set("Content-Type", "application/json; charset=utf-8")
-		if feedbackStore == nil {
-			_ = json.NewEncoder(w).Encode(map[string]string{"message": "Store not available"})
-			return
-		}
-		r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
-		if err := r.ParseForm(); err != nil {
-			_ = json.NewEncoder(w).Encode(map[string]string{"message": msgFormParseError})
-			return
-		}
-		text := strings.TrimSpace(r.FormValue("text"))
-		if text == "" {
-			_ = json.NewEncoder(w).Encode(map[string]string{"message": "Text is required"})
-			return
-		}
-		id, err := feedbackStore.SaveQuickNote(r.Context(), text, cfg.General.Language, "manual", 0, 0, nil)
-		if err != nil {
-			_ = json.NewEncoder(w).Encode(map[string]string{"message": fmt.Sprintf("Save failed: %v", err)})
-			return
-		}
-		_ = json.NewEncoder(w).Encode(map[string]interface{}{"id": id, "message": "Quick Note saved"})
-	})
-	mux.HandleFunc("/quicknotes/update", func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodPost {
-			w.WriteHeader(http.StatusMethodNotAllowed)
-			return
-		}
-		w.Header().Set("Content-Type", "application/json; charset=utf-8")
-		if feedbackStore == nil {
-			_ = json.NewEncoder(w).Encode(map[string]string{"message": "Store not available"})
-			return
-		}
-		r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
-		if err := r.ParseForm(); err != nil {
-			_ = json.NewEncoder(w).Encode(map[string]string{"message": msgFormParseError})
-			return
-		}
-		idStr := r.FormValue("id")
-		text := strings.TrimSpace(r.FormValue("text"))
-		id, err := strconv.ParseInt(idStr, 10, 64)
-		if err != nil {
-			_ = json.NewEncoder(w).Encode(map[string]string{"message": "Invalid ID"})
-			return
-		}
-		if err := feedbackStore.UpdateQuickNote(r.Context(), id, text); err != nil {
-			_ = json.NewEncoder(w).Encode(map[string]string{"message": fmt.Sprintf("Update failed: %v", err)})
-			return
-		}
-		_ = json.NewEncoder(w).Encode(map[string]string{"message": "Updated"})
-	})
-	mux.HandleFunc("/quicknotes/delete", func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodPost {
-			w.WriteHeader(http.StatusMethodNotAllowed)
-			return
-		}
-		w.Header().Set("Content-Type", "application/json; charset=utf-8")
-		if feedbackStore == nil {
-			_ = json.NewEncoder(w).Encode(map[string]string{"message": "Store not available"})
-			return
-		}
-		r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
-		if err := r.ParseForm(); err != nil {
-			_ = json.NewEncoder(w).Encode(map[string]string{"message": msgFormParseError})
-			return
-		}
-		id, err := strconv.ParseInt(r.FormValue("id"), 10, 64)
-		if err != nil {
-			_ = json.NewEncoder(w).Encode(map[string]string{"message": "Invalid ID"})
-			return
-		}
-		if err := feedbackStore.DeleteQuickNote(r.Context(), id); err != nil {
-			_ = json.NewEncoder(w).Encode(map[string]string{"message": fmt.Sprintf("Delete failed: %v", err)})
-			return
-		}
-		_ = json.NewEncoder(w).Encode(map[string]string{"message": "Deleted"})
-	})
-	mux.HandleFunc("/quicknotes/pin", func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodPost {
-			w.WriteHeader(http.StatusMethodNotAllowed)
-			return
-		}
-		w.Header().Set("Content-Type", "application/json; charset=utf-8")
-		if feedbackStore == nil {
-			_ = json.NewEncoder(w).Encode(map[string]string{"message": "Store not available"})
-			return
-		}
-		r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
-		if err := r.ParseForm(); err != nil {
-			_ = json.NewEncoder(w).Encode(map[string]string{"message": msgFormParseError})
-			return
-		}
-		id, err := strconv.ParseInt(r.FormValue("id"), 10, 64)
-		if err != nil {
-			_ = json.NewEncoder(w).Encode(map[string]string{"message": "Invalid ID"})
-			return
-		}
-		pinned := r.FormValue("pinned") == "1"
-		if err := feedbackStore.PinQuickNote(r.Context(), id, pinned); err != nil {
-			_ = json.NewEncoder(w).Encode(map[string]string{"message": fmt.Sprintf("Pin failed: %v", err)})
-			return
-		}
-		_ = json.NewEncoder(w).Encode(map[string]string{"message": "Updated"})
-	})
-	mux.HandleFunc("/quicknotes/summary", func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodPost {
-			w.WriteHeader(http.StatusMethodNotAllowed)
-			return
-		}
-		w.Header().Set("Content-Type", "application/json; charset=utf-8")
-		note, err := resolveQuickNoteFromRequest(r, feedbackStore)
-		if err != nil {
-			writeQuickNoteError(w, err)
-			return
-		}
-		_ = json.NewEncoder(w).Encode(map[string]string{
-			"summary": summarizeQuickNote(r.Context(), state, note.Text, note.Language),
-		})
-	})
-	mux.HandleFunc("/quicknotes/email", func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodPost {
-			w.WriteHeader(http.StatusMethodNotAllowed)
-			return
-		}
-		w.Header().Set("Content-Type", "application/json; charset=utf-8")
-		note, err := resolveQuickNoteFromRequest(r, feedbackStore)
-		if err != nil {
-			writeQuickNoteError(w, err)
-			return
-		}
-		summary := summarizeQuickNote(r.Context(), state, note.Text, note.Language)
-		_ = json.NewEncoder(w).Encode(map[string]string{
-			"email": draftQuickNoteEmail(note.Text, summary),
-		})
-	})
-	mux.HandleFunc("/quicknotes/get", func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodGet {
-			w.WriteHeader(http.StatusMethodNotAllowed)
-			return
-		}
-		w.Header().Set("Content-Type", "application/json; charset=utf-8")
-		if feedbackStore == nil {
-			_ = json.NewEncoder(w).Encode(map[string]string{"text": ""})
-			return
-		}
-		idStr := r.URL.Query().Get("id")
-		id, err := strconv.ParseInt(idStr, 10, 64)
-		if err != nil {
-			_ = json.NewEncoder(w).Encode(map[string]string{"text": ""})
-			return
-		}
-		n, err := feedbackStore.GetQuickNote(r.Context(), id)
-		if err != nil {
-			_ = json.NewEncoder(w).Encode(map[string]string{"text": ""})
-			return
-		}
-		_ = json.NewEncoder(w).Encode(map[string]interface{}{
-			"id": n.ID, "text": n.Text, "language": n.Language,
-			"provider": n.Provider, "durationMs": n.DurationMs, "audio": n.Audio,
-			"createdAt": n.CreatedAt.Format("2006-01-02T15:04:05Z07:00"),
-		})
-	})
-	mux.HandleFunc("/quicknotes/record-mode", func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodPost {
-			w.WriteHeader(http.StatusMethodNotAllowed)
-			return
-		}
-		w.Header().Set("Content-Type", "application/json; charset=utf-8")
-		noteID, _ := strconv.ParseInt(r.URL.Query().Get("id"), 10, 64)
-		if err := dispatchQuickNoteCommand(r.Context(), state, speechkit.Command{
-			Type:   speechkit.CommandArmQuickNoteRecording,
-			NoteID: noteID,
-		}); err != nil {
-			service.ArmRecording(noteID)
-		}
-		_ = json.NewEncoder(w).Encode(map[string]string{"message": "Quick Note recording armed"})
-	})
-	mux.HandleFunc("/quicknotes/open-editor", func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodPost {
-			w.WriteHeader(http.StatusMethodNotAllowed)
-			return
-		}
-		w.Header().Set("Content-Type", "application/json; charset=utf-8")
+}
 
-		var noteID int64
-		if idParam := r.URL.Query().Get("id"); idParam != "" {
-			parsedID, err := strconv.ParseInt(idParam, 10, 64)
-			if err == nil {
-				noteID = parsedID
-			}
-		}
-		err := dispatchQuickNoteCommand(r.Context(), state, speechkit.Command{
-			Type:   speechkit.CommandOpenQuickNote,
-			NoteID: noteID,
-		})
-		if errors.Is(err, speechkit.ErrCommandHandlerUnavailable) {
-			err = service.OpenEditor(noteID) //nolint:contextcheck // OpenEditor is a Wails window operation that does not accept context
-		}
-		if err != nil {
-			_ = json.NewEncoder(w).Encode(map[string]string{"message": "Failed to open editor"})
-			return
-		}
-		_ = json.NewEncoder(w).Encode(map[string]string{"message": "Editor opened"})
+func (h quickNoteRouteHandlers) create(w http.ResponseWriter, r *http.Request) {
+	if !h.beginJSON(w, r, http.MethodPost) || !h.requireStore(w) {
+		return
+	}
+	form, ok := h.parseLimitedForm(w, r)
+	if !ok {
+		return
+	}
+	text := strings.TrimSpace(form.Get("text"))
+	if text == "" {
+		_ = json.NewEncoder(w).Encode(map[string]string{"message": "Text is required"})
+		return
+	}
+	id, err := h.feedbackStore.SaveQuickNote(r.Context(), text, h.cfg.General.Language, "manual", 0, 0, nil)
+	if err != nil {
+		_ = json.NewEncoder(w).Encode(map[string]string{"message": fmt.Sprintf("Save failed: %v", err)})
+		return
+	}
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{"id": id, "message": "Quick Note saved"})
+}
+
+func (h quickNoteRouteHandlers) update(w http.ResponseWriter, r *http.Request) {
+	if !h.beginJSON(w, r, http.MethodPost) || !h.requireStore(w) {
+		return
+	}
+	form, ok := h.parseLimitedForm(w, r)
+	if !ok {
+		return
+	}
+	id, err := strconv.ParseInt(form.Get("id"), 10, 64)
+	if err != nil {
+		_ = json.NewEncoder(w).Encode(map[string]string{"message": "Invalid ID"})
+		return
+	}
+	text := strings.TrimSpace(form.Get("text"))
+	if err := h.feedbackStore.UpdateQuickNote(r.Context(), id, text); err != nil {
+		_ = json.NewEncoder(w).Encode(map[string]string{"message": fmt.Sprintf("Update failed: %v", err)})
+		return
+	}
+	_ = json.NewEncoder(w).Encode(map[string]string{"message": "Updated"})
+}
+
+func (h quickNoteRouteHandlers) delete(w http.ResponseWriter, r *http.Request) {
+	if !h.beginJSON(w, r, http.MethodPost) || !h.requireStore(w) {
+		return
+	}
+	form, ok := h.parseLimitedForm(w, r)
+	if !ok {
+		return
+	}
+	id, err := strconv.ParseInt(form.Get("id"), 10, 64)
+	if err != nil {
+		_ = json.NewEncoder(w).Encode(map[string]string{"message": "Invalid ID"})
+		return
+	}
+	if err := h.feedbackStore.DeleteQuickNote(r.Context(), id); err != nil {
+		_ = json.NewEncoder(w).Encode(map[string]string{"message": fmt.Sprintf("Delete failed: %v", err)})
+		return
+	}
+	_ = json.NewEncoder(w).Encode(map[string]string{"message": "Deleted"})
+}
+
+func (h quickNoteRouteHandlers) pin(w http.ResponseWriter, r *http.Request) {
+	if !h.beginJSON(w, r, http.MethodPost) || !h.requireStore(w) {
+		return
+	}
+	form, ok := h.parseLimitedForm(w, r)
+	if !ok {
+		return
+	}
+	id, err := strconv.ParseInt(form.Get("id"), 10, 64)
+	if err != nil {
+		_ = json.NewEncoder(w).Encode(map[string]string{"message": "Invalid ID"})
+		return
+	}
+	if err := h.feedbackStore.PinQuickNote(r.Context(), id, form.Get("pinned") == "1"); err != nil {
+		_ = json.NewEncoder(w).Encode(map[string]string{"message": fmt.Sprintf("Pin failed: %v", err)})
+		return
+	}
+	_ = json.NewEncoder(w).Encode(map[string]string{"message": "Updated"})
+}
+
+func (h quickNoteRouteHandlers) summary(w http.ResponseWriter, r *http.Request) {
+	if !h.beginJSON(w, r, http.MethodPost) {
+		return
+	}
+	note, err := resolveQuickNoteFromRequest(r, h.feedbackStore)
+	if err != nil {
+		writeQuickNoteError(w, err)
+		return
+	}
+	_ = json.NewEncoder(w).Encode(map[string]string{
+		"summary": summarizeQuickNote(r.Context(), h.state, note.Text, note.Language),
 	})
-	mux.HandleFunc("/quicknotes/open-capture", func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodPost {
-			w.WriteHeader(http.StatusMethodNotAllowed)
-			return
-		}
-		w.Header().Set("Content-Type", "application/json; charset=utf-8")
-		err := dispatchQuickNoteCommand(r.Context(), state, speechkit.Command{
-			Type: speechkit.CommandOpenQuickCapture,
-		})
-		if errors.Is(err, speechkit.ErrCommandHandlerUnavailable) {
-			_, err = service.OpenCapture(r.Context())
-		}
-		if err != nil {
-			_ = json.NewEncoder(w).Encode(map[string]string{"message": "Failed to create note"})
-			return
-		}
-		_ = json.NewEncoder(w).Encode(map[string]string{"message": "Capture opened"})
+}
+
+func (h quickNoteRouteHandlers) email(w http.ResponseWriter, r *http.Request) {
+	if !h.beginJSON(w, r, http.MethodPost) {
+		return
+	}
+	note, err := resolveQuickNoteFromRequest(r, h.feedbackStore)
+	if err != nil {
+		writeQuickNoteError(w, err)
+		return
+	}
+	summary := summarizeQuickNote(r.Context(), h.state, note.Text, note.Language)
+	_ = json.NewEncoder(w).Encode(map[string]string{
+		"email": draftQuickNoteEmail(note.Text, summary),
 	})
-	mux.HandleFunc("/quicknotes/close-capture", func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodPost {
-			w.WriteHeader(http.StatusMethodNotAllowed)
-			return
-		}
-		w.Header().Set("Content-Type", "application/json; charset=utf-8")
-		err := dispatchQuickNoteCommand(r.Context(), state, speechkit.Command{
-			Type: speechkit.CommandCloseQuickCapture,
-		})
-		if errors.Is(err, speechkit.ErrCommandHandlerUnavailable) {
-			err = service.CloseCapture() //nolint:contextcheck // CloseCapture is a Wails window operation that does not accept context
-		}
-		if err != nil {
-			_ = json.NewEncoder(w).Encode(map[string]string{"message": "Failed to close capture"})
-			return
-		}
-		_ = json.NewEncoder(w).Encode(map[string]string{"message": "Closed"})
+}
+
+func (h quickNoteRouteHandlers) get(w http.ResponseWriter, r *http.Request) {
+	if !h.beginJSON(w, r, http.MethodGet) {
+		return
+	}
+	if h.feedbackStore == nil {
+		_ = json.NewEncoder(w).Encode(map[string]string{"text": ""})
+		return
+	}
+	id, err := strconv.ParseInt(r.URL.Query().Get("id"), 10, 64)
+	if err != nil {
+		_ = json.NewEncoder(w).Encode(map[string]string{"text": ""})
+		return
+	}
+	n, err := h.feedbackStore.GetQuickNote(r.Context(), id)
+	if err != nil {
+		_ = json.NewEncoder(w).Encode(map[string]string{"text": ""})
+		return
+	}
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{
+		"id": n.ID, "text": n.Text, "language": n.Language,
+		"provider": n.Provider, "durationMs": n.DurationMs, "audio": n.Audio,
+		"createdAt": n.CreatedAt.Format("2006-01-02T15:04:05Z07:00"),
 	})
+}
+
+func (h quickNoteRouteHandlers) recordMode(w http.ResponseWriter, r *http.Request) {
+	if !h.beginJSON(w, r, http.MethodPost) {
+		return
+	}
+	noteID, _ := strconv.ParseInt(r.URL.Query().Get("id"), 10, 64)
+	if err := dispatchQuickNoteCommand(r.Context(), h.state, speechkit.Command{
+		Type:   speechkit.CommandArmQuickNoteRecording,
+		NoteID: noteID,
+	}); err != nil {
+		h.service.ArmRecording(noteID)
+	}
+	_ = json.NewEncoder(w).Encode(map[string]string{"message": "Quick Note recording armed"})
+}
+
+func (h quickNoteRouteHandlers) openEditor(w http.ResponseWriter, r *http.Request) {
+	if !h.beginJSON(w, r, http.MethodPost) {
+		return
+	}
+	noteID := quickNoteIDFromQuery(r)
+	err := dispatchQuickNoteCommand(r.Context(), h.state, speechkit.Command{
+		Type:   speechkit.CommandOpenQuickNote,
+		NoteID: noteID,
+	})
+	if errors.Is(err, speechkit.ErrCommandHandlerUnavailable) {
+		err = h.service.OpenEditor(noteID) //nolint:contextcheck // OpenEditor is a Wails window operation that does not accept context.
+	}
+	if err != nil {
+		_ = json.NewEncoder(w).Encode(map[string]string{"message": "Failed to open editor"})
+		return
+	}
+	_ = json.NewEncoder(w).Encode(map[string]string{"message": "Editor opened"})
+}
+
+func (h quickNoteRouteHandlers) openCapture(w http.ResponseWriter, r *http.Request) {
+	if !h.beginJSON(w, r, http.MethodPost) {
+		return
+	}
+	err := dispatchQuickNoteCommand(r.Context(), h.state, speechkit.Command{
+		Type: speechkit.CommandOpenQuickCapture,
+	})
+	if errors.Is(err, speechkit.ErrCommandHandlerUnavailable) {
+		_, err = h.service.OpenCapture(r.Context())
+	}
+	if err != nil {
+		_ = json.NewEncoder(w).Encode(map[string]string{"message": "Failed to create note"})
+		return
+	}
+	_ = json.NewEncoder(w).Encode(map[string]string{"message": "Capture opened"})
+}
+
+func (h quickNoteRouteHandlers) closeCapture(w http.ResponseWriter, r *http.Request) {
+	if !h.beginJSON(w, r, http.MethodPost) {
+		return
+	}
+	err := dispatchQuickNoteCommand(r.Context(), h.state, speechkit.Command{
+		Type: speechkit.CommandCloseQuickCapture,
+	})
+	if errors.Is(err, speechkit.ErrCommandHandlerUnavailable) {
+		err = h.service.CloseCapture() //nolint:contextcheck // CloseCapture is a Wails window operation that does not accept context.
+	}
+	if err != nil {
+		_ = json.NewEncoder(w).Encode(map[string]string{"message": "Failed to close capture"})
+		return
+	}
+	_ = json.NewEncoder(w).Encode(map[string]string{"message": "Closed"})
+}
+
+func (h quickNoteRouteHandlers) beginJSON(w http.ResponseWriter, r *http.Request, method string) bool {
+	if r.Method != method {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return false
+	}
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	return true
+}
+
+func (h quickNoteRouteHandlers) requireStore(w http.ResponseWriter) bool {
+	if h.feedbackStore != nil {
+		return true
+	}
+	_ = json.NewEncoder(w).Encode(map[string]string{"message": "Store not available"})
+	return false
+}
+
+func (h quickNoteRouteHandlers) parseLimitedForm(w http.ResponseWriter, r *http.Request) (url.Values, bool) {
+	r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
+	if err := r.ParseForm(); err != nil {
+		_ = json.NewEncoder(w).Encode(map[string]string{"message": msgFormParseError})
+		return nil, false
+	}
+	return r.Form, true
+}
+
+func quickNoteIDFromQuery(r *http.Request) int64 {
+	idParam := r.URL.Query().Get("id")
+	if idParam == "" {
+		return 0
+	}
+	noteID, err := strconv.ParseInt(idParam, 10, 64)
+	if err != nil {
+		return 0
+	}
+	return noteID
 }
 
 // --- QuickNote request helpers ---

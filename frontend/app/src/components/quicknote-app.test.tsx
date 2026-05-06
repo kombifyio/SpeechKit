@@ -88,6 +88,8 @@ describe('QuickNoteApp', () => {
 
   afterEach(() => {
     storageMock.clear()
+    vi.useRealTimers()
+    vi.unstubAllGlobals()
   })
 
   it('passes the created note id into the recording arm call', async () => {
@@ -101,6 +103,35 @@ describe('QuickNoteApp', () => {
 
     await waitFor(() => expect(createQuickNoteMock).toHaveBeenCalledWith('Draft note'))
     await waitFor(() => expect(armQuickNoteRecordingMock).toHaveBeenCalledWith(42))
+  })
+
+  it('polls the armed note and updates the editor when transcription lands', async () => {
+    const fetchMock = vi.fn((input: RequestInfo | URL) => {
+      const url = String(input)
+      if (url === '/quicknotes/get?id=42') {
+        return Promise.resolve({
+          json: () => Promise.resolve({ id: 42, text: 'Draft note\nRecorded follow-up' }),
+        })
+      }
+      return Promise.resolve({
+        json: () => Promise.resolve([]),
+      })
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    render(<QuickNoteApp />)
+
+    fireEvent.change(screen.getByPlaceholderText(/start typing your note/i), {
+      target: { value: 'Draft note' },
+    })
+    fireEvent.click(screen.getByRole('button', { name: 'Record' }))
+
+    await waitFor(() => expect(armQuickNoteRecordingMock).toHaveBeenCalledWith(42))
+
+    await waitFor(() => {
+      expect(screen.getByPlaceholderText(/start typing your note/i)).toHaveValue('Draft note\nRecorded follow-up')
+    })
+    expect(fetchMock).toHaveBeenCalledWith('/quicknotes/get?id=42', { cache: 'no-store' })
   })
 
   it('renders the shared chrome with theme and window controls', async () => {

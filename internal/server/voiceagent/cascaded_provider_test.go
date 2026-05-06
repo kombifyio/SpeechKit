@@ -16,7 +16,7 @@ import (
 	"github.com/kombifyio/SpeechKit/internal/tts"
 )
 
-// ── fakes ───────────────────────────────────────────────────────────────────
+// â”€â”€ fakes â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 type fakeSTT struct {
 	mu    sync.Mutex
@@ -71,7 +71,7 @@ func (f *fakeTTS) Synthesize(_ context.Context, _ string, _ tts.SynthesizeOpts) 
 	return &tts.Result{Audio: f.audio, Format: "mp3"}, nil
 }
 
-// ── helpers ─────────────────────────────────────────────────────────────────
+// â”€â”€ helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 // sineChunk generates N ms of S16LE mono 16 kHz audio at the given amplitude.
 func sineChunk(ms int, amp int16) []byte {
@@ -127,7 +127,7 @@ func collectMessages(t *testing.T, p *CascadedProvider, timeout time.Duration) [
 	return out
 }
 
-// ── tests ───────────────────────────────────────────────────────────────────
+// â”€â”€ tests â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 func TestCascaded_ConnectRequiresSTT(t *testing.T) {
 	p := NewCascadedProvider(CascadedDeps{Agent: &fakeAgent{}, TTS: &fakeTTS{}})
@@ -232,7 +232,7 @@ func TestCascaded_AudioEndForcesImmediateTurn(t *testing.T) {
 	agent := &fakeAgent{response: "ok"}
 	p := newTestProvider(t, CascadedDeps{
 		STT: sttFake, Agent: agent,
-		// No TTS → pure transcript mode.
+		// No TTS â†’ pure transcript mode.
 		Config: CascadedConfig{SilenceTurnMs: 10_000 /* irrelevantly large */, MinTurnMs: 50},
 	})
 
@@ -308,7 +308,7 @@ func TestCascaded_HistoryIsFedToAgent(t *testing.T) {
 	// Drain the resulting messages so the processor queue clears.
 	_ = collectMessages(t, p, 500*time.Millisecond)
 
-	// Second turn — agent input should carry prior turn in LastTranscription.
+	// Second turn â€” agent input should carry prior turn in LastTranscription.
 	_ = p.SendText("how are you")
 	_ = collectMessages(t, p, 500*time.Millisecond)
 
@@ -361,7 +361,7 @@ func TestCascaded_TTSAbsentStillReturnsTranscript(t *testing.T) {
 	agent := &fakeAgent{response: "hello"}
 	p := newTestProvider(t, CascadedDeps{
 		STT: sttFake, Agent: agent,
-		// No TTS → transcript-only
+		// No TTS â†’ transcript-only
 		Config: CascadedConfig{SilenceTurnMs: 50, MinTurnMs: 50},
 	})
 
@@ -394,7 +394,7 @@ func TestCascaded_ChunkRMS(t *testing.T) {
 	}
 	loud := sineChunk(100, 30000)
 	if rms := chunkRMS(loud); rms < 0.4 {
-		t.Fatalf("loud sine RMS = %v, want ≥0.4", rms)
+		t.Fatalf("loud sine RMS = %v, want â‰¥0.4", rms)
 	}
 }
 
@@ -408,7 +408,7 @@ func TestCascaded_ChunkAudio(t *testing.T) {
 	}
 }
 
-// ── utils ───────────────────────────────────────────────────────────────────
+// â”€â”€ utils â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 func contains(haystack, needle string) bool {
 	return len(haystack) > 0 && len(needle) > 0 && indexOf(haystack, needle) >= 0

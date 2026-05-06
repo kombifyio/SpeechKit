@@ -121,7 +121,7 @@ func DefaultProviderProfiles() []ProviderProfile {
 		{
 			ID:            "assist.builtin.gemma4-e4b",
 			Mode:          ModeAssist,
-			Name:          "llama.cpp (Local Built-in)",
+			Name:          "Gemma 4 E4B (Local Built-in)",
 			ProviderKind:  ProviderKindLocalBuiltIn,
 			ExecutionMode: ExecutionModeLocal,
 			ModelID:       DefaultLocalBuiltInLLMModel,

@@ -656,6 +656,57 @@ describe("DashboardApp", () => {
     ).toBeInTheDocument();
   });
 
+  it("marks unsigned update releases as manual-only", async () => {
+    fetchSpy?.mockImplementation(async (input: RequestInfo | URL) => {
+      const url =
+        typeof input === "string"
+          ? input
+          : input instanceof URL
+            ? input.toString()
+            : (input as Request).url;
+      if (url === "/app/setup-status") {
+        return new Response(JSON.stringify({ setupDone: true }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+      if (url === "/app/version") {
+        return new Response(
+          JSON.stringify({
+            version: "0.18.0",
+            latestVersion: "0.19.0",
+            updateURL: "https://example.com/releases/tag/v0.19.0",
+            installMode: "manual_unsigned",
+            manualDownloadRequired: true,
+          }),
+          {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          },
+        );
+      }
+      if (url === "/app/update/jobs") {
+        return new Response(JSON.stringify([]), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+      return new Response("{}", {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    });
+
+    render(<DashboardApp />);
+
+    expect(await screen.findByText(/manual download required/i)).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Download" })).not.toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /manual download/i })).toHaveAttribute(
+      "href",
+      "https://example.com/releases/tag/v0.19.0",
+    );
+  });
+
   it("offers local small and turbo downloads during onboarding and keeps progress visible", async () => {
     fetchSpy?.mockImplementation(async (input: RequestInfo | URL) => {
       const url =

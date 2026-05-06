@@ -15,6 +15,7 @@ import (
 
 	assistpkg "github.com/kombifyio/SpeechKit/internal/assist"
 	"github.com/kombifyio/SpeechKit/internal/config"
+	"github.com/kombifyio/SpeechKit/internal/server/middleware"
 	"github.com/kombifyio/SpeechKit/internal/voiceagentprofile"
 	framework "github.com/kombifyio/SpeechKit/pkg/speechkit"
 )
@@ -40,7 +41,11 @@ func registerServerSettings(app *App) {
 		if r.Method == http.MethodHead {
 			return
 		}
-		_ = json.NewEncoder(w).Encode(serverSettingsSnapshot(app))
+		snapshot := serverSettingsSnapshot(app)
+		if !serverSettingsFullAccess(r) {
+			snapshot = serverSettingsBootstrapSnapshot(snapshot)
+		}
+		_ = json.NewEncoder(w).Encode(snapshot)
 	})
 }
 
@@ -118,12 +123,19 @@ func handleServerSettingsPatch(w http.ResponseWriter, r *http.Request, app *App)
 	}
 	applyRuntimeServerAuth(app, next.ServerAuth)
 
+	fullAccess := serverSettingsFullAccess(r)
+	desired := config.SanitizeServerModelSettings(next)
+	if !fullAccess {
+		desired = serverSettingsBootstrapDesired(next)
+	}
 	response := map[string]any{
 		"status":           "saved",
 		"restart_required": true,
-		"message":          "saved; restart/recreate the server stack to apply model runtime changes",
-		"desired":          config.SanitizeServerModelSettings(next),
-		"settings":         serverSettingsSnapshot(app),
+		"desired":          desired,
+	}
+	if fullAccess {
+		response["message"] = "saved; restart/recreate the server stack to apply model runtime changes"
+		response["settings"] = serverSettingsSnapshot(app)
 	}
 	if generatedToken != "" {
 		response["generated_token"] = map[string]any{
@@ -255,6 +267,46 @@ func serverSettingsSnapshot(app *App) map[string]any {
 	}
 }
 
+func serverSettingsFullAccess(r *http.Request) bool {
+	if r == nil {
+		return false
+	}
+	switch middleware.IdentityFromContext(r.Context()).Source {
+	case "bearer", "edge_hmac":
+		return true
+	default:
+		return false
+	}
+}
+
+func serverSettingsBootstrapSnapshot(full map[string]any) map[string]any {
+	out := map[string]any{}
+	for _, key := range []string{"version", "status", "onboarding", "catalog"} {
+		if value, ok := full[key]; ok {
+			out[key] = value
+		}
+	}
+	if editable, ok := full["editable"].(map[string]any); ok {
+		if desired, ok := editable["desired"].(config.ServerModelSettings); ok {
+			out["editable"] = map[string]any{
+				"desired": serverSettingsBootstrapDesired(desired),
+			}
+		}
+	}
+	return out
+}
+
+func serverSettingsBootstrapDesired(settings config.ServerModelSettings) config.ServerModelSettings {
+	settings = config.SanitizeServerModelSettings(settings)
+	settings.ServerAuth.BearerTokenEnv = ""
+	settings.Credentials = config.ServerCredentialSettings{}
+	settings.STT.URL = ""
+	settings.LLM.BaseURL = ""
+	settings.Dictation.Dictionary = nil
+	settings.VoiceAgent.PromptTemplate = nil
+	return settings
+}
+
 func enabledModeNames(app *App) []string {
 	if app == nil || len(app.Modes) == 0 {
 		return []string{string(ModeDictation), string(ModeAssist), string(ModeVoiceAgent)}
@@ -270,6 +322,13 @@ func enabledModeNames(app *App) []string {
 
 func serverSettingsBootstrapWriteAllowed(app *App) bool {
 	if app == nil {
+		return false
+	}
+	// Once any final post-onboarding state has been observed for this
+	// process, the bootstrap window stays closed. Out-of-band tampering
+	// with the settings file (deletion, downgrade) cannot reopen it
+	// until a fresh process starts.
+	if app.bootstrapSealed.Load() {
 		return false
 	}
 	if !envBool(config.ServerSettingsWriteEnv) {
@@ -289,6 +348,9 @@ func serverSettingsBootstrapWriteAllowed(app *App) bool {
 		return false
 	}
 	if strings.TrimSpace(token) != "" {
+		// A token is already in place. Bootstrap is no longer needed â€”
+		// any further setup must go through authenticated PATCH.
+		app.bootstrapSealed.Store(true)
 		return false
 	}
 	settingsPath := config.ServerSettingsPath(app.Cfg)
@@ -299,7 +361,11 @@ func serverSettingsBootstrapWriteAllowed(app *App) bool {
 	if !ok {
 		return true
 	}
-	return !(stored.OnboardingComplete && strings.TrimSpace(stored.OnboardingVersion) == strings.TrimSpace(app.Version))
+	if stored.OnboardingComplete && strings.TrimSpace(stored.OnboardingVersion) == strings.TrimSpace(app.Version) {
+		app.bootstrapSealed.Store(true)
+		return false
+	}
+	return true
 }
 
 func providerConfigured(enabled bool, envName string) map[string]any {

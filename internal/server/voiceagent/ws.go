@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
@@ -125,6 +126,8 @@ type HandlerOptions struct {
 	Manager             *SessionManager
 	Provider            ProviderFactory
 	Persona             PersonaResolver
+	PublicURL           string
+	AllowedOrigins      []string
 	MaxAllowedClockSkew time.Duration
 	// IdleTimeout terminates a session that hasn't seen any activity
 	// (client frame OR provider message) within the duration. Zero
@@ -136,14 +139,16 @@ type HandlerOptions struct {
 // Handler exposes both the HTTP session-creation endpoint and the WS
 // upgrade endpoint under /v1/voiceagent/*.
 type Handler struct {
-	manager     *SessionManager
-	provider    ProviderFactory
-	persona     PersonaResolver
-	idleTimeout time.Duration
+	manager        *SessionManager
+	provider       ProviderFactory
+	persona        PersonaResolver
+	publicURL      string
+	allowedOrigins []string
+	idleTimeout    time.Duration
 }
 
 // New constructs a handler. All options except MaxAllowedClockSkew are
-// required — the adapter cannot function without a manager, provider, and
+// required â€” the adapter cannot function without a manager, provider, and
 // persona resolver.
 func New(opts HandlerOptions) (*Handler, error) {
 	if opts.Manager == nil {
@@ -162,25 +167,27 @@ func New(opts HandlerOptions) (*Handler, error) {
 		idle = 0
 	}
 	return &Handler{
-		manager:     opts.Manager,
-		provider:    opts.Provider,
-		persona:     opts.Persona,
-		idleTimeout: idle,
+		manager:        opts.Manager,
+		provider:       opts.Provider,
+		persona:        opts.Persona,
+		publicURL:      strings.TrimSpace(opts.PublicURL),
+		allowedOrigins: normalizeAllowedOrigins(opts.AllowedOrigins),
+		idleTimeout:    idle,
 	}, nil
 }
 
 // Mount wires the voiceagent endpoints onto mux:
 //
-//	POST   /v1/voiceagent/sessions        — create session + mint ticket
-//	GET    /v1/voiceagent/sessions        — list caller's active sessions
-//	DELETE /v1/voiceagent/sessions/{id}   — force close a session
-//	GET    /v1/voiceagent/sessions/{id}/ws?ticket=... — upgrade to WebSocket
+//	POST   /v1/voiceagent/sessions        â€” create session + mint ticket
+//	GET    /v1/voiceagent/sessions        â€” list caller's active sessions
+//	DELETE /v1/voiceagent/sessions/{id}   â€” force close a session
+//	GET    /v1/voiceagent/sessions/{id}/ws?ticket=... â€” upgrade to WebSocket
 func (h *Handler) Mount(mux *http.ServeMux) {
 	mux.HandleFunc("/v1/voiceagent/sessions", h.collectionHandler)
 	mux.HandleFunc("/v1/voiceagent/sessions/", h.itemHandler)
 }
 
-// ── HTTP endpoints ──────────────────────────────────────────────────────────
+// â”€â”€ HTTP endpoints â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 type createSessionResponse struct {
 	SessionID string `json:"session_id"`
@@ -267,20 +274,7 @@ func (h *Handler) createSession(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Build the WebSocket URL reflective of the request scheme / host.
-	scheme := "wss"
-	if r.TLS == nil && !strings.EqualFold(r.Header.Get("X-Forwarded-Proto"), "https") {
-		scheme = "ws"
-	}
-	host := r.Host
-	if fwd := r.Header.Get("X-Forwarded-Host"); fwd != "" {
-		host = fwd
-	}
-	apiPrefix := strings.TrimSpace(r.Header.Get(httpx.APIPrefixHeader))
-	if apiPrefix != "/api" {
-		apiPrefix = ""
-	}
-	wsURL := fmt.Sprintf("%s://%s%s/v1/voiceagent/sessions/%s/ws?ticket=%s", scheme, host, apiPrefix, session.ID, ticket)
+	wsURL := h.webSocketURL(r, session.ID, ticket)
 	expires := h.manager.opts.Clock().Add(h.manager.opts.TicketTTL).UTC().Format(time.RFC3339)
 
 	w.Header().Set("Content-Type", "application/json")
@@ -333,9 +327,14 @@ func (h *Handler) deleteSession(w http.ResponseWriter, r *http.Request, sessionI
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// ── WebSocket upgrade ───────────────────────────────────────────────────────
+// â”€â”€ WebSocket upgrade â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 func (h *Handler) upgradeWS(w http.ResponseWriter, r *http.Request, sessionID string) {
+	if !originAllowedForWebSocket(r.Header.Get("Origin"), h.allowedOrigins) {
+		httpx.WriteError(w, http.StatusForbidden, "origin_not_allowed", "websocket origin is not allowed")
+		return
+	}
+
 	ticket := strings.TrimSpace(r.URL.Query().Get("ticket"))
 	if err := h.manager.VerifyTicket(sessionID, ticket); err != nil {
 		switch {
@@ -362,14 +361,14 @@ func (h *Handler) upgradeWS(w http.ResponseWriter, r *http.Request, sessionID st
 	}
 
 	conn, err := websocket.Accept(w, r, &websocket.AcceptOptions{
-		InsecureSkipVerify: true, // origin check runs at the CORS middleware
+		InsecureSkipVerify: true, // Origin was checked explicitly before the upgrade.
 	})
 	if err != nil {
 		h.manager.Remove(sessionID)
 		slog.Warn("voiceagent: WS upgrade failed", "session_id", sessionID, "err", err)
 		return
 	}
-	// Conservative read limit — raw PCM chunks should be well under 4 KB.
+	// Conservative read limit â€” raw PCM chunks should be well under 4 KB.
 	conn.SetReadLimit(1 << 20)
 
 	adapter := &Adapter{
@@ -387,4 +386,98 @@ func (h *Handler) upgradeWS(w http.ResponseWriter, r *http.Request, sessionID st
 	// HTTP handler owns the connection for its lifetime, which keeps
 	// observability and tracing correct.
 	adapter.Run(r.Context())
+}
+
+func (h *Handler) webSocketURL(r *http.Request, sessionID, ticket string) string {
+	scheme, host, prefix := requestWebSocketParts(r)
+	if h.publicURL != "" {
+		if parsed, ok := parsePublicURL(h.publicURL); ok {
+			scheme = parsed.scheme
+			host = parsed.host
+			prefix = parsed.prefix
+		}
+	}
+	return fmt.Sprintf("%s://%s%s/v1/voiceagent/sessions/%s/ws?ticket=%s", scheme, host, prefix, sessionID, url.QueryEscape(ticket))
+}
+
+type publicURLParts struct {
+	scheme string
+	host   string
+	prefix string
+}
+
+func parsePublicURL(raw string) (publicURLParts, bool) {
+	u, err := url.Parse(strings.TrimSpace(raw))
+	if err != nil || u.Host == "" {
+		return publicURLParts{}, false
+	}
+	var scheme string
+	switch strings.ToLower(u.Scheme) {
+	case "https", "wss":
+		scheme = "wss"
+	case "http", "ws":
+		scheme = "ws"
+	default:
+		return publicURLParts{}, false
+	}
+	return publicURLParts{
+		scheme: scheme,
+		host:   u.Host,
+		prefix: cleanAPIPrefix(u.EscapedPath()),
+	}, true
+}
+
+func requestWebSocketParts(r *http.Request) (scheme, host, prefix string) {
+	scheme = "wss"
+	if r.TLS == nil && !strings.EqualFold(r.Header.Get("X-Forwarded-Proto"), "https") {
+		scheme = "ws"
+	}
+	host = sanitizeRequestHost(r.Host)
+	if host == "" {
+		host = "localhost"
+	}
+	prefix = cleanAPIPrefix(r.Header.Get(httpx.APIPrefixHeader))
+	return scheme, host, prefix
+}
+
+func sanitizeRequestHost(host string) string {
+	host = strings.TrimSpace(host)
+	if host == "" || strings.ContainsAny(host, "/\\@ \t\r\n") {
+		return ""
+	}
+	return host
+}
+
+func cleanAPIPrefix(prefix string) string {
+	prefix = strings.TrimRight(strings.TrimSpace(prefix), "/")
+	if prefix == "" {
+		return ""
+	}
+	if prefix == "/api" {
+		return prefix
+	}
+	return ""
+}
+
+func normalizeAllowedOrigins(origins []string) []string {
+	out := make([]string, 0, len(origins))
+	for _, origin := range origins {
+		if trimmed := strings.TrimSpace(origin); trimmed != "" {
+			out = append(out, trimmed)
+		}
+	}
+	return out
+}
+
+func originAllowedForWebSocket(origin string, allowed []string) bool {
+	origin = strings.TrimSpace(origin)
+	if origin == "" {
+		return true
+	}
+	for _, candidate := range allowed {
+		if candidate == "*" || origin == candidate {
+			return true
+		}
+	}
+	return false
 }

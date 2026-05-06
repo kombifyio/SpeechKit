@@ -24,6 +24,19 @@ export function QuickNoteApp() {
   const [recording, setRecording] = useState(false)
   const textRef = useRef<HTMLTextAreaElement>(null)
   const toastTimer = useRef<number | null>(null)
+  const pollInterval = useRef<number | null>(null)
+  const pollTimeout = useRef<number | null>(null)
+
+  const stopRecordingPoll = () => {
+    if (pollInterval.current) {
+      window.clearInterval(pollInterval.current)
+      pollInterval.current = null
+    }
+    if (pollTimeout.current) {
+      window.clearTimeout(pollTimeout.current)
+      pollTimeout.current = null
+    }
+  }
 
   useEffect(() => {
     if (initialNoteId) {
@@ -38,21 +51,39 @@ export function QuickNoteApp() {
     textRef.current?.focus()
   }, [initialNoteId])
 
+  useEffect(() => {
+    return () => {
+      stopRecordingPoll()
+      if (toastTimer.current) window.clearTimeout(toastTimer.current)
+    }
+  }, [])
+
   const showToast = (msg: string) => {
     if (toastTimer.current) window.clearTimeout(toastTimer.current)
     setToast(msg)
     toastTimer.current = window.setTimeout(() => setToast(''), 1400)
   }
 
-  const handleSave = async () => {
-    if (!text.trim()) return
-    try {
-      if (noteId) {
-        await updateQuickNote(noteId, text.trim())
-      } else {
-        const result = await createQuickNote(text.trim())
-        setNoteId(result.id)
+  const ensureSavedNote = async () => {
+    const trimmedText = text.trim()
+    if (noteId) {
+      if (trimmedText) {
+        await updateQuickNote(noteId, trimmedText)
       }
+      return noteId
+    }
+    if (!trimmedText) {
+      return null
+    }
+    const result = await createQuickNote(trimmedText)
+    setNoteId(result.id)
+    return result.id
+  }
+
+  const handleSave = async () => {
+    try {
+      const savedNoteId = await ensureSavedNote()
+      if (!savedNoteId) return
       showToast('Saved')
     } catch {
       showToast('Save failed')
@@ -60,11 +91,10 @@ export function QuickNoteApp() {
   }
 
   const handleSummary = async () => {
-    if (!noteId) {
-      await handleSave()
-    }
     try {
-      const result = await quickNoteSummary(noteId ?? 0)
+      const savedNoteId = await ensureSavedNote()
+      if (!savedNoteId) return
+      const result = await quickNoteSummary(savedNoteId)
       setSummary(result)
     } catch {
       showToast('Summary failed')
@@ -72,9 +102,10 @@ export function QuickNoteApp() {
   }
 
   const handleEmail = async () => {
-    if (!noteId) await handleSave()
     try {
-      const result = await quickNoteEmail(noteId ?? 0)
+      const savedNoteId = await ensureSavedNote()
+      if (!savedNoteId) return
+      const result = await quickNoteEmail(savedNoteId)
       await navigator.clipboard.writeText(result)
       showToast('Email draft copied')
     } catch {
@@ -82,41 +113,55 @@ export function QuickNoteApp() {
     }
   }
 
+  const startRecordingPoll = (recordingNoteId: number | null, startingText: string) => {
+    stopRecordingPoll()
+    const originalText = startingText.trim()
+
+    pollInterval.current = window.setInterval(async () => {
+      try {
+        if (recordingNoteId) {
+          const res = await fetch(`/quicknotes/get?id=${recordingNoteId}`, { cache: 'no-store' })
+          const data = await res.json() as { text?: string }
+          const nextText = data.text?.trim() ? data.text : ''
+          if (nextText && nextText.trim() !== originalText) {
+            setText(nextText)
+            setRecording(false)
+            showToast('Transcription added')
+            stopRecordingPoll()
+          }
+          return
+        }
+
+        const res = await fetch('/dashboard/quicknotes', { cache: 'no-store' })
+        const notes = await res.json() as Array<{ id: number; text: string }>
+        const latest = notes[0]
+        if (latest?.text) {
+          setNoteId(latest.id)
+          setText(latest.text)
+          setRecording(false)
+          showToast('Transcription added')
+          stopRecordingPoll()
+        }
+      } catch {
+        /* ignore poll errors */
+      }
+    }, 500)
+
+    pollTimeout.current = window.setTimeout(() => {
+      stopRecordingPoll()
+      setRecording(false)
+    }, 30000)
+  }
+
   const handleRecord = async () => {
     try {
-      let resolvedNoteId = noteId
-
-      if (text.trim() && !noteId) {
-        const result = await createQuickNote(text.trim())
-        setNoteId(result.id)
-        resolvedNoteId = result.id
-      }
+      const startingText = text
+      const resolvedNoteId = await ensureSavedNote()
 
       await armQuickNoteRecording(resolvedNoteId ?? undefined)
       setRecording(true)
-      showToast('Recording armed — press hotkey to dictate')
-
-      const pollInterval = setInterval(async () => {
-        try {
-          const res = await fetch('/dashboard/quicknotes', { cache: 'no-store' })
-          const notes = await res.json() as Array<{ id: number; text: string }>
-          if (notes.length > 0) {
-            const latest = notes[0]
-            if (!noteId || latest.id !== noteId) {
-              setNoteId(latest.id)
-              setText((prev) => prev ? prev + '\n' + latest.text : latest.text)
-              setRecording(false)
-              showToast('Transcription added')
-              clearInterval(pollInterval)
-            }
-          }
-        } catch { /* ignore poll errors */ }
-      }, 500)
-
-      setTimeout(() => {
-        clearInterval(pollInterval)
-        setRecording(false)
-      }, 30000)
+      showToast('Recording started — stops automatically on silence')
+      startRecordingPoll(resolvedNoteId, startingText)
     } catch {
       showToast('Failed to arm recording')
     }

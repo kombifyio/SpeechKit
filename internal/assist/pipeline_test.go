@@ -162,6 +162,17 @@ func TestProcessNoLLMFallsThrough(t *testing.T) {
 	}
 }
 
+func TestCanHandleWithoutDirectReplyModelRejectsModelRequiredUtilities(t *testing.T) {
+	pipeline := NewPipeline(nil, &mockToolExecutor{}, nil, false)
+
+	if pipeline.CanHandleWithoutDirectReplyModel("summarize this", ProcessOpts{Locale: "en"}) {
+		t.Fatal("CanHandleWithoutDirectReplyModel returned true for model-required summarize utility")
+	}
+	if !pipeline.CanHandleWithoutDirectReplyModel("copy last", ProcessOpts{Locale: "en"}) {
+		t.Fatal("CanHandleWithoutDirectReplyModel returned false for action-only copy utility")
+	}
+}
+
 func TestProcessDirectReplySkipsToolExecution(t *testing.T) {
 	executor := &mockToolExecutor{}
 	pipeline := NewPipeline(fixedAssistFlow(t, flows.AssistOutput{

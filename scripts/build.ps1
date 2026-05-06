@@ -257,6 +257,29 @@ function Find-PowerShellExecutable {
     throw 'No PowerShell executable found. Expected pwsh or powershell.exe.'
 }
 
+function Normalize-GeneratedTextAssets {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$AssetDir
+    )
+
+    if (-not (Test-Path $AssetDir)) {
+        return
+    }
+
+    $utf8NoBom = [System.Text.UTF8Encoding]::new($false)
+    $textExtensions = @('.css', '.html', '.js', '.json', '.map', '.svg', '.txt', '.xml')
+    Get-ChildItem -Path $AssetDir -File -Recurse |
+        Where-Object { $textExtensions -contains $_.Extension.ToLowerInvariant() } |
+        ForEach-Object {
+            $content = [System.IO.File]::ReadAllText($_.FullName)
+            $content = $content.Replace("`r`n", "`n").Replace("`r", "`n")
+            $lines = $content.Split([string[]]@("`n"), [System.StringSplitOptions]::None)
+            $normalized = (($lines | ForEach-Object { $_.TrimEnd() }) -join "`n")
+            [System.IO.File]::WriteAllText($_.FullName, $normalized, $utf8NoBom)
+        }
+}
+
 Write-Host 'Preparing clean Windows bundle...'
 Assert-PathExists -Path $mingwGcc -Description 'MinGW gcc compiler'
 Assert-PathExists -Path $mingwGxx -Description 'MinGW g++ compiler'
@@ -308,6 +331,7 @@ try {
     }
 
     Invoke-Step -Description 'Building frontend assets...' -FilePath 'npm.cmd' -ArgumentList @('run', 'build')
+    Normalize-GeneratedTextAssets -AssetDir (Join-Path $projectDir 'internal/frontendassets/dist')
 }
 finally {
     Pop-Location

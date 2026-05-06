@@ -16,6 +16,9 @@ language = "en"
 
 [server]
 listen_addr            = ":8080"
+# External API base used for generated WebSocket URLs behind a proxy.
+# Include any external mount prefix, for example "https://speechkit.example.com/api".
+public_url             = ""
 # modes: leave empty or omit to enable all three. Comment out individual
 # entries to disable a mode for a given deployment (e.g. a Dictation-only
 # pool).
@@ -23,7 +26,7 @@ modes                  = ["dictation", "assist", "voiceagent"]
 auth_mode              = "bearer"               # Production default. Use "none" only for local-only demos.
 bearer_token_env       = "SPEECHKIT_SERVER_TOKEN"
 edge_auth_secret_env   = "EDGE_AUTH_SECRET"
-cors_allowed_origins   = []                      # e.g. ["https://app.example.com"]
+cors_allowed_origins   = []                      # e.g. ["https://app.example.com"]; also enforced for browser WebSocket clients.
 rate_limit_rps         = 10.0
 rate_limit_burst       = 20
 max_upload_mb          = 25

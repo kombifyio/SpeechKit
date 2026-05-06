@@ -1,7 +1,7 @@
 {
   "name": "speechkit-release",
   "private": true,
-  "version": "0.28.2",
+  "version": "0.29.0",
   "type": "module",
   "scripts": {
     "app:dev": "powershell -ExecutionPolicy Bypass -File ./start-dev.ps1",
@@ -11,6 +11,7 @@
     "dev": "npm --prefix Website run dev --",
     "release:notes": "node ./scripts/release/render-release-notes.mjs",
     "release:notes:test": "node --test ./scripts/release/changelog.test.mjs",
+    "release:dry-run:private": "powershell -ExecutionPolicy Bypass -File ./scripts/private-release-dry-run.ps1",
     "website:build": "npm --prefix Website run build",
     "website:check": "npm --prefix Website run check",
     "website:dev": "npm --prefix Website run dev --",

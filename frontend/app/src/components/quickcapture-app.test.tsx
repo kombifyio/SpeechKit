@@ -21,6 +21,8 @@ describe('QuickCaptureApp', () => {
 
   beforeEach(() => {
     window.history.pushState({}, '', '/quickcapture.html?noteId=42')
+    document.documentElement.dataset.theme = 'light'
+    document.documentElement.classList.remove('dark')
     updateQuickNoteMock.mockReset()
     updateQuickNoteMock.mockResolvedValue('updated')
     useAutoCloseMock.mockReset()
@@ -82,5 +84,12 @@ describe('QuickCaptureApp', () => {
         idleTimeoutMs: 60_000,
       }),
     )
+  })
+
+  it('applies the desktop dark theme inside the capture webview', async () => {
+    render(<QuickCaptureApp />)
+
+    await waitFor(() => expect(document.documentElement.dataset.theme).toBe('dark'))
+    expect(document.documentElement.classList.contains('dark')).toBe(true)
   })
 })

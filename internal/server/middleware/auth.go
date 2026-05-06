@@ -50,7 +50,8 @@ const (
 	// AuthModeEdgeHMAC trusts HMAC-signed headers from a known edge
 	// (Cloudflare Worker / reverse proxy). The actual user identity comes
 	// from the edge. Expected header set:
-	//   X-Edge-Auth-Hmac, X-Edge-User-Id, X-Edge-Org-Id, X-Edge-Plan.
+	//   X-Edge-Auth-Hmac, X-Edge-User-Id, X-Edge-Org-Id, X-Edge-Plan,
+	//   and optional X-Edge-Role. Role is covered by the HMAC when present.
 	AuthModeEdgeHMAC AuthMode = "edge_hmac"
 	// AuthModeBearerOrEdge accepts either credential format; handy when a
 	// single deployment serves both internal services (bearer) and
@@ -73,6 +74,7 @@ type AuthOptions struct {
 	// Bootstrap routes are public only while BootstrapAllowed returns true.
 	// The server uses this for the first settings write when bearer auth is
 	// configured but no bearer token exists yet.
+	AllowBootstrapPaths  []string
 	AllowBootstrapRoutes []PublicRoute
 	BootstrapAllowed     func(*http.Request) bool
 }
@@ -173,6 +175,12 @@ func Auth(opts AuthOptions) Middleware {
 		}
 	}
 	publicRoutes := routeSet(opts.AllowPublicRoutes)
+	bootstrapSet := make(map[string]struct{}, len(opts.AllowBootstrapPaths))
+	for _, p := range opts.AllowBootstrapPaths {
+		if trimmed := strings.TrimSpace(p); trimmed != "" {
+			bootstrapSet[trimmed] = struct{}{}
+		}
+	}
 	bootstrapRoutes := routeSet(opts.AllowBootstrapRoutes)
 
 	return func(next http.Handler) http.Handler {
@@ -182,6 +190,10 @@ func Auth(opts AuthOptions) Middleware {
 				return
 			}
 			if routeAllowed(publicRoutes, r.URL.Path, r.Method) {
+				next.ServeHTTP(w, r)
+				return
+			}
+			if _, bootstrap := bootstrapSet[r.URL.Path]; bootstrap && opts.BootstrapAllowed != nil && opts.BootstrapAllowed(r) {
 				next.ServeHTTP(w, r)
 				return
 			}
@@ -292,16 +304,19 @@ func verifyEdgeHMAC(r *http.Request, secret string) (Identity, bool) {
 	userID := strings.TrimSpace(r.Header.Get("X-Edge-User-Id"))
 	orgID := strings.TrimSpace(r.Header.Get("X-Edge-Org-Id"))
 	plan := strings.TrimSpace(r.Header.Get("X-Edge-Plan"))
+	role := strings.TrimSpace(r.Header.Get("X-Edge-Role"))
 	if presented == "" || userID == "" || orgID == "" {
 		return Identity{}, false
 	}
-	// Signature base: userID + "\n" + orgID + "\n" + plan.
+	// Signature base: userID + "\n" + orgID + "\n" + plan + "\n" + role.
 	mac := hmac.New(sha256.New, []byte(secret))
 	mac.Write([]byte(userID))
 	mac.Write([]byte{'\n'})
 	mac.Write([]byte(orgID))
 	mac.Write([]byte{'\n'})
 	mac.Write([]byte(plan))
+	mac.Write([]byte{'\n'})
+	mac.Write([]byte(role))
 	want := hex.EncodeToString(mac.Sum(nil))
 	if !hmacEqual([]byte(presented), []byte(want)) {
 		return Identity{}, false
@@ -310,7 +325,7 @@ func verifyEdgeHMAC(r *http.Request, secret string) (Identity, bool) {
 		UserID: userID,
 		OrgID:  orgID,
 		Plan:   plan,
-		Role:   strings.TrimSpace(r.Header.Get("X-Edge-Role")),
+		Role:   role,
 		Source: "edge_hmac",
 	}, true
 }

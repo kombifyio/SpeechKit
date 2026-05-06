@@ -168,7 +168,7 @@ func TestBuiltInTranscribeAndAssistProfilesUseRuntimeSelectionLabels(t *testing.
 		},
 		"assist.builtin.gemma4-e4b": {
 			modality: models.ModalityAssist,
-			name:     "llama.cpp (Local Built-in)",
+			name:     "Gemma 4 E4B (Local Built-in)",
 			runtime:  "llama.cpp",
 		},
 	}

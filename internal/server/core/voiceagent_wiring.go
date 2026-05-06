@@ -30,7 +30,7 @@ const (
 // /readyz surfaces the selected provider's state; the handler is always
 // mounted so POST /v1/voiceagent/sessions works even when the provider
 // itself is degraded (clients get a `provider_connect_failed` error at WS
-// upgrade rather than a 404 at session creation — operators can then read
+// upgrade rather than a 404 at session creation â€” operators can then read
 // /readyz to see why).
 func buildVoiceAgentHandler(ctx context.Context, cfg *config.Config, app *App) (*vsserver.Handler, string, error) {
 	provider := strings.ToLower(strings.TrimSpace(cfg.VoiceAgent.Provider))
@@ -66,10 +66,12 @@ func buildVoiceAgentHandler(ctx context.Context, cfg *config.Config, app *App) (
 	}
 
 	h, err := vsserver.New(vsserver.HandlerOptions{
-		Manager:     manager,
-		Provider:    factory,
-		Persona:     resolver,
-		IdleTimeout: idleTimeout,
+		Manager:        manager,
+		Provider:       factory,
+		Persona:        resolver,
+		PublicURL:      cfg.Server.PublicURL,
+		AllowedOrigins: cfg.Server.CORSAllowedOrigins,
+		IdleTimeout:    idleTimeout,
 	})
 	if err != nil {
 		return nil, status, err
@@ -124,7 +126,7 @@ func buildProviderFactory(ctx context.Context, cfg *config.Config, app *App, pro
 	}
 }
 
-// ── persona resolver ────────────────────────────────────────────────────────
+// â”€â”€ persona resolver â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 // personaResolver implements vsserver.PersonaResolver by composing a
 // LiveConfigFrame from three layers, in order of precedence:
@@ -210,7 +212,7 @@ func (r *personaResolver) resolve(start vsserver.StartFrame, stepIndex int) (vss
 			frame.RefinementPrompt = resolved.RefinementPrompt
 		}
 		// Role VAD/activity fields override config defaults only when they
-		// are non-empty — this keeps roles minimal without wiping server
+		// are non-empty â€” this keeps roles minimal without wiping server
 		// defaults that the admin cares about.
 		if resolved.AutomaticVAD {
 			frame.Automatic = true
@@ -273,7 +275,7 @@ func composeStartOverrideWithStep(prompt, stepID, stepInstruction string) string
 	return prompt + "\n\n[Current step: " + stepID + "]\n" + stepInstruction
 }
 
-// ── Gemini Live provider factory + bridge ───────────────────────────────────
+// â”€â”€ Gemini Live provider factory + bridge â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 type geminiProviderFactory struct{}
 
@@ -379,7 +381,7 @@ func mapKernelToolCalls(calls []vskernel.ToolCall) []vsserver.ToolCall {
 	return out
 }
 
-// ── Cascaded provider factory ───────────────────────────────────────────────
+// â”€â”€ Cascaded provider factory â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 // cascadedProviderFactory produces CascadedProvider instances backed by the
 // shared AI deps held on App. Each session gets its own provider so

@@ -4,12 +4,12 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
-	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
 
+	desktopupdate "github.com/kombifyio/SpeechKit/internal/desktop/update"
 	"github.com/kombifyio/SpeechKit/internal/netsec"
 )
 
@@ -20,6 +20,7 @@ var (
 	updateDownloadURL  string
 	updateDownloadName string
 	updateDownloadSize int64
+	updateInstallMode  string
 	updateChecked      time.Time
 )
 
@@ -27,17 +28,16 @@ const (
 	updateCheckInterval = 6 * time.Hour
 	updateCheckTimeout  = 5 * time.Second
 	releaseAPIURL       = "https://api.github.com/repos/kombifyio/SpeechKit/releases/latest"
+
+	appUpdateInstallModeVerified       = desktopupdate.InstallModeVerified
+	appUpdateInstallModeManualUnsigned = desktopupdate.InstallModeManualUnsigned
+	appUpdateInstallModeUnavailable    = desktopupdate.InstallModeUnavailable
 )
 
 var releaseAPIURLValidation = netsec.ValidationOptions{}
 
-type latestReleaseInfo struct {
-	Version      string
-	ReleaseURL   string
-	DownloadURL  string
-	DownloadName string
-	DownloadSize int64
-}
+type latestReleaseInfo = desktopupdate.ReleaseInfo
+type releaseAssetInfo = desktopupdate.ReleaseAsset
 
 func cachedLatestRelease() (latestReleaseInfo, bool) {
 	updateMu.Lock()
@@ -47,6 +47,7 @@ func cachedLatestRelease() (latestReleaseInfo, bool) {
 		DownloadURL:  updateDownloadURL,
 		DownloadName: updateDownloadName,
 		DownloadSize: updateDownloadSize,
+		InstallMode:  desktopupdate.NormalizeInstallMode(updateInstallMode, updateDownloadURL),
 	}
 	checked := updateChecked
 	updateMu.Unlock()
@@ -84,14 +85,9 @@ func refreshLatestRelease() {
 	}
 
 	var release struct {
-		TagName string `json:"tag_name"`
-		HTMLURL string `json:"html_url"`
-		Assets  []struct {
-			Name               string `json:"name"`
-			BrowserDownloadURL string `json:"browser_download_url"`
-			ContentType        string `json:"content_type"`
-			Size               int64  `json:"size"`
-		} `json:"assets"`
+		TagName string             `json:"tag_name"`
+		HTMLURL string             `json:"html_url"`
+		Assets  []releaseAssetInfo `json:"assets"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&release); err != nil {
 		return
@@ -99,6 +95,15 @@ func refreshLatestRelease() {
 
 	version := normalizeReleaseVersion(release.TagName)
 	assetName, downloadURL, downloadSize := selectWindowsInstallerAsset(release.Assets)
+	installMode := appUpdateInstallModeUnavailable
+	if desktopupdate.HasUnsignedWindowsNotice(release.Assets) {
+		assetName = ""
+		downloadURL = ""
+		downloadSize = 0
+		installMode = appUpdateInstallModeManualUnsigned
+	} else if downloadURL != "" {
+		installMode = appUpdateInstallModeVerified
+	}
 
 	updateMu.Lock()
 	updateVersion = version
@@ -106,6 +111,7 @@ func refreshLatestRelease() {
 	updateDownloadURL = downloadURL
 	updateDownloadName = assetName
 	updateDownloadSize = downloadSize
+	updateInstallMode = installMode
 	updateChecked = testNow()
 	updateMu.Unlock()
 }
@@ -114,61 +120,8 @@ func normalizeReleaseVersion(version string) string {
 	return strings.TrimPrefix(strings.TrimSpace(version), "v")
 }
 
-func selectWindowsInstallerAsset(assets []struct {
-	Name               string `json:"name"`
-	BrowserDownloadURL string `json:"browser_download_url"`
-	ContentType        string `json:"content_type"`
-	Size               int64  `json:"size"`
-}) (string, string, int64) {
-	bestScore := -1
-	var bestName string
-	var bestURL string
-	var bestSize int64
-
-	for _, asset := range assets {
-		score := installerAssetScore(asset.Name, asset.ContentType)
-		if score <= bestScore {
-			continue
-		}
-		bestScore = score
-		bestName = asset.Name
-		bestURL = asset.BrowserDownloadURL
-		bestSize = asset.Size
-	}
-
-	if bestScore <= 0 {
-		return "", "", 0
-	}
-	return bestName, bestURL, bestSize
-}
-
-func installerAssetScore(name, contentType string) int {
-	base := strings.ToLower(filepath.Base(strings.TrimSpace(name)))
-	if base == "" {
-		return 0
-	}
-
-	score := 0
-	switch filepath.Ext(base) {
-	case ".exe":
-		score += 100
-	case ".msi":
-		score += 90
-	default:
-		return 0
-	}
-
-	if strings.Contains(base, "speechkit") {
-		score += 20
-	}
-	if strings.Contains(base, "setup") || strings.Contains(base, "installer") {
-		score += 20
-	}
-	if strings.Contains(strings.ToLower(contentType), "application") {
-		score += 5
-	}
-
-	return score
+func selectWindowsInstallerAsset(assets []releaseAssetInfo) (string, string, int64) {
+	return desktopupdate.SelectWindowsInstallerAsset(assets)
 }
 
 func isNewerReleaseVersion(latest, current string) bool {

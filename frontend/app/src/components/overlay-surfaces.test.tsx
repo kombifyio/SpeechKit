@@ -222,7 +222,7 @@ describe('overlay surfaces', () => {
     expect(screen.queryByTestId('pill-anchor-compact-feedback-panel')).not.toBeInTheDocument()
   })
 
-  it('renders quick controls on the left and three independent module toggles on the right in the pill panel', async () => {
+  it('renders quick controls on the left and only enabled module toggles on the right in the pill panel', async () => {
     fetchOverlayStateMock.mockResolvedValue(
       snap({
         activeMode: 'voice_agent',
@@ -259,16 +259,14 @@ describe('overlay surfaces', () => {
     expect(within(leftControls).getByRole('button', { name: /note/i })).toBeInTheDocument()
     expect(within(leftControls).getByTestId('mic-selector-icon')).toHaveAttribute('data-icon', 'mic')
     expect(within(rightControls).getByRole('button', { name: 'Dictation' })).toBeInTheDocument()
-    expect(within(rightControls).getByRole('button', { name: 'Assist' })).toBeInTheDocument()
+    expect(within(rightControls).queryByRole('button', { name: 'Assist' })).not.toBeInTheDocument()
     expect(within(rightControls).getByRole('button', { name: 'Voice Agent' })).toBeInTheDocument()
     expect(within(rightControls).getByTestId('mode-icon-dictation')).toHaveAttribute('data-icon', 'audio-lines')
-    expect(within(rightControls).getAllByRole('button')).toHaveLength(3)
+    expect(within(rightControls).getAllByRole('button')).toHaveLength(2)
     expect(screen.queryByRole('button', { name: /microphone settings/i })).not.toBeInTheDocument()
     expect(screen.getByTestId('pill-panel-status')).toHaveTextContent('No mode ready')
     expect(screen.getByTestId('pill-panel-center-shell')).toHaveAttribute('data-overlay-draggable', 'true')
-    expect(within(rightControls).getByRole('button', { name: 'Assist' })).toHaveAttribute('aria-pressed', 'false')
     expect(within(rightControls).getByRole('button', { name: 'Voice Agent' })).toHaveAttribute('data-runtime-active', 'true')
-    expect(within(rightControls).getByTestId('mode-toggle-assist-slashed')).toBeInTheDocument()
   })
 
   it('keeps the hovered pill panel shell as a rounded pill without rectangular shadow chrome', async () => {
@@ -379,12 +377,12 @@ describe('overlay surfaces', () => {
       snap({
         modeEnabled: {
           dictate: true,
-          assist: false,
+          assist: true,
           voice_agent: true,
         },
         availableModes: {
           dictate: true,
-          assist: false,
+          assist: true,
           voice_agent: true,
         },
       }),
@@ -394,7 +392,7 @@ describe('overlay surfaces', () => {
     const assistButton = await screen.findByRole('button', { name: 'Assist' })
     fireEvent.click(assistButton)
 
-    await waitFor(() => expect(setModeEnabledMock).toHaveBeenCalledWith('assist', true))
+    await waitFor(() => expect(setModeEnabledMock).toHaveBeenCalledWith('assist', false))
     expect(setActiveModeMock).not.toHaveBeenCalled()
   })
 
@@ -427,7 +425,7 @@ describe('overlay surfaces', () => {
     )
   })
 
-  it('lists all three module toggles in the dot radial menu and keeps disabled ones visible', async () => {
+  it('omits disabled module toggles from the dot radial menu', async () => {
     fetchOverlayStateMock.mockResolvedValue(
       snap({
         visualizer: 'circle',
@@ -459,7 +457,7 @@ describe('overlay surfaces', () => {
     expect(labels.getByText('Note')).toBeInTheDocument()
     expect(labels.getByText('Dictation')).toBeInTheDocument()
     expect(labels.getByText('Assist')).toBeInTheDocument()
-    expect(labels.getByText('Voice Agent')).toBeInTheDocument()
+    expect(labels.queryByText('Voice Agent')).not.toBeInTheDocument()
   })
 
   it('returns from the radial host on mouse leave', async () => {

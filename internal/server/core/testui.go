@@ -6,24 +6,26 @@ import (
 	"io"
 	"net/http"
 
+	"github.com/kombifyio/SpeechKit/internal/config"
 	"github.com/kombifyio/SpeechKit/internal/server/middleware"
 )
 
 func serverPublicPaths() []string {
-	return []string{"/", "/healthz", "/readyz", "/setup", "/setup/"}
+	return []string{"/healthz", "/readyz"}
 }
 
 func serverPublicRoutes() []middleware.PublicRoute {
-	return []middleware.PublicRoute{
-		{Path: "/v1/server/settings", Methods: []string{http.MethodGet, http.MethodHead}},
-		{Path: "/api/v1/server/settings", Methods: []string{http.MethodGet, http.MethodHead}},
-	}
+	return nil
+}
+
+func serverBootstrapPaths() []string {
+	return []string{"/", "/setup", "/setup/"}
 }
 
 func serverBootstrapAuthRoutes() []middleware.PublicRoute {
 	return []middleware.PublicRoute{
-		{Path: "/v1/server/settings", Methods: []string{http.MethodPatch}},
-		{Path: "/api/v1/server/settings", Methods: []string{http.MethodPatch}},
+		{Path: "/v1/server/settings", Methods: []string{http.MethodGet, http.MethodHead, http.MethodPatch}},
+		{Path: "/api/v1/server/settings", Methods: []string{http.MethodGet, http.MethodHead, http.MethodPatch}},
 	}
 }
 
@@ -31,11 +33,15 @@ func registerTestUI(app *App) {
 	if app == nil || app.Mux == nil {
 		return
 	}
-	smokeHandler := testUIHandler{}
-	setupHandler := setupUIHandler{}
-	app.Mux.Handle("/", smokeHandler)
-	app.Mux.Handle("/setup", setupHandler)
-	app.Mux.Handle("/setup/", setupHandler)
+	// Operators can disable the onboarding/smoke UI entirely with
+	// SPEECHKIT_SERVER_ONBOARDING_UI=false. The default is on.
+	if !envBoolDefault(config.ServerOnboardingUIEnv, true) {
+		return
+	}
+	app.Mux.Handle("/", testUIHandler{})
+	setup := setupUIHandler{app: app}
+	app.Mux.Handle("/setup", setup)
+	app.Mux.Handle("/setup/", setup)
 }
 
 type testUIHandler struct{}
@@ -54,9 +60,11 @@ func (testUIHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	writeHTML(w, r, testUIHTML)
 }
 
-type setupUIHandler struct{}
+type setupUIHandler struct {
+	app *App
+}
 
-func (setupUIHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+func (h setupUIHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if r.URL.Path != "/setup" && r.URL.Path != "/setup/" {
 		http.NotFound(w, r)
 		return
@@ -64,6 +72,13 @@ func (setupUIHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet && r.Method != http.MethodHead {
 		w.Header().Set("Allow", "GET, HEAD")
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	// Setup wizard is only meaningful while the bootstrap window is
+	// open. Once the seal latches (post-onboarding or with a token in
+	// place), serve 404 so the wizard isn't reachable from any browser.
+	if h.app != nil && h.app.bootstrapSealed.Load() {
+		http.NotFound(w, r)
 		return
 	}
 

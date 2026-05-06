@@ -316,12 +316,3 @@ func parseSettingsBool(value string) bool {
 func normalizeProviderKey(provider string) string {
 	return strings.TrimSpace(strings.ToLower(provider))
 }
-
-func containsString(values []string, expected string) bool {
-	for _, value := range values {
-		if value == expected {
-			return true
-		}
-	}
-	return false
-}

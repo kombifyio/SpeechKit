@@ -1,11 +1,11 @@
 # SpeechKit Docs
 
-Start with the product you are working on, then jump into the detailed docs.
+Start with the module you are working on, then jump into the detailed docs.
 
-## Products
+## Modules
 
-- [../README.md](../README.md) — short product overview.
-- [speechkit-framework-api.md](./speechkit-framework-api.md) — Go Voice Framework API, mode contracts, provider catalog, and local control API.
+- [../README.md](../README.md) — short module overview.
+- [speechkit-framework-api.md](./speechkit-framework-api.md) — local-first Go backend API, mode contracts, provider catalog, and local control API.
 - [server/README.md](./server/README.md) — SpeechKit Server runtime, modes, auth, and deployment setup.
 - [../CHANGELOG.md](../CHANGELOG.md) — release history.
 

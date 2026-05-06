@@ -1,23 +1,17 @@
 package main
 
 import (
-	"context"
 	"fmt"
 	"log/slog"
 	"os"
-	"os/exec"
 	"strconv"
-	"strings"
 	"sync"
 	"time"
-	"unicode/utf8"
 
 	"github.com/wailsapp/wails/v3/pkg/application"
-	"github.com/wailsapp/wails/v3/pkg/events"
 
 	"github.com/firebase/genkit/go/core"
 
-	appassets "github.com/kombifyio/SpeechKit/assets"
 	appai "github.com/kombifyio/SpeechKit/internal/ai"
 	"github.com/kombifyio/SpeechKit/internal/ai/flows"
 	"github.com/kombifyio/SpeechKit/internal/assist"
@@ -25,9 +19,7 @@ import (
 	"github.com/kombifyio/SpeechKit/internal/config"
 	"github.com/kombifyio/SpeechKit/internal/downloads"
 	_ "github.com/kombifyio/SpeechKit/internal/kombify"
-	"github.com/kombifyio/SpeechKit/internal/output"
 	"github.com/kombifyio/SpeechKit/internal/router"
-	"github.com/kombifyio/SpeechKit/internal/secrets"
 	"github.com/kombifyio/SpeechKit/internal/store"
 	"github.com/kombifyio/SpeechKit/internal/stt"
 	"github.com/kombifyio/SpeechKit/internal/textactions"
@@ -95,6 +87,7 @@ type appState struct {
 	quickNoteMode            bool
 	quickCaptureMode         bool
 	quickCaptureAutoStart    bool  // when true, next PTT event auto-starts + auto-stops recording
+	quickNoteAutoStop        bool  // enables silence auto-stop for editor-armed quick-note recording
 	quickCaptureNoteID       int64 // the specific note ID this capture session writes to
 	lastTranscriptionText    string
 	vocabularyDictionary     string
@@ -251,50 +244,86 @@ func main() {
 	_, closeLogFile := initAppLogging()
 	defer closeLogFile()
 
-	cfgPath := runtimeConfigPath()
-	cfg, err := config.Load(cfgPath)
+	runDesktopApp(closeLogFile)
+}
+
+func runDesktopApp(closeLogFile func()) {
+	var cleanup desktopCleanupStack
+	defer cleanup.Close()
+
+	cfgPath, cfg, installState, err := loadDesktopStartupConfig()
 	if err != nil {
 		slog.Error("config load failed", "err", err)
 		closeLogFile()
 		os.Exit(1) //nolint:gocritic // exitAfterDefer: closeLogFile() called explicitly above before exit
 	}
-	normalizeConfigModes(cfg)
-	applySelectedVoiceAgentProfile(cfg, filteredModelCatalog())
-	if migrated, err := secrets.MigrateInstallTokenBootstrap(); err != nil {
-		slog.Warn("migrate install hugging face token", "err", err)
-	} else if migrated {
-		slog.Info("install token migrated Hugging Face bootstrap token into secure storage")
-	}
-	// Load install state (local vs cloud mode)
-	installState, err := config.LoadInstallState()
+
+	state := newInitialAppState(cfg)
+
+	r := initDesktopRouterRuntime(cfg, state)
+	audioRuntime, err := initDesktopAudioRuntime(cfg, state, &cleanup)
 	if err != nil {
-		slog.Warn("install state load failed", "err", err)
-		installState = &config.InstallState{Mode: config.InstallModeLocal}
-	}
-	if installState.Mode == "" {
-		// First run or not yet set -- default to local
-		installState.Mode = config.InstallModeLocal
-		installState.SetupDone = false
-		if err := config.SaveInstallState(installState); err != nil {
-			slog.Warn("save install state", "err", err)
-		}
-		slog.Info("install mode: local (default, first run — setup wizard pending)")
-	} else {
-		slog.Info("install mode", "mode", installState.Mode)
-	}
-	if config.ApplyLocalInstallDefaults(cfg, installState) {
-		if err := config.Save(cfgPath, cfg); err != nil {
-			slog.Warn("save local install defaults", "err", err)
-		} else {
-			slog.Info("local install defaults: onboarding will download a local model before enabling whisper.cpp")
-		}
+		slog.Error("audio init failed", "err", err)
+		os.Exit(1)
 	}
 
-	if config.ApplyManagedIntegrationDefaults(cfg) {
-		slog.Info("managed integration: Hugging Face enabled by explicit opt-in with resolved credentials")
+	ctx, cancel := initDesktopAppContext(state, &cleanup)
+	services := initDesktopRuntimeServices(ctx, cfg, state, &cleanup)
+	prepareDesktopVoiceAgentSession(cfg, state)
+	hkManager := newDesktopModeHotkeyManager(cfg, state)
+	feedbackStore := openDesktopFeedbackStore(cfg, state, &cleanup)
+	showDashboard := newDesktopDashboardPresenter(state)
+	var inputController *desktopInputController
+
+	app := newDesktopWailsApp(desktopWailsAppOptions{
+		ConfigPath:    cfgPath,
+		Config:        cfg,
+		State:         state,
+		STTRouter:     r,
+		FeedbackStore: feedbackStore,
+		InstallState:  installState,
+		Capturer:      audioRuntime.Capturer,
+		Cancel:        cancel,
+		ShowDashboard: showDashboard,
+	})
+
+	configureDesktopWindowsAndTray(desktopWindowRuntimeOptions{
+		App:        app,
+		Ctx:        ctx,
+		ConfigPath: cfgPath,
+		Config:     cfg,
+		State:      state,
+		ShowDashboard: func(source string) {
+			showDashboard(source)
+		},
+		InputController: func() *desktopInputController {
+			return inputController
+		},
+	})
+
+	startDesktopProviderReadiness(ctx, state, r)
+	if err := startDesktopHotkeys(ctx, hkManager, &cleanup); err != nil {
+		slog.Error("hotkey start failed", "err", err)
+		os.Exit(1)
 	}
 
-	state := &appState{
+	logDesktopStartupReady(cfg, state, r)
+	startDesktopOverlaySyncLoop(ctx, state)
+	inputController, err = startDesktopInputRuntime(ctx, cfg, state, r, feedbackStore, audioRuntime, services, hkManager, installState, showDashboard, &cleanup)
+	if err != nil {
+		slog.Error("desktop mode runtime init failed", "err", err)
+		os.Exit(1)
+	}
+
+	if err := app.Run(); err != nil {
+		slog.Error("app run failed", "err", err)
+		os.Exit(1)
+	}
+	cancel()
+}
+
+func newInitialAppState(cfg *config.Config) *appState {
+	return &appState{
 		controlPlaneToken:        newControlPlaneToken(),
 		hotkey:                   cfg.General.DictateHotkey,
 		dictateHotkey:            cfg.General.DictateHotkey,
@@ -328,620 +357,6 @@ func main() {
 		downloads:                downloads.NewManager(),
 		appUpdates:               newAppUpdateManager(),
 	}
-
-	// Build router and track provider status
-	r, providerLog := buildRouter(cfg)
-	syncRuntimeProviders(context.Background(), state, r) //nolint:contextcheck // ctx not yet created at startup initialization
-	for _, msg := range providerLog {
-		slog.Info(msg)
-	}
-
-	// Build optional server delegates for any mode that opts into
-	// server-side execution via [server_connection]. A nil result means
-	// every mode runs locally (the pre-0.26 default). Misconfigurations
-	// log a warning and fall through to local — we never block startup
-	// on a misconfigured server toggle.
-	serverDel, serverDelErr := buildServerDelegates(cfg)
-	if serverDelErr != nil {
-		slog.Warn("server delegates init failed; running modes locally", "err", serverDelErr)
-		serverDel = nil
-	}
-	if serverDel != nil {
-		state.mu.Lock()
-		state.serverDelegates = serverDel
-		state.mu.Unlock()
-		var modes []string
-		if serverDel.hasDictation() {
-			modes = append(modes, "dictation")
-		}
-		if serverDel.hasAssist() {
-			modes = append(modes, "assist")
-		}
-		if serverDel.hasVoiceAgent() {
-			modes = append(modes, "voice_agent")
-		}
-		slog.Info("server delegates active",
-			"modes", strings.Join(modes, ","),
-			"fallback_to_local", serverDel.shouldFallback())
-	}
-
-	// Audio capture
-	audioCfg := audio.Config{
-		Backend:     audio.Backend(cfg.Audio.Backend),
-		DeviceID:    cfg.Audio.DeviceID,
-		SampleRate:  cfg.Audio.SampleRate,
-		Channels:    cfg.Audio.Channels,
-		FrameSizeMs: cfg.Audio.FrameSizeMs,
-		LatencyHint: cfg.Audio.LatencyHint,
-	}
-	capturer, err := newReconfigurableAudioSession(audioCfg, audio.Open)
-	if err != nil {
-		slog.Error("audio init failed", "err", err)
-		os.Exit(1)
-	}
-	state.audioSession = capturer
-	defer func() {
-		if err := capturer.Close(); err != nil {
-			slog.Warn("audio close", "err", err)
-		}
-	}()
-
-	go func() {
-		for event := range capturer.Events() {
-			switch event.Type {
-			case audio.EventError:
-				state.addLog(fmt.Sprintf("Audio backend error: %v", event.Err), "error")
-			case audio.EventWarning:
-				msg := event.Message
-				if msg == "" && event.Err != nil {
-					msg = event.Err.Error()
-				}
-				if msg != "" {
-					state.addLog(fmt.Sprintf("Audio backend warning: %s", msg), "warn")
-				}
-			default:
-				// EventStarted, EventStopped — no log action needed.
-			}
-		}
-	}()
-
-	dictationVAD, closeDictationVAD, err := newDictationVAD()
-	if err != nil {
-		slog.Warn("dictation VAD unavailable", "err", err)
-	} else {
-		if closeDictationVAD != nil {
-			defer closeDictationVAD()
-		}
-		if dictationVAD != nil {
-			state.addLog("Dictation VAD ready", "info")
-		}
-	}
-
-	// Silence detection for Quick Capture auto-stop
-	silenceAutoStop := make(chan struct{}, 1)
-	silenceThreshold := 0.01 // RMS below this = silence
-	var silenceSince time.Time
-	fastModeDuration := time.Duration(cfg.General.FastModeSilenceMs) * time.Millisecond
-	if fastModeDuration <= 0 {
-		fastModeDuration = 1500 * time.Millisecond
-	}
-
-	capturer.SetLevelHandler(func(level float64) {
-		state.setLevel(level)
-
-		state.mu.Lock()
-		voiceSession := state.voiceAgentSession
-		state.mu.Unlock()
-		if voiceSession != nil {
-			state.updatePrompterActivity("user", voiceAgentUserActivityLevel(voiceSession.CurrentState(), level, state.currentVoiceAgentEchoGuard()))
-		}
-
-		// Only do silence detection when Quick Capture is active
-		if !state.quickCaptureModeActive() {
-			silenceSince = time.Time{}
-			return
-		}
-
-		if level < silenceThreshold {
-			if silenceSince.IsZero() {
-				silenceSince = time.Now()
-			} else if time.Since(silenceSince) >= fastModeDuration {
-				// Silence exceeded threshold -- trigger auto-stop
-				select {
-				case silenceAutoStop <- struct{}{}:
-				default:
-				}
-				silenceSince = time.Time{}
-			}
-		} else {
-			silenceSince = time.Time{} // reset on speech
-		}
-	})
-
-	state.sttRouter = r
-
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	defer stopConfiguredLocalLLMRuntime(state)
-
-	// Genkit AI initialization: replaces the old LLM registries.
-	syncConfiguredLocalLLMRuntime(ctx, cfg, state)
-	genkitRT, err := appai.Init(ctx, buildGenkitConfig(cfg))
-	if err != nil {
-		slog.Warn("genkit init", "err", err)
-		state.addLog("AI providers unavailable — Assist and Voice Agent disabled", "warn")
-	} else {
-		state.genkitRT = genkitRT
-
-		// Define flows.
-		state.summarizeFlow = flows.DefineSummarizeFlow(genkitRT.G, genkitRT.UtilityModels())
-		state.agentFlow = flows.DefineAgentFlow(genkitRT.G, genkitRT.AgentModels())
-		if len(genkitRT.AssistModels()) > 0 {
-			state.assistFlow = flows.DefineAssistFlow(genkitRT.G, genkitRT.AssistModels())
-		}
-
-		slog.Info("genkit initialized",
-			"utility_models", len(genkitRT.UtilityModels()),
-			"assist_models", len(genkitRT.AssistModels()),
-			"agent_models", len(genkitRT.AgentModels()),
-		)
-	}
-
-	// TTS initialization for Assist Mode.
-	ttsRouter := buildTTSRouter(cfg)
-	state.ttsRouter = ttsRouter
-	if ttsRouter != nil {
-		healthResults := ttsRouter.HealthCheck(ctx)
-		for name, err := range healthResults {
-			if err != nil {
-				slog.Warn("TTS provider unavailable", "provider", name, "err", err)
-			} else {
-				slog.Info("TTS provider ready", "provider", name)
-			}
-		}
-	}
-
-	// Audio player for TTS output.
-	audioPlayer, err := audio.NewPlayer()
-	if err != nil {
-		slog.Warn("audio player init", "err", err)
-		state.addLog("TTS audio player unavailable — voice output disabled", "warn")
-	} else {
-		state.audioPlayer = audioPlayer
-		defer audioPlayer.Close()
-		slog.Info("audio player ready (24kHz mono)")
-	}
-
-	// Clipboard output and desktop quick actions.
-	clipHandler := output.NewClipboardHandler()
-	shortcutResolver := buildShortcutResolver(cfg)
-	quickActions := newQuickActionCoordinator(state, clipHandler, shortcutResolver)
-	quickActions.summarizer.Summarizer = textactions.SummarizerFunc(func(ctx context.Context, input textactions.Input) (string, error) {
-		state.mu.Lock()
-		flow := state.summarizeFlow
-		state.mu.Unlock()
-		return (&textactions.FlowSummarizer{Flow: flow}).Summarize(ctx, input)
-	})
-	state.assistExecutor = newAssistToolExecutor(quickActions)
-
-	// Assist Pipeline: STT → Codeword → LLM → TTS → Result{Text, Audio}
-	if state.assistFlow != nil || state.assistExecutor != nil {
-		state.assistPipeline = assist.NewPipeline(
-			state.assistFlow,
-			state.assistExecutor,
-			ttsRouter,
-			cfg.TTS.Enabled,
-			assist.WithRouter(assist.NewRouter(assist.WithResolver(shortcutResolver))),
-		)
-		slog.Info("assist pipeline ready")
-	}
-
-	// Voice Agent session (pre-created, started on demand via hotkey).
-	if cfg.VoiceAgent.Enabled {
-		state.voiceAgentSession = prepareVoiceAgentSession(state, cfg)
-		slog.Info("voice agent session prepared")
-	}
-
-	// Hotkeys for Dictate, Assist and Voice Agent.
-	hkManager := newModeHotkeyManager(configuredModeCombos(
-		cfg.General.DictateEnabled,
-		cfg.General.AssistEnabled,
-		cfg.General.VoiceAgentEnabled,
-		cfg.General.DictateHotkey,
-		cfg.General.AssistHotkey,
-		cfg.General.VoiceAgentHotkey,
-	))
-	state.hkManager = hkManager
-
-	// Store (interface-based, backend selected via config)
-	var feedbackStore store.Store
-	feedbackStore, err = store.New(store.StoreConfig{
-		Backend:                 cfg.Store.Backend,
-		SQLitePath:              cfg.Store.SQLitePath,
-		SaveAudio:               cfg.Store.SaveAudio,
-		AudioRetentionDays:      cfg.Store.AudioRetentionDays,
-		MaxAudioStorageMB:       cfg.Store.MaxAudioStorageMB,
-		PostgresDSN:             cfg.Store.PostgresDSN,
-		TranscriptionModelHints: configuredTranscriptionModelHints(cfg),
-	})
-	if err != nil {
-		slog.Warn("store init", "err", err)
-		feedbackStore = nil
-	} else {
-		if voiceStore, ok := feedbackStore.(store.VoiceAgentSessionStore); ok {
-			state.voiceAgentStore = voiceStore
-		}
-		defer func() { _ = feedbackStore.Close() }()
-		count, _ := feedbackStore.TranscriptionCount(context.Background())
-		state.transcriptions = count
-		state.syncSpeechKitSnapshot()
-		slog.Info("store ready", "records", count, "backend", cfg.Store.Backend)
-	}
-
-	var dashboardWin *application.WebviewWindow
-	createDashboardWindow := func(wailsApp *application.App) *application.WebviewWindow {
-		win := wailsApp.Window.NewWithOptions(newDashboardWindowOptions())
-		win.RegisterHook(events.Common.WindowClosing, func(event *application.WindowEvent) {
-			if !state.shouldHideWindowOnClose() {
-				return
-			}
-			event.Cancel()
-			win.Hide()
-		})
-		return win
-	}
-	showDashboard := func(source string) {
-		slog.Info("dashboard requested", "source", source)
-		state.showDashboardWindow(source)
-	}
-
-	// Wails app
-	app := application.New(application.Options{
-		Name: "kombify SpeechKit",
-		Icon: appassets.SpeechKitICO(),
-		Windows: application.WindowsOptions{
-			EnabledFeatures: []string{"msWebView2EnableDraggableRegions"},
-		},
-		Assets: application.AssetOptions{
-			Handler: assetHandler(cfg, cfgPath, state, r, feedbackStore, installState),
-		},
-		PanicHandler: func(details *application.PanicDetails) {
-			slog.Error("wails panic", "err", details.Error, "stack", details.StackTrace)
-		},
-		WarningHandler: func(message string) {
-			slog.Warn("wails warning", "message", message)
-		},
-		ErrorHandler: func(err error) {
-			slog.Error("wails error", "err", err)
-		},
-		ShouldQuit: func() bool {
-			state.beginShutdown()
-			return true
-		},
-		OnShutdown: func() {
-			state.beginShutdown()
-			cancel()
-			state.stopVoiceAgentAudioSender()
-			state.stopVoiceAgentStream()
-			if capturer != nil {
-				capturer.SetPCMHandler(nil)
-			}
-		},
-		SingleInstance: &application.SingleInstanceOptions{
-			UniqueID: "com.kombify.speechkit",
-			OnSecondInstanceLaunch: func(data application.SecondInstanceData) {
-				slog.Info("second instance launch blocked", "cwd", data.WorkingDir, "args", data.Args)
-				if state.engine != nil {
-					_ = state.engine.Commands().Dispatch(context.Background(), speechkit.Command{
-						Type: speechkit.CommandShowDashboard,
-						Metadata: map[string]string{
-							"source": "second-instance",
-						},
-					})
-				} else {
-					showDashboard("second-instance")
-				}
-			},
-		},
-	})
-
-	state.wailsApp = app
-
-	// Overlay windows
-	pillAnchorWindow := app.Window.NewWithOptions(newPillAnchorWindowOptions())
-	pillPanelWindow := app.Window.NewWithOptions(newPillPanelWindowOptions())
-	dotAnchorWindow := app.Window.NewWithOptions(newDotAnchorWindowOptions())
-	radialMenuWindow := app.Window.NewWithOptions(newRadialMenuWindowOptions())
-	assistBubbleWindow := app.Window.NewWithOptions(newAssistBubbleWindowOptions())
-
-	state.pillAnchor = pillAnchorWindow
-	state.pillPanel = pillPanelWindow
-	state.dotAnchor = dotAnchorWindow
-	state.radialMenu = radialMenuWindow
-	state.assistBubble = assistBubbleWindow
-
-	var inputController *desktopInputController
-	prompterWin := app.Window.NewWithOptions(newPrompterWindowOptions())
-	prompterWin.RegisterHook(events.Common.WindowClosing, func(event *application.WindowEvent) {
-		if !state.shouldHideWindowOnClose() {
-			return
-		}
-		event.Cancel()
-		if inputController != nil {
-			inputController.closeVoiceAgentPrompter(ctx)
-			return
-		}
-		prompterWin.Hide()
-	})
-	state.prompterWindow = prompterWin
-
-	var overlayMoveSaveMu sync.Mutex
-	var overlayMoveSaveTimer *time.Timer
-	scheduleOverlayMoveSave := func() {
-		overlayMoveSaveMu.Lock()
-		defer overlayMoveSaveMu.Unlock()
-
-		if overlayMoveSaveTimer != nil {
-			overlayMoveSaveTimer.Stop()
-		}
-
-		overlayMoveSaveTimer = time.AfterFunc(250*time.Millisecond, func() {
-			centerX, centerY, monitorPositions := state.overlayFreeCenterState()
-
-			overlayMoveSaveMu.Lock()
-			defer overlayMoveSaveMu.Unlock()
-
-			cfg.UI.OverlayFreeX = centerX
-			cfg.UI.OverlayFreeY = centerY
-			cfg.UI.OverlayMonitorPositions = monitorPositions
-			if !cfg.UI.OverlayMovable {
-				return
-			}
-			if err := config.Save(cfgPath, cfg); err != nil {
-				slog.Warn("save free overlay position", "err", err)
-			}
-		})
-	}
-
-	pillPanelWindow.OnWindowEvent(events.Common.WindowDidMove, func(_ *application.WindowEvent) {
-		if !pillPanelWindow.IsVisible() {
-			return
-		}
-		x, y := pillPanelWindow.Position()
-		if !state.updateOverlayFreeCenterFromPanel(x, y) {
-			return
-		}
-		scheduleOverlayMoveSave()
-	})
-
-	// Dashboard: main product window (Dashboard/Settings/Logs tabs)
-	dashboardWin = createDashboardWindow(app)
-	state.dashboard = dashboardWin
-	state.settings = dashboardWin
-
-	// System tray
-	appTray := tray.New(app, func() {
-		state.addLog("Quit requested from tray", "info")
-		state.beginShutdown()
-		app.Quit()
-	}, func() {
-		state.addLog("Dashboard requested from tray", "info")
-		if state.engine != nil {
-			_ = state.engine.Commands().Dispatch(context.Background(), speechkit.Command{
-				Type: speechkit.CommandShowDashboard,
-				Metadata: map[string]string{
-					"source": "tray",
-				},
-			})
-			return
-		}
-		showDashboard("tray")
-	})
-	appTray.OnFeedback = func() {
-		_ = exec.Command("explorer", "https://github.com/kombifyio/SpeechKit/issues").Start() //nolint:noctx // fire-and-forget browser open; no caller context available
-	}
-	state.appTray = appTray
-
-	// On app start: make overlay click-through and position it via the first sync tick.
-	app.Event.OnApplicationEvent(events.Common.ApplicationStarted, func(event *application.ApplicationEvent) {
-		state.positionOverlay()
-		state.setState("idle", "")
-		maybeAutoStartVoiceAgentOnLaunch(ctx, cfg, inputController)
-	})
-
-	// Listen for prompter controls.
-	app.Event.On("voiceagent:start", func(_ *application.CustomEvent) {
-		if inputController == nil {
-			return
-		}
-		inputController.activateVoiceAgent(ctx)
-	})
-	app.Event.On("voiceagent:stop", func(_ *application.CustomEvent) {
-		if inputController == nil {
-			return
-		}
-		inputController.deactivateVoiceAgentWithReason(ctx, true, "stop control")
-	})
-	app.Event.On("voiceagent:close", func(_ *application.CustomEvent) {
-		if inputController == nil {
-			return
-		}
-		inputController.closeVoiceAgentPrompter(ctx)
-	})
-
-	for _, msg := range validateCloudProviders(ctx, r) {
-		state.addLog(msg, "info")
-	}
-	syncRuntimeProviders(ctx, state, r)
-
-	if localProvider, ok := r.Local().(localProviderStarter); ok {
-		startLocalProviderAsync(ctx, state, r, localProvider)
-	}
-
-	if err := hkManager.Start(ctx); err != nil {
-		slog.Error("hotkey start failed", "err", err)
-		os.Exit(1)
-	}
-	defer hkManager.Stop()
-
-	state.setActiveMode(cfg.General.ActiveMode)
-	state.addLog(fmt.Sprintf("Dictate hotkey: %s", cfg.General.DictateHotkey), "info")
-	if cfg.General.AssistHotkey != "" {
-		state.addLog(fmt.Sprintf("Assist hotkey: %s", cfg.General.AssistHotkey), "info")
-	}
-	if cfg.General.VoiceAgentHotkey != "" {
-		state.addLog(fmt.Sprintf("Voice Agent hotkey: %s", cfg.General.VoiceAgentHotkey), "info")
-	}
-	state.addLog(fmt.Sprintf("Providers: %s", strings.Join(state.providers, ", ")), "info")
-	if len(state.providers) == 0 {
-		if r.Local() != nil {
-			state.addLog("Waiting for local STT startup...", "info")
-		} else {
-			if hint := missingProviderHint(cfg); hint != "" {
-				state.addLog(hint, "error")
-			}
-			state.addLog("No STT provider ready", "error")
-		}
-	} else {
-		state.addLog("Ready", "success")
-	}
-
-	go func() {
-		ticker := time.NewTicker(900 * time.Millisecond)
-		defer ticker.Stop()
-		for {
-			select {
-			case <-ticker.C:
-				state.syncOverlayToActiveScreen()
-			case <-ctx.Done():
-				return
-			}
-		}
-	}()
-
-	transcriptionWorker, err := speechkit.NewTranscriptionWorker(speechkit.TranscriptionWorkerConfig{
-		Timeout:   30 * time.Second,
-		QueueSize: 4,
-		Runner: speechkit.NewTranscriptionRunner(
-			routerTranscriber{
-				router:          newRuntimeDictationTranscriber(r, state),
-				state:           state,
-				dictionaryStore: userDictionaryStoreFromFeedbackStore(feedbackStore),
-			},
-			speechkitStoreAdapter{store: feedbackStore},
-		).WithObserver(speechkitCommitObserver{state: state}),
-		Output: desktopTranscriptOutput{
-			cfg:         cfg,
-			state:       state,
-			handler:     clipHandler,
-			interceptor: quickActions,
-			playbackCtx: ctx,
-			activeMode: func() string {
-				state.mu.Lock()
-				defer state.mu.Unlock()
-				return state.activeMode
-			},
-			onAssistText: func(text string) {
-				trimmed := strings.TrimSpace(text)
-				state.addLog(
-					fmt.Sprintf(
-						"Assist response ready (%d chars, %d words)",
-						utf8.RuneCountInString(trimmed),
-						len(strings.Fields(trimmed)),
-					),
-					"info",
-				)
-				state.showAssistBubble(text)
-			},
-		},
-		Observer: state,
-	})
-	if err != nil {
-		slog.Error("transcription worker init failed", "err", err)
-		os.Exit(1)
-	}
-	transcriptionWorker.Start(ctx)
-	defer func() {
-		transcriptionWorker.Close()
-		transcriptionWorker.Wait()
-	}()
-	quickNoteService := desktopQuickNoteService{
-		cfg:           cfg,
-		state:         state,
-		feedbackStore: feedbackStore,
-		host:          wailsQuickNoteHost{state: state},
-	}
-	recordingController := speechkit.NewRecordingController(
-		capturer,
-		transcriptionWorker,
-		state,
-		func() speechkit.SegmentCollector {
-			if dictationVAD == nil {
-				return nil
-			}
-			pauseThreshold := 700 * time.Millisecond
-			if cfg.General.AutoStopSilenceMs > 0 {
-				pauseThreshold = time.Duration(cfg.General.AutoStopSilenceMs) * time.Millisecond
-			}
-			return speechkit.NewDictationSegmenter(dictationVAD, pauseThreshold)
-		},
-	)
-	state.engine = newSpeechKitRuntime(state, speechkit.Hooks{
-		HandleCommand: desktopCommandHandler{
-			cfg:                 cfg,
-			state:               state,
-			recordingController: recordingController,
-			feedbackStore:       feedbackStore,
-			showDashboard:       showDashboard,
-			quickNotes:          quickNoteService,
-			actions:             quickActions,
-			startVoiceAgent: func(ctx context.Context) error {
-				if inputController == nil {
-					return fmt.Errorf("voice agent runtime not configured")
-				}
-				inputController.activateVoiceAgent(ctx)
-				return nil
-			},
-			stopVoiceAgent: func(ctx context.Context) error {
-				if inputController == nil {
-					return fmt.Errorf("voice agent runtime not configured")
-				}
-				inputController.deactivateVoiceAgentWithReason(ctx, true, "API control")
-				return nil
-			},
-			voiceAgentFallback: func() bool {
-				if inputController == nil {
-					return true
-				}
-				return inputController.shouldUseVoiceAgentPipelineFallback()
-			},
-		}.Handle,
-	})
-	defer state.engine.Close()
-	state.syncSpeechKitSnapshot()
-
-	// Unified event loop: handles PTT, Quick Capture auto-record, and silence auto-stop
-	inputController = &desktopInputController{
-		commands:          state.engine.Commands(),
-		recording:         recordingController,
-		state:             state,
-		hotkeyEvents:      hkManager.Events(),
-		silenceAutoStop:   silenceAutoStop,
-		autoStartInterval: 200 * time.Millisecond,
-		voiceAgentSession: state.voiceAgentSession,
-		voiceAgentConfig:  &cfg.VoiceAgent,
-		cfg:               cfg,
-		installState:      installState,
-		sttRouter:         r,
-		audioCapturer:     capturer,
-	}
-	go inputController.Run(ctx)
-
-	if err := app.Run(); err != nil {
-		slog.Error("app run failed", "err", err)
-		os.Exit(1)
-	}
-	cancel()
 }
 
 // buildRouter, buildGenkitConfig, buildTTSRouter, validateCloudProviders,

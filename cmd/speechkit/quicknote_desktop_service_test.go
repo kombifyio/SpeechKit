@@ -185,6 +185,9 @@ func TestDesktopQuickNoteServiceArmRecordingSetsMode(t *testing.T) {
 	if runtime.quickCaptureMode {
 		t.Fatal("runtime.quickCaptureMode = true, want false")
 	}
+	if !runtime.quickCaptureAutoStart {
+		t.Fatal("runtime.quickCaptureAutoStart = false, want true")
+	}
 	if got, want := runtime.quickCaptureNoteID, int64(77); got != want {
 		t.Fatalf("runtime.quickCaptureNoteID = %d, want %d", got, want)
 	}

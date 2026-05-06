@@ -17,7 +17,7 @@ services:
     image: speechkit-server:dev
     environment:
       # Optional unless [server].auth_mode is set to "bearer" or "bearer_or_edge".
-      SPEECHKIT_SERVER_TOKEN: ${SPEECHKIT_SERVER_TOKEN:-dev-local-token}
+      SPEECHKIT_SERVER_TOKEN: ${SPEECHKIT_SERVER_TOKEN:?set SPEECHKIT_SERVER_TOKEN for the server bearer token}
       EDGE_AUTH_SECRET: ${EDGE_AUTH_SECRET:-}
       HF_TOKEN: ${HF_TOKEN:-}
       GOOGLE_AI_API_KEY: ${GOOGLE_AI_API_KEY:-}
@@ -37,7 +37,7 @@ services:
     image: postgres:17-alpine
     environment:
       POSTGRES_USER: speechkit
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-dev-insecure-password}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD for the database password}
       POSTGRES_DB: speechkit
     volumes:
       - speechkit-postgres:/var/lib/postgresql/data

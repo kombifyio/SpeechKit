@@ -1,8 +1,8 @@
 // Package auth provides the authentication abstraction for SpeechKit.
 //
 // In OSS mode: no auth provider is registered, all auth functions return nil/false.
-// In kombify Cloud mode: the private kombify-speechkit module registers an
-// AuthProvider via init() that uses the Device Code Flow and kombify Gateway API.
+// Optional downstream products can register an AuthProvider via init(). The OSS
+// core does not require a Kombify account, device-code login, or private auth package.
 package auth
 
 import (
@@ -39,7 +39,7 @@ type TokenPair struct {
 }
 
 // AuthProvider is the interface that auth backends must implement.
-// OSS builds have no registered provider. kombify builds register one via init().
+// OSS builds have no registered provider. Downstream product builds may register one via init().
 type AuthProvider interface {
 	// StartDeviceCodeFlow initiates the OAuth 2.0 Device Code flow.
 	StartDeviceCodeFlow(ctx context.Context) (*DeviceCodeResponse, error)
@@ -68,7 +68,7 @@ var (
 	registryMu         sync.RWMutex
 )
 
-// RegisterAuthProvider is called from init() in external modules (e.g. kombify-speechkit).
+// RegisterAuthProvider is called from init() in external product modules.
 func RegisterAuthProvider(p AuthProvider) {
 	registryMu.Lock()
 	registeredProvider = p

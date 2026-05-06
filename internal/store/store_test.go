@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -24,6 +25,290 @@ func TestNewAndMigrate(t *testing.T) {
 	}
 	if count != 0 {
 		t.Errorf("expected 0 records, got %d", count)
+	}
+}
+
+func TestSQLiteMigrationRepairsLegacyPersonaDefaultSequence(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "legacy.db")
+	db, err := sql.Open("sqlite", dbPath)
+	if err != nil {
+		t.Fatalf("open legacy db: %v", err)
+	}
+	_, err = db.Exec(`
+CREATE TABLE transcriptions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    text TEXT NOT NULL,
+    language TEXT NOT NULL DEFAULT 'de',
+    provider TEXT NOT NULL,
+    model TEXT NOT NULL DEFAULT '',
+    latency_ms INTEGER NOT NULL DEFAULT 0,
+    audio_path TEXT,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE quick_notes (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    text TEXT NOT NULL,
+    language TEXT NOT NULL DEFAULT 'de',
+    provider TEXT NOT NULL DEFAULT '',
+    latency_ms INTEGER NOT NULL DEFAULT 0,
+    audio_path TEXT,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    pinned INTEGER NOT NULL DEFAULT 0,
+    duration_ms INTEGER NOT NULL DEFAULT 0
+);
+CREATE TABLE user_dictionary_entries (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    spoken TEXT NOT NULL,
+    canonical TEXT NOT NULL,
+    language TEXT NOT NULL DEFAULT '',
+    source TEXT NOT NULL DEFAULT 'settings',
+    enabled INTEGER NOT NULL DEFAULT 1,
+    usage_count INTEGER NOT NULL DEFAULT 0,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(spoken, canonical, language, source)
+);
+CREATE TABLE voice_agent_sessions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    title TEXT NOT NULL DEFAULT '',
+    summary TEXT NOT NULL,
+    raw_summary TEXT NOT NULL DEFAULT '',
+    transcript TEXT NOT NULL DEFAULT '',
+    language TEXT NOT NULL DEFAULT '',
+    provider_profile_id TEXT NOT NULL DEFAULT '',
+    runtime_kind TEXT NOT NULL DEFAULT '',
+    turns_json TEXT NOT NULL DEFAULT '[]',
+    ideas_json TEXT NOT NULL DEFAULT '[]',
+    decisions_json TEXT NOT NULL DEFAULT '[]',
+    open_questions_json TEXT NOT NULL DEFAULT '[]',
+    next_steps_json TEXT NOT NULL DEFAULT '[]',
+    started_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    ended_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE voice_agent_personas (
+    id TEXT PRIMARY KEY,
+    display_name TEXT NOT NULL,
+    description TEXT NOT NULL DEFAULT '',
+    voice TEXT NOT NULL DEFAULT '',
+    locale TEXT NOT NULL DEFAULT '',
+    default_role TEXT NOT NULL DEFAULT '',
+    tags_json TEXT NOT NULL DEFAULT '[]',
+    metadata_json TEXT NOT NULL DEFAULT '{}',
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE voice_agent_roles (
+    id TEXT PRIMARY KEY,
+    display_name TEXT NOT NULL,
+    system_prompt TEXT NOT NULL,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE voice_agent_sequences (
+    id TEXT PRIMARY KEY,
+    display_name TEXT NOT NULL,
+    steps_json TEXT NOT NULL DEFAULT '[]',
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+`)
+	if err != nil {
+		_ = db.Close()
+		t.Fatalf("seed legacy schema: %v", err)
+	}
+	_ = db.Close()
+
+	s, err := NewSQLiteStore(StoreConfig{SQLitePath: dbPath, MaxAudioStorageMB: 100})
+	if err != nil {
+		t.Fatalf("NewSQLiteStore should repair legacy schema: %v", err)
+	}
+	defer s.Close()
+
+	if _, err := s.db.Exec(`INSERT INTO voice_agent_personas (id, display_name, default_sequence) VALUES (?, ?, ?)`, "p", "Persona", "seq"); err != nil {
+		t.Fatalf("insert persona with repaired default_sequence: %v", err)
+	}
+}
+
+func TestSQLiteMigrationCreatesLedgerAndExpandTables(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "test.db")
+	s, err := NewSQLiteStore(StoreConfig{SQLitePath: dbPath, MaxAudioStorageMB: 100})
+	if err != nil {
+		t.Fatalf("NewSQLiteStore: %v", err)
+	}
+	defer s.Close()
+
+	for _, table := range []string{"schema_migrations", "voice_agent_session_turns", "voice_agent_session_summary_items", "audio_assets"} {
+		var name string
+		err := s.db.QueryRow(`SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?`, table).Scan(&name)
+		if err != nil {
+			t.Fatalf("table %s missing after migration: %v", table, err)
+		}
+	}
+
+	var applied int
+	if err := s.db.QueryRow(`SELECT COUNT(*) FROM schema_migrations WHERE version = ?`, "sqlite:008_persona_default_sequence").Scan(&applied); err != nil {
+		t.Fatalf("query schema_migrations: %v", err)
+	}
+	if applied != 1 {
+		t.Fatalf("sqlite 008 migration ledger rows = %d, want 1", applied)
+	}
+}
+
+func TestSQLiteMigrationBackfillsExpandTables(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "test.db")
+	s, err := NewSQLiteStore(StoreConfig{SQLitePath: dbPath, MaxAudioStorageMB: 100})
+	if err != nil {
+		t.Fatalf("NewSQLiteStore: %v", err)
+	}
+	defer s.Close()
+
+	ctx := context.Background()
+	if _, err := s.db.ExecContext(ctx, `INSERT INTO voice_agent_sessions
+		(title, summary, raw_summary, transcript, language, turns_json, ideas_json, decisions_json, open_questions_json, next_steps_json)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		"Session", "Summary", "Raw", "User: hello", "de",
+		`[{"role":"user","text":"hello"}]`,
+		`["Idea"]`, `["Decision"]`, `["Question"]`, `["Step"]`,
+	); err != nil {
+		t.Fatalf("insert legacy voice session: %v", err)
+	}
+	if err := backfillSQLiteVoiceAgentNormalized(ctx, s.db); err != nil {
+		t.Fatalf("backfill voice agent normalized: %v", err)
+	}
+	if err := backfillSQLiteVoiceAgentNormalized(ctx, s.db); err != nil {
+		t.Fatalf("backfill voice agent normalized idempotent: %v", err)
+	}
+
+	var turnCount, itemCount int
+	if err := s.db.QueryRow(`SELECT COUNT(*) FROM voice_agent_session_turns`).Scan(&turnCount); err != nil {
+		t.Fatalf("count voice turns: %v", err)
+	}
+	if err := s.db.QueryRow(`SELECT COUNT(*) FROM voice_agent_session_summary_items`).Scan(&itemCount); err != nil {
+		t.Fatalf("count summary items: %v", err)
+	}
+	if turnCount != 1 {
+		t.Fatalf("voice turn rows = %d, want 1", turnCount)
+	}
+	if itemCount != 4 {
+		t.Fatalf("summary item rows = %d, want 4", itemCount)
+	}
+
+	if _, err := s.db.ExecContext(ctx, `INSERT INTO transcriptions (text, language, provider, model, duration_ms, latency_ms, audio_path, word_count)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+		"audio row", "de", "local", "m", 1200, 100, filepath.Join(t.TempDir(), "clip.wav"), 0,
+	); err != nil {
+		t.Fatalf("insert legacy audio transcription: %v", err)
+	}
+	if err := backfillSQLiteAudioAssets(ctx, s.db); err != nil {
+		t.Fatalf("backfill audio assets: %v", err)
+	}
+	var assetCount int
+	if err := s.db.QueryRow(`SELECT COUNT(*) FROM audio_assets WHERE owner_kind = ?`, "transcription").Scan(&assetCount); err != nil {
+		t.Fatalf("count audio assets: %v", err)
+	}
+	if assetCount != 1 {
+		t.Fatalf("audio asset rows = %d, want 1", assetCount)
+	}
+}
+
+func TestSQLiteMigrationBackfillsWordCounts(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "test.db")
+	s, err := NewSQLiteStore(StoreConfig{SQLitePath: dbPath, MaxAudioStorageMB: 100})
+	if err != nil {
+		t.Fatalf("NewSQLiteStore: %v", err)
+	}
+	defer s.Close()
+
+	ctx := context.Background()
+	if _, err := s.db.ExecContext(ctx, `INSERT INTO transcriptions (text, language, provider, model, duration_ms, latency_ms, word_count)
+		VALUES (?, ?, ?, ?, ?, ?, ?)`, "one two three", "en", "local", "m", 0, 0, 0); err != nil {
+		t.Fatalf("insert transcription: %v", err)
+	}
+	if _, err := s.db.ExecContext(ctx, `INSERT INTO quick_notes (text, language, provider, duration_ms, latency_ms, word_count)
+		VALUES (?, ?, ?, ?, ?, ?)`, "four five", "en", "manual", 0, 0, 0); err != nil {
+		t.Fatalf("insert quick note: %v", err)
+	}
+	if err := backfillSQLiteWordCounts(ctx, s.db); err != nil {
+		t.Fatalf("backfill word counts: %v", err)
+	}
+
+	var transcriptionWords, noteWords int
+	if err := s.db.QueryRow(`SELECT word_count FROM transcriptions LIMIT 1`).Scan(&transcriptionWords); err != nil {
+		t.Fatalf("select transcription word_count: %v", err)
+	}
+	if err := s.db.QueryRow(`SELECT word_count FROM quick_notes LIMIT 1`).Scan(&noteWords); err != nil {
+		t.Fatalf("select quick note word_count: %v", err)
+	}
+	if transcriptionWords != 3 {
+		t.Fatalf("transcription word_count = %d, want 3", transcriptionWords)
+	}
+	if noteWords != 2 {
+		t.Fatalf("quick note word_count = %d, want 2", noteWords)
+	}
+	if _, _, err := wordCountBackfillQueries("sqlite", "unknown"); err == nil {
+		t.Fatal("wordCountBackfillQueries unknown table error = nil, want error")
+	}
+}
+
+func TestAudioAssetHelpersRecordAndDelete(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "test.db")
+	s, err := NewSQLiteStore(StoreConfig{SQLitePath: dbPath, MaxAudioStorageMB: 100})
+	if err != nil {
+		t.Fatalf("NewSQLiteStore: %v", err)
+	}
+	defer s.Close()
+
+	audioPath := filepath.Join(t.TempDir(), "clip.wav")
+	audioData := []byte{0, 1, 2, 3, 4}
+	if err := os.WriteFile(audioPath, audioData, 0o600); err != nil {
+		t.Fatalf("write audio fixture: %v", err)
+	}
+
+	ctx := context.Background()
+	if err := recordAudioAsset(ctx, s.db, "sqlite", "transcription", 42, audioPath, 1234); err != nil {
+		t.Fatalf("recordAudioAsset: %v", err)
+	}
+	var sizeBytes, durationMs int64
+	if err := s.db.QueryRow(`SELECT size_bytes, duration_ms FROM audio_assets WHERE owner_kind = ? AND owner_id = ?`,
+		"transcription", 42,
+	).Scan(&sizeBytes, &durationMs); err != nil {
+		t.Fatalf("select audio asset: %v", err)
+	}
+	if sizeBytes != int64(len(audioData)) {
+		t.Fatalf("size_bytes = %d, want %d", sizeBytes, len(audioData))
+	}
+	if durationMs != 1234 {
+		t.Fatalf("duration_ms = %d, want 1234", durationMs)
+	}
+
+	if err := deleteAudioAsset(ctx, s.db, "sqlite", "transcription", 42, audioPath); err != nil {
+		t.Fatalf("deleteAudioAsset: %v", err)
+	}
+	var count int
+	if err := s.db.QueryRow(`SELECT COUNT(*) FROM audio_assets WHERE owner_kind = ? AND owner_id = ?`,
+		"transcription", 42,
+	).Scan(&count); err != nil {
+		t.Fatalf("count audio assets: %v", err)
+	}
+	if count != 0 {
+		t.Fatalf("audio asset rows = %d, want 0", count)
+	}
+}
+
+func TestNormalizedLanguageFilterHelpers(t *testing.T) {
+	clauses, args := appendSQLiteNormalizedLanguageFilter(nil, nil, "de-DE")
+	if len(clauses) != 1 || len(args) != 2 {
+		t.Fatalf("sqlite filter clauses=%v args=%v, want one clause and two args", clauses, args)
+	}
+	clauses, args = appendPostgresNormalizedLanguageFilter(nil, nil, "en_US")
+	if len(clauses) != 1 || len(args) != 1 {
+		t.Fatalf("postgres filter clauses=%v args=%v, want one clause and one arg", clauses, args)
+	}
+	clauses, args = appendSQLiteNormalizedLanguageFilter(clauses, args, " ")
+	if len(clauses) != 1 || len(args) != 1 {
+		t.Fatalf("empty filter should not append: clauses=%v args=%v", clauses, args)
 	}
 }
 
@@ -69,6 +354,48 @@ func TestSaveAndRecent(t *testing.T) {
 	}
 }
 
+func TestSQLiteSaveMaintainsWordCounts(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "test.db")
+	s, err := NewSQLiteStore(StoreConfig{SQLitePath: dbPath, MaxAudioStorageMB: 100})
+	if err != nil {
+		t.Fatalf("NewSQLiteStore: %v", err)
+	}
+	defer s.Close()
+
+	if err := s.SaveTranscription(context.Background(), "one two three", "en", "local", "m", 1000, 100, nil); err != nil {
+		t.Fatalf("SaveTranscription: %v", err)
+	}
+	noteID, err := s.SaveQuickNote(context.Background(), "four five", "en", "manual", 500, 50, nil)
+	if err != nil {
+		t.Fatalf("SaveQuickNote: %v", err)
+	}
+	if err := s.UpdateQuickNote(context.Background(), noteID, "four five six seven"); err != nil {
+		t.Fatalf("UpdateQuickNote: %v", err)
+	}
+
+	var transcriptionWords, noteWords int
+	if err := s.db.QueryRow(`SELECT word_count FROM transcriptions LIMIT 1`).Scan(&transcriptionWords); err != nil {
+		t.Fatalf("select transcription word_count: %v", err)
+	}
+	if err := s.db.QueryRow(`SELECT word_count FROM quick_notes WHERE id = ?`, noteID).Scan(&noteWords); err != nil {
+		t.Fatalf("select quick note word_count: %v", err)
+	}
+	if transcriptionWords != 3 {
+		t.Fatalf("transcription word_count = %d, want 3", transcriptionWords)
+	}
+	if noteWords != 4 {
+		t.Fatalf("quick note word_count = %d, want 4", noteWords)
+	}
+
+	stats, err := s.Stats(context.Background())
+	if err != nil {
+		t.Fatalf("Stats: %v", err)
+	}
+	if stats.TotalWords != 7 {
+		t.Fatalf("Stats.TotalWords = %d, want 7", stats.TotalWords)
+	}
+}
+
 func TestSaveAndRecentFallsBackToConfiguredModelHints(t *testing.T) {
 	dbPath := filepath.Join(t.TempDir(), "test.db")
 	s, err := New(StoreConfig{
@@ -101,6 +428,63 @@ func TestSaveAndRecentFallsBackToConfiguredModelHints(t *testing.T) {
 	}
 	if recent[1].Model != "openai/whisper-large-v3" {
 		t.Fatalf("hf model = %q, want %q", recent[1].Model, "openai/whisper-large-v3")
+	}
+}
+
+func TestSQLiteListOptsLanguageAndAfterFilter(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "test.db")
+	s, err := NewSQLiteStore(StoreConfig{SQLitePath: dbPath, MaxAudioStorageMB: 100})
+	if err != nil {
+		t.Fatalf("NewSQLiteStore: %v", err)
+	}
+	defer s.Close()
+
+	ctx := context.Background()
+	if err := s.SaveTranscription(ctx, "old german", "de", "local", "m", 1000, 100, nil); err != nil {
+		t.Fatalf("SaveTranscription old german: %v", err)
+	}
+	first, err := s.ListTranscriptions(ctx, ListOpts{Limit: 1})
+	if err != nil {
+		t.Fatalf("ListTranscriptions first: %v", err)
+	}
+	after := first[0].CreatedAt
+	time.Sleep(1100 * time.Millisecond)
+	if err := s.SaveTranscription(ctx, "new german", "de-DE", "local", "m", 1000, 100, nil); err != nil {
+		t.Fatalf("SaveTranscription new german: %v", err)
+	}
+	if err := s.SaveTranscription(ctx, "new english", "en", "local", "m", 1000, 100, nil); err != nil {
+		t.Fatalf("SaveTranscription new english: %v", err)
+	}
+
+	transcriptions, err := s.ListTranscriptions(ctx, ListOpts{Limit: 10, Language: "de", After: after})
+	if err != nil {
+		t.Fatalf("ListTranscriptions filtered: %v", err)
+	}
+	if len(transcriptions) != 1 || transcriptions[0].Text != "new german" {
+		t.Fatalf("filtered transcriptions = %+v, want only new german", transcriptions)
+	}
+
+	if _, err := s.SaveQuickNote(ctx, "old note", "de", "manual", 1000, 100, nil); err != nil {
+		t.Fatalf("SaveQuickNote old: %v", err)
+	}
+	notes, err := s.ListQuickNotes(ctx, ListOpts{Limit: 1})
+	if err != nil {
+		t.Fatalf("ListQuickNotes first: %v", err)
+	}
+	noteAfter := notes[0].CreatedAt
+	time.Sleep(1100 * time.Millisecond)
+	if _, err := s.SaveQuickNote(ctx, "new note", "de_DE", "manual", 1000, 100, nil); err != nil {
+		t.Fatalf("SaveQuickNote new de: %v", err)
+	}
+	if _, err := s.SaveQuickNote(ctx, "english note", "en", "manual", 1000, 100, nil); err != nil {
+		t.Fatalf("SaveQuickNote new en: %v", err)
+	}
+	notes, err = s.ListQuickNotes(ctx, ListOpts{Limit: 10, Language: "de", After: noteAfter})
+	if err != nil {
+		t.Fatalf("ListQuickNotes filtered: %v", err)
+	}
+	if len(notes) != 1 || notes[0].Text != "new note" {
+		t.Fatalf("filtered notes = %+v, want only new note", notes)
 	}
 }
 
@@ -226,6 +610,28 @@ func TestVoiceAgentSessionsSaveAndList(t *testing.T) {
 	if len(got.Summary.NextSteps) != 1 || got.Summary.NextSteps[0] != "Build pruefen" {
 		t.Fatalf("next steps = %#v", got.Summary.NextSteps)
 	}
+	filtered, err := sessionStore.ListVoiceAgentSessions(context.Background(), ListOpts{Limit: 10, Language: "de-DE", After: startedAt})
+	if err != nil {
+		t.Fatalf("ListVoiceAgentSessions filtered: %v", err)
+	}
+	if len(filtered) != 1 || filtered[0].ID != id {
+		t.Fatalf("filtered voice sessions = %+v, want saved session", filtered)
+	}
+
+	var turnCount int
+	if err := s.db.QueryRow(`SELECT COUNT(*) FROM voice_agent_session_turns WHERE session_id = ?`, id).Scan(&turnCount); err != nil {
+		t.Fatalf("query normalized turns: %v", err)
+	}
+	if turnCount != 2 {
+		t.Fatalf("normalized turn rows = %d, want 2", turnCount)
+	}
+	var itemCount int
+	if err := s.db.QueryRow(`SELECT COUNT(*) FROM voice_agent_session_summary_items WHERE session_id = ?`, id).Scan(&itemCount); err != nil {
+		t.Fatalf("query normalized summary items: %v", err)
+	}
+	if itemCount != 4 {
+		t.Fatalf("normalized summary item rows = %d, want 4", itemCount)
+	}
 }
 
 func TestSaveWithAudio(t *testing.T) {
@@ -260,6 +666,18 @@ func TestSaveWithAudio(t *testing.T) {
 	}
 	if recent[0].Audio.SizeBytes != int64(len(fakeWAV)) {
 		t.Fatalf("audio size = %d, want %d", recent[0].Audio.SizeBytes, len(fakeWAV))
+	}
+
+	sqliteStore, ok := s.(*SQLiteStore)
+	if !ok {
+		t.Fatalf("store type = %T, want *SQLiteStore", s)
+	}
+	var assetCount int
+	if err := sqliteStore.db.QueryRow(`SELECT COUNT(*) FROM audio_assets WHERE owner_kind = ? AND owner_id = ? AND path = ?`, "transcription", recent[0].ID, recent[0].AudioPath).Scan(&assetCount); err != nil {
+		t.Fatalf("query audio_assets: %v", err)
+	}
+	if assetCount != 1 {
+		t.Fatalf("audio asset rows = %d, want 1", assetCount)
 	}
 }
 
@@ -693,6 +1111,9 @@ func TestAudioRetentionRemovesExpiredAudio(t *testing.T) {
 	if _, err := sqliteStore.db.Exec(`UPDATE transcriptions SET created_at = ? WHERE id = ?`, expiredAt, records[0].ID); err != nil {
 		t.Fatalf("age transcription: %v", err)
 	}
+	if _, err := sqliteStore.db.Exec(`UPDATE audio_assets SET created_at = ? WHERE owner_kind = ? AND owner_id = ?`, expiredAt, "transcription", records[0].ID); err != nil {
+		t.Fatalf("age audio asset: %v", err)
+	}
 
 	sqliteStore.enforceAudioRetention()
 
@@ -705,6 +1126,60 @@ func TestAudioRetentionRemovesExpiredAudio(t *testing.T) {
 	}
 	if updated[0].Audio != nil {
 		t.Fatalf("Audio metadata = %+v, want nil after retention", updated[0].Audio)
+	}
+	var assetCount int
+	if err := sqliteStore.db.QueryRow(`SELECT COUNT(*) FROM audio_assets WHERE owner_kind = ? AND owner_id = ?`, "transcription", records[0].ID).Scan(&assetCount); err != nil {
+		t.Fatalf("count audio assets: %v", err)
+	}
+	if assetCount != 0 {
+		t.Fatalf("audio asset count = %d, want 0 after retention", assetCount)
+	}
+}
+
+func TestAudioRetentionFallsBackToLegacyAudioPath(t *testing.T) {
+	dir := t.TempDir()
+	dbPath := filepath.Join(dir, "test.db")
+	sqliteStore, err := NewSQLiteStore(StoreConfig{
+		Backend:            "sqlite",
+		SQLitePath:         dbPath,
+		SaveAudio:          true,
+		AudioRetentionDays: 7,
+		MaxAudioStorageMB:  0,
+	})
+	if err != nil {
+		t.Fatalf("NewSQLiteStore: %v", err)
+	}
+	defer sqliteStore.Close()
+
+	if err := sqliteStore.SaveTranscription(context.Background(), "legacy clip", "de", "local", "", 1000, 100, make([]byte, 512)); err != nil {
+		t.Fatalf("SaveTranscription: %v", err)
+	}
+	time.Sleep(300 * time.Millisecond)
+
+	records, err := sqliteStore.ListTranscriptions(context.Background(), ListOpts{Limit: 1})
+	if err != nil {
+		t.Fatalf("ListTranscriptions: %v", err)
+	}
+	if len(records) != 1 || records[0].AudioPath == "" {
+		t.Fatalf("expected saved audio path, got %+v", records)
+	}
+
+	if _, err := sqliteStore.db.Exec(`DELETE FROM audio_assets WHERE owner_kind = ? AND owner_id = ?`, "transcription", records[0].ID); err != nil {
+		t.Fatalf("remove audio asset row: %v", err)
+	}
+	expiredAt := time.Now().Add(-8 * 24 * time.Hour).Format("2006-01-02 15:04:05")
+	if _, err := sqliteStore.db.Exec(`UPDATE transcriptions SET created_at = ? WHERE id = ?`, expiredAt, records[0].ID); err != nil {
+		t.Fatalf("age transcription: %v", err)
+	}
+
+	sqliteStore.enforceAudioRetention()
+
+	updated, err := sqliteStore.ListTranscriptions(context.Background(), ListOpts{Limit: 1})
+	if err != nil {
+		t.Fatalf("ListTranscriptions after retention: %v", err)
+	}
+	if updated[0].AudioPath != "" {
+		t.Fatalf("AudioPath = %q, want cleared through legacy fallback", updated[0].AudioPath)
 	}
 }
 

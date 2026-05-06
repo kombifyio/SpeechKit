@@ -135,7 +135,11 @@ func registerAppRoutes(mux *http.ServeMux, cfgPath string, state *appState, inst
 		if latest, ok := cachedLatestRelease(); ok && latest.Version != "" && isNewerReleaseVersion(latest.Version, AppVersion) { //nolint:contextcheck // cachedLatestRelease triggers background refresh goroutine that must not be bound to request context
 			resp["latestVersion"] = latest.Version
 			resp["updateURL"] = latest.ReleaseURL
-			if latest.DownloadURL != "" {
+			resp["installMode"] = latest.InstallMode
+			if latest.InstallMode == appUpdateInstallModeManualUnsigned {
+				resp["manualDownloadRequired"] = true
+			}
+			if latest.InstallMode == appUpdateInstallModeVerified && latest.DownloadURL != "" {
 				resp["downloadURL"] = latest.DownloadURL
 				resp["downloadSizeBytes"] = latest.DownloadSize
 				resp["assetName"] = latest.DownloadName
@@ -167,6 +171,10 @@ func registerAppRoutes(mux *http.ServeMux, cfgPath string, state *appState, inst
 		latest, ok := cachedLatestRelease() //nolint:contextcheck // background refresh goroutine must not be bound to request context
 		if !ok || latest.Version == "" || !isNewerReleaseVersion(latest.Version, AppVersion) {
 			http.Error(w, "no update available", http.StatusNotFound)
+			return
+		}
+		if latest.InstallMode != appUpdateInstallModeVerified {
+			http.Error(w, "manual download required for unsigned release", http.StatusConflict)
 			return
 		}
 		if strings.TrimSpace(latest.DownloadURL) == "" {

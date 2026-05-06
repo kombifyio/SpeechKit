@@ -10,7 +10,7 @@ import (
 	"github.com/kombifyio/SpeechKit/internal/runtimepath"
 )
 
-// InstallMode defines whether SpeechKit runs locally or connected to kombify Cloud.
+// InstallMode defines whether SpeechKit runs locally or connected to an external host.
 type InstallMode string
 
 const (
@@ -89,8 +89,8 @@ func IsFirstRun() bool {
 	return os.IsNotExist(err)
 }
 
-// ApplyLocalInstallDefaults configures a pending local install to wait for the
-// onboarding download flow before enabling a local Whisper runtime.
+// ApplyLocalInstallDefaults keeps a pending local install local-first while the
+// onboarding download flow prepares the selected Whisper model.
 func ApplyLocalInstallDefaults(cfg *Config, state *InstallState) bool {
 	if cfg == nil || state == nil {
 		return false
@@ -100,14 +100,12 @@ func ApplyLocalInstallDefaults(cfg *Config, state *InstallState) bool {
 	}
 
 	changed := false
-	if cfg.Local.Enabled {
-		cfg.Local.Enabled = false
+	if !cfg.Local.Enabled {
+		cfg.Local.Enabled = true
 		changed = true
 	}
-	// A fresh install no longer bundles a Whisper model. Keep routing neutral
-	// until the user downloads the selected onboarding model.
-	if cfg.Routing.Strategy == "" || cfg.Routing.Strategy == "local-only" || cfg.Routing.Strategy == "cloud-only" {
-		cfg.Routing.Strategy = "dynamic"
+	if cfg.Routing.Strategy != "local-only" {
+		cfg.Routing.Strategy = "local-only"
 		changed = true
 	}
 	if cfg.HuggingFace.Enabled {

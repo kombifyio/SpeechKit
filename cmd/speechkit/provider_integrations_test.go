@@ -13,6 +13,15 @@ import (
 	"github.com/kombifyio/SpeechKit/internal/secrets"
 )
 
+func containsString(values []string, expected string) bool {
+	for _, value := range values {
+		if value == expected {
+			return true
+		}
+	}
+	return false
+}
+
 func TestProviderIntegrationStatesExposeGatewayAndDerivedGeminiSelection(t *testing.T) {
 	cfg := defaultTestConfig()
 	cfg.Providers.Google.Enabled = false

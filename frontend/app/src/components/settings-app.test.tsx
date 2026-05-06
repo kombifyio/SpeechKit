@@ -5,6 +5,7 @@ import {
   waitFor,
   within,
 } from "@testing-library/react";
+import { baseSettings } from "@/components/settings-test-fixtures";
 import { vi } from "vitest";
 
 import { SettingsApp } from "@/components/settings-app";
@@ -281,116 +282,12 @@ vi.mock("@/components/ui/mic-selector", () => ({
   ),
 }));
 
-const baseSettings: SpeechKitSettingsState = {
-  overlayEnabled: true,
-  storeBackend: "sqlite",
-  sqlitePath: "C:/Users/testuser/AppData/Roaming/SpeechKit/feedback.db",
-  postgresConfigured: false,
-  postgresDSN: "",
-  maxAudioStorageMB: 500,
-  hfAvailable: true,
-  hfEnabled: false,
-  hotkey: "ctrl+win",
-  dictateHotkey: "ctrl+win",
-  assistHotkey: "win+alt",
-  voiceAgentHotkey: "ctrl+shift",
-  dictateHotkeyBehavior: "push_to_talk",
-  assistHotkeyBehavior: "push_to_talk",
-  voiceAgentHotkeyBehavior: "push_to_talk",
-  voiceAgentCloseBehavior: "continue",
-  voiceAgentProfileId: "default",
-  voiceAgentProfiles: [
-    {
-      id: "default",
-      displayName: "Default Voice Agent",
-      description: "Current Voice Mode behavior.",
-    },
-    {
-      id: "brainstorming_companion",
-      displayName: "Brainstorming Companion",
-      description: "Critical, creative ideation partner.",
-      voice: "Aoede",
-    },
-    {
-      id: "humor_companion",
-      displayName: "Humor Companion",
-      description: "Playful conversation profile.",
-      voice: "Puck",
-    },
-    {
-      id: "support_companion",
-      displayName: "Support Companion",
-      description: "Warm, solution-oriented helper.",
-      voice: "Charon",
-    },
-  ],
-  voiceAgentRefinementPrompt: "",
-  voiceAgentSessionSummary: true,
-  autoStartOnLaunch: false,
-  agentHotkey: "win+alt",
-  agentMode: "assist",
-  activeMode: "none",
-  modeEnabled: {
-    dictate: true,
-    assist: true,
-    voice_agent: true,
-  },
-  availableModes: {
-    dictate: true,
-    assist: true,
-    voice_agent: true,
-  },
-  hfModel: "openai/whisper-large-v3-turbo",
-  visualizer: "pill",
-  design: "default",
-  assistOverlayMode: "small_feedback",
-  voiceAgentOverlayMode: "small_feedback",
-  overlayPosition: "top",
-  overlayMovable: false,
-  overlayFreeX: 0,
-  overlayFreeY: 0,
-  modelDownloadDir: "C:/Users/testuser/AppData/Local/SpeechKit/models",
-  vocabularyDictionary: "",
-  saveAudio: true,
-  audioRetentionDays: 7,
-  selectedAudioDeviceId: "mic-1",
-  hfHasUserToken: false,
-  hfHasInstallToken: false,
-  hfTokenSource: "none",
-  activeProfiles: { stt: "stt-local" },
-  modelSelections: {
-    dictate: { primaryProfileId: "stt-local", fallbackProfileId: "" },
-    assist: {
-      primaryProfileId: "assist.builtin.gemma4-e4b",
-      fallbackProfileId: "",
-    },
-    voice_agent: {
-      primaryProfileId: "realtime.google.gemini-native-audio",
-      fallbackProfileId: "",
-    },
-  },
-  profiles: [
-    {
-      id: "stt-local",
-      modality: "stt",
-      name: "Qwen/Qwen3-ASR-1.7B",
-      executionMode: "local",
-      description: "Default local STT profile",
-    },
-  ],
-  providerCredentials: {
-    huggingface: {
-      provider: "huggingface",
-      label: "Hugging Face",
-      envName: "HF_TOKEN",
-      available: true,
-      hasStoredSecret: false,
-      source: "none",
-    },
-  },
-};
 
 describe("SettingsApp", () => {
+  const openStorageSettings = async () => {
+    fireEvent.click(await screen.findByRole("button", { name: "Storage & Data" }));
+  };
+
   beforeEach(() => {
     vi.stubGlobal("ResizeObserver", ResizeObserverStub);
     fetchSettingsStateMock.mockReset();
@@ -561,6 +458,81 @@ describe("SettingsApp", () => {
     expect(screen.getByText("Primary")).toBeInTheDocument();
   });
 
+  it("lets Transcribe Mode pick the companion Assist LLM and defaults it to Gemma 4", async () => {
+    fetchSettingsStateMock.mockResolvedValue({
+      ...baseSettings,
+      profiles: [
+        {
+          id: "stt.local.whispercpp",
+          modality: "stt",
+          name: "Whisper.cpp (Local Built-in)",
+          providerKind: "local_built_in",
+          executionMode: "local",
+          source: "Local Built-in",
+          description: "SpeechKit-managed local transcription runtime.",
+        },
+        {
+          id: "assist.builtin.gemma4-e4b",
+          modality: "assist",
+          name: "Gemma 4 E4B (Local Built-in)",
+          providerKind: "local_built_in",
+          executionMode: "local",
+          source: "Local Built-in",
+          description: "Recommended local Assist LLM.",
+          recommended: true,
+        },
+        {
+          id: "assist.ollama.gemma4-e4b",
+          modality: "assist",
+          name: "Gemma 4 E4B (Ollama)",
+          providerKind: "local_provider",
+          executionMode: "ollama_local",
+          source: "Local Provider",
+          description: "Externally managed local Assist LLM.",
+        },
+      ],
+      activeProfiles: { stt: "stt.local.whispercpp" },
+      modelSelections: {
+        ...baseSettings.modelSelections,
+        dictate: {
+          primaryProfileId: "stt.local.whispercpp",
+          fallbackProfileId: "",
+        },
+        assist: {
+          primaryProfileId: "",
+          fallbackProfileId: "",
+        },
+      },
+    });
+
+    render(<SettingsApp initialTab="stt" />);
+
+    const companion = await screen.findByTestId(
+      "transcribe-companion-llm-selection",
+    );
+    const llmSelect = within(companion).getByLabelText("Assist LLM");
+
+    expect(llmSelect).toHaveValue("assist.builtin.gemma4-e4b");
+    expect(companion).toHaveTextContent("Gemma 4 E4B (Local Built-in)");
+    expect(companion).toHaveTextContent("Default local LLM");
+
+    fireEvent.change(llmSelect, {
+      target: { value: "assist.ollama.gemma4-e4b" },
+    });
+
+    await waitFor(() =>
+      expect(saveSettingsStateMock).toHaveBeenCalledWith(
+        expect.objectContaining({
+          modelSelections: expect.objectContaining({
+            assist: expect.objectContaining({
+              primaryProfileId: "assist.ollama.gemma4-e4b",
+            }),
+          }),
+        }),
+      ),
+    );
+  });
+
   it("places routing controls above model setup without a card and defaults primary", async () => {
     fetchSettingsStateMock.mockResolvedValue({
       ...baseSettings,
@@ -568,7 +540,7 @@ describe("SettingsApp", () => {
         {
           id: "assist.builtin.gemma4-e4b",
           modality: "assist",
-          name: "llama.cpp (Local Built-in)",
+          name: "Gemma 4 E4B (Local Built-in)",
           providerKind: "local_built_in",
           executionMode: "local",
           source: "Local Built-in",
@@ -605,7 +577,7 @@ describe("SettingsApp", () => {
         {
           id: "assist.builtin.gemma4-e4b",
           modality: "assist",
-          name: "llama.cpp (Local Built-in)",
+          name: "Gemma 4 E4B (Local Built-in)",
           executionMode: "local",
           source: "Local Built-in",
           description: "SpeechKit-managed llama.cpp runtime.",
@@ -748,8 +720,9 @@ describe("SettingsApp", () => {
 
     render(<SettingsApp />);
 
-    await screen.findByText("Storage");
-    expect(screen.queryByText("Mode")).not.toBeInTheDocument();
+    await screen.findByText("Startup");
+    expect(screen.queryByText("Storage")).not.toBeInTheDocument();
+    expect(screen.queryByText("Server Target")).not.toBeInTheDocument();
     expect(
       screen.queryByRole("button", { name: "Active mode Assist" }),
     ).not.toBeInTheDocument();
@@ -821,9 +794,144 @@ describe("SettingsApp", () => {
         }),
       ),
     );
+
+    await waitFor(() =>
+      expect(
+        screen.getByRole("button", { name: "Voice Agent Mode" }),
+      ).toBeDisabled(),
+    );
+    expect(screen.queryByText("Voice Agent hotkey")).not.toBeInTheDocument();
   });
 
-  it("shows provider integrations in General settings and toggles them", async () => {
+  it("renders General, Integrations, SpeechKit Server, and Storage as separate settings pages", async () => {
+    fetchSettingsStateMock.mockResolvedValue(baseSettings);
+
+    render(<SettingsApp />);
+
+    expect(await screen.findByRole("button", { name: "General" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Integrations" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "SpeechKit Server" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Storage & Data" })).toBeInTheDocument();
+
+    expect(screen.getByText("Startup")).toBeInTheDocument();
+    expect(screen.queryByText("Storage")).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Storage & Data" }));
+    expect(await screen.findByText("Storage")).toBeInTheDocument();
+    expect(screen.getByLabelText("Audio retention")).toBeInTheDocument();
+    expect(screen.queryByText("Startup")).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "SpeechKit Server" }));
+    expect(await screen.findByText("Server Target")).toBeInTheDocument();
+    expect(await screen.findByText("Mode Source")).toBeInTheDocument();
+    expect(screen.queryByText("Storage")).not.toBeInTheDocument();
+  });
+
+  it("groups settings navigation under audio and mode section titles", async () => {
+    fetchSettingsStateMock.mockResolvedValue(baseSettings);
+
+    render(<SettingsApp />);
+
+    expect(
+      await screen.findByRole("button", { name: "General" }),
+    ).toBeInTheDocument();
+
+    const audioGroup = screen.getByTestId("settings-nav-group-audio");
+    expect(audioGroup).toHaveTextContent("Audio Settings");
+    expect(
+      within(audioGroup).getByRole("button", { name: "Integrations" }),
+    ).toBeInTheDocument();
+    expect(
+      within(audioGroup).getByRole("button", { name: "SpeechKit Server" }),
+    ).toBeInTheDocument();
+    expect(
+      within(audioGroup).getByRole("button", { name: "Storage & Data" }),
+    ).toBeInTheDocument();
+
+    const modeGroup = screen.getByTestId("settings-nav-group-mode");
+    expect(modeGroup).toHaveTextContent("Mode Settings");
+    expect(
+      within(modeGroup).getByRole("button", { name: "Transcribe Mode" }),
+    ).toBeInTheDocument();
+    expect(
+      within(modeGroup).getByRole("button", { name: "Assist Mode" }),
+    ).toBeInTheDocument();
+    expect(
+      within(modeGroup).getByRole("button", { name: "Voice Agent Mode" }),
+    ).toBeInTheDocument();
+  });
+
+  it("keeps the settings navigation wide enough for grouped labels", async () => {
+    fetchSettingsStateMock.mockResolvedValue(baseSettings);
+
+    render(<SettingsApp />);
+
+    expect(await screen.findByTestId("settings-nav-panel")).toHaveClass(
+      "w-56",
+    );
+  });
+
+  it("uses General as the master place for all three mode toggles", async () => {
+    fetchSettingsStateMock.mockResolvedValue(baseSettings);
+
+    render(<SettingsApp />);
+
+    await screen.findByText("Startup");
+
+    expect(
+      screen.getByRole("switch", { name: "Transcribe Mode" }),
+    ).toHaveAttribute("aria-checked", "true");
+    expect(
+      screen.getByRole("switch", { name: "Assist Mode" }),
+    ).toHaveAttribute("aria-checked", "true");
+    expect(
+      screen.getByRole("switch", { name: "Voice Agent Mode" }),
+    ).toHaveAttribute("aria-checked", "true");
+
+    fireEvent.click(screen.getByRole("switch", { name: "Voice Agent Mode" }));
+
+    await waitFor(() =>
+      expect(saveSettingsStateMock).toHaveBeenCalledWith(
+        expect.objectContaining({
+          modeEnabled: expect.objectContaining({
+            voice_agent: false,
+          }),
+          availableModes: expect.objectContaining({
+            voice_agent: false,
+          }),
+        }),
+      ),
+    );
+    expect(
+      screen.getByRole("button", { name: "Voice Agent Mode" }),
+    ).toBeDisabled();
+  });
+
+  it("redirects away from a disabled initial mode tab", async () => {
+    fetchSettingsStateMock.mockResolvedValue({
+      ...baseSettings,
+      modeEnabled: {
+        ...baseSettings.modeEnabled,
+        voice_agent: false,
+      },
+      availableModes: {
+        ...baseSettings.availableModes,
+        voice_agent: false,
+      },
+    });
+
+    render(<SettingsApp initialTab="realtime_voice" />);
+
+    await screen.findByText("Startup");
+    await waitFor(() =>
+      expect(screen.queryByText("Voice Agent hotkey")).not.toBeInTheDocument(),
+    );
+    expect(
+      screen.getByRole("button", { name: "Voice Agent Mode" }),
+    ).toBeDisabled();
+  });
+
+  it("shows provider integrations in Integrations settings and toggles them", async () => {
     fetchSettingsStateMock.mockResolvedValue({
       ...baseSettings,
       providerIntegrations: {
@@ -915,7 +1023,8 @@ describe("SettingsApp", () => {
 
     render(<SettingsApp />);
 
-    expect(await screen.findByText("Integrations")).toBeInTheDocument();
+    fireEvent.click(await screen.findByRole("button", { name: "Integrations" }));
+
     const cards = screen.getAllByTestId("settings-integration-card");
     expect(
       cards.map((card) =>
@@ -1127,7 +1236,7 @@ describe("SettingsApp", () => {
     );
   });
 
-  it("reactivates a reset mode when a new hotkey is selected", async () => {
+  it("reactivates a reset mode from the General master toggle", async () => {
     fetchSettingsStateMock.mockResolvedValue({
       ...baseSettings,
       assistHotkey: "",
@@ -1143,15 +1252,17 @@ describe("SettingsApp", () => {
 
     render(<SettingsApp initialTab="assist" />);
 
-    await screen.findByText("Assist hotkey");
-    fireEvent.click(
-      screen.getByRole("button", { name: "Assist hotkey Ctrl + Win" }),
-    );
+    await screen.findByText("Startup");
+    expect(
+      screen.getByRole("button", { name: "Assist Mode" }),
+    ).toBeDisabled();
+
+    fireEvent.click(screen.getByRole("switch", { name: "Assist Mode" }));
 
     await waitFor(() =>
       expect(saveSettingsStateMock).toHaveBeenCalledWith(
         expect.objectContaining({
-          assistHotkey: "ctrl+win",
+          assistHotkey: "win+alt",
           modeEnabled: expect.objectContaining({
             assist: true,
           }),
@@ -1161,6 +1272,9 @@ describe("SettingsApp", () => {
         }),
       ),
     );
+    expect(
+      screen.getByRole("button", { name: "Assist Mode" }),
+    ).not.toBeDisabled();
   });
 
   it("saves per-mode hotkey trigger behavior independently", async () => {
@@ -1458,7 +1572,7 @@ describe("SettingsApp", () => {
 
     render(<SettingsApp />);
 
-    await screen.findByText("Storage");
+    await screen.findByText("Startup");
     expect(
       screen.queryByRole("button", { name: "Assist Mode Big Productivity" }),
     ).not.toBeInTheDocument();
@@ -1584,6 +1698,7 @@ describe("SettingsApp", () => {
     fetchSettingsStateMock.mockResolvedValue(baseSettings);
 
     render(<SettingsApp />);
+    await openStorageSettings();
 
     const saveAudioToggle = await screen.findByRole("switch", {
       name: "Save raw audio locally",
@@ -1606,13 +1721,14 @@ describe("SettingsApp", () => {
     );
   });
 
-  it("saves the default model download directory from general settings", async () => {
+  it("saves the default model download directory from storage settings", async () => {
     fetchSettingsStateMock.mockResolvedValue({
       ...baseSettings,
       modelDownloadDir: "C:/Users/testuser/AppData/Local/SpeechKit/models",
     });
 
     render(<SettingsApp />);
+    await openStorageSettings();
 
     const input = await screen.findByLabelText("Default model download folder");
     fireEvent.change(input, {
@@ -1630,6 +1746,7 @@ describe("SettingsApp", () => {
     fetchSettingsStateMock.mockResolvedValue(baseSettings);
 
     render(<SettingsApp />);
+    await openStorageSettings();
 
     const storageCard = await screen.findByTestId("storage-settings-card");
     expect(storageCard).toHaveClass("xl:col-span-2");
@@ -1645,6 +1762,7 @@ describe("SettingsApp", () => {
     openFileDialogMock.mockResolvedValue("D:\\SpeechKitData");
 
     render(<SettingsApp />);
+    await openStorageSettings();
 
     fireEvent.click(
       await screen.findByRole("button", {
@@ -1679,6 +1797,7 @@ describe("SettingsApp", () => {
     openFileDialogMock.mockResolvedValue("E:\\Models\\SpeechKit");
 
     render(<SettingsApp />);
+    await openStorageSettings();
 
     fireEvent.click(
       await screen.findByRole("button", {
@@ -1709,6 +1828,7 @@ describe("SettingsApp", () => {
     fetchSettingsStateMock.mockResolvedValue(baseSettings);
 
     render(<SettingsApp />);
+    await openStorageSettings();
 
     fireEvent.click(await screen.findByRole("button", { name: "PostgreSQL" }));
 
@@ -1737,6 +1857,7 @@ describe("SettingsApp", () => {
     fetchSettingsStateMock.mockResolvedValue(baseSettings);
 
     render(<SettingsApp />);
+    await openStorageSettings();
 
     expect(await screen.findByLabelText("SQLite path")).toBeInTheDocument();
     expect(
@@ -1760,6 +1881,7 @@ describe("SettingsApp", () => {
     fetchSettingsStateMock.mockResolvedValue(baseSettings);
 
     render(<SettingsApp />);
+    await openStorageSettings();
 
     fireEvent.click(await screen.findByRole("button", { name: "PostgreSQL" }));
 
@@ -1788,6 +1910,7 @@ describe("SettingsApp", () => {
     fetchSettingsStateMock.mockResolvedValue(baseSettings);
 
     render(<SettingsApp />);
+    await openStorageSettings();
 
     const input = await screen.findByLabelText("Max local audio storage (MB)");
     fireEvent.change(input, {
@@ -2230,14 +2353,14 @@ describe("SettingsApp", () => {
     expect(screen.getByText("recommended")).toBeInTheDocument();
   });
 
-  it("shows llama.cpp download options for the built-in Assist provider", async () => {
+  it("shows Gemma 4 download options for the built-in Assist provider", async () => {
     fetchSettingsStateMock.mockResolvedValue({
       ...baseSettings,
       profiles: [
         {
           id: "assist.builtin.gemma4-e4b",
           modality: "assist",
-          name: "llama.cpp (Local Built-in)",
+          name: "Gemma 4 E4B (Local Built-in)",
           providerKind: "local_built_in",
           executionMode: "local",
           source: "Local Built-in",
@@ -2267,7 +2390,7 @@ describe("SettingsApp", () => {
     fireEvent.click(await screen.findByRole("button", { name: "Assist Mode" }));
 
     expect(
-      (await screen.findAllByText("llama.cpp (Local Built-in)")).length,
+      (await screen.findAllByText("Gemma 4 E4B (Local Built-in)")).length,
     ).toBeGreaterThan(0);
     expect(
       screen.getByText("Gemma 4 E4B IT Q4_K_M (GGUF)"),

@@ -65,6 +65,17 @@ func fixedAssistFlow(t *testing.T, assistOutput flows.AssistOutput) *core.Flow[f
 	})
 }
 
+func capturingAssistFlow(t *testing.T, capture func(flows.AssistInput), assistOutput flows.AssistOutput) *core.Flow[flows.AssistInput, flows.AssistOutput, struct{}] {
+	t.Helper()
+
+	g := genkit.Init(context.Background())
+	name := "test_assist_capture_" + strings.NewReplacer("/", "_", " ", "_").Replace(t.Name())
+	return genkit.DefineFlow(g, name, func(_ context.Context, input flows.AssistInput) (flows.AssistOutput, error) {
+		capture(input)
+		return assistOutput, nil
+	})
+}
+
 func failingAssistFlow(t *testing.T, flowErr error) *core.Flow[flows.AssistInput, flows.AssistOutput, struct{}] {
 	t.Helper()
 
@@ -229,6 +240,51 @@ func TestDesktopTranscriptOutput_VoiceAgentUsesBrainstormingAgentFlow(t *testing
 	}
 	if !strings.Contains(sessionTranscript, "Assistant: Agent brainstorm reply") {
 		t.Fatalf("voice agent transcript missing assistant turn: %s", sessionTranscript)
+	}
+}
+
+func TestDesktopTranscriptOutput_AssistPassesSelectedTextToDirectFlow(t *testing.T) {
+	var captured flows.AssistInput
+	flow := capturingAssistFlow(t, func(input flows.AssistInput) {
+		captured = input
+	}, flows.AssistOutput{
+		Text:      "Subject: Project update\n\nHello,\n\nHere is the update.",
+		SpeakText: "Email draft ready.",
+		Action:    "respond",
+		Locale:    "en",
+	})
+
+	state := &appState{
+		assistPipeline: assist.NewPipeline(flow, nil, nil, false),
+		assistBubble:   &fakeOverlayWindow{},
+	}
+	selectionCalls := 0
+	outputAdapter := desktopTranscriptOutput{
+		state: state,
+		activeMode: func() string {
+			return modeAssist
+		},
+		selectionCapture: func(context.Context) (string, error) {
+			selectionCalls++
+			return "rough customer update", nil
+		},
+	}
+
+	err := outputAdapter.Deliver(context.Background(), speechkit.Transcript{
+		Text:     "make this an email",
+		Language: "en",
+	}, output.Target{})
+	if err != nil {
+		t.Fatalf("Deliver() error = %v", err)
+	}
+	if selectionCalls != 1 {
+		t.Fatalf("selection capture calls = %d, want 1", selectionCalls)
+	}
+	if got, want := captured.Utterance, "make this an email"; got != want {
+		t.Fatalf("captured utterance = %q, want %q", got, want)
+	}
+	if got, want := captured.Selection, "rough customer update"; got != want {
+		t.Fatalf("captured selection = %q, want %q", got, want)
 	}
 }
 

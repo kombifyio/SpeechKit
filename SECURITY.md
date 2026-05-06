@@ -36,3 +36,9 @@ Please include:
 
 - Give maintainers time to validate and fix the issue before public disclosure.
 - Avoid including live secrets, user data, or exploit material in public channels.
+
+## Maintainer Security Gates
+
+- Go dependency exposure is checked with `govulncheck`; repository and container surfaces are checked with OSV, Trivy, and TruffleHog in GitHub Actions.
+- `gosec` intentionally excludes `G101` because SpeechKit stores environment variable names such as `OPENAI_API_KEY`, not credential values, in committed config defaults. It also excludes `G104` because unchecked Windows API return values are covered by `errcheck`/local review where those calls are meaningful.
+- Windows DPAPI and Win32 `unsafe` usage in `internal/secrets`, `internal/voiceagent`, `internal/hotkey`, and `internal/output` is treated as audited native interop. Changes to those files should keep comments explaining why each unsafe call is required and should include Windows-specific tests when practical.

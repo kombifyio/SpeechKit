@@ -18,15 +18,6 @@ import (
 //go:embed migrations/sqlite/001_init.sql
 var sqliteMigration001 string
 
-//go:embed migrations/sqlite/002_quick_notes_pinned.sql
-var sqliteMigration002 string
-
-//go:embed migrations/sqlite/003_durations.sql
-var sqliteMigration003 string
-
-//go:embed migrations/sqlite/004_transcription_model.sql
-var sqliteMigration004 string
-
 //go:embed migrations/sqlite/005_user_dictionary.sql
 var sqliteMigration005 string
 
@@ -35,6 +26,15 @@ var sqliteMigration006 string
 
 //go:embed migrations/sqlite/007_personas.sql
 var sqliteMigration007 string
+
+//go:embed migrations/sqlite/010_voice_agent_normalized.sql
+var sqliteMigration010 string
+
+//go:embed migrations/sqlite/011_audio_assets.sql
+var sqliteMigration011 string
+
+//go:embed migrations/sqlite/012_indexes.sql
+var sqliteMigration012 string
 
 // SQLiteStore implements Store using a local SQLite database.
 // Uses modernc.org/sqlite (pure Go, no CGo required).
@@ -66,37 +66,9 @@ func NewSQLiteStore(cfg StoreConfig) (*SQLiteStore, error) {
 		return nil, fmt.Errorf("open db: %w", err)
 	}
 
-	if _, err := db.ExecContext(context.Background(), sqliteMigration001); err != nil {
+	if err := runSQLiteMigrations(context.Background(), db); err != nil {
 		_ = db.Close()
-		return nil, fmt.Errorf("migrate 001: %w", err)
-	}
-	// Migration 002: add pinned column (safe to ignore "duplicate column" error)
-	if _, err := db.ExecContext(context.Background(), sqliteMigration002); err != nil {
-		errMsg := err.Error()
-		if !strings.Contains(errMsg, "duplicate column") && !strings.Contains(errMsg, "already exists") {
-			slog.Warn("migrate 002", "err", err)
-		}
-	}
-	if _, err := db.ExecContext(context.Background(), sqliteMigration003); err != nil {
-		errMsg := err.Error()
-		if !strings.Contains(errMsg, "duplicate column") && !strings.Contains(errMsg, "already exists") {
-			slog.Warn("migrate 003", "err", err)
-		}
-	}
-	if _, err := db.ExecContext(context.Background(), sqliteMigration004); err != nil {
-		errMsg := err.Error()
-		if !strings.Contains(errMsg, "duplicate column") && !strings.Contains(errMsg, "already exists") {
-			slog.Warn("migrate 004", "err", err)
-		}
-	}
-	if _, err := db.ExecContext(context.Background(), sqliteMigration005); err != nil {
-		return nil, fmt.Errorf("migrate 005: %w", err)
-	}
-	if _, err := db.ExecContext(context.Background(), sqliteMigration006); err != nil {
-		return nil, fmt.Errorf("migrate 006: %w", err)
-	}
-	if _, err := db.ExecContext(context.Background(), sqliteMigration007); err != nil {
-		return nil, fmt.Errorf("migrate 007: %w", err)
+		return nil, err
 	}
 
 	store := &SQLiteStore{
@@ -141,12 +113,21 @@ func (s *SQLiteStore) SaveTranscription(ctx context.Context, text, language, pro
 		}
 	}
 
-	_, err := s.db.ExecContext(ctx,
-		`INSERT INTO transcriptions (text, language, provider, model, duration_ms, latency_ms, audio_path) VALUES (?, ?, ?, ?, ?, ?, ?)`,
-		text, language, provider, model, durationMs, latencyMs, audioPath,
+	result, err := s.db.ExecContext(ctx,
+		`INSERT INTO transcriptions (text, language, provider, model, duration_ms, latency_ms, audio_path, word_count) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+		text, language, provider, model, durationMs, latencyMs, audioPath, countWords(text),
 	)
 	if err != nil {
 		return fmt.Errorf("insert: %w", err)
+	}
+	id, err := result.LastInsertId()
+	if err != nil {
+		return err
+	}
+	if audioPath != "" {
+		if err := recordAudioAsset(ctx, s.db, "sqlite", "transcription", id, audioPath, durationMs); err != nil {
+			return fmt.Errorf("record audio asset: %w", err)
+		}
 	}
 
 	if s.saveAudio && s.maxStorageMB > 0 {
@@ -162,14 +143,23 @@ func (s *SQLiteStore) SaveTranscription(ctx context.Context, text, language, pro
 }
 
 func (s *SQLiteStore) ListTranscriptions(ctx context.Context, opts ListOpts) ([]Transcription, error) {
-	limit := opts.Limit
-	if limit <= 0 {
-		limit = 20
+	limit, offset := normalizedListPagination(opts)
+
+	query := `SELECT id, text, language, provider, COALESCE(model, ''), COALESCE(duration_ms, 0), latency_ms, COALESCE(audio_path, ''), created_at
+		 FROM transcriptions`
+	args := make([]any, 0, 4)
+	clauses := make([]string, 0, 2)
+	clauses, args = appendSQLiteNormalizedLanguageFilter(clauses, args, opts.Language)
+	if !opts.After.IsZero() {
+		clauses = append(clauses, "created_at > ?")
+		args = append(args, sqliteTime(opts.After))
 	}
+	query += buildWhereClause(clauses) // #nosec G202 -- audited choke-point; see SECURITY INVARIANT in query_filters.go.
+	query += " ORDER BY created_at DESC, id DESC LIMIT ? OFFSET ?"
+	args = append(args, limit, offset)
 
 	rows, err := s.db.QueryContext(ctx,
-		`SELECT id, text, language, provider, COALESCE(model, ''), COALESCE(duration_ms, 0), latency_ms, COALESCE(audio_path, ''), created_at
-		 FROM transcriptions ORDER BY created_at DESC LIMIT ? OFFSET ?`, limit, opts.Offset,
+		query, args...,
 	)
 	if err != nil {
 		return nil, err
@@ -206,25 +196,6 @@ func (s *SQLiteStore) GetTranscription(ctx context.Context, id int64) (*Transcri
 	}
 	t.Audio = buildLocalAudioAsset(t.AudioPath, t.DurationMs)
 	return &t, nil
-}
-
-func normalizeTranscriptionModelHints(hints map[string]string) map[string]string {
-	if len(hints) == 0 {
-		return nil
-	}
-	normalized := make(map[string]string, len(hints))
-	for provider, model := range hints {
-		provider = strings.TrimSpace(strings.ToLower(provider))
-		model = strings.TrimSpace(model)
-		if provider == "" || model == "" {
-			continue
-		}
-		normalized[provider] = model
-	}
-	if len(normalized) == 0 {
-		return nil
-	}
-	return normalized
 }
 
 func (s *SQLiteStore) transcriptionModelHint(provider string) string {
@@ -371,13 +342,22 @@ func (s *SQLiteStore) SaveQuickNote(ctx context.Context, text, language, provide
 	}
 
 	result, err := s.db.ExecContext(ctx,
-		`INSERT INTO quick_notes (text, language, provider, duration_ms, latency_ms, audio_path) VALUES (?, ?, ?, ?, ?, ?)`,
-		text, language, provider, durationMs, latencyMs, audioPath,
+		`INSERT INTO quick_notes (text, language, provider, duration_ms, latency_ms, audio_path, word_count) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+		text, language, provider, durationMs, latencyMs, audioPath, countWords(text),
 	)
 	if err != nil {
 		return 0, fmt.Errorf("insert quick note: %w", err)
 	}
-	return result.LastInsertId()
+	id, err := result.LastInsertId()
+	if err != nil {
+		return 0, err
+	}
+	if audioPath != "" {
+		if err := recordAudioAsset(ctx, s.db, "sqlite", "quick_note", id, audioPath, durationMs); err != nil {
+			return 0, fmt.Errorf("record audio asset: %w", err)
+		}
+	}
+	return id, nil
 }
 
 func (s *SQLiteStore) GetQuickNote(ctx context.Context, id int64) (*QuickNote, error) {
@@ -395,14 +375,23 @@ func (s *SQLiteStore) GetQuickNote(ctx context.Context, id int64) (*QuickNote, e
 }
 
 func (s *SQLiteStore) ListQuickNotes(ctx context.Context, opts ListOpts) ([]QuickNote, error) {
-	limit := opts.Limit
-	if limit <= 0 {
-		limit = 20
+	limit, offset := normalizedListPagination(opts)
+
+	query := `SELECT id, text, language, provider, COALESCE(duration_ms, 0), latency_ms, COALESCE(audio_path, ''), COALESCE(pinned, 0), created_at, updated_at
+		 FROM quick_notes`
+	args := make([]any, 0, 4)
+	clauses := make([]string, 0, 2)
+	clauses, args = appendSQLiteNormalizedLanguageFilter(clauses, args, opts.Language)
+	if !opts.After.IsZero() {
+		clauses = append(clauses, "created_at > ?")
+		args = append(args, sqliteTime(opts.After))
 	}
+	query += buildWhereClause(clauses) // #nosec G202 -- audited choke-point; see SECURITY INVARIANT in query_filters.go.
+	query += " ORDER BY pinned DESC, created_at DESC, id DESC LIMIT ? OFFSET ?"
+	args = append(args, limit, offset)
 
 	rows, err := s.db.QueryContext(ctx,
-		`SELECT id, text, language, provider, COALESCE(duration_ms, 0), latency_ms, COALESCE(audio_path, ''), COALESCE(pinned, 0), created_at, updated_at
-		 FROM quick_notes ORDER BY pinned DESC, created_at DESC, id DESC LIMIT ? OFFSET ?`, limit, opts.Offset,
+		query, args...,
 	)
 	if err != nil {
 		return nil, err
@@ -425,8 +414,8 @@ func (s *SQLiteStore) ListQuickNotes(ctx context.Context, opts ListOpts) ([]Quic
 
 func (s *SQLiteStore) UpdateQuickNote(ctx context.Context, id int64, text string) error {
 	result, err := s.db.ExecContext(ctx,
-		`UPDATE quick_notes SET text = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
-		text, id,
+		`UPDATE quick_notes SET text = ?, word_count = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
+		text, countWords(text), id,
 	)
 	if err != nil {
 		return fmt.Errorf("update quick note: %w", err)
@@ -463,9 +452,9 @@ func (s *SQLiteStore) UpdateQuickNoteCapture(ctx context.Context, id int64, text
 
 	result, err := s.db.ExecContext(ctx,
 		`UPDATE quick_notes
-		 SET text = ?, provider = ?, duration_ms = ?, latency_ms = ?, audio_path = ?, updated_at = CURRENT_TIMESTAMP
+		 SET text = ?, provider = ?, duration_ms = ?, latency_ms = ?, audio_path = ?, word_count = ?, updated_at = CURRENT_TIMESTAMP
 		 WHERE id = ?`,
-		text, provider, durationMs, latencyMs, nextAudioPath, id,
+		text, provider, durationMs, latencyMs, nextAudioPath, countWords(text), id,
 	)
 	if err != nil {
 		return fmt.Errorf("update quick note capture: %w", err)
@@ -476,6 +465,12 @@ func (s *SQLiteStore) UpdateQuickNoteCapture(ctx context.Context, id int64, text
 	}
 	if currentAudioPath != "" && currentAudioPath != nextAudioPath {
 		_ = os.Remove(currentAudioPath)
+		_ = deleteAudioAsset(ctx, s.db, "sqlite", "quick_note", id, currentAudioPath)
+	}
+	if nextAudioPath != "" && currentAudioPath != nextAudioPath {
+		if err := recordAudioAsset(ctx, s.db, "sqlite", "quick_note", id, nextAudioPath, durationMs); err != nil {
+			return fmt.Errorf("record audio asset: %w", err)
+		}
 	}
 	if s.saveAudio && s.maxStorageMB > 0 {
 		//nolint:contextcheck // maintenance cleanup must not be cancelled with the request.
@@ -519,6 +514,7 @@ func (s *SQLiteStore) DeleteQuickNote(ctx context.Context, id int64) error {
 
 	if audioPath != "" {
 		_ = os.Remove(audioPath)
+		_ = deleteAudioAssetsForOwner(ctx, s.db, "sqlite", "quick_note", id)
 	}
 	return nil
 }
@@ -531,46 +527,25 @@ func (s *SQLiteStore) QuickNoteCount(ctx context.Context) (int, error) {
 
 func (s *SQLiteStore) Stats(ctx context.Context) (Stats, error) {
 	var stats Stats
-	if err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM transcriptions`).Scan(&stats.Transcriptions); err != nil {
-		return Stats{}, err
-	}
-	if err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM quick_notes`).Scan(&stats.QuickNotes); err != nil {
-		return Stats{}, err
-	}
-
-	rows, err := s.db.QueryContext(ctx,
-		`SELECT text, COALESCE(duration_ms, 0), COALESCE(latency_ms, 0) FROM (
-			SELECT text, duration_ms, latency_ms FROM transcriptions
-			UNION ALL
-			SELECT text, duration_ms, latency_ms FROM quick_notes
-		)`,
-	)
-	if err != nil {
-		return Stats{}, err
-	}
-	defer rows.Close() //nolint:errcheck // deferred rows close, error not actionable
-
 	var (
 		totalLatency int64
 		latencyCount int64
 	)
-	for rows.Next() {
-		var (
-			text       string
-			durationMs int64
-			latencyMs  int64
-		)
-		if err := rows.Scan(&text, &durationMs, &latencyMs); err != nil {
-			return Stats{}, err
-		}
-		stats.TotalWords += len(strings.Fields(text))
-		stats.TotalAudioDurationMs += durationMs
-		if latencyMs > 0 {
-			totalLatency += latencyMs
-			latencyCount++
-		}
-	}
-	if err := rows.Err(); err != nil {
+	err := s.db.QueryRowContext(ctx, `
+		SELECT
+			(SELECT COUNT(*) FROM transcriptions),
+			(SELECT COUNT(*) FROM quick_notes),
+			COALESCE(SUM(word_count), 0),
+			COALESCE(SUM(duration_ms), 0),
+			COALESCE(SUM(CASE WHEN latency_ms > 0 THEN latency_ms ELSE 0 END), 0),
+			COALESCE(SUM(CASE WHEN latency_ms > 0 THEN 1 ELSE 0 END), 0)
+		FROM (
+			SELECT word_count, duration_ms, latency_ms FROM transcriptions
+			UNION ALL
+			SELECT word_count, duration_ms, latency_ms FROM quick_notes
+		)`,
+	).Scan(&stats.Transcriptions, &stats.QuickNotes, &stats.TotalWords, &stats.TotalAudioDurationMs, &totalLatency, &latencyCount)
+	if err != nil {
 		return Stats{}, err
 	}
 	if stats.TotalAudioDurationMs > 0 {
@@ -596,23 +571,6 @@ func (s *SQLiteStore) SemanticCapabilities(context.Context) SemanticCapabilities
 		Embeddings:   false,
 		VectorSearch: false,
 	}
-}
-
-func buildLocalAudioAsset(path string, durationMs int64) *AudioAsset {
-	if path == "" {
-		return nil
-	}
-
-	asset := &AudioAsset{
-		StorageKind: AudioStorageLocalFile,
-		Path:        path,
-		MimeType:    "audio/wav",
-		DurationMs:  durationMs,
-	}
-	if info, err := os.Stat(path); err == nil {
-		asset.SizeBytes = info.Size()
-	}
-	return asset
 }
 
 func (s *SQLiteStore) enforceStorageLimit() {
@@ -646,10 +604,22 @@ func (s *SQLiteStore) enforceStorageLimit() {
 	defer tx.Rollback() //nolint:errcheck // deferred rollback, error not actionable
 
 	rows, err := tx.QueryContext(context.Background(),
-		`SELECT kind, id, audio_path FROM (
-			SELECT 'transcription' AS kind, id, audio_path, created_at FROM transcriptions WHERE audio_path != ''
+		`SELECT kind, id, path FROM (
+			SELECT owner_kind AS kind, owner_id AS id, path, created_at FROM audio_assets WHERE path != ''
 			UNION ALL
-			SELECT 'quick_note' AS kind, id, audio_path, created_at FROM quick_notes WHERE audio_path != ''
+			SELECT 'transcription' AS kind, t.id, t.audio_path AS path, t.created_at FROM transcriptions t
+			 WHERE t.audio_path != ''
+			   AND NOT EXISTS (
+			       SELECT 1 FROM audio_assets a
+			       WHERE a.owner_kind = 'transcription' AND a.owner_id = t.id AND a.path = t.audio_path
+			   )
+			UNION ALL
+			SELECT 'quick_note' AS kind, q.id, q.audio_path AS path, q.created_at FROM quick_notes q
+			 WHERE q.audio_path != ''
+			   AND NOT EXISTS (
+			       SELECT 1 FROM audio_assets a
+			       WHERE a.owner_kind = 'quick_note' AND a.owner_id = q.id AND a.path = q.audio_path
+			   )
 		) ORDER BY created_at ASC`,
 	)
 	if err != nil {
@@ -686,6 +656,9 @@ func (s *SQLiteStore) enforceStorageLimit() {
 		if _, err := tx.ExecContext(context.Background(), query, id); err != nil {
 			slog.Warn("store: clear audio_path", "kind", kind, "id", id, "err", err)
 		}
+		if err := deleteAudioAsset(context.Background(), tx, "sqlite", kind, id, path); err != nil {
+			slog.Warn("store: delete audio asset", "kind", kind, "id", id, "err", err)
+		}
 	}
 	if err := rows.Err(); err != nil {
 		slog.Warn("store: cleanup rows error", "err", err)
@@ -710,12 +683,24 @@ func (s *SQLiteStore) enforceAudioRetention() {
 	defer tx.Rollback() //nolint:errcheck // deferred rollback, error not actionable
 
 	rows, err := tx.QueryContext(context.Background(),
-		`SELECT kind, id, audio_path FROM (
-			SELECT 'transcription' AS kind, id, audio_path, created_at FROM transcriptions WHERE audio_path != '' AND created_at < ?
+		`SELECT kind, id, path FROM (
+			SELECT owner_kind AS kind, owner_id AS id, path, created_at FROM audio_assets WHERE path != '' AND created_at < ?
 			UNION ALL
-			SELECT 'quick_note' AS kind, id, audio_path, created_at FROM quick_notes WHERE audio_path != '' AND created_at < ?
+			SELECT 'transcription' AS kind, t.id, t.audio_path AS path, t.created_at FROM transcriptions t
+			 WHERE t.audio_path != '' AND t.created_at < ?
+			   AND NOT EXISTS (
+			       SELECT 1 FROM audio_assets a
+			       WHERE a.owner_kind = 'transcription' AND a.owner_id = t.id AND a.path = t.audio_path
+			   )
+			UNION ALL
+			SELECT 'quick_note' AS kind, q.id, q.audio_path AS path, q.created_at FROM quick_notes q
+			 WHERE q.audio_path != '' AND q.created_at < ?
+			   AND NOT EXISTS (
+			       SELECT 1 FROM audio_assets a
+			       WHERE a.owner_kind = 'quick_note' AND a.owner_id = q.id AND a.path = q.audio_path
+			   )
 		)`,
-		cutoff, cutoff,
+		cutoff, cutoff, cutoff,
 	)
 	if err != nil {
 		slog.Warn("store: query retention rows", "err", err)
@@ -744,6 +729,9 @@ func (s *SQLiteStore) enforceAudioRetention() {
 		}
 		if _, err := tx.ExecContext(context.Background(), query, id); err != nil {
 			slog.Warn("store: clear retained audio_path", "kind", kind, "id", id, "err", err)
+		}
+		if err := deleteAudioAsset(context.Background(), tx, "sqlite", kind, id, path); err != nil {
+			slog.Warn("store: delete retained audio asset", "kind", kind, "id", id, "err", err)
 		}
 	}
 	if err := rows.Err(); err != nil {

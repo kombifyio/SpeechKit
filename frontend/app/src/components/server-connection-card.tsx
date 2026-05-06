@@ -21,6 +21,7 @@ import { cn } from "@/lib/utils";
 
 export type ServerConnectionCardProps = {
   className?: string;
+  serverConnection?: ServerConnectionSetting;
   /**
    * Called whenever a successful PATCH returns. Lets the surrounding
    * settings page refresh its own ServerConnectionSetting copy so
@@ -31,11 +32,14 @@ export type ServerConnectionCardProps = {
 
 export function ServerConnectionCard({
   className,
+  serverConnection,
   onSettingsChange,
 }: ServerConnectionCardProps) {
-  const [setting, setSetting] = useState<ServerConnectionSetting | null>(null);
+  const [internalSetting, setInternalSetting] =
+    useState<ServerConnectionSetting | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const setting = serverConnection ?? internalSetting;
 
   // Local form state — kept separate so users can edit without thrashing
   // the persisted server config on every keystroke.
@@ -44,14 +48,12 @@ export function ServerConnectionCard({
   const [timeoutSec, setTimeoutSec] = useState(30);
 
   useEffect(() => {
+    if (serverConnection) return;
     let cancelled = false;
     fetchAPIV1ServerConnection()
       .then((data) => {
         if (cancelled) return;
-        setSetting(data);
-        setUrl(data.url ?? "");
-        setBearerEnv(data.bearerTokenEnv ?? "SPEECHKIT_SERVER_TOKEN");
-        setTimeoutSec(data.requestTimeoutSec || 30);
+        setInternalSetting(data);
       })
       .catch((err) => {
         if (cancelled) return;
@@ -60,7 +62,14 @@ export function ServerConnectionCard({
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [serverConnection]);
+
+  useEffect(() => {
+    if (!setting) return;
+    setUrl(setting.url ?? "");
+    setBearerEnv(setting.bearerTokenEnv ?? "SPEECHKIT_SERVER_TOKEN");
+    setTimeoutSec(setting.requestTimeoutSec || 30);
+  }, [setting]);
 
   const submitPatch = useCallback(
     async (patch: Partial<ServerConnectionSetting>) => {
@@ -74,7 +83,7 @@ export function ServerConnectionCard({
           fallbackToLocal: patch.fallbackToLocal,
           requestTimeoutSec: patch.requestTimeoutSec,
         });
-        setSetting(next);
+        setInternalSetting(next);
         if (onSettingsChange) onSettingsChange(next);
       } catch (err) {
         setError(String((err as Error)?.message ?? err));

@@ -23,6 +23,11 @@ vi.mock('@/lib/speechkit', () => ({
     agentHotkey: 'ctrl+shift+j',
     agentMode: 'assist',
     activeMode: 'none',
+    modeEnabled: {
+      dictate: true,
+      assist: true,
+      voice_agent: true,
+    },
     availableModes: {
       dictate: true,
       assist: true,
@@ -60,6 +65,11 @@ vi.mock('@/lib/speechkit', () => ({
     agentHotkey: 'ctrl+shift+j',
     agentMode: 'assist',
     activeMode: 'none',
+    modeEnabled: {
+      dictate: true,
+      assist: true,
+      voice_agent: true,
+    },
     availableModes: {
       dictate: true,
       assist: true,
@@ -110,6 +120,7 @@ describe('useSettings', () => {
     const showToast = vi.fn()
     const { result } = renderHook(() => useSettings(showToast))
 
+    await waitFor(() => expect(result.current.loaded).toBe(true))
     act(() => result.current.setTab('stt'))
     expect(result.current.tab).toBe('stt')
   })

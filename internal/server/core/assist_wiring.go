@@ -111,8 +111,8 @@ func localLLMHealthURL(baseURL string) string {
 
 // buildAssistPipeline assembles the Assist mode pipeline from the shared AI
 // deps held on App. Any degraded component (no Genkit, no TTS, no
-// shortcuts) still yields a viable pipeline — the Framework's Assist code
-// gracefully degrades from LLM → shortcuts → action-only, and Assist
+// shortcuts) still yields a viable pipeline â€” the Framework's Assist code
+// gracefully degrades from LLM â†’ shortcuts â†’ action-only, and Assist
 // responses stay functional for every valid caller.
 func buildAssistPipeline(ctx context.Context, cfg *config.Config, app *App) (*assist.Pipeline, []string, error) {
 	notes := ensureSharedAIDeps(ctx, app)
@@ -186,7 +186,7 @@ func buildAssistUtilityRegistry(cfg *config.Config) *assist.UtilityRegistry {
 
 // agentFlowFromRuntime mirrors assistFlowFromRuntime for the agent flow that
 // the Cascaded Voice Agent provider uses. Returns nil when no agent models
-// are available — the cascaded provider rejects Connect in that state.
+// are available â€” the cascaded provider rejects Connect in that state.
 func agentFlowFromRuntime(rt *ai.Runtime) *core.Flow[flows.AgentInput, flows.AgentOutput, struct{}] {
 	if rt == nil {
 		return nil
@@ -199,7 +199,7 @@ func agentFlowFromRuntime(rt *ai.Runtime) *core.Flow[flows.AgentInput, flows.Age
 }
 
 // buildGenkitRuntime maps config.Config into ai.Config and initializes Genkit.
-// Only the fields the Server-Target actually uses are mapped — Local-LLM
+// Only the fields the Server-Target actually uses are mapped â€” Local-LLM
 // runtime detection and model-profile-selection logic are Device-Target
 // concerns that the server deliberately does not replicate.
 func buildGenkitRuntime(ctx context.Context, cfg *config.Config) (*ai.Runtime, []string, error) {
@@ -267,7 +267,7 @@ func buildGenkitRuntime(ctx context.Context, cfg *config.Config) (*ai.Runtime, [
 }
 
 // assistFlowFromRuntime defines the Assist flow only when at least one assist
-// model is available. Returning nil is a valid state — the pipeline still
+// model is available. Returning nil is a valid state â€” the pipeline still
 // handles codeword shortcuts without an LLM.
 func assistFlowFromRuntime(rt *ai.Runtime) *core.Flow[flows.AssistInput, flows.AssistOutput, struct{}] {
 	if rt == nil {

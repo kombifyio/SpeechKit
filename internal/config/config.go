@@ -49,7 +49,7 @@ const (
 	DefaultVoiceAgentPrimaryProfileID = "realtime.builtin.pipeline"
 
 	// defaultGeminiNativeAudioModel is the primary real-time audio-to-audio
-	// model. As of April 2026 this is Gemini 3.1 Flash Live (preview) —
+	// model. As of April 2026 this is Gemini 3.1 Flash Live (preview) â€”
 	// Google's latest native-audio model per
 	// https://ai.google.dev/gemini-api/docs/models/gemini-3.1-flash-live-preview.
 	//
@@ -103,6 +103,7 @@ type Config struct {
 // cmd/speechkit-server; the desktop app never reads these values.
 type ServerConfig struct {
 	ListenAddr            string   `toml:"listen_addr"`          // e.g. ":8080"
+	PublicURL             string   `toml:"public_url"`           // external API base URL, e.g. https://speechkit.example.com/api
 	Modes                 []string `toml:"modes"`                // subset of ["dictation","assist","voiceagent"]; empty = all
 	AuthMode              string   `toml:"auth_mode"`            // "none" | "bearer" | "edge_hmac" | "bearer_or_edge"
 	BearerTokenEnv        string   `toml:"bearer_token_env"`     // env var name holding the bearer token
@@ -210,7 +211,7 @@ type GeneralConfig struct {
 	VoiceAgentEnabled        bool   `toml:"voice_agent_enabled"`
 	AutoStartOnLaunch        bool   `toml:"auto_start_on_launch"`
 	AgentHotkey              string `toml:"agent_hotkey"`
-	AgentMode                string `toml:"agent_mode"`  // "assist" or "voice_agent" — determines what agent_hotkey triggers
+	AgentMode                string `toml:"agent_mode"`  // "assist" or "voice_agent" â€” determines what agent_hotkey triggers
 	ActiveMode               string `toml:"active_mode"` // legacy compat
 	HotkeyMode               string `toml:"hotkey_mode"` // legacy compat for single behavior setting
 	AutoStopSilenceMs        int    `toml:"auto_stop_silence_ms"`
@@ -290,7 +291,7 @@ type ServerConnectionConfig struct {
 
 	// BearerTokenEnv names the env var that holds the bearer token sent in
 	// the Authorization header. Defaults to SPEECHKIT_SERVER_TOKEN. The
-	// value is never read from the TOML file itself — only the env var name
+	// value is never read from the TOML file itself â€” only the env var name
 	// is configured here.
 	BearerTokenEnv string `toml:"bearer_token_env"`
 
@@ -534,11 +535,11 @@ type VoiceAgentConfig struct {
 	Enabled bool `toml:"enabled"`
 	// Provider selects the backend that drives a Voice Agent session.
 	// Supported values:
-	//   ""          (default) — same as "gemini"
-	//   "gemini"    — Google Gemini Live (cloud, GOOGLE_AI_API_KEY required)
-	//   "cascaded"  — self-hosted whisper.cpp → Genkit agent LLM → TTS pipeline
+	//   ""          (default) â€” same as "gemini"
+	//   "gemini"    â€” Google Gemini Live (cloud, GOOGLE_AI_API_KEY required)
+	//   "cascaded"  â€” self-hosted whisper.cpp â†’ Genkit agent LLM â†’ TTS pipeline
 	//                 (CPU-capable; no external realtime dependency)
-	//   "moshi"     — self-hosted Kyutai Moshi Rust server (GPU required, M9b)
+	//   "moshi"     â€” self-hosted Kyutai Moshi Rust server (GPU required, M9b)
 	//
 	// The Server-Target reads this field via cmd/speechkit-server; the Device-
 	// Target currently always uses "gemini" and ignores it.
@@ -646,134 +647,6 @@ func Load(path string) (*Config, error) {
 	return cfg, nil
 }
 
-func backfillLegacyModeHotkeys(meta toml.MetaData, cfg *Config) {
-	if cfg == nil {
-		return
-	}
-
-	if strings.TrimSpace(cfg.General.DictateHotkey) == "" {
-		cfg.General.DictateHotkey = strings.TrimSpace(cfg.General.Hotkey)
-	}
-	if strings.TrimSpace(cfg.General.DictateHotkey) == "" {
-		cfg.General.DictateHotkey = "ctrl+win"
-	}
-
-	legacyAgentHotkey := strings.TrimSpace(cfg.General.AgentHotkey)
-	legacyAgentMode := strings.TrimSpace(cfg.General.AgentMode)
-	if legacyAgentMode != "voice_agent" {
-		legacyAgentMode = "assist"
-	}
-
-	if !meta.IsDefined("general", "assist_hotkey") && strings.TrimSpace(cfg.General.AssistHotkey) == "" && legacyAgentMode == "assist" {
-		cfg.General.AssistHotkey = legacyAgentHotkey
-	}
-	if !meta.IsDefined("general", "voice_agent_hotkey") && strings.TrimSpace(cfg.General.VoiceAgentHotkey) == "" && legacyAgentMode == "voice_agent" {
-		cfg.General.VoiceAgentHotkey = legacyAgentHotkey
-	}
-
-	cfg.General.AssistHotkey = strings.TrimSpace(cfg.General.AssistHotkey)
-	cfg.General.VoiceAgentHotkey = strings.TrimSpace(cfg.General.VoiceAgentHotkey)
-	if cfg.General.AgentHotkey == "" {
-		cfg.General.AgentHotkey = cfg.LegacyAgentHotkey()
-	}
-	if cfg.General.AgentMode == "" {
-		cfg.General.AgentMode = legacyAgentMode
-	}
-	if !meta.IsDefined("general", "dictate_enabled") {
-		cfg.General.DictateEnabled = strings.TrimSpace(cfg.General.DictateHotkey) != ""
-	}
-	if !meta.IsDefined("general", "assist_enabled") {
-		cfg.General.AssistEnabled = strings.TrimSpace(cfg.General.AssistHotkey) != ""
-	}
-	if !meta.IsDefined("general", "voice_agent_enabled") {
-		cfg.General.VoiceAgentEnabled = strings.TrimSpace(cfg.General.VoiceAgentHotkey) != ""
-	}
-
-	legacyHotkeyMode := NormalizeHotkeyBehavior(cfg.General.HotkeyMode, HotkeyBehaviorPushToTalk)
-	legacyHotkeyModeDefined := meta.IsDefined("general", "hotkey_mode")
-	if legacyHotkeyModeDefined && !meta.IsDefined("general", "dictate_hotkey_behavior") {
-		cfg.General.DictateHotkeyBehavior = legacyHotkeyMode
-	}
-	if legacyHotkeyModeDefined && !meta.IsDefined("general", "assist_hotkey_behavior") {
-		cfg.General.AssistHotkeyBehavior = legacyHotkeyMode
-	}
-	if legacyHotkeyModeDefined && !meta.IsDefined("general", "voice_agent_hotkey_behavior") {
-		cfg.General.VoiceAgentHotkeyBehavior = legacyHotkeyMode
-	}
-
-	cfg.General.DictateHotkeyBehavior = NormalizeHotkeyBehavior(cfg.General.DictateHotkeyBehavior, HotkeyBehaviorPushToTalk)
-	cfg.General.AssistHotkeyBehavior = NormalizeHotkeyBehavior(cfg.General.AssistHotkeyBehavior, HotkeyBehaviorPushToTalk)
-	cfg.General.VoiceAgentHotkeyBehavior = NormalizeHotkeyBehavior(cfg.General.VoiceAgentHotkeyBehavior, HotkeyBehaviorPushToTalk)
-	cfg.General.HotkeyMode = NormalizeHotkeyBehavior(cfg.General.HotkeyMode, cfg.General.DictateHotkeyBehavior)
-}
-
-func backfillStartupBehavior(meta toml.MetaData, cfg *Config) {
-	if cfg == nil {
-		return
-	}
-
-	switch {
-	case meta.IsDefined("general", "auto_start_on_launch"):
-		cfg.VoiceAgent.AutoStartOnLaunch = cfg.General.AutoStartOnLaunch
-	case meta.IsDefined("voice_agent", "auto_start_on_launch"):
-		cfg.General.AutoStartOnLaunch = cfg.VoiceAgent.AutoStartOnLaunch
-	default:
-		cfg.VoiceAgent.AutoStartOnLaunch = cfg.General.AutoStartOnLaunch
-	}
-}
-
-func backfillVoiceAgentPromptLayers(meta toml.MetaData, cfg *Config) {
-	if cfg == nil {
-		return
-	}
-
-	frameworkPrompt := strings.TrimSpace(cfg.VoiceAgent.FrameworkPrompt)
-	legacyInstruction := strings.TrimSpace(cfg.VoiceAgent.Instruction)
-
-	if frameworkPrompt == "" && !meta.IsDefined("voice_agent", "framework_prompt") {
-		frameworkPrompt = legacyInstruction
-	}
-	if legacyInstruction == "" && frameworkPrompt != "" {
-		legacyInstruction = frameworkPrompt
-	}
-
-	cfg.VoiceAgent.FrameworkPrompt = frameworkPrompt
-	cfg.VoiceAgent.RefinementPrompt = strings.TrimSpace(cfg.VoiceAgent.RefinementPrompt)
-	cfg.VoiceAgent.Instruction = legacyInstruction
-}
-
-func backfillVoiceAgentSessionSummary(meta toml.MetaData, cfg *Config) {
-	if cfg == nil {
-		return
-	}
-	if !meta.IsDefined("voice_agent", "enable_session_summary") {
-		cfg.VoiceAgent.EnableSessionSummary = true
-	}
-}
-
-func backfillLegacyAssistModels(meta toml.MetaData, cfg *Config) {
-	if cfg == nil {
-		return
-	}
-
-	backfillLegacyAssistField(!meta.IsDefined("huggingface", "assist_model"), meta.IsDefined("huggingface", "agent_model"), &cfg.HuggingFace.AssistModel, cfg.HuggingFace.AgentModel)
-	backfillLegacyAssistField(!meta.IsDefined("providers", "openai", "assist_model"), meta.IsDefined("providers", "openai", "agent_model"), &cfg.Providers.OpenAI.AssistModel, cfg.Providers.OpenAI.AgentModel)
-	backfillLegacyAssistField(!meta.IsDefined("providers", "groq", "assist_model"), meta.IsDefined("providers", "groq", "agent_model"), &cfg.Providers.Groq.AssistModel, cfg.Providers.Groq.AgentModel)
-	backfillLegacyAssistField(!meta.IsDefined("providers", "google", "assist_model"), meta.IsDefined("providers", "google", "agent_model"), &cfg.Providers.Google.AssistModel, cfg.Providers.Google.AgentModel)
-	backfillLegacyAssistField(!meta.IsDefined("providers", "ollama", "assist_model"), meta.IsDefined("providers", "ollama", "agent_model"), &cfg.Providers.Ollama.AssistModel, cfg.Providers.Ollama.AgentModel)
-	backfillLegacyAssistField(!meta.IsDefined("providers", "openrouter", "assist_model"), meta.IsDefined("providers", "openrouter", "agent_model"), &cfg.Providers.OpenRouter.AssistModel, cfg.Providers.OpenRouter.AgentModel)
-	backfillLegacyAssistField(!meta.IsDefined("local_llm", "assist_model"), meta.IsDefined("local_llm", "agent_model"), &cfg.LocalLLM.AssistModel, cfg.LocalLLM.AgentModel)
-}
-
-func backfillLegacyAssistField(assistMissing, legacyAgentDefined bool, assistValue *string, legacyAgentValue string) {
-	if !assistMissing || !legacyAgentDefined || assistValue == nil {
-		return
-	}
-	if legacyAgentValue = strings.TrimSpace(legacyAgentValue); legacyAgentValue != "" {
-		*assistValue = legacyAgentValue
-	}
-}
-
 func Save(path string, cfg *Config) error {
 	if path == "" {
 		path = defaultConfigPath()
@@ -793,230 +666,6 @@ func Save(path string, cfg *Config) error {
 	}
 
 	return nil
-}
-
-func defaults() *Config {
-	cfg := &Config{
-		General: GeneralConfig{
-			Language:                 "de",
-			Hotkey:                   "ctrl+win",
-			DictateHotkey:            "ctrl+win",
-			AssistHotkey:             "win+alt",
-			VoiceAgentHotkey:         "ctrl+shift",
-			DictateHotkeyBehavior:    HotkeyBehaviorPushToTalk,
-			AssistHotkeyBehavior:     HotkeyBehaviorPushToTalk,
-			VoiceAgentHotkeyBehavior: HotkeyBehaviorPushToTalk,
-			DictateEnabled:           true,
-			AssistEnabled:            true,
-			VoiceAgentEnabled:        true,
-			AutoStartOnLaunch:        false,
-			AgentHotkey:              "win+alt",
-			AgentMode:                "assist",
-			ActiveMode:               "none",
-			HotkeyMode:               HotkeyBehaviorPushToTalk,
-			AutoStopSilenceMs:        500,
-			FastModeSilenceMs:        1500,
-		},
-		Audio: AudioConfig{
-			Backend:     "windows-wasapi-malgo",
-			SampleRate:  16000,
-			Channels:    1,
-			FrameSizeMs: 32,
-			LatencyHint: "interactive",
-		},
-		Vocabulary: VocabularyConfig{
-			Dictionary: "",
-		},
-		ModelSelection: BuiltInPrimaryModelSelectionDefaults(),
-		ServerConnection: ServerConnectionConfig{
-			Enabled:           false,
-			URL:               "",
-			BearerTokenEnv:    "SPEECHKIT_SERVER_TOKEN", //nolint:gosec // env var name, not a credential
-			FallbackToLocal:   true,
-			RequestTimeoutSec: 30,
-		},
-		UI: UIConfig{
-			OverlayEnabled:          true,
-			OverlayPosition:         "bottom",
-			OverlayMovable:          false,
-			OverlayFreeX:            0,
-			OverlayFreeY:            0,
-			OverlayMonitorPositions: map[string]OverlayFreePosition{},
-			Visualizer:              "pill",
-			Design:                  "default",
-			AssistOverlayMode:       OverlayFeedbackModeSmallFeedback,
-			VoiceAgentOverlayMode:   OverlayFeedbackModeSmallFeedback,
-		},
-		Local: LocalConfig{
-			Enabled: false,
-			Model:   DefaultLocalSTTModel,
-			Port:    8080,
-			GPU:     "auto",
-		},
-		LocalLLM: LocalLLMConfig{
-			Enabled:      false,
-			BaseURL:      DefaultLocalLLMBaseURL,
-			Model:        DefaultLocalLLMModel,
-			Port:         8082,
-			GPU:          "auto",
-			UtilityModel: DefaultLocalLLMModel,
-			AssistModel:  DefaultLocalLLMModel,
-			AgentModel:   DefaultLocalLLMModel,
-		},
-		VPS: VPSConfig{
-			Enabled:   false,
-			APIKeyEnv: "VPS_API_KEY",
-		},
-		HuggingFace: HuggingFaceConfig{
-			Enabled:      ManagedHuggingFaceAvailableInBuild(),
-			Model:        "openai/whisper-large-v3",
-			UtilityModel: "",
-			AssistModel:  "",
-			AgentModel:   "",
-			TokenEnv:     "HF_TOKEN", //nolint:gosec // not a credential, field name triggers false positive
-		},
-		Routing: RoutingConfig{
-			Strategy:                "cloud-only",
-			PreferLocalUnderSeconds: 10,
-			ParallelCloud:           false,
-			ReplaceOnBetter:         false,
-		},
-		Feedback: FeedbackConfig{
-			SaveAudio:          true,
-			AudioRetentionDays: 7,
-			MaxAudioStorageMB:  500,
-		},
-		Store: StoreConfig{
-			Backend:            "sqlite",
-			SaveAudio:          true,
-			AudioRetentionDays: 7,
-			MaxAudioStorageMB:  500,
-		},
-		TTS: TTSConfig{
-			Enabled:  true,
-			Strategy: "cloud-first",
-			Speed:    1.0,
-			Format:   "mp3",
-			OpenAI: TTSOpenAI{
-				Enabled: true,
-				Model:   "tts-1",
-				Voice:   "nova",
-			},
-			Google: TTSGoogle{
-				Enabled: false,
-				Voice:   "en-US-Neural2-J",
-			},
-			HuggingFace: TTSHuggingFace{
-				Enabled: false,
-				Model:   "parler-tts/parler-tts-mini-multilingual-v1.1",
-			},
-			Local: TTSLocal{
-				Enabled: false,
-				Model:   "hexgrad/Kokoro-82M",
-				Port:    8081,
-			},
-		},
-		VoiceAgent: VoiceAgentConfig{
-			Enabled: true,
-			Model:   defaultGeminiNativeAudioModel,
-			// Same-provider Gemini fallback keeps Voice Agent up when the 3.1
-			// preview endpoint has transient issues. Cross-provider fallbacks
-			// (OpenAI gpt-realtime-mini) can be configured explicitly per
-			// deployment via the separate model_selection section.
-			FallbackModel:                   fallbackGeminiNativeAudioModel,
-			Voice:                           "Kore",
-			AgentProfileID:                  voiceagentprofile.DefaultID,
-			AgentSequenceID:                 "",
-			FrameworkPrompt:                 "",
-			RefinementPrompt:                "",
-			Instruction:                     "",
-			AutoStartOnLaunch:               false,
-			CloseBehavior:                   VoiceAgentCloseBehaviorContinue,
-			ReminderAfterIdleSec:            300,
-			DeactivateAfterIdleSec:          900,
-			PipelineFallback:                false,
-			ShowPrompter:                    true,
-			EnableSessionSummary:            true,
-			EnableInputTranscript:           true,
-			EnableOutputTranscript:          true,
-			EnableAffectiveDialog:           false,
-			ThinkingEnabled:                 false,
-			IncludeThoughts:                 false,
-			ThinkingBudget:                  0,
-			ThinkingLevel:                   "medium",
-			ContextCompressionEnabled:       true,
-			ContextCompressionTriggerTokens: 12000,
-			ContextCompressionTargetTokens:  6000,
-			AutomaticActivityDetection:      true,
-			ActivityHandling:                "start_of_activity_interrupts",
-			TurnCoverage:                    "turn_includes_only_activity",
-			VADStartSensitivity:             "low",
-			VADEndSensitivity:               "low",
-			VADPrefixPaddingMs:              100,
-			VADSilenceDurationMs:            700,
-		},
-		Providers: ProvidersConfig{
-			OpenAI: OpenAIProviderConfig{
-				APIKeyEnv:     "OPENAI_API_KEY", //nolint:gosec // not a credential, field name triggers false positive
-				STTModel:      "whisper-1",      // Fallback only; HuggingFace is primary STT
-				UtilityModel:  "gpt-5.4-mini-2026-03-17",
-				AssistModel:   "gpt-5.4-2026-03-05",
-				AgentModel:    "gpt-5.4-2026-03-05",
-				TTSModel:      "tts-1",
-				TTSVoice:      "nova",
-				RealtimeModel: "gpt-realtime-mini",
-			},
-			Groq: GroqProviderConfig{
-				APIKeyEnv:    "GROQ_API_KEY", //nolint:gosec // not a credential, field name triggers false positive
-				STTModel:     "whisper-large-v3-turbo",
-				UtilityModel: "llama-3.1-8b-instant",
-				AssistModel:  "llama-3.3-70b-versatile",
-				AgentModel:   "llama-3.3-70b-versatile",
-			},
-			Google: GoogleProviderConfig{
-				APIKeyEnv:    "GOOGLE_AI_API_KEY", //nolint:gosec // not a credential, field name triggers false positive
-				STTModel:     "chirp_3",
-				UtilityModel: "gemini-2.5-flash-lite",
-				AssistModel:  "gemini-2.5-flash",
-				AgentModel:   "gemini-2.5-pro",
-			},
-			Ollama: OllamaProviderConfig{
-				BaseURL:      "http://localhost:11434",
-				UtilityModel: "gemma4:e4b",
-				AssistModel:  "gemma4:e4b",
-				AgentModel:   "gemma4:e4b",
-			},
-			OpenRouter: OpenRouterProviderConfig{
-				APIKeyEnv:    "OPENROUTER_API_KEY", //nolint:gosec // not a credential, field name triggers false positive
-				STTModel:     "openai/whisper-1",
-				UtilityModel: "meta-llama/llama-3.1-8b-instruct",
-				AssistModel:  "google/gemini-2.5-flash",
-				AgentModel:   "google/gemini-2.5-flash",
-			},
-		},
-		Server: ServerConfig{
-			ListenAddr:               ":8080",
-			Modes:                    nil, // nil = all three modes enabled
-			AuthMode:                 "none",
-			BearerTokenEnv:           "SPEECHKIT_SERVER_TOKEN", //nolint:gosec // env var name, not a credential
-			EdgeAuthSecretEnv:        "EDGE_AUTH_SECRET",       //nolint:gosec // env var name, not a credential
-			CORSAllowedOrigins:       []string{},
-			RateLimitRPS:             10,
-			RateLimitBurst:           20,
-			MaxUploadMB:              25,
-			MaxVoiceAgentSessions:    100,
-			MaxSessionsPerUser:       3,
-			TicketTTLSec:             30,
-			VoiceAgentIdleTimeoutSec: 900,
-			WhisperBinary:            "/usr/local/bin/whisper-server",
-			WhisperPort:              8180,
-			ModelDir:                 "/var/lib/speechkit/models",
-			LogFormat:                "json",
-			LogLevel:                 "info",
-		},
-	}
-	ApplyManagedDevServerDefaults(cfg)
-	return cfg
 }
 
 func defaultConfigPath() string {
@@ -1283,55 +932,4 @@ func defaultManagedPrivateFeatureForModule() bool {
 
 func privateModulePath() string {
 	return "github.com/" + "Soulcreek" + "/kombify-SpeechKit"
-}
-
-func NormalizeHotkeyBehavior(value, fallback string) string {
-	switch strings.ToLower(strings.TrimSpace(value)) {
-	case HotkeyBehaviorPushToTalk:
-		return HotkeyBehaviorPushToTalk
-	case HotkeyBehaviorToggle:
-		return HotkeyBehaviorToggle
-	default:
-		if strings.TrimSpace(fallback) == "" {
-			return HotkeyBehaviorPushToTalk
-		}
-		if strings.EqualFold(strings.TrimSpace(fallback), value) {
-			return HotkeyBehaviorPushToTalk
-		}
-		return NormalizeHotkeyBehavior(fallback, HotkeyBehaviorPushToTalk)
-	}
-}
-
-func NormalizeVoiceAgentCloseBehavior(value, fallback string) string {
-	switch strings.ToLower(strings.TrimSpace(value)) {
-	case VoiceAgentCloseBehaviorContinue:
-		return VoiceAgentCloseBehaviorContinue
-	case VoiceAgentCloseBehaviorNewChat:
-		return VoiceAgentCloseBehaviorNewChat
-	default:
-		if strings.TrimSpace(fallback) == "" {
-			return VoiceAgentCloseBehaviorContinue
-		}
-		if strings.EqualFold(strings.TrimSpace(fallback), value) {
-			return VoiceAgentCloseBehaviorContinue
-		}
-		return NormalizeVoiceAgentCloseBehavior(fallback, VoiceAgentCloseBehaviorContinue)
-	}
-}
-
-func NormalizeOverlayFeedbackMode(value, fallback string) string {
-	switch strings.ToLower(strings.TrimSpace(value)) {
-	case OverlayFeedbackModeBigProductivity:
-		return OverlayFeedbackModeBigProductivity
-	case OverlayFeedbackModeSmallFeedback:
-		return OverlayFeedbackModeSmallFeedback
-	default:
-		if strings.TrimSpace(fallback) == "" {
-			return OverlayFeedbackModeSmallFeedback
-		}
-		if strings.EqualFold(strings.TrimSpace(fallback), value) {
-			return OverlayFeedbackModeSmallFeedback
-		}
-		return NormalizeOverlayFeedbackMode(fallback, OverlayFeedbackModeSmallFeedback)
-	}
 }

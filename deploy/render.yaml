@@ -18,7 +18,7 @@ services:
     repo: https://github.com/kombifyio/SpeechKit        # rewrite to KombiverseLabs/kombify-SpeechKit for private deploys
     branch: main
     dockerfilePath: ./deploy/docker/Dockerfile.server
-    # Frankfurt keeps inter-service latency low for the kombify-AI callers
+    # Frankfurt keeps inter-service latency low for private product callers
     # already hosted on Render Frankfurt.
     region: frankfurt
     plan: standard                                      # 2 CPU / 4 GB — room for whisper.cpp subprocess + Genkit

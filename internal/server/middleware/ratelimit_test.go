@@ -3,10 +3,12 @@
 package middleware
 
 import (
+	"container/list"
 	"context"
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 )
 
 func TestRateLimit_DisabledWhenZeroOpts(t *testing.T) {
@@ -143,4 +145,113 @@ func contains(haystack, needle string) bool {
 		}
 	}
 	return false
+}
+
+func TestBucketStore_EvictsOldestWhenCapHit(t *testing.T) {
+	const cap = 4
+	store := &bucketStore{
+		perSecond:  100, // generous so token math doesn't reject
+		burst:      10,
+		maxBuckets: cap,
+		m:          map[string]*list.Element{},
+		lru:        list.New(),
+	}
+
+	// Fill to cap.
+	for _, key := range []string{"u:a", "u:b", "u:c", "u:d"} {
+		if !store.allow(key) {
+			t.Fatalf("first request for %s should be allowed", key)
+		}
+	}
+	if got := store.size(); got != cap {
+		t.Fatalf("size after fill = %d, want %d", got, cap)
+	}
+
+	// Touch "u:b" so it becomes most-recent. "u:a" is now LRU.
+	if !store.allow("u:b") {
+		t.Fatalf("repeat request for u:b should be allowed")
+	}
+
+	// Insert a new key. It should evict "u:a" (oldest), not "u:b".
+	if !store.allow("u:e") {
+		t.Fatalf("new key u:e should be allowed")
+	}
+	if got := store.size(); got != cap {
+		t.Fatalf("size after eviction = %d, want %d", got, cap)
+	}
+	store.mu.Lock()
+	_, hasA := store.m["u:a"]
+	_, hasB := store.m["u:b"]
+	_, hasE := store.m["u:e"]
+	store.mu.Unlock()
+	if hasA {
+		t.Fatalf("u:a should have been evicted as LRU")
+	}
+	if !hasB {
+		t.Fatalf("u:b should still be present (recently touched)")
+	}
+	if !hasE {
+		t.Fatalf("u:e should be present (just inserted)")
+	}
+}
+
+func TestBucketStore_SweepStaleEvictsOldEntries(t *testing.T) {
+	store := &bucketStore{
+		perSecond:  10,
+		burst:      5,
+		maxBuckets: 100,
+		m:          map[string]*list.Element{},
+		lru:        list.New(),
+	}
+
+	now := time.Now()
+	// Manually insert entries in LRU order (front=most-recent, back=oldest).
+	// sweepStale walks from back and stops at the first non-stale entry, so
+	// the test must respect the production invariant that LRU order matches
+	// timestamp order.
+	insert := func(key string, last time.Time) {
+		entry := &bucketEntry{key: key, bucket: &bucket{tokens: 4, last: last}}
+		store.m[key] = store.lru.PushFront(entry)
+	}
+	insert("stale-2", now.Add(-3*time.Hour)) // pushed first → ends at back
+	insert("stale-1", now.Add(-2*time.Hour))
+	insert("fresh", now) // pushed last → at front
+
+	removed := store.sweepStale(now, 1*time.Hour)
+	if removed != 2 {
+		t.Fatalf("sweepStale removed %d entries, want 2", removed)
+	}
+	if got := store.size(); got != 1 {
+		t.Fatalf("size after sweep = %d, want 1", got)
+	}
+	store.mu.Lock()
+	_, hasFresh := store.m["fresh"]
+	store.mu.Unlock()
+	if !hasFresh {
+		t.Fatalf("fresh entry should survive sweep")
+	}
+}
+
+func TestRateLimit_SweeperContextCancellationStopsGoroutine(t *testing.T) {
+	// Verify the sweeper goroutine returns when ctx is cancelled. We can't
+	// directly assert goroutine count, but we can verify ctx-cancel is
+	// honoured by setting an aggressive interval and giving it a tick.
+	ctx, cancel := context.WithCancel(context.Background())
+	mw := RateLimit(RateLimitOptions{
+		RequestsPerSecond: 10,
+		Burst:             2,
+		SweepInterval:     50 * time.Millisecond,
+		SweepMaxAge:       10 * time.Millisecond,
+		Context:           ctx,
+	})
+	if mw == nil {
+		t.Fatalf("RateLimit returned nil middleware")
+	}
+	// Cancel immediately — the sweeper goroutine must exit on next tick or
+	// next select cycle.
+	cancel()
+	// Sleep to let the goroutine observe the cancellation. If it leaks,
+	// goleak (not configured here) would flag it; this test is mainly a
+	// smoke check that the context plumbing compiles and is wired.
+	time.Sleep(100 * time.Millisecond)
 }

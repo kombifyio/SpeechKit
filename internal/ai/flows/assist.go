@@ -92,6 +92,7 @@ Your response will be spoken aloud via TTS, so:
 
 	if input.Selection != "" {
 		prompt += fmt.Sprintf("\n\nThe user has this text selected:\n%s", input.Selection)
+		prompt += "\n\nWhen the user asks you to summarize, rewrite, improve, shorten, polish, translate, or turn the selected text into an email, work on the selected text directly. Return the finished text, not an explanation of what you changed. For email requests, produce a usable email structure with subject, greeting, body, and close when appropriate. Selection work may use practical formatting when it makes the result easier to copy."
 	}
 	if input.Context != "" {
 		prompt += fmt.Sprintf("\n\nAdditional context:\n%s", input.Context)

@@ -18,7 +18,7 @@ const (
 )
 
 // Store is the central storage abstraction.
-// Each backend (SQLite, PostgreSQL, kombify Cloud) implements this interface.
+// Each backend, such as SQLite or future host-provided backends, implements this interface.
 type Store interface {
 	// Transcriptions
 	SaveTranscription(ctx context.Context, text, language, provider, model string, durationMs, latencyMs int64, audioData []byte) error

@@ -118,6 +118,15 @@ func TestControlPlaneGuardAllowsSessionHeaderWhenConfigured(t *testing.T) {
 	}
 }
 
+func TestHasValidControlPlaneTokenHeaderRejectsEmptyExpectedToken(t *testing.T) {
+	req := httptest.NewRequest(http.MethodPost, "/auth/logout", http.NoBody)
+	req.Header.Set(controlPlaneTokenHeaderName, "")
+
+	if hasValidControlPlaneTokenHeader(req, "") {
+		t.Fatal("empty expected control-plane token was accepted")
+	}
+}
+
 func TestControlPlaneGuardSetsSessionCookieOnReadRequest(t *testing.T) {
 	handler := newControlPlaneGuardTestHandlerWithState(t, &appState{controlPlaneToken: "test-token"})
 	req := httptest.NewRequest(http.MethodGet, "/app/version", http.NoBody)

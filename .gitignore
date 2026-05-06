@@ -39,7 +39,10 @@ config.toml
 
 # Local tooling state
 .cache/
-.agents/
+.agents/*
+!.agents/skills/
+!.agents/skills/**
+.stitch/
 .claude/settings.local.json
 .claude/scheduled_tasks.lock
 .codex-tmp/
@@ -101,3 +104,6 @@ scripts/whisper-server/whisper-server
 
 # Android — local development only, not tracked in main repo
 /android/
+
+# Embedded frontend build output (regenerated on every frontend build)
+internal/frontendassets/dist/

@@ -17,7 +17,7 @@ import (
 	"github.com/kombifyio/SpeechKit/internal/voiceeval"
 )
 
-// ── fakes ───────────────────────────────────────────────────────────────────
+// â”€â”€ fakes â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 // fakeProvider is a controllable LiveProviderAdapter for adapter tests.
 // Messages enqueued via Push are returned from Receive in order; client
@@ -128,7 +128,7 @@ func (r *fakeResolver) ResolveStep(_ StartFrame, stepIndex int) (LiveConfigFrame
 	return LiveConfigFrame{}, errors.New("missing step")
 }
 
-// ── test infrastructure ─────────────────────────────────────────────────────
+// â”€â”€ test infrastructure â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 // adapterTestEnv pairs a running httptest.Server hosting a single Adapter
 // run() with a connected client websocket. Cleans up on test completion.
@@ -252,7 +252,7 @@ func readEnvelope(t *testing.T, conn *websocket.Conn) (string, []byte) {
 	return env.Type, data
 }
 
-// ── tests ───────────────────────────────────────────────────────────────────
+// â”€â”€ tests â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 func TestAdapter_StartFrameTriggersConnectAndStateListening(t *testing.T) {
 	provider := newFakeProvider()
@@ -369,11 +369,13 @@ func TestAdapter_ClientStopProducesSessionEnd(t *testing.T) {
 		t.Fatalf("expected reason=client, got %q", seq.Reason)
 	}
 
-	// Adapter should call OnClose shortly.
+	// Adapter should call OnClose shortly. The deadline is generous to
+	// absorb GitHub-hosted Linux runner contention; the watchdog itself
+	// is sub-millisecond when the pumps actually finish.
 	select {
 	case <-env.done:
 		// expected
-	case <-time.After(2 * time.Second):
+	case <-time.After(10 * time.Second):
 		t.Fatalf("adapter did not invoke OnClose after stop")
 	}
 }
@@ -403,7 +405,7 @@ func TestAdapter_GoAwayClosesSessionWithReason(t *testing.T) {
 	select {
 	case <-env.done:
 		// expected
-	case <-time.After(2 * time.Second):
+	case <-time.After(10 * time.Second):
 		t.Fatalf("adapter did not invoke OnClose after GoAway")
 	}
 }
@@ -412,7 +414,7 @@ func TestAdapter_IdleTimeoutClosesSession(t *testing.T) {
 	provider := newFakeProvider()
 	defer provider.Close() //nolint:errcheck
 	resolver := &fakeResolver{}
-	// 80 ms idle; no client frames → adapter should fire watchdog.
+	// 80 ms idle; no client frames â†’ adapter should fire watchdog.
 	env := startAdapterEnv(t, 80*time.Millisecond, provider, resolver)
 
 	sendStart(t, env.conn, StartFrame{})
@@ -432,7 +434,7 @@ func TestAdapter_IdleTimeoutClosesSession(t *testing.T) {
 	select {
 	case <-env.done:
 		// expected
-	case <-time.After(2 * time.Second):
+	case <-time.After(10 * time.Second):
 		t.Fatalf("adapter did not invoke OnClose after idle timeout")
 	}
 }

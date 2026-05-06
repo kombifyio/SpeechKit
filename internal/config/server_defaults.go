@@ -26,6 +26,11 @@ func ApplyServerRuntimeDefaults(cfg *Config) []string {
 
 	var notes []string
 
+	if publicURL := strings.TrimRight(strings.TrimSpace(os.Getenv("SPEECHKIT_PUBLIC_URL")), "/"); publicURL != "" && strings.TrimSpace(cfg.Server.PublicURL) == "" {
+		cfg.Server.PublicURL = publicURL
+		notes = append(notes, "server public URL default: "+publicURL)
+	}
+
 	sttURL := envOrDefault("SPEECHKIT_SELFHOSTED_STT_URL", defaultServerSTTURL)
 	if strings.TrimSpace(cfg.VPS.URL) == "" {
 		cfg.VPS.URL = sttURL

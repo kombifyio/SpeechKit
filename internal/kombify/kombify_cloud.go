@@ -1,11 +1,11 @@
 //go:build kombify
 
-// When built with -tags kombify, this file imports the private kombify-speechkit module.
-// That module's init() registers the kombify store backend and auth provider.
+// This build-tag seam is intentionally inert.
 //
-// To enable: go build -tags kombify ./cmd/speechkit/
-// The private module must be available in the Go module cache.
+// Do not add a private blank import here. The OSS default build must keep
+// working without private module access, and downstream product integrations
+// must remain separate from the SpeechKit framework checkout.
 package kombify
 
-// TODO: Uncomment when the private module is published:
+// Blocked on private module publication:
 // import _ "github.com/kombifyio/kombify-speechkit"

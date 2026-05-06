@@ -78,7 +78,18 @@ func contractBackends() []backendFixture {
 				if !ok {
 					t.Fatalf("postgres: got %T, want *PostgresStore", s)
 				}
-				if _, err := pg.db.Exec(`TRUNCATE TABLE quick_notes, transcriptions, voice_agent_sessions, user_dictionary RESTART IDENTITY`); err != nil {
+				if _, err := pg.db.Exec(`TRUNCATE TABLE
+					audio_assets,
+					voice_agent_session_summary_items,
+					voice_agent_session_turns,
+					voice_agent_sessions,
+					quick_notes,
+					transcriptions,
+					user_dictionary_entries,
+					voice_agent_sequences,
+					voice_agent_roles,
+					voice_agent_personas
+					RESTART IDENTITY CASCADE`); err != nil {
 					t.Fatalf("postgres: truncate: %v", err)
 				}
 				return s, func() { _ = s.Close() }

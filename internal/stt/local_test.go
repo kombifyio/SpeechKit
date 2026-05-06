@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"runtime"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -115,6 +116,12 @@ func TestDefaultWhisperThreadsIgnoresInvalidEnvOverride(t *testing.T) {
 }
 
 func TestFindWhisperBinary_FindsManagedInstallRootBinary(t *testing.T) {
+	if runtime.GOOS != "windows" {
+		// platformWhisperSearchDirs only probes %LOCALAPPDATA% on Windows
+		// (see local_search_{windows,unix}.go). On Unix the Server-Target
+		// reads cfg.VPS.WhisperBinary instead, so this path doesn't apply.
+		t.Skip("Windows-only: managed-install LOCALAPPDATA lookup")
+	}
 	localAppData := t.TempDir()
 	t.Setenv("LOCALAPPDATA", localAppData)
 
@@ -222,7 +229,7 @@ func TestLocal_Transcribe_ContextCancelledDuringStartupWait(t *testing.T) {
 		BaseURL: "http://127.0.0.1:1",
 		client:  &http.Client{Timeout: 5 * time.Second},
 	}
-	done := make(chan struct{}) // never closed — startup hangs indefinitely
+	done := make(chan struct{}) // never closed â€” startup hangs indefinitely
 	p.startDone = done
 
 	ctx, cancel := context.WithCancel(context.Background())

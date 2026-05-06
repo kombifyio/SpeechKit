@@ -103,6 +103,14 @@ jobs:
           install: >-
             mingw-w64-x86_64-gcc
 
+      - name: Install Staticcheck
+        shell: pwsh
+        run: go install honnef.co/go/tools/cmd/staticcheck@v0.7.0
+
+      - name: Run Windows desktop Staticcheck
+        shell: pwsh
+        run: staticcheck ./cmd/speechkit/...
+
       - name: Install NSIS
         shell: pwsh
         run: choco install nsis -y --no-progress
@@ -110,6 +118,12 @@ jobs:
       - name: Run canonical Windows bundle build
         shell: pwsh
         run: ./scripts/build.ps1 -SkipInstaller -SkipVerification
+
+      - name: Verify build did not dirty tracked files
+        shell: pwsh
+        run: |
+          git diff --check
+          git diff --exit-code
 
       - name: Upload embedded frontend assets
         if: failure()

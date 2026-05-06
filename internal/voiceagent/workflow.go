@@ -52,7 +52,7 @@ func prepareWorkflowStart(cfg LiveConfig) (LiveConfig, *workflowState) {
 	if basePrompt == "" {
 		basePrompt = firstWorkflowPrompt(cfg.FrameworkPrompt, cfg.Instruction, cfg.SystemPrompt)
 	}
-	next, _, ok := applyWorkflowStepToConfig(cfg, wf, basePrompt, stepIndex)
+	next, ok := applyWorkflowStepToConfig(cfg, wf, basePrompt, stepIndex)
 	if !ok {
 		return cfg, nil
 	}
@@ -112,7 +112,7 @@ func (s *Session) prepareWorkflowAdvance(reason string) (LiveConfig, bool) {
 		s.workflow.completed = true
 		return LiveConfig{}, false
 	}
-	next, _, ok := applyWorkflowStepToConfig(s.lastCfg, s.workflow.cfg, s.workflow.basePrompt, nextIndex)
+	next, ok := applyWorkflowStepToConfig(s.lastCfg, s.workflow.cfg, s.workflow.basePrompt, nextIndex)
 	if !ok {
 		s.workflow.completed = true
 		return LiveConfig{}, false
@@ -162,9 +162,9 @@ func RenderHostInstructionUpdate(cfg LiveConfig) string {
 	return b.String()
 }
 
-func applyWorkflowStepToConfig(cfg LiveConfig, wf WorkflowConfig, basePrompt string, stepIndex int) (LiveConfig, WorkflowStep, bool) {
+func applyWorkflowStepToConfig(cfg LiveConfig, wf WorkflowConfig, basePrompt string, stepIndex int) (LiveConfig, bool) {
 	if stepIndex < 0 || stepIndex >= len(wf.Steps) {
-		return cfg, WorkflowStep{}, false
+		return cfg, false
 	}
 	wf = cloneWorkflowConfig(wf)
 	wf.InitialStep = stepIndex
@@ -174,7 +174,7 @@ func applyWorkflowStepToConfig(cfg LiveConfig, wf WorkflowConfig, basePrompt str
 	cfg.Instruction = cfg.FrameworkPrompt
 	cfg.SystemPrompt = cfg.FrameworkPrompt
 	cfg.Workflow = &wf
-	return cfg, step, true
+	return cfg, true
 }
 
 func composeWorkflowPrompt(basePrompt string, step WorkflowStep) string {

@@ -1,16 +1,14 @@
 package main
 
 import (
-	"crypto/rand"
-	"encoding/hex"
 	"fmt"
 	"net/http"
-	"net/url"
 	"os/exec"
 	"path/filepath"
 	"strings"
 
 	"github.com/kombifyio/SpeechKit/internal/config"
+	"github.com/kombifyio/SpeechKit/internal/desktop/controlplane"
 	"github.com/kombifyio/SpeechKit/internal/frontendassets"
 	"github.com/kombifyio/SpeechKit/internal/router"
 	"github.com/kombifyio/SpeechKit/internal/store"
@@ -20,13 +18,9 @@ import (
 // local development builds that skip the release toolchain.
 var AppVersion = "dev"
 
-// maxControlPlaneBodySize limits the request body for mutating control-plane
-// requests. All POST data is small form fields; 1 MB is generous headroom.
-const maxControlPlaneBodySize = 1 << 20 // 1 MB
-
 const (
-	controlPlaneTokenCookieName = "speechkit_control_plane"
-	controlPlaneTokenHeaderName = "X-SpeechKit-Control-Token"
+	controlPlaneTokenCookieName = controlplane.TokenCookieName
+	controlPlaneTokenHeaderName = controlplane.TokenHeaderName
 )
 
 // revealAudioFileInShell opens the containing folder in Explorer and selects
@@ -56,62 +50,48 @@ var openInstallerFileInShell = func(path string) error {
 // assetHandler builds the unified HTTP mux for the Wails control plane.
 // Routes are registered by domain in dedicated routes_*.go files.
 func assetHandler(cfg *config.Config, cfgPath string, state *appState, sttRouter *router.Router, feedbackStore store.Store, installState *config.InstallState) http.Handler {
+	return newControlPlaneHandler(controlPlaneDeps{
+		Config:        cfg,
+		ConfigPath:    cfgPath,
+		State:         state,
+		STTRouter:     sttRouter,
+		FeedbackStore: feedbackStore,
+		InstallState:  installState,
+	})
+}
+
+type controlPlaneDeps struct {
+	Config        *config.Config
+	ConfigPath    string
+	State         *appState
+	STTRouter     *router.Router
+	FeedbackStore store.Store
+	InstallState  *config.InstallState
+}
+
+func newControlPlaneHandler(deps controlPlaneDeps) http.Handler {
 	mux := http.NewServeMux()
-	registerOverlayRoutes(mux, cfgPath, cfg, state)
-	registerSettingsRoutes(mux, cfgPath, cfg, state, sttRouter, feedbackStore)
-	registerDashboardRoutes(mux, state, feedbackStore)
-	registerQuickNoteRoutes(mux, cfg, state, feedbackStore)
-	registerFeatureRoutes(mux, installState)
+	registerOverlayRoutes(mux, deps.ConfigPath, deps.Config, deps.State)
+	registerSettingsRoutes(mux, deps.ConfigPath, deps.Config, deps.State, deps.STTRouter, deps.FeedbackStore)
+	registerDashboardRoutes(mux, deps.State, deps.FeedbackStore)
+	registerQuickNoteRoutes(mux, deps.Config, deps.State, deps.FeedbackStore)
+	registerFeatureRoutes(mux, deps.InstallState)
 	registerAuthRoutes(mux)
-	registerAppRoutes(mux, cfgPath, state, installState)
-	registerDownloadRoutes(mux, cfgPath, cfg, state)
-	registerAPIV1Routes(mux, cfgPath, cfg, state, sttRouter, feedbackStore)
+	registerAppRoutes(mux, deps.ConfigPath, deps.State, deps.InstallState)
+	registerDownloadRoutes(mux, deps.ConfigPath, deps.Config, deps.State)
+	registerAPIV1Routes(mux, deps.ConfigPath, deps.Config, deps.State, deps.STTRouter, deps.FeedbackStore)
 	mux.Handle("/", http.FileServer(http.FS(frontendassets.Files())))
-	return enforceControlPlaneRequestGuard(mux, controlPlaneTokenFromState(state))
+	return enforceControlPlaneRequestGuard(mux, controlPlaneTokenFromState(deps.State))
 }
 
 // enforceControlPlaneRequestGuard rejects cross-site and disallowed-origin
 // mutating requests. It is the primary CSRF defence for the local control plane.
 func enforceControlPlaneRequestGuard(next http.Handler, sessionToken string) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if sessionToken != "" {
-			setControlPlaneTokenBootstrap(w, sessionToken)
-		}
-
-		if !isMutatingMethod(r.Method) {
-			next.ServeHTTP(w, r)
-			return
-		}
-
-		// Limit request body size for mutating requests (defence in depth).
-		r.Body = http.MaxBytesReader(w, r.Body, maxControlPlaneBodySize)
-
-		if strings.EqualFold(strings.TrimSpace(r.Header.Get("Sec-Fetch-Site")), "cross-site") {
-			http.Error(w, "cross-site requests are not allowed", http.StatusForbidden)
-			return
-		}
-
-		origin := strings.TrimSpace(r.Header.Get("Origin"))
-		if origin != "" && !isAllowedControlPlaneOrigin(origin) {
-			http.Error(w, "origin is not allowed", http.StatusForbidden)
-			return
-		}
-
-		if sessionToken != "" && !hasValidControlPlaneTokenHeader(r, sessionToken) {
-			http.Error(w, "control-plane session token is invalid", http.StatusForbidden)
-			return
-		}
-
-		next.ServeHTTP(w, r)
-	})
+	return controlplane.Guard(next, sessionToken)
 }
 
 func newControlPlaneToken() string {
-	var token [32]byte
-	if _, err := rand.Read(token[:]); err != nil {
-		panic(fmt.Sprintf("generate control-plane token: %v", err))
-	}
-	return hex.EncodeToString(token[:])
+	return controlplane.NewToken()
 }
 
 func controlPlaneTokenFromState(state *appState) string {
@@ -121,45 +101,6 @@ func controlPlaneTokenFromState(state *appState) string {
 	return state.controlPlaneToken
 }
 
-func setControlPlaneTokenBootstrap(w http.ResponseWriter, token string) {
-	w.Header().Set(controlPlaneTokenHeaderName, token)
-	http.SetCookie(w, &http.Cookie{
-		Name:     controlPlaneTokenCookieName,
-		Value:    token,
-		Path:     "/",
-		HttpOnly: true,
-		Secure:   true,
-		SameSite: http.SameSiteStrictMode,
-	})
-}
-
 func hasValidControlPlaneTokenHeader(r *http.Request, expected string) bool {
-	return r.Header.Get(controlPlaneTokenHeaderName) == expected
-}
-
-func isMutatingMethod(method string) bool {
-	switch method {
-	case http.MethodPost, http.MethodPut, http.MethodPatch, http.MethodDelete:
-		return true
-	default:
-		return false
-	}
-}
-
-func isAllowedControlPlaneOrigin(origin string) bool {
-	parsed, err := url.Parse(origin)
-	if err != nil || parsed.Hostname() == "" {
-		return false
-	}
-	if parsed.Scheme != "http" && parsed.Scheme != "https" {
-		return false
-	}
-	host := strings.ToLower(parsed.Hostname())
-	if host == "localhost" || host == "127.0.0.1" || host == "::1" {
-		return true
-	}
-	if host == "wails.localhost" || strings.HasSuffix(host, ".wails.localhost") {
-		return true
-	}
-	return false
+	return controlplane.HasValidTokenHeader(r, expected)
 }

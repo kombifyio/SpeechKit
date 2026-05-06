@@ -67,8 +67,8 @@ func TestLoadDefaults(t *testing.T) {
 	if cfg.General.AutoStartOnLaunch {
 		t.Fatal("general auto-start should be disabled by default")
 	}
-	if cfg.Local.Enabled {
-		t.Error("local provider should be disabled by default")
+	if !cfg.Local.Enabled {
+		t.Error("local provider should be enabled by default")
 	}
 	if cfg.LocalLLM.Enabled {
 		t.Error("built-in local LLM should be disabled by default")
@@ -119,11 +119,11 @@ func TestLoadDefaults(t *testing.T) {
 	if cfg.ServerConnection.RequestTimeoutSec != 30 {
 		t.Errorf("default server request timeout = %d, want 30", cfg.ServerConnection.RequestTimeoutSec)
 	}
-	if cfg.Server.AuthMode != "none" {
-		t.Errorf("default server auth_mode = %q, want none", cfg.Server.AuthMode)
+	if cfg.Server.AuthMode != "bearer" {
+		t.Errorf("default server auth_mode = %q, want bearer", cfg.Server.AuthMode)
 	}
-	if want := ManagedHuggingFaceAvailableInBuild(); cfg.HuggingFace.Enabled != want {
-		t.Errorf("default HuggingFace enabled = %v, want %v for this module build", cfg.HuggingFace.Enabled, want)
+	if cfg.HuggingFace.Enabled {
+		t.Error("default HuggingFace should stay disabled until explicitly enabled")
 	}
 	if cfg.HuggingFace.Model != "openai/whisper-large-v3" {
 		t.Errorf("default HF model = %q", cfg.HuggingFace.Model)
@@ -146,8 +146,8 @@ func TestLoadDefaults(t *testing.T) {
 	if cfg.Routing.PreferLocalUnderSeconds != 10 {
 		t.Errorf("default prefer local = %f, want 10", cfg.Routing.PreferLocalUnderSeconds)
 	}
-	if cfg.Routing.Strategy != "cloud-only" {
-		t.Errorf("default routing strategy = %q, want %q", cfg.Routing.Strategy, "cloud-only")
+	if cfg.Routing.Strategy != "local-only" {
+		t.Errorf("default routing strategy = %q, want %q", cfg.Routing.Strategy, "local-only")
 	}
 	if !cfg.UI.OverlayEnabled {
 		t.Error("overlay should be enabled by default")
@@ -969,6 +969,8 @@ func TestApplyManagedIntegrationDefaultsEnablesHFWhenExplicitlyDisabled(t *testi
 	defer restoreBuild()
 
 	cfg := defaults()
+	cfg.Local.Enabled = false
+	cfg.Routing.Strategy = "cloud-only"
 	cfg.HuggingFace.Enabled = false
 	t.Setenv("SPEECHKIT_ENABLE_MANAGED_HF", "1")
 	t.Setenv("HF_TOKEN", "test-token")
@@ -1178,6 +1180,73 @@ voice_agent_hotkey = "ctrl+shift"
 	}
 }
 
+func TestLoadMigratesOldBuiltInHotkeyDefaults(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.toml")
+
+	content := `[general]
+hotkey = "win+alt"
+dictate_hotkey = "win+alt"
+assist_hotkey = "ctrl+win"
+voice_agent_hotkey = "ctrl+shift"
+agent_hotkey = "ctrl+win"
+agent_mode = "assist"
+`
+	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+
+	if got, want := cfg.General.Hotkey, "ctrl+win"; got != want {
+		t.Fatalf("legacy hotkey alias = %q, want %q", got, want)
+	}
+	if got, want := cfg.General.DictateHotkey, "ctrl+win"; got != want {
+		t.Fatalf("dictate hotkey = %q, want %q", got, want)
+	}
+	if got, want := cfg.General.AssistHotkey, "win+alt"; got != want {
+		t.Fatalf("assist hotkey = %q, want %q", got, want)
+	}
+	if got, want := cfg.General.AgentHotkey, "win+alt"; got != want {
+		t.Fatalf("agent hotkey alias = %q, want %q", got, want)
+	}
+}
+
+func TestLoadPreservesCustomHotkeyPair(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.toml")
+
+	content := `[general]
+hotkey = "ctrl+shift+d"
+dictate_hotkey = "ctrl+shift+d"
+assist_hotkey = "ctrl+win+j"
+voice_agent_hotkey = "win+alt+k"
+agent_hotkey = "ctrl+win+j"
+agent_mode = "assist"
+`
+	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+
+	if got, want := cfg.General.DictateHotkey, "ctrl+shift+d"; got != want {
+		t.Fatalf("dictate hotkey = %q, want %q", got, want)
+	}
+	if got, want := cfg.General.AssistHotkey, "ctrl+win+j"; got != want {
+		t.Fatalf("assist hotkey = %q, want %q", got, want)
+	}
+	if got, want := cfg.General.VoiceAgentHotkey, "win+alt+k"; got != want {
+		t.Fatalf("voice agent hotkey = %q, want %q", got, want)
+	}
+}
+
 func TestApplyManagedIntegrationDefaultsSkipsNonCloudOnly(t *testing.T) {
 	useMemorySecretStoreForTest(t)
 	restoreBuild := OverrideManagedHuggingFaceBuildForTests("1")
@@ -1264,6 +1333,9 @@ auto_start_on_launch = true
 
 func TestApplyLocalInstallDefaultsPreparesPendingLocalInstallForOnboardingDownloads(t *testing.T) {
 	cfg := defaults()
+	cfg.Local.Enabled = false
+	cfg.Routing.Strategy = "cloud-only"
+	cfg.HuggingFace.Enabled = true
 	state := &InstallState{Mode: InstallModeLocal}
 
 	changed := ApplyLocalInstallDefaults(cfg, state)
@@ -1271,11 +1343,11 @@ func TestApplyLocalInstallDefaultsPreparesPendingLocalInstallForOnboardingDownlo
 	if !changed {
 		t.Fatal("expected local install defaults to change config")
 	}
-	if cfg.Local.Enabled {
-		t.Fatal("local provider should stay disabled until the user downloads a model")
+	if !cfg.Local.Enabled {
+		t.Fatal("local provider should be enabled for local-first installs")
 	}
-	if cfg.Routing.Strategy != "dynamic" {
-		t.Fatalf("routing strategy = %q, want %q", cfg.Routing.Strategy, "dynamic")
+	if cfg.Routing.Strategy != "local-only" {
+		t.Fatalf("routing strategy = %q, want %q", cfg.Routing.Strategy, "local-only")
 	}
 	if cfg.HuggingFace.Enabled {
 		t.Fatal("HuggingFace should be disabled on fresh local install while onboarding is pending")
@@ -1294,11 +1366,11 @@ func TestApplyLocalInstallDefaultsSkipsCompletedSetup(t *testing.T) {
 	if changed {
 		t.Fatal("expected completed setup to keep config unchanged")
 	}
-	if cfg.Local.Enabled {
-		t.Fatal("local provider should remain unchanged after setup is complete")
+	if !cfg.Local.Enabled {
+		t.Fatal("local provider should remain enabled after setup is complete")
 	}
-	if cfg.Routing.Strategy != "cloud-only" {
-		t.Fatalf("routing strategy = %q, want %q", cfg.Routing.Strategy, "cloud-only")
+	if cfg.Routing.Strategy != "local-only" {
+		t.Fatalf("routing strategy = %q, want %q", cfg.Routing.Strategy, "local-only")
 	}
 }
 
@@ -1311,11 +1383,11 @@ func TestApplyLocalInstallDefaultsSkipsCloudInstalls(t *testing.T) {
 	if changed {
 		t.Fatal("expected cloud installs to keep config unchanged")
 	}
-	if cfg.Local.Enabled {
-		t.Fatal("local provider should remain disabled for cloud installs")
+	if !cfg.Local.Enabled {
+		t.Fatal("local provider should remain enabled unless a cloud install explicitly changes it")
 	}
-	if cfg.Routing.Strategy != "cloud-only" {
-		t.Fatalf("routing strategy = %q, want %q", cfg.Routing.Strategy, "cloud-only")
+	if cfg.Routing.Strategy != "local-only" {
+		t.Fatalf("routing strategy = %q, want %q", cfg.Routing.Strategy, "local-only")
 	}
 }
 

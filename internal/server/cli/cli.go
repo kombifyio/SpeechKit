@@ -37,7 +37,7 @@ type Options struct {
 // Run is the canonical entry point each cmd/<name>/main.go calls. It
 // owns the entire process lifecycle: parse flags, load config, set up
 // logging, hand off to core.Run, log the exit reason, return. It does
-// not return an exit code — it calls os.Exit on failure so callers
+// not return an exit code â€” it calls os.Exit on failure so callers
 // stay one line.
 //
 // The body delegates to runOnce so we can keep `defer` clean: any
@@ -73,7 +73,7 @@ func runOnce(opts Options) int {
 	}
 
 	if *printVer {
-		// Best-effort print to stdout — exit code 0 even if stdout
+		// Best-effort print to stdout â€” exit code 0 even if stdout
 		// is closed, since `--version` is supposed to be a cheap probe.
 		_, _ = fmt.Fprintln(os.Stdout, version)
 		return 0
@@ -102,6 +102,10 @@ func runOnce(opts Options) int {
 	settingsNotes, err := config.ApplyServerModelSettingsFile(cfg)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "%s: load server model settings: %v\n", banner, err)
+		return 2
+	}
+	if err := config.ValidateServerProductionAuth(cfg); err != nil {
+		fmt.Fprintf(os.Stderr, "%s: unsafe server configuration: %v\n", banner, err)
 		return 2
 	}
 

@@ -38,6 +38,19 @@ func (e apiV1UserError) Error() string {
 	return string(e)
 }
 
+type apiV1ModeSettingsSnapshot struct {
+	dictateEnabled       bool
+	assistEnabled        bool
+	voiceAgentEnabled    bool
+	dictateHotkey        string
+	assistHotkey         string
+	voiceAgentHotkey     string
+	voiceAgentProfileID  string
+	voiceAgentSequenceID string
+	audioDeviceID        string
+	overlayEnabled       bool
+}
+
 func handleAPIV1ModeSettings(w http.ResponseWriter, r *http.Request, cfgPath string, cfg *config.Config, state *appState, sttRouter *router.Router, mode string) {
 	switch r.Method {
 	case http.MethodGet:
@@ -62,17 +75,117 @@ func applyAPIV1ModeSettingsPatch(ctx context.Context, cfgPath string, cfg *confi
 	if cfg == nil {
 		return errors.New("config unavailable")
 	}
-	oldDictateEnabled := cfg.General.DictateEnabled
-	oldAssistEnabled := cfg.General.AssistEnabled
-	oldVoiceAgentEnabled := cfg.General.VoiceAgentEnabled
-	oldDictateHotkey := cfg.General.DictateHotkey
-	oldAssistHotkey := cfg.General.AssistHotkey
-	oldVoiceAgentHotkey := cfg.General.VoiceAgentHotkey
-	oldVoiceAgentProfileID := voiceagentprofile.NormalizeID(cfg.VoiceAgent.AgentProfileID)
-	oldVoiceAgentSequenceID := strings.TrimSpace(cfg.VoiceAgent.AgentSequenceID)
-	oldAudioDeviceID := cfg.Audio.DeviceID
-	oldOverlayEnabled := cfg.UI.OverlayEnabled
+	snapshot := captureAPIV1ModeSettingsSnapshot(cfg)
 
+	if err := applyAPIV1ModeBindingPatch(cfg, mode, patch); err != nil {
+		return err
+	}
+	modelSelectionChanged, err := applyAPIV1ModeSelectionPatch(cfg, mode, patch)
+	if err != nil {
+		return err
+	}
+	applyAPIV1ModeSpecificPatch(cfg, mode, patch)
+	if modelSelectionChanged {
+		cfg.ServerConnection.Enabled = anyServerModeSelected(cfg)
+		if cfg.ServerConnection.Enabled {
+			config.ApplyManagedDevServerDefaults(cfg)
+		}
+	}
+
+	if !validateDistinctModeHotkeys(cfg.General.DictateEnabled, cfg.General.AssistEnabled, cfg.General.VoiceAgentEnabled, cfg.General.DictateHotkey, cfg.General.AssistHotkey, cfg.General.VoiceAgentHotkey) {
+		return apiV1UserError(msgDuplicateHotkeys)
+	}
+	cfg.General.ActiveMode = sanitizeActiveModeForBindings(
+		cfg.General.ActiveMode,
+		cfg.General.AgentMode,
+		cfg.General.DictateEnabled,
+		cfg.General.AssistEnabled,
+		cfg.General.VoiceAgentEnabled,
+		cfg.General.DictateHotkey,
+		cfg.General.AssistHotkey,
+		cfg.General.VoiceAgentHotkey,
+	)
+	cfg.General.AgentMode = deriveLegacyAgentModeFromBindings(cfg.General.AssistHotkey, cfg.General.VoiceAgentHotkey, cfg.General.ActiveMode, cfg.General.AgentMode)
+	cfg.General.AgentHotkey = legacyAgentHotkeyFromModeBindings(cfg.General.AssistHotkey, cfg.General.VoiceAgentHotkey, cfg.General.AgentMode)
+
+	if err := refreshProviderRuntimes(ctx, cfg, state, sttRouter); err != nil {
+		return err
+	}
+	voiceAgentProfileChanged := snapshot.voiceAgentProfileID != voiceagentprofile.NormalizeID(cfg.VoiceAgent.AgentProfileID)
+	voiceAgentSequenceChanged := snapshot.voiceAgentSequenceID != strings.TrimSpace(cfg.VoiceAgent.AgentSequenceID)
+	if modelSelectionChanged || voiceAgentProfileChanged || voiceAgentSequenceChanged {
+		if err := refreshServerDelegates(cfg, state); err != nil {
+			return err
+		}
+	}
+	if err := config.Save(cfgPath, cfg); err != nil {
+		return err
+	}
+	if state != nil {
+		state.applyRuntimeSettings(
+			cfg.General.DictateEnabled,
+			cfg.General.AssistEnabled,
+			cfg.General.VoiceAgentEnabled,
+			cfg.General.DictateHotkey,
+			cfg.General.AssistHotkey,
+			cfg.General.VoiceAgentHotkey,
+			cfg.General.DictateHotkeyBehavior,
+			cfg.General.AssistHotkeyBehavior,
+			cfg.General.VoiceAgentHotkeyBehavior,
+			cfg.General.ActiveMode,
+			cfg.Audio.DeviceID,
+			runtimeAvailableProviders(ctx, sttRouter),
+			cfg.UI.Visualizer,
+			cfg.UI.Design,
+			cfg.UI.AssistOverlayMode,
+			cfg.UI.VoiceAgentOverlayMode,
+			cfg.UI.OverlayPosition,
+			cfg.Vocabulary.Dictionary,
+			cfg.UI.OverlayMovable,
+			cfg.UI.OverlayFreeX,
+			cfg.UI.OverlayFreeY,
+			cfg.UI.OverlayMonitorPositions,
+		)
+		if voiceAgentProfileChanged || voiceAgentSequenceChanged {
+			resetInactiveVoiceAgentSession(state)
+		}
+		state.applyDesktopSettings(
+			snapshot.dictateEnabled,
+			snapshot.assistEnabled,
+			snapshot.voiceAgentEnabled,
+			snapshot.dictateHotkey,
+			snapshot.assistHotkey,
+			snapshot.voiceAgentHotkey,
+			cfg.General.DictateEnabled,
+			cfg.General.AssistEnabled,
+			cfg.General.VoiceAgentEnabled,
+			cfg.General.DictateHotkey,
+			cfg.General.AssistHotkey,
+			cfg.General.VoiceAgentHotkey,
+			snapshot.audioDeviceID,
+			cfg.Audio.DeviceID,
+			snapshot.overlayEnabled,
+		)
+	}
+	return nil
+}
+
+func captureAPIV1ModeSettingsSnapshot(cfg *config.Config) apiV1ModeSettingsSnapshot {
+	return apiV1ModeSettingsSnapshot{
+		dictateEnabled:       cfg.General.DictateEnabled,
+		assistEnabled:        cfg.General.AssistEnabled,
+		voiceAgentEnabled:    cfg.General.VoiceAgentEnabled,
+		dictateHotkey:        cfg.General.DictateHotkey,
+		assistHotkey:         cfg.General.AssistHotkey,
+		voiceAgentHotkey:     cfg.General.VoiceAgentHotkey,
+		voiceAgentProfileID:  voiceagentprofile.NormalizeID(cfg.VoiceAgent.AgentProfileID),
+		voiceAgentSequenceID: strings.TrimSpace(cfg.VoiceAgent.AgentSequenceID),
+		audioDeviceID:        cfg.Audio.DeviceID,
+		overlayEnabled:       cfg.UI.OverlayEnabled,
+	}
+}
+
+func applyAPIV1ModeBindingPatch(cfg *config.Config, mode string, patch apiV1ModeSettingsPatch) error {
 	if patch.Enabled != nil {
 		switch mode {
 		case modeDictate:
@@ -112,136 +225,63 @@ func applyAPIV1ModeSettingsPatch(ctx context.Context, cfgPath string, cfg *confi
 			cfg.General.VoiceAgentHotkeyBehavior = behavior
 		}
 	}
-	if patch.PrimaryProfileID != nil || patch.FallbackProfileID != nil || patch.ModeSource != nil {
-		selection := modeSelectionForMode(cfg, mode)
-		if patch.PrimaryProfileID != nil {
-			selection.PrimaryProfileID = strings.TrimSpace(*patch.PrimaryProfileID)
-		}
-		if patch.FallbackProfileID != nil {
-			selection.FallbackProfileID = strings.TrimSpace(*patch.FallbackProfileID)
-		}
-		if patch.ModeSource != nil {
-			selection.ModeSource = normaliseModeSourcePatch(*patch.ModeSource)
-		}
-		selection = normalizeModeSelection(selection)
-		if err := validateModeSelection(cfg, filteredModelCatalog(), mode, selection); err != nil {
-			return err
-		}
-		switch mode {
-		case modeDictate:
-			cfg.ModelSelection.Dictate = selection
-		case modeAssist:
-			cfg.ModelSelection.Assist = selection
-		case modeVoiceAgent:
-			cfg.ModelSelection.VoiceAgent = selection
-		}
+	return nil
+}
+
+func applyAPIV1ModeSelectionPatch(cfg *config.Config, mode string, patch apiV1ModeSettingsPatch) (bool, error) {
+	if patch.PrimaryProfileID == nil && patch.FallbackProfileID == nil && patch.ModeSource == nil {
+		return false, nil
 	}
+	selection := modeSelectionForMode(cfg, mode)
+	if patch.PrimaryProfileID != nil {
+		selection.PrimaryProfileID = strings.TrimSpace(*patch.PrimaryProfileID)
+	}
+	if patch.FallbackProfileID != nil {
+		selection.FallbackProfileID = strings.TrimSpace(*patch.FallbackProfileID)
+	}
+	if patch.ModeSource != nil {
+		selection.ModeSource = normaliseModeSourcePatch(*patch.ModeSource)
+	}
+	selection = normalizeModeSelection(selection)
+	if err := validateModeSelection(cfg, filteredModelCatalog(), mode, selection); err != nil {
+		return false, err
+	}
+	switch mode {
+	case modeDictate:
+		cfg.ModelSelection.Dictate = selection
+	case modeAssist:
+		cfg.ModelSelection.Assist = selection
+	case modeVoiceAgent:
+		cfg.ModelSelection.VoiceAgent = selection
+	}
+	return true, nil
+}
+
+func applyAPIV1ModeSpecificPatch(cfg *config.Config, mode string, patch apiV1ModeSettingsPatch) {
 	if mode == modeDictate && patch.DictionaryEnabled != nil && !*patch.DictionaryEnabled {
 		cfg.Vocabulary.Dictionary = ""
 	}
 	if mode == modeAssist && patch.TTSEnabled != nil {
 		cfg.TTS.Enabled = *patch.TTSEnabled
 	}
-	if mode == modeVoiceAgent {
-		if patch.SessionSummary != nil {
-			cfg.VoiceAgent.EnableSessionSummary = *patch.SessionSummary
-		}
-		if patch.PipelineFallback != nil {
-			cfg.VoiceAgent.PipelineFallback = *patch.PipelineFallback
-		}
-		if patch.CloseBehavior != nil {
-			cfg.VoiceAgent.CloseBehavior = config.NormalizeVoiceAgentCloseBehavior(*patch.CloseBehavior, config.VoiceAgentCloseBehaviorContinue)
-		}
-		if patch.AgentProfileID != nil {
-			cfg.VoiceAgent.AgentProfileID = voiceagentprofile.NormalizeID(*patch.AgentProfileID)
-		}
-		if patch.AgentSequenceID != nil {
-			cfg.VoiceAgent.AgentSequenceID = strings.TrimSpace(*patch.AgentSequenceID)
-		}
+	if mode != modeVoiceAgent {
+		return
 	}
-	if patch.ModeSource != nil {
-		cfg.ServerConnection.Enabled = anyServerModeSelected(cfg)
-		if cfg.ServerConnection.Enabled {
-			config.ApplyManagedDevServerDefaults(cfg)
-		}
+	if patch.SessionSummary != nil {
+		cfg.VoiceAgent.EnableSessionSummary = *patch.SessionSummary
 	}
-
-	if !validateDistinctModeHotkeys(cfg.General.DictateEnabled, cfg.General.AssistEnabled, cfg.General.VoiceAgentEnabled, cfg.General.DictateHotkey, cfg.General.AssistHotkey, cfg.General.VoiceAgentHotkey) {
-		return apiV1UserError(msgDuplicateHotkeys)
+	if patch.PipelineFallback != nil {
+		cfg.VoiceAgent.PipelineFallback = *patch.PipelineFallback
 	}
-	cfg.General.ActiveMode = sanitizeActiveModeForBindings(
-		cfg.General.ActiveMode,
-		cfg.General.AgentMode,
-		cfg.General.DictateEnabled,
-		cfg.General.AssistEnabled,
-		cfg.General.VoiceAgentEnabled,
-		cfg.General.DictateHotkey,
-		cfg.General.AssistHotkey,
-		cfg.General.VoiceAgentHotkey,
-	)
-	cfg.General.AgentMode = deriveLegacyAgentModeFromBindings(cfg.General.AssistHotkey, cfg.General.VoiceAgentHotkey, cfg.General.ActiveMode, cfg.General.AgentMode)
-	cfg.General.AgentHotkey = legacyAgentHotkeyFromModeBindings(cfg.General.AssistHotkey, cfg.General.VoiceAgentHotkey, cfg.General.AgentMode)
-
-	if err := refreshProviderRuntimes(ctx, cfg, state, sttRouter); err != nil {
-		return err
+	if patch.CloseBehavior != nil {
+		cfg.VoiceAgent.CloseBehavior = config.NormalizeVoiceAgentCloseBehavior(*patch.CloseBehavior, config.VoiceAgentCloseBehaviorContinue)
 	}
-	voiceAgentProfileChanged := oldVoiceAgentProfileID != voiceagentprofile.NormalizeID(cfg.VoiceAgent.AgentProfileID)
-	voiceAgentSequenceChanged := oldVoiceAgentSequenceID != strings.TrimSpace(cfg.VoiceAgent.AgentSequenceID)
-	if patch.PrimaryProfileID != nil || patch.FallbackProfileID != nil || patch.ModeSource != nil || voiceAgentProfileChanged || voiceAgentSequenceChanged {
-		if err := refreshServerDelegates(cfg, state); err != nil {
-			return err
-		}
+	if patch.AgentProfileID != nil {
+		cfg.VoiceAgent.AgentProfileID = voiceagentprofile.NormalizeID(*patch.AgentProfileID)
 	}
-	if err := config.Save(cfgPath, cfg); err != nil {
-		return err
+	if patch.AgentSequenceID != nil {
+		cfg.VoiceAgent.AgentSequenceID = strings.TrimSpace(*patch.AgentSequenceID)
 	}
-	if state != nil {
-		state.applyRuntimeSettings(
-			cfg.General.DictateEnabled,
-			cfg.General.AssistEnabled,
-			cfg.General.VoiceAgentEnabled,
-			cfg.General.DictateHotkey,
-			cfg.General.AssistHotkey,
-			cfg.General.VoiceAgentHotkey,
-			cfg.General.DictateHotkeyBehavior,
-			cfg.General.AssistHotkeyBehavior,
-			cfg.General.VoiceAgentHotkeyBehavior,
-			cfg.General.ActiveMode,
-			cfg.Audio.DeviceID,
-			runtimeAvailableProviders(ctx, sttRouter),
-			cfg.UI.Visualizer,
-			cfg.UI.Design,
-			cfg.UI.AssistOverlayMode,
-			cfg.UI.VoiceAgentOverlayMode,
-			cfg.UI.OverlayPosition,
-			cfg.Vocabulary.Dictionary,
-			cfg.UI.OverlayMovable,
-			cfg.UI.OverlayFreeX,
-			cfg.UI.OverlayFreeY,
-			cfg.UI.OverlayMonitorPositions,
-		)
-		if voiceAgentProfileChanged || voiceAgentSequenceChanged {
-			resetInactiveVoiceAgentSession(state)
-		}
-		state.applyDesktopSettings(
-			oldDictateEnabled,
-			oldAssistEnabled,
-			oldVoiceAgentEnabled,
-			oldDictateHotkey,
-			oldAssistHotkey,
-			oldVoiceAgentHotkey,
-			cfg.General.DictateEnabled,
-			cfg.General.AssistEnabled,
-			cfg.General.VoiceAgentEnabled,
-			cfg.General.DictateHotkey,
-			cfg.General.AssistHotkey,
-			cfg.General.VoiceAgentHotkey,
-			oldAudioDeviceID,
-			cfg.Audio.DeviceID,
-			oldOverlayEnabled,
-		)
-	}
-	return nil
 }
 
 func apiV1ModeSettingsFromConfig(cfg *config.Config) speechkit.ModeSettings {
@@ -297,25 +337,6 @@ func apiV1ModeSettingsFromConfig(cfg *config.Config) speechkit.ModeSettings {
 			AgentSequenceID:  strings.TrimSpace(cfg.VoiceAgent.AgentSequenceID),
 		},
 		ServerConnection: serverConnectionSettingFromConfig(cfg.ServerConnection),
-	}
-}
-
-// serverConnectionSettingFromConfig copies the [server_connection]
-// config into the public surface, never including the bearer-token
-// value itself (only the env var name + a "is the env var set" boolean
-// so the UI can render a "missing token" warning).
-func serverConnectionSettingFromConfig(cfg config.ServerConnectionConfig) speechkit.ServerConnectionSetting {
-	tokenSet := false
-	if env := strings.TrimSpace(cfg.BearerTokenEnv); env != "" {
-		tokenSet = strings.TrimSpace(config.ResolveSecret(env)) != ""
-	}
-	return speechkit.ServerConnectionSetting{
-		Enabled:           cfg.Enabled,
-		URL:               cfg.URL,
-		BearerTokenEnv:    cfg.BearerTokenEnv,
-		BearerTokenSet:    tokenSet,
-		FallbackToLocal:   cfg.FallbackToLocal,
-		RequestTimeoutSec: cfg.RequestTimeoutSec,
 	}
 }
 

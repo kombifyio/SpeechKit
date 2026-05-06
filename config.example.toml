@@ -1,7 +1,7 @@
 [general]
 language = "de"                    # Default transcription language
-dictate_hotkey = "win+alt"         # Dictation hotkey (push-to-talk, speech-to-text only)
-assist_hotkey = "ctrl+win"         # Assist hotkey (one-shot utility mode). Blank disables the mode.
+dictate_hotkey = "ctrl+win"        # Dictation hotkey (push-to-talk, speech-to-text only)
+assist_hotkey = "win+alt"          # Assist hotkey (one-shot utility mode). Blank disables the mode.
 voice_agent_hotkey = "ctrl+shift"  # Voice Agent hotkey (realtime dialogue mode). Blank disables the mode.
 dictate_hotkey_behavior = "push_to_talk"
 assist_hotkey_behavior = "push_to_talk"
@@ -10,9 +10,9 @@ dictate_enabled = true
 assist_enabled = true
 voice_agent_enabled = true
 active_mode = "none"               # none, dictate, assist, voice_agent
-agent_hotkey = "ctrl+win"          # Deprecated compatibility alias. SpeechKit now persists assist_hotkey + voice_agent_hotkey separately.
+agent_hotkey = "win+alt"           # Deprecated compatibility alias. SpeechKit now persists assist_hotkey + voice_agent_hotkey separately.
 agent_mode = "assist"              # Deprecated compatibility alias for legacy agent_hotkey readers.
-hotkey = "win+alt"                 # Legacy alias for dictate_hotkey
+hotkey = "ctrl+win"                # Legacy alias for dictate_hotkey
 hotkey_mode = "push_to_talk"
 auto_stop_silence_ms = 500
 fast_mode_silence_ms = 1500
@@ -33,7 +33,7 @@ visualizer = "pill"       # pill or circle
 design = "default"        # default or kombify
 
 [local]
-enabled = false
+enabled = true
 model = "ggml-large-v3-turbo.bin"
 model_path = ""           # Auto: ./models/ first, then %LOCALAPPDATA%/SpeechKit/models/
 port = 8080               # whisper-server port
@@ -64,7 +64,7 @@ token_env = "HF_TOKEN"    # Fallback env var when no stored host token exists; D
 # agent_model = "Qwen/Qwen3.5-27B" # Voice Agent pipeline fallback / legacy agent flow
 
 [routing]
-strategy = "dynamic"      # dynamic, local-only, cloud-only
+strategy = "local-only"   # dynamic, local-only, cloud-only
 prefer_local_under_seconds = 10
 parallel_cloud = false    # Start cloud parallel to local
 replace_on_better = false # Silently replace with better result
@@ -115,6 +115,34 @@ fallback_profile_id = ""
 mode_source = "local"
 
 # ──────────────────────────────────────────────
+# SpeechKit Server — standalone Linux HTTP/WebSocket target
+# Defaults fail closed: protected routes require a bearer token from the
+# configured environment variable. auth_mode = "none" is only for loopback
+# development/test binds; public no-auth binds are rejected at startup.
+# ──────────────────────────────────────────────
+
+[server]
+listen_addr = ":8080"                         # Bind address for speechkit-server. Use "127.0.0.1:8080" for local-only no-auth tests.
+public_url = ""                               # External API base for generated WS URLs, e.g. "https://speechkit.example.com/api".
+modes = ["dictation", "assist", "voiceagent"] # Empty/missing enables all three modes.
+auth_mode = "bearer"                          # bearer, edge_hmac, bearer_or_edge, none
+bearer_token_env = "SPEECHKIT_SERVER_TOKEN"   # Env var name only; token value must not be committed.
+edge_auth_secret_env = "EDGE_AUTH_SECRET"     # Env var name for edge_hmac mode.
+cors_allowed_origins = []                     # Set explicit origins for browser/WS clients; empty disables browser-origin access.
+rate_limit_rps = 10
+rate_limit_burst = 20
+max_upload_mb = 25
+max_voice_agent_sessions = 100
+max_sessions_per_user = 3
+ticket_ttl_sec = 30
+voice_agent_idle_timeout_sec = 900
+whisper_binary = "/usr/local/bin/whisper-server"
+whisper_port = 8180
+model_dir = "/var/lib/speechkit/models"
+log_format = "json"
+log_level = "info"
+
+# ──────────────────────────────────────────────
 # Server Connection — points the desktop app at a remote speechkit-server.
 # Only consulted when at least one mode has mode_source = "server".
 # The server itself ignores this section; this is a device/local-target
@@ -123,7 +151,7 @@ mode_source = "local"
 
 [server_connection]
 enabled = false                              # Master switch. When false, every mode forces back to local.
-url = ""                                     # e.g. "https://speechkit.example.com" or "http://localhost:8080"
+url = "https://speechkit.kombify.dev"        # Default remote target. Local mode is still the startup default.
 bearer_token_env = "SPEECHKIT_SERVER_TOKEN"  # Env var name. The token value is never read from this file.
 fallback_to_local = true                     # If a server call fails, retry against the in-process kernel.
 request_timeout_sec = 30                     # Caps non-streaming HTTP calls. WebSocket sessions are unaffected.

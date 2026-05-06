@@ -2,8 +2,7 @@
  * Composite component that renders the per-mode local-vs-server
  * toggles for Dictation / Assist / Voice Agent in a single place,
  * driven off the device-target's /api/v1/modes settings + the
- * /api/v1/server-connection state. Sits in the General tab of the
- * Settings dialog.
+ * /api/v1/server-connection state. Used by the SpeechKit Server settings page.
  *
  * Self-contained: fetches everything it needs on mount, persists each
  * toggle change immediately. Surfaces errors inline so users see why
@@ -53,9 +52,14 @@ export type ModeSourceSectionProps = {
    * with its own ServerConnectionCard.
    */
   serverConnection?: ServerConnectionSetting;
+  onServerConnectionChange?: (next: ServerConnectionSetting) => void;
 };
 
-export function ModeSourceSection({ className, serverConnection: externalServerConnection }: ModeSourceSectionProps) {
+export function ModeSourceSection({
+  className,
+  serverConnection: externalServerConnection,
+  onServerConnectionChange,
+}: ModeSourceSectionProps) {
   const [modes, setModes] = useState<APIV1ModeSettings | null>(null);
   const [fetchedServerConnection, setFetchedServerConnection] =
     useState<ServerConnectionSetting | null>(null);
@@ -68,6 +72,14 @@ export function ModeSourceSection({ className, serverConnection: externalServerC
   // happy (no synchronous setState inside an effect body) and avoids
   // re-render churn when the parent prop identity changes.
   const serverConnection = externalServerConnection ?? fetchedServerConnection;
+
+  const applyServerConnection = useCallback(
+    (nextConnection: ServerConnectionSetting) => {
+      setFetchedServerConnection(nextConnection);
+      onServerConnectionChange?.(nextConnection);
+    },
+    [onServerConnectionChange],
+  );
 
   useEffect(() => {
     let cancelled = false;
@@ -110,8 +122,9 @@ export function ModeSourceSection({ className, serverConnection: externalServerC
       setError(null);
       try {
         if (next === "server" && !serverConnection?.enabled) {
-          const nextConnection = await patchAPIV1ServerConnection({ enabled: true });
-          setFetchedServerConnection(nextConnection);
+          applyServerConnection(
+            await patchAPIV1ServerConnection({ enabled: true }),
+          );
         }
         const updated = await patchAPIV1ModeSettings(mode, { modeSource: next });
         const settingsKey = SETTINGS_KEY[mode];
@@ -128,7 +141,7 @@ export function ModeSourceSection({ className, serverConnection: externalServerC
         setBusy(false);
       }
     },
-    [serverConnection?.enabled],
+    [applyServerConnection, serverConnection?.enabled],
   );
 
   const updateAllModes = useCallback(
@@ -138,8 +151,9 @@ export function ModeSourceSection({ className, serverConnection: externalServerC
       setError(null);
       try {
         if (next === "server" && !serverConnection?.enabled) {
-          const nextConnection = await patchAPIV1ServerConnection({ enabled: true });
-          setFetchedServerConnection(nextConnection);
+          applyServerConnection(
+            await patchAPIV1ServerConnection({ enabled: true }),
+          );
         }
         const updates = await Promise.all(
           MODE_KEYS.map(async (mode) => {
@@ -158,8 +172,9 @@ export function ModeSourceSection({ className, serverConnection: externalServerC
           }, prev);
         });
         if (next === "local") {
-          const nextConnection = await patchAPIV1ServerConnection({ enabled: false });
-          setFetchedServerConnection(nextConnection);
+          applyServerConnection(
+            await patchAPIV1ServerConnection({ enabled: false }),
+          );
         }
       } catch (err) {
         setError(String((err as Error)?.message ?? err));
@@ -167,7 +182,7 @@ export function ModeSourceSection({ className, serverConnection: externalServerC
         setBusy(false);
       }
     },
-    [modes, serverConnection],
+    [applyServerConnection, modes, serverConnection],
   );
 
   if (error && !modes) {

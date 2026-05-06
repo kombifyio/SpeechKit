@@ -15,6 +15,8 @@ func (s *appState) armQuickNoteRecording(noteID int64) {
 	s.mu.Lock()
 	s.quickNoteMode = true
 	s.quickCaptureMode = false
+	s.quickCaptureAutoStart = true
+	s.quickNoteAutoStop = true
 	s.quickCaptureNoteID = noteID
 	s.syncSpeechKitSnapshotLocked()
 	s.mu.Unlock()
@@ -33,6 +35,7 @@ func (s *appState) armQuickCapture(noteID int64) {
 	s.quickNoteMode = true
 	s.quickCaptureMode = true
 	s.quickCaptureAutoStart = true
+	s.quickNoteAutoStop = true
 	s.quickCaptureNoteID = noteID
 	s.syncSpeechKitSnapshotLocked()
 	s.mu.Unlock()
@@ -51,6 +54,7 @@ func (s *appState) clearQuickNoteRecording() {
 	s.quickNoteMode = false
 	s.quickCaptureMode = false
 	s.quickCaptureAutoStart = false
+	s.quickNoteAutoStop = false
 	s.quickCaptureNoteID = 0
 	s.syncSpeechKitSnapshotLocked()
 	s.mu.Unlock()
@@ -76,7 +80,7 @@ func (s *appState) quickCaptureModeActive() bool {
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	return s.quickCaptureMode
+	return s.quickCaptureMode || s.quickNoteAutoStop
 }
 
 func (s *appState) currentQuickNoteContext() quickNoteContext {

@@ -4,7 +4,7 @@ This document covers deployment paths for the central SpeechKit Server:
 
 1. **Local Docker Compose** (dev + e2e)
 2. **Installer setup modes** (onboarding or ready container deploy)
-3. **Managed dev/staging deployment** (reference workflow shape)
+3. **kombify dev deployment** (Coolify Cloud on `kombify-ionos-dev`)
 4. **Render Blueprint** (managed cloud, Frankfurt region)
 5. **Generic Kubernetes / any OCI runtime** (pointers only; no manifests shipped yet)
 
@@ -17,7 +17,7 @@ plain local `.env` file all work because the server only reads values from
 
 The SpeechKit Server is distributed as one OCI image:
 `ghcr.io/kombifyio/speechkit-server`. Tags follow the repository's semver tags,
-for example `ghcr.io/kombifyio/speechkit-server:v0.28.2`. The image:
+for example `ghcr.io/kombifyio/speechkit-server:v0.28.3`. The image:
 
 - listens on port `8080` over plain HTTP (add TLS at the edge)
 - exposes `/healthz` and `/readyz`
@@ -30,7 +30,8 @@ Minimum provider secrets for useful mode coverage:
 
 | Env var | Purpose |
 |---|---|
-| `SPEECHKIT_SERVER_TOKEN` | optional bearer token when `[server].auth_mode` is `bearer` or `bearer_or_edge` |
+| `SPEECHKIT_SERVER_TOKEN` | required by the shipped Compose stack; bearer token when `[server].auth_mode` is `bearer` or `bearer_or_edge` |
+| `POSTGRES_PASSWORD` | required by the shipped Compose stack for the bundled Postgres service |
 | `GOOGLE_AI_API_KEY` | Gemini Live Voice Agent + Google STT/TTS |
 | `OPENAI_API_KEY` | OpenAI Whisper / GPT / TTS fallback |
 | `HF_TOKEN` | HuggingFace STT fallback |
@@ -39,6 +40,8 @@ Minimum provider secrets for useful mode coverage:
 ## 1. Local Docker Compose
 
 ```bash
+export SPEECHKIT_SERVER_TOKEN="replace-with-a-local-dev-token"
+export POSTGRES_PASSWORD="replace-with-a-local-dev-password"
 export GOOGLE_AI_API_KEY="..."  # optional
 export OPENAI_API_KEY="..."     # optional
 docker compose -f deploy/docker/docker-compose.yml up -d
@@ -46,6 +49,9 @@ docker compose -f deploy/docker/docker-compose.yml up -d
 curl -fsS http://localhost:8080/healthz
 curl -fsS http://localhost:8080/readyz
 ```
+
+The two placeholder values above are local-development examples only. Do not
+reuse them for public, shared, or production deployments.
 
 ### End-to-end smoke test
 
@@ -79,20 +85,40 @@ enabled and allows settings writes. `--ready` disables onboarding UI/settings
 writes for preconfigured deployments with self-hosted defaults and env-based
 secrets.
 
-## 3. Managed dev/staging deployment
+## 3. kombify dev deployment
 
-A managed dev or staging environment should use the same image contract as
-production, with a shorter release cadence:
+The canonical internal dev server is:
 
-- Build a `git-{sha}` image from `deploy/docker/Dockerfile.server` target `speechkit-server`.
-- Push the image to your private container registry.
-- Render a runtime `config.toml` and compose or orchestrator payload.
-- Inject provider secrets from your chosen secret manager.
-- Deploy to the target host.
-- Gate the rollout on `GET /healthz`.
+```text
+https://speechkit.kombify.dev
+```
 
-The canonical kombify dev deployment is `https://speechkit.kombify.dev` and is
-managed by `.github/workflows/auto-deploy-dev.yml`.
+It runs as a Coolify Cloud Docker Compose service on `kombify-ionos-dev`.
+The deploy artifacts live under:
+
+```text
+deploy/coolify/kombify-ionos-dev/
+```
+
+The important routing rule is auth separation:
+
+- `/healthz`, `/readyz`, and mode APIs under `/v1/dictation`,
+  `/v1/assist`, `/v1/voiceagent` and their `/api/v1/*` aliases are routed
+  directly to SpeechKit and use SpeechKit Bearer/edge-HMAC auth.
+- Browser surfaces are routed through TinyAuth/Pocket ID.
+
+TinyAuth must not wrap the whole host as a single catch-all for API traffic.
+Desktop clients need JSON API responses and send `Authorization: Bearer
+<SPEECHKIT_SERVER_TOKEN>`.
+
+To update the Coolify service from a local shell with API credentials:
+
+```powershell
+$env:COOLIFY_API_BASE = "https://app.coolify.io/api/v1"
+$env:COOLIFY_API_TOKEN = "<token>"
+$env:COOLIFY_SERVICE_UUID = "<speechkit service uuid>"
+powershell -ExecutionPolicy Bypass -File scripts/deploy-coolify-dev.ps1
+```
 
 `/readyz` may report degraded when optional providers are intentionally missing;
 `/healthz` is the deployment gate.
@@ -133,6 +159,14 @@ Minimum deployment expectations:
   Agent sessions receive `session_end` frames.
 - **Voice Agent ticket TTL**: 30 s by default. Tune `[server].ticket_ttl_sec` if
   your load balancer adds latency.
+- **Public URL**: set `[server].public_url` when the service is behind a reverse
+  proxy or mounted under `/api`; generated Voice Agent `ws_url` values use this
+  trusted base instead of forwarded host headers.
+- **WebSocket Origins**: browser Voice Agent clients must match
+  `[server].cors_allowed_origins`; native clients may omit `Origin`.
+- **Edge identity signing**: edge-HMAC auth signs generic edge identity claims:
+  `user_id`, `org_id`, `plan`, and `role`. Persona/admin operations require the
+  signed role, not an unsigned `X-Edge-Role` value.
 - **Persona CRUD is admin-only**: set `Role=admin` on the edge-auth-signed
   identity for the operator account.
 - **Provider swap is zero-downtime**: change provider config and restart;

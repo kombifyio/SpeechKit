@@ -74,11 +74,12 @@ func (c desktopInputController) handleSilenceAutoStop(ctx context.Context) {
 	if c.recording == nil || !c.recording.IsRecording() {
 		return
 	}
-	c.log("Quick Capture: silence detected, auto-stopping", "info")
+	label := c.quickNoteRecordingLabel()
+	c.log(fmt.Sprintf("%s: silence detected, auto-stopping", label), "info")
 	c.dispatch(ctx, speechkit.Command{
 		Type: speechkit.CommandStopDictation,
 		Metadata: map[string]string{
-			"label": "Quick Capture",
+			"label": label,
 		},
 	}, "Stop")
 }
@@ -96,9 +97,20 @@ func (c desktopInputController) handleAutoStartTick(ctx context.Context) {
 	c.dispatch(ctx, speechkit.Command{
 		Type: speechkit.CommandStartDictation,
 		Metadata: map[string]string{
-			"label": "Quick Capture: auto-recording started (speak now, auto-stops on silence)",
+			"label": fmt.Sprintf("%s: auto-recording started (speak now, auto-stops on silence)", c.quickNoteRecordingLabel()),
 		},
 	}, "Start")
+}
+
+func (c desktopInputController) quickNoteRecordingLabel() string {
+	if c.state == nil {
+		return "Quick Capture"
+	}
+	context := c.state.currentQuickNoteContext()
+	if context.enabled && !context.captureMode {
+		return "Quick Note"
+	}
+	return "Quick Capture"
 }
 
 func (c desktopInputController) handleHotkey(ctx context.Context, evt hotkey.Event) {
@@ -406,7 +418,7 @@ func (c desktopInputController) currentVoiceAgentSession() *voiceagent.Session {
 func (c desktopInputController) toggleVoiceAgent(ctx context.Context) {
 	session := c.currentVoiceAgentSession() //nolint:contextcheck // getter, no context needed
 	if session == nil {
-		c.log("Voice Agent session not initialized — check config and API key", "error")
+		c.log("Voice Agent session not initialized â€” check config and API key", "error")
 		return
 	}
 
@@ -421,186 +433,11 @@ func (c desktopInputController) toggleVoiceAgent(ctx context.Context) {
 }
 
 func (c desktopInputController) activateVoiceAgent(ctx context.Context) {
-	if msg := c.voiceAgentStartBlockedReason(); msg != "" { //nolint:contextcheck // realtime session readiness is independent from a request lifecycle
-		c.presentPreflightHint(msg)
+	plan, ok := c.prepareVoiceAgentActivation(ctx)
+	if !ok {
 		return
 	}
-
-	session := c.currentVoiceAgentSession() //nolint:contextcheck // getter, no context needed
-	if session == nil {
-		c.log("Voice Agent session not initialized — check config and API key", "error")
-		return
-	}
-	if session.CurrentState() != voiceagent.StateInactive {
-		return
-	}
-
-	c.dispatch(ctx, speechkit.Command{
-		Type: speechkit.CommandSetActiveMode,
-		Metadata: map[string]string{
-			"mode": modeVoiceAgent,
-		},
-	}, "Set mode")
-
-	c.log("Voice Agent: activating", "info")
-	echoGuard := c.currentVoiceAgentEchoGuard()
-	if echoGuard != nil {
-		echoGuard.reset()
-	}
-	if c.state != nil {
-		c.state.resetVoiceAgentSessionSummary()
-	}
-
-	// Show prompter window if configured.
-	if c.state != nil && c.voiceAgentConfig != nil && c.voiceAgentConfig.ShowPrompter {
-		c.state.showPrompterWindowForMode(modeVoiceAgent, true)
-		c.state.updatePrompterState(string(voiceagent.StateConnecting))
-	}
-
-	// Resolve API key.
-	apiKey := c.voiceAgentAPIKey()
-	if apiKey == "" {
-		c.log("Voice Agent: no Google API key configured", "error")
-		return
-	}
-
-	model := "gemini-3.1-flash-live-preview"
-	voice := "Kore"
-	locale := "en"
-	if c.voiceAgentConfig != nil {
-		if c.voiceAgentConfig.Model != "" {
-			model = c.voiceAgentConfig.Model
-		}
-		if c.voiceAgentConfig.Voice != "" {
-			voice = c.voiceAgentConfig.Voice
-		}
-	}
-	if c.cfg != nil && c.cfg.General.Language != "" {
-		locale = c.cfg.General.Language
-	}
-
-	idleCfg := voiceagent.DefaultIdleConfig()
-	if c.voiceAgentConfig != nil {
-		if c.voiceAgentConfig.ReminderAfterIdleSec > 0 {
-			idleCfg.ReminderAfter = time.Duration(c.voiceAgentConfig.ReminderAfterIdleSec) * time.Second
-		}
-		if c.voiceAgentConfig.DeactivateAfterIdleSec > 0 {
-			idleCfg.DeactivateAfter = time.Duration(c.voiceAgentConfig.DeactivateAfterIdleSec) * time.Second
-		}
-	}
-
-	go func() {
-		vocabularyHint := ""
-		frameworkPrompt := ""
-		refinementPrompt := ""
-		policies := voiceagent.LivePolicies{}
-		if c.cfg != nil {
-			vocabularyHint = buildVoiceAgentVocabularyHint(parseVocabularyDictionary(c.cfg.Vocabulary.Dictionary))
-		}
-		if c.voiceAgentConfig != nil {
-			frameworkPrompt = strings.TrimSpace(c.voiceAgentConfig.FrameworkPrompt)
-			if frameworkPrompt == "" {
-				frameworkPrompt = strings.TrimSpace(c.voiceAgentConfig.Instruction)
-			}
-			refinementPrompt = strings.TrimSpace(c.voiceAgentConfig.RefinementPrompt)
-			policies = voiceagent.LivePolicies{
-				EnableInputAudioTranscription:  c.voiceAgentConfig.EnableInputTranscript,
-				EnableOutputAudioTranscription: c.voiceAgentConfig.EnableOutputTranscript,
-				EnableAffectiveDialog:          c.voiceAgentConfig.EnableAffectiveDialog,
-				Thinking: voiceagent.ThinkingPolicy{
-					Enabled:         c.voiceAgentConfig.ThinkingEnabled,
-					IncludeThoughts: c.voiceAgentConfig.IncludeThoughts,
-					ThinkingBudget:  int32(c.voiceAgentConfig.ThinkingBudget), // #nosec G115 -- config normalization bounds Gemini thinking budgets before use.
-					ThinkingLevel:   voiceagent.ThinkingLevel(c.voiceAgentConfig.ThinkingLevel),
-				},
-				ContextCompression: voiceagent.ContextCompressionPolicy{
-					Enabled:       c.voiceAgentConfig.ContextCompressionEnabled,
-					TriggerTokens: c.voiceAgentConfig.ContextCompressionTriggerTokens,
-					TargetTokens:  c.voiceAgentConfig.ContextCompressionTargetTokens,
-				},
-				ActivityDetection: voiceagent.ActivityDetectionPolicy{
-					Automatic:         c.voiceAgentConfig.AutomaticActivityDetection,
-					StartSensitivity:  voiceagent.StartSensitivity(c.voiceAgentConfig.VADStartSensitivity),
-					EndSensitivity:    voiceagent.EndSensitivity(c.voiceAgentConfig.VADEndSensitivity),
-					PrefixPaddingMs:   int32(c.voiceAgentConfig.VADPrefixPaddingMs),   // #nosec G115 -- VAD millisecond settings are bounded by config normalization.
-					SilenceDurationMs: int32(c.voiceAgentConfig.VADSilenceDurationMs), // #nosec G115 -- VAD millisecond settings are bounded by config normalization.
-					ActivityHandling:  voiceagent.ActivityHandling(c.voiceAgentConfig.ActivityHandling),
-					TurnCoverage:      voiceagent.TurnCoverage(c.voiceAgentConfig.TurnCoverage),
-				},
-			}
-		}
-		var workflow *voiceagent.WorkflowConfig
-		voice, frameworkPrompt, workflow = applyVoiceAgentProfileSelection(
-			voiceAgentProfileID(c.voiceAgentConfig),
-			voiceAgentSequenceID(c.voiceAgentConfig),
-			voice,
-			frameworkPrompt,
-		)
-		if session.ProviderName() == "server-voiceagent" {
-			workflow = nil
-		}
-
-		// Start streaming audio output before connecting.
-		if c.state != nil {
-			c.state.startVoiceAgentStream(ctx)
-		}
-
-		if err := session.Start(ctx, voiceagent.LiveConfig{
-			Model:            model,
-			APIKey:           apiKey,
-			Voice:            voice,
-			Locale:           locale,
-			FrameworkPrompt:  frameworkPrompt,
-			RefinementPrompt: refinementPrompt,
-			Instruction:      frameworkPrompt,
-			VocabularyHint:   vocabularyHint,
-			Policies:         policies,
-			Workflow:         workflow,
-		}, idleCfg); err != nil {
-			c.log(fmt.Sprintf("Voice Agent: start failed: %v", err), "error")
-			if c.state != nil {
-				c.state.stopVoiceAgentStream()
-			}
-			return
-		}
-
-		// Stream mic audio to the Voice Agent session via the shared audio capturer.
-		c.log("Voice Agent: streaming audio", "info")
-		if c.audioCapturer != nil {
-			audioSender := newVoiceAgentAudioSender(session, defaultVoiceAgentAudioQueueSize)
-			sendErrorLogged := false
-			audioSender.onSendError = func(err error) {
-				if err == nil || sendErrorLogged {
-					return
-				}
-				sendErrorLogged = true
-				c.log(fmt.Sprintf("Voice Agent: audio send failed: %v", err), "warn")
-				if c.state != nil {
-					c.state.sendPrompterMessage("system", "Voice Agent audio stream needs attention. Restart the Voice Agent if the next turn is not picked up.", true)
-				}
-			}
-			audioSender.Start(ctx)
-			if c.state != nil {
-				c.state.setVoiceAgentAudioSender(audioSender)
-			}
-			c.audioCapturer.SetPCMHandler(func(frame []byte) {
-				if !voiceAgentMicFrameAllowed(session.CurrentState(), echoGuard) {
-					return
-				}
-				_ = audioSender.Enqueue(frame)
-			})
-
-			// Start the mic capture so frames flow to the handler.
-			if err := c.audioCapturer.Start(); err != nil {
-				audioSender.Stop()
-				c.audioCapturer.SetPCMHandler(nil)
-				if c.state != nil {
-					c.state.stopVoiceAgentAudioSender()
-				}
-				c.log(fmt.Sprintf("Voice Agent: mic capture start failed: %v", err), "error")
-			}
-		}
-	}()
+	go c.startVoiceAgentSession(ctx, plan)
 }
 
 func voiceAgentProfileID(cfg *config.VoiceAgentConfig) string {

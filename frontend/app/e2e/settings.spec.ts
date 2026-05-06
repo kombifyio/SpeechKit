@@ -6,7 +6,7 @@ import { mockBackendRoutes } from './helpers'
  * Smoke tests for the Settings surface (settings.html → SettingsApp).
  *
  * SettingsApp loads settings state + model profiles on mount, then renders
- * a tabbed layout. We verify: page renders, the four tabs are present, and
+ * a tabbed layout. We verify: page renders, the seven tabs are present, and
  * navigating tabs shows the correct content without errors.
  */
 test.describe('Settings surface', () => {
@@ -19,17 +19,37 @@ test.describe('Settings surface', () => {
     await expect(page.getByRole('heading', { name: 'Settings' })).toBeVisible({ timeout: 5_000 })
   })
 
-  test('shows all four navigation tabs', async ({ page }) => {
+  test('shows all seven navigation tabs', async ({ page }) => {
     await expect(page.getByRole('button', { name: 'General', exact: true })).toBeVisible({ timeout: 5_000 })
+    await expect(page.getByRole('button', { name: 'Integrations', exact: true })).toBeVisible()
+    await expect(page.getByRole('button', { name: 'SpeechKit Server', exact: true })).toBeVisible()
+    await expect(page.getByRole('button', { name: 'Storage & Data', exact: true })).toBeVisible()
     await expect(page.getByRole('button', { name: 'Transcribe Mode', exact: true })).toBeVisible()
     await expect(page.getByRole('button', { name: 'Assist Mode', exact: true })).toBeVisible()
     await expect(page.getByRole('button', { name: 'Voice Agent Mode', exact: true })).toBeVisible()
   })
 
   test('General tab is active by default', async ({ page }) => {
-    // The General tab renders hotkey fields — spot-check one
     await expect(page.getByRole('button', { name: 'General' })).toBeVisible({ timeout: 5_000 })
-    // Audio retention label is unique to General tab
+    await expect(page.getByText('Startup')).toBeVisible()
+    await expect(page.getByText('Microphone', { exact: true })).toBeVisible()
+    await expect(page.getByText('Overlay', { exact: true })).toBeVisible()
+    await expect(page.getByLabel('Audio retention')).toBeHidden()
+  })
+
+  test('navigating to Integrations tab renders provider setup', async ({ page }) => {
+    await page.getByRole('button', { name: 'Integrations', exact: true }).click()
+    await expect(page.getByText('Optional providers appear here')).toBeVisible({ timeout: 5_000 })
+  })
+
+  test('navigating to SpeechKit Server tab renders server target and mode source', async ({ page }) => {
+    await page.getByRole('button', { name: 'SpeechKit Server', exact: true }).click()
+    await expect(page.getByText('Server Target')).toBeVisible({ timeout: 5_000 })
+    await expect(page.getByText('Mode Source')).toBeVisible({ timeout: 5_000 })
+  })
+
+  test('navigating to Storage & Data tab renders storage settings', async ({ page }) => {
+    await page.getByRole('button', { name: 'Storage & Data', exact: true }).click()
     await expect(page.getByLabel('Audio retention')).toBeVisible()
   })
 

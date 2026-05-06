@@ -16,7 +16,7 @@ import (
 // surface internal/server/assist.Handler depends on) against a remote
 // SpeechKit server's POST /v1/assist/process endpoint. The kernel-side
 // caller doesn't know whether the pipeline ran in-process or hopped a
-// network — the abstract type is preserved.
+// network â€” the abstract type is preserved.
 type AssistProcessor struct {
 	client *Client
 }
@@ -30,7 +30,7 @@ func NewAssist(client *Client) (*AssistProcessor, error) {
 }
 
 // processRequest mirrors the server's processJSONRequest. The text path
-// is the only one wired right now — Assist on the device side already
+// is the only one wired right now â€” Assist on the device side already
 // runs STT locally before reaching the Pipeline, so the server adapter
 // also enters at the post-STT stage. If a future device path wants to
 // hand audio directly to the server (skipping local STT entirely), an

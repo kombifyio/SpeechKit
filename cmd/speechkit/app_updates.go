@@ -11,6 +11,7 @@ import (
 	"sync"
 	"time"
 
+	desktopupdate "github.com/kombifyio/SpeechKit/internal/desktop/update"
 	"github.com/kombifyio/SpeechKit/internal/netsec"
 )
 
@@ -22,8 +23,9 @@ var appInstallerURLValidation = netsec.ValidationOptions{}
 // headers) with a long timeout for large installer downloads.
 var installerDownloadClient = netsec.NewSafeHTTPClient(netsec.ClientOptions{Timeout: 30 * time.Minute, DialValidation: &appInstallerURLValidation})
 
-// verifyInstallerBeforeOpen verifies the downloaded installer before the app
-// hands it to the OS shell. Tests replace this hook for unsigned fixtures.
+// verifyInstallerBeforeOpen verifies the downloaded installer before it is
+// marked ready and again before the app hands it to the OS shell. Tests
+// replace this hook for unsigned fixtures.
 var verifyInstallerBeforeOpen = verifyInstallerSignature
 
 type appUpdateStatus string
@@ -123,7 +125,7 @@ func (m *appUpdateManager) Start(release latestReleaseInfo, destDir string) appU
 		AssetName:  release.DownloadName,
 		Status:     appUpdateStatusPending,
 		TotalBytes: release.DownloadSize,
-		StatusText: "Starting…",
+		StatusText: "Startingâ€¦",
 		cancel:     cancel,
 	}
 
@@ -166,7 +168,7 @@ func (m *appUpdateManager) CompletedFile(jobID string) (string, bool) {
 func (m *appUpdateManager) run(ctx context.Context, job *appUpdateJob, release latestReleaseInfo, destDir string) {
 	job.mu.Lock()
 	job.Status = appUpdateStatusRunning
-	job.StatusText = "Downloading…"
+	job.StatusText = "Downloadingâ€¦"
 	job.mu.Unlock()
 
 	err := downloadAppInstaller(ctx, job, release, destDir)
@@ -287,6 +289,11 @@ func downloadAppInstaller(ctx context.Context, job *appUpdateJob, release latest
 		return fmt.Errorf("move installer into place: %w", err)
 	}
 
+	if err := verifyInstallerBeforeOpen(destPath); err != nil {
+		_ = os.Remove(destPath)
+		return fmt.Errorf("verify installer: %w", err)
+	}
+
 	job.mu.Lock()
 	job.FilePath = destPath
 	job.StatusText = "Ready to install"
@@ -296,31 +303,13 @@ func downloadAppInstaller(ctx context.Context, job *appUpdateJob, release latest
 }
 
 func resolveAppUpdateDir(cfgPath string) string {
-	if cfgPath != "" {
-		return filepath.Join(filepath.Dir(cfgPath), "updates")
-	}
-	if exeDir := executableDir(); exeDir != "" {
-		return filepath.Join(exeDir, "updates")
-	}
-	if localAppData := strings.TrimSpace(os.Getenv("LOCALAPPDATA")); localAppData != "" {
-		return filepath.Join(localAppData, "SpeechKit", "updates")
-	}
-	return filepath.Join(os.TempDir(), "SpeechKit", "updates")
+	return desktopupdate.ResolveDir(cfgPath, executableDir(), os.Getenv("LOCALAPPDATA"), os.TempDir())
 }
 
 func installerAssetName(release latestReleaseInfo) string {
-	if release.DownloadName != "" {
-		return filepath.Base(release.DownloadName)
-	}
-	if release.DownloadURL != "" {
-		if name := filepath.Base(release.DownloadURL); name != "" && name != "." && name != "/" {
-			return name
-		}
-	}
-	return fmt.Sprintf("SpeechKit-Setup-v%s.exe", release.Version)
+	return desktopupdate.InstallerAssetName(release)
 }
 
 func isInstallerAssetName(name string) bool {
-	ext := strings.ToLower(filepath.Ext(name))
-	return ext == ".exe" || ext == ".msi"
+	return desktopupdate.IsInstallerAssetName(name)
 }

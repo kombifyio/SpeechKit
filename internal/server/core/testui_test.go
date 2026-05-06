@@ -7,6 +7,8 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"github.com/kombifyio/SpeechKit/internal/config"
 )
 
 func TestRegisterTestUI_ServesModeTester(t *testing.T) {
@@ -265,7 +267,7 @@ func TestRegisterTestUI_AllowsHEADAndRejectsOtherMethods(t *testing.T) {
 
 func TestServerPublicPaths_IncludeOnlyAlwaysPublicUIPaths(t *testing.T) {
 	paths := serverPublicPaths()
-	for _, want := range []string{"/", "/healthz", "/readyz", "/setup", "/setup/"} {
+	for _, want := range []string{"/healthz", "/readyz"} {
 		found := false
 		for _, got := range paths {
 			if got == want {
@@ -277,7 +279,7 @@ func TestServerPublicPaths_IncludeOnlyAlwaysPublicUIPaths(t *testing.T) {
 			t.Fatalf("serverPublicPaths should include %q, got %#v", want, paths)
 		}
 	}
-	for _, forbidden := range []string{"/test-ui", "/test-ui/", "/admin", "/admin/", "/v1/server/settings", "/api/v1/server/settings"} {
+	for _, forbidden := range []string{"/", "/setup", "/setup/", "/test-ui", "/test-ui/", "/admin", "/admin/", "/v1/server/settings", "/api/v1/server/settings"} {
 		for _, got := range paths {
 			if got == forbidden {
 				t.Fatalf("serverPublicPaths should not include extra UI path %q, got %#v", forbidden, paths)
@@ -286,11 +288,49 @@ func TestServerPublicPaths_IncludeOnlyAlwaysPublicUIPaths(t *testing.T) {
 	}
 }
 
-func TestServerPublicRoutes_ExposeSettingsReadOnly(t *testing.T) {
+func TestServerBootstrapPaths_ExposeSetupOnlyDuringBootstrap(t *testing.T) {
+	paths := serverBootstrapPaths()
+	for _, want := range []string{"/", "/setup", "/setup/"} {
+		found := false
+		for _, got := range paths {
+			if got == want {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Fatalf("serverBootstrapPaths should include %q, got %#v", want, paths)
+		}
+	}
+	for _, forbidden := range []string{"/healthz", "/readyz", "/v1/server/settings", "/api/v1/server/settings"} {
+		for _, got := range paths {
+			if got == forbidden {
+				t.Fatalf("serverBootstrapPaths should not include %q, got %#v", forbidden, paths)
+			}
+		}
+	}
+}
+
+func TestServerPublicRoutes_DoNotExposeSettings(t *testing.T) {
 	routes := serverPublicRoutes()
+	if len(routes) != 0 {
+		t.Fatalf("serverPublicRoutes should be empty; settings reads are bootstrap/auth only, got %#v", routes)
+	}
+}
+
+func TestServerBootstrapAuthRoutes_ExposeSettingsDuringBootstrap(t *testing.T) {
+	routes := serverBootstrapAuthRoutes()
 	wants := map[string]map[string]bool{
-		"/v1/server/settings":     {http.MethodGet: false, http.MethodHead: false},
-		"/api/v1/server/settings": {http.MethodGet: false, http.MethodHead: false},
+		"/v1/server/settings": {
+			http.MethodGet:   false,
+			http.MethodHead:  false,
+			http.MethodPatch: false,
+		},
+		"/api/v1/server/settings": {
+			http.MethodGet:   false,
+			http.MethodHead:  false,
+			http.MethodPatch: false,
+		},
 	}
 
 	for _, route := range routes {
@@ -308,12 +348,46 @@ func TestServerPublicRoutes_ExposeSettingsReadOnly(t *testing.T) {
 	for path, methods := range wants {
 		for method := range methods {
 			if !methods[method] {
-				t.Fatalf("%s should be public for %s", method, path)
+				t.Fatalf("%s should be bootstrap-auth route for %s", method, path)
 			}
 		}
-		if methods[http.MethodPatch] {
-			t.Fatalf("%s must not be public for %s", http.MethodPatch, path)
+	}
+}
+
+func TestRegisterTestUI_NoOpWhenOnboardingDisabledByEnv(t *testing.T) {
+	t.Setenv(config.ServerOnboardingUIEnv, "false")
+
+	app := &App{Mux: http.NewServeMux()}
+	registerTestUI(app)
+
+	for _, path := range []string{"/", "/setup", "/setup/"} {
+		rec := httptest.NewRecorder()
+		app.Mux.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, path, nil))
+		if rec.Code != http.StatusNotFound {
+			t.Fatalf("with %s=false, GET %s should be 404 (handlers not registered), got %d", config.ServerOnboardingUIEnv, path, rec.Code)
 		}
+	}
+}
+
+func TestSetupHandler_Returns404WhenAppSealed(t *testing.T) {
+	app := &App{Mux: http.NewServeMux()}
+	registerTestUI(app)
+	app.bootstrapSealed.Store(true)
+
+	for _, path := range []string{"/setup", "/setup/"} {
+		rec := httptest.NewRecorder()
+		app.Mux.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, path, nil))
+		if rec.Code != http.StatusNotFound {
+			t.Fatalf("sealed app should 404 GET %s, got %d body=%s", path, rec.Code, rec.Body.String())
+		}
+	}
+
+	// Smoke (`/`) is harmless and remains reachable so operators can
+	// still view runtime status after onboarding completes.
+	rec := httptest.NewRecorder()
+	app.Mux.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/", nil))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("sealed app should still serve smoke at /, got %d", rec.Code)
 	}
 }
 

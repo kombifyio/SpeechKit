@@ -466,11 +466,7 @@ func (s *Session) receiveLoop(ctx context.Context) {
 			}
 			slog.Warn("voice agent speaking turn did not emit completion; returning to listening")
 			s.setState(StateListening)
-			s.mu.Lock()
-			if s.idleTimer != nil {
-				s.idleTimer.Reset()
-			}
-			s.mu.Unlock()
+			s.resetIdleTimer()
 		})
 	}
 	defer stopSpeakingSettleTimer()
@@ -508,98 +504,129 @@ func (s *Session) receiveLoop(ctx context.Context) {
 			return
 		}
 
-		// Barge-in: user interrupted model.
-		if msg.Interrupted {
-			stopSpeakingSettleTimer()
-			s.setState(StateListening)
-			if s.callbacks.OnInterrupted != nil {
-				s.callbacks.OnInterrupted()
-			}
-		}
-
-		// Input transcription (user speech).
-		if msg.InputTranscript != "" {
-			if s.callbacks.OnInputTranscript != nil {
-				s.callbacks.OnInputTranscript(msg.InputTranscript, msg.InputTranscriptDone)
-			}
-			if msg.InputTranscriptDone {
-				s.recordWorkflowUserTurn(ctx)
-			}
-			if msg.InputTranscriptDone && !msg.Done && len(msg.Audio) == 0 && msg.OutputTranscript == "" && msg.Text == "" {
-				s.setState(StateProcessing)
-			}
-		}
-
-		// Output transcription (model speech).
-		if msg.OutputTranscript != "" {
-			if s.callbacks.OnOutputTranscript != nil {
-				s.callbacks.OnOutputTranscript(msg.OutputTranscript, msg.OutputTranscriptDone)
-			}
-			if len(msg.Audio) == 0 && !msg.OutputTranscriptDone {
-				s.setProcessingUnlessSpeaking()
-			}
-		}
-
-		if msg.Text != "" {
-			if s.callbacks.OnText != nil {
-				s.callbacks.OnText(msg.Text)
-			}
-			if len(msg.Audio) == 0 {
-				s.setProcessingUnlessSpeaking()
-			}
-		}
-
-		if len(msg.Audio) > 0 {
-			s.setState(StateSpeaking)
-			if s.callbacks.OnAudio != nil {
-				s.callbacks.OnAudio(msg.Audio)
-			}
-			scheduleSpeakingSettle()
-		}
-
-		if len(msg.ToolCalls) > 0 && s.callbacks.OnToolCall != nil {
-			for _, call := range msg.ToolCalls {
-				s.callbacks.OnToolCall(call)
-			}
-		}
-
-		if len(msg.ToolCallCancellationIDs) > 0 && s.callbacks.OnToolCallCancellation != nil {
-			s.callbacks.OnToolCallCancellation(msg.ToolCallCancellationIDs)
-		}
-
-		// GoAway: server signals imminent session end — attempt reconnect.
-		if msg.GoAway {
-			if reconnector, ok := s.provider.(LiveReconnector); ok {
-				slog.Info("voice agent: GoAway received, attempting reconnect")
-				s.setState(StateRecovering)
-				if err := reconnector.Reconnect(ctx); err != nil {
-					slog.Error("voice agent reconnect failed", "err", err)
-					if s.callbacks.OnError != nil {
-						s.callbacks.OnError(fmt.Errorf("reconnect failed: %w", err))
-					}
-					s.cleanupOnError()
-					return
-				}
-				slog.Info("voice agent: reconnected successfully")
-				s.setState(StateListening)
-				continue // Resume receive loop with reconnected session.
-			}
-			// Provider doesn't support reconnect — treat as fatal.
-			slog.Warn("voice agent: GoAway received but provider does not support reconnect")
-			s.cleanupOnError()
+		if !s.handleLiveMessage(ctx, msg, scheduleSpeakingSettle, stopSpeakingSettleTimer) {
 			return
 		}
+	}
+}
 
-		if msg.Done || (msg.OutputTranscriptDone && len(msg.Audio) == 0) {
-			stopSpeakingSettleTimer()
-			s.setState(StateListening)
-			// Hold the lock across Reset to prevent a TOCTOU race with Stop().
-			s.mu.Lock()
-			if s.idleTimer != nil {
-				s.idleTimer.Reset()
-			}
-			s.mu.Unlock()
+func (s *Session) handleLiveMessage(ctx context.Context, msg *LiveMessage, scheduleSpeakingSettle, stopSpeakingSettleTimer func()) bool {
+	if msg.Interrupted {
+		s.handleInterruption(stopSpeakingSettleTimer)
+	}
+	s.handleInputTranscript(ctx, msg)
+	s.handleOutputTranscript(msg)
+	s.handleText(msg)
+	s.handleAudio(msg, scheduleSpeakingSettle)
+	s.handleToolEvents(msg)
+	if msg.GoAway {
+		return s.handleGoAway(ctx)
+	}
+	if msg.Done || (msg.OutputTranscriptDone && len(msg.Audio) == 0) {
+		stopSpeakingSettleTimer()
+		s.setState(StateListening)
+		s.resetIdleTimer()
+	}
+	return true
+}
+
+func (s *Session) handleInterruption(stopSpeakingSettleTimer func()) {
+	stopSpeakingSettleTimer()
+	s.setState(StateListening)
+	if s.callbacks.OnInterrupted != nil {
+		s.callbacks.OnInterrupted()
+	}
+}
+
+func (s *Session) handleInputTranscript(ctx context.Context, msg *LiveMessage) {
+	if msg.InputTranscript == "" {
+		return
+	}
+	if s.callbacks.OnInputTranscript != nil {
+		s.callbacks.OnInputTranscript(msg.InputTranscript, msg.InputTranscriptDone)
+	}
+	if msg.InputTranscriptDone {
+		s.recordWorkflowUserTurn(ctx)
+	}
+	if msg.InputTranscriptDone && !msg.Done && len(msg.Audio) == 0 && msg.OutputTranscript == "" && msg.Text == "" {
+		s.setState(StateProcessing)
+	}
+}
+
+func (s *Session) handleOutputTranscript(msg *LiveMessage) {
+	if msg.OutputTranscript == "" {
+		return
+	}
+	if s.callbacks.OnOutputTranscript != nil {
+		s.callbacks.OnOutputTranscript(msg.OutputTranscript, msg.OutputTranscriptDone)
+	}
+	if len(msg.Audio) == 0 && !msg.OutputTranscriptDone {
+		s.setProcessingUnlessSpeaking()
+	}
+}
+
+func (s *Session) handleText(msg *LiveMessage) {
+	if msg.Text == "" {
+		return
+	}
+	if s.callbacks.OnText != nil {
+		s.callbacks.OnText(msg.Text)
+	}
+	if len(msg.Audio) == 0 {
+		s.setProcessingUnlessSpeaking()
+	}
+}
+
+func (s *Session) handleAudio(msg *LiveMessage, scheduleSpeakingSettle func()) {
+	if len(msg.Audio) == 0 {
+		return
+	}
+	s.setState(StateSpeaking)
+	if s.callbacks.OnAudio != nil {
+		s.callbacks.OnAudio(msg.Audio)
+	}
+	scheduleSpeakingSettle()
+}
+
+func (s *Session) handleToolEvents(msg *LiveMessage) {
+	if len(msg.ToolCalls) > 0 && s.callbacks.OnToolCall != nil {
+		for _, call := range msg.ToolCalls {
+			s.callbacks.OnToolCall(call)
 		}
+	}
+	if len(msg.ToolCallCancellationIDs) > 0 && s.callbacks.OnToolCallCancellation != nil {
+		s.callbacks.OnToolCallCancellation(msg.ToolCallCancellationIDs)
+	}
+}
+
+func (s *Session) handleGoAway(ctx context.Context) bool {
+	reconnector, ok := s.provider.(LiveReconnector)
+	if !ok {
+		slog.Warn("voice agent: GoAway received but provider does not support reconnect")
+		s.cleanupOnError()
+		return false
+	}
+	slog.Info("voice agent: GoAway received, attempting reconnect")
+	s.setState(StateRecovering)
+	if err := reconnector.Reconnect(ctx); err != nil {
+		slog.Error("voice agent reconnect failed", "err", err)
+		if s.callbacks.OnError != nil {
+			s.callbacks.OnError(fmt.Errorf("reconnect failed: %w", err))
+		}
+		s.cleanupOnError()
+		return false
+	}
+	slog.Info("voice agent: reconnected successfully")
+	s.setState(StateListening)
+	return true
+}
+
+func (s *Session) resetIdleTimer() {
+	// Hold the lock across Reset to prevent a TOCTOU race with Stop().
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.idleTimer != nil {
+		s.idleTimer.Reset()
 	}
 }
 

@@ -552,6 +552,15 @@ func TestBuildNextConfig(t *testing.T) {
 
 	result := buildNextConfig(form, cfg)
 
+	assertBuildNextConfigGeneral(t, result)
+	assertBuildNextConfigUIAndAudio(t, result)
+	assertBuildNextConfigVoiceAgent(t, result)
+	assertBuildNextConfigStoreAndVocabulary(t, result)
+}
+
+func assertBuildNextConfigGeneral(t *testing.T, result config.Config) {
+	t.Helper()
+
 	if result.General.Hotkey != "ctrl+shift+d" {
 		t.Errorf("Hotkey = %q, want %q", result.General.Hotkey, "ctrl+shift+d")
 	}
@@ -579,6 +588,14 @@ func TestBuildNextConfig(t *testing.T) {
 	if !result.General.DictateEnabled || !result.General.AssistEnabled || result.General.VoiceAgentEnabled {
 		t.Fatalf("unexpected mode enabled flags: %+v", result.General)
 	}
+	if !result.General.AutoStartOnLaunch {
+		t.Error("General.AutoStartOnLaunch = false, want true")
+	}
+}
+
+func assertBuildNextConfigUIAndAudio(t *testing.T, result config.Config) {
+	t.Helper()
+
 	if result.Audio.DeviceID != "dev-1" {
 		t.Errorf("DeviceID = %q", result.Audio.DeviceID)
 	}
@@ -588,6 +605,11 @@ func TestBuildNextConfig(t *testing.T) {
 	if result.UI.OverlayPosition != "bottom" {
 		t.Errorf("OverlayPosition = %q", result.UI.OverlayPosition)
 	}
+}
+
+func assertBuildNextConfigVoiceAgent(t *testing.T, result config.Config) {
+	t.Helper()
+
 	if result.VoiceAgent.CloseBehavior != config.VoiceAgentCloseBehaviorNewChat {
 		t.Errorf("VoiceAgent.CloseBehavior = %q", result.VoiceAgent.CloseBehavior)
 	}
@@ -606,12 +628,14 @@ func TestBuildNextConfig(t *testing.T) {
 	if result.VoiceAgent.Instruction != "Framework prompt" {
 		t.Errorf("VoiceAgent.Instruction = %q", result.VoiceAgent.Instruction)
 	}
-	if !result.General.AutoStartOnLaunch {
-		t.Error("General.AutoStartOnLaunch = false, want true")
-	}
 	if !result.VoiceAgent.AutoStartOnLaunch {
 		t.Error("VoiceAgent.AutoStartOnLaunch = false, want true")
 	}
+}
+
+func assertBuildNextConfigStoreAndVocabulary(t *testing.T, result config.Config) {
+	t.Helper()
+
 	if result.Store.Backend != "sqlite" {
 		t.Errorf("StoreBackend = %q", result.Store.Backend)
 	}

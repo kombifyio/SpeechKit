@@ -165,6 +165,44 @@ func isolateManagedHFEnvForTest(t *testing.T) {
 	}
 }
 
+func TestNewInitialAppStateMirrorsConfigDefaults(t *testing.T) {
+	cfg, err := config.Load(filepath.Join(t.TempDir(), "missing.toml"))
+	if err != nil {
+		t.Fatalf("Load defaults: %v", err)
+	}
+	cfg.General.DictateHotkey = "ctrl+alt+d"
+	cfg.General.AssistHotkey = "ctrl+alt+a"
+	cfg.General.VoiceAgentHotkey = "ctrl+alt+v"
+	cfg.UI.OverlayMovable = true
+	cfg.UI.OverlayFreeX = 321
+	cfg.UI.OverlayFreeY = 654
+	cfg.Vocabulary.Dictionary = "kombify => Kombify"
+
+	state := newInitialAppState(cfg)
+
+	if state.controlPlaneToken == "" {
+		t.Fatal("controlPlaneToken should be generated")
+	}
+	if got, want := state.dictateHotkey, "ctrl+alt+d"; got != want {
+		t.Fatalf("dictateHotkey = %q, want %q", got, want)
+	}
+	if got, want := state.assistHotkey, "ctrl+alt+a"; got != want {
+		t.Fatalf("assistHotkey = %q, want %q", got, want)
+	}
+	if got, want := state.voiceAgentHotkey, "ctrl+alt+v"; got != want {
+		t.Fatalf("voiceAgentHotkey = %q, want %q", got, want)
+	}
+	if !state.overlayMovable || state.overlayFreeX != 321 || state.overlayFreeY != 654 {
+		t.Fatalf("overlay movable/free position = %v/%d/%d", state.overlayMovable, state.overlayFreeX, state.overlayFreeY)
+	}
+	if got, want := state.vocabularyDictionary, "kombify => Kombify"; got != want {
+		t.Fatalf("vocabularyDictionary = %q, want %q", got, want)
+	}
+	if state.downloads == nil || state.appUpdates == nil {
+		t.Fatal("download and app update managers should be initialized")
+	}
+}
+
 func TestOverlayWindowOptionsKeepOverlayAboveApps(t *testing.T) {
 	opts := newOverlayWindowOptions()
 

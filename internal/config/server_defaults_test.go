@@ -84,3 +84,15 @@ func TestApplyServerRuntimeDefaults_GoogleKeyKeepsGeminiDefault(t *testing.T) {
 		t.Fatal("Google credential should keep the Gemini Live default")
 	}
 }
+
+func TestApplyServerRuntimeDefaults_UsesPublicURLEnv(t *testing.T) {
+	t.Setenv(ServerSelfHostedDefaultsEnv, "true")
+	t.Setenv("SPEECHKIT_PUBLIC_URL", " https://speechkit.kombify.dev/ ")
+
+	cfg := defaults()
+	ApplyServerRuntimeDefaults(cfg)
+
+	if cfg.Server.PublicURL != "https://speechkit.kombify.dev" {
+		t.Fatalf("Server.PublicURL = %q, want speechkit public URL from env", cfg.Server.PublicURL)
+	}
+}
