@@ -1,4 +1,4 @@
-# SpeechKit v0.30 Preview Agent Context
+# SpeechKit v0.30 Agent Context
 
 SpeechKit is a voice framework for products and automation hosts. It has three
 strict modes:
@@ -7,8 +7,9 @@ strict modes:
 - Assist: one-shot utility, codeword, or LLM result with optional TTS.
 - Voice Agent: realtime audio-to-audio dialogue for fast follow-ups.
 
-v0.30 Preview is testable but not released. Use preview docs and preview image
-tags without creating a `v0.30.0` release or changing `latest`.
+v0.30 is the released stable line. The latest GitHub Release is the canonical
+source for desktop installers; the `latest` GHCR tag tracks the current
+stable server image.
 
 ## Start Here
 
@@ -27,7 +28,7 @@ Hi Codex, go to speechkit.cc and install the SpeechKit Server on this server.
 ```
 
 ```text
-Hi Codex, read speechkit.cc/llms.txt, then install the v0.30 Preview SpeechKit Server with Docker Compose.
+Hi Codex, read speechkit.cc/llms.txt, then install the SpeechKit Server with Docker Compose.
 ```
 
 ```text
@@ -40,25 +41,16 @@ Hi Codex, configure `speechkit-mcp` in docs mode and verify the SpeechKit API be
 
 ## Server Install
 
-For a stable server:
-
 ```sh
 curl -fsSL https://speechkit.cc/install-server.sh | sh
-```
-
-For v0.30 Preview:
-
-```sh
-curl -fsSL https://speechkit.cc/install-server.sh | sh -s -- --channel preview
 ```
 
 The script writes a Docker Compose stack, `config.toml`, and `.env` into
 `/opt/speechkit` by default. It generates a local bearer token when one is not
 provided. The generated Compose stack binds to `127.0.0.1:8080` by default;
-use `--public-bind` only behind a TLS reverse proxy. It uses:
-
-- Stable: `ghcr.io/kombifyio/speechkit-server:latest`
-- Preview: `ghcr.io/kombifyio/speechkit-server:v0.30-preview`
+use `--public-bind` only behind a TLS reverse proxy. It pulls
+`ghcr.io/kombifyio/speechkit-server:latest`, which tracks the latest stable
+release.
 
 ## API Surfaces
 
@@ -68,7 +60,7 @@ https://speechkit.cc/api/openapi.v1.yaml
 Use the AsyncAPI document for the Voice Agent WebSocket contract:
 https://speechkit.cc/api/asyncapi.v1.yaml
 
-Important v0.30 Preview surfaces:
+Important v0.30 surfaces:
 
 - `GET /v1/catalog/profiles`
 - `GET /v1/catalog/contracts`
@@ -90,7 +82,7 @@ manage a running SpeechKit Server.
 
 Agent planning tools:
 
-- `speechkit_install_plan`: read-only install steps for stable or v0.30 Preview.
+- `speechkit_install_plan`: read-only install steps for the stable server.
 - `speechkit_self_check_plan`: ordered Docker, health, readiness, config, catalog, OpenAPI, and AsyncAPI probes.
 - `speechkit_scaffold_templates`: list starter integration templates.
 - `speechkit_scaffold_integration`: render a starter integration in memory for an agent to apply.

@@ -253,8 +253,6 @@ jobs:
           mapfile -t files < <(find . -type f -name '*.go' \
             -not -path './node_modules/*' \
             -not -path './frontend/*' \
-            -not -path './Website/*' \
-            -not -path './marketing-site-svelte/*' \
             -not -path './android/*' \
             -not -path './internal/frontendassets/*' \
             -not -path './.cache/*')

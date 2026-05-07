@@ -87,11 +87,10 @@ workflows:
 
 ```bash
 curl -fsSL https://speechkit.cc/install-server.sh | sh
-curl -fsSL https://speechkit.cc/install-server.sh | sh -s -- --channel preview
 ```
 
-The preview channel pins `ghcr.io/kombifyio/speechkit-server:v0.30-preview`
-and must not be treated as a v0.30.0 release.
+The installer pulls `ghcr.io/kombifyio/speechkit-server:latest`, which tracks
+the most recent stable release.
 
 ## API contract
 

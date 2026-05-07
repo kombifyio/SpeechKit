@@ -6,19 +6,89 @@ The format is based on Keep a Changelog and this project is intended to ship und
 
 ## [Unreleased]
 
+## [0.30.1] - 2026-05-08
+
+v0.30.1 is a docs and tooling polish release on top of v0.30.0. The
+v0.30 docs surface now describes itself as the released stable line
+instead of a still-in-progress preview, and the public toolchain has
+been brought current with the latest Go security patches.
+
+### Highlights
+
+- **Stable v0.30 docs**: dropped the "Preview, not yet released"
+  framing across the public docs (Getting Started, agent llms.txt,
+  install-server.sh guidance, server README/DEPLOY); v0.30.0 IS the
+  released line.
+- **Toolchain bump**: Go 1.26.3 + `golang.org/x/net` v0.53.0 across
+  the build pipeline, closing 17 stdlib + transitive vulnerability
+  reports surfaced by govulncheck and OSV.
+
+### Changed
+
+- `docs/agent/llms.txt`, `docs/agent/llms-full.txt`,
+  `docs/server/README.md`, `docs/server/DEPLOY.md`, and the public
+  Website Getting Started pages no longer describe v0.30 as a
+  preview. The `--channel preview` install flag and
+  `:v0.30-preview` GHCR tag references have been removed where
+  they conflicted with the released v0.30.0.
+
+### Security
+
+- Bumped Go toolchain to 1.26.3 and `golang.org/x/net` to v0.53.0,
+  resolving GO-2026-4918 / 4971 / 4976 / 4977 / 4980 / 4981 / 4982 /
+  4986 reported against the previous baseline.
+
 ## [0.30.0] - 2026-05-07
+
+v0.30.0 introduces the public agent and integrator-facing
+documentation surface for SpeechKit. Existing v0.29.0 desktop
+installs auto-update; the new SpeechKit Server image is
+`ghcr.io/kombifyio/speechkit-server:v0.30.0`.
+
+### Highlights
+
+- **Getting Started, two tracks**: a concise track for human
+  integrators and a longer track for coding agents and MCP tools,
+  both linked from the public Website.
+- **Crawler-friendly Markdown entrypoints**: `/llms.txt` and
+  `/llms-full.txt` give documentation-aware agents a single URL
+  to load before writing integrations.
+- **One-line server install**: `install-server.sh` writes a
+  self-contained Docker Compose deployment with a generated bearer
+  token, pinned to a stable image.
 
 ### Added
 
-- Getting Started documentation for human and agent integrators.
-- Markdown entrypoints `/llms.txt` and `/llms-full.txt` for
-  documentation-aware coding agents.
-- Static OpenAPI surface and MCP guidance for SpeechKit Server.
+- Two Getting Started tracks (general + technical) with links from
+  the Website.
+- `/llms.txt` and `/llms-full.txt` Markdown endpoints for coding
+  agents.
+- Static OpenAPI surface published at the public Website root.
+- MCP guidance and `speechkit-mcp` prompt updates so docs-mode
+  agents start from the public Markdown / OpenAPI surfaces before
+  writing integrations.
 - `install-server.sh` for one-line SpeechKit Server installs.
 - Feature-detected read-only WebMCP documentation context for
   browsers that expose `navigator.modelContext`.
 
 ## [0.29.0] - 2026-05-06
+
+v0.29.0 is the post-audit release. It ships the highest-priority
+security and correctness fixes from a comprehensive code-base
+review, plus a settings-page reorganisation and a kernel/adapter
+boundary cleanup. Superseded by v0.30.0.
+
+### Highlights
+
+- **Bootstrap window is one-shot**: the SpeechKit Server's setup
+  flow can be opened only on a fresh, unbootstrapped install; once
+  closed it cannot be reopened by editing the settings file.
+- **Rate limiter is bounded**: the in-memory limiter now caps its
+  bucket map with LRU eviction and a background sweeper, closing
+  a slow memory-exhaustion path.
+- **Frontend correctness**: dashboard clipboard feedback awaits
+  success, log entries use stable React keys, settings hotkey
+  patches are typed end-to-end.
 
 ### Security
 

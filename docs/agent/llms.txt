@@ -1,9 +1,9 @@
-# SpeechKit v0.30 Preview
+# SpeechKit v0.30
 
 > Agent entrypoint for SpeechKit Server, Framework API, and MCP integration.
 
 SpeechKit is a Windows-first voice framework with three strict modes:
-Dictation, Assist, and Voice Agent. v0.30 Preview adds API-first server
+Dictation, Assist, and Voice Agent. v0.30 ships API-first server
 surfaces, a Go client, a CLI, and an MCP server for coding agents.
 
 Use these links first:
@@ -32,8 +32,5 @@ Hi Codex, go to speechkit.cc and install the SpeechKit Server on this server.
 
 Safety:
 
-- Do not publish a v0.30.0 GitHub Release from this preview.
-- Do not retag or overwrite `latest` for preview images.
-- Use `--channel preview` only when the user explicitly wants v0.30 Preview.
 - Keep the default local bind unless the user explicitly asks for public access.
 - Keep secrets in environment variables or generated `.env` files, never in repo files.

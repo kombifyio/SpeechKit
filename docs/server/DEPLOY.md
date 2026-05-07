@@ -88,12 +88,10 @@ website installer:
 
 ```bash
 curl -fsSL https://speechkit.cc/install-server.sh | sh
-curl -fsSL https://speechkit.cc/install-server.sh | sh -s -- --channel preview
 ```
 
-`--channel preview` is for v0.30 preview testing only. It uses
-`ghcr.io/kombifyio/speechkit-server:v0.30-preview` and never publishes or
-updates the release `latest` tag.
+The installer pulls `ghcr.io/kombifyio/speechkit-server:latest`, which tracks
+the most recent stable release.
 
 ## Generic Kubernetes Or OCI
 
