@@ -160,6 +160,38 @@ func TestContractTranscriptionRoundTrip(t *testing.T) {
 	})
 }
 
+func TestContractTranscriptionOwnershipFilters(t *testing.T) {
+	eachBackend(t, func(t *testing.T, s Store) {
+		ctxA := WithRecordOwner(context.Background(), RecordOwner{UserID: "user-a", OrgID: "org-1", Source: "edge_hmac"})
+		ctxB := WithRecordOwner(context.Background(), RecordOwner{UserID: "user-b", OrgID: "org-1", Source: "edge_hmac"})
+		if err := s.SaveTranscription(ctxA, "owned by a", "en", "p", "m", 100, 10, nil); err != nil {
+			t.Fatalf("SaveTranscription(a): %v", err)
+		}
+		if err := s.SaveTranscription(ctxB, "owned by b", "en", "p", "m", 100, 10, nil); err != nil {
+			t.Fatalf("SaveTranscription(b): %v", err)
+		}
+		if err := s.SaveTranscription(context.Background(), "legacy ownerless", "en", "p", "m", 100, 10, nil); err != nil {
+			t.Fatalf("SaveTranscription(legacy): %v", err)
+		}
+
+		owned, err := s.ListTranscriptions(context.Background(), ListOpts{Limit: 10, OwnerUserID: "user-a", OwnerOrgID: "org-1"})
+		if err != nil {
+			t.Fatalf("ListTranscriptions(owner): %v", err)
+		}
+		if len(owned) != 1 || owned[0].Text != "owned by a" || owned[0].OwnerUserID != "user-a" {
+			t.Fatalf("owner filtered list = %+v, want only user-a record", owned)
+		}
+
+		all, err := s.ListTranscriptions(context.Background(), ListOpts{Limit: 10, IncludeAllOwners: true, IncludeOwnerless: true})
+		if err != nil {
+			t.Fatalf("ListTranscriptions(admin): %v", err)
+		}
+		if len(all) != 3 {
+			t.Fatalf("admin list len = %d, want 3", len(all))
+		}
+	})
+}
+
 // TestContractQuickNoteLifecycle walks the full quick-note CRUD surface on
 // every backend. Drift in any backend (e.g. a typo in an UPDATE returning
 // RowsAffected vs row-count check) will surface here.
@@ -230,6 +262,49 @@ func TestContractStatsReflectsWrites(t *testing.T) {
 		}
 		if after.TotalWords < 2 {
 			t.Errorf("Stats.TotalWords = %d, want at least 2", after.TotalWords)
+		}
+	})
+}
+
+func TestContractVoiceAgentSessionOwnershipAndGet(t *testing.T) {
+	eachBackend(t, func(t *testing.T, s Store) {
+		vs, ok := s.(VoiceAgentSessionStore)
+		if !ok {
+			t.Skip("backend does not implement VoiceAgentSessionStore")
+		}
+
+		ctxA := WithRecordOwner(context.Background(), RecordOwner{UserID: "user-a", OrgID: "org-1", Source: "edge_hmac"})
+		ctxB := WithRecordOwner(context.Background(), RecordOwner{UserID: "user-b", OrgID: "org-1", Source: "edge_hmac"})
+		idA, err := vs.SaveVoiceAgentSession(ctxA, VoiceAgentSession{
+			Language:   "en",
+			Transcript: "hello from a",
+			Summary:    VoiceAgentSessionSummary{Summary: "a summary"},
+		})
+		if err != nil {
+			t.Fatalf("SaveVoiceAgentSession(a): %v", err)
+		}
+		if _, err := vs.SaveVoiceAgentSession(ctxB, VoiceAgentSession{
+			Language:   "en",
+			Transcript: "hello from b",
+			Summary:    VoiceAgentSessionSummary{Summary: "b summary"},
+		}); err != nil {
+			t.Fatalf("SaveVoiceAgentSession(b): %v", err)
+		}
+
+		got, err := vs.GetVoiceAgentSession(context.Background(), idA)
+		if err != nil {
+			t.Fatalf("GetVoiceAgentSession: %v", err)
+		}
+		if got.Transcript != "hello from a" || got.OwnerUserID != "user-a" {
+			t.Fatalf("GetVoiceAgentSession = %+v, want user-a session", got)
+		}
+
+		owned, err := vs.ListVoiceAgentSessions(context.Background(), ListOpts{Limit: 10, OwnerUserID: "user-a", OwnerOrgID: "org-1"})
+		if err != nil {
+			t.Fatalf("ListVoiceAgentSessions(owner): %v", err)
+		}
+		if len(owned) != 1 || owned[0].Transcript != "hello from a" {
+			t.Fatalf("owner filtered sessions = %+v, want only user-a session", owned)
 		}
 	})
 }

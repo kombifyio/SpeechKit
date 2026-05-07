@@ -15,12 +15,15 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"mime"
 	"net/http"
 	"strings"
 	"time"
 
 	"github.com/kombifyio/SpeechKit/internal/server/audio"
 	"github.com/kombifyio/SpeechKit/internal/server/httpx"
+	"github.com/kombifyio/SpeechKit/internal/server/storageauth"
+	"github.com/kombifyio/SpeechKit/internal/store"
 	"github.com/kombifyio/SpeechKit/internal/stt"
 )
 
@@ -36,6 +39,7 @@ type Options struct {
 	Router        Transcriber
 	MaxUploadMB   int    // request body ceiling; 0 disables the limit (discouraged)
 	DefaultPrompt string // applied when the request does not provide a prompt
+	Store         store.Store
 }
 
 // Handler implements the dictation HTTP surface.
@@ -43,6 +47,7 @@ type Handler struct {
 	router        Transcriber
 	maxBytes      int64
 	defaultPrompt string
+	store         store.Store
 }
 
 // New constructs a Handler. The router must be non-nil; a zero maxBytes
@@ -59,6 +64,7 @@ func New(opts Options) (*Handler, error) {
 		router:        opts.Router,
 		maxBytes:      maxBytes,
 		defaultPrompt: strings.TrimSpace(opts.DefaultPrompt),
+		store:         opts.Store,
 	}, nil
 }
 
@@ -67,7 +73,7 @@ func (h *Handler) Mount(mux *http.ServeMux) {
 	mux.Handle("/v1/dictation/transcribe", h)
 }
 
-// response body shape â€” kept stable across versions so kombify-AI and future
+// response body shape — kept stable across versions so kombify-AI and future
 // OSS consumers can pin to this contract.
 type transcribeResponse struct {
 	Text       string      `json:"text"`
@@ -147,7 +153,7 @@ func (h *Handler) handleMultipart(w http.ResponseWriter, r *http.Request) {
 		Prompt:   strings.TrimSpace(r.FormValue("prompt")),
 	}
 	opts.Prompt = h.resolvePrompt(opts.Prompt)
-	h.transcribeAndReply(w, r.Context(), file, partCT, opts)
+	h.transcribeAndReply(w, r, file, partCT, opts)
 }
 
 func (h *Handler) handleJSON(w http.ResponseWriter, r *http.Request) {
@@ -198,7 +204,7 @@ func (h *Handler) handleJSON(w http.ResponseWriter, r *http.Request) {
 	}
 	opts.Prompt = h.resolvePrompt(opts.Prompt)
 
-	h.transcribeBytes(w, r.Context(), raw, formatHint, opts)
+	h.transcribeBytes(w, r, raw, formatHint, opts)
 }
 
 func (h *Handler) resolvePrompt(prompt string) string {
@@ -210,7 +216,7 @@ func (h *Handler) resolvePrompt(prompt string) string {
 }
 
 // transcribeAndReply buffers the reader, decodes, and hands off.
-func (h *Handler) transcribeAndReply(w http.ResponseWriter, ctx context.Context, reader io.Reader, contentType string, opts stt.TranscribeOpts) {
+func (h *Handler) transcribeAndReply(w http.ResponseWriter, r *http.Request, reader io.Reader, contentType string, opts stt.TranscribeOpts) {
 	lr := io.LimitReader(reader, h.maxBytes+1)
 	raw, err := io.ReadAll(lr)
 	if err != nil {
@@ -223,10 +229,10 @@ func (h *Handler) transcribeAndReply(w http.ResponseWriter, ctx context.Context,
 			fmt.Sprintf("audio exceeds maximum %d bytes", h.maxBytes))
 		return
 	}
-	h.transcribeBytes(w, ctx, raw, contentType, opts)
+	h.transcribeBytes(w, r, raw, contentType, opts)
 }
 
-func (h *Handler) transcribeBytes(w http.ResponseWriter, ctx context.Context, raw []byte, contentType string, opts stt.TranscribeOpts) {
+func (h *Handler) transcribeBytes(w http.ResponseWriter, r *http.Request, raw []byte, contentType string, opts stt.TranscribeOpts) {
 	decoded, err := audio.Decode(raw, contentType)
 	if err != nil {
 		if errors.Is(err, audio.ErrUnsupportedFormat) {
@@ -246,6 +252,7 @@ func (h *Handler) transcribeBytes(w http.ResponseWriter, ctx context.Context, ra
 
 	started := time.Now()
 	durationSecs := float64(decoded.DurationMs) / 1000.0
+	ctx := r.Context()
 	result, err := h.router.Route(ctx, decoded.PCM, durationSecs, opts)
 	latency := time.Since(started)
 
@@ -282,6 +289,19 @@ func (h *Handler) transcribeBytes(w http.ResponseWriter, ctx context.Context, ra
 			DurationMs: decoded.DurationMs,
 		},
 	}
+	if h.store != nil {
+		persistCtx := storageauth.ContextWithRequestOwner(ctx, r)
+		audioAsset := audioAssetInput(raw, contentType, decoded.SourceFormat, decoded.DurationMs)
+		var err error
+		if saver, ok := h.store.(store.TranscriptionAudioStore); ok {
+			err = saver.SaveTranscriptionWithAudio(persistCtx, result.Text, resp.Language, result.Provider, result.Model, decoded.DurationMs, latency.Milliseconds(), audioAsset)
+		} else {
+			err = h.store.SaveTranscription(persistCtx, result.Text, resp.Language, result.Provider, result.Model, decoded.DurationMs, latency.Milliseconds(), raw)
+		}
+		if err != nil {
+			slog.Warn("dictation: persist transcript failed", "err", err)
+		}
+	}
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
@@ -295,4 +315,69 @@ func firstNonEmpty(values ...string) string {
 		}
 	}
 	return ""
+}
+
+func audioAssetInput(raw []byte, contentType, sourceFormat string, durationMs int64) store.AudioAssetInput {
+	mimeType := strings.TrimSpace(contentType)
+	if parsed, _, err := mime.ParseMediaType(mimeType); err == nil {
+		mimeType = parsed
+	}
+	extension := audioExtension(mimeType, sourceFormat)
+	if mimeType == "" {
+		mimeType = audioMimeType(extension)
+	}
+	return store.AudioAssetInput{
+		Data:       raw,
+		MimeType:   mimeType,
+		Extension:  extension,
+		DurationMs: durationMs,
+	}
+}
+
+func audioExtension(mimeType, sourceFormat string) string {
+	switch strings.ToLower(strings.TrimSpace(strings.Split(mimeType, ";")[0])) {
+	case "audio/mpeg", "audio/mp3":
+		return ".mp3"
+	case "audio/ogg":
+		return ".ogg"
+	case "audio/opus":
+		return ".opus"
+	case "audio/webm":
+		return ".webm"
+	case "audio/l16", "audio/pcm":
+		return ".pcm"
+	case "audio/wav", "audio/wave", "audio/x-wav":
+		return ".wav"
+	}
+	switch strings.ToLower(strings.TrimSpace(sourceFormat)) {
+	case "mp3", "mpeg":
+		return ".mp3"
+	case "ogg":
+		return ".ogg"
+	case "opus":
+		return ".opus"
+	case "webm":
+		return ".webm"
+	case "pcm", "pcm16", "l16":
+		return ".pcm"
+	default:
+		return ".wav"
+	}
+}
+
+func audioMimeType(extension string) string {
+	switch strings.ToLower(strings.TrimSpace(extension)) {
+	case ".mp3":
+		return "audio/mpeg"
+	case ".ogg":
+		return "audio/ogg"
+	case ".opus":
+		return "audio/opus"
+	case ".webm":
+		return "audio/webm"
+	case ".pcm":
+		return "audio/L16"
+	default:
+		return "audio/wav"
+	}
 }

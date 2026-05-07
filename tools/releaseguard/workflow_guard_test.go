@@ -209,7 +209,7 @@ func TestCIWorkflowRunsRaceTestsForCriticalGoPackages(t *testing.T) {
 func TestAutoDeployDevWorkflowRetired(t *testing.T) {
 	path := filepath.Join(".github", "workflows", "auto-deploy-dev.yml")
 	if _, err := os.Stat(filepath.Join(repoRoot(t), path)); err == nil {
-		t.Fatalf("auto-deploy-dev.yml is back; the workflow was retired in v0.29.0 â€” re-add intentionally and update this guard")
+		t.Fatalf("auto-deploy-dev.yml is back; the workflow was retired in v0.29.0 — re-add intentionally and update this guard")
 	}
 }
 
@@ -290,7 +290,7 @@ func TestServerReferenceConfigRequiresBearerAuthByDefault(t *testing.T) {
 
 	assertContains(t, config, `auth_mode              = "bearer"`)
 	assertContains(t, docs, "`bearer` (production default)")
-	assertContains(t, docs, "`none` â€” local development only")
+	assertContains(t, docs, "`none` — local development only")
 	assertNotContains(t, docs, "`none` (default)")
 }
 

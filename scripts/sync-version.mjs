@@ -1,11 +1,12 @@
 import fs from "node:fs";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
-const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+const modulePath = fileURLToPath(import.meta.url);
+const repoRoot = path.resolve(path.dirname(modulePath), "..");
 const rootPackagePath = path.join(repoRoot, "package.json");
 
-function parseArgs(argv) {
+export function parseArgs(argv) {
   const args = new Map();
   for (const entry of argv) {
     if (!entry.startsWith("--")) {
@@ -24,7 +25,7 @@ function parseArgs(argv) {
   return args;
 }
 
-function resolveTargets(rawTargets) {
+export function resolveTargets(rawTargets) {
   const requested = new Set(
     (rawTargets ?? "frontend,windows")
       .split(",")
@@ -45,17 +46,25 @@ function resolveTargets(rawTargets) {
   return requested;
 }
 
-const args = parseArgs(process.argv.slice(2));
-const rootPackage = JSON.parse(fs.readFileSync(rootPackagePath, "utf8"));
-const version = args.get("version") ?? rootPackage.version;
-const targets = resolveTargets(args.get("targets"));
+export function resolveVersionMetadata(version) {
+  const match = /^(\d+)\.(\d+)\.(\d+)(?:[-+].*)?$/.exec(version);
+  if (!match) {
+    throw new Error(`Invalid semver version: ${version}`);
+  }
 
-const [majorRaw, minorRaw, patchRaw] = version.split(".");
-const major = Number.parseInt(majorRaw ?? "0", 10);
-const minor = Number.parseInt(minorRaw ?? "0", 10);
-const patch = Number.parseInt(patchRaw ?? "0", 10);
-const androidVersionCode = major * 10000 + minor * 100 + patch;
-const windowsManifestVersion = `${version}.0`;
+  const major = Number.parseInt(match[1], 10);
+  const minor = Number.parseInt(match[2], 10);
+  const patch = Number.parseInt(match[3], 10);
+  const releaseVersion = `${major}.${minor}.${patch}`;
+
+  return {
+    packageVersion: version,
+    releaseVersion,
+    windowsManifestVersion: `${releaseVersion}.0`,
+    androidVersionCode: major * 10000 + minor * 100 + patch,
+    previewLabel: version.includes("-") ? `v${major}.${minor} Preview` : "",
+  };
+}
 
 function updateJson(filePath, updater) {
   const fullPath = path.join(repoRoot, filePath);
@@ -73,47 +82,65 @@ function updateText(filePath, replacements) {
   fs.writeFileSync(fullPath, text);
 }
 
-if (fs.existsSync(path.join(repoRoot, "package-lock.json"))) {
-  updateJson("package-lock.json", (data) => {
-    data.version = version;
-    if (data.packages && data.packages[""]) {
-      data.packages[""].version = version;
-    }
-  });
-}
+export function syncVersion(argv = process.argv.slice(2)) {
+  const args = parseArgs(argv);
+  const rootPackage = JSON.parse(fs.readFileSync(rootPackagePath, "utf8"));
+  const version = args.get("version") ?? rootPackage.version;
+  const targets = resolveTargets(args.get("targets"));
+  const metadata = resolveVersionMetadata(version);
 
-if (targets.has("frontend")) {
-  updateJson("frontend/app/package.json", (data) => {
-    data.version = version;
+  updateJson("package.json", (data) => {
+    data.version = metadata.packageVersion;
   });
 
-  if (fs.existsSync(path.join(repoRoot, "frontend/app/package-lock.json"))) {
-    updateJson("frontend/app/package-lock.json", (data) => {
-      data.version = version;
+  if (fs.existsSync(path.join(repoRoot, "package-lock.json"))) {
+    updateJson("package-lock.json", (data) => {
+      data.version = metadata.packageVersion;
       if (data.packages && data.packages[""]) {
-        data.packages[""].version = version;
+        data.packages[""].version = metadata.packageVersion;
       }
     });
   }
+
+  if (targets.has("frontend")) {
+    updateJson("frontend/app/package.json", (data) => {
+      data.version = metadata.packageVersion;
+    });
+
+    if (fs.existsSync(path.join(repoRoot, "frontend/app/package-lock.json"))) {
+      updateJson("frontend/app/package-lock.json", (data) => {
+        data.version = metadata.packageVersion;
+        if (data.packages && data.packages[""]) {
+          data.packages[""].version = metadata.packageVersion;
+        }
+      });
+    }
+  }
+
+  if (targets.has("windows")) {
+    updateJson("cmd/speechkit/winres.json", (data) => {
+      data.RT_MANIFEST["#1"]["0409"].identity.version = metadata.windowsManifestVersion;
+    });
+
+    // AppVersion is injected via -ldflags in build.ps1 from package.json.
+    // No source file edit needed.
+
+    updateText("installer/speechkit.nsi", [
+      [/!define VERSION ".*"/, `!define VERSION "${metadata.packageVersion}"`],
+      [/WriteRegStr HKCU "Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\kombify SpeechKit" "DisplayVersion" ".*"/, 'WriteRegStr HKCU "Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\kombify SpeechKit" "DisplayVersion" "${VERSION}"'],
+    ]);
+  }
+
+  if (targets.has("android")) {
+    if (fs.existsSync(path.join(repoRoot, "android/app/build.gradle.kts"))) {
+      updateText("android/app/build.gradle.kts", [
+        [/versionCode = \d+/, `versionCode = ${metadata.androidVersionCode}`],
+        [/versionName = ".*"/, `versionName = "${metadata.packageVersion}"`],
+      ]);
+    }
+  }
 }
 
-if (targets.has("windows")) {
-  updateJson("cmd/speechkit/winres.json", (data) => {
-    data.RT_MANIFEST["#1"]["0409"].identity.version = windowsManifestVersion;
-  });
-
-  // AppVersion is injected via -ldflags in build.ps1 from package.json.
-  // No source file edit needed.
-
-  updateText("installer/speechkit.nsi", [
-    [/!define VERSION ".*"/, `!define VERSION "${version}"`],
-    [/WriteRegStr HKCU "Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\kombify SpeechKit" "DisplayVersion" ".*"/, 'WriteRegStr HKCU "Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\kombify SpeechKit" "DisplayVersion" "${VERSION}"'],
-  ]);
-}
-
-if (targets.has("android")) {
-  updateText("android/app/build.gradle.kts", [
-    [/versionCode = \d+/, `versionCode = ${androidVersionCode}`],
-    [/versionName = ".*"/, `versionName = "${version}"`],
-  ]);
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  syncVersion();
 }

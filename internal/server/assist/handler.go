@@ -1,12 +1,12 @@
 //go:build linux
 
 // Package assist implements the POST /v1/assist/process handler. It accepts
-// either an audio payload (â†’ STT â†’ Assist pipeline) or a text transcript
+// either an audio payload (→ STT → Assist pipeline) or a text transcript
 // directly, runs the Framework's Assist Pipeline, and returns the result
 // plus optional TTS audio as base64 in the JSON response.
 //
 // Host-side tool execution (clipboard, selection, quick-note) is NOT done
-// server-side â€” the server returns an `action: "execute"` signal and the
+// server-side — the server returns an `action: "execute"` signal and the
 // calling client performs the action. This keeps the Server-Target safe
 // for multi-tenant deployments where host-level side effects would be
 // nonsensical.
@@ -59,7 +59,7 @@ type Handler struct {
 }
 
 // New constructs a Handler. processor must be non-nil. Transcriber is
-// optional â€” when omitted, the handler rejects requests that carry audio
+// optional — when omitted, the handler rejects requests that carry audio
 // with a 400/missing-transcriber code.
 func New(opts Options) (*Handler, error) {
 	if opts.Processor == nil {
@@ -82,7 +82,7 @@ func (h *Handler) Mount(mux *http.ServeMux) {
 	mux.Handle("/v1/assist/process", h)
 }
 
-// â”€â”€ request / response shapes â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── request / response shapes ───────────────────────────────────────────────
 
 type processJSONRequest struct {
 	Text        string `json:"text"`
@@ -91,7 +91,7 @@ type processJSONRequest struct {
 	Locale      string `json:"locale"`
 	Selection   string `json:"selection"`
 	Context     string `json:"context"`
-	// TTS overrides â€” the Pipeline already knows whether TTS is globally
+	// TTS overrides — the Pipeline already knows whether TTS is globally
 	// enabled; these fields let the caller opt out per-request.
 	TTS       *bool   `json:"tts,omitempty"`
 	TTSFormat string  `json:"tts_format,omitempty"`
@@ -121,7 +121,7 @@ type sourceMeta struct {
 	DurationMs int64  `json:"duration_ms"`
 }
 
-// â”€â”€ ServeHTTP â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── ServeHTTP ───────────────────────────────────────────────────────────────
 
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
@@ -227,7 +227,7 @@ func (h *Handler) handleJSON(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// â”€â”€ core flow â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── core flow ───────────────────────────────────────────────────────────────
 
 func (h *Handler) processAudio(w http.ResponseWriter, ctx context.Context, reader io.Reader, contentType string, opts assistpkg.ProcessOpts, ttsOverride *bool, ttsFormat, ttsVoice string) {
 	lr := io.LimitReader(reader, h.maxBytes+1)
@@ -313,7 +313,7 @@ func (h *Handler) processTranscript(w http.ResponseWriter, ctx context.Context, 
 	}
 
 	// Respect TTS opt-out from the request. We cannot opt IN when the
-	// pipeline was built without a TTS router â€” Audio will already be empty
+	// pipeline was built without a TTS router — Audio will already be empty
 	// in that case.
 	if ttsOverride != nil && !*ttsOverride {
 		result.Audio = nil
@@ -344,7 +344,7 @@ func (h *Handler) processTranscript(w http.ResponseWriter, ctx context.Context, 
 	_ = json.NewEncoder(w).Encode(resp)
 }
 
-// â”€â”€ helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── helpers ─────────────────────────────────────────────────────────────────
 
 func (h *Handler) resolveLocale(requested string) string {
 	if trimmed := strings.TrimSpace(requested); trimmed != "" {

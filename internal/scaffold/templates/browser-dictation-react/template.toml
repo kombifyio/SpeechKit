@@ -1,0 +1,24 @@
+name = "browser-dictation-react"
+description = "Vite + React + TypeScript app with a microphone-driven dictation textarea wired to POST /v1/dictation/transcribe."
+min_server_version = "0.30"
+
+[[vars]]
+name = "APP_NAME"
+description = "Project name (used as package name)"
+
+[[vars]]
+name = "SPEECHKIT_SERVER_URL"
+description = "SpeechKit Server base URL"
+default = "http://localhost:8080"
+env_hint = "SPEECHKIT_SERVER_URL"
+
+[[vars]]
+name = "SPEECHKIT_TOKEN"
+description = "Bearer token for SpeechKit Server (leave blank for auth_mode=none)"
+default = ""
+env_hint = "SPEECHKIT_TOKEN"
+optional = true
+
+[[post_init]]
+description = "Install npm dependencies"
+cmd = "npm install"

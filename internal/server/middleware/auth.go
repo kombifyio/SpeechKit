@@ -64,6 +64,7 @@ type AuthOptions struct {
 	Mode              string
 	BearerTokenEnv    string
 	EdgeSecretEnv     string
+	BearerRole        string
 	AllowPublicPaths  []string // exact path matches that skip auth entirely (e.g. /healthz)
 	AllowPublicRoutes []PublicRoute
 	// Dynamic providers are evaluated for every request. They let first-run
@@ -71,6 +72,7 @@ type AuthOptions struct {
 	ModeProvider        func() string
 	BearerTokenProvider func() string
 	EdgeSecretProvider  func() string
+	BearerRoleProvider  func() string
 	// Bootstrap routes are public only while BootstrapAllowed returns true.
 	// The server uses this for the first settings write when bearer auth is
 	// configured but no bearer token exists yet.
@@ -168,6 +170,11 @@ func Auth(opts AuthOptions) Middleware {
 		envName := strings.TrimSpace(opts.EdgeSecretEnv)
 		edgeSecretProvider = func() string { return strings.TrimSpace(os.Getenv(envName)) }
 	}
+	bearerRoleProvider := opts.BearerRoleProvider
+	if bearerRoleProvider == nil {
+		bearerRole := strings.TrimSpace(opts.BearerRole)
+		bearerRoleProvider = func() string { return bearerRole }
+	}
 	publicSet := make(map[string]struct{}, len(opts.AllowPublicPaths))
 	for _, p := range opts.AllowPublicPaths {
 		if trimmed := strings.TrimSpace(p); trimmed != "" {
@@ -206,7 +213,7 @@ func Auth(opts AuthOptions) Middleware {
 			if mode == "" {
 				mode = AuthModeNone
 			}
-			id, ok := verify(mode, r, strings.TrimSpace(bearerTokenProvider()), strings.TrimSpace(edgeSecretProvider()))
+			id, ok := verify(mode, r, strings.TrimSpace(bearerTokenProvider()), strings.TrimSpace(edgeSecretProvider()), strings.TrimSpace(bearerRoleProvider()))
 			if !ok {
 				writeAuthError(w)
 				return
@@ -247,7 +254,7 @@ func routeAllowed(routes map[string]map[string]struct{}, path, method string) bo
 	return ok
 }
 
-func verify(mode AuthMode, r *http.Request, bearerToken, edgeSecret string) (Identity, bool) {
+func verify(mode AuthMode, r *http.Request, bearerToken, edgeSecret, bearerRole string) (Identity, bool) {
 	switch mode {
 	case AuthModeNone:
 		return Identity{
@@ -257,11 +264,11 @@ func verify(mode AuthMode, r *http.Request, bearerToken, edgeSecret string) (Ide
 			Source: "none",
 		}, true
 	case AuthModeBearer:
-		return verifyBearer(r, bearerToken)
+		return verifyBearer(r, bearerToken, bearerRole)
 	case AuthModeEdgeHMAC:
 		return verifyEdgeHMAC(r, edgeSecret)
 	case AuthModeBearerOrEdge:
-		if id, ok := verifyBearer(r, bearerToken); ok {
+		if id, ok := verifyBearer(r, bearerToken, bearerRole); ok {
 			return id, true
 		}
 		return verifyEdgeHMAC(r, edgeSecret)
@@ -270,7 +277,7 @@ func verify(mode AuthMode, r *http.Request, bearerToken, edgeSecret string) (Ide
 	}
 }
 
-func verifyBearer(r *http.Request, expected string) (Identity, bool) {
+func verifyBearer(r *http.Request, expected, role string) (Identity, bool) {
 	if expected == "" {
 		// Fail closed: an unset server token must never accept requests.
 		return Identity{}, false
@@ -292,6 +299,7 @@ func verifyBearer(r *http.Request, expected string) (Identity, bool) {
 		UserID: "service",
 		OrgID:  "default",
 		Plan:   "internal",
+		Role:   strings.TrimSpace(role),
 		Source: "bearer",
 	}, true
 }

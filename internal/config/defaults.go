@@ -207,7 +207,8 @@ func defaults() *Config {
 			Modes:                    nil, // nil = all three modes enabled
 			AuthMode:                 "bearer",
 			BearerTokenEnv:           "SPEECHKIT_SERVER_TOKEN", //nolint:gosec // env var name, not a credential
-			EdgeAuthSecretEnv:        "EDGE_AUTH_SECRET",       //nolint:gosec // env var name, not a credential
+			BearerRole:               "",
+			EdgeAuthSecretEnv:        "EDGE_AUTH_SECRET", //nolint:gosec // env var name, not a credential
 			CORSAllowedOrigins:       []string{},
 			RateLimitRPS:             10,
 			RateLimitBurst:           20,
@@ -221,6 +222,12 @@ func defaults() *Config {
 			ModelDir:                 "/var/lib/speechkit/models",
 			LogFormat:                "json",
 			LogLevel:                 "info",
+			Features: ServerFeaturesConfig{
+				Catalog:      true,
+				StorageReads: true,
+				Vocabulary:   true,
+				TTSDirect:    true,
+			},
 		},
 	}
 	ApplyManagedDevServerDefaults(cfg)

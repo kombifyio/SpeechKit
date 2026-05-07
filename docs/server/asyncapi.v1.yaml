@@ -1,0 +1,452 @@
+asyncapi: 3.1.0
+info:
+  title: SpeechKit Voice Agent WebSocket API
+  version: 1.0.0
+  description: |
+    Stable v1 WebSocket contract for the SpeechKit Server's Voice Agent mode.
+
+    A client first calls `POST /v1/voiceagent/sessions` (see openapi.v1.yaml)
+    to obtain a session id and a single-use `ticket`, then upgrades a
+    WebSocket to `GET /v1/voiceagent/sessions/{id}/ws?ticket=...`.
+
+    The protocol multiplexes two kinds of frames over the same WebSocket:
+
+    - **JSON control frames** (`text` opcode): a JSON object with a required
+      `type` field. The full set is enumerated below.
+    - **Binary audio frames** (`binary` opcode): raw PCM, **16 kHz S16 mono**
+      from client to server, **24 kHz S16 mono** from server to client
+      (matching Gemini Live's native output rate).
+
+    Field guarantees follow the same rules as openapi.v1.yaml: additive
+    across minor releases, no rename or removal without a v2 bump.
+
+  contact:
+    url: https://github.com/kombifyio/SpeechKit
+  license:
+    name: Apache-2.0
+    url: https://www.apache.org/licenses/LICENSE-2.0
+
+defaultContentType: application/json
+
+servers:
+  production:
+    host: api.speechkit.dev
+    pathname: /v1/voiceagent
+    protocol: wss
+    description: Replace with your deployment's public host.
+    security:
+      - $ref: '#/components/securitySchemes/sessionTicket'
+
+channels:
+  voiceAgentSession:
+    address: /sessions/{sessionId}/ws
+    title: Voice Agent realtime session
+    description: |
+      One WebSocket per active voice-agent session. The first message a
+      client sends MUST be a StartFrame; the server replies with a State
+      frame (state="connecting" then "listening") and begins streaming.
+    parameters:
+      sessionId:
+        description: Session id returned by `POST /v1/voiceagent/sessions`.
+    messages:
+      # Client to server JSON control frames
+      StartFrame:
+        $ref: '#/components/messages/StartFrame'
+      TextFrame:
+        $ref: '#/components/messages/TextFrame'
+      ToolResponseFrame:
+        $ref: '#/components/messages/ToolResponseFrame'
+      AdvanceStepFrame:
+        $ref: '#/components/messages/AdvanceStepFrame'
+      AudioEndFrame:
+        $ref: '#/components/messages/AudioEndFrame'
+      PingFrame:
+        $ref: '#/components/messages/PingFrame'
+      StopFrame:
+        $ref: '#/components/messages/StopFrame'
+      # Client to server binary audio
+      AudioChunkClient:
+        $ref: '#/components/messages/AudioChunkClient'
+      # Server to client JSON control frames
+      StateFrame:
+        $ref: '#/components/messages/StateFrame'
+      InputTranscriptFrame:
+        $ref: '#/components/messages/InputTranscriptFrame'
+      OutputTranscriptFrame:
+        $ref: '#/components/messages/OutputTranscriptFrame'
+      ToolCallFrame:
+        $ref: '#/components/messages/ToolCallFrame'
+      SequenceStepFrame:
+        $ref: '#/components/messages/SequenceStepFrame'
+      InterruptedFrame:
+        $ref: '#/components/messages/InterruptedFrame'
+      ErrorFrame:
+        $ref: '#/components/messages/ErrorFrame'
+      SessionEndFrame:
+        $ref: '#/components/messages/SessionEndFrame'
+      PongFrame:
+        $ref: '#/components/messages/PongFrame'
+      # Server to client binary audio
+      AudioChunkServer:
+        $ref: '#/components/messages/AudioChunkServer'
+
+operations:
+  sendClientFrame:
+    action: send
+    channel:
+      $ref: '#/channels/voiceAgentSession'
+    summary: Frames the client sends to the server.
+    description: |
+      The first frame MUST be StartFrame. Subsequent frames may be any of
+      the client message types in any order. Binary audio chunks may be
+      interleaved freely with JSON control frames.
+    messages:
+      - $ref: '#/channels/voiceAgentSession/messages/StartFrame'
+      - $ref: '#/channels/voiceAgentSession/messages/TextFrame'
+      - $ref: '#/channels/voiceAgentSession/messages/ToolResponseFrame'
+      - $ref: '#/channels/voiceAgentSession/messages/AdvanceStepFrame'
+      - $ref: '#/channels/voiceAgentSession/messages/AudioEndFrame'
+      - $ref: '#/channels/voiceAgentSession/messages/PingFrame'
+      - $ref: '#/channels/voiceAgentSession/messages/StopFrame'
+      - $ref: '#/channels/voiceAgentSession/messages/AudioChunkClient'
+
+  receiveServerFrame:
+    action: receive
+    channel:
+      $ref: '#/channels/voiceAgentSession'
+    summary: Frames the client receives from the server.
+    description: |
+      All frames carry a `type` discriminator. SessionEnd is terminal; the
+      server closes the WebSocket immediately after sending it.
+    messages:
+      - $ref: '#/channels/voiceAgentSession/messages/StateFrame'
+      - $ref: '#/channels/voiceAgentSession/messages/InputTranscriptFrame'
+      - $ref: '#/channels/voiceAgentSession/messages/OutputTranscriptFrame'
+      - $ref: '#/channels/voiceAgentSession/messages/ToolCallFrame'
+      - $ref: '#/channels/voiceAgentSession/messages/SequenceStepFrame'
+      - $ref: '#/channels/voiceAgentSession/messages/InterruptedFrame'
+      - $ref: '#/channels/voiceAgentSession/messages/ErrorFrame'
+      - $ref: '#/channels/voiceAgentSession/messages/SessionEndFrame'
+      - $ref: '#/channels/voiceAgentSession/messages/PongFrame'
+      - $ref: '#/channels/voiceAgentSession/messages/AudioChunkServer'
+
+components:
+  securitySchemes:
+    sessionTicket:
+      type: httpApiKey
+      in: query
+      name: ticket
+      description: |
+        Single-use session ticket minted by `POST /v1/voiceagent/sessions`.
+        Bound to the session id and consumed at WebSocket upgrade.
+
+  messages:
+    # client to server JSON
+    StartFrame:
+      title: Start
+      summary: First frame; opens the realtime session.
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/StartFrame'
+
+    TextFrame:
+      title: Text
+      summary: Inject a text user-turn into the session.
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/TextFrame'
+
+    ToolResponseFrame:
+      title: Tool response
+      summary: Resolve a previously-issued ToolCall.
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/ToolResponseFrame'
+
+    AdvanceStepFrame:
+      title: Advance step
+      summary: Move the workflow runner to the next sequence step.
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/AdvanceStepFrame'
+
+    AudioEndFrame:
+      title: Audio end
+      summary: Mark the end of the current microphone burst.
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/AudioEndFrame'
+
+    PingFrame:
+      title: Ping
+      summary: Application-level keepalive.
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/PingFrame'
+
+    StopFrame:
+      title: Stop
+      summary: Client-initiated session shutdown.
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/StopFrame'
+
+    AudioChunkClient:
+      title: Audio chunk (client to server)
+      summary: PCM 16 kHz S16 mono microphone chunk (binary frame).
+      contentType: application/octet-stream
+      payload:
+        $ref: '#/components/schemas/AudioChunkBinary'
+
+    # server to client JSON
+    StateFrame:
+      title: State
+      summary: Session state transition notification.
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/StateFrame'
+
+    InputTranscriptFrame:
+      title: Input transcript
+      summary: Server-side STT of the user's speech.
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/TranscriptFrame'
+
+    OutputTranscriptFrame:
+      title: Output transcript
+      summary: Server-side STT of the model's spoken reply.
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/TranscriptFrame'
+
+    ToolCallFrame:
+      title: Tool call
+      summary: Model-issued request to invoke a host-side tool.
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/ToolCallFrame'
+
+    SequenceStepFrame:
+      title: Sequence step
+      summary: Workflow runner advanced or completed a step.
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/SequenceStepFrame'
+
+    InterruptedFrame:
+      title: Interrupted
+      summary: User interrupted the model (barge-in).
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/InterruptedFrame'
+
+    ErrorFrame:
+      title: Error
+      summary: Server-side error during the session.
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/ErrorFrame'
+
+    SessionEndFrame:
+      title: Session end
+      summary: Terminal frame; the server closes the socket after this.
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/SessionEndFrame'
+
+    PongFrame:
+      title: Pong
+      summary: Reply to PingFrame.
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/PongFrame'
+
+    AudioChunkServer:
+      title: Audio chunk (server to client)
+      summary: PCM 24 kHz S16 mono model-output chunk (binary frame).
+      contentType: application/octet-stream
+      payload:
+        $ref: '#/components/schemas/AudioChunkBinary'
+
+  schemas:
+    # client to server
+    StartFrame:
+      type: object
+      required: [type]
+      properties:
+        type: { type: string, const: start }
+        persona_id: { type: string }
+        role_id: { type: string }
+        sequence_id: { type: string }
+        voice: { type: string }
+        locale: { type: string }
+        model: { type: string }
+        thinking:
+          type: string
+          enum: [off, low, medium, high]
+        activity_detection:
+          $ref: '#/components/schemas/ActivityDetection'
+        system_prompt_override:
+          type: string
+          description: Durable instruction layered on top of the role's prompt.
+
+    ActivityDetection:
+      type: object
+      properties:
+        automatic: { type: boolean }
+        start_sensitivity:
+          type: string
+          enum: ['', low, medium, high]
+        end_sensitivity:
+          type: string
+          enum: ['', low, medium, high]
+        prefix_padding_ms: { type: integer, format: int32 }
+        silence_duration_ms: { type: integer, format: int32 }
+        activity_handling:
+          type: string
+          enum: ['', no_interrupt, start_of_activity_interrupts]
+        turn_coverage:
+          type: string
+          enum: ['', turn_includes_only_activity, turn_includes_all_input, turn_includes_audio_activity]
+
+    TextFrame:
+      type: object
+      required: [type, text]
+      properties:
+        type: { type: string, const: text }
+        text: { type: string }
+
+    ToolResponseFrame:
+      type: object
+      required: [type, id, name, response]
+      properties:
+        type: { type: string, const: tool_response }
+        id:
+          type: string
+          description: Echoes ToolCallFrame.id.
+        name:
+          type: string
+          description: Echoes ToolCallFrame.name.
+        response:
+          type: object
+          additionalProperties: true
+          description: 'Free-form result; commonly an error object on failure.'
+
+    AdvanceStepFrame:
+      type: object
+      required: [type]
+      properties:
+        type: { type: string, const: advance_step }
+        step_id:
+          type: string
+          description: Reserved for future direct jumps; v1 advances linearly.
+        reason:
+          type: string
+
+    AudioEndFrame:
+      type: object
+      required: [type]
+      properties:
+        type: { type: string, const: audio_end }
+
+    PingFrame:
+      type: object
+      required: [type]
+      properties:
+        type: { type: string, const: ping }
+
+    StopFrame:
+      type: object
+      required: [type]
+      properties:
+        type: { type: string, const: stop }
+
+    AudioChunkBinary:
+      type: string
+      format: binary
+      description: |
+        Raw PCM 16-bit signed little-endian mono frame. Sample rate:
+        16 kHz client to server, 24 kHz server to client. Frames are sent on
+        the WebSocket binary opcode without any wrapping header.
+
+    # server to client
+    StateFrame:
+      type: object
+      required: [type, state]
+      properties:
+        type: { type: string, const: state }
+        state:
+          type: string
+          enum: [connecting, listening, processing, speaking, recovering, deactivating, inactive]
+
+    TranscriptFrame:
+      type: object
+      required: [type, text, done]
+      properties:
+        type:
+          type: string
+          enum: [input_transcript, output_transcript]
+        text:
+          type: string
+          description: Partial or full transcript chunk.
+        done:
+          type: boolean
+          description: True when the transcript segment is final.
+
+    ToolCallFrame:
+      type: object
+      required: [type, id, name]
+      properties:
+        type: { type: string, const: tool_call }
+        id:
+          type: string
+          description: Unique within this session; echo back in ToolResponseFrame.id.
+        name: { type: string }
+        args:
+          type: object
+          additionalProperties: true
+
+    SequenceStepFrame:
+      type: object
+      required: [type, step_id, status]
+      properties:
+        type: { type: string, const: sequence_step }
+        sequence_id: { type: string }
+        step_id: { type: string }
+        step_index: { type: integer }
+        status:
+          type: string
+          enum: [entered, completed, sequence_completed]
+        reason: { type: string }
+
+    InterruptedFrame:
+      type: object
+      required: [type]
+      properties:
+        type: { type: string, const: interrupted }
+
+    ErrorFrame:
+      type: object
+      required: [type, code, message]
+      properties:
+        type: { type: string, const: error }
+        code:
+          type: string
+          description: Stable machine-readable error code.
+        message: { type: string }
+
+    SessionEndFrame:
+      type: object
+      required: [type, reason]
+      properties:
+        type: { type: string, const: session_end }
+        reason:
+          type: string
+          enum: [idle, go_away, client, error, shutdown]
+
+    PongFrame:
+      type: object
+      required: [type]
+      properties:
+        type: { type: string, const: pong }

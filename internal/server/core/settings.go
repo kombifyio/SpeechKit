@@ -348,7 +348,7 @@ func serverSettingsBootstrapWriteAllowed(app *App) bool {
 		return false
 	}
 	if strings.TrimSpace(token) != "" {
-		// A token is already in place. Bootstrap is no longer needed â€”
+		// A token is already in place. Bootstrap is no longer needed —
 		// any further setup must go through authenticated PATCH.
 		app.bootstrapSealed.Store(true)
 		return false

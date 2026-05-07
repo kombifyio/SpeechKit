@@ -1,0 +1,34 @@
+# {{ .APP_NAME }}
+
+A browser-based dictation app powered by [SpeechKit](https://speechkit.cc).
+Records audio in the browser and transcribes it via
+`POST /v1/dictation/transcribe` on the SpeechKit Server.
+
+## Prerequisites
+
+- Node 20+
+- A running SpeechKit Server (default `{{ .SPEECHKIT_SERVER_URL }}`)
+- (optional) Bearer token if the server uses `auth_mode = "bearer"`
+
+## Configure
+
+```sh
+cp .env.example .env
+# edit .env and adjust VITE_SPEECHKIT_SERVER_URL and VITE_SPEECHKIT_TOKEN
+```
+
+## Run
+
+```sh
+npm install
+npm run dev
+```
+
+Then open <http://localhost:5173>, click **Start recording**, speak,
+then click **Stop & transcribe**. The transcript appears in the textarea.
+
+## How it works
+
+`src/App.tsx` uses the browser `MediaRecorder` API to capture WebM/Opus
+audio, then POSTs the blob to `/v1/dictation/transcribe` as `multipart/
+form-data`. SpeechKit handles the format conversion server-side.

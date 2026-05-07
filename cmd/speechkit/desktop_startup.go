@@ -32,7 +32,7 @@ func loadDesktopStartupConfig() (string, *config.Config, *config.InstallState, e
 		if err := config.SaveInstallState(installState); err != nil {
 			slog.Warn("save install state", "err", err)
 		}
-		slog.Info("install mode: local (default, first run â€” setup wizard pending)")
+		slog.Info("install mode: local (default, first run — setup wizard pending)")
 	} else {
 		slog.Info("install mode", "mode", installState.Mode)
 	}

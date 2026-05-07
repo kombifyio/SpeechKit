@@ -46,6 +46,13 @@ var (
 	procKeybdEvent    = winapi.User32.NewProc("keybd_event")
 	procRtlMoveMemory = winapi.RtlMoveMemory
 	procLstrlenW      = winapi.Kernel32.NewProc("lstrlenW")
+
+	clipboardGetText                 = getClipboardText
+	clipboardSetText                 = setClipboardText
+	clipboardCurrentForegroundWindow = currentForegroundWindow
+	clipboardRestoreForegroundWindow = restoreForegroundWindow
+	clipboardSimulateCtrlV           = simulateCtrlV
+	clipboardPause                   = time.Sleep
 )
 
 // ClipboardHandler injects text via clipboard + Ctrl+V simulation.
@@ -56,7 +63,7 @@ func NewClipboardHandler() *ClipboardHandler {
 }
 
 func CaptureTarget() Target {
-	return Target{HWND: currentForegroundWindow()}
+	return Target{HWND: clipboardCurrentForegroundWindow()}
 }
 
 func (h *ClipboardHandler) Handle(ctx context.Context, result *stt.Result, target Target) error {
@@ -67,21 +74,21 @@ func (h *ClipboardHandler) Handle(ctx context.Context, result *stt.Result, targe
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
 
-	backup, hasBackup := getClipboardText()
+	backup, hasBackup := clipboardGetText()
 
-	if err := setClipboardText(result.Text); err != nil {
+	if err := clipboardSetText(result.Text); err != nil {
 		return fmt.Errorf("set clipboard: %w", err)
 	}
 
-	restoreForegroundWindow(choosePasteWindow(target.HWND, currentForegroundWindow()))
-	simulateCtrlV()
+	clipboardRestoreForegroundWindow(choosePasteWindow(target.HWND, clipboardCurrentForegroundWindow()))
+	clipboardSimulateCtrlV()
 
 	// Wait for the target app to consume the Ctrl+V keystroke before restoring
 	// the previous clipboard content. Done inline (same OS-thread) to avoid
 	// a background goroutine race where a user's subsequent copy gets clobbered.
 	if hasBackup {
-		time.Sleep(restoreDelay)
-		_ = setClipboardText(backup)
+		clipboardPause(restoreDelay)
+		_ = clipboardSetText(backup)
 	}
 
 	return nil

@@ -82,6 +82,17 @@ Use `--ready` for a container deploy that starts with self-hosted defaults:
 whisper.cpp for STT, llama.cpp for the agent LLM, and env-based secrets. Both
 paths write the same Compose and environment contract.
 
+The public website also ships a no-clone installer for agents and browser-fetch
+workflows:
+
+```bash
+curl -fsSL https://speechkit.cc/install-server.sh | sh
+curl -fsSL https://speechkit.cc/install-server.sh | sh -s -- --channel preview
+```
+
+The preview channel pins `ghcr.io/kombifyio/speechkit-server:v0.30-preview`
+and must not be treated as a v0.30.0 release.
+
 ## API contract
 
 The complete v1 HTTP and WebSocket surface is documented in

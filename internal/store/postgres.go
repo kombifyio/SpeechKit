@@ -90,27 +90,36 @@ func NewPostgresStore(cfg StoreConfig) (*PostgresStore, error) {
 func (s *PostgresStore) DB() *sql.DB { return s.db }
 
 func (s *PostgresStore) SaveTranscription(ctx context.Context, text, language, provider, model string, durationMs, latencyMs int64, audioData []byte) error {
-	audioPath, err := s.persistAudio(audioData, "", durationMs)
+	return s.SaveTranscriptionWithAudio(ctx, text, language, provider, model, durationMs, latencyMs, audioAssetInputFromBytes(audioData))
+}
+
+func (s *PostgresStore) SaveTranscriptionWithAudio(ctx context.Context, text, language, provider, model string, durationMs, latencyMs int64, audio AudioAssetInput) error {
+	audio = normalizeAudioAssetInput(audio)
+	if audio.DurationMs > 0 {
+		durationMs = audio.DurationMs
+	}
+	audioPath, err := s.persistAudio(audio, "")
 	if err != nil {
 		return err
 	}
 	if strings.TrimSpace(model) == "" {
 		model = s.transcriptionModelHint(provider)
 	}
+	owner, _ := RecordOwnerFromContext(ctx)
 
 	var id int64
 	err = s.db.QueryRowContext(ctx,
-		`INSERT INTO transcriptions (text, language, provider, model, duration_ms, latency_ms, audio_path, word_count)
-		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+		`INSERT INTO transcriptions (text, language, provider, model, duration_ms, latency_ms, audio_path, word_count, owner_user_id, owner_org_id, owner_source)
+		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
 		 RETURNING id`,
 		text, language, provider, model, durationMs, latencyMs, audioPath,
-		countWords(text),
+		countWords(text), owner.UserID, owner.OrgID, owner.Source,
 	).Scan(&id)
 	if err != nil {
 		return fmt.Errorf("insert transcription: %w", err)
 	}
 	if audioPath != "" {
-		if err := recordAudioAsset(ctx, s.db, "postgres", "transcription", id, audioPath, durationMs); err != nil {
+		if err := recordAudioAsset(ctx, s.db, "postgres", "transcription", id, audioPath, durationMs, audio.MimeType); err != nil {
 			return fmt.Errorf("record audio asset: %w", err)
 		}
 	}
@@ -121,13 +130,14 @@ func (s *PostgresStore) SaveTranscription(ctx context.Context, text, language, p
 
 func (s *PostgresStore) GetTranscription(ctx context.Context, id int64) (*Transcription, error) {
 	row := s.db.QueryRowContext(ctx,
-		`SELECT id, text, language, provider, COALESCE(model, ''), COALESCE(duration_ms, 0), COALESCE(latency_ms, 0), COALESCE(audio_path, ''), created_at
+		`SELECT id, text, language, provider, COALESCE(model, ''), COALESCE(duration_ms, 0), COALESCE(latency_ms, 0), COALESCE(audio_path, ''), created_at,
+			COALESCE(owner_user_id, ''), COALESCE(owner_org_id, ''), COALESCE(owner_source, '')
 		 FROM transcriptions WHERE id = $1`,
 		id,
 	)
 
 	var t Transcription
-	if err := row.Scan(&t.ID, &t.Text, &t.Language, &t.Provider, &t.Model, &t.DurationMs, &t.LatencyMs, &t.AudioPath, &t.CreatedAt); err != nil {
+	if err := row.Scan(&t.ID, &t.Text, &t.Language, &t.Provider, &t.Model, &t.DurationMs, &t.LatencyMs, &t.AudioPath, &t.CreatedAt, &t.OwnerUserID, &t.OwnerOrgID, &t.OwnerSource); err != nil {
 		return nil, err
 	}
 	if strings.TrimSpace(t.Model) == "" {
@@ -140,11 +150,13 @@ func (s *PostgresStore) GetTranscription(ctx context.Context, id int64) (*Transc
 func (s *PostgresStore) ListTranscriptions(ctx context.Context, opts ListOpts) ([]Transcription, error) {
 	limit, offset := normalizedListPagination(opts)
 
-	query := `SELECT id, text, language, provider, COALESCE(model, ''), COALESCE(duration_ms, 0), COALESCE(latency_ms, 0), COALESCE(audio_path, ''), created_at
+	query := `SELECT id, text, language, provider, COALESCE(model, ''), COALESCE(duration_ms, 0), COALESCE(latency_ms, 0), COALESCE(audio_path, ''), created_at,
+			COALESCE(owner_user_id, ''), COALESCE(owner_org_id, ''), COALESCE(owner_source, '')
 		 FROM transcriptions`
 	args := make([]any, 0, 4)
 	clauses := make([]string, 0, 2)
 	clauses, args = appendPostgresNormalizedLanguageFilter(clauses, args, opts.Language)
+	clauses, args = appendPostgresOwnerFilter(clauses, args, opts)
 	if !opts.After.IsZero() {
 		args = append(args, opts.After.UTC())
 		clauses = append(clauses, fmt.Sprintf("created_at > $%d", len(args)))
@@ -167,7 +179,7 @@ func (s *PostgresStore) ListTranscriptions(ctx context.Context, opts ListOpts) (
 	results := make([]Transcription, 0)
 	for rows.Next() {
 		var t Transcription
-		if err := rows.Scan(&t.ID, &t.Text, &t.Language, &t.Provider, &t.Model, &t.DurationMs, &t.LatencyMs, &t.AudioPath, &t.CreatedAt); err != nil {
+		if err := rows.Scan(&t.ID, &t.Text, &t.Language, &t.Provider, &t.Model, &t.DurationMs, &t.LatencyMs, &t.AudioPath, &t.CreatedAt, &t.OwnerUserID, &t.OwnerOrgID, &t.OwnerSource); err != nil {
 			return nil, err
 		}
 		if strings.TrimSpace(t.Model) == "" {
@@ -285,7 +297,7 @@ func (s *PostgresStore) TranscriptionCount(ctx context.Context) (int, error) {
 }
 
 func (s *PostgresStore) SaveQuickNote(ctx context.Context, text, language, provider string, durationMs, latencyMs int64, audioData []byte) (int64, error) {
-	audioPath, err := s.persistAudio(audioData, "qn_", durationMs)
+	audioPath, err := s.persistAudio(audioAssetInputFromBytes(audioData), "qn_")
 	if err != nil {
 		return 0, err
 	}
@@ -301,7 +313,7 @@ func (s *PostgresStore) SaveQuickNote(ctx context.Context, text, language, provi
 		return 0, fmt.Errorf("insert quick note: %w", err)
 	}
 	if audioPath != "" {
-		if err := recordAudioAsset(ctx, s.db, "postgres", "quick_note", id, audioPath, durationMs); err != nil {
+		if err := recordAudioAsset(ctx, s.db, "postgres", "quick_note", id, audioPath, durationMs, "audio/wav"); err != nil {
 			return 0, fmt.Errorf("record audio asset: %w", err)
 		}
 	}
@@ -382,7 +394,7 @@ func (s *PostgresStore) UpdateQuickNoteCapture(ctx context.Context, id int64, te
 		return fmt.Errorf("lookup quick note %d: %w", id, err)
 	}
 
-	nextAudioPath, err := s.persistAudio(audioData, "qn_", durationMs)
+	nextAudioPath, err := s.persistAudio(audioAssetInputFromBytes(audioData), "qn_")
 	if err != nil {
 		return err
 	}
@@ -408,7 +420,7 @@ func (s *PostgresStore) UpdateQuickNoteCapture(ctx context.Context, id int64, te
 		_ = deleteAudioAsset(ctx, s.db, "postgres", "quick_note", id, currentAudioPath)
 	}
 	if nextAudioPath != "" && currentAudioPath != nextAudioPath {
-		if err := recordAudioAsset(ctx, s.db, "postgres", "quick_note", id, nextAudioPath, durationMs); err != nil {
+		if err := recordAudioAsset(ctx, s.db, "postgres", "quick_note", id, nextAudioPath, durationMs, "audio/wav"); err != nil {
 			return fmt.Errorf("record audio asset: %w", err)
 		}
 	}
@@ -509,16 +521,17 @@ func (s *PostgresStore) scheduleMaintenance() {
 	}
 }
 
-func (s *PostgresStore) persistAudio(audioData []byte, prefix string, _ int64) (string, error) {
-	if !s.saveAudio || len(audioData) == 0 {
+func (s *PostgresStore) persistAudio(audio AudioAssetInput, prefix string) (string, error) {
+	audio = normalizeAudioAssetInput(audio)
+	if !s.saveAudio || len(audio.Data) == 0 {
 		return "", nil
 	}
 	if err := os.MkdirAll(s.audioDir, 0o700); err != nil {
 		return "", fmt.Errorf("create audio dir: %w", err)
 	}
-	filename := fmt.Sprintf("%s%d.wav", prefix, time.Now().UnixNano())
+	filename := fmt.Sprintf("%s%d%s", prefix, time.Now().UnixNano(), audio.Extension)
 	audioPath := filepath.Join(s.audioDir, filename)
-	if err := os.WriteFile(audioPath, audioData, 0o600); err != nil {
+	if err := os.WriteFile(audioPath, audio.Data, 0o600); err != nil {
 		return "", fmt.Errorf("save audio: %w", err)
 	}
 	return audioPath, nil

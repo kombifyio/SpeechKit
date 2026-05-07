@@ -53,6 +53,32 @@ func TestAuth_BearerAcceptsMatch(t *testing.T) {
 	}
 }
 
+func TestAuth_BearerCanAttachConfiguredRole(t *testing.T) {
+	t.Setenv("TEST_BEARER", "correct-horse-battery-staple")
+	handler := Auth(AuthOptions{
+		Mode:           "bearer",
+		BearerTokenEnv: "TEST_BEARER",
+		BearerRole:     "admin",
+	})(
+		http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			id := IdentityFromContext(r.Context())
+			if id.Role != "admin" {
+				t.Fatalf("identity role = %q, want admin", id.Role)
+			}
+			w.WriteHeader(http.StatusOK)
+		}),
+	)
+
+	req := httptest.NewRequest(http.MethodGet, "/v1/any", nil)
+	req.Header.Set("Authorization", "Bearer correct-horse-battery-staple")
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", rec.Code)
+	}
+}
+
 func TestAuth_BearerReadsTokenProviderPerRequest(t *testing.T) {
 	token := ""
 	handler := Auth(AuthOptions{

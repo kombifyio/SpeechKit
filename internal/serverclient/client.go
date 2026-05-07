@@ -162,7 +162,7 @@ func (c *Client) BearerToken() string {
 }
 
 // newRequest is the central place that attaches Authorization, User-Agent,
-// and Content-Type headers. path must start with "/" â€” it is joined to the
+// and Content-Type headers. path must start with "/" — it is joined to the
 // configured BaseURL preserving any base path the user configured (e.g.
 // "https://api.example.com/speechkit").
 func (c *Client) newRequest(ctx context.Context, method, path string, body io.Reader, contentType string) (*http.Request, error) {

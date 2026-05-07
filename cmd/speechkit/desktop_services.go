@@ -21,7 +21,7 @@ func initDesktopAIRuntime(ctx context.Context, cfg *config.Config, state *appSta
 	genkitRT, err := appai.Init(ctx, buildGenkitConfig(cfg))
 	if err != nil {
 		slog.Warn("genkit init", "err", err)
-		state.addLog("AI providers unavailable â€” Assist and Voice Agent disabled", "warn")
+		state.addLog("AI providers unavailable — Assist and Voice Agent disabled", "warn")
 		return
 	}
 
@@ -56,7 +56,7 @@ func initDesktopTTSRuntime(ctx context.Context, cfg *config.Config, state *appSt
 	audioPlayer, err := audio.NewPlayer()
 	if err != nil {
 		slog.Warn("audio player init", "err", err)
-		state.addLog("TTS audio player unavailable â€” voice output disabled", "warn")
+		state.addLog("TTS audio player unavailable — voice output disabled", "warn")
 		return ttsRouter
 	}
 	state.audioPlayer = audioPlayer

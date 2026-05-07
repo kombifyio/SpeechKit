@@ -96,26 +96,35 @@ func NewSQLiteStore(cfg StoreConfig) (*SQLiteStore, error) {
 func (s *SQLiteStore) DB() *sql.DB { return s.db }
 
 func (s *SQLiteStore) SaveTranscription(ctx context.Context, text, language, provider, model string, durationMs, latencyMs int64, audioData []byte) error {
+	return s.SaveTranscriptionWithAudio(ctx, text, language, provider, model, durationMs, latencyMs, audioAssetInputFromBytes(audioData))
+}
+
+func (s *SQLiteStore) SaveTranscriptionWithAudio(ctx context.Context, text, language, provider, model string, durationMs, latencyMs int64, audio AudioAssetInput) error {
 	var audioPath string
+	audio = normalizeAudioAssetInput(audio)
+	if audio.DurationMs > 0 {
+		durationMs = audio.DurationMs
+	}
 	if strings.TrimSpace(model) == "" {
 		model = s.transcriptionModelHint(provider)
 	}
+	owner, _ := RecordOwnerFromContext(ctx)
 
-	if s.saveAudio && len(audioData) > 0 {
+	if s.saveAudio && len(audio.Data) > 0 {
 		audioDir := filepath.Join(filepath.Dir(s.path), "audio")
 		if err := os.MkdirAll(audioDir, 0o700); err != nil {
 			return fmt.Errorf("create audio dir: %w", err)
 		}
-		filename := fmt.Sprintf("%d.wav", time.Now().UnixNano())
+		filename := fmt.Sprintf("%d%s", time.Now().UnixNano(), audio.Extension)
 		audioPath = filepath.Join(audioDir, filename)
-		if err := os.WriteFile(audioPath, audioData, 0o600); err != nil {
+		if err := os.WriteFile(audioPath, audio.Data, 0o600); err != nil {
 			return fmt.Errorf("save audio: %w", err)
 		}
 	}
 
 	result, err := s.db.ExecContext(ctx,
-		`INSERT INTO transcriptions (text, language, provider, model, duration_ms, latency_ms, audio_path, word_count) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-		text, language, provider, model, durationMs, latencyMs, audioPath, countWords(text),
+		`INSERT INTO transcriptions (text, language, provider, model, duration_ms, latency_ms, audio_path, word_count, owner_user_id, owner_org_id, owner_source) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		text, language, provider, model, durationMs, latencyMs, audioPath, countWords(text), owner.UserID, owner.OrgID, owner.Source,
 	)
 	if err != nil {
 		return fmt.Errorf("insert: %w", err)
@@ -125,7 +134,7 @@ func (s *SQLiteStore) SaveTranscription(ctx context.Context, text, language, pro
 		return err
 	}
 	if audioPath != "" {
-		if err := recordAudioAsset(ctx, s.db, "sqlite", "transcription", id, audioPath, durationMs); err != nil {
+		if err := recordAudioAsset(ctx, s.db, "sqlite", "transcription", id, audioPath, durationMs, audio.MimeType); err != nil {
 			return fmt.Errorf("record audio asset: %w", err)
 		}
 	}
@@ -145,11 +154,13 @@ func (s *SQLiteStore) SaveTranscription(ctx context.Context, text, language, pro
 func (s *SQLiteStore) ListTranscriptions(ctx context.Context, opts ListOpts) ([]Transcription, error) {
 	limit, offset := normalizedListPagination(opts)
 
-	query := `SELECT id, text, language, provider, COALESCE(model, ''), COALESCE(duration_ms, 0), latency_ms, COALESCE(audio_path, ''), created_at
+	query := `SELECT id, text, language, provider, COALESCE(model, ''), COALESCE(duration_ms, 0), latency_ms, COALESCE(audio_path, ''), created_at,
+			COALESCE(owner_user_id, ''), COALESCE(owner_org_id, ''), COALESCE(owner_source, '')
 		 FROM transcriptions`
 	args := make([]any, 0, 4)
 	clauses := make([]string, 0, 2)
 	clauses, args = appendSQLiteNormalizedLanguageFilter(clauses, args, opts.Language)
+	clauses, args = appendSQLiteOwnerFilter(clauses, args, opts)
 	if !opts.After.IsZero() {
 		clauses = append(clauses, "created_at > ?")
 		args = append(args, sqliteTime(opts.After))
@@ -169,7 +180,7 @@ func (s *SQLiteStore) ListTranscriptions(ctx context.Context, opts ListOpts) ([]
 	results := make([]Transcription, 0)
 	for rows.Next() {
 		var t Transcription
-		if err := rows.Scan(&t.ID, &t.Text, &t.Language, &t.Provider, &t.Model, &t.DurationMs, &t.LatencyMs, &t.AudioPath, &t.CreatedAt); err != nil {
+		if err := rows.Scan(&t.ID, &t.Text, &t.Language, &t.Provider, &t.Model, &t.DurationMs, &t.LatencyMs, &t.AudioPath, &t.CreatedAt, &t.OwnerUserID, &t.OwnerOrgID, &t.OwnerSource); err != nil {
 			return nil, err
 		}
 		if strings.TrimSpace(t.Model) == "" {
@@ -183,12 +194,13 @@ func (s *SQLiteStore) ListTranscriptions(ctx context.Context, opts ListOpts) ([]
 
 func (s *SQLiteStore) GetTranscription(ctx context.Context, id int64) (*Transcription, error) {
 	row := s.db.QueryRowContext(ctx,
-		`SELECT id, text, language, provider, COALESCE(model, ''), COALESCE(duration_ms, 0), latency_ms, COALESCE(audio_path, ''), created_at
+		`SELECT id, text, language, provider, COALESCE(model, ''), COALESCE(duration_ms, 0), latency_ms, COALESCE(audio_path, ''), created_at,
+			COALESCE(owner_user_id, ''), COALESCE(owner_org_id, ''), COALESCE(owner_source, '')
 		 FROM transcriptions WHERE id = ?`, id,
 	)
 
 	var t Transcription
-	if err := row.Scan(&t.ID, &t.Text, &t.Language, &t.Provider, &t.Model, &t.DurationMs, &t.LatencyMs, &t.AudioPath, &t.CreatedAt); err != nil {
+	if err := row.Scan(&t.ID, &t.Text, &t.Language, &t.Provider, &t.Model, &t.DurationMs, &t.LatencyMs, &t.AudioPath, &t.CreatedAt, &t.OwnerUserID, &t.OwnerOrgID, &t.OwnerSource); err != nil {
 		return nil, err
 	}
 	if strings.TrimSpace(t.Model) == "" {
@@ -353,7 +365,7 @@ func (s *SQLiteStore) SaveQuickNote(ctx context.Context, text, language, provide
 		return 0, err
 	}
 	if audioPath != "" {
-		if err := recordAudioAsset(ctx, s.db, "sqlite", "quick_note", id, audioPath, durationMs); err != nil {
+		if err := recordAudioAsset(ctx, s.db, "sqlite", "quick_note", id, audioPath, durationMs, "audio/wav"); err != nil {
 			return 0, fmt.Errorf("record audio asset: %w", err)
 		}
 	}
@@ -468,7 +480,7 @@ func (s *SQLiteStore) UpdateQuickNoteCapture(ctx context.Context, id int64, text
 		_ = deleteAudioAsset(ctx, s.db, "sqlite", "quick_note", id, currentAudioPath)
 	}
 	if nextAudioPath != "" && currentAudioPath != nextAudioPath {
-		if err := recordAudioAsset(ctx, s.db, "sqlite", "quick_note", id, nextAudioPath, durationMs); err != nil {
+		if err := recordAudioAsset(ctx, s.db, "sqlite", "quick_note", id, nextAudioPath, durationMs, "audio/wav"); err != nil {
 			return fmt.Errorf("record audio asset: %w", err)
 		}
 	}

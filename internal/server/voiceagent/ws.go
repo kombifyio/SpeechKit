@@ -4,18 +4,22 @@ package voiceagent
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/coder/websocket"
 	"github.com/kombifyio/SpeechKit/internal/server/httpx"
 	"github.com/kombifyio/SpeechKit/internal/server/middleware"
+	"github.com/kombifyio/SpeechKit/internal/server/storageauth"
+	"github.com/kombifyio/SpeechKit/internal/store"
 )
 
 // ProviderFactory builds a Framework kernel voice-agent provider on demand.
@@ -134,6 +138,7 @@ type HandlerOptions struct {
 	// disables the server-side idle watchdog. Defaults to 15 minutes
 	// when zero is passed; pass a negative value to disable explicitly.
 	IdleTimeout time.Duration
+	Store       store.Store
 }
 
 // Handler exposes both the HTTP session-creation endpoint and the WS
@@ -145,10 +150,11 @@ type Handler struct {
 	publicURL      string
 	allowedOrigins []string
 	idleTimeout    time.Duration
+	store          store.Store
 }
 
 // New constructs a handler. All options except MaxAllowedClockSkew are
-// required â€” the adapter cannot function without a manager, provider, and
+// required — the adapter cannot function without a manager, provider, and
 // persona resolver.
 func New(opts HandlerOptions) (*Handler, error) {
 	if opts.Manager == nil {
@@ -173,21 +179,22 @@ func New(opts HandlerOptions) (*Handler, error) {
 		publicURL:      strings.TrimSpace(opts.PublicURL),
 		allowedOrigins: normalizeAllowedOrigins(opts.AllowedOrigins),
 		idleTimeout:    idle,
+		store:          opts.Store,
 	}, nil
 }
 
 // Mount wires the voiceagent endpoints onto mux:
 //
-//	POST   /v1/voiceagent/sessions        â€” create session + mint ticket
-//	GET    /v1/voiceagent/sessions        â€” list caller's active sessions
-//	DELETE /v1/voiceagent/sessions/{id}   â€” force close a session
-//	GET    /v1/voiceagent/sessions/{id}/ws?ticket=... â€” upgrade to WebSocket
+//	POST   /v1/voiceagent/sessions        — create session + mint ticket
+//	GET    /v1/voiceagent/sessions        — list caller's active sessions
+//	DELETE /v1/voiceagent/sessions/{id}   — force close a session
+//	GET    /v1/voiceagent/sessions/{id}/ws?ticket=... — upgrade to WebSocket
 func (h *Handler) Mount(mux *http.ServeMux) {
 	mux.HandleFunc("/v1/voiceagent/sessions", h.collectionHandler)
 	mux.HandleFunc("/v1/voiceagent/sessions/", h.itemHandler)
 }
 
-// â”€â”€ HTTP endpoints â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── HTTP endpoints ──────────────────────────────────────────────────────────
 
 type createSessionResponse struct {
 	SessionID string `json:"session_id"`
@@ -222,14 +229,14 @@ func (h *Handler) collectionHandler(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) itemHandler(w http.ResponseWriter, r *http.Request) {
 	path := strings.TrimPrefix(r.URL.Path, "/v1/voiceagent/sessions/")
-	// Expect either "{id}" or "{id}/ws".
+	// Expect "{id}", "{id}/ws", "{id}/transcript", or "{id}/summary".
 	var (
-		sessionID string
-		isWS      bool
+		sessionID   string
+		subresource string
 	)
 	if slash := strings.Index(path, "/"); slash >= 0 {
 		sessionID = path[:slash]
-		isWS = path[slash+1:] == "ws"
+		subresource = path[slash+1:]
 	} else {
 		sessionID = path
 	}
@@ -239,15 +246,61 @@ func (h *Handler) itemHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	switch {
-	case isWS && r.Method == http.MethodGet:
+	case subresource == "ws" && r.Method == http.MethodGet:
 		h.upgradeWS(w, r, sessionID)
-	case !isWS && r.Method == http.MethodDelete:
+	case subresource == "" && r.Method == http.MethodDelete:
 		h.deleteSession(w, r, sessionID)
+	case (subresource == "transcript" || subresource == "summary") && r.Method == http.MethodGet:
+		h.persistedSessionSubresource(w, r, sessionID, subresource)
 	default:
-		w.Header().Set("Allow", "GET (ws), DELETE")
+		w.Header().Set("Allow", "GET (ws/transcript/summary), DELETE")
 		httpx.WriteError(w, http.StatusMethodNotAllowed, "method_not_allowed",
 			"unsupported method for this sub-resource")
 	}
+}
+
+func (h *Handler) persistedSessionSubresource(w http.ResponseWriter, r *http.Request, sessionID, subresource string) {
+	vs, ok := h.store.(store.VoiceAgentSessionStore)
+	if h.store == nil || !ok {
+		httpx.WriteError(w, http.StatusServiceUnavailable, "store_unavailable", "voice agent session storage is not configured")
+		return
+	}
+	id, err := strconv.ParseInt(strings.TrimSpace(sessionID), 10, 64)
+	if err != nil || id <= 0 {
+		httpx.WriteError(w, http.StatusNotFound, "session_not_found", "voice agent session id must be numeric")
+		return
+	}
+	session, err := vs.GetVoiceAgentSession(r.Context(), id)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			httpx.WriteError(w, http.StatusNotFound, "session_not_found", "voice agent session not found")
+			return
+		}
+		httpx.WriteError(w, http.StatusInternalServerError, "session_read_failed", err.Error())
+		return
+	}
+	if !storageauth.CanReadOwned(r, session.OwnerUserID, session.OwnerOrgID) {
+		httpx.WriteError(w, http.StatusForbidden, "forbidden", "voice agent session is not owned by this caller")
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	if subresource == "transcript" {
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"id":         session.ID,
+			"transcript": session.Transcript,
+			"turns":      session.Turns,
+			"language":   session.Language,
+			"created_at": session.CreatedAt,
+		})
+		return
+	}
+	_ = json.NewEncoder(w).Encode(map[string]any{
+		"id":         session.ID,
+		"summary":    session.Summary,
+		"language":   session.Language,
+		"created_at": session.CreatedAt,
+	})
 }
 
 func (h *Handler) createSession(w http.ResponseWriter, r *http.Request) {
@@ -327,7 +380,7 @@ func (h *Handler) deleteSession(w http.ResponseWriter, r *http.Request, sessionI
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// â”€â”€ WebSocket upgrade â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── WebSocket upgrade ───────────────────────────────────────────────────────
 
 func (h *Handler) upgradeWS(w http.ResponseWriter, r *http.Request, sessionID string) {
 	if !originAllowedForWebSocket(r.Header.Get("Origin"), h.allowedOrigins) {
@@ -368,7 +421,7 @@ func (h *Handler) upgradeWS(w http.ResponseWriter, r *http.Request, sessionID st
 		slog.Warn("voiceagent: WS upgrade failed", "session_id", sessionID, "err", err)
 		return
 	}
-	// Conservative read limit â€” raw PCM chunks should be well under 4 KB.
+	// Conservative read limit — raw PCM chunks should be well under 4 KB.
 	conn.SetReadLimit(1 << 20)
 
 	adapter := &Adapter{

@@ -15,9 +15,12 @@ func sqliteTime(t time.Time) string {
 	return t.UTC().Format("2006-01-02 15:04:05")
 }
 
-func recordAudioAsset(ctx context.Context, db execContexter, dialect, ownerKind string, ownerID int64, path string, durationMs int64) error {
+func recordAudioAsset(ctx context.Context, db execContexter, dialect, ownerKind string, ownerID int64, path string, durationMs int64, mimeType string) error {
 	if path == "" || ownerID <= 0 {
 		return nil
+	}
+	if mimeType == "" {
+		mimeType = mimeTypeForAudioPath(path)
 	}
 	var size int64
 	if info, err := os.Stat(path); err == nil {
@@ -33,7 +36,7 @@ func recordAudioAsset(ctx context.Context, db execContexter, dialect, ownerKind 
 				size_bytes = excluded.size_bytes,
 				duration_ms = excluded.duration_ms,
 				updated_at = NOW()`,
-			ownerKind, ownerID, string(AudioStorageLocalFile), path, "audio/wav", size, durationMs)
+			ownerKind, ownerID, string(AudioStorageLocalFile), path, mimeType, size, durationMs)
 		return err
 	}
 	_, err := db.ExecContext(ctx, `INSERT INTO audio_assets
@@ -45,7 +48,7 @@ func recordAudioAsset(ctx context.Context, db execContexter, dialect, ownerKind 
 			size_bytes = excluded.size_bytes,
 			duration_ms = excluded.duration_ms,
 			updated_at = CURRENT_TIMESTAMP`,
-		ownerKind, ownerID, string(AudioStorageLocalFile), path, "audio/wav", size, durationMs)
+		ownerKind, ownerID, string(AudioStorageLocalFile), path, mimeType, size, durationMs)
 	return err
 }
 

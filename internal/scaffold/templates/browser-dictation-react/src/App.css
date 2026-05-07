@@ -1,0 +1,45 @@
+:root {
+  font-family: system-ui, -apple-system, sans-serif;
+  color-scheme: light dark;
+}
+
+body {
+  margin: 0;
+  background: #f6f7f9;
+}
+
+.speechkit-shell {
+  max-width: 720px;
+  margin: 2rem auto;
+  padding: 0 1rem;
+}
+
+.speechkit-hint {
+  color: #555;
+}
+
+.speechkit-button {
+  padding: 0.75rem 1.5rem;
+  font-size: 1rem;
+  background: #2c3e50;
+  color: white;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.speechkit-button.is-recording {
+  background: #c0392b;
+}
+
+.speechkit-textarea {
+  width: 100%;
+  margin-top: 1rem;
+  padding: 0.75rem;
+  font-size: 1rem;
+  font-family: inherit;
+}
+
+.speechkit-error {
+  color: #c0392b;
+}

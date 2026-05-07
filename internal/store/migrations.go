@@ -92,6 +92,26 @@ func runSQLiteMigrations(ctx context.Context, db *sql.DB) error {
 			return backfillSQLiteAudioAssets(ctx, db)
 		}},
 		sqliteSQLMigration("sqlite:012_indexes", sqliteMigration012),
+		{version: "sqlite:013_owner_scope", run: func(ctx context.Context, db *sql.DB) error {
+			for _, table := range []string{"transcriptions", "voice_agent_sessions"} {
+				if err := ensureSQLiteColumn(ctx, db, table, "owner_user_id", "TEXT NOT NULL DEFAULT ''"); err != nil {
+					return err
+				}
+				if err := ensureSQLiteColumn(ctx, db, table, "owner_org_id", "TEXT NOT NULL DEFAULT ''"); err != nil {
+					return err
+				}
+				if err := ensureSQLiteColumn(ctx, db, table, "owner_source", "TEXT NOT NULL DEFAULT ''"); err != nil {
+					return err
+				}
+			}
+			_, err := db.ExecContext(ctx, `
+CREATE INDEX IF NOT EXISTS idx_transcriptions_owner_created
+	ON transcriptions(owner_org_id, owner_user_id, created_at DESC, id DESC);
+CREATE INDEX IF NOT EXISTS idx_voice_agent_sessions_owner_created
+	ON voice_agent_sessions(owner_org_id, owner_user_id, created_at DESC, id DESC);
+`)
+			return err
+		}},
 	}
 	for _, migration := range migrations {
 		if err := applyMigration(ctx, db, "sqlite", migration); err != nil {
@@ -128,6 +148,23 @@ func runPostgresMigrations(ctx context.Context, db *sql.DB) error {
 			return backfillPostgresAudioAssets(ctx, db)
 		}},
 		postgresSQLMigration("postgres:007_indexes", postgresMigration007),
+		{version: "postgres:008_owner_scope", run: func(ctx context.Context, db *sql.DB) error {
+			_, err := db.ExecContext(ctx, `
+ALTER TABLE transcriptions
+	ADD COLUMN IF NOT EXISTS owner_user_id TEXT NOT NULL DEFAULT '',
+	ADD COLUMN IF NOT EXISTS owner_org_id TEXT NOT NULL DEFAULT '',
+	ADD COLUMN IF NOT EXISTS owner_source TEXT NOT NULL DEFAULT '';
+ALTER TABLE voice_agent_sessions
+	ADD COLUMN IF NOT EXISTS owner_user_id TEXT NOT NULL DEFAULT '',
+	ADD COLUMN IF NOT EXISTS owner_org_id TEXT NOT NULL DEFAULT '',
+	ADD COLUMN IF NOT EXISTS owner_source TEXT NOT NULL DEFAULT '';
+CREATE INDEX IF NOT EXISTS idx_transcriptions_owner_created
+	ON transcriptions(owner_org_id, owner_user_id, created_at DESC, id DESC);
+CREATE INDEX IF NOT EXISTS idx_voice_agent_sessions_owner_created
+	ON voice_agent_sessions(owner_org_id, owner_user_id, created_at DESC, id DESC);
+`)
+			return err
+		}},
 	}
 	for _, migration := range migrations {
 		if err := applyMigration(ctx, db, "postgres", migration); err != nil {

@@ -267,7 +267,7 @@ func TestAudioAssetHelpersRecordAndDelete(t *testing.T) {
 	}
 
 	ctx := context.Background()
-	if err := recordAudioAsset(ctx, s.db, "sqlite", "transcription", 42, audioPath, 1234); err != nil {
+	if err := recordAudioAsset(ctx, s.db, "sqlite", "transcription", 42, audioPath, 1234, "audio/wav"); err != nil {
 		t.Fatalf("recordAudioAsset: %v", err)
 	}
 	var sizeBytes, durationMs int64
@@ -767,6 +767,91 @@ func TestSaveWithAudioDisabled(t *testing.T) {
 	}
 	if recent[0].AudioPath != "" {
 		t.Errorf("expected empty audio path when saveAudio=false, got %q", recent[0].AudioPath)
+	}
+}
+
+func TestSQLiteQuickNoteCaptureUpdateReplacesAudioAndCountsRows(t *testing.T) {
+	dir := t.TempDir()
+	dbPath := filepath.Join(dir, "test.db")
+	s, err := NewSQLiteStore(StoreConfig{SQLitePath: dbPath, SaveAudio: true, MaxAudioStorageMB: 100})
+	if err != nil {
+		t.Fatalf("NewSQLiteStore: %v", err)
+	}
+	defer s.Close()
+
+	ctx := context.Background()
+	id, err := s.SaveQuickNote(ctx, "draft", "de", "manual", 500, 50, []byte("old audio"))
+	if err != nil {
+		t.Fatalf("SaveQuickNote: %v", err)
+	}
+	before, err := s.GetQuickNote(ctx, id)
+	if err != nil {
+		t.Fatalf("GetQuickNote before update: %v", err)
+	}
+	if before.AudioPath == "" {
+		t.Fatal("expected initial audio path")
+	}
+
+	if err := s.UpdateQuickNoteCapture(ctx, id, "final note", "hf", 1300, 90, []byte("new audio")); err != nil {
+		t.Fatalf("UpdateQuickNoteCapture: %v", err)
+	}
+	after, err := s.GetQuickNote(ctx, id)
+	if err != nil {
+		t.Fatalf("GetQuickNote after update: %v", err)
+	}
+	if after.Text != "final note" || after.Provider != "hf" || after.DurationMs != 1300 || after.LatencyMs != 90 {
+		t.Fatalf("updated note = %+v", after)
+	}
+	if after.AudioPath == "" || after.AudioPath == before.AudioPath {
+		t.Fatalf("audio path after update = %q, before %q", after.AudioPath, before.AudioPath)
+	}
+	if _, err := os.Stat(before.AudioPath); !os.IsNotExist(err) {
+		t.Fatalf("old audio path should be removed, stat err=%v", err)
+	}
+	if after.Audio == nil || after.Audio.SizeBytes != int64(len("new audio")) {
+		t.Fatalf("audio asset = %+v", after.Audio)
+	}
+	var assetCount int
+	if err := s.db.QueryRow(`SELECT COUNT(*) FROM audio_assets WHERE owner_kind = ? AND owner_id = ?`, "quick_note", id).Scan(&assetCount); err != nil {
+		t.Fatalf("query audio assets: %v", err)
+	}
+	if assetCount != 1 {
+		t.Fatalf("audio asset rows = %d, want 1", assetCount)
+	}
+	count, err := s.QuickNoteCount(ctx)
+	if err != nil {
+		t.Fatalf("QuickNoteCount: %v", err)
+	}
+	if count != 1 {
+		t.Fatalf("QuickNoteCount = %d, want 1", count)
+	}
+	if s.DB() == nil {
+		t.Fatal("DB should expose sqlite handle")
+	}
+}
+
+func TestSQLiteQuickNoteMutationsReportMissingRows(t *testing.T) {
+	s, err := NewSQLiteStore(StoreConfig{SQLitePath: filepath.Join(t.TempDir(), "test.db"), MaxAudioStorageMB: 100})
+	if err != nil {
+		t.Fatalf("NewSQLiteStore: %v", err)
+	}
+	defer s.Close()
+
+	ctx := context.Background()
+	for name, mutate := range map[string]func() error{
+		"update text":    func() error { return s.UpdateQuickNote(ctx, 404, "missing") },
+		"update capture": func() error { return s.UpdateQuickNoteCapture(ctx, 404, "missing", "hf", 1, 1, nil) },
+		"pin":            func() error { return s.PinQuickNote(ctx, 404, true) },
+	} {
+		t.Run(name, func(t *testing.T) {
+			err := mutate()
+			if err == nil {
+				t.Fatal("expected missing quick note error")
+			}
+			if !strings.Contains(err.Error(), "quick note") {
+				t.Fatalf("error = %v", err)
+			}
+		})
 	}
 }
 

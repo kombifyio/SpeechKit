@@ -1,0 +1,276 @@
+//go:build linux
+
+package catalog
+
+import (
+	"encoding/json"
+	"net/http"
+	"os"
+	"strings"
+
+	framework "github.com/kombifyio/SpeechKit/pkg/speechkit"
+
+	"github.com/kombifyio/SpeechKit/internal/config"
+	"github.com/kombifyio/SpeechKit/internal/server/httpx"
+)
+
+type Handler struct {
+	cfg          *config.Config
+	healthStatus func(component string) string
+	version      string
+}
+
+func New(cfg *config.Config, healthStatus func(component string) string, version string) *Handler {
+	return &Handler{cfg: cfg, healthStatus: healthStatus, version: version}
+}
+
+func (h *Handler) Mount(mux *http.ServeMux) {
+	mux.HandleFunc("/v1/catalog/profiles", h.profiles)
+	mux.HandleFunc("/v1/catalog/contracts", h.contracts)
+	mux.HandleFunc("/v1/catalog/readiness", h.readiness)
+	mux.HandleFunc("/v1/catalog/profiles/", h.profileReadiness)
+}
+
+func (h *Handler) profiles(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		methodNotAllowed(w, http.MethodGet)
+		return
+	}
+	profiles := framework.DefaultProviderProfiles()
+	if mode := normalizeMode(r.URL.Query().Get("mode")); mode != framework.ModeNone {
+		profiles = framework.ProfilesForMode(mode)
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"profiles": profiles})
+}
+
+func (h *Handler) contracts(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		methodNotAllowed(w, http.MethodGet)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"contracts": framework.DefaultModeContracts()})
+}
+
+func (h *Handler) readiness(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		methodNotAllowed(w, http.MethodGet)
+		return
+	}
+	readiness := make([]framework.Readiness, 0)
+	for _, profile := range framework.DefaultProviderProfiles() {
+		readiness = append(readiness, h.profileReadinessSummary(profile))
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"readiness": readiness})
+}
+
+func (h *Handler) profileReadiness(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		methodNotAllowed(w, http.MethodGet)
+		return
+	}
+	if !strings.HasSuffix(r.URL.Path, "/readiness") {
+		httpx.WriteError(w, http.StatusNotFound, "profile_not_found", "unknown provider profile subresource")
+		return
+	}
+	id := strings.TrimPrefix(r.URL.Path, "/v1/catalog/profiles/")
+	id = strings.TrimSuffix(id, "/readiness")
+	id = strings.Trim(strings.TrimSpace(id), "/")
+	if id == "" || strings.Contains(id, "/") {
+		httpx.WriteError(w, http.StatusNotFound, "profile_not_found", "profile id missing")
+		return
+	}
+	for _, profile := range framework.DefaultProviderProfiles() {
+		if profile.ID == id {
+			writeJSON(w, http.StatusOK, h.profileReadinessSummary(profile))
+			return
+		}
+	}
+	httpx.WriteError(w, http.StatusNotFound, "profile_not_found", "unknown provider profile")
+}
+
+func (h *Handler) profileReadinessSummary(profile framework.ProviderProfile) framework.Readiness {
+	modeEnabled := h.modeEnabled(profile.Mode)
+	providerEnabled := h.providerEnabled(profile)
+	credentialsReady := h.credentialsReady(profile)
+	runtimeReady := h.runtimeReady(profile)
+	capabilityReady := framework.ValidateProfileForMode(profile, profile.Mode) == nil
+	configured := providerEnabled && credentialsReady
+	return framework.Readiness{
+		SchemaVersion:    framework.ReadinessSchemaVersion,
+		ProfileID:        profile.ID,
+		Mode:             framework.NormalizeMode(profile.Mode),
+		ProviderKind:     profile.ProviderKind,
+		ExecutionMode:    profile.ExecutionMode,
+		ModelID:          profile.ModelID,
+		Source:           profile.Source,
+		Active:           modeEnabled && providerEnabled && h.profileSelected(profile),
+		Default:          profile.Default,
+		Configured:       configured,
+		CredentialsReady: credentialsReady,
+		RuntimeReady:     runtimeReady,
+		CapabilityReady:  capabilityReady,
+		Ready:            configured && runtimeReady && capabilityReady,
+		Missing:          missing(modeEnabled, providerEnabled, credentialsReady, runtimeReady),
+	}
+}
+
+func (h *Handler) modeEnabled(mode framework.Mode) bool {
+	mode = normalizeMode(string(mode))
+	if h.cfg == nil || len(h.cfg.Server.Modes) == 0 {
+		return true
+	}
+	for _, configured := range h.cfg.Server.Modes {
+		if normalizeMode(configured) == mode {
+			return true
+		}
+	}
+	return false
+}
+
+func (h *Handler) profileSelected(profile framework.ProviderProfile) bool {
+	selected := h.selectedProfiles(profile.Mode)
+	if len(selected) == 0 {
+		return profile.Default
+	}
+	return selected[profile.ID]
+}
+
+func (h *Handler) selectedProfiles(mode framework.Mode) map[string]bool {
+	if h.cfg == nil {
+		return nil
+	}
+	var primary, fallback string
+	switch normalizeMode(string(mode)) {
+	case framework.ModeDictation:
+		primary = h.cfg.ModelSelection.Dictate.PrimaryProfileID
+		fallback = h.cfg.ModelSelection.Dictate.FallbackProfileID
+	case framework.ModeAssist:
+		primary = h.cfg.ModelSelection.Assist.PrimaryProfileID
+		fallback = h.cfg.ModelSelection.Assist.FallbackProfileID
+	case framework.ModeVoiceAgent:
+		primary = h.cfg.ModelSelection.VoiceAgent.PrimaryProfileID
+		fallback = h.cfg.ModelSelection.VoiceAgent.FallbackProfileID
+	case framework.ModeNone:
+		// No mode-specific selection; primary/fallback stay empty.
+	}
+	out := map[string]bool{}
+	for _, id := range []string{primary, fallback} {
+		id = strings.TrimSpace(id)
+		if id != "" {
+			out[id] = true
+		}
+	}
+	return out
+}
+
+func (h *Handler) providerEnabled(profile framework.ProviderProfile) bool {
+	if h.cfg == nil {
+		return true
+	}
+	switch profile.ExecutionMode {
+	case framework.ExecutionModeLocal:
+		switch normalizeMode(string(profile.Mode)) {
+		case framework.ModeDictation:
+			return h.cfg.Local.Enabled
+		case framework.ModeAssist:
+			return h.cfg.LocalLLM.Enabled
+		case framework.ModeVoiceAgent:
+			return h.cfg.VoiceAgent.Enabled
+		default:
+			return true
+		}
+	case framework.ExecutionModeOllama:
+		return h.cfg.Providers.Ollama.Enabled
+	case framework.ExecutionModeHFRouted:
+		return h.cfg.HuggingFace.Enabled
+	case framework.ExecutionModeOpenAI:
+		return h.cfg.Providers.OpenAI.Enabled
+	case framework.ExecutionModeGroq:
+		return h.cfg.Providers.Groq.Enabled
+	case framework.ExecutionModeGoogle:
+		return h.cfg.Providers.Google.Enabled
+	case framework.ExecutionModeOpenRouter:
+		return h.cfg.Providers.OpenRouter.Enabled
+	default:
+		return true
+	}
+}
+
+func (h *Handler) credentialsReady(profile framework.ProviderProfile) bool {
+	switch profile.ExecutionMode {
+	case framework.ExecutionModeOpenAI:
+		return envPresent(h.cfg.Providers.OpenAI.APIKeyEnv)
+	case framework.ExecutionModeGroq:
+		return envPresent(h.cfg.Providers.Groq.APIKeyEnv)
+	case framework.ExecutionModeGoogle:
+		return envPresent(h.cfg.Providers.Google.APIKeyEnv)
+	case framework.ExecutionModeHFRouted:
+		return envPresent(config.HuggingFaceTokenEnvName(h.cfg))
+	case framework.ExecutionModeOpenRouter:
+		return envPresent(h.cfg.Providers.OpenRouter.APIKeyEnv)
+	default:
+		return true
+	}
+}
+
+func (h *Handler) runtimeReady(profile framework.ProviderProfile) bool {
+	if !h.modeEnabled(profile.Mode) {
+		return false
+	}
+	switch framework.NormalizeMode(profile.Mode) {
+	case framework.ModeDictation:
+		return h.statusOK("mode.dictation")
+	case framework.ModeAssist:
+		return h.statusOK("mode.assist")
+	case framework.ModeVoiceAgent:
+		return h.statusOK("mode.voiceagent")
+	default:
+		return false
+	}
+}
+
+func (h *Handler) statusOK(component string) bool {
+	if h.healthStatus == nil {
+		return false
+	}
+	return h.healthStatus(component) == "ok"
+}
+
+func envPresent(name string) bool {
+	return strings.TrimSpace(os.Getenv(strings.TrimSpace(name))) != ""
+}
+
+func missing(modeEnabled, providerEnabled, credentialsReady, runtimeReady bool) []string {
+	var out []string
+	if !modeEnabled {
+		out = append(out, "mode_disabled")
+	}
+	if !providerEnabled {
+		out = append(out, "provider_disabled")
+	}
+	if providerEnabled && !credentialsReady {
+		out = append(out, "credentials")
+	}
+	if modeEnabled && providerEnabled && !runtimeReady {
+		out = append(out, "runtime")
+	}
+	return out
+}
+
+func normalizeMode(raw string) framework.Mode {
+	if strings.EqualFold(strings.TrimSpace(raw), "voiceagent") {
+		return framework.ModeVoiceAgent
+	}
+	return framework.NormalizeMode(framework.Mode(raw))
+}
+
+func writeJSON(w http.ResponseWriter, status int, body any) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	_ = json.NewEncoder(w).Encode(body)
+}
+
+func methodNotAllowed(w http.ResponseWriter, allowed ...string) {
+	w.Header().Set("Allow", strings.Join(allowed, ", "))
+	httpx.WriteError(w, http.StatusMethodNotAllowed, "method_not_allowed", "method not allowed on this resource")
+}

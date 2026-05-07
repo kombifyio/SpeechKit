@@ -5,7 +5,7 @@
 // each mode package hangs its handlers off.
 //
 // M1 scope: HTTP listener, /healthz, /readyz, signal handling, middleware
-// chain. STT/TTS/Voice-Agent wiring comes in M2â€“M4 as those modes come online.
+// chain. STT/TTS/Voice-Agent wiring comes in M2–M4 as those modes come online.
 package core
 
 import (
@@ -26,9 +26,14 @@ import (
 	"github.com/kombifyio/SpeechKit/internal/config"
 	"github.com/kombifyio/SpeechKit/internal/router"
 	"github.com/kombifyio/SpeechKit/internal/server/assist"
+	"github.com/kombifyio/SpeechKit/internal/server/catalog"
+	"github.com/kombifyio/SpeechKit/internal/server/configapi"
 	"github.com/kombifyio/SpeechKit/internal/server/dictation"
 	"github.com/kombifyio/SpeechKit/internal/server/middleware"
 	"github.com/kombifyio/SpeechKit/internal/server/persona"
+	"github.com/kombifyio/SpeechKit/internal/server/transcripts"
+	"github.com/kombifyio/SpeechKit/internal/server/ttsapi"
+	"github.com/kombifyio/SpeechKit/internal/server/vocabulary"
 	"github.com/kombifyio/SpeechKit/internal/store"
 	"github.com/kombifyio/SpeechKit/internal/tts"
 )
@@ -66,7 +71,7 @@ type App struct {
 	STTRouter      *router.Router
 	AssistPipeline *assistpkg.Pipeline
 
-	// Shared AI deps â€” populated by ensureSharedAIDeps on demand.
+	// Shared AI deps — populated by ensureSharedAIDeps on demand.
 	GenkitRuntime *ai.Runtime
 	AssistFlow    *genkitcore.Flow[flows.AssistInput, flows.AssistOutput, struct{}]
 	AgentFlow     *genkitcore.Flow[flows.AgentInput, flows.AgentOutput, struct{}]
@@ -74,13 +79,13 @@ type App struct {
 	TTSEnabled    bool
 
 	// PersonaRegistry holds the in-memory persona / role / sequence catalog.
-	// Populated by ensurePersonaRegistry â€” loaded from TOML seeds at boot;
+	// Populated by ensurePersonaRegistry — loaded from TOML seeds at boot;
 	// admin CRUD writes land here too (M5a). Durable persistence is
 	// attached via a Persister when the store supports it (M5b).
 	PersonaRegistry *persona.Registry
 
 	// Store is the durable backend for transcriptions, quick notes, voice
-	// agent session summaries, and â€” since M5b â€” the persona catalog.
+	// agent session summaries, and — since M5b — the persona catalog.
 	// Nil when the server is configured without a store.
 	Store store.Store
 
@@ -156,6 +161,26 @@ func Run(ctx context.Context, cfg *config.Config, opts RunOptions) error {
 		registerProviderHealth(app, providers)
 	}
 
+	if cfg.Server.Features.StorageReads || cfg.Server.Features.Vocabulary {
+		ensureStore(cfg, app)
+	}
+	if cfg.Server.Features.TTSDirect && app.TTSRouter == nil {
+		ttsRouter, ttsEnabled, ttsNotes := buildTTSRouter(cfg)
+		for _, note := range ttsNotes {
+			slog.Info("TTS wiring", "msg", note)
+		}
+		app.TTSRouter = ttsRouter
+		app.TTSEnabled = ttsEnabled
+		switch {
+		case ttsEnabled:
+			app.Health.SetReady("tts", StatusOK, "enabled")
+		case !cfg.TTS.Enabled:
+			app.Health.SetReady("tts", StatusOK, "disabled")
+		default:
+			app.Health.SetReady("tts", StatusDegraded, "enabled but no providers configured")
+		}
+	}
+
 	if app.ModeEnabled(ModeDictation) {
 		if app.STTRouter == nil {
 			app.Health.SetReady("mode.dictation", StatusUnavailable, "STT router not initialized")
@@ -164,6 +189,7 @@ func Run(ctx context.Context, cfg *config.Config, opts RunOptions) error {
 				Router:        app.STTRouter,
 				MaxUploadMB:   cfg.Server.MaxUploadMB,
 				DefaultPrompt: dictationPromptFromDictionary(cfg.Vocabulary.Dictionary),
+				Store:         app.Store,
 			})
 			if err != nil {
 				return fmt.Errorf("core.Run: build dictation handler: %w", err)
@@ -171,6 +197,57 @@ func Run(ctx context.Context, cfg *config.Config, opts RunOptions) error {
 			h.Mount(app.Mux)
 			app.Health.SetReady("mode.dictation", StatusOK, "listening")
 			slog.Info("mode enabled", "mode", "dictation", "path", "/v1/dictation/transcribe")
+		}
+	}
+
+	if cfg.Server.Features.Catalog {
+		catalog.New(cfg, func(component string) string {
+			_, components, _ := app.Health.Snapshot()
+			entry, ok := components[component]
+			if !ok {
+				return ""
+			}
+			return string(entry.Status)
+		}, app.Version).Mount(app.Mux)
+		app.Health.SetReady("api.catalog", StatusOK, "listening")
+	}
+	configapi.New(cfg, app.Version, func() string {
+		overall, _, _ := app.Health.Snapshot()
+		return string(overall)
+	}).Mount(app.Mux)
+	if cfg.Server.Features.Vocabulary {
+		dictStore, _ := app.Store.(store.UserDictionaryStore)
+		vocabulary.New(dictStore).Mount(app.Mux)
+		switch {
+		case app.Store == nil:
+			app.Health.SetReady("api.vocabulary", StatusUnavailable, "store unavailable")
+		case dictStore == nil:
+			app.Health.SetReady("api.vocabulary", StatusUnavailable, "store does not support user dictionary")
+		default:
+			app.Health.SetReady("api.vocabulary", StatusOK, "listening")
+		}
+	}
+	if cfg.Server.Features.StorageReads {
+		transcriptHandler := transcripts.New(app.Store)
+		transcriptHandler.Mount(app.Mux)
+		if !app.ModeEnabled(ModeVoiceAgent) {
+			transcriptHandler.MountVoiceAgentReads(app.Mux)
+		}
+		if app.Store == nil {
+			app.Health.SetReady("api.storage_reads", StatusUnavailable, "store unavailable")
+		} else {
+			app.Health.SetReady("api.storage_reads", StatusOK, "listening")
+		}
+	}
+	if cfg.Server.Features.TTSDirect {
+		ttsapi.New(cfg, app.TTSRouter).Mount(app.Mux)
+		switch {
+		case app.TTSRouter != nil && app.TTSEnabled:
+			app.Health.SetReady("api.tts_direct", StatusOK, "listening")
+		case !cfg.TTS.Enabled:
+			app.Health.SetReady("api.tts_direct", StatusUnavailable, "tts disabled")
+		default:
+			app.Health.SetReady("api.tts_direct", StatusUnavailable, "tts router unavailable")
 		}
 	}
 
@@ -271,6 +348,7 @@ func Run(ctx context.Context, cfg *config.Config, opts RunOptions) error {
 			AllowPublicRoutes:    publicRoutes,
 			AllowBootstrapPaths:  bootstrapPaths,
 			AllowBootstrapRoutes: serverBootstrapAuthRoutes(),
+			BearerRole:           cfg.Server.BearerRole,
 			BootstrapAllowed: func(r *http.Request) bool {
 				return serverSettingsBootstrapWriteAllowed(app)
 			},
@@ -386,7 +464,7 @@ func firstVANonEmpty(a, b string) string {
 	return b
 }
 
-// ensureStore opens the configured durable store. Idempotent â€” the first
+// ensureStore opens the configured durable store. Idempotent — the first
 // successful call populates app.Store; subsequent calls are no-ops. If
 // the backend is unconfigured or the driver fails, we log and continue:
 // Voice Agent mode still works (personas stay in-memory), dictation still
@@ -425,10 +503,10 @@ func ensureStore(cfg *config.Config, app *App) {
 //  2. If the Store exposes a *sql.DB (SQLite backend), hydrate previously
 //     persisted entries FIRST so admin-authored overrides are in place,
 //     then attach a Persister so subsequent admin writes survive restart.
-//  3. Overlay TOML seeds on top â€” TOML acts as a baseline of defaults
+//  3. Overlay TOML seeds on top — TOML acts as a baseline of defaults
 //     that admin writes can replace per ID.
 //
-// Idempotent â€” second+ calls are no-ops.
+// Idempotent — second+ calls are no-ops.
 func ensurePersonaRegistry(ctx context.Context, cfg *config.Config, app *App) {
 	if app.PersonaRegistry != nil {
 		return
@@ -458,7 +536,7 @@ func ensurePersonaRegistry(ctx context.Context, cfg *config.Config, app *App) {
 	}
 
 	// (3) overlay TOML seeds. Seeds are tagged Source="toml" and never
-	// round-trip to the persister â€” they're the baseline, not data.
+	// round-trip to the persister — they're the baseline, not data.
 	notes := persona.LoadSeeds(reg, cfg)
 	for _, note := range notes {
 		slog.Debug("persona seed", "note", note)

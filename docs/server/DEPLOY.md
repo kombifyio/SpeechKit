@@ -85,6 +85,18 @@ enabled and allows settings writes. `--ready` disables onboarding UI/settings
 writes for preconfigured deployments with self-hosted defaults and env-based
 secrets.
 
+For agent-driven server setup without cloning the repository, use the public
+website installer:
+
+```bash
+curl -fsSL https://speechkit.cc/install-server.sh | sh
+curl -fsSL https://speechkit.cc/install-server.sh | sh -s -- --channel preview
+```
+
+`--channel preview` is for v0.30 Preview testing only. It uses
+`ghcr.io/kombifyio/speechkit-server:v0.30-preview` and never publishes or
+updates the release `latest` tag.
+
 ## 3. kombify dev deployment
 
 The canonical internal dev server is:

@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"strings"
@@ -17,6 +18,7 @@ func (s *SQLiteStore) SaveVoiceAgentSession(ctx context.Context, session VoiceAg
 	if err != nil {
 		return 0, err
 	}
+	owner, _ := RecordOwnerFromContext(ctx)
 
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
@@ -27,8 +29,9 @@ func (s *SQLiteStore) SaveVoiceAgentSession(ctx context.Context, session VoiceAg
 	result, err := tx.ExecContext(ctx,
 		`INSERT INTO voice_agent_sessions (
 			title, summary, raw_summary, transcript, language, provider_profile_id, runtime_kind,
-			turns_json, ideas_json, decisions_json, open_questions_json, next_steps_json, started_at, ended_at
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			turns_json, ideas_json, decisions_json, open_questions_json, next_steps_json, started_at, ended_at,
+			owner_user_id, owner_org_id, owner_source
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		session.Summary.Title,
 		session.Summary.Summary,
 		session.Summary.RawText,
@@ -43,6 +46,9 @@ func (s *SQLiteStore) SaveVoiceAgentSession(ctx context.Context, session VoiceAg
 		j.Steps,
 		session.StartedAt,
 		session.EndedAt,
+		owner.UserID,
+		owner.OrgID,
+		owner.Source,
 	)
 	if err != nil {
 		return 0, fmt.Errorf("insert voice agent session: %w", err)
@@ -64,11 +70,13 @@ func (s *SQLiteStore) ListVoiceAgentSessions(ctx context.Context, opts ListOpts)
 	limit, offset := normalizedListPagination(opts)
 
 	query := `SELECT id, title, summary, raw_summary, transcript, language, provider_profile_id, runtime_kind,
-			turns_json, ideas_json, decisions_json, open_questions_json, next_steps_json, started_at, ended_at, created_at
+			turns_json, ideas_json, decisions_json, open_questions_json, next_steps_json, started_at, ended_at, created_at,
+			COALESCE(owner_user_id, ''), COALESCE(owner_org_id, ''), COALESCE(owner_source, '')
 		 FROM voice_agent_sessions`
 	args := make([]any, 0, 4)
 	clauses := make([]string, 0, 2)
 	clauses, args = appendSQLiteNormalizedLanguageFilter(clauses, args, opts.Language)
+	clauses, args = appendSQLiteOwnerFilter(clauses, args, opts)
 	if !opts.After.IsZero() {
 		clauses = append(clauses, "created_at > ?")
 		args = append(args, sqliteTime(opts.After))
@@ -88,12 +96,34 @@ func (s *SQLiteStore) ListVoiceAgentSessions(ctx context.Context, opts ListOpts)
 	return scanVoiceAgentSessions(rows)
 }
 
+func (s *SQLiteStore) GetVoiceAgentSession(ctx context.Context, id int64) (*VoiceAgentSession, error) {
+	rows, err := s.db.QueryContext(ctx, //nolint:rowserrcheck // rows.Err() is checked inside scanVoiceAgentSessions
+		`SELECT id, title, summary, raw_summary, transcript, language, provider_profile_id, runtime_kind,
+			turns_json, ideas_json, decisions_json, open_questions_json, next_steps_json, started_at, ended_at, created_at,
+			COALESCE(owner_user_id, ''), COALESCE(owner_org_id, ''), COALESCE(owner_source, '')
+		 FROM voice_agent_sessions WHERE id = ?`, id,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close() //nolint:errcheck // deferred rows close, error not actionable
+	sessions, err := scanVoiceAgentSessions(rows)
+	if err != nil {
+		return nil, err
+	}
+	if len(sessions) == 0 {
+		return nil, sql.ErrNoRows
+	}
+	return &sessions[0], nil
+}
+
 func (s *PostgresStore) SaveVoiceAgentSession(ctx context.Context, session VoiceAgentSession) (int64, error) {
 	session = normalizeVoiceAgentSession(session)
 	j, err := marshalVoiceAgentSessionJSON(session)
 	if err != nil {
 		return 0, err
 	}
+	owner, _ := RecordOwnerFromContext(ctx)
 
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
@@ -105,8 +135,9 @@ func (s *PostgresStore) SaveVoiceAgentSession(ctx context.Context, session Voice
 	err = tx.QueryRowContext(ctx,
 		`INSERT INTO voice_agent_sessions (
 			title, summary, raw_summary, transcript, language, provider_profile_id, runtime_kind,
-			turns_json, ideas_json, decisions_json, open_questions_json, next_steps_json, started_at, ended_at
-		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb, $9::jsonb, $10::jsonb, $11::jsonb, $12::jsonb, $13, $14)
+			turns_json, ideas_json, decisions_json, open_questions_json, next_steps_json, started_at, ended_at,
+			owner_user_id, owner_org_id, owner_source
+		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb, $9::jsonb, $10::jsonb, $11::jsonb, $12::jsonb, $13, $14, $15, $16, $17)
 		RETURNING id`,
 		session.Summary.Title,
 		session.Summary.Summary,
@@ -122,6 +153,9 @@ func (s *PostgresStore) SaveVoiceAgentSession(ctx context.Context, session Voice
 		j.Steps,
 		session.StartedAt,
 		session.EndedAt,
+		owner.UserID,
+		owner.OrgID,
+		owner.Source,
 	).Scan(&id)
 	if err != nil {
 		return 0, fmt.Errorf("insert voice agent session: %w", err)
@@ -140,11 +174,13 @@ func (s *PostgresStore) ListVoiceAgentSessions(ctx context.Context, opts ListOpt
 
 	query := `SELECT id, title, summary, raw_summary, transcript, language, provider_profile_id, runtime_kind,
 			turns_json::text, ideas_json::text, decisions_json::text, open_questions_json::text, next_steps_json::text,
-			started_at, ended_at, created_at
+			started_at, ended_at, created_at,
+			COALESCE(owner_user_id, ''), COALESCE(owner_org_id, ''), COALESCE(owner_source, '')
 		 FROM voice_agent_sessions`
 	args := make([]any, 0, 4)
 	clauses := make([]string, 0, 2)
 	clauses, args = appendPostgresNormalizedLanguageFilter(clauses, args, opts.Language)
+	clauses, args = appendPostgresOwnerFilter(clauses, args, opts)
 	if !opts.After.IsZero() {
 		args = append(args, opts.After.UTC())
 		clauses = append(clauses, fmt.Sprintf("created_at > $%d", len(args)))
@@ -165,6 +201,28 @@ func (s *PostgresStore) ListVoiceAgentSessions(ctx context.Context, opts ListOpt
 	defer rows.Close() //nolint:errcheck // deferred rows close, error not actionable
 
 	return scanVoiceAgentSessions(rows)
+}
+
+func (s *PostgresStore) GetVoiceAgentSession(ctx context.Context, id int64) (*VoiceAgentSession, error) {
+	rows, err := s.db.QueryContext(ctx, //nolint:rowserrcheck // rows.Err() is checked inside scanVoiceAgentSessions
+		`SELECT id, title, summary, raw_summary, transcript, language, provider_profile_id, runtime_kind,
+			turns_json::text, ideas_json::text, decisions_json::text, open_questions_json::text, next_steps_json::text,
+			started_at, ended_at, created_at,
+			COALESCE(owner_user_id, ''), COALESCE(owner_org_id, ''), COALESCE(owner_source, '')
+		 FROM voice_agent_sessions WHERE id = $1`, id,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close() //nolint:errcheck // deferred rows close, error not actionable
+	sessions, err := scanVoiceAgentSessions(rows)
+	if err != nil {
+		return nil, err
+	}
+	if len(sessions) == 0 {
+		return nil, sql.ErrNoRows
+	}
+	return &sessions[0], nil
 }
 
 func replaceVoiceAgentSessionChildren(ctx context.Context, db execContexter, dialect string, sessionID int64, session VoiceAgentSession) error {
@@ -244,9 +302,12 @@ type voiceAgentSessionRows interface {
 	Next() bool
 	Scan(dest ...any) error
 	Err() error
+	Columns() ([]string, error)
 }
 
 func scanVoiceAgentSessions(rows voiceAgentSessionRows) ([]VoiceAgentSession, error) {
+	columns, _ := rows.Columns()
+	hasOwner := len(columns) >= 19
 	sessions := make([]VoiceAgentSession, 0)
 	for rows.Next() {
 		var (
@@ -257,7 +318,7 @@ func scanVoiceAgentSessions(rows voiceAgentSessionRows) ([]VoiceAgentSession, er
 			questionsJSON string
 			stepsJSON     string
 		)
-		if err := rows.Scan(
+		dest := []any{
 			&session.ID,
 			&session.Summary.Title,
 			&session.Summary.Summary,
@@ -274,7 +335,11 @@ func scanVoiceAgentSessions(rows voiceAgentSessionRows) ([]VoiceAgentSession, er
 			&session.StartedAt,
 			&session.EndedAt,
 			&session.CreatedAt,
-		); err != nil {
+		}
+		if hasOwner {
+			dest = append(dest, &session.OwnerUserID, &session.OwnerOrgID, &session.OwnerSource)
+		}
+		if err := rows.Scan(dest...); err != nil {
 			return nil, err
 		}
 		session.Turns = unmarshalVoiceAgentTurns(turnsJSON)

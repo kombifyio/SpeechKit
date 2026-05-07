@@ -17,8 +17,8 @@ import (
 )
 
 // vaTestEnv stands up a fake speechkit-server that handles
-//   - POST   /v1/voiceagent/sessions          â†’ returns ws_url to itself
-//   - GET    /v1/voiceagent/sessions/{id}/ws  â†’ upgrades + echoes scripted frames
+//   - POST   /v1/voiceagent/sessions          → returns ws_url to itself
+//   - GET    /v1/voiceagent/sessions/{id}/ws  → upgrades + echoes scripted frames
 //
 // The test interacts with VoiceAgentProvider against this env. Frames the
 // fake echoes back are configured per-test via env.scripted.
@@ -197,7 +197,7 @@ func TestVoiceAgentConnectAndReceive(t *testing.T) {
 		t.Error("Interrupted = false")
 	}
 
-	// Frame 4: session_end â†’ GoAway.
+	// Frame 4: session_end → GoAway.
 	msg, err = p.Receive(ctx)
 	if err != nil {
 		t.Fatalf("Receive 4: %v", err)

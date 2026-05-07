@@ -25,6 +25,7 @@ public_url             = ""
 modes                  = ["dictation", "assist", "voiceagent"]
 auth_mode              = "bearer"               # Production default. Use "none" only for local-only demos.
 bearer_token_env       = "SPEECHKIT_SERVER_TOKEN"
+bearer_role            = ""                     # Set "admin" only for trusted single-operator bearer-token installs.
 edge_auth_secret_env   = "EDGE_AUTH_SECRET"
 cors_allowed_origins   = []                      # e.g. ["https://app.example.com"]; also enforced for browser WebSocket clients.
 rate_limit_rps         = 10.0
@@ -42,6 +43,12 @@ whisper_port            = 8180
 model_dir               = "/var/lib/speechkit/models"
 log_format              = "json"                 # "json" | "text"
 log_level               = "info"                 # "debug" | "info" | "warn" | "error"
+
+[server.features]
+catalog       = true
+storage_reads = true
+vocabulary    = true
+tts_direct    = true
 
 # ── STT / TTS / LLM providers ─────────────────────────────────────────────────
 # Enable whatever the deployment should support. Disabled providers are simply

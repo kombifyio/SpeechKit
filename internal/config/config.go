@@ -49,7 +49,7 @@ const (
 	DefaultVoiceAgentPrimaryProfileID = "realtime.builtin.pipeline"
 
 	// defaultGeminiNativeAudioModel is the primary real-time audio-to-audio
-	// model. As of April 2026 this is Gemini 3.1 Flash Live (preview) â€”
+	// model. As of April 2026 this is Gemini 3.1 Flash Live (preview) —
 	// Google's latest native-audio model per
 	// https://ai.google.dev/gemini-api/docs/models/gemini-3.1-flash-live-preview.
 	//
@@ -107,6 +107,7 @@ type ServerConfig struct {
 	Modes                 []string `toml:"modes"`                // subset of ["dictation","assist","voiceagent"]; empty = all
 	AuthMode              string   `toml:"auth_mode"`            // "none" | "bearer" | "edge_hmac" | "bearer_or_edge"
 	BearerTokenEnv        string   `toml:"bearer_token_env"`     // env var name holding the bearer token
+	BearerRole            string   `toml:"bearer_role"`          // optional role for static bearer callers, e.g. "admin"
 	EdgeAuthSecretEnv     string   `toml:"edge_auth_secret_env"` // env var name holding the HMAC secret
 	CORSAllowedOrigins    []string `toml:"cors_allowed_origins"`
 	RateLimitRPS          float64  `toml:"rate_limit_rps"`
@@ -119,12 +120,20 @@ type ServerConfig struct {
 	// after N seconds without any client- or provider-side activity.
 	// Defaults to 900 (15 min). Set to 0 to disable the server-side idle
 	// timeout (kernel-level idle handling stays in effect either way).
-	VoiceAgentIdleTimeoutSec int    `toml:"voiceagent_idle_timeout_sec"`
-	WhisperBinary            string `toml:"whisper_binary"` // absolute path inside container
-	WhisperPort              int    `toml:"whisper_port"`   // loopback port for whisper.cpp server
-	ModelDir                 string `toml:"model_dir"`      // persistent volume, e.g. /var/lib/speechkit/models
-	LogFormat                string `toml:"log_format"`     // "json" | "text"
-	LogLevel                 string `toml:"log_level"`      // "debug" | "info" | "warn" | "error"
+	VoiceAgentIdleTimeoutSec int                  `toml:"voiceagent_idle_timeout_sec"`
+	WhisperBinary            string               `toml:"whisper_binary"` // absolute path inside container
+	WhisperPort              int                  `toml:"whisper_port"`   // loopback port for whisper.cpp server
+	ModelDir                 string               `toml:"model_dir"`      // persistent volume, e.g. /var/lib/speechkit/models
+	LogFormat                string               `toml:"log_format"`     // "json" | "text"
+	LogLevel                 string               `toml:"log_level"`      // "debug" | "info" | "warn" | "error"
+	Features                 ServerFeaturesConfig `toml:"features"`
+}
+
+type ServerFeaturesConfig struct {
+	Catalog      bool `toml:"catalog"`
+	StorageReads bool `toml:"storage_reads"`
+	Vocabulary   bool `toml:"vocabulary"`
+	TTSDirect    bool `toml:"tts_direct"`
 }
 
 // PersonaConfig is a TOML-seeded Voice Agent persona. DB entries with the same
@@ -211,7 +220,7 @@ type GeneralConfig struct {
 	VoiceAgentEnabled        bool   `toml:"voice_agent_enabled"`
 	AutoStartOnLaunch        bool   `toml:"auto_start_on_launch"`
 	AgentHotkey              string `toml:"agent_hotkey"`
-	AgentMode                string `toml:"agent_mode"`  // "assist" or "voice_agent" â€” determines what agent_hotkey triggers
+	AgentMode                string `toml:"agent_mode"`  // "assist" or "voice_agent" — determines what agent_hotkey triggers
 	ActiveMode               string `toml:"active_mode"` // legacy compat
 	HotkeyMode               string `toml:"hotkey_mode"` // legacy compat for single behavior setting
 	AutoStopSilenceMs        int    `toml:"auto_stop_silence_ms"`
@@ -291,7 +300,7 @@ type ServerConnectionConfig struct {
 
 	// BearerTokenEnv names the env var that holds the bearer token sent in
 	// the Authorization header. Defaults to SPEECHKIT_SERVER_TOKEN. The
-	// value is never read from the TOML file itself â€” only the env var name
+	// value is never read from the TOML file itself — only the env var name
 	// is configured here.
 	BearerTokenEnv string `toml:"bearer_token_env"`
 
@@ -535,11 +544,11 @@ type VoiceAgentConfig struct {
 	Enabled bool `toml:"enabled"`
 	// Provider selects the backend that drives a Voice Agent session.
 	// Supported values:
-	//   ""          (default) â€” same as "gemini"
-	//   "gemini"    â€” Google Gemini Live (cloud, GOOGLE_AI_API_KEY required)
-	//   "cascaded"  â€” self-hosted whisper.cpp â†’ Genkit agent LLM â†’ TTS pipeline
+	//   ""          (default) — same as "gemini"
+	//   "gemini"    — Google Gemini Live (cloud, GOOGLE_AI_API_KEY required)
+	//   "cascaded"  — self-hosted whisper.cpp → Genkit agent LLM → TTS pipeline
 	//                 (CPU-capable; no external realtime dependency)
-	//   "moshi"     â€” self-hosted Kyutai Moshi Rust server (GPU required, M9b)
+	//   "moshi"     — self-hosted Kyutai Moshi Rust server (GPU required, M9b)
 	//
 	// The Server-Target reads this field via cmd/speechkit-server; the Device-
 	// Target currently always uses "gemini" and ignores it.

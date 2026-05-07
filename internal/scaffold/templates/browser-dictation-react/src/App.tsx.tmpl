@@ -1,0 +1,84 @@
+import { useRef, useState } from "react";
+
+const SERVER_URL =
+  import.meta.env.VITE_SPEECHKIT_SERVER_URL ?? "{{ .SPEECHKIT_SERVER_URL }}";
+const TOKEN = import.meta.env.VITE_SPEECHKIT_TOKEN ?? "{{ .SPEECHKIT_TOKEN }}";
+
+export function App() {
+  const [recording, setRecording] = useState(false);
+  const [text, setText] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const recorderRef = useRef<MediaRecorder | null>(null);
+  const chunksRef = useRef<Blob[]>([]);
+
+  const start = async () => {
+    setError(null);
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const recorder = new MediaRecorder(stream, { mimeType: "audio/webm" });
+      chunksRef.current = [];
+      recorder.ondataavailable = (event) => {
+        if (event.data.size > 0) chunksRef.current.push(event.data);
+      };
+      recorder.onstop = async () => {
+        stream.getTracks().forEach((track) => track.stop());
+        const blob = new Blob(chunksRef.current, { type: "audio/webm" });
+        await transcribe(blob);
+      };
+      recorderRef.current = recorder;
+      recorder.start();
+      setRecording(true);
+    } catch (err) {
+      setError((err as Error).message);
+    }
+  };
+
+  const stop = () => {
+    recorderRef.current?.stop();
+    setRecording(false);
+  };
+
+  const transcribe = async (blob: Blob) => {
+    try {
+      const form = new FormData();
+      form.append("audio", blob, "speech.webm");
+      const headers: Record<string, string> = {};
+      if (TOKEN) headers["Authorization"] = `Bearer ${TOKEN}`;
+      const response = await fetch(`${SERVER_URL}/v1/dictation/transcribe`, {
+        method: "POST",
+        headers,
+        body: form,
+      });
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}: ${await response.text()}`);
+      }
+      const body = (await response.json()) as { text?: string };
+      if (body.text) setText((current) => (current ? `${current} ${body.text}` : body.text!));
+    } catch (err) {
+      setError((err as Error).message);
+    }
+  };
+
+  return (
+    <main className="speechkit-shell">
+      <h1>{{ .APP_NAME }} - SpeechKit Dictation</h1>
+      <p className="speechkit-hint">
+        Press the button, speak, then press it again. The recording is sent to
+        <code> {SERVER_URL}/v1/dictation/transcribe</code>.
+      </p>
+      <button
+        className={recording ? "speechkit-button is-recording" : "speechkit-button"}
+        onClick={recording ? stop : start}
+      >
+        {recording ? "Stop & transcribe" : "Start recording"}
+      </button>
+      <textarea
+        className="speechkit-textarea"
+        value={text}
+        onChange={(event) => setText(event.target.value)}
+        rows={12}
+      />
+      {error && <p className="speechkit-error">Error: {error}</p>}
+    </main>
+  );
+}

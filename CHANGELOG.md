@@ -6,157 +6,46 @@ The format is based on Keep a Changelog and this project is intended to ship und
 
 ## [Unreleased]
 
-## [0.29.0] - 2026-05-06
+## [0.30.0] - 2026-05-07
 
-v0.29.0 is the post-audit release. A comprehensive code-base audit ran
-across security, code quality, frontend, tests/CI, and dead-code hygiene;
-this release lands the block-the-launch fixes plus the boundary-cleanup
-and frontend-correctness items that were landable without invasive
-refactors. The 0.28.4 working number was rolled into 0.29.0 — there is
-no 0.28.4 release.
+### Added
+
+- Getting Started documentation for human and agent integrators.
+- Markdown entrypoints `/llms.txt` and `/llms-full.txt` for
+  documentation-aware coding agents.
+- Static OpenAPI surface and MCP guidance for SpeechKit Server.
+- `install-server.sh` for one-line SpeechKit Server installs.
+- Feature-detected read-only WebMCP documentation context for
+  browsers that expose `navigator.modelContext`.
+
+## [0.29.0] - 2026-05-06
 
 ### Security
 
-- Made the SpeechKit Server bootstrap window strictly one-shot per
-  process. `App.bootstrapSealed` (atomic) latches once a final post-
-  onboarding state is observed (settings file marks complete with a
-  matching version, or a bearer token is already in env). Out-of-band
-  tampering with the settings file (deletion, downgrade) cannot
-  reopen the auth-bypass window until a fresh process starts.
-- Gated `registerTestUI` on `SPEECHKIT_SERVER_ONBOARDING_UI` (handlers
-  don't register at all when set to `false`) and added a request-time
-  seal check on the `/setup` and `/setup/` handlers so the wizard
-  returns 404 once the seal latches. Smoke `/` remains reachable for
-  runtime status.
-- Capped the in-memory rate-limiter bucket map with LRU eviction
-  (default 100 000 entries) and a context-cancellable background
-  sweeper that evicts buckets idle past `2 * burst / perSecond`
-  seconds. Closes the slow memory-exhaustion path under sustained
-  traffic from many distinct identities.
-- Centralised the SQL `WHERE` clause builder behind
-  `internal/store/query_filters.go::buildWhereClause` with an
-  explicit SECURITY INVARIANT block. Six per-site `#nosec G202`
-  annotations consolidated to one audited choke-point.
-- Overrode the transitive npm `ip-address` dependency to `>=10.1.1`
-  (pulled in via shadcn → @modelcontextprotocol/sdk → express-rate-
-  limit). Closes GHSA-v2v4-37r5-5v8g.
-- Documented the gosec G101/G104 exclusion rationale in
-  `security.yml` (env-var-name false positives are covered by
-  TruffleHog above; G104 by errcheck under golangci-lint).
+- Server bootstrap (setup) window is one-shot per process; the
+  auth-bypass window cannot be reopened by mutating the settings
+  file at runtime.
+- The `/setup` wizard returns 404 after onboarding completes and
+  is gated by `SPEECHKIT_SERVER_ONBOARDING_UI`.
+- In-memory rate limiter is bounded with LRU eviction and a
+  background sweeper.
+- Bumped transitive npm `ip-address` to ≥10.1.1
+  (GHSA-v2v4-37r5-5v8g).
 
 ### Changed
 
-- Moved Windows-specific whisper-binary discovery out of the
-  `internal/stt` kernel via build tags. `local_search_windows.go`
-  owns the `%LOCALAPPDATA%\SpeechKit` probe; `local_search_unix.go`
-  is a no-op (the Server-Target reads `cfg.VPS.WhisperBinary`
-  instead). Restores kernel/adapter discipline.
-- Removed `as Partial<SpeechKitSettingsState>` casts from
-  `frontend/app/src/components/settings/use-settings-controller.ts`.
-  Computed-key patches now go through typed property assignment so
-  TypeScript catches typos in the `MODE_HOTKEY_BEHAVIOR_FIELDS` /
-  `MODE_HOTKEY_FIELDS` records.
-- Build-tagged the frontend asset embed: `internal/frontendassets/
-  assets.go` carries `//go:build !no_embed_frontend` and the //go:embed
-  remains; `assets_stub.go` is selected under `no_embed_frontend` and
-  returns an empty fs.FS. CI's Go Analysis runs with the tag so it
-  doesn't require the gitignored `dist/` to be materialised. The
-  Wails canonical build omits the tag and embeds the real dist.
-- Reconciled `actions/checkout` to a single SHA across all 12
-  workflow files. Dependabot can now track one pin instead of two.
-- Settings page split: the 0.28-era settings shell, model panel,
-  and general-settings page were further factored alongside the
-  new components (`overlay-surfaces`, `quickcapture-app`,
-  `quicknote-app`).
+- Windows-specific whisper-binary discovery moved out of the
+  `internal/stt` kernel into platform adapter files.
+- Settings page reorganised into shell + per-page panels with
+  separate quick-note and quick-capture surfaces.
 
 ### Fixed
 
-- `dashboard-shell.tsx`: `handleCopyNote` now awaits the clipboard
-  promise before showing "Copied!" feedback so the UI reflects
-  failure when the Wails WebView is unfocused. Pattern matches the
-  sibling `copyText`.
-- `dashboard-shell.tsx`: `LogsView` map switched from `key={i}` to
-  `key={`${entry.timestamp}-${i}`}` so DOM reconciliation handles
-  the 2 s log poll correctly when entries are inserted out of order.
-- `dashboard-shell.tsx`: `handlePinNote`, `handleDeleteNote`, and
-  `handleCopyNote` now use `useCallback` so they're stable identities
-  consistent with the rest of the file.
-- Eliminated 2 lint-surfaced regressions introduced earlier in the
-  cycle: errcheck on type assertions in the LRU bucket store
-  (panic on impossible !ok), and gosec G202 on `query +=
-  buildWhereClause(...)` call sites (single annotation pointing to
-  the helper's invariant).
-
-### Removed
-
-- Orphan `android/keyboard/heliboard` git submodule entry from
-  `.gitmodules`. The submodule was never initialised, no gitlink,
-  no references in workflows or docs. Re-add when Android keyboard
-  work resumes.
-- Stale internal docs `kombify-toolauth-integration.md` and
-  `speechkit-integration-plan.md`. Retired internal-dev workflow
-  `auto-deploy-dev.yml` (replaced by Render-managed preview path)
-  and the `deploy/kombify-dev/docker-compose.dev.yml` it pointed at.
-
-### Tests
-
-- Added `TestRegisterTestUI_NoOpWhenOnboardingDisabledByEnv` and
-  `TestSetupHandler_Returns404WhenAppSealed` covering the bootstrap
-  seal handler-side gating.
-- Added `TestBucketStore_EvictsOldestWhenCapHit`,
-  `TestBucketStore_SweepStaleEvictsOldEntries`, and
-  `TestRateLimit_SweeperContextCancellationStopsGoroutine` for the
-  LRU rate-limiter bucket map.
-- Guarded `TestFindWhisperBinary_FindsManagedInstallRootBinary` with
-  `runtime.GOOS != "windows" → t.Skip` so the LOCALAPPDATA probe
-  test doesn't run on Linux CI after the kernel/adapter split.
-- Fixed the LRU sweep test to respect production LRU ordering
-  (`MoveToFront` on access) — the test was inserting entries in
-  reverse order which left the sweeper walking from the freshest
-  entry.
-- New `cmd/speechkit/desktop_bootstrap_test.go` covering quick-
-  capture silence-auto-stop boundaries.
-
-### Docs
-
-- Documented the SpeechKit migration pattern in
-  `internal/store/migrations.go`: pure DDL via embedded SQL goes
-  through `sqliteSQLMigration`/`postgresSQLMigration`; idempotent
-  `ALTER TABLE … ADD COLUMN` and data backfills go through
-  `{version, run: func(...)}` runners. New contributors now have an
-  authoritative rule for which form to add.
-- `docs/server/{DEPLOY,README,openapi.v1.yaml}`,
-  `docs/speechkit-architecture-v2.md`, top-level `README.md`,
-  `ROADMAP.md`, `DEPLOYMENT_CONTRACT.md`, `CLAUDE.md` and
-  `STATUS.md` refreshed for 0.29.0.
-- New release-readiness plan at
-  `docs/release-notes/v0.29.0-PLAN.md` (working draft kept alongside
-  the user-facing release notes).
-
-### CI / Build
-
-- New build-tag invariant: CI's Go Analysis runs `go vet`,
-  `golangci-lint run`, `go test -race`, coverage,
-  `staticcheck`, and `govulncheck` with `-tags=no_embed_frontend`.
-  `windows-build.yml` (canonical bundle) and `release.yml` omit
-  the tag so production binaries embed the real frontend dist.
-
-### Deferred to 0.30.0 (tracked)
-
-The audit identified additional work that didn't make this release.
-See `docs/release-notes/v0.29.0-PLAN.md` for the full backlog.
-Headlines: per-site `#nosec G101` annotations
-across `internal/config` + `cmd/speechkit` (so the global G101
-exclusion can be retired); re-enabling `gosec`/`staticcheck`/`noctx`
-for the `internal/server/` lint-suppression block; the Doppler
-decouple from the kernel `internal/config/config.go`; the
-`internal/config/config.go` 4-file split; frontend
-`noUncheckedIndexedAccess` + `exactOptionalPropertyTypes` strict
-flags; `time.Sleep` test-sync replacements; `sk-e2e` + Playwright
-in CI; Device-Target coverage gate; SHA-pinning the lint-tool
-installs; the `internal/server/core/testui.go` 2 112-LOC HTML
-extraction into `internal/server/onboarding/`; and the
-`dashboard-shell.tsx` 2 432-LOC component split.
+- Dashboard clipboard feedback now awaits the clipboard write
+  before showing the success state; log entries use stable React
+  keys; row handlers are stable across re-renders.
+- Settings hotkey patches are typed end-to-end so a misspelled
+  field key fails to compile.
 
 ## [0.28.3] - 2026-05-05
 

@@ -4,8 +4,8 @@ info:
   version: 1.0.0
   description: |
     Stable v1 HTTP and WebSocket contract for the SpeechKit Server.
-    The canonical browser-facing API prefix is `/api/v1/`; `/v1/` remains
-    available as a legacy alias. These endpoints are covered by the same
+    The canonical server API prefix is `/v1/`; `/api/v1/` remains
+    available as a compatibility alias. These endpoints are covered by the same
     backwards-compatibility guarantees as the Framework's public
     `pkg/speechkit` packages — fields are additive across minor releases; no
     rename or removal without a version bump.
@@ -21,7 +21,7 @@ info:
     url: https://www.apache.org/licenses/LICENSE-2.0
 
 servers:
-  - url: https://speechkit.example.com
+  - url: https://api.speechkit.dev
     description: Replace with your deployment's URL.
 
 # ── Auth ────────────────────────────────────────────────────────────────────
@@ -37,6 +37,7 @@ paths:
   # ── Health ──────────────────────────────────────────────────────────────
   /healthz:
     get:
+      operationId: getHealthz
       summary: Liveness probe
       description: |
         Always returns 200 while the process is up. Public — no auth required.
@@ -55,9 +56,11 @@ paths:
                     enum: [ok]
                   version:
                     type: string
+        '405': { $ref: '#/components/responses/MethodNotAllowed' }
 
   /readyz:
     get:
+      operationId: getReadyz
       summary: Readiness probe
       description: |
         Returns 200 only when every registered component reports OK. Returns
@@ -67,10 +70,271 @@ paths:
       responses:
         '200': { $ref: '#/components/responses/Readiness' }
         '503': { $ref: '#/components/responses/Readiness' }
+        '405': { $ref: '#/components/responses/MethodNotAllowed' }
+
+  # ── API-first Control Plane ────────────────────────────────────────────
+  /v1/catalog/profiles:
+    get:
+      operationId: listCatalogProfiles
+      summary: List provider profiles
+      tags: [catalog]
+      parameters:
+        - name: mode
+          in: query
+          required: false
+          schema: { type: string, enum: [dictation, assist, voiceagent, voice_agent] }
+      responses:
+        '200':
+          description: Provider catalog.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  profiles:
+                    type: array
+                    items: { $ref: '#/components/schemas/ProviderProfile' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+
+  /v1/catalog/contracts:
+    get:
+      operationId: listCatalogContracts
+      summary: List strict mode contracts
+      tags: [catalog]
+      responses:
+        '200':
+          description: Mode contracts.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  contracts:
+                    type: array
+                    items: { $ref: '#/components/schemas/ModeContract' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+
+  /v1/catalog/readiness:
+    get:
+      operationId: listCatalogReadiness
+      summary: List provider readiness snapshots
+      tags: [catalog]
+      responses:
+        '200':
+          description: Readiness for every provider profile.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  readiness:
+                    type: array
+                    items: { $ref: '#/components/schemas/ProviderReadiness' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+
+  /v1/catalog/profiles/{id}/readiness:
+    get:
+      operationId: getCatalogProfileReadiness
+      summary: Get provider readiness
+      tags: [catalog]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: Provider readiness.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ProviderReadiness' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '404': { $ref: '#/components/responses/BadRequest' }
+
+  /v1/config:
+    get:
+      operationId: getServerConfig
+      summary: Read server configuration summary
+      tags: [config]
+      responses:
+        '200':
+          description: Read-only configuration summary.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ConfigSummary' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+
+  /v1/vocabulary/dictionary:
+    get:
+      operationId: listVocabularyDictionaryEntries
+      summary: List dictionary entries
+      tags: [vocabulary]
+      parameters:
+        - name: language
+          in: query
+          required: false
+          schema: { type: string }
+      responses:
+        '200':
+          description: Dictionary entries.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  entries:
+                    type: array
+                    items: { $ref: '#/components/schemas/DictionaryEntry' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '503': { $ref: '#/components/responses/ProviderUnavailable' }
+    post:
+      operationId: replaceVocabularyDictionaryEntries
+      summary: Replace dictionary entries
+      description: Requires an admin identity.
+      tags: [vocabulary]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                language: { type: string }
+                entries:
+                  type: array
+                  items: { $ref: '#/components/schemas/DictionaryEntry' }
+      responses:
+        '200':
+          description: Replaced entries.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  entries:
+                    type: array
+                    items: { $ref: '#/components/schemas/DictionaryEntry' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/AdminRequired' }
+
+  /v1/transcripts:
+    get:
+      operationId: listTranscripts
+      summary: List caller-scoped transcripts
+      tags: [storage]
+      parameters:
+        - name: limit
+          in: query
+          required: false
+          schema: { type: integer, minimum: 1, maximum: 200 }
+      responses:
+        '200':
+          description: Transcripts visible to the caller.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  transcripts:
+                    type: array
+                    items: { $ref: '#/components/schemas/Transcript' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '503': { $ref: '#/components/responses/ProviderUnavailable' }
+
+  /v1/transcripts/{id}:
+    get:
+      operationId: getTranscript
+      summary: Get caller-scoped transcript
+      tags: [storage]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: integer }
+      responses:
+        '200':
+          description: Transcript.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Transcript' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/AdminRequired' }
+        '404': { $ref: '#/components/responses/BadRequest' }
+
+  /v1/voiceagent/sessions/{id}/transcript:
+    get:
+      operationId: getVoiceAgentSessionTranscript
+      summary: Get persisted Voice Agent session transcript
+      tags: [storage, voiceagent]
+      parameters:
+        - $ref: '#/components/parameters/SessionID'
+      responses:
+        '200':
+          description: Session transcript.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/VoiceAgentTranscript' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/AdminRequired' }
+
+  /v1/voiceagent/sessions/{id}/summary:
+    get:
+      operationId: getVoiceAgentSessionSummary
+      summary: Get persisted Voice Agent session summary
+      tags: [storage, voiceagent]
+      parameters:
+        - $ref: '#/components/parameters/SessionID'
+      responses:
+        '200':
+          description: Session summary.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/VoiceAgentSummaryResponse' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/AdminRequired' }
+
+  /v1/tts/synthesize:
+    post:
+      operationId: synthesizeTTS
+      summary: Synthesize text to audio
+      tags: [tts]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/TTSSynthesizeRequest' }
+      responses:
+        '200':
+          description: Synthesized audio as base64.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TTSSynthesizeResponse' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '503': { $ref: '#/components/responses/ProviderUnavailable' }
+
+  /v1/tts/voices:
+    get:
+      operationId: listTTSVoices
+      summary: List configured TTS voices
+      tags: [tts]
+      responses:
+        '200':
+          description: Voice list.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  voices:
+                    type: array
+                    items: { $ref: '#/components/schemas/Voice' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
 
   # ── Dictation ───────────────────────────────────────────────────────────
-  /api/v1/dictation/transcribe:
+  /v1/dictation/transcribe:
     post:
+      operationId: transcribeDictation
       summary: Transcribe audio to text
       description: |
         Routes audio through the configured STT provider and returns the
@@ -116,8 +380,9 @@ paths:
         '503': { $ref: '#/components/responses/ProviderUnavailable' }
 
   # ── Assist ──────────────────────────────────────────────────────────────
-  /api/v1/assist/process:
+  /v1/assist/process:
     post:
+      operationId: processAssist
       summary: STT → codeword/utility/LLM → optional TTS
       description: |
         Accepts either an audio payload (transcribed via STT first) or a
@@ -176,8 +441,9 @@ paths:
         '503': { $ref: '#/components/responses/ProviderUnavailable' }
 
   # ── Voice Agent ─────────────────────────────────────────────────────────
-  /api/v1/voiceagent/sessions:
+  /v1/voiceagent/sessions:
     post:
+      operationId: createVoiceAgentSession
       summary: Create a Voice Agent session and ticket
       description: |
         Creates a session record and returns a one-time HMAC ticket the
@@ -186,7 +452,7 @@ paths:
         a different session.
 
         The WebSocket upgrade itself happens at
-        `GET /api/v1/voiceagent/sessions/{id}/ws?ticket=...` and is documented
+        `GET /v1/voiceagent/sessions/{id}/ws?ticket=...` and is documented
         separately because OpenAPI 3.1 has no first-class WebSocket
         primitive.
 
@@ -217,6 +483,7 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/Error' }
     get:
+      operationId: listVoiceAgentSessions
       summary: List the caller's active sessions
       tags: [voiceagent]
       responses:
@@ -232,8 +499,9 @@ paths:
                     items: { $ref: '#/components/schemas/ListedSession' }
         '401': { $ref: '#/components/responses/Unauthenticated' }
 
-  /api/v1/voiceagent/sessions/{id}:
+  /v1/voiceagent/sessions/{id}:
     delete:
+      operationId: deleteVoiceAgentSession
       summary: Force close a session
       tags: [voiceagent]
       parameters:
@@ -253,8 +521,9 @@ paths:
               schema: { $ref: '#/components/schemas/Error' }
 
   # ── Personas ────────────────────────────────────────────────────────────
-  /api/v1/personas:
+  /v1/personas:
     get:
+      operationId: listPersonas
       summary: List personas
       tags: [persona]
       responses:
@@ -270,6 +539,7 @@ paths:
                     items: { $ref: '#/components/schemas/Persona' }
         '401': { $ref: '#/components/responses/Unauthenticated' }
     post:
+      operationId: createPersona
       summary: Create a persona (admin)
       tags: [persona]
       requestBody:
@@ -288,10 +558,11 @@ paths:
         '403': { $ref: '#/components/responses/AdminRequired' }
         '500': { $ref: '#/components/responses/PersistFailed' }
 
-  /api/v1/personas/{id}:
+  /v1/personas/{id}:
     parameters:
       - { $ref: '#/components/parameters/PersonaID' }
     get:
+      operationId: getPersona
       summary: Get a persona by id
       tags: [persona]
       responses:
@@ -306,6 +577,7 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/Error' }
     patch:
+      operationId: updatePersona
       summary: Update a persona (admin)
       tags: [persona]
       requestBody:
@@ -324,6 +596,7 @@ paths:
         '403': { $ref: '#/components/responses/AdminRequired' }
         '500': { $ref: '#/components/responses/PersistFailed' }
     delete:
+      operationId: deletePersona
       summary: Delete a persona (admin)
       tags: [persona]
       responses:
@@ -337,8 +610,9 @@ paths:
               schema: { $ref: '#/components/schemas/Error' }
         '500': { $ref: '#/components/responses/PersistFailed' }
 
-  /api/v1/roles:
+  /v1/roles:
     get:
+      operationId: listRoles
       summary: List roles
       tags: [persona]
       responses:
@@ -352,7 +626,9 @@ paths:
                   roles:
                     type: array
                     items: { $ref: '#/components/schemas/Role' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
     post:
+      operationId: createRole
       summary: Create a role (admin)
       tags: [persona]
       requestBody:
@@ -371,10 +647,11 @@ paths:
         '403': { $ref: '#/components/responses/AdminRequired' }
         '500': { $ref: '#/components/responses/PersistFailed' }
 
-  /api/v1/roles/{id}:
+  /v1/roles/{id}:
     parameters:
       - { $ref: '#/components/parameters/RoleID' }
     get:
+      operationId: getRole
       summary: Get role
       tags: [persona]
       responses:
@@ -389,6 +666,7 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/Error' }
     patch:
+      operationId: updateRole
       summary: Update role (admin)
       tags: [persona]
       requestBody:
@@ -406,6 +684,7 @@ paths:
         '403': { $ref: '#/components/responses/AdminRequired' }
         '500': { $ref: '#/components/responses/PersistFailed' }
     delete:
+      operationId: deleteRole
       summary: Delete role (admin)
       tags: [persona]
       responses:
@@ -419,8 +698,9 @@ paths:
               schema: { $ref: '#/components/schemas/Error' }
         '500': { $ref: '#/components/responses/PersistFailed' }
 
-  /api/v1/sequences:
+  /v1/sequences:
     get:
+      operationId: listSequences
       summary: List sequences
       tags: [persona]
       responses:
@@ -434,7 +714,9 @@ paths:
                   sequences:
                     type: array
                     items: { $ref: '#/components/schemas/Sequence' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
     post:
+      operationId: createSequence
       summary: Create sequence (admin)
       tags: [persona]
       requestBody:
@@ -452,10 +734,11 @@ paths:
         '403': { $ref: '#/components/responses/AdminRequired' }
         '500': { $ref: '#/components/responses/PersistFailed' }
 
-  /api/v1/sequences/{id}:
+  /v1/sequences/{id}:
     parameters:
       - { $ref: '#/components/parameters/SequenceID' }
     get:
+      operationId: getSequence
       summary: Get sequence
       tags: [persona]
       responses:
@@ -470,6 +753,7 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/Error' }
     patch:
+      operationId: updateSequence
       summary: Update sequence (admin)
       tags: [persona]
       requestBody:
@@ -487,6 +771,7 @@ paths:
         '403': { $ref: '#/components/responses/AdminRequired' }
         '500': { $ref: '#/components/responses/PersistFailed' }
     delete:
+      operationId: deleteSequence
       summary: Delete sequence (admin)
       tags: [persona]
       responses:
@@ -572,6 +857,11 @@ components:
       content:
         application/json:
           schema: { $ref: '#/components/schemas/Error' }
+    MethodNotAllowed:
+      description: HTTP method is not allowed on this resource.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
     Unauthenticated:
       description: Missing or invalid credentials.
       content:
@@ -633,6 +923,182 @@ components:
             details:
               type: object
               additionalProperties: true
+
+    ProviderProfile:
+      type: object
+      properties:
+        id: { type: string }
+        mode: { type: string }
+        name: { type: string }
+        providerKind: { type: string }
+        executionMode: { type: string }
+        modelId: { type: string }
+        source: { type: string }
+        description: { type: string }
+        license: { type: string }
+        capabilities:
+          type: array
+          items: { type: string }
+        adapterKind: { type: string }
+        inferenceAllowed: { type: boolean }
+        default: { type: boolean }
+        recommended: { type: boolean }
+        experimental: { type: boolean }
+
+    ModeContract:
+      type: object
+      properties:
+        mode: { type: string }
+        intelligence: { type: string }
+        input: { type: string }
+        output: { type: string }
+        allowed:
+          type: array
+          items: { type: string }
+        forbidden:
+          type: array
+          items: { type: string }
+
+    ProviderReadiness:
+      type: object
+      description: |
+        Server-side readiness for a catalog profile. `active` means selected
+        by server configuration; `default` is static catalog metadata.
+        `ready` is independent of `active` and only reflects whether the
+        profile could run if selected.
+      properties:
+        schemaVersion: { type: string }
+        profileId: { type: string }
+        mode: { type: string }
+        providerKind: { type: string }
+        executionMode: { type: string }
+        modelId: { type: string }
+        source: { type: string }
+        active: { type: boolean }
+        default: { type: boolean }
+        configured: { type: boolean }
+        credentialsReady: { type: boolean }
+        runtimeReady: { type: boolean }
+        capabilityReady: { type: boolean }
+        ready: { type: boolean }
+        missing:
+          type: array
+          items:
+            type: string
+            enum: [mode_disabled, provider_disabled, credentials, runtime]
+
+    ConfigSummary:
+      type: object
+      properties:
+        version: { type: string }
+        public_url: { type: string }
+        modes:
+          type: array
+          items: { type: string }
+        auth_mode: { type: string }
+        bearer_role: { type: string }
+        max_upload_mb: { type: integer }
+        features:
+          type: object
+          additionalProperties: { type: boolean }
+        ready_status: { type: string }
+
+    DictionaryEntry:
+      type: object
+      properties:
+        id: { type: integer }
+        spoken: { type: string }
+        canonical: { type: string }
+        language: { type: string }
+        source: { type: string }
+        enabled: { type: boolean }
+        usageCount: { type: integer }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+
+    Transcript:
+      type: object
+      properties:
+        id: { type: integer }
+        text: { type: string }
+        language: { type: string }
+        provider: { type: string }
+        model: { type: string }
+        durationMs: { type: integer }
+        latencyMs: { type: integer }
+        audioPath: { type: string }
+        audio: { $ref: '#/components/schemas/AudioAsset' }
+        createdAt: { type: string, format: date-time }
+        ownerUserId: { type: string }
+        ownerOrgId: { type: string }
+        ownerSource: { type: string }
+
+    AudioAsset:
+      type: object
+      properties:
+        storageKind: { type: string, enum: [local-file] }
+        path: { type: string }
+        mimeType:
+          type: string
+          description: MIME type preserved from the source upload when available.
+        sizeBytes: { type: integer }
+        durationMs: { type: integer }
+
+    VoiceAgentTranscript:
+      type: object
+      properties:
+        id: { type: integer }
+        transcript: { type: string }
+        turns:
+          type: array
+          items:
+            type: object
+            properties:
+              role: { type: string }
+              text: { type: string }
+              createdAt: { type: string, format: date-time }
+        language: { type: string }
+        created_at: { type: string, format: date-time }
+
+    VoiceAgentSummaryResponse:
+      type: object
+      properties:
+        id: { type: integer }
+        summary:
+          type: object
+          additionalProperties: true
+        language: { type: string }
+        created_at: { type: string, format: date-time }
+
+    TTSSynthesizeRequest:
+      type: object
+      required: [text]
+      properties:
+        text: { type: string }
+        locale: { type: string }
+        voice: { type: string }
+        speed: { type: number }
+        format: { type: string, enum: [mp3, wav, opus, pcm] }
+
+    TTSSynthesizeResponse:
+      type: object
+      properties:
+        audio_base64: { type: string }
+        format: { type: string }
+        sample_rate: { type: integer }
+        duration_ms: { type: integer }
+        provider: { type: string }
+        voice: { type: string }
+
+    Voice:
+      type: object
+      description: Configured TTS voice entry. This is a server configuration snapshot, not live provider voice discovery.
+      properties:
+        provider: { type: string }
+        id: { type: string }
+        locale: { type: string }
+        default: { type: boolean }
+        discovery: { type: string, enum: [configured] }
 
     DictateJSONRequest:
       type: object
@@ -839,7 +1305,7 @@ components:
 
 # ── WebSocket protocol (informational) ───────────────────────────────────
 # OpenAPI 3.1 has no first-class WebSocket primitive; the path under
-# /api/v1/voiceagent/sessions/{id}/ws is documented via tags + the
+# /v1/voiceagent/sessions/{id}/ws is documented via tags + the
 # CreateSessionResponse.ws_url field above. The full protocol is described
 # in docs/server/README.md and the wire types in
 # internal/server/voiceagent/protocol.go.

@@ -2,7 +2,7 @@ package main
 
 // api_v1_server_connection.go exposes the [server_connection] device-target
 // section through the same /api/v1/* control plane the React UI consumes.
-// GET returns the current settings (with the bearer token elided â€” only
+// GET returns the current settings (with the bearer token elided — only
 // the env var name + "is the env var set?" boolean travel over this
 // boundary). PATCH accepts partial updates with the same trust boundary
 // rules as the rest of the control plane: invalid values clamp to safe

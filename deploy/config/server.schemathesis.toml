@@ -1,0 +1,47 @@
+# Minimal server configuration used by .github/workflows/server-spec-contract.yml
+# to stand up the SpeechKit Server long enough for schemathesis to fuzz the
+# documented OpenAPI surface. Auth is disabled and no external provider keys
+# are needed; provider-dependent endpoints intentionally degrade and respond
+# with the contract's documented error envelopes.
+
+[general]
+language = "en"
+
+[server]
+listen_addr            = ":8080"
+public_url             = ""
+modes                  = ["dictation", "assist", "voiceagent"]
+auth_mode              = "none"
+cors_allowed_origins   = []
+rate_limit_rps         = 100.0
+rate_limit_burst       = 200
+max_upload_mb          = 5
+max_voiceagent_sessions = 10
+max_sessions_per_user   = 5
+ticket_ttl_sec          = 30
+voiceagent_idle_timeout_sec = 60
+model_dir               = "/tmp/speechkit/models"
+log_format              = "json"
+log_level               = "warn"
+
+[server.features]
+catalog       = true
+storage_reads = true
+vocabulary    = true
+tts_direct    = true
+
+# All providers explicitly disabled. Schemathesis fuzzes only the spec
+# contract, not provider behaviour. Endpoints that need a provider return
+# the documented 503 / 422 envelopes, which the spec covers.
+[providers.openai]
+enabled = false
+[providers.google]
+enabled = false
+[providers.groq]
+enabled = false
+[huggingface]
+enabled = false
+[tts]
+enabled = false
+[voice_agent]
+enabled = false

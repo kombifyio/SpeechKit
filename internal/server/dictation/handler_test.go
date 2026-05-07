@@ -140,7 +140,7 @@ func TestHandler_MultipartWAVHappyPath(t *testing.T) {
 	if resp.Source.Format != "wav" || resp.Source.SampleRate != 16000 || resp.Source.Channels != 1 {
 		t.Fatalf("source meta = %+v", resp.Source)
 	}
-	// Duration ~250 ms Â± a few.
+	// Duration ~250 ms ± a few.
 	if resp.DurationMs < 240 || resp.DurationMs > 260 {
 		t.Fatalf("DurationMs = %d, want ~250", resp.DurationMs)
 	}
@@ -304,7 +304,7 @@ func TestHandler_PayloadTooLarge_JSON(t *testing.T) {
 		t.Fatalf("New: %v", err)
 	}
 
-	// Build a 2 MB fake "audio" base64 payload â€” well above the 1 MB limit.
+	// Build a 2 MB fake "audio" base64 payload — well above the 1 MB limit.
 	big := bytes.Repeat([]byte{0xAA}, 2<<20)
 	body, _ := json.Marshal(map[string]string{
 		"audio_base64": base64.StdEncoding.EncodeToString(big),
@@ -320,7 +320,7 @@ func TestHandler_PayloadTooLarge_JSON(t *testing.T) {
 	}
 }
 
-// â”€â”€ helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── helpers ─────────────────────────────────────────────────────────────────
 
 func mustHandler(t *testing.T, router Transcriber) *Handler {
 	t.Helper()
