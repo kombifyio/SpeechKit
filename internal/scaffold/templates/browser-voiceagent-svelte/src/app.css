@@ -1,0 +1,95 @@
+:root {
+  font-family: system-ui, -apple-system, sans-serif;
+  color-scheme: light dark;
+}
+
+body {
+  margin: 0;
+  background: #f6f7f9;
+}
+
+.shell {
+  max-width: 720px;
+  margin: 2rem auto;
+  padding: 0 1rem;
+}
+
+header h1 {
+  margin-bottom: 0.25rem;
+}
+
+.hint {
+  color: #555;
+  margin-top: 0;
+}
+
+.actions {
+  margin: 1rem 0;
+}
+
+button {
+  padding: 0.6rem 1.2rem;
+  font-size: 0.95rem;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+button.primary {
+  background: #2c3e50;
+  color: white;
+}
+
+button.secondary {
+  background: #c0392b;
+  color: white;
+}
+
+.log {
+  border: 1px solid #d0d3d8;
+  border-radius: 8px;
+  padding: 0.75rem;
+  background: white;
+  min-height: 160px;
+  max-height: 320px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.entry {
+  font-size: 0.95rem;
+  line-height: 1.4;
+}
+
+.partial {
+  color: #777;
+  font-style: italic;
+  margin: 0.5rem 0;
+}
+
+.composer {
+  display: flex;
+  gap: 0.5rem;
+  margin-top: 1rem;
+}
+
+.composer input {
+  flex: 1;
+  padding: 0.6rem 0.8rem;
+  font-size: 0.95rem;
+  border-radius: 6px;
+  border: 1px solid #c5c8ce;
+}
+
+.error {
+  color: #c0392b;
+  font-weight: 500;
+}
+
+footer {
+  margin-top: 2rem;
+  font-size: 0.85rem;
+  color: #555;
+}

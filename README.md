@@ -1,7 +1,5 @@
 # SpeechKit
 
-> Local testing standard: use [docs/LOCAL_TESTING.md](docs/LOCAL_TESTING.md) as the repo-local source of truth before remote CI or deploy. Run the documented mise preflight gates before dispatching remote workflows.
-
 SpeechKit is a Windows-first voice framework for products that need dictation,
 voice commands, and realtime voice dialogue without coupling every use case to
 one desktop app or one hosted API.
@@ -82,10 +80,10 @@ Key advantages:
 
 Download public builds from
 [GitHub Releases](https://github.com/kombifyio/SpeechKit/releases) when
-available. For local development:
+available. For source builds:
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File .\start-dev.ps1
+powershell -ExecutionPolicy Bypass -File scripts/build.ps1 -SkipInstaller
 ```
 
 Default hotkeys:
@@ -102,10 +100,10 @@ Embed the Go backend:
 go get github.com/kombifyio/SpeechKit/pkg/speechkit
 ```
 
-Run the Windows client locally:
+Build the Windows client locally:
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File .\start-dev.ps1
+powershell -ExecutionPolicy Bypass -File scripts/build.ps1 -SkipInstaller
 ```
 
 Run the server image:
@@ -124,8 +122,8 @@ contracts, deployment steps, or release rules:
 - [Local OpenAPI](./docs/api/openapi.v1.yaml)
 - [SpeechKit Server docs](./docs/server/README.md)
 - [SpeechKit Server OpenAPI](./docs/server/openapi.v1.yaml)
-- [Deployment standards](./docs/deployment-standards.md)
-- [OSS release boundary](./docs/oss-release-boundary.md)
+- [SpeechKit MCP docs](./docs/mcp/README.md)
+- [Agent entrypoint](./docs/agent/llms.txt)
 - [Changelog](./CHANGELOG.md)
 
 ## Build
@@ -143,8 +141,6 @@ go test ./...
 go vet ./...
 npm --prefix frontend/app run test
 npm --prefix frontend/app run build
-npm --prefix Website run test
-npm --prefix Website run build
 ```
 
 ## Repository Layout
@@ -154,10 +150,9 @@ pkg/speechkit/          Local-first Go backend
 cmd/speechkit-server/   SpeechKit Server entry point
 cmd/speechkit/          Windows Client entry point
 frontend/app/           Windows UI source
-Website/                Public website
 internal/               Product internals
 docs/                   Detailed documentation
-deploy/                 Docker, Render, and server config
+deploy/                 Docker and server config
 installer/              Windows installer
 scripts/                Build, release, export, and verification scripts
 ```

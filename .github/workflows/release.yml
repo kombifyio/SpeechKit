@@ -134,13 +134,13 @@ jobs:
       - name: Setup Go
         uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c
         with:
-          go-version: '1.26.2'
+          go-version: '1.26.3'
           cache: true
 
       - name: Setup Node
         uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f
         with:
-          node-version: 22
+          node-version: 24
           cache: npm
           cache-dependency-path: frontend/app/package-lock.json
 
@@ -428,7 +428,7 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f
         with:
-          node-version: 22
+          node-version: 24
 
       - name: Render release notes from CHANGELOG
         shell: bash

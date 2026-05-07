@@ -38,9 +38,8 @@ concurrency:
 jobs:
   plan:
     name: Resolve Docker Release Plan
-    # Releases happen ONLY on the OSS repo. publish-oss.yml syncs the
-    # source from KombiverseLabs/kombify-SpeechKit (private dev) to
-    # kombifyio/SpeechKit (public) and pushes the v* tag there; this
+    # Releases happen ONLY on the OSS repo. The private upstream syncs
+    # the curated source to kombifyio/SpeechKit and pushes the v* tag; this
     # workflow then runs in the public repo, where GitHub-hosted
     # runners are unmetered. A tag pushed in the dev repo by mistake
     # must NOT trigger a publish.

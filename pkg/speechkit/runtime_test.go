@@ -130,3 +130,22 @@ func TestRuntimeStateClonesQuickCaptureFlags(t *testing.T) {
 		t.Fatal("QuickCaptureMode = false, want true")
 	}
 }
+
+func TestRuntimeSetStateClonesSnapshot(t *testing.T) {
+	runtime := NewRuntime(Snapshot{}, Hooks{})
+
+	snapshot := Snapshot{
+		Status:    "recording",
+		Providers: []string{"local"},
+	}
+	runtime.SetState(snapshot)
+	snapshot.Providers[0] = "mutated"
+
+	current := runtime.State()
+	if current.Status != "recording" {
+		t.Fatalf("Status = %q, want recording", current.Status)
+	}
+	if got := current.Providers[0]; got != "local" {
+		t.Fatalf("Providers[0] = %q, want local", got)
+	}
+}

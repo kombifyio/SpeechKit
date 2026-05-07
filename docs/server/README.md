@@ -53,9 +53,9 @@ curl -fsS http://localhost:8080/healthz
 curl -fsS http://localhost:8080/readyz
 ```
 
-Secrets can equivalently be injected via `doppler run -- docker compose up`;
-the Framework has no opinion on the secret manager, only on where values are
-read (`os.Getenv(<name from config>)`). The example values above are local
+Secrets can be injected by any operator-managed secret system. The Framework
+has no opinion on the secret manager, only on where values are read
+(`os.Getenv(<name from config>)`). The example values above are local
 development placeholders only; production Compose runs must provide real
 secrets explicitly.
 

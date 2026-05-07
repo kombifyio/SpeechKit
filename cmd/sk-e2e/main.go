@@ -123,7 +123,8 @@ type scenarioResult struct {
 }
 
 func selectedScenarios(s string) []string {
-	if strings.TrimSpace(s) == "" || s == "all" {
+	s = strings.TrimSpace(s)
+	if s == "" || s == "all" {
 		// Stable order: health first (cheapest), then mode-specific.
 		return []string{"health", "dictation", "assist", "voiceagent"}
 	}

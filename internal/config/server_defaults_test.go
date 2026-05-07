@@ -87,12 +87,12 @@ func TestApplyServerRuntimeDefaults_GoogleKeyKeepsGeminiDefault(t *testing.T) {
 
 func TestApplyServerRuntimeDefaults_UsesPublicURLEnv(t *testing.T) {
 	t.Setenv(ServerSelfHostedDefaultsEnv, "true")
-	t.Setenv("SPEECHKIT_PUBLIC_URL", " https://speechkit.kombify.dev/ ")
+	t.Setenv("SPEECHKIT_PUBLIC_URL", " https://speechkit.example.com/ ")
 
 	cfg := defaults()
 	ApplyServerRuntimeDefaults(cfg)
 
-	if cfg.Server.PublicURL != "https://speechkit.kombify.dev" {
+	if cfg.Server.PublicURL != "https://speechkit.example.com" {
 		t.Fatalf("Server.PublicURL = %q, want speechkit public URL from env", cfg.Server.PublicURL)
 	}
 }

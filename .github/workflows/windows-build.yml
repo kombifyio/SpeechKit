@@ -4,7 +4,7 @@ name: Windows Build
 # of being a job inside ci.yml) so a Windows runner is NEVER the
 # silent fallback for a generic CI runner — the previous shape
 # (`runs-on: ${{ vars.WINDOWS_CI_RUNNER || 'windows-2025' }}` inside
-# CI) burned metered Windows minutes on the private dev repo every
+# CI) burned metered Windows minutes on the upstream development repo every
 # time WINDOWS_CI_RUNNER wasn't explicitly set.
 #
 # Where this workflow runs:
@@ -14,7 +14,7 @@ name: Windows Build
 #     `windows-2025` fallback is fine. The `if:` guard below admits
 #     this path explicitly.
 #
-#   * On the private dev repo (KombiverseLabs/kombify-SpeechKit):
+#   * On the upstream development repo:
 #     ONLY runs when the operator has wired a self-hosted Windows
 #     runner via `vars.WINDOWS_CI_RUNNER`. If the variable is unset,
 #     the `if:` guard skips the whole job — no accidental fallback
@@ -86,13 +86,13 @@ jobs:
       - name: Setup Go
         uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c
         with:
-          go-version: '1.26.2'
+          go-version: '1.26.3'
           cache: true
 
       - name: Setup Node
         uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f
         with:
-          node-version: 22
+          node-version: 24
           cache: npm
           cache-dependency-path: frontend/app/package-lock.json
 

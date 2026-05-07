@@ -1,0 +1,48 @@
+# {{ .APP_NAME }}
+
+Node.js + TypeScript Voice Agent host. Opens a WebSocket session, prints
+the agent's transcripts to stdout, and registers a stub
+`getCurrentWeather` tool the agent can invoke.
+
+## Prerequisites
+
+- Node 20+
+- A running SpeechKit Server with Voice Agent enabled
+- (optional) Bearer token for `auth_mode = "bearer"` deployments
+
+## Configure
+
+```sh
+cp .env.example .env
+# edit .env to point at your SpeechKit deployment
+```
+
+## Run
+
+```sh
+npm install
+npm run dev
+```
+
+Then type sentences in the terminal to inject user-turns. Type
+`/quit` to close the session cleanly.
+
+## Adding tools
+
+Edit [src/tools.ts](src/tools.ts) to add new tools. Each tool exposes a
+JSON-Schema describing its parameters and an `invoke(args)` function.
+The included `getCurrentWeather` tool is a deterministic stub — replace
+its `invoke` with a real provider call.
+
+For Voice Agent persona/role configuration that registers tools at
+session-start, see <https://speechkit.cc/api/openapi.v1.yaml> under
+`POST /v1/personas`.
+
+## Frame protocol
+
+The full WebSocket protocol is documented in
+<https://speechkit.cc/api/asyncapi.v1.yaml>. This template implements
+the handler subset needed for text-only conversations + tool dispatch:
+`start`, `text`, `tool_response`, `stop` (out) and `state`,
+`input_transcript`, `output_transcript`, `tool_call`, `error`,
+`session_end` (in). Binary audio frames are received but skipped.

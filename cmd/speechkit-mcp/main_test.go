@@ -237,6 +237,113 @@ func TestRequireMCPTokenRejectsMissingToken(t *testing.T) {
 	}
 }
 
+func TestRequireMCPTokenAcceptsBearerAndHeaderTokens(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		header string
+		value  string
+	}{
+		{name: "bearer", header: "Authorization", value: "Bearer secret"},
+		{name: "explicit header", header: "X-SpeechKit-MCP-Token", value: "secret"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			nextCalled := false
+			handler := requireMCPToken("secret", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				nextCalled = true
+				w.WriteHeader(http.StatusNoContent)
+			}))
+
+			rr := httptest.NewRecorder()
+			req := httptest.NewRequest(http.MethodPost, "/", nil)
+			req.Header.Set(tc.header, tc.value)
+			handler.ServeHTTP(rr, req)
+			if rr.Code != http.StatusNoContent {
+				t.Fatalf("status = %d, want 204", rr.Code)
+			}
+			if !nextCalled {
+				t.Fatal("next handler was not called with valid token")
+			}
+		})
+	}
+}
+
+func TestModeParsingAndMCPMetadataHelpers(t *testing.T) {
+	modes := parseModes(" docs, MANAGEMENT ,, test ")
+	for _, mode := range []string{"docs", "management", "test"} {
+		if !modes[mode] {
+			t.Fatalf("parseModes missing %q in %#v", mode, modes)
+		}
+	}
+	if modes[""] {
+		t.Fatalf("parseModes should not include empty mode: %#v", modes)
+	}
+
+	tool := mcpTool("speechkit_persona_delete", "delete persona", false, true, true)
+	if tool.Title != "persona delete" {
+		t.Fatalf("tool title = %q, want persona delete", tool.Title)
+	}
+	if tool.Annotations == nil || tool.Annotations.ReadOnlyHint || tool.Annotations.DestructiveHint == nil || !*tool.Annotations.DestructiveHint {
+		t.Fatalf("tool annotations = %#v, want destructive non-readonly", tool.Annotations)
+	}
+	if tool.Annotations.OpenWorldHint == nil || *tool.Annotations.OpenWorldHint {
+		t.Fatalf("open world hint = %#v, want false", tool.Annotations.OpenWorldHint)
+	}
+
+	if got := resourceTitle("docs/server/openapi.v1.yaml"); got != "docs server openapi.v1" {
+		t.Fatalf("resourceTitle = %q", got)
+	}
+	if got := mimeTypeForResource("docs/server/openapi.v1.yaml"); got != "application/yaml" {
+		t.Fatalf("yaml MIME = %q", got)
+	}
+	if got := mimeTypeForResource("docs/mcp/README.md"); got != "text/markdown" {
+		t.Fatalf("markdown MIME = %q", got)
+	}
+	if resourcePriority("docs/server/openapi.v1.yaml") <= resourcePriority("docs/other.md") {
+		t.Fatal("OpenAPI resource should have higher priority than generic docs")
+	}
+
+	for _, addr := range []string{"127.0.0.1:8090", "localhost:8090", "[::1]:8090"} {
+		if !isLoopbackListenAddr(addr) {
+			t.Fatalf("%s should be treated as loopback", addr)
+		}
+	}
+	if isLoopbackListenAddr("0.0.0.0:8090") {
+		t.Fatal("0.0.0.0 should not be treated as loopback")
+	}
+	if got := firstNonEmpty(" ", "\tvalue ", "fallback"); got != "value" {
+		t.Fatalf("firstNonEmpty = %q, want value", got)
+	}
+	if got := stringMapValue(map[string]any{"id": 42}, "id"); got != "42" {
+		t.Fatalf("stringMapValue = %q, want 42", got)
+	}
+	if got := shellQuote("can't"); got != "'can'\"'\"'t'" {
+		t.Fatalf("shellQuote = %q", got)
+	}
+}
+
+func TestValidateOpenAPIPayloadRejectsLocalShapeErrors(t *testing.T) {
+	_, structured, err := validateOpenAPIPayload(context.Background(), "request", jsonValidationInput{})
+	if err != nil {
+		t.Fatalf("validateOpenAPIPayload missing endpoint: %v", err)
+	}
+	out := structured.(map[string]any)
+	if out["valid"] != false || out["error"] != "endpoint is required" {
+		t.Fatalf("missing endpoint result = %#v", out)
+	}
+
+	_, structured, err = validateOpenAPIPayload(context.Background(), "request", jsonValidationInput{
+		Endpoint: "/v1/tts/synthesize",
+		Payload:  json.RawMessage(`{`),
+	})
+	if err != nil {
+		t.Fatalf("validateOpenAPIPayload invalid JSON: %v", err)
+	}
+	out = structured.(map[string]any)
+	if out["valid"] != false || out["error"] != "payload is not valid JSON" {
+		t.Fatalf("invalid JSON result = %#v", out)
+	}
+}
+
 func TestTranscribeDisablesAudioPathForHTTPTransport(t *testing.T) {
 	app := &speechkitMCP{opts: serverOptions{transport: "http"}}
 	result, _, err := app.transcribe(context.Background(), nil, transcribeInput{AudioPath: "hello.wav"})

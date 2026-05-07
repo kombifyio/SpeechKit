@@ -1,0 +1,163 @@
+// Minimal SpeechKit Voice Agent WebSocket helper.
+// Frames are documented at https://speechkit.cc/api/asyncapi.v1.yaml.
+
+const SERVER_URL =
+  import.meta.env.VITE_SPEECHKIT_SERVER_URL ?? "{{ .SPEECHKIT_SERVER_URL }}";
+const TOKEN = import.meta.env.VITE_SPEECHKIT_TOKEN ?? "{{ .SPEECHKIT_TOKEN }}";
+const PERSONA_ID =
+  import.meta.env.VITE_SPEECHKIT_PERSONA_ID ?? "{{ .PERSONA_ID }}";
+
+export interface SessionTicket {
+  session_id: string;
+  ticket: string;
+  ws_url?: string;
+  expires_at?: string;
+}
+
+export interface AgentMessage {
+  type: string;
+  text?: string;
+  state?: string;
+  done?: boolean;
+  id?: string;
+  name?: string;
+  args?: Record<string, unknown>;
+  reason?: string;
+  code?: string;
+  message?: string;
+}
+
+export type ToolHandler = (
+  call: { id: string; name: string; args: Record<string, unknown> },
+) => Promise<Record<string, unknown>> | Record<string, unknown>;
+
+export interface OpenSessionOptions {
+  onState?: (state: string) => void;
+  onUserTranscript?: (text: string, done: boolean) => void;
+  onAgentTranscript?: (text: string, done: boolean) => void;
+  onAudio?: (chunk: ArrayBuffer) => void;
+  onError?: (err: unknown) => void;
+  onClose?: (reason: string) => void;
+  /** Optional registry of host-side tools the agent may call. */
+  tools?: Record<string, ToolHandler>;
+}
+
+export interface VoiceAgentSession {
+  send(text: string): void;
+  sendAudioChunk(pcm16: ArrayBuffer | Int16Array): void;
+  endAudio(): void;
+  close(): void;
+  readonly socket: WebSocket;
+  readonly sessionId: string;
+}
+
+async function mintTicket(): Promise<SessionTicket> {
+  const headers: Record<string, string> = { "Content-Type": "application/json" };
+  if (TOKEN) headers["Authorization"] = `Bearer ${TOKEN}`;
+  const response = await fetch(`${SERVER_URL}/v1/voiceagent/sessions`, {
+    method: "POST",
+    headers,
+    body: JSON.stringify({ persona_id: PERSONA_ID }),
+  });
+  if (!response.ok) {
+    throw new Error(`mint ticket failed: HTTP ${response.status} ${await response.text()}`);
+  }
+  return (await response.json()) as SessionTicket;
+}
+
+function deriveWsUrl(ticket: SessionTicket): string {
+  if (ticket.ws_url) return ticket.ws_url;
+  const wsBase = SERVER_URL.replace(/^http/, "ws");
+  return `${wsBase}/v1/voiceagent/sessions/${ticket.session_id}/ws?ticket=${encodeURIComponent(ticket.ticket)}`;
+}
+
+export async function openSession(options: OpenSessionOptions = {}): Promise<VoiceAgentSession> {
+  const ticket = await mintTicket();
+  const ws = new WebSocket(deriveWsUrl(ticket));
+  ws.binaryType = "arraybuffer";
+
+  ws.addEventListener("open", () => {
+    ws.send(JSON.stringify({ type: "start", persona_id: PERSONA_ID }));
+  });
+
+  ws.addEventListener("message", async (event) => {
+    if (typeof event.data === "string") {
+      let frame: AgentMessage;
+      try {
+        frame = JSON.parse(event.data) as AgentMessage;
+      } catch (err) {
+        options.onError?.(err);
+        return;
+      }
+      switch (frame.type) {
+        case "state":
+          if (frame.state) options.onState?.(frame.state);
+          break;
+        case "input_transcript":
+          options.onUserTranscript?.(frame.text ?? "", Boolean(frame.done));
+          break;
+        case "output_transcript":
+          options.onAgentTranscript?.(frame.text ?? "", Boolean(frame.done));
+          break;
+        case "tool_call":
+          if (frame.id && frame.name && options.tools?.[frame.name]) {
+            try {
+              const result = await options.tools[frame.name]({
+                id: frame.id,
+                name: frame.name,
+                args: frame.args ?? {},
+              });
+              ws.send(
+                JSON.stringify({
+                  type: "tool_response",
+                  id: frame.id,
+                  name: frame.name,
+                  response: result ?? {},
+                }),
+              );
+            } catch (err) {
+              ws.send(
+                JSON.stringify({
+                  type: "tool_response",
+                  id: frame.id,
+                  name: frame.name,
+                  response: { error: (err as Error).message },
+                }),
+              );
+            }
+          }
+          break;
+        case "error":
+          options.onError?.(new Error(`${frame.code ?? "error"}: ${frame.message ?? ""}`));
+          break;
+        case "session_end":
+          options.onClose?.(frame.reason ?? "");
+          break;
+      }
+    } else if (event.data instanceof ArrayBuffer) {
+      options.onAudio?.(event.data);
+    }
+  });
+
+  ws.addEventListener("error", (event) => options.onError?.(event));
+  ws.addEventListener("close", (event) => options.onClose?.(event.reason || "closed"));
+
+  return {
+    socket: ws,
+    sessionId: ticket.session_id,
+    send(text: string) {
+      ws.send(JSON.stringify({ type: "text", text }));
+    },
+    sendAudioChunk(pcm16: ArrayBuffer | Int16Array) {
+      const buffer = pcm16 instanceof Int16Array ? pcm16.buffer : pcm16;
+      ws.send(buffer);
+    },
+    endAudio() {
+      ws.send(JSON.stringify({ type: "audio_end" }));
+    },
+    close() {
+      ws.send(JSON.stringify({ type: "stop" }));
+      ws.close();
+    },
+  };
+}

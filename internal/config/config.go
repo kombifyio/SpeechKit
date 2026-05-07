@@ -42,7 +42,7 @@ const (
 	DefaultLocalLLMBaseURL = "http://127.0.0.1:8082/v1"
 	DefaultLocalLLMModel   = "ggml-org/gemma-4-E4B-it-GGUF:Q4_K_M"
 	DefaultLocalSTTModel   = "ggml-large-v3-turbo.bin"
-	ManagedDevServerURL    = "https://speechkit.kombify.dev"
+	ManagedDevServerURL    = "https://speechkit.example.com"
 
 	DefaultDictatePrimaryProfileID    = "stt.local.whispercpp"
 	DefaultAssistPrimaryProfileID     = "assist.builtin.gemma4-e4b"

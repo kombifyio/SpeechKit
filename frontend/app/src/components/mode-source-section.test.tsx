@@ -21,7 +21,7 @@ import { ModeSourceSection } from "@/components/mode-source-section";
 
 const serverConnection = {
   enabled: false,
-  url: "https://speechkit.kombify.dev",
+  url: "https://speechkit.example.com",
   bearerTokenEnv: "SPEECHKIT_SERVER_TOKEN",
   bearerTokenSet: false,
   fallbackToLocal: true,

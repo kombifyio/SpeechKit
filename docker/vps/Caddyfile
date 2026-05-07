@@ -1,7 +1,0 @@
-voice.dein-vps.de {
-    @auth header Authorization Bearer {env.API_KEY}
-    handle @auth {
-        reverse_proxy whisper:8080
-    }
-    respond 401
-}

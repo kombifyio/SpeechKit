@@ -291,7 +291,7 @@ without requiring private project context.
 
 ### Fixed
 
-- Hardened the dev rollout pipeline for `speechkit.kombify.dev`:
+- Hardened the internal dev rollout pipeline:
   `auto-deploy-dev.yml` now streams runtime env + compose payloads over
   SSH with retries, avoiding `scp` transport fragility on short-lived
   runner/network interruptions.

@@ -1,0 +1,213 @@
+# SpeechKit Copy-Paste Snippets
+
+Canonical, minimal code blocks for the most-used SpeechKit Server endpoints.
+Each block is self-contained: paste, set the SPEECHKIT_SERVER_URL and
+SPEECHKIT_TOKEN environment variables, run.
+
+Server defaults: `http://localhost:8080`. Auth is `bearer` unless the
+deployment configures `auth_mode = "none"`.
+
+## Scaffold a starter project
+
+The fastest way to get working code is the embedded scaffolder. It generates
+a fully wired project in seconds; the snippets below explain what the
+generated code does.
+
+```sh
+# List templates
+speechkit-cli init --list
+
+# Browser dictation app (React + Vite + TypeScript)
+speechkit-cli init --template browser-dictation-react my-app
+cd my-app && npm install && npm run dev
+```
+
+Coding agents can also call `speechkit_scaffold_integration` via the
+SpeechKit MCP server (`speechkit-mcp --mode=docs,test`) to receive the same
+files in-band without writing to the host.
+
+## Dictation - POST /v1/dictation/transcribe
+
+### curl
+
+```sh
+curl -X POST "$SPEECHKIT_SERVER_URL/v1/dictation/transcribe" \
+  -H "Authorization: Bearer $SPEECHKIT_TOKEN" \
+  -F "audio=@speech.wav" \
+  -F "language=en"
+```
+
+### TypeScript (browser, MediaRecorder)
+
+```ts
+async function transcribe(blob: Blob): Promise<string> {
+  const form = new FormData();
+  form.append("audio", blob, "speech.webm");
+  const response = await fetch(
+    `${import.meta.env.VITE_SPEECHKIT_SERVER_URL}/v1/dictation/transcribe`,
+    {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${import.meta.env.VITE_SPEECHKIT_TOKEN}`,
+      },
+      body: form,
+    },
+  );
+  if (!response.ok) throw new Error(`HTTP ${response.status}`);
+  const { text } = (await response.json()) as { text: string };
+  return text;
+}
+```
+
+### Python (sync, requests)
+
+```python
+import os, requests
+
+with open("speech.wav", "rb") as fh:
+    response = requests.post(
+        f"{os.environ['SPEECHKIT_SERVER_URL']}/v1/dictation/transcribe",
+        headers={"Authorization": f"Bearer {os.environ['SPEECHKIT_TOKEN']}"},
+        files={"audio": ("speech.wav", fh, "audio/wav")},
+        data={"language": "en"},
+        timeout=120,
+    )
+response.raise_for_status()
+print(response.json()["text"])
+```
+
+### Go (pkg/speechkit/client)
+
+```go
+import (
+    "context"
+    skclient "github.com/kombifyio/SpeechKit/pkg/speechkit/client"
+)
+
+func dictate(ctx context.Context) error {
+    c, err := skclient.FromEnv() // reads SPEECHKIT_SERVER_URL + SPEECHKIT_TOKEN
+    if err != nil { return err }
+    out, err := c.TranscribeFile(ctx, "speech.wav", skclient.TranscribeOptions{Language: "en"})
+    if err != nil { return err }
+    fmt.Println(out.Text)
+    return nil
+}
+```
+
+## Assist - POST /v1/assist/process
+
+### curl (text-only)
+
+```sh
+curl -X POST "$SPEECHKIT_SERVER_URL/v1/assist/process" \
+  -H "Authorization: Bearer $SPEECHKIT_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"text": "summarize the key points"}'
+```
+
+### TypeScript
+
+```ts
+const response = await fetch(`${SERVER}/v1/assist/process`, {
+  method: "POST",
+  headers: {
+    "Content-Type": "application/json",
+    Authorization: `Bearer ${TOKEN}`,
+  },
+  body: JSON.stringify({ text: "summarize the key points" }),
+});
+const result = (await response.json()) as { text: string };
+```
+
+## Voice Agent - open a realtime WebSocket session
+
+### Step 1: mint a session ticket (POST)
+
+```sh
+curl -X POST "$SPEECHKIT_SERVER_URL/v1/voiceagent/sessions" \
+  -H "Authorization: Bearer $SPEECHKIT_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"persona_id":"default"}'
+```
+
+### Step 2: upgrade WebSocket using the returned ticket
+
+```ts
+const session = await fetch(`${SERVER}/v1/voiceagent/sessions`, {
+  method: "POST",
+  headers: { "Content-Type": "application/json", Authorization: `Bearer ${TOKEN}` },
+  body: JSON.stringify({ persona_id: "default" }),
+}).then((r) => r.json());
+
+const ws = new WebSocket(
+  `${SERVER.replace("http", "ws")}/v1/voiceagent/sessions/${session.session_id}/ws?ticket=${session.ticket}`,
+);
+
+ws.onopen = () => {
+  ws.send(JSON.stringify({ type: "start", persona_id: "default", locale: "en" }));
+};
+
+ws.onmessage = async (event) => {
+  if (typeof event.data === "string") {
+    const frame = JSON.parse(event.data);
+    if (frame.type === "output_transcript") console.log("agent:", frame.text);
+    if (frame.type === "tool_call") {
+      // run host-side tool, then:
+      ws.send(JSON.stringify({ type: "tool_response", id: frame.id, name: frame.name, response: { ok: true } }));
+    }
+  } else {
+    // event.data is a Blob/ArrayBuffer of PCM 24kHz S16 mono. Feed it to AudioContext.
+  }
+};
+```
+
+The AsyncAPI 3.0 schema for every frame type is at
+<https://speechkit.cc/api/asyncapi.v1.yaml>. The full set:
+
+- Client to server: `start`, `text`, `tool_response`, `audio_end`, `ping`, `stop`, `advance_step`, plus binary PCM 16 kHz S16 mono.
+- Server to client: `state`, `input_transcript`, `output_transcript`, `tool_call`, `sequence_step`, `interrupted`, `error`, `session_end`, `pong`, plus binary PCM 24 kHz S16 mono.
+
+## Voice Agent custom tools (Go, agentkit)
+
+```go
+import (
+    "context"
+    "github.com/kombifyio/SpeechKit/pkg/speechkit/agentkit"
+)
+
+reg := agentkit.NewRegistry()
+reg.MustRegister(&agentkit.FuncTool{
+    ToolName:        "checkAvailability",
+    ToolDescription: "Check if a time slot is free.",
+    ToolSchema: agentkit.Schema{
+        "type":       "object",
+        "properties": map[string]any{"date": map[string]any{"type": "string"}},
+        "required":   []string{"date"},
+    },
+    Fn: func(ctx context.Context, args map[string]any) (map[string]any, error) {
+        return map[string]any{"available": true}, nil
+    },
+})
+
+agent := agentkit.NewAgentSession(provider, callbacks, reg, agentkit.LifecycleHooks{}, nil)
+if err := agent.Start(ctx, cfg, idleCfg); err != nil { return err }
+defer agent.Stop()
+```
+
+## TTS - POST /v1/tts/synthesize
+
+```sh
+curl -X POST "$SPEECHKIT_SERVER_URL/v1/tts/synthesize" \
+  -H "Authorization: Bearer $SPEECHKIT_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"text":"Hello from SpeechKit","voice":"nova"}'
+```
+
+Response is JSON `{ audio_base64, format, sample_rate, duration_ms, ... }`.
+
+## Discovering more
+
+- Full OpenAPI: <https://speechkit.cc/api/openapi.v1.yaml>
+- Voice Agent AsyncAPI: <https://speechkit.cc/api/asyncapi.v1.yaml>
+- MCP server (machine-readable docs + scaffolding): `speechkit-mcp --mode=docs,test`
+- Full agent context: <https://speechkit.cc/llms-full.txt>

@@ -1,0 +1,102 @@
+<script lang="ts">
+  import { openSession, type VoiceAgentSession } from "./voiceagent";
+
+  let session: VoiceAgentSession | null = $state(null);
+  let connected = $state(false);
+  let state = $state("disconnected");
+  let userTranscript = $state("");
+  let agentLog: string[] = $state([]);
+  let textInput = $state("");
+  let error: string | null = $state(null);
+
+  async function connect() {
+    error = null;
+    try {
+      session = await openSession({
+        onState: (s) => (state = s),
+        onUserTranscript: (text, done) => {
+          if (done) userTranscript = text;
+          else userTranscript = text;
+        },
+        onAgentTranscript: (text, done) => {
+          if (done && text) agentLog = [...agentLog, text];
+        },
+        onError: (err) => (error = (err as Error).message ?? String(err)),
+        onClose: (reason) => {
+          connected = false;
+          state = "closed: " + reason;
+        },
+      });
+      connected = true;
+    } catch (err) {
+      error = (err as Error).message;
+    }
+  }
+
+  function disconnect() {
+    session?.close();
+    session = null;
+    connected = false;
+    state = "disconnected";
+  }
+
+  function sendText() {
+    if (!textInput.trim() || !session) return;
+    session.send(textInput.trim());
+    agentLog = [...agentLog, "you: " + textInput.trim()];
+    textInput = "";
+  }
+</script>
+
+<main class="shell">
+  <header>
+    <h1>{{ .APP_NAME }} - SpeechKit Voice Agent</h1>
+    <p class="hint">Persona: <code>{{ .PERSONA_ID }}</code> · State: <code>{state}</code></p>
+  </header>
+
+  <section class="actions">
+    {#if !connected}
+      <button class="primary" onclick={connect}>Connect</button>
+    {:else}
+      <button class="secondary" onclick={disconnect}>Disconnect</button>
+    {/if}
+  </section>
+
+  <section class="log" aria-label="conversation">
+    {#each agentLog as entry, index (index)}
+      <div class="entry">{entry}</div>
+    {/each}
+  </section>
+
+  {#if userTranscript}
+    <p class="partial">user (live): {userTranscript}</p>
+  {/if}
+
+  {#if connected}
+    <form
+      onsubmit={(event) => {
+        event.preventDefault();
+        sendText();
+      }}
+      class="composer"
+    >
+      <input
+        type="text"
+        bind:value={textInput}
+        placeholder="Type to inject a user-turn into the live session..."
+      />
+      <button type="submit" disabled={!textInput.trim()}>Send</button>
+    </form>
+  {/if}
+
+  {#if error}
+    <p class="error">Error: {error}</p>
+  {/if}
+
+  <footer>
+    <p>
+      For mic capture, see <a href="https://speechkit.cc/llms-snippets.txt">llms-snippets.txt</a>
+      or upgrade to <code>@speechkit/voiceagent-client</code> once published.
+    </p>
+  </footer>
+</main>

@@ -1,0 +1,139 @@
+# SpeechKit v0.30 Preview Agent Context
+
+SpeechKit is a voice framework for products and automation hosts. It has three
+strict modes:
+
+- Dictation: speech-to-text only. No LLM rewriting, no utilities, no codewords.
+- Assist: one-shot utility, codeword, or LLM result with optional TTS.
+- Voice Agent: realtime audio-to-audio dialogue for fast follow-ups.
+
+v0.30 Preview is testable but not released. Use preview docs and preview image
+tags without creating a `v0.30.0` release or changing `latest`.
+
+## Start Here
+
+- Human technical guide: https://speechkit.cc/getting-started/technical
+- Human agent guide: https://speechkit.cc/getting-started/agents
+- Markdown technical guide: https://speechkit.cc/getting-started/technical.md
+- Markdown agent guide: https://speechkit.cc/getting-started/agents.md
+- Server installer: https://speechkit.cc/install-server.sh
+- OpenAPI: https://speechkit.cc/api/openapi.v1.yaml
+- Voice Agent AsyncAPI: https://speechkit.cc/api/asyncapi.v1.yaml
+
+## Simple Prompts
+
+```text
+Hi Codex, go to speechkit.cc and install the SpeechKit Server on this server.
+```
+
+```text
+Hi Codex, read speechkit.cc/llms.txt, then install the v0.30 Preview SpeechKit Server with Docker Compose.
+```
+
+```text
+Hi Codex, add SpeechKit as a Go framework dependency and use the documented Dictation, Assist, and Voice Agent contracts.
+```
+
+```text
+Hi Codex, configure `speechkit-mcp` in docs mode and verify the SpeechKit API before writing integration code.
+```
+
+## Server Install
+
+For a stable server:
+
+```sh
+curl -fsSL https://speechkit.cc/install-server.sh | sh
+```
+
+For v0.30 Preview:
+
+```sh
+curl -fsSL https://speechkit.cc/install-server.sh | sh -s -- --channel preview
+```
+
+The script writes a Docker Compose stack, `config.toml`, and `.env` into
+`/opt/speechkit` by default. It generates a local bearer token when one is not
+provided. The generated Compose stack binds to `127.0.0.1:8080` by default;
+use `--public-bind` only behind a TLS reverse proxy. It uses:
+
+- Stable: `ghcr.io/kombifyio/speechkit-server:latest`
+- Preview: `ghcr.io/kombifyio/speechkit-server:v0.30-preview`
+
+## API Surfaces
+
+Use the OpenAPI document for exact request and response shapes:
+https://speechkit.cc/api/openapi.v1.yaml
+
+Use the AsyncAPI document for the Voice Agent WebSocket contract:
+https://speechkit.cc/api/asyncapi.v1.yaml
+
+Important v0.30 Preview surfaces:
+
+- `GET /v1/catalog/profiles`
+- `GET /v1/catalog/contracts`
+- `GET /v1/catalog/readiness`
+- `GET /v1/config`
+- `GET /v1/vocabulary/dictionary`
+- `POST /v1/vocabulary/dictionary`
+- `GET /v1/transcripts`
+- `GET /v1/transcripts/{id}`
+- `GET /v1/voiceagent/sessions/{id}/transcript`
+- `GET /v1/voiceagent/sessions/{id}/summary`
+- `POST /v1/tts/synthesize`
+- `GET /v1/tts/voices`
+
+## MCP
+
+Use `speechkit-mcp` when an agent should inspect docs, validate requests, or
+manage a running SpeechKit Server.
+
+Agent planning tools:
+
+- `speechkit_install_plan`: read-only install steps for stable or v0.30 Preview.
+- `speechkit_self_check_plan`: ordered Docker, health, readiness, config, catalog, OpenAPI, and AsyncAPI probes.
+- `speechkit_scaffold_templates`: list starter integration templates.
+- `speechkit_scaffold_integration`: render a starter integration in memory for an agent to apply.
+
+Docs-only local config:
+
+```json
+{
+  "mcpServers": {
+    "speechkit": {
+      "command": "speechkit-mcp",
+      "args": ["--mode=docs,test"]
+    }
+  }
+}
+```
+
+## Go AgentKit Harness
+
+Use `pkg/speechkit/agentkit` when embedding SpeechKit Voice Agent behavior into
+a Go host. It provides a session wrapper, tool registry, lifecycle hooks, and a
+session-scoped memory interface on top of the Voice Agent runtime. Register
+host-side tools with `agentkit.NewRegistry()` and pass the registry to
+`agentkit.NewAgentSession(...)` before calling `Start`.
+
+For a browser starter, use `speechkitctl init browser-dictation-react --output
+./speechkit-demo` or ask `speechkit-mcp` for `speechkit_scaffold_integration`.
+The MCP scaffold tool is read-only and returns file paths plus content for the
+calling agent to review and apply.
+
+Management mode requires a running server and bearer token:
+
+```json
+{
+  "mcpServers": {
+    "speechkit": {
+      "command": "speechkit-mcp",
+      "args": ["--mode=docs,management,test"],
+      "env": {
+        "SPEECHKIT_SERVER_URL": "http://localhost:8080",
+        "SPEECHKIT_TOKEN": "replace-with-generated-token"
+      }
+    }
+  }
+}
+```

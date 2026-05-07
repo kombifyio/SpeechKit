@@ -34,6 +34,20 @@ func readRepoFile(t *testing.T, relativePath string) string {
 	return string(content)
 }
 
+func readRepoFileIfExists(t *testing.T, relativePath string) (string, bool) {
+	t.Helper()
+
+	content, err := os.ReadFile(filepath.Join(repoRoot(t), relativePath))
+	if err != nil {
+		if os.IsNotExist(err) {
+			return "", false
+		}
+		t.Fatalf("read %s: %v", relativePath, err)
+	}
+
+	return string(content), true
+}
+
 func extractRawStringConst(t *testing.T, content, name string) string {
 	t.Helper()
 
@@ -98,7 +112,10 @@ func TestReleaseWorkflowMarksUnsignedWindowsReleasesManualOnly(t *testing.T) {
 }
 
 func TestPrivateReleaseDryRunScriptNeverPublishes(t *testing.T) {
-	script := readRepoFile(t, filepath.Join("scripts", "private-release-dry-run.ps1"))
+	script, ok := readRepoFileIfExists(t, filepath.Join("scripts", "private-release-dry-run.ps1"))
+	if !ok {
+		t.Skip("private release dry-run script is not part of the public export")
+	}
 	packageJSON := readRepoFile(t, "package.json")
 
 	assertContains(t, packageJSON, `"release:dry-run:private"`)
@@ -121,7 +138,10 @@ func TestPrivateReleaseDryRunScriptNeverPublishes(t *testing.T) {
 }
 
 func TestPrivateReleaseDryRunWorkflowIsPrivateOnlyAndReadOnly(t *testing.T) {
-	workflow := readRepoFile(t, filepath.Join(".github", "workflows", "private-release-dry-run.yml"))
+	workflow, ok := readRepoFileIfExists(t, filepath.Join(".github", "workflows", "private-release-dry-run.yml"))
+	if !ok {
+		t.Skip("private release dry-run workflow is not part of the public export")
+	}
 
 	assertContains(t, workflow, "name: Private Release Dry Run")
 	assertContains(t, workflow, "workflow_dispatch:")
@@ -149,7 +169,10 @@ func TestPrivateReleaseDryRunWorkflowIsPrivateOnlyAndReadOnly(t *testing.T) {
 }
 
 func TestPublishOssWorkflowPublishesFromResolvedTag(t *testing.T) {
-	workflow := readRepoFile(t, filepath.Join(".github", "workflows", "publish-oss.yml"))
+	workflow, ok := readRepoFileIfExists(t, filepath.Join(".github", "workflows", "publish-oss.yml"))
+	if !ok {
+		t.Skip("private OSS publisher workflow is not part of the public export")
+	}
 
 	assertContains(t, workflow, "checkout_ref=")
 	assertContains(t, workflow, "ref: ${{ needs.prepare.outputs.checkout_ref }}")
@@ -235,28 +258,32 @@ func TestCIWorkflowFailsWhenCoverageDropsBelowMinimum(t *testing.T) {
 	assertContains(t, workflow, `gsub(/%/, "", $NF)`)
 }
 
-func TestCIWorkflowRunsWebsiteChecks(t *testing.T) {
+func TestCIWorkflowDoesNotReferenceNonExportedWebsite(t *testing.T) {
 	workflow := readRepoFile(t, filepath.Join(".github", "workflows", "ci.yml"))
 
-	assertContains(t, workflow, "name: Website Checks")
-	assertContains(t, workflow, "working-directory: Website")
-	assertContains(t, workflow, "cache-dependency-path: Website/package-lock.json")
-	assertContains(t, workflow, "npm ci")
-	assertContains(t, workflow, "npm audit --audit-level=moderate")
-	assertContains(t, workflow, "npm run check")
-	assertContains(t, workflow, "npm run test")
+	assertNotContains(t, workflow, "name: Website Checks")
+	assertNotContains(t, workflow, "working-directory: Website")
+	assertNotContains(t, workflow, "cache-dependency-path: Website/package-lock.json")
+	assertNotContains(t, workflow, "Website/**")
 }
 
 func TestDependabotOnlyReferencesExistingProjectDirectories(t *testing.T) {
 	dependabot := readRepoFile(t, filepath.Join(".github", "dependabot.yml"))
 
 	assertContains(t, dependabot, "directory: /frontend/app")
-	assertContains(t, dependabot, "directory: /Website")
+	if _, err := os.Stat(filepath.Join(repoRoot(t), "Website")); err == nil {
+		assertContains(t, dependabot, "directory: /Website")
+	} else {
+		assertNotContains(t, dependabot, "directory: /Website")
+	}
 	assertNotContains(t, dependabot, "directory: /marketing-site-svelte")
 }
 
 func TestSecurityWorkflowRunsRequiredGates(t *testing.T) {
-	workflow := readRepoFile(t, filepath.Join(".github", "workflows", "security.yml"))
+	workflow, ok := readRepoFileIfExists(t, filepath.Join(".github", "workflows", "security.yml"))
+	if !ok {
+		t.Skip("private security workflow is not part of the public export")
+	}
 
 	assertContains(t, workflow, "name: Security")
 	assertContains(t, workflow, "Run TruffleHog")
@@ -271,7 +298,10 @@ func TestSecurityWorkflowRunsRequiredGates(t *testing.T) {
 }
 
 func TestDeploymentStandardsDocumentBranchProtectionGates(t *testing.T) {
-	docs := readRepoFile(t, filepath.Join("docs", "deployment-standards.md"))
+	docs, ok := readRepoFileIfExists(t, filepath.Join("docs", "deployment-standards.md"))
+	if !ok {
+		t.Skip("private deployment standards are not part of the public export")
+	}
 
 	assertContains(t, docs, "## Branch Protection")
 	assertContains(t, docs, "The `main` branch is protected")
@@ -409,6 +439,9 @@ func TestLegacyPublicExportGitlinkRemoved(t *testing.T) {
 
 	output, err := command.Output()
 	if err != nil {
+		if exitErr, ok := err.(*exec.ExitError); ok && strings.Contains(string(exitErr.Stderr), "not a git repository") {
+			t.Skip("git metadata is not available in this exported tree")
+		}
 		t.Fatalf("git ls-files failed: %v", err)
 	}
 

@@ -1,0 +1,48 @@
+# {{ .APP_NAME }}
+
+A Svelte 5 + Vite + TypeScript app that opens a SpeechKit Voice Agent
+WebSocket session and exchanges typed turns. The frame protocol matches
+[asyncapi.v1.yaml](https://speechkit.cc/api/asyncapi.v1.yaml).
+
+This template is a **text-first** baseline. Mic capture and audio
+playback are intentionally out of scope so the protocol is easy to read;
+upgrade with [`@speechkit/voiceagent-client`](https://speechkit.cc) when
+the dedicated browser/Node SDK package ships.
+
+## Prerequisites
+
+- Node 20+
+- A running SpeechKit Server with Voice Agent enabled (default `{{ .SPEECHKIT_SERVER_URL }}`)
+- (optional) Bearer token for `auth_mode = "bearer"` deployments
+
+## Configure
+
+```sh
+cp .env.example .env
+# adjust VITE_SPEECHKIT_SERVER_URL, VITE_SPEECHKIT_TOKEN, VITE_SPEECHKIT_PERSONA_ID
+```
+
+## Run
+
+```sh
+npm install
+npm run dev
+```
+
+Open <http://localhost:5173>, click **Connect**, and type to send a
+user-turn. The agent's transcribed replies appear in the log; binary
+audio frames are received but skipped (browser audio playback is the
+follow-up task).
+
+## How it works
+
+1. `voiceagent.ts.tmpl` POSTs to `/v1/voiceagent/sessions` to mint a
+   `session_id` + `ticket`.
+2. It opens `WS /v1/voiceagent/sessions/{id}/ws?ticket=...`.
+3. Sends a `start` frame with the persona id.
+4. Dispatches incoming `state`, `input_transcript`, `output_transcript`,
+   `tool_call`, `error`, and `session_end` frames.
+
+To register a custom tool, pass it via `openSession({ tools: { ... } })`.
+The handler signature is
+`(call: { id, name, args }) => Promise<Record<string, unknown>>`.

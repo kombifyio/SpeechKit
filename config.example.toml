@@ -52,13 +52,13 @@ agent_model = "gemma4:e4b"
 
 [vps]
 enabled = false
-url = ""                  # Example: https://voice.your-vps.tld
-api_key_env = "VPS_API_KEY"  # Environment variable or Doppler secret name
+url = ""                  # Example: https://voice.example.com
+api_key_env = "SPEECHKIT_SELF_HOSTED_API_KEY"  # Environment variable name
 
 [huggingface]
 enabled = false           # Legacy STT toggle for HF routed inference; dedicated HF Endpoints are modeled separately in the profile catalog
 model = "openai/whisper-large-v3" # Routed/shared provider model, not a dedicated endpoint deployment
-token_env = "HF_TOKEN"    # Fallback env var when no stored host token exists; Doppler is internal/dev only
+token_env = "HF_TOKEN"    # Fallback env var when no stored host token exists
 # utility_model = "Qwen/Qwen3.5-9B"
 # assist_model = "Qwen/Qwen3.5-27B"
 # agent_model = "Qwen/Qwen3.5-27B" # Voice Agent pipeline fallback / legacy agent flow
@@ -158,7 +158,7 @@ tts_direct = true
 
 [server_connection]
 enabled = false                              # Master switch. When false, every mode forces back to local.
-url = "https://speechkit.kombify.dev"        # Default remote target. Local mode is still the startup default.
+url = ""                                      # Optional remote target. Local mode is still the startup default.
 bearer_token_env = "SPEECHKIT_SERVER_TOKEN"  # Env var name. The token value is never read from this file.
 fallback_to_local = true                     # If a server call fails, retry against the in-process kernel.
 request_timeout_sec = 30                     # Caps non-streaming HTTP calls. WebSocket sessions are unaffected.
@@ -251,7 +251,7 @@ vad_silence_duration_ms = 700
 # ──────────────────────────────────────────────
 # Provider Configuration
 # STT, LLM, TTS, and Realtime model assignments per provider.
-# API keys are resolved from environment variables or Doppler.
+# API keys are resolved from environment variables.
 # ──────────────────────────────────────────────
 
 # [providers.openai]

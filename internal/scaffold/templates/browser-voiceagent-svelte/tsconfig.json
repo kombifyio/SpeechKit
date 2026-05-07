@@ -1,0 +1,14 @@
+{
+  "extends": "@tsconfig/svelte/tsconfig.json",
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "strict": true,
+    "noEmit": true,
+    "isolatedModules": true,
+    "verbatimModuleSyntax": false,
+    "types": ["svelte"]
+  },
+  "include": ["src/**/*", "src/**/*.svelte"]
+}

@@ -18,14 +18,8 @@ Start with the module you are working on, then jump into the detailed docs.
 
 ## Operations
 
-- [server/DEPLOY.md](./server/DEPLOY.md) — SpeechKit Server Docker Compose, Render, and generic OCI deployments.
-- [deployment-standards.md](./deployment-standards.md) — build, CI, packaging, and release rules.
-- [runbooks/README.md](./runbooks/README.md) — incident playbooks.
+- [server/DEPLOY.md](./server/DEPLOY.md) — SpeechKit Server Docker Compose and generic OCI deployments.
 
 ## Release And Trust
 
-- [oss-release-boundary.md](./oss-release-boundary.md) — public/private repo boundary.
-- [oss-release-checklist.md](./oss-release-checklist.md) — release gate before mirror/tag.
-- [public-repo-operating-model.md](./public-repo-operating-model.md) — public repo operating model.
 - [code-signing-policy.md](./code-signing-policy.md) — Windows artifact trust policy.
-- [signpath-oss-setup.md](./signpath-oss-setup.md) — optional SignPath setup.

@@ -3,6 +3,7 @@ package router
 import (
 	"context"
 	"fmt"
+	"net"
 	"testing"
 	"time"
 
@@ -313,5 +314,64 @@ func TestAvailableProviders_None(t *testing.T) {
 	r := &Router{}
 	if len(r.AvailableProviders()) != 0 {
 		t.Error("expected 0 providers")
+	}
+}
+
+func TestCloudProviderListManagement(t *testing.T) {
+	r := &Router{}
+	r.AddCloud(nil)
+	r.AddCloud(&mockProvider{name: "vps"})
+	r.AddCloud(&mockProvider{name: "huggingface"})
+	if r.VPS() == nil || r.HuggingFace() == nil {
+		t.Fatalf("expected vps and hf providers to be registered")
+	}
+	if got := r.Cloud("missing"); got != nil {
+		t.Fatalf("missing cloud provider = %#v, want nil", got)
+	}
+
+	r.SetCloudProviders([]stt.STTProvider{nil, &mockProvider{name: "groq"}})
+	if r.Cloud("vps") != nil || r.Cloud("huggingface") != nil || r.Cloud("groq") == nil {
+		t.Fatalf("SetCloudProviders did not replace list cleanly: %#v", r.AvailableProviders())
+	}
+
+	r.SetCloud("groq", nil)
+	if r.Cloud("groq") != nil || len(r.AvailableProviders()) != 0 {
+		t.Fatalf("SetCloud nil did not remove provider: %#v", r.AvailableProviders())
+	}
+
+	r.SetCloud("openai", &mockProvider{name: "openai"})
+	r.SetCloudProviders(nil)
+	if len(r.AvailableProviders()) != 0 {
+		t.Fatalf("empty SetCloudProviders should clear cloud list: %#v", r.AvailableProviders())
+	}
+}
+
+func TestRouterProbeInternetUsesConfiguredAddressAndCache(t *testing.T) {
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("Listen: %v", err)
+	}
+	defer ln.Close()
+	accepted := make(chan struct{}, 1)
+	go func() {
+		conn, err := ln.Accept()
+		if err == nil {
+			_ = conn.Close()
+			accepted <- struct{}{}
+		}
+	}()
+
+	r := &Router{ConnectivityProbe: ln.Addr().String()}
+	if !r.checkInternet(context.Background()) {
+		t.Fatal("checkInternet = false, want true for local listener")
+	}
+	select {
+	case <-accepted:
+	case <-time.After(time.Second):
+		t.Fatal("probe did not connect to listener")
+	}
+	_ = ln.Close()
+	if !r.checkInternet(context.Background()) {
+		t.Fatal("second checkInternet should return cached true value")
 	}
 }
