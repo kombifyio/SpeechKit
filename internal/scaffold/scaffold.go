@@ -255,15 +255,7 @@ func resolveVars(specs []VarSpec, overrides map[string]string, interactive bool,
 			}
 		}
 		if spec.Default != "" {
-			value := spec.Default
-			if strings.Contains(value, "{{") {
-				rendered, err := renderString(value, resolved)
-				if err != nil {
-					return nil, fmt.Errorf("scaffold: render default for %s: %w", spec.Name, err)
-				}
-				value = rendered
-			}
-			resolved[spec.Name] = value
+			resolved[spec.Name] = spec.Default
 			continue
 		}
 		if spec.Optional {

@@ -52,7 +52,6 @@ $mingwPath = "$mingwBinDir;$basePath"
 $env:CGO_ENABLED = '1'
 $env:CC = $mingwGcc
 $env:CXX = $mingwGxx
-$env:GOWORK = 'off'
 $env:GOCACHE = $goCacheDir
 $env:GOTMPDIR = $goTmpDir
 

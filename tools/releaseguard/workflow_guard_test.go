@@ -179,6 +179,8 @@ func TestPublishOssWorkflowPublishesFromResolvedTag(t *testing.T) {
 	assertContains(t, workflow, "publish-source:")
 	assertContains(t, workflow, "- publish-source")
 	assertContains(t, workflow, "RELEASE_AUTH_TOKEN")
+	assertContains(t, workflow, "workflows_backup")
+	assertContains(t, workflow, "does not yet have Workflows write permission")
 	assertContains(t, workflow, "git -c \"http.https://github.com/.extraheader=AUTHORIZATION: basic ${auth_header}\" \\")
 	assertContains(t, workflow, "clone \"https://github.com/${OSS_REPO}.git\" oss-repo")
 	assertContains(t, workflow, "git remote set-url origin \"https://github.com/${OSS_REPO}.git\"")
@@ -222,8 +224,8 @@ func TestCIWorkflowRunsRaceTestsForCriticalGoPackages(t *testing.T) {
 }
 
 // TestAutoDeployDevWorkflowRetired asserts that the legacy
-// auto-deploy-dev.yml workflow (kombify-ionos-dev SSH push) has been
-// removed in favour of the Render-managed preview path. The two
+// auto-deploy-dev.yml workflow has been removed in favour of the
+// managed preview path. The two
 // previous tests that verified the workflow's content
 // (TestAutoDeployDevCoversRuntimeAndRunsLiveSmoke and
 // TestAutoDeployDevMasksMultilineSSHSecretsSafely) were removed when
@@ -232,7 +234,7 @@ func TestCIWorkflowRunsRaceTestsForCriticalGoPackages(t *testing.T) {
 func TestAutoDeployDevWorkflowRetired(t *testing.T) {
 	path := filepath.Join(".github", "workflows", "auto-deploy-dev.yml")
 	if _, err := os.Stat(filepath.Join(repoRoot(t), path)); err == nil {
-		t.Fatalf("auto-deploy-dev.yml is back; the workflow was retired in v0.29.0 — re-add intentionally and update this guard")
+		t.Fatalf("auto-deploy-dev.yml is back; the workflow was retired in v0.29.0 - re-add intentionally and update this guard")
 	}
 }
 
@@ -265,6 +267,8 @@ func TestCIWorkflowDoesNotReferenceNonExportedWebsite(t *testing.T) {
 	assertNotContains(t, workflow, "working-directory: Website")
 	assertNotContains(t, workflow, "cache-dependency-path: Website/package-lock.json")
 	assertNotContains(t, workflow, "Website/**")
+	assertNotContains(t, workflow, "./Website/*")
+	assertNotContains(t, workflow, "marketing-site-svelte")
 }
 
 func TestDependabotOnlyReferencesExistingProjectDirectories(t *testing.T) {

@@ -747,7 +747,7 @@ Stufe 2 wird nur aktiviert wenn Pattern Matching keinen Treffer hat UND der Assi
 - Shortcut/Codeword System
 - Desktop Output (Clipboard, Paste)
 - Config System (TOML)
-- Credential Management (Windows Credential Manager; Doppler nur intern)
+- Credential Management (Windows Credential Manager; external secret managers optional)
 - Overlay UI (Pill, Dot, Radial)
 - System Tray
 - Model Catalog
