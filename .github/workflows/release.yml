@@ -79,6 +79,7 @@ jobs:
   wait-for-publisher-release:
     name: Wait For Publisher Draft
     needs: prepare
+    if: needs.prepare.outputs.should_build_windows == 'true'
     runs-on: ${{ vars.CI_RUNNER || 'ubuntu-24.04' }}
     timeout-minutes: 15
 
