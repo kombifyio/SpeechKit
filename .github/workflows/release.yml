@@ -460,3 +460,72 @@ jobs:
           fi
 
           gh "${args[@]}"
+
+  publish-release:
+    name: Publish Release
+    needs:
+      - prepare
+      - build-and-release
+      - create-source-release
+    if: >-
+      always() &&
+      needs.prepare.result == 'success' &&
+      (needs.build-and-release.result == 'success' || needs.build-and-release.result == 'skipped') &&
+      (needs.create-source-release.result == 'success' || needs.create-source-release.result == 'skipped') &&
+      (needs.build-and-release.result == 'success' || needs.create-source-release.result == 'success')
+    runs-on: ${{ vars.CI_RUNNER || 'ubuntu-24.04' }}
+    timeout-minutes: 10
+
+    steps:
+      - name: Validate release assets
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          tag="${{ needs.prepare.outputs.tag }}"
+          expect_installer="${{ needs.prepare.outputs.release_windows_installer }}"
+          expect_portable="${{ needs.prepare.outputs.release_windows_portable }}"
+
+          if ! gh release view "$tag" --repo "${{ github.repository }}" >/dev/null 2>&1; then
+            echo "::error title=Missing release::No GitHub Release exists for $tag."
+            exit 1
+          fi
+
+          if [ "${{ needs.prepare.outputs.should_build_windows }}" != "true" ]; then
+            exit 0
+          fi
+
+          asset_names="$(gh release view "$tag" --repo "${{ github.repository }}" --json assets --jq '.assets[].name')"
+
+          if [ "$expect_installer" = "true" ] && ! grep -qx 'SpeechKit-Setup.exe' <<<"$asset_names"; then
+            echo "::error title=Missing public installer::SpeechKit-Setup.exe was not attached to $tag."
+            exit 1
+          fi
+          if [ "$expect_portable" = "true" ] && ! grep -qx 'SpeechKit-Portable.zip' <<<"$asset_names"; then
+            echo "::error title=Missing public portable bundle::SpeechKit-Portable.zip was not attached to $tag."
+            exit 1
+          fi
+          if ! grep -qx 'SHA256SUMS.txt' <<<"$asset_names"; then
+            echo "::error title=Missing public checksums::SHA256SUMS.txt was not attached to $tag."
+            exit 1
+          fi
+          if ! grep -qx 'SpeechKit.sbom.json' <<<"$asset_names"; then
+            echo "::error title=Missing public SBOM::SpeechKit.sbom.json was not attached to $tag."
+            exit 1
+          fi
+
+      - name: Publish GitHub Release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          tag="${{ needs.prepare.outputs.tag }}"
+          is_draft="$(gh release view "$tag" --repo "${{ github.repository }}" --json isDraft --jq '.isDraft')"
+          if [ "$is_draft" = "true" ]; then
+            gh release edit "$tag" --repo "${{ github.repository }}" --draft=false
+            echo "Published $tag."
+          else
+            echo "$tag is already published."
+          fi
