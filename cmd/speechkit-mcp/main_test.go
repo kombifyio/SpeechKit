@@ -8,6 +8,7 @@ import (
 	"os"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
@@ -234,6 +235,62 @@ func TestRequireMCPTokenRejectsMissingToken(t *testing.T) {
 	}
 	if nextCalled {
 		t.Fatal("next handler was called without token")
+	}
+}
+
+func TestRequireMCPTokenAcceptsBearerAndHeaderToken(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		header string
+		value  string
+	}{
+		{name: "authorization bearer", header: "Authorization", value: "Bearer secret"},
+		{name: "mcp token header", header: "X-SpeechKit-MCP-Token", value: "secret"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			nextCalled := false
+			handler := requireMCPToken("secret", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				nextCalled = true
+				w.WriteHeader(http.StatusNoContent)
+			}))
+
+			rr := httptest.NewRecorder()
+			req := httptest.NewRequest(http.MethodPost, "/", nil)
+			req.Header.Set(tc.header, tc.value)
+			handler.ServeHTTP(rr, req)
+			if rr.Code != http.StatusNoContent {
+				t.Fatalf("status = %d, want 204", rr.Code)
+			}
+			if !nextCalled {
+				t.Fatal("next handler was not called for valid token")
+			}
+		})
+	}
+}
+
+func TestNewHTTPServerUsesHardenedTimeouts(t *testing.T) {
+	handler := http.NotFoundHandler()
+	server := newHTTPServer("127.0.0.1:0", handler)
+	if server.Addr != "127.0.0.1:0" {
+		t.Fatalf("Addr = %q, want 127.0.0.1:0", server.Addr)
+	}
+	if server.Handler == nil {
+		t.Fatal("server handler was not set")
+	}
+	if server.ReadHeaderTimeout != 15*time.Second {
+		t.Fatalf("ReadHeaderTimeout = %s, want 15s", server.ReadHeaderTimeout)
+	}
+	if server.ReadTimeout != 30*time.Second {
+		t.Fatalf("ReadTimeout = %s, want 30s", server.ReadTimeout)
+	}
+	if server.WriteTimeout != 0 {
+		t.Fatalf("WriteTimeout = %s, want 0 for streamable MCP responses", server.WriteTimeout)
+	}
+	if server.IdleTimeout != 120*time.Second {
+		t.Fatalf("IdleTimeout = %s, want 120s", server.IdleTimeout)
+	}
+	if server.MaxHeaderBytes != 1<<20 {
+		t.Fatalf("MaxHeaderBytes = %d, want %d", server.MaxHeaderBytes, 1<<20)
 	}
 }
 

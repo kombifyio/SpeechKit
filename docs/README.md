@@ -10,6 +10,14 @@ Start with the module you are working on, then jump into the detailed docs.
 - [mcp/README.md](./mcp/README.md) — SpeechKit MCP server for coding agents, docs mode, management mode, and validation tools.
 - [../CHANGELOG.md](../CHANGELOG.md) — release history.
 
+## Architecture
+
+- [architecture/voice-agent-target.md](./architecture/voice-agent-target.md) — Voice Agent (Mode 3) target architecture: confirmed decisions, 6-phase roadmap, critical files across SpeechKit + 11Seconds + kombify-AI, residual risks. The single source of truth for Mode 3 direction.
+
+## Setup
+
+- [setup/LIVE_TEST_VOICE_AGENT.md](./setup/LIVE_TEST_VOICE_AGENT.md) — End-to-end local test of the Voice Agent server + Wails device-target integration.
+
 ## Contracts
 
 - [api/openapi.v1.yaml](./api/openapi.v1.yaml) — Local Windows Client control-plane OpenAPI.

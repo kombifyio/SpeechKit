@@ -91,6 +91,10 @@ func TestSaveServerModelSettings_DropsWriteOnlyCredentialValues(t *testing.T) {
 			GenerateToken:  boolPtrForTest(true),
 			TokenValue:     "server-secret-token",
 		},
+		AdminAuth: ServerAdminAuthSettings{
+			Username:      "admin",
+			PasswordValue: "admin-password",
+		},
 		Credentials: ServerCredentialSettings{
 			Google: ServerProviderCredentialSettings{
 				Enabled: boolPtrForTest(true),
@@ -119,8 +123,39 @@ func TestSaveServerModelSettings_DropsWriteOnlyCredentialValues(t *testing.T) {
 	if loaded.ServerAuth.GenerateToken != nil {
 		t.Fatal("stored server auth generate flag should be empty")
 	}
+	if loaded.AdminAuth.PasswordValue != "" {
+		t.Fatalf("stored admin password should be empty, got %q", loaded.AdminAuth.PasswordValue)
+	}
+	if loaded.AdminAuth.Username != "admin" {
+		t.Fatalf("stored admin username = %q, want admin", loaded.AdminAuth.Username)
+	}
+	if loaded.AdminAuth.PasswordHash == "" {
+		t.Fatal("stored admin password hash should be set")
+	}
 	if sanitized := SanitizeServerModelSettings(loaded); sanitized.Credentials.Google.Value != "" {
 		t.Fatal("sanitized settings should remove raw credential values")
+	}
+}
+
+func TestApplyServerModelSettings_AppliesAdminPasswordHash(t *testing.T) {
+	cfg := defaults()
+	settings := ServerModelSettings{
+		AdminAuth: ServerAdminAuthSettings{
+			Username:     "speechkit-admin",
+			PasswordHash: "$2a$04$3ZQhRz6fJb3kQGN9cE1uD.RZ8c3E9oB3z4ED5CzSMYRhhAv7n4EHa",
+		},
+	}
+
+	notes := ApplyServerModelSettings(cfg, settings)
+
+	if cfg.Server.AdminUsername != "speechkit-admin" {
+		t.Fatalf("admin username = %q, want speechkit-admin", cfg.Server.AdminUsername)
+	}
+	if cfg.Server.AdminPasswordHash != settings.AdminAuth.PasswordHash {
+		t.Fatal("admin password hash was not applied")
+	}
+	if len(notes) == 0 {
+		t.Fatal("expected admin auth application notes")
 	}
 }
 

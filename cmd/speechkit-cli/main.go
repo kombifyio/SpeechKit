@@ -56,11 +56,11 @@ func run(args []string, stdout, stderr io.Writer) int {
 		var ee exitError
 		if errors.As(err, &ee) {
 			if ee.err != nil {
-				fmt.Fprintln(stderr, ee.err)
+				writeLineIgnore(stderr, ee.err)
 			}
 			return ee.code
 		}
-		fmt.Fprintln(stderr, err)
+		writeLineIgnore(stderr, err)
 		return 2
 	}
 	return 0
@@ -83,7 +83,7 @@ func newRootCommand(opts *globalOptions, stdout, stderr io.Writer) *cobra.Comman
 	root.AddCommand(newStatusCommand(opts, stdout, stderr))
 	root.AddCommand(newCatalogCommand(opts, stdout, stderr))
 	root.AddCommand(newConfigCommand(opts, stdout, stderr))
-	root.AddCommand(newPersonasCommand(opts, stdout, stderr))
+	root.AddCommand(newPersonasCommand(opts, stdout))
 	root.AddCommand(newTranscribeCommand(opts, stdout, stderr))
 	root.AddCommand(newInitCommand(opts, stdout, stderr))
 	return root
@@ -103,8 +103,7 @@ func newStatusCommand(opts *globalOptions, stdout, stderr io.Writer) *cobra.Comm
 				if opts.json {
 					return exitFromCode(writeJSON(stdout, stderr, status))
 				}
-				fmt.Fprintf(stdout, "status: %s\nversion: %s\n", status.Status, status.Version)
-				return nil
+				return writef(stdout, "status: %s\nversion: %s\n", status.Status, status.Version)
 			})
 		},
 	}
@@ -127,7 +126,9 @@ func newCatalogCommand(opts *globalOptions, stdout, stderr io.Writer) *cobra.Com
 					return exitFromCode(writeJSON(stdout, stderr, map[string]any{"profiles": profiles}))
 				}
 				for _, profile := range profiles {
-					fmt.Fprintf(stdout, "%s\t%s\t%s\n", profile.ID, profile.Mode, profile.Name)
+					if err := writef(stdout, "%s\t%s\t%s\n", profile.ID, profile.Mode, profile.Name); err != nil {
+						return err
+					}
 				}
 				return nil
 			})
@@ -157,7 +158,7 @@ func newConfigCommand(opts *globalOptions, stdout, stderr io.Writer) *cobra.Comm
 	return cmd
 }
 
-func newPersonasCommand(opts *globalOptions, stdout, stderr io.Writer) *cobra.Command {
+func newPersonasCommand(opts *globalOptions, stdout io.Writer) *cobra.Command {
 	cmd := &cobra.Command{Use: "personas", Short: "Inspect Voice Agent personas"}
 	cmd.AddCommand(&cobra.Command{
 		Use:   "list",
@@ -170,8 +171,7 @@ func newPersonasCommand(opts *globalOptions, stdout, stderr io.Writer) *cobra.Co
 					return exitError{code: 1, err: err}
 				}
 				if opts.json {
-					fmt.Fprintln(stdout, string(raw))
-					return nil
+					return writeLine(stdout, string(raw))
 				}
 				var body struct {
 					Personas []struct {
@@ -179,12 +179,16 @@ func newPersonasCommand(opts *globalOptions, stdout, stderr io.Writer) *cobra.Co
 						DisplayName string `json:"displayName"`
 					} `json:"personas"`
 				}
-				if err := json.Unmarshal(raw, &body); err != nil || len(body.Personas) == 0 {
-					fmt.Fprintln(stdout, string(raw))
-					return nil
+				if err := json.Unmarshal(raw, &body); err != nil {
+					return writeLine(stdout, string(raw))
+				}
+				if len(body.Personas) == 0 {
+					return writeLine(stdout, string(raw))
 				}
 				for _, persona := range body.Personas {
-					fmt.Fprintf(stdout, "%s\t%s\n", persona.ID, persona.DisplayName)
+					if err := writef(stdout, "%s\t%s\n", persona.ID, persona.DisplayName); err != nil {
+						return err
+					}
 				}
 				return nil
 			})
@@ -208,8 +212,7 @@ func newTranscribeCommand(opts *globalOptions, stdout, stderr io.Writer) *cobra.
 				if opts.json {
 					return exitFromCode(writeJSON(stdout, stderr, result))
 				}
-				fmt.Fprintln(stdout, result.Text)
-				return nil
+				return writeLine(stdout, result.Text)
 			})
 		},
 	}
@@ -260,10 +263,24 @@ func writeJSON(stdout, stderr io.Writer, value any) int {
 	enc := json.NewEncoder(stdout)
 	enc.SetIndent("", "  ")
 	if err := enc.Encode(value); err != nil {
-		fmt.Fprintln(stderr, err)
+		writeLineIgnore(stderr, err)
 		return 1
 	}
 	return 0
+}
+
+func writeLine(w io.Writer, values ...any) error {
+	_, err := fmt.Fprintln(w, values...)
+	return err
+}
+
+func writef(w io.Writer, format string, values ...any) error {
+	_, err := fmt.Fprintf(w, format, values...)
+	return err
+}
+
+func writeLineIgnore(w io.Writer, values ...any) {
+	_, _ = fmt.Fprintln(w, values...)
 }
 
 func firstNonEmpty(values ...string) string {

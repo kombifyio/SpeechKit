@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/kombifyio/SpeechKit/internal/voiceagentprofile"
+	"golang.org/x/crypto/bcrypt"
 )
 
 const (
@@ -27,6 +28,7 @@ type ServerModelSettings struct {
 	OnboardingComplete bool                       `json:"onboarding_complete,omitempty"`
 	OnboardingVersion  string                     `json:"onboarding_version,omitempty"`
 	ServerAuth         ServerAuthSettings         `json:"server_auth,omitempty"`
+	AdminAuth          ServerAdminAuthSettings    `json:"admin_auth,omitempty"`
 	Modes              ServerModeProviderSettings `json:"modes,omitempty"`
 	Credentials        ServerCredentialSettings   `json:"credentials,omitempty"`
 	Dictation          ServerDictationSettings    `json:"dictation,omitempty"`
@@ -42,6 +44,12 @@ type ServerAuthSettings struct {
 	BearerTokenEnv string `json:"bearer_token_env,omitempty"`
 	GenerateToken  *bool  `json:"generate_token,omitempty"`
 	TokenValue     string `json:"token_value,omitempty"`
+}
+
+type ServerAdminAuthSettings struct {
+	Username      string `json:"username,omitempty"`
+	PasswordHash  string `json:"password_hash,omitempty"`
+	PasswordValue string `json:"password,omitempty"`
 }
 
 type ServerModeProviderSettings struct {
@@ -144,6 +152,14 @@ func SaveServerModelSettings(path string, settings ServerModelSettings) error {
 	if err := validateServerModelSettings(settings); err != nil {
 		return err
 	}
+	if value := settings.AdminAuth.PasswordValue; value != "" {
+		hash, err := bcrypt.GenerateFromPassword([]byte(value), bcrypt.DefaultCost)
+		if err != nil {
+			return fmt.Errorf("hash admin password: %w", err)
+		}
+		settings.AdminAuth.PasswordHash = string(hash)
+		settings.AdminAuth.PasswordValue = ""
+	}
 	settings = SanitizeServerModelSettings(settings)
 	settings.Version = 1
 	data, err := json.MarshalIndent(settings, "", "  ")
@@ -168,6 +184,7 @@ func SanitizeServerModelSettings(settings ServerModelSettings) ServerModelSettin
 	settings = NormalizeServerModelSettings(settings)
 	settings.ServerAuth.GenerateToken = nil
 	settings.ServerAuth.TokenValue = ""
+	settings.AdminAuth.PasswordValue = ""
 	settings.Credentials.OpenAI.Value = ""
 	settings.Credentials.Groq.Value = ""
 	settings.Credentials.Google.Value = ""
@@ -180,6 +197,9 @@ func NormalizeServerModelSettings(settings ServerModelSettings) ServerModelSetti
 	settings.ServerAuth.Mode = strings.ToLower(strings.TrimSpace(settings.ServerAuth.Mode))
 	settings.ServerAuth.BearerTokenEnv = strings.TrimSpace(settings.ServerAuth.BearerTokenEnv)
 	settings.ServerAuth.TokenValue = strings.TrimSpace(settings.ServerAuth.TokenValue)
+	settings.AdminAuth.Username = strings.TrimSpace(settings.AdminAuth.Username)
+	settings.AdminAuth.PasswordHash = strings.TrimSpace(settings.AdminAuth.PasswordHash)
+	settings.AdminAuth.PasswordValue = strings.TrimSpace(settings.AdminAuth.PasswordValue)
 	settings.LLM.UtilityModel = normalizeServerModelValue(settings.LLM.UtilityModel)
 	settings.LLM.AssistModel = normalizeServerModelValue(settings.LLM.AssistModel)
 	settings.LLM.AgentModel = normalizeServerModelValue(settings.LLM.AgentModel)
@@ -226,6 +246,7 @@ func ApplyServerModelSettings(cfg *Config, settings ServerModelSettings) []strin
 	}
 	var notes []string
 	notes = append(notes, ApplyServerAuthSettings(cfg, settings.ServerAuth)...)
+	notes = append(notes, ApplyServerAdminAuthSettings(cfg, settings.AdminAuth)...)
 	notes = append(notes, applyServerCredentialSettings(cfg, settings.Credentials)...)
 	notes = append(notes, applyServerModeProviderSettings(cfg, settings.Modes)...)
 	if settings.Dictation.Dictionary != nil {
@@ -289,6 +310,22 @@ func ApplyServerModelSettings(cfg *Config, settings ServerModelSettings) []strin
 	if settings.TTS.Enabled != nil {
 		cfg.TTS.Enabled = *settings.TTS.Enabled
 		notes = append(notes, "server settings: TTS enabled updated")
+	}
+	return notes
+}
+
+func ApplyServerAdminAuthSettings(cfg *Config, auth ServerAdminAuthSettings) []string {
+	if cfg == nil {
+		return nil
+	}
+	var notes []string
+	if value := cleanSetting(auth.Username); value != "" {
+		cfg.Server.AdminUsername = value
+		notes = append(notes, "server settings: admin username updated")
+	}
+	if value := cleanSetting(auth.PasswordHash); value != "" {
+		cfg.Server.AdminPasswordHash = value
+		notes = append(notes, "server settings: admin password updated")
 	}
 	return notes
 }
@@ -599,6 +636,8 @@ func validateServerModelSettings(settings ServerModelSettings) error {
 	for name, value := range map[string]string{
 		"server_auth.mode":  settings.ServerAuth.Mode,
 		"server_auth.env":   settings.ServerAuth.BearerTokenEnv,
+		"admin_auth.user":   settings.AdminAuth.Username,
+		"admin_auth.hash":   settings.AdminAuth.PasswordHash,
 		"stt.url":           settings.STT.URL,
 		"stt.model":         settings.STT.Model,
 		"llm.base_url":      settings.LLM.BaseURL,
@@ -627,6 +666,12 @@ func validateServerModelSettings(settings ServerModelSettings) error {
 	}
 	if len(settings.ServerAuth.TokenValue) > 4096 {
 		return fmt.Errorf("server_auth.token_value is too long")
+	}
+	if len(settings.AdminAuth.PasswordValue) > 4096 {
+		return fmt.Errorf("admin_auth.password is too long")
+	}
+	if (settings.AdminAuth.PasswordHash != "" || settings.AdminAuth.PasswordValue != "") && settings.AdminAuth.Username == "" {
+		return fmt.Errorf("admin_auth.username is required when an admin password is configured")
 	}
 	switch strings.ToLower(strings.TrimSpace(settings.ServerAuth.Mode)) {
 	case "", ServerAuthModeManagedBearer, ServerAuthModeSelfManaged:

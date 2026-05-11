@@ -73,6 +73,56 @@ func TestReadinessSeparatesModeAndProviderMissingReasons(t *testing.T) {
 	}
 }
 
+func TestReadinessGoogleSTTDoesNotUseGeminiKey(t *testing.T) {
+	t.Setenv("GOOGLE_AI_API_KEY", "gemini-key")
+
+	cfg := &config.Config{}
+	cfg.Server.Modes = []string{"dictation"}
+	cfg.ModelSelection.Dictate.PrimaryProfileID = "stt.google.chirp-3"
+	cfg.Providers.Google.Enabled = true
+	cfg.Providers.Google.APIKeyEnv = "GOOGLE_AI_API_KEY"
+	cfg.Providers.Google.STTAPIKeyEnv = "SPEECHKIT_TEST_GOOGLE_STT_KEY"
+
+	h := New(cfg, func(component string) string {
+		if component == "mode.dictation" {
+			return "ok"
+		}
+		return ""
+	}, "test")
+
+	ready := getReadiness(t, h, "/v1/catalog/profiles/stt.google.chirp-3/readiness")
+	if ready.CredentialsReady || ready.Configured || ready.Ready {
+		t.Fatalf("readiness = %+v, want Google STT not ready with Gemini key only", ready)
+	}
+	if !slices.Contains(ready.Missing, "credentials") {
+		t.Fatalf("Missing = %v, want credentials", ready.Missing)
+	}
+}
+
+func TestReadinessGoogleSTTUsesDedicatedKey(t *testing.T) {
+	t.Setenv("GOOGLE_AI_API_KEY", "gemini-key")
+	t.Setenv("SPEECHKIT_TEST_GOOGLE_STT_KEY", "speech-key")
+
+	cfg := &config.Config{}
+	cfg.Server.Modes = []string{"dictation"}
+	cfg.ModelSelection.Dictate.PrimaryProfileID = "stt.google.chirp-3"
+	cfg.Providers.Google.Enabled = true
+	cfg.Providers.Google.APIKeyEnv = "GOOGLE_AI_API_KEY"
+	cfg.Providers.Google.STTAPIKeyEnv = "SPEECHKIT_TEST_GOOGLE_STT_KEY"
+
+	h := New(cfg, func(component string) string {
+		if component == "mode.dictation" {
+			return "ok"
+		}
+		return ""
+	}, "test")
+
+	ready := getReadiness(t, h, "/v1/catalog/profiles/stt.google.chirp-3/readiness")
+	if !ready.CredentialsReady || !ready.Configured || !ready.Ready {
+		t.Fatalf("readiness = %+v, want Google STT ready with dedicated key", ready)
+	}
+}
+
 func getReadiness(t *testing.T, h *Handler, path string) framework.Readiness {
 	t.Helper()
 	req := httptest.NewRequest(http.MethodGet, path, nil)

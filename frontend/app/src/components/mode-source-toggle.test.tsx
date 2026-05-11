@@ -8,6 +8,7 @@ const baseConn: ServerConnectionSetting = {
   enabled: true,
   url: "http://localhost:8080",
   bearerTokenEnv: "SPEECHKIT_SERVER_TOKEN",
+  authMode: "bearer",
   bearerTokenSet: true,
   fallbackToLocal: true,
   requestTimeoutSec: 30,

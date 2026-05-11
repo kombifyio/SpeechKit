@@ -384,6 +384,54 @@ func TestHandler_Pipeline_ErrorMapsTo503(t *testing.T) {
 	}
 }
 
+func TestHandler_Pipeline_ConfigErrorClassified(t *testing.T) {
+	fp := &fakeProcessor{err: errors.New("assist: LLM failed: INVALID_ARGUMENT: Invalid configuration type: *ai.GenerationCommonConfig. Expected *genai.GenerateContentConfig")}
+	h := mustHandler(t, Options{Processor: fp})
+	body := []byte(`{"text":"do the thing"}`)
+	req := httptest.NewRequest(http.MethodPost, "/v1/assist/process", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("status = %d want 503", rec.Code)
+	}
+	var bodyOut struct {
+		Error struct {
+			Code    string         `json:"code"`
+			Details map[string]any `json:"details"`
+		} `json:"error"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &bodyOut); err != nil {
+		t.Fatalf("decode body: %v", err)
+	}
+	if bodyOut.Error.Code != "pipeline_unavailable" {
+		t.Fatalf("code = %q", bodyOut.Error.Code)
+	}
+	if got := bodyOut.Error.Details["category"]; got != "provider_config" {
+		t.Fatalf("category = %#v, want provider_config; body=%s", got, rec.Body.String())
+	}
+	if got := bodyOut.Error.Details["retryable"]; got != false {
+		t.Fatalf("retryable = %#v, want false", got)
+	}
+}
+
+func TestHandler_SelfTest_HappyPath(t *testing.T) {
+	fp := &fakeProcessor{result: okAssistResult()}
+	h := mustHandler(t, Options{Processor: fp})
+	req := httptest.NewRequest(http.MethodPost, "/v1/assist/self-test", nil)
+	rec := httptest.NewRecorder()
+	h.ServeSelfTest(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d body=%s", rec.Code, rec.Body.String())
+	}
+	if fp.lastTranscr != "Reply with exactly the single word: pong." {
+		t.Fatalf("self-test transcript = %q", fp.lastTranscr)
+	}
+	if !strings.Contains(rec.Body.String(), `"status":"ok"`) {
+		t.Fatalf("expected ok self-test response; got %s", rec.Body.String())
+	}
+}
+
 func TestHandler_UnsupportedMediaType(t *testing.T) {
 	h := mustHandler(t, Options{Processor: &fakeProcessor{result: okAssistResult()}})
 	req := httptest.NewRequest(http.MethodPost, "/v1/assist/process", strings.NewReader("foo"))

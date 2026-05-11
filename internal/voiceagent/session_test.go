@@ -203,7 +203,7 @@ func TestSessionDoesNotEmitDuplicateStateChangesForConsecutiveAudioChunks(t *tes
 	waitForState(t, stateChanges, StateSpeaking)
 
 	provider.messages <- &LiveMessage{Audio: []byte{5, 6, 7, 8}}
-	time.Sleep(50 * time.Millisecond)
+	assertNoStateWithin(t, stateChanges, StateSpeaking, 50*time.Millisecond)
 
 	if got := countBufferedState(stateChanges, StateSpeaking); got != 0 {
 		t.Fatalf("duplicate %s state changes = %d, want 0", StateSpeaking, got)
@@ -242,7 +242,7 @@ func TestSessionKeepsSpeakingStateForTranscriptPartialsDuringAudioTurn(t *testin
 	case <-time.After(2 * time.Second):
 		t.Fatal("timed out waiting for output transcript callback")
 	}
-	time.Sleep(50 * time.Millisecond)
+	assertNoStateWithin(t, stateChanges, StateProcessing, 50*time.Millisecond)
 
 	if session.CurrentState() != StateSpeaking {
 		t.Fatalf("current state = %s, want %s", session.CurrentState(), StateSpeaking)
@@ -635,6 +635,22 @@ func countBufferedState(ch <-chan State, want State) int {
 			}
 		default:
 			return count
+		}
+	}
+}
+
+func assertNoStateWithin(t *testing.T, ch <-chan State, forbidden State, timeout time.Duration) {
+	t.Helper()
+	timer := time.NewTimer(timeout)
+	defer timer.Stop()
+	for {
+		select {
+		case state := <-ch:
+			if state == forbidden {
+				t.Fatalf("unexpected %s state change within %s", forbidden, timeout)
+			}
+		case <-timer.C:
+			return
 		}
 	}
 }

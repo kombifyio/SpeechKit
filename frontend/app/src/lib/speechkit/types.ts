@@ -210,12 +210,42 @@ export type ModeModelSetting = {
 
 export type ServerConnectionSetting = {
   enabled: boolean;
+  activeTargetId?: string;
   url: string;
   bearerTokenEnv?: string;
+  authMode?: "bearer" | "api_key";
   /** True iff the env var named by bearerTokenEnv is set in the host process. */
   bearerTokenSet: boolean;
   fallbackToLocal: boolean;
   requestTimeoutSec: number;
+  targets?: ServerConnectionTarget[];
+};
+
+export type ServerConnectionTarget = {
+  id: string;
+  label: string;
+  url: string;
+  authMode: "bearer" | "api_key";
+  bearerTokenEnv?: string;
+  bearerTokenSet: boolean;
+  fallbackToLocal: boolean;
+  requestTimeoutSec: number;
+};
+
+export type ServerConnectionSmokeRequest = {
+  url: string;
+  bearerTokenEnv?: string;
+  authMode?: "bearer" | "api_key";
+  token?: string;
+  requestTimeoutSec?: number;
+};
+
+export type ServerConnectionSmokeResponse = {
+  ok: boolean;
+  status: "ok" | "failed" | string;
+  message: string;
+  healthStatus?: number;
+  readyStatus?: number;
 };
 
 export type APIV1ModesResponse = {

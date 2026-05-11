@@ -48,24 +48,6 @@ func readRepoFileIfExists(t *testing.T, relativePath string) (string, bool) {
 	return string(content), true
 }
 
-func extractRawStringConst(t *testing.T, content, name string) string {
-	t.Helper()
-
-	startMarker := "const " + name + " = `"
-	start := strings.Index(content, startMarker)
-	if start < 0 {
-		t.Fatalf("expected content to include raw string const %s", name)
-	}
-	start += len(startMarker)
-
-	end := strings.Index(content[start:], "`")
-	if end < 0 {
-		t.Fatalf("expected raw string const %s to be closed", name)
-	}
-
-	return content[start : start+end]
-}
-
 func assertContains(t *testing.T, content, needle string) {
 	t.Helper()
 
@@ -221,6 +203,9 @@ func TestCIWorkflowRunsRaceTestsForCriticalGoPackages(t *testing.T) {
 	assertContains(t, workflow, "go test -race")
 	assertContains(t, workflow, "./pkg/speechkit/...")
 	assertContains(t, workflow, "./internal/router/...")
+	assertContains(t, workflow, "./cmd/speechkit-cli/...")
+	assertContains(t, workflow, "./cmd/speechkit-mcp/...")
+	assertContains(t, workflow, "./internal/scaffold/...")
 }
 
 // TestAutoDeployDevWorkflowRetired asserts that the legacy
@@ -260,15 +245,34 @@ func TestCIWorkflowFailsWhenCoverageDropsBelowMinimum(t *testing.T) {
 	assertContains(t, workflow, `gsub(/%/, "", $NF)`)
 }
 
-func TestCIWorkflowDoesNotReferenceNonExportedWebsite(t *testing.T) {
+func TestCIWorkflowRunsWebsiteChecksWhenWebsiteExists(t *testing.T) {
 	workflow := readRepoFile(t, filepath.Join(".github", "workflows", "ci.yml"))
 
-	assertNotContains(t, workflow, "name: Website Checks")
-	assertNotContains(t, workflow, "working-directory: Website")
-	assertNotContains(t, workflow, "cache-dependency-path: Website/package-lock.json")
-	assertNotContains(t, workflow, "Website/**")
-	assertNotContains(t, workflow, "./Website/*")
+	if _, err := os.Stat(filepath.Join(repoRoot(t), "Website")); err != nil {
+		if os.IsNotExist(err) {
+			assertNotContains(t, workflow, "name: Website Checks")
+			assertNotContains(t, workflow, "working-directory: Website")
+			assertNotContains(t, workflow, "cache-dependency-path: Website/package-lock.json")
+			return
+		}
+		t.Fatalf("stat Website: %v", err)
+	}
+
+	assertContains(t, workflow, "name: Website Checks")
+	assertContains(t, workflow, "working-directory: Website")
+	assertContains(t, workflow, "cache-dependency-path: Website/package-lock.json")
+	assertContains(t, workflow, "npm run check")
+	assertContains(t, workflow, "npm test")
+	assertContains(t, workflow, "npm run build")
+	assertContains(t, workflow, "Website/**")
 	assertNotContains(t, workflow, "marketing-site-svelte")
+}
+
+func TestReleaseBuildWorkflowsDoNotSkipVerification(t *testing.T) {
+	for _, workflowName := range []string{"build.yml", "release.yml", "windows-build.yml"} {
+		workflow := readRepoFile(t, filepath.Join(".github", "workflows", workflowName))
+		assertNotContains(t, workflow, "-SkipVerification")
+	}
 }
 
 func TestDependabotOnlyReferencesExistingProjectDirectories(t *testing.T) {
@@ -295,7 +299,8 @@ func TestSecurityWorkflowRunsRequiredGates(t *testing.T) {
 	assertContains(t, workflow, "Trivy repository scan")
 	assertContains(t, workflow, "govulncheck ./...")
 	assertContains(t, workflow, "staticcheck ./...")
-	assertContains(t, workflow, "gosec -quiet -severity medium -confidence medium -exclude=G101,G104 ./...")
+	assertContains(t, workflow, "gosec -quiet -severity medium -confidence medium ./...")
+	assertNotContains(t, workflow, "-exclude=G101,G104")
 	assertNotContains(t, workflow, "-exclude=G115,G118")
 	assertContains(t, workflow, "security-passed")
 	assertContains(t, workflow, "Verify security gates")
@@ -318,12 +323,12 @@ func TestDeploymentStandardsDocumentBranchProtectionGates(t *testing.T) {
 	assertContains(t, docs, "owner, date, and removal criterion")
 }
 
-func TestServerReferenceConfigRequiresBearerAuthByDefault(t *testing.T) {
+func TestServerReferenceConfigRequiresProductionAuthByDefault(t *testing.T) {
 	config := readRepoFile(t, filepath.Join("deploy", "config", "server.example.toml"))
 	docs := readRepoFile(t, filepath.Join("docs", "server", "README.md"))
 
-	assertContains(t, config, `auth_mode              = "bearer"`)
-	assertContains(t, docs, "`bearer` (production default)")
+	assertContains(t, config, `auth_mode              = "bearer_or_edge"`)
+	assertContains(t, docs, "`bearer_or_edge` (Kombify production default)")
 	assertContains(t, docs, "`none` — local development only")
 	assertNotContains(t, docs, "`none` (default)")
 }
@@ -340,8 +345,7 @@ func TestComposeSmokeEscapesShellVariables(t *testing.T) {
 }
 
 func TestServerTestUIUsesLiveBackendWithoutClientSetup(t *testing.T) {
-	uiFile := readRepoFile(t, filepath.Join("internal", "server", "core", "testui.go"))
-	ui := extractRawStringConst(t, uiFile, "testUIHTML")
+	ui := readRepoFile(t, filepath.Join("internal", "server", "onboarding", "assets", "testui.html"))
 
 	for _, forbidden := range []string{
 		"Base URL",

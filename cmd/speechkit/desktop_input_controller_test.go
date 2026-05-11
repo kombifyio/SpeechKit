@@ -13,6 +13,7 @@ import (
 	"github.com/kombifyio/SpeechKit/internal/hotkey"
 	"github.com/kombifyio/SpeechKit/internal/router"
 	"github.com/kombifyio/SpeechKit/internal/stt"
+	"github.com/kombifyio/SpeechKit/internal/testutil"
 	"github.com/kombifyio/SpeechKit/internal/voiceagent"
 	"github.com/kombifyio/SpeechKit/internal/voiceagentprofile"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit"
@@ -233,7 +234,9 @@ func TestDesktopInputControllerRunStopsOnSilence(t *testing.T) {
 	}()
 
 	silence <- struct{}{}
-	time.Sleep(20 * time.Millisecond)
+	waitForCondition(t, 2*time.Second, func() bool {
+		return len(bus.commands) == 1
+	})
 	cancel()
 	<-done
 
@@ -386,8 +389,7 @@ func TestToggleVoiceAgentActivatesAndWiresMic(t *testing.T) {
 
 	controller.toggleVoiceAgent(ctx)
 
-	// Wait for the goroutine to finish starting.
-	time.Sleep(300 * time.Millisecond)
+	waitForVoiceAgentActive(t, session)
 
 	if session.CurrentState() == voiceagent.StateInactive {
 		t.Fatal("expected voice agent to be active")
@@ -430,7 +432,7 @@ func TestVoiceAgentMicFramesAreSuppressedDuringAssistantEchoWindow(t *testing.T)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	controller.activateVoiceAgent(ctx)
-	time.Sleep(300 * time.Millisecond)
+	waitForVoiceAgentActive(t, session)
 
 	handler := mockAudio.getHandler()
 	if handler == nil {
@@ -444,7 +446,9 @@ func TestVoiceAgentMicFramesAreSuppressedDuringAssistantEchoWindow(t *testing.T)
 
 	echoGuard.markAssistantAudio()
 	handler([]byte{2, 0, 2, 0})
-	time.Sleep(50 * time.Millisecond)
+	assertConditionHolds(t, 50*time.Millisecond, func() bool {
+		return mockProvider.sendAudioCount() == 1
+	})
 	if got := mockProvider.sendAudioCount(); got != 1 {
 		t.Fatalf("sent audio while echo guard active = %d, want 1", got)
 	}
@@ -489,7 +493,7 @@ func TestToggleVoiceAgentPassesFrameworkAndRefinementPromptsToRuntime(t *testing
 	defer cancel()
 
 	controller.toggleVoiceAgent(ctx)
-	time.Sleep(300 * time.Millisecond)
+	waitForVoiceAgentActive(t, session)
 
 	liveCfg := mockProvider.configSnapshot()
 	if got, want := liveCfg.FrameworkPrompt, "You are the durable framework prompt."; got != want {
@@ -540,7 +544,7 @@ func TestToggleVoiceAgentAppliesSelectedAgentProfile(t *testing.T) {
 	defer cancel()
 
 	controller.toggleVoiceAgent(ctx)
-	time.Sleep(300 * time.Millisecond)
+	waitForVoiceAgentActive(t, session)
 
 	liveCfg := mockProvider.configSnapshot()
 	if !strings.Contains(strings.ToLower(liveCfg.FrameworkPrompt), "blind spot") {
@@ -594,7 +598,7 @@ func TestToggleVoiceAgentLeavesWorkflowToServerProvider(t *testing.T) {
 	defer cancel()
 
 	controller.toggleVoiceAgent(ctx)
-	time.Sleep(300 * time.Millisecond)
+	waitForVoiceAgentActive(t, session)
 
 	liveCfg := mockProvider.configSnapshot()
 	if !strings.Contains(strings.ToLower(liveCfg.FrameworkPrompt), "blind spot") {
@@ -634,7 +638,7 @@ func TestDeactivateVoiceAgentClearsMic(t *testing.T) {
 
 	// First toggle: activate.
 	controller.toggleVoiceAgent(ctx)
-	time.Sleep(300 * time.Millisecond)
+	waitForVoiceAgentActive(t, session)
 
 	if session.CurrentState() == voiceagent.StateInactive {
 		t.Fatal("expected voice agent to be active before deactivation")
@@ -967,7 +971,7 @@ func TestDesktopInputControllerVoiceAgentHotkeyToggleDispatchesOnlyActiveModeOnS
 		Binding: "agent",
 		Type:    hotkey.EventKeyDown,
 	})
-	time.Sleep(300 * time.Millisecond)
+	waitForCommandCount(t, bus, 1)
 
 	if got := len(bus.commands); got != 1 {
 		t.Fatalf("commands = %d, want 1 while voice agent activates", got)
@@ -978,6 +982,7 @@ func TestDesktopInputControllerVoiceAgentHotkeyToggleDispatchesOnlyActiveModeOnS
 	if got, want := bus.commands[0].Metadata["mode"], modeVoiceAgent; got != want {
 		t.Fatalf("commands[0].Metadata[mode] = %q, want %q", got, want)
 	}
+	waitForVoiceAgentActive(t, session)
 	if session.CurrentState() == voiceagent.StateInactive {
 		t.Fatal("expected voice agent to be active after first key down")
 	}
@@ -1132,7 +1137,7 @@ func TestDesktopInputControllerVoiceAgentBindingToggleDispatchesOnlyActiveModeOn
 		Binding: "voice_agent",
 		Type:    hotkey.EventKeyDown,
 	})
-	time.Sleep(300 * time.Millisecond)
+	waitForCommandCount(t, bus, 1)
 
 	if got := len(bus.commands); got != 1 {
 		t.Fatalf("commands = %d, want 1 while voice agent activates", got)
@@ -1143,6 +1148,7 @@ func TestDesktopInputControllerVoiceAgentBindingToggleDispatchesOnlyActiveModeOn
 	if got, want := bus.commands[0].Metadata["mode"], modeVoiceAgent; got != want {
 		t.Fatalf("commands[0].Metadata[mode] = %q, want %q", got, want)
 	}
+	waitForVoiceAgentActive(t, session)
 	if session.CurrentState() == voiceagent.StateInactive {
 		t.Fatal("expected voice agent to be active after key down")
 	}
@@ -1202,7 +1208,6 @@ func TestDesktopInputControllerCloseVoiceAgentPrompterEndsChatWhenConfiguredForN
 	}
 
 	controller.activateVoiceAgent(context.Background())
-	time.Sleep(300 * time.Millisecond)
 
 	controller.closeVoiceAgentPrompter(context.Background())
 
@@ -1247,7 +1252,7 @@ func TestDesktopInputControllerVoiceAgentPushToTalkEndsRealtimeSessionOnKeyUp(t 
 		Binding: "voice_agent",
 		Type:    hotkey.EventKeyDown,
 	})
-	time.Sleep(300 * time.Millisecond)
+	waitForCommandCount(t, bus, 1)
 
 	if got := len(bus.commands); got != 1 {
 		t.Fatalf("commands after key down = %d, want 1", got)
@@ -1258,6 +1263,7 @@ func TestDesktopInputControllerVoiceAgentPushToTalkEndsRealtimeSessionOnKeyUp(t 
 	if got, want := bus.commands[0].Metadata["mode"], modeVoiceAgent; got != want {
 		t.Fatalf("commands[0].Metadata[mode] = %q, want %q", got, want)
 	}
+	waitForVoiceAgentActive(t, session)
 	if got := session.CurrentState(); got == voiceagent.StateInactive {
 		t.Fatal("expected voice agent to be active after key down")
 	}
@@ -1367,7 +1373,7 @@ func TestMaybeAutoStartVoiceAgentOnLaunchActivatesSession(t *testing.T) {
 	t.Setenv("FAKE_KEY_FOR_VOICE_AGENT_AUTOSTART_TEST", "test-api-key")
 
 	maybeAutoStartVoiceAgentOnLaunch(context.Background(), controller.cfg, controller)
-	time.Sleep(300 * time.Millisecond)
+	waitForVoiceAgentActive(t, session)
 
 	if got := session.CurrentState(); got == voiceagent.StateInactive {
 		t.Fatal("expected voice agent to auto-start on launch")
@@ -1401,7 +1407,9 @@ func TestMaybeAutoStartVoiceAgentOnLaunchSkipsWhenDisabled(t *testing.T) {
 	t.Setenv("FAKE_KEY_FOR_VOICE_AGENT_AUTOSTART_SKIP_TEST", "test-api-key")
 
 	maybeAutoStartVoiceAgentOnLaunch(context.Background(), controller.cfg, controller)
-	time.Sleep(50 * time.Millisecond)
+	assertConditionHolds(t, 50*time.Millisecond, func() bool {
+		return session.CurrentState() == voiceagent.StateInactive
+	})
 
 	if got := session.CurrentState(); got != voiceagent.StateInactive {
 		t.Fatalf("session state = %s, want inactive when auto-start is disabled", got)
@@ -1410,14 +1418,37 @@ func TestMaybeAutoStartVoiceAgentOnLaunchSkipsWhenDisabled(t *testing.T) {
 
 func waitForCondition(t *testing.T, timeout time.Duration, predicate func() bool) {
 	t.Helper()
+	testutil.Eventually(t, timeout, 10*time.Millisecond, predicate)
+}
 
-	deadline := time.Now().Add(timeout)
-	for time.Now().Before(deadline) {
-		if predicate() {
+func waitForVoiceAgentActive(t *testing.T, session *voiceagent.Session) {
+	t.Helper()
+	waitForCondition(t, 2*time.Second, func() bool {
+		return session.CurrentState() != voiceagent.StateInactive
+	})
+}
+
+func waitForCommandCount(t *testing.T, bus *testDesktopCommandBus, count int) {
+	t.Helper()
+	waitForCondition(t, 2*time.Second, func() bool {
+		return len(bus.commands) == count
+	})
+}
+
+func assertConditionHolds(t *testing.T, duration time.Duration, predicate func() bool) {
+	t.Helper()
+	timer := time.NewTimer(duration)
+	defer timer.Stop()
+	ticker := time.NewTicker(5 * time.Millisecond)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-timer.C:
 			return
+		case <-ticker.C:
+			if !predicate() {
+				t.Fatalf("condition did not hold for %s", duration)
+			}
 		}
-		time.Sleep(10 * time.Millisecond)
 	}
-
-	t.Fatalf("condition not met within %s", timeout)
 }

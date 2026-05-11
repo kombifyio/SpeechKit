@@ -1,9 +1,9 @@
-# golangci-lint v2 config — requires golangci-lint >= v2.0.0.
-# Run locally:  golangci-lint run ./...
-# Auto-fix:     golangci-lint run --fix ./...
+# golangci-lint v2 config. Requires golangci-lint >= v2.0.0.
+# Run locally: golangci-lint run ./...
+# Auto-fix: golangci-lint run --fix ./...
 #
-# Note: gofmt and goimports are run as separate steps in CI and lefthook,
-# not via golangci-lint (removed in v2). gosimple was merged into staticcheck.
+# gofmt and goimports are run as separate CI/lefthook steps, not via
+# golangci-lint. gosimple is covered by staticcheck.
 
 version: "2"
 
@@ -18,7 +18,7 @@ linters:
   enable:
     # Baseline correctness
     - govet
-    - staticcheck      # includes former gosimple rules
+    - staticcheck
     - ineffassign
     - unused
     - errcheck
@@ -29,7 +29,7 @@ linters:
     - bodyclose
     - rowserrcheck
     - noctx
-    # Style & defensive
+    # Style and defensive checks
     - revive
     - gocritic
     - misspell
@@ -45,15 +45,15 @@ linters:
       check-type-assertions: true
       check-blank: false
       exclude-functions:
-        # Flush/Sync on stdout/stderr is idiomatic to ignore
+        # Flush/Sync on stdout/stderr is idiomatic to ignore.
         - (os.File).Sync
         - (*os.File).Sync
     gosec:
       excludes:
-        # G104: "errors unhandled" — handled by errcheck with better reporting
+        # G104: errors unhandled. errcheck reports this with better signal.
         - G104
-        # G101: "hardcoded credentials" — false positive: all hits are env var
-        # name fields like APIKeyEnv: "OPENAI_API_KEY", not actual secrets
+        # G101: hardcoded credentials. Existing hits are secret/env key names,
+        # not credential values.
         - G101
       config:
         global:
@@ -61,8 +61,8 @@ linters:
     govet:
       enable-all: true
       disable:
-        - fieldalignment   # noisy; revisit for hot structs only
-        - shadow           # handled separately
+        - fieldalignment
+        - shadow
     revive:
       rules:
         - name: blank-imports
@@ -73,12 +73,12 @@ linters:
         - name: error-strings
         - name: error-naming
         - name: exported
-          disabled: true   # godoc enforcement phased in; see Sprint 2
+          disabled: true
         - name: if-return
         - name: increment-decrement
         - name: indent-error-flow
         - name: package-comments
-          disabled: true   # phased in
+          disabled: true
         - name: range
         - name: receiver-naming
         - name: redefines-builtin-id
@@ -87,7 +87,7 @@ linters:
         - name: unexported-return
         - name: unreachable-code
         - name: unused-parameter
-          disabled: true   # too noisy pre-cleanup
+          disabled: true
         - name: var-declaration
         - name: var-naming
     gocritic:
@@ -105,8 +105,6 @@ linters:
       asserts: true
       comparison: true
     exhaustive:
-      # A switch with an explicit default branch is considered exhaustive —
-      # the author has already handled the "unknown value" case.
       default-signifies-exhaustive: true
 
   exclusions:
@@ -121,11 +119,6 @@ linters:
       - docker
       - docs
     rules:
-      # Tests may use goroutines without context, use fmt.Printf for debug,
-      # skip some error checks on assertion setup paths, and compare error
-      # values directly (e.g. `if err != io.EOF` against fakes that don't
-      # wrap their errors). errorlint's wrap-aware comparison is good
-      # production hygiene but it's noise on test scaffolding.
       - path: _test\.go
         linters:
           - errcheck
@@ -137,7 +130,6 @@ linters:
           - bodyclose
           - unparam
           - rowserrcheck
-      # CGo wrapper packages have special conventions
       - path: internal/winapi/
         linters:
           - revive
@@ -149,23 +141,13 @@ linters:
       - path: internal/vad/
         linters:
           - revive
-      # Server-Target packages were authored under Windows-only CI
-      # (Go Analysis ran on windows-2025 prior to v0.26) where the
-      # `contextcheck` linter happened to skip them via build tags.
-      # Linux CI now exercises them and surfaces a backlog of context-
-      # propagation polish (background goroutines that could thread
-      # the request context, helper functions that drop ctx). None
-      # are functional bugs — they're hygiene findings — but the
-      # cleanup is its own focused sprint, not a release blocker.
-      # Tracked separately; remove this exclusion when the sweep
-      # lands.
+      # Server-target packages have a known hygiene backlog from code that
+      # originally ran under Windows-only CI. Linux server CI still builds,
+      # vets, race-tests, docker-builds, and smoke-tests this surface. Remove
+      # this exclusion set when the dedicated server lint hardening sweep lands.
       - path: internal/server/
         linters:
           - contextcheck
-          # v0.26.x shipped a large Server-Target surface from a
-          # previously Windows-only CI path. Keep release automation
-          # green while we close this backlog in dedicated hardening
-          # PRs, then remove this temporary exclusion set.
           - gosec
           - revive
           - gocritic

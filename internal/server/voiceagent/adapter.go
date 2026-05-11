@@ -30,6 +30,9 @@ type Adapter struct {
 	Conn     *websocket.Conn
 	Provider LiveProviderAdapter
 	Persona  PersonaResolver
+	// MediaBridge starts an optional LiveKit media bridge for sessions that
+	// keep this WebSocket as control transport and move audio through LiveKit.
+	MediaBridge MediaBridgeFactory
 	// IdleTimeout terminates a session whose readPump and writePump have
 	// both been silent for the duration. Zero disables the server-side
 	// idle watchdog. Defaults to 15 minutes when set by the WS handler.
@@ -42,6 +45,9 @@ type Adapter struct {
 	closed  atomicBool
 	idle    *idleWatchdog
 	flow    *SequenceRunner
+
+	mediaTransport string
+	mediaBridge    MediaBridge
 }
 
 // Run blocks until the session ends. The first frame from the client MUST be
@@ -60,6 +66,22 @@ func (a *Adapter) Run(parent context.Context) {
 		a.sendError("start_required", err.Error())
 		return
 	}
+	transport, err := normalizeMediaTransport(start.MediaTransport)
+	if err != nil {
+		a.sendError("invalid_media_transport", err.Error())
+		return
+	}
+	a.mediaTransport = transport
+	if transport == MediaTransportLiveKit {
+		if !providerSupportsLiveKitTransport(a.Provider) {
+			a.sendError("media_transport_unsupported", "media_transport=livekit requires a native realtime PCM provider")
+			return
+		}
+		if a.MediaBridge == nil {
+			a.sendError("media_transport_unavailable", "LiveKit media bridge is not configured")
+			return
+		}
+	}
 	cfg, err := a.Persona.Resolve(start)
 	if err != nil {
 		a.sendError("persona_unresolved", err.Error())
@@ -74,6 +96,23 @@ func (a *Adapter) Run(parent context.Context) {
 			slog.Debug("voiceagent: provider close", "err", err)
 		}
 	}()
+	if transport == MediaTransportLiveKit {
+		bridge, err := a.MediaBridge.Start(ctx, MediaBridgeRequest{
+			SessionID: a.Session.ID,
+			Owner:     a.Session.Owner,
+			Provider:  a.Provider,
+		})
+		if err != nil {
+			a.sendError("media_bridge_failed", err.Error())
+			return
+		}
+		a.mediaBridge = bridge
+		defer func() {
+			if err := bridge.Close(); err != nil {
+				slog.Debug("voiceagent: media bridge close", "err", err)
+			}
+		}()
+	}
 
 	a.sendJSON(StateFrame{Type: MsgState, State: "listening"})
 	if stepResolver, ok := a.Persona.(StepResolver); ok {
@@ -152,6 +191,10 @@ func (a *Adapter) readPump(ctx context.Context, done chan<- struct{}) {
 		a.idle.Reset()
 		switch typ {
 		case websocket.MessageBinary:
+			if a.mediaTransport == MediaTransportLiveKit {
+				a.sendError("audio_transport_mismatch", "binary audio frames are disabled when media_transport=livekit")
+				continue
+			}
 			if err := a.Provider.SendAudio(data); err != nil {
 				slog.Warn("voiceagent: send audio failed", "err", err)
 				a.sendError("audio_upstream_failed", err.Error())
@@ -240,7 +283,15 @@ func (a *Adapter) writePump(ctx context.Context, done chan<- struct{}) {
 		// watchdog so a long-running TTS reply doesn't get cut off.
 		a.idle.Reset()
 		if len(msg.Audio) > 0 {
-			a.sendBinary(msg.Audio)
+			if a.mediaBridge != nil {
+				if err := a.mediaBridge.SendAudio(msg.Audio); err != nil {
+					slog.Warn("voiceagent: send media bridge audio failed", "err", err)
+					a.sendError("audio_downstream_failed", err.Error())
+					return
+				}
+			} else {
+				a.sendBinary(msg.Audio)
+			}
 		}
 		if msg.InputTranscript != "" {
 			a.sendJSON(TranscriptFrame{Type: MsgInputTranscript, Text: msg.InputTranscript, Done: msg.InputTranscriptDone})

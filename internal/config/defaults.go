@@ -1,6 +1,10 @@
 package config
 
-import "github.com/kombifyio/SpeechKit/internal/voiceagentprofile"
+import (
+	"strings"
+
+	"github.com/kombifyio/SpeechKit/internal/voiceagentprofile"
+)
 
 func defaults() *Config {
 	cfg := &Config{
@@ -39,6 +43,7 @@ func defaults() *Config {
 			Enabled:           false,
 			URL:               "",
 			BearerTokenEnv:    "SPEECHKIT_SERVER_TOKEN", //nolint:gosec // env var name, not a credential
+			AuthMode:          ServerConnectionAuthModeBearer,
 			FallbackToLocal:   true,
 			RequestTimeoutSec: 30,
 		},
@@ -181,7 +186,8 @@ func defaults() *Config {
 				AgentModel:   "llama-3.3-70b-versatile",
 			},
 			Google: GoogleProviderConfig{
-				APIKeyEnv:    "GOOGLE_AI_API_KEY", //nolint:gosec // not a credential, field name triggers false positive
+				APIKeyEnv:    GoogleAIAPIKeyEnv,         //nolint:gosec // not a credential, field name triggers false positive
+				STTAPIKeyEnv: GoogleSTTDefaultAPIKeyEnv, //nolint:gosec // not a credential, field name triggers false positive
 				STTModel:     "chirp_3",
 				UtilityModel: "gemini-2.5-flash-lite",
 				AssistModel:  "gemini-2.5-flash",
@@ -217,11 +223,19 @@ func defaults() *Config {
 			MaxSessionsPerUser:       3,
 			TicketTTLSec:             30,
 			VoiceAgentIdleTimeoutSec: 900,
-			WhisperBinary:            "/usr/local/bin/whisper-server",
-			WhisperPort:              8180,
-			ModelDir:                 "/var/lib/speechkit/models",
-			LogFormat:                "json",
-			LogLevel:                 "info",
+			LiveKit: ServerLiveKitConfig{
+				Enabled:      false,
+				URL:          "",
+				APIKeyEnv:    "LIVEKIT_API_KEY",
+				APISecretEnv: "LIVEKIT_API_SECRET",
+				TokenTTLSec:  600,
+				RoomPrefix:   "speechkit-va",
+			},
+			WhisperBinary: "/usr/local/bin/whisper-server",
+			WhisperPort:   8180,
+			ModelDir:      "/var/lib/speechkit/models",
+			LogFormat:     "json",
+			LogLevel:      "info",
 			Features: ServerFeaturesConfig{
 				Catalog:      true,
 				StorageReads: true,
@@ -230,6 +244,54 @@ func defaults() *Config {
 			},
 		},
 	}
-	ApplyManagedDevServerDefaults(cfg)
 	return cfg
+}
+
+func BuiltInPrimaryModelSelectionDefaults() ModelSelectionConfig {
+	return ModelSelectionConfig{
+		Dictate: ModeModelSelection{
+			PrimaryProfileID: DefaultDictatePrimaryProfileID,
+			ModeSource:       ModeSourceLocal,
+		},
+		Assist: ModeModelSelection{
+			PrimaryProfileID: DefaultAssistPrimaryProfileID,
+			ModeSource:       ModeSourceLocal,
+		},
+		VoiceAgent: ModeModelSelection{
+			PrimaryProfileID: DefaultVoiceAgentPrimaryProfileID,
+			ModeSource:       ModeSourceLocal,
+		},
+	}
+}
+
+func applyBuiltInPrimaryModelSelectionDefaults(cfg *Config) bool {
+	if cfg == nil {
+		return false
+	}
+
+	changed := false
+	changed = applyBuiltInPrimaryModelSelectionDefault(&cfg.ModelSelection.Dictate, DefaultDictatePrimaryProfileID) || changed
+	changed = applyBuiltInPrimaryModelSelectionDefault(&cfg.ModelSelection.Assist, DefaultAssistPrimaryProfileID) || changed
+	changed = applyBuiltInPrimaryModelSelectionDefault(&cfg.ModelSelection.VoiceAgent, DefaultVoiceAgentPrimaryProfileID) || changed
+	return changed
+}
+
+func applyBuiltInPrimaryModelSelectionDefault(selection *ModeModelSelection, primaryProfileID string) bool {
+	if selection == nil {
+		return false
+	}
+	changed := false
+	if strings.TrimSpace(selection.ModeSource) == "" {
+		selection.ModeSource = ModeSourceLocal
+		changed = true
+	}
+	primaryProfileID = strings.TrimSpace(primaryProfileID)
+	if primaryProfileID == "" {
+		return changed
+	}
+	if strings.TrimSpace(selection.PrimaryProfileID) != "" || strings.TrimSpace(selection.FallbackProfileID) != "" {
+		return changed
+	}
+	selection.PrimaryProfileID = primaryProfileID
+	return true
 }

@@ -13,6 +13,9 @@ Security defaults:
 - HTTP MCP binds to `127.0.0.1:8090` by default.
 - HTTP MCP with `management` on a non-loopback address requires
   `SPEECHKIT_MCP_TOKEN` or `--mcp-token`.
+- HTTP MCP uses explicit server limits: `ReadHeaderTimeout=15s`,
+  `ReadTimeout=30s`, `IdleTimeout=120s`, and `MaxHeaderBytes=1MiB`.
+  `WriteTimeout` remains unset so streamable MCP responses are not cut off.
 - Management tools still pass through SpeechKit server auth. Write tools need
   an admin identity where the HTTP API requires one.
 - Remote HTTP MCP deployments do not expose local `audio_path` file access.

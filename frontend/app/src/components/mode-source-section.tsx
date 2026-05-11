@@ -18,6 +18,7 @@ import {
   patchAPIV1ModeSettings,
   patchAPIV1ServerConnection,
   type APIV1ModeSettings,
+  type ModeModelSetting,
   type ModeSource,
   type ServerConnectionSetting,
 } from "@/lib/speechkit";
@@ -155,12 +156,13 @@ export function ModeSourceSection({
             await patchAPIV1ServerConnection({ enabled: true }),
           );
         }
-        const updates = await Promise.all(
-          MODE_KEYS.map(async (mode) => {
-            const updated = await patchAPIV1ModeSettings(mode, { modeSource: next });
-            return [mode, updated] as const;
-          }),
-        );
+        const updates: Array<readonly [ModeKey, ModeModelSetting]> = [];
+        for (const mode of MODE_KEYS) {
+          const updated = await patchAPIV1ModeSettings(mode, {
+            modeSource: next,
+          });
+          updates.push([mode, updated]);
+        }
         setModes((prev) => {
           if (!prev) return prev;
           return updates.reduce<APIV1ModeSettings>((acc, [mode, updated]) => {

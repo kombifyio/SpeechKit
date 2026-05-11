@@ -16,6 +16,7 @@ import (
 
 	"github.com/kombifyio/SpeechKit/internal/config"
 	"github.com/kombifyio/SpeechKit/internal/netsec"
+	"github.com/kombifyio/SpeechKit/internal/testutil"
 )
 
 func init() {
@@ -32,6 +33,20 @@ func TestNewManager(t *testing.T) {
 	if len(jobs) != 0 {
 		t.Fatalf("expected 0 jobs, got %d", len(jobs))
 	}
+}
+
+func waitForJobStatus(t *testing.T, m *Manager, timeout time.Duration, statuses ...Status) JobView {
+	t.Helper()
+	allowed := make(map[Status]bool, len(statuses))
+	for _, status := range statuses {
+		allowed[status] = true
+	}
+	var jobs []JobView
+	testutil.Eventually(t, timeout, 50*time.Millisecond, func() bool {
+		jobs = m.AllJobs()
+		return len(jobs) == 1 && allowed[jobs[0].Status]
+	})
+	return jobs[0]
 }
 
 func TestHTTPDownload(t *testing.T) {
@@ -69,15 +84,7 @@ func TestHTTPDownload(t *testing.T) {
 		t.Fatalf("expected pending status, got %s", snap.Status)
 	}
 
-	// Wait for completion.
-	deadline := time.Now().Add(5 * time.Second)
-	for time.Now().Before(deadline) {
-		jobs := m.AllJobs()
-		if len(jobs) == 1 && jobs[0].Status == StatusDone {
-			break
-		}
-		time.Sleep(50 * time.Millisecond)
-	}
+	waitForJobStatus(t, m, 5*time.Second, StatusDone)
 
 	jobs := m.AllJobs()
 	if len(jobs) != 1 {
@@ -118,14 +125,7 @@ func TestHTTPDownloadServerError(t *testing.T) {
 		SHA256: "0000000000000000000000000000000000000000000000000000000000000000",
 	}, t.TempDir(), nil)
 
-	deadline := time.Now().Add(5 * time.Second)
-	for time.Now().Before(deadline) {
-		jobs := m.AllJobs()
-		if len(jobs) == 1 && (jobs[0].Status == StatusDone || jobs[0].Status == StatusFailed) {
-			break
-		}
-		time.Sleep(50 * time.Millisecond)
-	}
+	waitForJobStatus(t, m, 5*time.Second, StatusDone, StatusFailed)
 
 	jobs := m.AllJobs()
 	if len(jobs) != 1 || jobs[0].Status != StatusFailed {
@@ -156,28 +156,13 @@ func TestCancelJob(t *testing.T) {
 		SHA256:    "0000000000000000000000000000000000000000000000000000000000000000",
 	}, t.TempDir(), nil)
 
-	// Wait for running state.
-	deadline := time.Now().Add(5 * time.Second)
-	for time.Now().Before(deadline) {
-		jobs := m.AllJobs()
-		if len(jobs) == 1 && jobs[0].Status == StatusRunning {
-			break
-		}
-		time.Sleep(50 * time.Millisecond)
-	}
+	waitForJobStatus(t, m, 5*time.Second, StatusRunning)
 
 	if !m.CancelJob(snap.ID) {
 		t.Fatal("CancelJob returned false")
 	}
 
-	// Wait for cancellation.
-	for time.Now().Before(deadline) {
-		jobs := m.AllJobs()
-		if len(jobs) == 1 && jobs[0].Status == StatusCancelled {
-			break
-		}
-		time.Sleep(50 * time.Millisecond)
-	}
+	waitForJobStatus(t, m, 5*time.Second, StatusCancelled)
 
 	jobs := m.AllJobs()
 	if len(jobs) != 1 || jobs[0].Status != StatusCancelled {
@@ -578,14 +563,7 @@ func TestHTTPDownloadSHA256Pass(t *testing.T) {
 		SHA256:    hash,
 	}, dir, nil)
 
-	deadline := time.Now().Add(5 * time.Second)
-	for time.Now().Before(deadline) {
-		jobs := m.AllJobs()
-		if len(jobs) == 1 && (jobs[0].Status == StatusDone || jobs[0].Status == StatusFailed) {
-			break
-		}
-		time.Sleep(50 * time.Millisecond)
-	}
+	waitForJobStatus(t, m, 5*time.Second, StatusDone, StatusFailed)
 
 	jobs := m.AllJobs()
 	if len(jobs) != 1 || jobs[0].Status != StatusDone {
@@ -616,14 +594,7 @@ func TestHTTPDownloadRequiresSHA256(t *testing.T) {
 		SizeBytes: int64(len(content)),
 	}, dir, nil)
 
-	deadline := time.Now().Add(5 * time.Second)
-	for time.Now().Before(deadline) {
-		jobs := m.AllJobs()
-		if len(jobs) == 1 && (jobs[0].Status == StatusDone || jobs[0].Status == StatusFailed) {
-			break
-		}
-		time.Sleep(50 * time.Millisecond)
-	}
+	waitForJobStatus(t, m, 5*time.Second, StatusDone, StatusFailed)
 
 	jobs := m.AllJobs()
 	if len(jobs) != 1 || jobs[0].Status != StatusFailed {
@@ -657,14 +628,7 @@ func TestHTTPDownloadSHA256Mismatch(t *testing.T) {
 		SHA256:    "0000000000000000000000000000000000000000000000000000000000000000",
 	}, dir, nil)
 
-	deadline := time.Now().Add(5 * time.Second)
-	for time.Now().Before(deadline) {
-		jobs := m.AllJobs()
-		if len(jobs) == 1 && (jobs[0].Status == StatusDone || jobs[0].Status == StatusFailed) {
-			break
-		}
-		time.Sleep(50 * time.Millisecond)
-	}
+	waitForJobStatus(t, m, 5*time.Second, StatusDone, StatusFailed)
 
 	jobs := m.AllJobs()
 	if len(jobs) != 1 || jobs[0].Status != StatusFailed {

@@ -2,6 +2,10 @@ import { MicSelector } from "@/components/ui/mic-selector";
 import { Chip, Row, Section } from "@/components/settings/settings-primitives";
 import type { ConfigurableMode } from "@/components/settings/settings-state";
 import type { SpeechKitSettingsState } from "@/lib/speechkit";
+import {
+  releaseFeatureFlags,
+  type ReleaseFeatureFlags,
+} from "@/lib/speechkit/release-flags";
 
 const MODE_TOGGLE_ROWS: Array<{ mode: ConfigurableMode; label: string }> = [
   { mode: "dictate", label: "Transcribe Mode" },
@@ -16,6 +20,7 @@ export function GeneralSettingsPage({
   hasSavedOverlaySpot,
   onSaveCurrentOverlaySpot,
   onResetOverlaySpot,
+  features = releaseFeatureFlags,
 }: {
   settings: SpeechKitSettingsState;
   updateSettings: (patch: Partial<SpeechKitSettingsState>, delay?: number) => void;
@@ -23,6 +28,7 @@ export function GeneralSettingsPage({
   hasSavedOverlaySpot: boolean;
   onSaveCurrentOverlaySpot: () => Promise<void>;
   onResetOverlaySpot: () => Promise<void>;
+  features?: ReleaseFeatureFlags;
 }) {
   return (
     <div className="grid grid-cols-1 gap-y-5 xl:grid-cols-2 xl:gap-x-10">
@@ -37,7 +43,7 @@ export function GeneralSettingsPage({
               })
             }
           />
-          <p className="mt-2 text-[11px] leading-relaxed text-[color:var(--sk-text-muted)]/80">
+          <p className="mt-2 text-[11px] leading-relaxed text-(--sk-text-muted)/80">
             Starts the configured launch session automatically when SpeechKit
             opens. Keep mode-specific controls on their own tab.
           </p>
@@ -79,7 +85,7 @@ export function GeneralSettingsPage({
           {settings.overlayEnabled && (
             <div className="mt-2 flex flex-col gap-2">
               <div className="flex flex-wrap items-center gap-1.5">
-                <span className="mr-1 text-[11px] text-[color:var(--sk-text-muted)]">
+                <span className="mr-1 text-[11px] text-(--sk-text-muted)">
                   Style
                 </span>
                 <Chip
@@ -89,16 +95,18 @@ export function GeneralSettingsPage({
                   Default{" "}
                   <span className="ml-1 text-[10px] opacity-50">(Pill)</span>
                 </Chip>
-                <Chip
-                  active={settings.visualizer === "circle"}
-                  onClick={() => updateSettings({ visualizer: "circle" })}
-                >
-                  Focus{" "}
-                  <span className="ml-1 text-[10px] opacity-50">(Dot)</span>
-                </Chip>
-                {settings.visualizer === "pill" && (
+                {features.overlayFocusOption && (
+                  <Chip
+                    active={settings.visualizer === "circle"}
+                    onClick={() => updateSettings({ visualizer: "circle" })}
+                  >
+                    Focus{" "}
+                    <span className="ml-1 text-[10px] opacity-50">(Dot)</span>
+                  </Chip>
+                )}
+                {settings.visualizer === "pill" && features.overlayKombifyDesignOption && (
                   <>
-                    <span className="mx-1 text-[color:var(--sk-border)]">|</span>
+                    <span className="mx-1 text-(--sk-border)">|</span>
                     <Chip
                       active={settings.design === "default"}
                       onClick={() => updateSettings({ design: "default" })}
@@ -115,7 +123,7 @@ export function GeneralSettingsPage({
                 )}
               </div>
               <div className="flex flex-wrap items-center gap-1.5">
-                <span className="mr-1 text-[11px] text-[color:var(--sk-text-muted)]">
+                <span className="mr-1 text-[11px] text-(--sk-text-muted)">
                   Position
                 </span>
                 {(["top", "bottom", "left", "right"] as const).map((pos) => (
@@ -140,13 +148,13 @@ export function GeneralSettingsPage({
               {settings.overlayMovable && (
                 <div className="flex flex-col gap-2">
                   {settings.visualizer === "pill" && (
-                    <p className="text-[11px] text-[color:var(--sk-text-muted)]/80">
+                    <p className="text-[11px] text-(--sk-text-muted)/80">
                       Drag the center bubble inside the pill panel to place it
                       anywhere on the desktop.
                     </p>
                   )}
-                  <div className="rounded-[18px] border border-[color:var(--sk-panel-border)] bg-[color:var(--sk-surface-1)] px-3 py-2.5">
-                    <p className="text-[11px] text-[color:var(--sk-text-muted)]">
+                  <div className="rounded-[18px] border border-(--sk-panel-border) bg-(--sk-surface-1) px-3 py-2.5">
+                    <p className="text-[11px] text-(--sk-text-muted)">
                       {hasSavedOverlaySpot
                         ? `Saved spot: X ${settings.overlayFreeX}, Y ${settings.overlayFreeY}`
                         : "No custom spot saved yet. The overlay falls back to the selected edge until you save the current spot."}
@@ -155,7 +163,7 @@ export function GeneralSettingsPage({
                       <button
                         type="button"
                         onClick={() => void onSaveCurrentOverlaySpot()}
-                        className="sk-secondary-button rounded-full px-3 py-1.5 text-[11px] font-medium transition-colors hover:bg-[color:var(--sk-surface-3)]"
+                        className="sk-secondary-button rounded-full px-3 py-1.5 text-[11px] font-medium transition-colors hover:bg-(--sk-surface-3)"
                       >
                         Save current spot
                       </button>
@@ -166,8 +174,8 @@ export function GeneralSettingsPage({
                         className={[
                           "rounded-full px-3 py-1.5 text-[11px] font-medium transition-colors",
                           hasSavedOverlaySpot
-                            ? "sk-secondary-button hover:bg-[color:var(--sk-surface-3)]"
-                            : "cursor-not-allowed border border-[color:var(--sk-panel-border)] bg-[color:var(--sk-surface-1)] text-[color:var(--sk-text-subtle)]",
+                            ? "sk-secondary-button hover:bg-(--sk-surface-3)"
+                            : "cursor-not-allowed border border-(--sk-panel-border) bg-(--sk-surface-1) text-(--sk-text-subtle)",
                         ].join(" ")}
                       >
                         Reset saved spot

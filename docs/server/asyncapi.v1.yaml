@@ -15,7 +15,13 @@ info:
       `type` field. The full set is enumerated below.
     - **Binary audio frames** (`binary` opcode): raw PCM, **16 kHz S16 mono**
       from client to server, **24 kHz S16 mono** from server to client
-      (matching Gemini Live's native output rate).
+      (matching Gemini Live's native output rate) when the StartFrame uses
+      the default `media_transport: "websocket"`.
+
+    If the StartFrame uses `media_transport: "livekit"`, this WebSocket remains
+    the control channel for start, transcripts, tool calls, errors, workflow
+    steps, and shutdown. Microphone and model audio move through LiveKit audio
+    tracks; WebSocket binary audio is rejected for that session.
 
     Field guarantees follow the same rules as openapi.v1.yaml: additive
     across minor releases, no rename or removal without a v2 bump.
@@ -99,7 +105,8 @@ operations:
     description: |
       The first frame MUST be StartFrame. Subsequent frames may be any of
       the client message types in any order. Binary audio chunks may be
-      interleaved freely with JSON control frames.
+      interleaved freely with JSON control frames only when
+      `media_transport` is omitted or set to `websocket`.
     messages:
       - $ref: '#/channels/voiceAgentSession/messages/StartFrame'
       - $ref: '#/channels/voiceAgentSession/messages/TextFrame'
@@ -279,6 +286,17 @@ components:
         persona_id: { type: string }
         role_id: { type: string }
         sequence_id: { type: string }
+        media_transport:
+          type: string
+          enum: [websocket, livekit]
+          default: websocket
+          description: |
+            Selects where microphone and model audio move. `websocket` keeps
+            the v1 binary-frame audio path. `livekit` keeps this WebSocket as
+            the control channel and moves audio through the LiveKit room minted
+            by `POST /v1/voiceagent/sessions`. v1 LiveKit media is limited to
+            native realtime PCM providers (Gemini/OpenAI); cascaded providers
+            stay on WebSocket audio until explicit transcoding is added.
         voice: { type: string }
         locale: { type: string }
         model: { type: string }
@@ -368,7 +386,8 @@ components:
       description: |
         Raw PCM 16-bit signed little-endian mono frame. Sample rate:
         16 kHz client to server, 24 kHz server to client. Frames are sent on
-        the WebSocket binary opcode without any wrapping header.
+        the WebSocket binary opcode without any wrapping header. Only valid
+        when the session uses `media_transport: "websocket"`.
 
     # server to client
     StateFrame:

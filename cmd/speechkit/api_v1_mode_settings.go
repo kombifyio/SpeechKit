@@ -47,6 +47,7 @@ type apiV1ModeSettingsSnapshot struct {
 	voiceAgentHotkey     string
 	voiceAgentProfileID  string
 	voiceAgentSequenceID string
+	voiceAgentModeSource string
 	audioDeviceID        string
 	overlayEnabled       bool
 }
@@ -87,9 +88,6 @@ func applyAPIV1ModeSettingsPatch(ctx context.Context, cfgPath string, cfg *confi
 	applyAPIV1ModeSpecificPatch(cfg, mode, patch)
 	if modelSelectionChanged {
 		cfg.ServerConnection.Enabled = anyServerModeSelected(cfg)
-		if cfg.ServerConnection.Enabled {
-			config.ApplyManagedDevServerDefaults(cfg)
-		}
 	}
 
 	if !validateDistinctModeHotkeys(cfg.General.DictateEnabled, cfg.General.AssistEnabled, cfg.General.VoiceAgentEnabled, cfg.General.DictateHotkey, cfg.General.AssistHotkey, cfg.General.VoiceAgentHotkey) {
@@ -113,6 +111,7 @@ func applyAPIV1ModeSettingsPatch(ctx context.Context, cfgPath string, cfg *confi
 	}
 	voiceAgentProfileChanged := snapshot.voiceAgentProfileID != voiceagentprofile.NormalizeID(cfg.VoiceAgent.AgentProfileID)
 	voiceAgentSequenceChanged := snapshot.voiceAgentSequenceID != strings.TrimSpace(cfg.VoiceAgent.AgentSequenceID)
+	voiceAgentModeSourceChanged := snapshot.voiceAgentModeSource != cfg.ModelSelection.VoiceAgent.ResolvedModeSource()
 	if modelSelectionChanged || voiceAgentProfileChanged || voiceAgentSequenceChanged {
 		if err := refreshServerDelegates(cfg, state); err != nil {
 			return err
@@ -146,7 +145,7 @@ func applyAPIV1ModeSettingsPatch(ctx context.Context, cfgPath string, cfg *confi
 			cfg.UI.OverlayFreeY,
 			cfg.UI.OverlayMonitorPositions,
 		)
-		if voiceAgentProfileChanged || voiceAgentSequenceChanged {
+		if voiceAgentProfileChanged || voiceAgentSequenceChanged || voiceAgentModeSourceChanged {
 			resetInactiveVoiceAgentSession(state)
 		}
 		state.applyDesktopSettings(
@@ -180,6 +179,7 @@ func captureAPIV1ModeSettingsSnapshot(cfg *config.Config) apiV1ModeSettingsSnaps
 		voiceAgentHotkey:     cfg.General.VoiceAgentHotkey,
 		voiceAgentProfileID:  voiceagentprofile.NormalizeID(cfg.VoiceAgent.AgentProfileID),
 		voiceAgentSequenceID: strings.TrimSpace(cfg.VoiceAgent.AgentSequenceID),
+		voiceAgentModeSource: cfg.ModelSelection.VoiceAgent.ResolvedModeSource(),
 		audioDeviceID:        cfg.Audio.DeviceID,
 		overlayEnabled:       cfg.UI.OverlayEnabled,
 	}

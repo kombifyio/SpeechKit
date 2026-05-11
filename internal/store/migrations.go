@@ -112,6 +112,7 @@ CREATE INDEX IF NOT EXISTS idx_voice_agent_sessions_owner_created
 `)
 			return err
 		}},
+		{version: "sqlite:014_persona_schema_repair", run: repairSQLitePersonaSchema},
 	}
 	for _, migration := range migrations {
 		if err := applyMigration(ctx, db, "sqlite", migration); err != nil {
@@ -165,6 +166,7 @@ CREATE INDEX IF NOT EXISTS idx_voice_agent_sessions_owner_created
 `)
 			return err
 		}},
+		{version: "postgres:009_persona_schema_repair", run: repairPostgresPersonaSchema},
 	}
 	for _, migration := range migrations {
 		if err := applyMigration(ctx, db, "postgres", migration); err != nil {
@@ -242,6 +244,264 @@ func ensureSQLiteColumn(ctx context.Context, db *sql.DB, table, column, definiti
 	}
 	_, err = db.ExecContext(ctx, fmt.Sprintf("ALTER TABLE %s ADD COLUMN %s %s", table, column, definition))
 	return err
+}
+
+type sqliteColumnRepair struct {
+	table      string
+	column     string
+	definition string
+}
+
+func repairSQLitePersonaSchema(ctx context.Context, db *sql.DB) error {
+	repairs := []sqliteColumnRepair{
+		{"voice_agent_personas", "display_name", "TEXT NOT NULL DEFAULT ''"},
+		{"voice_agent_personas", "description", "TEXT NOT NULL DEFAULT ''"},
+		{"voice_agent_personas", "voice", "TEXT NOT NULL DEFAULT ''"},
+		{"voice_agent_personas", "locale", "TEXT NOT NULL DEFAULT ''"},
+		{"voice_agent_personas", "default_role", "TEXT NOT NULL DEFAULT ''"},
+		{"voice_agent_personas", "default_sequence", "TEXT NOT NULL DEFAULT ''"},
+		{"voice_agent_personas", "tags_json", "TEXT NOT NULL DEFAULT '[]'"},
+		{"voice_agent_personas", "metadata_json", "TEXT NOT NULL DEFAULT '{}'"},
+		{"voice_agent_personas", "created_at", "DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP"},
+		{"voice_agent_personas", "updated_at", "DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP"},
+		{"voice_agent_roles", "display_name", "TEXT NOT NULL DEFAULT ''"},
+		{"voice_agent_roles", "system_prompt", "TEXT NOT NULL DEFAULT ''"},
+		{"voice_agent_roles", "refinement_prompt", "TEXT NOT NULL DEFAULT ''"},
+		{"voice_agent_roles", "locale", "TEXT NOT NULL DEFAULT ''"},
+		{"voice_agent_roles", "vocabulary_hint", "TEXT NOT NULL DEFAULT ''"},
+		{"voice_agent_roles", "tool_allowlist_json", "TEXT NOT NULL DEFAULT '[]'"},
+		{"voice_agent_roles", "temperature", "REAL NOT NULL DEFAULT 0"},
+		{"voice_agent_roles", "thinking_enabled", "INTEGER NOT NULL DEFAULT 0"},
+		{"voice_agent_roles", "thinking_level", "TEXT NOT NULL DEFAULT ''"},
+		{"voice_agent_roles", "include_thoughts", "INTEGER NOT NULL DEFAULT 0"},
+		{"voice_agent_roles", "thinking_budget", "INTEGER NOT NULL DEFAULT 0"},
+		{"voice_agent_roles", "automatic_activity_detection", "INTEGER NOT NULL DEFAULT 0"},
+		{"voice_agent_roles", "vad_start_sensitivity", "TEXT NOT NULL DEFAULT ''"},
+		{"voice_agent_roles", "vad_end_sensitivity", "TEXT NOT NULL DEFAULT ''"},
+		{"voice_agent_roles", "vad_prefix_padding_ms", "INTEGER NOT NULL DEFAULT 0"},
+		{"voice_agent_roles", "vad_silence_duration_ms", "INTEGER NOT NULL DEFAULT 0"},
+		{"voice_agent_roles", "activity_handling", "TEXT NOT NULL DEFAULT ''"},
+		{"voice_agent_roles", "turn_coverage", "TEXT NOT NULL DEFAULT ''"},
+		{"voice_agent_roles", "context_compression_enabled", "INTEGER NOT NULL DEFAULT 0"},
+		{"voice_agent_roles", "context_compression_trigger_tk", "INTEGER NOT NULL DEFAULT 0"},
+		{"voice_agent_roles", "context_compression_target_tk", "INTEGER NOT NULL DEFAULT 0"},
+		{"voice_agent_roles", "enable_affective_dialog", "INTEGER NOT NULL DEFAULT 0"},
+		{"voice_agent_roles", "created_at", "DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP"},
+		{"voice_agent_roles", "updated_at", "DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP"},
+		{"voice_agent_sequences", "display_name", "TEXT NOT NULL DEFAULT ''"},
+		{"voice_agent_sequences", "description", "TEXT NOT NULL DEFAULT ''"},
+		{"voice_agent_sequences", "completion", "TEXT NOT NULL DEFAULT ''"},
+		{"voice_agent_sequences", "max_turns", "INTEGER NOT NULL DEFAULT 0"},
+		{"voice_agent_sequences", "steps_json", "TEXT NOT NULL DEFAULT '[]'"},
+		{"voice_agent_sequences", "created_at", "DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP"},
+		{"voice_agent_sequences", "updated_at", "DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP"},
+	}
+	for _, repair := range repairs {
+		if err := ensureSQLiteColumn(ctx, db, repair.table, repair.column, repair.definition); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func repairPostgresPersonaSchema(ctx context.Context, db *sql.DB) error {
+	tx, err := db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback() //nolint:errcheck // deferred rollback is harmless after commit and not actionable.
+	for _, repair := range postgresPersonaRepairColumnSpecs() {
+		if err := repairPostgresColumn(ctx, tx, repair); err != nil {
+			return fmt.Errorf("repair %s.%s: %w", repair.table, repair.column, err)
+		}
+	}
+	return tx.Commit()
+}
+
+type postgresColumnRepair struct {
+	table       string
+	column      string
+	dataType    string
+	defaultExpr string
+	notNull     bool
+}
+
+func postgresPersonaRepairColumnSpecs() []postgresColumnRepair {
+	text := func(table, column string) postgresColumnRepair {
+		return postgresColumnRepair{table: table, column: column, dataType: "TEXT", defaultExpr: "''", notNull: true}
+	}
+	jsonb := func(table, column, defaultExpr string) postgresColumnRepair {
+		return postgresColumnRepair{table: table, column: column, dataType: "JSONB", defaultExpr: defaultExpr, notNull: true}
+	}
+	bigint := func(table, column string) postgresColumnRepair {
+		return postgresColumnRepair{table: table, column: column, dataType: "BIGINT", defaultExpr: "0", notNull: true}
+	}
+	roleBoolean := func(column string) postgresColumnRepair {
+		return postgresColumnRepair{table: "voice_agent_roles", column: column, dataType: "BOOLEAN", defaultExpr: "FALSE", notNull: true}
+	}
+	timestamptz := func(table, column string) postgresColumnRepair {
+		return postgresColumnRepair{table: table, column: column, dataType: "TIMESTAMPTZ", defaultExpr: "NOW()", notNull: true}
+	}
+
+	return []postgresColumnRepair{
+		text("voice_agent_personas", "display_name"),
+		text("voice_agent_personas", "description"),
+		text("voice_agent_personas", "voice"),
+		text("voice_agent_personas", "locale"),
+		text("voice_agent_personas", "default_role"),
+		text("voice_agent_personas", "default_sequence"),
+		jsonb("voice_agent_personas", "tags_json", "'[]'::jsonb"),
+		jsonb("voice_agent_personas", "metadata_json", "'{}'::jsonb"),
+		timestamptz("voice_agent_personas", "created_at"),
+		timestamptz("voice_agent_personas", "updated_at"),
+
+		text("voice_agent_roles", "display_name"),
+		text("voice_agent_roles", "system_prompt"),
+		text("voice_agent_roles", "refinement_prompt"),
+		text("voice_agent_roles", "locale"),
+		text("voice_agent_roles", "vocabulary_hint"),
+		jsonb("voice_agent_roles", "tool_allowlist_json", "'[]'::jsonb"),
+		{table: "voice_agent_roles", column: "temperature", dataType: "DOUBLE PRECISION", defaultExpr: "0", notNull: true},
+		roleBoolean("thinking_enabled"),
+		text("voice_agent_roles", "thinking_level"),
+		roleBoolean("include_thoughts"),
+		bigint("voice_agent_roles", "thinking_budget"),
+		roleBoolean("automatic_activity_detection"),
+		text("voice_agent_roles", "vad_start_sensitivity"),
+		text("voice_agent_roles", "vad_end_sensitivity"),
+		bigint("voice_agent_roles", "vad_prefix_padding_ms"),
+		bigint("voice_agent_roles", "vad_silence_duration_ms"),
+		text("voice_agent_roles", "activity_handling"),
+		text("voice_agent_roles", "turn_coverage"),
+		roleBoolean("context_compression_enabled"),
+		bigint("voice_agent_roles", "context_compression_trigger_tk"),
+		bigint("voice_agent_roles", "context_compression_target_tk"),
+		roleBoolean("enable_affective_dialog"),
+		timestamptz("voice_agent_roles", "created_at"),
+		timestamptz("voice_agent_roles", "updated_at"),
+
+		text("voice_agent_sequences", "display_name"),
+		text("voice_agent_sequences", "description"),
+		text("voice_agent_sequences", "completion"),
+		bigint("voice_agent_sequences", "max_turns"),
+		jsonb("voice_agent_sequences", "steps_json", "'[]'::jsonb"),
+		timestamptz("voice_agent_sequences", "created_at"),
+		timestamptz("voice_agent_sequences", "updated_at"),
+	}
+}
+
+type postgresRepairDB interface {
+	ExecContext(context.Context, string, ...any) (sql.Result, error)
+	QueryRowContext(context.Context, string, ...any) *sql.Row
+}
+
+func repairPostgresColumn(ctx context.Context, db postgresRepairDB, repair postgresColumnRepair) error {
+	table := postgresQuoteIdent(repair.table)
+	column := postgresQuoteIdent(repair.column)
+	if _, err := db.ExecContext(ctx, fmt.Sprintf(`ALTER TABLE %s ADD COLUMN IF NOT EXISTS %s %s DEFAULT %s`,
+		table, column, repair.dataType, repair.defaultExpr)); err != nil {
+		return fmt.Errorf("add column: %w", err)
+	}
+
+	info, err := postgresColumnInfo(ctx, db, repair.table, repair.column)
+	if err != nil {
+		return fmt.Errorf("inspect column: %w", err)
+	}
+	if info == nil {
+		return fmt.Errorf("column missing after repair add")
+	}
+	if info.dataType != postgresInformationSchemaType(repair.dataType) {
+		usingExpr, err := postgresRepairUsingExpression(repair)
+		if err != nil {
+			return err
+		}
+		if _, err := db.ExecContext(ctx, fmt.Sprintf(`ALTER TABLE %s ALTER COLUMN %s DROP DEFAULT`,
+			table, column)); err != nil {
+			return fmt.Errorf("drop incompatible default: %w", err)
+		}
+		if _, err := db.ExecContext(ctx, fmt.Sprintf(`ALTER TABLE %s ALTER COLUMN %s TYPE %s USING %s`,
+			table, column, repair.dataType, usingExpr)); err != nil {
+			return fmt.Errorf("alter type to %s: %w", repair.dataType, err)
+		}
+	}
+	if _, err := db.ExecContext(ctx, fmt.Sprintf(`UPDATE %s SET %s = %s WHERE %s IS NULL`,
+		table, column, repair.defaultExpr, column)); err != nil {
+		return fmt.Errorf("backfill nulls: %w", err)
+	}
+	if _, err := db.ExecContext(ctx, fmt.Sprintf(`ALTER TABLE %s ALTER COLUMN %s SET DEFAULT %s`,
+		table, column, repair.defaultExpr)); err != nil {
+		return fmt.Errorf("set default: %w", err)
+	}
+	if repair.notNull {
+		if _, err := db.ExecContext(ctx, fmt.Sprintf(`ALTER TABLE %s ALTER COLUMN %s SET NOT NULL`,
+			table, column)); err != nil {
+			return fmt.Errorf("set not null: %w", err)
+		}
+	}
+	return nil
+}
+
+type postgresColumnMetadata struct {
+	dataType string
+}
+
+func postgresColumnInfo(ctx context.Context, db postgresRepairDB, table, column string) (*postgresColumnMetadata, error) {
+	var info postgresColumnMetadata
+	err := db.QueryRowContext(ctx, `
+		SELECT data_type
+		FROM information_schema.columns
+		WHERE table_schema = current_schema()
+		  AND table_name = $1
+		  AND column_name = $2`,
+		table, column,
+	).Scan(&info.dataType)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	info.dataType = strings.ToLower(strings.TrimSpace(info.dataType))
+	return &info, nil
+}
+
+func postgresRepairUsingExpression(repair postgresColumnRepair) (string, error) {
+	column := repair.column
+	switch strings.ToUpper(strings.TrimSpace(repair.dataType)) {
+	case "TEXT":
+		return fmt.Sprintf("COALESCE(%s::text, %s)", column, repair.defaultExpr), nil
+	case "JSONB":
+		return fmt.Sprintf("CASE WHEN %s IS NULL OR BTRIM(%s::text) = '' THEN %s ELSE %s::jsonb END",
+			column, column, repair.defaultExpr, column), nil
+	case "BIGINT":
+		return fmt.Sprintf("COALESCE(NULLIF(TRIM(%s::text), '')::bigint, %s)", column, repair.defaultExpr), nil
+	case "DOUBLE PRECISION":
+		return fmt.Sprintf("COALESCE(NULLIF(TRIM(%s::text), '')::double precision, %s)", column, repair.defaultExpr), nil
+	case "BOOLEAN":
+		return fmt.Sprintf(`CASE
+			WHEN %s IS NULL THEN %s
+			WHEN LOWER(TRIM(%s::text)) IN ('true', 't', '1', 'yes', 'on') THEN TRUE
+			WHEN LOWER(TRIM(%s::text)) IN ('false', 'f', '0', 'no', 'off', '') THEN FALSE
+			ELSE %s::boolean
+		END`, column, repair.defaultExpr, column, column, column), nil
+	case "TIMESTAMPTZ":
+		return fmt.Sprintf("COALESCE(NULLIF(TRIM(%s::text), '')::timestamptz, %s)", column, repair.defaultExpr), nil
+	default:
+		return "", fmt.Errorf("unsupported postgres repair type %q", repair.dataType)
+	}
+}
+
+func postgresInformationSchemaType(dataType string) string {
+	switch strings.ToUpper(strings.TrimSpace(dataType)) {
+	case "TIMESTAMPTZ":
+		return "timestamp with time zone"
+	default:
+		return strings.ToLower(strings.TrimSpace(dataType))
+	}
+}
+
+func postgresQuoteIdent(identifier string) string {
+	return `"` + strings.ReplaceAll(identifier, `"`, `""`) + `"`
 }
 
 func sqliteColumnExists(ctx context.Context, db *sql.DB, table, column string) (bool, error) {
@@ -359,7 +619,7 @@ func backfillSQLiteVoiceAgentNormalized(ctx context.Context, db *sql.DB) error {
 		return err
 	}
 	for _, session := range sessions {
-		if err := replaceVoiceAgentSessionChildren(ctx, db, "sqlite", session.ID, session); err != nil {
+		if err := backfillVoiceAgentSessionChildren(ctx, db, "sqlite", session.ID, session); err != nil {
 			return err
 		}
 	}
@@ -381,7 +641,7 @@ func backfillPostgresVoiceAgentNormalized(ctx context.Context, db *sql.DB) error
 		return err
 	}
 	for _, session := range sessions {
-		if err := replaceVoiceAgentSessionChildren(ctx, db, "postgres", session.ID, session); err != nil {
+		if err := backfillVoiceAgentSessionChildren(ctx, db, "postgres", session.ID, session); err != nil {
 			return err
 		}
 	}

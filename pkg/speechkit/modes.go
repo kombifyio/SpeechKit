@@ -162,8 +162,22 @@ type ModeSettings struct {
 // to the control-plane API + frontend. The bearer token is never sent
 // across this boundary — only the env var name + connection metadata.
 type ServerConnectionSetting struct {
-	Enabled           bool   `json:"enabled"`
+	Enabled           bool                     `json:"enabled"`
+	ActiveTargetID    string                   `json:"activeTargetId,omitempty"`
+	URL               string                   `json:"url"`
+	BearerTokenEnv    string                   `json:"bearerTokenEnv,omitempty"`
+	AuthMode          string                   `json:"authMode,omitempty"`
+	BearerTokenSet    bool                     `json:"bearerTokenSet"`
+	FallbackToLocal   bool                     `json:"fallbackToLocal"`
+	RequestTimeoutSec int                      `json:"requestTimeoutSec"`
+	Targets           []ServerConnectionTarget `json:"targets,omitempty"`
+}
+
+type ServerConnectionTarget struct {
+	ID                string `json:"id"`
+	Label             string `json:"label"`
 	URL               string `json:"url"`
+	AuthMode          string `json:"authMode"`
 	BearerTokenEnv    string `json:"bearerTokenEnv,omitempty"`
 	BearerTokenSet    bool   `json:"bearerTokenSet"`
 	FallbackToLocal   bool   `json:"fallbackToLocal"`

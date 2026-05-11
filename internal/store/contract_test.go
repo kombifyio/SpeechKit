@@ -6,7 +6,6 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
-	"time"
 )
 
 // Compile-time interface compliance guards. If a backend's method signatures
@@ -17,11 +16,13 @@ var (
 	_ Store                      = (*SQLiteStore)(nil)
 	_ UserDictionaryStore        = (*SQLiteStore)(nil)
 	_ VoiceAgentSessionStore     = (*SQLiteStore)(nil)
+	_ AudioAssetStore            = (*SQLiteStore)(nil)
 	_ SemanticCapabilityProvider = (*SQLiteStore)(nil)
 
 	_ Store                      = (*PostgresStore)(nil)
 	_ UserDictionaryStore        = (*PostgresStore)(nil)
 	_ VoiceAgentSessionStore     = (*PostgresStore)(nil)
+	_ AudioAssetStore            = (*PostgresStore)(nil)
 	_ SemanticCapabilityProvider = (*PostgresStore)(nil)
 )
 
@@ -318,9 +319,6 @@ func TestContractListPaginationOrdering(t *testing.T) {
 			if err := s.SaveTranscription(ctx, text, "en", "p", "m", int64(i*100), 50, nil); err != nil {
 				t.Fatalf("SaveTranscription(%s): %v", text, err)
 			}
-			// Small sleep so CreatedAt differs between rows on systems with
-			// coarse clock resolution. Both backends order by CreatedAt DESC.
-			time.Sleep(2 * time.Millisecond)
 		}
 		list, err := s.ListTranscriptions(ctx, ListOpts{Limit: 2})
 		if err != nil {

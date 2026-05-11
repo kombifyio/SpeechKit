@@ -3,6 +3,7 @@
 package core
 
 import (
+	"context"
 	"strings"
 	"testing"
 
@@ -32,6 +33,28 @@ func TestPersonaResolverAppliesConfiguredAgentProfileWhenStartOmitsPersona(t *te
 	}
 	if !strings.Contains(frame.SystemPrompt, "blind spots") {
 		t.Fatalf("SystemPrompt should contain brainstorming profile instructions, got %q", frame.SystemPrompt)
+	}
+}
+
+func TestMoshiProviderFactoryIsExplicitlyExperimentalUnavailable(t *testing.T) {
+	cfg := &config.Config{}
+	app := &App{}
+
+	factory, status, err := buildProviderFactory(context.Background(), cfg, app, ProviderMoshi)
+	if err != nil {
+		t.Fatalf("buildProviderFactory() error = %v", err)
+	}
+	if !strings.Contains(status, "experimental_unavailable") {
+		t.Fatalf("status = %q, want experimental_unavailable marker", status)
+	}
+
+	provider := factory.NewProvider()
+	if provider.Name() != "moshi-stub" {
+		t.Fatalf("provider name = %q, want moshi-stub", provider.Name())
+	}
+	err = provider.Connect(context.Background(), vsserver.LiveConfigFrame{})
+	if err == nil || !strings.Contains(err.Error(), "experimental_unavailable") {
+		t.Fatalf("Connect() error = %v, want experimental_unavailable marker", err)
 	}
 }
 

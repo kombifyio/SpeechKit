@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -47,9 +48,7 @@ func TestAPIV1ModesReturnsContractsAndSettings(t *testing.T) {
 	}
 }
 
-func TestAPIV1ServerConnectionEnableBackfillsManagedDevServerURL(t *testing.T) {
-	restoreBuild := config.OverrideManagedDevServerBuildForTests("1")
-	defer restoreBuild()
+func TestAPIV1ServerConnectionEnableDoesNotBackfillServerURL(t *testing.T) {
 	cfg := defaultTestConfig()
 	cfg.ServerConnection.URL = ""
 	cfg.ServerConnection.Enabled = false
@@ -67,8 +66,11 @@ func TestAPIV1ServerConnectionEnableBackfillsManagedDevServerURL(t *testing.T) {
 	if !cfg.ServerConnection.Enabled {
 		t.Fatal("server connection enabled = false, want true")
 	}
-	if got, want := cfg.ServerConnection.URL, config.ManagedDevServerURL; got != want {
+	if got, want := cfg.ServerConnection.URL, ""; got != want {
 		t.Fatalf("server connection URL = %q, want %q", got, want)
+	}
+	if got, want := cfg.ServerConnection.AuthMode, config.ServerConnectionAuthModeBearer; got != want {
+		t.Fatalf("server connection auth mode = %q, want %q", got, want)
 	}
 	if got, want := cfg.ServerConnection.BearerTokenEnv, "SPEECHKIT_SERVER_TOKEN"; got != want {
 		t.Fatalf("bearer token env = %q, want %q", got, want)
@@ -90,10 +92,174 @@ func TestServerConnectionSettingMarksStoredTokenAsSet(t *testing.T) {
 		Enabled:        false,
 		URL:            "https://speechkit.example.com",
 		BearerTokenEnv: "SC_TEST_STORED_SERVER_TOKEN",
+		AuthMode:       config.ServerConnectionAuthModeBearer,
 	})
 
 	if !setting.BearerTokenSet {
 		t.Fatal("BearerTokenSet = false, want true for stored named secret")
+	}
+	if setting.AuthMode != config.ServerConnectionAuthModeBearer {
+		t.Fatalf("AuthMode = %q", setting.AuthMode)
+	}
+	if len(setting.Targets) != 1 {
+		t.Fatalf("targets = %#v, want one configured server target", setting.Targets)
+	}
+	if !setting.Targets[0].BearerTokenSet {
+		t.Fatal("target BearerTokenSet = false, want true for stored named secret")
+	}
+}
+
+func TestAPIV1ServerConnectionPatchRegistersAndActivatesTarget(t *testing.T) {
+	cfg := defaultTestConfig()
+	cfg.ServerConnection.URL = "http://127.0.0.1:8080"
+	cfg.ServerConnection.BearerTokenEnv = "SPEECHKIT_LOCAL_TOKEN"
+	cfg.ServerConnection.AuthMode = config.ServerConnectionAuthModeBearer
+	cfg.ServerConnection.RequestTimeoutSec = 30
+	cfgPath := filepath.Join(t.TempDir(), "config.toml")
+
+	activeTargetID := "staging"
+	targets := []apiV1ServerConnectionTargetPatch{
+		{
+			ID:                "local",
+			Label:             "Local server",
+			URL:               "http://127.0.0.1:8080",
+			BearerTokenEnv:    "SPEECHKIT_LOCAL_TOKEN",
+			AuthMode:          config.ServerConnectionAuthModeBearer,
+			FallbackToLocal:   true,
+			RequestTimeoutSec: 30,
+		},
+		{
+			ID:                "staging",
+			Label:             "Staging server",
+			URL:               "https://speechkit-staging.example.com",
+			BearerTokenEnv:    "SPEECHKIT_STAGING_TOKEN",
+			AuthMode:          config.ServerConnectionAuthModeAPIKey,
+			FallbackToLocal:   false,
+			RequestTimeoutSec: 10,
+		},
+	}
+	if err := applyAPIV1ServerConnectionPatch(cfgPath, cfg, &appState{}, apiV1ServerConnectionPatch{
+		ActiveTargetID: &activeTargetID,
+		Targets:        &targets,
+	}); err != nil {
+		t.Fatalf("applyAPIV1ServerConnectionPatch: %v", err)
+	}
+
+	if got, want := cfg.ServerConnection.ActiveTargetID, "staging"; got != want {
+		t.Fatalf("active target id = %q, want %q", got, want)
+	}
+	if got, want := cfg.ServerConnection.URL, "https://speechkit-staging.example.com"; got != want {
+		t.Fatalf("active URL = %q, want %q", got, want)
+	}
+	if got, want := cfg.ServerConnection.AuthMode, config.ServerConnectionAuthModeAPIKey; got != want {
+		t.Fatalf("active auth mode = %q, want %q", got, want)
+	}
+	if got, want := cfg.ServerConnection.BearerTokenEnv, "SPEECHKIT_STAGING_TOKEN"; got != want {
+		t.Fatalf("active token env = %q, want %q", got, want)
+	}
+	if cfg.ServerConnection.FallbackToLocal {
+		t.Fatal("active fallback_to_local = true, want false")
+	}
+	if got, want := cfg.ServerConnection.RequestTimeoutSec, 10; got != want {
+		t.Fatalf("active timeout = %d, want %d", got, want)
+	}
+	if got, want := len(cfg.ServerConnection.Targets), 2; got != want {
+		t.Fatalf("registered targets = %d, want %d", got, want)
+	}
+}
+
+func TestAPIV1ServerConnectionSmokeTestsHealthAndReadiness(t *testing.T) {
+	var sawAuth string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		sawAuth = r.Header.Get("Authorization")
+		switch r.URL.Path {
+		case "/healthz", "/readyz":
+			w.WriteHeader(http.StatusOK)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	body := `{"url":` + strconv.Quote(server.URL) + `,"token":"server-token","authMode":"bearer"}`
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/server-connection/smoke", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+
+	handleAPIV1ServerConnectionSmoke(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, body=%s", rec.Code, rec.Body.String())
+	}
+	var payload apiV1ServerConnectionSmokeResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("decode smoke response: %v", err)
+	}
+	if !payload.OK || payload.HealthStatus != http.StatusOK || payload.ReadyStatus != http.StatusOK {
+		t.Fatalf("smoke response = %#v, want ok health+ready", payload)
+	}
+	if sawAuth != "Bearer server-token" {
+		t.Fatalf("auth header = %q, want bearer token", sawAuth)
+	}
+}
+
+func TestAPIV1ServerConnectionPatchAppliesAPIKeyAuthMode(t *testing.T) {
+	cfg := defaultTestConfig()
+	cfg.ServerConnection.URL = "https://speechkit.example.com"
+	cfg.ServerConnection.AuthMode = config.ServerConnectionAuthModeBearer
+	cfg.ServerConnection.BearerTokenEnv = "SPEECHKIT_SERVER_TOKEN"
+	cfgPath := filepath.Join(t.TempDir(), "config.toml")
+
+	authMode := config.ServerConnectionAuthModeAPIKey
+	tokenEnv := ""
+	if err := applyAPIV1ServerConnectionPatch(cfgPath, cfg, &appState{}, apiV1ServerConnectionPatch{
+		AuthMode:       &authMode,
+		BearerTokenEnv: &tokenEnv,
+	}); err != nil {
+		t.Fatalf("applyAPIV1ServerConnectionPatch: %v", err)
+	}
+
+	if got, want := cfg.ServerConnection.AuthMode, config.ServerConnectionAuthModeAPIKey; got != want {
+		t.Fatalf("auth mode = %q, want %q", got, want)
+	}
+	if got, want := cfg.ServerConnection.BearerTokenEnv, "SPEECHKIT_SERVER_TOKEN"; got != want {
+		t.Fatalf("token env = %q, want %q", got, want)
+	}
+}
+
+func TestAPIV1VoiceAgentModeSourceSwitchResetsCachedSession(t *testing.T) {
+	t.Setenv("SC_TEST_SERVER_TOKEN", "secret")
+	cfg := defaultTestConfig()
+	cfg.ModelSelection.VoiceAgent.ModeSource = config.ModeSourceLocal
+	cfg.ServerConnection = config.ServerConnectionConfig{
+		Enabled:        false,
+		URL:            "http://localhost:8080",
+		BearerTokenEnv: "SC_TEST_SERVER_TOKEN",
+		AuthMode:       config.ServerConnectionAuthModeBearer,
+	}
+	state := &appState{
+		voiceAgentSession: prepareVoiceAgentSession(&appState{}, cfg),
+	}
+	cfgPath := filepath.Join(t.TempDir(), "config.toml")
+	modeSource := config.ModeSourceServer
+
+	if err := applyAPIV1ModeSettingsPatch(
+		context.Background(),
+		cfgPath,
+		cfg,
+		state,
+		&router.Router{},
+		modeVoiceAgent,
+		apiV1ModeSettingsPatch{ModeSource: &modeSource},
+	); err != nil {
+		t.Fatalf("applyAPIV1ModeSettingsPatch: %v", err)
+	}
+
+	if got := state.voiceAgentSession; got != nil {
+		t.Fatalf("voiceAgentSession = %#v, want nil after switching voice_agent to server", got)
+	}
+	if !currentServerDelegates(state).hasVoiceAgent() {
+		t.Fatal("server voice agent delegate not enabled after mode_source=server")
 	}
 }
 
@@ -413,6 +579,8 @@ func TestAPIV1OpenAPISpecDocumentsRegisteredRoutes(t *testing.T) {
 		"/api/v1/modes/{mode}/settings:",
 		"/api/v1/modes/{mode}/start:",
 		"/api/v1/modes/{mode}/stop:",
+		"/api/v1/server-connection:",
+		"/api/v1/server-connection/smoke:",
 		"/api/v1/providers/profiles:",
 		"/api/v1/providers/readiness:",
 		"/api/v1/providers/artifacts:",

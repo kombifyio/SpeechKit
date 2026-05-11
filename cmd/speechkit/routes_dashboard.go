@@ -232,20 +232,34 @@ func resolveDashboardAudio(ctx context.Context, feedbackStore store.Store, kind,
 		if err != nil {
 			return "", "", fmt.Errorf("transcription not found")
 		}
-		if rec.AudioPath == "" {
+		path := resolveDashboardAudioPath(ctx, feedbackStore, "transcription", rec.ID, rec.Audio, rec.AudioPath)
+		if path == "" {
 			return "", "", fmt.Errorf("audio not available")
 		}
-		return rec.AudioPath, fmt.Sprintf("transcription-%d.wav", rec.ID), nil
+		return path, fmt.Sprintf("transcription-%d.wav", rec.ID), nil
 	case "quicknote":
 		note, err := feedbackStore.GetQuickNote(ctx, id)
 		if err != nil {
 			return "", "", fmt.Errorf("quick note not found")
 		}
-		if note.AudioPath == "" {
+		path := resolveDashboardAudioPath(ctx, feedbackStore, "quick_note", note.ID, note.Audio, note.AudioPath)
+		if path == "" {
 			return "", "", fmt.Errorf("audio not available")
 		}
-		return note.AudioPath, fmt.Sprintf("quicknote-%d.wav", note.ID), nil
+		return path, fmt.Sprintf("quicknote-%d.wav", note.ID), nil
 	default:
 		return "", "", fmt.Errorf("unsupported audio kind")
 	}
+}
+
+func resolveDashboardAudioPath(ctx context.Context, feedbackStore store.Store, ownerKind string, ownerID int64, asset *store.AudioAsset, fallbackPath string) string {
+	if assetStore, ok := feedbackStore.(store.AudioAssetStore); ok {
+		if storedAsset, err := assetStore.GetAudioAsset(ctx, ownerKind, ownerID); err == nil && storedAsset != nil && strings.TrimSpace(storedAsset.Path) != "" {
+			return storedAsset.Path
+		}
+	}
+	if asset != nil && strings.TrimSpace(asset.Path) != "" {
+		return asset.Path
+	}
+	return strings.TrimSpace(fallbackPath)
 }

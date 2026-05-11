@@ -160,6 +160,7 @@ tts_direct = true
 enabled = false                              # Master switch. When false, every mode forces back to local.
 url = ""                                      # Optional remote target. Local mode is still the startup default.
 bearer_token_env = "SPEECHKIT_SERVER_TOKEN"  # Env var name. The token value is never read from this file.
+auth_mode = "bearer"                         # bearer = Authorization header, api_key = X-Api-Key for custom servers.
 fallback_to_local = true                     # If a server call fails, retry against the in-process kernel.
 request_timeout_sec = 30                     # Caps non-streaming HTTP calls. WebSocket sessions are unaffected.
 
@@ -276,6 +277,7 @@ vad_silence_duration_ms = 700
 # [providers.google]
 # enabled = false
 # api_key_env = "GOOGLE_AI_API_KEY"
+# stt_api_key_env = "SPEECHKIT_GOOGLE_STT_API_KEY"
 # stt_model = "chirp_3"
 # utility_model = "gemini-2.5-flash-lite"
 # assist_model = "gemini-2.5-flash"

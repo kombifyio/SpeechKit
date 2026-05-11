@@ -92,6 +92,38 @@ func TestCreateSessionUsesConfiguredPublicURLForWebSocketURL(t *testing.T) {
 	}
 }
 
+func TestCreateSessionUsesMountedPublicURLForWebSocketURL(t *testing.T) {
+	manager := mustManager(t, Options{})
+	handler, err := New(HandlerOptions{
+		Manager:   manager,
+		Provider:  staticProviderFactory{provider: newFakeProvider()},
+		Persona:   &fakeResolver{},
+		PublicURL: "https://speechkit-api.example.com/v1/speechkit",
+	})
+	if err != nil {
+		t.Fatalf("New handler: %v", err)
+	}
+	mux := http.NewServeMux()
+	handler.Mount(mux)
+	wrapped := middleware.Auth(middleware.AuthOptions{Mode: "none"})(mux)
+
+	req := httptest.NewRequest(http.MethodPost, "https://speechkit.internal/v1/voiceagent/sessions", nil)
+	rec := httptest.NewRecorder()
+	wrapped.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("expected 201, got %d body=%s", rec.Code, rec.Body.String())
+	}
+
+	var body createSessionResponse
+	if err := json.NewDecoder(rec.Body).Decode(&body); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if !strings.HasPrefix(body.WSURL, "wss://speechkit-api.example.com/v1/speechkit/voiceagent/sessions/") {
+		t.Fatalf("ws_url = %q, want configured mounted public URL", body.WSURL)
+	}
+}
+
 func TestCreateSessionIgnoresForwardedHostWithoutPublicURL(t *testing.T) {
 	manager := mustManager(t, Options{})
 	handler, err := New(HandlerOptions{

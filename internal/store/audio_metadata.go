@@ -21,7 +21,7 @@ func buildLocalAudioAsset(path string, durationMs int64) *AudioAsset {
 	if info, err := os.Stat(path); err == nil {
 		asset.SizeBytes = info.Size()
 	}
-	return asset
+	return normalizeAudioAsset(*asset)
 }
 
 func normalizeAudioAssetInput(audio AudioAssetInput) AudioAssetInput {

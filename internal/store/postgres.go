@@ -143,7 +143,9 @@ func (s *PostgresStore) GetTranscription(ctx context.Context, id int64) (*Transc
 	if strings.TrimSpace(t.Model) == "" {
 		t.Model = s.transcriptionModelHint(t.Provider)
 	}
-	t.Audio = buildLocalAudioAsset(t.AudioPath, t.DurationMs)
+	if err := s.hydrateTranscriptionAudio(ctx, &t); err != nil {
+		return nil, err
+	}
 	return &t, nil
 }
 
@@ -185,10 +187,15 @@ func (s *PostgresStore) ListTranscriptions(ctx context.Context, opts ListOpts) (
 		if strings.TrimSpace(t.Model) == "" {
 			t.Model = s.transcriptionModelHint(t.Provider)
 		}
-		t.Audio = buildLocalAudioAsset(t.AudioPath, t.DurationMs)
 		results = append(results, t)
 	}
-	return results, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	if err := hydrateTranscriptionAudioBatch(ctx, s.db, "postgres", results); err != nil {
+		return nil, err
+	}
+	return results, nil
 }
 
 func (s *PostgresStore) ReplaceUserDictionaryEntries(ctx context.Context, language string, entries []UserDictionaryEntry) error {
@@ -333,7 +340,9 @@ func (s *PostgresStore) GetQuickNote(ctx context.Context, id int64) (*QuickNote,
 	if err := row.Scan(&n.ID, &n.Text, &n.Language, &n.Provider, &n.DurationMs, &n.LatencyMs, &n.AudioPath, &n.Pinned, &n.CreatedAt, &n.UpdatedAt); err != nil {
 		return nil, err
 	}
-	n.Audio = buildLocalAudioAsset(n.AudioPath, n.DurationMs)
+	if err := s.hydrateQuickNoteAudio(ctx, &n); err != nil {
+		return nil, err
+	}
 	return &n, nil
 }
 
@@ -370,10 +379,41 @@ func (s *PostgresStore) ListQuickNotes(ctx context.Context, opts ListOpts) ([]Qu
 		if err := rows.Scan(&n.ID, &n.Text, &n.Language, &n.Provider, &n.DurationMs, &n.LatencyMs, &n.AudioPath, &n.Pinned, &n.CreatedAt, &n.UpdatedAt); err != nil {
 			return nil, err
 		}
-		n.Audio = buildLocalAudioAsset(n.AudioPath, n.DurationMs)
 		results = append(results, n)
 	}
-	return results, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	if err := hydrateQuickNoteAudioBatch(ctx, s.db, "postgres", results); err != nil {
+		return nil, err
+	}
+	return results, nil
+}
+
+func (s *PostgresStore) hydrateTranscriptionAudio(ctx context.Context, t *Transcription) error {
+	asset, err := s.GetAudioAsset(ctx, "transcription", t.ID)
+	if err != nil {
+		return err
+	}
+	if asset != nil {
+		t.Audio = asset
+		return nil
+	}
+	t.Audio = buildLocalAudioAsset(t.AudioPath, t.DurationMs)
+	return nil
+}
+
+func (s *PostgresStore) hydrateQuickNoteAudio(ctx context.Context, n *QuickNote) error {
+	asset, err := s.GetAudioAsset(ctx, "quick_note", n.ID)
+	if err != nil {
+		return err
+	}
+	if asset != nil {
+		n.Audio = asset
+		return nil
+	}
+	n.Audio = buildLocalAudioAsset(n.AudioPath, n.DurationMs)
+	return nil
 }
 
 func (s *PostgresStore) UpdateQuickNote(ctx context.Context, id int64, text string) error {
@@ -392,6 +432,10 @@ func (s *PostgresStore) UpdateQuickNoteCapture(ctx context.Context, id int64, te
 	var currentAudioPath string
 	if err := s.db.QueryRowContext(ctx, `SELECT COALESCE(audio_path, '') FROM quick_notes WHERE id = $1`, id).Scan(&currentAudioPath); err != nil {
 		return fmt.Errorf("lookup quick note %d: %w", id, err)
+	}
+	currentAudioPaths, err := quickNoteAudioPaths(ctx, s.db, "postgres", id, currentAudioPath)
+	if err != nil {
+		return fmt.Errorf("lookup quick note audio assets: %w", err)
 	}
 
 	nextAudioPath, err := s.persistAudio(audioAssetInputFromBytes(audioData), "qn_")
@@ -415,9 +459,14 @@ func (s *PostgresStore) UpdateQuickNoteCapture(ctx context.Context, id int64, te
 	if rows == 0 {
 		return fmt.Errorf("quick note %d not found", id)
 	}
-	if currentAudioPath != "" && currentAudioPath != nextAudioPath {
-		_ = os.Remove(currentAudioPath)
-		_ = deleteAudioAsset(ctx, s.db, "postgres", "quick_note", id, currentAudioPath)
+	if currentAudioPath != nextAudioPath {
+		for _, path := range currentAudioPaths {
+			if path == nextAudioPath {
+				continue
+			}
+			_ = os.Remove(path)
+			_ = deleteAudioAsset(ctx, s.db, "postgres", "quick_note", id, path)
+		}
 	}
 	if nextAudioPath != "" && currentAudioPath != nextAudioPath {
 		if err := recordAudioAsset(ctx, s.db, "postgres", "quick_note", id, nextAudioPath, durationMs, "audio/wav"); err != nil {
@@ -444,6 +493,10 @@ func (s *PostgresStore) PinQuickNote(ctx context.Context, id int64, pinned bool)
 func (s *PostgresStore) DeleteQuickNote(ctx context.Context, id int64) error {
 	var audioPath string
 	_ = s.db.QueryRowContext(ctx, `SELECT COALESCE(audio_path, '') FROM quick_notes WHERE id = $1`, id).Scan(&audioPath)
+	audioPaths, err := quickNoteAudioPaths(ctx, s.db, "postgres", id, audioPath)
+	if err != nil {
+		return fmt.Errorf("lookup quick note audio assets: %w", err)
+	}
 
 	result, err := s.db.ExecContext(ctx, `DELETE FROM quick_notes WHERE id = $1`, id)
 	if err != nil {
@@ -453,9 +506,11 @@ func (s *PostgresStore) DeleteQuickNote(ctx context.Context, id int64) error {
 	if rows == 0 {
 		return fmt.Errorf("quick note %d not found", id)
 	}
-	if audioPath != "" {
-		_ = os.Remove(audioPath)
-		_ = deleteAudioAssetsForOwner(ctx, s.db, "postgres", "quick_note", id)
+	for _, path := range audioPaths {
+		_ = os.Remove(path)
+	}
+	if err := deleteAudioAssetsForOwner(ctx, s.db, "postgres", "quick_note", id); err != nil {
+		return fmt.Errorf("delete quick note audio assets: %w", err)
 	}
 	return nil
 }

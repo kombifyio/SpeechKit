@@ -78,6 +78,7 @@ func TestNewFromConfigSuccess(t *testing.T) {
 		Enabled:           true,
 		URL:               "http://localhost:8080",
 		BearerTokenEnv:    "SC_TEST_TOKEN_OK",
+		AuthMode:          config.ServerConnectionAuthModeBearer,
 		RequestTimeoutSec: 7,
 	})
 	if err != nil {
@@ -88,6 +89,76 @@ func TestNewFromConfigSuccess(t *testing.T) {
 	}
 	if c.timeoutOnReq.Seconds() != 7 {
 		t.Errorf("timeoutOnReq = %v, want 7s", c.timeoutOnReq)
+	}
+}
+
+func TestNewFromConfigSupportsAPIKeyAuthMode(t *testing.T) {
+	t.Setenv("SC_TEST_CUSTOM_API_KEY", "custom-secret")
+	c, err := NewFromConfig(config.ServerConnectionConfig{
+		Enabled:        true,
+		URL:            "https://speechkit-api.example.com/v1/speechkit",
+		BearerTokenEnv: "SC_TEST_CUSTOM_API_KEY",
+		AuthMode:       config.ServerConnectionAuthModeAPIKey,
+	})
+	if err != nil {
+		t.Fatalf("NewFromConfig: %v", err)
+	}
+	if c.AuthMode() != config.ServerConnectionAuthModeAPIKey {
+		t.Fatalf("AuthMode = %q", c.AuthMode())
+	}
+}
+
+func TestNewRequestAvoidsDuplicateVersionForMountedBase(t *testing.T) {
+	c, err := New(Options{
+		BaseURL:     "https://speechkit-api.example.com/v1/speechkit",
+		BearerToken: "custom-secret",
+		AuthMode:    config.ServerConnectionAuthModeAPIKey,
+	})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+
+	req, err := c.newRequest(context.Background(), http.MethodPost, "/v1/voiceagent/sessions", strings.NewReader("{}"), "application/json")
+	if err != nil {
+		t.Fatalf("newRequest: %v", err)
+	}
+
+	if got, want := req.URL.Path, "/v1/speechkit/voiceagent/sessions"; got != want {
+		t.Fatalf("request path = %q, want %q", got, want)
+	}
+}
+
+func TestNewRequestKeepsVersionForOriginBase(t *testing.T) {
+	c, err := New(Options{
+		BaseURL:     "https://speechkit.example.com",
+		BearerToken: "server-token",
+	})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+
+	req, err := c.newRequest(context.Background(), http.MethodPost, "/v1/voiceagent/sessions", strings.NewReader("{}"), "application/json")
+	if err != nil {
+		t.Fatalf("newRequest: %v", err)
+	}
+
+	if got, want := req.URL.Path, "/v1/voiceagent/sessions"; got != want {
+		t.Fatalf("request path = %q, want %q", got, want)
+	}
+}
+
+func TestNewFromConfigDefaultsAPIKeyTokenEnv(t *testing.T) {
+	t.Setenv("SPEECHKIT_SERVER_TOKEN", "server-secret")
+	c, err := NewFromConfig(config.ServerConnectionConfig{
+		Enabled:  true,
+		URL:      "https://speechkit-api.example.com/v1/speechkit",
+		AuthMode: config.ServerConnectionAuthModeAPIKey,
+	})
+	if err != nil {
+		t.Fatalf("NewFromConfig: %v", err)
+	}
+	if c.BearerToken() != "server-secret" {
+		t.Fatalf("BearerToken = %q", c.BearerToken())
 	}
 }
 
@@ -128,6 +199,32 @@ func TestHealthSuccess(t *testing.T) {
 	c, err := New(Options{
 		BaseURL:     srv.URL,
 		BearerToken: "abc",
+		HTTPClient:  srv.Client(),
+	})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	if err := c.Health(context.Background()); err != nil {
+		t.Fatalf("Health: %v", err)
+	}
+}
+
+func TestHealthUsesAPIKeyHeader(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if got := r.Header.Get("X-Api-Key"); got != "abc" {
+			t.Errorf("missing/wrong X-Api-Key header: %q", got)
+		}
+		if got := r.Header.Get("Authorization"); got != "" {
+			t.Errorf("Authorization header should be empty for api_key auth: %q", got)
+		}
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	c, err := New(Options{
+		BaseURL:     srv.URL,
+		BearerToken: "abc",
+		AuthMode:    config.ServerConnectionAuthModeAPIKey,
 		HTTPClient:  srv.Client(),
 	})
 	if err != nil {

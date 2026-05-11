@@ -1,0 +1,1312 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>SpeechKit Server Setup</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #0f1115;
+      --surface: #171a20;
+      --line: #343a45;
+      --text: #f3f5f8;
+      --muted: #a7b0bd;
+      --ok: #73d28d;
+      --warn: #e6bd68;
+      --fail: #ff7878;
+      --run: #8bbcff;
+      font-family: "Segoe UI", "Aptos", sans-serif;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      background: var(--bg);
+      color: var(--text);
+    }
+
+    button, input, select {
+      font: inherit;
+    }
+
+    .shell {
+      width: min(960px, calc(100vw - 32px));
+      margin: 0 auto;
+      padding: 28px 0 40px;
+    }
+
+    header {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-end;
+      gap: 18px;
+      border-bottom: 1px solid var(--line);
+      padding-bottom: 18px;
+    }
+
+    h1 {
+      margin: 0;
+      font-size: 32px;
+      line-height: 1.1;
+      letter-spacing: 0;
+    }
+
+    .subtitle {
+      margin: 8px 0 0;
+      color: var(--muted);
+      max-width: 680px;
+      line-height: 1.45;
+    }
+
+    .state {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 9px 12px;
+      color: var(--muted);
+      background: #12151a;
+      white-space: nowrap;
+    }
+
+    .state.ok { color: var(--ok); border-color: rgba(115, 210, 141, .55); }
+    .state.warn { color: var(--warn); border-color: rgba(230, 189, 104, .55); }
+    .state.fail { color: var(--fail); border-color: rgba(255, 120, 120, .55); }
+    .state.run { color: var(--run); border-color: rgba(139, 188, 255, .55); }
+
+    .panel {
+      margin-top: 18px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--surface);
+      padding: 16px;
+    }
+
+    .stepper {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 8px;
+    }
+
+    .step {
+      min-height: 42px;
+      border-color: var(--line);
+      background: #12151a;
+      color: var(--muted);
+      text-align: left;
+    }
+
+    .step.active {
+      color: var(--text);
+      border-color: rgba(139, 188, 255, .7);
+      background: #172133;
+    }
+
+    .step.done {
+      color: var(--ok);
+      border-color: rgba(115, 210, 141, .5);
+    }
+
+    .step-panel {
+      display: grid;
+      gap: 14px;
+    }
+
+    .step-panel.hidden {
+      display: none;
+    }
+
+    .intro-copy, .review-copy {
+      color: var(--muted);
+      line-height: 1.45;
+      margin: 0;
+    }
+
+    .callout {
+      padding: 12px;
+      border: 1px solid rgba(139, 188, 255, .35);
+      border-radius: 6px;
+      background: #111827;
+      color: var(--text);
+      overflow-wrap: anywhere;
+    }
+
+    .setup-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 12px;
+      margin-top: 14px;
+    }
+
+    .metric {
+      min-height: 76px;
+      padding: 11px 12px;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      background: #12151a;
+    }
+
+    .metric span {
+      color: var(--muted);
+      font-size: 11px;
+      text-transform: uppercase;
+    }
+
+    .metric strong {
+      display: block;
+      margin-top: 3px;
+      overflow-wrap: anywhere;
+    }
+
+    .metric small {
+      display: block;
+      margin-top: 6px;
+      color: var(--muted);
+      line-height: 1.35;
+      overflow-wrap: anywhere;
+    }
+
+    .model-form {
+      display: grid;
+      gap: 16px;
+      margin-top: 16px;
+      padding-top: 16px;
+      border-top: 1px solid var(--line);
+    }
+
+    .provider-matrix {
+      grid-column: 1 / -1;
+      display: grid;
+      gap: 8px;
+    }
+
+    .provider-row {
+      display: grid;
+      grid-template-columns: 120px minmax(150px, .75fr) minmax(190px, 1fr) minmax(150px, .75fr);
+      gap: 10px;
+      align-items: end;
+      padding: 10px;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      background: #12151a;
+    }
+
+    .mode-name {
+      padding-bottom: 10px;
+      font-weight: 650;
+    }
+
+    .mode-options {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 10px;
+      margin-top: 8px;
+    }
+
+    .mode-option-card {
+      display: grid;
+      gap: 10px;
+      padding: 10px;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      background: #12151a;
+    }
+
+    .mode-option-card h3 {
+      margin: 0;
+      font-size: 14px;
+      line-height: 1.2;
+    }
+
+    .tool-grid {
+      display: grid;
+      gap: 6px;
+    }
+
+    .credential-grid {
+      grid-column: 1 / -1;
+      display: grid;
+      grid-template-columns: repeat(5, minmax(0, 1fr));
+      gap: 10px;
+    }
+
+    .credential-card {
+      display: grid;
+      gap: 8px;
+      padding: 10px;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      background: #12151a;
+    }
+
+    .server-auth-card {
+      grid-column: 1 / -1;
+    }
+
+    .auth-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+
+    .token-output {
+      display: grid;
+      gap: 8px;
+      border: 1px solid rgba(115, 210, 141, .35);
+      border-radius: 6px;
+      padding: 10px;
+      background: #0f1b13;
+    }
+
+    .token-output.hidden {
+      display: none;
+    }
+
+    .token-output code {
+      display: block;
+      overflow-wrap: anywhere;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      background: #0b0d11;
+      padding: 8px 10px;
+      color: var(--ok);
+      line-height: 1.45;
+    }
+
+    .token-output small {
+      color: var(--muted);
+      line-height: 1.35;
+    }
+
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      min-height: 24px;
+      width: fit-content;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      padding: 2px 8px;
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .badge.ok {
+      color: var(--ok);
+      border-color: rgba(115, 210, 141, .55);
+    }
+
+    .badge.warn {
+      color: var(--warn);
+      border-color: rgba(230, 189, 104, .55);
+    }
+
+    label {
+      display: grid;
+      gap: 7px;
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    input, select, textarea {
+      min-height: 38px;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      background: #0b0d11;
+      color: var(--text);
+      padding: 8px 10px;
+      outline: none;
+      line-height: 1.4;
+    }
+
+    textarea {
+      min-height: 110px;
+      resize: vertical;
+    }
+
+    input:focus, select:focus, textarea:focus {
+      border-color: var(--run);
+      box-shadow: 0 0 0 3px rgba(139, 188, 255, .13);
+    }
+
+    .inline {
+      min-height: 38px;
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      color: var(--text);
+    }
+
+    .inline input {
+      width: 18px;
+      min-height: 18px;
+    }
+
+    .form-actions {
+      grid-column: 1 / -1;
+      display: flex;
+      gap: 10px;
+      align-items: center;
+      justify-content: flex-end;
+    }
+
+    .save-status {
+      min-height: 20px;
+      color: var(--muted);
+      font-size: 13px;
+      overflow-wrap: anywhere;
+    }
+
+    button {
+      min-height: 42px;
+      border: 1px solid rgba(115, 210, 141, .62);
+      border-radius: 6px;
+      background: #203126;
+      color: var(--text);
+      padding: 0 16px;
+      cursor: pointer;
+    }
+
+    button:hover {
+      border-color: var(--ok);
+    }
+
+    button:disabled {
+      cursor: not-allowed;
+      opacity: .58;
+    }
+
+    button.secondary {
+      min-height: 34px;
+      border-color: var(--line);
+      background: #151a22;
+      color: var(--muted);
+    }
+
+    @media (max-width: 760px) {
+      header, .stepper, .setup-grid, .provider-row, .mode-options, .credential-grid, .model-form {
+        grid-template-columns: 1fr;
+      }
+
+      header {
+        display: grid;
+        align-items: start;
+      }
+
+      button {
+        width: 100%;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main class="shell">
+    <header>
+      <div>
+        <h1 id="setupHeading">SpeechKit Server Setup</h1>
+        <p class="subtitle" id="setupSubtitle">Guided onboarding for provider, model, and credential settings on this server instance.</p>
+      </div>
+      <div class="state" id="setupStatus">Loading</div>
+    </header>
+
+    <section class="panel" id="setupWizard" data-setup-mode="onboarding">
+      <div class="stepper" aria-label="Setup steps">
+        <button class="step active" data-step-target="welcome" type="button">1. Welcome</button>
+        <button class="step" data-step-target="models" type="button">2. Models</button>
+        <button class="step" data-step-target="credentials" type="button">3. Keys</button>
+        <button class="step" data-step-target="review" type="button">4. Review</button>
+      </div>
+
+      <form class="model-form" id="onboardingPanel">
+        <section class="step-panel" data-step-panel="welcome">
+          <p class="intro-copy">SpeechKit can run fully self-hosted out of the box. The default stack uses Whisper Large v3 Turbo for dictation and a local llama.cpp model for Assist and the Voice Agent pipeline.</p>
+          <div class="callout">Default local LLM: <strong>ggml-org/gemma-4-E4B-it-GGUF:Q4_K_M</strong></div>
+          <div class="setup-grid">
+            <div class="metric">
+              <span>Runtime</span>
+              <strong id="runtimeMode">waiting</strong>
+              <small id="runtimeDetail">-</small>
+            </div>
+            <div class="metric">
+              <span>Models</span>
+              <strong id="modelSummary">waiting</strong>
+              <small id="modelDetail">-</small>
+            </div>
+            <div class="metric">
+              <span>Data</span>
+              <strong id="dataSummary">waiting</strong>
+              <small id="dataDetail">-</small>
+            </div>
+          </div>
+        </section>
+
+        <section class="step-panel hidden" id="settingsPanel" data-step-panel="models">
+        <p class="settings-copy">Choose provider types and concrete models for Dictation, Assist, and Voice Agent.</p>
+        <div class="provider-matrix" id="providerMatrix">
+          <span class="badge" id="onboardingState">Onboarding pending</span>
+          <div class="provider-row">
+            <div class="mode-name">Dictation</div>
+            <label for="dictationKind">Provider type
+              <select id="dictationKind" data-mode="dictation">
+                <option value="local_built_in">Local Built-in</option>
+                <option value="local_provider">Local Provider</option>
+                <option value="cloud_provider">Cloud Provider</option>
+                <option value="direct_provider">Direct Provider</option>
+              </select>
+            </label>
+            <label for="dictationProfile">Provider
+              <select id="dictationProfile"></select>
+            </label>
+            <label for="dictationModel">Model
+              <input id="dictationModel" autocomplete="off" value="whisper-1">
+            </label>
+          </div>
+          <div class="provider-row">
+            <div class="mode-name">Assist</div>
+            <label for="assistKind">Provider type
+              <select id="assistKind" data-mode="assist">
+                <option value="local_built_in">Local Built-in</option>
+                <option value="local_provider">Local Provider</option>
+                <option value="cloud_provider">Cloud Provider</option>
+                <option value="direct_provider">Direct Provider</option>
+              </select>
+            </label>
+            <label for="assistProfile">Provider
+              <select id="assistProfile"></select>
+            </label>
+            <label for="assistModel">Model
+              <input id="assistModel" autocomplete="off" value="ggml-org/gemma-4-E4B-it-GGUF:Q4_K_M">
+            </label>
+          </div>
+          <div class="provider-row">
+            <div class="mode-name">Voice Agent</div>
+            <label for="voiceAgentKind">Provider type
+              <select id="voiceAgentKind" data-mode="voice_agent">
+                <option value="local_built_in">Local Built-in</option>
+                <option value="local_provider">Local Provider</option>
+                <option value="cloud_provider">Cloud Provider</option>
+                <option value="direct_provider">Direct Provider</option>
+              </select>
+            </label>
+            <label for="voiceAgentProfile">Provider
+              <select id="voiceAgentProfile"></select>
+            </label>
+            <label for="voiceAgentModel">Model
+              <input id="voiceAgentModel" autocomplete="off" value="ggml-org/gemma-4-E4B-it-GGUF:Q4_K_M">
+            </label>
+          </div>
+          <div class="mode-options" id="modeOptions">
+            <div class="mode-option-card">
+              <h3>Dictation Dictionary</h3>
+              <label for="dictationDictionary">Custom words
+                <textarea id="dictationDictionary" autocomplete="off" placeholder="Kombify&#10;kombi fire => Kombify"></textarea>
+              </label>
+            </div>
+            <div class="mode-option-card">
+              <h3>Assist Tools</h3>
+              <div class="tool-grid" id="assistToolList"></div>
+            </div>
+            <div class="mode-option-card">
+              <h3>Voice Agent Prompt Template</h3>
+              <label for="voiceAgentAgentProfile">Agent profile
+                <select id="voiceAgentAgentProfile"></select>
+              </label>
+              <label for="voiceAgentPromptTemplate">System prompt
+                <textarea id="voiceAgentPromptTemplate" autocomplete="off" placeholder="You are a concise voice assistant."></textarea>
+              </label>
+            </div>
+          </div>
+        </div>
+        </section>
+
+        <section class="step-panel hidden" data-step-panel="credentials">
+        <div class="credential-card server-auth-card">
+          <div class="auth-row">
+            <strong>Admin sign-in</strong>
+            <span class="badge warn" id="adminPasswordState">Password required</span>
+          </div>
+          <p class="intro-copy">Create the admin account for this SpeechKit setup UI. API clients still use their configured bearer token.</p>
+          <label for="adminUsername">Admin username
+            <input id="adminUsername" autocomplete="username" value="admin">
+          </label>
+          <label for="adminPassword">Admin password
+            <input id="adminPassword" autocomplete="new-password" type="password" placeholder="required for initial setup">
+          </label>
+          <label for="adminPasswordConfirm">Confirm admin password
+            <input id="adminPasswordConfirm" autocomplete="new-password" type="password">
+          </label>
+        </div>
+        <div class="credential-card server-auth-card">
+          <div class="auth-row">
+            <label class="inline"><input id="serverTokenManaged" type="checkbox" checked> Generate server API token</label>
+            <span class="badge warn" id="serverTokenState">Token pending</span>
+          </div>
+          <p class="intro-copy">Keep this on to generate a bearer token for Windows clients and API callers. Turn it off when authentication is handled outside SpeechKit or the API should stay available with the current server auth mode.</p>
+          <label for="serverTokenEnv">Bearer token env
+            <input id="serverTokenEnv" autocomplete="off" value="SPEECHKIT_SERVER_TOKEN">
+          </label>
+          <div class="token-output hidden" id="serverTokenOutput">
+            <strong>Generated server API token</strong>
+            <code id="generatedServerToken">-</code>
+            <button id="copyGeneratedServerToken" class="secondary" type="button">Copy Token</button>
+            <small id="generatedServerTokenHint">Store this token in the Windows client environment and send it as Authorization: Bearer.</small>
+          </div>
+        </div>
+        <div class="credential-grid">
+          <div class="credential-card">
+            <label class="inline"><input id="openAIEnabled" type="checkbox"> OpenAI</label>
+            <label for="openAIEnv">Env
+              <input id="openAIEnv" autocomplete="off" value="OPENAI_API_KEY">
+            </label>
+            <label for="openAIKey">API Key
+              <input id="openAIKey" autocomplete="off" type="password" placeholder="leave empty to keep the current value">
+            </label>
+          </div>
+          <div class="credential-card">
+            <label class="inline"><input id="groqEnabled" type="checkbox"> Groq</label>
+            <label for="groqEnv">Env
+              <input id="groqEnv" autocomplete="off" value="GROQ_API_KEY">
+            </label>
+            <label for="groqKey">API Key
+              <input id="groqKey" autocomplete="off" type="password" placeholder="leave empty to keep the current value">
+            </label>
+          </div>
+          <div class="credential-card">
+            <label class="inline"><input id="googleEnabled" type="checkbox"> Google</label>
+            <label for="googleEnv">Env
+              <input id="googleEnv" autocomplete="off" value="GOOGLE_AI_API_KEY">
+            </label>
+            <label for="googleKey">API Key
+              <input id="googleKey" autocomplete="off" type="password" placeholder="leave empty to keep the current value">
+            </label>
+          </div>
+          <div class="credential-card">
+            <label class="inline"><input id="hfEnabled" type="checkbox"> Hugging Face</label>
+            <label for="hfEnv">Env
+              <input id="hfEnv" autocomplete="off" value="HF_TOKEN">
+            </label>
+            <label for="hfKey">API Key
+              <input id="hfKey" autocomplete="off" type="password" placeholder="leave empty to keep the current value">
+            </label>
+          </div>
+          <div class="credential-card">
+            <label class="inline"><input id="openRouterEnabled" type="checkbox"> OpenRouter</label>
+            <label for="openRouterEnv">Env
+              <input id="openRouterEnv" autocomplete="off" value="OPENROUTER_API_KEY">
+            </label>
+            <label for="openRouterKey">API Key
+              <input id="openRouterKey" autocomplete="off" type="password" placeholder="leave empty to keep the current value">
+            </label>
+          </div>
+        </div>
+        </section>
+
+        <section class="step-panel hidden" data-step-panel="review">
+          <p class="review-copy">Review the active choices. Saving marks onboarding complete for this deploy version and writes the desired model settings.</p>
+          <div class="setup-grid">
+            <div class="metric">
+              <span>Dictation</span>
+              <strong id="reviewDictation">-</strong>
+              <small id="reviewDictationModel">-</small>
+            </div>
+            <div class="metric">
+              <span>Assist</span>
+              <strong id="reviewAssist">-</strong>
+              <small id="reviewAssistModel">-</small>
+            </div>
+            <div class="metric">
+              <span>Voice Agent</span>
+              <strong id="reviewVoice">-</strong>
+              <small id="reviewVoiceModel">-</small>
+            </div>
+            <div class="metric">
+              <span>API Auth</span>
+              <strong id="reviewServerAuth">-</strong>
+              <small id="reviewServerAuthDetail">-</small>
+            </div>
+          </div>
+        </section>
+
+        <div class="form-actions">
+          <span class="save-status" id="settingsSaveStatus"></span>
+          <button id="runDefaultInstall" class="secondary" type="button">Use Local Defaults</button>
+          <button id="setupBack" class="secondary" type="button">Back</button>
+          <button id="setupNext" type="button">Continue</button>
+          <button id="saveModelSettings" type="button">Save Settings</button>
+        </div>
+      </form>
+    </section>
+  </main>
+
+  <script>
+    const defaultLocalLLMModel = "ggml-org/gemma-4-E4B-it-GGUF:Q4_K_M";
+    const providerKinds = ["local_built_in", "local_provider", "cloud_provider", "direct_provider"];
+    const setupSteps = ["welcome", "models", "credentials", "review"];
+    const adminBasicSessionKey = "speechkit.admin.basic";
+    let currentStep = 0;
+    let lastSettings = null;
+    let setupMode = "onboarding";
+    let generatedServerToken = "";
+    let forceServerTokenGeneration = false;
+
+    function byId(id) {
+      return document.getElementById(id);
+    }
+
+    function setSetupStatus(text, state) {
+      const el = byId("setupStatus");
+      el.textContent = text;
+      el.className = "state " + (state || "");
+    }
+
+    function component(settings, name) {
+      return settings && settings.components ? settings.components[name] : null;
+    }
+
+    function providerList(values) {
+      return Array.isArray(values) && values.length ? values.join(", ") : "none";
+    }
+
+    function selectedText(id) {
+      const select = byId(id);
+      return select && select.selectedOptions.length ? select.selectedOptions[0].textContent : "-";
+    }
+
+    function voiceAgentProfiles() {
+      const voice = lastSettings && lastSettings.voice_agent ? lastSettings.voice_agent : {};
+      const profiles = Array.isArray(voice.agent_profiles) ? voice.agent_profiles : [];
+      return profiles.length ? profiles : [
+        { id: "default", display_name: "Default Voice Agent" },
+        { id: "brainstorming_companion", display_name: "Brainstorming Companion", voice: "Aoede" },
+        { id: "humor_companion", display_name: "Humor Companion", voice: "Puck" },
+        { id: "support_companion", display_name: "Support Companion", voice: "Charon" }
+      ];
+    }
+
+    function populateVoiceAgentProfiles(selectedID) {
+      const select = byId("voiceAgentAgentProfile");
+      if (!select) return;
+      const profiles = voiceAgentProfiles();
+      const current = selectedID || select.value || "default";
+      select.innerHTML = "";
+      profiles.forEach(function (profile) {
+        const option = document.createElement("option");
+        option.value = profile.id;
+        option.textContent = profile.display_name || profile.displayName || profile.id;
+        if (profile.voice) {
+          option.textContent += " (" + profile.voice + ")";
+        }
+        select.appendChild(option);
+      });
+      select.value = profiles.some(function (profile) { return profile.id === current; }) ? current : "default";
+    }
+
+    function assistTools() {
+      const catalog = lastSettings && lastSettings.catalog ? lastSettings.catalog : {};
+      return Array.isArray(catalog.assist_tools) ? catalog.assist_tools : [];
+    }
+
+    function defaultAssistToolIDs() {
+      return assistTools().filter(function (tool) {
+        return tool.default_enabled;
+      }).map(function (tool) {
+        return tool.id;
+      });
+    }
+
+    function renderAssistTools(selectedIDs) {
+      const selected = new Set(Array.isArray(selectedIDs) ? selectedIDs : defaultAssistToolIDs());
+      const list = byId("assistToolList");
+      list.innerHTML = "";
+      assistTools().forEach(function (tool) {
+        const label = document.createElement("label");
+        label.className = "inline";
+        const input = document.createElement("input");
+        input.type = "checkbox";
+        input.value = tool.id;
+        input.checked = selected.has(tool.id);
+        input.dataset.assistTool = "true";
+        label.appendChild(input);
+        label.appendChild(document.createTextNode(tool.label || tool.id));
+        list.appendChild(label);
+      });
+    }
+
+    function selectedAssistToolIDs() {
+      return Array.from(document.querySelectorAll("[data-assist-tool]")).filter(function (input) {
+        return input.checked;
+      }).map(function (input) {
+        return input.value;
+      });
+    }
+
+    function serverBearerTokenSet() {
+      const auth = lastSettings && lastSettings.auth ? lastSettings.auth : {};
+      return Boolean(auth.bearer_token_set);
+    }
+
+    function adminPasswordSet() {
+      const auth = lastSettings && lastSettings.auth ? lastSettings.auth : {};
+      return Boolean(auth.admin_password_set);
+    }
+
+    function updateServerAuthUI() {
+      const managed = byId("serverTokenManaged").checked;
+      const tokenSet = serverBearerTokenSet();
+      const envName = byId("serverTokenEnv").value.trim() || "SPEECHKIT_SERVER_TOKEN";
+      const state = byId("serverTokenState");
+      if (!managed) {
+        state.textContent = "Self-managed";
+        state.className = "badge";
+      } else if (forceServerTokenGeneration || !tokenSet) {
+        state.textContent = "Token will be generated";
+        state.className = "badge warn";
+      } else {
+        state.textContent = "Token configured";
+        state.className = "badge ok";
+      }
+      byId("reviewServerAuth").textContent = managed ? "Managed bearer token" : "Self-managed";
+      byId("reviewServerAuthDetail").textContent = managed
+        ? "Env: " + envName + (forceServerTokenGeneration || !tokenSet ? " / new token on save" : " / existing token")
+        : "Setup will not generate a server API token.";
+      updateAdminAuthUI();
+    }
+
+    function updateAdminAuthUI() {
+      const state = byId("adminPasswordState");
+      const password = byId("adminPassword").value;
+      const confirm = byId("adminPasswordConfirm").value;
+      if (password || confirm) {
+        state.textContent = password && password === confirm ? "Password will be updated" : "Password confirmation required";
+        state.className = "badge " + (password && password === confirm ? "ok" : "warn");
+      } else if (adminPasswordSet()) {
+        state.textContent = "Admin configured";
+        state.className = "badge ok";
+      } else {
+        state.textContent = "Password required";
+        state.className = "badge warn";
+      }
+    }
+
+    function applyServerAuthToForm(settings) {
+      settings = settings || {};
+      const editable = settings.editable || {};
+      const desired = editable.desired || {};
+      const desiredAuth = desired.server_auth || {};
+      const runtime = settings.runtime || {};
+      const runtimeAuth = settings.auth || {};
+      const mode = runtime.settings_persisted && desiredAuth.mode ? desiredAuth.mode : "managed_bearer";
+      byId("serverTokenManaged").checked = mode !== "self_managed";
+      byId("serverTokenEnv").value = desiredAuth.bearer_token_env || runtimeAuth.bearer_token_env || "SPEECHKIT_SERVER_TOKEN";
+      forceServerTokenGeneration = byId("serverTokenManaged").checked && !Boolean(runtimeAuth.bearer_token_set);
+      const desiredAdmin = desired.admin_auth || {};
+      byId("adminUsername").value = desiredAdmin.username || runtimeAuth.admin_username || "admin";
+      byId("adminPassword").value = "";
+      byId("adminPasswordConfirm").value = "";
+      updateServerAuthUI();
+    }
+
+    function adminAuthPayload() {
+      const username = byId("adminUsername").value.trim();
+      const password = byId("adminPassword").value;
+      const confirm = byId("adminPasswordConfirm").value;
+      if (!username) {
+        throw new Error("Admin username is required.");
+      }
+      if ((password || confirm) && password !== confirm) {
+        throw new Error("Admin password confirmation does not match.");
+      }
+      if (!adminPasswordSet() && !password) {
+        throw new Error("Admin password is required for initial setup.");
+      }
+      if (password && password.length < 8) {
+        throw new Error("Admin password must be at least 8 characters.");
+      }
+      const payload = { username: username };
+      if (password) {
+        payload.password = password;
+      }
+      return payload;
+    }
+
+    function serverAuthPayload() {
+      const managed = byId("serverTokenManaged").checked;
+      const payload = {
+        mode: managed ? "managed_bearer" : "self_managed",
+        bearer_token_env: byId("serverTokenEnv").value.trim() || "SPEECHKIT_SERVER_TOKEN"
+      };
+      if (managed && (forceServerTokenGeneration || !serverBearerTokenSet())) {
+        payload.generate_token = true;
+      }
+      return payload;
+    }
+
+    function renderGeneratedServerToken(generated) {
+      generated = generated || {};
+      if (!generated.token) {
+        if (!generatedServerToken) {
+          byId("serverTokenOutput").classList.add("hidden");
+        }
+        return;
+      }
+      generatedServerToken = generated.token;
+      forceServerTokenGeneration = false;
+      byId("generatedServerToken").textContent = generated.token;
+      byId("generatedServerTokenHint").textContent = "Store this in " + (generated.env || "SPEECHKIT_SERVER_TOKEN") + " on the Windows client. API calls must send Authorization: Bearer <token>.";
+      byId("serverTokenOutput").classList.remove("hidden");
+      updateServerAuthUI();
+    }
+
+    function renderSettingsPanels() {
+      document.querySelectorAll("[data-step-panel]").forEach(function (panel) {
+        panel.classList.toggle("hidden", panel.dataset.stepPanel !== "models" && panel.dataset.stepPanel !== "credentials");
+      });
+      document.querySelectorAll("[data-step-target]").forEach(function (step) {
+        step.classList.remove("active", "done");
+      });
+      byId("setupBack").style.display = "none";
+      byId("setupNext").style.display = "none";
+      byId("saveModelSettings").style.display = "";
+      updateReview();
+    }
+
+    function renderSetupMode(settings) {
+      const onboarding = settings && settings.onboarding ? settings.onboarding : {};
+      const requiresOnboarding = onboarding.enabled !== false && Boolean(onboarding.required);
+      setupMode = requiresOnboarding ? "onboarding" : "settings";
+      byId("setupWizard").dataset.setupMode = setupMode;
+      byId("setupHeading").textContent = requiresOnboarding ? "SpeechKit Server Setup" : "SpeechKit Server Settings";
+      byId("setupSubtitle").textContent = requiresOnboarding
+        ? "Guided onboarding for provider, model, and credential settings on this server instance."
+        : "Manage provider, model, and credential settings for this server instance.";
+      document.querySelector(".stepper").style.display = requiresOnboarding ? "" : "none";
+      byId("onboardingState").textContent = requiresOnboarding ? "Onboarding required" : "Settings mode";
+      byId("onboardingState").className = "badge " + (requiresOnboarding ? "warn" : "ok");
+      if (requiresOnboarding) {
+        setStep(currentStep);
+      } else {
+        renderSettingsPanels();
+      }
+    }
+
+    function setStep(index) {
+      if (setupMode === "settings") {
+        renderSettingsPanels();
+        return;
+      }
+      currentStep = Math.max(0, Math.min(setupSteps.length - 1, index));
+      const active = setupSteps[currentStep];
+      document.querySelectorAll("[data-step-panel]").forEach(function (panel) {
+        panel.classList.toggle("hidden", panel.dataset.stepPanel !== active);
+      });
+      document.querySelectorAll("[data-step-target]").forEach(function (step, idx) {
+        step.classList.toggle("active", step.dataset.stepTarget === active);
+        step.classList.toggle("done", idx < currentStep);
+      });
+      byId("setupBack").disabled = currentStep === 0;
+      byId("setupBack").style.display = "";
+      byId("setupNext").style.display = currentStep === setupSteps.length - 1 ? "none" : "";
+      byId("saveModelSettings").style.display = currentStep === setupSteps.length - 1 ? "" : "none";
+      updateReview();
+    }
+
+    function updateReview() {
+      const pairs = [
+        ["reviewDictation", "reviewDictationModel", "dictationProfile", "dictationModel"],
+        ["reviewAssist", "reviewAssistModel", "assistProfile", "assistModel"],
+        ["reviewVoice", "reviewVoiceModel", "voiceAgentProfile", "voiceAgentModel"]
+      ];
+      pairs.forEach(function (pair) {
+        byId(pair[0]).textContent = selectedText(pair[2]);
+        byId(pair[1]).textContent = byId(pair[3]).value || "-";
+      });
+      const agentProfile = selectedText("voiceAgentAgentProfile");
+      if (agentProfile !== "-") {
+        byId("reviewVoiceModel").textContent = (byId("reviewVoiceModel").textContent || "-") + " / Agent " + agentProfile;
+      }
+      updateServerAuthUI();
+    }
+
+    function profilesFor(mode, kind) {
+      const catalog = lastSettings && lastSettings.catalog && lastSettings.catalog.modes ? lastSettings.catalog.modes : {};
+      return (catalog[mode] || []).filter(function (profile) {
+        return !kind || profile.providerKind === kind;
+      });
+    }
+
+    function profileById(mode, id) {
+      const catalog = lastSettings && lastSettings.catalog && lastSettings.catalog.modes ? lastSettings.catalog.modes : {};
+      return (catalog[mode] || []).find(function (profile) {
+        return profile.id === id;
+      });
+    }
+
+    function preferredProfile(mode, kind) {
+      const profiles = profilesFor(mode, kind);
+      return profiles.find(function (profile) { return profile.default; })
+        || profiles.find(function (profile) { return profile.recommended; })
+        || profiles[0]
+        || null;
+    }
+
+    function recommendedVariant(profile) {
+      if (!profile || !Array.isArray(profile.variants)) return null;
+      return profile.variants.find(function (variant) { return variant.recommended; }) || profile.variants[0] || null;
+    }
+
+    function populateProfiles(mode, kindId, profileId) {
+      const kind = byId(kindId).value;
+      const select = byId(profileId);
+      const current = select.value;
+      select.innerHTML = "";
+      profilesFor(mode, kind).forEach(function (profile) {
+        const option = document.createElement("option");
+        option.value = profile.id;
+        option.textContent = profile.name;
+        select.appendChild(option);
+      });
+      const fallback = preferredProfile(mode, kind);
+      select.value = current && profileById(mode, current) ? current : (fallback ? fallback.id : "");
+      syncModelForProfile(mode, profileId);
+    }
+
+    function syncModelForProfile(mode, profileId) {
+      const profile = profileById(mode, byId(profileId).value);
+      const variant = recommendedVariant(profile);
+      const modelInput = mode === "dictation" ? byId("dictationModel") : mode === "assist" ? byId("assistModel") : byId("voiceAgentModel");
+      if (!modelInput.value.trim()) {
+        if (profile && profile.providerKind === "local_built_in" && mode !== "dictation") {
+          modelInput.value = defaultLocalLLMModel;
+        } else {
+          modelInput.value = variant ? variant.modelId : (profile ? profile.modelId : "");
+        }
+      }
+      updateReview();
+    }
+
+    function applyModeOptionsToForm(settings) {
+      settings = settings || {};
+      const editable = settings.editable || {};
+      const desired = editable.desired || {};
+      const dictation = desired.dictation || {};
+      const assist = desired.assist || {};
+      const voice = desired.voice_agent || {};
+      byId("dictationDictionary").value = typeof dictation.dictionary === "string" ? dictation.dictionary : "";
+      renderAssistTools(Array.isArray(assist.enabled_tools) ? assist.enabled_tools : defaultAssistToolIDs());
+      populateVoiceAgentProfiles(voice.agent_profile_id || (settings.voice_agent || {}).agent_profile_id || "default");
+      byId("voiceAgentPromptTemplate").value = typeof voice.prompt_template === "string" ? voice.prompt_template : "";
+    }
+
+    function applySettingsToForm(settings, options) {
+      options = options || {};
+      lastSettings = settings || {};
+      populateProfiles("dictation", "dictationKind", "dictationProfile");
+      populateProfiles("assist", "assistKind", "assistProfile");
+      populateProfiles("voice_agent", "voiceAgentKind", "voiceAgentProfile");
+
+      const editable = lastSettings.editable || {};
+      const desired = editable.desired || {};
+      const modes = desired.modes || {};
+      applyModeForm("dictation", modes.dictation, "dictationKind", "dictationProfile", "dictationModel");
+      applyModeForm("assist", modes.assist, "assistKind", "assistProfile", "assistModel");
+      applyModeForm("voice_agent", modes.voice_agent, "voiceAgentKind", "voiceAgentProfile", "voiceAgentModel");
+
+      const credentials = desired.credentials || {};
+      applyCredentialForm(credentials.openai, "openAIEnabled", "openAIEnv");
+      applyCredentialForm(credentials.groq, "groqEnabled", "groqEnv");
+      applyCredentialForm(credentials.google, "googleEnabled", "googleEnv");
+      applyCredentialForm(credentials.huggingface, "hfEnabled", "hfEnv");
+      applyCredentialForm(credentials.openrouter, "openRouterEnabled", "openRouterEnv");
+      applyServerAuthToForm(lastSettings);
+      applyModeOptionsToForm(lastSettings);
+
+      const runtime = lastSettings.runtime || {};
+      const onboarding = lastSettings.onboarding || {};
+      byId("saveModelSettings").disabled = !runtime.settings_write;
+      const requiresOnboarding = onboarding.enabled !== false && Boolean(onboarding.required);
+      byId("onboardingState").textContent = requiresOnboarding ? "Onboarding required" : "Settings mode";
+      byId("onboardingState").className = "badge " + (requiresOnboarding ? "warn" : "ok");
+      if (!options.preserveStatus || !runtime.settings_write) {
+        byId("settingsSaveStatus").textContent = runtime.settings_write ? "" : "Saving is disabled.";
+      }
+      updateRuntimePanel(lastSettings);
+      renderSetupMode(lastSettings);
+      updateReview();
+    }
+
+    function applyModeForm(mode, setting, kindId, profileId, modelId) {
+      setting = setting || {};
+      const kind = setting.provider_kind || (preferredProfile(mode, "local_built_in") ? "local_built_in" : byId(kindId).value);
+      byId(kindId).value = providerKinds.includes(kind) ? kind : "local_built_in";
+      populateProfiles(mode, kindId, profileId);
+      if (setting.profile_id && profileById(mode, setting.profile_id)) {
+        byId(profileId).value = setting.profile_id;
+      }
+      byId(modelId).value = setting.model || byId(modelId).value || "";
+    }
+
+    function applyCredentialForm(setting, enabledId, envId) {
+      setting = setting || {};
+      if (typeof setting.enabled === "boolean") {
+        byId(enabledId).checked = setting.enabled;
+      }
+      if (setting.env) {
+        byId(envId).value = setting.env;
+      }
+    }
+
+    function setDefaultLocalSettings() {
+      byId("dictationKind").value = "local_built_in";
+      byId("assistKind").value = "local_built_in";
+      byId("voiceAgentKind").value = "local_built_in";
+      populateProfiles("dictation", "dictationKind", "dictationProfile");
+      populateProfiles("assist", "assistKind", "assistProfile");
+      populateProfiles("voice_agent", "voiceAgentKind", "voiceAgentProfile");
+      byId("dictationProfile").value = "stt.local.whispercpp";
+      byId("assistProfile").value = "assist.builtin.gemma4-e4b";
+      byId("voiceAgentProfile").value = "realtime.builtin.pipeline";
+      byId("dictationModel").value = "whisper-1";
+      byId("assistModel").value = defaultLocalLLMModel;
+      byId("voiceAgentModel").value = defaultLocalLLMModel;
+      renderAssistTools(defaultAssistToolIDs());
+      populateVoiceAgentProfiles("default");
+      byId("settingsSaveStatus").textContent = "Local defaults selected.";
+      updateReview();
+    }
+
+    function credentialPayload(enabledId, envId, valueId) {
+      const payload = {
+        enabled: byId(enabledId).checked,
+        env: byId(envId).value.trim()
+      };
+      const value = byId(valueId).value.trim();
+      if (value) {
+        payload.value = value;
+      }
+      return payload;
+    }
+
+    function buildSettingsPayload() {
+      return {
+        onboarding_complete: true,
+        onboarding_version: lastSettings && lastSettings.version ? lastSettings.version : "",
+        admin_auth: adminAuthPayload(),
+        server_auth: serverAuthPayload(),
+        modes: {
+          dictation: {
+            provider_kind: byId("dictationKind").value,
+            profile_id: byId("dictationProfile").value,
+            model: byId("dictationModel").value.trim()
+          },
+          assist: {
+            provider_kind: byId("assistKind").value,
+            profile_id: byId("assistProfile").value,
+            model: byId("assistModel").value.trim()
+          },
+          voice_agent: {
+            provider_kind: byId("voiceAgentKind").value,
+            profile_id: byId("voiceAgentProfile").value,
+            model: byId("voiceAgentModel").value.trim()
+          }
+        },
+        dictation: {
+          dictionary: byId("dictationDictionary").value.trim()
+        },
+        assist: {
+          enabled_tools: selectedAssistToolIDs()
+        },
+        voice_agent: {
+          agent_profile_id: byId("voiceAgentAgentProfile").value || "default",
+          prompt_template: byId("voiceAgentPromptTemplate").value.trim()
+        },
+        credentials: {
+          openai: credentialPayload("openAIEnabled", "openAIEnv", "openAIKey"),
+          groq: credentialPayload("groqEnabled", "groqEnv", "groqKey"),
+          google: credentialPayload("googleEnabled", "googleEnv", "googleKey"),
+          huggingface: credentialPayload("hfEnabled", "hfEnv", "hfKey"),
+          openrouter: credentialPayload("openRouterEnabled", "openRouterEnv", "openRouterKey")
+        }
+      };
+    }
+
+    async function saveServerSettings(event) {
+      if (event && event.preventDefault) {
+        event.preventDefault();
+      }
+      byId("saveModelSettings").disabled = true;
+      byId("settingsSaveStatus").textContent = "Saving...";
+      try {
+        const payload = buildSettingsPayload();
+        const result = await request("/v1/server/settings", {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload)
+        });
+        if (!result.ok) {
+          throw new Error(format(result.body));
+        }
+        if (payload.admin_auth && payload.admin_auth.password) {
+          sessionStorage.setItem(adminBasicSessionKey, "Basic " + btoa(payload.admin_auth.username + ":" + payload.admin_auth.password));
+        }
+        ["openAIKey", "groqKey", "googleKey", "hfKey", "openRouterKey"].forEach(function (id) {
+          byId(id).value = "";
+        });
+        byId("adminPassword").value = "";
+        byId("adminPasswordConfirm").value = "";
+        const generated = result.body && result.body.generated_token ? result.body.generated_token : null;
+        const message = result.body && result.body.message ? result.body.message : "Saved.";
+        await loadServerSettings({ preserveStatus: true });
+        renderGeneratedServerToken(generated);
+        byId("settingsSaveStatus").textContent = message;
+        setSetupStatus("Saved", "ok");
+      } catch (err) {
+        byId("settingsSaveStatus").textContent = err && err.message ? err.message : String(err);
+      } finally {
+        const runtime = lastSettings && lastSettings.runtime ? lastSettings.runtime : {};
+        byId("saveModelSettings").disabled = !runtime.settings_write;
+      }
+    }
+
+    function updateRuntimePanel(settings) {
+      settings = settings || {};
+      const stt = settings.stt || {};
+      const sttSelf = stt.self_hosted || {};
+      const llm = settings.llm || {};
+      const localLLM = llm.local || {};
+      const runtime = settings.runtime || {};
+      const personas = settings.personas || {};
+      const tts = settings.tts || {};
+      const storeComponent = component(settings, "store");
+
+      byId("runtimeMode").textContent = runtime.self_hosted_defaults ? "Self-hosted defaults" : "Custom";
+      byId("runtimeDetail").textContent = "Modes: " + providerList(settings.modes) + " | Model dir: " + (runtime.model_dir || "-");
+      byId("modelSummary").textContent = "STT " + (sttSelf.model || "-") + " / LLM " + (localLLM.assist || localLLM.voice_agent || "-");
+      byId("modelDetail").textContent = "STT endpoint: " + (sttSelf.url || "-") + " | LLM endpoint: " + (localLLM.base_url || "-");
+      byId("dataSummary").textContent = "Store " + (storeComponent ? storeComponent.status : "unknown") + " / TTS " + (tts.enabled ? "enabled" : "optional");
+      byId("dataDetail").textContent = "Personas: " + (personas.seeded || 0) + ", roles: " + (personas.roles || 0);
+    }
+
+    function format(value) {
+      if (typeof value === "string") return value;
+      return JSON.stringify(value, null, 2);
+    }
+
+    async function request(path, opts) {
+      opts = opts || {};
+      const headers = new Headers(opts.headers || {});
+      const adminAuth = sessionStorage.getItem(adminBasicSessionKey);
+      if (adminAuth && !headers.has("Authorization")) {
+        headers.set("Authorization", adminAuth);
+      }
+      if (generatedServerToken && opts.method && opts.method !== "GET" && path.indexOf("/server/settings") !== -1 && !headers.has("Authorization")) {
+        headers.set("Authorization", "Bearer " + generatedServerToken);
+      }
+      opts = Object.assign({}, opts, { headers: headers });
+      const response = await fetch(path, opts);
+      const text = await response.text();
+      let body = text;
+      if (text) {
+        try {
+          body = JSON.parse(text);
+        } catch (_) {
+          body = text;
+        }
+      }
+      return {
+        ok: response.ok,
+        status: response.status,
+        statusText: response.statusText,
+        body: body,
+        text: text
+      };
+    }
+
+    async function loadServerSettings(options) {
+      options = options || {};
+      setSetupStatus("Loading", "run");
+      try {
+        const result = await request("/v1/server/settings", { method: "GET" });
+        if (!result.ok) {
+          throw new Error(format(result.body));
+        }
+        applySettingsToForm(result.body, options);
+        setSetupStatus(result.body && result.body.status ? result.body.status : "ok", result.body && result.body.status === "ok" ? "ok" : "warn");
+      } catch (err) {
+        setSetupStatus("Failed", "fail");
+        byId("settingsSaveStatus").textContent = err && err.message ? err.message : String(err);
+      }
+    }
+
+    byId("onboardingPanel").addEventListener("submit", saveServerSettings);
+    byId("saveModelSettings").addEventListener("click", saveServerSettings);
+    byId("runDefaultInstall").addEventListener("click", setDefaultLocalSettings);
+    byId("setupBack").addEventListener("click", function () {
+      setStep(currentStep - 1);
+    });
+    byId("setupNext").addEventListener("click", function () {
+      setStep(currentStep + 1);
+    });
+    document.querySelectorAll("[data-step-target]").forEach(function (step, index) {
+      step.addEventListener("click", function () {
+        setStep(index);
+      });
+    });
+    byId("dictationKind").addEventListener("change", function () {
+      byId("dictationModel").value = "";
+      populateProfiles("dictation", "dictationKind", "dictationProfile");
+      updateReview();
+    });
+    byId("assistKind").addEventListener("change", function () {
+      byId("assistModel").value = "";
+      populateProfiles("assist", "assistKind", "assistProfile");
+      updateReview();
+    });
+    byId("voiceAgentKind").addEventListener("change", function () {
+      byId("voiceAgentModel").value = "";
+      populateProfiles("voice_agent", "voiceAgentKind", "voiceAgentProfile");
+      updateReview();
+    });
+    byId("dictationProfile").addEventListener("change", function () {
+      byId("dictationModel").value = "";
+      syncModelForProfile("dictation", "dictationProfile");
+      updateReview();
+    });
+    byId("assistProfile").addEventListener("change", function () {
+      byId("assistModel").value = "";
+      syncModelForProfile("assist", "assistProfile");
+      updateReview();
+    });
+    byId("voiceAgentProfile").addEventListener("change", function () {
+      byId("voiceAgentModel").value = "";
+      syncModelForProfile("voice_agent", "voiceAgentProfile");
+      updateReview();
+    });
+    byId("voiceAgentAgentProfile").addEventListener("change", updateReview);
+    byId("serverTokenManaged").addEventListener("change", function () {
+      forceServerTokenGeneration = byId("serverTokenManaged").checked && !serverBearerTokenSet();
+      updateServerAuthUI();
+    });
+    byId("serverTokenEnv").addEventListener("input", updateServerAuthUI);
+    ["adminUsername", "adminPassword", "adminPasswordConfirm"].forEach(function (id) {
+      byId(id).addEventListener("input", updateAdminAuthUI);
+    });
+    byId("copyGeneratedServerToken").addEventListener("click", async function () {
+      if (!generatedServerToken) return;
+      try {
+        await navigator.clipboard.writeText(generatedServerToken);
+        byId("settingsSaveStatus").textContent = "Token copied.";
+      } catch (_) {
+        byId("settingsSaveStatus").textContent = "Copy failed; select the token manually.";
+      }
+    });
+
+    ["dictationModel", "assistModel", "voiceAgentModel"].forEach(function (id) {
+      byId(id).addEventListener("input", updateReview);
+    });
+    setStep(0);
+    loadServerSettings();
+  </script>
+</body>
+</html>

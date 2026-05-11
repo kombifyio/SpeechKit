@@ -17,15 +17,17 @@
 # ── Stage 1: Go builder ──────────────────────────────────────────────────────
 FROM golang:1.26-bookworm AS builder
 
-# ONNX Runtime, oto/v3 (ALSA on Linux via pkg-config), and any future CGo
-# dependencies need a host compiler plus ALSA development headers at build
-# time. The actual libonnxruntime.so is copied into the runtime stage, not
-# here.
+# ONNX Runtime, oto/v3 (ALSA on Linux via pkg-config), and LiveKit PCM/Opus
+# media bridging need a host compiler plus development headers at build time.
+# The actual libonnxruntime.so is copied into the runtime stage, not here.
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
         gcc \
         libc6-dev \
         libasound2-dev \
+        libopus-dev \
+        libopusfile-dev \
+        libsoxr-dev \
         pkg-config \
     && rm -rf /var/lib/apt/lists/*
 
@@ -64,6 +66,8 @@ FROM debian:bookworm-slim AS runtime-base
 #  - libasound2: ALSA runtime. oto/v3 links against libasound at build time
 #                via cgo; even though the server never plays audio locally,
 #                the linker requires the .so to resolve symbols at start.
+#  - libopus0/libopusfile0/libsoxr0: runtime libraries for the LiveKit
+#                PCM/Opus bridge.
 #  - curl: for optional model download on first boot and health probes
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
@@ -71,6 +75,9 @@ RUN apt-get update \
         ffmpeg \
         libgomp1 \
         libasound2 \
+        libopus0 \
+        libopusfile0 \
+        libsoxr0 \
         curl \
     && rm -rf /var/lib/apt/lists/*
 
@@ -118,6 +125,7 @@ LABEL org.opencontainers.image.source="https://github.com/kombifyio/SpeechKit"
 LABEL org.opencontainers.image.licenses="Apache-2.0"
 
 COPY --from=builder /out/speechkit-server /app/speechkit-server
+COPY --chown=speechkit:speechkit deploy/config/server.example.toml /etc/speechkit/config.toml
 
 # Operators typically override this to `doppler run -- /app/speechkit-server`
 # when using Doppler for secrets; the plain entrypoint works with any env-var

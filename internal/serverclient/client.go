@@ -19,10 +19,16 @@ import (
 type Client struct {
 	baseURL      *url.URL
 	bearerToken  string
+	authMode     string
 	httpClient   *http.Client
 	userAgent    string
 	debug        bool
 	timeoutOnReq time.Duration
+}
+
+type ProbeResult struct {
+	HealthStatus int
+	ReadyStatus  int
 }
 
 // Options configures a Client. Use NewFromConfig to wire from config.toml
@@ -33,9 +39,14 @@ type Options struct {
 	BaseURL string
 
 	// BearerToken is sent verbatim as the Authorization header value
-	// "Bearer <token>". Leave empty for endpoints that don't require auth
-	// (only /healthz and /readyz qualify on the server today).
+	// "Bearer <token>" by default, or as X-Api-Key when AuthMode is
+	// "api_key". Leave empty for endpoints that don't require auth.
 	BearerToken string
+
+	// AuthMode controls how BearerToken is attached to HTTP requests.
+	// Defaults to "bearer"; "api_key" sends the same configured token as
+	// X-Api-Key for custom servers that expect header-based API keys.
+	AuthMode string
 
 	// HTTPClient overrides the default http.Client. Useful in tests with
 	// httptest.Server. If nil, a sensible default with the timeout below
@@ -91,6 +102,7 @@ func New(opts Options) (*Client, error) {
 	return &Client{
 		baseURL:      u,
 		bearerToken:  strings.TrimSpace(opts.BearerToken),
+		authMode:     config.NormalizeServerConnectionAuthMode(opts.AuthMode),
 		httpClient:   httpClient,
 		userAgent:    ua,
 		debug:        opts.Debug,
@@ -99,8 +111,9 @@ func New(opts Options) (*Client, error) {
 }
 
 // NewFromConfig resolves the bearer token from the env var named in
-// cfg.BearerTokenEnv and constructs a Client. Returns an error if the env
-// var is not set or empty when cfg.Enabled is true. When cfg.Enabled is
+// cfg.BearerTokenEnv and constructs a Client. AuthMode decides whether that
+// token is sent as Authorization: Bearer or X-Api-Key. Returns an error if
+// the env var is not set or empty when cfg.Enabled is true. When cfg.Enabled is
 // false the function returns (nil, ErrServerConnectionDisabled) so callers
 // can branch cleanly.
 func NewFromConfig(cfg config.ServerConnectionConfig) (*Client, error) {
@@ -123,6 +136,7 @@ func NewFromConfig(cfg config.ServerConnectionConfig) (*Client, error) {
 	return New(Options{
 		BaseURL:        baseURL,
 		BearerToken:    token,
+		AuthMode:       cfg.AuthMode,
 		RequestTimeout: timeout,
 	})
 }
@@ -151,14 +165,20 @@ func (c *Client) HTTPClient() *http.Client {
 	return c.httpClient
 }
 
-// BearerToken returns the configured bearer token. The Voice Agent adapter
-// needs it to attach the same token to the initial POST /sessions and to
-// pass through to the WebSocket query-string ticket logic.
+// BearerToken returns the configured auth token. The Voice Agent adapter uses
+// it for the initial POST /sessions; the WebSocket hop is ticket-only.
 func (c *Client) BearerToken() string {
 	if c == nil {
 		return ""
 	}
 	return c.bearerToken
+}
+
+func (c *Client) AuthMode() string {
+	if c == nil {
+		return config.ServerConnectionAuthModeBearer
+	}
+	return config.NormalizeServerConnectionAuthMode(c.authMode)
 }
 
 // newRequest is the central place that attaches Authorization, User-Agent,
@@ -173,15 +193,13 @@ func (c *Client) newRequest(ctx context.Context, method, path string, body io.Re
 		return nil, fmt.Errorf("serverclient: path must start with /, got %q", path)
 	}
 	u := *c.baseURL
-	u.Path += path
+	u.Path = joinRequestPath(u.Path, path)
 	req, err := http.NewRequestWithContext(ctx, method, u.String(), body)
 	if err != nil {
 		return nil, fmt.Errorf("serverclient: build request: %w", err)
 	}
 	req.Header.Set("User-Agent", c.userAgent)
-	if c.bearerToken != "" {
-		req.Header.Set("Authorization", "Bearer "+c.bearerToken)
-	}
+	c.applyAuthHeaders(req.Header)
 	if contentType != "" {
 		req.Header.Set("Content-Type", contentType)
 	}
@@ -189,21 +207,70 @@ func (c *Client) newRequest(ctx context.Context, method, path string, body io.Re
 	return req, nil
 }
 
+func joinRequestPath(basePath, endpointPath string) string {
+	basePath = strings.TrimRight(basePath, "/")
+	if strings.HasSuffix(basePath, "/v1/speechkit") && strings.HasPrefix(endpointPath, "/v1/") {
+		endpointPath = strings.TrimPrefix(endpointPath, "/v1")
+	}
+	return basePath + endpointPath
+}
+
+func (c *Client) applyAuthHeaders(headers http.Header) {
+	if c == nil || strings.TrimSpace(c.bearerToken) == "" {
+		return
+	}
+	switch c.AuthMode() {
+	case config.ServerConnectionAuthModeAPIKey:
+		headers.Set("X-Api-Key", c.bearerToken)
+	default:
+		headers.Set("Authorization", "Bearer "+c.bearerToken)
+	}
+}
+
 // Health hits /healthz to confirm the server is reachable. Returns nil on
 // 200, a wrapped error otherwise. Use it from /readyz dashboards on the
 // device-target so a misconfigured ServerConnection surfaces early.
 func (c *Client) Health(ctx context.Context) error {
-	req, err := c.newRequest(ctx, http.MethodGet, "/healthz", nil, "")
-	if err != nil {
-		return err
-	}
-	resp, err := c.httpClient.Do(req)
+	status, err := c.getStatus(ctx, "/healthz")
 	if err != nil {
 		return fmt.Errorf("serverclient: GET /healthz: %w", err)
 	}
-	defer func() { _ = resp.Body.Close() }()
-	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("serverclient: GET /healthz returned %d", resp.StatusCode)
+	if status != http.StatusOK {
+		return fmt.Errorf("serverclient: GET /healthz returned %d", status)
 	}
 	return nil
+}
+
+func (c *Client) Probe(ctx context.Context) (ProbeResult, error) {
+	var result ProbeResult
+	healthStatus, err := c.getStatus(ctx, "/healthz")
+	result.HealthStatus = healthStatus
+	if err != nil {
+		return result, fmt.Errorf("serverclient: GET /healthz: %w", err)
+	}
+	if healthStatus != http.StatusOK {
+		return result, fmt.Errorf("serverclient: GET /healthz returned %d", healthStatus)
+	}
+	readyStatus, err := c.getStatus(ctx, "/readyz")
+	result.ReadyStatus = readyStatus
+	if err != nil {
+		return result, fmt.Errorf("serverclient: GET /readyz: %w", err)
+	}
+	if readyStatus != http.StatusOK {
+		return result, fmt.Errorf("serverclient: GET /readyz returned %d", readyStatus)
+	}
+	return result, nil
+}
+
+func (c *Client) getStatus(ctx context.Context, path string) (int, error) {
+	req, err := c.newRequest(ctx, http.MethodGet, path, nil, "")
+	if err != nil {
+		return 0, err
+	}
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return 0, err
+	}
+	defer func() { _ = resp.Body.Close() }()
+	return resp.StatusCode, nil
 }

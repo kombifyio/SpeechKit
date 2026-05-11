@@ -558,6 +558,45 @@ func TestBuildNextConfig(t *testing.T) {
 	assertBuildNextConfigStoreAndVocabulary(t, result)
 }
 
+func TestBuildNextConfigPreservesModeSources(t *testing.T) {
+	cfg := defaultTestConfig()
+	cfg.ModelSelection.Dictate.ModeSource = config.ModeSourceServer
+	cfg.ModelSelection.Assist.ModeSource = config.ModeSourceLocal
+	cfg.ModelSelection.VoiceAgent.ModeSource = config.ModeSourceServer
+
+	form := settingsFormData{
+		DictateHotkey:            "ctrl+shift+d",
+		AssistHotkey:             "ctrl+win+j",
+		VoiceAgentHotkey:         "win+alt+k",
+		AgentMode:                "assist",
+		ActiveMode:               "none",
+		DictateEnabled:           true,
+		AssistEnabled:            true,
+		VoiceAgentEnabled:        true,
+		DictatePrimaryProfileID:  "stt.local.whispercpp",
+		AssistPrimaryProfileID:   "assist.builtin.gemma4-e4b",
+		VoicePrimaryProfileID:    "realtime.builtin.pipeline",
+		Visualizer:               "pill",
+		Design:                   "default",
+		OverlayPosition:          "top",
+		StoreBackend:             "sqlite",
+		VoiceAgentCloseBehavior:  config.VoiceAgentCloseBehaviorContinue,
+		VoiceAgentSessionSummary: true,
+	}
+
+	result := buildNextConfig(form, cfg)
+
+	if got := result.ModelSelection.Dictate.ModeSource; got != config.ModeSourceServer {
+		t.Fatalf("dictate mode_source = %q, want %q", got, config.ModeSourceServer)
+	}
+	if got := result.ModelSelection.Assist.ModeSource; got != config.ModeSourceLocal {
+		t.Fatalf("assist mode_source = %q, want %q", got, config.ModeSourceLocal)
+	}
+	if got := result.ModelSelection.VoiceAgent.ModeSource; got != config.ModeSourceServer {
+		t.Fatalf("voice_agent mode_source = %q, want %q", got, config.ModeSourceServer)
+	}
+}
+
 func assertBuildNextConfigGeneral(t *testing.T, result config.Config) {
 	t.Helper()
 

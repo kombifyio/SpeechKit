@@ -138,9 +138,9 @@ func (p *VoiceAgentProvider) Connect(ctx context.Context, cfg voiceagent.LiveCon
 		HTTPClient: p.client.HTTPClient(),
 		HTTPHeader: http.Header{},
 	}
-	if tok := p.client.BearerToken(); tok != "" {
-		dialOpts.HTTPHeader.Set("Authorization", "Bearer "+tok)
-	}
+	// The upgrade URL already carries a short-lived HMAC ticket. Do not send
+	// bearer/API-key credentials on the WebSocket route; the public Gateway
+	// bypass and the direct origin path both authenticate this hop via ticket.
 	conn, dialResp, err := websocket.Dial(ctx, wsURL, dialOpts)
 	if err != nil {
 		return fmt.Errorf("serverclient: WS dial %s: %w", wsURL, err)

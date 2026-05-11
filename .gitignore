@@ -10,6 +10,8 @@ SpeechKit-Portable-v*.zip
 
 # Go
 /vendor/
+clients/python/**/__pycache__/
+clients/python/**/*.pyc
 
 # Models (large files)
 *.bin
@@ -85,6 +87,7 @@ node_modules/
 frontend/node_modules/
 frontend/**/node_modules/
 frontend/dist/
+frontend/app/coverage/
 /frontend/app-v2/
 frontend/app/.git/
 
@@ -107,3 +110,4 @@ scripts/whisper-server/whisper-server
 
 # Embedded frontend build output (regenerated on every frontend build)
 internal/frontendassets/dist/
+clients/typescript/**/dist/

@@ -1,4 +1,9 @@
-import type { ServerConnectionSetting } from "./types";
+import type {
+  ServerConnectionSetting,
+  ServerConnectionSmokeRequest,
+  ServerConnectionSmokeResponse,
+  ServerConnectionTarget,
+} from "./types";
 
 /**
  * Fetches the [server_connection] device-target settings. The bearer
@@ -19,10 +24,14 @@ export async function fetchAPIV1ServerConnection(): Promise<ServerConnectionSett
 export async function patchAPIV1ServerConnection(
   patch: Partial<{
     enabled: boolean;
+    activeTargetId: string;
     url: string;
     bearerTokenEnv: string;
+    authMode: "bearer" | "api_key";
     fallbackToLocal: boolean;
     requestTimeoutSec: number;
+    targets: ServerConnectionTarget[];
+    token: string;
   }>,
 ): Promise<ServerConnectionSetting> {
   const resp = await fetch("/api/v1/server-connection", {
@@ -37,4 +46,19 @@ export async function patchAPIV1ServerConnection(
     );
   }
   return (await resp.json()) as ServerConnectionSetting;
+}
+
+export async function testAPIV1ServerConnection(
+  request: ServerConnectionSmokeRequest,
+): Promise<ServerConnectionSmokeResponse> {
+  const resp = await fetch("/api/v1/server-connection/smoke", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(request),
+  });
+  if (!resp.ok) {
+    const errorText = await resp.text();
+    throw new Error(errorText || `server smoke test failed: ${resp.status}`);
+  }
+  return (await resp.json()) as ServerConnectionSmokeResponse;
 }

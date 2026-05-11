@@ -93,7 +93,11 @@ func (s *SQLiteStore) ListVoiceAgentSessions(ctx context.Context, opts ListOpts)
 	}
 	defer rows.Close() //nolint:errcheck // deferred rows close, error not actionable
 
-	return scanVoiceAgentSessions(rows)
+	sessions, err := scanVoiceAgentSessions(rows)
+	if err != nil {
+		return nil, err
+	}
+	return hydrateVoiceAgentSessionChildren(ctx, s.db, "sqlite", sessions)
 }
 
 func (s *SQLiteStore) GetVoiceAgentSession(ctx context.Context, id int64) (*VoiceAgentSession, error) {
@@ -200,7 +204,11 @@ func (s *PostgresStore) ListVoiceAgentSessions(ctx context.Context, opts ListOpt
 	}
 	defer rows.Close() //nolint:errcheck // deferred rows close, error not actionable
 
-	return scanVoiceAgentSessions(rows)
+	sessions, err := scanVoiceAgentSessions(rows)
+	if err != nil {
+		return nil, err
+	}
+	return hydrateVoiceAgentSessionChildren(ctx, s.db, "postgres", sessions)
 }
 
 func (s *PostgresStore) GetVoiceAgentSession(ctx context.Context, id int64) (*VoiceAgentSession, error) {
@@ -278,6 +286,48 @@ func replaceVoiceAgentSessionChildren(ctx context.Context, db execContexter, dia
 	return insertVoiceAgentSummaryItems(ctx, db, itemQuery, sessionID, "next_step", session.Summary.NextSteps)
 }
 
+func backfillVoiceAgentSessionChildren(ctx context.Context, db execContexter, dialect string, sessionID int64, session VoiceAgentSession) error {
+	turnQuery := `INSERT OR IGNORE INTO voice_agent_session_turns
+		(session_id, turn_index, role, text, created_at)
+		VALUES (?, ?, ?, ?, ?)`
+	itemQuery := `INSERT OR IGNORE INTO voice_agent_session_summary_items
+		(session_id, item_type, item_index, text)
+		VALUES (?, ?, ?, ?)`
+	if dialect == "postgres" {
+		turnQuery = `INSERT INTO voice_agent_session_turns
+			(session_id, turn_index, role, text, created_at)
+			VALUES ($1, $2, $3, $4, $5)
+			ON CONFLICT(session_id, turn_index) DO NOTHING`
+		itemQuery = `INSERT INTO voice_agent_session_summary_items
+			(session_id, item_type, item_index, text)
+			VALUES ($1, $2, $3, $4)
+			ON CONFLICT(session_id, item_type, item_index) DO NOTHING`
+	}
+
+	for i, turn := range session.Turns {
+		if _, err := db.ExecContext(ctx, turnQuery,
+			sessionID,
+			i,
+			strings.TrimSpace(turn.Role),
+			strings.TrimSpace(turn.Text),
+			nullableVoiceAgentTime(turn.CreatedAt),
+		); err != nil {
+			return err
+		}
+	}
+
+	if err := insertVoiceAgentSummaryItems(ctx, db, itemQuery, sessionID, "idea", session.Summary.Ideas); err != nil {
+		return err
+	}
+	if err := insertVoiceAgentSummaryItems(ctx, db, itemQuery, sessionID, "decision", session.Summary.Decisions); err != nil {
+		return err
+	}
+	if err := insertVoiceAgentSummaryItems(ctx, db, itemQuery, sessionID, "open_question", session.Summary.OpenQuestions); err != nil {
+		return err
+	}
+	return insertVoiceAgentSummaryItems(ctx, db, itemQuery, sessionID, "next_step", session.Summary.NextSteps)
+}
+
 func insertVoiceAgentSummaryItems(ctx context.Context, db execContexter, query string, sessionID int64, itemType string, values []string) error {
 	for i, value := range values {
 		text := strings.TrimSpace(value)
@@ -303,6 +353,10 @@ type voiceAgentSessionRows interface {
 	Scan(dest ...any) error
 	Err() error
 	Columns() ([]string, error)
+}
+
+type queryContexter interface {
+	QueryContext(context.Context, string, ...any) (*sql.Rows, error)
 }
 
 func scanVoiceAgentSessions(rows voiceAgentSessionRows) ([]VoiceAgentSession, error) {
@@ -350,6 +404,120 @@ func scanVoiceAgentSessions(rows voiceAgentSessionRows) ([]VoiceAgentSession, er
 		sessions = append(sessions, session)
 	}
 	return sessions, rows.Err()
+}
+
+func hydrateVoiceAgentSessionChildren(ctx context.Context, db queryContexter, dialect string, sessions []VoiceAgentSession) ([]VoiceAgentSession, error) {
+	ids := make([]int64, 0, len(sessions))
+	for i := range sessions {
+		ids = append(ids, sessions[i].ID)
+	}
+	turnsBySession, err := loadVoiceAgentSessionTurnsBatch(ctx, db, dialect, ids)
+	if err != nil {
+		return nil, err
+	}
+	summaryBySession, err := loadVoiceAgentSessionSummaryItemsBatch(ctx, db, dialect, ids)
+	if err != nil {
+		return nil, err
+	}
+
+	for i := range sessions {
+		if turns := turnsBySession[sessions[i].ID]; len(turns) > 0 {
+			sessions[i].Turns = turns
+		}
+		if summaryItems, found := summaryBySession[sessions[i].ID]; found {
+			sessions[i].Summary.Ideas = summaryItems.summary.Ideas
+			sessions[i].Summary.Decisions = summaryItems.summary.Decisions
+			sessions[i].Summary.OpenQuestions = summaryItems.summary.OpenQuestions
+			sessions[i].Summary.NextSteps = summaryItems.summary.NextSteps
+		}
+	}
+	return sessions, nil
+}
+
+func loadVoiceAgentSessionTurnsBatch(ctx context.Context, db queryContexter, dialect string, sessionIDs []int64) (map[int64][]VoiceAgentTurn, error) {
+	out := make(map[int64][]VoiceAgentTurn)
+	ids := compactPositiveInt64s(sessionIDs)
+	if len(ids) == 0 {
+		return out, nil
+	}
+	placeholders, err := sqlInPlaceholders(dialect, 1, len(ids))
+	if err != nil {
+		return nil, err
+	}
+	query := fmt.Sprintf(`SELECT session_id, role, text, created_at
+		FROM voice_agent_session_turns
+		WHERE session_id IN (%s)
+		ORDER BY session_id ASC, turn_index ASC, id ASC`, placeholders) // #nosec G201 -- placeholders are generated from count and fixed dialect.
+	rows, err := db.QueryContext(ctx, query, appendInt64Args(nil, ids)...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close() //nolint:errcheck // deferred rows close, error not actionable
+
+	for rows.Next() {
+		var (
+			sessionID int64
+			turn      VoiceAgentTurn
+			createdAt sql.NullTime
+		)
+		if err := rows.Scan(&sessionID, &turn.Role, &turn.Text, &createdAt); err != nil {
+			return nil, err
+		}
+		if createdAt.Valid {
+			turn.CreatedAt = createdAt.Time
+		}
+		out[sessionID] = append(out[sessionID], turn)
+	}
+	return out, rows.Err()
+}
+
+type voiceAgentSummaryHydration struct {
+	summary VoiceAgentSessionSummary
+}
+
+func loadVoiceAgentSessionSummaryItemsBatch(ctx context.Context, db queryContexter, dialect string, sessionIDs []int64) (map[int64]voiceAgentSummaryHydration, error) {
+	out := make(map[int64]voiceAgentSummaryHydration)
+	ids := compactPositiveInt64s(sessionIDs)
+	if len(ids) == 0 {
+		return out, nil
+	}
+	placeholders, err := sqlInPlaceholders(dialect, 1, len(ids))
+	if err != nil {
+		return nil, err
+	}
+	query := fmt.Sprintf(`SELECT session_id, item_type, text
+		FROM voice_agent_session_summary_items
+		WHERE session_id IN (%s)
+		ORDER BY session_id ASC, item_type ASC, item_index ASC, id ASC`, placeholders) // #nosec G201 -- placeholders are generated from count and fixed dialect.
+	rows, err := db.QueryContext(ctx, query, appendInt64Args(nil, ids)...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close() //nolint:errcheck // deferred rows close, error not actionable
+
+	for rows.Next() {
+		var (
+			sessionID int64
+			itemType  string
+			text      string
+		)
+		if err := rows.Scan(&sessionID, &itemType, &text); err != nil {
+			return nil, err
+		}
+		item := out[sessionID]
+		switch itemType {
+		case "idea":
+			item.summary.Ideas = append(item.summary.Ideas, text)
+		case "decision":
+			item.summary.Decisions = append(item.summary.Decisions, text)
+		case "open_question":
+			item.summary.OpenQuestions = append(item.summary.OpenQuestions, text)
+		case "next_step":
+			item.summary.NextSteps = append(item.summary.NextSteps, text)
+		}
+		out[sessionID] = item
+	}
+	return out, rows.Err()
 }
 
 func normalizeVoiceAgentSession(session VoiceAgentSession) VoiceAgentSession {

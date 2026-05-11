@@ -57,6 +57,12 @@ type VoiceAgentSessionStore interface {
 	ListVoiceAgentSessions(ctx context.Context, opts ListOpts) ([]VoiceAgentSession, error)
 }
 
+// AudioAssetStore is an optional extension for backends that persist
+// first-class audio asset metadata alongside legacy audio_path columns.
+type AudioAssetStore interface {
+	GetAudioAsset(ctx context.Context, ownerKind string, ownerID int64) (*AudioAsset, error)
+}
+
 // SemanticCapabilityProvider is an optional extension for stores that can
 // advertise indexing/vector capabilities without forcing every backend to
 // implement semantic features immediately.
@@ -78,7 +84,7 @@ type ListOpts struct {
 
 type AudioAsset struct {
 	StorageKind AudioStorageKind `json:"storageKind"`
-	Path        string           `json:"path,omitempty"`
+	Path        string           `json:"-"`
 	MimeType    string           `json:"mimeType"`
 	SizeBytes   int64            `json:"sizeBytes"`
 	DurationMs  int64            `json:"durationMs"`

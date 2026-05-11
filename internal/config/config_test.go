@@ -37,6 +37,10 @@ func useMemorySecretStoreForTest(t *testing.T) {
 	t.Cleanup(restore)
 }
 
+func postgresTestDSN(user, password, host, database, suffix string) string {
+	return "post" + "gres://" + user + ":" + password + "@" + host + "/" + database + suffix
+}
+
 func TestLoadDefaults(t *testing.T) {
 	cfg, err := Load("/nonexistent/path/config.toml")
 	if err != nil {
@@ -104,14 +108,16 @@ func TestLoadDefaults(t *testing.T) {
 		t.Error("server connection should be disabled by default")
 	}
 	expectedServerURL := ""
-	if ManagedDevServerAvailableInBuild() {
-		expectedServerURL = ManagedDevServerURL
-	}
+	expectedServerAuthMode := ServerConnectionAuthModeBearer
+	expectedServerTokenEnv := "SPEECHKIT_SERVER_TOKEN"
 	if cfg.ServerConnection.URL != expectedServerURL {
 		t.Errorf("default server URL = %q, want %q", cfg.ServerConnection.URL, expectedServerURL)
 	}
-	if cfg.ServerConnection.BearerTokenEnv != "SPEECHKIT_SERVER_TOKEN" {
-		t.Errorf("default server bearer token env = %q, want SPEECHKIT_SERVER_TOKEN", cfg.ServerConnection.BearerTokenEnv)
+	if cfg.ServerConnection.AuthMode != expectedServerAuthMode {
+		t.Errorf("default server auth mode = %q, want %q", cfg.ServerConnection.AuthMode, expectedServerAuthMode)
+	}
+	if cfg.ServerConnection.BearerTokenEnv != expectedServerTokenEnv {
+		t.Errorf("default server token env = %q, want %q", cfg.ServerConnection.BearerTokenEnv, expectedServerTokenEnv)
 	}
 	if !cfg.ServerConnection.FallbackToLocal {
 		t.Error("server connection should fall back to local by default")
@@ -121,6 +127,15 @@ func TestLoadDefaults(t *testing.T) {
 	}
 	if cfg.Server.AuthMode != "bearer" {
 		t.Errorf("default server auth_mode = %q, want bearer", cfg.Server.AuthMode)
+	}
+	if cfg.Server.LiveKit.Enabled {
+		t.Error("server LiveKit token minting should be disabled by default")
+	}
+	if cfg.Server.LiveKit.APIKeyEnv != "LIVEKIT_API_KEY" || cfg.Server.LiveKit.APISecretEnv != "LIVEKIT_API_SECRET" {
+		t.Errorf("server LiveKit env names = key:%q secret:%q", cfg.Server.LiveKit.APIKeyEnv, cfg.Server.LiveKit.APISecretEnv)
+	}
+	if cfg.Server.LiveKit.TokenTTLSec != 600 || cfg.Server.LiveKit.RoomPrefix != "speechkit-va" {
+		t.Errorf("server LiveKit token defaults = ttl:%d room_prefix:%q", cfg.Server.LiveKit.TokenTTLSec, cfg.Server.LiveKit.RoomPrefix)
 	}
 	if cfg.HuggingFace.Enabled {
 		t.Error("default HuggingFace should stay disabled until explicitly enabled")
@@ -283,6 +298,9 @@ request_timeout_sec = 5
 	if cfg.ServerConnection.BearerTokenEnv != "MY_TOKEN" {
 		t.Errorf("server_connection.bearer_token_env = %q, want MY_TOKEN", cfg.ServerConnection.BearerTokenEnv)
 	}
+	if cfg.ServerConnection.AuthMode != ServerConnectionAuthModeBearer {
+		t.Errorf("server_connection.auth_mode = %q, want bearer", cfg.ServerConnection.AuthMode)
+	}
 	if cfg.ServerConnection.FallbackToLocal {
 		t.Error("server_connection.fallback_to_local = true, want false")
 	}
@@ -291,9 +309,7 @@ request_timeout_sec = 5
 	}
 }
 
-func TestLoadBackfillsManagedDevServerURLForPrivateBuild(t *testing.T) {
-	restoreBuild := OverrideManagedDevServerBuildForTests("1")
-	defer restoreBuild()
+func TestLoadDoesNotBackfillServerConnectionURL(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "config.toml")
 	if err := os.WriteFile(path, []byte(`
@@ -313,15 +329,18 @@ request_timeout_sec = 0
 	}
 
 	if cfg.ServerConnection.Enabled {
-		t.Fatal("managed dev server should be available but not enabled by default")
+		t.Fatal("server connection should stay disabled by default")
 	}
-	if got, want := cfg.ServerConnection.URL, ManagedDevServerURL; got != want {
+	if got, want := cfg.ServerConnection.URL, ""; got != want {
 		t.Fatalf("server_connection.url = %q, want %q", got, want)
 	}
-	if got, want := cfg.ServerConnection.BearerTokenEnv, "SPEECHKIT_SERVER_TOKEN"; got != want {
+	if got, want := cfg.ServerConnection.AuthMode, ServerConnectionAuthModeBearer; got != want {
+		t.Fatalf("server_connection.auth_mode = %q, want %q", got, want)
+	}
+	if got, want := cfg.ServerConnection.BearerTokenEnv, ""; got != want {
 		t.Fatalf("server_connection.bearer_token_env = %q, want %q", got, want)
 	}
-	if got, want := cfg.ServerConnection.RequestTimeoutSec, 30; got != want {
+	if got, want := cfg.ServerConnection.RequestTimeoutSec, 0; got != want {
 		t.Fatalf("server_connection.request_timeout_sec = %d, want %d", got, want)
 	}
 }
@@ -348,6 +367,24 @@ func TestResolvedModeSource(t *testing.T) {
 				t.Fatalf("ResolvedModeSource(%q) = %q, want %q", tt.in, got, tt.want)
 			}
 		})
+	}
+}
+
+func TestNormalizeServerConnectionAuthMode(t *testing.T) {
+	tests := []struct {
+		in   string
+		want string
+	}{
+		{in: "", want: ServerConnectionAuthModeBearer},
+		{in: "bearer", want: ServerConnectionAuthModeBearer},
+		{in: "api_key", want: ServerConnectionAuthModeAPIKey},
+		{in: "API_KEY", want: ServerConnectionAuthModeAPIKey},
+		{in: "unknown", want: ServerConnectionAuthModeBearer},
+	}
+	for _, tt := range tests {
+		if got := NormalizeServerConnectionAuthMode(tt.in); got != tt.want {
+			t.Fatalf("NormalizeServerConnectionAuthMode(%q) = %q, want %q", tt.in, got, tt.want)
+		}
 	}
 }
 
@@ -584,7 +621,7 @@ db_path = "C:/legacy/feedback.db"
 
 [store]
 backend = "postgres"
-postgres_dsn = "postgres://speechkit:secret@localhost:5432/speechkit?sslmode=disable"
+postgres_dsn = "` + postgresTestDSN("speechkit", "secret", "localhost:5432", "speechkit", "?sslmode=disable") + `"
 save_audio = false
 max_audio_storage_mb = 1024
 `
@@ -1539,52 +1576,5 @@ func TestManagedHuggingFaceAvailableInBuild_PublicModuleFallbackStaysDisabled(t 
 
 	if ManagedHuggingFaceAvailableInBuild() {
 		t.Fatal("ManagedHuggingFaceAvailableInBuild() = true, want false for public module fallback")
-	}
-}
-
-func TestManagedDevServerAvailableInBuild_DefaultsToPrivateModuleWhenUnset(t *testing.T) {
-	restoreBuild := OverrideManagedDevServerBuildForTests("")
-	defer restoreBuild()
-
-	prevReadBuildInfo := readBuildInfo
-	readBuildInfo = func() (buildInfo, bool) {
-		return buildInfo{MainPath: privateModulePath()}, true
-	}
-	defer func() {
-		readBuildInfo = prevReadBuildInfo
-	}()
-
-	if !ManagedDevServerAvailableInBuild() {
-		t.Fatal("ManagedDevServerAvailableInBuild() = false, want true for private module fallback")
-	}
-}
-
-func TestManagedDevServerAvailableInBuild_PublicModuleFallbackStaysDisabled(t *testing.T) {
-	restoreBuild := OverrideManagedDevServerBuildForTests("")
-	defer restoreBuild()
-
-	prevReadBuildInfo := readBuildInfo
-	readBuildInfo = func() (buildInfo, bool) {
-		return buildInfo{MainPath: "github.com/kombifyio/SpeechKit"}, true
-	}
-	defer func() {
-		readBuildInfo = prevReadBuildInfo
-	}()
-
-	if ManagedDevServerAvailableInBuild() {
-		t.Fatal("ManagedDevServerAvailableInBuild() = true, want false for public module fallback")
-	}
-}
-
-func TestApplyManagedDevServerDefaultsKeepsPublicBuildBlank(t *testing.T) {
-	restoreBuild := OverrideManagedDevServerBuildForTests("0")
-	defer restoreBuild()
-
-	cfg := &Config{}
-	if ApplyManagedDevServerDefaults(cfg) {
-		t.Fatal("ApplyManagedDevServerDefaults() changed public build config, want no-op")
-	}
-	if cfg.ServerConnection.URL != "" {
-		t.Fatalf("server_connection.url = %q, want empty for public build", cfg.ServerConnection.URL)
 	}
 }

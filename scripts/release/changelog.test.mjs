@@ -2,9 +2,12 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 
 import {
+  extractLatestMinorReleaseNotes,
   extractLatestReleaseNotes,
+  isMinorBaselineVersion,
   parseChangelogSections,
   renderReleaseNotes,
+  toMinorVersionLabel,
 } from './changelog.mjs'
 
 const sampleChangelog = `# Changelog
@@ -98,4 +101,78 @@ test('extractLatestReleaseNotes prefers Highlights bullets and limits output', (
       body: 'Website surfaces now derive data directly from the changelog.',
     },
   ])
+})
+
+test('isMinorBaselineVersion only accepts X.Y.0 (with optional pre-release)', () => {
+  assert.equal(isMinorBaselineVersion('0.30.0'), true)
+  assert.equal(isMinorBaselineVersion('1.0.0'), true)
+  assert.equal(isMinorBaselineVersion('0.30.0-rc1'), true)
+  assert.equal(isMinorBaselineVersion('0.30.1'), false)
+  assert.equal(isMinorBaselineVersion('0.30.10'), false)
+  assert.equal(isMinorBaselineVersion('preview'), false)
+})
+
+test('toMinorVersionLabel reduces X.Y.Z to X.Y', () => {
+  assert.equal(toMinorVersionLabel('0.30.1'), '0.30')
+  assert.equal(toMinorVersionLabel('0.30.0'), '0.30')
+  assert.equal(toMinorVersionLabel('1.2.3-rc1'), '1.2')
+  assert.equal(toMinorVersionLabel('weird'), 'weird')
+})
+
+const patchOnTopChangelog = `# Changelog
+
+## [Unreleased]
+
+## [0.18.2] - 2026-04-20
+
+### Highlights
+
+- **Patch fix**: One small organizational thing.
+
+## [0.18.1] - 2026-04-18
+
+### Highlights
+
+- **Another patch**: Just security stuff.
+
+## [0.18.0] - 2026-04-14
+
+### Highlights
+
+- **Local onboarding**: Continue while downloads run in the
+  background.
+- **Recommended local model**: Whisper Large v3 Turbo is now the default recommendation.
+- **Release surface automation**: Website surfaces now derive data directly from the changelog.
+`
+
+test('extractLatestMinorReleaseNotes skips patch releases and anchors on the latest X.Y.0 entry', () => {
+  const latest = extractLatestMinorReleaseNotes(patchOnTopChangelog)
+
+  assert.equal(latest.version, '0.18.0')
+  assert.equal(latest.notes.length, 3)
+  assert.equal(latest.notes[0].title, 'Local onboarding')
+  assert.equal(latest.notes[2].title, 'Release surface automation')
+})
+
+test('extractLatestMinorReleaseNotes returns the same entry as extractLatestReleaseNotes when top entry is already a minor baseline', () => {
+  const minorTop = extractLatestMinorReleaseNotes(sampleChangelog)
+  const absoluteTop = extractLatestReleaseNotes(sampleChangelog)
+
+  assert.equal(minorTop.version, absoluteTop.version)
+  assert.deepEqual(minorTop.notes, absoluteTop.notes)
+})
+
+test('extractLatestMinorReleaseNotes falls back gracefully when no minor baseline exists', () => {
+  const onlyPatchesChangelog = `# Changelog
+
+## [0.0.1] - 2026-01-01
+
+### Highlights
+
+- **Bootstrap**: First commit.
+`
+
+  const result = extractLatestMinorReleaseNotes(onlyPatchesChangelog, { fallbackVersion: '0.0.0' })
+  assert.equal(result.version, '0.0.1')
+  assert.equal(result.notes.length, 1)
 })

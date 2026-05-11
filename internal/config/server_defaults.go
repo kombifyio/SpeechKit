@@ -13,6 +13,10 @@ const (
 	defaultServerLLMBaseURL = "http://speechkit-llm:8080/v1"
 	defaultServerLLMModel   = DefaultLocalLLMModel
 	defaultServerSQLitePath = "/var/lib/speechkit/data/speechkit.db"
+
+	serverPostgresDSNEnv       = "POSTGRES_DSN"
+	serverSpeechKitPostgresEnv = "SPEECHKIT_POSTGRES_DSN"
+	serverLiveKitURLEnv        = "LIVEKIT_URL"
 )
 
 // ApplyServerRuntimeDefaults turns the standalone Linux Server-Target into a
@@ -20,7 +24,7 @@ const (
 // Desktop code never calls this; it is intentionally opt-in for server
 // containers that ship local STT/LLM sidecars.
 func ApplyServerRuntimeDefaults(cfg *Config) []string {
-	if cfg == nil || !parseManagedBool(os.Getenv(ServerSelfHostedDefaultsEnv)) {
+	if cfg == nil {
 		return nil
 	}
 
@@ -29,6 +33,46 @@ func ApplyServerRuntimeDefaults(cfg *Config) []string {
 	if publicURL := strings.TrimRight(strings.TrimSpace(os.Getenv("SPEECHKIT_PUBLIC_URL")), "/"); publicURL != "" && strings.TrimSpace(cfg.Server.PublicURL) == "" {
 		cfg.Server.PublicURL = publicURL
 		notes = append(notes, "server public URL default: "+publicURL)
+	}
+
+	if postgresDSN, envName := firstPresentEnv(serverSpeechKitPostgresEnv, serverPostgresDSNEnv); postgresDSN != "" {
+		if strings.TrimSpace(cfg.Store.PostgresDSN) == "" {
+			cfg.Store.PostgresDSN = postgresDSN
+			notes = append(notes, "server store postgres DSN default from "+envName)
+		}
+		backend := strings.ToLower(strings.TrimSpace(cfg.Store.Backend))
+		if backend == "" || backend == "sqlite" || backend == "postgres" {
+			cfg.Store.Backend = "postgres"
+			cfg.Store.SQLitePath = ""
+		}
+	}
+
+	if strings.TrimSpace(cfg.Server.LiveKit.APIKeyEnv) == "" {
+		cfg.Server.LiveKit.APIKeyEnv = "LIVEKIT_API_KEY"
+	}
+	if strings.TrimSpace(cfg.Server.LiveKit.APISecretEnv) == "" {
+		cfg.Server.LiveKit.APISecretEnv = "LIVEKIT_API_SECRET"
+	}
+	if cfg.Server.LiveKit.TokenTTLSec <= 0 {
+		cfg.Server.LiveKit.TokenTTLSec = 600
+	}
+	if strings.TrimSpace(cfg.Server.LiveKit.RoomPrefix) == "" {
+		cfg.Server.LiveKit.RoomPrefix = "speechkit-va"
+	}
+	if liveKitURL := strings.TrimRight(strings.TrimSpace(os.Getenv(serverLiveKitURLEnv)), "/"); liveKitURL != "" && strings.TrimSpace(cfg.Server.LiveKit.URL) == "" {
+		cfg.Server.LiveKit.URL = liveKitURL
+		notes = append(notes, "server LiveKit URL default from "+serverLiveKitURLEnv)
+	}
+	if strings.TrimSpace(cfg.Server.LiveKit.URL) != "" &&
+		envPresent(cfg.Server.LiveKit.APIKeyEnv) &&
+		envPresent(cfg.Server.LiveKit.APISecretEnv) &&
+		!cfg.Server.LiveKit.Enabled {
+		cfg.Server.LiveKit.Enabled = true
+		notes = append(notes, "server LiveKit token minting enabled from runtime env")
+	}
+
+	if !parseManagedBool(os.Getenv(ServerSelfHostedDefaultsEnv)) {
+		return notes
 	}
 
 	sttURL := envOrDefault("SPEECHKIT_SELFHOSTED_STT_URL", defaultServerSTTURL)
@@ -146,7 +190,7 @@ func shouldUseCascadedVoiceAgent(cfg *Config) bool {
 	}
 	googleEnv := strings.TrimSpace(cfg.Providers.Google.APIKeyEnv)
 	if googleEnv == "" {
-		googleEnv = "GOOGLE_AI_API_KEY"
+		googleEnv = GoogleAIAPIKeyEnv
 	}
 	return strings.TrimSpace(os.Getenv(googleEnv)) == ""
 }
@@ -176,4 +220,13 @@ func envOrDefault(name, fallback string) string {
 		return value
 	}
 	return fallback
+}
+
+func firstPresentEnv(names ...string) (string, string) {
+	for _, name := range names {
+		if value := strings.TrimSpace(os.Getenv(name)); value != "" {
+			return value, name
+		}
+	}
+	return "", ""
 }

@@ -19,6 +19,7 @@ servers:
 security: []
 tags:
   - name: Modes
+  - name: Server
   - name: Providers
   - name: Data
 paths:
@@ -132,6 +133,67 @@ paths:
           $ref: "#/components/responses/NotFound"
         "503":
           $ref: "#/components/responses/Unavailable"
+  /api/v1/server-connection:
+    get:
+      tags: [Server]
+      operationId: getServerConnection
+      summary: Read the registered SpeechKit server targets and active target.
+      responses:
+        "200":
+          description: Current server connection settings.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ServerConnectionSetting"
+    patch:
+      tags: [Server]
+      operationId: patchServerConnection
+      summary: Update or activate a SpeechKit server target.
+      security:
+        - ControlPlaneHeader: []
+        - ControlPlaneCookie: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ServerConnectionPatch"
+      responses:
+        "200":
+          description: Updated server connection settings.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ServerConnectionSetting"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+  /api/v1/server-connection/smoke:
+    post:
+      tags: [Server]
+      operationId: smokeTestServerConnection
+      summary: Probe a SpeechKit server target with health and readiness checks.
+      security:
+        - ControlPlaneHeader: []
+        - ControlPlaneCookie: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ServerConnectionSmokeRequest"
+      responses:
+        "200":
+          description: Probe result for the provided server target.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ServerConnectionSmokeResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "403":
+          $ref: "#/components/responses/Forbidden"
   /api/v1/providers/profiles:
     get:
       tags: [Providers]
@@ -444,6 +506,9 @@ components:
           type: string
         fallbackProfileId:
           type: string
+        modeSource:
+          type: string
+          enum: [local, server]
     DictationSetting:
       allOf:
         - $ref: "#/components/schemas/BaseModeSetting"
@@ -474,9 +539,132 @@ components:
               type: boolean
             closeBehavior:
               type: string
+            agentProfileId:
+              type: string
+            agentSequenceId:
+              type: string
+    ServerConnectionTarget:
+      type: object
+      required:
+        - id
+        - label
+        - url
+        - authMode
+        - bearerTokenSet
+        - fallbackToLocal
+        - requestTimeoutSec
+      properties:
+        id:
+          type: string
+        label:
+          type: string
+        url:
+          type: string
+        authMode:
+          type: string
+          enum: [bearer, api_key]
+        bearerTokenEnv:
+          type: string
+        bearerTokenSet:
+          type: boolean
+        fallbackToLocal:
+          type: boolean
+        requestTimeoutSec:
+          type: integer
+          minimum: 0
+          maximum: 3600
+    ServerConnectionSetting:
+      type: object
+      required: [enabled, url, bearerTokenSet, fallbackToLocal, requestTimeoutSec]
+      properties:
+        enabled:
+          type: boolean
+        activeTargetId:
+          type: string
+        url:
+          type: string
+        bearerTokenEnv:
+          type: string
+        authMode:
+          type: string
+          enum: [bearer, api_key]
+        bearerTokenSet:
+          type: boolean
+        fallbackToLocal:
+          type: boolean
+        requestTimeoutSec:
+          type: integer
+          minimum: 0
+          maximum: 3600
+        targets:
+          type: array
+          items:
+            $ref: "#/components/schemas/ServerConnectionTarget"
+    ServerConnectionPatch:
+      type: object
+      additionalProperties: false
+      properties:
+        enabled:
+          type: boolean
+        activeTargetId:
+          type: string
+        url:
+          type: string
+        bearerTokenEnv:
+          type: string
+        authMode:
+          type: string
+          enum: [bearer, api_key]
+        fallbackToLocal:
+          type: boolean
+        requestTimeoutSec:
+          type: integer
+          minimum: 0
+          maximum: 3600
+        targets:
+          type: array
+          items:
+            $ref: "#/components/schemas/ServerConnectionTarget"
+        token:
+          type: string
+          writeOnly: true
+          description: Optional secret value stored locally under bearerTokenEnv.
+    ServerConnectionSmokeRequest:
+      type: object
+      additionalProperties: false
+      required: [url]
+      properties:
+        url:
+          type: string
+        bearerTokenEnv:
+          type: string
+        authMode:
+          type: string
+          enum: [bearer, api_key]
+        token:
+          type: string
+          writeOnly: true
+        requestTimeoutSec:
+          type: integer
+          minimum: 0
+          maximum: 3600
+    ServerConnectionSmokeResponse:
+      type: object
+      required: [ok, status, message]
+      properties:
+        ok:
+          type: boolean
+        status:
+          type: string
+        message:
+          type: string
+        healthStatus:
+          type: integer
+        readyStatus:
+          type: integer
     ModeSettings:
       type: object
-      required: [dictation, assist, voiceAgent]
+      required: [dictation, assist, voiceAgent, serverConnection]
       properties:
         dictation:
           $ref: "#/components/schemas/DictationSetting"
@@ -484,6 +672,8 @@ components:
           $ref: "#/components/schemas/AssistSetting"
         voiceAgent:
           $ref: "#/components/schemas/VoiceAgentSetting"
+        serverConnection:
+          $ref: "#/components/schemas/ServerConnectionSetting"
     ModeSettingsPatch:
       type: object
       additionalProperties: false
@@ -499,6 +689,9 @@ components:
           type: string
         fallbackProfileId:
           type: string
+        modeSource:
+          type: string
+          enum: [local, server]
         dictionaryEnabled:
           type: boolean
         ttsEnabled:
@@ -508,6 +701,10 @@ components:
         pipelineFallback:
           type: boolean
         closeBehavior:
+          type: string
+        agentProfileId:
+          type: string
+        agentSequenceId:
           type: string
     ModesResponse:
       type: object

@@ -12,6 +12,7 @@ import {
 
 import { DownloadConfirmationDialog } from "@/components/settings/download-confirmation-dialog";
 import { GeneralSettingsPage } from "@/components/settings/pages/general-settings-page";
+import type { ReleaseFeatureFlags } from "@/lib/speechkit/release-flags";
 import { IntegrationsSettingsPage } from "@/components/settings/pages/integrations-settings-page";
 import { ModeSettingsPage } from "@/components/settings/pages/mode-settings-page";
 import { SpeechKitServerSettingsPage } from "@/components/settings/pages/speechkit-server-settings-page";
@@ -86,7 +87,13 @@ function modeForTab(tab: ModeTab): ConfigurableMode {
   return MODE_TAB_TO_MODE[tab];
 }
 
-export function SettingsApp({ initialTab = "general" }: { initialTab?: Tab }) {
+export function SettingsApp({
+  initialTab = "general",
+  features,
+}: {
+  initialTab?: Tab;
+  features?: ReleaseFeatureFlags;
+}) {
   const {
     settings,
     providerTokens,
@@ -121,26 +128,20 @@ export function SettingsApp({ initialTab = "general" }: { initialTab?: Tab }) {
     hasSavedOverlaySpot,
     handleChooseStorageFolder,
   } = useSettingsController({ initialTab });
+  const modeEnabled = settings.modeEnabled;
 
   useEffect(() => {
-    if (isModeTab(tab) && !settings.modeEnabled[modeForTab(tab)]) {
+    if (isModeTab(tab) && !modeEnabled[modeForTab(tab)]) {
       setTab("general");
     }
-  }, [
-    settings.modeEnabled.assist,
-    settings.modeEnabled.dictate,
-    settings.modeEnabled.voice_agent,
-    setTab,
-    tab,
-  ]);
+  }, [modeEnabled, setTab, tab]);
 
-  const activeModeTab =
-    isModeTab(tab) && settings.modeEnabled[modeForTab(tab)] ? tab : null;
+  const activeModeTab = isModeTab(tab) && modeEnabled[modeForTab(tab)] ? tab : null;
 
   const renderNavTab = (navTab: NavTab) => {
     const Icon = navTab.icon;
     const disabled =
-      isModeTab(navTab.value) && !settings.modeEnabled[modeForTab(navTab.value)];
+      isModeTab(navTab.value) && !modeEnabled[modeForTab(navTab.value)];
     return (
       <TabBtn
         key={navTab.value}
@@ -168,13 +169,13 @@ export function SettingsApp({ initialTab = "general" }: { initialTab?: Tab }) {
   return (
     <div
       data-testid="settings-layout"
-      className="flex h-full min-h-0 min-w-0 bg-[color:var(--sk-surface-0)] text-[13px] text-[color:var(--sk-text)]"
+      className="flex h-full min-h-0 min-w-0 bg-(--sk-surface-0) text-[13px] text-(--sk-text)"
     >
       <div
         data-testid="settings-nav-panel"
-        className="w-56 shrink-0 overflow-y-auto border-r border-[color:var(--sk-shell-divider)] bg-[color:var(--sk-surface-1)] px-3 py-6"
+        className="w-56 shrink-0 overflow-y-auto border-r border-(--sk-shell-divider) bg-(--sk-surface-1) px-3 py-6"
       >
-        <h2 className="mb-5 px-3 text-xs font-bold uppercase tracking-widest text-[color:var(--sk-text-muted)]">
+        <h2 className="mb-5 px-3 text-xs font-bold uppercase tracking-widest text-(--sk-text-muted)">
           Settings
         </h2>
         <nav className="space-y-4">
@@ -202,6 +203,7 @@ export function SettingsApp({ initialTab = "general" }: { initialTab?: Tab }) {
             hasSavedOverlaySpot={hasSavedOverlaySpot}
             onSaveCurrentOverlaySpot={handleSaveCurrentOverlaySpot}
             onResetOverlaySpot={handleResetOverlaySpot}
+            features={features}
           />
         )}
         {tab === "integrations" && (
@@ -282,8 +284,8 @@ function NavGroup({
   return (
     <div data-testid={testId} className="pt-1">
       <div className="px-3">
-        <div className="border-b border-[color:var(--sk-shell-divider)]/80 pb-1.5">
-          <span className="text-[10px] font-semibold uppercase tracking-[0.14em] text-[color:var(--sk-text-muted)]">
+        <div className="border-b border-(--sk-shell-divider)/80 pb-1.5">
+          <span className="text-[10px] font-semibold uppercase tracking-[0.14em] text-(--sk-text-muted)">
             {title}
           </span>
         </div>
@@ -312,10 +314,10 @@ function TabBtn({
       className={[
         "w-full rounded-2xl px-3 py-2.5 text-left text-sm transition-all",
         active
-          ? "border border-[color:var(--sk-accent)]/18 bg-[color:var(--sk-accent-soft)] text-[color:var(--sk-accent)] font-semibold"
+          ? "border border-(--sk-accent)/18 bg-(--sk-accent-soft) text-(--sk-accent) font-semibold"
           : disabled
-            ? "cursor-not-allowed border border-transparent text-[color:var(--sk-text-subtle)] opacity-45"
-            : "border border-transparent text-[color:var(--sk-text-muted)] hover:border-[color:var(--sk-panel-border)] hover:bg-[color:var(--sk-surface-2)] hover:text-[color:var(--sk-text)]",
+            ? "cursor-not-allowed border border-transparent text-(--sk-text-subtle) opacity-45"
+            : "border border-transparent text-(--sk-text-muted) hover:border-(--sk-panel-border) hover:bg-(--sk-surface-2) hover:text-(--sk-text)",
       ].join(" ")}
     >
       {children}

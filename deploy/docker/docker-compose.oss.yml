@@ -31,6 +31,7 @@ services:
       SPEECHKIT_SERVER_TOKEN: ${SPEECHKIT_SERVER_TOKEN:-}
       # Optional — enables specific provider features.
       GOOGLE_AI_API_KEY: ${GOOGLE_AI_API_KEY:-}
+      SPEECHKIT_GOOGLE_STT_API_KEY: ${SPEECHKIT_GOOGLE_STT_API_KEY:-}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       GROQ_API_KEY: ${GROQ_API_KEY:-}
       HF_TOKEN: ${HF_TOKEN:-}

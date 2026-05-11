@@ -84,9 +84,10 @@ The Go CI job (`go-analysis`) runs these — run them locally before pushing:
 
 ```powershell
 gofmt -s -l .                        # should print nothing
-golangci-lint run --timeout=5m ./... # pinned to v2.11.4 in CI
-staticcheck ./...
-govulncheck ./...
+golangci-lint run --timeout=5m ./... # pinned to v2.11.4 in CI/mise
+staticcheck ./...                    # pinned to v0.7.0 in CI/mise
+govulncheck ./...                    # pinned to v1.3.0 in CI
+gosec -quiet -severity medium -confidence medium ./... # pinned to v2.26.1 in CI
 ```
 
 ### Frontend

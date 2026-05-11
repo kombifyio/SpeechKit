@@ -203,6 +203,10 @@ func (h *Handler) credentialsReady(profile framework.ProviderProfile) bool {
 	case framework.ExecutionModeGroq:
 		return envPresent(h.cfg.Providers.Groq.APIKeyEnv)
 	case framework.ExecutionModeGoogle:
+		if profile.Mode == framework.ModeDictation || strings.HasPrefix(profile.ID, "stt.google.") {
+			_, source := config.ResolveGoogleSTTKey(h.cfg)
+			return source != ""
+		}
 		return envPresent(h.cfg.Providers.Google.APIKeyEnv)
 	case framework.ExecutionModeHFRouted:
 		return envPresent(config.HuggingFaceTokenEnvName(h.cfg))

@@ -98,7 +98,7 @@ func DefaultProviderProfiles() []ProviderProfile {
 			ExecutionMode:  ExecutionModeGoogle,
 			ModelID:        "chirp_3",
 			Source:         "Google AI",
-			Description:    "Google-hosted transcription path for deployments that already use Gemini credentials.",
+			Description:    "Google-hosted transcription path. Requires a dedicated Google STT key; Gemini's GOOGLE_AI_API_KEY does not enable this profile by itself.",
 			License:        "proprietary",
 			Capabilities:   []Capability{CapabilityTranscription, CapabilitySTT, CapabilityAudioInput, CapabilityDictionaryNativeHints},
 			AdapterKind:    "stt_router",

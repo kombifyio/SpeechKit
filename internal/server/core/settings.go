@@ -53,6 +53,16 @@ func handleServerSettingsPatch(w http.ResponseWriter, r *http.Request, app *App)
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("X-Content-Type-Options", "nosniff")
+	if !serverSettingsBootstrapWriteAllowed(app) && !serverSettingsAdminAccess(r) {
+		w.WriteHeader(http.StatusForbidden)
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"error": map[string]any{
+				"code":    "admin_required",
+				"message": "server settings writes require an admin identity after bootstrap",
+			},
+		})
+		return
+	}
 	if !envBool(config.ServerSettingsWriteEnv) {
 		w.WriteHeader(http.StatusForbidden)
 		_ = json.NewEncoder(w).Encode(map[string]any{
@@ -121,10 +131,21 @@ func handleServerSettingsPatch(w http.ResponseWriter, r *http.Request, app *App)
 		})
 		return
 	}
-	applyRuntimeServerAuth(app, next.ServerAuth)
+	runtimeAuth := next.ServerAuth
+	if stored, ok, err := config.LoadServerModelSettings(path); err == nil && ok {
+		next = stored
+	} else if err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"error": map[string]any{"code": "settings_load_failed", "message": err.Error()},
+		})
+		return
+	}
+	applyRuntimeServerAuth(app, runtimeAuth)
+	applyRuntimeServerAdminAuth(app, next.AdminAuth)
 
 	fullAccess := serverSettingsFullAccess(r)
-	desired := config.SanitizeServerModelSettings(next)
+	desired := serverSettingsResponseDesired(next)
 	if !fullAccess {
 		desired = serverSettingsBootstrapDesired(next)
 	}
@@ -199,9 +220,11 @@ func serverSettingsSnapshot(app *App) map[string]any {
 			"restart_required":     restartRequired,
 		},
 		"auth": map[string]any{
-			"mode":             cfg.Server.AuthMode,
-			"bearer_token_env": firstNonEmpty(cfg.Server.BearerTokenEnv, "SPEECHKIT_SERVER_TOKEN"),
-			"bearer_token_set": envPresent(firstNonEmpty(cfg.Server.BearerTokenEnv, "SPEECHKIT_SERVER_TOKEN")),
+			"mode":               cfg.Server.AuthMode,
+			"bearer_token_env":   firstNonEmpty(cfg.Server.BearerTokenEnv, "SPEECHKIT_SERVER_TOKEN"),
+			"bearer_token_set":   envPresent(firstNonEmpty(cfg.Server.BearerTokenEnv, "SPEECHKIT_SERVER_TOKEN")),
+			"admin_username":     cfg.Server.AdminUsername,
+			"admin_password_set": strings.TrimSpace(cfg.Server.AdminPasswordHash) != "",
 		},
 		"stt": map[string]any{
 			"strategy":  cfg.Routing.Strategy,
@@ -260,11 +283,18 @@ func serverSettingsSnapshot(app *App) map[string]any {
 			"sequences": len(cfg.Sequences),
 		},
 		"editable": map[string]any{
-			"active":           active,
-			"desired":          desired,
+			"active":           serverSettingsResponseDesired(active),
+			"desired":          serverSettingsResponseDesired(desired),
 			"restart_required": restartRequired,
 		},
 	}
+}
+
+func serverSettingsAdminAccess(r *http.Request) bool {
+	if r == nil {
+		return false
+	}
+	return middleware.IdentityFromContext(r.Context()).Role == "admin"
 }
 
 func serverSettingsFullAccess(r *http.Request) bool {
@@ -272,7 +302,7 @@ func serverSettingsFullAccess(r *http.Request) bool {
 		return false
 	}
 	switch middleware.IdentityFromContext(r.Context()).Source {
-	case "bearer", "edge_hmac":
+	case "bearer", "edge_hmac", "basic":
 		return true
 	default:
 		return false
@@ -297,13 +327,21 @@ func serverSettingsBootstrapSnapshot(full map[string]any) map[string]any {
 }
 
 func serverSettingsBootstrapDesired(settings config.ServerModelSettings) config.ServerModelSettings {
-	settings = config.SanitizeServerModelSettings(settings)
+	settings = serverSettingsResponseDesired(settings)
 	settings.ServerAuth.BearerTokenEnv = ""
+	settings.AdminAuth.PasswordHash = ""
 	settings.Credentials = config.ServerCredentialSettings{}
 	settings.STT.URL = ""
 	settings.LLM.BaseURL = ""
 	settings.Dictation.Dictionary = nil
 	settings.VoiceAgent.PromptTemplate = nil
+	return settings
+}
+
+func serverSettingsResponseDesired(settings config.ServerModelSettings) config.ServerModelSettings {
+	settings = config.SanitizeServerModelSettings(settings)
+	settings.AdminAuth.PasswordHash = ""
+	settings.AdminAuth.PasswordValue = ""
 	return settings
 }
 
@@ -449,8 +487,12 @@ func activeServerModelSettings(cfg *config.Config) config.ServerModelSettings {
 		cfg = &config.Config{}
 	}
 	return config.ServerModelSettings{
-		Version:     1,
-		ServerAuth:  activeServerAuthSettings(cfg),
+		Version:    1,
+		ServerAuth: activeServerAuthSettings(cfg),
+		AdminAuth: config.ServerAdminAuthSettings{
+			Username:     strings.TrimSpace(cfg.Server.AdminUsername),
+			PasswordHash: strings.TrimSpace(cfg.Server.AdminPasswordHash),
+		},
 		Modes:       activeServerModeSettings(cfg),
 		Credentials: activeServerCredentialSettings(cfg),
 		Dictation: config.ServerDictationSettings{
@@ -492,6 +534,7 @@ func mergeServerModelSettings(base, patch config.ServerModelSettings) config.Ser
 		base.OnboardingVersion = value
 	}
 	base.ServerAuth = mergeServerAuthSetting(base.ServerAuth, patch.ServerAuth)
+	base.AdminAuth = mergeServerAdminAuthSetting(base.AdminAuth, patch.AdminAuth)
 	base.Modes.Dictation = mergeServerModeSetting(base.Modes.Dictation, patch.Modes.Dictation)
 	base.Modes.Assist = mergeServerModeSetting(base.Modes.Assist, patch.Modes.Assist)
 	base.Modes.VoiceAgent = mergeServerModeSetting(base.Modes.VoiceAgent, patch.Modes.VoiceAgent)
@@ -548,6 +591,19 @@ func mergeServerModelSettings(base, patch config.ServerModelSettings) config.Ser
 	return base
 }
 
+func mergeServerAdminAuthSetting(base, patch config.ServerAdminAuthSettings) config.ServerAdminAuthSettings {
+	if value := strings.TrimSpace(patch.Username); value != "" {
+		base.Username = value
+	}
+	if value := strings.TrimSpace(patch.PasswordHash); value != "" {
+		base.PasswordHash = value
+	}
+	if value := strings.TrimSpace(patch.PasswordValue); value != "" {
+		base.PasswordValue = value
+	}
+	return base
+}
+
 func mergeServerAuthSetting(base, patch config.ServerAuthSettings) config.ServerAuthSettings {
 	if value := strings.TrimSpace(patch.Mode); value != "" {
 		base.Mode = strings.ToLower(value)
@@ -588,6 +644,19 @@ func applyRuntimeServerAuth(app *App, auth config.ServerAuthSettings) {
 	}
 	if app.AuthState != nil {
 		app.AuthState.Set(app.Cfg.Server.AuthMode, app.Cfg.Server.BearerTokenEnv, app.Cfg.Server.EdgeAuthSecretEnv)
+	}
+}
+
+func applyRuntimeServerAdminAuth(app *App, auth config.ServerAdminAuthSettings) {
+	if app == nil || app.Cfg == nil {
+		return
+	}
+	notes := config.ApplyServerAdminAuthSettings(app.Cfg, auth)
+	if len(notes) == 0 {
+		return
+	}
+	if app.AuthState != nil {
+		app.AuthState.SetAdmin(app.Cfg.Server.AdminUsername, app.Cfg.Server.AdminPasswordHash)
 	}
 }
 

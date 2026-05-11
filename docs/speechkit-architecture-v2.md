@@ -54,6 +54,16 @@ Der Framework-Katalog fuer die drei Hauptmodi lebt in `pkg/speechkit`. `internal
 
 Die Local-Built-in-Grenze ist absichtlich eng formuliert: Dictation kann Whisper.cpp-Modelle direkt herunterladen und mit der gebundelten lokalen Transcription-Runtime verwenden. Assist und Voice Agent duerfen GGUF-Modelle herunterladen und auswaehlen, aber diese Modelldateien sind nicht selbst die Runtime. Bis SpeechKit einen OpenAI-kompatiblen lokalen LLM-Server buendelt, muss dieser Server separat konfiguriert und erreichbar sein.
 
+#### Production Trust Boundaries
+
+| Boundary | Default | Produktionsregel |
+|----------|---------|------------------|
+| Desktop Control Plane | Loopback + Control-Plane-Token | Mutierende Routen bleiben token-geschuetzt und duerfen nicht als public API behandelt werden. |
+| SpeechKit Server | Bearer Auth | `auth_mode = "none"` ist nur fuer Loopback/Dev gueltig; public binds benoetigen Bearer oder Edge-HMAC. |
+| MCP HTTP Transport | `127.0.0.1:8090` | Non-loopback Management-Modus benoetigt `SPEECHKIT_MCP_TOKEN`; der HTTP-Server setzt Header-/Read-/Idle-Timeouts. |
+| Scaffold Templates | Embedded repo-owned templates | Nur Templates mit `template.toml` werden gelistet; Post-Init-Hooks sind opt-in und auf feste Binary/Argument-Paare begrenzt. |
+| Provider Boundary | User-/Install-/Env-Secrets | Provider-Antworten, Tool-Call-Daten und externes Audio/Text-Material bleiben untrusted Input. |
+
 #### SDK Contracts
 
 `pkg/speechkit` stellt folgende stabile Typen und Helfer bereit:

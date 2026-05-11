@@ -1,33 +1,6 @@
 package config
 
-import (
-	"fmt"
-	"log/slog"
-	"os"
-	"os/exec"
-	"path/filepath"
-	"runtime/debug"
-	"strings"
-
-	"github.com/BurntSushi/toml"
-	"github.com/kombifyio/SpeechKit/internal/secrets"
-	"github.com/kombifyio/SpeechKit/internal/voiceagentprofile"
-)
-
-var (
-	dopplerLookPath              = exec.LookPath
-	dopplerSecretLookup          = secrets.DefaultDopplerSecretLookup
-	managedHFBuildEnabled        string
-	managedDevServerBuildEnabled string
-	managedHFDefaultOptIn        string
-	managedDopplerDefaultProject string
-	managedDopplerDefaultConfig  string
-	readBuildInfo                = defaultReadBuildInfo
-)
-
-type buildInfo struct {
-	MainPath string
-}
+import "strings"
 
 const (
 	HotkeyBehaviorPushToTalk = "push_to_talk"
@@ -42,7 +15,6 @@ const (
 	DefaultLocalLLMBaseURL = "http://127.0.0.1:8082/v1"
 	DefaultLocalLLMModel   = "ggml-org/gemma-4-E4B-it-GGUF:Q4_K_M"
 	DefaultLocalSTTModel   = "ggml-large-v3-turbo.bin"
-	ManagedDevServerURL    = "https://speechkit.example.com"
 
 	DefaultDictatePrimaryProfileID    = "stt.local.whispercpp"
 	DefaultAssistPrimaryProfileID     = "assist.builtin.gemma4-e4b"
@@ -108,6 +80,8 @@ type ServerConfig struct {
 	AuthMode              string   `toml:"auth_mode"`            // "none" | "bearer" | "edge_hmac" | "bearer_or_edge"
 	BearerTokenEnv        string   `toml:"bearer_token_env"`     // env var name holding the bearer token
 	BearerRole            string   `toml:"bearer_role"`          // optional role for static bearer callers, e.g. "admin"
+	AdminUsername         string   `toml:"admin_username"`       // setup/admin UI username; not used by API clients
+	AdminPasswordHash     string   `toml:"admin_password_hash"`  // bcrypt hash for setup/admin UI Basic auth
 	EdgeAuthSecretEnv     string   `toml:"edge_auth_secret_env"` // env var name holding the HMAC secret
 	CORSAllowedOrigins    []string `toml:"cors_allowed_origins"`
 	RateLimitRPS          float64  `toml:"rate_limit_rps"`
@@ -121,12 +95,22 @@ type ServerConfig struct {
 	// Defaults to 900 (15 min). Set to 0 to disable the server-side idle
 	// timeout (kernel-level idle handling stays in effect either way).
 	VoiceAgentIdleTimeoutSec int                  `toml:"voiceagent_idle_timeout_sec"`
+	LiveKit                  ServerLiveKitConfig  `toml:"livekit"`
 	WhisperBinary            string               `toml:"whisper_binary"` // absolute path inside container
 	WhisperPort              int                  `toml:"whisper_port"`   // loopback port for whisper.cpp server
 	ModelDir                 string               `toml:"model_dir"`      // persistent volume, e.g. /var/lib/speechkit/models
 	LogFormat                string               `toml:"log_format"`     // "json" | "text"
 	LogLevel                 string               `toml:"log_level"`      // "debug" | "info" | "warn" | "error"
 	Features                 ServerFeaturesConfig `toml:"features"`
+}
+
+type ServerLiveKitConfig struct {
+	Enabled      bool   `toml:"enabled"`
+	URL          string `toml:"url"`            // e.g. wss://livekit.example.com
+	APIKeyEnv    string `toml:"api_key_env"`    // env var name holding the LiveKit API key
+	APISecretEnv string `toml:"api_secret_env"` // env var name holding the LiveKit API secret
+	TokenTTLSec  int    `toml:"token_ttl_sec"`  // join-token TTL
+	RoomPrefix   string `toml:"room_prefix"`    // room name prefix for SpeechKit-managed rooms
 }
 
 type ServerFeaturesConfig struct {
@@ -273,6 +257,11 @@ const (
 	ModeSourceServer = "server"
 )
 
+const (
+	ServerConnectionAuthModeBearer = "bearer"
+	ServerConnectionAuthModeAPIKey = "api_key"
+)
+
 type ModeModelSelection struct {
 	PrimaryProfileID  string `toml:"primary_profile_id"`
 	FallbackProfileID string `toml:"fallback_profile_id"`
@@ -304,6 +293,12 @@ type ServerConnectionConfig struct {
 	// is configured here.
 	BearerTokenEnv string `toml:"bearer_token_env"`
 
+	// AuthMode selects how the resolved token is attached to outbound
+	// requests. "bearer" sends Authorization: Bearer <token>. "api_key"
+	// sends X-Api-Key: <token> for servers that use header-based API keys.
+	// Empty/missing defaults to "bearer".
+	AuthMode string `toml:"auth_mode"`
+
 	// FallbackToLocal makes the device app fall back to the in-process
 	// Framework kernel if a server call fails or the server is unreachable.
 	// Useful for laptop deployments that may be offline; should be false
@@ -314,55 +309,26 @@ type ServerConnectionConfig struct {
 	// 0 means no explicit timeout (the underlying http.Client default
 	// applies). Voice Agent WebSocket sessions are not affected.
 	RequestTimeoutSec int `toml:"request_timeout_sec"`
+
+	// ActiveTargetID selects the registered server target copied into the
+	// compatibility fields above. Empty means the top-level URL/env/auth fields
+	// are an ad-hoc single target.
+	ActiveTargetID string `toml:"active_target_id"`
+
+	// Targets is the optional local registry of SpeechKit server endpoints the
+	// device can switch between. These are user/operator configured; product
+	// builds must not inject private gateway/origin entries here.
+	Targets []ServerConnectionTargetConfig `toml:"targets"`
 }
 
-func BuiltInPrimaryModelSelectionDefaults() ModelSelectionConfig {
-	return ModelSelectionConfig{
-		Dictate: ModeModelSelection{
-			PrimaryProfileID: DefaultDictatePrimaryProfileID,
-			ModeSource:       ModeSourceLocal,
-		},
-		Assist: ModeModelSelection{
-			PrimaryProfileID: DefaultAssistPrimaryProfileID,
-			ModeSource:       ModeSourceLocal,
-		},
-		VoiceAgent: ModeModelSelection{
-			PrimaryProfileID: DefaultVoiceAgentPrimaryProfileID,
-			ModeSource:       ModeSourceLocal,
-		},
-	}
-}
-
-func applyBuiltInPrimaryModelSelectionDefaults(cfg *Config) bool {
-	if cfg == nil {
-		return false
-	}
-
-	changed := false
-	changed = applyBuiltInPrimaryModelSelectionDefault(&cfg.ModelSelection.Dictate, DefaultDictatePrimaryProfileID) || changed
-	changed = applyBuiltInPrimaryModelSelectionDefault(&cfg.ModelSelection.Assist, DefaultAssistPrimaryProfileID) || changed
-	changed = applyBuiltInPrimaryModelSelectionDefault(&cfg.ModelSelection.VoiceAgent, DefaultVoiceAgentPrimaryProfileID) || changed
-	return changed
-}
-
-func applyBuiltInPrimaryModelSelectionDefault(selection *ModeModelSelection, primaryProfileID string) bool {
-	if selection == nil {
-		return false
-	}
-	changed := false
-	if strings.TrimSpace(selection.ModeSource) == "" {
-		selection.ModeSource = ModeSourceLocal
-		changed = true
-	}
-	primaryProfileID = strings.TrimSpace(primaryProfileID)
-	if primaryProfileID == "" {
-		return changed
-	}
-	if strings.TrimSpace(selection.PrimaryProfileID) != "" || strings.TrimSpace(selection.FallbackProfileID) != "" {
-		return changed
-	}
-	selection.PrimaryProfileID = primaryProfileID
-	return true
+type ServerConnectionTargetConfig struct {
+	ID                string `toml:"id"`
+	Label             string `toml:"label"`
+	URL               string `toml:"url"`
+	BearerTokenEnv    string `toml:"bearer_token_env"`
+	AuthMode          string `toml:"auth_mode"`
+	FallbackToLocal   bool   `toml:"fallback_to_local"`
+	RequestTimeoutSec int    `toml:"request_timeout_sec"`
 }
 
 // ResolvedModeSource returns the effective ModeSource for this mode,
@@ -375,6 +341,15 @@ func (sel ModeModelSelection) ResolvedModeSource() string {
 		return ModeSourceServer
 	default:
 		return ModeSourceLocal
+	}
+}
+
+func NormalizeServerConnectionAuthMode(mode string) string {
+	switch strings.TrimSpace(strings.ToLower(mode)) {
+	case ServerConnectionAuthModeAPIKey:
+		return ServerConnectionAuthModeAPIKey
+	default:
+		return ServerConnectionAuthModeBearer
 	}
 }
 
@@ -479,6 +454,7 @@ type GroqProviderConfig struct {
 type GoogleProviderConfig struct {
 	Enabled      bool   `toml:"enabled"`
 	APIKeyEnv    string `toml:"api_key_env"`
+	STTAPIKeyEnv string `toml:"stt_api_key_env"`
 	STTModel     string `toml:"stt_model"`
 	UtilityModel string `toml:"utility_model"`
 	AssistModel  string `toml:"assist_model"`
@@ -587,101 +563,6 @@ type VoiceAgentConfig struct {
 	VADSilenceDurationMs            int    `toml:"vad_silence_duration_ms"`
 }
 
-// Load reads config from the given path. Falls back to defaults if file not found.
-func Load(path string) (*Config, error) {
-	cfg := defaults()
-
-	if path == "" {
-		path = defaultConfigPath()
-	}
-
-	data, err := os.ReadFile(path) // #nosec G304 -- path is the application config path supplied by startup/config plumbing.
-	if err != nil {
-		if os.IsNotExist(err) {
-			return cfg, nil
-		}
-		return nil, fmt.Errorf("read config: %w", err)
-	}
-
-	// Warn (but do not block) when the config file is accessible to group or
-	// other users on POSIX systems. No-op on Windows where Go's os.FileMode
-	// does not reflect NTFS ACLs.
-	if warning, permErr := checkConfigFilePermissions(path); permErr == nil && warning != "" {
-		slog.Warn("config file permissions are loose", "msg", warning)
-	}
-
-	meta, err := toml.Decode(string(data), cfg)
-	if err != nil {
-		slog.Warn("malformed config.toml, using defaults", "err", err)
-		return defaults(), nil
-	}
-
-	// Bridge legacy [feedback] to [store] if store.backend is not explicitly set.
-	if cfg.Store.Backend == "" || cfg.Store.Backend == "sqlite" {
-		if cfg.Feedback.DBPath != "" && !meta.IsDefined("store", "sqlite_path") && cfg.Store.SQLitePath == "" {
-			cfg.Store.SQLitePath = cfg.Feedback.DBPath
-		}
-		if cfg.Feedback.MaxAudioStorageMB > 0 && !meta.IsDefined("store", "max_audio_storage_mb") && cfg.Store.MaxAudioStorageMB == 0 {
-			cfg.Store.MaxAudioStorageMB = cfg.Feedback.MaxAudioStorageMB
-		}
-		if cfg.Feedback.AudioRetentionDays > 0 && !meta.IsDefined("store", "audio_retention_days") && cfg.Store.AudioRetentionDays == 0 {
-			cfg.Store.AudioRetentionDays = cfg.Feedback.AudioRetentionDays
-		}
-		if !meta.IsDefined("store", "save_audio") {
-			cfg.Store.SaveAudio = cfg.Feedback.SaveAudio
-		}
-	}
-
-	backfillLegacyAssistModels(meta, cfg)
-	backfillLegacyModeHotkeys(meta, cfg)
-	backfillStartupBehavior(meta, cfg)
-	backfillVoiceAgentPromptLayers(meta, cfg)
-	backfillVoiceAgentSessionSummary(meta, cfg)
-	cfg.VoiceAgent.AgentProfileID = voiceagentprofile.NormalizeID(cfg.VoiceAgent.AgentProfileID)
-	cfg.VoiceAgent.AgentSequenceID = strings.TrimSpace(cfg.VoiceAgent.AgentSequenceID)
-	cfg.VoiceAgent.CloseBehavior = NormalizeVoiceAgentCloseBehavior(
-		cfg.VoiceAgent.CloseBehavior,
-		VoiceAgentCloseBehaviorContinue,
-	)
-	cfg.UI.AssistOverlayMode = NormalizeOverlayFeedbackMode(
-		cfg.UI.AssistOverlayMode,
-		OverlayFeedbackModeSmallFeedback,
-	)
-	cfg.UI.VoiceAgentOverlayMode = NormalizeOverlayFeedbackMode(
-		cfg.UI.VoiceAgentOverlayMode,
-		OverlayFeedbackModeSmallFeedback,
-	)
-	ApplyManagedDevServerDefaults(cfg)
-
-	return cfg, nil
-}
-
-func Save(path string, cfg *Config) error {
-	if path == "" {
-		path = defaultConfigPath()
-	}
-	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
-		return fmt.Errorf("create config dir: %w", err)
-	}
-
-	file, err := os.Create(path) // #nosec G304 -- path is the application config path supplied by startup/config plumbing.
-	if err != nil {
-		return fmt.Errorf("create config: %w", err)
-	}
-	defer file.Close() //nolint:errcheck // file close on write, error not actionable after encode
-
-	if err := toml.NewEncoder(file).Encode(cfg); err != nil {
-		return fmt.Errorf("encode config: %w", err)
-	}
-
-	return nil
-}
-
-func defaultConfigPath() string {
-	exe, _ := os.Executable()
-	return filepath.Join(filepath.Dir(exe), "config.toml")
-}
-
 func (cfg *Config) LegacyAgentHotkey() string {
 	if cfg == nil {
 		return ""
@@ -697,248 +578,4 @@ func (g GeneralConfig) LegacyAgentHotkey() string {
 		return strings.TrimSpace(g.VoiceAgentHotkey)
 	}
 	return strings.TrimSpace(g.AssistHotkey)
-}
-
-// ResolveSecret resolves a secret by name. Checks environment first, then Doppler CLI
-// using either explicit DOPPLER_PROJECT/DOPPLER_CONFIG env vars or build-embedded
-// managed Doppler defaults.
-func ResolveSecret(envName string) string {
-	if strings.TrimSpace(envName) == "" {
-		return ""
-	}
-	value, _, err := secrets.ResolveNamedSecret(envName, func() string {
-		return ResolveSecretFromEnvironmentOrDoppler(envName)
-	})
-	if err == nil && strings.TrimSpace(value) != "" {
-		return strings.TrimSpace(value)
-	}
-	return ResolveSecretFromEnvironmentOrDoppler(envName)
-}
-
-func ResolveSecretFromEnvironmentOrDoppler(envName string) string {
-	if v := os.Getenv(envName); v != "" {
-		return v
-	}
-	return dopplerGet(envName)
-}
-
-func HuggingFaceTokenEnvName(cfg *Config) string {
-	if cfg == nil {
-		return "HF_TOKEN"
-	}
-	if tokenEnv := strings.TrimSpace(cfg.HuggingFace.TokenEnv); tokenEnv != "" {
-		return tokenEnv
-	}
-	return "HF_TOKEN"
-}
-
-func HuggingFaceTokenStatus(cfg *Config) (secrets.TokenStatus, error) {
-	tokenEnv := HuggingFaceTokenEnvName(cfg)
-	return secrets.HuggingFaceTokenStatus(func() string {
-		return ResolveSecretFromEnvironmentOrDoppler(tokenEnv)
-	})
-}
-
-func ResolveHuggingFaceToken(cfg *Config) (string, secrets.TokenStatus, error) {
-	tokenEnv := HuggingFaceTokenEnvName(cfg)
-	return secrets.ResolveHuggingFaceToken(func() string {
-		return ResolveSecretFromEnvironmentOrDoppler(tokenEnv)
-	})
-}
-
-// dopplerGet tries to resolve a secret via `doppler secrets get` CLI.
-func dopplerGet(key string) string {
-	dopplerPath := findDopplerExecutable()
-	if dopplerPath == "" {
-		return ""
-	}
-
-	projects := dopplerProjects()
-	configs := dopplerConfigs()
-	if len(projects) == 0 || len(configs) == 0 {
-		return ""
-	}
-
-	for _, project := range projects {
-		for _, cfg := range configs {
-			v, err := dopplerSecretLookup(dopplerPath, key, project, cfg)
-			if err == nil && strings.TrimSpace(v) != "" {
-				return strings.TrimSpace(v)
-			}
-		}
-	}
-	return ""
-}
-
-func findDopplerExecutable() string {
-	return secrets.FindDopplerExecutable(dopplerLookPath)
-}
-
-func dopplerProjects() []string {
-	if rawProject, ok := os.LookupEnv("DOPPLER_PROJECT"); ok {
-		if project := strings.TrimSpace(rawProject); project != "" {
-			return []string{project}
-		}
-		return nil
-	}
-	if project := strings.TrimSpace(managedDopplerDefaultProject); project != "" {
-		return []string{project}
-	}
-	return nil
-}
-
-func dopplerConfigs() []string {
-	if rawConfig, ok := os.LookupEnv("DOPPLER_CONFIG"); ok {
-		if cfg := strings.TrimSpace(rawConfig); cfg != "" {
-			return []string{cfg}
-		}
-		return nil
-	}
-	if cfg := strings.TrimSpace(managedDopplerDefaultConfig); cfg != "" {
-		return []string{cfg}
-	}
-	return nil
-}
-
-func resetDopplerHooksForTests() {
-	dopplerLookPath = exec.LookPath
-	dopplerSecretLookup = secrets.DefaultDopplerSecretLookup
-}
-
-func ApplyManagedIntegrationDefaults(cfg *Config) bool {
-	if cfg == nil {
-		return false
-	}
-
-	if !ManagedHuggingFaceAvailableInBuild() {
-		cfg.HuggingFace.Enabled = false
-		return false
-	}
-
-	if !managedHFOptInEnabled() {
-		return false
-	}
-
-	if cfg.HuggingFace.Enabled || cfg.VPS.Enabled || cfg.Local.Enabled {
-		return false
-	}
-
-	if cfg.Routing.Strategy != "cloud-only" {
-		return false
-	}
-
-	tokenEnv := HuggingFaceTokenEnvName(cfg)
-	cfg.HuggingFace.TokenEnv = tokenEnv
-
-	token, _, err := ResolveHuggingFaceToken(cfg)
-	if err != nil || token == "" {
-		return false
-	}
-
-	cfg.HuggingFace.Enabled = true
-	if strings.TrimSpace(cfg.HuggingFace.Model) == "" {
-		cfg.HuggingFace.Model = "openai/whisper-large-v3"
-	}
-	return true
-}
-
-func ApplyManagedDevServerDefaults(cfg *Config) bool {
-	if cfg == nil || !ManagedDevServerAvailableInBuild() {
-		return false
-	}
-
-	changed := false
-	if strings.TrimSpace(cfg.ServerConnection.URL) == "" {
-		cfg.ServerConnection.URL = ManagedDevServerURL
-		changed = true
-	}
-	if strings.TrimSpace(cfg.ServerConnection.BearerTokenEnv) == "" {
-		cfg.ServerConnection.BearerTokenEnv = "SPEECHKIT_SERVER_TOKEN"
-		changed = true
-	}
-	if cfg.ServerConnection.RequestTimeoutSec <= 0 {
-		cfg.ServerConnection.RequestTimeoutSec = 30
-		changed = true
-	}
-	return changed
-}
-
-func managedHFOptInEnabled() bool {
-	if raw, ok := os.LookupEnv("SPEECHKIT_ENABLE_MANAGED_HF"); ok {
-		return parseManagedBool(raw)
-	}
-	if strings.TrimSpace(managedHFDefaultOptIn) != "" {
-		return parseManagedBool(managedHFDefaultOptIn)
-	}
-	return defaultManagedHuggingFaceForModule()
-}
-
-func ManagedHuggingFaceAvailableInBuild() bool {
-	if strings.TrimSpace(managedHFBuildEnabled) != "" {
-		return parseManagedBool(managedHFBuildEnabled)
-	}
-	return defaultManagedHuggingFaceForModule()
-}
-
-func ManagedDevServerAvailableInBuild() bool {
-	if strings.TrimSpace(managedDevServerBuildEnabled) != "" {
-		return parseManagedBool(managedDevServerBuildEnabled)
-	}
-	return defaultManagedPrivateFeatureForModule()
-}
-
-func OverrideManagedHuggingFaceBuildForTests(value string) func() {
-	previous := managedHFBuildEnabled
-	managedHFBuildEnabled = value
-	return func() {
-		managedHFBuildEnabled = previous
-	}
-}
-
-func OverrideManagedDevServerBuildForTests(value string) func() {
-	previous := managedDevServerBuildEnabled
-	managedDevServerBuildEnabled = value
-	return func() {
-		managedDevServerBuildEnabled = previous
-	}
-}
-
-func parseManagedBool(value string) bool {
-	switch strings.ToLower(strings.TrimSpace(value)) {
-	case "1", "true", "yes", "on":
-		return true
-	default:
-		return false
-	}
-}
-
-func defaultReadBuildInfo() (buildInfo, bool) {
-	info, ok := debug.ReadBuildInfo()
-	if !ok || info == nil {
-		return buildInfo{}, false
-	}
-	return buildInfo{MainPath: strings.TrimSpace(info.Main.Path)}, true
-}
-
-func defaultManagedHuggingFaceForModule() bool {
-	return defaultManagedPrivateFeatureForModule()
-}
-
-func defaultManagedPrivateFeatureForModule() bool {
-	info, ok := readBuildInfo()
-	if !ok {
-		return false
-	}
-	mainPath := strings.TrimSpace(info.MainPath)
-	if mainPath == privateModulePath() {
-		return true
-	}
-	if mainPath == "github.com/kombifyio/SpeechKit" {
-		return false
-	}
-	return false
-}
-
-func privateModulePath() string {
-	return "github.com/" + "Soulcreek" + "/kombify-SpeechKit"
 }

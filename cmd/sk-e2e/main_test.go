@@ -16,10 +16,27 @@ import (
 
 func TestAssistScenarioExercisesAllDeploySmokeTools(t *testing.T) {
 	var requests []map[string]any
+	var selfTestCalled atomic.Bool
 
 	mux := http.NewServeMux()
 	server := httptest.NewServer(mux)
 	defer server.Close()
+
+	mux.HandleFunc("/api/v1/assist/self-test", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			t.Fatalf("assist self-test method = %s, want POST", r.Method)
+		}
+		if got := r.Header.Get("Authorization"); got != "Bearer smoke-token" {
+			t.Fatalf("Authorization = %q, want bearer token", got)
+		}
+		selfTestCalled.Store(true)
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"status":     "ok",
+			"text":       "pong",
+			"action":     "respond",
+			"latency_ms": 1,
+		})
+	})
 
 	mux.HandleFunc("/api/v1/assist/process", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
@@ -56,6 +73,9 @@ func TestAssistScenarioExercisesAllDeploySmokeTools(t *testing.T) {
 	}
 	if err := scenarioAssist(c, &scenarioOpts{}); err != nil {
 		t.Fatalf("scenarioAssist: %v", err)
+	}
+	if !selfTestCalled.Load() {
+		t.Fatal("scenarioAssist did not call assist self-test")
 	}
 
 	wantTexts := []string{

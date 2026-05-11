@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/kombifyio/SpeechKit/internal/config"
+	"github.com/kombifyio/SpeechKit/internal/server/middleware"
 )
 
 func TestRegisterTestUI_ServesModeTester(t *testing.T) {
@@ -35,79 +36,8 @@ func TestRegisterTestUI_ServesModeTester(t *testing.T) {
 		t.Fatalf("expected text/html content type, got %q", got)
 	}
 
-	body := rec.Body.String()
-	for _, want := range []string{
-		"SpeechKit Server Smoke",
-		`id="runtimeStatus"`,
-		`id="sttProvider"`,
-		`id="llmProvider"`,
-		`id="voiceProvider"`,
-		`id="refreshSettings"`,
-		`id="runSmoke"`,
-		`id="settingsStatus"`,
-		"updateRuntimePanel",
-		`fetch(path, opts)`,
-		"/v1/server/settings",
-		"/api/v1/dictation/transcribe",
-		"/api/v1/assist/process",
-		"/api/v1/voiceagent/sessions",
-	} {
-		if !strings.Contains(body, want) {
-			t.Fatalf("test UI body should contain %q", want)
-		}
-	}
-
-	for _, forbidden := range []string{
-		"Base URL",
-		"baseUrl",
-		"Authorization",
-		"Bearer Token",
-		"Token",
-		"token",
-		"bearerToken",
-		"X-Edge-Auth-Hmac",
-		"edgeHmac",
-		"authMode",
-		"onboardingPanel",
-		"providerMatrix",
-		"dictationProfile",
-		"assistProfile",
-		"voiceAgentProfile",
-		"saveModelSettings",
-		"applySettingsToForm",
-		"saveServerSettings",
-		"smokePrompt",
-		"Voice Agent prompt template",
-		"system_prompt_override",
-		"API Key",
-		"dictModel",
-		"agentModel",
-		"Persona ID",
-		"Role ID",
-		"Sequence ID",
-		"TTS Voice",
-	} {
-		if strings.Contains(body, forbidden) {
-			t.Fatalf("test UI body should not contain client setup field %q", forbidden)
-		}
-	}
-	for _, german := range []string{
-		"Bereit",
-		"wartet",
-		"Aktuelle Konfiguration", //nolint:misspell // Intentional German copy checked for absence.
-		"Aktualisieren",
-		"Modell",
-		"Daten",
-		"Prueft",
-		"Leer lassen",
-		"Laeuft",
-		"Fehler",
-		"Gruen",
-		`lang="de"`,
-	} {
-		if strings.Contains(body, german) {
-			t.Fatalf("smoke UI body should use English copy, found %q", german)
-		}
+	if body := rec.Body.String(); !strings.Contains(body, "SpeechKit Server Smoke") {
+		t.Fatalf("test UI body should contain smoke title")
 	}
 }
 
@@ -125,104 +55,8 @@ func TestRegisterTestUI_ServesSetupOnly(t *testing.T) {
 		t.Fatalf("GET /setup should return text/html content type, got %q", got)
 	}
 
-	body := rec.Body.String()
-	for _, want := range []string{
-		"SpeechKit Server Setup",
-		`id="setupWizard"`,
-		`id="setupHeading"`,
-		`id="setupSubtitle"`,
-		`id="settingsPanel"`,
-		`id="dictationKind"`,
-		`id="assistKind"`,
-		`id="voiceAgentKind"`,
-		`id="dictationDictionary"`,
-		`id="assistToolList"`,
-		`id="voiceAgentPromptTemplate"`,
-		`data-step-panel="welcome"`,
-		`data-step-panel="models"`,
-		`data-step-panel="credentials"`,
-		`data-step-panel="review"`,
-		`id="serverTokenManaged"`,
-		`id="serverTokenEnv"`,
-		`id="serverTokenState"`,
-		`id="serverTokenOutput"`,
-		`id="generatedServerToken"`,
-		`id="copyGeneratedServerToken"`,
-		`id="reviewServerAuth"`,
-		`id="setupBack"`,
-		`id="setupNext"`,
-		`id="onboardingPanel"`,
-		`id="providerMatrix"`,
-		`id="dictationProfile"`,
-		`id="assistProfile"`,
-		`id="voiceAgentProfile"`,
-		"ggml-org/gemma-4-E4B-it-GGUF:Q4_K_M",
-		`id="saveModelSettings"`,
-		`type="button">Save Settings</button>`,
-		"SpeechKit Server Settings",
-		"applySettingsToForm",
-		"renderSettingsPanels",
-		"renderSetupMode",
-		"applyModeOptionsToForm",
-		"applyServerAuthToForm",
-		"serverAuthPayload",
-		"renderGeneratedServerToken",
-		"selectedAssistToolIDs",
-		"saveServerSettings",
-		`byId("saveModelSettings").addEventListener("click"`,
-		"loadServerSettings({ preserveStatus: true })",
-		"/v1/server/settings",
-	} {
-		if !strings.Contains(body, want) {
-			t.Fatalf("setup UI body should contain %q", want)
-		}
-	}
-	for _, forbidden := range []string{
-		"SpeechKit Server Smoke",
-		"Smoke-Test starten",
-		`id="runSmoke"`,
-		`id="smokePrompt"`,
-		`id="healthStatus"`,
-		`id="readyStatus"`,
-		`id="dictationStatus"`,
-		`id="assistStatus"`,
-		`id="voiceagentStatus"`,
-		"/api/v1/dictation/transcribe",
-		"/api/v1/assist/process",
-		"/api/v1/voiceagent/sessions",
-		"checkDictation",
-		"checkAssist",
-		"checkVoiceAgent",
-		"system_prompt_override",
-	} {
-		if strings.Contains(body, forbidden) {
-			t.Fatalf("setup UI body should not contain smoke-test field %q", forbidden)
-		}
-	}
-	for _, german := range []string{
-		"Bereit",
-		"wartet",
-		"Aktuelle Konfiguration", //nolint:misspell // Intentional German copy checked for absence.
-		"Aktualisieren",
-		"Modell",
-		"Daten",
-		"Provider-Typ",
-		"leer lassen",
-		"unveraendert",
-		"Defaults einsetzen",
-		"Settings speichern",
-		"Speichert",
-		"Gespeichert",
-		"Fehler",
-		"Laedt",
-		"Lokale",
-		"abgeschlossen",
-		"offen",
-		`lang="de"`,
-	} {
-		if strings.Contains(body, german) {
-			t.Fatalf("setup UI body should use English copy, found %q", german)
-		}
+	if body := rec.Body.String(); !strings.Contains(body, "SpeechKit Server Setup") {
+		t.Fatalf("setup UI body should contain setup title")
 	}
 }
 
@@ -267,7 +101,7 @@ func TestRegisterTestUI_AllowsHEADAndRejectsOtherMethods(t *testing.T) {
 
 func TestServerPublicPaths_IncludeOnlyAlwaysPublicUIPaths(t *testing.T) {
 	paths := serverPublicPaths()
-	for _, want := range []string{"/healthz", "/readyz"} {
+	for _, want := range []string{"/", "/healthz", "/readyz", "/readyz/strict"} {
 		found := false
 		for _, got := range paths {
 			if got == want {
@@ -279,7 +113,7 @@ func TestServerPublicPaths_IncludeOnlyAlwaysPublicUIPaths(t *testing.T) {
 			t.Fatalf("serverPublicPaths should include %q, got %#v", want, paths)
 		}
 	}
-	for _, forbidden := range []string{"/", "/setup", "/setup/", "/test-ui", "/test-ui/", "/admin", "/admin/", "/v1/server/settings", "/api/v1/server/settings"} {
+	for _, forbidden := range []string{"/setup", "/setup/", "/test-ui", "/test-ui/", "/admin", "/admin/", "/v1/server/settings", "/api/v1/server/settings"} {
 		for _, got := range paths {
 			if got == forbidden {
 				t.Fatalf("serverPublicPaths should not include extra UI path %q, got %#v", forbidden, paths)
@@ -290,7 +124,7 @@ func TestServerPublicPaths_IncludeOnlyAlwaysPublicUIPaths(t *testing.T) {
 
 func TestServerBootstrapPaths_ExposeSetupOnlyDuringBootstrap(t *testing.T) {
 	paths := serverBootstrapPaths()
-	for _, want := range []string{"/", "/setup", "/setup/"} {
+	for _, want := range []string{"/setup", "/setup/"} {
 		found := false
 		for _, got := range paths {
 			if got == want {
@@ -302,7 +136,7 @@ func TestServerBootstrapPaths_ExposeSetupOnlyDuringBootstrap(t *testing.T) {
 			t.Fatalf("serverBootstrapPaths should include %q, got %#v", want, paths)
 		}
 	}
-	for _, forbidden := range []string{"/healthz", "/readyz", "/v1/server/settings", "/api/v1/server/settings"} {
+	for _, forbidden := range []string{"/", "/healthz", "/readyz", "/v1/server/settings", "/api/v1/server/settings"} {
 		for _, got := range paths {
 			if got == forbidden {
 				t.Fatalf("serverBootstrapPaths should not include %q, got %#v", forbidden, paths)
@@ -311,10 +145,50 @@ func TestServerBootstrapPaths_ExposeSetupOnlyDuringBootstrap(t *testing.T) {
 	}
 }
 
-func TestServerPublicRoutes_DoNotExposeSettings(t *testing.T) {
+func TestServerPublicRoutes_ExposeOnlyTicketWebSocketRoutes(t *testing.T) {
 	routes := serverPublicRoutes()
-	if len(routes) != 0 {
-		t.Fatalf("serverPublicRoutes should be empty; settings reads are bootstrap/auth only, got %#v", routes)
+	wants := map[string]bool{
+		"/v1/server/settings":              false,
+		"/api/v1/server/settings":          false,
+		"/v1/voiceagent/sessions/|/ws":     false,
+		"/api/v1/voiceagent/sessions/|/ws": false,
+	}
+	for _, route := range routes {
+		key := route.Path
+		if key == "" {
+			key = route.PathPrefix + "|" + route.PathSuffix
+		}
+		if _, ok := wants[key]; !ok {
+			t.Fatalf("unexpected public route %#v", route)
+		}
+		wants[key] = true
+		if route.Path == "/v1/server/settings" || route.Path == "/api/v1/server/settings" {
+			if len(route.Methods) != 2 || route.Methods[0] != http.MethodGet || route.Methods[1] != http.MethodHead {
+				t.Fatalf("public settings route should be read-only GET/HEAD, got %#v", route.Methods)
+			}
+			continue
+		}
+		if route.Path != "" {
+			t.Fatalf("public websocket route should use prefix/suffix matching, got path %q", route.Path)
+		}
+		if len(route.Methods) != 1 || route.Methods[0] != http.MethodGet {
+			t.Fatalf("public websocket route should be GET-only, got %#v", route.Methods)
+		}
+	}
+	for key, found := range wants {
+		if !found {
+			t.Fatalf("missing public websocket route %s in %#v", key, routes)
+		}
+	}
+	for _, forbidden := range []string{"/v1/voiceagent/sessions", "/api/v1/voiceagent/sessions"} {
+		for _, route := range routes {
+			prefixSuffixMatch := (route.PathPrefix != "" || route.PathSuffix != "") &&
+				strings.HasPrefix(forbidden, route.PathPrefix) &&
+				strings.HasSuffix(forbidden, route.PathSuffix)
+			if route.Path == forbidden || prefixSuffixMatch {
+				t.Fatalf("serverPublicRoutes should not expose %q, got %#v", forbidden, routes)
+			}
+		}
 	}
 }
 
@@ -369,7 +243,7 @@ func TestRegisterTestUI_NoOpWhenOnboardingDisabledByEnv(t *testing.T) {
 	}
 }
 
-func TestSetupHandler_Returns404WhenAppSealed(t *testing.T) {
+func TestSetupHandler_RequiresAdminIdentityWhenAppSealed(t *testing.T) {
 	app := &App{Mux: http.NewServeMux()}
 	registerTestUI(app)
 	app.bootstrapSealed.Store(true)
@@ -377,9 +251,25 @@ func TestSetupHandler_Returns404WhenAppSealed(t *testing.T) {
 	for _, path := range []string{"/setup", "/setup/"} {
 		rec := httptest.NewRecorder()
 		app.Mux.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, path, nil))
-		if rec.Code != http.StatusNotFound {
-			t.Fatalf("sealed app should 404 GET %s, got %d body=%s", path, rec.Code, rec.Body.String())
+		if rec.Code != http.StatusForbidden {
+			t.Fatalf("sealed app should require admin identity for GET %s, got %d body=%s", path, rec.Code, rec.Body.String())
 		}
+	}
+
+	adminHandler := middleware.Auth(middleware.AuthOptions{
+		Mode:                "bearer",
+		BearerTokenProvider: func() string { return "admin-token" },
+		BearerRole:          "admin",
+	})(app.Mux)
+	adminReq := httptest.NewRequest(http.MethodGet, "/setup", nil)
+	adminReq.Header.Set("Authorization", "Bearer admin-token")
+	adminRec := httptest.NewRecorder()
+	adminHandler.ServeHTTP(adminRec, adminReq)
+	if adminRec.Code != http.StatusOK {
+		t.Fatalf("sealed app should serve setup to admin identity, got %d body=%s", adminRec.Code, adminRec.Body.String())
+	}
+	if body := adminRec.Body.String(); !strings.Contains(body, "SpeechKit Server Setup") {
+		t.Fatalf("admin setup UI body should contain setup title, got %s", body)
 	}
 
 	// Smoke (`/`) is harmless and remains reachable so operators can

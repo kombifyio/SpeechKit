@@ -106,8 +106,8 @@ func (c desktopInputController) quickNoteRecordingLabel() string {
 	if c.state == nil {
 		return "Quick Capture"
 	}
-	context := c.state.currentQuickNoteContext()
-	if context.enabled && !context.captureMode {
+	noteContext := c.state.currentQuickNoteContext()
+	if noteContext.enabled && !noteContext.captureMode {
 		return "Quick Note"
 	}
 	return "Quick Capture"

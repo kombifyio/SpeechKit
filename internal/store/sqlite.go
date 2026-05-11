@@ -186,10 +186,15 @@ func (s *SQLiteStore) ListTranscriptions(ctx context.Context, opts ListOpts) ([]
 		if strings.TrimSpace(t.Model) == "" {
 			t.Model = s.transcriptionModelHint(t.Provider)
 		}
-		t.Audio = buildLocalAudioAsset(t.AudioPath, t.DurationMs)
 		results = append(results, t)
 	}
-	return results, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	if err := hydrateTranscriptionAudioBatch(ctx, s.db, "sqlite", results); err != nil {
+		return nil, err
+	}
+	return results, nil
 }
 
 func (s *SQLiteStore) GetTranscription(ctx context.Context, id int64) (*Transcription, error) {
@@ -206,7 +211,9 @@ func (s *SQLiteStore) GetTranscription(ctx context.Context, id int64) (*Transcri
 	if strings.TrimSpace(t.Model) == "" {
 		t.Model = s.transcriptionModelHint(t.Provider)
 	}
-	t.Audio = buildLocalAudioAsset(t.AudioPath, t.DurationMs)
+	if err := s.hydrateTranscriptionAudio(ctx, &t); err != nil {
+		return nil, err
+	}
 	return &t, nil
 }
 
@@ -382,7 +389,9 @@ func (s *SQLiteStore) GetQuickNote(ctx context.Context, id int64) (*QuickNote, e
 		return nil, err
 	}
 	n.Pinned = pinInt != 0
-	n.Audio = buildLocalAudioAsset(n.AudioPath, n.DurationMs)
+	if err := s.hydrateQuickNoteAudio(ctx, &n); err != nil {
+		return nil, err
+	}
 	return &n, nil
 }
 
@@ -418,10 +427,41 @@ func (s *SQLiteStore) ListQuickNotes(ctx context.Context, opts ListOpts) ([]Quic
 			return nil, err
 		}
 		n.Pinned = pinned != 0
-		n.Audio = buildLocalAudioAsset(n.AudioPath, n.DurationMs)
 		results = append(results, n)
 	}
-	return results, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	if err := hydrateQuickNoteAudioBatch(ctx, s.db, "sqlite", results); err != nil {
+		return nil, err
+	}
+	return results, nil
+}
+
+func (s *SQLiteStore) hydrateTranscriptionAudio(ctx context.Context, t *Transcription) error {
+	asset, err := s.GetAudioAsset(ctx, "transcription", t.ID)
+	if err != nil {
+		return err
+	}
+	if asset != nil {
+		t.Audio = asset
+		return nil
+	}
+	t.Audio = buildLocalAudioAsset(t.AudioPath, t.DurationMs)
+	return nil
+}
+
+func (s *SQLiteStore) hydrateQuickNoteAudio(ctx context.Context, n *QuickNote) error {
+	asset, err := s.GetAudioAsset(ctx, "quick_note", n.ID)
+	if err != nil {
+		return err
+	}
+	if asset != nil {
+		n.Audio = asset
+		return nil
+	}
+	n.Audio = buildLocalAudioAsset(n.AudioPath, n.DurationMs)
+	return nil
 }
 
 func (s *SQLiteStore) UpdateQuickNote(ctx context.Context, id int64, text string) error {
@@ -447,6 +487,10 @@ func (s *SQLiteStore) UpdateQuickNoteCapture(ctx context.Context, id int64, text
 
 	if err := s.db.QueryRowContext(ctx, `SELECT COALESCE(audio_path, '') FROM quick_notes WHERE id = ?`, id).Scan(&currentAudioPath); err != nil {
 		return fmt.Errorf("lookup quick note %d: %w", id, err)
+	}
+	currentAudioPaths, err := quickNoteAudioPaths(ctx, s.db, "sqlite", id, currentAudioPath)
+	if err != nil {
+		return fmt.Errorf("lookup quick note audio assets: %w", err)
 	}
 
 	nextAudioPath = currentAudioPath
@@ -475,9 +519,14 @@ func (s *SQLiteStore) UpdateQuickNoteCapture(ctx context.Context, id int64, text
 	if rows == 0 {
 		return fmt.Errorf("quick note %d not found", id)
 	}
-	if currentAudioPath != "" && currentAudioPath != nextAudioPath {
-		_ = os.Remove(currentAudioPath)
-		_ = deleteAudioAsset(ctx, s.db, "sqlite", "quick_note", id, currentAudioPath)
+	if currentAudioPath != nextAudioPath {
+		for _, path := range currentAudioPaths {
+			if path == nextAudioPath {
+				continue
+			}
+			_ = os.Remove(path)
+			_ = deleteAudioAsset(ctx, s.db, "sqlite", "quick_note", id, path)
+		}
 	}
 	if nextAudioPath != "" && currentAudioPath != nextAudioPath {
 		if err := recordAudioAsset(ctx, s.db, "sqlite", "quick_note", id, nextAudioPath, durationMs, "audio/wav"); err != nil {
@@ -514,6 +563,10 @@ func (s *SQLiteStore) PinQuickNote(ctx context.Context, id int64, pinned bool) e
 func (s *SQLiteStore) DeleteQuickNote(ctx context.Context, id int64) error {
 	var audioPath string
 	_ = s.db.QueryRowContext(ctx, `SELECT COALESCE(audio_path, '') FROM quick_notes WHERE id = ?`, id).Scan(&audioPath)
+	audioPaths, err := quickNoteAudioPaths(ctx, s.db, "sqlite", id, audioPath)
+	if err != nil {
+		return fmt.Errorf("lookup quick note audio assets: %w", err)
+	}
 
 	result, err := s.db.ExecContext(ctx, `DELETE FROM quick_notes WHERE id = ?`, id)
 	if err != nil {
@@ -524,9 +577,11 @@ func (s *SQLiteStore) DeleteQuickNote(ctx context.Context, id int64) error {
 		return fmt.Errorf("quick note %d not found", id)
 	}
 
-	if audioPath != "" {
-		_ = os.Remove(audioPath)
-		_ = deleteAudioAssetsForOwner(ctx, s.db, "sqlite", "quick_note", id)
+	for _, path := range audioPaths {
+		_ = os.Remove(path)
+	}
+	if err := deleteAudioAssetsForOwner(ctx, s.db, "sqlite", "quick_note", id); err != nil {
+		return fmt.Errorf("delete quick note audio assets: %w", err)
 	}
 	return nil
 }

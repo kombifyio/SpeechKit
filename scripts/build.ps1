@@ -54,6 +54,7 @@ $env:CC = $mingwGcc
 $env:CXX = $mingwGxx
 $env:GOCACHE = $goCacheDir
 $env:GOTMPDIR = $goTmpDir
+$env:GOWORK = 'off'
 
 function Get-EnvValue {
     param(

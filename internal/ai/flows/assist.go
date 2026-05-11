@@ -48,10 +48,7 @@ func DefineAssistFlow(g *genkit.Genkit, models []ai.Model) *core.Flow[AssistInpu
 				ai.WithModel(model),
 				ai.WithSystem(systemPrompt),
 				ai.WithPrompt(userPrompt),
-				ai.WithConfig(&ai.GenerationCommonConfig{
-					MaxOutputTokens: 1024,
-					Temperature:     0.4,
-				}),
+				generationConfigOption(model, 1024, 0.4),
 			)
 			if err != nil {
 				lastErr = err

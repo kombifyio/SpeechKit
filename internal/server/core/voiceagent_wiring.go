@@ -19,6 +19,7 @@ import (
 // Supported provider strings for cfg.VoiceAgent.Provider.
 const (
 	ProviderGemini   = "gemini"
+	ProviderOpenAI   = "openai"
 	ProviderCascaded = "cascaded"
 	ProviderMoshi    = "moshi"
 )
@@ -54,7 +55,7 @@ func buildVoiceAgentHandler(ctx context.Context, cfg *config.Config, app *App) (
 
 	resolver := &personaResolver{
 		cfg:      cfg,
-		apiKey:   strings.TrimSpace(config.ResolveSecret(cfg.Providers.Google.APIKeyEnv)),
+		apiKey:   resolveRealtimeAPIKey(cfg, provider),
 		registry: app.PersonaRegistry,
 	}
 
@@ -73,11 +74,47 @@ func buildVoiceAgentHandler(ctx context.Context, cfg *config.Config, app *App) (
 		AllowedOrigins: cfg.Server.CORSAllowedOrigins,
 		IdleTimeout:    idleTimeout,
 		Store:          app.Store,
+		LiveKit:        buildLiveKitIssuer(cfg, app),
 	})
 	if err != nil {
 		return nil, status, err
 	}
 	return h, status, nil
+}
+
+func buildLiveKitIssuer(cfg *config.Config, app *App) *vsserver.LiveKitTokenIssuer {
+	lk := cfg.Server.LiveKit
+	if !lk.Enabled {
+		if app != nil && app.Health != nil {
+			app.Health.SetReady("livekit.token_mint", StatusOK, "disabled")
+		}
+		return nil
+	}
+	apiKey := strings.TrimSpace(config.ResolveSecret(lk.APIKeyEnv))
+	apiSecret := strings.TrimSpace(config.ResolveSecret(lk.APISecretEnv))
+	url := strings.TrimRight(strings.TrimSpace(lk.URL), "/")
+	if url == "" || apiKey == "" || apiSecret == "" {
+		if app != nil && app.Health != nil {
+			app.Health.SetReady("livekit.token_mint", StatusDegraded, "enabled but URL/API key/API secret is missing")
+		}
+		return &vsserver.LiveKitTokenIssuer{
+			URL:        url,
+			APIKey:     apiKey,
+			APISecret:  apiSecret,
+			TokenTTL:   time.Duration(lk.TokenTTLSec) * time.Second,
+			RoomPrefix: lk.RoomPrefix,
+		}
+	}
+	if app != nil && app.Health != nil {
+		app.Health.SetReady("livekit.token_mint", StatusOK, url)
+	}
+	return &vsserver.LiveKitTokenIssuer{
+		URL:        url,
+		APIKey:     apiKey,
+		APISecret:  apiSecret,
+		TokenTTL:   time.Duration(lk.TokenTTLSec) * time.Second,
+		RoomPrefix: lk.RoomPrefix,
+	}
 }
 
 // buildProviderFactory constructs the ProviderFactory matching the configured
@@ -91,6 +128,14 @@ func buildProviderFactory(ctx context.Context, cfg *config.Config, app *App, pro
 			status = "degraded: no Google API key; Gemini Live sessions will fail at upgrade"
 		}
 		return &geminiProviderFactory{}, status, nil
+
+	case ProviderOpenAI:
+		apiKey := strings.TrimSpace(config.ResolveSecret(cfg.Providers.OpenAI.APIKeyEnv))
+		status := "ready (openai)"
+		if apiKey == "" {
+			status = "degraded: no OpenAI API key; gpt-realtime sessions will fail at upgrade"
+		}
+		return &openaiProviderFactory{}, status, nil
 
 	case ProviderCascaded:
 		ensureSharedAIDeps(ctx, app)
@@ -120,7 +165,7 @@ func buildProviderFactory(ctx context.Context, cfg *config.Config, app *App, pro
 		// M9b implements this; ship a stub factory that produces helpful
 		// errors so operators discover the misconfiguration at session
 		// creation rather than silently succeeding and failing at upgrade.
-		return &moshiStubFactory{}, "unavailable: moshi provider is not yet implemented (pending M9b)", nil
+		return &moshiStubFactory{}, "experimental_unavailable: moshi provider is not yet implemented (pending M9b)", nil
 
 	default:
 		return nil, "unknown provider", errors.New("voiceagent: unsupported provider " + provider)
@@ -276,6 +321,19 @@ func composeStartOverrideWithStep(prompt, stepID, stepInstruction string) string
 	return prompt + "\n\n[Current step: " + stepID + "]\n" + stepInstruction
 }
 
+// resolveRealtimeAPIKey selects the API key matching the configured Voice
+// Agent provider. The persona resolver receives this so the LiveConfigFrame
+// it produces carries the right credential downstream — Gemini Live, OpenAI
+// Realtime, and the Cascaded pipeline have distinct env vars.
+func resolveRealtimeAPIKey(cfg *config.Config, provider string) string {
+	switch provider {
+	case ProviderOpenAI:
+		return strings.TrimSpace(config.ResolveSecret(cfg.Providers.OpenAI.APIKeyEnv))
+	default:
+		return strings.TrimSpace(config.ResolveSecret(cfg.Providers.Google.APIKeyEnv))
+	}
+}
+
 // ── Gemini Live provider factory + bridge ───────────────────────────────────
 
 type geminiProviderFactory struct{}
@@ -330,6 +388,9 @@ func (b *geminiLiveBridge) SendAudioStreamEnd() error    { return b.inner.SendAu
 func (b *geminiLiveBridge) SendText(text string) error   { return b.inner.SendText(text) }
 func (b *geminiLiveBridge) Close() error                 { return b.inner.Close() }
 func (b *geminiLiveBridge) Name() string                 { return b.inner.Name() }
+func (b *geminiLiveBridge) SupportsLiveKitTransport() bool {
+	return true
+}
 
 func (b *geminiLiveBridge) UpdateInstructions(_ context.Context, cfg vsserver.LiveConfigFrame) error {
 	text := vsserver.RenderHostInstructionUpdate(cfg)
@@ -382,6 +443,103 @@ func mapKernelToolCalls(calls []vskernel.ToolCall) []vsserver.ToolCall {
 	return out
 }
 
+// ── OpenAI Realtime provider factory + bridge ───────────────────────────────
+
+type openaiProviderFactory struct{}
+
+func (f *openaiProviderFactory) NewProvider() vsserver.LiveProviderAdapter {
+	return &openaiLiveBridge{inner: vskernel.NewOpenAILive()}
+}
+
+// openaiLiveBridge adapts the kernel's OpenAILive provider to the narrow
+// interface the WebSocket handler consumes. Same translation pattern as
+// geminiLiveBridge — kernel enum types are rebuilt from string fields on
+// vsserver.LiveConfigFrame.
+type openaiLiveBridge struct {
+	inner *vskernel.OpenAILive
+}
+
+func (b *openaiLiveBridge) Connect(ctx context.Context, cfg vsserver.LiveConfigFrame) error {
+	if cfg.APIKey == "" {
+		return errors.New("voiceagent: no OpenAI API key configured for this deployment")
+	}
+	liveCfg := vskernel.LiveConfig{
+		Model:            cfg.Model,
+		FallbackModel:    cfg.FallbackModel,
+		APIKey:           cfg.APIKey,
+		Voice:            cfg.Voice,
+		FrameworkPrompt:  cfg.SystemPrompt,
+		RefinementPrompt: cfg.RefinementPrompt,
+		Locale:           cfg.Locale,
+		Policies: vskernel.LivePolicies{
+			EnableInputAudioTranscription:  true,
+			EnableOutputAudioTranscription: true,
+			ActivityDetection: vskernel.ActivityDetectionPolicy{
+				Automatic:         cfg.Automatic,
+				StartSensitivity:  vskernel.StartSensitivity(strings.ToLower(cfg.StartSensitivity)),
+				EndSensitivity:    vskernel.EndSensitivity(strings.ToLower(cfg.EndSensitivity)),
+				PrefixPaddingMs:   cfg.PrefixPaddingMs,
+				SilenceDurationMs: cfg.SilenceDurationMs,
+				ActivityHandling:  vskernel.ActivityHandling(strings.ToLower(cfg.ActivityHandling)),
+				TurnCoverage:      vskernel.TurnCoverage(strings.ToLower(cfg.TurnCoverage)),
+			},
+		},
+	}
+	if err := b.inner.Connect(ctx, liveCfg); err != nil {
+		slog.Warn("voiceagent: OpenAI Realtime connect failed", "err", err)
+		return err
+	}
+	return nil
+}
+
+func (b *openaiLiveBridge) SendAudio(chunk []byte) error { return b.inner.SendAudio(chunk) }
+func (b *openaiLiveBridge) SendAudioStreamEnd() error    { return b.inner.SendAudioStreamEnd() }
+func (b *openaiLiveBridge) SendText(text string) error   { return b.inner.SendText(text) }
+func (b *openaiLiveBridge) Close() error                 { return b.inner.Close() }
+func (b *openaiLiveBridge) Name() string                 { return b.inner.Name() }
+func (b *openaiLiveBridge) SupportsLiveKitTransport() bool {
+	return true
+}
+
+func (b *openaiLiveBridge) UpdateInstructions(ctx context.Context, cfg vsserver.LiveConfigFrame) error {
+	liveCfg := vskernel.LiveConfig{
+		Model:            cfg.Model,
+		Voice:            cfg.Voice,
+		FrameworkPrompt:  cfg.SystemPrompt,
+		RefinementPrompt: cfg.RefinementPrompt,
+		Locale:           cfg.Locale,
+	}
+	return b.inner.UpdateInstructions(ctx, liveCfg)
+}
+
+func (b *openaiLiveBridge) SendToolResponse(frame vsserver.ToolResponseFrame) error {
+	return b.inner.SendToolResponse(vskernel.ToolResponse{
+		ID:       frame.ID,
+		Name:     frame.Name,
+		Response: frame.Response,
+	})
+}
+
+func (b *openaiLiveBridge) Receive(ctx context.Context) (*vsserver.LiveMessage, error) {
+	msg, err := b.inner.Receive(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if msg == nil {
+		return nil, nil
+	}
+	return &vsserver.LiveMessage{
+		Audio:                msg.Audio,
+		InputTranscript:      msg.InputTranscript,
+		InputTranscriptDone:  msg.InputTranscriptDone,
+		OutputTranscript:     msg.OutputTranscript,
+		OutputTranscriptDone: msg.OutputTranscriptDone,
+		ToolCalls:            mapKernelToolCalls(msg.ToolCalls),
+		Interrupted:          msg.Interrupted,
+		GoAway:               msg.GoAway,
+	}, nil
+}
+
 // ── Cascaded provider factory ───────────────────────────────────────────────
 
 // cascadedProviderFactory produces CascadedProvider instances backed by the
@@ -420,7 +578,7 @@ func (moshiStubFactory) NewProvider() vsserver.LiveProviderAdapter {
 type moshiStubProvider struct{}
 
 func (moshiStubProvider) Connect(_ context.Context, _ vsserver.LiveConfigFrame) error {
-	return errors.New("voiceagent: moshi provider not yet implemented (pending M9b)")
+	return errors.New("voiceagent: moshi provider is experimental_unavailable (pending M9b)")
 }
 func (moshiStubProvider) SendAudio([]byte) error    { return nil }
 func (moshiStubProvider) SendAudioStreamEnd() error { return nil }

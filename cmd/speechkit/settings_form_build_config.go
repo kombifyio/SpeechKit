@@ -31,18 +31,9 @@ func buildNextConfig(form settingsFormData, cfg *config.Config) config.Config {
 	nextCfg.General.AgentMode = deriveLegacyAgentModeFromBindings(form.AssistHotkey, form.VoiceAgentHotkey, nextCfg.General.ActiveMode, form.AgentMode)
 	nextCfg.General.AgentHotkey = legacyAgentHotkeyFromModeBindings(form.AssistHotkey, form.VoiceAgentHotkey, nextCfg.General.AgentMode)
 	nextCfg.General.HotkeyMode = nextCfg.General.DictateHotkeyBehavior
-	nextCfg.ModelSelection.Dictate = normalizeModeSelection(config.ModeModelSelection{
-		PrimaryProfileID:  form.DictatePrimaryProfileID,
-		FallbackProfileID: form.DictateFallbackProfileID,
-	})
-	nextCfg.ModelSelection.Assist = normalizeModeSelection(config.ModeModelSelection{
-		PrimaryProfileID:  form.AssistPrimaryProfileID,
-		FallbackProfileID: form.AssistFallbackProfileID,
-	})
-	nextCfg.ModelSelection.VoiceAgent = normalizeModeSelection(config.ModeModelSelection{
-		PrimaryProfileID:  form.VoicePrimaryProfileID,
-		FallbackProfileID: form.VoiceFallbackProfileID,
-	})
+	nextCfg.ModelSelection.Dictate = buildNextModeSelection(form.DictatePrimaryProfileID, form.DictateFallbackProfileID, cfg.ModelSelection.Dictate)
+	nextCfg.ModelSelection.Assist = buildNextModeSelection(form.AssistPrimaryProfileID, form.AssistFallbackProfileID, cfg.ModelSelection.Assist)
+	nextCfg.ModelSelection.VoiceAgent = buildNextModeSelection(form.VoicePrimaryProfileID, form.VoiceFallbackProfileID, cfg.ModelSelection.VoiceAgent)
 	nextCfg.VoiceAgent.RefinementPrompt = form.VoiceAgentRefinementPrompt
 	nextCfg.VoiceAgent.AgentProfileID = voiceagentprofile.NormalizeID(form.VoiceAgentProfileID)
 	nextCfg.VoiceAgent.EnableSessionSummary = form.VoiceAgentSessionSummary
@@ -85,4 +76,13 @@ func buildNextConfig(form settingsFormData, cfg *config.Config) config.Config {
 	nextCfg.Vocabulary.Dictionary = form.VocabularyDictionary
 	nextCfg.General.Language = form.Language
 	return nextCfg
+}
+
+func buildNextModeSelection(primaryProfileID, fallbackProfileID string, current config.ModeModelSelection) config.ModeModelSelection {
+	next := normalizeModeSelection(config.ModeModelSelection{
+		PrimaryProfileID:  primaryProfileID,
+		FallbackProfileID: fallbackProfileID,
+		ModeSource:        current.ResolvedModeSource(),
+	})
+	return next
 }

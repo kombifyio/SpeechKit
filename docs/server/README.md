@@ -41,9 +41,11 @@ docker build -f deploy/docker/Dockerfile.server \
   --target speechkit-server -t speechkit-server:dev .
 
 # 2. Bring the dev stack up.
-export GOOGLE_AI_API_KEY="..."   # optional, enables Voice Agent + Google STT/TTS
-export OPENAI_API_KEY="..."      # optional
-export HF_TOKEN="..."            # optional, enables HF STT
+export GOOGLE_AI_API_KEY="..."   # optional, enables Gemini Assist + Gemini Live
+export HF_TOKEN="..."            # optional, enables Hugging Face STT
+export OPENAI_API_KEY="..."      # optional, enables OpenAI STT/LLM/TTS
+# Optional only when Google STT is selected for Dictation:
+export SPEECHKIT_GOOGLE_STT_API_KEY="..."
 export SPEECHKIT_SERVER_TOKEN="replace-with-a-local-dev-token"
 export POSTGRES_PASSWORD="replace-with-a-local-dev-password"
 docker compose -f deploy/docker/docker-compose.yml up -d
@@ -51,6 +53,8 @@ docker compose -f deploy/docker/docker-compose.yml up -d
 # 3. Verify.
 curl -fsS http://localhost:8080/healthz
 curl -fsS http://localhost:8080/readyz
+curl -fsS -H "Authorization: Bearer $SPEECHKIT_SERVER_TOKEN" \
+  -X POST http://localhost:8080/v1/assist/self-test
 ```
 
 Secrets can be injected by any operator-managed secret system. The Framework
@@ -58,6 +62,17 @@ has no opinion on the secret manager, only on where values are read
 (`os.Getenv(<name from config>)`). The example values above are local
 development placeholders only; production Compose runs must provide real
 secrets explicitly.
+
+For the common web integration profile — Dictation through Hugging Face,
+Assist through Gemini, Voice Agent through Gemini Live, and TTS disabled — set
+`HF_TOKEN`, `GOOGLE_AI_API_KEY`, and `[tts].enabled = false`. Do not set a
+Google STT key unless Dictation actually selects `stt.google.chirp-3`.
+`GOOGLE_AI_API_KEY` is for Gemini Assist/Voice and does not make Google STT a
+required provider.
+
+`/readyz` reports mode readiness for load balancers and ignores non-blocking
+optional provider probes. `/readyz/strict` keeps the diagnostic all-components
+view and may return 503 when an optional provider such as `stt.google` fails.
 
 ## Installer setup modes
 
@@ -107,6 +122,7 @@ original `/v1` paths remain available for compatibility.
 | Dictation | HTTP POST | `/api/v1/dictation/transcribe` | ships |
 | Assist | HTTP POST | `/api/v1/assist/process` | ships |
 | Voice Agent | HTTP + WS | `/api/v1/voiceagent/sessions` + `/ws` | ships |
+| Voice Agent LiveKit token | HTTP GET | `/api/v1/voiceagent/sessions/{id}/livekit-token` | optional when `[server.livekit]` is enabled |
 | Personas API | HTTP CRUD | `/api/v1/personas`, `/api/v1/roles`, `/api/v1/sequences` | ships |
 | Health | HTTP GET | `/healthz`, `/readyz` | ships |
 | Test UI | HTTP GET | `/` | browser smoke-test surface |
@@ -133,9 +149,15 @@ optional `[voice_agent].agent_sequence_id`; server clients use `persona_id` and
 the selected persona's `default_sequence` is used.
 
 At WebSocket startup, the first client text frame must be `start`. It may carry
-`persona_id`, `role_id`, and `sequence_id`. When a sequence is active, the
-server resolves step 0, connects the provider with the composed prompt, and
-emits `sequence_step` with `status="entered"`.
+`persona_id`, `role_id`, `sequence_id`, and `media_transport`. The
+`media_transport` default is `websocket`, preserving the original binary PCM
+audio frames. `media_transport: "livekit"` keeps the WebSocket as the control
+channel and moves microphone/model audio through LiveKit tracks. In v1 that
+LiveKit audio path is limited to native realtime PCM providers, Gemini and
+OpenAI; cascaded providers stay on WebSocket audio until explicit transcoding
+is added. When a sequence is active, the server resolves step 0, connects the
+provider with the composed prompt, and emits `sequence_step` with
+`status="entered"`.
 
 Clients can advance the workflow by sending:
 
@@ -150,19 +172,48 @@ clients answer with `tool_response`. Provider implementations can update live
 instructions natively; otherwise the adapter injects a host-instruction update
 as text.
 
+## LiveKit media tokens
+
+SpeechKit can mint LiveKit join tokens and optionally use LiveKit as the Voice
+Agent media transport. Configure `[server.livekit]` with `url`, `api_key_env`,
+`api_secret_env`, `token_ttl_sec`, and `room_prefix`. When enabled,
+`POST /v1/voiceagent/sessions` includes a `livekit` object with `url`, `room`,
+`token`, `token_expires_at`, and `participant_identity`. Clients connect media
+directly to the Render-hosted LiveKit target using that token while keeping
+SpeechKit as the authenticated policy boundary; no host migration is part of
+this path.
+
+The WebSocket remains required for all Voice Agent sessions. Send
+`{"type":"start","media_transport":"livekit"}` after the upgrade to opt into
+LiveKit media. If omitted, audio continues over WebSocket binary frames.
+Under LiveKit media, WebSocket binary audio is rejected for the session.
+
+`GET /v1/voiceagent/sessions/{id}/livekit-token` refreshes the token for the
+session owner or an admin. The endpoint never returns LiveKit API secrets.
+
 ## Authentication
 
 Built-in auth is configured via `[server].auth_mode`:
 
-- `bearer` (production default) — single static token from
+- `bearer_or_edge` (Kombify production default) — accepts either a static
+  service bearer token or trusted Gateway edge auth.
+- `bearer` — single static token from
   `$SPEECHKIT_SERVER_TOKEN`.
 - `edge_hmac` — trusts HMAC-signed headers from an authenticated edge.
-- `bearer_or_edge` — accepts either bearer or edge auth.
 - `none` — local development only. Do not expose a `none` deployment publicly.
 
-`/healthz`, `/readyz`, `/`, and `/setup` are always public so probes, browser
-smoke tests, and first-run onboarding can load without credentials. When auth is
-enabled, only `/api/v1/*` and compatibility `/v1/*` calls require credentials.
+`/healthz`, `/readyz`, and `/` are always public so probes and browser smoke
+tests can load without credentials. `/setup` is public only during the
+first-run bootstrap window. Once a server token or completed onboarding state
+exists, `/setup` is an admin UI and requires an authenticated identity with
+`role = "admin"` from either `bearer_role = "admin"` or a trusted edge HMAC
+header `X-Edge-Role: admin`. Browser requests without valid admin credentials
+receive an HTML sign-in-required page; API requests still receive the JSON
+`unauthenticated` envelope. Voice Agent WebSocket upgrades at
+`/v1/voiceagent/sessions/{id}/ws` and
+`/api/v1/voiceagent/sessions/{id}/ws` bypass bearer/edge auth because the
+handler validates the short-lived session ticket itself. When auth is enabled,
+all other `/api/v1/*` and compatibility `/v1/*` calls require credentials.
 The setup page can generate a server API token during onboarding. The generated
 value is shown once, loaded into the running server process, and omitted from
 `server-settings.json`; persist it in the deployment environment as
@@ -171,6 +222,12 @@ value is shown once, loaded into the running server process, and omitted from
 ```http
 Authorization: Bearer <token>
 ```
+
+Desktop clients should use `[server_connection].auth_mode = "bearer"` against
+the operator-managed SpeechKit origin, with the token resolved from
+`SPEECHKIT_SERVER_TOKEN`. If a separate edge or custom server is used later,
+that edge should translate its own auth into SpeechKit's trusted `X-Edge-*`
+HMAC identity headers before forwarding to the origin.
 
 For `edge_hmac`, the edge signs the exact string
 `user_id + "\n" + org_id + "\n" + plan + "\n" + role` with the shared secret
@@ -192,6 +249,9 @@ OSS/dev mode.
 If setup auth is switched to self-managed, SpeechKit does not generate a token
 or change the current server auth mode; the deployment owner must provide
 external auth, a bearer env var, or an explicit local-only `auth_mode = "none"`.
+After bootstrap, settings writes through `/v1/server/settings` require an
+admin identity; read-only settings snapshots remain redacted unless the request
+is authenticated.
 
 ## Relation to the Framework kernel
 

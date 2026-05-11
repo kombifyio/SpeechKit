@@ -158,7 +158,7 @@ func Run(ctx context.Context, cfg *config.Config, opts RunOptions) error {
 		for _, note := range notes {
 			slog.Info("STT wiring", "msg", note)
 		}
-		registerProviderHealth(app, providers)
+		registerProviderHealth(app, providers, app.ModeEnabled(ModeDictation))
 	}
 
 	if cfg.Server.Features.StorageReads || cfg.Server.Features.Vocabulary {
@@ -330,7 +330,13 @@ func Run(ctx context.Context, cfg *config.Config, opts RunOptions) error {
 	// OPTIONS bypasses the bearer check, Auth attaches Identity to the
 	// context, and RateLimit reads that Identity to bucket per-user
 	// rather than per-IP.
-	app.AuthState = middleware.NewAuthState(cfg.Server.AuthMode, cfg.Server.BearerTokenEnv, cfg.Server.EdgeAuthSecretEnv)
+	app.AuthState = middleware.NewAuthState(
+		cfg.Server.AuthMode,
+		cfg.Server.BearerTokenEnv,
+		cfg.Server.EdgeAuthSecretEnv,
+		cfg.Server.AdminUsername,
+		cfg.Server.AdminPasswordHash,
+	)
 	publicPaths := serverPublicPaths()
 	publicRoutes := serverPublicRoutes()
 	bootstrapPaths := serverBootstrapPaths()
@@ -339,16 +345,19 @@ func Run(ctx context.Context, cfg *config.Config, opts RunOptions) error {
 		middleware.Logging(),
 		middleware.CORS(cfg.Server.CORSAllowedOrigins),
 		middleware.Auth(middleware.AuthOptions{
-			ModeProvider:        app.AuthState.Mode,
-			BearerTokenProvider: app.AuthState.BearerToken,
-			EdgeSecretProvider:  app.AuthState.EdgeSecret,
+			ModeProvider:              app.AuthState.Mode,
+			BearerTokenProvider:       app.AuthState.BearerToken,
+			EdgeSecretProvider:        app.AuthState.EdgeSecret,
+			AdminUsernameProvider:     app.AuthState.AdminUsername,
+			AdminPasswordHashProvider: app.AuthState.AdminPasswordHash,
 			// Health endpoints are always public so external probes (Render,
 			// Kubernetes) can hit them without credentials.
-			AllowPublicPaths:     publicPaths,
-			AllowPublicRoutes:    publicRoutes,
-			AllowBootstrapPaths:  bootstrapPaths,
-			AllowBootstrapRoutes: serverBootstrapAuthRoutes(),
-			BearerRole:           cfg.Server.BearerRole,
+			AllowPublicPaths:      publicPaths,
+			AllowPublicRoutes:     publicRoutes,
+			HTMLUnauthorizedPaths: serverAdminUIPaths(),
+			AllowBootstrapPaths:   bootstrapPaths,
+			AllowBootstrapRoutes:  serverBootstrapAuthRoutes(),
+			BearerRole:            cfg.Server.BearerRole,
 			BootstrapAllowed: func(r *http.Request) bool {
 				return serverSettingsBootstrapWriteAllowed(app)
 			},

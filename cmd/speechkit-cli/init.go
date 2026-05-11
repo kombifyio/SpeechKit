@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"os"
@@ -44,7 +45,7 @@ Examples:
 				outputDir = args[0]
 				appName = filepath.Base(outputDir)
 			}
-			return runInitScaffold(stdout, stderr, templateName, outputDir, appName, varOverrides, runInstall)
+			return runInitScaffold(cmd.Context(), stdout, stderr, templateName, outputDir, appName, varOverrides, runInstall)
 		},
 	}
 	cmd.Flags().StringVar(&templateName, "template", "", "starter template to render")
@@ -63,17 +64,20 @@ func runInitList(stdout, stderr io.Writer, asJSON bool) error {
 		return exitFromCode(writeJSON(stdout, stderr, map[string]any{"templates": templates}))
 	}
 	if len(templates) == 0 {
-		fmt.Fprintln(stdout, "no embedded templates found")
-		return nil
+		return writeLine(stdout, "no embedded templates found")
 	}
-	fmt.Fprintln(stdout, "Available SpeechKit starter templates:")
+	if err := writeLine(stdout, "Available SpeechKit starter templates:"); err != nil {
+		return err
+	}
 	for _, tpl := range templates {
-		fmt.Fprintf(stdout, "  %s\n      %s\n", tpl.Name, tpl.Description)
+		if err := writef(stdout, "  %s\n      %s\n", tpl.Name, tpl.Description); err != nil {
+			return err
+		}
 	}
 	return nil
 }
 
-func runInitScaffold(stdout, stderr io.Writer, templateName, outputDir, appName string, varOverrides []string, runInstall bool) error {
+func runInitScaffold(ctx context.Context, stdout, stderr io.Writer, templateName, outputDir, appName string, varOverrides []string, runInstall bool) error {
 	overrides := map[string]string{}
 	if appName != "" {
 		overrides["APP_NAME"] = appName
@@ -97,7 +101,7 @@ func runInitScaffold(stdout, stderr io.Writer, templateName, outputDir, appName 
 		}
 	}
 
-	result, err := scaffold.Scaffold(scaffold.ScaffoldOptions{
+	result, err := scaffold.ScaffoldContext(ctx, scaffold.ScaffoldOptions{
 		Template:    templateName,
 		OutputDir:   outputDir,
 		Vars:        overrides,
@@ -112,23 +116,35 @@ func runInitScaffold(stdout, stderr io.Writer, templateName, outputDir, appName 
 
 	if outputDir == "" {
 		for _, file := range result.Files {
-			fmt.Fprintf(stdout, "---- %s ----\n%s\n", file.RelPath, string(file.Content))
+			if err := writef(stdout, "---- %s ----\n%s\n", file.RelPath, string(file.Content)); err != nil {
+				return err
+			}
 		}
 		return nil
 	}
 
-	fmt.Fprintf(stdout, "Scaffolded %s into %s (%d files).\n", result.Template, outputDir, len(result.Files))
+	if err := writef(stdout, "Scaffolded %s into %s (%d files).\n", result.Template, outputDir, len(result.Files)); err != nil {
+		return err
+	}
 	if !runInstall {
-		fmt.Fprintln(stdout, "Next steps:")
-		fmt.Fprintf(stdout, "  cd %s\n", outputDir)
-		fmt.Fprintln(stdout, "  npm install && npm run dev")
+		if err := writeLine(stdout, "Next steps:"); err != nil {
+			return err
+		}
+		if err := writef(stdout, "  cd %s\n", outputDir); err != nil {
+			return err
+		}
+		if err := writeLine(stdout, "  npm install && npm run dev"); err != nil {
+			return err
+		}
 	}
 	for _, hook := range result.Hooks {
 		status := "ok"
 		if !hook.Success {
 			status = "FAILED"
 		}
-		fmt.Fprintf(stderr, "[hook %s] %s\n", status, hook.Cmd)
+		if err := writef(stderr, "[hook %s] %s\n", status, hook.Cmd); err != nil {
+			return err
+		}
 	}
 	return nil
 }

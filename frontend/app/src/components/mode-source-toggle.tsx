@@ -37,7 +37,7 @@ export function ModeSourceToggle({
   const tokenMissing = !!serverConnection && !serverConnection.bearerTokenSet;
   const hint = tokenMissing
     ? `Set ${
-        serverConnection?.bearerTokenEnv ?? "the bearer-token env var"
+        serverConnection?.bearerTokenEnv ?? "the server token env var"
       } in the host environment so the device can authenticate.`
     : null;
 

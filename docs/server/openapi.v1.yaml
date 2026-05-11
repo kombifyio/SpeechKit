@@ -25,8 +25,8 @@ servers:
     description: Replace with your deployment's URL.
 
 # ── Auth ────────────────────────────────────────────────────────────────────
-# Default deployments are public (`auth_mode = "none"`). Bearer or edge-HMAC
-# auth can be enabled by the framework user in front of, or inside, the server.
+# Default server deployments require bearer auth. `auth_mode = "none"` is only
+# intended for loopback/dev deployments and must not be used on public binds.
 security:
   - {}
   - bearer: []
@@ -63,8 +63,33 @@ paths:
       operationId: getReadyz
       summary: Readiness probe
       description: |
-        Returns 200 only when every registered component reports OK. Returns
-        503 with the same component map otherwise. Public — no auth required.
+        Mode readiness for orchestrators. Returns 200 when every blocking
+        component required by the enabled modes reports OK. Optional provider
+        probes stay visible in `components` with `blocking=false` and can make
+        `strict_status` degraded without failing this endpoint. Pass
+        `?strict=true` or call `/readyz/strict` to require every component to
+        report OK. Public — no auth required.
+      tags: [health]
+      security: []
+      parameters:
+        - name: strict
+          in: query
+          required: false
+          schema: { type: boolean }
+          description: When true, use strict all-components readiness semantics.
+      responses:
+        '200': { $ref: '#/components/responses/Readiness' }
+        '503': { $ref: '#/components/responses/Readiness' }
+        '405': { $ref: '#/components/responses/MethodNotAllowed' }
+
+  /readyz/strict:
+    get:
+      operationId: getStrictReadyz
+      summary: Strict readiness probe
+      description: |
+        Diagnostic readiness that returns 200 only when every registered
+        component reports OK, including optional provider probes. Public — no
+        auth required.
       tags: [health]
       security: []
       responses:
@@ -440,6 +465,25 @@ paths:
         '429': { $ref: '#/components/responses/RateLimited' }
         '503': { $ref: '#/components/responses/ProviderUnavailable' }
 
+  /v1/assist/self-test:
+    post:
+      operationId: selfTestAssist
+      summary: Run a text-only Assist self-test
+      description: |
+        Runs a fixed text-only Assist prompt with TTS output ignored. Use this
+        to separate client/proxy issues from server-side LLM/provider
+        configuration failures.
+      tags: [assist]
+      responses:
+        '200':
+          description: Assist pipeline produced a non-empty response.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AssistSelfTestResponse' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+        '503': { $ref: '#/components/responses/ProviderUnavailable' }
+
   # ── Voice Agent ─────────────────────────────────────────────────────────
   /v1/voiceagent/sessions:
     post:
@@ -456,14 +500,26 @@ paths:
         separately because OpenAPI 3.1 has no first-class WebSocket
         primitive.
 
+        When `[server.livekit]` is enabled, the response also includes a
+        short-lived LiveKit join token for the same authenticated caller.
+        Render-hosted LiveKit is the target media service for production;
+        this API does not require a host migration. SpeechKit remains the
+        token issuer and policy boundary.
+
         WebSocket control frames are JSON text messages. The first client
         frame must be `{"type":"start"}` and may include `persona_id`,
-        `role_id`, `sequence_id`, `voice`, `locale`, `model`,
-        `activity_detection`, and `system_prompt_override`. During a workflow,
-        clients send `{"type":"advance_step","reason":"host"}` to move to the
-        next sequence step. The server emits `sequence_step` frames with
-        `status` values `entered`, `completed`, and `sequence_completed`.
-        Tool calls use `tool_call` and `tool_response`.
+        `role_id`, `sequence_id`, `media_transport`, `voice`, `locale`,
+        `model`, `activity_detection`, and `system_prompt_override`.
+        `media_transport` defaults to `websocket` for backwards compatibility.
+        Set `media_transport` to `livekit` to keep the WebSocket as the
+        control channel while microphone and model audio move through the
+        LiveKit room from this response. v1 LiveKit media is limited to native
+        realtime PCM providers (Gemini/OpenAI); cascaded providers remain on
+        WebSocket audio until explicit transcoding is added. During a
+        workflow, clients send `{"type":"advance_step","reason":"host"}` to
+        move to the next sequence step. The server emits `sequence_step`
+        frames with `status` values `entered`, `completed`, and
+        `sequence_completed`. Tool calls use `tool_call` and `tool_response`.
       tags: [voiceagent]
       responses:
         '201':
@@ -498,6 +554,36 @@ paths:
                     type: array
                     items: { $ref: '#/components/schemas/ListedSession' }
         '401': { $ref: '#/components/responses/Unauthenticated' }
+
+  /v1/voiceagent/sessions/{id}/livekit-token:
+    get:
+      operationId: refreshVoiceAgentLiveKitToken
+      summary: Refresh a LiveKit join token for a Voice Agent session
+      tags: [voiceagent]
+      parameters:
+        - { $ref: '#/components/parameters/SessionID' }
+      responses:
+        '200':
+          description: Fresh short-lived LiveKit join token.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/LiveKitJoinInfo' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403':
+          description: Caller does not own the session and is not admin.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '404':
+          description: Session not found or already closed.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '503':
+          description: LiveKit token minting is disabled or misconfigured.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
 
   /v1/voiceagent/sessions/{id}:
     delete:
@@ -840,6 +926,9 @@ components:
               status:
                 type: string
                 enum: [ok, starting, degraded, unavailable]
+              strict_status:
+                type: string
+                enum: [ok, starting, degraded, unavailable]
               components:
                 type: object
                 additionalProperties:
@@ -850,6 +939,12 @@ components:
                       enum: [ok, starting, degraded, unavailable]
                     detail: { type: string }
                     updated_at: { type: string, format: date-time }
+                    blocking: { type: boolean }
+                    kind: { type: string }
+                    modes:
+                      type: array
+                      items: { type: string }
+                    provider: { type: string }
               uptime_seconds: { type: integer }
               version: { type: string }
     BadRequest:
@@ -1166,6 +1261,18 @@ components:
         source:
           $ref: '#/components/schemas/SourceMeta'
 
+    AssistSelfTestResponse:
+      type: object
+      properties:
+        status: { type: string, enum: [ok] }
+        text: { type: string }
+        action: { type: string }
+        locale: { type: string }
+        latency_ms: { type: integer }
+        details:
+          type: object
+          additionalProperties: true
+
     CreateSessionResponse:
       type: object
       properties:
@@ -1181,6 +1288,27 @@ components:
         expires_at:
           type: string
           format: date-time
+        livekit:
+          $ref: '#/components/schemas/LiveKitJoinInfo'
+
+    LiveKitJoinInfo:
+      type: object
+      properties:
+        url:
+          type: string
+          format: uri
+          description: LiveKit WebSocket URL, e.g. `wss://livekit.example.com`.
+        room:
+          type: string
+          description: SpeechKit-managed LiveKit room name.
+        token:
+          type: string
+          description: Short-lived LiveKit JWT scoped to this room and participant.
+        token_expires_at:
+          type: string
+          format: date-time
+        participant_identity:
+          type: string
 
     ListedSession:
       type: object

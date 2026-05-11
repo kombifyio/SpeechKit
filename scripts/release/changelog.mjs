@@ -120,6 +120,50 @@ export function extractLatestReleaseNotes(markdown, options = {}) {
   }
 }
 
+// A "minor baseline" version is one whose patch component is 0 — i.e.
+// 0.30.0 or 1.0.0, but not 0.30.1. Pre-release suffixes (e.g. `-rc1`)
+// are tolerated so a release-candidate of a new minor still counts.
+export function isMinorBaselineVersion(version) {
+  return /^\d+\.\d+\.0(?:[-+].*)?$/.test(version)
+}
+
+// Like `extractLatestReleaseNotes` but skips patch releases. The website
+// uses this so that publishing a 0.30.1 (purely organizational/security
+// patch) does not replace the highlight reel for the 0.30 minor line —
+// "What is new in 0.30" stays anchored to the 0.30.0 highlights until
+// 0.31.0 ships.
+export function extractLatestMinorReleaseNotes(markdown, options = {}) {
+  const { limit = 3, fallbackVersion = '0.0.0' } = options
+  const sections = parseChangelogSections(markdown)
+  const latest = sections.find(section => isMinorBaselineVersion(section.version))
+  if (!latest) {
+    // Fall back to the absolute latest entry if no minor baseline exists.
+    // This keeps the helper safe during early development before the
+    // first X.Y.0 lands in the changelog.
+    return extractLatestReleaseNotes(markdown, { limit, fallbackVersion })
+  }
+
+  const highlightsBody = getSubsectionBody(latest.body, 'Highlights')
+  const sourceBody = highlightsBody || latest.body
+  const bulletLines = extractBulletBlocks(sourceBody).slice(0, limit)
+
+  return {
+    version: latest.version,
+    notes: bulletLines.map(toReleaseNote),
+  }
+}
+
+// Reduce an X.Y.Z[-...] version string to its "X.Y" minor label.
+// Used by the website so the marketing surface tracks the release
+// line, not the patch revision.
+export function toMinorVersionLabel(version) {
+  const match = /^(\d+)\.(\d+)/.exec(version)
+  if (!match) {
+    return version
+  }
+  return `${match[1]}.${match[2]}`
+}
+
 export function renderReleaseNotes({ markdown, version, repoUrl, compareUrl }) {
   const sections = parseChangelogSections(markdown)
   const normalizedVersion = normalizeVersion(version)

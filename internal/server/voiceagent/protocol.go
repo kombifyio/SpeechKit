@@ -20,6 +20,11 @@ const (
 	MsgAdvanceStep  = "advance_step"
 )
 
+const (
+	MediaTransportWebSocket = "websocket"
+	MediaTransportLiveKit   = "livekit"
+)
+
 // Server-to-client message types.
 const (
 	MsgState            = "state"
@@ -40,10 +45,14 @@ type StartFrame struct {
 	PersonaID  string `json:"persona_id,omitempty"`
 	RoleID     string `json:"role_id,omitempty"`
 	SequenceID string `json:"sequence_id,omitempty"`
-	Voice      string `json:"voice,omitempty"`
-	Locale     string `json:"locale,omitempty"`
-	Model      string `json:"model,omitempty"`
-	Thinking   string `json:"thinking,omitempty"` // "off" | "low" | "medium" | "high"
+	// MediaTransport selects where microphone and model audio move. Empty
+	// defaults to "websocket" for existing clients. "livekit" keeps this
+	// WebSocket as the control channel and moves audio through LiveKit tracks.
+	MediaTransport string `json:"media_transport,omitempty"`
+	Voice          string `json:"voice,omitempty"`
+	Locale         string `json:"locale,omitempty"`
+	Model          string `json:"model,omitempty"`
+	Thinking       string `json:"thinking,omitempty"` // "off" | "low" | "medium" | "high"
 	// Raw activity-detection policy override. Pipeline translates these to
 	// the kernel's internal enums.
 	ActivityDetection *ActivityDetectionFrame `json:"activity_detection,omitempty"`

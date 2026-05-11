@@ -8,6 +8,7 @@ package scaffold
 import (
 	"bufio"
 	"bytes"
+	"context"
 	"embed"
 	"errors"
 	"fmt"
@@ -30,6 +31,8 @@ const (
 	templateRoot     = "templates"
 	templateMetaFile = "template.toml"
 	tmplSuffix       = ".tmpl"
+	outputDirPerm    = 0o750
+	outputFilePerm   = 0o640
 )
 
 // VarSpec describes one variable a template wants resolved before
@@ -140,6 +143,9 @@ func ListTemplates() ([]TemplateMeta, error) {
 		if !entry.IsDir() {
 			continue
 		}
+		if !templateAvailable(entry.Name()) {
+			continue
+		}
 		meta, err := loadMeta(entry.Name())
 		if err != nil {
 			return nil, fmt.Errorf("load %s: %w", entry.Name(), err)
@@ -151,9 +157,9 @@ func ListTemplates() ([]TemplateMeta, error) {
 }
 
 // LookupTemplate returns metadata for a single template, or
-// ErrUnknownTemplate if the template directory does not exist.
+// ErrUnknownTemplate if the template is not a complete published template.
 func LookupTemplate(name string) (TemplateMeta, error) {
-	if !templateExists(name) {
+	if !templateAvailable(name) {
 		return TemplateMeta{}, fmt.Errorf("%w: %s", ErrUnknownTemplate, name)
 	}
 	return loadMeta(name)
@@ -165,7 +171,13 @@ func LookupTemplate(name string) (TemplateMeta, error) {
 // the engine returns the rendered content in-memory only, used by the
 // MCP scaffold tool to hand files back to the calling agent.
 func Scaffold(opts ScaffoldOptions) (*Result, error) {
-	if !templateExists(opts.Template) {
+	return ScaffoldContext(context.Background(), opts)
+}
+
+// ScaffoldContext is Scaffold with caller-controlled cancellation for
+// post-init hooks. ctx must be non-nil.
+func ScaffoldContext(ctx context.Context, opts ScaffoldOptions) (*Result, error) {
+	if !templateAvailable(opts.Template) {
 		return nil, fmt.Errorf("%w: %s", ErrUnknownTemplate, opts.Template)
 	}
 	meta, err := loadMeta(opts.Template)
@@ -208,7 +220,7 @@ func Scaffold(opts ScaffoldOptions) (*Result, error) {
 	}
 
 	if opts.RunPostInit && opts.OutputDir != "" {
-		hooks, err := runHooks(opts.OutputDir, meta.PostInit, out)
+		hooks, err := runHooks(ctx, opts.OutputDir, meta.PostInit, out)
 		result.Hooks = hooks
 		if err != nil {
 			return result, err
@@ -223,6 +235,14 @@ func templateExists(name string) bool {
 		return false
 	}
 	_, err := fs.Stat(templatesFS, path.Join(templateRoot, name))
+	return err == nil
+}
+
+func templateAvailable(name string) bool {
+	if !templateExists(name) {
+		return false
+	}
+	_, err := fs.Stat(templatesFS, path.Join(templateRoot, name, templateMetaFile))
 	return err == nil
 }
 
@@ -289,7 +309,9 @@ func promptVar(spec VarSpec, in io.Reader, out io.Writer) (string, error) {
 	if spec.EnvHint != "" {
 		hint = fmt.Sprintf("%s (env: %s)", hint, spec.EnvHint)
 	}
-	fmt.Fprintf(out, "%s: ", hint)
+	if _, err := fmt.Fprintf(out, "%s: ", hint); err != nil {
+		return "", err
+	}
 	line, err := reader.ReadString('\n')
 	if err != nil && !errors.Is(err, io.EOF) {
 		return "", fmt.Errorf("read %s: %w", spec.Name, err)
@@ -366,7 +388,7 @@ func renderString(text string, vars map[string]string) (string, error) {
 }
 
 func writeFiles(outputDir string, files []GeneratedFile) error {
-	if err := os.MkdirAll(outputDir, 0o755); err != nil {
+	if err := os.MkdirAll(outputDir, outputDirPerm); err != nil {
 		return fmt.Errorf("mkdir %s: %w", outputDir, err)
 	}
 	cleanRoot := filepath.Clean(outputDir)
@@ -375,10 +397,10 @@ func writeFiles(outputDir string, files []GeneratedFile) error {
 		if err != nil {
 			return err
 		}
-		if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
+		if err := os.MkdirAll(filepath.Dir(target), outputDirPerm); err != nil {
 			return fmt.Errorf("mkdir %s: %w", filepath.Dir(target), err)
 		}
-		if err := os.WriteFile(target, f.Content, 0o644); err != nil {
+		if err := os.WriteFile(target, f.Content, outputFilePerm); err != nil {
 			return fmt.Errorf("write %s: %w", target, err)
 		}
 	}

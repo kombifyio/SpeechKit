@@ -18,6 +18,12 @@ func TestValidateDopplerExecutablePathAllowsOnlyDopplerBinaryNames(t *testing.T)
 	}
 }
 
+func TestDefaultDopplerSecretLookupRejectsNonDopplerBinary(t *testing.T) {
+	if _, err := DefaultDopplerSecretLookup("powershell.exe", "HF_TOKEN", "project", "prd"); err == nil {
+		t.Fatal("expected non-doppler executable to be rejected")
+	}
+}
+
 func TestFindDopplerExecutableUsesExistingEnvOverrideBeforeLookPath(t *testing.T) {
 	dopplerPath := filepath.Join(t.TempDir(), "doppler.exe")
 	if err := os.WriteFile(dopplerPath, []byte("placeholder"), 0o600); err != nil {

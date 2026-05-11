@@ -86,24 +86,6 @@ function profileVisibleForIntegration(
   return integrations[providerKey]?.enabled === true;
 }
 
-function profileNeedsCredentialForSelection(
-  profile: SettingsModelProfile,
-  settings: SpeechKitSettingsState,
-) {
-  const providerKey = profile.executionMode
-    ? PROVIDER_FOR_EXECUTION_MODE[profile.executionMode]
-    : undefined;
-  if (!providerKey) {
-    return false;
-  }
-  const integration = settings.providerIntegrations?.[providerKey];
-  const credential = settings.providerCredentials?.[providerKey];
-  const requiresCredential = Boolean(
-    integration?.credentialRequired ?? credential,
-  );
-  return requiresCredential && !credential?.available;
-}
-
 function sourceBadge(profile: SettingsModelProfile) {
   switch (profile.executionMode) {
     case "local":
@@ -246,32 +228,6 @@ export function ModelPanel({
       filtered,
     ),
   };
-  const disabledProfileIds = new Set(
-    filtered
-      .filter((profile) => profileNeedsCredentialForSelection(profile, settings))
-      .map((profile) => profile.id),
-  );
-  const companionAssistProfiles =
-    modality === "stt"
-      ? profiles
-          .filter((profile) => profile.modality === "assist")
-          .filter((profile) => profileVisibleForIntegration(profile, settings))
-      : [];
-  const companionAssistSelection = settings.modelSelections.assist;
-  const companionAssistPrimaryProfileId =
-    companionAssistProfiles.length > 0
-      ? resolvePrimaryProfileId(
-          "assist",
-          companionAssistSelection,
-          settings.activeProfiles?.assist,
-          companionAssistProfiles,
-        )
-      : "";
-  const companionAssistDisabledProfileIds = new Set(
-    companionAssistProfiles
-      .filter((profile) => profileNeedsCredentialForSelection(profile, settings))
-      .map((profile) => profile.id),
-  );
   const providerGroups = PROVIDER_KIND_ORDER.map((kind) => ({
     kind,
     label: PROVIDER_KIND_LABELS[kind],
@@ -298,27 +254,33 @@ export function ModelPanel({
             </div>
           </div>
           <div className="grid gap-3 md:grid-cols-2">
-            <SelectionField
-              label="Primary model"
-              value={currentSelection.primaryProfileId}
-              options={filtered}
-              disabledProfileIds={disabledProfileIds}
-              onChange={(value) =>
-                onUpdateSelection(
-                  selectionMode,
-                  normalizeModeSelectionUpdate(
-                    currentSelection,
-                    "primaryProfileId",
-                    value,
-                  ),
-                )
+            <div
+              data-testid={
+                modality === "assist" ? "assist-llm-selection" : undefined
               }
-            />
+            >
+              <SelectionField
+                label={modality === "assist" ? "Assist LLM" : "Primary model"}
+                value={currentSelection.primaryProfileId}
+                options={filtered}
+                onChange={(value) =>
+                  onUpdateSelection(
+                    selectionMode,
+                    normalizeModeSelectionUpdate(
+                      currentSelection,
+                      "primaryProfileId",
+                      value,
+                    ),
+                  )
+                }
+              />
+            </div>
             <SelectionField
-              label="Fallback model"
+              label={
+                modality === "assist" ? "Fallback Assist LLM" : "Fallback model"
+              }
               value={currentSelection.fallbackProfileId}
               options={filtered}
-              disabledProfileIds={disabledProfileIds}
               onChange={(value) =>
                 onUpdateSelection(
                   selectionMode,
@@ -331,30 +293,6 @@ export function ModelPanel({
               }
               allowEmptyLabel="No fallback"
             />
-            {companionAssistProfiles.length > 0 ? (
-              <div data-testid="transcribe-companion-llm-selection">
-                <SelectionField
-                  label="Assist LLM"
-                  value={companionAssistPrimaryProfileId}
-                  options={companionAssistProfiles}
-                  disabledProfileIds={companionAssistDisabledProfileIds}
-                  hint="Default local LLM"
-                  onChange={(value) =>
-                    onUpdateSelection(
-                      "assist",
-                      normalizeModeSelectionUpdate(
-                        {
-                          ...companionAssistSelection,
-                          primaryProfileId: companionAssistPrimaryProfileId,
-                        },
-                        "primaryProfileId",
-                        value,
-                      ),
-                    )
-                  }
-                />
-              </div>
-            ) : null}
           </div>
         </section>
       ) : null}
@@ -818,7 +756,6 @@ function SelectionField({
   label,
   value,
   options,
-  disabledProfileIds,
   onChange,
   allowEmptyLabel,
   hint,
@@ -826,7 +763,6 @@ function SelectionField({
   label: string;
   value: string;
   options: NonNullable<SpeechKitSettingsState["profiles"]>;
-  disabledProfileIds?: Set<string>;
   onChange: (value: string) => void;
   allowEmptyLabel?: string;
   hint?: string;
@@ -844,11 +780,7 @@ function SelectionField({
       >
         {allowEmptyLabel ? <option value="">{allowEmptyLabel}</option> : null}
         {options.map((profile) => (
-          <option
-            key={profile.id}
-            value={profile.id}
-            disabled={disabledProfileIds?.has(profile.id)}
-          >
+          <option key={profile.id} value={profile.id}>
             {profile.name}
           </option>
         ))}

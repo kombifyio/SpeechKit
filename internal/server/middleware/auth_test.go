@@ -5,10 +5,14 @@ package middleware
 import (
 	"crypto/hmac"
 	"crypto/sha256"
+	"encoding/base64"
 	"encoding/hex"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
+
+	"golang.org/x/crypto/bcrypt"
 )
 
 func TestAuth_BearerRejectsMissingHeader(t *testing.T) {
@@ -76,6 +80,36 @@ func TestAuth_BearerCanAttachConfiguredRole(t *testing.T) {
 
 	if rec.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d", rec.Code)
+	}
+}
+
+func TestAuth_BasicAdminAcceptsConfiguredPasswordHash(t *testing.T) {
+	hash, err := bcrypt.GenerateFromPassword([]byte("correct-password"), bcrypt.MinCost)
+	if err != nil {
+		t.Fatalf("hash password: %v", err)
+	}
+	handler := Auth(AuthOptions{
+		Mode:                      "bearer",
+		BearerTokenProvider:       func() string { return "api-token" },
+		AdminUsernameProvider:     func() string { return "admin" },
+		AdminPasswordHashProvider: func() string { return string(hash) },
+	})(
+		http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			id := IdentityFromContext(r.Context())
+			if id.UserID != "admin" || id.Role != "admin" || id.Source != "basic" {
+				t.Fatalf("identity = %+v, want admin basic identity", id)
+			}
+			w.WriteHeader(http.StatusOK)
+		}),
+	)
+
+	req := httptest.NewRequest(http.MethodGet, "/setup", nil)
+	req.Header.Set("Authorization", "Basic "+base64.StdEncoding.EncodeToString([]byte("admin:correct-password")))
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("basic admin should authenticate, got %d body=%s", rec.Code, rec.Body.String())
 	}
 }
 
@@ -195,6 +229,55 @@ func TestAuth_BootstrapPathBypassesOnlyWhenAllowed(t *testing.T) {
 	}
 }
 
+func TestAuth_HTMLUnauthorizedPathReturnsBrowserResponse(t *testing.T) {
+	t.Setenv("TEST_BEARER", "correct-horse-battery-staple")
+	handler := Auth(AuthOptions{
+		Mode:                  "bearer",
+		BearerTokenEnv:        "TEST_BEARER",
+		HTMLUnauthorizedPaths: []string{"/setup", "/setup/"},
+	})(
+		http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusOK) }),
+	)
+
+	req := httptest.NewRequest(http.MethodGet, "/setup", nil)
+	req.Header.Set("Accept", "text/html")
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("expected 401, got %d", rec.Code)
+	}
+	if got := rec.Header().Get("Content-Type"); got != "text/html; charset=utf-8" {
+		t.Fatalf("expected HTML content type, got %q", got)
+	}
+	body := rec.Body.String()
+	if !strings.Contains(body, "SpeechKit Admin Sign-In Required") {
+		t.Fatalf("expected browser auth page, got %s", body)
+	}
+	if strings.Contains(body, "Kombify Cloud SSO") {
+		t.Fatalf("browser auth page should not mention Kombify Cloud SSO: %s", body)
+	}
+	for _, want := range []string{"Admin username", "Admin password"} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("browser auth page should contain %q, got %s", want, body)
+		}
+	}
+	if got := rec.Header().Get("WWW-Authenticate"); got == "" {
+		t.Fatal("expected WWW-Authenticate challenge")
+	}
+
+	apiReq := httptest.NewRequest(http.MethodGet, "/v1/any", nil)
+	apiReq.Header.Set("Accept", "application/json")
+	apiRec := httptest.NewRecorder()
+	handler.ServeHTTP(apiRec, apiReq)
+	if apiRec.Code != http.StatusUnauthorized {
+		t.Fatalf("expected API 401, got %d", apiRec.Code)
+	}
+	if got := apiRec.Header().Get("Content-Type"); got != "application/json" {
+		t.Fatalf("expected JSON content type for API auth failure, got %q", got)
+	}
+}
+
 func TestAuth_PublicRouteBypassesOnlyConfiguredMethods(t *testing.T) {
 	t.Setenv("TEST_BEARER", "correct-horse-battery-staple")
 	handler := Auth(AuthOptions{
@@ -227,6 +310,40 @@ func TestAuth_PublicRouteBypassesOnlyConfiguredMethods(t *testing.T) {
 	handler.ServeHTTP(authorizedRec, authorizedWrite)
 	if authorizedRec.Code != http.StatusOK {
 		t.Fatalf("settings PATCH with auth should pass; got %d", authorizedRec.Code)
+	}
+}
+
+func TestAuth_PublicRouteCanMatchPrefixAndSuffix(t *testing.T) {
+	t.Setenv("TEST_BEARER", "correct-horse-battery-staple")
+	handler := Auth(AuthOptions{
+		Mode:           "bearer",
+		BearerTokenEnv: "TEST_BEARER",
+		AllowPublicRoutes: []PublicRoute{
+			{PathPrefix: "/v1/voiceagent/sessions/", PathSuffix: "/ws", Methods: []string{http.MethodGet}},
+		},
+	})(
+		http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusOK) }),
+	)
+
+	wsReq := httptest.NewRequest(http.MethodGet, "/v1/voiceagent/sessions/session-1/ws?ticket=t", nil)
+	wsRec := httptest.NewRecorder()
+	handler.ServeHTTP(wsRec, wsReq)
+	if wsRec.Code != http.StatusOK {
+		t.Fatalf("ticket websocket route should bypass auth; got %d", wsRec.Code)
+	}
+
+	postReq := httptest.NewRequest(http.MethodPost, "/v1/voiceagent/sessions/session-1/ws?ticket=t", nil)
+	postRec := httptest.NewRecorder()
+	handler.ServeHTTP(postRec, postReq)
+	if postRec.Code != http.StatusUnauthorized {
+		t.Fatalf("wrong method should require auth; got %d", postRec.Code)
+	}
+
+	transcriptReq := httptest.NewRequest(http.MethodGet, "/v1/voiceagent/sessions/session-1/transcript", nil)
+	transcriptRec := httptest.NewRecorder()
+	handler.ServeHTTP(transcriptRec, transcriptReq)
+	if transcriptRec.Code != http.StatusUnauthorized {
+		t.Fatalf("other session routes should require auth; got %d", transcriptRec.Code)
 	}
 }
 

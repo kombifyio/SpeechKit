@@ -47,7 +47,7 @@ func main() {
 		token       = flag.String("token", "", "bearer token (also reads $SPEECHKIT_SERVER_TOKEN)")
 		scenarios   = flag.String("scenarios", "all", "comma-separated scenarios: health,dictation,assist,voiceagent,all")
 		timeout     = flag.Duration("timeout", 30*time.Second, "per-request timeout")
-		strictReady = flag.Bool("strict-ready", false, "fail when /readyz returns 503 (default: allow degraded for missing-key deployments)")
+		strictReady = flag.Bool("strict-ready", false, "fail when /readyz or /readyz/strict returns 503")
 		verbose     = flag.Bool("v", false, "verbose: print every request body and response")
 	)
 	flag.Parse()
@@ -155,9 +155,9 @@ func scenarioHealth(c *client, opts *scenarioOpts) error {
 		return fmt.Errorf("/healthz status = %q, want ok", hz.Status)
 	}
 
-	// /readyz can be 200 (everything ready) or 503 (some component
-	// degraded). We tolerate degraded states unless --strict-ready is set,
-	// because dev deployments commonly run without optional provider keys.
+	// /readyz is the orchestrator probe. It can still be 503 when a blocking
+	// dependency for an enabled mode is unavailable; providerless dev stacks use
+	// the response shape as the contract unless --strict-ready is set.
 	resp, body, err = c.do(http.MethodGet, "/readyz", "", nil, false)
 	if err != nil {
 		return fmt.Errorf("/readyz: %w", err)
@@ -168,8 +168,28 @@ func scenarioHealth(c *client, opts *scenarioOpts) error {
 	if opts.strictReady && resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("/readyz returned %d under --strict-ready; body=%s", resp.StatusCode, string(body))
 	}
+	if err := assertReadinessBody("/readyz", body, false); err != nil {
+		return err
+	}
 	if c.verbose {
 		fmt.Printf("    /readyz status=%d body=%s\n", resp.StatusCode, string(body))
+	}
+
+	resp, body, err = c.do(http.MethodGet, "/readyz/strict", "", nil, false)
+	if err != nil {
+		return fmt.Errorf("/readyz/strict: %w", err)
+	}
+	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusServiceUnavailable {
+		return fmt.Errorf("/readyz/strict status = %d, want 200 or 503", resp.StatusCode)
+	}
+	if opts.strictReady && resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("/readyz/strict returned %d under --strict-ready; body=%s", resp.StatusCode, string(body))
+	}
+	if err := assertReadinessBody("/readyz/strict", body, true); err != nil {
+		return err
+	}
+	if c.verbose {
+		fmt.Printf("    /readyz/strict status=%d body=%s\n", resp.StatusCode, string(body))
 	}
 	return nil
 }
@@ -235,6 +255,10 @@ func scenarioDictation(c *client, opts *scenarioOpts) error {
 }
 
 func scenarioAssist(c *client, opts *scenarioOpts) error {
+	if err := checkAssistSelfTest(c); err != nil {
+		return err
+	}
+
 	checks := []struct {
 		name         string
 		payload      map[string]any
@@ -318,6 +342,43 @@ func scenarioAssist(c *client, opts *scenarioOpts) error {
 		}
 	}
 	return nil
+}
+
+func checkAssistSelfTest(c *client) error {
+	resp, respBody, err := c.do(http.MethodPost, "/api/v1/assist/self-test", "application/json", nil, true)
+	if err != nil {
+		return fmt.Errorf("assist self-test request: %w", err)
+	}
+	switch resp.StatusCode {
+	case http.StatusOK:
+		var sr struct {
+			Status    string `json:"status"`
+			Text      string `json:"text"`
+			LatencyMs int64  `json:"latency_ms"`
+		}
+		if err := json.Unmarshal(respBody, &sr); err != nil {
+			return fmt.Errorf("assist self-test response parse: %w body=%s", err, respBody)
+		}
+		if sr.Status != "ok" || strings.TrimSpace(sr.Text) == "" {
+			return fmt.Errorf("assist self-test invalid success body=%s", respBody)
+		}
+		if c.verbose {
+			fmt.Printf("    assist self-test text=%q latency_ms=%d\n", sr.Text, sr.LatencyMs)
+		}
+		return nil
+	case http.StatusServiceUnavailable:
+		if !hasErrorEnvelope(respBody) {
+			return fmt.Errorf("assist self-test 503 missing error envelope; body=%s", respBody)
+		}
+		details, _ := errorEnvelopeDetails(respBody)
+		if len(details) == 0 {
+			return fmt.Errorf("assist self-test 503 missing structured details; body=%s", respBody)
+		}
+		fmt.Printf("    assist self-test: unavailable with structured diagnostics — treating as smoke-pass\n")
+		return nil
+	default:
+		return fmt.Errorf("assist self-test status = %d; body=%s", resp.StatusCode, respBody)
+	}
 }
 
 func scenarioVoiceAgentCreate(c *client, opts *scenarioOpts) error {
@@ -456,6 +517,45 @@ func hasErrorEnvelope(body []byte) bool {
 		return false
 	}
 	return env.Error.Code != ""
+}
+
+func errorEnvelopeDetails(body []byte) (map[string]any, bool) {
+	var env struct {
+		Error struct {
+			Details map[string]any `json:"details"`
+		} `json:"error"`
+	}
+	if err := json.Unmarshal(body, &env); err != nil || len(env.Error.Details) == 0 {
+		return nil, false
+	}
+	return env.Error.Details, true
+}
+
+func assertReadinessBody(endpoint string, body []byte, strictEndpoint bool) error {
+	var rz struct {
+		Status       string `json:"status"`
+		StrictStatus string `json:"strict_status"`
+		Components   map[string]struct {
+			Status   string `json:"status"`
+			Blocking bool   `json:"blocking"`
+		} `json:"components"`
+	}
+	if err := json.Unmarshal(body, &rz); err != nil {
+		return fmt.Errorf("%s body parse: %w body=%s", endpoint, err, body)
+	}
+	if rz.Status == "" {
+		return fmt.Errorf("%s missing status; body=%s", endpoint, body)
+	}
+	if rz.StrictStatus == "" {
+		return fmt.Errorf("%s missing strict_status; body=%s", endpoint, body)
+	}
+	if rz.Components == nil {
+		return fmt.Errorf("%s missing components map; body=%s", endpoint, body)
+	}
+	if strictEndpoint && rz.Status != rz.StrictStatus {
+		return fmt.Errorf("%s status=%q strict_status=%q, want identical", endpoint, rz.Status, rz.StrictStatus)
+	}
+	return nil
 }
 
 // ── audio fixtures ──────────────────────────────────────────────────────────

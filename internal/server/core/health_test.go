@@ -3,6 +3,9 @@
 package core
 
 import (
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"testing"
 )
 
@@ -41,6 +44,85 @@ func TestHealthRegistry_WorstStatusWins(t *testing.T) {
 	if overall != StatusUnavailable {
 		t.Fatalf("expected worst status (unavailable) to win, got %q", overall)
 	}
+}
+
+func TestHealthRegistry_ReadinessIgnoresNonBlockingComponents(t *testing.T) {
+	r := NewHealthRegistry()
+	r.SetReady("server", StatusOK, "listening")
+	r.SetReadyWithOptions("stt.google", StatusDegraded, "403", ComponentOptions{
+		Blocking: false,
+		Kind:     "provider",
+		Provider: "google",
+	})
+
+	strict, components, _ := r.Snapshot()
+	if strict != StatusDegraded {
+		t.Fatalf("strict status = %q, want degraded", strict)
+	}
+	if components["stt.google"].Blocking {
+		t.Fatalf("stt.google should be non-blocking")
+	}
+
+	ready, _, _ := r.ReadinessSnapshot()
+	if ready != StatusOK {
+		t.Fatalf("readiness status = %q, want ok", ready)
+	}
+}
+
+func TestRegisterHealth_StrictReadinessEndpointsIncludeOptionalFailures(t *testing.T) {
+	app := &App{
+		Mux:     http.NewServeMux(),
+		Health:  NewHealthRegistry(),
+		Version: "test-version",
+	}
+	app.Health.SetReady("server", StatusOK, "listening")
+	app.Health.SetReadyWithOptions("stt.google", StatusDegraded, "403", ComponentOptions{
+		Blocking: false,
+		Kind:     "provider",
+		Modes:    []string{string(ModeDictation)},
+		Provider: "google",
+	})
+	registerHealth(app)
+
+	readyRec := httptest.NewRecorder()
+	app.Mux.ServeHTTP(readyRec, httptest.NewRequest(http.MethodGet, "/readyz", nil))
+	if readyRec.Code != http.StatusOK {
+		t.Fatalf("/readyz status = %d body=%s", readyRec.Code, readyRec.Body.String())
+	}
+	ready := decodeReadinessBody(t, readyRec.Body.Bytes())
+	if ready.Status != string(StatusOK) || ready.StrictStatus != string(StatusDegraded) {
+		t.Fatalf("/readyz body = %+v, want status ok and strict_status degraded", ready)
+	}
+	if ready.Components["stt.google"].Blocking {
+		t.Fatalf("stt.google should stay visible as non-blocking in /readyz")
+	}
+
+	for _, endpoint := range []string{"/readyz?strict=true", "/readyz/strict"} {
+		rec := httptest.NewRecorder()
+		app.Mux.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, endpoint, nil))
+		if rec.Code != http.StatusServiceUnavailable {
+			t.Fatalf("%s status = %d body=%s", endpoint, rec.Code, rec.Body.String())
+		}
+		body := decodeReadinessBody(t, rec.Body.Bytes())
+		if body.Status != string(StatusDegraded) || body.StrictStatus != string(StatusDegraded) {
+			t.Fatalf("%s body = %+v, want degraded/degraded", endpoint, body)
+		}
+	}
+}
+
+type readinessBodyForTest struct {
+	Status       string                    `json:"status"`
+	StrictStatus string                    `json:"strict_status"`
+	Components   map[string]componentEntry `json:"components"`
+}
+
+func decodeReadinessBody(t *testing.T, data []byte) readinessBodyForTest {
+	t.Helper()
+	var body readinessBodyForTest
+	if err := json.Unmarshal(data, &body); err != nil {
+		t.Fatalf("decode readiness body: %v body=%s", err, data)
+	}
+	return body
 }
 
 func TestResolveModes_EmptyMeansAll(t *testing.T) {

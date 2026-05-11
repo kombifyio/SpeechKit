@@ -21,6 +21,7 @@ export PATH="$MINGW_BIN_DIR:$PATH"
 export CGO_ENABLED=1
 export CC="$MINGW_GCC"
 export CXX="$MINGW_GXX"
+export GOWORK=off
 
 GO_MODULE_PATH="$(go list -m -f '{{.Path}}')"
 if [ -z "$GO_MODULE_PATH" ]; then

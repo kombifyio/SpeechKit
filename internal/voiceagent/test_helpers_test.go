@@ -3,20 +3,13 @@ package voiceagent
 import (
 	"testing"
 	"time"
+
+	"github.com/kombifyio/SpeechKit/internal/testutil"
 )
 
 func waitForCondition(t *testing.T, timeout time.Duration, condition func() bool) {
 	t.Helper()
-
-	deadline := time.Now().Add(timeout)
-	for time.Now().Before(deadline) {
-		if condition() {
-			return
-		}
-		time.Sleep(25 * time.Millisecond)
-	}
-
-	t.Fatalf("timed out after %s waiting for condition", timeout)
+	testutil.Eventually(t, timeout, 25*time.Millisecond, condition)
 }
 
 func containsState(states []State, want State) bool {

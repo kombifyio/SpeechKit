@@ -1,7 +1,7 @@
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import type { ModeSource } from "@/lib/speechkit";
+import type { ModeSource, ServerConnectionSetting } from "@/lib/speechkit";
 
 const mocks = vi.hoisted(() => ({
   fetchAPIV1Modes: vi.fn(),
@@ -19,10 +19,11 @@ vi.mock("@/lib/speechkit", () => ({
 
 import { ModeSourceSection } from "@/components/mode-source-section";
 
-const serverConnection = {
+const serverConnection: ServerConnectionSetting = {
   enabled: false,
   url: "https://speechkit.example.com",
   bearerTokenEnv: "SPEECHKIT_SERVER_TOKEN",
+  authMode: "bearer",
   bearerTokenSet: false,
   fallbackToLocal: true,
   requestTimeoutSec: 30,
@@ -117,5 +118,52 @@ describe("ModeSourceSection", () => {
       });
     });
     expect(mocks.fetchAPIV1ServerConnection).not.toHaveBeenCalled();
+  });
+
+  it("applies global mode source updates sequentially", async () => {
+    const resolvers: Array<() => void> = [];
+    mocks.patchAPIV1ModeSettings.mockImplementation(
+      async (_mode: string, patch: { modeSource?: ModeSource }) =>
+        new Promise((resolve) => {
+          resolvers.push(() =>
+            resolve({ enabled: true, modeSource: patch.modeSource }),
+          );
+        }),
+    );
+
+    render(<ModeSourceSection serverConnection={{ ...serverConnection, enabled: true }} />);
+
+    const globalGroup = await screen.findByRole("radiogroup", {
+      name: "Global mode source",
+    });
+    fireEvent.click(within(globalGroup).getByRole("radio", { name: /server/i }));
+
+    await waitFor(() => {
+      expect(mocks.patchAPIV1ModeSettings).toHaveBeenCalledTimes(1);
+    });
+    expect(mocks.patchAPIV1ModeSettings).toHaveBeenNthCalledWith(1, "dictation", {
+      modeSource: "server",
+    });
+
+    resolvers[0]();
+    await waitFor(() => {
+      expect(mocks.patchAPIV1ModeSettings).toHaveBeenCalledTimes(2);
+    });
+    expect(mocks.patchAPIV1ModeSettings).toHaveBeenNthCalledWith(2, "assist", {
+      modeSource: "server",
+    });
+
+    resolvers[1]();
+    await waitFor(() => {
+      expect(mocks.patchAPIV1ModeSettings).toHaveBeenCalledTimes(3);
+    });
+    expect(mocks.patchAPIV1ModeSettings).toHaveBeenNthCalledWith(
+      3,
+      "voice_agent",
+      {
+        modeSource: "server",
+      },
+    );
+    resolvers[2]();
   });
 });

@@ -119,6 +119,10 @@ func registerAPIV1Routes(mux *http.ServeMux, cfgPath string, cfg *config.Config,
 		handleAPIV1ServerConnection(w, r, cfgPath, cfg, state)
 	})
 
+	mux.HandleFunc("/api/v1/server-connection/smoke", func(w http.ResponseWriter, r *http.Request) {
+		handleAPIV1ServerConnectionSmoke(w, r)
+	})
+
 	mux.HandleFunc("/api/v1/voice-sessions", func(w http.ResponseWriter, r *http.Request) {
 		handleAPIV1VoiceSessions(w, r, feedbackStore)
 	})

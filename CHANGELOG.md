@@ -6,6 +6,58 @@ The format is based on Keep a Changelog and this project is intended to ship und
 
 ## [Unreleased]
 
+## [0.31.0] - 2026-05-11
+
+v0.31.0 hardens SpeechKit Server for real hosted deployments. It separates
+liveness from strict provider diagnostics, gives Assist and Voice Agent clearer
+production smoke paths, and removes managed gateway assumptions from the local
+client setup flow.
+
+### Highlights
+
+- **Production readiness contract**: `/healthz` remains a public liveness check,
+  `/readyz` now reports only blocking startup dependencies, and
+  `/readyz?strict=true` plus `/readyz/strict` expose full provider diagnostics.
+- **Assist and provider diagnostics**: Assist now has a self-test endpoint and
+  structured pipeline errors, while Gemini/Google AI generation uses
+  provider-aware Genkit configuration.
+- **Server-owned mode targets**: the Windows client now stores explicit
+  operator-registered SpeechKit Server targets instead of managed gateway
+  presets, with smoke coverage for the connection contract.
+- **Voice Agent media readiness**: Voice Agent session metadata now reports
+  `media_transport`, and Linux server builds can bridge LiveKit media when the
+  native dependencies are present.
+
+### Added
+
+- Dedicated Google STT credential resolution via
+  `SPEECHKIT_GOOGLE_STT_API_KEY`, with legacy STT variables still supported and
+  `GOOGLE_AI_API_KEY` reserved for Gemini/Google AI.
+- Strict readiness metadata for component kind, blocking status, provider, and
+  supported modes.
+- Docker, CLI, and production smoke checks for strict readiness and the Assist
+  self-test envelope.
+- OpenAPI and AsyncAPI documentation for strict readiness, Assist self-test, and
+  LiveKit-backed Voice Agent media transport.
+
+### Changed
+
+- Server setup now creates admin Basic Auth credentials during onboarding and no
+  longer assumes Kombify Cloud SSO for self-hosted installs.
+- Release-gated overlay options stay hidden by default unless the corresponding
+  frontend feature flag is enabled.
+- GitHub Actions now run deeper Linux server validation, including native audio
+  dependencies and Docker compose smoke coverage.
+
+### Fixed
+
+- Google STT readiness no longer appears healthy just because a Gemini/Google AI
+  key is present.
+- Optional provider degradation no longer makes orchestrator readiness fail in
+  normal mode.
+- Assist diagnostics now distinguish provider configuration failures from other
+  pipeline errors so production smoke tests can fail with useful context.
+
 ## [0.30.1] - 2026-05-08
 
 v0.30.1 is a docs and tooling polish release on top of v0.30.0. The

@@ -25,6 +25,7 @@ fields:
 enabled = false
 url = ""
 bearer_token_env = "SPEECHKIT_SERVER_TOKEN"
+auth_mode = "bearer"
 fallback_to_local = true
 request_timeout_sec = 30
 
@@ -113,6 +114,7 @@ Alternatively edit `config.toml` directly:
 enabled = true
 url = "https://speechkit.example.com"
 bearer_token_env = "SPEECHKIT_SERVER_TOKEN"
+auth_mode = "bearer"
 fallback_to_local = true
 request_timeout_sec = 30
 

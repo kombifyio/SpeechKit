@@ -139,6 +139,8 @@ type HandlerOptions struct {
 	// when zero is passed; pass a negative value to disable explicitly.
 	IdleTimeout time.Duration
 	Store       store.Store
+	LiveKit     *LiveKitTokenIssuer
+	MediaBridge MediaBridgeFactory
 }
 
 // Handler exposes both the HTTP session-creation endpoint and the WS
@@ -151,6 +153,8 @@ type Handler struct {
 	allowedOrigins []string
 	idleTimeout    time.Duration
 	store          store.Store
+	liveKit        *LiveKitTokenIssuer
+	mediaBridge    MediaBridgeFactory
 }
 
 // New constructs a handler. All options except MaxAllowedClockSkew are
@@ -172,6 +176,10 @@ func New(opts HandlerOptions) (*Handler, error) {
 	} else if idle < 0 {
 		idle = 0
 	}
+	mediaBridge := opts.MediaBridge
+	if mediaBridge == nil && opts.LiveKit != nil && opts.LiveKit.Enabled() {
+		mediaBridge = NewLiveKitMediaBridgeFactory(opts.LiveKit)
+	}
 	return &Handler{
 		manager:        opts.Manager,
 		provider:       opts.Provider,
@@ -180,6 +188,8 @@ func New(opts HandlerOptions) (*Handler, error) {
 		allowedOrigins: normalizeAllowedOrigins(opts.AllowedOrigins),
 		idleTimeout:    idle,
 		store:          opts.Store,
+		liveKit:        opts.LiveKit,
+		mediaBridge:    mediaBridge,
 	}, nil
 }
 
@@ -197,10 +207,11 @@ func (h *Handler) Mount(mux *http.ServeMux) {
 // ── HTTP endpoints ──────────────────────────────────────────────────────────
 
 type createSessionResponse struct {
-	SessionID string `json:"session_id"`
-	WSURL     string `json:"ws_url"`
-	Ticket    string `json:"ticket"`
-	ExpiresAt string `json:"expires_at"`
+	SessionID string           `json:"session_id"`
+	WSURL     string           `json:"ws_url"`
+	Ticket    string           `json:"ticket"`
+	ExpiresAt string           `json:"expires_at"`
+	LiveKit   *LiveKitJoinInfo `json:"livekit,omitempty"`
 }
 
 type listSessionsResponse struct {
@@ -229,7 +240,7 @@ func (h *Handler) collectionHandler(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) itemHandler(w http.ResponseWriter, r *http.Request) {
 	path := strings.TrimPrefix(r.URL.Path, "/v1/voiceagent/sessions/")
-	// Expect "{id}", "{id}/ws", "{id}/transcript", or "{id}/summary".
+	// Expect "{id}", "{id}/ws", "{id}/livekit-token", "{id}/transcript", or "{id}/summary".
 	var (
 		sessionID   string
 		subresource string
@@ -248,6 +259,8 @@ func (h *Handler) itemHandler(w http.ResponseWriter, r *http.Request) {
 	switch {
 	case subresource == "ws" && r.Method == http.MethodGet:
 		h.upgradeWS(w, r, sessionID)
+	case subresource == "livekit-token" && (r.Method == http.MethodGet || r.Method == http.MethodPost):
+		h.liveKitToken(w, r, sessionID)
 	case subresource == "" && r.Method == http.MethodDelete:
 		h.deleteSession(w, r, sessionID)
 	case (subresource == "transcript" || subresource == "summary") && r.Method == http.MethodGet:
@@ -329,6 +342,16 @@ func (h *Handler) createSession(w http.ResponseWriter, r *http.Request) {
 
 	wsURL := h.webSocketURL(r, session.ID, ticket)
 	expires := h.manager.opts.Clock().Add(h.manager.opts.TicketTTL).UTC().Format(time.RFC3339)
+	var liveKit *LiveKitJoinInfo
+	if h.liveKit != nil && h.liveKit.Enabled() {
+		info, err := h.liveKit.IssueJoinToken(r.Context(), session.ID, session.Owner)
+		if err != nil {
+			h.manager.Remove(session.ID)
+			httpx.WriteError(w, http.StatusServiceUnavailable, "livekit_token_unavailable", err.Error())
+			return
+		}
+		liveKit = &info
+	}
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
@@ -337,6 +360,7 @@ func (h *Handler) createSession(w http.ResponseWriter, r *http.Request) {
 		WSURL:     wsURL,
 		Ticket:    ticket,
 		ExpiresAt: expires,
+		LiveKit:   liveKit,
 	})
 }
 
@@ -378,6 +402,35 @@ func (h *Handler) deleteSession(w http.ResponseWriter, r *http.Request, sessionI
 	}
 	h.manager.Remove(sessionID)
 	w.WriteHeader(http.StatusNoContent)
+}
+
+func (h *Handler) liveKitToken(w http.ResponseWriter, r *http.Request, sessionID string) {
+	if h.liveKit == nil || !h.liveKit.Enabled() {
+		httpx.WriteError(w, http.StatusServiceUnavailable, "livekit_disabled", "LiveKit token minting is not configured")
+		return
+	}
+	id := middleware.IdentityFromContext(r.Context())
+	if id.UserID == "" {
+		httpx.WriteError(w, http.StatusUnauthorized, "unauthenticated", "identity not available on context")
+		return
+	}
+	s, err := h.manager.Get(sessionID)
+	if err != nil {
+		httpx.WriteError(w, http.StatusNotFound, "session_not_found", err.Error())
+		return
+	}
+	if s.Owner.UserID != id.UserID && id.Role != "admin" {
+		httpx.WriteError(w, http.StatusForbidden, "forbidden", "you do not own this session")
+		return
+	}
+	info, err := h.liveKit.IssueJoinToken(r.Context(), sessionID, s.Owner)
+	if err != nil {
+		httpx.WriteError(w, http.StatusServiceUnavailable, "livekit_token_unavailable", err.Error())
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	_ = json.NewEncoder(w).Encode(info)
 }
 
 // ── WebSocket upgrade ───────────────────────────────────────────────────────
@@ -429,6 +482,7 @@ func (h *Handler) upgradeWS(w http.ResponseWriter, r *http.Request, sessionID st
 		Conn:        conn,
 		Provider:    h.provider.NewProvider(),
 		Persona:     h.persona,
+		MediaBridge: h.mediaBridge,
 		IdleTimeout: h.idleTimeout,
 		OnClose: func() {
 			h.manager.Remove(sessionID)
@@ -450,7 +504,7 @@ func (h *Handler) webSocketURL(r *http.Request, sessionID, ticket string) string
 			prefix = parsed.prefix
 		}
 	}
-	return fmt.Sprintf("%s://%s%s/v1/voiceagent/sessions/%s/ws?ticket=%s", scheme, host, prefix, sessionID, url.QueryEscape(ticket))
+	return fmt.Sprintf("%s://%s%s/voiceagent/sessions/%s/ws?ticket=%s", scheme, host, voiceAgentPublicBase(prefix), sessionID, url.QueryEscape(ticket))
 }
 
 type publicURLParts struct {
@@ -476,7 +530,7 @@ func parsePublicURL(raw string) (publicURLParts, bool) {
 	return publicURLParts{
 		scheme: scheme,
 		host:   u.Host,
-		prefix: cleanAPIPrefix(u.EscapedPath()),
+		prefix: cleanPublicAPIPrefix(u.EscapedPath()),
 	}, true
 }
 
@@ -489,7 +543,7 @@ func requestWebSocketParts(r *http.Request) (scheme, host, prefix string) {
 	if host == "" {
 		host = "localhost"
 	}
-	prefix = cleanAPIPrefix(r.Header.Get(httpx.APIPrefixHeader))
+	prefix = cleanPublicAPIPrefix(r.Header.Get(httpx.APIPrefixHeader))
 	return scheme, host, prefix
 }
 
@@ -501,15 +555,26 @@ func sanitizeRequestHost(host string) string {
 	return host
 }
 
-func cleanAPIPrefix(prefix string) string {
+func cleanPublicAPIPrefix(prefix string) string {
 	prefix = strings.TrimRight(strings.TrimSpace(prefix), "/")
 	if prefix == "" {
 		return ""
 	}
-	if prefix == "/api" {
+	if prefix == "/api" || prefix == "/api/v1" || prefix == "/v1" || strings.HasPrefix(prefix, "/v1/") {
 		return prefix
 	}
 	return ""
+}
+
+func voiceAgentPublicBase(prefix string) string {
+	switch prefix {
+	case "":
+		return "/v1"
+	case "/api":
+		return "/api/v1"
+	default:
+		return prefix
+	}
 }
 
 func normalizeAllowedOrigins(origins []string) []string {

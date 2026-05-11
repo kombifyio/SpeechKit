@@ -80,6 +80,7 @@ func New(opts Options) (*Handler, error) {
 // Mount registers the handler at /v1/assist/process.
 func (h *Handler) Mount(mux *http.ServeMux) {
 	mux.Handle("/v1/assist/process", h)
+	mux.HandleFunc("/v1/assist/self-test", h.ServeSelfTest)
 }
 
 // ── request / response shapes ───────────────────────────────────────────────
@@ -114,11 +115,57 @@ type processResponse struct {
 	SourceInfo  *sourceMeta `json:"source,omitempty"`
 }
 
+type selfTestResponse struct {
+	Status    string         `json:"status"`
+	Text      string         `json:"text,omitempty"`
+	Action    string         `json:"action,omitempty"`
+	Locale    string         `json:"locale,omitempty"`
+	LatencyMs int64          `json:"latency_ms"`
+	Details   map[string]any `json:"details,omitempty"`
+}
+
 type sourceMeta struct {
 	Format     string `json:"format"`
 	SampleRate int    `json:"sample_rate"`
 	Channels   int    `json:"channels"`
 	DurationMs int64  `json:"duration_ms"`
+}
+
+func (h *Handler) ServeSelfTest(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		w.Header().Set("Allow", http.MethodPost)
+		httpx.WriteError(w, http.StatusMethodNotAllowed, "method_not_allowed",
+			"only POST is accepted on this endpoint")
+		return
+	}
+
+	started := time.Now()
+	result, err := h.processor.Process(r.Context(), "Reply with exactly the single word: pong.", assistpkg.ProcessOpts{Locale: "en"})
+	latency := time.Since(started)
+	if err != nil {
+		slog.Warn("assist: self-test failed", "err", err)
+		writePipelineError(w, err, latency)
+		return
+	}
+	if result == nil || strings.TrimSpace(result.Text) == "" {
+		httpx.WriteErrorWithDetails(w, http.StatusServiceUnavailable, "pipeline_unavailable", "Assist self-test returned an empty result", map[string]any{
+			"stage":      "llm",
+			"category":   "empty_result",
+			"retryable":  true,
+			"latency_ms": latency.Milliseconds(),
+		})
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	_ = json.NewEncoder(w).Encode(selfTestResponse{
+		Status:    "ok",
+		Text:      result.Text,
+		Action:    result.Action,
+		Locale:    result.Locale,
+		LatencyMs: latency.Milliseconds(),
+	})
 }
 
 // ── ServeHTTP ───────────────────────────────────────────────────────────────
@@ -302,8 +349,7 @@ func (h *Handler) processTranscript(w http.ResponseWriter, ctx context.Context, 
 	latency := time.Since(started)
 	if err != nil {
 		slog.Warn("assist: pipeline error", "err", err, "transcript_chars", len(transcript))
-		httpx.WriteError(w, http.StatusServiceUnavailable, "pipeline_unavailable",
-			"Assist pipeline failed: "+err.Error())
+		writePipelineError(w, err, latency)
 		return
 	}
 	if result == nil {
@@ -389,4 +435,55 @@ func firstNonEmptyString(values ...string) string {
 		}
 	}
 	return ""
+}
+
+func writePipelineError(w http.ResponseWriter, err error, latency time.Duration) {
+	classification := classifyPipelineError(err)
+	classification["latency_ms"] = latency.Milliseconds()
+	message := "Assist pipeline failed"
+	if stage, _ := classification["stage"].(string); stage != "" {
+		message += " during " + stage
+	}
+	if category, _ := classification["category"].(string); category != "" {
+		message += ": " + category
+	}
+	httpx.WriteErrorWithDetails(w, http.StatusServiceUnavailable, "pipeline_unavailable", message, classification)
+}
+
+func classifyPipelineError(err error) map[string]any {
+	details := map[string]any{
+		"stage":     "pipeline",
+		"category":  "runtime_error",
+		"retryable": true,
+	}
+	if err == nil {
+		return details
+	}
+	msg := err.Error()
+	lower := strings.ToLower(msg)
+	if strings.Contains(lower, "llm failed") || strings.Contains(lower, "no llm flow") || strings.Contains(lower, "no models configured") {
+		details["stage"] = "llm"
+	}
+	if strings.Contains(msg, "Invalid configuration type") || strings.Contains(msg, "GenerateContentConfig") || strings.Contains(msg, "GenerationCommonConfig") {
+		details["stage"] = "llm"
+		details["category"] = "provider_config"
+		details["retryable"] = false
+		details["provider"] = "googleai"
+		return details
+	}
+	if strings.Contains(lower, "no llm flow") || strings.Contains(lower, "no models configured") {
+		details["category"] = "missing_model"
+		details["retryable"] = false
+		return details
+	}
+	if strings.Contains(lower, "rate limit") || strings.Contains(lower, "429") {
+		details["category"] = "rate_limited"
+		return details
+	}
+	if strings.Contains(lower, "unauthorized") || strings.Contains(lower, "forbidden") || strings.Contains(lower, "401") || strings.Contains(lower, "403") {
+		details["category"] = "credentials"
+		details["retryable"] = false
+		return details
+	}
+	return details
 }

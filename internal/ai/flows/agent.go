@@ -41,10 +41,6 @@ func DefineAgentFlow(g *genkit.Genkit, models []ai.Model, tools ...ai.ToolRef) *
 		generateOpts = append(generateOpts,
 			ai.WithSystem(systemPrompt),
 			ai.WithPrompt(userPrompt),
-			ai.WithConfig(&ai.GenerationCommonConfig{
-				MaxOutputTokens: 2048,
-				Temperature:     0.5,
-			}),
 		)
 		if len(tools) > 0 {
 			generateOpts = append(generateOpts, ai.WithTools(tools...))
@@ -52,7 +48,7 @@ func DefineAgentFlow(g *genkit.Genkit, models []ai.Model, tools ...ai.ToolRef) *
 
 		var lastErr error
 		for _, model := range models {
-			opts := append([]ai.GenerateOption{ai.WithModel(model)}, generateOpts...)
+			opts := append([]ai.GenerateOption{ai.WithModel(model), generationConfigOption(model, 2048, 0.5)}, generateOpts...)
 			resp, err := genkit.Generate(ctx, g, opts...)
 			if err != nil {
 				lastErr = err

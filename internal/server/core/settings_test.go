@@ -4,6 +4,7 @@ package core
 
 import (
 	"bytes"
+	"encoding/base64"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -22,6 +23,17 @@ func serveServerSettingsWithBearer(app *App, req *http.Request) *httptest.Respon
 	middleware.Auth(middleware.AuthOptions{
 		Mode:                "bearer",
 		BearerTokenProvider: func() string { return "test-token" },
+	})(app.Mux).ServeHTTP(rec, req)
+	return rec
+}
+
+func serveServerSettingsWithBearerRole(app *App, req *http.Request, role string) *httptest.ResponseRecorder {
+	req.Header.Set("Authorization", "Bearer test-token")
+	rec := httptest.NewRecorder()
+	middleware.Auth(middleware.AuthOptions{
+		Mode:                "bearer",
+		BearerTokenProvider: func() string { return "test-token" },
+		BearerRole:          role,
 	})(app.Mux).ServeHTTP(rec, req)
 	return rec
 }
@@ -135,6 +147,8 @@ func TestRegisterServerSettings_PatchSavesProviderMatrixWithoutLeakingCredential
 			ModeVoiceAgent: true,
 		},
 	}
+	app.Cfg.Server.AuthMode = "bearer"
+	app.Cfg.Server.BearerTokenEnv = "SPEECHKIT_SERVER_TOKEN"
 
 	registerServerSettings(app)
 
@@ -223,7 +237,7 @@ func TestRegisterServerSettings_PatchGeneratesWriteOnlyServerToken(t *testing.T)
 		Health:  NewHealthRegistry(),
 		Version: "test-version",
 	}
-	app.Cfg.Server.AuthMode = "none"
+	app.Cfg.Server.AuthMode = "bearer"
 	app.Cfg.Server.BearerTokenEnv = "SPEECHKIT_SERVER_TOKEN"
 
 	registerServerSettings(app)
@@ -287,6 +301,98 @@ func TestRegisterServerSettings_PatchGeneratesWriteOnlyServerToken(t *testing.T)
 	}
 	if stored.ServerAuth.TokenValue != "" || stored.ServerAuth.GenerateToken != nil {
 		t.Fatalf("stored settings should hide write-only auth fields: %+v", stored.ServerAuth)
+	}
+}
+
+func TestRegisterServerSettings_PatchCreatesAdminBasicLogin(t *testing.T) {
+	t.Setenv(config.ServerSettingsWriteEnv, "true")
+	t.Setenv(config.ServerSettingsPathEnv, filepath.Join(t.TempDir(), "server-settings.json"))
+	t.Setenv("SPEECHKIT_SERVER_TOKEN", "")
+
+	app := &App{
+		Cfg:       &config.Config{},
+		Mux:       http.NewServeMux(),
+		Health:    NewHealthRegistry(),
+		Version:   "test-version",
+		AuthState: middleware.NewAuthState("bearer", "SPEECHKIT_SERVER_TOKEN", "", "", ""),
+	}
+	app.Cfg.Server.AuthMode = "bearer"
+	app.Cfg.Server.BearerTokenEnv = "SPEECHKIT_SERVER_TOKEN"
+
+	registerServerSettings(app)
+
+	payload := []byte(`{
+		"onboarding_complete": true,
+		"admin_auth": {
+			"username": "owner",
+			"password": "correct-password"
+		},
+		"server_auth": {
+			"mode": "managed_bearer",
+			"bearer_token_env": "SPEECHKIT_SERVER_TOKEN",
+			"generate_token": true
+		}
+	}`)
+	rec := httptest.NewRecorder()
+	app.Mux.ServeHTTP(rec, httptest.NewRequest(http.MethodPatch, "/v1/server/settings", bytes.NewReader(payload)))
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("bootstrap PATCH = %d body=%s", rec.Code, rec.Body.String())
+	}
+	stored, ok, err := config.LoadServerModelSettings(config.ServerSettingsPath(app.Cfg))
+	if err != nil {
+		t.Fatalf("LoadServerModelSettings: %v", err)
+	}
+	if !ok {
+		t.Fatal("expected saved settings")
+	}
+	if stored.AdminAuth.Username != "owner" || stored.AdminAuth.PasswordHash == "" || stored.AdminAuth.PasswordValue != "" {
+		t.Fatalf("stored admin auth = %+v", stored.AdminAuth)
+	}
+
+	auth := "Basic " + base64.StdEncoding.EncodeToString([]byte("owner:correct-password"))
+	adminReq := httptest.NewRequest(http.MethodPatch, "/v1/server/settings", strings.NewReader(`{"onboarding_complete":true}`))
+	adminReq.Header.Set("Authorization", auth)
+	adminRec := httptest.NewRecorder()
+	middleware.Auth(middleware.AuthOptions{
+		ModeProvider:              app.AuthState.Mode,
+		BearerTokenProvider:       app.AuthState.BearerToken,
+		AdminUsernameProvider:     app.AuthState.AdminUsername,
+		AdminPasswordHashProvider: app.AuthState.AdminPasswordHash,
+	})(app.Mux).ServeHTTP(adminRec, adminReq)
+
+	if adminRec.Code != http.StatusOK {
+		t.Fatalf("basic admin PATCH after bootstrap = %d body=%s", adminRec.Code, adminRec.Body.String())
+	}
+}
+
+func TestRegisterServerSettings_PatchRequiresAdminAfterBootstrap(t *testing.T) {
+	t.Setenv(config.ServerSettingsWriteEnv, "true")
+	t.Setenv(config.ServerSettingsPathEnv, filepath.Join(t.TempDir(), "server-settings.json"))
+	t.Setenv("SPEECHKIT_SERVER_TOKEN", "test-token")
+
+	app := &App{
+		Cfg:     &config.Config{},
+		Mux:     http.NewServeMux(),
+		Health:  NewHealthRegistry(),
+		Version: "test-version",
+	}
+	app.Cfg.Server.AuthMode = "bearer"
+	app.Cfg.Server.BearerTokenEnv = "SPEECHKIT_SERVER_TOKEN"
+	registerServerSettings(app)
+
+	payload := []byte(`{"onboarding_complete":true}`)
+	nonAdmin := serveServerSettingsWithBearerRole(app, httptest.NewRequest(http.MethodPatch, "/v1/server/settings", bytes.NewReader(payload)), "")
+	if nonAdmin.Code != http.StatusForbidden {
+		t.Fatalf("non-admin PATCH after bootstrap should return 403, got %d body=%s", nonAdmin.Code, nonAdmin.Body.String())
+	}
+	if !strings.Contains(nonAdmin.Body.String(), "admin_required") {
+		t.Fatalf("non-admin PATCH should explain admin_required, got %s", nonAdmin.Body.String())
+	}
+
+	admin := serveServerSettingsWithBearerRole(app, httptest.NewRequest(http.MethodPatch, "/v1/server/settings", bytes.NewReader(payload)), "admin")
+	if admin.Code != http.StatusOK {
+		t.Fatalf("admin PATCH after bootstrap should return 200, got %d body=%s", admin.Code, admin.Body.String())
 	}
 }
 

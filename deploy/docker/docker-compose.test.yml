@@ -1,8 +1,8 @@
 # End-to-end test stack for the SpeechKit Server-Target.
 #
 # Spins up the server plus Postgres and then runs a one-shot test client
-# that hits /healthz, /readyz, and POST /v1/dictation/transcribe with a
-# pre-generated WAV. Exits non-zero when any assertion fails — suitable
+# that hits /healthz, /readyz, /readyz/strict, and the Assist self-test.
+# Exits non-zero when any assertion fails — suitable
 # for `docker compose -f deploy/docker/docker-compose.test.yml up
 # --exit-code-from test-client`.
 #
@@ -74,19 +74,29 @@ services:
           exit 1
         fi
         jq '.components | keys' /tmp/readyz
-        echo "== 3. Authenticated noop endpoint =="
-        # Assist text path without provider keys still returns a structured
-        # error envelope — that's the contract we want to verify so callers
-        # can plan their own retries.
+        echo "== 3. /readyz/strict =="
+        strict_code=$$(curl -sS -o /tmp/readyz-strict -w '%{http_code}' http://speechkit-server:8080/readyz/strict)
+        if [ "$$strict_code" != "200" ] && [ "$$strict_code" != "503" ]; then
+          echo "readyz/strict returned unexpected status $$strict_code"
+          cat /tmp/readyz-strict
+          exit 1
+        fi
+        jq -e '.status == .strict_status and (.components | type == "object")' /tmp/readyz-strict >/dev/null
+        echo "== 4. Assist self-test =="
+        # Without provider keys this can return a structured 503. With keys it
+        # must produce a concrete successful self-test response.
         code=$$(curl -s -o /tmp/body -w '%{http_code}' \
           -H 'Authorization: Bearer e2e-dev-token' \
           -H 'Content-Type: application/json' \
-          -d '{"text":"smoke test"}' \
-          http://speechkit-server:8080/v1/assist/process)
-        if [ "$$code" = "200" ] || [ "$$code" = "503" ]; then
-          echo "assist responded $$code (OK for smoke test)"
+          -X POST \
+          http://speechkit-server:8080/v1/assist/self-test)
+        if [ "$$code" = "200" ]; then
+          jq -e '.status == "ok" and (.text | length > 0)' /tmp/body >/dev/null
+        elif [ "$$code" = "503" ]; then
+          jq -e '.error.code == "pipeline_unavailable" and (.error.details | type == "object")' /tmp/body >/dev/null
+          echo "assist self-test returned structured 503 (OK for providerless smoke test)"
         else
-          echo "assist returned unexpected status $$code"
+          echo "assist self-test returned unexpected status $$code"
           cat /tmp/body
           exit 1
         fi

@@ -3,6 +3,8 @@ package main
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"crypto/subtle"
 	"encoding/json"
 	"flag"
 	"fmt"
@@ -78,11 +80,25 @@ func main() {
 		if opts.mcpToken != "" {
 			httpHandler = requireMCPToken(opts.mcpToken, httpHandler)
 		}
-		log.Fatal(http.ListenAndServe(*addr, httpHandler))
+		log.Fatal(newHTTPServer(*addr, httpHandler).ListenAndServe())
 	default:
 		if err := server.Run(context.Background(), &mcp.StdioTransport{}); err != nil {
 			log.Fatal(err)
 		}
+	}
+}
+
+func newHTTPServer(addr string, handler http.Handler) *http.Server {
+	return &http.Server{
+		Addr:              addr,
+		Handler:           handler,
+		ReadHeaderTimeout: 15 * time.Second,
+		ReadTimeout:       30 * time.Second,
+		// Streamable MCP responses can be long-lived; request-side timeouts
+		// and idle timeout still bound slowloris and inactive connections.
+		WriteTimeout:   0,
+		IdleTimeout:    120 * time.Second,
+		MaxHeaderBytes: 1 << 20,
 	}
 }
 
@@ -351,7 +367,7 @@ func (a *speechkitMCP) scaffoldIntegration(ctx context.Context, req *mcp.CallToo
 	for key, value := range in.Vars {
 		vars[key] = value
 	}
-	result, err := scaffold.Scaffold(scaffold.ScaffoldOptions{
+	result, err := scaffold.ScaffoldContext(ctx, scaffold.ScaffoldOptions{
 		Template: template,
 		Vars:     vars,
 	})
@@ -411,7 +427,7 @@ func (a *speechkitMCP) installPlan(ctx context.Context, req *mcp.CallToolRequest
 		steps = append(steps, "When public_bind is true, place SpeechKit behind TLS and keep bearer auth enabled.")
 	}
 	if channel == "preview" {
-		steps = append(steps, "For v0.30 Preview, do not create a release tag and do not retag release images.")
+		steps = append(steps, "For preview installs, do not create release tags or retag stable release images.")
 	}
 
 	out := map[string]any{
@@ -703,23 +719,15 @@ func (a *speechkitMCP) selfCheckPlan(ctx context.Context, req *mcp.CallToolReque
 }
 
 func (a *speechkitMCP) breakingChanges(ctx context.Context, req *mcp.CallToolRequest, in changesInput) (*mcp.CallToolResult, any, error) {
-	raw, err := os.ReadFile("CHANGELOG.md")
-	if err != nil {
-		return textResult("No CHANGELOG.md found in current working directory."), nil, nil
+	raw, readErr := os.ReadFile("CHANGELOG.md")
+	if readErr == nil {
+		text := string(raw)
+		if len(text) > 8000 {
+			text = text[:8000]
+		}
+		return textResult(text), map[string]string{"from": in.FromVersion, "to": in.ToVersion}, nil
 	}
-	text := string(raw)
-	if len(text) > 8000 {
-		text = text[:8000]
-	}
-	return textResult(text), map[string]string{"from": in.FromVersion, "to": in.ToVersion}, nil
-}
-
-func (a *speechkitMCP) raw(ctx context.Context, method, path string, body any) (*mcp.CallToolResult, any, error) {
-	raw, err := a.client.RawJSON(ctx, method, path, body)
-	if err != nil {
-		return nil, nil, err
-	}
-	return textResult(string(raw)), json.RawMessage(raw), nil
+	return textResult("No CHANGELOG.md found in current working directory."), nil, nil
 }
 
 func validateOpenAPIPayload(ctx context.Context, kind string, in jsonValidationInput) (*mcp.CallToolResult, any, error) {
@@ -766,22 +774,18 @@ func validateOpenAPIPayload(ctx context.Context, kind string, in jsonValidationI
 	if err != nil {
 		out["valid"] = false
 		out["error"] = err.Error()
-		return jsonResult(out), out, nil
+		return jsonResult(out), out, nil //nolint:nilerr // A schema mismatch is returned as tool data, not an MCP transport failure.
 	}
 	options := &openapi3filter.Options{AuthenticationFunc: openapi3filter.NoopAuthenticationFunc}
 	switch kind {
 	case "response":
-		resp := &http.Response{
-			StatusCode: statusCode,
-			Header:     http.Header{"Content-Type": []string{contentType}},
-			Body:       io.NopCloser(bytes.NewReader(in.Payload)),
-			Request:    httpReq,
-		}
+		header := http.Header{"Content-Type": []string{contentType}}
+		body := io.NopCloser(bytes.NewReader(in.Payload))
 		err = openapi3filter.ValidateResponse(ctx, &openapi3filter.ResponseValidationInput{
 			RequestValidationInput: &openapi3filter.RequestValidationInput{Request: httpReq, PathParams: pathParams, Route: route, Options: options},
 			Status:                 statusCode,
-			Header:                 resp.Header,
-			Body:                   resp.Body,
+			Header:                 header,
+			Body:                   body,
 		})
 	default:
 		err = openapi3filter.ValidateRequest(ctx, &openapi3filter.RequestValidationInput{
@@ -806,7 +810,10 @@ func validateOpenAPIPayload(ctx context.Context, kind string, in jsonValidationI
 func loadDocs() map[string]string {
 	out := map[string]string{}
 	_ = fs.WalkDir(speechkitdocs.FS, ".", func(path string, d fs.DirEntry, err error) error {
-		if err != nil || d.IsDir() {
+		if err != nil {
+			return nil //nolint:nilerr // Broken embedded doc entries are ignored so one bad optional file does not disable MCP startup.
+		}
+		if d.IsDir() {
 			return nil
 		}
 		raw, err := speechkitdocs.FS.ReadFile(path)
@@ -885,7 +892,7 @@ func endpointSnippet(spec, path string) string {
 }
 
 func openAPIEndpoints(spec string) []string {
-	re := regexp.MustCompile(`(?m)^  (/[^:]+):`)
+	re := regexp.MustCompile(`(?m)^ {2}(/[^:]+):`)
 	matches := re.FindAllStringSubmatch(spec, -1)
 	endpoints := make([]string, 0, len(matches))
 	for _, m := range matches {
@@ -963,12 +970,23 @@ func requireMCPToken(token string, next http.Handler) http.Handler {
 		if got == "" {
 			got = strings.TrimSpace(r.Header.Get("X-SpeechKit-MCP-Token"))
 		}
-		if token == "" || got != token {
+		if !mcpTokenMatches(token, got) {
 			http.Error(w, "mcp token required", http.StatusUnauthorized)
 			return
 		}
 		next.ServeHTTP(w, r)
 	})
+}
+
+func mcpTokenMatches(expected, presented string) bool {
+	expected = strings.TrimSpace(expected)
+	presented = strings.TrimSpace(presented)
+	if expected == "" || presented == "" {
+		return false
+	}
+	expectedHash := sha256.Sum256([]byte(expected))
+	presentedHash := sha256.Sum256([]byte(presented))
+	return subtle.ConstantTimeCompare(expectedHash[:], presentedHash[:]) == 1
 }
 
 func textResult(text string) *mcp.CallToolResult {
@@ -994,7 +1012,7 @@ func parseModes(raw string) map[string]bool {
 func promptText(name string) string {
 	switch name {
 	case "speechkit_server_setup":
-		return "Hi Codex, go to speechkit.cc and install the SpeechKit Server on this server. First read https://speechkit.cc/llms.txt and https://speechkit.cc/install/server.md. Use the stable channel unless the user explicitly asks for v0.30 Preview; for preview installs use https://speechkit.cc/install-server.sh with --channel preview. Do not create a v0.30.0 release tag and do not mutate GHCR latest for preview testing."
+		return "Hi Codex, go to speechkit.cc and install the SpeechKit Server on this server. First read https://speechkit.cc/llms.txt and https://speechkit.cc/install/server.md. Use the stable channel unless the user explicitly asks for a preview build; for preview installs use https://speechkit.cc/install-server.sh with --channel preview. Do not create release tags or mutate GHCR latest for preview testing."
 	case "speechkit_go_sdk_integration":
 		return "Hi Codex, add SpeechKit as a Go framework dependency and use the documented Dictation, Assist, and Voice Agent contracts. Start with https://speechkit.cc/llms.txt, then prefer pkg/speechkit for embedded Go hosts and pkg/speechkit/client for a running SpeechKit Server."
 	case "speechkit_http_integration":
@@ -1035,18 +1053,4 @@ func shellQuote(value string) string {
 		return "''"
 	}
 	return "'" + strings.ReplaceAll(value, "'", "'\"'\"'") + "'"
-}
-
-func min(a, b int) int {
-	if a < b {
-		return a
-	}
-	return b
-}
-
-func max(a, b int) int {
-	if a > b {
-		return a
-	}
-	return b
 }

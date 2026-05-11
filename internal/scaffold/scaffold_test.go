@@ -4,6 +4,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -34,8 +35,32 @@ func TestListTemplates_IncludesEmbeddedTemplates(t *testing.T) {
 	}
 }
 
+func TestListTemplates_SkipsIncompleteTemplateDirectories(t *testing.T) {
+	templates, err := ListTemplates()
+	if err != nil {
+		t.Fatalf("ListTemplates: %v", err)
+	}
+	incomplete := map[string]bool{
+		"browser-voiceagent-svelte": true,
+		"go-server-embed":           true,
+		"node-voice-agent-tools":    true,
+	}
+	for _, tpl := range templates {
+		if incomplete[tpl.Name] {
+			t.Fatalf("ListTemplates exposed incomplete template %q", tpl.Name)
+		}
+	}
+}
+
 func TestLookupTemplate_UnknownReturnsSentinel(t *testing.T) {
 	_, err := LookupTemplate("does-not-exist")
+	if !errors.Is(err, ErrUnknownTemplate) {
+		t.Fatalf("LookupTemplate err = %v, want ErrUnknownTemplate", err)
+	}
+}
+
+func TestLookupTemplate_IncompleteTemplateReturnsSentinel(t *testing.T) {
+	_, err := LookupTemplate("browser-voiceagent-svelte")
 	if !errors.Is(err, ErrUnknownTemplate) {
 		t.Fatalf("LookupTemplate err = %v, want ErrUnknownTemplate", err)
 	}
@@ -168,5 +193,34 @@ func TestScaffold_EnvHintFallback(t *testing.T) {
 	}
 	if got := result.Vars["SPEECHKIT_SERVER_URL"]; got != "https://env.example.com" {
 		t.Errorf("expected env-hint fallback for SPEECHKIT_SERVER_URL, got %q", got)
+	}
+}
+
+func TestScaffold_WritesRestrictiveFileModes(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Windows does not preserve POSIX permission bits consistently")
+	}
+	root := t.TempDir()
+	dir := filepath.Join(root, "app")
+
+	_, err := Scaffold(ScaffoldOptions{
+		Template:  "browser-dictation-react",
+		OutputDir: dir,
+		Vars: map[string]string{
+			"APP_NAME": "mode-test",
+		},
+	})
+	if err != nil {
+		t.Fatalf("Scaffold: %v", err)
+	}
+	if info, err := os.Stat(dir); err != nil {
+		t.Fatalf("stat output dir: %v", err)
+	} else if got := info.Mode().Perm(); got != 0o750 {
+		t.Fatalf("output dir mode = %o, want 750", got)
+	}
+	if info, err := os.Stat(filepath.Join(dir, "package.json")); err != nil {
+		t.Fatalf("stat package.json: %v", err)
+	} else if got := info.Mode().Perm(); got != 0o640 {
+		t.Fatalf("package.json mode = %o, want 640", got)
 	}
 }

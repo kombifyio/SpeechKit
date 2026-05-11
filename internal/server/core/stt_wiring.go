@@ -20,6 +20,8 @@ const (
 	probeTimeout  = 8 * time.Second
 	probeDeadline = 2 * time.Minute
 	probeInterval = 5 * time.Second
+
+	sttAggregateComponent = "stt"
 )
 
 // buildSTTRouter constructs the STT router from config. It mirrors the
@@ -99,13 +101,13 @@ func buildSTTRouter(cfg *config.Config) (*router.Router, []namedProvider, []stri
 
 	// Google Cloud STT.
 	if cfg.Providers.Google.Enabled {
-		if key := strings.TrimSpace(config.ResolveSecret(cfg.Providers.Google.APIKeyEnv)); key != "" {
+		if key, source := config.ResolveGoogleSTTKey(cfg); key != "" {
 			p := stt.NewGoogleSTTProvider(key, cfg.Providers.Google.STTModel)
 			r.AddCloud(p)
 			providers = append(providers, namedProvider{name: "stt.google", provider: p})
-			notes = append(notes, "Google STT registered (model="+cfg.Providers.Google.STTModel+")")
+			notes = append(notes, "Google STT registered (model="+cfg.Providers.Google.STTModel+", source="+source+")")
 		} else {
-			notes = append(notes, "Google STT disabled ("+cfg.Providers.Google.APIKeyEnv+" not set)")
+			notes = append(notes, "Google STT disabled (set "+config.GoogleSTTAPIKeyEnvName(cfg)+" or "+config.GoogleCloudSTTAPIKeyEnv+")")
 		}
 	}
 
@@ -144,14 +146,25 @@ type namedProvider struct {
 // this is typically a cheap HTTP HEAD/GET; we don't want to block the server
 // start on it, so we run the probes in background with a short per-attempt
 // timeout.
-func registerProviderHealth(app *App, providers []namedProvider) {
+
+func registerProviderHealth(app *App, providers []namedProvider, blockSTT bool) {
+	if app == nil || app.Health == nil {
+		return
+	}
+	if blockSTT {
+		if len(providers) == 0 {
+			app.Health.SetReadyWithOptions(sttAggregateComponent, StatusUnavailable, "no STT providers configured", sttAggregateOptions(true))
+			return
+		}
+		app.Health.SetReadyWithOptions(sttAggregateComponent, StatusStarting, "probing STT providers", sttAggregateOptions(true))
+	}
 	for _, np := range providers {
-		app.Health.SetReady(np.name, StatusStarting, "probing")
-		go probeProviderHealth(app, np)
+		app.Health.SetReadyWithOptions(np.name, StatusStarting, "probing", sttProviderOptions(np))
+		go probeProviderHealth(app, np, blockSTT)
 	}
 }
 
-func probeProviderHealth(app *App, np namedProvider) {
+func probeProviderHealth(app *App, np namedProvider, blockSTT bool) {
 	deadline := time.Now().Add(probeDeadline)
 	var lastErr error
 	for {
@@ -160,7 +173,10 @@ func probeProviderHealth(app *App, np namedProvider) {
 		cancel()
 		if err == nil {
 			slog.Info("STT provider ready", "component", np.name, "provider", np.provider.Name())
-			app.Health.SetReady(np.name, StatusOK, "ready")
+			app.Health.SetReadyWithOptions(np.name, StatusOK, "ready", sttProviderOptions(np))
+			if blockSTT {
+				updateSTTAggregate(app)
+			}
 			return
 		}
 		lastErr = err
@@ -170,9 +186,67 @@ func probeProviderHealth(app *App, np namedProvider) {
 			"err", err,
 		)
 		if time.Now().After(deadline) {
-			app.Health.SetReady(np.name, StatusDegraded, lastErr.Error())
+			app.Health.SetReadyWithOptions(np.name, StatusDegraded, lastErr.Error(), sttProviderOptions(np))
+			if blockSTT {
+				updateSTTAggregate(app)
+			}
 			return
 		}
 		time.Sleep(probeInterval)
+	}
+}
+
+func updateSTTAggregate(app *App) {
+	if app == nil || app.Health == nil {
+		return
+	}
+	_, components, _ := app.Health.Snapshot()
+	providers := 0
+	starting := 0
+	degraded := 0
+	for name, entry := range components {
+		if !strings.HasPrefix(name, "stt.") {
+			continue
+		}
+		providers++
+		switch entry.Status {
+		case StatusOK:
+			app.Health.SetReadyWithOptions(sttAggregateComponent, StatusOK, "at least one STT provider ready", sttAggregateOptions(true))
+			return
+		case StatusStarting:
+			starting++
+		case StatusDegraded, StatusUnavailable:
+			degraded++
+		}
+	}
+	if providers == 0 {
+		app.Health.SetReadyWithOptions(sttAggregateComponent, StatusUnavailable, "no STT providers configured", sttAggregateOptions(true))
+		return
+	}
+	if starting > 0 {
+		app.Health.SetReadyWithOptions(sttAggregateComponent, StatusStarting, "probing STT providers", sttAggregateOptions(true))
+		return
+	}
+	if degraded > 0 {
+		app.Health.SetReadyWithOptions(sttAggregateComponent, StatusDegraded, "no STT provider is currently ready", sttAggregateOptions(true))
+		return
+	}
+}
+
+func sttProviderOptions(np namedProvider) ComponentOptions {
+	provider := strings.TrimPrefix(np.name, "stt.")
+	return ComponentOptions{
+		Blocking: false,
+		Kind:     "provider",
+		Modes:    []string{string(ModeDictation), string(ModeAssist)},
+		Provider: provider,
+	}
+}
+
+func sttAggregateOptions(blocking bool) ComponentOptions {
+	return ComponentOptions{
+		Blocking: blocking,
+		Kind:     "dependency",
+		Modes:    []string{string(ModeDictation)},
 	}
 }
