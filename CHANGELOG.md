@@ -8,60 +8,32 @@ The format is based on Keep a Changelog and this project is intended to ship und
 
 ## [0.32.2] - 2026-05-13
 
-v0.32.2 closes the runtime-stability findings from Beads SK-004.5.10:
-the duplicate-text-injection symptom reported in live testing is
-root-caused (Wails v3 alpha's `SingleInstance` activation fires inside
-`app.Run()`, which is the last bootstrap stage — by then a racing
-second instance has already registered global Windows hotkeys via
-`RegisterHotKey`). The fix is belt-and-suspenders: claim a session-
-scoped Windows named mutex in `runDesktopApp` before any global
-resource is acquired. The release also adds structured startup /
-window / tray telemetry so future field reports of the same class of
-bug can be diagnosed from log alone, and a `defer recoverHook` guard
-around every Wails event-loop callback so a panic in one hook no
-longer crashes the entire desktop event loop. No public API change.
+v0.32.2 is a Windows desktop client stability patch. No public API
+change — `pkg/speechkit/**` remains backward-compatible.
 
 ### Fixed
 
-- **Duplicate text injection eliminated.** A new
-  `Local\com.kombify.speechkit.singleton-belt` Windows named mutex is
-  acquired as the first action in `runDesktopApp`. If the mutex is
-  already held, the second instance logs
-  `desktop.singleton.duplicate_instance` and exits cleanly before any
-  hotkey is registered, audio capturer is opened, or Wails event loop
-  is started. Wails' own `SingleInstanceOptions` remains as a
-  redundant second layer.
-- **Wails event-loop callback panics no longer crash the desktop
-  client.** A `defer recoverHook(name)` is installed in every
-  registered callback (`WindowClosing` on prompter and dashboard,
-  `WindowDidMove` on the pill panel, `ApplicationStarted`,
-  `voiceagent:start` / `:stop` / `:close`). A panic now lands in
-  `slog.Error("desktop.hook.panic", ...)` with hook name and full
-  stack trace, and the remaining hooks keep working.
+- **Duplicate text injection when two SpeechKit instances were active
+  at once.** If a second SpeechKit process was launched while one was
+  already running, both processes registered the same global Windows
+  hotkey and a single key press got handled twice — the transcript
+  was typed into the focused application twice. The desktop client
+  now claims a per-user-session Windows named mutex before any global
+  resource is acquired and exits cleanly if another instance already
+  holds it.
+- **A crash in any Wails event-loop callback no longer takes down the
+  whole desktop client.** Window close, window move, the application
+  startup hook, and the voice-agent custom-event hooks are now
+  guarded so an unexpected error in one is recorded in the log and
+  isolated, instead of tearing down the event loop.
 
 ### Added
 
-- **Structured startup / window / tray telemetry.** A new
-  `startupTracker` emits ten `desktop.startup` log events with stage
-  name, `elapsed_ms`, and `delta_ms` across the full `runDesktopApp`
-  bootstrap (`entered`, `singleton_acquired`, `config_loaded`,
-  `state_init`, `router_runtime`, `audio_runtime`, `runtime_services`,
-  `wails_app_created`, `windows_configured`, `hotkeys_started`,
-  `input_runtime_ready`, `app_run_begin`, `app_run_returned`). Tray
-  click events (`tray.action`), tray-driven dashboard / quit requests
-  (`desktop.tray.dashboard_requested`, `desktop.tray.quit_requested`),
-  and window lifecycle (`desktop.window.closing`, `.shown`) now log
-  structured fields so close-reason and visibility transitions are
-  reconstructable from the log file.
-
-### Notes
-
-- The 2026-05-13 audit Phase C2 PR 3 (`internal/quicknote`) was
-  attempted in the same session but deferred: both
-  `quicknote_desktop_service.go` and `quick_actions.go` are
-  significantly more entangled with `*appState` than the
-  decomposition plan estimated. Recorded as a follow-up in Beads
-  SK-004.6.5; no behaviour or release impact in v0.32.2.
+- **Structured startup, window, and tray telemetry in the local log
+  file.** The desktop client now records timestamped events for each
+  startup stage, every tray menu interaction, and every window show
+  or close transition, so runtime issues can be reconstructed from
+  the log file without a live repro.
 
 ## [0.32.1] - 2026-05-13
 
