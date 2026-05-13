@@ -25,8 +25,8 @@ func runDesktopApp(closeLogFile func()) {
 	// WASAPI capture) is acquired. Wails' own SingleInstance check fires
 	// inside app.Run() which is the LAST stage of bootstrap — by then a
 	// racing second instance has already registered the global hotkey
-	// and is reacting to the same key press, producing the duplicate
-	// text injection symptom in SK-004.5.10.
+	// and is reacting to the same key press, producing duplicate text
+	// injection into the focused application.
 	release, isFirst, mutexErr := tryAcquireSingleton()
 	if mutexErr != nil {
 		slog.Warn("desktop.singleton.acquire_error",
