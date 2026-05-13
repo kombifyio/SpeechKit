@@ -1,11 +1,79 @@
 package main
 
-import "github.com/kombifyio/SpeechKit/pkg/speechkit"
+import (
+	"log/slog"
+	"time"
+
+	"github.com/kombifyio/SpeechKit/internal/tray"
+	"github.com/kombifyio/SpeechKit/pkg/speechkit"
+)
 
 type quickNoteContext struct {
 	enabled     bool
 	captureMode bool
 	noteID      int64
+}
+
+func (s *appState) setState(state, text string) {
+	s.mu.Lock()
+	s.currentState = state
+	s.overlayText = text
+	if state == "recording" || state == "idle" {
+		s.overlayFeedbackRole = ""
+		s.overlayFeedbackText = ""
+		s.overlayFeedbackDone = true
+	}
+	if state != "recording" {
+		s.overlayLevel = 0
+	}
+	s.overlayPhase = overlayPhase(state, normalizeOverlayLevel(s.overlayLevel))
+	appTray := s.appTray
+	s.syncSpeechKitSnapshotLocked()
+	s.mu.Unlock()
+
+	s.publishSpeechKitEvent(speechkitStateEvent(state, text))
+
+	s.showActiveOverlayWindow()
+	if appTray != nil {
+		appTray.SetState(tray.State(state))
+	}
+
+	if state == "done" {
+		go s.resetIdleAfter("done", s.doneResetDelayValue())
+	}
+}
+
+func (s *appState) resetIdleAfter(expected string, delay time.Duration) {
+	time.Sleep(delay)
+
+	s.mu.Lock()
+	current := s.currentState
+	s.mu.Unlock()
+
+	if current == expected {
+		s.setState("idle", "")
+	}
+}
+
+func (s *appState) addLog(msg, logType string) {
+	entry := logEntry{
+		Message:   msg,
+		Type:      logType,
+		Timestamp: time.Now().Format(time.RFC3339),
+	}
+
+	s.mu.Lock()
+	s.logEntries = append(s.logEntries, entry)
+	if len(s.logEntries) > 200 {
+		s.logEntries = s.logEntries[len(s.logEntries)-200:]
+	}
+	s.mu.Unlock()
+
+	if event, ok := speechkitLogEvent(msg, logType); ok {
+		s.publishSpeechKitEvent(event)
+	}
+
+	slog.Info(msg)
 }
 
 func (s *appState) armQuickNoteRecording(noteID int64) {

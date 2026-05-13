@@ -1,7 +1,7 @@
 import { render, screen, waitFor } from '@testing-library/react'
 import { vi } from 'vitest'
 
-import { OverlayApp } from '@/components/overlay-app'
+import { OverlayApp } from '@/components/overlay-surfaces'
 import type { SpeechKitOverlayState } from '@/lib/speechkit'
 
 const { fetchOverlayStateMock } = vi.hoisted(() => ({

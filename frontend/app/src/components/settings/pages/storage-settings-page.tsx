@@ -80,7 +80,7 @@ export function StorageSettingsPage({
             onChange={(e) =>
               updateSettings({ postgresDSN: e.target.value }, 350)
             }
-            placeholder="postgres://user:password@host:5432/speechkit?sslmode=disable"
+            placeholder="postgres://host:5432/speechkit?sslmode=disable"
             className="sk-input mt-1.5 h-8 w-full rounded px-2.5 text-xs"
           />
         )}

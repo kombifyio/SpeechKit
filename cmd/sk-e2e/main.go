@@ -45,7 +45,7 @@ func main() {
 	var (
 		server      = flag.String("server", "http://localhost:8080", "speechkit-server base URL")
 		token       = flag.String("token", "", "bearer token (also reads $SPEECHKIT_SERVER_TOKEN)")
-		scenarios   = flag.String("scenarios", "all", "comma-separated scenarios: health,dictation,assist,voiceagent,all")
+		scenarios   = flag.String("scenarios", "all", "comma-separated scenarios: health,deployment,dictation,assist,voiceagent,all")
 		timeout     = flag.Duration("timeout", 30*time.Second, "per-request timeout")
 		strictReady = flag.Bool("strict-ready", false, "fail when /readyz or /readyz/strict returns 503")
 		verbose     = flag.Bool("v", false, "verbose: print every request body and response")
@@ -110,6 +110,7 @@ type scenarioOpts struct {
 
 var allScenarios = map[string]scenarioFn{
 	"health":     scenarioHealth,
+	"deployment": scenarioDeploymentStatus,
 	"dictation":  scenarioDictation,
 	"assist":     scenarioAssist,
 	"voiceagent": scenarioVoiceAgentCreate,
@@ -125,7 +126,7 @@ type scenarioResult struct {
 func selectedScenarios(s string) []string {
 	if strings.TrimSpace(s) == "" || s == "all" {
 		// Stable order: health first (cheapest), then mode-specific.
-		return []string{"health", "dictation", "assist", "voiceagent"}
+		return []string{"health", "deployment", "dictation", "assist", "voiceagent"}
 	}
 	out := []string{}
 	for _, p := range strings.Split(s, ",") {
@@ -134,6 +135,46 @@ func selectedScenarios(s string) []string {
 		}
 	}
 	return out
+}
+
+func scenarioDeploymentStatus(c *client, opts *scenarioOpts) error {
+	if strings.TrimSpace(c.token) == "" {
+		return errors.New("deployment status requires --token or SPEECHKIT_SERVER_TOKEN")
+	}
+	resp, body, err := c.do(http.MethodGet, "/api/v1/deployment/status", "", nil, true)
+	if err != nil {
+		return fmt.Errorf("deployment status request: %w", err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("deployment status = %d; body=%s", resp.StatusCode, body)
+	}
+	if bytes.Contains(body, []byte(c.token)) {
+		return fmt.Errorf("deployment status leaked bearer token; body=%s", body)
+	}
+	var status struct {
+		Version string `json:"version"`
+		Auth    struct {
+			Mode           string `json:"mode"`
+			BearerTokenEnv string `json:"bearer_token_env"`
+			BearerTokenSet bool   `json:"bearer_token_set"`
+		} `json:"auth"`
+	}
+	if err := json.Unmarshal(body, &status); err != nil {
+		return fmt.Errorf("deployment status parse: %w body=%s", err, body)
+	}
+	if status.Version == "" {
+		return fmt.Errorf("deployment status missing version; body=%s", body)
+	}
+	if status.Auth.Mode == "" {
+		return fmt.Errorf("deployment status missing auth.mode; body=%s", body)
+	}
+	if status.Auth.BearerTokenEnv == "" || !status.Auth.BearerTokenSet {
+		return fmt.Errorf("deployment status bearer token not configured; body=%s", body)
+	}
+	if c.verbose {
+		fmt.Printf("    deployment auth_mode=%s bearer_env=%s\n", status.Auth.Mode, status.Auth.BearerTokenEnv)
+	}
+	return nil
 }
 
 func scenarioHealth(c *client, opts *scenarioOpts) error {

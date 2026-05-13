@@ -9,6 +9,7 @@ import (
 
 	"github.com/firebase/genkit/go/core"
 
+	"github.com/kombifyio/SpeechKit/cmd/speechkit/internal/transcription"
 	"github.com/kombifyio/SpeechKit/internal/ai/flows"
 	"github.com/kombifyio/SpeechKit/internal/assist"
 	"github.com/kombifyio/SpeechKit/internal/audio"
@@ -42,9 +43,9 @@ func (t routerTranscriber) Transcribe(ctx context.Context, audioData []byte, dur
 		rawDictionary = t.state.vocabularyDictionary
 		t.state.mu.Unlock()
 	}
-	entries := parseVocabularyDictionary(rawDictionary)
+	entries := transcription.ParseVocabularyDictionary(rawDictionary)
 	if t.dictionaryStore != nil {
-		storedEntries, err := vocabularyEntriesFromStore(ctx, t.dictionaryStore, language)
+		storedEntries, err := transcription.VocabularyEntriesFromStore(ctx, t.dictionaryStore, language)
 		if err != nil {
 			slog.Debug("load vocabulary dictionary from store", "err", err)
 		} else if len(storedEntries) > 0 {
@@ -54,12 +55,12 @@ func (t routerTranscriber) Transcribe(ctx context.Context, audioData []byte, dur
 
 	result, err := t.router.Route(ctx, audioData, durationSecs, stt.TranscribeOpts{
 		Language: language,
-		Prompt:   buildVocabularyPrompt(entries),
+		Prompt:   transcription.BuildVocabularyPrompt(entries),
 	})
 	if err != nil {
 		return speechkit.Transcript{}, err
 	}
-	correctedText, correctedTerms := applyVocabularyCorrectionsWithMatches(result.Text, entries)
+	correctedText, correctedTerms := transcription.ApplyVocabularyCorrectionsWithMatches(result.Text, entries)
 	result.Text = correctedText
 	if t.dictionaryStore != nil && len(correctedTerms) > 0 {
 		languageForUsage := result.Language

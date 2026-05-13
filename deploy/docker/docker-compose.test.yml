@@ -82,7 +82,12 @@ services:
           exit 1
         fi
         jq -e '.status == .strict_status and (.components | type == "object")' /tmp/readyz-strict >/dev/null
-        echo "== 4. Assist self-test =="
+        echo "== 4. Deployment status =="
+        curl -fsS \
+          -H 'Authorization: Bearer e2e-dev-token' \
+          http://speechkit-server:8080/v1/deployment/status \
+          | jq -e '.auth.bearer_token_env == "SPEECHKIT_SERVER_TOKEN" and .auth.bearer_token_set == true and (.auth | tostring | contains("e2e-dev-token") | not)' >/dev/null
+        echo "== 5. Assist self-test =="
         # Without provider keys this can return a structured 503. With keys it
         # must produce a concrete successful self-test response.
         code=$$(curl -s -o /tmp/body -w '%{http_code}' \

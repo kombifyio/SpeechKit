@@ -30,6 +30,10 @@ Minimum provider secrets for useful mode coverage:
 | Env var | Purpose |
 |---|---|
 | `SPEECHKIT_SERVER_TOKEN` | bearer token when `[server].auth_mode` is `bearer` or `bearer_or_edge` |
+| `SPEECHKIT_SERVER_AUTH_MODE` | optional startup override for `[server].auth_mode` (`none`, `bearer`, `edge_hmac`, `bearer_or_edge`) |
+| `SPEECHKIT_SERVER_BEARER_TOKEN_ENV` | optional name of the env var that holds the bearer token; defaults to `SPEECHKIT_SERVER_TOKEN` |
+| `SPEECHKIT_SERVER_EDGE_AUTH_SECRET_ENV` | optional name of the env var that holds the edge-HMAC secret; defaults to `EDGE_AUTH_SECRET` |
+| `SPEECHKIT_SERVER_BEARER_ROLE` | optional role assigned to bearer-token callers, for example `admin` for single-operator deployments |
 | `POSTGRES_PASSWORD` | required by the shipped Compose stack for bundled Postgres |
 | `GOOGLE_AI_API_KEY` | Gemini Assist and Gemini Live Voice Agent |
 | `SPEECHKIT_GOOGLE_STT_API_KEY` | optional Google STT key; only needed when Dictation selects Google STT |
@@ -39,6 +43,42 @@ Minimum provider secrets for useful mode coverage:
 | `LIVEKIT_URL` | optional Render-hosted LiveKit media target for Voice Agent sessions |
 | `LIVEKIT_API_KEY` | optional LiveKit token minting key |
 | `LIVEKIT_API_SECRET` | optional LiveKit token minting secret |
+
+## Headless Deployment Contract
+
+Container deployers must treat environment variables as the authoritative
+credential source. SpeechKit applies this contract after reading `config.toml`
+and persisted `server-settings.json`, so Compose, Kubernetes, Render, or
+Coolify-injected secrets override stale local settings without writing secret
+values back to disk.
+
+Auth startup rules:
+
+- `SPEECHKIT_SERVER_TOKEN` is the canonical bearer token env var. If it is set,
+  it overrides a stored `bearer_token_env` that points at a different env var.
+- `SPEECHKIT_SERVER_BEARER_TOKEN_ENV=MY_TOKEN` intentionally selects a custom
+  bearer-token env var and takes precedence over `SPEECHKIT_SERVER_TOKEN`.
+- `SPEECHKIT_SERVER_AUTH_MODE` can explicitly select `bearer`, `edge_hmac`, or
+  `bearer_or_edge`. If omitted and credentials are present while `auth_mode` is
+  empty or `none`, SpeechKit infers the matching authenticated mode.
+- Authenticated modes fail startup when their required credential env values
+  are empty. This is intentional; a public headless deployment must not boot
+  into a broken or unauthenticated state.
+
+Deployers can verify the loaded contract through the authenticated status API.
+It accepts the service bearer credential, local admin auth, or an edge-HMAC
+identity with role `admin`; normal edge user identities are rejected:
+
+```bash
+curl -fsS \
+  -H "Authorization: Bearer $SPEECHKIT_SERVER_TOKEN" \
+  http://localhost:8080/v1/deployment/status | jq '.auth, .providers'
+```
+
+The response reports env var names and `*_set` booleans only. It never returns
+bearer tokens, provider API keys, or edge-HMAC secrets. The same endpoint is
+available at `/api/v1/deployment/status` for clients that use the browser/API
+prefix.
 
 ## Local Docker Compose
 
@@ -53,6 +93,8 @@ docker compose -f deploy/docker/docker-compose.yml up -d
 curl -fsS http://localhost:8080/healthz
 curl -fsS http://localhost:8080/readyz
 curl -fsS http://localhost:8080/readyz/strict || true
+curl -fsS -H "Authorization: Bearer $SPEECHKIT_SERVER_TOKEN" \
+  http://localhost:8080/v1/deployment/status | jq '.auth'
 ```
 
 The two placeholder values above are local-development examples only. Do not
@@ -128,7 +170,7 @@ Manual redeploys use the same path:
 gh workflow run deploy-render-server.yml \
   --repo <private-release-repo> \
   --ref main \
-  -f tag=v0.31.0 \
+  -f tag=v0.31.1 \
   -f strict_ready=true \
   -f run_e2e=true
 ```
@@ -140,8 +182,9 @@ docker compose -f deploy/docker/docker-compose.test.yml up \
   --exit-code-from test-client --abort-on-container-exit
 ```
 
-The test-client container curls `/healthz`, `/readyz`, and a minimal
-`/api/v1/assist/process` request, then asserts the response contract.
+The test-client container curls `/healthz`, `/readyz`, the authenticated
+deployment status API, and the Assist self-test, then asserts the response
+contracts and verifies that the bearer token is not leaked in status JSON.
 
 ## Installer Setup Modes
 

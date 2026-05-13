@@ -37,7 +37,12 @@ func (h *Handler) profiles(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	profiles := framework.DefaultProviderProfiles()
-	if mode := normalizeMode(r.URL.Query().Get("mode")); mode != framework.ModeNone {
+	if rawMode := strings.TrimSpace(r.URL.Query().Get("mode")); rawMode != "" {
+		mode := normalizeMode(rawMode)
+		if mode == framework.ModeNone {
+			httpx.WriteError(w, http.StatusBadRequest, "invalid_mode", "mode must be one of dictation, assist, voiceagent, or voice_agent")
+			return
+		}
 		profiles = framework.ProfilesForMode(mode)
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"profiles": profiles})

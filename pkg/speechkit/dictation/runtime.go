@@ -1,4 +1,13 @@
 // Package dictation provides an embeddable strict Dictation runtime.
+//
+// Dictation is the most boundary-strict of the three SpeechKit modes: STT
+// turns speech into text and the pipeline stops there. No LLM rewriting,
+// no codewords, no tool invocation. Host apps integrate this when they
+// want a transcript surface they can route into their own editor, command
+// dispatcher, or downstream processor.
+//
+// Use [NewRuntime] to construct an instance; pass a recorder, a worker,
+// and the [speechkit.RuntimePolicy] from the host config.
 package dictation
 
 import (

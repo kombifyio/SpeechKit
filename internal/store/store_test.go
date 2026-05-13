@@ -1129,6 +1129,72 @@ func TestHydrateVoiceAgentSessionChildrenBatchesAndPreservesFallback(t *testing.
 	}
 }
 
+func TestVoiceAgentSessionNormalizationAndJSONHelpers(t *testing.T) {
+	session := VoiceAgentSession{
+		Language:          " de-DE ",
+		ProviderProfileID: " realtime.google.gemini-native-audio ",
+		RuntimeKind:       " server ",
+		Transcript:        "  User: hello\nAgent: ready  ",
+		Turns: []VoiceAgentTurn{
+			{Role: " user ", Text: " hello "},
+			{Role: " assistant ", Text: " ready "},
+		},
+		Summary: VoiceAgentSessionSummary{
+			Summary:       "  one two three four five six seven eight nine ten  ",
+			Ideas:         []string{" idea "},
+			Decisions:     []string{" decision "},
+			OpenQuestions: []string{" question "},
+			NextSteps:     []string{" next "},
+		},
+	}
+
+	normalized := normalizeVoiceAgentSession(session)
+	if normalized.StartedAt.IsZero() || normalized.EndedAt.IsZero() {
+		t.Fatal("normalizeVoiceAgentSession should populate missing timestamps")
+	}
+	if got, want := normalized.Summary.Title, "one two three four five six seven eight"; got != want {
+		t.Fatalf("derived title = %q, want %q", got, want)
+	}
+	if got, want := normalized.Summary.RawText, normalized.Summary.Summary; got != want {
+		t.Fatalf("raw summary = %q, want %q", got, want)
+	}
+	if got, want := normalized.Language, "de-DE"; got != want {
+		t.Fatalf("language = %q, want %q", got, want)
+	}
+
+	j, err := marshalVoiceAgentSessionJSON(normalized)
+	if err != nil {
+		t.Fatalf("marshalVoiceAgentSessionJSON: %v", err)
+	}
+	if got := unmarshalVoiceAgentTurns(j.Turns); len(got) != 2 || got[0].Role != " user " || got[1].Text != " ready " {
+		t.Fatalf("unmarshalVoiceAgentTurns = %#v", got)
+	}
+	if got := unmarshalStringSlice(j.Ideas); len(got) != 1 || got[0] != " idea " {
+		t.Fatalf("unmarshalStringSlice(ideas) = %#v", got)
+	}
+	if got := unmarshalVoiceAgentTurns("{"); got != nil {
+		t.Fatalf("unmarshalVoiceAgentTurns(invalid) = %#v, want nil", got)
+	}
+	if got := unmarshalStringSlice("{"); got != nil {
+		t.Fatalf("unmarshalStringSlice(invalid) = %#v, want nil", got)
+	}
+	if got, err := marshalJSON(nil); err != nil || got != "[]" {
+		t.Fatalf("marshalJSON(nil) = %q, %v; want [] nil", got, err)
+	}
+	if got := firstNonEmptyStoreString(" \t", "", "fallback"); got != "fallback" {
+		t.Fatalf("firstNonEmptyStoreString fallback = %q, want fallback", got)
+	}
+	if got := firstNonEmptyStoreString(" ", "\t"); got != "" {
+		t.Fatalf("firstNonEmptyStoreString empty = %q, want empty", got)
+	}
+	if got := deriveVoiceAgentSessionTitle(" \t "); got != "Voice Agent session" {
+		t.Fatalf("empty derived title = %q", got)
+	}
+	if got := deriveVoiceAgentSessionTitle("short useful title"); got != "short useful title" {
+		t.Fatalf("short derived title = %q", got)
+	}
+}
+
 func TestSQLiteDeleteQuickNoteCleansAudioAssetsWhenLegacyPathEmpty(t *testing.T) {
 	dbPath := filepath.Join(t.TempDir(), "test.db")
 	s, err := NewSQLiteStore(StoreConfig{SQLitePath: dbPath, MaxAudioStorageMB: 100})

@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"github.com/kombifyio/SpeechKit/cmd/speechkit/internal/profiles"
 	"strings"
 
 	"github.com/kombifyio/SpeechKit/internal/config"
@@ -179,7 +180,7 @@ func selectedProviderInConfig(cfg *config.Config, provider string) bool {
 		cfg.ModelSelection.VoiceAgent,
 	} {
 		for _, profileID := range []string{selection.PrimaryProfileID, selection.FallbackProfileID} {
-			profile, ok := findCatalogProfile(catalog, profileID)
+			profile, ok := profiles.FindCatalogProfile(catalog, profileID)
 			if !ok {
 				continue
 			}
@@ -281,7 +282,7 @@ func resetSelectionForDisabledProvider(selection *config.ModeModelSelection, pro
 }
 
 func profileIDBelongsToProvider(catalog models.Catalog, profileID, provider string) bool {
-	profile, ok := findCatalogProfile(catalog, profileID)
+	profile, ok := profiles.FindCatalogProfile(catalog, profileID)
 	return ok && providerForProfile(profile) == provider
 }
 

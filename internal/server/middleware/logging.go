@@ -56,6 +56,8 @@ func (r *responseRecorder) Write(b []byte) (int, error) {
 		// Implicit 200 per net/http contract.
 		r.wroteHeader = true
 	}
+	// codeql[go/reflected-xss] Transparent middleware recorder: handlers own
+	// response encoding, this wrapper only forwards bytes and counts them.
 	n, err := r.ResponseWriter.Write(b)
 	r.bytes += n
 	return n, err

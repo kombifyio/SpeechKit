@@ -5,13 +5,16 @@ package middleware
 import (
 	"context"
 	"crypto/hmac"
+	"crypto/rand"
 	"crypto/sha256"
+	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"net/http"
 	"os"
 	"strings"
 	"sync"
+	"time"
 
 	"golang.org/x/crypto/bcrypt"
 )
@@ -23,10 +26,23 @@ type Identity struct {
 	OrgID  string `json:"org_id"`
 	Plan   string `json:"plan"`
 	Role   string `json:"role,omitempty"` // "admin" | "" (default)
-	Source string `json:"source"`         // "none" | "bearer" | "edge_hmac" | "basic"
+	Source string `json:"source"`         // "none" | "bearer" | "edge_hmac" | "basic" | "admin_session"
 }
 
 type identityCtxKey struct{}
+
+const (
+	adminSessionCookieName = "speechkit_admin_session"
+	adminSessionTTL        = 30 * time.Minute
+)
+
+var adminSessionSigningKey = mustRandomBytes(32)
+
+type adminSessionClaims struct {
+	User      string `json:"user"`
+	ExpiresAt int64  `json:"expires_at"`
+	Nonce     string `json:"nonce"`
+}
 
 // IdentityFromContext returns the Identity attached by Auth, or the zero
 // Identity if none is present.
@@ -274,7 +290,18 @@ func Auth(opts AuthOptions) Middleware {
 			if mode == "" {
 				mode = AuthModeNone
 			}
-			if id, ok := verifyBasicAdmin(r, strings.TrimSpace(adminUsernameProvider()), strings.TrimSpace(adminPasswordHashProvider())); ok {
+			adminUsername := strings.TrimSpace(adminUsernameProvider())
+			adminPasswordHash := strings.TrimSpace(adminPasswordHashProvider())
+			if handleAdminSessionEndpoint(w, r, adminUsername, adminPasswordHash) {
+				return
+			}
+			if id, ok := verifyAdminSession(r, adminUsername, adminPasswordHash); ok {
+				ctx := context.WithValue(r.Context(), identityCtxKey{}, id)
+				next.ServeHTTP(w, r.WithContext(ctx))
+				return
+			}
+			if id, ok := verifyBasicAdmin(r, adminUsername, adminPasswordHash); ok {
+				setAdminSessionCookie(w, r, adminUsername, adminPasswordHash)
 				ctx := context.WithValue(r.Context(), identityCtxKey{}, id)
 				next.ServeHTTP(w, r.WithContext(ctx))
 				return
@@ -391,6 +418,168 @@ func verifyBasicAdmin(r *http.Request, username, passwordHash string) (Identity,
 		Role:   "admin",
 		Source: "basic",
 	}, true
+}
+
+func handleAdminSessionEndpoint(w http.ResponseWriter, r *http.Request, username, passwordHash string) bool {
+	if r == nil || !isAdminSessionPath(r.URL.Path) {
+		return false
+	}
+	switch r.Method {
+	case http.MethodGet:
+		if id, ok := verifyAdminSession(r, username, passwordHash); ok {
+			writeAdminSessionJSON(w, true, id)
+			return true
+		}
+		writeAuthError(w)
+		return true
+	case http.MethodPost:
+		id, ok := verifyBasicAdmin(r, username, passwordHash)
+		if !ok {
+			writeAuthError(w)
+			return true
+		}
+		setAdminSessionCookie(w, r, username, passwordHash)
+		writeAdminSessionJSON(w, true, id)
+		return true
+	case http.MethodDelete:
+		clearAdminSessionCookie(w, r)
+		w.WriteHeader(http.StatusNoContent)
+		return true
+	case http.MethodOptions:
+		w.WriteHeader(http.StatusNoContent)
+		return true
+	default:
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return true
+	}
+}
+
+func isAdminSessionPath(path string) bool {
+	return path == "/v1/admin/session" || path == "/api/v1/admin/session"
+}
+
+func verifyAdminSession(r *http.Request, username, passwordHash string) (Identity, bool) {
+	if username == "" || passwordHash == "" {
+		return Identity{}, false
+	}
+	cookie, err := r.Cookie(adminSessionCookieName)
+	if err != nil || strings.TrimSpace(cookie.Value) == "" {
+		return Identity{}, false
+	}
+	claims, ok := parseAdminSessionToken(cookie.Value, passwordHash)
+	if !ok {
+		return Identity{}, false
+	}
+	if time.Now().Unix() > claims.ExpiresAt {
+		return Identity{}, false
+	}
+	if !hmacEqual([]byte(claims.User), []byte(username)) {
+		return Identity{}, false
+	}
+	return Identity{
+		UserID: username,
+		OrgID:  "default",
+		Plan:   "admin",
+		Role:   "admin",
+		Source: "admin_session",
+	}, true
+}
+
+func setAdminSessionCookie(w http.ResponseWriter, r *http.Request, username, passwordHash string) {
+	expires := time.Now().Add(adminSessionTTL)
+	token := signAdminSessionToken(adminSessionClaims{
+		User:      username,
+		ExpiresAt: expires.Unix(),
+		Nonce:     base64.RawURLEncoding.EncodeToString(mustRandomBytes(16)),
+	}, passwordHash)
+	http.SetCookie(w, &http.Cookie{
+		Name:     adminSessionCookieName,
+		Value:    token,
+		Path:     "/",
+		Expires:  expires,
+		MaxAge:   int(adminSessionTTL.Seconds()),
+		HttpOnly: true,
+		Secure:   requestIsHTTPS(r),
+		SameSite: http.SameSiteLaxMode,
+	})
+}
+
+func clearAdminSessionCookie(w http.ResponseWriter, r *http.Request) {
+	http.SetCookie(w, &http.Cookie{
+		Name:     adminSessionCookieName,
+		Value:    "",
+		Path:     "/",
+		Expires:  time.Unix(0, 0),
+		MaxAge:   -1,
+		HttpOnly: true,
+		Secure:   requestIsHTTPS(r),
+		SameSite: http.SameSiteLaxMode,
+	})
+}
+
+func writeAdminSessionJSON(w http.ResponseWriter, authenticated bool, id Identity) {
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Cache-Control", "no-store")
+	_ = json.NewEncoder(w).Encode(map[string]any{
+		"authenticated": authenticated,
+		"identity":      id,
+		"expires_in":    int(adminSessionTTL.Seconds()),
+	})
+}
+
+func signAdminSessionToken(claims adminSessionClaims, passwordHash string) string {
+	payload, err := json.Marshal(claims)
+	if err != nil {
+		return ""
+	}
+	encodedPayload := base64.RawURLEncoding.EncodeToString(payload)
+	mac := hmac.New(sha256.New, adminSessionSigningSecret(passwordHash))
+	mac.Write([]byte(encodedPayload))
+	signature := base64.RawURLEncoding.EncodeToString(mac.Sum(nil))
+	return encodedPayload + "." + signature
+}
+
+func parseAdminSessionToken(token, passwordHash string) (adminSessionClaims, bool) {
+	payload, signature, ok := strings.Cut(strings.TrimSpace(token), ".")
+	if !ok || payload == "" || signature == "" {
+		return adminSessionClaims{}, false
+	}
+	mac := hmac.New(sha256.New, adminSessionSigningSecret(passwordHash))
+	mac.Write([]byte(payload))
+	want := base64.RawURLEncoding.EncodeToString(mac.Sum(nil))
+	if !hmacEqual([]byte(signature), []byte(want)) {
+		return adminSessionClaims{}, false
+	}
+	decoded, err := base64.RawURLEncoding.DecodeString(payload)
+	if err != nil {
+		return adminSessionClaims{}, false
+	}
+	var claims adminSessionClaims
+	if err := json.Unmarshal(decoded, &claims); err != nil {
+		return adminSessionClaims{}, false
+	}
+	return claims, true
+}
+
+func adminSessionSigningSecret(passwordHash string) []byte {
+	mac := hmac.New(sha256.New, adminSessionSigningKey)
+	mac.Write([]byte(strings.TrimSpace(passwordHash)))
+	return mac.Sum(nil)
+}
+
+func requestIsHTTPS(r *http.Request) bool {
+	if r == nil {
+		return false
+	}
+	return r.TLS != nil || strings.EqualFold(strings.TrimSpace(r.Header.Get("X-Forwarded-Proto")), "https")
+}
+
+func mustRandomBytes(size int) []byte {
+	buf := make([]byte, size)
+	if _, err := rand.Read(buf); err != nil {
+		panic("speechkit admin session entropy unavailable: " + err.Error())
+	}
+	return buf
 }
 
 func verifyBearer(r *http.Request, expected, role string) (Identity, bool) {
@@ -520,27 +709,26 @@ func writeBrowserAuthError(w http.ResponseWriter, r *http.Request) {
   </main>
   <script>
     (function () {
-      const key = "speechkit.admin.basic";
       const form = document.getElementById("adminLogin");
       const error = document.getElementById("loginError");
-      async function tryLogin(header) {
-        const response = await fetch(window.location.pathname + window.location.search, {
-          headers: { "Authorization": header, "Accept": "text/html" }
+      function adminSessionPath() {
+        return window.location.pathname.indexOf("/api/") === 0 ? "/api/v1/admin/session" : "/v1/admin/session";
+      }
+      async function tryLogin(username, password) {
+        const response = await fetch(adminSessionPath(), {
+          method: "POST",
+          headers: { "Authorization": "Basic " + btoa(username + ":" + password), "Accept": "application/json" },
+          credentials: "same-origin"
         });
         if (!response.ok) throw new Error("Invalid admin username or password.");
-        sessionStorage.setItem(key, header);
-        document.open();
-        document.write(await response.text());
-        document.close();
+        window.location.reload();
       }
-      const stored = sessionStorage.getItem(key);
-      if (stored) tryLogin(stored).catch(function () { sessionStorage.removeItem(key); });
       form.addEventListener("submit", function (event) {
         event.preventDefault();
         error.textContent = "";
         const username = document.getElementById("adminUsername").value.trim();
         const password = document.getElementById("adminPassword").value;
-        tryLogin("Basic " + btoa(username + ":" + password)).catch(function (err) {
+        tryLogin(username, password).catch(function (err) {
           error.textContent = err && err.message ? err.message : String(err);
         });
       });

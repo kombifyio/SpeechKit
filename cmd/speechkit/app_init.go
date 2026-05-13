@@ -8,6 +8,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/kombifyio/SpeechKit/cmd/speechkit/internal/profiles"
 	"os"
 	"path/filepath"
 	"strings"
@@ -112,7 +113,7 @@ func selectedLocalBuiltInSTT(cfg *config.Config) bool {
 	if cfg == nil {
 		return false
 	}
-	profile, ok := effectiveSelectedProfile(cfg, filteredModelCatalog(), modeDictate)
+	profile, ok := profiles.EffectiveSelectedProfile(cfg, filteredModelCatalog(), modeDictate)
 	return ok &&
 		profile.Modality == models.ModalitySTT &&
 		profile.ExecutionMode == models.ExecutionModeLocal &&

@@ -5,18 +5,18 @@ import (
 	"testing"
 	"time"
 
-	"github.com/kombifyio/SpeechKit/internal/voiceagent"
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/voiceagent/live"
 )
 
 type testLiveProvider struct {
 	cfg       LiveConfig
-	messages  chan *voiceagent.LiveMessage
+	messages  chan *live.LiveMessage
 	responses chan ToolResponse
 }
 
 func newTestLiveProvider() *testLiveProvider {
 	return &testLiveProvider{
-		messages:  make(chan *voiceagent.LiveMessage, 4),
+		messages:  make(chan *live.LiveMessage, 4),
 		responses: make(chan ToolResponse, 4),
 	}
 }
@@ -33,7 +33,7 @@ func (p *testLiveProvider) Close() error                          { return nil }
 func (p *testLiveProvider) Name() string                          { return "test" }
 func (p *testLiveProvider) SendToolResponse(r ToolResponse) error { p.responses <- r; return nil }
 
-func (p *testLiveProvider) Receive(ctx context.Context) (*voiceagent.LiveMessage, error) {
+func (p *testLiveProvider) Receive(ctx context.Context) (*live.LiveMessage, error) {
 	select {
 	case msg := <-p.messages:
 		return msg, nil
@@ -65,7 +65,7 @@ func TestAgentSessionInjectsToolsAndDispatchesToolCalls(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	if err := session.Start(ctx, LiveConfig{}, voiceagent.DefaultIdleConfig()); err != nil {
+	if err := session.Start(ctx, LiveConfig{}, live.DefaultIdleConfig()); err != nil {
 		t.Fatalf("start: %v", err)
 	}
 	defer session.Stop()
@@ -83,7 +83,7 @@ func TestAgentSessionInjectsToolsAndDispatchesToolCalls(t *testing.T) {
 		t.Fatalf("tools injected into config = %#v", provider.cfg.Tools)
 	}
 
-	provider.messages <- &voiceagent.LiveMessage{ToolCalls: []ToolCall{{
+	provider.messages <- &live.LiveMessage{ToolCalls: []ToolCall{{
 		ID:   "call-1",
 		Name: "lookup_note",
 		Args: map[string]any{"id": "n1"},

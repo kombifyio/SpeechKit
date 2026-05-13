@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"github.com/kombifyio/SpeechKit/cmd/speechkit/internal/profiles"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -148,7 +149,7 @@ func TestApplySTTProfileOpenRouterRegistersCloudGatewayProvider(t *testing.T) {
 
 	state := &appState{activeProfiles: map[string]string{}}
 	sttRouter := &router.Router{}
-	profile, ok := findCatalogProfile(filteredModelCatalog(), "stt.openrouter.whisper-1")
+	profile, ok := profiles.FindCatalogProfile(filteredModelCatalog(), "stt.openrouter.whisper-1")
 	if !ok {
 		t.Fatal("missing OpenRouter STT profile")
 	}
@@ -364,7 +365,7 @@ func TestApplyRealtimeVoiceProfileOpenRouterUsesPipelineFallback(t *testing.T) {
 	t.Setenv("OPENROUTER_API_KEY", "test-openrouter-key")
 
 	state := &appState{activeProfiles: map[string]string{}}
-	profile, ok := findCatalogProfile(filteredModelCatalog(), "realtime.openrouter.gemini-2.5-flash-pipeline")
+	profile, ok := profiles.FindCatalogProfile(filteredModelCatalog(), "realtime.openrouter.gemini-2.5-flash-pipeline")
 	if !ok {
 		t.Fatal("missing OpenRouter realtime voice profile")
 	}

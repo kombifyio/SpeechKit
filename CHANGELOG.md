@@ -6,6 +6,250 @@ The format is based on Keep a Changelog and this project is intended to ship und
 
 ## [Unreleased]
 
+## [0.32.2] - 2026-05-13
+
+v0.32.2 closes the runtime-stability findings from Beads SK-004.5.10:
+the duplicate-text-injection symptom reported in live testing is
+root-caused (Wails v3 alpha's `SingleInstance` activation fires inside
+`app.Run()`, which is the last bootstrap stage — by then a racing
+second instance has already registered global Windows hotkeys via
+`RegisterHotKey`). The fix is belt-and-suspenders: claim a session-
+scoped Windows named mutex in `runDesktopApp` before any global
+resource is acquired. The release also adds structured startup /
+window / tray telemetry so future field reports of the same class of
+bug can be diagnosed from log alone, and a `defer recoverHook` guard
+around every Wails event-loop callback so a panic in one hook no
+longer crashes the entire desktop event loop. No public API change.
+
+### Fixed
+
+- **Duplicate text injection eliminated.** A new
+  `Local\com.kombify.speechkit.singleton-belt` Windows named mutex is
+  acquired as the first action in `runDesktopApp`. If the mutex is
+  already held, the second instance logs
+  `desktop.singleton.duplicate_instance` and exits cleanly before any
+  hotkey is registered, audio capturer is opened, or Wails event loop
+  is started. Wails' own `SingleInstanceOptions` remains as a
+  redundant second layer.
+- **Wails event-loop callback panics no longer crash the desktop
+  client.** A `defer recoverHook(name)` is installed in every
+  registered callback (`WindowClosing` on prompter and dashboard,
+  `WindowDidMove` on the pill panel, `ApplicationStarted`,
+  `voiceagent:start` / `:stop` / `:close`). A panic now lands in
+  `slog.Error("desktop.hook.panic", ...)` with hook name and full
+  stack trace, and the remaining hooks keep working.
+
+### Added
+
+- **Structured startup / window / tray telemetry.** A new
+  `startupTracker` emits ten `desktop.startup` log events with stage
+  name, `elapsed_ms`, and `delta_ms` across the full `runDesktopApp`
+  bootstrap (`entered`, `singleton_acquired`, `config_loaded`,
+  `state_init`, `router_runtime`, `audio_runtime`, `runtime_services`,
+  `wails_app_created`, `windows_configured`, `hotkeys_started`,
+  `input_runtime_ready`, `app_run_begin`, `app_run_returned`). Tray
+  click events (`tray.action`), tray-driven dashboard / quit requests
+  (`desktop.tray.dashboard_requested`, `desktop.tray.quit_requested`),
+  and window lifecycle (`desktop.window.closing`, `.shown`) now log
+  structured fields so close-reason and visibility transitions are
+  reconstructable from the log file.
+
+### Notes
+
+- The 2026-05-13 audit Phase C2 PR 3 (`internal/quicknote`) was
+  attempted in the same session but deferred: both
+  `quicknote_desktop_service.go` and `quick_actions.go` are
+  significantly more entangled with `*appState` than the
+  decomposition plan estimated. Recorded as a follow-up in Beads
+  SK-004.6.5; no behaviour or release impact in v0.32.2.
+
+## [0.32.1] - 2026-05-13
+
+v0.32.1 fixes a Windows-client first-run UX bug. Before this release the
+desktop binary launched silently into the system tray and the global
+mode hotkeys (`Win+Alt+D`, etc.) were live immediately — so a user could
+trigger a transcription before noticing the app was even running, with
+no setup completed.
+
+### Fixed
+
+- **First-run onboarding now opens the dashboard automatically.** When
+  the app launches with `InstallMode=local` and `SetupDone=false` the
+  dashboard window is shown as soon as it is wired up (polled briefly
+  during early startup). The setup wizard inside the dashboard is the
+  intended first surface for a new install.
+- **Mode hotkeys are gated until onboarding is complete.** Pressing the
+  Dictate / Assist / Voice Agent hotkey before finishing the setup
+  wizard no longer starts capture or activates a session. Instead the
+  controller surfaces a one-line hint ("SpeechKit setup is not
+  finished. Complete the onboarding before activating modes.") and
+  re-opens the dashboard so the user can finish the wizard.
+- The quick-capture auto-start tick honours the same gate, so an armed
+  quick-capture cannot fire before onboarding either.
+
+### Changed
+
+- Existing test `TestDesktopInputControllerDictationHotkeyBlocksWhenLocalSetupPending`
+  renamed to `…BlocksWhenOnboardingPending` and updated to assert the
+  new onboarding-pending hint plus the `setup-required` dashboard-open
+  call. Three new tests cover the same gate for the Assist and Voice
+  Agent hotkeys and a positive control (gate must not fire once
+  `SetupDone=true`).
+
+
+
+v0.32.0 lands the 2026-05-13 senior-architect audit-driven hardening pass:
+Phase A and B from the improvement plan, the first slices of Phase C
+(public-API stability gate, voice-agent runtime extraction to a stable
+public path, and the start of the `cmd/speechkit/` decomposition), plus a
+CI fix for Frontend Checks that had been red on main since v0.31.1. No
+public API change — `pkg/speechkit/**` remains backward-compatible and is
+now enforced by an automated apidiff gate. Internal package boundaries
+became significantly clearer.
+
+### Highlights
+
+- **Public API stability gate**: every PR is now automatically gated on
+  incompatible changes to `pkg/speechkit/**` via a new `apidiff` CI job.
+  Downstream embedders can rely on the stability contract.
+- **Voice Agent runtime moved into `pkg/speechkit/voiceagent/live`**:
+  `Session`, `IdleTimer`, and the realtime workflow primitives are now
+  importable from a stable public path. The internal mirror at
+  `internal/voiceagent` keeps alias-bridge declarations to avoid churn
+  for in-tree consumers.
+- **`cmd/speechkit` decomposition started**: two new internal subpackages
+  carved out of the 128-file `package main` god-package —
+  `cmd/speechkit/internal/transcription` (vocabulary + STT model hints)
+  and `cmd/speechkit/internal/profiles` (model-profile selection +
+  local-provider validation). Mechanical moves, no behaviour change.
+- **Audit-driven dead-code purge**: 27 dead UI files (3,632 LOC), 4 unused
+  npm deps, 2 orphan large assets, and the orphan `frontend/app/go.mod`
+  stub removed. Strict knip dead-code gate now blocks regressions.
+- **Server hardening**: three poisoned-bucket panic sites in the rate
+  limiter replaced with `slog`-based recovery on the HTTP hot path.
+
+### Security
+
+- Replaced three `panic("bucketStore corruption: ...")` sites in the
+  Linux server's `internal/server/middleware/ratelimit.go` with a typed
+  `entryOf()` helper that logs via `slog` and recovers. A poisoned bucket
+  entry can no longer crash the whole server process on the HTTP hot path.
+
+### Added
+
+- **Public API**: `pkg/speechkit/voiceagent/live` now exports `Session`,
+  `IdleTimer`, and the realtime workflow types lifted out of
+  `internal/voiceagent` (Phase C1, commits `2337339` + `b0a84b9`). The
+  internal package retains alias-bridge declarations for backwards
+  compatibility.
+- **CI gate**: `Public API Stability` workflow job runs `apidiff` against
+  the previous merge base for every PR touching `pkg/speechkit/**`,
+  failing the build on incompatible changes (Phase C5, commit `fa85c24`).
+- **New internal subpackages from `cmd/speechkit` decomposition**
+  (Phase C2):
+  - `cmd/speechkit/internal/transcription` — pure vocabulary-dictionary
+    helpers and STT model-selection hints (PR 1, commit `59fc52f`).
+  - `cmd/speechkit/internal/profiles` — pure model-profile selection
+    helpers and local-provider validation, decoupled from `*appState`
+    (PR 2, commit `7ad3078`). Path renamed from the original
+    `internal/models` plan to avoid clash with the repo-root catalog
+    package.
+- **Per-package coverage gates** for the two new subpackages
+  (`transcription` at floor 30%, `profiles` at floor 20%), and for the
+  Linux server adapter packages (`internal/server/middleware` 65%,
+  `internal/server/voiceagent` 60%, `internal/server/core` 40%).
+- **Package-level documentation** for the public SDK surface
+  (`pkg/speechkit/doc.go`, `pkg/speechkit/client/doc.go`) plus enriched
+  package comments for `pkg/speechkit/{assist,dictation,voiceagent}` and
+  the seven previously-undocumented kernel packages
+  (`internal/{ai,dictation,models,router,shortcuts,stt,tts}`).
+- `docs/cmd-speechkit/DECOMPOSE-PLAN.md` — self-contained 11-PR
+  decomposition roadmap for `cmd/speechkit/`. Resequenced 2026-05-13 to
+  put structural-leaf packages first and `internal/state` last after
+  discovering that `appState` has 65+ methods spread across 12 files.
+- `docs/audits/2026-05-13/improvement-plan.md` — the in-repo copy of
+  the senior-architect audit plan that drove this release line.
+- `docs/mcp/SPLIT-PLAN.md` — five-PR decomposition roadmap for the
+  700-LOC `cmd/speechkit-mcp/main.go`. Execution is tracked as
+  SK-004.6.6.
+- `npm run deadcode:strict` is now a CI step in the Frontend Checks job
+  and gates merges on unused-code regressions.
+
+### Changed
+
+- **`cmd/speechkit/model_selection_helpers.go` slimmed from 351 LOC to
+  192 LOC** — 9 pure helpers moved to `internal/profiles`. The four
+  remaining helpers (`validateModeSelection`, `selectedModelSpecsForMode`,
+  `applySelectedVoiceAgentProfile`, `syncConfiguredSTTRouter`) still
+  depend on main-package state and stay in main until later C2 PRs.
+- Test DSN in `cmd/speechkit/main_test.go` switched from a scanner-bypass
+  string-concat workaround to a proper placeholder with
+  `SPEECHKIT_TEST_POSTGRES_DSN` env override.
+- `CONTRIBUTING.md` now documents the `dist/tools/` output convention
+  for ad-hoc developer builds of `speechkit-mcp`, `speechkit-cli`, and
+  `sk-e2e` so 20 MB binaries do not accidentally land at the repo root.
+- `STATUS.md` and `ROADMAP.md` carry an "Audit 2026-05-13" section that
+  cross-links the Phase A/B commits and the six SK-004.6.x Phase C
+  tracking issues.
+
+### Fixed
+
+- **Frontend Checks CI**: knip strict scan failed on every main commit
+  since `7391d0b` (the knip-strict introduction PR) because the
+  Frontend Checks runner did not install `Website/` npm dependencies
+  before running knip from the repo root, so `Website/vite.config.ts`
+  could not resolve `vite`. Added a dedicated `npm ci` step inside
+  `Website/` before the knip step (commit `4986d4a`). Main was first
+  fully green again 2026-05-13.
+
+### Removed
+
+- 27 dead UI files (3,632 LOC) from the abandoned 2026-03-26 LiveKit
+  agent iteration plus the unused shadcn/ui boilerplate components
+  (calendar, command, dialog, input-group, input, popover, select,
+  textarea, toggle), the `overlay-app.tsx` re-export wrapper, the
+  `hooks/index.ts` barrel, and the orphan
+  `use-{agent-control-bar,error-polling,logs}` hooks.
+- Four unused npm dependencies: `@base-ui-components/react`, `cmdk`,
+  `date-fns`, `react-day-picker`.
+- Two orphan large assets (~5.5 MB freed):
+  `assets/kombify_speechkit_logo.png` (zero references anywhere) and
+  `frontend/app/public/bubble-icon.png` (Go runtime uses the embedded
+  `assets/Bubble_Icon.png`; no second copy needed for the React app).
+- Orphan stub `frontend/app/go.mod` (speechkit-ui module, no Go files,
+  no script or `go.work` referenced it).
+
+## [0.31.1] - 2026-05-12
+
+v0.31.1 prepares the post-audit release line after the GitHub alert
+remediation pass. It keeps the v0.31 production-readiness surface intact while
+closing the remaining GitHub security, dependency, and contract-test warnings.
+
+### Security
+
+- Bumped `github.com/go-git/go-git/v5` to the patched release line so the
+  default-branch Dependabot alert for GHSA-389r-gv7p-r3rp / CVE-2026-45022
+  closes after merge.
+- Kept CodeQL clean by documenting transparent response forwarding and
+  smoke-test JWT/HMAC signing as non-password cryptographic use.
+
+### Changed
+
+- Updated GitHub Actions Node runners to Node 24 and moved pinned
+  `actions/setup-node`, `actions/setup-go`, and `actions/setup-python` usage to
+  the current v6 SHAs.
+- Declared Node `>=24.0.0` for the root release tooling, frontend app, and
+  Website package surfaces.
+
+### Fixed
+
+- Restored Schemathesis contract fuzzing with the current v4 CLI options and a
+  no-auth loopback profile that excludes auth-only deployment probes.
+- Tightened server API validation for catalog `mode` and transcript `limit`
+  query parameters, and documented missing 404 responses for persisted Voice
+  Agent reads.
+- Synchronized the Website OpenAPI copy with the canonical server contract.
+
 ## [0.31.0] - 2026-05-11
 
 v0.31.0 hardens SpeechKit Server for real hosted deployments. It separates

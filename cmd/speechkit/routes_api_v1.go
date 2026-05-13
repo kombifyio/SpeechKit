@@ -3,10 +3,12 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"github.com/kombifyio/SpeechKit/cmd/speechkit/internal/profiles"
 	"net/http"
 	"strconv"
 	"strings"
 
+	"github.com/kombifyio/SpeechKit/cmd/speechkit/internal/transcription"
 	"github.com/kombifyio/SpeechKit/internal/config"
 	"github.com/kombifyio/SpeechKit/internal/downloads"
 	"github.com/kombifyio/SpeechKit/internal/models"
@@ -169,7 +171,7 @@ func registerAPIV1Routes(mux *http.ServeMux, cfgPath string, cfg *config.Config,
 			w.WriteHeader(http.StatusMethodNotAllowed)
 			return
 		}
-		profile, ok := findCatalogProfile(filteredModelCatalog(), profileID)
+		profile, ok := profiles.FindCatalogProfile(filteredModelCatalog(), profileID)
 		if !ok {
 			http.Error(w, "profile not found", http.StatusNotFound)
 			return
@@ -214,7 +216,7 @@ func handleAPIV1Dictionary(w http.ResponseWriter, r *http.Request, cfgPath strin
 			state.mu.Unlock()
 			state.syncSpeechKitSnapshot()
 		}
-		if err := syncVocabularyDictionaryStore(r.Context(), feedbackStore, language, raw); err != nil {
+		if err := transcription.SyncVocabularyDictionaryStore(r.Context(), feedbackStore, language, raw); err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
@@ -248,7 +250,7 @@ func apiV1DictionaryFromStoreOrConfig(ctx context.Context, cfg *config.Config, f
 	if language == "" && cfg != nil {
 		language = strings.TrimSpace(cfg.General.Language)
 	}
-	if dictionaryStore := userDictionaryStoreFromFeedbackStore(feedbackStore); dictionaryStore != nil {
+	if dictionaryStore := transcription.UserDictionaryStoreFromFeedbackStore(feedbackStore); dictionaryStore != nil {
 		entries, err := dictionaryStore.ListUserDictionaryEntries(ctx, language)
 		if err == nil {
 			return apiV1DictionaryResponse{
@@ -262,7 +264,7 @@ func apiV1DictionaryFromStoreOrConfig(ctx context.Context, cfg *config.Config, f
 	if cfg != nil {
 		raw = cfg.Vocabulary.Dictionary
 	}
-	parsed := parseVocabularyDictionary(raw)
+	parsed := transcription.ParseVocabularyDictionary(raw)
 	entries := make([]apiV1DictionaryEntry, 0, len(parsed))
 	for _, entry := range parsed {
 		entries = append(entries, apiV1DictionaryEntry{

@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/kombifyio/SpeechKit/cmd/speechkit/internal/transcription"
 	"github.com/kombifyio/SpeechKit/internal/voiceagent"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit"
 )
@@ -171,7 +172,7 @@ func (c desktopInputController) voiceAgentVocabularyHint() string {
 	if c.cfg == nil {
 		return ""
 	}
-	return buildVoiceAgentVocabularyHint(parseVocabularyDictionary(c.cfg.Vocabulary.Dictionary))
+	return transcription.BuildVoiceAgentVocabularyHint(transcription.ParseVocabularyDictionary(c.cfg.Vocabulary.Dictionary))
 }
 
 func (c desktopInputController) voiceAgentPrompts() (string, string) {

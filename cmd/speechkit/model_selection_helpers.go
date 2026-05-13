@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/kombifyio/SpeechKit/cmd/speechkit/internal/profiles"
 	appai "github.com/kombifyio/SpeechKit/internal/ai"
 	"github.com/kombifyio/SpeechKit/internal/config"
 	"github.com/kombifyio/SpeechKit/internal/models"
@@ -12,96 +13,15 @@ import (
 	"github.com/kombifyio/SpeechKit/internal/stt"
 )
 
-type modeModelSelectionSnapshot struct {
-	PrimaryProfileID  string `json:"primaryProfileId"`
-	FallbackProfileID string `json:"fallbackProfileId"`
-}
-
-func modalityForMode(mode string) models.Modality {
-	switch strings.TrimSpace(mode) {
-	case modeDictate:
-		return models.ModalitySTT
-	case modeVoiceAgent:
-		return models.ModalityRealtimeVoice
-	default:
-		return models.ModalityAssist
-	}
-}
-
-func normalizeModeSelection(selection config.ModeModelSelection) config.ModeModelSelection {
-	selection.PrimaryProfileID = strings.TrimSpace(selection.PrimaryProfileID)
-	selection.FallbackProfileID = strings.TrimSpace(selection.FallbackProfileID)
-	if selection.PrimaryProfileID != "" && selection.PrimaryProfileID == selection.FallbackProfileID {
-		selection.FallbackProfileID = ""
-	}
-	return selection
-}
-
-func modeSelectionForMode(cfg *config.Config, mode string) config.ModeModelSelection {
-	if cfg == nil {
-		return config.ModeModelSelection{}
-	}
-	switch strings.TrimSpace(mode) {
-	case modeDictate:
-		return normalizeModeSelection(cfg.ModelSelection.Dictate)
-	case modeVoiceAgent:
-		return normalizeModeSelection(cfg.ModelSelection.VoiceAgent)
-	default:
-		return normalizeModeSelection(cfg.ModelSelection.Assist)
-	}
-}
-
-func setModeSelectionForProfile(cfg *config.Config, profile models.Profile) {
-	if cfg == nil {
-		return
-	}
-	selection := normalizeModeSelection(config.ModeModelSelection{
-		PrimaryProfileID: profile.ID,
-	})
-	switch profile.Modality {
-	case models.ModalitySTT:
-		cfg.ModelSelection.Dictate = selection
-	case models.ModalityAssist:
-		cfg.ModelSelection.Assist = selection
-	case models.ModalityRealtimeVoice:
-		cfg.ModelSelection.VoiceAgent = selection
-	default:
-	}
-}
-
-func configuredModeModelSelections(cfg *config.Config, _ models.Catalog) map[string]modeModelSelectionSnapshot {
-	return map[string]modeModelSelectionSnapshot{
-		modeDictate: {
-			PrimaryProfileID:  modeSelectionForMode(cfg, modeDictate).PrimaryProfileID,
-			FallbackProfileID: modeSelectionForMode(cfg, modeDictate).FallbackProfileID,
-		},
-		modeAssist: {
-			PrimaryProfileID:  modeSelectionForMode(cfg, modeAssist).PrimaryProfileID,
-			FallbackProfileID: modeSelectionForMode(cfg, modeAssist).FallbackProfileID,
-		},
-		modeVoiceAgent: {
-			PrimaryProfileID:  modeSelectionForMode(cfg, modeVoiceAgent).PrimaryProfileID,
-			FallbackProfileID: modeSelectionForMode(cfg, modeVoiceAgent).FallbackProfileID,
-		},
-	}
-}
-
-func findCatalogProfile(catalog models.Catalog, profileID string) (models.Profile, bool) {
-	profileID = strings.TrimSpace(profileID)
-	if profileID == "" {
-		return models.Profile{}, false
-	}
-	for _, profile := range catalog.Profiles {
-		if profile.ID == profileID {
-			return profile, true
-		}
-	}
-	return models.Profile{}, false
-}
-
+// validateModeSelection enforces that the selected profile IDs refer
+// to known catalog entries with the correct modality and (for routed
+// providers) that the install has the required credentials. Lives in
+// package main because it consumes profileCredentialAvailable and
+// errHFUnavailableBuild from elsewhere in main; will join the
+// profiles package once those helpers also move.
 func validateModeSelection(cfg *config.Config, catalog models.Catalog, mode string, selection config.ModeModelSelection) error {
-	selection = normalizeModeSelection(selection)
-	expectedModality := modalityForMode(mode)
+	selection = profiles.NormalizeModeSelection(selection)
+	expectedModality := profiles.ModalityForMode(mode)
 	seen := map[string]bool{}
 
 	for _, profileID := range []string{selection.PrimaryProfileID, selection.FallbackProfileID} {
@@ -113,7 +33,7 @@ func validateModeSelection(cfg *config.Config, catalog models.Catalog, mode stri
 		}
 		seen[profileID] = true
 
-		profile, ok := findCatalogProfile(catalog, profileID)
+		profile, ok := profiles.FindCatalogProfile(catalog, profileID)
 		if !ok {
 			return fmt.Errorf("unknown %s profile %q", mode, profileID)
 		}
@@ -132,78 +52,12 @@ func validateModeSelection(cfg *config.Config, catalog models.Catalog, mode stri
 	return nil
 }
 
-func effectiveSelectedProfile(cfg *config.Config, catalog models.Catalog, mode string) (models.Profile, bool) {
-	selection := modeSelectionForMode(cfg, mode)
-	for _, profileID := range []string{selection.PrimaryProfileID, selection.FallbackProfileID} {
-		if profile, ok := findCatalogProfile(catalog, profileID); ok {
-			return profile, true
-		}
-	}
-	return models.Profile{}, false
-}
-
-func orderedSelectionFromProfile(cfg *config.Config, profile models.Profile) (appai.OrderedModelSelection, bool) {
-	modelID := selectedModelIDForProfile(cfg, profile)
-	if strings.TrimSpace(modelID) == "" {
-		return appai.OrderedModelSelection{}, false
-	}
-
-	var provider string
-	switch profile.ExecutionMode {
-	case models.ExecutionModeLocal:
-		provider = "local"
-	case models.ExecutionModeGoogle:
-		provider = "googleai"
-	case models.ExecutionModeOpenAI:
-		provider = "openai"
-	case models.ExecutionModeGroq:
-		provider = "groq"
-	case models.ExecutionModeHFRouted:
-		provider = "huggingface"
-	case models.ExecutionModeOllama:
-		provider = "ollama"
-	case models.ExecutionModeOpenRouter:
-		provider = "openrouter"
-	default:
-		return appai.OrderedModelSelection{}, false
-	}
-
-	return appai.OrderedModelSelection{
-		Provider: provider,
-		Model:    modelID,
-	}, true
-}
-
-func selectedModelIDForProfile(cfg *config.Config, profile models.Profile) string {
-	modelID := profile.ModelID
-	if cfg == nil || profile.ExecutionMode != models.ExecutionModeLocal || profile.ProviderKind != models.ProviderKindLocalBuiltIn {
-		return modelID
-	}
-
-	switch profile.Modality {
-	case models.ModalityUtility:
-		if configured := strings.TrimSpace(cfg.LocalLLM.UtilityModel); configured != "" {
-			return configured
-		}
-	case models.ModalityAssist:
-		if configured := strings.TrimSpace(cfg.LocalLLM.AssistModel); configured != "" {
-			return configured
-		}
-	case models.ModalityRealtimeVoice:
-		if configured := strings.TrimSpace(cfg.LocalLLM.AgentModel); configured != "" {
-			return configured
-		}
-	default:
-	}
-
-	if configured := strings.TrimSpace(cfg.LocalLLM.Model); configured != "" {
-		return configured
-	}
-	return modelID
-}
-
+// selectedModelSpecsForMode resolves the ordered (provider, model)
+// pairs that the Genkit AI runtime should bind for the given mode.
+// Stays in package main because localBuiltInLLMProfileReady lives in
+// app_init.go (alongside the rest of the local-LLM bootstrap surface).
 func selectedModelSpecsForMode(cfg *config.Config, catalog models.Catalog, mode string) ([]appai.OrderedModelSelection, bool) {
-	selection := modeSelectionForMode(cfg, mode)
+	selection := profiles.ModeSelectionForMode(cfg, mode)
 	if selection.PrimaryProfileID == "" && selection.FallbackProfileID == "" {
 		return nil, false
 	}
@@ -211,14 +65,14 @@ func selectedModelSpecsForMode(cfg *config.Config, catalog models.Catalog, mode 
 	ordered := make([]appai.OrderedModelSelection, 0, 2)
 	seen := map[string]bool{}
 	for _, profileID := range []string{selection.PrimaryProfileID, selection.FallbackProfileID} {
-		profile, ok := findCatalogProfile(catalog, profileID)
+		profile, ok := profiles.FindCatalogProfile(catalog, profileID)
 		if !ok {
 			continue
 		}
 		if !localBuiltInLLMProfileReady(cfg, profile) {
 			continue
 		}
-		spec, ok := orderedSelectionFromProfile(cfg, profile)
+		spec, ok := profiles.OrderedSelectionFromProfile(cfg, profile)
 		if !ok {
 			continue
 		}
@@ -236,18 +90,21 @@ func selectedModelSpecsForMode(cfg *config.Config, catalog models.Catalog, mode 
 	return ordered, true
 }
 
+// applySelectedVoiceAgentProfile mutates the live Config to reflect
+// the currently-selected Voice Agent profile. Stays in main because
+// selectedLocalBuiltInLLMModelID lives in model_profiles.go.
 func applySelectedVoiceAgentProfile(cfg *config.Config, catalog models.Catalog) {
 	if cfg == nil {
 		return
 	}
 
-	selection := modeSelectionForMode(cfg, modeVoiceAgent)
+	selection := profiles.ModeSelectionForMode(cfg, modeVoiceAgent)
 	if selection.PrimaryProfileID == "" && selection.FallbackProfileID == "" {
 		return
 	}
 
-	primary, primaryOK := findCatalogProfile(catalog, selection.PrimaryProfileID)
-	fallback, fallbackOK := findCatalogProfile(catalog, selection.FallbackProfileID)
+	primary, primaryOK := profiles.FindCatalogProfile(catalog, selection.PrimaryProfileID)
+	fallback, fallbackOK := profiles.FindCatalogProfile(catalog, selection.FallbackProfileID)
 	if !primaryOK {
 		primary = fallback
 		primaryOK = fallbackOK
@@ -306,6 +163,10 @@ func applySelectedVoiceAgentProfile(cfg *config.Config, catalog models.Catalog) 
 	}
 }
 
+// syncConfiguredSTTRouter wires the live router instance to match the
+// current config. Stays in package main because it pulls in the
+// concrete provider constructors (configuredVPSProvider etc.) that
+// live in provider_integrations.go.
 func syncConfiguredSTTRouter(ctx context.Context, cfg *config.Config, state *appState, sttRouter *router.Router) {
 	targetRouter := sttRouter
 	if targetRouter == nil && state != nil {

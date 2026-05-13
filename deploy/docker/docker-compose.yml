@@ -16,7 +16,7 @@ services:
         VERSION: dev-compose
     image: speechkit-server:dev
     environment:
-      # Optional unless [server].auth_mode is set to "bearer" or "bearer_or_edge".
+      # Required by deploy/config/server.example.toml, which uses bearer_or_edge auth.
       SPEECHKIT_SERVER_TOKEN: ${SPEECHKIT_SERVER_TOKEN:?set SPEECHKIT_SERVER_TOKEN for the server bearer token}
       EDGE_AUTH_SECRET: ${EDGE_AUTH_SECRET:-}
       HF_TOKEN: ${HF_TOKEN:-}

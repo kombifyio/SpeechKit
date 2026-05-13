@@ -1,6 +1,7 @@
 package main
 
 import (
+	"github.com/kombifyio/SpeechKit/cmd/speechkit/internal/profiles"
 	"strings"
 
 	"github.com/kombifyio/SpeechKit/internal/config"
@@ -8,7 +9,7 @@ import (
 )
 
 func defaultActiveProfiles(catalog models.Catalog) map[string]string {
-	profiles := make(map[string]string)
+	active := make(map[string]string)
 	for _, modality := range []models.Modality{
 		models.ModalitySTT,
 		models.ModalityAssist,
@@ -16,25 +17,25 @@ func defaultActiveProfiles(catalog models.Catalog) map[string]string {
 		models.ModalityRealtimeVoice,
 	} {
 		if profile, ok := catalog.DefaultProfile(modality); ok {
-			profiles[string(modality)] = profile.ID
+			active[string(modality)] = profile.ID
 		}
 	}
-	return profiles
+	return active
 }
 
 func activeProfilesFromConfig(cfg *config.Config, catalog models.Catalog) map[string]string {
-	profiles := make(map[string]string)
+	active := make(map[string]string)
 	if cfg == nil {
 		return defaultActiveProfiles(catalog)
 	}
 
 	for _, mode := range []string{modeDictate, modeAssist, modeVoiceAgent} {
-		if profile, ok := effectiveSelectedProfile(cfg, catalog, mode); ok {
-			profiles[string(modalityForMode(mode))] = profile.ID
+		if profile, ok := profiles.EffectiveSelectedProfile(cfg, catalog, mode); ok {
+			active[string(profiles.ModalityForMode(mode))] = profile.ID
 			continue
 		}
-		if profile, ok := activeProfileForModality(cfg, catalog, modalityForMode(mode)); ok {
-			profiles[string(modalityForMode(mode))] = profile.ID
+		if profile, ok := activeProfileForModality(cfg, catalog, profiles.ModalityForMode(mode)); ok {
+			active[string(profiles.ModalityForMode(mode))] = profile.ID
 		}
 	}
 
@@ -42,11 +43,11 @@ func activeProfilesFromConfig(cfg *config.Config, catalog models.Catalog) map[st
 		models.ModalityUtility,
 	} {
 		if profile, ok := activeProfileForModality(cfg, catalog, modality); ok {
-			profiles[string(modality)] = profile.ID
+			active[string(modality)] = profile.ID
 		}
 	}
 
-	return profiles
+	return active
 }
 
 func activeProfileForModality(cfg *config.Config, catalog models.Catalog, modality models.Modality) (models.Profile, bool) {

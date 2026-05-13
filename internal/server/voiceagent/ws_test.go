@@ -199,6 +199,41 @@ func TestWebSocketRejectsDisallowedOrigin(t *testing.T) {
 	}
 }
 
+func TestWebSocketAllowsConfiguredBrowserOrigin(t *testing.T) {
+	manager := mustManager(t, Options{})
+	provider := newFakeProvider()
+	handler, err := New(HandlerOptions{
+		Manager:        manager,
+		Provider:       staticProviderFactory{provider: provider},
+		Persona:        &fakeResolver{},
+		AllowedOrigins: []string{"https://app.example.com"},
+		IdleTimeout:    time.Second,
+	})
+	if err != nil {
+		t.Fatalf("New handler: %v", err)
+	}
+	mux := http.NewServeMux()
+	handler.Mount(mux)
+	server := httptest.NewServer(mux)
+	defer server.Close()
+	defer provider.Close() //nolint:errcheck
+
+	session, ticket, err := manager.Create(Identity{UserID: "user-1", OrgID: "org-1"})
+	if err != nil {
+		t.Fatalf("create session: %v", err)
+	}
+	wsURL := "ws" + strings.TrimPrefix(server.URL, "http") + "/v1/voiceagent/sessions/" + session.ID + "/ws?ticket=" + ticket
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	conn, _, err := websocket.Dial(ctx, wsURL, &websocket.DialOptions{
+		HTTPHeader: http.Header{"Origin": []string{"https://app.example.com"}},
+	})
+	if err != nil {
+		t.Fatalf("websocket dial with allowed Origin: %v", err)
+	}
+	_ = conn.Close(websocket.StatusNormalClosure, "")
+}
+
 func TestWebSocketAllowsNativeClientWithoutOrigin(t *testing.T) {
 	manager := mustManager(t, Options{})
 	provider := newFakeProvider()

@@ -33,6 +33,11 @@ type desktopInputController struct {
 	sttRouter           *router.Router
 	audioCapturer       audioFrameStreamer
 	voiceAgentEchoGuard *voiceAgentEchoGuard
+	// showDashboard, when non-nil, lets the controller open the
+	// dashboard window from inside a hotkey/preflight path — used when
+	// onboarding is incomplete so the user sees the wizard instead of
+	// silently failing.
+	showDashboard func(source string)
 }
 
 type audioFrameStreamer interface {
@@ -91,6 +96,9 @@ func (c desktopInputController) handleAutoStartTick(ctx context.Context) {
 	if c.state == nil || !c.state.consumeQuickCaptureAutoStart() {
 		return
 	}
+	if c.gateOnOnboardingPending() {
+		return
+	}
 	if !c.preflightCaptureStart(ctx, modeDictate) {
 		return
 	}
@@ -114,6 +122,9 @@ func (c desktopInputController) quickNoteRecordingLabel() string {
 }
 
 func (c desktopInputController) handleHotkey(ctx context.Context, evt hotkey.Event) {
+	if evt.Type == hotkey.EventKeyDown && c.gateOnOnboardingPending() {
+		return
+	}
 	switch binding := c.resolveHotkeyBinding(evt.Binding); binding {
 	case modeVoiceAgent:
 		c.routeVoiceAgentHotkey(ctx, evt)
@@ -125,6 +136,33 @@ func (c desktopInputController) handleHotkey(ctx context.Context, evt hotkey.Eve
 	default:
 		return
 	}
+}
+
+// gateOnOnboardingPending returns true when SpeechKit is in a fresh
+// local install with the onboarding wizard not yet completed. The
+// caller must abort mode activation when this returns true. The user
+// is shown a one-line hint and the dashboard is opened so they can
+// finish the wizard.
+//
+// We deliberately gate ALL three modes (Dictate, Assist, Voice Agent)
+// uniformly even when a cloud provider would otherwise satisfy the
+// per-mode prerequisites — until onboarding is acknowledged the user
+// has no way to know SpeechKit is listening on their global hotkeys.
+func (c desktopInputController) gateOnOnboardingPending() bool {
+	if c.installState == nil {
+		return false
+	}
+	if c.installState.Mode != config.InstallModeLocal {
+		return false
+	}
+	if c.installState.SetupDone {
+		return false
+	}
+	c.presentPreflightHint("SpeechKit setup is not finished. Complete the onboarding before activating modes.")
+	if c.showDashboard != nil {
+		c.showDashboard("setup-required")
+	}
+	return true
 }
 
 func (c desktopInputController) handlePushToTalk(ctx context.Context, evt hotkey.Event) {

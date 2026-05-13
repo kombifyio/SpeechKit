@@ -758,10 +758,11 @@ func TestDesktopInputControllerVoiceAgentPipelineFallbackUsesCapturePipeline(t *
 	}
 }
 
-func TestDesktopInputControllerDictationHotkeyBlocksWhenLocalSetupPending(t *testing.T) {
+func TestDesktopInputControllerDictationHotkeyBlocksWhenOnboardingPending(t *testing.T) {
 	bus := &testDesktopCommandBus{}
 	bubble := &fakeOverlayWindow{}
 	state := &appState{assistBubble: bubble}
+	var dashboardSources []string
 	controller := desktopInputController{
 		commands:  bus,
 		recording: &mutableRecordingState{},
@@ -771,6 +772,9 @@ func TestDesktopInputControllerDictationHotkeyBlocksWhenLocalSetupPending(t *tes
 			Mode:      config.InstallModeLocal,
 			SetupDone: false,
 		},
+		showDashboard: func(source string) {
+			dashboardSources = append(dashboardSources, source)
+		},
 	}
 
 	controller.handleHotkey(context.Background(), hotkey.Event{
@@ -779,22 +783,118 @@ func TestDesktopInputControllerDictationHotkeyBlocksWhenLocalSetupPending(t *tes
 	})
 
 	if got := len(bus.commands); got != 0 {
-		t.Fatalf("commands = %d, want 0 when local setup is still pending", got)
+		t.Fatalf("commands = %d, want 0 while onboarding is pending", got)
 	}
 	state.mu.Lock()
 	logEntries := append([]logEntry(nil), state.logEntries...)
 	state.mu.Unlock()
 	if len(logEntries) == 0 {
-		t.Fatal("expected immediate guidance log entry")
+		t.Fatal("expected immediate onboarding-required log entry")
 	}
-	if got := logEntries[len(logEntries)-1].Message; !strings.Contains(got, "local speech model") {
-		t.Fatalf("last log message = %q, want local model guidance", got)
+	if got := logEntries[len(logEntries)-1].Message; !strings.Contains(got, "onboarding") {
+		t.Fatalf("last log message = %q, want onboarding guidance", got)
 	}
 	if got := bubble.showCalls; got != 1 {
 		t.Fatalf("assist bubble show calls = %d, want 1", got)
 	}
-	if len(bubble.scripts) == 0 || !strings.Contains(bubble.scripts[len(bubble.scripts)-1], "local speech model") {
-		t.Fatalf("bubble scripts = %v, want local model guidance", bubble.scripts)
+	if len(bubble.scripts) == 0 || !strings.Contains(bubble.scripts[len(bubble.scripts)-1], "onboarding") {
+		t.Fatalf("bubble scripts = %v, want onboarding guidance", bubble.scripts)
+	}
+	if len(dashboardSources) != 1 || dashboardSources[0] != "setup-required" {
+		t.Fatalf("showDashboard sources = %v, want exactly [setup-required]", dashboardSources)
+	}
+}
+
+func TestDesktopInputControllerAssistHotkeyBlocksWhenOnboardingPending(t *testing.T) {
+	bus := &testDesktopCommandBus{}
+	bubble := &fakeOverlayWindow{}
+	state := &appState{assistBubble: bubble}
+	var dashboardSources []string
+	controller := desktopInputController{
+		commands:  bus,
+		recording: &mutableRecordingState{},
+		state:     state,
+		cfg:       defaultTestConfig(),
+		installState: &config.InstallState{
+			Mode:      config.InstallModeLocal,
+			SetupDone: false,
+		},
+		showDashboard: func(source string) {
+			dashboardSources = append(dashboardSources, source)
+		},
+	}
+
+	controller.handleHotkey(context.Background(), hotkey.Event{
+		Binding: modeAssist,
+		Type:    hotkey.EventKeyDown,
+	})
+
+	if got := len(bus.commands); got != 0 {
+		t.Fatalf("commands = %d, want 0 while onboarding is pending (Assist must not bypass the gate)", got)
+	}
+	if len(dashboardSources) != 1 || dashboardSources[0] != "setup-required" {
+		t.Fatalf("showDashboard sources = %v, want exactly [setup-required]", dashboardSources)
+	}
+}
+
+func TestDesktopInputControllerVoiceAgentHotkeyBlocksWhenOnboardingPending(t *testing.T) {
+	bus := &testDesktopCommandBus{}
+	bubble := &fakeOverlayWindow{}
+	state := &appState{assistBubble: bubble}
+	var dashboardSources []string
+	controller := desktopInputController{
+		commands:  bus,
+		recording: &mutableRecordingState{},
+		state:     state,
+		cfg:       defaultTestConfig(),
+		installState: &config.InstallState{
+			Mode:      config.InstallModeLocal,
+			SetupDone: false,
+		},
+		showDashboard: func(source string) {
+			dashboardSources = append(dashboardSources, source)
+		},
+	}
+
+	controller.handleHotkey(context.Background(), hotkey.Event{
+		Binding: modeVoiceAgent,
+		Type:    hotkey.EventKeyDown,
+	})
+
+	if got := len(bus.commands); got != 0 {
+		t.Fatalf("commands = %d, want 0 while onboarding is pending (Voice Agent must not bypass the gate)", got)
+	}
+	if len(dashboardSources) != 1 || dashboardSources[0] != "setup-required" {
+		t.Fatalf("showDashboard sources = %v, want exactly [setup-required]", dashboardSources)
+	}
+}
+
+func TestDesktopInputControllerHotkeyDoesNotOpenDashboardOnceSetupDone(t *testing.T) {
+	bus := &testDesktopCommandBus{}
+	state := &appState{assistBubble: &fakeOverlayWindow{}}
+	var dashboardSources []string
+	controller := desktopInputController{
+		commands:  bus,
+		recording: &mutableRecordingState{},
+		state:     state,
+		cfg:       defaultTestConfig(),
+		installState: &config.InstallState{
+			Mode:      config.InstallModeLocal,
+			SetupDone: true,
+		},
+		showDashboard: func(source string) {
+			dashboardSources = append(dashboardSources, source)
+		},
+	}
+
+	// Hotkey-up (non KeyDown) — gate must be a no-op regardless of setup state.
+	controller.handleHotkey(context.Background(), hotkey.Event{
+		Binding: modeDictate,
+		Type:    hotkey.EventKeyUp,
+	})
+
+	if len(dashboardSources) != 0 {
+		t.Fatalf("showDashboard sources = %v, want none (setup is complete)", dashboardSources)
 	}
 }
 

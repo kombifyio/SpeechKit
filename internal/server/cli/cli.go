@@ -104,6 +104,11 @@ func runOnce(opts Options) int {
 		fmt.Fprintf(os.Stderr, "%s: load server model settings: %v\n", banner, err)
 		return 2
 	}
+	deploymentNotes, err := config.ApplyServerDeploymentEnv(cfg)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "%s: apply deployment env: %v\n", banner, err)
+		return 2
+	}
 	if err := config.ValidateServerProductionAuth(cfg); err != nil {
 		fmt.Fprintf(os.Stderr, "%s: unsafe server configuration: %v\n", banner, err)
 		return 2
@@ -115,6 +120,9 @@ func runOnce(opts Options) int {
 	}
 	for _, note := range settingsNotes {
 		slog.Info("server model setting", "msg", note)
+	}
+	for _, note := range deploymentNotes {
+		slog.Info("server deployment env", "msg", note)
 	}
 
 	slog.Info(banner+" starting",

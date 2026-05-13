@@ -1,3 +1,12 @@
+// Package ai wires the Genkit runtime and the SpeechKit model catalog into
+// a single LLM/embedding/reranker surface used by Assist and the Voice
+// Agent pipeline-fallback path.
+//
+// It owns provider keys, model selection, OpenAI-compatible model
+// registration, and the per-Modality plumbing (Utility, Assist, Agent).
+// Routing decisions live in [github.com/kombifyio/SpeechKit/internal/router]
+// and [github.com/kombifyio/SpeechKit/internal/tts]; this package
+// is the model substrate they call into.
 package ai
 
 import (

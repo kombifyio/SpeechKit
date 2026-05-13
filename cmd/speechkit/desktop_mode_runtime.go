@@ -8,6 +8,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/kombifyio/SpeechKit/cmd/speechkit/internal/transcription"
 	"github.com/kombifyio/SpeechKit/internal/audio"
 	"github.com/kombifyio/SpeechKit/internal/config"
 	"github.com/kombifyio/SpeechKit/internal/hotkey"
@@ -43,7 +44,7 @@ func startDesktopModeRuntime(opts desktopModeRuntimeOptions) (*desktopInputContr
 			routerTranscriber{
 				router:          newRuntimeDictationTranscriber(opts.STTRouter, opts.State),
 				state:           opts.State,
-				dictionaryStore: userDictionaryStoreFromFeedbackStore(opts.FeedbackStore),
+				dictionaryStore: transcription.UserDictionaryStoreFromFeedbackStore(opts.FeedbackStore),
 			},
 			speechkitStoreAdapter{store: opts.FeedbackStore},
 		).WithObserver(speechkitCommitObserver{state: opts.State}),
@@ -151,6 +152,7 @@ func startDesktopModeRuntime(opts desktopModeRuntimeOptions) (*desktopInputContr
 		installState:      opts.InstallState,
 		sttRouter:         opts.STTRouter,
 		audioCapturer:     opts.Capturer,
+		showDashboard:     opts.ShowDashboard,
 	}
 	go inputController.Run(opts.Ctx)
 	slog.Info("desktop mode runtime ready")

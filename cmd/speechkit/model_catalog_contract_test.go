@@ -1,6 +1,7 @@
 package main
 
 import (
+	"github.com/kombifyio/SpeechKit/cmd/speechkit/internal/profiles"
 	"testing"
 
 	"github.com/kombifyio/SpeechKit/internal/config"
@@ -137,7 +138,7 @@ func TestFilteredModelCatalogExposesOptionalIntegrationProfiles(t *testing.T) {
 	}
 
 	for profileID, expected := range required {
-		profile, ok := findCatalogProfile(catalog, profileID)
+		profile, ok := profiles.FindCatalogProfile(catalog, profileID)
 		if !ok {
 			t.Fatalf("missing integration profile %q", profileID)
 		}
@@ -173,7 +174,7 @@ func TestBuiltInTranscribeAndAssistProfilesUseRuntimeSelectionLabels(t *testing.
 		},
 	}
 	for profileID, expected := range required {
-		profile, ok := findCatalogProfile(catalog, profileID)
+		profile, ok := profiles.FindCatalogProfile(catalog, profileID)
 		if !ok {
 			t.Fatalf("missing built-in profile %q", profileID)
 		}

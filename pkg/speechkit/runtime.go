@@ -1,9 +1,4 @@
-// Package speechkit provides the public SDK for embedding SpeechKit voice
-// capture and transcription into host applications.
-//
-// The central type is [Runtime], which manages shared state and event delivery.
-// An [Engine] is the full voice pipeline; [RecordingController] and
-// [TranscriptionWorker] can be composed independently for custom pipelines.
+// Package-level documentation lives in doc.go.
 package speechkit
 
 import (

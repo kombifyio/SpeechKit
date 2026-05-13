@@ -7,12 +7,28 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"slices"
+	"strings"
 	"testing"
 
 	framework "github.com/kombifyio/SpeechKit/pkg/speechkit"
 
 	"github.com/kombifyio/SpeechKit/internal/config"
 )
+
+func TestProfilesRejectsUnknownMode(t *testing.T) {
+	h := New(&config.Config{}, func(string) string { return "ok" }, "test")
+
+	req := httptest.NewRequest(http.MethodGet, "/v1/catalog/profiles?mode=invalid", nil)
+	rec := httptest.NewRecorder()
+	h.profiles(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d body=%s, want 400", rec.Code, rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), "invalid_mode") {
+		t.Fatalf("body = %s, want invalid_mode", rec.Body.String())
+	}
+}
 
 func TestReadinessUsesConfiguredActiveProfile(t *testing.T) {
 	t.Setenv("SPEECHKIT_TEST_OPENAI_KEY", "test-key")

@@ -1,4 +1,17 @@
-// Package voiceagent provides an embeddable Voice Agent service constructor.
+// Package voiceagent provides an embeddable Voice Agent service.
+//
+// Voice Agent is the realtime audio-to-audio mode: a duplex WebSocket
+// session with the underlying live model (Gemini Live, OpenAI Realtime,
+// or a pipeline fallback) where the user and the agent take audio turns
+// in sequence. Use this when the host needs brainstorming, support, or
+// follow-up dialogue rather than a one-shot result.
+//
+// For tool registration, lifecycle hooks, and session memory, build on
+// top of this with
+// [github.com/kombifyio/SpeechKit/pkg/speechkit/agentkit].
+//
+// Construct an instance with [New], passing a provider and the strict-
+// mode policy fields from the host config.
 package voiceagent
 
 import (

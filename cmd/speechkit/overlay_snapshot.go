@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"github.com/kombifyio/SpeechKit/cmd/speechkit/internal/profiles"
 	"strings"
 	"time"
 
@@ -283,7 +284,7 @@ func (s *appState) settingsSnapshot(cfg *config.Config) settingsSnapshot {
 		SelectedOutputDeviceID:     audioOutputDeviceID,
 		Profiles:                   catalog.Profiles,
 		ActiveProfiles:             cloneStringMap(s.activeProfiles),
-		ModelSelections:            configuredModeModelSelections(cfg, catalog),
+		ModelSelections:            profiles.ConfiguredModeModelSelections(cfg, catalog),
 		ProviderCredentials:        providerCredentialStates(cfg),
 		ProviderIntegrations:       providerIntegrationStates(cfg),
 	}

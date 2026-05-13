@@ -1,4 +1,13 @@
-// Package assist provides an embeddable Assist service constructor.
+// Package assist provides an embeddable Assist Mode service.
+//
+// Assist is the one-shot pipeline: speech (or text) in, a single useful
+// result out (codeword, deterministic utility, or LLM generation), with
+// optional TTS playback. It is the middle of the three SpeechKit modes
+// (Dictation < Assist < Voice Agent) and the right surface when the user
+// wants an answer back, not a transcript and not a dialogue.
+//
+// Construct an instance with [New], passing a generator (LLM) and/or a
+// tool executor plus the strict-mode policy fields from the host config.
 package assist
 
 import (

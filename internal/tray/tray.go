@@ -1,6 +1,7 @@
 package tray
 
 import (
+	"log/slog"
 	"sync"
 
 	"github.com/wailsapp/wails/v3/pkg/application"
@@ -52,28 +53,33 @@ func New(app *application.App, onQuit, onSettings func()) *Tray {
 
 	menu := app.NewMenu()
 	menu.Add("Dashboard").OnClick(func(ctx *application.Context) {
+		slog.Info("tray.action", "action", "dashboard", "source", "menu")
 		if t.OnSettings != nil {
 			t.OnSettings()
 		}
 	})
 	menu.Add("Send Feedback").OnClick(func(ctx *application.Context) {
+		slog.Info("tray.action", "action", "feedback", "source", "menu")
 		if t.OnFeedback != nil {
 			t.OnFeedback()
 		}
 	})
 	menu.AddSeparator()
 	menu.Add("Quit SpeechKit").OnClick(func(ctx *application.Context) {
+		slog.Info("tray.action", "action", "quit", "source", "menu")
 		if t.OnQuit != nil {
 			t.OnQuit()
 		}
 	})
 	t.systray.SetMenu(menu)
 	t.systray.OnDoubleClick(func() {
+		slog.Info("tray.action", "action", "dashboard", "source", "double_click")
 		if t.OnSettings != nil {
 			t.OnSettings()
 		}
 	})
 	t.systray.OnRightClick(func() {
+		slog.Info("tray.action", "action", "open_menu", "source", "right_click")
 		t.systray.OpenMenu()
 	})
 

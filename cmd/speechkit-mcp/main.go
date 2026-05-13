@@ -3,47 +3,26 @@ package main
 import (
 	"bytes"
 	"context"
-	"crypto/sha256"
-	"crypto/subtle"
 	"encoding/json"
 	"flag"
 	"fmt"
 	"io"
-	"io/fs"
 	"log"
-	"net"
 	"net/http"
 	"os"
-	"regexp"
 	"sort"
 	"strings"
 	"time"
 
 	"github.com/BurntSushi/toml"
-	"github.com/getkin/kin-openapi/openapi3"
 	"github.com/getkin/kin-openapi/openapi3filter"
 	"github.com/getkin/kin-openapi/routers/legacy"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
-	speechkitdocs "github.com/kombifyio/SpeechKit/docs"
 	"github.com/kombifyio/SpeechKit/internal/config"
 	"github.com/kombifyio/SpeechKit/internal/scaffold"
 	skclient "github.com/kombifyio/SpeechKit/pkg/speechkit/client"
 )
-
-type serverOptions struct {
-	modes     map[string]bool
-	serverURL string
-	token     string
-	transport string
-	mcpToken  string
-}
-
-type speechkitMCP struct {
-	opts   serverOptions
-	client *skclient.Client
-	docs   map[string]string
-}
 
 func main() {
 	modeFlag := flag.String("mode", "docs", "comma-separated modes: docs,management,test")
@@ -86,120 +65,6 @@ func main() {
 			log.Fatal(err)
 		}
 	}
-}
-
-func newHTTPServer(addr string, handler http.Handler) *http.Server {
-	return &http.Server{
-		Addr:              addr,
-		Handler:           handler,
-		ReadHeaderTimeout: 15 * time.Second,
-		ReadTimeout:       30 * time.Second,
-		// Streamable MCP responses can be long-lived; request-side timeouts
-		// and idle timeout still bound slowloris and inactive connections.
-		WriteTimeout:   0,
-		IdleTimeout:    120 * time.Second,
-		MaxHeaderBytes: 1 << 20,
-	}
-}
-
-func (a *speechkitMCP) newServer() *mcp.Server {
-	server := mcp.NewServer(&mcp.Implementation{Name: "speechkit-mcp", Version: "0.1.0"}, nil)
-	if a.opts.modes["docs"] {
-		a.addDocs(server)
-	}
-	if a.opts.modes["management"] {
-		a.addManagement(server)
-	}
-	if a.opts.modes["test"] {
-		a.addTest(server)
-	}
-	return server
-}
-
-func (a *speechkitMCP) addDocs(server *mcp.Server) {
-	mcp.AddTool(server, mcpTool("speechkit_docs_search", "Search SpeechKit docs, OpenAPI, and AsyncAPI snippets.", true, false, true), a.docsSearch)
-	mcp.AddTool(server, mcpTool("speechkit_api_endpoint", "Return OpenAPI details for one endpoint path.", true, false, true), a.apiEndpoint)
-	mcp.AddTool(server, mcpTool("speechkit_api_overview", "List SpeechKit API endpoints grouped from OpenAPI.", true, false, true), a.apiOverview)
-	mcp.AddTool(server, mcpTool("speechkit_get_openapi_spec", "Return the SpeechKit OpenAPI YAML.", true, false, true), a.getOpenAPISpec)
-	mcp.AddTool(server, mcpTool("speechkit_get_asyncapi_spec", "Return the SpeechKit Voice Agent AsyncAPI YAML.", true, false, true), a.getAsyncAPISpec)
-	mcp.AddTool(server, mcpTool("speechkit_integration_example", "Return an integration snippet by language and mode.", true, false, true), a.integrationExample)
-	mcp.AddTool(server, mcpTool("speechkit_architecture_overview", "Summarize SpeechKit modes and API-first architecture.", true, false, true), a.architectureOverview)
-	mcp.AddTool(server, mcpTool("speechkit_install_plan", "Return a safe, read-only server install plan for agents.", true, false, true), a.installPlan)
-	mcp.AddTool(server, mcpTool("speechkit_scaffold_templates", "List read-only SpeechKit starter integration templates.", true, false, true), a.scaffoldTemplates)
-	mcp.AddTool(server, mcpTool("speechkit_scaffold_integration", "Render a starter integration template in memory for an agent to apply.", true, false, true), a.scaffoldIntegration)
-
-	for uri, body := range a.docs {
-		uri := uri
-		body := body
-		server.AddResource(&mcp.Resource{
-			Name:        uri,
-			Title:       resourceTitle(uri),
-			URI:         "speechkit://" + uri,
-			MIMEType:    mimeTypeForResource(uri),
-			Size:        int64(len(body)),
-			Description: "Embedded SpeechKit API-first documentation",
-			Annotations: &mcp.Annotations{Audience: []mcp.Role{mcp.Role("assistant")}, Priority: resourcePriority(uri)},
-		}, func(ctx context.Context, req *mcp.ReadResourceRequest) (*mcp.ReadResourceResult, error) {
-			return &mcp.ReadResourceResult{Contents: []*mcp.ResourceContents{{URI: req.Params.URI, MIMEType: mimeTypeForResource(uri), Text: body}}}, nil
-		})
-	}
-	for _, prompt := range []string{
-		"speechkit_go_sdk_integration",
-		"speechkit_http_integration",
-		"speechkit_server_setup",
-		"speechkit_windows_client_to_server_setup",
-		"speechkit_feature_integration",
-		"speechkit_deployment_diagnosis",
-	} {
-		prompt := prompt
-		server.AddPrompt(&mcp.Prompt{Name: prompt, Description: "SpeechKit integration prompt"}, func(ctx context.Context, req *mcp.GetPromptRequest) (*mcp.GetPromptResult, error) {
-			return &mcp.GetPromptResult{
-				Description: prompt,
-				Messages: []*mcp.PromptMessage{{
-					Role:    "user",
-					Content: &mcp.TextContent{Text: promptText(prompt)},
-				}},
-			}, nil
-		})
-	}
-}
-
-func (a *speechkitMCP) addManagement(server *mcp.Server) {
-	mcp.AddTool(server, mcpTool("speechkit_status", "GET /readyz", true, false, true), a.status)
-	mcp.AddTool(server, mcpTool("speechkit_config_get", "GET /v1/config", true, false, true), a.configGet)
-	mcp.AddTool(server, mcpTool("speechkit_provider_list", "GET /v1/catalog/profiles", true, false, true), a.providerList)
-	mcp.AddTool(server, mcpTool("speechkit_provider_readiness", "GET /v1/catalog/profiles/{id}/readiness", true, false, true), a.providerReadiness)
-	mcp.AddTool(server, mcpTool("speechkit_personas_list", "GET /v1/personas", true, false, true), a.personasList)
-	mcp.AddTool(server, mcpTool("speechkit_persona_get", "GET /v1/personas/{id}", true, false, true), a.personaGet)
-	mcp.AddTool(server, mcpTool("speechkit_persona_create", "POST /v1/personas", false, false, false), a.personaCreate)
-	mcp.AddTool(server, mcpTool("speechkit_persona_update", "PATCH /v1/personas/{id}", false, false, true), a.personaUpdate)
-	mcp.AddTool(server, mcpTool("speechkit_persona_delete", "DELETE /v1/personas/{id}", false, true, true), a.personaDelete)
-	mcp.AddTool(server, mcpTool("speechkit_roles_list", "GET /v1/roles", true, false, true), a.rolesList)
-	mcp.AddTool(server, mcpTool("speechkit_role_get", "GET /v1/roles/{id}", true, false, true), a.roleGet)
-	mcp.AddTool(server, mcpTool("speechkit_role_create", "POST /v1/roles", false, false, false), a.roleCreate)
-	mcp.AddTool(server, mcpTool("speechkit_role_update", "PATCH /v1/roles/{id}", false, false, true), a.roleUpdate)
-	mcp.AddTool(server, mcpTool("speechkit_role_delete", "DELETE /v1/roles/{id}", false, true, true), a.roleDelete)
-	mcp.AddTool(server, mcpTool("speechkit_sequences_list", "GET /v1/sequences", true, false, true), a.sequencesList)
-	mcp.AddTool(server, mcpTool("speechkit_sequence_get", "GET /v1/sequences/{id}", true, false, true), a.sequenceGet)
-	mcp.AddTool(server, mcpTool("speechkit_sequence_create", "POST /v1/sequences", false, false, false), a.sequenceCreate)
-	mcp.AddTool(server, mcpTool("speechkit_sequence_update", "PATCH /v1/sequences/{id}", false, false, true), a.sequenceUpdate)
-	mcp.AddTool(server, mcpTool("speechkit_sequence_delete", "DELETE /v1/sequences/{id}", false, true, true), a.sequenceDelete)
-	mcp.AddTool(server, mcpTool("speechkit_transcripts_list", "GET /v1/transcripts", true, false, true), a.transcriptsList)
-	mcp.AddTool(server, mcpTool("speechkit_transcript_get", "GET /v1/transcripts/{id}", true, false, true), a.transcriptGet)
-	mcp.AddTool(server, mcpTool("speechkit_voiceagent_session_summary", "GET /v1/voiceagent/sessions/{id}/summary", true, false, true), a.voiceAgentSessionSummary)
-	mcp.AddTool(server, mcpTool("speechkit_vocabulary_get", "GET /v1/vocabulary/dictionary", true, false, true), a.vocabularyGet)
-	mcp.AddTool(server, mcpTool("speechkit_vocabulary_replace", "POST /v1/vocabulary/dictionary", false, true, true), a.vocabularyReplace)
-	mcp.AddTool(server, mcpTool("speechkit_transcribe", "Transcribe a local audio file via /v1/dictation/transcribe.", false, false, false), a.transcribe)
-	mcp.AddTool(server, mcpTool("speechkit_tts_synthesize", "POST /v1/tts/synthesize", false, false, false), a.ttsSynthesize)
-}
-
-func (a *speechkitMCP) addTest(server *mcp.Server) {
-	mcp.AddTool(server, &mcp.Tool{Name: "speechkit_validate_config", Description: "Validate a SpeechKit TOML config snippet."}, a.validateConfig)
-	mcp.AddTool(server, &mcp.Tool{Name: "speechkit_validate_request", Description: "Validate request JSON shape heuristically against known OpenAPI paths."}, a.validateRequest)
-	mcp.AddTool(server, &mcp.Tool{Name: "speechkit_validate_response", Description: "Validate response JSON shape heuristically against known OpenAPI paths."}, a.validateResponse)
-	mcp.AddTool(server, &mcp.Tool{Name: "speechkit_check_compatibility", Description: "Heuristically check client code for known SpeechKit API paths."}, a.checkCompatibility)
-	mcp.AddTool(server, &mcp.Tool{Name: "speechkit_list_breaking_changes", Description: "Return CHANGELOG snippets for a version range."}, a.breakingChanges)
-	mcp.AddTool(server, mcpTool("speechkit_self_check_plan", "Return ordered health, readiness, config, OpenAPI, and AsyncAPI probes for a SpeechKit Server.", true, false, true), a.selfCheckPlan)
 }
 
 type queryInput struct {
@@ -807,188 +672,6 @@ func validateOpenAPIPayload(ctx context.Context, kind string, in jsonValidationI
 	return jsonResult(out), out, nil
 }
 
-func loadDocs() map[string]string {
-	out := map[string]string{}
-	_ = fs.WalkDir(speechkitdocs.FS, ".", func(path string, d fs.DirEntry, err error) error {
-		if err != nil {
-			return nil //nolint:nilerr // Broken embedded doc entries are ignored so one bad optional file does not disable MCP startup.
-		}
-		if d.IsDir() {
-			return nil
-		}
-		raw, err := speechkitdocs.FS.ReadFile(path)
-		if err == nil {
-			out["docs/"+path] = string(raw)
-		}
-		return nil
-	})
-	return out
-}
-
-func openAPISpec() string {
-	if raw, err := speechkitdocs.FS.ReadFile("server/openapi.v1.yaml"); err == nil {
-		return string(raw)
-	}
-	return "openapi: 3.0.3\ninfo:\n  title: SpeechKit Server API\npaths: {}\n"
-}
-
-func asyncAPISpec() string {
-	if raw, err := speechkitdocs.FS.ReadFile("server/asyncapi.v1.yaml"); err == nil {
-		return string(raw)
-	}
-	return "asyncapi: 3.0.0\ninfo:\n  title: SpeechKit Voice Agent WebSocket API\nchannels: {}\noperations: {}\n"
-}
-
-func loadOpenAPIDocument(ctx context.Context) (*openapi3.T, error) {
-	loader := openapi3.NewLoader()
-	doc, err := loader.LoadFromData([]byte(openAPISpec()))
-	if err != nil {
-		return nil, fmt.Errorf("load embedded OpenAPI: %w", err)
-	}
-	if err := doc.Validate(ctx); err != nil {
-		return nil, fmt.Errorf("validate embedded OpenAPI: %w", err)
-	}
-	return doc, nil
-}
-
-func inferMethod(doc *openapi3.T, endpoint, kind string) string {
-	if doc == nil || doc.Paths == nil {
-		return ""
-	}
-	item := doc.Paths.Value(endpoint)
-	if item == nil {
-		return ""
-	}
-	if kind == "request" {
-		for _, candidate := range []string{http.MethodPost, http.MethodPatch, http.MethodPut, http.MethodDelete, http.MethodGet} {
-			if item.GetOperation(candidate) != nil {
-				return candidate
-			}
-		}
-	}
-	for _, candidate := range []string{http.MethodGet, http.MethodPost, http.MethodPatch, http.MethodPut, http.MethodDelete} {
-		if item.GetOperation(candidate) != nil {
-			return candidate
-		}
-	}
-	return ""
-}
-
-func endpointSnippet(spec, path string) string {
-	idx := strings.Index(spec, "\n  "+path+":")
-	if idx < 0 {
-		idx = strings.Index(spec, "\n  \""+path+"\":")
-	}
-	if idx < 0 {
-		return ""
-	}
-	end := strings.Index(spec[idx+1:], "\n  /")
-	if end < 0 {
-		end = min(len(spec)-idx, 2500)
-	} else {
-		end++
-	}
-	return strings.TrimSpace(spec[idx : idx+end])
-}
-
-func openAPIEndpoints(spec string) []string {
-	re := regexp.MustCompile(`(?m)^ {2}(/[^:]+):`)
-	matches := re.FindAllStringSubmatch(spec, -1)
-	endpoints := make([]string, 0, len(matches))
-	for _, m := range matches {
-		endpoints = append(endpoints, strings.TrimSpace(m[1]))
-	}
-	sort.Strings(endpoints)
-	return endpoints
-}
-
-func mcpTool(name, description string, readOnly, destructive, idempotent bool) *mcp.Tool {
-	return &mcp.Tool{
-		Name:        name,
-		Title:       strings.TrimPrefix(strings.ReplaceAll(name, "_", " "), "speechkit "),
-		Description: description,
-		Annotations: &mcp.ToolAnnotations{
-			Title:           strings.TrimPrefix(strings.ReplaceAll(name, "_", " "), "speechkit "),
-			ReadOnlyHint:    readOnly,
-			DestructiveHint: boolPtr(destructive),
-			IdempotentHint:  idempotent,
-			OpenWorldHint:   boolPtr(false),
-		},
-	}
-}
-
-func boolPtr(v bool) *bool {
-	return &v
-}
-
-func resourceTitle(uri string) string {
-	base := strings.TrimSuffix(uri, ".md")
-	base = strings.TrimSuffix(base, ".yaml")
-	base = strings.ReplaceAll(base, "/", " ")
-	base = strings.ReplaceAll(base, "-", " ")
-	base = strings.ReplaceAll(base, "_", " ")
-	return strings.TrimSpace(base)
-}
-
-func mimeTypeForResource(uri string) string {
-	if strings.HasSuffix(uri, ".yaml") || strings.HasSuffix(uri, ".yml") {
-		return "application/yaml"
-	}
-	return "text/markdown"
-}
-
-func resourcePriority(uri string) float64 {
-	switch uri {
-	case "docs/server/openapi.v1.yaml", "docs/server/asyncapi.v1.yaml":
-		return 1.0
-	case "docs/speechkit-architecture-v2.md", "docs/mcp/README.md":
-		return 0.9
-	default:
-		return 0.6
-	}
-}
-
-func isLoopbackListenAddr(addr string) bool {
-	host, _, err := net.SplitHostPort(addr)
-	if err != nil {
-		host = strings.TrimSpace(strings.Split(addr, ":")[0])
-	}
-	if host == "" {
-		return false
-	}
-	ip := net.ParseIP(host)
-	if ip != nil {
-		return ip.IsLoopback()
-	}
-	return strings.EqualFold(host, "localhost")
-}
-
-func requireMCPToken(token string, next http.Handler) http.Handler {
-	token = strings.TrimSpace(token)
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		got := strings.TrimSpace(strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer "))
-		if got == "" {
-			got = strings.TrimSpace(r.Header.Get("X-SpeechKit-MCP-Token"))
-		}
-		if !mcpTokenMatches(token, got) {
-			http.Error(w, "mcp token required", http.StatusUnauthorized)
-			return
-		}
-		next.ServeHTTP(w, r)
-	})
-}
-
-func mcpTokenMatches(expected, presented string) bool {
-	expected = strings.TrimSpace(expected)
-	presented = strings.TrimSpace(presented)
-	if expected == "" || presented == "" {
-		return false
-	}
-	expectedHash := sha256.Sum256([]byte(expected))
-	presentedHash := sha256.Sum256([]byte(presented))
-	return subtle.ConstantTimeCompare(expectedHash[:], presentedHash[:]) == 1
-}
-
 func textResult(text string) *mcp.CallToolResult {
 	return &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: text}}}
 }
@@ -996,45 +679,6 @@ func textResult(text string) *mcp.CallToolResult {
 func jsonResult(value any) *mcp.CallToolResult {
 	raw, _ := json.MarshalIndent(value, "", "  ")
 	return textResult(string(raw))
-}
-
-func parseModes(raw string) map[string]bool {
-	out := map[string]bool{}
-	for _, part := range strings.Split(raw, ",") {
-		part = strings.ToLower(strings.TrimSpace(part))
-		if part != "" {
-			out[part] = true
-		}
-	}
-	return out
-}
-
-func promptText(name string) string {
-	switch name {
-	case "speechkit_server_setup":
-		return "Hi Codex, go to speechkit.cc and install the SpeechKit Server on this server. First read https://speechkit.cc/llms.txt and https://speechkit.cc/install/server.md. Use the stable channel unless the user explicitly asks for a preview build; for preview installs use https://speechkit.cc/install-server.sh with --channel preview. Do not create release tags or mutate GHCR latest for preview testing."
-	case "speechkit_go_sdk_integration":
-		return "Hi Codex, add SpeechKit as a Go framework dependency and use the documented Dictation, Assist, and Voice Agent contracts. Start with https://speechkit.cc/llms.txt, then prefer pkg/speechkit for embedded Go hosts and pkg/speechkit/client for a running SpeechKit Server."
-	case "speechkit_http_integration":
-		return "Use the SpeechKit OpenAPI contract at https://speechkit.cc/api/openapi.v1.yaml before writing HTTP code, and the Voice Agent AsyncAPI contract at https://speechkit.cc/api/asyncapi.v1.yaml before writing WebSocket clients. Prefer canonical /v1 paths for Dictation, Assist, Voice Agent, catalog, config, vocabulary, transcript, and TTS calls."
-	case "speechkit_windows_client_to_server_setup":
-		return "Connect the Local Windows Client to a SpeechKit Server only after the server passes /healthz and /readyz. Keep mode_source and server_connection settings explicit, and keep bearer tokens in environment variables."
-	case "speechkit_feature_integration":
-		return "Use SpeechKit's strict mode boundaries: Dictation is STT only, Assist returns a one-shot utility or LLM result, and Voice Agent is realtime dialogue. Read https://speechkit.cc/getting-started/technical.md and validate API payloads with this MCP server before editing integration code."
-	case "speechkit_deployment_diagnosis":
-		return "Diagnose SpeechKit deployments by checking Docker Compose state, /healthz, /readyz, server logs, configured provider secrets, https://speechkit.cc/api/openapi.v1.yaml, and https://speechkit.cc/api/asyncapi.v1.yaml. Do not switch auth_mode to none on a public host."
-	default:
-		return "Use the SpeechKit MCP docs and OpenAPI tools to complete: " + strings.ReplaceAll(name, "_", " ") + ". Prefer /v1 canonical paths, https://speechkit.cc/llms.txt, and pkg/speechkit/client for Go."
-	}
-}
-
-func firstNonEmpty(values ...string) string {
-	for _, value := range values {
-		if strings.TrimSpace(value) != "" {
-			return strings.TrimSpace(value)
-		}
-	}
-	return ""
 }
 
 func stringMapValue(values map[string]any, key string) string {

@@ -221,7 +221,8 @@ func syncActiveServerConnectionTarget(cfg *config.ServerConnectionConfig) {
 			return
 		}
 	}
-	cfg.Targets = append(targets, current)
+	targets = append(targets, current)
+	cfg.Targets = targets
 }
 
 func handleAPIV1ServerConnectionSmoke(w http.ResponseWriter, r *http.Request) {

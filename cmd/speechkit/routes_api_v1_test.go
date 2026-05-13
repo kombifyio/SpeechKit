@@ -11,6 +11,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/kombifyio/SpeechKit/cmd/speechkit/internal/transcription"
 	"github.com/kombifyio/SpeechKit/internal/config"
 	"github.com/kombifyio/SpeechKit/internal/downloads"
 	"github.com/kombifyio/SpeechKit/internal/router"
@@ -494,7 +495,7 @@ func TestAPIV1DictionaryExportsUsageCountsAndImportsEntries(t *testing.T) {
 		t.Fatalf("NewSQLiteStore: %v", err)
 	}
 	defer feedbackStore.Close()
-	if err := syncVocabularyDictionaryStore(context.Background(), feedbackStore, "de", cfg.Vocabulary.Dictionary); err != nil {
+	if err := transcription.SyncVocabularyDictionaryStore(context.Background(), feedbackStore, "de", cfg.Vocabulary.Dictionary); err != nil {
 		t.Fatalf("sync dictionary: %v", err)
 	}
 	if err := feedbackStore.RecordUserDictionaryUsage(context.Background(), "Kombify", "de"); err != nil {

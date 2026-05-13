@@ -1,8 +1,11 @@
 {
   "name": "speechkit-release",
   "private": true,
-  "version": "0.31.0",
+  "version": "0.32.1",
   "type": "module",
+  "engines": {
+    "node": ">=24.0.0"
+  },
   "scripts": {
     "app:build": "npm --prefix frontend/app run build",
     "app:check": "npm --prefix frontend/app run check",
@@ -13,6 +16,8 @@
     "changeset": "changeset",
     "changeset:status": "changeset status --verbose",
     "check": "npm run app:check",
+    "deadcode": "knip --config knip.json --no-exit-code",
+    "deadcode:strict": "knip --config knip.json",
     "release:notes": "node ./scripts/release/render-release-notes.mjs",
     "release:notes:test": "node --test ./scripts/release/changelog.test.mjs",
     "release:dry-run:private": "powershell -ExecutionPolicy Bypass -File ./scripts/private-release-dry-run.ps1",
@@ -24,6 +29,7 @@
     "version": "changeset version && npm run version:sync"
   },
   "devDependencies": {
-    "@changesets/cli": "^2.30.0"
+    "@changesets/cli": "^2.30.0",
+    "knip": "^6.13.0"
   }
 }

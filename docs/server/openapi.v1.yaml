@@ -97,6 +97,51 @@ paths:
         '503': { $ref: '#/components/responses/Readiness' }
         '405': { $ref: '#/components/responses/MethodNotAllowed' }
 
+  /v1/deployment/status:
+    get:
+      operationId: getDeploymentStatus
+      summary: Read headless deployment status
+      description: |
+        Authenticated, redacted runtime contract for deployers and CI smoke
+        tests. The endpoint accepts the service bearer credential, local admin
+        auth, or an edge-HMAC identity with role `admin`; normal edge user
+        identities are rejected. The response reports which environment
+        variable names are active and whether their values are present; it never
+        returns secret values. Use it after container startup to confirm that
+        Compose, Kubernetes, or Render injected the intended bearer, edge-auth,
+        and provider credentials.
+      tags: [deployment]
+      security:
+        - bearer: []
+        - edgeHmac: []
+      responses:
+        '200':
+          description: Redacted deployment status.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DeploymentStatus' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403':
+          description: Authenticated identity may not read deployment status.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '405': { $ref: '#/components/responses/MethodNotAllowed' }
+    head:
+      operationId: headDeploymentStatus
+      summary: Probe authenticated deployment status
+      description: |
+        Authenticated no-body variant of `GET /v1/deployment/status`.
+      tags: [deployment]
+      security:
+        - bearer: []
+        - edgeHmac: []
+      responses:
+        '200':
+          description: Deployment status endpoint is reachable with credentials.
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '405': { $ref: '#/components/responses/MethodNotAllowed' }
+
   # ── API-first Control Plane ────────────────────────────────────────────
   /v1/catalog/profiles:
     get:
@@ -119,6 +164,7 @@ paths:
                   profiles:
                     type: array
                     items: { $ref: '#/components/schemas/ProviderProfile' }
+        '400': { $ref: '#/components/responses/BadRequest' }
         '401': { $ref: '#/components/responses/Unauthenticated' }
 
   /v1/catalog/contracts:
@@ -263,6 +309,7 @@ paths:
                   transcripts:
                     type: array
                     items: { $ref: '#/components/schemas/Transcript' }
+        '400': { $ref: '#/components/responses/BadRequest' }
         '401': { $ref: '#/components/responses/Unauthenticated' }
         '503': { $ref: '#/components/responses/ProviderUnavailable' }
 
@@ -301,6 +348,7 @@ paths:
               schema: { $ref: '#/components/schemas/VoiceAgentTranscript' }
         '401': { $ref: '#/components/responses/Unauthenticated' }
         '403': { $ref: '#/components/responses/AdminRequired' }
+        '404': { $ref: '#/components/responses/BadRequest' }
 
   /v1/voiceagent/sessions/{id}/summary:
     get:
@@ -317,6 +365,7 @@ paths:
               schema: { $ref: '#/components/schemas/VoiceAgentSummaryResponse' }
         '401': { $ref: '#/components/responses/Unauthenticated' }
         '403': { $ref: '#/components/responses/AdminRequired' }
+        '404': { $ref: '#/components/responses/BadRequest' }
 
   /v1/tts/synthesize:
     post:
@@ -1018,6 +1067,99 @@ components:
             details:
               type: object
               additionalProperties: true
+
+    EnvStatus:
+      type: object
+      required: [env, configured]
+      properties:
+        env:
+          type: string
+          description: Environment variable name read by this process.
+        configured:
+          type: boolean
+          description: True when the named environment variable has a non-empty value.
+
+    DeploymentStatus:
+      type: object
+      required: [version, status, uptime_seconds, headless, auth, providers, store, modes]
+      properties:
+        version: { type: string }
+        status:
+          type: string
+          enum: [ok, starting, degraded, unavailable]
+        uptime_seconds: { type: integer }
+        components:
+          type: object
+          additionalProperties:
+            type: object
+            additionalProperties: true
+        headless:
+          type: object
+          required: [settings_path, settings_write, onboarding_ui]
+          properties:
+            settings_path: { type: string }
+            settings_write:
+              type: boolean
+              description: Whether settings writes are enabled for this process.
+            onboarding_ui:
+              type: boolean
+              description: Whether the setup/onboarding UI is enabled.
+        auth:
+          type: object
+          required:
+            - mode
+            - bearer_token_env
+            - bearer_token_set
+            - edge_auth_secret_env
+            - edge_auth_secret_set
+          properties:
+            mode:
+              type: string
+              enum: [none, bearer, edge_hmac, bearer_or_edge]
+            bearer_token_env: { type: string }
+            bearer_token_set:
+              type: boolean
+              description: True when the active bearer token env has a non-empty value.
+            bearer_role: { type: string }
+            edge_auth_secret_env: { type: string }
+            edge_auth_secret_set:
+              type: boolean
+              description: True when the active edge-HMAC secret env has a non-empty value.
+            admin_username: { type: string }
+            admin_password_set:
+              type: boolean
+              description: True when an admin password hash is configured.
+        providers:
+          type: object
+          properties:
+            google:
+              type: object
+              properties:
+                api_key: { $ref: '#/components/schemas/EnvStatus' }
+                stt_key: { $ref: '#/components/schemas/EnvStatus' }
+            openai:
+              type: object
+              properties:
+                api_key: { $ref: '#/components/schemas/EnvStatus' }
+            groq:
+              type: object
+              properties:
+                api_key: { $ref: '#/components/schemas/EnvStatus' }
+            huggingface:
+              type: object
+              properties:
+                token: { $ref: '#/components/schemas/EnvStatus' }
+            openrouter:
+              type: object
+              properties:
+                api_key: { $ref: '#/components/schemas/EnvStatus' }
+        store:
+          type: object
+          properties:
+            backend: { type: string }
+        modes:
+          type: array
+          items: { type: string }
 
     ProviderProfile:
       type: object

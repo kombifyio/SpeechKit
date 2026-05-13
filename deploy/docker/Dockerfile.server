@@ -55,8 +55,8 @@ RUN go build \
         ./cmd/speechkit-server
 
 # ── Stage 2: Shared runtime base ─────────────────────────────────────────────
-# Keeping this as a separate stage keeps apt + ONNX + Doppler install layers
-# stable across rebuilds.
+# Keeping this as a separate stage keeps apt + ONNX install layers stable
+# across rebuilds.
 FROM debian:bookworm-slim AS runtime-base
 
 # Runtime dependencies:
@@ -80,12 +80,6 @@ RUN apt-get update \
         libsoxr0 \
         curl \
     && rm -rf /var/lib/apt/lists/*
-
-# Optional: Doppler CLI for `doppler run --` entrypoints in managed deployments.
-# Omitting the CLI at build-time still lets you inject secrets as env vars from
-# any orchestrator (Render, Kubernetes, Docker Compose with an env_file).
-RUN curl -Ls https://cli.doppler.com/install.sh | sh -s -- --no-package-manager \
-    && doppler --version
 
 # ONNX Runtime shared lib for the Silero VAD kernel. Pinned version must stay
 # in sync with `github.com/yalue/onnxruntime_go` in go.mod.
@@ -127,8 +121,8 @@ LABEL org.opencontainers.image.licenses="Apache-2.0"
 COPY --from=builder /out/speechkit-server /app/speechkit-server
 COPY --chown=speechkit:speechkit deploy/config/server.example.toml /etc/speechkit/config.toml
 
-# Operators typically override this to `doppler run -- /app/speechkit-server`
-# when using Doppler for secrets; the plain entrypoint works with any env-var
+# Operators using Doppler can wrap this image from the host or orchestrator;
+# the image itself stays secret-manager neutral and works with any env-var
 # injector.
 ENTRYPOINT ["/app/speechkit-server"]
 CMD ["--config=/etc/speechkit/config.toml"]

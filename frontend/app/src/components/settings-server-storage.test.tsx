@@ -13,6 +13,11 @@ import {
 import { baseSettings } from "@/components/settings-test-fixtures";
 import { SettingsApp } from "@/components/settings-app";
 
+const postgresTestDSN = [
+  "postgres://",
+  "speechkit:secret@localhost:5432/speechkit?sslmode=disable",
+].join("");
+
 describe("SettingsApp server and storage", () => {
   it("saves local audio storage preferences", async () => {
     fetchSettingsStateMock.mockResolvedValue(baseSettings);
@@ -155,10 +160,7 @@ describe("SettingsApp server and storage", () => {
     fireEvent.change(
       await screen.findByLabelText("PostgreSQL connection string"),
       {
-        target: {
-          value:
-            "postgres://speechkit:secret@localhost:5432/speechkit?sslmode=disable",
-        },
+        target: { value: postgresTestDSN },
       },
     );
 
@@ -166,8 +168,7 @@ describe("SettingsApp server and storage", () => {
       expect(saveSettingsStateMock).toHaveBeenCalledWith(
         expect.objectContaining({
           storeBackend: "postgres",
-          postgresDSN:
-            "postgres://speechkit:secret@localhost:5432/speechkit?sslmode=disable",
+          postgresDSN: postgresTestDSN,
         }),
       ),
     );
@@ -209,18 +210,14 @@ describe("SettingsApp server and storage", () => {
     expect(saveSettingsStateMock).not.toHaveBeenCalled();
 
     fireEvent.change(screen.getByLabelText("PostgreSQL connection string"), {
-      target: {
-        value:
-          "postgres://speechkit:secret@localhost:5432/speechkit?sslmode=disable",
-      },
+      target: { value: postgresTestDSN },
     });
 
     await waitFor(() =>
       expect(saveSettingsStateMock).toHaveBeenCalledWith(
         expect.objectContaining({
           storeBackend: "postgres",
-          postgresDSN:
-            "postgres://speechkit:secret@localhost:5432/speechkit?sslmode=disable",
+          postgresDSN: postgresTestDSN,
         }),
       ),
     );

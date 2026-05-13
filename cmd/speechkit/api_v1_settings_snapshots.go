@@ -2,6 +2,7 @@ package main
 
 import (
 	"net/url"
+	"strconv"
 	"strings"
 	"unicode"
 
@@ -159,7 +160,7 @@ func serverConnectionTargetID(seed, rawURL string, index int) string {
 		id = "server"
 	}
 	if index > 0 && seed == "" {
-		id = id + "-" + string(rune('1'+index))
+		id = id + "-" + strconv.Itoa(index+1)
 	}
 	return id
 }

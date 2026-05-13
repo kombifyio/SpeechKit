@@ -1,3 +1,12 @@
+// Package tts implements the SpeechKit text-to-speech surface: a small
+// provider interface plus concrete adapters for OpenAI, Google, and
+// Hugging Face. The router in this file picks a provider per request
+// based on Strategy (CloudFirst, LocalFirst) and degrades gracefully
+// when a provider is unavailable.
+//
+// All providers must go through [github.com/kombifyio/SpeechKit/internal/netsec]
+// for outbound HTTP. STT has a parallel routing layer in package router;
+// this package is TTS-only.
 package tts
 
 import (

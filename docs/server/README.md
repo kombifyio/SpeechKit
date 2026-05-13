@@ -54,6 +54,8 @@ docker compose -f deploy/docker/docker-compose.yml up -d
 curl -fsS http://localhost:8080/healthz
 curl -fsS http://localhost:8080/readyz
 curl -fsS -H "Authorization: Bearer $SPEECHKIT_SERVER_TOKEN" \
+  http://localhost:8080/v1/deployment/status | jq '.auth, .providers'
+curl -fsS -H "Authorization: Bearer $SPEECHKIT_SERVER_TOKEN" \
   -X POST http://localhost:8080/v1/assist/self-test
 ```
 
@@ -73,6 +75,40 @@ required provider.
 `/readyz` reports mode readiness for load balancers and ignores non-blocking
 optional provider probes. `/readyz/strict` keeps the diagnostic all-components
 view and may return 503 when an optional provider such as `stt.google` fails.
+
+## Headless deployment contract
+
+Headless installs are configured by `config.toml` plus environment variables.
+At process startup, SpeechKit reads TOML and any persisted
+`server-settings.json`, then applies deployment env overrides last. This gives
+Compose, Kubernetes, Render, Coolify, and other deployers the final say for
+runtime credentials without storing secret values in JSON.
+
+| Env var | Effect |
+|---|---|
+| `SPEECHKIT_SERVER_TOKEN` | Canonical bearer token value for server auth. When set, it overrides a stale persisted `bearer_token_env` that points somewhere else. |
+| `SPEECHKIT_SERVER_BEARER_TOKEN_ENV` | Optional custom env var name for the bearer token, for example `DEPLOYMENT_SERVER_TOKEN`. |
+| `SPEECHKIT_SERVER_AUTH_MODE` | Optional startup override: `none`, `bearer`, `edge_hmac`, or `bearer_or_edge`. |
+| `SPEECHKIT_SERVER_EDGE_AUTH_SECRET_ENV` | Optional custom env var name for the edge-HMAC shared secret. |
+| `SPEECHKIT_SERVER_BEARER_ROLE` | Optional role for bearer-token callers, for example `admin` in a single-operator deployment. |
+
+Authenticated public modes fail startup if the required env credential values
+are empty. `auth_mode = "none"` remains limited to local loopback/dev use.
+
+Deployers can confirm what the running process loaded through:
+
+```bash
+curl -fsS \
+  -H "Authorization: Bearer $SPEECHKIT_SERVER_TOKEN" \
+  http://localhost:8080/v1/deployment/status
+```
+
+This endpoint is auth-protected and redacted. It accepts the service bearer
+credential, local admin auth, or an edge-HMAC identity with role `admin`; normal
+edge user identities are rejected. It returns env var names and booleans such
+as `auth.bearer_token_set` and `providers.google.api_key.configured`, but never
+token or provider key values. The compatibility path
+`/api/v1/deployment/status` returns the same payload.
 
 ## Installer setup modes
 
@@ -125,6 +161,7 @@ original `/v1` paths remain available for compatibility.
 | Voice Agent LiveKit token | HTTP GET | `/api/v1/voiceagent/sessions/{id}/livekit-token` | optional when `[server.livekit]` is enabled |
 | Personas API | HTTP CRUD | `/api/v1/personas`, `/api/v1/roles`, `/api/v1/sequences` | ships |
 | Health | HTTP GET | `/healthz`, `/readyz` | ships |
+| Deployment status | HTTP GET/HEAD | `/api/v1/deployment/status` | auth-protected, redacted |
 | Test UI | HTTP GET | `/` | browser smoke-test surface |
 
 The mode set is decided at startup from `[server].modes` in `config.toml` or
@@ -243,8 +280,9 @@ request host and ignores `X-Forwarded-Host`.
 
 Browser WebSocket clients must send an `Origin` that exactly matches
 `[server].cors_allowed_origins`, or the server rejects the upgrade with `403`.
-Native clients that send no `Origin` are allowed. Use `["*"]` only for local
-OSS/dev mode.
+Native clients that send no `Origin` are allowed. Use `["*"]` only for
+explicit local no-auth OSS/dev mode; authenticated server modes reject wildcard
+CORS during startup.
 
 If setup auth is switched to self-managed, SpeechKit does not generate a token
 or change the current server auth mode; the deployment owner must provide

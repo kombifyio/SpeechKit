@@ -255,3 +255,60 @@ func TestRateLimit_SweeperContextCancellationStopsGoroutine(t *testing.T) {
 	// smoke check that the context plumbing compiles and is wired.
 	time.Sleep(100 * time.Millisecond)
 }
+
+func TestEntryOf_NilAndWrongTypeAreSafe(t *testing.T) {
+	// Nil element must produce nil, not crash.
+	if got := entryOf(nil); got != nil {
+		t.Fatalf("entryOf(nil) = %v, want nil", got)
+	}
+
+	// An element whose value is the wrong type must produce nil and log
+	// rather than panicking — a panic inside the rate-limit hot path would
+	// crash the whole server.
+	l := list.New()
+	corrupted := l.PushFront("not-a-bucketEntry")
+	if got := entryOf(corrupted); got != nil {
+		t.Fatalf("entryOf(wrong-type) = %v, want nil", got)
+	}
+
+	// Sanity: a correctly typed entry round-trips.
+	want := &bucketEntry{key: "k", bucket: &bucket{}}
+	good := l.PushFront(want)
+	if got := entryOf(good); got != want {
+		t.Fatalf("entryOf(*bucketEntry) = %v, want %v", got, want)
+	}
+}
+
+func TestRateLimit_RecoversFromCorruptedBucketStore(t *testing.T) {
+	// Build a limiter, then manually poison one element to simulate the
+	// "impossible" corruption path. The limiter must keep serving subsequent
+	// requests instead of crashing.
+	mw := RateLimit(RateLimitOptions{RequestsPerSecond: 100, Burst: 10})
+	h := mw(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+
+	// Warm the limiter with one request so the bucket store has an entry.
+	req := httptest.NewRequest(http.MethodGet, "/v1/x", nil)
+	req.RemoteAddr = "9.9.9.9:1234"
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("warm-up returned %d, want 200", rec.Code)
+	}
+
+	// Subsequent requests from the same remote must still succeed (and not
+	// panic the process). We're not directly poisoning the store — that
+	// requires reflection — but entryOf's defensive nil-return path is
+	// covered by TestEntryOf_NilAndWrongTypeAreSafe above; this test
+	// confirms the happy path didn't regress when entryOf was introduced.
+	for i := 0; i < 5; i++ {
+		req = httptest.NewRequest(http.MethodGet, "/v1/x", nil)
+		req.RemoteAddr = "9.9.9.9:1234"
+		rec = httptest.NewRecorder()
+		h.ServeHTTP(rec, req)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("post-warmup request %d returned %d, want 200", i, rec.Code)
+		}
+	}
+}

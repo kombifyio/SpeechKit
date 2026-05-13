@@ -146,6 +146,7 @@ func Run(ctx context.Context, cfg *config.Config, opts RunOptions) error {
 	registerHealth(app)
 	registerTestUI(app)
 	registerServerSettings(app)
+	registerDeploymentStatus(app)
 	registerAPIAlias(app.Mux)
 
 	// Build the STT router and register dictation/assist/voiceagent handlers

@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"github.com/kombifyio/SpeechKit/cmd/speechkit/internal/profiles"
 	"path/filepath"
 	"strings"
 
@@ -36,7 +37,7 @@ func apiV1ProfileReadiness(ctx context.Context, cfg *config.Config, sttRouter *r
 		Mode:             speechkit.NormalizeMode(speechkit.Mode(mode)),
 		ProviderKind:     speechkit.ProviderKind(profile.ProviderKind),
 		ExecutionMode:    speechkit.ExecutionMode(profile.ExecutionMode),
-		ModelID:          selectedModelIDForProfile(cfg, profile),
+		ModelID:          profiles.SelectedModelIDForProfile(cfg, profile),
 		Source:           profile.Source,
 		Active:           isActive,
 		Default:          profile.Default,
@@ -337,7 +338,7 @@ func apiV1LocalLLMModelPath(cfg *config.Config, profile models.Profile) string {
 	if modelPath := strings.TrimSpace(cfg.LocalLLM.ModelPath); modelPath != "" {
 		return modelPath
 	}
-	modelID := strings.TrimSpace(selectedModelIDForProfile(cfg, profile))
+	modelID := strings.TrimSpace(profiles.SelectedModelIDForProfile(cfg, profile))
 	if modelID == "" || strings.Contains(modelID, ":") || filepath.IsAbs(modelID) {
 		return ""
 	}

@@ -72,6 +72,27 @@ go tool cover -func coverage.out | Select-String 'total:'
 go tool cover -html coverage.out   # open browser report
 ```
 
+### Auxiliary binaries (dev builds)
+
+For ad-hoc builds of CLI / MCP / E2E binaries, always emit to `dist/tools/`
+so the repo root stays clean (the root-level `*.exe` ignore in `.gitignore`
+is the only thing keeping a 20 MB binary out of an accidental `git add -A`).
+
+```powershell
+# MCP server
+go build -o dist/tools/speechkit-mcp.exe ./cmd/speechkit-mcp
+
+# Standalone CLI
+go build -o dist/tools/speechkit-cli.exe ./cmd/speechkit-cli
+
+# E2E harness
+go build -o dist/tools/sk-e2e.exe ./cmd/sk-e2e
+```
+
+The canonical Wails app build (`scripts/build.ps1`) writes to
+`dist/windows/SpeechKit/` and `dist/windows/SpeechKit-Setup.exe`; do not
+mix that output with ad-hoc tool builds.
+
 ### Build tags
 
 - **default**: everything builds and tests on Windows with CGo.

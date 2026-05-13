@@ -1,3 +1,11 @@
+// Package router implements the STT routing layer. It picks the right
+// provider (local, cloud, or direct) for a transcription request based on
+// the configured Strategy (Dynamic, LocalOnly, CloudOnly) and current
+// connectivity / readiness.
+//
+// The router is platform-neutral and is consumed by both the Device-
+// Target (Wails client) and the Server-Target. TTS has a parallel routing
+// layer in package tts; this package is STT-only.
 package router
 
 import (

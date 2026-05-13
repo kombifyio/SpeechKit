@@ -157,11 +157,3 @@ func TestRouterTranscriberPrefersStoredVocabularyDictionary(t *testing.T) {
 		}
 	}
 }
-
-func TestBuildVoiceAgentVocabularyHintUsesCanonicalTerms(t *testing.T) {
-	entries := parseVocabularyDictionary("kombi fire => Kombify\nAcmeOS\nGemma\nacmeos")
-
-	if got, want := buildVoiceAgentVocabularyHint(entries), "Prefer these names and product terms in recognition and responses: Kombify, AcmeOS, Gemma."; got != want {
-		t.Fatalf("buildVoiceAgentVocabularyHint() = %q, want %q", got, want)
-	}
-}

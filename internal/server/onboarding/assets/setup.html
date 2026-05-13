@@ -644,7 +644,6 @@
     const defaultLocalLLMModel = "ggml-org/gemma-4-E4B-it-GGUF:Q4_K_M";
     const providerKinds = ["local_built_in", "local_provider", "cloud_provider", "direct_provider"];
     const setupSteps = ["welcome", "models", "credentials", "review"];
-    const adminBasicSessionKey = "speechkit.admin.basic";
     let currentStep = 0;
     let lastSettings = null;
     let setupMode = "onboarding";
@@ -1131,6 +1130,24 @@
       };
     }
 
+    function adminSessionPath() {
+      return window.location.pathname.indexOf("/api/") === 0 ? "/api/v1/admin/session" : "/v1/admin/session";
+    }
+
+    async function establishAdminSession(adminAuth) {
+      if (!adminAuth || !adminAuth.password) return;
+      const result = await request(adminSessionPath(), {
+        method: "POST",
+        headers: {
+          "Authorization": "Basic " + btoa(adminAuth.username + ":" + adminAuth.password),
+          "Accept": "application/json"
+        }
+      });
+      if (!result.ok) {
+        throw new Error(format(result.body));
+      }
+    }
+
     async function saveServerSettings(event) {
       if (event && event.preventDefault) {
         event.preventDefault();
@@ -1148,7 +1165,7 @@
           throw new Error(format(result.body));
         }
         if (payload.admin_auth && payload.admin_auth.password) {
-          sessionStorage.setItem(adminBasicSessionKey, "Basic " + btoa(payload.admin_auth.username + ":" + payload.admin_auth.password));
+          await establishAdminSession(payload.admin_auth);
         }
         ["openAIKey", "groqKey", "googleKey", "hfKey", "openRouterKey"].forEach(function (id) {
           byId(id).value = "";
@@ -1196,14 +1213,11 @@
     async function request(path, opts) {
       opts = opts || {};
       const headers = new Headers(opts.headers || {});
-      const adminAuth = sessionStorage.getItem(adminBasicSessionKey);
-      if (adminAuth && !headers.has("Authorization")) {
-        headers.set("Authorization", adminAuth);
-      }
       if (generatedServerToken && opts.method && opts.method !== "GET" && path.indexOf("/server/settings") !== -1 && !headers.has("Authorization")) {
         headers.set("Authorization", "Bearer " + generatedServerToken);
       }
       opts = Object.assign({}, opts, { headers: headers });
+      opts.credentials = opts.credentials || "same-origin";
       const response = await fetch(path, opts);
       const text = await response.text();
       let body = text;

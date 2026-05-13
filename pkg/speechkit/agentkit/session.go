@@ -9,10 +9,10 @@ import (
 	"sync"
 	"time"
 
-	"github.com/kombifyio/SpeechKit/internal/voiceagent"
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/voiceagent/live"
 )
 
-// AgentSession wraps a voiceagent.Session with a tool registry, lifecycle
+// AgentSession wraps a live.Session with a tool registry, lifecycle
 // hooks, and a session-scoped memory store. It is the primary entry point
 // for callers building voice agents on top of SpeechKit.
 //
@@ -26,10 +26,10 @@ import (
 //  6. Start(ctx, cfg, idleCfg)
 //
 // AgentSession is safe for concurrent calls to SendAudio / SendText /
-// EndAudioStream and the underlying voiceagent.Session enforces single-
+// EndAudioStream and the underlying live.Session enforces single-
 // session activation.
 type AgentSession struct {
-	session   *voiceagent.Session
+	session   *live.Session
 	registry  *ToolRegistry
 	hooks     LifecycleHooks
 	memory    Memory
@@ -73,13 +73,13 @@ func NewAgentSession(
 		sessionID: newSessionID(),
 	}
 	wrapped := wrapCallbacks(a, userCallbacks)
-	a.session = voiceagent.NewSession(provider, wrapped)
+	a.session = live.NewSession(provider, wrapped)
 	return a
 }
 
 // Start activates the underlying voice-agent session. It injects the
 // registry's tool definitions into cfg.Tools (preserving any tools the
-// caller already supplied) before forwarding to voiceagent.Session.Start.
+// caller already supplied) before forwarding to live.Session.Start.
 //
 // OnSessionStart fires after a successful Start. If Start returns an error,
 // no hook fires.
@@ -138,7 +138,7 @@ func (a *AgentSession) Registry() *ToolRegistry { return a.registry }
 func (a *AgentSession) Memory() Memory { return a.memory }
 
 // State returns the underlying session state.
-func (a *AgentSession) State() voiceagent.State { return a.session.CurrentState() }
+func (a *AgentSession) State() live.State { return a.session.CurrentState() }
 
 func (a *AgentSession) sc() SessionContext {
 	return SessionContext{

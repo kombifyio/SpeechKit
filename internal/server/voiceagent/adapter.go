@@ -127,7 +127,7 @@ func (a *Adapter) Run(parent context.Context) {
 	a.idle = newIdleWatchdog(a.IdleTimeout)
 	defer a.idle.Stop()
 
-	done := make(chan struct{})
+	done := make(chan struct{}, 2)
 	var wg sync.WaitGroup
 	wg.Add(2)
 	go func() { defer wg.Done(); a.readPump(ctx, done) }()

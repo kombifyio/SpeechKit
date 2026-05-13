@@ -140,6 +140,9 @@ func TestSetupUIHTMLContainsOnboardingMarkers(t *testing.T) {
 	for _, forbidden := range []string{
 		"SpeechKit Server Smoke",
 		"Smoke-Test starten",
+		"speechkit.admin.basic",
+		"sessionStorage",
+		"localStorage",
 		`id="runSmoke"`,
 		`id="smokePrompt"`,
 		`id="healthStatus"`,

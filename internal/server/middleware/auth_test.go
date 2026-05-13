@@ -113,6 +113,89 @@ func TestAuth_BasicAdminAcceptsConfiguredPasswordHash(t *testing.T) {
 	}
 }
 
+func TestAuth_AdminSessionEndpointIssuesHttpOnlyCookie(t *testing.T) {
+	hash, err := bcrypt.GenerateFromPassword([]byte("correct-password"), bcrypt.MinCost)
+	if err != nil {
+		t.Fatalf("hash password: %v", err)
+	}
+	handler := Auth(AuthOptions{
+		Mode:                      "bearer",
+		BearerTokenProvider:       func() string { return "api-token" },
+		AdminUsernameProvider:     func() string { return "admin" },
+		AdminPasswordHashProvider: func() string { return string(hash) },
+	})(
+		http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			id := IdentityFromContext(r.Context())
+			if id.Source != "admin_session" {
+				t.Fatalf("identity source = %q, want admin_session", id.Source)
+			}
+			w.WriteHeader(http.StatusOK)
+		}),
+	)
+
+	loginReq := httptest.NewRequest(http.MethodPost, "/v1/admin/session", nil)
+	loginReq.Header.Set("Authorization", "Basic "+base64.StdEncoding.EncodeToString([]byte("admin:correct-password")))
+	loginRec := httptest.NewRecorder()
+	handler.ServeHTTP(loginRec, loginReq)
+
+	if loginRec.Code != http.StatusOK {
+		t.Fatalf("admin session login got %d body=%s", loginRec.Code, loginRec.Body.String())
+	}
+	cookies := loginRec.Result().Cookies()
+	if len(cookies) != 1 {
+		t.Fatalf("login cookies = %d, want 1", len(cookies))
+	}
+	cookie := cookies[0]
+	if cookie.Name != adminSessionCookieName {
+		t.Fatalf("cookie name = %q, want %q", cookie.Name, adminSessionCookieName)
+	}
+	if !cookie.HttpOnly {
+		t.Fatal("admin session cookie must be HttpOnly")
+	}
+	if cookie.SameSite != http.SameSiteLaxMode {
+		t.Fatalf("admin session SameSite = %v, want Lax", cookie.SameSite)
+	}
+	payload, _, ok := strings.Cut(cookie.Value, ".")
+	if !ok {
+		t.Fatalf("admin session cookie is not signed: %q", cookie.Value)
+	}
+	decodedPayload, err := base64.RawURLEncoding.DecodeString(payload)
+	if err != nil {
+		t.Fatalf("decode admin session payload: %v", err)
+	}
+	for _, forbidden := range []string{"correct-password", string(hash), "password"} {
+		if strings.Contains(strings.ToLower(string(decodedPayload)), strings.ToLower(forbidden)) {
+			t.Fatalf("admin session payload leaks password-derived material: %s", decodedPayload)
+		}
+	}
+
+	setupReq := httptest.NewRequest(http.MethodGet, "/setup", nil)
+	setupReq.AddCookie(cookie)
+	setupRec := httptest.NewRecorder()
+	handler.ServeHTTP(setupRec, setupReq)
+	if setupRec.Code != http.StatusOK {
+		t.Fatalf("setup with admin session got %d body=%s", setupRec.Code, setupRec.Body.String())
+	}
+}
+
+func TestAuth_AdminSessionEndpointClearsCookie(t *testing.T) {
+	handler := Auth(AuthOptions{Mode: "bearer"})(
+		http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusOK) }),
+	)
+
+	req := httptest.NewRequest(http.MethodDelete, "/api/v1/admin/session", nil)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("logout got %d", rec.Code)
+	}
+	cookies := rec.Result().Cookies()
+	if len(cookies) != 1 || cookies[0].Name != adminSessionCookieName || cookies[0].MaxAge >= 0 {
+		t.Fatalf("logout cookie = %+v, want cleared admin session cookie", cookies)
+	}
+}
+
 func TestAuth_BearerReadsTokenProviderPerRequest(t *testing.T) {
 	token := ""
 	handler := Auth(AuthOptions{
@@ -253,6 +336,9 @@ func TestAuth_HTMLUnauthorizedPathReturnsBrowserResponse(t *testing.T) {
 	body := rec.Body.String()
 	if !strings.Contains(body, "SpeechKit Admin Sign-In Required") {
 		t.Fatalf("expected browser auth page, got %s", body)
+	}
+	if strings.Contains(body, "sessionStorage") || strings.Contains(body, "localStorage") {
+		t.Fatalf("browser auth page must not persist Basic credentials in web storage: %s", body)
 	}
 	if strings.Contains(body, "Kombify Cloud SSO") {
 		t.Fatalf("browser auth page should not mention Kombify Cloud SSO: %s", body)

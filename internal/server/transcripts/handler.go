@@ -41,7 +41,12 @@ func (h *Handler) transcripts(w http.ResponseWriter, r *http.Request) {
 		methodNotAllowed(w, http.MethodGet)
 		return
 	}
-	opts := storageauth.ListOptsForIdentity(r, queryLimit(r, 50))
+	limit, ok := queryLimit(r, 50)
+	if !ok {
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_limit", "limit must be an integer from 1 to 200")
+		return
+	}
+	opts := storageauth.ListOptsForIdentity(r, limit)
 	list, err := h.store.ListTranscriptions(r.Context(), opts)
 	if err != nil {
 		httpx.WriteError(w, http.StatusInternalServerError, "transcripts_read_failed", err.Error())
@@ -155,19 +160,19 @@ func idFromPath(path, prefix string) (int64, bool) {
 	return id, err == nil && id > 0
 }
 
-func queryLimit(r *http.Request, fallback int) int {
+func queryLimit(r *http.Request, fallback int) (int, bool) {
 	raw := strings.TrimSpace(r.URL.Query().Get("limit"))
 	if raw == "" {
-		return fallback
+		return fallback, true
 	}
 	n, err := strconv.Atoi(raw)
 	if err != nil || n <= 0 {
-		return fallback
+		return 0, false
 	}
 	if n > 200 {
-		return 200
+		return 0, false
 	}
-	return n
+	return n, true
 }
 
 func writeJSON(w http.ResponseWriter, status int, body any) {

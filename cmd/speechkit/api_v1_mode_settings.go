@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"github.com/kombifyio/SpeechKit/cmd/speechkit/internal/profiles"
 	"net/http"
 	"strings"
 
@@ -232,7 +233,7 @@ func applyAPIV1ModeSelectionPatch(cfg *config.Config, mode string, patch apiV1Mo
 	if patch.PrimaryProfileID == nil && patch.FallbackProfileID == nil && patch.ModeSource == nil {
 		return false, nil
 	}
-	selection := modeSelectionForMode(cfg, mode)
+	selection := profiles.ModeSelectionForMode(cfg, mode)
 	if patch.PrimaryProfileID != nil {
 		selection.PrimaryProfileID = strings.TrimSpace(*patch.PrimaryProfileID)
 	}
@@ -242,7 +243,7 @@ func applyAPIV1ModeSelectionPatch(cfg *config.Config, mode string, patch apiV1Mo
 	if patch.ModeSource != nil {
 		selection.ModeSource = normaliseModeSourcePatch(*patch.ModeSource)
 	}
-	selection = normalizeModeSelection(selection)
+	selection = profiles.NormalizeModeSelection(selection)
 	if err := validateModeSelection(cfg, filteredModelCatalog(), mode, selection); err != nil {
 		return false, err
 	}
@@ -285,15 +286,15 @@ func applyAPIV1ModeSpecificPatch(cfg *config.Config, mode string, patch apiV1Mod
 }
 
 func apiV1ModeSettingsFromConfig(cfg *config.Config) speechkit.ModeSettings {
-	dictateSelection := normalizeModeSelection(cfg.ModelSelection.Dictate)
+	dictateSelection := profiles.NormalizeModeSelection(cfg.ModelSelection.Dictate)
 	if dictateSelection.PrimaryProfileID == "" {
 		dictateSelection.PrimaryProfileID = config.DefaultDictatePrimaryProfileID
 	}
-	assistSelection := normalizeModeSelection(cfg.ModelSelection.Assist)
+	assistSelection := profiles.NormalizeModeSelection(cfg.ModelSelection.Assist)
 	if assistSelection.PrimaryProfileID == "" {
 		assistSelection.PrimaryProfileID = config.DefaultAssistPrimaryProfileID
 	}
-	voiceSelection := normalizeModeSelection(cfg.ModelSelection.VoiceAgent)
+	voiceSelection := profiles.NormalizeModeSelection(cfg.ModelSelection.VoiceAgent)
 	if voiceSelection.PrimaryProfileID == "" {
 		voiceSelection.PrimaryProfileID = config.DefaultVoiceAgentPrimaryProfileID
 	}

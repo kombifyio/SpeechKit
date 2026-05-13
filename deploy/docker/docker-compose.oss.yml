@@ -12,10 +12,10 @@
 #     Voice Agent WS in one container under one URL.
 #
 # Quick start:
-#   1. Copy .env.example to .env and fill in whichever provider keys
-#      you want enabled (Google for Voice Agent, OpenAI for Assist,
-#      etc.). SPEECHKIT_SERVER_TOKEN is only needed when you enable
-#      bearer auth in config.toml.
+#   1. Copy .env.example to .env and fill in SPEECHKIT_SERVER_TOKEN plus
+#      whichever provider keys you want enabled (Google for Voice Agent,
+#      OpenAI for Assist, etc.). You may omit SPEECHKIT_SERVER_TOKEN only
+#      with a custom loopback/dev config that explicitly sets auth_mode=none.
 #   2. docker compose -f docker-compose.oss.yml up -d
 #   3. curl -fsS http://localhost:8080/healthz
 #
@@ -27,7 +27,7 @@ services:
   speechkit-server:
     image: ghcr.io/kombifyio/speechkit-server:${IMAGE_TAG:-latest}
     environment:
-      # Optional unless [server].auth_mode is set to "bearer" or "bearer_or_edge".
+      # Required by the stock authenticated config; optional only for explicit loopback/dev auth_mode=none.
       SPEECHKIT_SERVER_TOKEN: ${SPEECHKIT_SERVER_TOKEN:-}
       # Optional — enables specific provider features.
       GOOGLE_AI_API_KEY: ${GOOGLE_AI_API_KEY:-}

@@ -97,6 +97,16 @@ func TestDocsModeEmbedsOpenAPIWithoutRepoWorkingDirectory(t *testing.T) {
 	}
 }
 
+func TestEmbeddedAsyncAPISpecIsCanonical(t *testing.T) {
+	body := asyncAPISpec()
+	if strings.Contains(strings.ToLower(body), "fallback") || !strings.Contains(body, "SpeechKit Voice Agent WebSocket API") {
+		t.Fatalf("asyncapi spec is not canonical")
+	}
+	if strings.Contains(body, "channels: {}\noperations: {}") {
+		t.Fatalf("asyncapi spec is placeholder content")
+	}
+}
+
 func TestDocsModeEmbedsAgentMarkdownEntrypoints(t *testing.T) {
 	docs := loadDocs()
 

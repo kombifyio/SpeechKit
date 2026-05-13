@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/kombifyio/SpeechKit/cmd/speechkit/internal/profiles"
 	"net/http"
 	"path/filepath"
 
@@ -181,7 +182,7 @@ func downloadDestinationDir(item downloads.Item, cfg *config.Config) string {
 }
 
 func downloadProfileForItem(item downloads.Item) (models.Profile, bool) {
-	return findCatalogProfile(filteredModelCatalog(), item.ProfileID)
+	return profiles.FindCatalogProfile(filteredModelCatalog(), item.ProfileID)
 }
 
 func selectDownloadedHTTPModel(ctx context.Context, cfgPath string, cfg *config.Config, state *appState, item downloads.Item) error {
@@ -232,7 +233,7 @@ func selectDownloadedLocalModel(ctx context.Context, cfgPath string, cfg *config
 	destDir := downloads.ResolveWhisperModelsDir(cfg)
 	filename := filepath.Base(item.URL)
 	modelPath := filepath.Join(destDir, filename)
-	if err := validateLocalProviderActivation(cfg, modelPath); err != nil {
+	if err := profiles.ValidateLocalProviderActivation(cfg, modelPath); err != nil {
 		return err
 	}
 
@@ -241,7 +242,7 @@ func selectDownloadedLocalModel(ctx context.Context, cfgPath string, cfg *config
 	cfg.Local.Model = filename
 	cfg.Local.ModelPath = modelPath
 	if profile, ok := downloadProfileForItem(item); ok {
-		setModeSelectionForProfile(cfg, profile)
+		profiles.SetModeSelectionForProfile(cfg, profile)
 	}
 	if cfgPath != "" {
 		if err := config.Save(cfgPath, cfg); err != nil {
@@ -289,7 +290,7 @@ func selectDownloadedLocalLLMModel(ctx context.Context, cfgPath string, cfg *con
 	}
 	cfg.LocalLLM.Model = filename
 	cfg.LocalLLM.ModelPath = modelPath
-	setModeSelectionForProfile(cfg, profile)
+	profiles.SetModeSelectionForProfile(cfg, profile)
 
 	switch profile.Modality {
 	case models.ModalityAssist:

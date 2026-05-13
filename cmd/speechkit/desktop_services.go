@@ -4,6 +4,7 @@ import (
 	"context"
 	"log/slog"
 
+	"github.com/kombifyio/SpeechKit/cmd/speechkit/internal/transcription"
 	appai "github.com/kombifyio/SpeechKit/internal/ai"
 	"github.com/kombifyio/SpeechKit/internal/ai/flows"
 	"github.com/kombifyio/SpeechKit/internal/assist"
@@ -106,7 +107,7 @@ func openDesktopFeedbackStore(cfg *config.Config, state *appState, cleanup *desk
 		AudioRetentionDays:      cfg.Store.AudioRetentionDays,
 		MaxAudioStorageMB:       cfg.Store.MaxAudioStorageMB,
 		PostgresDSN:             cfg.Store.PostgresDSN,
-		TranscriptionModelHints: configuredTranscriptionModelHints(cfg),
+		TranscriptionModelHints: transcription.ConfiguredModelHints(cfg),
 	})
 	if err != nil {
 		slog.Warn("store init", "err", err)

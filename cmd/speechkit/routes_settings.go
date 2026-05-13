@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/kombifyio/SpeechKit/cmd/speechkit/internal/transcription"
 	"github.com/kombifyio/SpeechKit/internal/config"
 	"github.com/kombifyio/SpeechKit/internal/models"
 	"github.com/kombifyio/SpeechKit/internal/router"
@@ -80,7 +81,7 @@ func saveSettings(ctx context.Context, req *http.Request, cfgPath string, cfg *c
 	if err := config.Save(cfgPath, cfg); err != nil {
 		return fmt.Sprintf(msgSaveFailed, err)
 	}
-	if err := syncVocabularyDictionaryStore(ctx, feedbackStore, form.Language, form.VocabularyDictionary); err != nil {
+	if err := transcription.SyncVocabularyDictionaryStore(ctx, feedbackStore, form.Language, form.VocabularyDictionary); err != nil {
 		return fmt.Sprintf(msgSaveFailed, err)
 	}
 

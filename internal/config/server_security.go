@@ -15,8 +15,15 @@ func ValidateServerProductionAuth(cfg *Config) error {
 	if cfg == nil {
 		return nil
 	}
-	if !strings.EqualFold(strings.TrimSpace(cfg.Server.AuthMode), "none") {
-		return nil
+	authMode := strings.ToLower(strings.TrimSpace(cfg.Server.AuthMode))
+	if authMode == "" {
+		authMode = "none"
+	}
+	if authMode != "none" && serverCORSAllowsWildcard(cfg.Server.CORSAllowedOrigins) {
+		return fmt.Errorf("cors_allowed_origins=* is not allowed with authenticated server auth_mode=%s", authMode)
+	}
+	if authMode != "none" {
+		return validateServerAuthCredentials(cfg, authMode)
 	}
 	if parseServerBoolEnv(AllowInsecureNoAuthEnv) {
 		return nil
@@ -25,6 +32,43 @@ func ValidateServerProductionAuth(cfg *Config) error {
 		return nil
 	}
 	return fmt.Errorf("auth_mode=none is only allowed on loopback listen addresses; set %s=1 only for explicit local test runs", AllowInsecureNoAuthEnv)
+}
+
+func validateServerAuthCredentials(cfg *Config, authMode string) error {
+	bearerEnv := strings.TrimSpace(cfg.Server.BearerTokenEnv)
+	if bearerEnv == "" {
+		bearerEnv = "SPEECHKIT_SERVER_TOKEN"
+	}
+	edgeEnv := strings.TrimSpace(cfg.Server.EdgeAuthSecretEnv)
+	if edgeEnv == "" {
+		edgeEnv = "EDGE_AUTH_SECRET"
+	}
+	bearerSet := strings.TrimSpace(os.Getenv(bearerEnv)) != ""
+	edgeSet := strings.TrimSpace(os.Getenv(edgeEnv)) != ""
+	switch authMode {
+	case "bearer":
+		if !bearerSet {
+			return fmt.Errorf("auth_mode=bearer requires %s to be set", bearerEnv)
+		}
+	case "edge_hmac":
+		if !edgeSet {
+			return fmt.Errorf("auth_mode=edge_hmac requires %s to be set", edgeEnv)
+		}
+	case "bearer_or_edge":
+		if !bearerSet && !edgeSet {
+			return fmt.Errorf("auth_mode=bearer_or_edge requires %s or %s to be set", bearerEnv, edgeEnv)
+		}
+	}
+	return nil
+}
+
+func serverCORSAllowsWildcard(origins []string) bool {
+	for _, origin := range origins {
+		if strings.TrimSpace(origin) == "*" {
+			return true
+		}
+	}
+	return false
 }
 
 func parseServerBoolEnv(name string) bool {

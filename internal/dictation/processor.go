@@ -1,3 +1,11 @@
+// Package dictation implements pause-based segmentation for Dictation
+// Mode: it consumes VAD speech-probability frames and emits one
+// transcription request per natural pause.
+//
+// The package is platform-neutral and reusable: Device-Target and
+// Server-Target both call into it. Audio capture and the STT call itself
+// live in sibling packages (audio, stt) — this package only owns the
+// "where does an utterance end" decision.
 package dictation
 
 import (

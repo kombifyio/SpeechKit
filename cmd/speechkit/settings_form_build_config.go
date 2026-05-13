@@ -1,6 +1,7 @@
 package main
 
 import (
+	"github.com/kombifyio/SpeechKit/cmd/speechkit/internal/profiles"
 	"github.com/kombifyio/SpeechKit/internal/config"
 	"github.com/kombifyio/SpeechKit/internal/voiceagentprofile"
 )
@@ -79,7 +80,7 @@ func buildNextConfig(form settingsFormData, cfg *config.Config) config.Config {
 }
 
 func buildNextModeSelection(primaryProfileID, fallbackProfileID string, current config.ModeModelSelection) config.ModeModelSelection {
-	next := normalizeModeSelection(config.ModeModelSelection{
+	next := profiles.NormalizeModeSelection(config.ModeModelSelection{
 		PrimaryProfileID:  primaryProfileID,
 		FallbackProfileID: fallbackProfileID,
 		ModeSource:        current.ResolvedModeSource(),

@@ -6,6 +6,7 @@ import (
 	"container/list"
 	"context"
 	"encoding/json"
+	"log/slog"
 	"net/http"
 	"strings"
 	"sync"
@@ -154,28 +155,48 @@ type bucketStore struct {
 	lru        *list.List               // front = most recent, back = oldest
 }
 
+// entryOf is the single cast site for elements in the LRU list. The list
+// is private and only [bucketStore] inserts into it, so a non-*bucketEntry
+// value is an impossible-state corruption. Returning nil + logging — rather
+// than panicking inside an HTTP request — lets the server keep serving
+// other requests while operators get a structured signal in logs.
+func entryOf(elem *list.Element) *bucketEntry {
+	if elem == nil {
+		return nil
+	}
+	entry, ok := elem.Value.(*bucketEntry)
+	if !ok {
+		slog.Error("ratelimit: bucketStore corruption: list element value has unexpected type")
+		return nil
+	}
+	return entry
+}
+
 func (s *bucketStore) allow(key string) bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	now := time.Now()
 	if elem, ok := s.m[key]; ok {
 		s.lru.MoveToFront(elem)
-		entry, ok := elem.Value.(*bucketEntry)
-		if !ok {
-			panic("bucketStore corruption: list.Element.Value is not *bucketEntry")
+		entry := entryOf(elem)
+		if entry == nil {
+			// Drop the corrupted element and treat as a fresh bucket below.
+			delete(s.m, key)
+			s.lru.Remove(elem)
+		} else {
+			b := entry.bucket
+			elapsed := now.Sub(b.last).Seconds()
+			b.tokens += elapsed * s.perSecond
+			if b.tokens > s.burst {
+				b.tokens = s.burst
+			}
+			b.last = now
+			if b.tokens >= 1 {
+				b.tokens--
+				return true
+			}
+			return false
 		}
-		b := entry.bucket
-		elapsed := now.Sub(b.last).Seconds()
-		b.tokens += elapsed * s.perSecond
-		if b.tokens > s.burst {
-			b.tokens = s.burst
-		}
-		b.last = now
-		if b.tokens >= 1 {
-			b.tokens--
-			return true
-		}
-		return false
 	}
 
 	// Fresh bucket — evict oldest if over cap.
@@ -184,11 +205,9 @@ func (s *bucketStore) allow(key string) bool {
 		if oldest == nil {
 			break
 		}
-		entry, ok := oldest.Value.(*bucketEntry)
-		if !ok {
-			panic("bucketStore corruption: list.Element.Value is not *bucketEntry")
+		if entry := entryOf(oldest); entry != nil {
+			delete(s.m, entry.key)
 		}
-		delete(s.m, entry.key)
 		s.lru.Remove(oldest)
 	}
 
@@ -209,9 +228,11 @@ func (s *bucketStore) sweepStale(now time.Time, maxAge time.Duration) int {
 		if oldest == nil {
 			break
 		}
-		entry, ok := oldest.Value.(*bucketEntry)
-		if !ok {
-			panic("bucketStore corruption: list.Element.Value is not *bucketEntry")
+		entry := entryOf(oldest)
+		if entry == nil {
+			// Corrupted: remove from list but skip the map delete.
+			s.lru.Remove(oldest)
+			continue
 		}
 		if now.Sub(entry.bucket.last) <= maxAge {
 			break

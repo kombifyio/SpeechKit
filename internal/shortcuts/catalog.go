@@ -1,3 +1,8 @@
+// Package shortcuts implements pattern-matched intent shortcuts used by
+// Assist Mode. The Registry holds two ordered lists — phrases (full
+// utterances mapped to a fixed Intent) and fillers (locale-specific
+// idle/filler words to strip) — and the resolver walks them to classify
+// or normalize incoming transcripts before they reach the LLM path.
 package shortcuts
 
 import "sort"

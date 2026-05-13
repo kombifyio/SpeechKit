@@ -86,16 +86,3 @@ export function resolveOverlayTone(snapshot: SpeechKitOverlayState): OverlayTone
     visualizerClassName: isCircle ? 'h-full w-full' : 'h-[16px]',
   }
 }
-
-export function bubblePositionClass(position: string): string {
-  switch (position) {
-    case 'bottom':
-      return 'absolute bottom-1.5 left-1/2 -translate-x-1/2'
-    case 'left':
-      return 'absolute left-1.5 top-1/2 -translate-y-1/2'
-    case 'right':
-      return 'absolute right-1.5 top-1/2 -translate-y-1/2'
-    default:
-      return 'absolute top-1.5 left-1/2 -translate-x-1/2'
-  }
-}

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/kombifyio/SpeechKit/cmd/speechkit/internal/profiles"
 	"log/slog"
 	"strings"
 
@@ -44,7 +45,7 @@ func applySTTProfile(ctx context.Context, cfgPath string, cfg *config.Config, st
 	switch profile.ExecutionMode {
 	case models.ExecutionModeLocal:
 		modelPath := configuredLocalSTTModelPath(cfg)
-		if err := validateLocalProviderActivation(cfg, modelPath); err != nil {
+		if err := profiles.ValidateLocalProviderActivation(cfg, modelPath); err != nil {
 			return err
 		}
 		cfg.Local.Enabled = true
@@ -125,7 +126,7 @@ func applySTTProfile(ctx context.Context, cfgPath string, cfg *config.Config, st
 		return fmt.Errorf("unsupported execution mode for STT")
 	}
 
-	setModeSelectionForProfile(cfg, profile)
+	profiles.SetModeSelectionForProfile(cfg, profile)
 	if err := config.Save(cfgPath, cfg); err != nil {
 		return err
 	}
@@ -192,7 +193,7 @@ func applyAssistProfile(ctx context.Context, cfgPath string, cfg *config.Config,
 	if err := configureLLMProfile(cfg, profile, models.ModalityAssist); err != nil {
 		return err
 	}
-	setModeSelectionForProfile(cfg, profile)
+	profiles.SetModeSelectionForProfile(cfg, profile)
 	if err := config.Save(cfgPath, cfg); err != nil {
 		return err
 	}
@@ -419,7 +420,7 @@ func applyRealtimeVoiceProfile(ctx context.Context, cfgPath string, cfg *config.
 	default:
 		return fmt.Errorf("unsupported execution mode for realtime voice")
 	}
-	setModeSelectionForProfile(cfg, profile)
+	profiles.SetModeSelectionForProfile(cfg, profile)
 	if err := config.Save(cfgPath, cfg); err != nil {
 		return fmt.Errorf("save config: %w", err)
 	}

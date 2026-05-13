@@ -40,6 +40,19 @@ type fakeOverlayWindow struct {
 	sizes         [][2]int
 }
 
+// testPostgresDSN returns a DSN string for tests that need a Postgres URL
+// shape. The default value is a local loopback URL that is never used to
+// connect to a real database in this test file — the connection is opened
+// against a dummy server, so the credentials are placeholder-only. Tests
+// that need a real database should set SPEECHKIT_TEST_POSTGRES_DSN.
+func testPostgresDSN() string {
+	if dsn := os.Getenv("SPEECHKIT_TEST_POSTGRES_DSN"); dsn != "" {
+		return dsn
+	}
+	// The "secret" password is a placeholder; tests do not connect with it.
+	return "postgres://speechkit:test-only-placeholder@localhost:5432/speechkit?sslmode=disable"
+}
+
 func (f *fakeOverlayWindow) Show() application.Window {
 	f.showCalls++
 	f.visible = true
@@ -1056,7 +1069,7 @@ func TestSettingsRoutesSyncVocabularyDictionaryToUserDictionaryStore(t *testing.
 func TestSettingsSnapshotExposesPostgresConfiguration(t *testing.T) {
 	cfg := defaultTestConfig()
 	cfg.Store.Backend = "postgres"
-	cfg.Store.PostgresDSN = "postgres://speechkit:secret@localhost:5432/speechkit?sslmode=disable"
+	cfg.Store.PostgresDSN = testPostgresDSN()
 	cfg.Store.MaxAudioStorageMB = 1024
 	state := &appState{
 		overlayEnabled:    true,
@@ -1517,7 +1530,7 @@ func TestSaveSettingsUpdatesConfigAndRuntime(t *testing.T) {
 		"overlay_free_x":             {"884"},
 		"overlay_free_y":             {"412"},
 		"store_backend":              {"postgres"},
-		"store_postgres_dsn":         {"postgres://speechkit:secret@localhost:5432/speechkit?sslmode=disable"},
+		"store_postgres_dsn":         {testPostgresDSN()},
 		"store_audio_retention_days": {"30"},
 		"store_max_audio_storage_mb": {"1024"},
 	}

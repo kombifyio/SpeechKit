@@ -1,3 +1,12 @@
+// Package stt defines the SpeechKit speech-to-text provider interface and
+// houses the concrete provider implementations: whisper.cpp (local
+// built-in), HuggingFace, OpenAI, Groq, Google, an OpenAI-compatible
+// adapter (covers Ollama and other compatible servers), and the
+// self-hosted VPS adapter.
+//
+// All providers must go through [github.com/kombifyio/SpeechKit/internal/netsec]
+// for outbound HTTP. Routing — which provider to pick for a given
+// request — lives in [github.com/kombifyio/SpeechKit/internal/router].
 package stt
 
 import (

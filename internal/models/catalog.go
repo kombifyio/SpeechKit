@@ -1,3 +1,11 @@
+// Package models defines the SpeechKit model catalog: provider IDs, model
+// identifiers, modality (STT, TTS, Realtime Voice, Assist, Utility,
+// Embedding, Reranker), execution mode (local/cloud/direct), and the
+// readiness metadata that setup UIs and the readiness endpoint consume.
+//
+// It is the single source of truth for "what providers and models does
+// SpeechKit know about." Routing, key resolution, and pipeline assembly
+// live in their own packages and read from this catalog.
 package models
 
 import "github.com/kombifyio/SpeechKit/pkg/speechkit"
