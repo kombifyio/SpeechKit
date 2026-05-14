@@ -67,6 +67,7 @@ permissions:
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
+  STATICCHECK_VERSION: v0.7.0
 
 jobs:
   windows-bundle:
@@ -90,7 +91,7 @@ jobs:
           cache: true
 
       - name: Setup Node
-        uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e
         with:
           node-version: 24
           cache: npm
@@ -105,11 +106,40 @@ jobs:
 
       - name: Install Staticcheck
         shell: pwsh
-        run: go install honnef.co/go/tools/cmd/staticcheck@v0.7.0
+        run: go install honnef.co/go/tools/cmd/staticcheck@${env:STATICCHECK_VERSION}
 
       - name: Run Windows desktop Staticcheck
         shell: pwsh
         run: staticcheck ./cmd/speechkit/...
+
+      - name: Report Windows-only coverage targets
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $env:GOWORK = 'off'
+
+          function Report-CoverageTarget {
+            param(
+              [string]$Package,
+              [double]$Minimum,
+              [string]$Label
+            )
+
+            $profile = New-TemporaryFile
+            go test -coverprofile $profile.FullName -covermode atomic $Package
+            $report = go tool cover -func $profile.FullName
+            $report | Write-Output
+            Remove-Item -LiteralPath $profile.FullName -Force
+            $totalLine = $report | Where-Object { $_ -match '^total:' }
+            $coverage = [double](($totalLine -split '\s+')[-1].TrimEnd('%'))
+            if ($coverage -lt $Minimum) {
+              Write-Warning "$Label coverage $coverage% is below target threshold $Minimum%"
+              return
+            }
+            Write-Output "$Label coverage $coverage% meets target threshold $Minimum%"
+          }
+
+          Report-CoverageTarget -Package './internal/output/...' -Minimum 50 -Label 'internal/output'
 
       - name: Install NSIS
         shell: pwsh
@@ -117,7 +147,7 @@ jobs:
 
       - name: Run canonical Windows bundle build
         shell: pwsh
-        run: ./scripts/build.ps1 -SkipInstaller -SkipVerification
+        run: ./scripts/build.ps1 -SkipInstaller
 
       - name: Verify build did not dirty tracked files
         shell: pwsh

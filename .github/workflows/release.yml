@@ -36,7 +36,7 @@ jobs:
   prepare:
     name: Resolve Release Plan
     if: github.repository == 'kombifyio/SpeechKit'
-    runs-on: ${{ vars.CI_RUNNER || 'ubuntu-24.04' }}
+    runs-on: ${{ vars.GHA_HOSTED_RUNNER || 'ubuntu-24.04' }}
     timeout-minutes: 15
     outputs:
       tag: ${{ steps.plan.outputs.tag }}
@@ -80,7 +80,7 @@ jobs:
     name: Wait For Publisher Draft
     needs: prepare
     if: needs.prepare.outputs.should_build_windows == 'true'
-    runs-on: ${{ vars.CI_RUNNER || 'ubuntu-24.04' }}
+    runs-on: ${{ vars.GHA_HOSTED_RUNNER || 'ubuntu-24.04' }}
     timeout-minutes: 15
 
     steps:
@@ -139,7 +139,7 @@ jobs:
           cache: true
 
       - name: Setup Node
-        uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e
         with:
           node-version: 24
           cache: npm
@@ -169,11 +169,14 @@ jobs:
 
       - name: Build canonical Windows bundle
         shell: pwsh
+        env:
+          SPEECHKIT_WINDOWS_SIGNING_PUBLISHER: ${{ vars.SIGNPATH_PUBLISHER_NAME }}
+          SPEECHKIT_WINDOWS_SIGNING_THUMBPRINT: ${{ vars.SPEECHKIT_WINDOWS_SIGNING_THUMBPRINT }}
         run: |
           if ('${{ needs.prepare.outputs.release_windows_installer }}' -eq 'true') {
-            ./scripts/build.ps1 -SkipVerification
+            ./scripts/build.ps1
           } else {
-            ./scripts/build.ps1 -SkipInstaller -SkipVerification
+            ./scripts/build.ps1 -SkipInstaller
           }
 
       - name: Resolve Windows signing mode
@@ -415,7 +418,7 @@ jobs:
     name: Create Source Release
     needs: prepare
     if: needs.prepare.outputs.should_build_windows != 'true'
-    runs-on: ${{ vars.CI_RUNNER || 'ubuntu-24.04' }}
+    runs-on: ${{ vars.GHA_HOSTED_RUNNER || 'ubuntu-24.04' }}
     timeout-minutes: 15
 
     steps:
@@ -427,7 +430,7 @@ jobs:
           fetch-tags: true
 
       - name: Setup Node
-        uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e
         with:
           node-version: 24
 
@@ -474,7 +477,7 @@ jobs:
       (needs.build-and-release.result == 'success' || needs.build-and-release.result == 'skipped') &&
       (needs.create-source-release.result == 'success' || needs.create-source-release.result == 'skipped') &&
       (needs.build-and-release.result == 'success' || needs.create-source-release.result == 'success')
-    runs-on: ${{ vars.CI_RUNNER || 'ubuntu-24.04' }}
+    runs-on: ${{ vars.GHA_HOSTED_RUNNER || 'ubuntu-24.04' }}
     timeout-minutes: 10
 
     steps:

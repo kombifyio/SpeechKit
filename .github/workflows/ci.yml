@@ -8,11 +8,15 @@ on:
       - 'internal/**'
       - 'pkg/**'
       - 'deploy/**'
+      - 'docs/agent/**'
       - 'docs/server/**'
+      - 'Website/**'
       - 'tools/**'
       - 'go.mod'
       - 'go.sum'
       - 'package.json'
+      - 'CHANGELOG.md'
+      - 'scripts/release/**'
       - '.github/workflows/ci.yml'
   pull_request:
     branches: [main]
@@ -21,11 +25,15 @@ on:
       - 'internal/**'
       - 'pkg/**'
       - 'deploy/**'
+      - 'docs/agent/**'
       - 'docs/server/**'
+      - 'Website/**'
       - 'tools/**'
       - 'go.mod'
       - 'go.sum'
       - 'package.json'
+      - 'CHANGELOG.md'
+      - 'scripts/release/**'
       - '.github/workflows/ci.yml'
   workflow_dispatch:
 
@@ -39,11 +47,37 @@ permissions:
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
   SPEECHKIT_COVERAGE_MIN: '60.0'
+  GOLANGCI_LINT_VERSION: v2.11.4
+  GOVULNCHECK_VERSION: v1.3.0
+  STATICCHECK_VERSION: v0.7.0
 
 jobs:
+  changelog-lint:
+    name: Changelog Lint
+    runs-on: ${{ vars.GHA_HOSTED_RUNNER || 'ubuntu-24.04' }}
+    timeout-minutes: 5
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+
+      - name: Setup Node
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e
+        with:
+          node-version: 24
+
+      - name: Run linter self-tests
+        run: node --test scripts/release/lint-changelog.test.mjs
+
+      - name: Lint [Unreleased] entry
+        run: node scripts/release/lint-changelog.mjs --unreleased
+
+      - name: Verify package.json version matches top CHANGELOG entry
+        run: node scripts/release/lint-version-sync.mjs
+
   frontend-ci:
     name: Frontend Checks
-    runs-on: ubuntu-24.04
+    runs-on: ${{ vars.GHA_HOSTED_RUNNER || 'ubuntu-24.04' }}
     timeout-minutes: 15
 
     defaults:
@@ -55,7 +89,7 @@ jobs:
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
 
       - name: Setup Node
-        uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e
         with:
           node-version: 24
           cache: npm
@@ -67,8 +101,28 @@ jobs:
       - name: Audit frontend dependencies
         run: npm audit --audit-level=moderate
 
+      - name: Install root dev dependencies (for knip)
+        working-directory: ${{ github.workspace }}
+        run: npm ci
+
+      # knip scans all workspaces declared in knip.json (root, frontend/app,
+      # Website). To load Website/vite.config.ts knip needs Website's deps
+      # resolvable in Website/node_modules. The dedicated `Website Checks`
+      # job installs them on its own runner, but this Frontend Checks job
+      # runs on a separate runner and otherwise wouldn't have them.
+      - name: Install website dependencies (for knip)
+        working-directory: Website
+        run: npm ci
+
+      - name: Dead-code check (knip)
+        working-directory: ${{ github.workspace }}
+        run: npm run deadcode:strict
+
       - name: Run frontend tests
         run: npm test
+
+      - name: Type-check frontend
+        run: npm run check
 
       - name: Run frontend lint
         run: npm run lint
@@ -76,15 +130,56 @@ jobs:
       - name: Build frontend
         run: npm run build
 
+      - name: Install Playwright Chromium
+        run: npx playwright install --with-deps chromium
+
+      - name: Run frontend E2E
+        run: npm run e2e
+
       - name: Verify frontend build is reproducible
         working-directory: ${{ github.workspace }}
         run: |
           git diff --check
           git diff --exit-code -- internal/frontendassets/dist
 
+  website-ci:
+    name: Website Checks
+    runs-on: ${{ vars.GHA_HOSTED_RUNNER || 'ubuntu-24.04' }}
+    timeout-minutes: 15
+
+    defaults:
+      run:
+        working-directory: Website
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+
+      - name: Setup Node
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: Website/package-lock.json
+
+      - name: Install website dependencies
+        run: npm ci
+
+      - name: Audit website dependencies
+        run: npm audit --audit-level=moderate
+
+      - name: Type-check website
+        run: npm run check
+
+      - name: Run website tests
+        run: npm test
+
+      - name: Build website
+        run: npm run build
+
   android-ci:
     name: Android Checks
-    runs-on: ubuntu-24.04
+    runs-on: ${{ vars.GHA_HOSTED_RUNNER || 'ubuntu-24.04' }}
     timeout-minutes: 30
 
     steps:
@@ -134,7 +229,7 @@ jobs:
     # winapi, *_windows_cgo.go) are covered by the dedicated Windows
     # bundle workflow (windows-build.yml), not here.
     name: Go Analysis
-    runs-on: ubuntu-24.04
+    runs-on: ${{ vars.GHA_HOSTED_RUNNER || 'ubuntu-24.04' }}
     timeout-minutes: 30
 
     steps:
@@ -151,8 +246,11 @@ jobs:
         # The race-tested package set below imports oto/v3 transitively
         # via `internal/audio` (which is gated behind `//go:build !linux
         # || cgo`). On Linux runners the package compiles only when ALSA
-        # headers and a working cc are present — install both up front
-        # so the race step doesn't fail on missing -lasound.
+        # headers and a working cc are present. The Server Voice Agent
+        # LiveKit bridge also compiles the real Linux CGO path here and
+        # needs Opus, Opusfile, and Soxr headers. Install them up front so
+        # CI catches native dependency drift instead of compiling only
+        # stubs.
         #
         # Retry the apt invocations in case hosted runners start with a
         # transient apt/dpkg lock. The retry burns at most ~30 s
@@ -172,7 +270,7 @@ jobs:
           done
           tries=0
           until sudo apt-get install -y --no-install-recommends \
-              gcc libc6-dev libasound2-dev pkg-config; do
+              gcc libc6-dev libasound2-dev libopus-dev libopusfile-dev libsoxr-dev pkg-config; do
             tries=$((tries + 1))
             if [ "$tries" -ge 12 ]; then
               echo "apt-get install kept failing after $tries tries; giving up" >&2
@@ -206,6 +304,8 @@ jobs:
           set -euo pipefail
           packages=(
             ./pkg/...
+            ./cmd/speechkit-cli/...
+            ./cmd/speechkit-mcp/...
             ./cmd/sk-e2e/...
             ./cmd/speechkit-server/...
             ./examples/...
@@ -224,6 +324,7 @@ jobs:
             ./internal/netsec/...
             ./internal/router/...
             ./internal/runtimepath/...
+            ./internal/scaffold/...
             ./internal/secrets/...
             ./internal/server/...
             ./internal/serverclient/...
@@ -268,7 +369,7 @@ jobs:
           fi
 
       - name: Install golangci-lint
-        run: go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.11.4
+        run: go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@${GOLANGCI_LINT_VERSION}
 
       - name: Run golangci-lint
         # Lint the same cross-platform package set so the Windows-only
@@ -286,12 +387,15 @@ jobs:
         run: >-
           go test -race -tags=no_embed_frontend
           ./pkg/speechkit/...
+          ./cmd/speechkit-cli/...
+          ./cmd/speechkit-mcp/...
           ./internal/ai/...
           ./internal/assist/...
           ./internal/config/...
           ./internal/features/...
           ./internal/models/...
           ./internal/router/...
+          ./internal/scaffold/...
           ./internal/secrets/...
           ./internal/server/...
           ./internal/serverclient/...
@@ -310,12 +414,15 @@ jobs:
           set -euo pipefail
           packages=(
             ./pkg/speechkit/...
+            ./cmd/speechkit-cli/...
+            ./cmd/speechkit-mcp/...
             ./internal/ai/...
             ./internal/assist/...
             ./internal/config/...
             ./internal/features/...
             ./internal/models/...
             ./internal/router/...
+            ./internal/scaffold/...
             ./internal/secrets/...
             ./internal/server/...
             ./internal/serverclient/...
@@ -337,6 +444,69 @@ jobs:
             }
             printf("total coverage %.1f%% meets coverage gate %.1f%%\n", total, min)
           }'
+          measure_package_coverage() {
+            package="$1"
+            label="$2"
+            profile="$(mktemp)"
+            if ! go test -tags=no_embed_frontend -coverprofile "$profile" -covermode atomic "$package" >&2; then
+              echo "::warning title=Coverage check skipped::${label} coverage could not be measured on this runner"
+              rm -f "$profile"
+              return 2
+            fi
+            package_report="$(go tool cover -func "$profile")"
+            package_total="$(printf '%s\n' "$package_report" | awk '/^total:/ { gsub(/%/, "", $NF); print $NF }')"
+            rm -f "$profile"
+            printf '%s\n' "$package_total"
+          }
+          assert_package_coverage() {
+            package="$1"
+            min="$2"
+            label="$3"
+            package_total="$(measure_package_coverage "$package" "$label")" || exit 1
+            awk -v total="$package_total" -v min="$min" -v label="$label" 'BEGIN {
+              if ((total + 0) < (min + 0)) {
+                printf("%s coverage %.1f%% is below required threshold %.1f%%\n", label, total, min)
+                exit 1
+              }
+              printf("%s coverage %.1f%% meets required threshold %.1f%%\n", label, total, min)
+            }'
+          }
+          warn_package_coverage() {
+            package="$1"
+            min="$2"
+            label="$3"
+            if ! package_total="$(measure_package_coverage "$package" "$label")"; then
+              return
+            fi
+            awk -v total="$package_total" -v min="$min" -v label="$label" 'BEGIN {
+              if ((total + 0) < (min + 0)) {
+                printf("::warning title=Coverage warning::%s coverage %.1f%% is below warning threshold %.1f%%\n", label, total, min)
+              } else {
+                printf("%s coverage %.1f%% meets warning threshold %.1f%%\n", label, total, min)
+              }
+            }'
+          }
+          assert_package_coverage ./pkg/speechkit/client 60 pkg/speechkit/client
+          assert_package_coverage ./internal/secrets/... 70 internal/secrets
+          # Storage 3.0 baseline includes SQLite, Postgres, scoped storage,
+          # audio assets, and voice-session persistence. Current measured
+          # package coverage is 55.2%; keep the floor just below that until
+          # the integration-heavy Postgres/session paths get broader tests.
+          assert_package_coverage ./internal/store/... 55 internal/store
+          # Server-Target adapter — floors set just below current measured
+          # coverage (audit baseline: middleware 67.7%, voiceagent 64.0%,
+          # core 45.3%) so the gate catches regressions without making the
+          # first run red. Raise the floors as coverage improves.
+          assert_package_coverage ./internal/server/middleware/... 65 internal/server/middleware
+          assert_package_coverage ./internal/server/voiceagent/... 60 internal/server/voiceagent
+          assert_package_coverage ./internal/server/core/... 40 internal/server/core
+          # cmd/speechkit subpackages — C2 decomposition baseline. Floor
+          # set just below current measured coverage; raise as in-package
+          # tests are added. Indirect coverage from cmd/speechkit's
+          # adapter tests is not counted by the per-package gate.
+          assert_package_coverage ./cmd/speechkit/internal/transcription/... 30 cmd/speechkit/internal/transcription
+          assert_package_coverage ./cmd/speechkit/internal/profiles/... 20 cmd/speechkit/internal/profiles
+          warn_package_coverage ./internal/tray/... 30 internal/tray
 
       # Upload coverage. If CODECOV_TOKEN is not configured, the step
       # will warn but not fail CI. Pinned to SHA so supply-chain drift
@@ -351,21 +521,76 @@ jobs:
           token: ${{ secrets.CODECOV_TOKEN }}
 
       - name: Install Staticcheck
-        run: go install honnef.co/go/tools/cmd/staticcheck@v0.7.0
+        run: go install honnef.co/go/tools/cmd/staticcheck@${STATICCHECK_VERSION}
 
       - name: Run Staticcheck
         run: staticcheck -tags=no_embed_frontend ${{ steps.pkgs.outputs.list }}
 
       - name: Install govulncheck
-        run: go install golang.org/x/vuln/cmd/govulncheck@v1.3.0
+        run: go install golang.org/x/vuln/cmd/govulncheck@${GOVULNCHECK_VERSION}
 
       - name: Run govulncheck
         run: govulncheck -tags=no_embed_frontend ${{ steps.pkgs.outputs.list }}
 
+  linux-server-ci:
+    name: Linux Server Checks
+    runs-on: ${{ vars.GHA_HOSTED_RUNNER || 'ubuntu-24.04' }}
+    timeout-minutes: 25
+    env:
+      CGO_ENABLED: '1'
+      GOOS: linux
+      GOARCH: amd64
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+
+      - name: Setup Go
+        uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c
+        with:
+          go-version: '1.26.3'
+          cache: true
+
+      - name: Install native toolchain for Linux server tests
+        # Keeps the Linux-only server packages on a real Linux CGO path
+        # while the Docker compose smoke test stays in server-linux.yml.
+        run: |
+          set -eu
+          tries=0
+          until sudo apt-get update; do
+            tries=$((tries + 1))
+            if [ "$tries" -ge 12 ]; then
+              echo "apt-get update kept failing after $tries tries; giving up" >&2
+              exit 1
+            fi
+            echo "apt locked, retry $tries in 5s…"
+            sleep 5
+          done
+          tries=0
+          until sudo apt-get install -y --no-install-recommends \
+              gcc libc6-dev libasound2-dev libopus-dev libopusfile-dev libsoxr-dev pkg-config ffmpeg; do
+            tries=$((tries + 1))
+            if [ "$tries" -ge 12 ]; then
+              echo "apt-get install kept failing after $tries tries; giving up" >&2
+              exit 1
+            fi
+            echo "apt locked, retry $tries in 5s…"
+            sleep 5
+          done
+
+      - name: Test Linux server packages
+        run: >-
+          go test -race
+          ./cmd/speechkit-server/...
+          ./cmd/speechkit-mcp/...
+          ./cmd/sk-e2e/...
+          ./internal/server/...
+          ./internal/serverclient/...
+
   dependency-review:
     name: Dependency Review
     if: github.event_name == 'pull_request'
-    runs-on: ubuntu-24.04
+    runs-on: ${{ vars.GHA_HOSTED_RUNNER || 'ubuntu-24.04' }}
     timeout-minutes: 10
 
     steps:
@@ -374,3 +599,94 @@ jobs:
 
       - name: Dependency review
         uses: actions/dependency-review-action@2031cfc080254a8a887f58cffee85186f0e49e48
+
+  public-api-stability:
+    # Catches accidental breaking changes to pkg/speechkit/** before they
+    # merge. Compares the PR HEAD against the PR base ref (usually main)
+    # via golang.org/x/exp/cmd/apidiff. Fails on any incompatible change.
+    # Compatible additions (new exports) pass silently — the gate is
+    # one-directional: "do not break".
+    #
+    # Phase C5 from the 2026-05-13 audit improvement plan (Beads SK-004.6.8).
+    name: Public API Stability
+    if: github.event_name == 'pull_request'
+    runs-on: ${{ vars.GHA_HOSTED_RUNNER || 'ubuntu-24.04' }}
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout PR
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          fetch-depth: 0
+
+      - name: Setup Go
+        uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c
+        with:
+          go-version: '1.26.3'
+          cache: true
+
+      - name: Install apidiff
+        run: go install golang.org/x/exp/cmd/apidiff@latest
+
+      - name: Diff public packages against base ref
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -z "${BASE_SHA}" ]; then
+            echo "::error::base SHA is empty; this job must run on a pull_request event"
+            exit 1
+          fi
+
+          # Public-API packages — the SpeechKit OSS surface. Add new entries
+          # here when a new public sub-package is introduced.
+          packages=(
+            ./pkg/speechkit
+            ./pkg/speechkit/agentkit
+            ./pkg/speechkit/assist
+            ./pkg/speechkit/client
+            ./pkg/speechkit/dictation
+            ./pkg/speechkit/voiceagent
+            ./pkg/speechkit/voiceagent/live
+          )
+
+          baseline_dir="$(mktemp -d)"
+          worktree_dir="$(mktemp -d)"
+          # Cleanup on exit, success or failure.
+          trap 'git worktree remove --force "${worktree_dir}" >/dev/null 2>&1 || true' EXIT
+
+          git worktree add --detach "${worktree_dir}" "${BASE_SHA}"
+
+          # Generate baseline API export data from the base ref.
+          for pkg in "${packages[@]}"; do
+            safe_name="$(echo "${pkg}" | tr / -)"
+            (cd "${worktree_dir}" && apidiff -w "${baseline_dir}/${safe_name}.api" "${pkg}") || {
+              echo "::warning title=apidiff baseline failed::cannot generate baseline for ${pkg} at ${BASE_SHA} (probably a new package introduced in this PR — that's compatible)"
+              continue
+            }
+          done
+
+          # Compare current PR state to the baseline. Fail on incompat.
+          failed=0
+          for pkg in "${packages[@]}"; do
+            safe_name="$(echo "${pkg}" | tr / -)"
+            baseline_file="${baseline_dir}/${safe_name}.api"
+            if [ ! -f "${baseline_file}" ]; then
+              echo "::notice::skipping ${pkg} (no baseline)"
+              continue
+            fi
+            echo "::group::apidiff ${pkg}"
+            output="$(apidiff -incompatible "${baseline_file}" "${pkg}" 2>&1 || true)"
+            echo "${output}"
+            if [ -n "${output}" ]; then
+              echo "::error title=Public API regression::${pkg} has incompatible changes vs base ref ${BASE_SHA}. If the break is intentional, document it in the PR description and update consumers — then a maintainer can override this gate."
+              failed=1
+            fi
+            echo "::endgroup::"
+          done
+
+          if [ "${failed}" = "1" ]; then
+            exit 1
+          fi
+          echo "Public API stable — no incompatible changes detected."
