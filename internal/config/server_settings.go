@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -47,6 +48,7 @@ type ServerAuthSettings struct {
 }
 
 type ServerAdminAuthSettings struct {
+	Enabled       *bool  `json:"enabled,omitempty"`
 	Username      string `json:"username,omitempty"`
 	PasswordHash  string `json:"password_hash,omitempty"`
 	PasswordValue string `json:"password,omitempty"`
@@ -149,6 +151,10 @@ func SaveServerModelSettings(path string, settings ServerModelSettings) error {
 		return errors.New("server settings path is empty")
 	}
 	settings = NormalizeServerModelSettings(settings)
+	if settings.AdminAuth.PasswordValue != "" && settings.AdminAuth.Enabled == nil {
+		enabled := true
+		settings.AdminAuth.Enabled = &enabled
+	}
 	if err := validateServerModelSettings(settings); err != nil {
 		return err
 	}
@@ -319,6 +325,10 @@ func ApplyServerAdminAuthSettings(cfg *Config, auth ServerAdminAuthSettings) []s
 		return nil
 	}
 	var notes []string
+	if auth.Enabled != nil {
+		cfg.Server.AdminAuthEnabled = *auth.Enabled
+		notes = append(notes, "server settings: admin login updated")
+	}
 	if value := cleanSetting(auth.Username); value != "" {
 		cfg.Server.AdminUsername = value
 		notes = append(notes, "server settings: admin username updated")
@@ -480,6 +490,8 @@ func applyDictationModeSetting(cfg *Config, mode ServerModeSetting) []string {
 	}
 	switch kind {
 	case "direct_provider":
+		cfg.Local.Enabled = false
+		cfg.Routing.Strategy = "cloud-only"
 		cfg.VPS.Enabled = false
 		cfg.HuggingFace.Enabled = false
 		cfg.Providers.OpenAI.Enabled = true
@@ -488,6 +500,8 @@ func applyDictationModeSetting(cfg *Config, mode ServerModeSetting) []string {
 		}
 		notes = append(notes, "server settings: Dictation uses direct provider")
 	case "cloud_provider":
+		cfg.Local.Enabled = false
+		cfg.Routing.Strategy = "cloud-only"
 		cfg.VPS.Enabled = false
 		if strings.Contains(strings.ToLower(mode.ProfileID), "openrouter") {
 			cfg.HuggingFace.Enabled = false
@@ -503,6 +517,8 @@ func applyDictationModeSetting(cfg *Config, mode ServerModeSetting) []string {
 		}
 		notes = append(notes, "server settings: Dictation uses cloud provider")
 	case "local_provider":
+		cfg.Local.Enabled = true
+		cfg.Routing.Strategy = "local-only"
 		cfg.VPS.Enabled = false
 		cfg.Providers.Ollama.Enabled = true
 		if model != "" {
@@ -510,6 +526,8 @@ func applyDictationModeSetting(cfg *Config, mode ServerModeSetting) []string {
 		}
 		notes = append(notes, "server settings: Dictation uses local provider")
 	default:
+		cfg.Local.Enabled = false
+		cfg.Routing.Strategy = "cloud-only"
 		cfg.VPS.Enabled = true
 		if model != "" {
 			cfg.VPS.Model = model
@@ -670,7 +688,10 @@ func validateServerModelSettings(settings ServerModelSettings) error {
 	if len(settings.AdminAuth.PasswordValue) > 4096 {
 		return fmt.Errorf("admin_auth.password is too long")
 	}
-	if (settings.AdminAuth.PasswordHash != "" || settings.AdminAuth.PasswordValue != "") && settings.AdminAuth.Username == "" {
+	if settings.AdminAuth.Enabled != nil && *settings.AdminAuth.Enabled && settings.AdminAuth.PasswordHash == "" && settings.AdminAuth.PasswordValue == "" {
+		return fmt.Errorf("admin_auth.password is required when admin auth is enabled")
+	}
+	if (settings.AdminAuth.PasswordHash != "" || settings.AdminAuth.PasswordValue != "" || (settings.AdminAuth.Enabled != nil && *settings.AdminAuth.Enabled)) && settings.AdminAuth.Username == "" {
 		return fmt.Errorf("admin_auth.username is required when an admin password is configured")
 	}
 	switch strings.ToLower(strings.TrimSpace(settings.ServerAuth.Mode)) {
@@ -696,6 +717,13 @@ func validateServerModelSettings(settings ServerModelSettings) error {
 		}
 		if !strings.HasPrefix(value, "http://") && !strings.HasPrefix(value, "https://") {
 			return fmt.Errorf("%s must start with http:// or https://", name)
+		}
+		parsed, err := url.Parse(value)
+		if err != nil || parsed.Host == "" {
+			return fmt.Errorf("%s must be a valid URL", name)
+		}
+		if parsed.User != nil {
+			return fmt.Errorf("%s must not contain user-info", name)
 		}
 	}
 	provider := strings.ToLower(strings.TrimSpace(settings.VoiceAgent.Provider))

@@ -15,6 +15,9 @@ CREATE TABLE IF NOT EXISTS audio_assets (
 CREATE INDEX IF NOT EXISTS idx_audio_assets_owner
     ON audio_assets(owner_kind, owner_id);
 
+CREATE UNIQUE INDEX IF NOT EXISTS idx_audio_assets_owner_path
+    ON audio_assets(owner_kind, owner_id, path);
+
 CREATE INDEX IF NOT EXISTS idx_audio_assets_created_at
     ON audio_assets(created_at, id);
 

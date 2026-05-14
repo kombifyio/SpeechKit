@@ -46,7 +46,34 @@ else
 fi
 MANAGED_DOPPLER_PROJECT="${SPEECHKIT_MANAGED_DOPPLER_PROJECT-}"
 MANAGED_DOPPLER_CONFIG="${SPEECHKIT_MANAGED_DOPPLER_CONFIG-}"
-GO_LDFLAGS="-H windowsgui -X ${GO_MODULE_PATH}/internal/config.managedHFBuildEnabled=${MANAGED_HF_BUILD_ENABLED} -X ${GO_MODULE_PATH}/internal/config.managedHFDefaultOptIn=${MANAGED_HF_DEFAULT} -X ${GO_MODULE_PATH}/internal/config.managedDopplerDefaultProject=${MANAGED_DOPPLER_PROJECT} -X ${GO_MODULE_PATH}/internal/config.managedDopplerDefaultConfig=${MANAGED_DOPPLER_CONFIG}"
+WINDOWS_SIGNING_PUBLISHER="${SPEECHKIT_WINDOWS_SIGNING_PUBLISHER-}"
+WINDOWS_SIGNING_THUMBPRINT="${SPEECHKIT_WINDOWS_SIGNING_THUMBPRINT-}"
+
+quote_ldflag_assignment() {
+  local value="$1"
+  value="${value//\\/\\\\}"
+  value="${value//\"/\\\"}"
+  printf '"%s"' "$value"
+}
+
+GO_LDFLAGS=("-H windowsgui")
+add_string_ldflag() {
+  local name="$1"
+  local value="${2-}"
+  GO_LDFLAGS+=("-X $(quote_ldflag_assignment "${name}=${value}")")
+}
+
+add_string_ldflag "${GO_MODULE_PATH}/internal/config.managedHFBuildEnabled" "${MANAGED_HF_BUILD_ENABLED}"
+add_string_ldflag "${GO_MODULE_PATH}/internal/config.managedHFDefaultOptIn" "${MANAGED_HF_DEFAULT}"
+add_string_ldflag "${GO_MODULE_PATH}/internal/config.managedDopplerDefaultProject" "${MANAGED_DOPPLER_PROJECT}"
+add_string_ldflag "${GO_MODULE_PATH}/internal/config.managedDopplerDefaultConfig" "${MANAGED_DOPPLER_CONFIG}"
+if [ -n "$WINDOWS_SIGNING_PUBLISHER" ]; then
+  add_string_ldflag "${GO_MODULE_PATH}/cmd/speechkit.installerSignatureDefaultPublisher" "$WINDOWS_SIGNING_PUBLISHER"
+fi
+if [ -n "$WINDOWS_SIGNING_THUMBPRINT" ]; then
+  add_string_ldflag "${GO_MODULE_PATH}/cmd/speechkit.installerSignatureDefaultThumbprint" "$WINDOWS_SIGNING_THUMBPRINT"
+fi
+GO_LDFLAGS_STRING="${GO_LDFLAGS[*]}"
 
 require_path() {
   local path="$1"
@@ -107,7 +134,7 @@ go vet ./...
 go test ./...
 
 echo "Building SpeechKit.exe..."
-go build -ldflags "$GO_LDFLAGS" -o "$BUNDLE_EXE" ./cmd/speechkit/
+go build -ldflags "$GO_LDFLAGS_STRING" -o "$BUNDLE_EXE" ./cmd/speechkit/
 
 echo "Writing runtime config..."
 cp "$PROJECT_DIR/config.example.toml" "$BUNDLE_DIR/config.toml"

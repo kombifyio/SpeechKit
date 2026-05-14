@@ -115,6 +115,7 @@ type appState struct {
 	downloads                *downloads.Manager
 	appUpdates               *appUpdateManager
 	shuttingDown             bool
+	appStarted               bool
 
 	// serverDelegates holds optional per-mode adapters that delegate to a
 	// remote SpeechKit Server-Target. Nil when every mode runs locally

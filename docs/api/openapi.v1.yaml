@@ -266,7 +266,7 @@ paths:
     get:
       tags: [Data]
       operationId: getVoiceSessions
-      summary: List persisted Voice Agent session summaries.
+      summary: List persisted Voice Agent session summaries without heavy transcript detail.
       parameters:
         - name: limit
           in: query
@@ -283,6 +283,28 @@ paths:
                 type: array
                 items:
                   $ref: "#/components/schemas/VoiceAgentSession"
+  /api/v1/voice-sessions/{sessionId}:
+    get:
+      tags: [Data]
+      operationId: getVoiceSession
+      summary: Get one persisted Voice Agent session with transcript, turns, and summary detail.
+      parameters:
+        - name: sessionId
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+            minimum: 1
+      responses:
+        "200":
+          description: Voice Agent session detail.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VoiceAgentSession"
+        "404":
+          $ref: "#/components/responses/NotFound"
   /api/v1/providers/artifacts:
     get:
       tags: [Providers]

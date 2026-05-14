@@ -20,6 +20,7 @@ var (
 	dopplerLookPath              = exec.LookPath
 	dopplerSecretLookup          = secrets.DefaultDopplerSecretLookup
 	managedHFBuildEnabled        string
+	managedDevServerBuildEnabled string
 	managedHFDefaultOptIn        string
 	managedDopplerDefaultProject string
 	managedDopplerDefaultConfig  string
@@ -214,6 +215,46 @@ func ApplyManagedIntegrationDefaults(cfg *Config) bool {
 	return true
 }
 
+func ApplyManagedDevServerDefaults(cfg *Config) bool {
+	if cfg == nil || !ManagedDevServerAvailableInBuild() {
+		return false
+	}
+
+	changed := false
+	rawURL := strings.TrimRight(strings.TrimSpace(cfg.ServerConnection.URL), "/")
+	useManagedOrigin := rawURL == "" ||
+		rawURL == ManagedDevServerURL ||
+		rawURL == "https://api.kombify.io/v1/speechkit"
+	if rawURL == "" || rawURL == "https://api.kombify.io/v1/speechkit" {
+		cfg.ServerConnection.URL = ManagedDevServerURL
+		changed = true
+	}
+	if useManagedOrigin && NormalizeServerConnectionAuthMode(cfg.ServerConnection.AuthMode) != ServerConnectionAuthModeBearer {
+		cfg.ServerConnection.AuthMode = ServerConnectionAuthModeBearer
+		changed = true
+	} else if strings.TrimSpace(cfg.ServerConnection.AuthMode) == "" {
+		cfg.ServerConnection.AuthMode = ServerConnectionAuthModeBearer
+		changed = true
+	}
+	if strings.TrimSpace(cfg.ServerConnection.BearerTokenEnv) == "" ||
+		(useManagedOrigin && strings.TrimSpace(cfg.ServerConnection.BearerTokenEnv) == "INTERNAL_API_KEY") {
+		cfg.ServerConnection.BearerTokenEnv = managedServerTokenEnv(cfg.ServerConnection.AuthMode)
+		changed = true
+	}
+	if cfg.ServerConnection.RequestTimeoutSec <= 0 {
+		cfg.ServerConnection.RequestTimeoutSec = 30
+		changed = true
+	}
+	return changed
+}
+
+func managedServerTokenEnv(authMode string) string {
+	if NormalizeServerConnectionAuthMode(authMode) == ServerConnectionAuthModeAPIKey {
+		return "INTERNAL_API_KEY"
+	}
+	return "SPEECHKIT_SERVER_TOKEN"
+}
+
 func managedHFOptInEnabled() bool {
 	if raw, ok := os.LookupEnv("SPEECHKIT_ENABLE_MANAGED_HF"); ok {
 		return parseManagedBool(raw)
@@ -236,6 +277,21 @@ func OverrideManagedHuggingFaceBuildForTests(value string) func() {
 	managedHFBuildEnabled = value
 	return func() {
 		managedHFBuildEnabled = previous
+	}
+}
+
+func ManagedDevServerAvailableInBuild() bool {
+	if strings.TrimSpace(managedDevServerBuildEnabled) != "" {
+		return parseManagedBool(managedDevServerBuildEnabled)
+	}
+	return defaultManagedPrivateFeatureForModule()
+}
+
+func OverrideManagedDevServerBuildForTests(value string) func() {
+	previous := managedDevServerBuildEnabled
+	managedDevServerBuildEnabled = value
+	return func() {
+		managedDevServerBuildEnabled = previous
 	}
 }
 

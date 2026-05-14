@@ -143,6 +143,74 @@ paths:
         '405': { $ref: '#/components/responses/MethodNotAllowed' }
 
   # ── API-first Control Plane ────────────────────────────────────────────
+  /v1/server/settings:
+    get:
+      operationId: getServerSettings
+      summary: Read setup and runtime settings snapshot
+      description: |
+        Public during first-run onboarding with a sanitized bootstrap snapshot.
+        Authenticated callers receive the full non-secret runtime snapshot.
+      tags: [setup]
+      responses:
+        '200':
+          description: Server setup snapshot.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ServerSettingsSnapshot' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+    patch:
+      operationId: patchServerSettings
+      summary: Save first-run or admin setup settings
+      description: |
+        During first-run onboarding, this endpoint accepts one anonymous setup
+        write so automated installers can configure server auth and optional
+        admin login. After onboarding is complete, settings changes require an
+        admin identity through bearer/edge auth or an enabled admin session.
+      tags: [setup]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ServerSettingsPatch' }
+      responses:
+        '200':
+          description: Settings saved. One-time generated secrets are returned only in this response.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ServerSettingsSaveResponse' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/AdminRequired' }
+
+  /v1/server/admin/session:
+    post:
+      operationId: createServerAdminSession
+      summary: Create browser admin session
+      description: |
+        Validates the standalone setup username/password when admin auth is
+        enabled and returns an HttpOnly signed session cookie. This endpoint is
+        unavailable when `admin_auth.enabled` is false.
+      tags: [setup]
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [username, password]
+              properties:
+                username: { type: string }
+                password: { type: string, format: password }
+      responses:
+        '200':
+          description: Admin session cookie set.
+          headers:
+            Set-Cookie:
+              schema: { type: string }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '404': { $ref: '#/components/responses/BadRequest' }
+
   /v1/catalog/profiles:
     get:
       operationId: listCatalogProfiles
@@ -450,6 +518,11 @@ paths:
         '401': { $ref: '#/components/responses/Unauthenticated' }
         '413': { $ref: '#/components/responses/PayloadTooLarge' }
         '415': { $ref: '#/components/responses/UnsupportedMediaType' }
+        '422':
+          description: STT completed but returned no transcript.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
         '429': { $ref: '#/components/responses/RateLimited' }
         '503': { $ref: '#/components/responses/ProviderUnavailable' }
 
@@ -1180,6 +1253,78 @@ components:
         inferenceAllowed: { type: boolean }
         default: { type: boolean }
         recommended: { type: boolean }
+
+    ServerSettingsSnapshot:
+      type: object
+      properties:
+        version: { type: string }
+        status: { type: string }
+        onboarding:
+          type: object
+          properties:
+            enabled: { type: boolean }
+            complete: { type: boolean }
+            required: { type: boolean }
+            current_deploy_version: { type: string }
+            completed_version: { type: string }
+        auth:
+          type: object
+          properties:
+            mode: { type: string }
+            bearer_token_env: { type: string }
+            bearer_token_set: { type: boolean }
+            admin_auth_enabled: { type: boolean }
+            admin_username: { type: string }
+            admin_password_set: { type: boolean }
+        editable:
+          type: object
+          properties:
+            desired: { $ref: '#/components/schemas/ServerSettingsPatch' }
+
+    ServerSettingsPatch:
+      type: object
+      properties:
+        onboarding_complete: { type: boolean }
+        server_auth:
+          type: object
+          properties:
+            mode:
+              type: string
+              enum: [managed_bearer, self_managed]
+            bearer_token_env: { type: string }
+            generate_token: { type: boolean }
+        admin_auth:
+          type: object
+          properties:
+            enabled:
+              type: boolean
+              description: Enables standalone `/setup` username/password login.
+            username: { type: string }
+            password:
+              type: string
+              format: password
+              description: Write-only. Stored as a bcrypt hash.
+            password_hash:
+              type: string
+              description: Optional precomputed bcrypt hash for automation.
+
+    ServerSettingsSaveResponse:
+      type: object
+      properties:
+        status:
+          type: string
+          enum: [saved]
+        restart_required: { type: boolean }
+        desired: { $ref: '#/components/schemas/ServerSettingsPatch' }
+        generated_token:
+          type: object
+          properties:
+            token:
+              type: string
+              description: One-time server bearer token. Store it in the configured environment.
+            env: { type: string }
+            auth_mode: { type: string }
+            header_name: { type: string }
         experimental: { type: boolean }
 
     ModeContract:
@@ -1351,8 +1496,9 @@ components:
 
     DictateResponse:
       type: object
+      required: [text, duration_ms, latency_ms]
       properties:
-        text: { type: string }
+        text: { type: string, minLength: 1 }
         language: { type: string }
         duration_ms: { type: integer }
         latency_ms: { type: integer }
@@ -1386,8 +1532,9 @@ components:
 
     AssistResponse:
       type: object
+      required: [text, action, latency_ms]
       properties:
-        text: { type: string }
+        text: { type: string, minLength: 1 }
         speak_text: { type: string }
         action:
           type: string

@@ -346,11 +346,21 @@ func Run(ctx context.Context, cfg *config.Config, opts RunOptions) error {
 		middleware.Logging(),
 		middleware.CORS(cfg.Server.CORSAllowedOrigins),
 		middleware.Auth(middleware.AuthOptions{
-			ModeProvider:              app.AuthState.Mode,
-			BearerTokenProvider:       app.AuthState.BearerToken,
-			EdgeSecretProvider:        app.AuthState.EdgeSecret,
-			AdminUsernameProvider:     app.AuthState.AdminUsername,
-			AdminPasswordHashProvider: app.AuthState.AdminPasswordHash,
+			ModeProvider:        app.AuthState.Mode,
+			BearerTokenProvider: app.AuthState.BearerToken,
+			EdgeSecretProvider:  app.AuthState.EdgeSecret,
+			AdminUsernameProvider: func() string {
+				if app.Cfg == nil || !app.Cfg.Server.AdminAuthEnabled {
+					return ""
+				}
+				return app.AuthState.AdminUsername()
+			},
+			AdminPasswordHashProvider: func() string {
+				if app.Cfg == nil || !app.Cfg.Server.AdminAuthEnabled {
+					return ""
+				}
+				return app.AuthState.AdminPasswordHash()
+			},
 			// Health endpoints are always public so external probes (Render,
 			// Kubernetes) can hit them without credentials.
 			AllowPublicPaths:      publicPaths,

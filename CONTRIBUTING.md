@@ -186,14 +186,44 @@ Releases cut from the public OSS mirror (`kombifyio/SpeechKit`). The private ups
 1. **Sync versions** across manifests:
 
    ```bash
-   node scripts/sync-version.mjs <new-version>   # e.g. 0.20.0
+   node scripts/sync-version.mjs --version=<new-version>   # e.g. 0.20.0
    ```
+
+   This bumps `package.json`, both `package-lock.json` files,
+   `frontend/app/package.json`, `cmd/speechkit/winres.json`, and
+   `installer/speechkit.nsi`. Forgetting this step leaves the
+   Website surfacing the previous version — CI now catches the
+   drift via `npm run release:lint:version-sync`.
 
 2. **Update changelog + render release notes**:
 
+   The CHANGELOG entry is the public-facing summary that lands on the
+   GitHub Release page on `kombifyio/SpeechKit` and feeds the Website
+   "What is new" panel. Write it for end users, not for maintainers.
+   Full style rules and a template are in
+   [`docs/changelog-style.md`](./docs/changelog-style.md).
+
    ```bash
+   # Validate the [Unreleased] section before moving it under a version header.
+   npm run release:lint:unreleased
+
+   # Verify package.json and CHANGELOG.md agree on the version.
+   npm run release:lint:version-sync
+
+   # After moving the entry under ## [0.20.0]:
+   npm run release:lint -- --version v0.20.0
+
+   # Render the public release notes.
    npm run release:notes -- --version v0.20.0 --output release-notes.md
    ```
+
+   `release:lint` refuses to render an entry that references internal
+   tracker IDs (`SK-…`, `Beads`), internal source paths
+   (`cmd/…`, `internal/…`, specific `*.go` filenames), private host
+   names, or other maintainer-only vocabulary. CI runs the same check
+   on every tag push, plus a hard guard that fails the release if
+   `package.json` and the top CHANGELOG entry disagree on the
+   version.
 
 3. **Commit the version bump** on `main` and get explicit owner approval before pushing.
 

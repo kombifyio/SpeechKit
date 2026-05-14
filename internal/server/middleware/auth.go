@@ -36,6 +36,10 @@ const (
 	adminSessionTTL        = 30 * time.Minute
 )
 
+// AdminSessionCookieName is exported for server integration tests that verify
+// setup/auth transitions without duplicating the cookie contract.
+const AdminSessionCookieName = adminSessionCookieName
+
 var adminSessionSigningKey = mustRandomBytes(32)
 
 type adminSessionClaims struct {
@@ -308,7 +312,7 @@ func Auth(opts AuthOptions) Middleware {
 			}
 			id, ok := verify(mode, r, strings.TrimSpace(bearerTokenProvider()), strings.TrimSpace(edgeSecretProvider()), strings.TrimSpace(bearerRoleProvider()))
 			if !ok {
-				if browserUnauthorizedResponse(htmlUnauthorizedSet, htmlUnauthorizedRoutes, r) {
+				if browserUnauthorizedResponse(htmlUnauthorizedSet, htmlUnauthorizedRoutes, r) && strings.TrimSpace(adminUsernameProvider()) != "" && strings.TrimSpace(adminPasswordHashProvider()) != "" {
 					writeBrowserAuthError(w, r)
 				} else {
 					writeAuthError(w)
@@ -418,6 +422,47 @@ func verifyBasicAdmin(r *http.Request, username, passwordHash string) (Identity,
 		Role:   "admin",
 		Source: "basic",
 	}, true
+}
+
+func AdminPasswordMatches(username, passwordHash, presentedUser, presentedPassword string) bool {
+	username = strings.TrimSpace(username)
+	passwordHash = strings.TrimSpace(passwordHash)
+	presentedUser = strings.TrimSpace(presentedUser)
+	if username == "" || passwordHash == "" || presentedUser == "" || presentedPassword == "" {
+		return false
+	}
+	return hmacEqual([]byte(presentedUser), []byte(username)) &&
+		bcrypt.CompareHashAndPassword([]byte(passwordHash), []byte(presentedPassword)) == nil
+}
+
+func NewAdminSessionCookie(username, passwordHash string, secure bool, now time.Time) (*http.Cookie, error) {
+	username = strings.TrimSpace(username)
+	passwordHash = strings.TrimSpace(passwordHash)
+	if username == "" || passwordHash == "" {
+		return nil, http.ErrNoCookie
+	}
+	if now.IsZero() {
+		now = time.Now()
+	}
+	expires := now.Add(adminSessionTTL)
+	token := signAdminSessionToken(adminSessionClaims{
+		User:      username,
+		ExpiresAt: expires.Unix(),
+		Nonce:     base64.RawURLEncoding.EncodeToString(mustRandomBytes(16)),
+	}, passwordHash)
+	if token == "" {
+		return nil, http.ErrNoCookie
+	}
+	return &http.Cookie{
+		Name:     adminSessionCookieName,
+		Value:    token,
+		Path:     "/",
+		Expires:  expires,
+		MaxAge:   int(adminSessionTTL.Seconds()),
+		HttpOnly: true,
+		Secure:   secure,
+		SameSite: http.SameSiteLaxMode,
+	}, nil
 }
 
 func handleAdminSessionEndpoint(w http.ResponseWriter, r *http.Request, username, passwordHash string) bool {
@@ -663,8 +708,6 @@ func writeBrowserAuthError(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("X-Content-Type-Options", "nosniff")
-	w.Header().Add("WWW-Authenticate", `Basic realm="speechkit-admin", charset="UTF-8"`)
-	w.Header().Add("WWW-Authenticate", `Bearer realm="speechkit"`)
 	w.WriteHeader(http.StatusUnauthorized)
 	if r.Method == http.MethodHead {
 		return

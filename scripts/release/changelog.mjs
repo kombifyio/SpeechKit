@@ -56,10 +56,10 @@ function extractBulletBlocks(body) {
 
 function toReleaseNote(rawLine, index) {
   const raw = rawLine.slice(2).trim()
-  const boldMatch = raw.match(/^\*\*(.+?)\*\*:\s*(.+)$/)
+  const boldMatch = raw.match(/^\*\*(.+?)\*\*(?::|\.)?\s*(.+)$/)
   if (boldMatch) {
     return {
-      title: boldMatch[1].trim(),
+      title: boldMatch[1].trim().replace(/[.:]+$/, ''),
       body: boldMatch[2].trim(),
     }
   }

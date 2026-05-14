@@ -103,6 +103,29 @@ test('extractLatestReleaseNotes prefers Highlights bullets and limits output', (
   ])
 })
 
+test('extractLatestReleaseNotes turns bold sentence bullets into titled notes', () => {
+  const latest = extractLatestReleaseNotes(`# Changelog
+
+## [0.19.0] - 2026-04-30
+
+### Highlights
+
+- **Agent-ready getting started.** The website gives coding agents copy-ready prompts.
+- **Storage groundwork** Speech sessions can now link to audio assets.
+`)
+
+  assert.deepEqual(latest.notes, [
+    {
+      title: 'Agent-ready getting started',
+      body: 'The website gives coding agents copy-ready prompts.',
+    },
+    {
+      title: 'Storage groundwork',
+      body: 'Speech sessions can now link to audio assets.',
+    },
+  ])
+})
+
 test('isMinorBaselineVersion only accepts X.Y.0 (with optional pre-release)', () => {
   assert.equal(isMinorBaselineVersion('0.30.0'), true)
   assert.equal(isMinorBaselineVersion('1.0.0'), true)

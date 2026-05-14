@@ -169,6 +169,12 @@ func newInitialAppState(cfg *config.Config) *appState {
 }
 
 func showSettingsWindow(window settingsWindow) {
+	showSettingsWindowWithFocus(window, true)
+}
+
+func showSettingsWindowWithFocus(window settingsWindow, focus bool) {
+	defer recoverHook("settings_window_show")
+
 	if window == nil {
 		slog.Warn("desktop.window.show_skipped", "window", "settings", "reason", "nil")
 		return
@@ -180,8 +186,28 @@ func showSettingsWindow(window settingsWindow) {
 	if !wasVisible {
 		window.Show()
 	}
-	window.Focus()
-	slog.Info("desktop.window.shown", "window", "settings", "was_visible", wasVisible)
+	if focus {
+		window.Focus()
+	}
+	slog.Info("desktop.window.shown", "window", "settings", "was_visible", wasVisible, "focus", focus)
+}
+
+func (s *appState) markAppStarted() {
+	if s == nil {
+		return
+	}
+	s.mu.Lock()
+	s.appStarted = true
+	s.mu.Unlock()
+}
+
+func (s *appState) dashboardReadyForAutoOpen() bool {
+	if s == nil {
+		return false
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.dashboard != nil && s.appStarted
 }
 
 func dashboardRefreshScript(source string) string {
@@ -205,7 +231,7 @@ func (s *appState) showDashboardWindow(source string) {
 		if window == nil {
 			return
 		}
-		showSettingsWindow(window)
+		showSettingsWindowWithFocus(window, source != "first-run-setup")
 		window.ExecJS(dashboardRefreshScript(source))
 	}
 
@@ -247,7 +273,7 @@ func (s *appState) shouldHideWindowOnClose() bool {
 // The presenter is dispatched in a goroutine because the dashboard
 // window is created during app.Run()'s event loop, which has not yet
 // started when we are called. We poll briefly (under 4 s) for the
-// window to be wired up and then ask Wails to show it.
+// window and application-started event before asking Wails to show it.
 func scheduleFirstRunOnboarding(state *appState, installState *config.InstallState, showDashboard func(string)) {
 	if installState == nil || installState.Mode != config.InstallModeLocal || installState.SetupDone {
 		return
@@ -260,10 +286,7 @@ func scheduleFirstRunOnboarding(state *appState, installState *config.InstallSta
 		const interval = 200 * time.Millisecond
 		for i := 0; i < attempts; i++ {
 			time.Sleep(interval)
-			state.mu.Lock()
-			ready := state.dashboard != nil
-			state.mu.Unlock()
-			if ready {
+			if state.dashboardReadyForAutoOpen() {
 				slog.Info("first-run onboarding: opening dashboard")
 				showDashboard("first-run-setup")
 				return

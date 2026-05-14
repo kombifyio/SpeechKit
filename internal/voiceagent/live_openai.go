@@ -18,10 +18,14 @@ import (
 )
 
 // defaultOpenAIRealtimeModel is the kernel-level default for the OpenAI
-// Realtime provider when LiveConfig.Model is empty. As of May 2026
-// `gpt-realtime-2` is the GPT-5-class realtime model OpenAI announced
-// alongside `gpt-realtime-translate` and `gpt-realtime-whisper`.
+// Realtime provider when LiveConfig.Model is empty. gpt-realtime-2 requires the
+// GA Realtime WebSocket API, so the provider must not send the legacy beta
+// routing header.
 const defaultOpenAIRealtimeModel = "gpt-realtime-2"
+
+// DefaultOpenAIRealtimeModel is the public runtime default for OpenAI-backed
+// Voice Agent sessions.
+const DefaultOpenAIRealtimeModel = defaultOpenAIRealtimeModel
 
 // OpenAI Realtime API constants. The API expects 24 kHz, 16-bit signed,
 // little-endian PCM mono on the input audio buffer; SpeechKit's mic capture
@@ -29,8 +33,7 @@ const defaultOpenAIRealtimeModel = "gpt-realtime-2"
 // PCM from the server is also 24 kHz, which matches the kernel's
 // LiveMessage.Audio contract — no resample on the way back out.
 const (
-	openaiRealtimeBaseURL    = "wss://api.openai.com/v1/realtime"
-	openaiRealtimeBetaHeader = "realtime=v1"
+	openaiRealtimeBaseURL = "wss://api.openai.com/v1/realtime"
 
 	openaiInputSampleRate = 24000 // OpenAI Realtime expects 24 kHz PCM input
 	micSampleRate         = 16000 // SpeechKit microphone capture rate
@@ -74,14 +77,8 @@ func (p *OpenAILive) Connect(ctx context.Context, cfg LiveConfig) error {
 	if strings.TrimSpace(cfg.APIKey) == "" {
 		return errors.New("openai realtime: APIKey is required")
 	}
-	model := strings.TrimSpace(cfg.Model)
-	if model == "" {
-		model = defaultOpenAIRealtimeModel
-	}
-
-	header := http.Header{}
-	header.Set("Authorization", "Bearer "+cfg.APIKey)
-	header.Set("OpenAI-Beta", openaiRealtimeBetaHeader)
+	model := resolveOpenAIRealtimeModel(cfg.Model)
+	header := openAIRealtimeHeaders(cfg.APIKey)
 
 	dialURL := fmt.Sprintf("%s?model=%s", openaiRealtimeBaseURL, model)
 	conn, dialResp, err := websocket.Dial(ctx, dialURL, &websocket.DialOptions{
@@ -127,6 +124,19 @@ func (p *OpenAILive) Connect(ctx context.Context, cfg LiveConfig) error {
 		return fmt.Errorf("openai realtime: session.update: %w", err)
 	}
 	return nil
+}
+
+func resolveOpenAIRealtimeModel(model string) string {
+	if trimmed := strings.TrimSpace(model); trimmed != "" {
+		return trimmed
+	}
+	return defaultOpenAIRealtimeModel
+}
+
+func openAIRealtimeHeaders(apiKey string) http.Header {
+	header := http.Header{}
+	header.Set("Authorization", "Bearer "+apiKey)
+	return header
 }
 
 // UpdateInstructions sends a fresh session.update with new instructions/tools.
@@ -348,27 +358,8 @@ func (p *OpenAILive) sendSessionUpdate(ctx context.Context, cfg LiveConfig) erro
 		}
 	}
 
-	turnDetection := buildOpenAITurnDetection(cfg.Policies.ActivityDetection)
-
-	session := map[string]any{
-		"modalities":          []string{"audio", "text"},
-		"input_audio_format":  "pcm16",
-		"output_audio_format": "pcm16",
-		"voice":               firstNonEmptyOpenAIVoice(cfg.Voice),
-		"instructions":        instructions,
-	}
-	if turnDetection != nil {
-		session["turn_detection"] = turnDetection
-	}
-	if cfg.Policies.EnableInputAudioTranscription {
-		session["input_audio_transcription"] = map[string]any{
-			"model": "whisper-1",
-		}
-	}
-	if tools := buildOpenAITools(cfg.Tools); len(tools) > 0 {
-		session["tools"] = tools
-		session["tool_choice"] = "auto"
-	}
+	session := buildOpenAISession(cfg)
+	session["instructions"] = instructions
 
 	frame := map[string]any{
 		"type":    "session.update",
@@ -388,17 +379,59 @@ func (p *OpenAILive) sendSessionUpdate(ctx context.Context, cfg LiveConfig) erro
 	return nil
 }
 
+func buildOpenAISession(cfg LiveConfig) map[string]any {
+	turnDetection := buildOpenAITurnDetection(cfg.Policies.ActivityDetection)
+	inputAudio := map[string]any{
+		"format": map[string]any{
+			"type": "audio/pcm",
+			"rate": openaiInputSampleRate,
+		},
+	}
+	if turnDetection != nil {
+		inputAudio["turn_detection"] = turnDetection
+	}
+	if cfg.Policies.EnableInputAudioTranscription {
+		inputAudio["transcription"] = map[string]any{
+			"model": "whisper-1",
+		}
+	}
+	session := map[string]any{
+		"type":              "realtime",
+		"model":             resolveOpenAIRealtimeModel(cfg.Model),
+		"output_modalities": []string{"audio"},
+		"audio": map[string]any{
+			"input": inputAudio,
+			"output": map[string]any{
+				"format": map[string]any{
+					"type": "audio/pcm",
+					"rate": openaiInputSampleRate,
+				},
+				"voice": firstNonEmptyOpenAIVoice(cfg.Voice),
+			},
+		},
+	}
+	if tools := buildOpenAITools(cfg.Tools); len(tools) > 0 {
+		session["tools"] = tools
+		session["tool_choice"] = "auto"
+	}
+	return session
+}
+
 // firstNonEmptyOpenAIVoice maps the kernel's voice name to a value the
-// Realtime API accepts. OpenAI exposes a fixed set of named voices
-// ("alloy", "ash", "ballad", "cedar", "coral", "echo", "marin", "sage",
-// "shimmer", "verse"). We pass user values through as-is; an empty value
-// falls back to "alloy" which is valid across all current Realtime models.
+// Realtime API accepts. OpenAI exposes a fixed set of named voices. Unknown
+// SpeechKit/Gemini voice names intentionally fall back to alloy so switching
+// provider=OpenAI does not turn a valid server config into a failed session.
 func firstNonEmptyOpenAIVoice(voice string) string {
-	v := strings.TrimSpace(voice)
+	v := strings.ToLower(strings.TrimSpace(voice))
 	if v == "" {
 		return "alloy"
 	}
-	return strings.ToLower(v)
+	switch v {
+	case "alloy", "ash", "ballad", "cedar", "coral", "echo", "marin", "sage", "shimmer", "verse":
+		return v
+	default:
+		return "alloy"
+	}
 }
 
 // buildOpenAITurnDetection translates the kernel's ActivityDetectionPolicy
@@ -407,10 +440,12 @@ func firstNonEmptyOpenAIVoice(voice string) string {
 // audio buffer manually).
 func buildOpenAITurnDetection(policy ActivityDetectionPolicy) map[string]any {
 	if !policy.Automatic {
-		return map[string]any{"type": "none"}
+		return nil
 	}
 	td := map[string]any{
-		"type": "server_vad",
+		"type":               "server_vad",
+		"create_response":    true,
+		"interrupt_response": true,
 	}
 	if policy.SilenceDurationMs > 0 {
 		td["silence_duration_ms"] = int(policy.SilenceDurationMs)
@@ -536,7 +571,7 @@ func (p *OpenAILive) parseEvent(data []byte) (*LiveMessage, bool, error) {
 		}
 		_ = json.Unmarshal(data, &ev)
 		return &LiveMessage{InputTranscript: ev.Transcript, InputTranscriptDone: true}, false, nil
-	case "response.audio.delta":
+	case "response.audio.delta", "response.output_audio.delta":
 		var ev struct {
 			Delta string `json:"delta"`
 		}
@@ -548,29 +583,35 @@ func (p *OpenAILive) parseEvent(data []byte) (*LiveMessage, bool, error) {
 			return nil, false, fmt.Errorf("openai realtime: decode audio bytes: %w", err)
 		}
 		return &LiveMessage{Audio: audio}, false, nil
-	case "response.audio.done":
+	case "response.audio.done", "response.output_audio.done":
 		// End-of-audio for this response — the server still owes us a
 		// response.done, which is where we signal turn completion to the
 		// kernel. Swallow audio.done to avoid double-fire.
 		return nil, true, nil
-	case "response.audio_transcript.delta":
+	case "response.audio_transcript.delta", "response.output_audio_transcript.delta":
 		var ev struct {
 			Delta string `json:"delta"`
 		}
 		_ = json.Unmarshal(data, &ev)
 		return &LiveMessage{OutputTranscript: ev.Delta}, false, nil
-	case "response.audio_transcript.done":
+	case "response.audio_transcript.done", "response.output_audio_transcript.done":
 		var ev struct {
 			Transcript string `json:"transcript"`
 		}
 		_ = json.Unmarshal(data, &ev)
 		return &LiveMessage{OutputTranscript: ev.Transcript, OutputTranscriptDone: true}, false, nil
-	case "response.text.delta":
+	case "response.text.delta", "response.output_text.delta":
 		var ev struct {
 			Delta string `json:"delta"`
 		}
 		_ = json.Unmarshal(data, &ev)
-		return &LiveMessage{Text: ev.Delta}, false, nil
+		return &LiveMessage{Text: ev.Delta, OutputTranscript: ev.Delta}, false, nil
+	case "response.output_text.done":
+		var ev struct {
+			Text string `json:"text"`
+		}
+		_ = json.Unmarshal(data, &ev)
+		return &LiveMessage{Text: ev.Text, OutputTranscript: ev.Text, OutputTranscriptDone: true}, false, nil
 	case "response.function_call_arguments.done":
 		var ev struct {
 			CallID    string `json:"call_id"`

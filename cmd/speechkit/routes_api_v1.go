@@ -2,7 +2,9 @@ package main
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
+	"errors"
 	"github.com/kombifyio/SpeechKit/cmd/speechkit/internal/profiles"
 	"net/http"
 	"strconv"
@@ -129,6 +131,10 @@ func registerAPIV1Routes(mux *http.ServeMux, cfgPath string, cfg *config.Config,
 		handleAPIV1VoiceSessions(w, r, feedbackStore)
 	})
 
+	mux.HandleFunc("/api/v1/voice-sessions/", func(w http.ResponseWriter, r *http.Request) {
+		handleAPIV1VoiceSessionDetail(w, r, feedbackStore)
+	})
+
 	mux.HandleFunc("/api/v1/providers/artifacts", func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/api/v1/providers/artifacts" {
 			http.NotFound(w, r)
@@ -243,6 +249,38 @@ func handleAPIV1VoiceSessions(w http.ResponseWriter, r *http.Request, feedbackSt
 		return
 	}
 	writeJSON(w, sessions)
+}
+
+func handleAPIV1VoiceSessionDetail(w http.ResponseWriter, r *http.Request, feedbackStore store.Store) {
+	if r.Method != http.MethodGet {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+	sessionStore, ok := feedbackStore.(store.VoiceAgentSessionStore)
+	if !ok || sessionStore == nil {
+		http.NotFound(w, r)
+		return
+	}
+	rawID := strings.Trim(strings.TrimPrefix(r.URL.Path, "/api/v1/voice-sessions/"), "/")
+	if rawID == "" || strings.Contains(rawID, "/") {
+		http.NotFound(w, r)
+		return
+	}
+	id, err := strconv.ParseInt(rawID, 10, 64)
+	if err != nil || id <= 0 {
+		http.NotFound(w, r)
+		return
+	}
+	session, err := sessionStore.GetVoiceAgentSession(r.Context(), id)
+	if errors.Is(err, sql.ErrNoRows) {
+		http.NotFound(w, r)
+		return
+	}
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	writeJSON(w, session)
 }
 
 func apiV1DictionaryFromStoreOrConfig(ctx context.Context, cfg *config.Config, feedbackStore store.Store, language string) apiV1DictionaryResponse {

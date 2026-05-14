@@ -15,10 +15,11 @@
 //	1 — at least one scenario failed
 //	2 — invalid CLI usage / setup error
 //
-// Scenarios use programmatically generated audio fixtures (synth sine
-// wave wrapped in a WAV header) so the tool has no external file
-// dependencies. WebM/Opus and OGG/Opus paths are exercised by the
-// server-side ffmpeg-test pair, not here.
+// By default scenarios use programmatically generated audio fixtures
+// (synth sine wave wrapped in a WAV header) so the tool has no external
+// file dependencies. When --require-functional is set, Dictation must be
+// given a spoken --audio-fixture and mode checks require provider-backed
+// non-empty outputs.
 package main
 
 import (
@@ -35,6 +36,7 @@ import (
 	"net/http"
 	"net/textproto"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -48,6 +50,10 @@ func main() {
 		scenarios   = flag.String("scenarios", "all", "comma-separated scenarios: health,deployment,dictation,assist,voiceagent,all")
 		timeout     = flag.Duration("timeout", 30*time.Second, "per-request timeout")
 		strictReady = flag.Bool("strict-ready", false, "fail when /readyz or /readyz/strict returns 503")
+		functional  = flag.Bool("require-functional", false, "fail on provider-unavailable responses and require real mode outputs")
+		audioFile   = flag.String("audio-fixture", "", "spoken audio fixture for functional dictation checks")
+		expectText  = flag.String("expect-dictation-text", "", "case-insensitive text fragment expected in functional dictation output")
+		vaText      = flag.String("voiceagent-text", "Say exactly: SpeechKit voice agent live check.", "text turn for functional Voice Agent checks")
 		verbose     = flag.Bool("v", false, "verbose: print every request body and response")
 	)
 	flag.Parse()
@@ -74,7 +80,13 @@ func main() {
 		}
 		fmt.Printf("=== RUN  %s\n", name)
 		start := time.Now()
-		err := fn(c, &scenarioOpts{strictReady: *strictReady})
+		err := fn(c, &scenarioOpts{
+			strictReady:         *strictReady,
+			requireFunctional:   *functional,
+			audioFixturePath:    *audioFile,
+			expectDictationText: *expectText,
+			voiceAgentText:      *vaText,
+		})
 		dur := time.Since(start)
 		if err != nil {
 			fmt.Printf("--- FAIL %s (%s)\n   %v\n", name, dur, err)
@@ -105,7 +117,11 @@ func main() {
 type scenarioFn func(c *client, opts *scenarioOpts) error
 
 type scenarioOpts struct {
-	strictReady bool
+	strictReady         bool
+	requireFunctional   bool
+	audioFixturePath    string
+	expectDictationText string
+	voiceAgentText      string
 }
 
 var allScenarios = map[string]scenarioFn{
@@ -236,23 +252,39 @@ func scenarioHealth(c *client, opts *scenarioOpts) error {
 }
 
 func scenarioDictation(c *client, opts *scenarioOpts) error {
-	// 250ms 440 Hz sine — enough for the ingress path to validate but
-	// short enough that any STT provider will return quickly. The actual
-	// transcript content depends on the deployment's provider mix; we
-	// only assert the response shape, not the words.
-	pcm := synthSine(16000, 440.0, 250)
-	wav := wrapWAV(pcm, 16000, 1)
+	var (
+		audio       []byte
+		contentType = "audio/wav"
+		filename    = "e2e.wav"
+		err         error
+	)
+	if strings.TrimSpace(opts.audioFixturePath) != "" {
+		audio, err = os.ReadFile(opts.audioFixturePath)
+		if err != nil {
+			return fmt.Errorf("dictation audio fixture: %w", err)
+		}
+		filename = filepath.Base(opts.audioFixturePath)
+		contentType = audioContentType(filename)
+	} else {
+		if opts.requireFunctional {
+			return errors.New("functional dictation requires --audio-fixture with real spoken audio")
+		}
+		// 250ms 440 Hz sine is only an ingress smoke fixture. It is not a
+		// functional transcription test.
+		pcm := synthSine(16000, 440.0, 250)
+		audio = wrapWAV(pcm, 16000, 1)
+	}
 
 	body := &bytes.Buffer{}
 	mw := multipart.NewWriter(body)
 	hdr := textproto.MIMEHeader{}
-	hdr.Set("Content-Type", "audio/wav")
-	hdr.Set("Content-Disposition", `form-data; name="audio"; filename="e2e.wav"`)
+	hdr.Set("Content-Type", contentType)
+	hdr.Set("Content-Disposition", fmt.Sprintf(`form-data; name="audio"; filename=%q`, filename))
 	part, err := mw.CreatePart(hdr)
 	if err != nil {
 		return err
 	}
-	if _, err := part.Write(wav); err != nil {
+	if _, err := part.Write(audio); err != nil {
 		return err
 	}
 	_ = mw.WriteField("language", "en")
@@ -278,11 +310,23 @@ func scenarioDictation(c *client, opts *scenarioOpts) error {
 		if dr.DurationMs <= 0 {
 			return fmt.Errorf("dictation: duration_ms must be > 0; got %d body=%s", dr.DurationMs, respBody)
 		}
+		if opts.requireFunctional {
+			if strings.TrimSpace(dr.Text) == "" {
+				return fmt.Errorf("dictation: functional check produced empty transcript; body=%s", respBody)
+			}
+			if expected := strings.TrimSpace(opts.expectDictationText); expected != "" &&
+				!strings.Contains(strings.ToLower(dr.Text), strings.ToLower(expected)) {
+				return fmt.Errorf("dictation: transcript %q does not contain expected text fragment %q", dr.Text, expected)
+			}
+		}
 		if c.verbose {
 			fmt.Printf("    dictation provider=%s text=%q latency_ms=%d\n", dr.Provider, dr.Text, dr.LatencyMs)
 		}
 		return nil
 	case http.StatusServiceUnavailable:
+		if opts.requireFunctional {
+			return fmt.Errorf("dictation unavailable during functional check; body=%s", respBody)
+		}
 		// Acceptable when the deployment has no STT provider keys; we
 		// still want the contract envelope.
 		if !hasErrorEnvelope(respBody) {
@@ -295,8 +339,25 @@ func scenarioDictation(c *client, opts *scenarioOpts) error {
 	}
 }
 
+func audioContentType(filename string) string {
+	switch strings.ToLower(filepath.Ext(filename)) {
+	case ".wav":
+		return "audio/wav"
+	case ".webm":
+		return "audio/webm"
+	case ".ogg":
+		return "audio/ogg"
+	case ".mp3":
+		return "audio/mpeg"
+	case ".m4a":
+		return "audio/mp4"
+	default:
+		return "application/octet-stream"
+	}
+}
+
 func scenarioAssist(c *client, opts *scenarioOpts) error {
-	if err := checkAssistSelfTest(c); err != nil {
+	if err := checkAssistSelfTest(c, opts); err != nil {
 		return err
 	}
 
@@ -367,10 +428,16 @@ func scenarioAssist(c *client, opts *scenarioOpts) error {
 			if check.wantAction != "" && ar.Action != check.wantAction {
 				return fmt.Errorf("assist %s: action = %q, want %q; body=%s", check.name, ar.Action, check.wantAction, respBody)
 			}
+			if opts.requireFunctional && strings.TrimSpace(ar.Text) == "" {
+				return fmt.Errorf("assist %s: functional check produced empty text; body=%s", check.name, respBody)
+			}
 			if c.verbose {
 				fmt.Printf("    assist %s action=%s text=%q latency_ms=%d\n", check.name, ar.Action, ar.Text, ar.LatencyMs)
 			}
 		case http.StatusServiceUnavailable:
+			if opts.requireFunctional {
+				return fmt.Errorf("assist %s unavailable during functional check; body=%s", check.name, respBody)
+			}
 			if !check.allowDegrade {
 				return fmt.Errorf("assist %s unexpectedly unavailable; body=%s", check.name, respBody)
 			}
@@ -385,7 +452,7 @@ func scenarioAssist(c *client, opts *scenarioOpts) error {
 	return nil
 }
 
-func checkAssistSelfTest(c *client) error {
+func checkAssistSelfTest(c *client, opts *scenarioOpts) error {
 	resp, respBody, err := c.do(http.MethodPost, "/api/v1/assist/self-test", "application/json", nil, true)
 	if err != nil {
 		return fmt.Errorf("assist self-test request: %w", err)
@@ -408,6 +475,9 @@ func checkAssistSelfTest(c *client) error {
 		}
 		return nil
 	case http.StatusServiceUnavailable:
+		if opts.requireFunctional {
+			return fmt.Errorf("assist self-test unavailable during functional check; body=%s", respBody)
+		}
 		if !hasErrorEnvelope(respBody) {
 			return fmt.Errorf("assist self-test 503 missing error envelope; body=%s", respBody)
 		}
@@ -452,11 +522,15 @@ func scenarioVoiceAgentCreate(c *client, opts *scenarioOpts) error {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), c.timeout)
 	defer cancel()
-	if err := c.verifyVoiceAgentWebSocket(ctx, sr.WSURL); err != nil {
+	if opts.requireFunctional {
+		if err := c.verifyVoiceAgentFunctional(ctx, sr.WSURL, opts.voiceAgentText); err != nil {
+			return fmt.Errorf("voiceagent functional websocket: %w", err)
+		}
+	} else if err := c.verifyVoiceAgentWebSocket(ctx, sr.WSURL); err != nil {
 		return fmt.Errorf("voiceagent websocket: %w", err)
 	}
 	if c.verbose {
-		fmt.Printf("    voiceagent websocket connected and closed cleanly\n")
+		fmt.Printf("    voiceagent websocket verified\n")
 	}
 
 	// Clean up the session — leaving it dangling would slowly use up the
@@ -500,6 +574,110 @@ func (c *client) verifyVoiceAgentWebSocket(ctx context.Context, rawURL string) e
 	}
 	defer func() { _ = conn.CloseNow() }()
 	return conn.Close(websocket.StatusNormalClosure, "speechkit e2e smoke complete")
+}
+
+func (c *client) verifyVoiceAgentFunctional(ctx context.Context, rawURL, textTurn string) error {
+	wsURL := strings.TrimSpace(rawURL)
+	if wsURL == "" {
+		return errors.New("ws_url is empty")
+	}
+	opts := &websocket.DialOptions{}
+	if c.token != "" {
+		opts.HTTPHeader = http.Header{}
+		opts.HTTPHeader.Set("Authorization", "Bearer "+c.token)
+	}
+	conn, resp, err := websocket.Dial(ctx, wsURL, opts)
+	if resp != nil && resp.Body != nil {
+		defer func() { _ = resp.Body.Close() }()
+	}
+	if err != nil {
+		return err
+	}
+	defer func() { _ = conn.CloseNow() }()
+
+	start := map[string]any{
+		"type":            "start",
+		"media_transport": "websocket",
+		"locale":          "en",
+		"system_prompt_override": strings.Join([]string{
+			"You are running a SpeechKit release verification.",
+			"Reply briefly to the user's text turn.",
+			"Include the words 'SpeechKit live check' in your answer.",
+		}, " "),
+	}
+	if err := writeWSJSON(ctx, conn, start); err != nil {
+		return fmt.Errorf("send start: %w", err)
+	}
+
+	turn := strings.TrimSpace(textTurn)
+	if turn == "" {
+		turn = "Say exactly: SpeechKit live check."
+	}
+	textSent := false
+	var outputTranscript strings.Builder
+	for {
+		typ, data, err := conn.Read(ctx)
+		if err != nil {
+			return fmt.Errorf("read frame before output transcript: %w", err)
+		}
+		if typ == websocket.MessageBinary {
+			continue
+		}
+		if typ != websocket.MessageText {
+			continue
+		}
+		var frame struct {
+			Type    string `json:"type"`
+			State   string `json:"state"`
+			Text    string `json:"text"`
+			Done    bool   `json:"done"`
+			Code    string `json:"code"`
+			Message string `json:"message"`
+			Reason  string `json:"reason"`
+		}
+		if err := json.Unmarshal(data, &frame); err != nil {
+			return fmt.Errorf("decode websocket frame %s: %w", data, err)
+		}
+		switch frame.Type {
+		case "error":
+			return fmt.Errorf("%s: %s", firstNonEmpty(frame.Code, "voiceagent_error"), frame.Message)
+		case "state":
+			if frame.State == "listening" && !textSent {
+				if err := writeWSJSON(ctx, conn, map[string]any{"type": "text", "text": turn}); err != nil {
+					return fmt.Errorf("send text turn: %w", err)
+				}
+				textSent = true
+			}
+		case "output_transcript":
+			if !textSent {
+				return errors.New("received output_transcript before sending text turn")
+			}
+			outputTranscript.WriteString(frame.Text)
+			if strings.TrimSpace(outputTranscript.String()) != "" {
+				_ = writeWSJSON(ctx, conn, map[string]any{"type": "stop"})
+				return nil
+			}
+		case "session_end":
+			return fmt.Errorf("session ended before output transcript: %s", frame.Reason)
+		}
+	}
+}
+
+func writeWSJSON(ctx context.Context, conn *websocket.Conn, v any) error {
+	body, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+	return conn.Write(ctx, websocket.MessageText, body)
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, value := range values {
+		if strings.TrimSpace(value) != "" {
+			return value
+		}
+	}
+	return ""
 }
 
 // doResp captures the small amount of HTTP response metadata the

@@ -273,6 +273,11 @@ func (h *Handler) transcribeBytes(w http.ResponseWriter, r *http.Request, raw []
 			"STT router returned nil result")
 		return
 	}
+	if strings.TrimSpace(result.Text) == "" {
+		httpx.WriteError(w, http.StatusUnprocessableEntity, "empty_transcript",
+			"STT returned an empty transcript; the audio may contain no speech")
+		return
+	}
 
 	resp := transcribeResponse{
 		Text:       result.Text,

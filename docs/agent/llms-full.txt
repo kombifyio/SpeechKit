@@ -113,6 +113,21 @@ For a browser starter, use `speechkitctl init browser-dictation-react --output
 The MCP scaffold tool is read-only and returns file paths plus content for the
 calling agent to review and apply.
 
+## Release-Gated Native Android Memo Prompt
+
+Create a real native Android project, not a browser harness. The project must
+include Gradle settings, `app/build.gradle` or `app/build.gradle.kts`,
+`app/src/main/AndroidManifest.xml`, and Kotlin or Java source. The app records a
+memo, calls `/v1/dictation/transcribe`, saves the transcript locally, and sends
+memo text to `/v1/assist/process` for cleanup or summary. It must expose a
+settings/config path for `SPEECHKIT_SERVER_URL` and token, set up a fresh local
+SpeechKit Server in Docker Compose for verification, and define a Gradle task
+named `verifySpeechKitLive` that writes
+`speechkit-one-shot-functional-result.json` with `app_kind=android`,
+`app_transport=android`, `server_url_source=settings_screen` or
+`android_config`, non-empty Dictation/Assist outputs, and
+`checked_via_app=true`.
+
 Management mode requires a running server and bearer token:
 
 ```json

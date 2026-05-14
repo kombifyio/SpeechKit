@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"os"
 	"strings"
+	"time"
 
 	assistpkg "github.com/kombifyio/SpeechKit/internal/assist"
 	"github.com/kombifyio/SpeechKit/internal/config"
@@ -69,6 +70,16 @@ func handleServerSettingsPatch(w http.ResponseWriter, r *http.Request, app *App)
 			"error": map[string]any{
 				"code":    "settings_write_disabled",
 				"message": config.ServerSettingsWriteEnv + " must be true to save server model settings",
+			},
+		})
+		return
+	}
+	if !serverSettingsWriteAllowed(r, app) {
+		w.WriteHeader(http.StatusForbidden)
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"error": map[string]any{
+				"code":    "admin_required",
+				"message": "server settings changes require an admin identity after bootstrap",
 			},
 		})
 		return
@@ -166,6 +177,11 @@ func handleServerSettingsPatch(w http.ResponseWriter, r *http.Request, app *App)
 			"header_name": "Authorization",
 		}
 	}
+	if strings.TrimSpace(patch.AdminAuth.PasswordValue) != "" {
+		if cookie, err := middleware.NewAdminSessionCookie(app.Cfg.Server.AdminUsername, app.Cfg.Server.AdminPasswordHash, requestIsSecure(r), time.Now()); err == nil && cookie != nil {
+			http.SetCookie(w, cookie)
+		}
+	}
 	w.WriteHeader(http.StatusOK)
 	_ = json.NewEncoder(w).Encode(response)
 }
@@ -223,6 +239,7 @@ func serverSettingsSnapshot(app *App) map[string]any {
 			"mode":               cfg.Server.AuthMode,
 			"bearer_token_env":   firstNonEmpty(cfg.Server.BearerTokenEnv, "SPEECHKIT_SERVER_TOKEN"),
 			"bearer_token_set":   envPresent(firstNonEmpty(cfg.Server.BearerTokenEnv, "SPEECHKIT_SERVER_TOKEN")),
+			"admin_auth_enabled": cfg.Server.AdminAuthEnabled,
 			"admin_username":     cfg.Server.AdminUsername,
 			"admin_password_set": strings.TrimSpace(cfg.Server.AdminPasswordHash) != "",
 		},
@@ -302,11 +319,24 @@ func serverSettingsFullAccess(r *http.Request) bool {
 		return false
 	}
 	switch middleware.IdentityFromContext(r.Context()).Source {
-	case "bearer", "edge_hmac", "basic":
+	case "bearer", "edge_hmac", "admin_session":
 		return true
 	default:
 		return false
 	}
+}
+
+func serverSettingsWriteAllowed(r *http.Request, app *App) bool {
+	if r != nil {
+		id := middleware.IdentityFromContext(r.Context())
+		if id.Source == "admin_session" || strings.EqualFold(strings.TrimSpace(id.Role), "admin") {
+			return true
+		}
+		if id.Source != "" && id.Source != "none" {
+			return false
+		}
+	}
+	return serverSettingsBootstrapWriteAllowed(app)
 }
 
 func serverSettingsBootstrapSnapshot(full map[string]any) map[string]any {
@@ -321,6 +351,11 @@ func serverSettingsBootstrapSnapshot(full map[string]any) map[string]any {
 			out["editable"] = map[string]any{
 				"desired": serverSettingsBootstrapDesired(desired),
 			}
+		}
+	}
+	if runtime, ok := full["runtime"].(map[string]any); ok {
+		out["runtime"] = map[string]any{
+			"settings_write": runtime["settings_write"],
 		}
 	}
 	return out
@@ -362,6 +397,9 @@ func serverSettingsBootstrapWriteAllowed(app *App) bool {
 	if app == nil {
 		return false
 	}
+	if !envBool(config.ServerSettingsWriteEnv) {
+		return false
+	}
 	// Once any final post-onboarding state has been observed for this
 	// process, the bootstrap window stays closed. Out-of-band tampering
 	// with the settings file (deletion, downgrade) cannot reopen it
@@ -369,41 +407,32 @@ func serverSettingsBootstrapWriteAllowed(app *App) bool {
 	if app.bootstrapSealed.Load() {
 		return false
 	}
-	if !envBool(config.ServerSettingsWriteEnv) {
-		return false
-	}
-	mode := ""
-	token := ""
-	if app.AuthState != nil {
-		mode = app.AuthState.Mode()
-		token = app.AuthState.BearerToken()
-	} else if app.Cfg != nil {
-		mode = app.Cfg.Server.AuthMode
-		token = strings.TrimSpace(os.Getenv(strings.TrimSpace(app.Cfg.Server.BearerTokenEnv)))
-	}
-	mode = strings.ToLower(strings.TrimSpace(mode))
-	if mode != "bearer" && mode != "bearer_or_edge" {
-		return false
-	}
-	if strings.TrimSpace(token) != "" {
-		// A token is already in place. Bootstrap is no longer needed —
-		// any further setup must go through authenticated PATCH.
-		app.bootstrapSealed.Store(true)
-		return false
-	}
 	settingsPath := config.ServerSettingsPath(app.Cfg)
 	stored, ok, err := config.LoadServerModelSettings(settingsPath)
 	if err != nil {
 		return false
 	}
-	if !ok {
-		return true
-	}
-	if stored.OnboardingComplete && strings.TrimSpace(stored.OnboardingVersion) == strings.TrimSpace(app.Version) {
+	if ok && stored.OnboardingComplete && strings.TrimSpace(stored.OnboardingVersion) == strings.TrimSpace(app.Version) {
 		app.bootstrapSealed.Store(true)
 		return false
 	}
-	return true
+	if !serverAdminConfigured(app) {
+		return true
+	}
+	return false
+}
+
+func serverAdminConfigured(app *App) bool {
+	if app == nil {
+		return false
+	}
+	if app.Cfg != nil && !app.Cfg.Server.AdminAuthEnabled {
+		return false
+	}
+	if app.AuthState != nil && strings.TrimSpace(app.AuthState.AdminPasswordHash()) != "" {
+		return true
+	}
+	return app.Cfg != nil && app.Cfg.Server.AdminAuthEnabled && strings.TrimSpace(app.Cfg.Server.AdminPasswordHash) != ""
 }
 
 func providerConfigured(enabled bool, envName string) map[string]any {
@@ -490,6 +519,7 @@ func activeServerModelSettings(cfg *config.Config) config.ServerModelSettings {
 		Version:    1,
 		ServerAuth: activeServerAuthSettings(cfg),
 		AdminAuth: config.ServerAdminAuthSettings{
+			Enabled:      boolPtr(cfg.Server.AdminAuthEnabled),
 			Username:     strings.TrimSpace(cfg.Server.AdminUsername),
 			PasswordHash: strings.TrimSpace(cfg.Server.AdminPasswordHash),
 		},
@@ -592,6 +622,9 @@ func mergeServerModelSettings(base, patch config.ServerModelSettings) config.Ser
 }
 
 func mergeServerAdminAuthSetting(base, patch config.ServerAdminAuthSettings) config.ServerAdminAuthSettings {
+	if patch.Enabled != nil {
+		base.Enabled = patch.Enabled
+	}
 	if value := strings.TrimSpace(patch.Username); value != "" {
 		base.Username = value
 	}

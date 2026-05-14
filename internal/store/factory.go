@@ -1,6 +1,10 @@
 package store
 
-import "fmt"
+import (
+	"fmt"
+
+	speechstorage "github.com/kombifyio/SpeechKit/pkg/speechkit/storage"
+)
 
 // StoreConfig holds configuration for store backend selection.
 type StoreConfig struct {
@@ -11,6 +15,8 @@ type StoreConfig struct {
 	AudioRetentionDays      int    `toml:"audio_retention_days"`
 	MaxAudioStorageMB       int    `toml:"max_audio_storage_mb"`
 	TranscriptionModelHints map[string]string
+	DefaultScope            speechstorage.Scope
+	ScopePolicy             speechstorage.ScopePolicy
 }
 
 // BackendFactory creates a Store from config.

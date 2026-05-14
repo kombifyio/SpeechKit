@@ -52,6 +52,34 @@ curl -fsS http://localhost:8080/healthz
 curl -fsS http://localhost:8080/readyz
 ```
 
+Complete setup with the API. The base server image leaves admin
+username/password disabled, but public installs should enable it immediately
+unless an authenticated edge already protects `/setup`:
+
+```sh
+ADMIN_PASSWORD="$(openssl rand -base64 32)"
+curl -fsS -X PATCH http://localhost:8080/v1/server/settings \
+  -H 'Content-Type: application/json' \
+  -d "{
+    \"onboarding_complete\": true,
+    \"admin_auth\": {
+      \"enabled\": true,
+      \"username\": \"admin\",
+      \"password\": \"${ADMIN_PASSWORD}\"
+    },
+    \"server_auth\": {
+      \"mode\": \"managed_bearer\",
+      \"bearer_token_env\": \"SPEECHKIT_SERVER_TOKEN\",
+      \"generate_token\": true
+    }
+  }"
+```
+
+Store the returned generated bearer token in the deployment environment as
+`SPEECHKIT_SERVER_TOKEN`, then restart the stack. Store the generated admin
+password in the operator's password manager; the server writes only a bcrypt
+hash.
+
 Bearer token:
 
 ```sh

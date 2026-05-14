@@ -331,8 +331,7 @@ Activate(Toggle-Hotkey) →
 |--------|----------|----------|--------|-------|-------|
 | **Gemini 2.5 Flash Native Audio** | `gemini-2.5-flash-native-audio-preview-12-2025` | Google | Sub-Sekunde | TBD | **Current Default** |
 | **Gemini 3.1 Flash Live** | `gemini-3.1-flash-live-preview` | Google | Sub-Sekunde | TBD (Preview) | Explicit preview candidate |
-| **OpenAI gpt-realtime-mini** | `gpt-realtime-mini` | OpenAI | ~300ms | ~$0.02/min in, ~$0.08/min out | Guenstiger Fallback |
-| **OpenAI gpt-realtime** | `gpt-realtime` | OpenAI | ~300ms | ~$0.06/min in, ~$0.24/min out | Qualitaets-Fallback |
+| **OpenAI gpt-realtime-2** | `gpt-realtime-2` | OpenAI | ~300ms | Provider pricing | OpenAI Realtime Standard |
 | **Groq Pipeline** | STT+LLM+TTS | Groq | ~500-800ms | Guenstigste Option | Budget-Fallback |
 
 **Warum Gemini 2.5 Flash Native Audio als aktueller Default:**
@@ -346,7 +345,7 @@ Activate(Toggle-Hotkey) →
 **Fallback-Strategie:**
 1. Gemini 2.5 Flash Native Audio → Wenn nicht verfuegbar:
 2. Gemini 3.1 Flash Live nur wenn explizit konfiguriert → Wenn nicht verfuegbar:
-3. OpenAI gpt-realtime-mini (guenstiger als gpt-realtime) → Wenn nicht verfuegbar:
+3. OpenAI gpt-realtime-2, wenn OpenAI Realtime explizit aktiviert ist → Wenn nicht verfuegbar:
 4. Groq Pipeline Fallback (STT: whisper-large-v3-turbo + LLM: llama-3.1-8b-instant + TTS: PlayAI Dialog)
 
 Der Groq Pipeline Fallback nutzt die bestehende STT→LLM→TTS Architektur als Notloesung wenn kein nativer Real-Time Provider verfuegbar ist.
@@ -430,7 +429,7 @@ Real-Time Models liefern Audio als primaeren Output. Text ist **optional und nic
 | Szenario | Text verfuegbar? | Verhalten |
 |----------|-------------------|-----------|
 | Gemini Live mit `ModalityText` | Ja, parallel zum Audio | Text in UI anzeigen (Sprechblase) |
-| OpenAI gpt-realtime | Ja, als Transkript | Text in UI anzeigen |
+| OpenAI gpt-realtime-2 | Ja, als Transkript | Text in UI anzeigen |
 | Groq Pipeline Fallback | Ja, vollstaendig | Text immer verfuegbar |
 | Komplexe Anfrage (User will Text) | Bei Bedarf | User kann per Codeword "zeig mir das" Text-Output erzwingen |
 
@@ -458,7 +457,7 @@ Vereinfacht gegenueber der STT→LLM→TTS Pipeline: Das Model uebernimmt VAD, T
 |------------|--------------|---------|
 | **Live Session Manager** | WebSocket Lifecycle, Reconnect, Model-Auswahl | M |
 | **Gemini Live Provider** | `google.golang.org/genai` Live API Integration | M |
-| **OpenAI Realtime Provider** | WebSocket Client fuer gpt-realtime API | M |
+| **OpenAI Realtime Provider** | WebSocket Client fuer gpt-realtime-2 API | M |
 | **Groq Pipeline Fallback** | STT→LLM→TTS Fallback mit bestehenden Providern | S |
 | **Audio Streaming Bridge** | Mic PCM → WebSocket Send + WebSocket Receive → Speaker | M |
 | **Idle Timer Manager** | Reminder + Auto-Deactivate, konfigurierbar | S |
@@ -582,7 +581,7 @@ voice = "de-DE-Neural2-B"
 [voice_agent]
 enabled = true
 model = "gemini-2.5-flash-native-audio-preview-12-2025"  # Real-Time Model
-fallback_model = "gpt-realtime-mini"      # Fallback wenn Primary nicht verfuegbar
+fallback_model = "gpt-realtime-2"         # OpenAI Realtime nur wenn explizit aktiviert
 voice = "Kore"                            # Gemini Voice Name
 reminder_after_idle_sec = 300             # 5 Minuten
 deactivate_after_idle_sec = 900           # 15 Minuten
@@ -615,7 +614,7 @@ Native Direct Voice-Agent-Profile nutzen keinen Genkit Flow fuer die laufende Au
 |---------|------------|---------|-----------|-------|
 | Codeword Check | Pattern Matching | Shortcut Resolver | — | Latenz: 0ms |
 | Assist Response | Utility LLM | `gpt-4o-mini` | Gemini Flash Lite, Groq LLaMA 8B, Qwen 9B | Schnell, guenstig |
-| Voice Agent | **Real-Time** | `gemini-2.5-flash-native-audio-preview-12-2025` | `gpt-realtime-mini`, Groq Pipeline | Sub-Sekunde, nativ |
+| Voice Agent | **Real-Time** | `gemini-2.5-flash-native-audio-preview-12-2025` | `gpt-realtime-2`, Groq Pipeline | Sub-Sekunde, nativ |
 | Summarize | Utility | Gleich wie Assist | — | Schnell |
 | TTS (nur Assist) | TTS-spezifisch | OpenAI `tts-1` | Google Neural2, Kokoro 82M | Sprachqualitaet |
 | STT (nur Dictation+Assist) | STT-spezifisch | Whisper (HF Routed) | Groq, OpenAI, Google Chirp | Transkriptionsqualitaet |
@@ -632,7 +631,7 @@ enabled = true
 api_key_env = "OPENAI_API_KEY"
 stt_model = "gpt-4o-transcribe"
 utility_model = "gpt-4o-mini"
-realtime_model = "gpt-realtime-mini"  # NEU — fuer Voice Agent Fallback
+realtime_model = "gpt-realtime-2"     # NEU — fuer Voice Agent OpenAI Realtime
 tts_model = "tts-1"                   # NEU — fuer Assist Mode
 tts_voice = "nova"                    # NEU
 ```
@@ -738,7 +737,7 @@ Stufe 2 wird nur aktiviert wenn Pattern Matching keinen Treffer hat UND der Assi
 
 | Risiko | Impact | Mitigation |
 |--------|--------|------------|
-| Gemini Live Preview Stabilitaet | Session-Abbrueche | OpenAI gpt-realtime-mini als Fallback |
+| Gemini Live Preview Stabilitaet | Session-Abbrueche | OpenAI gpt-realtime-2 als explizit aktivierter Realtime-Provider |
 | WebSocket Verbindungsverlust | Voice Agent Unterbrechung | Auto-Reconnect mit Session Resume |
 | Kosten bei langem Voice Agent | Providerkosten | Session-Timeout (default 15min), User-Warnung |
 | Gleichzeitige Audio Ein-/Ausgabe | Echo/Feedback | Real-Time Models handlen das serverseitig |

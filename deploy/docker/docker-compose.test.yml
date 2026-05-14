@@ -107,5 +107,39 @@ services:
         fi
         echo "== OK =="
 
+  functional-test-client:
+    profiles: ["functional"]
+    image: golang:1.26
+    working_dir: /workspace
+    depends_on:
+      speechkit-server:
+        condition: service_healthy
+    volumes:
+      - ../..:/workspace
+    environment:
+      SPEECHKIT_E2E_DICTATION_AUDIO: ${SPEECHKIT_E2E_DICTATION_AUDIO:-}
+      SPEECHKIT_E2E_DICTATION_TEXT: ${SPEECHKIT_E2E_DICTATION_TEXT:-}
+      SPEECHKIT_E2E_VOICEAGENT_TEXT: ${SPEECHKIT_E2E_VOICEAGENT_TEXT:-}
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        set -euo pipefail
+        if [ -z "$${SPEECHKIT_E2E_DICTATION_AUDIO:-}" ]; then
+          echo "SPEECHKIT_E2E_DICTATION_AUDIO is required for the functional Docker e2e profile" >&2
+          exit 2
+        fi
+        if [ ! -f "$$SPEECHKIT_E2E_DICTATION_AUDIO" ]; then
+          echo "SPEECHKIT_E2E_DICTATION_AUDIO does not exist in the container: $$SPEECHKIT_E2E_DICTATION_AUDIO" >&2
+          exit 2
+        fi
+        set -- --server http://speechkit-server:8080 --token e2e-dev-token --scenarios all --strict-ready --require-functional --audio-fixture "$$SPEECHKIT_E2E_DICTATION_AUDIO"
+        if [ -n "$${SPEECHKIT_E2E_DICTATION_TEXT:-}" ]; then
+          set -- "$$@" --expect-dictation-text "$$SPEECHKIT_E2E_DICTATION_TEXT"
+        fi
+        if [ -n "$${SPEECHKIT_E2E_VOICEAGENT_TEXT:-}" ]; then
+          set -- "$$@" --voiceagent-text "$$SPEECHKIT_E2E_VOICEAGENT_TEXT"
+        fi
+        go run ./cmd/sk-e2e "$$@"
+
 volumes:
   speechkit-test-models:

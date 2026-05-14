@@ -44,8 +44,12 @@ func buildVoiceAgentHandler(ctx context.Context, cfg *config.Config, app *App) (
 		return nil, status, err
 	}
 
+	ticketTTL := time.Duration(cfg.Server.TicketTTLSec) * time.Second
+	if cfg.Server.TicketTTLSec <= 0 {
+		ticketTTL = 0
+	}
 	manager, err := vsserver.NewSessionManager(vsserver.Options{
-		TicketTTL:              0,
+		TicketTTL:              ticketTTL,
 		MaxGlobalSessions:      cfg.Server.MaxVoiceAgentSessions,
 		MaxPerIdentitySessions: cfg.Server.MaxSessionsPerUser,
 	})
@@ -133,7 +137,7 @@ func buildProviderFactory(ctx context.Context, cfg *config.Config, app *App, pro
 		apiKey := strings.TrimSpace(config.ResolveSecret(cfg.Providers.OpenAI.APIKeyEnv))
 		status := "ready (openai)"
 		if apiKey == "" {
-			status = "degraded: no OpenAI API key; gpt-realtime sessions will fail at upgrade"
+			status = "degraded: no OpenAI API key; gpt-realtime-2 sessions will fail at upgrade"
 		}
 		return &openaiProviderFactory{}, status, nil
 
@@ -202,7 +206,7 @@ func (r *personaResolver) resolve(start vsserver.StartFrame, stepIndex int) (vss
 	va := r.cfg.VoiceAgent
 
 	frame := vsserver.LiveConfigFrame{
-		Model:             firstNonEmpty(start.Model, va.Model),
+		Model:             r.resolveModel(start.Model),
 		FallbackModel:     va.FallbackModel,
 		APIKey:            r.apiKey,
 		Voice:             firstNonEmpty(start.Voice, va.Voice),
@@ -307,6 +311,13 @@ func (r *personaResolver) resolve(start vsserver.StartFrame, stepIndex int) (vss
 		}
 	}
 	return frame, nil
+}
+
+func (r *personaResolver) resolveModel(startModel string) string {
+	if strings.EqualFold(strings.TrimSpace(r.cfg.VoiceAgent.Provider), ProviderOpenAI) {
+		return firstNonEmpty(startModel, r.cfg.Providers.OpenAI.RealtimeModel, vskernel.DefaultOpenAIRealtimeModel)
+	}
+	return firstNonEmpty(startModel, r.cfg.VoiceAgent.Model)
 }
 
 func composeStartOverrideWithStep(prompt, stepID, stepInstruction string) string {

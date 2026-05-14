@@ -18,7 +18,7 @@ const (
 )
 
 // Store is the central storage abstraction.
-// Each backend, such as SQLite or future host-provided backends, implements this interface.
+// Each backend (SQLite, PostgreSQL, kombify Cloud) implements this interface.
 type Store interface {
 	// Transcriptions
 	SaveTranscription(ctx context.Context, text, language, provider, model string, durationMs, latencyMs int64, audioData []byte) error
@@ -128,15 +128,15 @@ type Transcription struct {
 }
 
 type UserDictionaryEntry struct {
-	ID         int64     `json:"id,omitempty"`
-	Spoken     string    `json:"spoken"`
-	Canonical  string    `json:"canonical"`
-	Language   string    `json:"language"`
-	Source     string    `json:"source,omitempty"`
-	Enabled    bool      `json:"enabled"`
-	UsageCount int       `json:"usageCount,omitempty"`
-	CreatedAt  time.Time `json:"createdAt,omitempty"`
-	UpdatedAt  time.Time `json:"updatedAt,omitempty"`
+	ID         int64
+	Spoken     string
+	Canonical  string
+	Language   string
+	Source     string
+	Enabled    bool
+	UsageCount int
+	CreatedAt  time.Time
+	UpdatedAt  time.Time
 }
 
 // QuickNote represents a user-created dictation note.

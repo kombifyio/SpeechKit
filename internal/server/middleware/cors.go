@@ -40,7 +40,7 @@ func CORS(allowedOrigins []string) Middleware {
 					w.Header().Set("Vary", "Origin")
 				}
 				w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PATCH, DELETE, OPTIONS")
-				w.Header().Set("Access-Control-Allow-Headers", "Authorization, Content-Type, X-Edge-Auth-Hmac, X-Edge-User-Id, X-Edge-Org-Id, X-Edge-Plan, X-Edge-Role")
+				w.Header().Set("Access-Control-Allow-Headers", "Authorization, Content-Type, X-SpeechKit-Setup-Token, X-Edge-Auth-Version, X-Edge-Auth-Hmac, X-Edge-Auth-Timestamp, X-Edge-Auth-Nonce, X-Edge-User-Id, X-Edge-Org-Id, X-Edge-Plan, X-Edge-Role")
 				w.Header().Set("Access-Control-Max-Age", "600")
 			}
 

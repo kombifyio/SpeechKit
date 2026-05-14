@@ -92,7 +92,8 @@ The OpenAPI contract lives in [`docs/api/openapi.v1.yaml`](./api/openapi.v1.yaml
 | `/api/v1/providers/artifacts/{artifactId}/select` | `POST` | Select an already available provider artifact. |
 | `/api/v1/providers/{profileId}/activate` | `POST` | Activate a provider profile for its mode. |
 | `/api/v1/dictionary` | `GET`, `POST` | Export dictionary entries with usage counters or import normalized dictionary entries. |
-| `/api/v1/voice-sessions` | `GET` | List stored Voice Agent sessions and generated summaries. |
+| `/api/v1/voice-sessions` | `GET` | List stored Voice Agent session summaries without transcript or turn payloads. |
+| `/api/v1/voice-sessions/{id}` | `GET` | Read one Voice Agent session with transcript, turns, and full summary detail. |
 
 Accepted mode aliases include `dictation`, `dictate`, `transcribe`, `assist`, `voice_agent`, `voiceAgent`, and `voice-agent`.
 

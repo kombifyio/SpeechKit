@@ -3,6 +3,7 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -58,6 +59,12 @@ func TestApplyServerModelSettings_AppliesProviderMatrixAndCredentialEnv(t *testi
 	if !cfg.Providers.OpenAI.Enabled {
 		t.Fatal("OpenAI provider should be enabled")
 	}
+	if got := cfg.Routing.Strategy; got != "cloud-only" {
+		t.Fatalf("direct provider dictation should route to cloud STT, got strategy %q", got)
+	}
+	if cfg.Local.Enabled {
+		t.Fatal("direct provider dictation should disable local STT fallback")
+	}
 	if cfg.Providers.OpenAI.APIKeyEnv != "SPEECHKIT_UI_OPENAI_KEY" {
 		t.Fatalf("OpenAI key env = %q", cfg.Providers.OpenAI.APIKeyEnv)
 	}
@@ -92,6 +99,7 @@ func TestSaveServerModelSettings_DropsWriteOnlyCredentialValues(t *testing.T) {
 			TokenValue:     "server-secret-token",
 		},
 		AdminAuth: ServerAdminAuthSettings{
+			Enabled:       boolPtrForTest(true),
 			Username:      "admin",
 			PasswordValue: "admin-password",
 		},
@@ -129,6 +137,9 @@ func TestSaveServerModelSettings_DropsWriteOnlyCredentialValues(t *testing.T) {
 	if loaded.AdminAuth.Username != "admin" {
 		t.Fatalf("stored admin username = %q, want admin", loaded.AdminAuth.Username)
 	}
+	if loaded.AdminAuth.Enabled == nil || !*loaded.AdminAuth.Enabled {
+		t.Fatal("stored admin auth should be enabled")
+	}
 	if loaded.AdminAuth.PasswordHash == "" {
 		t.Fatal("stored admin password hash should be set")
 	}
@@ -141,6 +152,7 @@ func TestApplyServerModelSettings_AppliesAdminPasswordHash(t *testing.T) {
 	cfg := defaults()
 	settings := ServerModelSettings{
 		AdminAuth: ServerAdminAuthSettings{
+			Enabled:      boolPtrForTest(true),
 			Username:     "speechkit-admin",
 			PasswordHash: "$2a$04$3ZQhRz6fJb3kQGN9cE1uD.RZ8c3E9oB3z4ED5CzSMYRhhAv7n4EHa",
 		},
@@ -150,6 +162,9 @@ func TestApplyServerModelSettings_AppliesAdminPasswordHash(t *testing.T) {
 
 	if cfg.Server.AdminUsername != "speechkit-admin" {
 		t.Fatalf("admin username = %q, want speechkit-admin", cfg.Server.AdminUsername)
+	}
+	if !cfg.Server.AdminAuthEnabled {
+		t.Fatal("admin auth should be enabled")
 	}
 	if cfg.Server.AdminPasswordHash != settings.AdminAuth.PasswordHash {
 		t.Fatal("admin password hash was not applied")
@@ -217,6 +232,39 @@ func TestLoadServerModelSettings_NormalizesLegacyServerLLMAlias(t *testing.T) {
 	}
 	if loaded.Modes.Assist.Model != "ggml-org/gemma-4-E4B-it-GGUF:Q4_K_M" || loaded.Modes.VoiceAgent.Model != "ggml-org/gemma-4-E4B-it-GGUF:Q4_K_M" {
 		t.Fatalf("models = assist %q voice %q", loaded.Modes.Assist.Model, loaded.Modes.VoiceAgent.Model)
+	}
+}
+
+func TestSaveServerModelSettings_RejectsProviderURLUserInfo(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "server-settings.json")
+	settings := ServerModelSettings{
+		STT: ServerSTTSettings{
+			URL: "https://userinfo@speechkit.example.com",
+		},
+	}
+
+	err := SaveServerModelSettings(path, settings)
+	if err == nil {
+		t.Fatal("expected provider URL with user-info to be rejected")
+	}
+	if !strings.Contains(err.Error(), "user-info") {
+		t.Fatalf("expected user-info validation error, got %v", err)
+	}
+}
+
+func TestSaveServerModelSettings_AllowsSelfHostedProviderURLs(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "server-settings.json")
+	settings := ServerModelSettings{
+		STT: ServerSTTSettings{
+			URL: "http://speechkit-whisper:8080",
+		},
+		LLM: ServerLLMSettings{
+			BaseURL: "http://127.0.0.1:8081/v1",
+		},
+	}
+
+	if err := SaveServerModelSettings(path, settings); err != nil {
+		t.Fatalf("SaveServerModelSettings: %v", err)
 	}
 }
 

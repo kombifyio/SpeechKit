@@ -100,6 +100,7 @@ type fakeSettingsWindow struct {
 	restoreCalls    int
 	unMinimiseCalls int
 	focusCalls      int
+	panicOnFocus    bool
 }
 
 func (f *fakeSettingsWindow) ExecJS(script string) {
@@ -124,6 +125,9 @@ func (f *fakeSettingsWindow) UnMinimise() {
 
 func (f *fakeSettingsWindow) Focus() {
 	f.focusCalls++
+	if f.panicOnFocus {
+		panic("focus unavailable")
+	}
 }
 
 type fakeTray struct {
@@ -663,6 +667,42 @@ func TestShowSettingsWindowDoesNotReshowVisibleWindow(t *testing.T) {
 	}
 	if settings.restoreCalls != 1 || settings.unMinimiseCalls != 1 || settings.focusCalls != 1 {
 		t.Fatalf("restore=%d unminimise=%d focus=%d", settings.restoreCalls, settings.unMinimiseCalls, settings.focusCalls)
+	}
+}
+
+func TestShowSettingsWindowCanSkipFocus(t *testing.T) {
+	settings := &fakeSettingsWindow{}
+
+	showSettingsWindowWithFocus(settings, false)
+
+	if settings.focusCalls != 0 {
+		t.Fatalf("focus calls = %d, want 0", settings.focusCalls)
+	}
+	if settings.showCalls != 1 {
+		t.Fatalf("show calls = %d, want 1", settings.showCalls)
+	}
+}
+
+func TestShowSettingsWindowRecoversFocusPanic(t *testing.T) {
+	settings := &fakeSettingsWindow{panicOnFocus: true}
+
+	showSettingsWindow(settings)
+
+	if settings.restoreCalls != 1 || settings.unMinimiseCalls != 1 || settings.showCalls != 1 || settings.focusCalls != 1 {
+		t.Fatalf("restore=%d unminimise=%d show=%d focus=%d", settings.restoreCalls, settings.unMinimiseCalls, settings.showCalls, settings.focusCalls)
+	}
+}
+
+func TestDashboardReadyForAutoOpenRequiresApplicationStarted(t *testing.T) {
+	state := &appState{dashboard: &fakeSettingsWindow{}}
+	if state.dashboardReadyForAutoOpen() {
+		t.Fatal("dashboard should not auto-open before application started")
+	}
+
+	state.markAppStarted()
+
+	if !state.dashboardReadyForAutoOpen() {
+		t.Fatal("dashboard should auto-open once window and application are ready")
 	}
 }
 

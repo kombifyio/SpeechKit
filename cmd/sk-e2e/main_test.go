@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -13,6 +14,37 @@ import (
 
 	"github.com/coder/websocket"
 )
+
+func TestDictationFunctionalRequiresSpokenAudioFixture(t *testing.T) {
+	c := &client{base: "http://127.0.0.1:1", timeout: time.Second}
+	err := scenarioDictation(c, &scenarioOpts{requireFunctional: true})
+	if err == nil || !strings.Contains(err.Error(), "requires --audio-fixture") {
+		t.Fatalf("scenarioDictation error = %v, want missing fixture error", err)
+	}
+}
+
+func TestAssistFunctionalRejectsUnavailableProvider(t *testing.T) {
+	mux := http.NewServeMux()
+	server := httptest.NewServer(mux)
+	defer server.Close()
+
+	mux.HandleFunc("/api/v1/assist/self-test", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusServiceUnavailable)
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"error": map[string]any{
+				"code":    "provider_unavailable",
+				"message": "no LLM provider",
+				"details": map[string]any{"provider": "missing"},
+			},
+		})
+	})
+
+	c := &client{base: server.URL, token: "smoke-token", timeout: 5 * time.Second}
+	err := scenarioAssist(c, &scenarioOpts{requireFunctional: true})
+	if err == nil || !strings.Contains(err.Error(), "unavailable during functional check") {
+		t.Fatalf("scenarioAssist error = %v, want functional provider failure", err)
+	}
+}
 
 func TestAssistScenarioExercisesAllDeploySmokeTools(t *testing.T) {
 	var requests []map[string]any
@@ -156,6 +188,114 @@ func TestVoiceAgentScenarioConnectsReturnedWebSocketURL(t *testing.T) {
 	}
 	if !deleted.Load() {
 		t.Fatal("voiceagent scenario did not clean up the session")
+	}
+}
+
+func TestVoiceAgentFunctionalScenarioRequiresOutputTranscript(t *testing.T) {
+	var textTurnSeen atomic.Bool
+	var deleted atomic.Bool
+
+	mux := http.NewServeMux()
+	server := httptest.NewServer(mux)
+	defer server.Close()
+
+	wsURL := "ws" + strings.TrimPrefix(server.URL, "http") + "/api/v1/voiceagent/sessions/session-1/ws?ticket=ticket-1"
+	mux.HandleFunc("/api/v1/voiceagent/sessions", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusCreated)
+		_ = json.NewEncoder(w).Encode(map[string]string{
+			"session_id": "session-1",
+			"ws_url":     wsURL,
+			"ticket":     "ticket-1",
+			"expires_at": time.Now().Add(time.Minute).Format(time.RFC3339),
+		})
+	})
+	mux.HandleFunc("/api/v1/voiceagent/sessions/session-1/ws", func(w http.ResponseWriter, r *http.Request) {
+		conn, err := websocket.Accept(w, r, nil)
+		if err != nil {
+			t.Fatalf("accept websocket: %v", err)
+		}
+		defer conn.CloseNow()
+
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		_, start, err := conn.Read(ctx)
+		if err != nil {
+			t.Fatalf("read start: %v", err)
+		}
+		if !strings.Contains(string(start), `"type":"start"`) {
+			t.Fatalf("start frame = %s", start)
+		}
+		if err := conn.Write(ctx, websocket.MessageText, []byte(`{"type":"state","state":"listening"}`)); err != nil {
+			t.Fatalf("write state: %v", err)
+		}
+		_, turn, err := conn.Read(ctx)
+		if err != nil {
+			t.Fatalf("read text turn: %v", err)
+		}
+		if !strings.Contains(string(turn), `"type":"text"`) {
+			t.Fatalf("text frame = %s", turn)
+		}
+		textTurnSeen.Store(true)
+		if err := conn.Write(ctx, websocket.MessageText, []byte(`{"type":"output_transcript","text":"SpeechKit live check complete.","done":true}`)); err != nil && !errors.Is(err, context.Canceled) {
+			t.Fatalf("write transcript: %v", err)
+		}
+	})
+	mux.HandleFunc("/api/v1/voiceagent/sessions/session-1", func(w http.ResponseWriter, r *http.Request) {
+		deleted.Store(true)
+		w.WriteHeader(http.StatusNoContent)
+	})
+
+	c := &client{base: server.URL, token: "smoke-token", timeout: 5 * time.Second}
+	if err := scenarioVoiceAgentCreate(c, &scenarioOpts{requireFunctional: true, voiceAgentText: "run the live check"}); err != nil {
+		t.Fatalf("scenarioVoiceAgentCreate functional: %v", err)
+	}
+	if !textTurnSeen.Load() {
+		t.Fatal("functional scenario did not send text turn")
+	}
+	if !deleted.Load() {
+		t.Fatal("functional scenario did not clean up the session")
+	}
+}
+
+func TestVoiceAgentFunctionalScenarioRequiresTextTurnBeforeOutput(t *testing.T) {
+	mux := http.NewServeMux()
+	server := httptest.NewServer(mux)
+	defer server.Close()
+
+	wsURL := "ws" + strings.TrimPrefix(server.URL, "http") + "/api/v1/voiceagent/sessions/session-1/ws?ticket=ticket-1"
+	mux.HandleFunc("/api/v1/voiceagent/sessions", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusCreated)
+		_ = json.NewEncoder(w).Encode(map[string]string{
+			"session_id": "session-1",
+			"ws_url":     wsURL,
+			"ticket":     "ticket-1",
+			"expires_at": time.Now().Add(time.Minute).Format(time.RFC3339),
+		})
+	})
+	mux.HandleFunc("/api/v1/voiceagent/sessions/session-1/ws", func(w http.ResponseWriter, r *http.Request) {
+		conn, err := websocket.Accept(w, r, nil)
+		if err != nil {
+			t.Fatalf("accept websocket: %v", err)
+		}
+		defer conn.CloseNow()
+
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		if _, _, err := conn.Read(ctx); err != nil {
+			t.Fatalf("read start: %v", err)
+		}
+		if err := conn.Write(ctx, websocket.MessageText, []byte(`{"type":"output_transcript","text":"SpeechKit live check complete.","done":true}`)); err != nil && !errors.Is(err, context.Canceled) {
+			t.Fatalf("write transcript: %v", err)
+		}
+	})
+	mux.HandleFunc("/api/v1/voiceagent/sessions/session-1", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	})
+
+	c := &client{base: server.URL, token: "smoke-token", timeout: 5 * time.Second}
+	err := scenarioVoiceAgentCreate(c, &scenarioOpts{requireFunctional: true, voiceAgentText: "run the live check"})
+	if err == nil || !strings.Contains(err.Error(), "before sending text turn") {
+		t.Fatalf("scenarioVoiceAgentCreate error = %v, want text-turn failure", err)
 	}
 }
 

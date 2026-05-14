@@ -2,9 +2,63 @@
 
 All notable changes to SpeechKit should be documented in this file.
 
-The format is based on Keep a Changelog and this project is intended to ship under Apache-2.0.
+The format is based on Keep a Changelog and this project is intended
+to ship under Apache-2.0. Entries are the public-facing summary that
+lands on the GitHub Release page — write them for end users, not for
+maintainers. See [`docs/changelog-style.md`](docs/changelog-style.md)
+for the style guide and template. The linter
+(`npm run release:lint -- --version vX.Y.Z`) refuses internal tracker
+IDs, source paths, and other maintainer-only vocabulary.
 
 ## [Unreleased]
+
+## [0.33.0] - 2026-05-14
+
+### Highlights
+
+- **Agent-ready getting started**: The website now gives coding agents
+  copy-ready prompts, MCP setup guidance, and source docs in one place.
+- **Storage groundwork**: Speech sessions can now link to first-class
+  audio assets, expose storage stats, and return voice-session details for
+  upcoming storage workflows.
+- **Stricter server failures**: Empty Dictation transcripts and empty
+  Assist results now return clear errors instead of looking like successful
+  empty responses.
+
+### Added
+
+- **Agent-ready documentation**: The public website now keeps the short
+  getting-started prompts, detailed agent guidance, MCP setup instructions,
+  OpenAPI links, and Voice Agent AsyncAPI links together so coding agents can
+  discover the framework from the site.
+- **Advisory live prompt validation**: Maintainers can run the public
+  website prompts through fresh coding-agent workspaces and Docker Desktop
+  when promoting new agent examples.
+- **Storage groundwork**: Speech sessions can now link to first-class audio
+  assets, expose storage stats, and return `/api/v1/voice-sessions/{id}`
+  details for upcoming storage workflows.
+
+### Changed
+
+- **SpeechKit Server responses fail closed for empty mode output**:
+  Dictation returns a validation error when speech recognition completes
+  without text, and Assist reports provider or pipeline unavailability instead
+  of returning an empty successful result.
+- **OpenAI realtime Voice Agent sessions use the current GA session shape**:
+  The OpenAI realtime adapter now defaults to the current realtime model,
+  sends the GA audio session format, and maps audio transcript events into the
+  same Voice Agent transcript stream as other realtime providers.
+
+### Fixed
+
+- **Older local role databases are repaired automatically**: Existing
+  installs with older role tables now receive missing columns at startup
+  instead of failing the first admin override save.
+- **First-run dashboard open no longer trips a WebView2 focus panic**:
+  The local setup dashboard still opens automatically for new installs,
+  but the first automatic show no longer forces focus while WebView2 is
+  embedding the window. Manual tray and second-instance opens still bring
+  the dashboard to the foreground.
 
 ## [0.32.2] - 2026-05-13
 
@@ -70,35 +124,29 @@ no setup completed.
 
 
 
-v0.32.0 lands the 2026-05-13 senior-architect audit-driven hardening pass:
-Phase A and B from the improvement plan, the first slices of Phase C
-(public-API stability gate, voice-agent runtime extraction to a stable
-public path, and the start of the `cmd/speechkit/` decomposition), plus a
-CI fix for Frontend Checks that had been red on main since v0.31.1. No
-public API change — `pkg/speechkit/**` remains backward-compatible and is
-now enforced by an automated apidiff gate. Internal package boundaries
-became significantly clearer.
+## [0.32.0] - 2026-05-13
+
+v0.32.0 is a hardening release for the SpeechKit framework and the
+Linux server. No public API change — the SDK surface remains
+backward-compatible and is now enforced by an automated stability
+gate.
 
 ### Highlights
 
-- **Public API stability gate**: every PR is now automatically gated on
-  incompatible changes to `pkg/speechkit/**` via a new `apidiff` CI job.
-  Downstream embedders can rely on the stability contract.
-- **Voice Agent runtime moved into `pkg/speechkit/voiceagent/live`**:
-  `Session`, `IdleTimer`, and the realtime workflow primitives are now
-  importable from a stable public path. The internal mirror at
-  `internal/voiceagent` keeps alias-bridge declarations to avoid churn
-  for in-tree consumers.
-- **`cmd/speechkit` decomposition started**: two new internal subpackages
-  carved out of the 128-file `package main` god-package —
-  `cmd/speechkit/internal/transcription` (vocabulary + STT model hints)
-  and `cmd/speechkit/internal/profiles` (model-profile selection +
-  local-provider validation). Mechanical moves, no behaviour change.
-- **Audit-driven dead-code purge**: 27 dead UI files (3,632 LOC), 4 unused
-  npm deps, 2 orphan large assets, and the orphan `frontend/app/go.mod`
-  stub removed. Strict knip dead-code gate now blocks regressions.
-- **Server hardening**: three poisoned-bucket panic sites in the rate
-  limiter replaced with `slog`-based recovery on the HTTP hot path.
+- **Public API stability gate**: every change to the SpeechKit SDK
+  surface is now automatically checked for backward incompatibilities
+  before it can land, so downstream embedders can rely on a documented
+  no-breaking-change contract.
+- **Voice Agent SDK on a stable public path**: the realtime Voice
+  Agent runtime — sessions, idle timers, and workflow primitives — is
+  now importable from the public SDK package instead of an
+  internal-only path.
+- **Server reliability**: three latent crash paths in the SpeechKit
+  Server's rate limiter were replaced with graceful recovery, so a
+  poisoned request can no longer take the server down.
+- **Lighter desktop bundle**: a focused dead-code cleanup removed 27
+  unused UI files, four unused dependencies, and roughly 5 MB of
+  duplicated assets, with a strict check now blocking regressions.
 
 ### Security
 

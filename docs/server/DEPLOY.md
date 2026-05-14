@@ -218,6 +218,34 @@ curl -fsSL https://speechkit.cc/install-server.sh | sh
 The installer pulls `ghcr.io/kombifyio/speechkit-server:latest`, which tracks
 the most recent stable release.
 
+After the container is healthy, agents should complete first-run setup through
+the setup API and enable the standalone admin login:
+
+```bash
+ADMIN_PASSWORD="$(openssl rand -base64 32)"
+curl -fsS -X PATCH http://localhost:8080/v1/server/settings \
+  -H 'Content-Type: application/json' \
+  -d "{
+    \"onboarding_complete\": true,
+    \"admin_auth\": {
+      \"enabled\": true,
+      \"username\": \"admin\",
+      \"password\": \"${ADMIN_PASSWORD}\"
+    },
+    \"server_auth\": {
+      \"mode\": \"managed_bearer\",
+      \"bearer_token_env\": \"SPEECHKIT_SERVER_TOKEN\",
+      \"generate_token\": true
+    }
+  }"
+```
+
+The generated server bearer token is returned once by the API and must be
+stored in the deployment secret environment. The admin password is never stored
+as plaintext; the server persists only a bcrypt hash. To rely on an external
+identity-aware edge instead of the browser admin login, send
+`"admin_auth": {"enabled": false}` during setup.
+
 ## Generic Kubernetes Or OCI
 
 No Kubernetes manifests ship yet. The image contract above is enough for any

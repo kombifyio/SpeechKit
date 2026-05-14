@@ -384,6 +384,34 @@ func TestHandler_Pipeline_ErrorMapsTo503(t *testing.T) {
 	}
 }
 
+func TestHandler_Pipeline_EmptyOutputMapsTo503(t *testing.T) {
+	fp := &fakeProcessor{result: &assistpkg.Result{Text: "", Action: "respond"}}
+	h := mustHandler(t, Options{Processor: fp})
+	body := []byte(`{"text":"do the thing"}`)
+	req := httptest.NewRequest(http.MethodPost, "/v1/assist/process", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("status = %d body=%s, want 503", rec.Code, rec.Body.String())
+	}
+	var bodyOut struct {
+		Error struct {
+			Code    string         `json:"code"`
+			Details map[string]any `json:"details"`
+		} `json:"error"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &bodyOut); err != nil {
+		t.Fatalf("decode body: %v", err)
+	}
+	if bodyOut.Error.Code != "pipeline_unavailable" {
+		t.Fatalf("code = %q, want pipeline_unavailable", bodyOut.Error.Code)
+	}
+	if got := bodyOut.Error.Details["category"]; got != "empty_result" {
+		t.Fatalf("category = %#v, want empty_result; body=%s", got, rec.Body.String())
+	}
+}
+
 func TestHandler_Pipeline_ConfigErrorClassified(t *testing.T) {
 	fp := &fakeProcessor{err: errors.New("assist: LLM failed: INVALID_ARGUMENT: Invalid configuration type: *ai.GenerationCommonConfig. Expected *genai.GenerateContentConfig")}
 	h := mustHandler(t, Options{Processor: fp})

@@ -15,6 +15,8 @@ const (
 	DefaultLocalLLMBaseURL = "http://127.0.0.1:8082/v1"
 	DefaultLocalLLMModel   = "ggml-org/gemma-4-E4B-it-GGUF:Q4_K_M"
 	DefaultLocalSTTModel   = "ggml-large-v3-turbo.bin"
+	ManagedDevServerURL    = "https://speechkit.kombify.io"
+	ManagedLiveKitURL      = "wss://livekit.kombify.io"
 
 	DefaultDictatePrimaryProfileID    = "stt.local.whispercpp"
 	DefaultAssistPrimaryProfileID     = "assist.builtin.gemma4-e4b"
@@ -80,9 +82,12 @@ type ServerConfig struct {
 	AuthMode              string   `toml:"auth_mode"`            // "none" | "bearer" | "edge_hmac" | "bearer_or_edge"
 	BearerTokenEnv        string   `toml:"bearer_token_env"`     // env var name holding the bearer token
 	BearerRole            string   `toml:"bearer_role"`          // optional role for static bearer callers, e.g. "admin"
+	AdminAuthEnabled      bool     `toml:"admin_auth_enabled"`   // enables setup/admin UI username/password login
 	AdminUsername         string   `toml:"admin_username"`       // setup/admin UI username; not used by API clients
-	AdminPasswordHash     string   `toml:"admin_password_hash"`  // bcrypt hash for setup/admin UI Basic auth
+	AdminPasswordHash     string   `toml:"admin_password_hash"`  // bcrypt hash for setup/admin UI login
 	EdgeAuthSecretEnv     string   `toml:"edge_auth_secret_env"` // env var name holding the HMAC secret
+	PublicBaseURL         string   `toml:"public_base_url"`      // public server URL used for returned client URLs
+	TrustedProxyCIDRs     []string `toml:"trusted_proxy_cidrs"`  // proxies allowed to supply X-Forwarded-* headers
 	CORSAllowedOrigins    []string `toml:"cors_allowed_origins"`
 	RateLimitRPS          float64  `toml:"rate_limit_rps"`
 	RateLimitBurst        int      `toml:"rate_limit_burst"`

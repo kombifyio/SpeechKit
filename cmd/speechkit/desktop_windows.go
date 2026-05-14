@@ -103,6 +103,7 @@ func configureDesktopWindowsAndTray(opts desktopWindowRuntimeOptions) {
 
 	opts.App.Event.OnApplicationEvent(events.Common.ApplicationStarted, func(event *application.ApplicationEvent) {
 		defer recoverHook("application_started")
+		opts.State.markAppStarted()
 		opts.State.positionOverlay()
 		opts.State.setState("idle", "")
 		maybeAutoStartVoiceAgentOnLaunch(opts.Ctx, opts.Config, opts.InputController())

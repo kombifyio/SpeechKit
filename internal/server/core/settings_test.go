@@ -4,7 +4,6 @@ package core
 
 import (
 	"bytes"
-	"encoding/base64"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -113,9 +112,21 @@ func TestRegisterServerSettings_ServesMinimalBootstrapSnapshotWithoutAuth(t *tes
 			t.Fatalf("bootstrap settings response should include %q, got %#v", want, body)
 		}
 	}
-	for _, forbidden := range []string{"modes", "components", "runtime", "auth", "stt", "llm", "voice_agent", "tts", "personas"} {
+	for _, forbidden := range []string{"modes", "components", "auth", "stt", "llm", "voice_agent", "tts", "personas"} {
 		if _, ok := body[forbidden]; ok {
 			t.Fatalf("bootstrap settings response should not include %q: %#v", forbidden, body[forbidden])
+		}
+	}
+	runtime, ok := body["runtime"].(map[string]any)
+	if !ok {
+		t.Fatalf("bootstrap settings response should include sanitized runtime, got %#v", body["runtime"])
+	}
+	if _, ok := runtime["settings_write"]; !ok {
+		t.Fatalf("bootstrap runtime should include settings_write, got %#v", runtime)
+	}
+	for key := range runtime {
+		if key != "settings_write" {
+			t.Fatalf("bootstrap runtime should not include %q: %#v", key, runtime)
 		}
 	}
 	for _, forbidden := range []string{
@@ -304,7 +315,7 @@ func TestRegisterServerSettings_PatchGeneratesWriteOnlyServerToken(t *testing.T)
 	}
 }
 
-func TestRegisterServerSettings_PatchCreatesAdminBasicLogin(t *testing.T) {
+func TestRegisterServerSettings_PatchCreatesAdminSessionLogin(t *testing.T) {
 	t.Setenv(config.ServerSettingsWriteEnv, "true")
 	t.Setenv(config.ServerSettingsPathEnv, filepath.Join(t.TempDir(), "server-settings.json"))
 	t.Setenv("SPEECHKIT_SERVER_TOKEN", "")
@@ -350,9 +361,18 @@ func TestRegisterServerSettings_PatchCreatesAdminBasicLogin(t *testing.T) {
 		t.Fatalf("stored admin auth = %+v", stored.AdminAuth)
 	}
 
-	auth := "Basic " + base64.StdEncoding.EncodeToString([]byte("owner:correct-password"))
+	var adminCookie *http.Cookie
+	for _, cookie := range rec.Result().Cookies() {
+		if cookie.Name == middleware.AdminSessionCookieName {
+			adminCookie = cookie
+			break
+		}
+	}
+	if adminCookie == nil {
+		t.Fatal("bootstrap PATCH should set an admin session cookie")
+	}
 	adminReq := httptest.NewRequest(http.MethodPatch, "/v1/server/settings", strings.NewReader(`{"onboarding_complete":true}`))
-	adminReq.Header.Set("Authorization", auth)
+	adminReq.AddCookie(adminCookie)
 	adminRec := httptest.NewRecorder()
 	middleware.Auth(middleware.AuthOptions{
 		ModeProvider:              app.AuthState.Mode,
@@ -362,7 +382,7 @@ func TestRegisterServerSettings_PatchCreatesAdminBasicLogin(t *testing.T) {
 	})(app.Mux).ServeHTTP(adminRec, adminReq)
 
 	if adminRec.Code != http.StatusOK {
-		t.Fatalf("basic admin PATCH after bootstrap = %d body=%s", adminRec.Code, adminRec.Body.String())
+		t.Fatalf("admin session PATCH after bootstrap = %d body=%s", adminRec.Code, adminRec.Body.String())
 	}
 }
 
@@ -393,6 +413,96 @@ func TestRegisterServerSettings_PatchRequiresAdminAfterBootstrap(t *testing.T) {
 	admin := serveServerSettingsWithBearerRole(app, httptest.NewRequest(http.MethodPatch, "/v1/server/settings", bytes.NewReader(payload)), "admin")
 	if admin.Code != http.StatusOK {
 		t.Fatalf("admin PATCH after bootstrap should return 200, got %d body=%s", admin.Code, admin.Body.String())
+	}
+}
+
+func TestRegisterServerSettings_FirstRunAdminCreateAllowedWithExistingToken(t *testing.T) {
+	t.Setenv(config.ServerSettingsWriteEnv, "true")
+	t.Setenv(config.ServerSettingsPathEnv, filepath.Join(t.TempDir(), "server-settings.json"))
+	t.Setenv("SPEECHKIT_SERVER_TOKEN", "existing-token")
+
+	app := &App{
+		Cfg:       &config.Config{},
+		Mux:       http.NewServeMux(),
+		Health:    NewHealthRegistry(),
+		Version:   "test-version",
+		AuthState: middleware.NewAuthState("bearer", "SPEECHKIT_SERVER_TOKEN", "", "", ""),
+	}
+	app.Cfg.Server.AuthMode = "bearer"
+	app.Cfg.Server.BearerTokenEnv = "SPEECHKIT_SERVER_TOKEN"
+	registerServerSettings(app)
+
+	payload := []byte(`{
+		"onboarding_complete": true,
+		"admin_auth": {
+			"username": "first-admin",
+			"password": "correct-password"
+		}
+	}`)
+	rec := httptest.NewRecorder()
+	app.Mux.ServeHTTP(rec, httptest.NewRequest(http.MethodPatch, "/v1/server/settings", bytes.NewReader(payload)))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("first-run admin create should be allowed with existing token, got %d body=%s", rec.Code, rec.Body.String())
+	}
+
+	stored, ok, err := config.LoadServerModelSettings(config.ServerSettingsPath(app.Cfg))
+	if err != nil || !ok {
+		t.Fatalf("LoadServerModelSettings ok=%v err=%v", ok, err)
+	}
+	if stored.AdminAuth.Username != "first-admin" || stored.AdminAuth.PasswordHash == "" {
+		t.Fatalf("stored admin auth = %+v", stored.AdminAuth)
+	}
+
+	second := httptest.NewRecorder()
+	app.Mux.ServeHTTP(second, httptest.NewRequest(http.MethodPatch, "/v1/server/settings", bytes.NewReader(payload)))
+	if second.Code != http.StatusForbidden {
+		t.Fatalf("second anonymous admin create should be blocked, got %d body=%s", second.Code, second.Body.String())
+	}
+}
+
+func TestRegisterServerSettings_AdminAuthDisabledDoesNotKeepBootstrapWriteOpen(t *testing.T) {
+	t.Setenv(config.ServerSettingsWriteEnv, "true")
+	t.Setenv(config.ServerSettingsPathEnv, filepath.Join(t.TempDir(), "server-settings.json"))
+	t.Setenv("SPEECHKIT_SERVER_TOKEN", "existing-token")
+
+	app := &App{
+		Cfg:       &config.Config{},
+		Mux:       http.NewServeMux(),
+		Health:    NewHealthRegistry(),
+		Version:   "test-version",
+		AuthState: middleware.NewAuthState("bearer", "SPEECHKIT_SERVER_TOKEN", "", "", ""),
+	}
+	app.Cfg.Server.AuthMode = "bearer"
+	app.Cfg.Server.BearerTokenEnv = "SPEECHKIT_SERVER_TOKEN"
+	registerServerSettings(app)
+
+	firstPayload := []byte(`{
+		"onboarding_complete": true,
+		"admin_auth": {
+			"enabled": false
+		}
+	}`)
+	first := httptest.NewRecorder()
+	app.Mux.ServeHTTP(first, httptest.NewRequest(http.MethodPatch, "/v1/server/settings", bytes.NewReader(firstPayload)))
+	if first.Code != http.StatusOK {
+		t.Fatalf("first-run settings write should be allowed, got %d body=%s", first.Code, first.Body.String())
+	}
+
+	second := httptest.NewRecorder()
+	app.Mux.ServeHTTP(second, httptest.NewRequest(http.MethodPatch, "/v1/server/settings", bytes.NewReader([]byte(`{"onboarding_complete":true}`))))
+	if second.Code != http.StatusForbidden {
+		t.Fatalf("anonymous PATCH after completed setup should be blocked, got %d body=%s", second.Code, second.Body.String())
+	}
+
+	stored, ok, err := config.LoadServerModelSettings(config.ServerSettingsPath(app.Cfg))
+	if err != nil || !ok {
+		t.Fatalf("LoadServerModelSettings ok=%v err=%v", ok, err)
+	}
+	if stored.AdminAuth.Enabled == nil || *stored.AdminAuth.Enabled {
+		t.Fatalf("stored admin auth should be explicitly disabled, got %+v", stored.AdminAuth)
+	}
+	if app.Cfg.Server.AdminAuthEnabled {
+		t.Fatal("runtime admin auth should be disabled")
 	}
 }
 

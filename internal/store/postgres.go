@@ -13,6 +13,7 @@ import (
 
 	_ "github.com/jackc/pgx/v5/stdlib" // register pgx as database/sql driver
 	"github.com/kombifyio/SpeechKit/internal/runtimepath"
+	speechstorage "github.com/kombifyio/SpeechKit/pkg/speechkit/storage"
 )
 
 //go:embed migrations/postgres/001_init.sql
@@ -36,6 +37,12 @@ var postgresMigration006 string
 //go:embed migrations/postgres/007_indexes.sql
 var postgresMigration007 string
 
+//go:embed migrations/postgres/008_storage_scopes.sql
+var postgresMigration008 string
+
+//go:embed migrations/postgres/009_storage_v3_model.sql
+var postgresMigration009 string
+
 // PostgresStore implements Store using PostgreSQL for metadata and the local
 // filesystem for optional raw WAV persistence.
 type PostgresStore struct {
@@ -45,6 +52,8 @@ type PostgresStore struct {
 	saveAudio               bool
 	audioRetentionDays      int
 	transcriptionModelHints map[string]string
+	defaultScope            speechstorage.Scope
+	scopePolicy             speechstorage.ScopePolicy
 }
 
 var _ Store = (*PostgresStore)(nil)
@@ -75,6 +84,8 @@ func NewPostgresStore(cfg StoreConfig) (*PostgresStore, error) {
 		saveAudio:               cfg.SaveAudio,
 		audioRetentionDays:      cfg.AudioRetentionDays,
 		transcriptionModelHints: normalizeTranscriptionModelHints(cfg.TranscriptionModelHints),
+		defaultScope:            speechstorage.NormalizeScope(cfg.DefaultScope),
+		scopePolicy:             normalizedScopePolicy(cfg.ScopePolicy),
 	}
 	if store.saveAudio && store.audioRetentionDays > 0 {
 		store.enforceAudioRetention()
@@ -94,6 +105,10 @@ func (s *PostgresStore) SaveTranscription(ctx context.Context, text, language, p
 }
 
 func (s *PostgresStore) SaveTranscriptionWithAudio(ctx context.Context, text, language, provider, model string, durationMs, latencyMs int64, audio AudioAssetInput) error {
+	scopeID, err := s.scopeID(ctx)
+	if err != nil {
+		return err
+	}
 	audio = normalizeAudioAssetInput(audio)
 	if audio.DurationMs > 0 {
 		durationMs = audio.DurationMs
@@ -107,21 +122,33 @@ func (s *PostgresStore) SaveTranscriptionWithAudio(ctx context.Context, text, la
 	}
 	owner, _ := RecordOwnerFromContext(ctx)
 
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback() //nolint:errcheck // rollback after commit is harmless
+
 	var id int64
-	err = s.db.QueryRowContext(ctx,
-		`INSERT INTO transcriptions (text, language, provider, model, duration_ms, latency_ms, audio_path, word_count, owner_user_id, owner_org_id, owner_source)
-		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+	err = tx.QueryRowContext(ctx,
+		`INSERT INTO transcriptions (scope_id, text, language, language_base, provider, model, duration_ms, latency_ms, word_count, owner_user_id, owner_org_id, owner_source)
+		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
 		 RETURNING id`,
-		text, language, provider, model, durationMs, latencyMs, audioPath,
+		scopeID, text, language, normalizeDictionaryLanguage(language), provider, model, durationMs, latencyMs,
 		countWords(text), owner.UserID, owner.OrgID, owner.Source,
 	).Scan(&id)
 	if err != nil {
 		return fmt.Errorf("insert transcription: %w", err)
 	}
 	if audioPath != "" {
-		if err := recordAudioAsset(ctx, s.db, "postgres", "transcription", id, audioPath, durationMs, audio.MimeType); err != nil {
+		if err := recordScopedAudioAsset(ctx, tx, "postgres", scopeID, "transcription", id, audioPath, durationMs); err != nil {
 			return fmt.Errorf("record audio asset: %w", err)
 		}
+	}
+	if err := refreshPostgresStoreStats(ctx, tx, scopeID); err != nil {
+		return fmt.Errorf("refresh stats: %w", err)
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit transcription: %w", err)
 	}
 
 	s.scheduleMaintenance() //nolint:contextcheck // maintenance goroutines must not be bound to request context
@@ -129,46 +156,77 @@ func (s *PostgresStore) SaveTranscriptionWithAudio(ctx context.Context, text, la
 }
 
 func (s *PostgresStore) GetTranscription(ctx context.Context, id int64) (*Transcription, error) {
+	scopeID, err := s.scopeID(ctx)
+	if err != nil {
+		return nil, err
+	}
 	row := s.db.QueryRowContext(ctx,
-		`SELECT id, text, language, provider, COALESCE(model, ''), COALESCE(duration_ms, 0), COALESCE(latency_ms, 0), COALESCE(audio_path, ''), created_at,
-			COALESCE(owner_user_id, ''), COALESCE(owner_org_id, ''), COALESCE(owner_source, '')
-		 FROM transcriptions WHERE id = $1`,
-		id,
+		`SELECT t.id, t.text, t.language, t.provider, COALESCE(t.model, ''), COALESCE(t.duration_ms, 0), COALESCE(t.latency_ms, 0),
+			COALESCE(a.path, ''), COALESCE(a.storage_kind, ''), COALESCE(a.mime_type, ''), COALESCE(a.size_bytes, 0), COALESCE(a.duration_ms, 0),
+			t.created_at, COALESCE(t.owner_user_id, ''), COALESCE(t.owner_org_id, ''), COALESCE(t.owner_source, '')
+		 FROM transcriptions t
+		 LEFT JOIN audio_assets a ON a.id = (
+			SELECT link.audio_asset_id
+			FROM transcription_audio_assets link
+			JOIN audio_assets asset ON asset.id = link.audio_asset_id
+			WHERE link.transcription_id = t.id AND link.role = 'source'
+			ORDER BY link.created_at DESC, link.audio_asset_id DESC
+			LIMIT 1
+		 )
+		 WHERE t.id = $1 AND t.scope_id = $2`,
+		id, scopeID,
 	)
 
 	var t Transcription
-	if err := row.Scan(&t.ID, &t.Text, &t.Language, &t.Provider, &t.Model, &t.DurationMs, &t.LatencyMs, &t.AudioPath, &t.CreatedAt, &t.OwnerUserID, &t.OwnerOrgID, &t.OwnerSource); err != nil {
+	var audioStorageKind, audioMimeType string
+	var audioSizeBytes, audioDurationMs int64
+	if err := row.Scan(&t.ID, &t.Text, &t.Language, &t.Provider, &t.Model, &t.DurationMs, &t.LatencyMs,
+		&t.AudioPath, &audioStorageKind, &audioMimeType, &audioSizeBytes, &audioDurationMs, &t.CreatedAt,
+		&t.OwnerUserID, &t.OwnerOrgID, &t.OwnerSource); err != nil {
 		return nil, err
 	}
 	if strings.TrimSpace(t.Model) == "" {
 		t.Model = s.transcriptionModelHint(t.Provider)
 	}
-	if err := s.hydrateTranscriptionAudio(ctx, &t); err != nil {
-		return nil, err
-	}
+	t.Audio = buildAudioAsset(audioStorageKind, t.AudioPath, audioMimeType, audioSizeBytes, audioDurationMs)
 	return &t, nil
 }
 
 func (s *PostgresStore) ListTranscriptions(ctx context.Context, opts ListOpts) ([]Transcription, error) {
+	scopeID, err := s.scopeID(ctx)
+	if err != nil {
+		return nil, err
+	}
 	limit, offset := normalizedListPagination(opts)
 
-	query := `SELECT id, text, language, provider, COALESCE(model, ''), COALESCE(duration_ms, 0), COALESCE(latency_ms, 0), COALESCE(audio_path, ''), created_at,
-			COALESCE(owner_user_id, ''), COALESCE(owner_org_id, ''), COALESCE(owner_source, '')
-		 FROM transcriptions`
-	args := make([]any, 0, 4)
-	clauses := make([]string, 0, 2)
+	query := `SELECT t.id, t.text, t.language, t.provider, COALESCE(t.model, ''), COALESCE(t.duration_ms, 0), COALESCE(t.latency_ms, 0),
+			COALESCE(a.path, ''), COALESCE(a.storage_kind, ''), COALESCE(a.mime_type, ''), COALESCE(a.size_bytes, 0), COALESCE(a.duration_ms, 0),
+			t.created_at, COALESCE(t.owner_user_id, ''), COALESCE(t.owner_org_id, ''), COALESCE(t.owner_source, '')
+		 FROM transcriptions t
+		 LEFT JOIN audio_assets a ON a.id = (
+			SELECT link.audio_asset_id
+			FROM transcription_audio_assets link
+			JOIN audio_assets asset ON asset.id = link.audio_asset_id
+			WHERE link.transcription_id = t.id AND link.role = 'source'
+			ORDER BY link.created_at DESC, link.audio_asset_id DESC
+			LIMIT 1
+		 )`
+	args := []any{scopeID}
+	clauses := []string{"t.scope_id = $1"}
 	clauses, args = appendPostgresNormalizedLanguageFilter(clauses, args, opts.Language)
 	clauses, args = appendPostgresOwnerFilter(clauses, args, opts)
 	if !opts.After.IsZero() {
 		args = append(args, opts.After.UTC())
-		clauses = append(clauses, fmt.Sprintf("created_at > $%d", len(args)))
+		clauses = append(clauses, fmt.Sprintf("t.created_at > $%d", len(args)))
 	}
-	query += buildWhereClause(clauses) // #nosec G202 -- audited choke-point; see SECURITY INVARIANT in query_filters.go.
+	if len(clauses) > 0 {
+		query += " WHERE " + strings.Join(clauses, " AND ") // #nosec G202 -- clauses are fixed internal snippets; values are parameterized.
+	}
 	args = append(args, limit)
 	limitPos := len(args)
 	args = append(args, offset)
 	offsetPos := len(args)
-	query += fmt.Sprintf(" ORDER BY created_at DESC, id DESC LIMIT $%d OFFSET $%d", limitPos, offsetPos) // #nosec G202 -- limit/offset positions are derived from argument indexes.
+	query += fmt.Sprintf(" ORDER BY t.created_at DESC, t.id DESC LIMIT $%d OFFSET $%d", limitPos, offsetPos) // #nosec G202 -- limit/offset positions are derived from argument indexes.
 
 	rows, err := s.db.QueryContext(ctx,
 		query, args...,
@@ -181,24 +239,27 @@ func (s *PostgresStore) ListTranscriptions(ctx context.Context, opts ListOpts) (
 	results := make([]Transcription, 0)
 	for rows.Next() {
 		var t Transcription
-		if err := rows.Scan(&t.ID, &t.Text, &t.Language, &t.Provider, &t.Model, &t.DurationMs, &t.LatencyMs, &t.AudioPath, &t.CreatedAt, &t.OwnerUserID, &t.OwnerOrgID, &t.OwnerSource); err != nil {
+		var audioStorageKind, audioMimeType string
+		var audioSizeBytes, audioDurationMs int64
+		if err := rows.Scan(&t.ID, &t.Text, &t.Language, &t.Provider, &t.Model, &t.DurationMs, &t.LatencyMs,
+			&t.AudioPath, &audioStorageKind, &audioMimeType, &audioSizeBytes, &audioDurationMs, &t.CreatedAt,
+			&t.OwnerUserID, &t.OwnerOrgID, &t.OwnerSource); err != nil {
 			return nil, err
 		}
 		if strings.TrimSpace(t.Model) == "" {
 			t.Model = s.transcriptionModelHint(t.Provider)
 		}
+		t.Audio = buildAudioAsset(audioStorageKind, t.AudioPath, audioMimeType, audioSizeBytes, audioDurationMs)
 		results = append(results, t)
 	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	if err := hydrateTranscriptionAudioBatch(ctx, s.db, "postgres", results); err != nil {
-		return nil, err
-	}
-	return results, nil
+	return results, rows.Err()
 }
 
 func (s *PostgresStore) ReplaceUserDictionaryEntries(ctx context.Context, language string, entries []UserDictionaryEntry) error {
+	scopeID, err := s.scopeID(ctx)
+	if err != nil {
+		return err
+	}
 	language = normalizeDictionaryLanguage(language)
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
@@ -211,16 +272,16 @@ func (s *PostgresStore) ReplaceUserDictionaryEntries(ctx context.Context, langua
 	}()
 
 	if _, err = tx.ExecContext(ctx,
-		`DELETE FROM user_dictionary_entries WHERE language = $1 AND source = $2`,
-		language, userDictionarySettingsSource,
+		`DELETE FROM user_dictionary_entries WHERE scope_id = $1 AND language = $2 AND source = $3`,
+		scopeID, language, userDictionarySettingsSource,
 	); err != nil {
 		return fmt.Errorf("clear user dictionary entries: %w", err)
 	}
 
 	stmt, err := tx.PrepareContext(ctx,
-		`INSERT INTO user_dictionary_entries (spoken, canonical, language, source, enabled)
-		 VALUES ($1, $2, $3, $4, TRUE)
-		 ON CONFLICT(spoken, canonical, language, source)
+		`INSERT INTO user_dictionary_entries (scope_id, spoken, canonical, language, source, enabled)
+		 VALUES ($1, $2, $3, $4, $5, TRUE)
+		 ON CONFLICT(scope_id, spoken, canonical, language, source)
 		 DO UPDATE SET enabled = TRUE, updated_at = NOW()`,
 	)
 	if err != nil {
@@ -233,7 +294,7 @@ func (s *PostgresStore) ReplaceUserDictionaryEntries(ctx context.Context, langua
 		if !ok {
 			continue
 		}
-		if _, err = stmt.ExecContext(ctx, entry.Spoken, entry.Canonical, entry.Language, entry.Source); err != nil {
+		if _, err = stmt.ExecContext(ctx, scopeID, entry.Spoken, entry.Canonical, entry.Language, entry.Source); err != nil {
 			return fmt.Errorf("insert user dictionary entry: %w", err)
 		}
 	}
@@ -245,13 +306,17 @@ func (s *PostgresStore) ReplaceUserDictionaryEntries(ctx context.Context, langua
 }
 
 func (s *PostgresStore) ListUserDictionaryEntries(ctx context.Context, language string) ([]UserDictionaryEntry, error) {
+	scopeID, err := s.scopeID(ctx)
+	if err != nil {
+		return nil, err
+	}
 	language = normalizeDictionaryLanguage(language)
 	rows, err := s.db.QueryContext(ctx,
 		`SELECT id, spoken, canonical, language, source, enabled, usage_count, created_at, updated_at
 		 FROM user_dictionary_entries
-		 WHERE enabled = TRUE AND ($1 = '' OR language = $2 OR language = '')
+		 WHERE scope_id = $1 AND enabled = TRUE AND ($2 = '' OR language = $3 OR language = '')
 		 ORDER BY id ASC`,
-		language, language,
+		scopeID, language, language,
 	)
 	if err != nil {
 		return nil, err
@@ -280,16 +345,20 @@ func (s *PostgresStore) ListUserDictionaryEntries(ctx context.Context, language 
 }
 
 func (s *PostgresStore) RecordUserDictionaryUsage(ctx context.Context, canonical, language string) error {
+	scopeID, err := s.scopeID(ctx)
+	if err != nil {
+		return err
+	}
 	canonical = strings.TrimSpace(canonical)
 	language = normalizeDictionaryLanguage(language)
 	if canonical == "" {
 		return nil
 	}
-	_, err := s.db.ExecContext(ctx,
+	_, err = s.db.ExecContext(ctx,
 		`UPDATE user_dictionary_entries
 		 SET usage_count = usage_count + 1, updated_at = NOW()
-		 WHERE enabled = TRUE AND lower(canonical) = lower($1) AND ($2 = '' OR language = $3 OR language = '')`,
-		canonical, language, language,
+		 WHERE scope_id = $1 AND enabled = TRUE AND lower(canonical) = lower($2) AND ($3 = '' OR language = $4 OR language = '')`,
+		scopeID, canonical, language, language,
 	)
 	if err != nil {
 		return fmt.Errorf("record user dictionary usage: %w", err)
@@ -298,31 +367,51 @@ func (s *PostgresStore) RecordUserDictionaryUsage(ctx context.Context, canonical
 }
 
 func (s *PostgresStore) TranscriptionCount(ctx context.Context) (int, error) {
+	scopeID, err := s.scopeID(ctx)
+	if err != nil {
+		return 0, err
+	}
 	var count int
-	err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM transcriptions`).Scan(&count)
+	err = s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM transcriptions WHERE scope_id = $1`, scopeID).Scan(&count)
 	return count, err
 }
 
 func (s *PostgresStore) SaveQuickNote(ctx context.Context, text, language, provider string, durationMs, latencyMs int64, audioData []byte) (int64, error) {
+	scopeID, err := s.scopeID(ctx)
+	if err != nil {
+		return 0, err
+	}
 	audioPath, err := s.persistAudio(audioAssetInputFromBytes(audioData), "qn_")
 	if err != nil {
 		return 0, err
 	}
 
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return 0, err
+	}
+	defer tx.Rollback() //nolint:errcheck // rollback after commit is harmless
+
 	var id int64
-	err = s.db.QueryRowContext(ctx,
-		`INSERT INTO quick_notes (text, language, provider, duration_ms, latency_ms, audio_path, word_count)
-		 VALUES ($1, $2, $3, $4, $5, $6, $7)
+	err = tx.QueryRowContext(ctx,
+		`INSERT INTO quick_notes (scope_id, text, language, language_base, provider, duration_ms, latency_ms, word_count)
+		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
 		 RETURNING id`,
-		text, language, provider, durationMs, latencyMs, audioPath, countWords(text),
+		scopeID, text, language, normalizeDictionaryLanguage(language), provider, durationMs, latencyMs, countWords(text),
 	).Scan(&id)
 	if err != nil {
 		return 0, fmt.Errorf("insert quick note: %w", err)
 	}
 	if audioPath != "" {
-		if err := recordAudioAsset(ctx, s.db, "postgres", "quick_note", id, audioPath, durationMs, "audio/wav"); err != nil {
+		if err := recordScopedAudioAsset(ctx, tx, "postgres", scopeID, "quick_note", id, audioPath, durationMs); err != nil {
 			return 0, fmt.Errorf("record audio asset: %w", err)
 		}
+	}
+	if err := refreshPostgresStoreStats(ctx, tx, scopeID); err != nil {
+		return 0, fmt.Errorf("refresh stats: %w", err)
+	}
+	if err := tx.Commit(); err != nil {
+		return 0, fmt.Errorf("commit quick note: %w", err)
 	}
 
 	s.scheduleMaintenance() //nolint:contextcheck // maintenance goroutines must not be bound to request context
@@ -330,40 +419,72 @@ func (s *PostgresStore) SaveQuickNote(ctx context.Context, text, language, provi
 }
 
 func (s *PostgresStore) GetQuickNote(ctx context.Context, id int64) (*QuickNote, error) {
+	scopeID, err := s.scopeID(ctx)
+	if err != nil {
+		return nil, err
+	}
 	row := s.db.QueryRowContext(ctx,
-		`SELECT id, text, language, provider, COALESCE(duration_ms, 0), COALESCE(latency_ms, 0), COALESCE(audio_path, ''), pinned, created_at, updated_at
-		 FROM quick_notes WHERE id = $1`,
-		id,
+		`SELECT q.id, q.text, q.language, q.provider, COALESCE(q.duration_ms, 0), COALESCE(q.latency_ms, 0),
+			COALESCE(a.path, ''), COALESCE(a.storage_kind, ''), COALESCE(a.mime_type, ''), COALESCE(a.size_bytes, 0), COALESCE(a.duration_ms, 0),
+			q.pinned, q.created_at, q.updated_at
+		 FROM quick_notes q
+		 LEFT JOIN audio_assets a ON a.id = (
+			SELECT link.audio_asset_id
+			FROM quick_note_audio_assets link
+			JOIN audio_assets asset ON asset.id = link.audio_asset_id
+			WHERE link.quick_note_id = q.id AND link.role = 'source'
+			ORDER BY link.created_at DESC, link.audio_asset_id DESC
+			LIMIT 1
+		 )
+		 WHERE q.id = $1 AND q.scope_id = $2`,
+		id, scopeID,
 	)
 
 	var n QuickNote
-	if err := row.Scan(&n.ID, &n.Text, &n.Language, &n.Provider, &n.DurationMs, &n.LatencyMs, &n.AudioPath, &n.Pinned, &n.CreatedAt, &n.UpdatedAt); err != nil {
+	var audioStorageKind, audioMimeType string
+	var audioSizeBytes, audioDurationMs int64
+	if err := row.Scan(&n.ID, &n.Text, &n.Language, &n.Provider, &n.DurationMs, &n.LatencyMs,
+		&n.AudioPath, &audioStorageKind, &audioMimeType, &audioSizeBytes, &audioDurationMs, &n.Pinned, &n.CreatedAt, &n.UpdatedAt); err != nil {
 		return nil, err
 	}
-	if err := s.hydrateQuickNoteAudio(ctx, &n); err != nil {
-		return nil, err
-	}
+	n.Audio = buildAudioAsset(audioStorageKind, n.AudioPath, audioMimeType, audioSizeBytes, audioDurationMs)
 	return &n, nil
 }
 
 func (s *PostgresStore) ListQuickNotes(ctx context.Context, opts ListOpts) ([]QuickNote, error) {
+	scopeID, err := s.scopeID(ctx)
+	if err != nil {
+		return nil, err
+	}
 	limit, offset := normalizedListPagination(opts)
 
-	query := `SELECT id, text, language, provider, COALESCE(duration_ms, 0), COALESCE(latency_ms, 0), COALESCE(audio_path, ''), pinned, created_at, updated_at
-		 FROM quick_notes`
-	args := make([]any, 0, 4)
-	clauses := make([]string, 0, 2)
+	query := `SELECT q.id, q.text, q.language, q.provider, COALESCE(q.duration_ms, 0), COALESCE(q.latency_ms, 0),
+			COALESCE(a.path, ''), COALESCE(a.storage_kind, ''), COALESCE(a.mime_type, ''), COALESCE(a.size_bytes, 0), COALESCE(a.duration_ms, 0),
+			q.pinned, q.created_at, q.updated_at
+		 FROM quick_notes q
+		 LEFT JOIN audio_assets a ON a.id = (
+			SELECT link.audio_asset_id
+			FROM quick_note_audio_assets link
+			JOIN audio_assets asset ON asset.id = link.audio_asset_id
+			WHERE link.quick_note_id = q.id AND link.role = 'source'
+			ORDER BY link.created_at DESC, link.audio_asset_id DESC
+			LIMIT 1
+		 )`
+	args := []any{scopeID}
+	clauses := []string{"q.scope_id = $1"}
 	clauses, args = appendPostgresNormalizedLanguageFilter(clauses, args, opts.Language)
 	if !opts.After.IsZero() {
 		args = append(args, opts.After.UTC())
-		clauses = append(clauses, fmt.Sprintf("created_at > $%d", len(args)))
+		clauses = append(clauses, fmt.Sprintf("q.created_at > $%d", len(args)))
 	}
-	query += buildWhereClause(clauses) // #nosec G202 -- audited choke-point; see SECURITY INVARIANT in query_filters.go.
+	if len(clauses) > 0 {
+		query += " WHERE " + strings.Join(clauses, " AND ") // #nosec G202 -- clauses are fixed internal snippets; values are parameterized.
+	}
 	args = append(args, limit)
 	limitPos := len(args)
 	args = append(args, offset)
 	offsetPos := len(args)
-	query += fmt.Sprintf(" ORDER BY pinned DESC, created_at DESC, id DESC LIMIT $%d OFFSET $%d", limitPos, offsetPos) // #nosec G202 -- limit/offset positions are derived from argument indexes.
+	query += fmt.Sprintf(" ORDER BY q.pinned DESC, q.created_at DESC, q.id DESC LIMIT $%d OFFSET $%d", limitPos, offsetPos) // #nosec G202 -- limit/offset positions are derived from argument indexes.
 
 	rows, err := s.db.QueryContext(ctx,
 		query, args...,
@@ -376,48 +497,30 @@ func (s *PostgresStore) ListQuickNotes(ctx context.Context, opts ListOpts) ([]Qu
 	results := make([]QuickNote, 0)
 	for rows.Next() {
 		var n QuickNote
-		if err := rows.Scan(&n.ID, &n.Text, &n.Language, &n.Provider, &n.DurationMs, &n.LatencyMs, &n.AudioPath, &n.Pinned, &n.CreatedAt, &n.UpdatedAt); err != nil {
+		var audioStorageKind, audioMimeType string
+		var audioSizeBytes, audioDurationMs int64
+		if err := rows.Scan(&n.ID, &n.Text, &n.Language, &n.Provider, &n.DurationMs, &n.LatencyMs,
+			&n.AudioPath, &audioStorageKind, &audioMimeType, &audioSizeBytes, &audioDurationMs, &n.Pinned, &n.CreatedAt, &n.UpdatedAt); err != nil {
 			return nil, err
 		}
+		n.Audio = buildAudioAsset(audioStorageKind, n.AudioPath, audioMimeType, audioSizeBytes, audioDurationMs)
 		results = append(results, n)
 	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	if err := hydrateQuickNoteAudioBatch(ctx, s.db, "postgres", results); err != nil {
-		return nil, err
-	}
-	return results, nil
-}
-
-func (s *PostgresStore) hydrateTranscriptionAudio(ctx context.Context, t *Transcription) error {
-	asset, err := s.GetAudioAsset(ctx, "transcription", t.ID)
-	if err != nil {
-		return err
-	}
-	if asset != nil {
-		t.Audio = asset
-		return nil
-	}
-	t.Audio = buildLocalAudioAsset(t.AudioPath, t.DurationMs)
-	return nil
-}
-
-func (s *PostgresStore) hydrateQuickNoteAudio(ctx context.Context, n *QuickNote) error {
-	asset, err := s.GetAudioAsset(ctx, "quick_note", n.ID)
-	if err != nil {
-		return err
-	}
-	if asset != nil {
-		n.Audio = asset
-		return nil
-	}
-	n.Audio = buildLocalAudioAsset(n.AudioPath, n.DurationMs)
-	return nil
+	return results, rows.Err()
 }
 
 func (s *PostgresStore) UpdateQuickNote(ctx context.Context, id int64, text string) error {
-	result, err := s.db.ExecContext(ctx, `UPDATE quick_notes SET text = $1, word_count = $2, updated_at = NOW() WHERE id = $3`, text, countWords(text), id)
+	scopeID, err := s.scopeID(ctx)
+	if err != nil {
+		return err
+	}
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback() //nolint:errcheck // rollback after commit is harmless
+
+	result, err := tx.ExecContext(ctx, `UPDATE quick_notes SET text = $1, word_count = $2, updated_at = NOW() WHERE id = $3 AND scope_id = $4`, text, countWords(text), id, scopeID)
 	if err != nil {
 		return fmt.Errorf("update quick note: %w", err)
 	}
@@ -425,17 +528,45 @@ func (s *PostgresStore) UpdateQuickNote(ctx context.Context, id int64, text stri
 	if rows == 0 {
 		return fmt.Errorf("quick note %d not found", id)
 	}
+	if err := refreshPostgresStoreStats(ctx, tx, scopeID); err != nil {
+		return fmt.Errorf("refresh stats: %w", err)
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit quick note update: %w", err)
+	}
 	return nil
 }
 
 func (s *PostgresStore) UpdateQuickNoteCapture(ctx context.Context, id int64, text, provider string, durationMs, latencyMs int64, audioData []byte) error {
-	var currentAudioPath string
-	if err := s.db.QueryRowContext(ctx, `SELECT COALESCE(audio_path, '') FROM quick_notes WHERE id = $1`, id).Scan(&currentAudioPath); err != nil {
-		return fmt.Errorf("lookup quick note %d: %w", id, err)
-	}
-	currentAudioPaths, err := quickNoteAudioPaths(ctx, s.db, "postgres", id, currentAudioPath)
+	scopeID, err := s.scopeID(ctx)
 	if err != nil {
-		return fmt.Errorf("lookup quick note audio assets: %w", err)
+		return err
+	}
+	var currentAudioPath string
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	committed := false
+	defer func() {
+		if !committed {
+			_ = tx.Rollback()
+		}
+	}()
+
+	if err := tx.QueryRowContext(ctx, `SELECT COALESCE(a.path, '')
+		FROM quick_notes q
+		LEFT JOIN audio_assets a ON a.id = (
+			SELECT link.audio_asset_id
+			FROM quick_note_audio_assets link
+			JOIN audio_assets asset ON asset.id = link.audio_asset_id
+			WHERE link.quick_note_id = q.id AND link.role = 'source'
+			ORDER BY link.created_at DESC, link.audio_asset_id DESC
+			LIMIT 1
+		)
+		WHERE q.id = $1 AND q.scope_id = $2
+		LIMIT 1`, id, scopeID).Scan(&currentAudioPath); err != nil {
+		return fmt.Errorf("lookup quick note %d: %w", id, err)
 	}
 
 	nextAudioPath, err := s.persistAudio(audioAssetInputFromBytes(audioData), "qn_")
@@ -445,12 +576,18 @@ func (s *PostgresStore) UpdateQuickNoteCapture(ctx context.Context, id int64, te
 	if nextAudioPath == "" {
 		nextAudioPath = currentAudioPath
 	}
+	createdNewAudio := nextAudioPath != "" && currentAudioPath != nextAudioPath
+	defer func() {
+		if !committed && createdNewAudio {
+			_ = os.Remove(nextAudioPath)
+		}
+	}()
 
-	result, err := s.db.ExecContext(ctx,
+	result, err := tx.ExecContext(ctx,
 		`UPDATE quick_notes
-		 SET text = $1, provider = $2, duration_ms = $3, latency_ms = $4, audio_path = $5, word_count = $6, updated_at = NOW()
-		 WHERE id = $7`,
-		text, provider, durationMs, latencyMs, nextAudioPath, countWords(text), id,
+		 SET text = $1, provider = $2, duration_ms = $3, latency_ms = $4, word_count = $5, updated_at = NOW()
+		 WHERE id = $6 AND scope_id = $7`,
+		text, provider, durationMs, latencyMs, countWords(text), id, scopeID,
 	)
 	if err != nil {
 		return fmt.Errorf("update quick note capture: %w", err)
@@ -459,19 +596,25 @@ func (s *PostgresStore) UpdateQuickNoteCapture(ctx context.Context, id int64, te
 	if rows == 0 {
 		return fmt.Errorf("quick note %d not found", id)
 	}
-	if currentAudioPath != nextAudioPath {
-		for _, path := range currentAudioPaths {
-			if path == nextAudioPath {
-				continue
-			}
-			_ = os.Remove(path)
-			_ = deleteAudioAsset(ctx, s.db, "postgres", "quick_note", id, path)
+	if currentAudioPath != "" && currentAudioPath != nextAudioPath {
+		if err := deleteAudioAsset(ctx, tx, "postgres", "quick_note", id, currentAudioPath); err != nil {
+			return fmt.Errorf("delete previous audio asset: %w", err)
 		}
 	}
 	if nextAudioPath != "" && currentAudioPath != nextAudioPath {
-		if err := recordAudioAsset(ctx, s.db, "postgres", "quick_note", id, nextAudioPath, durationMs, "audio/wav"); err != nil {
+		if err := recordScopedAudioAsset(ctx, tx, "postgres", scopeID, "quick_note", id, nextAudioPath, durationMs); err != nil {
 			return fmt.Errorf("record audio asset: %w", err)
 		}
+	}
+	if err := refreshPostgresStoreStats(ctx, tx, scopeID); err != nil {
+		return fmt.Errorf("refresh stats: %w", err)
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit quick note capture: %w", err)
+	}
+	committed = true
+	if currentAudioPath != "" && currentAudioPath != nextAudioPath {
+		_ = os.Remove(currentAudioPath)
 	}
 
 	s.scheduleMaintenance() //nolint:contextcheck // maintenance goroutines must not be bound to request context
@@ -479,7 +622,11 @@ func (s *PostgresStore) UpdateQuickNoteCapture(ctx context.Context, id int64, te
 }
 
 func (s *PostgresStore) PinQuickNote(ctx context.Context, id int64, pinned bool) error {
-	result, err := s.db.ExecContext(ctx, `UPDATE quick_notes SET pinned = $1 WHERE id = $2`, pinned, id)
+	scopeID, err := s.scopeID(ctx)
+	if err != nil {
+		return err
+	}
+	result, err := s.db.ExecContext(ctx, `UPDATE quick_notes SET pinned = $1 WHERE id = $2 AND scope_id = $3`, pinned, id, scopeID)
 	if err != nil {
 		return fmt.Errorf("pin quick note: %w", err)
 	}
@@ -491,14 +638,42 @@ func (s *PostgresStore) PinQuickNote(ctx context.Context, id int64, pinned bool)
 }
 
 func (s *PostgresStore) DeleteQuickNote(ctx context.Context, id int64) error {
-	var audioPath string
-	_ = s.db.QueryRowContext(ctx, `SELECT COALESCE(audio_path, '') FROM quick_notes WHERE id = $1`, id).Scan(&audioPath)
-	audioPaths, err := quickNoteAudioPaths(ctx, s.db, "postgres", id, audioPath)
+	scopeID, err := s.scopeID(ctx)
 	if err != nil {
-		return fmt.Errorf("lookup quick note audio assets: %w", err)
+		return err
+	}
+	var audioPath string
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	committed := false
+	defer func() {
+		if !committed {
+			_ = tx.Rollback()
+		}
+	}()
+
+	_ = tx.QueryRowContext(ctx, `SELECT COALESCE(a.path, '')
+		FROM quick_notes q
+		LEFT JOIN audio_assets a ON a.id = (
+			SELECT link.audio_asset_id
+			FROM quick_note_audio_assets link
+			JOIN audio_assets asset ON asset.id = link.audio_asset_id
+			WHERE link.quick_note_id = q.id AND link.role = 'source'
+			ORDER BY link.created_at DESC, link.audio_asset_id DESC
+			LIMIT 1
+		)
+		WHERE q.id = $1 AND q.scope_id = $2
+		LIMIT 1`, id, scopeID).Scan(&audioPath)
+
+	if audioPath != "" {
+		if err := deleteAudioAssetsForOwner(ctx, tx, "postgres", "quick_note", id); err != nil {
+			return fmt.Errorf("delete quick note audio assets: %w", err)
+		}
 	}
 
-	result, err := s.db.ExecContext(ctx, `DELETE FROM quick_notes WHERE id = $1`, id)
+	result, err := tx.ExecContext(ctx, `DELETE FROM quick_notes WHERE id = $1 AND scope_id = $2`, id, scopeID)
 	if err != nil {
 		return fmt.Errorf("delete quick note: %w", err)
 	}
@@ -506,39 +681,41 @@ func (s *PostgresStore) DeleteQuickNote(ctx context.Context, id int64) error {
 	if rows == 0 {
 		return fmt.Errorf("quick note %d not found", id)
 	}
-	for _, path := range audioPaths {
-		_ = os.Remove(path)
+	if err := refreshPostgresStoreStats(ctx, tx, scopeID); err != nil {
+		return fmt.Errorf("refresh stats: %w", err)
 	}
-	if err := deleteAudioAssetsForOwner(ctx, s.db, "postgres", "quick_note", id); err != nil {
-		return fmt.Errorf("delete quick note audio assets: %w", err)
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit quick note delete: %w", err)
+	}
+	committed = true
+	if audioPath != "" {
+		_ = os.Remove(audioPath)
 	}
 	return nil
 }
 
 func (s *PostgresStore) QuickNoteCount(ctx context.Context) (int, error) {
+	scopeID, err := s.scopeID(ctx)
+	if err != nil {
+		return 0, err
+	}
 	var count int
-	err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM quick_notes`).Scan(&count)
+	err = s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM quick_notes WHERE scope_id = $1`, scopeID).Scan(&count)
 	return count, err
 }
 
 func (s *PostgresStore) Stats(ctx context.Context) (Stats, error) {
+	scopeID, err := s.scopeID(ctx)
+	if err != nil {
+		return Stats{}, err
+	}
 	var stats Stats
 	var totalLatency int64
 	var latencyCount int64
-	err := s.db.QueryRowContext(ctx, `
-		SELECT
-			(SELECT COUNT(*) FROM transcriptions),
-			(SELECT COUNT(*) FROM quick_notes),
-			COALESCE(SUM(word_count), 0),
-			COALESCE(SUM(duration_ms), 0),
-			COALESCE(SUM(CASE WHEN latency_ms > 0 THEN latency_ms ELSE 0 END), 0),
-			COALESCE(SUM(CASE WHEN latency_ms > 0 THEN 1 ELSE 0 END), 0)
-		FROM (
-			SELECT word_count, duration_ms, latency_ms FROM transcriptions
-			UNION ALL
-			SELECT word_count, duration_ms, latency_ms FROM quick_notes
-		) AS combined`,
-	).Scan(&stats.Transcriptions, &stats.QuickNotes, &stats.TotalWords, &stats.TotalAudioDurationMs, &totalLatency, &latencyCount)
+	err = s.db.QueryRowContext(ctx, `SELECT transcriptions_count, quick_notes_count, total_words,
+		total_audio_duration_ms, total_latency_ms, latency_count
+		FROM store_stats WHERE scope_id = $1`, scopeID).
+		Scan(&stats.Transcriptions, &stats.QuickNotes, &stats.TotalWords, &stats.TotalAudioDurationMs, &totalLatency, &latencyCount)
 	if err != nil {
 		return Stats{}, err
 	}
@@ -643,24 +820,10 @@ func (s *PostgresStore) enforceStorageLimit() {
 	defer tx.Rollback() //nolint:errcheck // deferred rollback, error not actionable
 
 	rows, err := tx.QueryContext(context.Background(), //nolint:contextcheck // background goroutine should not be bound to request context
-		`SELECT kind, id, path FROM (
-			SELECT owner_kind AS kind, owner_id AS id, path, created_at FROM audio_assets WHERE path <> ''
-			UNION ALL
-			SELECT 'transcription' AS kind, t.id, t.audio_path AS path, t.created_at FROM transcriptions t
-			 WHERE t.audio_path <> ''
-			   AND NOT EXISTS (
-			       SELECT 1 FROM audio_assets a
-			       WHERE a.owner_kind = 'transcription' AND a.owner_id = t.id AND a.path = t.audio_path
-			   )
-			UNION ALL
-			SELECT 'quick_note' AS kind, q.id, q.audio_path AS path, q.created_at FROM quick_notes q
-			 WHERE q.audio_path <> ''
-			   AND NOT EXISTS (
-			       SELECT 1 FROM audio_assets a
-			       WHERE a.owner_kind = 'quick_note' AND a.owner_id = q.id AND a.path = q.audio_path
-			   )
-		) AS assets
-		ORDER BY created_at ASC, id ASC`,
+		`SELECT owner_kind AS kind, owner_id AS id, path
+		 FROM audio_assets
+		 WHERE path <> ''
+		 ORDER BY created_at ASC, id ASC`,
 	)
 	if err != nil {
 		return
@@ -689,13 +852,6 @@ func (s *PostgresStore) enforceStorageLimit() {
 			continue
 		}
 		totalSize -= info.Size()
-		query := `UPDATE transcriptions SET audio_path = '' WHERE id = $1`
-		if kind == "quick_note" {
-			query = `UPDATE quick_notes SET audio_path = '' WHERE id = $1`
-		}
-		if _, err := tx.ExecContext(context.Background(), query, id); err != nil { //nolint:contextcheck // background goroutine should not be bound to request context
-			slog.Warn("store: clear postgres audio_path", "kind", kind, "id", id, "err", err)
-		}
 		if err := deleteAudioAsset(context.Background(), tx, "postgres", kind, id, path); err != nil { //nolint:contextcheck // background goroutine should not be bound to request context
 			slog.Warn("store: delete postgres audio asset", "kind", kind, "id", id, "err", err)
 		}
@@ -723,23 +879,10 @@ func (s *PostgresStore) enforceAudioRetention() {
 	defer tx.Rollback() //nolint:errcheck // deferred rollback, error not actionable
 
 	rows, err := tx.QueryContext(context.Background(), //nolint:contextcheck // background goroutine should not be bound to request context
-		`SELECT kind, id, path FROM (
-			SELECT owner_kind AS kind, owner_id AS id, path, created_at FROM audio_assets WHERE path <> '' AND created_at < $1
-			UNION ALL
-			SELECT 'transcription' AS kind, t.id, t.audio_path AS path, t.created_at FROM transcriptions t
-			 WHERE t.audio_path <> '' AND t.created_at < $1
-			   AND NOT EXISTS (
-			       SELECT 1 FROM audio_assets a
-			       WHERE a.owner_kind = 'transcription' AND a.owner_id = t.id AND a.path = t.audio_path
-			   )
-			UNION ALL
-			SELECT 'quick_note' AS kind, q.id, q.audio_path AS path, q.created_at FROM quick_notes q
-			 WHERE q.audio_path <> '' AND q.created_at < $1
-			   AND NOT EXISTS (
-			       SELECT 1 FROM audio_assets a
-			       WHERE a.owner_kind = 'quick_note' AND a.owner_id = q.id AND a.path = q.audio_path
-			   )
-		) AS assets`,
+		`SELECT owner_kind AS kind, owner_id AS id, path
+		 FROM audio_assets
+		 WHERE path <> '' AND created_at < $1
+		 ORDER BY created_at ASC, id ASC`,
 		cutoff,
 	)
 	if err != nil {
@@ -764,13 +907,6 @@ func (s *PostgresStore) enforceAudioRetention() {
 		if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
 			slog.Warn("store: remove retained postgres audio", "path", path, "err", err)
 			continue
-		}
-		query := `UPDATE transcriptions SET audio_path = '' WHERE id = $1`
-		if kind == "quick_note" {
-			query = `UPDATE quick_notes SET audio_path = '' WHERE id = $1`
-		}
-		if _, err := tx.ExecContext(context.Background(), query, id); err != nil { //nolint:contextcheck // background goroutine should not be bound to request context
-			slog.Warn("store: clear retained postgres audio_path", "kind", kind, "id", id, "err", err)
 		}
 		if err := deleteAudioAsset(context.Background(), tx, "postgres", kind, id, path); err != nil { //nolint:contextcheck // background goroutine should not be bound to request context
 			slog.Warn("store: delete retained postgres audio asset", "kind", kind, "id", id, "err", err)

@@ -133,8 +133,8 @@ func defaults() *Config {
 			Model:   defaultGeminiNativeAudioModel,
 			// Same-provider Gemini fallback keeps Voice Agent up when the 3.1
 			// preview endpoint has transient issues. Cross-provider fallbacks
-			// (OpenAI gpt-realtime-mini) can be configured explicitly per
-			// deployment via the separate model_selection section.
+			// can be configured explicitly per deployment via the separate
+			// model_selection section.
 			FallbackModel:                   fallbackGeminiNativeAudioModel,
 			Voice:                           "Kore",
 			AgentProfileID:                  voiceagentprofile.DefaultID,
@@ -176,7 +176,7 @@ func defaults() *Config {
 				AgentModel:    "gpt-5.4-2026-03-05",
 				TTSModel:      "tts-1",
 				TTSVoice:      "nova",
-				RealtimeModel: "gpt-realtime-mini",
+				RealtimeModel: "gpt-realtime-2",
 			},
 			Groq: GroqProviderConfig{
 				APIKeyEnv:    "GROQ_API_KEY", //nolint:gosec // not a credential, field name triggers false positive

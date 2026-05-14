@@ -1,7 +1,7 @@
 {
   "name": "speechkit-release",
   "private": true,
-  "version": "0.32.1",
+  "version": "0.33.0",
   "type": "module",
   "engines": {
     "node": ">=24.0.0"
@@ -20,12 +20,22 @@
     "deadcode:strict": "knip --config knip.json",
     "release:notes": "node ./scripts/release/render-release-notes.mjs",
     "release:notes:test": "node --test ./scripts/release/changelog.test.mjs",
+    "release:website-one-shot": "node ./scripts/verify-website-one-shot-prompts.mjs",
+    "release:lint": "node ./scripts/release/lint-changelog.mjs",
+    "release:lint:unreleased": "node ./scripts/release/lint-changelog.mjs --unreleased",
+    "release:lint:version-sync": "node ./scripts/release/lint-version-sync.mjs",
+    "release:lint:test": "node --test ./scripts/release/lint-changelog.test.mjs",
     "release:dry-run:private": "powershell -ExecutionPolicy Bypass -File ./scripts/private-release-dry-run.ps1",
     "version:sync": "node ./scripts/sync-version.mjs",
     "version:sync:windows": "node ./scripts/sync-version.mjs --targets=frontend,windows",
     "version:sync:android": "node ./scripts/sync-version.mjs --targets=android",
     "version:sync:all": "node ./scripts/sync-version.mjs --targets=frontend,windows,android",
-    "test": "npm run release:notes:test && npm run app:test",
+    "website:dev": "npm --prefix Website run dev",
+    "website:install": "npm --prefix Website ci",
+    "website:build": "npm --prefix Website run build",
+    "website:check": "npm --prefix Website run check",
+    "website:test": "npm --prefix Website test",
+    "test": "npm run release:notes:test && npm run release:lint:test && npm run app:test",
     "version": "changeset version && npm run version:sync"
   },
   "devDependencies": {

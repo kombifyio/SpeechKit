@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -541,10 +542,16 @@ func TestAPIV1VoiceSessionsListsStoredSummaries(t *testing.T) {
 		t.Fatalf("NewSQLiteStore: %v", err)
 	}
 	defer feedbackStore.Close()
-	if _, err := feedbackStore.SaveVoiceAgentSession(context.Background(), store.VoiceAgentSession{
-		Language: "en",
-		Summary:  store.VoiceAgentSessionSummary{Summary: "Decided to harden live UX."},
-	}); err != nil {
+	id, err := feedbackStore.SaveVoiceAgentSession(context.Background(), store.VoiceAgentSession{
+		Language:   "en",
+		Transcript: "User: harden UX",
+		Turns:      []store.VoiceAgentTurn{{Role: "user", Text: "harden UX"}},
+		Summary: store.VoiceAgentSessionSummary{
+			Summary:   "Decided to harden live UX.",
+			NextSteps: []string{"Build detail route"},
+		},
+	})
+	if err != nil {
 		t.Fatalf("SaveVoiceAgentSession: %v", err)
 	}
 
@@ -565,6 +572,30 @@ func TestAPIV1VoiceSessionsListsStoredSummaries(t *testing.T) {
 	}
 	if got := sessions[0].Summary.Summary; got != "Decided to harden live UX." {
 		t.Fatalf("summary = %q", got)
+	}
+	if sessions[0].Transcript != "" || len(sessions[0].Turns) != 0 || len(sessions[0].Summary.NextSteps) != 0 {
+		t.Fatalf("list response should be light, got %+v", sessions[0])
+	}
+
+	req = httptest.NewRequest(http.MethodGet, fmt.Sprintf("/api/v1/voice-sessions/%d", id), http.NoBody)
+	rec = httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("detail status = %d, body=%s", rec.Code, rec.Body.String())
+	}
+	var detail store.VoiceAgentSession
+	if err := json.Unmarshal(rec.Body.Bytes(), &detail); err != nil {
+		t.Fatalf("decode voice session detail: %v", err)
+	}
+	if detail.Transcript == "" || len(detail.Turns) != 1 || len(detail.Summary.NextSteps) != 1 {
+		t.Fatalf("detail response missing heavy fields: %+v", detail)
+	}
+
+	req = httptest.NewRequest(http.MethodGet, "/api/v1/voice-sessions/999999", http.NoBody)
+	rec = httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("missing detail status = %d, want 404", rec.Code)
 	}
 }
 
@@ -591,6 +622,7 @@ func TestAPIV1OpenAPISpecDocumentsRegisteredRoutes(t *testing.T) {
 		"/api/v1/providers/{profileId}/activate:",
 		"/api/v1/dictionary:",
 		"/api/v1/voice-sessions:",
+		"/api/v1/voice-sessions/{sessionId}:",
 		"X-SpeechKit-Control-Token",
 		"speechkit_control_plane",
 	} {

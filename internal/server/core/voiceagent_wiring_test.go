@@ -4,10 +4,15 @@ package core
 
 import (
 	"context"
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/kombifyio/SpeechKit/internal/config"
+	"github.com/kombifyio/SpeechKit/internal/server/middleware"
 	"github.com/kombifyio/SpeechKit/internal/server/persona"
 	vsserver "github.com/kombifyio/SpeechKit/internal/server/voiceagent"
 	"github.com/kombifyio/SpeechKit/internal/voiceagentprofile"
@@ -58,6 +63,46 @@ func TestMoshiProviderFactoryIsExplicitlyExperimentalUnavailable(t *testing.T) {
 	}
 }
 
+func TestBuildVoiceAgentHandlerUsesConfiguredTicketTTL(t *testing.T) {
+	cfg := &config.Config{}
+	cfg.General.Language = "en"
+	cfg.Server.TicketTTLSec = 90
+	cfg.Server.MaxVoiceAgentSessions = 10
+	cfg.Server.MaxSessionsPerUser = 10
+	cfg.VoiceAgent.Provider = ProviderGemini
+	app := &App{PersonaRegistry: persona.NewRegistry()}
+
+	h, _, err := buildVoiceAgentHandler(context.Background(), cfg, app)
+	if err != nil {
+		t.Fatalf("buildVoiceAgentHandler() error = %v", err)
+	}
+	mux := http.NewServeMux()
+	h.Mount(mux)
+	handler := middleware.Auth(middleware.AuthOptions{Mode: string(middleware.AuthModeNone)})(mux)
+
+	before := time.Now().UTC()
+	req := httptest.NewRequest(http.MethodPost, "https://speechkit.test/v1/voiceagent/sessions", nil)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("create session status = %d body=%s", rec.Code, rec.Body.String())
+	}
+	var body struct {
+		ExpiresAt string `json:"expires_at"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	expires, err := time.Parse(time.RFC3339, body.ExpiresAt)
+	if err != nil {
+		t.Fatalf("parse expires_at %q: %v", body.ExpiresAt, err)
+	}
+	delta := expires.Sub(before)
+	if delta < 89*time.Second || delta > 92*time.Second {
+		t.Fatalf("expires_at delta = %s, want configured 90s TTL", delta)
+	}
+}
+
 func TestPersonaResolverDefaultProfileKeepsServerPromptAndVoice(t *testing.T) {
 	cfg := &config.Config{}
 	cfg.General.Language = "de"
@@ -78,6 +123,23 @@ func TestPersonaResolverDefaultProfileKeepsServerPromptAndVoice(t *testing.T) {
 	}
 	if frame.SystemPrompt != "Base prompt" {
 		t.Fatalf("SystemPrompt = %q, want Base prompt", frame.SystemPrompt)
+	}
+}
+
+func TestPersonaResolverOpenAIUsesRealtimeModelDefault(t *testing.T) {
+	cfg := config.Config{}
+	cfg.VoiceAgent.Provider = ProviderOpenAI
+	cfg.VoiceAgent.Model = "gemini-3.1-flash-live-preview"
+	cfg.Providers.OpenAI.RealtimeModel = "gpt-realtime-2"
+
+	resolver := &personaResolver{cfg: &cfg, registry: persona.NewRegistry()}
+
+	frame, err := resolver.Resolve(vsserver.StartFrame{})
+	if err != nil {
+		t.Fatalf("Resolve() error = %v", err)
+	}
+	if frame.Model != "gpt-realtime-2" {
+		t.Fatalf("Model = %q, want gpt-realtime-2", frame.Model)
 	}
 }
 

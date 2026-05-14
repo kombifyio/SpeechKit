@@ -149,7 +149,9 @@ func TestServerPublicRoutes_ExposeOnlyTicketWebSocketRoutes(t *testing.T) {
 	routes := serverPublicRoutes()
 	wants := map[string]bool{
 		"/v1/server/settings":              false,
+		"/v1/server/admin/session":         false,
 		"/api/v1/server/settings":          false,
+		"/api/v1/server/admin/session":     false,
 		"/v1/voiceagent/sessions/|/ws":     false,
 		"/api/v1/voiceagent/sessions/|/ws": false,
 	}
@@ -165,6 +167,12 @@ func TestServerPublicRoutes_ExposeOnlyTicketWebSocketRoutes(t *testing.T) {
 		if route.Path == "/v1/server/settings" || route.Path == "/api/v1/server/settings" {
 			if len(route.Methods) != 2 || route.Methods[0] != http.MethodGet || route.Methods[1] != http.MethodHead {
 				t.Fatalf("public settings route should be read-only GET/HEAD, got %#v", route.Methods)
+			}
+			continue
+		}
+		if route.Path == "/v1/server/admin/session" || route.Path == "/api/v1/server/admin/session" {
+			if len(route.Methods) != 1 || route.Methods[0] != http.MethodPost {
+				t.Fatalf("admin session route should be POST-only, got %#v", route.Methods)
 			}
 			continue
 		}
@@ -244,7 +252,14 @@ func TestRegisterTestUI_NoOpWhenOnboardingDisabledByEnv(t *testing.T) {
 }
 
 func TestSetupHandler_RequiresAdminIdentityWhenAppSealed(t *testing.T) {
-	app := &App{Mux: http.NewServeMux()}
+	app := &App{
+		Cfg:       &config.Config{},
+		Mux:       http.NewServeMux(),
+		AuthState: middleware.NewAuthState("bearer", "SPEECHKIT_SERVER_TOKEN", "", "owner", "$2a$04$3ZQhRz6fJb3kQGN9cE1uD.RZ8c3E9oB3z4ED5CzSMYRhhAv7n4EHa"),
+	}
+	app.Cfg.Server.AdminAuthEnabled = true
+	app.Cfg.Server.AdminUsername = "owner"
+	app.Cfg.Server.AdminPasswordHash = "$2a$04$3ZQhRz6fJb3kQGN9cE1uD.RZ8c3E9oB3z4ED5CzSMYRhhAv7n4EHa"
 	registerTestUI(app)
 	app.bootstrapSealed.Store(true)
 
@@ -278,6 +293,41 @@ func TestSetupHandler_RequiresAdminIdentityWhenAppSealed(t *testing.T) {
 	app.Mux.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/", nil))
 	if rec.Code != http.StatusOK {
 		t.Fatalf("sealed app should still serve smoke at /, got %d", rec.Code)
+	}
+}
+
+func TestSetupHandler_AllowsFirstRunWhenNoAdminExists(t *testing.T) {
+	app := &App{
+		Cfg:       &config.Config{},
+		Mux:       http.NewServeMux(),
+		AuthState: middleware.NewAuthState("bearer", "SPEECHKIT_SERVER_TOKEN", "", "", ""),
+	}
+	registerTestUI(app)
+	app.bootstrapSealed.Store(true)
+
+	rec := httptest.NewRecorder()
+	app.Mux.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/setup", nil))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("first-run setup without admin should be reachable, got %d body=%s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestSetupHandler_AllowsSealedSetupWhenAdminAuthDisabled(t *testing.T) {
+	app := &App{
+		Cfg:       &config.Config{},
+		Mux:       http.NewServeMux(),
+		AuthState: middleware.NewAuthState("bearer", "SPEECHKIT_SERVER_TOKEN", "", "owner", "$2a$04$3ZQhRz6fJb3kQGN9cE1uD.RZ8c3E9oB3z4ED5CzSMYRhhAv7n4EHa"),
+	}
+	app.Cfg.Server.AdminAuthEnabled = false
+	app.Cfg.Server.AdminUsername = "owner"
+	app.Cfg.Server.AdminPasswordHash = "$2a$04$3ZQhRz6fJb3kQGN9cE1uD.RZ8c3E9oB3z4ED5CzSMYRhhAv7n4EHa"
+	registerTestUI(app)
+	app.bootstrapSealed.Store(true)
+
+	rec := httptest.NewRecorder()
+	app.Mux.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/setup", nil))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("admin-auth-disabled setup should be reachable in handler, got %d body=%s", rec.Code, rec.Body.String())
 	}
 }
 

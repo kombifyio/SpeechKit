@@ -11,6 +11,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"golang.org/x/crypto/bcrypt"
 )
@@ -83,10 +84,16 @@ func TestAuth_BearerCanAttachConfiguredRole(t *testing.T) {
 	}
 }
 
-func TestAuth_BasicAdminAcceptsConfiguredPasswordHash(t *testing.T) {
+func TestAuth_AdminSessionAcceptsConfiguredPasswordHash(t *testing.T) {
 	hash, err := bcrypt.GenerateFromPassword([]byte("correct-password"), bcrypt.MinCost)
 	if err != nil {
 		t.Fatalf("hash password: %v", err)
+	}
+	expires := time.Now().Add(adminSessionTTL)
+	cookie := &http.Cookie{
+		Name:  adminSessionCookieName,
+		Value: signAdminSessionToken(adminSessionClaims{User: "admin", ExpiresAt: expires.Unix(), Nonce: "test"}, string(hash)),
+		Path:  "/",
 	}
 	handler := Auth(AuthOptions{
 		Mode:                      "bearer",
@@ -96,20 +103,20 @@ func TestAuth_BasicAdminAcceptsConfiguredPasswordHash(t *testing.T) {
 	})(
 		http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			id := IdentityFromContext(r.Context())
-			if id.UserID != "admin" || id.Role != "admin" || id.Source != "basic" {
-				t.Fatalf("identity = %+v, want admin basic identity", id)
+			if id.UserID != "admin" || id.Role != "admin" || id.Source != "admin_session" {
+				t.Fatalf("identity = %+v, want admin session identity", id)
 			}
 			w.WriteHeader(http.StatusOK)
 		}),
 	)
 
 	req := httptest.NewRequest(http.MethodGet, "/setup", nil)
-	req.Header.Set("Authorization", "Basic "+base64.StdEncoding.EncodeToString([]byte("admin:correct-password")))
+	req.AddCookie(cookie)
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusOK {
-		t.Fatalf("basic admin should authenticate, got %d body=%s", rec.Code, rec.Body.String())
+		t.Fatalf("admin session should authenticate, got %d body=%s", rec.Code, rec.Body.String())
 	}
 }
 
@@ -315,9 +322,11 @@ func TestAuth_BootstrapPathBypassesOnlyWhenAllowed(t *testing.T) {
 func TestAuth_HTMLUnauthorizedPathReturnsBrowserResponse(t *testing.T) {
 	t.Setenv("TEST_BEARER", "correct-horse-battery-staple")
 	handler := Auth(AuthOptions{
-		Mode:                  "bearer",
-		BearerTokenEnv:        "TEST_BEARER",
-		HTMLUnauthorizedPaths: []string{"/setup", "/setup/"},
+		Mode:                      "bearer",
+		BearerTokenEnv:            "TEST_BEARER",
+		HTMLUnauthorizedPaths:     []string{"/setup", "/setup/"},
+		AdminUsernameProvider:     func() string { return "admin" },
+		AdminPasswordHashProvider: func() string { return "$2a$04$3ZQhRz6fJb3kQGN9cE1uD.RZ8c3E9oB3z4ED5CzSMYRhhAv7n4EHa" },
 	})(
 		http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusOK) }),
 	)
@@ -348,8 +357,8 @@ func TestAuth_HTMLUnauthorizedPathReturnsBrowserResponse(t *testing.T) {
 			t.Fatalf("browser auth page should contain %q, got %s", want, body)
 		}
 	}
-	if got := rec.Header().Get("WWW-Authenticate"); got == "" {
-		t.Fatal("expected WWW-Authenticate challenge")
+	if got := rec.Header().Get("WWW-Authenticate"); got != "" {
+		t.Fatalf("browser admin page must not trigger HTTP auth, got WWW-Authenticate=%q", got)
 	}
 
 	apiReq := httptest.NewRequest(http.MethodGet, "/v1/any", nil)
@@ -361,6 +370,32 @@ func TestAuth_HTMLUnauthorizedPathReturnsBrowserResponse(t *testing.T) {
 	}
 	if got := apiRec.Header().Get("Content-Type"); got != "application/json" {
 		t.Fatalf("expected JSON content type for API auth failure, got %q", got)
+	}
+}
+
+func TestAuth_HTMLUnauthorizedPathFallsBackToJSONWithoutAdminLogin(t *testing.T) {
+	t.Setenv("TEST_BEARER", "correct-horse-battery-staple")
+	handler := Auth(AuthOptions{
+		Mode:                  "bearer",
+		BearerTokenEnv:        "TEST_BEARER",
+		HTMLUnauthorizedPaths: []string{"/setup", "/setup/"},
+	})(
+		http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusOK) }),
+	)
+
+	req := httptest.NewRequest(http.MethodGet, "/setup", nil)
+	req.Header.Set("Accept", "text/html")
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("expected 401, got %d", rec.Code)
+	}
+	if got := rec.Header().Get("Content-Type"); got != "application/json" {
+		t.Fatalf("expected JSON content type when admin login is disabled, got %q", got)
+	}
+	if strings.Contains(rec.Body.String(), "SpeechKit Admin Sign-In Required") {
+		t.Fatalf("disabled admin login should not render browser sign-in page: %s", rec.Body.String())
 	}
 }
 
@@ -543,6 +578,60 @@ func TestAuth_EdgeHMACRejectsTamperedSignature(t *testing.T) {
 	if rec.Code != http.StatusUnauthorized {
 		t.Fatalf("expected 401, got %d", rec.Code)
 	}
+}
+
+func TestAuthStateAccessorsAndUpdates(t *testing.T) {
+	t.Setenv("TEST_AUTH_STATE_BEARER", "bearer-secret")
+	t.Setenv("TEST_AUTH_STATE_EDGE", "edge-secret")
+	state := NewAuthState("bearer", "TEST_AUTH_STATE_BEARER", "TEST_AUTH_STATE_EDGE", "admin", "hash")
+
+	if got := state.Mode(); got != "bearer" {
+		t.Fatalf("mode = %q", got)
+	}
+	if got := state.BearerTokenEnv(); got != "TEST_AUTH_STATE_BEARER" {
+		t.Fatalf("bearer env = %q", got)
+	}
+	if got := state.BearerToken(); got != "bearer-secret" {
+		t.Fatalf("bearer token = %q", got)
+	}
+	if got := state.EdgeSecret(); got != "edge-secret" {
+		t.Fatalf("edge secret = %q", got)
+	}
+	if got := state.AdminUsername(); got != "admin" {
+		t.Fatalf("admin username = %q", got)
+	}
+	if got := state.AdminPasswordHash(); got != "hash" {
+		t.Fatalf("admin hash = %q", got)
+	}
+
+	state.Set("edge_hmac", " ", "TEST_AUTH_STATE_EDGE_2")
+	state.SetAdmin("root", "")
+	t.Setenv("TEST_AUTH_STATE_EDGE_2", "edge-secret-2")
+
+	if got := state.Mode(); got != "edge_hmac" {
+		t.Fatalf("updated mode = %q", got)
+	}
+	if got := state.BearerTokenEnv(); got != "TEST_AUTH_STATE_BEARER" {
+		t.Fatalf("blank bearer env update should be ignored, got %q", got)
+	}
+	if got := state.EdgeSecret(); got != "edge-secret-2" {
+		t.Fatalf("updated edge secret = %q", got)
+	}
+	if got := state.AdminUsername(); got != "root" {
+		t.Fatalf("updated admin username = %q", got)
+	}
+	if got := state.AdminPasswordHash(); got != "hash" {
+		t.Fatalf("blank admin hash update should be ignored, got %q", got)
+	}
+}
+
+func TestNilAuthStateAccessorsFailClosed(t *testing.T) {
+	var state *AuthState
+	if state.Mode() != "" || state.BearerTokenEnv() != "" || state.EdgeSecret() != "" || state.AdminUsername() != "" || state.AdminPasswordHash() != "" {
+		t.Fatal("nil AuthState accessors should return empty values")
+	}
+	state.Set("bearer", "TOKEN", "EDGE")
+	state.SetAdmin("admin", "hash")
 }
 
 func TestChain_OrderOutermostFirst(t *testing.T) {

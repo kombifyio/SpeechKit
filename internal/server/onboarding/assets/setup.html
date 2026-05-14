@@ -524,7 +524,7 @@
         <section class="step-panel hidden" data-step-panel="credentials">
         <div class="credential-card server-auth-card">
           <div class="auth-row">
-            <strong>Admin sign-in</strong>
+            <label class="inline"><input id="adminAuthEnabled" type="checkbox" checked> Enable admin sign-in</label>
             <span class="badge warn" id="adminPasswordState">Password required</span>
           </div>
           <p class="intro-copy">Create the admin account for this SpeechKit setup UI. API clients still use their configured bearer token.</p>
@@ -775,9 +775,13 @@
 
     function updateAdminAuthUI() {
       const state = byId("adminPasswordState");
+      const enabled = byId("adminAuthEnabled").checked;
       const password = byId("adminPassword").value;
       const confirm = byId("adminPasswordConfirm").value;
-      if (password || confirm) {
+      if (!enabled) {
+        state.textContent = "Admin sign-in disabled";
+        state.className = "badge";
+      } else if (password || confirm) {
         state.textContent = password && password === confirm ? "Password will be updated" : "Password confirmation required";
         state.className = "badge " + (password && password === confirm ? "ok" : "warn");
       } else if (adminPasswordSet()) {
@@ -801,6 +805,7 @@
       byId("serverTokenEnv").value = desiredAuth.bearer_token_env || runtimeAuth.bearer_token_env || "SPEECHKIT_SERVER_TOKEN";
       forceServerTokenGeneration = byId("serverTokenManaged").checked && !Boolean(runtimeAuth.bearer_token_set);
       const desiredAdmin = desired.admin_auth || {};
+      byId("adminAuthEnabled").checked = typeof desiredAdmin.enabled === "boolean" ? desiredAdmin.enabled : true;
       byId("adminUsername").value = desiredAdmin.username || runtimeAuth.admin_username || "admin";
       byId("adminPassword").value = "";
       byId("adminPasswordConfirm").value = "";
@@ -809,8 +814,12 @@
 
     function adminAuthPayload() {
       const username = byId("adminUsername").value.trim();
+      const enabled = byId("adminAuthEnabled").checked;
       const password = byId("adminPassword").value;
       const confirm = byId("adminPasswordConfirm").value;
+      if (!enabled) {
+        return { enabled: false };
+      }
       if (!username) {
         throw new Error("Admin username is required.");
       }
@@ -823,7 +832,7 @@
       if (password && password.length < 8) {
         throw new Error("Admin password must be at least 8 characters.");
       }
-      const payload = { username: username };
+      const payload = { enabled: true, username: username };
       if (password) {
         payload.password = password;
       }
@@ -1303,8 +1312,9 @@
       updateServerAuthUI();
     });
     byId("serverTokenEnv").addEventListener("input", updateServerAuthUI);
-    ["adminUsername", "adminPassword", "adminPasswordConfirm"].forEach(function (id) {
+    ["adminAuthEnabled", "adminUsername", "adminPassword", "adminPasswordConfirm"].forEach(function (id) {
       byId(id).addEventListener("input", updateAdminAuthUI);
+      byId(id).addEventListener("change", updateAdminAuthUI);
     });
     byId("copyGeneratedServerToken").addEventListener("click", async function () {
       if (!generatedServerToken) return;

@@ -1,58 +1,70 @@
 # SpeechKit Storage Architecture
 
-**Status:** current OSS-oriented architecture, March 27, 2026
+**Status:** Storage 3.0 local-first OSS contract, May 5, 2026
 
-## Current Reality
+## Current Contract
 
-SpeechKit currently ships with one production-ready storage backend in the repo:
+SpeechKit ships with a local-first storage layer that is usable without accounts, tenants, or cloud infrastructure:
 
-- `sqlite` as the default backend
-- local metadata in `%APPDATA%/SpeechKit/feedback.db`
-- optional raw WAV storage in `%APPDATA%/SpeechKit/audio/`
+- `sqlite` is the default production-ready local backend.
+- `postgres` is supported when a DSN is configured.
+- Host applications can register additional backends without changing the OSS core.
+- Kombify Cloud remains an external backend path, not a dependency of the default framework.
 
-This is the only storage path that should be described as shipped and supported in the first OSS release.
+The public framework contract lives in `pkg/speechkit/storage`. It defines `Scope`, context helpers, scope policies, backend capabilities, and backend registration primitives. The internal app store keeps its existing facade, but all user-owned records resolve a scope from `context.Context`.
 
-## Why This Matters
+## Scope Model
 
-The repo is being prepared for a framework-style public release. That requires the docs to distinguish clearly between:
+Storage 3.0 standardizes multi-user and multi-tenant support without forcing a SaaS product model into local apps.
 
-- what is implemented now
-- what is a planned extension point
-- what belongs in private downstream integrations instead of the OSS core
+- No scope in context maps to the local default scope: `install:local`.
+- Host apps can provide `InstallID`, `DeviceID`, `UserID`, `TenantID`, and labels.
+- SQLite and Postgres persist scopes in `storage_scopes`.
+- User data tables store `scope_id` and filter all list, detail, stats, and dictionary queries by that scope.
+- Backends can require a user or tenant with `ScopePolicy`, while the OSS desktop default stays no-config.
 
-## Current Store Contract
+Persona, role, and sequence catalog tables remain global/admin-authored in this step. Persona multi-tenancy needs a separate product model and is intentionally not mixed into Storage 3.0.
 
-The current store layer is designed to keep extension space open without forcing extra infrastructure into the default runtime:
+## Data Model
 
-- `sqlite` is the local, zero-config default
-- semantic capabilities are optional
-- provider and audio metadata remain part of the stored record model
-- host apps can decide retention and raw-audio policy
+Scoped tables:
 
-## Future Work, Not Yet Shipped
+- `transcriptions`
+- `quick_notes`
+- `user_dictionary_entries`
+- `voice_agent_sessions`
+- `audio_assets`
+- `store_stats`
 
-The following are valid roadmap items, but they are not part of the first OSS release contract:
+Audio is represented through `audio_assets` plus owner link tables:
 
-- generic PostgreSQL backend
-- S3-compatible audio storage
-- pgvector or other vector-search backends
-- private downstream plugin backends
+- `transcription_audio_assets`
+- `quick_note_audio_assets`
 
-If these backends are added later, they should extend the existing contracts without breaking the SQLite-first default path.
+`Transcription.AudioPath` and `QuickNote.AudioPath` remain Go compatibility fields, but new writes derive them from the linked `audio_assets` row instead of persisting path data in the owner table.
 
-## OSS Boundary
+Voice Agent sessions use light list rows and detail rows:
 
-For the public framework release:
+- `/api/v1/voice-sessions` returns session metadata and scalar summary fields.
+- `/api/v1/voice-sessions/{id}` returns transcript, turns, raw summary, and summary items.
 
-- the default experience must work with local storage only
-- no private cloud integration may be required
-- no proprietary kombify backend code may be referenced as part of the shipped OSS implementation
-- release docs must never claim a backend is available when the code is still a stub
+## Performance Notes
 
-## Release Guidance
+Storage 3.0 removes the hot-path OR/function language filters by persisting `language_base` on history rows. Scoped list indexes cover the default history and quick-note reads.
 
-When updating storage docs:
+Stats are maintained per scope in `store_stats`; `Stats()` reads that aggregate instead of repeatedly scanning all history rows. Startup migrations can recalculate the table from the base records.
 
-- describe `sqlite` as current
-- describe `postgres` and richer storage backends as planned or experimental until they are fully implemented and tested
-- keep host-managed secrets and provider credentials out of the store contract unless there is a concrete, public implementation
+## Backend Guidance
+
+SQLite remains the simplest OSS path and should be the documented default. Postgres is the BYO database path for hosts that need shared infrastructure or stronger operational controls.
+
+Additional cloud backends should:
+
+- honor the public `storage.Scope` contract
+- declare scope requirements through `ScopePolicy`
+- keep tenant/user enforcement in the backend layer
+- avoid adding private cloud assumptions to desktop-local code paths
+
+## Export And Import
+
+Exports should include scope metadata alongside scoped records. Imports can either preserve the source scope, map records to the local default scope, or be rejected by the host backend policy when required scope data is missing.

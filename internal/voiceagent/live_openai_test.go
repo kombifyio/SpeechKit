@@ -68,11 +68,48 @@ func TestParseEventAudioDelta(t *testing.T) {
 	}
 }
 
+func TestParseEventOutputAudioDeltaGA(t *testing.T) {
+	t.Parallel()
+	p := &OpenAILive{}
+	audioBytes := []byte{0x05, 0x06, 0x07, 0x08}
+	encoded := base64.StdEncoding.EncodeToString(audioBytes)
+	frame := mustMarshal(t, map[string]any{
+		"type":  "response.output_audio.delta",
+		"delta": encoded,
+	})
+	msg, swallow, err := p.parseEvent(frame)
+	if err != nil {
+		t.Fatalf("parseEvent: %v", err)
+	}
+	if swallow {
+		t.Fatalf("output_audio.delta should not be swallowed")
+	}
+	if string(msg.Audio) != string(audioBytes) {
+		t.Fatalf("audio bytes mismatch: got % x, want % x", msg.Audio, audioBytes)
+	}
+}
+
 func TestParseEventOutputTranscriptDelta(t *testing.T) {
 	t.Parallel()
 	p := &OpenAILive{}
 	frame := mustMarshal(t, map[string]any{
 		"type":  "response.audio_transcript.delta",
+		"delta": "Hello",
+	})
+	msg, _, err := p.parseEvent(frame)
+	if err != nil {
+		t.Fatalf("parseEvent: %v", err)
+	}
+	if msg.OutputTranscript != "Hello" || msg.OutputTranscriptDone {
+		t.Fatalf("expected partial transcript 'Hello', got %+v", msg)
+	}
+}
+
+func TestParseEventOutputTranscriptDeltaGA(t *testing.T) {
+	t.Parallel()
+	p := &OpenAILive{}
+	frame := mustMarshal(t, map[string]any{
+		"type":  "response.output_audio_transcript.delta",
 		"delta": "Hello",
 	})
 	msg, _, err := p.parseEvent(frame)
@@ -97,6 +134,38 @@ func TestParseEventOutputTranscriptDone(t *testing.T) {
 	}
 	if msg.OutputTranscript != "Final answer." || !msg.OutputTranscriptDone {
 		t.Fatalf("expected final transcript, got %+v", msg)
+	}
+}
+
+func TestParseEventOutputTranscriptDoneGA(t *testing.T) {
+	t.Parallel()
+	p := &OpenAILive{}
+	frame := mustMarshal(t, map[string]any{
+		"type":       "response.output_audio_transcript.done",
+		"transcript": "Final answer.",
+	})
+	msg, _, err := p.parseEvent(frame)
+	if err != nil {
+		t.Fatalf("parseEvent: %v", err)
+	}
+	if msg.OutputTranscript != "Final answer." || !msg.OutputTranscriptDone {
+		t.Fatalf("expected final transcript, got %+v", msg)
+	}
+}
+
+func TestParseEventOutputTextDeltaAlsoSetsTranscript(t *testing.T) {
+	t.Parallel()
+	p := &OpenAILive{}
+	frame := mustMarshal(t, map[string]any{
+		"type":  "response.output_text.delta",
+		"delta": "Text answer",
+	})
+	msg, _, err := p.parseEvent(frame)
+	if err != nil {
+		t.Fatalf("parseEvent: %v", err)
+	}
+	if msg.Text != "Text answer" || msg.OutputTranscript != "Text answer" {
+		t.Fatalf("expected text delta to populate text and transcript, got %+v", msg)
 	}
 }
 
@@ -209,12 +278,18 @@ func TestBuildOpenAITurnDetection(t *testing.T) {
 		{
 			name:   "manual / push-to-talk",
 			policy: ActivityDetectionPolicy{Automatic: false},
-			want:   "none",
+			want:   "",
 		},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			got := buildOpenAITurnDetection(tc.policy)
+			if tc.want == "" {
+				if got != nil {
+					t.Fatalf("turn_detection: got %v, want nil", got)
+				}
+				return
+			}
 			if got["type"] != tc.want {
 				t.Fatalf("turn_detection.type: got %v, want %v", got["type"], tc.want)
 			}
@@ -259,6 +334,74 @@ func TestFirstNonEmptyOpenAIVoice(t *testing.T) {
 	}
 	if got := firstNonEmptyOpenAIVoice("Sage"); got != "sage" {
 		t.Errorf("voice should be lowercased, got %q", got)
+	}
+	if got := firstNonEmptyOpenAIVoice("Kore"); got != "alloy" {
+		t.Errorf("unknown non-OpenAI voice should fall back to alloy, got %q", got)
+	}
+}
+
+func TestOpenAIRealtimeGAConnectionDefaults(t *testing.T) {
+	t.Parallel()
+	if got := resolveOpenAIRealtimeModel(""); got != "gpt-realtime-2" {
+		t.Fatalf("default realtime model = %q, want gpt-realtime-2", got)
+	}
+	header := openAIRealtimeHeaders("test-key")
+	if got := header.Get("Authorization"); got != "Bearer test-key" {
+		t.Fatalf("Authorization header = %q", got)
+	}
+	if got := header.Get("OpenAI-Beta"); got != "" {
+		t.Fatalf("GA realtime WebSocket must not send OpenAI-Beta header, got %q", got)
+	}
+}
+
+func TestBuildOpenAISessionIncludesGAType(t *testing.T) {
+	t.Parallel()
+	session := buildOpenAISession(LiveConfig{
+		Model: "gpt-realtime-2",
+		Voice: "alloy",
+		Policies: LivePolicies{
+			EnableInputAudioTranscription: true,
+			ActivityDetection: ActivityDetectionPolicy{
+				Automatic:        true,
+				StartSensitivity: StartSensitivityLow,
+			},
+		},
+	})
+	if got := session["type"]; got != "realtime" {
+		t.Fatalf("session.type = %v, want realtime", got)
+	}
+	if _, ok := session["input_audio_format"]; ok {
+		t.Fatalf("GA realtime session must not include legacy input_audio_format")
+	}
+	if got := session["model"]; got != "gpt-realtime-2" {
+		t.Fatalf("session.model = %v, want gpt-realtime-2", got)
+	}
+	modalities, ok := session["output_modalities"].([]string)
+	if !ok || len(modalities) != 1 || modalities[0] != "audio" {
+		t.Fatalf("session.output_modalities = %#v, want [audio]", session["output_modalities"])
+	}
+	audio, ok := session["audio"].(map[string]any)
+	if !ok {
+		t.Fatalf("session.audio = %T, want map", session["audio"])
+	}
+	input, ok := audio["input"].(map[string]any)
+	if !ok {
+		t.Fatalf("session.audio.input = %T, want map", audio["input"])
+	}
+	format, ok := input["format"].(map[string]any)
+	if !ok || format["type"] != "audio/pcm" || format["rate"] != openaiInputSampleRate {
+		t.Fatalf("session.audio.input.format = %#v", input["format"])
+	}
+	if _, ok := input["transcription"].(map[string]any); !ok {
+		t.Fatalf("session.audio.input.transcription missing")
+	}
+	output, ok := audio["output"].(map[string]any)
+	if !ok || output["voice"] != "alloy" {
+		t.Fatalf("session.audio.output = %#v", audio["output"])
+	}
+	outputFormat, ok := output["format"].(map[string]any)
+	if !ok || outputFormat["type"] != "audio/pcm" || outputFormat["rate"] != openaiInputSampleRate {
+		t.Fatalf("session.audio.output.format = %#v", output["format"])
 	}
 }
 

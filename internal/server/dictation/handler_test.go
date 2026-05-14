@@ -298,6 +298,29 @@ func TestHandler_RouterError_Mapped503(t *testing.T) {
 	}
 }
 
+func TestHandler_EmptyTranscriptReturns422(t *testing.T) {
+	fake := &fakeRouter{result: &stt.Result{Text: "", Provider: "fake"}}
+	h := mustHandler(t, fake)
+
+	pcm := synthSine(16000, 1, 440.0, 100)
+	wav := wrapWAV(pcm, 16000, 1)
+	body, _ := json.Marshal(map[string]string{
+		"audio_base64": base64.StdEncoding.EncodeToString(wav),
+		"format":       "wav",
+	})
+	req := httptest.NewRequest(http.MethodPost, "/v1/dictation/transcribe", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("status = %d body=%s, want 422", rec.Code, rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), "empty_transcript") {
+		t.Fatalf("expected empty_transcript error code, got %s", rec.Body.String())
+	}
+}
+
 func TestHandler_PayloadTooLarge_JSON(t *testing.T) {
 	h, err := New(Options{Router: &fakeRouter{result: okResult()}, MaxUploadMB: 1})
 	if err != nil {

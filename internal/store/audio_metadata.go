@@ -87,3 +87,26 @@ func extensionForMimeType(mimeType string) string {
 		return ".wav"
 	}
 }
+
+func buildAudioAsset(storageKind, path, mimeType string, sizeBytes, durationMs int64) *AudioAsset {
+	if path == "" {
+		return nil
+	}
+	if storageKind == "" {
+		storageKind = string(AudioStorageLocalFile)
+	}
+	if mimeType == "" {
+		mimeType = "audio/wav"
+	}
+	return &AudioAsset{
+		StorageKind: AudioStorageKind(storageKind),
+		Path:        path,
+		MimeType:    mimeType,
+		SizeBytes:   sizeBytes,
+		DurationMs:  durationMs,
+	}
+}
+
+func normalizeAudioAsset(asset AudioAsset) *AudioAsset {
+	return buildAudioAsset(string(asset.StorageKind), asset.Path, asset.MimeType, asset.SizeBytes, asset.DurationMs)
+}

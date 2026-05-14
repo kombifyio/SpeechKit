@@ -79,7 +79,9 @@ function Import-DotEnvFiles {
         'SPEECHKIT_MANAGED_DOPPLER_PROJECT',
         'SPEECHKIT_MANAGED_DOPPLER_CONFIG',
         'SPEECHKIT_MANAGED_HF_BUILD_ENABLED',
-        'SPEECHKIT_MANAGED_HF_DEFAULT'
+        'SPEECHKIT_MANAGED_HF_DEFAULT',
+        'SPEECHKIT_WINDOWS_SIGNING_PUBLISHER',
+        'SPEECHKIT_WINDOWS_SIGNING_THUMBPRINT'
     )
 
     foreach ($fileName in @('.env', '.env.local')) {
@@ -149,6 +151,19 @@ function Resolve-GoModulePath {
     return $modulePath
 }
 
+function New-GoStringLdflag {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Name,
+        [Parameter()]
+        [string]$Value = ''
+    )
+
+    $assignment = "$Name=$Value"
+    $escaped = $assignment.Replace('\', '\\').Replace('"', '\"')
+    return "-X `"$escaped`""
+}
+
 Import-DotEnvFiles -ProjectDir $projectDir
 
 if (Test-Path Env:\SPEECHKIT_MANAGED_DOPPLER_PROJECT) {
@@ -161,6 +176,8 @@ if (Test-Path Env:\SPEECHKIT_MANAGED_DOPPLER_CONFIG) {
 } else {
     $managedDopplerConfig = ''
 }
+$windowsSigningPublisher = Get-EnvValue -Name 'SPEECHKIT_WINDOWS_SIGNING_PUBLISHER'
+$windowsSigningThumbprint = Get-EnvValue -Name 'SPEECHKIT_WINDOWS_SIGNING_THUMBPRINT'
 $modulePath = Resolve-GoModulePath -ProjectDir $projectDir
 $publicModulePath = 'github.com/kombifyio/SpeechKit'
 $isPublicModule = $modulePath -eq $publicModulePath
@@ -180,11 +197,17 @@ if (Test-Path Env:\SPEECHKIT_MANAGED_HF_DEFAULT) {
 }
 $goLdflags = @(
     "-H windowsgui"
-    "-X $modulePath/internal/config.managedHFBuildEnabled=$managedHFBuildEnabled"
-    "-X $modulePath/internal/config.managedHFDefaultOptIn=$managedHFDefault"
-    "-X $modulePath/internal/config.managedDopplerDefaultProject=$managedDopplerProject"
-    "-X $modulePath/internal/config.managedDopplerDefaultConfig=$managedDopplerConfig"
+    (New-GoStringLdflag -Name "$modulePath/internal/config.managedHFBuildEnabled" -Value $managedHFBuildEnabled)
+    (New-GoStringLdflag -Name "$modulePath/internal/config.managedHFDefaultOptIn" -Value $managedHFDefault)
+    (New-GoStringLdflag -Name "$modulePath/internal/config.managedDopplerDefaultProject" -Value $managedDopplerProject)
+    (New-GoStringLdflag -Name "$modulePath/internal/config.managedDopplerDefaultConfig" -Value $managedDopplerConfig)
 )
+if (-not [string]::IsNullOrWhiteSpace($windowsSigningPublisher)) {
+    $goLdflags += (New-GoStringLdflag -Name "$modulePath/cmd/speechkit.installerSignatureDefaultPublisher" -Value $windowsSigningPublisher)
+}
+if (-not [string]::IsNullOrWhiteSpace($windowsSigningThumbprint)) {
+    $goLdflags += (New-GoStringLdflag -Name "$modulePath/cmd/speechkit.installerSignatureDefaultThumbprint" -Value $windowsSigningThumbprint)
+}
 
 # Read canonical version from root package.json and inject via ldflags.
 $rootPackageJson = Join-Path $projectDir 'package.json'
@@ -195,7 +218,7 @@ if (Test-Path $rootPackageJson) {
         $appVersion = $pkg.version
     }
 }
-$goLdflags += "-X main.AppVersion=$appVersion"
+$goLdflags += (New-GoStringLdflag -Name 'main.AppVersion' -Value $appVersion)
 $goLdflags = $goLdflags -join ' '
 
 function Invoke-Step {
@@ -359,7 +382,9 @@ try {
         'SPEECHKIT_MANAGED_DOPPLER_PROJECT',
         'SPEECHKIT_MANAGED_DOPPLER_CONFIG',
         'SPEECHKIT_MANAGED_HF_BUILD_ENABLED',
-        'SPEECHKIT_MANAGED_HF_DEFAULT'
+        'SPEECHKIT_MANAGED_HF_DEFAULT',
+        'SPEECHKIT_WINDOWS_SIGNING_PUBLISHER',
+        'SPEECHKIT_WINDOWS_SIGNING_THUMBPRINT'
     )) {
         Remove-Item -Path "Env:\$name" -ErrorAction SilentlyContinue
     }

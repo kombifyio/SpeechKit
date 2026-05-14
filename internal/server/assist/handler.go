@@ -357,6 +357,15 @@ func (h *Handler) processTranscript(w http.ResponseWriter, ctx context.Context, 
 			"Assist pipeline returned nil result")
 		return
 	}
+	if strings.TrimSpace(result.Text) == "" {
+		httpx.WriteErrorWithDetails(w, http.StatusServiceUnavailable, "pipeline_unavailable", "Assist pipeline returned an empty result", map[string]any{
+			"stage":      "llm",
+			"category":   "empty_result",
+			"retryable":  true,
+			"latency_ms": latency.Milliseconds(),
+		})
+		return
+	}
 
 	// Respect TTS opt-out from the request. We cannot opt IN when the
 	// pipeline was built without a TTS router — Audio will already be empty
