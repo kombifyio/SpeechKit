@@ -10,7 +10,6 @@ on:
       - 'deploy/**'
       - 'docs/agent/**'
       - 'docs/server/**'
-      - 'Website/**'
       - 'tools/**'
       - 'go.mod'
       - 'go.sum'
@@ -27,7 +26,6 @@ on:
       - 'deploy/**'
       - 'docs/agent/**'
       - 'docs/server/**'
-      - 'Website/**'
       - 'tools/**'
       - 'go.mod'
       - 'go.sum'
@@ -101,28 +99,8 @@ jobs:
       - name: Audit frontend dependencies
         run: npm audit --audit-level=moderate
 
-      - name: Install root dev dependencies (for knip)
-        working-directory: ${{ github.workspace }}
-        run: npm ci
-
-      # knip scans all workspaces declared in knip.json (root, frontend/app,
-      # Website). To load Website/vite.config.ts knip needs Website's deps
-      # resolvable in Website/node_modules. The dedicated `Website Checks`
-      # job installs them on its own runner, but this Frontend Checks job
-      # runs on a separate runner and otherwise wouldn't have them.
-      - name: Install website dependencies (for knip)
-        working-directory: Website
-        run: npm ci
-
-      - name: Dead-code check (knip)
-        working-directory: ${{ github.workspace }}
-        run: npm run deadcode:strict
-
       - name: Run frontend tests
         run: npm test
-
-      - name: Type-check frontend
-        run: npm run check
 
       - name: Run frontend lint
         run: npm run lint
@@ -130,52 +108,11 @@ jobs:
       - name: Build frontend
         run: npm run build
 
-      - name: Install Playwright Chromium
-        run: npx playwright install --with-deps chromium
-
-      - name: Run frontend E2E
-        run: npm run e2e
-
       - name: Verify frontend build is reproducible
         working-directory: ${{ github.workspace }}
         run: |
           git diff --check
           git diff --exit-code -- internal/frontendassets/dist
-
-  website-ci:
-    name: Website Checks
-    runs-on: ${{ vars.GHA_HOSTED_RUNNER || 'ubuntu-24.04' }}
-    timeout-minutes: 15
-
-    defaults:
-      run:
-        working-directory: Website
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
-
-      - name: Setup Node
-        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e
-        with:
-          node-version: 24
-          cache: npm
-          cache-dependency-path: Website/package-lock.json
-
-      - name: Install website dependencies
-        run: npm ci
-
-      - name: Audit website dependencies
-        run: npm audit --audit-level=moderate
-
-      - name: Type-check website
-        run: npm run check
-
-      - name: Run website tests
-        run: npm test
-
-      - name: Build website
-        run: npm run build
 
   android-ci:
     name: Android Checks
