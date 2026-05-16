@@ -279,14 +279,17 @@ func TestCIWorkflowRunsWebsiteChecksWhenWebsiteExists(t *testing.T) {
 
 	if _, err := os.Stat(filepath.Join(repoRoot(t), "Website")); err != nil {
 		if os.IsNotExist(err) {
-			assertContains(t, workflow, "if: ${{ hashFiles('Website/package-lock.json') != '' }}")
+			assertContains(t, workflow, "name: Detect website workspace")
+			assertContains(t, workflow, "Website workspace is not part of this repository; skipping Website checks.")
+			assertContains(t, workflow, "if: steps.website-workspace.outputs.present == 'true'")
 			return
 		}
 		t.Fatalf("stat Website: %v", err)
 	}
 
 	assertContains(t, workflow, "name: Website Checks")
-	assertContains(t, workflow, "if: ${{ hashFiles('Website/package-lock.json') != '' }}")
+	assertContains(t, workflow, "name: Detect website workspace")
+	assertContains(t, workflow, "if: steps.website-workspace.outputs.present == 'true'")
 	assertContains(t, workflow, "working-directory: Website")
 	assertContains(t, workflow, "cache-dependency-path: Website/package-lock.json")
 	assertContains(t, workflow, "npm run check")

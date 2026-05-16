@@ -16,62 +16,56 @@ IDs, source paths, and other maintainer-only vocabulary.
 
 ### Highlights
 
-- **Product-readiness patch for the 0.34 line**: the 0.34 release now carries
-  the stricter agent integration gate, desktop runtime validation, and local
-  storage readiness checks needed before public promotion.
-- **Patch releases can be promoted to full quality gates**: 0.34.1 now runs the
-  same website one-shot app matrix as a main agent release when validating the
-  public prompts.
-- **Local data contracts are documented as product surface**: the SQLite-first
-  storage model, scope rules, audio metadata links, and settings boundaries are
-  now part of the release checklist.
+- **More complete Voice Agent embedding**: Go clients can create session
+  tickets, dial realtime Voice Agent sessions, send text and audio frames, and
+  close sessions through the public client helpers.
+- **Local storage is more complete for desktop use**: history, quick notes,
+  voice sessions, audio references, and scoped settings now share a clearer
+  SQLite-first data model for device, user, and tenant use.
+- **Windows first-run behavior is steadier**: startup, tray dashboard access,
+  and focus handling are documented for portable and installer builds.
+
+### Added
+
+- **Voice Agent game-instructor example**: a new Go example shows a realtime
+  game moderator using personas, player roles, sequence prompts, and duplex
+  Voice Agent frames.
+- **Storage and settings architecture docs**: local scopes, audio references,
+  and SQLite defaults are documented as part of the public framework surface.
 
 ### Changed
 
-- **Website one-shot validation blocks 0.34.1 promotion**: the full profile and
-  prompt matrix must pass for the product-readiness patch instead of being
-  skipped as a normal patch release.
-- **Release readiness guidance is clearer**: desktop runtime validation,
-  storage/settings scope checks, and OSS-structure follow-ups are grouped into a
-  single 0.34.1 readiness checklist.
-- **Cloudflare stays evidence-only**: the remote quality gate remains a shadow
-  signal and cannot make the release blocking until a separate promotion change
-  lands.
+- **Agent getting-started content is easier to reuse**: the public prompts now
+  provide clearer starting points for web apps, Android app prompts, Voice Agent
+  examples, and Go framework integrations.
+- **First-run setup steps stay consistent**: setup wizard copy and step data are
+  organized so the dashboard flow can be kept in sync more easily.
+
+### Fixed
+
+- **Postgres upgrades from older stores recover missing language columns**:
+  existing deployments now add the normalized language fields before rebuilding
+  history and voice-session indexes.
 
 ## [0.34.0] - 2026-05-15
 
 ### Highlights
 
-- **Blocking agent usability gate**: main releases now require the public
-  one-shot prompts to produce functional generated apps in fresh workspaces.
-- **Remote shadow quality signal**: maintainers can dispatch a Cloudflare-based
-  quality gate and collect sanitized run evidence without making it release
-  blocking yet.
-- **Windows runtime validation**: release promotion now includes explicit
-  singleton, tray, dashboard, and first-run desktop checks for portable and
-  installer builds.
-
-### Added
-
-- **Cloudflare quality-gate Agent**: release operators can run a remote shadow
-  gate for public SpeechKit prompts and inspect status plus artifact indexes
-  while the local Docker Desktop matrix remains the source of truth.
-- **Windows desktop runtime runbook**: portable and installer candidates now
-  have a repeatable checklist for singleton startup, tray dashboard access,
-  hide-on-close behavior, first-run onboarding, and focus-hook recovery.
+- **Agent-ready app generation is clearer**: the public getting-started flow
+  explains how generated apps should connect to a local SpeechKit Server and
+  report Dictation, Assist, and Voice Agent results.
+- **Windows package metadata is aligned for the 0.34 line**: portable and
+  installer builds carry the updated 0.34 version metadata.
+- **SpeechKit Server examples are easier to run locally**: generated app
+  prompts now emphasize a fresh Docker Compose server for local integration.
 
 ### Changed
 
-- **Website one-shot validation is now a main-release blocker**: for `v0.34.0`,
-  the full profile and prompt matrix must use fresh generated SpeechKit Server
-  stacks and pass functional Dictation, Assist, and Voice Agent evidence before
-  release promotion.
-- **Functional evidence is stricter**: generated apps must point their live
-  verification result back to the manifest, mark every checked mode as
-  app-exercised, and provide non-empty mode outputs.
-- **Cloudflare remains shadow-only**: the remote quality gate refuses promoted
-  blocking mode until a separate promotion change lands after consecutive green
-  shadow runs.
+- **Generated app result files are more explicit**: result JSON now records the
+  manifest link, mode outputs, and whether each SpeechKit mode was exercised in
+  the app.
+- **OpenAI Agents SDK runner guidance is refreshed**: runner instructions now
+  match the current public prompt flow.
 
 ## [0.33.0] - 2026-05-14
 
