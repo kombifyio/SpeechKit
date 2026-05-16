@@ -25,6 +25,12 @@ Generate a working starter project:
 - Or via MCP: `speechkit_scaffold_integration` returns the same starter files in-band without writing to the host.
 - Native Android memo showcase prompt: create a real Gradle Android project with `app/src/main/AndroidManifest.xml`, Kotlin/Java sources, configurable `SPEECHKIT_SERVER_URL`/token settings, a fresh Docker Compose SpeechKit Server, Dictation `/v1/dictation/transcribe`, Assist `/v1/assist/process`, and a `verifySpeechKitLive` Gradle task that writes `speechkit-one-shot-functional-result.json` with `status=pass`, `manifest_file=speechkit-one-shot-manifest.json`, and `checked_via_app=true`.
 
+Embed a Voice Agent into your own app:
+
+- Reference: `examples/voice-agent/game-instructor/` (TOML preset + Go embedder + README).
+- One prompt: "Build a 15-minute voice-agent game instructor into my app using SpeechKit. Use `pkg/speechkit/client` (CreateVoiceAgentSession + DialVoiceAgent), reuse the persona/role/sequence IDs `game-instructor` / `game-moderator` / `game-flow-15min`, and feed PCM 16 kHz S16LE mono via SendAudio."
+- Server-side: seed the persona/role/sequence via the TOML at `examples/voice-agent/game-instructor/config.toml` and run `speechkit-server` with `GOOGLE_AI_API_KEY` set. Idle timeout caps each session at 15 min by default.
+
 Canonical prompt:
 
 ```text

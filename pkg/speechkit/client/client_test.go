@@ -10,6 +10,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	ws "github.com/coder/websocket"
 )
 
 func TestClientAddsBearerAndDecodesStatus(t *testing.T) {
@@ -242,5 +244,228 @@ func TestFromEnvUsesDocumentedVariables(t *testing.T) {
 func TestHTTPErrorWithoutBody(t *testing.T) {
 	if got := (HTTPError{StatusCode: http.StatusUnauthorized}).Error(); got != "speechkit: HTTP 401" {
 		t.Fatalf("Error() = %q", got)
+	}
+}
+
+func TestClientValidationAndErrorPaths(t *testing.T) {
+	for _, opts := range []Options{
+		{BaseURL: "://bad"},
+		{BaseURL: "localhost:8080"},
+	} {
+		if _, err := New(opts); err == nil {
+			t.Fatalf("New(%+v) succeeded, want error", opts)
+		}
+	}
+
+	c, err := New(Options{})
+	if err != nil {
+		t.Fatalf("New default: %v", err)
+	}
+	if c.baseURL.String() != "http://localhost:8080" {
+		t.Fatalf("default baseURL = %s", c.baseURL)
+	}
+	if c.userAgent != defaultUserAgent {
+		t.Fatalf("default user agent = %q", c.userAgent)
+	}
+
+	if err := c.DoJSON(context.Background(), http.MethodPost, "/v1/bad", func() {}, nil); err == nil {
+		t.Fatal("DoJSON with unmarshalable body succeeded, want error")
+	}
+
+	badJSON := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte("{"))
+	}))
+	defer badJSON.Close()
+	c, err = New(Options{BaseURL: badJSON.URL})
+	if err != nil {
+		t.Fatalf("New badJSON: %v", err)
+	}
+	var out map[string]any
+	if err := c.DoJSON(context.Background(), http.MethodGet, "/bad", nil, &out); err == nil {
+		t.Fatal("DoJSON decoded invalid JSON, want error")
+	}
+
+	if err := (*Client)(nil).DoJSON(context.Background(), http.MethodGet, "/readyz", nil, nil); err == nil {
+		t.Fatal("nil client DoJSON succeeded, want error")
+	}
+}
+
+func TestVoiceAgentSessionLifecycle(t *testing.T) {
+	var gotAuth string
+	var gotFrames []string
+	var gotBinary string
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodPost && r.URL.Path == "/v1/voiceagent/sessions":
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"session_id": "session-1",
+				"ws_url":     "ws://" + r.Host + "/v1/voiceagent/ws?ticket=ticket-1",
+				"ticket":     "ticket-1",
+				"expires_at": "2026-05-16T15:00:00Z",
+			})
+		case r.Method == http.MethodDelete && r.URL.Path == "/v1/voiceagent/sessions/session-1":
+			http.NotFound(w, r)
+		case r.URL.Path == "/v1/voiceagent/ws":
+			gotAuth = r.Header.Get("Authorization")
+			conn, err := ws.Accept(w, r, nil)
+			if err != nil {
+				t.Errorf("Accept: %v", err)
+				return
+			}
+			defer conn.CloseNow()
+			for range 5 {
+				typ, data, err := conn.Read(r.Context())
+				if err != nil {
+					t.Errorf("server read: %v", err)
+					return
+				}
+				if typ == ws.MessageBinary {
+					gotBinary = string(data)
+					continue
+				}
+				gotFrames = append(gotFrames, string(data))
+			}
+			if err := conn.Write(r.Context(), ws.MessageBinary, []byte("speaker")); err != nil {
+				t.Errorf("server write binary: %v", err)
+				return
+			}
+			if err := conn.Write(r.Context(), ws.MessageText, []byte(`{"type":"state","state":"speaking"}`)); err != nil {
+				t.Errorf("server write text: %v", err)
+				return
+			}
+			if err := conn.Write(r.Context(), ws.MessageText, []byte(`{`)); err != nil {
+				t.Errorf("server write invalid: %v", err)
+			}
+		default:
+			t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
+		}
+	}))
+	defer srv.Close()
+
+	c, err := New(Options{BaseURL: srv.URL, Token: "voice-token"})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	ctx := context.Background()
+	ticket, err := c.CreateVoiceAgentSession(ctx)
+	if err != nil {
+		t.Fatalf("CreateVoiceAgentSession: %v", err)
+	}
+	if ticket.SessionID != "session-1" || ticket.Ticket != "ticket-1" || ticket.ExpiresAt.IsZero() {
+		t.Fatalf("ticket = %+v", ticket)
+	}
+
+	session, err := c.DialVoiceAgent(ctx, ticket)
+	if err != nil {
+		t.Fatalf("DialVoiceAgent: %v", err)
+	}
+	defer session.Close()
+	if session.SessionID() != "session-1" {
+		t.Fatalf("SessionID = %q", session.SessionID())
+	}
+
+	if err := session.SendStart(ctx, VoiceAgentStartFrame{
+		PersonaID:            "persona",
+		RoleID:               "role",
+		SequenceID:           "sequence",
+		Voice:                "nova",
+		Locale:               "en-US",
+		Model:                "gemini-live",
+		Thinking:             "fast",
+		SystemPromptOverride: "override",
+	}); err != nil {
+		t.Fatalf("SendStart: %v", err)
+	}
+	if err := session.SendText(ctx, "hello"); err != nil {
+		t.Fatalf("SendText: %v", err)
+	}
+	if err := session.SendAudio(ctx, nil); err != nil {
+		t.Fatalf("SendAudio empty: %v", err)
+	}
+	if err := session.SendAudio(ctx, []byte("mic")); err != nil {
+		t.Fatalf("SendAudio: %v", err)
+	}
+	if err := session.SendAudioEnd(ctx); err != nil {
+		t.Fatalf("SendAudioEnd: %v", err)
+	}
+	if err := session.AdvanceStep(ctx, "next"); err != nil {
+		t.Fatalf("AdvanceStep: %v", err)
+	}
+
+	audio, err := session.ReadMessage(ctx)
+	if err != nil {
+		t.Fatalf("ReadMessage audio: %v", err)
+	}
+	if string(audio.Audio) != "speaker" {
+		t.Fatalf("audio = %q", audio.Audio)
+	}
+	frame, err := session.ReadMessage(ctx)
+	if err != nil {
+		t.Fatalf("ReadMessage frame: %v", err)
+	}
+	if frame.Frame == nil || frame.Frame.State != "speaking" {
+		t.Fatalf("frame = %+v", frame.Frame)
+	}
+	if _, err := session.ReadMessage(ctx); err == nil {
+		t.Fatal("ReadMessage invalid JSON succeeded, want error")
+	}
+	if err := session.SendStop(ctx); err != nil {
+		t.Fatalf("SendStop: %v", err)
+	}
+	if err := c.DeleteVoiceAgentSession(ctx, " session-1 "); err != nil {
+		t.Fatalf("DeleteVoiceAgentSession should ignore 404: %v", err)
+	}
+
+	if gotAuth != "Bearer voice-token" {
+		t.Fatalf("websocket Authorization = %q", gotAuth)
+	}
+	if gotBinary != "mic" {
+		t.Fatalf("binary = %q", gotBinary)
+	}
+	joined := strings.Join(gotFrames, "\n")
+	for _, want := range []string{
+		`"type":"start"`,
+		`"media_transport":"websocket"`,
+		`"persona_id":"persona"`,
+		`"type":"text"`,
+		`"type":"audio_end"`,
+		`"type":"advance_step"`,
+		`"reason":"next"`,
+	} {
+		if !strings.Contains(joined, want) {
+			t.Fatalf("frames missing %s: %s", want, joined)
+		}
+	}
+}
+
+func TestVoiceAgentSessionErrors(t *testing.T) {
+	c, err := New(Options{BaseURL: "http://example.test"})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	if _, err := c.DialVoiceAgent(context.Background(), nil); err == nil {
+		t.Fatal("DialVoiceAgent nil ticket succeeded, want error")
+	}
+	if _, err := c.DialVoiceAgent(context.Background(), &VoiceAgentTicket{}); err == nil {
+		t.Fatal("DialVoiceAgent empty ticket succeeded, want error")
+	}
+	if got := (*VoiceAgentSession)(nil).SessionID(); got != "" {
+		t.Fatalf("nil SessionID = %q", got)
+	}
+	if err := (*VoiceAgentSession)(nil).Close(); err != nil {
+		t.Fatalf("nil Close: %v", err)
+	}
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewEncoder(w).Encode(map[string]any{"session_id": "missing-fields"})
+	}))
+	defer srv.Close()
+	c, err = New(Options{BaseURL: srv.URL})
+	if err != nil {
+		t.Fatalf("New missingFields: %v", err)
+	}
+	if _, err := c.CreateVoiceAgentSession(context.Background()); err == nil {
+		t.Fatal("CreateVoiceAgentSession missing fields succeeded, want error")
 	}
 }

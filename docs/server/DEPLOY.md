@@ -151,18 +151,23 @@ The release path is automated:
   updates the Render service image to that immutable tag, triggers the Render
   deploy API, and waits for the deploy to become `live`.
 4. The job verifies `/healthz`, `/readyz`, and `/readyz/strict`. If
-  `SPEECHKIT_SMOKE_TOKEN` is configured as a GitHub secret it also runs
-  `cmd/sk-e2e` across Dictation, Assist, and Voice Agent.
+  `SPEECHKIT_SERVER_TOKEN` is available in Doppler, it is exported as
+  `SPEECHKIT_SMOKE_TOKEN` and the job also runs `cmd/sk-e2e` across Dictation,
+  Assist, and Voice Agent.
 
 Required private-repo GitHub settings:
 
 | Name | Type | Purpose |
 |---|---|---|
-| `RENDER_API_KEY` | secret | Render API token with deploy access |
-| `SPEECHKIT_SMOKE_TOKEN` | secret | Optional bearer token for authenticated mode smokes |
+| `DOPPLER_TOKEN` | secret | Read-only service token for `kombify-io/prd_speechkit`; used to load deploy/test credentials at runtime |
 | `RENDER_SPEECHKIT_SERVICE_ID` | variable | Render web service id |
 | `RENDER_GHCR_REGISTRY_CREDENTIAL_ID` | variable | Optional Render registry credential id for private GHCR images |
 | `SPEECHKIT_PROD_ORIGIN` | variable | Public SpeechKit origin, for example `https://speechkit.example.com` |
+
+The Doppler config `kombify-io/prd_speechkit` must contain `RENDER_API_KEY`
+and `SPEECHKIT_SERVER_TOKEN`. Legacy GitHub secrets named `RENDER_API_KEY`,
+`SPEECHKIT_SMOKE_TOKEN`, or `SPEECHKIT_SERVER_TOKEN` are accepted only as
+fallback values while bootstrapping.
 
 Manual redeploys use the same path:
 

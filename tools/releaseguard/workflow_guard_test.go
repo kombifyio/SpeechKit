@@ -195,6 +195,52 @@ func TestPublishOssWorkflowPublishesFromResolvedTag(t *testing.T) {
 	assertContains(t, workflow, "OSS_REPO: kombifyio/SpeechKit")
 }
 
+func TestDopplerBackedWorkflowSecretResolution(t *testing.T) {
+	action := readRepoFile(t, filepath.Join(".github", "actions", "doppler-env", "action.yml"))
+	exporter := readRepoFile(t, filepath.Join("scripts", "ci", "export-doppler-env.mjs"))
+	appToken := readRepoFile(t, filepath.Join("scripts", "ci", "create-github-app-token.mjs"))
+	publish, ok := readRepoFileIfExists(t, filepath.Join(".github", "workflows", "publish-oss.yml"))
+	if !ok {
+		t.Skip("private OSS publisher workflow is not part of the public export")
+	}
+	render := readRepoFile(t, filepath.Join(".github", "workflows", "deploy-render-server.yml"))
+	cloudflare := readRepoFile(t, filepath.Join(".github", "workflows", "cloudflare-quality-gate.yml"))
+	website := readRepoFile(t, filepath.Join(".github", "workflows", "deploy-website.yml"))
+
+	assertContains(t, action, "Resolve Doppler environment")
+	assertContains(t, action, "DOPPLER_TOKEN: ${{ inputs.token }}")
+	assertContains(t, action, "scripts/ci/export-doppler-env.mjs")
+	assertContains(t, exporter, "/v3/configs/config/secrets/download")
+	assertContains(t, exporter, "parseMappings")
+	assertContains(t, appToken, "GITHUB_APP_REPOSITORIES")
+	assertContains(t, appToken, "/app/installations/${installation.id}/access_tokens")
+
+	assertContains(t, publish, "Resolve Doppler release publisher secrets")
+	assertContains(t, publish, "RELEASE_APP_PRIVATE_KEY")
+	assertContains(t, publish, "node scripts/ci/create-github-app-token.mjs")
+	assertContains(t, publish, "Resolve Doppler deployment secrets")
+	assertContains(t, publish, "RENDER_API_KEY")
+	assertContains(t, publish, "SPEECHKIT_SMOKE_TOKEN=SPEECHKIT_SERVER_TOKEN")
+	assertNotContains(t, publish, "actions/create-github-app-token@")
+
+	assertContains(t, render, "Resolve Doppler deployment secrets")
+	assertContains(t, render, "RENDER_API_KEY")
+	assertContains(t, render, "SPEECHKIT_SMOKE_TOKEN=SPEECHKIT_SERVER_TOKEN")
+
+	assertContains(t, cloudflare, "Resolve Doppler Cloudflare gate secrets")
+	assertContains(t, cloudflare, "CLOUDFLARE_API_TOKEN=CLOUDFLARE_BUILDS_API_TOKEN")
+	assertContains(t, cloudflare, "SPEECHKIT_CLOUDFLARE_GATE_TOKEN")
+	assertContains(t, cloudflare, "SPEECHKIT_CLOUDFLARE_QUALITY_GATE_URL")
+	assertContains(t, cloudflare, "OPENAI_API_KEY")
+	assertContains(t, cloudflare, "GOOGLE_AI_API_KEY")
+	assertContains(t, cloudflare, "HF_TOKEN")
+
+	assertContains(t, website, "Resolve Doppler Cloudflare Pages secrets")
+	assertContains(t, website, "CLOUDFLARE_API_TOKEN=CLOUDFLARE_PAGES_DEPLOY_TOKEN")
+	assertContains(t, website, "CLOUDFLARE_ACCOUNT_ID")
+	assertNotContains(t, website, "Deploy to Cloudflare Pages\n        env:")
+}
+
 func TestCIWorkflowRunsRaceTestsForCriticalGoPackages(t *testing.T) {
 	workflow := readRepoFile(t, filepath.Join(".github", "workflows", "ci.yml"))
 	assertContains(t, workflow, "go test -race")

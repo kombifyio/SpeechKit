@@ -113,6 +113,35 @@ For a browser starter, use `speechkitctl init browser-dictation-react --output
 The MCP scaffold tool is read-only and returns file paths plus content for the
 calling agent to review and apply.
 
+## Voice Agent — single-prompt embedding (Server-Target)
+
+For host applications that talk to a remote `speechkit-server` (recommended for
+non-Windows targets, cloud deployments, and any multi-client scenario), use
+`pkg/speechkit/client` instead of embedding the kernel. The reference is
+`examples/voice-agent/game-instructor/` in this repo:
+
+- `config.toml` seeds a Voice Agent persona + role + sequence on the server
+  (`game-instructor` / `game-moderator` / `game-flow-15min`). The sequence is
+  capped to 30 turns and the server-side `voiceagent_idle_timeout_sec` is set to
+  15 min — this is the working preset for a 15-minute moderated game.
+- `main.go` shows the full duplex flow: `CreateVoiceAgentSession` →
+  `DialVoiceAgent` → `SendStart` (with persona/role/sequence IDs) →
+  `SendText`/`SendAudio` + `ReadMessage` loop → `SendStop` / deadline exit.
+
+A coding agent asked to "build a voice agent into my app" should:
+
+1. Generate a TOML preset matching their use case (start from
+   `examples/voice-agent/game-instructor/config.toml`), defining persona,
+   role (system prompt + VAD policy + thinking level), and a sequence with
+   step instructions + exit criteria.
+2. Reuse `examples/voice-agent/game-instructor/main.go` as the embedder
+   skeleton. Only the persona/role/sequence IDs and the audio I/O adapter
+   need to change. Audio in: PCM 16 kHz S16LE mono via
+   `VoiceAgentSession.SendAudio`. Audio out: PCM 24 kHz S16LE mono from
+   `VoiceAgentMessage.Audio`.
+3. Deploy: `speechkit-server --config <preset.toml>` with `GOOGLE_AI_API_KEY`
+   and a bearer token in env. Idle timeout enforces the wall-clock cap.
+
 ## Release-Gated Native Android Memo Prompt
 
 Create a real native Android project, not a browser harness. The project must
