@@ -144,7 +144,6 @@ jobs:
 
   website-ci:
     name: Website Checks
-    if: ${{ hashFiles('Website/package-lock.json') != '' }}
     runs-on: ${{ vars.GHA_HOSTED_RUNNER || 'ubuntu-24.04' }}
     timeout-minutes: 15
 
@@ -156,7 +155,20 @@ jobs:
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
 
+      - name: Detect website workspace
+        id: website-workspace
+        shell: bash
+        working-directory: ${{ github.workspace }}
+        run: |
+          if [ -f Website/package-lock.json ]; then
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "present=false" >> "$GITHUB_OUTPUT"
+            echo "Website workspace is not part of this repository; skipping Website checks."
+          fi
+
       - name: Setup Node
+        if: steps.website-workspace.outputs.present == 'true'
         uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e
         with:
           node-version: 24
@@ -164,18 +176,23 @@ jobs:
           cache-dependency-path: Website/package-lock.json
 
       - name: Install website dependencies
+        if: steps.website-workspace.outputs.present == 'true'
         run: npm ci
 
       - name: Audit website dependencies
+        if: steps.website-workspace.outputs.present == 'true'
         run: npm audit --audit-level=moderate
 
       - name: Type-check website
+        if: steps.website-workspace.outputs.present == 'true'
         run: npm run check
 
       - name: Run website tests
+        if: steps.website-workspace.outputs.present == 'true'
         run: npm test
 
       - name: Build website
+        if: steps.website-workspace.outputs.present == 'true'
         run: npm run build
 
   android-ci:
