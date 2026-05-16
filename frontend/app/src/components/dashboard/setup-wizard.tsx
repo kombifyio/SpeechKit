@@ -3,7 +3,6 @@ import { useEffect, useMemo, useState } from "react";
 import { pickLatestModelDownloadJob } from "@/components/dashboard/state-hooks/use-model-download-state";
 import {
   builtInPrimaryModelSelections,
-  defaultSettingsState,
   fetchAudioDevices,
   saveProviderCredential,
   setAudioDevice,
@@ -14,172 +13,17 @@ import {
 } from "@/lib/speechkit";
 
 import type { SetupWizardCompletion } from "./dashboard-types";
-
-const onboardingHotkeys = {
-  dictate: defaultSettingsState.dictateHotkey,
-  assist: defaultSettingsState.assistHotkey,
-  voiceAgent: defaultSettingsState.voiceAgentHotkey,
-} as const;
-
-const onboardingHotkeyLabels = {
-  dictate: "Ctrl+Win",
-  assist: "Win+Alt",
-  voiceAgent: "Ctrl+Shift",
-} as const;
-
-type WizardStep = "welcome" | "local_model" | "integrations" | "done";
-type OnboardingIntegration = {
-  provider: string;
-  label: string;
-  category: "Cloud Router / Gateway" | "Direct Provider" | "Local Provider";
-  modes: IntegrationMode[];
-  credentialLabel?: string;
-  setupUrl: string;
-  setupLabel: string;
-  headline: string;
-  summary: string;
-};
-
-type IntegrationMode = "dictate" | "assist" | "voice_agent";
-
-const integrationModeOrder: IntegrationMode[] = [
-  "dictate",
-  "assist",
-  "voice_agent",
-];
-const integrationModeLabels: Record<IntegrationMode, string> = {
-  dictate: "Dictation",
-  assist: "Assist",
-  voice_agent: "Voice Agent",
-};
-
-const onboardingIntegrations: OnboardingIntegration[] = [
-  {
-    provider: "huggingface",
-    label: "Hugging Face",
-    category: "Cloud Router / Gateway",
-    modes: ["dictate", "assist", "voice_agent"],
-    credentialLabel: "Hugging Face token",
-    setupUrl: "https://huggingface.co/settings/tokens",
-    setupLabel: "Create Hugging Face token",
-    headline: "One key for every mode.",
-    summary: "All modes with one gateway key.",
-  },
-  {
-    provider: "openrouter",
-    label: "OpenRouter",
-    category: "Cloud Router / Gateway",
-    modes: ["dictate", "assist", "voice_agent"],
-    credentialLabel: "OpenRouter API key",
-    setupUrl: "https://openrouter.ai/settings/keys",
-    setupLabel: "Create OpenRouter API key",
-    headline: "One router for every mode.",
-    summary: "Dictation, Assist, and Voice Agent through OpenRouter.",
-  },
-  {
-    provider: "openai",
-    label: "OpenAI",
-    category: "Direct Provider",
-    modes: ["dictate", "assist"],
-    credentialLabel: "OpenAI API key",
-    setupUrl: "https://platform.openai.com/api-keys",
-    setupLabel: "Create OpenAI API key",
-    headline: "Use your OpenAI key.",
-    summary: "Use OpenAI for Dictation and Assist.",
-  },
-  {
-    provider: "google",
-    label: "Gemini / Google AI",
-    category: "Direct Provider",
-    modes: ["dictate", "assist", "voice_agent"],
-    credentialLabel: "Gemini / Google AI API key",
-    setupUrl: "https://aistudio.google.com/apikey",
-    setupLabel: "Create Gemini API key",
-    headline: "Gemini for Voice Agent.",
-    summary: "Native Voice Agent plus Google profiles.",
-  },
-  {
-    provider: "groq",
-    label: "Groq",
-    category: "Direct Provider",
-    modes: ["dictate", "assist"],
-    credentialLabel: "Groq API key",
-    setupUrl: "https://console.groq.com/keys",
-    setupLabel: "Create Groq API key",
-    headline: "Groq for fast turns.",
-    summary: "Fast Direct Provider for Dictation and Assist.",
-  },
-  {
-    provider: "ollama",
-    label: "Ollama",
-    category: "Local Provider",
-    modes: ["dictate", "assist", "voice_agent"],
-    setupUrl: "https://ollama.com/download",
-    setupLabel: "Download Ollama",
-    headline: "Run models locally.",
-    summary: "Run optional local models yourself.",
-  },
-];
-
-const onboardingIntegrationGroups = [
-  {
-    id: "gateways",
-    headline: "Want one key for everything? Start with a gateway.",
-    summary:
-      "Hugging Face and OpenRouter unlock more model choice without managing every vendor.",
-    providers: ["huggingface", "openrouter"],
-    gridClass: "md:grid-cols-2",
-  },
-  {
-    id: "direct",
-    headline: "Already use a provider? Plug in your key.",
-    summary:
-      "OpenAI, Gemini, and Groq are best when your team already has an API account.",
-    providers: ["openai", "google", "groq"],
-    gridClass: "md:grid-cols-3",
-  },
-  {
-    id: "local",
-    headline: "Want to test models on your own machine? Use Ollama.",
-    summary: "Keep experimenting locally while SpeechKit stays local-first by default.",
-    providers: ["ollama"],
-    gridClass: "md:grid-cols-2",
-  },
-];
-
-const integrationLogoSrc: Record<string, string> = {
-  huggingface: "/integrations/huggingface.svg",
-  openrouter: "/integrations/openrouter.svg",
-  openai: "/integrations/openai.svg",
-  google: "/integrations/gemini.svg",
-  groq: "/integrations/groq.svg",
-  ollama: "/integrations/ollama.svg",
-};
-
-const logoFrameClass: Record<string, string> = {
-  huggingface: "bg-[#ffd84d]",
-  openrouter: "bg-[#0f1117]",
-  openai: "bg-white",
-  google: "bg-white",
-  groq: "bg-white",
-  ollama: "bg-white",
-};
-
-function orderedIntegrationModeLabels(modes: IntegrationMode[]) {
-  const enabledModes = new Set(modes);
-  return integrationModeOrder
-    .filter((mode) => enabledModes.has(mode))
-    .map((mode) => integrationModeLabels[mode]);
-}
-
-function setupDisplayUrl(setupUrl: string) {
-  try {
-    const parsed = new URL(setupUrl);
-    return `${parsed.host}${parsed.pathname}`.replace(/\/$/, "");
-  } catch {
-    return setupUrl;
-  }
-}
+import {
+  integrationLogoSrc,
+  logoFrameClass,
+  onboardingHotkeyLabels,
+  onboardingHotkeys,
+  onboardingIntegrationGroups,
+  onboardingIntegrations,
+  orderedIntegrationModeLabels,
+  setupDisplayUrl,
+  type WizardStep,
+} from "./setup-wizard-data";
 
 export function SetupWizard({
   catalog,

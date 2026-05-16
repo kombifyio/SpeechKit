@@ -1,7 +1,8 @@
 # `cmd/speechkit-mcp` split plan
 
-**Status:** planning only — code change lands in Phase C of the post-audit
-improvement plan, not in v0.32.0.
+**Status:** Phase C execution started for v0.34.1 product readiness. PR-1
+utility extraction has begun; the remaining handler/package moves stay
+sequenced below.
 **Audit basis:** `cmd/speechkit-mcp/main.go` is 700 LOC with 48 top-level
 functions all in `package main`, mixing transport bootstrap, three modes
 of tool handlers (docs / management / test), and OpenAPI-payload
@@ -58,7 +59,8 @@ Target sizes: every file ≤ 300 LOC, `main.go` ≤ 100 LOC.
 
 Land in five PRs, each independently reviewable:
 
-1. **PR-1** — extract `internal/util` (pure helpers, no API behavior).
+1. **PR-1** — extract `internal/util` (pure helpers, no API behavior). Started
+   in v0.34.1 with MCP result formatting and shell quoting.
 2. **PR-2** — extract `internal/server` (server bootstrap, tool registration, shared input types). Verify stdio + HTTP transports still work end-to-end.
 3. **PR-3** — extract `internal/tools/docs` and `internal/tools/scaffold` (the lowest-risk read-only tools).
 4. **PR-4** — extract `internal/tools/management` (the bulk of the surface; touches provider/persona/role/sequence/transcript/vocabulary CRUD).

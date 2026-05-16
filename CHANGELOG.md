@@ -12,6 +12,67 @@ IDs, source paths, and other maintainer-only vocabulary.
 
 ## [Unreleased]
 
+## [0.34.1] - 2026-05-15
+
+### Highlights
+
+- **Product-readiness patch for the 0.34 line**: the 0.34 release now carries
+  the stricter agent integration gate, desktop runtime validation, and local
+  storage readiness checks needed before public promotion.
+- **Patch releases can be promoted to full quality gates**: 0.34.1 now runs the
+  same website one-shot app matrix as a main agent release when validating the
+  public prompts.
+- **Local data contracts are documented as product surface**: the SQLite-first
+  storage model, scope rules, audio metadata links, and settings boundaries are
+  now part of the release checklist.
+
+### Changed
+
+- **Website one-shot validation blocks 0.34.1 promotion**: the full profile and
+  prompt matrix must pass for the product-readiness patch instead of being
+  skipped as a normal patch release.
+- **Release readiness guidance is clearer**: desktop runtime validation,
+  storage/settings scope checks, and OSS-structure follow-ups are grouped into a
+  single 0.34.1 readiness checklist.
+- **Cloudflare stays evidence-only**: the remote quality gate remains a shadow
+  signal and cannot make the release blocking until a separate promotion change
+  lands.
+
+## [0.34.0] - 2026-05-15
+
+### Highlights
+
+- **Blocking agent usability gate**: main releases now require the public
+  one-shot prompts to produce functional generated apps in fresh workspaces.
+- **Remote shadow quality signal**: maintainers can dispatch a Cloudflare-based
+  quality gate and collect sanitized run evidence without making it release
+  blocking yet.
+- **Windows runtime validation**: release promotion now includes explicit
+  singleton, tray, dashboard, and first-run desktop checks for portable and
+  installer builds.
+
+### Added
+
+- **Cloudflare quality-gate Agent**: release operators can run a remote shadow
+  gate for public SpeechKit prompts and inspect status plus artifact indexes
+  while the local Docker Desktop matrix remains the source of truth.
+- **Windows desktop runtime runbook**: portable and installer candidates now
+  have a repeatable checklist for singleton startup, tray dashboard access,
+  hide-on-close behavior, first-run onboarding, and focus-hook recovery.
+
+### Changed
+
+- **Website one-shot validation is now a main-release blocker**: for `v0.34.0`,
+  the full profile and prompt matrix must use fresh generated SpeechKit Server
+  stacks and pass functional Dictation, Assist, and Voice Agent evidence before
+  release promotion.
+- **Functional evidence is stricter**: generated apps must point their live
+  verification result back to the manifest, mark every checked mode as
+  app-exercised, and provide non-empty mode outputs.
+- **Cloudflare remains shadow-only**: the remote quality gate refuses promoted
+  blocking mode until a separate promotion change lands after consecutive green
+  shadow runs.
+
 ## [0.33.0] - 2026-05-14
 
 ### Highlights

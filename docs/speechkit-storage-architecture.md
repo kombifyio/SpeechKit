@@ -1,6 +1,6 @@
 # SpeechKit Storage Architecture
 
-**Status:** Storage 3.0 local-first OSS contract, May 5, 2026
+**Status:** Storage 3.0 local-first OSS contract, v0.34.1 readiness baseline, May 15, 2026
 
 ## Current Contract
 
@@ -12,6 +12,11 @@ SpeechKit ships with a local-first storage layer that is usable without accounts
 - Kombify Cloud remains an external backend path, not a dependency of the default framework.
 
 The public framework contract lives in `pkg/speechkit/storage`. It defines `Scope`, context helpers, scope policies, backend capabilities, and backend registration primitives. The internal app store keeps its existing facade, but all user-owned records resolve a scope from `context.Context`.
+
+For `v0.34.1`, this is the product boundary: SQLite, scope resolution, scoped
+history/settings-adjacent records, audio metadata links, and per-scope stats are
+release surface. Proprietary Kombify backend wiring remains a future backend
+implementation and must not be required by local OSS usage.
 
 ## Scope Model
 

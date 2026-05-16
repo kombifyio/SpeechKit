@@ -23,7 +23,7 @@ Generate a working starter project:
 - `speechkit-cli init --list`: see embedded templates.
 - `speechkit-cli init --template browser-dictation-react my-app`: scaffold a Vite + React + TypeScript dictation app.
 - Or via MCP: `speechkit_scaffold_integration` returns the same starter files in-band without writing to the host.
-- Native Android memo showcase prompt: create a real Gradle Android project with `app/src/main/AndroidManifest.xml`, Kotlin/Java sources, configurable `SPEECHKIT_SERVER_URL`/token settings, a fresh Docker Compose SpeechKit Server, Dictation `/v1/dictation/transcribe`, Assist `/v1/assist/process`, and a `verifySpeechKitLive` Gradle task that writes `speechkit-one-shot-functional-result.json` with `checked_via_app=true`.
+- Native Android memo showcase prompt: create a real Gradle Android project with `app/src/main/AndroidManifest.xml`, Kotlin/Java sources, configurable `SPEECHKIT_SERVER_URL`/token settings, a fresh Docker Compose SpeechKit Server, Dictation `/v1/dictation/transcribe`, Assist `/v1/assist/process`, and a `verifySpeechKitLive` Gradle task that writes `speechkit-one-shot-functional-result.json` with `status=pass`, `manifest_file=speechkit-one-shot-manifest.json`, and `checked_via_app=true`.
 
 Canonical prompt:
 

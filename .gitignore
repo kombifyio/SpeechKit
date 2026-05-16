@@ -105,6 +105,9 @@ scripts/whisper-server/whisper-server
 .env
 .env.*
 
+# Cloudflare local emulator state
+infra/cloudflare/**/.wrangler/
+
 # Android — local development only, not tracked in main repo
 /android/
 

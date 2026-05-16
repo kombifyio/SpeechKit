@@ -5,7 +5,6 @@ import (
 	"context"
 	"encoding/json"
 	"flag"
-	"fmt"
 	"io"
 	"log"
 	"net/http"
@@ -19,6 +18,7 @@ import (
 	"github.com/getkin/kin-openapi/routers/legacy"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
+	mcputil "github.com/kombifyio/SpeechKit/cmd/speechkit-mcp/internal/util"
 	"github.com/kombifyio/SpeechKit/internal/config"
 	"github.com/kombifyio/SpeechKit/internal/scaffold"
 	skclient "github.com/kombifyio/SpeechKit/pkg/speechkit/client"
@@ -159,7 +159,7 @@ type scaffoldInput struct {
 func (a *speechkitMCP) docsSearch(ctx context.Context, req *mcp.CallToolRequest, in queryInput) (*mcp.CallToolResult, any, error) {
 	query := strings.ToLower(strings.TrimSpace(in.Query))
 	if query == "" {
-		return textResult("query is required"), nil, nil
+		return mcputil.TextResult("query is required"), nil, nil
 	}
 	type hit struct {
 		Path    string `json:"path"`
@@ -175,29 +175,29 @@ func (a *speechkitMCP) docsSearch(ctx context.Context, req *mcp.CallToolRequest,
 		}
 	}
 	sort.Slice(hits, func(i, j int) bool { return hits[i].Path < hits[j].Path })
-	return jsonResult(hits), hits, nil
+	return mcputil.JSONResult(hits), hits, nil
 }
 
 func (a *speechkitMCP) apiEndpoint(ctx context.Context, req *mcp.CallToolRequest, in endpointInput) (*mcp.CallToolResult, any, error) {
 	spec := openAPISpec()
 	snippet := endpointSnippet(spec, in.Path)
 	if snippet == "" {
-		return textResult("endpoint not found in OpenAPI spec"), nil, nil
+		return mcputil.TextResult("endpoint not found in OpenAPI spec"), nil, nil
 	}
-	return textResult(snippet), map[string]string{"path": in.Path, "snippet": snippet}, nil
+	return mcputil.TextResult(snippet), map[string]string{"path": in.Path, "snippet": snippet}, nil
 }
 
 func (a *speechkitMCP) apiOverview(ctx context.Context, req *mcp.CallToolRequest, _ struct{}) (*mcp.CallToolResult, any, error) {
 	endpoints := openAPIEndpoints(openAPISpec())
-	return jsonResult(endpoints), endpoints, nil
+	return mcputil.JSONResult(endpoints), endpoints, nil
 }
 
 func (a *speechkitMCP) getOpenAPISpec(ctx context.Context, req *mcp.CallToolRequest, _ struct{}) (*mcp.CallToolResult, any, error) {
-	return textResult(openAPISpec()), nil, nil
+	return mcputil.TextResult(openAPISpec()), nil, nil
 }
 
 func (a *speechkitMCP) getAsyncAPISpec(ctx context.Context, req *mcp.CallToolRequest, _ struct{}) (*mcp.CallToolResult, any, error) {
-	return textResult(asyncAPISpec()), nil, nil
+	return mcputil.TextResult(asyncAPISpec()), nil, nil
 }
 
 func (a *speechkitMCP) integrationExample(ctx context.Context, req *mcp.CallToolRequest, in integrationInput) (*mcp.CallToolResult, any, error) {
@@ -208,13 +208,13 @@ func (a *speechkitMCP) integrationExample(ctx context.Context, req *mcp.CallTool
 	}
 	key := "docs/mcp/examples/" + language + "/" + mode + ".md"
 	if body, ok := a.docs[key]; ok {
-		return textResult(body), map[string]string{"language": in.Language, "mode": in.Mode, "example": body}, nil
+		return mcputil.TextResult(body), map[string]string{"language": in.Language, "mode": in.Mode, "example": body}, nil
 	}
-	return textResult("No embedded example for language " + in.Language), nil, nil
+	return mcputil.TextResult("No embedded example for language " + in.Language), nil, nil
 }
 
 func (a *speechkitMCP) architectureOverview(ctx context.Context, req *mcp.CallToolRequest, _ struct{}) (*mcp.CallToolResult, any, error) {
-	return textResult(a.docs["docs/speechkit-architecture-v2.md"] + "\n\n" + a.docs["docs/mcp/README.md"]), nil, nil
+	return mcputil.TextResult(a.docs["docs/speechkit-architecture-v2.md"] + "\n\n" + a.docs["docs/mcp/README.md"]), nil, nil
 }
 
 func (a *speechkitMCP) scaffoldTemplates(ctx context.Context, req *mcp.CallToolRequest, _ struct{}) (*mcp.CallToolResult, any, error) {
@@ -223,7 +223,7 @@ func (a *speechkitMCP) scaffoldTemplates(ctx context.Context, req *mcp.CallToolR
 		return nil, nil, err
 	}
 	out := map[string]any{"templates": templates}
-	return jsonResult(out), out, nil
+	return mcputil.JSONResult(out), out, nil
 }
 
 func (a *speechkitMCP) scaffoldIntegration(ctx context.Context, req *mcp.CallToolRequest, in scaffoldInput) (*mcp.CallToolResult, any, error) {
@@ -255,7 +255,7 @@ func (a *speechkitMCP) scaffoldIntegration(ctx context.Context, req *mcp.CallToo
 			"Review generated files before applying them to a repository.",
 		},
 	}
-	return jsonResult(out), out, nil
+	return mcputil.JSONResult(out), out, nil
 }
 
 func (a *speechkitMCP) installPlan(ctx context.Context, req *mcp.CallToolRequest, in installPlanInput) (*mcp.CallToolResult, any, error) {
@@ -269,7 +269,7 @@ func (a *speechkitMCP) installPlan(ctx context.Context, req *mcp.CallToolRequest
 		args = append(args, "--channel", "preview")
 	}
 	if installDir != "/opt/speechkit" {
-		args = append(args, "--dir", shellQuote(installDir))
+		args = append(args, "--dir", mcputil.ShellQuote(installDir))
 	}
 	if in.PublicBind {
 		args = append(args, "--public-bind")
@@ -302,7 +302,7 @@ func (a *speechkitMCP) installPlan(ctx context.Context, req *mcp.CallToolRequest
 		"command":     command,
 		"steps":       steps,
 	}
-	return jsonResult(out), out, nil
+	return mcputil.JSONResult(out), out, nil
 }
 
 func (a *speechkitMCP) status(ctx context.Context, req *mcp.CallToolRequest, _ struct{}) (*mcp.CallToolResult, any, error) {
@@ -310,7 +310,7 @@ func (a *speechkitMCP) status(ctx context.Context, req *mcp.CallToolRequest, _ s
 	if err != nil {
 		return nil, nil, err
 	}
-	return jsonResult(status), status, nil
+	return mcputil.JSONResult(status), status, nil
 }
 
 func (a *speechkitMCP) configGet(ctx context.Context, req *mcp.CallToolRequest, _ struct{}) (*mcp.CallToolResult, any, error) {
@@ -318,7 +318,7 @@ func (a *speechkitMCP) configGet(ctx context.Context, req *mcp.CallToolRequest, 
 	if err != nil {
 		return nil, nil, err
 	}
-	return jsonResult(cfg), cfg, nil
+	return mcputil.JSONResult(cfg), cfg, nil
 }
 
 func (a *speechkitMCP) providerList(ctx context.Context, req *mcp.CallToolRequest, in providerListInput) (*mcp.CallToolResult, any, error) {
@@ -326,7 +326,7 @@ func (a *speechkitMCP) providerList(ctx context.Context, req *mcp.CallToolReques
 	if err != nil {
 		return nil, nil, err
 	}
-	return jsonResult(profiles), profiles, nil
+	return mcputil.JSONResult(profiles), profiles, nil
 }
 
 func (a *speechkitMCP) providerReadiness(ctx context.Context, req *mcp.CallToolRequest, in idInput) (*mcp.CallToolResult, any, error) {
@@ -334,7 +334,7 @@ func (a *speechkitMCP) providerReadiness(ctx context.Context, req *mcp.CallToolR
 	if err != nil {
 		return nil, nil, err
 	}
-	return jsonResult(ready), ready, nil
+	return mcputil.JSONResult(ready), ready, nil
 }
 
 func (a *speechkitMCP) personasList(ctx context.Context, req *mcp.CallToolRequest, _ struct{}) (*mcp.CallToolResult, any, error) {
@@ -342,7 +342,7 @@ func (a *speechkitMCP) personasList(ctx context.Context, req *mcp.CallToolReques
 	if err != nil {
 		return nil, nil, err
 	}
-	return textResult(string(raw)), raw, nil
+	return mcputil.TextResult(string(raw)), raw, nil
 }
 
 func (a *speechkitMCP) personaGet(ctx context.Context, req *mcp.CallToolRequest, in idInput) (*mcp.CallToolResult, any, error) {
@@ -350,7 +350,7 @@ func (a *speechkitMCP) personaGet(ctx context.Context, req *mcp.CallToolRequest,
 	if err != nil {
 		return nil, nil, err
 	}
-	return textResult(string(raw)), raw, nil
+	return mcputil.TextResult(string(raw)), raw, nil
 }
 
 func (a *speechkitMCP) personaCreate(ctx context.Context, req *mcp.CallToolRequest, in payloadInput) (*mcp.CallToolResult, any, error) {
@@ -358,7 +358,7 @@ func (a *speechkitMCP) personaCreate(ctx context.Context, req *mcp.CallToolReque
 	if err != nil {
 		return nil, nil, err
 	}
-	return textResult(string(raw)), raw, nil
+	return mcputil.TextResult(string(raw)), raw, nil
 }
 
 func (a *speechkitMCP) personaUpdate(ctx context.Context, req *mcp.CallToolRequest, in payloadInput) (*mcp.CallToolResult, any, error) {
@@ -366,14 +366,14 @@ func (a *speechkitMCP) personaUpdate(ctx context.Context, req *mcp.CallToolReque
 	if err != nil {
 		return nil, nil, err
 	}
-	return textResult(string(raw)), raw, nil
+	return mcputil.TextResult(string(raw)), raw, nil
 }
 
 func (a *speechkitMCP) personaDelete(ctx context.Context, req *mcp.CallToolRequest, in idInput) (*mcp.CallToolResult, any, error) {
 	if err := a.client.DeletePersona(ctx, in.ID); err != nil {
 		return nil, nil, err
 	}
-	return textResult(`{"deleted":true}`), map[string]any{"deleted": true}, nil
+	return mcputil.TextResult(`{"deleted":true}`), map[string]any{"deleted": true}, nil
 }
 
 func (a *speechkitMCP) rolesList(ctx context.Context, req *mcp.CallToolRequest, _ struct{}) (*mcp.CallToolResult, any, error) {
@@ -381,7 +381,7 @@ func (a *speechkitMCP) rolesList(ctx context.Context, req *mcp.CallToolRequest, 
 	if err != nil {
 		return nil, nil, err
 	}
-	return textResult(string(raw)), raw, nil
+	return mcputil.TextResult(string(raw)), raw, nil
 }
 
 func (a *speechkitMCP) roleGet(ctx context.Context, req *mcp.CallToolRequest, in idInput) (*mcp.CallToolResult, any, error) {
@@ -389,7 +389,7 @@ func (a *speechkitMCP) roleGet(ctx context.Context, req *mcp.CallToolRequest, in
 	if err != nil {
 		return nil, nil, err
 	}
-	return textResult(string(raw)), raw, nil
+	return mcputil.TextResult(string(raw)), raw, nil
 }
 
 func (a *speechkitMCP) roleCreate(ctx context.Context, req *mcp.CallToolRequest, in payloadInput) (*mcp.CallToolResult, any, error) {
@@ -397,7 +397,7 @@ func (a *speechkitMCP) roleCreate(ctx context.Context, req *mcp.CallToolRequest,
 	if err != nil {
 		return nil, nil, err
 	}
-	return textResult(string(raw)), raw, nil
+	return mcputil.TextResult(string(raw)), raw, nil
 }
 
 func (a *speechkitMCP) roleUpdate(ctx context.Context, req *mcp.CallToolRequest, in payloadInput) (*mcp.CallToolResult, any, error) {
@@ -405,14 +405,14 @@ func (a *speechkitMCP) roleUpdate(ctx context.Context, req *mcp.CallToolRequest,
 	if err != nil {
 		return nil, nil, err
 	}
-	return textResult(string(raw)), raw, nil
+	return mcputil.TextResult(string(raw)), raw, nil
 }
 
 func (a *speechkitMCP) roleDelete(ctx context.Context, req *mcp.CallToolRequest, in idInput) (*mcp.CallToolResult, any, error) {
 	if err := a.client.DeleteRole(ctx, in.ID); err != nil {
 		return nil, nil, err
 	}
-	return textResult(`{"deleted":true}`), map[string]any{"deleted": true}, nil
+	return mcputil.TextResult(`{"deleted":true}`), map[string]any{"deleted": true}, nil
 }
 
 func (a *speechkitMCP) sequencesList(ctx context.Context, req *mcp.CallToolRequest, _ struct{}) (*mcp.CallToolResult, any, error) {
@@ -420,7 +420,7 @@ func (a *speechkitMCP) sequencesList(ctx context.Context, req *mcp.CallToolReque
 	if err != nil {
 		return nil, nil, err
 	}
-	return textResult(string(raw)), raw, nil
+	return mcputil.TextResult(string(raw)), raw, nil
 }
 
 func (a *speechkitMCP) sequenceGet(ctx context.Context, req *mcp.CallToolRequest, in idInput) (*mcp.CallToolResult, any, error) {
@@ -428,7 +428,7 @@ func (a *speechkitMCP) sequenceGet(ctx context.Context, req *mcp.CallToolRequest
 	if err != nil {
 		return nil, nil, err
 	}
-	return textResult(string(raw)), raw, nil
+	return mcputil.TextResult(string(raw)), raw, nil
 }
 
 func (a *speechkitMCP) sequenceCreate(ctx context.Context, req *mcp.CallToolRequest, in payloadInput) (*mcp.CallToolResult, any, error) {
@@ -436,7 +436,7 @@ func (a *speechkitMCP) sequenceCreate(ctx context.Context, req *mcp.CallToolRequ
 	if err != nil {
 		return nil, nil, err
 	}
-	return textResult(string(raw)), raw, nil
+	return mcputil.TextResult(string(raw)), raw, nil
 }
 
 func (a *speechkitMCP) sequenceUpdate(ctx context.Context, req *mcp.CallToolRequest, in payloadInput) (*mcp.CallToolResult, any, error) {
@@ -444,14 +444,14 @@ func (a *speechkitMCP) sequenceUpdate(ctx context.Context, req *mcp.CallToolRequ
 	if err != nil {
 		return nil, nil, err
 	}
-	return textResult(string(raw)), raw, nil
+	return mcputil.TextResult(string(raw)), raw, nil
 }
 
 func (a *speechkitMCP) sequenceDelete(ctx context.Context, req *mcp.CallToolRequest, in idInput) (*mcp.CallToolResult, any, error) {
 	if err := a.client.DeleteSequence(ctx, in.ID); err != nil {
 		return nil, nil, err
 	}
-	return textResult(`{"deleted":true}`), map[string]any{"deleted": true}, nil
+	return mcputil.TextResult(`{"deleted":true}`), map[string]any{"deleted": true}, nil
 }
 
 func (a *speechkitMCP) transcriptsList(ctx context.Context, req *mcp.CallToolRequest, in transcriptListInput) (*mcp.CallToolResult, any, error) {
@@ -459,7 +459,7 @@ func (a *speechkitMCP) transcriptsList(ctx context.Context, req *mcp.CallToolReq
 	if err != nil {
 		return nil, nil, err
 	}
-	return jsonResult(map[string]any{"transcripts": list}), map[string]any{"transcripts": list}, nil
+	return mcputil.JSONResult(map[string]any{"transcripts": list}), map[string]any{"transcripts": list}, nil
 }
 
 func (a *speechkitMCP) transcriptGet(ctx context.Context, req *mcp.CallToolRequest, in numericIDInput) (*mcp.CallToolResult, any, error) {
@@ -467,7 +467,7 @@ func (a *speechkitMCP) transcriptGet(ctx context.Context, req *mcp.CallToolReque
 	if err != nil {
 		return nil, nil, err
 	}
-	return jsonResult(item), item, nil
+	return mcputil.JSONResult(item), item, nil
 }
 
 func (a *speechkitMCP) voiceAgentSessionSummary(ctx context.Context, req *mcp.CallToolRequest, in numericIDInput) (*mcp.CallToolResult, any, error) {
@@ -475,7 +475,7 @@ func (a *speechkitMCP) voiceAgentSessionSummary(ctx context.Context, req *mcp.Ca
 	if err != nil {
 		return nil, nil, err
 	}
-	return jsonResult(summary), summary, nil
+	return mcputil.JSONResult(summary), summary, nil
 }
 
 func (a *speechkitMCP) vocabularyGet(ctx context.Context, req *mcp.CallToolRequest, in vocabularyInput) (*mcp.CallToolResult, any, error) {
@@ -483,17 +483,17 @@ func (a *speechkitMCP) vocabularyGet(ctx context.Context, req *mcp.CallToolReque
 	if err != nil {
 		return nil, nil, err
 	}
-	return jsonResult(map[string]any{"entries": entries}), map[string]any{"entries": entries}, nil
+	return mcputil.JSONResult(map[string]any{"entries": entries}), map[string]any{"entries": entries}, nil
 }
 
 func (a *speechkitMCP) vocabularyReplace(ctx context.Context, req *mcp.CallToolRequest, in vocabularyInput) (*mcp.CallToolResult, any, error) {
 	entries := make([]skclient.DictionaryEntry, 0, len(in.Entries))
 	for _, raw := range in.Entries {
 		entries = append(entries, skclient.DictionaryEntry{
-			Spoken:    stringMapValue(raw, "spoken"),
-			Canonical: stringMapValue(raw, "canonical"),
-			Language:  firstNonEmpty(stringMapValue(raw, "language"), in.Language),
-			Source:    stringMapValue(raw, "source"),
+			Spoken:    mcputil.StringMapValue(raw, "spoken"),
+			Canonical: mcputil.StringMapValue(raw, "canonical"),
+			Language:  firstNonEmpty(mcputil.StringMapValue(raw, "language"), in.Language),
+			Source:    mcputil.StringMapValue(raw, "source"),
 			Enabled:   true,
 		})
 	}
@@ -501,18 +501,18 @@ func (a *speechkitMCP) vocabularyReplace(ctx context.Context, req *mcp.CallToolR
 	if err != nil {
 		return nil, nil, err
 	}
-	return jsonResult(map[string]any{"entries": out}), map[string]any{"entries": out}, nil
+	return mcputil.JSONResult(map[string]any{"entries": out}), map[string]any{"entries": out}, nil
 }
 
 func (a *speechkitMCP) transcribe(ctx context.Context, req *mcp.CallToolRequest, in transcribeInput) (*mcp.CallToolResult, any, error) {
 	if a.opts.transport == "http" {
-		return textResult("audio_path is disabled for HTTP MCP transport; use local stdio MCP for filesystem audio files."), nil, nil
+		return mcputil.TextResult("audio_path is disabled for HTTP MCP transport; use local stdio MCP for filesystem audio files."), nil, nil
 	}
 	result, err := a.client.TranscribeFile(ctx, in.AudioPath, skclient.TranscribeOptions{Language: in.Language, Model: in.Model})
 	if err != nil {
 		return nil, nil, err
 	}
-	return jsonResult(result), result, nil
+	return mcputil.JSONResult(result), result, nil
 }
 
 func (a *speechkitMCP) ttsSynthesize(ctx context.Context, req *mcp.CallToolRequest, in ttsInput) (*mcp.CallToolResult, any, error) {
@@ -526,7 +526,7 @@ func (a *speechkitMCP) ttsSynthesize(ctx context.Context, req *mcp.CallToolReque
 	if err != nil {
 		return nil, nil, err
 	}
-	return jsonResult(result), result, nil
+	return mcputil.JSONResult(result), result, nil
 }
 
 func (a *speechkitMCP) validateConfig(ctx context.Context, req *mcp.CallToolRequest, in configValidationInput) (*mcp.CallToolResult, any, error) {
@@ -536,7 +536,7 @@ func (a *speechkitMCP) validateConfig(ctx context.Context, req *mcp.CallToolRequ
 	if err != nil {
 		out["error"] = err.Error()
 	}
-	return jsonResult(out), out, nil
+	return mcputil.JSONResult(out), out, nil
 }
 
 func (a *speechkitMCP) validateRequest(ctx context.Context, req *mcp.CallToolRequest, in jsonValidationInput) (*mcp.CallToolResult, any, error) {
@@ -556,7 +556,7 @@ func (a *speechkitMCP) checkCompatibility(ctx context.Context, req *mcp.CallTool
 		}
 	}
 	out := map[string]any{"known_endpoints_found": found, "valid": len(found) > 0}
-	return jsonResult(out), out, nil
+	return mcputil.JSONResult(out), out, nil
 }
 
 func (a *speechkitMCP) selfCheckPlan(ctx context.Context, req *mcp.CallToolRequest, in selfCheckInput) (*mcp.CallToolResult, any, error) {
@@ -580,7 +580,7 @@ func (a *speechkitMCP) selfCheckPlan(ctx context.Context, req *mcp.CallToolReque
 			"Use the AsyncAPI contract before implementing Voice Agent WebSocket clients.",
 		},
 	}
-	return jsonResult(out), out, nil
+	return mcputil.JSONResult(out), out, nil
 }
 
 func (a *speechkitMCP) breakingChanges(ctx context.Context, req *mcp.CallToolRequest, in changesInput) (*mcp.CallToolResult, any, error) {
@@ -590,9 +590,9 @@ func (a *speechkitMCP) breakingChanges(ctx context.Context, req *mcp.CallToolReq
 		if len(text) > 8000 {
 			text = text[:8000]
 		}
-		return textResult(text), map[string]string{"from": in.FromVersion, "to": in.ToVersion}, nil
+		return mcputil.TextResult(text), map[string]string{"from": in.FromVersion, "to": in.ToVersion}, nil
 	}
-	return textResult("No CHANGELOG.md found in current working directory."), nil, nil
+	return mcputil.TextResult("No CHANGELOG.md found in current working directory."), nil, nil
 }
 
 func validateOpenAPIPayload(ctx context.Context, kind string, in jsonValidationInput) (*mcp.CallToolResult, any, error) {
@@ -607,12 +607,12 @@ func validateOpenAPIPayload(ctx context.Context, kind string, in jsonValidationI
 	if endpoint == "" {
 		out["valid"] = false
 		out["error"] = "endpoint is required"
-		return jsonResult(out), out, nil
+		return mcputil.JSONResult(out), out, nil
 	}
 	if len(bytes.TrimSpace(in.Payload)) > 0 && !json.Valid(in.Payload) {
 		out["valid"] = false
 		out["error"] = "payload is not valid JSON"
-		return jsonResult(out), out, nil
+		return mcputil.JSONResult(out), out, nil
 	}
 	doc, err := loadOpenAPIDocument(ctx)
 	if err != nil {
@@ -624,7 +624,7 @@ func validateOpenAPIPayload(ctx context.Context, kind string, in jsonValidationI
 	if method == "" {
 		out["valid"] = false
 		out["error"] = "unknown endpoint or method"
-		return jsonResult(out), out, nil
+		return mcputil.JSONResult(out), out, nil
 	}
 	router, err := legacy.NewRouter(doc)
 	if err != nil {
@@ -639,7 +639,7 @@ func validateOpenAPIPayload(ctx context.Context, kind string, in jsonValidationI
 	if err != nil {
 		out["valid"] = false
 		out["error"] = err.Error()
-		return jsonResult(out), out, nil //nolint:nilerr // A schema mismatch is returned as tool data, not an MCP transport failure.
+		return mcputil.JSONResult(out), out, nil //nolint:nilerr // A schema mismatch is returned as tool data, not an MCP transport failure.
 	}
 	options := &openapi3filter.Options{AuthenticationFunc: openapi3filter.NoopAuthenticationFunc}
 	switch kind {
@@ -669,32 +669,5 @@ func validateOpenAPIPayload(ctx context.Context, kind string, in jsonValidationI
 	if kind == "response" {
 		out["status_code"] = statusCode
 	}
-	return jsonResult(out), out, nil
-}
-
-func textResult(text string) *mcp.CallToolResult {
-	return &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: text}}}
-}
-
-func jsonResult(value any) *mcp.CallToolResult {
-	raw, _ := json.MarshalIndent(value, "", "  ")
-	return textResult(string(raw))
-}
-
-func stringMapValue(values map[string]any, key string) string {
-	if values == nil {
-		return ""
-	}
-	value, ok := values[key]
-	if !ok || value == nil {
-		return ""
-	}
-	return strings.TrimSpace(fmt.Sprint(value))
-}
-
-func shellQuote(value string) string {
-	if value == "" {
-		return "''"
-	}
-	return "'" + strings.ReplaceAll(value, "'", "'\"'\"'") + "'"
+	return mcputil.JSONResult(out), out, nil
 }

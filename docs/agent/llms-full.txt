@@ -124,8 +124,9 @@ settings/config path for `SPEECHKIT_SERVER_URL` and token, set up a fresh local
 SpeechKit Server in Docker Compose for verification, and define a Gradle task
 named `verifySpeechKitLive` that writes
 `speechkit-one-shot-functional-result.json` with `app_kind=android`,
-`app_transport=android`, `server_url_source=settings_screen` or
-`android_config`, non-empty Dictation/Assist outputs, and
+`app_transport=android`, `manifest_file=speechkit-one-shot-manifest.json`,
+`server_url_source=settings_screen` or `android_config`, non-empty
+Dictation/Assist outputs, `status=pass` on every checked mode, and
 `checked_via_app=true`.
 
 Management mode requires a running server and bearer token:

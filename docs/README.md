@@ -16,6 +16,8 @@ Start with the module you are working on, then jump into the detailed docs.
 
 ## Setup
 
+- [LOCAL_TESTING.md](./LOCAL_TESTING.md) — canonical local `mise` preflight
+  contract for setup, build, test, release preview, and deploy readiness.
 - [setup/LIVE_TEST_VOICE_AGENT.md](./setup/LIVE_TEST_VOICE_AGENT.md) — End-to-end local test of the Voice Agent server + Wails device-target integration.
 
 ## Contracts
@@ -31,3 +33,4 @@ Start with the module you are working on, then jump into the detailed docs.
 ## Release And Trust
 
 - [code-signing-policy.md](./code-signing-policy.md) — Windows artifact trust policy.
+- [product-readiness-v0.34.1.md](./product-readiness-v0.34.1.md) — v0.34.1 desktop, agent-gate, storage/settings, and OSS-readiness release checklist.

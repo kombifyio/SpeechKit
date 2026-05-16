@@ -134,13 +134,15 @@ Canonical Windows app build:
 powershell -ExecutionPolicy Bypass -File scripts/build.ps1 -SkipInstaller
 ```
 
-Common checks:
+For local verification before commit, PR, CI, or deploy work, use the
+repo-local `mise` contract documented in
+[docs/LOCAL_TESTING.md](./docs/LOCAL_TESTING.md). Package-manager and raw Go
+commands are implementation details behind those preflight gates.
 
 ```powershell
-go test ./...
-go vet ./...
-npm --prefix frontend/app run test
-npm --prefix frontend/app run build
+mise run preflight:quick
+mise run preflight:release
+mise run preflight:deploy
 ```
 
 ## Repository Layout

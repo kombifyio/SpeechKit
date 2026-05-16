@@ -249,6 +249,19 @@ func TestServerLinuxWorkflowRunsComposeSmokeStack(t *testing.T) {
 	assertNotContains(t, workflow, "matrix.target")
 }
 
+func TestCloudflareQualityGateWorkflowStaysShadowOnly(t *testing.T) {
+	workflow := readRepoFile(t, filepath.Join(".github", "workflows", "cloudflare-quality-gate.yml"))
+
+	assertContains(t, workflow, "name: Cloudflare SpeechKit Quality Gate")
+	assertContains(t, workflow, "workflow_dispatch:")
+	assertContains(t, workflow, "workflow_call:")
+	assertContains(t, workflow, "SPEECHKIT_CLOUDFLARE_QUALITY_GATE_URL")
+	assertContains(t, workflow, "SPEECHKIT_CLOUDFLARE_GATE_TOKEN")
+	assertContains(t, workflow, "node scripts/cloudflare-quality-gate.mjs")
+	assertContains(t, workflow, "--release-version")
+	assertNotContains(t, workflow, "--require-pass")
+}
+
 func TestCIWorkflowFailsWhenCoverageDropsBelowMinimum(t *testing.T) {
 	workflow := readRepoFile(t, filepath.Join(".github", "workflows", "ci.yml"))
 
