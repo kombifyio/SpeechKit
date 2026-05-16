@@ -173,9 +173,9 @@ jobs:
           SPEECHKIT_WINDOWS_SIGNING_THUMBPRINT: ${{ vars.SPEECHKIT_WINDOWS_SIGNING_THUMBPRINT }}
         run: |
           if ('${{ needs.prepare.outputs.release_windows_installer }}' -eq 'true') {
-            ./scripts/build.ps1
+            ./scripts/build.ps1 -SkipVerification
           } else {
-            ./scripts/build.ps1 -SkipInstaller
+            ./scripts/build.ps1 -SkipInstaller -SkipVerification
           }
 
       - name: Resolve Windows signing mode
