@@ -110,7 +110,7 @@ jobs:
 
       - name: Run Windows desktop Staticcheck
         shell: pwsh
-        run: staticcheck ./cmd/speechkit/...
+        run: staticcheck -tags=no_embed_frontend ./cmd/speechkit/...
 
       - name: Report Windows-only coverage targets
         shell: pwsh
