@@ -104,6 +104,8 @@ scripts/whisper-server/whisper-server
 # Doppler
 .env
 .env.*
+!.env.example
+!.env.example.tmpl
 
 # Cloudflare local emulator state
 infra/cloudflare/**/.wrangler/
