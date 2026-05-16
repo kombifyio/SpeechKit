@@ -12,6 +12,9 @@ CREATE TABLE IF NOT EXISTS transcriptions (
     created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+ALTER TABLE transcriptions
+    ADD COLUMN IF NOT EXISTS language_base TEXT NOT NULL DEFAULT '';
+
 CREATE INDEX IF NOT EXISTS idx_transcriptions_created_at_id
     ON transcriptions(created_at DESC, id DESC);
 
@@ -32,6 +35,9 @@ CREATE TABLE IF NOT EXISTS quick_notes (
     created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at    TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+ALTER TABLE quick_notes
+    ADD COLUMN IF NOT EXISTS language_base TEXT NOT NULL DEFAULT '';
 
 CREATE INDEX IF NOT EXISTS idx_quick_notes_created_at_id
     ON quick_notes(created_at DESC, id DESC);
@@ -119,6 +125,9 @@ CREATE TABLE IF NOT EXISTS voice_agent_sessions (
     ended_at            TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     created_at          TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+ALTER TABLE voice_agent_sessions
+    ADD COLUMN IF NOT EXISTS language_base TEXT NOT NULL DEFAULT '';
 
 CREATE INDEX IF NOT EXISTS idx_voice_agent_sessions_created_at_id
     ON voice_agent_sessions(created_at DESC, id DESC);

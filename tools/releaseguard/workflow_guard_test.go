@@ -250,7 +250,10 @@ func TestServerLinuxWorkflowRunsComposeSmokeStack(t *testing.T) {
 }
 
 func TestCloudflareQualityGateWorkflowStaysShadowOnly(t *testing.T) {
-	workflow := readRepoFile(t, filepath.Join(".github", "workflows", "cloudflare-quality-gate.yml"))
+	workflow, ok := readRepoFileIfExists(t, filepath.Join(".github", "workflows", "cloudflare-quality-gate.yml"))
+	if !ok {
+		t.Skip("cloudflare quality gate workflow is not part of the public workflow export")
+	}
 
 	assertContains(t, workflow, "name: Cloudflare SpeechKit Quality Gate")
 	assertContains(t, workflow, "workflow_dispatch:")
@@ -276,15 +279,14 @@ func TestCIWorkflowRunsWebsiteChecksWhenWebsiteExists(t *testing.T) {
 
 	if _, err := os.Stat(filepath.Join(repoRoot(t), "Website")); err != nil {
 		if os.IsNotExist(err) {
-			assertNotContains(t, workflow, "name: Website Checks")
-			assertNotContains(t, workflow, "working-directory: Website")
-			assertNotContains(t, workflow, "cache-dependency-path: Website/package-lock.json")
+			assertContains(t, workflow, "if: ${{ hashFiles('Website/package-lock.json') != '' }}")
 			return
 		}
 		t.Fatalf("stat Website: %v", err)
 	}
 
 	assertContains(t, workflow, "name: Website Checks")
+	assertContains(t, workflow, "if: ${{ hashFiles('Website/package-lock.json') != '' }}")
 	assertContains(t, workflow, "working-directory: Website")
 	assertContains(t, workflow, "cache-dependency-path: Website/package-lock.json")
 	assertContains(t, workflow, "npm run check")
