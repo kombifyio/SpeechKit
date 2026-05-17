@@ -55,6 +55,15 @@ func runDesktopApp(closeLogFile func()) {
 	tracker.stage("config_loaded", "path", cfgPath, "install_mode", string(installState.Mode))
 
 	state := newInitialAppState(cfg)
+	// First-run UX: hide the overlay until the user finishes the
+	// onboarding wizard. Without this, the bubble pops up over the
+	// setup window which is confusing. The setup-completion handler
+	// (/app/complete-setup) re-applies cfg.UI.OverlayEnabled. Already-
+	// configured users keep their current overlay preference because
+	// SetupDone is true on launch for them.
+	if installState != nil && !installState.SetupDone {
+		state.setOverlayEnabled(false)
+	}
 	tracker.stage("state_init")
 
 	r := initDesktopRouterRuntime(cfg, state)
@@ -119,6 +128,12 @@ func runDesktopApp(closeLogFile func()) {
 		os.Exit(1)
 	}
 	tracker.stage("input_runtime_ready")
+
+	// Wake-word listener (opt-in via cfg.Wakeword.Enabled). Never fatal —
+	// missing models or audio errors degrade gracefully to "no wake-word
+	// today" with a warning in the log and the in-app status feed.
+	startDesktopWakeword(ctx, cfg, state, hkManager, &cleanup)
+	tracker.stage("wakeword_evaluated")
 
 	scheduleFirstRunOnboarding(state, installState, showDashboard)
 	tracker.stage("app_run_begin")
@@ -190,6 +205,21 @@ func showSettingsWindowWithFocus(window settingsWindow, focus bool) {
 		window.Focus()
 	}
 	slog.Info("desktop.window.shown", "window", "settings", "was_visible", wasVisible, "focus", focus)
+}
+
+// isAppStarted reports whether the Wails application event loop has entered
+// its main thread. Until this returns true, any code path that calls
+// application.InvokeSync (overlay windows, dashboard show, screen-aware
+// positioning) will dereference a nil internal pointer and panic. Callers
+// that may run before app.Run() — most notably the desktop input
+// controller goroutine — should gate UI-touching work on this.
+func (s *appState) isAppStarted() bool {
+	if s == nil {
+		return false
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.appStarted
 }
 
 func (s *appState) markAppStarted() {

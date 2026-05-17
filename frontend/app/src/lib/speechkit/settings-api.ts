@@ -108,6 +108,14 @@ export async function saveSettingsState(nextState: SpeechKitSettingsState) {
       nextState.modelSelections.voice_agent.primaryProfileId,
     voice_fallback_profile_id:
       nextState.modelSelections.voice_agent.fallbackProfileId,
+    wakeword_enabled: nextState.wakeword.enabled ? "1" : "0",
+    wakeword_phrase_id: nextState.wakeword.phraseId,
+    wakeword_default_mode: nextState.wakeword.defaultMode,
+    wakeword_threshold: String(nextState.wakeword.threshold),
+    wakeword_min_consecutive_frames: String(
+      nextState.wakeword.minConsecutiveFrames,
+    ),
+    wakeword_cooldown_ms: String(nextState.wakeword.cooldownMs),
   });
 
   const response = await fetch("/settings/update", {
@@ -137,4 +145,57 @@ export async function resetOverlayPosition() {
 
   const payload = (await response.json()) as { message?: string };
   return payload.message ?? "";
+}
+
+// WakewordState mirrors the JSON returned by /app/wakeword/state and the
+// enable/disable endpoints. `listening` reflects whether the sidecar
+// process is actually running right now (true when the runtime is non-nil
+// in the desktop state); `status` is the human-readable last status the
+// adapter wrote (e.g. "Listening for Hey Siri" or "Disabled").
+export type WakewordState = {
+  enabled: boolean;
+  listening: boolean;
+  phraseId: string;
+  defaultMode: "voice_agent" | "assist" | "dictate" | string;
+  threshold?: number;
+  status: string;
+};
+
+export async function fetchWakewordState(): Promise<WakewordState> {
+  const response = await fetch("/app/wakeword/state");
+  if (!response.ok) {
+    throw new Error(`wake-word state failed: ${response.status}`);
+  }
+  return (await response.json()) as WakewordState;
+}
+
+// enableWakeword is the one-click activation path used by the onboarding
+// wizard. The backend picks sensible defaults for any field omitted from
+// the request body (phraseId="hey_siri", defaultMode="voice_agent"),
+// persists the config, and respawns the wake-word sidecar before
+// returning the resulting state. Callers should poll `listening` for a
+// few seconds after the response to confirm the sidecar fully booted.
+export async function enableWakeword(opts?: {
+  phraseId?: string;
+  defaultMode?: WakewordState["defaultMode"];
+  threshold?: number;
+}): Promise<WakewordState> {
+  const response = await fetch("/app/wakeword/enable", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(opts ?? {}),
+  });
+  if (!response.ok) {
+    const detail = await response.text().catch(() => "");
+    throw new Error(`wake-word enable failed: ${response.status}: ${detail}`);
+  }
+  return (await response.json()) as WakewordState;
+}
+
+export async function disableWakeword(): Promise<WakewordState> {
+  const response = await fetch("/app/wakeword/disable", { method: "POST" });
+  if (!response.ok) {
+    throw new Error(`wake-word disable failed: ${response.status}`);
+  }
+  return (await response.json()) as WakewordState;
 }

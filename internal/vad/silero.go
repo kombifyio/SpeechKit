@@ -3,19 +3,37 @@
 package vad
 
 import (
-	"fmt"
+	"errors"
 	"sync"
-
-	ort "github.com/yalue/onnxruntime_go"
 )
+
+// NOTE — historical context:
+//
+// This file previously embedded the Silero VAD via github.com/yalue/onnxruntime_go.
+// Linking that binding into the SpeechKit binary alongside github.com/k2-fsa/sherpa-onnx-go
+// (which is used by internal/wakeword) caused a hard native abort on Windows
+// during wake-word initialisation — both modules link `-lonnxruntime` with
+// different ABI expectations (MSVC vs MinGW), and the resulting symbol
+// collisions corrupted process state once one of the two engines tried to
+// start its runtime.
+//
+// VAD is opt-in and has historically not been bundled on the Windows
+// reference target (silero_vad.onnx is not shipped). The dictation flow
+// works fine without it — push-to-talk ends when the user releases the
+// hotkey. Until we re-implement VAD on top of sherpa-onnx's own
+// `sherpa.VoiceActivityDetector`, this stub keeps the package surface
+// intact and reports "VAD unavailable" if anyone tries to instantiate.
 
 const (
 	SampleRate     = 16000
-	FrameSize      = 512 // 32ms at 16kHz
+	FrameSize      = 512
 	BytesPerSample = 2
 	FrameBytes     = FrameSize * BytesPerSample
-	stateSize      = 2 * 1 * 128
 )
+
+// ErrUnavailable is returned by NewSileroVAD until VAD is re-implemented on
+// the unified sherpa-onnx runtime. See package-level note for rationale.
+var ErrUnavailable = errors.New("vad: silero VAD temporarily unavailable on this build — tracked in beads (replace yalue/onnxruntime_go usage with sherpa-onnx VAD to avoid double-runtime conflict)")
 
 // Detector is the speech-probability contract consumed by dictation processors.
 type Detector interface {
@@ -23,162 +41,28 @@ type Detector interface {
 	Reset()
 }
 
-// SileroVAD runs voice activity detection via ONNX Runtime.
-// <1ms per frame, ~2MB model, no CGo beyond onnxruntime DLL.
+// SileroVAD is the public type the package previously exported. Kept as an
+// empty struct so callers compile; constructor returns ErrUnavailable.
 type SileroVAD struct {
-	session *ort.AdvancedSession
-
-	inputTensor  *ort.Tensor[float32]
-	srTensor     *ort.Tensor[int64]
-	hTensor      *ort.Tensor[float32]
-	cTensor      *ort.Tensor[float32]
-	outputTensor *ort.Tensor[float32]
-	hnTensor     *ort.Tensor[float32]
-	cnTensor     *ort.Tensor[float32]
-
+	//lint:ignore U1000 reserved for the sherpa-VAD reimplementation that will reuse the lock around buffered ProcessFrame state.
 	mu sync.Mutex
 }
 
-// NewSileroVAD loads the Silero VAD ONNX model and prepares inference tensors.
-// The onnxruntime shared library must already be in PATH or beside the executable.
-func NewSileroVAD(modelPath string) (*SileroVAD, error) {
-	ort.SetSharedLibraryPath("onnxruntime.dll")
-	if err := ort.InitializeEnvironment(); err != nil {
-		return nil, fmt.Errorf("onnx env init: %w", err)
-	}
-
-	v := &SileroVAD{}
-	if err := v.initTensors(); err != nil {
-		_ = ort.DestroyEnvironment()
-		return nil, err
-	}
-
-	if err := v.initSession(modelPath); err != nil {
-		v.destroyTensors()
-		_ = ort.DestroyEnvironment()
-		return nil, err
-	}
-
-	return v, nil
+// NewSileroVAD always returns ErrUnavailable in this build. Adapters
+// (cmd/speechkit/dictation_session.go) detect the error, log a warning and
+// degrade to manual-release hotkey behaviour.
+func NewSileroVAD(_ string) (*SileroVAD, error) {
+	return nil, ErrUnavailable
 }
 
-func (v *SileroVAD) initTensors() error {
-	var err error
-
-	// Input: float32[1, FrameSize] -- audio frame normalized [-1, 1]
-	inputData := make([]float32, FrameSize)
-	v.inputTensor, err = ort.NewTensor(ort.NewShape(1, int64(FrameSize)), inputData)
-	if err != nil {
-		return fmt.Errorf("input tensor: %w", err)
-	}
-
-	// Sample rate: int64[1]
-	v.srTensor, err = ort.NewTensor(ort.NewShape(1), []int64{SampleRate})
-	if err != nil {
-		return fmt.Errorf("sr tensor: %w", err)
-	}
-
-	// Hidden state: float32[2, 1, 128]
-	v.hTensor, err = ort.NewEmptyTensor[float32](ort.NewShape(2, 1, 128))
-	if err != nil {
-		return fmt.Errorf("h tensor: %w", err)
-	}
-
-	// Cell state: float32[2, 1, 128]
-	v.cTensor, err = ort.NewEmptyTensor[float32](ort.NewShape(2, 1, 128))
-	if err != nil {
-		return fmt.Errorf("c tensor: %w", err)
-	}
-
-	// Output: float32[1, 1] -- speech probability
-	v.outputTensor, err = ort.NewEmptyTensor[float32](ort.NewShape(1, 1))
-	if err != nil {
-		return fmt.Errorf("output tensor: %w", err)
-	}
-
-	// Hidden state output: float32[2, 1, 128]
-	v.hnTensor, err = ort.NewEmptyTensor[float32](ort.NewShape(2, 1, 128))
-	if err != nil {
-		return fmt.Errorf("hn tensor: %w", err)
-	}
-
-	// Cell state output: float32[2, 1, 128]
-	v.cnTensor, err = ort.NewEmptyTensor[float32](ort.NewShape(2, 1, 128))
-	if err != nil {
-		return fmt.Errorf("cn tensor: %w", err)
-	}
-
-	return nil
+// ProcessFrame is a no-op for the stub. The real implementation will return
+// the speech probability from the sherpa-onnx VAD model.
+func (v *SileroVAD) ProcessFrame(_ []int16) (float32, error) {
+	return 0, ErrUnavailable
 }
 
-func (v *SileroVAD) initSession(modelPath string) error {
-	var err error
-	v.session, err = ort.NewAdvancedSession(
-		modelPath,
-		[]string{"input", "sr", "h", "c"},
-		[]string{"output", "hn", "cn"},
-		[]ort.Value{v.inputTensor, v.srTensor, v.hTensor, v.cTensor},
-		[]ort.Value{v.outputTensor, v.hnTensor, v.cnTensor},
-		nil,
-	)
-	if err != nil {
-		return fmt.Errorf("create session: %w", err)
-	}
-	return nil
-}
+// Reset is a no-op for the stub.
+func (v *SileroVAD) Reset() {}
 
-// ProcessFrame returns speech probability (0.0-1.0) for a single audio frame.
-// pcm must contain exactly FrameSize samples of S16 PCM.
-func (v *SileroVAD) ProcessFrame(pcm []int16) (float32, error) {
-	if len(pcm) != FrameSize {
-		return 0, fmt.Errorf("expected %d samples, got %d", FrameSize, len(pcm))
-	}
-
-	v.mu.Lock()
-	defer v.mu.Unlock()
-
-	// Convert S16 to float32 normalized [-1, 1] directly into tensor data
-	inputData := v.inputTensor.GetData()
-	for i, s := range pcm {
-		inputData[i] = float32(s) / 32768.0
-	}
-
-	if err := v.session.Run(); err != nil {
-		return 0, fmt.Errorf("inference: %w", err)
-	}
-
-	prob := v.outputTensor.GetData()[0]
-
-	// Copy output hidden/cell state back to input state for next frame
-	copy(v.hTensor.GetData(), v.hnTensor.GetData())
-	copy(v.cTensor.GetData(), v.cnTensor.GetData())
-
-	return prob, nil
-}
-
-// Reset clears the hidden state for a new recording session.
-func (v *SileroVAD) Reset() {
-	v.mu.Lock()
-	defer v.mu.Unlock()
-	v.hTensor.ZeroContents()
-	v.cTensor.ZeroContents()
-}
-
-func (v *SileroVAD) Close() {
-	if v.session != nil {
-		_ = v.session.Destroy()
-	}
-	v.destroyTensors()
-	_ = ort.DestroyEnvironment()
-}
-
-func (v *SileroVAD) destroyTensors() {
-	for _, t := range []interface{ Destroy() error }{
-		v.inputTensor, v.srTensor, v.hTensor, v.cTensor,
-		v.outputTensor, v.hnTensor, v.cnTensor,
-	} {
-		if t != nil {
-			_ = t.Destroy()
-		}
-	}
-}
+// Close is a no-op for the stub.
+func (v *SileroVAD) Close() {}

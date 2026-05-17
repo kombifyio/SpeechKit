@@ -67,8 +67,10 @@ func NewVPSProviderWithModel(baseURL, apiKey, model string) *OpenAICompatiblePro
 		AllowHTTP:     true,
 	}
 	// Rebuild the HTTP client with a longer timeout — self-hosted whisper
-	// may take longer to cold-start than managed cloud APIs.
-	p.client = netsec.NewSafeHTTPClient(netsec.ClientOptions{Timeout: 60 * time.Second, DialValidation: &p.Validation})
+	// may take longer to cold-start than managed cloud APIs. 5 min covers
+	// Whisper Large v3 Turbo CPU-only on small VMs (2-core GH-hosted
+	// runners take ~70 s for a 2 s clip with the Turbo model).
+	p.client = netsec.NewSafeHTTPClient(netsec.ClientOptions{Timeout: 5 * time.Minute, DialValidation: &p.Validation})
 	return p
 }
 

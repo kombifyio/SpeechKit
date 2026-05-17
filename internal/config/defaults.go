@@ -207,6 +207,18 @@ func defaults() *Config {
 				AgentModel:   "google/gemini-2.5-flash",
 			},
 		},
+		Wakeword: WakewordConfig{
+			Enabled:              false, // opt-in: mic is only opened when the user explicitly turns this on
+			PhraseID:             "hey_quby",
+			Phrase:               "", // empty -> catalog DisplayName for PhraseID is used
+			ModelPath:            "", // empty -> catalog FileName resolved against wake-word models dir
+			MelspecModelPath:     "",
+			EmbeddingModelPath:   "",
+			DefaultMode:          WakewordDefaultModeVoiceAgent,
+			Threshold:            0, // 0 -> catalog RecommendedThreshold for PhraseID is used
+			MinConsecutiveFrames: 2,
+			CooldownMs:           1500,
+		},
 		Server: ServerConfig{
 			ListenAddr:               ":8080",
 			PublicURL:                "",
@@ -221,7 +233,7 @@ func defaults() *Config {
 			MaxUploadMB:              25,
 			MaxVoiceAgentSessions:    100,
 			MaxSessionsPerUser:       3,
-			TicketTTLSec:             30,
+			TicketTTLSec:             90,
 			VoiceAgentIdleTimeoutSec: 900,
 			LiveKit: ServerLiveKitConfig{
 				Enabled:      false,

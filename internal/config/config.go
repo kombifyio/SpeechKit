@@ -71,6 +71,80 @@ type Config struct {
 	Personas  []PersonaConfig  `toml:"personas"`
 	Roles     []RoleConfig     `toml:"roles"`
 	Sequences []SequenceConfig `toml:"sequences"`
+
+	// Wakeword configures the always-on "Hey Quby" activation-word listener.
+	// Read by cmd/speechkit (Device-Target) and any library embedder; the
+	// Server-Target ignores this block in v1.
+	Wakeword WakewordConfig `toml:"wakeword"`
+}
+
+// Wake-word default-mode values for WakewordConfig.DefaultMode.
+const (
+	WakewordDefaultModeDictate    = "dictate"
+	WakewordDefaultModeAssist     = "assist"
+	WakewordDefaultModeVoiceAgent = "voice_agent"
+)
+
+// WakewordConfig configures the always-on activation-word listener.
+//
+// When Enabled is true the Device-Target opens a dedicated low-volume audio
+// session that continuously feeds the wake-word detector. A successful
+// detection synthesises a key-down event on DefaultMode's hotkey binding,
+// which the existing mode dispatcher treats identically to a real hotkey
+// press. Audio for wake detection NEVER leaves the device.
+type WakewordConfig struct {
+	// Enabled gates the entire feature. Default false (opt-in).
+	Enabled bool `toml:"enabled"`
+
+	// PhraseID picks one of SpeechKit's curated wake phrases from
+	// wakeword.DefaultCatalog (e.g. "hey_quby", "hey_computer",
+	// "hey_jarvis", "hey_mira"). When set, the corresponding ONNX file is
+	// resolved automatically and Phrase/ModelPath below are ignored. When
+	// empty, the explicit Phrase + ModelPath fields are used instead
+	// (custom phrase mode). Switching via this field is how users pick a
+	// different wake phrase in settings without editing paths by hand.
+	PhraseID string `toml:"phrase_id"`
+
+	// Phrase is the display label of the trained wake phrase, surfaced in
+	// the tray and status feed. It has NO effect on detection — the ONNX
+	// model encodes the actual phrase(s). One model can be trained to
+	// fire on multiple pronunciation variants (e.g. "Hey Cubi" and
+	// "Hey Kubi" for the same brand "Quby") via target_phrases in the
+	// training yaml; the display label here remains a single brand string.
+	//
+	// Ignored when PhraseID matches a catalog entry (the catalog's
+	// DisplayName is used instead).
+	Phrase string `toml:"phrase"`
+
+	// ModelPath is the path to the trained phrase prediction model (.onnx).
+	// Empty resolves to <data_dir>/models/wakeword/hey_quby.onnx at runtime.
+	//
+	// Ignored when PhraseID matches a catalog entry (the catalog's
+	// FileName is resolved inside the wake-word models directory).
+	ModelPath string `toml:"model_path"`
+
+	// MelspecModelPath and EmbeddingModelPath point at the shared
+	// openWakeWord upstream models. Empty values resolve to the same
+	// directory as ModelPath with canonical filenames.
+	MelspecModelPath   string `toml:"melspec_model_path"`
+	EmbeddingModelPath string `toml:"embedding_model_path"`
+
+	// DefaultMode is the runtime mode triggered when the wake phrase fires.
+	// One of "dictate" | "assist" | "voice_agent". Defaults to voice_agent.
+	DefaultMode string `toml:"default_mode"`
+
+	// Threshold is the minimum probability to count a frame as a hit.
+	// Range (0.0, 1.0]; LiveKit's published sweet-spot is 0.68.
+	Threshold float64 `toml:"threshold"`
+
+	// MinConsecutiveFrames is the number of consecutive above-threshold
+	// frames required before a trigger fires. Higher = fewer false-accepts,
+	// more false-rejects. Defaults to 2.
+	MinConsecutiveFrames int `toml:"min_consecutive_frames"`
+
+	// CooldownMs is the minimum gap between two triggers, in milliseconds.
+	// Defaults to 1500ms.
+	CooldownMs int `toml:"cooldown_ms"`
 }
 
 // ServerConfig configures the standalone Linux server binary. Used only by

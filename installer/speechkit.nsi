@@ -10,7 +10,7 @@ RequestExecutionLevel user
 
 ; VERSION can be overridden at compile time: makensis /DVERSION=x.y.z
 !ifndef VERSION
-  !define VERSION "0.34.1"
+  !define VERSION "0.34.9"
 !endif
 
 ; --- Interface ---
@@ -38,6 +38,14 @@ Section "SpeechKit" SecMain
   File "${STAGE_DIR}\whisper-server.exe"
   File "${STAGE_DIR}\*.dll"
   File "${STAGE_DIR}\MicrosoftEdgeWebview2Setup.exe"
+
+  ; Local LLM runtime (llama-server.exe + its private DLLs). Without
+  ; this, the bundled SpeechKit cannot run the local LLM path and
+  ; Assist/Voice-Agent fall back to a hard "missing_model" error.
+  ; The /r switch recurses into the llama/ subdirectory.
+  SetOutPath "$INSTDIR\llama"
+  File /r "${STAGE_DIR}\llama\*"
+  SetOutPath "$INSTDIR"
 
   ; Runtime config template
   File "/oname=config.default.toml" "${STAGE_DIR}\config.toml"
@@ -83,6 +91,7 @@ Section "Uninstall"
   Delete "$INSTDIR\config.default.toml"
   Delete "$INSTDIR\uninstall.exe"
   RMDir /r "$INSTDIR\models"
+  RMDir /r "$INSTDIR\llama"
 
   ; Remove shortcuts
   Delete "$SMPROGRAMS\kombify SpeechKit\SpeechKit.lnk"

@@ -111,7 +111,7 @@ func registerAuthRoutes(mux *http.ServeMux) {
 	})
 }
 
-func registerAppRoutes(mux *http.ServeMux, cfgPath string, state *appState, installState *config.InstallState) {
+func registerAppRoutes(mux *http.ServeMux, cfgPath string, cfg *config.Config, state *appState, installState *config.InstallState) {
 	updateManager := ensureAppUpdateManager(state)
 
 	mux.HandleFunc("/app/control-token", func(w http.ResponseWriter, r *http.Request) {
@@ -268,7 +268,131 @@ func registerAppRoutes(mux *http.ServeMux, cfgPath string, state *appState, inst
 		if err := config.SaveInstallState(installState); err != nil {
 			slog.Warn("save setup completion", "err", err)
 		}
+		// Sync the runtime overlay state to the saved config preference now
+		// that the user has completed onboarding. During onboarding the
+		// overlay was force-hidden (see runDesktopApp → state.setOverlayEnabled).
+		// Most users want the overlay visible by default, which matches the
+		// default cfg.UI.OverlayEnabled = true; a user who toggled it off in
+		// the wizard sees no overlay regardless.
+		if state != nil && cfg != nil {
+			state.setOverlayEnabled(cfg.UI.OverlayEnabled)
+			state.refreshOverlayWindows()
+		}
 		w.Header().Set("Content-Type", "application/json; charset=utf-8")
 		_ = json.NewEncoder(w).Encode(map[string]bool{"setupDone": true})
 	})
+
+	// Wake-word one-click endpoints. The Settings UI's WakewordPanel writes
+	// the full settings form which goes through routes_settings.go and
+	// triggers restartDesktopWakeword on changes. The endpoints below are
+	// the simpler surface for the onboarding wizard: a single button click
+	// enables the feature with sensible defaults and returns the
+	// runtime-ready status. They never touch fields the user did not
+	// explicitly pick — phrase_id, default_mode and threshold only get
+	// overwritten when the request body provides a value.
+	mux.HandleFunc("/app/wakeword/enable", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+		if cfg == nil || state == nil {
+			http.Error(w, "wake-word: runtime state not ready", http.StatusServiceUnavailable)
+			return
+		}
+		var body wakewordEnableRequest
+		if r.Body != nil {
+			_ = json.NewDecoder(r.Body).Decode(&body) // empty body is OK
+		}
+
+		cfg.Wakeword.Enabled = true
+		if v := strings.TrimSpace(body.PhraseID); v != "" {
+			cfg.Wakeword.PhraseID = v
+		} else if strings.TrimSpace(cfg.Wakeword.PhraseID) == "" {
+			cfg.Wakeword.PhraseID = "hey_siri"
+		}
+		if v := strings.TrimSpace(body.DefaultMode); v != "" {
+			cfg.Wakeword.DefaultMode = config.NormalizeWakewordDefaultMode(v)
+		} else if strings.TrimSpace(cfg.Wakeword.DefaultMode) == "" {
+			cfg.Wakeword.DefaultMode = "voice_agent"
+		}
+		if body.Threshold > 0 && body.Threshold <= 1 {
+			cfg.Wakeword.Threshold = body.Threshold
+		}
+
+		if err := config.Save(cfgPath, cfg); err != nil {
+			slog.Warn("wakeword: save config failed", "err", err)
+			http.Error(w, "wake-word: save config failed: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		state.mu.Lock()
+		hkMgr := state.hkManager
+		state.mu.Unlock()
+		if mode, ok := hkMgr.(*modeHotkeyManager); ok {
+			restartDesktopWakeword(r.Context(), cfg, state, mode)
+		} else {
+			slog.Warn("wakeword: hotkey manager unavailable — runtime will start on next launch")
+		}
+
+		writeWakewordStateResponse(w, cfg, state)
+	})
+
+	mux.HandleFunc("/app/wakeword/disable", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+		if cfg == nil || state == nil {
+			http.Error(w, "wake-word: runtime state not ready", http.StatusServiceUnavailable)
+			return
+		}
+		cfg.Wakeword.Enabled = false
+		if err := config.Save(cfgPath, cfg); err != nil {
+			http.Error(w, "wake-word: save config failed: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+		state.mu.Lock()
+		hkMgr := state.hkManager
+		state.mu.Unlock()
+		if mode, ok := hkMgr.(*modeHotkeyManager); ok {
+			restartDesktopWakeword(r.Context(), cfg, state, mode)
+		}
+		writeWakewordStateResponse(w, cfg, state)
+	})
+
+	mux.HandleFunc("/app/wakeword/state", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+		writeWakewordStateResponse(w, cfg, state)
+	})
+}
+
+type wakewordEnableRequest struct {
+	PhraseID    string  `json:"phraseId,omitempty"`
+	DefaultMode string  `json:"defaultMode,omitempty"`
+	Threshold   float64 `json:"threshold,omitempty"`
+}
+
+func writeWakewordStateResponse(w http.ResponseWriter, cfg *config.Config, state *appState) {
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	resp := map[string]any{
+		"enabled":     false,
+		"listening":   false,
+		"phraseId":    "",
+		"defaultMode": "voice_agent",
+		"status":      "",
+	}
+	if cfg != nil {
+		resp["enabled"] = cfg.Wakeword.Enabled
+		resp["phraseId"] = strings.TrimSpace(cfg.Wakeword.PhraseID)
+		resp["defaultMode"] = config.NormalizeWakewordDefaultMode(cfg.Wakeword.DefaultMode)
+		resp["threshold"] = cfg.Wakeword.Threshold
+	}
+	if state != nil {
+		resp["listening"] = state.currentWakewordRuntime() != nil
+		resp["status"] = state.wakewordStatusValue()
+	}
+	_ = json.NewEncoder(w).Encode(resp)
 }

@@ -114,6 +114,9 @@ func applyAPIV1ModeSettingsPatch(ctx context.Context, cfgPath string, cfg *confi
 	voiceAgentSequenceChanged := snapshot.voiceAgentSequenceID != strings.TrimSpace(cfg.VoiceAgent.AgentSequenceID)
 	voiceAgentModeSourceChanged := snapshot.voiceAgentModeSource != cfg.ModelSelection.VoiceAgent.ResolvedModeSource()
 	if modelSelectionChanged || voiceAgentProfileChanged || voiceAgentSequenceChanged {
+		if err := validateServerConnectionForActiveModes(cfg); err != nil {
+			return err
+		}
 		if err := refreshServerDelegates(cfg, state); err != nil {
 			return err
 		}

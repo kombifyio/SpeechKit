@@ -12,6 +12,217 @@ IDs, source paths, and other maintainer-only vocabulary.
 
 ## [Unreleased]
 
+## [0.34.9] - 2026-05-17
+
+### Fixed
+
+- **Local LLM now actually works after a fresh Windows install**: the
+  NSIS installer copied SpeechKit.exe and whisper-server.exe but
+  completely skipped the bundled llama runtime, so Assist and the
+  Voice Agent cascaded path hit "missing model" errors on first use.
+  The installer now ships the full `llama/` runtime (llama-server.exe
+  + its private DLLs) alongside the Whisper components, so the local
+  LLM path is available immediately after install — no manual file
+  copy needed.
+- **Self-hosted server routes to the local Whisper sidecar**: a fresh
+  install of `scripts/install-server.sh` left the STT router on the
+  Device-Target default of "local-only", which the Server-Target has
+  no in-process Whisper for. Every Dictation and Assist request
+  responded 503 "local provider not configured". The self-hosted
+  defaults now force the strategy to "cloud-only" so the server
+  reaches the bundled whisper sidecar through the configured URL.
+- **Server `/readyz` stays green when local-only TTS is intentional**:
+  the `api.tts_direct` health entry was marked blocking even when TTS
+  was deliberately disabled (no cloud TTS key on a self-hosted
+  install), forcing `/readyz` to 503 even though every other component
+  was healthy. The endpoint now marks itself non-blocking when TTS is
+  disabled by design.
+- **Self-hosted Docker stack ships with working Whisper + llama
+  sidecars**: `deploy/docker/docker-compose.yml` only declared the
+  server + postgres, yet `install-server.sh` wrote env vars pointing
+  at `http://speechkit-whisper:8080` and `http://speechkit-llm:8080`
+  — hosts that did not exist anywhere in the stack. The compose file
+  now declares both sidecars (profile-gated behind
+  `COMPOSE_PROFILES=local`, which `install-server.sh` enables
+  automatically) so a fresh self-hosted install actually has a local
+  STT and LLM at the other end of the configured endpoints.
+
+### Added
+
+- **Install-rollout E2E gates on the release pipeline**: every
+  released SpeechKit version now goes through two install-E2E
+  workflows (`install-e2e-windows` on a clean windows-2025 runner,
+  `install-e2e-linux` on a clean ubuntu-24.04 runner) before the
+  GitHub Release is published. The Windows gate silent-installs the
+  NSIS bundle and exercises Dictation, Assist, and the local cascaded
+  Voice Agent against bundled Whisper + Gemma. The Linux gate runs
+  `install-server.sh --strict-local-only` end-to-end against the same
+  three modes through the public REST and WebSocket surfaces. See
+  [docs/server/local-only-guarantee.md](docs/server/local-only-guarantee.md).
+- **`install-server.sh --strict-local-only` flag**: refuses to write
+  the generated `.env` when any cloud provider key (Google, OpenAI,
+  Groq, OpenRouter, Hugging Face) is set in the environment. Used by
+  the install-E2E pipeline to assert the local-only contract; useful
+  manually for verifying a self-hosted setup script does not silently
+  pick up shell-exported secrets.
+- **Server-side `providers.cloud_keys_present` flag on
+  `/v1/deployment/status`**: a single boolean operators can scrape to
+  verify a deployment is genuinely zero-cloud (false) versus
+  configured to fall back to cloud providers (true).
+
+### Changed
+
+- **Voice Agent gains a fully self-hosted "local" provider on Windows**:
+  the cascaded turn-based provider (STT → LLM → TTS) is now selectable
+  from the Voice Agent provider menu on the Windows client in addition
+  to the existing Linux server build. Pick "local cascaded" to run a
+  Voice Agent session without a Gemini Live API key — Whisper handles
+  the listening, the bundled Gemma model produces the reply, and the
+  client speaks it through its own audio stack.
+
+## [0.34.8] - 2026-05-17
+
+### Added
+
+- **kombify server presets pre-registered in the Windows client**: launching
+  SpeechKit now seeds the Settings → Server Target dropdown with three
+  switchable endpoints — speechkit.kombify.io (Origin), api.kombify.io
+  (Gateway), and Hugging Face Inference. Pick a target, paste the matching
+  token under Token value, and Server mode is ready without hand-editing
+  config.toml. User-customised entries are kept intact across launches.
+
+### Fixed
+
+- **Wake-word now actually fires on a fresh install**: the bundled
+  `keywords.txt` was written in a format sherpa-onnx could not parse, so the
+  spotter crashed at startup before listening began. The boost factor is
+  now space-separated from the BPE tokens (`▁HE Y ▁QU B Y :1.5 @hey_quby`),
+  and the on-device sidecar boots into a healthy listening state for all
+  five SpeechKit phrases (Hey Quby / Hey Computer / Hey Jarvis / Hey Mira /
+  Hey Kombify) plus the four upstream defaults.
+- **Onboarding wizard offers the SpeechKit catalog instead of generic
+  defaults**: the wake-phrase picker no longer shows Hey Siri / Alexa /
+  Hi Google as the primary options; it lists the curated SpeechKit phrases
+  whose detection labels match the runtime catalog.
+- **Rebuilds no longer wipe your local config.toml**: the build script
+  preserves the bundle's runtime configuration across rebuilds, so
+  customised ports, audio devices, server targets, and wake-word picks
+  survive `scripts/build.ps1` runs. Delete `dist/windows/SpeechKit/config.toml`
+  manually to reset to the example template.
+
+## [0.34.7] - 2026-05-17
+
+### Added
+
+- **One-click wake-word in the onboarding wizard**: the setup flow now has
+  a dedicated wake-word step after integrations. Pick a wake phrase
+  (Hey Siri / Hi Google / Alexa / Hello World), click **Enable wake word**,
+  and SpeechKit writes the config, spawns the sidecar, and shows the
+  listening status before you continue — no manual config editing or
+  follow-up downloads required. Skip preserves the previous hotkey-only
+  default.
+- **Dedicated `/app/wakeword/{enable,disable,state}` endpoints**: a small
+  REST surface tailored for one-click activation. The existing Settings →
+  Wake word panel keeps the full configuration UI for power users.
+
+## [0.34.6] - 2026-05-17
+
+### Added
+
+- **Wake-word works on the Windows reference client out of the box**: the
+  on-device keyword spotter now runs in a sibling process
+  (`speechkit-wakeword.exe`) and streams detection events back into the
+  desktop app via a JSON protocol. Enable it in Settings, say your
+  configured phrase, and the corresponding mode starts the same way a
+  hotkey press would. The bundled gigaspeech keyword model ships with the
+  installer, so no model download is needed for first use.
+
+### Changed
+
+- **Wake-word resilience**: a crash in the keyword-spotter no longer
+  affects the rest of the desktop app — the sidecar's exit is logged,
+  status is surfaced, and the rest of the application keeps running.
+
+## [0.34.5] - 2026-05-17
+
+### Changed
+
+- **Wake-word backend swapped to sherpa-onnx Zipformer keyword spotting**:
+  the framework module now uses an Apache-2.0 keyword-spotter that ships a
+  matching MinGW-compiled ONNX runtime, removing the Windows ABI mismatch
+  that previously made the feature unreachable. Keywords are declared as
+  text — no per-phrase model retraining is required.
+- **Wake-word is framed as a client-side framework module everywhere it
+  is documented**. The Server-Target does not and will not host always-on
+  audio; the framework provides a kernel that client targets (Windows
+  desktop today, Local-Target / Android / iOS / Web on the roadmap) embed
+  via their own adapters.
+
+### Added
+
+- **Reproducible bundling of the wake-word stack**:
+  `scripts/prepare-sherpa-runtime.ps1` ships the matching MinGW-compiled
+  native libraries next to the Windows executable;
+  `scripts/prepare-wakeword-model.ps1` fetches a pinned, SHA256-verifiable
+  release of the KWS model into the bundle so the demo works out of the
+  box once the in-process integration is replaced by the sidecar.
+
+### Known limitation
+
+- **Wake-word ships disabled by default on Windows**. Enabling it in the
+  current build still triggers a native crash inside the Wails-alpha
+  runtime that is not present in the standalone test runner; the
+  sidecar-process pivot tracked under
+  [`kombify-SpeechKit-x3w`](.beads/issues.jsonl) is the next step.
+
+## [0.34.4] - 2026-05-17
+
+### Fixed
+
+- **Wake-word startup can no longer kill the desktop app**: any unexpected
+  panic during wake-word initialisation is now caught and surfaced as a
+  status message instead of taking the whole application down. Wake-word
+  remains opt-in while the underlying ONNX runtime integration is being
+  hardened.
+
+## [0.34.3] - 2026-05-17
+
+### Added
+
+- **ONNX Runtime is bundled automatically on Windows**: the Windows build
+  step now downloads and verifies a pinned ONNX Runtime release and ships
+  it next to the executable, so wake-word and voice-activity detection no
+  longer fall back to whatever copy Windows happens to have installed.
+
+### Changed
+
+- **Wake-word and VAD share one runtime environment**: a single
+  process-wide ONNX Runtime initialiser now backs both features instead
+  of each one initialising and tearing down independently, which removes
+  a class of "second consumer fails to start" issues seen on Windows.
+- **Bundled runtime version mismatches surface a clear hint**: when the
+  loaded ONNX Runtime does not match what the Go bindings expect, the
+  log now says the bundle needs refreshing instead of an opaque
+  "Platform-specific initialization failed" line.
+
+## [0.34.2] - 2026-05-17
+
+### Fixed
+
+- **Voice Agent and Assist tolerate longer local responses**: the request
+  timeout for local LLM calls has been extended so CPU-bound first-token
+  latency no longer aborts replies with a "deadline exceeded" error.
+- **Local LLM uses all available CPU cores**: the bundled llama runtime now
+  scales its thread count to the host (up to 8) instead of running on a
+  fixed 4 threads, so Assist and the Voice Agent pipeline fallback respond
+  noticeably faster on multi-core machines.
+- **Developer rebuilds keep install state intact**: rebuilding the Windows
+  bundle no longer wipes `data/install.toml`, so a portable install does not
+  silently bounce back to the onboarding wizard between iterations.
+- **Developer rebuilds keep manually-supplied onnxruntime.dll**: operators
+  who place a compatible ONNX Runtime DLL next to the executable keep it
+  across rebuilds instead of having to copy it back each time.
+
 ## [0.34.1] - 2026-05-15
 
 ### Highlights

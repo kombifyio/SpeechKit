@@ -1,0 +1,95 @@
+# Browser-facing SpeechKit Server reference config.
+#
+# Keep `public_url` blank here so the runtime can apply SPEECHKIT_PUBLIC_URL
+# or the alias SPEECHKIT_SERVER_PUBLIC_URL from Docker Compose.
+
+[general]
+language = "en"
+
+[server]
+listen_addr = ":8080"
+public_url = ""
+modes = ["dictation", "assist", "voiceagent"]
+auth_mode = "bearer"
+bearer_token_env = "SPEECHKIT_SERVER_TOKEN"
+bearer_role = "admin"
+edge_auth_secret_env = "EDGE_AUTH_SECRET"
+cors_allowed_origins = [
+  "http://localhost:3000",
+  "http://localhost:5173",
+  "http://localhost:8080"
+]
+rate_limit_rps = 10.0
+rate_limit_burst = 20
+max_upload_mb = 25
+max_voiceagent_sessions = 100
+max_sessions_per_user = 3
+ticket_ttl_sec = 90
+voiceagent_idle_timeout_sec = 900
+model_dir = "/var/lib/speechkit/models"
+log_format = "json"
+log_level = "info"
+
+[server.features]
+catalog = true
+storage_reads = true
+vocabulary = true
+tts_direct = true
+
+[store]
+backend = "sqlite"
+sqlite_path = "/var/lib/speechkit/data/speechkit.db"
+save_audio = true
+audio_retention_days = 7
+max_audio_storage_mb = 500
+
+[huggingface]
+enabled = true
+model = "openai/whisper-large-v3"
+token_env = "HF_TOKEN"
+
+[providers.openai]
+enabled = true
+api_key_env = "OPENAI_API_KEY"
+stt_model = "whisper-1"
+utility_model = "gpt-4o-mini"
+assist_model = "gpt-4o"
+agent_model = "gpt-4o"
+tts_model = "tts-1"
+tts_voice = "nova"
+realtime_model = "gpt-realtime-2"
+
+[providers.google]
+enabled = true
+api_key_env = "GOOGLE_AI_API_KEY"
+stt_api_key_env = "SPEECHKIT_GOOGLE_STT_API_KEY"
+stt_model = "chirp_3"
+utility_model = "gemini-2.5-flash-lite"
+assist_model = "gemini-2.5-flash"
+agent_model = "gemini-2.5-pro"
+
+[providers.groq]
+enabled = false
+api_key_env = "GROQ_API_KEY"
+stt_model = "whisper-large-v3-turbo"
+
+[tts]
+enabled = false
+strategy = "cloud-first"
+format = "mp3"
+speed = 1.0
+
+[voice_agent]
+enabled = true
+provider = "gemini"
+model = "gemini-3.1-flash-live-preview"
+fallback_model = "gemini-2.5-flash-native-audio-preview-12-2025"
+voice = "Kore"
+framework_prompt = """
+You are a helpful, concise voice assistant. Always respond in the user's language.
+Keep turns short. Confirm ambiguous requests before acting.
+"""
+automatic_activity_detection = true
+enable_input_transcript = true
+enable_output_transcript = true
+

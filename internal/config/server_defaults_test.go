@@ -114,6 +114,29 @@ func TestApplyServerRuntimeDefaults_UsesPublicURLEnvWithoutSelfHostedDefaults(t 
 	}
 }
 
+func TestApplyServerRuntimeDefaults_UsesServerPublicURLAlias(t *testing.T) {
+	t.Setenv("SPEECHKIT_SERVER_PUBLIC_URL", " http://localhost:8080/ ")
+
+	cfg := defaults()
+	ApplyServerRuntimeDefaults(cfg)
+
+	if cfg.Server.PublicURL != "http://localhost:8080" {
+		t.Fatalf("Server.PublicURL = %q, want server public URL alias from env", cfg.Server.PublicURL)
+	}
+}
+
+func TestApplyServerRuntimeDefaults_PublicURLEnvWinsOverAlias(t *testing.T) {
+	t.Setenv("SPEECHKIT_PUBLIC_URL", " https://canonical.example.test/ ")
+	t.Setenv("SPEECHKIT_SERVER_PUBLIC_URL", " http://localhost:8080/ ")
+
+	cfg := defaults()
+	ApplyServerRuntimeDefaults(cfg)
+
+	if cfg.Server.PublicURL != "https://canonical.example.test" {
+		t.Fatalf("Server.PublicURL = %q, want canonical public URL env to win", cfg.Server.PublicURL)
+	}
+}
+
 func TestApplyServerRuntimeDefaults_UsesPostgresDSNEnvWithoutSelfHostedDefaults(t *testing.T) {
 	postgresDSN := postgresTestDSN("speechkit", "secret", "db", "speechkit", "")
 	t.Setenv("POSTGRES_DSN", " "+postgresDSN+" ")

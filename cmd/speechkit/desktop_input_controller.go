@@ -122,6 +122,16 @@ func (c desktopInputController) quickNoteRecordingLabel() string {
 }
 
 func (c desktopInputController) handleHotkey(ctx context.Context, evt hotkey.Event) {
+	// Pre-Wails-Run guard: the keyboard hook + the per-mode hotkey
+	// managers start polling immediately, so a key that's down when the
+	// app is launched can fire EventKeyDown before app.Run() has set up
+	// the Wails main thread. Every downstream UI path (overlay positioning,
+	// dashboard show, assist bubble) then dereferences a nil Screen /
+	// nil dispatcher and panics. Drop hotkey events until the app is
+	// fully started; see beads kombify-SpeechKit-0s6.
+	if !c.state.isAppStarted() {
+		return
+	}
 	if evt.Type == hotkey.EventKeyDown && c.gateOnOnboardingPending() {
 		return
 	}

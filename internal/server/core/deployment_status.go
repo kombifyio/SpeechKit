@@ -94,6 +94,10 @@ func deploymentStatusSnapshot(app *App) map[string]any {
 			"openrouter": map[string]any{
 				"api_key": envStatus(firstNonEmpty(cfg.Providers.OpenRouter.APIKeyEnv, "OPENROUTER_API_KEY")),
 			},
+			// cloud_keys_present is the load-bearing flag for the install-E2E
+			// local-only gate (install-e2e-linux.yml). True when ANY of the
+			// configured cloud-provider env keys is set, false otherwise.
+			"cloud_keys_present": anyCloudKeyEnvSet(cfg),
 		},
 		"store": map[string]any{
 			"backend": strings.ToLower(strings.TrimSpace(cfg.Store.Backend)),

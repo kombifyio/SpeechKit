@@ -57,11 +57,16 @@ func ValidateModelPath(path string) error {
 }
 
 const (
-	whisperHealthRetries      = 120
+	// Cold-start budgets for whisper-server. The CI install-E2E loads
+	// Whisper Large v3 Turbo (~1.6 GB) on a CPU-only runner; the model
+	// can take 90+ s just to memory-map and ggml-init before the
+	// /health endpoint starts responding. Pre-CI values (60 s + 90 s)
+	// were a too-tight on cold cache.
+	whisperHealthRetries      = 360 // 360 * 500ms = 180s health-wait
 	whisperHealthInterval     = 500 * time.Millisecond
-	whisperWarmupRetries      = 180
+	whisperWarmupRetries      = 360 // 360 * 500ms = 180s warmup-wait
 	whisperWarmupInterval     = 500 * time.Millisecond
-	whisperWarmupTimeout      = 90 * time.Second
+	whisperWarmupTimeout      = 180 * time.Second
 	localMinTranscribeTimeout = 60 * time.Second
 	localMaxTranscribeTimeout = 5 * time.Minute
 	localMaxResponseBytes     = 1 << 20

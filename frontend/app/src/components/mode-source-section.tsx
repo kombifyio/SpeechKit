@@ -12,6 +12,7 @@
 import { useCallback, useEffect, useState } from "react";
 
 import { ModeSourceToggle } from "@/components/mode-source-toggle";
+import { serverConnectionReadiness } from "@/components/server-connection-card";
 import {
   fetchAPIV1Modes,
   fetchAPIV1ServerConnection,
@@ -117,8 +118,14 @@ export function ModeSourceSection({
     };
   }, [externalServerConnection]);
 
+  const readiness = serverConnectionReadiness(serverConnection);
+
   const updateMode = useCallback(
     async (mode: ModeKey, next: ModeSource) => {
+      if (next === "server" && readiness !== "ready") {
+        setError(serverModeBlockReason(readiness, serverConnection));
+        return;
+      }
       setBusy(true);
       setError(null);
       try {
@@ -142,12 +149,16 @@ export function ModeSourceSection({
         setBusy(false);
       }
     },
-    [applyServerConnection, serverConnection?.enabled],
+    [applyServerConnection, readiness, serverConnection],
   );
 
   const updateAllModes = useCallback(
     async (next: ModeSource) => {
       if (!modes) return;
+      if (next === "server" && readiness !== "ready") {
+        setError(serverModeBlockReason(readiness, serverConnection));
+        return;
+      }
       setBusy(true);
       setError(null);
       try {
@@ -184,7 +195,7 @@ export function ModeSourceSection({
         setBusy(false);
       }
     },
-    [applyServerConnection, modes, serverConnection],
+    [applyServerConnection, modes, readiness, serverConnection],
   );
 
   if (error && !modes) {
@@ -258,13 +269,21 @@ export function ModeSourceSection({
             type="button"
             role="radio"
             aria-checked={allServer}
-            disabled={busy}
+            aria-disabled={readiness !== "ready"}
+            disabled={busy || (readiness !== "ready" && !allServer)}
             onClick={() => updateAllModes("server")}
+            title={
+              readiness !== "ready"
+                ? serverModeBlockReason(readiness, serverConnection)
+                : undefined
+            }
             className={cn(
               "rounded-sm px-3 py-1 text-xs font-medium transition-colors",
               allServer
                 ? "bg-foreground text-background"
                 : "text-muted-foreground hover:text-foreground",
+              readiness !== "ready" && !allServer &&
+                "cursor-not-allowed opacity-60",
             )}
           >
             Server
@@ -288,4 +307,19 @@ export function ModeSourceSection({
       {error ? <p className="text-sm text-destructive">{error}</p> : null}
     </section>
   );
+}
+
+function serverModeBlockReason(
+  readiness: ReturnType<typeof serverConnectionReadiness>,
+  serverConnection: ServerConnectionSetting | null | undefined,
+): string {
+  if (readiness === "not-configured") {
+    return "No SpeechKit server is configured. Register one under Server Target before switching this mode to Server.";
+  }
+  if (readiness === "token-missing") {
+    return `Server token ${
+      serverConnection?.bearerTokenEnv ?? "SPEECHKIT_SERVER_TOKEN"
+    } is missing. Set it in the New Server form (Token value) or as an env var, then try again.`;
+  }
+  return "";
 }

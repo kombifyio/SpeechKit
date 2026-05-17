@@ -38,7 +38,7 @@ rate_limit_burst       = 20
 max_upload_mb          = 25
 max_voiceagent_sessions = 100
 max_sessions_per_user   = 3
-ticket_ttl_sec          = 30
+ticket_ttl_sec          = 90
 # Server-side idle timeout for Voice Agent WS sessions (seconds).
 # Default 900 (15 min). Set to 0 for the implicit default, negative to
 # disable the watchdog entirely.

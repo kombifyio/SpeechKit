@@ -26,8 +26,8 @@ func TestNewServerDefaultsAndURL(t *testing.T) {
 	if s.ContextSize != defaultContextSize {
 		t.Errorf("ContextSize = %d, want %d", s.ContextSize, defaultContextSize)
 	}
-	if s.Threads != defaultThreads {
-		t.Errorf("Threads = %d, want %d", s.Threads, defaultThreads)
+	if s.Threads <= 0 || s.Threads > 8 {
+		t.Errorf("Threads = %d, want 1..8", s.Threads)
 	}
 	if !s.Validation.AllowLoopback || !s.Validation.AllowHTTP {
 		t.Errorf("Validation must allow loopback+HTTP for local llama server, got %+v", s.Validation)

@@ -87,6 +87,8 @@ type appState struct {
 	activeProfiles           map[string]string
 	hkManager                hotkeyReconfigurer
 	audioSession             audioDeviceReconfigurer
+	wakewordRuntime          *desktopWakeRuntime
+	wakewordStatus           string
 	engine                   *speechkit.Runtime
 	sttRouter                *router.Router
 	genkitRT                 *appai.Runtime

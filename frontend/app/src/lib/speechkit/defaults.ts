@@ -3,7 +3,26 @@ import type {
   SpeechKitOverlayState,
   SpeechKitSettingsState,
   VoiceAgentProfile,
+  WakewordSettings,
 } from "./types";
+
+// defaultWakewordSettings mirrors the empty-state of the backend's
+// WakewordConfig defaults (cfg.Wakeword in internal/config/defaults.go).
+// The phraseCatalog stays empty until /settings/state is fetched — the
+// backend ships the curated list at that point so the UI dropdown can
+// render the four+ shipped entries (hey_quby / hey_computer / hey_jarvis
+// / hey_mira / hey_kombify).
+export const defaultWakewordSettings: WakewordSettings = {
+  enabled: false,
+  phraseId: "hey_quby",
+  defaultMode: "voice_agent",
+  threshold: 0,
+  minConsecutiveFrames: 2,
+  cooldownMs: 1500,
+  active: false,
+  statusMessage: "",
+  phraseCatalog: [],
+};
 
 export const builtInPrimaryModelSelections: ModelSelectionsState = {
   dictate: { primaryProfileId: "stt.local.whispercpp", fallbackProfileId: "" },
@@ -142,4 +161,5 @@ export const defaultSettingsState: SpeechKitSettingsState = {
   selectedOutputDeviceId: "",
   activeProfiles: {},
   modelSelections: builtInPrimaryModelSelections,
+  wakeword: defaultWakewordSettings,
 };

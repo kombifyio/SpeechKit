@@ -9,6 +9,7 @@ import (
 	"github.com/kombifyio/SpeechKit/internal/config"
 	"github.com/kombifyio/SpeechKit/internal/secrets"
 	"github.com/kombifyio/SpeechKit/internal/voiceagentprofile"
+	"github.com/kombifyio/SpeechKit/internal/wakeword"
 )
 
 // This file groups appState state-observation methods: audio-level updates,
@@ -232,6 +233,7 @@ func (s *appState) settingsSnapshot(cfg *config.Config) settingsSnapshot {
 		}
 	}
 	catalog := filteredModelCatalog()
+	wakewordSnap := buildWakewordSettingsSnapshot(cfg, s.wakewordRuntime != nil, s.wakewordStatus)
 	return settingsSnapshot{
 		OverlayEnabled:             s.overlayEnabled,
 		OverlayPosition:            normalizeOverlayPosition(s.overlayPosition),
@@ -287,6 +289,35 @@ func (s *appState) settingsSnapshot(cfg *config.Config) settingsSnapshot {
 		ModelSelections:            profiles.ConfiguredModeModelSelections(cfg, catalog),
 		ProviderCredentials:        providerCredentialStates(cfg),
 		ProviderIntegrations:       providerIntegrationStates(cfg),
+		Wakeword:                   wakewordSnap,
+	}
+}
+
+// buildWakewordSettingsSnapshot assembles the wake-word block surfaced in
+// /settings/state. The phrase catalog is always included so the dropdown
+// in the React panel can render even when wake-word is disabled.
+func buildWakewordSettingsSnapshot(cfg *config.Config, active bool, status string) wakewordSettingsSnapshot {
+	entries := wakeword.DefaultCatalog()
+	catalog := make([]wakewordCatalogEntry, 0, len(entries))
+	for _, e := range entries {
+		catalog = append(catalog, wakewordCatalogEntry{
+			ID:           e.ID,
+			DisplayName:  e.DisplayName,
+			KeywordLabel: e.KeywordLabel,
+			Notes:        e.Notes,
+		})
+	}
+	defaultMode := config.NormalizeWakewordDefaultMode(cfg.Wakeword.DefaultMode)
+	return wakewordSettingsSnapshot{
+		Enabled:              cfg.Wakeword.Enabled,
+		PhraseID:             strings.TrimSpace(cfg.Wakeword.PhraseID),
+		DefaultMode:          defaultMode,
+		Threshold:            cfg.Wakeword.Threshold,
+		MinConsecutiveFrames: cfg.Wakeword.MinConsecutiveFrames,
+		CooldownMs:           cfg.Wakeword.CooldownMs,
+		Active:               active,
+		StatusMessage:        status,
+		PhraseCatalog:        catalog,
 	}
 }
 

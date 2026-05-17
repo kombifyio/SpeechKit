@@ -15,6 +15,11 @@ import {
   OverlayFeedbackModePicker,
   Row,
 } from "@/components/settings/settings-primitives";
+
+// NOTE: do NOT add cross-mode settings (e.g. wake-word, microphone,
+// overlay) to this page. Mode pages are scoped to the *one* mode they're
+// rendering. Anything that crosses modes lives in
+// `general-settings-page.tsx`. See docs/settings-architecture.md.
 import {
   MODE_DEFAULT_BASES,
   type ConfigurableMode,

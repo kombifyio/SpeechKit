@@ -24,6 +24,13 @@ services:
       SPEECHKIT_GOOGLE_STT_API_KEY: ${SPEECHKIT_GOOGLE_STT_API_KEY:-}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       GROQ_API_KEY: ${GROQ_API_KEY:-}
+      # Self-hosted defaults the server picks up when no cloud key is
+      # configured. install-server.sh writes these into .env; the local
+      # endpoints below back them. Override SPEECHKIT_SELFHOSTED_DEFAULTS=
+      # to false to disable the default-local wiring.
+      SPEECHKIT_SELFHOSTED_DEFAULTS: ${SPEECHKIT_SELFHOSTED_DEFAULTS:-true}
+      SPEECHKIT_SELFHOSTED_STT_URL: ${SPEECHKIT_SELFHOSTED_STT_URL:-http://speechkit-whisper:8080}
+      SPEECHKIT_SELFHOSTED_LLM_BASE_URL: ${SPEECHKIT_SELFHOSTED_LLM_BASE_URL:-http://speechkit-llm:8080/v1}
     volumes:
       - ../config/server.example.toml:/etc/speechkit/config.toml:ro
       - speechkit-models:/var/lib/speechkit/models
@@ -32,6 +39,65 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+    restart: unless-stopped
+
+  # Whisper.cpp HTTP server sidecar. Profile-gated so cloud-only setups
+  # don't have to pull a 100+ MB image they never use. install-server.sh
+  # adds COMPOSE_PROFILES=local to .env, which activates this service +
+  # the matching llama sidecar. speechkit-server reaches it at
+  # http://speechkit-whisper:8080 via SPEECHKIT_SELFHOSTED_STT_URL.
+  speechkit-whisper:
+    profiles: ["local"]
+    image: ${SPEECHKIT_WHISPER_IMAGE:-ghcr.io/ggml-org/whisper.cpp:main}
+    # ggml-org/whisper.cpp:main ships with ENTRYPOINT ["bash", "-c"]
+    # which swallows additional args. Override with the full server
+    # binary path so command-list args reach it directly.
+    entrypoint: ["/app/build/bin/whisper-server"]
+    command:
+      - --host
+      - 0.0.0.0
+      - --port
+      - "8080"
+      - --model
+      - /models/whisper/${SPEECHKIT_WHISPER_MODEL_FILE:-ggml-large-v3-turbo.bin}
+      - --inference-path
+      - /v1/audio/transcriptions
+    volumes:
+      - speechkit-models:/models:ro
+    expose:
+      - "8080"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:8080/ >/dev/null || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+    restart: unless-stopped
+
+  # llama.cpp HTTP server sidecar. Profile-gated (see speechkit-whisper
+  # above). Speaks OpenAI-compatible /v1/ endpoints. speechkit-server
+  # reaches it at http://speechkit-llm:8080/v1 via
+  # SPEECHKIT_SELFHOSTED_LLM_BASE_URL.
+  speechkit-llm:
+    profiles: ["local"]
+    image: ${SPEECHKIT_LLM_IMAGE:-ghcr.io/ggml-org/llama.cpp:server}
+    command:
+      - --host
+      - 0.0.0.0
+      - --port
+      - "8080"
+      - --model
+      - /models/llama/${SPEECHKIT_LLM_MODEL_FILE:-gemma-4-E4B-it-Q4_K_M.gguf}
+    volumes:
+      - speechkit-models:/models:ro
+    expose:
+      - "8080"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:8080/health >/dev/null || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 18
+      start_period: 60s
     restart: unless-stopped
 
   postgres:

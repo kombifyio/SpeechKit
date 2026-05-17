@@ -131,11 +131,16 @@ func (f *fakeSettingsWindow) Focus() {
 }
 
 type fakeTray struct {
-	states []tray.State
+	states           []tray.State
+	wakeListeningLog []bool
 }
 
 func (f *fakeTray) SetState(state tray.State) {
 	f.states = append(f.states, state)
+}
+
+func (f *fakeTray) SetWakeListening(listening bool) {
+	f.wakeListeningLog = append(f.wakeListeningLog, listening)
 }
 
 type fakeScreenLocator struct {

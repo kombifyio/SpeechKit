@@ -98,6 +98,7 @@ type settingsWindow interface {
 
 type trayStateSetter interface {
 	SetState(tray.State)
+	SetWakeListening(bool)
 }
 
 type modeAvailabilitySnapshot struct {
@@ -209,4 +210,52 @@ type settingsSnapshot struct {
 	ModelSelections            map[string]profiles.ModeModelSelectionSnapshot `json:"modelSelections"`
 	ProviderCredentials        map[string]providerCredentialState             `json:"providerCredentials"`
 	ProviderIntegrations       map[string]providerIntegrationState            `json:"providerIntegrations"`
+
+	// Wakeword surfaces the always-on activation-word listener configuration
+	// alongside the catalog of selectable phrases so the React Settings panel
+	// can render the toggle + dropdown without a second round-trip.
+	Wakeword wakewordSettingsSnapshot `json:"wakeword"`
+}
+
+// wakewordSettingsSnapshot is the JSON-friendly shape of WakewordConfig
+// plus runtime info (active status, catalog entries) for the Settings UI.
+type wakewordSettingsSnapshot struct {
+	// Enabled mirrors cfg.Wakeword.Enabled.
+	Enabled bool `json:"enabled"`
+
+	// PhraseID is the currently selected catalog entry. Empty means
+	// "custom" mode driven by ModelPath.
+	PhraseID string `json:"phraseId"`
+
+	// DefaultMode is the runtime mode to trigger ("dictate" | "assist"
+	// | "voice_agent").
+	DefaultMode string `json:"defaultMode"`
+
+	// Threshold is the user-overridden detection threshold. 0 means
+	// "use the catalog's recommended value".
+	Threshold float64 `json:"threshold"`
+
+	// MinConsecutiveFrames and CooldownMs are the rolling debounce knobs.
+	MinConsecutiveFrames int `json:"minConsecutiveFrames"`
+	CooldownMs           int `json:"cooldownMs"`
+
+	// Active reflects whether the wake runtime is currently listening
+	// (Enabled AND model files present AND audio device available).
+	Active bool `json:"active"`
+
+	// StatusMessage is a short human-readable status line for the panel
+	// — e.g. "Listening for Hey Quby" or "Disabled: model file missing".
+	StatusMessage string `json:"statusMessage"`
+
+	// PhraseCatalog lists every curated entry the user can pick from in
+	// the dropdown.
+	PhraseCatalog []wakewordCatalogEntry `json:"phraseCatalog"`
+}
+
+// wakewordCatalogEntry mirrors wakeword.PhraseCatalogEntry for JSON.
+type wakewordCatalogEntry struct {
+	ID           string `json:"id"`
+	DisplayName  string `json:"displayName"`
+	KeywordLabel string `json:"keywordLabel"`
+	Notes        string `json:"notes"`
 }

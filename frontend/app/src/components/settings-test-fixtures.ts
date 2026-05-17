@@ -1,3 +1,4 @@
+import { defaultWakewordSettings } from "@/lib/speechkit";
 import type { SpeechKitSettingsState } from "@/lib/speechkit";
 
 export const baseSettings: SpeechKitSettingsState = {
@@ -107,4 +108,5 @@ export const baseSettings: SpeechKitSettingsState = {
       source: "none",
     },
   },
+  wakeword: defaultWakewordSettings,
 };

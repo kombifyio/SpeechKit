@@ -76,6 +76,21 @@ func buildNextConfig(form settingsFormData, cfg *config.Config) config.Config {
 	nextCfg.General.ModelDownloadDir = form.ModelDownloadDir
 	nextCfg.Vocabulary.Dictionary = form.VocabularyDictionary
 	nextCfg.General.Language = form.Language
+
+	// Wake-word: preserve catalog-driven defaults for anything the form
+	// doesn't supply (e.g. ModelPath stays empty so the resolver looks
+	// up the catalog entry on next runtime start).
+	nextCfg.Wakeword.Enabled = form.WakewordEnabled
+	nextCfg.Wakeword.PhraseID = form.WakewordPhraseID
+	nextCfg.Wakeword.DefaultMode = config.NormalizeWakewordDefaultMode(form.WakewordDefaultMode)
+	nextCfg.Wakeword.Threshold = form.WakewordThreshold
+	if form.WakewordMinConsecutiveFrames > 0 {
+		nextCfg.Wakeword.MinConsecutiveFrames = form.WakewordMinConsecutiveFrames
+	}
+	if form.WakewordCooldownMs > 0 {
+		nextCfg.Wakeword.CooldownMs = form.WakewordCooldownMs
+	}
+
 	return nextCfg
 }
 

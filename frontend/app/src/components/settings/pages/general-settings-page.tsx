@@ -1,6 +1,7 @@
 import { MicSelector } from "@/components/ui/mic-selector";
 import { Chip, Row, Section } from "@/components/settings/settings-primitives";
 import type { ConfigurableMode } from "@/components/settings/settings-state";
+import { WakewordPanel } from "@/components/settings/wakeword-panel";
 import type { SpeechKitSettingsState } from "@/lib/speechkit";
 import {
   releaseFeatureFlags,
@@ -71,6 +72,15 @@ export function GeneralSettingsPage({
             className="w-full"
           />
         </Section>
+
+        {/* Wake-word lives in General because it spans modes — the
+           user picks ONE phrase and ONE target mode globally. Per-mode
+           wake phrases are a future feature; see backlog
+           kombify-SpeechKit-aps. */}
+        <WakewordPanel
+          settings={settings}
+          onChange={(next) => updateSettings({ wakeword: next.wakeword })}
+        />
       </div>
 
       <div className="flex flex-col gap-5">

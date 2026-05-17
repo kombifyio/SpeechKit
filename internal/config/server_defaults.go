@@ -14,6 +14,8 @@ const (
 	defaultServerLLMModel   = DefaultLocalLLMModel
 	defaultServerSQLitePath = "/var/lib/speechkit/data/speechkit.db"
 
+	serverPublicURLEnv         = "SPEECHKIT_PUBLIC_URL"
+	serverPublicURLAliasEnv    = "SPEECHKIT_SERVER_PUBLIC_URL"
 	serverPostgresDSNEnv       = "POSTGRES_DSN"
 	serverSpeechKitPostgresEnv = "SPEECHKIT_POSTGRES_DSN"
 	serverLiveKitURLEnv        = "LIVEKIT_URL"
@@ -30,9 +32,9 @@ func ApplyServerRuntimeDefaults(cfg *Config) []string {
 
 	var notes []string
 
-	if publicURL := strings.TrimRight(strings.TrimSpace(os.Getenv("SPEECHKIT_PUBLIC_URL")), "/"); publicURL != "" && strings.TrimSpace(cfg.Server.PublicURL) == "" {
-		cfg.Server.PublicURL = publicURL
-		notes = append(notes, "server public URL default: "+publicURL)
+	if publicURL, envName := firstPresentEnv(serverPublicURLEnv, serverPublicURLAliasEnv); publicURL != "" && strings.TrimSpace(cfg.Server.PublicURL) == "" {
+		cfg.Server.PublicURL = strings.TrimRight(publicURL, "/")
+		notes = append(notes, "server public URL default from "+envName+": "+cfg.Server.PublicURL)
 	}
 
 	if postgresDSN, envName := firstPresentEnv(serverSpeechKitPostgresEnv, serverPostgresDSNEnv); postgresDSN != "" {
@@ -89,8 +91,17 @@ func ApplyServerRuntimeDefaults(cfg *Config) []string {
 	if strings.TrimSpace(cfg.VPS.APIKeyEnv) == "" || strings.TrimSpace(cfg.VPS.APIKeyEnv) == "VPS_API_KEY" {
 		cfg.VPS.APIKeyEnv = "SPEECHKIT_SELFHOSTED_STT_API_KEY"
 	}
-	if strings.TrimSpace(cfg.Routing.Strategy) == "" {
+	// The kernel's default config Strategy is "local-only" because the
+	// Device-Target embeds an in-process whisper.cpp Local provider. The
+	// Server-Target has no such Local provider — it reaches whisper.cpp
+	// over the network via the VPS-shaped client at SPEECHKIT_SELFHOSTED_
+	// STT_URL. Force Strategy to cloud-only here (not just default-when-
+	// empty) so a fresh self-hosted install routes through the VPS
+	// provider instead of failing with "local provider not configured".
+	switch strings.TrimSpace(strings.ToLower(cfg.Routing.Strategy)) {
+	case "", "local-only":
 		cfg.Routing.Strategy = "cloud-only"
+		notes = append(notes, "self-hosted routing: forced strategy=cloud-only (server reaches whisper.cpp via VPS endpoint)")
 	}
 
 	llmBaseURL := envOrDefault("SPEECHKIT_SELFHOSTED_LLM_BASE_URL", defaultServerLLMBaseURL)

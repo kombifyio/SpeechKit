@@ -14,6 +14,7 @@ require (
 	github.com/google/uuid v1.6.0
 	github.com/hajimehoshi/go-mp3 v0.3.4
 	github.com/jackc/pgx/v5 v5.9.2
+	github.com/k2-fsa/sherpa-onnx-go v1.13.2
 	github.com/livekit/media-sdk v0.0.0-20260424094251-1e21ae1138de
 	github.com/livekit/protocol v1.45.5-0.20260423163244-347de5a2ef78
 	github.com/livekit/server-sdk-go/v2 v2.16.3
@@ -21,7 +22,6 @@ require (
 	github.com/pion/webrtc/v4 v4.2.11
 	github.com/spf13/cobra v1.10.2
 	github.com/wailsapp/wails/v3 v3.0.0-alpha.74
-	github.com/yalue/onnxruntime_go v1.27.0
 	golang.org/x/crypto v0.50.0
 	golang.org/x/sys v0.43.0
 	golang.org/x/text v0.36.0
@@ -88,6 +88,9 @@ require (
 	github.com/jchv/go-winloader v0.0.0-20250406163304-c1995be93bd1 // indirect
 	github.com/josharian/intern v1.0.0 // indirect
 	github.com/jxskiss/base62 v1.1.0 // indirect
+	github.com/k2-fsa/sherpa-onnx-go-linux v1.13.2 // indirect
+	github.com/k2-fsa/sherpa-onnx-go-macos v1.13.2 // indirect
+	github.com/k2-fsa/sherpa-onnx-go-windows v1.13.2 // indirect
 	github.com/kevinburke/ssh_config v1.4.0 // indirect
 	github.com/klauspost/compress v1.18.4 // indirect
 	github.com/klauspost/cpuid/v2 v2.3.0 // indirect

@@ -613,9 +613,10 @@ paths:
       summary: Create a Voice Agent session and ticket
       description: |
         Creates a session record and returns a one-time HMAC ticket the
-        client uses to upgrade the WebSocket. Tickets expire (default 30 s)
-        and are bound to the session ID — they cannot be replayed against
-        a different session.
+        client uses to upgrade the WebSocket. Tickets expire (default 90 s),
+        are single-use, and are bound to the session ID — they cannot be
+        replayed against a different session. Expired tickets are not
+        refreshed in v1; create a new session.
 
         The WebSocket upgrade itself happens at
         `GET /v1/voiceagent/sessions/{id}/ws?ticket=...` and is documented
@@ -627,6 +628,11 @@ paths:
         Render-hosted LiveKit is the target media service for production;
         this API does not require a host migration. SpeechKit remains the
         token issuer and policy boundary.
+
+        Missing realtime provider keys do not turn this endpoint into a 404.
+        The session can still be created while `/readyz` reports the provider
+        as degraded; the WebSocket start emits a provider connection error such
+        as `provider_connect_failed`.
 
         WebSocket control frames are JSON text messages. The first client
         frame must be `{"type":"start"}` and may include `persona_id`,
@@ -1564,6 +1570,7 @@ components:
 
     CreateSessionResponse:
       type: object
+      required: [session_id, ws_url, ticket, expires_at]
       properties:
         session_id: { type: string }
         ws_url:
@@ -1571,12 +1578,20 @@ components:
           format: uri
           description: |
             Use this exact URL (already includes the `?ticket=…` query
-            param) to open the WebSocket. Tickets are HMAC-bound to the
-            session id and expire after the configured TTL (default 30 s).
-        ticket: { type: string }
+            param) to open the WebSocket. Browser clients do not send bearer
+            tokens in the WebSocket handshake. Tickets are HMAC-bound to the
+            session id, single-use, and expire after the configured TTL
+            (default 90 s). Expired tickets are not refreshed in v1; create a
+            new session. Set SPEECHKIT_PUBLIC_URL (or alias
+            SPEECHKIT_SERVER_PUBLIC_URL) for browser-facing Docker/proxy
+            deployments so `ws_url` uses the public origin.
+        ticket:
+          type: string
+          description: One-time WebSocket upgrade ticket already embedded in `ws_url`.
         expires_at:
           type: string
           format: date-time
+          description: Ticket expiry timestamp.
         livekit:
           $ref: '#/components/schemas/LiveKitJoinInfo'
 

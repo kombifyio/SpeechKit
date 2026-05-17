@@ -55,6 +55,12 @@ services:
     # Use a thin alpine image with curl and jq so the test script stays
     # in this compose file rather than a separate Go binary. The real
     # performance-comparison harness (M9c) will be a Go tool.
+    #
+    # Tagged with the "smoke" profile so server-linux.yml's existing
+    # smoke job runs only this client (no profile is implicit-activate
+    # by default; the local-only profile must NOT pull this client in
+    # or --abort-on-container-exit kills the local-only stack early).
+    profiles: ["smoke"]
     image: alpine:3.20
     depends_on:
       speechkit-server:
@@ -140,6 +146,55 @@ services:
           set -- "$$@" --voiceagent-text "$$SPEECHKIT_E2E_VOICEAGENT_TEXT"
         fi
         go run ./cmd/sk-e2e "$$@"
+
+  # ── local-only profile ────────────────────────────────────────────────
+  # Runs sk-e2e --local-only against the server with no cloud keys.
+  # Model pre-population is a workflow concern in install-e2e-linux.yml
+  # (NOT a compose service) because --abort-on-container-exit aborts on
+  # ANY service exit — including a one-shot "prepare" container — which
+  # tore the stack down before the test client could run. Models are
+  # seeded into the speechkit-test-models named volume from the host
+  # cache before the compose stack starts.
+  local-only-test-client:
+    profiles: ["local-only"]
+    image: golang:1.26
+    working_dir: /workspace
+    depends_on:
+      speechkit-server:
+        condition: service_healthy
+    volumes:
+      - ../..:/workspace
+      - speechkit-test-models:/var/lib/speechkit/models
+    environment:
+      # Assert all cloud keys are unset before going further. Compose
+      # treats unset env-var keys as removed (not blank), which is what
+      # we want here.
+      GOOGLE_AI_API_KEY: ""
+      OPENAI_API_KEY: ""
+      GROQ_API_KEY: ""
+      OPENROUTER_API_KEY: ""
+      HF_TOKEN: ""
+      GOOGLE_STT_API_KEY: ""
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        set -euo pipefail
+        for k in GOOGLE_AI_API_KEY OPENAI_API_KEY GROQ_API_KEY OPENROUTER_API_KEY HF_TOKEN GOOGLE_STT_API_KEY; do
+          v=$$(printenv "$$k" || true)
+          if [ -n "$$v" ]; then
+            echo "local-only-test-client: $$k is set; refusing to run" >&2
+            exit 2
+          fi
+        done
+        go run ./cmd/sk-e2e \
+          --server http://speechkit-server:8080 \
+          --token e2e-dev-token \
+          --scenarios all \
+          --require-functional \
+          --local-only \
+          --timeout 180s \
+          --audio-fixture testdata/e2e/dictation/hello-world.wav \
+          --expect-dictation-text "(?i)hello,?\\s+world"
 
 volumes:
   speechkit-test-models:

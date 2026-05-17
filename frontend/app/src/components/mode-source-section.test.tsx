@@ -24,7 +24,12 @@ const serverConnection: ServerConnectionSetting = {
   url: "https://speechkit.example.com",
   bearerTokenEnv: "SPEECHKIT_SERVER_TOKEN",
   authMode: "bearer",
-  bearerTokenSet: false,
+  // bearerTokenSet=true represents a fully-ready connection (URL + token).
+  // The frontend now blocks clicks on the Server pill when readiness != ready,
+  // so these tests need a ready fixture; readiness=not-configured/token-missing
+  // is covered by the dedicated "blocks ... without prompting the backend"
+  // test below.
+  bearerTokenSet: true,
   fallbackToLocal: true,
   requestTimeoutSec: 30,
 };
@@ -118,6 +123,48 @@ describe("ModeSourceSection", () => {
       });
     });
     expect(mocks.fetchAPIV1ServerConnection).not.toHaveBeenCalled();
+  });
+
+  it("blocks the Server pill with an actionable hint when the connection is not configured", async () => {
+    const notConfigured: ServerConnectionSetting = {
+      ...serverConnection,
+      url: "",
+      bearerTokenSet: true,
+      targets: [],
+    };
+    render(<ModeSourceSection serverConnection={notConfigured} />);
+
+    const dictationGroup = await screen.findByRole("radiogroup", {
+      name: "Dictation mode source",
+    });
+    const serverPill = within(dictationGroup).getByRole("radio", {
+      name: /server/i,
+    });
+    expect(serverPill).toBeDisabled();
+    fireEvent.click(serverPill);
+
+    expect(mocks.patchAPIV1ServerConnection).not.toHaveBeenCalled();
+    expect(mocks.patchAPIV1ModeSettings).not.toHaveBeenCalled();
+    expect(
+      screen.getAllByText(/Register a server target/i).length,
+    ).toBeGreaterThan(0);
+  });
+
+  it("blocks the global Server radio when token is missing and names the env var", async () => {
+    const tokenMissing: ServerConnectionSetting = {
+      ...serverConnection,
+      bearerTokenSet: false,
+      bearerTokenEnv: "SPEECHKIT_SERVER_TOKEN",
+    };
+    render(<ModeSourceSection serverConnection={tokenMissing} />);
+
+    const globalGroup = await screen.findByRole("radiogroup", {
+      name: "Global mode source",
+    });
+    const serverPill = within(globalGroup).getByRole("radio", {
+      name: /server/i,
+    });
+    expect(serverPill).toBeDisabled();
   });
 
   it("applies global mode source updates sequentially", async () => {

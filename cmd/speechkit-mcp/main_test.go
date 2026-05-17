@@ -115,7 +115,10 @@ func TestDocsModeEmbedsAgentMarkdownEntrypoints(t *testing.T) {
 		"docs/agent/llms-full.txt",
 		"docs/agent/getting-started/technical.md",
 		"docs/agent/getting-started/agents.md",
+		"docs/agent/getting-started/agents/voice-game-moderator.md",
 		"docs/agent/install/server.md",
+		"docs/agent/install-server/docker-compose.example.yml",
+		"docs/agent/schemas/speechkit-one-shot-functional-result.schema.json",
 		"docs/agent/mcp/speechkit-mcp.md",
 	} {
 		body := docs[path]

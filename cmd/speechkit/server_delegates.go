@@ -13,6 +13,7 @@ package main
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"strings"
 
@@ -113,6 +114,34 @@ func anyServerModeSelected(cfg *config.Config) bool {
 	return cfg.ModelSelection.Dictate.ResolvedModeSource() == config.ModeSourceServer ||
 		cfg.ModelSelection.Assist.ResolvedModeSource() == config.ModeSourceServer ||
 		cfg.ModelSelection.VoiceAgent.ResolvedModeSource() == config.ModeSourceServer
+}
+
+// validateServerConnectionForActiveModes returns a user-facing apiV1UserError
+// describing exactly what the operator still needs to do before any mode can
+// run server-side. Returns nil when no mode opts into server execution, or
+// when the connection is fully configured.
+//
+// This is the trust boundary between the React UI and the serverclient
+// transport: catching the misconfiguration here means the user sees
+// "Configure a server target first" instead of the raw Go error
+// "serverclient: server_connection.url is required when enabled" surfacing
+// out of internal/serverclient.
+func validateServerConnectionForActiveModes(cfg *config.Config) error {
+	if cfg == nil || !anyServerModeSelected(cfg) {
+		return nil
+	}
+	url := strings.TrimSpace(cfg.ServerConnection.URL)
+	if url == "" {
+		return apiV1UserError("No SpeechKit server is configured. Add a server URL under SpeechKit Server > Server Target, then switch the mode again.")
+	}
+	envName := strings.TrimSpace(cfg.ServerConnection.BearerTokenEnv)
+	if envName == "" {
+		envName = "SPEECHKIT_SERVER_TOKEN"
+	}
+	if strings.TrimSpace(config.ResolveSecret(envName)) == "" {
+		return apiV1UserError(fmt.Sprintf("Server token %q is missing. Set it in the New Server form (Token value) or as an environment variable, then try again.", envName))
+	}
+	return nil
 }
 
 // hasDictation reports whether Dictation should run server-side. nil-safe.

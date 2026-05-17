@@ -8,6 +8,15 @@ info:
     A client first calls `POST /v1/voiceagent/sessions` (see openapi.v1.yaml)
     to obtain a session id and a single-use `ticket`, then upgrades a
     WebSocket to `GET /v1/voiceagent/sessions/{id}/ws?ticket=...`.
+    Browser WebSocket auth uses only this `?ticket=` query parameter. Do not
+    send the HTTP bearer token in the browser WebSocket handshake.
+
+    Tickets default to 90 seconds, are single-use, and are not refreshed in v1.
+    If a ticket expires before upgrade, create a new Voice Agent session.
+    Browser-facing Docker/proxy deployments should set `SPEECHKIT_PUBLIC_URL`
+    (or compatibility alias `SPEECHKIT_SERVER_PUBLIC_URL`) so the HTTP session
+    response returns a browser-reachable `ws_url` rather than a container
+    hostname.
 
     The protocol multiplexes two kinds of frames over the same WebSocket:
 
@@ -22,6 +31,13 @@ info:
     the control channel for start, transcripts, tool calls, errors, workflow
     steps, and shutdown. Microphone and model audio move through LiveKit audio
     tracks; WebSocket binary audio is rejected for that session.
+
+    Media transport matrix:
+
+    | media_transport | Control frames | Client audio | Model audio | Provider support |
+    |---|---|---|---|---|
+    | websocket (default) | SpeechKit WS JSON | SpeechKit WS binary PCM | SpeechKit WS binary PCM | Gemini, OpenAI, cascaded providers |
+    | livekit | SpeechKit WS JSON | LiveKit audio track | LiveKit audio track | Gemini and OpenAI native realtime providers |
 
     Field guarantees follow the same rules as openapi.v1.yaml: additive
     across minor releases, no rename or removal without a v2 bump.
@@ -145,7 +161,9 @@ components:
       name: ticket
       description: |
         Single-use session ticket minted by `POST /v1/voiceagent/sessions`.
-        Bound to the session id and consumed at WebSocket upgrade.
+        Bound to the session id and consumed at WebSocket upgrade. Use this
+        query value only; browser clients do not send `Authorization: Bearer`
+        in the WebSocket handshake.
 
   messages:
     # client to server JSON

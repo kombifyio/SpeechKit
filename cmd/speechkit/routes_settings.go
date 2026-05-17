@@ -53,6 +53,7 @@ func saveSettings(ctx context.Context, req *http.Request, cfgPath string, cfg *c
 	oldVoiceAgentHotkey := cfg.General.VoiceAgentHotkey
 	oldVoiceAgentProfileID := cfg.VoiceAgent.AgentProfileID
 	oldAudioDeviceID := cfg.Audio.DeviceID
+	oldWakewordCfg := cfg.Wakeword
 
 	managedHFEnabled := config.ApplyManagedIntegrationDefaults(&nextCfg)
 	needsHFRefresh := managedHFEnabled ||
@@ -132,6 +133,21 @@ func saveSettings(ctx context.Context, req *http.Request, cfgPath string, cfg *c
 		form.AudioDeviceID,
 		form.OverlayEnabled,
 	)
+
+	// Hot-reload the wake-word runtime when relevant fields changed.
+	// Skipping when the config is identical avoids dropping the audio
+	// session for a no-op settings save (e.g. user toggled an overlay
+	// setting and clicked Apply).
+	if !wakewordConfigEquals(oldWakewordCfg, cfg.Wakeword) {
+		state.mu.Lock()
+		hkMgr := state.hkManager
+		state.mu.Unlock()
+		if mode, ok := hkMgr.(*modeHotkeyManager); ok {
+			restartDesktopWakeword(ctx, cfg, state, mode)
+		} else if hkMgr == nil {
+			slog.Warn("wakeword: hotkey manager unavailable, cannot hot-reload — restart the app to apply wake-word changes")
+		}
+	}
 
 	return msgSaved
 }

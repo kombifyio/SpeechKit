@@ -47,6 +47,18 @@ func loadDesktopStartupConfig() (string, *config.Config, *config.InstallState, e
 	if config.ApplyManagedIntegrationDefaults(cfg) {
 		slog.Info("managed integration: Hugging Face enabled by explicit opt-in with resolved credentials")
 	}
+	// Seed kombify-hosted server target presets into [server_connection].Targets
+	// so the device Settings UI shows speechkit.kombify.io + api.kombify.io +
+	// huggingface-inference as switchable options on every Windows launch. No-op
+	// in OSS builds (gated by ManagedDevServerAvailableInBuild) and idempotent —
+	// user-customised entries with matching IDs are left intact.
+	if config.ApplyManagedDevServerDefaults(cfg) {
+		if err := config.Save(cfgPath, cfg); err != nil {
+			slog.Warn("save managed dev server defaults", "err", err)
+		} else {
+			slog.Info("managed dev server: seeded kombify server presets into server_connection.targets")
+		}
+	}
 
 	return cfgPath, cfg, installState, nil
 }

@@ -246,7 +246,13 @@ func Run(ctx context.Context, cfg *config.Config, opts RunOptions) error {
 		case app.TTSRouter != nil && app.TTSEnabled:
 			app.Health.SetReady("api.tts_direct", StatusOK, "listening")
 		case !cfg.TTS.Enabled:
-			app.Health.SetReady("api.tts_direct", StatusUnavailable, "tts disabled")
+			// TTS deliberately off (self-hosted defaults disable it when
+			// no cloud TTS key is present). Mark non-blocking so /readyz
+			// stays green for the other modes that don't depend on TTS.
+			app.Health.SetReadyWithOptions("api.tts_direct", StatusUnavailable, "tts disabled", ComponentOptions{
+				Blocking: false,
+				Kind:     "feature",
+			})
 		default:
 			app.Health.SetReady("api.tts_direct", StatusUnavailable, "tts router unavailable")
 		}

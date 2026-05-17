@@ -2,11 +2,12 @@
 set -eu
 
 INSTALL_DIR="/opt/speechkit"
-PUBLIC_URL="${SPEECHKIT_PUBLIC_URL:-http://localhost:8080}"
+PUBLIC_URL="${SPEECHKIT_PUBLIC_URL:-${SPEECHKIT_SERVER_PUBLIC_URL:-http://localhost:8080}}"
 PUBLIC_HOST="${SPEECHKIT_PUBLIC_HOST:-}"
 SERVER_IMAGE="${SPEECHKIT_SERVER_IMAGE:-ghcr.io/kombifyio/speechkit-server:latest}"
 ONBOARDING_UI="true"
 START_STACK="true"
+STRICT_LOCAL_ONLY="false"
 
 usage() {
   cat <<'EOF'
@@ -21,6 +22,9 @@ Options:
   --ready             Disable onboarding UI for ready-to-run container deploys.
   --no-ui             Alias for --ready.
   --no-up             Write compose/.env only; do not start containers.
+  --strict-local-only Refuse to run when any cloud-provider env key is set.
+                      Used by install-e2e-linux.yml to enforce the local-
+                      only guarantee at install time.
   -h, --help          Show this help.
 
 Setup modes:
@@ -65,6 +69,10 @@ while [ "$#" -gt 0 ]; do
       START_STACK="false"
       shift
       ;;
+    --strict-local-only)
+      STRICT_LOCAL_ONLY="true"
+      shift
+      ;;
     -h|--help)
       usage
       exit 0
@@ -92,6 +100,21 @@ fi
 if [ -z "$PUBLIC_HOST" ]; then
   echo "Could not derive public host from --public-url. Pass --public-host." >&2
   exit 2
+fi
+
+if [ "$STRICT_LOCAL_ONLY" = "true" ]; then
+  local_only_failed=0
+  for key in GOOGLE_AI_API_KEY OPENAI_API_KEY GROQ_API_KEY OPENROUTER_API_KEY HF_TOKEN GOOGLE_STT_API_KEY; do
+    val=$(printenv "$key" 2>/dev/null || true)
+    if [ -n "$val" ]; then
+      echo "strict-local-only: $key is set in env; install-server.sh refuses to write a non-local config" >&2
+      local_only_failed=1
+    fi
+  done
+  if [ "$local_only_failed" = "1" ]; then
+    exit 2
+  fi
+  echo "strict-local-only: no cloud-provider keys detected — proceeding with local-only defaults"
 fi
 
 SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
@@ -148,6 +171,11 @@ upsert_env "SPEECHKIT_SERVER_IMAGE" "$SERVER_IMAGE"
 upsert_env "SPEECHKIT_PUBLIC_URL" "$PUBLIC_URL"
 upsert_env "SPEECHKIT_PUBLIC_HOST" "$PUBLIC_HOST"
 upsert_env "SPEECHKIT_SELFHOSTED_DEFAULTS" "true"
+# Activate the whisper + llama sidecars declared in docker-compose.yml
+# so the self-hosted defaults the server falls back to actually have
+# something at the other end of the SPEECHKIT_SELFHOSTED_STT_URL and
+# SPEECHKIT_SELFHOSTED_LLM_BASE_URL endpoints.
+upsert_env "COMPOSE_PROFILES" "local"
 upsert_env "SPEECHKIT_SELFHOSTED_WHISPER_MODEL" "large-v3-turbo"
 upsert_env "SPEECHKIT_SELFHOSTED_STT_MODEL" "whisper-1"
 upsert_env "SPEECHKIT_SELFHOSTED_LLM_REPO" "ggml-org/gemma-4-E4B-it-GGUF:Q4_K_M"

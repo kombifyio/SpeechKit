@@ -889,6 +889,11 @@ describe("DashboardApp", () => {
 
     fireEvent.click(screen.getByRole("button", { name: /^continue$/i }));
 
+    // Wake-word step (inserted between integrations and the completion screen
+    // by task #20): click "Skip" to leave wake-word disabled and reach the
+    // final "Start Using SpeechKit" screen the assertions below rely on.
+    fireEvent.click(await screen.findByRole("button", { name: /^skip$/i }));
+
     expect(await screen.findByText("Ctrl+Win")).toBeInTheDocument();
     expect(
       screen.getByText("Open a text field, speak one sentence, then check the output"),
@@ -987,6 +992,9 @@ describe("DashboardApp", () => {
     );
 
     fireEvent.click(screen.getByRole("button", { name: /^continue$/i }));
+    // Wake-word step (task #20) sits between integrations and the completion
+    // screen — Skip to keep wake-word off and proceed.
+    fireEvent.click(await screen.findByRole("button", { name: /^skip$/i }));
     fireEvent.click(
       await screen.findByRole("button", { name: /start using speechkit/i }),
     );
@@ -1078,6 +1086,8 @@ describe("DashboardApp", () => {
     );
     fireEvent.click(await screen.findByRole("button", { name: /^continue/i }));
     fireEvent.click(await screen.findByRole("button", { name: /^continue$/i }));
+    // Wake-word step (task #20): Skip to advance to the completion screen.
+    fireEvent.click(await screen.findByRole("button", { name: /^skip$/i }));
     fireEvent.click(
       await screen.findByRole("button", { name: /start using speechkit/i }),
     );

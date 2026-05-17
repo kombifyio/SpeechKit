@@ -229,6 +229,77 @@ func TestAPIV1ServerConnectionPatchAppliesAPIKeyAuthMode(t *testing.T) {
 	}
 }
 
+func TestAPIV1ModeSourceServerRejectsWhenServerURLMissing(t *testing.T) {
+	// Reproduces the bug where the UI showed a green "token set" badge
+	// (SPEECHKIT_SERVER_TOKEN resolved in env) but flipping a mode to
+	// "server" with no registered target produced the raw Go error
+	// "serverclient: server_connection.url is required when enabled".
+	// The patch now must fail with a user-facing message that names
+	// the next action.
+	t.Setenv("SPEECHKIT_SERVER_TOKEN", "secret")
+	cfg := defaultTestConfig()
+	cfg.ServerConnection = config.ServerConnectionConfig{
+		Enabled:        false,
+		URL:            "",
+		BearerTokenEnv: "SPEECHKIT_SERVER_TOKEN",
+		AuthMode:       config.ServerConnectionAuthModeBearer,
+	}
+	cfg.ModelSelection.Dictate.ModeSource = config.ModeSourceLocal
+	cfgPath := filepath.Join(t.TempDir(), "config.toml")
+	modeSource := config.ModeSourceServer
+
+	err := applyAPIV1ModeSettingsPatch(
+		context.Background(),
+		cfgPath,
+		cfg,
+		&appState{},
+		&router.Router{},
+		modeDictate,
+		apiV1ModeSettingsPatch{ModeSource: &modeSource},
+	)
+	if err == nil {
+		t.Fatal("err = nil, want user-facing validation error")
+	}
+	if strings.Contains(err.Error(), "serverclient:") {
+		t.Fatalf("error %q leaks the internal package name; should be user-friendly", err.Error())
+	}
+	if !strings.Contains(err.Error(), "Server Target") && !strings.Contains(err.Error(), "server URL") {
+		t.Fatalf("error %q does not point the user at the next action", err.Error())
+	}
+}
+
+func TestAPIV1ModeSourceServerRejectsWhenTokenMissing(t *testing.T) {
+	// URL is configured but the env var holding the bearer token is empty.
+	// The patch must surface the env var name so the operator knows what
+	// to set.
+	t.Setenv("SC_TEST_NO_TOKEN", "")
+	cfg := defaultTestConfig()
+	cfg.ServerConnection = config.ServerConnectionConfig{
+		Enabled:        false,
+		URL:            "http://127.0.0.1:8080",
+		BearerTokenEnv: "SC_TEST_NO_TOKEN",
+		AuthMode:       config.ServerConnectionAuthModeBearer,
+	}
+	cfgPath := filepath.Join(t.TempDir(), "config.toml")
+	modeSource := config.ModeSourceServer
+
+	err := applyAPIV1ModeSettingsPatch(
+		context.Background(),
+		cfgPath,
+		cfg,
+		&appState{},
+		&router.Router{},
+		modeDictate,
+		apiV1ModeSettingsPatch{ModeSource: &modeSource},
+	)
+	if err == nil {
+		t.Fatal("err = nil, want user-facing validation error")
+	}
+	if !strings.Contains(err.Error(), "SC_TEST_NO_TOKEN") {
+		t.Fatalf("error %q does not name the missing env var", err.Error())
+	}
+}
+
 func TestAPIV1VoiceAgentModeSourceSwitchResetsCachedSession(t *testing.T) {
 	t.Setenv("SC_TEST_SERVER_TOKEN", "secret")
 	cfg := defaultTestConfig()

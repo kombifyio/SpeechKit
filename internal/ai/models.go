@@ -33,8 +33,11 @@ var localLLMCallValidation = netsec.ValidationOptions{AllowLoopback: true, Allow
 
 // newAIClient builds a hardened HTTP client for LLM calls (TLS 1.2+,
 // redacting transport, resolve-time IP validation, long-running timeout).
+// The 180s ceiling accommodates first-token latency of CPU-bound local
+// llama-server on large prompts; cloud providers normally respond in seconds
+// and the larger ceiling only kicks in on genuine slowness.
 func newAIClient(validation *netsec.ValidationOptions) *http.Client {
-	return netsec.NewSafeHTTPClient(netsec.ClientOptions{Timeout: 60 * time.Second, DialValidation: validation})
+	return netsec.NewSafeHTTPClient(netsec.ClientOptions{Timeout: 180 * time.Second, DialValidation: validation})
 }
 
 // registerOpenAIModels registers OpenAI models as custom Genkit models.

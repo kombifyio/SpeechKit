@@ -40,6 +40,13 @@ func TestSessionManager_GeneratesSecretWhenAbsent(t *testing.T) {
 	}
 }
 
+func TestSessionManager_DefaultTicketTTL(t *testing.T) {
+	m := mustManager(t, Options{})
+	if m.opts.TicketTTL != 90*time.Second {
+		t.Fatalf("TicketTTL = %s, want 90s default", m.opts.TicketTTL)
+	}
+}
+
 func TestSessionManager_CreateAndGet(t *testing.T) {
 	m := mustManager(t, Options{})
 	session, ticket, err := m.Create(Identity{UserID: "u1", OrgID: "o1"})

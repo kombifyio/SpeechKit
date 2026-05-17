@@ -12,7 +12,55 @@ export const onboardingHotkeyLabels = {
   voiceAgent: "Ctrl+Shift",
 } as const;
 
-export type WizardStep = "welcome" | "local_model" | "integrations" | "done";
+export type WizardStep =
+  | "welcome"
+  | "local_model"
+  | "integrations"
+  | "wake_word"
+  | "done";
+
+// Curated catalog of phrases the wake-word wizard step offers. IDs here
+// MUST match internal/wakeword/catalog.go DefaultCatalog() entries so the
+// backend's keyword-label resolution (DetectionEvent.Keyword → phrase
+// display name) lines up with the user's UI selection. The bundled
+// keywords.txt (see scripts/prepare-wakeword-model.ps1) ships
+// BPE-tokenised entries for every ID listed below.
+export const onboardingWakeWordPhrases: {
+  id: string;
+  displayName: string;
+  notes: string;
+}[] = [
+  {
+    id: "hey_quby",
+    displayName: "Hey Quby",
+    notes:
+      "SpeechKit brand default. Recognises three pronunciations (Quby / Cubi / Kubi) so it works in DE and EN.",
+  },
+  {
+    id: "hey_computer",
+    displayName: "Hey Computer",
+    notes:
+      "Star Trek classic — four syllables with very distinct phonemes. Best false-accept-rate of the curated set.",
+  },
+  {
+    id: "hey_jarvis",
+    displayName: "Hey Jarvis",
+    notes:
+      "Marvel-popular. Strong J/RV/S consonants make it easy to recognise even in noisy rooms.",
+  },
+  {
+    id: "hey_mira",
+    displayName: "Hey Mira",
+    notes:
+      "Short brand-style alternative. Three syllables, distinct vowels, equally natural in DE+EN.",
+  },
+  {
+    id: "hey_kombify",
+    displayName: "Hey Kombify",
+    notes:
+      "Kombify org brand. Four syllables with three distinct consonant onsets (K/B/F). English pronunciation only.",
+  },
+];
 
 export type IntegrationMode = "dictate" | "assist" | "voice_agent";
 

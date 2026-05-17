@@ -173,6 +173,102 @@ func ArtifactCatalog() []Item {
 			OllamaModel: "gemma4:e4b",
 			License:     "gemma",
 		},
+
+		// Wake-word models. The two "shared" entries (melspectrogram +
+		// embedding) are mandatory whenever wake-word is enabled; the
+		// phrase entries are user-selected (one of five). ProfileID
+		// "wakeword.shared" groups the always-needed files; phrase
+		// models use "wakeword.phrase.<id>" so the dashboard can render
+		// them as a "pick one" group. Trained 2026-05 via
+		// livekit-wakeword. All Apache-2.0. See
+		// docs/wakeword.md + tools/wakeword-training/README.md.
+		{
+			ID:          "wakeword.shared.melspec",
+			ProfileID:   "wakeword.shared",
+			Name:        "Wake-word: melspectrogram model (shared)",
+			Description: "openWakeWord-compatible melspectrogram frontend. Required by every wake phrase.",
+			SizeLabel:   "~1.1 MB",
+			SizeBytes:   1_087_958,
+			Kind:        KindHTTP,
+			URL:         "https://huggingface.co/Soulcreek2/speechkit-wakeword-models/resolve/main/melspectrogram.onnx",
+			SHA256:      "ba2b0e0f8b7b875369a2c89cb13360ff53bac436f2895cced9f479fa65eb176f",
+			License:     "apache",
+			Recommended: true,
+		},
+		{
+			ID:          "wakeword.shared.embedding",
+			ProfileID:   "wakeword.shared",
+			Name:        "Wake-word: embedding model (shared)",
+			Description: "openWakeWord-compatible embedding network. Required by every wake phrase.",
+			SizeLabel:   "~1.3 MB",
+			SizeBytes:   1_326_578,
+			Kind:        KindHTTP,
+			URL:         "https://huggingface.co/Soulcreek2/speechkit-wakeword-models/resolve/main/embedding_model.onnx",
+			SHA256:      "70d164290c1d095d1d4ee149bc5e00543250a7316b59f31d056cff7bd3075c1f",
+			License:     "apache",
+			Recommended: true,
+		},
+		{
+			ID:          "wakeword.phrase.hey_quby",
+			ProfileID:   "wakeword.phrase",
+			Name:        "Wake-phrase: Hey Quby (Cubi / Kubi)",
+			Description: "SpeechKit brand default. Trained on both Cubi and Kubi pronunciations. Recommended threshold 0.22, measured FPPH 0.06/h.",
+			SizeLabel:   "~165 KB",
+			SizeBytes:   164_607,
+			Kind:        KindHTTP,
+			URL:         "https://huggingface.co/Soulcreek2/speechkit-wakeword-models/resolve/main/hey_quby.onnx",
+			SHA256:      "d2219a70af63a12750b8d0a21fda38688b96841d21f564e57f99af7ba56951a6",
+			License:     "apache",
+			Recommended: true,
+		},
+		{
+			ID:          "wakeword.phrase.hey_computer",
+			ProfileID:   "wakeword.phrase",
+			Name:        "Wake-phrase: Hey Computer",
+			Description: "Star Trek classic. Four syllables, very distinct phonemes — best-in-class FAR. Recommended threshold 0.10, measured FPPH 0.00/h.",
+			SizeLabel:   "~165 KB",
+			SizeBytes:   164_607,
+			Kind:        KindHTTP,
+			URL:         "https://huggingface.co/Soulcreek2/speechkit-wakeword-models/resolve/main/hey_computer.onnx",
+			SHA256:      "3acbd9ffff04beba2d16ebdfd0d4c734d65fecdd22446f25f4d0afa6e5d7606b",
+			License:     "apache",
+		},
+		{
+			ID:          "wakeword.phrase.hey_jarvis",
+			ProfileID:   "wakeword.phrase",
+			Name:        "Wake-phrase: Hey Jarvis",
+			Description: "Marvel-popular wake phrase. Strong J/RV/S consonants. Recommended threshold 0.45, measured FPPH 0.06/h.",
+			SizeLabel:   "~165 KB",
+			SizeBytes:   164_607,
+			Kind:        KindHTTP,
+			URL:         "https://huggingface.co/Soulcreek2/speechkit-wakeword-models/resolve/main/hey_jarvis.onnx",
+			SHA256:      "7256019a18029c7bea33abc3344f7a3d0e07655cf4a5f18e65c9b6329eac3fb6",
+			License:     "apache",
+		},
+		{
+			ID:          "wakeword.phrase.hey_mira",
+			ProfileID:   "wakeword.phrase",
+			Name:        "Wake-phrase: Hey Mira",
+			Description: "Short brand-style alternative. 3 syllables, equally natural in German and English. Recommended threshold 0.08, measured FPPH 0.11/h.",
+			SizeLabel:   "~165 KB",
+			SizeBytes:   164_607,
+			Kind:        KindHTTP,
+			URL:         "https://huggingface.co/Soulcreek2/speechkit-wakeword-models/resolve/main/hey_mira.onnx",
+			SHA256:      "cb1f371f3a61dccc43c47bc79145f504b1e2e2ed1ab233a427494fb57378e794",
+			License:     "apache",
+		},
+		{
+			ID:          "wakeword.phrase.hey_kombify",
+			ProfileID:   "wakeword.phrase",
+			Name:        "Wake-phrase: Hey Kombify",
+			Description: "Organisation brand. 4 syllables, three distinct consonant onsets (K/B/F). English pronunciation only. Recommended threshold 0.55, measured FPPH 0.00/h.",
+			SizeLabel:   "~165 KB",
+			SizeBytes:   164_607,
+			Kind:        KindHTTP,
+			URL:         "https://huggingface.co/Soulcreek2/speechkit-wakeword-models/resolve/main/hey_kombify.onnx",
+			SHA256:      "24c6d2d1c235892362ebf12b0055801d2f8461f856e15d704c3d8262304f4c9f",
+			License:     "apache",
+		},
 	}
 }
 
@@ -302,6 +398,29 @@ func ResolveWhisperModelsDir(cfg *config.Config) string {
 		return filepath.Join(lad, "SpeechKit", "models")
 	}
 	return "models"
+}
+
+// ResolveWakewordModelsDir returns the directory where wake-word ONNX
+// model files live. Mirrors the resolution order used for whisper/LLM
+// models so all on-disk artifacts share one user-configurable directory.
+//
+// Wake-word models are downloaded on first activation when
+// cfg.Wakeword.Enabled is set and the model path is missing on disk. The
+// catalog entry that drives that download lives in ArtifactCatalog() once
+// a published .onnx URL is available; until then, power-users can place a
+// custom hey_quby.onnx (trained via tools/wakeword-training/hey_quby.yaml)
+// directly into this directory.
+func ResolveWakewordModelsDir(cfg *config.Config) string {
+	if cfg != nil {
+		if dir := strings.TrimSpace(cfg.General.ModelDownloadDir); dir != "" {
+			return filepath.Join(filepath.Clean(dir), "wakeword")
+		}
+	}
+	lad := os.Getenv("LOCALAPPDATA")
+	if lad != "" {
+		return filepath.Join(lad, "SpeechKit", "models", "wakeword")
+	}
+	return filepath.Join("models", "wakeword")
 }
 
 // ResolveLocalLLMModelsDir returns the directory where local llama.cpp GGUF files live.

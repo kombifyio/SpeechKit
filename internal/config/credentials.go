@@ -245,6 +245,68 @@ func ApplyManagedDevServerDefaults(cfg *Config) bool {
 		cfg.ServerConnection.RequestTimeoutSec = 30
 		changed = true
 	}
+	if applyManagedDevServerTargetPresets(&cfg.ServerConnection) {
+		changed = true
+	}
+	return changed
+}
+
+// applyManagedDevServerTargetPresets seeds the kombify-hosted SpeechKit-server
+// presets into ServerConnection.Targets so the device-target Settings UI
+// shows a switchable list out of the box. Only active for the managed
+// private build (gated by ManagedDevServerAvailableInBuild) — OSS builds get
+// nothing. The function never overwrites a target the user already edited:
+// presets are matched by ID and skipped if present, so renaming the label or
+// changing the URL of an existing preset is sticky.
+func applyManagedDevServerTargetPresets(cfg *ServerConnectionConfig) bool {
+	if cfg == nil {
+		return false
+	}
+	presets := []ServerConnectionTargetConfig{
+		{
+			ID:                "kombify-origin",
+			Label:             "kombify (speechkit.kombify.io)",
+			URL:               ManagedDevServerURL,
+			BearerTokenEnv:    "SPEECHKIT_SERVER_TOKEN", //nolint:gosec // env var name, not a credential
+			AuthMode:          ServerConnectionAuthModeBearer,
+			FallbackToLocal:   true,
+			RequestTimeoutSec: 30,
+		},
+		{
+			ID:                "kombify-gateway",
+			Label:             "kombify Gateway (api.kombify.io)",
+			URL:               "https://api.kombify.io/v1/speechkit",
+			BearerTokenEnv:    "INTERNAL_API_KEY", //nolint:gosec // env var name, not a credential
+			AuthMode:          ServerConnectionAuthModeAPIKey,
+			FallbackToLocal:   true,
+			RequestTimeoutSec: 30,
+		},
+		{
+			ID:                "huggingface-inference",
+			Label:             "Hugging Face Inference",
+			URL:               "https://api-inference.huggingface.co",
+			BearerTokenEnv:    "HF_TOKEN", //nolint:gosec // env var name, not a credential
+			AuthMode:          ServerConnectionAuthModeBearer,
+			FallbackToLocal:   true,
+			RequestTimeoutSec: 60,
+		},
+	}
+
+	existingByID := map[string]bool{}
+	for _, target := range cfg.Targets {
+		if id := strings.TrimSpace(target.ID); id != "" {
+			existingByID[id] = true
+		}
+	}
+
+	changed := false
+	for _, preset := range presets {
+		if existingByID[preset.ID] {
+			continue
+		}
+		cfg.Targets = append(cfg.Targets, preset)
+		changed = true
+	}
 	return changed
 }
 

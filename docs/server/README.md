@@ -59,6 +59,11 @@ curl -fsS -H "Authorization: Bearer $SPEECHKIT_SERVER_TOKEN" \
   -X POST http://localhost:8080/v1/assist/self-test
 ```
 
+The repository dev stack includes Postgres because it exercises the production
+store path. A fresh browser-facing local server can use SQLite only; use the
+agent/browser reference files at `docs/agent/install-server/docker-compose.example.yml`
+and `docs/agent/install-server/config.browser.example.toml`.
+
 Secrets can be injected by any operator-managed secret system. The Framework
 has no opinion on the secret manager, only on where values are read
 (`os.Getenv(<name from config>)`). The example values above are local
@@ -91,6 +96,8 @@ runtime credentials without storing secret values in JSON.
 | `SPEECHKIT_SERVER_AUTH_MODE` | Optional startup override: `none`, `bearer`, `edge_hmac`, or `bearer_or_edge`. |
 | `SPEECHKIT_SERVER_EDGE_AUTH_SECRET_ENV` | Optional custom env var name for the edge-HMAC shared secret. |
 | `SPEECHKIT_SERVER_BEARER_ROLE` | Optional role for bearer-token callers, for example `admin` in a single-operator deployment. |
+| `SPEECHKIT_PUBLIC_URL` | Canonical public HTTP base used to generate browser-reachable Voice Agent `ws_url` values. |
+| `SPEECHKIT_SERVER_PUBLIC_URL` | Compatibility alias for `SPEECHKIT_PUBLIC_URL`; ignored when the canonical variable is also set. |
 
 Authenticated public modes fail startup if the required env credential values
 are empty. `auth_mode = "none"` remains limited to local loopback/dev use.
@@ -143,6 +150,11 @@ curl -fsSL https://speechkit.cc/install-server.sh | sh
 The installer pulls `ghcr.io/kombifyio/speechkit-server:latest`, which tracks
 the most recent stable release.
 
+Automation path: for a fresh local server that an agent should call
+immediately, set `SPEECHKIT_SERVER_TOKEN` in the environment before first
+start. Otherwise finish the first-run setup through `/v1/server/settings`
+before creating Dictation, Assist, or Voice Agent sessions.
+
 ## API contract
 
 The complete v1 HTTP and WebSocket surface is documented in
@@ -167,6 +179,27 @@ original `/v1` paths remain available for compatibility.
 The mode set is decided at startup from `[server].modes` in `config.toml` or
 the `--modes=` CLI flag. Empty means all three modes. Voice Agent remains a
 mode of this server, not a separate image or deployment tier.
+
+Use `voiceagent` as the canonical URL/query/config spelling for server mode
+filters and one-shot evidence. The catalog keeps accepting compatibility
+aliases such as `voice_agent`, but docs, tests, and functional results use
+`voiceagent`.
+
+## Provider support
+
+| Mode | Self-hosted/local | Gemini | OpenAI | Groq |
+|---|---|---|---|---|
+| Dictation | `whisper.cpp` sidecar or local desktop STT | Google STT when selected | Whisper API | Whisper-compatible Groq STT |
+| Assist | local LLM sidecar / Ollama-style endpoint | Gemini text models | Chat Completions / Responses models | Groq chat models |
+| Voice Agent | cascaded self-hosted provider for server smoke/dev; no fully local native realtime audio provider in v1 | Gemini Live default | OpenAI Realtime when `[voice_agent].provider = "openai"` | not a native realtime Voice Agent provider |
+
+Missing-key behavior is explicit: HTTP session creation for Voice Agent still
+returns a session and ticket while the provider is degraded, so clients can
+surface a precise provider error on WebSocket start. `/readyz` reports the
+selected provider as degraded, and the WebSocket emits a
+`provider_connect_failed` style error when the required key, such as
+`GOOGLE_AI_API_KEY` for Gemini Live or `OPENAI_API_KEY` for OpenAI Realtime, is
+absent.
 
 ## Voice Agent workflows
 
@@ -195,6 +228,11 @@ OpenAI; cascaded providers stay on WebSocket audio until explicit transcoding
 is added. When a sequence is active, the server resolves step 0, connects the
 provider with the composed prompt, and emits `sequence_step` with
 `status="entered"`.
+
+| `media_transport` | Control frames | Client audio | Model audio | Provider support |
+|---|---|---|---|---|
+| `websocket` (default) | JSON over SpeechKit WS | binary PCM frames on SpeechKit WS | binary PCM frames on SpeechKit WS | Gemini, OpenAI, cascaded providers |
+| `livekit` | JSON over SpeechKit WS | LiveKit track | LiveKit track | Gemini and OpenAI native realtime providers |
 
 Clients can advance the workflow by sending:
 
@@ -249,8 +287,11 @@ receive an HTML sign-in-required page; API requests still receive the JSON
 `unauthenticated` envelope. Voice Agent WebSocket upgrades at
 `/v1/voiceagent/sessions/{id}/ws` and
 `/api/v1/voiceagent/sessions/{id}/ws` bypass bearer/edge auth because the
-handler validates the short-lived session ticket itself. When auth is enabled,
-all other `/api/v1/*` and compatibility `/v1/*` calls require credentials.
+handler validates the short-lived session ticket itself. Browser clients should
+use only the `?ticket=` query parameter returned by
+`POST /v1/voiceagent/sessions`; the bearer token is for HTTP requests and does
+not belong in the browser WebSocket handshake. When auth is enabled, all other
+`/api/v1/*` and compatibility `/v1/*` calls require credentials.
 The setup page can generate a server API token during onboarding. The generated
 value is shown once, loaded into the running server process, and omitted from
 `server-settings.json`; persist it in the deployment environment as
@@ -277,6 +318,18 @@ Set `[server].public_url` when the server is behind a reverse proxy or mounted
 under a prefix such as `/api`. Voice Agent session creation uses it to generate
 the returned `ws_url`; otherwise SpeechKit derives the URL from the sanitized
 request host and ignores `X-Forwarded-Host`.
+
+Container/browser deployments should set `SPEECHKIT_PUBLIC_URL` to the
+browser-reachable HTTP base, for example `http://localhost:8080` in Docker
+Desktop. `SPEECHKIT_SERVER_PUBLIC_URL` is accepted as an alias for compatibility
+with older automation, but `SPEECHKIT_PUBLIC_URL` is canonical. If neither is
+set and the request reaches the server through a Docker-internal host such as
+`speechkit-server:8080`, the returned `ws_url` may be unusable from the
+browser; either set the public URL or proxy the WebSocket through your backend.
+
+Voice Agent tickets default to 90 seconds. They are single-use and are not
+refreshed in v1; if a microphone permission dialog or user delay lets a ticket
+expire, create a new session and use the new `ws_url`.
 
 Browser WebSocket clients must send an `Origin` that exactly matches
 `[server].cors_allowed_origins`, or the server rejects the upgrade with `403`.

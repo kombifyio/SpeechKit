@@ -19,6 +19,17 @@ Contracts:
 
 - OpenAPI: `https://speechkit.cc/api/openapi.v1.yaml`
 - Voice Agent AsyncAPI: `https://speechkit.cc/api/asyncapi.v1.yaml`
+- One-shot manifest schema: `https://speechkit.cc/schemas/speechkit-one-shot-manifest.schema.json`
+- One-shot functional result schema: `https://speechkit.cc/schemas/speechkit-one-shot-functional-result.schema.json`
+
+Static prompt and install artifacts indexed by docs mode:
+
+- `https://speechkit.cc/getting-started/agents/tri-mode-web-demo.md`
+- `https://speechkit.cc/getting-started/agents/voice-game-moderator.md`
+- `https://speechkit.cc/getting-started/agents/android-memo-app.md`
+- `https://speechkit.cc/getting-started/agents/go-framework-integration.md`
+- `https://speechkit.cc/install-server/docker-compose.example.yml`
+- `https://speechkit.cc/install-server/config.browser.example.toml`
 
 Docs-only config:
 

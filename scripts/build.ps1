@@ -16,6 +16,9 @@ $installerScript = Join-Path $projectDir 'installer/speechkit.nsi'
 $installerExe = Join-Path $distDir 'SpeechKit-Setup.exe'
 $prepareWhisperRuntimeScript = Join-Path $scriptDir 'prepare-whisper-runtime.ps1'
 $prepareLlamaRuntimeScript = Join-Path $scriptDir 'prepare-llama-runtime.ps1'
+$prepareOnnxRuntimeScript = Join-Path $scriptDir 'prepare-onnx-runtime.ps1'
+$prepareSherpaRuntimeScript = Join-Path $scriptDir 'prepare-sherpa-runtime.ps1'
+$prepareWakewordModelScript = Join-Path $scriptDir 'prepare-wakeword-model.ps1'
 $prepareWebView2RuntimeScript = Join-Path $scriptDir 'prepare-webview2-runtime.ps1'
 $cacheDir = Join-Path $projectDir '.cache'
 $goCacheDir = Join-Path $cacheDir 'go-build'
@@ -332,12 +335,20 @@ if (-not (Test-Path $goTmpDir)) {
     New-Item -ItemType Directory -Path $goTmpDir | Out-Null
 }
 $powershellExe = Find-PowerShellExecutable
+# Wipe only build artifacts; preserve user state across rebuilds:
+#   - data/        -> install.toml (setup_done), feedback SQLite store
+#   - config.toml  -> user's Settings UI edits (port choice, server target,
+#                    wake-word phrase, audio device etc). Without this, every
+#                    rebuild resets the runtime config back to the template
+#                    defaults, which surprised the operator multiple times
+#                    during v0.34.x development.
+$preserveBundleEntries = @('data', 'config.toml')
 if (Test-Path $bundleDir) {
-    Remove-Item -Recurse -Force $bundleDir
+    Get-ChildItem -Path $bundleDir -Force | Where-Object { $preserveBundleEntries -notcontains $_.Name } | Remove-Item -Recurse -Force
 }
-New-Item -ItemType Directory -Path $bundleDir | Out-Null
+New-Item -ItemType Directory -Path $bundleDir -Force | Out-Null
 
-# --- Frontend (clean PATH — no MinGW DLLs) ---
+# --- Frontend (clean PATH - no MinGW DLLs) ---
 $env:PATH = $basePath
 Push-Location $frontendDir
 try {
@@ -414,6 +425,16 @@ try {
         )
     }
     Invoke-Step -Description 'Building SpeechKit.exe...' -FilePath 'go' -ArgumentList @('build', '-ldflags', $goLdflags, '-o', $bundleExe, './cmd/speechkit/')
+
+    # Wake-word sidecar. Built from cmd/speechkit-wakeword and dropped next
+    # to SpeechKit.exe; the desktop adapter spawns it on demand. Same
+    # MinGW + cgo setup as the host binary so the sherpa-onnx runtime libs
+    # already in the bundle resolve at runtime. Uses a smaller ldflags set
+    # because the sidecar only needs main.AppVersion injected - no
+    # installer-signature placeholders.
+    $sidecarExe = Join-Path $bundleDir 'speechkit-wakeword.exe'
+    $sidecarLdflags = (New-GoStringLdflag -Name 'main.AppVersion' -Value $appVersion)
+    Invoke-Step -Description 'Building speechkit-wakeword.exe (sidecar)...' -FilePath 'go' -ArgumentList @('build', '-ldflags', $sidecarLdflags, '-o', $sidecarExe, './cmd/speechkit-wakeword/')
 }
 finally {
     Pop-Location
@@ -422,9 +443,21 @@ finally {
 
 Write-Host 'Writing runtime config...'
 $bundleConfig = Join-Path $bundleDir 'config.toml'
-Copy-Item -Path (Join-Path $projectDir 'config.example.toml') -Destination $bundleConfig -Force
+# Only seed the config from the template on first install. On a dev rebuild
+# the preserve filter (data/, config.toml) above kept the operator's edits;
+# re-copying the template now would undo them. Operators who want a fresh
+# config can delete bundleConfig manually before rebuilding.
+if (-not (Test-Path -LiteralPath $bundleConfig)) {
+    Copy-Item -Path (Join-Path $projectDir 'config.example.toml') -Destination $bundleConfig -Force
+    Write-Host '  -> installed config.toml from config.example.toml (first run).'
+} else {
+    Write-Host "  -> preserving existing config.toml (delete $bundleConfig before rebuilding to reset)."
+}
 Invoke-Step -Description 'Bundling local whisper runtime...' -FilePath $powershellExe -ArgumentList @('-ExecutionPolicy', 'Bypass', '-File', $prepareWhisperRuntimeScript, '-BundleDir', $bundleDir, '-CacheDir', $cacheDir)
 Invoke-Step -Description 'Bundling local llama.cpp runtime...' -FilePath $powershellExe -ArgumentList @('-ExecutionPolicy', 'Bypass', '-File', $prepareLlamaRuntimeScript, '-BundleDir', $bundleDir, '-CacheDir', $cacheDir)
+Invoke-Step -Description 'Bundling ONNX Runtime (VAD)...' -FilePath $powershellExe -ArgumentList @('-ExecutionPolicy', 'Bypass', '-File', $prepareOnnxRuntimeScript, '-BundleDir', $bundleDir, '-CacheDir', $cacheDir)
+Invoke-Step -Description 'Bundling sherpa-onnx runtime (wake-word)...' -FilePath $powershellExe -ArgumentList @('-ExecutionPolicy', 'Bypass', '-File', $prepareSherpaRuntimeScript, '-BundleDir', $bundleDir, '-CacheDir', $cacheDir)
+Invoke-Step -Description 'Bundling wake-word KWS model...' -FilePath $powershellExe -ArgumentList @('-ExecutionPolicy', 'Bypass', '-File', $prepareWakewordModelScript, '-BundleDir', $bundleDir, '-CacheDir', $cacheDir)
 Invoke-Step -Description 'Bundling WebView2 bootstrapper...' -FilePath $powershellExe -ArgumentList @('-ExecutionPolicy', 'Bypass', '-File', $prepareWebView2RuntimeScript, '-BundleDir', $bundleDir, '-CacheDir', $cacheDir)
 
 if ($SkipInstaller) {

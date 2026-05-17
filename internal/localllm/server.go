@@ -24,10 +24,28 @@ var ggufModelPattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._\-]*\.gguf$`)
 const (
 	defaultPort        = 8082
 	defaultContextSize = 4096
-	defaultThreads     = 4
 	readyRetries       = 180
 	readyInterval      = 500 * time.Millisecond
 )
+
+// defaultLlamaThreads picks a thread count appropriate for the host. Capped
+// at 8 so a heavy llama generate doesn't starve a concurrent whisper-server
+// (which also caps at 8). Honours SPEECHKIT_LLAMA_THREADS for override.
+func defaultLlamaThreads() int {
+	if raw := strings.TrimSpace(os.Getenv("SPEECHKIT_LLAMA_THREADS")); raw != "" {
+		if n, err := strconv.Atoi(raw); err == nil && n > 0 {
+			return n
+		}
+	}
+	n := runtime.NumCPU()
+	if n < 1 {
+		return 1
+	}
+	if n > 8 {
+		return 8
+	}
+	return n
+}
 
 // ValidateModelPath verifies that path points at a safe GGUF model filename.
 func ValidateModelPath(path string) error {
@@ -77,7 +95,7 @@ func NewServer(port int, modelPath, gpu string) *Server {
 		ModelPath:   modelPath,
 		GPU:         gpu,
 		ContextSize: defaultContextSize,
-		Threads:     defaultThreads,
+		Threads:     defaultLlamaThreads(),
 		Validation: netsec.ValidationOptions{
 			AllowLoopback: true,
 			AllowHTTP:     true,

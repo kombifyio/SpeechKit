@@ -54,3 +54,8 @@ Public docs:
 - `https://speechkit.cc/llms.txt`
 - `https://speechkit.cc/mcp/speechkit-mcp.md`
 - `https://speechkit.cc/api/openapi.v1.yaml`
+- `https://speechkit.cc/api/asyncapi.v1.yaml`
+- `https://speechkit.cc/getting-started/agents/voice-game-moderator.md`
+- `https://speechkit.cc/schemas/speechkit-one-shot-manifest.schema.json`
+- `https://speechkit.cc/schemas/speechkit-one-shot-functional-result.schema.json`
+- `https://speechkit.cc/install-server/docker-compose.example.yml`

@@ -4,6 +4,7 @@
 
 import { useId } from "react";
 
+import { serverConnectionReadiness } from "@/components/server-connection-card";
 import type { ModeSource, ServerConnectionSetting } from "@/lib/speechkit";
 
 import { cn } from "@/lib/utils";
@@ -34,12 +35,20 @@ export function ModeSourceToggle({
   const headingId = useId();
   const resolved: ModeSource = value === "server" ? "server" : "local";
 
-  const tokenMissing = !!serverConnection && !serverConnection.bearerTokenSet;
-  const hint = tokenMissing
-    ? `Set ${
-        serverConnection?.bearerTokenEnv ?? "the server token env var"
-      } in the host environment so the device can authenticate.`
+  const readiness = serverConnectionReadiness(serverConnection);
+  const serverReady = readiness === "ready";
+  const hint = !serverReady
+    ? readiness === "not-configured"
+      ? "Register a server target under SpeechKit Server > Server Target first."
+      : `Set ${
+          serverConnection?.bearerTokenEnv ?? "the server token env var"
+        } in the host environment so the device can authenticate.`
     : null;
+
+  const handleServerClick = () => {
+    if (!serverReady) return;
+    onChange("server");
+  };
 
   return (
     <div
@@ -84,12 +93,16 @@ export function ModeSourceToggle({
             type="button"
             role="radio"
             aria-checked={resolved === "server"}
-            onClick={() => onChange("server")}
+            aria-disabled={!serverReady}
+            disabled={!serverReady && resolved !== "server"}
+            onClick={handleServerClick}
             className={cn(
               "rounded-sm px-3 py-1 text-xs font-medium transition-colors",
               resolved === "server"
                 ? "bg-foreground text-background"
                 : "text-muted-foreground hover:text-foreground",
+              !serverReady && resolved !== "server" &&
+                "cursor-not-allowed opacity-50",
             )}
             title={hint ?? undefined}
           >
@@ -97,7 +110,7 @@ export function ModeSourceToggle({
           </button>
         </div>
       </div>
-      {hint && resolved === "server" ? (
+      {hint ? (
         <p className="text-xs text-muted-foreground">{hint}</p>
       ) : null}
     </div>

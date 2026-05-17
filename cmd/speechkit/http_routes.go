@@ -77,7 +77,7 @@ func newControlPlaneHandler(deps controlPlaneDeps) http.Handler {
 	registerQuickNoteRoutes(mux, deps.Config, deps.State, deps.FeedbackStore)
 	registerFeatureRoutes(mux, deps.InstallState)
 	registerAuthRoutes(mux)
-	registerAppRoutes(mux, deps.ConfigPath, deps.State, deps.InstallState)
+	registerAppRoutes(mux, deps.ConfigPath, deps.Config, deps.State, deps.InstallState)
 	registerDownloadRoutes(mux, deps.ConfigPath, deps.Config, deps.State)
 	registerControlPlaneAPIRoutes(mux, deps)
 	mux.Handle("/", http.FileServer(http.FS(frontendassets.Files())))

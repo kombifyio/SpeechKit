@@ -72,4 +72,26 @@ describe("ModeSourceToggle", () => {
     const localButton = screen.getByRole("radio", { name: /local/i });
     expect(localButton).toHaveAttribute("aria-checked", "true");
   });
+
+  it("disables the Server pill and explains how to fix it when no server is registered", () => {
+    const onChange = vi.fn();
+    render(
+      <ModeSourceToggle
+        modeLabel="Dictation"
+        value="local"
+        onChange={onChange}
+        serverConnection={{
+          ...baseConn,
+          url: "",
+          bearerTokenSet: true,
+          targets: [],
+        }}
+      />,
+    );
+    const serverButton = screen.getByRole("radio", { name: /server/i });
+    expect(serverButton).toBeDisabled();
+    fireEvent.click(serverButton);
+    expect(onChange).not.toHaveBeenCalled();
+    expect(screen.getByText(/Register a server target/i)).toBeInTheDocument();
+  });
 });

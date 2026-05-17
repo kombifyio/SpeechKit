@@ -269,11 +269,14 @@ Minimum deployment expectations:
 
 - **Graceful shutdown**: SIGTERM triggers a 20 s HTTP drain; WebSocket Voice
   Agent sessions receive `session_end` frames.
-- **Voice Agent ticket TTL**: 30 s by default. Tune
+- **Voice Agent ticket TTL**: 90 s by default. Tickets are single-use and are
+  not refreshed in v1; clients must create a new session after expiry. Tune
   `[server].ticket_ttl_sec` if your load balancer adds latency.
 - **Public URL**: set `[server].public_url` when the service is behind a
   reverse proxy or mounted under `/api`; generated Voice Agent `ws_url` values
-  use this trusted base instead of forwarded host headers.
+  use this trusted base instead of forwarded host headers. In container/browser
+  deployments, prefer `SPEECHKIT_PUBLIC_URL`; `SPEECHKIT_SERVER_PUBLIC_URL` is
+  accepted as an alias.
 - **WebSocket Origins**: browser Voice Agent clients must match
   `[server].cors_allowed_origins`; native clients may omit `Origin`.
 - **Edge identity signing**: edge-HMAC auth signs `user_id`, `org_id`, `plan`,

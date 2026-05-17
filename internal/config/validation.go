@@ -36,6 +36,31 @@ func NormalizeVoiceAgentCloseBehavior(value, fallback string) string {
 	}
 }
 
+// NormalizeWakewordDefaultMode coerces an arbitrary mode string to one of
+// the supported wake-word target modes. Unknown values fall back to
+// WakewordDefaultModeVoiceAgent (the most common consumer use case).
+func NormalizeWakewordDefaultMode(value string) string {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case WakewordDefaultModeDictate:
+		return WakewordDefaultModeDictate
+	case WakewordDefaultModeAssist:
+		return WakewordDefaultModeAssist
+	case WakewordDefaultModeVoiceAgent, "":
+		return WakewordDefaultModeVoiceAgent
+	default:
+		return WakewordDefaultModeVoiceAgent
+	}
+}
+
+// NormalizeWakewordThreshold clamps the threshold to a sane range. Values
+// outside (0, 1] are coerced to the published sweet-spot of 0.68.
+func NormalizeWakewordThreshold(value float64) float64 {
+	if value <= 0 || value > 1 {
+		return 0.68
+	}
+	return value
+}
+
 func NormalizeOverlayFeedbackMode(value, fallback string) string {
 	switch strings.ToLower(strings.TrimSpace(value)) {
 	case OverlayFeedbackModeBigProductivity:

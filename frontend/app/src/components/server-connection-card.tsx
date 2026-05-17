@@ -163,13 +163,21 @@ export function ServerConnectionCard({
     );
   }
 
-  const tokenStatusBadge = setting.bearerTokenSet ? (
-    <span className="inline-flex items-center rounded-full bg-emerald-500/10 px-2 py-0.5 text-xs font-medium text-emerald-600 dark:text-emerald-400">
-      token set
-    </span>
-  ) : (
-    <span className="inline-flex items-center rounded-full bg-amber-500/10 px-2 py-0.5 text-xs font-medium text-amber-600 dark:text-amber-400">
-      token missing
+  const readiness = serverConnectionReadiness(setting);
+  const readinessBadge = (
+    <span
+      className={cn(
+        "inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium",
+        readiness === "ready" &&
+          "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400",
+        readiness === "token-missing" &&
+          "bg-amber-500/10 text-amber-600 dark:text-amber-400",
+        readiness === "not-configured" &&
+          "bg-muted text-muted-foreground",
+      )}
+      title={readinessHint(readiness, setting)}
+    >
+      {readinessLabel(readiness)}
     </span>
   );
 
@@ -266,7 +274,7 @@ export function ServerConnectionCard({
             Select the SpeechKit server used when a mode runs on a server.
           </p>
         </div>
-        {tokenStatusBadge}
+        {readinessBadge}
       </header>
 
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-[1fr_auto_auto] sm:items-end">
@@ -639,4 +647,51 @@ function defaultTokenEnv() {
 
 function trimTrailingSlash(value: string) {
   return value.trim().replace(/\/+$/, "");
+}
+
+type ServerConnectionReadiness = "ready" | "token-missing" | "not-configured";
+
+/**
+ * Single source of truth for the active server target's readiness state.
+ * The badge in this card and the disabled-state hint on the per-mode
+ * Server toggle both consume this so the UI never claims "token set"
+ * while no URL is configured.
+ */
+// eslint-disable-next-line react-refresh/only-export-components -- consumed by mode-source-toggle and mode-source-section as a shared readiness check; moving it to a separate file would force a renaming churn across those imports without changing behaviour.
+export function serverConnectionReadiness(
+  setting: ServerConnectionSetting | null | undefined,
+): ServerConnectionReadiness {
+  if (!setting) return "not-configured";
+  const hasTarget =
+    (setting.targets && setting.targets.length > 0) ||
+    !!setting.url?.trim();
+  if (!hasTarget) return "not-configured";
+  return setting.bearerTokenSet ? "ready" : "token-missing";
+}
+
+function readinessLabel(readiness: ServerConnectionReadiness) {
+  switch (readiness) {
+    case "ready":
+      return "ready";
+    case "token-missing":
+      return "token missing";
+    case "not-configured":
+      return "not configured";
+  }
+}
+
+function readinessHint(
+  readiness: ServerConnectionReadiness,
+  setting: ServerConnectionSetting | null | undefined,
+) {
+  switch (readiness) {
+    case "ready":
+      return "Active server URL and token are both configured.";
+    case "token-missing":
+      return `The ${
+        setting?.bearerTokenEnv ?? "SPEECHKIT_SERVER_TOKEN"
+      } secret is empty in this host. Set it under Token value or via env.`;
+    case "not-configured":
+      return "No active server. Register one via New Server before switching any mode to Server.";
+  }
 }

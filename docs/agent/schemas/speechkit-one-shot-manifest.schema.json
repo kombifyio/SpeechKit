@@ -1,0 +1,50 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://speechkit.cc/schemas/speechkit-one-shot-manifest.schema.json",
+  "title": "SpeechKit one-shot manifest",
+  "type": "object",
+  "required": [
+    "docker_compose_file",
+    "localhost_urls",
+    "speechkit_server_url",
+    "speechkit_server_token_env"
+  ],
+  "properties": {
+    "docker_compose_file": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Path to the generated Docker Compose file, relative to the generated workspace."
+    },
+    "localhost_urls": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "string",
+        "format": "uri",
+        "pattern": "^https?://(localhost|127\\.0\\.0\\.1|\\[::1\\]):[0-9]+(/.*)?$"
+      }
+    },
+    "health_urls": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "format": "uri",
+        "pattern": "^https?://(localhost|127\\.0\\.0\\.1|\\[::1\\]):[0-9]+(/.*)?$"
+      }
+    },
+    "speechkit_server_url": {
+      "type": "string",
+      "format": "uri",
+      "pattern": "^https?://(localhost|127\\.0\\.0\\.1|\\[::1\\]):[0-9]+(/.*)?$"
+    },
+    "speechkit_server_token_env": {
+      "type": "string",
+      "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
+    },
+    "android_project_dir": {
+      "type": "string",
+      "minLength": 1
+    }
+  },
+  "additionalProperties": true
+}

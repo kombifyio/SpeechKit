@@ -18,8 +18,19 @@ stable server image.
 - Markdown technical guide: https://speechkit.cc/getting-started/technical.md
 - Markdown agent guide: https://speechkit.cc/getting-started/agents.md
 - Server installer: https://speechkit.cc/install-server.sh
+- Browser Docker Compose example: https://speechkit.cc/install-server/docker-compose.example.yml
+- Browser config example: https://speechkit.cc/install-server/config.browser.example.toml
 - OpenAPI: https://speechkit.cc/api/openapi.v1.yaml
 - Voice Agent AsyncAPI: https://speechkit.cc/api/asyncapi.v1.yaml
+- One-shot manifest schema: https://speechkit.cc/schemas/speechkit-one-shot-manifest.schema.json
+- One-shot functional result schema: https://speechkit.cc/schemas/speechkit-one-shot-functional-result.schema.json
+
+Fetchable one-shot prompt Markdown:
+
+- https://speechkit.cc/getting-started/agents/tri-mode-web-demo.md
+- https://speechkit.cc/getting-started/agents/voice-game-moderator.md
+- https://speechkit.cc/getting-started/agents/android-memo-app.md
+- https://speechkit.cc/getting-started/agents/go-framework-integration.md
 
 ## Simple Prompts
 
@@ -52,6 +63,12 @@ use `--public-bind` only behind a TLS reverse proxy. It pulls
 `ghcr.io/kombifyio/speechkit-server:latest`, which tracks the latest stable
 release.
 
+For browser-facing Docker Compose, set `SPEECHKIT_PUBLIC_URL=http://localhost:8080`
+or the compatibility alias `SPEECHKIT_SERVER_PUBLIC_URL=http://localhost:8080`.
+`SPEECHKIT_PUBLIC_URL` is canonical and wins when both are set. The returned
+Voice Agent `ws_url` uses that public base; otherwise a browser can be handed a
+container-internal host that it cannot resolve.
+
 ## API Surfaces
 
 Use the OpenAPI document for exact request and response shapes:
@@ -59,6 +76,11 @@ https://speechkit.cc/api/openapi.v1.yaml
 
 Use the AsyncAPI document for the Voice Agent WebSocket contract:
 https://speechkit.cc/api/asyncapi.v1.yaml
+
+Browser WebSocket auth uses the one-time `?ticket=` value returned from
+`POST /v1/voiceagent/sessions`. Do not put the server bearer token into a
+browser WebSocket handshake. Tickets default to 90 seconds; expired tickets are
+not refreshed in v1, so create a new session.
 
 Important v0.30 surfaces:
 
@@ -156,7 +178,11 @@ named `verifySpeechKitLive` that writes
 `app_transport=android`, `manifest_file=speechkit-one-shot-manifest.json`,
 `server_url_source=settings_screen` or `android_config`, non-empty
 Dictation/Assist outputs, `status=pass` on every checked mode, and
-`checked_via_app=true`.
+`checked_via_app=true` under `modes.dictation` and `modes.assist`.
+
+The canonical functional-result shape is `modes.voiceagent`; do not emit
+`modes.voice_agent`. Extra evidence fields such as `app_url_reachable` and
+`latency_seconds` are allowed by the published schema.
 
 Management mode requires a running server and bearer token:
 

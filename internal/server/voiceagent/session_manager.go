@@ -59,7 +59,7 @@ type Options struct {
 	// construction time (acceptable only for single-process deployments).
 	TicketSecret []byte
 	// TicketTTL limits how long a minted ticket remains valid. Defaults to
-	// 30 seconds.
+	// 90 seconds.
 	TicketTTL time.Duration
 	// MaxGlobalSessions caps concurrent sessions across all callers.
 	// Defaults to 100.
@@ -114,7 +114,7 @@ func NewSessionManager(opts Options) (*SessionManager, error) {
 		return nil, errors.New("voiceagent: ticket secret must be at least 16 bytes")
 	}
 	if opts.TicketTTL <= 0 {
-		opts.TicketTTL = 30 * time.Second
+		opts.TicketTTL = 90 * time.Second
 	}
 	if opts.MaxGlobalSessions <= 0 {
 		opts.MaxGlobalSessions = 100

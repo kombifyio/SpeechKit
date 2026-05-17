@@ -55,6 +55,7 @@ func main() {
 		expectText  = flag.String("expect-dictation-text", "", "case-insensitive text fragment expected in functional dictation output")
 		vaText      = flag.String("voiceagent-text", "Say exactly: SpeechKit voice agent live check.", "text turn for functional Voice Agent checks")
 		verbose     = flag.Bool("v", false, "verbose: print every request body and response")
+		localOnly   = flag.Bool("local-only", false, "inject X-SpeechKit-Local-Only:1 on every request and assert /v1/deployment/status reports providers.cloud_keys_present=false")
 	)
 	flag.Parse()
 
@@ -63,10 +64,11 @@ func main() {
 		bearer = strings.TrimSpace(os.Getenv("SPEECHKIT_SERVER_TOKEN"))
 	}
 	c := &client{
-		base:    strings.TrimRight(*server, "/"),
-		token:   bearer,
-		timeout: *timeout,
-		verbose: *verbose,
+		base:      strings.TrimRight(*server, "/"),
+		token:     bearer,
+		timeout:   *timeout,
+		verbose:   *verbose,
+		localOnly: *localOnly,
 	}
 
 	wanted := selectedScenarios(*scenarios)
@@ -189,6 +191,22 @@ func scenarioDeploymentStatus(c *client, opts *scenarioOpts) error {
 	}
 	if c.verbose {
 		fmt.Printf("    deployment auth_mode=%s bearer_env=%s\n", status.Auth.Mode, status.Auth.BearerTokenEnv)
+	}
+	if c.localOnly {
+		var providers struct {
+			Providers struct {
+				CloudKeysPresent bool `json:"cloud_keys_present"`
+			} `json:"providers"`
+		}
+		if err := json.Unmarshal(body, &providers); err != nil {
+			return fmt.Errorf("deployment status parse providers: %w body=%s", err, body)
+		}
+		if providers.Providers.CloudKeysPresent {
+			return fmt.Errorf("local-only assertion failed: deployment status reports providers.cloud_keys_present=true; body=%s", body)
+		}
+		if c.verbose {
+			fmt.Println("    local-only: providers.cloud_keys_present=false")
+		}
 	}
 	return nil
 }
@@ -549,10 +567,11 @@ func scenarioVoiceAgentCreate(c *client, opts *scenarioOpts) error {
 // ── HTTP client ─────────────────────────────────────────────────────────────
 
 type client struct {
-	base    string
-	token   string
-	timeout time.Duration
-	verbose bool
+	base      string
+	token     string
+	timeout   time.Duration
+	verbose   bool
+	localOnly bool
 }
 
 func (c *client) verifyVoiceAgentWebSocket(ctx context.Context, rawURL string) error {
@@ -707,6 +726,9 @@ func (c *client) do(method, path, contentType string, body []byte, auth bool) (*
 	}
 	if auth && c.token != "" {
 		req.Header.Set("Authorization", "Bearer "+c.token)
+	}
+	if c.localOnly {
+		req.Header.Set("X-SpeechKit-Local-Only", "1")
 	}
 	if c.verbose && body != nil && contentType == "application/json" {
 		fmt.Printf("    → %s %s\n      %s\n", method, path, string(body))

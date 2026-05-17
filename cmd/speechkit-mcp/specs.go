@@ -124,6 +124,12 @@ func mimeTypeForResource(uri string) string {
 	if strings.HasSuffix(uri, ".yaml") || strings.HasSuffix(uri, ".yml") {
 		return "application/yaml"
 	}
+	if strings.HasSuffix(uri, ".json") {
+		return "application/json"
+	}
+	if strings.HasSuffix(uri, ".toml") {
+		return "application/toml"
+	}
 	return "text/markdown"
 }
 
@@ -131,6 +137,8 @@ func resourcePriority(uri string) float64 {
 	switch uri {
 	case "docs/server/openapi.v1.yaml", "docs/server/asyncapi.v1.yaml":
 		return 1.0
+	case "docs/agent/schemas/speechkit-one-shot-manifest.schema.json", "docs/agent/schemas/speechkit-one-shot-functional-result.schema.json":
+		return 0.95
 	case "docs/speechkit-architecture-v2.md", "docs/mcp/README.md":
 		return 0.9
 	default:
@@ -141,11 +149,11 @@ func resourcePriority(uri string) float64 {
 func promptText(name string) string {
 	switch name {
 	case "speechkit_server_setup":
-		return "Hi Codex, go to speechkit.cc and install the SpeechKit Server on this server. First read https://speechkit.cc/llms.txt and https://speechkit.cc/install/server.md. Use the stable channel unless the user explicitly asks for a preview build; for preview installs use https://speechkit.cc/install-server.sh with --channel preview. Do not create release tags or mutate GHCR latest for preview testing."
+		return "Hi Codex, go to speechkit.cc and install the SpeechKit Server on this server. First read https://speechkit.cc/llms.txt and https://speechkit.cc/install/server.md. For browser Docker Compose use https://speechkit.cc/install-server/docker-compose.example.yml and set SPEECHKIT_PUBLIC_URL. Use the stable channel unless the user explicitly asks for a preview build; for preview installs use https://speechkit.cc/install-server.sh with --channel preview. Do not create release tags or mutate GHCR latest for preview testing."
 	case "speechkit_go_sdk_integration":
 		return "Hi Codex, add SpeechKit as a Go framework dependency and use the documented Dictation, Assist, and Voice Agent contracts. Start with https://speechkit.cc/llms.txt, then prefer pkg/speechkit for embedded Go hosts and pkg/speechkit/client for a running SpeechKit Server."
 	case "speechkit_http_integration":
-		return "Use the SpeechKit OpenAPI contract at https://speechkit.cc/api/openapi.v1.yaml before writing HTTP code, and the Voice Agent AsyncAPI contract at https://speechkit.cc/api/asyncapi.v1.yaml before writing WebSocket clients. Prefer canonical /v1 paths for Dictation, Assist, Voice Agent, catalog, config, vocabulary, transcript, and TTS calls."
+		return "Use the SpeechKit OpenAPI contract at https://speechkit.cc/api/openapi.v1.yaml before writing HTTP code, and the Voice Agent AsyncAPI contract at https://speechkit.cc/api/asyncapi.v1.yaml before writing WebSocket clients. Browser WebSocket auth uses the returned ?ticket query, not a bearer header. Prefer canonical /v1 paths and voiceagent spelling for Dictation, Assist, Voice Agent, catalog, config, vocabulary, transcript, and TTS calls."
 	case "speechkit_windows_client_to_server_setup":
 		return "Connect the Local Windows Client to a SpeechKit Server only after the server passes /healthz and /readyz. Keep mode_source and server_connection settings explicit, and keep bearer tokens in environment variables."
 	case "speechkit_feature_integration":

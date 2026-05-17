@@ -146,6 +146,9 @@ func applyAPIV1ServerConnectionPatch(cfgPath string, cfg *config.Config, state *
 		}
 	}
 	syncActiveServerConnectionTarget(&cfg.ServerConnection)
+	if err := validateServerConnectionForActiveModes(cfg); err != nil {
+		return err
+	}
 	if err := config.Save(cfgPath, cfg); err != nil {
 		return err
 	}

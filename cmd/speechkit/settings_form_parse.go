@@ -52,6 +52,15 @@ type settingsFormData struct {
 	AssistFallbackProfileID    string
 	VoicePrimaryProfileID      string
 	VoiceFallbackProfileID     string
+
+	// Wake-word controls. WakewordEnabled is the master toggle; the rest
+	// mirror WakewordConfig fields and apply only when Enabled.
+	WakewordEnabled              bool
+	WakewordPhraseID             string
+	WakewordDefaultMode          string
+	WakewordThreshold            float64
+	WakewordMinConsecutiveFrames int
+	WakewordCooldownMs           int
 }
 
 // parseSettingsForm extracts and validates all settings form values.
@@ -78,6 +87,7 @@ func parseSettingsForm(req *http.Request, cfg *config.Config) (settingsFormData,
 	if errMsg := validateModelSelectionSettingsForm(cfg, &f); errMsg != "" {
 		return f, errMsg
 	}
+	parseWakewordSettingsForm(req, cfg, &f)
 
 	return f, ""
 }

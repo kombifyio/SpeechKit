@@ -14,9 +14,20 @@ Use these links first:
 - Agent / Prompt Getting Started: https://speechkit.cc/getting-started/agents.md
 - Server install guide: https://speechkit.cc/install/server.md
 - Standalone server installer: https://speechkit.cc/install-server.sh
+- Browser Docker Compose example: https://speechkit.cc/install-server/docker-compose.example.yml
+- Browser config example: https://speechkit.cc/install-server/config.browser.example.toml
 - SpeechKit MCP guide: https://speechkit.cc/mcp/speechkit-mcp.md
 - OpenAPI: https://speechkit.cc/api/openapi.v1.yaml
 - Voice Agent AsyncAPI: https://speechkit.cc/api/asyncapi.v1.yaml
+- One-shot manifest schema: https://speechkit.cc/schemas/speechkit-one-shot-manifest.schema.json
+- One-shot functional result schema: https://speechkit.cc/schemas/speechkit-one-shot-functional-result.schema.json
+
+Stable one-shot prompt Markdown:
+
+- Tri-mode web demo: https://speechkit.cc/getting-started/agents/tri-mode-web-demo.md
+- Voice game moderator: https://speechkit.cc/getting-started/agents/voice-game-moderator.md
+- Android memo app: https://speechkit.cc/getting-started/agents/android-memo-app.md
+- Go framework integration: https://speechkit.cc/getting-started/agents/go-framework-integration.md
 
 Generate a working starter project:
 
@@ -41,3 +52,6 @@ Safety:
 
 - Keep the default local bind unless the user explicitly asks for public access.
 - Keep secrets in environment variables or generated `.env` files, never in repo files.
+- For browser clients behind Docker Compose, set `SPEECHKIT_PUBLIC_URL` (or alias `SPEECHKIT_SERVER_PUBLIC_URL`) to the browser-reachable origin so returned `ws_url` values do not use container-internal hostnames.
+- Voice Agent WebSocket auth uses only the `?ticket=` query value returned by `POST /v1/voiceagent/sessions`; do not send bearer tokens in the browser WS handshake.
+- One-shot results use canonical `modes.voiceagent`; `modes.voice_agent` is not the v1 result shape. Extra evidence fields such as `app_url_reachable` and `latency_seconds` are allowed.

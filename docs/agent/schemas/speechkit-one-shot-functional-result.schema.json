@@ -1,0 +1,136 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://speechkit.cc/schemas/speechkit-one-shot-functional-result.schema.json",
+  "title": "SpeechKit one-shot functional result",
+  "type": "object",
+  "required": [
+    "status",
+    "manifest_file",
+    "app_kind",
+    "app_url",
+    "modes"
+  ],
+  "properties": {
+    "status": {
+      "type": "string",
+      "const": "pass"
+    },
+    "manifest_file": {
+      "type": "string",
+      "pattern": "(^|[\\\\/])?speechkit-one-shot-manifest\\.json$"
+    },
+    "app_kind": {
+      "type": "string",
+      "enum": ["web", "android", "go"]
+    },
+    "app_transport": {
+      "type": "string"
+    },
+    "server_url_source": {
+      "type": "string"
+    },
+    "app_url": {
+      "type": "string",
+      "format": "uri"
+    },
+    "app_url_reachable": {
+      "type": "boolean"
+    },
+    "latency_seconds": {
+      "type": "number",
+      "minimum": 0
+    },
+    "modes": {
+      "type": "object",
+      "properties": {
+        "dictation": {
+          "$ref": "#/$defs/dictationResult"
+        },
+        "assist": {
+          "$ref": "#/$defs/assistResult"
+        },
+        "voiceagent": {
+          "$ref": "#/$defs/voiceAgentResult"
+        }
+      },
+      "additionalProperties": true
+    }
+  },
+  "additionalProperties": true,
+  "$defs": {
+    "baseModeResult": {
+      "type": "object",
+      "required": ["status", "checked_via_app"],
+      "properties": {
+        "status": {
+          "type": "string",
+          "const": "pass"
+        },
+        "checked_via_app": {
+          "type": "boolean",
+          "const": true
+        },
+        "app_transport": {
+          "type": "string"
+        },
+        "latency_seconds": {
+          "type": "number",
+          "minimum": 0
+        }
+      },
+      "additionalProperties": true
+    },
+    "dictationResult": {
+      "allOf": [
+        { "$ref": "#/$defs/baseModeResult" },
+        {
+          "type": "object",
+          "required": ["transcript"],
+          "properties": {
+            "transcript": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        }
+      ]
+    },
+    "assistResult": {
+      "allOf": [
+        { "$ref": "#/$defs/baseModeResult" },
+        {
+          "type": "object",
+          "anyOf": [
+            { "required": ["output"] },
+            { "required": ["text"] }
+          ],
+          "properties": {
+            "output": {
+              "type": "string",
+              "minLength": 1
+            },
+            "text": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        }
+      ]
+    },
+    "voiceAgentResult": {
+      "allOf": [
+        { "$ref": "#/$defs/baseModeResult" },
+        {
+          "type": "object",
+          "required": ["output_transcript"],
+          "properties": {
+            "output_transcript": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        }
+      ]
+    }
+  }
+}

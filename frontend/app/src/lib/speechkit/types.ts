@@ -416,6 +416,31 @@ export type SpeechKitSettingsState = {
   modelSelections: ModelSelectionsState;
   providerCredentials?: Record<string, ProviderCredentialState>;
   providerIntegrations?: Record<string, ProviderIntegrationState>;
+  wakeword: WakewordSettings;
+};
+
+export type WakewordDefaultMode = "dictate" | "assist" | "voice_agent";
+
+export type WakewordPhraseCatalogEntry = {
+  id: string;
+  displayName: string;
+  variants: string[];
+  fileName: string;
+  trainingTemplate: string;
+  recommendedThreshold: number;
+  notes: string;
+};
+
+export type WakewordSettings = {
+  enabled: boolean;
+  phraseId: string;
+  defaultMode: WakewordDefaultMode;
+  threshold: number;
+  minConsecutiveFrames: number;
+  cooldownMs: number;
+  active: boolean;
+  statusMessage: string;
+  phraseCatalog: WakewordPhraseCatalogEntry[];
 };
 
 export type AudioDevicesResponse = {

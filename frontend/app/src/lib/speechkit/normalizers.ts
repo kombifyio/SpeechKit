@@ -16,6 +16,9 @@ import type {
   SpeechKitOverlayState,
   SpeechKitSettingsState,
   VoiceAgentProfile,
+  WakewordDefaultMode,
+  WakewordPhraseCatalogEntry,
+  WakewordSettings,
 } from "./types";
 
 function readStringField(
@@ -527,6 +530,81 @@ export function normalizeSettingsState(
       payload?.providerCredentials ?? base.providerCredentials,
     providerIntegrations:
       payload?.providerIntegrations ?? base.providerIntegrations,
+    wakeword: normalizeWakewordSettings(record, base.wakeword),
+  };
+}
+
+function normalizeWakewordDefaultMode(
+  value: unknown,
+  fallback: WakewordDefaultMode,
+): WakewordDefaultMode {
+  if (typeof value !== "string") return fallback;
+  const v = value.trim().toLowerCase();
+  if (v === "dictate" || v === "assist" || v === "voice_agent") return v;
+  return fallback;
+}
+
+function normalizeWakewordPhraseCatalog(
+  raw: unknown,
+): WakewordPhraseCatalogEntry[] {
+  if (!Array.isArray(raw)) return [];
+  const out: WakewordPhraseCatalogEntry[] = [];
+  for (const entry of raw) {
+    if (!entry || typeof entry !== "object") continue;
+    const obj = entry as Record<string, unknown>;
+    const id = typeof obj.id === "string" ? obj.id.trim() : "";
+    if (!id) continue;
+    const variantsRaw = Array.isArray(obj.variants) ? obj.variants : [];
+    const variants = variantsRaw
+      .filter((v): v is string => typeof v === "string")
+      .map((v) => v.trim())
+      .filter((v) => v.length > 0);
+    out.push({
+      id,
+      displayName: typeof obj.displayName === "string" ? obj.displayName : id,
+      variants,
+      fileName: typeof obj.fileName === "string" ? obj.fileName : "",
+      trainingTemplate:
+        typeof obj.trainingTemplate === "string" ? obj.trainingTemplate : "",
+      recommendedThreshold:
+        typeof obj.recommendedThreshold === "number"
+          ? obj.recommendedThreshold
+          : 0,
+      notes: typeof obj.notes === "string" ? obj.notes : "",
+    });
+  }
+  return out;
+}
+
+function normalizeWakewordSettings(
+  record: Record<string, unknown> | null,
+  base: WakewordSettings,
+): WakewordSettings {
+  const raw = record?.wakeword;
+  if (!raw || typeof raw !== "object") return base;
+  const obj = raw as Record<string, unknown>;
+  return {
+    enabled: typeof obj.enabled === "boolean" ? obj.enabled : base.enabled,
+    phraseId:
+      typeof obj.phraseId === "string" ? obj.phraseId.trim() : base.phraseId,
+    defaultMode: normalizeWakewordDefaultMode(obj.defaultMode, base.defaultMode),
+    threshold:
+      typeof obj.threshold === "number" && obj.threshold >= 0
+        ? obj.threshold
+        : base.threshold,
+    minConsecutiveFrames:
+      typeof obj.minConsecutiveFrames === "number" &&
+      obj.minConsecutiveFrames >= 0
+        ? Math.round(obj.minConsecutiveFrames)
+        : base.minConsecutiveFrames,
+    cooldownMs:
+      typeof obj.cooldownMs === "number" && obj.cooldownMs >= 0
+        ? Math.round(obj.cooldownMs)
+        : base.cooldownMs,
+    active: typeof obj.active === "boolean" ? obj.active : false,
+    statusMessage:
+      typeof obj.statusMessage === "string" ? obj.statusMessage : "",
+    phraseCatalog: normalizeWakewordPhraseCatalog(obj.phraseCatalog),
   };
 }
 

@@ -19,6 +19,11 @@ clients/python/**/*.pyc
 /models/
 .public-export*/
 
+# Wake-word training artifacts (ONNX checkpoints + training logs land here,
+# committed model assets go into tools/wakeword-training/*.yaml configs and
+# the prepared bundle under wakeword-kws/ -- not the raw training output).
+tools/wakeword-training/output/
+
 # Hygiene / audit working artifacts
 AUDIT-REPORT.md
 _export/
