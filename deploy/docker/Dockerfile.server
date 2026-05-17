@@ -70,6 +70,7 @@ FROM debian:bookworm-slim AS runtime-base
 #                PCM/Opus bridge.
 #  - curl: for optional model download on first boot and health probes
 RUN apt-get update \
+    && apt-get -y upgrade \
     && apt-get install -y --no-install-recommends \
         ca-certificates \
         ffmpeg \

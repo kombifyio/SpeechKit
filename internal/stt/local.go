@@ -62,13 +62,18 @@ const (
 	// can take 90+ s just to memory-map and ggml-init before the
 	// /health endpoint starts responding. Pre-CI values (60 s + 90 s)
 	// were a too-tight on cold cache.
-	whisperHealthRetries      = 360 // 360 * 500ms = 180s health-wait
-	whisperHealthInterval     = 500 * time.Millisecond
-	whisperWarmupRetries      = 360 // 360 * 500ms = 180s warmup-wait
-	whisperWarmupInterval     = 500 * time.Millisecond
-	whisperWarmupTimeout      = 180 * time.Second
-	localMinTranscribeTimeout = 60 * time.Second
-	localMaxTranscribeTimeout = 5 * time.Minute
+	whisperHealthRetries  = 360 // 360 * 500ms = 180s health-wait
+	whisperHealthInterval = 500 * time.Millisecond
+	whisperWarmupRetries  = 360 // 360 * 500ms = 180s warmup-wait
+	whisperWarmupInterval = 500 * time.Millisecond
+	whisperWarmupTimeout  = 180 * time.Second
+	// Cold-CPU per-request budget. Whisper Large v3 Turbo on a 2-core
+	// GH-hosted runner takes ~70 s to transcribe a 1 s clip; the
+	// previous 60 s floor caused dictation timeouts that never
+	// reached the encoder. Generous floor keeps the existing 3x-audio
+	// scaling intact for longer clips.
+	localMinTranscribeTimeout = 5 * time.Minute
+	localMaxTranscribeTimeout = 10 * time.Minute
 	localMaxResponseBytes     = 1 << 20
 )
 

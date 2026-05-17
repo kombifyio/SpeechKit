@@ -265,8 +265,14 @@ func runVoiceAgent(ctx context.Context, whisper *stt.LocalProvider, llamaBaseURL
 	}
 	defer provider.Close()
 
+	// Per-turn budget: whisper transcription + llama inference must both
+	// complete. On a 2-core GH-hosted runner the whisper step alone
+	// takes ~70 s; allow 5 min per turn so we never time out before the
+	// real path finishes.
+	turnBudget := 5 * time.Minute
+
 	start := time.Now()
-	turns, err := pushTurnAndCollect(ctx, provider, t1, 60*time.Second)
+	turns, err := pushTurnAndCollect(ctx, provider, t1, turnBudget)
 	if err != nil {
 		return &modeResult{Err: "turn1: " + err.Error(), Latency: time.Since(start).String()}
 	}
@@ -275,7 +281,7 @@ func runVoiceAgent(ctx context.Context, whisper *stt.LocalProvider, llamaBaseURL
 	}
 	turn1Resp := turns[0]
 
-	turns, err = pushTurnAndCollect(ctx, provider, t2, 60*time.Second)
+	turns, err = pushTurnAndCollect(ctx, provider, t2, turnBudget)
 	if err != nil {
 		return &modeResult{Err: "turn2: " + err.Error(), Latency: time.Since(start).String()}
 	}
