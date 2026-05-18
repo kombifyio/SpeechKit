@@ -158,6 +158,16 @@ func (c desktopInputController) handleHotkey(ctx context.Context, evt hotkey.Eve
 // uniformly even when a cloud provider would otherwise satisfy the
 // per-mode prerequisites — until onboarding is acknowledged the user
 // has no way to know SpeechKit is listening on their global hotkeys.
+//
+// The showDashboard call is gated on state.isAppStarted() because a
+// hotkey arriving before app.Run() — phantom keyboard state from the
+// launching context, an auto-start ticker firing during init — would
+// otherwise reach application.InvokeSync against an uninitialised
+// dispatcher and panic (beads kombify-SpeechKit-0s6). Pre-Run the
+// preflight hint still runs (it touches no main-thread UI), and the
+// first-run dashboard popup is owned by scheduleFirstRunOnboarding
+// which polls state.dashboardReadyForAutoOpen() — so the user still
+// gets the wizard, just routed through the safe path.
 func (c desktopInputController) gateOnOnboardingPending() bool {
 	if c.installState == nil {
 		return false
@@ -169,7 +179,7 @@ func (c desktopInputController) gateOnOnboardingPending() bool {
 		return false
 	}
 	c.presentPreflightHint("SpeechKit setup is not finished. Complete the onboarding before activating modes.")
-	if c.showDashboard != nil {
+	if c.showDashboard != nil && c.state.isAppStarted() {
 		c.showDashboard("setup-required")
 	}
 	return true

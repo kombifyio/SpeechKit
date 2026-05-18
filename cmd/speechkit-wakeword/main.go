@@ -1,5 +1,13 @@
+//go:build cgo
+
 // speechkit-wakeword is the sidecar binary that hosts SpeechKit's on-device
 // keyword spotter outside the main desktop process.
+//
+// Build tag: requires cgo. The sherpa-onnx KWS engine is a native shared
+// library bound via github.com/k2-fsa/sherpa-onnx-go, which cannot link
+// when CGO_ENABLED=0. Production builds via scripts/build.ps1 enable cgo;
+// for `go build ./...` clean compiles in cgo-disabled dev environments
+// the package is correctly skipped.
 //
 // Why a sidecar: github.com/k2-fsa/sherpa-onnx-go works correctly when it
 // is the only ONNX consumer in a process and gets to control thread setup

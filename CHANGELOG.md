@@ -12,6 +12,27 @@ IDs, source paths, and other maintainer-only vocabulary.
 
 ## [Unreleased]
 
+## [0.35.1] - 2026-05-18
+
+Post-shipping stabilization patch for v0.35.0. No public API change.
+
+### Fixed
+- `go build ./...` is once again clean in cgo-disabled environments;
+  the wake-word sidecar build is now correctly skipped without cgo
+  rather than failing with a hard reference to its native bindings.
+- The Wails startup race that panicked the desktop client when a
+  hotkey arrived before the main event loop had fully initialised —
+  typical on fresh installs with phantom keyboard state inherited
+  from the launching shell — no longer dispatches against an
+  uninitialised main-thread handler. The first-run dashboard popup
+  is owned exclusively by the safe scheduler path that waits for
+  the dashboard window to become ready.
+
+### Added
+- Companion release notes for v0.35.0 at
+  `docs/release-notes/v0.35.0.md` covering the Enterprise Hardening
+  track with upgrade notes and known limitations.
+
 ## [0.35.0] - 2026-05-18
 
 This release closes the Enterprise Hardening track for production-pilot

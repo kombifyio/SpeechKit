@@ -264,12 +264,22 @@ func showSettingsWindowWithFocus(window settingsWindow, focus bool) {
 // positioning) will dereference a nil internal pointer and panic. Callers
 // that may run before app.Run() — most notably the desktop input
 // controller goroutine — should gate UI-touching work on this.
+//
+// When no Wails app is wired (test harnesses, ad-hoc tools that never call
+// application.New), there is no main-thread dispatcher to wait for —
+// InvokeSync would never be dialled in the first place — so we treat the
+// app as "started" and let callers proceed. The flag is only meaningful
+// when a Wails app exists and we are racing against its
+// OnApplicationStarted callback.
 func (s *appState) isAppStarted() bool {
 	if s == nil {
 		return false
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if s.wailsApp == nil {
+		return true
+	}
 	return s.appStarted
 }
 
