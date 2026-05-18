@@ -122,7 +122,12 @@ func runDesktopApp(closeLogFile func()) {
 
 	audioRuntime, err := initDesktopAudioRuntime(cfg, state, &cleanup)
 	if err != nil {
-		slog.Error("audio init failed", "err", err)
+		category, guidance := audioStartupDiagnostic(err)
+		slog.Error("audio init failed",
+			"err", err,
+			"category", category,
+			"guidance", guidance,
+			"version", AppVersion)
 		os.Exit(1)
 	}
 	tracker.stage("audio_runtime")

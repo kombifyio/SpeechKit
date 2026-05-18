@@ -12,6 +12,23 @@ IDs, source paths, and other maintainer-only vocabulary.
 
 ## [Unreleased]
 
+## [0.35.2] - 2026-05-18
+
+Desktop runtime diagnostics improvements. No public API change.
+
+### Added
+- Every startup log line and every event-loop panic log line now
+  records the running version and Go runtime build, so a customer
+  support bundle's first log line is enough to attribute a failure
+  to a specific release without grep-walking the rest of the file.
+- When the audio capture session fails to open at startup, the fatal
+  log entry now classifies the cause (`category`) and prints a
+  user-facing remediation hint (`guidance`) — distinguishing Windows
+  microphone privacy denial, missing input device, exclusive-use
+  conflict, and build/install mismatches. Reduces support-bundle
+  triage time from "run the user through every audio-stack
+  hypothesis" to "the category tells you where to start".
+
 ## [0.35.1] - 2026-05-18
 
 Post-shipping stabilization patch for v0.35.0. No public API change.

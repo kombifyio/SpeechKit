@@ -1,6 +1,10 @@
 package main
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/wailsapp/wails/v3/pkg/application"
+)
 
 func TestAppSurfaceClosePolicyAllowsCloseDuringShutdown(t *testing.T) {
 	state := &appState{}
@@ -13,5 +17,56 @@ func TestAppSurfaceClosePolicyAllowsCloseDuringShutdown(t *testing.T) {
 
 	if state.shouldHideWindowOnClose() {
 		t.Fatal("surface close should not cancel native close while app is shutting down")
+	}
+}
+
+// TestIsAppStartedReturnsFalseForNilState confirms the nil-receiver guard
+// stays in place; callers must keep working even when state plumbing has
+// not been initialised yet.
+func TestIsAppStartedReturnsFalseForNilState(t *testing.T) {
+	var s *appState
+	if s.isAppStarted() {
+		t.Fatal("nil appState must report not-started")
+	}
+}
+
+// TestIsAppStartedReturnsTrueWithoutWailsApp documents the test-friendly
+// path that drives most hotkey/gate tests: when no Wails app is wired,
+// no main-thread dispatcher exists, application.InvokeSync is never
+// reached, and the started flag is meaningless — treat as ready.
+func TestIsAppStartedReturnsTrueWithoutWailsApp(t *testing.T) {
+	state := &appState{}
+	if state.wailsApp != nil {
+		t.Fatalf("precondition: wailsApp must be nil, got %T", state.wailsApp)
+	}
+	if !state.isAppStarted() {
+		t.Fatal("without a Wails app there is no dispatcher to wait for; isAppStarted must return true")
+	}
+
+	state.markAppStarted()
+	if !state.isAppStarted() {
+		t.Fatal("markAppStarted on a wailsApp-less state must remain true")
+	}
+}
+
+// TestIsAppStartedGatesOnAppStartedWithWailsApp is the explicit
+// regression guard for beads kombify-SpeechKit-0s6: when a Wails app is
+// wired (production path) but app.Run() has not yet entered its main
+// thread, isAppStarted must return false. Otherwise any caller that uses
+// application.InvokeSync — overlay positioning, dashboard show, screen-
+// aware window placement — will dereference an uninitialised dispatcher
+// and crash the desktop client at offset 0x60 inside dispatchOnMainThread.
+//
+// This test would have caught the original race if it had existed before
+// 2026-05-17. Keep it as the canonical proof of fix.
+func TestIsAppStartedGatesOnAppStartedWithWailsApp(t *testing.T) {
+	state := &appState{wailsApp: &application.App{}}
+	if state.isAppStarted() {
+		t.Fatal("with a Wails app present and appStarted=false, isAppStarted must report not-started — see beads kombify-SpeechKit-0s6")
+	}
+
+	state.markAppStarted()
+	if !state.isAppStarted() {
+		t.Fatal("after markAppStarted(), isAppStarted must report started so UI callers can proceed")
 	}
 }
