@@ -1,0 +1,313 @@
+name: install-e2e-windows
+
+# Install-E2E for the SpeechKit Windows Device-Target. Builds the
+# canonical NSIS bundle, silent-installs it on a clean windows-2025
+# runner, then drives all three kernel modes (Dictation, Assist, Voice
+# Agent) against LOCAL Whisper + Gemma models via cmd/sk-localprobe.
+#
+# Triggers:
+#   * schedule (nightly)  — alert-only: failure pages the operator but
+#                            never blocks anything.
+#   * workflow_dispatch   — manual re-run after a fix.
+#   * workflow_call       — called by release.yml as a required gate.
+#
+# Runner: GitHub-hosted windows-2025 (paid; org-level monthly spending
+# cap of 50 EUR enforced via scripts/set-actions-billing-cap.sh).
+#
+# See docs/server/local-only-guarantee.md for the contract this gate
+# enforces.
+
+on:
+  schedule:
+    - cron: '15 3 * * *'
+  workflow_dispatch:
+    inputs:
+      installer:
+        description: 'Installer type to test (nsis | msi | both)'
+        required: false
+        default: both
+  workflow_call:
+    inputs:
+      installer:
+        description: 'Installer type to test (nsis | msi | both)'
+        required: false
+        default: both
+        type: string
+    outputs:
+      pass:
+        description: 'true when the install-E2E gate passed'
+        value: ${{ jobs.install-e2e-windows.outputs.pass }}
+
+concurrency:
+  group: install-e2e-windows-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
+
+jobs:
+  install-e2e-windows:
+    name: Install E2E (${{ matrix.installer }} / Windows)
+    runs-on: ${{ vars.WINDOWS_INSTALL_E2E_RUNNER || 'windows-2025' }}
+    timeout-minutes: 60
+    outputs:
+      pass: ${{ steps.gate.outputs.pass }}
+    strategy:
+      fail-fast: false
+      matrix:
+        installer:
+          - nsis
+          - msi
+        exclude:
+          # When called with installer=nsis, skip the msi leg.
+          # When called with installer=msi, skip the nsis leg.
+          # Default ("both") runs both — no exclusion needed.
+          - installer: ${{ (inputs.installer == 'msi') && 'nsis' || '_none_' }}
+          - installer: ${{ (inputs.installer == 'nsis') && 'msi' || '_none_' }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+
+      - name: Setup Go
+        uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c
+        with:
+          go-version: '1.26.3'
+          cache: true
+
+      - name: Setup Node
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: frontend/app/package-lock.json
+
+      - name: Setup MinGW
+        uses: msys2/setup-msys2@cafece8e6baf9247cf9b1bf95097b0b983cc558d
+        with:
+          update: true
+          install: mingw-w64-x86_64-gcc
+
+      - name: Install NSIS
+        if: matrix.installer == 'nsis'
+        shell: pwsh
+        run: choco install nsis -y --no-progress
+
+      - name: Install WiX toolset
+        if: matrix.installer == 'msi'
+        shell: pwsh
+        run: |
+          dotnet tool install --global wix --version 4.*
+          wix --version
+
+      - name: Cache local models (whisper + gemma)
+        id: models-cache
+        uses: actions/cache@1bd1e32a3bdc45362d1e726936510720a7c30a57
+        with:
+          path: ${{ runner.temp }}\speechkit-models
+          # Models are independent of source — key on the install
+          # script's pinned defaults so cache invalidates when those
+          # change. The script names are encoded in install-server.sh +
+          # generate-e2e-fixtures.ps1; including both here keeps the
+          # key honest.
+          key: ${{ runner.os }}-models-v1-whisper-large-v3-turbo-gemma-4-E4B-it-Q4_K_M
+          restore-keys: |
+            ${{ runner.os }}-models-v1-
+
+      - name: Build canonical Windows bundle
+        shell: pwsh
+        run: ./scripts/build.ps1 -SkipVerification
+
+      - name: Build MSI
+        if: matrix.installer == 'msi'
+        shell: pwsh
+        working-directory: installer/wix
+        env:
+          SPEECHKIT_VERSION: '0.0.0-e2e'
+        run: .\build-msi.ps1
+
+      # ----------------------------------------------------------------
+      # NSIS install: per-user, into $RUNNER_TEMP\SpeechKit-CI.
+      # The /D= switch overrides the default $LOCALAPPDATA\SpeechKit
+      # destination so CI does not pollute the runner's user profile.
+      # ----------------------------------------------------------------
+      - name: Silent install via NSIS
+        if: matrix.installer == 'nsis'
+        shell: pwsh
+        run: |
+          $installer = Resolve-Path "dist/windows/SpeechKit-Setup.exe"
+          $installDir = "$env:RUNNER_TEMP\SpeechKit-CI"
+          New-Item -ItemType Directory -Force -Path $installDir | Out-Null
+          Write-Host "installing $installer to $installDir"
+          Start-Process -FilePath $installer.Path -ArgumentList "/S","/D=$installDir" -Wait -NoNewWindow
+          if (-not (Test-Path "$installDir\SpeechKit.exe")) {
+            throw "SpeechKit.exe not found at $installDir after NSIS silent install"
+          }
+          if (-not (Test-Path "$installDir\whisper-server.exe")) {
+            throw "whisper-server.exe not found at $installDir after NSIS silent install"
+          }
+          Write-Host "install contents:"
+          Get-ChildItem $installDir | Select-Object Name, Length
+
+      # ----------------------------------------------------------------
+      # MSI install: per-machine, into %ProgramFiles%\kombify\SpeechKit.
+      # ALLUSERS=1 is set in the .wxs Package Scope="perMachine" but
+      # passing it on the command line keeps the intent explicit.
+      # Requires elevation — GitHub-hosted Windows runners run as admin.
+      # ----------------------------------------------------------------
+      - name: Silent install via MSI
+        if: matrix.installer == 'msi'
+        shell: pwsh
+        run: |
+          $msi = Resolve-Path "dist/windows/SpeechKit-x64.msi"
+          Write-Host "installing $msi per-machine"
+          $proc = Start-Process msiexec.exe `
+            -ArgumentList "/i", "`"$msi`"", "/quiet", "/norestart", "ALLUSERS=1" `
+            -Wait -PassThru -NoNewWindow
+          if ($proc.ExitCode -ne 0) {
+            throw "msiexec failed with exit code $($proc.ExitCode)"
+          }
+          $installDir = "$env:ProgramFiles\kombify\SpeechKit"
+          if (-not (Test-Path "$installDir\SpeechKit.exe")) {
+            throw "SpeechKit.exe not found at $installDir after MSI install"
+          }
+          if (-not (Test-Path "$installDir\whisper-server.exe")) {
+            throw "whisper-server.exe not found at $installDir after MSI install"
+          }
+          Write-Host "install contents:"
+          Get-ChildItem $installDir | Select-Object Name, Length
+          # Point the CI install dir env var at the MSI landing path so
+          # subsequent steps that reference $env:RUNNER_TEMP\SpeechKit-CI
+          # can be unified via this redirection.
+          $installDir | Out-File -Append -Encoding utf8 $env:GITHUB_PATH
+          "SPEECHKIT_CI_INSTALL_DIR=$installDir" | Out-File -Append -Encoding utf8 $env:GITHUB_ENV
+
+      # Unify install path: NSIS sets a fixed path, MSI wrote
+      # SPEECHKIT_CI_INSTALL_DIR to GITHUB_ENV in its install step.
+      # For NSIS we set it here so all subsequent steps use the same var.
+      - name: Set SPEECHKIT_CI_INSTALL_DIR (NSIS)
+        if: matrix.installer == 'nsis'
+        shell: pwsh
+        run: |
+          "SPEECHKIT_CI_INSTALL_DIR=$env:RUNNER_TEMP\SpeechKit-CI" | Out-File -Append -Encoding utf8 $env:GITHUB_ENV
+
+      - name: Inspect installed SpeechKit.exe
+        shell: pwsh
+        run: |
+          # cmd/speechkit doesn't expose a CLI flag we can run head-
+          # lessly; launching the binary spawns the Wails GUI which
+          # hangs in CI. Verify the installer placed the expected
+          # bundle: SpeechKit.exe + whisper-server.exe + llama-server
+          # .exe all present, SpeechKit.exe of non-trivial size.
+          # (FileVersion metadata isn't injected by the Wails build so
+          # we don't assert on it.)
+          $installDir = $env:SPEECHKIT_CI_INSTALL_DIR
+          $exe = "$installDir\SpeechKit.exe"
+          $info = Get-Item $exe
+          if ($info.Length -lt 1MB) {
+            throw "SpeechKit.exe is suspiciously small: $($info.Length) bytes"
+          }
+          Write-Host ("SpeechKit.exe size = {0:N0} bytes" -f $info.Length)
+          foreach ($req in @("whisper-server.exe", "llama\llama-server.exe", "whisper.dll", "ggml.dll")) {
+            $p = Join-Path $installDir $req
+            if (-not (Test-Path $p)) {
+              throw "Required bundle file missing after install: $req"
+            }
+            Write-Host ("  bundled: {0} ({1:N0} bytes)" -f $req, (Get-Item $p).Length)
+          }
+
+      - name: Build sk-localprobe.exe next to SpeechKit.exe
+        shell: pwsh
+        run: |
+          $installDir = $env:SPEECHKIT_CI_INSTALL_DIR
+          go build -o "$installDir\sk-localprobe.exe" ./cmd/sk-localprobe
+          if (-not (Test-Path "$installDir\sk-localprobe.exe")) {
+            throw "sk-localprobe.exe was not built"
+          }
+
+      - name: Download local models (cold path)
+        if: steps.models-cache.outputs.cache-hit != 'true'
+        shell: pwsh
+        run: |
+          $modelDir = "$env:RUNNER_TEMP\speechkit-models"
+          New-Item -ItemType Directory -Force -Path "$modelDir\whisper", "$modelDir\llama" | Out-Null
+
+          $whisperPath = "$modelDir\whisper\ggml-large-v3-turbo.bin"
+          $whisperURL  = "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-large-v3-turbo.bin"
+          Write-Host "downloading whisper large-v3-turbo (~1.6 GB)..."
+          Invoke-WebRequest -Uri $whisperURL -OutFile $whisperPath -UseBasicParsing
+
+          $gemmaPath = "$modelDir\llama\gemma-4-E4B-it-Q4_K_M.gguf"
+          $gemmaURL  = "https://huggingface.co/ggml-org/gemma-4-E4B-it-GGUF/resolve/main/gemma-4-E4B-it-Q4_K_M.gguf"
+          Write-Host "downloading gemma 4 E4B IT Q4_K_M (~3.3 GB)..."
+          Invoke-WebRequest -Uri $gemmaURL -OutFile $gemmaPath -UseBasicParsing
+
+          Write-Host "model files:"
+          Get-ChildItem -Recurse $modelDir | Select-Object FullName, Length
+
+      - name: Verify cached models present (warm path)
+        if: steps.models-cache.outputs.cache-hit == 'true'
+        shell: pwsh
+        run: |
+          $modelDir = "$env:RUNNER_TEMP\speechkit-models"
+          $whisperPath = "$modelDir\whisper\ggml-large-v3-turbo.bin"
+          $gemmaPath = "$modelDir\llama\gemma-4-E4B-it-Q4_K_M.gguf"
+          foreach ($p in @($whisperPath, $gemmaPath)) {
+            if (-not (Test-Path $p)) {
+              throw "expected cached model not present: $p"
+            }
+          }
+          Get-ChildItem -Recurse $modelDir | Select-Object FullName, Length
+
+      - name: Run sk-localprobe with all three modes
+        shell: pwsh
+        run: |
+          # Clear every cloud key from the runner env so a leaked secret
+          # cannot accidentally satisfy the assertions via a hosted
+          # provider rather than the local kernel.
+          Remove-Item env:GOOGLE_AI_API_KEY        -ErrorAction SilentlyContinue
+          Remove-Item env:GOOGLE_STT_API_KEY       -ErrorAction SilentlyContinue
+          Remove-Item env:OPENAI_API_KEY           -ErrorAction SilentlyContinue
+          Remove-Item env:GROQ_API_KEY             -ErrorAction SilentlyContinue
+          Remove-Item env:OPENROUTER_API_KEY       -ErrorAction SilentlyContinue
+          Remove-Item env:HF_TOKEN                 -ErrorAction SilentlyContinue
+
+          $installDir = $env:SPEECHKIT_CI_INSTALL_DIR
+          $modelDir   = "$env:RUNNER_TEMP\speechkit-models"
+          $report     = "$env:RUNNER_TEMP\sk-localprobe-report.json"
+
+          # sk-localprobe.exe is in the install dir alongside
+          # whisper-server.exe and llama-server.exe, so the kernel
+          # libraries find their subprocess binaries via the standard
+          # "next to executable" lookup.
+          & "$installDir\sk-localprobe.exe" `
+            --whisper-model "$modelDir\whisper\ggml-large-v3-turbo.bin" `
+            --gemma-model   "$modelDir\llama\gemma-4-E4B-it-Q4_K_M.gguf" `
+            --fixtures      "$(Get-Location)\testdata\e2e" `
+            --report        $report `
+            --timeout       5m
+          $code = $LASTEXITCODE
+          Write-Host "--- sk-localprobe report ---"
+          if (Test-Path $report) {
+            Get-Content $report
+          }
+          if ($code -ne 0) { exit $code }
+
+      - name: Set gate output
+        id: gate
+        shell: pwsh
+        run: echo "pass=true" | Out-File -Append -Encoding utf8 $env:GITHUB_OUTPUT
+
+      - name: Upload report on failure
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: install-e2e-windows-${{ matrix.installer }}-report
+          path: |
+            ${{ runner.temp }}\sk-localprobe-report.json
+            ${{ runner.temp }}\SpeechKit-CI\*.log
+            ${{ env.ProgramFiles }}\kombify\SpeechKit\*.log
+          retention-days: 7
+          if-no-files-found: ignore

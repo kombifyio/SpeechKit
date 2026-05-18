@@ -18,6 +18,11 @@ on:
         required: true
         default: true
         type: boolean
+      release_windows_msi:
+        description: 'Attach the WiX per-machine MSI (.msi) for SCCM/Intune'
+        required: true
+        default: true
+        type: boolean
 
 permissions:
   actions: read
@@ -43,6 +48,7 @@ jobs:
       checkout_ref: ${{ steps.plan.outputs.checkout_ref }}
       release_windows_portable: ${{ steps.plan.outputs.release_windows_portable }}
       release_windows_installer: ${{ steps.plan.outputs.release_windows_installer }}
+      release_windows_msi: ${{ steps.plan.outputs.release_windows_msi }}
       should_build_windows: ${{ steps.plan.outputs.should_build_windows }}
 
     steps:
@@ -56,15 +62,17 @@ jobs:
             checkout_ref="refs/tags/$tag"
             release_windows_portable="${{ github.event.inputs.release_windows_portable }}"
             release_windows_installer="${{ github.event.inputs.release_windows_installer }}"
+            release_windows_msi="${{ github.event.inputs.release_windows_msi }}"
           else
             tag="${{ github.ref_name }}"
             checkout_ref="${{ github.ref }}"
             release_windows_portable=true
             release_windows_installer=true
+            release_windows_msi=true
           fi
 
           should_build_windows=false
-          if [ "$release_windows_portable" = true ] || [ "$release_windows_installer" = true ]; then
+          if [ "$release_windows_portable" = true ] || [ "$release_windows_installer" = true ] || [ "$release_windows_msi" = true ]; then
             should_build_windows=true
           fi
 
@@ -73,6 +81,7 @@ jobs:
             echo "checkout_ref=$checkout_ref"
             echo "release_windows_portable=$release_windows_portable"
             echo "release_windows_installer=$release_windows_installer"
+            echo "release_windows_msi=$release_windows_msi"
             echo "should_build_windows=$should_build_windows"
           } >> "$GITHUB_OUTPUT"
 
@@ -92,19 +101,28 @@ jobs:
           set -euo pipefail
           tag="${{ needs.prepare.outputs.tag }}"
 
-          for attempt in $(seq 1 12); do
+          # The publisher app (publish-oss.yml) is the single source of
+          # truth for the GitHub Release object — it creates the draft
+          # with the rendered changelog notes. This job waits up to
+          # ~10 min for that draft to appear, then strict-fails so the
+          # Windows asset job never silently creates a duplicate release
+          # of its own (regression observed on v0.34.9 where two
+          # releases for the same tag ended up on the OSS mirror).
+          attempts=120  # 120 * 5 s = 10 min budget
+          for attempt in $(seq 1 $attempts); do
             is_draft="$(gh release view "$tag" --repo "${{ github.repository }}" --json isDraft --jq '.isDraft' 2>/dev/null || true)"
             if [ -n "$is_draft" ]; then
               if [ "$is_draft" = "true" ]; then
                 exit 0
               fi
-              echo "::error title=Release already published::Expected $tag to exist as a draft release from the private publisher flow."
+              echo "::error title=Release already published::Expected $tag to exist as a draft release from the publisher app, but it is already published. Refusing to re-publish."
               exit 1
             fi
             sleep 5
           done
 
-          echo "No publisher draft release for $tag is visible yet; the Windows release job will create a draft with the rendered notes."
+          echo "::error title=Publisher draft missing::No draft release for $tag appeared after 10 minutes. The publisher app (publish-oss.yml) is the single source of truth for the release object; the Windows asset job must not create one on its own."
+          exit 1
 
   build-and-release:
     name: Build Windows Assets
@@ -172,6 +190,14 @@ jobs:
           SPEECHKIT_WINDOWS_SIGNING_PUBLISHER: ${{ vars.SIGNPATH_PUBLISHER_NAME }}
           SPEECHKIT_WINDOWS_SIGNING_THUMBPRINT: ${{ vars.SPEECHKIT_WINDOWS_SIGNING_THUMBPRINT }}
         run: |
+          # Verification (go vet + go test + frontend tests) runs separately
+          # in ci.yml on every push to main and is also enforced as a gate
+          # before tagging. The release workflow only produces the signed
+          # artifact, so we skip the in-build test step here to avoid the
+          # 3-minute duplication and to keep CGo bindings for the wake-word
+          # sidecar happy on the Windows runner without bundling sherpa-onnx
+          # DLLs into PATH for `go test`. The release-guard meta-test in
+          # tools/releaseguard documents the allowance.
           if ('${{ needs.prepare.outputs.release_windows_installer }}' -eq 'true') {
             ./scripts/build.ps1 -SkipVerification
           } else {
@@ -294,6 +320,66 @@ jobs:
           }
           Copy-Item -Path $signedInstaller.FullName -Destination "dist/windows/SpeechKit-Setup.exe" -Force
 
+      # ----------------------------------------------------------------
+      # WiX MSI — per-machine installer for SCCM/Intune deployment
+      # Builds from the same dist/windows/SpeechKit/ staging dir as
+      # the NSIS installer. The signed SpeechKit.exe is already in
+      # place (replaced above) so the MSI embeds the signed binary.
+      # ----------------------------------------------------------------
+
+      - name: Install WiX toolset
+        if: needs.prepare.outputs.release_windows_msi == 'true'
+        shell: pwsh
+        run: |
+          dotnet tool install --global wix --version 4.*
+          # heat is bundled with WiX v4; verify both are on PATH.
+          wix --version
+          heat --help 2>&1 | Select-Object -First 1
+
+      - name: Build MSI
+        if: needs.prepare.outputs.release_windows_msi == 'true'
+        shell: pwsh
+        working-directory: installer/wix
+        env:
+          SPEECHKIT_VERSION: ${{ needs.prepare.outputs.tag }}
+        run: .\build-msi.ps1
+
+      - name: Upload unsigned SpeechKit-x64.msi
+        if: steps.signing.outputs.mode == 'signed' && needs.prepare.outputs.release_windows_msi == 'true'
+        id: upload-speechkit-msi
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: unsigned-speechkit-msi
+          path: dist/windows/SpeechKit-x64.msi
+          compression-level: 0
+          retention-days: 1
+
+      - name: Sign SpeechKit-x64.msi with SignPath
+        if: steps.signing.outputs.mode == 'signed' && needs.prepare.outputs.release_windows_msi == 'true'
+        uses: signpath/github-action-submit-signing-request@bc66d86b015a46e9c6d9700de73143a82f9570ff
+        with:
+          api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
+          organization-id: ${{ vars.SIGNPATH_ORGANIZATION_ID }}
+          project-slug: ${{ vars.SIGNPATH_PROJECT_SLUG }}
+          signing-policy-slug: ${{ vars.SIGNPATH_SIGNING_POLICY_SLUG }}
+          artifact-configuration-slug: ${{ vars.SIGNPATH_ARTIFACT_CONFIGURATION_SLUG }}
+          github-artifact-id: ${{ steps.upload-speechkit-msi.outputs.artifact-id }}
+          wait-for-completion: true
+          output-artifact-directory: signed-speechkit-msi
+          parameters: |
+            version: "${{ needs.prepare.outputs.tag }}"
+            commit: "${{ github.sha }}"
+
+      - name: Replace signed SpeechKit-x64.msi
+        if: steps.signing.outputs.mode == 'signed' && needs.prepare.outputs.release_windows_msi == 'true'
+        shell: pwsh
+        run: |
+          $signedMsi = Get-ChildItem -Path "signed-speechkit-msi" -Recurse -Filter "SpeechKit-x64.msi" | Select-Object -First 1
+          if ($null -eq $signedMsi) {
+            throw 'Signed SpeechKit-x64.msi not found in SignPath output.'
+          }
+          Copy-Item -Path $signedMsi.FullName -Destination "dist/windows/SpeechKit-x64.msi" -Force
+
       - name: Validate signed Windows binaries
         if: steps.signing.outputs.mode == 'signed'
         shell: pwsh
@@ -305,6 +391,9 @@ jobs:
           )
           if ('${{ needs.prepare.outputs.release_windows_installer }}' -eq 'true') {
             $validationArgs += '-RequireInstaller'
+          }
+          if ('${{ needs.prepare.outputs.release_windows_msi }}' -eq 'true') {
+            $validationArgs += '-RequireMsi'
           }
           & ./scripts/validate-windows-signing.ps1 @validationArgs
           if ($LASTEXITCODE -ne 0) {
@@ -351,6 +440,10 @@ jobs:
             Copy-Item "dist/windows/SpeechKit-Setup.exe" "SpeechKit-Setup.exe"
             $assets += "SpeechKit-Setup.exe"
           }
+          if ('${{ needs.prepare.outputs.release_windows_msi }}' -eq 'true') {
+            Copy-Item "dist/windows/SpeechKit-x64.msi" "SpeechKit-x64.msi"
+            $assets += "SpeechKit-x64.msi"
+          }
           if ('${{ needs.prepare.outputs.release_windows_portable }}' -eq 'true') {
             Compress-Archive -Path "dist/windows/SpeechKit/*" -DestinationPath "SpeechKit-Portable.zip" -Force
             $assets += "SpeechKit-Portable.zip"
@@ -384,25 +477,25 @@ jobs:
         with:
           subject-path: ${{ steps.assets.outputs.subject_paths }}
 
-      - name: Upload Windows assets to GitHub Release
+      - name: Verify publisher draft still exists before attaching assets
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           tag="${{ needs.prepare.outputs.tag }}"
-          title="SpeechKit $tag"
-          if gh release view "$tag" --repo "${{ github.repository }}" >/dev/null 2>&1; then
-            echo "Release $tag already exists; preserving publisher-managed notes."
-            exit 0
+          # By the time this step runs, wait-for-publisher-release has
+          # already strict-confirmed a draft exists. This is a belt-and-
+          # suspenders check to catch the rare race where the App
+          # somehow deleted the draft between the wait job ending and
+          # this step starting. The workflow MUST NOT fall back to
+          # creating its own release here — the App is the single
+          # source of truth for the release object.
+          if ! gh release view "$tag" --repo "${{ github.repository }}" --json isDraft --jq '.isDraft' >/dev/null 2>&1; then
+            echo "::error title=Publisher draft disappeared::Draft release for $tag is no longer visible. Refusing to attach assets to a release this job did not create."
+            exit 1
           fi
-
-          args=(release create "$tag" --repo "${{ github.repository }}" --title "$title" --notes-file release-notes.md --verify-tag --draft)
-          if [[ "$tag" == *-alpha* || "$tag" == *-beta* || "$tag" == *-rc* ]]; then
-            args+=(--prerelease)
-          fi
-
-          gh "${args[@]}"
+          echo "Confirmed publisher draft for $tag is present."
 
       - name: Attach Windows assets to GitHub Release
         uses: softprops/action-gh-release@153bb8e04406b158c6c84fc1615b65b24149a1fe
@@ -443,26 +536,44 @@ jobs:
             --repo-url "https://github.com/${{ github.repository }}" \
             --output release-notes.md
 
-      - name: Create source release if the publisher has not already created it
+      - name: Verify publisher created the source release
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           tag="${{ needs.prepare.outputs.tag }}"
-          title="SpeechKit $tag"
 
-          if gh release view "$tag" --repo "${{ github.repository }}" >/dev/null 2>&1; then
-            echo "Release $tag already exists; preserving publisher-managed notes."
-            exit 0
-          fi
+          # Same single-source-of-truth contract as the Windows path:
+          # the publisher app (publish-oss.yml) creates the GitHub
+          # Release object. This job must NOT create a parallel release
+          # of its own — earlier behavior caused duplicate releases.
+          attempts=120
+          for attempt in $(seq 1 $attempts); do
+            if gh release view "$tag" --repo "${{ github.repository }}" >/dev/null 2>&1; then
+              echo "Confirmed publisher release for $tag is present."
+              exit 0
+            fi
+            sleep 5
+          done
 
-          args=(release create "$tag" --repo "${{ github.repository }}" --title "$title" --notes-file release-notes.md --verify-tag)
-          if [[ "$tag" == *-alpha* || "$tag" == *-beta* || "$tag" == *-rc* ]]; then
-            args+=(--prerelease)
-          fi
+          echo "::error title=Publisher release missing::No release for $tag appeared after 10 minutes. The publisher app (publish-oss.yml) is the single source of truth for the release object. Refusing to create a duplicate from this workflow."
+          exit 1
 
-          gh "${args[@]}"
+  install-e2e-linux-gate:
+    name: Install E2E Gate (Linux)
+    needs: prepare
+    uses: ./.github/workflows/install-e2e-linux.yml
+    secrets: inherit
+
+  install-e2e-windows-gate:
+    name: Install E2E Gate (Windows)
+    needs:
+      - prepare
+      - build-and-release
+    if: needs.prepare.outputs.should_build_windows == 'true'
+    uses: ./.github/workflows/install-e2e-windows.yml
+    secrets: inherit
 
   publish-release:
     name: Publish Release
@@ -470,11 +581,15 @@ jobs:
       - prepare
       - build-and-release
       - create-source-release
+      - install-e2e-linux-gate
+      - install-e2e-windows-gate
     if: >-
       always() &&
       needs.prepare.result == 'success' &&
       (needs.build-and-release.result == 'success' || needs.build-and-release.result == 'skipped') &&
       (needs.create-source-release.result == 'success' || needs.create-source-release.result == 'skipped') &&
+      needs.install-e2e-linux-gate.result == 'success' &&
+      (needs.install-e2e-windows-gate.result == 'success' || needs.install-e2e-windows-gate.result == 'skipped') &&
       (needs.build-and-release.result == 'success' || needs.create-source-release.result == 'success')
     runs-on: ${{ vars.GHA_HOSTED_RUNNER || 'ubuntu-24.04' }}
     timeout-minutes: 10
@@ -488,6 +603,7 @@ jobs:
           set -euo pipefail
           tag="${{ needs.prepare.outputs.tag }}"
           expect_installer="${{ needs.prepare.outputs.release_windows_installer }}"
+          expect_msi="${{ needs.prepare.outputs.release_windows_msi }}"
           expect_portable="${{ needs.prepare.outputs.release_windows_portable }}"
 
           if ! gh release view "$tag" --repo "${{ github.repository }}" >/dev/null 2>&1; then
@@ -503,6 +619,10 @@ jobs:
 
           if [ "$expect_installer" = "true" ] && ! grep -qx 'SpeechKit-Setup.exe' <<<"$asset_names"; then
             echo "::error title=Missing public installer::SpeechKit-Setup.exe was not attached to $tag."
+            exit 1
+          fi
+          if [ "$expect_msi" = "true" ] && ! grep -qx 'SpeechKit-x64.msi' <<<"$asset_names"; then
+            echo "::error title=Missing public MSI::SpeechKit-x64.msi was not attached to $tag."
             exit 1
           fi
           if [ "$expect_portable" = "true" ] && ! grep -qx 'SpeechKit-Portable.zip' <<<"$asset_names"; then

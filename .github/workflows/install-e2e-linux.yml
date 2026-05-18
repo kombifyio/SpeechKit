@@ -1,0 +1,176 @@
+name: install-e2e-linux
+
+# Install-E2E for the SpeechKit Linux Docker server. Runs the same
+# install-server.sh path a self-hosted operator would, brings up the
+# docker-compose stack with the local-only profile (which pre-pulls
+# Whisper Large v3 Turbo + Gemma 4 E4B Q4_K_M), and exercises all
+# three modes via sk-e2e --local-only --require-functional.
+#
+# Triggers:
+#   * push: tags 'v*'     — non-blocking heartbeat for tag visibility;
+#                            release.yml's publish-release gates on this
+#                            via workflow_call (see release.yml).
+#   * schedule (nightly)  — alert-only: failure pages the operator but
+#                            never blocks anything.
+#   * workflow_dispatch   — manual re-run after a fix.
+#   * workflow_call       — called by release.yml as a required gate.
+#
+# See docs/server/local-only-guarantee.md for the contract this gate
+# enforces.
+
+on:
+  schedule:
+    - cron: '0 3 * * *'
+  workflow_dispatch:
+  workflow_call:
+    outputs:
+      pass:
+        description: 'true when the install-E2E gate passed'
+        value: ${{ jobs.install-e2e-linux.outputs.pass }}
+
+concurrency:
+  group: install-e2e-linux-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  install-e2e-linux:
+    name: Install E2E (Linux Docker)
+    runs-on: ${{ vars.GHA_HOSTED_RUNNER || 'ubuntu-24.04' }}
+    timeout-minutes: 30
+    outputs:
+      pass: ${{ steps.gate.outputs.pass }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+
+      - name: Setup Go
+        uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c
+        with:
+          go-version: '1.26.3'
+          cache: true
+
+      - name: Cache local models (whisper + gemma)
+        id: models-cache
+        uses: actions/cache@1bd1e32a3bdc45362d1e726936510720a7c30a57
+        with:
+          # ~/.speechkit-test-models is the host-side copy that
+          # local-only-prepare seeds into the speechkit-test-models
+          # named volume on cold runs.
+          path: ~/.speechkit-test-models
+          key: ${{ runner.os }}-models-${{ hashFiles('scripts/install-server.sh', 'deploy/docker/docker-compose.yml', 'deploy/docker/docker-compose.test.yml') }}
+          restore-keys: |
+            ${{ runner.os }}-models-
+
+      - name: Build server image
+        run: |
+          docker build \
+            --file deploy/docker/Dockerfile.server \
+            --target speechkit-server \
+            --build-arg "VERSION=${{ github.sha }}" \
+            --tag speechkit-server:install-e2e \
+            .
+
+      - name: Verify --strict-local-only refuses cloud env
+        env:
+          OPENAI_API_KEY: should-fail
+        run: |
+          set +e
+          # tee swallows the script's exit code; capture via PIPESTATUS.
+          bash scripts/install-server.sh \
+            --strict-local-only --no-up \
+            --dir "$RUNNER_TEMP/sk-install-bad" 2>&1 | tee /tmp/strict.log
+          rc=${PIPESTATUS[0]}
+          set -e
+          if [ "$rc" != "2" ]; then
+            echo "::error title=strict-local-only escape::expected exit 2 with OPENAI_API_KEY set, got $rc" >&2
+            exit 1
+          fi
+          grep -q 'OPENAI_API_KEY is set' /tmp/strict.log
+
+      - name: Install via install-server.sh --strict-local-only --no-up
+        env:
+          SPEECHKIT_SERVER_IMAGE: speechkit-server:install-e2e
+        run: |
+          unset GOOGLE_AI_API_KEY OPENAI_API_KEY GROQ_API_KEY OPENROUTER_API_KEY HF_TOKEN GOOGLE_STT_API_KEY
+          mkdir -p "$RUNNER_TEMP/sk-install"
+          bash scripts/install-server.sh \
+            --strict-local-only \
+            --no-up \
+            --dir "$RUNNER_TEMP/sk-install" \
+            --image speechkit-server:install-e2e
+          echo "--- generated .env ---"
+          cat "$RUNNER_TEMP/sk-install/.env"
+
+      - name: Download local models on cache miss
+        if: steps.models-cache.outputs.cache-hit != 'true'
+        run: |
+          mkdir -p "$HOME/.speechkit-test-models/whisper" "$HOME/.speechkit-test-models/llama"
+          if [ ! -f "$HOME/.speechkit-test-models/whisper/ggml-large-v3-turbo.bin" ]; then
+            echo "downloading whisper large-v3-turbo (~1.6 GB)..."
+            curl -fSL --retry 8 --retry-delay 5 \
+              -o "$HOME/.speechkit-test-models/whisper/ggml-large-v3-turbo.bin" \
+              https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-large-v3-turbo.bin
+          fi
+          if [ ! -f "$HOME/.speechkit-test-models/llama/gemma-4-E4B-it-Q4_K_M.gguf" ]; then
+            echo "downloading gemma 4 E4B IT Q4_K_M (~3.3 GB)..."
+            curl -fSL --retry 8 --retry-delay 5 \
+              -o "$HOME/.speechkit-test-models/llama/gemma-4-E4B-it-Q4_K_M.gguf" \
+              https://huggingface.co/ggml-org/gemma-4-E4B-it-GGUF/resolve/main/gemma-4-E4B-it-Q4_K_M.gguf
+          fi
+          ls -lh "$HOME/.speechkit-test-models/whisper" "$HOME/.speechkit-test-models/llama"
+
+      - name: Bring up local-only stack and run all three modes
+        env:
+          SPEECHKIT_SERVER_IMAGE: speechkit-server:install-e2e
+          # Bind-mounted via docker-compose.install-e2e.override.yml so
+          # the GH-hosted runner doesn't have to host both the host
+          # cache AND a Docker volume copy of the multi-GB models.
+          SPEECHKIT_MODELS_HOST_DIR: ${{ github.workspace }}/../speechkit-models
+        run: |
+          unset GOOGLE_AI_API_KEY OPENAI_API_KEY GROQ_API_KEY OPENROUTER_API_KEY HF_TOKEN GOOGLE_STT_API_KEY
+          # Resolve the host dir absolutely (Compose bind mount requires
+          # an absolute path).
+          export SPEECHKIT_MODELS_HOST_DIR="$HOME/.speechkit-test-models"
+          ls -lh "$SPEECHKIT_MODELS_HOST_DIR/whisper" "$SPEECHKIT_MODELS_HOST_DIR/llama"
+          docker compose \
+            -f deploy/docker/docker-compose.test.yml \
+            -f deploy/docker/docker-compose.install-e2e.override.yml \
+            --profile local-only \
+            up \
+            --abort-on-container-exit \
+            --exit-code-from local-only-test-client
+
+      - name: List host cache for cache write-back
+        if: always()
+        run: |
+          # Models live in $HOME/.speechkit-test-models on the host;
+          # the actions/cache restore-and-save action picks them up
+          # automatically at job-end via the `path:` set on the
+          # actions/cache step above.
+          ls -lh "$HOME/.speechkit-test-models/whisper" "$HOME/.speechkit-test-models/llama" || true
+
+      - name: Set gate output
+        id: gate
+        run: echo "pass=true" >> "$GITHUB_OUTPUT"
+
+      - name: Tear down compose stack
+        if: always()
+        run: |
+          docker compose \
+            -f deploy/docker/docker-compose.test.yml \
+            --profile local-only down -v || true
+
+      - name: Upload install + env artefacts on failure
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: install-e2e-linux-artefacts
+          path: |
+            ${{ runner.temp }}/sk-install/.env
+            ${{ runner.temp }}/sk-install/docker-compose.yml
+            /tmp/strict.log
+          retention-days: 7
+          if-no-files-found: ignore
