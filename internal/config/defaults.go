@@ -93,6 +93,22 @@ func defaults() *Config {
 			ParallelCloud:           false,
 			ReplaceOnBetter:         false,
 		},
+		Update: UpdateConfig{
+			Enabled:            true,
+			ManifestURL:        "https://api.github.com/repos/kombifyio/SpeechKit/releases/latest",
+			CheckIntervalHours: 6,
+		},
+		Logging: LoggingConfig{
+			MaxFileSizeMB: 50,
+			MaxFiles:      30,
+		},
+		Audit: AuditConfig{
+			Enabled:       true,
+			RetentionDays: 90,
+		},
+		Telemetry: TelemetryConfig{
+			UpdateCheck: true,
+		},
 		Feedback: FeedbackConfig{
 			SaveAudio:          true,
 			AudioRetentionDays: 7,
@@ -192,6 +208,9 @@ func defaults() *Config {
 				UtilityModel: "gemini-2.5-flash-lite",
 				AssistModel:  "gemini-2.5-flash",
 				AgentModel:   "gemini-2.5-pro",
+				// EU default: reflects target enterprise customer base.
+				// US customers override with "us-central1" in config.toml.
+				Region: "europe-west3",
 			},
 			Ollama: OllamaProviderConfig{
 				BaseURL:      "http://localhost:11434",

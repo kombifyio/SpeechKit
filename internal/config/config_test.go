@@ -191,6 +191,58 @@ func TestLoadDefaults(t *testing.T) {
 	if cfg.Feedback.AudioRetentionDays != 7 {
 		t.Errorf("legacy feedback audio retention days = %d, want 7", cfg.Feedback.AudioRetentionDays)
 	}
+	if cfg.Providers.Google.Region != "europe-west3" {
+		t.Errorf("default Google region = %q, want europe-west3 (EU compliance default)", cfg.Providers.Google.Region)
+	}
+}
+
+func TestGoogleProviderRegionDefaultAndOverride(t *testing.T) {
+	t.Run("defaults to europe-west3 when absent from TOML", func(t *testing.T) {
+		dir := t.TempDir()
+		path := filepath.Join(dir, "config.toml")
+		body := `[providers.google]
+api_key_env = "GOOGLE_AI_API_KEY"
+`
+		if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
+			t.Fatalf("write toml: %v", err)
+		}
+		cfg, err := Load(path)
+		if err != nil {
+			t.Fatalf("Load: %v", err)
+		}
+		if cfg.Providers.Google.Region != "europe-west3" {
+			t.Errorf("region = %q, want europe-west3 when not set in TOML", cfg.Providers.Google.Region)
+		}
+	})
+
+	t.Run("respects explicit override in TOML", func(t *testing.T) {
+		dir := t.TempDir()
+		path := filepath.Join(dir, "config.toml")
+		body := `[providers.google]
+api_key_env = "GOOGLE_AI_API_KEY"
+region = "us-central1"
+`
+		if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
+			t.Fatalf("write toml: %v", err)
+		}
+		cfg, err := Load(path)
+		if err != nil {
+			t.Fatalf("Load: %v", err)
+		}
+		if cfg.Providers.Google.Region != "us-central1" {
+			t.Errorf("region = %q, want us-central1", cfg.Providers.Google.Region)
+		}
+	})
+
+	t.Run("no TOML file uses europe-west3 from defaults", func(t *testing.T) {
+		cfg, err := Load("/nonexistent/no-config.toml")
+		if err != nil {
+			t.Fatalf("Load: %v", err)
+		}
+		if cfg.Providers.Google.Region != "europe-west3" {
+			t.Errorf("region = %q, want europe-west3", cfg.Providers.Google.Region)
+		}
+	})
 }
 
 func TestLoadVoiceAgentAgentProfileID(t *testing.T) {
@@ -1576,5 +1628,94 @@ func TestManagedHuggingFaceAvailableInBuild_PublicModuleFallbackStaysDisabled(t 
 
 	if ManagedHuggingFaceAvailableInBuild() {
 		t.Fatal("ManagedHuggingFaceAvailableInBuild() = true, want false for public module fallback")
+	}
+}
+
+func TestPhase0Defaults(t *testing.T) {
+	cfg := defaults()
+
+	const wantManifestURL = "https://api.github.com/repos/kombifyio/SpeechKit/releases/latest"
+	if cfg.Update.ManifestURL != wantManifestURL {
+		t.Errorf("Update.ManifestURL: want %q, got %q", wantManifestURL, cfg.Update.ManifestURL)
+	}
+	if cfg.Update.CheckIntervalHours != 6 {
+		t.Errorf("Update.CheckIntervalHours: want 6, got %d", cfg.Update.CheckIntervalHours)
+	}
+	if !cfg.Update.Enabled {
+		t.Errorf("Update.Enabled: want true by default, got false")
+	}
+	if cfg.Logging.MaxFileSizeMB != 50 {
+		t.Errorf("Logging.MaxFileSizeMB: want 50, got %d", cfg.Logging.MaxFileSizeMB)
+	}
+	if cfg.Logging.MaxFiles != 30 {
+		t.Errorf("Logging.MaxFiles: want 30, got %d", cfg.Logging.MaxFiles)
+	}
+	if !cfg.Audit.Enabled {
+		t.Errorf("Audit.Enabled: want true by default, got false")
+	}
+	if cfg.Audit.RetentionDays != 90 {
+		t.Errorf("Audit.RetentionDays: want 90, got %d", cfg.Audit.RetentionDays)
+	}
+	if !cfg.Telemetry.UpdateCheck {
+		t.Errorf("Telemetry.UpdateCheck: want true by default, got false")
+	}
+}
+
+func TestLoadDisablesTelemetryWhenUpdateDisabled(t *testing.T) {
+	tmpFile := filepath.Join(t.TempDir(), "config.toml")
+	if err := os.WriteFile(tmpFile, []byte("[update]\nenabled = false\n"), 0o600); err != nil {
+		t.Fatalf("write tmp config: %v", err)
+	}
+	cfg, err := Load(tmpFile)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.Update.Enabled {
+		t.Errorf("Update.Enabled: want false (from toml), got true")
+	}
+	if cfg.Telemetry.UpdateCheck {
+		t.Errorf("Telemetry.UpdateCheck: want false (backfilled from disabled update), got true")
+	}
+}
+
+func TestEnterprisePresetsLoad(t *testing.T) {
+	cases := []struct {
+		name     string
+		path     string
+		wantProv string
+		wantUpd  bool
+		wantStrt string
+	}{
+		{
+			name:     "onprem profile A",
+			path:     "../../deploy/presets/enterprise-onprem.toml",
+			wantProv: "local-cascaded",
+			wantUpd:  false,
+			wantStrt: "local-only",
+		},
+		{
+			name:     "cloud-byok profile B",
+			path:     "../../deploy/presets/enterprise-cloud-byok.toml",
+			wantProv: "gemini",
+			wantUpd:  true,
+			wantStrt: "dynamic",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			cfg, err := Load(tc.path)
+			if err != nil {
+				t.Fatalf("Load(%s): %v", tc.path, err)
+			}
+			if cfg.VoiceAgent.Provider != tc.wantProv {
+				t.Errorf("VoiceAgent.Provider: want %q, got %q", tc.wantProv, cfg.VoiceAgent.Provider)
+			}
+			if cfg.Update.Enabled != tc.wantUpd {
+				t.Errorf("Update.Enabled: want %v, got %v", tc.wantUpd, cfg.Update.Enabled)
+			}
+			if cfg.Routing.Strategy != tc.wantStrt {
+				t.Errorf("Routing.Strategy: want %q, got %q", tc.wantStrt, cfg.Routing.Strategy)
+			}
+		})
 	}
 }

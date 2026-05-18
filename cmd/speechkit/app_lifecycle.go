@@ -1,14 +1,17 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"log/slog"
 	"os"
+	"path/filepath"
 	"strconv"
 	"time"
 
 	"github.com/wailsapp/wails/v3/pkg/application"
 
+	"github.com/kombifyio/SpeechKit/internal/auditlog"
 	"github.com/kombifyio/SpeechKit/internal/config"
 	"github.com/kombifyio/SpeechKit/internal/downloads"
 )
@@ -51,6 +54,54 @@ func runDesktopApp(closeLogFile func()) {
 		slog.Error("config load failed", "err", err)
 		closeLogFile()
 		os.Exit(1) //nolint:gocritic // exitAfterDefer: closeLogFile() called explicitly above before exit
+	}
+	// configureLoggingLimits runs after initAppLogging on purpose: logging
+	// infrastructure must be up before loadDesktopStartupConfig (which can
+	// emit log lines during config error reporting). The var defaults in
+	// logging.go are aligned with the config defaults so the small window
+	// before this call does not cause spurious rotation.
+	configureLoggingLimits(cfg.Logging.MaxFileSizeMB, cfg.Logging.MaxFiles)
+	configureUpdateChannel(cfg.Update.Enabled, cfg.Update.ManifestURL, cfg.Update.CheckIntervalHours, cfg.Update.SignaturePinThumbprint)
+	if exePath, err := os.Executable(); err == nil {
+		if err := auditlog.ConfigureFromOptions(auditlog.ConfigOptions{
+			Enabled:         cfg.Audit.Enabled,
+			Dir:             filepath.Join(filepath.Dir(exePath), "logs"),
+			RetentionDays:   cfg.Audit.RetentionDays,
+			EventLogEnabled: cfg.Audit.EventLogEnabled,
+			OTLPEndpoint:    cfg.Audit.OTLPEndpoint,
+			OTLPCertFile:    cfg.Audit.OTLPCertFile,
+			OTLPKeyFile:     cfg.Audit.OTLPKeyFile,
+			OTLPCAFile:      cfg.Audit.OTLPCAFile,
+		}); err != nil {
+			slog.Warn("auditlog: configure failed", "err", err)
+		}
+	} else {
+		slog.Warn("auditlog: could not resolve executable path", "err", err)
+	}
+	// Emit a policy.applied audit event so compliance auditors can verify
+	// which registry source contributed to the effective config and how many
+	// values were locked. We emit even when KeysFound == 0 so the audit trail
+	// is consistent across deploys (auditors can distinguish "no registry
+	// policy present" from "policy data missing from audit log").
+	if policy := config.LastPolicy(); policy.Origin != "none" || policy.KeysFound > 0 {
+		if err := auditlog.AppendEvent(context.Background(), auditlog.Record{
+			Event: auditlog.EventPolicyApplied,
+			Resource: map[string]any{
+				"source":            policy.Origin,
+				"keys_locked_count": policy.KeysFound,
+			},
+		}); err != nil {
+			slog.Warn("auditlog: failed to write policy.applied event", "err", err)
+		}
+	}
+	if *noTelemetry {
+		// Mutate cfg to reflect the runtime state — not functionally required
+		// (configureUpdateChannel mutated package vars already), but keeps cfg
+		// self-consistent for diagnostic dumps and future readers.
+		cfg.Telemetry.UpdateCheck = false
+		cfg.Update.Enabled = false
+		disableTelemetry()
+		slog.Info("telemetry disabled by --no-telemetry CLI flag")
 	}
 	tracker.stage("config_loaded", "path", cfgPath, "install_mode", string(installState.Mode))
 

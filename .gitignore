@@ -8,6 +8,14 @@
 /dist/
 SpeechKit-Portable-v*.zip
 
+# Server-target Linux binary (no extension, dropped at repo root by
+# `go build ./cmd/speechkit-server`). Catches it on Windows dev hosts
+# where *.exe doesn't apply.
+/speechkit-server
+/speechkit-cli
+/speechkit-mcp
+/sk-e2e
+
 # Go
 /vendor/
 clients/python/**/__pycache__/

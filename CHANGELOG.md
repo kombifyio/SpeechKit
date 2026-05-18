@@ -12,6 +12,161 @@ IDs, source paths, and other maintainer-only vocabulary.
 
 ## [Unreleased]
 
+## [0.35.0] - 2026-05-18
+
+This release closes the Enterprise Hardening track for production-pilot
+readiness: an enterprise customer can now deploy SpeechKit across managed
+Windows endpoints, lock the configuration via Group Policy, mirror the
+audit log into Windows Event Log or an OTLP-capable SIEM, run end-to-end
+DSGVO subject-rights workflows, and pick their Voice Agent compliance
+posture from a setup wizard. None of the new behavior changes existing
+defaults — every enterprise feature is opt-in and disabled until the
+customer enables it.
+
+### Added
+
+- **Dedicated audit-log stream**: a separate JSON Lines file
+  (`<exe-dir>/logs/audit-YYYY-MM-DD.log`, daily rotation, 90-day default
+  retention) captures eight event types — provider selection, voice-agent
+  session start/end, settings changes, update installs, auth failures,
+  privacy export/delete, BYOK key updates, and policy applications. The
+  audit log is the source of truth for SOC 2 / ISO 27001 / DSGVO Art. 30
+  evidence; the existing runtime log stays focused on operator
+  troubleshooting. See `docs/compliance/audit-event-catalog.md` for the
+  v1 schema and `docs/compliance/ENTERPRISE-DEPLOYMENT.md` for the
+  full deployment reference.
+- **DSGVO Subject-Rights APIs**: `POST /api/v1/privacy/export` returns
+  every scoped record (transcripts, voice-agent sessions, dictionary
+  entries) as JSON or as a ZIP with the raw audio bytes — satisfies the
+  Right of Access (Art. 15). `POST /api/v1/privacy/delete` removes the
+  same records plus the audio files on disk — satisfies the Right to
+  Erasure (Art. 17). Both endpoints require an explicit `confirm: true`
+  for delete and emit dedicated audit events with the requester's
+  Windows SID + record count. See `docs/compliance/dsgvo-subject-rights.md`.
+- **Per-machine WiX MSI installer for SCCM/Intune**: the public release
+  now ships both the existing NSIS per-user installer
+  (`SpeechKit-Setup.exe`) AND a per-machine WiX MSI (`SpeechKit-x64.msi`,
+  `ALLUSERS=1`, `INSTALLDIR=%ProgramFiles%\kombify SpeechKit`). MSI is
+  MST-transformable and rollback-safe, ready for application packaging
+  in SCCM, Intune Win32, or legacy GPO Software Installation. See
+  `docs/runbooks/nsis-to-msi-migration.md` for the packaging recipe.
+- **ADMX policy templates (English + German)** for centralised lockdown
+  via Group Policy. Eight policy keys cover update on/off, internal
+  update mirror URL, telemetry, local-only routing, cloud-provider
+  block, audit retention days, Windows Event Log mirror, and OTLP
+  endpoint. Drop `installer/admx/SpeechKit.admx` into
+  `%SystemRoot%\PolicyDefinitions\` for single-host policy, or into the
+  AD Central Store for domain-wide enforcement. See
+  `docs/runbooks/admx-deployment.md`.
+- **Air-gap-friendly update channel**: enterprise admins can disable
+  auto-update entirely (`[update] enabled = false`) or point at an
+  internal mirror serving the GitHub releases JSON shape
+  (`[update] manifest_url = "https://artifacts.internal/..."`).
+  Optional signing-cert thumbprint pinning
+  (`[update] signature_pin_thumbprint = "..."`) defends against
+  compromised signing certs by rejecting installers whose Authenticode
+  thumbprint doesn't match. See `docs/runbooks/internal-update-mirror.md`
+  for the static-S3 + nginx reference recipe.
+- **Windows Event Log audit mirror (opt-in)**: set
+  `[audit] event_log_enabled = true` and the audit events also appear
+  in the "kombify SpeechKit" Application Event Log channel — ingested
+  by Splunk, Sentinel, QRadar, and other SIEMs that follow Windows
+  channels by default. One-time admin install via
+  `SpeechKit.exe --install-event-log-source` or via the MSI's elevated
+  custom action.
+- **OTLP exporter for the audit log (opt-in, mTLS-capable)**: set
+  `[audit] otlp_endpoint = "loki.internal:4318"` and the audit events
+  ship as OTLP log records to Loki, Datadog, Splunk-OTLP, or any
+  OTLP-capable backend. mTLS via
+  `[audit] otlp_cert_file / otlp_key_file / otlp_ca_file`.
+- **BYOK Gemini Live with EU region selection**: bring your own Google
+  Cloud API key and pin to `europe-west3`, `europe-west4`, `us-central1`,
+  or `asia-southeast1` from the Voice Agent settings UI or via
+  `[providers.google] region`. Setting any provider's BYOK key emits a
+  `byok.key_updated` audit event with provider name, configured region,
+  and a truncated key fingerprint (no plaintext key in the log). See
+  `docs/compliance/byok-gemini-region-pinning.md` for the operational
+  guide and DPA template at
+  `docs/compliance/dpa-templates/google-cloud-byok.md`.
+- **Diagnostics support-bundle CLI**: `SpeechKit.exe --collect-support-bundle out.zip`
+  produces a single ZIP with the last seven days of runtime + audit logs
+  (secrets redacted), the active `config.toml` (provider keys redacted),
+  Windows system info (no PATH, no system secrets), and the SBOM if
+  available. `--include-transcripts` opt-in adds audit-log transcript
+  content for cases where the customer wants to share them with kombify
+  support after review.
+- **Voice Agent profile decision wizard in the setup flow**: a new step
+  shows two cards — "On-Prem (Local Cascaded)" with badges "Zero egress"
+  + "BSI C5 ready", and "BYOK Cloud (Gemini Live)" with badges
+  "Sub-1s latency" + "EU region". Selecting Apply writes the matching
+  preset (`enterprise-onprem.toml` or `enterprise-cloud-byok.toml`) and
+  records the choice in the audit log. The full decision tree (four
+  questions + tradeoffs) lives at
+  `docs/compliance/voice-agent-decision-tree.md`.
+- **NTFS ACL check for `config.toml` on Windows**: SpeechKit walks the
+  DACL via `GetNamedSecurityInfo` at startup and emits a clear warning
+  (with the exact `icacls` command to fix it) when any access-allowed
+  ACE targets `Everyone`, `Authenticated Users`, or `BUILTIN\Users`.
+  Defends multi-user Windows hosts where the config file might hold
+  provider keys.
+- **Two enterprise preset configs** under `deploy/presets/`:
+  `enterprise-onprem.toml` (Profile A — zero egress, local-cascaded
+  Voice Agent, audit on, telemetry off) and
+  `enterprise-cloud-byok.toml` (Profile B — Gemini Live with EU region
+  + BYOK Google Cloud key + audit on).
+- **`--no-telemetry` CLI flag**: bypasses every outbound non-provider
+  HTTP call (currently the auto-update check) regardless of config.
+  Useful when an enterprise images SpeechKit into a baseline config
+  and wants a per-launch override.
+- **Provider TOM data sheets** for every shipping provider
+  (whisper.cpp, OpenAI, Groq, Google, HuggingFace, self-hosted VPS,
+  Gemini Live, gpt-realtime-2) at `docs/compliance/providers/` — each
+  sheet documents endpoint base, region options, subprocessor list,
+  DPA URL, retention defaults, disable procedure, and compliance
+  posture so an auditor's first stop is pre-answered.
+- **Enterprise Deployment reference** at
+  `docs/compliance/ENTERPRISE-DEPLOYMENT.md` — single-page reference
+  for customer IT and auditor with the full egress whitelist
+  (host, port, protocol, purpose, how to disable), air-gap profile
+  example, install paths and NTFS ACL guarantees, every compliance-
+  relevant config switch, audit-log layout, and a pre-demo
+  verification checklist.
+- **Local-Cascaded Voice Agent benchmark scaffolding** at
+  `scripts/bench-voice-agent-cascaded.ps1` plus the results-skeleton
+  doc at `docs/compliance/voice-agent-cascaded-benchmark.md`. Customer
+  runs the script on three hardware tiers (baseline / mid / pro) and
+  fills the doc with measured TTFB / P50 / P95 / WER numbers.
+
+### Changed
+
+- **Log rotation defaults raised from 5 MB × 3 files to 50 MB × 30
+  files** so enterprise audit-window retention is realistic out of the
+  box. Both limits are configurable via `[logging] max_file_size_mb`
+  and `[logging] max_files`.
+- **`settings.changed` audit event now emits one event per changed
+  top-level config section** with a hashed before/after value, instead
+  of a single generic event. Values themselves are NEVER logged — only
+  16-character SHA-256 prefixes.
+- **Voice Agent `session.end` audit event** now fires on user,
+  error, and idle termination paths (previously only user). The
+  `terminated_by` resource field distinguishes the cause so an auditor
+  can reconstruct session lifecycle from the log alone.
+- **Internal audit-log API** replaced positional `Configure(enabled,
+  dir, retentionDays, eventLogEnabled)` with `ConfigureFromOptions`
+  taking an options struct. The old four-arg `Configure` is kept as a
+  thin wrapper so existing call sites keep working.
+
+### Fixed
+
+- **STT router dynamic-fallback now emits the `provider.selected`
+  audit event** when cloud providers fail and the local provider
+  takes over. The previous path called `local.Transcribe` directly
+  and silently bypassed the emit helper, leaving a hole in compliance
+  evidence for the most operationally interesting case.
+- **`/api/v1/privacy/delete` now also unlinks audio files on disk**
+  after removing the SQLite rows. The previous behavior left the
+  bytes on the filesystem, partially defeating Right-to-Erasure.
+
 ## [0.34.9] - 2026-05-17
 
 ### Fixed

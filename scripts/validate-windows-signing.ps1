@@ -2,8 +2,10 @@ param(
     [string]$DistDir,
     [string]$BundleExePath,
     [string]$InstallerExePath,
+    [string]$MsiPath,
     [string]$ExpectedPublisher = '',
     [switch]$RequireInstaller,
+    [switch]$RequireMsi,
     [switch]$RequireTimestamp,
     [switch]$UseSignTool
 )
@@ -28,6 +30,12 @@ if ([string]::IsNullOrWhiteSpace($InstallerExePath)) {
     $installerExe = Join-Path $DistDir 'SpeechKit-Setup.exe'
 } else {
     $installerExe = $InstallerExePath
+}
+
+if ([string]::IsNullOrWhiteSpace($MsiPath)) {
+    $msiFile = Join-Path $DistDir 'SpeechKit-x64.msi'
+} else {
+    $msiFile = $MsiPath
 }
 
 function Get-SignToolPath {
@@ -133,6 +141,16 @@ $results += Test-FileSignature -Path $bundleExe -Role 'SpeechKit.exe' -ExpectedP
 
 if ($RequireInstaller -or (Test-Path $installerExe)) {
     $results += Test-FileSignature -Path $installerExe -Role 'SpeechKit-Setup.exe' -ExpectedPublisher $ExpectedPublisher -RequireTimestamp:$RequireTimestamp -UseSignTool:$UseSignTool -SignToolPath $signToolPath
+}
+
+if ($RequireMsi) {
+    if (-not (Test-Path $msiFile)) {
+        Write-Error "No *.msi found: expected $msiFile"
+        exit 1
+    }
+    $results += Test-FileSignature -Path $msiFile -Role 'SpeechKit-x64.msi' -ExpectedPublisher $ExpectedPublisher -RequireTimestamp:$RequireTimestamp -UseSignTool:$UseSignTool -SignToolPath $signToolPath
+} elseif (Test-Path $msiFile) {
+    $results += Test-FileSignature -Path $msiFile -Role 'SpeechKit-x64.msi' -ExpectedPublisher $ExpectedPublisher -RequireTimestamp:$RequireTimestamp -UseSignTool:$UseSignTool -SignToolPath $signToolPath
 }
 
 Write-Host ''

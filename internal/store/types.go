@@ -3,7 +3,14 @@ package store
 import (
 	"context"
 	"time"
+
+	speechstorage "github.com/kombifyio/SpeechKit/pkg/speechkit/storage"
 )
+
+// Scope is an alias for the public speechkit storage Scope, re-exported so
+// callers within this package (and callers that only import store) do not need
+// to reference the pkg/speechkit/storage sub-package directly.
+type Scope = speechstorage.Scope
 
 type AudioStorageKind string
 
@@ -61,6 +68,45 @@ type VoiceAgentSessionStore interface {
 // first-class audio asset metadata alongside legacy audio_path columns.
 type AudioAssetStore interface {
 	GetAudioAsset(ctx context.Context, ownerKind string, ownerID int64) (*AudioAsset, error)
+}
+
+// DeleteResult is returned by DeleteScope. The caller is responsible for
+// unlinking AudioFilePaths from disk; the store only removes DB rows.
+type DeleteResult struct {
+	RowsDeleted    int      `json:"rows_deleted"`
+	AudioFilePaths []string `json:"audio_file_paths"`
+}
+
+// ScopePrivacyStore is an optional extension for backends that implement
+// GDPR Subject-Rights operations scoped to a Storage-3.0 scope.
+//
+// Both methods operate entirely within the scope boundaries — no cross-scope
+// data is ever returned or deleted. Audio files on disk are NOT removed by
+// DeleteScope (only the database rows are deleted). The caller receives the
+// paths in DeleteResult and is responsible for unlinking them. Disk cleanup
+// for ExportScope is the caller's responsibility (stream the paths returned in
+// AudioAssetPaths alongside the JSON).
+type ScopePrivacyStore interface {
+	// ExportScope returns all user-owned records for the given scope. The
+	// returned ScopeExport includes audio asset paths; the caller is
+	// responsible for streaming the raw audio bytes if needed.
+	ExportScope(ctx context.Context, scope Scope) (*ScopeExport, error)
+
+	// DeleteScope removes all user-owned DB rows for the given scope across
+	// every scoped table. Returns a DeleteResult with the total row count and
+	// the distinct audio file paths that were associated with those rows.
+	// The caller must unlink AudioFilePaths from disk; the store does not.
+	DeleteScope(ctx context.Context, scope Scope) (DeleteResult, error)
+}
+
+// ScopeExport is the structured payload returned by ExportScope (GDPR Art. 15).
+type ScopeExport struct {
+	Scope              Scope                 `json:"scope"`
+	Transcriptions     []Transcription       `json:"transcriptions"`
+	QuickNotes         []QuickNote           `json:"quick_notes"`
+	VoiceAgentSessions []VoiceAgentSession   `json:"voice_agent_sessions"`
+	DictionaryEntries  []UserDictionaryEntry `json:"dictionary_entries,omitempty"`
+	AudioAssetPaths    []string              `json:"audio_asset_paths"`
 }
 
 // SemanticCapabilityProvider is an optional extension for stores that can

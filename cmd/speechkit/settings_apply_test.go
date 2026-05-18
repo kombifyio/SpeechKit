@@ -1,8 +1,15 @@
 package main
 
 import (
+	"context"
+	"os"
+	"path/filepath"
+	"strings"
 	"testing"
+	"time"
 
+	"github.com/kombifyio/SpeechKit/internal/auditlog"
+	"github.com/kombifyio/SpeechKit/internal/auditlogtest"
 	"github.com/kombifyio/SpeechKit/internal/config"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit"
 )
@@ -36,6 +43,7 @@ func TestAppStateApplyRuntimeSettingsUpdatesSnapshot(t *testing.T) {
 	state.engine = newSpeechKitRuntime(state, speechkit.Hooks{})
 
 	oldHotkey := state.applyRuntimeSettings(
+		config.Config{}, config.Config{},
 		true,
 		true,
 		true,
@@ -146,5 +154,64 @@ func TestAppStateApplyDesktopSettingsReconfiguresHotkey(t *testing.T) {
 	}
 	if !state.overlayEnabled {
 		t.Fatal("state.overlayEnabled = false, want true")
+	}
+}
+
+// TestEmitSettingsDiffEmitsOnePerChangedSection verifies that emitSettingsDiff
+// emits exactly one settings.changed event per top-level section that differs,
+// and skips unchanged sections.
+func TestEmitSettingsDiffEmitsOnePerChangedSection(t *testing.T) {
+	dir := t.TempDir()
+	auditlog.Configure(true, dir, 90, false)
+
+	old := config.Config{
+		Update:    config.UpdateConfig{Enabled: true, CheckIntervalHours: 6, ManifestURL: "https://example.com/x"},
+		Telemetry: config.TelemetryConfig{UpdateCheck: true},
+		Routing:   config.RoutingConfig{Strategy: "dynamic"},
+	}
+	newCfg := old
+	newCfg.Update.Enabled = false          // changed
+	newCfg.Routing.Strategy = "local-only" // changed
+	// Telemetry unchanged
+
+	emitSettingsDiff(context.Background(), old, newCfg)
+
+	// Close before reading so the file handle is released for TempDir cleanup.
+	auditlogtest.Reset()
+
+	dateKey := time.Now().UTC().Format("2006-01-02")
+	data, _ := os.ReadFile(filepath.Join(dir, "audit-"+dateKey+".log"))
+	body := string(data)
+
+	if !strings.Contains(body, `"key_path":"update"`) {
+		t.Errorf("want key_path=update emit, got: %s", body)
+	}
+	if !strings.Contains(body, `"key_path":"routing"`) {
+		t.Errorf("want key_path=routing emit, got: %s", body)
+	}
+	if strings.Contains(body, `"key_path":"telemetry"`) {
+		t.Errorf("did NOT want telemetry emit (unchanged), got: %s", body)
+	}
+}
+
+// TestEmitSettingsDiffNoEventsWhenAllUnchanged verifies that emitSettingsDiff
+// does not write any audit file when old and new configs are identical.
+func TestEmitSettingsDiffNoEventsWhenAllUnchanged(t *testing.T) {
+	dir := t.TempDir()
+	auditlog.Configure(true, dir, 90, false)
+
+	old := config.Config{
+		Update: config.UpdateConfig{Enabled: true},
+	}
+	same := old
+
+	emitSettingsDiff(context.Background(), old, same)
+
+	// Close before reading dir so the file handle is released for TempDir cleanup.
+	auditlogtest.Reset()
+
+	entries, _ := os.ReadDir(dir)
+	if len(entries) != 0 {
+		t.Errorf("want no audit file when nothing changed, got %d entries", len(entries))
 	}
 }

@@ -61,6 +61,10 @@ type settingsFormData struct {
 	WakewordThreshold            float64
 	WakewordMinConsecutiveFrames int
 	WakewordCooldownMs           int
+
+	// GoogleRegion is the [providers.google] region setting.
+	// Surfaces in the Voice Agent settings form as a compliance control.
+	GoogleRegion string
 }
 
 // parseSettingsForm extracts and validates all settings form values.

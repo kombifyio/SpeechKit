@@ -17,6 +17,7 @@ export type WizardStep =
   | "local_model"
   | "integrations"
   | "wake_word"
+  | "voice_agent_profile"
   | "done";
 
 // Curated catalog of phrases the wake-word wizard step offers. IDs here

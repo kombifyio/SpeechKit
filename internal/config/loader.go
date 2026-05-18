@@ -6,10 +6,26 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 
 	"github.com/BurntSushi/toml"
 	"github.com/kombifyio/SpeechKit/internal/voiceagentprofile"
 )
+
+var (
+	lastPolicyMu sync.Mutex
+	lastPolicy   PolicyValues
+)
+
+// LastPolicy returns the PolicyValues applied during the most recent Load call.
+// This accessor lets the app layer read policy metadata (Origin, KeysFound)
+// for the policy.applied audit event without changing Load's return signature.
+// Returns a zero-value PolicyValues if Load has not yet been called.
+func LastPolicy() PolicyValues {
+	lastPolicyMu.Lock()
+	defer lastPolicyMu.Unlock()
+	return lastPolicy
+}
 
 // Load reads config from the given path. Falls back to defaults if file not found.
 func Load(path string) (*Config, error) {
@@ -40,6 +56,21 @@ func Load(path string) (*Config, error) {
 		return defaults(), nil
 	}
 
+	// Apply registry policy overlay (ADMX/GPO). Must run BEFORE the backfill
+	// chain so that policy values are in place when backfill logic mirrors them
+	// (e.g. Update.Enabled → Telemetry.UpdateCheck). On non-Windows platforms
+	// applyPolicyOverlay is a no-op (see policy_other.go).
+	policy := ReadPolicyValues()
+	applyPolicyOverlay(cfg, policy)
+	lastPolicyMu.Lock()
+	lastPolicy = policy
+	lastPolicyMu.Unlock()
+	if policy.KeysFound > 0 {
+		slog.Info("config: policy overlay applied",
+			"origin", policy.Origin,
+			"keys_locked", policy.KeysFound)
+	}
+
 	// Bridge legacy [feedback] to [store] if store.backend is not explicitly set.
 	if cfg.Store.Backend == "" || cfg.Store.Backend == "sqlite" {
 		if cfg.Feedback.DBPath != "" && !meta.IsDefined("store", "sqlite_path") && cfg.Store.SQLitePath == "" {
@@ -62,6 +93,11 @@ func Load(path string) (*Config, error) {
 	backfillVoiceAgentPromptLayers(meta, cfg)
 	backfillVoiceAgentSessionSummary(meta, cfg)
 	backfillServerConnectionCustomURLAuth(meta, cfg)
+	// Backfill: Telemetry.UpdateCheck mirrors Update.Enabled when update is disabled.
+	// Phase 0 has only the update-check as telemetry; later phases may diverge.
+	if !cfg.Update.Enabled {
+		cfg.Telemetry.UpdateCheck = false
+	}
 	cfg.VoiceAgent.AgentProfileID = voiceagentprofile.NormalizeID(cfg.VoiceAgent.AgentProfileID)
 	cfg.VoiceAgent.AgentSequenceID = strings.TrimSpace(cfg.VoiceAgent.AgentSequenceID)
 	cfg.VoiceAgent.CloseBehavior = NormalizeVoiceAgentCloseBehavior(

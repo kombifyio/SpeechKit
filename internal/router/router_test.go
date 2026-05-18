@@ -3,9 +3,14 @@ package router
 import (
 	"context"
 	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
+	"github.com/kombifyio/SpeechKit/internal/auditlog"
+	"github.com/kombifyio/SpeechKit/internal/auditlogtest"
 	"github.com/kombifyio/SpeechKit/internal/stt"
 )
 
@@ -313,5 +318,123 @@ func TestAvailableProviders_None(t *testing.T) {
 	r := &Router{}
 	if len(r.AvailableProviders()) != 0 {
 		t.Error("expected 0 providers")
+	}
+}
+
+func TestRouterEmitsProviderSelectedAuditLocalOnly(t *testing.T) {
+	dir := t.TempDir()
+	t.Cleanup(auditlogtest.Reset) // must run before TempDir cleanup (LIFO: registered after TempDir)
+	auditlog.Configure(true, dir, 90, false)
+
+	r := newTestRouter(
+		&mockProvider{name: "local", text: "hello", healthy: true},
+		nil, nil,
+		StrategyLocalOnly,
+	)
+	_, err := r.Route(context.Background(), []byte("audio"), 1.0, stt.TranscribeOpts{})
+	if err != nil {
+		t.Fatalf("Route: %v", err)
+	}
+
+	dateKey := time.Now().UTC().Format("2006-01-02")
+	data, readErr := os.ReadFile(filepath.Join(dir, "audit-"+dateKey+".log"))
+	if readErr != nil {
+		t.Fatalf("read audit log: %v", readErr)
+	}
+	if !strings.Contains(string(data), `"event":"provider.selected"`) {
+		t.Errorf("want provider.selected event in audit log, got:\n%s", data)
+	}
+	if !strings.Contains(string(data), `"provider_name":"local"`) {
+		t.Errorf("want provider_name=local in audit log, got:\n%s", data)
+	}
+}
+
+func TestRouterEmitsProviderSelectedAuditCloudOnly(t *testing.T) {
+	dir := t.TempDir()
+	t.Cleanup(auditlogtest.Reset) // must run before TempDir cleanup (LIFO: registered after TempDir)
+	auditlog.Configure(true, dir, 90, false)
+
+	r := newTestRouter(
+		nil, nil,
+		&mockProvider{name: "hf", text: "cloud result", healthy: true},
+		StrategyCloudOnly,
+	)
+	_, err := r.Route(context.Background(), []byte("audio"), 1.0, stt.TranscribeOpts{})
+	if err != nil {
+		t.Fatalf("Route: %v", err)
+	}
+
+	dateKey := time.Now().UTC().Format("2006-01-02")
+	data, readErr := os.ReadFile(filepath.Join(dir, "audit-"+dateKey+".log"))
+	if readErr != nil {
+		t.Fatalf("read audit log: %v", readErr)
+	}
+	if !strings.Contains(string(data), `"event":"provider.selected"`) {
+		t.Errorf("want provider.selected event in audit log, got:\n%s", data)
+	}
+	if !strings.Contains(string(data), `"provider_name":"hf"`) {
+		t.Errorf("want provider_name=hf in audit log, got:\n%s", data)
+	}
+}
+
+func TestRouterEmitsProviderSelectedOnDynamicFallback(t *testing.T) {
+	// Case 4: online + all cloud providers fail + local succeeds.
+	// Verifies that the provider.selected audit event is emitted even when
+	// transcribeDynamic reaches its local-fallback path.
+	dir := t.TempDir()
+	t.Cleanup(auditlogtest.Reset) // LIFO: runs before TempDir cleanup
+	auditlog.Configure(true, dir, 90, false)
+
+	// Long audio (>PreferLocalUnderSecs=10) so Case 2 is skipped and we land
+	// on Case 3 (cloud) first, then fall through to Case 4 (local fallback).
+	r := newTestRouter(
+		&mockProvider{name: "local-fallback", text: "local ok", healthy: true},
+		nil,
+		&mockProvider{name: "cloud-fail", text: "", healthy: false, failNext: true},
+		StrategyDynamic,
+	)
+	// newTestRouter already forces internet=online, so Case 1 is skipped.
+
+	_, err := r.Route(context.Background(), []byte("audio"), 30.0, stt.TranscribeOpts{})
+	if err != nil {
+		t.Fatalf("Route: %v", err)
+	}
+
+	dateKey := time.Now().UTC().Format("2006-01-02")
+	data, readErr := os.ReadFile(filepath.Join(dir, "audit-"+dateKey+".log"))
+	if readErr != nil {
+		t.Fatalf("read audit log: %v", readErr)
+	}
+	if !strings.Contains(string(data), `"event":"provider.selected"`) {
+		t.Errorf("want provider.selected event in audit log for Case 4 fallback, got:\n%s", data)
+	}
+	if !strings.Contains(string(data), `"provider_name":"local-fallback"`) {
+		t.Errorf("want provider_name=local-fallback in audit log for Case 4 fallback, got:\n%s", data)
+	}
+}
+
+func TestRouterDoesNotEmitProviderSelectedOnFailure(t *testing.T) {
+	dir := t.TempDir()
+	t.Cleanup(auditlogtest.Reset) // must run before TempDir cleanup (LIFO: registered after TempDir)
+	auditlog.Configure(true, dir, 90, false)
+
+	r := newTestRouter(
+		nil, nil,
+		&mockProvider{name: "hf", text: "", healthy: false, failNext: true},
+		StrategyCloudOnly,
+	)
+	_, _ = r.Route(context.Background(), []byte("audio"), 1.0, stt.TranscribeOpts{})
+
+	dateKey := time.Now().UTC().Format("2006-01-02")
+	logPath := filepath.Join(dir, "audit-"+dateKey+".log")
+	data, readErr := os.ReadFile(logPath)
+	if os.IsNotExist(readErr) {
+		return // no log file = no events written, which is correct
+	}
+	if readErr != nil {
+		t.Fatalf("read audit log: %v", readErr)
+	}
+	if strings.Contains(string(data), `"event":"provider.selected"`) {
+		t.Errorf("must not emit provider.selected on failure, got:\n%s", data)
 	}
 }

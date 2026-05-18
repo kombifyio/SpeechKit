@@ -17,6 +17,7 @@ import {
 } from "@/lib/speechkit";
 
 import type { SetupWizardCompletion } from "./dashboard-types";
+import { VoiceAgentProfileStep } from "./voice-agent-profile-step";
 import {
   integrationLogoSrc,
   logoFrameClass,
@@ -231,6 +232,7 @@ export function SetupWizard({
     "local_model",
     "integrations",
     "wake_word",
+    "voice_agent_profile",
     "done",
   ];
 
@@ -238,7 +240,7 @@ export function SetupWizard({
     <div
       className={[
         "flex h-screen flex-col items-center bg-[#131318] text-[#e4e1e9] px-6 relative",
-        step === "local_model" || step === "integrations" || step === "wake_word"
+        step === "local_model" || step === "integrations" || step === "wake_word" || step === "voice_agent_profile"
           ? "justify-start overflow-hidden py-0"
           : "justify-center overflow-hidden",
       ].join(" ")}
@@ -623,7 +625,14 @@ export function SetupWizard({
       {step === "wake_word" && (
         <WakeWordStep
           onBack={() => setStep("integrations")}
-          onContinue={() => setStep("done")}
+          onContinue={() => setStep("voice_agent_profile")}
+        />
+      )}
+
+      {step === "voice_agent_profile" && (
+        <VoiceAgentProfileStep
+          onBack={() => setStep("wake_word")}
+          onNext={() => setStep("done")}
         />
       )}
 
@@ -1040,7 +1049,7 @@ function WakeWordStep({
   return (
     <div className="flex flex-col text-left max-w-3xl w-full h-full overflow-y-auto py-8 z-10">
       <div className="flex gap-3 mb-8 self-center">
-        {(["welcome", "local_model", "integrations", "wake_word", "done"] as const).map(
+        {(["welcome", "local_model", "integrations", "wake_word", "voice_agent_profile", "done"] as const).map(
           (s) => (
             <div
               key={s}

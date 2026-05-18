@@ -46,6 +46,7 @@ func installerSignaturePolicyFromEnv() (installerSignaturePolicy, error) {
 		ExpectedThumbprint: normalizeCertThumbprint(getEnvValue("SPEECHKIT_WINDOWS_SIGNING_THUMBPRINT")),
 	}
 	if envPolicy.configured() {
+		// Environment variables take full precedence — enterprise override.
 		return envPolicy, nil
 	}
 
@@ -53,6 +54,15 @@ func installerSignaturePolicyFromEnv() (installerSignaturePolicy, error) {
 		ExpectedPublisher:  strings.TrimSpace(installerSignatureDefaultPublisher),
 		ExpectedThumbprint: normalizeCertThumbprint(installerSignatureDefaultThumbprint),
 	}
+
+	// If a runtime thumbprint pin is configured (from [update] signature_pin_thumbprint
+	// in the config file), it overrides the build-time default thumbprint. The
+	// publisher check is preserved. This lets enterprise customers pin the cert
+	// via their managed config without rebuilding the binary.
+	if pin := normalizeCertThumbprint(signaturePinThumbprint); pin != "" {
+		policy.ExpectedThumbprint = pin
+	}
+
 	if !policy.configured() {
 		return installerSignaturePolicy{}, errors.New("installer signature policy is not configured: bundle a signing publisher/thumbprint or set SPEECHKIT_WINDOWS_SIGNING_PUBLISHER or SPEECHKIT_WINDOWS_SIGNING_THUMBPRINT")
 	}

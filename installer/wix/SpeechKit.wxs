@@ -1,0 +1,190 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  SpeechKit WiX v4 MSI — per-machine installer for SCCM/Intune/GPO deployment.
+
+  UpgradeCode: {0F6F0A5A-7F29-4D95-BD2C-A64296C5CC69}
+  DO NOT regenerate this GUID. It is the stable identity across all SpeechKit
+  releases. Changing it would orphan existing per-machine installations and
+  break SCCM detection rules.
+
+  Build with installer/wix/build-msi.ps1.
+  Requires: WiX v4 CLI  (`dotnet tool install --global wix --version 4.*`)
+            heat.exe     (included in WiX v4 toolset)
+
+  The llama/ directory is harvested separately by heat into llama-fragment.wxs
+  and referenced here via the LlamaComponents ComponentGroup. All other files
+  are listed explicitly so the MSI schema is auditable without running heat.
+
+  Version is supplied at build time via:
+    wix build -define "SPEECHKIT_VERSION=$(env.SPEECHKIT_VERSION)"
+  or via the SPEECHKIT_VERSION environment variable read by build-msi.ps1.
+-->
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
+
+  <Package
+    Name="kombify SpeechKit"
+    Manufacturer="kombify"
+    Version="$(env.SPEECHKIT_VERSION)"
+    UpgradeCode="{0F6F0A5A-7F29-4D95-BD2C-A64296C5CC69}"
+    ProductCode="*"
+    Language="1033"
+    Codepage="1252"
+    Scope="perMachine"
+    InstallerVersion="500">
+
+    <!--
+      Embed the CAB directly into the MSI so the package is self-contained
+      for SCCM/Intune deployment without a separate media layout.
+    -->
+    <MediaTemplate EmbedCab="yes" CompressionLevel="high" />
+
+    <!--
+      Upgrade table: any earlier version with the same UpgradeCode is removed
+      before this version installs (major upgrade). Prevents duplicate entries
+      in Programs and Features.
+    -->
+    <MajorUpgrade
+      DowngradeErrorMessage="A newer version of [ProductName] is already installed."
+      Schedule="afterInstallInitialize" />
+
+    <!--
+      Stage directory: dist/windows/SpeechKit/
+      build-msi.ps1 ensures this is populated by scripts/build.ps1 -SkipInstaller
+      before invoking wix build.
+    -->
+
+    <StandardDirectory Id="ProgramFiles64Folder">
+      <Directory Id="ManufacturerDir" Name="kombify">
+        <Directory Id="INSTALLDIR" Name="SpeechKit">
+
+          <!-- ============================================================
+               Main binaries and DLLs
+               ============================================================ -->
+          <Component Id="SpeechKitExe" Guid="*">
+            <File Id="SpeechKit_exe"
+                  Source="..\..\dist\windows\SpeechKit\SpeechKit.exe"
+                  KeyPath="yes" />
+          </Component>
+
+          <Component Id="WhisperServerExe" Guid="*">
+            <File Id="WhisperServer_exe"
+                  Source="..\..\dist\windows\SpeechKit\whisper-server.exe"
+                  KeyPath="yes" />
+          </Component>
+
+          <!--
+            DLLs: whisper.dll, ggml.dll, and any other *.dll present in
+            the staging directory. heat handles llama/ DLLs separately.
+            If new DLLs are added to the build, add them here.
+          -->
+          <Component Id="WhisperDll" Guid="*">
+            <File Id="whisper_dll"
+                  Source="..\..\dist\windows\SpeechKit\whisper.dll"
+                  KeyPath="yes" />
+          </Component>
+
+          <Component Id="GgmlDll" Guid="*">
+            <File Id="ggml_dll"
+                  Source="..\..\dist\windows\SpeechKit\ggml.dll"
+                  KeyPath="yes" />
+          </Component>
+
+          <!--
+            WebView2 bootstrapper — used by the custom action below.
+            Placed in INSTALLDIR so the CA can reference it by relative path.
+          -->
+          <Component Id="WebView2Setup" Guid="*">
+            <File Id="MicrosoftEdgeWebview2Setup_exe"
+                  Source="..\..\dist\windows\SpeechKit\MicrosoftEdgeWebview2Setup.exe"
+                  KeyPath="yes" />
+          </Component>
+
+          <!--
+            Config template. Written to config.default.toml so an existing
+            user config.toml is not clobbered on upgrade.
+          -->
+          <Component Id="ConfigDefaultToml" Guid="*">
+            <File Id="config_default_toml"
+                  Source="..\..\dist\windows\SpeechKit\config.toml"
+                  Name="config.default.toml"
+                  KeyPath="yes" />
+          </Component>
+
+          <!--
+            Create config.toml on first install only (never overwrite on upgrade).
+            Uses a util:CopyFile from config.default.toml so the file is
+            tracked by MSI and removed on uninstall.
+          -->
+          <Component Id="ConfigToml" Guid="*">
+            <File Id="config_toml"
+                  Source="..\..\dist\windows\SpeechKit\config.toml"
+                  Name="config.toml"
+                  KeyPath="yes"
+                  NeverOverwrite="yes" />
+          </Component>
+
+          <!-- llama/ subtree is in the LlamaComponents group from heat fragment -->
+          <Directory Id="LLAMADIR" Name="llama" />
+
+        </Directory><!-- INSTALLDIR -->
+      </Directory><!-- ManufacturerDir -->
+    </StandardDirectory>
+
+    <!-- Start Menu shortcut -->
+    <StandardDirectory Id="ProgramMenuFolder">
+      <Directory Id="StartMenuDir" Name="kombify SpeechKit">
+        <Component Id="StartMenuShortcut" Guid="*">
+          <Shortcut Id="AppShortcut"
+                    Name="SpeechKit"
+                    Target="[INSTALLDIR]SpeechKit.exe"
+                    WorkingDirectory="INSTALLDIR"
+                    Icon="speechkit.ico" />
+          <RegistryValue Root="HKLM"
+                         Key="Software\kombify\SpeechKit"
+                         Name="StartMenuInstalled"
+                         Type="integer"
+                         Value="1"
+                         KeyPath="yes" />
+          <RemoveFolder Id="CleanStartMenuDir" Directory="StartMenuDir" On="uninstall" />
+        </Component>
+      </Directory>
+    </StandardDirectory>
+
+    <!-- Icon registered for Add/Remove Programs -->
+    <Icon Id="speechkit.ico" SourceFile="..\speechkit.ico" />
+    <Property Id="ARPPRODUCTICON" Value="speechkit.ico" />
+    <Property Id="ARPHELPLINK" Value="https://github.com/kombifyio/SpeechKit" />
+
+    <!--
+      WebView2 custom action — runs MicrosoftEdgeWebview2Setup.exe /silent /install
+      after InstallFiles, elevated (impersonate=no), deferred execution.
+      Condition: only on fresh install or upgrade (NOT during uninstall).
+    -->
+    <CustomAction Id="InstallWebView2"
+                  FileRef="MicrosoftEdgeWebview2Setup_exe"
+                  ExeCommand="/silent /install"
+                  Execute="deferred"
+                  Impersonate="no"
+                  Return="ignore" />
+
+    <InstallExecuteSequence>
+      <Custom Action="InstallWebView2" After="InstallFiles">
+        NOT REMOVE
+      </Custom>
+    </InstallExecuteSequence>
+
+    <!-- Feature tree — single feature referencing all components -->
+    <Feature Id="ProductFeature" Title="SpeechKit" Level="1">
+      <ComponentRef Id="SpeechKitExe" />
+      <ComponentRef Id="WhisperServerExe" />
+      <ComponentRef Id="WhisperDll" />
+      <ComponentRef Id="GgmlDll" />
+      <ComponentRef Id="WebView2Setup" />
+      <ComponentRef Id="ConfigDefaultToml" />
+      <ComponentRef Id="ConfigToml" />
+      <ComponentRef Id="StartMenuShortcut" />
+      <ComponentGroupRef Id="LlamaComponents" />
+    </Feature>
+
+  </Package>
+</Wix>

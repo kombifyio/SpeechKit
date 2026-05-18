@@ -2,17 +2,82 @@ package main
 
 import (
 	"fmt"
+	"net"
 	"net/http"
+	"net/http/httptest"
 	"os/exec"
 	"path/filepath"
 	"strings"
 
+	"github.com/kombifyio/SpeechKit/internal/auditlog"
 	"github.com/kombifyio/SpeechKit/internal/config"
 	"github.com/kombifyio/SpeechKit/internal/desktop/controlplane"
 	"github.com/kombifyio/SpeechKit/internal/frontendassets"
 	"github.com/kombifyio/SpeechKit/internal/router"
 	"github.com/kombifyio/SpeechKit/internal/store"
 )
+
+// redactIP removes the last octet of an IPv4 address (or the full IPv6
+// address) before it is written to the audit log. Loopback addresses are
+// returned as-is because they carry no personally-identifiable information.
+func redactIP(addr string) string {
+	host, _, err := net.SplitHostPort(addr)
+	if err != nil {
+		host = addr
+	}
+	ip := net.ParseIP(host)
+	if ip == nil || ip.IsLoopback() {
+		return host
+	}
+	if ip4 := ip.To4(); ip4 != nil {
+		return fmt.Sprintf("%d.%d.%d.x", ip4[0], ip4[1], ip4[2])
+	}
+	return "[ipv6-redacted]"
+}
+
+// auditTokenRejection wraps the control-plane Guard and emits an auth.failed
+// audit event whenever the guard rejects a request with 403 Forbidden due to
+// an invalid or missing session token.
+func auditTokenRejection(next http.Handler, sessionToken string) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Only bother recording when a token is configured and the request is
+		// mutating — the guard only rejects on mutating methods.
+		if sessionToken == "" || !controlplane.IsMutatingMethod(r.Method) {
+			next.ServeHTTP(w, r)
+			return
+		}
+
+		if controlplane.HasValidTokenHeader(r, sessionToken) {
+			// Fast path: token is valid, skip the recorder overhead.
+			next.ServeHTTP(w, r)
+			return
+		}
+
+		// Capture the response to detect a 403 from a missing/invalid token.
+		rec := httptest.NewRecorder()
+		next.ServeHTTP(rec, r)
+
+		// Copy the captured response to the real writer.
+		for k, vs := range rec.Header() {
+			for _, v := range vs {
+				w.Header().Add(k, v)
+			}
+		}
+		w.WriteHeader(rec.Code)
+		_, _ = w.Write(rec.Body.Bytes())
+
+		if rec.Code == http.StatusForbidden {
+			_ = auditlog.AppendEvent(r.Context(), auditlog.Record{
+				Event: auditlog.EventAuthFailed,
+				Resource: map[string]any{
+					"source_ip_redacted": redactIP(r.RemoteAddr),
+					"endpoint":           r.URL.Path,
+				},
+				Outcome: auditlog.OutcomeFailure,
+			})
+		}
+	})
+}
 
 // AppVersion is injected at build time via -ldflags. Defaults to "dev" for
 // local development builds that skip the release toolchain.
@@ -86,8 +151,10 @@ func newControlPlaneHandler(deps controlPlaneDeps) http.Handler {
 
 // enforceControlPlaneRequestGuard rejects cross-site and disallowed-origin
 // mutating requests. It is the primary CSRF defence for the local control plane.
+// An audit.failed event is emitted whenever a request is rejected due to a
+// missing or invalid session token.
 func enforceControlPlaneRequestGuard(next http.Handler, sessionToken string) http.Handler {
-	return controlplane.Guard(next, sessionToken)
+	return auditTokenRejection(controlplane.Guard(next, sessionToken), sessionToken)
 }
 
 func newControlPlaneToken() string {

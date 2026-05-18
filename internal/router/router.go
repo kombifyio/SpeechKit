@@ -17,8 +17,24 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/kombifyio/SpeechKit/internal/auditlog"
 	"github.com/kombifyio/SpeechKit/internal/stt"
 )
+
+// emitProviderSelected records a provider.selected audit event on successful
+// transcription. Errors from AppendEvent are intentionally discarded —
+// audit failures must never abort a user-facing transcription.
+func emitProviderSelected(ctx context.Context, providerName string, strategy Strategy) {
+	_ = auditlog.AppendEvent(ctx, auditlog.Record{
+		Event: auditlog.EventProviderSelected,
+		Resource: map[string]any{
+			"provider_name": providerName,
+			"provider_kind": "stt",
+			"strategy":      string(strategy),
+		},
+		Outcome: auditlog.OutcomeSuccess,
+	})
+}
 
 // Strategy defines the routing strategy.
 type Strategy string
@@ -233,10 +249,10 @@ func (r *Router) transcribeDynamic(ctx context.Context, audio []byte, durationSe
 		slog.Warn("cloud transcribe failed", "err", err)
 	}
 
-	// Case 4: Fallback to local
+	// Case 4: Fallback to local via transcribeLocal so the audit event fires.
 	if local != nil {
 		slog.Warn("cloud providers unavailable; falling back to local STT")
-		return local.Transcribe(ctx, audio, opts)
+		return r.transcribeLocal(ctx, audio, opts)
 	}
 
 	return nil, fmt.Errorf("no STT provider available")
@@ -281,6 +297,7 @@ func (r *Router) transcribeCloud(ctx context.Context, audio []byte, opts stt.Tra
 	for _, p := range cloud {
 		result, err := p.Transcribe(ctx, audio, opts)
 		if err == nil {
+			emitProviderSelected(ctx, p.Name(), r.Strategy)
 			return result, nil
 		}
 		slog.Warn("provider transcribe failed", "provider", p.Name(), "err", err)
@@ -294,7 +311,11 @@ func (r *Router) transcribeLocal(ctx context.Context, audio []byte, opts stt.Tra
 	if local == nil {
 		return nil, fmt.Errorf("local provider not configured")
 	}
-	return local.Transcribe(ctx, audio, opts)
+	result, err := local.Transcribe(ctx, audio, opts)
+	if err == nil {
+		emitProviderSelected(ctx, local.Name(), r.Strategy)
+	}
+	return result, err
 }
 
 // transcribeParallel sends to local and cloud simultaneously, returns first result.
@@ -312,6 +333,9 @@ func (r *Router) transcribeParallel(ctx context.Context, audio []byte, opts stt.
 	if local != nil {
 		go func() {
 			result, err := local.Transcribe(ctx, audio, opts)
+			if err == nil {
+				emitProviderSelected(ctx, local.Name(), r.Strategy)
+			}
 			results <- resultOrError{result, err}
 		}()
 	}

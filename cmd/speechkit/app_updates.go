@@ -11,6 +11,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/kombifyio/SpeechKit/internal/auditlog"
 	desktopupdate "github.com/kombifyio/SpeechKit/internal/desktop/update"
 	"github.com/kombifyio/SpeechKit/internal/netsec"
 )
@@ -291,8 +292,27 @@ func downloadAppInstaller(ctx context.Context, job *appUpdateJob, release latest
 
 	if err := verifyInstallerBeforeOpen(destPath); err != nil {
 		_ = os.Remove(destPath)
+		_ = auditlog.AppendEvent(ctx, auditlog.Record{
+			Event: auditlog.EventUpdateInstalled,
+			Resource: map[string]any{
+				"version":    release.Version,
+				"asset_name": release.DownloadName,
+				"error":      "signature verification failed",
+			},
+			Outcome: auditlog.OutcomeFailure,
+		})
 		return fmt.Errorf("verify installer: %w", err)
 	}
+
+	_ = auditlog.AppendEvent(ctx, auditlog.Record{
+		Event: auditlog.EventUpdateInstalled,
+		Resource: map[string]any{
+			"version":          release.Version,
+			"asset_name":       release.DownloadName,
+			"signature_status": "verified",
+		},
+		Outcome: auditlog.OutcomeSuccess,
+	})
 
 	job.mu.Lock()
 	job.FilePath = destPath

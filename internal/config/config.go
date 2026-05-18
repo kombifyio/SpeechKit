@@ -59,6 +59,10 @@ type Config struct {
 	VPS         VPSConfig         `toml:"vps"`
 	HuggingFace HuggingFaceConfig `toml:"huggingface"`
 	Routing     RoutingConfig     `toml:"routing"`
+	Update      UpdateConfig      `toml:"update"`
+	Logging     LoggingConfig     `toml:"logging"`
+	Audit       AuditConfig       `toml:"audit"`
+	Telemetry   TelemetryConfig   `toml:"telemetry"`
 	Feedback    FeedbackConfig    `toml:"feedback"` // legacy compat; prefer Store
 	Store       StoreConfig       `toml:"store"`
 	Providers   ProvidersConfig   `toml:"providers"`
@@ -493,6 +497,47 @@ type RoutingConfig struct {
 	ReplaceOnBetter         bool    `toml:"replace_on_better"`
 }
 
+// UpdateConfig controls the auto-update channel. The default values mirror
+// the historical hard-coded constants so existing installations keep working.
+// Enterprise customers set Enabled = false (full air-gap) or override
+// ManifestURL with an internal mirror that serves the same JSON shape as
+// https://api.github.com/repos/<owner>/<repo>/releases/latest.
+type UpdateConfig struct {
+	Enabled                bool   `toml:"enabled"`
+	ManifestURL            string `toml:"manifest_url"`
+	CheckIntervalHours     int    `toml:"check_interval_hours"`
+	SignaturePinThumbprint string `toml:"signature_pin_thumbprint"` // optional Authenticode SHA-1 thumbprint; if set, installer signature verification additionally checks cert thumbprint matches (defense against compromised signing cert)
+}
+
+// LoggingConfig controls runtime log file rotation. The defaults are tuned
+// for enterprise audit retention; the 5 MB / 3 file historical values were
+// insufficient and have been replaced.
+type LoggingConfig struct {
+	MaxFileSizeMB int `toml:"max_file_size_mb"`
+	MaxFiles      int `toml:"max_files"`
+}
+
+// AuditConfig controls the dedicated audit-log stream introduced in Phase 0.
+// Enabled defaults to true: the audit log is the customer's source of truth
+// for SOC2 / ISO27001 evidence and must not be silently disabled.
+type AuditConfig struct {
+	Enabled         bool   `toml:"enabled"`
+	RetentionDays   int    `toml:"retention_days"`
+	EventLogEnabled bool   `toml:"event_log_enabled"` // wired in P2.1 (cpv.3.1) — Windows Event Log mirror
+	OTLPEndpoint    string `toml:"otlp_endpoint"`     // wired in P2.2 (cpv.3.2) — OTLP exporter
+	OTLPCertFile    string `toml:"otlp_cert_file"`
+	OTLPKeyFile     string `toml:"otlp_key_file"`
+	OTLPCAFile      string `toml:"otlp_ca_file"`
+}
+
+// TelemetryConfig is the single switch surface for every outbound non-provider
+// HTTP call SpeechKit may make. Today the only such call is the auto-update
+// check; future calls (crash reports, usage stats) must add a field here
+// rather than create a parallel toggle.
+type TelemetryConfig struct {
+	UpdateCheck bool `toml:"update_check"`
+}
+
 type FeedbackConfig struct {
 	SaveAudio          bool   `toml:"save_audio"`
 	AudioRetentionDays int    `toml:"audio_retention_days"`
@@ -538,6 +583,17 @@ type GoogleProviderConfig struct {
 	UtilityModel string `toml:"utility_model"`
 	AssistModel  string `toml:"assist_model"`
 	AgentModel   string `toml:"agent_model"`
+	// Region is the Google Cloud region the customer's API key / project is
+	// pinned to. Default "europe-west3" (Frankfurt) reflects the EU-enterprise
+	// compliance posture. US customers should explicitly set "us-central1".
+	//
+	// IMPORTANT: this field feeds the byok.key_updated audit event and the
+	// settings UI. It does NOT redirect API traffic — the Gemini Live endpoint
+	// is a single global WebSocket (generativelanguage.googleapis.com). Actual
+	// data residency is controlled at the Google Cloud project level. Both the
+	// project region AND this field must match for the audit event to be
+	// accurate. See docs/compliance/byok-gemini-region-pinning.md.
+	Region string `toml:"region"`
 }
 
 type OllamaProviderConfig struct {

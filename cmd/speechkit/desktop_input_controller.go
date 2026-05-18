@@ -580,7 +580,27 @@ func (c desktopInputController) deactivateVoiceAgentWithReason(ctx context.Conte
 	} else if c.voiceAgentEchoGuard != nil {
 		c.voiceAgentEchoGuard.reset()
 	}
+
+	// Capture session identity before Stop() so we can emit the end event.
+	// session.Stop() does not fire OnSessionEnd, so the audit event would be
+	// missing for user-initiated deactivation without this explicit emit.
+	// Clearing voiceAgentSessionID here also prevents the idle-path branch in
+	// OnStateChange from double-emitting (it no-ops when session ID is empty).
+	var auditSessionID string
+	var auditSessionStart time.Time
+	if c.state != nil {
+		c.state.mu.Lock()
+		auditSessionID = c.state.voiceAgentSessionID
+		auditSessionStart = c.state.voiceAgentSessionStart
+		c.state.voiceAgentSessionID = ""
+		c.state.voiceAgentSessionStart = time.Time{}
+		c.state.voiceAgentTerminatedBy = ""
+		c.state.mu.Unlock()
+	}
+
 	session.Stop()
+	emitVoiceAgentSessionEnd(ctx, auditSessionID, auditSessionStart, "user")
+
 	if c.state != nil {
 		c.state.stopVoiceAgentAudioSender()
 		c.state.finishVoiceAgentSessionSummary(ctx, c.cfg)

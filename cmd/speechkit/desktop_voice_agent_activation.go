@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/kombifyio/SpeechKit/cmd/speechkit/internal/transcription"
+	"github.com/kombifyio/SpeechKit/internal/auditlog"
 	"github.com/kombifyio/SpeechKit/internal/voiceagent"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit"
 )
@@ -130,12 +131,38 @@ func (c desktopInputController) startVoiceAgentSession(ctx context.Context, plan
 		c.state.startVoiceAgentStream(ctx)
 	}
 
+	sessionStart := time.Now()
 	if err := plan.session.Start(ctx, liveCfg, plan.start.IdleConfig); err != nil {
 		c.log(fmt.Sprintf("Voice Agent: start failed: %v", err), "error")
 		if c.state != nil {
 			c.state.stopVoiceAgentStream()
 		}
 		return
+	}
+
+	providerName := plan.session.ProviderName()
+	if providerName == "" {
+		providerName = "unknown" // TODO Phase 1: surface provider name from session config
+	}
+	sessionID := fmt.Sprintf("va-%d", sessionStart.UnixNano())
+	_ = auditlog.AppendEvent(ctx, auditlog.Record{
+		Event: auditlog.EventVoiceAgentSessionStart,
+		Resource: map[string]any{
+			"session_id": sessionID,
+			"provider":   providerName,
+			"transport":  "in-process",
+		},
+	})
+
+	if c.state != nil {
+		c.state.mu.Lock()
+		c.state.voiceAgentSessionID = sessionID
+		c.state.voiceAgentSessionStart = sessionStart
+		// Defensive: clear stale terminated_by from any prior session so the
+		// idle-path guard (terminated_by == "") in OnStateChange works on the
+		// very first state transition of this fresh session.
+		c.state.voiceAgentTerminatedBy = ""
+		c.state.mu.Unlock()
 	}
 
 	c.log("Voice Agent: streaming audio", "info")
@@ -154,11 +181,16 @@ func (c desktopInputController) voiceAgentLiveConfig(session *voiceagent.Session
 		workflow = nil
 	}
 
+	region := ""
+	if c.cfg != nil {
+		region = c.cfg.Providers.Google.Region
+	}
 	return voiceagent.LiveConfig{
 		Model:            start.Model,
 		APIKey:           start.APIKey,
 		Voice:            voice,
 		Locale:           start.Locale,
+		Region:           region,
 		FrameworkPrompt:  frameworkPrompt,
 		RefinementPrompt: refinementPrompt,
 		Instruction:      frameworkPrompt,

@@ -52,6 +52,7 @@ type apiV1DictionaryImportRequest struct {
 }
 
 func registerAPIV1Routes(mux *http.ServeMux, cfgPath string, cfg *config.Config, state *appState, sttRouter *router.Router, feedbackStore store.Store) {
+	registerVoiceAgentPresetRoute(mux, cfgPath, cfg, state)
 	mux.HandleFunc("/api/v1/modes", func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/api/v1/modes" {
 			http.NotFound(w, r)
@@ -134,6 +135,12 @@ func registerAPIV1Routes(mux *http.ServeMux, cfgPath string, cfg *config.Config,
 	mux.HandleFunc("/api/v1/voice-sessions/", func(w http.ResponseWriter, r *http.Request) {
 		handleAPIV1VoiceSessionDetail(w, r, feedbackStore)
 	})
+
+	// Privacy / Subject-Rights endpoints (GDPR Art. 15 + Art. 17).
+	// Both require the existing control-plane token (enforced by the outer
+	// enforceControlPlaneRequestGuard middleware — no extra auth needed here).
+	mux.HandleFunc("/api/v1/privacy/export", handlePrivacyExport(feedbackStore))
+	mux.HandleFunc("/api/v1/privacy/delete", handlePrivacyDelete(feedbackStore))
 
 	mux.HandleFunc("/api/v1/providers/artifacts", func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/api/v1/providers/artifacts" {

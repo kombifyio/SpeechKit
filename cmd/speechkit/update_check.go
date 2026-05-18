@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"log/slog"
 	"net/http"
 	"strconv"
 	"strings"
@@ -25,21 +26,67 @@ var (
 )
 
 const (
-	updateCheckInterval = 6 * time.Hour
-	updateCheckTimeout  = 5 * time.Second
-	releaseAPIURL       = "https://api.github.com/repos/kombifyio/SpeechKit/releases/latest"
+	updateCheckTimeout = 5 * time.Second
 
 	appUpdateInstallModeVerified       = desktopupdate.InstallModeVerified
 	appUpdateInstallModeManualUnsigned = desktopupdate.InstallModeManualUnsigned
 	appUpdateInstallModeUnavailable    = desktopupdate.InstallModeUnavailable
 )
 
-var releaseAPIURLValidation = netsec.ValidationOptions{}
+var (
+	releaseAPIURLValidation = netsec.ValidationOptions{}
+
+	// updateCheckInterval, releaseAPIURL, updateEnabled, and
+	// signaturePinThumbprint are populated by configureUpdateChannel during
+	// startup from internal/config.UpdateConfig.
+	// When enabled = false, refreshLatestRelease() and cachedLatestRelease()
+	// both become no-ops — no outbound HTTP is ever attempted (air-gap mode).
+	// Defaults mirror the historical hardcoded values so unit tests that
+	// run without explicit configuration behave as before.
+	updateCheckInterval    = 6 * time.Hour
+	releaseAPIURL          = "https://api.github.com/repos/kombifyio/SpeechKit/releases/latest"
+	updateEnabled          = true
+	signaturePinThumbprint string // optional runtime Authenticode SHA-1 thumbprint from config
+)
+
+// configureUpdateChannel must be called once during startup with values
+// resolved from internal/config.UpdateConfig. Passing enabled=false fully
+// disables the auto-update path. Passing an empty manifestURL or invalid
+// URL also disables it (with a warning log). pinThumbprint is an optional
+// Authenticode SHA-1 thumbprint; when non-empty it is stored and used by
+// installer signature verification as an additional cert-pin check.
+func configureUpdateChannel(enabled bool, manifestURL string, checkIntervalHours int, pinThumbprint string) {
+	updateEnabled = enabled
+	if manifestURL != "" {
+		releaseAPIURL = manifestURL
+	}
+	if checkIntervalHours > 0 {
+		updateCheckInterval = time.Duration(checkIntervalHours) * time.Hour
+	}
+	signaturePinThumbprint = strings.TrimSpace(pinThumbprint)
+	if enabled && releaseAPIURL != "" {
+		if err := netsec.ValidateProviderURL(releaseAPIURL, releaseAPIURLValidation); err != nil {
+			slog.Warn("update manifest URL rejected by netsec, disabling updates",
+				"url", releaseAPIURL, "err", err)
+			updateEnabled = false
+		}
+	}
+}
+
+// disableTelemetry applies the --no-telemetry CLI override to runtime state.
+// It is a standalone function (rather than inline logic) so that tests can
+// exercise the override path without invoking flag.Parse.
+func disableTelemetry() {
+	configureUpdateChannel(false, releaseAPIURL, 0, signaturePinThumbprint)
+}
 
 type latestReleaseInfo = desktopupdate.ReleaseInfo
 type releaseAssetInfo = desktopupdate.ReleaseAsset
 
 func cachedLatestRelease() (latestReleaseInfo, bool) {
+	if !updateEnabled {
+		return latestReleaseInfo{}, false
+	}
 	updateMu.Lock()
 	info := latestReleaseInfo{
 		Version:      updateVersion,
@@ -63,6 +110,9 @@ func cachedLatestRelease() (latestReleaseInfo, bool) {
 }
 
 func refreshLatestRelease() {
+	if !updateEnabled || releaseAPIURL == "" {
+		return
+	}
 	updateMu.Lock()
 	if !updateChecked.IsZero() && time.Since(updateChecked) < updateCheckInterval {
 		updateMu.Unlock()

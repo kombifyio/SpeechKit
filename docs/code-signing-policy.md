@@ -7,7 +7,8 @@ This policy applies to public Windows release artifacts for SpeechKit published 
 The policy covers:
 
 - `SpeechKit.exe`
-- `SpeechKit-Setup.exe`
+- `SpeechKit-Setup.exe` (per-user NSIS installer)
+- `SpeechKit-x64.msi` (per-machine WiX MSI for SCCM/Intune — added cpv.2.2)
 - `SpeechKit-Portable.zip`
 - `SHA256SUMS.txt`
 - `SpeechKit.sbom.json`

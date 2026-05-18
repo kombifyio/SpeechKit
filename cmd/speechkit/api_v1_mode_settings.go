@@ -78,6 +78,7 @@ func applyAPIV1ModeSettingsPatch(ctx context.Context, cfgPath string, cfg *confi
 		return errors.New("config unavailable")
 	}
 	snapshot := captureAPIV1ModeSettingsSnapshot(cfg)
+	oldCfg := *cfg
 
 	if err := applyAPIV1ModeBindingPatch(cfg, mode, patch); err != nil {
 		return err
@@ -126,6 +127,7 @@ func applyAPIV1ModeSettingsPatch(ctx context.Context, cfgPath string, cfg *confi
 	}
 	if state != nil {
 		state.applyRuntimeSettings(
+			oldCfg, *cfg,
 			cfg.General.DictateEnabled,
 			cfg.General.AssistEnabled,
 			cfg.General.VoiceAgentEnabled,

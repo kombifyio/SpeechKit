@@ -34,3 +34,11 @@ Start with the module you are working on, then jump into the detailed docs.
 
 - [code-signing-policy.md](./code-signing-policy.md) — Windows artifact trust policy.
 - [product-readiness-v0.34.1.md](./product-readiness-v0.34.1.md) — v0.34.1 desktop, agent-gate, storage/settings, and OSS-readiness release checklist.
+
+## Compliance And Enterprise
+
+- [compliance/ENTERPRISE-DEPLOYMENT.md](./compliance/ENTERPRISE-DEPLOYMENT.md) — single-page deployment reference for Customer IT and Auditor (egress hosts, config switches, audit-log layout, install paths, Profile A vs B).
+- [compliance/audit-event-catalog.md](./compliance/audit-event-catalog.md) — audit-log schema v1 + per-event resource fields.
+- [compliance/providers/README.md](./compliance/providers/README.md) — DSGVO TOM data sheets per provider.
+- [superpowers/specs/2026-05-18-enterprise-hardening-design.md](./superpowers/specs/2026-05-18-enterprise-hardening-design.md) — Enterprise Hardening design spec (4 phases).
+- [superpowers/plans/2026-05-18-enterprise-hardening-phase-0.md](./superpowers/plans/2026-05-18-enterprise-hardening-phase-0.md) — Phase 0 implementation plan.

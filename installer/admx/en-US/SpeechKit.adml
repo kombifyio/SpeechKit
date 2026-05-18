@@ -1,0 +1,151 @@
+<?xml version="1.0" encoding="utf-8"?>
+<policyDefinitionResources
+    xmlns:xsd="http://www.w3.org/2001/XMLSchema"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    revision="1.0"
+    schemaVersion="1.0"
+    xmlns="http://schemas.microsoft.com/GroupPolicy/2006/07/PolicyDefinitions">
+  <displayName>kombify SpeechKit Policies</displayName>
+  <description>Group Policy administrative template for kombify SpeechKit. Overrides config.toml values via HKLM registry. See docs/runbooks/admx-deployment.md for the full deployment guide.</description>
+  <resources>
+    <stringTable>
+
+      <!-- Categories -->
+      <string id="KombifyCat">kombify</string>
+      <string id="SpeechKitCat">SpeechKit</string>
+      <string id="SpeechKitUpdateCat">Update</string>
+      <string id="SpeechKitTelemetryCat">Telemetry</string>
+      <string id="SpeechKitProvidersCat">Providers</string>
+      <string id="SpeechKitVoiceAgentCat">Voice Agent</string>
+      <string id="SpeechKitAuditCat">Audit</string>
+
+      <!-- Update\Enabled -->
+      <string id="UpdateEnabled">Enable automatic updates</string>
+      <string id="UpdateEnabled_explain">Controls whether SpeechKit periodically checks for new releases. When disabled, no outbound HTTP request is made for update checks and no installer is downloaded automatically.
+
+Recommended: Disabled for air-gapped or strict-egress endpoints.
+
+Registry value: HKLM\SOFTWARE\Policies\kombify\SpeechKit\Update\Enabled (DWORD)
+  1 = updates enabled (default)
+  0 = updates disabled
+
+config.toml equivalent: [update] enabled = true/false
+
+When disabled via policy, the Telemetry\UpdateCheck value is also silently suppressed by the config loader backfill logic.</string>
+
+      <!-- Update\ManifestURL -->
+      <string id="UpdateManifestURL">Update manifest URL</string>
+      <string id="UpdateManifestURL_explain">Overrides the default update manifest URL used to discover new releases. Use this to point SpeechKit at an internal artifact mirror instead of the public GitHub releases endpoint.
+
+The URL must serve the same JSON shape as:
+  https://api.github.com/repos/kombifyio/SpeechKit/releases/latest
+
+See docs/runbooks/internal-update-mirror.md for the mirror contract.
+
+Registry value: HKLM\SOFTWARE\Policies\kombify\SpeechKit\Update\ManifestURL (REG_SZ)
+config.toml equivalent: [update] manifest_url = "https://..."
+
+Maximum length: 500 characters. Leave unset to use the default GitHub endpoint.</string>
+
+      <!-- Telemetry\UpdateCheck -->
+      <string id="TelemetryUpdateCheck">Enable update-check telemetry</string>
+      <string id="TelemetryUpdateCheck_explain">Controls whether the periodic update-check HTTP call is treated as a telemetry-gated operation. This is a fine-grained complement to Update\Enabled: if Update\Enabled is already disabled, disabling this value has no additional effect.
+
+Note: the config loader automatically mirrors Update\Enabled into Telemetry\UpdateCheck when Update is disabled. This policy key provides an independent override for environments that want update checks enabled but all telemetry labelling suppressed.
+
+Registry value: HKLM\SOFTWARE\Policies\kombify\SpeechKit\Telemetry\UpdateCheck (DWORD)
+  1 = update-check telemetry enabled
+  0 = update-check telemetry disabled
+
+config.toml equivalent: [telemetry] update_check = true/false</string>
+
+      <!-- Providers\EnforceLocalOnly -->
+      <string id="ProvidersEnforceLocalOnly">Enforce local-only STT routing</string>
+      <string id="ProvidersEnforceLocalOnly_explain">When enabled, forces the STT (speech-to-text) routing strategy to "local-only". SpeechKit will only use the on-device whisper.cpp model for transcription and will never send audio to cloud STT providers (OpenAI, Groq, Google, HuggingFace, VPS).
+
+This is the recommended setting for air-gapped endpoints and deployments with strict data-residency requirements (BSI C5, ISO 27001 Annex A.8).
+
+Registry value: HKLM\SOFTWARE\Policies\kombify\SpeechKit\Providers\EnforceLocalOnly (DWORD)
+  1 = local-only (cloud STT blocked)
+  0 = no enforcement (config.toml routing.strategy is used)
+
+config.toml equivalent: [routing] strategy = "local-only"
+
+Verification: after applying this policy, confirm in speechkit.log that router selects "whisper-cpp" for every transcription and no traffic reaches cloud STT endpoints.</string>
+
+      <!-- VoiceAgent\AllowCloudProviders -->
+      <string id="VoiceAgentAllowCloudProviders">Allow cloud providers for Voice Agent</string>
+      <string id="VoiceAgentAllowCloudProviders_explain">Controls whether SpeechKit is allowed to use cloud-hosted real-time audio providers (Gemini Live, GPT-Realtime) for the Voice Agent mode.
+
+When disabled (DWORD = 0), SpeechKit forces Voice Agent to use the local cascaded pipeline (whisper.cpp + local LLM + local TTS). No audio is sent to any cloud provider during a Voice Agent session.
+
+Registry value: HKLM\SOFTWARE\Policies\kombify\SpeechKit\VoiceAgent\AllowCloudProviders (DWORD)
+  1 = cloud providers allowed (default)
+  0 = cloud providers blocked; forces provider = "local-cascaded"
+
+config.toml equivalent: [voice_agent] provider = "local-cascaded"
+
+Combine with Providers\EnforceLocalOnly = 1 for a complete zero-egress Voice Agent deployment. See docs/compliance/ENTERPRISE-DEPLOYMENT.md §2 for the full air-gap profile.</string>
+
+      <!-- Audit\RetentionDays -->
+      <string id="AuditRetentionDays">Audit log retention period (days)</string>
+      <string id="AuditRetentionDays_explain">Sets the number of days that daily audit log files (audit-YYYY-MM-DD.log) are retained before automatic pruning. Files older than the configured retention period are deleted when a new audit log entry is written.
+
+Minimum: 1 day. Maximum: 3650 days (approximately 10 years).
+
+SOC 2 Type II typically requires 1 year (365 days). ISO 27001 minimum is 3 months (90 days, the default). Adjust to match your organisation's data-retention policy.
+
+Registry value: HKLM\SOFTWARE\Policies\kombify\SpeechKit\Audit\RetentionDays (DWORD)
+config.toml equivalent: [audit] retention_days = 90
+
+The audit log directory is: &lt;install-dir&gt;\logs\ (per-user install) or %ProgramData%\kombify\SpeechKit\logs\ (per-machine install).</string>
+
+      <!-- Audit\EventLogEnabled -->
+      <string id="AuditEventLogEnabled">Mirror audit events to Windows Event Log</string>
+      <string id="AuditEventLogEnabled_explain">When enabled, SpeechKit mirrors each audit event to the Windows Application Event Log in addition to the JSON Lines file sink. This allows SIEM tools that monitor the Windows Event Log to receive SpeechKit audit events without needing file-system access to the audit log directory.
+
+Note: This feature is wired in Phase 2 Task 6 (cpv.3.1). Setting this policy value before that task ships stores the preference and activates it when the binary is updated.
+
+Registry value: HKLM\SOFTWARE\Policies\kombify\SpeechKit\Audit\EventLogEnabled (DWORD)
+  1 = Event Log mirroring enabled
+  0 = Event Log mirroring disabled (default)
+
+config.toml equivalent: [audit] event_log_enabled = true/false</string>
+
+      <!-- Audit\OTLPEndpoint -->
+      <string id="AuditOTLPEndpoint">Audit OTLP exporter endpoint</string>
+      <string id="AuditOTLPEndpoint_explain">Sets the OpenTelemetry Protocol (OTLP) endpoint to which audit events are exported. When set, SpeechKit sends each audit event as an OTLP log record to this endpoint in addition to the local JSON Lines file sink.
+
+Use this to integrate SpeechKit audit events with a central SIEM or observability platform that speaks OTLP (e.g. Grafana Loki, Elasticsearch with OTLP receiver, Azure Monitor).
+
+Note: This feature is wired in Phase 2 Task 7 (cpv.3.2). Setting this policy value before that task ships stores the endpoint and activates export when the binary is updated.
+
+Format: https://otel-collector.internal.example.com:4317
+
+Registry value: HKLM\SOFTWARE\Policies\kombify\SpeechKit\Audit\OTLPEndpoint (REG_SZ)
+config.toml equivalent: [audit] otlp_endpoint = "https://..."
+
+Maximum length: 500 characters. Leave unset to disable OTLP export.</string>
+
+    </stringTable>
+
+    <presentationTable>
+      <presentation id="UpdateManifestURL">
+        <textBox refId="UpdateManifestURL_Text">
+          <label>Manifest URL:</label>
+          <defaultValue>https://api.github.com/repos/kombifyio/SpeechKit/releases/latest</defaultValue>
+        </textBox>
+      </presentation>
+      <presentation id="AuditRetentionDays">
+        <decimalTextBox refId="AuditRetentionDays_Value" defaultValue="90">Retention period (days):</decimalTextBox>
+      </presentation>
+      <presentation id="AuditOTLPEndpoint">
+        <textBox refId="AuditOTLPEndpoint_Text">
+          <label>OTLP endpoint URL:</label>
+          <defaultValue></defaultValue>
+        </textBox>
+      </presentation>
+    </presentationTable>
+
+  </resources>
+</policyDefinitionResources>

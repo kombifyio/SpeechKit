@@ -2,11 +2,14 @@ package main
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"strings"
 	"time"
 
+	"github.com/kombifyio/SpeechKit/internal/auditlog"
 	"github.com/kombifyio/SpeechKit/internal/config"
 	"github.com/kombifyio/SpeechKit/internal/models"
 	"github.com/kombifyio/SpeechKit/internal/router"
@@ -200,6 +203,29 @@ func configuredVPSProvider(cfg *config.Config) stt.STTProvider {
 	return stt.NewVPSProvider(cfg.VPS.URL, apiKey)
 }
 
+// emitBYOKKeyUpdated fires a byok.key_updated audit event whenever a customer
+// sets a new BYOK API key for any provider. The key itself is never logged —
+// only the SHA-256 first-16-hex fingerprint is stored for cross-event
+// correlation (e.g. "was the same key set twice?").
+//
+// region is the Google Cloud region for the google provider; empty for
+// providers that have no regional concept (openai, groq, huggingface).
+func emitBYOKKeyUpdated(ctx context.Context, providerName, region, apiKey string) {
+	if strings.TrimSpace(apiKey) == "" {
+		return // key clear is a different operation; not audited here
+	}
+	sum := sha256.Sum256([]byte(apiKey))
+	fingerprint := hex.EncodeToString(sum[:])[:16]
+	_ = auditlog.AppendEvent(ctx, auditlog.Record{
+		Event: auditlog.EventBYOKKeyUpdated,
+		Resource: map[string]any{
+			"provider_name":         providerName,
+			"region":                region,
+			"fingerprint_truncated": fingerprint,
+		},
+	})
+}
+
 func refreshProviderRuntimes(ctx context.Context, cfg *config.Config, state *appState, sttRouter *router.Router) error {
 	if sttRouter == nil && state != nil {
 		sttRouter = state.sttRouter
@@ -237,6 +263,7 @@ func saveProviderCredential(ctx context.Context, provider, secret string, cfg *c
 		if err := secrets.SetUserHuggingFaceToken(secret); err != nil {
 			return "", err
 		}
+		emitBYOKKeyUpdated(ctx, "huggingface", "", secret)
 		cfg.HuggingFace.Enabled = true
 		if strings.TrimSpace(cfg.HuggingFace.Model) == "" {
 			cfg.HuggingFace.Model = "openai/whisper-large-v3"
@@ -259,6 +286,13 @@ func saveProviderCredential(ctx context.Context, provider, secret string, cfg *c
 	if err := secrets.SetNamedSecret(envName, secret); err != nil {
 		return "", err
 	}
+	// Emit audit event after secret is durably stored.
+	// Region is only relevant for google (Gemini Live BYOK EU-pin).
+	region := ""
+	if provider == "google" && cfg != nil {
+		region = cfg.Providers.Google.Region
+	}
+	emitBYOKKeyUpdated(ctx, provider, region, secret)
 	if err := setProviderIntegrationEnabled(cfg, provider, true); err != nil {
 		return "", err
 	}

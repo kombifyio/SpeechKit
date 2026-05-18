@@ -77,6 +77,11 @@ func buildNextConfig(form settingsFormData, cfg *config.Config) config.Config {
 	nextCfg.Vocabulary.Dictionary = form.VocabularyDictionary
 	nextCfg.General.Language = form.Language
 
+	// Google Cloud region (Gemini Live BYOK compliance control).
+	if form.GoogleRegion != "" {
+		nextCfg.Providers.Google.Region = form.GoogleRegion
+	}
+
 	// Wake-word: preserve catalog-driven defaults for anything the form
 	// doesn't supply (e.g. ModelPath stays empty so the resolver looks
 	// up the catalog entry on next runtime start).

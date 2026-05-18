@@ -746,3 +746,68 @@ func TestNormalizeVocabularyDictionary(t *testing.T) {
 		}
 	}
 }
+
+func TestNormalizeGoogleRegion(t *testing.T) {
+	tests := []struct {
+		name     string
+		region   string
+		fallback string
+		want     string
+	}{
+		{"europe-west3 accepted", "europe-west3", "europe-west3", "europe-west3"},
+		{"europe-west4 accepted", "europe-west4", "europe-west3", "europe-west4"},
+		{"us-central1 accepted", "us-central1", "europe-west3", "us-central1"},
+		{"asia-southeast1 accepted", "asia-southeast1", "europe-west3", "asia-southeast1"},
+		{"unknown region falls back", "us-east1", "europe-west3", "europe-west3"},
+		{"empty region falls back", "", "europe-west3", "europe-west3"},
+		{"whitespace region falls back", "  ", "europe-west3", "europe-west3"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := normalizeGoogleRegion(tt.region, tt.fallback)
+			if got != tt.want {
+				t.Errorf("normalizeGoogleRegion(%q, %q) = %q, want %q", tt.region, tt.fallback, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestParseVoiceAgentSettingsFormGoogleRegion(t *testing.T) {
+	cfg := defaultTestConfig()
+	cfg.Providers.Google.Region = "europe-west3"
+
+	t.Run("form field present with valid region", func(t *testing.T) {
+		body := "providers.google.region=us-central1"
+		req, _ := http.NewRequest(http.MethodPost, "/settings/update", strings.NewReader(body))
+		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		req.ParseForm()
+		var f settingsFormData
+		parseVoiceAgentSettingsForm(req, cfg, &f)
+		if f.GoogleRegion != "us-central1" {
+			t.Errorf("GoogleRegion = %q, want us-central1", f.GoogleRegion)
+		}
+	})
+
+	t.Run("form field absent keeps current region", func(t *testing.T) {
+		req, _ := http.NewRequest(http.MethodPost, "/settings/update", strings.NewReader(""))
+		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		req.ParseForm()
+		var f settingsFormData
+		parseVoiceAgentSettingsForm(req, cfg, &f)
+		if f.GoogleRegion != "europe-west3" {
+			t.Errorf("GoogleRegion = %q, want europe-west3 (from cfg)", f.GoogleRegion)
+		}
+	})
+
+	t.Run("invalid region falls back to current", func(t *testing.T) {
+		body := "providers.google.region=invalid-region"
+		req, _ := http.NewRequest(http.MethodPost, "/settings/update", strings.NewReader(body))
+		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		req.ParseForm()
+		var f settingsFormData
+		parseVoiceAgentSettingsForm(req, cfg, &f)
+		if f.GoogleRegion != "europe-west3" {
+			t.Errorf("GoogleRegion = %q, want europe-west3 (fallback from invalid input)", f.GoogleRegion)
+		}
+	})
+}

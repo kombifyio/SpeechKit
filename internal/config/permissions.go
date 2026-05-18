@@ -3,35 +3,27 @@ package config
 import (
 	"fmt"
 	"os"
-	"runtime"
 )
 
-// insecureConfigPermissionBits are the mode bits that indicate the config file
-// is readable or writable by users other than the owner. config.toml may hold
-// provider API keys, DSNs, or Doppler references, so it should be owner-only
-// on multi-user systems.
+// insecureConfigPermissionBits is the POSIX mode mask that flags a config
+// file as readable or writable by users other than the owner. config.toml
+// may hold provider API keys, DSNs, or Doppler references, so it must be
+// owner-only on multi-user systems. On Windows the equivalent check uses
+// the NTFS DACL (see permissions_windows.go); this constant is irrelevant
+// there.
 const insecureConfigPermissionBits os.FileMode = 0o077
 
-// checkConfigFilePermissions returns a non-empty warning message if the given
-// file is readable or writable by group/world on a POSIX system. On Windows
-// the Go file-mode bits are a simulation of Unix permissions and do not
-// reflect NTFS ACLs, so the check is skipped and an empty string is returned.
-//
-// The warning is non-fatal: callers are expected to log it and continue so a
-// misconfigured permission does not prevent the app from running.
+// checkConfigFilePermissions is the stable internal entry point. The
+// OS-specific implementation lives in checkConfigFilePermissionsOS
+// (permissions_windows.go for NTFS DACLs, permissions_other.go for POSIX).
+// Do not collapse this into a direct call without preserving build-tag dispatch.
 func checkConfigFilePermissions(path string) (string, error) {
-	if runtime.GOOS == "windows" {
-		return "", nil
-	}
-	info, err := os.Stat(path)
-	if err != nil {
-		return "", err
-	}
-	return configPermissionWarning(path, info.Mode().Perm()), nil
+	return checkConfigFilePermissionsOS(path)
 }
 
-// configPermissionWarning is the pure-logic half of checkConfigFilePermissions
-// so it can be unit-tested on any platform without touching the filesystem.
+// configPermissionWarning is the pure-POSIX helper. Kept in the
+// build-tag-neutral file so existing TestConfigPermissionWarning runs on
+// any platform.
 func configPermissionWarning(path string, perm os.FileMode) string {
 	if perm&insecureConfigPermissionBits == 0 {
 		return ""

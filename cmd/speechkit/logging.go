@@ -11,10 +11,29 @@ import (
 	"time"
 )
 
-const (
-	maxLogFileSize = 5 * 1024 * 1024 // 5 MB
-	maxLogFiles    = 3
+var (
+	// maxLogFileSize and maxLogFiles default to the same values the config
+	// loader applies ([logging] max_file_size_mb=50, max_files=30). They are
+	// vars (not consts) so configureLoggingLimits can adjust them after
+	// config is loaded. Aligning the historical defaults with the config
+	// defaults eliminates the rotation-mismatch window between
+	// initAppLogging (which uses these vars directly) and configureLoggingLimits
+	// (which runs later, after config loads).
+	maxLogFileSize int64 = 50 * 1024 * 1024
+	maxLogFiles    int   = 30
 )
+
+// configureLoggingLimits is called once during startup with values resolved
+// from internal/config.LoggingConfig. Zero values keep the historical
+// defaults so existing tests do not need to know about config.
+func configureLoggingLimits(maxFileSizeMB int, maxFiles int) {
+	if maxFileSizeMB > 0 {
+		maxLogFileSize = int64(maxFileSizeMB) * 1024 * 1024
+	}
+	if maxFiles > 0 {
+		maxLogFiles = maxFiles
+	}
+}
 
 type writerTarget struct {
 	name   string

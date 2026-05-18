@@ -45,6 +45,7 @@ func saveSettings(ctx context.Context, req *http.Request, cfgPath string, cfg *c
 
 	nextCfg := buildNextConfig(form, cfg)
 	applySelectedVoiceAgentProfile(&nextCfg, filteredModelCatalog())
+	oldCfg := *cfg
 	oldDictateEnabled := cfg.General.DictateEnabled
 	oldAssistEnabled := cfg.General.AssistEnabled
 	oldVoiceAgentEnabled := cfg.General.VoiceAgentEnabled
@@ -87,6 +88,7 @@ func saveSettings(ctx context.Context, req *http.Request, cfgPath string, cfg *c
 	}
 
 	state.applyRuntimeSettings(
+		oldCfg, nextCfg,
 		form.DictateEnabled,
 		form.AssistEnabled,
 		form.VoiceAgentEnabled,

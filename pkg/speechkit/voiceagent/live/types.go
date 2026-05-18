@@ -213,9 +213,20 @@ type LiveConfig struct {
 	SystemPrompt     string // Deprecated: kept as compat alias, prefer FrameworkPrompt.
 	VocabularyHint   string
 	Locale           string
-	Policies         LivePolicies
-	Tools            []ToolDefinition
-	Workflow         *WorkflowConfig
+	// Region is the Google Cloud region the caller's API key / project is
+	// pinned to (e.g. "europe-west3", "us-central1"). Used by providers that
+	// support regional endpoints. For Gemini Live (as of May 2026) the API
+	// exposes a single global WebSocket endpoint, so this field does NOT
+	// redirect traffic — it is logged at connect time for compliance evidence
+	// (byok.key_updated audit event) and reserved for future regional routing
+	// once Google publishes per-region hostnames. Data residency is controlled
+	// at the Google Cloud project level; both the project region AND this field
+	// must agree for audit records to be accurate.
+	// See docs/compliance/byok-gemini-region-pinning.md.
+	Region   string
+	Policies LivePolicies
+	Tools    []ToolDefinition
+	Workflow *WorkflowConfig
 }
 
 // LiveMessage is a message received from the real-time model.

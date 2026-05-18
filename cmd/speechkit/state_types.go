@@ -105,6 +105,9 @@ type appState struct {
 	voiceAgentSession        *voiceagent.Session
 	voiceAgentDialogTurns    []voiceAgentDialogTurn
 	voiceAgentSessionStarted time.Time
+	voiceAgentSessionID      string    // audit: opaque session identifier for the current VA session
+	voiceAgentSessionStart   time.Time // audit: wall-clock start of the current VA session
+	voiceAgentTerminatedBy   string    // audit: termination reason preset before session.Stop() or OnError fires
 	voiceAgentSummaryDone    bool
 	voiceAgentStore          store.VoiceAgentSessionStore
 	voiceAgentSummaryTool    textactions.SummaryTool

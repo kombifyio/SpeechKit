@@ -81,13 +81,23 @@ func (g *GeminiLive) Connect(ctx context.Context, cfg LiveConfig) error {
 			g.lastConfig = &cfg
 			g.mu.Unlock()
 			if i == 0 {
-				slog.Info("Gemini Live connected", "model", model, "voice", connectCfg.SpeechConfig.VoiceConfig.PrebuiltVoiceConfig.VoiceName)
+				slog.Info("Gemini Live connected",
+					"model", model,
+					"voice", connectCfg.SpeechConfig.VoiceConfig.PrebuiltVoiceConfig.VoiceName,
+					// configured_region is logged for compliance evidence only.
+					// Gemini Live (May 2026) uses a single global endpoint; the
+					// region field does NOT redirect traffic. Data residency is
+					// controlled at the Google Cloud project level.
+					// See docs/compliance/byok-gemini-region-pinning.md.
+					"configured_region", cfg.Region,
+				)
 			} else {
 				slog.Warn("Gemini Live connected via fallback model",
 					"primary", candidates[0],
 					"fallback", model,
 					"primary_err", lastErr,
 					"voice", connectCfg.SpeechConfig.VoiceConfig.PrebuiltVoiceConfig.VoiceName,
+					"configured_region", cfg.Region,
 				)
 			}
 			return nil
