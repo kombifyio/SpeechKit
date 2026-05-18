@@ -194,7 +194,7 @@ services:
           --local-only \
           --timeout 180s \
           --audio-fixture testdata/e2e/dictation/hello-world.wav \
-          --expect-dictation-text "(?i)hello,?\\s+world"
+          --expect-dictation-text "hello world"
 
 volumes:
   speechkit-test-models:
