@@ -344,6 +344,7 @@ func Run(ctx context.Context, cfg *config.Config, opts RunOptions) error {
 		cfg.Server.AdminUsername,
 		cfg.Server.AdminPasswordHash,
 	)
+	app.AuthState.SetSmokeTokenEnv(cfg.Server.SmokeTokenEnv)
 	publicPaths := serverPublicPaths()
 	publicRoutes := serverPublicRoutes()
 	bootstrapPaths := serverBootstrapPaths()
@@ -367,6 +368,7 @@ func Run(ctx context.Context, cfg *config.Config, opts RunOptions) error {
 				}
 				return app.AuthState.AdminPasswordHash()
 			},
+			SmokeTokenProvider: app.AuthState.SmokeToken,
 			// Health endpoints are always public so external probes (Render,
 			// Kubernetes) can hit them without credentials.
 			AllowPublicPaths:      publicPaths,

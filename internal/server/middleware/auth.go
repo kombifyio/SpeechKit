@@ -101,6 +101,11 @@ type AuthOptions struct {
 	BearerRoleProvider        func() string
 	AdminUsernameProvider     func() string
 	AdminPasswordHashProvider func() string
+	// SmokeTokenProvider returns the optional public demo token used by the
+	// smoke UI on `/`. When non-empty and matching the presented Bearer,
+	// the middleware attaches a Source="smoke", Plan="demo" identity so
+	// handlers and the rate-limiter can treat demo traffic accordingly.
+	SmokeTokenProvider func() string
 	// Bootstrap routes are public only while BootstrapAllowed returns true.
 	// The server uses this for the first settings write when bearer auth is
 	// configured but no bearer token exists yet.
@@ -123,6 +128,7 @@ type AuthState struct {
 	mode              string
 	bearerTokenEnv    string
 	edgeSecretEnv     string
+	smokeTokenEnv     string
 	adminUsername     string
 	adminPasswordHash string
 }
@@ -135,6 +141,37 @@ func NewAuthState(mode, bearerTokenEnv, edgeSecretEnv, adminUsername, adminPassw
 		adminUsername:     strings.TrimSpace(adminUsername),
 		adminPasswordHash: strings.TrimSpace(adminPasswordHash),
 	}
+}
+
+// SetSmokeTokenEnv records the env var name holding the optional public
+// demo token. Empty string disables smoke-from-page authentication.
+func (s *AuthState) SetSmokeTokenEnv(envName string) {
+	if s == nil {
+		return
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.smokeTokenEnv = strings.TrimSpace(envName)
+}
+
+// SmokeTokenEnv returns the configured env var name for the demo token.
+func (s *AuthState) SmokeTokenEnv() string {
+	if s == nil {
+		return ""
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.smokeTokenEnv
+}
+
+// SmokeToken resolves the current value of the demo bearer token, or "" if
+// the env var is unset / unconfigured.
+func (s *AuthState) SmokeToken() string {
+	envName := s.SmokeTokenEnv()
+	if envName == "" {
+		return ""
+	}
+	return strings.TrimSpace(os.Getenv(envName))
 }
 
 func (s *AuthState) Mode() string {
@@ -249,6 +286,10 @@ func Auth(opts AuthOptions) Middleware {
 	if adminPasswordHashProvider == nil {
 		adminPasswordHashProvider = func() string { return "" }
 	}
+	smokeTokenProvider := opts.SmokeTokenProvider
+	if smokeTokenProvider == nil {
+		smokeTokenProvider = func() string { return "" }
+	}
 	publicSet := make(map[string]struct{}, len(opts.AllowPublicPaths))
 	for _, p := range opts.AllowPublicPaths {
 		if trimmed := strings.TrimSpace(p); trimmed != "" {
@@ -312,6 +353,14 @@ func Auth(opts AuthOptions) Middleware {
 			}
 			id, ok := verify(mode, r, strings.TrimSpace(bearerTokenProvider()), strings.TrimSpace(edgeSecretProvider()), strings.TrimSpace(bearerRoleProvider()))
 			if !ok {
+				// Fall back to the optional public smoke token before
+				// returning 401. The smoke identity carries Source="smoke"
+				// so handlers and the rate-limiter can tighten budgets.
+				if smokeID, smokeOK := verifySmoke(r, strings.TrimSpace(smokeTokenProvider())); smokeOK {
+					ctx := context.WithValue(r.Context(), identityCtxKey{}, smokeID)
+					next.ServeHTTP(w, r.WithContext(ctx))
+					return
+				}
 				if browserUnauthorizedResponse(htmlUnauthorizedSet, htmlUnauthorizedRoutes, r) && strings.TrimSpace(adminUsernameProvider()) != "" && strings.TrimSpace(adminPasswordHashProvider()) != "" {
 					writeBrowserAuthError(w, r)
 				} else {
@@ -625,6 +674,39 @@ func mustRandomBytes(size int) []byte {
 		panic("speechkit admin session entropy unavailable: " + err.Error())
 	}
 	return buf
+}
+
+// verifySmoke accepts a Bearer header matching the public smoke token.
+// Unlike verifyBearer, smoke identities are explicitly low-trust:
+//
+//   - Source = "smoke" (distinguishable in audit logs)
+//   - Plan   = "demo"  (downstream rate-limiters/quota gates can throttle)
+//   - Role   = ""      (never admin)
+//
+// Returns (zero, false) when smoke auth is disabled (expected == "") or
+// the token doesn't match. Constant-time compare to avoid timing leaks.
+func verifySmoke(r *http.Request, expected string) (Identity, bool) {
+	if expected == "" {
+		return Identity{}, false
+	}
+	header := r.Header.Get("Authorization")
+	const prefix = "Bearer "
+	if !strings.HasPrefix(header, prefix) {
+		return Identity{}, false
+	}
+	presented := strings.TrimSpace(strings.TrimPrefix(header, prefix))
+	if presented == "" {
+		return Identity{}, false
+	}
+	if !hmacEqual([]byte(presented), []byte(expected)) {
+		return Identity{}, false
+	}
+	return Identity{
+		UserID: "smoke",
+		OrgID:  "public",
+		Plan:   "demo",
+		Source: "smoke",
+	}, true
 }
 
 func verifyBearer(r *http.Request, expected, role string) (Identity, bool) {

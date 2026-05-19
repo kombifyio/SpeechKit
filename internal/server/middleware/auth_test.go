@@ -661,3 +661,93 @@ func TestChain_OrderOutermostFirst(t *testing.T) {
 		}
 	}
 }
+
+func TestAuth_SmokeTokenIsLowTrustFallback(t *testing.T) {
+	// Bearer mode is on, smoke token is configured. A request with the
+	// SMOKE token (and no bearer) must succeed but get a smoke identity
+	// (Source=smoke, Plan=demo) — never an admin / bearer identity.
+	t.Setenv("TEST_SMOKE_TOKEN", "sk-smoke-public-demo-001")
+	var gotSource, gotPlan, gotUser, gotRole string
+	handler := Auth(AuthOptions{
+		Mode:               "bearer",
+		BearerTokenEnv:     "UNDEFINED_BEARER_VAR",
+		BearerRole:         "admin",
+		SmokeTokenProvider: func() string { return "sk-smoke-public-demo-001" },
+	})(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		id := IdentityFromContext(r.Context())
+		gotSource = id.Source
+		gotPlan = id.Plan
+		gotUser = id.UserID
+		gotRole = id.Role
+		w.WriteHeader(http.StatusOK)
+	}))
+
+	req := httptest.NewRequest(http.MethodGet, "/v1/dictation/transcribe", nil)
+	req.Header.Set("Authorization", "Bearer sk-smoke-public-demo-001")
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("smoke token must be accepted; got %d body=%s", rec.Code, rec.Body.String())
+	}
+	if gotSource != "smoke" {
+		t.Fatalf("identity source = %q, want smoke", gotSource)
+	}
+	if gotPlan != "demo" {
+		t.Fatalf("identity plan = %q, want demo", gotPlan)
+	}
+	if gotUser != "smoke" {
+		t.Fatalf("identity user = %q, want smoke", gotUser)
+	}
+	if gotRole != "" {
+		t.Fatalf("smoke identity must never inherit BearerRole; got %q", gotRole)
+	}
+}
+
+func TestAuth_SmokeTokenDisabledWhenNotConfigured(t *testing.T) {
+	// No SmokeTokenProvider → smoke fallback is off → unauth request
+	// (no bearer, no smoke) still 401.
+	handler := Auth(AuthOptions{
+		Mode:           "bearer",
+		BearerTokenEnv: "UNDEFINED_BEARER_VAR",
+	})(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusOK) }))
+
+	req := httptest.NewRequest(http.MethodGet, "/v1/dictation/transcribe", nil)
+	req.Header.Set("Authorization", "Bearer some-random-token")
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("unset smoke must not auth a stray bearer; got %d", rec.Code)
+	}
+}
+
+func TestAuth_SmokeTokenRejectsMismatch(t *testing.T) {
+	// Smoke token configured, but client sends a different value → 401.
+	handler := Auth(AuthOptions{
+		Mode:               "bearer",
+		BearerTokenEnv:     "UNDEFINED_BEARER_VAR",
+		SmokeTokenProvider: func() string { return "sk-smoke-public-demo-001" },
+	})(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusOK) }))
+
+	req := httptest.NewRequest(http.MethodGet, "/v1/dictation/transcribe", nil)
+	req.Header.Set("Authorization", "Bearer wrong-token")
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("wrong smoke token must fail; got %d", rec.Code)
+	}
+}
+
+func TestAuthState_SmokeTokenResolvesFromEnv(t *testing.T) {
+	t.Setenv("TEST_SMOKE_ENV", "sk-smoke-from-env")
+	state := NewAuthState("bearer", "TEST_BEARER", "TEST_EDGE", "", "")
+	if got := state.SmokeToken(); got != "" {
+		t.Fatalf("smoke token must be empty until SetSmokeTokenEnv is called; got %q", got)
+	}
+	state.SetSmokeTokenEnv("TEST_SMOKE_ENV")
+	if got := state.SmokeToken(); got != "sk-smoke-from-env" {
+		t.Fatalf("smoke token = %q, want sk-smoke-from-env", got)
+	}
+}

@@ -154,18 +154,26 @@ type WakewordConfig struct {
 // ServerConfig configures the standalone Linux server binary. Used only by
 // cmd/speechkit-server; the desktop app never reads these values.
 type ServerConfig struct {
-	ListenAddr            string   `toml:"listen_addr"`          // e.g. ":8080"
-	PublicURL             string   `toml:"public_url"`           // external API base URL, e.g. https://speechkit.example.com/api
-	Modes                 []string `toml:"modes"`                // subset of ["dictation","assist","voiceagent"]; empty = all
-	AuthMode              string   `toml:"auth_mode"`            // "none" | "bearer" | "edge_hmac" | "bearer_or_edge"
-	BearerTokenEnv        string   `toml:"bearer_token_env"`     // env var name holding the bearer token
-	BearerRole            string   `toml:"bearer_role"`          // optional role for static bearer callers, e.g. "admin"
-	AdminAuthEnabled      bool     `toml:"admin_auth_enabled"`   // enables setup/admin UI username/password login
-	AdminUsername         string   `toml:"admin_username"`       // setup/admin UI username; not used by API clients
-	AdminPasswordHash     string   `toml:"admin_password_hash"`  // bcrypt hash for setup/admin UI login
-	EdgeAuthSecretEnv     string   `toml:"edge_auth_secret_env"` // env var name holding the HMAC secret
-	PublicBaseURL         string   `toml:"public_base_url"`      // public server URL used for returned client URLs
-	TrustedProxyCIDRs     []string `toml:"trusted_proxy_cidrs"`  // proxies allowed to supply X-Forwarded-* headers
+	ListenAddr        string   `toml:"listen_addr"`          // e.g. ":8080"
+	PublicURL         string   `toml:"public_url"`           // external API base URL, e.g. https://speechkit.example.com/api
+	Modes             []string `toml:"modes"`                // subset of ["dictation","assist","voiceagent"]; empty = all
+	AuthMode          string   `toml:"auth_mode"`            // "none" | "bearer" | "edge_hmac" | "bearer_or_edge"
+	BearerTokenEnv    string   `toml:"bearer_token_env"`     // env var name holding the bearer token
+	BearerRole        string   `toml:"bearer_role"`          // optional role for static bearer callers, e.g. "admin"
+	AdminAuthEnabled  bool     `toml:"admin_auth_enabled"`   // enables setup/admin UI username/password login
+	AdminUsername     string   `toml:"admin_username"`       // setup/admin UI username; not used by API clients
+	AdminPasswordHash string   `toml:"admin_password_hash"`  // bcrypt hash for setup/admin UI login
+	EdgeAuthSecretEnv string   `toml:"edge_auth_secret_env"` // env var name holding the HMAC secret
+	// SmokeTokenEnv names an optional env var that holds a public-friendly
+	// demo bearer token. When set, the smoke UI on `/` embeds the token in
+	// the rendered HTML so visitors can run all three modes without
+	// configuring credentials. The smoke identity is tagged Source="smoke"
+	// (Plan="demo") so handlers and rate-limiters can distinguish demo
+	// traffic. Leave empty to disable smoke-from-page entirely; operators
+	// must then paste their bearer token in the UI manually.
+	SmokeTokenEnv         string   `toml:"smoke_token_env"`
+	PublicBaseURL         string   `toml:"public_base_url"`     // public server URL used for returned client URLs
+	TrustedProxyCIDRs     []string `toml:"trusted_proxy_cidrs"` // proxies allowed to supply X-Forwarded-* headers
 	CORSAllowedOrigins    []string `toml:"cors_allowed_origins"`
 	RateLimitRPS          float64  `toml:"rate_limit_rps"`
 	RateLimitBurst        int      `toml:"rate_limit_burst"`

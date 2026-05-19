@@ -3,6 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="speechkit-smoke-token" content="__SPEECHKIT_SMOKE_TOKEN__">
   <title>SpeechKit Server Smoke</title>
   <style>
     :root {
@@ -464,8 +465,26 @@
       return JSON.stringify(value, null, 2);
     }
 
+    function smokeBearerToken() {
+      const meta = document.querySelector('meta[name="speechkit-smoke-token"]');
+      if (!meta) return "";
+      const value = (meta.getAttribute("content") || "").trim();
+      // Server renders the placeholder literally when no token is set;
+      // detect and treat as "no smoke auth configured".
+      if (!value || value === "__SPEECHKIT_SMOKE_TOKEN__") return "";
+      return value;
+    }
+
     async function request(path, opts) {
       opts = opts || {};
+      const token = smokeBearerToken();
+      if (token) {
+        const headers = new Headers(opts.headers || {});
+        if (!headers.has("Authorization")) {
+          headers.set("Authorization", "Bearer " + token);
+        }
+        opts = Object.assign({}, opts, { headers: headers });
+      }
       const response = await fetch(path, opts);
       const text = await response.text();
       let body = text;

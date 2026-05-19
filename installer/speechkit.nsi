@@ -10,7 +10,7 @@ RequestExecutionLevel user
 
 ; VERSION can be overridden at compile time: makensis /DVERSION=x.y.z
 !ifndef VERSION
-  !define VERSION "0.35.2"
+  !define VERSION "0.35.3"
 !endif
 
 ; --- Interface ---

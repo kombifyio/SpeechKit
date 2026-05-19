@@ -61,7 +61,7 @@ func registerTestUI(app *App) {
 	if !envBoolDefault(config.ServerOnboardingUIEnv, true) {
 		return
 	}
-	app.Mux.Handle("/", testUIHandler{})
+	app.Mux.Handle("/", testUIHandler{app: app})
 	setup := setupUIHandler{app: app}
 	app.Mux.Handle("/setup", setup)
 	app.Mux.Handle("/setup/", setup)
@@ -70,9 +70,11 @@ func registerTestUI(app *App) {
 	app.Mux.Handle("/api/v1/server/admin/session", session)
 }
 
-type testUIHandler struct{}
+type testUIHandler struct {
+	app *App
+}
 
-func (testUIHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+func (h testUIHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if r.URL.Path != "/" {
 		http.NotFound(w, r)
 		return
@@ -83,7 +85,11 @@ func (testUIHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeHTML(w, r, onboarding.TestUIHTML())
+	smokeToken := ""
+	if h.app != nil && h.app.AuthState != nil {
+		smokeToken = h.app.AuthState.SmokeToken()
+	}
+	writeHTML(w, r, onboarding.TestUIHTML(smokeToken))
 }
 
 type setupUIHandler struct {

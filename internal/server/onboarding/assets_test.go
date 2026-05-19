@@ -6,7 +6,7 @@ import (
 )
 
 func TestTestUIHTMLContainsSmokeMarkers(t *testing.T) {
-	body := TestUIHTML()
+	body := TestUIHTML("")
 	for _, want := range []string{
 		"SpeechKit Server Smoke",
 		`id="runtimeStatus"`,
@@ -22,6 +22,10 @@ func TestTestUIHTMLContainsSmokeMarkers(t *testing.T) {
 		"/api/v1/dictation/transcribe",
 		"/api/v1/assist/process",
 		"/api/v1/voiceagent/sessions",
+		// Smoke token plumbing: the page must read the token from a
+		// server-rendered meta tag and apply it as a Bearer header.
+		`meta name="speechkit-smoke-token"`,
+		"smokeBearerToken",
 	} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("test UI body should contain %q", want)
@@ -31,11 +35,6 @@ func TestTestUIHTMLContainsSmokeMarkers(t *testing.T) {
 	for _, forbidden := range []string{
 		"Base URL",
 		"baseUrl",
-		"Authorization",
-		"Bearer Token",
-		"Token",
-		"token",
-		"bearerToken",
 		"X-Edge-Auth-Hmac",
 		"edgeHmac",
 		"authMode",
@@ -57,6 +56,12 @@ func TestTestUIHTMLContainsSmokeMarkers(t *testing.T) {
 		"Role ID",
 		"Sequence ID",
 		"TTS Voice",
+		// No operator-facing token input fields — token comes from the
+		// server-rendered meta tag, never from a form on this page.
+		"Bearer Token",
+		`id="bearerToken"`,
+		`id="serverToken"`,
+		`name="bearerToken"`,
 	} {
 		if strings.Contains(body, forbidden) {
 			t.Fatalf("test UI body should not contain client setup field %q", forbidden)

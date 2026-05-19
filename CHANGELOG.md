@@ -12,6 +12,32 @@ IDs, source paths, and other maintainer-only vocabulary.
 
 ## [Unreleased]
 
+## [0.35.3] - 2026-05-19
+
+Server-Target patch. Public demo at `https://speechkit.kombify.io`
+now drives all three modes from the browser, and the OSS container's
+STT routing default no longer pretends a local whisper.cpp exists.
+No public API change.
+
+### Added
+- Optional `SPEECHKIT_SMOKE_TOKEN` env var. When set, the smoke page
+  on `/` embeds the token through a server-rendered meta tag and
+  attaches it as a Bearer header on every fetch. The smoke identity
+  is tagged with a public source and a demo plan so the rate-limiter
+  and handlers can treat anonymous demo traffic differently from
+  service callers. Never inherits an admin role.
+- `[routing] strategy` is now spelled out as `cloud-only` in
+  `deploy/config/server.example.toml`, matching what the container
+  actually ships.
+
+### Fixed
+- Public smoke page no longer returns 401 on Dictation, Assist, and
+  Voice Agent tiles when the server is configured for bearer auth.
+- Dictation no longer returns
+  `503 provider_unavailable: local provider not configured` on a
+  fresh OSS container that has cloud STT providers configured but
+  no in-process whisper.cpp.
+
 ## [0.35.2] - 2026-05-18
 
 Desktop runtime diagnostics improvements. No public API change.

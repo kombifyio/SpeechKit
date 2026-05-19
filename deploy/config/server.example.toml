@@ -27,6 +27,12 @@ public_url             = ""
 modes                  = ["dictation", "assist", "voiceagent"]
 auth_mode              = "bearer_or_edge"       # Production default. Accepts service bearer tokens and Gateway X-Edge-* HMAC.
 bearer_token_env       = "SPEECHKIT_SERVER_TOKEN"
+# Optional public demo token. When SPEECHKIT_SMOKE_TOKEN is set in the env,
+# the smoke UI on `/` embeds it so visitors can drive all three modes from
+# the browser without configuring credentials. The smoke identity is
+# tagged Source="smoke", Plan="demo" — handlers and rate-limiters can
+# tighten budgets for demo traffic. Leave the env var unset to disable.
+smoke_token_env        = "SPEECHKIT_SMOKE_TOKEN"
 bearer_role            = ""                     # Set "admin" only for trusted single-operator bearer-token installs.
 admin_auth_enabled     = false                  # Optional setup UI username/password login. Keep false in the base image; enable through first-run setup/API for public installs.
 admin_username         = ""                     # Set through /setup or /v1/server/settings. Do not store plaintext passwords in TOML.
@@ -99,6 +105,14 @@ agent_model    = "gemini-2.5-pro"
 enabled        = false
 api_key_env    = "GROQ_API_KEY"
 stt_model      = "whisper-large-v3-turbo"
+
+[routing]
+# Server-Target containers ship without an in-process whisper.cpp, so the STT
+# router must reach cloud providers (HF, OpenAI). The kernel default is
+# "local-only" because Device-Target embeds whisper.cpp; we override here.
+strategy                   = "cloud-only"
+prefer_local_under_seconds = 0
+parallel_cloud             = false
 
 [tts]
 enabled  = true
