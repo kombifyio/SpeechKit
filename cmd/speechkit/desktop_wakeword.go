@@ -148,11 +148,42 @@ func startDesktopWakeword(ctx context.Context, cfg *config.Config, state *appSta
 	return runtime
 }
 
+// execCommandContext is the injection point for exec.CommandContext used by
+// launchWakewordSidecar. Production code uses the stdlib function; tests
+// replace it with a recorder to assert the sidecar exec ctx is decoupled
+// from any short-lived caller context.
+var execCommandContext = exec.CommandContext
+
+// sidecarParentContext returns the base context the sidecar's
+// exec.CommandContext is rooted in. It is intentionally context.Background()
+// so that no HTTP-request-scoped or otherwise short-lived caller ctx can
+// cancel the long-lived sidecar — see launchWakewordSidecar for the bug
+// history (v0.35.6 "Wake-word sidecar exited (code 1)" toast).
+func sidecarParentContext() context.Context { return context.Background() }
+
 // launchWakewordSidecar starts the sidecar process, sets up the stdout
 // event pump and stderr log fan-out, and returns the runtime handle.
-func launchWakewordSidecar(parentCtx context.Context, state *appState, hkManager *modeHotkeyManager, cfg *config.Config, resolved resolvedWakewordAssets) (*desktopWakeRuntime, error) {
-	ctx, cancel := context.WithCancel(parentCtx)
-	cmd := exec.CommandContext(ctx, resolved.SidecarPath,
+//
+// The sidecar's exec context is deliberately rooted in sidecarParentContext()
+// (a fresh Background) and NOT in the caller's ctx. The sidecar's lifetime is
+// owned by desktopWakeRuntime.Close (stdin shutdown + Kill fallback) and by
+// the cleanup stack registered at app startup — not by callers.
+//
+// Until v0.35.6 this used the caller's parentCtx, which silently broke every
+// runtime path that flowed restartDesktopWakeword(r.Context(), ...) — i.e. the
+// "Enable wake-word" wizard button and every Settings save that touched a
+// wake-word field. Those callers pass an HTTP-request context that cancels
+// the instant the response is written, so exec.CommandContext killed the
+// freshly-launched sidecar via Windows TerminateProcess(handle, 1). The
+// user-visible symptom was the toast pair
+//
+//	Wake-word ready: "<phrase>" → <mode>
+//	Wake-word sidecar exited (code 1): exit status 1
+//
+// emitted in the same second. Background() severs the link.
+func launchWakewordSidecar(_ context.Context, state *appState, hkManager *modeHotkeyManager, cfg *config.Config, resolved resolvedWakewordAssets) (*desktopWakeRuntime, error) {
+	ctx, cancel := context.WithCancel(sidecarParentContext())
+	cmd := execCommandContext(ctx, resolved.SidecarPath,
 		"--model-dir", resolved.ModelDir,
 		"--keywords-file", resolved.KeywordsFile,
 		"--phrase-id", strings.TrimSpace(cfg.Wakeword.PhraseID),

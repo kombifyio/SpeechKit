@@ -12,6 +12,25 @@ IDs, source paths, and other maintainer-only vocabulary.
 
 ## [Unreleased]
 
+## [0.35.7] - 2026-05-19
+
+Wake-word hotfix. The "Enable wake-word" button in the onboarding
+wizard and every Settings save that touched a Wake-word field
+were killing the listener within milliseconds of starting it. The
+listener now stays alive until the user disables it or quits the
+app. No public API change.
+
+### Fixed
+- Enabling Wake-word from the onboarding wizard's
+  "Enable wake-word" button no longer produces the toast pair
+  `Wake-word ready: "<phrase>" → <mode>` followed immediately by
+  `Wake-word sidecar exited (code 1)` in the same second. The
+  listener now keeps running and emits regular heartbeats.
+- Saving any Wake-word change in Settings (phrase, threshold,
+  default mode, cooldown) hot-reloads the listener into a
+  long-lived state instead of leaving it dead after the
+  Settings dialog closes.
+
 ## [0.35.6] - 2026-05-19
 
 CI hardening: every release now includes a headless-browser
