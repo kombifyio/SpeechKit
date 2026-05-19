@@ -469,9 +469,14 @@
       const meta = document.querySelector('meta[name="speechkit-smoke-token"]');
       if (!meta) return "";
       const value = (meta.getAttribute("content") || "").trim();
-      // Server renders the placeholder literally when no token is set;
-      // detect and treat as "no smoke auth configured".
-      if (!value || value === "__SPEECHKIT_SMOKE_TOKEN__") return "";
+      if (!value) return "";
+      // Server's ReplaceAll rewrites every occurrence of the literal
+      // placeholder, including any guard string in this file. Build the
+      // sentinel by concatenation at runtime so the server-side rewrite
+      // cannot collapse this comparison into "value === <real-token>",
+      // which would always be true and disable the smoke flow.
+      const sentinel = "__SPEECHKIT_" + "SMOKE_TOKEN__";
+      if (value === sentinel) return "";
       return value;
     }
 

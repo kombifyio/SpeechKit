@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/kombifyio/SpeechKit/cmd/speechkit/internal/transcription"
@@ -16,6 +17,12 @@ type voiceAgentActivationPlan struct {
 	session   *voiceagent.Session
 	echoGuard *voiceAgentEchoGuard
 	start     voiceAgentStartConfig
+	// preSession is set while the activation goroutine is still inside
+	// session.Start (typically while Gemini Live establishes its WebSocket).
+	// The microphone handler consults this flag so frames captured during the
+	// handshake are forwarded to the audio sender's channel even though the
+	// session state has not yet transitioned out of StateInactive.
+	preSession *atomic.Bool
 }
 
 type voiceAgentStartConfig struct {
@@ -62,10 +69,13 @@ func (c desktopInputController) prepareVoiceAgentActivation(ctx context.Context)
 	if !ok {
 		return voiceAgentActivationPlan{}, false
 	}
+	preSession := &atomic.Bool{}
+	preSession.Store(true)
 	return voiceAgentActivationPlan{
-		session:   session,
-		echoGuard: echoGuard,
-		start:     start,
+		session:    session,
+		echoGuard:  echoGuard,
+		start:      start,
+		preSession: preSession,
 	}, true
 }
 
@@ -125,15 +135,22 @@ func (c desktopInputController) voiceAgentIdleConfig() voiceagent.IdleConfig {
 	return idleCfg
 }
 
-func (c desktopInputController) startVoiceAgentSession(ctx context.Context, plan voiceAgentActivationPlan) {
+func (c desktopInputController) startVoiceAgentSession(ctx context.Context, plan voiceAgentActivationPlan, audioSender *voiceAgentAudioSender) {
 	liveCfg := c.voiceAgentLiveConfig(plan.session, plan.start)
 	if c.state != nil {
 		c.state.startVoiceAgentStream(ctx)
 	}
 
 	sessionStart := time.Now()
-	if err := plan.session.Start(ctx, liveCfg, plan.start.IdleConfig); err != nil {
+	err := plan.session.Start(ctx, liveCfg, plan.start.IdleConfig)
+	// The activation cancel hook is consumed regardless of outcome; from here
+	// on Stop() drives the teardown path.
+	if c.state != nil {
+		c.state.clearVoiceAgentActivationCancel()
+	}
+	if err != nil {
 		c.log(fmt.Sprintf("Voice Agent: start failed: %v", err), "error")
+		c.tearDownVoiceAgentAudioCapture(plan, audioSender)
 		if c.state != nil {
 			c.state.stopVoiceAgentStream()
 		}
@@ -165,8 +182,27 @@ func (c desktopInputController) startVoiceAgentSession(ctx context.Context, plan
 		c.state.mu.Unlock()
 	}
 
+	c.activateVoiceAgentAudioSender(ctx, plan, audioSender)
 	c.log("Voice Agent: streaming audio", "info")
-	c.bindVoiceAgentAudio(ctx, plan.session, plan.echoGuard)
+}
+
+// activateVoiceAgentAudioSender starts the audio sender goroutine that drains
+// the in-flight frame channel into the live session. Frames captured while
+// session.Start was establishing the WebSocket are already queued in the
+// channel; the goroutine forwards them in order, then keeps streaming the
+// real-time mic input. Clearing the preSession flag flips the microphone
+// handler back to the normal voiceAgentMicFrameAllowed gate so the echo guard
+// and Speaking-state mute take effect once the AI starts to respond.
+func (c desktopInputController) activateVoiceAgentAudioSender(ctx context.Context, plan voiceAgentActivationPlan, audioSender *voiceAgentAudioSender) {
+	if audioSender == nil {
+		return
+	}
+	sendErrorLogged := false
+	audioSender.onSendError = c.voiceAgentAudioSendErrorHandler(&sendErrorLogged)
+	if plan.preSession != nil {
+		plan.preSession.Store(false)
+	}
+	audioSender.Start(ctx)
 }
 
 func (c desktopInputController) voiceAgentLiveConfig(session *voiceagent.Session, start voiceAgentStartConfig) voiceagent.LiveConfig {
@@ -249,32 +285,71 @@ func (c desktopInputController) voiceAgentLivePolicies() voiceagent.LivePolicies
 	}
 }
 
-func (c desktopInputController) bindVoiceAgentAudio(ctx context.Context, session *voiceagent.Session, echoGuard *voiceAgentEchoGuard) {
-	if c.audioCapturer == nil {
-		return
-	}
-
-	audioSender := newVoiceAgentAudioSender(session, defaultVoiceAgentAudioQueueSize)
-	sendErrorLogged := false
-	audioSender.onSendError = c.voiceAgentAudioSendErrorHandler(&sendErrorLogged)
-	audioSender.Start(ctx)
+// armVoiceAgentAudioCapture wires the microphone to a freshly-created audio
+// sender BEFORE the realtime session is connected. The sender's drain
+// goroutine is deliberately NOT started yet — frames captured during the
+// WebSocket handshake queue up in the sender's bounded channel and are
+// replayed in order once activateVoiceAgentAudioSender runs. This is what
+// keeps hold-to-talk feeling instantaneous: the user's earliest utterance
+// reaches the model even though Connect took a few hundred milliseconds.
+//
+// In test contexts that pass a nil audioCapturer this still returns a working
+// sender so the activation goroutine can proceed; tests drive frames into the
+// sender directly.
+func (c desktopInputController) armVoiceAgentAudioCapture(plan voiceAgentActivationPlan) (*voiceAgentAudioSender, bool) {
+	audioSender := newVoiceAgentAudioSender(plan.session, defaultVoiceAgentAudioQueueSize)
 	if c.state != nil {
 		c.state.setVoiceAgentAudioSender(audioSender)
 	}
+	if c.audioCapturer == nil {
+		return audioSender, true
+	}
+
 	c.audioCapturer.SetPCMHandler(func(frame []byte) {
-		if !voiceAgentMicFrameAllowed(session.CurrentState(), echoGuard) {
+		if plan.preSession != nil && plan.preSession.Load() {
+			// Pre-session window: session state is still StateInactive or has
+			// just transitioned to StateConnecting. Buffer the frame in the
+			// sender's channel; voiceAgentMicFrameAllowed would otherwise drop
+			// it because it treats StateInactive as muted.
+			_ = audioSender.Enqueue(frame)
+			return
+		}
+		if !voiceAgentMicFrameAllowed(plan.session.CurrentState(), plan.echoGuard) {
 			return
 		}
 		_ = audioSender.Enqueue(frame)
 	})
 
 	if err := c.audioCapturer.Start(); err != nil {
-		audioSender.Stop()
+		c.log(fmt.Sprintf("Voice Agent: mic capture start failed: %v", err), "error")
 		c.audioCapturer.SetPCMHandler(nil)
 		if c.state != nil {
 			c.state.stopVoiceAgentAudioSender()
 		}
-		c.log(fmt.Sprintf("Voice Agent: mic capture start failed: %v", err), "error")
+		audioSender.Stop()
+		return nil, false
+	}
+	return audioSender, true
+}
+
+// tearDownVoiceAgentAudioCapture unwinds an armVoiceAgentAudioCapture when the
+// activation aborts (session.Start failed, or the user released the hotkey
+// while the WebSocket was still connecting). It clears the mic handler so the
+// capturer stops feeding the now-dead sender, drops the pending sender, and
+// flips preSession back to false so any straggler frame from the capturer
+// callback thread takes the muted path instead of enqueueing.
+func (c desktopInputController) tearDownVoiceAgentAudioCapture(plan voiceAgentActivationPlan, sender *voiceAgentAudioSender) {
+	if plan.preSession != nil {
+		plan.preSession.Store(false)
+	}
+	if c.audioCapturer != nil {
+		c.audioCapturer.SetPCMHandler(nil)
+	}
+	if c.state != nil {
+		c.state.stopVoiceAgentAudioSender()
+	}
+	if sender != nil {
+		sender.Stop()
 	}
 }
 

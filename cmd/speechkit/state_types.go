@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"sync"
 	"time"
 
@@ -113,14 +114,21 @@ type appState struct {
 	voiceAgentSummaryTool    textactions.SummaryTool
 	streamPlayer             *audio.StreamPlayer
 	voiceAgentAudioSender    *voiceAgentAudioSender
-	voiceAgentEchoGuard      *voiceAgentEchoGuard
-	wailsApp                 *application.App
-	captureWin               *application.WebviewWindow
-	doneResetDelay           time.Duration
-	downloads                *downloads.Manager
-	appUpdates               *appUpdateManager
-	shuttingDown             bool
-	appStarted               bool
+	// voiceAgentActivationCancel cancels the activation goroutine's context
+	// so a hold-to-talk release can abort an in-flight session.Start (most
+	// notably while Gemini Live is still establishing its WebSocket). The
+	// field is set synchronously by activateVoiceAgent before the goroutine
+	// runs and cleared by startVoiceAgentSession once activation either
+	// succeeds or fails.
+	voiceAgentActivationCancel context.CancelFunc
+	voiceAgentEchoGuard        *voiceAgentEchoGuard
+	wailsApp                   *application.App
+	captureWin                 *application.WebviewWindow
+	doneResetDelay             time.Duration
+	downloads                  *downloads.Manager
+	appUpdates                 *appUpdateManager
+	shuttingDown               bool
+	appStarted                 bool
 
 	// serverDelegates holds optional per-mode adapters that delegate to a
 	// remote SpeechKit Server-Target. Nil when every mode runs locally

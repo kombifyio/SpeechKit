@@ -4,18 +4,20 @@ import "strings"
 
 func NormalizeHotkeyBehavior(value, fallback string) string {
 	switch strings.ToLower(strings.TrimSpace(value)) {
-	case HotkeyBehaviorPushToTalk:
-		return HotkeyBehaviorPushToTalk
+	case HotkeyBehaviorHoldToTalk, legacyHotkeyBehaviorPushToTalk:
+		// Legacy push_to_talk inputs are normalized to the canonical
+		// hold_to_talk value so subsequent writes use the new name.
+		return HotkeyBehaviorHoldToTalk
 	case HotkeyBehaviorToggle:
 		return HotkeyBehaviorToggle
 	default:
 		if strings.TrimSpace(fallback) == "" {
-			return HotkeyBehaviorPushToTalk
+			return HotkeyBehaviorHoldToTalk
 		}
 		if strings.EqualFold(strings.TrimSpace(fallback), value) {
-			return HotkeyBehaviorPushToTalk
+			return HotkeyBehaviorHoldToTalk
 		}
-		return NormalizeHotkeyBehavior(fallback, HotkeyBehaviorPushToTalk)
+		return NormalizeHotkeyBehavior(fallback, HotkeyBehaviorHoldToTalk)
 	}
 }
 

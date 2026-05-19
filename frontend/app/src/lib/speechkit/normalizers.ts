@@ -44,8 +44,11 @@ function normalizeHotkeyBehavior(
   if (value === "toggle") {
     return "toggle";
   }
-  if (value === "push_to_talk") {
-    return "push_to_talk";
+  // Accept the legacy "push_to_talk" string from older installs and map it to
+  // the new canonical "hold_to_talk" value so the UI and config stay in sync
+  // with the Go backend (config.NormalizeHotkeyBehavior does the same).
+  if (value === "hold_to_talk" || value === "push_to_talk") {
+    return "hold_to_talk";
   }
   return fallback;
 }

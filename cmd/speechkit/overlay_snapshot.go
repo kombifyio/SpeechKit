@@ -68,9 +68,9 @@ func (s *appState) overlaySnapshot() overlaySnapshot {
 	}
 	assistHotkey := s.assistHotkey
 	voiceAgentHotkey := s.voiceAgentHotkey
-	dictateHotkeyBehavior := config.NormalizeHotkeyBehavior(s.dictateHotkeyBehavior, config.HotkeyBehaviorPushToTalk)
-	assistHotkeyBehavior := config.NormalizeHotkeyBehavior(s.assistHotkeyBehavior, config.HotkeyBehaviorPushToTalk)
-	voiceAgentHotkeyBehavior := config.NormalizeHotkeyBehavior(s.voiceAgentHotkeyBehavior, config.HotkeyBehaviorPushToTalk)
+	dictateHotkeyBehavior := config.NormalizeHotkeyBehavior(s.dictateHotkeyBehavior, config.HotkeyBehaviorHoldToTalk)
+	assistHotkeyBehavior := config.NormalizeHotkeyBehavior(s.assistHotkeyBehavior, config.HotkeyBehaviorHoldToTalk)
+	voiceAgentHotkeyBehavior := config.NormalizeHotkeyBehavior(s.voiceAgentHotkeyBehavior, config.HotkeyBehaviorHoldToTalk)
 	agentHotkey := legacyAgentHotkeyFromModeBindings(assistHotkey, voiceAgentHotkey, modeAssist)
 	modeEnabled, availableModes := modeAvailabilityFromState(
 		s.dictateEnabled,
@@ -160,15 +160,15 @@ func (s *appState) settingsSnapshot(cfg *config.Config) settingsSnapshot {
 	}
 	dictateHotkeyBehavior := config.NormalizeHotkeyBehavior(
 		s.dictateHotkeyBehavior,
-		config.NormalizeHotkeyBehavior(cfg.General.DictateHotkeyBehavior, config.HotkeyBehaviorPushToTalk),
+		config.NormalizeHotkeyBehavior(cfg.General.DictateHotkeyBehavior, config.HotkeyBehaviorHoldToTalk),
 	)
 	assistHotkeyBehavior := config.NormalizeHotkeyBehavior(
 		s.assistHotkeyBehavior,
-		config.NormalizeHotkeyBehavior(cfg.General.AssistHotkeyBehavior, config.HotkeyBehaviorPushToTalk),
+		config.NormalizeHotkeyBehavior(cfg.General.AssistHotkeyBehavior, config.HotkeyBehaviorHoldToTalk),
 	)
 	voiceAgentHotkeyBehavior := config.NormalizeHotkeyBehavior(
 		s.voiceAgentHotkeyBehavior,
-		config.NormalizeHotkeyBehavior(cfg.General.VoiceAgentHotkeyBehavior, config.HotkeyBehaviorPushToTalk),
+		config.NormalizeHotkeyBehavior(cfg.General.VoiceAgentHotkeyBehavior, config.HotkeyBehaviorHoldToTalk),
 	)
 	voiceAgentCloseBehavior := config.NormalizeVoiceAgentCloseBehavior(
 		cfg.VoiceAgent.CloseBehavior,

@@ -9,7 +9,7 @@ const HOTKEY_BASE_OPTIONS = [
   { value: "ctrl+shift", label: "Ctrl + Shift" },
 ] as const;
 const HOTKEY_BEHAVIOR_OPTIONS = [
-  { value: "push_to_talk", label: "Hold to talk" },
+  { value: "hold_to_talk", label: "Hold to talk" },
   { value: "toggle", label: "Toggle on press" },
 ] as const;
 

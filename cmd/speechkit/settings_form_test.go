@@ -72,8 +72,8 @@ func TestParseSettingsFormDefaults(t *testing.T) {
 	if form.StoreBackend != "sqlite" {
 		t.Errorf("StoreBackend = %q, want %q", form.StoreBackend, "sqlite")
 	}
-	if form.VoiceAgentHotkeyBehavior != config.HotkeyBehaviorPushToTalk {
-		t.Errorf("VoiceAgentHotkeyBehavior = %q, want %q", form.VoiceAgentHotkeyBehavior, config.HotkeyBehaviorPushToTalk)
+	if form.VoiceAgentHotkeyBehavior != config.HotkeyBehaviorHoldToTalk {
+		t.Errorf("VoiceAgentHotkeyBehavior = %q, want %q", form.VoiceAgentHotkeyBehavior, config.HotkeyBehaviorHoldToTalk)
 	}
 	if form.VoiceAgentCloseBehavior != config.VoiceAgentCloseBehaviorContinue {
 		t.Errorf("VoiceAgentCloseBehavior = %q, want %q", form.VoiceAgentCloseBehavior, config.VoiceAgentCloseBehaviorContinue)

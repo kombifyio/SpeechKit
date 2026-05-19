@@ -475,8 +475,8 @@ describe("SettingsApp modes", () => {
       expect(saveSettingsStateMock).toHaveBeenCalledWith(
         expect.objectContaining({
           assistHotkeyBehavior: "toggle",
-          dictateHotkeyBehavior: "push_to_talk",
-          voiceAgentHotkeyBehavior: "push_to_talk",
+          dictateHotkeyBehavior: "hold_to_talk",
+          voiceAgentHotkeyBehavior: "hold_to_talk",
         }),
       ),
     );

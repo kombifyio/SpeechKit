@@ -14,9 +14,9 @@ export const baseSettings: SpeechKitSettingsState = {
   dictateHotkey: "ctrl+win",
   assistHotkey: "win+alt",
   voiceAgentHotkey: "ctrl+shift",
-  dictateHotkeyBehavior: "push_to_talk",
-  assistHotkeyBehavior: "push_to_talk",
-  voiceAgentHotkeyBehavior: "push_to_talk",
+  dictateHotkeyBehavior: "hold_to_talk",
+  assistHotkeyBehavior: "hold_to_talk",
+  voiceAgentHotkeyBehavior: "hold_to_talk",
   voiceAgentCloseBehavior: "continue",
   voiceAgentProfileId: "default",
   voiceAgentProfiles: [

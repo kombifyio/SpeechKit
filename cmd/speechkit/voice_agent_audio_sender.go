@@ -6,7 +6,15 @@ import (
 	"sync/atomic"
 )
 
-const defaultVoiceAgentAudioQueueSize = 24
+// defaultVoiceAgentAudioQueueSize bounds the audio sender's in-flight frame
+// channel. The buffer is also used as the pre-session ring buffer: mic frames
+// captured between hold-to-talk KeyDown and the moment Gemini Live finishes
+// its WebSocket handshake queue here, so the user's first words are replayed
+// in order once the sender's drain goroutine starts. At 32 ms frames, 96
+// entries cover roughly three seconds of pre-session audio — comfortably
+// above the typical 300-1500 ms connect latency. Frames captured beyond the
+// buffer get the oldest-first eviction in Enqueue.
+const defaultVoiceAgentAudioQueueSize = 96
 
 type voiceAgentAudioSink interface {
 	SendAudio([]byte) error
@@ -132,4 +140,49 @@ func (s *appState) stopVoiceAgentAudioSender() {
 	if sender != nil {
 		sender.Stop()
 	}
+}
+
+// setVoiceAgentActivationCancel records the cancel function for the in-flight
+// activation goroutine so a hold-to-talk release that lands before the
+// session has transitioned out of StateInactive can still abort the WebSocket
+// handshake. Any prior cancel function (left over from a previous activation
+// that bailed without clearing) is invoked defensively to avoid stranding a
+// stuck goroutine.
+func (s *appState) setVoiceAgentActivationCancel(cancel context.CancelFunc) {
+	if s == nil {
+		return
+	}
+	s.mu.Lock()
+	old := s.voiceAgentActivationCancel
+	s.voiceAgentActivationCancel = cancel
+	s.mu.Unlock()
+	if old != nil {
+		old()
+	}
+}
+
+// takeVoiceAgentActivationCancel atomically pulls and clears the activation
+// cancel hook. The caller owns invoking it.
+func (s *appState) takeVoiceAgentActivationCancel() context.CancelFunc {
+	if s == nil {
+		return nil
+	}
+	s.mu.Lock()
+	cancel := s.voiceAgentActivationCancel
+	s.voiceAgentActivationCancel = nil
+	s.mu.Unlock()
+	return cancel
+}
+
+// clearVoiceAgentActivationCancel drops the activation cancel hook without
+// invoking it. Called by the activation goroutine once session.Start has
+// either succeeded (state has moved past Inactive — release uses Stop now) or
+// failed (the goroutine handled the teardown itself).
+func (s *appState) clearVoiceAgentActivationCancel() {
+	if s == nil {
+		return
+	}
+	s.mu.Lock()
+	s.voiceAgentActivationCancel = nil
+	s.mu.Unlock()
 }

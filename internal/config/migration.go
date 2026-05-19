@@ -50,7 +50,7 @@ func backfillLegacyModeHotkeys(meta toml.MetaData, cfg *Config) {
 		cfg.General.VoiceAgentEnabled = strings.TrimSpace(cfg.General.VoiceAgentHotkey) != ""
 	}
 
-	legacyHotkeyMode := NormalizeHotkeyBehavior(cfg.General.HotkeyMode, HotkeyBehaviorPushToTalk)
+	legacyHotkeyMode := NormalizeHotkeyBehavior(cfg.General.HotkeyMode, HotkeyBehaviorHoldToTalk)
 	legacyHotkeyModeDefined := meta.IsDefined("general", "hotkey_mode")
 	if legacyHotkeyModeDefined && !meta.IsDefined("general", "dictate_hotkey_behavior") {
 		cfg.General.DictateHotkeyBehavior = legacyHotkeyMode
@@ -62,9 +62,9 @@ func backfillLegacyModeHotkeys(meta toml.MetaData, cfg *Config) {
 		cfg.General.VoiceAgentHotkeyBehavior = legacyHotkeyMode
 	}
 
-	cfg.General.DictateHotkeyBehavior = NormalizeHotkeyBehavior(cfg.General.DictateHotkeyBehavior, HotkeyBehaviorPushToTalk)
-	cfg.General.AssistHotkeyBehavior = NormalizeHotkeyBehavior(cfg.General.AssistHotkeyBehavior, HotkeyBehaviorPushToTalk)
-	cfg.General.VoiceAgentHotkeyBehavior = NormalizeHotkeyBehavior(cfg.General.VoiceAgentHotkeyBehavior, HotkeyBehaviorPushToTalk)
+	cfg.General.DictateHotkeyBehavior = NormalizeHotkeyBehavior(cfg.General.DictateHotkeyBehavior, HotkeyBehaviorHoldToTalk)
+	cfg.General.AssistHotkeyBehavior = NormalizeHotkeyBehavior(cfg.General.AssistHotkeyBehavior, HotkeyBehaviorHoldToTalk)
+	cfg.General.VoiceAgentHotkeyBehavior = NormalizeHotkeyBehavior(cfg.General.VoiceAgentHotkeyBehavior, HotkeyBehaviorHoldToTalk)
 	cfg.General.HotkeyMode = NormalizeHotkeyBehavior(cfg.General.HotkeyMode, cfg.General.DictateHotkeyBehavior)
 }
 

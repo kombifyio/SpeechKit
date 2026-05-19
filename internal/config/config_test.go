@@ -1097,17 +1097,17 @@ func TestApplyManagedIntegrationDefaultsDoesNotOverrideExplicitProviderConfig(t 
 
 func TestDefaultHotkeyBehaviors(t *testing.T) {
 	cfg := defaults()
-	if cfg.General.HotkeyMode != HotkeyBehaviorPushToTalk {
-		t.Fatalf("default HotkeyMode = %q, want %q", cfg.General.HotkeyMode, HotkeyBehaviorPushToTalk)
+	if cfg.General.HotkeyMode != HotkeyBehaviorHoldToTalk {
+		t.Fatalf("default HotkeyMode = %q, want %q", cfg.General.HotkeyMode, HotkeyBehaviorHoldToTalk)
 	}
-	if cfg.General.DictateHotkeyBehavior != HotkeyBehaviorPushToTalk {
-		t.Fatalf("default DictateHotkeyBehavior = %q, want %q", cfg.General.DictateHotkeyBehavior, HotkeyBehaviorPushToTalk)
+	if cfg.General.DictateHotkeyBehavior != HotkeyBehaviorHoldToTalk {
+		t.Fatalf("default DictateHotkeyBehavior = %q, want %q", cfg.General.DictateHotkeyBehavior, HotkeyBehaviorHoldToTalk)
 	}
-	if cfg.General.AssistHotkeyBehavior != HotkeyBehaviorPushToTalk {
-		t.Fatalf("default AssistHotkeyBehavior = %q, want %q", cfg.General.AssistHotkeyBehavior, HotkeyBehaviorPushToTalk)
+	if cfg.General.AssistHotkeyBehavior != HotkeyBehaviorHoldToTalk {
+		t.Fatalf("default AssistHotkeyBehavior = %q, want %q", cfg.General.AssistHotkeyBehavior, HotkeyBehaviorHoldToTalk)
 	}
-	if cfg.General.VoiceAgentHotkeyBehavior != HotkeyBehaviorPushToTalk {
-		t.Fatalf("default VoiceAgentHotkeyBehavior = %q, want %q", cfg.General.VoiceAgentHotkeyBehavior, HotkeyBehaviorPushToTalk)
+	if cfg.General.VoiceAgentHotkeyBehavior != HotkeyBehaviorHoldToTalk {
+		t.Fatalf("default VoiceAgentHotkeyBehavior = %q, want %q", cfg.General.VoiceAgentHotkeyBehavior, HotkeyBehaviorHoldToTalk)
 	}
 	if cfg.VoiceAgent.CloseBehavior != VoiceAgentCloseBehaviorContinue {
 		t.Fatalf("default VoiceAgent.CloseBehavior = %q, want %q", cfg.VoiceAgent.CloseBehavior, VoiceAgentCloseBehaviorContinue)
@@ -1156,7 +1156,7 @@ func TestSaveRoundTripNewFields(t *testing.T) {
 	cfg := defaults()
 	cfg.General.HotkeyMode = HotkeyBehaviorToggle
 	cfg.General.DictateHotkeyBehavior = HotkeyBehaviorToggle
-	cfg.General.AssistHotkeyBehavior = HotkeyBehaviorPushToTalk
+	cfg.General.AssistHotkeyBehavior = HotkeyBehaviorHoldToTalk
 	cfg.General.VoiceAgentHotkeyBehavior = HotkeyBehaviorToggle
 	cfg.UI.OverlayPosition = "bottom"
 	cfg.UI.OverlayMovable = true
@@ -1177,8 +1177,8 @@ func TestSaveRoundTripNewFields(t *testing.T) {
 	if reloaded.General.DictateHotkeyBehavior != HotkeyBehaviorToggle {
 		t.Fatalf("DictateHotkeyBehavior = %q, want %q", reloaded.General.DictateHotkeyBehavior, HotkeyBehaviorToggle)
 	}
-	if reloaded.General.AssistHotkeyBehavior != HotkeyBehaviorPushToTalk {
-		t.Fatalf("AssistHotkeyBehavior = %q, want %q", reloaded.General.AssistHotkeyBehavior, HotkeyBehaviorPushToTalk)
+	if reloaded.General.AssistHotkeyBehavior != HotkeyBehaviorHoldToTalk {
+		t.Fatalf("AssistHotkeyBehavior = %q, want %q", reloaded.General.AssistHotkeyBehavior, HotkeyBehaviorHoldToTalk)
 	}
 	if reloaded.General.VoiceAgentHotkeyBehavior != HotkeyBehaviorToggle {
 		t.Fatalf("VoiceAgentHotkeyBehavior = %q, want %q", reloaded.General.VoiceAgentHotkeyBehavior, HotkeyBehaviorToggle)
@@ -1219,17 +1219,17 @@ design = "default"
 	}
 
 	// Fields absent from file should retain defaults.
-	if cfg.General.HotkeyMode != HotkeyBehaviorPushToTalk {
-		t.Fatalf("HotkeyMode = %q, want default %q", cfg.General.HotkeyMode, HotkeyBehaviorPushToTalk)
+	if cfg.General.HotkeyMode != HotkeyBehaviorHoldToTalk {
+		t.Fatalf("HotkeyMode = %q, want default %q", cfg.General.HotkeyMode, HotkeyBehaviorHoldToTalk)
 	}
-	if cfg.General.DictateHotkeyBehavior != HotkeyBehaviorPushToTalk {
-		t.Fatalf("DictateHotkeyBehavior = %q, want default %q", cfg.General.DictateHotkeyBehavior, HotkeyBehaviorPushToTalk)
+	if cfg.General.DictateHotkeyBehavior != HotkeyBehaviorHoldToTalk {
+		t.Fatalf("DictateHotkeyBehavior = %q, want default %q", cfg.General.DictateHotkeyBehavior, HotkeyBehaviorHoldToTalk)
 	}
-	if cfg.General.AssistHotkeyBehavior != HotkeyBehaviorPushToTalk {
-		t.Fatalf("AssistHotkeyBehavior = %q, want default %q", cfg.General.AssistHotkeyBehavior, HotkeyBehaviorPushToTalk)
+	if cfg.General.AssistHotkeyBehavior != HotkeyBehaviorHoldToTalk {
+		t.Fatalf("AssistHotkeyBehavior = %q, want default %q", cfg.General.AssistHotkeyBehavior, HotkeyBehaviorHoldToTalk)
 	}
-	if cfg.General.VoiceAgentHotkeyBehavior != HotkeyBehaviorPushToTalk {
-		t.Fatalf("VoiceAgentHotkeyBehavior = %q, want default %q", cfg.General.VoiceAgentHotkeyBehavior, HotkeyBehaviorPushToTalk)
+	if cfg.General.VoiceAgentHotkeyBehavior != HotkeyBehaviorHoldToTalk {
+		t.Fatalf("VoiceAgentHotkeyBehavior = %q, want default %q", cfg.General.VoiceAgentHotkeyBehavior, HotkeyBehaviorHoldToTalk)
 	}
 	if cfg.VoiceAgent.CloseBehavior != VoiceAgentCloseBehaviorContinue {
 		t.Fatalf("VoiceAgent.CloseBehavior = %q, want default %q", cfg.VoiceAgent.CloseBehavior, VoiceAgentCloseBehaviorContinue)

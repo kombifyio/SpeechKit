@@ -220,7 +220,7 @@ func applyAPIV1ModeBindingPatch(cfg *config.Config, mode string, patch apiV1Mode
 		}
 	}
 	if patch.HotkeyBehavior != nil {
-		behavior := config.NormalizeHotkeyBehavior(*patch.HotkeyBehavior, config.HotkeyBehaviorPushToTalk)
+		behavior := config.NormalizeHotkeyBehavior(*patch.HotkeyBehavior, config.HotkeyBehaviorHoldToTalk)
 		switch mode {
 		case modeDictate:
 			cfg.General.DictateHotkeyBehavior = behavior

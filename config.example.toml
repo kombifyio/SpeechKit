@@ -1,11 +1,14 @@
 [general]
 language = "de"                    # Default transcription language
-dictate_hotkey = "ctrl+win"        # Dictation hotkey (push-to-talk, speech-to-text only)
+dictate_hotkey = "ctrl+win"        # Dictation hotkey (hold-to-talk, speech-to-text only)
 assist_hotkey = "win+alt"          # Assist hotkey (one-shot utility mode). Blank disables the mode.
 voice_agent_hotkey = "ctrl+shift"  # Voice Agent hotkey (realtime dialogue mode). Blank disables the mode.
-dictate_hotkey_behavior = "push_to_talk"
-assist_hotkey_behavior = "push_to_talk"
-voice_agent_hotkey_behavior = "push_to_talk"
+# Hotkey behaviour: "hold_to_talk" (hold to capture, release to end) or "toggle"
+# (press to start, press again to stop). Legacy configs may still set
+# "push_to_talk" — the loader normalises it to "hold_to_talk" automatically.
+dictate_hotkey_behavior = "hold_to_talk"
+assist_hotkey_behavior = "hold_to_talk"
+voice_agent_hotkey_behavior = "hold_to_talk"
 dictate_enabled = true
 assist_enabled = true
 voice_agent_enabled = true
@@ -13,7 +16,7 @@ active_mode = "none"               # none, dictate, assist, voice_agent
 agent_hotkey = "win+alt"           # Deprecated compatibility alias. SpeechKit now persists assist_hotkey + voice_agent_hotkey separately.
 agent_mode = "assist"              # Deprecated compatibility alias for legacy agent_hotkey readers.
 hotkey = "ctrl+win"                # Legacy alias for dictate_hotkey
-hotkey_mode = "push_to_talk"
+hotkey_mode = "hold_to_talk"
 auto_stop_silence_ms = 500
 fast_mode_silence_ms = 1500
 model_download_dir = ""            # Blank = %LOCALAPPDATA%/SpeechKit/models. Set a dedicated folder for local model downloads.
@@ -228,6 +231,7 @@ refinement_prompt = ""                     # Optional personal refinement prompt
 instruction = ""                           # Legacy alias for framework_prompt. Keep empty for new configs.
 reminder_after_idle_sec = 300              # Remind user after 5 min silence
 deactivate_after_idle_sec = 900            # Auto-deactivate after 15 min silence
+hold_release_grace_sec = 10                # Hold-to-talk: how long the Voice Agent stays open after release so the model can finish its reply. 0 -> default (10), capped at 30.
 pipeline_fallback = false                  # Uses STT -> Agent LLM -> optional TTS for non-realtime Voice Agent profiles.
 show_prompter = true                       # Show live transcript window during voice agent
 enable_session_summary = true              # Generate a structured dialogue summary when a session ends

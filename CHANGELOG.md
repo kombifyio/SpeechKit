@@ -12,6 +12,24 @@ IDs, source paths, and other maintainer-only vocabulary.
 
 ## [Unreleased]
 
+## [0.35.4] - 2026-05-19
+
+Hotfix for v0.35.3. The smoke page's in-browser auth guard was
+silently disabled by the renderer that ships the smoke token to
+the page. Public deploy looked healthy in CI (server endpoints
+work when called directly) but every smoke tile in the browser
+still returned 401.
+
+### Fixed
+- The JS guard in `smokeBearerToken()` now builds its sentinel
+  by runtime string concatenation. The server-side
+  `strings.ReplaceAll` that embeds the token can no longer
+  rewrite the guard into a self-comparison that always matches
+  the real token.
+- Added regression tests that fail the build if a future change
+  reintroduces a literal sentinel that the renderer could
+  collapse.
+
 ## [0.35.3] - 2026-05-19
 
 Server-Target patch. Public demo at `https://speechkit.kombify.io`

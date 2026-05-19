@@ -46,8 +46,14 @@ type audioFrameStreamer interface {
 }
 
 const (
-	voiceAgentPushToTalkReleasePollInterval = 50 * time.Millisecond
-	voiceAgentPushToTalkReleaseMaxWait      = 8 * time.Second
+	voiceAgentHoldToTalkReleasePollInterval = 50 * time.Millisecond
+	// voiceAgentHoldToTalkReleaseMaxWait caps how long the post-release
+	// grace period can run even when the user configures a longer value.
+	// Beyond ~30 s a "hold released" session is almost certainly stuck on a
+	// model that never produced a Done message; force-deactivate so the user
+	// can start a new turn without restarting the app.
+	voiceAgentHoldToTalkReleaseMaxWait      = 30 * time.Second
+	voiceAgentHoldToTalkReleaseGraceDefault = 10 * time.Second
 )
 
 func (c desktopInputController) Run(ctx context.Context) {
@@ -129,7 +135,7 @@ func (c desktopInputController) handleHotkey(ctx context.Context, evt hotkey.Eve
 	// dashboard show, assist bubble) then dereferences a nil Screen /
 	// nil dispatcher and panics. Drop hotkey events until the app is
 	// fully started; see beads kombify-SpeechKit-0s6.
-	if !c.state.isAppStarted() {
+	if c.state != nil && !c.state.isAppStarted() {
 		return
 	}
 	if evt.Type == hotkey.EventKeyDown && c.gateOnOnboardingPending() {
@@ -185,7 +191,7 @@ func (c desktopInputController) gateOnOnboardingPending() bool {
 	return true
 }
 
-func (c desktopInputController) handlePushToTalk(ctx context.Context, evt hotkey.Event) {
+func (c desktopInputController) handleHoldToTalk(ctx context.Context, evt hotkey.Event) {
 	switch evt.Type {
 	case hotkey.EventKeyDown:
 		if c.recording != nil && c.recording.IsRecording() {
@@ -252,7 +258,7 @@ func (c desktopInputController) routeCaptureHotkey(ctx context.Context, mode str
 	case config.HotkeyBehaviorToggle:
 		c.handleToggleCapture(ctx, evt)
 	default:
-		c.handlePushToTalk(ctx, evt)
+		c.handleHoldToTalk(ctx, evt)
 	}
 }
 
@@ -272,16 +278,16 @@ func (c desktopInputController) routeVoiceAgentHotkey(ctx context.Context, evt h
 
 	behavior := c.hotkeyBehavior(modeVoiceAgent)
 	switch behavior {
-	case config.HotkeyBehaviorPushToTalk:
+	case config.HotkeyBehaviorHoldToTalk:
 		switch evt.Type {
 		case hotkey.EventKeyDown:
-			c.logVoiceAgentRoute(evt.Binding, "push-to-talk", "info", evt.Type)
+			c.logVoiceAgentRoute(evt.Binding, "hold-to-talk", "info", evt.Type)
 			session := c.currentVoiceAgentSession() //nolint:contextcheck // getter, no context needed
 			if session == nil || session.CurrentState() == voiceagent.StateInactive {
 				c.activateVoiceAgent(ctx)
 			}
 		case hotkey.EventKeyUp:
-			c.releaseVoiceAgentPushToTalk(ctx)
+			c.releaseVoiceAgentHoldToTalk(ctx)
 		}
 	default:
 		if evt.Type != hotkey.EventKeyDown {
@@ -292,13 +298,72 @@ func (c desktopInputController) routeVoiceAgentHotkey(ctx context.Context, evt h
 	}
 }
 
-func (c desktopInputController) releaseVoiceAgentPushToTalk(ctx context.Context) {
+func (c desktopInputController) releaseVoiceAgentHoldToTalk(ctx context.Context) {
 	session := c.currentVoiceAgentSession() //nolint:contextcheck // getter, no context needed
-	if session == nil || session.CurrentState() == voiceagent.StateInactive {
+	if session == nil {
 		return
 	}
 
-	c.log("Voice Agent: push-to-talk released", "info")
+	// Activation goroutine may still be inside session.Start — either before
+	// it set StateConnecting, or already blocked on provider.Connect. In both
+	// cases pulling the cancel hook unblocks the WebSocket handshake so
+	// session.Start returns ctx.Err() and the activation tears itself down.
+	// We do this BEFORE inspecting state because the race window between
+	// activateVoiceAgent dispatching the goroutine and the goroutine reaching
+	// setState(Connecting) lets a fast KeyUp see StateInactive even though
+	// the activation is genuinely in flight.
+	activationCancel := c.takeVoiceAgentActivationCancel()
+
+	state := session.CurrentState()
+	if state == voiceagent.StateInactive {
+		if activationCancel == nil {
+			// Nothing was in flight; ignore the spurious KeyUp.
+			return
+		}
+		c.log("Voice Agent: hold released before connect — cancelling activation", "info")
+		activationCancel()
+		// Drop the microphone synchronously so the next user gesture sees a
+		// clean controller state even if the activation goroutine is still
+		// unwinding (it will also call tearDownVoiceAgentAudioCapture, which
+		// is idempotent — SetPCMHandler(nil) over a nil handler and
+		// audioSender.Stop() under the once-guard are both safe to repeat).
+		if c.audioCapturer != nil {
+			c.audioCapturer.SetPCMHandler(nil)
+		}
+		if c.state != nil {
+			c.state.stopVoiceAgentAudioSender()
+		}
+		// deactivateVoiceAgentWithReason short-circuits when the session is
+		// already Inactive (which it is in this branch) so the call just hides
+		// the prompter if appropriate. It is kept for symmetry — when the
+		// race resolves the other way (state already moved to Connecting by
+		// the time we got here) the deactivate call below is what does the
+		// real cleanup.
+		c.deactivateVoiceAgentWithReason(ctx, true, "hold-to-talk released before connect")
+		return
+	}
+
+	// Hold-to-talk semantics: when the user releases the shortcut while the
+	// WebSocket handshake is still running, the realtime session never had a
+	// chance to receive audio. There is nothing to wait for, so we abort the
+	// activation immediately instead of stalling on the grace timer.
+	if state == voiceagent.StateConnecting {
+		c.log("Voice Agent: hold released during connect — cancelling activation", "info")
+		if activationCancel != nil {
+			activationCancel()
+		}
+		c.deactivateVoiceAgentWithReason(ctx, true, "hold-to-talk released during connect")
+		return
+	}
+
+	// Activation already succeeded; the cancel hook would have been cleared,
+	// but if a stale one survived (e.g. test contexts), drop it now.
+	if activationCancel != nil {
+		// no-op: session has moved past Start; the goroutine no longer reads ctx.
+		_ = activationCancel
+	}
+
+	c.log("Voice Agent: hold-to-talk released", "info")
 	if c.audioCapturer != nil {
 		c.audioCapturer.SetPCMHandler(nil)
 	}
@@ -308,44 +373,57 @@ func (c desktopInputController) releaseVoiceAgentPushToTalk(ctx context.Context)
 	}
 	if err := session.EndAudioStream(); err != nil {
 		c.log(fmt.Sprintf("Voice Agent: audio stream end failed: %v", err), "warn")
-		c.deactivateVoiceAgentWithReason(ctx, true, "push-to-talk release")
+		c.deactivateVoiceAgentWithReason(ctx, true, "hold-to-talk release")
 		return
 	}
 
-	go c.deactivateVoiceAgentAfterPushToTalkTurn(ctx, session)
+	go c.deactivateVoiceAgentAfterHoldToTalkTurn(ctx, session)
 }
 
-func (c desktopInputController) deactivateVoiceAgentAfterPushToTalkTurn(ctx context.Context, session *voiceagent.Session) {
+// voiceAgentHoldReleaseGrace returns the time a hold-to-talk release is held
+// open after EndAudioStream so the model can deliver its reply. The default
+// (10 s) is generous enough for chatty agents but short enough that a stuck
+// session does not appear "still on" to the user. Settings >0 are honoured up
+// to voiceAgentHoldToTalkReleaseMaxWait; 0 or negative falls back to the
+// default.
+func (c desktopInputController) voiceAgentHoldReleaseGrace() time.Duration {
+	grace := voiceAgentHoldToTalkReleaseGraceDefault
+	if c.voiceAgentConfig != nil && c.voiceAgentConfig.HoldReleaseGraceSec > 0 {
+		grace = time.Duration(c.voiceAgentConfig.HoldReleaseGraceSec) * time.Second
+	}
+	if grace > voiceAgentHoldToTalkReleaseMaxWait {
+		grace = voiceAgentHoldToTalkReleaseMaxWait
+	}
+	return grace
+}
+
+func (c desktopInputController) deactivateVoiceAgentAfterHoldToTalkTurn(ctx context.Context, session *voiceagent.Session) {
 	if session == nil {
 		return
 	}
-	ticker := time.NewTicker(voiceAgentPushToTalkReleasePollInterval)
+	grace := c.voiceAgentHoldReleaseGrace()
+	ticker := time.NewTicker(voiceAgentHoldToTalkReleasePollInterval)
 	defer ticker.Stop()
-	timer := time.NewTimer(voiceAgentPushToTalkReleaseMaxWait)
+	timer := time.NewTimer(grace)
 	defer timer.Stop()
 
-	seenTurnInFlight := true
 	for {
 		select {
 		case <-ctx.Done():
 			return
 		case <-timer.C:
-			c.deactivateVoiceAgentWithReason(ctx, true, "push-to-talk release")
+			// Grace period elapsed: forcibly tear the session down even if the
+			// model is mid-reply. This is what makes hold-to-talk feel like a
+			// walkie-talkie — releasing the key ends the conversation within a
+			// bounded window regardless of how chatty the agent is.
+			c.deactivateVoiceAgentWithReason(ctx, true, "hold-to-talk release grace expired")
 			return
 		case <-ticker.C:
-			switch state := session.CurrentState(); state {
-			case voiceagent.StateInactive:
+			if session.CurrentState() == voiceagent.StateInactive {
+				// Session already deactivated by another path (idle timer,
+				// error path, user pressing the shortcut again). Nothing left
+				// to do.
 				return
-			case voiceagent.StateConnecting, voiceagent.StateProcessing, voiceagent.StateSpeaking, voiceagent.StateDeactivating, voiceagent.StateRecovering:
-				// StateRecovering is treated like an in-flight turn: the user's speech
-				// went somewhere, but the session is reconnecting to retrieve the reply.
-				// Keep polling rather than cutting the push-to-talk short.
-				seenTurnInFlight = true
-			case voiceagent.StateListening:
-				if seenTurnInFlight {
-					c.deactivateVoiceAgentWithReason(ctx, true, "push-to-talk release")
-					return
-				}
 			}
 		}
 	}
@@ -376,7 +454,7 @@ func (c desktopInputController) hotkeyBehavior(mode string) string {
 }
 
 func defaultHotkeyBehavior(mode string) string {
-	return config.HotkeyBehaviorPushToTalk
+	return config.HotkeyBehaviorHoldToTalk
 }
 
 func (c desktopInputController) logModeRoute(mode, binding, behavior string, evtType hotkey.EventType) {
@@ -449,6 +527,13 @@ func (c desktopInputController) dispatch(ctx context.Context, command speechkit.
 	}
 }
 
+func (c desktopInputController) takeVoiceAgentActivationCancel() context.CancelFunc {
+	if c.state == nil {
+		return nil
+	}
+	return c.state.takeVoiceAgentActivationCancel()
+}
+
 func (c desktopInputController) currentVoiceAgentSession() *voiceagent.Session {
 	if c.state != nil {
 		c.state.mu.Lock()
@@ -495,7 +580,33 @@ func (c desktopInputController) activateVoiceAgent(ctx context.Context) {
 	if !ok {
 		return
 	}
-	go c.startVoiceAgentSession(ctx, plan)
+	// Arm the microphone synchronously so audio captured during the WebSocket
+	// handshake is queued in the audio sender's channel and replayed in-order
+	// once the realtime session is ready. Without this the user perceives a
+	// 300-1500 ms dead window where the hotkey "does nothing" until they
+	// release — see beads kombify-SpeechKit hold-to-talk activation lag bug.
+	audioSender, ok := c.armVoiceAgentAudioCapture(plan)
+	if !ok {
+		// Mic capture failed; surface the error and bail. tearDown was
+		// already performed inside armVoiceAgentAudioCapture so the sender
+		// and capturer state are clean.
+		c.deactivateVoiceAgentWithReason(ctx, true, "mic capture start failed")
+		return
+	}
+	// Install a cancel hook so a hold-to-talk release that lands before the
+	// activation goroutine has transitioned the session out of StateInactive
+	// can still tear it down. Without this the goroutine would happily finish
+	// connecting after the user already let go. In contexts without an
+	// appState (rare; only legacy tests) skip the wrapping context to avoid
+	// leaking the cancel function — those tests cannot use the release-before-
+	// connect abort path anyway.
+	activationCtx := ctx
+	if c.state != nil {
+		var cancel context.CancelFunc
+		activationCtx, cancel = context.WithCancel(ctx)
+		c.state.setVoiceAgentActivationCancel(cancel)
+	}
+	go c.startVoiceAgentSession(activationCtx, plan, audioSender)
 }
 
 func voiceAgentProfileID(cfg *config.VoiceAgentConfig) string {

@@ -523,7 +523,9 @@ components:
           type: string
         hotkeyBehavior:
           type: string
-          enum: [push_to_talk, toggle]
+          enum: [hold_to_talk, push_to_talk, toggle]
+          # push_to_talk is the legacy alias for hold_to_talk and is normalised
+          # on read; new writes should always use hold_to_talk.
         primaryProfileId:
           type: string
         fallbackProfileId:
@@ -706,7 +708,9 @@ components:
           type: string
         hotkeyBehavior:
           type: string
-          enum: [push_to_talk, toggle]
+          enum: [hold_to_talk, push_to_talk, toggle]
+          # push_to_talk is the legacy alias for hold_to_talk and is normalised
+          # on read; new writes should always use hold_to_talk.
         primaryProfileId:
           type: string
         fallbackProfileId:

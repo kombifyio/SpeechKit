@@ -139,9 +139,9 @@ func normalizeConfigModes(cfg *config.Config) {
 	}
 	cfg.General.AgentMode = normalizeAgentMode(cfg.General.AgentMode)
 	cfg.General.ActiveMode = normalizeRuntimeMode(cfg.General.ActiveMode, cfg.General.AgentMode)
-	cfg.General.DictateHotkeyBehavior = config.NormalizeHotkeyBehavior(cfg.General.DictateHotkeyBehavior, config.HotkeyBehaviorPushToTalk)
-	cfg.General.AssistHotkeyBehavior = config.NormalizeHotkeyBehavior(cfg.General.AssistHotkeyBehavior, config.HotkeyBehaviorPushToTalk)
-	cfg.General.VoiceAgentHotkeyBehavior = config.NormalizeHotkeyBehavior(cfg.General.VoiceAgentHotkeyBehavior, config.HotkeyBehaviorPushToTalk)
+	cfg.General.DictateHotkeyBehavior = config.NormalizeHotkeyBehavior(cfg.General.DictateHotkeyBehavior, config.HotkeyBehaviorHoldToTalk)
+	cfg.General.AssistHotkeyBehavior = config.NormalizeHotkeyBehavior(cfg.General.AssistHotkeyBehavior, config.HotkeyBehaviorHoldToTalk)
+	cfg.General.VoiceAgentHotkeyBehavior = config.NormalizeHotkeyBehavior(cfg.General.VoiceAgentHotkeyBehavior, config.HotkeyBehaviorHoldToTalk)
 	cfg.General.HotkeyMode = config.NormalizeHotkeyBehavior(cfg.General.HotkeyMode, cfg.General.DictateHotkeyBehavior)
 	cfg.General.AgentHotkey = legacyAgentHotkeyFromModeBindings(cfg.General.AssistHotkey, cfg.General.VoiceAgentHotkey, cfg.General.AgentMode)
 }

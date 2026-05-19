@@ -134,14 +134,14 @@ func TestDesktopInputControllerHotkeyKeyUpIgnoresQuickCaptureMode(t *testing.T) 
 	}
 }
 
-func TestDesktopInputControllerPushToTalkKeyDownWhileRecordingDoesNotToggleStop(t *testing.T) {
+func TestDesktopInputControllerHoldToTalkKeyDownWhileRecordingDoesNotToggleStop(t *testing.T) {
 	bus := &testDesktopCommandBus{}
 	controller := desktopInputController{
 		commands:  bus,
 		recording: testRecordingState{recording: true},
 	}
 
-	controller.handlePushToTalk(context.Background(), hotkey.Event{Type: hotkey.EventKeyDown})
+	controller.handleHoldToTalk(context.Background(), hotkey.Event{Type: hotkey.EventKeyDown})
 
 	if got := len(bus.commands); got != 0 {
 		t.Fatalf("commands = %d, want 0; repeated keydown must not stop hold-to-talk", got)
@@ -720,7 +720,7 @@ func TestDesktopInputControllerVoiceAgentPipelineFallbackUsesCapturePipeline(t *
 		sttRouter: sttRouter,
 		cfg: &config.Config{
 			General: config.GeneralConfig{
-				VoiceAgentHotkeyBehavior: config.HotkeyBehaviorPushToTalk,
+				VoiceAgentHotkeyBehavior: config.HotkeyBehaviorHoldToTalk,
 			},
 			Routing: config.RoutingConfig{
 				Strategy: "cloud-only",
@@ -1325,7 +1325,7 @@ func TestDesktopInputControllerCloseVoiceAgentPrompterEndsChatWhenConfiguredForN
 	}
 }
 
-func TestDesktopInputControllerVoiceAgentPushToTalkEndsRealtimeSessionOnKeyUp(t *testing.T) {
+func TestDesktopInputControllerVoiceAgentHoldToTalkEndsRealtimeSessionOnKeyUp(t *testing.T) {
 	bus := &testDesktopCommandBus{}
 	mockAudio := &mockAudioFrameStreamer{}
 	mockProvider := newSimpleMockLiveProvider()
@@ -1334,10 +1334,14 @@ func TestDesktopInputControllerVoiceAgentPushToTalkEndsRealtimeSessionOnKeyUp(t 
 		commands:          bus,
 		recording:         &mutableRecordingState{},
 		voiceAgentSession: session,
-		voiceAgentConfig:  &config.VoiceAgentConfig{},
+		// HoldReleaseGraceSec=1 keeps the post-release grace short so the
+		// test does not stall for the production 10-second default. The
+		// behavior under test (KeyUp tears the session down within the
+		// configured window) is identical regardless of the timeout value.
+		voiceAgentConfig: &config.VoiceAgentConfig{HoldReleaseGraceSec: 1},
 		cfg: &config.Config{
 			General: config.GeneralConfig{
-				VoiceAgentHotkeyBehavior: config.HotkeyBehaviorPushToTalk,
+				VoiceAgentHotkeyBehavior: config.HotkeyBehaviorHoldToTalk,
 			},
 			Providers: config.ProvidersConfig{
 				Google: config.GoogleProviderConfig{APIKeyEnv: "FAKE_KEY_FOR_VOICE_AGENT_PTT_TEST"},
@@ -1380,14 +1384,14 @@ func TestDesktopInputControllerVoiceAgentPushToTalkEndsRealtimeSessionOnKeyUp(t 
 		t.Fatalf("audio stream end count = %d, want 1", got)
 	}
 	if h := mockAudio.getHandler(); h != nil {
-		t.Fatal("expected microphone handler to be detached after push-to-talk key up")
+		t.Fatal("expected microphone handler to be detached after hold-to-talk key up")
 	}
-	waitForCondition(t, voiceAgentPushToTalkReleaseMaxWait+time.Second, func() bool {
+	waitForCondition(t, voiceAgentHoldToTalkReleaseMaxWait+time.Second, func() bool {
 		return session.CurrentState() == voiceagent.StateInactive && mockProvider.isClosed()
 	})
 }
 
-func TestDesktopInputControllerVoiceAgentPushToTalkShowsReadyPrompterWithoutSecondClick(t *testing.T) {
+func TestDesktopInputControllerVoiceAgentHoldToTalkShowsReadyPrompterWithoutSecondClick(t *testing.T) {
 	bus := &testDesktopCommandBus{}
 	prompter := &fakeOverlayWindow{}
 	mockAudio := &mockAudioFrameStreamer{}
@@ -1411,7 +1415,7 @@ func TestDesktopInputControllerVoiceAgentPushToTalkShowsReadyPrompterWithoutSeco
 		},
 		cfg: &config.Config{
 			General: config.GeneralConfig{
-				VoiceAgentHotkeyBehavior: config.HotkeyBehaviorPushToTalk,
+				VoiceAgentHotkeyBehavior: config.HotkeyBehaviorHoldToTalk,
 			},
 			Providers: config.ProvidersConfig{
 				Google: config.GoogleProviderConfig{APIKeyEnv: "FAKE_KEY_FOR_VOICE_AGENT_READY_PROMPTER_TEST"},

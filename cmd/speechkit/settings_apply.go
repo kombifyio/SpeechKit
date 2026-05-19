@@ -95,9 +95,9 @@ func (s *appState) applyRuntimeSettings(old, newCfg config.Config, dictateEnable
 	s.dictateHotkey = dictateHotkey
 	s.assistHotkey = assistHotkey
 	s.voiceAgentHotkey = voiceAgentHotkey
-	s.dictateHotkeyBehavior = config.NormalizeHotkeyBehavior(dictateHotkeyBehavior, config.HotkeyBehaviorPushToTalk)
-	s.assistHotkeyBehavior = config.NormalizeHotkeyBehavior(assistHotkeyBehavior, config.HotkeyBehaviorPushToTalk)
-	s.voiceAgentHotkeyBehavior = config.NormalizeHotkeyBehavior(voiceAgentHotkeyBehavior, config.HotkeyBehaviorPushToTalk)
+	s.dictateHotkeyBehavior = config.NormalizeHotkeyBehavior(dictateHotkeyBehavior, config.HotkeyBehaviorHoldToTalk)
+	s.assistHotkeyBehavior = config.NormalizeHotkeyBehavior(assistHotkeyBehavior, config.HotkeyBehaviorHoldToTalk)
+	s.voiceAgentHotkeyBehavior = config.NormalizeHotkeyBehavior(voiceAgentHotkeyBehavior, config.HotkeyBehaviorHoldToTalk)
 	legacyAgentMode := deriveLegacyAgentModeFromBindings(assistHotkey, voiceAgentHotkey, activeMode, modeAssist)
 	s.agentHotkey = legacyAgentHotkeyFromModeBindings(assistHotkey, voiceAgentHotkey, legacyAgentMode)
 	s.activeMode = sanitizeActiveModeForBindings(activeMode, "", dictateEnabled, assistEnabled, voiceAgentEnabled, dictateHotkey, assistHotkey, voiceAgentHotkey)

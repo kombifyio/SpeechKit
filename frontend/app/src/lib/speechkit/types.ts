@@ -3,7 +3,7 @@ export type OverlayDesign = "default" | "kombify";
 export type OverlayFeedbackMode = "big_productivity" | "small_feedback";
 export type RuntimeMode = "none" | "dictate" | "assist" | "voice_agent";
 export type AgentMode = "assist" | "voice_agent";
-export type HotkeyBehavior = "push_to_talk" | "toggle";
+export type HotkeyBehavior = "hold_to_talk" | "toggle";
 export type VoiceAgentCloseBehavior = "continue" | "new_chat";
 export type VoiceAgentProfile = {
   id: string;

@@ -3,8 +3,17 @@ package config
 import "strings"
 
 const (
-	HotkeyBehaviorPushToTalk = "push_to_talk"
+	// HotkeyBehaviorHoldToTalk is the canonical name for the "hold the
+	// shortcut while you speak, release to end" capture model. It replaces
+	// the historical push_to_talk value; NormalizeHotkeyBehavior accepts the
+	// legacy string as an alias so existing config files keep loading.
+	HotkeyBehaviorHoldToTalk = "hold_to_talk"
 	HotkeyBehaviorToggle     = "toggle"
+
+	// legacyHotkeyBehaviorPushToTalk is the pre-rename TOML value of
+	// HotkeyBehaviorHoldToTalk. NormalizeHotkeyBehavior maps it to the new
+	// canonical value so older configs continue to work without a manual edit.
+	legacyHotkeyBehaviorPushToTalk = "push_to_talk"
 
 	VoiceAgentCloseBehaviorContinue = "continue"
 	VoiceAgentCloseBehaviorNewChat  = "new_chat"
@@ -671,19 +680,26 @@ type VoiceAgentConfig struct {
 	//
 	// The Server-Target reads this field via cmd/speechkit-server; the Device-
 	// Target currently always uses "gemini" and ignores it.
-	Provider                        string `toml:"provider"`
-	Model                           string `toml:"model"`             // Real-time model ID (e.g. "gemini-3.1-flash-live-preview")
-	FallbackModel                   string `toml:"fallback_model"`    // Fallback real-time model
-	Voice                           string `toml:"voice"`             // Voice name for real-time model
-	AgentProfileID                  string `toml:"agent_profile_id"`  // Built-in Voice Agent profile ID; "default" preserves current behavior.
-	AgentSequenceID                 string `toml:"agent_sequence_id"` // Optional workflow sequence ID; empty uses the selected persona default.
-	FrameworkPrompt                 string `toml:"framework_prompt"`  // Durable host/framework instruction that defines the Voice Agent behavior
-	RefinementPrompt                string `toml:"refinement_prompt"` // User-specific refinement appended to the framework prompt
-	Instruction                     string `toml:"instruction"`       // Legacy alias for FrameworkPrompt
-	AutoStartOnLaunch               bool   `toml:"auto_start_on_launch"`
-	CloseBehavior                   string `toml:"close_behavior"` // "continue" keeps the conversation window in the taskbar; "new_chat" ends the current chat on close
-	ReminderAfterIdleSec            int    `toml:"reminder_after_idle_sec"`
-	DeactivateAfterIdleSec          int    `toml:"deactivate_after_idle_sec"`
+	Provider               string `toml:"provider"`
+	Model                  string `toml:"model"`             // Real-time model ID (e.g. "gemini-3.1-flash-live-preview")
+	FallbackModel          string `toml:"fallback_model"`    // Fallback real-time model
+	Voice                  string `toml:"voice"`             // Voice name for real-time model
+	AgentProfileID         string `toml:"agent_profile_id"`  // Built-in Voice Agent profile ID; "default" preserves current behavior.
+	AgentSequenceID        string `toml:"agent_sequence_id"` // Optional workflow sequence ID; empty uses the selected persona default.
+	FrameworkPrompt        string `toml:"framework_prompt"`  // Durable host/framework instruction that defines the Voice Agent behavior
+	RefinementPrompt       string `toml:"refinement_prompt"` // User-specific refinement appended to the framework prompt
+	Instruction            string `toml:"instruction"`       // Legacy alias for FrameworkPrompt
+	AutoStartOnLaunch      bool   `toml:"auto_start_on_launch"`
+	CloseBehavior          string `toml:"close_behavior"` // "continue" keeps the conversation window in the taskbar; "new_chat" ends the current chat on close
+	ReminderAfterIdleSec   int    `toml:"reminder_after_idle_sec"`
+	DeactivateAfterIdleSec int    `toml:"deactivate_after_idle_sec"`
+	// HoldReleaseGraceSec controls how long the Voice Agent stays open after
+	// the user releases a hold-to-talk shortcut so the model has time to
+	// deliver its reply. 0 (or unset) falls back to the kernel default
+	// (10 seconds). The Device-Target hard-caps this at 30 seconds; values
+	// above that are silently clamped at runtime so a misconfigured profile
+	// cannot strand the user in a "still active" session.
+	HoldReleaseGraceSec             int    `toml:"hold_release_grace_sec"`
 	PipelineFallback                bool   `toml:"pipeline_fallback"` // Use STT -> Agent LLM -> optional TTS when the selected Voice Agent profile is not native realtime.
 	ShowPrompter                    bool   `toml:"show_prompter"`     // Show live transcript prompter window
 	EnableSessionSummary            bool   `toml:"enable_session_summary"`

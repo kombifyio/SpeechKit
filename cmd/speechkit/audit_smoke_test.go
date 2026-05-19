@@ -42,7 +42,7 @@ func TestSettingsChangedEmitsAuditEvent(t *testing.T) {
 		oldCfg, newCfg,
 		true, true, true,
 		"ctrl+shift+d", "ctrl+win+j", "win+alt+k",
-		config.HotkeyBehaviorToggle, config.HotkeyBehaviorPushToTalk, config.HotkeyBehaviorToggle,
+		config.HotkeyBehaviorToggle, config.HotkeyBehaviorHoldToTalk, config.HotkeyBehaviorToggle,
 		"dictate", "mic-1",
 		[]string{"local"},
 		"pill", "default",

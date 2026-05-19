@@ -29,8 +29,8 @@ function snap(partial: Partial<SpeechKitOverlayState> = {}): SpeechKitOverlaySta
     dictateHotkey: 'win+alt',
     assistHotkey: 'ctrl+win',
     voiceAgentHotkey: 'ctrl+shift',
-    dictateHotkeyBehavior: 'push_to_talk',
-    assistHotkeyBehavior: 'push_to_talk',
+    dictateHotkeyBehavior: 'hold_to_talk',
+    assistHotkeyBehavior: 'hold_to_talk',
     voiceAgentHotkeyBehavior: 'toggle',
     modeEnabled: {
       dictate: true,

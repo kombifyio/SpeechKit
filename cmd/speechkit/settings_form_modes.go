@@ -74,15 +74,15 @@ func disableModesWithoutHotkeys(f *settingsFormData) {
 func parseModeHotkeyBehaviors(req *http.Request, cfg *config.Config, f *settingsFormData) {
 	f.DictateHotkeyBehavior = config.NormalizeHotkeyBehavior(
 		req.FormValue("dictate_hotkey_behavior"),
-		config.NormalizeHotkeyBehavior(cfg.General.DictateHotkeyBehavior, config.HotkeyBehaviorPushToTalk),
+		config.NormalizeHotkeyBehavior(cfg.General.DictateHotkeyBehavior, config.HotkeyBehaviorHoldToTalk),
 	)
 	f.AssistHotkeyBehavior = config.NormalizeHotkeyBehavior(
 		req.FormValue("assist_hotkey_behavior"),
-		config.NormalizeHotkeyBehavior(cfg.General.AssistHotkeyBehavior, config.HotkeyBehaviorPushToTalk),
+		config.NormalizeHotkeyBehavior(cfg.General.AssistHotkeyBehavior, config.HotkeyBehaviorHoldToTalk),
 	)
 	f.VoiceAgentHotkeyBehavior = config.NormalizeHotkeyBehavior(
 		req.FormValue("voice_agent_hotkey_behavior"),
-		config.NormalizeHotkeyBehavior(cfg.General.VoiceAgentHotkeyBehavior, config.HotkeyBehaviorPushToTalk),
+		config.NormalizeHotkeyBehavior(cfg.General.VoiceAgentHotkeyBehavior, config.HotkeyBehaviorHoldToTalk),
 	)
 }
 

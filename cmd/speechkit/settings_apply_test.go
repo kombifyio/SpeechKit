@@ -51,7 +51,7 @@ func TestAppStateApplyRuntimeSettingsUpdatesSnapshot(t *testing.T) {
 		"ctrl+win+j",
 		"win+alt+k",
 		config.HotkeyBehaviorToggle,
-		config.HotkeyBehaviorPushToTalk,
+		config.HotkeyBehaviorHoldToTalk,
 		config.HotkeyBehaviorToggle,
 		"dictate",
 		"mic-1",
@@ -98,7 +98,7 @@ func TestAppStateApplyRuntimeSettingsUpdatesSnapshot(t *testing.T) {
 	if got, want := runtime.dictateHotkeyBehavior, config.HotkeyBehaviorToggle; got != want {
 		t.Fatalf("runtime.dictateHotkeyBehavior = %q, want %q", got, want)
 	}
-	if got, want := runtime.assistHotkeyBehavior, config.HotkeyBehaviorPushToTalk; got != want {
+	if got, want := runtime.assistHotkeyBehavior, config.HotkeyBehaviorHoldToTalk; got != want {
 		t.Fatalf("runtime.assistHotkeyBehavior = %q, want %q", got, want)
 	}
 	if got, want := runtime.voiceAgentHotkeyBehavior, config.HotkeyBehaviorToggle; got != want {

@@ -13,9 +13,9 @@ func buildNextConfig(form settingsFormData, cfg *config.Config) config.Config {
 	nextCfg.General.DictateHotkey = form.DictateHotkey
 	nextCfg.General.AssistHotkey = form.AssistHotkey
 	nextCfg.General.VoiceAgentHotkey = form.VoiceAgentHotkey
-	nextCfg.General.DictateHotkeyBehavior = config.NormalizeHotkeyBehavior(form.DictateHotkeyBehavior, config.HotkeyBehaviorPushToTalk)
-	nextCfg.General.AssistHotkeyBehavior = config.NormalizeHotkeyBehavior(form.AssistHotkeyBehavior, config.HotkeyBehaviorPushToTalk)
-	nextCfg.General.VoiceAgentHotkeyBehavior = config.NormalizeHotkeyBehavior(form.VoiceAgentHotkeyBehavior, config.HotkeyBehaviorPushToTalk)
+	nextCfg.General.DictateHotkeyBehavior = config.NormalizeHotkeyBehavior(form.DictateHotkeyBehavior, config.HotkeyBehaviorHoldToTalk)
+	nextCfg.General.AssistHotkeyBehavior = config.NormalizeHotkeyBehavior(form.AssistHotkeyBehavior, config.HotkeyBehaviorHoldToTalk)
+	nextCfg.General.VoiceAgentHotkeyBehavior = config.NormalizeHotkeyBehavior(form.VoiceAgentHotkeyBehavior, config.HotkeyBehaviorHoldToTalk)
 	nextCfg.General.DictateEnabled = form.DictateEnabled
 	nextCfg.General.AssistEnabled = form.AssistEnabled
 	nextCfg.General.VoiceAgentEnabled = form.VoiceAgentEnabled
