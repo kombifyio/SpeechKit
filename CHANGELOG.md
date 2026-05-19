@@ -12,6 +12,22 @@ IDs, source paths, and other maintainer-only vocabulary.
 
 ## [Unreleased]
 
+## [0.35.5] - 2026-05-19
+
+Second hotfix in the v0.35.x server-target patch line. With the
+v0.35.4 smoke-token guard fix in place, Dictation and Assist
+work from the browser, but the Voice Agent WebSocket handshake
+still failed with HTTP 403 because the WS handler's same-origin
+check used an empty allow-list.
+
+### Fixed
+- `ApplyServerRuntimeDefaults` now folds the resolved
+  `SPEECHKIT_PUBLIC_URL` into `cors_allowed_origins` automatically.
+  Same-origin browser WebSocket connections from the configured
+  public URL no longer return 403. Existing operator-configured
+  origins are kept, duplicates are skipped, and an explicit `*`
+  short-circuits the auto-derive.
+
 ## [0.35.4] - 2026-05-19
 
 Hotfix for v0.35.3. The smoke page's in-browser auth guard was

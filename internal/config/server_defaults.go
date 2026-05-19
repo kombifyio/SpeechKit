@@ -37,6 +37,18 @@ func ApplyServerRuntimeDefaults(cfg *Config) []string {
 		notes = append(notes, "server public URL default from "+envName+": "+cfg.Server.PublicURL)
 	}
 
+	// Same-origin browser smoke + Voice Agent WebSocket: if PublicURL is set
+	// but CORSAllowedOrigins doesn't already include it, fold it in. The
+	// alternative (operators noticing 403 only when the WS handshake fails
+	// in a browser) is exactly what shipped broken in v0.35.4 and required
+	// a hotfix. Auto-deriving here keeps OSS deployments behind a public
+	// origin working without operator intervention.
+	if origin := strings.TrimSpace(cfg.Server.PublicURL); origin != "" {
+		if added := appendUniqueOrigin(&cfg.Server.CORSAllowedOrigins, origin); added {
+			notes = append(notes, "server CORS allow-list extended with PublicURL: "+origin)
+		}
+	}
+
 	if postgresDSN, envName := firstPresentEnv(serverSpeechKitPostgresEnv, serverPostgresDSNEnv); postgresDSN != "" {
 		if strings.TrimSpace(cfg.Store.PostgresDSN) == "" {
 			cfg.Store.PostgresDSN = postgresDSN
@@ -240,4 +252,26 @@ func firstPresentEnv(names ...string) (string, string) {
 		}
 	}
 	return "", ""
+}
+
+// appendUniqueOrigin folds origin into *origins iff it is not already
+// present (case-sensitive, exact match — origins are URL-shaped).
+// Returns true when the slice was extended. A wildcard ("*") entry
+// short-circuits: nothing further needs to be added.
+func appendUniqueOrigin(origins *[]string, origin string) bool {
+	if origins == nil {
+		return false
+	}
+	target := strings.TrimSpace(origin)
+	if target == "" {
+		return false
+	}
+	for _, existing := range *origins {
+		trimmed := strings.TrimSpace(existing)
+		if trimmed == "*" || trimmed == target {
+			return false
+		}
+	}
+	*origins = append(*origins, target)
+	return true
 }
