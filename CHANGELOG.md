@@ -12,6 +12,28 @@ IDs, source paths, and other maintainer-only vocabulary.
 
 ## [Unreleased]
 
+## [0.35.6] - 2026-05-19
+
+CI hardening: every release now includes a headless-browser
+smoke against the deployed origin before the workflow declares
+success. The previous gate exercised `/api/v1/*` directly with a
+bearer token, which left browser-only regressions invisible (the
+v0.35.3 JS-guard collapse and the v0.35.4 WebSocket Origin
+rejection both passed the old CI before failing in production).
+
+### Added
+- A new headless-browser smoke step drives the public smoke
+  page on `/` in real Chrome, clicks "Start Smoke Test", and
+  asserts every tile (Server Settings / Health / Readiness /
+  Dictation / Assist / Voice Agent) reaches OK and the page
+  header reaches Passing. Default 3-minute timeout; the release
+  fails if any tile is red.
+- Both the tag-driven release workflow and the manual Render
+  deploy workflow now run the browser smoke against the deployed
+  origin after the existing API smoke. A red tile blocks the
+  release rather than waiting to be reported as a production
+  incident.
+
 ## [0.35.5] - 2026-05-19
 
 Second hotfix in the v0.35.x server-target patch line. With the
