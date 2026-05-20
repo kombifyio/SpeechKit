@@ -13,10 +13,15 @@ $whisperReleaseVersion = 'v1.8.4'
 $whisperAssetName = 'whisper-bin-x64.zip'
 $whisperAssetSha256 = '74f973345cb52ef5ba3ec9e7e7af8e48cc8c71722d1528603b80588a11f82e3e'
 $whisperAssetUrl = "https://github.com/ggml-org/whisper.cpp/releases/download/$whisperReleaseVersion/$whisperAssetName"
+$starterModelName = 'ggml-small.bin'
+$starterModelSha256 = '1be3a9b2063867b937e64e2ec7483364a79917e157fa98c5d94b5c1fffea987b'
+$starterModelUrl = "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/$starterModelName"
 
 $runtimeCacheDir = Join-Path $CacheDir 'whisper-runtime'
 $runtimeZipPath = Join-Path $runtimeCacheDir $whisperAssetName
 $runtimeExtractDir = Join-Path $runtimeCacheDir "runtime-$whisperReleaseVersion"
+$modelCacheDir = Join-Path $CacheDir 'whisper-models'
+$starterModelCachePath = Join-Path $modelCacheDir $starterModelName
 
 function Get-Sha256 {
     param(
@@ -159,7 +164,11 @@ function Copy-VCRuntimeDependencies {
 if (-not (Test-Path -LiteralPath $runtimeCacheDir)) {
     New-Item -ItemType Directory -Path $runtimeCacheDir | Out-Null
 }
+if (-not (Test-Path -LiteralPath $modelCacheDir)) {
+    New-Item -ItemType Directory -Path $modelCacheDir | Out-Null
+}
 Download-VerifiedFile -Url $whisperAssetUrl -Destination $runtimeZipPath -ExpectedSha256 $whisperAssetSha256 -Description 'whisper.cpp Windows runtime'
+Download-VerifiedFile -Url $starterModelUrl -Destination $starterModelCachePath -ExpectedSha256 $starterModelSha256 -Description 'Whisper.cpp starter model'
 
 if (Test-Path -LiteralPath $runtimeExtractDir) {
     Remove-Item -LiteralPath $runtimeExtractDir -Recurse -Force
@@ -168,4 +177,12 @@ Expand-Archive -LiteralPath $runtimeZipPath -DestinationPath $runtimeExtractDir 
 Copy-RuntimeFiles -ExtractDir $runtimeExtractDir -BundleDir $BundleDir
 Copy-VCRuntimeDependencies -BundleDir $BundleDir
 
-Write-Host 'Bundled local whisper runtime prepared without model weights.'
+$bundleModelDir = Join-Path $BundleDir 'models'
+if (-not (Test-Path -LiteralPath $bundleModelDir)) {
+    New-Item -ItemType Directory -Path $bundleModelDir | Out-Null
+}
+$bundleStarterModelPath = Join-Path $bundleModelDir $starterModelName
+Copy-Item -LiteralPath $starterModelCachePath -Destination $bundleStarterModelPath -Force
+Assert-Sha256 -Path $bundleStarterModelPath -Expected $starterModelSha256 -Description 'bundled Whisper.cpp starter model'
+
+Write-Host 'Bundled local whisper runtime and starter model prepared.'

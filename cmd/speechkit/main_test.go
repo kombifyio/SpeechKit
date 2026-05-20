@@ -325,8 +325,29 @@ func TestRadialMenuPositionCentersAroundDotAnchor(t *testing.T) {
 	dotX, dotY := dotAnchorPosition(bounds, "right")
 	radialX, radialY := radialMenuPosition(bounds, "right")
 
-	wantX := dotX + dotAnchorSize/2 - radialMenuSize/2
-	wantY := dotY + dotAnchorSize/2 - radialMenuSize/2
+	// Both windows are clamped to minFramelessWindowWidth/Height for centring
+	// math (see overlay_layout.go) so Windows' silent enlargement of
+	// sub-minimum frameless windows doesn't shift their visible centres.
+	// Note width and height have DIFFERENT minimums (Windows enforces
+	// ~136 wide × ~39 tall for frameless top-level windows).
+	effectiveDotW := dotAnchorSize
+	if effectiveDotW < minFramelessWindowWidth {
+		effectiveDotW = minFramelessWindowWidth
+	}
+	effectiveDotH := dotAnchorSize
+	if effectiveDotH < minFramelessWindowHeight {
+		effectiveDotH = minFramelessWindowHeight
+	}
+	effectiveRadialW := radialMenuSize
+	if effectiveRadialW < minFramelessWindowWidth {
+		effectiveRadialW = minFramelessWindowWidth
+	}
+	effectiveRadialH := radialMenuSize
+	if effectiveRadialH < minFramelessWindowHeight {
+		effectiveRadialH = minFramelessWindowHeight
+	}
+	wantX := dotX + effectiveDotW/2 - effectiveRadialW/2
+	wantY := dotY + effectiveDotH/2 - effectiveRadialH/2
 	if radialX != wantX || radialY != wantY {
 		t.Fatalf("radial menu = (%d,%d), want centered around dot at (%d,%d)", radialX, radialY, wantX, wantY)
 	}
@@ -410,8 +431,21 @@ func TestDedicatedPillHostAnchorsVisiblePillNearBottomEdge(t *testing.T) {
 	bounds := screenBounds{X: 0, Y: 0, Width: 1920, Height: 1080}
 	x, y := pillAnchorPosition(bounds, "bottom")
 
-	wantX := (1920 - pillAnchorWidth) / 2
-	wantY := 1080 - overlayEdgeMargin - pillBubbleH/2 - pillAnchorHeight/2
+	// overlayAnchoredPosition now centres on the OS-enforced minimum
+	// frameless window size, not the requested metric, so Windows'
+	// silent enlargement of sub-minimum windows no longer shifts the
+	// visible pill 28 px to the right of screen centre (regression
+	// 2026-05-19).
+	effectiveW := pillAnchorWidth
+	if effectiveW < minFramelessWindowWidth {
+		effectiveW = minFramelessWindowWidth
+	}
+	effectiveH := pillAnchorHeight
+	if effectiveH < minFramelessWindowHeight {
+		effectiveH = minFramelessWindowHeight
+	}
+	wantX := (1920 - effectiveW) / 2
+	wantY := 1080 - overlayEdgeMargin - pillBubbleH/2 - effectiveH/2
 	if x != wantX || y != wantY {
 		t.Fatalf("pill anchor position = (%d,%d), want (%d,%d)", x, y, wantX, wantY)
 	}
@@ -422,16 +456,35 @@ func TestDedicatedDotAndRadialMenuShareVisibleDotCenter(t *testing.T) {
 	dotX, dotY := dotAnchorPosition(bounds, "bottom")
 	radialX, radialY := radialMenuPosition(bounds, "bottom")
 
-	dotCenterX := dotX + dotAnchorMetrics.Width/2
-	dotCenterY := dotY + dotAnchorMetrics.Height/2
+	// Visible bubble centre is at the OS-enforced effective window
+	// centre, not the requested-metric centre. See pillAnchor test for
+	// the regression context.
+	effectiveDotW := dotAnchorMetrics.Width
+	if effectiveDotW < minFramelessWindowWidth {
+		effectiveDotW = minFramelessWindowWidth
+	}
+	effectiveDotH := dotAnchorMetrics.Height
+	if effectiveDotH < minFramelessWindowHeight {
+		effectiveDotH = minFramelessWindowHeight
+	}
+	dotCenterX := dotX + effectiveDotW/2
+	dotCenterY := dotY + effectiveDotH/2
 	if dotCenterX != 960 {
 		t.Fatalf("dot center x = %d, want 960", dotCenterX)
 	}
 	if got, want := dotCenterY, 1080-overlayEdgeMargin-dotBubbleH/2; got != want {
 		t.Fatalf("dot center y = %d, want %d", got, want)
 	}
-	if radialX+radialMenuMetrics.Width/2 != dotCenterX || radialY+radialMenuMetrics.Height/2 != dotCenterY {
-		t.Fatalf("radial center = (%d,%d), want dot center (%d,%d)", radialX+radialMenuMetrics.Width/2, radialY+radialMenuMetrics.Height/2, dotCenterX, dotCenterY)
+	effectiveRadialW := radialMenuMetrics.Width
+	if effectiveRadialW < minFramelessWindowWidth {
+		effectiveRadialW = minFramelessWindowWidth
+	}
+	effectiveRadialH := radialMenuMetrics.Height
+	if effectiveRadialH < minFramelessWindowHeight {
+		effectiveRadialH = minFramelessWindowHeight
+	}
+	if radialX+effectiveRadialW/2 != dotCenterX || radialY+effectiveRadialH/2 != dotCenterY {
+		t.Fatalf("radial center = (%d,%d), want dot center (%d,%d)", radialX+effectiveRadialW/2, radialY+effectiveRadialH/2, dotCenterX, dotCenterY)
 	}
 }
 
@@ -2148,6 +2201,74 @@ func TestConfiguredLocalSTTModelPathUsesDefaultModelDownloadDir(t *testing.T) {
 	want := filepath.Join(cfg.General.ModelDownloadDir, cfg.Local.Model)
 	if got := configuredLocalSTTModelPath(cfg); got != want {
 		t.Fatalf("model path = %q, want %q", got, want)
+	}
+}
+
+func TestApplyBundledLocalSTTStarterDefaultRepairsLegacyMissingTurboDefault(t *testing.T) {
+	cfg := defaultTestConfig()
+	cfg.Local.Enabled = true
+	cfg.Local.Model = "ggml-large-v3-turbo.bin"
+	cfg.Local.ModelPath = ""
+
+	exeDir := t.TempDir()
+	modelPath := filepath.Join(exeDir, "models", config.DefaultLocalSTTModel)
+	writeValidWhisperModelFile(t, modelPath)
+	withExecutableDirForTest(t, exeDir)
+
+	if !applyBundledLocalSTTStarterDefault(cfg) {
+		t.Fatal("expected bundled starter model to repair legacy missing turbo default")
+	}
+	if cfg.Local.Model != config.DefaultLocalSTTModel {
+		t.Fatalf("local model = %q, want %q", cfg.Local.Model, config.DefaultLocalSTTModel)
+	}
+	if cfg.Local.ModelPath != "" {
+		t.Fatalf("local model path = %q, want empty bundle-relative config", cfg.Local.ModelPath)
+	}
+	if got := configuredLocalSTTModelPath(cfg); got != modelPath {
+		t.Fatalf("configured local model path = %q, want bundled starter %q", got, modelPath)
+	}
+}
+
+func TestApplyBundledLocalSTTStarterDefaultKeepsCustomMissingModel(t *testing.T) {
+	cfg := defaultTestConfig()
+	cfg.Local.Enabled = true
+	cfg.Local.Model = "ggml-custom.bin"
+
+	exeDir := t.TempDir()
+	writeValidWhisperModelFile(t, filepath.Join(exeDir, "models", config.DefaultLocalSTTModel))
+	withExecutableDirForTest(t, exeDir)
+
+	if applyBundledLocalSTTStarterDefault(cfg) {
+		t.Fatal("custom missing model should not be silently rewritten")
+	}
+	if cfg.Local.Model != "ggml-custom.bin" {
+		t.Fatalf("local model = %q, want custom model unchanged", cfg.Local.Model)
+	}
+}
+
+func TestApplyLocalSTTPortDefaultMovesLegacyServerPort(t *testing.T) {
+	cfg := defaultTestConfig()
+	cfg.Local.Enabled = true
+	cfg.Local.Port = 8080
+
+	if !applyLocalSTTPortDefault(cfg) {
+		t.Fatal("expected legacy whisper port 8080 to move away from SpeechKit Server")
+	}
+	if cfg.Local.Port != config.DefaultLocalSTTPort {
+		t.Fatalf("local STT port = %d, want %d", cfg.Local.Port, config.DefaultLocalSTTPort)
+	}
+}
+
+func TestApplyLocalSTTPortDefaultKeepsCustomPort(t *testing.T) {
+	cfg := defaultTestConfig()
+	cfg.Local.Enabled = true
+	cfg.Local.Port = 9100
+
+	if applyLocalSTTPortDefault(cfg) {
+		t.Fatal("custom local STT port should not be rewritten")
+	}
+	if cfg.Local.Port != 9100 {
+		t.Fatalf("local STT port = %d, want custom port", cfg.Local.Port)
 	}
 }
 

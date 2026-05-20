@@ -176,6 +176,33 @@ func syncConfiguredSTTRouter(ctx context.Context, cfg *config.Config, state *app
 		return
 	}
 
+	// Reconcile the routing strategy with the current dictate primary
+	// selection BEFORE applying it to the live router. Without this step,
+	// initDesktopRouterRuntime's startup override (cfg.Routing.Strategy =
+	// "local-only" when local-builtin STT was the picked primary) persists
+	// across config saves even after the user switches the dictate primary
+	// to a cloud provider like Hugging Face in Settings. Result: the router
+	// stays in StrategyLocalOnly and silently bypasses every cloud provider
+	// the user just added — exactly the regression Marcel reported on
+	// 2026-05-19. Re-deriving the strategy here keeps the picker as the
+	// single source of truth for routing.
+	//
+	// PreferLocalUnderSeconds is also zeroed on leaving local-builtin
+	// because the default 10s window means dynamic-strategy short-utterance
+	// dictation still routes to local whisper-server despite the picker
+	// pointing at a cloud provider — see reconcileRoutingStrategyFromSelection
+	// (app_init.go) for the matching startup path.
+	if selectedLocalBuiltInSTT(cfg) {
+		cfg.Routing.Strategy = "local-only"
+	} else {
+		if cfg.Routing.Strategy == "local-only" {
+			cfg.Routing.Strategy = "dynamic"
+		}
+		if cfg.Routing.PreferLocalUnderSeconds > 0 {
+			cfg.Routing.PreferLocalUnderSeconds = 0
+		}
+	}
+
 	targetRouter.Strategy = router.Strategy(cfg.Routing.Strategy)
 	targetRouter.PreferLocalUnderSecs = cfg.Routing.PreferLocalUnderSeconds
 	targetRouter.ParallelCloud = cfg.Routing.ParallelCloud

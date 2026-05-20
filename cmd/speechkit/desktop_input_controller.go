@@ -270,6 +270,35 @@ func (c desktopInputController) primeOverlayForCapture(mode string) {
 }
 
 func (c desktopInputController) routeVoiceAgentHotkey(ctx context.Context, evt hotkey.Event) {
+	// Wake-word-origin events are routed independently of the configured
+	// Hold-to-Talk / Toggle behaviour. There is no KeyUp counterpart for a
+	// synthesized wake-word press, so a Hold-to-Talk Voice-Agent setting
+	// would otherwise leave the session running until the 15 min idle
+	// timeout. Wake-word events always go through the Session abstraction
+	// (no Pipeline-Fallback detour) and rely on the attached
+	// AutoEndPolicy for termination.
+	if evt.Source == hotkey.EventSourceWakeword {
+		if evt.Type != hotkey.EventKeyDown {
+			// Wake-word dispatcher does not emit KeyUp by default. Defensive
+			// guard for callers that opt into SyntheticRelease.
+			return
+		}
+		c.logVoiceAgentRoute(evt.Binding, "wake-word", "info", evt.Type)
+		if msg := c.voiceAgentStartBlockedReason(); msg != "" { //nolint:contextcheck // realtime readiness is independent of caller ctx.
+			// No voice-agent provider configured/activated — drop the policy
+			// the wake-word handler parked in the slot, show a preflight
+			// hint instead of falling through into the dictation-style
+			// fallback path.
+			if policy := c.state.clearWakewordSessionPolicy(); policy != nil {
+				policy.Close()
+			}
+			c.presentPreflightHint(msg)
+			return
+		}
+		c.activateVoiceAgentWakewordSession(ctx)
+		return
+	}
+
 	if c.shouldUseVoiceAgentPipelineFallback() {
 		c.logVoiceAgentRoute(evt.Binding, "pipeline fallback", "info", evt.Type)
 		c.routeCaptureHotkey(ctx, modeVoiceAgent, evt)

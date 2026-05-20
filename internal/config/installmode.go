@@ -120,7 +120,7 @@ func ApplyLocalInstallDefaults(cfg *Config, state *InstallState) bool {
 		changed = true
 	}
 	if cfg.Local.Port == 0 {
-		cfg.Local.Port = 8080
+		cfg.Local.Port = DefaultLocalSTTPort
 		changed = true
 	}
 	if cfg.Local.GPU == "" {

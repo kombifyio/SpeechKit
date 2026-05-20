@@ -57,6 +57,16 @@ $RequiredFiles = @(
     "whisper-server.exe",
     "whisper.dll",
     "ggml.dll",
+    "models\ggml-small.bin",
+    "speechkit-wakeword.exe",
+    "wakeword-kws\keywords.txt",
+    "wakeword-kws\tokens.txt",
+    "wakeword-kws\encoder-epoch-12-avg-2-chunk-16-left-64.onnx",
+    "wakeword-kws\decoder-epoch-12-avg-2-chunk-16-left-64.onnx",
+    "wakeword-kws\joiner-epoch-12-avg-2-chunk-16-left-64.onnx",
+    "onnxruntime.dll",
+    "sherpa-onnx-c-api.dll",
+    "sherpa-onnx-cxx-api.dll",
     "MicrosoftEdgeWebview2Setup.exe",
     "config.toml"
 )
@@ -66,6 +76,13 @@ foreach ($f in $RequiredFiles) {
         Write-Error "Required staging file missing: $p`nEnsure scripts/build.ps1 -SkipInstaller completed successfully."
     }
 }
+
+$TemplateConfig = Join-Path $RepoRoot "config.example.toml"
+if (-not (Test-Path $TemplateConfig)) {
+    Write-Error "Release-safe config template missing: $TemplateConfig"
+}
+Copy-Item -Path $TemplateConfig -Destination (Join-Path $StageDir "config.toml") -Force
+Write-Host "Reset staging config.toml from config.example.toml for MSI packaging."
 
 if (-not (Test-Path (Join-Path $StageDir "llama"))) {
     Write-Error "llama/ subdirectory missing from staging: $StageDir\llama`nEnsure scripts/build.ps1 -SkipInstaller completed successfully."

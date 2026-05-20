@@ -67,9 +67,31 @@ const (
 	EventKeyUp
 )
 
+// EventSource identifies the origin of a hotkey event.
+type EventSource string
+
+const (
+	// EventSourceHotkey is the default — the event came from a real
+	// keyboard press picked up by the platform hotkey manager.
+	EventSourceHotkey EventSource = "hotkey"
+
+	// EventSourceWakeword indicates the event was synthesized by the
+	// wake-word adapter to simulate a hotkey press. Consumers that need
+	// different downstream behaviour for wake-word-triggered activations
+	// (e.g. attach an AutoEndPolicy, ignore hold-to-talk semantics)
+	// branch on this value.
+	EventSourceWakeword EventSource = "wakeword"
+)
+
 type Event struct {
 	Type    EventType
 	Binding string
+
+	// Source identifies the origin of this event. Native keyboard-hook
+	// events leave this zero (empty string) which callers must treat as
+	// equivalent to EventSourceHotkey. Synthesized events (wake-word,
+	// future programmatic triggers) set this explicitly.
+	Source EventSource
 }
 
 // Manager captures a push-to-talk key combination through a low-level keyboard hook.

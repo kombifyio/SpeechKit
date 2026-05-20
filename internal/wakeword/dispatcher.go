@@ -14,7 +14,20 @@ import (
 type HotkeyEvent struct {
 	KeyDown bool   // true = press, false = release
 	Binding string // mode name: "dictate" | "assist" | "voice_agent"
+
+	// Source identifies the origin of the synthesized event. The wake-word
+	// Dispatcher always sets this to "wakeword". Client adapters use this
+	// to distinguish wake-word-triggered activations from real hotkey
+	// presses — e.g. to attach an AutoEndPolicy to wake-word-origin
+	// sessions but leave hotkey-origin sessions on their existing
+	// hold-to-talk / toggle semantics.
+	Source string
 }
+
+// SourceWakeword is the value the Dispatcher writes into HotkeyEvent.Source.
+// Client adapters should compare against this constant rather than the
+// literal string to stay decoupled from the dispatch wording.
+const SourceWakeword = "wakeword"
 
 // HotkeySink consumes synthetic key events. The Device-Target supplies an
 // adapter that pushes into the modeHotkeyManager events channel.
@@ -130,7 +143,7 @@ func (d *Dispatcher) Close(ctx context.Context) error {
 
 func (d *Dispatcher) dispatch(ev DetectionEvent) {
 	defer d.inFlight.Done()
-	d.sink.Submit(HotkeyEvent{KeyDown: true, Binding: ev.Mode})
+	d.sink.Submit(HotkeyEvent{KeyDown: true, Binding: ev.Mode, Source: SourceWakeword})
 	if !d.syntheticRelease {
 		return
 	}
@@ -140,5 +153,5 @@ func (d *Dispatcher) dispatch(ev DetectionEvent) {
 	// purpose — that would let Close swallow the release half of a pair
 	// and leave downstream state thinking a key is still held.
 	time.Sleep(d.releaseAfter)
-	d.sink.Submit(HotkeyEvent{KeyDown: false, Binding: ev.Mode})
+	d.sink.Submit(HotkeyEvent{KeyDown: false, Binding: ev.Mode, Source: SourceWakeword})
 }

@@ -61,6 +61,9 @@ func runDesktopApp(closeLogFile func()) {
 	// logging.go are aligned with the config defaults so the small window
 	// before this call does not cause spurious rotation.
 	configureLoggingLimits(cfg.Logging.MaxFileSizeMB, cfg.Logging.MaxFiles)
+	if appliedLevel := configureLoggingLevel(cfg.Logging.Level); appliedLevel != "info" {
+		slog.Info("log level configured", "level", appliedLevel, "source", logLevelSourceLabel(cfg.Logging.Level))
+	}
 	configureUpdateChannel(cfg.Update.Enabled, cfg.Update.ManifestURL, cfg.Update.CheckIntervalHours, cfg.Update.SignaturePinThumbprint)
 	if exePath, err := os.Executable(); err == nil {
 		if err := auditlog.ConfigureFromOptions(auditlog.ConfigOptions{
@@ -270,12 +273,12 @@ func showSettingsWindowWithFocus(window settingsWindow, focus bool) {
 // that may run before app.Run() — most notably the desktop input
 // controller goroutine — should gate UI-touching work on this.
 //
-// When no Wails app is wired (test harnesses, ad-hoc tools that never call
-// application.New), there is no main-thread dispatcher to wait for —
-// InvokeSync would never be dialled in the first place — so we treat the
-// app as "started" and let callers proceed. The flag is only meaningful
-// when a Wails app exists and we are racing against its
-// OnApplicationStarted callback.
+// When an appState is present but no Wails app is wired (test harnesses,
+// ad-hoc tools that never call application.New), there is no main-thread
+// dispatcher to wait for — InvokeSync would never be dialled in the first
+// place — so we treat the app as "started" and let callers proceed. A nil
+// appState still reports not-started; callers that intentionally operate
+// without app state should guard the receiver separately.
 func (s *appState) isAppStarted() bool {
 	if s == nil {
 		return false
@@ -327,7 +330,19 @@ func (s *appState) showDashboardWindow(source string) {
 		if window == nil {
 			return
 		}
-		showSettingsWindowWithFocus(window, source != "first-run-setup")
+		// Skip Focus() for "first-run-setup" (the scheduler's initial popup)
+		// AND "setup-required" (the hotkey-gate's re-trigger) to avoid a
+		// race with Wails' Chromium.Embed. During fresh first-run, both
+		// calls can fire within ~70ms of each other; Wails pumps the
+		// main-thread message loop synchronously while embedding the
+		// webview, so a second InvokeSync'd Focus() lands against
+		// half-initialized Chromium internals and crashes the webview
+		// with a nil-pointer panic in chromium.go:573.
+		// Regression 2026-05-19: panic stack confirmed in user log
+		// (first-run-setup 18:04:30.099, setup-required 18:04:30.168,
+		// wails panic 18:04:30.169).
+		focus := source != "first-run-setup" && source != "setup-required"
+		showSettingsWindowWithFocus(window, focus)
 		window.ExecJS(dashboardRefreshScript(source))
 	}
 

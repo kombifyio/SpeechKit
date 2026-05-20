@@ -12,6 +12,110 @@ IDs, source paths, and other maintainer-only vocabulary.
 
 ## [Unreleased]
 
+## [0.35.8] - 2026-05-20
+
+Wake-word triggers now activate a true live Voice Agent dialog that
+ends automatically. A fresh install ships with a starter speech model
+pre-bundled so onboarding completes without any download. The dashboard
+explains exactly what went wrong if local setup ever fails and offers a
+one-click recovery. Both log surfaces are now privacy-first opt-in, so
+a fresh install writes nothing to disk by default.
+
+### Added
+- Voice Agent sessions triggered by the wake-word (e.g. "Hey Quby")
+  now end automatically after a configurable silence interval
+  (default 10 s) or when the user says one of the configured
+  closing phrases (default DE + EN: "danke", "tschüss", "ende",
+  "stop", "thanks", "bye", "goodbye"). Configure in `config.toml`
+  under `[wakeword.auto_end]` with `silence_cutoff_sec` and
+  `exit_phrases`. No hard-cap on session duration — Voice Agent
+  remains designed for multi-hour dialogs.
+- Windows installer now bundles the ggml-small Whisper starter
+  model (~466 MB) plus the wake-word KWS bundle. A fresh install
+  reaches "Start Using SpeechKit" without any model download.
+- Setup wizard shows a precise error banner when local setup
+  cannot complete (e.g. bundled model missing on a self-built
+  installer), offers "Back to local model" + a one-click
+  "Download starter model" that auto-retries setup once the
+  download finishes.
+- New `SPEECHKIT_LOG_LEVEL` environment variable overrides the
+  configured log level at startup. Support engineers can flip on
+  debug logging for one session without editing `config.toml`.
+  Accepted values: `debug`, `info`, `warn`, `error`, `off`.
+
+### Changed
+- General application logging is now off by default. Set
+  `[logging] level = "info"` (or `"debug"`) in `config.toml` to
+  capture transcription events, mode switches, and wake-word
+  triggers. Operators with a compliance obligation should also
+  set `[audit] enabled = true` — the audit trail is now opt-in.
+- Wake-word-triggered Voice Agent sessions ignore the configured
+  Hold-to-Talk vs Toggle hotkey behavior and rely on the auto-end
+  policy for termination (the wake-word has no key-release
+  counterpart). Hotkey-triggered sessions are unchanged.
+- Wake-word-triggered Voice Agent sessions no longer fall back to
+  the dictation-style capture path when no realtime provider is
+  active. Instead, the user sees a clear preflight hint asking
+  them to configure a Voice Agent provider in Settings — the
+  earlier behavior surprised users with "recording starts but
+  transcription only on manual stop" semantics.
+- Default local STT model is now `ggml-small.bin` and the local
+  whisper-server port moved from 8080 to 9000 to avoid colliding
+  with common development tools.
+- Server connection targets are now explicit user/operator
+  configuration. Previously-seeded preset targets are no longer
+  injected at startup; operators upgrading from a private build
+  with pre-seeded targets keep them (existing targets are sticky),
+  but new installations start with an empty target list.
+
+### Fixed
+- Fresh installs now read the installer-written `config.default.toml`
+  template instead of silently applying Go defaults. The NSIS
+  installer writes the template into the install directory, but
+  the runtime config path resolves to `%APPDATA%` for installed
+  (non-portable) builds — a mismatch that left every fresh install
+  using the wrong overlay anchor, log defaults, and STT model.
+- Switching the dictation provider from a local model to a cloud
+  model (e.g. Hugging Face) no longer silently keeps routing
+  on whisper-server. The router strategy and the
+  prefer-local-under-seconds window now reconcile to the
+  picker's intent on every settings save.
+- The overlay no longer renders ~28 px right of centre on
+  Windows 11. The OS-enforced minimum frameless window size
+  (~136×39 with DWM drop-shadow) is now honoured when computing
+  the screen-centre offset, so the pill anchor lands where the
+  positioning math expects it.
+- Saving Settings from the onboarding wizard no longer flips
+  `overlay_enabled` to false. The wizard's partial POST omits
+  overlay fields entirely; the form parser now falls back to the
+  current config value when a key is absent instead of treating
+  `""` as "unchecked".
+- Wake-word detections no longer drop under default settings.
+  The sherpa-onnx KWS backend emits discrete keyword events, so
+  the per-decode "require N consecutive hits" gate is now forced
+  to 1 and the per-keyword consecutive-hits map is actively
+  cleaned between decode windows. Previous behavior accumulated
+  stale counters and could spuriously fire on a similar word
+  said later in the same session.
+- Voice Agent session-end audit events now carry the precise
+  termination reason: `wakeword_silence` (silence cutoff fired)
+  and `wakeword_exit_phrase` (exit-phrase matched), in addition
+  to the existing `user`, `error`, and `idle` reasons.
+- Wails Chromium webview no longer panics during fresh first-run
+  when the dashboard scheduler's "first-run-setup" popup races
+  with the hotkey-gate's "setup-required" re-trigger inside the
+  same ~70 ms window. The second focus call is now skipped while
+  Wails embeds the webview.
+
+### Security
+- Patched three transitive dependency vulnerabilities surfaced
+  by the OSV scanner: `github.com/go-git/go-git/v5` from 5.19.0
+  to 5.19.1 (GHSA-crhj-59gh-8x96 + GHSA-m7cr-m3pv-hgrp), and
+  `ws` from 8.18.0 to 8.20.1 inside the Cloudflare quality-gate
+  worker package (GHSA-58qx-3vcg-4xpx). The npm `brace-expansion`
+  moderate finding (GHSA-jxxr-4gwj-5jf2) was also resolved in
+  `frontend/app` via `npm audit fix`.
+
 ## [0.35.7] - 2026-05-19
 
 Wake-word hotfix. The "Enable wake-word" button in the onboarding

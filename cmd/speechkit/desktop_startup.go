@@ -2,13 +2,58 @@ package main
 
 import (
 	"log/slog"
+	"os"
+	"path/filepath"
 
 	"github.com/kombifyio/SpeechKit/internal/config"
 	"github.com/kombifyio/SpeechKit/internal/secrets"
 )
 
+// seedRuntimeConfigFromInstallTemplate ensures cfgPath exists before
+// config.Load runs. The NSIS installer writes config.toml + config.default.toml
+// to $LOCALAPPDATA\SpeechKit (the install directory), but for installed
+// (non-portable) builds runtimeConfigPath() resolves to %APPDATA%\SpeechKit
+// (Roaming). These are different directories, so SpeechKit was silently
+// loading Go defaults on every fresh install — most visibly causing the
+// overlay to render at the "bottom" Go default instead of the "top" template
+// value (regression 2026-05-19, observed live in user's log).
+//
+// On first launch we copy the install-dir config.default.toml to the runtime
+// config path. config.Load can then read the template defaults; the wizard's
+// /settings/update later persists user choices to the same path.
+func seedRuntimeConfigFromInstallTemplate(cfgPath string) {
+	if cfgPath == "" {
+		return
+	}
+	if _, err := os.Stat(cfgPath); err == nil {
+		return
+	}
+	exeDir := executableDir()
+	if exeDir == "" {
+		return
+	}
+	template := filepath.Join(exeDir, "config.default.toml")
+	data, err := os.ReadFile(template)
+	if err != nil {
+		if !os.IsNotExist(err) {
+			slog.Warn("seed runtime config: read install template", "path", template, "err", err)
+		}
+		return
+	}
+	if err := os.MkdirAll(filepath.Dir(cfgPath), 0o755); err != nil {
+		slog.Warn("seed runtime config: create dir", "path", filepath.Dir(cfgPath), "err", err)
+		return
+	}
+	if err := os.WriteFile(cfgPath, data, 0o600); err != nil {
+		slog.Warn("seed runtime config: write", "path", cfgPath, "err", err)
+		return
+	}
+	slog.Info("runtime config seeded from install template", "from", template, "to", cfgPath)
+}
+
 func loadDesktopStartupConfig() (string, *config.Config, *config.InstallState, error) {
 	cfgPath := runtimeConfigPath()
+	seedRuntimeConfigFromInstallTemplate(cfgPath)
 	cfg, err := config.Load(cfgPath)
 	if err != nil {
 		return "", nil, nil, err
@@ -41,23 +86,32 @@ func loadDesktopStartupConfig() (string, *config.Config, *config.InstallState, e
 		if err := config.Save(cfgPath, cfg); err != nil {
 			slog.Warn("save local install defaults", "err", err)
 		} else {
-			slog.Info("local install defaults: onboarding will download a local model before enabling whisper.cpp")
+			slog.Info("local install defaults: selected bundled local speech model for whisper.cpp")
+		}
+	}
+	if applyBundledLocalSTTStarterDefault(cfg) {
+		if err := config.Save(cfgPath, cfg); err != nil {
+			slog.Warn("save bundled local STT starter default", "err", err)
+		} else {
+			slog.Info("local install defaults: selected bundled local STT starter model")
+		}
+	}
+	if applyLocalSTTPortDefault(cfg) {
+		if err := config.Save(cfgPath, cfg); err != nil {
+			slog.Warn("save local STT port default", "err", err)
+		} else {
+			slog.Info("local install defaults: selected non-conflicting local STT port", "port", cfg.Local.Port)
+		}
+	}
+	if reconcileRoutingStrategyFromSelection(cfg) {
+		if err := config.Save(cfgPath, cfg); err != nil {
+			slog.Warn("save reconciled routing strategy", "err", err)
+		} else {
+			slog.Info("routing strategy reconciled from current dictate primary selection", "strategy", cfg.Routing.Strategy)
 		}
 	}
 	if config.ApplyManagedIntegrationDefaults(cfg) {
 		slog.Info("managed integration: Hugging Face enabled by explicit opt-in with resolved credentials")
-	}
-	// Seed kombify-hosted server target presets into [server_connection].Targets
-	// so the device Settings UI shows speechkit.kombify.io + api.kombify.io +
-	// huggingface-inference as switchable options on every Windows launch. No-op
-	// in OSS builds (gated by ManagedDevServerAvailableInBuild) and idempotent —
-	// user-customised entries with matching IDs are left intact.
-	if config.ApplyManagedDevServerDefaults(cfg) {
-		if err := config.Save(cfgPath, cfg); err != nil {
-			slog.Warn("save managed dev server defaults", "err", err)
-		} else {
-			slog.Info("managed dev server: seeded kombify server presets into server_connection.targets")
-		}
 	}
 
 	return cfgPath, cfg, installState, nil

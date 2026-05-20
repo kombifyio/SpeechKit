@@ -1,0 +1,94 @@
+# Compose override for install-e2e-linux.yml.
+#
+# Two responsibilities:
+#
+#   1. Bind-mount the host model cache into the affected containers
+#      (avoids the duplicate disk usage of "host dir + copy into named
+#      Docker volume" that exhausts the ~14 GB GitHub-hosted runner
+#      disk when Whisper Large v3 Turbo + Gemma 4 E4B Q4_K_M are both
+#      present).
+#
+#   2. Add the whisper.cpp + llama.cpp sidecar services that
+#      speechkit-server expects when SPEECHKIT_SELFHOSTED_DEFAULTS=true
+#      is set (speechkit-server reaches them at
+#      http://speechkit-whisper:8080 and http://speechkit-llm:8080/v1).
+#      These mirror the same sidecars now declared in the production
+#      deploy/docker/docker-compose.yml but use the host cache via
+#      bind mount.
+#
+# Use:
+#   SPEECHKIT_MODELS_HOST_DIR=$HOME/.speechkit-test-models \
+#   docker compose \
+#     -f deploy/docker/docker-compose.test.yml \
+#     -f deploy/docker/docker-compose.install-e2e.override.yml \
+#     --profile local-only \
+#     up ...
+#
+# The override REPLACES the volumes list on the affected services (the
+# Compose merge rule for the volumes key on a service is "replace" for
+# overrides, not "append"). The config volume from the base file is
+# preserved by listing it explicitly here.
+
+services:
+  speechkit-server:
+    environment:
+      SPEECHKIT_SELFHOSTED_DEFAULTS: "true"
+      SPEECHKIT_SELFHOSTED_STT_URL: http://speechkit-whisper:8080
+      SPEECHKIT_SELFHOSTED_LLM_BASE_URL: http://speechkit-llm:8080/v1
+    volumes:
+      - ../config/server.example.toml:/etc/speechkit/config.toml:ro
+      - ${SPEECHKIT_MODELS_HOST_DIR:?SPEECHKIT_MODELS_HOST_DIR must be set}:/var/lib/speechkit/models:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+      speechkit-whisper:
+        condition: service_healthy
+      speechkit-llm:
+        condition: service_healthy
+
+  speechkit-whisper:
+    profiles: ["local-only"]
+    image: ${SPEECHKIT_WHISPER_IMAGE:-ghcr.io/ggml-org/whisper.cpp:main}
+    # See production docker-compose.yml for the entrypoint rationale.
+    entrypoint: ["/app/build/bin/whisper-server"]
+    command:
+      - --host
+      - 0.0.0.0
+      - --port
+      - "8080"
+      - --model
+      - /models/whisper/ggml-large-v3-turbo.bin
+      - --inference-path
+      - /v1/audio/transcriptions
+    volumes:
+      - ${SPEECHKIT_MODELS_HOST_DIR:?SPEECHKIT_MODELS_HOST_DIR must be set}:/models:ro
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:8080/ >/dev/null || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 18
+      start_period: 30s
+
+  speechkit-llm:
+    profiles: ["local-only"]
+    image: ${SPEECHKIT_LLM_IMAGE:-ghcr.io/ggml-org/llama.cpp:server}
+    command:
+      - --host
+      - 0.0.0.0
+      - --port
+      - "8080"
+      - --model
+      - /models/llama/gemma-4-E4B-it-Q4_K_M.gguf
+    volumes:
+      - ${SPEECHKIT_MODELS_HOST_DIR:?SPEECHKIT_MODELS_HOST_DIR must be set}:/models:ro
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:8080/health >/dev/null || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 24
+      start_period: 60s
+
+  local-only-test-client:
+    volumes:
+      - ../..:/workspace
+      - ${SPEECHKIT_MODELS_HOST_DIR:?SPEECHKIT_MODELS_HOST_DIR must be set}:/var/lib/speechkit/models:ro

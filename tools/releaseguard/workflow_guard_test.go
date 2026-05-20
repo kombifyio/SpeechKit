@@ -438,14 +438,20 @@ func TestComposeSmokeEscapesShellVariables(t *testing.T) {
 func TestServerTestUIUsesLiveBackendWithoutClientSetup(t *testing.T) {
 	ui := readRepoFile(t, filepath.Join("internal", "server", "onboarding", "assets", "testui.html"))
 
+	// Strings that would only appear in the UI if the smoke page asked the
+	// user to configure connection/auth/persona — the test asserts those
+	// inputs do not exist. The smoke page is allowed to auto-attach a
+	// bearer token via server-side ReplaceAll (v0.35.3 smoke-from-page
+	// flow); that path uses the `token` variable + Authorization header
+	// without exposing any input field to the user, so we no longer
+	// forbid the literal "Auth"/"Authorization"/"Token"/"token" strings.
+	// The manual-input field labels and JS variables ("Bearer Token",
+	// "bearerToken", "Base URL", "baseUrl", etc.) remain forbidden so a
+	// future regression that adds a setup form fails this gate.
 	for _, forbidden := range []string{
 		"Base URL",
 		"baseUrl",
-		"Auth",
-		"Authorization",
 		"Bearer Token",
-		"Token",
-		"token",
 		"bearerToken",
 		"X-Edge-Auth-Hmac",
 		"edgeHmac",

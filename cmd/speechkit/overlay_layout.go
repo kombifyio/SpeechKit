@@ -230,7 +230,21 @@ func overlayAnchoredPosition(bounds screenBounds, position string, metrics overl
 		centerY = bounds.Y + bounds.Height - overlayEdgeMargin - visibleH/2
 	}
 
-	return centerX - metrics.Width/2, centerY - metrics.Height/2
+	// Clamp the metrics we subtract to the OS-enforced minimum frameless
+	// window size. Without this, requested-size centring is off by
+	// (renderedWidth - metrics.Width)/2 px to the right because Windows
+	// enlarges sub-minimum windows silently. See minFramelessWindowWidth
+	// in overlay.go for the regression context.
+	effectiveW := metrics.Width
+	if effectiveW < minFramelessWindowWidth {
+		effectiveW = minFramelessWindowWidth
+	}
+	effectiveH := metrics.Height
+	if effectiveH < minFramelessWindowHeight {
+		effectiveH = minFramelessWindowHeight
+	}
+
+	return centerX - effectiveW/2, centerY - effectiveH/2
 }
 
 func normalizeOverlayPosition(position string) string {
@@ -295,7 +309,26 @@ func dotAnchorPosition(bounds screenBounds, position string) (int, int) {
 
 func radialMenuPosition(bounds screenBounds, position string) (int, int) {
 	anchorX, anchorY := dotAnchorPosition(bounds, position)
-	return anchorX + dotAnchorMetrics.Width/2 - radialMenuMetrics.Width/2, anchorY + dotAnchorMetrics.Height/2 - radialMenuMetrics.Height/2
+	// Match the OS-enforced effective-window-size clamp from
+	// overlayAnchoredPosition so the radial menu visually shares the
+	// dot's centre instead of drifting by (metric - min)/2 px.
+	effectiveDotW := dotAnchorMetrics.Width
+	if effectiveDotW < minFramelessWindowWidth {
+		effectiveDotW = minFramelessWindowWidth
+	}
+	effectiveDotH := dotAnchorMetrics.Height
+	if effectiveDotH < minFramelessWindowHeight {
+		effectiveDotH = minFramelessWindowHeight
+	}
+	effectiveRadialW := radialMenuMetrics.Width
+	if effectiveRadialW < minFramelessWindowWidth {
+		effectiveRadialW = minFramelessWindowWidth
+	}
+	effectiveRadialH := radialMenuMetrics.Height
+	if effectiveRadialH < minFramelessWindowHeight {
+		effectiveRadialH = minFramelessWindowHeight
+	}
+	return anchorX + effectiveDotW/2 - effectiveRadialW/2, anchorY + effectiveDotH/2 - effectiveRadialH/2
 }
 
 func clampInt(value, minValue, maxValue int) int {

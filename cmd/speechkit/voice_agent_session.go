@@ -127,6 +127,13 @@ func buildVoiceAgentCallbacks(state *appState, cfg *config.Config) voiceagent.Ca
 		OnInputTranscript: func(text string, done bool) {
 			state.sendPrompterMessage("user", text, done)
 			state.recordVoiceAgentDialogTurn("user", text, done)
+			// Wake-word-origin sessions wire their auto-end policy through
+			// the appState slot. Push every user-transcript snippet into the
+			// policy so exit-phrase detection works; for hotkey-origin
+			// sessions the slot is nil and this is a no-op.
+			if policy := state.currentWakewordSessionPolicy(); policy != nil {
+				policy.NotifyTranscript(text)
+			}
 		},
 		OnOutputTranscript: func(text string, done bool) {
 			state.sendPrompterMessage("assistant", text, done)
@@ -161,6 +168,15 @@ func buildVoiceAgentCallbacks(state *appState, cfg *config.Config) voiceagent.Ca
 			state.updatePrompterActivity("user", 0)
 			state.updatePrompterActivity("assistant", 0)
 			state.addLog("Voice Agent session ended", "info")
+
+			// Close any active wake-word policy so its timer goroutine
+			// releases. The auto-end-fired path closes the policy itself
+			// (see activateVoiceAgentWakewordSession), but error and
+			// GoAway paths reach OnSessionEnd without ever consuming
+			// EndSignal — clear+close here covers those.
+			if policy := state.clearWakewordSessionPolicy(); policy != nil {
+				policy.Close()
+			}
 
 			// OnSessionEnd is called exclusively from cleanupOnError (error / GoAway /
 			// reconnect-failure paths). The reason was pre-set by OnError; fall back to

@@ -230,9 +230,11 @@ func (e *downloadProfileError) Error() string {
 }
 
 func selectDownloadedLocalModel(ctx context.Context, cfgPath string, cfg *config.Config, state *appState, item downloads.Item) error {
-	destDir := downloads.ResolveWhisperModelsDir(cfg)
 	filename := filepath.Base(item.URL)
-	modelPath := filepath.Join(destDir, filename)
+	modelPath, ok := downloads.AvailableArtifactModelPath(item, cfg)
+	if !ok {
+		modelPath = filepath.Join(downloads.ResolveWhisperModelsDir(cfg), filename)
+	}
 	if err := profiles.ValidateLocalProviderActivation(cfg, modelPath); err != nil {
 		return err
 	}

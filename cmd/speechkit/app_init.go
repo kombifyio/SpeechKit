@@ -24,6 +24,14 @@ import (
 	"github.com/kombifyio/SpeechKit/internal/tts"
 )
 
+var executableDirFunc = func() string {
+	exe, err := os.Executable()
+	if err != nil || exe == "" {
+		return ""
+	}
+	return filepath.Dir(exe)
+}
+
 // runtimeConfigPath returns the active config file path.
 func runtimeConfigPath() string {
 	return runtimepath.ConfigFilePath()
@@ -74,6 +82,15 @@ func buildRouter(cfg *config.Config) (*router.Router, []string) {
 		cfg.Local.Enabled = true
 		cfg.Routing.Strategy = "local-only"
 		r.Strategy = router.StrategyLocalOnly
+	} else if cfg.Routing.Strategy == "local-only" {
+		// Stale local-only Strategy from a prior session where local was
+		// primary. Reset both the in-memory router and the cfg field so the
+		// caller can persist via config.Save (see reconcileRoutingStrategyChanged
+		// flag plumbed through loadDesktopStartupConfig). Without this reset
+		// the router silently rejects every cloud provider even when the
+		// picker has been switched to HuggingFace — regression 2026-05-19.
+		cfg.Routing.Strategy = "dynamic"
+		r.Strategy = router.StrategyDynamic
 	}
 
 	if cfg.Local.Enabled {
@@ -107,6 +124,43 @@ func buildRouter(cfg *config.Config) (*router.Router, []string) {
 	}
 
 	return r, msgs
+}
+
+// reconcileRoutingStrategyFromSelection mirrors the equivalent reset inside
+// syncConfiguredSTTRouter (the hot /settings/update path). It runs once at
+// app startup so a persisted cfg.Routing.Strategy="local-only" — left behind
+// when local-builtin was the picked primary — gets reset to "dynamic" the
+// moment the user has switched dictate's primary to a cloud provider.
+// Without this cold-path reset the router silently rejects every cloud
+// provider (regression 2026-05-19).
+//
+// It also zeroes Routing.PreferLocalUnderSeconds when the user has moved
+// to a cloud-builtin primary: the default 10.0s window means
+// dynamic-strategy short-utterance dictation otherwise still routes to
+// the local whisper-server, contradicting the user's "primary = HF"
+// intent and keeping the local subprocess busy (regression 2026-05-19,
+// observed live as 616 MB RAM + 122 CPU-seconds on whisper-server while
+// HF was supposedly primary).
+//
+// Returns true when cfg was mutated so the caller can persist via
+// config.Save.
+func reconcileRoutingStrategyFromSelection(cfg *config.Config) bool {
+	if cfg == nil {
+		return false
+	}
+	if selectedLocalBuiltInSTT(cfg) {
+		return false
+	}
+	changed := false
+	if cfg.Routing.Strategy == "local-only" {
+		cfg.Routing.Strategy = "dynamic"
+		changed = true
+	}
+	if cfg.Routing.PreferLocalUnderSeconds > 0 {
+		cfg.Routing.PreferLocalUnderSeconds = 0
+		changed = true
+	}
+	return changed
 }
 
 func selectedLocalBuiltInSTT(cfg *config.Config) bool {
@@ -395,11 +449,69 @@ func missingProviderHint(cfg *config.Config) string {
 
 // executableDir returns the directory of the running binary.
 func executableDir() string {
-	exe, err := os.Executable()
-	if err != nil || exe == "" {
+	return executableDirFunc()
+}
+
+func bundledLocalModelPath(modelName string) string {
+	modelName = strings.TrimSpace(modelName)
+	if modelName == "" {
 		return ""
 	}
-	return filepath.Dir(exe)
+	dir := executableDir()
+	if dir == "" {
+		return ""
+	}
+	return filepath.Join(dir, "models", modelName)
+}
+
+func localModelFileReady(path string) bool {
+	if strings.TrimSpace(path) == "" {
+		return false
+	}
+	fi, err := os.Stat(path)
+	return err == nil && !fi.IsDir() && fi.Size() >= stt.MinWhisperModelBytes
+}
+
+func applyBundledLocalSTTStarterDefault(cfg *config.Config) bool {
+	if cfg == nil || !cfg.Local.Enabled {
+		return false
+	}
+	starterModel := config.DefaultLocalSTTModel
+	starterPath := bundledLocalModelPath(starterModel)
+	if !localModelFileReady(starterPath) {
+		return false
+	}
+	if localModelFileReady(configuredLocalSTTModelPath(cfg)) {
+		return false
+	}
+
+	configuredName := strings.TrimSpace(cfg.Local.Model)
+	if modelPath := strings.TrimSpace(cfg.Local.ModelPath); modelPath != "" {
+		configuredName = filepath.Base(modelPath)
+	}
+	switch configuredName {
+	case "", starterModel, "ggml-large-v3-turbo.bin":
+	default:
+		return false
+	}
+
+	changed := cfg.Local.Model != starterModel || strings.TrimSpace(cfg.Local.ModelPath) != ""
+	cfg.Local.Model = starterModel
+	cfg.Local.ModelPath = ""
+	return changed
+}
+
+func applyLocalSTTPortDefault(cfg *config.Config) bool {
+	if cfg == nil || !cfg.Local.Enabled {
+		return false
+	}
+	switch cfg.Local.Port {
+	case 0, 8080:
+		cfg.Local.Port = config.DefaultLocalSTTPort
+		return true
+	default:
+		return false
+	}
 }
 
 // defaultLocalModelPath resolves where the local Whisper model file lives,

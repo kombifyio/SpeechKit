@@ -10,6 +10,7 @@ import (
 	"github.com/kombifyio/SpeechKit/cmd/speechkit/internal/transcription"
 	"github.com/kombifyio/SpeechKit/internal/auditlog"
 	"github.com/kombifyio/SpeechKit/internal/voiceagent"
+	"github.com/kombifyio/SpeechKit/internal/wakeword"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit"
 )
 
@@ -312,12 +313,14 @@ func (c desktopInputController) armVoiceAgentAudioCapture(plan voiceAgentActivat
 			// sender's channel; voiceAgentMicFrameAllowed would otherwise drop
 			// it because it treats StateInactive as muted.
 			_ = audioSender.Enqueue(frame)
+			c.notifyWakewordActivity()
 			return
 		}
 		if !voiceAgentMicFrameAllowed(plan.session.CurrentState(), plan.echoGuard) {
 			return
 		}
 		_ = audioSender.Enqueue(frame)
+		c.notifyWakewordActivity()
 	})
 
 	if err := c.audioCapturer.Start(); err != nil {
@@ -350,6 +353,101 @@ func (c desktopInputController) tearDownVoiceAgentAudioCapture(plan voiceAgentAc
 	}
 	if sender != nil {
 		sender.Stop()
+	}
+}
+
+// activateVoiceAgentWakewordSession is the wake-word-origin counterpart to
+// activateVoiceAgent. It runs the same activation pipeline (preflight,
+// audio capture, session.Start) and additionally:
+//
+//   - Starts the AutoEndPolicy the wake-word handler parked in the
+//     appState slot (NewAutoEndPolicy already ran with the resolved
+//     wakeword config).
+//   - Spawns a watcher goroutine that waits on policy.EndSignal() and
+//     translates the reason into a deactivateVoiceAgentWithReason call
+//     with terminated_by="wakeword_silence" or "wakeword_exit_phrase".
+//   - Cleans up the policy when the activation aborts before session
+//     start so the slot does not leak a dangling watcher.
+//
+// Hold-to-Talk semantics do NOT apply: wake-word events have no KeyUp
+// counterpart, so the session relies entirely on the policy or an
+// explicit user/idle path to terminate.
+func (c desktopInputController) activateVoiceAgentWakewordSession(ctx context.Context) {
+	plan, ok := c.prepareVoiceAgentActivation(ctx)
+	if !ok {
+		// Preflight already showed a hint; clean up the parked policy so
+		// it does not survive into the next detection.
+		if policy := c.state.clearWakewordSessionPolicy(); policy != nil {
+			policy.Close()
+		}
+		return
+	}
+	audioSender, ok := c.armVoiceAgentAudioCapture(plan)
+	if !ok {
+		if policy := c.state.clearWakewordSessionPolicy(); policy != nil {
+			policy.Close()
+		}
+		c.deactivateVoiceAgentWithReason(ctx, true, "mic capture start failed")
+		return
+	}
+	// Install an activation-scoped cancel so that — even though wake-word
+	// has no KeyUp path — error-recovery and tests can cancel the in-flight
+	// activation cleanly.
+	activationCtx := ctx
+	if c.state != nil {
+		var cancel context.CancelFunc
+		activationCtx, cancel = context.WithCancel(ctx)
+		c.state.setVoiceAgentActivationCancel(cancel)
+	}
+
+	policy := c.state.currentWakewordSessionPolicy()
+	if policy != nil {
+		policy.Start()
+		go c.watchWakewordAutoEnd(ctx, policy)
+	}
+
+	go c.startVoiceAgentSession(activationCtx, plan, audioSender)
+}
+
+// watchWakewordAutoEnd blocks on policy.EndSignal until the policy fires
+// (silence cutoff or exit-phrase match) or is closed without firing. On
+// fire it triggers the session-end path with a wakeword_* terminated_by
+// reason; on a closed-without-fire channel (session ended via another
+// path) it exits silently.
+func (c desktopInputController) watchWakewordAutoEnd(ctx context.Context, policy *wakeword.AutoEndPolicy) {
+	if policy == nil {
+		return
+	}
+	reason, ok := <-policy.EndSignal()
+	if !ok {
+		// Channel closed without a fire — session ended via another path
+		// (manual deactivate, error, idle). Nothing for us to do here;
+		// OnSessionEnd already closed and cleared the policy slot.
+		return
+	}
+	// Clear the slot so OnSessionEnd does not try to close the policy a
+	// second time. policy.Close is idempotent but the slot must not point
+	// at a fired policy after we deactivate.
+	if claimed := c.state.clearWakewordSessionPolicy(); claimed != nil {
+		claimed.Close()
+	}
+	terminatedBy := "wakeword_" + string(reason)
+	c.log(fmt.Sprintf("Voice Agent: auto-end via wake-word policy (%s)", reason), "info")
+	c.deactivateVoiceAgentWithReason(ctx, false, terminatedBy)
+}
+
+// notifyWakewordActivity pushes a single activity tick into the active
+// wake-word AutoEndPolicy (if any). Called from the PCM handler on every
+// accepted frame so the policy's silence timer resets while the user is
+// speaking. No-op for hotkey-origin sessions because the policy slot is
+// nil; no-op if the policy already fired (the policy itself guards
+// against post-fire updates).
+func (c desktopInputController) notifyWakewordActivity() {
+	if c.state == nil {
+		return
+	}
+	if policy := c.state.currentWakewordSessionPolicy(); policy != nil {
+		policy.NotifyActivity()
 	}
 }
 

@@ -39,3 +39,15 @@ func writeValidWhisperModelFile(t *testing.T, path string) {
 		t.Fatalf("truncate model file: %v", err)
 	}
 }
+
+func withExecutableDirForTest(t *testing.T, dir string) {
+	t.Helper()
+
+	previous := executableDirFunc
+	executableDirFunc = func() string {
+		return dir
+	}
+	t.Cleanup(func() {
+		executableDirFunc = previous
+	})
+}

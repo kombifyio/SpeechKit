@@ -276,21 +276,62 @@ func TestPositionOverlayAppliesDedicatedHostMetricsForAnchoredSurfaces(t *testin
 		t.Fatalf("radial menu sizes = %v, want [[%d %d]]", got, radialMenuSize, radialMenuSize)
 	}
 
-	wantPillAnchor := [2]int{100 + 1600 - overlayEdgeMargin - pillBubbleW/2 - pillAnchorWidth/2, 50 + (900-pillAnchorHeight)/2}
+	// overlayAnchoredPosition clamps the metric used for window-centre math
+	// to minFramelessWindowWidth/Height so Windows' silent enlargement of
+	// sub-minimum frameless windows no longer shifts the rendered overlay
+	// off-centre (regression 2026-05-19). Mirror that clamp here.
+	effectivePillW := pillAnchorWidth
+	if effectivePillW < minFramelessWindowWidth {
+		effectivePillW = minFramelessWindowWidth
+	}
+	effectivePillH := pillAnchorHeight
+	if effectivePillH < minFramelessWindowHeight {
+		effectivePillH = minFramelessWindowHeight
+	}
+	effectivePanelW := pillPanelWidth
+	if effectivePanelW < minFramelessWindowWidth {
+		effectivePanelW = minFramelessWindowWidth
+	}
+	effectivePanelH := pillPanelHeight
+	if effectivePanelH < minFramelessWindowHeight {
+		effectivePanelH = minFramelessWindowHeight
+	}
+	effectiveDotW := dotAnchorSize
+	if effectiveDotW < minFramelessWindowWidth {
+		effectiveDotW = minFramelessWindowWidth
+	}
+	effectiveDotH := dotAnchorSize
+	if effectiveDotH < minFramelessWindowHeight {
+		effectiveDotH = minFramelessWindowHeight
+	}
+	effectiveRadialW := radialMenuSize
+	if effectiveRadialW < minFramelessWindowWidth {
+		effectiveRadialW = minFramelessWindowWidth
+	}
+	effectiveRadialH := radialMenuSize
+	if effectiveRadialH < minFramelessWindowHeight {
+		effectiveRadialH = minFramelessWindowHeight
+	}
+	// Y is bounds.Y + bounds.Height/2 - effectiveH/2 in code (centre-of-bounds
+	// minus half effective metric), NOT bounds.Y + (bounds.Height-effectiveH)/2
+	// — those formulas differ by one pixel for odd dimensions due to integer
+	// truncation. Match the code's two-step arithmetic exactly.
+	centerYBounds := 50 + 900/2
+	wantPillAnchor := [2]int{100 + 1600 - overlayEdgeMargin - pillBubbleW/2 - effectivePillW/2, centerYBounds - effectivePillH/2}
 	if got := pillAnchor.positions; len(got) != 1 || got[0] != wantPillAnchor {
 		t.Fatalf("pill anchor positions = %v, want [%v]", got, wantPillAnchor)
 	}
-	wantPillPanel := [2]int{100 + 1600 - overlayEdgeMargin - pillBubbleW/2 - pillPanelWidth/2, 50 + (900-pillPanelHeight)/2}
+	wantPillPanel := [2]int{100 + 1600 - overlayEdgeMargin - pillBubbleW/2 - effectivePanelW/2, centerYBounds - effectivePanelH/2}
 	if got := pillPanel.positions; len(got) != 1 || got[0] != wantPillPanel {
 		t.Fatalf("pill panel positions = %v, want [%v]", got, wantPillPanel)
 	}
-	wantDotAnchor := [2]int{100 + 1600 - overlayEdgeMargin - dotBubbleW/2 - dotAnchorSize/2, 50 + (900-dotAnchorSize)/2}
+	wantDotAnchor := [2]int{100 + 1600 - overlayEdgeMargin - dotBubbleW/2 - effectiveDotW/2, centerYBounds - effectiveDotH/2}
 	if got := dotAnchor.positions; len(got) != 1 || got[0] != wantDotAnchor {
 		t.Fatalf("dot anchor positions = %v, want [%v]", got, wantDotAnchor)
 	}
 	wantRadial := [2]int{
-		wantDotAnchor[0] + dotAnchorSize/2 - radialMenuSize/2,
-		wantDotAnchor[1] + dotAnchorSize/2 - radialMenuSize/2,
+		wantDotAnchor[0] + effectiveDotW/2 - effectiveRadialW/2,
+		wantDotAnchor[1] + effectiveDotH/2 - effectiveRadialH/2,
 	}
 	if got := radialMenu.positions; len(got) != 1 || got[0] != wantRadial {
 		t.Fatalf("radial menu positions = %v, want [%v]", got, wantRadial)

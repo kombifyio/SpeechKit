@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import { pickLatestModelDownloadJob } from "@/components/dashboard/state-hooks/use-model-download-state";
 import {
@@ -44,7 +44,7 @@ export function SetupWizard({
   onStartDownload: (itemId: string) => Promise<DownloadJob>;
   onCancelDownload: (jobId: string) => Promise<void>;
   onSelectDownloadedModel: (itemId: string) => Promise<{ message?: string }>;
-  onComplete: (next?: SetupWizardCompletion) => void;
+  onComplete: (next?: SetupWizardCompletion) => void | Promise<void>;
 }) {
   const [step, setStep] = useState<WizardStep>("welcome");
   const [devices, setDevices] = useState<AudioDevice[]>([]);
@@ -61,6 +61,18 @@ export function SetupWizard({
   const [integrationTokens, setIntegrationTokens] = useState<
     Record<string, string>
   >({});
+  // Self-heal: when /app/complete-setup 409s because the bundled starter
+  // model is missing on disk (Bug B), the banner can kick off a one-click
+  // download of whisper.ggml-small and auto-retry handleFinish once the
+  // catalog/jobs feed reports the new file is ready. The ref guards against
+  // re-firing the auto-retry if the job state oscillates.
+  const [bannerDownloadModelId, setBannerDownloadModelId] = useState<
+    string | null
+  >(null);
+  const [bannerDownloadError, setBannerDownloadError] = useState<string | null>(
+    null,
+  );
+  const autoRetryFiredRef = useRef(false);
 
   useEffect(() => {
     void fetchAudioDevices()
@@ -206,7 +218,89 @@ export function SetupWizard({
       );
       return;
     }
-    onComplete();
+    try {
+      await onComplete();
+    } catch (error) {
+      setLoading(false);
+      setModelActionError(
+        error instanceof Error ? error.message : "Setup could not be completed",
+      );
+    }
+  };
+
+  // Keep a live ref to handleFinish so the banner-driven auto-retry effect
+  // can invoke the current closure without depending on it (eslint-friendly
+  // and avoids stale captures while the wizard re-renders).
+  const handleFinishRef = useRef(handleFinish);
+  useEffect(() => {
+    handleFinishRef.current = handleFinish;
+  });
+
+  const bannerDownloadJob = useMemo(() => {
+    if (!bannerDownloadModelId) return null;
+    return jobs.find((job) => job.modelId === bannerDownloadModelId) ?? null;
+  }, [jobs, bannerDownloadModelId]);
+
+  // Watch the banner-initiated starter download. On success: switch the
+  // configured local STT model to the just-downloaded starter so the
+  // /app/complete-setup gate sees ModelFound=true, then re-run handleFinish.
+  // On failure/cancel: surface as bannerDownloadError next to the button.
+  useEffect(() => {
+    if (!bannerDownloadJob || autoRetryFiredRef.current) {
+      return;
+    }
+    if (bannerDownloadJob.status === "done") {
+      autoRetryFiredRef.current = true;
+      const modelId = bannerDownloadJob.modelId;
+      void (async () => {
+        try {
+          await onSelectDownloadedModel(modelId);
+          setPreferredLocalModelId(modelId);
+          setBannerDownloadModelId(null);
+          setBannerDownloadError(null);
+          setModelActionError(null);
+          await handleFinishRef.current();
+        } catch (error) {
+          setBannerDownloadError(
+            error instanceof Error
+              ? error.message
+              : "Could not finish setup after download.",
+          );
+          autoRetryFiredRef.current = false;
+        }
+      })();
+    } else if (
+      bannerDownloadJob.status === "failed" ||
+      bannerDownloadJob.status === "cancelled"
+    ) {
+      setBannerDownloadError(
+        `Starter model download ${bannerDownloadJob.status}: ${
+          bannerDownloadJob.statusText || "no status reported"
+        }`,
+      );
+      setBannerDownloadModelId(null);
+    }
+  }, [bannerDownloadJob, onSelectDownloadedModel]);
+
+  const handleDownloadStarterModel = async () => {
+    const starter = catalog.find((item) => item.id === "whisper.ggml-small");
+    if (!starter) {
+      setBannerDownloadError(
+        "Starter model is not in the download catalog. Please reinstall SpeechKit.",
+      );
+      return;
+    }
+    setBannerDownloadError(null);
+    setBannerDownloadModelId(starter.id);
+    autoRetryFiredRef.current = false;
+    try {
+      await onStartDownload(starter.id);
+    } catch (error) {
+      setBannerDownloadError(
+        error instanceof Error ? error.message : "Download failed",
+      );
+      setBannerDownloadModelId(null);
+    }
   };
 
   const handleChooseModel = (itemId: string) => {
@@ -214,9 +308,18 @@ export function SetupWizard({
     setModelActionError(null);
   };
 
-  const handleSkipSetup = () => {
+  const handleSkipSetup = async () => {
     setModelActionError(null);
-    onComplete();
+    setLoading(true);
+    try {
+      await onComplete();
+    } catch (error) {
+      setModelActionError(
+        error instanceof Error ? error.message : "Setup could not be completed",
+      );
+    } finally {
+      setLoading(false);
+    }
   };
 
   const toggleIntegration = (provider: string) => {
@@ -289,6 +392,21 @@ export function SetupWizard({
             />
           </div>
 
+          {modelActionError && (
+            <SetupCompletionErrorBanner
+              message={modelActionError}
+              onBackToLocalModel={() => {
+                setModelActionError(null);
+                setStep("local_model");
+              }}
+              onDismiss={() => setModelActionError(null)}
+              onDownloadStarter={() => void handleDownloadStarterModel()}
+              downloadJob={bannerDownloadJob}
+              downloadError={bannerDownloadError}
+              className="mt-10"
+            />
+          )}
+
           <div className="flex flex-col items-center space-y-4 mt-16">
             <button
               type="button"
@@ -299,10 +417,11 @@ export function SetupWizard({
             </button>
             <button
               type="button"
-              onClick={handleSkipSetup}
-              className="text-[#b5b3c4] text-sm font-medium hover:text-[#e4e1e9] transition-colors"
+              onClick={() => void handleSkipSetup()}
+              disabled={loading}
+              className="text-[#b5b3c4] text-sm font-medium hover:text-[#e4e1e9] transition-colors disabled:opacity-50"
             >
-              Skip setup
+              {loading ? "Finishing..." : "Skip setup"}
             </button>
           </div>
         </div>
@@ -685,16 +804,139 @@ export function SetupWizard({
             />
           </div>
 
+          {modelActionError && (
+            <SetupCompletionErrorBanner
+              message={modelActionError}
+              onBackToLocalModel={() => {
+                setModelActionError(null);
+                setStep("local_model");
+              }}
+              onDismiss={() => setModelActionError(null)}
+              onDownloadStarter={() => void handleDownloadStarterModel()}
+              downloadJob={bannerDownloadJob}
+              downloadError={bannerDownloadError}
+              className="mb-6"
+            />
+          )}
+
           <button
             type="button"
             onClick={() => void handleFinish()}
             disabled={loading}
             className="signature-gradient text-[#2b0088] h-14 rounded-full font-bold text-lg px-12 ambient-glow hover:scale-[1.02] active:scale-[0.98] transition-all disabled:opacity-50"
           >
-            {loading ? "Setting up..." : "Start Using SpeechKit"}
+            {loading
+              ? "Setting up..."
+              : modelActionError
+                ? "Try Again"
+                : "Start Using SpeechKit"}
           </button>
         </div>
       )}
+    </div>
+  );
+}
+
+function SetupCompletionErrorBanner({
+  message,
+  onBackToLocalModel,
+  onDismiss,
+  onDownloadStarter,
+  downloadJob,
+  downloadError,
+  className,
+}: {
+  message: string;
+  onBackToLocalModel: () => void;
+  onDismiss: () => void;
+  onDownloadStarter?: () => void;
+  downloadJob?: DownloadJob | null;
+  downloadError?: string | null;
+  className?: string;
+}) {
+  // Heuristic: only offer the self-heal download when the backend reason
+  // mentions the local speech model. Other failure paths (runtime missing,
+  // settings save failed) won't be fixed by a model download.
+  const offersStarterDownload =
+    typeof onDownloadStarter === "function" && /speech model/i.test(message);
+  const downloadActive =
+    downloadJob &&
+    (downloadJob.status === "pending" || downloadJob.status === "running");
+  const downloadDone = downloadJob?.status === "done";
+  const downloadProgress = downloadJob
+    ? Math.max(0.06, Math.min(1, downloadJob.progress))
+    : 0;
+
+  return (
+    <div
+      role="alert"
+      data-testid="setup-completion-error"
+      className={[
+        "w-full max-w-md text-left rounded-2xl border border-red-400/30 bg-red-500/10 px-5 py-4 text-sm text-red-100",
+        className ?? "",
+      ].join(" ")}
+    >
+      <p className="font-semibold mb-1">Setup couldn't finish</p>
+      <p className="text-red-100/85 leading-relaxed mb-3 break-words">
+        {message}
+      </p>
+
+      {offersStarterDownload && (
+        <div
+          data-testid="setup-completion-starter-download"
+          className="mb-3 rounded-xl border border-red-400/20 bg-red-500/8 px-3 py-2"
+        >
+          {!downloadActive && !downloadDone && (
+            <button
+              type="button"
+              onClick={onDownloadStarter}
+              className="rounded-full bg-[#cabeff]/20 px-3 py-1.5 text-[11px] font-bold text-[#cabeff] hover:bg-[#cabeff]/30"
+            >
+              Download starter model
+            </button>
+          )}
+          {downloadActive && downloadJob && (
+            <div className="space-y-1.5">
+              <div className="h-1.5 overflow-hidden rounded-full bg-[#0e0e13]">
+                <div
+                  className="h-full rounded-full bg-[#cabeff] transition-all duration-500"
+                  style={{ width: `${Math.round(downloadProgress * 100)}%` }}
+                />
+              </div>
+              <div className="text-[10px] text-red-100/70">
+                {downloadJob.statusText || "Downloading starter model..."}
+              </div>
+            </div>
+          )}
+          {downloadDone && (
+            <div className="text-[11px] text-emerald-200/85">
+              Starter model ready — finishing setup automatically.
+            </div>
+          )}
+          {downloadError && (
+            <div className="mt-1.5 text-[11px] text-red-200/90">
+              {downloadError}
+            </div>
+          )}
+        </div>
+      )}
+
+      <div className="flex flex-wrap items-center gap-3">
+        <button
+          type="button"
+          onClick={onBackToLocalModel}
+          className="rounded-full bg-red-500/15 px-3 py-1.5 text-[11px] font-semibold text-red-100 hover:bg-red-500/25 transition-colors"
+        >
+          Back to local model
+        </button>
+        <button
+          type="button"
+          onClick={onDismiss}
+          className="text-[11px] font-medium text-red-100/70 hover:text-red-100 transition-colors"
+        >
+          Dismiss
+        </button>
+      </div>
     </div>
   );
 }

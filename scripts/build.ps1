@@ -44,14 +44,39 @@ function Resolve-MinGWBinDir {
     return $defaultBinDir
 }
 
+function Resolve-SherpaNativeLibDir {
+    $arch = 'x86_64-pc-windows-gnu'
+    $moduleVersion = 'v1.13.2' # keep in lockstep with scripts/prepare-sherpa-runtime.ps1 and go.mod
+    $goPath = (& go env GOPATH).Trim()
+    if ([string]::IsNullOrWhiteSpace($goPath)) {
+        $goPath = Join-Path $HOME 'go'
+    }
+    $libDir = Join-Path $goPath "pkg\mod\github.com\k2-fsa\sherpa-onnx-go-windows@$moduleVersion\lib\$arch"
+
+    if (-not (Test-Path -LiteralPath $libDir)) {
+        Push-Location $projectDir
+        try {
+            & go mod download github.com/k2-fsa/sherpa-onnx-go-windows | Out-Null
+        }
+        finally {
+            Pop-Location
+        }
+    }
+    if (-not (Test-Path -LiteralPath $libDir)) {
+        throw "sherpa-onnx native lib dir missing after go mod download: $libDir"
+    }
+    return $libDir
+}
+
 $mingwBinDir = Resolve-MinGWBinDir
+$sherpaNativeLibDir = Resolve-SherpaNativeLibDir
 $mingwGcc = Join-Path $mingwBinDir 'gcc.exe'
 $mingwGxx = Join-Path $mingwBinDir 'g++.exe'
 
 # MinGW DLLs (libstdc++, libwinpthread) conflict with Node worker forks.
 # Keep the original PATH for frontend steps; inject MinGW only for Go steps.
 $basePath = $env:PATH
-$mingwPath = "$mingwBinDir;$basePath"
+$goNativePath = "$mingwBinDir;$sherpaNativeLibDir;$basePath"
 $env:CGO_ENABLED = '1'
 $env:CC = $mingwGcc
 $env:CXX = $mingwGxx
@@ -254,6 +279,23 @@ function Assert-PathExists {
     }
 }
 
+function Assert-Sha256Hash {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Path,
+        [Parameter(Mandatory = $true)]
+        [string]$Expected,
+        [Parameter(Mandatory = $true)]
+        [string]$Description
+    )
+
+    Assert-PathExists -Path $Path -Description $Description
+    $actual = (Get-FileHash -LiteralPath $Path -Algorithm SHA256).Hash.ToLowerInvariant()
+    if ($actual -ne $Expected.ToLowerInvariant()) {
+        throw "$Description SHA256 mismatch at ${Path}: expected $Expected got $actual."
+    }
+}
+
 function Find-NSISExecutable {
     $command = Get-Command 'makensis' -ErrorAction SilentlyContinue
     if ($null -ne $command -and -not [string]::IsNullOrWhiteSpace($command.Source)) {
@@ -335,14 +377,13 @@ if (-not (Test-Path $goTmpDir)) {
     New-Item -ItemType Directory -Path $goTmpDir | Out-Null
 }
 $powershellExe = Find-PowerShellExecutable
-# Wipe only build artifacts; preserve user state across rebuilds:
+# Wipe only build artifacts. Dev bundle rebuilds preserve local operator state:
 #   - data/        -> install.toml (setup_done), feedback SQLite store
-#   - config.toml  -> user's Settings UI edits (port choice, server target,
-#                    wake-word phrase, audio device etc). Without this, every
-#                    rebuild resets the runtime config back to the template
-#                    defaults, which surprised the operator multiple times
-#                    during v0.34.x development.
-$preserveBundleEntries = @('data', 'config.toml')
+#   - config.toml  -> Settings UI edits and local dev server targets.
+#
+# Installer/release builds must not preserve config.toml because the installer
+# packages the staged file as the first-run default for other users.
+$preserveBundleEntries = if ($SkipInstaller) { @('data', 'config.toml') } else { @('data') }
 if (Test-Path $bundleDir) {
     Get-ChildItem -Path $bundleDir -Force | Where-Object { $preserveBundleEntries -notcontains $_.Name } | Remove-Item -Recurse -Force
 }
@@ -373,7 +414,7 @@ finally {
 }
 
 # --- Go (MinGW on PATH for CGo) ---
-$env:PATH = $mingwPath
+$env:PATH = $goNativePath
 Push-Location $projectDir
 try {
     # Build-time defaults are resolved into ldflags above. The test suite
@@ -443,22 +484,59 @@ finally {
 
 Write-Host 'Writing runtime config...'
 $bundleConfig = Join-Path $bundleDir 'config.toml'
-# Only seed the config from the template on first install. On a dev rebuild
-# the preserve filter (data/, config.toml) above kept the operator's edits;
-# re-copying the template now would undo them. Operators who want a fresh
-# config can delete bundleConfig manually before rebuilding.
-if (-not (Test-Path -LiteralPath $bundleConfig)) {
+# Dev builds seed the config from the template only on first install. Installer
+# builds always reset to the template so local/private server targets can never
+# leak into config.default.toml or a fresh user install.
+if (-not $SkipInstaller) {
+    Copy-Item -Path (Join-Path $projectDir 'config.example.toml') -Destination $bundleConfig -Force
+    Write-Host '  -> installed release-safe config.toml from config.example.toml.'
+} elseif (-not (Test-Path -LiteralPath $bundleConfig)) {
     Copy-Item -Path (Join-Path $projectDir 'config.example.toml') -Destination $bundleConfig -Force
     Write-Host '  -> installed config.toml from config.example.toml (first run).'
 } else {
     Write-Host "  -> preserving existing config.toml (delete $bundleConfig before rebuilding to reset)."
 }
 Invoke-Step -Description 'Bundling local whisper runtime...' -FilePath $powershellExe -ArgumentList @('-ExecutionPolicy', 'Bypass', '-File', $prepareWhisperRuntimeScript, '-BundleDir', $bundleDir, '-CacheDir', $cacheDir)
+# Build-time gate: the NSIS/MSI installer scripts assume the bundled starter
+# model is present in <bundleDir>/models/ggml-small.bin. If prepare-whisper-runtime
+# silently skipped the copy (older script, partial cache, modified hash table) the
+# packaged installer would ship without the model and Setup-Wizard's
+# /app/complete-setup would 409 on every first-launch.
+# Keep this assertion in lockstep with $starterModelSha256 in
+# scripts/prepare-whisper-runtime.ps1.
+$starterModelStagedPath = Join-Path $bundleDir 'models\ggml-small.bin'
+$starterModelExpectedSha256 = '1be3a9b2063867b937e64e2ec7483364a79917e157fa98c5d94b5c1fffea987b'
+Assert-Sha256Hash -Path $starterModelStagedPath -Expected $starterModelExpectedSha256 -Description 'Bundled starter Whisper model'
+Write-Host "  -> verified staged starter model at $starterModelStagedPath"
 Invoke-Step -Description 'Bundling local llama.cpp runtime...' -FilePath $powershellExe -ArgumentList @('-ExecutionPolicy', 'Bypass', '-File', $prepareLlamaRuntimeScript, '-BundleDir', $bundleDir, '-CacheDir', $cacheDir)
 Invoke-Step -Description 'Bundling ONNX Runtime (VAD)...' -FilePath $powershellExe -ArgumentList @('-ExecutionPolicy', 'Bypass', '-File', $prepareOnnxRuntimeScript, '-BundleDir', $bundleDir, '-CacheDir', $cacheDir)
 Invoke-Step -Description 'Bundling sherpa-onnx runtime (wake-word)...' -FilePath $powershellExe -ArgumentList @('-ExecutionPolicy', 'Bypass', '-File', $prepareSherpaRuntimeScript, '-BundleDir', $bundleDir, '-CacheDir', $cacheDir)
 Invoke-Step -Description 'Bundling wake-word KWS model...' -FilePath $powershellExe -ArgumentList @('-ExecutionPolicy', 'Bypass', '-File', $prepareWakewordModelScript, '-BundleDir', $bundleDir, '-CacheDir', $cacheDir)
 Invoke-Step -Description 'Bundling WebView2 bootstrapper...' -FilePath $powershellExe -ArgumentList @('-ExecutionPolicy', 'Bypass', '-File', $prepareWebView2RuntimeScript, '-BundleDir', $bundleDir, '-CacheDir', $cacheDir)
+
+# Build-time gate: every artifact the NSIS+WiX installer scripts reference
+# must exist in $bundleDir BEFORE we pack. The wake-word sidecar binary and
+# its KWS model bundle had been silently absent from both installers, which
+# caused "wake-word sidecar asset missing" warnings on every fresh install
+# even though the Go build had produced the sidecar.
+$requiredBundleArtifacts = @(
+    'speechkit-wakeword.exe',
+    'wakeword-kws\keywords.txt',
+    'wakeword-kws\tokens.txt',
+    'wakeword-kws\encoder-epoch-12-avg-2-chunk-16-left-64.onnx',
+    'wakeword-kws\decoder-epoch-12-avg-2-chunk-16-left-64.onnx',
+    'wakeword-kws\joiner-epoch-12-avg-2-chunk-16-left-64.onnx',
+    'onnxruntime.dll',
+    'sherpa-onnx-c-api.dll',
+    'sherpa-onnx-cxx-api.dll',
+    'whisper-server.exe',
+    'whisper.dll',
+    'ggml.dll'
+)
+foreach ($relPath in $requiredBundleArtifacts) {
+    Assert-PathExists -Path (Join-Path $bundleDir $relPath) -Description "Bundle artifact $relPath"
+}
+Write-Host "  -> verified $($requiredBundleArtifacts.Count) required bundle artifacts present"
 
 if ($SkipInstaller) {
     Write-Host 'Skipping installer build (SkipInstaller specified).'

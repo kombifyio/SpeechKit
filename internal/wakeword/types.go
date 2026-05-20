@@ -106,6 +106,14 @@ type Config struct {
 	// for the same keyword. Prevents the same utterance triggering twice
 	// and gives the downstream mode time to spin up before another fire.
 	Cooldown time.Duration
+
+	// AutoEnd steuert das automatische Beenden von Sessions die durch
+	// dieses Wake-Word getriggert wurden. Provider-agnostisch — gilt fuer
+	// Gemini Live, OpenAI Realtime und Local-Cascaded gleichermassen. Wenn
+	// der Zero-Value verwendet wird (SilenceCutoff=0 + len(ExitPhrases)=0),
+	// faellt die Pipeline auf DefaultAutoEndConfig zurueck. Siehe
+	// AutoEndPolicy + DefaultAutoEndConfig fuer die Framework-Baseline.
+	AutoEnd AutoEndConfig
 }
 
 // DetectionEvent is emitted when a keyword fires.

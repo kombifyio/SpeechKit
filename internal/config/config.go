@@ -23,9 +23,16 @@ const (
 
 	DefaultLocalLLMBaseURL = "http://127.0.0.1:8082/v1"
 	DefaultLocalLLMModel   = "ggml-org/gemma-4-E4B-it-GGUF:Q4_K_M"
-	DefaultLocalSTTModel   = "ggml-large-v3-turbo.bin"
-	ManagedDevServerURL    = "https://speechkit.kombify.io"
-	ManagedLiveKitURL      = "wss://livekit.kombify.io"
+	DefaultLocalSTTModel   = "ggml-small.bin"
+	DefaultLocalSTTPort    = 9000
+
+	// ManagedDevServerURL and ManagedLiveKitURL are referenced by the
+	// pre-rewrite internal/config/credentials.go ServerConnection
+	// onboarding path. They are scheduled for removal together with that
+	// path's in-flight rewrite; do not remove them in isolation or
+	// CI will fail with "undefined: ManagedDevServerURL".
+	ManagedDevServerURL = "https://speechkit.kombify.io"
+	ManagedLiveKitURL   = "wss://livekit.kombify.io"
 
 	DefaultDictatePrimaryProfileID    = "stt.local.whispercpp"
 	DefaultAssistPrimaryProfileID     = "assist.builtin.gemma4-e4b"
@@ -158,6 +165,34 @@ type WakewordConfig struct {
 	// CooldownMs is the minimum gap between two triggers, in milliseconds.
 	// Defaults to 1500ms.
 	CooldownMs int `toml:"cooldown_ms"`
+
+	// AutoEnd controls the framework-level auto-end policy applied to any
+	// session that the wake-word triggered. Wake-word-origin Voice-Agent
+	// activations terminate automatically on silence after this many
+	// seconds, or when the user utters one of the configured exit
+	// phrases. Empty values fall back to wakeword.DefaultAutoEndConfig
+	// (10s silence + DE/EN exit phrases) so a TOML without an [auto_end]
+	// block still gets the framework baseline. There is intentionally no
+	// hard-cap on session duration — Voice-Agent is designed for
+	// multi-hour dialogs and a forced cap would break regular use.
+	AutoEnd WakewordAutoEndConfig `toml:"auto_end"`
+}
+
+// WakewordAutoEndConfig is the TOML surface of wakeword.AutoEndConfig.
+// SilenceCutoffSec maps to wakeword.AutoEndConfig.SilenceCutoff;
+// ExitPhrases is passed through verbatim. The framework defaults are
+// applied in wakeword.NewAutoEndPolicy when both fields are zero.
+type WakewordAutoEndConfig struct {
+	// SilenceCutoffSec is the duration without user audio activity (in
+	// whole seconds) after which a wake-word-triggered session ends.
+	// Zero falls back to the framework default (10s).
+	SilenceCutoffSec int `toml:"silence_cutoff_sec"`
+
+	// ExitPhrases is the case-insensitive substring list checked against
+	// each user-transcript snippet. Empty falls back to the framework
+	// default (DE+EN common closers: "danke", "tschuess", "ende", "stop",
+	// "thanks", "bye", "goodbye", ...).
+	ExitPhrases []string `toml:"exit_phrases"`
 }
 
 // ServerConfig configures the standalone Linux server binary. Used only by
@@ -526,17 +561,42 @@ type UpdateConfig struct {
 	SignaturePinThumbprint string `toml:"signature_pin_thumbprint"` // optional Authenticode SHA-1 thumbprint; if set, installer signature verification additionally checks cert thumbprint matches (defense against compromised signing cert)
 }
 
-// LoggingConfig controls runtime log file rotation. The defaults are tuned
-// for enterprise audit retention; the 5 MB / 3 file historical values were
-// insufficient and have been replaced.
+// LoggingConfig controls the general application log — the stream that
+// surfaces transcription events, mode switches, wake-word triggers and is
+// visible in the dashboard's "Logs" tab when enabled. This is one of two
+// independent log surfaces in SpeechKit; the other is AuditConfig (the
+// SOC2/ISO27001 compliance trail). Both default to OFF so a privacy-first
+// install writes nothing to disk until the operator explicitly opts in.
+//
+// Level options: "debug" | "info" | "warn" | "error" | "off". The
+// SPEECHKIT_LOG_LEVEL environment variable overrides this field at startup
+// — the recommended path for support engineers who need a one-session
+// debug toggle without touching config.toml. When Level="off" the
+// fanoutWriter short-circuits to a no-op before any I/O syscall, so even
+// extremely chatty hot paths (overlay sync loop, audio status pumps) carry
+// zero log overhead.
+//
+// MaxFileSizeMB and MaxFiles apply only when Level != "off". They are
+// preserved at enterprise-friendly defaults (50 MB / 30 files) for the
+// case where an operator opts logging in.
 type LoggingConfig struct {
-	MaxFileSizeMB int `toml:"max_file_size_mb"`
-	MaxFiles      int `toml:"max_files"`
+	MaxFileSizeMB int    `toml:"max_file_size_mb"`
+	MaxFiles      int    `toml:"max_files"`
+	Level         string `toml:"level"` // "debug" | "info" | "warn" | "error" | "off"
 }
 
 // AuditConfig controls the dedicated audit-log stream introduced in Phase 0.
-// Enabled defaults to true: the audit log is the customer's source of truth
-// for SOC2 / ISO27001 evidence and must not be silently disabled.
+// This is the structured compliance trail (SOC2 / ISO27001 evidence) — no
+// transcript content, only event metadata (when, who, which model, success
+// vs failure). It is one of two independent log surfaces in SpeechKit; the
+// other is LoggingConfig (the general application log).
+//
+// As of 2026-05-19 Enabled defaults to FALSE — opt-in. The earlier
+// "default-true so we have evidence" stance was overridden by the privacy
+// principle: a user with no compliance obligations should not produce
+// audit artefacts on disk by default. Enterprises that need the audit
+// trail flip Enabled=true in Settings → Compliance (or via config.toml)
+// and configure RetentionDays plus the OTLP exporter.
 type AuditConfig struct {
 	Enabled         bool   `toml:"enabled"`
 	RetentionDays   int    `toml:"retention_days"`

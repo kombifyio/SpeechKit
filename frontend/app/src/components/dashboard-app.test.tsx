@@ -111,6 +111,16 @@ describe("DashboardApp", () => {
   let fetchSpy: ReturnType<typeof vi.spyOn> | undefined;
   let storageMock: Storage;
 
+  async function skipWakeWordAndApplyDefaultVoiceAgentProfile() {
+    fireEvent.click(await screen.findByRole("button", { name: /^skip$/i }));
+    fireEvent.click(
+      (await screen.findByText("On-Prem (Local Cascaded)")).closest("button")!,
+    );
+    fireEvent.click(
+      await screen.findByRole("button", { name: /apply on-prem/i }),
+    );
+  }
+
   beforeEach(() => {
     storageMock = createMockStorage();
     Object.defineProperty(window, "localStorage", {
@@ -889,10 +899,7 @@ describe("DashboardApp", () => {
 
     fireEvent.click(screen.getByRole("button", { name: /^continue$/i }));
 
-    // Wake-word step (inserted between integrations and the completion screen
-    // by task #20): click "Skip" to leave wake-word disabled and reach the
-    // final "Start Using SpeechKit" screen the assertions below rely on.
-    fireEvent.click(await screen.findByRole("button", { name: /^skip$/i }));
+    await skipWakeWordAndApplyDefaultVoiceAgentProfile();
 
     expect(await screen.findByText("Ctrl+Win")).toBeInTheDocument();
     expect(
@@ -924,6 +931,159 @@ describe("DashboardApp", () => {
     expect(body.get("assist_hotkey")).toBe("win+alt");
     expect(body.get("voice_agent_hotkey")).toBe("ctrl+shift");
     expect(body.get("voice_primary_profile_id")).toBe("realtime.builtin.pipeline");
+  });
+
+  it("renders the 409 reason from /app/complete-setup and offers Back to local model", async () => {
+    const conflictMessage =
+      "Local setup cannot be completed because the bundled speech model is not ready.";
+    fetchSpy?.mockImplementation(async (input: RequestInfo | URL) => {
+      const url =
+        typeof input === "string"
+          ? input
+          : input instanceof URL
+            ? input.toString()
+            : (input as Request).url;
+      if (url === "/app/setup-status") {
+        return new Response(JSON.stringify({ setupDone: false }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+      if (url === "/app/version") {
+        return new Response(JSON.stringify({ version: "0.18.0" }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+      if (url === "/settings/update") {
+        return new Response(JSON.stringify({ message: "Saved" }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+      if (url === "/app/complete-setup") {
+        return new Response(conflictMessage, {
+          status: 409,
+          headers: { "Content-Type": "text/plain" },
+        });
+      }
+      return new Response("{}", {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    });
+
+    render(<DashboardApp />);
+
+    fireEvent.click(
+      await screen.findByRole("button", { name: /get started/i }),
+    );
+    fireEvent.click(await screen.findByRole("button", { name: /^continue$/i }));
+    fireEvent.click(await screen.findByRole("button", { name: /^continue$/i }));
+    await skipWakeWordAndApplyDefaultVoiceAgentProfile();
+
+    fireEvent.click(
+      await screen.findByRole("button", { name: /start using speechkit/i }),
+    );
+
+    const banner = await screen.findByTestId("setup-completion-error");
+    expect(within(banner).getByText(/setup couldn't finish/i)).toBeInTheDocument();
+    expect(within(banner).getByText(conflictMessage)).toBeInTheDocument();
+
+    expect(
+      await screen.findByRole("button", { name: /try again/i }),
+    ).toBeInTheDocument();
+
+    fireEvent.click(
+      within(banner).getByRole("button", { name: /back to local model/i }),
+    );
+
+    expect(
+      await screen.findByText(/local dictation setup/i),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByTestId("setup-completion-error"),
+    ).not.toBeInTheDocument();
+  });
+
+  it("offers a self-heal Download starter model action when the 409 mentions the bundled speech model", async () => {
+    const conflictMessage =
+      "Local setup cannot be completed because the bundled speech model is not ready.";
+    fetchDownloadCatalogMock.mockResolvedValue([
+      {
+        id: "whisper.ggml-small",
+        name: "Whisper Small",
+        description: "Bundled starter model",
+        profileId: "stt.local.whispercpp",
+        url: "https://example.com/ggml-small.bin",
+        sizeLabel: "466 MB",
+        license: "MIT",
+        available: false,
+        selected: false,
+        recommended: false,
+      },
+    ]);
+    fetchSpy?.mockImplementation(async (input: RequestInfo | URL) => {
+      const url =
+        typeof input === "string"
+          ? input
+          : input instanceof URL
+            ? input.toString()
+            : (input as Request).url;
+      if (url === "/app/setup-status") {
+        return new Response(JSON.stringify({ setupDone: false }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+      if (url === "/app/version") {
+        return new Response(JSON.stringify({ version: "0.18.0" }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+      if (url === "/settings/update") {
+        return new Response(JSON.stringify({ message: "Saved" }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+      if (url === "/app/complete-setup") {
+        return new Response(conflictMessage, {
+          status: 409,
+          headers: { "Content-Type": "text/plain" },
+        });
+      }
+      return new Response("{}", {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    });
+
+    render(<DashboardApp />);
+
+    fireEvent.click(
+      await screen.findByRole("button", { name: /get started/i }),
+    );
+    fireEvent.click(await screen.findByRole("button", { name: /^continue$/i }));
+    fireEvent.click(await screen.findByRole("button", { name: /^continue$/i }));
+    await skipWakeWordAndApplyDefaultVoiceAgentProfile();
+
+    fireEvent.click(
+      await screen.findByRole("button", { name: /start using speechkit/i }),
+    );
+
+    const banner = await screen.findByTestId("setup-completion-error");
+    expect(within(banner).getByText(conflictMessage)).toBeInTheDocument();
+
+    const downloadButton = within(banner).getByRole("button", {
+      name: /download starter model/i,
+    });
+    fireEvent.click(downloadButton);
+
+    await waitFor(() =>
+      expect(startModelDownloadMock).toHaveBeenCalledWith("whisper.ggml-small"),
+    );
   });
 
   it("activates multiple onboarding integrations and saves entered tokens", async () => {
@@ -992,9 +1152,7 @@ describe("DashboardApp", () => {
     );
 
     fireEvent.click(screen.getByRole("button", { name: /^continue$/i }));
-    // Wake-word step (task #20) sits between integrations and the completion
-    // screen — Skip to keep wake-word off and proceed.
-    fireEvent.click(await screen.findByRole("button", { name: /^skip$/i }));
+    await skipWakeWordAndApplyDefaultVoiceAgentProfile();
     fireEvent.click(
       await screen.findByRole("button", { name: /start using speechkit/i }),
     );
@@ -1086,8 +1244,7 @@ describe("DashboardApp", () => {
     );
     fireEvent.click(await screen.findByRole("button", { name: /^continue/i }));
     fireEvent.click(await screen.findByRole("button", { name: /^continue$/i }));
-    // Wake-word step (task #20): Skip to advance to the completion screen.
-    fireEvent.click(await screen.findByRole("button", { name: /^skip$/i }));
+    await skipWakeWordAndApplyDefaultVoiceAgentProfile();
     fireEvent.click(
       await screen.findByRole("button", { name: /start using speechkit/i }),
     );

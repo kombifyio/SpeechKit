@@ -37,9 +37,9 @@ design = "default"        # default or kombify
 
 [local]
 enabled = true
-model = "ggml-large-v3-turbo.bin"
+model = "ggml-small.bin"
 model_path = ""           # Auto: ./models/ first, then %LOCALAPPDATA%/SpeechKit/models/
-port = 8080               # whisper-server port
+port = 9000               # whisper-server port
 gpu = "auto"              # auto, cuda, vulkan, cpu
 
 [local_llm]
@@ -71,6 +71,34 @@ strategy = "local-only"   # dynamic, local-only, cloud-only
 prefer_local_under_seconds = 10
 parallel_cloud = false    # Start cloud parallel to local
 replace_on_better = false # Silently replace with better result
+
+[logging]
+# General application log (transcription events, mode switches, wake-word
+# triggers). Shown live in the dashboard's "Logs" tab when enabled.
+# Default "off" — privacy-first. Turn on to "info" or "debug" if you want
+# to see what SpeechKit is doing.
+#
+# The 900ms desktop overlay sync loop emits a few log lines per tick; at
+# "debug" the file fills with ~10k entries/hour and burns CPU on slower
+# machines. "info" is the recommended setting for live troubleshooting.
+# "off" short-circuits the writer before any I/O syscall.
+#
+# SPEECHKIT_LOG_LEVEL overrides this field at startup — useful for
+# one-session debug toggles without editing config.toml.
+level = "off"                # debug | info | warn | error | off
+max_file_size_mb = 50         # rotate when speechkit.log grows past this
+max_files = 30                # keep at most N rotated logs (older are pruned)
+
+[audit]
+# Structured compliance trail (SOC2 / ISO27001 evidence). No transcript
+# content — only event metadata (timestamp, mode, model, outcome).
+# Independent from [logging]. Default false — opt-in. Enable this only if
+# your deployment has a compliance obligation; otherwise leave off so
+# nothing is written to disk by default.
+enabled = false
+retention_days = 90           # 0 disables automatic pruning
+event_log_enabled = false      # mirror to Windows Event Log
+# otlp_endpoint = "..."        # OTLP exporter target; blank disables OTLP
 
 [feedback]
 save_audio = true         # Legacy compat only; [store] is the preferred config surface

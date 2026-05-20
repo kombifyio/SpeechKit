@@ -320,7 +320,20 @@ func handleSidecarEvent(ev sidecarEvent, state *appState, hkManager *modeHotkeyM
 		}
 		slog.Info("wakeword: detection", "keyword", ev.Keyword, "phrase", ev.Phrase, "mode", mode)
 		state.addLog(fmt.Sprintf("Wake-word fired: \"%s\" → %s", ev.Phrase, mode), "info")
-		hkManager.Submit(hotkey.Event{Type: hotkey.EventKeyDown, Binding: mode})
+
+		// Build a per-detection AutoEndPolicy from the live wake-word
+		// config and park it in the appState slot so routeVoiceAgentHotkey
+		// can claim it when the synthesized KeyDown arrives. We do this
+		// BEFORE submitting the event so the input-controller cannot race
+		// us and look for the policy in an empty slot.
+		policy := wakeword.NewAutoEndPolicy(autoEndConfigFromTOML(resolved.AutoEnd), slog.Default())
+		state.setWakewordSessionPolicy(policy)
+
+		hkManager.Submit(hotkey.Event{
+			Type:    hotkey.EventKeyDown,
+			Binding: mode,
+			Source:  hotkey.EventSourceWakeword,
+		})
 	case "heartbeat":
 		slog.Info("wakeword: heartbeat",
 			"bytes_in_30s", ev.BytesIn,
@@ -386,13 +399,21 @@ func wakewordConfigEquals(a, b config.WakewordConfig) bool {
 		a.CooldownMs == b.CooldownMs
 }
 
-// resolvedWakewordAssets bundles every on-disk input the sidecar needs.
+// resolvedWakewordAssets bundles every on-disk input the sidecar needs,
+// plus the resolved auto-end config the desktop adapter uses when wiring
+// session auto-end on a detection.
 type resolvedWakewordAssets struct {
 	SidecarPath   string
 	ModelDir      string
 	KeywordsFile  string
 	DefaultMode   string
 	DisplayPhrase string
+
+	// AutoEnd is a copy of cfg.Wakeword.AutoEnd captured at sidecar-launch
+	// time. Held here so handleSidecarEvent can build a fresh policy per
+	// detection without re-reading the live config (which may have been
+	// edited concurrently in the settings UI).
+	AutoEnd config.WakewordAutoEndConfig
 }
 
 func resolveWakeword(cfg *config.Config) (resolvedWakewordAssets, error) {
@@ -423,6 +444,7 @@ func resolveWakeword(cfg *config.Config) (resolvedWakewordAssets, error) {
 	}
 
 	out.DefaultMode = config.NormalizeWakewordDefaultMode(cfg.Wakeword.DefaultMode)
+	out.AutoEnd = cfg.Wakeword.AutoEnd
 	out.DisplayPhrase = strings.TrimSpace(cfg.Wakeword.Phrase)
 	if id := strings.TrimSpace(cfg.Wakeword.PhraseID); id != "" {
 		if entry := wakeword.LookupPhrase(id); entry != nil && out.DisplayPhrase == "" {
@@ -450,4 +472,21 @@ func maxInt(a, b int) int {
 		return a
 	}
 	return b
+}
+
+// autoEndConfigFromTOML converts the TOML surface (whole seconds + raw
+// phrase slice) into the kernel's AutoEndConfig (time.Duration). A
+// zero-value input is returned as-is — wakeword.NewAutoEndPolicy then
+// substitutes DefaultAutoEndConfig so a fresh install gets the framework
+// baseline without the client adapter needing to know what the baseline
+// numbers are.
+func autoEndConfigFromTOML(in config.WakewordAutoEndConfig) wakeword.AutoEndConfig {
+	out := wakeword.AutoEndConfig{}
+	if in.SilenceCutoffSec > 0 {
+		out.SilenceCutoff = time.Duration(in.SilenceCutoffSec) * time.Second
+	}
+	if len(in.ExitPhrases) > 0 {
+		out.ExitPhrases = append([]string(nil), in.ExitPhrases...)
+	}
+	return out
 }

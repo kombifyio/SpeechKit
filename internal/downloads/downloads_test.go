@@ -240,28 +240,62 @@ func TestCatalogExposesWhisperCppTurboAsRecommendedChoice(t *testing.T) {
 	}
 }
 
-func TestCatalogMarksPendingLocalInstallTurboAsSelected(t *testing.T) {
+func TestCatalogMarksPendingLocalInstallStarterModelAsSelected(t *testing.T) {
 	cfg := &config.Config{}
 	config.ApplyLocalInstallDefaults(cfg, &config.InstallState{Mode: config.InstallModeLocal})
 
 	items := CatalogWithStatus(t.Context(), cfg, StatusOptions{})
 
-	var smallSelected, turboSelected bool
+	var starterSelected, turboSelected bool
 	for _, item := range items {
 		switch item.ID {
 		case "whisper.ggml-small":
-			smallSelected = item.Selected
+			starterSelected = item.Selected
 		case "whisper.ggml-large-v3-turbo":
 			turboSelected = item.Selected
 		}
 	}
 
-	if smallSelected {
-		t.Fatal("whisper small should not be selected for a pending local install")
+	if !starterSelected {
+		t.Fatal("whisper small should be selected for a pending local install")
 	}
-	if !turboSelected {
-		t.Fatal("whisper turbo should be selected for a pending local install")
+	if turboSelected {
+		t.Fatal("whisper turbo should not be selected for a pending local install")
 	}
+}
+
+func TestCatalogMarksBundledStarterWhisperModelAvailable(t *testing.T) {
+	exe, err := os.Executable()
+	if err != nil {
+		t.Fatalf("os.Executable: %v", err)
+	}
+	modelPath := filepath.Join(filepath.Dir(exe), "models", config.DefaultLocalSTTModel)
+	if err := os.MkdirAll(filepath.Dir(modelPath), 0o755); err != nil {
+		t.Fatalf("mkdir bundled models dir: %v", err)
+	}
+	if err := os.WriteFile(modelPath, []byte("bundled starter model"), 0o644); err != nil {
+		t.Fatalf("write bundled starter model: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = os.Remove(modelPath)
+	})
+
+	cfg := &config.Config{}
+	config.ApplyLocalInstallDefaults(cfg, &config.InstallState{Mode: config.InstallModeLocal})
+
+	items := CatalogWithStatus(t.Context(), cfg, StatusOptions{})
+	for _, item := range items {
+		if item.ProfileID == "stt.local.whispercpp" && filepath.Base(item.URL) == config.DefaultLocalSTTModel {
+			if !item.Available {
+				t.Fatal("bundled starter model should be reported available")
+			}
+			if !item.Selected {
+				t.Fatal("bundled starter model should be selected for local install defaults")
+			}
+			return
+		}
+	}
+	t.Fatalf("catalog missing default local STT model %q", config.DefaultLocalSTTModel)
 }
 
 func TestCatalogExposesOllamaItemsForAllUserModes(t *testing.T) {

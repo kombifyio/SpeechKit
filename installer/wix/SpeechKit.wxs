@@ -123,6 +123,77 @@
                   NeverOverwrite="yes" />
           </Component>
 
+          <!-- Bundled local starter speech model for out-of-box dictation. -->
+          <Directory Id="MODELSDIR" Name="models">
+            <Component Id="StarterWhisperModel" Guid="*">
+              <File Id="ggml_small_bin"
+                    Source="..\..\dist\windows\SpeechKit\models\ggml-small.bin"
+                    KeyPath="yes" />
+            </Component>
+          </Directory>
+
+          <!--
+            Wake-word sidecar binary. The desktop adapter spawns this
+            executable when wake-word is toggled on in Settings. Without
+            this Component the Settings toggle silently no-ops and the
+            log fills with "wake-word sidecar asset missing" warnings.
+          -->
+          <Component Id="WakewordSidecarExe" Guid="*">
+            <File Id="speechkit_wakeword_exe"
+                  Source="..\..\dist\windows\SpeechKit\speechkit-wakeword.exe"
+                  KeyPath="yes" />
+          </Component>
+
+          <!--
+            Wake-word KWS model bundle (sherpa-onnx Zipformer). Five files,
+            listed explicitly so the MSI schema stays auditable without
+            running heat over the wakeword-kws/ subtree.
+          -->
+          <Directory Id="WAKEWORDKWSDIR" Name="wakeword-kws">
+            <Component Id="WakewordKwsEncoder" Guid="*">
+              <File Id="wakeword_kws_encoder_onnx"
+                    Source="..\..\dist\windows\SpeechKit\wakeword-kws\encoder-epoch-12-avg-2-chunk-16-left-64.onnx"
+                    KeyPath="yes" />
+            </Component>
+            <Component Id="WakewordKwsDecoder" Guid="*">
+              <File Id="wakeword_kws_decoder_onnx"
+                    Source="..\..\dist\windows\SpeechKit\wakeword-kws\decoder-epoch-12-avg-2-chunk-16-left-64.onnx"
+                    KeyPath="yes" />
+            </Component>
+            <Component Id="WakewordKwsJoiner" Guid="*">
+              <File Id="wakeword_kws_joiner_onnx"
+                    Source="..\..\dist\windows\SpeechKit\wakeword-kws\joiner-epoch-12-avg-2-chunk-16-left-64.onnx"
+                    KeyPath="yes" />
+            </Component>
+            <Component Id="WakewordKwsKeywords" Guid="*">
+              <File Id="wakeword_kws_keywords_txt"
+                    Source="..\..\dist\windows\SpeechKit\wakeword-kws\keywords.txt"
+                    KeyPath="yes" />
+            </Component>
+            <Component Id="WakewordKwsTokens" Guid="*">
+              <File Id="wakeword_kws_tokens_txt"
+                    Source="..\..\dist\windows\SpeechKit\wakeword-kws\tokens.txt"
+                    KeyPath="yes" />
+            </Component>
+          </Directory>
+
+          <!-- Sherpa-onnx + ONNX Runtime native libs needed by the wake-word sidecar. -->
+          <Component Id="OnnxRuntimeDll" Guid="*">
+            <File Id="onnxruntime_dll"
+                  Source="..\..\dist\windows\SpeechKit\onnxruntime.dll"
+                  KeyPath="yes" />
+          </Component>
+          <Component Id="SherpaOnnxCApiDll" Guid="*">
+            <File Id="sherpa_onnx_c_api_dll"
+                  Source="..\..\dist\windows\SpeechKit\sherpa-onnx-c-api.dll"
+                  KeyPath="yes" />
+          </Component>
+          <Component Id="SherpaOnnxCxxApiDll" Guid="*">
+            <File Id="sherpa_onnx_cxx_api_dll"
+                  Source="..\..\dist\windows\SpeechKit\sherpa-onnx-cxx-api.dll"
+                  KeyPath="yes" />
+          </Component>
+
           <!-- llama/ subtree is in the LlamaComponents group from heat fragment -->
           <Directory Id="LLAMADIR" Name="llama" />
 
@@ -182,6 +253,16 @@
       <ComponentRef Id="WebView2Setup" />
       <ComponentRef Id="ConfigDefaultToml" />
       <ComponentRef Id="ConfigToml" />
+      <ComponentRef Id="StarterWhisperModel" />
+      <ComponentRef Id="WakewordSidecarExe" />
+      <ComponentRef Id="WakewordKwsEncoder" />
+      <ComponentRef Id="WakewordKwsDecoder" />
+      <ComponentRef Id="WakewordKwsJoiner" />
+      <ComponentRef Id="WakewordKwsKeywords" />
+      <ComponentRef Id="WakewordKwsTokens" />
+      <ComponentRef Id="OnnxRuntimeDll" />
+      <ComponentRef Id="SherpaOnnxCApiDll" />
+      <ComponentRef Id="SherpaOnnxCxxApiDll" />
       <ComponentRef Id="StartMenuShortcut" />
       <ComponentGroupRef Id="LlamaComponents" />
     </Feature>

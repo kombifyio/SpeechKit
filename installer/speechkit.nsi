@@ -10,7 +10,7 @@ RequestExecutionLevel user
 
 ; VERSION can be overridden at compile time: makensis /DVERSION=x.y.z
 !ifndef VERSION
-  !define VERSION "0.35.7"
+  !define VERSION "0.35.8"
 !endif
 
 ; --- Interface ---
@@ -36,8 +36,19 @@ Section "SpeechKit" SecMain
   ; Main binary
   File "${STAGE_DIR}\SpeechKit.exe"
   File "${STAGE_DIR}\whisper-server.exe"
+  File "${STAGE_DIR}\speechkit-wakeword.exe"
   File "${STAGE_DIR}\*.dll"
   File "${STAGE_DIR}\MicrosoftEdgeWebview2Setup.exe"
+
+  ; Bundled starter Whisper model (ggml-small.bin + tiny). Without this
+  ; the first-launch /app/complete-setup gate returns 409 (no local
+  ; speech model configured) and onboarding stalls until the user
+  ; downloads a model. The build script verifies the SHA256 of
+  ; ggml-small.bin before packaging — see scripts/build.ps1 and
+  ; scripts/prepare-whisper-runtime.ps1.
+  SetOutPath "$INSTDIR\models"
+  File /r "${STAGE_DIR}\models\*"
+  SetOutPath "$INSTDIR"
 
   ; Local LLM runtime (llama-server.exe + its private DLLs). Without
   ; this, the bundled SpeechKit cannot run the local LLM path and
@@ -45,6 +56,14 @@ Section "SpeechKit" SecMain
   ; The /r switch recurses into the llama/ subdirectory.
   SetOutPath "$INSTDIR\llama"
   File /r "${STAGE_DIR}\llama\*"
+  SetOutPath "$INSTDIR"
+
+  ; Wake-word KWS model bundle (sherpa-onnx Zipformer encoder/decoder/
+  ; joiner ONNX + keywords + tokens). The sidecar binary
+  ; speechkit-wakeword.exe (staged with the main binaries above) loads
+  ; these from $INSTDIR\wakeword-kws relative to its own executable.
+  SetOutPath "$INSTDIR\wakeword-kws"
+  File /r "${STAGE_DIR}\wakeword-kws\*"
   SetOutPath "$INSTDIR"
 
   ; Runtime config template
@@ -85,6 +104,7 @@ Section "Uninstall"
   ; Remove files
   Delete "$INSTDIR\SpeechKit.exe"
   Delete "$INSTDIR\whisper-server.exe"
+  Delete "$INSTDIR\speechkit-wakeword.exe"
   Delete "$INSTDIR\*.dll"
   Delete "$INSTDIR\MicrosoftEdgeWebview2Setup.exe"
   Delete "$INSTDIR\config.toml"
@@ -92,6 +112,7 @@ Section "Uninstall"
   Delete "$INSTDIR\uninstall.exe"
   RMDir /r "$INSTDIR\models"
   RMDir /r "$INSTDIR\llama"
+  RMDir /r "$INSTDIR\wakeword-kws"
 
   ; Remove shortcuts
   Delete "$SMPROGRAMS\kombify SpeechKit\SpeechKit.lnk"

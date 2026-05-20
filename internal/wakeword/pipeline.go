@@ -98,21 +98,28 @@ func (p *Pipeline) FeedPCM(pcm []byte) (decodes int, peakProb float32, err error
 		res := p.detector.spotter.GetResult(p.stream)
 		decodes++
 		if res.Keyword == "" {
+			if len(p.consecutiveHits) > 0 {
+				p.consecutiveHits = make(map[string]int)
+			}
 			continue
 		}
 		keyword := strings.TrimSpace(res.Keyword)
-		p.detector.spotter.Reset(p.stream)
+		for kw := range p.consecutiveHits {
+			if kw != keyword {
+				delete(p.consecutiveHits, kw)
+			}
+		}
 		p.consecutiveHits[keyword]++
 		if p.consecutiveHits[keyword] < p.cfg.MinConsecutiveFrames {
 			continue
 		}
+		p.detector.spotter.Reset(p.stream)
+		p.consecutiveHits[keyword] = 0
 		now := p.now()
 		if last, ok := p.lastTrigger[keyword]; ok && now.Sub(last) < p.cfg.Cooldown {
-			p.consecutiveHits[keyword] = 0
 			continue
 		}
 		p.lastTrigger[keyword] = now
-		p.consecutiveHits[keyword] = 0
 		event := DetectionEvent{
 			Phrase:      p.displayPhrase(keyword),
 			Keyword:     keyword,
@@ -166,9 +173,12 @@ func (p *Pipeline) Config() Config {
 }
 
 func normalizeConfig(cfg Config) Config {
-	if cfg.MinConsecutiveFrames <= 0 {
-		cfg.MinConsecutiveFrames = defaultMinConsecutiveFrames
-	}
+	// For sherpa-onnx, MinConsecutiveFrames is forced to 1.
+	// Transducer KWS models emit discrete, complete keyword spotting events;
+	// counting consecutive frames at the Go layer is conceptually incorrect for this backend
+	// and breaks detection under default settings.
+	cfg.MinConsecutiveFrames = 1
+
 	if cfg.Cooldown <= 0 {
 		cfg.Cooldown = defaultCooldown
 	}

@@ -41,8 +41,16 @@ export function DashboardApp() {
           onStartDownload={modelDownloads.startDownload}
           onCancelDownload={modelDownloads.cancelDownload}
           onSelectDownloadedModel={modelDownloads.selectModel}
-          onComplete={(next) => {
-            void fetch("/app/complete-setup", { method: "POST" });
+          onComplete={async (next) => {
+            const response = await fetch("/app/complete-setup", {
+              method: "POST",
+            });
+            if (!response.ok) {
+              const detail = await response.text().catch(() => "");
+              throw new Error(
+                detail.trim() || `Setup completion failed: ${response.status}`,
+              );
+            }
             if (next?.settingsTab) {
               setSettingsTab(next.settingsTab);
             }

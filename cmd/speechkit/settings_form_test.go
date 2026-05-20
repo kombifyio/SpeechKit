@@ -92,6 +92,43 @@ func TestParseSettingsFormDefaults(t *testing.T) {
 	}
 }
 
+// Regression test for the onboarding wizard /settings/update path: handleFinish
+// POSTs hotkeys + audio_device_id + primary_profile_ids only, never overlay_*
+// fields. Before the fix, parseOverlaySettingsForm treated the missing
+// overlay_enabled key as an explicit "0" and flipped cfg.UI.OverlayEnabled
+// from the template default (true) to false on every fresh install, hiding
+// the overlay after onboarding.
+func TestParseSettingsFormPreservesOverlayEnabledWhenFieldOmitted(t *testing.T) {
+	cfg := defaultTestConfig()
+	cfg.UI.OverlayEnabled = true
+	cfg.UI.OverlayPosition = "top"
+
+	// Wizard's handleFinish POST body — overlay_* fields intentionally absent.
+	// Profile IDs trimmed to fields the validator does not require to be in
+	// the real catalog (the regression we care about is purely the overlay
+	// fallback path in parseOverlaySettingsForm).
+	wizardBody := url.Values{
+		"dictate_hotkey":     {"ctrl+win"},
+		"assist_hotkey":      {"win+alt"},
+		"voice_agent_hotkey": {"ctrl+shift"},
+		"audio_device_id":    {"dev-1"},
+	}
+	req, _ := http.NewRequest(http.MethodPost, "/settings/update", strings.NewReader(wizardBody.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.ParseForm()
+
+	form, errMsg := parseSettingsForm(req, cfg)
+	if errMsg != "" {
+		t.Fatalf("unexpected error: %s", errMsg)
+	}
+	if !form.OverlayEnabled {
+		t.Fatal("OverlayEnabled = false after wizard POST; expected true (preserved from cfg)")
+	}
+	if form.OverlayPosition != "top" {
+		t.Fatalf("OverlayPosition = %q, want %q (preserved from cfg)", form.OverlayPosition, "top")
+	}
+}
+
 func TestParseSettingsFormOverrides(t *testing.T) {
 	cfg := defaultTestConfig()
 	cfg.General.DictateHotkey = "win+alt"

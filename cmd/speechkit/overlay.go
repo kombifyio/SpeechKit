@@ -22,6 +22,18 @@ const (
 
 	overlayEdgeMargin = 6
 
+	// Windows clamps frameless top-level windows to a system-enforced
+	// minimum (~132×38 client + ~4px DWM drop-shadow on Win11). Wails
+	// creates the window at the requested Width/Height but the OS
+	// enlarges it, so the geometric centre we compute from metrics.Width
+	// is left of the actual rendered centre. We use these effective
+	// floors when positioning the window so the rendered centre matches
+	// the screen-centre math instead of drifting right (regression
+	// 2026-05-19: pillAnchor 80px requested, 136px rendered, overlay
+	// visually 28px right of centre).
+	minFramelessWindowWidth  = 136
+	minFramelessWindowHeight = 39
+
 	pillBubbleW = 80
 	pillBubbleH = 36
 	// Keep aligned with frontend circle shell (`h-[18px] w-[18px]`) so

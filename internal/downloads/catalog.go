@@ -21,6 +21,8 @@ var OllamaBaseURL = "http://localhost:11434"
 // ollamaValidation permits loopback + http because Ollama runs on localhost.
 var ollamaValidation = netsec.ValidationOptions{AllowLoopback: true, AllowHTTP: true}
 
+var executablePath = os.Executable
+
 // ollamaClient is a shared safe HTTP client with short timeout for catalog checks.
 var ollamaClient = netsec.NewSafeHTTPClient(netsec.ClientOptions{Timeout: 2 * time.Second, DialValidation: &ollamaValidation})
 
@@ -299,7 +301,7 @@ func ApplyStatus(ctx context.Context, cfg *config.Config, items []Item, options 
 			if filename == "" || filename == "." {
 				continue
 			}
-			item.Available = FileIsPresent(filepath.Join(artifactModelDir(*item, cfg), filename))
+			item.Available = modelFileAvailable(*item, cfg)
 			item.Selected = selectedArtifactModel(cfg, item.ProfileID) == filename
 			if options.ProbeRuntimes && item.ProfileID == "stt.local.whispercpp" {
 				if !whisperRuntimeChecked {
@@ -323,6 +325,67 @@ func ApplyStatus(ctx context.Context, cfg *config.Config, items []Item, options 
 		default:
 		}
 	}
+}
+
+func modelFileAvailable(item Item, cfg *config.Config) bool {
+	_, ok := AvailableArtifactModelPath(item, cfg)
+	return ok
+}
+
+// AvailableArtifactModelPath returns the first on-disk file backing a catalog
+// item. For whisper.cpp this includes the bundled starter model in addition to
+// the user-writable download directory.
+func AvailableArtifactModelPath(item Item, cfg *config.Config) (string, bool) {
+	filename := filepath.Base(item.URL)
+	for _, path := range artifactModelPaths(item, cfg, filename) {
+		if FileIsPresent(path) {
+			return path, true
+		}
+	}
+	return "", false
+}
+
+func artifactModelPaths(item Item, cfg *config.Config, filename string) []string {
+	if strings.TrimSpace(filename) == "" || filename == "." {
+		return nil
+	}
+	paths := []string{filepath.Join(artifactModelDir(item, cfg), filename)}
+	if item.ProfileID == "stt.local.whispercpp" {
+		if cfg != nil {
+			if modelPath := strings.TrimSpace(cfg.Local.ModelPath); modelPath != "" && filepath.Base(modelPath) == filename {
+				paths = append(paths, modelPath)
+			}
+		}
+		if bundled := bundledWhisperModelPath(filename); bundled != "" {
+			paths = append(paths, bundled)
+		}
+	}
+	return dedupePaths(paths)
+}
+
+func bundledWhisperModelPath(filename string) string {
+	if strings.TrimSpace(filename) == "" || filename == "." {
+		return ""
+	}
+	exe, err := executablePath()
+	if err != nil || strings.TrimSpace(exe) == "" {
+		return ""
+	}
+	return filepath.Join(filepath.Dir(exe), "models", filename)
+}
+
+func dedupePaths(paths []string) []string {
+	seen := map[string]bool{}
+	out := make([]string, 0, len(paths))
+	for _, path := range paths {
+		clean := filepath.Clean(strings.TrimSpace(path))
+		if clean == "." || seen[clean] {
+			continue
+		}
+		seen[clean] = true
+		out = append(out, clean)
+	}
+	return out
 }
 
 func artifactModelDir(item Item, cfg *config.Config) string {

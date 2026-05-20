@@ -20,6 +20,7 @@ import (
 	"github.com/kombifyio/SpeechKit/internal/textactions"
 	"github.com/kombifyio/SpeechKit/internal/tts"
 	"github.com/kombifyio/SpeechKit/internal/voiceagent"
+	"github.com/kombifyio/SpeechKit/internal/wakeword"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit"
 )
 
@@ -90,6 +91,14 @@ type appState struct {
 	audioSession             audioDeviceReconfigurer
 	wakewordRuntime          *desktopWakeRuntime
 	wakewordStatus           string
+	// wakewordSessionPolicy is the per-detection auto-end watcher. The
+	// wake-word sidecar handler installs one here as soon as a detection
+	// event arrives; the input-controller's routeVoiceAgentHotkey
+	// hand-off claims it via takeWakewordSessionPolicy. Slot capacity is
+	// 1 — a new detection while another policy is pending replaces (and
+	// closes) the previous one, mirroring how a duplicate hotkey press
+	// would supersede an in-flight activation.
+	wakewordSessionPolicy    *wakeword.AutoEndPolicy
 	engine                   *speechkit.Runtime
 	sttRouter                *router.Router
 	genkitRT                 *appai.Runtime

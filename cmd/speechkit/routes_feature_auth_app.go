@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"strings"
@@ -9,6 +10,7 @@ import (
 	"github.com/kombifyio/SpeechKit/internal/auth"
 	"github.com/kombifyio/SpeechKit/internal/config"
 	"github.com/kombifyio/SpeechKit/internal/features"
+	"github.com/kombifyio/SpeechKit/internal/stt"
 )
 
 func registerFeatureRoutes(mux *http.ServeMux, installState *config.InstallState) {
@@ -264,6 +266,10 @@ func registerAppRoutes(mux *http.ServeMux, cfgPath string, cfg *config.Config, s
 			w.WriteHeader(http.StatusMethodNotAllowed)
 			return
 		}
+		if problem := localSetupCompletionProblem(cfg, installState); problem != "" {
+			http.Error(w, problem, http.StatusConflict)
+			return
+		}
 		installState.SetupDone = true
 		if err := config.SaveInstallState(installState); err != nil {
 			slog.Warn("save setup completion", "err", err)
@@ -367,6 +373,30 @@ func registerAppRoutes(mux *http.ServeMux, cfgPath string, cfg *config.Config, s
 		}
 		writeWakewordStateResponse(w, cfg, state)
 	})
+}
+
+func localSetupCompletionProblem(cfg *config.Config, installState *config.InstallState) string {
+	if installState == nil || installState.Mode != config.InstallModeLocal {
+		return ""
+	}
+	if cfg == nil {
+		return "Local setup cannot be completed because the runtime config is unavailable."
+	}
+	modelPath := configuredLocalSTTModelPath(cfg)
+	provider := stt.NewLocalProvider(cfg.Local.Port, modelPath, cfg.Local.GPU)
+	status := provider.VerifyInstallation()
+	if !status.BinaryFound {
+		return "Local setup cannot be completed because the bundled whisper-server runtime is missing. Reinstall SpeechKit."
+	}
+	if status.ModelFound {
+		return ""
+	}
+	for _, problem := range status.Problems {
+		if strings.TrimSpace(problem) != "" {
+			return fmt.Sprintf("Local setup cannot be completed because the bundled speech model is not ready: %s", problem)
+		}
+	}
+	return "Local setup cannot be completed because the bundled speech model is not ready."
 }
 
 type wakewordEnableRequest struct {

@@ -196,6 +196,12 @@ func TestLoadDefaults(t *testing.T) {
 	}
 }
 
+func TestDefaultLocalSTTModelIsBundledStarterModel(t *testing.T) {
+	if DefaultLocalSTTModel != "ggml-small.bin" {
+		t.Fatalf("DefaultLocalSTTModel = %q, want bundled starter model ggml-small.bin", DefaultLocalSTTModel)
+	}
+}
+
 func TestGoogleProviderRegionDefaultAndOverride(t *testing.T) {
 	t.Run("defaults to europe-west3 when absent from TOML", func(t *testing.T) {
 		dir := t.TempDir()
@@ -555,8 +561,8 @@ enabled = false
 		t.Error("HuggingFace should be disabled")
 	}
 	// Defaults should still be present for unset fields
-	if cfg.Local.Port != 8080 {
-		t.Errorf("local port = %d, want 8080 (default)", cfg.Local.Port)
+	if cfg.Local.Port != DefaultLocalSTTPort {
+		t.Errorf("local port = %d, want %d (default)", cfg.Local.Port, DefaultLocalSTTPort)
 	}
 }
 
@@ -1441,8 +1447,8 @@ func TestApplyLocalInstallDefaultsPreparesPendingLocalInstallForOnboardingDownlo
 	if cfg.HuggingFace.Enabled {
 		t.Fatal("HuggingFace should be disabled on fresh local install while onboarding is pending")
 	}
-	if cfg.Local.Model != "ggml-large-v3-turbo.bin" {
-		t.Fatalf("local model = %q, want %q", cfg.Local.Model, "ggml-large-v3-turbo.bin")
+	if cfg.Local.Model != DefaultLocalSTTModel {
+		t.Fatalf("local model = %q, want %q", cfg.Local.Model, DefaultLocalSTTModel)
 	}
 }
 
@@ -1650,11 +1656,14 @@ func TestPhase0Defaults(t *testing.T) {
 	if cfg.Logging.MaxFiles != 30 {
 		t.Errorf("Logging.MaxFiles: want 30, got %d", cfg.Logging.MaxFiles)
 	}
-	if !cfg.Audit.Enabled {
-		t.Errorf("Audit.Enabled: want true by default, got false")
+	if cfg.Logging.Level != "off" {
+		t.Errorf("Logging.Level: want \"off\" by default (privacy-first opt-in), got %q", cfg.Logging.Level)
+	}
+	if cfg.Audit.Enabled {
+		t.Errorf("Audit.Enabled: want false by default (compliance log is opt-in), got true")
 	}
 	if cfg.Audit.RetentionDays != 90 {
-		t.Errorf("Audit.RetentionDays: want 90, got %d", cfg.Audit.RetentionDays)
+		t.Errorf("Audit.RetentionDays: want 90 (retention applies when audit is opted in), got %d", cfg.Audit.RetentionDays)
 	}
 	if !cfg.Telemetry.UpdateCheck {
 		t.Errorf("Telemetry.UpdateCheck: want true by default, got false")

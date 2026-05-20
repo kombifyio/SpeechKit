@@ -62,7 +62,7 @@ func defaults() *Config {
 		Local: LocalConfig{
 			Enabled: true,
 			Model:   DefaultLocalSTTModel,
-			Port:    8080,
+			Port:    DefaultLocalSTTPort,
 			GPU:     "auto",
 		},
 		LocalLLM: LocalLLMConfig{
@@ -98,12 +98,32 @@ func defaults() *Config {
 			ManifestURL:        "https://api.github.com/repos/kombifyio/SpeechKit/releases/latest",
 			CheckIntervalHours: 6,
 		},
+		// SpeechKit has two log surfaces and BOTH are opt-in:
+		//
+		//  1. Logging.Level   — general application log (transcription events,
+		//                       mode switches, wake-word triggers). Visible in
+		//                       the dashboard's "Logs" tab when enabled.
+		//                       Default "off" — privacy-first; the user opts
+		//                       in to "info" or "debug" via Settings or the
+		//                       SPEECHKIT_LOG_LEVEL env var.
+		//
+		//  2. Audit.Enabled   — structured compliance trail (SOC2/ISO27001
+		//                       evidence; no transcript content, only event
+		//                       metadata). Default false — opt-in via
+		//                       Settings → Compliance. Enterprises that need
+		//                       the audit trail flip it on AND set retention.
+		//
+		// Reason: SpeechKit is shipped as a privacy-first reference
+		// implementation; users with no compliance obligations should not
+		// have either log writing to disk by default. Operators who DO need
+		// either log have a single toggle each.
 		Logging: LoggingConfig{
 			MaxFileSizeMB: 50,
 			MaxFiles:      30,
+			Level:         "off",
 		},
 		Audit: AuditConfig{
-			Enabled:       true,
+			Enabled:       false,
 			RetentionDays: 90,
 		},
 		Telemetry: TelemetryConfig{
@@ -236,7 +256,7 @@ func defaults() *Config {
 			EmbeddingModelPath:   "",
 			DefaultMode:          WakewordDefaultModeVoiceAgent,
 			Threshold:            0, // 0 -> catalog RecommendedThreshold for PhraseID is used
-			MinConsecutiveFrames: 2,
+			MinConsecutiveFrames: 1,
 			CooldownMs:           1500,
 		},
 		Server: ServerConfig{

@@ -76,7 +76,13 @@ func currentPhysicalToDipRect() func(application.Rect) application.Rect {
 	return app.Screen.PhysicalToDipRect
 }
 
-func physicalScreenBoundsToDip(bounds screenBounds, convert func(application.Rect) application.Rect) screenBounds {
+func physicalScreenBoundsToDip(bounds screenBounds, convert func(application.Rect) application.Rect) (out screenBounds) {
+	defer func() {
+		if r := recover(); r != nil {
+			out = bounds
+		}
+	}()
+
 	if convert == nil {
 		return bounds
 	}

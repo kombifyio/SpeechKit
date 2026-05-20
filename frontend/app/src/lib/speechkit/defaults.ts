@@ -17,7 +17,7 @@ export const defaultWakewordSettings: WakewordSettings = {
   phraseId: "hey_quby",
   defaultMode: "voice_agent",
   threshold: 0,
-  minConsecutiveFrames: 2,
+  minConsecutiveFrames: 1,
   cooldownMs: 1500,
   active: false,
   statusMessage: "",

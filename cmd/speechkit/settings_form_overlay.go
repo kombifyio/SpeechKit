@@ -7,7 +7,13 @@ import (
 )
 
 func parseOverlaySettingsForm(req *http.Request, cfg *config.Config, f *settingsFormData) string {
-	f.OverlayEnabled = req.FormValue("overlay_enabled") == "1"
+	// Fall back to the current cfg value when the form does not carry an
+	// overlay_enabled field at all (e.g. the onboarding wizard's partial
+	// /settings/update POST). Without this fallback the wizard's save
+	// silently flipped overlay_enabled from the template default true to
+	// false because "" != "1", which made the post-setup overlay invisible
+	// for every first-run user.
+	f.OverlayEnabled = boolFormValue(req, "overlay_enabled", cfg.UI.OverlayEnabled)
 	f.Visualizer = valueOrDefault(trimmedFormValue(req, "overlay_visualizer"), cfg.UI.Visualizer)
 	if !isSupportedOverlayVisualizer(f.Visualizer) {
 		return msgUnsupportedVis
