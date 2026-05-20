@@ -124,6 +124,25 @@ if ($LASTEXITCODE -ne 0) {
 Write-Host "heat output: $LlamaFragmentPath"
 
 # -------------------------------------------------------------------------
+# Step 1b: Migrate the heat-generated fragment from the WiX v3 namespace
+# (http://schemas.microsoft.com/wix/2006/wi) to the WiX v4 namespace
+# (http://wixtoolset.org/schemas/v4/wxs) that the v4 compiler requires.
+#
+# `heat.exe` is included in WiX v4 for backward compatibility but it
+# still emits v3 schema source. `wix convert` is WiX v4's official v3-
+# to-v4 source migrator and is the documented way to bridge that gap
+# without rewriting the fragment by hand each build.
+# -------------------------------------------------------------------------
+Write-Host "`nMigrating fragment to WiX v4 schema..."
+& wix convert $LlamaFragmentPath
+if ($LASTEXITCODE -ne 0) {
+    # `wix convert` exits 0 on a successful conversion that produced no
+    # changes too, so a non-zero code is a genuine failure rather than a
+    # "nothing to convert" signal. Surface it.
+    Write-Error "wix convert failed with exit code $LASTEXITCODE on $LlamaFragmentPath"
+}
+
+# -------------------------------------------------------------------------
 # Step 2: Compile and link the MSI.
 #
 # wix build compiles each .wxs source and links them into a single MSI.

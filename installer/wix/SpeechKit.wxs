@@ -8,8 +8,10 @@
   break SCCM detection rules.
 
   Build with installer/wix/build-msi.ps1.
-  Requires: WiX v4 CLI  (`dotnet tool install --global wix --version 4.*`)
-            heat.exe     (included in WiX v4 toolset)
+  Requires: WiX v4 CLI plus heat.exe; see installer/wix/build-msi.ps1
+            for the exact dotnet tool install command (XML comments
+            cannot contain double-dashes, so the literal install line
+            lives in the PowerShell help block instead).
 
   The llama/ directory is harvested separately by heat into llama-fragment.wxs
   and referenced here via the LlamaComponents ComponentGroup. All other files

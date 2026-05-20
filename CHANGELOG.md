@@ -12,6 +12,29 @@ IDs, source paths, and other maintainer-only vocabulary.
 
 ## [Unreleased]
 
+## [0.35.9] - 2026-05-20
+
+Fixes the public Windows release pipeline so the GitHub Release for
+this version is published with all its artifacts attached, instead of
+hanging as a draft like v0.35.4 through v0.35.8 did. There are no
+runtime behaviour changes from v0.35.8: SpeechKit itself is identical,
+only the release-time packaging is corrected.
+
+### Fixed
+- Public GitHub Release now publishes with the per-machine MSI
+  installer (`SpeechKit-x64.msi`), the NSIS installer
+  (`SpeechKit-Setup.exe`), the portable bundle
+  (`SpeechKit-Portable.zip`), the CycloneDX SBOM, and signed checksums
+  (`SHA256SUMS.txt`) attached. Builds since v0.35.4 had been blocked
+  by a WiX v4 toolchain mismatch (XML comments containing double
+  dashes, and the heat-generated fragment still using the WiX v3
+  namespace) that left the public release stuck as a draft.
+- The Linux install end-to-end gate now ships the dictation, assist,
+  and voice-agent audio fixtures so the dictation scenario can run
+  against the OSS-mirrored repository. The gate had failed since
+  v0.35.4 because the OSS export manifest omitted the
+  `testdata/e2e/` subtree.
+
 ## [0.35.8] - 2026-05-20
 
 Wake-word triggers now activate a true live Voice Agent dialog that
