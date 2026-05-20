@@ -48,7 +48,13 @@ services:
   # http://speechkit-whisper:8080 via SPEECHKIT_SELFHOSTED_STT_URL.
   speechkit-whisper:
     profiles: ["local"]
-    image: ${SPEECHKIT_WHISPER_IMAGE:-ghcr.io/ggml-org/whisper.cpp:main}
+    # Pinned to whisper.cpp commit 968eebe7 (image build 2026-05-15) —
+    # later `:main` builds rejected every WAV upload with
+    # `error: failed to read audio data from (RIFF...)`, blocking
+    # install-e2e-linux gates and the public release pipeline since
+    # v0.35.4. Override SPEECHKIT_WHISPER_IMAGE in your environment if
+    # you want a different (newer or tagged) image.
+    image: ${SPEECHKIT_WHISPER_IMAGE:-ghcr.io/ggml-org/whisper.cpp@sha256:fd7ca21c83126b08f610d02a50f68878a66388a4b96e90e2637ced84397013b5}
     # ggml-org/whisper.cpp:main ships with ENTRYPOINT ["bash", "-c"]
     # which swallows additional args. Override with the full server
     # binary path so command-list args reach it directly.

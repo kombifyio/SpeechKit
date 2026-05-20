@@ -48,7 +48,17 @@ services:
 
   speechkit-whisper:
     profiles: ["local-only"]
-    image: ${SPEECHKIT_WHISPER_IMAGE:-ghcr.io/ggml-org/whisper.cpp:main}
+    # Pin to whisper.cpp commit 968eebe7 (image build 2026-05-15) — the
+    # last upstream :main build whose whisper-server accepts our 16 kHz
+    # S16 mono WAV uploads via /v1/audio/transcriptions. The 2026-05-18+
+    # builds regressed: every WAV (including ones that round-trip
+    # cleanly through our own audio.Decode) gets rejected with
+    # `error: failed to read audio data from (RIFF...)`. Locally
+    # reproduced against both this fixture and the public test
+    # fixtures; the older digest below transcribes them all correctly.
+    # Re-evaluate when upstream publishes a tagged release we can pin
+    # to instead of an SHA digest.
+    image: ${SPEECHKIT_WHISPER_IMAGE:-ghcr.io/ggml-org/whisper.cpp@sha256:fd7ca21c83126b08f610d02a50f68878a66388a4b96e90e2637ced84397013b5}
     # See production docker-compose.yml for the entrypoint rationale.
     entrypoint: ["/app/build/bin/whisper-server"]
     command:

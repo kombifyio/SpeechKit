@@ -12,6 +12,35 @@ IDs, source paths, and other maintainer-only vocabulary.
 
 ## [Unreleased]
 
+## [0.35.10] - 2026-05-20
+
+Second release-pipeline hotfix, completing what v0.35.9 attempted.
+v0.35.9's GitHub Release stayed stuck as a draft because the build
+exposed two more issues that v0.35.9 itself could not detect: a self-
+inflicted exit-code interpretation in our WiX wrapper, and an upstream
+regression in the whisper.cpp container image that rejected every
+audio upload. Both are fixed here. SpeechKit's audio pipeline is
+unchanged; locally verified that our WAV encoding round-trips
+correctly through the pinned whisper.cpp image.
+
+### Fixed
+- Public GitHub Release for Windows now publishes without manual
+  intervention: the MSI build no longer aborts after a successful WiX
+  v3-to-v4 schema migration. The PowerShell wrapper had treated
+  `wix convert`'s "changes-made" exit code (2) as failure; it is now
+  recognised alongside 0 as success.
+- The Linux install-end-to-end gate's dictation scenario passes again.
+  The local-only test client used `ghcr.io/ggml-org/whisper.cpp:main`,
+  which regressed on 2026-05-18 such that every WAV upload —
+  including syntactically perfect 16 kHz S16 mono WAVs that our own
+  decoder reads without issue — was rejected with `error: failed to
+  read audio data from (RIFF...)`. Pinned to the last known-good image
+  digest until upstream publishes a tagged release.
+- install-e2e-windows.yml's MSI matrix leg now builds the staging
+  bundle with `-SkipInstaller`. The previous unconditional invocation
+  required NSIS even on the MSI leg, where NSIS is intentionally not
+  installed.
+
 ## [0.35.9] - 2026-05-20
 
 Fixes the public Windows release pipeline so the GitHub Release for

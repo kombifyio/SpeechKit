@@ -135,11 +135,18 @@ Write-Host "heat output: $LlamaFragmentPath"
 # -------------------------------------------------------------------------
 Write-Host "`nMigrating fragment to WiX v4 schema..."
 & wix convert $LlamaFragmentPath
-if ($LASTEXITCODE -ne 0) {
-    # `wix convert` exits 0 on a successful conversion that produced no
-    # changes too, so a non-zero code is a genuine failure rather than a
-    # "nothing to convert" signal. Surface it.
-    Write-Error "wix convert failed with exit code $LASTEXITCODE on $LlamaFragmentPath"
+$convertExit = $LASTEXITCODE
+# `wix convert` exit codes (per WiX v4 docs):
+#   0 — file already on v4 schema, no changes made
+#   2 — file was converted from v3, changes written (this is the
+#       common case for a fresh heat output)
+#   other — real error (parse failure, write failure, etc.)
+# Treating 2 as a failure caused v0.35.9's Build Windows Assets to
+# abort even though the conversion had actually succeeded; the v4
+# build would have read the converted llama-fragment.wxs without
+# issue. Accept both 0 and 2 as success.
+if ($convertExit -ne 0 -and $convertExit -ne 2) {
+    Write-Error "wix convert failed with exit code $convertExit on $LlamaFragmentPath"
 }
 
 # -------------------------------------------------------------------------
