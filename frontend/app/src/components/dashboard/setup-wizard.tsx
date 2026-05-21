@@ -3,17 +3,13 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { pickLatestModelDownloadJob } from "@/components/dashboard/state-hooks/use-model-download-state";
 import {
   builtInPrimaryModelSelections,
-  disableWakeword,
-  enableWakeword,
   fetchAudioDevices,
-  fetchWakewordState,
   saveProviderCredential,
   setAudioDevice,
   updateProviderIntegration,
   type AudioDevice,
   type DownloadItem,
   type DownloadJob,
-  type WakewordState,
 } from "@/lib/speechkit";
 import { postInstallMode } from "@/lib/speechkit/install-mode-api";
 import {
@@ -33,7 +29,6 @@ import {
   onboardingHotkeys,
   onboardingIntegrationGroups,
   onboardingIntegrations,
-  onboardingWakeWordPhrases,
   orderedIntegrationModeLabels,
   setupDisplayUrl,
   type IntegrationMode,
@@ -440,7 +435,9 @@ export function SetupWizard({
       } catch (err) {
         console.warn("voice-agent profile apply failed:", err);
       }
-      setStep("wake_word");
+      // Wake-word configuration moved to Settings + post-onboarding tips
+      // in v0.35.20. The wizard now finishes here.
+      setStep("done");
     } catch (err) {
       setServerFormTestState("fail");
       setServerFormTestMessage(
@@ -453,7 +450,6 @@ export function SetupWizard({
     "welcome",
     "local_model",
     "integrations",
-    "wake_word",
     "done",
   ];
 
@@ -461,7 +457,7 @@ export function SetupWizard({
     <div
       className={[
         "flex h-screen flex-col items-center bg-[#131318] text-[#e4e1e9] px-6 relative",
-        step === "local_model" || step === "integrations" || step === "wake_word"
+        step === "local_model" || step === "integrations"
           ? "justify-start overflow-hidden py-0"
           : "justify-center overflow-hidden",
       ].join(" ")}
@@ -1033,20 +1029,13 @@ export function SetupWizard({
             </button>
             <button
               type="button"
-              onClick={() => setStep("wake_word")}
+              onClick={() => setStep("done")}
               className="signature-gradient text-[#2b0088] h-12 rounded-full px-8 font-bold transition-all ambient-glow active:scale-[0.98]"
             >
               Continue
             </button>
           </div>
         </div>
-      )}
-
-      {step === "wake_word" && (
-        <WakeWordStep
-          onBack={() => setStep("integrations")}
-          onContinue={() => setStep("done")}
-        />
       )}
 
       {step === "done" && (
@@ -1495,223 +1484,3 @@ function WizardFeatureCard({ title, desc }: { title: string; desc: string }) {
   );
 }
 
-// WakeWordStep is the onboarding step that flips wake-word from "disabled"
-// (the default) to "active" in one click. The bundle ships the sherpa-onnx
-// Zipformer model, native libraries and the sidecar binary on every
-// install, so the only thing the wizard needs to do is POST to
-// /app/wakeword/enable. The backend writes the config, respawns the
-// sidecar process and reports the new runtime state.
-//
-// We deliberately gate this behind an explicit user click instead of
-// enabling by default. The always-on mic is a non-trivial privacy
-// trade-off; making it an opt-in opt-out moment matches the rest of the
-// industry (Wispr Flow's "Hey Flow" is a Pro toggle, Superwhisper /
-// VoiceInk default to hotkey only).
-function WakeWordStep({
-  onBack,
-  onContinue,
-}: {
-  onBack: () => void;
-  onContinue: () => void;
-}) {
-  const phrases = onboardingWakeWordPhrases;
-  const [phraseId, setPhraseId] = useState<string>(phrases[0]?.id ?? "hey_quby");
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [state, setState] = useState<WakewordState | null>(null);
-
-  // Poll the runtime state after enabling so the UI flips from "starting"
-  // to "listening" when the sidecar comes up. ~150 ms cadence × up to 12
-  // tries (~1.8 s budget) — sherpa-onnx KWS ready takes ~900 ms in our
-  // measurements, well inside the budget.
-  useEffect(() => {
-    if (!state?.enabled || state.listening) return;
-    let cancelled = false;
-    let attempts = 0;
-    const tick = async () => {
-      if (cancelled || attempts++ > 12) return;
-      try {
-        const next = await fetchWakewordState();
-        if (cancelled) return;
-        setState(next);
-        if (!next.listening) {
-          setTimeout(tick, 150);
-        }
-      } catch (e) {
-        if (!cancelled) {
-          setError(String(e));
-        }
-      }
-    };
-    void tick();
-    return () => {
-      cancelled = true;
-    };
-  }, [state?.enabled, state?.listening]);
-
-  const handleEnable = async () => {
-    setBusy(true);
-    setError(null);
-    try {
-      const next = await enableWakeword({
-        backend: "sherpa_kws",
-        phraseId,
-        defaultMode: "voice_agent",
-      });
-      setState(next);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const handleDisable = async () => {
-    setBusy(true);
-    setError(null);
-    try {
-      const next = await disableWakeword();
-      setState(next);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const selectedPhrase = phrases.find((p) => p.id === phraseId) ?? phrases[0];
-  const active = state?.enabled === true && state?.listening === true;
-  const enabledButNotListening = state?.enabled === true && !state?.listening;
-
-  return (
-    <div className="flex flex-col text-left max-w-3xl w-full h-full overflow-y-auto py-8 z-10">
-      <div className="flex gap-3 mb-8 self-center">
-        {(["welcome", "local_model", "integrations", "wake_word", "done"] as const).map(
-          (s) => (
-            <div
-              key={s}
-              className={`w-2.5 h-2.5 rounded-full ${
-                s === "wake_word" ? "bg-[#cabeff]" : "bg-[#cabeff]/30"
-              }`}
-            />
-          ),
-        )}
-      </div>
-
-      <h2 className="text-3xl font-extrabold tracking-tight mb-2">
-        Wake word — optional, one click to enable
-      </h2>
-      <p className="text-[#b5b3c4] text-sm leading-relaxed mb-6">
-        Pick a wake phrase and SpeechKit will start the Voice Agent the moment
-        you say it. The microphone is always on while this is enabled — audio
-        for wake detection stays fully on-device and is never recorded to
-        disk. Skip this step if you only want the hotkeys (Ctrl+Win for
-        dictation, Win+Alt for assist, Ctrl+Shift for Voice Agent).
-      </p>
-
-      <div className="space-y-4 bg-[#1b1b20] rounded-xl p-5 mb-4">
-        <div>
-          <label className="block text-xs font-medium text-[#e4e1e9] mb-2">
-            Wake phrase
-          </label>
-          <select
-            value={phraseId}
-            disabled={busy || active}
-            onChange={(e) => setPhraseId(e.target.value)}
-            className="w-full rounded-md bg-[#131318] border border-[#35343a] px-3 py-2 text-sm text-[#e4e1e9] focus:border-[#cabeff] focus:outline-none disabled:opacity-60"
-          >
-            {phrases.map((p) => (
-              <option key={p.id} value={p.id}>
-                {p.displayName}
-              </option>
-            ))}
-          </select>
-          {selectedPhrase && (
-            <p className="mt-2 text-[11px] text-[#938ea1] leading-relaxed">
-              {selectedPhrase.notes}
-            </p>
-          )}
-        </div>
-
-        <div className="flex items-center gap-2 pt-1">
-          <div
-            className={`h-2 w-2 rounded-full ${
-              active
-                ? "bg-emerald-400"
-                : enabledButNotListening
-                  ? "bg-amber-400"
-                  : "bg-[#35343a]"
-            }`}
-          />
-          <span className="text-xs font-medium text-[#e4e1e9]">
-            {active
-              ? "Active — listening for your wake phrase"
-              : enabledButNotListening
-                ? "Starting wake-word sidecar…"
-                : "Disabled — hotkeys still work"}
-          </span>
-        </div>
-        {state?.status && (
-          <p className="text-[11px] text-[#938ea1]">{state.status}</p>
-        )}
-        {error && <p className="text-[11px] text-red-300">{error}</p>}
-
-        <div className="flex items-center gap-3 pt-1">
-          {!state?.enabled && (
-            <button
-              type="button"
-              onClick={handleEnable}
-              disabled={busy}
-              className="signature-gradient text-[#2b0088] rounded-full px-6 py-2.5 text-sm font-bold transition-all active:scale-[0.98] disabled:opacity-60"
-            >
-              {busy ? "Enabling…" : "Enable wake word"}
-            </button>
-          )}
-          {state?.enabled && (
-            <button
-              type="button"
-              onClick={handleDisable}
-              disabled={busy}
-              className="rounded-full border border-[#35343a] px-6 py-2.5 text-sm font-medium text-[#e4e1e9] hover:border-red-300/40 hover:text-red-200 disabled:opacity-60"
-            >
-              {busy ? "Stopping…" : "Disable wake word"}
-            </button>
-          )}
-          {state?.enabled && phrases.length > 1 && (
-            <button
-              type="button"
-              onClick={handleEnable}
-              disabled={busy}
-              className="rounded-full border border-[#35343a] px-6 py-2.5 text-sm font-medium text-[#e4e1e9] hover:border-[#cabeff]/40 hover:text-[#cabeff] disabled:opacity-60"
-            >
-              {busy ? "Switching…" : "Switch phrase"}
-            </button>
-          )}
-        </div>
-      </div>
-
-      <div className="text-[11px] text-[#938ea1] leading-relaxed mb-4">
-        Want a custom phrase like "Hey&nbsp;Quby"? Open Settings →&nbsp;Wake&nbsp;word
-        after onboarding — the docs/wakeword.md note shows how to add new
-        BPE-tokenised entries to the bundled keywords.txt.
-      </div>
-
-      <div className="shrink-0 flex items-center justify-between gap-3 border-t border-[#35343a]/50 bg-[#131318]/95 pt-4 backdrop-blur-xl">
-        <button
-          type="button"
-          onClick={onBack}
-          className="text-[#b5b3c4] hover:text-[#e4e1e9] text-sm font-medium transition-colors"
-        >
-          Back
-        </button>
-        <button
-          type="button"
-          onClick={onContinue}
-          className="signature-gradient text-[#2b0088] h-12 rounded-full px-8 font-bold transition-all ambient-glow active:scale-[0.98]"
-        >
-          {state?.enabled ? "Continue" : "Skip"}
-        </button>
-      </div>
-    </div>
-  );
-}

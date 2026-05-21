@@ -280,11 +280,10 @@ describe("SetupWizard welcome step", () => {
     const postOrder = postInstallModeMock.mock.invocationCallOrder[0];
     expect(patchOrder).toBeLessThan(postOrder);
 
-    // Wake-word step header.
+    // Wake-word step was removed in v0.35.20; server-connect path now
+    // lands on the Done step.
     expect(
-      await screen.findByRole("heading", {
-        name: /Wake word.*one click to enable/i,
-      }),
+      await screen.findByRole("button", { name: /Start Using SpeechKit/i }),
     ).toBeInTheDocument();
   });
 });

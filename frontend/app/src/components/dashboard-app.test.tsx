@@ -111,12 +111,10 @@ describe("DashboardApp", () => {
   let fetchSpy: ReturnType<typeof vi.spyOn> | undefined;
   let storageMock: Storage;
 
-  async function skipWakeWord() {
-    // Wake-word step has a "Skip" button that advances straight to Done.
-    // The voice-agent profile step was removed in v0.35.19 — apply runs as
-    // a side-effect of the welcome-step target choice.
-    fireEvent.click(await screen.findByRole("button", { name: /^skip$/i }));
-  }
+  // The wake-word + voice-agent-profile onboarding steps were removed in
+  // v0.35.19 (voice-agent) and v0.35.20 (wake-word). The Integrations
+  // Continue button now lands directly on the Done step — no extra
+  // navigation helper is needed.
 
   beforeEach(() => {
     storageMock = createMockStorage();
@@ -896,7 +894,7 @@ describe("DashboardApp", () => {
 
     fireEvent.click(screen.getByRole("button", { name: /^continue$/i }));
 
-    await skipWakeWord();
+
 
     expect(await screen.findByText("Ctrl+Win")).toBeInTheDocument();
     expect(
@@ -977,7 +975,7 @@ describe("DashboardApp", () => {
     );
     fireEvent.click(await screen.findByRole("button", { name: /^continue$/i }));
     fireEvent.click(await screen.findByRole("button", { name: /^continue$/i }));
-    await skipWakeWord();
+
 
     fireEvent.click(
       await screen.findByRole("button", { name: /start using speechkit/i }),
@@ -1064,7 +1062,7 @@ describe("DashboardApp", () => {
     );
     fireEvent.click(await screen.findByRole("button", { name: /^continue$/i }));
     fireEvent.click(await screen.findByRole("button", { name: /^continue$/i }));
-    await skipWakeWord();
+
 
     fireEvent.click(
       await screen.findByRole("button", { name: /start using speechkit/i }),
@@ -1149,7 +1147,7 @@ describe("DashboardApp", () => {
     );
 
     fireEvent.click(screen.getByRole("button", { name: /^continue$/i }));
-    await skipWakeWord();
+
     fireEvent.click(
       await screen.findByRole("button", { name: /start using speechkit/i }),
     );
@@ -1241,7 +1239,7 @@ describe("DashboardApp", () => {
     );
     fireEvent.click(await screen.findByRole("button", { name: /^continue/i }));
     fireEvent.click(await screen.findByRole("button", { name: /^continue$/i }));
-    await skipWakeWord();
+
     fireEvent.click(
       await screen.findByRole("button", { name: /start using speechkit/i }),
     );

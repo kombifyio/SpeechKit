@@ -111,6 +111,11 @@ export function DashboardHomeView({
           />
         </div>
 
+        {/* Tips — replaces the wake-word onboarding step. Always visible
+            so users discover the feature even after activity has been
+            recorded. Wake-word card opens Settings → Wake Word panel. */}
+        <TipsSection onOpenSettings={onOpenSettings} />
+
         {/* Recent activity: transcriptions + notes */}
         {latestTranscription || featuredNotes.length > 0 ? (
           <div>
@@ -244,6 +249,85 @@ export function DashboardHomeView({
           </div>
         )}
       </div>
+    </div>
+  );
+}
+
+/* ── Tips section (replaces the v0.35.19 wake-word onboarding step) ── */
+
+type TipDefinition = {
+  id: string;
+  icon: string;
+  title: string;
+  body: string;
+  cta?: { label: string; onClick: () => void };
+};
+
+function TipsSection({ onOpenSettings }: { onOpenSettings: () => void }) {
+  const tips: TipDefinition[] = [
+    {
+      id: "wake-word",
+      icon: "mic",
+      title: "Use a wake word",
+      body: "Say a wake phrase like \"Hey Quby\" to start the Voice Agent hands-free — no hotkey needed. Microphone audio for wake detection stays fully on-device.",
+      cta: { label: "Enable in Settings", onClick: onOpenSettings },
+    },
+    {
+      id: "hotkeys",
+      icon: "keyboard",
+      title: "Master the three hotkeys",
+      body: "Ctrl+Win for dictation, Win+Alt for assist, Ctrl+Shift for Voice Agent. Hold-to-talk, release to send. Hotkeys are configurable in Settings.",
+      cta: { label: "Configure hotkeys", onClick: onOpenSettings },
+    },
+    {
+      id: "providers",
+      icon: "settings",
+      title: "Tune your providers",
+      body: "Add a cloud provider for faster transcription or a smarter LLM. SpeechKit stays local-first by default; integrations are layered on top.",
+      cta: { label: "Open Settings", onClick: onOpenSettings },
+    },
+  ];
+
+  return (
+    <div data-testid="dashboard-tips-section">
+      <h3 className="mb-4 text-xs font-bold uppercase tracking-widest text-[color:var(--sk-text-muted)]">
+        Tips
+      </h3>
+      <div className="grid gap-4 md:grid-cols-3">
+        {tips.map((tip) => (
+          <TipCard key={tip.id} tip={tip} />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function TipCard({ tip }: { tip: TipDefinition }) {
+  return (
+    <div
+      data-testid={`dashboard-tip-${tip.id}`}
+      className="sk-panel rounded-[24px] p-5 flex flex-col gap-3"
+    >
+      <div className="flex items-center gap-2">
+        <span className="material-symbols-outlined text-[color:var(--sk-accent)] text-xl leading-none">
+          {tip.icon}
+        </span>
+        <h4 className="text-sm font-semibold text-[color:var(--sk-text)]">
+          {tip.title}
+        </h4>
+      </div>
+      <p className="text-xs leading-6 text-[color:var(--sk-text-muted)]">
+        {tip.body}
+      </p>
+      {tip.cta && (
+        <button
+          type="button"
+          onClick={tip.cta.onClick}
+          className="sk-secondary-button self-start rounded-full px-4 py-1.5 text-[11px] font-semibold transition-colors"
+        >
+          {tip.cta.label}
+        </button>
+      )}
     </div>
   );
 }

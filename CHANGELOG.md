@@ -12,6 +12,50 @@ IDs, source paths, and other maintainer-only vocabulary.
 
 ## [Unreleased]
 
+## [0.35.20] - 2026-05-21
+
+The Wake Word step is gone from the onboarding wizard. Onboarding now
+ends after the Integrations step. Wake-word configuration moves to two
+places where users will actually look for it:
+
+1. A new Tips section on the dashboard home page, always visible above
+   Recent Activity, with one card titled "Use a wake word" linking to
+   Settings.
+2. The existing Settings → Wake Word panel, where the full backend
+   configuration (phrase choice, backend selector, status indicator)
+   already lived. Onboarding never added anything Settings did not.
+
+The wizard is now four steps: Welcome → Local Model → Integrations →
+Done (was five through v0.35.19, six through v0.35.17).
+
+### Changed
+- Onboarding flow shortened again: removed the Wake Word step. Welcome
+  → Local Model → Integrations → Done.
+- Integrations Continue button now lands on Done.
+- Server-Connect submit now lands on Done (previously Wake Word).
+- Progress-dot arrays trimmed to four steps.
+
+### Added
+- Dashboard home: new Tips section with three cards (Use a wake word,
+  Master the three hotkeys, Tune your providers). All three CTAs open
+  Settings. The section is always visible, not gated on empty activity
+  state.
+
+### Removed
+- `WakeWordStep` component (and its imports of `enableWakeword`,
+  `disableWakeword`, `fetchWakewordState`, `WakewordState`,
+  `onboardingWakeWordPhrases`) from `setup-wizard.tsx`. The data
+  export `onboardingWakeWordPhrases` is kept in `setup-wizard-data.ts`
+  for use by `settings/wakeword-panel.tsx` callers.
+- `wake_word` from the `WizardStep` union.
+
+### Tests
+- `setup-wizard.test.tsx`: server-connect test now asserts the Done
+  step's "Start Using SpeechKit" button instead of the wake-word
+  heading.
+- `dashboard-app.test.tsx`: removed the `skipWakeWord` test helper and
+  its five call sites — Integrations Continue lands on Done directly.
+
 ## [0.35.19] - 2026-05-21
 
 The Voice Agent profile step is gone from the onboarding wizard.
