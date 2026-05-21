@@ -23,6 +23,7 @@ const {
   testAPIV1ServerConnectionMock,
   patchAPIV1ServerConnectionMock,
   postInstallModeMock,
+  applyVoiceAgentProfileMock,
   fetchAudioDevicesMock,
   fetchWakewordStateMock,
   enableWakewordMock,
@@ -34,6 +35,7 @@ const {
   testAPIV1ServerConnectionMock: vi.fn(),
   patchAPIV1ServerConnectionMock: vi.fn(),
   postInstallModeMock: vi.fn(),
+  applyVoiceAgentProfileMock: vi.fn(),
   fetchAudioDevicesMock: vi.fn(),
   fetchWakewordStateMock: vi.fn(),
   enableWakewordMock: vi.fn(),
@@ -66,6 +68,16 @@ vi.mock("@/lib/speechkit/server-api", () => ({
 vi.mock("@/lib/speechkit/install-mode-api", () => ({
   postInstallMode: postInstallModeMock,
 }));
+
+vi.mock("@/lib/speechkit/voice-agent-profile-api", async () => {
+  const actual = await vi.importActual<
+    typeof import("@/lib/speechkit/voice-agent-profile-api")
+  >("@/lib/speechkit/voice-agent-profile-api");
+  return {
+    ...actual,
+    applyVoiceAgentProfile: applyVoiceAgentProfileMock,
+  };
+});
 
 import { SetupWizard } from "./setup-wizard";
 
@@ -133,6 +145,7 @@ describe("SetupWizard welcome step", () => {
     });
     patchAPIV1ServerConnectionMock.mockResolvedValue(undefined);
     postInstallModeMock.mockResolvedValue(undefined);
+    applyVoiceAgentProfileMock.mockResolvedValue(undefined);
   });
 
   it("renders Local card selected by default", () => {
@@ -166,6 +179,44 @@ describe("SetupWizard welcome step", () => {
       expect(postInstallModeMock).toHaveBeenCalledWith("cloud"),
     );
     // Integrations step renders the "Integrations" heading.
+    expect(
+      await screen.findByRole("heading", { name: /Integrations/i }),
+    ).toBeInTheDocument();
+  });
+
+  it("Get Started auto-applies cloud-byok voice-agent profile when Cloud is picked", async () => {
+    renderWizard();
+    fireEvent.click(
+      screen.getByRole("radio", { name: /^Cloud(?:Selected|\s)/i }),
+    );
+    fireEvent.click(screen.getByRole("button", { name: /Get Started/i }));
+    await waitFor(() =>
+      expect(applyVoiceAgentProfileMock).toHaveBeenCalledWith("cloud-byok"),
+    );
+  });
+
+  it("Get Started auto-applies on-prem voice-agent profile when Local is picked", async () => {
+    renderWizard();
+    // Local is the default, but click anyway to be explicit.
+    fireEvent.click(
+      screen.getByRole("radio", { name: /^Local(?:Selected|\s)/i }),
+    );
+    fireEvent.click(screen.getByRole("button", { name: /Get Started/i }));
+    await waitFor(() =>
+      expect(applyVoiceAgentProfileMock).toHaveBeenCalledWith("on-prem"),
+    );
+  });
+
+  it("welcome submit does not block onboarding if apply-profile fails", async () => {
+    applyVoiceAgentProfileMock.mockRejectedValueOnce(
+      new Error("backend down"),
+    );
+    renderWizard();
+    fireEvent.click(
+      screen.getByRole("radio", { name: /^Cloud(?:Selected|\s)/i }),
+    );
+    fireEvent.click(screen.getByRole("button", { name: /Get Started/i }));
+    // Wizard still advances to integrations step despite the failed apply.
     expect(
       await screen.findByRole("heading", { name: /Integrations/i }),
     ).toBeInTheDocument();
@@ -217,6 +268,9 @@ describe("SetupWizard welcome step", () => {
     await waitFor(() =>
       expect(postInstallModeMock).toHaveBeenCalledWith("server"),
     );
+    await waitFor(() =>
+      expect(applyVoiceAgentProfileMock).toHaveBeenCalledWith("cloud-byok"),
+    );
 
     // Verify the production handler called patch BEFORE postInstallMode.
     // Without this, a regression that reverses the order would still pass
@@ -252,6 +306,7 @@ describe("SetupWizard integrations step coverage warning", () => {
       status: "disabled",
     });
     postInstallModeMock.mockResolvedValue(undefined);
+    applyVoiceAgentProfileMock.mockResolvedValue(undefined);
   });
 
   async function goToIntegrationsStep() {

@@ -111,16 +111,11 @@ describe("DashboardApp", () => {
   let fetchSpy: ReturnType<typeof vi.spyOn> | undefined;
   let storageMock: Storage;
 
-  async function skipWakeWordAndApplyDefaultVoiceAgentProfile() {
+  async function skipWakeWord() {
+    // Wake-word step has a "Skip" button that advances straight to Done.
+    // The voice-agent profile step was removed in v0.35.19 — apply runs as
+    // a side-effect of the welcome-step target choice.
     fireEvent.click(await screen.findByRole("button", { name: /^skip$/i }));
-    // Voice-agent profile is auto-derived from the onboarding target (Local
-    // → On-Prem, Cloud → BYOK Cloud) and applied on mount. We just wait for
-    // the apply call to complete, then click Continue.
-    const applied = await screen.findByTestId("voice-agent-profile-applied");
-    expect(applied).toBeInTheDocument();
-    fireEvent.click(
-      await screen.findByRole("button", { name: /^continue$/i }),
-    );
   }
 
   beforeEach(() => {
@@ -901,7 +896,7 @@ describe("DashboardApp", () => {
 
     fireEvent.click(screen.getByRole("button", { name: /^continue$/i }));
 
-    await skipWakeWordAndApplyDefaultVoiceAgentProfile();
+    await skipWakeWord();
 
     expect(await screen.findByText("Ctrl+Win")).toBeInTheDocument();
     expect(
@@ -982,7 +977,7 @@ describe("DashboardApp", () => {
     );
     fireEvent.click(await screen.findByRole("button", { name: /^continue$/i }));
     fireEvent.click(await screen.findByRole("button", { name: /^continue$/i }));
-    await skipWakeWordAndApplyDefaultVoiceAgentProfile();
+    await skipWakeWord();
 
     fireEvent.click(
       await screen.findByRole("button", { name: /start using speechkit/i }),
@@ -1069,7 +1064,7 @@ describe("DashboardApp", () => {
     );
     fireEvent.click(await screen.findByRole("button", { name: /^continue$/i }));
     fireEvent.click(await screen.findByRole("button", { name: /^continue$/i }));
-    await skipWakeWordAndApplyDefaultVoiceAgentProfile();
+    await skipWakeWord();
 
     fireEvent.click(
       await screen.findByRole("button", { name: /start using speechkit/i }),
@@ -1154,7 +1149,7 @@ describe("DashboardApp", () => {
     );
 
     fireEvent.click(screen.getByRole("button", { name: /^continue$/i }));
-    await skipWakeWordAndApplyDefaultVoiceAgentProfile();
+    await skipWakeWord();
     fireEvent.click(
       await screen.findByRole("button", { name: /start using speechkit/i }),
     );
@@ -1246,7 +1241,7 @@ describe("DashboardApp", () => {
     );
     fireEvent.click(await screen.findByRole("button", { name: /^continue/i }));
     fireEvent.click(await screen.findByRole("button", { name: /^continue$/i }));
-    await skipWakeWordAndApplyDefaultVoiceAgentProfile();
+    await skipWakeWord();
     fireEvent.click(
       await screen.findByRole("button", { name: /start using speechkit/i }),
     );

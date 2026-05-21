@@ -17,7 +17,6 @@ export type WizardStep =
   | "local_model"
   | "integrations"
   | "wake_word"
-  | "voice_agent_profile"
   | "done";
 
 export type OnboardingTarget = "local" | "cloud";

@@ -22,7 +22,10 @@ import {
 } from "@/lib/speechkit/server-api";
 
 import type { SetupWizardCompletion } from "./dashboard-types";
-import { VoiceAgentProfileStep } from "./voice-agent-profile-step";
+import {
+  applyVoiceAgentProfile,
+  voiceAgentProfileForInstallMode,
+} from "@/lib/speechkit/voice-agent-profile-api";
 import {
   integrationLogoSrc,
   logoFrameClass,
@@ -428,6 +431,15 @@ export function SetupWizard({
       // so the next launch does not re-route the user to the local-model
       // step.
       await postInstallMode("server");
+      // Server-target delegates voice-agent to the remote server, but the
+      // local device still has a profile setting; apply the cloud-byok
+      // default so onboarding does not need to ask the user. Errors are
+      // logged, not blocking — Settings can fix it later.
+      try {
+        await applyVoiceAgentProfile(voiceAgentProfileForInstallMode("server"));
+      } catch (err) {
+        console.warn("voice-agent profile apply failed:", err);
+      }
       setStep("wake_word");
     } catch (err) {
       setServerFormTestState("fail");
@@ -442,7 +454,6 @@ export function SetupWizard({
     "local_model",
     "integrations",
     "wake_word",
-    "voice_agent_profile",
     "done",
   ];
 
@@ -450,7 +461,7 @@ export function SetupWizard({
     <div
       className={[
         "flex h-screen flex-col items-center bg-[#131318] text-[#e4e1e9] px-6 relative",
-        step === "local_model" || step === "integrations" || step === "wake_word" || step === "voice_agent_profile"
+        step === "local_model" || step === "integrations" || step === "wake_word"
           ? "justify-start overflow-hidden py-0"
           : "justify-center overflow-hidden",
       ].join(" ")}
@@ -573,13 +584,24 @@ export function SetupWizard({
                 if (targetSubmitting) return;
                 setTargetSubmitting(true);
                 try {
-                  if (onboardingTarget === "cloud") {
-                    await postInstallMode("cloud");
-                    setStep("integrations");
-                  } else {
-                    await postInstallMode("local");
-                    setStep("local_model");
+                  const mode =
+                    onboardingTarget === "cloud" ? "cloud" : "local";
+                  await postInstallMode(mode);
+                  // Apply the voice-agent profile derived from the target
+                  // so the user does not have to pick it manually later.
+                  // Errors here are logged but do not block onboarding —
+                  // the user can re-apply from Settings.
+                  try {
+                    await applyVoiceAgentProfile(
+                      voiceAgentProfileForInstallMode(mode),
+                    );
+                  } catch (err) {
+                    console.warn(
+                      "voice-agent profile apply failed:",
+                      err,
+                    );
                   }
+                  setStep(mode === "cloud" ? "integrations" : "local_model");
                 } finally {
                   setTargetSubmitting(false);
                 }
@@ -1023,15 +1045,7 @@ export function SetupWizard({
       {step === "wake_word" && (
         <WakeWordStep
           onBack={() => setStep("integrations")}
-          onContinue={() => setStep("voice_agent_profile")}
-        />
-      )}
-
-      {step === "voice_agent_profile" && (
-        <VoiceAgentProfileStep
-          target={onboardingTarget}
-          onBack={() => setStep("wake_word")}
-          onNext={() => setStep("done")}
+          onContinue={() => setStep("done")}
         />
       )}
 
@@ -1572,7 +1586,7 @@ function WakeWordStep({
   return (
     <div className="flex flex-col text-left max-w-3xl w-full h-full overflow-y-auto py-8 z-10">
       <div className="flex gap-3 mb-8 self-center">
-        {(["welcome", "local_model", "integrations", "wake_word", "voice_agent_profile", "done"] as const).map(
+        {(["welcome", "local_model", "integrations", "wake_word", "done"] as const).map(
           (s) => (
             <div
               key={s}

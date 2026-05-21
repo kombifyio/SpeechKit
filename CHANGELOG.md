@@ -12,6 +12,38 @@ IDs, source paths, and other maintainer-only vocabulary.
 
 ## [Unreleased]
 
+## [0.35.19] - 2026-05-21
+
+The Voice Agent profile step is gone from the onboarding wizard.
+v0.35.18 still showed a confirmation page even though the choice was
+auto-derived — the page itself was redundant. The profile is now
+applied as a side-effect of the welcome-screen target choice
+(Local → On-Prem, Cloud or Server-Connect → BYOK Cloud), the apply
+runs in the background, and the wizard advances straight from
+Wake Word to Done. Failures are logged but never block onboarding;
+users can re-apply from Settings later.
+
+### Changed
+- Onboarding flow shortened: removed the dedicated Voice Agent
+  profile step. The wizard is now Welcome → Local Model →
+  Integrations → Wake Word → Done (one step shorter than v0.35.18).
+- Welcome-step target submit (Get Started + Use this server) now
+  also calls `applyVoiceAgentProfile` with the derived profile.
+  Failures are surfaced via `console.warn` and do not block the
+  wizard transition.
+
+### Removed
+- `voice-agent-profile-step.tsx` and its test file — replaced by the
+  silent background apply in the welcome handlers.
+- `voice_agent_profile` from the `WizardStep` union and from the
+  progress-dot arrays.
+
+### Tests
+- `setup-wizard.test.tsx`: added apply-profile mock + assertions
+  that Local → `on-prem`, Cloud → `cloud-byok`, Server-Connect
+  → `cloud-byok`, and that an apply failure does not block the
+  wizard advancing to the next step.
+
 ## [0.35.18] - 2026-05-21
 
 Onboarding no longer asks for the Voice Agent profile on the last step —
