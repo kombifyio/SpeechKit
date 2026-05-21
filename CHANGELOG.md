@@ -12,6 +12,20 @@ IDs, source paths, and other maintainer-only vocabulary.
 
 ## [Unreleased]
 
+## [0.35.13] - 2026-05-21
+
+Rebuild of v0.35.12 — same feature surface, but `wix build`'s
+`-bindpath` flag did not actually resolve heat's `SourceDir\` token
+in the v4 toolchain. Replaced the runtime bind with a one-time path
+rewrite before `wix build` runs.
+
+### Fixed
+- Per-machine MSI installer for Windows: `heat dir`'s SourceDir paths
+  now get rewritten to absolute filesystem paths in the
+  llama-fragment.wxs immediately after heat emits the file, so
+  `wix build` sees concrete source paths without needing the
+  `-bindpath` indirection that v0.35.12 attempted unsuccessfully.
+
 ## [0.35.12] - 2026-05-21
 
 Rebuild of v0.35.11 — same feature surface (onboarding target

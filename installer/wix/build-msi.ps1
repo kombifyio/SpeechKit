@@ -132,6 +132,30 @@ if ($LASTEXITCODE -ne 0) {
 Write-Host "heat output: $LlamaFragmentPath"
 
 # -------------------------------------------------------------------------
+# Step 1a: Rewrite SourceDir\... paths to absolute paths.
+#
+# `heat dir <path>` emits File@Source as `SourceDir\<file>` regardless of
+# any -indent / -platform flags. In WiX v3 the `SourceDir` token was
+# implicitly bound to the directory heat ran on. WiX v4 requires explicit
+# binding via `-bindpath SourceDir=<path>` on `wix build`, but in
+# practice (verified across v0.35.11 + v0.35.12 attempts) `wix build`
+# still emits WIX0103 ("Cannot find the File file 'SourceDir\xxx.dll'")
+# even with the flag set — the SourceDir token does not appear to resolve
+# the heat-generated entries reliably.
+#
+# Replace the token with the absolute path before wix runs. This is the
+# same rewrite operators of large heat-driven WiX v4 projects do (see
+# WiX issue tracker: heat with -srd + v4 build needs path materialisation).
+# -------------------------------------------------------------------------
+$LlamaSourceDirAbs = (Join-Path $StageDir "llama")
+Write-Host "`nRewriting heat SourceDir token to absolute path: $LlamaSourceDirAbs"
+$fragmentContent = Get-Content $LlamaFragmentPath -Raw
+# Match `Source="SourceDir\` and `Source='SourceDir\` (both quote styles).
+$fragmentContent = $fragmentContent -replace 'Source="SourceDir\\', "Source=`"$LlamaSourceDirAbs\"
+$fragmentContent = $fragmentContent -replace "Source='SourceDir\\", "Source='$LlamaSourceDirAbs\"
+Set-Content -Path $LlamaFragmentPath -Value $fragmentContent -Encoding UTF8
+
+# -------------------------------------------------------------------------
 # Step 1b: Migrate the heat-generated fragment from the WiX v3 namespace
 # (http://schemas.microsoft.com/wix/2006/wi) to the WiX v4 namespace
 # (http://wixtoolset.org/schemas/v4/wxs) that the v4 compiler requires.
@@ -164,17 +188,12 @@ if ($convertExit -ne 0 -and $convertExit -ne 2) {
 # -arch x64 ensures the package targets 64-bit Windows.
 # -------------------------------------------------------------------------
 Write-Host "`nBuilding MSI..."
-# `heat dir` emits File@Source paths as `SourceDir\<relative-path>`.
-# In WiX v3 the implicit SourceDir was the directory heat was run on;
-# in WiX v4 the build step has to resolve it explicitly via -bindpath.
-# Without this, every File reference in llama-fragment.wxs fails with
-# WIX0103 ("Cannot find the File file 'SourceDir\ggml-base.dll'").
-$LlamaSourceDir = Join-Path $StageDir "llama"
+# File@Source paths have already been rewritten to absolute (Step 1a),
+# so no -bindpath is required here.
 & wix build `
     (Join-Path $ScriptDir "SpeechKit.wxs") `
     $LlamaFragmentPath `
     -arch x64 `
-    -bindpath "SourceDir=$LlamaSourceDir" `
     -out $OutFile
 
 if ($LASTEXITCODE -ne 0) {
