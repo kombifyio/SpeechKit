@@ -10,6 +10,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -454,6 +455,44 @@ func TestCatalogMarksLocalLLMArtifactsSelectedPerProfile(t *testing.T) {
 	}
 	if !selected["llamacpp.gemma-4-e2b-it-q8-0-voice"] {
 		t.Fatal("expected voice E2B Q8_0 artifact to be selected")
+	}
+}
+
+func TestCatalogMarksWakewordArtifactsInWakewordModelDir(t *testing.T) {
+	root := t.TempDir()
+	wakeDir := filepath.Join(root, "wakeword")
+	if err := os.MkdirAll(wakeDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for _, filename := range []string{"melspectrogram.onnx", "embedding_model.onnx", "hey_quby.onnx"} {
+		if err := os.WriteFile(filepath.Join(wakeDir, filename), []byte("wakeword"), 0o600); err != nil {
+			t.Fatalf("write %s: %v", filename, err)
+		}
+	}
+
+	cfg := &config.Config{}
+	cfg.General.ModelDownloadDir = root
+	cfg.Wakeword.PhraseID = "hey_quby"
+
+	items := CatalogWithStatus(t.Context(), cfg, StatusOptions{})
+	seen := map[string]Item{}
+	for _, item := range items {
+		if strings.HasPrefix(item.ID, "wakeword.") {
+			seen[item.ID] = item
+		}
+	}
+
+	for _, id := range []string{"wakeword.shared.melspec", "wakeword.shared.embedding", "wakeword.phrase.hey_quby"} {
+		item, ok := seen[id]
+		if !ok {
+			t.Fatalf("missing wake-word catalog item %s", id)
+		}
+		if !item.Available {
+			t.Fatalf("%s should be available from %s", id, wakeDir)
+		}
+	}
+	if !seen["wakeword.phrase.hey_quby"].Selected {
+		t.Fatal("selected wake phrase should be marked selected")
 	}
 }
 

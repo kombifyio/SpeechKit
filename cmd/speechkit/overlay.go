@@ -235,6 +235,9 @@ type wakewordSettingsSnapshot struct {
 	// Enabled mirrors cfg.Wakeword.Enabled.
 	Enabled bool `json:"enabled"`
 
+	// Backend is the selected detector implementation.
+	Backend string `json:"backend"`
+
 	// PhraseID is the currently selected catalog entry. Empty means
 	// "custom" mode driven by ModelPath.
 	PhraseID string `json:"phraseId"`
@@ -262,6 +265,10 @@ type wakewordSettingsSnapshot struct {
 	// PhraseCatalog lists every curated entry the user can pick from in
 	// the dropdown.
 	PhraseCatalog []wakewordCatalogEntry `json:"phraseCatalog"`
+
+	// BackendOptions lists every detector path exposed in the temporary
+	// v0.36 testing UI, including runtime availability.
+	BackendOptions []wakewordBackendOption `json:"backendOptions"`
 }
 
 // wakewordCatalogEntry mirrors wakeword.PhraseCatalogEntry for JSON.
@@ -270,4 +277,14 @@ type wakewordCatalogEntry struct {
 	DisplayName  string `json:"displayName"`
 	KeywordLabel string `json:"keywordLabel"`
 	Notes        string `json:"notes"`
+}
+
+type wakewordBackendOption struct {
+	ID          string `json:"id"`
+	Label       string `json:"label"`
+	Description string `json:"description"`
+	Status      string `json:"status"`
+	Available   bool   `json:"available"`
+	Implemented bool   `json:"implemented"`
+	Recommended bool   `json:"recommended,omitempty"`
 }

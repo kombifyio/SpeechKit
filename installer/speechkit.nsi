@@ -10,7 +10,7 @@ RequestExecutionLevel user
 
 ; VERSION can be overridden at compile time: makensis /DVERSION=x.y.z
 !ifndef VERSION
-  !define VERSION "0.35.10"
+  !define VERSION "0.35.11"
 !endif
 
 ; --- Interface ---
@@ -37,6 +37,7 @@ Section "SpeechKit" SecMain
   File "${STAGE_DIR}\SpeechKit.exe"
   File "${STAGE_DIR}\whisper-server.exe"
   File "${STAGE_DIR}\speechkit-wakeword.exe"
+  File "${STAGE_DIR}\speechkit-openwakeword.exe"
   File "${STAGE_DIR}\*.dll"
   File "${STAGE_DIR}\MicrosoftEdgeWebview2Setup.exe"
 
@@ -105,6 +106,7 @@ Section "Uninstall"
   Delete "$INSTDIR\SpeechKit.exe"
   Delete "$INSTDIR\whisper-server.exe"
   Delete "$INSTDIR\speechkit-wakeword.exe"
+  Delete "$INSTDIR\speechkit-openwakeword.exe"
   Delete "$INSTDIR\*.dll"
   Delete "$INSTDIR\MicrosoftEdgeWebview2Setup.exe"
   Delete "$INSTDIR\config.toml"

@@ -3,10 +3,13 @@ package main
 import (
 	"fmt"
 	"github.com/kombifyio/SpeechKit/cmd/speechkit/internal/profiles"
+	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
 	"github.com/kombifyio/SpeechKit/internal/config"
+	"github.com/kombifyio/SpeechKit/internal/downloads"
 	"github.com/kombifyio/SpeechKit/internal/secrets"
 	"github.com/kombifyio/SpeechKit/internal/voiceagentprofile"
 	"github.com/kombifyio/SpeechKit/internal/wakeword"
@@ -308,8 +311,10 @@ func buildWakewordSettingsSnapshot(cfg *config.Config, active bool, status strin
 		})
 	}
 	defaultMode := config.NormalizeWakewordDefaultMode(cfg.Wakeword.DefaultMode)
+	backend := config.NormalizeWakewordBackend(cfg.Wakeword.Backend)
 	return wakewordSettingsSnapshot{
 		Enabled:              cfg.Wakeword.Enabled,
+		Backend:              backend,
 		PhraseID:             strings.TrimSpace(cfg.Wakeword.PhraseID),
 		DefaultMode:          defaultMode,
 		Threshold:            cfg.Wakeword.Threshold,
@@ -318,7 +323,107 @@ func buildWakewordSettingsSnapshot(cfg *config.Config, active bool, status strin
 		Active:               active,
 		StatusMessage:        status,
 		PhraseCatalog:        catalog,
+		BackendOptions:       buildWakewordBackendOptions(cfg),
 	}
+}
+
+func buildWakewordBackendOptions(cfg *config.Config) []wakewordBackendOption {
+	sherpaAvailable, _ := sherpaWakewordBackendStatus()
+	liveKitAvailable := len(liveKitOpenWakeWordMissingAssets(cfg)) == 0
+	return []wakewordBackendOption{
+		{
+			ID:          config.WakewordBackendSherpaKWS,
+			Label:       "Sherpa KWS sidecar",
+			Available:   sherpaAvailable,
+			Implemented: true,
+			Recommended: true,
+		},
+		{
+			ID:          config.WakewordBackendLiveKitOpenWakeWord,
+			Label:       "LiveKit/openWakeWord",
+			Available:   liveKitAvailable,
+			Implemented: true,
+		},
+		{
+			ID:          config.WakewordBackendSTTPhrase,
+			Label:       "STT phrase match",
+			Available:   true,
+			Implemented: true,
+		},
+	}
+}
+
+func sherpaWakewordBackendStatus() (bool, string) {
+	exe, err := os.Executable()
+	if err != nil {
+		return false, "Cannot resolve the running executable path."
+	}
+	exeDir := filepath.Dir(exe)
+	for label, path := range map[string]string{
+		"sidecar":  filepath.Join(exeDir, defaultWakewordSidecarBinary),
+		"modelDir": filepath.Join(exeDir, defaultWakewordModelDirName),
+		"keywords": filepath.Join(exeDir, defaultWakewordModelDirName, "keywords.txt"),
+	} {
+		if !pathIsRegularFileOrDir(path) {
+			return false, fmt.Sprintf("Missing bundled %s at %s.", label, path)
+		}
+	}
+	return true, "Bundled sidecar and KWS model are present."
+}
+
+func liveKitOpenWakeWordMissingAssets(cfg *config.Config) []string {
+	paths := liveKitOpenWakeWordAssetPaths(cfg)
+	missing := make([]string, 0, len(paths))
+	for _, label := range []string{"melspec", "embedding", "phrase"} {
+		path := paths[label]
+		if !downloads.FileIsPresent(path) {
+			missing = append(missing, fmt.Sprintf("%s (%s)", label, path))
+		}
+	}
+	return missing
+}
+
+func liveKitOpenWakeWordAssetPaths(cfg *config.Config) map[string]string {
+	phraseID := "hey_quby"
+	if cfg != nil {
+		if id := strings.TrimSpace(cfg.Wakeword.PhraseID); id != "" {
+			phraseID = strings.ToLower(id)
+		}
+	}
+	modelPath := resolveOpenWakeWordArtifactPath(cfg, phraseID+".onnx")
+	melspecPath := resolveOpenWakeWordArtifactPath(cfg, "melspectrogram.onnx")
+	embeddingPath := resolveOpenWakeWordArtifactPath(cfg, "embedding_model.onnx")
+	if cfg != nil {
+		if v := strings.TrimSpace(cfg.Wakeword.ModelPath); v != "" && !strings.HasSuffix(strings.ToLower(v), ".txt") {
+			modelPath = v
+		}
+		if v := strings.TrimSpace(cfg.Wakeword.MelspecModelPath); v != "" {
+			melspecPath = v
+		}
+		if v := strings.TrimSpace(cfg.Wakeword.EmbeddingModelPath); v != "" {
+			embeddingPath = v
+		}
+	}
+	return map[string]string{
+		"phrase":    modelPath,
+		"melspec":   melspecPath,
+		"embedding": embeddingPath,
+	}
+}
+
+func resolveOpenWakeWordArtifactPath(cfg *config.Config, filename string) string {
+	userPath := filepath.Join(downloads.ResolveWakewordModelsDir(cfg), filename)
+	if downloads.FileIsPresent(userPath) {
+		return userPath
+	}
+	exe, err := os.Executable()
+	if err == nil {
+		bundledPath := filepath.Join(filepath.Dir(exe), "models", "wakeword", filename)
+		if downloads.FileIsPresent(bundledPath) {
+			return bundledPath
+		}
+	}
+	return userPath
 }
 
 func (s *appState) overlayFreeCenterState() (int, int, map[string]config.OverlayFreePosition) {

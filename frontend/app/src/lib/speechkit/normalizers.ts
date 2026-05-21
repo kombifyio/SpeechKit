@@ -16,6 +16,8 @@ import type {
   SpeechKitOverlayState,
   SpeechKitSettingsState,
   VoiceAgentProfile,
+  WakewordBackend,
+  WakewordBackendOption,
   WakewordDefaultMode,
   WakewordPhraseCatalogEntry,
   WakewordSettings,
@@ -23,7 +25,7 @@ import type {
 
 function readStringField(
   payload: Record<string, unknown> | null | undefined,
-  key: string,
+  key: string
 ): string | undefined {
   if (!payload || !(key in payload)) {
     return undefined;
@@ -38,7 +40,7 @@ function readStringField(
 function normalizeHotkeyBehavior(
   payload: Record<string, unknown> | null | undefined,
   key: string,
-  fallback: HotkeyBehavior,
+  fallback: HotkeyBehavior
 ): HotkeyBehavior {
   const value = readStringField(payload, key);
   if (value === "toggle") {
@@ -56,7 +58,7 @@ function normalizeHotkeyBehavior(
 function normalizeOverlayFeedbackMode(
   payload: Record<string, unknown> | null | undefined,
   key: string,
-  fallback: OverlayFeedbackMode,
+  fallback: OverlayFeedbackMode
 ): OverlayFeedbackMode {
   const value = readStringField(payload, key);
   if (value === "big_productivity") {
@@ -71,7 +73,7 @@ function normalizeOverlayFeedbackMode(
 function normalizeModeFlags(
   payload: Record<string, unknown> | null | undefined,
   key: "modeEnabled" | "availableModes",
-  fallback: AvailableModes,
+  fallback: AvailableModes
 ): AvailableModes {
   const raw = payload?.[key];
   if (!raw || typeof raw !== "object") {
@@ -92,7 +94,7 @@ function normalizeModeFlags(
 function normalizeAvailableModes(
   payload: Record<string, unknown> | null | undefined,
   modeEnabled: AvailableModes,
-  hotkeys: AvailableModes,
+  hotkeys: AvailableModes
 ): AvailableModes {
   const derived = {
     dictate: modeEnabled.dictate && hotkeys.dictate,
@@ -104,7 +106,7 @@ function normalizeAvailableModes(
 
 function resolveAssistHotkey(
   payload: Record<string, unknown> | null | undefined,
-  fallback: string,
+  fallback: string
 ): string {
   if (!payload) {
     return fallback;
@@ -126,7 +128,7 @@ function resolveAssistHotkey(
 
 function resolveVoiceAgentHotkey(
   payload: Record<string, unknown> | null | undefined,
-  fallback: string,
+  fallback: string
 ): string {
   if (!payload) {
     return fallback;
@@ -149,7 +151,7 @@ function resolveVoiceAgentHotkey(
 function normalizeRuntimeMode(
   rawMode: string | undefined,
   availableModes: AvailableModes,
-  agentMode: AgentMode = "assist",
+  agentMode: AgentMode = "assist"
 ): RuntimeMode {
   let mode: RuntimeMode;
   switch (rawMode) {
@@ -183,7 +185,7 @@ export function deriveLegacyAgentMode(
   assistHotkey: string,
   voiceAgentHotkey: string,
   activeMode: RuntimeMode,
-  fallback: AgentMode = "assist",
+  fallback: AgentMode = "assist"
 ): AgentMode {
   if (activeMode === "voice_agent" && voiceAgentHotkey) {
     return "voice_agent";
@@ -203,7 +205,7 @@ export function deriveLegacyAgentMode(
 export function deriveLegacyAgentHotkey(
   assistHotkey: string,
   voiceAgentHotkey: string,
-  activeMode: RuntimeMode,
+  activeMode: RuntimeMode
 ): string {
   if (activeMode === "voice_agent" && voiceAgentHotkey) {
     return voiceAgentHotkey;
@@ -215,13 +217,13 @@ export function deriveLegacyAgentHotkey(
 }
 
 function cloneVoiceAgentProfiles(
-  profiles: VoiceAgentProfile[],
+  profiles: VoiceAgentProfile[]
 ): VoiceAgentProfile[] {
   return profiles.map((profile) => ({ ...profile }));
 }
 
 function normalizeVoiceAgentProfileRecord(
-  value: unknown,
+  value: unknown
 ): VoiceAgentProfile | null {
   if (!value || typeof value !== "object") {
     return null;
@@ -254,7 +256,7 @@ function normalizeVoiceAgentProfileRecord(
 
 function normalizeVoiceAgentProfiles(
   payload: Record<string, unknown> | null | undefined,
-  fallback: VoiceAgentProfile[],
+  fallback: VoiceAgentProfile[]
 ): VoiceAgentProfile[] {
   const fallbackProfiles = fallback.length
     ? fallback
@@ -273,7 +275,7 @@ function normalizeVoiceAgentProfiles(
 function normalizeVoiceAgentProfileId(
   value: string | undefined,
   profiles: VoiceAgentProfile[],
-  fallback: string,
+  fallback: string
 ): string {
   const candidate = value?.trim() ?? "";
   if (candidate && profiles.some((profile) => profile.id === candidate)) {
@@ -289,7 +291,7 @@ function normalizeVoiceAgentProfileId(
 }
 
 export function normalizeOverlayState(
-  payload: Partial<SpeechKitOverlayState> | null | undefined,
+  payload: Partial<SpeechKitOverlayState> | null | undefined
 ): SpeechKitOverlayState {
   const base = { ...defaultOverlayState };
   const record = (payload ?? null) as Record<string, unknown> | null;
@@ -304,22 +306,22 @@ export function normalizeOverlayState(
   const assistHotkey = resolveAssistHotkey(record, base.assistHotkey);
   const voiceAgentHotkey = resolveVoiceAgentHotkey(
     record,
-    base.voiceAgentHotkey,
+    base.voiceAgentHotkey
   );
   const dictateHotkeyBehavior = normalizeHotkeyBehavior(
     record,
     "dictateHotkeyBehavior",
-    base.dictateHotkeyBehavior,
+    base.dictateHotkeyBehavior
   );
   const assistHotkeyBehavior = normalizeHotkeyBehavior(
     record,
     "assistHotkeyBehavior",
-    base.assistHotkeyBehavior,
+    base.assistHotkeyBehavior
   );
   const voiceAgentHotkeyBehavior = normalizeHotkeyBehavior(
     record,
     "voiceAgentHotkeyBehavior",
-    base.voiceAgentHotkeyBehavior,
+    base.voiceAgentHotkeyBehavior
   );
   const hotkeyModes = {
     dictate: dictateHotkey !== "",
@@ -330,11 +332,11 @@ export function normalizeOverlayState(
   const availableModes = normalizeAvailableModes(
     record,
     modeEnabled,
-    hotkeyModes,
+    hotkeyModes
   );
   const activeMode = normalizeRuntimeMode(
     readStringField(record, "activeMode"),
-    availableModes,
+    availableModes
   );
   const agentHotkey =
     readStringField(record, "agentHotkey") ??
@@ -342,12 +344,12 @@ export function normalizeOverlayState(
   const assistOverlayMode = normalizeOverlayFeedbackMode(
     record,
     "assistOverlayMode",
-    base.assistOverlayMode,
+    base.assistOverlayMode
   );
   const voiceAgentOverlayMode = normalizeOverlayFeedbackMode(
     record,
     "voiceAgentOverlayMode",
-    base.voiceAgentOverlayMode,
+    base.voiceAgentOverlayMode
   );
 
   return {
@@ -380,7 +382,7 @@ export function normalizeOverlayState(
 }
 
 export function normalizeSettingsState(
-  payload: Partial<SpeechKitSettingsState> | null | undefined,
+  payload: Partial<SpeechKitSettingsState> | null | undefined
 ): SpeechKitSettingsState {
   const base = { ...defaultSettingsState };
   const record = (payload ?? null) as Record<string, unknown> | null;
@@ -395,22 +397,22 @@ export function normalizeSettingsState(
   const assistHotkey = resolveAssistHotkey(record, base.assistHotkey);
   const voiceAgentHotkey = resolveVoiceAgentHotkey(
     record,
-    base.voiceAgentHotkey,
+    base.voiceAgentHotkey
   );
   const dictateHotkeyBehavior = normalizeHotkeyBehavior(
     record,
     "dictateHotkeyBehavior",
-    base.dictateHotkeyBehavior,
+    base.dictateHotkeyBehavior
   );
   const assistHotkeyBehavior = normalizeHotkeyBehavior(
     record,
     "assistHotkeyBehavior",
-    base.assistHotkeyBehavior,
+    base.assistHotkeyBehavior
   );
   const voiceAgentHotkeyBehavior = normalizeHotkeyBehavior(
     record,
     "voiceAgentHotkeyBehavior",
-    base.voiceAgentHotkeyBehavior,
+    base.voiceAgentHotkeyBehavior
   );
   const voiceAgentCloseBehavior =
     readStringField(record, "voiceAgentCloseBehavior") === "new_chat"
@@ -418,12 +420,12 @@ export function normalizeSettingsState(
       : "continue";
   const voiceAgentProfiles = normalizeVoiceAgentProfiles(
     record,
-    base.voiceAgentProfiles,
+    base.voiceAgentProfiles
   );
   const voiceAgentProfileId = normalizeVoiceAgentProfileId(
     readStringField(record, "voiceAgentProfileId"),
     voiceAgentProfiles,
-    base.voiceAgentProfileId,
+    base.voiceAgentProfileId
   );
   const voiceAgentRefinementPrompt =
     readStringField(record, "voiceAgentRefinementPrompt") ?? "";
@@ -435,8 +437,8 @@ export function normalizeSettingsState(
     typeof record?.autoStartOnLaunch === "boolean"
       ? record.autoStartOnLaunch
       : typeof record?.voiceAgentAutoStart === "boolean"
-        ? record.voiceAgentAutoStart
-        : base.autoStartOnLaunch;
+      ? record.voiceAgentAutoStart
+      : base.autoStartOnLaunch;
   const hotkeyModes = {
     dictate: dictateHotkey !== "",
     assist: assistHotkey !== "",
@@ -446,7 +448,7 @@ export function normalizeSettingsState(
   const availableModes = normalizeAvailableModes(
     record,
     modeEnabled,
-    hotkeyModes,
+    hotkeyModes
   );
   const agentMode =
     readStringField(record, "agentMode") === "voice_agent"
@@ -455,12 +457,12 @@ export function normalizeSettingsState(
           assistHotkey,
           voiceAgentHotkey,
           "none",
-          base.agentMode,
+          base.agentMode
         );
   const activeMode = normalizeRuntimeMode(
     readStringField(record, "activeMode"),
     availableModes,
-    agentMode,
+    agentMode
   );
   const agentHotkey =
     readStringField(record, "agentHotkey") ??
@@ -472,12 +474,12 @@ export function normalizeSettingsState(
   const assistOverlayMode = normalizeOverlayFeedbackMode(
     record,
     "assistOverlayMode",
-    base.assistOverlayMode,
+    base.assistOverlayMode
   );
   const voiceAgentOverlayMode = normalizeOverlayFeedbackMode(
     record,
     "voiceAgentOverlayMode",
-    base.voiceAgentOverlayMode,
+    base.voiceAgentOverlayMode
   );
 
   const sanitizedPayload = {
@@ -539,7 +541,7 @@ export function normalizeSettingsState(
 
 function normalizeWakewordDefaultMode(
   value: unknown,
-  fallback: WakewordDefaultMode,
+  fallback: WakewordDefaultMode
 ): WakewordDefaultMode {
   if (typeof value !== "string") return fallback;
   const v = value.trim().toLowerCase();
@@ -547,8 +549,51 @@ function normalizeWakewordDefaultMode(
   return fallback;
 }
 
-function normalizeWakewordPhraseCatalog(
+function normalizeWakewordBackend(
+  value: unknown,
+  fallback: WakewordBackend
+): WakewordBackend {
+  if (typeof value !== "string") return fallback;
+  const v = value.trim().toLowerCase();
+  if (
+    v === "sherpa_kws" ||
+    v === "livekit_openwakeword" ||
+    v === "stt_phrase"
+  ) {
+    return v;
+  }
+  return fallback;
+}
+
+function normalizeWakewordBackendOptions(
   raw: unknown,
+  fallback: WakewordBackendOption[]
+): WakewordBackendOption[] {
+  if (!Array.isArray(raw)) return fallback;
+  const out: WakewordBackendOption[] = [];
+  for (const entry of raw) {
+    if (!entry || typeof entry !== "object") continue;
+    const obj = entry as Record<string, unknown>;
+    const id = normalizeWakewordBackend(obj.id, "sherpa_kws");
+    if (out.some((existing) => existing.id === id)) continue;
+    out.push({
+      id,
+      label: typeof obj.label === "string" && obj.label.trim() ? obj.label : id,
+      description:
+        typeof obj.description === "string" ? obj.description.trim() : "",
+      status: typeof obj.status === "string" ? obj.status.trim() : "",
+      available: typeof obj.available === "boolean" ? obj.available : false,
+      implemented:
+        typeof obj.implemented === "boolean" ? obj.implemented : false,
+      recommended:
+        typeof obj.recommended === "boolean" ? obj.recommended : undefined,
+    });
+  }
+  return out.length ? out : fallback;
+}
+
+function normalizeWakewordPhraseCatalog(
+  raw: unknown
 ): WakewordPhraseCatalogEntry[] {
   if (!Array.isArray(raw)) return [];
   const out: WakewordPhraseCatalogEntry[] = [];
@@ -581,16 +626,25 @@ function normalizeWakewordPhraseCatalog(
 
 function normalizeWakewordSettings(
   record: Record<string, unknown> | null,
-  base: WakewordSettings,
+  base: WakewordSettings
 ): WakewordSettings {
   const raw = record?.wakeword;
   if (!raw || typeof raw !== "object") return base;
   const obj = raw as Record<string, unknown>;
+  const backendOptions = normalizeWakewordBackendOptions(
+    obj.backendOptions,
+    base.backendOptions
+  );
+  const backend = normalizeWakewordBackend(obj.backend, base.backend);
   return {
     enabled: typeof obj.enabled === "boolean" ? obj.enabled : base.enabled,
+    backend,
     phraseId:
       typeof obj.phraseId === "string" ? obj.phraseId.trim() : base.phraseId,
-    defaultMode: normalizeWakewordDefaultMode(obj.defaultMode, base.defaultMode),
+    defaultMode: normalizeWakewordDefaultMode(
+      obj.defaultMode,
+      base.defaultMode
+    ),
     threshold:
       typeof obj.threshold === "number" && obj.threshold >= 0
         ? obj.threshold
@@ -608,12 +662,13 @@ function normalizeWakewordSettings(
     statusMessage:
       typeof obj.statusMessage === "string" ? obj.statusMessage : "",
     phraseCatalog: normalizeWakewordPhraseCatalog(obj.phraseCatalog),
+    backendOptions,
   };
 }
 
 function normalizeModeSelectionEntry(
   value: unknown,
-  fallbackPrimary = "",
+  fallbackPrimary = ""
 ): ModeModelSelectionState {
   if (!value || typeof value !== "object") {
     return { primaryProfileId: fallbackPrimary, fallbackProfileId: "" };
@@ -643,7 +698,7 @@ function normalizeModeSelectionEntry(
 
 function normalizeModelSelections(
   payload: Record<string, unknown> | null | undefined,
-  activeProfiles: Partial<Record<Modality, string>>,
+  activeProfiles: Partial<Record<Modality, string>>
 ): ModelSelectionsState {
   const raw = payload?.modelSelections;
   const selections =
@@ -653,17 +708,17 @@ function normalizeModelSelections(
     dictate: normalizeModeSelectionEntry(
       selections.dictate,
       activeProfiles.stt ??
-        builtInPrimaryModelSelections.dictate.primaryProfileId,
+        builtInPrimaryModelSelections.dictate.primaryProfileId
     ),
     assist: normalizeModeSelectionEntry(
       selections.assist,
       activeProfiles.assist ??
-        builtInPrimaryModelSelections.assist.primaryProfileId,
+        builtInPrimaryModelSelections.assist.primaryProfileId
     ),
     voice_agent: normalizeModeSelectionEntry(
       selections.voice_agent,
       activeProfiles.realtime_voice ??
-        builtInPrimaryModelSelections.voice_agent.primaryProfileId,
+        builtInPrimaryModelSelections.voice_agent.primaryProfileId
     ),
   };
 }

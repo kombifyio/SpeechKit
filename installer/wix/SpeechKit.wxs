@@ -113,17 +113,15 @@
           </Component>
 
           <!--
-            Create config.toml on first install only (never overwrite on upgrade).
-            Uses a util:CopyFile from config.default.toml so the file is
-            tracked by MSI and removed on uninstall.
+            config.toml is provisioned by the app on first launch via
+            seedRuntimeConfigFromInstallTemplate (desktop_startup.go),
+            which copies config.default.toml from the install dir into
+            the user's %APPDATA% on first run only. We intentionally do
+            NOT install config.toml from MSI: WiX v4 removed
+            Component@NeverOverwrite, and shipping the file unconditionally
+            from MSI would clobber the user's edited config on upgrade.
+            The app-side seeding is the upgrade-safe path.
           -->
-          <Component Id="ConfigToml" Guid="*">
-            <File Id="config_toml"
-                  Source="..\..\dist\windows\SpeechKit\config.toml"
-                  Name="config.toml"
-                  KeyPath="yes"
-                  NeverOverwrite="yes" />
-          </Component>
 
           <!-- Bundled local starter speech model for out-of-box dictation. -->
           <Directory Id="MODELSDIR" Name="models">
@@ -132,6 +130,44 @@
                     Source="..\..\dist\windows\SpeechKit\models\ggml-small.bin"
                     KeyPath="yes" />
             </Component>
+
+            <Directory Id="OPENWAKEWORDMODELDIR" Name="wakeword">
+              <Component Id="OpenWakewordMelspecModel" Guid="*">
+                <File Id="openwakeword_melspectrogram_onnx"
+                      Source="..\..\dist\windows\SpeechKit\models\wakeword\melspectrogram.onnx"
+                      KeyPath="yes" />
+              </Component>
+              <Component Id="OpenWakewordEmbeddingModel" Guid="*">
+                <File Id="openwakeword_embedding_model_onnx"
+                      Source="..\..\dist\windows\SpeechKit\models\wakeword\embedding_model.onnx"
+                      KeyPath="yes" />
+              </Component>
+              <Component Id="OpenWakewordHeyQubyModel" Guid="*">
+                <File Id="openwakeword_hey_quby_onnx"
+                      Source="..\..\dist\windows\SpeechKit\models\wakeword\hey_quby.onnx"
+                      KeyPath="yes" />
+              </Component>
+              <Component Id="OpenWakewordHeyComputerModel" Guid="*">
+                <File Id="openwakeword_hey_computer_onnx"
+                      Source="..\..\dist\windows\SpeechKit\models\wakeword\hey_computer.onnx"
+                      KeyPath="yes" />
+              </Component>
+              <Component Id="OpenWakewordHeyJarvisModel" Guid="*">
+                <File Id="openwakeword_hey_jarvis_onnx"
+                      Source="..\..\dist\windows\SpeechKit\models\wakeword\hey_jarvis.onnx"
+                      KeyPath="yes" />
+              </Component>
+              <Component Id="OpenWakewordHeyMiraModel" Guid="*">
+                <File Id="openwakeword_hey_mira_onnx"
+                      Source="..\..\dist\windows\SpeechKit\models\wakeword\hey_mira.onnx"
+                      KeyPath="yes" />
+              </Component>
+              <Component Id="OpenWakewordHeyKombifyModel" Guid="*">
+                <File Id="openwakeword_hey_kombify_onnx"
+                      Source="..\..\dist\windows\SpeechKit\models\wakeword\hey_kombify.onnx"
+                      KeyPath="yes" />
+              </Component>
+            </Directory>
           </Directory>
 
           <!--
@@ -143,6 +179,12 @@
           <Component Id="WakewordSidecarExe" Guid="*">
             <File Id="speechkit_wakeword_exe"
                   Source="..\..\dist\windows\SpeechKit\speechkit-wakeword.exe"
+                  KeyPath="yes" />
+          </Component>
+
+          <Component Id="OpenWakewordSidecarExe" Guid="*">
+            <File Id="speechkit_openwakeword_exe"
+                  Source="..\..\dist\windows\SpeechKit\speechkit-openwakeword.exe"
                   KeyPath="yes" />
           </Component>
 
@@ -241,9 +283,7 @@
                   Return="ignore" />
 
     <InstallExecuteSequence>
-      <Custom Action="InstallWebView2" After="InstallFiles">
-        NOT REMOVE
-      </Custom>
+      <Custom Action="InstallWebView2" After="InstallFiles" Condition="NOT REMOVE" />
     </InstallExecuteSequence>
 
     <!-- Feature tree — single feature referencing all components -->
@@ -254,9 +294,16 @@
       <ComponentRef Id="GgmlDll" />
       <ComponentRef Id="WebView2Setup" />
       <ComponentRef Id="ConfigDefaultToml" />
-      <ComponentRef Id="ConfigToml" />
       <ComponentRef Id="StarterWhisperModel" />
       <ComponentRef Id="WakewordSidecarExe" />
+      <ComponentRef Id="OpenWakewordSidecarExe" />
+      <ComponentRef Id="OpenWakewordMelspecModel" />
+      <ComponentRef Id="OpenWakewordEmbeddingModel" />
+      <ComponentRef Id="OpenWakewordHeyQubyModel" />
+      <ComponentRef Id="OpenWakewordHeyComputerModel" />
+      <ComponentRef Id="OpenWakewordHeyJarvisModel" />
+      <ComponentRef Id="OpenWakewordHeyMiraModel" />
+      <ComponentRef Id="OpenWakewordHeyKombifyModel" />
       <ComponentRef Id="WakewordKwsEncoder" />
       <ComponentRef Id="WakewordKwsDecoder" />
       <ComponentRef Id="WakewordKwsJoiner" />

@@ -120,12 +120,6 @@ func (m *slowConnectMockLiveProvider) capturedAudioBytes() []byte {
 	return out
 }
 
-func (m *slowConnectMockLiveProvider) isClosed() bool {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	return m.closed
-}
-
 // TestVoiceAgentHoldToTalkBuffersFramesDuringConnect proves the regression
 // guard for the activation-lag bug: mic frames captured between the
 // hold-to-talk KeyDown and the moment Gemini Live finishes its WebSocket

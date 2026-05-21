@@ -19,17 +19,53 @@ $modelUrl = "https://github.com/k2-fsa/sherpa-onnx/releases/download/kws-models/
 $modelSha256 = '' # computed on first download below; CI can pin it later
 
 $runtimeCacheDir = Join-Path $CacheDir 'wakeword-model'
+$openWakewordCacheDir = Join-Path $CacheDir 'openwakeword-models'
 $modelTarPath = Join-Path $runtimeCacheDir $modelAsset
 $modelExtractDir = Join-Path $runtimeCacheDir "extract-$modelRelease"
 $targetDir = Join-Path $BundleDir 'wakeword-kws'
+$openWakewordTargetDir = Join-Path (Join-Path $BundleDir 'models') 'wakeword'
 
 function Get-Sha256 {
     param([Parameter(Mandatory = $true)][string]$Path)
     return (Get-FileHash -LiteralPath $Path -Algorithm SHA256).Hash.ToLowerInvariant()
 }
 
+function Download-VerifiedFile {
+    param(
+        [Parameter(Mandatory = $true)][string]$Url,
+        [Parameter(Mandatory = $true)][string]$Destination,
+        [Parameter(Mandatory = $true)][string]$ExpectedSha256,
+        [Parameter(Mandatory = $true)][string]$Description
+    )
+
+    if (Test-Path -LiteralPath $Destination) {
+        $actual = Get-Sha256 -Path $Destination
+        if ($actual -eq $ExpectedSha256.ToLowerInvariant()) {
+            Write-Host "Using cached $Description"
+            return
+        }
+        Remove-Item -LiteralPath $Destination -Force
+    }
+
+    $tmp = "$Destination.download"
+    if (Test-Path -LiteralPath $tmp) {
+        Remove-Item -LiteralPath $tmp -Force
+    }
+    Write-Host "Downloading $Description ..."
+    Invoke-WebRequest -Uri $Url -OutFile $tmp
+    $actual = Get-Sha256 -Path $tmp
+    if ($actual -ne $ExpectedSha256.ToLowerInvariant()) {
+        Remove-Item -LiteralPath $tmp -Force
+        throw "$Description hash mismatch. Expected $ExpectedSha256, got $actual."
+    }
+    Move-Item -LiteralPath $tmp -Destination $Destination -Force
+}
+
 if (-not (Test-Path -LiteralPath $runtimeCacheDir)) {
     New-Item -ItemType Directory -Path $runtimeCacheDir | Out-Null
+}
+if (-not (Test-Path -LiteralPath $openWakewordCacheDir)) {
+    New-Item -ItemType Directory -Path $openWakewordCacheDir | Out-Null
 }
 
 if (-not (Test-Path -LiteralPath $modelTarPath)) {
@@ -131,3 +167,65 @@ $keywordsPath = Join-Path $targetDir 'keywords.txt'
 [System.IO.File]::WriteAllLines($keywordsPath, $speechkitKeywords)
 
 Write-Host "Bundled sherpa-onnx KWS model into $targetDir ($([math]::Round((Get-ChildItem $targetDir -File | Measure-Object -Property Length -Sum).Sum / 1MB, 1)) MB)."
+
+# openWakeWord-compatible ONNX artifacts used by the temporary
+# LiveKit/openWakeWord backend. These are small enough to ship in the
+# desktop bundle so the backend works immediately after install, while the
+# model catalog can still manage updated/user-selected copies in
+# %LOCALAPPDATA%\SpeechKit\models\wakeword.
+$openWakewordFiles = @(
+    @{
+        Name = 'melspectrogram.onnx'
+        Url = 'https://huggingface.co/Soulcreek2/speechkit-wakeword-models/resolve/main/melspectrogram.onnx'
+        Sha256 = 'ba2b0e0f8b7b875369a2c89cb13360ff53bac436f2895cced9f479fa65eb176f'
+        Description = 'openWakeWord melspectrogram model'
+    }
+    @{
+        Name = 'embedding_model.onnx'
+        Url = 'https://huggingface.co/Soulcreek2/speechkit-wakeword-models/resolve/main/embedding_model.onnx'
+        Sha256 = '70d164290c1d095d1d4ee149bc5e00543250a7316b59f31d056cff7bd3075c1f'
+        Description = 'openWakeWord embedding model'
+    }
+    @{
+        Name = 'hey_quby.onnx'
+        Url = 'https://huggingface.co/Soulcreek2/speechkit-wakeword-models/resolve/main/hey_quby.onnx'
+        Sha256 = 'd2219a70af63a12750b8d0a21fda38688b96841d21f564e57f99af7ba56951a6'
+        Description = 'openWakeWord phrase model hey_quby'
+    }
+    @{
+        Name = 'hey_computer.onnx'
+        Url = 'https://huggingface.co/Soulcreek2/speechkit-wakeword-models/resolve/main/hey_computer.onnx'
+        Sha256 = '3acbd9ffff04beba2d16ebdfd0d4c734d65fecdd22446f25f4d0afa6e5d7606b'
+        Description = 'openWakeWord phrase model hey_computer'
+    }
+    @{
+        Name = 'hey_jarvis.onnx'
+        Url = 'https://huggingface.co/Soulcreek2/speechkit-wakeword-models/resolve/main/hey_jarvis.onnx'
+        Sha256 = '7256019a18029c7bea33abc3344f7a3d0e07655cf4a5f18e65c9b6329eac3fb6'
+        Description = 'openWakeWord phrase model hey_jarvis'
+    }
+    @{
+        Name = 'hey_mira.onnx'
+        Url = 'https://huggingface.co/Soulcreek2/speechkit-wakeword-models/resolve/main/hey_mira.onnx'
+        Sha256 = 'cb1f371f3a61dccc43c47bc79145f504b1e2e2ed1ab233a427494fb57378e794'
+        Description = 'openWakeWord phrase model hey_mira'
+    }
+    @{
+        Name = 'hey_kombify.onnx'
+        Url = 'https://huggingface.co/Soulcreek2/speechkit-wakeword-models/resolve/main/hey_kombify.onnx'
+        Sha256 = '24c6d2d1c235892362ebf12b0055801d2f8461f856e15d704c3d8262304f4c9f'
+        Description = 'openWakeWord phrase model hey_kombify'
+    }
+)
+
+if (Test-Path -LiteralPath $openWakewordTargetDir) {
+    Remove-Item -LiteralPath $openWakewordTargetDir -Recurse -Force
+}
+New-Item -ItemType Directory -Path $openWakewordTargetDir | Out-Null
+foreach ($file in $openWakewordFiles) {
+    $cachePath = Join-Path $openWakewordCacheDir $file.Name
+    Download-VerifiedFile -Url $file.Url -Destination $cachePath -ExpectedSha256 $file.Sha256 -Description $file.Description
+    Copy-Item -LiteralPath $cachePath -Destination (Join-Path $openWakewordTargetDir $file.Name) -Force
+}
+
+Write-Host "Bundled openWakeWord ONNX models into $openWakewordTargetDir ($([math]::Round((Get-ChildItem $openWakewordTargetDir -File | Measure-Object -Property Length -Sum).Sum / 1MB, 1)) MB)."

@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bufio"
 	"bytes"
 	"encoding/json"
 	"net/http"
@@ -305,25 +304,6 @@ func TestPrivacyExportZipFormat(t *testing.T) {
 	if ct := rec.Header().Get("Content-Type"); ct != "application/zip" {
 		t.Errorf("Content-Type = %q, want application/zip", ct)
 	}
-}
-
-// readAuditLines returns all lines in today's audit log that contain the given
-// event string. Helper to avoid repetition in audit-check tests.
-func readAuditLines(t *testing.T, dir string) []string {
-	t.Helper()
-	dateKey := time.Now().UTC().Format("2006-01-02")
-	path := filepath.Join(dir, "audit-"+dateKey+".log")
-	f, err := os.Open(path)
-	if err != nil {
-		t.Fatalf("open audit log: %v", err)
-	}
-	defer f.Close() //nolint:errcheck // test helper, read-only close
-	var lines []string
-	scanner := bufio.NewScanner(f)
-	for scanner.Scan() {
-		lines = append(lines, scanner.Text())
-	}
-	return lines
 }
 
 // newPrivacyTestStoreWithAudio creates an SQLite store configured to save

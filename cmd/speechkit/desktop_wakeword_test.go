@@ -2,7 +2,10 @@ package main
 
 import (
 	"context"
+	"os"
 	"os/exec"
+	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/kombifyio/SpeechKit/internal/config"
@@ -36,6 +39,157 @@ func TestResolveWakeword_MissingModelDirSurfacesError(t *testing.T) {
 	_, err := resolveWakeword(cfg)
 	if err == nil {
 		t.Fatal("expected error when wakeword-kws bundle directory is absent")
+	}
+}
+
+func TestResolveWakeword_LiveKitBackendResolvesRealAssetsPath(t *testing.T) {
+	cfg := &config.Config{}
+	cfg.Wakeword.Enabled = true
+	cfg.Wakeword.Backend = config.WakewordBackendLiveKitOpenWakeWord
+
+	_, err := resolveWakeword(cfg)
+	if err == nil {
+		t.Fatal("expected missing-asset error when LiveKit/openWakeWord bundle assets are absent")
+	}
+	if strings.Contains(err.Error(), "not wired") || strings.Contains(err.Error(), "planned") {
+		t.Fatalf("error = %q, should report concrete missing assets instead of planned/unwired status", err.Error())
+	}
+	if !strings.Contains(err.Error(), "asset missing") {
+		t.Fatalf("error = %q, want concrete missing asset status", err.Error())
+	}
+}
+
+func TestResolveWakeword_STTPhraseBackendDoesNotRequireSidecarAssets(t *testing.T) {
+	cfg := &config.Config{}
+	cfg.Wakeword.Enabled = true
+	cfg.Wakeword.Backend = config.WakewordBackendSTTPhrase
+	cfg.Wakeword.PhraseID = "hey_mira"
+
+	got, err := resolveWakeword(cfg)
+	if err != nil {
+		t.Fatalf("resolveWakeword STT phrase backend: %v", err)
+	}
+	if got.Backend != config.WakewordBackendSTTPhrase {
+		t.Fatalf("backend = %q, want %q", got.Backend, config.WakewordBackendSTTPhrase)
+	}
+	if got.DisplayPhrase != "Hey Mira" {
+		t.Fatalf("DisplayPhrase = %q, want Hey Mira", got.DisplayPhrase)
+	}
+}
+
+func TestWakewordConfigEqualsIncludesBackend(t *testing.T) {
+	a := config.WakewordConfig{Backend: config.WakewordBackendSherpaKWS}
+	b := config.WakewordConfig{Backend: config.WakewordBackendLiveKitOpenWakeWord}
+
+	if wakewordConfigEquals(a, b) {
+		t.Fatal("wakewordConfigEquals returned true for different wake-word backends")
+	}
+}
+
+func TestWakewordConfigEqualsIncludesAutoEnd(t *testing.T) {
+	a := config.WakewordConfig{
+		Backend: config.WakewordBackendSherpaKWS,
+		AutoEnd: config.WakewordAutoEndConfig{
+			SilenceCutoffSec: 10,
+			ExitPhrases:      []string{"danke"},
+		},
+	}
+	b := a
+	b.AutoEnd.ExitPhrases = []string{"stop"}
+
+	if wakewordConfigEquals(a, b) {
+		t.Fatal("wakewordConfigEquals returned true when auto-end exit phrases changed")
+	}
+}
+
+func TestEffectiveWakewordThresholdUsesConcreteDefaults(t *testing.T) {
+	cfg := &config.Config{}
+	cfg.Wakeword.PhraseID = "hey_quby"
+
+	if got := effectiveWakewordThreshold(cfg, config.WakewordBackendSherpaKWS); got != 0.25 {
+		t.Fatalf("Sherpa threshold = %.2f, want sidecar default 0.25", got)
+	}
+	if got := effectiveWakewordThreshold(cfg, config.WakewordBackendLiveKitOpenWakeWord); got != 0.22 {
+		t.Fatalf("LiveKit/openWakeWord threshold = %.2f, want phrase-tuned 0.22", got)
+	}
+	cfg.Wakeword.Threshold = 0.77
+	if got := effectiveWakewordThreshold(cfg, config.WakewordBackendLiveKitOpenWakeWord); got != 0.77 {
+		t.Fatalf("manual threshold = %.2f, want 0.77", got)
+	}
+}
+
+func TestStageSelectedSherpaKeywordsFileFiltersByLabel(t *testing.T) {
+	dir := t.TempDir()
+	source := filepath.Join(dir, "keywords.txt")
+	content := strings.Join([]string{
+		"▁HE Y ▁QU B Y :1.5 @hey_quby",
+		"▁HE Y ▁C U B I :1.5 @hey_quby",
+		"▁HE Y ▁COMP U TER :1.5 @hey_computer",
+		"▁HE Y ▁JA R VI S :1.5 @hey_jarvis",
+	}, "\n") + "\n"
+	if err := os.WriteFile(source, []byte(content), 0o600); err != nil {
+		t.Fatalf("write source keywords: %v", err)
+	}
+
+	staged, cleanupFiles, err := stageSelectedSherpaKeywordsFile(source, "hey_quby")
+	if err != nil {
+		t.Fatalf("stageSelectedSherpaKeywordsFile: %v", err)
+	}
+	t.Cleanup(func() { cleanupPaths(cleanupFiles) })
+	if staged == source {
+		t.Fatal("expected filtered keywords to be staged to a temp file")
+	}
+	if len(cleanupFiles) != 1 || cleanupFiles[0] != staged {
+		t.Fatalf("cleanupFiles = %#v, want staged file", cleanupFiles)
+	}
+
+	gotBytes, err := os.ReadFile(staged)
+	if err != nil {
+		t.Fatalf("read staged keywords: %v", err)
+	}
+	got := string(gotBytes)
+	if !strings.Contains(got, "@hey_quby") {
+		t.Fatalf("staged keywords = %q, want selected label", got)
+	}
+	if strings.Contains(got, "@hey_computer") || strings.Contains(got, "@hey_jarvis") {
+		t.Fatalf("staged keywords = %q, want only selected label", got)
+	}
+	if lines := strings.Count(strings.TrimSpace(got), "\n") + 1; lines != 2 {
+		t.Fatalf("staged line count = %d, want 2 Quby variants; content=%q", lines, got)
+	}
+}
+
+func TestStageSelectedSherpaKeywordsFileWithoutLabelKeepsSource(t *testing.T) {
+	source := filepath.Join(t.TempDir(), "keywords.txt")
+	if err := os.WriteFile(source, []byte("▁A LE X A :2.0 @alexa\n"), 0o600); err != nil {
+		t.Fatalf("write source keywords: %v", err)
+	}
+
+	staged, cleanupFiles, err := stageSelectedSherpaKeywordsFile(source, "")
+	if err != nil {
+		t.Fatalf("stageSelectedSherpaKeywordsFile: %v", err)
+	}
+	if staged != source {
+		t.Fatalf("staged = %q, want original source %q", staged, source)
+	}
+	if len(cleanupFiles) != 0 {
+		t.Fatalf("cleanupFiles = %#v, want none for unfiltered source", cleanupFiles)
+	}
+}
+
+func TestWakePhraseTranscriptMatchesCatalogAliases(t *testing.T) {
+	aliases := wakePhraseAliases(config.WakewordConfig{PhraseID: "hey_quby"}, "Hey Quby (Cubi / Kubi)")
+	for _, transcript := range []string{
+		"hey quby",
+		"Hey Cubi, bitte starte",
+		"okay hey kubi",
+	} {
+		if !wakePhraseTranscriptMatches(transcript, aliases) {
+			t.Fatalf("transcript %q did not match aliases %#v", transcript, aliases)
+		}
+	}
+	if wakePhraseTranscriptMatches("hey computer", aliases) {
+		t.Fatal("unrelated phrase matched hey_quby aliases")
 	}
 }
 

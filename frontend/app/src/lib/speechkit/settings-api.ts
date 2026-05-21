@@ -4,10 +4,7 @@ import {
   normalizeOverlayState,
   normalizeSettingsState,
 } from "./normalizers";
-import type {
-  SpeechKitOverlayState,
-  SpeechKitSettingsState,
-} from "./types";
+import type { SpeechKitOverlayState, SpeechKitSettingsState } from "./types";
 
 export async function fetchOverlayState() {
   const response = await fetch("/overlay/state", { cache: "no-store" });
@@ -15,7 +12,7 @@ export async function fetchOverlayState() {
     throw new Error(`overlay state request failed: ${response.status}`);
   }
   return normalizeOverlayState(
-    (await response.json()) as Partial<SpeechKitOverlayState>,
+    (await response.json()) as Partial<SpeechKitOverlayState>
   );
 }
 
@@ -25,7 +22,7 @@ export async function fetchSettingsState() {
     throw new Error(`settings state request failed: ${response.status}`);
   }
   return normalizeSettingsState(
-    (await response.json()) as Partial<SpeechKitSettingsState>,
+    (await response.json()) as Partial<SpeechKitSettingsState>
   );
 }
 
@@ -48,12 +45,12 @@ export async function saveSettingsState(nextState: SpeechKitSettingsState) {
     nextState.assistHotkey,
     nextState.voiceAgentHotkey,
     nextState.activeMode,
-    nextState.agentMode,
+    nextState.agentMode
   );
   const legacyAgentHotkey = deriveLegacyAgentHotkey(
     nextState.assistHotkey,
     nextState.voiceAgentHotkey,
-    nextState.activeMode,
+    nextState.activeMode
   );
   const body = new URLSearchParams({
     overlay_enabled: nextState.overlayEnabled ? "1" : "0",
@@ -109,11 +106,12 @@ export async function saveSettingsState(nextState: SpeechKitSettingsState) {
     voice_fallback_profile_id:
       nextState.modelSelections.voice_agent.fallbackProfileId,
     wakeword_enabled: nextState.wakeword.enabled ? "1" : "0",
+    wakeword_backend: nextState.wakeword.backend,
     wakeword_phrase_id: nextState.wakeword.phraseId,
     wakeword_default_mode: nextState.wakeword.defaultMode,
     wakeword_threshold: String(nextState.wakeword.threshold),
     wakeword_min_consecutive_frames: String(
-      nextState.wakeword.minConsecutiveFrames,
+      nextState.wakeword.minConsecutiveFrames
     ),
     wakeword_cooldown_ms: String(nextState.wakeword.cooldownMs),
   });
@@ -155,6 +153,7 @@ export async function resetOverlayPosition() {
 export type WakewordState = {
   enabled: boolean;
   listening: boolean;
+  backend: string;
   phraseId: string;
   defaultMode: "voice_agent" | "assist" | "dictate" | string;
   threshold?: number;
@@ -171,11 +170,13 @@ export async function fetchWakewordState(): Promise<WakewordState> {
 
 // enableWakeword is the one-click activation path used by the onboarding
 // wizard. The backend picks sensible defaults for any field omitted from
-// the request body (phraseId="hey_siri", defaultMode="voice_agent"),
+// the request body (backend="sherpa_kws", phraseId="hey_quby",
+// defaultMode="voice_agent"),
 // persists the config, and respawns the wake-word sidecar before
 // returning the resulting state. Callers should poll `listening` for a
 // few seconds after the response to confirm the sidecar fully booted.
 export async function enableWakeword(opts?: {
+  backend?: string;
   phraseId?: string;
   defaultMode?: WakewordState["defaultMode"];
   threshold?: number;

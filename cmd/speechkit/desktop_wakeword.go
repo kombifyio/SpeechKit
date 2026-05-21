@@ -11,6 +11,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -38,20 +39,24 @@ import (
 // sidecar crash never takes the main desktop app down.
 
 const (
-	defaultWakewordModelDirName  = "wakeword-kws"
-	defaultWakewordSidecarBinary = "speechkit-wakeword.exe"
+	defaultWakewordModelDirName       = "wakeword-kws"
+	defaultWakewordSidecarBinary      = "speechkit-wakeword.exe"
+	defaultOpenWakewordSidecarBinary  = "speechkit-openwakeword.exe"
+	defaultOpenWakewordRuntimeDLLName = "onnxruntime.dll"
 )
 
 // desktopWakeRuntime owns the spawned sidecar process and the goroutine
 // that pumps its stdout/stderr. Close() asks the sidecar to shut down
 // gracefully via stdin and falls back to Kill on timeout.
 type desktopWakeRuntime struct {
-	cmd    *exec.Cmd
-	cancel context.CancelFunc
-	stdin  io.WriteCloser
-	mu     sync.Mutex
-	closed bool
-	doneCh chan struct{}
+	cmd          *exec.Cmd
+	cancel       context.CancelFunc
+	stdin        io.WriteCloser
+	closeFn      func()
+	cleanupFiles []string
+	mu           sync.Mutex
+	closed       bool
+	doneCh       chan struct{}
 }
 
 // Close sends a shutdown command on stdin, waits briefly, then kills if
@@ -69,10 +74,13 @@ func (r *desktopWakeRuntime) Close() {
 	stdin := r.stdin
 	cmd := r.cmd
 	cancel := r.cancel
+	closeFn := r.closeFn
 	done := r.doneCh
 	r.mu.Unlock()
 
-	if stdin != nil {
+	if closeFn != nil {
+		closeFn()
+	} else if stdin != nil {
 		_, _ = stdin.Write([]byte(`{"type":"shutdown"}` + "\n"))
 		_ = stdin.Close()
 	}
@@ -88,6 +96,7 @@ func (r *desktopWakeRuntime) Close() {
 	if cancel != nil {
 		cancel()
 	}
+	cleanupPaths(r.cleanupFiles)
 }
 
 // startDesktopWakeword spawns the sidecar process when wake-word is
@@ -131,16 +140,26 @@ func startDesktopWakeword(ctx context.Context, cfg *config.Config, state *appSta
 		return nil
 	}
 
-	runtime, err := launchWakewordSidecar(ctx, state, hkManager, cfg, resolved)
+	var runtime *desktopWakeRuntime
+	if resolved.Backend == config.WakewordBackendSTTPhrase {
+		runtime, err = launchSTTPhraseWakeword(ctx, state, hkManager, cfg, resolved)
+	} else {
+		runtime, err = launchWakewordSidecar(ctx, state, hkManager, cfg, resolved)
+	}
 	if err != nil {
-		slog.Warn("wakeword: sidecar launch failed", "err", err)
+		cleanupResolvedWakewordAssets(resolved)
+		slog.Warn("wakeword: runtime launch failed", "err", err)
 		state.addLog(fmt.Sprintf("Wake-word disabled: %v", err), "warn")
 		state.setWakewordStatus(fmt.Sprintf("Disabled: %v", err))
 		return nil
 	}
 
 	state.setWakewordRuntime(runtime)
-	state.setWakewordStatus(fmt.Sprintf("Listening for \"%s\" → %s (sidecar PID %d)", resolved.DisplayPhrase, resolved.DefaultMode, runtime.cmd.Process.Pid))
+	status := fmt.Sprintf("Listening for \"%s\" → %s via %s", resolved.DisplayPhrase, resolved.DefaultMode, wakewordBackendDisplayName(resolved.Backend))
+	if runtime != nil && runtime.cmd != nil && runtime.cmd.Process != nil {
+		status = fmt.Sprintf("%s (sidecar PID %d)", status, runtime.cmd.Process.Pid)
+	}
+	state.setWakewordStatus(status)
 	if state.appTray != nil {
 		state.appTray.SetWakeListening(true)
 	}
@@ -183,18 +202,7 @@ func sidecarParentContext() context.Context { return context.Background() }
 // emitted in the same second. Background() severs the link.
 func launchWakewordSidecar(_ context.Context, state *appState, hkManager *modeHotkeyManager, cfg *config.Config, resolved resolvedWakewordAssets) (*desktopWakeRuntime, error) {
 	ctx, cancel := context.WithCancel(sidecarParentContext())
-	cmd := execCommandContext(ctx, resolved.SidecarPath,
-		"--model-dir", resolved.ModelDir,
-		"--keywords-file", resolved.KeywordsFile,
-		"--phrase-id", strings.TrimSpace(cfg.Wakeword.PhraseID),
-		"--phrase", resolved.DisplayPhrase,
-		"--default-mode", resolved.DefaultMode,
-		"--threshold", strconv.FormatFloat(float64(cfg.Wakeword.Threshold), 'f', -1, 32),
-		"--min-consecutive-frames", strconv.Itoa(maxInt(cfg.Wakeword.MinConsecutiveFrames, 1)),
-		"--cooldown-ms", strconv.Itoa(maxInt(cfg.Wakeword.CooldownMs, 1500)),
-		"--audio-backend", string(cfg.Audio.Backend),
-		"--audio-device-id", cfg.Audio.DeviceID,
-	)
+	cmd := execCommandContext(ctx, resolved.SidecarPath, wakewordSidecarArgs(cfg, resolved)...)
 	configureHiddenProcess(cmd)
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
@@ -221,10 +229,11 @@ func launchWakewordSidecar(_ context.Context, state *appState, hkManager *modeHo
 	}
 
 	rt := &desktopWakeRuntime{
-		cmd:    cmd,
-		cancel: cancel,
-		stdin:  stdin,
-		doneCh: make(chan struct{}),
+		cmd:          cmd,
+		cancel:       cancel,
+		stdin:        stdin,
+		cleanupFiles: append([]string(nil), resolved.CleanupFiles...),
+		doneCh:       make(chan struct{}),
 	}
 
 	go pumpSidecarStderr(stderr, state)
@@ -251,9 +260,35 @@ func launchWakewordSidecar(_ context.Context, state *appState, hkManager *modeHo
 		if rt := state.takeWakewordRuntime(); rt != nil && rt.cmd == cmd {
 			// nothing to do — already taken off the state field
 		}
+		cleanupPaths(rt.cleanupFiles)
 	}()
 
 	return rt, nil
+}
+
+func wakewordSidecarArgs(cfg *config.Config, resolved resolvedWakewordAssets) []string {
+	common := []string{
+		"--phrase-id", strings.TrimSpace(cfg.Wakeword.PhraseID),
+		"--phrase", resolved.DisplayPhrase,
+		"--default-mode", resolved.DefaultMode,
+		"--threshold", strconv.FormatFloat(float64(effectiveWakewordThreshold(cfg, resolved.Backend)), 'f', -1, 32),
+		"--min-consecutive-frames", strconv.Itoa(maxInt(cfg.Wakeword.MinConsecutiveFrames, 1)),
+		"--cooldown-ms", strconv.Itoa(maxInt(cfg.Wakeword.CooldownMs, 1500)),
+		"--audio-backend", string(cfg.Audio.Backend),
+		"--audio-device-id", cfg.Audio.DeviceID,
+	}
+	if resolved.Backend == config.WakewordBackendLiveKitOpenWakeWord {
+		return append([]string{
+			"--melspec-model", resolved.MelspecModelPath,
+			"--embedding-model", resolved.EmbeddingModelPath,
+			"--wake-model", resolved.ModelPath,
+			"--onnxruntime", resolved.OnnxRuntimePath,
+		}, common...)
+	}
+	return append([]string{
+		"--model-dir", resolved.ModelDir,
+		"--keywords-file", resolved.KeywordsFile,
+	}, common...)
 }
 
 // pumpSidecarStdout reads one JSON event per line and dispatches based on
@@ -318,27 +353,20 @@ func handleSidecarEvent(ev sidecarEvent, state *appState, hkManager *modeHotkeyM
 		if mode == "" {
 			mode = resolved.DefaultMode
 		}
-		slog.Info("wakeword: detection", "keyword", ev.Keyword, "phrase", ev.Phrase, "mode", mode)
-		state.addLog(fmt.Sprintf("Wake-word fired: \"%s\" → %s", ev.Phrase, mode), "info")
-
-		// Build a per-detection AutoEndPolicy from the live wake-word
-		// config and park it in the appState slot so routeVoiceAgentHotkey
-		// can claim it when the synthesized KeyDown arrives. We do this
-		// BEFORE submitting the event so the input-controller cannot race
-		// us and look for the policy in an empty slot.
-		policy := wakeword.NewAutoEndPolicy(autoEndConfigFromTOML(resolved.AutoEnd), slog.Default())
-		state.setWakewordSessionPolicy(policy)
-
-		hkManager.Submit(hotkey.Event{
-			Type:    hotkey.EventKeyDown,
-			Binding: mode,
-			Source:  hotkey.EventSourceWakeword,
-		})
+		dispatchWakewordDetection(state, hkManager, resolved, ev.Phrase, ev.Keyword, mode, ev.Probability)
 	case "heartbeat":
 		slog.Info("wakeword: heartbeat",
 			"bytes_in_30s", ev.BytesIn,
 			"decodes_30s", ev.DecodesIn,
 			"uptime_s", ev.UptimeSec)
+		state.setWakewordStatus(fmt.Sprintf(
+			"Listening for \"%s\" → %s via %s (audio %.1f KB/30s, decodes %d)",
+			resolved.DisplayPhrase,
+			resolved.DefaultMode,
+			wakewordBackendDisplayName(resolved.Backend),
+			float64(ev.BytesIn)/1024,
+			ev.DecodesIn,
+		))
 	case "log":
 		// Already fanned via stderr — duplicate slog only at debug level.
 		slog.Debug("wakeword: sidecar log", "level", ev.Level, "msg", ev.Msg)
@@ -350,6 +378,31 @@ func handleSidecarEvent(ev sidecarEvent, state *appState, hkManager *modeHotkeyM
 	default:
 		slog.Debug("wakeword: unknown sidecar event", "type", ev.Type)
 	}
+}
+
+func dispatchWakewordDetection(state *appState, hkManager *modeHotkeyManager, resolved resolvedWakewordAssets, phrase, keyword, mode string, probability float32) {
+	if state == nil || hkManager == nil {
+		return
+	}
+	phrase = strings.TrimSpace(phrase)
+	if phrase == "" {
+		phrase = resolved.DisplayPhrase
+	}
+	mode = config.NormalizeWakewordDefaultMode(mode)
+	slog.Info("wakeword: detection", "keyword", keyword, "phrase", phrase, "mode", mode, "probability", probability, "backend", resolved.Backend)
+	state.addLog(fmt.Sprintf("Wake-word fired: \"%s\" → %s", phrase, mode), "info")
+
+	// Build a per-detection AutoEndPolicy from the live wake-word config
+	// and park it before submitting the synthetic hotkey so the input
+	// controller cannot race and look for the policy in an empty slot.
+	policy := wakeword.NewAutoEndPolicy(autoEndConfigFromTOML(resolved.AutoEnd), slog.Default())
+	state.setWakewordSessionPolicy(policy)
+
+	hkManager.Submit(hotkey.Event{
+		Type:    hotkey.EventKeyDown,
+		Binding: mode,
+		Source:  hotkey.EventSourceWakeword,
+	})
 }
 
 // sidecarEvent mirrors cmd/speechkit-wakeword/ipc.go Event with `omitempty`
@@ -388,6 +441,7 @@ func restartDesktopWakeword(ctx context.Context, cfg *config.Config, state *appS
 // to decide whether a restart is needed.
 func wakewordConfigEquals(a, b config.WakewordConfig) bool {
 	return a.Enabled == b.Enabled &&
+		a.Backend == b.Backend &&
 		a.PhraseID == b.PhraseID &&
 		a.Phrase == b.Phrase &&
 		a.ModelPath == b.ModelPath &&
@@ -396,18 +450,26 @@ func wakewordConfigEquals(a, b config.WakewordConfig) bool {
 		a.DefaultMode == b.DefaultMode &&
 		a.Threshold == b.Threshold &&
 		a.MinConsecutiveFrames == b.MinConsecutiveFrames &&
-		a.CooldownMs == b.CooldownMs
+		a.CooldownMs == b.CooldownMs &&
+		a.AutoEnd.SilenceCutoffSec == b.AutoEnd.SilenceCutoffSec &&
+		slices.Equal(a.AutoEnd.ExitPhrases, b.AutoEnd.ExitPhrases)
 }
 
 // resolvedWakewordAssets bundles every on-disk input the sidecar needs,
 // plus the resolved auto-end config the desktop adapter uses when wiring
 // session auto-end on a detection.
 type resolvedWakewordAssets struct {
-	SidecarPath   string
-	ModelDir      string
-	KeywordsFile  string
-	DefaultMode   string
-	DisplayPhrase string
+	Backend            string
+	SidecarPath        string
+	ModelDir           string
+	ModelPath          string
+	MelspecModelPath   string
+	EmbeddingModelPath string
+	OnnxRuntimePath    string
+	KeywordsFile       string
+	DefaultMode        string
+	DisplayPhrase      string
+	CleanupFiles       []string
 
 	// AutoEnd is a copy of cfg.Wakeword.AutoEnd captured at sidecar-launch
 	// time. Held here so handleSidecarEvent can build a fresh policy per
@@ -418,7 +480,26 @@ type resolvedWakewordAssets struct {
 
 func resolveWakeword(cfg *config.Config) (resolvedWakewordAssets, error) {
 	var out resolvedWakewordAssets
+	if cfg == nil {
+		return out, errors.New("wake-word config unavailable")
+	}
 
+	backend := config.NormalizeWakewordBackend(cfg.Wakeword.Backend)
+	switch backend {
+	case config.WakewordBackendSherpaKWS:
+		return resolveSherpaWakeword(cfg, backend)
+	case config.WakewordBackendLiveKitOpenWakeWord:
+		return resolveLiveKitOpenWakeWord(cfg, backend)
+	case config.WakewordBackendSTTPhrase:
+		return resolveSTTPhraseWakeword(cfg, backend)
+	default:
+		return out, fmt.Errorf("unsupported wake-word backend %q", backend)
+	}
+}
+
+func resolveSherpaWakeword(cfg *config.Config, backend string) (resolvedWakewordAssets, error) {
+	var out resolvedWakewordAssets
+	out.Backend = backend
 	exe, err := os.Executable()
 	if err != nil {
 		return out, fmt.Errorf("resolve executable path: %w", err)
@@ -430,7 +511,12 @@ func resolveWakeword(cfg *config.Config) (resolvedWakewordAssets, error) {
 	if v := strings.TrimSpace(cfg.Wakeword.ModelPath); v != "" && strings.HasSuffix(strings.ToLower(v), ".txt") {
 		out.KeywordsFile = v
 	} else {
-		out.KeywordsFile = filepath.Join(out.ModelDir, "keywords.txt")
+		keywordsFile, cleanupFiles, err := stageSelectedSherpaKeywordsFile(filepath.Join(out.ModelDir, "keywords.txt"), wakewordKeywordLabelForConfig(cfg.Wakeword))
+		if err != nil {
+			return resolvedWakewordAssets{}, err
+		}
+		out.KeywordsFile = keywordsFile
+		out.CleanupFiles = append(out.CleanupFiles, cleanupFiles...)
 	}
 
 	for label, p := range map[string]string{
@@ -439,6 +525,7 @@ func resolveWakeword(cfg *config.Config) (resolvedWakewordAssets, error) {
 		"keywords": out.KeywordsFile,
 	} {
 		if !pathIsRegularFileOrDir(p) {
+			cleanupResolvedWakewordAssets(out)
 			return resolvedWakewordAssets{}, fmt.Errorf("wake-word %s asset missing at %s (rebuild the SpeechKit bundle via scripts/build.ps1)", label, p)
 		}
 	}
@@ -455,6 +542,112 @@ func resolveWakeword(cfg *config.Config) (resolvedWakewordAssets, error) {
 		out.DisplayPhrase = "Wake phrase"
 	}
 	return out, nil
+}
+
+func wakewordKeywordLabelForConfig(cfg config.WakewordConfig) string {
+	if id := strings.TrimSpace(cfg.PhraseID); id != "" {
+		if entry := wakeword.LookupPhrase(id); entry != nil {
+			return strings.TrimSpace(entry.KeywordLabel)
+		}
+		return strings.ToLower(id)
+	}
+	return ""
+}
+
+func stageSelectedSherpaKeywordsFile(sourcePath, label string) (string, []string, error) {
+	label = strings.TrimSpace(label)
+	if label == "" {
+		return sourcePath, nil, nil
+	}
+
+	content, err := os.ReadFile(sourcePath)
+	if err != nil {
+		return "", nil, fmt.Errorf("read wake-word keywords at %s: %w", sourcePath, err)
+	}
+
+	selected := make([]string, 0, 4)
+	for _, raw := range strings.Split(string(content), "\n") {
+		line := strings.TrimSpace(raw)
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		if keywordLineHasLabel(line, label) {
+			selected = append(selected, line)
+		}
+	}
+	if len(selected) == 0 {
+		return "", nil, fmt.Errorf("wake-word keyword label @%s not found in %s", label, sourcePath)
+	}
+
+	tmp, err := os.CreateTemp("", "speechkit-wakeword-"+sanitizeWakewordLabel(label)+"-*.txt")
+	if err != nil {
+		return "", nil, fmt.Errorf("stage wake-word keywords for @%s: %w", label, err)
+	}
+	if _, err := tmp.WriteString(strings.Join(selected, "\n") + "\n"); err != nil {
+		name := tmp.Name()
+		_ = tmp.Close()
+		_ = os.Remove(name)
+		return "", nil, fmt.Errorf("write staged wake-word keywords for @%s: %w", label, err)
+	}
+	if err := tmp.Close(); err != nil {
+		name := tmp.Name()
+		_ = os.Remove(name)
+		return "", nil, fmt.Errorf("close staged wake-word keywords for @%s: %w", label, err)
+	}
+	return tmp.Name(), []string{tmp.Name()}, nil
+}
+
+func keywordLineHasLabel(line, label string) bool {
+	want := "@" + strings.TrimSpace(label)
+	for _, field := range strings.Fields(line) {
+		if field == want {
+			return true
+		}
+	}
+	return false
+}
+
+func sanitizeWakewordLabel(label string) string {
+	var b strings.Builder
+	for _, r := range label {
+		switch {
+		case r >= 'a' && r <= 'z':
+			b.WriteRune(r)
+		case r >= 'A' && r <= 'Z':
+			b.WriteRune(r)
+		case r >= '0' && r <= '9':
+			b.WriteRune(r)
+		case r == '_' || r == '-':
+			b.WriteRune(r)
+		}
+	}
+	if b.Len() == 0 {
+		return "selected"
+	}
+	return b.String()
+}
+
+func cleanupResolvedWakewordAssets(resolved resolvedWakewordAssets) {
+	cleanupPaths(resolved.CleanupFiles)
+}
+
+func cleanupPaths(paths []string) {
+	for _, path := range paths {
+		if strings.TrimSpace(path) != "" {
+			_ = os.Remove(path)
+		}
+	}
+}
+
+func wakewordBackendDisplayName(backend string) string {
+	switch config.NormalizeWakewordBackend(backend) {
+	case config.WakewordBackendLiveKitOpenWakeWord:
+		return "LiveKit/openWakeWord"
+	case config.WakewordBackendSTTPhrase:
+		return "STT phrase match"
+	default:
+		return "Sherpa KWS"
+	}
 }
 
 func pathIsRegularFileOrDir(path string) bool {

@@ -13,6 +13,9 @@ import (
 // malformed numbers (uses cfg default) and case-insensitive enable toggles.
 func parseWakewordSettingsForm(req *http.Request, cfg *config.Config, f *settingsFormData) {
 	f.WakewordEnabled = boolFormValue(req, "wakeword_enabled", cfg.Wakeword.Enabled)
+	f.WakewordBackend = config.NormalizeWakewordBackend(
+		valueOrDefault(req.FormValue("wakeword_backend"), cfg.Wakeword.Backend),
+	)
 	f.WakewordPhraseID = strings.ToLower(strings.TrimSpace(
 		valueOrDefault(req.FormValue("wakeword_phrase_id"), cfg.Wakeword.PhraseID),
 	))

@@ -476,6 +476,9 @@ try {
     $sidecarExe = Join-Path $bundleDir 'speechkit-wakeword.exe'
     $sidecarLdflags = (New-GoStringLdflag -Name 'main.AppVersion' -Value $appVersion)
     Invoke-Step -Description 'Building speechkit-wakeword.exe (sidecar)...' -FilePath 'go' -ArgumentList @('build', '-ldflags', $sidecarLdflags, '-o', $sidecarExe, './cmd/speechkit-wakeword/')
+
+    $openWakewordSidecarExe = Join-Path $bundleDir 'speechkit-openwakeword.exe'
+    Invoke-Step -Description 'Building speechkit-openwakeword.exe (sidecar)...' -FilePath 'go' -ArgumentList @('build', '-ldflags', $sidecarLdflags, '-o', $openWakewordSidecarExe, './cmd/speechkit-openwakeword/')
 }
 finally {
     Pop-Location
@@ -521,11 +524,19 @@ Invoke-Step -Description 'Bundling WebView2 bootstrapper...' -FilePath $powershe
 # even though the Go build had produced the sidecar.
 $requiredBundleArtifacts = @(
     'speechkit-wakeword.exe',
+    'speechkit-openwakeword.exe',
     'wakeword-kws\keywords.txt',
     'wakeword-kws\tokens.txt',
     'wakeword-kws\encoder-epoch-12-avg-2-chunk-16-left-64.onnx',
     'wakeword-kws\decoder-epoch-12-avg-2-chunk-16-left-64.onnx',
     'wakeword-kws\joiner-epoch-12-avg-2-chunk-16-left-64.onnx',
+    'models\wakeword\melspectrogram.onnx',
+    'models\wakeword\embedding_model.onnx',
+    'models\wakeword\hey_quby.onnx',
+    'models\wakeword\hey_computer.onnx',
+    'models\wakeword\hey_jarvis.onnx',
+    'models\wakeword\hey_mira.onnx',
+    'models\wakeword\hey_kombify.onnx',
     'onnxruntime.dll',
     'sherpa-onnx-c-api.dll',
     'sherpa-onnx-cxx-api.dll',

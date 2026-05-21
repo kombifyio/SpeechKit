@@ -105,6 +105,13 @@ const (
 	WakewordDefaultModeVoiceAgent = "voice_agent"
 )
 
+// Wake-word backend values for WakewordConfig.Backend.
+const (
+	WakewordBackendSherpaKWS           = "sherpa_kws"
+	WakewordBackendLiveKitOpenWakeWord = "livekit_openwakeword"
+	WakewordBackendSTTPhrase           = "stt_phrase"
+)
+
 // WakewordConfig configures the always-on activation-word listener.
 //
 // When Enabled is true the Device-Target opens a dedicated low-volume audio
@@ -115,6 +122,12 @@ const (
 type WakewordConfig struct {
 	// Enabled gates the entire feature. Default false (opt-in).
 	Enabled bool `toml:"enabled"`
+
+	// Backend selects the local detector implementation. The Windows app
+	// ships Sherpa-ONNX KWS, LiveKit/openWakeWord ONNX, and STT phrase-match
+	// as explicit selectable paths so test builds can compare detector
+	// behaviour without silently falling back to a different implementation.
+	Backend string `toml:"backend"`
 
 	// PhraseID picks one of SpeechKit's curated wake phrases from
 	// wakeword.DefaultCatalog (e.g. "hey_quby", "hey_computer",

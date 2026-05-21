@@ -8,6 +8,7 @@ import (
 	"github.com/kombifyio/SpeechKit/cmd/speechkit/internal/profiles"
 	"net/http"
 	"path/filepath"
+	"strings"
 
 	"github.com/kombifyio/SpeechKit/internal/config"
 	"github.com/kombifyio/SpeechKit/internal/downloads"
@@ -170,6 +171,9 @@ func downloadCatalogItem(ctx context.Context, cfg *config.Config, modelID string
 }
 
 func downloadDestinationDir(item downloads.Item, cfg *config.Config) string {
+	if wakewordDownloadItem(item) {
+		return downloads.ResolveWakewordModelsDir(cfg)
+	}
 	profile, ok := downloadProfileForItem(item)
 	if ok && profile.ExecutionMode == models.ExecutionModeLocal {
 		switch profile.Modality {
@@ -186,6 +190,10 @@ func downloadProfileForItem(item downloads.Item) (models.Profile, bool) {
 }
 
 func selectDownloadedHTTPModel(ctx context.Context, cfgPath string, cfg *config.Config, state *appState, item downloads.Item) error {
+	if wakewordDownloadItem(item) {
+		return selectDownloadedWakewordModel(ctx, cfgPath, cfg, state, item)
+	}
+
 	profile, ok := downloadProfileForItem(item)
 	if !ok || profile.ExecutionMode != models.ExecutionModeLocal {
 		return &downloadProfileError{profileID: item.ProfileID}
@@ -199,6 +207,11 @@ func selectDownloadedHTTPModel(ctx context.Context, cfgPath string, cfg *config.
 	default:
 		return fmt.Errorf("unsupported local download modality %q", profile.Modality)
 	}
+}
+
+func wakewordDownloadItem(item downloads.Item) bool {
+	return strings.HasPrefix(strings.TrimSpace(item.ProfileID), "wakeword.") ||
+		strings.HasPrefix(strings.TrimSpace(item.ID), "wakeword.")
 }
 
 func selectDownloadedOllamaModel(ctx context.Context, cfgPath string, cfg *config.Config, state *appState, item downloads.Item) error {
@@ -257,6 +270,51 @@ func selectDownloadedLocalModel(ctx context.Context, cfgPath string, cfg *config
 		state.activeProfiles = activeProfilesFromConfig(cfg, filteredModelCatalog())
 		state.mu.Unlock()
 		syncRuntimeProviders(ctx, state, state.sttRouter)
+	}
+	return nil
+}
+
+func selectDownloadedWakewordModel(ctx context.Context, cfgPath string, cfg *config.Config, state *appState, item downloads.Item) error {
+	if cfg == nil {
+		return errors.New("wake-word config unavailable")
+	}
+	filename := filepath.Base(item.URL)
+	if filename == "" || filename == "." {
+		return errors.New("wake-word artifact filename missing")
+	}
+	modelPath, ok := downloads.AvailableArtifactModelPath(item, cfg)
+	if !ok {
+		modelPath = filepath.Join(downloads.ResolveWakewordModelsDir(cfg), filename)
+	}
+	if !downloads.FileIsPresent(modelPath) {
+		return fmt.Errorf("wake-word artifact not downloaded: %s", modelPath)
+	}
+
+	switch {
+	case item.ID == "wakeword.shared.melspec":
+		cfg.Wakeword.MelspecModelPath = modelPath
+	case item.ID == "wakeword.shared.embedding":
+		cfg.Wakeword.EmbeddingModelPath = modelPath
+	case strings.HasPrefix(item.ID, "wakeword.phrase."):
+		cfg.Wakeword.ModelPath = modelPath
+		cfg.Wakeword.PhraseID = strings.TrimPrefix(item.ID, "wakeword.phrase.")
+		cfg.Wakeword.Backend = config.WakewordBackendLiveKitOpenWakeWord
+	default:
+		return fmt.Errorf("unsupported wake-word artifact %q", item.ID)
+	}
+
+	if cfgPath != "" {
+		if err := config.Save(cfgPath, cfg); err != nil {
+			return err
+		}
+	}
+	if state != nil && cfg.Wakeword.Enabled {
+		state.mu.Lock()
+		hkMgr := state.hkManager
+		state.mu.Unlock()
+		if mode, ok := hkMgr.(*modeHotkeyManager); ok {
+			restartDesktopWakeword(ctx, cfg, state, mode)
+		}
 	}
 	return nil
 }

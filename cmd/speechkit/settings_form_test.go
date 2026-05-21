@@ -90,6 +90,9 @@ func TestParseSettingsFormDefaults(t *testing.T) {
 	if form.AutoStartOnLaunch {
 		t.Error("AutoStartOnLaunch = true, want false by default")
 	}
+	if form.WakewordBackend != config.WakewordBackendSherpaKWS {
+		t.Errorf("WakewordBackend = %q, want %q", form.WakewordBackend, config.WakewordBackendSherpaKWS)
+	}
 }
 
 // Regression test for the onboarding wizard /settings/update path: handleFinish
@@ -246,6 +249,38 @@ func TestParseSettingsFormOverrides(t *testing.T) {
 	}
 	if next.UI.VoiceAgentOverlayMode != config.OverlayFeedbackModeBigProductivity {
 		t.Errorf("next VoiceAgentOverlayMode = %q, want %q", next.UI.VoiceAgentOverlayMode, config.OverlayFeedbackModeBigProductivity)
+	}
+}
+
+func TestParseWakewordSettingsFormBackendRoundTrip(t *testing.T) {
+	cfg := defaultTestConfig()
+	cfg.Wakeword.Backend = config.WakewordBackendSherpaKWS
+
+	formValues := url.Values{
+		"wakeword_enabled":      {"1"},
+		"wakeword_backend":      {config.WakewordBackendLiveKitOpenWakeWord},
+		"wakeword_phrase_id":    {"hey_jarvis"},
+		"wakeword_default_mode": {"voice_agent"},
+	}
+	req, _ := http.NewRequest(http.MethodPost, "/settings/update", strings.NewReader(formValues.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.ParseForm()
+
+	var form settingsFormData
+	parseWakewordSettingsForm(req, cfg, &form)
+	if form.WakewordBackend != config.WakewordBackendLiveKitOpenWakeWord {
+		t.Fatalf("WakewordBackend = %q, want %q", form.WakewordBackend, config.WakewordBackendLiveKitOpenWakeWord)
+	}
+
+	next := buildNextConfig(form, cfg)
+	if next.Wakeword.Backend != config.WakewordBackendLiveKitOpenWakeWord {
+		t.Fatalf("next Wakeword.Backend = %q, want %q", next.Wakeword.Backend, config.WakewordBackendLiveKitOpenWakeWord)
+	}
+	if !next.Wakeword.Enabled {
+		t.Fatal("next Wakeword.Enabled = false, want true")
+	}
+	if next.Wakeword.PhraseID != "hey_jarvis" {
+		t.Fatalf("next Wakeword.PhraseID = %q, want hey_jarvis", next.Wakeword.PhraseID)
 	}
 }
 

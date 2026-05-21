@@ -194,6 +194,9 @@ func TestLoadDefaults(t *testing.T) {
 	if cfg.Providers.Google.Region != "europe-west3" {
 		t.Errorf("default Google region = %q, want europe-west3 (EU compliance default)", cfg.Providers.Google.Region)
 	}
+	if cfg.Wakeword.Backend != WakewordBackendSherpaKWS {
+		t.Errorf("default wake-word backend = %q, want %q", cfg.Wakeword.Backend, WakewordBackendSherpaKWS)
+	}
 }
 
 func TestDefaultLocalSTTModelIsBundledStarterModel(t *testing.T) {
@@ -463,6 +466,29 @@ func TestNormalizeOverlayFeedbackMode(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			if got := NormalizeOverlayFeedbackMode(tt.value, tt.fallback); got != tt.want {
 				t.Fatalf("NormalizeOverlayFeedbackMode(%q, %q) = %q, want %q", tt.value, tt.fallback, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestNormalizeWakewordBackend(t *testing.T) {
+	tests := []struct {
+		name string
+		in   string
+		want string
+	}{
+		{name: "empty defaults to sherpa", in: "", want: WakewordBackendSherpaKWS},
+		{name: "sherpa", in: "sherpa_kws", want: WakewordBackendSherpaKWS},
+		{name: "livekit", in: "livekit", want: WakewordBackendLiveKitOpenWakeWord},
+		{name: "openwakeword alias", in: "openWakeWord", want: WakewordBackendLiveKitOpenWakeWord},
+		{name: "stt alias", in: "phrase_match", want: WakewordBackendSTTPhrase},
+		{name: "unknown falls back", in: "unknown", want: WakewordBackendSherpaKWS},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := NormalizeWakewordBackend(tt.in); got != tt.want {
+				t.Fatalf("NormalizeWakewordBackend(%q) = %q, want %q", tt.in, got, tt.want)
 			}
 		})
 	}

@@ -359,6 +359,10 @@ func artifactModelPaths(item Item, cfg *config.Config, filename string) []string
 		if bundled := bundledWhisperModelPath(filename); bundled != "" {
 			paths = append(paths, bundled)
 		}
+	} else if wakewordArtifactProfile(item.ProfileID) {
+		if bundled := bundledWakewordModelPath(filename); bundled != "" {
+			paths = append(paths, bundled)
+		}
 	}
 	return dedupePaths(paths)
 }
@@ -372,6 +376,17 @@ func bundledWhisperModelPath(filename string) string {
 		return ""
 	}
 	return filepath.Join(filepath.Dir(exe), "models", filename)
+}
+
+func bundledWakewordModelPath(filename string) string {
+	if strings.TrimSpace(filename) == "" || filename == "." {
+		return ""
+	}
+	exe, err := executablePath()
+	if err != nil || strings.TrimSpace(exe) == "" {
+		return ""
+	}
+	return filepath.Join(filepath.Dir(exe), "models", "wakeword", filename)
 }
 
 func dedupePaths(paths []string) []string {
@@ -392,6 +407,9 @@ func artifactModelDir(item Item, cfg *config.Config) string {
 	if item.ProfileID == "stt.local.whispercpp" {
 		return ResolveWhisperModelsDir(cfg)
 	}
+	if wakewordArtifactProfile(item.ProfileID) {
+		return ResolveWakewordModelsDir(cfg)
+	}
 	return ResolveLocalLLMModelsDir(cfg)
 }
 
@@ -399,7 +417,35 @@ func selectedArtifactModel(cfg *config.Config, profileID string) string {
 	if profileID == "stt.local.whispercpp" {
 		return selectedWhisperModel(cfg)
 	}
+	if wakewordArtifactProfile(profileID) {
+		return selectedWakewordModel(cfg, profileID)
+	}
 	return selectedLocalLLMModelForProfile(cfg, profileID)
+}
+
+func wakewordArtifactProfile(profileID string) bool {
+	return strings.HasPrefix(strings.TrimSpace(profileID), "wakeword.")
+}
+
+func selectedWakewordModel(cfg *config.Config, profileID string) string {
+	if cfg == nil {
+		return ""
+	}
+	switch strings.TrimSpace(profileID) {
+	case "wakeword.phrase":
+		if modelPath := strings.TrimSpace(cfg.Wakeword.ModelPath); modelPath != "" && !strings.HasSuffix(strings.ToLower(modelPath), ".txt") {
+			return filepath.Base(modelPath)
+		}
+		if phraseID := strings.TrimSpace(cfg.Wakeword.PhraseID); phraseID != "" {
+			return strings.ToLower(phraseID) + ".onnx"
+		}
+	case "wakeword.shared":
+		// The shared profile contains two files (melspectrogram + embedding),
+		// so a single profile-level selected filename would be ambiguous.
+		return ""
+	default:
+	}
+	return ""
 }
 
 func selectedWhisperModel(cfg *config.Config) string {

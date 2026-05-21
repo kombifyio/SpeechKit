@@ -106,7 +106,13 @@ func runDesktopApp(closeLogFile func()) {
 		disableTelemetry()
 		slog.Info("telemetry disabled by --no-telemetry CLI flag")
 	}
-	tracker.stage("config_loaded", "path", cfgPath, "install_mode", string(installState.Mode))
+	installMode := ""
+	setupDone := true
+	if installState != nil {
+		installMode = string(installState.Mode)
+		setupDone = installState.SetupDone
+	}
+	tracker.stage("config_loaded", "path", cfgPath, "install_mode", installMode)
 
 	state := newInitialAppState(cfg)
 	// First-run UX: hide the overlay until the user finishes the
@@ -115,7 +121,7 @@ func runDesktopApp(closeLogFile func()) {
 	// (/app/complete-setup) re-applies cfg.UI.OverlayEnabled. Already-
 	// configured users keep their current overlay preference because
 	// SetupDone is true on launch for them.
-	if installState != nil && !installState.SetupDone {
+	if !setupDone {
 		state.setOverlayEnabled(false)
 	}
 	tracker.stage("state_init")

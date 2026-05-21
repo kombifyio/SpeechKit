@@ -288,6 +288,51 @@ func registerAppRoutes(mux *http.ServeMux, cfgPath string, cfg *config.Config, s
 		_ = json.NewEncoder(w).Encode(map[string]bool{"setupDone": true})
 	})
 
+	mux.HandleFunc("/app/install-mode", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+		if installState == nil {
+			http.Error(w, "install state not initialized", http.StatusServiceUnavailable)
+			return
+		}
+		var body struct {
+			Mode string `json:"mode"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			http.Error(w, "invalid JSON body", http.StatusBadRequest)
+			return
+		}
+		var next config.InstallMode
+		switch strings.TrimSpace(strings.ToLower(body.Mode)) {
+		case "local":
+			next = config.InstallModeLocal
+		case "cloud", "server":
+			// Server is functionally a Cloud install from the device's
+			// perspective: no local model is required on this machine,
+			// the actual STT/LLM provider (a hosted vendor or a self-
+			// hosted SpeechKit server) is configured separately. The
+			// ServerConnection block in cfg distinguishes the two at
+			// runtime.
+			next = config.InstallModeCloud
+		default:
+			http.Error(w, "unknown install mode", http.StatusBadRequest)
+			return
+		}
+		installState.Mode = next
+		if err := config.SaveInstallState(installState); err != nil {
+			slog.Warn("save install-mode", "err", err)
+		}
+		// Echo the resolved mode (after the server→cloud collapse) so the
+		// client can confirm the server's interpretation rather than blindly
+		// trusting its own input.
+		w.Header().Set("Content-Type", "application/json; charset=utf-8")
+		_ = json.NewEncoder(w).Encode(map[string]string{
+			"mode": string(installState.Mode),
+		})
+	})
+
 	// Wake-word one-click endpoints. The Settings UI's WakewordPanel writes
 	// the full settings form which goes through routes_settings.go and
 	// triggers restartDesktopWakeword on changes. The endpoints below are
@@ -311,10 +356,15 @@ func registerAppRoutes(mux *http.ServeMux, cfgPath string, cfg *config.Config, s
 		}
 
 		cfg.Wakeword.Enabled = true
+		if v := strings.TrimSpace(body.Backend); v != "" {
+			cfg.Wakeword.Backend = config.NormalizeWakewordBackend(v)
+		} else if strings.TrimSpace(cfg.Wakeword.Backend) == "" {
+			cfg.Wakeword.Backend = config.WakewordBackendSherpaKWS
+		}
 		if v := strings.TrimSpace(body.PhraseID); v != "" {
 			cfg.Wakeword.PhraseID = v
 		} else if strings.TrimSpace(cfg.Wakeword.PhraseID) == "" {
-			cfg.Wakeword.PhraseID = "hey_siri"
+			cfg.Wakeword.PhraseID = "hey_quby"
 		}
 		if v := strings.TrimSpace(body.DefaultMode); v != "" {
 			cfg.Wakeword.DefaultMode = config.NormalizeWakewordDefaultMode(v)
@@ -400,6 +450,7 @@ func localSetupCompletionProblem(cfg *config.Config, installState *config.Instal
 }
 
 type wakewordEnableRequest struct {
+	Backend     string  `json:"backend,omitempty"`
 	PhraseID    string  `json:"phraseId,omitempty"`
 	DefaultMode string  `json:"defaultMode,omitempty"`
 	Threshold   float64 `json:"threshold,omitempty"`
@@ -410,12 +461,14 @@ func writeWakewordStateResponse(w http.ResponseWriter, cfg *config.Config, state
 	resp := map[string]any{
 		"enabled":     false,
 		"listening":   false,
+		"backend":     config.WakewordBackendSherpaKWS,
 		"phraseId":    "",
 		"defaultMode": "voice_agent",
 		"status":      "",
 	}
 	if cfg != nil {
 		resp["enabled"] = cfg.Wakeword.Enabled
+		resp["backend"] = config.NormalizeWakewordBackend(cfg.Wakeword.Backend)
 		resp["phraseId"] = strings.TrimSpace(cfg.Wakeword.PhraseID)
 		resp["defaultMode"] = config.NormalizeWakewordDefaultMode(cfg.Wakeword.DefaultMode)
 		resp["threshold"] = cfg.Wakeword.Threshold

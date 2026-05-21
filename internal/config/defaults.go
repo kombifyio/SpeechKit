@@ -249,6 +249,7 @@ func defaults() *Config {
 		},
 		Wakeword: WakewordConfig{
 			Enabled:              false, // opt-in: mic is only opened when the user explicitly turns this on
+			Backend:              WakewordBackendSherpaKWS,
 			PhraseID:             "hey_quby",
 			Phrase:               "", // empty -> catalog DisplayName for PhraseID is used
 			ModelPath:            "", // empty -> catalog FileName resolved against wake-word models dir

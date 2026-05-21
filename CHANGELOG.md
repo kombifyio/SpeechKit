@@ -12,6 +12,37 @@ IDs, source paths, and other maintainer-only vocabulary.
 
 ## [Unreleased]
 
+## [0.35.11] - 2026-05-21
+
+The first onboarding step now asks how you want SpeechKit to run —
+on this device, against a hosted cloud provider, or against your
+own self-hosted SpeechKit server. Wake-word detection got a second
+backend option so noisy environments and quieter rooms each have a
+recogniser tuned for them. Release pipeline regained the ability to
+build the per-machine MSI installer.
+
+### Added
+- Onboarding welcome step asks "Local, Cloud, or my own server?"
+  before continuing into model selection. The default stays Local;
+  Cloud routes directly to provider integrations; an unobtrusive
+  "I have my own SpeechKit server" link opens an inline form to
+  test and persist the server URL + bearer token without leaving
+  the wizard. Once connected, the wizard skips local model setup
+  and continues with wake-word and persona configuration.
+- Second wake-word backend (openWakeWord) shipped alongside the
+  existing Sherpa-ONNX KWS sidecar. Each backend has its own
+  pronunciation profile; Settings exposes the choice so operators
+  in different acoustic environments can pick the recogniser that
+  performs best.
+
+### Fixed
+- Per-machine MSI installer for Windows now builds again. WiX v4
+  removed the `Component@NeverOverwrite` attribute the previous
+  build relied on; replaced the MSI-side `config.toml` install with
+  the existing app-side first-launch seed from
+  `config.default.toml`, which is upgrade-safe and was already the
+  intended path in `seedRuntimeConfigFromInstallTemplate`.
+
 ## [0.35.10] - 2026-05-20
 
 Second release-pipeline hotfix, completing what v0.35.9 attempted.

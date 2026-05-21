@@ -20,6 +20,8 @@ export type WizardStep =
   | "voice_agent_profile"
   | "done";
 
+export type OnboardingTarget = "local" | "cloud";
+
 // Curated catalog of phrases the wake-word wizard step offers. IDs here
 // MUST match internal/wakeword/catalog.go DefaultCatalog() entries so the
 // backend's keyword-label resolution (DetectionEvent.Keyword → phrase

@@ -54,6 +54,21 @@ func NormalizeWakewordDefaultMode(value string) string {
 	}
 }
 
+// NormalizeWakewordBackend coerces arbitrary config/UI values to the small
+// set of detector backend IDs the desktop app understands.
+func NormalizeWakewordBackend(value string) string {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case WakewordBackendSherpaKWS, "":
+		return WakewordBackendSherpaKWS
+	case WakewordBackendLiveKitOpenWakeWord, "livekit", "openwakeword", "livekit_openwakeword_onnx":
+		return WakewordBackendLiveKitOpenWakeWord
+	case WakewordBackendSTTPhrase, "stt", "phrase_match", "stt_phrase_match":
+		return WakewordBackendSTTPhrase
+	default:
+		return WakewordBackendSherpaKWS
+	}
+}
+
 // NormalizeWakewordThreshold clamps the threshold to a sane range. Values
 // outside (0, 1] are coerced to the published sweet-spot of 0.68.
 func NormalizeWakewordThreshold(value float64) float64 {

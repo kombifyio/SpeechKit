@@ -420,6 +420,20 @@ export type SpeechKitSettingsState = {
 };
 
 export type WakewordDefaultMode = "dictate" | "assist" | "voice_agent";
+export type WakewordBackend =
+  | "sherpa_kws"
+  | "livekit_openwakeword"
+  | "stt_phrase";
+
+export type WakewordBackendOption = {
+  id: WakewordBackend;
+  label: string;
+  description: string;
+  status: string;
+  available: boolean;
+  implemented: boolean;
+  recommended?: boolean;
+};
 
 export type WakewordPhraseCatalogEntry = {
   id: string;
@@ -433,6 +447,7 @@ export type WakewordPhraseCatalogEntry = {
 
 export type WakewordSettings = {
   enabled: boolean;
+  backend: WakewordBackend;
   phraseId: string;
   defaultMode: WakewordDefaultMode;
   threshold: number;
@@ -441,6 +456,7 @@ export type WakewordSettings = {
   active: boolean;
   statusMessage: string;
   phraseCatalog: WakewordPhraseCatalogEntry[];
+  backendOptions: WakewordBackendOption[];
 };
 
 export type AudioDevicesResponse = {

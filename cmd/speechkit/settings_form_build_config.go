@@ -86,6 +86,7 @@ func buildNextConfig(form settingsFormData, cfg *config.Config) config.Config {
 	// doesn't supply (e.g. ModelPath stays empty so the resolver looks
 	// up the catalog entry on next runtime start).
 	nextCfg.Wakeword.Enabled = form.WakewordEnabled
+	nextCfg.Wakeword.Backend = config.NormalizeWakewordBackend(form.WakewordBackend)
 	nextCfg.Wakeword.PhraseID = form.WakewordPhraseID
 	nextCfg.Wakeword.DefaultMode = config.NormalizeWakewordDefaultMode(form.WakewordDefaultMode)
 	nextCfg.Wakeword.Threshold = form.WakewordThreshold

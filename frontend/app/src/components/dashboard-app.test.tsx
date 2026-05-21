@@ -1320,7 +1320,7 @@ describe("DashboardApp", () => {
     fireEvent.click(
       await screen.findByRole("button", { name: /get started/i }),
     );
-    fireEvent.click(screen.getByRole("button", { name: /^continue$/i }));
+    fireEvent.click(await screen.findByRole("button", { name: /^continue$/i }));
 
     expect(await screen.findByText("Integrations")).toBeInTheDocument();
     expect(

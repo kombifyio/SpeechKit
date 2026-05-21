@@ -56,6 +56,7 @@ type settingsFormData struct {
 	// Wake-word controls. WakewordEnabled is the master toggle; the rest
 	// mirror WakewordConfig fields and apply only when Enabled.
 	WakewordEnabled              bool
+	WakewordBackend              string
 	WakewordPhraseID             string
 	WakewordDefaultMode          string
 	WakewordThreshold            float64

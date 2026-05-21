@@ -47,7 +47,9 @@ const {
       (provider: string, secret: string) => Promise<{ message?: string }>
     >(),
   updateProviderIntegrationMock:
-    vi.fn<(provider: string, enabled: boolean) => Promise<{ message?: string }>>(),
+    vi.fn<
+      (provider: string, enabled: boolean) => Promise<{ message?: string }>
+    >(),
   fetchAudioDevicesMock: vi.fn(),
   setAudioDeviceMock: vi.fn<(deviceId: string) => Promise<string>>(),
   fetchAPIV1DictionaryMock: vi.fn(),
@@ -206,6 +208,7 @@ vi.mock("@/lib/speechkit", () => ({
     },
     wakeword: {
       enabled: false,
+      backend: "sherpa_kws",
       phraseId: "hey_quby",
       defaultMode: "voice_agent",
       threshold: 0,
@@ -214,10 +217,12 @@ vi.mock("@/lib/speechkit", () => ({
       active: false,
       statusMessage: "",
       phraseCatalog: [],
+      backendOptions: [],
     },
   } satisfies SpeechKitSettingsState,
   defaultWakewordSettings: {
     enabled: false,
+    backend: "sherpa_kws",
     phraseId: "hey_quby",
     defaultMode: "voice_agent",
     threshold: 0,
@@ -226,6 +231,7 @@ vi.mock("@/lib/speechkit", () => ({
     active: false,
     statusMessage: "",
     phraseCatalog: [],
+    backendOptions: [],
   },
   fetchSettingsState: fetchSettingsStateMock,
   fetchModelProfiles: fetchModelProfilesMock,
@@ -253,7 +259,11 @@ vi.mock("@/lib/speechkit", () => ({
     Promise.resolve({
       contracts: [],
       settings: {
-        dictation: { enabled: true, modeSource: "local", dictionaryEnabled: false },
+        dictation: {
+          enabled: true,
+          modeSource: "local",
+          dictionaryEnabled: false,
+        },
         assist: { enabled: true, modeSource: "local", ttsEnabled: true },
         voiceAgent: {
           enabled: true,
@@ -271,10 +281,10 @@ vi.mock("@/lib/speechkit", () => ({
           requestTimeoutSec: 30,
         },
       },
-    }),
+    })
   ),
   patchAPIV1ModeSettings: vi.fn(() =>
-    Promise.resolve({ enabled: true, modeSource: "local" }),
+    Promise.resolve({ enabled: true, modeSource: "local" })
   ),
   fetchAPIV1ServerConnection: vi.fn(() =>
     Promise.resolve({
@@ -285,7 +295,7 @@ vi.mock("@/lib/speechkit", () => ({
       bearerTokenSet: false,
       fallbackToLocal: true,
       requestTimeoutSec: 30,
-    }),
+    })
   ),
   patchAPIV1ServerConnection: vi.fn(() =>
     Promise.resolve({
@@ -296,7 +306,7 @@ vi.mock("@/lib/speechkit", () => ({
       bearerTokenSet: false,
       fallbackToLocal: true,
       requestTimeoutSec: 30,
-    }),
+    })
   ),
 }));
 
@@ -322,7 +332,9 @@ vi.mock("@/components/ui/mic-selector", () => ({
 }));
 
 export const openStorageSettings = async () => {
-  fireEvent.click(await screen.findByRole("button", { name: "Storage & Data" }));
+  fireEvent.click(
+    await screen.findByRole("button", { name: "Storage & Data" })
+  );
 };
 
 beforeEach(() => {
@@ -405,7 +417,7 @@ beforeEach(() => {
     async (language: string, entries: unknown[]) => ({
       language,
       entries,
-    }),
+    })
   );
   fetchDownloadCatalogMock.mockResolvedValue([]);
   fetchDownloadJobsMock.mockResolvedValue([]);

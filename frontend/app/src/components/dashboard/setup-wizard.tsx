@@ -15,6 +15,11 @@ import {
   type DownloadJob,
   type WakewordState,
 } from "@/lib/speechkit";
+import { postInstallMode } from "@/lib/speechkit/install-mode-api";
+import {
+  patchAPIV1ServerConnection,
+  testAPIV1ServerConnection,
+} from "@/lib/speechkit/server-api";
 
 import type { SetupWizardCompletion } from "./dashboard-types";
 import { VoiceAgentProfileStep } from "./voice-agent-profile-step";
@@ -28,8 +33,11 @@ import {
   onboardingWakeWordPhrases,
   orderedIntegrationModeLabels,
   setupDisplayUrl,
+  type OnboardingTarget,
   type WizardStep,
 } from "./setup-wizard-data";
+
+type ServerFormTestState = "idle" | "testing" | "pass" | "fail";
 
 export function SetupWizard({
   catalog,
@@ -47,6 +55,14 @@ export function SetupWizard({
   onComplete: (next?: SetupWizardCompletion) => void | Promise<void>;
 }) {
   const [step, setStep] = useState<WizardStep>("welcome");
+  const [onboardingTarget, setOnboardingTarget] = useState<OnboardingTarget>("local");
+  const [targetSubmitting, setTargetSubmitting] = useState(false);
+  const [serverFormOpen, setServerFormOpen] = useState(false);
+  const [serverFormUrl, setServerFormUrl] = useState("");
+  const [serverFormToken, setServerFormToken] = useState("");
+  const [serverFormTestState, setServerFormTestState] =
+    useState<ServerFormTestState>("idle");
+  const [serverFormTestMessage, setServerFormTestMessage] = useState<string>("");
   const [devices, setDevices] = useState<AudioDevice[]>([]);
   const [selectedDevice, setSelectedDevice] = useState("");
   const [loading, setLoading] = useState(false);
@@ -330,6 +346,57 @@ export function SetupWizard({
     setModelActionError(null);
   };
 
+  async function handleTestServerConnection() {
+    setServerFormTestState("testing");
+    setServerFormTestMessage("");
+    try {
+      const result = await testAPIV1ServerConnection({
+        url: serverFormUrl,
+        bearerTokenEnv: "SPEECHKIT_SERVER_TOKEN",
+        authMode: "bearer",
+        token: serverFormToken,
+        requestTimeoutSec: 5,
+      });
+      if (result.ok) {
+        setServerFormTestState("pass");
+        setServerFormTestMessage(
+          `Connected — health ${result.healthStatus}, ready ${result.readyStatus}`,
+        );
+      } else {
+        setServerFormTestState("fail");
+        setServerFormTestMessage(result.message || "Connection failed.");
+      }
+    } catch (err) {
+      setServerFormTestState("fail");
+      setServerFormTestMessage(
+        err instanceof Error ? err.message : "Connection failed.",
+      );
+    }
+  }
+
+  async function handleUseRemoteServer() {
+    try {
+      await patchAPIV1ServerConnection({
+        enabled: true,
+        url: serverFormUrl,
+        bearerTokenEnv: "SPEECHKIT_SERVER_TOKEN",
+        authMode: "bearer",
+        token: serverFormToken,
+      });
+      // Server-pathway maps to InstallMode.Cloud at the backend layer
+      // (see Task 1). Persist the install-mode flip before transitioning
+      // so the next launch does not re-route the user to the local-model
+      // step.
+      await postInstallMode("server");
+      setStep("wake_word");
+    } catch (err) {
+      setServerFormTestState("fail");
+      setServerFormTestMessage(
+        err instanceof Error ? err.message : "Could not save server settings.",
+      );
+    }
+  }
+
   const STEPS: WizardStep[] = [
     "welcome",
     "local_model",
@@ -407,11 +474,78 @@ export function SetupWizard({
             />
           )}
 
+          <div
+            role="radiogroup"
+            aria-label="Onboarding target"
+            className="grid grid-cols-1 md:grid-cols-2 gap-4 w-full max-w-2xl mt-12"
+          >
+            <button
+              type="button"
+              role="radio"
+              aria-checked={onboardingTarget === "local"}
+              onClick={() => setOnboardingTarget("local")}
+              className={[
+                "rounded-2xl border-2 p-6 text-left transition-all",
+                onboardingTarget === "local"
+                  ? "border-[#947dff] bg-[#2a292f] ring-2 ring-[#947dff]/40"
+                  : "border-white/10 bg-[#1a191e] hover:border-white/20",
+              ].join(" ")}
+            >
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-lg font-semibold text-[#e4e1e9]">Local</span>
+                {onboardingTarget === "local" && (
+                  <span className="text-[#947dff] text-sm font-medium">Selected</span>
+                )}
+              </div>
+              <p className="text-sm text-[#b5b3c4] leading-relaxed">
+                Run dictation and assist on this device. Models live on your machine.
+              </p>
+            </button>
+
+            <button
+              type="button"
+              role="radio"
+              aria-checked={onboardingTarget === "cloud"}
+              onClick={() => setOnboardingTarget("cloud")}
+              className={[
+                "rounded-2xl border-2 p-6 text-left transition-all",
+                onboardingTarget === "cloud"
+                  ? "border-[#947dff] bg-[#2a292f] ring-2 ring-[#947dff]/40"
+                  : "border-white/10 bg-[#1a191e] hover:border-white/20",
+              ].join(" ")}
+            >
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-lg font-semibold text-[#e4e1e9]">Cloud</span>
+                {onboardingTarget === "cloud" && (
+                  <span className="text-[#947dff] text-sm font-medium">Selected</span>
+                )}
+              </div>
+              <p className="text-sm text-[#b5b3c4] leading-relaxed">
+                Use a hosted provider (Hugging Face, OpenAI, Gemini, Groq). Bring your own key.
+              </p>
+            </button>
+          </div>
+
           <div className="flex flex-col items-center space-y-4 mt-16">
             <button
               type="button"
-              onClick={() => setStep("local_model")}
-              className="signature-gradient ambient-glow text-[#2b0088] font-bold text-lg px-12 h-14 rounded-full transition-all active:scale-95 hover:opacity-90"
+              onClick={async () => {
+                if (targetSubmitting) return;
+                setTargetSubmitting(true);
+                try {
+                  if (onboardingTarget === "cloud") {
+                    await postInstallMode("cloud");
+                    setStep("integrations");
+                  } else {
+                    await postInstallMode("local");
+                    setStep("local_model");
+                  }
+                } finally {
+                  setTargetSubmitting(false);
+                }
+              }}
+              disabled={targetSubmitting}
+              className="signature-gradient ambient-glow text-[#2b0088] font-bold text-lg px-12 h-14 rounded-full transition-all active:scale-95 hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed"
             >
               Get Started
             </button>
@@ -423,6 +557,90 @@ export function SetupWizard({
             >
               {loading ? "Finishing..." : "Skip setup"}
             </button>
+            <button
+              type="button"
+              onClick={() => setServerFormOpen((open) => !open)}
+              aria-expanded={serverFormOpen}
+              aria-controls="server-connect-form"
+              className="text-[#b5b3c4] text-xs font-medium hover:text-[#e4e1e9] transition-colors mt-2"
+            >
+              {serverFormOpen
+                ? "Hide server connection"
+                : "I have my own SpeechKit server"}
+            </button>
+
+            {serverFormOpen && (
+              <div
+                id="server-connect-form"
+                className="w-full max-w-md mt-4 rounded-2xl border border-white/10 bg-[#1a191e] p-5 space-y-3 text-left"
+              >
+                <label className="block text-xs font-medium text-[#b5b3c4]">
+                  Server URL
+                  <input
+                    type="url"
+                    value={serverFormUrl}
+                    onChange={(e) => {
+                      setServerFormUrl(e.target.value);
+                      setServerFormTestState("idle");
+                      setServerFormTestMessage("");
+                    }}
+                    aria-describedby="server-form-test-status"
+                    placeholder="https://speechkit.example.com"
+                    className="mt-1 w-full rounded-md bg-[#2a292f] border border-white/10 text-[#e4e1e9] text-sm px-3 py-2"
+                  />
+                </label>
+                <label className="block text-xs font-medium text-[#b5b3c4]">
+                  Bearer token (optional)
+                  <input
+                    type="password"
+                    value={serverFormToken}
+                    onChange={(e) => {
+                      setServerFormToken(e.target.value);
+                      setServerFormTestState("idle");
+                      setServerFormTestMessage("");
+                    }}
+                    aria-describedby="server-form-test-status"
+                    placeholder="paste token here"
+                    className="mt-1 w-full rounded-md bg-[#2a292f] border border-white/10 text-[#e4e1e9] text-sm px-3 py-2"
+                  />
+                </label>
+                <div className="flex flex-row gap-2 pt-1">
+                  <button
+                    type="button"
+                    onClick={() => void handleTestServerConnection()}
+                    disabled={!serverFormUrl || serverFormTestState === "testing"}
+                    className="rounded-md bg-[#2a292f] border border-white/10 text-[#e4e1e9] text-sm px-3 py-2 disabled:opacity-50 hover:border-white/20"
+                  >
+                    {serverFormTestState === "testing"
+                      ? "Testing..."
+                      : "Test connection"}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => void handleUseRemoteServer()}
+                    disabled={serverFormTestState !== "pass"}
+                    className="rounded-md signature-gradient text-[#2b0088] font-semibold text-sm px-3 py-2 disabled:opacity-50"
+                  >
+                    Use this server
+                  </button>
+                </div>
+                {serverFormTestMessage && (
+                  <p
+                    id="server-form-test-status"
+                    role={serverFormTestState === "fail" ? "alert" : undefined}
+                    aria-live={serverFormTestState === "fail" ? undefined : "polite"}
+                    className={[
+                      "text-xs leading-relaxed",
+                      serverFormTestState === "fail"
+                        ? "text-rose-300"
+                        : "text-[#b5b3c4]",
+                    ].join(" ")}
+                  >
+                    {serverFormTestMessage}
+                  </p>
+                )}
+              </div>
+            )}
           </div>
         </div>
       )}
@@ -1221,7 +1439,7 @@ function WakeWordStep({
   onContinue: () => void;
 }) {
   const phrases = onboardingWakeWordPhrases;
-  const [phraseId, setPhraseId] = useState<string>(phrases[0]?.id ?? "hey_siri");
+  const [phraseId, setPhraseId] = useState<string>(phrases[0]?.id ?? "hey_quby");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [state, setState] = useState<WakewordState | null>(null);
@@ -1260,6 +1478,7 @@ function WakeWordStep({
     setError(null);
     try {
       const next = await enableWakeword({
+        backend: "sherpa_kws",
         phraseId,
         defaultMode: "voice_agent",
       });

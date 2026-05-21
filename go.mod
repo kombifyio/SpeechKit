@@ -23,6 +23,7 @@ require (
 	github.com/pion/webrtc/v4 v4.2.11
 	github.com/spf13/cobra v1.10.2
 	github.com/wailsapp/wails/v3 v3.0.0-alpha.74
+	github.com/yalue/onnxruntime_go v1.27.0
 	go.opentelemetry.io/otel/exporters/otlp/otlplog/otlploghttp v0.19.0
 	go.opentelemetry.io/otel/log v0.19.0
 	go.opentelemetry.io/otel/sdk/log v0.19.0

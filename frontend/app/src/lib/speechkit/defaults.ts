@@ -14,6 +14,7 @@ import type {
 // / hey_mira / hey_kombify).
 export const defaultWakewordSettings: WakewordSettings = {
   enabled: false,
+  backend: "sherpa_kws",
   phraseId: "hey_quby",
   defaultMode: "voice_agent",
   threshold: 0,
@@ -22,6 +23,33 @@ export const defaultWakewordSettings: WakewordSettings = {
   active: false,
   statusMessage: "",
   phraseCatalog: [],
+  backendOptions: [
+    {
+      id: "sherpa_kws",
+      label: "Sherpa KWS sidecar",
+      description: "",
+      status: "",
+      available: false,
+      implemented: true,
+      recommended: true,
+    },
+    {
+      id: "livekit_openwakeword",
+      label: "LiveKit/openWakeWord",
+      description: "",
+      status: "",
+      available: false,
+      implemented: true,
+    },
+    {
+      id: "stt_phrase",
+      label: "STT phrase match",
+      description: "",
+      status: "",
+      available: false,
+      implemented: true,
+    },
+  ],
 };
 
 export const builtInPrimaryModelSelections: ModelSelectionsState = {

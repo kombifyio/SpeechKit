@@ -2,6 +2,8 @@ import type { ChangeEvent } from "react";
 
 import type {
   SpeechKitSettingsState,
+  WakewordBackend,
+  WakewordBackendOption,
   WakewordDefaultMode,
   WakewordPhraseCatalogEntry,
   WakewordSettings,
@@ -29,7 +31,9 @@ export function WakewordPanel({
 
   const selectedEntry = findPhraseEntry(wake.phraseId, wake.phraseCatalog);
   const effectiveThreshold =
-    wake.threshold > 0 ? wake.threshold : (selectedEntry?.recommendedThreshold ?? 0.68);
+    wake.threshold > 0
+      ? wake.threshold
+      : selectedEntry?.recommendedThreshold ?? 0.68;
 
   return (
     <Section title="Wake word" testId="settings-wakeword">
@@ -53,6 +57,13 @@ export function WakewordPanel({
             wake.enabled ? "opacity-100" : "pointer-events-none opacity-50"
           }`}
         >
+          <BackendSelector
+            backend={wake.backend}
+            options={wake.backendOptions}
+            disabled={!wake.enabled}
+            onChange={(backend) => update({ backend })}
+          />
+
           <PhraseSelector
             phraseId={wake.phraseId}
             catalog={wake.phraseCatalog}
@@ -114,6 +125,43 @@ export function WakewordPanel({
   );
 }
 
+function BackendSelector({
+  backend,
+  options,
+  disabled,
+  onChange,
+}: {
+  backend: WakewordBackend;
+  options: WakewordBackendOption[];
+  disabled: boolean;
+  onChange: (next: WakewordBackend) => void;
+}) {
+  const handleChange = (e: ChangeEvent<HTMLSelectElement>) => {
+    onChange(e.target.value as WakewordBackend);
+  };
+  return (
+    <div>
+      <label className="mb-1.5 block text-xs font-medium text-[color:var(--sk-text)]">
+        Detection backend
+      </label>
+      <select
+        data-testid="wakeword-backend-select"
+        value={backend}
+        onChange={handleChange}
+        disabled={disabled}
+        className="w-full rounded-md border border-[color:var(--sk-border)] bg-[color:var(--sk-surface-0)] px-3 py-2 text-sm text-[color:var(--sk-text)] focus:border-[color:var(--sk-accent)] focus:outline-none disabled:cursor-not-allowed disabled:opacity-50"
+      >
+        {options.map((opt) => (
+          <option key={opt.id} value={opt.id}>
+            {opt.label}
+            {opt.recommended ? " (recommended)" : ""}
+          </option>
+        ))}
+      </select>
+    </div>
+  );
+}
+
 function WakewordStatus({
   wake,
   entry,
@@ -124,13 +172,13 @@ function WakewordStatus({
   const indicatorColor = wake.active
     ? "bg-green-500"
     : wake.enabled
-      ? "bg-amber-500"
-      : "bg-[color:var(--sk-border)]";
+    ? "bg-amber-500"
+    : "bg-[color:var(--sk-border)]";
   const headline = wake.active
     ? "Listening"
     : wake.enabled
-      ? "Enabled (not active)"
-      : "Disabled";
+    ? "Enabled (not active)"
+    : "Disabled";
   const fallbackMessage = entry
     ? `${entry.displayName} — ${entry.notes}`
     : "Pick a phrase to see its tradeoffs.";
@@ -278,13 +326,15 @@ function ThresholdInput({
         <span className="text-[11px] text-[color:var(--sk-text-muted)]">
           {usingRecommended
             ? `Using recommended value: ${effective.toFixed(2)}`
-            : `Manual override (recommended for this phrase: ${effective.toFixed(2)})`}
+            : `Manual override (recommended for this phrase: ${effective.toFixed(
+                2
+              )})`}
         </span>
       </div>
       <p className="mt-1.5 text-[11px] leading-relaxed text-[color:var(--sk-text-muted)]">
         Range (0, 1]. Lower = more sensitive (more false-accepts), higher =
-        stricter (more false-rejects). Set to 0 to use the recommended value
-        for the selected phrase.
+        stricter (more false-rejects). Set to 0 to use the recommended value for
+        the selected phrase.
       </p>
     </div>
   );
@@ -337,7 +387,7 @@ function NumberField({
 
 function findPhraseEntry(
   id: string,
-  catalog: WakewordPhraseCatalogEntry[],
+  catalog: WakewordPhraseCatalogEntry[]
 ): WakewordPhraseCatalogEntry | null {
   const normalized = id.trim().toLowerCase();
   if (!normalized) return null;
