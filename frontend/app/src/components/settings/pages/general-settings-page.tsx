@@ -71,6 +71,36 @@ export function GeneralSettingsPage({
             className="w-full"
           />
         </Section>
+
+        <Section title="Auto-Stop on Silence" testId="general-silence-timeout">
+          <label className="flex flex-col gap-2">
+            <span className="text-xs font-medium text-(--sk-text)">
+              Seconds of silence before Dictate ends
+            </span>
+            <input
+              type="number"
+              min={0}
+              max={300}
+              step={1}
+              value={settings.dictateSilenceTimeoutSec}
+              onChange={(e) =>
+                updateSettings({
+                  dictateSilenceTimeoutSec: Math.max(
+                    0,
+                    Number(e.target.value) || 0,
+                  ),
+                })
+              }
+              className="w-32 rounded-md border border-(--sk-panel-border) bg-(--sk-surface-1) px-2 py-1.5 text-sm text-(--sk-text) focus:border-(--sk-accent)/40 focus:outline-none"
+              aria-label="Dictate silence timeout in seconds"
+            />
+            <p className="text-[11px] leading-relaxed text-(--sk-text-muted)/80">
+              Toggle-mode Dictate auto-stops after this many seconds of no
+              detected speech. Set to <code>0</code> to disable. Hold-to-talk
+              dictation releases on key-up regardless of this setting.
+            </p>
+          </label>
+        </Section>
       </div>
 
       <div className="flex flex-col gap-5">

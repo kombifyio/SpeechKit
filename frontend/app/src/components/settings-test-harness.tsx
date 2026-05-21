@@ -177,6 +177,7 @@ vi.mock("@/lib/speechkit", () => ({
     vocabularyDictionary: "",
     saveAudio: true,
     audioRetentionDays: 7,
+    dictateSilenceTimeoutSec: 10,
     selectedAudioDeviceId: "",
     hfHasUserToken: false,
     hfHasInstallToken: false,

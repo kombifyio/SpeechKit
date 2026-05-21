@@ -76,6 +76,7 @@ func buildNextConfig(form settingsFormData, cfg *config.Config) config.Config {
 	nextCfg.General.ModelDownloadDir = form.ModelDownloadDir
 	nextCfg.Vocabulary.Dictionary = form.VocabularyDictionary
 	nextCfg.General.Language = form.Language
+	nextCfg.General.DictateSilenceTimeoutSec = form.DictateSilenceTimeoutSec
 
 	// Google Cloud region (Gemini Live BYOK compliance control).
 	if form.GoogleRegion != "" {

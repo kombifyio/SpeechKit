@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"strings"
 	"time"
 
@@ -12,6 +13,7 @@ import (
 	"github.com/kombifyio/SpeechKit/internal/voiceagent"
 	"github.com/kombifyio/SpeechKit/internal/voiceagentprofile"
 	"github.com/kombifyio/SpeechKit/internal/voicebehavior"
+	"github.com/kombifyio/SpeechKit/internal/wakeword"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit"
 )
 
@@ -635,6 +637,25 @@ func (c desktopInputController) activateVoiceAgent(ctx context.Context) {
 		activationCtx, cancel = context.WithCancel(ctx)
 		c.state.setVoiceAgentActivationCancel(cancel)
 	}
+
+	// Hotkey-toggle Voice Agent gets the same silence-cutoff + exit-phrase
+	// auto-end policy as the wake-word path. Without this the toggle-mode
+	// VA session would stay open forever after the user stopped speaking.
+	// Hold-to-talk does not need it either way — the KeyUp tears the
+	// session down — but installing the policy is harmless there: any
+	// NotifyActivity from the PCM handler resets the timer well before
+	// SilenceCutoff fires.
+	if c.state != nil && c.cfg != nil &&
+		c.hotkeyBehavior(modeVoiceAgent) == config.HotkeyBehaviorToggle {
+		policy := wakeword.NewAutoEndPolicy(
+			autoEndConfigFromTOML(c.cfg.Wakeword.AutoEnd),
+			slog.Default(),
+		)
+		c.state.setWakewordSessionPolicy(policy)
+		policy.Start()
+		go c.watchWakewordAutoEnd(ctx, policy)
+	}
+
 	go c.startVoiceAgentSession(activationCtx, plan, audioSender)
 }
 

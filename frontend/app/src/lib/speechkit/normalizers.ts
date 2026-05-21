@@ -496,6 +496,8 @@ export function normalizeSettingsState(
     postgresConfigured: payload?.postgresConfigured ?? base.postgresConfigured,
     postgresDSN: payload?.postgresDSN ?? base.postgresDSN,
     maxAudioStorageMB: payload?.maxAudioStorageMB ?? base.maxAudioStorageMB,
+    dictateSilenceTimeoutSec:
+      payload?.dictateSilenceTimeoutSec ?? base.dictateSilenceTimeoutSec,
     modelDownloadDir: payload?.modelDownloadDir ?? base.modelDownloadDir,
     hotkey,
     dictateHotkey,

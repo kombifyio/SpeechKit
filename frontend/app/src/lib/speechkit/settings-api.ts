@@ -91,6 +91,7 @@ export async function saveSettingsState(nextState: SpeechKitSettingsState) {
     store_save_audio: nextState.saveAudio ? "1" : "0",
     store_audio_retention_days: String(nextState.audioRetentionDays),
     store_max_audio_storage_mb: String(nextState.maxAudioStorageMB),
+    dictate_silence_timeout_sec: String(nextState.dictateSilenceTimeoutSec),
     model_download_dir: nextState.modelDownloadDir,
     vocabulary_dictionary: nextState.vocabularyDictionary,
     selected_audio_device_id: nextState.selectedAudioDeviceId,

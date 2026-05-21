@@ -12,6 +12,37 @@ IDs, source paths, and other maintainer-only vocabulary.
 
 ## [Unreleased]
 
+## [0.35.22] - 2026-05-21
+
+Voice Agent hotkey-toggle now auto-ends on silence, the dictate silence
+timeout is configurable from the General Settings page (no more TOML
+edit required), and Assist mode inherits the same auto-stop because it
+reuses the dictate pipeline.
+
+### Added
+- General Settings now has an "Auto-Stop on Silence" section with a
+  seconds input. Set to `0` to disable. The value seeds both
+  `dictate_silence_timeout_sec` in TOML and the runtime watcher
+  introduced in v0.35.21.
+- Voice Agent toggle-mode sessions now run the same silence + exit
+  phrase auto-end policy that wake-word triggered sessions already
+  used. Activated whenever the Voice Agent hotkey is configured as
+  Toggle (not Hold-to-Talk). Hold-to-talk still terminates on key-up
+  and does not need the watcher. The silence-cutoff value comes from
+  the existing `[wakeword.auto_end]` TOML block (default 10 s plus the
+  built-in DE/EN exit phrases).
+
+### Changed
+- Assist mode auto-stops on silence using the dictate timeout. Assist
+  already used the dictate capture pipeline; the new watcher applies
+  uniformly so a forgotten Assist session no longer keeps the
+  microphone live.
+
+### Verification
+- Go test suites for the desktop client, config layer, and framework
+  kernel pass locally.
+- Frontend suite: 189/189 passing, TypeScript clean, ESLint clean.
+
 ## [0.35.21] - 2026-05-21
 
 Dictate Mode now auto-stops after a configurable silence window. The

@@ -46,6 +46,7 @@ type settingsFormData struct {
 	ModelDownloadDir           string
 	VocabularyDictionary       string
 	Language                   string
+	DictateSilenceTimeoutSec   int
 	DictatePrimaryProfileID    string
 	DictateFallbackProfileID   string
 	AssistPrimaryProfileID     string

@@ -280,6 +280,7 @@ func (s *appState) settingsSnapshot(cfg *config.Config) settingsSnapshot {
 		AssistOverlayMode:          config.NormalizeOverlayFeedbackMode(s.assistOverlayMode, config.NormalizeOverlayFeedbackMode(cfg.UI.AssistOverlayMode, config.OverlayFeedbackModeSmallFeedback)),
 		VoiceAgentOverlayMode:      config.NormalizeOverlayFeedbackMode(s.voiceAgentOverlayMode, config.NormalizeOverlayFeedbackMode(cfg.UI.VoiceAgentOverlayMode, config.OverlayFeedbackModeSmallFeedback)),
 		Language:                   cfg.General.Language,
+		DictateSilenceTimeoutSec:   cfg.General.DictateSilenceTimeoutSec,
 		VocabularyDictionary:       cfg.Vocabulary.Dictionary,
 		SaveAudio:                  cfg.Store.SaveAudio,
 		AudioRetentionDays:         cfg.Store.AudioRetentionDays,

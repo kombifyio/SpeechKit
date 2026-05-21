@@ -36,6 +36,14 @@ func parseContentSettingsForm(req *http.Request, cfg *config.Config, f *settings
 		f.VocabularyDictionary = cfg.Vocabulary.Dictionary
 	}
 	f.Language = firstNonEmpty(trimmedFormValue(req, "language"), cfg.General.Language, "de")
+	// dictate_silence_timeout_sec — see GeneralConfig.DictateSilenceTimeoutSec.
+	// Treat absence of the form field as "keep current value." 0 explicitly
+	// disables the watcher.
+	if postFormIncludes(req, "dictate_silence_timeout_sec") {
+		f.DictateSilenceTimeoutSec = nonNegativeIntFormValue(req, "dictate_silence_timeout_sec", cfg.General.DictateSilenceTimeoutSec)
+	} else {
+		f.DictateSilenceTimeoutSec = cfg.General.DictateSilenceTimeoutSec
+	}
 }
 
 func normalizeVocabularyDictionary(input string) string {

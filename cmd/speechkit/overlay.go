@@ -210,6 +210,7 @@ type settingsSnapshot struct {
 	AssistOverlayMode          string                                         `json:"assistOverlayMode"`
 	VoiceAgentOverlayMode      string                                         `json:"voiceAgentOverlayMode"`
 	Language                   string                                         `json:"language"`
+	DictateSilenceTimeoutSec   int                                            `json:"dictateSilenceTimeoutSec"`
 	VocabularyDictionary       string                                         `json:"vocabularyDictionary"`
 	SaveAudio                  bool                                           `json:"saveAudio"`
 	AudioRetentionDays         int                                            `json:"audioRetentionDays"`

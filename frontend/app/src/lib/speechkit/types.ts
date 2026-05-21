@@ -409,6 +409,7 @@ export type SpeechKitSettingsState = {
   vocabularyDictionary: string;
   saveAudio: boolean;
   audioRetentionDays: number;
+  dictateSilenceTimeoutSec: number;
   selectedAudioDeviceId: string;
   selectedOutputDeviceId?: string;
   profiles?: ModelProfile[];
