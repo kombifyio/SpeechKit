@@ -12,6 +12,56 @@ IDs, source paths, and other maintainer-only vocabulary.
 
 ## [Unreleased]
 
+## [0.36.0] - 2026-05-21
+
+Beta consolidation release. v0.36.0 bundles the v0.35.9 → v0.35.23
+patch wave (15 patches over three days) into a single named Beta
+release. Five themes consolidated: Onboarding 2.0, Installer
+Hardening, Auto-End Family, Wake-word Reorg, Server Smoke Browser
+Gate. Plus two long-open Desktop Runtime Stability tasks closed
+(first-run init, shutdown cleanup with goleak). No public API
+changes from v0.35.x — drop-in upgrade.
+
+Detailed walk-through:
+[docs/release-notes/v0.36.0.md](docs/release-notes/v0.36.0.md).
+
+### Added
+- First-run startup now explicitly creates every persistent runtime
+  directory (data, local data, secrets, audit log) and logs which
+  ones were created versus already present, with the resolved path
+  and permission mode. Previously each consumer performed its own
+  ad-hoc directory creation on first write, making first-run
+  permission errors hard to diagnose from a single log file.
+- Shutdown now emits a single summary log line reporting total
+  cleanup callbacks run, how many had explicit subsystem names, how
+  many panicked, and total duration. A panic in one cleanup
+  callback no longer orphans the later ones — every remaining
+  callback still runs and the panic is logged with the registering
+  subsystem name.
+
+### Fixed
+- Two Go source files had drifted out of `gofmt -s` since the
+  v0.35.21/22 settings work landed (struct-field and inline-comment
+  alignment). The CI gofmt gate is green again.
+- Removed an unused frontend export that the strict dead-code gate
+  had flagged: `onboardingWakeWordPhrases` from the dashboard
+  setup-wizard data module. The export had been declared as "kept
+  for the wake-word settings panel" in v0.35.20 but no callsite
+  ever consumed it.
+
+### Documentation
+- `STATUS.md` and `ROADMAP.md` caught up to v0.35.23 and now
+  declare v0.36.0 as the current focus, with the rolling Desktop
+  Runtime Stability stream linked from the milestone-details
+  section.
+- A consolidated v0.36.0 release-notes document under
+  `docs/release-notes/` walks through the five themes that rolled
+  out across v0.35.9 → v0.35.23.
+
+This release inherits every change from v0.35.9 → v0.35.23 — see
+those per-tag entries below for the detailed feature-level
+behaviour.
+
 ## [0.35.23] - 2026-05-21
 
 v0.35.20 added a "Tips" panel at the top of the dashboard home as its

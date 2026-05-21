@@ -52,6 +52,12 @@ func seedRuntimeConfigFromInstallTemplate(cfgPath string) {
 }
 
 func loadDesktopStartupConfig() (string, *config.Config, *config.InstallState, error) {
+	// Initialise every persistent runtime directory before config.Load,
+	// secrets resolution, or the audit-log subsystem touches them. Each
+	// downstream component used to MkdirAll on first write; with the
+	// explicit init we get a single source of truth + structured log
+	// trail for first-run-vs-upgrade triage. See kombify-SpeechKit-1pg.
+	initRuntimeDirectories()
 	cfgPath := runtimeConfigPath()
 	seedRuntimeConfigFromInstallTemplate(cfgPath)
 	cfg, err := config.Load(cfgPath)

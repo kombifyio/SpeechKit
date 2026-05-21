@@ -174,7 +174,14 @@ func TestPublishOssWorkflowPublishesFromResolvedTag(t *testing.T) {
 	assertNotContains(t, workflow, "workflows_backup")
 	assertContains(t, workflow, "git -c \"http.https://github.com/.extraheader=AUTHORIZATION: basic ${auth_header}\" \\")
 	assertContains(t, workflow, "clone \"https://github.com/${OSS_REPO}.git\" oss-repo")
-	assertContains(t, workflow, "git remote set-url origin \"https://github.com/${OSS_REPO}.git\"")
+	// Push side now uses a URL-embedded token (push_token derived from
+	// WORKFLOWS_SYNC_PAT or RELEASE_AUTH_TOKEN). The extraheader form was
+	// rejected by oauth2 in d8603d0f; assertion below pins the new push
+	// remote contract.
+	assertContains(t, workflow, "git remote set-url origin \"https://x-access-token:${push_token}@github.com/${OSS_REPO}.git\"")
+	// The literal RELEASE_AUTH_TOKEN MUST NOT be inlined in the remote URL;
+	// it must always flow via the push_token variable so the PAT fallback
+	// path is reachable.
 	assertNotContains(t, workflow, "https://x-access-token:${RELEASE_AUTH_TOKEN}@github.com/${OSS_REPO}.git")
 	assertNotContains(t, workflow, "path: /tmp/oss-repo")
 	assertNotContains(t, workflow, "gh release download")
