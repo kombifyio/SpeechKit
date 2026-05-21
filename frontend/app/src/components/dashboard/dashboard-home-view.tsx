@@ -111,11 +111,6 @@ export function DashboardHomeView({
           />
         </div>
 
-        {/* Tips — replaces the wake-word onboarding step. Always visible
-            so users discover the feature even after activity has been
-            recorded. Wake-word card opens Settings → Wake Word panel. */}
-        <TipsSection onOpenSettings={onOpenSettings} />
-
         {/* Recent activity: transcriptions + notes */}
         {latestTranscription || featuredNotes.length > 0 ? (
           <div>
@@ -227,6 +222,27 @@ export function DashboardHomeView({
                 >
                   Quick words trigger focused actions on the current selection.
                 </QuickStartCard>
+                {/* Wake-word promo (replaces the dedicated onboarding step
+                    removed in v0.35.20). Lives inside Quick Start so the
+                    tip surface stays in one place. */}
+                <QuickStartCard
+                  number="04"
+                  title="Use a wake word"
+                  cta={{ label: "Enable in Settings", onClick: onOpenSettings }}
+                >
+                  Say a phrase like &ldquo;Hey Quby&rdquo; to start Voice Agent
+                  hands-free &mdash; no hotkey needed. Microphone audio for
+                  wake detection stays fully on-device.
+                </QuickStartCard>
+                <QuickStartCard
+                  number="05"
+                  title="Tune your providers"
+                  cta={{ label: "Open Settings", onClick: onOpenSettings }}
+                >
+                  Add a cloud provider for faster transcription or a smarter
+                  LLM. SpeechKit stays local-first by default; integrations
+                  are layered on top.
+                </QuickStartCard>
               </div>
             </div>
 
@@ -253,85 +269,6 @@ export function DashboardHomeView({
   );
 }
 
-/* ── Tips section (replaces the v0.35.19 wake-word onboarding step) ── */
-
-type TipDefinition = {
-  id: string;
-  icon: string;
-  title: string;
-  body: string;
-  cta?: { label: string; onClick: () => void };
-};
-
-function TipsSection({ onOpenSettings }: { onOpenSettings: () => void }) {
-  const tips: TipDefinition[] = [
-    {
-      id: "wake-word",
-      icon: "mic",
-      title: "Use a wake word",
-      body: "Say a wake phrase like \"Hey Quby\" to start the Voice Agent hands-free — no hotkey needed. Microphone audio for wake detection stays fully on-device.",
-      cta: { label: "Enable in Settings", onClick: onOpenSettings },
-    },
-    {
-      id: "hotkeys",
-      icon: "keyboard",
-      title: "Master the three hotkeys",
-      body: "Ctrl+Win for dictation, Win+Alt for assist, Ctrl+Shift for Voice Agent. Hold-to-talk, release to send. Hotkeys are configurable in Settings.",
-      cta: { label: "Configure hotkeys", onClick: onOpenSettings },
-    },
-    {
-      id: "providers",
-      icon: "settings",
-      title: "Tune your providers",
-      body: "Add a cloud provider for faster transcription or a smarter LLM. SpeechKit stays local-first by default; integrations are layered on top.",
-      cta: { label: "Open Settings", onClick: onOpenSettings },
-    },
-  ];
-
-  return (
-    <div data-testid="dashboard-tips-section">
-      <h3 className="mb-4 text-xs font-bold uppercase tracking-widest text-[color:var(--sk-text-muted)]">
-        Tips
-      </h3>
-      <div className="grid gap-4 md:grid-cols-3">
-        {tips.map((tip) => (
-          <TipCard key={tip.id} tip={tip} />
-        ))}
-      </div>
-    </div>
-  );
-}
-
-function TipCard({ tip }: { tip: TipDefinition }) {
-  return (
-    <div
-      data-testid={`dashboard-tip-${tip.id}`}
-      className="sk-panel rounded-[24px] p-5 flex flex-col gap-3"
-    >
-      <div className="flex items-center gap-2">
-        <span className="material-symbols-outlined text-[color:var(--sk-accent)] text-xl leading-none">
-          {tip.icon}
-        </span>
-        <h4 className="text-sm font-semibold text-[color:var(--sk-text)]">
-          {tip.title}
-        </h4>
-      </div>
-      <p className="text-xs leading-6 text-[color:var(--sk-text-muted)]">
-        {tip.body}
-      </p>
-      {tip.cta && (
-        <button
-          type="button"
-          onClick={tip.cta.onClick}
-          className="sk-secondary-button self-start rounded-full px-4 py-1.5 text-[11px] font-semibold transition-colors"
-        >
-          {tip.cta.label}
-        </button>
-      )}
-    </div>
-  );
-}
-
 /* ── Library View ── */
 
 function KPICard({ label, value }: { label: string; value: string }) {
@@ -351,10 +288,17 @@ function QuickStartCard({
   number,
   title,
   children,
+  cta,
 }: {
   number: string;
   title: string;
   children: React.ReactNode;
+  // Optional call-to-action shown to the right of the body text.
+  // Cards added in v0.35.23 (wake word, providers) wire this to
+  // onOpenSettings so the user can act on the tip immediately. Older
+  // feature-intro cards (hold-to-talk, hover-pill, summarize) omit the
+  // prop and stay text-only.
+  cta?: { label: string; onClick: () => void };
 }) {
   return (
     <div className="flex items-start gap-3 rounded-[20px] border border-[color:var(--sk-panel-border)] bg-[color:var(--sk-surface-0)] px-4 py-3">
@@ -369,6 +313,15 @@ function QuickStartCard({
           {children}
         </p>
       </div>
+      {cta && (
+        <button
+          type="button"
+          onClick={cta.onClick}
+          className="sk-secondary-button shrink-0 self-center rounded-full px-3 py-1.5 text-[11px] font-semibold transition-colors"
+        >
+          {cta.label}
+        </button>
+      )}
     </div>
   );
 }

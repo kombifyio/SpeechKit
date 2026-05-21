@@ -12,6 +12,24 @@ IDs, source paths, and other maintainer-only vocabulary.
 
 ## [Unreleased]
 
+## [0.35.23] - 2026-05-21
+
+v0.35.20 added a "Tips" panel at the top of the dashboard home as its
+own section above the existing "Welcome to SpeechKit" / Quick Start
+block. That meant the same screen now had two tips surfaces. This
+release removes the standalone panel and folds the new tips
+(wake word, providers) into the existing Quick Start grid as cards 04
+and 05. Card 04 carries an "Enable in Settings" button, card 05 carries
+an "Open Settings" button.
+
+### Changed
+- Dashboard home: the standalone Tips section introduced in v0.35.20 is
+  gone. The wake-word and providers tips now live inside the existing
+  Welcome → Quick Start grid as new cards (04, 05) with Settings CTAs.
+- Quick Start cards now accept an optional CTA button rendered next to
+  the body text. The original three feature-intro cards (hold-to-talk,
+  hover-pill, summarize) stay text-only.
+
 ## [0.35.22] - 2026-05-21
 
 Voice Agent hotkey-toggle now auto-ends on silence, the dictate silence
