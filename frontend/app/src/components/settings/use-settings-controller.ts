@@ -34,7 +34,12 @@ import {
   type SpeechKitSettingsState,
 } from "@/lib/speechkit";
 
-type GeneralTab = "general" | "integrations" | "speechkit_server" | "storage";
+type GeneralTab =
+  | "general"
+  | "integrations"
+  | "speechkit_server"
+  | "wake_word"
+  | "storage";
 type ModeTab = keyof typeof MODE_SELECTION_KEYS;
 export type SettingsTab = GeneralTab | ModeTab;
 type Tab = SettingsTab;

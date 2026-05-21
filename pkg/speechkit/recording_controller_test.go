@@ -3,8 +3,32 @@ package speechkit
 import (
 	"errors"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
+	"time"
 )
+
+// fakeIdleCollector lets a test pin an idle-since timestamp so the
+// RecordingController's silence watcher fires deterministically without
+// requiring real audio capture.
+type fakeIdleCollector struct {
+	fakeCollector
+	mu        sync.Mutex
+	idleSince time.Time
+}
+
+func (c *fakeIdleCollector) IdleSince() time.Time {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.idleSince
+}
+
+func (c *fakeIdleCollector) setIdleSince(t time.Time) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.idleSince = t
+}
 
 type fakeRecorder struct {
 	startErr   error
@@ -135,6 +159,119 @@ func TestRecordingControllerHandlesShortAudio(t *testing.T) {
 	}
 	if got := observer.states; len(got) < 2 || got[1] != "idle:" {
 		t.Fatalf("states = %#v", got)
+	}
+}
+
+func TestRecordingControllerIdleWatcherFiresOnSilence(t *testing.T) {
+	recorder := &fakeRecorder{stopPCM: []byte(strings.Repeat("a", 6400))}
+	submitter := &fakeSubmitter{}
+	observer := &fakeObserver{}
+	collector := &fakeIdleCollector{}
+	// Pin idleSince well into the past so the watcher's first tick
+	// already sees the timeout exceeded.
+	collector.setIdleSince(time.Now().Add(-5 * time.Second))
+
+	controller := NewRecordingController(recorder, submitter, observer, func() SegmentCollector {
+		return collector
+	})
+	controller.SetIdleWatchInterval(5 * time.Millisecond)
+
+	var fired atomic.Int32
+	if err := controller.Start(RecordingStartOptions{
+		Language:    "en",
+		IdleTimeout: 100 * time.Millisecond,
+		OnIdleTimeoutCallback: func() {
+			fired.Add(1)
+		},
+	}); err != nil {
+		t.Fatalf("Start() error = %v", err)
+	}
+
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		if fired.Load() > 0 {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	if fired.Load() != 1 {
+		t.Fatalf("idle callback fired %d times, want 1", fired.Load())
+	}
+
+	if err := controller.Stop(RecordingStopOptions{Label: "Captured"}); err != nil {
+		t.Fatalf("Stop() error = %v", err)
+	}
+}
+
+func TestRecordingControllerIdleWatcherSkipsWhileSpeechActive(t *testing.T) {
+	recorder := &fakeRecorder{stopPCM: []byte(strings.Repeat("a", 6400))}
+	submitter := &fakeSubmitter{}
+	observer := &fakeObserver{}
+	collector := &fakeIdleCollector{}
+	// Zero IdleSince === "currently speaking" — watcher must not fire.
+	collector.setIdleSince(time.Time{})
+
+	controller := NewRecordingController(recorder, submitter, observer, func() SegmentCollector {
+		return collector
+	})
+	controller.SetIdleWatchInterval(5 * time.Millisecond)
+
+	var fired atomic.Int32
+	if err := controller.Start(RecordingStartOptions{
+		Language:    "en",
+		IdleTimeout: 50 * time.Millisecond,
+		OnIdleTimeoutCallback: func() {
+			fired.Add(1)
+		},
+	}); err != nil {
+		t.Fatalf("Start() error = %v", err)
+	}
+
+	// Give the watcher a generous window to incorrectly fire.
+	time.Sleep(200 * time.Millisecond)
+
+	if fired.Load() != 0 {
+		t.Fatalf("idle callback fired while speech active (fired=%d)", fired.Load())
+	}
+
+	if err := controller.Stop(RecordingStopOptions{Label: "Captured"}); err != nil {
+		t.Fatalf("Stop() error = %v", err)
+	}
+}
+
+func TestRecordingControllerStopClearsIdleWatcher(t *testing.T) {
+	recorder := &fakeRecorder{stopPCM: []byte(strings.Repeat("a", 6400))}
+	submitter := &fakeSubmitter{}
+	observer := &fakeObserver{}
+	collector := &fakeIdleCollector{}
+	collector.setIdleSince(time.Now().Add(-5 * time.Second))
+
+	controller := NewRecordingController(recorder, submitter, observer, func() SegmentCollector {
+		return collector
+	})
+	controller.SetIdleWatchInterval(5 * time.Millisecond)
+
+	var fired atomic.Int32
+	if err := controller.Start(RecordingStartOptions{
+		Language:    "en",
+		IdleTimeout: 5 * time.Second, // long enough that Stop wins the race
+		OnIdleTimeoutCallback: func() {
+			fired.Add(1)
+		},
+	}); err != nil {
+		t.Fatalf("Start() error = %v", err)
+	}
+
+	// Stop immediately — the watcher should not get a chance to fire.
+	if err := controller.Stop(RecordingStopOptions{Label: "Captured"}); err != nil {
+		t.Fatalf("Stop() error = %v", err)
+	}
+
+	// Wait a few watcher ticks past the stop to make sure a stale fire
+	// did not leak through.
+	time.Sleep(100 * time.Millisecond)
+	if fired.Load() != 0 {
+		t.Fatalf("idle callback fired after Stop (fired=%d)", fired.Load())
 	}
 }
 

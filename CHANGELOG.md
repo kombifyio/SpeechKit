@@ -12,6 +12,41 @@ IDs, source paths, and other maintainer-only vocabulary.
 
 ## [Unreleased]
 
+## [0.35.21] - 2026-05-21
+
+Dictate Mode now auto-stops after a configurable silence window. The
+toggle-mode dictation session previously kept the microphone hot until
+the user pressed the hotkey a second time — if they walked away, the
+session stayed open. The new silence watcher ends the dictate session
+after a configurable window of no observed speech (default 10
+seconds). Hold-to-talk keeps releasing on key-up as before; the
+watcher does not interfere there because hold-to-talk sessions are
+typically short.
+
+Wake-word configuration moved out of General Settings into its own
+sub-page under Audio Settings. The General page was getting overloaded
+and wake-word has enough surface area (phrase picker, backend chooser,
+self-test, threshold) to deserve a dedicated tab.
+
+### Added
+- New config knob `[general] dictate_silence_timeout_sec` (default
+  `10`). Set to `0` to disable the auto-stop watcher.
+- New Settings tab "Wake Word" inside the Audio Settings nav group,
+  alongside Integrations, SpeechKit Server, and Storage & Data.
+
+### Changed
+- Dictate Mode auto-stops on silence using the configured timeout.
+  Hold-to-talk behaviour is unchanged; toggle-mode dictation no longer
+  needs a manual second hotkey press to release the microphone after
+  the user stops talking.
+- Removed the Wake Word panel from the General Settings page. Existing
+  configuration is preserved — only the location changed.
+
+### Tests
+- New unit coverage for the silence watcher: fires after the timeout,
+  stays quiet while speech is active, and is cleared cleanly when the
+  user stops the dictate session manually.
+
 ## [0.35.20] - 2026-05-21
 
 The Wake Word step is gone from the onboarding wizard. Onboarding now

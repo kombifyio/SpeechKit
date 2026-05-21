@@ -27,6 +27,7 @@ func defaults() *Config {
 			HotkeyMode:               HotkeyBehaviorHoldToTalk,
 			AutoStopSilenceMs:        500,
 			FastModeSilenceMs:        1500,
+			DictateSilenceTimeoutSec: 10,
 		},
 		Audio: AudioConfig{
 			Backend:     "windows-wasapi-malgo",

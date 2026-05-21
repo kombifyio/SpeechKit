@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/kombifyio/SpeechKit/internal/config"
 	"github.com/kombifyio/SpeechKit/internal/output"
@@ -177,12 +178,31 @@ func (h desktopCommandHandler) startDictation(ctx context.Context, command speec
 		label = "Recording started"
 	}
 
+	// Configure silence-based auto-stop for toggle-mode dictation. Hold-to-talk
+	// sessions also benefit (they currently never auto-stop on a stuck KeyUp),
+	// but the dominant case is the user reporting that toggle mode keeps the
+	// session alive after they stopped speaking. Zero in config disables the
+	// watcher entirely.
+	idleTimeout := time.Duration(h.cfg.General.DictateSilenceTimeoutSec) * time.Second
+
 	return h.recordingController.Start(speechkit.RecordingStartOptions{
 		Label:       label,
 		Target:      output.CaptureTarget(),
 		Language:    h.cfg.General.Language,
 		QuickNote:   quickNote.enabled,
 		QuickNoteID: quickNote.noteID,
+		IdleTimeout: idleTimeout,
+		OnIdleTimeoutCallback: func() {
+			if err := h.stopDictation(speechkit.Command{
+				Type: speechkit.CommandStopDictation,
+				Metadata: map[string]string{
+					"label":  "Captured (silence timeout)",
+					"reason": "silence_timeout",
+				},
+			}); err != nil {
+				h.state.addLog(fmt.Sprintf("auto-stop on silence failed: %v", err), "warn")
+			}
+		},
 	})
 }
 

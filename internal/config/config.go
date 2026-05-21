@@ -368,8 +368,9 @@ type GeneralConfig struct {
 	ActiveMode               string `toml:"active_mode"` // legacy compat
 	HotkeyMode               string `toml:"hotkey_mode"` // legacy compat for single behavior setting
 	AutoStopSilenceMs        int    `toml:"auto_stop_silence_ms"`
-	FastModeSilenceMs        int    `toml:"fast_mode_silence_ms"` // silence threshold for Quick Capture auto-stop
-	ModelDownloadDir         string `toml:"model_download_dir"`   // Default directory for downloaded local model files
+	FastModeSilenceMs        int    `toml:"fast_mode_silence_ms"`        // silence threshold for Quick Capture auto-stop
+	DictateSilenceTimeoutSec int    `toml:"dictate_silence_timeout_sec"` // total silence in seconds before dictate auto-stops; 0 disables
+	ModelDownloadDir         string `toml:"model_download_dir"`          // Default directory for downloaded local model files
 }
 
 type AudioConfig struct {

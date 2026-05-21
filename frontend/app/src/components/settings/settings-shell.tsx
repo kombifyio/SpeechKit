@@ -4,6 +4,7 @@ import {
   Bot,
   Database,
   Headphones,
+  Mic,
   Plug,
   ServerCog,
   SlidersHorizontal,
@@ -17,6 +18,7 @@ import { IntegrationsSettingsPage } from "@/components/settings/pages/integratio
 import { ModeSettingsPage } from "@/components/settings/pages/mode-settings-page";
 import { SpeechKitServerSettingsPage } from "@/components/settings/pages/speechkit-server-settings-page";
 import { StorageSettingsPage } from "@/components/settings/pages/storage-settings-page";
+import { WakewordSettingsPage } from "@/components/settings/pages/wakeword-settings-page";
 import {
   useSettingsController,
   type SettingsTab,
@@ -52,6 +54,7 @@ const AUDIO_NAV_TABS: NavTab[] = [
     icon: ServerCog,
     iconKey: "server-cog",
   },
+  { value: "wake_word", label: "Wake Word", icon: Mic, iconKey: "mic" },
   {
     value: "storage",
     label: "Storage & Data",
@@ -218,6 +221,12 @@ export function SettingsApp({
           />
         )}
         {tab === "speechkit_server" && <SpeechKitServerSettingsPage />}
+        {tab === "wake_word" && (
+          <WakewordSettingsPage
+            settings={settings}
+            updateSettings={updateSettings}
+          />
+        )}
         {tab === "storage" && (
           <StorageSettingsPage
             settings={settings}

@@ -52,6 +52,15 @@ type DictationSegmenter struct {
 	silenceTime time.Duration
 	emittedAny  bool
 	segments    []AudioSegment
+
+	// nowFunc is injectable for tests; production uses time.Now.
+	nowFunc func() time.Time
+	// idleSince is the wall-clock time at which the segmenter last
+	// transitioned out of speech (or session start). Zero value means
+	// "currently in speech" so a poller can short-circuit. Used by the
+	// RecordingController's idle watcher to auto-stop a dictate session
+	// after a configurable silence threshold.
+	idleSince time.Time
 }
 
 func NewDictationSegmenter(detector VoiceActivityDetector, pauseThreshold time.Duration) *DictationSegmenter {
@@ -62,13 +71,42 @@ func NewDictationSegmenter(detector VoiceActivityDetector, pauseThreshold time.D
 		pauseThreshold = 700 * time.Millisecond
 	}
 
+	now := time.Now()
 	return &DictationSegmenter{
 		detector:   detector,
 		pause:      pauseThreshold,
 		minSegment: DefaultDictationMinSegment,
 		padding:    DefaultDictationPadding,
 		overlap:    DefaultDictationOverlap,
+		idleSince:  now,
 	}
+}
+
+// IdleSince returns the wall-clock time at which the segmenter most
+// recently transitioned out of speech (or, for a fresh session that
+// has not yet seen speech, the construction time). Returns the zero
+// value when speech is currently being captured — the poller treats
+// zero as "user is actively speaking, silence timer should reset."
+//
+// Satisfies the [IdleObserver] contract consumed by RecordingController
+// to drive silence-based auto-stop.
+func (s *DictationSegmenter) IdleSince() time.Time {
+	if s == nil {
+		return time.Time{}
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.inSpeech {
+		return time.Time{}
+	}
+	return s.idleSince
+}
+
+func (s *DictationSegmenter) now() time.Time {
+	if s.nowFunc != nil {
+		return s.nowFunc()
+	}
+	return time.Now()
 }
 
 func (s *DictationSegmenter) FeedPCM(pcm []byte) error {
@@ -158,6 +196,9 @@ func (s *DictationSegmenter) feedFrame(frame []byte) ([]AudioSegment, error) {
 		if !s.inSpeech {
 			s.inSpeech = true
 			s.silenceTime = 0
+			// Clear idleSince so the poller does not see stale silence
+			// while the user is mid-utterance.
+			s.idleSince = time.Time{}
 			if len(s.preRoll) > 0 {
 				s.active = append(s.active, s.preRoll...)
 				s.preRoll = nil
@@ -193,6 +234,10 @@ func (s *DictationSegmenter) feedFrame(frame []byte) ([]AudioSegment, error) {
 	s.tailSilence = nil
 	s.inSpeech = false
 	s.silenceTime = 0
+	// User stopped speaking — anchor the idle clock to "now" so the
+	// post-utterance silence countdown starts here, not from session
+	// start.
+	s.idleSince = s.now()
 
 	if segment == nil {
 		return nil, nil
@@ -256,6 +301,10 @@ func (s *DictationSegmenter) resetSession() {
 	s.inSpeech = false
 	s.silenceTime = 0
 	s.emittedAny = false
+	// A new dictate session starts idle relative to "now" so the
+	// silence-timeout watcher gives the user a full window before
+	// auto-stopping.
+	s.idleSince = s.now()
 }
 
 func dictationFrameDuration() time.Duration {

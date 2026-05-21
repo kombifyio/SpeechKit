@@ -3,7 +3,18 @@ package speechkit
 import (
 	"fmt"
 	"sync"
+	"time"
 )
+
+// IdleObserver is implemented by SegmentCollectors that want to drive
+// silence-based auto-stop. Returning the zero value tells the watcher
+// "user is actively speaking; reset the timer." Returning a non-zero
+// time tells the watcher "user has been silent since T."
+type IdleObserver interface {
+	IdleSince() time.Time
+}
+
+const defaultIdleWatchInterval = 1 * time.Second
 
 const DefaultMinPCMBytes = 3200
 
@@ -39,6 +50,17 @@ type RecordingStartOptions struct {
 	Language    string
 	QuickNote   bool
 	QuickNoteID int64
+	// IdleTimeout, when greater than zero AND the underlying collector
+	// implements [IdleObserver], arms a watcher that calls
+	// OnIdleTimeoutCallback once the user has been silent for this long.
+	// Zero (default) disables the watcher — typical for hold-to-talk
+	// hotkey sessions that already terminate on KeyUp.
+	IdleTimeout time.Duration
+	// OnIdleTimeoutCallback fires once if IdleTimeout elapses without
+	// observed speech. Wired by the host to dispatch a Stop command so
+	// the dictate session ends after a silence window. The watcher
+	// guarantees at-most-one invocation per Start() call.
+	OnIdleTimeoutCallback func()
 }
 
 type RecordingStopOptions struct {
@@ -54,23 +76,40 @@ type RecordingController struct {
 	segmenterFactory SegmentCollectorFactory
 	recordingMessage string
 	minPCMBytes      int
+	// idleWatchInterval is how often the idle watcher polls the
+	// IdleObserver. Defaults to 1s — overridable from tests.
+	idleWatchInterval time.Duration
 
-	mu        sync.Mutex
-	recording bool
-	sessionID uint64
-	current   RecordingStartOptions
-	collector SegmentCollector
+	mu            sync.Mutex
+	recording     bool
+	sessionID     uint64
+	current       RecordingStartOptions
+	collector     SegmentCollector
+	idleWatcherCh chan struct{}
 }
 
 func NewRecordingController(recorder AudioRecorder, submitter JobSubmitter, observer RecordingObserver, segmenterFactory SegmentCollectorFactory) *RecordingController {
 	return &RecordingController{
-		recorder:         recorder,
-		submitter:        submitter,
-		observer:         observer,
-		segmenterFactory: segmenterFactory,
-		recordingMessage: "Speak now",
-		minPCMBytes:      DefaultMinPCMBytes,
+		recorder:          recorder,
+		submitter:         submitter,
+		observer:          observer,
+		segmenterFactory:  segmenterFactory,
+		recordingMessage:  "Speak now",
+		minPCMBytes:       DefaultMinPCMBytes,
+		idleWatchInterval: defaultIdleWatchInterval,
 	}
+}
+
+// SetIdleWatchInterval overrides the polling interval used by the
+// silence-based auto-stop watcher. Tests use this to keep the unit
+// tests fast (e.g. 5ms polling). Production should never touch this.
+func (c *RecordingController) SetIdleWatchInterval(d time.Duration) {
+	if c == nil || d <= 0 {
+		return
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.idleWatchInterval = d
 }
 
 func (c *RecordingController) IsRecording() bool {
@@ -149,7 +188,67 @@ func (c *RecordingController) Start(opts RecordingStartOptions) error {
 		return err
 	}
 
+	// Arm the silence-based auto-stop watcher when both pieces are
+	// present: the host provided a timeout + callback AND the collector
+	// can report idle time. Wake-word/hold-to-talk paths leave the
+	// timeout at zero and skip the watcher entirely.
+	if opts.IdleTimeout > 0 && opts.OnIdleTimeoutCallback != nil {
+		if observer, ok := collector.(IdleObserver); ok {
+			c.startIdleWatcher(sessionID, observer, opts.IdleTimeout, opts.OnIdleTimeoutCallback)
+		}
+	}
+
 	return nil
+}
+
+// startIdleWatcher spawns a goroutine that polls observer.IdleSince()
+// every idleWatchInterval and fires callback once the gap to time.Now
+// exceeds timeout. The watcher exits when the session changes (Stop()
+// closes the per-session channel) or when it has already fired.
+func (c *RecordingController) startIdleWatcher(sessionID uint64, observer IdleObserver, timeout time.Duration, callback func()) {
+	done := make(chan struct{})
+	c.mu.Lock()
+	c.idleWatcherCh = done
+	interval := c.idleWatchInterval
+	c.mu.Unlock()
+	if interval <= 0 {
+		interval = defaultIdleWatchInterval
+	}
+
+	go func() {
+		ticker := time.NewTicker(interval)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-done:
+				return
+			case <-ticker.C:
+				c.mu.Lock()
+				stillActive := c.sessionID == sessionID && c.recording
+				c.mu.Unlock()
+				if !stillActive {
+					return
+				}
+				idleSince := observer.IdleSince()
+				if idleSince.IsZero() {
+					// Speech in progress — skip this tick.
+					continue
+				}
+				if time.Since(idleSince) >= timeout {
+					c.onLog(fmt.Sprintf("Silence timeout reached (%.0fs) — auto-stopping dictate.", timeout.Seconds()), "info")
+					// Mark watcher done before firing the callback so a
+					// Stop() racing on the same channel does not deadlock.
+					c.mu.Lock()
+					if c.idleWatcherCh == done {
+						c.idleWatcherCh = nil
+					}
+					c.mu.Unlock()
+					callback()
+					return
+				}
+			}
+		}
+	}()
 }
 
 func (c *RecordingController) Stop(opts RecordingStopOptions) error {
@@ -166,6 +265,13 @@ func (c *RecordingController) Stop(opts RecordingStopOptions) error {
 	current := c.current
 	collector := c.collector
 	c.collector = nil
+	// Tear down any active idle watcher so it does not fire a stale
+	// callback against the next session. Closing the channel signals
+	// the goroutine to exit on its next select iteration.
+	if c.idleWatcherCh != nil {
+		close(c.idleWatcherCh)
+		c.idleWatcherCh = nil
+	}
 	c.mu.Unlock()
 
 	c.recorder.SetPCMHandler(nil)
