@@ -234,3 +234,92 @@ describe("SetupWizard welcome step", () => {
     ).toBeInTheDocument();
   });
 });
+
+describe("SetupWizard integrations step coverage warning", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    fetchAudioDevicesMock.mockResolvedValue({
+      devices: [],
+      selectedDeviceId: "",
+    });
+    fetchWakewordStateMock.mockResolvedValue({
+      enabled: false,
+      listening: false,
+      backend: "sherpa_kws",
+      phraseId: "hey_quby",
+      defaultMode: "voice_agent",
+      threshold: 0.5,
+      status: "disabled",
+    });
+    postInstallModeMock.mockResolvedValue(undefined);
+  });
+
+  async function goToIntegrationsStep() {
+    renderWizard();
+    fireEvent.click(
+      screen.getByRole("radio", { name: /^Cloud(?:Selected|\s)/i }),
+    );
+    fireEvent.click(screen.getByRole("button", { name: /Get Started/i }));
+    await screen.findByRole("heading", { name: /Integrations/i });
+  }
+
+  it("hides the coverage warning when no integrations are selected", async () => {
+    await goToIntegrationsStep();
+    expect(
+      screen.queryByTestId("onboarding-integration-coverage-warning"),
+    ).not.toBeInTheDocument();
+  });
+
+  it("hides the coverage warning when a full-coverage integration is enabled", async () => {
+    await goToIntegrationsStep();
+    // Hugging Face covers all three modes.
+    fireEvent.click(
+      screen.getByRole("switch", {
+        name: /Enable Hugging Face integration/i,
+      }),
+    );
+    expect(
+      screen.queryByTestId("onboarding-integration-coverage-warning"),
+    ).not.toBeInTheDocument();
+  });
+
+  it("shows the coverage warning when only partial-coverage providers are enabled", async () => {
+    await goToIntegrationsStep();
+    // OpenAI covers dictate + assist only — voice_agent missing.
+    fireEvent.click(
+      screen.getByRole("switch", {
+        name: /Enable OpenAI integration/i,
+      }),
+    );
+    const warning = await screen.findByTestId(
+      "onboarding-integration-coverage-warning",
+    );
+    expect(warning).toBeInTheDocument();
+    expect(warning).toHaveTextContent(/Voice Agent/i);
+    expect(warning).not.toHaveTextContent(/Dictation/i);
+  });
+
+  it("clears the warning when adding a provider that closes the gap", async () => {
+    await goToIntegrationsStep();
+    fireEvent.click(
+      screen.getByRole("switch", {
+        name: /Enable OpenAI integration/i,
+      }),
+    );
+    expect(
+      screen.getByTestId("onboarding-integration-coverage-warning"),
+    ).toBeInTheDocument();
+
+    // Adding Hugging Face covers all 3 modes — warning disappears.
+    fireEvent.click(
+      screen.getByRole("switch", {
+        name: /Enable Hugging Face integration/i,
+      }),
+    );
+    await waitFor(() =>
+      expect(
+        screen.queryByTestId("onboarding-integration-coverage-warning"),
+      ).not.toBeInTheDocument(),
+    );
+  });
+});

@@ -17,35 +17,34 @@ describe("VoiceAgentProfileStep", () => {
     fetchMock.mockRestore();
   });
 
-  it("renders both profile cards", () => {
-    render(<VoiceAgentProfileStep onNext={onNext} onBack={onBack} />);
-    expect(screen.getByText(/On-Prem \(Local Cascaded\)/i)).toBeInTheDocument();
-    expect(screen.getByText(/BYOK Cloud \(Gemini Live\)/i)).toBeInTheDocument();
-  });
-
-  it("disables apply button until a profile is selected", () => {
-    render(<VoiceAgentProfileStep onNext={onNext} onBack={onBack} />);
-    const applyBtn = screen.getByRole("button", { name: /Apply profile/i });
-    expect(applyBtn).toBeDisabled();
-  });
-
-  it("applies on-prem profile and calls onNext on success", async () => {
+  it("auto-applies on-prem profile when target is local", async () => {
     fetchMock.mockResolvedValue({
       ok: true,
       json: async () => ({ applied: true, profile: "on-prem" }),
       text: async () => "",
     } as Response);
 
-    render(<VoiceAgentProfileStep onNext={onNext} onBack={onBack} />);
+    render(
+      <VoiceAgentProfileStep
+        target="local"
+        onNext={onNext}
+        onBack={onBack}
+      />,
+    );
 
-    // Select the on-prem card
-    fireEvent.click(screen.getByText(/On-Prem.*Local Cascaded/i).closest("button")!);
-    // Button label updates
-    const applyBtn = screen.getByRole("button", { name: /Apply On-Prem/i });
-    expect(applyBtn).not.toBeDisabled();
-    fireEvent.click(applyBtn);
+    expect(
+      screen.getByText(/On-Prem \(Local Cascaded\)/i),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByText(/BYOK Cloud \(Gemini Live\)/i),
+    ).not.toBeInTheDocument();
 
-    await waitFor(() => expect(onNext).toHaveBeenCalled());
+    await waitFor(() =>
+      expect(
+        screen.getByTestId("voice-agent-profile-applied"),
+      ).toBeInTheDocument(),
+    );
+
     expect(fetchMock).toHaveBeenCalledWith(
       "/api/v1/voice-agent/apply-profile",
       expect.objectContaining({
@@ -55,26 +54,157 @@ describe("VoiceAgentProfileStep", () => {
     );
   });
 
-  it("shows error and does not advance on apply failure", async () => {
+  it("auto-applies cloud-byok profile when target is cloud", async () => {
     fetchMock.mockResolvedValue({
+      ok: true,
+      json: async () => ({ applied: true, profile: "cloud-byok" }),
+      text: async () => "",
+    } as Response);
+
+    render(
+      <VoiceAgentProfileStep
+        target="cloud"
+        onNext={onNext}
+        onBack={onBack}
+      />,
+    );
+
+    expect(
+      screen.getByText(/BYOK Cloud \(Gemini Live\)/i),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByText(/On-Prem \(Local Cascaded\)/i),
+    ).not.toBeInTheDocument();
+
+    await waitFor(() =>
+      expect(
+        screen.getByTestId("voice-agent-profile-applied"),
+      ).toBeInTheDocument(),
+    );
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/v1/voice-agent/apply-profile",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({ profile: "cloud-byok" }),
+      }),
+    );
+  });
+
+  it("disables Continue until apply succeeds", async () => {
+    let resolveFetch: ((value: Response) => void) | null = null;
+    fetchMock.mockImplementation(
+      () =>
+        new Promise<Response>((resolve) => {
+          resolveFetch = resolve;
+        }),
+    );
+
+    render(
+      <VoiceAgentProfileStep
+        target="local"
+        onNext={onNext}
+        onBack={onBack}
+      />,
+    );
+
+    const continueBtn = screen.getByRole("button", { name: /Continue/i });
+    expect(continueBtn).toBeDisabled();
+    expect(
+      screen.getByTestId("voice-agent-profile-applying"),
+    ).toBeInTheDocument();
+
+    // Resolve the pending fetch as success
+    resolveFetch!({
+      ok: true,
+      json: async () => ({ applied: true }),
+      text: async () => "",
+    } as Response);
+
+    await waitFor(() => expect(continueBtn).not.toBeDisabled());
+  });
+
+  it("Continue advances after successful auto-apply", async () => {
+    fetchMock.mockResolvedValue({
+      ok: true,
+      json: async () => ({ applied: true }),
+      text: async () => "",
+    } as Response);
+
+    render(
+      <VoiceAgentProfileStep
+        target="local"
+        onNext={onNext}
+        onBack={onBack}
+      />,
+    );
+
+    await waitFor(() =>
+      expect(
+        screen.getByTestId("voice-agent-profile-applied"),
+      ).toBeInTheDocument(),
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: /Continue/i }));
+    expect(onNext).toHaveBeenCalled();
+  });
+
+  it("shows error and offers retry on apply failure", async () => {
+    fetchMock.mockResolvedValueOnce({
       ok: false,
       status: 500,
       text: async () => "internal error",
     } as Response);
 
-    render(<VoiceAgentProfileStep onNext={onNext} onBack={onBack} />);
-    // Select cloud-byok
-    fireEvent.click(screen.getByText(/BYOK Cloud.*Gemini Live/i).closest("button")!);
-    fireEvent.click(screen.getByRole("button", { name: /Apply BYOK Cloud/i }));
+    render(
+      <VoiceAgentProfileStep
+        target="cloud"
+        onNext={onNext}
+        onBack={onBack}
+      />,
+    );
 
     await waitFor(() =>
-      expect(screen.getByText(/Apply failed: 500/)).toBeInTheDocument(),
+      expect(
+        screen.getByTestId("voice-agent-profile-error"),
+      ).toBeInTheDocument(),
     );
     expect(onNext).not.toHaveBeenCalled();
+    expect(screen.getByRole("button", { name: /Continue/i })).toBeDisabled();
+
+    // Retry button is visible while in error state
+    const retryBtn = screen.getByRole("button", { name: /Retry/i });
+    expect(retryBtn).toBeInTheDocument();
+
+    fetchMock.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({ applied: true }),
+      text: async () => "",
+    } as Response);
+    fireEvent.click(retryBtn);
+
+    await waitFor(() =>
+      expect(
+        screen.getByTestId("voice-agent-profile-applied"),
+      ).toBeInTheDocument(),
+    );
+    expect(screen.getByRole("button", { name: /Continue/i })).not.toBeDisabled();
   });
 
   it("calls onBack when back button is clicked", () => {
-    render(<VoiceAgentProfileStep onNext={onNext} onBack={onBack} />);
+    fetchMock.mockResolvedValue({
+      ok: true,
+      json: async () => ({ applied: true }),
+      text: async () => "",
+    } as Response);
+
+    render(
+      <VoiceAgentProfileStep
+        target="local"
+        onNext={onNext}
+        onBack={onBack}
+      />,
+    );
     fireEvent.click(screen.getByRole("button", { name: /Back/i }));
     expect(onBack).toHaveBeenCalled();
   });

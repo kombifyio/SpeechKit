@@ -12,6 +12,38 @@ IDs, source paths, and other maintainer-only vocabulary.
 
 ## [Unreleased]
 
+## [0.35.18] - 2026-05-21
+
+Onboarding no longer asks for the Voice Agent profile on the last step —
+the choice is now derived from the Local-vs.-Cloud selection on the
+welcome screen. Picking Local on the welcome card applies the On-Prem
+cascaded profile; picking Cloud applies the BYOK Cloud profile. The
+profile is applied on mount and the wizard advances to Done once the
+backend confirms it.
+
+The integrations step now warns when the providers a user has enabled
+do not cover all three modes (Dictation, Assist, Voice Agent). The
+warning names the missing mode(s) and lets the user finish onboarding
+anyway — the missing capability can be filled in from Settings later.
+
+### Changed
+- Onboarding Voice Agent step: no more manual profile choice. The
+  profile is auto-derived from the welcome-screen target choice and
+  applied on mount. Continue is gated until the backend confirms the
+  profile. A Retry button surfaces if `/api/v1/voice-agent/apply-profile`
+  errors out.
+- Onboarding integrations step: shows a coverage-gap warning when one
+  or more providers are toggled on but the selection does not cover
+  Dictation + Assist + Voice Agent together. Zero-selection (pure-local
+  path) keeps its previous quiet behavior.
+
+### Tests
+- `voice-agent-profile-step.test.tsx`: auto-apply per target, gated
+  Continue, Retry flow.
+- `setup-wizard.test.tsx`: coverage-warning shown/hidden across the
+  Hugging Face (full coverage), OpenAI (partial), and combined-provider
+  scenarios.
+
 ## [0.35.17] - 2026-05-21
 
 Silent installs (`/S`) no longer auto-launch the app or create a

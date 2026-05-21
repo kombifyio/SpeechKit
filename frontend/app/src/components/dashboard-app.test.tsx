@@ -5,7 +5,7 @@ import {
   waitFor,
   within,
 } from "@testing-library/react";
-import { vi } from "vitest";
+import { expect, vi } from "vitest";
 
 import { DashboardApp } from "@/components/dashboard-app";
 import type { LogEntry, QuickNote, TranscriptionRecord } from "@/lib/speechkit";
@@ -113,11 +113,13 @@ describe("DashboardApp", () => {
 
   async function skipWakeWordAndApplyDefaultVoiceAgentProfile() {
     fireEvent.click(await screen.findByRole("button", { name: /^skip$/i }));
+    // Voice-agent profile is auto-derived from the onboarding target (Local
+    // → On-Prem, Cloud → BYOK Cloud) and applied on mount. We just wait for
+    // the apply call to complete, then click Continue.
+    const applied = await screen.findByTestId("voice-agent-profile-applied");
+    expect(applied).toBeInTheDocument();
     fireEvent.click(
-      (await screen.findByText("On-Prem (Local Cascaded)")).closest("button")!,
-    );
-    fireEvent.click(
-      await screen.findByRole("button", { name: /apply on-prem/i }),
+      await screen.findByRole("button", { name: /^continue$/i }),
     );
   }
 

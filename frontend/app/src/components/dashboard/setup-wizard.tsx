@@ -33,9 +33,20 @@ import {
   onboardingWakeWordPhrases,
   orderedIntegrationModeLabels,
   setupDisplayUrl,
+  type IntegrationMode,
   type OnboardingTarget,
   type WizardStep,
 } from "./setup-wizard-data";
+
+// User-facing labels for IntegrationMode IDs. Lives in the wizard rather
+// than setup-wizard-data because it's only consumed by the coverage warning
+// pill — the existing `orderedIntegrationModeLabels` helper is the
+// data-layer canonical version for card chips.
+const integrationModeLabels: Record<IntegrationMode, string> = {
+  dictate: "Dictation",
+  assist: "Assist",
+  voice_agent: "Voice Agent",
+};
 
 type ServerFormTestState = "idle" | "testing" | "pass" | "fail";
 
@@ -156,6 +167,35 @@ export function SetupWizard({
       ),
     [jobs, localModelIDs],
   );
+
+  // Integration mode-coverage: union of modes covered by the integrations
+  // the user has toggled ON. Used by the integrations step to warn when the
+  // selected set leaves one of the three modes uncovered.
+  //
+  // We only warn when 1+ integrations are selected. Zero selected is the
+  // pure-local path — the user already declared Local intent on the welcome
+  // screen and the bundled whisper + llama runtimes carry dictate/assist;
+  // Voice Agent in that case is documented under the On-Prem cascaded
+  // profile downstream.
+  const selectedIntegrationProviders = useMemo(
+    () =>
+      onboardingIntegrations.filter(
+        (integration) => selectedIntegrations[integration.provider],
+      ),
+    [selectedIntegrations],
+  );
+
+  const missingIntegrationModes = useMemo<IntegrationMode[]>(() => {
+    if (selectedIntegrationProviders.length === 0) return [];
+    const covered = new Set<IntegrationMode>();
+    for (const integration of selectedIntegrationProviders) {
+      for (const mode of integration.modes) {
+        covered.add(mode);
+      }
+    }
+    const required: IntegrationMode[] = ["dictate", "assist", "voice_agent"];
+    return required.filter((mode) => !covered.has(mode));
+  }, [selectedIntegrationProviders]);
 
   const continueLabel = activeLocalJob
     ? "Continue while model downloads"
@@ -930,6 +970,27 @@ export function SetupWizard({
               ))}
             </div>
 
+            {missingIntegrationModes.length > 0 && (
+              <div
+                data-testid="onboarding-integration-coverage-warning"
+                role="status"
+                className="mt-4 rounded-xl border border-amber-400/30 bg-amber-500/8 px-4 py-3 text-xs text-amber-200/90"
+              >
+                <p className="font-semibold">
+                  Heads up: your current selection does not cover all three
+                  modes.
+                </p>
+                <p className="mt-1 text-amber-200/70">
+                  Missing:{" "}
+                  {missingIntegrationModes
+                    .map((mode) => integrationModeLabels[mode])
+                    .join(", ")}
+                  . You can finish onboarding and revisit Settings later, or
+                  add a provider above that lists the missing mode.
+                </p>
+              </div>
+            )}
+
             {modelActionError && (
               <div className="mt-4 rounded-xl border border-red-400/15 bg-red-500/8 px-4 py-3 text-xs text-red-200/85">
                 {modelActionError}
@@ -968,6 +1029,7 @@ export function SetupWizard({
 
       {step === "voice_agent_profile" && (
         <VoiceAgentProfileStep
+          target={onboardingTarget}
           onBack={() => setStep("wake_word")}
           onNext={() => setStep("done")}
         />
