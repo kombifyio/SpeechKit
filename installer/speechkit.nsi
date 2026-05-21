@@ -10,7 +10,7 @@ RequestExecutionLevel user
 
 ; VERSION can be overridden at compile time: makensis /DVERSION=x.y.z
 !ifndef VERSION
-  !define VERSION "0.35.16"
+  !define VERSION "0.35.17"
 !endif
 
 ; --- Interface ---
@@ -23,14 +23,16 @@ RequestExecutionLevel user
 !insertmacro MUI_PAGE_INSTFILES
 
 ; FINISH page: opt-in launch + opt-in desktop shortcut.
-; - MUI_FINISHPAGE_RUN gives the "Run SpeechKit now" checkbox.
-;   Default unchecked so the installer respects the user's intent;
-;   silent installs (/S) ignore the checkbox entirely.
-; - MUI_FINISHPAGE_SHOWREADME is repurposed to offer a "Create
-;   desktop shortcut" checkbox via the SHOWREADME_FUNCTION hook;
-;   NSIS MUI2 has no dedicated "create shortcut" checkbox so this
-;   is the canonical workaround.
-!define MUI_FINISHPAGE_RUN "$INSTDIR\SpeechKit.exe"
+;   - "Launch SpeechKit now" checkbox (unchecked by default)
+;   - "Create a Desktop shortcut" checkbox (unchecked by default)
+; Both hooks route through their own functions instead of the
+; default MUI_FINISHPAGE_RUN target — because NSIS MUI2 silent mode
+; (/S) fires the hooks even when the _NOTCHECKED defines are set
+; (verified the hard way on v0.35.16: a silent install launched
+; the app AND created a desktop shortcut). The function bodies
+; below explicitly `IfSilent` to noop in silent mode.
+!define MUI_FINISHPAGE_RUN ""
+!define MUI_FINISHPAGE_RUN_FUNCTION LaunchSpeechKitFromFinishPage
 !define MUI_FINISHPAGE_RUN_NOTCHECKED
 !define MUI_FINISHPAGE_RUN_TEXT "Launch SpeechKit now"
 !define MUI_FINISHPAGE_SHOWREADME ""
@@ -157,9 +159,19 @@ Section "Uninstall"
 SectionEnd
 
 ; --- Desktop shortcut hook (called by the FINISH page's
-;     "Create a Desktop shortcut" checkbox when ticked) ---
+;     "Create a Desktop shortcut" checkbox when ticked).
+;     IfSilent guard because MUI2 fires the hook even in silent
+;     mode regardless of the _NOTCHECKED define. ---
 Function CreateDesktopShortcut
-  CreateShortcut "$DESKTOP\SpeechKit.lnk" "$INSTDIR\SpeechKit.exe" "" "$INSTDIR\SpeechKit.exe" 0
+  IfSilent +2
+    CreateShortcut "$DESKTOP\SpeechKit.lnk" "$INSTDIR\SpeechKit.exe" "" "$INSTDIR\SpeechKit.exe" 0
+FunctionEnd
+
+; --- Launch hook (called by the FINISH page's "Launch SpeechKit
+;     now" checkbox when ticked). Same silent-mode guard. ---
+Function LaunchSpeechKitFromFinishPage
+  IfSilent +2
+    Exec '"$INSTDIR\SpeechKit.exe"'
 FunctionEnd
 
 Function IsWebView2RuntimeInstalled

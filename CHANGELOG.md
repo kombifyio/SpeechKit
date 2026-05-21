@@ -12,6 +12,21 @@ IDs, source paths, and other maintainer-only vocabulary.
 
 ## [Unreleased]
 
+## [0.35.17] - 2026-05-21
+
+Silent installs (`/S`) no longer auto-launch the app or create a
+Desktop shortcut. v0.35.16 shipped the FINISH-page checkboxes
+correctly but NSIS MUI2 fires the underlying hooks even in silent
+mode, regardless of the `_NOTCHECKED` defines — so a `/S` install
+ended up doing both. Added an `IfSilent` guard at the top of each
+hook so silent installs really stay silent.
+
+### Fixed
+- `installer/speechkit.nsi`: `LaunchSpeechKitFromFinishPage` and
+  `CreateDesktopShortcut` short-circuit when `IfSilent` is set.
+  GUI installs still expose the unchecked-by-default checkboxes
+  and run the hooks only when the user opts in.
+
 ## [0.35.16] - 2026-05-21
 
 Installer now respects the user's intent after copying files: a
