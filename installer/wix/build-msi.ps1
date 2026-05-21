@@ -164,10 +164,17 @@ if ($convertExit -ne 0 -and $convertExit -ne 2) {
 # -arch x64 ensures the package targets 64-bit Windows.
 # -------------------------------------------------------------------------
 Write-Host "`nBuilding MSI..."
+# `heat dir` emits File@Source paths as `SourceDir\<relative-path>`.
+# In WiX v3 the implicit SourceDir was the directory heat was run on;
+# in WiX v4 the build step has to resolve it explicitly via -bindpath.
+# Without this, every File reference in llama-fragment.wxs fails with
+# WIX0103 ("Cannot find the File file 'SourceDir\ggml-base.dll'").
+$LlamaSourceDir = Join-Path $StageDir "llama"
 & wix build `
     (Join-Path $ScriptDir "SpeechKit.wxs") `
     $LlamaFragmentPath `
     -arch x64 `
+    -bindpath "SourceDir=$LlamaSourceDir" `
     -out $OutFile
 
 if ($LASTEXITCODE -ne 0) {

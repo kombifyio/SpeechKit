@@ -12,6 +12,20 @@ IDs, source paths, and other maintainer-only vocabulary.
 
 ## [Unreleased]
 
+## [0.35.12] - 2026-05-21
+
+Rebuild of v0.35.11 — same feature surface (onboarding target
+selection, openWakeWord backend) but the per-machine MSI installer
+builds again. v0.35.11 stayed as a draft because WiX v4 surfaced
+two more strictnesses that v0.35.10 had not exercised; both are now
+addressed.
+
+### Fixed
+- Per-machine MSI installer for Windows now builds end-to-end. WiX v4
+  required `wix build -bindpath "SourceDir=<llama-staging>"` to
+  resolve the `SourceDir\` paths in the heat-generated llama-fragment;
+  added that flag to `installer/wix/build-msi.ps1`.
+
 ## [0.35.11] - 2026-05-21
 
 The first onboarding step now asks how you want SpeechKit to run —
