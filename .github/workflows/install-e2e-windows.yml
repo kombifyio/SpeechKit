@@ -116,9 +116,19 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-models-v1-
 
-      - name: Build canonical Windows bundle
+      - name: Build canonical Windows bundle (NSIS leg)
+        if: matrix.installer == 'nsis'
         shell: pwsh
         run: ./scripts/build.ps1 -SkipVerification
+
+      - name: Build canonical Windows bundle (MSI leg, no NSIS)
+        if: matrix.installer == 'msi'
+        shell: pwsh
+        # `-SkipInstaller` because the MSI leg only installs WiX above,
+        # not NSIS. Without it, build.ps1 aborts at the makensis.exe
+        # presence check before it has produced the staging bundle that
+        # build-msi.ps1 needs.
+        run: ./scripts/build.ps1 -SkipVerification -SkipInstaller
 
       - name: Build MSI
         if: matrix.installer == 'msi'
