@@ -155,7 +155,19 @@ func startDesktopWakeword(ctx context.Context, cfg *config.Config, state *appSta
 	}
 
 	state.setWakewordRuntime(runtime)
-	status := fmt.Sprintf("Listening for \"%s\" → %s via %s", resolved.DisplayPhrase, resolved.DefaultMode, wakewordBackendDisplayName(resolved.Backend))
+	// The sidecar is spawned but we cannot claim "Listening" yet — we
+	// have no proof that audio is actually flowing into the detector.
+	// The status progresses through three honest stages driven by real
+	// events from the sidecar:
+	//   1. "Starting"               (this branch — sidecar process up)
+	//   2. "Microphone open"        (after `device` event arrives)
+	//   3. "Active: X KB/30s"       (after first `heartbeat` confirms
+	//                                 audio bytes are being decoded)
+	// If a heartbeat reports BytesIn == 0 the status flips to an
+	// explicit error so the user does not stare at "Listening" while
+	// the detector silently receives nothing.
+	status := fmt.Sprintf("Starting \"%s\" → %s via %s — waiting for audio confirmation",
+		resolved.DisplayPhrase, resolved.DefaultMode, wakewordBackendDisplayName(resolved.Backend))
 	if runtime != nil && runtime.cmd != nil && runtime.cmd.Process != nil {
 		status = fmt.Sprintf("%s (sidecar PID %d)", status, runtime.cmd.Process.Pid)
 	}
@@ -163,7 +175,7 @@ func startDesktopWakeword(ctx context.Context, cfg *config.Config, state *appSta
 	if state.appTray != nil {
 		state.appTray.SetWakeListening(true)
 	}
-	state.addLog(fmt.Sprintf("Wake-word ready: \"%s\" → %s", resolved.DisplayPhrase, resolved.DefaultMode), "info")
+	state.addLog(fmt.Sprintf("Wake-word starting: \"%s\" → %s (waiting for audio)", resolved.DisplayPhrase, resolved.DefaultMode), "info")
 	return runtime
 }
 
@@ -350,7 +362,11 @@ func handleSidecarEvent(ev sidecarEvent, state *appState, hkManager *modeHotkeyM
 	switch ev.Type {
 	case "ready":
 		slog.Info("wakeword: sidecar ready", "phrase", ev.Phrase, "mode", ev.Mode, "backend", ev.Backend, "version", ev.Version)
-		state.addLog(fmt.Sprintf("Wake-word listening for \"%s\" → %s", ev.Phrase, ev.Mode), "info")
+		// "ready" only means the sidecar process is up and the model is
+		// loaded; it does NOT yet confirm audio is flowing. Don't claim
+		// "Listening" in the user-visible log until the first heartbeat
+		// proves audio frames are being decoded.
+		state.addLog(fmt.Sprintf("Wake-word sidecar ready: \"%s\" → %s (waiting for mic + audio)", ev.Phrase, ev.Mode), "info")
 	case "detection":
 		mode := strings.TrimSpace(ev.Mode)
 		if mode == "" {
@@ -368,29 +384,49 @@ func handleSidecarEvent(ev sidecarEvent, state *appState, hkManager *modeHotkeyM
 			level = "warn"
 		}
 		state.addLog(summary, level)
+		// Update the panel status to reflect we now have a mic but
+		// haven't yet seen the first audio frame heartbeat. The status
+		// will flip to "Active" or "ERROR" once the first heartbeat
+		// arrives (~30 s after the sidecar's start) with a bytes count.
+		state.setWakewordStatus(fmt.Sprintf(
+			"Microphone open (\"%s\") — waiting for first audio heartbeat (~30 s) to confirm decoding for \"%s\"",
+			ev.DeviceName,
+			resolved.DisplayPhrase,
+		))
 	case "heartbeat":
 		slog.Info("wakeword: heartbeat",
 			"bytes_in_30s", ev.BytesIn,
 			"decodes_30s", ev.DecodesIn,
 			"uptime_s", ev.UptimeSec)
-		statusLine := fmt.Sprintf(
-			"Listening for \"%s\" → %s via %s (audio %.1f KB/30s, decodes %d)",
-			resolved.DisplayPhrase,
-			resolved.DefaultMode,
-			wakewordBackendDisplayName(resolved.Backend),
-			float64(ev.BytesIn)/1024,
-			ev.DecodesIn,
-		)
-		state.setWakewordStatus(statusLine)
-		// Surface heartbeat in user log so silent-mic failures are visible
-		// without opening internal status panels. Level escalates to "warn"
-		// when bytes_in is zero — that means audio is not flowing at all.
-		level := "info"
+		// First positive heartbeat is what flips the UI from "Starting"
+		// to honest-state. BytesIn > 0 confirms audio is reaching the
+		// detector; BytesIn == 0 means the mic is open but no PCM frames
+		// are flowing — surface that as a hard error in both the panel
+		// status and the user log so the user does not stare at a green
+		// indicator while nothing happens.
+		var statusLine string
+		var logLevel string
 		if ev.BytesIn == 0 {
-			level = "warn"
+			statusLine = fmt.Sprintf(
+				"ERROR — no audio reaching detector for \"%s\" (0 KB/30s, %d decodes). Check mic permissions / device selection.",
+				resolved.DisplayPhrase,
+				ev.DecodesIn,
+			)
+			logLevel = "warn"
+		} else {
+			statusLine = fmt.Sprintf(
+				"Active — listening for \"%s\" → %s via %s (audio %.1f KB/30s, %d decodes)",
+				resolved.DisplayPhrase,
+				resolved.DefaultMode,
+				wakewordBackendDisplayName(resolved.Backend),
+				float64(ev.BytesIn)/1024,
+				ev.DecodesIn,
+			)
+			logLevel = "info"
 		}
+		state.setWakewordStatus(statusLine)
 		state.addLog(fmt.Sprintf("Wake-word heartbeat: %.1f KB/30s, %d decodes, uptime %ds",
-			float64(ev.BytesIn)/1024, ev.DecodesIn, ev.UptimeSec), level)
+			float64(ev.BytesIn)/1024, ev.DecodesIn, ev.UptimeSec), logLevel)
 	case "score":
 		// Debug-only: per-decode score from openWakeWord. Fires ~12×/s when
 		// audio is flowing, so we only forward to the user log when it's a

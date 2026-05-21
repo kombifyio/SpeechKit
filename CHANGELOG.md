@@ -12,6 +12,34 @@ IDs, source paths, and other maintainer-only vocabulary.
 
 ## [Unreleased]
 
+## [0.35.15] - 2026-05-21
+
+Wake-word panel no longer claims "Listening" when the sidecar has
+only just spawned and there is no proof audio is flowing yet. The
+status now progresses through three honest stages (`Starting` →
+`Microphone open` → `Active` or `ERROR`) driven by real events from
+the sidecar, and the first audio-flow heartbeat arrives within five
+seconds instead of thirty.
+
+Project is also marked as Beta on the docs site header and in the
+repository README so deployment targets know to pin to specific
+versions until SpeechKit reaches 1.0.
+
+### Changed
+- Wake-word panel status: honest three-stage messaging
+  (`Starting … — waiting for audio confirmation` →
+   `Microphone open ('Mic Name') — waiting for first audio heartbeat (~5 s)` →
+   `Active — listening for 'X' → mode (audio Y KB/5s, Z decodes)` OR
+   `ERROR — no audio reaching detector for 'X' (0 KB/5s)`).
+  Sidecar emits the first heartbeat after 5 seconds so the user
+  knows within five seconds whether the detector is actually
+  receiving audio frames, instead of staring at an unconfirmed
+  "green" indicator for thirty.
+- `Website/src/Layout.svelte`: SpeechKit wordmark in the docs site
+  header carries an inline `Beta` badge.
+- `README.md`: top callout names the project as Beta and links to
+  the changelog for breaking-change notes.
+
 ## [0.35.14] - 2026-05-21
 
 Same feature surface as v0.35.13. The per-machine MSI now actually

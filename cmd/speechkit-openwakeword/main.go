@@ -489,6 +489,28 @@ func (d *openWakeWordDetector) Close() error {
 }
 
 func pumpHeartbeats(ctx context.Context, rt *runtime) {
+	// First heartbeat fires after 5 s so the desktop adapter can flip the
+	// panel status from "Starting / waiting for audio" to "Active" (or to
+	// the explicit "no audio reaching detector" error) without making the
+	// user stare at a misleading green indicator for 30 s. Subsequent
+	// heartbeats follow the steady-state 30 s cadence.
+	initial := time.NewTimer(5 * time.Second)
+	defer initial.Stop()
+	select {
+	case <-ctx.Done():
+		return
+	case now := <-initial.C:
+		bytes, decodes := rt.snapshotStats()
+		emit(Event{
+			Type:      EventHeartbeat,
+			BytesIn:   bytes,
+			DecodesIn: decodes,
+			UptimeSec: int64(now.Sub(rt.startedAt).Seconds()),
+			At:        now,
+		})
+		rt.resetStats()
+	}
+
 	t := time.NewTicker(30 * time.Second)
 	defer t.Stop()
 	for {

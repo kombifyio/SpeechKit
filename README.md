@@ -1,5 +1,11 @@
 # SpeechKit
 
+> **🚧 Beta.** SpeechKit is in active beta. Public APIs, config keys, and
+> defaults can still change between minor releases. Use it in production
+> only with version pins. Pre-1.0 releases use the
+> [`v0.MAJOR.MINOR`](CHANGELOG.md) scheme; breaking changes are called
+> out in each release entry.
+
 SpeechKit is a Windows-first voice framework for products that need dictation,
 voice commands, and realtime voice dialogue without coupling every use case to
 one desktop app or one hosted API.

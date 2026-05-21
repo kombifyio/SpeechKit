@@ -245,6 +245,28 @@ func (rt *runtime) Close() {
 }
 
 func pumpHeartbeats(ctx context.Context, rt *runtime) {
+	// First heartbeat after 5 s so the desktop panel can flip from the
+	// initial "Starting / waiting for audio" status to "Active" (or to
+	// the explicit no-audio error) without leaving the user staring at
+	// an unconfirmed green indicator for 30 s. Subsequent heartbeats
+	// follow the steady-state 30 s cadence.
+	initial := time.NewTimer(5 * time.Second)
+	defer initial.Stop()
+	select {
+	case <-ctx.Done():
+		return
+	case now := <-initial.C:
+		bytes, decodes := rt.snapshotStats()
+		emit(Event{
+			Type:      EventHeartbeat,
+			BytesIn:   bytes,
+			DecodesIn: decodes,
+			UptimeSec: int64(now.Sub(rt.startedAt).Seconds()),
+			At:        now,
+		})
+		rt.resetStats()
+	}
+
 	t := time.NewTicker(30 * time.Second)
 	defer t.Stop()
 	for {
