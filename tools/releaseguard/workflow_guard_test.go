@@ -161,8 +161,17 @@ func TestPublishOssWorkflowPublishesFromResolvedTag(t *testing.T) {
 	assertContains(t, workflow, "publish-source:")
 	assertContains(t, workflow, "needs: [prepare, publish-source]")
 	assertContains(t, workflow, "RELEASE_AUTH_TOKEN")
-	assertContains(t, workflow, "workflows_backup")
-	assertContains(t, workflow, "does not yet have Workflows write permission")
+	// The pre-2080deff workflow backup/restore dance was replaced with a
+	// WORKFLOWS_SYNC_PAT (classic PAT scoped to `workflow`) used only for the
+	// push step. The App token still lacks Workflows:write but no longer needs
+	// it because the PAT-fallback handles workflow-file propagation. The two
+	// assertions below pin both halves of the new contract: the secret name
+	// + the push-step env-var binding.
+	assertContains(t, workflow, "secrets.WORKFLOWS_SYNC_PAT")
+	assertContains(t, workflow, "WORKFLOWS_SYNC_PAT: ${{ secrets.WORKFLOWS_SYNC_PAT }}")
+	// The old backup/restore mechanism MUST be gone — if it crept back in
+	// it would silently undo workflow-file propagation.
+	assertNotContains(t, workflow, "workflows_backup")
 	assertContains(t, workflow, "git -c \"http.https://github.com/.extraheader=AUTHORIZATION: basic ${auth_header}\" \\")
 	assertContains(t, workflow, "clone \"https://github.com/${OSS_REPO}.git\" oss-repo")
 	assertContains(t, workflow, "git remote set-url origin \"https://github.com/${OSS_REPO}.git\"")

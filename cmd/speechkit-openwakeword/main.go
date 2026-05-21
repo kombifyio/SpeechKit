@@ -123,6 +123,7 @@ func startRuntime(cfg sidecarConfig) (*runtime, error) {
 		return nil, fmt.Errorf("audio open: %w", err)
 	}
 	rt.session = session
+	emitDeviceEvent(cfg.AudioBackend, cfg.AudioDeviceID)
 	session.SetPCMHandler(rt.handlePCM)
 
 	if err := session.Start(); err != nil {
@@ -146,6 +147,9 @@ func (rt *runtime) handlePCM(pcm []byte) {
 	if err != nil {
 		emit(Event{Type: EventError, Msg: fmt.Sprintf("feed pcm: %v", err), At: time.Now()})
 		return
+	}
+	if rt.cfg.Debug && decodes > 0 {
+		emit(Event{Type: EventScore, Score: score, At: time.Now()})
 	}
 	rt.maybeEmitDetection(score)
 }
@@ -548,6 +552,51 @@ type sidecarConfig struct {
 
 	AudioBackend  string
 	AudioDeviceID string
+
+	// Debug emits a "score" event for every decode window so the host can
+	// surface the raw detector score in the user log feed. Off by default —
+	// this fires ~12×/s per active model.
+	Debug bool
+}
+
+// emitDeviceEvent — see speechkit-wakeword/main.go for rationale. Identical
+// behaviour kept inline rather than shared so each sidecar stays a single
+// self-contained binary (the IPC contract is the share point, not the impl).
+func emitDeviceEvent(backend, requestedID string) {
+	devices, err := audio.ListCaptureDevices(audio.Config{Backend: audio.Backend(backend)})
+	if err != nil {
+		emit(Event{Type: EventDevice, DeviceKind: "enumeration-failed", DeviceID: requestedID, Msg: fmt.Sprintf("audio device enumeration failed: %v", err), At: time.Now()})
+		return
+	}
+	requested := strings.TrimSpace(requestedID)
+	if requested == "" {
+		for _, d := range devices {
+			if d.IsDefault {
+				emit(Event{Type: EventDevice, DeviceKind: "default", DeviceID: d.ID, DeviceName: d.Name, At: time.Now()})
+				return
+			}
+		}
+		emit(Event{Type: EventDevice, DeviceKind: "default", DeviceID: "", DeviceName: "(system default — none flagged)", At: time.Now()})
+		return
+	}
+	for _, d := range devices {
+		if strings.EqualFold(strings.TrimSpace(d.ID), requested) {
+			emit(Event{Type: EventDevice, DeviceKind: "requested", DeviceID: d.ID, DeviceName: d.Name, At: time.Now()})
+			return
+		}
+	}
+	names := make([]string, 0, len(devices))
+	for _, d := range devices {
+		names = append(names, d.Name)
+	}
+	emit(Event{
+		Type:       EventDevice,
+		DeviceKind: "default-fallback",
+		DeviceID:   requested,
+		DeviceName: "(system default — requested ID not in enumeration)",
+		Msg:        fmt.Sprintf("requested capture id not found; %d devices available: %s", len(devices), strings.Join(names, " | ")),
+		At:         time.Now(),
+	})
 }
 
 func parseFlags() sidecarConfig {
@@ -564,6 +613,7 @@ func parseFlags() sidecarConfig {
 		cooldownMs    = flag.Int("cooldown-ms", 1500, "minimum interval between detections")
 		audioBackend  = flag.String("audio-backend", "windows-wasapi-malgo", "audio capture backend identifier")
 		audioDeviceID = flag.String("audio-device-id", "", "audio capture device ID")
+		debug         = flag.Bool("debug", false, "emit a score event per decode window for tuning")
 		showVersion   = flag.Bool("version", false, "print version and exit")
 	)
 	flag.Parse()
@@ -587,6 +637,7 @@ func parseFlags() sidecarConfig {
 		Cooldown:             time.Duration(maxInt(*cooldownMs, 1500)) * time.Millisecond,
 		AudioBackend:         *audioBackend,
 		AudioDeviceID:        *audioDeviceID,
+		Debug:                *debug,
 	}
 }
 

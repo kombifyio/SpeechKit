@@ -14,19 +14,20 @@ import type {
 // / hey_mira / hey_kombify).
 export const defaultWakewordSettings: WakewordSettings = {
   enabled: false,
-  backend: "sherpa_kws",
+  backend: "livekit_openwakeword",
   phraseId: "hey_quby",
   defaultMode: "voice_agent",
   threshold: 0,
   minConsecutiveFrames: 1,
   cooldownMs: 1500,
+  debugMode: false,
   active: false,
   statusMessage: "",
   phraseCatalog: [],
   backendOptions: [
     {
-      id: "sherpa_kws",
-      label: "Sherpa KWS sidecar",
+      id: "livekit_openwakeword",
+      label: "openWakeWord (per-phrase trained)",
       description: "",
       status: "",
       available: false,
@@ -34,8 +35,8 @@ export const defaultWakewordSettings: WakewordSettings = {
       recommended: true,
     },
     {
-      id: "livekit_openwakeword",
-      label: "LiveKit/openWakeWord",
+      id: "sherpa_kws",
+      label: "Sherpa KWS (generic Gigaspeech)",
       description: "",
       status: "",
       available: false,

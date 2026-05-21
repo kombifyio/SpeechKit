@@ -4,7 +4,11 @@ import {
   normalizeOverlayState,
   normalizeSettingsState,
 } from "./normalizers";
-import type { SpeechKitOverlayState, SpeechKitSettingsState } from "./types";
+import type {
+  SpeechKitOverlayState,
+  SpeechKitSettingsState,
+  WakewordSelfTestReport,
+} from "./types";
 
 export async function fetchOverlayState() {
   const response = await fetch("/overlay/state", { cache: "no-store" });
@@ -114,6 +118,7 @@ export async function saveSettingsState(nextState: SpeechKitSettingsState) {
       nextState.wakeword.minConsecutiveFrames
     ),
     wakeword_cooldown_ms: String(nextState.wakeword.cooldownMs),
+    wakeword_debug_mode: nextState.wakeword.debugMode ? "1" : "0",
   });
 
   const response = await fetch("/settings/update", {
@@ -199,4 +204,18 @@ export async function disableWakeword(): Promise<WakewordState> {
     throw new Error(`wake-word disable failed: ${response.status}`);
   }
   return (await response.json()) as WakewordState;
+}
+
+// runWakewordSelfTest POSTs to /api/wakeword/selftest, which records a
+// short sample of audio through the currently configured capture device
+// and returns a report with peak level + resolved device name + actionable
+// advice. Used by the Wake-word settings panel "Test microphone" button
+// to confirm the mic is actually capturing before blaming the detector.
+export async function runWakewordSelfTest(): Promise<WakewordSelfTestReport> {
+  const response = await fetch("/api/wakeword/selftest", { method: "POST" });
+  if (!response.ok) {
+    const body = await response.text().catch(() => "");
+    throw new Error(`wake-word self-test failed: ${response.status}: ${body}`);
+  }
+  return (await response.json()) as WakewordSelfTestReport;
 }

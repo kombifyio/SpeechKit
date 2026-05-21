@@ -209,10 +209,12 @@ jobs:
           # cmd/speechkit doesn't expose a CLI flag we can run head-
           # lessly; launching the binary spawns the Wails GUI which
           # hangs in CI. Verify the installer placed the expected
-          # bundle: SpeechKit.exe + whisper-server.exe + llama-server
-          # .exe all present, SpeechKit.exe of non-trivial size.
-          # (FileVersion metadata isn't injected by the Wails build so
-          # we don't assert on it.)
+          # bundle by checking every file in scripts/build.ps1's
+          # `$RequiredFiles` list — that list is the canonical contract
+          # for "this build is shippable", and an MSI that misses any
+          # of these will surface as runtime failures (silently-hanging
+          # whisper-server, broken wake-word sidecar, etc.) rather than
+          # an installer-time error.
           $installDir = $env:SPEECHKIT_CI_INSTALL_DIR
           $exe = "$installDir\SpeechKit.exe"
           $info = Get-Item $exe
@@ -220,12 +222,55 @@ jobs:
             throw "SpeechKit.exe is suspiciously small: $($info.Length) bytes"
           }
           Write-Host ("SpeechKit.exe size = {0:N0} bytes" -f $info.Length)
-          foreach ($req in @("whisper-server.exe", "llama\llama-server.exe", "whisper.dll", "ggml.dll")) {
+
+          # Required files mirror scripts/build.ps1's RequiredFiles
+          # array + the C++ / GGML runtime DLLs that whisper-server.exe
+          # needs alongside it. If a new file lands in build.ps1, add
+          # it here too; both lists are the single source of truth for
+          # "what must be in the installer bundle".
+          $RequiredFiles = @(
+            "whisper-server.exe",
+            "whisper.dll",
+            "ggml.dll",
+            "ggml-base.dll",
+            "ggml-cpu.dll",
+            "SDL2.dll",
+            "msvcp140.dll",
+            "vcomp140.dll",
+            "vcruntime140.dll",
+            "vcruntime140_1.dll",
+            "onnxruntime.dll",
+            "sherpa-onnx-c-api.dll",
+            "sherpa-onnx-cxx-api.dll",
+            "speechkit-wakeword.exe",
+            "speechkit-openwakeword.exe",
+            "MicrosoftEdgeWebview2Setup.exe",
+            "config.default.toml",
+            "llama\llama-server.exe",
+            "models\ggml-small.bin",
+            "models\wakeword\melspectrogram.onnx",
+            "models\wakeword\embedding_model.onnx",
+            "models\wakeword\hey_quby.onnx",
+            "wakeword-kws\keywords.txt",
+            "wakeword-kws\tokens.txt",
+            "wakeword-kws\encoder-epoch-12-avg-2-chunk-16-left-64.onnx",
+            "wakeword-kws\decoder-epoch-12-avg-2-chunk-16-left-64.onnx",
+            "wakeword-kws\joiner-epoch-12-avg-2-chunk-16-left-64.onnx"
+          )
+          $missing = @()
+          foreach ($req in $RequiredFiles) {
             $p = Join-Path $installDir $req
             if (-not (Test-Path $p)) {
-              throw "Required bundle file missing after install: $req"
+              $missing += $req
+              continue
             }
             Write-Host ("  bundled: {0} ({1:N0} bytes)" -f $req, (Get-Item $p).Length)
+          }
+          if ($missing.Count -gt 0) {
+            Write-Host ""
+            Write-Host "Recursive install dir listing for diagnosis:"
+            Get-ChildItem -Recurse $installDir | Select-Object FullName, Length | Format-Table -AutoSize
+            throw ("Required bundle files missing after install: " + ($missing -join ", "))
           }
 
       - name: Build sk-localprobe.exe next to SpeechKit.exe

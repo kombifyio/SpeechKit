@@ -30,6 +30,15 @@ type Event struct {
 
 	Level string `json:"level,omitempty"`
 	Msg   string `json:"msg,omitempty"`
+
+	// EventDevice fields — emitted once at startup with the audio device
+	// actually opened.
+	DeviceID   string `json:"deviceId,omitempty"`
+	DeviceName string `json:"deviceName,omitempty"`
+	DeviceKind string `json:"deviceKind,omitempty"`
+
+	// EventScore fields — emitted per decode when --debug is on.
+	Score float32 `json:"score,omitempty"`
 }
 
 type EventType string
@@ -41,6 +50,8 @@ const (
 	EventLog       EventType = "log"
 	EventError     EventType = "error"
 	EventShutdown  EventType = "shutdown"
+	EventDevice    EventType = "device"
+	EventScore     EventType = "score"
 )
 
 type Command struct {

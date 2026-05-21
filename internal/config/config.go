@@ -167,7 +167,12 @@ type WakewordConfig struct {
 	DefaultMode string `toml:"default_mode"`
 
 	// Threshold is the minimum probability to count a frame as a hit.
-	// Range (0.0, 1.0]; LiveKit's published sweet-spot is 0.68.
+	// Range (0.0, 1.0]. Backend-specific defaults when this is 0:
+	//   - LiveKit/openWakeWord: 0.5 (Wyoming/openWakeWord canonical)
+	//   - Sherpa-onnx KWS: 0.25 (sherpa-onnx upstream default)
+	//   - STT phrase match: 0 (substring match, no acoustic probability)
+	// Use the in-app "Test wake word" self-test in Settings to calibrate
+	// for your specific microphone + environment instead of guessing.
 	Threshold float64 `toml:"threshold"`
 
 	// MinConsecutiveFrames is the number of consecutive above-threshold
@@ -178,6 +183,13 @@ type WakewordConfig struct {
 	// CooldownMs is the minimum gap between two triggers, in milliseconds.
 	// Defaults to 1500ms.
 	CooldownMs int `toml:"cooldown_ms"`
+
+	// DebugMode enables verbose detector diagnostics. When true the sidecars
+	// emit per-decode score events (openWakeWord) or set the sherpa-onnx
+	// ModelConfig.Debug flag (Sherpa KWS), and the host adapter forwards
+	// those signals into the user-visible log feed. Default false — only flip
+	// on while tuning a wake phrase, the score event stream is high-volume.
+	DebugMode bool `toml:"debug_mode"`
 
 	// AutoEnd controls the framework-level auto-end policy applied to any
 	// session that the wake-word triggered. Wake-word-origin Voice-Agent

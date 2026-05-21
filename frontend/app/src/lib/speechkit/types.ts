@@ -453,10 +453,36 @@ export type WakewordSettings = {
   threshold: number;
   minConsecutiveFrames: number;
   cooldownMs: number;
+  debugMode: boolean;
   active: boolean;
   statusMessage: string;
   phraseCatalog: WakewordPhraseCatalogEntry[];
   backendOptions: WakewordBackendOption[];
+};
+
+// WakewordSelfTestReport mirrors cmd/speechkit/routes_wakeword.go
+// WakewordSelfTestReport. The settings panel POSTs to /api/wakeword/selftest
+// and renders the returned report so the user can confirm mic capture
+// independently of the detector firing.
+export type WakewordSelfTestReport = {
+  ok: boolean;
+  error?: string;
+  duration_ms: number;
+  captured_bytes: number;
+  sample_rate: number;
+  channels: number;
+  peak_level: number;
+  rms_level: number;
+  requested_device_id: string;
+  resolved_device_id: string;
+  resolved_device_name: string;
+  device_kind: string;
+  backend: string;
+  phrase: string;
+  phrase_id: string;
+  effective_threshold: number;
+  advice: string;
+  heartbeat_hint?: string;
 };
 
 export type AudioDevicesResponse = {

@@ -56,24 +56,33 @@ func NormalizeWakewordDefaultMode(value string) string {
 
 // NormalizeWakewordBackend coerces arbitrary config/UI values to the small
 // set of detector backend IDs the desktop app understands.
+//
+// Empty resolves to LiveKit/openWakeWord because the bundled per-phrase
+// ONNX models (hey_quby/hey_mira/hey_kombify/hey_jarvis/hey_computer) are
+// purpose-trained for those exact phrases and significantly more reliable
+// than the generic Gigaspeech sherpa-onnx KWS for the curated catalog.
+// Existing installs that pinned "sherpa_kws" keep it; only fresh configs
+// and unset fields land on openWakeWord.
 func NormalizeWakewordBackend(value string) string {
 	switch strings.ToLower(strings.TrimSpace(value)) {
-	case WakewordBackendSherpaKWS, "":
+	case WakewordBackendSherpaKWS:
 		return WakewordBackendSherpaKWS
-	case WakewordBackendLiveKitOpenWakeWord, "livekit", "openwakeword", "livekit_openwakeword_onnx":
+	case WakewordBackendLiveKitOpenWakeWord, "", "livekit", "openwakeword", "livekit_openwakeword_onnx":
 		return WakewordBackendLiveKitOpenWakeWord
 	case WakewordBackendSTTPhrase, "stt", "phrase_match", "stt_phrase_match":
 		return WakewordBackendSTTPhrase
 	default:
-		return WakewordBackendSherpaKWS
+		return WakewordBackendLiveKitOpenWakeWord
 	}
 }
 
 // NormalizeWakewordThreshold clamps the threshold to a sane range. Values
-// outside (0, 1] are coerced to the published sweet-spot of 0.68.
+// outside (0, 1] are coerced to 0.5 — the Wyoming/openWakeWord canonical
+// default. Sherpa-onnx KWS uses a separate per-backend default (0.25) via
+// effectiveWakewordThreshold in the desktop adapter.
 func NormalizeWakewordThreshold(value float64) float64 {
 	if value <= 0 || value > 1 {
-		return 0.68
+		return 0.5
 	}
 	return value
 }

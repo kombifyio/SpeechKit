@@ -140,6 +140,7 @@ func startRuntime(cfg sidecarConfig) (*runtime, error) {
 		KeywordsFile: cfg.KeywordsFile,
 		NumThreads:   cfg.NumThreads,
 		Threshold:    cfg.Threshold,
+		Debug:        cfg.Debug,
 	})
 	if err != nil {
 		if strings.Contains(err.Error(), "asset missing") || strings.Contains(err.Error(), "no such file") {
@@ -188,6 +189,8 @@ func startRuntime(cfg sidecarConfig) (*runtime, error) {
 		return nil, fmt.Errorf("audio open: %w", err)
 	}
 	rt.session = session
+
+	emitDeviceEvent(cfg.AudioBackend, cfg.AudioDeviceID)
 
 	session.SetPCMHandler(func(pcm []byte) {
 		rt.mu.Lock()
@@ -314,6 +317,60 @@ type sidecarConfig struct {
 
 	AudioBackend  string
 	AudioDeviceID string
+
+	// Debug toggles sherpa-onnx C++ verbose logging via DetectorConfig.Debug.
+	// The host adapter sets this when [wakeword] debug_mode = true. Off by
+	// default — the C++ side is chatty.
+	Debug bool
+}
+
+// emitDeviceEvent looks up the configured audio device name and emits a
+// "device" event so the host can show "you wanted X, we opened Y" in the
+// user log. Non-fatal — if enumeration fails the sidecar continues with
+// the default device and just logs a warning.
+func emitDeviceEvent(backend, requestedID string) {
+	devices, err := audio.ListCaptureDevices(audio.Config{Backend: audio.Backend(backend)})
+	if err != nil {
+		emit(Event{
+			Type:       EventDevice,
+			DeviceKind: "enumeration-failed",
+			DeviceID:   requestedID,
+			Msg:        fmt.Sprintf("audio device enumeration failed: %v", err),
+			At:         time.Now(),
+		})
+		return
+	}
+	requested := strings.TrimSpace(requestedID)
+	if requested == "" {
+		for _, d := range devices {
+			if d.IsDefault {
+				emit(Event{Type: EventDevice, DeviceKind: "default", DeviceID: d.ID, DeviceName: d.Name, At: time.Now()})
+				return
+			}
+		}
+		emit(Event{Type: EventDevice, DeviceKind: "default", DeviceID: "", DeviceName: "(system default — none flagged)", At: time.Now()})
+		return
+	}
+	for _, d := range devices {
+		if strings.EqualFold(strings.TrimSpace(d.ID), requested) {
+			emit(Event{Type: EventDevice, DeviceKind: "requested", DeviceID: d.ID, DeviceName: d.Name, At: time.Now()})
+			return
+		}
+	}
+	// Requested ID not in enumeration → malgo will fall back to default.
+	// Build a short list of what IS available so the user can pick a valid one.
+	names := make([]string, 0, len(devices))
+	for _, d := range devices {
+		names = append(names, d.Name)
+	}
+	emit(Event{
+		Type:       EventDevice,
+		DeviceKind: "default-fallback",
+		DeviceID:   requested,
+		DeviceName: "(system default — requested ID not in enumeration)",
+		Msg:        fmt.Sprintf("requested capture id not found; %d devices available: %s", len(devices), strings.Join(names, " | ")),
+		At:         time.Now(),
+	})
 }
 
 func parseFlags() sidecarConfig {
@@ -329,6 +386,7 @@ func parseFlags() sidecarConfig {
 		cooldownMs    = flag.Int("cooldown-ms", 1500, "minimum interval between two emitted detections for the same keyword")
 		audioBackend  = flag.String("audio-backend", "windows-wasapi-malgo", "audio capture backend identifier")
 		audioDeviceID = flag.String("audio-device-id", "", "audio capture device ID (empty = default)")
+		debug         = flag.Bool("debug", false, "enable sherpa-onnx C++ verbose logging (ModelConfig.Debug=1)")
 		showVersion   = flag.Bool("version", false, "print version and exit")
 	)
 	flag.Parse()
@@ -358,6 +416,7 @@ func parseFlags() sidecarConfig {
 		Cooldown:             time.Duration(*cooldownMs) * time.Millisecond,
 		AudioBackend:         *audioBackend,
 		AudioDeviceID:        *audioDeviceID,
+		Debug:                *debug,
 	}
 	if cfg.KeywordsFile == "" {
 		cfg.KeywordsFile = fileIn(*modelDir, "keywords.txt")

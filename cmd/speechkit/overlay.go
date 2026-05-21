@@ -254,6 +254,11 @@ type wakewordSettingsSnapshot struct {
 	MinConsecutiveFrames int `json:"minConsecutiveFrames"`
 	CooldownMs           int `json:"cooldownMs"`
 
+	// DebugMode mirrors WakewordConfig.DebugMode — when true the sidecars
+	// emit per-decode score events (openWakeWord) and verbose C++ logs
+	// (Sherpa) for tuning. The settings panel surfaces this as a toggle.
+	DebugMode bool `json:"debugMode"`
+
 	// Active reflects whether the wake runtime is currently listening
 	// (Enabled AND model files present AND audio device available).
 	Active bool `json:"active"`

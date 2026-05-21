@@ -90,8 +90,8 @@ func TestParseSettingsFormDefaults(t *testing.T) {
 	if form.AutoStartOnLaunch {
 		t.Error("AutoStartOnLaunch = true, want false by default")
 	}
-	if form.WakewordBackend != config.WakewordBackendSherpaKWS {
-		t.Errorf("WakewordBackend = %q, want %q", form.WakewordBackend, config.WakewordBackendSherpaKWS)
+	if form.WakewordBackend != config.WakewordBackendLiveKitOpenWakeWord {
+		t.Errorf("WakewordBackend = %q, want %q (new default for empty/fresh wakeword config — per-phrase trained ONNX models cover the curated catalog reliably; Sherpa-Gigaspeech requires an explicit pin)", form.WakewordBackend, config.WakewordBackendLiveKitOpenWakeWord)
 	}
 }
 

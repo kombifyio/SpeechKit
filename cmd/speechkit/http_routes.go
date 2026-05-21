@@ -144,6 +144,7 @@ func newControlPlaneHandler(deps controlPlaneDeps) http.Handler {
 	registerAuthRoutes(mux)
 	registerAppRoutes(mux, deps.ConfigPath, deps.Config, deps.State, deps.InstallState)
 	registerDownloadRoutes(mux, deps.ConfigPath, deps.Config, deps.State)
+	registerWakewordRoutes(mux, deps.Config, deps.State)
 	registerControlPlaneAPIRoutes(mux, deps)
 	mux.Handle("/", http.FileServer(http.FS(frontendassets.Files())))
 	return enforceControlPlaneRequestGuard(mux, controlPlaneTokenFromState(deps.State))

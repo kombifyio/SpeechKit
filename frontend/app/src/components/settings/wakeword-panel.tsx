@@ -1,12 +1,14 @@
-import type { ChangeEvent } from "react";
+import { useState, type ChangeEvent } from "react";
 
-import type {
-  SpeechKitSettingsState,
-  WakewordBackend,
-  WakewordBackendOption,
-  WakewordDefaultMode,
-  WakewordPhraseCatalogEntry,
-  WakewordSettings,
+import {
+  runWakewordSelfTest,
+  type SpeechKitSettingsState,
+  type WakewordBackend,
+  type WakewordBackendOption,
+  type WakewordDefaultMode,
+  type WakewordPhraseCatalogEntry,
+  type WakewordSelfTestReport,
+  type WakewordSettings,
 } from "@/lib/speechkit";
 import { Row, Section } from "./settings-primitives";
 
@@ -33,7 +35,7 @@ export function WakewordPanel({
   const effectiveThreshold =
     wake.threshold > 0
       ? wake.threshold
-      : selectedEntry?.recommendedThreshold ?? 0.68;
+      : selectedEntry?.recommendedThreshold ?? 0.5;
 
   return (
     <Section title="Wake word" testId="settings-wakeword">
@@ -118,10 +120,105 @@ export function WakewordPanel({
                 onChange={(cooldownMs) => update({ cooldownMs })}
               />
             </div>
+            <div className="mt-3">
+              <Row
+                label="Debug mode (verbose detector scores in log feed)"
+                on={wake.debugMode}
+                onToggle={() => update({ debugMode: !wake.debugMode })}
+              />
+              <p className="mt-1 text-[10px] leading-snug text-[color:var(--sk-text-muted)]">
+                Forwards every above-threshold-adjacent score from openWakeWord and
+                enables sherpa-onnx C++ verbose logging. Use this while tuning a
+                phrase, then switch off — the stream is chatty.
+              </p>
+            </div>
           </details>
+
+          <SelfTestPanel disabled={!wake.enabled} />
         </div>
       </div>
     </Section>
+  );
+}
+
+function SelfTestPanel({ disabled }: { disabled: boolean }) {
+  const [running, setRunning] = useState(false);
+  const [report, setReport] = useState<WakewordSelfTestReport | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  const handleRun = async () => {
+    setRunning(true);
+    setError(null);
+    setReport(null);
+    try {
+      const next = await runWakewordSelfTest();
+      setReport(next);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setRunning(false);
+    }
+  };
+
+  return (
+    <div className="rounded-lg border border-[color:var(--sk-panel-border)] bg-[color:var(--sk-surface-0)] px-3 py-3">
+      <div className="flex items-center justify-between">
+        <div>
+          <h4 className="text-xs font-semibold text-[color:var(--sk-text)]">
+            Test microphone (3 s capture)
+          </h4>
+          <p className="text-[10px] leading-snug text-[color:var(--sk-text-muted)]">
+            Records a short sample from the currently selected mic and reports
+            level + resolved device name. Run this first when wake-word doesn't
+            fire.
+          </p>
+        </div>
+        <button
+          type="button"
+          data-testid="wakeword-selftest-run"
+          onClick={handleRun}
+          disabled={disabled || running}
+          className="rounded-md border border-[color:var(--sk-accent)] bg-[color:var(--sk-accent)] px-3 py-1.5 text-xs font-medium text-white shadow-sm transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          {running ? "Recording..." : "Test microphone"}
+        </button>
+      </div>
+
+      {error && (
+        <p
+          data-testid="wakeword-selftest-error"
+          className="mt-2 text-[11px] text-red-500"
+        >
+          {error}
+        </p>
+      )}
+
+      {report && (
+        <div
+          data-testid="wakeword-selftest-report"
+          className="mt-3 space-y-1 text-[11px] leading-relaxed text-[color:var(--sk-text)]"
+        >
+          <p>
+            <strong>Device:</strong> {report.resolved_device_name}{" "}
+            <span className="text-[color:var(--sk-text-muted)]">
+              ({report.device_kind})
+            </span>
+          </p>
+          <p>
+            <strong>Captured:</strong> {report.captured_bytes.toLocaleString()} B
+            over {report.duration_ms} ms · peak {report.peak_level.toFixed(3)} ·
+            RMS {report.rms_level.toFixed(3)}
+          </p>
+          <p>
+            <strong>Backend:</strong> {report.backend} · threshold{" "}
+            {report.effective_threshold.toFixed(2)}
+          </p>
+          <p className="rounded bg-[color:var(--sk-surface-1)] p-2 text-[color:var(--sk-text)]">
+            {report.advice}
+          </p>
+        </div>
+      )}
+    </div>
   );
 }
 

@@ -35,6 +35,12 @@ type DetectorConfig struct {
 	// Threshold mirrors Config.Threshold; below 0 or above 1 falls back to
 	// the sherpa-onnx default (~0.25).
 	Threshold float32
+
+	// Debug enables sherpa-onnx's verbose C++ logging (ModelConfig.Debug = 1).
+	// Output goes to the C++ runtime's stderr — the sidecar's slog stderr pump
+	// fans it into the host's log feed. Use only while tuning; the C++ side
+	// is chatty.
+	Debug bool
 }
 
 // Detector owns the sherpa-onnx KeywordSpotter for the lifetime of the
@@ -94,7 +100,11 @@ func NewDetector(cfg DetectorConfig) (*Detector, error) {
 	sc.ModelConfig.Transducer.Joiner = cfg.Joiner
 	sc.ModelConfig.Tokens = cfg.Tokens
 	sc.ModelConfig.NumThreads = numThreads(cfg.NumThreads)
-	sc.ModelConfig.Debug = 0
+	if cfg.Debug {
+		sc.ModelConfig.Debug = 1
+	} else {
+		sc.ModelConfig.Debug = 0
+	}
 	sc.KeywordsFile = kwFile
 	if cfg.Threshold > 0 && cfg.Threshold <= 1 {
 		sc.KeywordsThreshold = cfg.Threshold

@@ -30,29 +30,55 @@ same wake-word trigger contract.
 
 ## Detection backends
 
-The Windows desktop ships three selectable detection paths. The default
-production backend loads the [sherpa-onnx](https://github.com/k2-fsa/sherpa-onnx)
-Zipformer keyword-spotting model via
-[`github.com/k2-fsa/sherpa-onnx-go`](https://github.com/k2-fsa/sherpa-onnx-go).
-sherpa-onnx ships its own MinGW-compiled ONNX Runtime, which matches the
-SpeechKit MinGW build toolchain and avoids the MSVC vs MinGW ABI clash that
-gated the previous openWakeWord-based implementation. The KWS model is
-~13 MB unpacked, Apache-2.0, supports open-vocabulary keyword spotting
-(keywords are declared as BPE-tokenised text, no per-phrase retraining).
+The Windows desktop ships three selectable detection paths. **Fresh installs
+default to `livekit_openwakeword`** because the bundled per-phrase ONNX models
+are purpose-trained for the curated catalog phrases (`hey_quby`, `hey_mira`,
+`hey_kombify`, `hey_jarvis`, `hey_computer`) and significantly more reliable
+than the generic Gigaspeech sherpa-onnx KWS for those exact words. Existing
+configs that pinned `sherpa_kws` keep their choice; only unset/new configs
+land on openWakeWord.
 
-As of v0.36, Settings exposes a temporary backend selector so we can test
-the available paths explicitly:
-
-| `backend` | UI label | Runtime status |
+| `backend` | UI label | When to pick |
 |---|---|---|
-| `sherpa_kws` | Sherpa KWS sidecar | Implemented and bundled. This is the current production path. |
-| `livekit_openwakeword` | LiveKit/openWakeWord | Implemented via `speechkit-openwakeword.exe`, using bundled openWakeWord-compatible ONNX frontend, embedding, and phrase models. |
-| `stt_phrase` | STT phrase match | Implemented as a continuous local STT listener that confirms the configured phrase through the current dictation transcriber. |
+| `livekit_openwakeword` (default) | openWakeWord (per-phrase trained) | All catalog phrases. Threshold 0.5 baseline (Wyoming/openWakeWord canonical). Per-phrase ONNX models bundled in `dist/windows/SpeechKit/models/wakeword/`. |
+| `sherpa_kws` | Sherpa KWS (generic Gigaspeech) | When you want to use a custom phrase that isn't in the curated catalog — the BPE-tokenised `keywords.txt` accepts arbitrary phrases without retraining. Less reliable than openWakeWord for the catalog phrases. |
+| `stt_phrase` | STT phrase match | When you have a fast STT path (Whisper local / Groq cloud) and want substring-match semantics, e.g. "Hey Quby" / "Hey Cubi" / "Hey Kubi" all firing the same trigger. Higher latency than the acoustic backends. |
 
 Selecting a backend does not silently fall back to another detector. If a
 selected backend is missing assets or credentials, the desktop status reports
 that concrete problem so testing results stay attributable to the backend that
 was actually selected.
+
+## Diagnostic mode
+
+Settings → Wake-word → Advanced → "Debug mode" toggles two sidecar behaviours
+at once:
+
+- **openWakeWord**: emits a `score` event for every decode window (~12×/s).
+  The host adapter forwards scores ≥ 0.2 to the user log feed so you can see
+  near-misses without flooding the panel.
+- **Sherpa KWS**: enables `ModelConfig.Debug=1` (sherpa-onnx C++ verbose
+  logging). Output goes to the sidecar's stderr → fanned into the user log.
+
+Both sidecars additionally emit a `device` event at startup naming the
+audio device that was actually opened (with `requested` / `default` /
+`default-fallback` kind), and forward 30-second heartbeats into the user log
+so silent-mic failures surface without opening internal status panels.
+
+Default off — the score stream is chatty. Flip on while tuning a phrase,
+flip off when done.
+
+## Microphone self-test
+
+Settings → Wake-word → "Test microphone" records 3 s through the currently
+selected mic and returns a JSON report (peak level, RMS, resolved device
+name, advice). Use this to validate that the mic is actually capturing audio
+*before* blaming the detector — silent-mic configuration drift has been the
+silent first cause of every wake-word-doesn't-fire report we've seen.
+
+The same data is exposed as `POST /api/wakeword/selftest` for scripted
+verification — the response body is `WakewordSelfTestReport` (see
+`cmd/speechkit/routes_wakeword.go`).
 
 The build pipeline downloads everything reproducibly:
 

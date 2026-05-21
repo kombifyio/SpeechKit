@@ -96,6 +96,7 @@ func buildNextConfig(form settingsFormData, cfg *config.Config) config.Config {
 	if form.WakewordCooldownMs > 0 {
 		nextCfg.Wakeword.CooldownMs = form.WakewordCooldownMs
 	}
+	nextCfg.Wakeword.DebugMode = form.WakewordDebugMode
 
 	return nextCfg
 }

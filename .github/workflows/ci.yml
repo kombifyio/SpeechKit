@@ -11,6 +11,7 @@ on:
       - 'docs/agent/**'
       - 'docs/server/**'
       - 'Website/**'
+      - 'frontend/**'
       - 'tools/**'
       - 'go.mod'
       - 'go.sum'
@@ -28,6 +29,7 @@ on:
       - 'docs/agent/**'
       - 'docs/server/**'
       - 'Website/**'
+      - 'frontend/**'
       - 'tools/**'
       - 'go.mod'
       - 'go.sum'
@@ -105,18 +107,37 @@ jobs:
         working-directory: ${{ github.workspace }}
         run: npm ci
 
+      - name: Detect website workspace for knip
+        id: website-workspace
+        shell: bash
+        working-directory: ${{ github.workspace }}
+        run: |
+          if [ -f Website/package-lock.json ]; then
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "present=false" >> "$GITHUB_OUTPUT"
+          fi
+
       # knip scans all workspaces declared in knip.json (root, frontend/app,
       # Website). To load Website/vite.config.ts knip needs Website's deps
       # resolvable in Website/node_modules. The dedicated `Website Checks`
       # job installs them on its own runner, but this Frontend Checks job
       # runs on a separate runner and otherwise wouldn't have them.
       - name: Install website dependencies (for knip)
+        if: steps.website-workspace.outputs.present == 'true'
         working-directory: Website
         run: npm ci
 
       - name: Dead-code check (knip)
         working-directory: ${{ github.workspace }}
-        run: npm run deadcode:strict
+        shell: bash
+        run: |
+          if [ "${{ steps.website-workspace.outputs.present }}" = "true" ]; then
+            npm run deadcode:strict
+          else
+            node -e "const fs = require('node:fs'); const config = JSON.parse(fs.readFileSync('knip.json', 'utf8')); if (config.workspaces) delete config.workspaces.Website; fs.writeFileSync('knip.public.json', JSON.stringify(config, null, 2) + '\n');"
+            npm exec -- knip --config knip.public.json
+          fi
 
       - name: Run frontend tests
         run: npm test

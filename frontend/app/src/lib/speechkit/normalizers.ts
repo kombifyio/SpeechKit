@@ -658,6 +658,8 @@ function normalizeWakewordSettings(
       typeof obj.cooldownMs === "number" && obj.cooldownMs >= 0
         ? Math.round(obj.cooldownMs)
         : base.cooldownMs,
+    debugMode:
+      typeof obj.debugMode === "boolean" ? obj.debugMode : base.debugMode,
     active: typeof obj.active === "boolean" ? obj.active : false,
     statusMessage:
       typeof obj.statusMessage === "string" ? obj.statusMessage : "",

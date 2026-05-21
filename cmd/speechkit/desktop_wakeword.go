@@ -277,6 +277,9 @@ func wakewordSidecarArgs(cfg *config.Config, resolved resolvedWakewordAssets) []
 		"--audio-backend", string(cfg.Audio.Backend),
 		"--audio-device-id", cfg.Audio.DeviceID,
 	}
+	if cfg.Wakeword.DebugMode {
+		common = append(common, "--debug")
+	}
 	if resolved.Backend == config.WakewordBackendLiveKitOpenWakeWord {
 		return append([]string{
 			"--melspec-model", resolved.MelspecModelPath,
@@ -354,19 +357,50 @@ func handleSidecarEvent(ev sidecarEvent, state *appState, hkManager *modeHotkeyM
 			mode = resolved.DefaultMode
 		}
 		dispatchWakewordDetection(state, hkManager, resolved, ev.Phrase, ev.Keyword, mode, ev.Probability)
+	case "device":
+		slog.Info("wakeword: audio device opened",
+			"name", ev.DeviceName,
+			"id", ev.DeviceID,
+			"kind", ev.DeviceKind)
+		summary := wakewordDeviceLogLine(ev)
+		level := "info"
+		if ev.DeviceKind == "default-fallback" || ev.DeviceKind == "enumeration-failed" {
+			level = "warn"
+		}
+		state.addLog(summary, level)
 	case "heartbeat":
 		slog.Info("wakeword: heartbeat",
 			"bytes_in_30s", ev.BytesIn,
 			"decodes_30s", ev.DecodesIn,
 			"uptime_s", ev.UptimeSec)
-		state.setWakewordStatus(fmt.Sprintf(
+		statusLine := fmt.Sprintf(
 			"Listening for \"%s\" → %s via %s (audio %.1f KB/30s, decodes %d)",
 			resolved.DisplayPhrase,
 			resolved.DefaultMode,
 			wakewordBackendDisplayName(resolved.Backend),
 			float64(ev.BytesIn)/1024,
 			ev.DecodesIn,
-		))
+		)
+		state.setWakewordStatus(statusLine)
+		// Surface heartbeat in user log so silent-mic failures are visible
+		// without opening internal status panels. Level escalates to "warn"
+		// when bytes_in is zero — that means audio is not flowing at all.
+		level := "info"
+		if ev.BytesIn == 0 {
+			level = "warn"
+		}
+		state.addLog(fmt.Sprintf("Wake-word heartbeat: %.1f KB/30s, %d decodes, uptime %ds",
+			float64(ev.BytesIn)/1024, ev.DecodesIn, ev.UptimeSec), level)
+	case "score":
+		// Debug-only: per-decode score from openWakeWord. Fires ~12×/s when
+		// audio is flowing, so we only forward to the user log when it's a
+		// "near-miss" (>=0.2 but below the configured threshold) or a hit.
+		// Slog at debug level so the raw stream is recoverable from the
+		// sidecar's stderr if needed.
+		slog.Debug("wakeword: score", "score", ev.Score)
+		if ev.Score >= 0.2 {
+			state.addLog(fmt.Sprintf("Wake-word score: %.3f (threshold tuning hint)", ev.Score), "info")
+		}
 	case "log":
 		// Already fanned via stderr — duplicate slog only at debug level.
 		slog.Debug("wakeword: sidecar log", "level", ev.Level, "msg", ev.Msg)
@@ -377,6 +411,29 @@ func handleSidecarEvent(ev sidecarEvent, state *appState, hkManager *modeHotkeyM
 		slog.Info("wakeword: sidecar shutting down on command")
 	default:
 		slog.Debug("wakeword: unknown sidecar event", "type", ev.Type)
+	}
+}
+
+// wakewordDeviceLogLine renders a device event for the user log feed. The
+// "kind" discriminator drives the wording so the user immediately knows
+// whether SpeechKit opened the device they asked for, fell back to the
+// system default, or failed to enumerate at all.
+func wakewordDeviceLogLine(ev sidecarEvent) string {
+	switch ev.DeviceKind {
+	case "requested":
+		return fmt.Sprintf("Wake-word audio: opened requested device \"%s\"", ev.DeviceName)
+	case "default":
+		return fmt.Sprintf("Wake-word audio: opened system default \"%s\" (no specific mic configured)", ev.DeviceName)
+	case "default-fallback":
+		extra := ""
+		if ev.Msg != "" {
+			extra = " — " + ev.Msg
+		}
+		return fmt.Sprintf("Wake-word audio: FALLBACK to system default — requested mic id not found%s", extra)
+	case "enumeration-failed":
+		return fmt.Sprintf("Wake-word audio: device enumeration failed (%s); using system default", ev.Msg)
+	default:
+		return fmt.Sprintf("Wake-word audio: opened \"%s\"", ev.DeviceName)
 	}
 }
 
@@ -424,6 +481,14 @@ type sidecarEvent struct {
 	UptimeSec   int64     `json:"uptimeSec,omitempty"`
 	Level       string    `json:"level,omitempty"`
 	Msg         string    `json:"msg,omitempty"`
+
+	// Added with the v0.36 diagnostic mode: device-resolution event and
+	// per-decode score events. Adapters from prior versions ignore
+	// unrecognised types (see handleSidecarEvent default branch).
+	DeviceID   string  `json:"deviceId,omitempty"`
+	DeviceName string  `json:"deviceName,omitempty"`
+	DeviceKind string  `json:"deviceKind,omitempty"`
+	Score      float32 `json:"score,omitempty"`
 }
 
 // restartDesktopWakeword stops the current sidecar (if any) and spawns a
@@ -451,6 +516,7 @@ func wakewordConfigEquals(a, b config.WakewordConfig) bool {
 		a.Threshold == b.Threshold &&
 		a.MinConsecutiveFrames == b.MinConsecutiveFrames &&
 		a.CooldownMs == b.CooldownMs &&
+		a.DebugMode == b.DebugMode &&
 		a.AutoEnd.SilenceCutoffSec == b.AutoEnd.SilenceCutoffSec &&
 		slices.Equal(a.AutoEnd.ExitPhrases, b.AutoEnd.ExitPhrases)
 }

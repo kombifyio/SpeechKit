@@ -320,6 +320,7 @@ func buildWakewordSettingsSnapshot(cfg *config.Config, active bool, status strin
 		Threshold:            cfg.Wakeword.Threshold,
 		MinConsecutiveFrames: cfg.Wakeword.MinConsecutiveFrames,
 		CooldownMs:           cfg.Wakeword.CooldownMs,
+		DebugMode:            cfg.Wakeword.DebugMode,
 		Active:               active,
 		StatusMessage:        status,
 		PhraseCatalog:        catalog,

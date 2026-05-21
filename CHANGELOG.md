@@ -12,6 +12,23 @@ IDs, source paths, and other maintainer-only vocabulary.
 
 ## [Unreleased]
 
+## [0.35.14] - 2026-05-21
+
+Same feature surface as v0.35.13. The per-machine MSI now actually
+runs — earlier MSI builds shipped without 7 runtime DLLs that
+whisper-server.exe and the wake-word sidecars depend on, so users
+who installed via MSI saw silently-hanging dictation and broken
+wake-word recognition. The NSIS installer was always fine.
+
+### Fixed
+- MSI installer now bundles `ggml-base.dll`, `ggml-cpu.dll`,
+  `SDL2.dll`, and the four Visual C++ 2015-2022 runtime DLLs
+  (`msvcp140`, `vcomp140`, `vcruntime140`, `vcruntime140_1`).
+  Without these the MSI-installed `whisper-server.exe` could not
+  initialise its GGML compute backend and the wake-word sidecars
+  could not open their audio input. End-to-end install-e2e gate
+  now exercises the full bundle.
+
 ## [0.35.13] - 2026-05-21
 
 Rebuild of v0.35.12 — same feature surface, but `wix build`'s

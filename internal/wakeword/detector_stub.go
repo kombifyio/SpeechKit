@@ -22,6 +22,7 @@ type DetectorConfig struct {
 	Keywords     []string
 	NumThreads   int
 	Threshold    float32
+	Debug        bool
 }
 
 // Detector is the no-cgo placeholder for the cgo build's Detector struct.

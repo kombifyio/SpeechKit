@@ -40,6 +40,19 @@ type Event struct {
 	// EventLog / EventError fields.
 	Level string `json:"level,omitempty"`
 	Msg   string `json:"msg,omitempty"`
+
+	// EventDevice fields — emitted once at startup with the audio device
+	// that was actually opened. Lets the host surface "you wanted X, we
+	// opened Y" so the user can spot mic-mismatch silently falling back
+	// to system default.
+	DeviceID   string `json:"deviceId,omitempty"`
+	DeviceName string `json:"deviceName,omitempty"`
+	DeviceKind string `json:"deviceKind,omitempty"` // "requested" | "default-fallback" | "default"
+
+	// EventScore fields — emitted per decode window when --debug. High
+	// volume (one per 80 ms frame for openWakeWord); the adapter rate-limits
+	// when forwarding to the user log feed.
+	Score float32 `json:"score,omitempty"`
 }
 
 // EventType enumerates the discriminator values used on stdout. New types
@@ -55,6 +68,8 @@ const (
 	EventLog       EventType = "log"
 	EventError     EventType = "error"
 	EventShutdown  EventType = "shutdown"
+	EventDevice    EventType = "device" // audio device opened
+	EventScore     EventType = "score"  // per-decode score, debug-only
 )
 
 // Command is one stdin line in the sidecar protocol. The first version

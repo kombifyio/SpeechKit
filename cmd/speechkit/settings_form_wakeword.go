@@ -52,4 +52,6 @@ func parseWakewordSettingsForm(req *http.Request, cfg *config.Config, f *setting
 	} else {
 		f.WakewordCooldownMs = cfg.Wakeword.CooldownMs
 	}
+
+	f.WakewordDebugMode = boolFormValue(req, "wakeword_debug_mode", cfg.Wakeword.DebugMode)
 }

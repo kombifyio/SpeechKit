@@ -102,19 +102,71 @@ func TestWakewordConfigEqualsIncludesAutoEnd(t *testing.T) {
 	}
 }
 
+// TestWakewordConfigEqualsIncludesDebugMode guards the invariant that flipping
+// DebugMode forces a sidecar restart — the sidecar gets --debug at launch and
+// won't change behaviour without a respawn.
+func TestWakewordConfigEqualsIncludesDebugMode(t *testing.T) {
+	a := config.WakewordConfig{Backend: config.WakewordBackendLiveKitOpenWakeWord, DebugMode: false}
+	b := a
+	b.DebugMode = true
+	if wakewordConfigEquals(a, b) {
+		t.Fatal("wakewordConfigEquals returned true after DebugMode flip — settings save will not restart the sidecar with --debug")
+	}
+}
+
+// TestWakewordSidecarArgsIncludesDebugWhenEnabled checks the actual flag
+// pipeline: when [wakeword] debug_mode = true, the sidecar invocation must
+// carry --debug. Otherwise the sidecar runs in quiet mode.
+func TestWakewordSidecarArgsIncludesDebugWhenEnabled(t *testing.T) {
+	cfg := &config.Config{}
+	cfg.Wakeword.DebugMode = true
+	cfg.Wakeword.PhraseID = "hey_kombify"
+	cfg.Wakeword.Backend = config.WakewordBackendLiveKitOpenWakeWord
+	resolved := resolvedWakewordAssets{
+		Backend:            config.WakewordBackendLiveKitOpenWakeWord,
+		DefaultMode:        "voice_agent",
+		DisplayPhrase:      "Hey Kombify",
+		ModelPath:          "fake-phrase.onnx",
+		MelspecModelPath:   "fake-mel.onnx",
+		EmbeddingModelPath: "fake-emb.onnx",
+		OnnxRuntimePath:    "fake-onnx.dll",
+	}
+	args := wakewordSidecarArgs(cfg, resolved)
+	found := false
+	for _, a := range args {
+		if a == "--debug" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("expected --debug in sidecar args when DebugMode=true; got: %v", args)
+	}
+
+	cfg.Wakeword.DebugMode = false
+	for _, a := range wakewordSidecarArgs(cfg, resolved) {
+		if a == "--debug" {
+			t.Fatalf("did NOT expect --debug when DebugMode=false; got it in args")
+		}
+	}
+}
+
 func TestEffectiveWakewordThresholdUsesConcreteDefaults(t *testing.T) {
 	cfg := &config.Config{}
 	cfg.Wakeword.PhraseID = "hey_quby"
 
 	if got := effectiveWakewordThreshold(cfg, config.WakewordBackendSherpaKWS); got != 0.25 {
-		t.Fatalf("Sherpa threshold = %.2f, want sidecar default 0.25", got)
+		t.Fatalf("Sherpa threshold = %.2f, want sherpa-onnx upstream default 0.25", got)
 	}
-	if got := effectiveWakewordThreshold(cfg, config.WakewordBackendLiveKitOpenWakeWord); got != 0.22 {
-		t.Fatalf("LiveKit/openWakeWord threshold = %.2f, want phrase-tuned 0.22", got)
+	if got := effectiveWakewordThreshold(cfg, config.WakewordBackendLiveKitOpenWakeWord); got != 0.5 {
+		t.Fatalf("LiveKit/openWakeWord threshold = %.2f, want Wyoming/openWakeWord canonical default 0.5", got)
+	}
+	if got := effectiveWakewordThreshold(cfg, config.WakewordBackendSTTPhrase); got != 0 {
+		t.Fatalf("STT phrase threshold = %.2f, want 0 (substring match, no acoustic probability)", got)
 	}
 	cfg.Wakeword.Threshold = 0.77
 	if got := effectiveWakewordThreshold(cfg, config.WakewordBackendLiveKitOpenWakeWord); got != 0.77 {
-		t.Fatalf("manual threshold = %.2f, want 0.77", got)
+		t.Fatalf("manual threshold override = %.2f, want user-pinned 0.77", got)
 	}
 }
 

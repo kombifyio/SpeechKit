@@ -92,6 +92,71 @@
           </Component>
 
           <!--
+            ggml-cpu.dll + ggml-base.dll are runtime-loaded by ggml.dll
+            for CPU backend selection. The NSIS installer picks them up
+            via wildcard (File "${STAGE_DIR}\*.dll"); WiX has to declare
+            each one explicitly. Without these whisper-server.exe loads
+            but cannot initialise the GGML compute backend, leaving the
+            HTTP server unresponsive until the readiness probe times
+            out — which is exactly the failure surfaced by v0.35.13's
+            MSI install-e2e gate.
+          -->
+          <Component Id="GgmlBaseDll" Guid="*">
+            <File Id="ggml_base_dll"
+                  Source="..\..\dist\windows\SpeechKit\ggml-base.dll"
+                  KeyPath="yes" />
+          </Component>
+
+          <Component Id="GgmlCpuDll" Guid="*">
+            <File Id="ggml_cpu_dll"
+                  Source="..\..\dist\windows\SpeechKit\ggml-cpu.dll"
+                  KeyPath="yes" />
+          </Component>
+
+          <!--
+            SDL2.dll is a runtime dep of the wake-word / openWakeWord
+            sidecars (audio input). NSIS gets it via the *.dll wildcard;
+            WiX needs an explicit Component.
+          -->
+          <Component Id="Sdl2Dll" Guid="*">
+            <File Id="sdl2_dll"
+                  Source="..\..\dist\windows\SpeechKit\SDL2.dll"
+                  KeyPath="yes" />
+          </Component>
+
+          <!--
+            Microsoft Visual C++ runtime DLLs. whisper-server.exe and the
+            other native subprocesses are linked against the VS 2015-2022
+            runtime; without these DLLs alongside, the subprocesses fail
+            to load on machines that do not have the VS redistributable
+            installed system-wide. NSIS bundles them via the *.dll
+            wildcard; WiX has to enumerate them.
+          -->
+          <Component Id="MsvcRuntimeMsvcp140Dll" Guid="*">
+            <File Id="msvcp140_dll"
+                  Source="..\..\dist\windows\SpeechKit\msvcp140.dll"
+                  KeyPath="yes" />
+          </Component>
+
+          <Component Id="MsvcRuntimeVcomp140Dll" Guid="*">
+            <File Id="vcomp140_dll"
+                  Source="..\..\dist\windows\SpeechKit\vcomp140.dll"
+                  KeyPath="yes" />
+          </Component>
+
+          <Component Id="MsvcRuntimeVcruntime140Dll" Guid="*">
+            <File Id="vcruntime140_dll"
+                  Source="..\..\dist\windows\SpeechKit\vcruntime140.dll"
+                  KeyPath="yes" />
+          </Component>
+
+          <Component Id="MsvcRuntimeVcruntime140_1Dll" Guid="*">
+            <File Id="vcruntime140_1_dll"
+                  Source="..\..\dist\windows\SpeechKit\vcruntime140_1.dll"
+                  KeyPath="yes" />
+          </Component>
+
+          <!--
             WebView2 bootstrapper — used by the custom action below.
             Placed in INSTALLDIR so the CA can reference it by relative path.
           -->
@@ -292,6 +357,13 @@
       <ComponentRef Id="WhisperServerExe" />
       <ComponentRef Id="WhisperDll" />
       <ComponentRef Id="GgmlDll" />
+      <ComponentRef Id="GgmlBaseDll" />
+      <ComponentRef Id="GgmlCpuDll" />
+      <ComponentRef Id="Sdl2Dll" />
+      <ComponentRef Id="MsvcRuntimeMsvcp140Dll" />
+      <ComponentRef Id="MsvcRuntimeVcomp140Dll" />
+      <ComponentRef Id="MsvcRuntimeVcruntime140Dll" />
+      <ComponentRef Id="MsvcRuntimeVcruntime140_1Dll" />
       <ComponentRef Id="WebView2Setup" />
       <ComponentRef Id="ConfigDefaultToml" />
       <ComponentRef Id="StarterWhisperModel" />

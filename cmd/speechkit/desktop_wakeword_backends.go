@@ -68,6 +68,21 @@ func resolvedWakewordDisplayPhrase(cfg *config.Config) string {
 	return display
 }
 
+// effectiveWakewordThreshold resolves the runtime detector threshold for
+// the active backend. Returns the user-set Threshold when in (0, 1], else
+// the per-backend default.
+//
+// openWakeWord uses the upstream-canonical 0.5 baseline (Wyoming/openWakeWord
+// docs). The earlier per-phrase hand-tuning (hey_mira=0.08, hey_computer=0.10,
+// hey_quby=0.22) was field-calibrated when the prior Go port mis-scaled
+// scores and is left as the baseline only when explicitly opted in by the
+// user via [wakeword] threshold = ... — set 0 to use the canonical default.
+//
+// Sherpa-onnx KWS uses 0.25 as documented by the upstream Python example;
+// per-keyword sensitivity is tuned via the `:boost` suffix in keywords.txt.
+//
+// STT phrase matching returns 0 because the detector decides on transcript
+// substring match, not acoustic probability.
 func effectiveWakewordThreshold(cfg *config.Config, backend string) float32 {
 	if cfg != nil && cfg.Wakeword.Threshold > 0 && cfg.Wakeword.Threshold <= 1 {
 		return float32(cfg.Wakeword.Threshold)
@@ -76,27 +91,10 @@ func effectiveWakewordThreshold(cfg *config.Config, backend string) float32 {
 	case config.WakewordBackendSherpaKWS:
 		return 0.25
 	case config.WakewordBackendSTTPhrase:
-		// STT phrase matching does not use acoustic probabilities.
 		return 0
 	case config.WakewordBackendLiveKitOpenWakeWord:
+		return 0.5
 	default:
-		return 0.25
-	}
-	if cfg == nil {
-		return 0.35
-	}
-	switch strings.ToLower(strings.TrimSpace(cfg.Wakeword.PhraseID)) {
-	case "hey_quby":
-		return 0.22
-	case "hey_computer":
-		return 0.10
-	case "hey_jarvis":
-		return 0.45
-	case "hey_mira":
-		return 0.08
-	case "hey_kombify":
-		return 0.55
-	default:
-		return 0.35
+		return 0.5
 	}
 }
