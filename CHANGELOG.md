@@ -12,6 +12,34 @@ IDs, source paths, and other maintainer-only vocabulary.
 
 ## [Unreleased]
 
+## [0.35.16] - 2026-05-21
+
+Installer now respects the user's intent after copying files: a
+"Launch SpeechKit now" checkbox and a "Create a Desktop shortcut"
+checkbox both default to OFF, so a quiet install stays quiet. The
+uninstaller now offers to remove user data (config, install state,
+secrets, audio cache) alongside the binaries — without this, a
+reinstall sees the prior `install.toml` with `setup_done=true` and
+silently skips the onboarding wizard, which is exactly the trap
+that caught the v0.35.14 first-launch testers.
+
+Docs site header now carries the SpeechKit microphone icon next to
+the wordmark, matching the desktop client's branding.
+
+### Added
+- NSIS finish page: "Launch SpeechKit now" + "Create a Desktop
+  shortcut" checkboxes (both unchecked by default).
+- NSIS uninstaller: prompt to also remove `%APPDATA%\SpeechKit\`
+  (config.toml, install.toml, secrets, feedback.db, audio cache).
+  Silent uninstalls (/S) default to NO so automation does not nuke
+  user state.
+- `Website/src/Layout.svelte`: SpeechKit favicon icon rendered
+  next to the wordmark + Beta badge in the docs site header.
+
+### Fixed
+- Uninstaller now also removes the desktop shortcut and the `logs/`
+  subdirectory under the install location.
+
 ## [0.35.15] - 2026-05-21
 
 Wake-word panel no longer claims "Listening" when the sidecar has

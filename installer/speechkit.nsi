@@ -10,7 +10,7 @@ RequestExecutionLevel user
 
 ; VERSION can be overridden at compile time: makensis /DVERSION=x.y.z
 !ifndef VERSION
-  !define VERSION "0.35.15"
+  !define VERSION "0.35.16"
 !endif
 
 ; --- Interface ---
@@ -21,10 +21,27 @@ RequestExecutionLevel user
 !insertmacro MUI_PAGE_WELCOME
 !insertmacro MUI_PAGE_DIRECTORY
 !insertmacro MUI_PAGE_INSTFILES
+
+; FINISH page: opt-in launch + opt-in desktop shortcut.
+; - MUI_FINISHPAGE_RUN gives the "Run SpeechKit now" checkbox.
+;   Default unchecked so the installer respects the user's intent;
+;   silent installs (/S) ignore the checkbox entirely.
+; - MUI_FINISHPAGE_SHOWREADME is repurposed to offer a "Create
+;   desktop shortcut" checkbox via the SHOWREADME_FUNCTION hook;
+;   NSIS MUI2 has no dedicated "create shortcut" checkbox so this
+;   is the canonical workaround.
+!define MUI_FINISHPAGE_RUN "$INSTDIR\SpeechKit.exe"
+!define MUI_FINISHPAGE_RUN_NOTCHECKED
+!define MUI_FINISHPAGE_RUN_TEXT "Launch SpeechKit now"
+!define MUI_FINISHPAGE_SHOWREADME ""
+!define MUI_FINISHPAGE_SHOWREADME_NOTCHECKED
+!define MUI_FINISHPAGE_SHOWREADME_TEXT "Create a Desktop shortcut"
+!define MUI_FINISHPAGE_SHOWREADME_FUNCTION CreateDesktopShortcut
 !insertmacro MUI_PAGE_FINISH
 
 !insertmacro MUI_UNPAGE_CONFIRM
 !insertmacro MUI_UNPAGE_INSTFILES
+!insertmacro MUI_UNPAGE_FINISH
 
 !insertmacro MUI_LANGUAGE "German"
 !insertmacro MUI_LANGUAGE "English"
@@ -115,15 +132,35 @@ Section "Uninstall"
   RMDir /r "$INSTDIR\models"
   RMDir /r "$INSTDIR\llama"
   RMDir /r "$INSTDIR\wakeword-kws"
+  RMDir /r "$INSTDIR\logs"
 
-  ; Remove shortcuts
+  ; Remove shortcuts (Start Menu + Desktop)
   Delete "$SMPROGRAMS\kombify SpeechKit\SpeechKit.lnk"
   Delete "$SMPROGRAMS\kombify SpeechKit\Uninstall.lnk"
   RMDir "$SMPROGRAMS\kombify SpeechKit"
+  Delete "$DESKTOP\SpeechKit.lnk"
 
   ; Remove install dir (only if empty or user confirms)
   RMDir "$INSTDIR"
+
+  ; Offer to also remove user data — config.toml, install state
+  ; (install.toml with setup_done flag and device id), secrets,
+  ; audio cache, feedback db. Without this prompt a reinstall sees
+  ; the prior install.toml with setup_done=true and silently skips
+  ; the onboarding wizard. /SD IDNO in silent mode so automated
+  ; uninstalls do not nuke user state by default.
+  MessageBox MB_YESNO|MB_ICONQUESTION \
+    "Also remove SpeechKit user data and configuration?$\r$\n$\r$\nThis deletes:$\r$\n  • Onboarding state (you'll see the welcome wizard next install)$\r$\n  • User settings (config.toml)$\r$\n  • Stored secrets / API keys$\r$\n  • Audio cache + feedback database$\r$\n$\r$\nChoose NO to keep your settings for the next install." \
+    /SD IDNO IDNO skipUserData
+    RMDir /r "$APPDATA\SpeechKit"
+  skipUserData:
 SectionEnd
+
+; --- Desktop shortcut hook (called by the FINISH page's
+;     "Create a Desktop shortcut" checkbox when ticked) ---
+Function CreateDesktopShortcut
+  CreateShortcut "$DESKTOP\SpeechKit.lnk" "$INSTDIR\SpeechKit.exe" "" "$INSTDIR\SpeechKit.exe" 0
+FunctionEnd
 
 Function IsWebView2RuntimeInstalled
   ReadRegStr $0 HKCU "Software\Microsoft\EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}" "pv"
