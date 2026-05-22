@@ -16,6 +16,14 @@ SpeechKit wird zu einem Drei-Modi-Framework, das vom reinen Diktat bis zum dauer
 - **Assist = Utility Intelligence.** Der Modus ist die einzige One-Shot-Utility-Schicht: STT, Codewords, host-seitige Tools, LLM-Ergebnis, optional TTS und Panel-Surface.
 - **Voice Agent = Brainstorming Intelligence.** Der Modus ist fuer Dialog, Ideenentwicklung und schnelle Follow-ups zustandshaft. Jede Session muss eine strukturierte Zusammenfassung liefern koennen.
 
+#### Wake-Word + Assist = Voice-Companion (Alexa/Siri-Style)
+
+Assist-Mode ist **gleichzeitig** die Voice-Companion-Surface fuer SpeechKit: kombiniert mit `[wakeword].default_mode = "assist"` wird aus der One-Shot-Utility-Schicht ein hands-free Companion mit "Hey Quby" Trigger. Es gibt **keine vierte Mode**. Voice-Companion-Skills (`time`, `weather`, `timer`, `reminder`, `math`, `wikipedia`, `home_assistant` — alle ausgeliefert; Skill-Catalog siehe [docs/voice-companion.md](voice-companion.md)) sind zusaetzliche `UtilityDefinition`-Eintraege in der bestehenden Assist-Registry — semantisch identisch zur Architektur der heutigen Text-Utilities (`copy_last`, `insert_last`, `summarize`, `quick_note`). v0.38.0 hat zusaetzlich Multi-Turn-Skill-Context (60 s `SkillContextStore`) freigeschaltet, v0.38.0/0.39.0 Piper als all-lokalen TTS-Subprocess-Provider, v0.38.2 die Settings-UI fuer HomeAssistant + Piper-Voice-Picker.
+
+Voice-Agent bleibt fuer Multi-Hour-Companion-Cases (11Seconds Party-Mode, kombify-AI Companion Live, Realtime-Dialog) zustaendig. Wake-Word-Trigger bestimmt nur welche Mode aktiviert wird — der Config-Wert in `[wakeword].default_mode` schaltet zwischen `assist` (Voice-Companion-Stil) und `voice_agent` (Multi-Hour-Stil). Beide Pfade nutzen denselben Wake-Word-Dispatcher + AutoEndPolicy.
+
+Voll dokumentiert in [docs/voice-companion.md](voice-companion.md): Skill-Surface, Pipeline-Diagramm, Latenz-Budgets, Phasen-Roadmap.
+
 ### V23 Provider Standard
 
 Jeder der drei Modi bietet dieselben vier Provider-Gruppen. Eine Provider-Gruppe ist keine Ein-Modell-Grenze: sie enthaelt mindestens ein empfohlenes oder unterstuetztes Modell und kann mehrere Varianten enthalten.
@@ -215,7 +223,7 @@ Assist ist der einzige Modus fuer Utility-Ausfuehrung. Built-ins wie Zusammenfas
 | Komponente | Beschreibung | Aufwand |
 |------------|--------------|---------|
 | **TTS Provider Interface** | Analog zu `stt.Provider` — `Synthesize(ctx, text, opts) ([]byte, error)` | S |
-| **TTS Providers** | OpenAI TTS, Google Cloud TTS, Kokoro Local, VPS | M |
+| **TTS Providers** | OpenAI TTS, Google Cloud TTS, HuggingFace, Piper (offline subprocess — added v0.38.0/0.39.0), Local | M |
 | **TTS Router** | Analog zu STT Router — Local-First, Cloud-Fallback | S |
 | **Audio Playback** | Windows Audio Output (WASAPI Render via malgo oder `oto`) | M |
 | **Erweiterte Codewords** | Mehr Intents: open_app, set_timer, web_search, custom user commands | S |

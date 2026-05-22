@@ -335,7 +335,13 @@ func rebuildAIRuntime(ctx context.Context, state *appState, cfg *config.Config) 
 
 	var assistPipeline *assist.Pipeline
 	if state.ttsRouter != nil || state.assistExecutor != nil {
-		assistPipeline = assist.NewPipeline(assistFlow, state.assistExecutor, state.ttsRouter, cfg.TTS.Enabled)
+		// Preserve the existing SkillContextStore across model-profile
+		// switches so in-flight multi-turn follow-ups survive the rebuild.
+		var pipelineOpts []assist.PipelineOption
+		if state.assistSkillContextStore != nil {
+			pipelineOpts = append(pipelineOpts, assist.WithSkillContextStore(state.assistSkillContextStore))
+		}
+		assistPipeline = assist.NewPipeline(assistFlow, state.assistExecutor, state.ttsRouter, cfg.TTS.Enabled, pipelineOpts...)
 	}
 
 	state.mu.Lock()

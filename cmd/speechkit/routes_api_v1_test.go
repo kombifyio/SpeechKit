@@ -39,8 +39,8 @@ func TestAPIV1ModesReturnsContractsAndSettings(t *testing.T) {
 	if err := json.Unmarshal(rec.Body.Bytes(), &payload); err != nil {
 		t.Fatalf("decode response: %v", err)
 	}
-	if len(payload.Contracts) != 3 {
-		t.Fatalf("contracts = %d, want 3", len(payload.Contracts))
+	if len(payload.Contracts) != 4 {
+		t.Fatalf("contracts = %d, want 4 (Dictation, Assist, VoiceAgent, TTS)", len(payload.Contracts))
 	}
 	if payload.Settings.Dictation.PrimaryProfileID == "" {
 		t.Fatal("dictation primary profile missing")

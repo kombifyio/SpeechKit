@@ -258,6 +258,13 @@ func Run(ctx context.Context, cfg *config.Config, opts RunOptions) error {
 		}
 	}
 
+	// Wake-word training-data uploads (v0.37.5). Always wired so the
+	// device-side uploader can probe the endpoint; AcceptUploads=false
+	// (the default) makes every request return 503 with a structured
+	// "training_data_disabled" payload. See
+	// docs/wakeword-training-data.md for the full privacy contract.
+	wireWakewordTraining(cfg, app)
+
 	if app.ModeEnabled(ModeAssist) {
 		pipeline, notes, err := buildAssistPipeline(ctx, cfg, app)
 		if err != nil {

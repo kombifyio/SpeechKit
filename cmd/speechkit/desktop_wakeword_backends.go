@@ -98,3 +98,63 @@ func effectiveWakewordThreshold(cfg *config.Config, backend string) float32 {
 		return 0.5
 	}
 }
+
+// resolveTrainingCaptureDir picks an absolute path for the activation-
+// capture directory. Empty config falls back to
+// %LOCALAPPDATA%/SpeechKit/wakeword-activations on Windows (and the
+// XDG-style equivalent on Linux). Lets the host pass a stable path to
+// the sidecar regardless of where SpeechKit was installed.
+func resolveTrainingCaptureDir(configured string) string {
+	if v := strings.TrimSpace(configured); v != "" {
+		return v
+	}
+	// Use LOCALAPPDATA when set (Windows), otherwise fall back to
+	// the user's home dir + .speechkit (XDG-style on Linux).
+	if base := os.Getenv("LOCALAPPDATA"); base != "" {
+		return filepath.Join(base, "SpeechKit", "wakeword-activations")
+	}
+	if home, err := os.UserHomeDir(); err == nil {
+		return filepath.Join(home, ".speechkit", "wakeword-activations")
+	}
+	return filepath.Join(os.TempDir(), "speechkit-wakeword-activations")
+}
+
+// ensureTrainingCaptureDir guarantees the directory exists with
+// user-only permissions. The sidecar's NewTrainingCapture refuses to
+// run if the dir doesn't exist; we create it here so the host's
+// opt-in toggle never silently fails because of a missing directory.
+func ensureTrainingCaptureDir(dir string) error {
+	if dir == "" {
+		return errEmptyTrainingDir
+	}
+	return os.MkdirAll(dir, 0o700)
+}
+
+var errEmptyTrainingDir = errEmptyTrainingDirError("training-data dir resolved to empty path")
+
+type errEmptyTrainingDirError string
+
+func (e errEmptyTrainingDirError) Error() string { return string(e) }
+
+// effectiveTrainingPreRollMs returns the configured pre-roll or a
+// 1500 ms default. Mirrors the sidecar's flag default so the
+// behaviour is identical regardless of which side resolves first.
+func effectiveTrainingPreRollMs(configured int) int {
+	if configured <= 0 {
+		return 1500
+	}
+	return configured
+}
+
+// effectiveTrainingPostRollMs is the post-roll counterpart of
+// effectiveTrainingPreRollMs. Default 500 ms.
+func effectiveTrainingPostRollMs(configured int) int {
+	if configured < 0 {
+		return 500
+	}
+	if configured == 0 {
+		// 0 is a valid choice (immediate flush). Preserve it.
+		return 0
+	}
+	return configured
+}

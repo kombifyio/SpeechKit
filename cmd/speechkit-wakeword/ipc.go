@@ -53,6 +53,15 @@ type Event struct {
 	// volume (one per 80 ms frame for openWakeWord); the adapter rate-limits
 	// when forwarding to the user log feed.
 	Score float32 `json:"score,omitempty"`
+
+	// EventTrainingCapture fields — emitted once per WAV+JSON pair the
+	// activation-capture pipeline writes to disk. v0.37.4+. Lets the host
+	// refresh its training-data UI without polling the filesystem.
+	TrainingID         string `json:"trainingId,omitempty"`
+	TrainingAudioPath  string `json:"trainingAudioPath,omitempty"` // basename inside the configured dir
+	TrainingAudioBytes int    `json:"trainingAudioBytes,omitempty"`
+	TrainingPreRollMs  int    `json:"trainingPreRollMs,omitempty"`
+	TrainingPostRollMs int    `json:"trainingPostRollMs,omitempty"`
 }
 
 // EventType enumerates the discriminator values used on stdout. New types
@@ -62,14 +71,15 @@ type Event struct {
 type EventType string
 
 const (
-	EventReady     EventType = "ready"
-	EventDetection EventType = "detection"
-	EventHeartbeat EventType = "heartbeat"
-	EventLog       EventType = "log"
-	EventError     EventType = "error"
-	EventShutdown  EventType = "shutdown"
-	EventDevice    EventType = "device" // audio device opened
-	EventScore     EventType = "score"  // per-decode score, debug-only
+	EventReady           EventType = "ready"
+	EventDetection       EventType = "detection"
+	EventHeartbeat       EventType = "heartbeat"
+	EventLog             EventType = "log"
+	EventError           EventType = "error"
+	EventShutdown        EventType = "shutdown"
+	EventDevice          EventType = "device"           // audio device opened
+	EventScore           EventType = "score"            // per-decode score, debug-only
+	EventTrainingCapture EventType = "training_capture" // v0.37.4+: one WAV/JSON pair written
 )
 
 // Command is one stdin line in the sidecar protocol. The first version

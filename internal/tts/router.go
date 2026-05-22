@@ -13,6 +13,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"strings"
 	"sync"
 )
 
@@ -111,4 +112,72 @@ func (r *Router) HealthCheck(ctx context.Context) map[string]error {
 		results[p.Name()] = p.Health(ctx)
 	}
 	return results
+}
+
+// OrderByPreferredProvider returns providers reordered so that the one whose
+// Provider.Name() matches `preferred` comes first; the remaining providers
+// retain their original relative order. Used by the bootstrap layer to honour
+// the [model_selection.tts] PrimaryProfileID without rewriting the
+// strategy/fallback logic. Empty preferred or no-match returns the input
+// slice unchanged.
+func OrderByPreferredProvider(providers []Provider, preferred string) []Provider {
+	if preferred == "" || len(providers) <= 1 {
+		return providers
+	}
+	out := make([]Provider, 0, len(providers))
+	var pinned Provider
+	for _, p := range providers {
+		if p != nil && p.Name() == preferred {
+			pinned = p
+			continue
+		}
+		out = append(out, p)
+	}
+	if pinned == nil {
+		return providers
+	}
+	return append([]Provider{pinned}, out...)
+}
+
+// PreferredProviderForProfileID maps a Voice-Output profile ID (e.g.
+// "tts.google.studio-o-de") to the Provider.Name() value the TTS router
+// uses internally. Returns the empty string when the profile is unknown
+// or unset — callers should treat that as "no preference, use default
+// strategy ordering".
+//
+// Mapping (kept in sync with pkg/speechkit/catalog.go TTS entries):
+//
+//	tts.openai.*                     → "openai"
+//	tts.google.*                     → "google"
+//	tts.huggingface.*                → "huggingface"
+//	tts.openedai.*                   → "kokoro"           (OpenAI-compatible self-hosted endpoint)
+//	tts.local.kokoro-*               → "kokoro_local"     (v0.37.3 ONNX in-process, Phase-3 runtime)
+//	tts.local.supertonic-*           → "supertonic_local" (v0.37.3 ONNX in-process, multilingual)
+//	tts.local.chatterbox-*           → "chatterbox_local" (v0.37.3 ONNX in-process, voice-clone)
+//	tts.local.piper / tts.local.piper-* → "piper"          (HA-compatible Piper subprocess)
+func PreferredProviderForProfileID(profileID string) string {
+	id := strings.TrimSpace(profileID)
+	if id == "" {
+		return ""
+	}
+	switch {
+	case strings.HasPrefix(id, "tts.openai."):
+		return "openai"
+	case strings.HasPrefix(id, "tts.google."):
+		return "google"
+	case strings.HasPrefix(id, "tts.huggingface."):
+		return "huggingface"
+	case strings.HasPrefix(id, "tts.openedai."), strings.HasPrefix(id, "tts.kokoro."):
+		return "kokoro"
+	case strings.HasPrefix(id, "tts.local.kokoro"):
+		return "kokoro_local"
+	case strings.HasPrefix(id, "tts.local.supertonic"):
+		return "supertonic_local"
+	case strings.HasPrefix(id, "tts.local.chatterbox"):
+		return "chatterbox_local"
+	case id == "tts.local.piper", strings.HasPrefix(id, "tts.local.piper-"):
+		return "piper"
+	default:
+		return ""
+	}
 }

@@ -26,6 +26,7 @@ func registerSettingsRoutes(mux *http.ServeMux, cfgPath string, cfg *config.Conf
 	registerAudioDeviceRoutes(mux, cfgPath, cfg, state)
 	registerModeRoutes(mux, cfgPath, cfg, state)
 	registerModelRoutes(mux, cfgPath, cfg, state, sttRouter)
+	registerVoiceCompanionRoutes(mux, cfg)
 }
 
 func saveSettings(ctx context.Context, req *http.Request, cfgPath string, cfg *config.Config, state *appState, sttRouter *router.Router, feedbackStore store.Store) string {

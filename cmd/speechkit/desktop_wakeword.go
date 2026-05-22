@@ -292,6 +292,23 @@ func wakewordSidecarArgs(cfg *config.Config, resolved resolvedWakewordAssets) []
 	if cfg.Wakeword.DebugMode {
 		common = append(common, "--debug")
 	}
+	// v0.37.4+: Wake-word training-data capture. Opt-in only — flags
+	// land in the spawn only when the user has explicitly enabled
+	// local capture in Settings. The sidecar's own NewTrainingCapture
+	// validates the dir exists and rejects the run with a log warning
+	// (not a fatal exit) if it doesn't, so the host's responsibility
+	// is just to pass the resolved absolute path.
+	if td := cfg.Wakeword.TrainingData; td.LocalCaptureEnabled {
+		dir := resolveTrainingCaptureDir(td.LocalCaptureDir)
+		if err := ensureTrainingCaptureDir(dir); err == nil {
+			common = append(common,
+				"--training-enabled",
+				"--training-dir", dir,
+				"--training-pre-roll-ms", strconv.Itoa(effectiveTrainingPreRollMs(td.PreRollMs)),
+				"--training-post-roll-ms", strconv.Itoa(effectiveTrainingPostRollMs(td.PostRollMs)),
+			)
+		}
+	}
 	if resolved.Backend == config.WakewordBackendLiveKitOpenWakeWord {
 		return append([]string{
 			"--melspec-model", resolved.MelspecModelPath,

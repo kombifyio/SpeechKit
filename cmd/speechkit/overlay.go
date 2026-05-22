@@ -228,6 +228,53 @@ type settingsSnapshot struct {
 	// alongside the catalog of selectable phrases so the React Settings panel
 	// can render the toggle + dropdown without a second round-trip.
 	Wakeword wakewordSettingsSnapshot `json:"wakeword"`
+
+	// HomeAssistant surfaces the [assist.home_assistant] section for the
+	// Voice-Companion HA bridge so the Settings UI can show URL/Token/Language
+	// fields without parsing the TOML. The Token itself is never returned —
+	// only TokenConfigured indicates whether secrets.Resolve returns a value.
+	HomeAssistant homeAssistantSettingsSnapshot `json:"homeAssistant"`
+
+	// PiperTTS surfaces the [tts.piper] section + a live scan of voice
+	// files in VoiceDir so the Settings UI can present a per-locale voice
+	// picker. AvailableVoices is empty when voice_dir is unset or missing —
+	// the UI shows an "install voices first" hint in that case.
+	PiperTTS piperTTSSettingsSnapshot `json:"piperTTS"`
+}
+
+// homeAssistantSettingsSnapshot is the JSON-friendly shape of
+// AssistHomeAssistantConfig for the Settings UI. TokenEnv carries the
+// env-var name configured in TOML; TokenConfigured reports whether
+// resolving that env-var via internal/secrets returns a non-empty
+// value. The raw token is never serialised.
+type homeAssistantSettingsSnapshot struct {
+	URL             string `json:"url"`
+	TokenEnv        string `json:"tokenEnv"`
+	TokenConfigured bool   `json:"tokenConfigured"`
+	Language        string `json:"language"`
+}
+
+// piperTTSSettingsSnapshot mirrors [tts.piper] plus a live voice
+// directory scan. AvailableVoices is sorted by filename and lists
+// every *.onnx file currently in VoiceDir; DefaultVoices is the
+// configured per-locale default voice filename.
+type piperTTSSettingsSnapshot struct {
+	Enabled         bool                `json:"enabled"`
+	Binary          string              `json:"binary"`
+	VoiceDir        string              `json:"voiceDir"`
+	TimeoutSec      int                 `json:"timeoutSec"`
+	DefaultVoices   map[string]string   `json:"defaultVoices"`
+	AvailableVoices []piperVoiceSummary `json:"availableVoices"`
+}
+
+// piperVoiceSummary mirrors tts.PiperVoiceInfo for the Settings UI.
+type piperVoiceSummary struct {
+	Filename string `json:"filename"`
+	Locale   string `json:"locale"`
+	Region   string `json:"region"`
+	Name     string `json:"name"`
+	Quality  string `json:"quality"`
+	SizeKB   int    `json:"sizeKB"`
 }
 
 // wakewordSettingsSnapshot is the JSON-friendly shape of WakewordConfig

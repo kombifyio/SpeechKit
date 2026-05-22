@@ -8,6 +8,7 @@ import (
 
 	"github.com/kombifyio/SpeechKit/internal/assist"
 	"github.com/kombifyio/SpeechKit/internal/config"
+	"github.com/kombifyio/SpeechKit/internal/shortcuts"
 )
 
 func TestLocalLLMHealthURL_StripsOpenAIPath(t *testing.T) {
@@ -85,4 +86,40 @@ func TestBuildAssistPipelineReturnsClientExecutableToolActions(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestEnableHomeAssistantUtility flips the registry entry from
+// Enabled=false (default) to Enabled=true so the Assist router can
+// dispatch HA-prefix matches. Regression guard for the v0.37.0 bug
+// where the HA skill was registered with the CompositeExecutor but
+// the resolver's intent-routing skipped the disabled UtilityDefinition.
+func TestEnableHomeAssistantUtility(t *testing.T) {
+	t.Parallel()
+
+	registry := assist.DefaultUtilityRegistry()
+	if _, ok := registry.Definition(shortcuts.IntentHomeAssistant); ok {
+		t.Fatal("expected default registry to expose HomeAssistant as disabled (Definition returns ok=false)")
+	}
+
+	enableHomeAssistantUtility(registry)
+
+	def, ok := registry.Definition(shortcuts.IntentHomeAssistant)
+	if !ok {
+		t.Fatal("expected HomeAssistant to be enabled after override")
+	}
+	if def.ID != assist.UtilityHomeAssistant {
+		t.Errorf("UtilityDefinition.ID = %q, want %q", def.ID, assist.UtilityHomeAssistant)
+	}
+	if !def.Enabled {
+		t.Errorf("UtilityDefinition.Enabled = false, want true")
+	}
+	if def.Input != assist.UtilityInputUtterance {
+		t.Errorf("UtilityDefinition.Input = %q, want %q", def.Input, assist.UtilityInputUtterance)
+	}
+}
+
+func TestEnableHomeAssistantUtility_NilRegistryIsSafe(t *testing.T) {
+	t.Parallel()
+	// Must not panic.
+	enableHomeAssistantUtility(nil)
 }

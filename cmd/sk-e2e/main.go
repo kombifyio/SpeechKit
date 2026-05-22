@@ -132,6 +132,7 @@ var allScenarios = map[string]scenarioFn{
 	"dictation":  scenarioDictation,
 	"assist":     scenarioAssist,
 	"voiceagent": scenarioVoiceAgentCreate,
+	"wakeword":   scenarioWakewordActivations,
 }
 
 type scenarioResult struct {
@@ -144,7 +145,7 @@ type scenarioResult struct {
 func selectedScenarios(s string) []string {
 	if strings.TrimSpace(s) == "" || s == "all" {
 		// Stable order: health first (cheapest), then mode-specific.
-		return []string{"health", "deployment", "dictation", "assist", "voiceagent"}
+		return []string{"health", "deployment", "dictation", "assist", "voiceagent", "wakeword"}
 	}
 	out := []string{}
 	for _, p := range strings.Split(s, ",") {
@@ -560,6 +561,122 @@ func scenarioVoiceAgentCreate(c *client, opts *scenarioOpts) error {
 	}
 	if delResp.StatusCode != http.StatusNoContent && delResp.StatusCode != http.StatusNotFound {
 		return fmt.Errorf("voiceagent delete status = %d; body=%s", delResp.StatusCode, delBody)
+	}
+	return nil
+}
+
+// scenarioWakewordActivations exercises the v0.37.5 wake-word
+// training-data REST endpoints against the deployed server. Posts a
+// synthetic activation clip, verifies the metadata round-trips on
+// GET, applies a label via PATCH, then DELETEs it so subsequent runs
+// stay idempotent.
+//
+// When the server has `[server.training_data].accept_uploads=false`
+// (the default), every endpoint returns 503 with a
+// `training_data_disabled` envelope. We treat that as a smoke-pass
+// rather than a failure — the contract is "503 with a structured
+// payload" and a server that opts out should still respond cleanly.
+func scenarioWakewordActivations(c *client, opts *scenarioOpts) error {
+	// Probe first: a single GET tells us whether uploads are accepted
+	// on this deployment without provisioning a clip we'd then have
+	// to garbage-collect.
+	probeResp, probeBody, err := c.do(http.MethodGet, "/api/v1/wakeword/activations", "", nil, true)
+	if err != nil {
+		return fmt.Errorf("wakeword probe: %w", err)
+	}
+	if probeResp.StatusCode == http.StatusServiceUnavailable {
+		if opts.requireFunctional {
+			return fmt.Errorf("wakeword activations unavailable during functional check; body=%s", probeBody)
+		}
+		if !hasErrorEnvelope(probeBody) {
+			return fmt.Errorf("wakeword 503 missing error envelope; body=%s", probeBody)
+		}
+		fmt.Printf("    wakeword: deployment has [server.training_data].accept_uploads=false (503 with envelope) — treating as smoke-pass\n")
+		return nil
+	}
+	if probeResp.StatusCode != http.StatusOK {
+		return fmt.Errorf("wakeword probe status = %d; body=%s", probeResp.StatusCode, probeBody)
+	}
+
+	// Build a tiny synthetic WAV + metadata pair.
+	pcm := synthSine(16000, 440.0, 250)
+	wav := wrapWAV(pcm, 16000, 1)
+	id := fmt.Sprintf("sk-e2e-%d", time.Now().UnixNano())
+	meta := map[string]any{
+		"id":           id,
+		"phrase_id":    "hey_quby",
+		"phrase":       "Hey Quby",
+		"backend":      "sk-e2e",
+		"score":        0.99,
+		"captured_at":  time.Now().UTC().Format(time.RFC3339),
+		"pre_roll_ms":  1500,
+		"post_roll_ms": 500,
+		"sample_rate":  16000,
+	}
+	metaJSON, _ := json.Marshal(meta)
+
+	body := &bytes.Buffer{}
+	mw := multipart.NewWriter(body)
+	_ = mw.WriteField("metadata", string(metaJSON))
+	part, err := mw.CreateFormFile("audio", "sk-e2e.wav")
+	if err != nil {
+		return fmt.Errorf("create audio part: %w", err)
+	}
+	if _, err := part.Write(wav); err != nil {
+		return fmt.Errorf("write audio part: %w", err)
+	}
+	if err := mw.Close(); err != nil {
+		return fmt.Errorf("multipart close: %w", err)
+	}
+
+	createResp, createBody, err := c.do(http.MethodPost, "/api/v1/wakeword/activations", mw.FormDataContentType(), body.Bytes(), true)
+	if err != nil {
+		return fmt.Errorf("wakeword upload: %w", err)
+	}
+	if createResp.StatusCode != http.StatusCreated {
+		return fmt.Errorf("wakeword upload status = %d; body=%s", createResp.StatusCode, createBody)
+	}
+
+	// GET the metadata back and assert the round-trip.
+	getResp, getBody, err := c.do(http.MethodGet, "/api/v1/wakeword/activations/"+id, "", nil, true)
+	if err != nil {
+		return fmt.Errorf("wakeword get: %w", err)
+	}
+	if getResp.StatusCode != http.StatusOK {
+		return fmt.Errorf("wakeword get status = %d; body=%s", getResp.StatusCode, getBody)
+	}
+	var got struct {
+		ID       string `json:"id"`
+		PhraseID string `json:"phrase_id"`
+		Label    string `json:"label"`
+	}
+	if err := json.Unmarshal(getBody, &got); err != nil {
+		return fmt.Errorf("wakeword get parse: %w body=%s", err, getBody)
+	}
+	if got.ID != id || got.PhraseID != "hey_quby" {
+		return fmt.Errorf("wakeword get round-trip mismatch: %+v", got)
+	}
+
+	// Apply a label via PATCH.
+	patchBody, _ := json.Marshal(map[string]string{"label": "correct"})
+	patchResp, patchRespBody, err := c.do(http.MethodPatch, "/api/v1/wakeword/activations/"+id, "application/json", patchBody, true)
+	if err != nil {
+		return fmt.Errorf("wakeword patch: %w", err)
+	}
+	if patchResp.StatusCode != http.StatusNoContent {
+		return fmt.Errorf("wakeword patch status = %d; body=%s", patchResp.StatusCode, patchRespBody)
+	}
+
+	// Clean up so re-runs stay idempotent.
+	delResp, delBody, err := c.do(http.MethodDelete, "/api/v1/wakeword/activations/"+id, "", nil, true)
+	if err != nil {
+		return fmt.Errorf("wakeword delete: %w", err)
+	}
+	if delResp.StatusCode != http.StatusNoContent {
+		return fmt.Errorf("wakeword delete status = %d; body=%s", delResp.StatusCode, delBody)
+	}
+	if c.verbose {
+		fmt.Printf("    wakeword: round-trip id=%s succeeded\n", id)
 	}
 	return nil
 }

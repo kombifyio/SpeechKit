@@ -7,11 +7,14 @@ import {
 import type {
   AgentMode,
   AvailableModes,
+  HomeAssistantSettings,
   HotkeyBehavior,
   ModeModelSelectionState,
   Modality,
   ModelSelectionsState,
   OverlayFeedbackMode,
+  PiperTTSSettings,
+  PiperVoiceSummary,
   RuntimeMode,
   SpeechKitOverlayState,
   SpeechKitSettingsState,
@@ -538,7 +541,99 @@ export function normalizeSettingsState(
     providerIntegrations:
       payload?.providerIntegrations ?? base.providerIntegrations,
     wakeword: normalizeWakewordSettings(record, base.wakeword),
+    homeAssistant: normalizeHomeAssistantSettings(record, base.homeAssistant),
+    piperTTS: normalizePiperTTSSettings(record, base.piperTTS),
   };
+}
+
+// normalizeHomeAssistantSettings reads the payload.homeAssistant block
+// produced by overlay_snapshot.go::buildHomeAssistantSettingsSnapshot.
+// Missing/invalid fields fall back to the provided base so a stale
+// /settings/state from an older build cannot corrupt the UI state.
+function normalizeHomeAssistantSettings(
+  payload: Record<string, unknown> | null,
+  base: HomeAssistantSettings
+): HomeAssistantSettings {
+  const raw =
+    (payload?.homeAssistant as Record<string, unknown> | undefined) ??
+    undefined;
+  if (!raw) {
+    return base;
+  }
+  const url = typeof raw.url === "string" ? raw.url : base.url;
+  const tokenEnv =
+    typeof raw.tokenEnv === "string" ? raw.tokenEnv : base.tokenEnv;
+  const tokenConfigured =
+    typeof raw.tokenConfigured === "boolean"
+      ? raw.tokenConfigured
+      : base.tokenConfigured;
+  const language =
+    typeof raw.language === "string" ? raw.language : base.language;
+  return { url, tokenEnv, tokenConfigured, language };
+}
+
+// normalizePiperTTSSettings mirrors the Go snapshot. availableVoices
+// preserves the backend-sorted order; defaultVoices is a per-locale
+// filename map.
+function normalizePiperTTSSettings(
+  payload: Record<string, unknown> | null,
+  base: PiperTTSSettings
+): PiperTTSSettings {
+  const raw =
+    (payload?.piperTTS as Record<string, unknown> | undefined) ?? undefined;
+  if (!raw) {
+    return base;
+  }
+  return {
+    enabled: typeof raw.enabled === "boolean" ? raw.enabled : base.enabled,
+    binary: typeof raw.binary === "string" ? raw.binary : base.binary,
+    voiceDir: typeof raw.voiceDir === "string" ? raw.voiceDir : base.voiceDir,
+    timeoutSec:
+      typeof raw.timeoutSec === "number" ? raw.timeoutSec : base.timeoutSec,
+    defaultVoices: normalizeStringMap(
+      raw.defaultVoices,
+      base.defaultVoices ?? {}
+    ),
+    availableVoices: normalizePiperVoiceList(raw.availableVoices),
+  };
+}
+
+function normalizeStringMap(
+  raw: unknown,
+  fallback: Record<string, string>
+): Record<string, string> {
+  if (!raw || typeof raw !== "object") {
+    return { ...fallback };
+  }
+  const out: Record<string, string> = {};
+  for (const [key, value] of Object.entries(raw as Record<string, unknown>)) {
+    if (typeof value === "string") {
+      out[key.toLowerCase()] = value;
+    }
+  }
+  return out;
+}
+
+function normalizePiperVoiceList(raw: unknown): PiperVoiceSummary[] {
+  if (!Array.isArray(raw)) {
+    return [];
+  }
+  const out: PiperVoiceSummary[] = [];
+  for (const entry of raw) {
+    if (!entry || typeof entry !== "object") continue;
+    const obj = entry as Record<string, unknown>;
+    const filename = typeof obj.filename === "string" ? obj.filename : "";
+    if (!filename) continue;
+    out.push({
+      filename,
+      locale: typeof obj.locale === "string" ? obj.locale : "",
+      region: typeof obj.region === "string" ? obj.region : "",
+      name: typeof obj.name === "string" ? obj.name : "",
+      quality: typeof obj.quality === "string" ? obj.quality : "",
+      sizeKB: typeof obj.sizeKB === "number" ? obj.sizeKB : 0,
+    });
+  }
+  return out;
 }
 
 function normalizeWakewordDefaultMode(

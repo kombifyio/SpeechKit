@@ -27,8 +27,25 @@ import (
 	assistpkg "github.com/kombifyio/SpeechKit/internal/assist"
 	"github.com/kombifyio/SpeechKit/internal/server/audio"
 	"github.com/kombifyio/SpeechKit/internal/server/httpx"
+	"github.com/kombifyio/SpeechKit/internal/server/middleware"
 	"github.com/kombifyio/SpeechKit/internal/stt"
 )
+
+// sessionKeyFromRequest derives a stable v0.38.0 multi-turn session
+// key from the request's Identity. The key is opaque to the
+// Pipeline — it just needs to be the same value across the user's
+// follow-up turns and unique across users so contexts do not bleed.
+// Identity{UserID, OrgID} satisfies both constraints. When no
+// Identity is on the context (e.g. auth_mode=none), we fall back to
+// the per-process anonymous default which still gives each user
+// their own conversation slot.
+func sessionKeyFromRequest(r *http.Request) string {
+	id := middleware.IdentityFromContext(r.Context())
+	if id.OrgID != "" {
+		return id.OrgID + "/" + id.UserID
+	}
+	return id.UserID
+}
 
 // Transcriber is the STT surface the handler needs when the caller sends
 // audio. If nil, only text-only requests are accepted.
@@ -209,9 +226,10 @@ func (h *Handler) handleMultipart(w http.ResponseWriter, r *http.Request) {
 	case text != "" && fileErr != nil:
 		// Text-only path.
 		h.processTranscript(w, r.Context(), text, nil, assistpkg.ProcessOpts{
-			Locale:    h.resolveLocale(locale),
-			Selection: selection,
-			Context:   contextStr,
+			Locale:     h.resolveLocale(locale),
+			Selection:  selection,
+			Context:    contextStr,
+			SessionKey: sessionKeyFromRequest(r),
 		}, ttsOverride, ttsFormat, ttsVoice)
 		return
 	case fileErr == nil:
@@ -222,9 +240,10 @@ func (h *Handler) handleMultipart(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		h.processAudio(w, r.Context(), file, header.Header.Get("Content-Type"), assistpkg.ProcessOpts{
-			Locale:    h.resolveLocale(locale),
-			Selection: selection,
-			Context:   contextStr,
+			Locale:     h.resolveLocale(locale),
+			Selection:  selection,
+			Context:    contextStr,
+			SessionKey: sessionKeyFromRequest(r),
 		}, ttsOverride, ttsFormat, ttsVoice)
 		return
 	default:
@@ -250,9 +269,10 @@ func (h *Handler) handleJSON(w http.ResponseWriter, r *http.Request) {
 	}
 
 	opts := assistpkg.ProcessOpts{
-		Locale:    h.resolveLocale(body.Locale),
-		Selection: body.Selection,
-		Context:   body.Context,
+		Locale:     h.resolveLocale(body.Locale),
+		Selection:  body.Selection,
+		Context:    body.Context,
+		SessionKey: sessionKeyFromRequest(r),
 	}
 
 	text := strings.TrimSpace(body.Text)

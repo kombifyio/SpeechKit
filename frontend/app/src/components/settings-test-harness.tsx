@@ -221,6 +221,20 @@ vi.mock("@/lib/speechkit", () => ({
       phraseCatalog: [],
       backendOptions: [],
     },
+    homeAssistant: {
+      url: "",
+      tokenEnv: "",
+      tokenConfigured: false,
+      language: "",
+    },
+    piperTTS: {
+      enabled: false,
+      binary: "",
+      voiceDir: "",
+      timeoutSec: 0,
+      defaultVoices: {},
+      availableVoices: [],
+    },
   } satisfies SpeechKitSettingsState,
   defaultWakewordSettings: {
     enabled: false,

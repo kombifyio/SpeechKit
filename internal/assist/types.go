@@ -55,6 +55,19 @@ type ToolResult struct {
 	Locale    string
 	Surface   ResultSurface
 	Kind      ResultKind
+
+	// FollowupNeeded signals a multi-turn skill: the pipeline stores
+	// the current Intent + FollowupState under the caller's session
+	// key (see ProcessOpts.SessionKey) and the next transcript will
+	// re-route to the same skill. When false, any prior follow-up
+	// state for the same session is cleared. v0.38.0 (Phase 2).
+	FollowupNeeded bool
+
+	// FollowupState carries skill-private data across turns. The
+	// pipeline echoes it back via ToolCall.Context on the next
+	// invocation. Keep entries small — this is in-memory state, not
+	// long-term persistence.
+	FollowupState map[string]string
 }
 
 type ToolExecutor interface {

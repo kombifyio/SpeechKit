@@ -62,6 +62,11 @@ type runtime struct {
 
 	consecutive int
 	lastTrigger time.Time
+
+	// trainingCapture is non-nil when --training-enabled. Mirrors the
+	// sherpa-onnx sidecar's wiring so both detector backends can feed
+	// the same training-data pipeline (v0.37.4+).
+	trainingCapture *wakeword.TrainingCapture
 }
 
 func run(ctx context.Context, cfg sidecarConfig) error {
@@ -110,6 +115,40 @@ func startRuntime(cfg sidecarConfig) (*runtime, error) {
 	}
 	rt := &runtime{cfg: cfg, detector: detector, startedAt: time.Now()}
 
+	// Optional v0.37.4+ training-data capture. NewTrainingCapture
+	// returns an inert capture when Enabled=false so the wiring below
+	// stays the same either way.
+	tc, terr := wakeword.NewTrainingCapture(wakeword.TrainingCaptureConfig{
+		Enabled:    cfg.TrainingCaptureEnabled,
+		Dir:        cfg.TrainingCaptureDir,
+		PreRollMs:  cfg.TrainingPreRollMs,
+		PostRollMs: cfg.TrainingPostRollMs,
+		Backend:    "livekit-openwakeword-onnx",
+		OnWrite: func(rec wakeword.TrainingRecord) {
+			if rec.ID == "" {
+				emit(Event{Type: EventLog, Level: "warn", Msg: "training capture: flush failed", At: time.Now()})
+				return
+			}
+			emit(Event{
+				Type:               EventTrainingCapture,
+				TrainingID:         rec.ID,
+				TrainingAudioPath:  rec.AudioPath,
+				TrainingAudioBytes: rec.AudioBytes,
+				TrainingPreRollMs:  rec.PreRollMs,
+				TrainingPostRollMs: rec.PostRollMs,
+				PhraseID:           rec.PhraseID,
+				Phrase:             rec.Phrase,
+				Probability:        rec.Score,
+				At:                 rec.CapturedAt,
+			})
+		},
+	})
+	if terr != nil {
+		emit(Event{Type: EventLog, Level: "warn", Msg: fmt.Sprintf("training capture init failed: %v", terr), At: time.Now()})
+		tc, _ = wakeword.NewTrainingCapture(wakeword.TrainingCaptureConfig{Enabled: false})
+	}
+	rt.trainingCapture = tc
+
 	session, err := audio.Open(audio.Config{
 		Backend:     audio.Backend(cfg.AudioBackend),
 		DeviceID:    cfg.AudioDeviceID,
@@ -137,6 +176,7 @@ func startRuntime(cfg sidecarConfig) (*runtime, error) {
 func (rt *runtime) handlePCM(pcm []byte) {
 	rt.mu.Lock()
 	d := rt.detector
+	tc := rt.trainingCapture
 	rt.mu.Unlock()
 	if d == nil {
 		return
@@ -151,6 +191,10 @@ func (rt *runtime) handlePCM(pcm []byte) {
 	if rt.cfg.Debug && decodes > 0 {
 		emit(Event{Type: EventScore, Score: score, At: time.Now()})
 	}
+	// Training-capture path: keeps the rolling pre-roll buffer warm
+	// and collects post-roll for pending captures. No-op when
+	// training is disabled.
+	tc.Ingest(pcm)
 	rt.maybeEmitDetection(score)
 }
 
@@ -179,6 +223,18 @@ func (rt *runtime) maybeEmitDetection(score float32) {
 		Probability: score,
 		At:          now,
 	})
+	// Mirror the sherpa-onnx sidecar: hand the detection to the
+	// training-capture pipeline. tc is non-nil and inert when
+	// disabled, so the call is safe and cheap.
+	if rt.trainingCapture != nil {
+		rt.trainingCapture.Trigger(wakeword.DetectionEvent{
+			Phrase:      rt.cfg.DisplayPhrase,
+			Keyword:     rt.cfg.PhraseID,
+			Mode:        rt.cfg.DefaultMode,
+			Probability: score,
+			At:          now,
+		})
+	}
 }
 
 func (rt *runtime) snapshotStats() (int64, int64) {
@@ -201,6 +257,10 @@ func (rt *runtime) Close() {
 	if rt.detector != nil {
 		_ = rt.detector.Close()
 		rt.detector = nil
+	}
+	if rt.trainingCapture != nil {
+		_ = rt.trainingCapture.Close()
+		rt.trainingCapture = nil
 	}
 }
 
@@ -579,6 +639,12 @@ type sidecarConfig struct {
 	// surface the raw detector score in the user log feed. Off by default —
 	// this fires ~12×/s per active model.
 	Debug bool
+
+	// Training-data capture (v0.37.4+). Default OFF.
+	TrainingCaptureEnabled bool
+	TrainingCaptureDir     string
+	TrainingPreRollMs      int
+	TrainingPostRollMs     int
 }
 
 // emitDeviceEvent — see speechkit-wakeword/main.go for rationale. Identical
@@ -636,7 +702,12 @@ func parseFlags() sidecarConfig {
 		audioBackend  = flag.String("audio-backend", "windows-wasapi-malgo", "audio capture backend identifier")
 		audioDeviceID = flag.String("audio-device-id", "", "audio capture device ID")
 		debug         = flag.Bool("debug", false, "emit a score event per decode window for tuning")
-		showVersion   = flag.Bool("version", false, "print version and exit")
+		// v0.37.4+: optional training-data capture. Default OFF.
+		trainingEnabled  = flag.Bool("training-enabled", false, "save each detection's audio (pre+post-roll) as WAV+JSON pairs")
+		trainingDir      = flag.String("training-dir", "", "directory where activation captures land (required when --training-enabled)")
+		trainingPreRoll  = flag.Int("training-pre-roll-ms", 1500, "milliseconds of pre-trigger audio to capture")
+		trainingPostRoll = flag.Int("training-post-roll-ms", 500, "milliseconds of post-trigger audio to capture")
+		showVersion      = flag.Bool("version", false, "print version and exit")
 	)
 	flag.Parse()
 	if *showVersion {
@@ -647,19 +718,23 @@ func parseFlags() sidecarConfig {
 		*threshold = 0.35
 	}
 	return sidecarConfig{
-		MelspecModelPath:     *melspec,
-		EmbeddingModelPath:   *embedding,
-		WakeModelPath:        *wakeModel,
-		OnnxRuntimePath:      *onnxRuntime,
-		PhraseID:             *phraseID,
-		DisplayPhrase:        *phrase,
-		DefaultMode:          *defaultMode,
-		Threshold:            float32(*threshold),
-		MinConsecutiveFrames: maxInt(*minFrames, 1),
-		Cooldown:             time.Duration(maxInt(*cooldownMs, 1500)) * time.Millisecond,
-		AudioBackend:         *audioBackend,
-		AudioDeviceID:        *audioDeviceID,
-		Debug:                *debug,
+		MelspecModelPath:       *melspec,
+		EmbeddingModelPath:     *embedding,
+		WakeModelPath:          *wakeModel,
+		OnnxRuntimePath:        *onnxRuntime,
+		PhraseID:               *phraseID,
+		DisplayPhrase:          *phrase,
+		DefaultMode:            *defaultMode,
+		Threshold:              float32(*threshold),
+		MinConsecutiveFrames:   maxInt(*minFrames, 1),
+		Cooldown:               time.Duration(maxInt(*cooldownMs, 1500)) * time.Millisecond,
+		AudioBackend:           *audioBackend,
+		AudioDeviceID:          *audioDeviceID,
+		Debug:                  *debug,
+		TrainingCaptureEnabled: *trainingEnabled,
+		TrainingCaptureDir:     *trainingDir,
+		TrainingPreRollMs:      *trainingPreRoll,
+		TrainingPostRollMs:     *trainingPostRoll,
 	}
 }
 

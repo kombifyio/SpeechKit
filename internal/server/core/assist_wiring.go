@@ -13,6 +13,7 @@ import (
 	"github.com/kombifyio/SpeechKit/internal/ai"
 	"github.com/kombifyio/SpeechKit/internal/ai/flows"
 	"github.com/kombifyio/SpeechKit/internal/assist"
+	"github.com/kombifyio/SpeechKit/internal/assist/skills/voice_companion"
 	"github.com/kombifyio/SpeechKit/internal/config"
 	"github.com/kombifyio/SpeechKit/internal/shortcuts"
 	"github.com/kombifyio/SpeechKit/internal/tts"
@@ -119,17 +120,71 @@ func buildAssistPipeline(ctx context.Context, cfg *config.Config, app *App) (*as
 
 	shortcutResolver := buildShortcutResolver(cfg)
 
+	// Voice-Companion skill catalog wraps the host-side legacy executor.
+	// CompositeExecutor first dispatches to a matching pure-Go skill
+	// (Time / Date / Math / Weather / Timer / Reminder / Wikipedia /
+	// HomeAssistant); unmatched intents fall through to the legacy
+	// serverAssistToolExecutor so existing Copy/Insert/Summarize clients
+	// keep working unchanged.
+	haURL := strings.TrimSpace(cfg.Assist.HomeAssistant.URL)
+	haToken := strings.TrimSpace(config.ResolveSecret(cfg.Assist.HomeAssistant.TokenEnv))
+	haConfigured := haURL != "" && haToken != ""
+	skills := voice_companion.AllSkills(haURL, haToken)
+	executor := voice_companion.NewCompositeExecutor(skills, serverAssistToolExecutor{})
+
+	switch {
+	case haConfigured:
+		notes = append(notes, "Assist: HomeAssistant bridge wired ("+haURL+")")
+	case haURL != "":
+		notes = append(notes, "Assist: HomeAssistant URL configured but token env unresolved; skill disabled")
+	}
+	notes = append(notes, "Assist: Voice-Companion skill catalog active (Time/Date/Math/Weather/Timer/Reminder/Wikipedia)")
+
+	utilityRegistry := buildAssistUtilityRegistry(cfg)
+	if haConfigured {
+		// Flip the HomeAssistant UtilityDefinition to Enabled=true so the
+		// router actually routes HA-prefix matches ("schalte ...", "turn
+		// on ...") to the CompositeExecutor instead of skipping the
+		// intent and falling through to the LLM.
+		enableHomeAssistantUtility(utilityRegistry)
+	}
+
+	// v0.38.0 multi-turn: each Pipeline gets its own in-memory
+	// SkillContextStore. The store is process-scoped — multi-server
+	// deployments needing cross-replica state would swap in a
+	// Redis-backed implementation here.
+	skillContexts := assist.NewInMemorySkillContextStore(60*time.Second, nil)
+
 	pipeline := assist.NewPipeline(
 		app.AssistFlow,
-		serverAssistToolExecutor{}, // Server-Target does not execute host-side tools; clients receive action=execute and act on it.
+		executor,
 		app.TTSRouter,
 		app.TTSEnabled,
 		assist.WithRouter(assist.NewRouter(
 			assist.WithResolver(shortcutResolver),
-			assist.WithUtilityRegistry(buildAssistUtilityRegistry(cfg)),
+			assist.WithUtilityRegistry(utilityRegistry),
 		)),
+		assist.WithSkillContextStore(skillContexts),
 	)
 	return pipeline, notes, nil
+}
+
+// enableHomeAssistantUtility flips the HomeAssistant UtilityDefinition
+// to Enabled=true so the router accepts the intent. Idempotent — when
+// the registry already has the entry enabled the call is a no-op.
+func enableHomeAssistantUtility(registry *assist.UtilityRegistry) {
+	if registry == nil {
+		return
+	}
+	registry.Register(assist.UtilityDefinition{
+		ID:             assist.UtilityHomeAssistant,
+		Intent:         shortcuts.IntentHomeAssistant,
+		Label:          "Send command to Home Assistant",
+		Input:          assist.UtilityInputUtterance,
+		DefaultSurface: assist.ResultSurfaceActionAck,
+		DefaultKind:    assist.ResultKindUtilityAction,
+		Enabled:        true,
+	})
 }
 
 type serverAssistToolExecutor struct{}
@@ -162,6 +217,11 @@ func serverAssistToolText(call assist.ToolCall) string {
 func buildAssistUtilityRegistry(cfg *config.Config) *assist.UtilityRegistry {
 	base := assist.DefaultUtilityRegistry()
 	if cfg == nil || cfg.Assist.EnabledTools == nil {
+		// No explicit allow-list — surface the default registry as-is
+		// so freshly-shipped Voice-Companion skills (Time/Date/...) are
+		// usable out of the box. Hosts that want to lock the catalog
+		// down still get the existing allow-list semantics via the
+		// branch below.
 		return base
 	}
 
@@ -319,11 +379,49 @@ func buildTTSRouter(cfg *config.Config) (*tts.Router, bool, []string) {
 			notes = append(notes, "TTS: HuggingFace registered")
 		}
 	}
+	if cfg.TTS.Piper.Enabled {
+		voiceDir := strings.TrimSpace(cfg.TTS.Piper.VoiceDir)
+		if voiceDir == "" {
+			notes = append(notes, "TTS: Piper enabled but voice_dir is empty; skipping")
+		} else {
+			piper, err := tts.NewPiper(tts.PiperOpts{
+				Binary:        cfg.TTS.Piper.Binary,
+				VoiceDir:      voiceDir,
+				DefaultVoices: cfg.TTS.Piper.DefaultVoices,
+				Timeout:       time.Duration(cfg.TTS.Piper.TimeoutSec) * time.Second,
+			})
+			if err != nil {
+				notes = append(notes, "TTS: Piper init failed: "+err.Error())
+			} else {
+				providers = append(providers, piper)
+				notes = append(notes, "TTS: Piper registered (voice_dir="+voiceDir+")")
+			}
+		}
+	}
 
 	if len(providers) == 0 {
 		return nil, false, append(notes, "TTS: no providers configured; Assist responses will be text-only")
 	}
 	strategy := tts.Strategy(strings.TrimSpace(cfg.TTS.Strategy))
+
+	// Honour [model_selection.tts] when set — pin the preferred provider
+	// to the front of the strategy-determined order. The model_selection
+	// layer is the host-facing "which voice does Thalia speak with"
+	// switch; the strategy still controls cloud-first / local-first
+	// fallback behaviour. Empty profile = no pinning, fall back to the
+	// natural provider order.
+	primaryProfile := strings.TrimSpace(cfg.ModelSelection.TTS.PrimaryProfileID)
+	preferred := tts.PreferredProviderForProfileID(primaryProfile)
+	if preferred != "" {
+		ordered := tts.OrderByPreferredProvider(providers, preferred)
+		if len(ordered) > 0 && ordered[0].Name() == preferred {
+			notes = append(notes, "TTS: model_selection profile "+primaryProfile+" pinned provider "+preferred+" first")
+		} else {
+			notes = append(notes, "TTS: model_selection profile "+primaryProfile+" requested provider "+preferred+" but it is not configured; using strategy order")
+		}
+		providers = ordered
+	}
+
 	return tts.NewRouter(strategy, providers...), true, notes
 }
 

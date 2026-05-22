@@ -43,6 +43,9 @@ var sqliteMigration013 string
 //go:embed migrations/sqlite/014_storage_v3_model.sql
 var sqliteMigration014 string
 
+//go:embed migrations/sqlite/015_wakeword_activations.sql
+var sqliteMigration015 string
+
 // SQLiteStore implements Store using a local SQLite database.
 // Uses modernc.org/sqlite (pure Go, no CGo required).
 type SQLiteStore struct {

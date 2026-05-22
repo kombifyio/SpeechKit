@@ -99,6 +99,18 @@ func buildNextConfig(form settingsFormData, cfg *config.Config) config.Config {
 	}
 	nextCfg.Wakeword.DebugMode = form.WakewordDebugMode
 
+	nextCfg.Assist.HomeAssistant.URL = form.HomeAssistantURL
+	nextCfg.Assist.HomeAssistant.TokenEnv = form.HomeAssistantTokenEnv
+	nextCfg.Assist.HomeAssistant.Language = form.HomeAssistantLanguage
+
+	nextCfg.TTS.Piper.Enabled = form.PiperEnabled
+	nextCfg.TTS.Piper.Binary = form.PiperBinary
+	nextCfg.TTS.Piper.VoiceDir = form.PiperVoiceDir
+	nextCfg.TTS.Piper.TimeoutSec = form.PiperTimeoutSec
+	if form.PiperDefaultVoices != nil {
+		nextCfg.TTS.Piper.DefaultVoices = form.PiperDefaultVoices
+	}
+
 	return nextCfg
 }
 

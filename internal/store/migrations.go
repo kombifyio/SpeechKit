@@ -59,6 +59,7 @@ func runSQLiteMigrations(ctx context.Context, db *sql.DB) error {
 		sqliteSQLMigration("sqlite:012_indexes", sqliteMigration012),
 		{version: "sqlite:013_storage_scopes", run: runSQLiteStorageScopesMigration},
 		{version: "sqlite:014_storage_v3_model", run: runSQLiteStorage3ModelMigration},
+		sqliteSQLMigration("sqlite:015_wakeword_activations", sqliteMigration015),
 	}
 	for _, migration := range migrations {
 		if err := applyMigration(ctx, db, "sqlite", migration); err != nil {
@@ -92,6 +93,7 @@ func runPostgresMigrations(ctx context.Context, db *sql.DB) error {
 		postgresSQLMigration("postgres:007_indexes", postgresMigration007),
 		postgresSQLMigration("postgres:008_storage_scopes", postgresMigration008),
 		{version: "postgres:009_storage_v3_model", run: runPostgresStorage3ModelMigration},
+		postgresSQLMigration("postgres:010_wakeword_activations", postgresMigration010),
 	}
 	for _, migration := range migrations {
 		if err := applyMigration(ctx, db, "postgres", migration); err != nil {

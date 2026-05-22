@@ -124,6 +124,13 @@ func (h *Handler) modeEnabled(mode framework.Mode) bool {
 	if h.cfg == nil || len(h.cfg.Server.Modes) == 0 {
 		return true
 	}
+	// TTS is a capability-mode, not a runtime-mode. It is implicitly
+	// enabled whenever the host has any product mode listed in
+	// Server.Modes — operators don't have to add "tts" to the modes
+	// flag the way they do for dictation/assist/voice-agent.
+	if mode == framework.ModeTTS {
+		return true
+	}
 	for _, configured := range h.cfg.Server.Modes {
 		if normalizeMode(configured) == mode {
 			return true
@@ -155,6 +162,9 @@ func (h *Handler) selectedProfiles(mode framework.Mode) map[string]bool {
 	case framework.ModeVoiceAgent:
 		primary = h.cfg.ModelSelection.VoiceAgent.PrimaryProfileID
 		fallback = h.cfg.ModelSelection.VoiceAgent.FallbackProfileID
+	case framework.ModeTTS:
+		primary = h.cfg.ModelSelection.TTS.PrimaryProfileID
+		fallback = h.cfg.ModelSelection.TTS.FallbackProfileID
 	case framework.ModeNone:
 		// No mode-specific selection; primary/fallback stay empty.
 	}
@@ -233,6 +243,14 @@ func (h *Handler) runtimeReady(profile framework.ProviderProfile) bool {
 		return h.statusOK("mode.assist")
 	case framework.ModeVoiceAgent:
 		return h.statusOK("mode.voiceagent")
+	case framework.ModeTTS:
+		// TTS doesn't have a standalone server-mode endpoint — it's a
+		// capability consumed by Assist + VoiceAgent. Tie readiness to
+		// the global TTS feature flag instead.
+		if h.cfg == nil {
+			return false
+		}
+		return h.cfg.TTS.Enabled
 	default:
 		return false
 	}

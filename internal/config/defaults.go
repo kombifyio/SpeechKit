@@ -164,6 +164,12 @@ func defaults() *Config {
 				Model:   "hexgrad/Kokoro-82M",
 				Port:    8081,
 			},
+			Piper: TTSPiper{
+				Enabled:    false,
+				Binary:     "",
+				VoiceDir:   "",
+				TimeoutSec: 30,
+			},
 		},
 		VoiceAgent: VoiceAgentConfig{
 			Enabled: true,
@@ -315,6 +321,11 @@ func BuiltInPrimaryModelSelectionDefaults() ModelSelectionConfig {
 			PrimaryProfileID: DefaultVoiceAgentPrimaryProfileID,
 			ModeSource:       ModeSourceLocal,
 		},
+		TTS: ModeModelSelection{
+			PrimaryProfileID:  DefaultTTSPrimaryProfileID,
+			FallbackProfileID: DefaultTTSFallbackProfileID,
+			ModeSource:        ModeSourceLocal,
+		},
 	}
 }
 
@@ -327,6 +338,7 @@ func applyBuiltInPrimaryModelSelectionDefaults(cfg *Config) bool {
 	changed = applyBuiltInPrimaryModelSelectionDefault(&cfg.ModelSelection.Dictate, DefaultDictatePrimaryProfileID) || changed
 	changed = applyBuiltInPrimaryModelSelectionDefault(&cfg.ModelSelection.Assist, DefaultAssistPrimaryProfileID) || changed
 	changed = applyBuiltInPrimaryModelSelectionDefault(&cfg.ModelSelection.VoiceAgent, DefaultVoiceAgentPrimaryProfileID) || changed
+	changed = applyBuiltInPrimaryModelSelectionDefault(&cfg.ModelSelection.TTS, DefaultTTSPrimaryProfileID) || changed
 	return changed
 }
 

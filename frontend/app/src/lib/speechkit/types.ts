@@ -418,6 +418,53 @@ export type SpeechKitSettingsState = {
   providerCredentials?: Record<string, ProviderCredentialState>;
   providerIntegrations?: Record<string, ProviderIntegrationState>;
   wakeword: WakewordSettings;
+  homeAssistant: HomeAssistantSettings;
+  piperTTS: PiperTTSSettings;
+};
+
+// HomeAssistantSettings mirrors the [assist.home_assistant] block in
+// internal/config/config.go via overlay_snapshot.go::buildHomeAssistant
+// SettingsSnapshot. tokenConfigured is true when secrets.Resolve returns
+// a non-empty value for tokenEnv — the raw token is never sent to the UI.
+export type HomeAssistantSettings = {
+  url: string;
+  tokenEnv: string;
+  tokenConfigured: boolean;
+  language: string;
+};
+
+// PiperTTSSettings mirrors [tts.piper] plus a live voice-directory scan
+// (overlay_snapshot.go::buildPiperTTSSettingsSnapshot). availableVoices
+// is empty when voiceDir is unset or missing.
+export type PiperTTSSettings = {
+  enabled: boolean;
+  binary: string;
+  voiceDir: string;
+  timeoutSec: number;
+  defaultVoices: Record<string, string>;
+  availableVoices: PiperVoiceSummary[];
+};
+
+export type PiperVoiceSummary = {
+  filename: string;
+  locale: string;
+  region: string;
+  name: string;
+  quality: string;
+  sizeKB: number;
+};
+
+export type HomeAssistantProbeResult = {
+  ok: boolean;
+  error?: string;
+  url?: string;
+};
+
+export type PiperVoiceListResult = {
+  voiceDir: string;
+  voices: PiperVoiceSummary[];
+  error?: string;
+  defaults: Record<string, string>;
 };
 
 export type WakewordDefaultMode = "dictate" | "assist" | "voice_agent";

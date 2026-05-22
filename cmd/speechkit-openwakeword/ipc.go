@@ -39,19 +39,28 @@ type Event struct {
 
 	// EventScore fields — emitted per decode when --debug is on.
 	Score float32 `json:"score,omitempty"`
+
+	// EventTrainingCapture fields — emitted once per WAV+JSON pair the
+	// activation-capture pipeline writes to disk. v0.37.4+.
+	TrainingID         string `json:"trainingId,omitempty"`
+	TrainingAudioPath  string `json:"trainingAudioPath,omitempty"`
+	TrainingAudioBytes int    `json:"trainingAudioBytes,omitempty"`
+	TrainingPreRollMs  int    `json:"trainingPreRollMs,omitempty"`
+	TrainingPostRollMs int    `json:"trainingPostRollMs,omitempty"`
 }
 
 type EventType string
 
 const (
-	EventReady     EventType = "ready"
-	EventDetection EventType = "detection"
-	EventHeartbeat EventType = "heartbeat"
-	EventLog       EventType = "log"
-	EventError     EventType = "error"
-	EventShutdown  EventType = "shutdown"
-	EventDevice    EventType = "device"
-	EventScore     EventType = "score"
+	EventReady           EventType = "ready"
+	EventDetection       EventType = "detection"
+	EventHeartbeat       EventType = "heartbeat"
+	EventLog             EventType = "log"
+	EventError           EventType = "error"
+	EventShutdown        EventType = "shutdown"
+	EventDevice          EventType = "device"
+	EventScore           EventType = "score"
+	EventTrainingCapture EventType = "training_capture" // v0.37.4+: one WAV/JSON pair written
 )
 
 type Command struct {

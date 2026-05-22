@@ -57,6 +57,16 @@ func IdentityFromContext(ctx context.Context) Identity {
 	return Identity{}
 }
 
+// InjectIdentityForTest attaches an Identity to the context using the same
+// unexported key the Auth middleware uses. Exported solely so handler tests in
+// external packages can exercise endpoints that depend on
+// IdentityFromContext without spinning up the full auth middleware. Production
+// code MUST NOT use this; the function name and the package it lives in are
+// intentionally awkward to make accidental use loud at review time.
+func InjectIdentityForTest(ctx context.Context, id Identity) context.Context {
+	return context.WithValue(ctx, identityCtxKey{}, id)
+}
+
 // AuthMode selects which credential format the server accepts.
 type AuthMode string
 

@@ -3,11 +3,14 @@ package main
 import (
 	"context"
 	"log/slog"
+	"strings"
+	"time"
 
 	"github.com/kombifyio/SpeechKit/cmd/speechkit/internal/transcription"
 	appai "github.com/kombifyio/SpeechKit/internal/ai"
 	"github.com/kombifyio/SpeechKit/internal/ai/flows"
 	"github.com/kombifyio/SpeechKit/internal/assist"
+	"github.com/kombifyio/SpeechKit/internal/assist/skills/voice_companion"
 	"github.com/kombifyio/SpeechKit/internal/audio"
 	"github.com/kombifyio/SpeechKit/internal/config"
 	"github.com/kombifyio/SpeechKit/internal/output"
@@ -89,14 +92,56 @@ func initDesktopAssistRuntime(cfg *config.Config, state *appState, ttsRouter *tt
 		return
 	}
 
+	// Voice-Companion skill catalog runs alongside the legacy host-side
+	// executor (copy_last / insert_last / summarize / quick_note). The
+	// CompositeExecutor dispatches first to a matching pure-Go skill
+	// (Time / Date / Math / Weather / Timer / Reminder / Wikipedia /
+	// HomeAssistant), and falls back to the legacy executor for the
+	// existing text-utility intents.
+	haURL := strings.TrimSpace(cfg.Assist.HomeAssistant.URL)
+	haToken := strings.TrimSpace(config.ResolveSecret(cfg.Assist.HomeAssistant.TokenEnv))
+	haConfigured := haURL != "" && haToken != ""
+	skills := voice_companion.AllSkills(haURL, haToken)
+	executor := voice_companion.NewCompositeExecutor(skills, state.assistExecutor)
+
+	routerOpts := []assist.RouterOption{assist.WithResolver(shortcutResolver)}
+	if haConfigured {
+		// Flip the HomeAssistant UtilityDefinition Enabled=true so the
+		// router actually routes HA-prefix matches to the executor.
+		// Without this override the default registry leaves the entry
+		// disabled and the resolver bypasses HA entirely.
+		registry := assist.DefaultUtilityRegistry()
+		registry.Register(assist.UtilityDefinition{
+			ID:             assist.UtilityHomeAssistant,
+			Intent:         shortcuts.IntentHomeAssistant,
+			Label:          "Send command to Home Assistant",
+			Input:          assist.UtilityInputUtterance,
+			DefaultSurface: assist.ResultSurfaceActionAck,
+			DefaultKind:    assist.ResultKindUtilityAction,
+			Enabled:        true,
+		})
+		routerOpts = append(routerOpts, assist.WithUtilityRegistry(registry))
+	}
+
+	// v0.38 multi-turn: a per-device SkillContextStore lets Voice-Companion
+	// skills ask follow-up questions ("Timer für wie lange?"). One store
+	// survives pipeline re-builds on model-profile switches so an in-flight
+	// follow-up does not reset when the user changes the LLM.
+	if state.assistSkillContextStore == nil {
+		state.assistSkillContextStore = assist.NewInMemorySkillContextStore(60*time.Second, nil)
+	}
+
 	state.assistPipeline = assist.NewPipeline(
 		state.assistFlow,
-		state.assistExecutor,
+		executor,
 		ttsRouter,
 		cfg.TTS.Enabled,
-		assist.WithRouter(assist.NewRouter(assist.WithResolver(shortcutResolver))),
+		assist.WithRouter(assist.NewRouter(routerOpts...)),
+		assist.WithSkillContextStore(state.assistSkillContextStore),
 	)
-	slog.Info("assist pipeline ready")
+	slog.Info("assist pipeline ready (voice-companion skills wired)",
+		"home_assistant", haConfigured,
+		"multi_turn", state.assistSkillContextStore != nil)
 }
 
 func openDesktopFeedbackStore(cfg *config.Config, state *appState, cleanup *desktopCleanupStack) store.Store {

@@ -68,6 +68,22 @@ type settingsFormData struct {
 	// GoogleRegion is the [providers.google] region setting.
 	// Surfaces in the Voice Agent settings form as a compliance control.
 	GoogleRegion string
+
+	// HomeAssistant fields mirror [assist.home_assistant]. Token itself is
+	// not posted (kept in env/secrets) — only TokenEnv (the env-var name)
+	// is editable from the Settings UI.
+	HomeAssistantURL      string
+	HomeAssistantTokenEnv string
+	HomeAssistantLanguage string
+
+	// Piper TTS fields mirror [tts.piper]. PiperDefaultVoices is a
+	// per-locale map of voice filename overrides; entries from the form
+	// merge with the existing cfg map (empty value clears).
+	PiperEnabled       bool
+	PiperBinary        string
+	PiperVoiceDir      string
+	PiperTimeoutSec    int
+	PiperDefaultVoices map[string]string
 }
 
 // parseSettingsForm extracts and validates all settings form values.
@@ -95,6 +111,7 @@ func parseSettingsForm(req *http.Request, cfg *config.Config) (settingsFormData,
 		return f, errMsg
 	}
 	parseWakewordSettingsForm(req, cfg, &f)
+	parseVoiceCompanionSettingsForm(req, cfg, &f)
 
 	return f, ""
 }

@@ -336,8 +336,30 @@ func buildTTSRouter(cfg *config.Config) *tts.Router {
 		}
 	}
 
+	if cfg.TTS.Piper.Enabled {
+		voiceDir := strings.TrimSpace(cfg.TTS.Piper.VoiceDir)
+		if voiceDir != "" {
+			piper, err := tts.NewPiper(tts.PiperOpts{
+				Binary:        cfg.TTS.Piper.Binary,
+				VoiceDir:      voiceDir,
+				DefaultVoices: cfg.TTS.Piper.DefaultVoices,
+				Timeout:       time.Duration(cfg.TTS.Piper.TimeoutSec) * time.Second,
+			})
+			if err == nil {
+				providers = append(providers, piper)
+			}
+		}
+	}
+
 	if len(providers) == 0 {
 		return nil
+	}
+
+	// Honour [model_selection.tts] when set — pin the matching provider to
+	// the front of the strategy-determined order. See
+	// internal/tts/router.go for the profile-ID → provider-name mapping.
+	if preferred := tts.PreferredProviderForProfileID(cfg.ModelSelection.TTS.PrimaryProfileID); preferred != "" {
+		providers = tts.OrderByPreferredProvider(providers, preferred)
 	}
 
 	return tts.NewRouter(tts.Strategy(cfg.TTS.Strategy), providers...)

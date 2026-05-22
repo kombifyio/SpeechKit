@@ -356,6 +356,15 @@ func TestSessionHandlesMultiTurnTextDialog(t *testing.T) {
 	if totalInteractions := len(dialog) * 2; totalInteractions <= 6 {
 		t.Fatalf("dialog interactions = %d, want > 6", totalInteractions)
 	}
+	// The state machine transitions OutputTranscriptDone →
+	// StateListening asynchronously. Without a poll the assertion races
+	// the transition under -race (caught by CI in run 26278006120). Poll
+	// up to 1 s so a slow state-machine tick doesn't flake the test;
+	// production transitions complete in microseconds.
+	deadline := time.Now().Add(time.Second)
+	for time.Now().Before(deadline) && session.CurrentState() != StateListening {
+		time.Sleep(2 * time.Millisecond)
+	}
 	if session.CurrentState() != StateListening {
 		t.Fatalf("current state = %s, want %s", session.CurrentState(), StateListening)
 	}

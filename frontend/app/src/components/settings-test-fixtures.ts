@@ -110,4 +110,18 @@ export const baseSettings: SpeechKitSettingsState = {
     },
   },
   wakeword: defaultWakewordSettings,
+  homeAssistant: {
+    url: "",
+    tokenEnv: "",
+    tokenConfigured: false,
+    language: "",
+  },
+  piperTTS: {
+    enabled: false,
+    binary: "",
+    voiceDir: "",
+    timeoutSec: 0,
+    defaultVoices: {},
+    availableVoices: [],
+  },
 };

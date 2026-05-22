@@ -11,6 +11,7 @@ import (
 	"github.com/kombifyio/SpeechKit/internal/config"
 	"github.com/kombifyio/SpeechKit/internal/downloads"
 	"github.com/kombifyio/SpeechKit/internal/secrets"
+	"github.com/kombifyio/SpeechKit/internal/tts"
 	"github.com/kombifyio/SpeechKit/internal/voiceagentprofile"
 	"github.com/kombifyio/SpeechKit/internal/wakeword"
 )
@@ -294,6 +295,63 @@ func (s *appState) settingsSnapshot(cfg *config.Config) settingsSnapshot {
 		ProviderCredentials:        providerCredentialStates(cfg),
 		ProviderIntegrations:       providerIntegrationStates(cfg),
 		Wakeword:                   wakewordSnap,
+		HomeAssistant:              buildHomeAssistantSettingsSnapshot(cfg),
+		PiperTTS:                   buildPiperTTSSettingsSnapshot(cfg),
+	}
+}
+
+// buildHomeAssistantSettingsSnapshot returns the JSON-ready view of
+// [assist.home_assistant] for the Settings UI. TokenConfigured trims
+// the resolved secret to ignore whitespace-only env values.
+func buildHomeAssistantSettingsSnapshot(cfg *config.Config) homeAssistantSettingsSnapshot {
+	if cfg == nil {
+		return homeAssistantSettingsSnapshot{}
+	}
+	tokenEnv := strings.TrimSpace(cfg.Assist.HomeAssistant.TokenEnv)
+	tokenConfigured := false
+	if tokenEnv != "" {
+		tokenConfigured = strings.TrimSpace(config.ResolveSecret(tokenEnv)) != ""
+	}
+	return homeAssistantSettingsSnapshot{
+		URL:             strings.TrimSpace(cfg.Assist.HomeAssistant.URL),
+		TokenEnv:        tokenEnv,
+		TokenConfigured: tokenConfigured,
+		Language:        strings.TrimSpace(cfg.Assist.HomeAssistant.Language),
+	}
+}
+
+// buildPiperTTSSettingsSnapshot returns the JSON-ready view of
+// [tts.piper] including a live scan of voice files in VoiceDir.
+// Voice-list scan errors are swallowed and surface as an empty
+// AvailableVoices slice — the UI shows an "install voices first"
+// hint in that case.
+func buildPiperTTSSettingsSnapshot(cfg *config.Config) piperTTSSettingsSnapshot {
+	if cfg == nil {
+		return piperTTSSettingsSnapshot{DefaultVoices: map[string]string{}, AvailableVoices: []piperVoiceSummary{}}
+	}
+	defaults := map[string]string{}
+	for k, v := range cfg.TTS.Piper.DefaultVoices {
+		defaults[k] = v
+	}
+	voices, _ := tts.ListPiperVoices(cfg.TTS.Piper.VoiceDir)
+	summaries := make([]piperVoiceSummary, 0, len(voices))
+	for _, v := range voices {
+		summaries = append(summaries, piperVoiceSummary{
+			Filename: v.Filename,
+			Locale:   v.Locale,
+			Region:   v.Region,
+			Name:     v.Name,
+			Quality:  v.Quality,
+			SizeKB:   v.SizeKB,
+		})
+	}
+	return piperTTSSettingsSnapshot{
+		Enabled:         cfg.TTS.Piper.Enabled,
+		Binary:          strings.TrimSpace(cfg.TTS.Piper.Binary),
+		VoiceDir:        strings.TrimSpace(cfg.TTS.Piper.VoiceDir),
+		TimeoutSec:      cfg.TTS.Piper.TimeoutSec,
+		DefaultVoices:   defaults,
+		AvailableVoices: summaries,
 	}
 }
 

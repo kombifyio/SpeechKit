@@ -38,6 +38,21 @@ func WithUtilityRegistry(registry *UtilityRegistry) RouterOption {
 	}
 }
 
+// UtilityFor returns the registered UtilityDefinition for an intent,
+// or the zero value when none is registered. Used by the multi-turn
+// follow-up code path in Process() so the pipeline can rebuild a
+// Decision without re-running keyword resolution. v0.38.0.
+func (r *Router) UtilityFor(intent shortcuts.Intent) UtilityDefinition {
+	registry := DefaultUtilityRegistry()
+	if r != nil && r.utilities != nil {
+		registry = r.utilities
+	}
+	if def, ok := registry.Definition(intent); ok {
+		return def
+	}
+	return UtilityDefinition{}
+}
+
 func (r *Router) Decide(transcript string, opts ProcessOpts) Decision {
 	decision := Decision{
 		Route:  RouteDirectReply,

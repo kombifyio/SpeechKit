@@ -95,6 +95,13 @@ type runtime struct {
 	cfg       sidecarConfig
 	startedAt time.Time
 
+	// trainingCapture is non-nil when --training-enabled was passed.
+	// PCM frames pass through Ingest in the audio handler; detections
+	// call Trigger from the pipeline sink. The capture is Close()d as
+	// part of runtime.Close() so any post-roll left in flight is
+	// flushed to disk before exit.
+	trainingCapture *wakeword.TrainingCapture
+
 	// Cumulative since last heartbeat reset; accessed via sync/atomic.
 	bytesIn int64
 	decodes int64
@@ -151,6 +158,45 @@ func startRuntime(cfg sidecarConfig) (*runtime, error) {
 
 	rt := &runtime{cfg: cfg, detector: detector, startedAt: time.Now()}
 
+	// Optional v0.37.4+ training-data capture. NewTrainingCapture
+	// returns an inert capture when Enabled=false so the wiring below
+	// stays the same either way.
+	tc, terr := wakeword.NewTrainingCapture(wakeword.TrainingCaptureConfig{
+		Enabled:    cfg.TrainingCaptureEnabled,
+		Dir:        cfg.TrainingCaptureDir,
+		PreRollMs:  cfg.TrainingPreRollMs,
+		PostRollMs: cfg.TrainingPostRollMs,
+		Backend:    "sherpa-onnx-zipformer-kws",
+		OnWrite: func(rec wakeword.TrainingRecord) {
+			if rec.ID == "" {
+				// Flush failed before any disk write — surface as a
+				// log line so operators see the error but the
+				// sidecar keeps running.
+				emit(Event{Type: EventLog, Level: "warn", Msg: "training capture: flush failed (disk full or permission denied?)", At: time.Now()})
+				return
+			}
+			emit(Event{
+				Type:               EventTrainingCapture,
+				TrainingID:         rec.ID,
+				TrainingAudioPath:  rec.AudioPath,
+				TrainingAudioBytes: rec.AudioBytes,
+				TrainingPreRollMs:  rec.PreRollMs,
+				TrainingPostRollMs: rec.PostRollMs,
+				PhraseID:           rec.PhraseID,
+				Phrase:             rec.Phrase,
+				Probability:        rec.Score,
+				At:                 rec.CapturedAt,
+			})
+		},
+	})
+	if terr != nil {
+		// Training is a non-fatal feature; log + continue. The
+		// detector remains usable; only the capture pipeline is off.
+		emit(Event{Type: EventLog, Level: "warn", Msg: fmt.Sprintf("training capture init failed: %v", terr), At: time.Now()})
+		tc, _ = wakeword.NewTrainingCapture(wakeword.TrainingCaptureConfig{Enabled: false})
+	}
+	rt.trainingCapture = tc
+
 	pipe, err := wakeword.NewPipeline(detector, sinkFunc(func(ev wakeword.DetectionEvent) {
 		emit(Event{
 			Type:        EventDetection,
@@ -160,6 +206,10 @@ func startRuntime(cfg sidecarConfig) (*runtime, error) {
 			Probability: ev.Probability,
 			At:          ev.At,
 		})
+		// Hand the detection over to the capture pipeline. The capture
+		// is a no-op when training is disabled, so this call is safe
+		// and cheap unconditionally.
+		rt.trainingCapture.Trigger(ev)
 	}), wakeword.Config{
 		Enabled:              true,
 		Phrase:               cfg.DisplayPhrase,
@@ -195,6 +245,7 @@ func startRuntime(cfg sidecarConfig) (*runtime, error) {
 	session.SetPCMHandler(func(pcm []byte) {
 		rt.mu.Lock()
 		p := rt.pipeline
+		tc := rt.trainingCapture
 		rt.mu.Unlock()
 		if p == nil {
 			return
@@ -205,6 +256,10 @@ func startRuntime(cfg sidecarConfig) (*runtime, error) {
 		if perr != nil {
 			emit(Event{Type: EventError, Msg: fmt.Sprintf("feed pcm: %v", perr), At: time.Now()})
 		}
+		// Training-capture path: keeps the rolling pre-roll buffer
+		// warm and collects post-roll for any pending captures. No-op
+		// when training is disabled.
+		tc.Ingest(pcm)
 	})
 
 	if err := session.Start(); err != nil {
@@ -241,6 +296,12 @@ func (rt *runtime) Close() {
 	if rt.detector != nil {
 		_ = rt.detector.Close()
 		rt.detector = nil
+	}
+	if rt.trainingCapture != nil {
+		// Close() flushes any pending captures whose post-roll never
+		// arrived (sidecar shutting down mid-trigger).
+		_ = rt.trainingCapture.Close()
+		rt.trainingCapture = nil
 	}
 }
 
@@ -344,6 +405,12 @@ type sidecarConfig struct {
 	// The host adapter sets this when [wakeword] debug_mode = true. Off by
 	// default — the C++ side is chatty.
 	Debug bool
+
+	// Training-data capture (v0.37.4+). Default OFF — host must opt-in.
+	TrainingCaptureEnabled bool
+	TrainingCaptureDir     string
+	TrainingPreRollMs      int
+	TrainingPostRollMs     int
 }
 
 // emitDeviceEvent looks up the configured audio device name and emits a
@@ -409,7 +476,12 @@ func parseFlags() sidecarConfig {
 		audioBackend  = flag.String("audio-backend", "windows-wasapi-malgo", "audio capture backend identifier")
 		audioDeviceID = flag.String("audio-device-id", "", "audio capture device ID (empty = default)")
 		debug         = flag.Bool("debug", false, "enable sherpa-onnx C++ verbose logging (ModelConfig.Debug=1)")
-		showVersion   = flag.Bool("version", false, "print version and exit")
+		// v0.37.4+: optional training-data capture. Default OFF.
+		trainingEnabled  = flag.Bool("training-enabled", false, "save each detection's audio (pre+post-roll) to --training-dir as WAV+JSON pairs")
+		trainingDir      = flag.String("training-dir", "", "directory where activation captures land (required when --training-enabled)")
+		trainingPreRoll  = flag.Int("training-pre-roll-ms", 1500, "milliseconds of pre-trigger audio to capture")
+		trainingPostRoll = flag.Int("training-post-roll-ms", 500, "milliseconds of post-trigger audio to capture")
+		showVersion      = flag.Bool("version", false, "print version and exit")
 	)
 	flag.Parse()
 
@@ -424,21 +496,25 @@ func parseFlags() sidecarConfig {
 	}
 
 	cfg := sidecarConfig{
-		Encoder:              fileIn(*modelDir, "encoder-epoch-12-avg-2-chunk-16-left-64.onnx"),
-		Decoder:              fileIn(*modelDir, "decoder-epoch-12-avg-2-chunk-16-left-64.onnx"),
-		Joiner:               fileIn(*modelDir, "joiner-epoch-12-avg-2-chunk-16-left-64.onnx"),
-		Tokens:               fileIn(*modelDir, "tokens.txt"),
-		KeywordsFile:         *keywordsFile,
-		NumThreads:           *numThreads,
-		Threshold:            float32(*threshold),
-		DefaultMode:          *defaultMode,
-		DisplayPhrase:        *phrase,
-		PhraseID:             *phraseID,
-		MinConsecutiveFrames: *minFrames,
-		Cooldown:             time.Duration(*cooldownMs) * time.Millisecond,
-		AudioBackend:         *audioBackend,
-		AudioDeviceID:        *audioDeviceID,
-		Debug:                *debug,
+		Encoder:                fileIn(*modelDir, "encoder-epoch-12-avg-2-chunk-16-left-64.onnx"),
+		Decoder:                fileIn(*modelDir, "decoder-epoch-12-avg-2-chunk-16-left-64.onnx"),
+		Joiner:                 fileIn(*modelDir, "joiner-epoch-12-avg-2-chunk-16-left-64.onnx"),
+		Tokens:                 fileIn(*modelDir, "tokens.txt"),
+		KeywordsFile:           *keywordsFile,
+		NumThreads:             *numThreads,
+		Threshold:              float32(*threshold),
+		DefaultMode:            *defaultMode,
+		DisplayPhrase:          *phrase,
+		PhraseID:               *phraseID,
+		MinConsecutiveFrames:   *minFrames,
+		Cooldown:               time.Duration(*cooldownMs) * time.Millisecond,
+		AudioBackend:           *audioBackend,
+		AudioDeviceID:          *audioDeviceID,
+		Debug:                  *debug,
+		TrainingCaptureEnabled: *trainingEnabled,
+		TrainingCaptureDir:     *trainingDir,
+		TrainingPreRollMs:      *trainingPreRoll,
+		TrainingPostRollMs:     *trainingPostRoll,
 	}
 	if cfg.KeywordsFile == "" {
 		cfg.KeywordsFile = fileIn(*modelDir, "keywords.txt")

@@ -5,6 +5,8 @@ import {
   normalizeSettingsState,
 } from "./normalizers";
 import type {
+  HomeAssistantProbeResult,
+  PiperVoiceListResult,
   SpeechKitOverlayState,
   SpeechKitSettingsState,
   WakewordSelfTestReport,
@@ -120,7 +122,21 @@ export async function saveSettingsState(nextState: SpeechKitSettingsState) {
     ),
     wakeword_cooldown_ms: String(nextState.wakeword.cooldownMs),
     wakeword_debug_mode: nextState.wakeword.debugMode ? "1" : "0",
+    homeassistant_url: nextState.homeAssistant.url,
+    homeassistant_token_env: nextState.homeAssistant.tokenEnv,
+    homeassistant_language: nextState.homeAssistant.language,
+    piper_enabled: nextState.piperTTS.enabled ? "1" : "0",
+    piper_binary: nextState.piperTTS.binary,
+    piper_voice_dir: nextState.piperTTS.voiceDir,
+    piper_timeout_sec: String(nextState.piperTTS.timeoutSec),
   });
+
+  // Encode per-locale Piper defaults as piper_default_voice[<locale>]=…
+  for (const [locale, voice] of Object.entries(
+    nextState.piperTTS.defaultVoices ?? {}
+  )) {
+    body.append(`piper_default_voice[${locale.toLowerCase()}]`, voice ?? "");
+  }
 
   const response = await fetch("/settings/update", {
     method: "POST",
@@ -149,6 +165,44 @@ export async function resetOverlayPosition() {
 
   const payload = (await response.json()) as { message?: string };
   return payload.message ?? "";
+}
+
+// ── v0.38.2: HomeAssistant probe + Piper voice listing ──────────────────────
+
+// probeHomeAssistant tests the configured HomeAssistant base URL +
+// token by hitting /api/. Used by the Settings UI "Test connection"
+// button. Pass the in-flight draft values so the user can verify a
+// new URL/token-env before saving.
+export async function probeHomeAssistant(
+  draft?: { url?: string; tokenEnv?: string }
+): Promise<HomeAssistantProbeResult> {
+  const body = new URLSearchParams();
+  if (draft?.url) body.set("homeassistant_url", draft.url);
+  if (draft?.tokenEnv) body.set("homeassistant_token_env", draft.tokenEnv);
+  const response = await fetch("/settings/homeassistant/test", {
+    method: "POST",
+    body,
+  });
+  if (!response.ok) {
+    throw new Error(
+      `home_assistant probe failed: ${response.status} ${response.statusText}`
+    );
+  }
+  return (await response.json()) as HomeAssistantProbeResult;
+}
+
+// fetchPiperVoices returns the live voice-directory scan from the
+// Go backend. Pass an in-flight voice_dir to preview a candidate
+// folder before saving the settings.
+export async function fetchPiperVoices(voiceDir?: string): Promise<PiperVoiceListResult> {
+  const url = voiceDir
+    ? `/api/tts/piper/voices?voice_dir=${encodeURIComponent(voiceDir)}`
+    : "/api/tts/piper/voices";
+  const response = await fetch(url, { cache: "no-store" });
+  if (!response.ok) {
+    throw new Error(`piper voice list failed: ${response.status}`);
+  }
+  return (await response.json()) as PiperVoiceListResult;
 }
 
 // WakewordState mirrors the JSON returned by /app/wakeword/state and the
@@ -219,4 +273,80 @@ export async function runWakewordSelfTest(): Promise<WakewordSelfTestReport> {
     throw new Error(`wake-word self-test failed: ${response.status}: ${body}`);
   }
   return (await response.json()) as WakewordSelfTestReport;
+}
+
+// ── v0.37.6: Wake-word activation management ─────────────────────────────────
+
+// LocalWakewordActivation mirrors the Go-side struct in
+// cmd/speechkit/routes_wakeword_activations.go. It's the JSON shape the
+// "Training data" panel renders; one entry per locally captured detection.
+export type LocalWakewordActivationLabel = "" | "correct" | "false_positive";
+
+export type LocalWakewordActivation = {
+  id: string;
+  phrase_id: string;
+  phrase: string;
+  backend: string;
+  score: number;
+  captured_at: string;
+  pre_roll_ms: number;
+  post_roll_ms: number;
+  sample_rate: number;
+  audio_bytes: number;
+  label: LocalWakewordActivationLabel;
+  uploaded: boolean;
+  audio_url: string;
+};
+
+export type WakewordActivationsListResponse = {
+  activations: LocalWakewordActivation[];
+  count: number;
+  dir: string;
+  enabled: boolean;
+};
+
+// listWakewordActivations returns all locally captured activations the
+// sidecar has saved under <local_capture_dir>. Returns an empty list
+// when capture is disabled or the dir has not been created yet — the
+// `enabled` flag in the response tells the UI which empty-state to
+// render (a privacy hint vs. a "no captures yet" hint).
+export async function listWakewordActivations(): Promise<WakewordActivationsListResponse> {
+  const response = await fetch("/api/wakeword/activations", { cache: "no-store" });
+  if (!response.ok) {
+    const body = await response.text().catch(() => "");
+    throw new Error(`list activations failed: ${response.status}: ${body}`);
+  }
+  return (await response.json()) as WakewordActivationsListResponse;
+}
+
+// updateWakewordActivationLabel writes a new `label` value into the
+// sidecar's JSON and resets the `uploaded` flag so the next background
+// uploader tick re-syncs the labelled clip to the server (when remote
+// upload is enabled). Empty `label` clears the label.
+export async function updateWakewordActivationLabel(
+  id: string,
+  label: LocalWakewordActivationLabel,
+): Promise<void> {
+  const response = await fetch(`/api/wakeword/activations/${encodeURIComponent(id)}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ label }),
+  });
+  if (!response.ok) {
+    const body = await response.text().catch(() => "");
+    throw new Error(`label update failed: ${response.status}: ${body}`);
+  }
+}
+
+// deleteWakewordActivation removes both the .wav and the .json sidecar
+// from disk. Idempotent — a 404 for an already-deleted clip is treated
+// as success so the UI can hide it from the list either way.
+export async function deleteWakewordActivation(id: string): Promise<void> {
+  const response = await fetch(`/api/wakeword/activations/${encodeURIComponent(id)}`, {
+    method: "DELETE",
+  });
+  if (!response.ok && response.status !== 404) {
+    const body = await response.text().catch(() => "");
+    throw new Error(`delete failed: ${response.status}: ${body}`);
+  }
 }

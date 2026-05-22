@@ -151,6 +151,72 @@ func TestWakewordSidecarArgsIncludesDebugWhenEnabled(t *testing.T) {
 	}
 }
 
+func TestWakewordSidecarArgsOmitsTrainingFlagsByDefault(t *testing.T) {
+	cfg := &config.Config{}
+	cfg.Wakeword.PhraseID = "hey_quby"
+	cfg.Wakeword.Backend = config.WakewordBackendSherpaKWS
+	// TrainingData zero-value → LocalCaptureEnabled is false.
+	resolved := resolvedWakewordAssets{
+		Backend:       config.WakewordBackendSherpaKWS,
+		DefaultMode:   "voice_agent",
+		DisplayPhrase: "Hey Quby",
+		ModelDir:      t.TempDir(),
+		KeywordsFile:  "keywords.txt",
+	}
+	for _, a := range wakewordSidecarArgs(cfg, resolved) {
+		if a == "--training-enabled" || a == "--training-dir" {
+			t.Fatalf("default config must not pass training flags; got %v", a)
+		}
+	}
+}
+
+func TestWakewordSidecarArgsIncludesTrainingFlagsWhenEnabled(t *testing.T) {
+	dir := t.TempDir()
+	cfg := &config.Config{}
+	cfg.Wakeword.PhraseID = "hey_quby"
+	cfg.Wakeword.Backend = config.WakewordBackendSherpaKWS
+	cfg.Wakeword.TrainingData.LocalCaptureEnabled = true
+	cfg.Wakeword.TrainingData.LocalCaptureDir = dir
+	cfg.Wakeword.TrainingData.PreRollMs = 2000
+	cfg.Wakeword.TrainingData.PostRollMs = 750
+	resolved := resolvedWakewordAssets{
+		Backend:       config.WakewordBackendSherpaKWS,
+		DefaultMode:   "voice_agent",
+		DisplayPhrase: "Hey Quby",
+		ModelDir:      dir,
+		KeywordsFile:  "keywords.txt",
+	}
+	args := wakewordSidecarArgs(cfg, resolved)
+
+	wantPairs := map[string]string{
+		"--training-dir":          dir,
+		"--training-pre-roll-ms":  "2000",
+		"--training-post-roll-ms": "750",
+	}
+	gotEnabled := false
+	for i, a := range args {
+		if a == "--training-enabled" {
+			gotEnabled = true
+			continue
+		}
+		if want, ok := wantPairs[a]; ok {
+			if i+1 >= len(args) {
+				t.Fatalf("%s missing value", a)
+			}
+			if args[i+1] != want {
+				t.Errorf("%s = %q, want %q", a, args[i+1], want)
+			}
+			delete(wantPairs, a)
+		}
+	}
+	if !gotEnabled {
+		t.Errorf("missing --training-enabled in args: %v", args)
+	}
+	for k := range wantPairs {
+		t.Errorf("missing flag %s in args: %v", k, args)
+	}
+}
+
 func TestEffectiveWakewordThresholdUsesConcreteDefaults(t *testing.T) {
 	cfg := &config.Config{}
 	cfg.Wakeword.PhraseID = "hey_quby"

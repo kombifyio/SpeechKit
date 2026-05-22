@@ -242,6 +242,19 @@ model = "hexgrad/Kokoro-82M"
 model_path = ""
 port = 8081
 
+[tts.piper]
+# Offline Piper subprocess TTS — Home-Assistant compatible voices, MIT licensed.
+# Pair with Ollama + whisper.cpp for a fully offline Voice-Companion stack.
+# Voice models are NOT bundled. Run scripts/prepare-piper-voices.{ps1,sh} once
+# to download en_US-amy-medium + de_DE-thorsten-medium into voice_dir.
+enabled = false
+binary = ""                              # piper executable; empty => "piper" on PATH
+voice_dir = ""                           # directory holding *.onnx voice files (e.g. %LOCALAPPDATA%/SpeechKit/piper-voices)
+timeout_sec = 30                         # subprocess timeout
+# [tts.piper.default_voices]             # per-locale voice override
+# en = "en_US-amy-medium.onnx"
+# de = "de_DE-thorsten-medium.onnx"
+
 # ──────────────────────────────────────────────
 # Voice Agent — realtime live session
 # Gemini Live is the canonical Voice Agent runtime. The Voice Agent contract is realtime-first and separate from Assist.
@@ -322,3 +335,70 @@ vad_silence_duration_ms = 700
 # utility_model = "gemma4:e4b"
 # assist_model = "gemma4:e4b"
 # agent_model = "gemma4:e4b"
+
+# ============================================================================
+# Voice-Companion (v0.37+) — Hands-Free Assist with skill catalog
+# ============================================================================
+# Setting [wakeword].default_mode = "assist" turns "Hey Quby" into a one-shot
+# voice companion that hits the Assist pipeline + 7 skills (Time, Date, Math,
+# Weather, Timer, Reminder, Wikipedia) and optionally Home Assistant.
+# Voice-Agent mode keeps its multi-hour realtime semantics — switch
+# `default_mode` between "assist" / "voice_agent" / "dictate" to pick the
+# wake-word target. See docs/voice-companion.md for the full design.
+
+# [wakeword]
+# enabled = true
+# phrase_id = "hey_quby"      # Curated catalog: hey_quby / hey_computer /
+#                              # hey_jarvis / hey_mira / hey_kombify
+# default_mode = "assist"      # "assist" (Voice-Companion, one-shot),
+#                              # "voice_agent" (Multi-Hour Companion-Live),
+#                              # "dictate" (transcription only)
+# backend = "livekit_openwakeword"  # default; bundled per-phrase ONNX
+
+# [wakeword.auto_end]
+# silence_cutoff_sec = 10       # Ends a wake-word session after this many
+#                                # seconds of silence (default 10s).
+# # exit_phrases = ["danke", "stop", ...]    # Optional override of the
+# #                                            # framework default list.
+
+# [assist]
+# enabled_tools = [
+#   # Legacy text-utilities:
+#   "copy_last", "insert_last", "summarize", "quick_note",
+#   # Voice-Companion skills (default Enabled=true once the package ships):
+#   "time", "date", "math", "weather", "timer", "reminder", "wikipedia",
+#   # Smart-Home (only useful when [assist.home_assistant] is configured):
+#   # "home_assistant",
+# ]
+
+# [assist.home_assistant]
+# # Optional Smart-Home bridge. When url + token_env are both set, the
+# # voice-companion HomeAssistant skill routes commands like
+# # "Hey Quby, schalte das Wohnzimmerlicht aus" through HA's
+# # Conversation API. The token itself is NEVER stored in TOML — only the
+# # environment variable name is configured here. Use Doppler / Windows
+# # Credential Manager / a process env var to provide the actual token.
+# url = "https://ha.example.lan:8123"
+# token_env = "HA_LONG_LIVED_TOKEN"
+# # language = "de"     # Optional override (default uses caller locale)
+
+# [model_selection.tts]
+# # Voice-Output model selection — pins which TTS provider Assist and
+# # Voice-Agent use when speaking back to the user. Same shape as
+# # [model_selection.assist] / .voice_agent / .dictate. v0.37.2 added
+# # this so Thalia + Companion-Live deployments can pick a stable
+# # voice ("Studio-O DE", "OpenAI Nova HD", "Piper Thorsten") without
+# # editing the lower-level [tts.providers.*] blocks.
+# #
+# # Catalog IDs (see pkg/speechkit/catalog.go):
+# #   tts.local.kokoro-82m                Local Built-in (Apache-2.0, ~50MB ONNX, EN, RECOMMENDED v0.37.3 default)
+# #   tts.local.supertonic-3              Local Built-in (OpenRAIL, multilingual 32 langs incl. DE)
+# #   tts.local.chatterbox-multilingual   Local Built-in (MIT, 24 langs, voice-clone)
+# #   tts.local.piper                     Local Built-in (MIT, HA-compatible voice catalog)
+# #   tts.openedai.kokoro                 Local Provider (OpenAI-compatible Kokoro container)
+# #   tts.huggingface.parler-multilingual Cloud Provider (HF Inference Router)
+# #   tts.google.studio-o-de              Direct Provider (Studio-O DE, default for installs with GOOGLE_AI_API_KEY)
+# #   tts.openai.tts-1-hd                 Direct Provider (OpenAI TTS-1-HD, six voices)
+# primary_profile_id = "tts.google.studio-o-de"
+# fallback_profile_id = "tts.local.kokoro-82m"     # Local fallback when cloud is unavailable
+# mode_source = "local"

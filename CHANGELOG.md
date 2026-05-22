@@ -12,6 +12,652 @@ IDs, source paths, and other maintainer-only vocabulary.
 
 ## [Unreleased]
 
+## [0.38.5] - 2026-05-22
+
+Release-hygiene patch on top of v0.38.4 so the OSS publish workflow
+can actually push to the public repository. The v0.37.6, v0.37.7, and
+v0.38.4 publish attempts all failed the same "public surface check"
+because two source comments named an internal secrets-store
+project. Reworded both without changing behaviour.
+
+### Fixed
+
+- Comment above the default TTS profile constant no longer references
+  the internal secrets-store project name. It now describes the same
+  fallback rationale in vendor-neutral terms — an existing
+  `GOOGLE_AI_API_KEY` is the most common pre-configured key, so the
+  Google Studio-O default ships first.
+- Same rewording applied to the `tts.google.studio-o-de` bullet in
+  this changelog's 0.37.x release notes.
+
+## [0.38.4] - 2026-05-22
+
+Tech-debt sweep accompanying the v0.38.2 / v0.38.3 work. No new
+behaviour for end users.
+
+### Changed
+
+- Version is now `0.38.4` across the root `package.json`, the
+  frontend `package.json`, the Windows resource manifest, and the
+  NSIS installer, restoring single-source-of-truth alignment with
+  `CHANGELOG.md`. v0.38.0–v0.38.3 left the manifests at `0.38.1`
+  because the release commits did not bump them.
+
+### Fixed
+
+- Voice-directory filename parser now uses an `else if` branch
+  instead of a nested `else { if }` block (gocritic). No behaviour
+  change.
+
+## [0.38.3] - 2026-05-22
+
+Docs sync — no functional changes. Brings the Voice-Companion phase
+roadmap and the architecture overview up to date with the features
+that have shipped through v0.38.2 (multi-turn skills in v0.38.0,
+Piper TTS in v0.38.0, Home Assistant Settings UI + per-locale Piper
+voice picker in v0.38.2). The previous text still listed
+`home_assistant` as "Phase 4 (later)" and the TTS provider table
+referenced backends that were never wired.
+
+## [0.38.2] - 2026-05-22
+
+Settings UI catches up with the Voice-Companion and Piper additions
+shipped in v0.37.0 and v0.38.0/v0.38.1 — both were previously
+TOML-only.
+
+### Added
+
+- New "Home Assistant Bridge" section under Settings → Integrations.
+  Configure base URL, the env-var that holds the long-lived access
+  token, and an optional language override. A "Test connection"
+  button verifies the URL + token against the running HA instance
+  without sending any utterance.
+- New "Piper Local Voices" section under Settings → Integrations.
+  Set the binary path and voice directory, then refresh the list to
+  see every installed `.onnx` voice model. The per-locale dropdown
+  pins which voice Piper uses for English and German output without
+  hand-editing the TOML.
+- New `POST /settings/homeassistant/test` and
+  `GET /api/tts/piper/voices` endpoints on the Windows client back
+  the two Settings UI sections.
+
+### Changed
+
+- The Settings UI also surfaces `tokenConfigured` for the configured
+  Home Assistant token env-var, so users can spot a missing or
+  whitespace-only token before clicking "Test connection".
+
+### Fixed
+
+- Partial Settings POSTs (e.g. from the onboarding wizard) no
+  longer clear previously configured Home Assistant URL, token
+  env-var, language, Piper enabled flag, binary path, voice
+  directory, timeout, or per-locale default voice. The wizard only
+  submits a handful of fields; before this fix, the missing fields
+  silently flipped to empty values when the wizard finished. Same
+  regression class previously fixed for the overlay-enabled flag.
+
+## [0.38.1] - 2026-05-22
+
+Voice-Companion Phase 2+3 ehrlich. Closes the gap between the
+v0.38.0 release-note claim ("Multi-turn skills" + "All-local TTS")
+and what the wiring actually delivered. Piper had no instantiation
+path on either target — selecting it from settings would silently
+fall through to cloud providers. Multi-turn skill follow-ups
+worked on the server but not on the desktop. This release wires
+both into both targets, ships the voice-fetch script, and adds
+the `[tts.piper]` config block so operators can actually enable
+the all-local stack end to end.
+
+### Added — Piper Provider Wiring
+
+- New `[tts.piper]` config block (`enabled`, `binary`, `voice_dir`,
+  `default_voices`, `timeout_sec`). Voice models are not bundled;
+  Piper stays disabled until an operator opts in and points
+  `voice_dir` at a directory of `.onnx` files.
+- Setting `[model_selection.tts] primary_profile_id = "tts.local.piper"`
+  now actually routes to the Piper subprocess on both the desktop
+  build and the standalone server. Before v0.38.1 the same setting
+  resolved to an unregistered provider name and the synthesis
+  request failed silently.
+- New `scripts/prepare-piper-voices.ps1` and
+  `scripts/prepare-piper-voices.sh` fetch ONNX voice models from
+  `rhasspy/piper-voices` on Hugging Face. Defaults match the
+  built-in fallback voices (`en_US-amy-medium`,
+  `de_DE-thorsten-medium`); operators can pass `-Voices` /
+  `VOICES=` to fetch other languages.
+
+### Added — Multi-Turn on the Desktop Build
+
+- The desktop build now allocates a 60-second in-memory skill
+  follow-up store per app instance, reused across model-profile
+  switches so an in-flight follow-up question survives a user
+  changing the Assist LLM mid-dialog. Before v0.38.1 the Timer
+  skill's "Für wie lange?" / "How long?" prompt on the Wails
+  Desktop was silently disabled — the next utterance re-routed
+  fresh instead of back to the skill.
+- The desktop build sets a stable per-device session key on every
+  Assist call so the multi-turn branch actually engages. The
+  desktop is single-user, so a constant key is the contract; the
+  standalone server keeps deriving its key from the authenticated
+  user identity for multi-tenant isolation.
+
+### Fixed
+
+- `/api/v1/modes` contract count test had asserted 3 mode
+  contracts but the default catalog has returned 4 since v0.37.2
+  (when TTS became a first-class model-selection axis). The test
+  now asserts 4 (Dictation, Assist, VoiceAgent, TTS).
+
+## [0.38.0] - 2026-05-22
+
+Voice-Companion goes beyond wake-word learning. This release lands
+both **Multi-turn skills** and the **All-Local TTS stack** so the
+Voice-Companion can hold a short follow-up conversation and answer
+without any cloud TTS key. Pairs with the Ollama LLM provider
+already shipped in the v0.37 chain — together they form a fully
+offline-capable Assist Mode.
+
+### Added — Multi-turn skills
+
+- Multi-turn conversation slot per user. Skills that need one more
+  piece of information from the user (e.g. "How long?" for a Timer)
+  now keep the conversation open for 60 s instead of immediately
+  punting to the LLM. The slot is keyed by user identity so
+  multi-tenant deployments do not bleed conversations across users.
+- Timer skill now asks "Für wie lange?" (de) / "How long?" (en)
+  when the first utterance does not include a duration. On the
+  next turn the spoken duration completes the request. If the
+  follow-up still does not parse, the LLM takes over rather than
+  re-asking forever.
+- Pipeline option that lets the host enable or disable the
+  multi-turn store. Hosts that opt in also need to supply a stable
+  session key per request; an empty key skips persistence and
+  preserves the v0.37 single-turn behaviour for callers that have
+  not yet been updated.
+- Server-target derives the session key from the authenticated
+  user identity so each tenant gets their own conversation slot.
+  The Assist pipeline mounts a 60 s in-memory store at boot.
+
+### Added — All-local TTS (Piper)
+
+- New Piper TTS provider that wraps the `piper` command-line
+  binary as a subprocess. Reads UTF-8 text from stdin, writes a
+  WAV stream to stdout, returns a `Result` with `Provider="piper"`
+  ready for the existing TTS router.
+- Default voice mapping for English (`en_US-amy-medium`) and
+  German (`de_DE-thorsten-medium`). Callers can override per
+  request via `SynthesizeOpts.Voice`. Unknown locales fall back to
+  English so the provider stays useful even with a partial voice
+  install.
+- Locale normalisation helper that collapses `de-DE` / `EN_US` /
+  `fr_FR` to short codes for the default-voice lookup.
+- Voice models are NOT bundled. The `piper` binary must be on
+  `PATH` or pointed at explicitly via configuration. The Health
+  probe verifies the binary is reachable but does not validate
+  voice models individually so a partial install does not block
+  readiness for the locales you do have.
+
+### Tests
+
+- New unit tests cover the in-memory multi-turn store (set/get/
+  clear, TTL expiry, defensive copies, nil-receiver safety,
+  empty-key safety) and the Piper provider (voice resolution,
+  constructor defaults, locale normalisation, WAV-header helpers).
+- New integration tests demonstrate the full multi-turn flow
+  through the Assist pipeline: a follow-up routes back to the same
+  skill, two concurrent users keep their slots isolated, and an
+  empty session key opts out of persistence.
+- The Timer skill's prior "unparseable is silent" expectation was
+  updated: an unparseable first turn now asks the follow-up
+  question; a second-pass failure still falls through to silent.
+
+### Implementation notes
+
+- The store is process-scoped. Multi-replica server deployments
+  that need cross-replica continuity should swap in a Redis-backed
+  `SkillContextStore`; the interface is stable.
+- Follow-up state is carried into the next turn via
+  `ToolCall.Context` (newline-delimited `key=value` lines). Skills
+  read it directly — no new ToolCall fields were introduced so
+  existing single-turn skills continue to work unchanged.
+- Default TTL is 60 s. Long-running multi-turn flows like
+  reminder-collection that need more time should ship their own
+  follow-up state with a `last_seen_at` marker and refresh on each
+  turn rather than relying on the store TTL.
+
+## [0.37.7] - 2026-05-22
+
+End-to-end test coverage for the wake-word activation upload chain.
+`sk-e2e` now ships a `wakeword` scenario that walks the full
+public-interface round-trip — POST a synthetic activation, GET the
+metadata back, PATCH a label, DELETE the row — and gracefully
+treats a 503 from a server that opts out of training-data uploads
+as a smoke-pass.
+
+### Added
+
+- `sk-e2e --scenarios wakeword` exercises
+  `POST/GET/PATCH/DELETE /api/v1/wakeword/activations` against the
+  deployed server. Default scenario list now includes wakeword
+  alongside health, deployment, dictation, assist, and voiceagent.
+- The scenario probes `accept_uploads` via an upfront GET. When the
+  server returns 503 with a structured `training_data_disabled`
+  envelope the run logs the smoke-pass and exits clean; only
+  unexpected statuses fail the build.
+- Round-trip assertions: the GET response must echo back the
+  client-supplied id and phrase_id, and the cleanup DELETE must
+  return 204 so subsequent runs stay idempotent.
+
+### Carry-over
+
+- `install-e2e-windows.yml` retains its cron + manual + workflow_call
+  triggers. Tag-push trigger was considered for symmetry with
+  `install-e2e-linux.yml` but deferred — the Windows runner is paid
+  and the 50 EUR/month spending cap takes precedence over symmetry.
+
+## [0.37.6] - 2026-05-22
+
+Wake-word activation Settings UI (Phase C — labelling + management).
+Closes the v0.37.4+5 chain by giving users a Wails Settings tab to
+browse the activations captured locally, play them back in the
+browser, apply a label (`correct` / `false_positive`), and delete
+clips they don't want kept.
+
+### Added
+
+- New "Wake-word training data" panel under Settings → Audio →
+  Wake-word. Lists every locally captured clip newest-first, with
+  inline audio playback via the standard `<audio controls>` element.
+- Per-activation label dropdown (Unlabelled / Correct / False
+  positive). Saving a label rewrites the JSON sidecar in place and
+  resets the `uploaded` flag so the background uploader picks up
+  the change on its next tick when remote upload is enabled.
+- Per-activation Delete button (with a confirmation prompt). Both
+  the WAV file and the JSON sidecar are removed from disk.
+- Empty-state hints that distinguish "capture disabled — enable it
+  in the panel above" from "capture enabled but nothing recorded
+  yet — trigger the wake-word a few times".
+- New local control-plane endpoints (loopback-only, no auth header
+  needed because the Wails app is the only caller):
+  - `GET    /api/wakeword/activations` — list locally captured clips
+    + the directory path the sidecar uses + the current
+    `local_capture_enabled` value.
+  - `GET    /api/wakeword/activations/{id}/audio` — stream the WAV
+    bytes for inline playback.
+  - `PATCH  /api/wakeword/activations/{id}` — update label.
+  - `DELETE /api/wakeword/activations/{id}` — remove .wav + .json.
+
+### Tests
+
+- 9 Go cases for the new routes (listing, ordering, audio stream
+  Content-Type, label patch + uploaded-flag reset, bogus label
+  rejection, delete, not-found, method-not-allowed, helper unit
+  tests).
+- Existing frontend tests continue to pass (4/4).
+
+## [0.37.5] - 2026-05-22
+
+Wake-word activation capture (Phase B — server storage + upload).
+Activations captured locally in v0.37.4 can now flow to a SpeechKit
+server, where they are stored per-tenant with strict owner scoping.
+The endpoint defaults OFF on both ends: the device only uploads when
+the user enables `upload_enabled`, and the server only accepts uploads
+when the operator enables `[server.training_data].accept_uploads`.
+
+### Added
+
+- `POST /v1/wakeword/activations` accepts multipart uploads (audio
+  WAV bytes + a metadata JSON form field). Returns `201` with the
+  stored row, `409` for duplicate IDs, `413` when the per-user quota
+  is exhausted, `503` when the operator has the feature off.
+- `GET /v1/wakeword/activations` and `GET
+  /v1/wakeword/activations/{id}` list and fetch the caller's stored
+  activations. Every read is scoped to `Identity{UserID, OrgID}` so
+  one tenant cannot see another tenant's recordings.
+- `GET /v1/wakeword/activations/{id}/audio` streams the raw WAV
+  bytes for review or re-labelling.
+- `PATCH /v1/wakeword/activations/{id}` updates the `label` field
+  (`correct`, `false_positive`, or empty for "unlabelled").
+- `DELETE /v1/wakeword/activations/{id}` removes both the database
+  row and the audio file from disk.
+- New `[server.training_data]` config block: `accept_uploads`
+  (default `false`), `audio_dir` (default
+  `<model_dir>/wakeword-activations`), `per_user_quota_bytes`
+  (default 1 GiB), `retention_days` (default 180).
+- New `[wakeword.training_data]` device-side fields: `upload_enabled`
+  (default `false`), `upload_server_url`, `upload_token_env`,
+  `upload_only_labeled` (default `false`),
+  `upload_interval_minutes` (default 5).
+- Device-side background uploader that scans the local capture dir,
+  POSTs each unsent activation, and marks the JSON sidecar
+  `uploaded: true` after a successful `201` (or a `409` from a prior
+  successful upload — idempotent).
+- Health component `api.wakeword_training` reports the endpoint
+  state on `/readyz`. Non-blocking so the rest of the server stays
+  green when the feature is disabled or the configured store does
+  not support activation persistence.
+
+### Security & Privacy
+
+- Multi-tenant isolation enforced at every read, write, label
+  update, and delete. The store returns `sql.ErrNoRows` for
+  cross-owner access instead of leaking existence.
+- Path-traversal guard: client-supplied IDs are scrubbed down to
+  alphanumeric + `-` + `_` before joining with `audio_dir`. The
+  literal `..` is reduced to `_` so a malicious client cannot
+  escape the audio root.
+- `O_EXCL` on audio create prevents duplicate-ID overwrites; the
+  server rejects with `409` instead of clobbering an existing file.
+- Per-user byte quota is checked before reading the upload body so
+  abusive clients fail fast on `413`.
+
+### Forward Compatibility
+
+- Both SQLite and Postgres backends satisfy the new
+  `WakewordActivationStore` interface introduced in this release.
+- The Settings UI for browsing, labelling, and deleting captured
+  activations is scheduled for v0.37.6.
+
+## [0.37.4] - 2026-05-21
+
+Wake-word activation capture (Phase A — local capture only). Every
+wake-word detection now optionally saves the surrounding audio
+(pre-roll + post-roll WAV plus a JSON metadata sidecar) to a local
+directory. Default OFF — explicit user opt-in required because the
+feature touches microphone audio.
+
+Server-side upload + Settings UI are scheduled for v0.37.5 + v0.37.6
+respectively. v0.37.4 ships the local-only foundation so the captured
+data lives on disk in a forward-compatible schema; manual
+`scp`/`curl` upload works today, the auto-uploader + REST endpoints
+land in v0.37.5.
+
+### Added
+- `internal/wakeword.TrainingCapture` — ring buffer of the last
+  `pre_roll_ms` of S16 mono 16 kHz PCM. On every detection,
+  snapshots the ring, collects `post_roll_ms` of further audio,
+  writes a canonical RIFF/WAVE PCM file plus a JSON sidecar with
+  id/phrase/score/backend/captured_at metadata. 11 unit tests
+  covering ring rotation, post-roll latency, immediate-flush, no-op
+  when disabled, concurrent ingest/trigger races, filesystem-safe
+  filename normalisation, and WAV header shape.
+- `WakewordConfig.TrainingData` (`WakewordTrainingDataConfig`) — TOML
+  block `[wakeword.training_data]` with eight knobs:
+  `local_capture_enabled` / `local_capture_dir` / `local_max_files` /
+  `local_retention_days` / `pre_roll_ms` / `post_roll_ms` /
+  `upload_enabled` / `upload_server_url` / `upload_token_env` /
+  `upload_only_labeled` / `upload_interval_minutes`. ALL booleans
+  default false; the upload knobs are forward-compat surface that
+  v0.37.5's auto-uploader will consume.
+- `ServerConfig.TrainingData` (`ServerTrainingDataConfig`) — sibling
+  block `[server.training_data]` with `accept_uploads` (default
+  false, gates the v0.37.5 REST endpoint), `audio_dir`,
+  `per_user_quota_bytes` (default 1 GiB), `retention_days` (default
+  180).
+- Sidecar flags (both `speechkit-wakeword` and
+  `speechkit-openwakeword`): `--training-enabled` /
+  `--training-dir` / `--training-pre-roll-ms` /
+  `--training-post-roll-ms`. The Wails host passes them through when
+  `LocalCaptureEnabled=true` in TOML.
+- IPC event `training_capture` — emitted once per WAV+JSON pair
+  written. Carries `trainingId`, `trainingAudioPath` (basename),
+  `trainingAudioBytes`, `trainingPreRollMs`, `trainingPostRollMs`
+  plus the existing phrase fields. Lets the host UI (v0.37.6)
+  refresh its activation list without polling the filesystem.
+- `cmd/speechkit/desktop_wakeword_backends.go`:
+  `resolveTrainingCaptureDir` (falls back to
+  `%LOCALAPPDATA%/SpeechKit/wakeword-activations` on Windows,
+  `~/.speechkit/wakeword-activations` elsewhere) +
+  `ensureTrainingCaptureDir` (0o700 user-only permissions) +
+  `effectiveTrainingPreRollMs/PostRollMs` helpers.
+- `docs/wakeword-training-data.md` — full privacy contract, default-
+  off matrix, architecture diagram, audit-event catalog entries,
+  SQL schema (consumed by v0.37.5), REST endpoint reference
+  (delivered in v0.37.5), DSGVO/GDPR compliance notes.
+- bd issue `kombify-SpeechKit-bvg`-style tracker filed for the
+  v0.37.4+5+6 chain.
+
+### Behaviour matrix
+| Toggle | Default | Effect |
+|---|---|---|
+| `[wakeword.training_data] local_capture_enabled` | **false** | Sidecar saves each detection's audio to `local_capture_dir`. No network traffic. |
+| `[wakeword.training_data] upload_enabled` | **false** | v0.37.5 background uploader sends labeled clips to `upload_server_url`. Currently a forward-compat config field — no uploader yet. |
+| `[server.training_data] accept_uploads` | **false** | v0.37.5 REST endpoint accepts client uploads when enabled. Currently a forward-compat config field — no endpoint yet. |
+
+### Deferred (v0.37.5)
+- `internal/store.WakewordActivationStore` (SQLite + Postgres impl).
+- `POST /v1/wakeword/activations` multipart upload + `GET` / `PATCH`
+  / `DELETE` per-activation endpoints + `GET .../audio` blob fetch.
+- `internal/wakeword/training_uploader.go` background goroutine
+  with backoff + retention worker.
+- Audit-log events `wakeword.activation.captured` /
+  `wakeword.activation.uploaded` / `wakeword.activation.deleted`.
+
+### Deferred (v0.37.6)
+- Wails Settings UI tab with activation list, audio playback,
+  label dropdown (correct / false-positive / unknown), and
+  batch-send button. Until then, captured clips can be inspected
+  in any audio player (the WAV files are standard 16 kHz mono
+  S16) and metadata edited in the JSON sidecar by hand.
+
+### Verification
+- `go test ./internal/wakeword/... ./internal/config/... ./cmd/speechkit/
+  -count=1 -short` — green (11 TrainingCapture tests + 3
+  sidecar-args tests + existing suites).
+- `gofmt -s -l` clean on touched files.
+
+## [0.37.3] - 2026-05-21
+
+Voice-Companion TTS catalog refresh. Pulls in the current Hugging Face
+TTS leaders as Local Built-in profiles so the v0.37 hands-free flow has
+sane "ships in the installer, no API key needed" voices out of the box.
+Required by the Thalia + Companion-Live deployments and aligns with
+the user's request to integrate Hugging Face TTS alongside the
+existing LLM and STT model selection.
+
+### Added
+- `tts.local.kokoro-82m` Local Built-in profile — Hugging Face's
+  current TTS leader (68M+ downloads, 6.1k likes). Apache-2.0,
+  StyleTTS2-based, ~50 MB ONNX (int8), bundled into the installer
+  as the recommended Voice-Output default. Marked `Default: true`
+  on the catalog so fresh installs without an API key get a local
+  voice. Phase-3 runtime via `onnxruntime-go` sidecar.
+- `tts.local.supertonic-3` Local Built-in profile — Hugging Face's
+  trending #3 TTS model (May 2026, trending score 331). OpenRAIL,
+  ONNX, multilingual across 32 languages including DE/EN/JA/AR/KO.
+  Phase-3 runtime via same sidecar pattern as Kokoro.
+- `tts.local.chatterbox-multilingual` Local Built-in profile —
+  best open voice-cloning TTS on Hugging Face (`onnx-community/
+  chatterbox-multilingual-ONNX`). MIT, 24 languages, voice-clone
+  reference clip configurable per Persona. Phase-3 runtime.
+- `tts.local.piper` Local Built-in profile — kept as the
+  HA-compatible fallback (Piper is Home Assistant Voice's canonical
+  engine). MIT, broad voice catalog (Thorsten DE, Amy EN, ...).
+  Replaces the earlier v0.37.2 `tts.local.piper-de` entry; the old
+  profile ID is gone — operators who pinned that string need to
+  migrate to `tts.local.piper`.
+- `internal/tts/router.go` `PreferredProviderForProfileID` extended
+  with the four new local profile mappings:
+    * `tts.local.kokoro-*`     → `kokoro_local`
+    * `tts.local.supertonic-*` → `supertonic_local`
+    * `tts.local.chatterbox-*` → `chatterbox_local`
+    * `tts.local.piper(-*)`    → `piper`
+  Each maps to a distinct internal Provider.Name() so the in-process
+  runtime adapter (Phase 3) can register itself without colliding
+  with the existing `kokoro` (OpenAI-compatible self-hosted) adapter.
+- Router test `TestPreferredProviderForProfileID_MapsCatalogEntries`
+  extended with the four new Local Built-in mappings.
+
+### Changed
+- Catalog `Default: true` moved from `tts.google.studio-o-de` to
+  `tts.local.kokoro-82m`. The Direct-Provider Google entry remains
+  the `DefaultTTSPrimaryProfileID` at the config layer (so installs
+  with `GOOGLE_AI_API_KEY` already set keep getting Studio-O on
+  bootstrap), but the catalog-wide default now points at the
+  shipped-in-installer local model — the v0.37 "works out of box
+  without a cloud key" baseline.
+
+### Migration
+- `tts.local.piper-de` → `tts.local.piper`. The voice variant
+  `piper.de.thorsten-medium` is still the recommended DE voice
+  inside the merged profile. No code change required if you
+  pinned the variant, only if you pinned the profile-ID.
+
+## [0.37.2] - 2026-05-21
+
+Adds Text-to-Speech as a first-class entry in SpeechKit's model-
+selection axis alongside the existing Dictation / Assist / Voice-Agent
+mode pickers. Required for the Thalia + Companion-Live deployments
+where the picked voice ("Studio-O DE", "OpenAI Nova HD", "Piper
+Thorsten DE", ...) needs to be pinned per-install without editing
+the lower-level `[tts.providers.*]` blocks. Builds on top of v0.37.1.
+
+### Added
+- `pkg/speechkit.ModeTTS` (`"tts"`) — fourth product-facing mode in
+  the SDK catalog with its own contract (input=text, output=audio,
+  `CapabilityTTS` allowed; everything else forbidden).
+- `pkg/speechkit.IntelligenceVoiceOutput` — paired intelligence kind.
+- Five new TTS `ProviderProfile` entries in the default catalog:
+  - `tts.local.piper-de` (Local Built-in, Phase 3 stub for the
+    voice-companion all-local stack)
+  - `tts.openedai.kokoro` (Local Provider, OpenAI-compatible
+    self-hosted Kokoro endpoint)
+  - `tts.huggingface.parler-multilingual` (Cloud Provider, Parler-
+    TTS via the HF Inference Router)
+  - `tts.google.studio-o-de` (Direct Provider, recommended default —
+    works out of the box when a `GOOGLE_AI_API_KEY` is already
+    configured)
+  - `tts.openai.tts-1-hd` (Direct Provider, six built-in voices)
+- `ModelSelectionConfig.TTS ModeModelSelection` field — same shape as
+  the existing Dictate/Assist/VoiceAgent mode selections. New TOML
+  block `[model_selection.tts]` with `primary_profile_id` and
+  `fallback_profile_id`.
+- `DefaultTTSPrimaryProfileID` + `DefaultTTSFallbackProfileID`
+  constants. Fresh installs default to Google Studio-O DE primary,
+  OpenAI tts-1-hd fallback.
+- `tts.OrderByPreferredProvider(providers, preferred)` and
+  `tts.PreferredProviderForProfileID(profileID)` helpers in
+  `internal/tts/router.go`. Both deployment-target wirings
+  (`internal/server/core/assist_wiring.go` `buildTTSRouter` and
+  `cmd/speechkit/app_init.go` `buildTTSRouter`) now consult these
+  to pin the user's selected provider to the front of the
+  strategy-determined order.
+- Catalog regression tests: `TestTTSProfilesAdvertiseTTSCapability`,
+  `TestNormalizeMode_TTSAliases`, plus extended
+  `TestEveryModeExposesFourProviderKinds` to cover ModeTTS.
+- Router tests: `TestOrderByPreferredProvider_*` (3 cases),
+  `TestPreferredProviderForProfileID_MapsCatalogEntries` (10 cases).
+
+### Changed
+- `ValidateDefaultCatalog` now also walks ModeTTS — the V23 invariant
+  "every mode exposes all four provider groups" is enforced for
+  Voice-Output too. A future build that removes a TTS provider group
+  fails the catalog test rather than shipping silently.
+- `internal/server/catalog/handler.go` now exhaustively handles
+  ModeTTS in `selectedProfiles`, `modeEnabled`, and `runtimeReady`.
+  TTS is a capability-mode (consumed by Assist + VoiceAgent), so
+  `modeEnabled` treats it as implicitly enabled rather than requiring
+  `"tts"` in `[server].modes`, and `runtimeReady` derives readiness
+  from `[tts].enabled`.
+
+## [0.37.1] - 2026-05-21
+
+Patch on top of v0.37.0 covering two issues caught immediately after
+the v0.37.0 cut: the documented "skill returns silent → fall through
+to LLM" contract was not wired into `assist.Pipeline.handleTool`, and
+three Voice-Companion files needed a `gofmt -s` pass.
+
+### Fixed
+- Voice-Companion skills returning `Action="silent"` with empty Text
+  now correctly fall through to the Assist LLM flow when one is
+  configured. Without this fix, unparseable math expressions, Wikipedia
+  disambiguation pages, and HomeAssistant requests on an unconfigured
+  bridge would have returned literal silence to the user instead of
+  letting the LLM answer. Legacy silent semantics (no LLM available
+  OR explicit silent-with-text from host skills) preserved with two
+  narrow guards.
+- HomeAssistant intent now actually routes when configured. The default
+  `UtilityRegistry` ships `home_assistant` with Enabled=false (the
+  intent is only meaningful when a HA URL + Token are wired). The
+  v0.37.0 cut forgot to flip the flag in both deployment targets when
+  HA config is present, which silently sent "schalte das Licht aus" to
+  the LLM instead of HA. Both the server (`buildAssistPipeline`) and
+  the desktop (`initDesktopAssistRuntime`) now register an
+  Enabled=true HA definition when URL+Token resolve.
+- Repo-root `package.json` + matching `package-lock.json`,
+  `installer/speechkit.nsi`, and `cmd/speechkit/winres.json` bumped
+  to 0.37.1 alongside `frontend/app/package.json` (CI's
+  changelog-lint reads the root manifest, not the SvelteKit
+  app's). `scripts/sync-version.mjs --version=0.37.1` did the
+  cascade.
+- gofmt sweep on `internal/shortcuts/catalog.go`,
+  `internal/assist/skills/voice_companion/weather_skill.go`, and
+  `internal/assist/skills/voice_companion/timer_skill_test.go`
+  cleared CI's Check-gofmt gate.
+
+### Added
+- Three regression tests in `internal/assist/pipeline_test.go`
+  documenting the silent-fallthrough contract:
+  - `TestSilentToolResultFallsThroughToLLM`
+  - `TestSilentToolResultWithoutLLMReturnsSilent`
+  - `TestSilentToolResultWithTextStaysSilent`
+
+## [0.37.0] - 2026-05-21
+
+Hands-Free Voice-Companion release. "Hey Quby" now drives a one-shot
+Assist session with a catalog of seven voice-oriented skills (Time,
+Date, Math, Weather, Timer, Reminder, Wikipedia) and an optional Home
+Assistant bridge for smart-home control. Voice-Agent mode keeps its
+multi-hour realtime semantics for Companion-Live and party-mode
+use-cases. No public API breakage from v0.36 — the new pipeline is
+opt-in via two TOML lines.
+
+Detailed walk-through:
+[docs/release-notes/v0.37.0.md](docs/release-notes/v0.37.0.md).
+
+### Added
+- Seven new Voice-Companion skills under `internal/assist/skills/voice_companion/`
+  answering Time, Date, Math, Weather, Timer, Reminder, and Wikipedia
+  intents. All pure-Go, locale-aware (DE+EN), with httptest doubles
+  for the HTTP-using skills so CI never reaches the live internet.
+- Home Assistant Conversation API bridge as a Voice-Companion skill.
+  Configure `[assist.home_assistant] url = "..."; token_env = "..."`
+  to wire SpeechKit's wake-word into HA's intent engine for full
+  smart-home control. The token is never stored in TOML.
+- New `voice_companion.CompositeExecutor` pattern: skills dispatch
+  first, host-side legacy executors (Copy/Insert/Summarize/QuickNote)
+  fall through unchanged.
+- `[assist.home_assistant]` config block for HA URL + Token-Env +
+  optional Language override.
+- 16 new IntentLexicon entries (8 intents × DE+EN) under
+  `internal/shortcuts/catalog.go` covering "Wetter", "Timer",
+  "schalte das Licht aus", "tell me about", and the rest of the
+  Voice-Companion phrasebook.
+- Public doc: [docs/voice-companion.md](docs/voice-companion.md) —
+  canonical Voice-Companion design with pipeline diagram, skill
+  surface, configuration block, latency budgets, phase roadmap.
+
+### Changed
+- Assist Pipeline construction on both deployment targets (Device-
+  Target via `cmd/speechkit/desktop_services.go`, Server-Target via
+  `internal/server/core/assist_wiring.go`) now wraps the host-side
+  ToolExecutor with `voice_companion.CompositeExecutor`. Existing
+  intents continue to work unchanged.
+- `buildAssistUtilityRegistry` documentation clarifies that an unset
+  `[assist].enabled_tools` returns the full default registry so
+  freshly-shipped Voice-Companion skills are usable out-of-box.
+  Hosts with an explicit allow-list see no behaviour change.
+
+### Deferred
+- MCP CLI Command Decomposition (the originally-planned v0.37
+  outcome) moves to v0.38. The hands-free voice-companion work
+  claimed v0.37 because it ships a user-visible capability — the
+  MCP refactor remains internal-cleanup that can land on its own
+  cycle.
+- Multi-Room Satellite topology (LiveKit / ESPHome-API) stays a
+  v0.38+ topic; v0.37 ships Single-Node only.
+
 ## [0.36.0] - 2026-05-21
 
 Beta consolidation release. v0.36.0 bundles the v0.35.9 → v0.35.23

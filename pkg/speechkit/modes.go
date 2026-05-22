@@ -13,6 +13,13 @@ const (
 	ModeDictation  Mode = "dictation"
 	ModeAssist     Mode = "assist"
 	ModeVoiceAgent Mode = "voice_agent"
+	// ModeTTS exposes Text-to-Speech as a first-class model-selection axis
+	// alongside the three product modes. The host activates an Assist or
+	// Voice-Agent session and the TTS profile selected here drives which
+	// provider speaks the response. v0.37 introduced this alongside the
+	// Voice-Companion hands-free flow — Thalia + Companion Live need a
+	// stable place to pin a TTS voice across deployments.
+	ModeTTS Mode = "tts"
 )
 
 // IntelligenceKind names the mode-specific intelligence contract.
@@ -22,6 +29,10 @@ const (
 	IntelligenceUser          IntelligenceKind = "user"
 	IntelligenceUtility       IntelligenceKind = "utility"
 	IntelligenceBrainstorming IntelligenceKind = "brainstorming"
+	// IntelligenceVoiceOutput is the contract for the TTS mode: render
+	// generated text to audio. No user intelligence, no utility tools,
+	// no brainstorming — strictly text in, audio out.
+	IntelligenceVoiceOutput IntelligenceKind = "voice_output"
 )
 
 // ProviderKind is the product-facing provider group shown for every mode.
@@ -258,6 +269,8 @@ func RequiredCapabilities(mode Mode, nativeRealtime bool) []Capability {
 			return []Capability{CapabilityRealtimeAudio}
 		}
 		return []Capability{CapabilityPipelineFallback, CapabilitySessionSummary}
+	case ModeTTS:
+		return []Capability{CapabilityTTS}
 	default:
 		return nil
 	}
@@ -289,6 +302,14 @@ func DefaultModeContracts() []ModeContract {
 			Allowed:      []Capability{CapabilityRealtimeAudio, CapabilityPipelineFallback, CapabilityAudioInput, CapabilityTTS, CapabilitySessionSummary, CapabilityToolCalling},
 			Forbidden:    []Capability{CapabilityTranscription},
 		},
+		{
+			Mode:         ModeTTS,
+			Intelligence: IntelligenceVoiceOutput,
+			Input:        "text",
+			Output:       "audio",
+			Allowed:      []Capability{CapabilityTTS},
+			Forbidden:    []Capability{CapabilityTranscription, CapabilitySTT, CapabilityLLM, CapabilityRealtimeAudio, CapabilityToolCalling, CapabilityPipelineFallback, CapabilityDictionaryPrompt, CapabilityDictionaryNativeHints, CapabilitySessionSummary},
+		},
 	}
 }
 
@@ -300,6 +321,8 @@ func NormalizeMode(mode Mode) Mode {
 		return ModeAssist
 	case "voice_agent", "voiceAgent", "voice-agent", "realtime_voice":
 		return ModeVoiceAgent
+	case "tts", "voice_output", "speak", "speech":
+		return ModeTTS
 	case "none", "":
 		return ModeNone
 	default:
@@ -325,6 +348,9 @@ func ValidateProfileForMode(profile ProviderProfile, mode Mode) error {
 	}
 	if mode == ModeDictation && (profile.HasCapability(CapabilityToolCalling) || profile.HasCapability(CapabilityLLM)) {
 		return fmt.Errorf("dictation profile %q cannot expose tools or LLM rewriting", profile.ID)
+	}
+	if mode == ModeTTS && (profile.HasCapability(CapabilityLLM) || profile.HasCapability(CapabilityTranscription) || profile.HasCapability(CapabilityRealtimeAudio)) {
+		return fmt.Errorf("tts profile %q cannot expose LLM / STT / realtime capabilities", profile.ID)
 	}
 	return nil
 }

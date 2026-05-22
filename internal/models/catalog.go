@@ -147,6 +147,8 @@ func modalityFromFrameworkMode(mode speechkit.Mode) Modality {
 		return ModalityAssist
 	case speechkit.ModeVoiceAgent:
 		return ModalityRealtimeVoice
+	case speechkit.ModeTTS:
+		return ModalityTTS
 	default:
 		return ""
 	}

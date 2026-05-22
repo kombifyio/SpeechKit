@@ -200,6 +200,13 @@ func runDesktopApp(closeLogFile func()) {
 	startDesktopWakeword(ctx, cfg, state, hkManager, &cleanup)
 	tracker.stage("wakeword_evaluated")
 
+	// v0.37.5: background uploader for locally captured activations.
+	// Double-gated by [wakeword.training_data].local_capture_enabled +
+	// upload_enabled; both default OFF. Silent no-op when either is
+	// false. See docs/wakeword-training-data.md.
+	startWakewordTrainingUploader(ctx, cfg, state, &cleanup)
+	tracker.stage("wakeword_uploader_evaluated")
+
 	scheduleFirstRunOnboarding(state, installState, showDashboard)
 	tracker.stage("app_run_begin")
 

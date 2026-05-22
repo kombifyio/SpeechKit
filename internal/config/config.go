@@ -37,6 +37,14 @@ const (
 	DefaultDictatePrimaryProfileID    = "stt.local.whispercpp"
 	DefaultAssistPrimaryProfileID     = "assist.builtin.gemma4-e4b"
 	DefaultVoiceAgentPrimaryProfileID = "realtime.builtin.pipeline"
+	// DefaultTTSPrimaryProfileID is the Voice-Output profile pre-selected for
+	// fresh installs. Google Studio-O (DE) is the v0.37 recommended baseline
+	// because operators that have already configured a GOOGLE_AI_API_KEY (the
+	// most common cloud-AI key in this stack) get a working voice out of the
+	// box; otherwise the fallback (OpenAI tts-1-hd) takes over once an
+	// OpenAI key is configured.
+	DefaultTTSPrimaryProfileID  = "tts.google.studio-o-de"
+	DefaultTTSFallbackProfileID = "tts.openai.tts-1-hd"
 
 	// defaultGeminiNativeAudioModel is the primary real-time audio-to-audio
 	// model. As of April 2026 this is Gemini 3.1 Flash Live (preview) —
@@ -201,6 +209,83 @@ type WakewordConfig struct {
 	// hard-cap on session duration — Voice-Agent is designed for
 	// multi-hour dialogs and a forced cap would break regular use.
 	AutoEnd WakewordAutoEndConfig `toml:"auto_end"`
+
+	// TrainingData controls the optional activation-capture pipeline:
+	// the sidecar saves the surrounding audio of each detection to a
+	// local directory and, when explicitly opted-in, uploads those
+	// clips to a SpeechKit-Server for training-data collection. ALL
+	// fields default to OFF — see docs/wakeword-training-data.md.
+	TrainingData WakewordTrainingDataConfig `toml:"training_data"`
+}
+
+// WakewordTrainingDataConfig governs the v0.37.4+ activation-capture
+// pipeline. All booleans default to false so the feature has no effect
+// unless the user explicitly opts in. The full privacy contract lives
+// in docs/wakeword-training-data.md.
+type WakewordTrainingDataConfig struct {
+	// LocalCaptureEnabled toggles the sidecar ring-buffer + WAV
+	// writer that persists each detection's audio to LocalCaptureDir.
+	// Default false. Even when true, no network traffic happens
+	// unless UploadEnabled is ALSO true.
+	LocalCaptureEnabled bool `toml:"local_capture_enabled"`
+
+	// LocalCaptureDir is the filesystem root that holds the captured
+	// WAV + JSON pairs. Empty resolves to
+	// %LOCALAPPDATA%/SpeechKit/wakeword-activations on Windows.
+	LocalCaptureDir string `toml:"local_capture_dir"`
+
+	// LocalMaxFiles caps how many activation pairs live on disk
+	// before the oldest get deleted by the rotation worker. Default
+	// 500. Set to 0 for unlimited (the retention_days limit still
+	// applies).
+	LocalMaxFiles int `toml:"local_max_files"`
+
+	// LocalRetentionDays auto-deletes activation pairs older than
+	// this many days at sidecar startup and every hour after. Zero
+	// means "do not auto-delete by age" (LocalMaxFiles still
+	// applies). Default 30.
+	LocalRetentionDays int `toml:"local_retention_days"`
+
+	// PreRollMs is the duration of audio captured BEFORE the
+	// detection trigger. The sidecar keeps this many milliseconds
+	// of PCM in a ring buffer so the moment the detection fires it
+	// can write the leading audio that contains the actual wake
+	// phrase. Default 1500 (matches the wake-phrase windows the
+	// existing detectors are tuned against).
+	PreRollMs int `toml:"pre_roll_ms"`
+
+	// PostRollMs is the duration of audio captured AFTER the
+	// detection trigger. Useful for catching the speaker continuing
+	// past the wake phrase so a labeler can hear whether the
+	// utterance was a true positive or noise. Default 500.
+	PostRollMs int `toml:"post_roll_ms"`
+
+	// UploadEnabled toggles the background uploader that pushes
+	// captured clips to UploadServerURL. Requires both
+	// LocalCaptureEnabled=true and UploadServerURL+UploadTokenEnv
+	// to be set. Default false.
+	UploadEnabled bool `toml:"upload_enabled"`
+
+	// UploadServerURL is the base URL of the SpeechKit-Server that
+	// accepts POST /v1/wakeword/activations. Empty falls back to
+	// [server_connection].url when set.
+	UploadServerURL string `toml:"upload_server_url"`
+
+	// UploadTokenEnv names the env var (resolved via
+	// internal/secrets) that holds the bearer token used by the
+	// uploader. Default "SPEECHKIT_TRAINING_TOKEN".
+	UploadTokenEnv string `toml:"upload_token_env"`
+
+	// UploadOnlyLabeled limits uploads to clips that the user has
+	// labeled (correct / false_positive). When true (default),
+	// unlabeled clips stay local — privacy-friendly default that
+	// only ships audio after explicit user review.
+	UploadOnlyLabeled bool `toml:"upload_only_labeled"`
+
+	// UploadIntervalMinutes is the cadence at which the uploader
+	// scans LocalCaptureDir and flushes new clips to the server.
+	// Default 60.
+	UploadIntervalMinutes int `toml:"upload_interval_minutes"`
 }
 
 // WakewordAutoEndConfig is the TOML surface of wakeword.AutoEndConfig.
@@ -262,6 +347,39 @@ type ServerConfig struct {
 	LogFormat                string               `toml:"log_format"`     // "json" | "text"
 	LogLevel                 string               `toml:"log_level"`      // "debug" | "info" | "warn" | "error"
 	Features                 ServerFeaturesConfig `toml:"features"`
+
+	// TrainingData configures the server-side wake-word activation
+	// collection endpoint. Default OFF so an operator must explicitly
+	// accept training-data uploads from clients. See
+	// docs/wakeword-training-data.md.
+	TrainingData ServerTrainingDataConfig `toml:"training_data"`
+}
+
+// ServerTrainingDataConfig governs the server-side wake-word
+// activation pipeline. AcceptUploads defaults to false so POST
+// /v1/wakeword/activations returns 503 until an operator explicitly
+// opts in.
+type ServerTrainingDataConfig struct {
+	// AcceptUploads gates POST /v1/wakeword/activations. When false
+	// the endpoint returns 503 with a clear "feature disabled"
+	// payload so device-side uploaders back off gracefully. Default
+	// false.
+	AcceptUploads bool `toml:"accept_uploads"`
+
+	// AudioDir is the filesystem root where uploaded audio files
+	// are stored. Empty resolves to <data>/wakeword-activations/ in
+	// the container. Files land under <audio_dir>/<org>/<user>/<id>.wav.
+	AudioDir string `toml:"audio_dir"`
+
+	// PerUserQuotaBytes caps how many bytes one user can have on
+	// disk before the server rejects further uploads with 413. Zero
+	// = unlimited. Default 1 GiB (1073741824).
+	PerUserQuotaBytes int64 `toml:"per_user_quota_bytes"`
+
+	// RetentionDays auto-deletes uploaded clips older than this
+	// many days via the maintenance worker. Zero = no auto-delete.
+	// Default 180.
+	RetentionDays int `toml:"retention_days"`
 }
 
 type ServerLiveKitConfig struct {
@@ -389,6 +507,32 @@ type VocabularyConfig struct {
 
 type AssistConfig struct {
 	EnabledTools []string `toml:"enabled_tools"`
+
+	// HomeAssistant configures the optional Home Assistant Conversation
+	// API bridge used by the Voice-Companion skill catalog. When
+	// URL+TokenEnv are both set, the HA skill is wired automatically;
+	// otherwise the skill stays disabled and Voice-Companion commands
+	// fall through to the LLM.
+	HomeAssistant AssistHomeAssistantConfig `toml:"home_assistant"`
+}
+
+// AssistHomeAssistantConfig is the TOML surface for the
+// [assist.home_assistant] block.
+type AssistHomeAssistantConfig struct {
+	// URL is the base URL of the Home Assistant instance, e.g.
+	// "https://ha.kombify.io:8123". No trailing slash required —
+	// the HA skill trims it.
+	URL string `toml:"url"`
+
+	// TokenEnv names the env var (resolved via internal/secrets) that
+	// holds a Long-Lived Access Token created via HA → Profile →
+	// Long-Lived Access Tokens. The value itself is NEVER stored in
+	// the TOML file.
+	TokenEnv string `toml:"token_env"`
+
+	// Language overrides the language sent to HA's Conversation API.
+	// When empty, the user's locale is used.
+	Language string `toml:"language"`
 }
 
 type ShortcutsConfig struct {
@@ -407,6 +551,14 @@ type ModelSelectionConfig struct {
 	Dictate    ModeModelSelection `toml:"dictate"`
 	Assist     ModeModelSelection `toml:"assist"`
 	VoiceAgent ModeModelSelection `toml:"voice_agent"`
+	// TTS pins the Voice-Output provider profile + optional fallback that
+	// Assist and Voice-Agent use when speaking back to the user. Same shape
+	// as the three product-mode selections so the catalog API stays
+	// symmetric. Added in v0.37 alongside the hands-free Voice-Companion
+	// flow so Thalia + Companion-Live deployments can pick a stable voice
+	// (e.g. Google Studio-O DE) without editing the lower-level
+	// [tts.providers.*] blocks.
+	TTS ModeModelSelection `toml:"tts"`
 }
 
 // Mode source values for ModeModelSelection.ModeSource. "local" means the
@@ -728,6 +880,7 @@ type TTSConfig struct {
 	Google      TTSGoogle      `toml:"google"`
 	HuggingFace TTSHuggingFace `toml:"huggingface"`
 	Local       TTSLocal       `toml:"local"`
+	Piper       TTSPiper       `toml:"piper"`
 }
 
 type TTSOpenAI struct {
@@ -751,6 +904,21 @@ type TTSLocal struct {
 	Model     string `toml:"model"`
 	ModelPath string `toml:"model_path"`
 	Port      int    `toml:"port"`
+}
+
+// TTSPiper configures the offline Piper subprocess TTS provider.
+// The piper binary must be on PATH (or pointed at via Binary). Voice models
+// are NOT bundled — operators run scripts/prepare-piper-voices.{ps1,sh} to
+// fetch ONNX voices from rhasspy/piper-voices into VoiceDir.
+type TTSPiper struct {
+	Enabled  bool   `toml:"enabled"`
+	Binary   string `toml:"binary"`    // path to piper executable; empty => "piper" on PATH
+	VoiceDir string `toml:"voice_dir"` // directory holding *.onnx voice files
+	// DefaultVoices maps a locale short-code ("en", "de", ...) to a voice
+	// filename inside VoiceDir. Empty entries fall back to the built-in
+	// defaults (en_US-amy-medium.onnx, de_DE-thorsten-medium.onnx).
+	DefaultVoices map[string]string `toml:"default_voices"`
+	TimeoutSec    int               `toml:"timeout_sec"` // subprocess timeout; 0 => 30 s
 }
 
 // VoiceAgentConfig configures the real-time Voice Agent Mode.

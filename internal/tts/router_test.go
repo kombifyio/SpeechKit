@@ -6,6 +6,75 @@ import (
 	"testing"
 )
 
+func TestOrderByPreferredProvider_MovesMatchToFront(t *testing.T) {
+	openai := &mockProvider{name: "openai"}
+	google := &mockProvider{name: "google"}
+	hf := &mockProvider{name: "huggingface"}
+
+	ordered := OrderByPreferredProvider([]Provider{openai, google, hf}, "google")
+	if len(ordered) != 3 {
+		t.Fatalf("expected 3 providers, got %d", len(ordered))
+	}
+	if ordered[0].Name() != "google" {
+		t.Errorf("ordered[0] = %q, want google", ordered[0].Name())
+	}
+	// Original relative order of the remaining providers is preserved.
+	if ordered[1].Name() != "openai" || ordered[2].Name() != "huggingface" {
+		t.Errorf("relative order broken: %v", []string{ordered[1].Name(), ordered[2].Name()})
+	}
+}
+
+func TestOrderByPreferredProvider_EmptyPreferredIsNoOp(t *testing.T) {
+	openai := &mockProvider{name: "openai"}
+	google := &mockProvider{name: "google"}
+	in := []Provider{openai, google}
+	out := OrderByPreferredProvider(in, "")
+	if len(out) != 2 || out[0].Name() != "openai" {
+		t.Errorf("empty preferred should be no-op, got %v", out)
+	}
+}
+
+func TestOrderByPreferredProvider_NoMatchReturnsInputUnchanged(t *testing.T) {
+	openai := &mockProvider{name: "openai"}
+	in := []Provider{openai}
+	out := OrderByPreferredProvider(in, "kokoro")
+	if len(out) != 1 || out[0].Name() != "openai" {
+		t.Errorf("no-match should return input, got %v", out)
+	}
+}
+
+func TestPreferredProviderForProfileID_MapsCatalogEntries(t *testing.T) {
+	cases := map[string]string{
+		"":                                      "",
+		"tts.openai.tts-1-hd":                   "openai",
+		"tts.google.studio-o-de":                "google",
+		"tts.google.studio-o-de.variant.studio": "google", // prefix match
+		"tts.huggingface.parler-multilingual":   "huggingface",
+		"tts.openedai.kokoro":                   "kokoro",
+		"tts.kokoro.82m":                        "kokoro",
+		// v0.37.3 Local Built-in profiles — distinct provider Name()s
+		// per runtime adapter (kokoro_local vs supertonic_local vs
+		// chatterbox_local vs piper subprocess).
+		"tts.local.kokoro-82m":              "kokoro_local",
+		"tts.local.kokoro-v1":               "kokoro_local",
+		"tts.local.supertonic-3":            "supertonic_local",
+		"tts.local.supertonic-3.variant.de": "supertonic_local",
+		"tts.local.chatterbox-multilingual": "chatterbox_local",
+		"tts.local.chatterbox-clone":        "chatterbox_local",
+		"tts.local.piper":                   "piper",
+		"tts.local.piper-de":                "piper",
+		"tts.local.piper-en":                "piper",
+		"stt.openai.whisper-1":              "", // wrong mode prefix
+		"random-string":                     "",
+	}
+	for profile, want := range cases {
+		got := PreferredProviderForProfileID(profile)
+		if got != want {
+			t.Errorf("PreferredProviderForProfileID(%q) = %q, want %q", profile, got, want)
+		}
+	}
+}
+
 // mockProvider is a test double for Provider.
 type mockProvider struct {
 	name   string

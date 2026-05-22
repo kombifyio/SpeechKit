@@ -43,6 +43,9 @@ var postgresMigration008 string
 //go:embed migrations/postgres/009_storage_v3_model.sql
 var postgresMigration009 string
 
+//go:embed migrations/postgres/010_wakeword_activations.sql
+var postgresMigration010 string
+
 // PostgresStore implements Store using PostgreSQL for metadata and the local
 // filesystem for optional raw WAV persistence.
 type PostgresStore struct {

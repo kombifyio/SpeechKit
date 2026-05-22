@@ -98,15 +98,20 @@ type appState struct {
 	// 1 — a new detection while another policy is pending replaces (and
 	// closes) the previous one, mirroring how a duplicate hotkey press
 	// would supersede an in-flight activation.
-	wakewordSessionPolicy    *wakeword.AutoEndPolicy
-	engine                   *speechkit.Runtime
-	sttRouter                *router.Router
-	genkitRT                 *appai.Runtime
-	summarizeFlow            *core.Flow[flows.SummarizeInput, string, struct{}]
-	agentFlow                *core.Flow[flows.AgentInput, flows.AgentOutput, struct{}]
-	assistFlow               *core.Flow[flows.AssistInput, flows.AssistOutput, struct{}]
-	assistExecutor           assist.ToolExecutor
-	assistPipeline           *assist.Pipeline
+	wakewordSessionPolicy *wakeword.AutoEndPolicy
+	engine                *speechkit.Runtime
+	sttRouter             *router.Router
+	genkitRT              *appai.Runtime
+	summarizeFlow         *core.Flow[flows.SummarizeInput, string, struct{}]
+	agentFlow             *core.Flow[flows.AgentInput, flows.AgentOutput, struct{}]
+	assistFlow            *core.Flow[flows.AssistInput, flows.AssistOutput, struct{}]
+	assistExecutor        assist.ToolExecutor
+	assistPipeline        *assist.Pipeline
+	// assistSkillContextStore holds v0.38 multi-turn skill follow-up state
+	// (e.g. Timer asking "for how long?"). Single store survives pipeline
+	// re-builds on model-profile switches so an in-flight follow-up does
+	// not get reset when the user changes the LLM. Nil disables multi-turn.
+	assistSkillContextStore  assist.SkillContextStore
 	assistBubble             overlayWindow
 	prompterWindow           overlayWindow
 	ttsRouter                *tts.Router

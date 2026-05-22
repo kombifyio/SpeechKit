@@ -268,6 +268,11 @@ func (o desktopTranscriptOutput) assistProcessOptions(ctx context.Context, trans
 		Locale:    transcript.Language,
 		Selection: o.captureAssistSelection(ctx),
 		Target:    target,
+		// v0.38 multi-turn: single-user Device-Target uses a stable session
+		// key so consecutive utterances within the SkillContextStore TTL
+		// reach the same follow-up slot. The server-target derives this
+		// from Identity.UserID; the device only has one user.
+		SessionKey: "device",
 	}
 }
 

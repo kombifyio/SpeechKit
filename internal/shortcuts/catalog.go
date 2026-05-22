@@ -270,6 +270,112 @@ var defaultLexicons = []IntentLexicon{
 		Locale:  "es",
 		Phrases: prefixPhrases("nota rapida", "toma nota", "anotar"),
 	},
+
+	// Voice-Companion lexicons. Phase 0 ships DE+EN baseline coverage; FR/ES
+	// are added in Phase 1 alongside the actual skill executors. Patterns
+	// favour short, distinctive prefixes so the payload (timer duration,
+	// city name, math expression, search topic) survives in
+	// Resolution.Payload. See internal/shortcuts/resolver.go matchPhrase.
+	{
+		Intent:  IntentTime,
+		Locale:  "en",
+		Phrases: prefixPhrases("what time is it", "what time", "current time", "the time", "tell me the time"),
+	},
+	{
+		Intent:  IntentTime,
+		Locale:  "de",
+		Phrases: prefixPhrases("wie spaet ist es", "wie spaet", "wieviel uhr ist es", "wieviel uhr", "uhrzeit", "die uhrzeit", "sag mir die uhrzeit"),
+	},
+	{
+		Intent:  IntentDate,
+		Locale:  "en",
+		Phrases: prefixPhrases("what day is it", "what is today", "today's date", "what date is it", "what's the date"),
+	},
+	{
+		Intent:  IntentDate,
+		Locale:  "de",
+		Phrases: prefixPhrases("welcher tag ist heute", "welcher tag", "welches datum ist heute", "welches datum", "datum", "der wievielte ist heute"),
+	},
+	{
+		Intent:  IntentWeather,
+		Locale:  "en",
+		Phrases: prefixPhrases("what's the weather", "how is the weather", "weather forecast", "weather in", "forecast for", "weather"),
+	},
+	{
+		Intent:  IntentWeather,
+		Locale:  "de",
+		Phrases: prefixPhrases("wie wird das wetter", "wie ist das wetter", "wetter in", "wetter fuer", "wettervorhersage", "wetter"),
+	},
+	{
+		Intent:  IntentTimer,
+		Locale:  "en",
+		Phrases: prefixPhrases("set a timer for", "set timer for", "start a timer for", "set a timer", "timer for"),
+	},
+	{
+		Intent:  IntentTimer,
+		Locale:  "de",
+		Phrases: prefixPhrases("stell einen timer auf", "stell einen timer fuer", "setze einen timer auf", "starte einen timer", "timer auf", "timer fuer"),
+	},
+	{
+		Intent:  IntentReminder,
+		Locale:  "en",
+		Phrases: prefixPhrases("remind me to", "remind me at", "remind me about", "set a reminder to", "set a reminder for"),
+	},
+	{
+		Intent:  IntentReminder,
+		Locale:  "de",
+		Phrases: prefixPhrases("erinnere mich an", "erinnere mich um", "erinnere mich morgen", "setze eine erinnerung", "stelle eine erinnerung"),
+	},
+	{
+		Intent:  IntentMath,
+		Locale:  "en",
+		Phrases: prefixPhrases("what is", "calculate", "compute", "how much is", "what's"),
+	},
+	{
+		Intent:  IntentMath,
+		Locale:  "de",
+		Phrases: prefixPhrases("was ist", "berechne", "rechne", "wie viel ist", "wieviel ist"),
+	},
+	{
+		Intent:  IntentWikipedia,
+		Locale:  "en",
+		Phrases: prefixPhrases("tell me about", "who is", "who was", "what is wikipedia", "search for"),
+	},
+	{
+		Intent:  IntentWikipedia,
+		Locale:  "de",
+		Phrases: prefixPhrases("erzaehl mir was ueber", "erzaehl mir ueber", "wer ist", "wer war", "was weisst du ueber", "suche nach"),
+	},
+	{
+		Intent: IntentHomeAssistant,
+		Locale: "en",
+		// "turn on/off" and "switch" cover Home-Assistant Assist Pipeline
+		// triggers; "play"/"stop"/"set" cover scenes and media; the
+		// fallback "home assistant" prefix lets users explicitly target
+		// the HA bridge ("Home Assistant, ...").
+		Phrases: prefixPhrases(
+			"turn on", "turn off", "switch on", "switch off",
+			"set the", "set",
+			"start the", "stop the",
+			"play", "pause", "resume",
+			"open the", "close the", "lock the", "unlock the",
+			"home assistant",
+		),
+	},
+	{
+		Intent: IntentHomeAssistant,
+		Locale: "de",
+		Phrases: prefixPhrases(
+			"schalte ein", "schalte aus", "schalte an",
+			"schalte das", "schalte die",
+			"mach das", "mach die",
+			"starte", "stoppe", "halte",
+			"spiele", "pause",
+			"oeffne die", "oeffne das",
+			"schliesse die", "schliesse das",
+			"home assistant",
+		),
+	},
 }
 
 var defaultLeadingFillers = map[string][]string{

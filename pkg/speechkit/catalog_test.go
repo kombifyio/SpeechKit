@@ -20,7 +20,7 @@ func TestEveryModeExposesFourProviderKinds(t *testing.T) {
 		ProviderKindDirectProvider,
 	}
 
-	for _, mode := range []Mode{ModeDictation, ModeAssist, ModeVoiceAgent} {
+	for _, mode := range []Mode{ModeDictation, ModeAssist, ModeVoiceAgent, ModeTTS} {
 		got := ProviderKindsForMode(mode)
 		if len(got) != len(want) {
 			t.Fatalf("%s provider kinds = %#v, want %#v", mode, got, want)
@@ -29,6 +29,35 @@ func TestEveryModeExposesFourProviderKinds(t *testing.T) {
 			if got[i] != want[i] {
 				t.Fatalf("%s provider kind[%d] = %q, want %q", mode, i, got[i], want[i])
 			}
+		}
+	}
+}
+
+func TestTTSProfilesAdvertiseTTSCapability(t *testing.T) {
+	for _, profile := range ProfilesForMode(ModeTTS) {
+		if !profile.HasCapability(CapabilityTTS) {
+			t.Fatalf("tts profile %q missing CapabilityTTS", profile.ID)
+		}
+		// TTS mode is voice-output-only — must NOT expose STT / LLM /
+		// realtime / tool-calling.
+		for _, forbidden := range []Capability{
+			CapabilityTranscription, CapabilitySTT, CapabilityLLM,
+			CapabilityRealtimeAudio, CapabilityToolCalling,
+		} {
+			if profile.HasCapability(forbidden) {
+				t.Errorf("tts profile %q exposes forbidden capability %q", profile.ID, forbidden)
+			}
+		}
+		if err := ValidateProfileForMode(profile, ModeTTS); err != nil {
+			t.Fatalf("tts profile %q invalid: %v", profile.ID, err)
+		}
+	}
+}
+
+func TestNormalizeMode_TTSAliases(t *testing.T) {
+	for _, alias := range []string{"tts", "voice_output", "speak", "speech"} {
+		if got := NormalizeMode(Mode(alias)); got != ModeTTS {
+			t.Errorf("NormalizeMode(%q) = %q, want ModeTTS", alias, got)
 		}
 	}
 }

@@ -162,6 +162,91 @@ func TestProcessNoLLMFallsThrough(t *testing.T) {
 	}
 }
 
+// TestSilentToolResultFallsThroughToLLM covers the Voice-Companion
+// fallthrough contract: when a registered skill matches an intent but
+// returns Action="silent" + empty Text (the documented "I can't answer
+// this specific payload — defer to LLM" signal), the pipeline must
+// re-route to handleLLM instead of returning silence. Documented in
+// docs/voice-companion.md and used by MathSkill on unparseable
+// expressions, WikipediaSkill on disambiguation, HomeAssistantSkill
+// when unconfigured.
+func TestSilentToolResultFallsThroughToLLM(t *testing.T) {
+	executor := &mockToolExecutor{
+		result: ToolResult{
+			Action: "silent",
+			Locale: "en",
+		},
+	}
+	pipeline := NewPipeline(fixedAssistFlow(t, flows.AssistOutput{
+		Text:      "LLM picked it up",
+		SpeakText: "LLM picked it up",
+		Action:    "respond",
+		Locale:    "en",
+	}), executor, nil, false)
+
+	// "summarize this" is a registered shortcut intent — the resolver
+	// will route to RouteToolIntent, the executor will return silent.
+	result, err := pipeline.Process(context.Background(), "summarize this", ProcessOpts{Locale: "en"})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if executor.calls != 1 {
+		t.Errorf("expected executor to be called once, got %d", executor.calls)
+	}
+	if result.Text != "LLM picked it up" {
+		t.Errorf("expected LLM-text fallthrough, got Text=%q", result.Text)
+	}
+	if result.Action != "respond" {
+		t.Errorf("expected Action=respond after fallthrough, got %q", result.Action)
+	}
+}
+
+// TestSilentToolResultWithoutLLMReturnsSilent guards the inverse: when
+// no LLM is configured, the silent skill response is honoured rather
+// than dropped. This preserves the legacy QuickNote-style "silent"
+// behaviour for hosts that intentionally have no LLM provider.
+func TestSilentToolResultWithoutLLMReturnsSilent(t *testing.T) {
+	executor := &mockToolExecutor{
+		result: ToolResult{
+			Action: "silent",
+			Locale: "en",
+		},
+	}
+	pipeline := NewPipeline(nil, executor, nil, false)
+	result, err := pipeline.Process(context.Background(), "summarize this", ProcessOpts{Locale: "en"})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result.Action != "silent" {
+		t.Errorf("expected Action=silent without LLM, got %q", result.Action)
+	}
+}
+
+// TestSilentToolResultWithTextStaysSilent covers the case where a host
+// returns Action="silent" with explanatory Text (e.g. "Already saved
+// silently"). That should NOT trigger LLM fallthrough — the host is
+// explicitly choosing silence with a known acknowledgement.
+func TestSilentToolResultWithTextStaysSilent(t *testing.T) {
+	executor := &mockToolExecutor{
+		result: ToolResult{
+			Action: "silent",
+			Text:   "Already saved silently",
+			Locale: "en",
+		},
+	}
+	pipeline := NewPipeline(fixedAssistFlow(t, flows.AssistOutput{
+		Text: "LLM fallback",
+	}), executor, nil, false)
+
+	result, err := pipeline.Process(context.Background(), "summarize this", ProcessOpts{Locale: "en"})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result.Text != "Already saved silently" {
+		t.Errorf("expected host-provided silent Text, got %q", result.Text)
+	}
+}
+
 func TestCanHandleWithoutDirectReplyModelRejectsModelRequiredUtilities(t *testing.T) {
 	pipeline := NewPipeline(nil, &mockToolExecutor{}, nil, false)
 

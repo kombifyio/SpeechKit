@@ -6,6 +6,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"strings"
 
 	"github.com/firebase/genkit/go/core"
 	"github.com/kombifyio/SpeechKit/internal/ai/flows"
@@ -28,11 +29,12 @@ type Result struct {
 
 // Pipeline orchestrates the Assist Mode flow.
 type Pipeline struct {
-	router     *Router
-	assistFlow *core.Flow[flows.AssistInput, flows.AssistOutput, struct{}]
-	executor   ToolExecutor
-	ttsRouter  *tts.Router
-	ttsEnabled bool
+	router        *Router
+	assistFlow    *core.Flow[flows.AssistInput, flows.AssistOutput, struct{}]
+	executor      ToolExecutor
+	ttsRouter     *tts.Router
+	ttsEnabled    bool
+	skillContexts SkillContextStore // v0.38.0 multi-turn store; nil = disabled
 }
 
 type PipelineOption func(*Pipeline)
@@ -42,6 +44,17 @@ func WithRouter(router *Router) PipelineOption {
 		if router != nil {
 			p.router = router
 		}
+	}
+}
+
+// WithSkillContextStore enables v0.38.0 multi-turn skill follow-ups.
+// When the host wires a store, callers must also pass
+// ProcessOpts.SessionKey on each Process call so the pipeline knows
+// which conversation to attach state to. Nil disables follow-ups —
+// every utterance is treated as fresh.
+func WithSkillContextStore(store SkillContextStore) PipelineOption {
+	return func(p *Pipeline) {
+		p.skillContexts = store
 	}
 }
 
@@ -87,6 +100,23 @@ func (p *Pipeline) Process(ctx context.Context, transcript string, opts ProcessO
 		return nil, fmt.Errorf("assist: empty transcript")
 	}
 
+	// v0.38.0 multi-turn: if the caller's session has an active
+	// follow-up context, replay the same Intent rather than running
+	// keyword routing. The skill receives the full new transcript as
+	// the payload + the prior FollowupState via ToolCall.Context.
+	if p.skillContexts != nil && opts.SessionKey != "" {
+		if active, ok := p.skillContexts.Get(opts.SessionKey); ok {
+			decision := Decision{
+				Route:   RouteToolIntent,
+				Intent:  active.Intent,
+				Payload: transcript,
+				Locale:  opts.Locale,
+			}
+			decision.Utility = p.router.UtilityFor(active.Intent)
+			return p.handleTool(ctx, transcript, decision, opts.withFollowupState(active.State))
+		}
+	}
+
 	decision := p.router.Decide(transcript, opts)
 	if decision.Route == RouteToolIntent {
 		return p.handleTool(ctx, transcript, decision, opts)
@@ -101,6 +131,36 @@ type ProcessOpts struct {
 	Selection string // Currently selected text
 	Context   string // Additional context
 	Target    any    // Host-specific target for insertion/execution
+
+	// SessionKey identifies the user conversation for v0.38.0 multi-
+	// turn follow-ups. Hosts derive this from the authenticated user
+	// (e.g. Identity.UserID) or a per-wake-word session id. Empty
+	// disables follow-ups for this call.
+	SessionKey string
+}
+
+// withFollowupState returns a copy of opts with the FollowupState
+// serialised into the Context field so the skill can read it without
+// the pipeline having to extend ToolCall.
+func (o ProcessOpts) withFollowupState(state map[string]string) ProcessOpts {
+	if len(state) == 0 {
+		return o
+	}
+	var b strings.Builder
+	for k, v := range state {
+		if b.Len() > 0 {
+			b.WriteString("\n")
+		}
+		b.WriteString(k)
+		b.WriteString("=")
+		b.WriteString(v)
+	}
+	if o.Context != "" {
+		o.Context = o.Context + "\n--\n" + b.String()
+	} else {
+		o.Context = b.String()
+	}
+	return o
 }
 
 func (p *Pipeline) handleTool(ctx context.Context, transcript string, decision Decision, opts ProcessOpts) (*Result, error) {
@@ -119,6 +179,32 @@ func (p *Pipeline) handleTool(ctx context.Context, transcript string, decision D
 	})
 	if err != nil {
 		return nil, fmt.Errorf("assist: execute tool intent %q: %w", decision.Intent, err)
+	}
+
+	// Voice-Companion skills emit Action="silent" + empty Text to signal
+	// "I matched the intent but cannot answer this specific payload —
+	// please defer to the LLM" (e.g. MathSkill on "what is the meaning
+	// of life", HomeAssistantSkill when no URL+Token configured,
+	// WikipediaSkill on disambiguation pages). When that happens AND an
+	// Assist LLM flow is available, fall through to handleLLM so the
+	// user gets a useful response instead of silence. Original Action
+	// "silent" semantics (host-side QuickNote with no audio reply) are
+	// preserved when the skill returned non-empty Text alongside.
+	if toolResult.Action == "silent" && strings.TrimSpace(toolResult.Text) == "" && p.assistFlow != nil {
+		return p.handleLLM(ctx, transcript, opts)
+	}
+
+	// v0.38.0 multi-turn: persist or clear the follow-up state. When
+	// the skill reports FollowupNeeded=true we stash the Intent +
+	// state so the next user transcript routes back to the same
+	// skill. Any other outcome clears the prior context so an
+	// orphaned follow-up does not bleed into the next conversation.
+	if p.skillContexts != nil && opts.SessionKey != "" {
+		if toolResult.FollowupNeeded {
+			p.skillContexts.Set(opts.SessionKey, decision.Intent, toolResult.FollowupState)
+		} else {
+			p.skillContexts.Clear(opts.SessionKey)
+		}
 	}
 
 	result := &Result{

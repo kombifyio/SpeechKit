@@ -218,6 +218,7 @@ export function SettingsApp({
             onToggleIntegration={handleUpdateProviderIntegration}
             onSaveCredential={handleSaveProviderCredential}
             tokenStatusLabel={tokenStatusLabel}
+            updateSettings={updateSettings}
           />
         )}
         {tab === "speechkit_server" && <SpeechKitServerSettingsPage />}
