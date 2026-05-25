@@ -45,7 +45,7 @@ func wireWakewordTraining(cfg *config.Config, app *App) {
 			return
 		}
 		h.Mount(app.Mux)
-		app.Health.SetReadyWithOptions(componentID, StatusUnavailable,
+		app.Health.SetReadyWithOptions(componentID, StatusDisabled,
 			"training-data uploads disabled (accept_uploads=false)",
 			ComponentOptions{Blocking: false, Kind: "feature"})
 		slog.Info("wakeword training endpoint mounted (disabled mode)",

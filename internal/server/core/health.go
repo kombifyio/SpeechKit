@@ -20,6 +20,11 @@ const (
 	StatusDegraded ComponentStatus = "degraded"
 	// StatusUnavailable means the component cannot be used.
 	StatusUnavailable ComponentStatus = "unavailable"
+	// StatusDisabled means the component is intentionally turned off by
+	// configuration. Unlike StatusUnavailable this is a deliberate
+	// operator choice, not a failure, so it does not degrade strict
+	// readiness.
+	StatusDisabled ComponentStatus = "disabled"
 	// StatusStarting means the component is initializing and not yet ready.
 	StatusStarting ComponentStatus = "starting"
 )
@@ -144,7 +149,7 @@ func cleanStrings(values []string) []string {
 
 func statusRank(s ComponentStatus) int {
 	switch s {
-	case StatusOK:
+	case StatusOK, StatusDisabled:
 		return 0
 	case StatusStarting:
 		return 1

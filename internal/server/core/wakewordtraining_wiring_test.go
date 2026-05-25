@@ -46,24 +46,31 @@ func TestWireWakewordTraining_Disabled_Returns503AndIsNonBlocking(t *testing.T) 
 		t.Errorf("status = %d, want 503", resp.StatusCode)
 	}
 
-	// Health is unavailable but non-blocking.
+	// Health is disabled (not unavailable) and non-blocking.
 	_, components, _ := app.Health.Snapshot()
 	entry, ok := components["api.wakeword_training"]
 	if !ok {
 		t.Fatal("component api.wakeword_training not registered")
 	}
-	if entry.Status != StatusUnavailable {
-		t.Errorf("status = %q, want unavailable", entry.Status)
+	if entry.Status != StatusDisabled {
+		t.Errorf("status = %q, want disabled", entry.Status)
 	}
 	if entry.Blocking {
 		t.Error("disabled feature must be non-blocking on /readyz")
 	}
 
 	// Readiness should still be green because the only registered
-	// component is non-blocking and unavailable doesn't block.
+	// component is non-blocking and disabled doesn't block.
 	overall, _, _ := app.Health.ReadinessSnapshot()
 	if overall != StatusStarting && overall != StatusOK {
 		t.Errorf("readiness = %q, want starting or ok (component non-blocking)", overall)
+	}
+
+	// Strict readiness must also be green — a deliberately disabled
+	// feature is not a health problem (StatusDisabled has rank 0).
+	strictOverall, _, _ := app.Health.Snapshot()
+	if statusRank(strictOverall) > statusRank(StatusOK) {
+		t.Errorf("strict readiness = %q (rank %d), want ok-level (disabled must not degrade strict)", strictOverall, statusRank(strictOverall))
 	}
 }
 
