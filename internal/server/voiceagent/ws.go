@@ -11,6 +11,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/url"
+	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -21,6 +22,26 @@ import (
 	"github.com/kombifyio/SpeechKit/internal/server/storageauth"
 	"github.com/kombifyio/SpeechKit/internal/store"
 )
+
+// defaultWSReadLimitBytes is the per-frame size cap when HandlerOptions.ReadLimit
+// is unset or non-positive. Tightened from 1 MiB to 64 KiB in audit S-12 because
+// raw PCM chunks are well under 4 KB in practice; 64 KiB leaves ample headroom
+// without giving attackers a 1 MB memory amplification vector per frame.
+const defaultWSReadLimitBytes int64 = 64 * 1024
+
+// envAllowEmptyWSOriginVar opts requests in that do not send an Origin
+// header (CLIs, native clients, server-to-server tests) past the WebSocket
+// upgrade gate. Default behaviour rejects empty Origin so a browser
+// without CSRF protection cannot establish a session by stripping the
+// header.
+const envAllowEmptyWSOriginVar = "SPEECHKIT_ALLOW_EMPTY_ORIGIN"
+
+// wsTicketSubprotocolPrefix carries the session ticket as a WebSocket
+// subprotocol, e.g. "ticket.AbCd...". This keeps the ticket out of the
+// URL — and therefore out of any fronting reverse proxy's access log.
+// The legacy ?ticket=... query form remains accepted for backwards
+// compatibility with clients that pre-date this header convention.
+const wsTicketSubprotocolPrefix = "ticket."
 
 // ProviderFactory builds a Framework kernel voice-agent provider on demand.
 // Each WebSocket session gets its own provider instance so concurrent
@@ -141,6 +162,9 @@ type HandlerOptions struct {
 	Store       store.Store
 	LiveKit     *LiveKitTokenIssuer
 	MediaBridge MediaBridgeFactory
+	// ReadLimit caps per-frame bytes the upgraded WebSocket will read.
+	// Zero or negative falls back to defaultWSReadLimitBytes (64 KiB).
+	ReadLimit int64
 }
 
 // Handler exposes both the HTTP session-creation endpoint and the WS
@@ -155,6 +179,7 @@ type Handler struct {
 	store          store.Store
 	liveKit        *LiveKitTokenIssuer
 	mediaBridge    MediaBridgeFactory
+	readLimit      int64
 }
 
 // New constructs a handler. All options except MaxAllowedClockSkew are
@@ -180,6 +205,10 @@ func New(opts HandlerOptions) (*Handler, error) {
 	if mediaBridge == nil && opts.LiveKit != nil && opts.LiveKit.Enabled() {
 		mediaBridge = NewLiveKitMediaBridgeFactory(opts.LiveKit)
 	}
+	readLimit := opts.ReadLimit
+	if readLimit <= 0 {
+		readLimit = defaultWSReadLimitBytes
+	}
 	return &Handler{
 		manager:        opts.Manager,
 		provider:       opts.Provider,
@@ -190,6 +219,7 @@ func New(opts HandlerOptions) (*Handler, error) {
 		store:          opts.Store,
 		liveKit:        opts.LiveKit,
 		mediaBridge:    mediaBridge,
+		readLimit:      readLimit,
 	}, nil
 }
 
@@ -441,7 +471,11 @@ func (h *Handler) upgradeWS(w http.ResponseWriter, r *http.Request, sessionID st
 		return
 	}
 
-	ticket := strings.TrimSpace(r.URL.Query().Get("ticket"))
+	// Prefer subprotocol-carried ticket over the legacy ?ticket= query
+	// string. Query form leaks into fronting-proxy access logs (NGINX,
+	// Cloudflare, Render); subprotocol form rides the upgrade handshake
+	// only. Both are accepted to keep older clients working.
+	ticket, ticketSubproto := extractWSTicket(r)
 	if err := h.manager.VerifyTicket(sessionID, ticket); err != nil {
 		switch {
 		case errors.Is(err, ErrSessionExpired):
@@ -466,16 +500,23 @@ func (h *Handler) upgradeWS(w http.ResponseWriter, r *http.Request, sessionID st
 		return
 	}
 
-	conn, err := websocket.Accept(w, r, &websocket.AcceptOptions{
-		InsecureSkipVerify: true, // Origin was checked explicitly before the upgrade.
-	})
+	acceptOpts := &websocket.AcceptOptions{
+		InsecureSkipVerify: true, // Origin was checked explicitly above.
+	}
+	if ticketSubproto != "" {
+		// Echo the negotiated subprotocol per RFC 6455 §4.2.2 so the
+		// browser accepts the handshake. Listing it here makes the
+		// coder/websocket library emit Sec-WebSocket-Protocol on the
+		// 101 response.
+		acceptOpts.Subprotocols = []string{ticketSubproto}
+	}
+	conn, err := websocket.Accept(w, r, acceptOpts)
 	if err != nil {
 		h.manager.Remove(sessionID)
 		slog.Warn("voiceagent: WS upgrade failed", "session_id", sessionID, "err", err)
 		return
 	}
-	// Conservative read limit — raw PCM chunks should be well under 4 KB.
-	conn.SetReadLimit(1 << 20)
+	conn.SetReadLimit(h.readLimit)
 
 	adapter := &Adapter{
 		Session:     session,
@@ -577,6 +618,40 @@ func voiceAgentPublicBase(prefix string) string {
 	}
 }
 
+// extractWSTicket prefers the Sec-WebSocket-Protocol subprotocol form
+// over the legacy ?ticket= query string. The subprotocol must look like
+// "ticket.<value>"; the returned subproto string MUST be echoed back to
+// the client via AcceptOptions.Subprotocols so the WS handshake
+// completes per RFC 6455. When no subprotocol header is present the
+// query-string ticket is returned with an empty subproto.
+func extractWSTicket(r *http.Request) (ticket, subproto string) {
+	for _, header := range r.Header.Values("Sec-WebSocket-Protocol") {
+		for _, raw := range strings.Split(header, ",") {
+			candidate := strings.TrimSpace(raw)
+			if !strings.HasPrefix(candidate, wsTicketSubprotocolPrefix) {
+				continue
+			}
+			value := strings.TrimSpace(strings.TrimPrefix(candidate, wsTicketSubprotocolPrefix))
+			if value != "" {
+				return value, candidate
+			}
+		}
+	}
+	return strings.TrimSpace(r.URL.Query().Get("ticket")), ""
+}
+
+// wsEnvBoolTrue returns true when the named env var holds 1/true/yes/on
+// (case-insensitive). Kept package-local so the upgrade path doesn't
+// pull in config or another helper package.
+func wsEnvBoolTrue(name string) bool {
+	switch strings.ToLower(strings.TrimSpace(os.Getenv(name))) {
+	case "1", "true", "yes", "on":
+		return true
+	default:
+		return false
+	}
+}
+
 func normalizeAllowedOrigins(origins []string) []string {
 	out := make([]string, 0, len(origins))
 	for _, origin := range origins {
@@ -590,7 +665,11 @@ func normalizeAllowedOrigins(origins []string) []string {
 func originAllowedForWebSocket(origin string, allowed []string) bool {
 	origin = strings.TrimSpace(origin)
 	if origin == "" {
-		return true
+		// Default deny: a browser that omits Origin defeats CSRF-style
+		// protection. CLIs, native clients, and server-to-server tests
+		// that never send Origin can opt in via
+		// SPEECHKIT_ALLOW_EMPTY_ORIGIN=1.
+		return wsEnvBoolTrue(envAllowEmptyWSOriginVar)
 	}
 	for _, candidate := range allowed {
 		if candidate == "*" || origin == candidate {

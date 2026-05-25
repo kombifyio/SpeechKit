@@ -121,7 +121,7 @@ func (p *LocalProvider) StartServer(ctx context.Context) error {
 	}
 
 	if err := ValidateModelPath(p.ModelPath); err != nil {
-		return err
+		return fmt.Errorf("validate whisper model path: %w", err)
 	}
 	if _, err := os.Stat(p.ModelPath); err != nil {
 		return fmt.Errorf("model not found: %s", p.ModelPath)
@@ -153,11 +153,11 @@ func (p *LocalProvider) StartServer(ctx context.Context) error {
 
 	if err := p.waitForReady(ctx); err != nil {
 		p.StopServer()
-		return err
+		return fmt.Errorf("whisper-server health probe never returned ready: %w", err)
 	}
 	if err := p.waitForInferenceReady(ctx); err != nil {
 		p.StopServer()
-		return err
+		return fmt.Errorf("whisper-server inference probe never returned ready: %w", err)
 	}
 
 	p.ready.Store(true)
@@ -288,7 +288,7 @@ func (p *LocalProvider) probeInferenceReady(ctx context.Context, client *http.Cl
 
 	resp, err := client.Do(req)
 	if err != nil {
-		return err
+		return fmt.Errorf("POST warmup request: %w", err)
 	}
 	defer resp.Body.Close() //nolint:errcheck // response body close error is not actionable
 
@@ -483,7 +483,7 @@ func (p *LocalProvider) Health(ctx context.Context) error {
 	healthURL := fmt.Sprintf("%s/health", p.BaseURL)
 	req, err := http.NewRequestWithContext(ctx, "GET", healthURL, http.NoBody)
 	if err != nil {
-		return err
+		return fmt.Errorf("build whisper-server health request: %w", err)
 	}
 
 	resp, err := p.client.Do(req)

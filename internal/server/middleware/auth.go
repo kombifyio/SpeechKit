@@ -34,11 +34,32 @@ type identityCtxKey struct{}
 const (
 	adminSessionCookieName = "speechkit_admin_session"
 	adminSessionTTL        = 30 * time.Minute
+	// adminCSRFCookieName is the JS-readable companion to the admin
+	// session cookie. The pair implements double-submit CSRF protection
+	// (audit S-13): the SPA reads the cookie value with JS and echoes it
+	// into the X-CSRF-Token header on state-changing requests. The
+	// browser can read the value because HttpOnly is false, but a
+	// cross-site attacker cannot — CORS blocks the read, and SameSite
+	// blocks the cookie from being attached to forged cross-origin
+	// requests. The header is the proof the request originated from
+	// our origin.
+	adminCSRFCookieName = "speechkit_admin_csrf"
+	// adminCSRFHeaderName is the request header the SPA sends. Picked
+	// to match the de-facto convention used by Django, Rails, etc.
+	adminCSRFHeaderName = "X-CSRF-Token"
 )
 
 // AdminSessionCookieName is exported for server integration tests that verify
 // setup/auth transitions without duplicating the cookie contract.
 const AdminSessionCookieName = adminSessionCookieName
+
+// AdminCSRFCookieName and AdminCSRFHeaderName are exported so server
+// integration tests and the SPA build pipeline can reference the
+// double-submit contract without re-declaring it.
+const (
+	AdminCSRFCookieName = adminCSRFCookieName
+	AdminCSRFHeaderName = adminCSRFHeaderName
+)
 
 var adminSessionSigningKey = mustRandomBytes(32)
 
@@ -122,6 +143,15 @@ type AuthOptions struct {
 	AllowBootstrapPaths  []string
 	AllowBootstrapRoutes []PublicRoute
 	BootstrapAllowed     func(*http.Request) bool
+	// RequireAuthenticatedMode is defence-in-depth on top of
+	// config.ValidateServerProductionAuth. When true, the AuthModeNone
+	// branch of verify() refuses to issue the anonymous Identity even if
+	// the resolved mode is "none" or empty. Bootstrap sets this for
+	// non-loopback binds so a future code path that skips startup
+	// validation cannot accidentally serve unauthenticated traffic to the
+	// public internet. Admin-session and smoke-token fallbacks remain
+	// available — only the implicit anonymous identity is suppressed.
+	RequireAuthenticatedMode bool
 }
 
 type PublicRoute struct {
@@ -361,7 +391,7 @@ func Auth(opts AuthOptions) Middleware {
 				next.ServeHTTP(w, r.WithContext(ctx))
 				return
 			}
-			id, ok := verify(mode, r, strings.TrimSpace(bearerTokenProvider()), strings.TrimSpace(edgeSecretProvider()), strings.TrimSpace(bearerRoleProvider()))
+			id, ok := verify(mode, r, strings.TrimSpace(bearerTokenProvider()), strings.TrimSpace(edgeSecretProvider()), strings.TrimSpace(bearerRoleProvider()), opts.RequireAuthenticatedMode)
 			if !ok {
 				// Fall back to the optional public smoke token before
 				// returning 401. The smoke identity carries Source="smoke"
@@ -437,9 +467,17 @@ func requestAcceptsHTML(r *http.Request) bool {
 	return accept == "" || strings.Contains(accept, "text/html") || strings.Contains(accept, "*/*")
 }
 
-func verify(mode AuthMode, r *http.Request, bearerToken, edgeSecret, bearerRole string) (Identity, bool) {
+func verify(mode AuthMode, r *http.Request, bearerToken, edgeSecret, bearerRole string, requireAuth bool) (Identity, bool) {
 	switch mode {
 	case AuthModeNone:
+		// Fail-closed defence-in-depth: when the operator bound the server
+		// to a non-loopback address, refuse to issue the implicit
+		// anonymous Identity even if cfg validation was somehow skipped.
+		// Smoke-token and admin-session fallbacks already ran above and
+		// returned their own Identities when applicable.
+		if requireAuth {
+			return Identity{}, false
+		}
 		return Identity{
 			UserID: "anonymous",
 			OrgID:  "public",
@@ -524,6 +562,37 @@ func NewAdminSessionCookie(username, passwordHash string, secure bool, now time.
 	}, nil
 }
 
+// NewAdminCSRFCookie returns the JS-readable double-submit CSRF cookie
+// that pairs with the admin session cookie minted by
+// NewAdminSessionCookie. Callers that issue the session cookie MUST
+// also issue this cookie in the same response — otherwise the SPA has
+// no token to echo in X-CSRF-Token and EnforceAdminCSRF will refuse
+// the next state-changing request from the admin_session identity.
+//
+// sessionCookieValue is the Value of the session cookie returned by
+// NewAdminSessionCookie. The returned CSRF cookie carries
+// csrfTokenFor(sessionCookieValue) so the binding HMAC over the
+// session signature also covers this cookie.
+func NewAdminCSRFCookie(sessionCookieValue string, secure bool, now time.Time) *http.Cookie {
+	if strings.TrimSpace(sessionCookieValue) == "" {
+		return nil
+	}
+	if now.IsZero() {
+		now = time.Now()
+	}
+	expires := now.Add(adminSessionTTL)
+	return &http.Cookie{
+		Name:     adminCSRFCookieName,
+		Value:    csrfTokenFor(sessionCookieValue),
+		Path:     "/",
+		Expires:  expires,
+		MaxAge:   int(adminSessionTTL.Seconds()),
+		HttpOnly: false,
+		Secure:   secure,
+		SameSite: http.SameSiteStrictMode,
+	}
+}
+
 func handleAdminSessionEndpoint(w http.ResponseWriter, r *http.Request, username, passwordHash string) bool {
 	if r == nil || !isAdminSessionPath(r.URL.Path) {
 		return false
@@ -606,6 +675,22 @@ func setAdminSessionCookie(w http.ResponseWriter, r *http.Request, username, pas
 		Secure:   requestIsHTTPS(r),
 		SameSite: http.SameSiteLaxMode,
 	})
+	http.SetCookie(w, &http.Cookie{
+		Name:  adminCSRFCookieName,
+		Value: csrfTokenFor(token),
+		Path:  "/",
+		// CSRF cookie shares the session lifetime — when the session
+		// expires, the cookie disappears with it and a stale token
+		// won't validate against a fresh session signature anyway.
+		Expires:  expires,
+		MaxAge:   int(adminSessionTTL.Seconds()),
+		HttpOnly: false, // JS must read this to set the X-CSRF-Token header.
+		Secure:   requestIsHTTPS(r),
+		// Strict because the cookie is only consumed by our own SPA
+		// running on the same origin; tightening from Lax (used by the
+		// session cookie for top-level navigation) costs nothing here.
+		SameSite: http.SameSiteStrictMode,
+	})
 }
 
 func clearAdminSessionCookie(w http.ResponseWriter, r *http.Request) {
@@ -619,6 +704,81 @@ func clearAdminSessionCookie(w http.ResponseWriter, r *http.Request) {
 		Secure:   requestIsHTTPS(r),
 		SameSite: http.SameSiteLaxMode,
 	})
+	http.SetCookie(w, &http.Cookie{
+		Name:     adminCSRFCookieName,
+		Value:    "",
+		Path:     "/",
+		Expires:  time.Unix(0, 0),
+		MaxAge:   -1,
+		HttpOnly: false,
+		Secure:   requestIsHTTPS(r),
+		SameSite: http.SameSiteStrictMode,
+	})
+}
+
+// csrfTokenFor derives a deterministic CSRF token from the admin
+// session cookie value. Using HMAC over the session signature binds the
+// CSRF cookie to its session — a stale CSRF cookie cannot validate
+// against a freshly issued session, and an attacker who somehow obtains
+// only the CSRF cookie (e.g. via XSS on a non-credential surface) still
+// cannot forge a session.
+//
+// The signing key is the process-local adminSessionSigningKey: it
+// rotates on every restart, so observability of a token leaks only
+// within one process lifetime.
+func csrfTokenFor(adminSessionToken string) string {
+	mac := hmac.New(sha256.New, adminSessionSigningKey)
+	mac.Write([]byte(adminSessionToken))
+	return base64.RawURLEncoding.EncodeToString(mac.Sum(nil))
+}
+
+// ValidateAdminCSRF returns true when the request carries a CSRF
+// cookie + matching X-CSRF-Token header AND the cookie value matches
+// csrfTokenFor(<session-cookie>). All comparisons are constant-time.
+// Returns false when any input is missing or mismatched — callers
+// should reject the request with 403.
+func ValidateAdminCSRF(r *http.Request) bool {
+	header := strings.TrimSpace(r.Header.Get(adminCSRFHeaderName))
+	if header == "" {
+		return false
+	}
+	cookie, err := r.Cookie(adminCSRFCookieName)
+	if err != nil || strings.TrimSpace(cookie.Value) == "" {
+		return false
+	}
+	if !hmacEqual([]byte(cookie.Value), []byte(header)) {
+		return false
+	}
+	sessionCookie, err := r.Cookie(adminSessionCookieName)
+	if err != nil || strings.TrimSpace(sessionCookie.Value) == "" {
+		return false
+	}
+	want := csrfTokenFor(sessionCookie.Value)
+	return hmacEqual([]byte(cookie.Value), []byte(want))
+}
+
+// EnforceAdminCSRF is the handler-level helper for endpoints that
+// accept admin-session-cookie-authenticated state changes. Call it at
+// the top of the handler when the resolved Identity has
+// Source="admin_session"; the helper writes 403 + JSON envelope when
+// the double-submit check fails and returns false (caller MUST return
+// without further writes).
+//
+// Bearer / edge-HMAC / smoke callers are not subject to CSRF (their
+// credentials are not automatically attached by the browser to
+// cross-origin requests), so they should skip this check entirely.
+func EnforceAdminCSRF(w http.ResponseWriter, r *http.Request) bool {
+	id := IdentityFromContext(r.Context())
+	if id.Source != "admin_session" {
+		return true
+	}
+	if ValidateAdminCSRF(r) {
+		return true
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusForbidden)
+	_, _ = w.Write([]byte(`{"error":{"code":"csrf_required","message":"X-CSRF-Token header missing or invalid"}}`))
+	return false
 }
 
 func writeAdminSessionJSON(w http.ResponseWriter, authenticated bool, id Identity) {

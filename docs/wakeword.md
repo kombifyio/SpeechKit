@@ -248,6 +248,14 @@ for the full catalog and
 [docs/superpowers/specs/2026-05-20-wakeword-auto-end-design.md](superpowers/specs/2026-05-20-wakeword-auto-end-design.md)
 for the design rationale.
 
+## Troubleshooting
+
+| Symptom | Likely cause | Runbook |
+|---|---|---|
+| Wake-word phrase clearly above threshold in `debug_mode` scores, but no detection fires (host log shows `"wakeword: score"` entries up to 0.8–0.9 but never `"wakeword: detection"`) | openWakeWord sidecar regression — the consecutive-frame counter is being reset between scoring frames by zero-score placeholder calls. The May 2026 fix gates `maybeEmitDetection` on `decodes > 0`. | [wakeword-detection-not-firing.md](runbooks/wakeword-detection-not-firing.md) |
+| Wake-word triggers dictation but the recording never auto-stops on silence; "Captured (silence timeout)" never appears in the log | Silero VAD is hard-disabled in the current build; if the Level-VAD fallback in `internal/vad/level_vad.go` is missing the `RecordingController` ends up with a nil collector and the silence-cutoff watcher never arms. | [vad-onnx-init-failure.md](runbooks/vad-onnx-init-failure.md) |
+| Microphone self-test reports OK and `"wakeword: heartbeat"` shows non-zero `bytes_in_30s`, but the detector score stream is flat near 0 — your phrase is not being recognised | Model / phrase mismatch — confirm the per-phrase ONNX in `models/wakeword/` matches the `phrase_id` you selected, then enable `debug_mode` to inspect the score stream while speaking. | (no dedicated runbook — see "Detection backends" above) |
+
 ## Sidecar architecture
 
 The Windows reference adapter spawns `speechkit-wakeword.exe` as a sibling

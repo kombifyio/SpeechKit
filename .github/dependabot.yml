@@ -24,3 +24,9 @@ updates:
     groups:
       npm-minor-patch:
         update-types: [minor, patch]
+
+  - package-ecosystem: docker
+    directory: /deploy/docker
+    schedule:
+      interval: weekly
+    labels: [dependencies, docker]

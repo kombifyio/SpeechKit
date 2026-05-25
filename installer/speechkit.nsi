@@ -10,7 +10,7 @@ RequestExecutionLevel user
 
 ; VERSION can be overridden at compile time: makensis /DVERSION=x.y.z
 !ifndef VERSION
-  !define VERSION "0.38.5"
+  !define VERSION "0.38.7"
 !endif
 
 ; --- Interface ---
@@ -60,14 +60,11 @@ Section "SpeechKit" SecMain
   File "${STAGE_DIR}\*.dll"
   File "${STAGE_DIR}\MicrosoftEdgeWebview2Setup.exe"
 
-  ; Bundled starter Whisper model (ggml-small.bin + tiny). Without this
-  ; the first-launch /app/complete-setup gate returns 409 (no local
-  ; speech model configured) and onboarding stalls until the user
-  ; downloads a model. The build script verifies the SHA256 of
-  ; ggml-small.bin before packaging — see scripts/build.ps1 and
-  ; scripts/prepare-whisper-runtime.ps1.
+  ; Wake-word ONNX models (small, ~3 MB). Whisper speech models are NOT
+  ; bundled — they are downloaded on-demand at first use via the
+  ; built-in downloads manager (internal/downloads/).
   SetOutPath "$INSTDIR\models"
-  File /r "${STAGE_DIR}\models\*"
+  File /nonfatal /r "${STAGE_DIR}\models\*"
   SetOutPath "$INSTDIR"
 
   ; Local LLM runtime (llama-server.exe + its private DLLs). Without

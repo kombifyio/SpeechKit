@@ -325,28 +325,44 @@ type ServerConfig struct {
 	// (Plan="demo") so handlers and rate-limiters can distinguish demo
 	// traffic. Leave empty to disable smoke-from-page entirely; operators
 	// must then paste their bearer token in the UI manually.
-	SmokeTokenEnv         string   `toml:"smoke_token_env"`
-	PublicBaseURL         string   `toml:"public_base_url"`     // public server URL used for returned client URLs
-	TrustedProxyCIDRs     []string `toml:"trusted_proxy_cidrs"` // proxies allowed to supply X-Forwarded-* headers
-	CORSAllowedOrigins    []string `toml:"cors_allowed_origins"`
-	RateLimitRPS          float64  `toml:"rate_limit_rps"`
-	RateLimitBurst        int      `toml:"rate_limit_burst"`
-	MaxUploadMB           int      `toml:"max_upload_mb"`
-	MaxVoiceAgentSessions int      `toml:"max_voiceagent_sessions"` // global cap
-	MaxSessionsPerUser    int      `toml:"max_sessions_per_user"`
-	TicketTTLSec          int      `toml:"ticket_ttl_sec"` // Voice Agent WS ticket TTL
+	SmokeTokenEnv      string   `toml:"smoke_token_env"`
+	PublicBaseURL      string   `toml:"public_base_url"`     // public server URL used for returned client URLs
+	TrustedProxyCIDRs  []string `toml:"trusted_proxy_cidrs"` // proxies allowed to supply X-Forwarded-* headers
+	CORSAllowedOrigins []string `toml:"cors_allowed_origins"`
+	RateLimitRPS       float64  `toml:"rate_limit_rps"`
+	RateLimitBurst     int      `toml:"rate_limit_burst"`
+	// RateLimitEndpointCosts assigns per-endpoint token costs so
+	// expensive handlers (LLM, transcription, voice-agent session
+	// create) drain the bucket faster than cheap ones. Keys are
+	// either "METHOD PATH" (e.g. "POST /v1/dictation/transcribe")
+	// or bare PATH. Missing entries default to 1.0. Audit S-4.
+	RateLimitEndpointCosts map[string]float64 `toml:"rate_limit_endpoint_costs"`
+	// DemoDailyQuota caps how many requests a Plan="demo" identity
+	// (the smoke-token surface) may make per UTC day, keyed by
+	// UserID + client IP. Zero disables the quota. Audit S-5.
+	DemoDailyQuota        int `toml:"demo_daily_quota"`
+	MaxUploadMB           int `toml:"max_upload_mb"`
+	MaxVoiceAgentSessions int `toml:"max_voiceagent_sessions"` // global cap
+	MaxSessionsPerUser    int `toml:"max_sessions_per_user"`
+	TicketTTLSec          int `toml:"ticket_ttl_sec"` // Voice Agent WS ticket TTL
 	// VoiceAgentIdleTimeoutSec terminates a Voice Agent WebSocket session
 	// after N seconds without any client- or provider-side activity.
 	// Defaults to 900 (15 min). Set to 0 to disable the server-side idle
 	// timeout (kernel-level idle handling stays in effect either way).
-	VoiceAgentIdleTimeoutSec int                  `toml:"voiceagent_idle_timeout_sec"`
-	LiveKit                  ServerLiveKitConfig  `toml:"livekit"`
-	WhisperBinary            string               `toml:"whisper_binary"` // absolute path inside container
-	WhisperPort              int                  `toml:"whisper_port"`   // loopback port for whisper.cpp server
-	ModelDir                 string               `toml:"model_dir"`      // persistent volume, e.g. /var/lib/speechkit/models
-	LogFormat                string               `toml:"log_format"`     // "json" | "text"
-	LogLevel                 string               `toml:"log_level"`      // "debug" | "info" | "warn" | "error"
-	Features                 ServerFeaturesConfig `toml:"features"`
+	VoiceAgentIdleTimeoutSec int `toml:"voiceagent_idle_timeout_sec"`
+	// WSReadLimitBytes caps the per-frame size the Voice Agent WebSocket
+	// will read from a client. Zero or negative defaults to 64 KiB,
+	// which leaves ample headroom over real PCM chunk sizes (well under
+	// 4 KB) without giving a single frame a 1 MiB memory amplification
+	// vector. Bumped only for non-standard payloads.
+	WSReadLimitBytes int64                `toml:"ws_read_limit_bytes"`
+	LiveKit          ServerLiveKitConfig  `toml:"livekit"`
+	WhisperBinary    string               `toml:"whisper_binary"` // absolute path inside container
+	WhisperPort      int                  `toml:"whisper_port"`   // loopback port for whisper.cpp server
+	ModelDir         string               `toml:"model_dir"`      // persistent volume, e.g. /var/lib/speechkit/models
+	LogFormat        string               `toml:"log_format"`     // "json" | "text"
+	LogLevel         string               `toml:"log_level"`      // "debug" | "info" | "warn" | "error"
+	Features         ServerFeaturesConfig `toml:"features"`
 
 	// TrainingData configures the server-side wake-word activation
 	// collection endpoint. Default OFF so an operator must explicitly

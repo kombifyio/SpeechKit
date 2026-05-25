@@ -12,6 +12,191 @@ IDs, source paths, and other maintainer-only vocabulary.
 
 ## [Unreleased]
 
+## [0.38.7] - 2026-05-25
+
+Consolidated security hardening and installer release. Rolls up
+v0.38.0 through v0.38.6 plus two post-v0.38.6 fixes into a single
+OSS release.
+
+### Security
+
+- **Server refuses to bind to a public address with no authentication.**
+  `auth_mode = "none"` on a non-loopback bind address now fails at
+  startup instead of silently running an open server.
+- **Voice Agent WebSocket prefers a session ticket in the
+  `Sec-WebSocket-Protocol` subprotocol** over the legacy `?ticket=`
+  query string. Cross-origin browsers without an `Origin` header are
+  rejected by default. Per-frame read limit tightened to 64 KiB.
+- **Admin settings PATCH requires a CSRF token** (double-submit cookie
+  pattern). Bearer and edge-auth callers bypass CSRF.
+- **Rate limiter is cost-weighted with a per-plan daily cap.** Expensive
+  endpoints draw more tokens; demo-tier callers have a hard daily
+  ceiling; service-bearer callers are keyed by remote IP.
+- **Wake-word upload validates activation IDs and serialises quota
+  checks.** Oversized or path-traversal-shaped IDs are rejected; two
+  concurrent uploads at the quota edge cannot both pass.
+- **Wildcard CORS is rejected when the admin login UI is enabled.**
+
+### Added
+
+- **Multi-turn skill conversations** (from v0.38.0). Skills that need
+  follow-up keep the conversation open for 60 seconds. Desktop build
+  now also supports follow-ups (previously server-only).
+- **All-local TTS via Piper** (from v0.38.0). New `[tts.piper]` config
+  block with voice directory, per-locale defaults, and health probe.
+- **Home Assistant and Piper Settings UI** (from v0.38.2). Configure
+  HA bridge and Piper voice picker from the Settings page.
+
+### Fixed
+
+- **Wake-word with openWakeWord now actually fires.** The sidecar
+  reset the consecutive-frame counter on non-scoring chunks; with
+  `min_consecutive_frames = 2` no detection was ever emitted.
+- **Dictation auto-stop after silence works again.** Falls back to an
+  RMS-level detector when Silero VAD is unavailable.
+- **Bundled Whisper model removed from the installer.** The 465 MB
+  `ggml-small.bin` was inflating the installer from ~150 MB to
+  ~530 MB. Speech models are now downloaded on-demand at first use
+  via the built-in downloads manager.
+- **Bundled ONNX Runtime bumped to v1.25.1** to match the API version
+  expected by the wake-word sidecar.
+
+### Changed
+
+- Default `dictate_silence_timeout_sec` lowered from 10 s to 3 s.
+- **Reproducible builds.** Windows builds pin `SOURCE_DATE_EPOCH`,
+  pass `-trimpath` + `-buildvcs=false`, and digest-pin container
+  base images.
+
+### Supply chain
+
+- `go mod verify` in CI, Trivy with `.trivyignore` baseline,
+  pinned OpenAPI/AsyncAPI CLIs, determinism gate on the OSS export.
+
+### Test coverage
+
+- Voice Agent persona/role catalog ~0.24 → ~0.94, Assist shortcut
+  resolver ~0.41 → ~0.77, auth-provider registry race-detector
+  contract, five new packages in race-test scope.
+
+## [0.38.6] - 2026-05-25
+
+### Security
+
+- **Server refuses to bind to a public address with no authentication.**
+  The Linux container's `auth_mode = "none"` shortcut used to silently
+  attach an anonymous identity to every request even on `0.0.0.0`. The
+  defence-in-depth backstop now refuses the anonymous fallback when the
+  bind address is non-loopback, so an operator who forgets
+  `SPEECHKIT_AUTH_MODE` no longer ships an open server. Admin-session and
+  smoke-token logins still work as configured.
+- **Voice Agent WebSocket prefers a session ticket in the
+  `Sec-WebSocket-Protocol` subprotocol over the legacy `?ticket=` query
+  string.** The legacy form still works for backwards compatibility, but
+  new clients ride the upgrade handshake and never leak the ticket to a
+  fronting reverse proxy's access log. Cross-origin browsers without an
+  `Origin` header are now rejected by default; native clients can opt in
+  via `SPEECHKIT_ALLOW_EMPTY_ORIGIN=1`. Per-frame WebSocket read limit
+  tightened from 1 MiB to 64 KiB (configurable via
+  `[server] ws_read_limit_bytes`).
+- **Admin settings PATCH now requires a CSRF token.** When a request
+  comes in with an admin-session cookie (the browser-based login),
+  state-changing settings calls (`PATCH /v1/server/settings`) require
+  an `X-CSRF-Token` header that matches the new `speechkit_admin_csrf`
+  cookie set on login. Bearer or edge-auth calls bypass CSRF — those
+  credentials are not browser-auto-attached. The first-run setup UI
+  already sends the header, so no flow change for end users.
+- **Rate limiter is cost-weighted and demo traffic has a hard daily
+  cap.** Expensive endpoints (`POST /v1/dictation/transcribe`,
+  `POST /v1/assist/process`, `POST /v1/voiceagent/sessions`) draw more
+  tokens than cheap GETs — configurable via
+  `[server] rate_limit_endpoint_costs`. The new
+  `[server] demo_daily_quota` ceiling caps Plan="demo" callers (the
+  smoke-token surface) per UTC day so a casual scraper can't run up
+  provider bills overnight. Service-bearer callers (`UserID="service"`)
+  are now keyed on remote IP instead of sharing one global bucket so
+  one noisy neighbour can't starve other consumers.
+- **Wake-word upload guards a hostile activation ID and a quota race.**
+  `metadata.id` is capped to 64 characters and constrained to
+  `[A-Za-z0-9_-]` at validation time; oversized or path-traversal-shaped
+  IDs are rejected with 400 before any filesystem work runs. Concurrent
+  uploads from the same user are serialised by a per-owner lock, so two
+  simultaneous uploads at the quota edge cannot both pass the
+  "below quota" check and silently double the user's stored bytes.
+- **Wildcard CORS is rejected when the admin login UI is enabled.**
+  Wildcard origins combined with the admin session cookie surface would
+  let any origin issue authenticated requests once the admin tab visits
+  a hostile page. Now refused at config validation with an explicit
+  error naming `admin_auth_enabled`.
+
+### Fixed
+
+- **Wake-word with the openWakeWord backend now actually fires.** The
+  detector frequently produced scores above 0.8 for clearly-spoken wake
+  phrases, but the sidecar reset the consecutive-frame counter on every
+  PCM chunk that did not yet contain a full decoder window — and at the
+  default 32 ms audio framing two thirds of chunks do not produce a new
+  score. With `min_consecutive_frames = 2` the counter could never reach
+  the threshold, so no detection event was emitted. The sidecar now only
+  feeds real scoring frames into the consecutive-frame logic and dispatches
+  the wake-word into the hotkey bus as designed.
+- **Dictation auto-stop after silence now works on the Windows reference
+  build.** The Silero VAD has been disabled since the recent ONNX runtime
+  clean-up, which silently left dictation without a voice-activity
+  detector — the silence-cutoff watcher never armed, so wake-word
+  triggered dictation sessions ran forever. SpeechKit now falls back to
+  a small RMS-level detector when Silero is unavailable, so the
+  silence-cutoff watcher arms and a quiet pause ends the session as
+  documented.
+
+### Changed
+
+- Default `dictate_silence_timeout_sec` lowered from 10 s to 3 s for a
+  more responsive dictation experience. Existing config files that pin
+  the previous value are untouched.
+- **Reproducible builds.** Windows desktop builds now pin
+  `SOURCE_DATE_EPOCH` to the HEAD commit timestamp and pass
+  `-trimpath` + `-buildvcs=false` to every `go build` invocation, so
+  two consecutive builds from the same commit produce identical EXEs.
+  Useful for signing pipelines and binary-diff investigations.
+- **Linux container base images are digest-pinned.** The server image
+  now resolves `golang:1.26-bookworm` and `debian:bookworm-slim` to
+  explicit `@sha256:...` digests so an upstream tag rebuild doesn't
+  silently change the runtime. Dependabot's `docker` ecosystem rotates
+  the digests weekly.
+
+### Supply chain
+
+- `go mod verify` is now part of the Go Analysis CI step.
+- Trivy stops silencing CVEs without a fix; waivers move into
+  `.trivyignore` with rationale + 90-day review TTL.
+- OpenAPI/AsyncAPI spec-lint CLIs (`@redocly/cli`, `@asyncapi/cli`)
+  are pinned to specific versions instead of `@latest`.
+- The OSS publish workflow now runs a determinism gate before
+  wiping the mirror; a non-deterministic export fails the gate and
+  doesn't push.
+
+### Test coverage
+
+- Coverage on the Voice Agent persona/role catalog rose from ~0.24 to
+  ~0.94, on the Assist shortcut resolver from ~0.41 to ~0.77, and the
+  auth-provider registry now ships a race-detector contract.
+- Race-test scope in CI gained five pure-Go packages
+  (`auth`, `downloads`, `netsec`, `voicebehavior`, `voiceeval`).
+- Flaky 1.1 s real-time sleeps in the storage tests were replaced
+  with a `waitForNextSecond` helper.
+
+### Documentation
+
+- Added `doc.go` to sixteen internal packages that previously had no
+  package-level comment.
+- Architecture doc now calls out the one intentional kernel-to-SDK
+  back-edge and the OSS-vs-Cloud build-tag seam so future refactors
+  don't accidentally treat them as cleanup candidates.
+- New `SECURITY.md` section documents the long-lived publish-OSS PAT,
+  its 90-day rotation cadence, and the planned migration to a
+  scoped GitHub App.
+
 ## [0.38.5] - 2026-05-22
 
 Release-hygiene patch on top of v0.38.4 so the OSS publish workflow

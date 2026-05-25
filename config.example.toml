@@ -163,11 +163,23 @@ edge_auth_secret_env = "EDGE_AUTH_SECRET"     # Env var name for edge_hmac mode.
 cors_allowed_origins = []                     # Set explicit origins for browser/WS clients; empty disables browser-origin access.
 rate_limit_rps = 10
 rate_limit_burst = 20
+# Per-endpoint token costs. Keys: "METHOD PATH" (preferred) or bare PATH.
+# Default 1.0 for entries not listed. Audit S-4: ensure expensive
+# handlers drain the global bucket proportionally to their cost.
+rate_limit_endpoint_costs = { "POST /v1/dictation/transcribe" = 5.0, "POST /v1/assist/process" = 3.0, "POST /v1/voiceagent/sessions" = 10.0 }
+# Hard daily ceiling for Plan="demo" identities (smoke-token surface).
+# Keyed by UserID + client IP. Zero disables the quota. Audit S-5.
+demo_daily_quota = 100
 max_upload_mb = 25
 max_voice_agent_sessions = 100
 max_sessions_per_user = 3
 ticket_ttl_sec = 90
 voice_agent_idle_timeout_sec = 900
+# Per-frame size cap on the Voice Agent WebSocket. Defaults to 65536
+# (64 KiB) when unset or non-positive. Tightened from the historical
+# 1 MiB default in audit S-12 because raw PCM chunks are well under
+# 4 KB in practice. Raise only for non-standard payloads.
+ws_read_limit_bytes = 65536
 whisper_binary = "/usr/local/bin/whisper-server"
 whisper_port = 8180
 model_dir = "/var/lib/speechkit/models"

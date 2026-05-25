@@ -20,8 +20,15 @@ func TestBuildLocalAudioAssetReadsFileMetadata(t *testing.T) {
 	if asset.StorageKind != AudioStorageLocalFile {
 		t.Fatalf("storage kind = %q, want %q", asset.StorageKind, AudioStorageLocalFile)
 	}
-	if asset.Path != path || asset.MimeType != "audio/wav" || asset.DurationMs != 1234 {
+	// Linux mime.TypeByExtension returns "audio/x-wav" while macOS /
+	// Windows tend to return "audio/wav". Both are RFC-registered MIME
+	// types for the same payload; accept either so CI on either host
+	// agrees.
+	if asset.Path != path || asset.DurationMs != 1234 {
 		t.Fatalf("asset metadata = %+v", asset)
+	}
+	if asset.MimeType != "audio/wav" && asset.MimeType != "audio/x-wav" {
+		t.Fatalf("asset MimeType = %q, want audio/wav or audio/x-wav", asset.MimeType)
 	}
 	if asset.SizeBytes != int64(len(payload)) {
 		t.Fatalf("asset size = %d, want %d", asset.SizeBytes, len(payload))

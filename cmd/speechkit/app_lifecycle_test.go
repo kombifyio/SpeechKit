@@ -70,3 +70,29 @@ func TestIsAppStartedGatesOnAppStartedWithWailsApp(t *testing.T) {
 		t.Fatal("after markAppStarted(), isAppStarted must report started so UI callers can proceed")
 	}
 }
+
+// TestOverlayLifecycleNoOpsDuringShutdown is the regression guard for beads
+// kombify-SpeechKit-u8b: once beginShutdown() has flipped the state, every
+// overlay-touching method must short-circuit so a parallel goroutine cannot
+// drive Show/Hide/SetPosition into Wails while the framework is destroying
+// its windows. Without the guards the desktop process hangs after the tray
+// "Quit" because the 900 ms overlay sync tick and the audio level handler
+// keep calling into windows that no longer have a backing dispatcher.
+func TestOverlayLifecycleNoOpsDuringShutdown(t *testing.T) {
+	state := &appState{overlayEnabled: true}
+	state.beginShutdown()
+
+	// None of these should reach the underlying window APIs. We rely on
+	// the methods being nil-safe (no overlay windows wired here) when the
+	// shutdown guard short-circuits; a panic indicates a guard regression.
+	state.syncOverlayToActiveScreen()
+	state.positionOverlay()
+	state.showActiveOverlayWindow()
+	state.showPillPanel()
+	state.showRadialMenu()
+	state.showAssistBubble("ignored")
+	state.showAssistPanel("ignored", "ignored")
+	state.primeOverlayForCapture("dictate")
+	state.setOverlayFeedbackMessage("user", "ignored", true)
+	state.refreshOverlayWindows()
+}

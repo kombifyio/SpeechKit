@@ -149,18 +149,43 @@ func TestAuth_AdminSessionEndpointIssuesHttpOnlyCookie(t *testing.T) {
 		t.Fatalf("admin session login got %d body=%s", loginRec.Code, loginRec.Body.String())
 	}
 	cookies := loginRec.Result().Cookies()
-	if len(cookies) != 1 {
-		t.Fatalf("login cookies = %d, want 1", len(cookies))
+	// S-13: login now issues the session cookie AND a paired CSRF
+	// cookie. Identify them by name so test order isn't load-bearing.
+	if len(cookies) != 2 {
+		t.Fatalf("login cookies = %d, want 2 (session + csrf)", len(cookies))
 	}
-	cookie := cookies[0]
-	if cookie.Name != adminSessionCookieName {
-		t.Fatalf("cookie name = %q, want %q", cookie.Name, adminSessionCookieName)
+	var cookie, csrf *http.Cookie
+	for _, c := range cookies {
+		switch c.Name {
+		case adminSessionCookieName:
+			cookie = c
+		case adminCSRFCookieName:
+			csrf = c
+		}
+	}
+	if cookie == nil {
+		t.Fatalf("missing %s cookie among %+v", adminSessionCookieName, cookies)
+	}
+	if csrf == nil {
+		t.Fatalf("missing %s cookie among %+v", adminCSRFCookieName, cookies)
 	}
 	if !cookie.HttpOnly {
 		t.Fatal("admin session cookie must be HttpOnly")
 	}
 	if cookie.SameSite != http.SameSiteLaxMode {
 		t.Fatalf("admin session SameSite = %v, want Lax", cookie.SameSite)
+	}
+	if csrf.HttpOnly {
+		t.Fatal("CSRF cookie must NOT be HttpOnly — JS reads it for the X-CSRF-Token header")
+	}
+	if csrf.SameSite != http.SameSiteStrictMode {
+		t.Fatalf("CSRF cookie SameSite = %v, want Strict", csrf.SameSite)
+	}
+	if csrf.Value == "" {
+		t.Fatal("CSRF cookie value must be non-empty")
+	}
+	if csrf.Value != csrfTokenFor(cookie.Value) {
+		t.Fatalf("CSRF cookie value does not match csrfTokenFor(session)")
 	}
 	payload, _, ok := strings.Cut(cookie.Value, ".")
 	if !ok {
@@ -198,8 +223,127 @@ func TestAuth_AdminSessionEndpointClearsCookie(t *testing.T) {
 		t.Fatalf("logout got %d", rec.Code)
 	}
 	cookies := rec.Result().Cookies()
-	if len(cookies) != 1 || cookies[0].Name != adminSessionCookieName || cookies[0].MaxAge >= 0 {
-		t.Fatalf("logout cookie = %+v, want cleared admin session cookie", cookies)
+	// S-13: logout also clears the paired CSRF cookie.
+	if len(cookies) != 2 {
+		t.Fatalf("logout cookies = %d, want 2 (cleared session + cleared csrf)", len(cookies))
+	}
+	seenSession := false
+	seenCSRF := false
+	for _, c := range cookies {
+		if c.MaxAge >= 0 {
+			t.Fatalf("logout cookie %q has MaxAge = %d, want negative (cleared)", c.Name, c.MaxAge)
+		}
+		switch c.Name {
+		case adminSessionCookieName:
+			seenSession = true
+		case adminCSRFCookieName:
+			seenCSRF = true
+		}
+	}
+	if !seenSession || !seenCSRF {
+		t.Fatalf("logout did not clear both cookies: session=%v csrf=%v (cookies=%+v)", seenSession, seenCSRF, cookies)
+	}
+}
+
+func TestAdminCSRF_TokenIsDeterministicForSessionToken(t *testing.T) {
+	tok := csrfTokenFor("session-cookie-value")
+	again := csrfTokenFor("session-cookie-value")
+	if tok != again {
+		t.Fatalf("csrfTokenFor is not deterministic: %q vs %q", tok, again)
+	}
+	other := csrfTokenFor("different-session-value")
+	if tok == other {
+		t.Fatalf("csrfTokenFor returned the same token for different sessions")
+	}
+	if tok == "" {
+		t.Fatal("csrfTokenFor returned empty token")
+	}
+}
+
+func TestValidateAdminCSRF_RejectsMissingHeader(t *testing.T) {
+	req := httptest.NewRequest(http.MethodPatch, "/v1/server/settings", nil)
+	req.AddCookie(&http.Cookie{Name: adminSessionCookieName, Value: "sess.abc"})
+	req.AddCookie(&http.Cookie{Name: adminCSRFCookieName, Value: csrfTokenFor("sess.abc")})
+	if ValidateAdminCSRF(req) {
+		t.Fatal("ValidateAdminCSRF must require X-CSRF-Token header")
+	}
+}
+
+func TestValidateAdminCSRF_RejectsMissingCookie(t *testing.T) {
+	req := httptest.NewRequest(http.MethodPatch, "/v1/server/settings", nil)
+	req.Header.Set(adminCSRFHeaderName, "anything")
+	if ValidateAdminCSRF(req) {
+		t.Fatal("ValidateAdminCSRF must require CSRF cookie")
+	}
+}
+
+func TestValidateAdminCSRF_RejectsHeaderCookieMismatch(t *testing.T) {
+	req := httptest.NewRequest(http.MethodPatch, "/v1/server/settings", nil)
+	req.AddCookie(&http.Cookie{Name: adminSessionCookieName, Value: "sess.abc"})
+	req.AddCookie(&http.Cookie{Name: adminCSRFCookieName, Value: csrfTokenFor("sess.abc")})
+	req.Header.Set(adminCSRFHeaderName, "wrong-token")
+	if ValidateAdminCSRF(req) {
+		t.Fatal("ValidateAdminCSRF must reject header that does not match cookie")
+	}
+}
+
+func TestValidateAdminCSRF_RejectsStaleCSRFAgainstFreshSession(t *testing.T) {
+	// CSRF cookie was minted for an older session; current session
+	// cookie is different. The HMAC binding must catch the mismatch.
+	staleCSRF := csrfTokenFor("old-session-value")
+	req := httptest.NewRequest(http.MethodPatch, "/v1/server/settings", nil)
+	req.AddCookie(&http.Cookie{Name: adminSessionCookieName, Value: "new-session-value"})
+	req.AddCookie(&http.Cookie{Name: adminCSRFCookieName, Value: staleCSRF})
+	req.Header.Set(adminCSRFHeaderName, staleCSRF)
+	if ValidateAdminCSRF(req) {
+		t.Fatal("ValidateAdminCSRF must reject stale CSRF bound to a different session")
+	}
+}
+
+func TestValidateAdminCSRF_AcceptsMatchedTriple(t *testing.T) {
+	const sess = "sess.xyz"
+	tok := csrfTokenFor(sess)
+	req := httptest.NewRequest(http.MethodPatch, "/v1/server/settings", nil)
+	req.AddCookie(&http.Cookie{Name: adminSessionCookieName, Value: sess})
+	req.AddCookie(&http.Cookie{Name: adminCSRFCookieName, Value: tok})
+	req.Header.Set(adminCSRFHeaderName, tok)
+	if !ValidateAdminCSRF(req) {
+		t.Fatal("ValidateAdminCSRF must accept a matched (session-cookie, csrf-cookie, header) triple")
+	}
+}
+
+func TestEnforceAdminCSRF_BypassesNonAdminSessionIdentity(t *testing.T) {
+	// Bearer / edge-HMAC / smoke callers must NOT be required to send
+	// X-CSRF-Token — their credentials are not browser-attached.
+	for _, source := range []string{"bearer", "edge_hmac", "smoke", "none", ""} {
+		t.Run("source="+source, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodPatch, "/v1/server/settings", nil)
+			ctx := InjectIdentityForTest(req.Context(), Identity{UserID: "svc", Source: source})
+			req = req.WithContext(ctx)
+			rec := httptest.NewRecorder()
+			if !EnforceAdminCSRF(rec, req) {
+				t.Fatalf("EnforceAdminCSRF must bypass when Source=%q (no CSRF needed)", source)
+			}
+			if rec.Code != http.StatusOK { // unwritten = default 200
+				t.Fatalf("EnforceAdminCSRF wrote a response for Source=%q (code=%d)", source, rec.Code)
+			}
+		})
+	}
+}
+
+func TestEnforceAdminCSRF_RejectsAdminSessionWithoutToken(t *testing.T) {
+	req := httptest.NewRequest(http.MethodPatch, "/v1/server/settings", nil)
+	ctx := InjectIdentityForTest(req.Context(), Identity{UserID: "admin", Source: "admin_session", Role: "admin"})
+	req = req.WithContext(ctx)
+	rec := httptest.NewRecorder()
+	if EnforceAdminCSRF(rec, req) {
+		t.Fatal("EnforceAdminCSRF must reject admin-session caller without CSRF token")
+	}
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("status = %d, want 403", rec.Code)
+	}
+	if !strings.Contains(rec.Body.String(), "csrf_required") {
+		t.Fatalf("body = %q, want csrf_required envelope", rec.Body.String())
 	}
 }
 
@@ -490,6 +634,70 @@ func TestAuth_NoneAllowsRequestAndAttachesAnonymousIdentity(t *testing.T) {
 	}
 	if rec.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d body=%s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestAuth_NoneRefusedWhenRequireAuthenticatedMode(t *testing.T) {
+	// Defence-in-depth on top of config.ValidateServerProductionAuth.
+	// When RequireAuthenticatedMode is true (set by bootstrap for
+	// non-loopback binds), AuthModeNone must NOT issue the anonymous
+	// Identity — the request falls through to writeAuthError → 401.
+	handler := Auth(AuthOptions{Mode: "none", RequireAuthenticatedMode: true})(
+		http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusOK) }),
+	)
+
+	req := httptest.NewRequest(http.MethodPost, "/v1/voiceagent/sessions", nil)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("RequireAuthenticatedMode must refuse anonymous when mode=none; got %d body=%s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestAuth_EmptyModeRefusedWhenRequireAuthenticatedMode(t *testing.T) {
+	// Empty Mode resolves to AuthModeNone at the mode-resolution step
+	// (auth.go:344). RequireAuthenticatedMode must still block.
+	handler := Auth(AuthOptions{Mode: "", RequireAuthenticatedMode: true})(
+		http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusOK) }),
+	)
+
+	req := httptest.NewRequest(http.MethodPost, "/v1/dictation/transcribe", nil)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("empty mode + RequireAuthenticatedMode must refuse; got %d body=%s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestAuth_SmokeFallbackStillWorksWithRequireAuthenticatedMode(t *testing.T) {
+	// Defence-in-depth must not break the smoke path: a valid smoke
+	// token with mode=none + RequireAuthenticatedMode=true should still
+	// authenticate via the smoke fallback. Only the implicit anonymous
+	// identity is suppressed.
+	smokeProvider := func() string { return "demo-token-xyz" }
+	handler := Auth(AuthOptions{
+		Mode:                     "none",
+		RequireAuthenticatedMode: true,
+		SmokeTokenProvider:       smokeProvider,
+	})(
+		http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			id := IdentityFromContext(r.Context())
+			if id.Source != "smoke" {
+				t.Fatalf("expected smoke identity, got %+v", id)
+			}
+			w.WriteHeader(http.StatusOK)
+		}),
+	)
+
+	req := httptest.NewRequest(http.MethodPost, "/v1/voiceagent/sessions", nil)
+	req.Header.Set("Authorization", "Bearer demo-token-xyz")
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("smoke fallback must work when RequireAuthenticatedMode is on; got %d body=%s", rec.Code, rec.Body.String())
 	}
 }
 

@@ -195,7 +195,16 @@ func (rt *runtime) handlePCM(pcm []byte) {
 	// and collects post-roll for pending captures. No-op when
 	// training is disabled.
 	tc.Ingest(pcm)
-	rt.maybeEmitDetection(score)
+	// Only drive the consecutive-frame logic on decode boundaries.
+	// A 32 ms PCM chunk usually does NOT produce a frame (the detector
+	// accumulates 80 ms / 1280 samples), so decodes==0 here means
+	// "no new score" — passing the placeholder 0 to maybeEmitDetection
+	// would reset rt.consecutive between every real frame and prevent
+	// MinConsecutiveFrames from ever being reached. See bug "Wake-word
+	// never fires despite high scores".
+	if decodes > 0 {
+		rt.maybeEmitDetection(score)
+	}
 }
 
 func (rt *runtime) maybeEmitDetection(score float32) {

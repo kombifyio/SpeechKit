@@ -361,18 +361,25 @@ func TestRegisterServerSettings_PatchCreatesAdminSessionLogin(t *testing.T) {
 		t.Fatalf("stored admin auth = %+v", stored.AdminAuth)
 	}
 
-	var adminCookie *http.Cookie
+	var adminCookie, csrfCookie *http.Cookie
 	for _, cookie := range rec.Result().Cookies() {
-		if cookie.Name == middleware.AdminSessionCookieName {
+		switch cookie.Name {
+		case middleware.AdminSessionCookieName:
 			adminCookie = cookie
-			break
+		case middleware.AdminCSRFCookieName:
+			csrfCookie = cookie
 		}
 	}
 	if adminCookie == nil {
 		t.Fatal("bootstrap PATCH should set an admin session cookie")
 	}
+	if csrfCookie == nil {
+		t.Fatal("bootstrap PATCH should also set a CSRF cookie (audit S-13)")
+	}
 	adminReq := httptest.NewRequest(http.MethodPatch, "/v1/server/settings", strings.NewReader(`{"onboarding_complete":true}`))
 	adminReq.AddCookie(adminCookie)
+	adminReq.AddCookie(csrfCookie)
+	adminReq.Header.Set(middleware.AdminCSRFHeaderName, csrfCookie.Value)
 	adminRec := httptest.NewRecorder()
 	middleware.Auth(middleware.AuthOptions{
 		ModeProvider:              app.AuthState.Mode,
@@ -384,6 +391,32 @@ func TestRegisterServerSettings_PatchCreatesAdminSessionLogin(t *testing.T) {
 	if adminRec.Code != http.StatusOK {
 		t.Fatalf("admin session PATCH after bootstrap = %d body=%s", adminRec.Code, adminRec.Body.String())
 	}
+
+	// Audit S-13: same admin-session cookie WITHOUT the X-CSRF-Token
+	// header must be refused with 403 csrf_required.
+	noCSRFReq := httptest.NewRequest(http.MethodPatch, "/v1/server/settings", strings.NewReader(`{"onboarding_complete":true}`))
+	noCSRFReq.AddCookie(adminCookie)
+	noCSRFReq.AddCookie(csrfCookie)
+	noCSRFRec := httptest.NewRecorder()
+	middleware.Auth(middleware.AuthOptions{
+		ModeProvider:              app.AuthState.Mode,
+		BearerTokenProvider:       app.AuthState.BearerToken,
+		AdminUsernameProvider:     app.AuthState.AdminUsername,
+		AdminPasswordHashProvider: app.AuthState.AdminPasswordHash,
+	})(app.Mux).ServeHTTP(noCSRFRec, noCSRFReq)
+	if noCSRFRec.Code != http.StatusForbidden {
+		t.Fatalf("admin session PATCH without X-CSRF-Token header = %d, want 403", noCSRFRec.Code)
+	}
+	if !strings.Contains(noCSRFRec.Body.String(), "csrf_required") {
+		t.Fatalf("body without CSRF = %q, want csrf_required envelope", noCSRFRec.Body.String())
+	}
+
+	// Bearer-token callers bypass CSRF via EnforceAdminCSRF's Source !=
+	// "admin_session" branch — verified directly in
+	// middleware.TestEnforceAdminCSRF_BypassesNonAdminSessionIdentity
+	// (source=bearer, edge_hmac, smoke, none, ""). No need to set up
+	// the post-bootstrap bearer environment here just to repeat that
+	// coverage end-to-end.
 }
 
 func TestRegisterServerSettings_PatchRequiresAdminAfterBootstrap(t *testing.T) {

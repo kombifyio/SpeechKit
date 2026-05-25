@@ -61,6 +61,10 @@ func (p *retryLocalProvider) Health(context.Context) error {
 	return errors.New("not ready")
 }
 
+func (p *retryLocalProvider) StopServer() {
+	p.ready = false
+}
+
 type blockingLocalProvider struct {
 	mu        sync.Mutex
 	attempts  int
@@ -117,6 +121,12 @@ func (p *blockingLocalProvider) Health(context.Context) error {
 		return nil
 	}
 	return errors.New("not ready")
+}
+
+func (p *blockingLocalProvider) StopServer() {
+	p.mu.Lock()
+	p.ready = false
+	p.mu.Unlock()
 }
 
 func (p *blockingLocalProvider) Attempts() int {

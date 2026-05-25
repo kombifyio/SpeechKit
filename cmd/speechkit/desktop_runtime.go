@@ -53,6 +53,12 @@ func (s *desktopCleanupStack) AddNamed(name string, fn func()) {
 // resources, and emits a single structured `desktop.shutdown.complete`
 // log line summarising the run. The stack empties itself so a repeated
 // Close is a no-op (`cleanup_calls=0` summary still emitted).
+//
+// Each entry is logged before and after it runs so an operator
+// investigating "the app didn't quit cleanly" can identify the exact
+// callback that hung. Without per-entry tracing the only signal is the
+// missing `desktop.shutdown.complete` line at the end and a stranded
+// process — useless for triage.
 func (s *desktopCleanupStack) Close() {
 	start := time.Now()
 	total := len(s.funcs)
@@ -63,7 +69,7 @@ func (s *desktopCleanupStack) Close() {
 		if entry.name != "" {
 			namedCount++
 		}
-		errorCount += runCleanupEntry(entry)
+		errorCount += runCleanupEntry(entry, total-1-i, total)
 	}
 	s.funcs = nil
 	slog.Info("desktop.shutdown.complete",
@@ -78,16 +84,24 @@ func (s *desktopCleanupStack) Close() {
 // guard. The named return is set to 1 when a panic is recovered and 0
 // on clean exit, giving Close a simple aggregate count for the
 // shutdown summary log line.
-func runCleanupEntry(entry cleanupEntry) (panics int) {
+func runCleanupEntry(entry cleanupEntry, idx, total int) (panics int) {
+	name := entry.name
+	if name == "" {
+		name = "(anonymous)"
+	}
+	start := time.Now()
+	slog.Info("desktop.shutdown.entry_begin", "name", name, "idx", idx, "total", total)
 	defer func() {
 		if r := recover(); r != nil {
 			panics = 1
 			slog.Error("desktop.shutdown.entry_panic",
-				"name", entry.name,
+				"name", name,
 				"panic", r,
+				"duration_ms", time.Since(start).Milliseconds(),
 			)
 		}
 	}()
 	entry.fn()
+	slog.Info("desktop.shutdown.entry_end", "name", name, "duration_ms", time.Since(start).Milliseconds())
 	return 0
 }

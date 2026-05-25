@@ -417,6 +417,19 @@ finally {
 $env:PATH = $goNativePath
 Push-Location $projectDir
 try {
+    # Audit 3.3: pin SOURCE_DATE_EPOCH to the HEAD commit timestamp so
+    # any downstream tool that honours it (archivers, signers,
+    # SBOM generators) gets the same value across rebuilds. Combined
+    # with the -trimpath + -buildvcs=false flags on the go build
+    # invocations below, two consecutive builds from the same commit
+    # produce byte-identical EXEs (PE timestamp drift aside — see
+    # audit doc for the follow-up).
+    $sourceDateEpoch = (& git -C $projectDir log -1 --pretty=%ct 2>$null)
+    if ([string]::IsNullOrWhiteSpace($sourceDateEpoch)) {
+        throw "Could not resolve SOURCE_DATE_EPOCH from git HEAD; ensure git is on PATH and $projectDir is a git working tree."
+    }
+    $env:SOURCE_DATE_EPOCH = ([string]$sourceDateEpoch).Trim()
+
     # Build-time defaults are resolved into ldflags above. The test suite
     # should stay hermetic and must not inherit local provider or Doppler
     # credentials from the caller environment.
@@ -465,7 +478,7 @@ try {
             './internal/textactions/...'
         )
     }
-    Invoke-Step -Description 'Building SpeechKit.exe...' -FilePath 'go' -ArgumentList @('build', '-ldflags', $goLdflags, '-o', $bundleExe, './cmd/speechkit/')
+    Invoke-Step -Description 'Building SpeechKit.exe...' -FilePath 'go' -ArgumentList @('build', '-trimpath', '-buildvcs=false', '-ldflags', $goLdflags, '-o', $bundleExe, './cmd/speechkit/')
 
     # Wake-word sidecar. Built from cmd/speechkit-wakeword and dropped next
     # to SpeechKit.exe; the desktop adapter spawns it on demand. Same
@@ -475,10 +488,10 @@ try {
     # installer-signature placeholders.
     $sidecarExe = Join-Path $bundleDir 'speechkit-wakeword.exe'
     $sidecarLdflags = (New-GoStringLdflag -Name 'main.AppVersion' -Value $appVersion)
-    Invoke-Step -Description 'Building speechkit-wakeword.exe (sidecar)...' -FilePath 'go' -ArgumentList @('build', '-ldflags', $sidecarLdflags, '-o', $sidecarExe, './cmd/speechkit-wakeword/')
+    Invoke-Step -Description 'Building speechkit-wakeword.exe (sidecar)...' -FilePath 'go' -ArgumentList @('build', '-trimpath', '-buildvcs=false', '-ldflags', $sidecarLdflags, '-o', $sidecarExe, './cmd/speechkit-wakeword/')
 
     $openWakewordSidecarExe = Join-Path $bundleDir 'speechkit-openwakeword.exe'
-    Invoke-Step -Description 'Building speechkit-openwakeword.exe (sidecar)...' -FilePath 'go' -ArgumentList @('build', '-ldflags', $sidecarLdflags, '-o', $openWakewordSidecarExe, './cmd/speechkit-openwakeword/')
+    Invoke-Step -Description 'Building speechkit-openwakeword.exe (sidecar)...' -FilePath 'go' -ArgumentList @('build', '-trimpath', '-buildvcs=false', '-ldflags', $sidecarLdflags, '-o', $openWakewordSidecarExe, './cmd/speechkit-openwakeword/')
 }
 finally {
     Pop-Location
@@ -500,17 +513,6 @@ if (-not $SkipInstaller) {
     Write-Host "  -> preserving existing config.toml (delete $bundleConfig before rebuilding to reset)."
 }
 Invoke-Step -Description 'Bundling local whisper runtime...' -FilePath $powershellExe -ArgumentList @('-ExecutionPolicy', 'Bypass', '-File', $prepareWhisperRuntimeScript, '-BundleDir', $bundleDir, '-CacheDir', $cacheDir)
-# Build-time gate: the NSIS/MSI installer scripts assume the bundled starter
-# model is present in <bundleDir>/models/ggml-small.bin. If prepare-whisper-runtime
-# silently skipped the copy (older script, partial cache, modified hash table) the
-# packaged installer would ship without the model and Setup-Wizard's
-# /app/complete-setup would 409 on every first-launch.
-# Keep this assertion in lockstep with $starterModelSha256 in
-# scripts/prepare-whisper-runtime.ps1.
-$starterModelStagedPath = Join-Path $bundleDir 'models\ggml-small.bin'
-$starterModelExpectedSha256 = '1be3a9b2063867b937e64e2ec7483364a79917e157fa98c5d94b5c1fffea987b'
-Assert-Sha256Hash -Path $starterModelStagedPath -Expected $starterModelExpectedSha256 -Description 'Bundled starter Whisper model'
-Write-Host "  -> verified staged starter model at $starterModelStagedPath"
 Invoke-Step -Description 'Bundling local llama.cpp runtime...' -FilePath $powershellExe -ArgumentList @('-ExecutionPolicy', 'Bypass', '-File', $prepareLlamaRuntimeScript, '-BundleDir', $bundleDir, '-CacheDir', $cacheDir)
 Invoke-Step -Description 'Bundling ONNX Runtime (VAD)...' -FilePath $powershellExe -ArgumentList @('-ExecutionPolicy', 'Bypass', '-File', $prepareOnnxRuntimeScript, '-BundleDir', $bundleDir, '-CacheDir', $cacheDir)
 Invoke-Step -Description 'Bundling sherpa-onnx runtime (wake-word)...' -FilePath $powershellExe -ArgumentList @('-ExecutionPolicy', 'Bypass', '-File', $prepareSherpaRuntimeScript, '-BundleDir', $bundleDir, '-CacheDir', $cacheDir)

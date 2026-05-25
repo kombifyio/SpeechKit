@@ -312,3 +312,158 @@ func TestRateLimit_RecoversFromCorruptedBucketStore(t *testing.T) {
 		}
 	}
 }
+
+func TestRateLimit_CostWeightedDrainsBucketFaster(t *testing.T) {
+	// Burst=10, cost=5 → 2 requests succeed, 3rd is rejected.
+	mw := RateLimit(RateLimitOptions{
+		RequestsPerSecond: 0.0001, // effectively no refill in test window
+		Burst:             10,
+		EndpointCosts:     map[string]float64{"POST /v1/dictation/transcribe": 5.0},
+	})
+	h := mw(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) }))
+
+	allowed := 0
+	rejected := 0
+	for i := 0; i < 4; i++ {
+		req := httptest.NewRequest(http.MethodPost, "/v1/dictation/transcribe", nil)
+		req.RemoteAddr = "1.2.3.4:5678"
+		ctx := context.WithValue(req.Context(), identityCtxKey{}, Identity{UserID: "u-cost"})
+		req = req.WithContext(ctx)
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, req)
+		switch rec.Code {
+		case http.StatusOK:
+			allowed++
+		case http.StatusTooManyRequests:
+			rejected++
+		default:
+			t.Fatalf("unexpected status %d", rec.Code)
+		}
+	}
+	if allowed != 2 || rejected != 2 {
+		t.Fatalf("cost-weighted: allowed=%d rejected=%d, want 2/2 (burst=10, cost=5)", allowed, rejected)
+	}
+}
+
+func TestRateLimit_ServiceBearerKeyedOnRemoteAddr(t *testing.T) {
+	// Two distinct service callers from different IPs must not share a
+	// bucket. Burst=2 + cost=1 → each IP gets 2 successes; 3rd rejected.
+	mw := RateLimit(RateLimitOptions{RequestsPerSecond: 0.0001, Burst: 2})
+	h := mw(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) }))
+
+	send := func(ip string) int {
+		req := httptest.NewRequest(http.MethodGet, "/v1/x", nil)
+		req.RemoteAddr = ip + ":9999"
+		ctx := context.WithValue(req.Context(), identityCtxKey{}, Identity{UserID: "service", Source: "bearer"})
+		req = req.WithContext(ctx)
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, req)
+		return rec.Code
+	}
+
+	if send("10.0.0.1") != http.StatusOK || send("10.0.0.1") != http.StatusOK {
+		t.Fatal("expected 2 OK from 10.0.0.1")
+	}
+	if send("10.0.0.1") != http.StatusTooManyRequests {
+		t.Fatal("expected 3rd from 10.0.0.1 to be rejected")
+	}
+	// A different IP must NOT share the bucket with 10.0.0.1.
+	if send("10.0.0.2") != http.StatusOK {
+		t.Fatal("expected fresh IP 10.0.0.2 to start with its own bucket")
+	}
+}
+
+func TestRateLimit_DemoDailyQuotaRejectsOverLimit(t *testing.T) {
+	now := time.Date(2026, 5, 24, 12, 0, 0, 0, time.UTC)
+	mw := RateLimit(RateLimitOptions{
+		RequestsPerSecond: 1000,
+		Burst:             1000,
+		DemoDailyQuota:    3,
+		Now:               func() time.Time { return now },
+	})
+	h := mw(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) }))
+
+	send := func() (int, string) {
+		req := httptest.NewRequest(http.MethodGet, "/v1/x", nil)
+		req.RemoteAddr = "5.5.5.5:1234"
+		ctx := context.WithValue(req.Context(), identityCtxKey{}, Identity{UserID: "smoke", Plan: "demo", Source: "smoke"})
+		req = req.WithContext(ctx)
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, req)
+		return rec.Code, rec.Header().Get("Retry-After")
+	}
+
+	for i := 1; i <= 3; i++ {
+		if code, _ := send(); code != http.StatusOK {
+			t.Fatalf("request %d got %d, want 200 (within quota)", i, code)
+		}
+	}
+	code, retry := send()
+	if code != http.StatusTooManyRequests {
+		t.Fatalf("4th demo request got %d, want 429", code)
+	}
+	if retry == "" {
+		t.Fatal("4th demo request missing Retry-After header")
+	}
+}
+
+func TestRateLimit_DemoDailyQuotaResetsAtUTCMidnight(t *testing.T) {
+	clock := time.Date(2026, 5, 24, 23, 59, 0, 0, time.UTC)
+	now := func() time.Time { return clock }
+	mw := RateLimit(RateLimitOptions{
+		RequestsPerSecond: 1000,
+		Burst:             1000,
+		DemoDailyQuota:    1,
+		Now:               now,
+	})
+	h := mw(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) }))
+
+	send := func() int {
+		req := httptest.NewRequest(http.MethodGet, "/v1/x", nil)
+		req.RemoteAddr = "7.7.7.7:42"
+		ctx := context.WithValue(req.Context(), identityCtxKey{}, Identity{UserID: "smoke", Plan: "demo", Source: "smoke"})
+		req = req.WithContext(ctx)
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, req)
+		return rec.Code
+	}
+
+	// 1st of the UTC day: OK.
+	if code := send(); code != http.StatusOK {
+		t.Fatalf("first request before midnight = %d, want 200", code)
+	}
+	// 2nd same day: blocked.
+	if code := send(); code != http.StatusTooManyRequests {
+		t.Fatalf("second same-day request = %d, want 429", code)
+	}
+	// Advance past UTC midnight — the next call must reset and succeed.
+	clock = clock.Add(2 * time.Minute)
+	if code := send(); code != http.StatusOK {
+		t.Fatalf("post-midnight request = %d, want 200 (quota reset)", code)
+	}
+}
+
+func TestRateLimit_DemoQuotaIgnoresNonDemoIdentities(t *testing.T) {
+	// Bearer/edge/anonymous traffic must not consume demo quota slots
+	// even when DemoDailyQuota is configured.
+	now := time.Date(2026, 5, 24, 12, 0, 0, 0, time.UTC)
+	mw := RateLimit(RateLimitOptions{
+		RequestsPerSecond: 1000,
+		Burst:             1000,
+		DemoDailyQuota:    1,
+		Now:               func() time.Time { return now },
+	})
+	h := mw(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) }))
+
+	for i := 0; i < 5; i++ {
+		req := httptest.NewRequest(http.MethodGet, "/v1/x", nil)
+		req.RemoteAddr = "1.1.1.1:9999"
+		ctx := context.WithValue(req.Context(), identityCtxKey{}, Identity{UserID: "alice", Plan: "pro", Source: "bearer"})
+		req = req.WithContext(ctx)
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, req)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("non-demo request %d = %d, want 200", i, rec.Code)
+		}
+	}
+}

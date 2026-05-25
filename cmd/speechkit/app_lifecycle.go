@@ -178,7 +178,7 @@ func runDesktopApp(closeLogFile func()) {
 	})
 	tracker.stage("windows_configured")
 
-	startDesktopProviderReadiness(ctx, state, r)
+	startDesktopProviderReadiness(ctx, state, r, &cleanup)
 	if err := startDesktopHotkeys(ctx, hkManager, &cleanup); err != nil {
 		slog.Error("hotkey start failed", "err", err)
 		os.Exit(1)

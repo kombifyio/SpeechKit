@@ -405,7 +405,51 @@ func TestWebSocketAllowsConfiguredBrowserOrigin(t *testing.T) {
 	_ = conn.Close(websocket.StatusNormalClosure, "")
 }
 
-func TestWebSocketAllowsNativeClientWithoutOrigin(t *testing.T) {
+func TestWebSocketRejectsClientWithoutOriginByDefault(t *testing.T) {
+	// Audit S-2 hardening: a browser that omits Origin defeats CSRF-style
+	// protection. Default is now to reject empty Origin; native clients
+	// opt in via SPEECHKIT_ALLOW_EMPTY_ORIGIN=1 (covered by the next
+	// test). Without that env, the upgrade returns 403 with body
+	// "origin_not_allowed".
+	manager := mustManager(t, Options{})
+	provider := newFakeProvider()
+	handler, err := New(HandlerOptions{
+		Manager:        manager,
+		Provider:       staticProviderFactory{provider: provider},
+		Persona:        &fakeResolver{},
+		AllowedOrigins: []string{"https://app.example.com"},
+		IdleTimeout:    time.Second,
+	})
+	if err != nil {
+		t.Fatalf("New handler: %v", err)
+	}
+	mux := http.NewServeMux()
+	handler.Mount(mux)
+	server := httptest.NewServer(mux)
+	defer server.Close()
+	defer provider.Close() //nolint:errcheck
+
+	session, ticket, err := manager.Create(Identity{UserID: "user-1", OrgID: "org-1"})
+	if err != nil {
+		t.Fatalf("create session: %v", err)
+	}
+	wsURL := "ws" + strings.TrimPrefix(server.URL, "http") + "/v1/voiceagent/sessions/" + session.ID + "/ws?ticket=" + ticket
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	_, resp, dialErr := websocket.Dial(ctx, wsURL, nil)
+	if dialErr == nil {
+		t.Fatalf("websocket dial without Origin should fail")
+	}
+	if resp != nil && resp.StatusCode != http.StatusForbidden {
+		t.Fatalf("expected 403 from origin gate; got %d", resp.StatusCode)
+	}
+}
+
+func TestWebSocketAllowsNativeClientWithoutOriginWhenEnvSet(t *testing.T) {
+	// CLIs, sk-e2e, and native desktop clients that never set an Origin
+	// header opt into the upgrade via SPEECHKIT_ALLOW_EMPTY_ORIGIN=1.
+	// This is the operator-controlled escape hatch added in S-2.
+	t.Setenv(envAllowEmptyWSOriginVar, "1")
 	manager := mustManager(t, Options{})
 	provider := newFakeProvider()
 	handler, err := New(HandlerOptions{
@@ -433,7 +477,73 @@ func TestWebSocketAllowsNativeClientWithoutOrigin(t *testing.T) {
 	defer cancel()
 	conn, _, err := websocket.Dial(ctx, wsURL, nil)
 	if err != nil {
-		t.Fatalf("websocket dial without Origin: %v", err)
+		t.Fatalf("websocket dial without Origin (env opt-in): %v", err)
 	}
 	_ = conn.Close(websocket.StatusNormalClosure, "")
+}
+
+func TestExtractWSTicket_PrefersSubprotocolOverQuery(t *testing.T) {
+	req := httptest.NewRequest(http.MethodGet, "/v1/voiceagent/sessions/abc/ws?ticket=querytkt", nil)
+	req.Header.Set("Sec-WebSocket-Protocol", "ticket.subprototkt, ticket-v1")
+	gotTicket, gotSubproto := extractWSTicket(req)
+	if gotTicket != "subprototkt" {
+		t.Fatalf("ticket = %q, want subprototkt", gotTicket)
+	}
+	if gotSubproto != "ticket.subprototkt" {
+		t.Fatalf("subproto = %q, want ticket.subprototkt", gotSubproto)
+	}
+}
+
+func TestExtractWSTicket_FallsBackToQueryWhenSubprotocolAbsent(t *testing.T) {
+	req := httptest.NewRequest(http.MethodGet, "/v1/voiceagent/sessions/abc/ws?ticket=onlyquery", nil)
+	gotTicket, gotSubproto := extractWSTicket(req)
+	if gotTicket != "onlyquery" {
+		t.Fatalf("ticket = %q, want onlyquery", gotTicket)
+	}
+	if gotSubproto != "" {
+		t.Fatalf("subproto = %q, want empty fallback", gotSubproto)
+	}
+}
+
+func TestExtractWSTicket_IgnoresUnrelatedSubprotocols(t *testing.T) {
+	req := httptest.NewRequest(http.MethodGet, "/v1/voiceagent/sessions/abc/ws?ticket=fallback", nil)
+	req.Header.Set("Sec-WebSocket-Protocol", "speechkit.audio, mqtt-v3")
+	gotTicket, gotSubproto := extractWSTicket(req)
+	if gotTicket != "fallback" {
+		t.Fatalf("ticket = %q, want fallback (no ticket.* subproto)", gotTicket)
+	}
+	if gotSubproto != "" {
+		t.Fatalf("subproto = %q, want empty (no ticket.* subproto)", gotSubproto)
+	}
+}
+
+func TestHandler_DefaultReadLimitIs64KiB(t *testing.T) {
+	manager := mustManager(t, Options{})
+	h, err := New(HandlerOptions{
+		Manager:  manager,
+		Provider: staticProviderFactory{provider: newFakeProvider()},
+		Persona:  &fakeResolver{},
+	})
+	if err != nil {
+		t.Fatalf("New handler: %v", err)
+	}
+	if h.readLimit != defaultWSReadLimitBytes {
+		t.Fatalf("readLimit = %d, want %d (64 KiB default)", h.readLimit, defaultWSReadLimitBytes)
+	}
+}
+
+func TestHandler_ReadLimitOverrideHonored(t *testing.T) {
+	manager := mustManager(t, Options{})
+	h, err := New(HandlerOptions{
+		Manager:   manager,
+		Provider:  staticProviderFactory{provider: newFakeProvider()},
+		Persona:   &fakeResolver{},
+		ReadLimit: 128 * 1024,
+	})
+	if err != nil {
+		t.Fatalf("New handler: %v", err)
+	}
+	if h.readLimit != 128*1024 {
+		t.Fatalf("readLimit = %d, want 128 KiB", h.readLimit)
+	}
 }

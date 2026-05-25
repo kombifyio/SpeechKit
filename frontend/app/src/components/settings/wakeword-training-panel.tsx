@@ -77,13 +77,8 @@ export function WakewordTrainingPanel() {
   );
 
   return (
-    <Section title="Wake-word training data" testId="settings-wakeword-training">
+    <Section title="Training clips" testId="settings-wakeword-training">
       <div className="space-y-3">
-        <p className="text-sm text-muted-foreground">
-          Browse, label, and delete the activation clips that the wake-word
-          detector saved to your local disk. Captured clips help improve
-          recognition over time when you opt into the upload pipeline.
-        </p>
         {!data && !error && <div className="text-sm text-muted-foreground">Loading…</div>}
         {error && (
           <div

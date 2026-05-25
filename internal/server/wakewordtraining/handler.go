@@ -26,14 +26,29 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/kombifyio/SpeechKit/internal/server/httpx"
 	"github.com/kombifyio/SpeechKit/internal/server/middleware"
 	"github.com/kombifyio/SpeechKit/internal/store"
 )
+
+// maxWakewordIDLen caps the client-supplied activation ID. Even on
+// filesystems that accept arbitrarily long names (ext4: 255 bytes,
+// NTFS: 255 chars), an attacker with a writeable upload surface could
+// burn disk via padding alone — and the ID becomes part of the audio
+// filename. 64 chars covers UUIDs, slug-style IDs, and short hashes.
+const maxWakewordIDLen = 64
+
+// wakewordIDPattern locks the activation ID to a small alphabet that
+// is safe on every filesystem (no slashes, dots, spaces, control
+// chars) and small enough that path-resolution can be reasoned about
+// without surprises.
+var wakewordIDPattern = regexp.MustCompile(`^[A-Za-z0-9_-]{1,64}$`)
 
 // Options configures the handler.
 type Options struct {
@@ -75,6 +90,32 @@ type Handler struct {
 	perUserQuotaBytes int64
 	acceptUploads     bool
 	now               func() time.Time
+	// quotaLocks serialises the (quota-read → write-file → save-DB)
+	// section per OwnerUserID so two concurrent uploads from the same
+	// user cannot both pass a stale "below quota" check and silently
+	// blow past the cap. Empty value is a sync.Map ready for use.
+	// Multi-pod deployments need a DB-level reserve; documented as
+	// out-of-scope for OSS v1 in audit S-6.
+	quotaLocks sync.Map
+}
+
+// lockOwner acquires the per-owner mutex. The mutex is created lazily on
+// first use and lives for the process lifetime — memory is bounded by
+// the user count, not by request count. Callers MUST defer the returned
+// unlock func.
+func (h *Handler) lockOwner(orgID, userID string) func() {
+	key := orgID + "/" + userID
+	actual, _ := h.quotaLocks.LoadOrStore(key, &sync.Mutex{})
+	m, ok := actual.(*sync.Mutex)
+	if !ok {
+		// Defensive: an impossible-state corruption can't be allowed to
+		// crash a request handler. Return a no-op unlock so the upload
+		// proceeds without the mutex — worse than expected (potential
+		// race window) but safer than a panic in production.
+		return func() {}
+	}
+	m.Lock()
+	return m.Unlock
 }
 
 // New validates the options and returns a ready-to-mount handler.
@@ -217,6 +258,20 @@ func (h *Handler) upload(w http.ResponseWriter, r *http.Request) {
 			"metadata.id and metadata.phrase_id are required")
 		return
 	}
+	// Audit S-6: cap and constrain the client-supplied ID before it
+	// becomes part of the audio filename and the DB primary key.
+	// Without this, an attacker can request a 64-KB ID, which fails
+	// on some filesystems and burns disk via padding alone.
+	if len(meta.ID) > maxWakewordIDLen {
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_metadata",
+			fmt.Sprintf("metadata.id must be at most %d characters", maxWakewordIDLen))
+		return
+	}
+	if !wakewordIDPattern.MatchString(meta.ID) {
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_metadata",
+			"metadata.id must match ^[A-Za-z0-9_-]{1,64}$")
+		return
+	}
 	if !store.ValidWakewordLabel(meta.Label) {
 		httpx.WriteError(w, http.StatusBadRequest, "invalid_label",
 			"metadata.label must be 'correct', 'false_positive', or omitted")
@@ -228,6 +283,16 @@ func (h *Handler) upload(w http.ResponseWriter, r *http.Request) {
 	if meta.SampleRate == 0 {
 		meta.SampleRate = 16000
 	}
+
+	// Audit S-6: serialise quota-check -> write-file -> save-DB per
+	// owner. Without this lock two concurrent uploads from the same
+	// user can both read "used < quota", both write, and both succeed,
+	// silently doubling the per-user storage budget. Released after
+	// SaveWakewordActivation either commits or the error path
+	// returns. Single-process scope; multi-pod fix (DB-level
+	// SELECT FOR UPDATE reserve) deferred per audit out-of-scope.
+	unlock := h.lockOwner(id.OrgID, id.UserID)
+	defer unlock()
 
 	// Quota check before reading audio bytes — fails fast.
 	if h.perUserQuotaBytes > 0 {

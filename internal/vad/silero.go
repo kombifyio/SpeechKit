@@ -18,11 +18,20 @@ import (
 // start its runtime.
 //
 // VAD is opt-in and has historically not been bundled on the Windows
-// reference target (silero_vad.onnx is not shipped). The dictation flow
-// works fine without it — push-to-talk ends when the user releases the
-// hotkey. Until we re-implement VAD on top of sherpa-onnx's own
+// reference target (silero_vad.onnx is not shipped). Until we
+// re-implement VAD on top of sherpa-onnx's own
 // `sherpa.VoiceActivityDetector`, this stub keeps the package surface
 // intact and reports "VAD unavailable" if anyone tries to instantiate.
+//
+// The dictation pipeline relies on a working VAD to drive the
+// silence-cutoff auto-stop watcher (RecordingController arms it only
+// when the collector implements IdleObserver, which DictationSegmenter
+// does only when it has a non-nil detector). Returning nil here without
+// a substitute therefore silently breaks dictation auto-stop. To prevent
+// that, cmd/speechkit/dictation_session.go falls back to the
+// RMS-based LevelVAD in this same package — do not change ErrUnavailable
+// to a non-error without also removing or rewiring that fallback.
+// See docs/runbooks/vad-onnx-init-failure.md for the full story.
 
 const (
 	SampleRate     = 16000

@@ -10,22 +10,22 @@ Set-StrictMode -Version Latest
 $ProgressPreference = 'SilentlyContinue'
 
 # The bundled DLL must match the C-API version baked into
-# github.com/yalue/onnxruntime_go (see go.mod). v1.27.0 of that binding
-# calls api_base->GetApi(24), which Microsoft ORT 1.24.x is the first
+# github.com/yalue/onnxruntime_go (see go.mod). v1.30.1 of that binding
+# calls api_base->GetApi(25), which Microsoft ORT 1.25.x is the first
 # release line to expose. Older DLLs (e.g. the 1.17.x copy that Windows
-# ships in System32) return NULL from GetApi(24) and the wrapper aborts
+# ships in System32) return NULL from GetApi(25) and the wrapper aborts
 # with "Platform-specific initialization failed: Error setting ORT API
 # base: 2" — wake-word and VAD then fail.
 #
-# When bumping the Go binding past v1.27.0, update both $ortReleaseVersion
+# When bumping the Go binding, update both $ortReleaseVersion
 # AND $ortAssetSha256 in lock-step. The mapping table lives in
 # https://github.com/yalue/onnxruntime_go/blob/main/onnxruntime_c_api.h
 # (`#define ORT_API_VERSION N`) and the Microsoft ORT release that ships
 # that N (`include/onnxruntime/core/session/onnxruntime_c_api.h` at the
 # matching tag).
-$ortReleaseVersion = 'v1.24.4'
+$ortReleaseVersion = 'v1.25.1'
 $ortAssetName = "onnxruntime-win-x64-$($ortReleaseVersion.TrimStart('v')).zip"
-$ortAssetSha256 = 'd2319fddfb6ea4db99ccc4b60c85c517bcd855721f5daa6a06d40d7cb2ee2357'
+$ortAssetSha256 = '33f2e8a63774811f99a5fc224cac32f4eed8c27643d46c6cc685319fa8f18019'
 $ortAssetUrl = "https://github.com/microsoft/onnxruntime/releases/download/$ortReleaseVersion/$ortAssetName"
 
 $runtimeCacheDir = Join-Path $CacheDir 'onnx-runtime'
@@ -117,4 +117,4 @@ if (Test-Path -LiteralPath $runtimeExtractDir) {
 Expand-Archive -LiteralPath $runtimeZipPath -DestinationPath $runtimeExtractDir -Force
 Copy-RuntimeDll -ExtractDir $runtimeExtractDir -BundleDir $BundleDir
 
-Write-Host "Bundled ONNX Runtime $ortReleaseVersion (api 24, matches yalue/onnxruntime_go v1.27.0)."
+Write-Host "Bundled ONNX Runtime $ortReleaseVersion (api 25, matches yalue/onnxruntime_go v1.30.1)."

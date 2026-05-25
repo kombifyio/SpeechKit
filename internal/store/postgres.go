@@ -110,7 +110,7 @@ func (s *PostgresStore) SaveTranscription(ctx context.Context, text, language, p
 func (s *PostgresStore) SaveTranscriptionWithAudio(ctx context.Context, text, language, provider, model string, durationMs, latencyMs int64, audio AudioAssetInput) error {
 	scopeID, err := s.scopeID(ctx)
 	if err != nil {
-		return err
+		return fmt.Errorf("postgres: resolve scope: %w", err)
 	}
 	audio = normalizeAudioAssetInput(audio)
 	if audio.DurationMs > 0 {
@@ -118,7 +118,7 @@ func (s *PostgresStore) SaveTranscriptionWithAudio(ctx context.Context, text, la
 	}
 	audioPath, err := s.persistAudio(audio, "")
 	if err != nil {
-		return err
+		return fmt.Errorf("postgres: persist transcription audio: %w", err)
 	}
 	if strings.TrimSpace(model) == "" {
 		model = s.transcriptionModelHint(provider)
@@ -127,7 +127,7 @@ func (s *PostgresStore) SaveTranscriptionWithAudio(ctx context.Context, text, la
 
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
-		return err
+		return fmt.Errorf("postgres: begin tx: %w", err)
 	}
 	defer tx.Rollback() //nolint:errcheck // rollback after commit is harmless
 
@@ -261,12 +261,12 @@ func (s *PostgresStore) ListTranscriptions(ctx context.Context, opts ListOpts) (
 func (s *PostgresStore) ReplaceUserDictionaryEntries(ctx context.Context, language string, entries []UserDictionaryEntry) error {
 	scopeID, err := s.scopeID(ctx)
 	if err != nil {
-		return err
+		return fmt.Errorf("postgres: resolve scope: %w", err)
 	}
 	language = normalizeDictionaryLanguage(language)
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
-		return err
+		return fmt.Errorf("postgres: begin tx: %w", err)
 	}
 	defer func() {
 		if err != nil {
@@ -350,7 +350,7 @@ func (s *PostgresStore) ListUserDictionaryEntries(ctx context.Context, language 
 func (s *PostgresStore) RecordUserDictionaryUsage(ctx context.Context, canonical, language string) error {
 	scopeID, err := s.scopeID(ctx)
 	if err != nil {
-		return err
+		return fmt.Errorf("postgres: resolve scope: %w", err)
 	}
 	canonical = strings.TrimSpace(canonical)
 	language = normalizeDictionaryLanguage(language)
@@ -515,11 +515,11 @@ func (s *PostgresStore) ListQuickNotes(ctx context.Context, opts ListOpts) ([]Qu
 func (s *PostgresStore) UpdateQuickNote(ctx context.Context, id int64, text string) error {
 	scopeID, err := s.scopeID(ctx)
 	if err != nil {
-		return err
+		return fmt.Errorf("postgres: resolve scope: %w", err)
 	}
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
-		return err
+		return fmt.Errorf("postgres: begin tx: %w", err)
 	}
 	defer tx.Rollback() //nolint:errcheck // rollback after commit is harmless
 
@@ -543,12 +543,12 @@ func (s *PostgresStore) UpdateQuickNote(ctx context.Context, id int64, text stri
 func (s *PostgresStore) UpdateQuickNoteCapture(ctx context.Context, id int64, text, provider string, durationMs, latencyMs int64, audioData []byte) error {
 	scopeID, err := s.scopeID(ctx)
 	if err != nil {
-		return err
+		return fmt.Errorf("postgres: resolve scope: %w", err)
 	}
 	var currentAudioPath string
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
-		return err
+		return fmt.Errorf("postgres: begin tx: %w", err)
 	}
 	committed := false
 	defer func() {
@@ -574,7 +574,7 @@ func (s *PostgresStore) UpdateQuickNoteCapture(ctx context.Context, id int64, te
 
 	nextAudioPath, err := s.persistAudio(audioAssetInputFromBytes(audioData), "qn_")
 	if err != nil {
-		return err
+		return fmt.Errorf("postgres: persist quicknote audio: %w", err)
 	}
 	if nextAudioPath == "" {
 		nextAudioPath = currentAudioPath
@@ -627,7 +627,7 @@ func (s *PostgresStore) UpdateQuickNoteCapture(ctx context.Context, id int64, te
 func (s *PostgresStore) PinQuickNote(ctx context.Context, id int64, pinned bool) error {
 	scopeID, err := s.scopeID(ctx)
 	if err != nil {
-		return err
+		return fmt.Errorf("postgres: resolve scope: %w", err)
 	}
 	result, err := s.db.ExecContext(ctx, `UPDATE quick_notes SET pinned = $1 WHERE id = $2 AND scope_id = $3`, pinned, id, scopeID)
 	if err != nil {
@@ -643,12 +643,12 @@ func (s *PostgresStore) PinQuickNote(ctx context.Context, id int64, pinned bool)
 func (s *PostgresStore) DeleteQuickNote(ctx context.Context, id int64) error {
 	scopeID, err := s.scopeID(ctx)
 	if err != nil {
-		return err
+		return fmt.Errorf("postgres: resolve scope: %w", err)
 	}
 	var audioPath string
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
-		return err
+		return fmt.Errorf("postgres: begin tx: %w", err)
 	}
 	committed := false
 	defer func() {

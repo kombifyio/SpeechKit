@@ -6,8 +6,11 @@ import (
 	"container/list"
 	"context"
 	"encoding/json"
+	"fmt"
 	"log/slog"
+	"net"
 	"net/http"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -44,6 +47,21 @@ type RateLimitOptions struct {
 	// sweeper goroutine. Cancellation stops the sweep loop. Production
 	// callers should pass the server's shutdown context here.
 	Context context.Context //nolint:containedctx // intentional middleware-lifetime ctx
+	// EndpointCosts assigns a per-endpoint token cost so expensive
+	// handlers (LLM, transcription, session create) drain the bucket
+	// faster than cheap ones. Lookup is "METHOD PATH" first (e.g.
+	// "POST /v1/dictation/transcribe"), then bare PATH, then default
+	// 1.0. Zero or negative entries fall back to 1.0. (Audit S-4)
+	EndpointCosts map[string]float64
+	// DemoDailyQuota caps how many requests an identity with
+	// Plan="demo" (the smoke-token surface) may make per UTC day,
+	// keyed by UserID + client IP. Zero disables the quota. Public
+	// paths bypass this check the same way they bypass token-bucket
+	// rate limiting. (Audit S-5)
+	DemoDailyQuota int
+	// Now lets tests inject a fake clock for the daily-quota window
+	// reset; production leaves it nil and gets time.Now.
+	Now func() time.Time
 }
 
 // RateLimit returns a middleware that enforces a per-identity token bucket.
@@ -69,13 +87,20 @@ func RateLimit(opts RateLimitOptions) Middleware {
 	if maxBuckets <= 0 {
 		maxBuckets = defaultRateLimitMaxBuckets
 	}
+	now := opts.Now
+	if now == nil {
+		now = time.Now
+	}
 	buckets := &bucketStore{
 		perSecond:  opts.RequestsPerSecond,
 		burst:      float64(opts.Burst),
 		maxBuckets: maxBuckets,
 		m:          map[string]*list.Element{},
 		lru:        list.New(),
+		now:        now,
 	}
+	demoQuota := newDemoQuotaStore(opts.DemoDailyQuota, now)
+	costs := normalizeEndpointCosts(opts.EndpointCosts)
 	startSweeper(opts, buckets)
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -84,13 +109,75 @@ func RateLimit(opts RateLimitOptions) Middleware {
 				return
 			}
 			key := rateLimitKey(r)
-			if !buckets.allow(key) {
+			cost := endpointCost(costs, r.Method, r.URL.Path)
+			if !buckets.allowN(key, cost) {
 				writeRateLimitError(w)
 				return
+			}
+			if demoQuota != nil {
+				id := IdentityFromContext(r.Context())
+				if strings.EqualFold(id.Plan, "demo") {
+					if retry, ok := demoQuota.allow(id.UserID, clientIPFromRemoteAddr(r)); !ok {
+						writeDemoQuotaExceededError(w, retry)
+						return
+					}
+				}
 			}
 			next.ServeHTTP(w, r)
 		})
 	}
+}
+
+// normalizeEndpointCosts copies the user map with non-positive values
+// dropped. Keys are kept verbatim so callers may use "METHOD PATH" or
+// bare PATH form interchangeably.
+func normalizeEndpointCosts(in map[string]float64) map[string]float64 {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make(map[string]float64, len(in))
+	for k, v := range in {
+		if v <= 0 {
+			continue
+		}
+		out[strings.TrimSpace(k)] = v
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
+}
+
+// endpointCost resolves the per-request token cost. Lookup order:
+// "METHOD PATH" (more specific) > bare PATH > default 1.0. Method
+// comparison is case-insensitive.
+func endpointCost(costs map[string]float64, method, path string) float64 {
+	if len(costs) == 0 {
+		return 1
+	}
+	method = strings.ToUpper(strings.TrimSpace(method))
+	path = strings.TrimSpace(path)
+	if c, ok := costs[method+" "+path]; ok {
+		return c
+	}
+	if c, ok := costs[path]; ok {
+		return c
+	}
+	return 1
+}
+
+// clientIPFromRemoteAddr returns the host portion of r.RemoteAddr
+// without the trailing :port. Falls back to the raw value when
+// SplitHostPort fails (IPv6 missing brackets, malformed input).
+func clientIPFromRemoteAddr(r *http.Request) string {
+	if r == nil {
+		return ""
+	}
+	host, _, err := net.SplitHostPort(r.RemoteAddr)
+	if err != nil {
+		return strings.TrimSpace(r.RemoteAddr)
+	}
+	return strings.TrimSpace(host)
 }
 
 func startSweeper(opts RateLimitOptions, buckets *bucketStore) {
@@ -130,6 +217,16 @@ func startSweeper(opts RateLimitOptions, buckets *bucketStore) {
 
 func rateLimitKey(r *http.Request) string {
 	id := IdentityFromContext(r.Context())
+	// Audit S-4: when the entire bearer-auth surface shares one
+	// UserID="service" (the kombify-AI -> SpeechKit private-network
+	// pattern), keying on that single string puts every consumer in
+	// one bucket and a single noisy neighbour DoS-es everyone else.
+	// Key on the remote IP instead so the budget is per-source.
+	if id.UserID == "service" {
+		if ip := clientIPFromRemoteAddr(r); ip != "" {
+			return "svc:" + ip
+		}
+	}
 	if id.UserID != "" {
 		return "u:" + id.UserID
 	}
@@ -153,6 +250,7 @@ type bucketStore struct {
 	maxBuckets int
 	m          map[string]*list.Element // key → element holding *bucketEntry
 	lru        *list.List               // front = most recent, back = oldest
+	now        func() time.Time
 }
 
 // entryOf is the single cast site for elements in the LRU list. The list
@@ -172,10 +270,24 @@ func entryOf(elem *list.Element) *bucketEntry {
 	return entry
 }
 
-func (s *bucketStore) allow(key string) bool {
+// allow keeps the historical "draw 1 token" semantics for callers that
+// don't supply a per-endpoint cost.
+func (s *bucketStore) allow(key string) bool { return s.allowN(key, 1) }
+
+// allowN attempts to draw `cost` tokens from the named bucket. Returns
+// true when the bucket had enough tokens (and were debited), false
+// when the request must be rejected. Cost <= 0 is treated as 1.
+func (s *bucketStore) allowN(key string, cost float64) bool {
+	if cost <= 0 {
+		cost = 1
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	now := time.Now()
+	clock := s.now
+	if clock == nil {
+		clock = time.Now
+	}
+	now := clock()
 	if elem, ok := s.m[key]; ok {
 		s.lru.MoveToFront(elem)
 		entry := entryOf(elem)
@@ -191,8 +303,8 @@ func (s *bucketStore) allow(key string) bool {
 				b.tokens = s.burst
 			}
 			b.last = now
-			if b.tokens >= 1 {
-				b.tokens--
+			if b.tokens >= cost {
+				b.tokens -= cost
 				return true
 			}
 			return false
@@ -211,9 +323,18 @@ func (s *bucketStore) allow(key string) bool {
 		s.lru.Remove(oldest)
 	}
 
-	entry := &bucketEntry{key: key, bucket: &bucket{tokens: s.burst - 1, last: now}}
+	// Fresh bucket starts at burst, debit cost.
+	startTokens := s.burst - cost
+	if startTokens < 0 {
+		// Even a fresh bucket can't service this single request — fail
+		// open on the bucket but still reject. Keep an empty bucket so
+		// retries within the same instant continue to be rejected
+		// rather than getting a brand-new burst.
+		startTokens = 0
+	}
+	entry := &bucketEntry{key: key, bucket: &bucket{tokens: startTokens, last: now}}
 	s.m[key] = s.lru.PushFront(entry)
-	return true
+	return s.burst >= cost
 }
 
 // sweepStale removes buckets whose last access is older than maxAge.
@@ -260,4 +381,78 @@ func writeRateLimitError(w http.ResponseWriter) {
 			"message": "request rate limit exceeded",
 		},
 	})
+}
+
+func writeDemoQuotaExceededError(w http.ResponseWriter, retryAfter time.Duration) {
+	seconds := int(retryAfter.Seconds())
+	if seconds < 1 {
+		seconds = 1
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Retry-After", strconv.Itoa(seconds))
+	w.WriteHeader(http.StatusTooManyRequests)
+	_ = json.NewEncoder(w).Encode(map[string]any{
+		"error": map[string]any{
+			"code":    "demo_quota_exceeded",
+			"message": fmt.Sprintf("daily quota exceeded for Plan=demo; resets in ~%ds", seconds),
+		},
+	})
+}
+
+// dailyQuotaStore tracks per-identity demo-tier request counts within
+// the current UTC day. Resets atomically when a request crosses the
+// next UTC-midnight boundary.
+type dailyQuotaStore struct {
+	mu      sync.Mutex
+	quota   int
+	resetAt time.Time
+	counts  map[string]int
+	now     func() time.Time
+}
+
+func newDemoQuotaStore(quota int, now func() time.Time) *dailyQuotaStore {
+	if quota <= 0 {
+		return nil
+	}
+	if now == nil {
+		now = time.Now
+	}
+	return &dailyQuotaStore{
+		quota:   quota,
+		resetAt: nextUTCMidnight(now()),
+		counts:  map[string]int{},
+		now:     now,
+	}
+}
+
+// allow increments the per-(user, ip) counter and reports whether the
+// request fits inside the daily quota. The returned duration is the
+// time until the next UTC-midnight reset and is the value the caller
+// echoes back via Retry-After when ok=false.
+func (d *dailyQuotaStore) allow(userID, clientIP string) (time.Duration, bool) {
+	if d == nil {
+		return 0, true
+	}
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	now := d.now()
+	if !now.Before(d.resetAt) {
+		// Crossed UTC midnight — reset the window.
+		for k := range d.counts {
+			delete(d.counts, k)
+		}
+		d.resetAt = nextUTCMidnight(now)
+	}
+	key := "demo:" + userID + ":" + clientIP
+	if d.counts[key] >= d.quota {
+		return d.resetAt.Sub(now), false
+	}
+	d.counts[key]++
+	return 0, true
+}
+
+// nextUTCMidnight returns the UTC midnight strictly after t.
+func nextUTCMidnight(t time.Time) time.Time {
+	u := t.UTC()
+	return time.Date(u.Year(), u.Month(), u.Day(), 0, 0, 0, 0, time.UTC).Add(24 * time.Hour)
 }

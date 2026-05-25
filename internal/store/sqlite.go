@@ -120,7 +120,7 @@ func (s *SQLiteStore) SaveTranscription(ctx context.Context, text, language, pro
 func (s *SQLiteStore) SaveTranscriptionWithAudio(ctx context.Context, text, language, provider, model string, durationMs, latencyMs int64, audio AudioAssetInput) error {
 	scopeID, err := s.scopeID(ctx)
 	if err != nil {
-		return err
+		return fmt.Errorf("sqlite: resolve scope: %w", err)
 	}
 	var audioPath string
 	audio = normalizeAudioAssetInput(audio)
@@ -146,7 +146,7 @@ func (s *SQLiteStore) SaveTranscriptionWithAudio(ctx context.Context, text, lang
 
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
-		return err
+		return fmt.Errorf("sqlite: begin tx: %w", err)
 	}
 	defer tx.Rollback() //nolint:errcheck // rollback after commit is harmless
 
@@ -160,7 +160,7 @@ func (s *SQLiteStore) SaveTranscriptionWithAudio(ctx context.Context, text, lang
 	}
 	id, err := result.LastInsertId()
 	if err != nil {
-		return err
+		return fmt.Errorf("sqlite: read last insert id: %w", err)
 	}
 	if audioPath != "" {
 		if err := recordScopedAudioAsset(ctx, tx, "sqlite", scopeID, "transcription", id, audioPath, durationMs); err != nil {
@@ -306,12 +306,12 @@ func (s *SQLiteStore) transcriptionModelHint(provider string) string {
 func (s *SQLiteStore) ReplaceUserDictionaryEntries(ctx context.Context, language string, entries []UserDictionaryEntry) error {
 	scopeID, err := s.scopeID(ctx)
 	if err != nil {
-		return err
+		return fmt.Errorf("sqlite: resolve scope: %w", err)
 	}
 	language = normalizeDictionaryLanguage(language)
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
-		return err
+		return fmt.Errorf("sqlite: begin tx: %w", err)
 	}
 	defer func() {
 		if err != nil {
@@ -397,7 +397,7 @@ func (s *SQLiteStore) ListUserDictionaryEntries(ctx context.Context, language st
 func (s *SQLiteStore) RecordUserDictionaryUsage(ctx context.Context, canonical, language string) error {
 	scopeID, err := s.scopeID(ctx)
 	if err != nil {
-		return err
+		return fmt.Errorf("sqlite: resolve scope: %w", err)
 	}
 	canonical = strings.TrimSpace(canonical)
 	language = normalizeDictionaryLanguage(language)
@@ -569,11 +569,11 @@ func (s *SQLiteStore) ListQuickNotes(ctx context.Context, opts ListOpts) ([]Quic
 func (s *SQLiteStore) UpdateQuickNote(ctx context.Context, id int64, text string) error {
 	scopeID, err := s.scopeID(ctx)
 	if err != nil {
-		return err
+		return fmt.Errorf("sqlite: resolve scope: %w", err)
 	}
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
-		return err
+		return fmt.Errorf("sqlite: begin tx: %w", err)
 	}
 	defer tx.Rollback() //nolint:errcheck // rollback after commit is harmless
 
@@ -600,7 +600,7 @@ func (s *SQLiteStore) UpdateQuickNote(ctx context.Context, id int64, text string
 func (s *SQLiteStore) UpdateQuickNoteCapture(ctx context.Context, id int64, text, provider string, durationMs, latencyMs int64, audioData []byte) error {
 	scopeID, err := s.scopeID(ctx)
 	if err != nil {
-		return err
+		return fmt.Errorf("sqlite: resolve scope: %w", err)
 	}
 	var (
 		currentAudioPath string
@@ -609,7 +609,7 @@ func (s *SQLiteStore) UpdateQuickNoteCapture(ctx context.Context, id int64, text
 
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
-		return err
+		return fmt.Errorf("sqlite: begin tx: %w", err)
 	}
 	committed := false
 	defer func() {
@@ -699,7 +699,7 @@ func (s *SQLiteStore) UpdateQuickNoteCapture(ctx context.Context, id int64, text
 func (s *SQLiteStore) PinQuickNote(ctx context.Context, id int64, pinned bool) error {
 	scopeID, err := s.scopeID(ctx)
 	if err != nil {
-		return err
+		return fmt.Errorf("sqlite: resolve scope: %w", err)
 	}
 	val := 0
 	if pinned {
@@ -719,12 +719,12 @@ func (s *SQLiteStore) PinQuickNote(ctx context.Context, id int64, pinned bool) e
 func (s *SQLiteStore) DeleteQuickNote(ctx context.Context, id int64) error {
 	scopeID, err := s.scopeID(ctx)
 	if err != nil {
-		return err
+		return fmt.Errorf("sqlite: resolve scope: %w", err)
 	}
 	var audioPath string
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
-		return err
+		return fmt.Errorf("sqlite: begin tx: %w", err)
 	}
 	committed := false
 	defer func() {

@@ -13,6 +13,9 @@ import (
 // on the active screen.
 
 func (s *appState) positionOverlay() {
+	if s.isShuttingDown() {
+		return
+	}
 	s.mu.Lock()
 	host := s.desktopHostStateLocked()
 	runtime := s.runtimeStateLocked()
@@ -70,6 +73,9 @@ func (s *appState) positionOverlay() {
 }
 
 func (s *appState) showActiveOverlayWindow() {
+	if s.isShuttingDown() {
+		return
+	}
 	s.mu.Lock()
 	host := s.desktopHostStateLocked()
 	runtime := s.runtimeStateLocked()
@@ -115,6 +121,9 @@ func (s *appState) hideAllOverlayWindows() {
 }
 
 func (s *appState) showPillPanel() {
+	if s.isShuttingDown() {
+		return
+	}
 	s.positionOverlay()
 
 	s.mu.Lock()
@@ -146,6 +155,9 @@ func (s *appState) hidePillPanel() {
 }
 
 func (s *appState) showRadialMenu() {
+	if s.isShuttingDown() {
+		return
+	}
 	s.positionOverlay()
 
 	s.mu.Lock()
@@ -177,7 +189,7 @@ func (s *appState) hideRadialMenu() {
 }
 
 func (s *appState) showAssistBubble(text string) {
-	if s == nil {
+	if s == nil || s.isShuttingDown() {
 		return
 	}
 	s.mu.Lock()
@@ -215,7 +227,7 @@ func (s *appState) showAssistBubble(text string) {
 }
 
 func (s *appState) showAssistPanel(inputText, resultText string) {
-	if s == nil {
+	if s == nil || s.isShuttingDown() {
 		return
 	}
 	s.mu.Lock()
@@ -249,7 +261,7 @@ func (s *appState) showAssistPanel(inputText, resultText string) {
 }
 
 func (s *appState) primeOverlayForCapture(mode string) {
-	if s == nil {
+	if s == nil || s.isShuttingDown() {
 		return
 	}
 	s.mu.Lock()
@@ -277,7 +289,7 @@ func (s *appState) primeOverlayForCapture(mode string) {
 }
 
 func (s *appState) setOverlayFeedbackMessage(role, text string, done bool) {
-	if s == nil {
+	if s == nil || s.isShuttingDown() {
 		return
 	}
 	s.mu.Lock()
@@ -339,6 +351,10 @@ func (s *appState) refreshOverlayWindows() {
 	if s == nil {
 		return
 	}
+	if s.isShuttingDown() {
+		s.hideAllOverlayWindows()
+		return
+	}
 
 	s.mu.Lock()
 	enabled := s.overlayEnabled
@@ -353,6 +369,9 @@ func (s *appState) refreshOverlayWindows() {
 }
 
 func (s *appState) syncOverlayToActiveScreen() {
+	if s.isShuttingDown() {
+		return
+	}
 	s.mu.Lock()
 	enabled := s.overlayEnabled
 	s.mu.Unlock()

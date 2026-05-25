@@ -11,6 +11,19 @@ import (
 	"time"
 )
 
+// waitForNextSecond busy-waits until time.Now() crosses the next
+// whole-second boundary. Replaces flat time.Sleep(1100*time.Millisecond)
+// sites where the only requirement is "the NEXT save gets a different
+// SQLite CURRENT_TIMESTAMP" (audit 4.4). Worst case 1 s wait; best case
+// near-zero when called right before a second tick. Use only when the
+// schema actually has 1-second-resolution timestamps.
+func waitForNextSecond() {
+	start := time.Now().Unix()
+	for time.Now().Unix() == start {
+		time.Sleep(5 * time.Millisecond)
+	}
+}
+
 func TestNewAndMigrate(t *testing.T) {
 	dbPath := filepath.Join(t.TempDir(), "test.db")
 	s, err := New(StoreConfig{Backend: "sqlite", SQLitePath: dbPath, MaxAudioStorageMB: 100})
@@ -466,7 +479,9 @@ func TestSQLiteListOptsLanguageAndAfterFilter(t *testing.T) {
 		t.Fatalf("ListTranscriptions first: %v", err)
 	}
 	after := first[0].CreatedAt
-	time.Sleep(1100 * time.Millisecond)
+	// Audit 4.4: wait for the next SQLite second boundary instead of
+	// a flat 1.1 s sleep. Saves up to ~1 s per call on a warm clock.
+	waitForNextSecond()
 	if err := s.SaveTranscription(ctx, "new german", "de-DE", "local", "m", 1000, 100, nil); err != nil {
 		t.Fatalf("SaveTranscription new german: %v", err)
 	}
@@ -490,7 +505,9 @@ func TestSQLiteListOptsLanguageAndAfterFilter(t *testing.T) {
 		t.Fatalf("ListQuickNotes first: %v", err)
 	}
 	noteAfter := notes[0].CreatedAt
-	time.Sleep(1100 * time.Millisecond)
+	// Audit 4.4: wait for the next SQLite second boundary instead of
+	// a flat 1.1 s sleep. Saves up to ~1 s per call on a warm clock.
+	waitForNextSecond()
 	if _, err := s.SaveQuickNote(ctx, "new note", "de_DE", "manual", 1000, 100, nil); err != nil {
 		t.Fatalf("SaveQuickNote new de: %v", err)
 	}

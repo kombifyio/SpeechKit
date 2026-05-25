@@ -114,6 +114,27 @@ strategy                   = "cloud-only"
 prefer_local_under_seconds = 0
 parallel_cloud             = false
 
+# ── Storage backend ─────────────────────────────────────────────────────────
+#
+# Persistent backend for transcriptions, quick notes, voice-agent session
+# summaries, persona catalog, and wake-word activation audio. Omit the
+# whole [store] block to fall back to SQLite at <data_dir>/store.db —
+# fine for single-replica dev and the docker-compose default. Production
+# deployments behind Render / Kubernetes should switch to Postgres so
+# the persona catalog and session state survive container restarts and
+# horizontal scaling.
+#
+# postgres_dsn is a standard Postgres connection string. Treat it as a
+# secret — do NOT commit the literal value; use an env-var substitution
+# in your real config (e.g. via the deployment manifest).
+#
+# [store]
+# backend              = "postgres"
+# postgres_dsn         = "postgres://speechkit:CHANGE-ME@localhost:5432/speechkit?sslmode=disable"
+# save_audio           = false
+# audio_retention_days = 30
+# max_audio_storage_mb = 1024
+
 [tts]
 enabled  = true
 strategy = "cloud-first"

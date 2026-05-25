@@ -79,6 +79,7 @@ func buildVoiceAgentHandler(ctx context.Context, cfg *config.Config, app *App) (
 		IdleTimeout:    idleTimeout,
 		Store:          app.Store,
 		LiveKit:        buildLiveKitIssuer(cfg, app),
+		ReadLimit:      cfg.Server.WSReadLimitBytes,
 	})
 	if err != nil {
 		return nil, status, err

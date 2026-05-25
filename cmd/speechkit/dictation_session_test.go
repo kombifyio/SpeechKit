@@ -26,6 +26,29 @@ func (f *fakeSessionVAD) Reset() {
 	f.idx = 0
 }
 
+// TestNewDictationVADAlwaysReturnsDetector pins the contract that the
+// dictation bootstrap cannot end up with a nil VAD. silero_vad.onnx is
+// not shipped with the Windows reference build and vad.NewSileroVAD is
+// hard-disabled (returns ErrUnavailable) while the runtime is
+// re-implemented on sherpa-onnx. Both paths must therefore fall back to
+// the level-based detector — without that fallback, the RecordingController
+// sees a nil collector, the (collector.(IdleObserver)) assertion fails,
+// the silence-cutoff watcher silently does not arm, and dictation
+// sessions never auto-stop. See docs/runbooks/vad-onnx-init-failure.md.
+func TestNewDictationVADAlwaysReturnsDetector(t *testing.T) {
+	detector, closeFn, err := newDictationVAD()
+	if err != nil {
+		t.Fatalf("newDictationVAD returned error: %v", err)
+	}
+	if detector == nil {
+		t.Fatal("newDictationVAD returned nil detector — silence-cutoff watcher will not arm and dictation will never auto-stop")
+	}
+	if closeFn == nil {
+		t.Fatal("newDictationVAD returned nil close — host cleanup-stack will not be able to drain the detector")
+	}
+	closeFn()
+}
+
 func TestDictationCaptureSessionFallsBackToWholePCMWithoutDetector(t *testing.T) {
 	session := newDictationCaptureSession(nil, &config.Config{})
 	if session != nil {

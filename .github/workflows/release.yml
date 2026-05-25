@@ -173,7 +173,7 @@ jobs:
             --output release-notes.md
 
       - name: Setup MinGW
-        uses: msys2/setup-msys2@cafece8e6baf9247cf9b1bf95097b0b983cc558d
+        uses: msys2/setup-msys2@e9898307ac31d1a803454791be09ab9973336e1c
         with:
           update: true
           install: >-
@@ -260,7 +260,7 @@ jobs:
 
       - name: Sign SpeechKit.exe with SignPath
         if: steps.signing.outputs.mode == 'signed'
-        uses: signpath/github-action-submit-signing-request@bc66d86b015a46e9c6d9700de73143a82f9570ff
+        uses: signpath/github-action-submit-signing-request@b9d91eadd323de506c0c81cf0c7fe7438f3360fd
         with:
           api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
           organization-id: ${{ vars.SIGNPATH_ORGANIZATION_ID }}
@@ -296,7 +296,7 @@ jobs:
 
       - name: Sign SpeechKit-Setup.exe with SignPath
         if: steps.signing.outputs.mode == 'signed' && needs.prepare.outputs.release_windows_installer == 'true'
-        uses: signpath/github-action-submit-signing-request@bc66d86b015a46e9c6d9700de73143a82f9570ff
+        uses: signpath/github-action-submit-signing-request@b9d91eadd323de506c0c81cf0c7fe7438f3360fd
         with:
           api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
           organization-id: ${{ vars.SIGNPATH_ORGANIZATION_ID }}
@@ -356,7 +356,7 @@ jobs:
 
       - name: Sign SpeechKit-x64.msi with SignPath
         if: steps.signing.outputs.mode == 'signed' && needs.prepare.outputs.release_windows_msi == 'true'
-        uses: signpath/github-action-submit-signing-request@bc66d86b015a46e9c6d9700de73143a82f9570ff
+        uses: signpath/github-action-submit-signing-request@b9d91eadd323de506c0c81cf0c7fe7438f3360fd
         with:
           api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
           organization-id: ${{ vars.SIGNPATH_ORGANIZATION_ID }}

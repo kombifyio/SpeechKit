@@ -186,7 +186,7 @@ export const defaultSettingsState: SpeechKitSettingsState = {
   vocabularyDictionary: "",
   saveAudio: true,
   audioRetentionDays: 7,
-  dictateSilenceTimeoutSec: 10,
+  dictateSilenceTimeoutSec: 3,
   selectedAudioDeviceId: "",
   selectedOutputDeviceId: "",
   activeProfiles: {},

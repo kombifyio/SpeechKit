@@ -15,7 +15,11 @@
 #       speechkit-server:dev
 
 # ── Stage 1: Go builder ──────────────────────────────────────────────────────
-FROM golang:1.26-bookworm AS builder
+# Audit 3.2: digest-pin the base. Dependabot's docker ecosystem
+# auto-updates the @sha256:... value when upstream tags rebuild. The
+# tag stays in the line so humans (and Dependabot's image: matcher)
+# can read what version this resolves to.
+FROM golang:1.26-bookworm@sha256:386d475a660466863d9f8c766fec64d7fdad3edac2c6a05020c09534d71edb4b AS builder
 
 # ONNX Runtime, oto/v3 (ALSA on Linux via pkg-config), and LiveKit PCM/Opus
 # media bridging need a host compiler plus development headers at build time.
@@ -57,7 +61,9 @@ RUN go build \
 # ── Stage 2: Shared runtime base ─────────────────────────────────────────────
 # Keeping this as a separate stage keeps apt + ONNX install layers stable
 # across rebuilds.
-FROM debian:bookworm-slim AS runtime-base
+# Audit 3.2: digest-pin the runtime base. See builder stage for the
+# Dependabot rationale.
+FROM debian:bookworm-slim@sha256:0104b334637a5f19aa9c983a91b54c89887c0984081f2068983107a6f6c21eeb AS runtime-base
 
 # Runtime dependencies:
 #  - ca-certificates: TLS trust for all cloud provider calls

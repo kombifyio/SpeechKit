@@ -25,6 +25,12 @@ var (
 type localProviderStarter interface {
 	stt.STTProvider
 	StartServer(context.Context) error
+	// StopServer terminates the underlying subprocess (whisper-server) so the
+	// process does not survive the SpeechKit shutdown. Registered as a
+	// desktopCleanupStack callback from startDesktopProviderReadiness — without
+	// this the local STT binary keeps holding ggml-base.dll and the next launch
+	// fails with "Access denied" on the build/bundle path.
+	StopServer()
 	IsReady() bool
 	VerifyInstallation() stt.InstallStatus
 }

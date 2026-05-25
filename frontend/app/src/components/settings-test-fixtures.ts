@@ -73,7 +73,7 @@ export const baseSettings: SpeechKitSettingsState = {
   vocabularyDictionary: "",
   saveAudio: true,
   audioRetentionDays: 7,
-  dictateSilenceTimeoutSec: 10,
+  dictateSilenceTimeoutSec: 3,
   selectedAudioDeviceId: "mic-1",
   hfHasUserToken: false,
   hfHasInstallToken: false,

@@ -291,7 +291,20 @@ func newDesktopWailsApp(opts desktopWailsAppOptions) *application.App {
 			opts.State.stopVoiceAgentStream()
 			if opts.Capturer != nil {
 				opts.Capturer.SetPCMHandler(nil)
+				// Detach the level handler too so the audio thread can no
+				// longer drive setLevel → snapshot fan-out into the Wails
+				// engine while windows are being destroyed. Without this,
+				// the overlay sync path keeps mutating state during quit
+				// and the process hangs holding the audio device + Wails
+				// runtime resources.
+				opts.Capturer.SetLevelHandler(nil)
 			}
+			// Explicitly hide all overlay surfaces before Wails tears down
+			// its windows. Overlay windows have no WindowClosing hook (they
+			// are tray-hidden by design); a parallel goroutine that calls
+			// Show()/SetPosition() while Wails is destroying them
+			// deadlocks the main thread.
+			opts.State.hideAllOverlayWindows()
 		},
 		SingleInstance: &application.SingleInstanceOptions{
 			UniqueID: "com.kombify.speechkit",
@@ -316,7 +329,7 @@ func handleSecondDesktopInstance(state *appState, showDashboard func(string), da
 	showDashboard("second-instance")
 }
 
-func startDesktopProviderReadiness(ctx context.Context, state *appState, r *router.Router) {
+func startDesktopProviderReadiness(ctx context.Context, state *appState, r *router.Router, cleanup *desktopCleanupStack) {
 	for _, msg := range validateCloudProviders(ctx, r) {
 		state.addLog(msg, "info")
 	}
@@ -324,6 +337,9 @@ func startDesktopProviderReadiness(ctx context.Context, state *appState, r *rout
 
 	if localProvider, ok := r.Local().(localProviderStarter); ok {
 		startLocalProviderAsync(ctx, state, r, localProvider)
+		if cleanup != nil {
+			cleanup.AddNamed("local-stt-server", localProvider.StopServer)
+		}
 	}
 }
 

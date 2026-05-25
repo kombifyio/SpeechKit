@@ -129,3 +129,10 @@ infra/cloudflare/**/.wrangler/
 # Embedded frontend build output (regenerated on every frontend build)
 internal/frontendassets/dist/
 clients/typescript/**/dist/
+# RepoWise local development index/cache
+.repowise/
+
+# Local docker-compose env overrides — may carry provider secrets when
+# pulled via `doppler run`. Never commit. Use .env.example for templates.
+deploy/docker/.env.local*
+deploy/docker/.env

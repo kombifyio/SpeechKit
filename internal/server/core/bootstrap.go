@@ -387,6 +387,14 @@ func Run(ctx context.Context, cfg *config.Config, opts RunOptions) error {
 			BootstrapAllowed: func(r *http.Request) bool {
 				return serverSettingsBootstrapWriteAllowed(app)
 			},
+			// Defence-in-depth: if the operator bound to a non-loopback
+			// address, refuse to issue the implicit anonymous Identity
+			// from AuthModeNone even if config validation was bypassed.
+			// ValidateServerProductionAuth already rejects this at
+			// startup; this is a runtime backstop for code paths that
+			// embed the server without calling that validator (tests,
+			// in-process hosts, future helper binaries).
+			RequireAuthenticatedMode: !config.IsLoopbackListenAddr(cfg.Server.ListenAddr),
 		}),
 		middleware.RateLimit(middleware.RateLimitOptions{
 			RequestsPerSecond: cfg.Server.RateLimitRPS,
@@ -395,6 +403,15 @@ func Run(ctx context.Context, cfg *config.Config, opts RunOptions) error {
 			// neighbour could starve out Render's readiness checks during
 			// real outages.
 			AllowPublicPaths: publicPaths,
+			// Audit S-4: cost-weighted bucket so a few expensive calls
+			// (LLM, transcription, voice-agent session create) drain
+			// the budget appropriately. Empty map falls back to flat
+			// cost=1 — backwards compatible.
+			EndpointCosts: cfg.Server.RateLimitEndpointCosts,
+			// Audit S-5: hard daily ceiling for Plan="demo" (smoke
+			// token) surface so a casual scraper can't burn provider
+			// budget overnight. Zero disables.
+			DemoDailyQuota: cfg.Server.DemoDailyQuota,
 		}),
 	)
 

@@ -83,6 +83,31 @@ func TestValidateServerProductionAuthAllowsWildcardCORSForExplicitLocalNoAuth(t 
 	}
 }
 
+func TestValidateServerProductionAuthRejectsWildcardCORSWithAdminAuth(t *testing.T) {
+	// Audit S-7: wildcard CORS combined with admin_auth_enabled
+	// exposes the admin session cookie surface to any origin. Must
+	// reject even when auth_mode=none on loopback (the admin cookie
+	// is independent of the request-auth mode).
+	for _, addr := range []string{"127.0.0.1:8080", ":8080"} {
+		cfg := &Config{}
+		cfg.Server.ListenAddr = addr
+		cfg.Server.AuthMode = "none"
+		cfg.Server.AdminAuthEnabled = true
+		cfg.Server.CORSAllowedOrigins = []string{"*"}
+		if addr == ":8080" {
+			t.Setenv(AllowInsecureNoAuthEnv, "1") // unrelated guard
+		}
+
+		err := ValidateServerProductionAuth(cfg)
+		if err == nil {
+			t.Fatalf("listen=%s: expected wildcard+admin_auth rejection", addr)
+		}
+		if !strings.Contains(err.Error(), "admin_auth_enabled") {
+			t.Fatalf("listen=%s: error %q does not name admin_auth_enabled", addr, err.Error())
+		}
+	}
+}
+
 func TestValidateServerProductionAuthRejectsMissingBearerToken(t *testing.T) {
 	t.Setenv("SPEECHKIT_SERVER_TOKEN", "")
 	cfg := &Config{}

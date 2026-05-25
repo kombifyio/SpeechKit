@@ -779,3 +779,54 @@ Stufe 2 wird nur aktiviert wenn Pattern Matching keinen Treffer hat UND der Assi
 | Local Built-in Voice Agent | Pipeline-Modell ist waehlbar; voll gebuendelte Voice-Agent-Runtime ist noch kein v0.23.1-Versprechen. |
 | Offline TTS | Cloud TTS und optionale lokale Routen existieren, aber kein als Default gebuendelter Offline-TTS-Pfad. |
 | Release Assets | Der finale Installer wird im Public-Release-Workflow mit NSIS gebaut und signiert; lokale `-SkipInstaller` Builds sind nur Preflight. |
+
+## Kernel boundary & back-edges
+
+The kernel/adapter split this document otherwise describes — pure-Go
+kernel under `internal/{ai,assist,dictation,models,router,shortcuts,
+stt,tts,vad,voiceagent,config,secrets,store}` with target-specific
+adapters under `cmd/speechkit/**`, `internal/{hotkey,tray,winapi,
+output}`, `cmd/speechkit-server/**`, and `internal/server/**` — holds
+strictly **except** for two intentional boundary crossings flagged by
+the 2026-05-24 senior-architect audit:
+
+### 1. `internal/voiceagent → pkg/speechkit/voiceagent/live`
+
+`internal/voiceagent/local_provider.go:7` imports
+`pkg/speechkit/voiceagent/live`. This is the only kernel-into-pkg
+edge in the tree. Why: `live.LiveConfig` is the realtime-session
+algebraic data type consumed both by the kernel's `cascaded`
+provider and the public SDK. Keeping the type in `pkg/` lets the SDK
+stay self-contained (semver from v1.0); having the kernel import
+**back** lets us share the type instead of duplicating it. Refactors
+to `pkg/speechkit/voiceagent/live` cascade into kernel callers —
+treat the type as a kernel contract.
+
+Do not extend this pattern without an architectural review. Adding
+a second kernel→pkg edge would convert `pkg/speechkit` from "SDK
+that depends on nothing" into "SDK that the kernel partially
+depends on", and the semver guarantees on `pkg/speechkit` would
+silently weaken.
+
+### 2. `internal/kombify` build-tag pair
+
+`internal/kombify` ships two files:
+
+- `kombify_oss.go` (default build tag, no `//go:build kombify`): a
+  no-op stub that registers nothing.
+- `kombify_cloud.go` (build tag `//go:build kombify`): private
+  variant that wires cloud-only features into the runtime via
+  side-effect imports.
+
+The OSS publish workflow (`scripts/public/export-public.sh` →
+`.github/workflows/publish-oss.yml`) **strips `kombify_cloud.go`**
+before pushing to `github.com/kombifyio/SpeechKit` so the OSS mirror
+only ever ships the no-op stub. Internal builds compile with
+`-tags kombify` to pull in the cloud variant.
+
+Practical consequence: a feature added to `kombify_cloud.go` must
+have a corresponding no-op declaration in `kombify_oss.go` or the
+OSS mirror won't compile. The package name `kombify` is intentionally
+generic so the build-tag seam isn't telegraphed to OSS readers; the
+hot path is reading these two files together when extending the
+cloud surface.

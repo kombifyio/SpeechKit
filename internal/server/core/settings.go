@@ -51,6 +51,14 @@ func registerServerSettings(app *App) {
 }
 
 func handleServerSettingsPatch(w http.ResponseWriter, r *http.Request, app *App) {
+	// Audit S-13: when the caller is using an admin-session cookie
+	// (Source="admin_session"), require a matching X-CSRF-Token header.
+	// Bearer / edge-HMAC / smoke / no-auth callers are exempt — they are
+	// not subject to cross-site request forgery because their
+	// credentials are not automatically attached by the browser.
+	if !middleware.EnforceAdminCSRF(w, r) {
+		return
+	}
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("X-Content-Type-Options", "nosniff")
@@ -178,8 +186,16 @@ func handleServerSettingsPatch(w http.ResponseWriter, r *http.Request, app *App)
 		}
 	}
 	if strings.TrimSpace(patch.AdminAuth.PasswordValue) != "" {
-		if cookie, err := middleware.NewAdminSessionCookie(app.Cfg.Server.AdminUsername, app.Cfg.Server.AdminPasswordHash, requestIsSecure(r), time.Now()); err == nil && cookie != nil {
+		now := time.Now()
+		secure := requestIsSecure(r)
+		if cookie, err := middleware.NewAdminSessionCookie(app.Cfg.Server.AdminUsername, app.Cfg.Server.AdminPasswordHash, secure, now); err == nil && cookie != nil {
 			http.SetCookie(w, cookie)
+			// Audit S-13: pair the session cookie with the CSRF
+			// double-submit cookie so the SPA can immediately make
+			// state-changing admin calls without a separate roundtrip.
+			if csrf := middleware.NewAdminCSRFCookie(cookie.Value, secure, now); csrf != nil {
+				http.SetCookie(w, csrf)
+			}
 		}
 	}
 	w.WriteHeader(http.StatusOK)

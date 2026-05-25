@@ -22,13 +22,23 @@ func ValidateServerProductionAuth(cfg *Config) error {
 	if authMode != "none" && serverCORSAllowsWildcard(cfg.Server.CORSAllowedOrigins) {
 		return fmt.Errorf("cors_allowed_origins=* is not allowed with authenticated server auth_mode=%s", authMode)
 	}
+	// Audit S-7: when AdminAuthEnabled is true the operator is
+	// shipping the admin-session cookie surface (set-cookie reachable
+	// via POST /v1/admin/session). Wildcard CORS combined with cookie
+	// auth lets any origin issue authenticated requests once the
+	// admin browser tab visits a hostile page in the same session.
+	// Reject even when auth_mode=none, because the admin cookie is
+	// independent of the request-auth mode.
+	if cfg.Server.AdminAuthEnabled && serverCORSAllowsWildcard(cfg.Server.CORSAllowedOrigins) {
+		return fmt.Errorf("cors_allowed_origins=* is not allowed when admin_auth_enabled=true; the admin session cookie surface requires an explicit origin allow-list")
+	}
 	if authMode != "none" {
 		return validateServerAuthCredentials(cfg, authMode)
 	}
 	if parseServerBoolEnv(AllowInsecureNoAuthEnv) {
 		return nil
 	}
-	if isLoopbackListenAddr(cfg.Server.ListenAddr) {
+	if IsLoopbackListenAddr(cfg.Server.ListenAddr) {
 		return nil
 	}
 	return fmt.Errorf("auth_mode=none is only allowed on loopback listen addresses; set %s=1 only for explicit local test runs", AllowInsecureNoAuthEnv)
@@ -80,7 +90,15 @@ func parseServerBoolEnv(name string) bool {
 	}
 }
 
-func isLoopbackListenAddr(raw string) bool {
+// IsLoopbackListenAddr reports whether the given HTTP listen address binds
+// only to a loopback interface (127.0.0.1, ::1, localhost). Used by both
+// startup validation (server_security.go) and the auth middleware to decide
+// whether AuthModeNone is acceptable as a runtime fallback.
+//
+// Returns false for wildcard binds (":8080", "0.0.0.0:8080", "[::]:8080")
+// and for any address that fails to parse — fail-closed: an unknown bind is
+// treated as public.
+func IsLoopbackListenAddr(raw string) bool {
 	addr := strings.TrimSpace(raw)
 	if addr == "" {
 		addr = ":8080"
