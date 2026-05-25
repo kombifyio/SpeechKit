@@ -12,72 +12,64 @@ IDs, source paths, and other maintainer-only vocabulary.
 
 ## [Unreleased]
 
-## [0.38.7] - 2026-05-25
+## [0.37.8] - 2026-05-25
 
-Consolidated security hardening and installer release. Rolls up
-v0.38.0 through v0.38.6 plus two post-v0.38.6 fixes into a single
-OSS release.
-
-### Security
-
-- **Server refuses to bind to a public address with no authentication.**
-  `auth_mode = "none"` on a non-loopback bind address now fails at
-  startup instead of silently running an open server.
-- **Voice Agent WebSocket prefers a session ticket in the
-  `Sec-WebSocket-Protocol` subprotocol** over the legacy `?ticket=`
-  query string. Cross-origin browsers without an `Origin` header are
-  rejected by default. Per-frame read limit tightened to 64 KiB.
-- **Admin settings PATCH requires a CSRF token** (double-submit cookie
-  pattern). Bearer and edge-auth callers bypass CSRF.
-- **Rate limiter is cost-weighted with a per-plan daily cap.** Expensive
-  endpoints draw more tokens; demo-tier callers have a hard daily
-  ceiling; service-bearer callers are keyed by remote IP.
-- **Wake-word upload validates activation IDs and serialises quota
-  checks.** Oversized or path-traversal-shaped IDs are rejected; two
-  concurrent uploads at the quota edge cannot both pass.
-- **Wildcard CORS is rejected when the admin login UI is enabled.**
+Consolidated Hands-Free Voice-Companion release. Rolls up v0.37.0
+through v0.37.7 into a single OSS release.
 
 ### Added
 
-- **Multi-turn skill conversations** (from v0.38.0). Skills that need
-  follow-up keep the conversation open for 60 seconds. Desktop build
-  now also supports follow-ups (previously server-only).
-- **All-local TTS via Piper** (from v0.38.0). New `[tts.piper]` config
-  block with voice directory, per-locale defaults, and health probe.
-- **Home Assistant and Piper Settings UI** (from v0.38.2). Configure
-  HA bridge and Piper voice picker from the Settings page.
-
-### Fixed
-
-- **Wake-word with openWakeWord now actually fires.** The sidecar
-  reset the consecutive-frame counter on non-scoring chunks; with
-  `min_consecutive_frames = 2` no detection was ever emitted.
-- **Dictation auto-stop after silence works again.** Falls back to an
-  RMS-level detector when Silero VAD is unavailable.
-- **Bundled Whisper model removed from the installer.** The 465 MB
-  `ggml-small.bin` was inflating the installer from ~150 MB to
-  ~530 MB. Speech models are now downloaded on-demand at first use
-  via the built-in downloads manager.
-- **Bundled ONNX Runtime bumped to v1.25.1** to match the API version
-  expected by the wake-word sidecar.
+- **Hands-Free Voice-Companion.** "Hey Quby" now drives a one-shot
+  Assist session with seven voice-oriented skills — Time, Date, Math,
+  Weather, Timer, Reminder, and Wikipedia — plus an optional Home
+  Assistant bridge for smart-home voice control. Voice-Agent mode
+  keeps its existing multi-hour realtime semantics.
+- **Multi-turn skill conversations.** Skills that need follow-up
+  information (e.g. "How long?" for a Timer) keep the conversation
+  open for 60 seconds instead of punting to the LLM. The slot is
+  keyed by user identity for multi-tenant isolation.
+- **All-local TTS via Piper.** New Piper TTS provider wrapping the
+  `piper` CLI as a subprocess. Default voices for English
+  (`en_US-amy-medium`) and German (`de_DE-thorsten-medium`). Voice
+  models are not bundled — install Piper and point the config at your
+  `.onnx` voice directory.
+- **TTS as a first-class model-selection mode.** Five provider profiles
+  ship in the default catalog: Kokoro 82M (local, default), Piper
+  (local HA-compatible), Google Studio-O, OpenAI tts-1-hd, and
+  Hugging Face Parler. The Settings UI exposes primary + fallback
+  selection alongside Dictation, Assist, and Voice Agent.
+- **Wake-word training data.** Local capture of wake-word activations
+  (pre-roll + post-roll WAV + JSON sidecar), optional background
+  upload to a SpeechKit server with per-user quota and multi-tenant
+  isolation, a Settings UI tab for browsing/labelling/deleting clips,
+  and an E2E test scenario covering the full upload round-trip. All
+  toggles default OFF — explicit user opt-in required.
+- **Home Assistant and Piper Settings UI.** Configure HA base URL,
+  token env-var, and language override with a "Test connection" button.
+  Set the Piper binary path and voice directory, browse installed
+  voices, and pin per-locale defaults — all from the Settings page
+  without editing TOML.
 
 ### Changed
 
-- Default `dictate_silence_timeout_sec` lowered from 10 s to 3 s.
-- **Reproducible builds.** Windows builds pin `SOURCE_DATE_EPOCH`,
-  pass `-trimpath` + `-buildvcs=false`, and digest-pin container
-  base images.
+- Catalog default TTS profile moved from Google Studio-O to
+  Kokoro 82M (local) so fresh installs without a cloud key get a
+  voice out of the box.
+- `tts.local.piper-de` profile ID renamed to `tts.local.piper`.
+  Operators who pinned the old ID need to update their config.
 
-### Supply chain
+### Fixed
 
-- `go mod verify` in CI, Trivy with `.trivyignore` baseline,
-  pinned OpenAPI/AsyncAPI CLIs, determinism gate on the OSS export.
-
-### Test coverage
-
-- Voice Agent persona/role catalog ~0.24 → ~0.94, Assist shortcut
-  resolver ~0.41 → ~0.77, auth-provider registry race-detector
-  contract, five new packages in race-test scope.
+- Voice-Companion skills returning `Action="silent"` now correctly
+  fall through to the Assist LLM when one is configured.
+- Home Assistant intent routing fixed — the enabled flag was not
+  flipped when HA config was present.
+- Multi-turn follow-ups wired into the desktop build (previously
+  server-only).
+- Partial Settings POSTs (e.g. from the onboarding wizard) no longer
+  clear previously configured HA or Piper settings.
+- Internal source comments that named a private project have been
+  reworded for OSS export compatibility.
 
 ## [0.38.6] - 2026-05-25
 
