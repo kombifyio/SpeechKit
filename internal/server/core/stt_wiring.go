@@ -208,15 +208,20 @@ func updateSTTAggregate(app *App) {
 		if !strings.HasPrefix(name, "stt.") {
 			continue
 		}
-		providers++
 		switch entry.Status {
 		case StatusOK:
 			app.Health.SetReadyWithOptions(sttAggregateComponent, StatusOK, "at least one STT provider ready", sttAggregateOptions(true))
 			return
 		case StatusStarting:
+			providers++
 			starting++
 		case StatusDegraded, StatusUnavailable:
+			providers++
 			degraded++
+		case StatusDisabled:
+			// Disabled STT components are intentional config choices,
+			// not candidate providers for the aggregate readiness gate.
+			continue
 		}
 	}
 	if providers == 0 {

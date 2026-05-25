@@ -189,7 +189,7 @@ services:
         go run ./cmd/sk-e2e \
           --server http://speechkit-server:8080 \
           --token e2e-dev-token \
-          --scenarios all \
+          --scenarios health,deployment,dictation,assist,voiceagent \
           --require-functional \
           --local-only \
           --timeout 180s \

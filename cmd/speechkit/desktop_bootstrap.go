@@ -153,9 +153,7 @@ func openDesktopDictationVAD(state *appState, cleanup *desktopCleanupStack) vad.
 	if closeDictationVAD != nil && cleanup != nil {
 		cleanup.Add(closeDictationVAD)
 	}
-	if dictationVAD != nil {
-		state.addLog("Dictation VAD ready", "info")
-	}
+	state.addLog("Dictation VAD ready", "info")
 	return dictationVAD
 }
 

@@ -35,6 +35,7 @@ services:
       SPEECHKIT_SELFHOSTED_DEFAULTS: "true"
       SPEECHKIT_SELFHOSTED_STT_URL: http://speechkit-whisper:8080
       SPEECHKIT_SELFHOSTED_LLM_BASE_URL: http://speechkit-llm:8080/v1
+      SPEECHKIT_ALLOW_EMPTY_ORIGIN: "1"
     volumes:
       - ../config/server.example.toml:/etc/speechkit/config.toml:ro
       - ${SPEECHKIT_MODELS_HOST_DIR:?SPEECHKIT_MODELS_HOST_DIR must be set}:/var/lib/speechkit/models:ro

@@ -696,7 +696,9 @@ func (c *client) wsDialOptions() *websocket.DialOptions {
 	if c.token != "" {
 		opts.HTTPHeader.Set("Authorization", "Bearer "+c.token)
 	}
-	opts.HTTPHeader.Set("Origin", strings.TrimRight(c.base, "/"))
+	if origin := strings.TrimSpace(os.Getenv("SPEECHKIT_E2E_WS_ORIGIN")); origin != "" {
+		opts.HTTPHeader.Set("Origin", origin)
+	}
 	return opts
 }
 

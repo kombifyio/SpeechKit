@@ -66,6 +66,36 @@ func TestBuildSTTRouterUsesConfiguredGoogleSTTKeyEnv(t *testing.T) {
 	}
 }
 
+func TestUpdateSTTAggregateIgnoresDisabledProviders(t *testing.T) {
+	app := &App{Health: NewHealthRegistry()}
+	app.Health.SetReadyWithOptions("stt.disabled", StatusDisabled, "configured off", sttProviderOptions(namedProvider{name: "stt.disabled"}))
+	app.Health.SetReadyWithOptions(sttAggregateComponent, StatusStarting, "probing STT providers", sttAggregateOptions(true))
+
+	updateSTTAggregate(app)
+
+	_, components, _ := app.Health.Snapshot()
+	entry := components[sttAggregateComponent]
+	if entry.Status != StatusUnavailable {
+		t.Fatalf("aggregate status = %q, want unavailable when every provider is disabled", entry.Status)
+	}
+	if entry.Detail != "no STT providers configured" {
+		t.Fatalf("aggregate detail = %q, want no providers detail", entry.Detail)
+	}
+}
+
+func TestUpdateSTTAggregateStartsWhenAnyEnabledProviderStillProbes(t *testing.T) {
+	app := &App{Health: NewHealthRegistry()}
+	app.Health.SetReadyWithOptions("stt.disabled", StatusDisabled, "configured off", sttProviderOptions(namedProvider{name: "stt.disabled"}))
+	app.Health.SetReadyWithOptions("stt.openai", StatusStarting, "probing", sttProviderOptions(namedProvider{name: "stt.openai"}))
+
+	updateSTTAggregate(app)
+
+	_, components, _ := app.Health.Snapshot()
+	if got := components[sttAggregateComponent].Status; got != StatusStarting {
+		t.Fatalf("aggregate status = %q, want starting", got)
+	}
+}
+
 func hasProvider(providers []namedProvider, name string) bool {
 	for _, provider := range providers {
 		if provider.name == name {

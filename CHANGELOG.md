@@ -12,6 +12,27 @@ IDs, source paths, and other maintainer-only vocabulary.
 
 ## [Unreleased]
 
+## [0.38.11] - 2026-05-25
+
+Windows local onboarding and release packaging hotfix. No public API
+change.
+
+### Fixed
+
+- **Local setup now starts a speech-model download immediately.**
+  Choosing Local starts the smallest Dictation-ready model by default,
+  and choosing a larger model starts that selected download in the
+  background during onboarding.
+- **Installer release packaging is unblocked.** Public package checks
+  now tolerate source exports without website-only dead-code config,
+  handle disabled STT providers correctly, and pass the Windows desktop
+  static-analysis gate.
+- **Linux install verification now checks the three shipped voice
+  modes.** The local-only release gate runs Dictation, Assist, and
+  Voice Agent without requiring disabled wake-word training, and the
+  native Voice Agent probe no longer sends a browser Origin header
+  unless explicitly configured.
+
 ## [0.38.10] - 2026-05-25
 
 Windows local onboarding hotfix. No public API change.
