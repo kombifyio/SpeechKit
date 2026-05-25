@@ -215,16 +215,16 @@ describe("DashboardApp", () => {
     });
     fetchDownloadCatalogMock.mockResolvedValue([]);
     fetchDownloadJobsMock.mockResolvedValue([]);
-    startModelDownloadMock.mockResolvedValue({
-      id: "model-job-1",
-      modelId: "whisper.ggml-large-v3-turbo",
+    startModelDownloadMock.mockImplementation(async (itemId: string) => ({
+      id: `model-job-${itemId}`,
+      modelId: itemId,
       profileId: "stt.local.whispercpp",
       status: "running",
       progress: 0.42,
       bytesDone: 42,
       totalBytes: 100,
       statusText: "42 / 100 MB",
-    });
+    }));
     cancelModelDownloadMock.mockResolvedValue(undefined);
     selectDownloadedModelMock.mockResolvedValue({ message: "Selected" });
     revealDashboardAudioMock.mockResolvedValue("Opened");
@@ -712,7 +712,7 @@ describe("DashboardApp", () => {
     );
   });
 
-  it("offers local small and turbo downloads during onboarding and keeps progress visible", async () => {
+  it("starts the local starter download during onboarding and keeps selected-model progress visible", async () => {
     fetchSpy?.mockImplementation(async (input: RequestInfo | URL) => {
       const url =
         typeof input === "string"
@@ -788,25 +788,35 @@ describe("DashboardApp", () => {
       await screen.findByText("Whisper Large v3 Turbo"),
     ).toBeInTheDocument();
     expect(
-      screen.getByText("Whisper Small Multilingual (466 MB)"),
+      within(
+        screen.getByTestId("local-model-card-whisper.ggml-small"),
+      ).getByText("Whisper Small Multilingual (466 MB)"),
     ).toBeInTheDocument();
     expect(screen.getByText("Recommended")).toBeInTheDocument();
     expect(
       await within(
-        screen.getByTestId("local-model-card-whisper.ggml-large-v3-turbo"),
+        screen.getByTestId("local-model-card-whisper.ggml-small"),
       ).findByText("Starter model"),
     ).toBeInTheDocument();
     expect(
       within(
-        screen.getByTestId("local-model-card-whisper.ggml-small"),
+        screen.getByTestId("local-model-card-whisper.ggml-large-v3-turbo"),
       ).queryByText("Starter model"),
     ).not.toBeInTheDocument();
 
-    const continueButton = screen.getByRole("button", { name: /^continue$/i });
+    await waitFor(() =>
+      expect(startModelDownloadMock).toHaveBeenCalledWith("whisper.ggml-small"),
+    );
+
+    const continueButton = await screen.findByRole("button", {
+      name: /continue while model downloads/i,
+    });
     expect(continueButton).toBeEnabled();
 
     fireEvent.click(
-      screen.getByRole("button", { name: "Download Whisper Large v3 Turbo" }),
+      screen.getByRole("button", {
+        name: "Choose Whisper Large v3 Turbo for setup",
+      }),
     );
 
     await waitFor(() =>
@@ -1392,7 +1402,7 @@ describe("DashboardApp", () => {
     expect(screen.getByLabelText("Hugging Face token")).toBeInTheDocument();
   });
 
-  it("lets the user skip setup even before a local model is downloaded", async () => {
+  it("starts the default local model download when the user skips local setup", async () => {
     fetchSpy?.mockImplementation(async (input: RequestInfo | URL) => {
       const url =
         typeof input === "string"
@@ -1428,6 +1438,9 @@ describe("DashboardApp", () => {
 
     fireEvent.click(await screen.findByRole("button", { name: /skip setup/i }));
 
+    await waitFor(() =>
+      expect(startModelDownloadMock).toHaveBeenCalledWith("whisper.ggml-small"),
+    );
     await waitFor(() =>
       expect(fetchSpy).toHaveBeenCalledWith("/app/complete-setup", {
         method: "POST",

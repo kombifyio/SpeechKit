@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { pickLatestModelDownloadJob } from "@/components/dashboard/state-hooks/use-model-download-state";
 import {
@@ -46,7 +46,17 @@ const integrationModeLabels: Record<IntegrationMode, string> = {
   voice_agent: "Voice Agent",
 };
 
+const STARTER_LOCAL_MODEL_ID = "whisper.ggml-small";
+const ONBOARDING_LOCAL_MODEL_IDS = [
+  STARTER_LOCAL_MODEL_ID,
+  "whisper.ggml-large-v3-turbo",
+];
+
 type ServerFormTestState = "idle" | "testing" | "pass" | "fail";
+
+function isActiveDownloadJob(job: DownloadJob): boolean {
+  return job.status === "pending" || job.status === "running";
+}
 
 export function SetupWizard({
   catalog,
@@ -86,11 +96,9 @@ export function SetupWizard({
   const [integrationTokens, setIntegrationTokens] = useState<
     Record<string, string>
   >({});
-  // Self-heal: when /app/complete-setup 409s because the bundled starter
-  // model is missing on disk (Bug B), the banner can kick off a one-click
-  // download of whisper.ggml-small and auto-retry handleFinish once the
-  // catalog/jobs feed reports the new file is ready. The ref guards against
-  // re-firing the auto-retry if the job state oscillates.
+  // Defensive self-heal for older backends or unusual states that still report
+  // a speech-model setup conflict. Current backends do not gate setup on model
+  // presence; downloads can continue during or after onboarding.
   const [bannerDownloadModelId, setBannerDownloadModelId] = useState<
     string | null
   >(null);
@@ -98,6 +106,8 @@ export function SetupWizard({
     null,
   );
   const autoRetryFiredRef = useRef(false);
+  const autoDownloadStartedForModelRef = useRef<Set<string>>(new Set());
+  const downloadStartRequestInFlightRef = useRef<Set<string>>(new Set());
 
   useEffect(() => {
     void fetchAudioDevices()
@@ -121,8 +131,7 @@ export function SetupWizard({
   );
 
   const localModelChoices = useMemo(() => {
-    const onboardingIDs = ["whisper.ggml-large-v3-turbo", "whisper.ggml-small"];
-    return onboardingIDs
+    return ONBOARDING_LOCAL_MODEL_IDS
       .map((id) => catalog.find((item) => item.id === id))
       .filter((item): item is DownloadItem => Boolean(item));
   }, [catalog]);
@@ -132,11 +141,10 @@ export function SetupWizard({
       return;
     }
     const selectedLocalModel = localCatalogItems.find((item) => item.selected);
-    const recommendedLocalModel =
-      localModelChoices.find((item) => item.recommended) ??
-      localModelChoices.find((item) => item.id === "whisper.ggml-large-v3-turbo") ??
+    const starterLocalModel =
+      localModelChoices.find((item) => item.id === STARTER_LOCAL_MODEL_ID) ??
       localModelChoices[0];
-    const defaultLocalModel = selectedLocalModel ?? recommendedLocalModel;
+    const defaultLocalModel = selectedLocalModel ?? starterLocalModel;
     if (defaultLocalModel) {
       setPreferredLocalModelId(defaultLocalModel.id);
     }
@@ -154,13 +162,44 @@ export function SetupWizard({
     [localCatalogItems, preferredLocalModelId],
   );
 
+  const starterLocalModel = useMemo(
+    () =>
+      localCatalogItems.find((item) => item.id === STARTER_LOCAL_MODEL_ID) ??
+      localModelChoices.find((item) => item.id === STARTER_LOCAL_MODEL_ID) ??
+      localModelChoices[0] ??
+      null,
+    [localCatalogItems, localModelChoices],
+  );
+
+  const activeModelDownloadIDs = useMemo(
+    () =>
+      new Set(
+        jobs
+          .filter((job) => isActiveDownloadJob(job))
+          .map((job) => job.modelId),
+      ),
+    [jobs],
+  );
+
+  useEffect(() => {
+    if (downloadStartRequestInFlightRef.current.size === 0) {
+      return;
+    }
+    for (const modelId of Array.from(
+      downloadStartRequestInFlightRef.current,
+    )) {
+      if (jobs.some((job) => job.modelId === modelId)) {
+        downloadStartRequestInFlightRef.current.delete(modelId);
+      }
+    }
+  }, [jobs]);
+
   const activeLocalJob = useMemo(
     () =>
       pickLatestModelDownloadJob(
         jobs.filter(
           (job) =>
-            localModelIDs.has(job.modelId) &&
-            (job.status === "pending" || job.status === "running"),
+            localModelIDs.has(job.modelId) && isActiveDownloadJob(job),
         ),
       ),
     [jobs, localModelIDs],
@@ -199,23 +238,107 @@ export function SetupWizard({
     ? "Continue while model downloads"
     : "Continue";
 
+  const ensureLocalModelDownload = useCallback(
+    async (modelId: string | null | undefined) => {
+      if (!modelId) return false;
+      const item =
+        localCatalogItems.find((candidate) => candidate.id === modelId) ??
+        catalog.find((candidate) => candidate.id === modelId) ??
+        null;
+
+      setPreferredLocalModelId(modelId);
+      if (item?.available) {
+        if (!item.selected) {
+          await onSelectDownloadedModel(modelId);
+        }
+        return false;
+      }
+      if (
+        activeModelDownloadIDs.has(modelId) ||
+        downloadStartRequestInFlightRef.current.has(modelId)
+      ) {
+        return false;
+      }
+
+      downloadStartRequestInFlightRef.current.add(modelId);
+      try {
+        await onStartDownload(modelId);
+        return true;
+      } catch (error) {
+        downloadStartRequestInFlightRef.current.delete(modelId);
+        throw error;
+      }
+    },
+    [
+      activeModelDownloadIDs,
+      catalog,
+      localCatalogItems,
+      onSelectDownloadedModel,
+      onStartDownload,
+    ],
+  );
+
+  useEffect(() => {
+    if (step !== "local_model" || onboardingTarget !== "local") {
+      return;
+    }
+    const modelId =
+      preferredLocalModelId ?? starterLocalModel?.id ?? STARTER_LOCAL_MODEL_ID;
+    const item =
+      localCatalogItems.find((candidate) => candidate.id === modelId) ?? null;
+    if (
+      item?.available ||
+      activeModelDownloadIDs.has(modelId) ||
+      autoDownloadStartedForModelRef.current.has(modelId)
+    ) {
+      return;
+    }
+
+    autoDownloadStartedForModelRef.current.add(modelId);
+    const actionID = `download:${modelId}`;
+    setBusyModelAction(actionID);
+    setModelActionError(null);
+    void ensureLocalModelDownload(modelId)
+      .catch((error) => {
+        autoDownloadStartedForModelRef.current.delete(modelId);
+        setModelActionError(
+          error instanceof Error ? error.message : "Download failed",
+        );
+      })
+      .finally(() => {
+        setBusyModelAction((current) =>
+          current === actionID ? null : current,
+        );
+      });
+  }, [
+    activeModelDownloadIDs,
+    ensureLocalModelDownload,
+    localCatalogItems,
+    onboardingTarget,
+    preferredLocalModelId,
+    starterLocalModel?.id,
+    step,
+  ]);
+
   const handleModelDownload = async (item: DownloadItem) => {
-    setBusyModelAction(`download:${item.id}`);
+    const actionID = `download:${item.id}`;
+    setBusyModelAction(actionID);
     setModelActionError(null);
     setPreferredLocalModelId(item.id);
     try {
-      await onStartDownload(item.id);
+      await ensureLocalModelDownload(item.id);
     } catch (error) {
       setModelActionError(
         error instanceof Error ? error.message : "Download failed",
       );
     } finally {
-      setBusyModelAction(null);
+      setBusyModelAction((current) => (current === actionID ? null : current));
     }
   };
 
   const handleModelSelect = async (item: DownloadItem) => {
-    setBusyModelAction(`select:${item.id}`);
+    const actionID = `select:${item.id}`;
+    setBusyModelAction(actionID);
     setModelActionError(null);
     setPreferredLocalModelId(item.id);
     try {
@@ -225,7 +348,7 @@ export function SetupWizard({
         error instanceof Error ? error.message : "Model switch failed",
       );
     } finally {
-      setBusyModelAction(null);
+      setBusyModelAction((current) => (current === actionID ? null : current));
     }
   };
 
@@ -233,8 +356,13 @@ export function SetupWizard({
     setLoading(true);
     try {
       setModelActionError(null);
-      if (chosenLocalModel?.available && !chosenLocalModel.selected) {
-        await onSelectDownloadedModel(chosenLocalModel.id);
+      if (onboardingTarget === "local") {
+        const modelId =
+          preferredLocalModelId ??
+          chosenLocalModel?.id ??
+          starterLocalModel?.id ??
+          STARTER_LOCAL_MODEL_ID;
+        await ensureLocalModelDownload(modelId);
       }
       const body = new URLSearchParams();
       body.set("dictate_hotkey", onboardingHotkeys.dictate);
@@ -296,9 +424,9 @@ export function SetupWizard({
   }, [jobs, bannerDownloadModelId]);
 
   // Watch the banner-initiated starter download. On success: switch the
-  // configured local STT model to the just-downloaded starter so the
-  // /app/complete-setup gate sees ModelFound=true, then re-run handleFinish.
-  // On failure/cancel: surface as bannerDownloadError next to the button.
+  // configured local STT model to the just-downloaded starter, then re-run
+  // handleFinish for defensive legacy recovery paths. On failure/cancel:
+  // surface as bannerDownloadError next to the button.
   useEffect(() => {
     if (!bannerDownloadJob || autoRetryFiredRef.current) {
       return;
@@ -337,7 +465,7 @@ export function SetupWizard({
   }, [bannerDownloadJob, onSelectDownloadedModel]);
 
   const handleDownloadStarterModel = async () => {
-    const starter = catalog.find((item) => item.id === "whisper.ggml-small");
+    const starter = catalog.find((item) => item.id === STARTER_LOCAL_MODEL_ID);
     if (!starter) {
       setBannerDownloadError(
         "Starter model is not in the download catalog. Please reinstall SpeechKit.",
@@ -348,7 +476,7 @@ export function SetupWizard({
     setBannerDownloadModelId(starter.id);
     autoRetryFiredRef.current = false;
     try {
-      await onStartDownload(starter.id);
+      await ensureLocalModelDownload(starter.id);
     } catch (error) {
       setBannerDownloadError(
         error instanceof Error ? error.message : "Download failed",
@@ -357,15 +485,40 @@ export function SetupWizard({
     }
   };
 
-  const handleChooseModel = (itemId: string) => {
-    setPreferredLocalModelId(itemId);
+  const handleChooseModel = async (item: DownloadItem) => {
+    const actionID = `download:${item.id}`;
+    setBusyModelAction(actionID);
+    setPreferredLocalModelId(item.id);
     setModelActionError(null);
+    try {
+      await ensureLocalModelDownload(item.id);
+    } catch (error) {
+      setModelActionError(
+        error instanceof Error ? error.message : "Download failed",
+      );
+    } finally {
+      setBusyModelAction((current) => (current === actionID ? null : current));
+    }
   };
 
   const handleSkipSetup = async () => {
     setModelActionError(null);
     setLoading(true);
     try {
+      const mode = onboardingTarget === "cloud" ? "cloud" : "local";
+      await postInstallMode(mode);
+      try {
+        await applyVoiceAgentProfile(voiceAgentProfileForInstallMode(mode));
+      } catch (err) {
+        console.warn("voice-agent profile apply failed:", err);
+      }
+      if (mode === "local") {
+        await ensureLocalModelDownload(
+          preferredLocalModelId ??
+            starterLocalModel?.id ??
+            STARTER_LOCAL_MODEL_ID,
+        );
+      }
       await onComplete();
     } catch (error) {
       setModelActionError(
@@ -754,7 +907,7 @@ export function SetupWizard({
                     onCancel={() =>
                       itemJob ? void onCancelDownload(itemJob.id) : undefined
                     }
-                    onChooseModel={() => handleChooseModel(item.id)}
+                    onChooseModel={() => void handleChooseModel(item)}
                     onUseModel={() => void handleModelSelect(item)}
                     downloading={itemDownloading}
                   />

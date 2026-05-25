@@ -2,7 +2,6 @@ package main
 
 import (
 	"encoding/json"
-	"fmt"
 	"log/slog"
 	"net/http"
 	"strings"
@@ -438,15 +437,12 @@ func localSetupCompletionProblem(cfg *config.Config, installState *config.Instal
 	if !status.BinaryFound {
 		return "Local setup cannot be completed because the bundled whisper-server runtime is missing. Reinstall SpeechKit."
 	}
-	if status.ModelFound {
-		return ""
+	if !status.ModelFound {
+		slog.Info("local setup completed without a ready speech model",
+			"model_path", status.ModelPath,
+			"problems", status.Problems)
 	}
-	for _, problem := range status.Problems {
-		if strings.TrimSpace(problem) != "" {
-			return fmt.Sprintf("Local setup cannot be completed because the bundled speech model is not ready: %s", problem)
-		}
-	}
-	return "Local setup cannot be completed because the bundled speech model is not ready."
+	return ""
 }
 
 type wakewordEnableRequest struct {

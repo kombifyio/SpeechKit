@@ -57,7 +57,6 @@ $RequiredFiles = @(
     "whisper-server.exe",
     "whisper.dll",
     "ggml.dll",
-    "models\ggml-small.bin",
     "speechkit-wakeword.exe",
     "speechkit-openwakeword.exe",
     "models\wakeword\melspectrogram.onnx",

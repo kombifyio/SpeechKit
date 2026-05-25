@@ -148,13 +148,13 @@ const patchOnTopChangelog = `# Changelog
 
 ## [0.18.2] - 2026-04-20
 
-### Highlights
+### Fixed
 
 - **Patch fix**: One small organizational thing.
 
 ## [0.18.1] - 2026-04-18
 
-### Highlights
+### Fixed
 
 - **Another patch**: Just security stuff.
 
@@ -168,13 +168,51 @@ const patchOnTopChangelog = `# Changelog
 - **Release surface automation**: Website surfaces now derive data directly from the changelog.
 `
 
-test('extractLatestMinorReleaseNotes skips patch releases and anchors on the latest X.Y.0 entry', () => {
+test('extractLatestMinorReleaseNotes skips normal patch releases and anchors on the latest X.Y.0 entry', () => {
   const latest = extractLatestMinorReleaseNotes(patchOnTopChangelog)
 
   assert.equal(latest.version, '0.18.0')
   assert.equal(latest.notes.length, 3)
   assert.equal(latest.notes[0].title, 'Local onboarding')
   assert.equal(latest.notes[2].title, 'Release surface automation')
+})
+
+test('extractLatestMinorReleaseNotes lets a patch rollup with Highlights refresh the line cards', () => {
+  const rollupChangelog = `# Changelog
+
+## [0.38.9] - 2026-05-25
+
+### Fixed
+
+- **Patch smoke**: Small release-only fix.
+
+## [0.38.7] - 2026-05-25
+
+### Highlights
+
+- **Security defaults**: Public server binds fail closed.
+- **Local voice**: Piper and multi-turn skills are ready.
+
+## [0.38.0] - 2026-05-22
+
+### Highlights
+
+- **Baseline**: Initial 0.38 release line.
+`
+
+  const latest = extractLatestMinorReleaseNotes(rollupChangelog)
+
+  assert.equal(latest.version, '0.38.7')
+  assert.deepEqual(latest.notes, [
+    {
+      title: 'Security defaults',
+      body: 'Public server binds fail closed.',
+    },
+    {
+      title: 'Local voice',
+      body: 'Piper and multi-turn skills are ready.',
+    },
+  ])
 })
 
 test('extractLatestMinorReleaseNotes returns the same entry as extractLatestReleaseNotes when top entry is already a minor baseline', () => {

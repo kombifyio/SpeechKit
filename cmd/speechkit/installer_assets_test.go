@@ -7,21 +7,26 @@ import (
 	"testing"
 )
 
-func TestWindowsPackagingIncludesBundledStarterWhisperModel(t *testing.T) {
+func TestWindowsPackagingDoesNotRequireBundledStarterWhisperModel(t *testing.T) {
 	repoRoot := filepath.Join("..", "..")
 	files := []struct {
-		path string
-		want []string
+		path   string
+		want   []string
+		forbid []string
 	}{
 		{
 			path: filepath.Join(repoRoot, "scripts", "prepare-whisper-runtime.ps1"),
-			want: []string{"ggml-small.bin", "1be3a9b2063867b937e64e2ec7483364a79917e157fa98c5d94b5c1fffea987b"},
+			want: []string{"model downloaded on-demand at first use"},
+			forbid: []string{
+				"1be3a9b2063867b937e64e2ec7483364a79917e157fa98c5d94b5c1fffea987b",
+			},
 		},
 		{
 			path: filepath.Join(repoRoot, "installer", "speechkit.nsi"),
 			want: []string{
 				`$INSTDIR\models`,
 				`${STAGE_DIR}\models\*`,
+				`Whisper speech models are NOT`,
 				`${STAGE_DIR}\speechkit-wakeword.exe`,
 				`${STAGE_DIR}\speechkit-openwakeword.exe`,
 				`$INSTDIR\wakeword-kws`,
@@ -31,8 +36,6 @@ func TestWindowsPackagingIncludesBundledStarterWhisperModel(t *testing.T) {
 		{
 			path: filepath.Join(repoRoot, "installer", "wix", "SpeechKit.wxs"),
 			want: []string{
-				"StarterWhisperModel",
-				`dist\windows\SpeechKit\models\ggml-small.bin`,
 				"WakewordSidecarExe",
 				`dist\windows\SpeechKit\speechkit-wakeword.exe`,
 				"OpenWakewordSidecarExe",
@@ -45,17 +48,21 @@ func TestWindowsPackagingIncludesBundledStarterWhisperModel(t *testing.T) {
 				"SherpaOnnxCApiDll",
 				"SherpaOnnxCxxApiDll",
 			},
+			forbid: []string{
+				"StarterWhisperModel",
+				`dist\windows\SpeechKit\models\ggml-small.bin`,
+			},
 		},
 		{
 			path: filepath.Join(repoRoot, "installer", "wix", "build-msi.ps1"),
 			want: []string{
-				`models\ggml-small.bin`,
 				"speechkit-wakeword.exe",
 				"speechkit-openwakeword.exe",
 				`models\wakeword\melspectrogram.onnx`,
 				`wakeword-kws\keywords.txt`,
 				"sherpa-onnx-c-api.dll",
 			},
+			forbid: []string{`models\ggml-small.bin`},
 		},
 	}
 
@@ -69,6 +76,11 @@ func TestWindowsPackagingIncludesBundledStarterWhisperModel(t *testing.T) {
 			for _, want := range file.want {
 				if !strings.Contains(body, want) {
 					t.Fatalf("%s missing %q", file.path, want)
+				}
+			}
+			for _, forbidden := range file.forbid {
+				if strings.Contains(body, forbidden) {
+					t.Fatalf("%s should not contain %q", file.path, forbidden)
 				}
 			}
 		})

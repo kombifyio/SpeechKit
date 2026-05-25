@@ -127,15 +127,32 @@ export function isMinorBaselineVersion(version) {
   return /^\d+\.\d+\.0(?:[-+].*)?$/.test(version)
 }
 
-// Like `extractLatestReleaseNotes` but skips patch releases. The website
-// uses this so that publishing a 0.30.1 (purely organizational/security
-// patch) does not replace the highlight reel for the 0.30 minor line —
-// "What is new in 0.30" stays anchored to the 0.30.0 highlights until
-// 0.31.0 ships.
+function minorKey(version) {
+  const match = /^(\d+)\.(\d+)\.(\d+)(?:[-+].*)?$/.exec(version)
+  if (!match) {
+    return ''
+  }
+  return `${match[1]}.${match[2]}`
+}
+
+// Like `extractLatestReleaseNotes` but keeps the website anchored to the
+// current minor release line. Publishing a normal 0.30.1 patch does not replace
+// the highlight reel for v0.30, but an explicit `### Highlights` section in a
+// later rollup entry (for example 0.38.7) is allowed to become the public
+// "What is new in v0.38" source.
 export function extractLatestMinorReleaseNotes(markdown, options = {}) {
   const { limit = 3, fallbackVersion = '0.0.0' } = options
   const sections = parseChangelogSections(markdown)
-  const latest = sections.find(section => isMinorBaselineVersion(section.version))
+  const firstVersionedSection = sections.find(section => minorKey(section.version))
+  const currentMinorKey = firstVersionedSection ? minorKey(firstVersionedSection.version) : ''
+  const currentMinorSections = currentMinorKey
+    ? sections.filter(section => minorKey(section.version) === currentMinorKey)
+    : []
+  const latestWithHighlights = currentMinorSections.find(
+    section => getSubsectionBody(section.body, 'Highlights'),
+  )
+  const minorBaseline = currentMinorSections.find(section => isMinorBaselineVersion(section.version))
+  const latest = latestWithHighlights || minorBaseline
   if (!latest) {
     // Fall back to the absolute latest entry if no minor baseline exists.
     // This keeps the helper safe during early development before the

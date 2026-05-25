@@ -11,16 +11,15 @@ the release pipeline is gated on the result.
 After install + first-run, every one of the three modes succeeds
 using local models only:
 
-- **STT:** whisper.cpp. The Windows installer ships the `ggml-small.bin`
-  starter model (~466 MB) under `<InstallDir>/models/`; the configured
-  default in `config.example.toml` is `ggml-large-v3-turbo.bin` which the
-  Setup Wizard can download on demand. The runtime helper
-  `applyBundledLocalSTTStarterDefault` swaps to the bundled starter on
-  first launch when the configured model is missing on disk so the gate
-  at `/app/complete-setup` passes. See
+- **STT:** whisper.cpp. The Windows installer ships the local runtime, while
+  Whisper models are downloaded on demand by the Setup Wizard or Settings. A
+  Local onboarding path must start the selected model immediately; when the
+  user has not selected anything else, it starts `whisper.ggml-small`.
+  `/app/complete-setup` must not require `ggml-small.bin` or any other model
+  to be present on disk; model readiness is reported by the local STT
+  readiness path after setup. See
   [`docs/setup/bundled-starter-model.md`](../setup/bundled-starter-model.md)
-  for the full bundle policy, build-time assertion and wizard recovery
-  flow.
+  for the full model-download policy and setup gate contract.
 - **LLM:** Gemma 4 E4B IT Q4_K_M via llama-server (llama.cpp).
 - **TTS:** server's local TTS provider when one is configured. The
   cascaded Voice Agent path runs text-only when no local TTS is wired

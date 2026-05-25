@@ -140,6 +140,15 @@ func (m *Manager) AllJobs() []JobView {
 // Start queues and launches a download. onDone is called (in a goroutine) on success.
 // Returns the initial job snapshot.
 func (m *Manager) Start(item Item, destDir string, onDone func(Item)) JobView {
+	m.mu.Lock()
+	for _, existing := range m.jobs {
+		snap := existing.snapshot()
+		if snap.ModelID == item.ID && (snap.Status == StatusPending || snap.Status == StatusRunning) {
+			m.mu.Unlock()
+			return snap
+		}
+	}
+
 	id := fmt.Sprintf("dl-%d-%s", time.Now().UnixMilli(), randHex())
 	ctx, cancel := context.WithCancel(context.Background()) //nolint:gosec // cancel stored in struct field, called on job cancellation
 	j := &job{
@@ -151,7 +160,6 @@ func (m *Manager) Start(item Item, destDir string, onDone func(Item)) JobView {
 		StatusText: "Starting…",
 		cancel:     cancel,
 	}
-	m.mu.Lock()
 	m.jobs[id] = j
 	m.mu.Unlock()
 	snap := j.snapshot()

@@ -188,14 +188,13 @@
             The app-side seeding is the upgrade-safe path.
           -->
 
-          <!-- Bundled local starter speech model for out-of-box dictation. -->
+          <!--
+            Wake-word ONNX models are bundled for hands-free activation.
+            Whisper speech models are intentionally downloaded on demand, so
+            fresh setup can complete before the user's preferred model is
+            present on disk.
+          -->
           <Directory Id="MODELSDIR" Name="models">
-            <Component Id="StarterWhisperModel" Guid="*">
-              <File Id="ggml_small_bin"
-                    Source="..\..\dist\windows\SpeechKit\models\ggml-small.bin"
-                    KeyPath="yes" />
-            </Component>
-
             <Directory Id="OPENWAKEWORDMODELDIR" Name="wakeword">
               <Component Id="OpenWakewordMelspecModel" Guid="*">
                 <File Id="openwakeword_melspectrogram_onnx"
@@ -366,7 +365,6 @@
       <ComponentRef Id="MsvcRuntimeVcruntime140_1Dll" />
       <ComponentRef Id="WebView2Setup" />
       <ComponentRef Id="ConfigDefaultToml" />
-      <ComponentRef Id="StarterWhisperModel" />
       <ComponentRef Id="WakewordSidecarExe" />
       <ComponentRef Id="OpenWakewordSidecarExe" />
       <ComponentRef Id="OpenWakewordMelspecModel" />

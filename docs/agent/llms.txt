@@ -1,10 +1,12 @@
-# SpeechKit v0.30
+# SpeechKit v0.38
 
 > Agent entrypoint for SpeechKit Server, Framework API, and MCP integration.
 
 SpeechKit is a Windows-first voice framework with three strict modes:
-Dictation, Assist, and Voice Agent. v0.30 ships API-first server
-surfaces, a Go client, a CLI, and an MCP server for coding agents.
+Dictation, Assist, and Voice Agent. v0.38 ships the hardened public
+release line with API-first server surfaces, local-first Voice-Companion
+updates, on-demand speech model downloads, a Go client, a CLI, and an
+MCP server for coding agents.
 
 Use these links first:
 

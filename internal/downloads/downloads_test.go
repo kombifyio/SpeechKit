@@ -171,6 +171,46 @@ func TestCancelJob(t *testing.T) {
 	}
 }
 
+func TestStartReturnsExistingInFlightJobForSameModel(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Length", "999999999")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte("x"))
+		if f, ok := w.(http.Flusher); ok {
+			f.Flush()
+		}
+		<-r.Context().Done()
+	}))
+	defer srv.Close()
+
+	m := NewManager()
+	item := Item{
+		ID:        "same-model",
+		Kind:      KindHTTP,
+		URL:       srv.URL + "/model.bin",
+		SizeBytes: 999999999,
+		SHA256:    "0000000000000000000000000000000000000000000000000000000000000000",
+	}
+
+	first := m.Start(item, t.TempDir(), nil)
+	waitForJobStatus(t, m, 5*time.Second, StatusRunning)
+
+	second := m.Start(item, t.TempDir(), nil)
+	if second.ID != first.ID {
+		t.Fatalf("second Start job ID = %q, want existing %q", second.ID, first.ID)
+	}
+
+	jobs := m.AllJobs()
+	if len(jobs) != 1 {
+		t.Fatalf("parallel same-model starts created %d jobs, want 1", len(jobs))
+	}
+
+	if !m.CancelJob(first.ID) {
+		t.Fatal("CancelJob returned false")
+	}
+	waitForJobStatus(t, m, 5*time.Second, StatusCancelled)
+}
+
 func TestCancelNonExistentJob(t *testing.T) {
 	m := NewManager()
 	if m.CancelJob("nonexistent") {

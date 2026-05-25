@@ -12,6 +12,20 @@ IDs, source paths, and other maintainer-only vocabulary.
 
 ## [Unreleased]
 
+## [0.38.10] - 2026-05-25
+
+Windows local onboarding hotfix. No public API change.
+
+### Fixed
+
+- **Local setup now starts a speech-model download automatically.**
+  Choosing Local starts the smallest Dictation-ready model by default,
+  and choosing a larger model starts that download immediately in the
+  background.
+- **Duplicate model-download clicks no longer start parallel downloads
+  for the same model.** SpeechKit reuses an in-progress download job so
+  fresh setup stays predictable.
+
 ## [0.38.9] - 2026-05-25
 
 ### Fixed
@@ -36,6 +50,20 @@ IDs, source paths, and other maintainer-only vocabulary.
 Consolidated security hardening and installer release. Rolls up
 v0.38.0 through v0.38.6 plus two post-v0.38.6 fixes into a single
 OSS release.
+
+### Highlights
+
+- **Security defaults now fail closed.** Public binds without
+  authentication are refused, browser settings writes require CSRF
+  protection, risky CORS combinations are rejected, and Voice Agent
+  session tickets no longer need to ride in query strings.
+- **Voice-Companion is now local-first.** Multi-turn skills, Piper TTS,
+  and Home Assistant/Piper settings let "Hey Quby" handle short
+  follow-ups and spoken answers without requiring a cloud TTS key.
+- **Windows releases are smaller and more reproducible.** Speech models
+  download on demand instead of inflating the installer, builds pin
+  their inputs, and the public export path now verifies supply-chain
+  determinism before publishing.
 
 ### Security
 
@@ -429,6 +457,77 @@ offline-capable Assist Mode.
   reminder-collection that need more time should ship their own
   follow-up state with a `last_seen_at` marker and refresh on each
   turn rather than relying on the store TTL.
+
+## [0.37.8] - 2026-05-25
+
+Consolidated Hands-Free Voice-Companion release. Rolls up v0.37.0
+through v0.37.7 into a single OSS release.
+
+### Highlights
+
+- **Hands-Free Voice-Companion.** "Hey Quby" now drives a one-shot
+  Assist session with seven voice-oriented skills and an optional Home
+  Assistant bridge for smart-home voice control.
+- **Wake-word training data is opt-in and manageable.** Local
+  activation capture, optional server upload, per-user quota, and a
+  Settings tab cover the full browse, label, and delete loop.
+- **Voice output can start locally.** Kokoro is the default TTS
+  profile for fresh installs, Piper is available for local/HA-friendly
+  voice output, and cloud TTS providers remain selectable fallbacks.
+
+### Added
+
+- **Hands-Free Voice-Companion.** "Hey Quby" now drives a one-shot
+  Assist session with seven voice-oriented skills — Time, Date, Math,
+  Weather, Timer, Reminder, and Wikipedia — plus an optional Home
+  Assistant bridge for smart-home voice control. Voice-Agent mode
+  keeps its existing multi-hour realtime semantics.
+- **Multi-turn skill conversations.** Skills that need follow-up
+  information (e.g. "How long?" for a Timer) keep the conversation
+  open for 60 seconds instead of punting to the LLM. The slot is
+  keyed by user identity for multi-tenant isolation.
+- **All-local TTS via Piper.** New Piper TTS provider wrapping the
+  `piper` CLI as a subprocess. Default voices for English
+  (`en_US-amy-medium`) and German (`de_DE-thorsten-medium`). Voice
+  models are not bundled — install Piper and point the config at your
+  `.onnx` voice directory.
+- **TTS as a first-class model-selection mode.** Five provider profiles
+  ship in the default catalog: Kokoro 82M (local, default), Piper
+  (local HA-compatible), Google Studio-O, OpenAI tts-1-hd, and
+  Hugging Face Parler. The Settings UI exposes primary + fallback
+  selection alongside Dictation, Assist, and Voice Agent.
+- **Wake-word training data.** Local capture of wake-word activations
+  (pre-roll + post-roll WAV + JSON sidecar), optional background
+  upload to a SpeechKit server with per-user quota and multi-tenant
+  isolation, a Settings UI tab for browsing/labelling/deleting clips,
+  and an E2E test scenario covering the full upload round-trip. All
+  toggles default OFF — explicit user opt-in required.
+- **Home Assistant and Piper Settings UI.** Configure HA base URL,
+  token env-var, and language override with a "Test connection" button.
+  Set the Piper binary path and voice directory, browse installed
+  voices, and pin per-locale defaults — all from the Settings page
+  without editing TOML.
+
+### Changed
+
+- Catalog default TTS profile moved from Google Studio-O to
+  Kokoro 82M (local) so fresh installs without a cloud key get a
+  voice out of the box.
+- `tts.local.piper-de` profile ID renamed to `tts.local.piper`.
+  Operators who pinned the old ID need to update their config.
+
+### Fixed
+
+- Voice-Companion skills returning `Action="silent"` now correctly
+  fall through to the Assist LLM when one is configured.
+- Home Assistant intent routing fixed — the enabled flag was not
+  flipped when HA config was present.
+- Multi-turn follow-ups wired into the desktop build (previously
+  server-only).
+- Partial Settings POSTs (e.g. from the onboarding wizard) no longer
+  clear previously configured HA or Piper settings.
+- Internal source comments that named a private project have been
+  reworded for OSS export compatibility.
 
 ## [0.37.7] - 2026-05-22
 
