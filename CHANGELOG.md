@@ -12,6 +12,15 @@ IDs, source paths, and other maintainer-only vocabulary.
 
 ## [Unreleased]
 
+## [0.38.9] - 2026-05-25
+
+### Fixed
+
+- **E2E smoke client sends an Origin header on WebSocket dials.** The
+  sk-e2e Go client did not set an Origin header, which the v0.38
+  cross-origin hardening gate rejects by default. The client now
+  derives the Origin from its `--server` URL.
+
 ## [0.38.8] - 2026-05-25
 
 ### Fixed

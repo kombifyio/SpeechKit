@@ -691,16 +691,21 @@ type client struct {
 	localOnly bool
 }
 
+func (c *client) wsDialOptions() *websocket.DialOptions {
+	opts := &websocket.DialOptions{HTTPHeader: http.Header{}}
+	if c.token != "" {
+		opts.HTTPHeader.Set("Authorization", "Bearer "+c.token)
+	}
+	opts.HTTPHeader.Set("Origin", strings.TrimRight(c.base, "/"))
+	return opts
+}
+
 func (c *client) verifyVoiceAgentWebSocket(ctx context.Context, rawURL string) error {
 	wsURL := strings.TrimSpace(rawURL)
 	if wsURL == "" {
 		return errors.New("ws_url is empty")
 	}
-	opts := &websocket.DialOptions{}
-	if c.token != "" {
-		opts.HTTPHeader = http.Header{}
-		opts.HTTPHeader.Set("Authorization", "Bearer "+c.token)
-	}
+	opts := c.wsDialOptions()
 	conn, resp, err := websocket.Dial(ctx, wsURL, opts)
 	if resp != nil && resp.Body != nil {
 		defer func() { _ = resp.Body.Close() }()
@@ -717,11 +722,7 @@ func (c *client) verifyVoiceAgentFunctional(ctx context.Context, rawURL, textTur
 	if wsURL == "" {
 		return errors.New("ws_url is empty")
 	}
-	opts := &websocket.DialOptions{}
-	if c.token != "" {
-		opts.HTTPHeader = http.Header{}
-		opts.HTTPHeader.Set("Authorization", "Bearer "+c.token)
-	}
+	opts := c.wsDialOptions()
 	conn, resp, err := websocket.Dial(ctx, wsURL, opts)
 	if resp != nil && resp.Body != nil {
 		defer func() { _ = resp.Body.Close() }()
