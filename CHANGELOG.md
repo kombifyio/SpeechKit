@@ -12,6 +12,28 @@ IDs, source paths, and other maintainer-only vocabulary.
 
 ## [Unreleased]
 
+## [0.38.14] - 2026-05-25
+
+Windows local onboarding release hygiene hotfix. No public API change.
+
+### Fixed
+
+- **Local setup always starts a Dictation-ready speech-model download.**
+  Choosing Local immediately starts the selected model download in the
+  background, defaulting to the smallest local Dictation model when no
+  larger model is selected.
+- **Windows installers follow the on-demand model design.** Fresh
+  installs no longer require `ggml-small.bin` to be bundled; setup can
+  finish while the client downloads the chosen local model after or
+  during onboarding.
+- **Release gates now verify the full clean-install path.** The
+  Windows NSIS and MSI install checks assert that speech weights are not
+  shipped in the installer, download local models on the cold path, and
+  run Dictation, Assist, and Voice Agent from the installed build.
+- **Public release history now only lists published versions.** Failed
+  draft attempts were removed from the public release surface so the
+  changelog and latest release page point at the same shipped line.
+
 ## [0.38.13] - 2026-05-25
 
 Windows local onboarding and install-gate hotfix. No public API
@@ -31,61 +53,6 @@ change.
   Local Native probes stay originless; production smoke sends the
   configured public browser origin so WebSocket hardening is tested
   through the deployed path.
-
-## [0.38.12] - 2026-05-25
-
-Windows local onboarding and release smoke hotfix. No public API
-change.
-
-### Fixed
-
-- **Local setup now starts a speech-model download immediately.**
-  Choosing Local starts the smallest Dictation-ready model by default,
-  and choosing a larger model starts that selected download in the
-  background during onboarding.
-- **Production release smoke now verifies Voice Agent with the public
-  browser origin.** Native local probes stay originless, while the
-  deployed smoke sends the configured public origin so WebSocket
-  hardening is tested the same way a browser client connects.
-- **Installer release gates remain unblocked for the public package.**
-  Source-export checks tolerate missing private dead-code config, STT
-  readiness handles disabled providers, and the Linux install gate only
-  requires the three shipped voice modes.
-
-## [0.38.11] - 2026-05-25
-
-Windows local onboarding and release packaging hotfix. No public API
-change.
-
-### Fixed
-
-- **Local setup now starts a speech-model download immediately.**
-  Choosing Local starts the smallest Dictation-ready model by default,
-  and choosing a larger model starts that selected download in the
-  background during onboarding.
-- **Installer release packaging is unblocked.** Public package checks
-  now tolerate source exports without website-only dead-code config,
-  handle disabled STT providers correctly, and pass the Windows desktop
-  static-analysis gate.
-- **Linux install verification now checks the three shipped voice
-  modes.** The local-only release gate runs Dictation, Assist, and
-  Voice Agent without requiring disabled wake-word training, and the
-  native Voice Agent probe no longer sends a browser Origin header
-  unless explicitly configured.
-
-## [0.38.10] - 2026-05-25
-
-Windows local onboarding hotfix. No public API change.
-
-### Fixed
-
-- **Local setup now starts a speech-model download automatically.**
-  Choosing Local starts the smallest Dictation-ready model by default,
-  and choosing a larger model starts that download immediately in the
-  background.
-- **Duplicate model-download clicks no longer start parallel downloads
-  for the same model.** SpeechKit reuses an in-progress download job so
-  fresh setup stays predictable.
 
 ## [0.38.9] - 2026-05-25
 
