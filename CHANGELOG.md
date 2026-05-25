@@ -12,6 +12,46 @@ IDs, source paths, and other maintainer-only vocabulary.
 
 ## [Unreleased]
 
+## [0.38.13] - 2026-05-25
+
+Windows local onboarding and install-gate hotfix. No public API
+change.
+
+### Fixed
+
+- **Local setup now starts a speech-model download immediately.**
+  Choosing Local starts the smallest Dictation-ready model by default,
+  and choosing a larger model starts that selected download in the
+  background during onboarding.
+- **Windows install verification now matches the on-demand model
+  design.** The installer gate no longer requires `ggml-small.bin` to
+  be bundled and instead verifies that Dictation speech models remain
+  client-side downloads after onboarding.
+- **Release smoke now verifies Voice Agent with the correct origin.**
+  Local Native probes stay originless; production smoke sends the
+  configured public browser origin so WebSocket hardening is tested
+  through the deployed path.
+
+## [0.38.12] - 2026-05-25
+
+Windows local onboarding and release smoke hotfix. No public API
+change.
+
+### Fixed
+
+- **Local setup now starts a speech-model download immediately.**
+  Choosing Local starts the smallest Dictation-ready model by default,
+  and choosing a larger model starts that selected download in the
+  background during onboarding.
+- **Production release smoke now verifies Voice Agent with the public
+  browser origin.** Native local probes stay originless, while the
+  deployed smoke sends the configured public origin so WebSocket
+  hardening is tested the same way a browser client connects.
+- **Installer release gates remain unblocked for the public package.**
+  Source-export checks tolerate missing private dead-code config, STT
+  readiness handles disabled providers, and the Linux install gate only
+  requires the three shipped voice modes.
+
 ## [0.38.11] - 2026-05-25
 
 Windows local onboarding and release packaging hotfix. No public API

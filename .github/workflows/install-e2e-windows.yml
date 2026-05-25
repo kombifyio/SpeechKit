@@ -225,9 +225,9 @@ jobs:
 
           # Required files mirror scripts/build.ps1's RequiredFiles
           # array + the C++ / GGML runtime DLLs that whisper-server.exe
-          # needs alongside it. If a new file lands in build.ps1, add
-          # it here too; both lists are the single source of truth for
-          # "what must be in the installer bundle".
+          # needs alongside it. Speech models are intentionally excluded:
+          # Dictation models are downloaded on demand by onboarding.
+          # If a new runtime file lands in build.ps1, add it here too.
           $RequiredFiles = @(
             "whisper-server.exe",
             "whisper.dll",
@@ -247,7 +247,6 @@ jobs:
             "MicrosoftEdgeWebview2Setup.exe",
             "config.default.toml",
             "llama\llama-server.exe",
-            "models\ggml-small.bin",
             "models\wakeword\melspectrogram.onnx",
             "models\wakeword\embedding_model.onnx",
             "models\wakeword\hey_quby.onnx",
@@ -271,6 +270,17 @@ jobs:
             Write-Host "Recursive install dir listing for diagnosis:"
             Get-ChildItem -Recurse $installDir | Select-Object FullName, Length | Format-Table -AutoSize
             throw ("Required bundle files missing after install: " + ($missing -join ", "))
+          }
+
+          $OnDemandModelFiles = @(
+            "models\ggml-small.bin"
+          )
+          foreach ($model in $OnDemandModelFiles) {
+            $p = Join-Path $installDir $model
+            if (Test-Path $p) {
+              throw "On-demand model should not be bundled in installer: $model"
+            }
+            Write-Host "  on-demand model not bundled: $model"
           }
 
       - name: Build sk-localprobe.exe next to SpeechKit.exe
