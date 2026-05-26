@@ -14,6 +14,38 @@ IDs, source paths, and other maintainer-only vocabulary.
 
 No unreleased user-facing changes are pending.
 
+## [0.40.4] - 2026-05-26
+
+Release-note, OSS export, and public CI rollup for the v0.40 line.
+
+### Highlights
+
+- **Runtime modularity is the v0.40 foundation.** Dictation-only use no
+  longer eagerly starts Assist, Voice Agent, Genkit, TTS, or LiveKit-specific
+  UI pieces, so embedders can keep the smallest voice path active without
+  paying for the full assistant stack.
+- **Embeddable SDK packages are now the primary integration surface.** Go
+  hosts can compose wake-word detection, hands-free companion sessions, spoken
+  output, Assist routing, and runtime events through the public
+  `pkg/speechkit/...` APIs.
+- **Voice Agent WebSocket tickets are subprotocol-first.** New clients receive
+  `ws_url` plus `ws_subprotocol` so one-time tickets do not ride in browser
+  URLs, while legacy query URLs remain compatible.
+- **GitHub Release notes and website highlights now share one changelog
+  source.** The v0.40 public rollup includes explicit `Highlights`, allowing
+  automated releases and the website "What is new" cards to present the same
+  main features instead of the latest small patch note.
+
+### Fixed
+
+- **Public CI no longer expects private deployment actions.** The public export
+  skips deployment-secret release guards when private deployment files are not
+  present, while the private source repository keeps those checks active.
+- **The v0.40 OSS export includes the files required by public configuration
+  tests and release smokes.** Enterprise presets, subprotocol-first Voice Agent
+  smoke checks, and the public release notes now move through the same release
+  path.
+
 ## [0.40.3] - 2026-05-26
 
 OSS export correction for the v0.40 line.

@@ -66,7 +66,7 @@ go get github.com/kombifyio/SpeechKit/pkg/speechkit
 
 Use `pkg/speechkit/client` when you want to call a running SpeechKit Server.
 
-Use the v0.40.1 SDK packages when you embed SpeechKit directly into another
+Use the v0.40 SDK packages when you embed SpeechKit directly into another
 Go host:
 
 ```sh

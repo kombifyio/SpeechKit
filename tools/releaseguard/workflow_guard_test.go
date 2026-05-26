@@ -205,14 +205,17 @@ func TestPublishOssWorkflowPublishesFromResolvedTag(t *testing.T) {
 	assertContains(t, workflow, "allow_website_deploy_skip")
 	assertContains(t, workflow, "source_ref")
 	assertContains(t, workflow, "checkout_ref=\"$source_ref\"")
-	assertContains(t, workflow, "website deployment continue from")
+	assertContains(t, workflow, "website deploys from the private Deploy Website workflow")
 	assertContains(t, workflow, "release_windows_installer")
 	assertContains(t, workflow, "release_windows_portable")
 	assertContains(t, workflow, "OSS_REPO: kombifyio/SpeechKit")
 }
 
 func TestDopplerBackedWorkflowSecretResolution(t *testing.T) {
-	action := readRepoFile(t, filepath.Join(".github", "actions", "doppler-env", "action.yml"))
+	action, ok := readRepoFileIfExists(t, filepath.Join(".github", "actions", "doppler-env", "action.yml"))
+	if !ok {
+		t.Skip("private deployment secret resolution is not part of the public export")
+	}
 	exporter := readRepoFile(t, filepath.Join("scripts", "ci", "export-doppler-env.mjs"))
 	appToken := readRepoFile(t, filepath.Join("scripts", "ci", "create-github-app-token.mjs"))
 	publish, ok := readRepoFileIfExists(t, filepath.Join(".github", "workflows", "publish-oss.yml"))

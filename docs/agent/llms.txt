@@ -1,9 +1,9 @@
-# SpeechKit v0.40.1
+# SpeechKit v0.40
 
 > Agent entrypoint for SpeechKit Server, Framework API, and MCP integration.
 
 SpeechKit is a Windows-first voice framework with three strict modes:
-Dictation, Assist, and Voice Agent. v0.40.1 adds the embeddable SDK surface
+Dictation, Assist, and Voice Agent. The v0.40 line adds the embeddable SDK surface
 for wake-word, Assist, Voice-Companion, Event-Bus, and TTS integrations while
 keeping the API-first server, Go client, CLI, and MCP server surfaces.
 

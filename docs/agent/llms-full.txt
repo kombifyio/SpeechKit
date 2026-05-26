@@ -1,4 +1,4 @@
-# SpeechKit v0.40.1 Agent Context
+# SpeechKit v0.40 Agent Context
 
 SpeechKit is a voice framework for products and automation hosts. It has three
 strict modes:
@@ -7,7 +7,7 @@ strict modes:
 - Assist: one-shot utility, codeword, or LLM result with optional TTS.
 - Voice Agent: realtime audio-to-audio dialogue for fast follow-ups.
 
-v0.40.1 is the SDK-surface release line: wake-word, Assist, Voice-Companion,
+v0.40 is the SDK-surface release line: wake-word, Assist, Voice-Companion,
 Event-Bus, and TTS building blocks are embeddable from `pkg/speechkit/...`.
 The latest GitHub Release is the canonical source for desktop installers; the
 `latest` GHCR tag tracks the current stable server image.
@@ -84,7 +84,7 @@ server bearer token into a browser WebSocket handshake. `legacy_ws_url` exists
 only for compatibility with older clients. Tickets default to 90 seconds;
 expired tickets are not refreshed in v1, so create a new session.
 
-Important v0.40.1 surfaces:
+Important v0.40 surfaces:
 
 - `GET /v1/catalog/profiles`
 - `GET /v1/catalog/contracts`
