@@ -1,0 +1,40 @@
+# SpeechKit Enterprise Preset — Profile A: Local Cascaded (on-prem)
+#
+# Intended for BSI C5 / ISO 27001 strict self-hosted customers.
+# Apply by copying this file to <install-dir>/config.toml.
+#
+# Hardware recommendation: see docs/compliance/voice-agent-cascaded-benchmark.md
+# (Phase 1 cpv.2.6). Minimum acceptable: Mid tier (32 GB RAM, 8-core CPU,
+# RTX 4060 or equivalent). Baseline tier (16 GB / iGPU) ships but expect
+# noticeable latency (~1.5s P50).
+#
+# Egress: zero (verify with network capture).
+# Voice Agent: local-cascaded (whisper.cpp + llama-server + local TTS).
+# STT: whisper.cpp only.
+
+[update]
+enabled = false  # air-gap: no auto-update; customer manages via internal mirror if needed
+
+[telemetry]
+update_check = false
+
+[logging]
+max_file_size_mb = 50
+max_files = 30
+
+[audit]
+enabled = true
+retention_days = 90  # raise to 365 for SOC2-aligned long retention
+
+[routing]
+strategy = "local-only"
+# prefer_local_under_secs is moot here; no cloud providers configured
+
+[voice_agent]
+provider = "local-cascaded"
+
+[local]
+# whisper_model_path = "C:\\Program Files\\kombify SpeechKit\\models\\whisper-medium.gguf"
+# Customer fills in. Model file SHA-256 is verified at load per the threat model.
+
+# All [providers.*] sections intentionally absent — local-only mode.

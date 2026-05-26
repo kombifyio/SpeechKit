@@ -14,6 +14,16 @@ IDs, source paths, and other maintainer-only vocabulary.
 
 No unreleased user-facing changes are pending.
 
+## [0.40.3] - 2026-05-26
+
+OSS export correction for the v0.40 line.
+
+### Fixed
+
+- **Enterprise preset files are included in the OSS export.** The
+  public repository now receives `deploy/presets/`, matching the
+  documented enterprise deployment guide and the public config tests.
+
 ## [0.40.2] - 2026-05-26
 
 Release-smoke compatibility patch for the v0.40 line.
