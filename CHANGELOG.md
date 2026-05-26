@@ -12,8 +12,18 @@ IDs, source paths, and other maintainer-only vocabulary.
 
 ## [Unreleased]
 
-No unreleased user-facing changes are pending beyond the v0.40.0/v0.40.1
-release split below.
+No unreleased user-facing changes are pending.
+
+## [0.40.2] - 2026-05-26
+
+Release-smoke compatibility patch for the v0.40 line.
+
+### Fixed
+
+- **Production smoke checks now use subprotocol-first Voice Agent
+  tickets.** The `sk-e2e` release smoke client now dials Voice Agent
+  sessions with `ws_url` plus `ws_subprotocol`, matching the v0.40.1
+  WebSocket contract while keeping legacy ticket-query URLs compatible.
 
 ## [0.40.1] - 2026-05-26
 

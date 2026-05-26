@@ -140,7 +140,7 @@ func TestVoiceAgentScenarioConnectsReturnedWebSocketURL(t *testing.T) {
 	server := httptest.NewServer(mux)
 	defer server.Close()
 
-	wsURL := "ws" + strings.TrimPrefix(server.URL, "http") + "/api/v1/voiceagent/sessions/session-1/ws?ticket=ticket-1"
+	wsURL := "ws" + strings.TrimPrefix(server.URL, "http") + "/api/v1/voiceagent/sessions/session-1/ws"
 	mux.HandleFunc("/api/v1/voiceagent/sessions", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
 			t.Fatalf("session create method = %s, want POST", r.Method)
@@ -150,17 +150,22 @@ func TestVoiceAgentScenarioConnectsReturnedWebSocketURL(t *testing.T) {
 		}
 		w.WriteHeader(http.StatusCreated)
 		_ = json.NewEncoder(w).Encode(map[string]string{
-			"session_id": "session-1",
-			"ws_url":     wsURL,
-			"ticket":     "ticket-1",
-			"expires_at": time.Now().Add(time.Minute).Format(time.RFC3339),
+			"session_id":     "session-1",
+			"ws_url":         wsURL,
+			"ws_subprotocol": "ticket.ticket-1",
+			"legacy_ws_url":  wsURL + "?ticket=ticket-1",
+			"ticket":         "ticket-1",
+			"expires_at":     time.Now().Add(time.Minute).Format(time.RFC3339),
 		})
 	})
 	mux.HandleFunc("/api/v1/voiceagent/sessions/session-1/ws", func(w http.ResponseWriter, r *http.Request) {
 		if got := r.Header.Get("Authorization"); got != "Bearer smoke-token" {
 			t.Fatalf("websocket Authorization = %q, want bearer token", got)
 		}
-		conn, err := websocket.Accept(w, r, nil)
+		if got := r.Header.Get("Sec-WebSocket-Protocol"); !strings.Contains(got, "ticket.ticket-1") {
+			t.Fatalf("websocket subprotocol = %q, want ticket.ticket-1", got)
+		}
+		conn, err := websocket.Accept(w, r, &websocket.AcceptOptions{Subprotocols: []string{"ticket.ticket-1"}})
 		if err != nil {
 			t.Fatalf("accept websocket: %v", err)
 		}
@@ -199,18 +204,23 @@ func TestVoiceAgentFunctionalScenarioRequiresOutputTranscript(t *testing.T) {
 	server := httptest.NewServer(mux)
 	defer server.Close()
 
-	wsURL := "ws" + strings.TrimPrefix(server.URL, "http") + "/api/v1/voiceagent/sessions/session-1/ws?ticket=ticket-1"
+	wsURL := "ws" + strings.TrimPrefix(server.URL, "http") + "/api/v1/voiceagent/sessions/session-1/ws"
 	mux.HandleFunc("/api/v1/voiceagent/sessions", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusCreated)
 		_ = json.NewEncoder(w).Encode(map[string]string{
-			"session_id": "session-1",
-			"ws_url":     wsURL,
-			"ticket":     "ticket-1",
-			"expires_at": time.Now().Add(time.Minute).Format(time.RFC3339),
+			"session_id":     "session-1",
+			"ws_url":         wsURL,
+			"ws_subprotocol": "ticket.ticket-1",
+			"legacy_ws_url":  wsURL + "?ticket=ticket-1",
+			"ticket":         "ticket-1",
+			"expires_at":     time.Now().Add(time.Minute).Format(time.RFC3339),
 		})
 	})
 	mux.HandleFunc("/api/v1/voiceagent/sessions/session-1/ws", func(w http.ResponseWriter, r *http.Request) {
-		conn, err := websocket.Accept(w, r, nil)
+		if got := r.Header.Get("Sec-WebSocket-Protocol"); !strings.Contains(got, "ticket.ticket-1") {
+			t.Fatalf("websocket subprotocol = %q, want ticket.ticket-1", got)
+		}
+		conn, err := websocket.Accept(w, r, &websocket.AcceptOptions{Subprotocols: []string{"ticket.ticket-1"}})
 		if err != nil {
 			t.Fatalf("accept websocket: %v", err)
 		}
@@ -262,18 +272,23 @@ func TestVoiceAgentFunctionalScenarioRequiresTextTurnBeforeOutput(t *testing.T) 
 	server := httptest.NewServer(mux)
 	defer server.Close()
 
-	wsURL := "ws" + strings.TrimPrefix(server.URL, "http") + "/api/v1/voiceagent/sessions/session-1/ws?ticket=ticket-1"
+	wsURL := "ws" + strings.TrimPrefix(server.URL, "http") + "/api/v1/voiceagent/sessions/session-1/ws"
 	mux.HandleFunc("/api/v1/voiceagent/sessions", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusCreated)
 		_ = json.NewEncoder(w).Encode(map[string]string{
-			"session_id": "session-1",
-			"ws_url":     wsURL,
-			"ticket":     "ticket-1",
-			"expires_at": time.Now().Add(time.Minute).Format(time.RFC3339),
+			"session_id":     "session-1",
+			"ws_url":         wsURL,
+			"ws_subprotocol": "ticket.ticket-1",
+			"legacy_ws_url":  wsURL + "?ticket=ticket-1",
+			"ticket":         "ticket-1",
+			"expires_at":     time.Now().Add(time.Minute).Format(time.RFC3339),
 		})
 	})
 	mux.HandleFunc("/api/v1/voiceagent/sessions/session-1/ws", func(w http.ResponseWriter, r *http.Request) {
-		conn, err := websocket.Accept(w, r, nil)
+		if got := r.Header.Get("Sec-WebSocket-Protocol"); !strings.Contains(got, "ticket.ticket-1") {
+			t.Fatalf("websocket subprotocol = %q, want ticket.ticket-1", got)
+		}
+		conn, err := websocket.Accept(w, r, &websocket.AcceptOptions{Subprotocols: []string{"ticket.ticket-1"}})
 		if err != nil {
 			t.Fatalf("accept websocket: %v", err)
 		}
@@ -301,7 +316,7 @@ func TestVoiceAgentFunctionalScenarioRequiresTextTurnBeforeOutput(t *testing.T) 
 
 func TestVerifyVoiceAgentWebSocketRejectsMissingURL(t *testing.T) {
 	c := &client{timeout: time.Second}
-	err := c.verifyVoiceAgentWebSocket(context.Background(), "")
+	err := c.verifyVoiceAgentWebSocket(context.Background(), "", "")
 	if err == nil {
 		t.Fatal("verifyVoiceAgentWebSocket returned nil for empty ws_url")
 	}

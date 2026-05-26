@@ -522,10 +522,12 @@ func scenarioVoiceAgentCreate(c *client, opts *scenarioOpts) error {
 		return fmt.Errorf("voiceagent create status = %d; body=%s", resp.StatusCode, respBody)
 	}
 	var sr struct {
-		SessionID string `json:"session_id"`
-		WSURL     string `json:"ws_url"`
-		Ticket    string `json:"ticket"`
-		ExpiresAt string `json:"expires_at"`
+		SessionID     string `json:"session_id"`
+		WSURL         string `json:"ws_url"`
+		WSSubprotocol string `json:"ws_subprotocol"`
+		LegacyWSURL   string `json:"legacy_ws_url"`
+		Ticket        string `json:"ticket"`
+		ExpiresAt     string `json:"expires_at"`
 	}
 	if err := json.Unmarshal(respBody, &sr); err != nil {
 		return fmt.Errorf("voiceagent create body parse: %w body=%s", err, respBody)
@@ -533,8 +535,13 @@ func scenarioVoiceAgentCreate(c *client, opts *scenarioOpts) error {
 	if sr.SessionID == "" || sr.Ticket == "" || sr.WSURL == "" {
 		return fmt.Errorf("voiceagent create: missing required fields; body=%s", respBody)
 	}
-	if !strings.Contains(sr.WSURL, "ticket=") {
-		return fmt.Errorf("voiceagent create: ws_url missing ticket query param; got %q", sr.WSURL)
+	wsURL := strings.TrimSpace(sr.WSURL)
+	wsSubprotocol := strings.TrimSpace(sr.WSSubprotocol)
+	if wsSubprotocol == "" && !strings.Contains(wsURL, "ticket=") {
+		if sr.Ticket == "" {
+			return fmt.Errorf("voiceagent create: missing ws_subprotocol and ticket fallback; body=%s", respBody)
+		}
+		wsSubprotocol = "ticket." + sr.Ticket
 	}
 	if c.verbose {
 		fmt.Printf("    voiceagent session_id=%s expires_at=%s\n", sr.SessionID, sr.ExpiresAt)
@@ -542,10 +549,10 @@ func scenarioVoiceAgentCreate(c *client, opts *scenarioOpts) error {
 	ctx, cancel := context.WithTimeout(context.Background(), c.timeout)
 	defer cancel()
 	if opts.requireFunctional {
-		if err := c.verifyVoiceAgentFunctional(ctx, sr.WSURL, opts.voiceAgentText); err != nil {
+		if err := c.verifyVoiceAgentFunctional(ctx, wsURL, wsSubprotocol, opts.voiceAgentText); err != nil {
 			return fmt.Errorf("voiceagent functional websocket: %w", err)
 		}
-	} else if err := c.verifyVoiceAgentWebSocket(ctx, sr.WSURL); err != nil {
+	} else if err := c.verifyVoiceAgentWebSocket(ctx, wsURL, wsSubprotocol); err != nil {
 		return fmt.Errorf("voiceagent websocket: %w", err)
 	}
 	if c.verbose {
@@ -702,12 +709,15 @@ func (c *client) wsDialOptions() *websocket.DialOptions {
 	return opts
 }
 
-func (c *client) verifyVoiceAgentWebSocket(ctx context.Context, rawURL string) error {
+func (c *client) verifyVoiceAgentWebSocket(ctx context.Context, rawURL, subprotocol string) error {
 	wsURL := strings.TrimSpace(rawURL)
 	if wsURL == "" {
 		return errors.New("ws_url is empty")
 	}
 	opts := c.wsDialOptions()
+	if protocol := strings.TrimSpace(subprotocol); protocol != "" {
+		opts.Subprotocols = []string{protocol}
+	}
 	conn, resp, err := websocket.Dial(ctx, wsURL, opts)
 	if resp != nil && resp.Body != nil {
 		defer func() { _ = resp.Body.Close() }()
@@ -719,12 +729,15 @@ func (c *client) verifyVoiceAgentWebSocket(ctx context.Context, rawURL string) e
 	return conn.Close(websocket.StatusNormalClosure, "speechkit e2e smoke complete")
 }
 
-func (c *client) verifyVoiceAgentFunctional(ctx context.Context, rawURL, textTurn string) error {
+func (c *client) verifyVoiceAgentFunctional(ctx context.Context, rawURL, subprotocol, textTurn string) error {
 	wsURL := strings.TrimSpace(rawURL)
 	if wsURL == "" {
 		return errors.New("ws_url is empty")
 	}
 	opts := c.wsDialOptions()
+	if protocol := strings.TrimSpace(subprotocol); protocol != "" {
+		opts.Subprotocols = []string{protocol}
+	}
 	conn, resp, err := websocket.Dial(ctx, wsURL, opts)
 	if resp != nil && resp.Body != nil {
 		defer func() { _ = resp.Body.Close() }()
