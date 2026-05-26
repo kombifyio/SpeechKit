@@ -3,6 +3,8 @@ package tts
 import (
 	"context"
 	"time"
+
+	"github.com/kombifyio/SpeechKit/internal/models"
 )
 
 // Provider defines the interface for all text-to-speech backends.
@@ -12,6 +14,9 @@ type Provider interface {
 
 	// Name returns the provider identifier (e.g. "openai", "google", "kokoro").
 	Name() string
+
+	// Kind returns the provider deployment class used by routing strategies.
+	Kind() models.ProviderKind
 
 	// Health checks if the provider is reachable and ready.
 	Health(ctx context.Context) error

@@ -11,6 +11,7 @@ import (
 	"github.com/kombifyio/SpeechKit/internal/config"
 	"github.com/kombifyio/SpeechKit/internal/store"
 	"github.com/kombifyio/SpeechKit/internal/textactions"
+	"github.com/kombifyio/SpeechKit/pkg/speechkit"
 )
 
 type voiceAgentDialogTurn struct {
@@ -40,22 +41,30 @@ func (s *appState) recordVoiceAgentDialogTurn(role, text string, done bool) {
 		return
 	}
 
+	createdAt := time.Now().UTC()
 	s.mu.Lock()
-	defer s.mu.Unlock()
 	if len(s.voiceAgentDialogTurns) > 0 {
 		last := s.voiceAgentDialogTurns[len(s.voiceAgentDialogTurns)-1]
 		if last.Role == role && last.Text == text {
+			s.mu.Unlock()
 			return
 		}
 	}
 	s.voiceAgentDialogTurns = append(s.voiceAgentDialogTurns, voiceAgentDialogTurn{
 		Role:      role,
 		Text:      text,
-		CreatedAt: time.Now().UTC(),
+		CreatedAt: createdAt,
 	})
 	if len(s.voiceAgentDialogTurns) > 80 {
 		s.voiceAgentDialogTurns = s.voiceAgentDialogTurns[len(s.voiceAgentDialogTurns)-80:]
 	}
+	s.mu.Unlock()
+	s.publishSpeechKitEvent(speechkit.Event{
+		Type:    speechkit.EventVoiceAgentTurnFinalized,
+		Text:    text,
+		Mode:    modeVoiceAgent,
+		Message: role,
+	})
 }
 
 func (s *appState) voiceAgentSessionTranscript() string {

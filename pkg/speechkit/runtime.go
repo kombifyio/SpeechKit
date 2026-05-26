@@ -16,16 +16,23 @@ var ErrCommandHandlerUnavailable = errors.New("speechkit: no command handler con
 type EventType string
 
 const (
-	EventStateChanged        EventType = "state.changed"
-	EventRecordingStarted    EventType = "recording.started"
-	EventProcessingStarted   EventType = "processing.started"
-	EventTranscriptionReady  EventType = "transcription.ready"
-	EventTranscriptCommitted EventType = "transcription.committed"
-	EventQuickNoteModeArmed  EventType = "quicknote.mode_armed"
-	EventQuickNoteUpdated    EventType = "quicknote.updated"
-	EventWarningRaised       EventType = "warning.raised"
-	EventErrorRaised         EventType = "error.raised"
-	EventShortcutMatched     EventType = "shortcut.matched"
+	EventStateChanged            EventType = "state.changed"
+	EventRecordingStarted        EventType = "recording.started"
+	EventProcessingStarted       EventType = "processing.started"
+	EventTranscriptionReady      EventType = "transcription.ready"
+	EventTranscriptCommitted     EventType = "transcription.committed"
+	EventQuickNoteModeArmed      EventType = "quicknote.mode_armed"
+	EventQuickNoteUpdated        EventType = "quicknote.updated"
+	EventWarningRaised           EventType = "warning.raised"
+	EventErrorRaised             EventType = "error.raised"
+	EventShortcutMatched         EventType = "shortcut.matched"
+	EventWakeFired               EventType = "wake.fired"
+	EventSkillExecuted           EventType = "skill.executed"
+	EventCompanionSessionStarted EventType = "companion.session.started"
+	EventCompanionSessionEnded   EventType = "companion.session.ended"
+	EventVoiceAgentTurnFinalized EventType = "voiceagent.turn.finalized"
+	EventTTSStarted              EventType = "tts.started"
+	EventTTSFinished             EventType = "tts.finished"
 )
 
 // Event is a notification published to the event channel returned by
@@ -37,9 +44,62 @@ type Event struct {
 	Message   string
 	Text      string
 	Provider  string
+	Mode      string
+	SessionID string
 	QuickNote bool
 	Err       error
 	Shortcut  string
+	Metadata  *Metadata
+}
+
+func (e Event) Clone() Event {
+	clone := e
+	clone.Metadata = e.Metadata.Clone()
+	return clone
+}
+
+// Metadata carries optional event key/value data without making Event
+// non-comparable for existing SDK consumers.
+type Metadata map[string]string
+
+func NewMetadata(values map[string]string) *Metadata {
+	if len(values) == 0 {
+		return nil
+	}
+	clone := make(Metadata, len(values))
+	for key, value := range values {
+		clone[key] = value
+	}
+	return &clone
+}
+
+func (m *Metadata) Clone() *Metadata {
+	if m == nil || len(*m) == 0 {
+		return nil
+	}
+	clone := make(Metadata, len(*m))
+	for key, value := range *m {
+		clone[key] = value
+	}
+	return &clone
+}
+
+func (m *Metadata) Get(key string) string {
+	if m == nil {
+		return ""
+	}
+	return (*m)[key]
+}
+
+func (m *Metadata) Map() map[string]string {
+	if m == nil || len(*m) == 0 {
+		return nil
+	}
+	clone := make(map[string]string, len(*m))
+	for key, value := range *m {
+		clone[key] = value
+	}
+	return clone
 }
 
 // Snapshot is a point-in-time copy of the Runtime's observable state.
@@ -207,6 +267,7 @@ func (r *Runtime) Publish(event Event) bool {
 	if event.Type == "" {
 		return false
 	}
+	event = event.Clone()
 	if event.Time.IsZero() {
 		event.Time = time.Now().UTC()
 	}

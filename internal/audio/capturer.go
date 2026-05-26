@@ -52,8 +52,38 @@ type Session interface {
 	Events() <-chan Event
 	SetLevelHandler(func(float64))
 	SetPCMHandler(func([]byte))
+	// SetPooledPCMHandler installs the pool-aware variant of the PCM
+	// callback. When set (non-nil), the capture backend leases the
+	// per-frame buffer from internal/audio's package-level FramePool
+	// instead of allocating fresh, and invokes the handler with a
+	// release closure. The handler MUST call release exactly once
+	// before returning OR before retaining any reference to the
+	// slice. Forgetting to release leaks one pool slot per frame but
+	// does not corrupt data.
+	//
+	// When both SetPCMHandler and SetPooledPCMHandler are set, the
+	// pool-aware variant wins — the legacy handler is not invoked
+	// for that frame, so callers that adopt the pooled API should
+	// also unset the legacy one to avoid surprise.
+	//
+	// Backends not yet wired to honour the pool MAY no-op this
+	// setter; the legacy SetPCMHandler path remains the canonical
+	// contract for all existing callers.
+	SetPooledPCMHandler(PooledPCMHandler)
 	Close() error
 }
+
+// PooledPCMHandler receives one captured PCM frame with explicit
+// buffer-ownership semantics. The release closure MUST be invoked
+// exactly once when the handler is done with buf — either before
+// returning, or asynchronously once any retained reference is
+// released. The buffer MUST NOT be read or written after release.
+//
+// See internal/audio.FramePool for the underlying lifecycle. The
+// optimisation only matters for sustained capture (~33 callbacks/sec
+// per session); short-lived recording paths can stay on the legacy
+// SetPCMHandler API without ceremony.
+type PooledPCMHandler func(buf []byte, release func())
 
 // Capturer is kept as an alias while the app migrates to the session terminology.
 type Capturer = Session

@@ -98,6 +98,10 @@ export function ModeSettingsPage({
                 value={settings.dictateHotkey}
                 behavior={settings.dictateHotkeyBehavior}
                 defaultBase={MODE_DEFAULT_BASES.dictate}
+                conflictWith={[
+                  { label: "Assist", value: settings.assistHotkey },
+                  { label: "Voice Agent", value: settings.voiceAgentHotkey },
+                ]}
                 onToggleEnabled={() => toggleModeEnabled("dictate")}
                 onChange={(value) => updateModeHotkey("dictate", value)}
                 onChangeBehavior={(value) =>
@@ -127,6 +131,10 @@ export function ModeSettingsPage({
               value={settings.assistHotkey}
               behavior={settings.assistHotkeyBehavior}
               defaultBase={MODE_DEFAULT_BASES.assist}
+              conflictWith={[
+                { label: "Dictate", value: settings.dictateHotkey },
+                { label: "Voice Agent", value: settings.voiceAgentHotkey },
+              ]}
               onToggleEnabled={() => toggleModeEnabled("assist")}
               onChange={(value) => updateModeHotkey("assist", value)}
               onChangeBehavior={(value) =>
@@ -162,6 +170,10 @@ export function ModeSettingsPage({
                 value={settings.voiceAgentHotkey}
                 behavior={settings.voiceAgentHotkeyBehavior}
                 defaultBase={MODE_DEFAULT_BASES.voice_agent}
+                conflictWith={[
+                  { label: "Dictate", value: settings.dictateHotkey },
+                  { label: "Assist", value: settings.assistHotkey },
+                ]}
                 onToggleEnabled={() => toggleModeEnabled("voice_agent")}
                 onChange={(value) => updateModeHotkey("voice_agent", value)}
                 onChangeBehavior={(value) =>

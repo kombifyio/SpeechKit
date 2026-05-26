@@ -10,6 +10,7 @@ import (
 	"regexp"
 	"time"
 
+	"github.com/kombifyio/SpeechKit/internal/models"
 	"github.com/kombifyio/SpeechKit/internal/netsec"
 )
 
@@ -163,6 +164,14 @@ func (h *HuggingFace) Synthesize(ctx context.Context, text string, opts Synthesi
 }
 
 func (h *HuggingFace) Name() string { return "huggingface" }
+
+func (h *HuggingFace) Kind() models.ProviderKind { return models.ProviderKindCloudProvider }
+
+func (h *HuggingFace) CloseIdleConnections() {
+	if h != nil && h.client != nil {
+		h.client.CloseIdleConnections()
+	}
+}
 
 func (h *HuggingFace) Health(ctx context.Context) error {
 	if h.token == "" {

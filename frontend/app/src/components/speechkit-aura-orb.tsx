@@ -1,11 +1,11 @@
 'use client'
 
 import { useMemo } from 'react'
-import { type AgentState } from '@livekit/components-react'
 import { motion } from 'motion/react'
 import { Sparkles } from 'lucide-react'
 
 import { AgentAudioVisualizerRadial } from '@/components/agent-audio-visualizer-radial'
+import type { AgentVisualizerState } from '@/lib/agent-visualizer-state'
 import { cn } from '@/lib/utils'
 
 export type SpeechKitAuraOrbState =
@@ -83,7 +83,7 @@ const ORB_COPY: Record<SpeechKitAuraOrbState, OrbCopy> = {
   },
 }
 
-const VISUALIZER_STATE: Record<SpeechKitAuraOrbState, AgentState> = {
+const VISUALIZER_STATE: Record<SpeechKitAuraOrbState, AgentVisualizerState> = {
   inactive: 'listening',
   connecting: 'connecting',
   listening: 'listening',

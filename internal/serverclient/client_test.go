@@ -184,6 +184,31 @@ func TestNewFromConfigResolvesNamedSecretToken(t *testing.T) {
 	}
 }
 
+func TestHTTPClientNilReceiverReturnsBoundedFallback(t *testing.T) {
+	var c *Client
+	got := c.HTTPClient()
+	if got == nil {
+		t.Fatal("HTTPClient() on nil receiver returned nil; want bounded fallback")
+	}
+	if got == http.DefaultClient {
+		t.Fatal("HTTPClient() on nil receiver returned http.DefaultClient (no timeout); want bounded fallback (B2 regression)")
+	}
+	if got.Timeout <= 0 {
+		t.Errorf("HTTPClient() on nil receiver returned client with Timeout=%v; want > 0 (no-timeout would hang the embedder host)", got.Timeout)
+	}
+}
+
+func TestHTTPClientReturnsConfiguredClient(t *testing.T) {
+	custom := &http.Client{Timeout: 7 * 1000 * 1000 * 1000} // 7s as time.Duration
+	c, err := New(Options{BaseURL: "http://localhost:8080", HTTPClient: custom})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	if got := c.HTTPClient(); got != custom {
+		t.Errorf("HTTPClient() = %p; want injected custom client %p", got, custom)
+	}
+}
+
 func TestHealthSuccess(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/healthz" {

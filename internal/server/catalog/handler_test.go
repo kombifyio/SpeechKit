@@ -30,6 +30,21 @@ func TestProfilesRejectsUnknownMode(t *testing.T) {
 	}
 }
 
+func TestProfilesRejectsEmptyMode(t *testing.T) {
+	h := New(&config.Config{}, func(string) string { return "ok" }, "test")
+
+	req := httptest.NewRequest(http.MethodGet, "/v1/catalog/profiles?mode=", nil)
+	rec := httptest.NewRecorder()
+	h.profiles(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d body=%s, want 400", rec.Code, rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), "invalid_mode") {
+		t.Fatalf("body = %s, want invalid_mode", rec.Body.String())
+	}
+}
+
 func TestReadinessUsesConfiguredActiveProfile(t *testing.T) {
 	t.Setenv("SPEECHKIT_TEST_OPENAI_KEY", "test-key")
 

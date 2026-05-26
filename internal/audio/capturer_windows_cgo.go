@@ -27,19 +27,20 @@ func init() {
 
 // MalgoSession records audio via malgo using the Windows WASAPI backend.
 type MalgoSession struct {
-	cfg          Config
-	ctx          *malgo.AllocatedContext
-	device       *malgo.Device
-	buffer       bytes.Buffer
-	mu           sync.Mutex
-	levelMu      sync.RWMutex
-	levelHandler func(float64)
-	pcmMu        sync.RWMutex
-	pcmHandler   func([]byte)
-	running      atomic.Bool
-	events       chan Event
-	eventsMu     sync.RWMutex
-	eventsClosed bool
+	cfg              Config
+	ctx              *malgo.AllocatedContext
+	device           *malgo.Device
+	buffer           bytes.Buffer
+	mu               sync.Mutex
+	levelMu          sync.RWMutex
+	levelHandler     func(float64)
+	pcmMu            sync.RWMutex
+	pcmHandler       func([]byte)
+	pooledPCMHandler PooledPCMHandler
+	running          atomic.Bool
+	events           chan Event
+	eventsMu         sync.RWMutex
+	eventsClosed     bool
 }
 
 var _ Session = (*MalgoSession)(nil)
@@ -101,9 +102,30 @@ func (s *MalgoSession) Start() error {
 
 		s.pcmMu.RLock()
 		pcmHandler := s.pcmHandler
+		pooledHandler := s.pooledPCMHandler
 		s.pcmMu.RUnlock()
-		if pcmHandler != nil && len(inputSamples) > 0 {
-			// malgo reuses callback buffers, so forward a stable copy.
+		if pooledHandler != nil && len(inputSamples) > 0 {
+			// Pool-aware path: lease a buffer, copy malgo's reused
+			// chunk into it, hand to the consumer with an explicit
+			// release. malgo's source buffer is reused after this
+			// callback returns, so the copy is still mandatory —
+			// what changes is the destination's lifecycle, which
+			// is now pool-managed (typically 26x less heap per
+			// frame; see internal/audio/framepool_bench_test.go).
+			buf := Get()
+			buf = append(buf, inputSamples...)
+			released := false
+			pooledHandler(buf, func() {
+				if released {
+					return
+				}
+				released = true
+				Put(buf)
+			})
+		} else if pcmHandler != nil && len(inputSamples) > 0 {
+			// Legacy path: malgo reuses callback buffers, so
+			// forward a stable copy. Existing handlers retain
+			// ownership.
 			pcmHandler(append([]byte(nil), inputSamples...))
 		}
 	}
@@ -184,6 +206,17 @@ func (s *MalgoSession) SetPCMHandler(handler func([]byte)) {
 	s.pcmMu.Lock()
 	defer s.pcmMu.Unlock()
 	s.pcmHandler = handler
+}
+
+// SetPooledPCMHandler installs the pool-aware variant of the PCM
+// callback — see the Session interface contract for the release
+// semantics. The malgo backend honours this on every captured frame;
+// when both legacy and pooled handlers are non-nil, the pooled one
+// wins and the legacy is skipped for that frame.
+func (s *MalgoSession) SetPooledPCMHandler(handler PooledPCMHandler) {
+	s.pcmMu.Lock()
+	defer s.pcmMu.Unlock()
+	s.pooledPCMHandler = handler
 }
 
 func (s *MalgoSession) Close() error {

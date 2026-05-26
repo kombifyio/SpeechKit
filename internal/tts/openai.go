@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/kombifyio/SpeechKit/internal/models"
 	"github.com/kombifyio/SpeechKit/internal/netsec"
 )
 
@@ -173,6 +174,14 @@ func (o *OpenAI) Synthesize(ctx context.Context, text string, opts SynthesizeOpt
 }
 
 func (o *OpenAI) Name() string { return "openai" }
+
+func (o *OpenAI) Kind() models.ProviderKind { return models.ProviderKindDirectProvider }
+
+func (o *OpenAI) CloseIdleConnections() {
+	if o != nil && o.client != nil {
+		o.client.CloseIdleConnections()
+	}
+}
 
 func (o *OpenAI) Health(ctx context.Context) error {
 	if o.apiKey == "" {

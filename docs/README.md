@@ -6,6 +6,9 @@ Start with the module you are working on, then jump into the detailed docs.
 
 - [../README.md](../README.md) — short module overview.
 - [speechkit-framework-api.md](./speechkit-framework-api.md) — local-first Go backend API, mode contracts, provider catalog, and local control API.
+- [architecture/sdk-surface-boundary.md](./architecture/sdk-surface-boundary.md) — public `pkg/speechkit/` boundary for v0.40.1 embedders.
+- [voice-companion.md](./voice-companion.md) — hands-free companion architecture, skills, latency budgets, and embed targets.
+- [wakeword.md](./wakeword.md) — wake-word setup, model policy, training data, and SDK promotion notes.
 - [server/README.md](./server/README.md) — SpeechKit Server runtime, modes, auth, and deployment setup.
 - [mcp/README.md](./mcp/README.md) — SpeechKit MCP server for coding agents, docs mode, management mode, and validation tools.
 - [../CHANGELOG.md](../CHANGELOG.md) — release history.
@@ -33,6 +36,9 @@ Start with the module you are working on, then jump into the detailed docs.
 ## Release And Trust
 
 - [code-signing-policy.md](./code-signing-policy.md) — Windows artifact trust policy.
+- [release-matrix.md](./release-matrix.md) — release-surface matrix, OSS rollups, and validation expectations.
+- [release-notes/v0.40.0.md](./release-notes/v0.40.0.md) — Runtime Modularity release notes.
+- [release-notes/v0.40.1.md](./release-notes/v0.40.1.md) — SDK Surface Modularity release notes.
 - [product-readiness-v0.34.1.md](./product-readiness-v0.34.1.md) — v0.34.1 desktop, agent-gate, storage/settings, and OSS-readiness release checklist.
 
 ## Compliance And Enterprise

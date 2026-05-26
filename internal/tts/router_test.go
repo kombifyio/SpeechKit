@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"testing"
+
+	"github.com/kombifyio/SpeechKit/internal/models"
 )
 
 func TestOrderByPreferredProvider_MovesMatchToFront(t *testing.T) {
@@ -78,6 +80,7 @@ func TestPreferredProviderForProfileID_MapsCatalogEntries(t *testing.T) {
 // mockProvider is a test double for Provider.
 type mockProvider struct {
 	name   string
+	kind   models.ProviderKind
 	err    error
 	result *Result
 	called bool
@@ -99,6 +102,7 @@ func (m *mockProvider) Synthesize(_ context.Context, text string, _ SynthesizeOp
 }
 
 func (m *mockProvider) Name() string                   { return m.name }
+func (m *mockProvider) Kind() models.ProviderKind      { return m.kind }
 func (m *mockProvider) Health(_ context.Context) error { return m.err }
 
 func TestRouterFallback(t *testing.T) {
@@ -142,8 +146,8 @@ func TestRouterAllFail(t *testing.T) {
 }
 
 func TestRouterCloudOnly(t *testing.T) {
-	local := &mockProvider{name: "kokoro"}
-	cloud := &mockProvider{name: "openai"}
+	local := &mockProvider{name: "piper", kind: models.ProviderKindLocalBuiltIn}
+	cloud := &mockProvider{name: "openai", kind: models.ProviderKindDirectProvider}
 
 	r := NewRouter(StrategyCloudOnly, local, cloud)
 	result, err := r.Synthesize(context.Background(), "test", SynthesizeOpts{})
@@ -159,8 +163,8 @@ func TestRouterCloudOnly(t *testing.T) {
 }
 
 func TestRouterLocalOnly(t *testing.T) {
-	local := &mockProvider{name: "kokoro"}
-	cloud := &mockProvider{name: "openai"}
+	local := &mockProvider{name: "piper", kind: models.ProviderKindLocalBuiltIn}
+	cloud := &mockProvider{name: "openai", kind: models.ProviderKindDirectProvider}
 
 	r := NewRouter(StrategyLocalOnly, local, cloud)
 	result, err := r.Synthesize(context.Background(), "test", SynthesizeOpts{})
@@ -170,8 +174,25 @@ func TestRouterLocalOnly(t *testing.T) {
 	if cloud.called {
 		t.Error("cloud provider should be skipped in local-only mode")
 	}
-	if result.Provider != "kokoro" {
-		t.Errorf("expected kokoro, got %s", result.Provider)
+	if result.Provider != "piper" {
+		t.Errorf("expected piper, got %s", result.Provider)
+	}
+}
+
+func TestRouterLocalOnlyAllowsLocalProviderKind(t *testing.T) {
+	local := &mockProvider{name: "openedai-kokoro", kind: models.ProviderKindLocalProvider}
+	cloud := &mockProvider{name: "huggingface", kind: models.ProviderKindCloudProvider}
+
+	r := NewRouter(StrategyLocalOnly, cloud, local)
+	result, err := r.Synthesize(context.Background(), "test", SynthesizeOpts{})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cloud.called {
+		t.Error("cloud provider should be skipped in local-only mode")
+	}
+	if result.Provider != "openedai-kokoro" {
+		t.Errorf("expected openedai-kokoro, got %s", result.Provider)
 	}
 }
 

@@ -780,6 +780,22 @@ Stufe 2 wird nur aktiviert wenn Pattern Matching keinen Treffer hat UND der Assi
 | Offline TTS | Cloud TTS und optionale lokale Routen existieren, aber kein als Default gebuendelter Offline-TTS-Pfad. |
 | Release Assets | Der finale Installer wird im Public-Release-Workflow mit NSIS gebaut und signiert; lokale `-SkipInstaller` Builds sind nur Preflight. |
 
+## SDK surface evolution (v0.40.1 implementation branch)
+
+The 2026-05-26 architecture review surfaced five kernel building blocks that are
+platform-neutral but were unreachable from outside the module (Wake-Word,
+Voice-Companion composer, Event-Bus, Assist-Pipeline parity, TTS-Service). The
+v0.40.1 implementation branch promotes them to
+`pkg/speechkit/{wakeword,companion,tts}` plus extends
+`pkg/speechkit/assist.Service`. All changes are additive; public SDK contracts
+own the embeddable surface, while internal kernel paths stay as compatible
+desktop/server adapters. Production `pkg/speechkit` code remains free of
+`internal/*` imports. See the
+[v0.40.1 section in the v0.40 roadmap](roadmap/v0.40-and-beyond-enterprise-modularity.md#v0401--sdk-surface-modularity-track-a-continuation),
+the `kombify-SpeechKit-jsn` beads epic, and
+[docs/architecture/sdk-surface-boundary.md](architecture/sdk-surface-boundary.md)
+for the detailed boundary rules.
+
 ## Kernel boundary & back-edges
 
 The kernel/adapter split this document otherwise describes — pure-Go

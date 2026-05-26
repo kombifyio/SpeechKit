@@ -639,13 +639,13 @@
         body: "{}"
       });
       requireStatus(session, 201, "Voice Agent session create");
-      if (!session.body || !session.body.session_id || !session.body.ws_url || !session.body.ticket) {
+      if (!session.body || !session.body.session_id || !session.body.ws_url || !session.body.ticket || !session.body.ws_subprotocol) {
         throw new Error("Voice Agent session response is incomplete\n" + format(session.body));
       }
 
       let wsResult;
       try {
-        wsResult = await verifyVoiceAgentSocket(session.body.ws_url);
+        wsResult = await verifyVoiceAgentSocket(session.body.ws_url, session.body.ws_subprotocol);
       } finally {
         await request("/api/v1/voiceagent/sessions/" + encodeURIComponent(session.body.session_id), {
           method: "DELETE"
@@ -661,11 +661,11 @@
       };
     }
 
-    function verifyVoiceAgentSocket(wsURL) {
+    function verifyVoiceAgentSocket(wsURL, wsSubprotocol) {
       return new Promise(function (resolve, reject) {
         let done = false;
         const frames = [];
-        const ws = new WebSocket(wsURL);
+        const ws = wsSubprotocol ? new WebSocket(wsURL, [wsSubprotocol]) : new WebSocket(wsURL);
         const timer = window.setTimeout(function () {
           fail("Voice Agent WebSocket timed out before pong/listening.");
         }, 12000);

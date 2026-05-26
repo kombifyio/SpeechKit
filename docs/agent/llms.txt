@@ -1,12 +1,11 @@
-# SpeechKit v0.38
+# SpeechKit v0.40.1
 
 > Agent entrypoint for SpeechKit Server, Framework API, and MCP integration.
 
 SpeechKit is a Windows-first voice framework with three strict modes:
-Dictation, Assist, and Voice Agent. v0.38 ships the hardened public
-release line with API-first server surfaces, local-first Voice-Companion
-updates, on-demand speech model downloads, a Go client, a CLI, and an
-MCP server for coding agents.
+Dictation, Assist, and Voice Agent. v0.40.1 adds the embeddable SDK surface
+for wake-word, Assist, Voice-Companion, Event-Bus, and TTS integrations while
+keeping the API-first server, Go client, CLI, and MCP server surfaces.
 
 Use these links first:
 
@@ -44,6 +43,12 @@ Embed a Voice Agent into your own app:
 - One prompt: "Build a 15-minute voice-agent game instructor into my app using SpeechKit. Use `pkg/speechkit/client` (CreateVoiceAgentSession + DialVoiceAgent), reuse the persona/role/sequence IDs `game-instructor` / `game-moderator` / `game-flow-15min`, and feed PCM 16 kHz S16LE mono via SendAudio."
 - Server-side: seed the persona/role/sequence via the TOML at `examples/voice-agent/game-instructor/config.toml` and run `speechkit-server` with `GOOGLE_AI_API_KEY` set. Idle timeout caps each session at 15 min by default.
 
+Embed SpeechKit as a Go framework:
+
+- `examples/embed-companion/`: wake detections + host transcript request + Assist + optional TTS + events.
+- `examples/embed-tts/`: `pkg/speechkit/tts` ProviderKind-aware Router and Service.
+- `examples/embed-event-bus/`: wake, skill, companion, Voice-Agent, and TTS event publication.
+
 Canonical prompt:
 
 ```text
@@ -55,5 +60,5 @@ Safety:
 - Keep the default local bind unless the user explicitly asks for public access.
 - Keep secrets in environment variables or generated `.env` files, never in repo files.
 - For browser clients behind Docker Compose, set `SPEECHKIT_PUBLIC_URL` (or alias `SPEECHKIT_SERVER_PUBLIC_URL`) to the browser-reachable origin so returned `ws_url` values do not use container-internal hostnames.
-- Voice Agent WebSocket auth uses only the `?ticket=` query value returned by `POST /v1/voiceagent/sessions`; do not send bearer tokens in the browser WS handshake.
+- Voice Agent WebSocket auth is subprotocol-first: use `ws_url` plus `ws_subprotocol` from `POST /v1/voiceagent/sessions`; do not send bearer tokens in the browser WS handshake. `legacy_ws_url` is compatibility-only.
 - One-shot results use canonical `modes.voiceagent`; `modes.voice_agent` is not the v1 result shape. Extra evidence fields such as `app_url_reachable` and `latency_seconds` are allowed.

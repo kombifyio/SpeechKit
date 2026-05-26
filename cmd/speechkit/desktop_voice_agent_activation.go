@@ -138,8 +138,11 @@ func (c desktopInputController) voiceAgentIdleConfig() voiceagent.IdleConfig {
 
 func (c desktopInputController) startVoiceAgentSession(ctx context.Context, plan voiceAgentActivationPlan, audioSender *voiceAgentAudioSender) {
 	liveCfg := c.voiceAgentLiveConfig(plan.session, plan.start)
-	if c.state != nil {
-		c.state.startVoiceAgentStream(ctx)
+	select {
+	case <-ctx.Done():
+		c.tearDownVoiceAgentAudioCapture(plan, audioSender)
+		return
+	default:
 	}
 
 	sessionStart := time.Now()
@@ -152,10 +155,10 @@ func (c desktopInputController) startVoiceAgentSession(ctx context.Context, plan
 	if err != nil {
 		c.log(fmt.Sprintf("Voice Agent: start failed: %v", err), "error")
 		c.tearDownVoiceAgentAudioCapture(plan, audioSender)
-		if c.state != nil {
-			c.state.stopVoiceAgentStream()
-		}
 		return
+	}
+	if c.state != nil {
+		c.state.startVoiceAgentStream(ctx)
 	}
 
 	providerName := plan.session.ProviderName()

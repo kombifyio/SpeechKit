@@ -40,6 +40,31 @@ Use `speechkit.RuntimePolicy` to constrain embedded deployments:
 
 The Windows desktop app remains the reference host and provider/model test bench. It can expose all profiles and switch between them, while embedded product integrations can use the same catalog with a narrower policy.
 
+## Embeddable Companion, Wake-Word, TTS, and Events
+
+The v0.40.1 implementation branch extends the public SDK surface without breaking the existing mode contracts:
+
+- `pkg/speechkit/wakeword` exposes wake-word phrase catalogs, detection events, dispatching, detector contracts, and `AutoEndPolicy`.
+- `pkg/speechkit/wakeword/sherpa` adapts sherpa-onnx wake-word detection behind the public detector contracts. Builds without cgo still compile against the public no-cgo surface.
+- `pkg/speechkit/tts` exposes `Provider`, `ProviderKind`, `Router`, `Service`, `NewService`, synthesis options, and fallback strategy for SDK hosts that need spoken output without importing desktop internals.
+- `pkg/speechkit/companion.NewHandsFree(...)` composes wake detections, host-provided transcript requests, Assist, optional TTS, and Event-Bus publication for hands-free Voice-Companion hosts.
+- `pkg/speechkit/assist.Service` supports multi-turn `SessionKey`, skill context storage, codeword routing, TTS routing, and the optional `pkg/speechkit/assist/genkitadapter`.
+- `speechkit.Runtime.Events()` publishes additive Event-Bus events for wake detections, skill execution, companion sessions, Voice-Agent finalized turns, and TTS lifecycle.
+
+Compatibility note: additive event metadata, Assist audio, and Assist follow-up
+state use pointer wrapper types (`speechkit.Metadata`, `speechkit.AudioData`,
+`assist.FollowupState`) so existing comparable SDK structs remain comparable.
+
+The reference examples compile as Local-Library smoke tests:
+
+| Example | Purpose |
+|---------|---------|
+| `examples/embed-companion` | Compose a hands-free Voice-Companion with mock wake/assist/TTS dependencies. |
+| `examples/embed-tts` | Use the TTS service/router surface with a mock provider. |
+| `examples/embed-event-bus` | Subscribe to and publish public runtime events. |
+
+Release status: implemented on `v0.40-m1-lifecycle`; the v0.40.1 tag must wait until v0.40.0 is tagged so the API diff can prove additions-only changes against the v0.40.0 baseline.
+
 ## Provider Catalog
 
 Every main mode exposes the same four provider groups:

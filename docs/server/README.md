@@ -288,9 +288,9 @@ receive an HTML sign-in-required page; API requests still receive the JSON
 `/v1/voiceagent/sessions/{id}/ws` and
 `/api/v1/voiceagent/sessions/{id}/ws` bypass bearer/edge auth because the
 handler validates the short-lived session ticket itself. Browser clients should
-use only the `?ticket=` query parameter returned by
-`POST /v1/voiceagent/sessions`; the bearer token is for HTTP requests and does
-not belong in the browser WebSocket handshake. When auth is enabled, all other
+open `ws_url` with the returned `ws_subprotocol` (`ticket.<value>`); the
+deprecated query-string URL is compatibility-only. The bearer token is for HTTP
+requests and does not belong in the browser WebSocket handshake. When auth is enabled, all other
 `/api/v1/*` and compatibility `/v1/*` calls require credentials.
 The setup page can generate a server API token during onboarding. The generated
 value is shown once, loaded into the running server process, and omitted from
@@ -329,7 +329,7 @@ browser; either set the public URL or proxy the WebSocket through your backend.
 
 Voice Agent tickets default to 90 seconds. They are single-use and are not
 refreshed in v1; if a microphone permission dialog or user delay lets a ticket
-expire, create a new session and use the new `ws_url`.
+expire, create a new session and use the new `ws_url` plus `ws_subprotocol`.
 
 Browser WebSocket clients must send an `Origin` that exactly matches
 `[server].cors_allowed_origins`, or the server rejects the upgrade with `403`.

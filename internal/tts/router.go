@@ -15,6 +15,8 @@ import (
 	"log/slog"
 	"strings"
 	"sync"
+
+	"github.com/kombifyio/SpeechKit/internal/models"
 )
 
 // Strategy determines how the TTS router selects a provider.
@@ -87,8 +89,7 @@ func (r *Router) Synthesize(ctx context.Context, text string, opts SynthesizeOpt
 
 // isAllowed checks if a provider is allowed under the current strategy.
 func (r *Router) isAllowed(p Provider) bool {
-	name := p.Name()
-	isLocal := name == "kokoro" || name == "local"
+	isLocal := isLocalProviderKind(p.Kind())
 
 	switch r.strategy {
 	case StrategyCloudOnly:
@@ -98,6 +99,10 @@ func (r *Router) isAllowed(p Provider) bool {
 	default:
 		return true
 	}
+}
+
+func isLocalProviderKind(kind models.ProviderKind) bool {
+	return kind == models.ProviderKindLocalBuiltIn || kind == models.ProviderKindLocalProvider
 }
 
 // HealthCheck returns health status for all providers.
@@ -112,6 +117,25 @@ func (r *Router) HealthCheck(ctx context.Context) map[string]error {
 		results[p.Name()] = p.Health(ctx)
 	}
 	return results
+}
+
+// CloseIdleConnections asks HTTP-backed providers to drop idle connection
+// pools. It is safe to call when a router is no longer referenced by any
+// active mode runtime.
+func (r *Router) CloseIdleConnections() {
+	if r == nil {
+		return
+	}
+	r.mu.RLock()
+	providers := make([]Provider, len(r.providers))
+	copy(providers, r.providers)
+	r.mu.RUnlock()
+
+	for _, p := range providers {
+		if closer, ok := p.(interface{ CloseIdleConnections() }); ok {
+			closer.CloseIdleConnections()
+		}
+	}
 }
 
 // OrderByPreferredProvider returns providers reordered so that the one whose

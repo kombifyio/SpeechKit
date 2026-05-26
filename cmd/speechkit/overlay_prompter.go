@@ -256,6 +256,12 @@ func (s *appState) updatePrompterActivity(role string, level float64) {
 }
 
 func (s *appState) startVoiceAgentStream(ctx context.Context) {
+	select {
+	case <-ctx.Done():
+		return
+	default:
+	}
+
 	s.mu.Lock()
 	outputDeviceID := s.audioOutputDeviceID
 	s.mu.Unlock()

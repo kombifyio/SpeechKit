@@ -20,6 +20,7 @@ import (
 	"github.com/kombifyio/SpeechKit/internal/config"
 	"github.com/kombifyio/SpeechKit/internal/hotkey"
 	"github.com/kombifyio/SpeechKit/internal/wakeword"
+	"github.com/kombifyio/SpeechKit/pkg/speechkit"
 )
 
 // SpeechKit's Windows reference adapter wires the platform-neutral
@@ -501,6 +502,15 @@ func dispatchWakewordDetection(state *appState, hkManager *modeHotkeyManager, re
 	mode = config.NormalizeWakewordDefaultMode(mode)
 	slog.Info("wakeword: detection", "keyword", keyword, "phrase", phrase, "mode", mode, "probability", probability, "backend", resolved.Backend)
 	state.addLog(fmt.Sprintf("Wake-word fired: \"%s\" → %s", phrase, mode), "info")
+	state.publishSpeechKitEvent(speechkit.Event{
+		Type:    speechkit.EventWakeFired,
+		Mode:    mode,
+		Message: phrase,
+		Metadata: speechkit.NewMetadata(map[string]string{
+			"keyword": keyword,
+			"backend": resolved.Backend,
+		}),
+	})
 
 	// Build a per-detection AutoEndPolicy from the live wake-word config
 	// and park it before submitting the synthetic hotkey so the input

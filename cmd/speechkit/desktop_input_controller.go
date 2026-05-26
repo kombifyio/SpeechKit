@@ -145,11 +145,23 @@ func (c desktopInputController) handleHotkey(ctx context.Context, evt hotkey.Eve
 	}
 	switch binding := c.resolveHotkeyBinding(evt.Binding); binding {
 	case modeVoiceAgent:
+		if !c.modeCurrentlyEnabled(modeVoiceAgent) {
+			c.log("Voice Agent hotkey ignored because the mode is disabled.", "info")
+			return
+		}
 		c.routeVoiceAgentHotkey(ctx, evt)
 	case modeAssist:
+		if !c.modeCurrentlyEnabled(modeAssist) {
+			c.log("Assist hotkey ignored because the mode is disabled.", "info")
+			return
+		}
 		c.logModeRoute(modeAssist, evt.Binding, c.hotkeyBehavior(modeAssist), evt.Type)
 		c.routeCaptureHotkey(ctx, modeAssist, evt)
 	case modeDictate:
+		if !c.modeCurrentlyEnabled(modeDictate) {
+			c.log("Dictation hotkey ignored because the mode is disabled.", "info")
+			return
+		}
 		c.routeCaptureHotkey(ctx, modeDictate, evt)
 	default:
 		return
@@ -531,6 +543,47 @@ func (c desktopInputController) resolveHotkeyBinding(binding string) string {
 	return normalizeRuntimeMode(trimmed, "")
 }
 
+func (c desktopInputController) modeCurrentlyEnabled(mode string) bool {
+	if c.cfg != nil {
+		switch mode {
+		case modeDictate:
+			if strings.TrimSpace(c.cfg.General.DictateHotkey) != "" {
+				return c.cfg.General.DictateEnabled
+			}
+		case modeAssist:
+			if strings.TrimSpace(c.cfg.General.AssistHotkey) != "" {
+				return c.cfg.General.AssistEnabled
+			}
+		case modeVoiceAgent:
+			if strings.TrimSpace(c.cfg.General.VoiceAgentHotkey) != "" {
+				return c.cfg.General.VoiceAgentEnabled
+			}
+		}
+	}
+	if c.state == nil {
+		return true
+	}
+	c.state.mu.Lock()
+	defer c.state.mu.Unlock()
+	switch mode {
+	case modeDictate:
+		if strings.TrimSpace(c.state.dictateHotkey) != "" {
+			return c.state.dictateEnabled
+		}
+	case modeAssist:
+		if strings.TrimSpace(c.state.assistHotkey) != "" {
+			return c.state.assistEnabled
+		}
+	case modeVoiceAgent:
+		if strings.TrimSpace(c.state.voiceAgentHotkey) != "" {
+			return c.state.voiceAgentEnabled
+		}
+	default:
+		return false
+	}
+	return true
+}
+
 func (c desktopInputController) voiceAgentAPIKey() string {
 	if c.cfg == nil {
 		return ""
@@ -732,6 +785,19 @@ func (c desktopInputController) deactivateVoiceAgent(ctx context.Context, keepPr
 func (c desktopInputController) deactivateVoiceAgentWithReason(ctx context.Context, keepPrompterVisible bool, reason string) {
 	session := c.currentVoiceAgentSession() //nolint:contextcheck // getter, no context needed
 	if session == nil || session.CurrentState() == voiceagent.StateInactive {
+		if c.audioCapturer != nil {
+			c.audioCapturer.SetPCMHandler(nil)
+		}
+		if c.state != nil {
+			if activationCancel := c.state.takeVoiceAgentActivationCancel(); activationCancel != nil {
+				activationCancel()
+			}
+			c.state.stopVoiceAgentAudioSender()
+			c.state.stopVoiceAgentStream()
+			if policy := c.state.clearWakewordSessionPolicy(); policy != nil {
+				policy.Close()
+			}
+		}
 		if c.state != nil && !keepPrompterVisible {
 			c.state.hidePrompterWindow()
 		}
@@ -896,7 +962,7 @@ func (c desktopInputController) assistStartBlockedReason() string {
 	assistPipeline := c.state.assistPipeline
 	serverAssistReady := c.state.serverDelegates.hasAssist()
 	c.state.mu.Unlock()
-	if serverAssistReady || assistPipeline.HasDirectReplyModel() {
+	if serverAssistReady || (assistPipeline != nil && assistPipeline.HasDirectReplyModel()) {
 		return ""
 	}
 	return "Assist can't start because no ready Assist model is available. Open Settings > Assist Mode and download a local model or choose a provider integration."

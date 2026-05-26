@@ -1,13 +1,13 @@
 'use client'
 
 import { useMemo, type ComponentProps, type CSSProperties } from 'react'
-import type { AgentState } from '@livekit/components-react'
 import { useAgentAudioVisualizerBarAnimator } from '@/hooks/use-agent-audio-visualizer-bar'
+import type { AgentVisualizerState } from '@/lib/agent-visualizer-state'
 import { cn } from '@/lib/utils'
 
 export interface AgentAudioVisualizerBarProps {
   size?: 'icon' | 'sm' | 'md' | 'lg' | 'xl'
-  state?: AgentState
+  state?: AgentVisualizerState
   color?: `#${string}`
   barCount?: number
   /** Direct audio level 0-1 (used instead of LiveKit track) */

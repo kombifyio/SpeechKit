@@ -6,10 +6,11 @@ info:
     Stable v1 WebSocket contract for the SpeechKit Server's Voice Agent mode.
 
     A client first calls `POST /v1/voiceagent/sessions` (see openapi.v1.yaml)
-    to obtain a session id and a single-use `ticket`, then upgrades a
-    WebSocket to `GET /v1/voiceagent/sessions/{id}/ws?ticket=...`.
-    Browser WebSocket auth uses only this `?ticket=` query parameter. Do not
-    send the HTTP bearer token in the browser WebSocket handshake.
+    to obtain a session id, `ws_url`, and a single-use `ws_subprotocol`, then
+    upgrades a WebSocket to `GET /v1/voiceagent/sessions/{id}/ws` with
+    `Sec-WebSocket-Protocol: ticket.<value>`. Do not send the HTTP bearer token
+    in the browser WebSocket handshake. The legacy `?ticket=` URL form remains
+    accepted only for compatibility.
 
     Tickets default to 90 seconds, are single-use, and are not refreshed in v1.
     If a ticket expires before upgrade, create a new Voice Agent session.
@@ -157,13 +158,14 @@ components:
   securitySchemes:
     sessionTicket:
       type: httpApiKey
-      in: query
-      name: ticket
+      in: header
+      name: Sec-WebSocket-Protocol
       description: |
         Single-use session ticket minted by `POST /v1/voiceagent/sessions`.
-        Bound to the session id and consumed at WebSocket upgrade. Use this
-        query value only; browser clients do not send `Authorization: Bearer`
-        in the WebSocket handshake.
+        Bound to the session id and consumed at WebSocket upgrade. Send the
+        returned `ws_subprotocol` value (`ticket.<value>`) as the WebSocket
+        subprotocol; browser clients do not send `Authorization: Bearer` in
+        the WebSocket handshake.
 
   messages:
     # client to server JSON

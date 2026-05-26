@@ -21,13 +21,15 @@ import (
 )
 
 // VoiceAgentTicket is the minted session envelope returned by
-// POST /v1/voiceagent/sessions. WSURL already carries the ticket query
-// parameter so callers only have to pass it to DialVoiceAgent.
+// POST /v1/voiceagent/sessions. DialVoiceAgent prefers WSSubprotocol so the
+// one-time ticket does not have to ride in the URL.
 type VoiceAgentTicket struct {
-	SessionID string    `json:"session_id"`
-	WSURL     string    `json:"ws_url"`
-	Ticket    string    `json:"ticket"`
-	ExpiresAt time.Time `json:"expires_at"`
+	SessionID     string    `json:"session_id"`
+	WSURL         string    `json:"ws_url"`
+	WSSubprotocol string    `json:"ws_subprotocol,omitempty"`
+	LegacyWSURL   string    `json:"legacy_ws_url,omitempty"`
+	Ticket        string    `json:"ticket"`
+	ExpiresAt     time.Time `json:"expires_at"`
 }
 
 // VoiceAgentStartFrame opens a session and binds it to a persona/role/sequence.
@@ -93,10 +95,12 @@ func (s *VoiceAgentSession) SessionID() string {
 // DialVoiceAgent to upgrade to the WebSocket.
 func (c *Client) CreateVoiceAgentSession(ctx context.Context) (*VoiceAgentTicket, error) {
 	var raw struct {
-		SessionID string `json:"session_id"`
-		WSURL     string `json:"ws_url"`
-		Ticket    string `json:"ticket"`
-		ExpiresAt string `json:"expires_at"`
+		SessionID     string `json:"session_id"`
+		WSURL         string `json:"ws_url"`
+		WSSubprotocol string `json:"ws_subprotocol"`
+		LegacyWSURL   string `json:"legacy_ws_url"`
+		Ticket        string `json:"ticket"`
+		ExpiresAt     string `json:"expires_at"`
 	}
 	if err := c.DoJSON(ctx, http.MethodPost, "/v1/voiceagent/sessions", map[string]any{}, &raw); err != nil {
 		return nil, err
@@ -105,9 +109,14 @@ func (c *Client) CreateVoiceAgentSession(ctx context.Context) (*VoiceAgentTicket
 		return nil, errors.New("speechkit: voice agent create response missing fields")
 	}
 	t := &VoiceAgentTicket{
-		SessionID: raw.SessionID,
-		WSURL:     raw.WSURL,
-		Ticket:    raw.Ticket,
+		SessionID:     raw.SessionID,
+		WSURL:         raw.WSURL,
+		WSSubprotocol: raw.WSSubprotocol,
+		LegacyWSURL:   raw.LegacyWSURL,
+		Ticket:        raw.Ticket,
+	}
+	if t.WSSubprotocol == "" {
+		t.WSSubprotocol = "ticket." + raw.Ticket
 	}
 	if raw.ExpiresAt != "" {
 		if parsed, err := time.Parse(time.RFC3339, raw.ExpiresAt); err == nil {
@@ -139,6 +148,9 @@ func (c *Client) DialVoiceAgent(ctx context.Context, ticket *VoiceAgentTicket) (
 		return nil, errors.New("speechkit: voice agent ticket is empty")
 	}
 	opts := &ws.DialOptions{}
+	if ticket.WSSubprotocol != "" {
+		opts.Subprotocols = []string{ticket.WSSubprotocol}
+	}
 	if c.token != "" {
 		opts.HTTPHeader = http.Header{}
 		opts.HTTPHeader.Set("Authorization", "Bearer "+c.token)

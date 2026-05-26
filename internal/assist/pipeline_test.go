@@ -8,6 +8,7 @@ import (
 	"github.com/firebase/genkit/go/genkit"
 
 	"github.com/kombifyio/SpeechKit/internal/ai/flows"
+	"github.com/kombifyio/SpeechKit/internal/models"
 	"github.com/kombifyio/SpeechKit/internal/shortcuts"
 	"github.com/kombifyio/SpeechKit/internal/tts"
 )
@@ -29,6 +30,7 @@ func (m *mockTTSProvider) Synthesize(_ context.Context, text string, _ tts.Synth
 }
 
 func (m *mockTTSProvider) Name() string                   { return "mock" }
+func (m *mockTTSProvider) Kind() models.ProviderKind      { return models.ProviderKindDirectProvider }
 func (m *mockTTSProvider) Health(_ context.Context) error { return nil }
 
 type mockToolExecutor struct {

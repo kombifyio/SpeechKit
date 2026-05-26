@@ -10,7 +10,7 @@ Modes:
 
 Useful agent planning tools:
 
-- `speechkit_install_plan`: returns stable or v0.30 Preview install steps without mutating the host.
+- `speechkit_install_plan`: returns stable install steps without mutating the host.
 - `speechkit_self_check_plan`: returns the health, readiness, config, catalog, OpenAPI, and AsyncAPI probes an agent should run.
 - `speechkit_scaffold_templates`: lists available starter integration templates.
 - `speechkit_scaffold_integration`: renders starter integration files in memory; it does not write to the host.

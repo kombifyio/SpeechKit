@@ -12,6 +12,58 @@ IDs, source paths, and other maintainer-only vocabulary.
 
 ## [Unreleased]
 
+No unreleased user-facing changes are pending beyond the v0.40.0/v0.40.1
+release split below.
+
+## [0.40.1] - 2026-05-26
+
+SDK-surface modularity patch on top of the v0.40 runtime-modularity work.
+
+### Added
+
+- **Embeddable voice building blocks are now public SDK packages.**
+  Go hosts can compose wake-word detection, hands-free companion
+  sessions, spoken output, Assist routing, and runtime event
+  subscriptions through `pkg/speechkit/wakeword`,
+  `pkg/speechkit/wakeword/sherpa`, `pkg/speechkit/companion`,
+  `pkg/speechkit/tts`, and the expanded `pkg/speechkit/assist`
+  surface.
+- **Hands-free companion composition is now executable, not just a
+  facade.** `companion.NewHandsFree` publishes wake events, delegates
+  host wake sinks, converts wake detections through a host transcript
+  request factory, calls Assist, optionally synthesizes spoken output,
+  and publishes Assist/TTS lifecycle events.
+
+### Changed
+
+- **Voice Agent session responses are subprotocol-first.** New clients
+  use `ws_url` plus `ws_subprotocol` so one-time WebSocket tickets do
+  not ride in URLs. The server still accepts the legacy query form and
+  returns `legacy_ws_url` only for compatibility.
+- **TTS routing uses provider kinds instead of provider names.**
+  Local-only and cloud-only routing now works for Piper, Kokoro-local,
+  self-hosted local providers, Hugging Face, OpenAI, and Google without
+  hard-coded string matching.
+
+## [0.40.0] - 2026-05-26
+
+Runtime-modularity release split. The tag is still gated by CI/release
+review; this entry is the release-note source for that cut.
+
+### Added
+
+- **Runtime modularity is ready for the v0.40.0 release split.**
+  Dictation-only use no longer eagerly starts Assist, Voice Agent,
+  Genkit, TTS, or LiveKit-specific UI pieces. Mode transitions now
+  report clear status and latency, and disabled modes return a
+  consistent unavailable response instead of partially starting.
+
+### Changed
+
+- **Voice Agent UI assets are isolated from the Dictation shell.**
+  The bundle budget now protects the lean Dictation path while still
+  allowing Voice Agent visuals to load when needed.
+
 ## [0.38.14] - 2026-05-25
 
 Windows local onboarding release hygiene hotfix. No public API change.

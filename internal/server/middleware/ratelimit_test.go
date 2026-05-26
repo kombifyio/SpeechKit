@@ -361,8 +361,11 @@ func TestRateLimit_ServiceBearerKeyedOnRemoteAddr(t *testing.T) {
 		return rec.Code
 	}
 
-	if send("10.0.0.1") != http.StatusOK || send("10.0.0.1") != http.StatusOK {
-		t.Fatal("expected 2 OK from 10.0.0.1")
+	if send("10.0.0.1") != http.StatusOK {
+		t.Fatal("expected 1st request from 10.0.0.1 to be OK")
+	}
+	if send("10.0.0.1") != http.StatusOK {
+		t.Fatal("expected 2nd request from 10.0.0.1 to be OK")
 	}
 	if send("10.0.0.1") != http.StatusTooManyRequests {
 		t.Fatal("expected 3rd from 10.0.0.1 to be rejected")

@@ -1,9 +1,8 @@
-import type { AgentState } from '@livekit/components-react'
-
+import type { AgentVisualizerState } from '@/lib/agent-visualizer-state'
 import type { SpeechKitOverlayState } from '@/lib/speechkit'
 
 export type OverlayTone = {
-  state: AgentState
+  state: AgentVisualizerState
   size: 'icon' | 'sm'
   color: `#${string}`
   level: number

@@ -37,7 +37,12 @@ func (h *Handler) profiles(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	profiles := framework.DefaultProviderProfiles()
-	if rawMode := strings.TrimSpace(r.URL.Query().Get("mode")); rawMode != "" {
+	if rawModes, ok := r.URL.Query()["mode"]; ok {
+		if len(rawModes) != 1 || strings.TrimSpace(rawModes[0]) == "" {
+			httpx.WriteError(w, http.StatusBadRequest, "invalid_mode", "mode must be one of dictation, assist, voiceagent, or voice_agent")
+			return
+		}
+		rawMode := strings.TrimSpace(rawModes[0])
 		mode := normalizeMode(rawMode)
 		if mode == framework.ModeNone {
 			httpx.WriteError(w, http.StatusBadRequest, "invalid_mode", "mode must be one of dictation, assist, voiceagent, or voice_agent")

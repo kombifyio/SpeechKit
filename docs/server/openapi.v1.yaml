@@ -619,9 +619,9 @@ paths:
         refreshed in v1; create a new session.
 
         The WebSocket upgrade itself happens at
-        `GET /v1/voiceagent/sessions/{id}/ws?ticket=...` and is documented
-        separately because OpenAPI 3.1 has no first-class WebSocket
-        primitive.
+        `GET /v1/voiceagent/sessions/{id}/ws` with the returned
+        `ws_subprotocol`; it is documented separately because OpenAPI 3.1 has
+        no first-class WebSocket primitive.
 
         When `[server.livekit]` is enabled, the response also includes a
         short-lived LiveKit join token for the same authenticated caller.
@@ -1570,24 +1570,32 @@ components:
 
     CreateSessionResponse:
       type: object
-      required: [session_id, ws_url, ticket, expires_at]
+      required: [session_id, ws_url, ws_subprotocol, ticket, expires_at]
       properties:
         session_id: { type: string }
         ws_url:
           type: string
           format: uri
           description: |
-            Use this exact URL (already includes the `?ticket=…` query
-            param) to open the WebSocket. Browser clients do not send bearer
-            tokens in the WebSocket handshake. Tickets are HMAC-bound to the
-            session id, single-use, and expire after the configured TTL
-            (default 90 s). Expired tickets are not refreshed in v1; create a
-            new session. Set SPEECHKIT_PUBLIC_URL (or alias
+            Browser-reachable WebSocket URL without a ticket query. Open the
+            WebSocket with `Sec-WebSocket-Protocol: <ws_subprotocol>`. Browser
+            clients do not send bearer tokens in the WebSocket handshake.
+            Tickets are HMAC-bound to the session id, single-use, and expire
+            after the configured TTL (default 90 s). Expired tickets are not
+            refreshed in v1; create a new session. Set SPEECHKIT_PUBLIC_URL
+            (or alias
             SPEECHKIT_SERVER_PUBLIC_URL) for browser-facing Docker/proxy
             deployments so `ws_url` uses the public origin.
+        ws_subprotocol:
+          type: string
+          description: WebSocket subprotocol value to pass during upgrade, e.g. `ticket.<value>`.
+        legacy_ws_url:
+          type: string
+          format: uri
+          description: Deprecated compatibility URL with `?ticket=...`; new clients should use `ws_url` plus `ws_subprotocol`.
         ticket:
           type: string
-          description: One-time WebSocket upgrade ticket already embedded in `ws_url`.
+          description: One-time WebSocket upgrade ticket. Prefer `ws_subprotocol` rather than putting this value in URLs.
         expires_at:
           type: string
           format: date-time

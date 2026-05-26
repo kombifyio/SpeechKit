@@ -142,6 +142,25 @@ func runDesktopApp(closeLogFile func()) {
 	tracker.stage("audio_runtime")
 
 	ctx, cancel := initDesktopAppContext(state, &cleanup)
+
+	// Attach the lifecycle bridge once the application context exists.
+	// The bridge owns the v0.40 shared-dep claims for audio.capture,
+	// ai.genkit, and tts.router so mode toggles can hot-acquire and release
+	// the pieces that are not needed by Dictation-only hosts.
+	bridge := newDesktopLifecycleBridge(ctx, desktopLifecycleBridgeOptions{Config: cfg, State: state})
+	state.attachLifecycleBridge(bridge)
+	cleanup.Add(func() {
+		shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer shutdownCancel()
+		if err := bridge.Shutdown(shutdownCtx); err != nil {
+			slog.Warn("lifecycle bridge shutdown", "err", err)
+		}
+	})
+	if err := bridge.Apply(ctx, cfg); err != nil {
+		slog.Warn("lifecycle bridge initial apply", "err", err)
+	}
+	tracker.stage("lifecycle_bridge_attached")
+
 	services := initDesktopRuntimeServices(ctx, cfg, state, &cleanup)
 	tracker.stage("runtime_services")
 	prepareDesktopVoiceAgentSession(cfg, state)

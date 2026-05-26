@@ -4,6 +4,8 @@ import (
 	"context"
 	"sync"
 	"sync/atomic"
+
+	"github.com/kombifyio/SpeechKit/internal/audio"
 )
 
 // defaultVoiceAgentAudioQueueSize bounds the audio sender's in-flight frame
@@ -20,10 +22,23 @@ type voiceAgentAudioSink interface {
 	SendAudio([]byte) error
 }
 
+// voiceAgentAudioFrame is one queue entry. data points at a buffer leased
+// from internal/audio's FramePool; release returns it. The drain goroutine
+// MUST call release exactly once per item (after SendAudio, on evict, or
+// during Stop drainage) so the pool's refcount stays balanced.
+//
+// The struct is intentionally small (one slice header + one func pointer)
+// so the channel ops don't escape it to heap. The slice header still goes
+// through the channel by value; the underlying buffer is the pool's.
+type voiceAgentAudioFrame struct {
+	data    []byte
+	release func()
+}
+
 type voiceAgentAudioSender struct {
 	sink voiceAgentAudioSink
 
-	frames  chan []byte
+	frames  chan voiceAgentAudioFrame
 	done    chan struct{}
 	started atomic.Bool
 	closed  atomic.Bool
@@ -38,7 +53,7 @@ func newVoiceAgentAudioSender(sink voiceAgentAudioSink, queueSize int) *voiceAge
 	}
 	return &voiceAgentAudioSender{
 		sink:   sink,
-		frames: make(chan []byte, queueSize),
+		frames: make(chan voiceAgentAudioFrame, queueSize),
 		done:   make(chan struct{}),
 	}
 }
@@ -58,19 +73,37 @@ func (s *voiceAgentAudioSender) Start(ctx context.Context) {
 		for {
 			select {
 			case <-ctx.Done():
+				s.drainQueueLocked()
 				return
 			case <-s.done:
+				s.drainQueueLocked()
 				return
-			case frame := <-s.frames:
-				if len(frame) == 0 {
+			case item := <-s.frames:
+				if len(item.data) == 0 {
+					item.release()
 					continue
 				}
-				if err := s.sink.SendAudio(frame); err != nil && s.onSendError != nil {
+				if err := s.sink.SendAudio(item.data); err != nil && s.onSendError != nil {
 					s.onSendError(err)
 				}
+				item.release()
 			}
 		}
 	}()
+}
+
+// drainQueueLocked drains any frames remaining in the channel after the
+// drain goroutine has been told to exit, returning their pool buffers.
+// Called once per Start goroutine, so concurrent invocation is impossible.
+func (s *voiceAgentAudioSender) drainQueueLocked() {
+	for {
+		select {
+		case item := <-s.frames:
+			item.release()
+		default:
+			return
+		}
+	}
 }
 
 func (s *voiceAgentAudioSender) Enqueue(frame []byte) bool {
@@ -78,31 +111,69 @@ func (s *voiceAgentAudioSender) Enqueue(frame []byte) bool {
 		return false
 	}
 
-	stableFrame := append([]byte(nil), frame...)
+	// Lease a recyclable buffer from the package-level FramePool and
+	// copy the caller's frame into it. The buffer is held until the
+	// drain goroutine releases it (after SendAudio) or until the
+	// eviction path below releases it on queue-full.
+	pooled := audio.Get()
+	pooled = append(pooled, frame...)
+	item := voiceAgentAudioFrame{
+		data:    pooled,
+		release: makeFramePoolRelease(pooled),
+	}
+
 	select {
 	case <-s.done:
+		item.release()
 		return false
 	default:
 	}
 
 	select {
-	case s.frames <- stableFrame:
+	case s.frames <- item:
 		return true
 	default:
 	}
 
+	// Queue full: evict the oldest (returning its buffer to the pool)
+	// so the freshest pre-session audio wins. Matches the historical
+	// "ring buffer that prefers recent" behaviour.
 	select {
-	case <-s.frames:
+	case evicted := <-s.frames:
+		evicted.release()
 	default:
 	}
 
 	select {
-	case s.frames <- stableFrame:
+	case s.frames <- item:
 		return true
 	case <-s.done:
+		item.release()
 		return false
 	default:
+		item.release()
 		return false
+	}
+}
+
+// makeFramePoolRelease wraps audio.Put in a one-shot closure so each
+// queue item carries its own release callback. The closure is idempotent
+// — second and subsequent calls are no-ops — so multi-path teardown
+// (drain after sink + final Stop drain) doesn't double-release.
+func makeFramePoolRelease(buf []byte) func() {
+	var (
+		mu       sync.Mutex
+		released bool
+	)
+	return func() {
+		mu.Lock()
+		if released {
+			mu.Unlock()
+			return
+		}
+		released = true
+		mu.Unlock()
+		audio.Put(buf)
 	}
 }
 

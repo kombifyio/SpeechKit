@@ -1,4 +1,4 @@
-# SpeechKit v0.38 Agent Context
+# SpeechKit v0.40.1 Agent Context
 
 SpeechKit is a voice framework for products and automation hosts. It has three
 strict modes:
@@ -7,9 +7,10 @@ strict modes:
 - Assist: one-shot utility, codeword, or LLM result with optional TTS.
 - Voice Agent: realtime audio-to-audio dialogue for fast follow-ups.
 
-v0.38 is the released stable line. The latest GitHub Release is the canonical
-source for desktop installers; the `latest` GHCR tag tracks the current
-stable server image.
+v0.40.1 is the SDK-surface release line: wake-word, Assist, Voice-Companion,
+Event-Bus, and TTS building blocks are embeddable from `pkg/speechkit/...`.
+The latest GitHub Release is the canonical source for desktop installers; the
+`latest` GHCR tag tracks the current stable server image.
 
 ## Start Here
 
@@ -77,12 +78,13 @@ https://speechkit.cc/api/openapi.v1.yaml
 Use the AsyncAPI document for the Voice Agent WebSocket contract:
 https://speechkit.cc/api/asyncapi.v1.yaml
 
-Browser WebSocket auth uses the one-time `?ticket=` value returned from
-`POST /v1/voiceagent/sessions`. Do not put the server bearer token into a
-browser WebSocket handshake. Tickets default to 90 seconds; expired tickets are
-not refreshed in v1, so create a new session.
+Browser WebSocket auth is subprotocol-first. Use the `ws_url` and
+`ws_subprotocol` returned from `POST /v1/voiceagent/sessions`; do not put the
+server bearer token into a browser WebSocket handshake. `legacy_ws_url` exists
+only for compatibility with older clients. Tickets default to 90 seconds;
+expired tickets are not refreshed in v1, so create a new session.
 
-Important v0.38 surfaces:
+Important v0.40.1 surfaces:
 
 - `GET /v1/catalog/profiles`
 - `GET /v1/catalog/contracts`
@@ -120,6 +122,24 @@ Docs-only local config:
     }
   }
 }
+```
+
+## Go SDK Embedding
+
+Use these packages when the host embeds SpeechKit directly instead of calling a
+running server:
+
+- `pkg/speechkit/wakeword` and `pkg/speechkit/wakeword/sherpa`: wake-word detection contracts and sherpa adapter.
+- `pkg/speechkit/companion`: `NewHandsFree` composer for wake events, host transcript requests, Assist, optional TTS, and runtime events.
+- `pkg/speechkit/tts`: ProviderKind-aware Router and Service for local/cloud/direct spoken output.
+- `pkg/speechkit/assist`: Assist service, multi-turn skill context, codeword routing, TTS routing, and optional Genkit adapter.
+
+Smoke examples:
+
+```sh
+go run ./examples/embed-companion
+go run ./examples/embed-tts
+go run ./examples/embed-event-bus
 ```
 
 ## Go AgentKit Harness

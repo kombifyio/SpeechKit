@@ -360,6 +360,14 @@ func (o desktopTranscriptOutput) playAssistAudio(ctx context.Context, result *as
 		playCtx := o.assistPlaybackContext(ctx)
 		audioData := result.Audio
 		audioFormat := result.Format
+		if o.state != nil {
+			o.state.publishSpeechKitEvent(speechkit.Event{
+				Type:     speechkit.EventTTSStarted,
+				Text:     result.SpeakText,
+				Mode:     modeAssist,
+				Provider: audioFormat,
+			})
+		}
 		go func() { //nolint:contextcheck // playbackCtx is app-scoped and intentionally not the request ctx, which would cancel when Deliver() returns
 			var playErr error
 			switch audioFormat {
@@ -377,6 +385,14 @@ func (o desktopTranscriptOutput) playAssistAudio(ctx context.Context, result *as
 			}
 			if prompterPanelSurface && o.state != nil {
 				o.state.updatePrompterState("ready")
+			}
+			if o.state != nil {
+				o.state.publishSpeechKitEvent(speechkit.Event{
+					Type:     speechkit.EventTTSFinished,
+					Text:     result.SpeakText,
+					Mode:     modeAssist,
+					Provider: audioFormat,
+				})
 			}
 		}()
 	}

@@ -130,10 +130,11 @@ func TestOpenReturnsBackendSentinelErrorsUnwrapped(t *testing.T) {
 
 type fakeSession struct{}
 
-func (fakeSession) Start() error                  { return nil }
-func (fakeSession) Stop() ([]byte, error)         { return nil, nil }
-func (fakeSession) IsRunning() bool               { return false }
-func (fakeSession) Events() <-chan Event          { return nil }
-func (fakeSession) SetLevelHandler(func(float64)) {}
-func (fakeSession) SetPCMHandler(func([]byte))    {}
-func (fakeSession) Close() error                  { return nil }
+func (fakeSession) Start() error                         { return nil }
+func (fakeSession) Stop() ([]byte, error)                { return nil, nil }
+func (fakeSession) IsRunning() bool                      { return false }
+func (fakeSession) Events() <-chan Event                 { return nil }
+func (fakeSession) SetLevelHandler(func(float64))        {}
+func (fakeSession) SetPCMHandler(func([]byte))           {}
+func (fakeSession) SetPooledPCMHandler(PooledPCMHandler) {}
+func (fakeSession) Close() error                         { return nil }

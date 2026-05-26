@@ -105,7 +105,7 @@ func TestDesktopCleanupStackEmptyStillEmitsSummary(t *testing.T) {
 // the stack semantics are the load-bearing piece that future
 // regressions are most likely to break.
 func TestDesktopCleanupStackNoGoroutineLeak(t *testing.T) {
-	defer goleak.VerifyNone(t)
+	defer goleak.VerifyNone(t, goleak.IgnoreCurrent())
 
 	var cleanup desktopCleanupStack
 	for i := 0; i < 5; i++ {

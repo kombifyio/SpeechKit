@@ -46,6 +46,15 @@ const (
 	VkShift    = 0x10
 	VkControl  = 0x11
 	VkMenu     = 0x12 // Alt
+
+	// Mouse side-buttons (X1/X2). Used by the v0.39.0 custom-binding picker
+	// so users can bind Dictation/Assist/VoiceAgent to e.g. `mouse-x1` or
+	// `ctrl+mouse-x2`. The poll loop picks them up via GetAsyncKeyState — no
+	// separate WH_MOUSE_LL hook is installed in this iteration. Left/right/
+	// middle mouse buttons are intentionally NOT mapped because binding them
+	// would block everyday clicks.
+	VkXButton1 = 0x05
+	VkXButton2 = 0x06
 )
 
 const (
@@ -544,6 +553,12 @@ var tokenVirtualKeys = map[string]uint32{
 	"escape":    VkEscape,
 	"tab":       VkTab,
 	"backspace": VkBackspace,
+	// Mouse side-buttons. `mouse-x1`/`mouse-x2` is the canonical form used by
+	// the Settings UI picker; `mb4`/`mb5` are equivalents some users type.
+	"mouse-x1": VkXButton1,
+	"mouse-x2": VkXButton2,
+	"mb4":      VkXButton1,
+	"mb5":      VkXButton2,
 }
 
 type kbdllHookStruct struct {

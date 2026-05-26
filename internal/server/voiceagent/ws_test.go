@@ -57,6 +57,15 @@ func TestCreateSessionUsesAPIPrefixInWebSocketURL(t *testing.T) {
 	if !strings.Contains(body.WSURL, "/api/v1/voiceagent/sessions/") {
 		t.Fatalf("ws_url = %q, want /api/v1 prefix", body.WSURL)
 	}
+	if strings.Contains(body.WSURL, "?ticket=") {
+		t.Fatalf("ws_url leaked ticket query: %q", body.WSURL)
+	}
+	if body.WSSubprotocol == "" || !strings.HasPrefix(body.WSSubprotocol, wsTicketSubprotocolPrefix) {
+		t.Fatalf("ws_subprotocol = %q, want ticket.*", body.WSSubprotocol)
+	}
+	if !strings.Contains(body.LegacyWSURL, "?ticket=") {
+		t.Fatalf("legacy_ws_url = %q, want ticket query compatibility URL", body.LegacyWSURL)
+	}
 }
 
 func TestCreateSessionUsesConfiguredPublicURLForWebSocketURL(t *testing.T) {

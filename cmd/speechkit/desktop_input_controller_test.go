@@ -1048,6 +1048,7 @@ func TestDesktopInputControllerVoiceAgentHotkeyToggleDispatchesOnlyActiveModeOnS
 	mockAudio := &mockAudioFrameStreamer{}
 	mockProvider := newSimpleMockLiveProvider()
 	session := voiceagent.NewSession(mockProvider, voiceagent.Callbacks{})
+	ctx, cancel := context.WithCancel(context.Background())
 	controller := desktopInputController{
 		commands:          bus,
 		recording:         &mutableRecordingState{},
@@ -1064,10 +1065,11 @@ func TestDesktopInputControllerVoiceAgentHotkeyToggleDispatchesOnlyActiveModeOnS
 		},
 		audioCapturer: mockAudio,
 	}
+	cleanupVoiceAgentTest(t, cancel, session, nil, mockAudio)
 
 	t.Setenv("FAKE_KEY_FOR_HOTKEY_TOGGLE_TEST", "test-api-key")
 
-	controller.handleHotkey(context.Background(), hotkey.Event{
+	controller.handleHotkey(ctx, hotkey.Event{
 		Binding: "agent",
 		Type:    hotkey.EventKeyDown,
 	})
@@ -1087,7 +1089,7 @@ func TestDesktopInputControllerVoiceAgentHotkeyToggleDispatchesOnlyActiveModeOnS
 		t.Fatal("expected voice agent to be active after first key down")
 	}
 
-	controller.handleHotkey(context.Background(), hotkey.Event{
+	controller.handleHotkey(ctx, hotkey.Event{
 		Binding: "agent",
 		Type:    hotkey.EventKeyUp,
 	})
@@ -1098,7 +1100,7 @@ func TestDesktopInputControllerVoiceAgentHotkeyToggleDispatchesOnlyActiveModeOnS
 		t.Fatal("expected voice agent to stay active after key up")
 	}
 
-	controller.handleHotkey(context.Background(), hotkey.Event{
+	controller.handleHotkey(ctx, hotkey.Event{
 		Binding: "agent",
 		Type:    hotkey.EventKeyDown,
 	})
@@ -1215,6 +1217,7 @@ func TestDesktopInputControllerVoiceAgentBindingToggleDispatchesOnlyActiveModeOn
 	mockAudio := &mockAudioFrameStreamer{}
 	mockProvider := newSimpleMockLiveProvider()
 	session := voiceagent.NewSession(mockProvider, voiceagent.Callbacks{})
+	ctx, cancel := context.WithCancel(context.Background())
 	controller := desktopInputController{
 		commands:          bus,
 		recording:         &mutableRecordingState{},
@@ -1230,10 +1233,11 @@ func TestDesktopInputControllerVoiceAgentBindingToggleDispatchesOnlyActiveModeOn
 		},
 		audioCapturer: mockAudio,
 	}
+	cleanupVoiceAgentTest(t, cancel, session, nil, mockAudio)
 
 	t.Setenv("FAKE_KEY_FOR_SEPARATE_VOICE_AGENT_TEST", "test-api-key")
 
-	controller.handleHotkey(context.Background(), hotkey.Event{
+	controller.handleHotkey(ctx, hotkey.Event{
 		Binding: "voice_agent",
 		Type:    hotkey.EventKeyDown,
 	})
@@ -1253,7 +1257,7 @@ func TestDesktopInputControllerVoiceAgentBindingToggleDispatchesOnlyActiveModeOn
 		t.Fatal("expected voice agent to be active after key down")
 	}
 
-	controller.handleHotkey(context.Background(), hotkey.Event{
+	controller.handleHotkey(ctx, hotkey.Event{
 		Binding: "voice_agent",
 		Type:    hotkey.EventKeyUp,
 	})
@@ -1292,6 +1296,7 @@ func TestDesktopInputControllerCloseVoiceAgentPrompterEndsChatWhenConfiguredForN
 	prompter := &fakeOverlayWindow{visible: true}
 	mockProvider := newSimpleMockLiveProvider()
 	session := voiceagent.NewSession(mockProvider, voiceagent.Callbacks{})
+	ctx, cancel := context.WithCancel(context.Background())
 	t.Setenv("FAKE_KEY_FOR_VOICE_AGENT_CLOSE_TEST", "test-api-key")
 	state := &appState{prompterWindow: prompter}
 	controller := desktopInputController{
@@ -1306,10 +1311,11 @@ func TestDesktopInputControllerCloseVoiceAgentPrompterEndsChatWhenConfiguredForN
 			},
 		},
 	}
+	cleanupVoiceAgentTest(t, cancel, session, state, nil)
 
-	controller.activateVoiceAgent(context.Background())
+	controller.activateVoiceAgent(ctx)
 
-	controller.closeVoiceAgentPrompter(context.Background())
+	controller.closeVoiceAgentPrompter(ctx)
 
 	if got := session.CurrentState(); got != voiceagent.StateInactive {
 		t.Fatalf("session state = %s, want %s after close", got, voiceagent.StateInactive)
@@ -1330,6 +1336,7 @@ func TestDesktopInputControllerVoiceAgentHoldToTalkEndsRealtimeSessionOnKeyUp(t 
 	mockAudio := &mockAudioFrameStreamer{}
 	mockProvider := newSimpleMockLiveProvider()
 	session := voiceagent.NewSession(mockProvider, voiceagent.Callbacks{})
+	ctx, cancel := context.WithCancel(context.Background())
 	controller := desktopInputController{
 		commands:          bus,
 		recording:         &mutableRecordingState{},
@@ -1349,10 +1356,11 @@ func TestDesktopInputControllerVoiceAgentHoldToTalkEndsRealtimeSessionOnKeyUp(t 
 		},
 		audioCapturer: mockAudio,
 	}
+	cleanupVoiceAgentTest(t, cancel, session, nil, mockAudio)
 
 	t.Setenv("FAKE_KEY_FOR_VOICE_AGENT_PTT_TEST", "test-api-key")
 
-	controller.handleHotkey(context.Background(), hotkey.Event{
+	controller.handleHotkey(ctx, hotkey.Event{
 		Binding: "voice_agent",
 		Type:    hotkey.EventKeyDown,
 	})
@@ -1372,7 +1380,7 @@ func TestDesktopInputControllerVoiceAgentHoldToTalkEndsRealtimeSessionOnKeyUp(t 
 		t.Fatal("expected voice agent to be active after key down")
 	}
 
-	controller.handleHotkey(context.Background(), hotkey.Event{
+	controller.handleHotkey(ctx, hotkey.Event{
 		Binding: "voice_agent",
 		Type:    hotkey.EventKeyUp,
 	})
@@ -1405,6 +1413,7 @@ func TestDesktopInputControllerVoiceAgentHoldToTalkShowsReadyPrompterWithoutSeco
 		},
 	})
 	state.voiceAgentSession = session
+	ctx, cancel := context.WithCancel(context.Background())
 	controller := desktopInputController{
 		commands:          bus,
 		recording:         &mutableRecordingState{},
@@ -1423,10 +1432,11 @@ func TestDesktopInputControllerVoiceAgentHoldToTalkShowsReadyPrompterWithoutSeco
 		},
 		audioCapturer: mockAudio,
 	}
+	cleanupVoiceAgentTest(t, cancel, session, state, mockAudio)
 
 	t.Setenv("FAKE_KEY_FOR_VOICE_AGENT_READY_PROMPTER_TEST", "test-api-key")
 
-	controller.handleHotkey(context.Background(), hotkey.Event{
+	controller.handleHotkey(ctx, hotkey.Event{
 		Binding: "voice_agent",
 		Type:    hotkey.EventKeyDown,
 	})
@@ -1445,13 +1455,14 @@ func TestDesktopInputControllerVoiceAgentHoldToTalkShowsReadyPrompterWithoutSeco
 		t.Fatalf("prompter scripts missing immediate active voice agent state: %s", combinedScripts)
 	}
 
-	session.Stop()
+	controller.deactivateVoiceAgent(ctx, true)
 }
 
 func TestMaybeAutoStartVoiceAgentOnLaunchActivatesSession(t *testing.T) {
 	mockAudio := &mockAudioFrameStreamer{}
 	mockProvider := newSimpleMockLiveProvider()
 	session := voiceagent.NewSession(mockProvider, voiceagent.Callbacks{})
+	ctx, cancel := context.WithCancel(context.Background())
 	controller := &desktopInputController{
 		voiceAgentSession: session,
 		voiceAgentConfig: &config.VoiceAgentConfig{
@@ -1473,10 +1484,11 @@ func TestMaybeAutoStartVoiceAgentOnLaunchActivatesSession(t *testing.T) {
 		},
 		audioCapturer: mockAudio,
 	}
+	cleanupVoiceAgentTest(t, cancel, session, nil, mockAudio)
 
 	t.Setenv("FAKE_KEY_FOR_VOICE_AGENT_AUTOSTART_TEST", "test-api-key")
 
-	maybeAutoStartVoiceAgentOnLaunch(context.Background(), controller.cfg, controller)
+	maybeAutoStartVoiceAgentOnLaunch(ctx, controller.cfg, controller)
 	waitForVoiceAgentActive(t, session)
 
 	if got := session.CurrentState(); got == voiceagent.StateInactive {
@@ -1523,6 +1535,36 @@ func TestMaybeAutoStartVoiceAgentOnLaunchSkipsWhenDisabled(t *testing.T) {
 func waitForCondition(t *testing.T, timeout time.Duration, predicate func() bool) {
 	t.Helper()
 	testutil.Eventually(t, timeout, 10*time.Millisecond, predicate)
+}
+
+func cleanupVoiceAgentTest(t *testing.T, cancel context.CancelFunc, session *voiceagent.Session, state *appState, audioCapturer *mockAudioFrameStreamer) {
+	t.Helper()
+	t.Cleanup(func() {
+		if audioCapturer != nil {
+			audioCapturer.SetPCMHandler(nil)
+		}
+		if state != nil {
+			if activationCancel := state.takeVoiceAgentActivationCancel(); activationCancel != nil {
+				activationCancel()
+			}
+			state.stopVoiceAgentAudioSender()
+			state.stopVoiceAgentStream()
+			if policy := state.clearWakewordSessionPolicy(); policy != nil {
+				policy.Close()
+			}
+		}
+		if session != nil {
+			session.Stop()
+		}
+		if cancel != nil {
+			cancel()
+		}
+		if state != nil {
+			state.stopVoiceAgentAudioSender()
+			state.stopVoiceAgentStream()
+		}
+		time.Sleep(25 * time.Millisecond)
+	})
 }
 
 func waitForVoiceAgentActive(t *testing.T, session *voiceagent.Session) {

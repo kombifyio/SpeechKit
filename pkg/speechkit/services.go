@@ -37,6 +37,33 @@ type AssistRequest struct {
 	Context           string `json:"context,omitempty"`
 	EditableTarget    bool   `json:"editableTarget,omitempty"`
 	ProviderProfileID string `json:"providerProfileId,omitempty"`
+	SessionKey        string `json:"sessionKey,omitempty"`
+}
+
+// AudioData carries optional synthesized audio without making AssistResult
+// non-comparable for existing SDK consumers.
+type AudioData []byte
+
+func NewAudioData(data []byte) *AudioData {
+	if len(data) == 0 {
+		return nil
+	}
+	clone := AudioData(append([]byte(nil), data...))
+	return &clone
+}
+
+func (a *AudioData) Bytes() []byte {
+	if a == nil {
+		return nil
+	}
+	return append([]byte(nil), (*a)...)
+}
+
+func (a *AudioData) Len() int {
+	if a == nil {
+		return 0
+	}
+	return len(*a)
 }
 
 // AssistResult is the public one-shot output contract for Assist Mode.
@@ -48,6 +75,8 @@ type AssistResult struct {
 	Surface    AssistSurfaceDecision `json:"surface"`
 	ShortcutID string                `json:"shortcutId,omitempty"`
 	Locale     string                `json:"locale,omitempty"`
+	Audio      *AudioData            `json:"audio,omitempty"`
+	Format     string                `json:"format,omitempty"`
 }
 
 // VoiceAgentTurn is one finalized turn in a realtime or fallback dialogue.

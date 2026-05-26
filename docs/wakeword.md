@@ -8,8 +8,12 @@ architectural sense and is intentionally out of scope.
 
 The framework ships:
 
-- A platform-neutral Go kernel under `internal/wakeword/` (`Pipeline`,
-  `Detector`, `Dispatcher`, `DetectionEvent`).
+- A public Local-Library SDK under `pkg/speechkit/wakeword/` (`Detector`,
+  `Dispatcher`, `DetectionEvent`, `AutoEndPolicy`) plus
+  `pkg/speechkit/wakeword/sherpa/` for the sherpa-onnx adapter on the
+  v0.40.1 implementation branch.
+- A desktop/server compatibility kernel under `internal/wakeword/` used by
+  existing app adapters while v0.40.1 is prepared for release.
 - Per-client adapters that wire the kernel into a particular target's
   audio source, hotkey bus and status surface.
 
@@ -23,7 +27,7 @@ same kernel are roadmap items:
 | Local-Target Go CLI | `cmd/speechkit-cli/` (planned) | Not started |
 | Android (gomobile) | `mobile/android/wakeword.aar` (planned) | Not started |
 | iOS (gomobile) | `mobile/ios/Wakeword.framework` (planned) | Not started |
-| Web | WASM build of `internal/wakeword` (planned) | Not started |
+| Web | WASM build of the public wake-word SDK (planned) | Not started |
 
 Each adapter brings its own audio source and event sink; all share the
 same wake-word trigger contract.
@@ -129,15 +133,21 @@ ships an in-app keyword editor that hides the BPE step.
 
 ## Setup (Windows reference adapter)
 
-1. Open Settings → Modes.
-2. Find the "Wake-word" panel.
-3. Toggle **Enable wake-word**.
-4. Pick the detection backend. Use `sherpa_kws` for the bundled runtime.
-5. Pick a wake phrase from the dropdown.
-6. Pick your default mode (the mode that starts when the phrase fires).
-7. Optionally adjust the threshold (lower = more sensitive). Empty falls
-   back to the sherpa-onnx default (~0.25).
-8. Click Apply. The status feed shows `Wake-word ready: "<phrase>" → <mode>`
+1. Open Settings → Audio → Wake-word.
+2. Toggle **Enable wake-word**.
+3. Pick the detection backend. The default `livekit_openwakeword` ships
+   per-phrase ONNX models for the curated catalog and is the recommended
+   choice; `sherpa_kws` is available when you need a custom phrase outside
+   the catalog; `stt_phrase` is available when you want substring-match
+   semantics on top of a fast STT path.
+4. Pick a wake phrase from the dropdown (catalog: `hey_quby`,
+   `hey_mira`, `hey_kombify`, `hey_jarvis`, `hey_computer`).
+5. Pick your default mode (the mode that starts when the phrase fires —
+   `assist` for one-shot hands-free voice-companion, `voice_agent` for a
+   multi-hour dialogue session, `dictate` for transcription-only).
+6. Optionally adjust the threshold (lower = more sensitive). Empty falls
+   back to the backend default (openWakeWord ~0.5, sherpa-onnx ~0.25).
+7. Click Apply. The status feed shows `Wake-word ready: "<phrase>" → <mode>`
    when the listener is running.
 
 ## Auto-end policy (framework contract)

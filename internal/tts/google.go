@@ -11,6 +11,7 @@ import (
 	"net/url"
 	"time"
 
+	"github.com/kombifyio/SpeechKit/internal/models"
 	"github.com/kombifyio/SpeechKit/internal/netsec"
 )
 
@@ -229,6 +230,14 @@ func (g *Google) Synthesize(ctx context.Context, text string, opts SynthesizeOpt
 }
 
 func (g *Google) Name() string { return "google" }
+
+func (g *Google) Kind() models.ProviderKind { return models.ProviderKindDirectProvider }
+
+func (g *Google) CloseIdleConnections() {
+	if g != nil && g.client != nil {
+		g.client.CloseIdleConnections()
+	}
+}
 
 func (g *Google) Health(ctx context.Context) error {
 	if g.apiKey == "" {

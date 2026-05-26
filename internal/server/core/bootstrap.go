@@ -29,6 +29,7 @@ import (
 	"github.com/kombifyio/SpeechKit/internal/server/catalog"
 	"github.com/kombifyio/SpeechKit/internal/server/configapi"
 	"github.com/kombifyio/SpeechKit/internal/server/dictation"
+	"github.com/kombifyio/SpeechKit/internal/server/httpx"
 	"github.com/kombifyio/SpeechKit/internal/server/middleware"
 	"github.com/kombifyio/SpeechKit/internal/server/persona"
 	"github.com/kombifyio/SpeechKit/internal/server/transcripts"
@@ -36,6 +37,7 @@ import (
 	"github.com/kombifyio/SpeechKit/internal/server/vocabulary"
 	"github.com/kombifyio/SpeechKit/internal/store"
 	"github.com/kombifyio/SpeechKit/internal/tts"
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/lifecycle"
 )
 
 // Mode identifies a server mode toggle.
@@ -66,6 +68,8 @@ type App struct {
 	Mux            *http.ServeMux
 	Health         *HealthRegistry
 	Modes          map[Mode]bool
+	Lifecycle      *lifecycle.Registry
+	SharedDeps     *lifecycle.SharedDepRegistry
 	Version        string
 	AuthState      *middleware.AuthState
 	STTRouter      *router.Router
@@ -161,6 +165,7 @@ func Run(ctx context.Context, cfg *config.Config, opts RunOptions) error {
 		}
 		registerProviderHealth(app, providers, app.ModeEnabled(ModeDictation))
 	}
+	initServerLifecycle(app)
 
 	if cfg.Server.Features.StorageReads || cfg.Server.Features.Vocabulary {
 		ensureStore(cfg, app)
@@ -199,6 +204,9 @@ func Run(ctx context.Context, cfg *config.Config, opts RunOptions) error {
 			app.Health.SetReady("mode.dictation", StatusOK, "listening")
 			slog.Info("mode enabled", "mode", "dictation", "path", "/v1/dictation/transcribe")
 		}
+	} else {
+		mountModeDisabled(app.Mux, ModeDictation, "/v1/dictation/transcribe")
+		app.Health.SetReady("mode.dictation", StatusDisabled, "configured off")
 	}
 
 	if cfg.Server.Features.Catalog {
@@ -290,6 +298,9 @@ func Run(ctx context.Context, cfg *config.Config, opts RunOptions) error {
 		h.Mount(app.Mux)
 		app.Health.SetReady("mode.assist", StatusOK, "listening")
 		slog.Info("mode enabled", "mode", "assist", "path", "/v1/assist/process")
+	} else {
+		mountModeDisabled(app.Mux, ModeAssist, "/v1/assist/process", "/v1/assist/self-test")
+		app.Health.SetReady("mode.assist", StatusDisabled, "configured off")
 	}
 
 	if app.ModeEnabled(ModeVoiceAgent) {
@@ -329,6 +340,12 @@ func Run(ctx context.Context, cfg *config.Config, opts RunOptions) error {
 			"create", "/v1/voiceagent/sessions",
 			"ws", "/v1/voiceagent/sessions/{id}/ws",
 			"status", status)
+	} else {
+		mountModeDisabled(app.Mux, ModeVoiceAgent, "/v1/voiceagent/sessions")
+		if !cfg.Server.Features.StorageReads {
+			mountModeDisabled(app.Mux, ModeVoiceAgent, "/v1/voiceagent/sessions/")
+		}
+		app.Health.SetReady("mode.voiceagent", StatusDisabled, "configured off")
 	}
 
 	if opts.HandlerHooks != nil {
@@ -458,6 +475,11 @@ func Run(ctx context.Context, cfg *config.Config, opts RunOptions) error {
 	if err := srv.Shutdown(shutdownCtx); err != nil {
 		slog.Warn("HTTP shutdown did not complete cleanly", "err", err)
 	}
+	if app.Lifecycle != nil {
+		if err := app.Lifecycle.Shutdown(shutdownCtx); err != nil {
+			slog.Warn("server lifecycle shutdown", "err", err)
+		}
+	}
 
 	// Drain any lingering serve error.
 	if err := <-serveErr; err != nil {
@@ -514,6 +536,21 @@ func firstVANonEmpty(a, b string) string {
 		return a
 	}
 	return b
+}
+
+func mountModeDisabled(mux *http.ServeMux, mode Mode, patterns ...string) {
+	if mux == nil {
+		return
+	}
+	for _, pattern := range patterns {
+		pattern := strings.TrimSpace(pattern)
+		if pattern == "" {
+			continue
+		}
+		mux.HandleFunc(pattern, func(w http.ResponseWriter, _ *http.Request) {
+			httpx.WriteModeDisabled(w, string(mode))
+		})
+	}
 }
 
 // ensureStore opens the configured durable store. Idempotent — the first

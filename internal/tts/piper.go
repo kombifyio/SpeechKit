@@ -12,6 +12,8 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/kombifyio/SpeechKit/internal/models"
 )
 
 // Piper implements Provider via the `piper` command-line binary. The
@@ -90,6 +92,8 @@ func NewPiper(opts PiperOpts) (*Piper, error) {
 
 // Name returns the provider identifier.
 func (*Piper) Name() string { return "piper" }
+
+func (*Piper) Kind() models.ProviderKind { return models.ProviderKindLocalBuiltIn }
 
 // Health verifies the piper binary can be located. Voice-model
 // presence is not checked here — operators may have a partial set

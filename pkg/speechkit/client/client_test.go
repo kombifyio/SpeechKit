@@ -292,6 +292,7 @@ func TestClientValidationAndErrorPaths(t *testing.T) {
 
 func TestVoiceAgentSessionLifecycle(t *testing.T) {
 	var gotAuth string
+	var gotSubprotocol string
 	var gotFrames []string
 	var gotBinary string
 
@@ -299,15 +300,18 @@ func TestVoiceAgentSessionLifecycle(t *testing.T) {
 		switch {
 		case r.Method == http.MethodPost && r.URL.Path == "/v1/voiceagent/sessions":
 			_ = json.NewEncoder(w).Encode(map[string]any{
-				"session_id": "session-1",
-				"ws_url":     "ws://" + r.Host + "/v1/voiceagent/ws?ticket=ticket-1",
-				"ticket":     "ticket-1",
-				"expires_at": "2026-05-16T15:00:00Z",
+				"session_id":     "session-1",
+				"ws_url":         "ws://" + r.Host + "/v1/voiceagent/ws",
+				"ws_subprotocol": "ticket.ticket-1",
+				"legacy_ws_url":  "ws://" + r.Host + "/v1/voiceagent/ws?ticket=ticket-1",
+				"ticket":         "ticket-1",
+				"expires_at":     "2026-05-16T15:00:00Z",
 			})
 		case r.Method == http.MethodDelete && r.URL.Path == "/v1/voiceagent/sessions/session-1":
 			http.NotFound(w, r)
 		case r.URL.Path == "/v1/voiceagent/ws":
 			gotAuth = r.Header.Get("Authorization")
+			gotSubprotocol = r.Header.Get("Sec-WebSocket-Protocol")
 			conn, err := ws.Accept(w, r, nil)
 			if err != nil {
 				t.Errorf("Accept: %v", err)
@@ -352,7 +356,7 @@ func TestVoiceAgentSessionLifecycle(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CreateVoiceAgentSession: %v", err)
 	}
-	if ticket.SessionID != "session-1" || ticket.Ticket != "ticket-1" || ticket.ExpiresAt.IsZero() {
+	if ticket.SessionID != "session-1" || ticket.Ticket != "ticket-1" || ticket.WSSubprotocol != "ticket.ticket-1" || ticket.ExpiresAt.IsZero() {
 		t.Fatalf("ticket = %+v", ticket)
 	}
 
@@ -419,6 +423,9 @@ func TestVoiceAgentSessionLifecycle(t *testing.T) {
 
 	if gotAuth != "Bearer voice-token" {
 		t.Fatalf("websocket Authorization = %q", gotAuth)
+	}
+	if gotSubprotocol != "ticket.ticket-1" {
+		t.Fatalf("websocket subprotocol = %q", gotSubprotocol)
 	}
 	if gotBinary != "mic" {
 		t.Fatalf("binary = %q", gotBinary)

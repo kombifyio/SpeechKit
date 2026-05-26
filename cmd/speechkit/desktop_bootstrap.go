@@ -15,6 +15,7 @@ import (
 	"github.com/kombifyio/SpeechKit/internal/output"
 	"github.com/kombifyio/SpeechKit/internal/router"
 	"github.com/kombifyio/SpeechKit/internal/store"
+	"github.com/kombifyio/SpeechKit/internal/tts"
 	"github.com/kombifyio/SpeechKit/internal/vad"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit"
 )
@@ -219,13 +220,120 @@ func initDesktopAppContext(state *appState, cleanup *desktopCleanupStack) (conte
 }
 
 func initDesktopRuntimeServices(ctx context.Context, cfg *config.Config, state *appState, cleanup *desktopCleanupStack) desktopRuntimeServices {
-	initDesktopAIRuntime(ctx, cfg, state)
-	ttsRouter := initDesktopTTSRuntime(ctx, cfg, state, cleanup)
+	// M2b-phase-1 (v0.40): cold-start gating. Genkit + TTS + Assist
+	// runtime construction now depends on which modes are enabled in
+	// cfg. A Dictation-only host never instantiates Genkit's plugin
+	// stack or the TTS router. When the user later toggles Assist or
+	// Voice-Agent on via the UI, settings_routes_modes invokes
+	// ensureSharedDepsForCfg(ctx, cfg, state, cleanup) which lazy-
+	// initialises the missing pieces. Idempotent in both directions.
+	if desktopRuntimeAINeeded(cfg) {
+		initDesktopAIRuntime(ctx, cfg, state)
+	} else {
+		slog.Info("desktop services: skipping Genkit init — neither Assist nor Voice-Agent enabled")
+	}
+
+	var ttsRouter *tts.Router
+	if desktopRuntimeTTSNeeded(cfg) {
+		ttsRouter = initDesktopTTSRuntime(ctx, cfg, state, cleanup)
+	} else {
+		slog.Info("desktop services: skipping TTS router init — neither Assist nor Voice-Agent enabled")
+	}
+
 	clipHandler, quickActions, shortcutResolver := initDesktopQuickActions(cfg, state)
-	initDesktopAssistRuntime(cfg, state, ttsRouter, shortcutResolver, quickActions)
+	state.mu.Lock()
+	state.assistQuickActions = quickActions
+	state.assistShortcutResolver = shortcutResolver
+	state.mu.Unlock()
+	if cfg != nil && cfg.General.AssistEnabled {
+		initDesktopAssistRuntime(cfg, state, ttsRouter, shortcutResolver, quickActions)
+	}
 	return desktopRuntimeServices{
 		Clipboard:    clipHandler,
 		QuickActions: quickActions,
+	}
+}
+
+// desktopRuntimeAINeeded reports whether the Genkit AI runtime should
+// be instantiated at this startup. True when at least one of the modes
+// that consumes it (Assist, Voice-Agent — both legacy hotkey toggles
+// and the future lifecycle.Registry view) is enabled.
+func desktopRuntimeAINeeded(cfg *config.Config) bool {
+	if cfg == nil {
+		return false
+	}
+	return cfg.General.AssistEnabled || cfg.General.VoiceAgentEnabled
+}
+
+// desktopRuntimeTTSNeeded reports whether the TTS router should be
+// instantiated. TTS feeds Assist replies and the Voice-Agent cascaded
+// fallback; Dictation never uses it. Aligned with desktopRuntimeAINeeded
+// today; kept as a separate predicate so future modes (e.g. read-aloud)
+// can shift the boundary without touching the AI predicate.
+func desktopRuntimeTTSNeeded(cfg *config.Config) bool {
+	if cfg == nil {
+		return false
+	}
+	return cfg.General.AssistEnabled || cfg.General.VoiceAgentEnabled
+}
+
+// ensureSharedDepsForCfg lazily initialises any of the runtime pieces
+// that desktopRuntimeAINeeded / desktopRuntimeTTSNeeded says should
+// exist but isn't on state yet. Idempotent: a second call when state
+// is already populated is a noop. Designed to be called from
+// settings_routes_modes on a mode-toggle-on event so the host warms
+// the runtime without a process restart.
+//
+// Best-Effort Hybrid (per roadmap risk R1 resolved 2026-05-26):
+// Genkit has no public Close. Once initialised it stays loaded until
+// process exit; provider HTTP connection pools idle out on their own.
+// The big win this function delivers is the cold-start case where a
+// Dictation-only user never pays Genkit's init cost at all.
+func ensureSharedDepsForCfg(ctx context.Context, cfg *config.Config, state *appState, cleanup *desktopCleanupStack) {
+	if cfg == nil || state == nil {
+		return
+	}
+	if desktopRuntimeAINeeded(cfg) {
+		state.mu.Lock()
+		needs := state.genkitRT == nil
+		state.mu.Unlock()
+		if needs {
+			initDesktopAIRuntime(ctx, cfg, state)
+		}
+	}
+	if desktopRuntimeTTSNeeded(cfg) {
+		state.mu.Lock()
+		needs := state.ttsRouter == nil
+		state.mu.Unlock()
+		if needs {
+			initDesktopTTSRuntime(ctx, cfg, state, cleanup)
+		}
+	}
+}
+
+func syncDesktopModeRuntimeForCfg(ctx context.Context, cfg *config.Config, state *appState, cleanup *desktopCleanupStack) {
+	if cfg == nil || state == nil {
+		return
+	}
+	ensureSharedDepsForCfg(ctx, cfg, state, cleanup)
+
+	state.mu.Lock()
+	needsAssistPipeline := cfg.General.AssistEnabled && state.assistPipeline == nil
+	ttsRouter := state.ttsRouter
+	shortcutResolver := state.assistShortcutResolver
+	quickActions := state.assistQuickActions
+	state.mu.Unlock()
+	if needsAssistPipeline {
+		initDesktopAssistRuntime(cfg, state, ttsRouter, shortcutResolver, quickActions)
+	}
+
+	if !cfg.General.AssistEnabled {
+		state.mu.Lock()
+		state.assistPipeline = nil
+		state.mu.Unlock()
+	}
+	if !desktopRuntimeTTSNeeded(cfg) {
+		teardownDesktopTTSRuntime(state)
 	}
 }
 

@@ -134,19 +134,30 @@ func (q *quickActionCoordinator) resolveDecisionFromCommand(command speechkit.Co
 }
 
 func (q *quickActionCoordinator) executeDecision(ctx context.Context, decision quickActionDecision, invocation quickActionInvocation) error {
+	var err error
 	switch decision.kind {
 	case quickActionCopyLast:
-		return q.copyLast()
+		err = q.copyLast()
 	case quickActionInsertLast:
-		return q.insertLast(ctx, invocation.transcript, invocation.target)
+		err = q.insertLast(ctx, invocation.transcript, invocation.target)
 	case quickActionSummarize:
 		if invocation.captureClipboard {
-			return q.summarizeSelection(ctx, invocation.transcript, invocation.target, decision.instruction)
+			err = q.summarizeSelection(ctx, invocation.transcript, invocation.target, decision.instruction)
+		} else {
+			err = q.summarizeText(ctx, invocation.transcript.Text, invocation.target, decision.instruction, invocation.transcript.Language)
 		}
-		return q.summarizeText(ctx, invocation.transcript.Text, invocation.target, decision.instruction, invocation.transcript.Language)
 	default:
 		return nil
 	}
+	if err == nil && q != nil && q.state != nil {
+		q.state.publishSpeechKitEvent(speechkit.Event{
+			Type:     speechkit.EventSkillExecuted,
+			Message:  fmt.Sprintf("Skill executed: %s", decision.kind),
+			Text:     invocation.transcript.Text,
+			Shortcut: string(decision.kind),
+		})
+	}
+	return err
 }
 
 func (q *quickActionCoordinator) copyLast() error {

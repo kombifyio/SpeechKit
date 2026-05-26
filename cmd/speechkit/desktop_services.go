@@ -6,6 +6,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/firebase/genkit/go/core"
+
 	"github.com/kombifyio/SpeechKit/cmd/speechkit/internal/transcription"
 	appai "github.com/kombifyio/SpeechKit/internal/ai"
 	"github.com/kombifyio/SpeechKit/internal/ai/flows"
@@ -29,12 +31,18 @@ func initDesktopAIRuntime(ctx context.Context, cfg *config.Config, state *appSta
 		return
 	}
 
-	state.genkitRT = genkitRT
-	state.summarizeFlow = flows.DefineSummarizeFlow(genkitRT.G, genkitRT.UtilityModels())
-	state.agentFlow = flows.DefineAgentFlow(genkitRT.G, genkitRT.AgentModels())
+	summarizeFlow := flows.DefineSummarizeFlow(genkitRT.G, genkitRT.UtilityModels())
+	agentFlow := flows.DefineAgentFlow(genkitRT.G, genkitRT.AgentModels())
+	var assistFlow *core.Flow[flows.AssistInput, flows.AssistOutput, struct{}]
 	if len(genkitRT.AssistModels()) > 0 {
-		state.assistFlow = flows.DefineAssistFlow(genkitRT.G, genkitRT.AssistModels())
+		assistFlow = flows.DefineAssistFlow(genkitRT.G, genkitRT.AssistModels())
 	}
+	state.mu.Lock()
+	state.genkitRT = genkitRT
+	state.summarizeFlow = summarizeFlow
+	state.agentFlow = agentFlow
+	state.assistFlow = assistFlow
+	state.mu.Unlock()
 
 	slog.Info("genkit initialized",
 		"utility_models", len(genkitRT.UtilityModels()),
@@ -45,7 +53,9 @@ func initDesktopAIRuntime(ctx context.Context, cfg *config.Config, state *appSta
 
 func initDesktopTTSRuntime(ctx context.Context, cfg *config.Config, state *appState, cleanup *desktopCleanupStack) *tts.Router {
 	ttsRouter := buildTTSRouter(cfg)
+	state.mu.Lock()
 	state.ttsRouter = ttsRouter
+	state.mu.Unlock()
 	if ttsRouter != nil {
 		healthResults := ttsRouter.HealthCheck(ctx)
 		for name, err := range healthResults {
@@ -56,6 +66,9 @@ func initDesktopTTSRuntime(ctx context.Context, cfg *config.Config, state *appSt
 			}
 		}
 	}
+	if ttsRouter == nil {
+		return nil
+	}
 
 	audioPlayer, err := audio.NewPlayer()
 	if err != nil {
@@ -63,13 +76,34 @@ func initDesktopTTSRuntime(ctx context.Context, cfg *config.Config, state *appSt
 		state.addLog("TTS audio player unavailable — voice output disabled", "warn")
 		return ttsRouter
 	}
+	state.mu.Lock()
 	state.audioPlayer = audioPlayer
+	state.mu.Unlock()
 	if cleanup != nil {
 		cleanup.Add(audioPlayer.Close)
 	}
 	slog.Info("audio player ready (24kHz mono)")
 
 	return ttsRouter
+}
+
+func teardownDesktopTTSRuntime(state *appState) {
+	if state == nil {
+		return
+	}
+	state.mu.Lock()
+	ttsRouter := state.ttsRouter
+	audioPlayer := state.audioPlayer
+	state.ttsRouter = nil
+	state.audioPlayer = nil
+	state.mu.Unlock()
+
+	if ttsRouter != nil {
+		ttsRouter.CloseIdleConnections()
+	}
+	if audioPlayer != nil {
+		audioPlayer.Close()
+	}
 }
 
 func initDesktopQuickActions(cfg *config.Config, state *appState) (*output.ClipboardHandler, *quickActionCoordinator, *shortcuts.Resolver) {
@@ -87,8 +121,17 @@ func initDesktopQuickActions(cfg *config.Config, state *appState) (*output.Clipb
 }
 
 func initDesktopAssistRuntime(cfg *config.Config, state *appState, ttsRouter *tts.Router, shortcutResolver *shortcuts.Resolver, quickActions *quickActionCoordinator) {
-	state.assistExecutor = newAssistToolExecutor(quickActions)
-	if state.assistFlow == nil && state.assistExecutor == nil {
+	hostExecutor := newAssistToolExecutor(quickActions)
+	state.mu.Lock()
+	state.assistExecutor = hostExecutor
+	assistFlow := state.assistFlow
+	if state.assistSkillContextStore == nil {
+		state.assistSkillContextStore = assist.NewInMemorySkillContextStore(60*time.Second, nil)
+	}
+	skillContexts := state.assistSkillContextStore
+	state.mu.Unlock()
+
+	if assistFlow == nil && hostExecutor == nil {
 		return
 	}
 
@@ -102,7 +145,7 @@ func initDesktopAssistRuntime(cfg *config.Config, state *appState, ttsRouter *tt
 	haToken := strings.TrimSpace(config.ResolveSecret(cfg.Assist.HomeAssistant.TokenEnv))
 	haConfigured := haURL != "" && haToken != ""
 	skills := voice_companion.AllSkills(haURL, haToken)
-	executor := voice_companion.NewCompositeExecutor(skills, state.assistExecutor)
+	executor := voice_companion.NewCompositeExecutor(skills, hostExecutor)
 
 	routerOpts := []assist.RouterOption{assist.WithResolver(shortcutResolver)}
 	if haConfigured {
@@ -127,21 +170,20 @@ func initDesktopAssistRuntime(cfg *config.Config, state *appState, ttsRouter *tt
 	// skills ask follow-up questions ("Timer für wie lange?"). One store
 	// survives pipeline re-builds on model-profile switches so an in-flight
 	// follow-up does not reset when the user changes the LLM.
-	if state.assistSkillContextStore == nil {
-		state.assistSkillContextStore = assist.NewInMemorySkillContextStore(60*time.Second, nil)
-	}
-
-	state.assistPipeline = assist.NewPipeline(
-		state.assistFlow,
+	pipeline := assist.NewPipeline(
+		assistFlow,
 		executor,
 		ttsRouter,
 		cfg.TTS.Enabled,
 		assist.WithRouter(assist.NewRouter(routerOpts...)),
-		assist.WithSkillContextStore(state.assistSkillContextStore),
+		assist.WithSkillContextStore(skillContexts),
 	)
+	state.mu.Lock()
+	state.assistPipeline = pipeline
+	state.mu.Unlock()
 	slog.Info("assist pipeline ready (voice-companion skills wired)",
 		"home_assistant", haConfigured,
-		"multi_turn", state.assistSkillContextStore != nil)
+		"multi_turn", skillContexts != nil)
 }
 
 func openDesktopFeedbackStore(cfg *config.Config, state *appState, cleanup *desktopCleanupStack) store.Store {

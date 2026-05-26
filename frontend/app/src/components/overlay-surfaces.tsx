@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react'
+import { Suspense, lazy, useEffect, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react'
 import {
   AudioLines,
   Bot,
@@ -9,8 +9,20 @@ import {
   type LucideIcon,
 } from 'lucide-react'
 
-import { AgentAudioVisualizerBar } from '@/components/agent-audio-visualizer-bar'
-import { AgentAudioVisualizerRadial } from '@/components/agent-audio-visualizer-radial'
+// v0.40 M4: lazy-load the Voice-Agent audio visualisers so they
+// (and their @livekit/components-react / livekit-client transitive
+// imports) DON'T appear in the static dep graph of the overlay
+// entry. A Dictation-only host never downloads them.
+const AgentAudioVisualizerBar = lazy(() =>
+  import('@/components/agent-audio-visualizer-bar').then((m) => ({
+    default: m.AgentAudioVisualizerBar,
+  })),
+)
+const AgentAudioVisualizerRadial = lazy(() =>
+  import('@/components/agent-audio-visualizer-radial').then((m) => ({
+    default: m.AgentAudioVisualizerRadial,
+  })),
+)
 import { DotRadialMenu, type DotMenuItem } from '@/components/dot-radial-menu'
 import {
   resolveOverlayTone,
@@ -486,15 +498,17 @@ function PillAnchorOverlayView({
             shellClassName={tone.shellClassName}
             surface="pill-anchor"
           >
-            <AgentAudioVisualizerBar
-              data-testid="pill-anchor-visualizer"
-              size={tone.size}
-              state={tone.state}
-              level={tone.level}
-              barCount={5}
-              color={tone.color}
-              className={['relative z-10 text-current', tone.visualizerClassName].join(' ')}
-            />
+            <Suspense fallback={null}>
+              <AgentAudioVisualizerBar
+                data-testid="pill-anchor-visualizer"
+                size={tone.size}
+                state={tone.state}
+                level={tone.level}
+                barCount={5}
+                color={tone.color}
+                className={['relative z-10 text-current', tone.visualizerClassName].join(' ')}
+              />
+            </Suspense>
           </OverlayPillShell>
         </CompactFeedbackStack>
       </div>
@@ -656,15 +670,17 @@ function PillPanelOverlayView({
               onPointerUp={endPanelDrag}
               onPointerCancel={endPanelDrag}
             >
-              <AgentAudioVisualizerBar
-                data-testid="pill-panel-visualizer"
-                size={tone.size}
-                state={tone.state}
-                level={tone.level}
-                barCount={5}
-                color={tone.color}
-                className={['relative z-10 text-current', tone.visualizerClassName].join(' ')}
-              />
+              <Suspense fallback={null}>
+                <AgentAudioVisualizerBar
+                  data-testid="pill-panel-visualizer"
+                  size={tone.size}
+                  state={tone.state}
+                  level={tone.level}
+                  barCount={5}
+                  color={tone.color}
+                  className={['relative z-10 text-current', tone.visualizerClassName].join(' ')}
+                />
+              </Suspense>
             </OverlayPillShell>
 
             <OverlayPanelSection testId="pill-panel-mode-controls" className="w-[76px] justify-end">
@@ -732,14 +748,16 @@ function DotAnchorOverlayView({
           <span data-testid="dot-anchor-status" className="sr-only">
             {overlayStatusLabel(snapshot)}
           </span>
-          <AgentAudioVisualizerRadial
-            data-testid="dot-anchor-visualizer"
-            size={tone.size}
-            state={tone.state}
-            level={tone.level}
-            color={tone.color}
-            className={['aspect-square text-current', tone.visualizerClassName].join(' ')}
-          />
+          <Suspense fallback={null}>
+            <AgentAudioVisualizerRadial
+              data-testid="dot-anchor-visualizer"
+              size={tone.size}
+              state={tone.state}
+              level={tone.level}
+              color={tone.color}
+              className={['aspect-square text-current', tone.visualizerClassName].join(' ')}
+            />
+          </Suspense>
           <BubbleGlyph />
         </div>
       </div>

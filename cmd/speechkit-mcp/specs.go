@@ -153,7 +153,7 @@ func promptText(name string) string {
 	case "speechkit_go_sdk_integration":
 		return "Hi Codex, add SpeechKit as a Go framework dependency and use the documented Dictation, Assist, and Voice Agent contracts. Start with https://speechkit.cc/llms.txt, then prefer pkg/speechkit for embedded Go hosts and pkg/speechkit/client for a running SpeechKit Server."
 	case "speechkit_http_integration":
-		return "Use the SpeechKit OpenAPI contract at https://speechkit.cc/api/openapi.v1.yaml before writing HTTP code, and the Voice Agent AsyncAPI contract at https://speechkit.cc/api/asyncapi.v1.yaml before writing WebSocket clients. Browser WebSocket auth uses the returned ?ticket query, not a bearer header. Prefer canonical /v1 paths and voiceagent spelling for Dictation, Assist, Voice Agent, catalog, config, vocabulary, transcript, and TTS calls."
+		return "Use the SpeechKit OpenAPI contract at https://speechkit.cc/api/openapi.v1.yaml before writing HTTP code, and the Voice Agent AsyncAPI contract at https://speechkit.cc/api/asyncapi.v1.yaml before writing WebSocket clients. Browser WebSocket auth uses the returned ws_subprotocol, not a bearer header; query-string ticket URLs are legacy compatibility only. Prefer canonical /v1 paths and voiceagent spelling for Dictation, Assist, Voice Agent, catalog, config, vocabulary, transcript, and TTS calls."
 	case "speechkit_windows_client_to_server_setup":
 		return "Connect the Local Windows Client to a SpeechKit Server only after the server passes /healthz and /readyz. Keep mode_source and server_connection settings explicit, and keep bearer tokens in environment variables."
 	case "speechkit_feature_integration":

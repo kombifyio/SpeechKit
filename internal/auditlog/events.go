@@ -40,6 +40,21 @@ const (
 	// providers), "fingerprint_truncated" (first 16 hex chars of SHA-256 of the
 	// key — correlates events without leaking the key itself).
 	EventBYOKKeyUpdated Event = "byok.key_updated"
+
+	// EventModeStart is emitted when a SpeechKit mode runtime transitions to
+	// Running (Outcome=success) or to Failed from Starting (Outcome=failure).
+	// Source: subscribers of pkg/speechkit/lifecycle.Registry. Resource
+	// fields: "mode" (string), "requires" (array of SharedDepKey, omitted
+	// when empty), "error" (string, only on failure). See
+	// docs/compliance/audit-event-catalog.md "mode.start" for the full
+	// contract incl. the mode.start/mode.stop pairing rule.
+	EventModeStart Event = "mode.start"
+
+	// EventModeStop is emitted when a SpeechKit mode runtime transitions to
+	// Stopped (Outcome=success) or to Failed from Stopping (Outcome=failure).
+	// Resource fields mirror EventModeStart with "released" instead of
+	// "requires" — the shared deps the runtime relinquished as it stopped.
+	EventModeStop Event = "mode.stop"
 )
 
 // Actor identifies who or what triggered the audited action.

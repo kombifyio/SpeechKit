@@ -156,11 +156,33 @@ func (c *Client) BaseURL() *url.URL {
 	return &clone
 }
 
+// nilReceiverFallbackTimeout caps the HTTP client returned by
+// HTTPClient when invoked on a nil *Client receiver. The value is the
+// safety net for an embedder that obtained a nil reference through a
+// programmer bug — without the cap, the fallback would silently use
+// http.DefaultClient (Timeout=0) and any misbehaving server would hang
+// the host process indefinitely. 30s matches the conservative default
+// elsewhere in this package; embedders that need different semantics
+// MUST construct a Client via New / NewFromConfig.
+const nilReceiverFallbackTimeout = 30 * time.Second
+
+// nilReceiverFallbackClient is the package-level bounded fallback used
+// only by HTTPClient on a nil receiver. It is never returned via the
+// New / NewFromConfig path.
+var nilReceiverFallbackClient = &http.Client{Timeout: nilReceiverFallbackTimeout}
+
 // HTTPClient returns the underlying *http.Client. Mode adapters use it
 // directly so they can stream uploads/downloads without buffering.
+//
+// On a nil receiver, returns a package-level fallback with a 30 s
+// timeout rather than http.DefaultClient — see B2 in
+// docs/roadmap/v0.40-and-beyond-enterprise-modularity.md for the
+// rationale (no-timeout DefaultClient was an embedder hang vector).
+// Production callers obtain a Client via New / NewFromConfig and
+// never hit this branch.
 func (c *Client) HTTPClient() *http.Client {
 	if c == nil {
-		return http.DefaultClient
+		return nilReceiverFallbackClient
 	}
 	return c.httpClient
 }

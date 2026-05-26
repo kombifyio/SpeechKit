@@ -155,6 +155,9 @@ jobs:
       - name: Build frontend
         run: npm run build
 
+      - name: Check bundle-size budgets (B3 — v0.40 Track B)
+        run: npm run bundle:check
+
       - name: Install Playwright Chromium
         run: npx playwright install --with-deps chromium
 

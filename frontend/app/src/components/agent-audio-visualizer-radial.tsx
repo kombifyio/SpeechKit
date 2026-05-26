@@ -4,10 +4,10 @@ import { type ComponentProps, type CSSProperties, useMemo } from 'react';
 import { type VariantProps, cva } from 'class-variance-authority';
 import { type LocalAudioTrack, type RemoteAudioTrack } from 'livekit-client';
 import {
-  type AgentState,
   type TrackReferenceOrPlaceholder,
   useMultibandTrackVolume,
 } from '@livekit/components-react';
+import type { AgentVisualizerState } from '@/lib/agent-visualizer-state';
 import { buildSyntheticBands } from '@/lib/synthetic-audio';
 import { cn } from '@/lib/utils';
 import { useAgentAudioVisualizerRadialAnimator } from '@/hooks/use-agent-audio-visualizer-radial';
@@ -52,7 +52,7 @@ export interface AgentAudioVisualizerRadialProps {
    * The current state of the agent. Determines the animation pattern.
    * @defaultValue 'connecting'
    */
-  state?: AgentState;
+  state?: AgentVisualizerState;
   /**
    * The color of the radial bars in hexidecimal format.
    */

@@ -228,7 +228,7 @@ func New(opts HandlerOptions) (*Handler, error) {
 //	POST   /v1/voiceagent/sessions        — create session + mint ticket
 //	GET    /v1/voiceagent/sessions        — list caller's active sessions
 //	DELETE /v1/voiceagent/sessions/{id}   — force close a session
-//	GET    /v1/voiceagent/sessions/{id}/ws?ticket=... — upgrade to WebSocket
+//	GET    /v1/voiceagent/sessions/{id}/ws — upgrade to WebSocket with Sec-WebSocket-Protocol: ticket.<ticket>
 func (h *Handler) Mount(mux *http.ServeMux) {
 	mux.HandleFunc("/v1/voiceagent/sessions", h.collectionHandler)
 	mux.HandleFunc("/v1/voiceagent/sessions/", h.itemHandler)
@@ -237,11 +237,13 @@ func (h *Handler) Mount(mux *http.ServeMux) {
 // ── HTTP endpoints ──────────────────────────────────────────────────────────
 
 type createSessionResponse struct {
-	SessionID string           `json:"session_id"`
-	WSURL     string           `json:"ws_url"`
-	Ticket    string           `json:"ticket"`
-	ExpiresAt string           `json:"expires_at"`
-	LiveKit   *LiveKitJoinInfo `json:"livekit,omitempty"`
+	SessionID     string           `json:"session_id"`
+	WSURL         string           `json:"ws_url"`
+	WSSubprotocol string           `json:"ws_subprotocol,omitempty"`
+	LegacyWSURL   string           `json:"legacy_ws_url,omitempty"`
+	Ticket        string           `json:"ticket"`
+	ExpiresAt     string           `json:"expires_at"`
+	LiveKit       *LiveKitJoinInfo `json:"livekit,omitempty"`
 }
 
 type listSessionsResponse struct {
@@ -370,7 +372,9 @@ func (h *Handler) createSession(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	wsURL := h.webSocketURL(r, session.ID, ticket)
+	wsURL := h.webSocketURL(r, session.ID)
+	legacyWSURL := h.legacyWebSocketURL(r, session.ID, ticket)
+	wsSubprotocol := wsTicketSubprotocol(ticket)
 	expires := h.manager.opts.Clock().Add(h.manager.opts.TicketTTL).UTC().Format(time.RFC3339)
 	var liveKit *LiveKitJoinInfo
 	if h.liveKit != nil && h.liveKit.Enabled() {
@@ -386,11 +390,13 @@ func (h *Handler) createSession(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
 	_ = json.NewEncoder(w).Encode(createSessionResponse{
-		SessionID: session.ID,
-		WSURL:     wsURL,
-		Ticket:    ticket,
-		ExpiresAt: expires,
-		LiveKit:   liveKit,
+		SessionID:     session.ID,
+		WSURL:         wsURL,
+		WSSubprotocol: wsSubprotocol,
+		LegacyWSURL:   legacyWSURL,
+		Ticket:        ticket,
+		ExpiresAt:     expires,
+		LiveKit:       liveKit,
 	})
 }
 
@@ -536,7 +542,7 @@ func (h *Handler) upgradeWS(w http.ResponseWriter, r *http.Request, sessionID st
 	adapter.Run(r.Context())
 }
 
-func (h *Handler) webSocketURL(r *http.Request, sessionID, ticket string) string {
+func (h *Handler) webSocketURL(r *http.Request, sessionID string) string {
 	scheme, host, prefix := requestWebSocketParts(r)
 	if h.publicURL != "" {
 		if parsed, ok := parsePublicURL(h.publicURL); ok {
@@ -545,7 +551,19 @@ func (h *Handler) webSocketURL(r *http.Request, sessionID, ticket string) string
 			prefix = parsed.prefix
 		}
 	}
-	return fmt.Sprintf("%s://%s%s/voiceagent/sessions/%s/ws?ticket=%s", scheme, host, voiceAgentPublicBase(prefix), sessionID, url.QueryEscape(ticket))
+	return fmt.Sprintf("%s://%s%s/voiceagent/sessions/%s/ws", scheme, host, voiceAgentPublicBase(prefix), sessionID)
+}
+
+func (h *Handler) legacyWebSocketURL(r *http.Request, sessionID, ticket string) string {
+	return h.webSocketURL(r, sessionID) + "?ticket=" + url.QueryEscape(ticket)
+}
+
+func wsTicketSubprotocol(ticket string) string {
+	ticket = strings.TrimSpace(ticket)
+	if ticket == "" {
+		return ""
+	}
+	return wsTicketSubprotocolPrefix + ticket
 }
 
 type publicURLParts struct {

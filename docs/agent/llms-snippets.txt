@@ -130,7 +130,7 @@ curl -X POST "$SPEECHKIT_SERVER_URL/v1/voiceagent/sessions" \
   -d '{"persona_id":"default"}'
 ```
 
-### Step 2: upgrade WebSocket using the returned ticket
+### Step 2: upgrade WebSocket using the returned subprotocol
 
 ```ts
 const session = await fetch(`${SERVER}/v1/voiceagent/sessions`, {
@@ -140,7 +140,8 @@ const session = await fetch(`${SERVER}/v1/voiceagent/sessions`, {
 }).then((r) => r.json());
 
 const ws = new WebSocket(
-  `${SERVER.replace("http", "ws")}/v1/voiceagent/sessions/${session.session_id}/ws?ticket=${session.ticket}`,
+  session.ws_url,
+  [session.ws_subprotocol],
 );
 
 ws.onopen = () => {

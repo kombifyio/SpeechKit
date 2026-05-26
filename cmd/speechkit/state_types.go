@@ -16,6 +16,7 @@ import (
 	"github.com/kombifyio/SpeechKit/internal/config"
 	"github.com/kombifyio/SpeechKit/internal/downloads"
 	"github.com/kombifyio/SpeechKit/internal/router"
+	"github.com/kombifyio/SpeechKit/internal/shortcuts"
 	"github.com/kombifyio/SpeechKit/internal/store"
 	"github.com/kombifyio/SpeechKit/internal/textactions"
 	"github.com/kombifyio/SpeechKit/internal/tts"
@@ -98,15 +99,17 @@ type appState struct {
 	// 1 — a new detection while another policy is pending replaces (and
 	// closes) the previous one, mirroring how a duplicate hotkey press
 	// would supersede an in-flight activation.
-	wakewordSessionPolicy *wakeword.AutoEndPolicy
-	engine                *speechkit.Runtime
-	sttRouter             *router.Router
-	genkitRT              *appai.Runtime
-	summarizeFlow         *core.Flow[flows.SummarizeInput, string, struct{}]
-	agentFlow             *core.Flow[flows.AgentInput, flows.AgentOutput, struct{}]
-	assistFlow            *core.Flow[flows.AssistInput, flows.AssistOutput, struct{}]
-	assistExecutor        assist.ToolExecutor
-	assistPipeline        *assist.Pipeline
+	wakewordSessionPolicy  *wakeword.AutoEndPolicy
+	engine                 *speechkit.Runtime
+	sttRouter              *router.Router
+	genkitRT               *appai.Runtime
+	summarizeFlow          *core.Flow[flows.SummarizeInput, string, struct{}]
+	agentFlow              *core.Flow[flows.AgentInput, flows.AgentOutput, struct{}]
+	assistFlow             *core.Flow[flows.AssistInput, flows.AssistOutput, struct{}]
+	assistExecutor         assist.ToolExecutor
+	assistPipeline         *assist.Pipeline
+	assistQuickActions     *quickActionCoordinator
+	assistShortcutResolver *shortcuts.Resolver
 	// assistSkillContextStore holds v0.38 multi-turn skill follow-up state
 	// (e.g. Timer asking "for how long?"). Single store survives pipeline
 	// re-builds on model-profile switches so an in-flight follow-up does
@@ -148,6 +151,37 @@ type appState struct {
 	// remote SpeechKit Server-Target. Nil when every mode runs locally
 	// (the pre-0.26 default). See server_delegates.go.
 	serverDelegates *serverDelegates
+
+	// lifecycle wires pkg/speechkit/lifecycle.Registry into the
+	// Wails-Desktop. Set once at startup via attachLifecycleBridge.
+	// nil until the bridge is constructed (early-error paths can still
+	// look up state without panicking — callers use desktopLifecycle).
+	lifecycle *desktopLifecycleBridge
+}
+
+// attachLifecycleBridge wires the bridge instance onto state. Called
+// once during desktop bootstrap after the application context is
+// available. Subsequent mode-toggle calls reach the bridge via
+// desktopLifecycle(state).
+func (s *appState) attachLifecycleBridge(bridge *desktopLifecycleBridge) {
+	if s == nil {
+		return
+	}
+	s.mu.Lock()
+	s.lifecycle = bridge
+	s.mu.Unlock()
+}
+
+// desktopLifecycle returns the bridge or nil. Callers MUST nil-check
+// the result — desktopLifecycleBridge methods are nil-safe so chained
+// usage like desktopLifecycle(state).Apply(ctx, cfg) is also fine.
+func desktopLifecycle(s *appState) *desktopLifecycleBridge {
+	if s == nil {
+		return nil
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.lifecycle
 }
 
 type hotkeyReconfigurer interface {

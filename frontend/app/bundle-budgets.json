@@ -1,0 +1,33 @@
+{
+  "$schema_version": "1",
+  "_doc": "Bundle-size budgets enforced by scripts/check-bundle-budgets.mjs. Sizes are uncompressed bytes of JS+CSS in internal/frontendassets/dist. Run `npm run bundle:check` after `npm run build` locally; CI runs it automatically (.github/workflows/ci.yml frontend-ci job). When a legitimate growth lands, bump the relevant budget in the same PR and explain why in the commit message.",
+  "headroom_pct": 0,
+  "categories": {
+    "total": {
+      "_doc": "Hard ceiling for the entire dist tree. Baseline measured 2026-05-26 = 1235 KB; budget sits at 1300 KB for the immediate v0.40 line. M4 (frontend code-split) is expected to TIGHTEN this, not loosen it.",
+      "budget_bytes": 1331200,
+      "include": [".*\\.(js|css)$"]
+    },
+    "voiceagent-bundle": {
+      "_doc": "Chunks that load only when the Voice-Agent UI mounts: the audio-level visualisers (bar + radial), the aura orb, and the VA prompter. v0.40 M4 made these dynamic-imported from overlay-surfaces and decoupled the bar visualiser from LiveKit so the overlay entry's static graph excludes LiveKit.",
+      "budget_bytes": 614400,
+      "include": [
+        "assets/agent-audio-visualizer-radial-.*\\.(js|css)$",
+        "assets/agent-audio-visualizer-bar-.*\\.(js|css)$",
+        "assets/speechkit-aura-orb-.*\\.(js|css)$",
+        "assets/voiceagentPrompter-.*\\.(js|css)$"
+      ]
+    },
+    "core-dictation-shell": {
+      "_doc": "Everything else: the control-plane SPA shell, settings dashboard, overlay surfaces, dictate-mode UI, shared React runtime. This is the budget that protects the 'Dictation-only is lean' claim. Baseline ~669 KB pre-M4, ~672 KB after M4 (utils + preload-helper now show as separate chunks).",
+      "budget_bytes": 716800,
+      "include": [".*\\.(js|css)$"],
+      "exclude": [
+        "assets/agent-audio-visualizer-radial-.*\\.(js|css)$",
+        "assets/agent-audio-visualizer-bar-.*\\.(js|css)$",
+        "assets/speechkit-aura-orb-.*\\.(js|css)$",
+        "assets/voiceagentPrompter-.*\\.(js|css)$"
+      ]
+    }
+  }
+}

@@ -11,16 +11,17 @@ import (
 type audioSessionOpener func(audio.Config) (audio.Session, error)
 
 type reconfigurableAudioSession struct {
-	mu            sync.Mutex
-	cfg           audio.Config
-	opener        audioSessionOpener
-	session       audio.Session
-	events        chan audio.Event
-	levelHandler  func(float64)
-	pcmHandler    func([]byte)
-	pendingReopen bool
-	closed        bool
-	closeOnce     sync.Once
+	mu               sync.Mutex
+	cfg              audio.Config
+	opener           audioSessionOpener
+	session          audio.Session
+	events           chan audio.Event
+	levelHandler     func(float64)
+	pcmHandler       func([]byte)
+	pooledPCMHandler audio.PooledPCMHandler
+	pendingReopen    bool
+	closed           bool
+	closeOnce        sync.Once
 }
 
 var _ audio.Session = (*reconfigurableAudioSession)(nil)
@@ -109,6 +110,18 @@ func (s *reconfigurableAudioSession) SetPCMHandler(handler func([]byte)) {
 	}
 }
 
+// SetPooledPCMHandler forwards the pool-aware handler to the underlying
+// session and caches it so a reconfigure (device-change-on-the-fly)
+// can re-install the same handler against the freshly-opened session.
+func (s *reconfigurableAudioSession) SetPooledPCMHandler(handler audio.PooledPCMHandler) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.pooledPCMHandler = handler
+	if s.session != nil {
+		s.session.SetPooledPCMHandler(handler)
+	}
+}
+
 func (s *reconfigurableAudioSession) ReconfigureDevice(deviceID string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -153,6 +166,7 @@ func (s *reconfigurableAudioSession) reopenLocked(previous audio.Session) error 
 	}
 	session.SetLevelHandler(s.levelHandler)
 	session.SetPCMHandler(s.pcmHandler)
+	session.SetPooledPCMHandler(s.pooledPCMHandler)
 	s.forwardEvents(session)
 	s.session = session
 	s.pendingReopen = false

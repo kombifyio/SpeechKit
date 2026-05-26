@@ -4,6 +4,7 @@ import (
 	"log/slog"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/kombifyio/SpeechKit/internal/config"
 )
@@ -99,6 +100,7 @@ func registerModeEnabledRoute(mux *http.ServeMux, cfgPath string, cfg *config.Co
 
 		mode := strings.TrimSpace(r.FormValue("mode"))
 		enabled := strings.TrimSpace(r.FormValue("enabled")) == "1"
+		started := time.Now()
 		oldSettings := currentDesktopModeSettings(cfg, state)
 		appliedEnabled, ok := applyModeEnabled(cfg, mode, enabled)
 		if !ok {
@@ -119,15 +121,49 @@ func registerModeEnabledRoute(mux *http.ServeMux, cfgPath string, cfg *config.Co
 		)
 		state.setActiveMode(cfg.General.ActiveMode)
 		applyDesktopModeSettings(state, cfg, oldSettings)
+
+		// Drive the lifecycle.Registry from the same toggle. Emits
+		// speechkit.mode.{start,stop} audit events via the bridge
+		// subscriber.
+		if bridge := desktopLifecycle(state); bridge != nil {
+			if err := bridge.Apply(r.Context(), cfg); err != nil {
+				slog.Warn("lifecycle bridge apply on mode toggle",
+					"mode", mode,
+					"enabled", appliedEnabled,
+					"err", err)
+				restoreDesktopModeSettings(cfg, state, oldSettings)
+				writeJSONStatus(w, http.StatusServiceUnavailable, map[string]any{
+					"mode":      mode,
+					"enabled":   oldSettings.enabledFor(mode),
+					"status":    "reverted",
+					"error":     err.Error(),
+					"latencyMs": time.Since(started).Milliseconds(),
+				})
+				return
+			}
+		}
+
+		// M2b phase 2: complete the hot path after the registry transition.
+		// This creates Assist pipeline state after a cold Assist toggle-on
+		// and hot-tears down TTS when Assist and Voice Agent are both off.
+		syncDesktopModeRuntimeForCfg(r.Context(), cfg, state, nil)
 		if err := config.Save(cfgPath, cfg); err != nil {
 			slog.Warn("save mode enabled config", "err", err)
 		}
 
 		writeJSON(w, map[string]any{
-			"mode":    mode,
-			"enabled": appliedEnabled,
+			"mode":      mode,
+			"enabled":   appliedEnabled,
+			"status":    "applied",
+			"latencyMs": time.Since(started).Milliseconds(),
 		})
 	})
+}
+
+func writeJSONStatus(w http.ResponseWriter, status int, payload any) {
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	w.WriteHeader(status)
+	writeJSON(w, payload)
 }
 
 type desktopModeSettings struct {
@@ -137,6 +173,7 @@ type desktopModeSettings struct {
 	dictateHotkey  string
 	assistHotkey   string
 	voiceHotkey    string
+	activeMode     string
 	audioDeviceID  string
 	overlayEnabled bool
 }
@@ -153,8 +190,22 @@ func currentDesktopModeSettings(cfg *config.Config, state *appState) desktopMode
 		dictateHotkey:  cfg.General.DictateHotkey,
 		assistHotkey:   cfg.General.AssistHotkey,
 		voiceHotkey:    cfg.General.VoiceAgentHotkey,
+		activeMode:     cfg.General.ActiveMode,
 		audioDeviceID:  audioDeviceID,
 		overlayEnabled: overlayEnabled,
+	}
+}
+
+func (s desktopModeSettings) enabledFor(mode string) bool {
+	switch mode {
+	case modeDictate:
+		return s.dictateEnabled
+	case modeAssist:
+		return s.assistEnabled
+	case modeVoiceAgent:
+		return s.voiceEnabled
+	default:
+		return false
 	}
 }
 
@@ -195,4 +246,20 @@ func applyDesktopModeSettings(state *appState, cfg *config.Config, old desktopMo
 		old.audioDeviceID,
 		old.overlayEnabled,
 	)
+}
+
+func restoreDesktopModeSettings(cfg *config.Config, state *appState, old desktopModeSettings) {
+	if cfg != nil {
+		cfg.General.DictateEnabled = old.dictateEnabled
+		cfg.General.AssistEnabled = old.assistEnabled
+		cfg.General.VoiceAgentEnabled = old.voiceEnabled
+		cfg.General.ActiveMode = old.activeMode
+	}
+	if state != nil {
+		state.setModeEnabled(modeDictate, old.dictateEnabled)
+		state.setModeEnabled(modeAssist, old.assistEnabled)
+		state.setModeEnabled(modeVoiceAgent, old.voiceEnabled)
+		state.setActiveMode(old.activeMode)
+		applyDesktopModeSettings(state, cfg, old)
+	}
 }

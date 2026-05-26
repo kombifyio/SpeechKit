@@ -6,12 +6,6 @@ Install stable:
 curl -fsSL https://speechkit.cc/install-server.sh | sh
 ```
 
-Install v0.30 Preview:
-
-```sh
-curl -fsSL https://speechkit.cc/install-server.sh | sh -s -- --channel preview
-```
-
 Options:
 
 ```text
@@ -40,7 +34,8 @@ For a browser app running on the host against a server in Docker Compose, set
 `SPEECHKIT_PUBLIC_URL=http://localhost:8080`. `SPEECHKIT_SERVER_PUBLIC_URL` is
 accepted as a compatibility alias, but `SPEECHKIT_PUBLIC_URL` is canonical and
 wins when both are set. Voice Agent session creation returns a `ws_url` based
-on this public origin, not the Docker-internal service name.
+on this public origin, not the Docker-internal service name. WebSocket upgrades
+use `ws_url` plus `ws_subprotocol`; query-string ticket URLs are legacy-only.
 
 Fresh local installs use SQLite by default at the configured data volume.
 Postgres is optional for dev stacks and production operators that want a

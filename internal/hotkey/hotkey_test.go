@@ -33,6 +33,14 @@ func TestParseCombo(t *testing.T) {
 		{"win+alt", []uint32{VkLWin, VkMenu}},
 		{"f8", []uint32{0x77}},
 		{"unknown_combo", []uint32{VkLWin, VkMenu}}, // fallback to win+alt
+		// v0.39.0 — mouse side-button support (kombify-SpeechKit-mtb)
+		{"mouse-x1", []uint32{VkXButton1}},
+		{"mouse-x2", []uint32{VkXButton2}},
+		{"ctrl+mouse-x1", []uint32{VkControl, VkXButton1}},
+		{"shift+mouse-x2", []uint32{VkShift, VkXButton2}},
+		{"ctrl+alt+mouse-x1", []uint32{VkControl, VkMenu, VkXButton1}},
+		{"mb4", []uint32{VkXButton1}},
+		{"mb5", []uint32{VkXButton2}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.input, func(t *testing.T) {
@@ -46,6 +54,55 @@ func TestParseCombo(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestParseCombo_LeftRightMiddleMouseRejected(t *testing.T) {
+	// Left, right, and middle mouse buttons are intentionally NOT recognised
+	// as combo tokens because binding them would block everyday clicks.
+	// Unknown tokens fall back to Win+Alt per ParseCombo's existing contract.
+	for _, token := range []string{"mouse-left", "mouse-right", "mouse-middle", "mb1", "mb2", "mb3"} {
+		t.Run(token, func(t *testing.T) {
+			keys := ParseCombo(token)
+			fallback := ComboWinAlt()
+			if len(keys) != len(fallback) || keys[0] != fallback[0] || keys[1] != fallback[1] {
+				t.Errorf("ParseCombo(%q) = %v, expected Win+Alt fallback %v", token, keys, fallback)
+			}
+		})
+	}
+}
+
+func TestNewManagerWithMouseCombo(t *testing.T) {
+	m := NewManager(ParseCombo("ctrl+mouse-x1"))
+	if m == nil {
+		t.Fatal("NewManager returned nil for ctrl+mouse-x1")
+	}
+	if len(m.keys) != 2 {
+		t.Fatalf("expected 2 keys (ctrl + mouse-x1), got %d", len(m.keys))
+	}
+	if m.keys[0] != VkControl || m.keys[1] != VkXButton1 {
+		t.Errorf("expected [VkControl, VkXButton1], got %v", m.keys)
+	}
+}
+
+func TestComboTrackerMouseX1(t *testing.T) {
+	// The tracker is VK-agnostic — mouse-button VKs should drive the same
+	// transition machinery as keyboard VKs. This is critical for the polling
+	// fallback path that picks up X1/X2 via GetAsyncKeyState.
+	tracker := newComboTracker(ParseCombo("ctrl+mouse-x1"))
+
+	if event, ok := tracker.transition(VkControl, true); ok {
+		t.Fatalf("expected no event on Ctrl down alone, got %#v", event)
+	}
+
+	event, ok := tracker.transition(VkXButton1, true)
+	if !ok || event.Type != EventKeyDown {
+		t.Fatalf("expected EventKeyDown when Ctrl+X1 becomes active, got %#v ok=%v", event, ok)
+	}
+
+	event, ok = tracker.transition(VkXButton1, false)
+	if !ok || event.Type != EventKeyUp {
+		t.Fatalf("expected EventKeyUp on X1 release, got %#v ok=%v", event, ok)
 	}
 }
 
