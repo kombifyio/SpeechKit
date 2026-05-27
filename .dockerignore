@@ -1,0 +1,27 @@
+# VCS and local agent/runtime state
+.git
+.beads
+.cache
+.codex
+.agents
+.tmp
+
+# Dependency caches and generated frontend output
+**/node_modules
+frontend/app/dist
+Website/dist
+Website/.next
+
+# Local build/test artifacts
+bin
+build
+dist
+coverage.out
+*.test
+*.prof
+*.log
+
+# Local environment files
+.env
+.env.*
+!.env.example

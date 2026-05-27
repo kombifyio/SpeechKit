@@ -1,0 +1,88 @@
+name: Sync Latest Installer Mirror
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Release tag to mirror; use latest for the current public release'
+        required: true
+        default: latest
+  schedule:
+    - cron: '23 6 * * *'
+  workflow_run:
+    workflows: ['Release']
+    types: [completed]
+
+permissions:
+  contents: write
+
+concurrency:
+  group: sync-latest-installer-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    name: Sync Latest Installer
+    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
+    runs-on: ${{ vars.GHA_HOSTED_RUNNER || 'ubuntu-24.04' }}
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          ref: ${{ github.ref_name }}
+          fetch-depth: 0
+
+      - name: Resolve and download public release installer
+        id: release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REQUESTED_TAG: ${{ github.event.inputs.tag || 'latest' }}
+          SOURCE_REPO: kombifyio/SpeechKit
+        run: |
+          set -euo pipefail
+          tag="${REQUESTED_TAG:-latest}"
+          if [ "$tag" = "latest" ]; then
+            tag="$(gh release view --repo "$SOURCE_REPO" --json tagName --jq '.tagName')"
+          fi
+
+          asset_dir="${RUNNER_TEMP}/speechkit-installer-assets"
+          rm -rf "$asset_dir"
+          mkdir -p "$asset_dir"
+
+          gh release download "$tag" --repo "$SOURCE_REPO" --dir "$asset_dir" --pattern 'SpeechKit-Setup.exe' --clobber
+          gh release download "$tag" --repo "$SOURCE_REPO" --dir "$asset_dir" --pattern 'SpeechKit-x64.msi' --clobber || true
+          gh release download "$tag" --repo "$SOURCE_REPO" --dir "$asset_dir" --pattern 'UNSIGNED-WINDOWS-RELEASE.txt' --clobber || true
+
+          {
+            echo "tag=$tag"
+            echo "asset_dir=$asset_dir"
+            echo "release_url=https://github.com/$SOURCE_REPO/releases/tag/$tag"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Mirror installer into repository
+        shell: pwsh
+        run: >-
+          ./scripts/release/mirror-latest-installer.ps1
+          -SourceDir '${{ steps.release.outputs.asset_dir }}'
+          -Version '${{ steps.release.outputs.tag }}'
+          -SourceRepo 'kombifyio/SpeechKit'
+          -SourceReleaseUrl '${{ steps.release.outputs.release_url }}'
+          -CommitSha '${{ github.sha }}'
+          -RequireInstaller
+
+      - name: Commit mirror update
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add -f release/latest/windows
+          if git diff --cached --quiet; then
+            echo "Latest installer mirror already up to date."
+            exit 0
+          fi
+          git commit -m "chore(release): mirror latest Windows installer (${{ steps.release.outputs.tag }})"
+          git push

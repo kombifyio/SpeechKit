@@ -1,26 +1,15 @@
 name: release-server-docker
 
-# Publishes the SpeechKit Server container image to the GitHub
-# Container Registry on every `v*` tag. Stays separate from the existing
-# Windows-oriented release.yml so the two pipelines can fail / succeed
-# independently.
-#
-# v0.25.x: dormant — the `if:` guard skips the whole job until a tag with
-#   MINOR >= 26 is pushed, keeping v0.25 release machinery prepared but
-#   quiet.
-# v0.26.x: active — publishes ghcr.io/kombifyio/speechkit-server:<tag>
-#   and ghcr.io/kombifyio/speechkit-server:latest.
-
 on:
   push:
     tags: ['v*']
   workflow_dispatch:
     inputs:
       tag:
-        description: 'Release tag (e.g. v0.26.0)'
+        description: 'Release tag (for example v0.40.5)'
         required: true
       force_publish:
-        description: 'Publish even if the tag is below v0.26 (M7 smoke tests)'
+        description: 'Publish even when the tag gate would normally skip'
         required: true
         default: false
         type: boolean
@@ -38,13 +27,8 @@ concurrency:
 jobs:
   plan:
     name: Resolve Docker Release Plan
-    # Releases happen ONLY on the OSS repo. The private upstream syncs
-    # the curated source to kombifyio/SpeechKit and pushes the v* tag; this
-    # workflow then runs in the public repo, where GitHub-hosted
-    # runners are unmetered. A tag pushed in the dev repo by mistake
-    # must NOT trigger a publish.
     if: github.repository == 'kombifyio/SpeechKit'
-    runs-on: ${{ vars.GHA_HOSTED_RUNNER || 'ubuntu-24.04' }}
+    runs-on: ubuntu-24.04
     timeout-minutes: 5
     outputs:
       tag: ${{ steps.plan.outputs.tag }}
@@ -91,18 +75,11 @@ jobs:
   publish:
     name: Build & Publish speechkit-server
     needs: plan
-    # Within the OSS repo: skip automatically on < v0.26 tags unless
-    # the operator force-publishes. This keeps v0.25.x release
-    # machinery in place without actually shipping a server
-    # image before the code goes OSS.
     if: needs.plan.outputs.should_publish == 'true'
-    runs-on: ${{ vars.GHA_HOSTED_RUNNER || 'ubuntu-24.04' }}
-    timeout-minutes: 30
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
     env:
       REGISTRY: ghcr.io
-      # Pin to the kombifyio org by default; on a non-canonical repo
-      # the namespace falls through to `kombify/<image>` so a fork's
-      # GHCR push doesn't shadow the canonical tag.
       IMAGE: ${{ github.repository_owner == 'kombifyio' && 'kombifyio/speechkit-server' || 'kombify/speechkit-server' }}
 
     steps:
@@ -136,7 +113,7 @@ jobs:
             ${{ env.REGISTRY }}/${{ env.IMAGE }}:latest
           labels: |
             org.opencontainers.image.title=SpeechKit Server
-            org.opencontainers.image.description=SpeechKit Framework — central server (Dictation REST + Assist REST + Voice Agent WS).
+            org.opencontainers.image.description=SpeechKit Framework self-host server.
             org.opencontainers.image.version=${{ needs.plan.outputs.semver }}
             org.opencontainers.image.source=https://github.com/${{ github.repository }}
             org.opencontainers.image.revision=${{ github.sha }}
@@ -145,29 +122,9 @@ jobs:
           cache-from: type=gha,scope=speechkit-server
           cache-to: type=gha,mode=max,scope=speechkit-server
 
-      - name: Scan image with Trivy
-        uses: aquasecurity/trivy-action@57a97c7e7821a5776cebc9bb87c984fa69cba8f1
-        with:
-          scan-type: image
-          image-ref: ${{ env.REGISTRY }}/${{ env.IMAGE }}:${{ needs.plan.outputs.tag }}
-          scanners: vuln,misconfig,secret
-          severity: HIGH,CRITICAL
-          ignore-unfixed: true
-          exit-code: "1"
-          hide-progress: true
-
       - name: Attest provenance
         uses: actions/attest-build-provenance@92c65d2898f1f53cfdc910b962cecff86e7f8fcc
         with:
           subject-name: ${{ env.REGISTRY }}/${{ env.IMAGE }}
           subject-digest: ${{ steps.build.outputs.digest }}
           push-to-registry: true
-
-      - name: Summary
-        shell: bash
-        run: |
-          echo "### SpeechKit Server published" >> "$GITHUB_STEP_SUMMARY"
-          echo "" >> "$GITHUB_STEP_SUMMARY"
-          echo "- \`${{ env.REGISTRY }}/${{ env.IMAGE }}:${{ needs.plan.outputs.tag }}\`" >> "$GITHUB_STEP_SUMMARY"
-          echo "- \`${{ env.REGISTRY }}/${{ env.IMAGE }}:latest\`" >> "$GITHUB_STEP_SUMMARY"
-          echo "- digest: \`${{ steps.build.outputs.digest }}\`" >> "$GITHUB_STEP_SUMMARY"

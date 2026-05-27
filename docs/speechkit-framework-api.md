@@ -42,7 +42,7 @@ The Windows desktop app remains the reference host and provider/model test bench
 
 ## Embeddable Companion, Wake-Word, TTS, and Events
 
-The v0.40.1 implementation branch extends the public SDK surface without breaking the existing mode contracts:
+The v0.40 patch line extends the public SDK surface without breaking the existing mode contracts. `v0.40.1` is the first factual API baseline for these packages, and the current v0.40 rollup keeps the same additive compatibility policy:
 
 - `pkg/speechkit/wakeword` exposes wake-word phrase catalogs, detection events, dispatching, detector contracts, and `AutoEndPolicy`.
 - `pkg/speechkit/wakeword/sherpa` adapts sherpa-onnx wake-word detection behind the public detector contracts. Builds without cgo still compile against the public no-cgo surface.
@@ -63,7 +63,7 @@ The reference examples compile as Local-Library smoke tests:
 | `examples/embed-tts` | Use the TTS service/router surface with a mock provider. |
 | `examples/embed-event-bus` | Subscribe to and publish public runtime events. |
 
-Release status: implemented on `v0.40-m1-lifecycle`; the v0.40.1 tag must wait until v0.40.0 is tagged so the API diff can prove additions-only changes against the v0.40.0 baseline.
+Release status: shipped in the v0.40.1 SDK-surface merge and carried forward in the current v0.40 rollup. No standalone v0.40.0 tag exists or should be backfilled; public API checks compare the shipped v0.40 surface against the factual release line and keep deprecated public fields compatible through v0.40.x.
 
 ## Provider Catalog
 

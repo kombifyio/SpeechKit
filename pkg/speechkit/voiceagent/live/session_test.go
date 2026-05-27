@@ -2,12 +2,11 @@ package live
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"sync"
 	"testing"
 	"time"
-
-	"github.com/kombifyio/SpeechKit/internal/voiceeval"
 )
 
 type sessionTestProvider struct {
@@ -513,29 +512,29 @@ func TestSessionEvaluatesWorkflowDialogSimulation(t *testing.T) {
 		stepID string
 		user   string
 		agent  string
-		rule   voiceeval.Rule
+		rule   dialogueRule
 	}{
 		{
 			stepID: "frame",
 			user:   "We need to plan the launch meeting.",
 			agent:  "Goal first: align the launch decision, capture constraints, and define a useful outcome.",
-			rule:   voiceeval.Rule{Contains: []string{"goal", "constraints", "outcome"}, NotContains: []string{"final recommendation"}},
+			rule:   dialogueRule{Contains: []string{"goal", "constraints", "outcome"}, NotContains: []string{"final recommendation"}},
 		},
 		{
 			stepID: "diverge",
 			user:   "The main constraint is only two engineers.",
 			agent:  "Alternative paths: reduce scope or stagger rollout. One blind spot is support load after release.",
-			rule:   voiceeval.Rule{Contains: []string{"alternative", "blind spot"}, NotContains: []string{"diagnosis"}},
+			rule:   dialogueRule{Contains: []string{"alternative", "blind spot"}, NotContains: []string{"diagnosis"}},
 		},
 		{
 			stepID: "converge",
 			user:   "Let us pick the staged rollout.",
 			agent:  "Recommendation: choose staged rollout and set the next step as a 30-minute owner review.",
-			rule:   voiceeval.Rule{Contains: []string{"recommendation", "next step"}, NotContains: []string{"another hour"}},
+			rule:   dialogueRule{Contains: []string{"recommendation", "next step"}, NotContains: []string{"another hour"}},
 		},
 	}
 
-	var transcript []voiceeval.Turn
+	var transcript []dialogueTurn
 	for i, turn := range dialog {
 		if err := session.SendText(turn.user); err != nil {
 			t.Fatalf("send text %q: %v", turn.user, err)
@@ -545,7 +544,7 @@ func TestSessionEvaluatesWorkflowDialogSimulation(t *testing.T) {
 
 		provider.messages <- &LiveMessage{OutputTranscript: turn.agent, OutputTranscriptDone: true}
 		waitForDialogueEvent(t, events, "agent", turn.agent)
-		transcript = append(transcript, voiceeval.Turn{
+		transcript = append(transcript, dialogueTurn{
 			Speaker: "agent",
 			StepID:  turn.stepID,
 			Text:    turn.agent,
@@ -559,9 +558,38 @@ func TestSessionEvaluatesWorkflowDialogSimulation(t *testing.T) {
 		}
 	}
 
-	if err := voiceeval.EvaluateTranscript(transcript); err != nil {
+	if err := evaluateDialogueTranscript(transcript); err != nil {
 		t.Fatalf("dialog simulation failed instruction checks: %v", err)
 	}
+}
+
+type dialogueRule struct {
+	Contains    []string
+	NotContains []string
+}
+
+type dialogueTurn struct {
+	Speaker string
+	StepID  string
+	Text    string
+	Rule    dialogueRule
+}
+
+func evaluateDialogueTranscript(turns []dialogueTurn) error {
+	for i, turn := range turns {
+		text := strings.ToLower(turn.Text)
+		for _, want := range turn.Rule.Contains {
+			if !strings.Contains(text, strings.ToLower(want)) {
+				return fmt.Errorf("turn %d (%s/%s) missing %q in %q", i+1, turn.Speaker, turn.StepID, want, turn.Text)
+			}
+		}
+		for _, forbidden := range turn.Rule.NotContains {
+			if strings.Contains(text, strings.ToLower(forbidden)) {
+				return fmt.Errorf("turn %d (%s/%s) unexpectedly contains %q in %q", i+1, turn.Speaker, turn.StepID, forbidden, turn.Text)
+			}
+		}
+	}
+	return nil
 }
 
 type dialogueEvent struct {

@@ -1,0 +1,26 @@
+{
+  "schema": "speechkit.latest-installer@1",
+  "version": "v0.40.4",
+  "source_repo": "kombifyio/SpeechKit",
+  "source_release_url": "https://github.com/kombifyio/SpeechKit/releases/tag/v0.40.4",
+  "source_commit": "5f61b442aba1333580b20298f4e30842af6da455",
+  "mirrored_at_utc": "2026-05-27T07:54:10Z",
+  "max_installer_bytes": 95000000,
+  "files": [
+    {
+      "name": "SpeechKit-Setup.exe",
+      "size_bytes": 83908385,
+      "sha256": "127d7e473ce7fb1fa200f1df2a3f4d939e6fde7384490f6e0ca79db3a339631b"
+    },
+    {
+      "name": "SpeechKit-x64.msi",
+      "size_bytes": 69840896,
+      "sha256": "e00922be88e6f282cc7f78f4a1891c42360033df36390ec8e80015e6aac7f681"
+    },
+    {
+      "name": "UNSIGNED-WINDOWS-RELEASE.txt",
+      "size_bytes": 554,
+      "sha256": "1702ede1c99efea9b3d578c2af5e005d13e824d5612fa01963d1beac76dbb9f8"
+    }
+  ]
+}

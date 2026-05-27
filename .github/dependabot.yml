@@ -15,18 +15,3 @@ updates:
     schedule:
       interval: weekly
     labels: [dependencies, ci]
-
-  - package-ecosystem: npm
-    directory: /frontend/app
-    schedule:
-      interval: weekly
-    labels: [dependencies, frontend]
-    groups:
-      npm-minor-patch:
-        update-types: [minor, patch]
-
-  - package-ecosystem: docker
-    directory: /deploy/docker
-    schedule:
-      interval: weekly
-    labels: [dependencies, docker]

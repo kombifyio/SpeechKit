@@ -139,7 +139,7 @@ func resourcePriority(uri string) float64 {
 		return 1.0
 	case "docs/agent/schemas/speechkit-one-shot-manifest.schema.json", "docs/agent/schemas/speechkit-one-shot-functional-result.schema.json":
 		return 0.95
-	case "docs/speechkit-architecture-v2.md", "docs/mcp/README.md":
+	case "docs/architecture/sdk-surface-boundary.md", "docs/speechkit-framework-api.md", "docs/mcp/README.md":
 		return 0.9
 	default:
 		return 0.6

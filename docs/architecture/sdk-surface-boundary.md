@@ -1,6 +1,6 @@
 # SDK Surface Boundary
 
-Decision date: 2026-05-26. This document records the v0.40.1 SDK-surface
+Decision date: 2026-05-26. This document records the v0.40 SDK-surface
 boundary so embedders can consume SpeechKit without importing desktop or
 server internals.
 
@@ -10,10 +10,10 @@ server internals.
 Local-Library hosts without depending on `internal/*`, Wails, Windows-only
 adapters, desktop storage, server middleware, or bundled app assets.
 
-The v0.40.1 implementation branch promotes the embeddable Voice-Companion
-building blocks that were previously reachable only through internal code.
-The release is additive and must branch after the v0.40.0 tag so the API
-diff can prove there are no signature breaks against v0.40.0.
+The v0.40 line promotes the embeddable Voice-Companion building blocks that
+were previously only available through product adapters. The release is
+additive: host applications should import public SDK packages and leave Go
+`internal` packages to this repository's own binaries.
 
 ## Public Packages
 
@@ -41,21 +41,35 @@ diff can prove there are no signature breaks against v0.40.0.
 5. Additive event types are allowed in patch releases. Removing event types,
    changing struct field semantics, or changing exported method signatures
    requires a release-plan callout and an API diff.
+6. Deprecated exported fields and methods remain source-compatible through the
+   v0.40.x line. Removing `LiveConfig.Instruction`,
+   `LiveConfig.SystemPrompt`, or similar public compatibility symbols is v1 or
+   explicit breaking-release work.
 
 ## Current Verification
 
-Verified on 2026-05-26:
+Verified on 2026-05-26 and updated on 2026-05-27:
 
 - `go test ./pkg/speechkit/...` passes with `CGO_ENABLED=0`.
 - `go test ./pkg/speechkit/...` passes with MinGW cgo enabled.
-- `go test ./internal/wakeword/... ./internal/tts/... ./internal/assist/...` passes.
 - `go test ./examples/embed-companion ./examples/embed-tts ./examples/embed-event-bus` passes.
 - Public export dry-run includes `pkg/speechkit/wakeword`, `pkg/speechkit/companion`, and `pkg/speechkit/tts`.
 - Production SDK packages have no `internal/*` imports.
+- CI public API stability discovers the surface dynamically with
+  `go list ./pkg/speechkit/...`, so new promoted SDK packages are checked by
+  default.
+- `scripts/public/consumer-smoke.sh` validates a fresh external Go module that
+  imports `github.com/kombifyio/SpeechKit/pkg/speechkit/{assist,companion,tts,wakeword}`
+  from a clean public export without depending on public-invisible
+  `internal/*` packages.
 
 ## Release Gates
 
-- v0.40.0 must be tagged before v0.40.1 branches.
-- API diff for `pkg/speechkit/...` must compare v0.40.1 against the v0.40.0 tag and show additions only.
-- Docker/server release gate still needs to run before the patch is cut.
-- Internal alias/adaptor cleanup remains tracked until public and internal wake/TTS behavior share ownership or parity tests.
+- API diff for every package returned by `go list ./pkg/speechkit/...` should
+  show no breaking removals inside the v0.40 patch line.
+- Docker/server release gates must pass before a public tag is cut.
+- Public source exports must include the SDK, self-host server, CLI, MCP, docs,
+  and examples needed by agents, while excluding desktop source, installer
+  source, releaseguard tooling, and E2E fixtures.
+- The external consumer smoke is a required public export gate before claiming
+  the SDK surface is embeddable.

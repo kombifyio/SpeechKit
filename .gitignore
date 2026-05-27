@@ -8,6 +8,12 @@
 /dist/
 SpeechKit-Portable-v*.zip
 
+# Intentional, bounded latest-installer mirror for clone-and-install testing.
+!/release/
+!/release/latest/
+!/release/latest/windows/
+!/release/latest/windows/SpeechKit-Setup.exe
+
 # Server-target Linux binary (no extension, dropped at repo root by
 # `go build ./cmd/speechkit-server`). Catches it on Windows dev hosts
 # where *.exe doesn't apply.

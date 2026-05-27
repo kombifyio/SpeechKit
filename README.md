@@ -10,15 +10,16 @@ SpeechKit is a Windows-first voice framework for products that need dictation,
 voice commands, and realtime voice dialogue without coupling every use case to
 one desktop app or one hosted API.
 
-The framework currently has three modules:
+The framework currently has four modules:
 
 | Module | What it is | Use it when |
 | --- | --- | --- |
 | Local-first Go backend | Embeddable Go runtime in `pkg/speechkit` with mode contracts, provider profiles, routing policy, readiness metadata, and reusable Dictation, Assist, and Voice Agent services. | You want to integrate SpeechKit into your own Go product, internal tool, prototype, or automation host. |
-| SpeechKit Server | Linux server runtime in `cmd/speechkit-server` that wraps the same backend behind HTTP and WebSocket APIs. | You need a durable server process for remote clients, teams, product backends, browsers, or centrally managed model/provider configuration. |
-| Windows Client | Wails desktop client in `cmd/speechkit` for local use, provider testing, and server-connected workflows. | You want to use SpeechKit on a Windows machine, validate providers and models, or connect a workstation to a SpeechKit Server. |
+| Self-host Server | Linux server runtime in `cmd/speechkit-server` that wraps the same backend behind HTTP and WebSocket APIs. | You need a durable process for your own clients, teams, product backends, browsers, or centrally managed model/provider configuration. |
+| Agent tools | `speechkit-mcp` and `speechkitctl` expose docs, validation, scaffolding, diagnostics, and authenticated server management to coding agents and operators. | You want an agent to inspect the framework, generate starters, validate payloads, or operate a self-hosted server. |
+| Windows Client | Public installer and portable release assets for local use, provider testing, and server-connected workflows. | You want to use SpeechKit on a Windows machine, validate providers and models, or connect a workstation to a SpeechKit Server. |
 
-All three modules share the same three strict modes:
+The runtime modules share the same three strict modes:
 
 | Mode | Purpose | Boundary |
 | --- | --- | --- |
@@ -49,9 +50,10 @@ Key advantages:
 Start with [Framework API](./docs/speechkit-framework-api.md) or the examples in
 [examples/](./examples/README.md).
 
-### SpeechKit Server
+### Self-host Server
 
-Use the server when SpeechKit should run as a long-lived Linux service. It
+Use the server when SpeechKit should run as a long-lived Linux service you
+operate. It
 adapts the same framework kernel to a containerized API surface so other
 clients can call Dictation, Assist, and Voice Agent without embedding Go code.
 
@@ -67,6 +69,17 @@ Key advantages:
 
 Start with [docs/server/README.md](./docs/server/README.md) and the server
 OpenAPI file at [docs/server/openapi.v1.yaml](./docs/server/openapi.v1.yaml).
+
+### Agent-native integration
+
+Use the MCP server and CLI when a coding agent should work with SpeechKit
+directly. Docs and test modes work without a running server. Management mode
+wraps a self-hosted SpeechKit Server and uses the same bearer or edge-auth
+rules as the HTTP API.
+
+Start with [docs/mcp/README.md](./docs/mcp/README.md),
+[docs/agent/mcp/speechkit-mcp.md](./docs/agent/mcp/speechkit-mcp.md), and the
+agent entrypoint at [docs/agent/llms.txt](./docs/agent/llms.txt).
 
 ### Windows Client
 
@@ -85,12 +98,11 @@ Key advantages:
   request timeout, and local fallback behavior.
 
 Download public builds from
-[GitHub Releases](https://github.com/kombifyio/SpeechKit/releases) when
-available. For source builds:
-
-```powershell
-powershell -ExecutionPolicy Bypass -File scripts/build.ps1 -SkipInstaller
-```
+[GitHub Releases](https://github.com/kombifyio/SpeechKit/releases). A fresh
+repository clone also carries the current mirrored installer at
+`release/latest/windows/SpeechKit-Setup.exe` for direct Windows test installs.
+The GitHub Release asset remains canonical; the repo mirror is updated from it
+with hashes and source metadata in `release/latest/windows/`.
 
 Default hotkeys:
 
@@ -106,16 +118,17 @@ Embed the Go backend:
 go get github.com/kombifyio/SpeechKit/pkg/speechkit
 ```
 
-Build the Windows client locally:
-
-```powershell
-powershell -ExecutionPolicy Bypass -File scripts/build.ps1 -SkipInstaller
-```
-
-Run the server image:
+Run the self-host server image:
 
 ```bash
 docker pull ghcr.io/kombifyio/speechkit-server:latest
+```
+
+Use the agent tools:
+
+```bash
+go run ./cmd/speechkit-mcp --mode=docs,test
+go run ./cmd/speechkit-cli status --server http://localhost:8080 --token "$SPEECHKIT_SERVER_TOKEN"
 ```
 
 ## Documentation
@@ -134,35 +147,31 @@ contracts, deployment steps, or release rules:
 
 ## Build
 
-Canonical Windows app build:
+Public source verification:
 
-```powershell
-powershell -ExecutionPolicy Bypass -File scripts/build.ps1 -SkipInstaller
+```bash
+go test ./pkg/... ./cmd/speechkit-cli/... ./cmd/speechkit-mcp/... ./examples/...
+GOOS=linux CGO_ENABLED=0 go test ./cmd/speechkit-server/...
+GOOS=linux CGO_ENABLED=0 go build ./cmd/speechkit-server ./cmd/speechkit-mcp ./cmd/speechkit-cli
 ```
 
-For local verification before commit, PR, CI, or deploy work, use the
-repo-local `mise` contract documented in
-[docs/LOCAL_TESTING.md](./docs/LOCAL_TESTING.md). Package-manager and raw Go
-commands are implementation details behind those preflight gates.
-
-```powershell
-mise run preflight:quick
-mise run preflight:release
-mise run preflight:deploy
-```
+Windows client builds are shipped as release assets from the maintained
+release pipeline. The installer is the recommended distribution format for
+end users. For clone-and-install testing on Windows, use
+`release/latest/windows/SpeechKit-Setup.exe`; it is a repository mirror of the
+latest public release asset with hashes and source metadata next to it.
 
 ## Repository Layout
 
 ```text
 pkg/speechkit/          Local-first Go backend
-cmd/speechkit-server/   SpeechKit Server entry point
-cmd/speechkit/          Windows Client entry point
-frontend/app/           Windows UI source
-internal/               Product internals
+cmd/speechkit-server/   Self-host Server entry point
+cmd/speechkit-mcp/      MCP server for agent docs, validation, and management
+cmd/speechkit-cli/      CLI diagnostics, scaffolding, and quick actions
+internal/               Implementation packages for the public binaries
 docs/                   Detailed documentation
 deploy/                 Docker and server config
-installer/              Windows installer
-scripts/                Build, release, export, and verification scripts
+scripts/                Public install and release-note helpers
 ```
 
 ## Trust

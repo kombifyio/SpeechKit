@@ -6,13 +6,12 @@
 # The server is the central Framework wrapper: Dictation REST, Assist REST,
 # and Voice Agent WebSocket are exposed by one reusable HTTP/WebSocket adapter.
 #
-# Run locally (with secrets injected via Doppler wrapper):
-#   doppler run --project <project> --config <config> -- \
-#     docker run --rm -p 8080:8080 \
-#       -e GOOGLE_AI_API_KEY \
-#       -v speechkit-models:/var/lib/speechkit/models \
-#       -v "$(pwd)/deploy/config/server.example.toml:/etc/speechkit/config.toml:ro" \
-#       speechkit-server:dev
+# Run locally:
+#   docker run --rm -p 8080:8080 \
+#     -e GOOGLE_AI_API_KEY \
+#     -v speechkit-models:/var/lib/speechkit/models \
+#     -v "$(pwd)/deploy/config/server.example.toml:/etc/speechkit/config.toml:ro" \
+#     speechkit-server:dev
 
 # ── Stage 1: Go builder ──────────────────────────────────────────────────────
 # Audit 3.2: digest-pin the base. Dependabot's docker ecosystem
@@ -128,8 +127,7 @@ LABEL org.opencontainers.image.licenses="Apache-2.0"
 COPY --from=builder /out/speechkit-server /app/speechkit-server
 COPY --chown=speechkit:speechkit deploy/config/server.example.toml /etc/speechkit/config.toml
 
-# Operators using Doppler can wrap this image from the host or orchestrator;
-# the image itself stays secret-manager neutral and works with any env-var
-# injector.
+# Operators can wrap this image from the host or orchestrator; the image
+# itself stays secret-manager neutral and works with any env-var injector.
 ENTRYPOINT ["/app/speechkit-server"]
 CMD ["--config=/etc/speechkit/config.toml"]

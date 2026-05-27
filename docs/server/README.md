@@ -4,13 +4,15 @@ The SpeechKit Server is the network deployment form of the SpeechKit Framework.
 It exposes Dictation, Assist, and Voice Agent over HTTP/WebSocket while using
 the same mode contracts as the Windows app and embeddable Go API.
 
-SpeechKit ships as three modules:
+SpeechKit ships as framework modules, not as a hosted service operated by
+kombify:
 
 | Module | Use it when | Surface |
 |---|---|---|
 | Local-first Go backend | You embed SpeechKit into a Go product or internal tool | Go API, mode contracts, provider catalog |
-| SpeechKit Server | You expose SpeechKit to remote clients | Linux HTTP/WebSocket service |
-| Windows Client | You want the desktop app, local tests, or a server-connected workstation | Desktop UI, overlay, settings, global hotkeys |
+| Self-host Server | You expose SpeechKit to your own remote clients | Linux HTTP/WebSocket service |
+| Agent tools | You want coding agents to inspect, validate, scaffold, or operate SpeechKit | MCP server and CLI |
+| Windows Client | You want the desktop app, local tests, or a server-connected workstation | Public installer and portable release assets |
 
 ## Deployment contract
 
@@ -36,21 +38,22 @@ The server:
 ## Quick start
 
 ```bash
-# 1. Build the central server.
-docker build -f deploy/docker/Dockerfile.server \
-  --target speechkit-server -t speechkit-server:dev .
-
-# 2. Bring the dev stack up.
+# 1. Configure credentials for your self-hosted server.
 export GOOGLE_AI_API_KEY="..."   # optional, enables Gemini Assist + Gemini Live
 export HF_TOKEN="..."            # optional, enables Hugging Face STT
 export OPENAI_API_KEY="..."      # optional, enables OpenAI STT/LLM/TTS
 # Optional only when Google STT is selected for Dictation:
 export SPEECHKIT_GOOGLE_STT_API_KEY="..."
 export SPEECHKIT_SERVER_TOKEN="replace-with-a-local-dev-token"
-export POSTGRES_PASSWORD="replace-with-a-local-dev-password"
-docker compose -f deploy/docker/docker-compose.yml up -d
 
-# 3. Verify.
+# 2. Start from the published image.
+docker compose -f deploy/docker/docker-compose.oss.yml up -d
+
+# 3. Or build a custom image from source.
+docker build -f deploy/docker/Dockerfile.server \
+  --target speechkit-server -t speechkit-server:dev .
+
+# 4. Verify.
 curl -fsS http://localhost:8080/healthz
 curl -fsS http://localhost:8080/readyz
 curl -fsS -H "Authorization: Bearer $SPEECHKIT_SERVER_TOKEN" \
@@ -59,10 +62,10 @@ curl -fsS -H "Authorization: Bearer $SPEECHKIT_SERVER_TOKEN" \
   -X POST http://localhost:8080/v1/assist/self-test
 ```
 
-The repository dev stack includes Postgres because it exercises the production
-store path. A fresh browser-facing local server can use SQLite only; use the
-agent/browser reference files at `docs/agent/install-server/docker-compose.example.yml`
-and `docs/agent/install-server/config.browser.example.toml`.
+A fresh browser-facing local server can use SQLite only; use the agent/browser
+reference files at `docs/agent/install-server/docker-compose.example.yml` and
+`docs/agent/install-server/config.browser.example.toml` when an agent should
+generate a complete install plan.
 
 Secrets can be injected by any operator-managed secret system. The Framework
 has no opinion on the secret manager, only on where values are read
@@ -254,9 +257,8 @@ Agent media transport. Configure `[server.livekit]` with `url`, `api_key_env`,
 `api_secret_env`, `token_ttl_sec`, and `room_prefix`. When enabled,
 `POST /v1/voiceagent/sessions` includes a `livekit` object with `url`, `room`,
 `token`, `token_expires_at`, and `participant_identity`. Clients connect media
-directly to the Render-hosted LiveKit target using that token while keeping
-SpeechKit as the authenticated policy boundary; no host migration is part of
-this path.
+directly to the configured LiveKit target using that token while keeping
+SpeechKit as the authenticated policy boundary.
 
 The WebSocket remains required for all Voice Agent sessions. Send
 `{"type":"start","media_transport":"livekit"}` after the upgrade to opt into
@@ -350,24 +352,26 @@ Every substantive operation delegates to the shared Framework packages:
 
 | Server handler | Delegates to |
 |---|---|
-| Dictation transcribe | `internal/router` + `internal/stt/*` |
-| Assist process | `internal/assist.Pipeline` |
-| Voice Agent session | `internal/voiceagent.Session` + `internal/voiceagent.GeminiLive` |
+| Dictation transcribe | Shared router and STT implementation packages |
+| Assist process | Shared Assist pipeline |
+| Voice Agent session | Shared Voice Agent live-session implementation |
 | Persona compose | TOML seeds + store-backed overrides + `voiceagent.LiveConfig` |
 
 This keeps the architecture DRY: public Go packages define the reusable
-framework surface, internal packages implement the mode runtime once, the
-server adapts it to HTTP/WebSocket, and the Windows Client adapts it to desktop
-UI workflows.
+framework surface, non-importable implementation packages build the mode
+runtime once, the server adapts it to HTTP/WebSocket, and the Windows Client
+ships as a release asset for desktop workflows.
 
 ## Directory layout
 
 ```text
-cmd/speechkit-server/          # Linux entry point (//go:build linux)
-internal/server/core/          # Bootstrap, lifecycle, health
-internal/server/middleware/    # Auth, logging, rate-limit, CORS, recover
-internal/server/{mode-pkg}/    # Dictation / Assist / VoiceAgent / Persona handlers
-deploy/docker/                 # Dockerfile, docker-compose
-deploy/config/                 # Reference config.toml
-docs/server/                   # This document + API reference
+cmd/speechkit-server/     # Linux entry point (//go:build linux)
+cmd/speechkit-mcp/        # Agent MCP server for docs, validation, management
+cmd/speechkit-cli/        # CLI diagnostics and scaffolding
+internal/server/          # Server bootstrap, auth, handlers, health
+internal/{ai,assist,...}/ # Shared implementation used by server and examples
+pkg/speechkit/            # Public SDK imports for host applications
+deploy/docker/            # Dockerfile and self-host compose example
+deploy/config/            # Reference config.toml
+docs/server/              # This document + API reference
 ```

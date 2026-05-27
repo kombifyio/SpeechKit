@@ -9,8 +9,10 @@ strict modes:
 
 v0.40 is the SDK-surface release line: wake-word, Assist, Voice-Companion,
 Event-Bus, and TTS building blocks are embeddable from `pkg/speechkit/...`.
-The latest GitHub Release is the canonical source for desktop installers; the
-`latest` GHCR tag tracks the current stable server image.
+The latest GitHub Release is the canonical source for desktop installers. A
+repository clone also mirrors the current Windows installer at
+`release/latest/windows/SpeechKit-Setup.exe`; the `latest` GHCR tag tracks the
+current stable server image.
 
 ## Start Here
 

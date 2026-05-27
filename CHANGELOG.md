@@ -12,7 +12,41 @@ IDs, source paths, and other maintainer-only vocabulary.
 
 ## [Unreleased]
 
-No unreleased user-facing changes are pending.
+## [0.40.5] - 2026-05-27
+
+Release-gate and installer availability rollup for the v0.40 framework line.
+
+### Highlights
+
+- **Fresh Windows clones now include the current installer mirror.**
+  The repository carries the latest Windows setup files plus checksum
+  and unsigned-build notes so a cloned tree can be installed and tested
+  on a second Windows device without hunting through release artifacts.
+- **Public framework exports now prove the SDK boundary automatically.**
+  Release checks discover every public SpeechKit framework package and
+  build an external consumer module that imports Assist, companion, TTS,
+  and wake-word APIs without relying on hidden source.
+- **The v0.40 release record now matches the shipped tag history.**
+  The documented API baseline starts with the v0.40.1 SDK-surface merge
+  and rolls forward through the current patch line; no v0.40.0 tag is
+  backfilled.
+
+### Changed
+
+- **Public source exports now keep the agent-native framework surface
+  buildable.** The exported tree keeps the SDK, self-host server, CLI, MCP,
+  docs, and examples while excluding desktop source, installer project files,
+  release-only guards, E2E fixtures, and private website sources.
+- **MCP architecture summaries now use public framework docs.** The embedded
+  MCP documentation points agents at the SDK boundary and Framework API instead
+  of relying on maintainer-only architecture notes.
+
+### Fixed
+
+- **Roadmap and website mirrors now use the same release sources as CI.**
+  The roadmap keeps the required v0.40 schema bucket while explaining the
+  factual patch-line baseline, and the docs website mirrors the canonical
+  server API and agent markdown.
 
 ## [0.40.4] - 2026-05-26
 
@@ -97,14 +131,15 @@ SDK-surface modularity patch on top of the v0.40 runtime-modularity work.
   self-hosted local providers, Hugging Face, OpenAI, and Google without
   hard-coded string matching.
 
-## [0.40.0] - 2026-05-26
+## v0.40.0 Planning Baseline (not a released tag)
 
-Runtime-modularity release split. The tag is still gated by CI/release
-review; this entry is the release-note source for that cut.
+Runtime-modularity was prepared under the v0.40.0 milestone bucket, then
+shipped through the v0.40.1 and later patch line. There is no standalone
+v0.40.0 release tag.
 
 ### Added
 
-- **Runtime modularity is ready for the v0.40.0 release split.**
+- **Runtime modularity prepared the v0.40 framework line.**
   Dictation-only use no longer eagerly starts Assist, Voice Agent,
   Genkit, TTS, or LiveKit-specific UI pieces. Mode transitions now
   report clear status and latency, and disabled modes return a

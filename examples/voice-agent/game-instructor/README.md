@@ -35,7 +35,7 @@ host: feed the session raw PCM 16 kHz S16LE mono via
 
 ## Pre-flight
 
-1. Build `cmd/speechkit-server` for Linux (`docker build -f deploy/docker/Dockerfile.server …` or `GOOS=linux go build ./cmd/speechkit-server`).
+1. Start a self-hosted SpeechKit Server with `deploy/docker/docker-compose.oss.yml`, the published `ghcr.io/kombifyio/speechkit-server` image, or a custom image built from `deploy/docker/Dockerfile.server`.
 2. Provide a Gemini Live API key (`GOOGLE_AI_API_KEY`) and a static bearer
    token (`SPEECHKIT_SERVER_TOKEN`) through your shell, CI secret store, or
    deployment environment.
@@ -46,8 +46,8 @@ host: feed the session raw PCM 16 kHz S16LE mono via
 ```bash
 # Terminal 1 — server.
 SPEECHKIT_SERVER_TOKEN=devtoken \
-GOOGLE_AI_API_KEY=…             \
-./speechkit-server --config examples/voice-agent/game-instructor/config.example.toml
+GOOGLE_AI_API_KEY=...           \
+docker compose -f deploy/docker/docker-compose.oss.yml up -d
 
 # Terminal 2 — embedder.
 SPEECHKIT_SERVER_URL=http://localhost:8080 \
@@ -120,4 +120,4 @@ need to talk to the server without the SDK:
 | Server → Client | `session_end`        | `reason`                                                                                      |
 | Server → Client | binary               | PCM 24 kHz S16LE mono                                                                         |
 
-Full reference: `internal/server/voiceagent/protocol.go`.
+Full wire reference: [docs/server/asyncapi.v1.yaml](../../../docs/server/asyncapi.v1.yaml).

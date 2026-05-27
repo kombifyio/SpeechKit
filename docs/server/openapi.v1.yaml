@@ -625,9 +625,8 @@ paths:
 
         When `[server.livekit]` is enabled, the response also includes a
         short-lived LiveKit join token for the same authenticated caller.
-        Render-hosted LiveKit is the target media service for production;
-        this API does not require a host migration. SpeechKit remains the
-        token issuer and policy boundary.
+        The configured LiveKit deployment is the target media service.
+        SpeechKit remains the token issuer and policy boundary.
 
         Missing realtime provider keys do not turn this endpoint into a 404.
         The session can still be created while `/readyz` reports the provider

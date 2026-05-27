@@ -1,7 +1,7 @@
 # SpeechKit Server-Target preset: Voice Agent "Game Instructor"
 #
-# Drop this on a speechkit-server (cmd/speechkit-server) — either by merging
-# into your main server config or by pointing the binary at this file with
+# Drop this on a self-hosted SpeechKit Server — either by merging
+# into your main server config or by pointing the server binary at this file with
 # `--config`. The Persona/Role/Sequence below load on startup and can be
 # referenced by ID from any client that opens a Voice Agent WebSocket.
 #

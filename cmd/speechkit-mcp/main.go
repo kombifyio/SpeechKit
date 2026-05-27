@@ -214,7 +214,7 @@ func (a *speechkitMCP) integrationExample(ctx context.Context, req *mcp.CallTool
 }
 
 func (a *speechkitMCP) architectureOverview(ctx context.Context, req *mcp.CallToolRequest, _ struct{}) (*mcp.CallToolResult, any, error) {
-	return mcputil.TextResult(a.docs["docs/speechkit-architecture-v2.md"] + "\n\n" + a.docs["docs/mcp/README.md"]), nil, nil
+	return mcputil.TextResult(a.docs["docs/architecture/sdk-surface-boundary.md"] + "\n\n" + a.docs["docs/speechkit-framework-api.md"] + "\n\n" + a.docs["docs/mcp/README.md"]), nil, nil
 }
 
 func (a *speechkitMCP) scaffoldTemplates(ctx context.Context, req *mcp.CallToolRequest, _ struct{}) (*mcp.CallToolResult, any, error) {

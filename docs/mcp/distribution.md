@@ -2,7 +2,7 @@
 
 Supported distribution paths:
 
-- Public remote MCP: `docs,test`, no SpeechKit server credentials.
+- Self-hosted or local docs MCP: `docs,test`, no SpeechKit server credentials.
 - Local MCP with server container: `docs,management`, using the same bearer
   token or edge-auth model as the HTTP API.
 - Self-hosted MCP: any combination of `docs,management,test`.
