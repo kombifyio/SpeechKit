@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/kombifyio/SpeechKit/internal/models"
+	"github.com/kombifyio/SpeechKit/internal/sdkparity"
 )
 
 func TestOrderByPreferredProvider_MovesMatchToFront(t *testing.T) {
@@ -83,11 +84,15 @@ type mockProvider struct {
 	kind   models.ProviderKind
 	err    error
 	result *Result
+	calls  *[]string
 	called bool
 }
 
 func (m *mockProvider) Synthesize(_ context.Context, text string, _ SynthesizeOpts) (*Result, error) {
 	m.called = true
+	if m.calls != nil {
+		*m.calls = append(*m.calls, m.name)
+	}
 	if m.err != nil {
 		return nil, m.err
 	}
@@ -104,6 +109,28 @@ func (m *mockProvider) Synthesize(_ context.Context, text string, _ SynthesizeOp
 func (m *mockProvider) Name() string                   { return m.name }
 func (m *mockProvider) Kind() models.ProviderKind      { return m.kind }
 func (m *mockProvider) Health(_ context.Context) error { return m.err }
+
+func TestRouterParity(t *testing.T) {
+	sdkparity.RunTTSRouterParity(t, sdkparity.TTSRouterHarness{
+		Synthesize: func(ctx context.Context, strategy sdkparity.TTSStrategy, specs []sdkparity.TTSProviderSpec) (sdkparity.TTSRouterResult, error) {
+			calls := make([]string, 0, len(specs))
+			providers := make([]Provider, 0, len(specs))
+			for _, spec := range specs {
+				providers = append(providers, &mockProvider{
+					name:  spec.Name,
+					kind:  models.ProviderKind(spec.Kind),
+					err:   spec.Err,
+					calls: &calls,
+				})
+			}
+			result, err := NewRouter(Strategy(strategy), providers...).Synthesize(ctx, "test", SynthesizeOpts{})
+			if err != nil {
+				return sdkparity.TTSRouterResult{Calls: calls}, err
+			}
+			return sdkparity.TTSRouterResult{Provider: result.Provider, Calls: calls}, nil
+		},
+	})
+}
 
 func TestRouterFallback(t *testing.T) {
 	failing := &mockProvider{name: "openai", err: fmt.Errorf("rate limited")}

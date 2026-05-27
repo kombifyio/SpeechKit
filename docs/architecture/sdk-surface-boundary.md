@@ -55,6 +55,10 @@ Verified on 2026-05-26 and updated on 2026-05-27:
 - `go test ./examples/embed-companion ./examples/embed-tts ./examples/embed-event-bus` passes.
 - Public export dry-run includes `pkg/speechkit/wakeword`, `pkg/speechkit/companion`, and `pkg/speechkit/tts`.
 - Production SDK packages have no `internal/*` imports.
+- Shared parity tests in `internal/sdkparity` exercise the same public/internal
+  TTS Router provider-kind behavior and wakeword Dispatcher/AutoEnd behavior;
+  the parity harness is test-only and does not change the production SDK
+  import boundary.
 - CI public API stability discovers the surface dynamically with
   `go list ./pkg/speechkit/...`, so new promoted SDK packages are checked by
   default.

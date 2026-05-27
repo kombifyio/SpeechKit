@@ -248,6 +248,7 @@ type createSessionResponse struct {
 
 type listSessionsResponse struct {
 	Sessions []listedSession `json:"sessions"`
+	Metrics  SessionStats    `json:"metrics"`
 }
 
 type listedSession struct {
@@ -407,7 +408,10 @@ func (h *Handler) listSessions(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	sessions := h.manager.List(id.UserID)
-	resp := listSessionsResponse{Sessions: make([]listedSession, 0, len(sessions))}
+	resp := listSessionsResponse{
+		Sessions: make([]listedSession, 0, len(sessions)),
+		Metrics:  h.manager.Stats(id.UserID),
+	}
 	for _, s := range sessions {
 		resp.Sessions = append(resp.Sessions, listedSession{
 			SessionID:   s.ID,

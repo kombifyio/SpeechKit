@@ -48,10 +48,11 @@ func buildVoiceAgentHandler(ctx context.Context, cfg *config.Config, app *App) (
 	if cfg.Server.TicketTTLSec <= 0 {
 		ticketTTL = 0
 	}
+	limits := cfg.VoiceAgentSessionLimits()
 	manager, err := vsserver.NewSessionManager(vsserver.Options{
 		TicketTTL:              ticketTTL,
-		MaxGlobalSessions:      cfg.Server.MaxVoiceAgentSessions,
-		MaxPerIdentitySessions: cfg.Server.MaxSessionsPerUser,
+		MaxGlobalSessions:      limits.MaxGlobalSessions,
+		MaxPerIdentitySessions: limits.MaxPerIdentitySessions,
 	})
 	if err != nil {
 		return nil, status, err

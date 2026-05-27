@@ -188,6 +188,28 @@ filters and one-shot evidence. The catalog keeps accepting compatibility
 aliases such as `voice_agent`, but docs, tests, and functional results use
 `voiceagent`.
 
+Voice Agent session capacity is configured under `[voice_agent.limits]`:
+
+```toml
+[voice_agent.limits]
+max_global_sessions = 100
+max_per_identity_sessions = 3
+```
+
+The older `[server].max_voiceagent_sessions` and
+`[server].max_sessions_per_user` keys remain supported. When a new
+`[voice_agent.limits]` value is set to a positive number, it takes precedence
+over the legacy server key. `GET /v1/voiceagent/sessions` returns a `metrics`
+object with current total, active, pending, per-identity, and configured limit
+values so operators can compare live usage with capacity.
+
+Budget capacity from the heaviest enabled Voice Agent provider, not only the
+SpeechKit manager record. Native realtime cloud sessions are mostly network
+and audio-buffer state in this process; cascaded/self-hosted sessions also hold
+STT, agent LLM, and optional TTS pipeline state. Keep
+`max_global_sessions` below the number of simultaneous provider sessions your
+deployment can sustain with headroom for `/readyz` and admin traffic.
+
 ## Provider support
 
 | Mode | Self-hosted/local | Gemini | OpenAI | Groq |

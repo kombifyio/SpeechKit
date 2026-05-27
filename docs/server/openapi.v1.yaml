@@ -680,6 +680,8 @@ paths:
                   sessions:
                     type: array
                     items: { $ref: '#/components/schemas/ListedSession' }
+                  metrics:
+                    $ref: '#/components/schemas/VoiceAgentSessionMetrics'
         '401': { $ref: '#/components/responses/Unauthenticated' }
 
   /v1/voiceagent/sessions/{id}/livekit-token:
@@ -1632,6 +1634,17 @@ components:
           type: string
           format: date-time
         has_ws_client: { type: boolean }
+
+    VoiceAgentSessionMetrics:
+      type: object
+      description: Current Voice Agent session occupancy and configured capacity.
+      properties:
+        total_sessions: { type: integer }
+        active_sessions: { type: integer }
+        pending_sessions: { type: integer }
+        identity_sessions: { type: integer }
+        max_global_sessions: { type: integer }
+        max_per_identity_sessions: { type: integer }
 
     SourceMeta:
       type: object

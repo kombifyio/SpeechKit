@@ -12,7 +12,7 @@ ghcr.io/kombifyio/speechkit-server
 ```
 
 Release tags follow the repository tags, for example
-`ghcr.io/kombifyio/speechkit-server:v0.40.5`. The image:
+`ghcr.io/kombifyio/speechkit-server:v0.40.6`. The image:
 
 - listens on port `8080` over plain HTTP
 - expects TLS at your reverse proxy or ingress

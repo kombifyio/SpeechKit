@@ -79,6 +79,16 @@ type SessionManager struct {
 	opts     Options
 }
 
+// SessionStats reports current session occupancy and configured capacity.
+type SessionStats struct {
+	TotalSessions          int `json:"total_sessions"`
+	ActiveSessions         int `json:"active_sessions"`
+	PendingSessions        int `json:"pending_sessions"`
+	IdentitySessions       int `json:"identity_sessions,omitempty"`
+	MaxGlobalSessions      int `json:"max_global_sessions"`
+	MaxPerIdentitySessions int `json:"max_per_identity_sessions"`
+}
+
 // ManagedSession is the manager's record for one active or pending session.
 // The WebSocket handler and adapter pull additional fields (conn, pumps)
 // onto this struct at handshake time.
@@ -187,6 +197,29 @@ func (m *SessionManager) List(userID string) []*ManagedSession {
 		}
 	}
 	return out
+}
+
+// Stats returns a point-in-time session and capacity snapshot.
+func (m *SessionManager) Stats(userID string) SessionStats {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	stats := SessionStats{
+		TotalSessions:          len(m.sessions),
+		IdentitySessions:       m.byUser[userID],
+		MaxGlobalSessions:      m.opts.MaxGlobalSessions,
+		MaxPerIdentitySessions: m.opts.MaxPerIdentitySessions,
+	}
+	for _, session := range m.sessions {
+		switch session.State {
+		case StateActive:
+			stats.ActiveSessions++
+		case StatePendingWS:
+			stats.PendingSessions++
+		case StateClosed:
+		}
+	}
+	return stats
 }
 
 // Attach moves a session from pending to active. Returns an error when the

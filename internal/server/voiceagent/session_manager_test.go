@@ -196,6 +196,30 @@ func TestSessionManager_List(t *testing.T) {
 	}
 }
 
+func TestSessionManager_Stats(t *testing.T) {
+	m := mustManager(t, Options{MaxGlobalSessions: 5, MaxPerIdentitySessions: 2})
+	s1, _, _ := m.Create(Identity{UserID: "u1"})
+	_, _, _ = m.Create(Identity{UserID: "u1"})
+	_, _, _ = m.Create(Identity{UserID: "u2"})
+	if err := m.Attach(s1.ID); err != nil {
+		t.Fatalf("Attach: %v", err)
+	}
+
+	stats := m.Stats("u1")
+	if stats.TotalSessions != 3 {
+		t.Fatalf("TotalSessions = %d, want 3", stats.TotalSessions)
+	}
+	if stats.ActiveSessions != 1 || stats.PendingSessions != 2 {
+		t.Fatalf("active/pending = %d/%d, want 1/2", stats.ActiveSessions, stats.PendingSessions)
+	}
+	if stats.IdentitySessions != 2 {
+		t.Fatalf("IdentitySessions = %d, want 2", stats.IdentitySessions)
+	}
+	if stats.MaxGlobalSessions != 5 || stats.MaxPerIdentitySessions != 2 {
+		t.Fatalf("limits = %d/%d, want 5/2", stats.MaxGlobalSessions, stats.MaxPerIdentitySessions)
+	}
+}
+
 func TestSessionManager_ConcurrentCreates(t *testing.T) {
 	m := mustManager(t, Options{MaxGlobalSessions: 50, MaxPerIdentitySessions: 50})
 	var wg sync.WaitGroup

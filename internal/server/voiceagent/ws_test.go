@@ -207,6 +207,12 @@ func TestListSessionsReturnsCallerSessions(t *testing.T) {
 	if len(body.Sessions) != 1 || body.Sessions[0].SessionID != own.ID {
 		t.Fatalf("sessions = %+v, want only %s", body.Sessions, own.ID)
 	}
+	if body.Metrics.TotalSessions != 2 || body.Metrics.IdentitySessions != 1 {
+		t.Fatalf("metrics = %+v, want total=2 identity=1", body.Metrics)
+	}
+	if body.Metrics.MaxGlobalSessions != 100 || body.Metrics.MaxPerIdentitySessions != 3 {
+		t.Fatalf("metric limits = %+v, want default 100/3", body.Metrics)
+	}
 }
 
 func TestDeleteSessionRequiresOwnerOrAdmin(t *testing.T) {

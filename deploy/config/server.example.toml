@@ -179,6 +179,12 @@ enable_output_transcript        = true
 reminder_after_idle_sec         = 300
 deactivate_after_idle_sec       = 900
 
+[voice_agent.limits]
+# Preferred v0.40.x capacity config. Legacy [server] limits above remain
+# accepted; positive values here take precedence.
+max_global_sessions       = 100
+max_per_identity_sessions = 3
+
 # ── Voice Agent Personas / Roles / Sequences ─────────────────────────────────
 # These are TOML-seeded defaults. DB-stored entries with the same ID override
 # these at runtime. The examples below are generic framework samples, not

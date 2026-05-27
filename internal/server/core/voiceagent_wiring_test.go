@@ -103,6 +103,38 @@ func TestBuildVoiceAgentHandlerUsesConfiguredTicketTTL(t *testing.T) {
 	}
 }
 
+func TestBuildVoiceAgentHandlerUsesVoiceAgentLimitsSection(t *testing.T) {
+	cfg := &config.Config{}
+	cfg.General.Language = "en"
+	cfg.Server.MaxVoiceAgentSessions = 10
+	cfg.Server.MaxSessionsPerUser = 10
+	cfg.VoiceAgent.Limits.MaxGlobalSessions = 1
+	cfg.VoiceAgent.Limits.MaxPerIdentitySessions = 1
+	cfg.VoiceAgent.Provider = ProviderGemini
+	app := &App{PersonaRegistry: persona.NewRegistry()}
+
+	h, _, err := buildVoiceAgentHandler(context.Background(), cfg, app)
+	if err != nil {
+		t.Fatalf("buildVoiceAgentHandler() error = %v", err)
+	}
+	mux := http.NewServeMux()
+	h.Mount(mux)
+	handler := middleware.Auth(middleware.AuthOptions{Mode: string(middleware.AuthModeNone)})(mux)
+
+	req := httptest.NewRequest(http.MethodPost, "https://speechkit.test/v1/voiceagent/sessions", nil)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("first create status = %d body=%s", rec.Code, rec.Body.String())
+	}
+	req = httptest.NewRequest(http.MethodPost, "https://speechkit.test/v1/voiceagent/sessions", nil)
+	rec = httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("second create status = %d body=%s, want global limit 503", rec.Code, rec.Body.String())
+	}
+}
+
 func TestPersonaResolverDefaultProfileKeepsServerPromptAndVoice(t *testing.T) {
 	cfg := &config.Config{}
 	cfg.General.Language = "de"

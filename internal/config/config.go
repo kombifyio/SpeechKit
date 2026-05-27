@@ -371,6 +371,13 @@ type ServerConfig struct {
 	TrainingData ServerTrainingDataConfig `toml:"training_data"`
 }
 
+// VoiceAgentLimitsConfig configures Voice Agent session capacity. Zero values
+// are treated as unset and fall back to the legacy [server] limits.
+type VoiceAgentLimitsConfig struct {
+	MaxGlobalSessions      int `toml:"max_global_sessions"`
+	MaxPerIdentitySessions int `toml:"max_per_identity_sessions"`
+}
+
 // ServerTrainingDataConfig governs the server-side wake-word
 // activation pipeline. AcceptUploads defaults to false so POST
 // /v1/wakeword/activations returns 503 until an operator explicitly
@@ -969,27 +976,48 @@ type VoiceAgentConfig struct {
 	// (10 seconds). The Device-Target hard-caps this at 30 seconds; values
 	// above that are silently clamped at runtime so a misconfigured profile
 	// cannot strand the user in a "still active" session.
-	HoldReleaseGraceSec             int    `toml:"hold_release_grace_sec"`
-	PipelineFallback                bool   `toml:"pipeline_fallback"` // Use STT -> Agent LLM -> optional TTS when the selected Voice Agent profile is not native realtime.
-	ShowPrompter                    bool   `toml:"show_prompter"`     // Show live transcript prompter window
-	EnableSessionSummary            bool   `toml:"enable_session_summary"`
-	EnableInputTranscript           bool   `toml:"enable_input_transcript"`
-	EnableOutputTranscript          bool   `toml:"enable_output_transcript"`
-	EnableAffectiveDialog           bool   `toml:"enable_affective_dialog"`
-	ThinkingEnabled                 bool   `toml:"thinking_enabled"`
-	IncludeThoughts                 bool   `toml:"include_thoughts"`
-	ThinkingBudget                  int    `toml:"thinking_budget"`
-	ThinkingLevel                   string `toml:"thinking_level"`
-	ContextCompressionEnabled       bool   `toml:"context_compression_enabled"`
-	ContextCompressionTriggerTokens int64  `toml:"context_compression_trigger_tokens"`
-	ContextCompressionTargetTokens  int64  `toml:"context_compression_target_tokens"`
-	AutomaticActivityDetection      bool   `toml:"automatic_activity_detection"`
-	ActivityHandling                string `toml:"activity_handling"`
-	TurnCoverage                    string `toml:"turn_coverage"`
-	VADStartSensitivity             string `toml:"vad_start_sensitivity"`
-	VADEndSensitivity               string `toml:"vad_end_sensitivity"`
-	VADPrefixPaddingMs              int    `toml:"vad_prefix_padding_ms"`
-	VADSilenceDurationMs            int    `toml:"vad_silence_duration_ms"`
+	HoldReleaseGraceSec             int                    `toml:"hold_release_grace_sec"`
+	PipelineFallback                bool                   `toml:"pipeline_fallback"` // Use STT -> Agent LLM -> optional TTS when the selected Voice Agent profile is not native realtime.
+	ShowPrompter                    bool                   `toml:"show_prompter"`     // Show live transcript prompter window
+	EnableSessionSummary            bool                   `toml:"enable_session_summary"`
+	EnableInputTranscript           bool                   `toml:"enable_input_transcript"`
+	EnableOutputTranscript          bool                   `toml:"enable_output_transcript"`
+	EnableAffectiveDialog           bool                   `toml:"enable_affective_dialog"`
+	ThinkingEnabled                 bool                   `toml:"thinking_enabled"`
+	IncludeThoughts                 bool                   `toml:"include_thoughts"`
+	ThinkingBudget                  int                    `toml:"thinking_budget"`
+	ThinkingLevel                   string                 `toml:"thinking_level"`
+	ContextCompressionEnabled       bool                   `toml:"context_compression_enabled"`
+	ContextCompressionTriggerTokens int64                  `toml:"context_compression_trigger_tokens"`
+	ContextCompressionTargetTokens  int64                  `toml:"context_compression_target_tokens"`
+	AutomaticActivityDetection      bool                   `toml:"automatic_activity_detection"`
+	ActivityHandling                string                 `toml:"activity_handling"`
+	TurnCoverage                    string                 `toml:"turn_coverage"`
+	VADStartSensitivity             string                 `toml:"vad_start_sensitivity"`
+	VADEndSensitivity               string                 `toml:"vad_end_sensitivity"`
+	VADPrefixPaddingMs              int                    `toml:"vad_prefix_padding_ms"`
+	VADSilenceDurationMs            int                    `toml:"vad_silence_duration_ms"`
+	Limits                          VoiceAgentLimitsConfig `toml:"limits"`
+}
+
+// VoiceAgentSessionLimits returns the effective Voice Agent session caps.
+// The v0.40.x config surface prefers [voice_agent.limits], while the older
+// [server] fields remain supported for existing deployments.
+func (cfg *Config) VoiceAgentSessionLimits() VoiceAgentLimitsConfig {
+	if cfg == nil {
+		return VoiceAgentLimitsConfig{}
+	}
+	limits := VoiceAgentLimitsConfig{
+		MaxGlobalSessions:      cfg.Server.MaxVoiceAgentSessions,
+		MaxPerIdentitySessions: cfg.Server.MaxSessionsPerUser,
+	}
+	if cfg.VoiceAgent.Limits.MaxGlobalSessions > 0 {
+		limits.MaxGlobalSessions = cfg.VoiceAgent.Limits.MaxGlobalSessions
+	}
+	if cfg.VoiceAgent.Limits.MaxPerIdentitySessions > 0 {
+		limits.MaxPerIdentitySessions = cfg.VoiceAgent.Limits.MaxPerIdentitySessions
+	}
+	return limits
 }
 
 func (cfg *Config) LegacyAgentHotkey() string {

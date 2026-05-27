@@ -12,6 +12,39 @@ IDs, source paths, and other maintainer-only vocabulary.
 
 ## [Unreleased]
 
+## [0.40.6] - 2026-05-27
+
+Stabilization rollup for the v0.40 framework line.
+
+### Highlights
+
+- **Windows release publishing now runs in smaller bounded phases.**
+  Public-source export, Windows build, signing, packaging, and publish gates
+  are separated so long-running release waits fail with clear diagnostics
+  instead of hiding inside one oversized job.
+- **Desktop mode settings now drive lifecycle state through the HTTP API.**
+  Assist and Voice Agent enablement changes made through the local control
+  plane now exercise the same lifecycle registry path as the desktop toggles.
+- **Voice Agent session limits are now configured in the Voice Agent section.**
+  Server deployments can set capacity under `voice_agent.limits` while older
+  server limit keys continue to work.
+
+### Added
+
+- `GET /v1/voiceagent/sessions` now includes session usage metrics with total,
+  active, pending, per-identity, and configured capacity values.
+
+### Changed
+
+- Release export determinism is checked by comparing two explicit export
+  directories, allowing the publish workflow to reuse the first export for the
+  public source mirror.
+
+### Fixed
+
+- Local mode start and stop commands now return a structured disabled response
+  when the requested mode is off or has no hotkey binding.
+
 ## [0.40.5] - 2026-05-27
 
 Release-gate and installer availability rollup for the v0.40 framework line.

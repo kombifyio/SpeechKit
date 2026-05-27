@@ -93,3 +93,7 @@ automatic_activity_detection = true
 enable_input_transcript = true
 enable_output_transcript = true
 
+[voice_agent.limits]
+max_global_sessions = 100
+max_per_identity_sessions = 3
+
