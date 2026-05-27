@@ -1,12 +1,5 @@
 IMPORTANT: This Windows release is intentionally unsigned.
 
-SpeechKit currently has no available no-cost public code-signing
-path. Windows SmartScreen and installer trust warnings are expected.
-This is a manual-only Windows release.
-Auto-update requires signed Windows installers.
-The in-app updater will not offer this installer as a verified
-installable download.
+SpeechKit currently has no available no-cost public code-signing path. Windows SmartScreen and installer trust warnings are expected. This is a manual-only Windows release.
 
-Verify downloads through the release's SHA256SUMS.txt file and the
-GitHub Actions provenance attached to the public release workflow
-when repository attestations are enabled.
+Verify downloads through this release's SHA256SUMS.txt file. Auto-update requires signed Windows installers and will not treat this installer as a verified in-app update payload.
