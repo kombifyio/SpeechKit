@@ -12,6 +12,13 @@ IDs, source paths, and other maintainer-only vocabulary.
 
 ## [Unreleased]
 
+## [0.40.7] - 2026-05-28
+
+### Added
+
+- Add cross-mode Hands-Free target routing docs and scaffold options for Assist,
+  Voice Agent, and Dictation-UI flows as part of the public source export.
+
 ## [0.40.6] - 2026-05-27
 
 Stabilization rollup for the v0.40 framework line.
@@ -3480,3 +3487,4 @@ First public release of SpeechKit as an open-source speech framework.
 - **Android app** with custom keyboard (HeliBoard), voice assistant service, live dashboard stats, and library UI
 - **Android release build** configuration with environment-based signing
 - **OSS governance**: Apache-2.0 license, contribution guidelines, security policy, export boundary enforcement
+
