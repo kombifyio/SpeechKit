@@ -19,6 +19,11 @@ The framework currently has four modules:
 | Agent tools | `speechkit-mcp` and `speechkitctl` expose docs, validation, scaffolding, diagnostics, and authenticated server management to coding agents and operators. | You want an agent to inspect the framework, generate starters, validate payloads, or operate a self-hosted server. |
 | Windows Client | Public installer and portable release assets for local use, provider testing, and server-connected workflows. | You want to use SpeechKit on a Windows machine, validate providers and models, or connect a workstation to a SpeechKit Server. |
 
+Desktop device support is Windows 10/11 x64 only today. The Windows Client uses
+WASAPI for local capture/playback. Linux is supported as a server runtime, not
+as a desktop capture client; macOS and Linux desktop packages are not currently
+supported.
+
 The runtime modules share the same three strict modes:
 
 | Mode | Purpose | Boundary |
@@ -26,6 +31,12 @@ The runtime modules share the same three strict modes:
 | Dictation | Turn speech into text. | STT only. No LLM rewriting, no utilities, no codewords. |
 | Assist | Turn speech or text into one useful result. | Codeword, utility, or LLM output with optional TTS and explicit UI surface metadata. |
 | Voice Agent | Run realtime audio-to-audio dialogue. | Live conversation for brainstorming, support, and fast follow-ups. |
+
+Hands-Free is not a fourth mode. It is an activation and voice-output layer for
+the three modes: wake activation, microphone capture, auto-end policy, and
+optional speaker output. Assist uses it for Siri/Alexa-style Voice Companion
+requests, Voice Agent uses it for continuous dialogue, and Dictation uses it
+only as UI-assisted activation with a visible text target or commit surface.
 
 ## Why SpeechKit
 
@@ -47,7 +58,8 @@ Key advantages:
 - Machine-readable readiness checks for credentials, local runtimes, model
   artifacts, and mode capability.
 
-Start with [Framework API](./docs/speechkit-framework-api.md) or the examples in
+Start with [Framework API](./docs/speechkit-framework-api.md),
+[Voice Companion](./docs/voice-companion.md), or the examples in
 [examples/](./examples/README.md).
 
 ### Self-host Server
@@ -91,6 +103,8 @@ Server.
 Key advantages:
 
 - Global hotkeys for Dictation, Assist, and Voice Agent.
+- Hands-Free settings for wake activation, target mode, auto-end behavior, and
+  voice output.
 - Local audio capture, VAD, overlays, settings, provider setup, and optional
   audio playback in one Wails app.
 - Provider/model test bench for local, cloud, and direct integrations.
@@ -115,7 +129,22 @@ Default hotkeys:
 Embed the Go backend:
 
 ```bash
-go get github.com/kombifyio/SpeechKit/pkg/speechkit
+go get github.com/kombifyio/SpeechKit
+```
+
+Import only the components your host needs. A dictation-only app can use
+`pkg/speechkit/dictation`; an activation-only integration can use
+`pkg/speechkit/wakeword`; spoken output can use `pkg/speechkit/tts`; one-shot
+Voice Companion hosts use `pkg/speechkit/companion` plus Assist/TTS adapters;
+server-connected apps use `pkg/speechkit/client`. You do not need to load the
+Windows client or the whole framework for a single component.
+
+For a single-prompt Go starter:
+
+```bash
+speechkit-cli init --template go-assist-voice-companion ./my-companion
+speechkit-cli init --template go-voice-agent-companion ./my-agent
+speechkit-cli init --template go-dictation-handsfree-ui ./my-dictation-ui
 ```
 
 Run the self-host server image:

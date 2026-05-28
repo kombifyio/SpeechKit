@@ -61,13 +61,14 @@ Core endpoints:
 ## Use Go
 
 ```sh
-go get github.com/kombifyio/SpeechKit/pkg/speechkit
+go get github.com/kombifyio/SpeechKit
 ```
 
 Use `pkg/speechkit/client` when you want to call a running SpeechKit Server.
 
-Use the v0.40 SDK packages when you embed SpeechKit directly into another
-Go host:
+Use the v0.40 SDK packages when you embed SpeechKit directly into another Go
+host. Import the smallest public component that matches the job instead of
+loading the whole framework:
 
 ```sh
 go run ./examples/embed-companion
@@ -78,9 +79,16 @@ go run ./examples/embed-event-bus
 Important packages:
 
 - `pkg/speechkit/wakeword` and `pkg/speechkit/wakeword/sherpa` for wake-word contracts.
-- `pkg/speechkit/companion` for hands-free Wake + Assist + optional TTS composition.
+- `pkg/speechkit/companion` for hands-free target routing with `TargetAssist`, `TargetVoiceAgent`, or `TargetDictationUIAssisted`.
 - `pkg/speechkit/tts` for Provider, Router, Service, and provider-kind routing.
 - `pkg/speechkit/assist` for one-shot Assist services, multi-turn skill context, codeword routing, and optional Genkit adapters.
+- `pkg/speechkit/dictation` for strict STT-only embedded dictation.
+- `pkg/speechkit/agentkit` and `pkg/speechkit/voiceagent/live` for embedded realtime Voice Agent hosts.
+
+Hands-Free is an activation and voice-output layer, not a fourth mode. Voice
+Companions are usually `TargetAssist`; continuous dialogue companions use
+`TargetVoiceAgent`; Dictation uses `TargetDictationUIAssisted` because text
+still needs a visible target or explicit commit surface.
 
 ## Use MCP
 

@@ -1,0 +1,19 @@
+name = "go-dictation-handsfree-ui"
+description = "Go-only Dictation UI-assisted scaffold showing wake activation routed through the host command bus without TTS."
+min_server_version = "0.40"
+next_steps = ["go mod tidy", "go run ."]
+
+[[vars]]
+name = "APP_NAME"
+description = "Go module name"
+default = "speechkit-dictation-handsfree-ui"
+
+[[vars]]
+name = "SPEECHKIT_MODULE"
+description = "SpeechKit Go module path"
+default = "github.com/kombifyio/SpeechKit"
+
+[[vars]]
+name = "WAKE_PHRASE"
+description = "Display wake phrase used by the sample wake event"
+default = "Hey Quby"

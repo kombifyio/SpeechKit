@@ -1,0 +1,19 @@
+name = "go-voice-agent-companion"
+description = "Go-only Voice Agent companion scaffold using hands-free activation to start a realtime dialogue service."
+min_server_version = "0.40"
+next_steps = ["go mod tidy", "go run ."]
+
+[[vars]]
+name = "APP_NAME"
+description = "Go module name"
+default = "speechkit-voice-agent-companion"
+
+[[vars]]
+name = "SPEECHKIT_MODULE"
+description = "SpeechKit Go module path"
+default = "github.com/kombifyio/SpeechKit"
+
+[[vars]]
+name = "WAKE_PHRASE"
+description = "Display wake phrase used by the sample wake event"
+default = "Hey Quby"

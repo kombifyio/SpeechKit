@@ -1,0 +1,19 @@
+name = "go-assist-voice-companion"
+description = "Go-only Assist voice companion scaffold using companion.NewHandsFree with one-shot Assist and optional TTS."
+min_server_version = "0.40"
+next_steps = ["go mod tidy", "go run ."]
+
+[[vars]]
+name = "APP_NAME"
+description = "Go module name"
+default = "speechkit-assist-companion"
+
+[[vars]]
+name = "SPEECHKIT_MODULE"
+description = "SpeechKit Go module path"
+default = "github.com/kombifyio/SpeechKit"
+
+[[vars]]
+name = "WAKE_PHRASE"
+description = "Display wake phrase used by the sample wake event"
+default = "Hey Quby"

@@ -9,6 +9,8 @@ strict modes:
 
 v0.40 is the SDK-surface release line: wake-word, Assist, Voice-Companion,
 Event-Bus, and TTS building blocks are embeddable from `pkg/speechkit/...`.
+Hands-Free is the activation and voice-output layer for Dictation, Assist, and
+Voice Agent; it is not a fourth mode.
 The latest GitHub Release is the canonical source for desktop installers. A
 repository clone also mirrors the current Windows installer at
 `release/latest/windows/SpeechKit-Setup.exe`; the `latest` GHCR tag tracks the
@@ -46,7 +48,11 @@ Hi Codex, read speechkit.cc/llms.txt, then install the SpeechKit Server with Doc
 ```
 
 ```text
-Hi Codex, add SpeechKit as a Go framework dependency and use the documented Dictation, Assist, and Voice Agent contracts.
+Hi Codex, add SpeechKit as a Go framework dependency and use the documented Dictation, Assist, Voice Agent, and Hands-Free contracts. Prefer the go-assist-voice-companion, go-voice-agent-companion, or go-dictation-handsfree-ui scaffold when it fits, import only public pkg/speechkit/... components, and do not import internal/*.
+```
+
+```text
+Hi Codex, add a SpeechKit Assist Voice Companion to this Go app. Import only pkg/speechkit/{companion,wakeword,assist,tts} plus pkg/speechkit for events, wire companion.NewHandsFree with TargetMode: companion.TargetAssist, keep microphone capture/playback host-owned, and do not import internal/* or the Windows client.
 ```
 
 ```text
@@ -131,10 +137,25 @@ Docs-only local config:
 Use these packages when the host embeds SpeechKit directly instead of calling a
 running server:
 
+- `pkg/speechkit`: mode contracts, Runtime, events, provider catalog, and readiness.
+- `pkg/speechkit/dictation`: strict STT-only embedded dictation.
 - `pkg/speechkit/wakeword` and `pkg/speechkit/wakeword/sherpa`: wake-word detection contracts and sherpa adapter.
-- `pkg/speechkit/companion`: `NewHandsFree` composer for wake events, host transcript requests, Assist, optional TTS, and runtime events.
+- `pkg/speechkit/companion`: `NewHandsFree` composer for wake events, target routing, host transcript requests, Assist, Voice Agent activation, optional TTS, and runtime events.
 - `pkg/speechkit/tts`: ProviderKind-aware Router and Service for local/cloud/direct spoken output.
 - `pkg/speechkit/assist`: Assist service, multi-turn skill context, codeword routing, TTS routing, and optional Genkit adapter.
+- `pkg/speechkit/agentkit` and `pkg/speechkit/voiceagent/live`: embedded realtime Voice Agent hosts.
+- `pkg/speechkit/client`: self-host server client.
+
+Import the smallest public component that matches the job. A wake-only
+satellite should import `wakeword`; a TTS-only app should import `tts`; a
+server-connected Voice Agent should import `client`. Do not import `internal/*`
+or the Windows client from a library integration.
+
+Hands-Free target modes:
+
+- `companion.TargetAssist`: Assist Voice Companion, one-shot utilities, smart-home commands, spoken answers.
+- `companion.TargetVoiceAgent`: continuous dialogue, companion mode, game moderator, brainstorming.
+- `companion.TargetDictationUIAssisted`: wake-triggered Dictation start/stop with a visible text target or explicit commit surface; no TTS.
 
 Smoke examples:
 

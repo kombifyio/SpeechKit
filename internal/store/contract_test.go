@@ -232,6 +232,64 @@ func TestContractQuickNoteLifecycle(t *testing.T) {
 	})
 }
 
+func TestContractQuickNoteCaptureUpdate(t *testing.T) {
+	eachBackend(t, func(t *testing.T, s Store) {
+		ctx := context.Background()
+		id, err := s.SaveQuickNote(ctx, "draft", "en", "manual", 100, 10, nil)
+		if err != nil {
+			t.Fatalf("SaveQuickNote: %v", err)
+		}
+		if err := s.UpdateQuickNoteCapture(ctx, id, "final capture", "hf", 1300, 90, nil); err != nil {
+			t.Fatalf("UpdateQuickNoteCapture(empty audio): %v", err)
+		}
+		got, err := s.GetQuickNote(ctx, id)
+		if err != nil {
+			t.Fatalf("GetQuickNote: %v", err)
+		}
+		if got.Text != "final capture" || got.Provider != "hf" || got.DurationMs != 1300 || got.LatencyMs != 90 {
+			t.Fatalf("updated note = %+v", got)
+		}
+		if got.Audio != nil || got.AudioPath != "" {
+			t.Fatalf("empty audio update should not create audio asset: path=%q asset=%+v", got.AudioPath, got.Audio)
+		}
+
+		if err := s.UpdateQuickNoteCapture(ctx, id, "final with audio", "openai", 2400, 150, []byte("new audio")); err != nil {
+			t.Fatalf("UpdateQuickNoteCapture(with audio): %v", err)
+		}
+		got, err = s.GetQuickNote(ctx, id)
+		if err != nil {
+			t.Fatalf("GetQuickNote after audio: %v", err)
+		}
+		if got.Provider != "openai" || got.DurationMs != 2400 || got.LatencyMs != 150 {
+			t.Fatalf("audio update note = %+v", got)
+		}
+		if got.Audio == nil || got.Audio.SizeBytes != int64(len("new audio")) {
+			t.Fatalf("audio asset = %+v, want size %d", got.Audio, len("new audio"))
+		}
+		if assetStore, ok := s.(AudioAssetStore); ok {
+			asset, err := assetStore.GetAudioAsset(ctx, "quick_note", id)
+			if err != nil {
+				t.Fatalf("GetAudioAsset: %v", err)
+			}
+			if asset == nil || asset.SizeBytes != int64(len("new audio")) {
+				t.Fatalf("stored audio asset = %+v", asset)
+			}
+		}
+	})
+}
+
+func TestContractQuickNoteCaptureUpdateMissingRow(t *testing.T) {
+	eachBackend(t, func(t *testing.T, s Store) {
+		err := s.UpdateQuickNoteCapture(context.Background(), 404, "missing", "hf", 1, 1, nil)
+		if err == nil {
+			t.Fatal("expected missing quick note error")
+		}
+		if !strings.Contains(err.Error(), "quick note") {
+			t.Fatalf("error = %v, want quick note context", err)
+		}
+	})
+}
+
 // TestContractStatsReflectsWrites ensures Stats() observes writes consistently
 // across backends. Important because the Stats SQL is the most divergent
 // area between sqlite.go and postgres.go (different aggregate syntax).

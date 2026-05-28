@@ -1,0 +1,18 @@
+# {{ .APP_NAME }}
+
+Go-only SpeechKit Assist voice companion scaffold.
+
+Hands-Free is configured as an add-on targeting Assist. The sample wires `pkg/speechkit/companion`, `wakeword`, and a tiny Assist service without importing `internal/*`.
+
+Run:
+
+```sh
+go mod tidy
+go run .
+```
+
+For local development against a checkout, add:
+
+```sh
+go mod edit -replace {{ .SPEECHKIT_MODULE }}=/path/to/SpeechKit
+```

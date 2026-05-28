@@ -18,8 +18,8 @@ func defaults() *Config {
 			AssistHotkeyBehavior:     HotkeyBehaviorHoldToTalk,
 			VoiceAgentHotkeyBehavior: HotkeyBehaviorHoldToTalk,
 			DictateEnabled:           true,
-			AssistEnabled:            true,
-			VoiceAgentEnabled:        true,
+			AssistEnabled:            false,
+			VoiceAgentEnabled:        false,
 			AutoStartOnLaunch:        false,
 			AgentHotkey:              "win+alt",
 			AgentMode:                "assist",
@@ -253,6 +253,13 @@ func defaults() *Config {
 				AssistModel:  "google/gemini-2.5-flash",
 				AgentModel:   "google/gemini-2.5-flash",
 			},
+		},
+		HandsFree: HandsFreeConfig{
+			Enabled:                 false,
+			ActivationPhraseID:      "hey_quby",
+			TargetMode:              HandsFreeTargetVoiceAgent,
+			AutoEndSilenceCutoffSec: 10,
+			VoiceOutputEnabled:      true,
 		},
 		Wakeword: WakewordConfig{
 			Enabled:              false, // opt-in: mic is only opened when the user explicitly turns this on

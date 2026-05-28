@@ -210,6 +210,155 @@ func TestAuth_AdminSessionEndpointIssuesHttpOnlyCookie(t *testing.T) {
 	}
 }
 
+func TestAuth_BasicSessionCookieUsesVerifiedCredentialSnapshot(t *testing.T) {
+	oldHash, err := bcrypt.GenerateFromPassword([]byte("old-password"), bcrypt.MinCost)
+	if err != nil {
+		t.Fatalf("hash old password: %v", err)
+	}
+	newHash, err := bcrypt.GenerateFromPassword([]byte("new-password"), bcrypt.MinCost)
+	if err != nil {
+		t.Fatalf("hash new password: %v", err)
+	}
+	hashCalls := 0
+	hashProvider := func() string {
+		hashCalls++
+		if hashCalls == 1 {
+			return string(oldHash)
+		}
+		return string(newHash)
+	}
+	handler := Auth(AuthOptions{
+		Mode:                      "bearer",
+		BearerTokenProvider:       func() string { return "api-token" },
+		AdminUsernameProvider:     func() string { return "admin" },
+		AdminPasswordHashProvider: hashProvider,
+	})(
+		http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusOK)
+		}),
+	)
+
+	loginReq := httptest.NewRequest(http.MethodGet, "/v1/any", nil)
+	loginReq.Header.Set("Authorization", "Basic "+base64.StdEncoding.EncodeToString([]byte("admin:old-password")))
+	loginRec := httptest.NewRecorder()
+	handler.ServeHTTP(loginRec, loginReq)
+	if loginRec.Code != http.StatusOK {
+		t.Fatalf("basic request got %d body=%s", loginRec.Code, loginRec.Body.String())
+	}
+	var session *http.Cookie
+	for _, cookie := range loginRec.Result().Cookies() {
+		if cookie.Name == adminSessionCookieName {
+			session = cookie
+			break
+		}
+	}
+	if session == nil {
+		t.Fatalf("basic request did not issue %s cookie", adminSessionCookieName)
+	}
+
+	replayReq := httptest.NewRequest(http.MethodGet, "/v1/any", nil)
+	replayReq.AddCookie(session)
+	replayRec := httptest.NewRecorder()
+	handler.ServeHTTP(replayRec, replayReq)
+	if replayRec.Code != http.StatusUnauthorized {
+		t.Fatalf("session signed after credential rotation must not authenticate; got %d", replayRec.Code)
+	}
+}
+
+func TestAuth_AdminSessionEndpointMarksCookiesSecureBehindHTTPSProxy(t *testing.T) {
+	hash, err := bcrypt.GenerateFromPassword([]byte("correct-password"), bcrypt.MinCost)
+	if err != nil {
+		t.Fatalf("hash password: %v", err)
+	}
+	handler := Auth(AuthOptions{
+		Mode:                      "bearer",
+		BearerTokenProvider:       func() string { return "api-token" },
+		AdminUsernameProvider:     func() string { return "admin" },
+		AdminPasswordHashProvider: func() string { return string(hash) },
+	})(
+		http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusOK)
+		}),
+	)
+
+	loginReq := httptest.NewRequest(http.MethodPost, "/v1/admin/session", nil)
+	loginReq.Header.Set("Authorization", "Basic "+base64.StdEncoding.EncodeToString([]byte("admin:correct-password")))
+	loginReq.Header.Set("X-Forwarded-Proto", "https")
+	loginRec := httptest.NewRecorder()
+	handler.ServeHTTP(loginRec, loginReq)
+
+	if loginRec.Code != http.StatusOK {
+		t.Fatalf("admin session login got %d body=%s", loginRec.Code, loginRec.Body.String())
+	}
+	for _, cookie := range loginRec.Result().Cookies() {
+		if cookie.Name != adminSessionCookieName && cookie.Name != adminCSRFCookieName {
+			continue
+		}
+		if !cookie.Secure {
+			t.Fatalf("%s must be Secure behind HTTPS proxy", cookie.Name)
+		}
+	}
+}
+
+func TestAuth_AdminSessionStateChangeRequiresCSRFHeader(t *testing.T) {
+	hash, err := bcrypt.GenerateFromPassword([]byte("correct-password"), bcrypt.MinCost)
+	if err != nil {
+		t.Fatalf("hash password: %v", err)
+	}
+	handler := Auth(AuthOptions{
+		Mode:                      "bearer",
+		BearerTokenProvider:       func() string { return "api-token" },
+		AdminUsernameProvider:     func() string { return "admin" },
+		AdminPasswordHashProvider: func() string { return string(hash) },
+	})(
+		http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if !EnforceAdminCSRF(w, r) {
+				return
+			}
+			w.WriteHeader(http.StatusOK)
+		}),
+	)
+
+	loginReq := httptest.NewRequest(http.MethodPost, "/v1/admin/session", nil)
+	loginReq.Header.Set("Authorization", "Basic "+base64.StdEncoding.EncodeToString([]byte("admin:correct-password")))
+	loginRec := httptest.NewRecorder()
+	handler.ServeHTTP(loginRec, loginReq)
+	if loginRec.Code != http.StatusOK {
+		t.Fatalf("admin session login got %d body=%s", loginRec.Code, loginRec.Body.String())
+	}
+	var sessionCookie, csrfCookie *http.Cookie
+	for _, cookie := range loginRec.Result().Cookies() {
+		switch cookie.Name {
+		case adminSessionCookieName:
+			sessionCookie = cookie
+		case adminCSRFCookieName:
+			csrfCookie = cookie
+		}
+	}
+	if sessionCookie == nil || csrfCookie == nil {
+		t.Fatalf("login did not issue session and csrf cookies: %+v", loginRec.Result().Cookies())
+	}
+
+	missingHeaderReq := httptest.NewRequest(http.MethodPatch, "/v1/server/settings", nil)
+	missingHeaderReq.AddCookie(sessionCookie)
+	missingHeaderReq.AddCookie(csrfCookie)
+	missingHeaderRec := httptest.NewRecorder()
+	handler.ServeHTTP(missingHeaderRec, missingHeaderReq)
+	if missingHeaderRec.Code != http.StatusForbidden {
+		t.Fatalf("admin session write without CSRF should get 403, got %d", missingHeaderRec.Code)
+	}
+
+	allowedReq := httptest.NewRequest(http.MethodPatch, "/v1/server/settings", nil)
+	allowedReq.AddCookie(sessionCookie)
+	allowedReq.AddCookie(csrfCookie)
+	allowedReq.Header.Set(adminCSRFHeaderName, csrfCookie.Value)
+	allowedRec := httptest.NewRecorder()
+	handler.ServeHTTP(allowedRec, allowedReq)
+	if allowedRec.Code != http.StatusOK {
+		t.Fatalf("admin session write with CSRF should pass, got %d body=%s", allowedRec.Code, allowedRec.Body.String())
+	}
+}
+
 func TestAuth_AdminSessionEndpointClearsCookie(t *testing.T) {
 	handler := Auth(AuthOptions{Mode: "bearer"})(
 		http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusOK) }),

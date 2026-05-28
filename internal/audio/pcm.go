@@ -14,7 +14,7 @@ const (
 
 // PCMToWAV wraps raw 16kHz S16 Mono PCM data in a WAV header.
 func PCMToWAV(pcm []byte) []byte {
-	dataSize := uint32(len(pcm)) //nolint:gosec // Windows API integer conversion, value fits
+	dataSize := uint32(len(pcm)) // #nosec G115 -- capture buffers are bounded by recorder duration and WAV RIFF size limits.
 	out := make([]byte, 44+len(pcm))
 
 	copy(out[0:], "RIFF")
@@ -56,7 +56,7 @@ func PCMLevel(pcm []byte) float64 {
 
 	var sumSquares float64
 	for i := 0; i+1 < len(pcm); i += BytesPerSample {
-		sample := int16(binary.LittleEndian.Uint16(pcm[i : i+2])) //nolint:gosec // Windows API integer conversion, value fits
+		sample := int16(binary.LittleEndian.Uint16(pcm[i : i+2])) // #nosec G115 -- PCM S16LE decoding reinterprets identical-width sample bits.
 		normalized := float64(sample) / 32768.0
 		sumSquares += normalized * normalized
 	}

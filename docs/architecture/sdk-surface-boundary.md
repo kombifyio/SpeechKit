@@ -25,7 +25,7 @@ additive: host applications should import public SDK packages and leave Go
 | `pkg/speechkit/wakeword` | Wake-word phrase catalog, detection events, dispatcher, detector contracts, and AutoEndPolicy. |
 | `pkg/speechkit/wakeword/sherpa` | Sherpa-onnx adapter behind the public wake-word detector contracts, with cgo/no-cgo build behavior. |
 | `pkg/speechkit/tts` | Provider, ProviderKind, Router, Service, fallback strategy, synthesis options, and result contract. |
-| `pkg/speechkit/companion` | `NewHandsFree(...)` composer for wake detections, host transcript requests, Assist, optional TTS, and EventBus lifecycle. |
+| `pkg/speechkit/companion` | `NewHandsFree(...)` composer for hands-free target routing across Assist, Voice Agent, and UI-assisted Dictation using wake detections, host transcript requests, optional TTS, and EventBus lifecycle. |
 
 ## Boundary Rules
 
@@ -64,8 +64,8 @@ Verified on 2026-05-26 and updated on 2026-05-27:
   default.
 - `scripts/public/consumer-smoke.sh` validates a fresh external Go module that
   imports `github.com/kombifyio/SpeechKit/pkg/speechkit/{assist,companion,tts,wakeword}`
-  from a clean public export without depending on public-invisible
-  `internal/*` packages.
+  from a clean public export, wires `companion.TargetAssist`, and builds
+  without depending on public-invisible `internal/*` packages.
 
 ## Release Gates
 

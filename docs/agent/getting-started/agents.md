@@ -15,6 +15,18 @@ For framework integration:
 Hi Codex, add SpeechKit as a Go framework dependency and use the documented Dictation, Assist, and Voice Agent contracts.
 ```
 
+For an Assist Voice Companion:
+
+```text
+Hi Codex, read https://speechkit.cc/llms.txt and add a SpeechKit Assist Voice Companion to this Go app. Use only public component packages from github.com/kombifyio/SpeechKit/pkg/speechkit/...: companion, wakeword, assist, tts, and speechkit for events. Wire companion.NewHandsFree with TargetMode: companion.TargetAssist. The host owns microphone capture and playback; SpeechKit owns wake activation contracts, transcript request, Assist routing, optional TTS, and EventBus publication. Do not import internal/* or the Windows client.
+```
+
+For a hands-free Voice Agent companion:
+
+```text
+Hi Codex, read https://speechkit.cc/llms.txt and build a hands-free SpeechKit Voice Agent companion into this app. Use companion.TargetVoiceAgent for wake activation. Use pkg/speechkit/client when talking to a running speechkit-server, or pkg/speechkit/agentkit when embedding a Go Voice Agent harness. Keep persona/role/sequence config in the host, stream PCM 16 kHz S16LE mono into the session, and do not import internal/*.
+```
+
 For a live-validatable native Android memo app:
 
 ```text
@@ -61,6 +73,12 @@ Hi Codex, configure `speechkit-mcp` in docs mode and verify the SpeechKit API be
 11. For automation, prefer setting `SPEECHKIT_SERVER_TOKEN` before first start. Otherwise complete `/v1/server/settings` setup and enable `admin_auth.enabled=true` with a generated admin username/password unless the host has an authenticated edge that already protects `/setup`.
 
 ## Go Agent Harness
+
+For hands-free experiences, start with `docs/voice-companion.md` and
+`examples/embed-companion`. Hands-Free is not a fourth mode: use
+`companion.TargetAssist` for Assist Voice Companion, `companion.TargetVoiceAgent`
+for continuous dialogue, and `companion.TargetDictationUIAssisted` only when a
+UI owns the dictation commit.
 
 Use `pkg/speechkit/agentkit` for Go hosts that need Voice Agent sessions with
 registered tools, lifecycle hooks, and session memory. Keep host tools

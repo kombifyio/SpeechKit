@@ -72,7 +72,7 @@ func (p *Pipeline) FeedPCM(pcm []byte) (decodes int, peakProb float32, err error
 
 	samples := make([]float32, len(pcm)/BytesPerSample)
 	for i := range samples {
-		s := int16(binary.LittleEndian.Uint16(pcm[i*BytesPerSample : (i+1)*BytesPerSample])) //nolint:gosec // S16LE: identical-width sample bits
+		s := int16(binary.LittleEndian.Uint16(pcm[i*BytesPerSample : (i+1)*BytesPerSample])) // #nosec G115 -- S16LE PCM decoding reinterprets identical-width sample bits.
 		samples[i] = float32(s) / 32768.0
 	}
 	p.stream.AcceptWaveform(SampleRate, samples)

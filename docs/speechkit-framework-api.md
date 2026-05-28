@@ -10,6 +10,12 @@ SpeechKit v23 exposes the three product modes as a reusable framework boundary. 
 | Assist | Utility Intelligence | Audio or text with optional context | One-shot result | Codeword, utility, LLM, optional TTS, and result surface metadata. |
 | Voice Agent | Brainstorming Intelligence | Realtime audio dialogue | Dialogue transcript and optional summary | Native realtime audio first, explicit pipeline fallback when configured. |
 
+Hands-Free is a capability layer over these modes, not a fourth mode. It
+combines wake activation, microphone capture, auto-end policy, and optional
+speaker output. Assist targets the Siri/Alexa-style Voice Companion path, Voice
+Agent targets continuous dialogue, and Dictation remains UI-assisted because
+text output needs a visible target or explicit commit surface.
+
 The public SDK exposes these contracts through:
 
 - `speechkit.DefaultModeContracts()`
@@ -30,6 +36,17 @@ Host products can embed individual modes without importing the Windows desktop h
 - `pkg/speechkit/assist.NewService(...)` constructs an Assist service from host-provided deterministic tools and/or an Assist generator. `ModeBehaviorClean` rejects unmatched LLM generation.
 - `pkg/speechkit/voiceagent.NewService(...)` constructs a Voice Agent service from a host-provided realtime provider.
 
+Host products can also import individual primitives without constructing a
+full mode runtime:
+
+| Use case | Public package |
+| --- | --- |
+| Wake activation only | `pkg/speechkit/wakeword` |
+| Spoken output only | `pkg/speechkit/tts` |
+| Hands-Free composition | `pkg/speechkit/companion` |
+| Server-connected mode calls | `pkg/speechkit/client` |
+| Embedded Voice Agent tools/session harness | `pkg/speechkit/agentkit`, `pkg/speechkit/voiceagent/live` |
+
 Use `speechkit.RuntimePolicy` to constrain embedded deployments:
 
 - `EnabledModes`: expose only one mode or a selected subset.
@@ -40,14 +57,14 @@ Use `speechkit.RuntimePolicy` to constrain embedded deployments:
 
 The Windows desktop app remains the reference host and provider/model test bench. It can expose all profiles and switch between them, while embedded product integrations can use the same catalog with a narrower policy.
 
-## Embeddable Companion, Wake-Word, TTS, and Events
+## Embeddable Hands-Free, Wake-Word, TTS, and Events
 
 The v0.40 patch line extends the public SDK surface without breaking the existing mode contracts. `v0.40.1` is the first factual API baseline for these packages, and the current v0.40 rollup keeps the same additive compatibility policy:
 
 - `pkg/speechkit/wakeword` exposes wake-word phrase catalogs, detection events, dispatching, detector contracts, and `AutoEndPolicy`.
 - `pkg/speechkit/wakeword/sherpa` adapts sherpa-onnx wake-word detection behind the public detector contracts. Builds without cgo still compile against the public no-cgo surface.
 - `pkg/speechkit/tts` exposes `Provider`, `ProviderKind`, `Router`, `Service`, `NewService`, synthesis options, and fallback strategy for SDK hosts that need spoken output without importing desktop internals.
-- `pkg/speechkit/companion.NewHandsFree(...)` composes wake detections, host-provided transcript requests, Assist, optional TTS, and Event-Bus publication for hands-free Voice-Companion hosts.
+- `pkg/speechkit/companion.NewHandsFree(...)` composes wake detections, target-mode routing, host-provided transcript requests, Assist, Voice Agent activation, optional TTS, and Event-Bus publication for hands-free hosts. Set `Options.TargetMode` to `companion.TargetAssist`, `companion.TargetVoiceAgent`, or `companion.TargetDictationUIAssisted`.
 - `pkg/speechkit/assist.Service` supports multi-turn `SessionKey`, skill context storage, codeword routing, TTS routing, and the optional `pkg/speechkit/assist/genkitadapter`.
 - `speechkit.Runtime.Events()` publishes additive Event-Bus events for wake detections, skill execution, companion sessions, Voice-Agent finalized turns, and TTS lifecycle.
 
@@ -62,6 +79,10 @@ The reference examples compile as Local-Library smoke tests:
 | `examples/embed-companion` | Compose a hands-free Voice-Companion with mock wake/assist/TTS dependencies. |
 | `examples/embed-tts` | Use the TTS service/router surface with a mock provider. |
 | `examples/embed-event-bus` | Subscribe to and publish public runtime events. |
+
+The CLI also ships Go-only scaffolds for agent-created companions:
+`go-assist-voice-companion`, `go-voice-agent-companion`, and
+`go-dictation-handsfree-ui`.
 
 Release status: shipped in the v0.40.1 SDK-surface merge and carried forward in the current v0.40 rollup. No standalone v0.40.0 tag exists or should be backfilled; public API checks compare the shipped v0.40 surface against the factual release line and keep deprecated public fields compatible through v0.40.x.
 

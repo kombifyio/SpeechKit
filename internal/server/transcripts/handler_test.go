@@ -15,15 +15,25 @@ import (
 func TestTranscriptsRejectsInvalidLimit(t *testing.T) {
 	h := New(fakeStore{})
 
-	req := httptest.NewRequest(http.MethodGet, "/v1/transcripts?limit=bogus", nil)
-	rec := httptest.NewRecorder()
-	h.transcripts(rec, req)
+	for _, path := range []string{
+		"/v1/transcripts?limit=bogus",
+		"/v1/transcripts?limit=",
+		"/v1/transcripts?limit=1&limit=2",
+		"/v1/transcripts?limit=0",
+		"/v1/transcripts?limit=201",
+	} {
+		t.Run(path, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodGet, path, nil)
+			rec := httptest.NewRecorder()
+			h.transcripts(rec, req)
 
-	if rec.Code != http.StatusBadRequest {
-		t.Fatalf("status = %d body=%s, want 400", rec.Code, rec.Body.String())
-	}
-	if !strings.Contains(rec.Body.String(), "invalid_limit") {
-		t.Fatalf("body = %s, want invalid_limit", rec.Body.String())
+			if rec.Code != http.StatusBadRequest {
+				t.Fatalf("status = %d body=%s, want 400", rec.Code, rec.Body.String())
+			}
+			if !strings.Contains(rec.Body.String(), "invalid_limit") {
+				t.Fatalf("body = %s, want invalid_limit", rec.Body.String())
+			}
+		})
 	}
 }
 

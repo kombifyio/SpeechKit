@@ -161,9 +161,16 @@ func idFromPath(path, prefix string) (int64, bool) {
 }
 
 func queryLimit(r *http.Request, fallback int) (int, bool) {
-	raw := strings.TrimSpace(r.URL.Query().Get("limit"))
-	if raw == "" {
+	values, ok := r.URL.Query()["limit"]
+	if !ok {
 		return fallback, true
+	}
+	if len(values) != 1 {
+		return 0, false
+	}
+	raw := strings.TrimSpace(values[0])
+	if raw == "" {
+		return 0, false
 	}
 	n, err := strconv.Atoi(raw)
 	if err != nil || n <= 0 {

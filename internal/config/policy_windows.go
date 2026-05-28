@@ -107,9 +107,11 @@ func readRegistryTree(hive registry.Key, rootPath string) registryTree {
 	if k, err := registry.OpenKey(hive, rootPath+`\Audit`, registry.QUERY_VALUE); err == nil {
 		defer k.Close()
 		if v, _, err := k.GetIntegerValue("RetentionDays"); err == nil {
-			i := int(v) //nolint:gosec // registry DWORD is always <= math.MaxUint32, fits int on any supported platform
-			t.auditRetentionDays = &i
-			t.keysFound++
+			if v <= uint64(int(^uint(0)>>1)) {
+				i := int(v) // #nosec G115 -- guarded against int overflow before conversion.
+				t.auditRetentionDays = &i
+				t.keysFound++
+			}
 		}
 		if v, _, err := k.GetIntegerValue("EventLogEnabled"); err == nil {
 			b := v != 0

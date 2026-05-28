@@ -126,6 +126,9 @@ func (p *LocalProvider) StartServer(ctx context.Context) error {
 	if _, err := os.Stat(p.ModelPath); err != nil {
 		return fmt.Errorf("model not found: %s", p.ModelPath)
 	}
+	if err := verifyReadableModelFile(p.ModelPath); err != nil {
+		return fmt.Errorf("model not readable: %s: %w", p.ModelPath, err)
+	}
 
 	threads := defaultWhisperThreads()
 	args := []string{
@@ -546,12 +549,22 @@ func (p *LocalProvider) VerifyInstallation() InstallStatus {
 		status.ModelBytes = fi.Size()
 		if fi.Size() < MinWhisperModelBytes {
 			status.Problems = append(status.Problems, fmt.Sprintf("model file too small (%d bytes) — likely corrupt or truncated", fi.Size()))
+		} else if err := verifyReadableModelFile(p.ModelPath); err != nil {
+			status.Problems = append(status.Problems, fmt.Sprintf("model file not readable: %s (%v)", p.ModelPath, err))
 		} else {
 			status.ModelFound = true
 		}
 	}
 
 	return status
+}
+
+func verifyReadableModelFile(path string) error {
+	file, err := os.Open(path) // #nosec G304 -- path is validated by ValidateModelPath before this helper is called.
+	if err != nil {
+		return err
+	}
+	return file.Close()
 }
 
 // FindWhisperBinary exposes the local whisper runtime lookup for callers that

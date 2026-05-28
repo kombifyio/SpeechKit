@@ -54,6 +54,44 @@ func NormalizeWakewordDefaultMode(value string) string {
 	}
 }
 
+// NormalizeHandsFreeTargetMode coerces arbitrary config/UI values to the
+// supported hands-free target modes. Unknown values fall back to Voice Agent,
+// the primary fully hands-free companion experience.
+func NormalizeHandsFreeTargetMode(value string) string {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case HandsFreeTargetAssist:
+		return HandsFreeTargetAssist
+	case HandsFreeTargetVoiceAgent, "voice-agent", "voiceagent", "":
+		return HandsFreeTargetVoiceAgent
+	case HandsFreeTargetDictationUIAssisted, "dictation-ui-assisted", "dictation", "dictate", "transcribe":
+		return HandsFreeTargetDictationUIAssisted
+	default:
+		return HandsFreeTargetVoiceAgent
+	}
+}
+
+func HandsFreeTargetToWakewordDefaultMode(target string) string {
+	switch NormalizeHandsFreeTargetMode(target) {
+	case HandsFreeTargetAssist:
+		return WakewordDefaultModeAssist
+	case HandsFreeTargetDictationUIAssisted:
+		return WakewordDefaultModeDictate
+	default:
+		return WakewordDefaultModeVoiceAgent
+	}
+}
+
+func WakewordDefaultModeToHandsFreeTarget(mode string) string {
+	switch NormalizeWakewordDefaultMode(mode) {
+	case WakewordDefaultModeAssist:
+		return HandsFreeTargetAssist
+	case WakewordDefaultModeDictate:
+		return HandsFreeTargetDictationUIAssisted
+	default:
+		return HandsFreeTargetVoiceAgent
+	}
+}
+
 // NormalizeWakewordBackend coerces arbitrary config/UI values to the small
 // set of detector backend IDs the desktop app understands.
 //

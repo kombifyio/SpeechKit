@@ -139,19 +139,8 @@ func Run(ctx context.Context, cfg *config.Config, opts RunOptions) error {
 		return errors.New("core.Run: nil config")
 	}
 
-	app := &App{
-		Cfg:     cfg,
-		Mux:     http.NewServeMux(),
-		Health:  NewHealthRegistry(),
-		Modes:   resolveModes(cfg.Server.Modes),
-		Version: opts.Version,
-	}
-
-	registerHealth(app)
-	registerTestUI(app)
-	registerServerSettings(app)
-	registerDeploymentStatus(app)
-	registerAPIAlias(app.Mux)
+	app := newServerApp(cfg, opts)
+	registerCoreEndpoints(app)
 
 	// Build the STT router and register dictation/assist/voiceagent handlers
 	// for whichever modes are enabled. The router is shared across all three
@@ -355,6 +344,28 @@ func Run(ctx context.Context, cfg *config.Config, opts RunOptions) error {
 	// Always-on server component. Mode handlers flip their own entries above.
 	app.Health.SetReady("server", StatusOK, "listening")
 
+	return serveServer(ctx, cfg, app)
+}
+
+func newServerApp(cfg *config.Config, opts RunOptions) *App {
+	return &App{
+		Cfg:     cfg,
+		Mux:     http.NewServeMux(),
+		Health:  NewHealthRegistry(),
+		Modes:   resolveModes(cfg.Server.Modes),
+		Version: opts.Version,
+	}
+}
+
+func registerCoreEndpoints(app *App) {
+	registerHealth(app)
+	registerTestUI(app)
+	registerServerSettings(app)
+	registerDeploymentStatus(app)
+	registerAPIAlias(app.Mux)
+}
+
+func serveServer(ctx context.Context, cfg *config.Config, app *App) error {
 	// Order matters: Recover wraps everything (panics from any middleware
 	// or handler land in the JSON 500), Logging runs early so even auth
 	// failures get an access-log line, CORS runs before Auth so preflight

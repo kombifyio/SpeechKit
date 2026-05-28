@@ -26,6 +26,38 @@ Coding agents can also call `speechkit_scaffold_integration` via the
 SpeechKit MCP server (`speechkit-mcp --mode=docs,test`) to receive the same
 files in-band without writing to the host.
 
+## Go component imports
+
+Install the module once, then import only the public component packages your
+host needs:
+
+```sh
+go get github.com/kombifyio/SpeechKit
+```
+
+```go
+import (
+    "github.com/kombifyio/SpeechKit/pkg/speechkit"
+    "github.com/kombifyio/SpeechKit/pkg/speechkit/assist"
+    "github.com/kombifyio/SpeechKit/pkg/speechkit/companion"
+    "github.com/kombifyio/SpeechKit/pkg/speechkit/tts"
+    "github.com/kombifyio/SpeechKit/pkg/speechkit/wakeword"
+)
+```
+
+Use `wakeword` for activation only, `tts` for spoken output only, `assist` for
+one-shot utilities/LLM, `companion` for Hands-Free composition, and
+`pkg/speechkit/client` for a running SpeechKit Server. Do not import
+`internal/*`. For a new Go companion, start with `speechkit-cli init --template
+go-assist-voice-companion`, `go-voice-agent-companion`, or
+`go-dictation-handsfree-ui`.
+
+## Assist Voice Companion prompt
+
+```text
+Add a SpeechKit Assist Voice Companion to this Go app. Use docs/voice-companion.md and examples/embed-companion. Import only pkg/speechkit/{companion,wakeword,assist,tts} plus pkg/speechkit for events, wire companion.NewHandsFree with TargetMode: companion.TargetAssist, keep mic capture and playback host-owned, and do not import internal/* or the Windows client.
+```
+
 ## Dictation - POST /v1/dictation/transcribe
 
 ### curl

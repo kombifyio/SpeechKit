@@ -3,7 +3,7 @@ package speechkitdocs
 import "embed"
 
 //go:embed server/openapi.v1.yaml server/asyncapi.v1.yaml server/README.md architecture/sdk-surface-boundary.md speechkit-framework-api.md
-//go:embed wakeword.md
+//go:embed wakeword.md voice-companion.md
 //go:embed mcp/README.md mcp/distribution.md mcp/examples/curl/dictation.md mcp/examples/go/dictation.md mcp/examples/python/dictation.md mcp/examples/typescript/dictation.md
 //go:embed agent/llms.txt agent/llms-full.txt agent/llms-snippets.txt
 //go:embed agent/getting-started/technical.md agent/getting-started/agents.md

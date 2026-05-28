@@ -59,6 +59,7 @@ type TemplateMeta struct {
 	MinServerVersion string         `toml:"min_server_version"`
 	Vars             []VarSpec      `toml:"vars"`
 	PostInit         []PostInitHook `toml:"post_init"`
+	NextSteps        []string       `toml:"next_steps"`
 }
 
 // ScaffoldOptions configure a Scaffold call.

@@ -1,0 +1,39 @@
+package main
+
+import (
+	"context"
+	"fmt"
+	"log"
+
+	speechkit "{{ .SPEECHKIT_MODULE }}/pkg/speechkit"
+	"{{ .SPEECHKIT_MODULE }}/pkg/speechkit/companion"
+	"{{ .SPEECHKIT_MODULE }}/pkg/speechkit/wakeword"
+)
+
+func main() {
+	ctx := context.Background()
+	runtime := speechkit.NewRuntime(speechkit.Snapshot{}, speechkit.Hooks{
+		HandleCommand: func(_ context.Context, cmd speechkit.Command) error {
+			if cmd.Type == speechkit.CommandStartMode && cmd.Metadata["hands_free_target"] == string(companion.TargetDictationUIAssisted) {
+				fmt.Println("open dictation UI target and start capture")
+				return nil
+			}
+			return nil
+		},
+	})
+	defer runtime.Close()
+
+	handsFree, err := companion.NewHandsFree(companion.Options{
+		Runtime:    runtime,
+		TargetMode: companion.TargetDictationUIAssisted,
+	})
+	if err != nil {
+		log.Fatal(err)
+	}
+	if err := handsFree.Start(ctx); err != nil {
+		log.Fatal(err)
+	}
+	if err := handsFree.HandleWake(ctx, wakeword.DetectionEvent{Phrase: "{{ .WAKE_PHRASE }}", Mode: "dictation_ui_assisted"}); err != nil {
+		log.Fatal(err)
+	}
+}

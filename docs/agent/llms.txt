@@ -6,6 +6,8 @@ SpeechKit is a Windows-first voice framework with three strict modes:
 Dictation, Assist, and Voice Agent. The v0.40 line adds the embeddable SDK surface
 for wake-word, Assist, Voice-Companion, Event-Bus, and TTS integrations while
 keeping the API-first server, Go client, CLI, and MCP server surfaces.
+Hands-Free is an activation and voice-output layer for those modes, not a
+fourth mode.
 
 Use these links first:
 
@@ -45,9 +47,24 @@ Embed a Voice Agent into your own app:
 
 Embed SpeechKit as a Go framework:
 
-- `examples/embed-companion/`: wake detections + host transcript request + Assist + optional TTS + events.
+- `docs/voice-companion.md`: Hands-Free target model, component imports, and single-prompt recipes.
+- `examples/embed-companion/`: wake detections + target routing + host transcript request + Assist + optional TTS + events.
+- `speechkit-cli init --template go-assist-voice-companion|go-voice-agent-companion|go-dictation-handsfree-ui`: Go-only starters for single-prompt companion creation.
 - `examples/embed-tts/`: `pkg/speechkit/tts` ProviderKind-aware Router and Service.
 - `examples/embed-event-bus/`: wake, skill, companion, Voice-Agent, and TTS event publication.
+
+Component rule: import only the public package you need from
+`github.com/kombifyio/SpeechKit/pkg/speechkit/...`. Use `wakeword` for
+activation, `tts` for spoken output, `assist` for one-shot utilities,
+`companion` for Hands-Free composition, `agentkit`/`voiceagent/live` for
+embedded realtime hosts, and `client` for a running SpeechKit Server. Do not
+import `internal/*` or the Windows client for a library integration.
+
+Voice Companion prompt:
+
+```text
+Add a SpeechKit Assist Voice Companion to this Go app. Import only pkg/speechkit/{companion,wakeword,assist,tts} plus pkg/speechkit for events, wire companion.NewHandsFree with TargetMode: companion.TargetAssist, keep mic capture/playback host-owned, and do not import internal/*.
+```
 
 Canonical prompt:
 

@@ -28,6 +28,9 @@ func IsPortable() bool {
 	if looksLikeDevWorkspace(exeDir) {
 		return false
 	}
+	if isUnderProgramFiles(exeDir) {
+		return false
+	}
 	if pathExists(filepath.Join(exeDir, "uninstall.exe")) {
 		return false
 	}
@@ -69,6 +72,10 @@ func LocalDataDir() string {
 	return filepath.Join(localAppData, "SpeechKit")
 }
 
+func ModelsDir() string {
+	return filepath.Join(LocalDataDir(), "models")
+}
+
 func ConfigFilePath() string {
 	if IsPortable() {
 		exeDir := ExecutableDir()
@@ -104,4 +111,33 @@ func looksLikeDevWorkspace(exeDir string) bool {
 	}
 	return pathExists(filepath.Join(exeDir, "go.mod")) &&
 		pathExists(filepath.Join(exeDir, "frontend", "app", "package.json"))
+}
+
+func isUnderProgramFiles(path string) bool {
+	for _, root := range []string{os.Getenv("ProgramFiles"), os.Getenv("ProgramFiles(x86)")} {
+		if isSameOrChildPath(path, root) {
+			return true
+		}
+	}
+	return false
+}
+
+func isSameOrChildPath(path, root string) bool {
+	path = strings.TrimSpace(path)
+	root = strings.TrimSpace(root)
+	if path == "" || root == "" {
+		return false
+	}
+
+	cleanPath := filepath.Clean(path)
+	cleanRoot := filepath.Clean(root)
+	if strings.EqualFold(cleanPath, cleanRoot) {
+		return true
+	}
+
+	rel, err := filepath.Rel(cleanRoot, cleanPath)
+	if err != nil || rel == "." || rel == ".." || filepath.IsAbs(rel) {
+		return false
+	}
+	return !strings.HasPrefix(rel, ".."+string(filepath.Separator))
 }

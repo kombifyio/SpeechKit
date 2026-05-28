@@ -38,6 +38,7 @@ func Load(path string) (*Config, error) {
 	data, err := os.ReadFile(path) // #nosec G304 -- path is the application config path supplied by startup/config plumbing.
 	if err != nil {
 		if os.IsNotExist(err) {
+			NormalizeHandsFreeConfig(cfg, true)
 			return cfg, nil
 		}
 		return nil, fmt.Errorf("read config: %w", err)
@@ -93,6 +94,7 @@ func Load(path string) (*Config, error) {
 	backfillVoiceAgentPromptLayers(meta, cfg)
 	backfillVoiceAgentSessionSummary(meta, cfg)
 	backfillServerConnectionCustomURLAuth(meta, cfg)
+	NormalizeHandsFreeConfig(cfg, meta.IsDefined("hands_free"))
 	// Backfill: Telemetry.UpdateCheck mirrors Update.Enabled when update is disabled.
 	// Phase 0 has only the update-check as telemetry; later phases may diverge.
 	if !cfg.Update.Enabled {
@@ -133,6 +135,7 @@ func Save(path string, cfg *Config) error {
 	if path == "" {
 		path = defaultConfigPath()
 	}
+	NormalizeHandsFreeConfig(cfg, true)
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return fmt.Errorf("create config dir: %w", err)
 	}

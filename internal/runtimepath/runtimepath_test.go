@@ -121,6 +121,26 @@ func TestIsPortable_UninstallerBlocksPortable(t *testing.T) {
 	}
 }
 
+func TestIsPortable_ProgramFilesInstallBlocksPortable(t *testing.T) {
+	programFiles := filepath.Join(t.TempDir(), "ProgramFiles")
+	exeDir := filepath.Join(programFiles, "kombify", "SpeechKit")
+	exe := filepath.Join(exeDir, "SpeechKit.exe")
+	t.Setenv("ProgramFiles", programFiles)
+	t.Setenv("ProgramFiles(x86)", filepath.Join(t.TempDir(), "ProgramFilesX86"))
+
+	withMocks(t,
+		mockExecutable(exe, nil),
+		mockStat(map[string]bool{
+			filepath.Join(exeDir, "config.default.toml"): true,
+			filepath.Join(exeDir, "whisper-server.exe"):  true,
+		}),
+		nil,
+	)
+	if IsPortable() {
+		t.Error("IsPortable() for ProgramFiles install with bundle markers = true, want false")
+	}
+}
+
 func TestIsPortable_NoMarkers(t *testing.T) {
 	withMocks(t,
 		mockExecutable(`C:\some\path\SpeechKit.exe`, nil),
@@ -261,6 +281,19 @@ func TestLocalDataDir_NoLocalAppDataFallsBackToDataDir(t *testing.T) {
 	)
 	if got, want := LocalDataDir(), DataDir(); got != want {
 		t.Errorf("LocalDataDir() with no LOCALAPPDATA = %q, want DataDir() %q", got, want)
+	}
+}
+
+func TestModelsDirUsesLocalDataDir(t *testing.T) {
+	t.Setenv("LOCALAPPDATA", `C:\Users\test\AppData\Local`)
+	withMocks(t,
+		mockExecutable(`C:\install\SpeechKit.exe`, nil),
+		mockStat(map[string]bool{}),
+		nil,
+	)
+	want := filepath.Join(`C:\Users\test\AppData\Local`, "SpeechKit", "models") //nolint:gocritic // filepathJoin: Windows path literal in test — intentional
+	if got := ModelsDir(); got != want {
+		t.Errorf("ModelsDir() = %q, want %q", got, want)
 	}
 }
 

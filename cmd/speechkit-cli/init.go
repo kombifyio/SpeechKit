@@ -127,14 +127,21 @@ func runInitScaffold(ctx context.Context, stdout, stderr io.Writer, templateName
 		return err
 	}
 	if !runInstall {
+		meta, _ := scaffold.LookupTemplate(templateName)
+		nextSteps := meta.NextSteps
+		if len(nextSteps) == 0 {
+			nextSteps = []string{"npm install && npm run dev"}
+		}
 		if err := writeLine(stdout, "Next steps:"); err != nil {
 			return err
 		}
 		if err := writef(stdout, "  cd %s\n", outputDir); err != nil {
 			return err
 		}
-		if err := writeLine(stdout, "  npm install && npm run dev"); err != nil {
-			return err
+		for _, step := range nextSteps {
+			if err := writef(stdout, "  %s\n", step); err != nil {
+				return err
+			}
 		}
 	}
 	for _, hook := range result.Hooks {

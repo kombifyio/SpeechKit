@@ -28,6 +28,7 @@
     "release:lint:test": "node --test ./scripts/release/lint-changelog.test.mjs",
     "release:cloudflare-quality-gate:test": "node --test ./scripts/release/cloudflare-quality-gate.test.mjs",
     "release:dry-run:private": "powershell -ExecutionPolicy Bypass -File ./scripts/private-release-dry-run.ps1",
+    "security:secrets": "powershell -NoProfile -ExecutionPolicy Bypass -File ./scripts/security/scan-tracked-secrets.ps1",
     "version:sync": "node ./scripts/sync-version.mjs",
     "version:sync:windows": "node ./scripts/sync-version.mjs --targets=frontend,windows",
     "version:sync:android": "node ./scripts/sync-version.mjs --targets=android",

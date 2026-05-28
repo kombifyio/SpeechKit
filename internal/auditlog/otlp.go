@@ -58,7 +58,7 @@ func ConfigureOTLP(endpoint, certFile, keyFile, caFile string) error {
 			MinVersion:   tls.VersionTLS12,
 		}
 		if caFile != "" {
-			caData, err := os.ReadFile(caFile)
+			caData, err := os.ReadFile(caFile) // #nosec G304 -- caFile is an operator-controlled OTLP TLS config path.
 			if err != nil {
 				return fmt.Errorf("read ca file: %w", err)
 			}

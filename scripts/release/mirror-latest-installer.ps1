@@ -7,7 +7,7 @@ param(
     [string]$SourceReleaseUrl = '',
     [string]$CommitSha = '',
     [switch]$RequireInstaller,
-    [int64]$MaxInstallerBytes = 95000000
+    [int64]$MaxInstallerBytes = 300000000
 )
 
 $ErrorActionPreference = 'Stop'

@@ -268,6 +268,95 @@ func TestSaveServerModelSettings_AllowsSelfHostedProviderURLs(t *testing.T) {
 	}
 }
 
+func TestSaveServerModelSettings_RejectsInvalidSecurityAndProviderSettings(t *testing.T) {
+	tests := []struct {
+		name     string
+		settings ServerModelSettings
+		want     string
+	}{
+		{
+			name: "admin auth enabled without password",
+			settings: ServerModelSettings{
+				AdminAuth: ServerAdminAuthSettings{
+					Enabled:  boolPtrForTest(true),
+					Username: "admin",
+				},
+			},
+			want: "admin_auth.password is required",
+		},
+		{
+			name: "admin password without username",
+			settings: ServerModelSettings{
+				AdminAuth: ServerAdminAuthSettings{
+					PasswordValue: "secret",
+				},
+			},
+			want: "admin_auth.username is required",
+		},
+		{
+			name: "invalid server auth mode",
+			settings: ServerModelSettings{
+				ServerAuth: ServerAuthSettings{Mode: "none"},
+			},
+			want: "server_auth.mode must be managed_bearer or self_managed",
+		},
+		{
+			name: "invalid env name",
+			settings: ServerModelSettings{
+				Credentials: ServerCredentialSettings{
+					OpenAI: ServerProviderCredentialSettings{Env: "not valid"},
+				},
+			},
+			want: "openai.env must be a valid environment variable name",
+		},
+		{
+			name: "invalid assist tool",
+			settings: ServerModelSettings{
+				Assist: ServerAssistSettings{EnabledTools: []string{"summarize", "../shell"}},
+			},
+			want: "assist.enabled_tools contains an invalid tool id",
+		},
+		{
+			name: "invalid provider kind",
+			settings: ServerModelSettings{
+				Modes: ServerModeProviderSettings{
+					VoiceAgent: ServerModeSetting{ProviderKind: "unknown"},
+				},
+			},
+			want: "voice.provider_kind must be local_built_in",
+		},
+		{
+			name: "invalid voice provider",
+			settings: ServerModelSettings{
+				VoiceAgent: ServerVoiceAgentSettings{Provider: "shell"},
+			},
+			want: "voice_agent.provider must be cascaded, gemini, or moshi",
+		},
+		{
+			name: "oversized raw credential value",
+			settings: ServerModelSettings{
+				Credentials: ServerCredentialSettings{
+					Google: ServerProviderCredentialSettings{Value: strings.Repeat("x", 4097)},
+				},
+			},
+			want: "google.value is too long",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "server-settings.json")
+			err := SaveServerModelSettings(path, tt.settings)
+			if err == nil {
+				t.Fatal("expected validation error")
+			}
+			if !strings.Contains(err.Error(), tt.want) {
+				t.Fatalf("error = %v, want to contain %q", err, tt.want)
+			}
+		})
+	}
+}
+
 func boolPtrForTest(v bool) *bool {
 	return &v
 }

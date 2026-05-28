@@ -299,6 +299,32 @@ func (s *AuthState) SetAdmin(username, passwordHash string) {
 // resolved Identity to the request context. Unauthenticated requests receive
 // 401 with a JSON error envelope.
 func Auth(opts AuthOptions) Middleware {
+	runtime := newAuthRuntime(opts)
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			runtime.serveHTTP(w, r, next)
+		})
+	}
+}
+
+type authRuntime struct {
+	opts                      AuthOptions
+	modeProvider              func() string
+	bearerTokenProvider       func() string
+	edgeSecretProvider        func() string
+	bearerRoleProvider        func() string
+	adminUsernameProvider     func() string
+	adminPasswordHashProvider func() string
+	smokeTokenProvider        func() string
+	publicSet                 map[string]struct{}
+	publicRoutes              []PublicRoute
+	bootstrapSet              map[string]struct{}
+	bootstrapRoutes           []PublicRoute
+	htmlUnauthorizedSet       map[string]struct{}
+	htmlUnauthorizedRoutes    []PublicRoute
+}
+
+func newAuthRuntime(opts AuthOptions) authRuntime {
 	modeProvider := opts.ModeProvider
 	if modeProvider == nil {
 		modeProvider = func() string { return opts.Mode }
@@ -336,82 +362,121 @@ func Auth(opts AuthOptions) Middleware {
 			publicSet[trimmed] = struct{}{}
 		}
 	}
-	publicRoutes := opts.AllowPublicRoutes
 	bootstrapSet := make(map[string]struct{}, len(opts.AllowBootstrapPaths))
 	for _, p := range opts.AllowBootstrapPaths {
 		if trimmed := strings.TrimSpace(p); trimmed != "" {
 			bootstrapSet[trimmed] = struct{}{}
 		}
 	}
-	bootstrapRoutes := opts.AllowBootstrapRoutes
 	htmlUnauthorizedSet := make(map[string]struct{}, len(opts.HTMLUnauthorizedPaths))
 	for _, p := range opts.HTMLUnauthorizedPaths {
 		if trimmed := strings.TrimSpace(p); trimmed != "" {
 			htmlUnauthorizedSet[trimmed] = struct{}{}
 		}
 	}
-	htmlUnauthorizedRoutes := opts.HTMLUnauthorizedRoutes
 
-	return func(next http.Handler) http.Handler {
-		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			if _, public := publicSet[r.URL.Path]; public {
-				next.ServeHTTP(w, r)
-				return
-			}
-			if routeAllowed(publicRoutes, r.URL.Path, r.Method) {
-				next.ServeHTTP(w, r)
-				return
-			}
-			if _, bootstrap := bootstrapSet[r.URL.Path]; bootstrap && opts.BootstrapAllowed != nil && opts.BootstrapAllowed(r) {
-				next.ServeHTTP(w, r)
-				return
-			}
-			if routeAllowed(bootstrapRoutes, r.URL.Path, r.Method) && opts.BootstrapAllowed != nil && opts.BootstrapAllowed(r) {
-				next.ServeHTTP(w, r)
-				return
-			}
-
-			mode := AuthMode(strings.TrimSpace(strings.ToLower(modeProvider())))
-			if mode == "" {
-				mode = AuthModeNone
-			}
-			adminUsername := strings.TrimSpace(adminUsernameProvider())
-			adminPasswordHash := strings.TrimSpace(adminPasswordHashProvider())
-			if handleAdminSessionEndpoint(w, r, adminUsername, adminPasswordHash) {
-				return
-			}
-			if id, ok := verifyAdminSession(r, adminUsername, adminPasswordHash); ok {
-				ctx := context.WithValue(r.Context(), identityCtxKey{}, id)
-				next.ServeHTTP(w, r.WithContext(ctx))
-				return
-			}
-			if id, ok := verifyBasicAdmin(r, adminUsername, adminPasswordHash); ok {
-				setAdminSessionCookie(w, r, adminUsername, adminPasswordHash)
-				ctx := context.WithValue(r.Context(), identityCtxKey{}, id)
-				next.ServeHTTP(w, r.WithContext(ctx))
-				return
-			}
-			id, ok := verify(mode, r, strings.TrimSpace(bearerTokenProvider()), strings.TrimSpace(edgeSecretProvider()), strings.TrimSpace(bearerRoleProvider()), opts.RequireAuthenticatedMode)
-			if !ok {
-				// Fall back to the optional public smoke token before
-				// returning 401. The smoke identity carries Source="smoke"
-				// so handlers and the rate-limiter can tighten budgets.
-				if smokeID, smokeOK := verifySmoke(r, strings.TrimSpace(smokeTokenProvider())); smokeOK {
-					ctx := context.WithValue(r.Context(), identityCtxKey{}, smokeID)
-					next.ServeHTTP(w, r.WithContext(ctx))
-					return
-				}
-				if browserUnauthorizedResponse(htmlUnauthorizedSet, htmlUnauthorizedRoutes, r) && strings.TrimSpace(adminUsernameProvider()) != "" && strings.TrimSpace(adminPasswordHashProvider()) != "" {
-					writeBrowserAuthError(w, r)
-				} else {
-					writeAuthError(w)
-				}
-				return
-			}
-			ctx := context.WithValue(r.Context(), identityCtxKey{}, id)
-			next.ServeHTTP(w, r.WithContext(ctx))
-		})
+	return authRuntime{
+		opts:                      opts,
+		modeProvider:              modeProvider,
+		bearerTokenProvider:       bearerTokenProvider,
+		edgeSecretProvider:        edgeSecretProvider,
+		bearerRoleProvider:        bearerRoleProvider,
+		adminUsernameProvider:     adminUsernameProvider,
+		adminPasswordHashProvider: adminPasswordHashProvider,
+		smokeTokenProvider:        smokeTokenProvider,
+		publicSet:                 publicSet,
+		publicRoutes:              opts.AllowPublicRoutes,
+		bootstrapSet:              bootstrapSet,
+		bootstrapRoutes:           opts.AllowBootstrapRoutes,
+		htmlUnauthorizedSet:       htmlUnauthorizedSet,
+		htmlUnauthorizedRoutes:    opts.HTMLUnauthorizedRoutes,
 	}
+}
+
+func (a authRuntime) serveHTTP(w http.ResponseWriter, r *http.Request, next http.Handler) {
+	if a.publicAllowed(r) || a.bootstrapAllowed(r) {
+		next.ServeHTTP(w, r)
+		return
+	}
+
+	adminUsername, adminPasswordHash := a.adminCredentials()
+	if handleAdminSessionEndpoint(w, r, adminUsername, adminPasswordHash) {
+		return
+	}
+	if id, ok := a.authenticateAdmin(r, adminUsername, adminPasswordHash); ok {
+		a.serveAuthenticated(next, w, r, id, adminUsername, adminPasswordHash)
+		return
+	}
+	if id, ok := a.authenticateConfiguredMode(r); ok {
+		a.serveAuthenticated(next, w, r, id, "", "")
+		return
+	}
+	a.writeUnauthorized(w, r, adminUsername, adminPasswordHash)
+}
+
+func (a authRuntime) publicAllowed(r *http.Request) bool {
+	if _, public := a.publicSet[r.URL.Path]; public {
+		return true
+	}
+	return routeAllowed(a.publicRoutes, r.URL.Path, r.Method)
+}
+
+func (a authRuntime) bootstrapAllowed(r *http.Request) bool {
+	if a.opts.BootstrapAllowed == nil || !a.opts.BootstrapAllowed(r) {
+		return false
+	}
+	if _, bootstrap := a.bootstrapSet[r.URL.Path]; bootstrap {
+		return true
+	}
+	return routeAllowed(a.bootstrapRoutes, r.URL.Path, r.Method)
+}
+
+func (a authRuntime) adminCredentials() (string, string) {
+	return strings.TrimSpace(a.adminUsernameProvider()), strings.TrimSpace(a.adminPasswordHashProvider())
+}
+
+func (a authRuntime) authenticateAdmin(r *http.Request, username, passwordHash string) (Identity, bool) {
+	if id, ok := verifyAdminSession(r, username, passwordHash); ok {
+		return id, true
+	}
+	if id, ok := verifyBasicAdmin(r, username, passwordHash); ok {
+		return id, true
+	}
+	return Identity{}, false
+}
+
+func (a authRuntime) authenticateConfiguredMode(r *http.Request) (Identity, bool) {
+	mode := AuthMode(strings.TrimSpace(strings.ToLower(a.modeProvider())))
+	if mode == "" {
+		mode = AuthModeNone
+	}
+	if id, ok := verify(
+		mode,
+		r,
+		strings.TrimSpace(a.bearerTokenProvider()),
+		strings.TrimSpace(a.edgeSecretProvider()),
+		strings.TrimSpace(a.bearerRoleProvider()),
+		a.opts.RequireAuthenticatedMode,
+	); ok {
+		return id, true
+	}
+	return verifySmoke(r, strings.TrimSpace(a.smokeTokenProvider()))
+}
+
+func (a authRuntime) serveAuthenticated(next http.Handler, w http.ResponseWriter, r *http.Request, id Identity, adminUsername, adminPasswordHash string) {
+	if id.Source == "basic" {
+		setAdminSessionCookie(w, r, adminUsername, adminPasswordHash)
+	}
+	ctx := context.WithValue(r.Context(), identityCtxKey{}, id)
+	next.ServeHTTP(w, r.WithContext(ctx))
+}
+
+func (a authRuntime) writeUnauthorized(w http.ResponseWriter, r *http.Request, adminUsername, adminPasswordHash string) {
+	if browserUnauthorizedResponse(a.htmlUnauthorizedSet, a.htmlUnauthorizedRoutes, r) && adminUsername != "" && adminPasswordHash != "" {
+		writeBrowserAuthError(w, r)
+		return
+	}
+	writeAuthError(w)
 }
 
 func routeAllowed(routes []PublicRoute, path, method string) bool {

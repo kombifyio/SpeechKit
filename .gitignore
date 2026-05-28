@@ -6,6 +6,7 @@
 *.dylib
 /build/
 /dist/
+installer/wix/llama-fragment.wxs
 SpeechKit-Portable-v*.zip
 
 # Intentional, bounded latest-installer mirror for clone-and-install testing.

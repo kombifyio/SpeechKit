@@ -651,29 +651,68 @@ func applyVoiceAgentModeSetting(cfg *Config, mode ServerModeSetting) []string {
 }
 
 func validateServerModelSettings(settings ServerModelSettings) error {
-	for name, value := range map[string]string{
-		"server_auth.mode":  settings.ServerAuth.Mode,
-		"server_auth.env":   settings.ServerAuth.BearerTokenEnv,
-		"admin_auth.user":   settings.AdminAuth.Username,
-		"admin_auth.hash":   settings.AdminAuth.PasswordHash,
-		"stt.url":           settings.STT.URL,
-		"stt.model":         settings.STT.Model,
-		"llm.base_url":      settings.LLM.BaseURL,
-		"llm.utility_model": settings.LLM.UtilityModel,
-		"llm.assist_model":  settings.LLM.AssistModel,
-		"llm.agent_model":   settings.LLM.AgentModel,
-		"llm.hf_repo":       settings.LLM.HFRepo,
-		"voice.provider":    settings.VoiceAgent.Provider,
-		"voice.agent":       settings.VoiceAgent.AgentProfileID,
-		"dictation.profile": settings.Modes.Dictation.ProfileID,
-		"dictation.model":   settings.Modes.Dictation.Model,
-		"assist.profile":    settings.Modes.Assist.ProfileID,
-		"assist.model":      settings.Modes.Assist.Model,
-		"voice.profile":     settings.Modes.VoiceAgent.ProfileID,
-		"voice.model":       settings.Modes.VoiceAgent.Model,
-	} {
-		if len(value) > 512 {
-			return fmt.Errorf("%s is too long", name)
+	if err := validateServerSettingsStringLengths(settings); err != nil {
+		return err
+	}
+	if err := validateServerAuthSettings(settings.ServerAuth); err != nil {
+		return err
+	}
+	if err := validateServerAdminAuthSettings(settings.AdminAuth); err != nil {
+		return err
+	}
+	if err := validateServerAssistSettings(settings.Assist); err != nil {
+		return err
+	}
+	if err := validateServerProviderURLs(settings); err != nil {
+		return err
+	}
+	if err := validateServerVoiceAgentProvider(settings.VoiceAgent.Provider); err != nil {
+		return err
+	}
+	if err := validateServerModeProviderKinds(settings.Modes); err != nil {
+		return err
+	}
+	return validateServerCredentialSettings(settings.Credentials)
+}
+
+type namedServerSetting struct {
+	name  string
+	value string
+	limit int
+}
+
+func validateServerSettingsStringLengths(settings ServerModelSettings) error {
+	fields := []namedServerSetting{
+		{"server_auth.mode", settings.ServerAuth.Mode, 512},
+		{"server_auth.env", settings.ServerAuth.BearerTokenEnv, 512},
+		{"server_auth.token_value", settings.ServerAuth.TokenValue, 4096},
+		{"admin_auth.user", settings.AdminAuth.Username, 512},
+		{"admin_auth.hash", settings.AdminAuth.PasswordHash, 512},
+		{"admin_auth.password", settings.AdminAuth.PasswordValue, 4096},
+		{"stt.url", settings.STT.URL, 512},
+		{"stt.model", settings.STT.Model, 512},
+		{"llm.base_url", settings.LLM.BaseURL, 512},
+		{"llm.utility_model", settings.LLM.UtilityModel, 512},
+		{"llm.assist_model", settings.LLM.AssistModel, 512},
+		{"llm.agent_model", settings.LLM.AgentModel, 512},
+		{"llm.hf_repo", settings.LLM.HFRepo, 512},
+		{"voice.provider", settings.VoiceAgent.Provider, 512},
+		{"voice.agent", settings.VoiceAgent.AgentProfileID, 512},
+		{"dictation.profile", settings.Modes.Dictation.ProfileID, 512},
+		{"dictation.model", settings.Modes.Dictation.Model, 512},
+		{"assist.profile", settings.Modes.Assist.ProfileID, 512},
+		{"assist.model", settings.Modes.Assist.Model, 512},
+		{"voice.profile", settings.Modes.VoiceAgent.ProfileID, 512},
+		{"voice.model", settings.Modes.VoiceAgent.Model, 512},
+		{"openai.value", settings.Credentials.OpenAI.Value, 4096},
+		{"groq.value", settings.Credentials.Groq.Value, 4096},
+		{"google.value", settings.Credentials.Google.Value, 4096},
+		{"huggingface.value", settings.Credentials.HuggingFace.Value, 4096},
+		{"openrouter.value", settings.Credentials.OpenRouter.Value, 4096},
+	}
+	for _, field := range fields {
+		if len(field.value) > field.limit {
+			return fmt.Errorf("%s is too long", field.name)
 		}
 	}
 	if settings.Dictation.Dictionary != nil && len(*settings.Dictation.Dictionary) > 8192 {
@@ -682,83 +721,104 @@ func validateServerModelSettings(settings ServerModelSettings) error {
 	if settings.VoiceAgent.PromptTemplate != nil && len(*settings.VoiceAgent.PromptTemplate) > 8192 {
 		return fmt.Errorf("voice_agent.prompt_template is too long")
 	}
-	if len(settings.ServerAuth.TokenValue) > 4096 {
-		return fmt.Errorf("server_auth.token_value is too long")
-	}
-	if len(settings.AdminAuth.PasswordValue) > 4096 {
-		return fmt.Errorf("admin_auth.password is too long")
-	}
-	if settings.AdminAuth.Enabled != nil && *settings.AdminAuth.Enabled && settings.AdminAuth.PasswordHash == "" && settings.AdminAuth.PasswordValue == "" {
-		return fmt.Errorf("admin_auth.password is required when admin auth is enabled")
-	}
-	if (settings.AdminAuth.PasswordHash != "" || settings.AdminAuth.PasswordValue != "" || (settings.AdminAuth.Enabled != nil && *settings.AdminAuth.Enabled)) && settings.AdminAuth.Username == "" {
-		return fmt.Errorf("admin_auth.username is required when an admin password is configured")
-	}
-	switch strings.ToLower(strings.TrimSpace(settings.ServerAuth.Mode)) {
+	return nil
+}
+
+func validateServerAuthSettings(settings ServerAuthSettings) error {
+	switch strings.ToLower(strings.TrimSpace(settings.Mode)) {
 	case "", ServerAuthModeManagedBearer, ServerAuthModeSelfManaged:
 	default:
 		return fmt.Errorf("server_auth.mode must be managed_bearer or self_managed")
 	}
-	if settings.ServerAuth.BearerTokenEnv != "" && !validEnvName(settings.ServerAuth.BearerTokenEnv) {
+	if settings.BearerTokenEnv != "" && !validEnvName(settings.BearerTokenEnv) {
 		return fmt.Errorf("server_auth.bearer_token_env must be a valid environment variable name")
 	}
-	for _, tool := range settings.Assist.EnabledTools {
+	return nil
+}
+
+func validateServerAdminAuthSettings(settings ServerAdminAuthSettings) error {
+	enabled := settings.Enabled != nil && *settings.Enabled
+	hasPassword := settings.PasswordHash != "" || settings.PasswordValue != ""
+	if enabled && !hasPassword {
+		return fmt.Errorf("admin_auth.password is required when admin auth is enabled")
+	}
+	if (hasPassword || enabled) && settings.Username == "" {
+		return fmt.Errorf("admin_auth.username is required when an admin password is configured")
+	}
+	return nil
+}
+
+func validateServerAssistSettings(settings ServerAssistSettings) error {
+	for _, tool := range settings.EnabledTools {
 		if !validServerToolID(tool) {
 			return fmt.Errorf("assist.enabled_tools contains an invalid tool id")
 		}
 	}
-	for name, value := range map[string]string{
-		"stt.url":      settings.STT.URL,
-		"llm.base_url": settings.LLM.BaseURL,
+	return nil
+}
+
+func validateServerProviderURLs(settings ServerModelSettings) error {
+	for _, field := range []namedServerSetting{
+		{"stt.url", settings.STT.URL, 0},
+		{"llm.base_url", settings.LLM.BaseURL, 0},
 	} {
-		value = strings.TrimSpace(value)
-		if value == "" {
-			continue
-		}
-		if !strings.HasPrefix(value, "http://") && !strings.HasPrefix(value, "https://") {
-			return fmt.Errorf("%s must start with http:// or https://", name)
-		}
-		parsed, err := url.Parse(value)
-		if err != nil || parsed.Host == "" {
-			return fmt.Errorf("%s must be a valid URL", name)
-		}
-		if parsed.User != nil {
-			return fmt.Errorf("%s must not contain user-info", name)
+		if err := validateServerProviderURL(field.name, field.value); err != nil {
+			return err
 		}
 	}
-	provider := strings.ToLower(strings.TrimSpace(settings.VoiceAgent.Provider))
-	if provider != "" && provider != "cascaded" && provider != "gemini" && provider != "moshi" {
+	return nil
+}
+
+func validateServerProviderURL(name, value string) error {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return nil
+	}
+	if !strings.HasPrefix(value, "http://") && !strings.HasPrefix(value, "https://") {
+		return fmt.Errorf("%s must start with http:// or https://", name)
+	}
+	parsed, err := url.Parse(value)
+	if err != nil || parsed.Host == "" {
+		return fmt.Errorf("%s must be a valid URL", name)
+	}
+	if parsed.User != nil {
+		return fmt.Errorf("%s must not contain user-info", name)
+	}
+	return nil
+}
+
+func validateServerVoiceAgentProvider(provider string) error {
+	switch strings.ToLower(strings.TrimSpace(provider)) {
+	case "", "cascaded", "gemini", "moshi":
+		return nil
+	default:
 		return fmt.Errorf("voice_agent.provider must be cascaded, gemini, or moshi")
 	}
-	for name, value := range map[string]string{
-		"dictation.provider_kind": settings.Modes.Dictation.ProviderKind,
-		"assist.provider_kind":    settings.Modes.Assist.ProviderKind,
-		"voice.provider_kind":     settings.Modes.VoiceAgent.ProviderKind,
+}
+
+func validateServerModeProviderKinds(settings ServerModeProviderSettings) error {
+	for _, field := range []namedServerSetting{
+		{"dictation.provider_kind", settings.Dictation.ProviderKind, 0},
+		{"assist.provider_kind", settings.Assist.ProviderKind, 0},
+		{"voice.provider_kind", settings.VoiceAgent.ProviderKind, 0},
 	} {
-		if !validServerProviderKind(value) {
-			return fmt.Errorf("%s must be local_built_in, local_provider, cloud_provider, or direct_provider", name)
+		if !validServerProviderKind(field.value) {
+			return fmt.Errorf("%s must be local_built_in, local_provider, cloud_provider, or direct_provider", field.name)
 		}
 	}
-	for name, value := range map[string]string{
-		"openai.env":      settings.Credentials.OpenAI.Env,
-		"groq.env":        settings.Credentials.Groq.Env,
-		"google.env":      settings.Credentials.Google.Env,
-		"huggingface.env": settings.Credentials.HuggingFace.Env,
-		"openrouter.env":  settings.Credentials.OpenRouter.Env,
+	return nil
+}
+
+func validateServerCredentialSettings(settings ServerCredentialSettings) error {
+	for _, field := range []namedServerSetting{
+		{"openai.env", settings.OpenAI.Env, 0},
+		{"groq.env", settings.Groq.Env, 0},
+		{"google.env", settings.Google.Env, 0},
+		{"huggingface.env", settings.HuggingFace.Env, 0},
+		{"openrouter.env", settings.OpenRouter.Env, 0},
 	} {
-		if value != "" && !validEnvName(value) {
-			return fmt.Errorf("%s must be a valid environment variable name", name)
-		}
-	}
-	for name, value := range map[string]string{
-		"openai.value":      settings.Credentials.OpenAI.Value,
-		"groq.value":        settings.Credentials.Groq.Value,
-		"google.value":      settings.Credentials.Google.Value,
-		"huggingface.value": settings.Credentials.HuggingFace.Value,
-		"openrouter.value":  settings.Credentials.OpenRouter.Value,
-	} {
-		if len(value) > 4096 {
-			return fmt.Errorf("%s is too long", name)
+		if field.value != "" && !validEnvName(field.value) {
+			return fmt.Errorf("%s must be a valid environment variable name", field.name)
 		}
 	}
 	return nil

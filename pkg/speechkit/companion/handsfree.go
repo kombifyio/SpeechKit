@@ -17,12 +17,31 @@ var ErrMissingRuntime = errors.New("speechkit companion: runtime is required")
 var ErrMissingAssist = errors.New("speechkit companion: assist service is required")
 var ErrMissingContext = errors.New("speechkit companion: context is required")
 
+// HandsFreeTarget identifies which strict SpeechKit mode a hands-free
+// activation should start. Hands-free is a capability layer, not a fourth
+// SpeechKit mode.
+type HandsFreeTarget string
+
+const (
+	// TargetAssist runs a one-shot Assist request and may synthesize spoken
+	// output. This is the Siri/Alexa-style Voice-Companion path.
+	TargetAssist HandsFreeTarget = "assist"
+	// TargetVoiceAgent starts a realtime Voice Agent session for continuous
+	// dialogue such as companion or game-moderator flows.
+	TargetVoiceAgent HandsFreeTarget = "voice_agent"
+	// TargetDictationUIAssisted starts Dictation through the host command bus.
+	// It intentionally does not synthesize audio: text output still belongs to
+	// a visible target or explicit commit surface owned by the host UI.
+	TargetDictationUIAssisted HandsFreeTarget = "dictation_ui_assisted"
+)
+
 // WakeRequestFunc converts a wake detection into an Assist request. Hosts use
 // it to attach their transcript/capture result to the framework composer.
 type WakeRequestFunc func(context.Context, wakeword.DetectionEvent) (speechkit.AssistRequest, bool)
 
 type Options struct {
 	Runtime     *speechkit.Runtime
+	TargetMode  HandsFreeTarget
 	WakeSink    wakeword.Sink
 	WakeRequest WakeRequestFunc
 	Assist      speechkit.AssistService
@@ -32,6 +51,7 @@ type Options struct {
 
 type HandsFree struct {
 	runtime            *speechkit.Runtime
+	targetMode         HandsFreeTarget
 	downstreamWakeSink wakeword.Sink
 	wakeRequest        WakeRequestFunc
 	assist             speechkit.AssistService
@@ -43,8 +63,13 @@ func NewHandsFree(opts Options) (*HandsFree, error) {
 	if opts.Runtime == nil {
 		return nil, ErrMissingRuntime
 	}
+	var targetMode HandsFreeTarget
+	if opts.TargetMode != "" {
+		targetMode = normalizeHandsFreeTarget(string(opts.TargetMode))
+	}
 	return &HandsFree{
 		runtime:            opts.Runtime,
+		targetMode:         targetMode,
 		downstreamWakeSink: opts.WakeSink,
 		wakeRequest:        opts.WakeRequest,
 		assist:             opts.Assist,
@@ -96,7 +121,9 @@ func (h *HandsFree) WakeSink() wakeword.Sink {
 }
 
 // HandleWake publishes a wake event, forwards it to the optional downstream
-// sink, and starts the configured Assist or Voice-Agent path.
+// sink, and starts the configured hands-free target. Assist and Voice Agent can
+// run without a visible UI; Dictation is UI-assisted and dispatches into the
+// host command bus so the host can choose the text target and commit surface.
 func (h *HandsFree) HandleWake(ctx context.Context, ev wakeword.DetectionEvent) error {
 	if h == nil || h.runtime == nil {
 		return ErrMissingRuntime
@@ -104,9 +131,10 @@ func (h *HandsFree) HandleWake(ctx context.Context, ev wakeword.DetectionEvent) 
 	if ctx == nil {
 		return ErrMissingContext
 	}
+	target := h.targetForWake(ev)
 	h.runtime.Publish(speechkit.Event{
 		Type:     speechkit.EventWakeFired,
-		Mode:     ev.Mode,
+		Mode:     string(target),
 		Message:  ev.Phrase,
 		Metadata: speechkit.NewMetadata(wakeMetadata(ev)),
 	})
@@ -114,13 +142,24 @@ func (h *HandsFree) HandleWake(ctx context.Context, ev wakeword.DetectionEvent) 
 		h.downstreamWakeSink.Emit(ev)
 	}
 
-	switch normalizedWakeMode(ev.Mode) {
-	case "voice_agent":
+	switch target {
+	case TargetVoiceAgent:
 		if h.voiceAgent == nil {
 			return nil
 		}
 		h.runtime.Publish(speechkit.Event{Type: speechkit.EventCompanionSessionStarted, Mode: "voice_agent"})
 		return h.voiceAgent.Start(ctx)
+	case TargetDictationUIAssisted:
+		return h.runtime.Commands().Dispatch(ctx, speechkit.Command{
+			Type: speechkit.CommandStartMode,
+			Text: ev.Phrase,
+			Metadata: map[string]string{
+				"mode":              "dictate",
+				"source":            "hands_free",
+				"hands_free_target": string(TargetDictationUIAssisted),
+				"activation":        "wake",
+			},
+		})
 	default:
 		if h.wakeRequest == nil {
 			return nil
@@ -135,6 +174,13 @@ func (h *HandsFree) HandleWake(ctx context.Context, ev wakeword.DetectionEvent) 
 		_, err := h.ProcessAssist(ctx, req)
 		return err
 	}
+}
+
+func (h *HandsFree) targetForWake(ev wakeword.DetectionEvent) HandsFreeTarget {
+	if h != nil && h.targetMode != "" {
+		return h.targetMode
+	}
+	return normalizeHandsFreeTarget(ev.Mode)
 }
 
 // ProcessAssist runs a one-shot Assist request through the configured service
@@ -216,12 +262,16 @@ func (h *HandsFree) publishError(err error) {
 	}
 }
 
-func normalizedWakeMode(mode string) string {
+func normalizeHandsFreeTarget(mode string) HandsFreeTarget {
 	switch strings.ToLower(strings.TrimSpace(mode)) {
 	case "voice-agent", "voiceagent", "voice_agent_hotkey":
-		return "voice_agent"
+		return TargetVoiceAgent
+	case "voice_agent":
+		return TargetVoiceAgent
+	case "dictate", "dictation", "transcribe", "stt", "dictation_ui_assisted":
+		return TargetDictationUIAssisted
 	default:
-		return "assist"
+		return TargetAssist
 	}
 }
 

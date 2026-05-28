@@ -17,21 +17,29 @@ func TestListTemplates_IncludesEmbeddedTemplates(t *testing.T) {
 	if len(templates) == 0 {
 		t.Fatalf("expected at least one embedded template")
 	}
-	var found bool
+	required := map[string]bool{
+		"browser-dictation-react":   false,
+		"go-assist-voice-companion": false,
+		"go-voice-agent-companion":  false,
+		"go-dictation-handsfree-ui": false,
+	}
 	for _, tpl := range templates {
-		if tpl.Name == "browser-dictation-react" {
-			found = true
+		if _, ok := required[tpl.Name]; ok {
+			required[tpl.Name] = true
 			if tpl.Description == "" {
-				t.Errorf("browser-dictation-react missing description")
+				t.Errorf("%s missing description", tpl.Name)
 			}
 		}
 	}
-	if !found {
+	for name, found := range required {
+		if found {
+			continue
+		}
 		names := make([]string, 0, len(templates))
 		for _, tpl := range templates {
 			names = append(names, tpl.Name)
 		}
-		t.Fatalf("browser-dictation-react not found among %v", names)
+		t.Fatalf("%s not found among %v", name, names)
 	}
 }
 
@@ -148,6 +156,34 @@ func TestScaffold_InMemoryWhenOutputDirEmpty(t *testing.T) {
 		if len(f.Content) == 0 {
 			t.Errorf("file %q has empty content", f.RelPath)
 		}
+	}
+}
+
+func TestScaffold_GoHandsFreeTemplatesRenderPublicImports(t *testing.T) {
+	for _, name := range []string{
+		"go-assist-voice-companion",
+		"go-voice-agent-companion",
+		"go-dictation-handsfree-ui",
+	} {
+		t.Run(name, func(t *testing.T) {
+			result, err := Scaffold(ScaffoldOptions{Template: name})
+			if err != nil {
+				t.Fatalf("Scaffold: %v", err)
+			}
+			files := map[string]string{}
+			for _, file := range result.Files {
+				files[file.RelPath] = string(file.Content)
+			}
+			if !strings.Contains(files["main.go"], "/pkg/speechkit/companion") {
+				t.Fatalf("main.go does not import companion package:\n%s", files["main.go"])
+			}
+			if strings.Contains(files["main.go"], "/internal/") {
+				t.Fatalf("main.go imports internal package:\n%s", files["main.go"])
+			}
+			if !strings.Contains(files["README.md"], "Hands-Free") {
+				t.Fatalf("README.md should mention Hands-Free")
+			}
+		})
 	}
 }
 

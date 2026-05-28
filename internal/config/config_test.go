@@ -62,8 +62,14 @@ func TestLoadDefaults(t *testing.T) {
 	if cfg.General.VoiceAgentHotkey != "ctrl+shift" {
 		t.Errorf("default voice agent hotkey = %q, want %q", cfg.General.VoiceAgentHotkey, "ctrl+shift")
 	}
-	if !cfg.General.DictateEnabled || !cfg.General.AssistEnabled || !cfg.General.VoiceAgentEnabled {
-		t.Fatal("all three modes should be enabled by default")
+	if !cfg.General.DictateEnabled {
+		t.Fatal("dictation should be enabled by default")
+	}
+	if cfg.General.AssistEnabled {
+		t.Fatal("assist should be disabled by default")
+	}
+	if cfg.General.VoiceAgentEnabled {
+		t.Fatal("voice agent should be disabled by default")
 	}
 	if cfg.General.AutoStopSilenceMs != 500 {
 		t.Errorf("default silence ms = %d, want 500", cfg.General.AutoStopSilenceMs)
@@ -196,6 +202,15 @@ func TestLoadDefaults(t *testing.T) {
 	}
 	if cfg.Wakeword.Backend != WakewordBackendSherpaKWS {
 		t.Errorf("default wake-word backend = %q, want %q", cfg.Wakeword.Backend, WakewordBackendSherpaKWS)
+	}
+	if cfg.HandsFree.TargetMode != HandsFreeTargetVoiceAgent {
+		t.Errorf("default hands-free target = %q, want %q", cfg.HandsFree.TargetMode, HandsFreeTargetVoiceAgent)
+	}
+	if cfg.HandsFree.ActivationPhraseID != "hey_quby" {
+		t.Errorf("default hands-free phrase = %q, want hey_quby", cfg.HandsFree.ActivationPhraseID)
+	}
+	if cfg.HandsFree.AutoEndSilenceCutoffSec != 10 {
+		t.Errorf("default hands-free auto-end = %d, want 10", cfg.HandsFree.AutoEndSilenceCutoffSec)
 	}
 }
 
@@ -558,6 +573,85 @@ func TestNormalizeWakewordBackend(t *testing.T) {
 				t.Fatalf("NormalizeWakewordBackend(%q) = %q, want %q", tt.in, got, tt.want)
 			}
 		})
+	}
+}
+
+func TestLoadHandsFreeBlockMirrorsWakewordCompatibility(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.toml")
+	body := `
+[hands_free]
+enabled = true
+activation_phrase_id = "hey_mira"
+target_mode = "assist"
+auto_end_silence_cutoff_sec = 7
+voice_output_enabled = true
+
+[wakeword]
+enabled = false
+phrase_id = "hey_quby"
+default_mode = "voice_agent"
+`
+	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if !cfg.HandsFree.Enabled || !cfg.Wakeword.Enabled {
+		t.Fatal("hands-free enabled should mirror to wakeword enabled")
+	}
+	if got, want := cfg.HandsFree.ActivationPhraseID, "hey_mira"; got != want {
+		t.Fatalf("hands-free phrase = %q, want %q", got, want)
+	}
+	if got, want := cfg.Wakeword.PhraseID, "hey_mira"; got != want {
+		t.Fatalf("wakeword phrase = %q, want %q", got, want)
+	}
+	if got, want := cfg.HandsFree.TargetMode, HandsFreeTargetAssist; got != want {
+		t.Fatalf("hands-free target = %q, want %q", got, want)
+	}
+	if got, want := cfg.Wakeword.DefaultMode, WakewordDefaultModeAssist; got != want {
+		t.Fatalf("wakeword default mode = %q, want %q", got, want)
+	}
+	if got, want := cfg.Wakeword.AutoEnd.SilenceCutoffSec, 7; got != want {
+		t.Fatalf("wakeword auto-end = %d, want %d", got, want)
+	}
+}
+
+func TestLoadLegacyWakewordDerivesHandsFree(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.toml")
+	body := `
+[wakeword]
+enabled = true
+phrase_id = "hey_kombify"
+default_mode = "dictate"
+
+[wakeword.auto_end]
+silence_cutoff_sec = 4
+`
+	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if !cfg.HandsFree.Enabled {
+		t.Fatal("hands-free enabled should be derived from legacy wakeword")
+	}
+	if got, want := cfg.HandsFree.ActivationPhraseID, "hey_kombify"; got != want {
+		t.Fatalf("hands-free phrase = %q, want %q", got, want)
+	}
+	if got, want := cfg.HandsFree.TargetMode, HandsFreeTargetDictationUIAssisted; got != want {
+		t.Fatalf("hands-free target = %q, want %q", got, want)
+	}
+	if cfg.HandsFree.VoiceOutputEnabled {
+		t.Fatal("dictation UI-assisted target must not enable hands-free voice output")
+	}
+	if got, want := cfg.HandsFree.AutoEndSilenceCutoffSec, 4; got != want {
+		t.Fatalf("hands-free auto-end = %d, want %d", got, want)
 	}
 }
 

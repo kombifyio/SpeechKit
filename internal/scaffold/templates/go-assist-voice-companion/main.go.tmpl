@@ -1,0 +1,51 @@
+package main
+
+import (
+	"context"
+	"fmt"
+	"log"
+
+	speechkit "{{ .SPEECHKIT_MODULE }}/pkg/speechkit"
+	"{{ .SPEECHKIT_MODULE }}/pkg/speechkit/companion"
+	"{{ .SPEECHKIT_MODULE }}/pkg/speechkit/wakeword"
+)
+
+type assistService struct{}
+
+func (assistService) Process(_ context.Context, req speechkit.AssistRequest) (speechkit.AssistResult, error) {
+	return speechkit.AssistResult{
+		Text:      "Handled: " + req.Text,
+		SpeakText: "Done.",
+		Surface:   speechkit.AssistSurfaceActionAck,
+		Locale:    req.Locale,
+	}, nil
+}
+
+func main() {
+	ctx := context.Background()
+	runtime := speechkit.NewRuntime(speechkit.Snapshot{}, speechkit.Hooks{})
+	defer runtime.Close()
+
+	handsFree, err := companion.NewHandsFree(companion.Options{
+		Runtime:    runtime,
+		TargetMode: companion.TargetAssist,
+		Assist:     assistService{},
+		WakeRequest: func(_ context.Context, ev wakeword.DetectionEvent) (speechkit.AssistRequest, bool) {
+			return speechkit.AssistRequest{Text: ev.Phrase, Locale: "en-US"}, true
+		},
+	})
+	if err != nil {
+		log.Fatal(err)
+	}
+	if err := handsFree.Start(ctx); err != nil {
+		log.Fatal(err)
+	}
+
+	if err := handsFree.HandleWake(ctx, wakeword.DetectionEvent{Phrase: "{{ .WAKE_PHRASE }}", Mode: "assist"}); err != nil {
+		log.Fatal(err)
+	}
+	for i := 0; i < 3; i++ {
+		ev := <-handsFree.Events()
+		fmt.Printf("%s mode=%s text=%q\n", ev.Type, ev.Mode, ev.Text)
+	}
+}

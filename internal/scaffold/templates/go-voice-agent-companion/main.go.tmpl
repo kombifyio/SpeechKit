@@ -1,0 +1,58 @@
+package main
+
+import (
+	"context"
+	"fmt"
+	"log"
+
+	speechkit "{{ .SPEECHKIT_MODULE }}/pkg/speechkit"
+	"{{ .SPEECHKIT_MODULE }}/pkg/speechkit/companion"
+	"{{ .SPEECHKIT_MODULE }}/pkg/speechkit/wakeword"
+)
+
+type voiceAgent struct {
+	started bool
+}
+
+func (v *voiceAgent) Start(context.Context) error {
+	v.started = true
+	fmt.Println("voice agent session started")
+	return nil
+}
+
+func (v *voiceAgent) Stop(context.Context) (speechkit.VoiceAgentSession, error) {
+	v.started = false
+	return speechkit.VoiceAgentSession{}, nil
+}
+
+func (v *voiceAgent) SendText(_ context.Context, text string) error {
+	fmt.Println("user:", text)
+	return nil
+}
+
+func (v *voiceAgent) CurrentSession(context.Context) (speechkit.VoiceAgentSession, error) {
+	return speechkit.VoiceAgentSession{ID: "local-demo"}, nil
+}
+
+func main() {
+	ctx := context.Background()
+	runtime := speechkit.NewRuntime(speechkit.Snapshot{}, speechkit.Hooks{})
+	defer runtime.Close()
+
+	agent := &voiceAgent{}
+	handsFree, err := companion.NewHandsFree(companion.Options{
+		Runtime:    runtime,
+		TargetMode: companion.TargetVoiceAgent,
+		VoiceAgent: agent,
+	})
+	if err != nil {
+		log.Fatal(err)
+	}
+	if err := handsFree.Start(ctx); err != nil {
+		log.Fatal(err)
+	}
+	if err := handsFree.HandleWake(ctx, wakeword.DetectionEvent{Phrase: "{{ .WAKE_PHRASE }}", Mode: "voice_agent"}); err != nil {
+		log.Fatal(err)
+	}
+	_ = agent.SendText(ctx, "Start the next scene.")
+}

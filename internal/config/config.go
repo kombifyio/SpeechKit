@@ -100,11 +100,23 @@ type Config struct {
 	Roles     []RoleConfig     `toml:"roles"`
 	Sequences []SequenceConfig `toml:"sequences"`
 
+	// HandsFree is the user-facing activation + optional voice-output layer
+	// across the three strict modes. New config writes should prefer this
+	// block; Wakeword remains the low-level detector compatibility block.
+	HandsFree HandsFreeConfig `toml:"hands_free"`
+
 	// Wakeword configures the always-on "Hey Quby" activation-word listener.
 	// Read by cmd/speechkit (Device-Target) and any library embedder; the
 	// Server-Target ignores this block in v1.
 	Wakeword WakewordConfig `toml:"wakeword"`
 }
+
+// Hands-Free target-mode values for HandsFreeConfig.TargetMode.
+const (
+	HandsFreeTargetAssist              = "assist"
+	HandsFreeTargetVoiceAgent          = "voice_agent"
+	HandsFreeTargetDictationUIAssisted = "dictation_ui_assisted"
+)
 
 // Wake-word default-mode values for WakewordConfig.DefaultMode.
 const (
@@ -119,6 +131,32 @@ const (
 	WakewordBackendLiveKitOpenWakeWord = "livekit_openwakeword"
 	WakewordBackendSTTPhrase           = "stt_phrase"
 )
+
+// HandsFreeConfig is SpeechKit's user-facing no/low-UI activation model.
+// It is not a fourth mode: TargetMode selects Dictation, Assist, or Voice
+// Agent behavior while this block controls wake activation, auto-end, and
+// hands-free speaker output.
+type HandsFreeConfig struct {
+	// Enabled gates hands-free activation. Default false (opt-in).
+	Enabled bool `toml:"enabled"`
+
+	// ActivationPhraseID picks one of wakeword.DefaultCatalog's curated
+	// phrases. The low-level detector mirrors this value to Wakeword.PhraseID.
+	ActivationPhraseID string `toml:"activation_phrase_id"`
+
+	// TargetMode is one of "assist", "voice_agent", or
+	// "dictation_ui_assisted". Dictation hands-free still requires a visible
+	// text target or explicit commit surface.
+	TargetMode string `toml:"target_mode"`
+
+	// AutoEndSilenceCutoffSec ends wake-triggered sessions after this many
+	// seconds of silence. Zero falls back to the framework default.
+	AutoEndSilenceCutoffSec int `toml:"auto_end_silence_cutoff_sec"`
+
+	// VoiceOutputEnabled allows Assist/Voice-Agent hands-free experiences to
+	// speak. Dictation UI-assisted targets should keep this false.
+	VoiceOutputEnabled bool `toml:"voice_output_enabled"`
+}
 
 // WakewordConfig configures the always-on activation-word listener.
 //

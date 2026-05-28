@@ -104,7 +104,7 @@ func (p *Piper) Health(ctx context.Context) error {
 	if p == nil {
 		return errors.New("piper: nil provider")
 	}
-	cmd := exec.CommandContext(ctx, p.binary, "--version") //nolint:gosec // operator-supplied binary path
+	cmd := exec.CommandContext(ctx, p.binary, "--version") // #nosec G204 -- operator-supplied Piper binary path, executed only as configured local TTS provider.
 	if err := cmd.Run(); err != nil {
 		return fmt.Errorf("piper: probing binary %q: %w", p.binary, err)
 	}
@@ -134,7 +134,7 @@ func (p *Piper) Synthesize(ctx context.Context, text string, opts SynthesizeOpts
 	// Piper reads UTF-8 text from stdin and writes a WAV stream to
 	// stdout when --output_file is "-". Some Piper builds spell the
 	// flag --output-file; the long form is consistent across both.
-	cmd := exec.CommandContext(cctx, //nolint:gosec // operator-supplied binary + voice paths
+	cmd := exec.CommandContext(cctx, // #nosec G204 -- operator-supplied Piper binary and voice model paths for local TTS execution.
 		p.binary,
 		"--model", model,
 		"--output_file", "-",
