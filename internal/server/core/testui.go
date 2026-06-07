@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/kombifyio/SpeechKit/internal/config"
+	"github.com/kombifyio/SpeechKit/internal/server/httpx"
 	"github.com/kombifyio/SpeechKit/internal/server/middleware"
 	"github.com/kombifyio/SpeechKit/internal/server/onboarding"
 )
@@ -167,7 +168,7 @@ func (h adminSessionHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		_ = json.NewEncoder(w).Encode(map[string]any{"error": "invalid_admin_credentials"})
 		return
 	}
-	cookie, err := middleware.NewAdminSessionCookie(username, passwordHash, requestIsSecure(r), time.Now())
+	cookie, err := middleware.NewAdminSessionCookie(username, passwordHash, serverRequestIsSecure(h.app, r), time.Now())
 	if err != nil || cookie == nil {
 		w.WriteHeader(http.StatusInternalServerError)
 		_ = json.NewEncoder(w).Encode(map[string]any{"error": "admin_session_failed"})
@@ -178,14 +179,16 @@ func (h adminSessionHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	_ = json.NewEncoder(w).Encode(map[string]any{"ok": true})
 }
 
-func requestIsSecure(r *http.Request) bool {
+func serverRequestIsSecure(app *App, r *http.Request) bool {
 	if r == nil {
 		return false
 	}
-	if r.TLS != nil {
-		return true
+	var cidrs []string
+	if app != nil && app.Cfg != nil {
+		cidrs = app.Cfg.Server.TrustedProxyCIDRs
 	}
-	return strings.EqualFold(strings.TrimSpace(r.Header.Get("X-Forwarded-Proto")), "https")
+	trustedProxies, _ := httpx.NewTrustedProxies(cidrs)
+	return trustedProxies.RequestIsHTTPS(r)
 }
 
 func writeHTML(w http.ResponseWriter, r *http.Request, html string) {

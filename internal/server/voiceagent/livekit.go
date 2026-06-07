@@ -183,7 +183,7 @@ func randomHex(n int) string {
 	return hex.EncodeToString(buf)
 }
 
-func compactTokenPart(value string, max int) string {
+func compactTokenPart(value string, maxLen int) string {
 	value = strings.ToLower(strings.TrimSpace(value))
 	var b strings.Builder
 	for _, r := range value {
@@ -200,8 +200,8 @@ func compactTokenPart(value string, max int) string {
 	if out == "" {
 		out = randomHex(8)
 	}
-	if max > 0 && len(out) > max {
-		out = out[:max]
+	if maxLen > 0 && len(out) > maxLen {
+		out = out[:maxLen]
 	}
 	return strings.Trim(out, "-")
 }

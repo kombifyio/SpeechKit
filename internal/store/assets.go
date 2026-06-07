@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"os"
 	"strings"
-	"time"
 )
 
 type execContexter interface {
@@ -21,10 +20,6 @@ type queryRowContexter interface {
 type dbContexter interface {
 	execContexter
 	queryRowContexter
-}
-
-func sqliteTime(t time.Time) string {
-	return t.UTC().Format("2006-01-02 15:04:05")
 }
 
 func recordAudioAsset(ctx context.Context, db execContexter, dialect, ownerKind string, ownerID int64, path string, durationMs int64) error {

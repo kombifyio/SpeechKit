@@ -142,7 +142,7 @@ func (r *Registry) DeletePersona(id string) error {
 	}
 	if persister != nil {
 		if err := persister.DeletePersona(context.Background(), id); err != nil {
-			slog.Warn("persona: persister.DeletePersona failed; in-memory entry kept for consistency",
+			slog.Warn("persona: persister.DeletePersona failed; in-memory entry kept for consistency", // #nosec G706 -- slog writes persisted IDs/errors as structured attributes, not interpolated log text.
 				"id", id, "err", err)
 			return fmt.Errorf("%w: DeletePersona: %w", ErrPersist, err)
 		}
@@ -219,7 +219,7 @@ func (r *Registry) DeleteRole(id string) error {
 	}
 	if persister != nil {
 		if err := persister.DeleteRole(context.Background(), id); err != nil {
-			slog.Warn("persona: persister.DeleteRole failed; in-memory entry kept for consistency",
+			slog.Warn("persona: persister.DeleteRole failed; in-memory entry kept for consistency", // #nosec G706 -- slog writes persisted IDs/errors as structured attributes, not interpolated log text.
 				"id", id, "err", err)
 			return fmt.Errorf("%w: DeleteRole: %w", ErrPersist, err)
 		}
@@ -296,7 +296,7 @@ func (r *Registry) DeleteSequence(id string) error {
 	}
 	if persister != nil {
 		if err := persister.DeleteSequence(context.Background(), id); err != nil {
-			slog.Warn("persona: persister.DeleteSequence failed; in-memory entry kept for consistency",
+			slog.Warn("persona: persister.DeleteSequence failed; in-memory entry kept for consistency", // #nosec G706 -- slog writes persisted IDs/errors as structured attributes, not interpolated log text.
 				"id", id, "err", err)
 			return fmt.Errorf("%w: DeleteSequence: %w", ErrPersist, err)
 		}
@@ -388,12 +388,27 @@ func (r *Registry) Resolve(personaID, roleID, sequenceID string, stepIndex int) 
 		result.AutomaticVAD = role.AutomaticActivityDetection
 		result.StartSensitivity = role.VADStartSensitivity
 		result.EndSensitivity = role.VADEndSensitivity
-		result.PrefixPaddingMs = int32(role.VADPrefixPaddingMs)
-		result.SilenceDurationMs = int32(role.VADSilenceDurationMs)
+		result.PrefixPaddingMs = intToInt32Clamp(role.VADPrefixPaddingMs)
+		result.SilenceDurationMs = intToInt32Clamp(role.VADSilenceDurationMs)
 		result.ActivityHandling = role.ActivityHandling
 		result.TurnCoverage = role.TurnCoverage
 	}
 	return result, nil
+}
+
+func intToInt32Clamp(value int) int32 {
+	const (
+		maxInt32 = 1<<31 - 1
+		minInt32 = -1 << 31
+	)
+	switch {
+	case value > maxInt32:
+		return maxInt32
+	case value < minInt32:
+		return minInt32
+	default:
+		return int32(value) // #nosec G115 -- value is clamped to the int32 range above.
+	}
 }
 
 // combinePrompts merges the role's system prompt with the current sequence

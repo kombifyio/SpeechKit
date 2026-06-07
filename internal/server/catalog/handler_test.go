@@ -109,7 +109,7 @@ func TestReadinessGoogleSTTDoesNotUseGeminiKey(t *testing.T) {
 
 	cfg := &config.Config{}
 	cfg.Server.Modes = []string{"dictation"}
-	cfg.ModelSelection.Dictate.PrimaryProfileID = "stt.google.chirp-3"
+	cfg.ModelSelection.Dictate.PrimaryProfileID = "stt.google.latest-long"
 	cfg.Providers.Google.Enabled = true
 	cfg.Providers.Google.APIKeyEnv = "GOOGLE_AI_API_KEY"
 	cfg.Providers.Google.STTAPIKeyEnv = "SPEECHKIT_TEST_GOOGLE_STT_KEY"
@@ -121,7 +121,7 @@ func TestReadinessGoogleSTTDoesNotUseGeminiKey(t *testing.T) {
 		return ""
 	}, "test")
 
-	ready := getReadiness(t, h, "/v1/catalog/profiles/stt.google.chirp-3/readiness")
+	ready := getReadiness(t, h, "/v1/catalog/profiles/stt.google.latest-long/readiness")
 	if ready.CredentialsReady || ready.Configured || ready.Ready {
 		t.Fatalf("readiness = %+v, want Google STT not ready with Gemini key only", ready)
 	}
@@ -136,7 +136,7 @@ func TestReadinessGoogleSTTUsesDedicatedKey(t *testing.T) {
 
 	cfg := &config.Config{}
 	cfg.Server.Modes = []string{"dictation"}
-	cfg.ModelSelection.Dictate.PrimaryProfileID = "stt.google.chirp-3"
+	cfg.ModelSelection.Dictate.PrimaryProfileID = "stt.google.latest-long"
 	cfg.Providers.Google.Enabled = true
 	cfg.Providers.Google.APIKeyEnv = "GOOGLE_AI_API_KEY"
 	cfg.Providers.Google.STTAPIKeyEnv = "SPEECHKIT_TEST_GOOGLE_STT_KEY"
@@ -148,9 +148,31 @@ func TestReadinessGoogleSTTUsesDedicatedKey(t *testing.T) {
 		return ""
 	}, "test")
 
-	ready := getReadiness(t, h, "/v1/catalog/profiles/stt.google.chirp-3/readiness")
+	ready := getReadiness(t, h, "/v1/catalog/profiles/stt.google.latest-long/readiness")
 	if !ready.CredentialsReady || !ready.Configured || !ready.Ready {
 		t.Fatalf("readiness = %+v, want Google STT ready with dedicated key", ready)
+	}
+}
+
+func TestReadinessGoogleSTTAcceptsLegacyProfileID(t *testing.T) {
+	t.Setenv("SPEECHKIT_TEST_GOOGLE_STT_KEY", "speech-key")
+
+	cfg := &config.Config{}
+	cfg.Server.Modes = []string{"dictation"}
+	cfg.ModelSelection.Dictate.PrimaryProfileID = "stt.google.chirp-3"
+	cfg.Providers.Google.Enabled = true
+	cfg.Providers.Google.STTAPIKeyEnv = "SPEECHKIT_TEST_GOOGLE_STT_KEY"
+
+	h := New(cfg, func(component string) string {
+		if component == "mode.dictation" {
+			return "ok"
+		}
+		return ""
+	}, "test")
+
+	ready := getReadiness(t, h, "/v1/catalog/profiles/stt.google.chirp-3/readiness")
+	if ready.ProfileID != "stt.google.latest-long" || !ready.Ready {
+		t.Fatalf("readiness = %+v, want legacy ID to resolve to latest-long ready profile", ready)
 	}
 }
 

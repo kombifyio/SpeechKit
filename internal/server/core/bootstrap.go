@@ -152,12 +152,12 @@ func Run(ctx context.Context, cfg *config.Config, opts RunOptions) error {
 		for _, note := range notes {
 			slog.Info("STT wiring", "msg", note)
 		}
-		registerProviderHealth(app, providers, app.ModeEnabled(ModeDictation))
+		registerProviderHealth(app, providers, app.ModeEnabled(ModeDictation)) //nolint:contextcheck // health probes own their short-lived contexts and are not request-scoped.
 	}
-	initServerLifecycle(app)
+	initServerLifecycle(app) //nolint:contextcheck // lifecycle hooks are process-scoped startup state, not request-scoped work.
 
 	if cfg.Server.Features.StorageReads || cfg.Server.Features.Vocabulary {
-		ensureStore(cfg, app)
+		ensureStore(cfg, app) //nolint:contextcheck // store.Open has no context-aware API; startup migration is bounded by CI/runtime gates.
 	}
 	if cfg.Server.Features.TTSDirect && app.TTSRouter == nil {
 		ttsRouter, ttsEnabled, ttsNotes := buildTTSRouter(cfg)
@@ -181,10 +181,11 @@ func Run(ctx context.Context, cfg *config.Config, opts RunOptions) error {
 			app.Health.SetReady("mode.dictation", StatusUnavailable, "STT router not initialized")
 		} else {
 			h, err := dictation.New(dictation.Options{
-				Router:        app.STTRouter,
-				MaxUploadMB:   cfg.Server.MaxUploadMB,
-				DefaultPrompt: dictationPromptFromDictionary(cfg.Vocabulary.Dictionary),
-				Store:         app.Store,
+				Router:                 app.STTRouter,
+				MaxUploadMB:            cfg.Server.MaxUploadMB,
+				MaxDecodedAudioSeconds: cfg.Server.MaxDecodedAudioSeconds,
+				DefaultPrompt:          dictationPromptFromDictionary(cfg.Vocabulary.Dictionary),
+				Store:                  app.Store,
 			})
 			if err != nil {
 				return fmt.Errorf("core.Run: build dictation handler: %w", err)
@@ -263,23 +264,18 @@ func Run(ctx context.Context, cfg *config.Config, opts RunOptions) error {
 	wireWakewordTraining(cfg, app)
 
 	if app.ModeEnabled(ModeAssist) {
-		pipeline, notes, err := buildAssistPipeline(ctx, cfg, app)
-		if err != nil {
-			// buildAssistPipeline is designed not to return fatal errors; if
-			// it ever does, we surface it rather than quietly marking the
-			// mode degraded.
-			return fmt.Errorf("core.Run: build assist pipeline: %w", err)
-		}
+		pipeline, notes := buildAssistPipeline(ctx, cfg, app)
 		for _, note := range notes {
 			slog.Info("assist wiring", "msg", note)
 		}
 		app.AssistPipeline = pipeline
 
 		h, err := assist.New(assist.Options{
-			Processor:     pipeline,
-			Transcriber:   app.STTRouter,
-			MaxUploadMB:   cfg.Server.MaxUploadMB,
-			DefaultLocale: cfg.General.Language,
+			Processor:              pipeline,
+			Transcriber:            app.STTRouter,
+			MaxUploadMB:            cfg.Server.MaxUploadMB,
+			MaxDecodedAudioSeconds: cfg.Server.MaxDecodedAudioSeconds,
+			DefaultLocale:          cfg.General.Language,
 		})
 		if err != nil {
 			return fmt.Errorf("core.Run: build assist handler: %w", err)
@@ -297,7 +293,7 @@ func Run(ctx context.Context, cfg *config.Config, opts RunOptions) error {
 		// endpoints (/v1/personas etc.) exist only when voiceagent is on.
 		// Initialize the durable store first so persona writes persist
 		// across restarts when a SQL backend is configured.
-		ensureStore(cfg, app)
+		ensureStore(cfg, app) //nolint:contextcheck // store.Open has no context-aware API; startup migration is bounded by CI/runtime gates.
 		ensurePersonaRegistry(ctx, cfg, app)
 
 		personaHandler, err := persona.New(persona.HandlerOptions{
@@ -362,7 +358,43 @@ func registerCoreEndpoints(app *App) {
 	registerTestUI(app)
 	registerServerSettings(app)
 	registerDeploymentStatus(app)
+	registerPprof(app)
 	registerAPIAlias(app.Mux)
+}
+
+// serverOIDCVerifier builds the OIDC JWT verifier when auth_mode = "oidc".
+// Returns (nil, nil) for every other mode so the auth chain is unchanged.
+func serverOIDCVerifier(cfg *config.Config) (func(*http.Request) (middleware.Identity, bool), error) {
+	if !strings.EqualFold(strings.TrimSpace(cfg.Server.AuthMode), string(middleware.AuthModeOIDC)) {
+		return nil, nil
+	}
+	validator, err := middleware.NewOIDCValidator(middleware.OIDCConfig{
+		JWKSURL:          cfg.Server.OIDC.JWKSURL,
+		Issuer:           cfg.Server.OIDC.Issuer,
+		Audience:         cfg.Server.OIDC.Audience,
+		ClockSkewSeconds: cfg.Server.OIDC.ClockSkewSeconds,
+		OrgClaim:         cfg.Server.OIDC.OrgClaim,
+		RoleClaim:        cfg.Server.OIDC.RoleClaim,
+	})
+	if err != nil {
+		return nil, err
+	}
+	return validator.Verify, nil
+}
+
+// serverSecurityHeaders builds the security-header middleware from config.
+// Returns nil (a no-op slot in the chain) only when explicitly disabled.
+func serverSecurityHeaders(cfg *config.Config) middleware.Middleware {
+	if cfg.Server.Security.Disabled {
+		return nil
+	}
+	return middleware.SecurityHeaders(middleware.SecurityHeadersOptions{
+		ContentSecurityPolicy: cfg.Server.Security.ContentSecurityPolicy,
+		FrameOptions:          cfg.Server.Security.FrameOptions,
+		ReferrerPolicy:        cfg.Server.Security.ReferrerPolicy,
+		HSTS:                  cfg.Server.Security.HSTS,
+		HSTSMaxAgeSeconds:     cfg.Server.Security.HSTSMaxAgeSeconds,
+	})
 }
 
 func serveServer(ctx context.Context, cfg *config.Config, app *App) error {
@@ -383,10 +415,16 @@ func serveServer(ctx context.Context, cfg *config.Config, app *App) error {
 	publicPaths := serverPublicPaths()
 	publicRoutes := serverPublicRoutes()
 	bootstrapPaths := serverBootstrapPaths()
+	oidcVerifier, err := serverOIDCVerifier(cfg)
+	if err != nil {
+		return fmt.Errorf("core.Run: %w", err)
+	}
 	chain := middleware.Chain(
 		middleware.Recover(),
+		middleware.RequestID(),
 		middleware.Logging(),
 		middleware.CORS(cfg.Server.CORSAllowedOrigins),
+		serverSecurityHeaders(cfg),
 		middleware.Auth(middleware.AuthOptions{
 			ModeProvider:        app.AuthState.Mode,
 			BearerTokenProvider: app.AuthState.BearerToken,
@@ -423,10 +461,13 @@ func serveServer(ctx context.Context, cfg *config.Config, app *App) error {
 			// embed the server without calling that validator (tests,
 			// in-process hosts, future helper binaries).
 			RequireAuthenticatedMode: !config.IsLoopbackListenAddr(cfg.Server.ListenAddr),
+			TrustedProxyCIDRs:        cfg.Server.TrustedProxyCIDRs,
+			OIDCVerifier:             oidcVerifier,
 		}),
-		middleware.RateLimit(middleware.RateLimitOptions{
+		middleware.RateLimit(middleware.RateLimitOptions{ //nolint:contextcheck // RateLimit receives the server lifetime context via options.Context; contextcheck does not model contained context fields.
 			RequestsPerSecond: cfg.Server.RateLimitRPS,
 			Burst:             cfg.Server.RateLimitBurst,
+			Context:           ctx,
 			// Health probes must never be rate-limited; otherwise a busy
 			// neighbour could starve out Render's readiness checks during
 			// real outages.
@@ -451,13 +492,15 @@ func serveServer(ctx context.Context, cfg *config.Config, app *App) error {
 	srv := &http.Server{
 		Addr:              addr,
 		Handler:           chain(app.Mux),
-		ReadHeaderTimeout: 15 * time.Second,
-		ReadTimeout:       0, // Large audio uploads; bounded per-route instead.
+		ReadHeaderTimeout: serverDurationDefault(cfg.Server.ReadHeaderTimeoutSec, 15*time.Second),
+		ReadTimeout:       serverDurationDefault(cfg.Server.ReadTimeoutSec, 120*time.Second),
 		WriteTimeout:      0, // WebSocket sessions can be long-lived.
-		IdleTimeout:       120 * time.Second,
+		IdleTimeout:       serverDurationDefault(cfg.Server.IdleTimeoutSec, 120*time.Second),
+		MaxHeaderBytes:    serverIntDefault(cfg.Server.MaxHeaderBytes, 1<<20),
 	}
 
-	ln, err := net.Listen("tcp", addr)
+	var listenConfig net.ListenConfig
+	ln, err := listenConfig.Listen(ctx, "tcp", addr)
 	if err != nil {
 		return fmt.Errorf("core.Run: listen on %s: %w", addr, err)
 	}
@@ -481,7 +524,7 @@ func serveServer(ctx context.Context, cfg *config.Config, app *App) error {
 		}
 	}
 
-	shutdownCtx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	shutdownCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 20*time.Second)
 	defer cancel()
 	if err := srv.Shutdown(shutdownCtx); err != nil {
 		slog.Warn("HTTP shutdown did not complete cleanly", "err", err)
@@ -497,6 +540,20 @@ func serveServer(ctx context.Context, cfg *config.Config, app *App) error {
 		return fmt.Errorf("core.Run: serve (post-shutdown): %w", err)
 	}
 	return nil
+}
+
+func serverDurationDefault(seconds int, fallback time.Duration) time.Duration {
+	if seconds <= 0 {
+		return fallback
+	}
+	return time.Duration(seconds) * time.Second
+}
+
+func serverIntDefault(value, fallback int) int {
+	if value <= 0 {
+		return fallback
+	}
+	return value
 }
 
 // resolveModes turns the toml "modes" list into a lookup map. Empty input means
@@ -615,29 +672,32 @@ func ensurePersonaRegistry(ctx context.Context, cfg *config.Config, app *App) {
 
 	// (2) store-backed persistence, opt-in per concrete store type so
 	// bootstrap stays compile-time explicit about durable backends.
-	if sqliteStore, ok := app.Store.(*store.SQLiteStore); ok {
-		persister := persona.NewSQLitePersister(sqliteStore.DB())
+	switch concreteStore := app.Store.(type) {
+	case *store.SQLiteStore:
+		persister := persona.NewSQLitePersister(concreteStore.DB())
 		if err := reg.HydrateFrom(ctx, persister); err != nil {
 			slog.Warn("persona: hydrate from store failed; falling back to TOML-only", "err", err)
 		} else {
 			slog.Info("persona: hydrated from SQLite store")
 		}
 		reg.WithPersister(persister)
-	} else if postgresStore, ok := app.Store.(*store.PostgresStore); ok {
-		persister := persona.NewPostgresPersister(postgresStore.DB())
+	case *store.PostgresStore:
+		persister := persona.NewPostgresPersister(concreteStore.DB())
 		if err := reg.HydrateFrom(ctx, persister); err != nil {
 			slog.Warn("persona: hydrate from Postgres store failed; falling back to TOML-only", "err", err)
 		} else {
 			slog.Info("persona: hydrated from Postgres store")
 		}
 		reg.WithPersister(persister)
-	} else if app.Store != nil {
-		slog.Info("persona: store backend does not support durable personas; admin writes are in-memory only")
+	default:
+		if app.Store != nil {
+			slog.Info("persona: store backend does not support durable personas; admin writes are in-memory only")
+		}
 	}
 
 	// (3) overlay TOML seeds. Seeds are tagged Source="toml" and never
 	// round-trip to the persister — they're the baseline, not data.
-	notes := persona.LoadSeeds(reg, cfg)
+	notes := persona.LoadSeeds(reg, cfg) //nolint:contextcheck // seed loading is in-memory TOML overlay work with no request or cancellable I/O.
 	for _, note := range notes {
 		slog.Debug("persona seed", "note", note)
 	}
@@ -647,10 +707,9 @@ func ensurePersonaRegistry(ctx context.Context, cfg *config.Config, app *App) {
 	roleCount := len(reg.ListRoles())
 	sequenceCount := len(reg.ListSequences())
 	detail := fmt.Sprintf("%d personas, %d roles, %d sequences", personaCount, roleCount, sequenceCount)
-	switch {
-	case personaCount == 0:
+	if personaCount == 0 {
 		app.Health.SetReady("persona.registry", StatusDegraded, "no personas seeded; clients must create one via POST /v1/personas")
-	default:
+	} else {
 		app.Health.SetReady("persona.registry", StatusOK, detail)
 	}
 	slog.Info("persona registry ready", "summary", detail)

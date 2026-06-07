@@ -2,7 +2,7 @@
 set -eu
 
 INSTALL_DIR="/opt/speechkit"
-PUBLIC_URL="${SPEECHKIT_PUBLIC_URL:-${SPEECHKIT_SERVER_PUBLIC_URL:-http://localhost:8080}}"
+PUBLIC_URL="${SPEECHKIT_PUBLIC_URL:-http://localhost:8080}"
 PUBLIC_HOST="${SPEECHKIT_PUBLIC_HOST:-}"
 SERVER_IMAGE="${SPEECHKIT_SERVER_IMAGE:-ghcr.io/kombifyio/speechkit-server:latest}"
 ONBOARDING_UI="true"

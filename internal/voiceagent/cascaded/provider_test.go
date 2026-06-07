@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/binary"
 	"errors"
+	"io"
 	"math"
 	"strings"
 	"sync"
@@ -13,6 +14,7 @@ import (
 	"github.com/kombifyio/SpeechKit/internal/ai/flows"
 	"github.com/kombifyio/SpeechKit/internal/stt"
 	"github.com/kombifyio/SpeechKit/internal/tts"
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/speaker"
 )
 
 // -- fakes ------------------------------------------------------------
@@ -58,6 +60,62 @@ type fakeTTS struct {
 	audio []byte
 	err   error
 	calls int
+}
+
+type fakeSpeakerStreamer struct {
+	mu      sync.Mutex
+	started int
+	stream  *fakeSpeakerStream
+}
+
+func (f *fakeSpeakerStreamer) StartSpeakerStream(_ context.Context, _ speaker.Options, _ speaker.AudioFormat) (speaker.SpeakerStream, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.started++
+	f.stream = &fakeSpeakerStream{frames: make(chan *speaker.SpeakerFrame, 4)}
+	return f.stream, nil
+}
+
+type fakeSpeakerStream struct {
+	mu     sync.Mutex
+	frames chan *speaker.SpeakerFrame
+	audio  [][]byte
+	ended  bool
+	closed bool
+}
+
+func (f *fakeSpeakerStream) SendAudio(_ context.Context, chunk []byte) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.audio = append(f.audio, append([]byte(nil), chunk...))
+	return nil
+}
+
+func (f *fakeSpeakerStream) EndAudio(context.Context) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.ended = true
+	return nil
+}
+
+func (f *fakeSpeakerStream) Receive(ctx context.Context) (*speaker.SpeakerFrame, error) {
+	select {
+	case frame, ok := <-f.frames:
+		if !ok {
+			return nil, io.EOF
+		}
+		return frame, nil
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	}
+}
+
+func (f *fakeSpeakerStream) Close() error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.closed = true
+	close(f.frames)
+	return nil
 }
 
 func (f *fakeTTS) Synthesize(_ context.Context, _ string, _ tts.SynthesizeOpts) (*tts.Result, error) {
@@ -217,6 +275,82 @@ func TestSendAudioTriggersAfterSilence(t *testing.T) {
 	}
 	if !sawInput {
 		t.Fatalf("expected STT transcript in messages; got %+v", msgs)
+	}
+}
+
+func TestStreamingSpeakerFramesEmitInputTranscriptMetadata(t *testing.T) {
+	sttFake := &fakeSTT{text: "batch final"}
+	agent := &fakeAgent{response: "ok"}
+	streamer := &fakeSpeakerStreamer{}
+	p := NewProvider(Deps{
+		STT:             sttFake,
+		Agent:           agent,
+		SpeakerStreamer: streamer,
+		Config:          Config{SilenceTurnMs: 10_000, MinTurnMs: 50},
+	})
+	if err := p.Connect(context.Background(), SessionConfig{
+		Locale: "en",
+		Speaker: speaker.Options{
+			Diarization:     true,
+			PreferStreaming: true,
+		},
+	}); err != nil {
+		t.Fatalf("Connect: %v", err)
+	}
+	t.Cleanup(func() { _ = p.Close() })
+
+	streamer.mu.Lock()
+	stream := streamer.stream
+	started := streamer.started
+	streamer.mu.Unlock()
+	if started != 1 || stream == nil {
+		t.Fatalf("speaker stream started=%d stream=%v", started, stream)
+	}
+
+	chunk := sineChunk(100, 10000)
+	if err := p.SendAudio(chunk); err != nil {
+		t.Fatalf("SendAudio: %v", err)
+	}
+	if err := p.SendAudioStreamEnd(); err != nil {
+		t.Fatalf("SendAudioStreamEnd: %v", err)
+	}
+	stream.mu.Lock()
+	audioCount := len(stream.audio)
+	ended := stream.ended
+	stream.mu.Unlock()
+	if audioCount != 1 || !ended {
+		t.Fatalf("stream audioCount=%d ended=%v", audioCount, ended)
+	}
+
+	stream.frames <- &speaker.SpeakerFrame{
+		Provider: "fake",
+		Text:     "live partial",
+		IsFinal:  false,
+		Segment: &speaker.SpeakerSegment{
+			SpeakerLabel:      "speaker_A",
+			PersonID:          "p1",
+			DisplayName:       "Alice",
+			SpeakerConfidence: 0.77,
+		},
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	var msg *Message
+	for {
+		got, err := p.Receive(ctx)
+		if err != nil {
+			t.Fatalf("Receive: %v", err)
+		}
+		if got.InputTranscript == "live partial" {
+			msg = got
+			break
+		}
+	}
+	if msg.InputTranscript != "live partial" || msg.InputSpeakerLabel != "speaker_A" ||
+		msg.InputPersonID != "p1" || msg.InputDisplayName != "Alice" || msg.InputSpeakerConfidence != 0.77 ||
+		msg.InputTranscriptDone {
+		t.Fatalf("message = %+v", msg)
 	}
 }
 
@@ -410,4 +544,159 @@ func TestPCMDurationMs(t *testing.T) {
 			t.Fatalf("PCMDurationMs(%d bytes) = %d, want %d", c.bytes, got, c.ms)
 		}
 	}
+}
+
+// -- speaker stream reconnect ----------------------------------------
+
+// reconnectStreamer hands out a fresh scriptStream on every StartSpeakerStream
+// call so a test can drop one stream and assert delivery resumes on the next.
+type reconnectStreamer struct {
+	mu      sync.Mutex
+	started int
+	streams []*scriptStream
+}
+
+func (r *reconnectStreamer) StartSpeakerStream(_ context.Context, _ speaker.Options, _ speaker.AudioFormat) (speaker.SpeakerStream, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.started++
+	st := &scriptStream{frames: make(chan *speaker.SpeakerFrame, 4), errc: make(chan error, 1)}
+	r.streams = append(r.streams, st)
+	return st, nil
+}
+
+func (r *reconnectStreamer) count() int {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.started
+}
+
+func (r *reconnectStreamer) nth(i int) *scriptStream {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if i < 0 || i >= len(r.streams) {
+		return nil
+	}
+	return r.streams[i]
+}
+
+// scriptStream lets a test push frames and inject a transient Receive error.
+type scriptStream struct {
+	frames chan *speaker.SpeakerFrame
+	errc   chan error
+	mu     sync.Mutex
+	closed bool
+}
+
+func (s *scriptStream) SendAudio(context.Context, []byte) error { return nil }
+func (s *scriptStream) EndAudio(context.Context) error          { return nil }
+
+func (s *scriptStream) Receive(ctx context.Context) (*speaker.SpeakerFrame, error) {
+	select {
+	case f := <-s.frames:
+		return f, nil
+	case err := <-s.errc:
+		return nil, err
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	}
+}
+
+func (s *scriptStream) Close() error {
+	s.mu.Lock()
+	s.closed = true
+	s.mu.Unlock()
+	return nil
+}
+
+func (s *scriptStream) isClosed() bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.closed
+}
+
+func TestSpeakerStreamReconnectsAfterTransientDrop(t *testing.T) {
+	origBackoff := speakerReconnectInitialBackoff
+	speakerReconnectInitialBackoff = time.Millisecond
+	t.Cleanup(func() { speakerReconnectInitialBackoff = origBackoff })
+
+	streamer := &reconnectStreamer{}
+	p := NewProvider(Deps{
+		STT:             &fakeSTT{text: "x"},
+		Agent:           &fakeAgent{response: "ok"},
+		SpeakerStreamer: streamer,
+		Config:          Config{SilenceTurnMs: 10_000, MinTurnMs: 50},
+	})
+	if err := p.Connect(context.Background(), SessionConfig{
+		Locale:  "en",
+		Speaker: speaker.Options{Diarization: true, PreferStreaming: true},
+	}); err != nil {
+		t.Fatalf("Connect: %v", err)
+	}
+	t.Cleanup(func() { _ = p.Close() })
+
+	s0 := waitForStream(t, streamer, 0)
+	s0.frames <- &speaker.SpeakerFrame{Provider: "fake", Text: "before drop",
+		Segment: &speaker.SpeakerSegment{SpeakerLabel: "speaker_A"}}
+	if got := receiveTranscript(t, p); got != "before drop" {
+		t.Fatalf("first transcript = %q, want %q", got, "before drop")
+	}
+
+	// Drop the stream with a transient (non-EOF, non-cancel) error. The loop
+	// must reconnect instead of dying for the rest of the session.
+	s0.errc <- errors.New("websocket: connection reset by peer")
+	waitForCount(t, streamer, 2)
+	if !s0.isClosed() {
+		t.Fatal("dropped stream was not closed before reconnect")
+	}
+
+	s1 := waitForStream(t, streamer, 1)
+	s1.frames <- &speaker.SpeakerFrame{Provider: "fake", Text: "after reconnect",
+		Segment: &speaker.SpeakerSegment{SpeakerLabel: "speaker_B"}}
+	if got := receiveTranscript(t, p); got != "after reconnect" {
+		t.Fatalf("post-reconnect transcript = %q, want %q", got, "after reconnect")
+	}
+}
+
+func waitForStream(t *testing.T, r *reconnectStreamer, idx int) *scriptStream {
+	t.Helper()
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		if s := r.nth(idx); s != nil {
+			return s
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	t.Fatalf("stream %d never started", idx)
+	return nil
+}
+
+func waitForCount(t *testing.T, r *reconnectStreamer, want int) {
+	t.Helper()
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		if r.count() >= want {
+			return
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	t.Fatalf("stream count = %d, want >= %d", r.count(), want)
+}
+
+func receiveTranscript(t *testing.T, p *Provider) string {
+	t.Helper()
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
+		msg, err := p.Receive(ctx)
+		cancel()
+		if err != nil {
+			continue
+		}
+		if msg != nil && msg.InputTranscript != "" {
+			return msg.InputTranscript
+		}
+	}
+	t.Fatal("no transcript message received")
+	return ""
 }

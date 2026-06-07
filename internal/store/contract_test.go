@@ -87,6 +87,7 @@ func contractBackends() []backendFixture {
 					quick_notes,
 					transcriptions,
 					user_dictionary_entries,
+					wakeword_activations,
 					voice_agent_sequences,
 					voice_agent_roles,
 					voice_agent_personas
@@ -364,6 +365,90 @@ func TestContractVoiceAgentSessionOwnershipAndGet(t *testing.T) {
 		}
 		if len(owned) != 1 || owned[0].Transcript != "hello from a" {
 			t.Fatalf("owner filtered sessions = %+v, want only user-a session", owned)
+		}
+	})
+}
+
+// TestContractWakewordActivationLifecycle walks the full WakewordActivationStore
+// CRUD surface on every backend: save, get, list, label, count, sum, delete.
+// Drift in any backend (placeholder style, jsonb cast, DELETE RETURNING) surfaces
+// here.
+func TestContractWakewordActivationLifecycle(t *testing.T) {
+	eachBackend(t, func(t *testing.T, s Store) {
+		ws, ok := s.(WakewordActivationStore)
+		if !ok {
+			t.Skip("backend does not implement WakewordActivationStore")
+		}
+		ctx := context.Background()
+		act := WakewordActivation{
+			ID:           "wa-1",
+			OwnerUserID:  "user-a",
+			OwnerOrgID:   "org-1",
+			PhraseID:     "hey-kombify",
+			Phrase:       "hey kombify",
+			Backend:      "openwakeword",
+			Score:        0.92,
+			AudioPath:    "/tmp/wa-1.wav",
+			AudioBytes:   2048,
+			SampleRate:   16000,
+			Label:        WakewordLabelCorrect,
+			MetadataJSON: `{"k":"v"}`,
+		}
+		saved, err := ws.SaveWakewordActivation(ctx, act)
+		if err != nil {
+			t.Fatalf("SaveWakewordActivation: %v", err)
+		}
+		if saved.UploadedAt.IsZero() {
+			t.Error("UploadedAt should be populated by the store")
+		}
+
+		got, err := ws.GetWakewordActivation(ctx, "wa-1", "user-a", "org-1")
+		if err != nil {
+			t.Fatalf("GetWakewordActivation: %v", err)
+		}
+		if got.Phrase != "hey kombify" || got.AudioBytes != 2048 || got.MetadataJSON == "" {
+			t.Fatalf("round-trip mismatch: %+v", got)
+		}
+
+		// Scope isolation: a different owner must not see the row.
+		if _, err := ws.GetWakewordActivation(ctx, "wa-1", "user-b", "org-1"); err == nil {
+			t.Error("GetWakewordActivation across owner should fail")
+		}
+
+		list, err := ws.ListWakewordActivations(ctx, "user-a", "org-1", ListOpts{Limit: 10})
+		if err != nil {
+			t.Fatalf("ListWakewordActivations: %v", err)
+		}
+		if len(list) != 1 || list[0].ID != "wa-1" {
+			t.Fatalf("list = %+v, want 1 row wa-1", list)
+		}
+
+		if err := ws.UpdateWakewordActivationLabel(ctx, "wa-1", "user-a", "org-1", WakewordLabelFalsePositive); err != nil {
+			t.Fatalf("UpdateWakewordActivationLabel: %v", err)
+		}
+		got, _ = ws.GetWakewordActivation(ctx, "wa-1", "user-a", "org-1")
+		if got.Label != WakewordLabelFalsePositive {
+			t.Errorf("label after update = %q, want %q", got.Label, WakewordLabelFalsePositive)
+		}
+
+		count, err := ws.CountWakewordActivationsForUser(ctx, "user-a", "org-1")
+		if err != nil || count != 1 {
+			t.Fatalf("CountWakewordActivationsForUser = %d, err %v, want 1", count, err)
+		}
+		sum, err := ws.SumWakewordActivationBytesForUser(ctx, "user-a", "org-1")
+		if err != nil || sum != 2048 {
+			t.Fatalf("SumWakewordActivationBytesForUser = %d, err %v, want 2048", sum, err)
+		}
+
+		path, err := ws.DeleteWakewordActivation(ctx, "wa-1", "user-a", "org-1")
+		if err != nil {
+			t.Fatalf("DeleteWakewordActivation: %v", err)
+		}
+		if path != "/tmp/wa-1.wav" {
+			t.Errorf("DeleteWakewordActivation returned path %q, want /tmp/wa-1.wav", path)
+		}
+		if _, err := ws.GetWakewordActivation(ctx, "wa-1", "user-a", "org-1"); err == nil {
+			t.Error("GetWakewordActivation after delete should fail")
 		}
 	})
 }

@@ -10,10 +10,14 @@ import (
 )
 
 const (
-	GoogleAIAPIKeyEnv         = "GOOGLE_AI_API_KEY"
-	GoogleSTTDefaultAPIKeyEnv = "SPEECHKIT_GOOGLE_STT_API_KEY"
-	GoogleCloudSTTAPIKeyEnv   = "GOOGLE_CLOUD_STT_API_KEY"
-	GoogleLegacySTTAPIKeyEnv  = "GOOGLE_STT_API_KEY"
+	GoogleAIAPIKeyEnv               = "GOOGLE_AI_API_KEY"
+	GoogleSTTDefaultAPIKeyEnv       = "SPEECHKIT_GOOGLE_STT_API_KEY"
+	GoogleSTTCredentialsJSONEnv     = "SPEECHKIT_GOOGLE_STT_CREDENTIALS_JSON"
+	GoogleApplicationCredentialsEnv = "GOOGLE_APPLICATION_CREDENTIALS"
+	GoogleCloudSTTAPIKeyEnv         = "GOOGLE_CLOUD_STT_API_KEY"
+	GoogleLegacySTTAPIKeyEnv        = "GOOGLE_STT_API_KEY"
+	DeepgramAPIKeyEnv               = "DEEPGRAM_API_KEY"
+	AssemblyAIAPIKeyEnv             = "ASSEMBLYAI_API_KEY"
 )
 
 var (
@@ -87,6 +91,26 @@ func GoogleSTTAPIKeyEnvName(cfg *Config) string {
 	return GoogleSTTDefaultAPIKeyEnv
 }
 
+func GoogleSTTCredentialsJSONEnvName(cfg *Config) string {
+	if cfg == nil {
+		return GoogleSTTCredentialsJSONEnv
+	}
+	if envName := strings.TrimSpace(cfg.Providers.Google.STTCredentialsJSONEnv); envName != "" {
+		return envName
+	}
+	return GoogleSTTCredentialsJSONEnv
+}
+
+func GoogleApplicationCredentialsEnvName(cfg *Config) string {
+	if cfg == nil {
+		return GoogleApplicationCredentialsEnv
+	}
+	if envName := strings.TrimSpace(cfg.Providers.Google.ApplicationCredentialsEnv); envName != "" {
+		return envName
+	}
+	return GoogleApplicationCredentialsEnv
+}
+
 func ResolveGoogleSTTKey(cfg *Config) (string, string) {
 	for _, envName := range googleSTTKeyEnvCandidates(cfg) {
 		if key := strings.TrimSpace(ResolveSecret(envName)); key != "" {
@@ -94,6 +118,28 @@ func ResolveGoogleSTTKey(cfg *Config) (string, string) {
 		}
 	}
 	return "", ""
+}
+
+func ResolveDeepgramKey(cfg *Config) (string, string) {
+	envName := DeepgramAPIKeyEnv
+	if cfg != nil && strings.TrimSpace(cfg.Providers.Deepgram.APIKeyEnv) != "" {
+		envName = strings.TrimSpace(cfg.Providers.Deepgram.APIKeyEnv)
+	}
+	if key := strings.TrimSpace(ResolveSecret(envName)); key != "" {
+		return key, envName
+	}
+	return "", envName
+}
+
+func ResolveAssemblyAIKey(cfg *Config) (string, string) {
+	envName := AssemblyAIAPIKeyEnv
+	if cfg != nil && strings.TrimSpace(cfg.Providers.AssemblyAI.APIKeyEnv) != "" {
+		envName = strings.TrimSpace(cfg.Providers.AssemblyAI.APIKeyEnv)
+	}
+	if key := strings.TrimSpace(ResolveSecret(envName)); key != "" {
+		return key, envName
+	}
+	return "", envName
 }
 
 func googleSTTKeyEnvCandidates(cfg *Config) []string {

@@ -191,18 +191,18 @@ func TestBuildGeminiLiveConnectConfigUsesCustomInstructionAndPolicies(t *testing
 	}
 }
 
-func TestBuildGeminiLiveConnectConfigFallsBackToLegacyInstructionAsFrameworkPrompt(t *testing.T) {
+func TestBuildGeminiLiveConnectConfigUsesFrameworkPrompt(t *testing.T) {
 	cfg := LiveConfig{
-		Model:       "gemini-2.5-flash-native-audio-preview-12-2025",
-		Locale:      "en",
-		Instruction: "Legacy host instruction",
+		Model:           "gemini-2.5-flash-native-audio-preview-12-2025",
+		Locale:          "en",
+		FrameworkPrompt: "Host framework instruction",
 	}
 
 	connectCfg := buildGeminiLiveConnectConfig(cfg)
 	text := joinContentText(connectCfg.SystemInstruction)
 
-	if !strings.Contains(text, "Legacy host instruction") {
-		t.Fatalf("instruction = %q, want legacy instruction to remain effective", text)
+	if !strings.Contains(text, "Host framework instruction") {
+		t.Fatalf("instruction = %q, want framework prompt to remain effective", text)
 	}
 }
 

@@ -5,7 +5,11 @@ import "time"
 // SchemaVersion is bumped when the audit-event JSON shape changes in a way
 // that breaks downstream SIEM ingestion. Increment requires a CHANGELOG.md
 // entry under "## Audit-Log Schema" with migration notes.
-const SchemaVersion = "1"
+//
+// v2 (2026-06): added the prev_hash/hash tamper-evidence chain fields. The
+// pre-v2 fields are unchanged, so v1 ingestion keeps working; consumers that
+// want integrity verification read the new fields.
+const SchemaVersion = "2"
 
 // Outcome is the success/failure state of the audited action.
 type Outcome string
@@ -72,4 +76,13 @@ type Record struct {
 	Resource      map[string]any `json:"resource,omitempty"`
 	Outcome       Outcome        `json:"outcome"`
 	TraceID       string         `json:"trace_id,omitempty"`
+
+	// PrevHash and Hash form a tamper-evidence chain. Hash binds this record's
+	// content together with PrevHash (the previous record's Hash), so any
+	// modification, reordering, or truncation breaks the chain at a verifiable
+	// point. Hash is HMAC-SHA256 when an integrity key is configured, plain
+	// SHA-256 otherwise. Both are populated by AppendEvent — never set them by
+	// hand; they are excluded from the hash input when recomputed.
+	PrevHash string `json:"prev_hash,omitempty"`
+	Hash     string `json:"hash,omitempty"`
 }

@@ -56,6 +56,9 @@ func Load(path string) (*Config, error) {
 		slog.Warn("malformed config.toml, using defaults", "err", err)
 		return defaults(), nil
 	}
+	if err := rejectRemovedConfigAliases(meta); err != nil {
+		return nil, err
+	}
 
 	// Apply registry policy overlay (ADMX/GPO). Must run BEFORE the backfill
 	// chain so that policy values are in place when backfill logic mirrors them
@@ -91,7 +94,7 @@ func Load(path string) (*Config, error) {
 	backfillLegacyAssistModels(meta, cfg)
 	backfillLegacyModeHotkeys(meta, cfg)
 	backfillStartupBehavior(meta, cfg)
-	backfillVoiceAgentPromptLayers(meta, cfg)
+	backfillVoiceAgentPromptLayers(cfg)
 	backfillVoiceAgentSessionSummary(meta, cfg)
 	backfillServerConnectionCustomURLAuth(meta, cfg)
 	NormalizeHandsFreeConfig(cfg, meta.IsDefined("hands_free"))

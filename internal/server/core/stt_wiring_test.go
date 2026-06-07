@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/kombifyio/SpeechKit/internal/config"
+	"github.com/kombifyio/SpeechKit/internal/stt"
 )
 
 func TestBuildSTTRouterDoesNotUseGoogleAIKeyForCloudSTT(t *testing.T) {
@@ -15,7 +16,7 @@ func TestBuildSTTRouterDoesNotUseGoogleAIKeyForCloudSTT(t *testing.T) {
 	cfg := &config.Config{}
 	cfg.Providers.Google.Enabled = true
 	cfg.Providers.Google.APIKeyEnv = "GOOGLE_AI_API_KEY"
-	cfg.Providers.Google.STTModel = "chirp_3"
+	cfg.Providers.Google.STTModel = "latest_long"
 
 	_, providers, notes := buildSTTRouter(cfg)
 
@@ -34,7 +35,7 @@ func TestBuildSTTRouterUsesDedicatedGoogleSTTKey(t *testing.T) {
 	cfg := &config.Config{}
 	cfg.Providers.Google.Enabled = true
 	cfg.Providers.Google.APIKeyEnv = "GOOGLE_AI_API_KEY"
-	cfg.Providers.Google.STTModel = "chirp_3"
+	cfg.Providers.Google.STTModel = "latest_long"
 
 	_, providers, notes := buildSTTRouter(cfg)
 
@@ -54,7 +55,7 @@ func TestBuildSTTRouterUsesConfiguredGoogleSTTKeyEnv(t *testing.T) {
 	cfg.Providers.Google.Enabled = true
 	cfg.Providers.Google.APIKeyEnv = "GOOGLE_AI_API_KEY"
 	cfg.Providers.Google.STTAPIKeyEnv = "CUSTOM_GOOGLE_STT_KEY"
-	cfg.Providers.Google.STTModel = "chirp_3"
+	cfg.Providers.Google.STTModel = "latest_long"
 
 	_, providers, notes := buildSTTRouter(cfg)
 
@@ -66,10 +67,56 @@ func TestBuildSTTRouterUsesConfiguredGoogleSTTKeyEnv(t *testing.T) {
 	}
 }
 
+func TestBuildSTTRouterRegistersDeepgramWhenKeyIsSet(t *testing.T) {
+	t.Setenv("DEEPGRAM_API_KEY", "deepgram-key")
+
+	cfg := &config.Config{}
+	cfg.Providers.Deepgram.Enabled = true
+	cfg.Providers.Deepgram.APIKeyEnv = "DEEPGRAM_API_KEY"
+	cfg.Providers.Deepgram.STTModel = "nova-3"
+	cfg.Providers.Deepgram.DiarizationModel = "latest"
+
+	_, providers, notes := buildSTTRouter(cfg)
+
+	if !hasProvider(providers, "stt.deepgram") {
+		t.Fatal("Deepgram STT should register when the key is set")
+	}
+	if !hasNote(notes, "source=DEEPGRAM_API_KEY") {
+		t.Fatalf("notes = %v, want Deepgram key source", notes)
+	}
+}
+
+func TestBuildSTTRouterRegistersAssemblyAIWhenKeyIsSet(t *testing.T) {
+	t.Setenv("ASSEMBLYAI_API_KEY", "assembly-key")
+
+	cfg := &config.Config{}
+	cfg.Providers.AssemblyAI.Enabled = true
+	cfg.Providers.AssemblyAI.APIKeyEnv = "ASSEMBLYAI_API_KEY"
+	cfg.Providers.AssemblyAI.STTModels = "universal-3-pro,universal-2"
+	cfg.Providers.AssemblyAI.StreamingModel = "u3-rt-pro"
+	cfg.Providers.AssemblyAI.StreamingBaseURL = "wss://eu.streaming.assemblyai.com"
+
+	_, providers, notes := buildSTTRouter(cfg)
+
+	if !hasProvider(providers, "stt.assemblyai") {
+		t.Fatal("AssemblyAI STT should register when the key is set")
+	}
+	if !hasNote(notes, "source=ASSEMBLYAI_API_KEY") {
+		t.Fatalf("notes = %v, want AssemblyAI key source", notes)
+	}
+	provider := findProvider[stt.AssemblyAIProvider](providers, "stt.assemblyai")
+	if provider == nil {
+		t.Fatalf("providers = %+v, want AssemblyAIProvider", providers)
+	}
+	if provider.StreamingModel != "u3-rt-pro" || provider.StreamingBaseURL != "wss://eu.streaming.assemblyai.com" {
+		t.Fatalf("AssemblyAI streaming config = %q/%q", provider.StreamingModel, provider.StreamingBaseURL)
+	}
+}
+
 func TestUpdateSTTAggregateIgnoresDisabledProviders(t *testing.T) {
 	app := &App{Health: NewHealthRegistry()}
 	app.Health.SetReadyWithOptions("stt.disabled", StatusDisabled, "configured off", sttProviderOptions(namedProvider{name: "stt.disabled"}))
-	app.Health.SetReadyWithOptions(sttAggregateComponent, StatusStarting, "probing STT providers", sttAggregateOptions(true))
+	app.Health.SetReadyWithOptions(sttAggregateComponent, StatusStarting, "probing STT providers", sttAggregateOptions())
 
 	updateSTTAggregate(app)
 
@@ -103,6 +150,19 @@ func hasProvider(providers []namedProvider, name string) bool {
 		}
 	}
 	return false
+}
+
+func findProvider[T any](providers []namedProvider, name string) *T {
+	for _, provider := range providers {
+		if provider.name != name {
+			continue
+		}
+		typed, ok := any(provider.provider).(*T)
+		if ok {
+			return typed
+		}
+	}
+	return nil
 }
 
 func hasNote(notes []string, needle string) bool {

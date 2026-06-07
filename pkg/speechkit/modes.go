@@ -55,6 +55,8 @@ const (
 	ExecutionModeOpenAI         ExecutionMode = "openai_api"
 	ExecutionModeGroq           ExecutionMode = "groq_api"
 	ExecutionModeGoogle         ExecutionMode = "google_api"
+	ExecutionModeDeepgram       ExecutionMode = "deepgram_api"
+	ExecutionModeAssemblyAI     ExecutionMode = "assemblyai_api"
 	ExecutionModeOllama         ExecutionMode = "ollama_local"
 	ExecutionModeOpenRouter     ExecutionMode = "openrouter_api"
 )
@@ -74,6 +76,10 @@ const (
 	CapabilityDictionaryPrompt      Capability = "dictionary_prompt"
 	CapabilityDictionaryNativeHints Capability = "dictionary_native_hints"
 	CapabilitySessionSummary        Capability = "session_summary"
+	CapabilitySpeakerDiarization    Capability = "speaker_diarization"
+	CapabilitySpeakerIdentification Capability = "speaker_identification"
+	CapabilitySpeakerAttribution    Capability = "speaker_attribution"
+	CapabilitySpeakerEnrollment     Capability = "speaker_enrollment"
 )
 
 // ModelVariant is a concrete model choice inside a provider profile group.
@@ -105,6 +111,20 @@ type ProviderProfile struct {
 	Default        bool           `json:"default,omitempty"`
 	Recommended    bool           `json:"recommended,omitempty"`
 	Experimental   bool           `json:"experimental,omitempty"`
+}
+
+// NormalizeProviderProfileID maps legacy profile IDs to their current
+// canonical IDs while preserving unknown custom IDs.
+func NormalizeProviderProfileID(profileID string) string {
+	profileID = strings.TrimSpace(profileID)
+	switch profileID {
+	case "stt.google.chirp-3":
+		return "stt.google.latest-long"
+	case "stt.google.chirp-3-diarization":
+		return "stt.google.latest-long-diarization"
+	default:
+		return profileID
+	}
 }
 
 func (p ProviderProfile) HasCapability(capability Capability) bool {
@@ -283,7 +303,7 @@ func DefaultModeContracts() []ModeContract {
 			Intelligence: IntelligenceUser,
 			Input:        "audio",
 			Output:       "text",
-			Allowed:      []Capability{CapabilityTranscription, CapabilitySTT, CapabilityAudioInput, CapabilityDictionaryPrompt, CapabilityDictionaryNativeHints},
+			Allowed:      []Capability{CapabilityTranscription, CapabilitySTT, CapabilityAudioInput, CapabilityDictionaryPrompt, CapabilityDictionaryNativeHints, CapabilitySpeakerDiarization, CapabilitySpeakerIdentification, CapabilitySpeakerAttribution},
 			Forbidden:    []Capability{CapabilityToolCalling, CapabilityLLM, CapabilityRealtimeAudio, CapabilityTTS},
 		},
 		{
@@ -291,7 +311,7 @@ func DefaultModeContracts() []ModeContract {
 			Intelligence: IntelligenceUtility,
 			Input:        "audio_or_text_with_optional_context",
 			Output:       "one_shot_result",
-			Allowed:      []Capability{CapabilityLLM, CapabilityToolCalling, CapabilityTTS, CapabilitySessionSummary},
+			Allowed:      []Capability{CapabilityLLM, CapabilityToolCalling, CapabilityTTS, CapabilitySessionSummary, CapabilitySpeakerDiarization, CapabilitySpeakerIdentification, CapabilitySpeakerAttribution},
 			Forbidden:    []Capability{CapabilityRealtimeAudio},
 		},
 		{
@@ -299,7 +319,7 @@ func DefaultModeContracts() []ModeContract {
 			Intelligence: IntelligenceBrainstorming,
 			Input:        "realtime_audio_dialogue",
 			Output:       "dialogue_transcript_and_optional_summary",
-			Allowed:      []Capability{CapabilityRealtimeAudio, CapabilityPipelineFallback, CapabilityAudioInput, CapabilityTTS, CapabilitySessionSummary, CapabilityToolCalling},
+			Allowed:      []Capability{CapabilityRealtimeAudio, CapabilityPipelineFallback, CapabilityAudioInput, CapabilityTTS, CapabilitySessionSummary, CapabilityToolCalling, CapabilitySpeakerDiarization, CapabilitySpeakerIdentification, CapabilitySpeakerAttribution},
 			Forbidden:    []Capability{CapabilityTranscription},
 		},
 		{

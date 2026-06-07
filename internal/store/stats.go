@@ -5,6 +5,16 @@ import (
 	"database/sql"
 )
 
+// refreshStoreStats recomputes the cached per-scope store_stats row using the
+// dialect-appropriate aggregate query. The shared sqlStore dispatches through
+// this helper so both backends share one call site.
+func refreshStoreStats(ctx context.Context, db execContexter, d sqlDialect, scopeID int64) error {
+	if d.isPostgres() {
+		return refreshPostgresStoreStats(ctx, db, scopeID)
+	}
+	return refreshSQLiteStoreStats(ctx, db, scopeID)
+}
+
 func refreshSQLiteStoreStats(ctx context.Context, db execContexter, scopeID int64) error {
 	_, err := db.ExecContext(ctx, `
 		INSERT INTO store_stats (

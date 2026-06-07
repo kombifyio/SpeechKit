@@ -13,7 +13,12 @@
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 
-import { parseChangelogSections } from './changelog.mjs'
+import {
+  parseChangelogSections,
+  isMinorBaselineVersion,
+  getHighlightNotesForVersion,
+  findMarketingNoteProblems,
+} from './changelog.mjs'
 
 // Forbidden patterns. Each entry is {pattern, label, hint}. `pattern`
 // is a RegExp tested against the entry body; `label` is the short
@@ -236,6 +241,24 @@ if (isMain) {
   if (violations.length > 0) {
     process.stderr.write(`${formatViolations(violations, header)}\n`)
     process.exit(1)
+  }
+
+  // Minor-baseline releases (X.Y.0) feed the website's "What is new in vX.Y"
+  // marketing cards, so they must ship a curated `### Highlights` section.
+  // Enforce it here (release-time) in addition to the website build guard.
+  if (version && isMinorBaselineVersion(normalizeVersion(version))) {
+    const notes = getHighlightNotesForVersion(markdown, version)
+    const problems =
+      notes.length === 0
+        ? ['no `### Highlights` section — minor baseline releases must list 2-4 short marketing bullets']
+        : findMarketingNoteProblems(notes, { version: normalizeVersion(version) })
+    if (problems.length > 0) {
+      process.stderr.write(
+        `Website release highlights for ${header} are not marketing-ready:\n  - ${problems.join('\n  - ')}\n` +
+          'Fix the `### Highlights` section in CHANGELOG.md (see docs/changelog-style.md).\n',
+      )
+      process.exit(1)
+    }
   }
 
   process.stdout.write(`CHANGELOG.md ${header}: clean (${body.split('\n').length} lines scanned).\n`)

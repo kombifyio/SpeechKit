@@ -42,8 +42,15 @@ The server:
 export GOOGLE_AI_API_KEY="..."   # optional, enables Gemini Assist + Gemini Live
 export HF_TOKEN="..."            # optional, enables Hugging Face STT
 export OPENAI_API_KEY="..."      # optional, enables OpenAI STT/LLM/TTS
-# Optional only when Google STT is selected for Dictation:
+export DEEPGRAM_API_KEY="..."    # optional, enables Deepgram STT + diarization
+export ASSEMBLYAI_API_KEY="..."  # optional, enables AssemblyAI STT + diarization/identification
+# AssemblyAI streaming diarization defaults to wss://streaming.assemblyai.com/v3/ws.
+# Override providers.assemblyai.streaming_base_url for regional or self-hosted data zones.
+# Optional only when Google STT batch/REST is selected for Dictation:
 export SPEECHKIT_GOOGLE_STT_API_KEY="..."
+# Optional only for Google STT v2 streaming diarization:
+export GOOGLE_APPLICATION_CREDENTIALS="/run/secrets/google-stt-service-account.json"
+# or set SPEECHKIT_GOOGLE_STT_CREDENTIALS_JSON through your secret manager
 export SPEECHKIT_SERVER_TOKEN="replace-with-a-local-dev-token"
 
 # 2. Start from the published image.
@@ -76,9 +83,13 @@ secrets explicitly.
 For the common web integration profile — Dictation through Hugging Face,
 Assist through Gemini, Voice Agent through Gemini Live, and TTS disabled — set
 `HF_TOKEN`, `GOOGLE_AI_API_KEY`, and `[tts].enabled = false`. Do not set a
-Google STT key unless Dictation actually selects `stt.google.chirp-3`.
+Google STT key unless Dictation actually selects `stt.google.latest-long`.
 `GOOGLE_AI_API_KEY` is for Gemini Assist/Voice and does not make Google STT a
-required provider.
+required provider. Google STT diarization uses the same dedicated
+`SPEECHKIT_GOOGLE_STT_API_KEY`, not `GOOGLE_AI_API_KEY`, for batch/REST.
+Google STT v2 streaming diarization additionally requires service-account/ADC
+auth via `GOOGLE_APPLICATION_CREDENTIALS` or
+`SPEECHKIT_GOOGLE_STT_CREDENTIALS_JSON`.
 
 `/readyz` reports mode readiness for load balancers and ignores non-blocking
 optional provider probes. `/readyz/strict` keeps the diagnostic all-components
@@ -100,7 +111,6 @@ runtime credentials without storing secret values in JSON.
 | `SPEECHKIT_SERVER_EDGE_AUTH_SECRET_ENV` | Optional custom env var name for the edge-HMAC shared secret. |
 | `SPEECHKIT_SERVER_BEARER_ROLE` | Optional role for bearer-token callers, for example `admin` in a single-operator deployment. |
 | `SPEECHKIT_PUBLIC_URL` | Canonical public HTTP base used to generate browser-reachable Voice Agent `ws_url` values. |
-| `SPEECHKIT_SERVER_PUBLIC_URL` | Compatibility alias for `SPEECHKIT_PUBLIC_URL`; ignored when the canonical variable is also set. |
 
 Authenticated public modes fail startup if the required env credential values
 are empty. `auth_mode = "none"` remains limited to local loopback/dev use.
@@ -312,8 +322,7 @@ receive an HTML sign-in-required page; API requests still receive the JSON
 `/v1/voiceagent/sessions/{id}/ws` and
 `/api/v1/voiceagent/sessions/{id}/ws` bypass bearer/edge auth because the
 handler validates the short-lived session ticket itself. Browser clients should
-open `ws_url` with the returned `ws_subprotocol` (`ticket.<value>`); the
-deprecated query-string URL is compatibility-only. The bearer token is for HTTP
+open `ws_url` with the returned `ws_subprotocol` (`ticket.<value>`). The bearer token is for HTTP
 requests and does not belong in the browser WebSocket handshake. When auth is enabled, all other
 `/api/v1/*` and compatibility `/v1/*` calls require credentials.
 The setup page can generate a server API token during onboarding. The generated
@@ -336,6 +345,13 @@ For `edge_hmac`, the edge signs the exact string
 from `EDGE_AUTH_SECRET`. `role` may be empty, but the trailing newline remains
 part of the signature base.
 
+Optionally, the edge may also send `X-Edge-Auth-Ts` (Unix seconds) and append
+the timestamp to the signed string as a fifth field
+(`... + "\n" + ts`). When present, the server rejects requests whose timestamp
+deviates more than 5 minutes from server time, bounding replay of a captured
+header. The timestamp is backward compatible: an edge that omits `X-Edge-Auth-Ts`
+keeps using the four-field signature above.
+
 ## Public URL and WebSocket origins
 
 Set `[server].public_url` when the server is behind a reverse proxy or mounted
@@ -345,9 +361,7 @@ request host and ignores `X-Forwarded-Host`.
 
 Container/browser deployments should set `SPEECHKIT_PUBLIC_URL` to the
 browser-reachable HTTP base, for example `http://localhost:8080` in Docker
-Desktop. `SPEECHKIT_SERVER_PUBLIC_URL` is accepted as an alias for compatibility
-with older automation, but `SPEECHKIT_PUBLIC_URL` is canonical. If neither is
-set and the request reaches the server through a Docker-internal host such as
+Desktop. If it is not set and the request reaches the server through a Docker-internal host such as
 `speechkit-server:8080`, the returned `ws_url` may be unusable from the
 browser; either set the public URL or proxy the WebSocket through your backend.
 
@@ -360,6 +374,18 @@ Browser WebSocket clients must send an `Origin` that exactly matches
 Native clients that send no `Origin` are allowed. Use `["*"]` only for
 explicit local no-auth OSS/dev mode; authenticated server modes reject wildcard
 CORS during startup.
+
+Only loopback callers and proxies listed in `[server].trusted_proxy_cidrs` may
+influence security-sensitive behavior through `X-Forwarded-*` headers. This
+applies to admin-session cookie `Secure` flags and generated WebSocket URL
+schemes. Set this list to the CIDR ranges of the reverse proxy or ingress that
+terminates TLS in front of SpeechKit.
+
+Server resource limits default to bounded production values: `read_header_timeout_sec = 15`,
+`read_timeout_sec = 120`, `idle_timeout_sec = 120`, `max_header_bytes = 1048576`,
+and `max_decoded_audio_seconds = 600`. Zero values fall back to these defaults;
+negative values are rejected at startup. `WriteTimeout` intentionally remains
+unset so long-lived Voice Agent WebSockets are not cut off.
 
 If setup auth is switched to self-managed, SpeechKit does not generate a token
 or change the current server auth mode; the deployment owner must provide

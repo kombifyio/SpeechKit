@@ -294,7 +294,7 @@ func pcmBytesToSample(data []byte) mediapcm.PCM16Sample {
 	}
 	sample := make(mediapcm.PCM16Sample, len(data)/2)
 	for i := range sample {
-		sample[i] = int16(binary.LittleEndian.Uint16(data[i*2:]))
+		sample[i] = int16(binary.LittleEndian.Uint16(data[i*2:])) //nolint:gosec // PCM16 sample is a bit reinterpretation of audio data, not a numeric overflow
 	}
 	return sample
 }

@@ -21,6 +21,7 @@ import (
 	"github.com/kombifyio/SpeechKit/internal/server/middleware"
 	"github.com/kombifyio/SpeechKit/internal/server/storageauth"
 	"github.com/kombifyio/SpeechKit/internal/store"
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/speaker"
 )
 
 // defaultWSReadLimitBytes is the per-frame size cap when HandlerOptions.ReadLimit
@@ -36,11 +37,17 @@ const defaultWSReadLimitBytes int64 = 64 * 1024
 // header.
 const envAllowEmptyWSOriginVar = "SPEECHKIT_ALLOW_EMPTY_ORIGIN"
 
+// envAllowWildcardOriginVar permits a literal "*" entry in AllowedOrigins to
+// match every Origin. This disables CSRF-style protection for the WebSocket
+// upgrade and is intended for local development only. By default a "*" entry
+// is dropped (fail-closed) and a loud warning is emitted at handler
+// construction, so a stray wildcard in config cannot silently open the
+// cross-origin surface in production.
+const envAllowWildcardOriginVar = "SPEECHKIT_ALLOW_WILDCARD_ORIGIN"
+
 // wsTicketSubprotocolPrefix carries the session ticket as a WebSocket
 // subprotocol, e.g. "ticket.AbCd...". This keeps the ticket out of the
-// URL — and therefore out of any fronting reverse proxy's access log.
-// The legacy ?ticket=... query form remains accepted for backwards
-// compatibility with clients that pre-date this header convention.
+// URL and therefore out of any fronting reverse proxy's access log.
 const wsTicketSubprotocolPrefix = "ticket."
 
 // ProviderFactory builds a Framework kernel voice-agent provider on demand.
@@ -117,20 +124,25 @@ type LiveConfigFrame struct {
 	SilenceDurationMs int32
 	ActivityHandling  string
 	TurnCoverage      string
+	Speaker           speaker.Options
 }
 
 // LiveMessage is the subset of kernel/internal/voiceagent.LiveMessage the
 // adapter relays to the client. Matching field names keep the translation
 // trivial.
 type LiveMessage struct {
-	Audio                []byte
-	OutputTranscript     string
-	OutputTranscriptDone bool
-	InputTranscript      string
-	InputTranscriptDone  bool
-	ToolCalls            []ToolCall
-	Interrupted          bool
-	GoAway               bool
+	Audio                  []byte
+	OutputTranscript       string
+	OutputTranscriptDone   bool
+	InputTranscript        string
+	InputTranscriptDone    bool
+	InputSpeakerLabel      string
+	InputPersonID          string
+	InputDisplayName       string
+	InputSpeakerConfidence float64
+	ToolCalls              []ToolCall
+	Interrupted            bool
+	GoAway                 bool
 }
 
 type ToolCall struct {
@@ -153,6 +165,7 @@ type HandlerOptions struct {
 	Persona             PersonaResolver
 	PublicURL           string
 	AllowedOrigins      []string
+	TrustedProxyCIDRs   []string
 	MaxAllowedClockSkew time.Duration
 	// IdleTimeout terminates a session that hasn't seen any activity
 	// (client frame OR provider message) within the duration. Zero
@@ -180,6 +193,7 @@ type Handler struct {
 	liveKit        *LiveKitTokenIssuer
 	mediaBridge    MediaBridgeFactory
 	readLimit      int64
+	trustedProxies httpx.TrustedProxies
 }
 
 // New constructs a handler. All options except MaxAllowedClockSkew are
@@ -209,6 +223,7 @@ func New(opts HandlerOptions) (*Handler, error) {
 	if readLimit <= 0 {
 		readLimit = defaultWSReadLimitBytes
 	}
+	trustedProxies, _ := httpx.NewTrustedProxies(opts.TrustedProxyCIDRs)
 	return &Handler{
 		manager:        opts.Manager,
 		provider:       opts.Provider,
@@ -220,6 +235,7 @@ func New(opts HandlerOptions) (*Handler, error) {
 		liveKit:        opts.LiveKit,
 		mediaBridge:    mediaBridge,
 		readLimit:      readLimit,
+		trustedProxies: trustedProxies,
 	}, nil
 }
 
@@ -240,7 +256,6 @@ type createSessionResponse struct {
 	SessionID     string           `json:"session_id"`
 	WSURL         string           `json:"ws_url"`
 	WSSubprotocol string           `json:"ws_subprotocol,omitempty"`
-	LegacyWSURL   string           `json:"legacy_ws_url,omitempty"`
 	Ticket        string           `json:"ticket"`
 	ExpiresAt     string           `json:"expires_at"`
 	LiveKit       *LiveKitJoinInfo `json:"livekit,omitempty"`
@@ -374,7 +389,6 @@ func (h *Handler) createSession(w http.ResponseWriter, r *http.Request) {
 	}
 
 	wsURL := h.webSocketURL(r, session.ID)
-	legacyWSURL := h.legacyWebSocketURL(r, session.ID, ticket)
 	wsSubprotocol := wsTicketSubprotocol(ticket)
 	expires := h.manager.opts.Clock().Add(h.manager.opts.TicketTTL).UTC().Format(time.RFC3339)
 	var liveKit *LiveKitJoinInfo
@@ -394,7 +408,6 @@ func (h *Handler) createSession(w http.ResponseWriter, r *http.Request) {
 		SessionID:     session.ID,
 		WSURL:         wsURL,
 		WSSubprotocol: wsSubprotocol,
-		LegacyWSURL:   legacyWSURL,
 		Ticket:        ticket,
 		ExpiresAt:     expires,
 		LiveKit:       liveKit,
@@ -481,10 +494,6 @@ func (h *Handler) upgradeWS(w http.ResponseWriter, r *http.Request, sessionID st
 		return
 	}
 
-	// Prefer subprotocol-carried ticket over the legacy ?ticket= query
-	// string. Query form leaks into fronting-proxy access logs (NGINX,
-	// Cloudflare, Render); subprotocol form rides the upgrade handshake
-	// only. Both are accepted to keep older clients working.
 	ticket, ticketSubproto := extractWSTicket(r)
 	if err := h.manager.VerifyTicket(sessionID, ticket); err != nil {
 		switch {
@@ -523,7 +532,7 @@ func (h *Handler) upgradeWS(w http.ResponseWriter, r *http.Request, sessionID st
 	conn, err := websocket.Accept(w, r, acceptOpts)
 	if err != nil {
 		h.manager.Remove(sessionID)
-		slog.Warn("voiceagent: WS upgrade failed", "session_id", sessionID, "err", err)
+		slog.Warn("voiceagent: WS upgrade failed", "session_id", sessionID, "err", err) // #nosec G706 -- slog writes request/session values as structured attributes, not interpolated log text.
 		return
 	}
 	conn.SetReadLimit(h.readLimit)
@@ -547,7 +556,7 @@ func (h *Handler) upgradeWS(w http.ResponseWriter, r *http.Request, sessionID st
 }
 
 func (h *Handler) webSocketURL(r *http.Request, sessionID string) string {
-	scheme, host, prefix := requestWebSocketParts(r)
+	scheme, host, prefix := h.requestWebSocketParts(r)
 	if h.publicURL != "" {
 		if parsed, ok := parsePublicURL(h.publicURL); ok {
 			scheme = parsed.scheme
@@ -556,10 +565,6 @@ func (h *Handler) webSocketURL(r *http.Request, sessionID string) string {
 		}
 	}
 	return fmt.Sprintf("%s://%s%s/voiceagent/sessions/%s/ws", scheme, host, voiceAgentPublicBase(prefix), sessionID)
-}
-
-func (h *Handler) legacyWebSocketURL(r *http.Request, sessionID, ticket string) string {
-	return h.webSocketURL(r, sessionID) + "?ticket=" + url.QueryEscape(ticket)
 }
 
 func wsTicketSubprotocol(ticket string) string {
@@ -597,9 +602,9 @@ func parsePublicURL(raw string) (publicURLParts, bool) {
 	}, true
 }
 
-func requestWebSocketParts(r *http.Request) (scheme, host, prefix string) {
+func (h *Handler) requestWebSocketParts(r *http.Request) (scheme, host, prefix string) {
 	scheme = "wss"
-	if r.TLS == nil && !strings.EqualFold(r.Header.Get("X-Forwarded-Proto"), "https") {
+	if h == nil || !h.trustedProxies.RequestIsHTTPS(r) {
 		scheme = "ws"
 	}
 	host = sanitizeRequestHost(r.Host)
@@ -640,12 +645,10 @@ func voiceAgentPublicBase(prefix string) string {
 	}
 }
 
-// extractWSTicket prefers the Sec-WebSocket-Protocol subprotocol form
-// over the legacy ?ticket= query string. The subprotocol must look like
-// "ticket.<value>"; the returned subproto string MUST be echoed back to
-// the client via AcceptOptions.Subprotocols so the WS handshake
-// completes per RFC 6455. When no subprotocol header is present the
-// query-string ticket is returned with an empty subproto.
+// extractWSTicket reads only the Sec-WebSocket-Protocol subprotocol form.
+// The subprotocol must look like "ticket.<value>"; the returned subproto
+// string MUST be echoed back to the client via AcceptOptions.Subprotocols
+// so the WS handshake completes per RFC 6455.
 func extractWSTicket(r *http.Request) (ticket, subproto string) {
 	for _, header := range r.Header.Values("Sec-WebSocket-Protocol") {
 		for _, raw := range strings.Split(header, ",") {
@@ -659,7 +662,7 @@ func extractWSTicket(r *http.Request) (ticket, subproto string) {
 			}
 		}
 	}
-	return strings.TrimSpace(r.URL.Query().Get("ticket")), ""
+	return "", ""
 }
 
 // wsEnvBoolTrue returns true when the named env var holds 1/true/yes/on
@@ -675,11 +678,23 @@ func wsEnvBoolTrue(name string) bool {
 }
 
 func normalizeAllowedOrigins(origins []string) []string {
+	wildcardOptIn := wsEnvBoolTrue(envAllowWildcardOriginVar)
 	out := make([]string, 0, len(origins))
 	for _, origin := range origins {
-		if trimmed := strings.TrimSpace(origin); trimmed != "" {
-			out = append(out, trimmed)
+		trimmed := strings.TrimSpace(origin)
+		if trimmed == "" {
+			continue
 		}
+		if trimmed == "*" && !wildcardOptIn {
+			// Fail-closed: drop the wildcard so it cannot match every
+			// Origin in production. Warn loudly so a misconfiguration is
+			// visible in logs rather than silently honoured.
+			slog.Warn("voiceagent: dropping wildcard '*' from allowed WebSocket origins; "+
+				"cross-origin upgrades stay denied. Set "+envAllowWildcardOriginVar+"=1 to permit it (development only).",
+				"hint", "configure explicit origins instead of '*'")
+			continue
+		}
+		out = append(out, trimmed)
 	}
 	return out
 }

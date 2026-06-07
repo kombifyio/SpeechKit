@@ -27,7 +27,6 @@ type VoiceAgentTicket struct {
 	SessionID     string    `json:"session_id"`
 	WSURL         string    `json:"ws_url"`
 	WSSubprotocol string    `json:"ws_subprotocol,omitempty"`
-	LegacyWSURL   string    `json:"legacy_ws_url,omitempty"`
 	Ticket        string    `json:"ticket"`
 	ExpiresAt     time.Time `json:"expires_at"`
 }
@@ -98,25 +97,20 @@ func (c *Client) CreateVoiceAgentSession(ctx context.Context) (*VoiceAgentTicket
 		SessionID     string `json:"session_id"`
 		WSURL         string `json:"ws_url"`
 		WSSubprotocol string `json:"ws_subprotocol"`
-		LegacyWSURL   string `json:"legacy_ws_url"`
 		Ticket        string `json:"ticket"`
 		ExpiresAt     string `json:"expires_at"`
 	}
 	if err := c.DoJSON(ctx, http.MethodPost, "/v1/voiceagent/sessions", map[string]any{}, &raw); err != nil {
 		return nil, err
 	}
-	if raw.SessionID == "" || raw.WSURL == "" || raw.Ticket == "" {
+	if raw.SessionID == "" || raw.WSURL == "" || raw.WSSubprotocol == "" || raw.Ticket == "" {
 		return nil, errors.New("speechkit: voice agent create response missing fields")
 	}
 	t := &VoiceAgentTicket{
 		SessionID:     raw.SessionID,
 		WSURL:         raw.WSURL,
 		WSSubprotocol: raw.WSSubprotocol,
-		LegacyWSURL:   raw.LegacyWSURL,
 		Ticket:        raw.Ticket,
-	}
-	if t.WSSubprotocol == "" {
-		t.WSSubprotocol = "ticket." + raw.Ticket
 	}
 	if raw.ExpiresAt != "" {
 		if parsed, err := time.Parse(time.RFC3339, raw.ExpiresAt); err == nil {

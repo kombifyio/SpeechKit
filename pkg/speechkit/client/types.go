@@ -5,6 +5,7 @@ import (
 	"time"
 
 	framework "github.com/kombifyio/SpeechKit/pkg/speechkit"
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/speaker"
 )
 
 type HTTPError struct {
@@ -30,16 +31,18 @@ type TranscribeOptions struct {
 	Language string
 	Model    string
 	Prompt   string
+	Speaker  speaker.Options
 }
 
 type TranscribeResponse struct {
-	Text       string  `json:"text"`
-	Language   string  `json:"language,omitempty"`
-	DurationMs int64   `json:"duration_ms"`
-	LatencyMs  int64   `json:"latency_ms"`
-	Provider   string  `json:"provider,omitempty"`
-	Model      string  `json:"model,omitempty"`
-	Confidence float64 `json:"confidence,omitempty"`
+	Text       string                     `json:"text"`
+	Language   string                     `json:"language,omitempty"`
+	DurationMs int64                      `json:"duration_ms"`
+	LatencyMs  int64                      `json:"latency_ms"`
+	Provider   string                     `json:"provider,omitempty"`
+	Model      string                     `json:"model,omitempty"`
+	Confidence float64                    `json:"confidence,omitempty"`
+	Speakers   *speaker.DiarizationResult `json:"speakers,omitempty"`
 }
 
 type ConfigSummary map[string]any
@@ -65,19 +68,20 @@ type AudioAsset struct {
 }
 
 type Transcript struct {
-	ID          int64       `json:"id"`
-	Text        string      `json:"text"`
-	Language    string      `json:"language"`
-	Provider    string      `json:"provider"`
-	Model       string      `json:"model"`
-	DurationMs  int64       `json:"durationMs"`
-	LatencyMs   int64       `json:"latencyMs"`
-	AudioPath   string      `json:"audioPath,omitempty"`
-	Audio       *AudioAsset `json:"audio,omitempty"`
-	CreatedAt   time.Time   `json:"createdAt"`
-	OwnerUserID string      `json:"ownerUserId,omitempty"`
-	OwnerOrgID  string      `json:"ownerOrgId,omitempty"`
-	OwnerSource string      `json:"ownerSource,omitempty"`
+	ID          int64                      `json:"id"`
+	Text        string                     `json:"text"`
+	Language    string                     `json:"language"`
+	Provider    string                     `json:"provider"`
+	Model       string                     `json:"model"`
+	DurationMs  int64                      `json:"durationMs"`
+	LatencyMs   int64                      `json:"latencyMs"`
+	AudioPath   string                     `json:"audioPath,omitempty"`
+	Audio       *AudioAsset                `json:"audio,omitempty"`
+	CreatedAt   time.Time                  `json:"createdAt"`
+	OwnerUserID string                     `json:"ownerUserId,omitempty"`
+	OwnerOrgID  string                     `json:"ownerOrgId,omitempty"`
+	OwnerSource string                     `json:"ownerSource,omitempty"`
+	Speakers    *speaker.DiarizationResult `json:"speakers,omitempty"`
 }
 
 type VoiceAgentTranscript struct {

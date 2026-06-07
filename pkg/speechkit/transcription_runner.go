@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"strings"
 	"time"
+
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/speaker"
 )
 
 // Transcriber converts raw WAV audio into a [Transcript].
@@ -20,6 +22,7 @@ type Transcript struct {
 	Provider   string
 	Model      string
 	Confidence float64
+	Speakers   *speaker.DiarizationResult
 }
 
 // QuickNoteStore persists and retrieves Quick Note records.

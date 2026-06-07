@@ -9,9 +9,13 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"sort"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/kombifyio/SpeechKit/internal/netsec"
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/speaker"
 )
 
 const (
@@ -25,27 +29,40 @@ const (
 // validated against Validation on every request. Default Validation is strict
 // (public https only).
 type GoogleSTTProvider struct {
-	APIKey     string
-	Model      string // "chirp_3", "chirp_2", "latest_long"
-	BaseURL    string // Override for testing; defaults to googleSTTBaseURL
-	Validation netsec.ValidationOptions
-	client     *http.Client
+	APIKey                    string
+	Model                     string // "latest_long", "latest_short", or another Google STT v1 model tag
+	STTCredentialsJSONEnv     string
+	ApplicationCredentialsEnv string
+	BaseURL                   string // Override for testing; defaults to googleSTTBaseURL
+	Validation                netsec.ValidationOptions
+	client                    *http.Client
 }
 
 // NewGoogleSTTProvider creates a provider for Google Cloud Speech-to-Text.
-// Model defaults to "chirp_3" if empty.
+// Model defaults to "latest_long" if empty.
 func NewGoogleSTTProvider(apiKey, model string) *GoogleSTTProvider {
 	if model == "" {
-		model = "chirp_3"
+		model = "latest_long"
 	}
 	p := &GoogleSTTProvider{
-		APIKey:  apiKey,
-		Model:   model,
-		BaseURL: googleSTTBaseURL,
+		APIKey:                    apiKey,
+		Model:                     model,
+		STTCredentialsJSONEnv:     "SPEECHKIT_GOOGLE_STT_CREDENTIALS_JSON",
+		ApplicationCredentialsEnv: "GOOGLE_APPLICATION_CREDENTIALS",
+		BaseURL:                   googleSTTBaseURL,
 		// Validation zero-value = strict: public https only.
 	}
 	p.client = netsec.NewSafeHTTPClient(netsec.ClientOptions{Timeout: 30 * time.Second, DialValidation: &p.Validation})
 	return p
+}
+
+func (p *GoogleSTTProvider) SetStreamingCredentialEnvs(credentialsJSONEnv, applicationCredentialsEnv string) {
+	if strings.TrimSpace(credentialsJSONEnv) != "" {
+		p.STTCredentialsJSONEnv = strings.TrimSpace(credentialsJSONEnv)
+	}
+	if strings.TrimSpace(applicationCredentialsEnv) != "" {
+		p.ApplicationCredentialsEnv = strings.TrimSpace(applicationCredentialsEnv)
+	}
 }
 
 // googleRecognizeRequest is the request body for the v1 speech:recognize endpoint.
@@ -55,24 +72,48 @@ type googleRecognizeRequest struct {
 }
 
 type googleRecognitionConfig struct {
-	Encoding        string `json:"encoding"`
-	SampleRateHertz int    `json:"sampleRateHertz"`
-	LanguageCode    string `json:"languageCode,omitempty"`
-	Model           string `json:"model,omitempty"`
+	Encoding              string                   `json:"encoding"`
+	SampleRateHertz       int                      `json:"sampleRateHertz"`
+	LanguageCode          string                   `json:"languageCode,omitempty"`
+	Model                 string                   `json:"model,omitempty"`
+	EnableWordTimeOffsets bool                     `json:"enableWordTimeOffsets,omitempty"`
+	DiarizationConfig     *googleDiarizationConfig `json:"diarizationConfig,omitempty"`
 }
 
 type googleRecognitionAudio struct {
 	Content string `json:"content"` // base64-encoded audio
 }
 
+type googleDiarizationConfig struct {
+	EnableSpeakerDiarization bool `json:"enableSpeakerDiarization"`
+	MinSpeakerCount          int  `json:"minSpeakerCount,omitempty"`
+	MaxSpeakerCount          int  `json:"maxSpeakerCount,omitempty"`
+}
+
 // googleRecognizeResponse is the response from the v1 speech:recognize endpoint.
 type googleRecognizeResponse struct {
-	Results []struct {
-		Alternatives []struct {
-			Transcript string  `json:"transcript"`
-			Confidence float64 `json:"confidence"`
-		} `json:"alternatives"`
-	} `json:"results"`
+	Results []googleSpeechRecognitionResult `json:"results"`
+}
+
+type googleSpeechRecognitionResult struct {
+	Alternatives []googleSpeechAlternative `json:"alternatives"`
+	LanguageCode string                    `json:"languageCode,omitempty"`
+}
+
+type googleSpeechAlternative struct {
+	Transcript string           `json:"transcript"`
+	Confidence float64          `json:"confidence"`
+	Words      []googleWordInfo `json:"words,omitempty"`
+}
+
+type googleWordInfo struct {
+	StartTime    string `json:"startTime,omitempty"`
+	EndTime      string `json:"endTime,omitempty"`
+	StartOffset  string `json:"startOffset,omitempty"`
+	EndOffset    string `json:"endOffset,omitempty"`
+	Word         string `json:"word"`
+	SpeakerTag   int    `json:"speakerTag,omitempty"`
+	SpeakerLabel string `json:"speakerLabel,omitempty"`
 }
 
 // mapLanguageCode maps short language codes to BCP-47 codes expected by Google.
@@ -123,17 +164,36 @@ func (p *GoogleSTTProvider) Transcribe(ctx context.Context, audio []byte, opts T
 	}
 
 	langCode := mapLanguageCode(opts.Language)
+	speakerOpts := opts.Speaker.Normalized()
+
+	// Google STT v1 rejects a sample-rate mismatch with HTTP 400. Derive the
+	// real rate from the WAV header and send raw PCM; fall back to 16 kHz for
+	// already-raw PCM input (the SpeechKit device-capture rate).
+	content := audio
+	sampleRate := 16000
+	if pcm, rate, _, ok := pcm16FromWAV(audio); ok {
+		content = pcm
+		sampleRate = rate
+	}
 
 	reqBody := googleRecognizeRequest{
 		Config: googleRecognitionConfig{
 			Encoding:        "LINEAR16",
-			SampleRateHertz: 16000,
+			SampleRateHertz: sampleRate,
 			LanguageCode:    langCode,
 			Model:           model,
 		},
 		Audio: googleRecognitionAudio{
-			Content: base64.StdEncoding.EncodeToString(audio),
+			Content: base64.StdEncoding.EncodeToString(content),
 		},
+	}
+	if speakerOpts.WantsDiarization() {
+		reqBody.Config.EnableWordTimeOffsets = true
+		reqBody.Config.DiarizationConfig = &googleDiarizationConfig{
+			EnableSpeakerDiarization: true,
+			MinSpeakerCount:          speakerMin(speakerOpts),
+			MaxSpeakerCount:          speakerMax(speakerOpts),
+		}
 	}
 
 	jsonBody, err := json.Marshal(reqBody)
@@ -172,6 +232,7 @@ func (p *GoogleSTTProvider) Transcribe(ctx context.Context, audio []byte, opts T
 	// Concatenate all result transcripts.
 	var text string
 	var confidence float64
+	var diarization *speaker.DiarizationResult
 	for _, r := range gResp.Results {
 		if len(r.Alternatives) > 0 {
 			text += r.Alternatives[0].Transcript
@@ -183,6 +244,9 @@ func (p *GoogleSTTProvider) Transcribe(ctx context.Context, audio []byte, opts T
 	if lang == "" {
 		lang = "de"
 	}
+	if speakerOpts.WantsDiarization() {
+		diarization = googleDiarizationFromResponse(gResp, p.Name(), model, text, lang)
+	}
 
 	return &Result{
 		Text:       text,
@@ -191,12 +255,103 @@ func (p *GoogleSTTProvider) Transcribe(ctx context.Context, audio []byte, opts T
 		Provider:   p.Name(),
 		Model:      model,
 		Confidence: confidence,
+		Speakers:   diarization,
 	}, nil
 }
 
 // Name returns the provider identifier.
 func (p *GoogleSTTProvider) Name() string {
 	return "google"
+}
+
+func googleDiarizationFromResponse(resp googleRecognizeResponse, provider, model, text, language string) *speaker.DiarizationResult {
+	googleWords := googleDiarizedWords(resp)
+	if len(googleWords) == 0 {
+		return nil
+	}
+	words := make([]speaker.SpeakerWord, 0, len(googleWords))
+	for _, word := range googleWords {
+		label := strings.TrimSpace(word.SpeakerLabel)
+		if label == "" {
+			// Google v1 diarization assigns a speakerTag per word. Some models
+			// (e.g. latest_long) 0-index the tags, so tag 0 is a real speaker,
+			// not "unassigned" — dropping it collapsed two speakers into one.
+			// This function only runs when diarization was requested.
+			label = fmt.Sprint(word.SpeakerTag)
+		}
+		words = append(words, speaker.SpeakerWord{
+			Text:         word.Word,
+			StartMs:      parseGoogleDurationMs(firstNonEmptyString(word.StartTime, word.StartOffset)),
+			EndMs:        parseGoogleDurationMs(firstNonEmptyString(word.EndTime, word.EndOffset)),
+			SpeakerLabel: speaker.NormalizeSpeakerLabel(label),
+		})
+	}
+	// Google v1 can split diarized words across results (one per speaker turn);
+	// sort by start time so segments reflect the true conversational order.
+	sort.SliceStable(words, func(i, j int) bool { return words[i].StartMs < words[j].StartMs })
+	segments := speaker.BuildSegmentsFromWords(words)
+	return &speaker.DiarizationResult{
+		Provider: provider,
+		Model:    model,
+		Level:    speaker.IdentificationDiarization,
+		Text:     text,
+		Language: language,
+		Speakers: speaker.SpeakersFromSegments(segments),
+		Segments: segments,
+		Words:    words,
+	}
+}
+
+// googleDiarizedWords aggregates word-level diarization output. Google v1 may
+// either split words across results (one per speaker turn) or consolidate them
+// in a final result; collecting words from every result/alternative that
+// carries them handles both shapes without dropping a speaker.
+func googleDiarizedWords(resp googleRecognizeResponse) []googleWordInfo {
+	var words []googleWordInfo
+	for i := range resp.Results {
+		for j := range resp.Results[i].Alternatives {
+			if alt := resp.Results[i].Alternatives[j]; len(alt.Words) > 0 {
+				words = append(words, alt.Words...)
+				break
+			}
+		}
+	}
+	return words
+}
+
+func parseGoogleDurationMs(raw string) int64 {
+	raw = strings.TrimSpace(strings.TrimSuffix(raw, "s"))
+	if raw == "" {
+		return 0
+	}
+	value, err := strconv.ParseFloat(raw, 64)
+	if err != nil {
+		return 0
+	}
+	return int64(value * 1000)
+}
+
+func speakerMin(opts speaker.Options) int {
+	if opts.SpeakersExpected > 0 {
+		return opts.SpeakersExpected
+	}
+	return opts.MinSpeakersExpected
+}
+
+func speakerMax(opts speaker.Options) int {
+	if opts.SpeakersExpected > 0 {
+		return opts.SpeakersExpected
+	}
+	return opts.MaxSpeakersExpected
+}
+
+func firstNonEmptyString(values ...string) string {
+	for _, value := range values {
+		if strings.TrimSpace(value) != "" {
+			return strings.TrimSpace(value)
+		}
+	}
+	return ""
 }
 
 // Health checks if the Google Speech API is reachable.

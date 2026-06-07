@@ -52,6 +52,7 @@ func (p *CascadedProvider) Connect(ctx context.Context, cfg LiveConfigFrame) err
 		Voice:            cfg.Voice,
 		SystemPrompt:     cfg.SystemPrompt,
 		RefinementPrompt: cfg.RefinementPrompt,
+		Speaker:          cfg.Speaker,
 	})
 }
 
@@ -62,6 +63,7 @@ func (p *CascadedProvider) UpdateInstructions(ctx context.Context, cfg LiveConfi
 		Voice:            cfg.Voice,
 		SystemPrompt:     cfg.SystemPrompt,
 		RefinementPrompt: cfg.RefinementPrompt,
+		Speaker:          cfg.Speaker,
 	})
 }
 
@@ -85,11 +87,15 @@ func (p *CascadedProvider) Receive(ctx context.Context) (*LiveMessage, error) {
 		return nil, nil
 	}
 	return &LiveMessage{
-		Audio:                msg.Audio,
-		InputTranscript:      msg.InputTranscript,
-		InputTranscriptDone:  msg.InputTranscriptDone,
-		OutputTranscript:     msg.OutputTranscript,
-		OutputTranscriptDone: msg.OutputTranscriptDone,
+		Audio:                  msg.Audio,
+		InputTranscript:        msg.InputTranscript,
+		InputTranscriptDone:    msg.InputTranscriptDone,
+		InputSpeakerLabel:      msg.InputSpeakerLabel,
+		InputPersonID:          msg.InputPersonID,
+		InputDisplayName:       msg.InputDisplayName,
+		InputSpeakerConfidence: msg.InputSpeakerConfidence,
+		OutputTranscript:       msg.OutputTranscript,
+		OutputTranscriptDone:   msg.OutputTranscriptDone,
 	}, nil
 }
 

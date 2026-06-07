@@ -114,26 +114,32 @@ func TestApplyServerRuntimeDefaults_UsesPublicURLEnvWithoutSelfHostedDefaults(t 
 	}
 }
 
-func TestApplyServerRuntimeDefaults_UsesServerPublicURLAlias(t *testing.T) {
+func TestApplyServerRuntimeDefaults_IgnoresRemovedServerPublicURLAlias(t *testing.T) {
 	t.Setenv("SPEECHKIT_SERVER_PUBLIC_URL", " http://localhost:8080/ ")
 
 	cfg := defaults()
-	ApplyServerRuntimeDefaults(cfg)
+	notes := ApplyServerRuntimeDefaults(cfg)
 
-	if cfg.Server.PublicURL != "http://localhost:8080" {
-		t.Fatalf("Server.PublicURL = %q, want server public URL alias from env", cfg.Server.PublicURL)
+	if cfg.Server.PublicURL != "" {
+		t.Fatalf("Server.PublicURL = %q, want removed alias ignored", cfg.Server.PublicURL)
+	}
+	if !notesContain(notes, "SPEECHKIT_SERVER_PUBLIC_URL was removed; use SPEECHKIT_PUBLIC_URL") {
+		t.Fatalf("notes = %#v, want removed alias message", notes)
 	}
 }
 
-func TestApplyServerRuntimeDefaults_PublicURLEnvWinsOverAlias(t *testing.T) {
+func TestApplyServerRuntimeDefaults_PublicURLEnvIgnoresRemovedAlias(t *testing.T) {
 	t.Setenv("SPEECHKIT_PUBLIC_URL", " https://canonical.example.test/ ")
 	t.Setenv("SPEECHKIT_SERVER_PUBLIC_URL", " http://localhost:8080/ ")
 
 	cfg := defaults()
-	ApplyServerRuntimeDefaults(cfg)
+	notes := ApplyServerRuntimeDefaults(cfg)
 
 	if cfg.Server.PublicURL != "https://canonical.example.test" {
 		t.Fatalf("Server.PublicURL = %q, want canonical public URL env to win", cfg.Server.PublicURL)
+	}
+	if !notesContain(notes, "SPEECHKIT_SERVER_PUBLIC_URL was removed; use SPEECHKIT_PUBLIC_URL") {
+		t.Fatalf("notes = %#v, want removed alias message", notes)
 	}
 }
 

@@ -34,11 +34,11 @@ const (
 // (or "unavailable") once their bootstrap completes.
 type HealthRegistry struct {
 	mu         sync.RWMutex
-	components map[string]componentEntry
+	components map[string]ComponentEntry
 	startedAt  time.Time
 }
 
-type componentEntry struct {
+type ComponentEntry struct {
 	Status    ComponentStatus `json:"status"`
 	Detail    string          `json:"detail,omitempty"`
 	UpdatedAt time.Time       `json:"updated_at"`
@@ -58,7 +58,7 @@ type ComponentOptions struct {
 // NewHealthRegistry returns an empty registry.
 func NewHealthRegistry() *HealthRegistry {
 	return &HealthRegistry{
-		components: map[string]componentEntry{},
+		components: map[string]ComponentEntry{},
 		startedAt:  time.Now().UTC(),
 	}
 }
@@ -78,7 +78,7 @@ func (r *HealthRegistry) SetReadyWithOptions(name string, status ComponentStatus
 	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	r.components[name] = componentEntry{
+	r.components[name] = ComponentEntry{
 		Status:    status,
 		Detail:    detail,
 		UpdatedAt: time.Now().UTC(),
@@ -92,22 +92,22 @@ func (r *HealthRegistry) SetReadyWithOptions(name string, status ComponentStatus
 // Snapshot returns a copy of the current component map plus strict readiness.
 // Strict readiness is "ok" iff every component is "ok"; otherwise the worst
 // individual status wins (starting < degraded < unavailable).
-func (r *HealthRegistry) Snapshot() (overall ComponentStatus, components map[string]componentEntry, uptimeSeconds int64) {
+func (r *HealthRegistry) Snapshot() (overall ComponentStatus, components map[string]ComponentEntry, uptimeSeconds int64) {
 	return r.snapshot(false)
 }
 
-func (r *HealthRegistry) ReadinessSnapshot() (overall ComponentStatus, components map[string]componentEntry, uptimeSeconds int64) {
+func (r *HealthRegistry) ReadinessSnapshot() (overall ComponentStatus, components map[string]ComponentEntry, uptimeSeconds int64) {
 	return r.snapshot(true)
 }
 
-func (r *HealthRegistry) snapshot(blockingOnly bool) (overall ComponentStatus, components map[string]componentEntry, uptimeSeconds int64) {
+func (r *HealthRegistry) snapshot(blockingOnly bool) (overall ComponentStatus, components map[string]ComponentEntry, uptimeSeconds int64) {
 	if r == nil {
 		return StatusUnavailable, nil, 0
 	}
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 
-	components = make(map[string]componentEntry, len(r.components))
+	components = make(map[string]ComponentEntry, len(r.components))
 	overall = StatusOK
 	considered := 0
 	for name, entry := range r.components {

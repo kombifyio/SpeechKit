@@ -77,6 +77,9 @@ func TestLoadDefaults(t *testing.T) {
 	if cfg.General.AutoStartOnLaunch {
 		t.Fatal("general auto-start should be disabled by default")
 	}
+	if cfg.General.EagerWarmup {
+		t.Fatal("general eager warmup should be disabled by default")
+	}
 	if !cfg.Local.Enabled {
 		t.Error("local provider should be enabled by default")
 	}
@@ -805,7 +808,7 @@ agent_model = "gemma4:e4b"
 	}
 }
 
-func TestLoadBackfillsVoiceAgentFrameworkPromptFromLegacyInstruction(t *testing.T) {
+func TestLoadRejectsRemovedVoiceAgentInstructionAlias(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "config.toml")
 
@@ -817,16 +820,12 @@ instruction = "Legacy framework prompt"
 		t.Fatal(err)
 	}
 
-	cfg, err := Load(path)
-	if err != nil {
-		t.Fatalf("Load: %v", err)
+	_, err := Load(path)
+	if err == nil {
+		t.Fatal("Load succeeded, want removed alias error")
 	}
-
-	if got, want := cfg.VoiceAgent.FrameworkPrompt, "Legacy framework prompt"; got != want {
-		t.Fatalf("framework prompt = %q, want %q", got, want)
-	}
-	if got, want := cfg.VoiceAgent.Instruction, "Legacy framework prompt"; got != want {
-		t.Fatalf("legacy instruction = %q, want %q", got, want)
+	if got, want := err.Error(), "config [voice_agent].instruction was removed; use [voice_agent].framework_prompt"; got != want {
+		t.Fatalf("Load error = %q, want %q", got, want)
 	}
 }
 

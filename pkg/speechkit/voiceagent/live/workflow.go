@@ -28,7 +28,7 @@ func prepareWorkflowStart(cfg LiveConfig) (LiveConfig, *workflowState) {
 	}
 	basePrompt := strings.TrimSpace(wf.BasePrompt)
 	if basePrompt == "" {
-		basePrompt = firstWorkflowPrompt(cfg.FrameworkPrompt, cfg.Instruction, cfg.SystemPrompt)
+		basePrompt = firstWorkflowPrompt(cfg.FrameworkPrompt)
 	}
 	next, ok := applyWorkflowStepToConfig(cfg, wf, basePrompt, stepIndex)
 	if !ok {
@@ -149,8 +149,6 @@ func applyWorkflowStepToConfig(cfg LiveConfig, wf WorkflowConfig, basePrompt str
 	wf.BasePrompt = basePrompt
 	step := wf.Steps[stepIndex]
 	cfg.FrameworkPrompt = composeWorkflowPrompt(basePrompt, step)
-	cfg.Instruction = cfg.FrameworkPrompt
-	cfg.SystemPrompt = cfg.FrameworkPrompt
 	cfg.Workflow = &wf
 	return cfg, true
 }

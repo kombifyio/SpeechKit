@@ -7,6 +7,7 @@ Start with the module you are working on, then jump into the detailed docs.
 - [../README.md](../README.md) — short module overview.
 - [speechkit-framework-api.md](./speechkit-framework-api.md) — local-first Go backend API, mode contracts, provider catalog, and local control API.
 - [architecture/sdk-surface-boundary.md](./architecture/sdk-surface-boundary.md) — public `pkg/speechkit/` boundary for v0.40.1 embedders.
+- [capabilities/voice-capability-matrix.json](./capabilities/voice-capability-matrix.json) — source of truth for mode/capability/provider support and future Notion sync.
 - [voice-companion.md](./voice-companion.md) — hands-free capability model, Assist companion architecture, skills, latency budgets, and embed targets.
 - [wakeword.md](./wakeword.md) — wake activation setup, model policy, training data, and SDK promotion notes.
 - [server/README.md](./server/README.md) — SpeechKit Server runtime, modes, auth, and deployment setup.
@@ -27,6 +28,7 @@ Start with the module you are working on, then jump into the detailed docs.
 
 - [api/openapi.v1.yaml](./api/openapi.v1.yaml) — Local Windows Client control-plane OpenAPI.
 - [server/openapi.v1.yaml](./server/openapi.v1.yaml) — SpeechKit Server HTTP and WebSocket OpenAPI.
+- [capabilities/voice-capability-matrix.json](./capabilities/voice-capability-matrix.json) — provider capability matrix with auth methods, status, evidence URLs, and required env-var names.
 - [https://speechkit.cc/llms.txt](https://speechkit.cc/llms.txt) — public Markdown entrypoint for agents and crawler-friendly install guidance.
 
 ## Operations

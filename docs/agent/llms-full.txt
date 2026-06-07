@@ -11,10 +11,10 @@ v0.40 is the SDK-surface release line: wake-word, Assist, Voice-Companion,
 Event-Bus, and TTS building blocks are embeddable from `pkg/speechkit/...`.
 Hands-Free is the activation and voice-output layer for Dictation, Assist, and
 Voice Agent; it is not a fourth mode.
-The latest GitHub Release is the canonical source for desktop installers. A
-repository clone also mirrors the current Windows installer at
-`release/latest/windows/SpeechKit-Setup.exe`; the `latest` GHCR tag tracks the
-current stable server image.
+The latest GitHub Release is the canonical source for desktop installers.
+`release/latest/windows/INSTALLER-MANIFEST.json` mirrors the current installer
+metadata and download URLs; the `latest` GHCR tag tracks the current stable
+server image.
 
 ## Start Here
 
@@ -72,11 +72,9 @@ use `--public-bind` only behind a TLS reverse proxy. It pulls
 `ghcr.io/kombifyio/speechkit-server:latest`, which tracks the latest stable
 release.
 
-For browser-facing Docker Compose, set `SPEECHKIT_PUBLIC_URL=http://localhost:8080`
-or the compatibility alias `SPEECHKIT_SERVER_PUBLIC_URL=http://localhost:8080`.
-`SPEECHKIT_PUBLIC_URL` is canonical and wins when both are set. The returned
-Voice Agent `ws_url` uses that public base; otherwise a browser can be handed a
-container-internal host that it cannot resolve.
+For browser-facing Docker Compose, set `SPEECHKIT_PUBLIC_URL=http://localhost:8080`.
+The returned Voice Agent `ws_url` uses that public base; otherwise a browser can
+be handed a container-internal host that it cannot resolve.
 
 ## API Surfaces
 
@@ -88,9 +86,8 @@ https://speechkit.cc/api/asyncapi.v1.yaml
 
 Browser WebSocket auth is subprotocol-first. Use the `ws_url` and
 `ws_subprotocol` returned from `POST /v1/voiceagent/sessions`; do not put the
-server bearer token into a browser WebSocket handshake. `legacy_ws_url` exists
-only for compatibility with older clients. Tickets default to 90 seconds;
-expired tickets are not refreshed in v1, so create a new session.
+server bearer token into a browser WebSocket handshake. Tickets default to 90
+seconds; expired tickets are not refreshed in v1, so create a new session.
 
 Important v0.40 surfaces:
 

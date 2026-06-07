@@ -54,8 +54,6 @@ jobs:
 
           gh release download "$tag" --repo "$SOURCE_REPO" --dir "$asset_dir" --pattern 'SpeechKit-Setup.exe' --clobber
           gh release download "$tag" --repo "$SOURCE_REPO" --dir "$asset_dir" --pattern 'SpeechKit-x64.msi' --clobber || true
-          gh release download "$tag" --repo "$SOURCE_REPO" --dir "$asset_dir" --pattern 'UNSIGNED-WINDOWS-RELEASE.txt' --clobber || true
-
           {
             echo "tag=$tag"
             echo "asset_dir=$asset_dir"
@@ -72,6 +70,7 @@ jobs:
           -SourceReleaseUrl '${{ steps.release.outputs.release_url }}'
           -CommitSha '${{ github.sha }}'
           -RequireInstaller
+          -MetadataOnly
 
       - name: Commit mirror update
         shell: bash
@@ -79,7 +78,7 @@ jobs:
           set -euo pipefail
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add -f release/latest/windows
+          git add release/latest/windows
           if git diff --cached --quiet; then
             echo "Latest installer mirror already up to date."
             exit 0

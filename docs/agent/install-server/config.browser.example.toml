@@ -1,7 +1,7 @@
 # Browser-facing SpeechKit Server reference config.
 #
 # Keep `public_url` blank here so the runtime can apply SPEECHKIT_PUBLIC_URL
-# or the alias SPEECHKIT_SERVER_PUBLIC_URL from Docker Compose.
+# from Docker Compose.
 
 [general]
 language = "en"
@@ -63,7 +63,9 @@ realtime_model = "gpt-realtime-2"
 enabled = true
 api_key_env = "GOOGLE_AI_API_KEY"
 stt_api_key_env = "SPEECHKIT_GOOGLE_STT_API_KEY"
-stt_model = "chirp_3"
+stt_credentials_json_env = "SPEECHKIT_GOOGLE_STT_CREDENTIALS_JSON"
+application_credentials_env = "GOOGLE_APPLICATION_CREDENTIALS"
+stt_model = "latest_long"
 utility_model = "gemini-2.5-flash-lite"
 assist_model = "gemini-2.5-flash"
 agent_model = "gemini-2.5-pro"

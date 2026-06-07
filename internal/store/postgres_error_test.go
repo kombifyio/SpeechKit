@@ -60,14 +60,15 @@ func openFailingPostgresDB(t *testing.T) *sql.DB {
 
 func TestPostgresStoreMethodsReturnDatabaseErrors(t *testing.T) {
 	ctx := context.Background()
-	store := &PostgresStore{
+	store := &PostgresStore{sqlStore: &sqlStore{
 		db:       openFailingPostgresDB(t),
+		dialect:  dialectPostgres,
 		audioDir: t.TempDir(),
 		transcriptionModelHints: map[string]string{
 			"hf":          "hf-model",
 			"huggingface": "hf-model",
 		},
-	}
+	}}
 
 	cases := []struct {
 		name string
@@ -157,8 +158,9 @@ func TestPostgresStoreMethodsReturnDatabaseErrors(t *testing.T) {
 }
 
 func TestPostgresStorePureHelpers(t *testing.T) {
-	store := &PostgresStore{
+	store := &PostgresStore{sqlStore: &sqlStore{
 		db:                 openFailingPostgresDB(t),
+		dialect:            dialectPostgres,
 		audioDir:           t.TempDir(),
 		maxStorageMB:       10,
 		saveAudio:          true,
@@ -167,7 +169,7 @@ func TestPostgresStorePureHelpers(t *testing.T) {
 			"hf":          "hf-model",
 			"huggingface": "huggingface-model",
 		},
-	}
+	}}
 
 	if store.DB() == nil {
 		t.Fatal("DB returned nil")
@@ -215,7 +217,7 @@ func TestPostgresHelperCoverageTargets(t *testing.T) {
 		}
 	}
 
-	clauses, args := appendPostgresOwnerFilter(nil, nil, ListOpts{
+	clauses, args := appendOwnerFilter(nil, nil, ListOpts{
 		OwnerUserID:      " user ",
 		OwnerOrgID:       " org ",
 		IncludeOwnerless: true,
@@ -223,8 +225,11 @@ func TestPostgresHelperCoverageTargets(t *testing.T) {
 	if len(clauses) != 1 || len(args) != 2 {
 		t.Fatalf("owner filter = (%v, %v)", clauses, args)
 	}
-	if !strings.Contains(clauses[0], "$1") || !strings.Contains(clauses[0], "$2") {
-		t.Fatalf("owner clause missing positional params: %s", clauses[0])
+	if strings.Count(clauses[0], "?") != 2 {
+		t.Fatalf("owner clause must carry two `?` placeholders (rebound per dialect): %s", clauses[0])
+	}
+	if strings.TrimSpace(args[0].(string)) != "user" || strings.TrimSpace(args[1].(string)) != "org" {
+		t.Fatalf("owner filter trimmed args = %v", args)
 	}
 
 	migration := postgresSQLMigration("999_test", "SELECT 1")

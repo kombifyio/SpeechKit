@@ -20,7 +20,7 @@ func Logging() Middleware {
 			start := time.Now()
 			rec := &responseRecorder{ResponseWriter: w, status: http.StatusOK}
 			next.ServeHTTP(rec, r)
-			slog.Info("http request",
+			slog.Info("http request", // #nosec G706 -- slog writes request values as structured attributes, not interpolated log text.
 				"method", r.Method,
 				"path", r.URL.Path,
 				"status", rec.status,
@@ -28,6 +28,7 @@ func Logging() Middleware {
 				"duration_ms", time.Since(start).Milliseconds(),
 				"remote", r.RemoteAddr,
 				"user_agent", r.Header.Get("User-Agent"),
+				"request_id", RequestIDFromContext(r.Context()),
 			)
 		})
 	}

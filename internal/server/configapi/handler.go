@@ -36,12 +36,17 @@ func (h *Handler) config(w http.ResponseWriter, r *http.Request) {
 		overall = h.readyStatus()
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
-		"version":       h.version,
-		"public_url":    strings.TrimRight(strings.TrimSpace(h.cfg.Server.PublicURL), "/"),
-		"modes":         h.cfg.Server.Modes,
-		"auth_mode":     h.cfg.Server.AuthMode,
-		"bearer_role":   h.cfg.Server.BearerRole,
-		"max_upload_mb": h.cfg.Server.MaxUploadMB,
+		"version":                   h.version,
+		"public_url":                strings.TrimRight(strings.TrimSpace(h.cfg.Server.PublicURL), "/"),
+		"modes":                     h.cfg.Server.Modes,
+		"auth_mode":                 h.cfg.Server.AuthMode,
+		"bearer_role":               h.cfg.Server.BearerRole,
+		"max_upload_mb":             h.cfg.Server.MaxUploadMB,
+		"read_header_timeout_sec":   h.cfg.Server.ReadHeaderTimeoutSec,
+		"read_timeout_sec":          h.cfg.Server.ReadTimeoutSec,
+		"idle_timeout_sec":          h.cfg.Server.IdleTimeoutSec,
+		"max_header_bytes":          h.cfg.Server.MaxHeaderBytes,
+		"max_decoded_audio_seconds": h.cfg.Server.MaxDecodedAudioSeconds,
 		"features": map[string]bool{
 			"catalog":       h.cfg.Server.Features.Catalog,
 			"storage_reads": h.cfg.Server.Features.StorageReads,

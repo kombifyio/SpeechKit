@@ -4,16 +4,18 @@ Decision date: 2026-05-26. This document records the v0.40 SDK-surface
 boundary so embedders can consume SpeechKit without importing desktop or
 server internals.
 
+Last updated: 2026-06-02 for the provider-neutral Speaker Layer surface.
+
 ## Purpose
 
 `pkg/speechkit` is the reusable framework boundary. It must compile for
 Local-Library hosts without depending on `internal/*`, Wails, Windows-only
 adapters, desktop storage, server middleware, or bundled app assets.
 
-The v0.40 line promotes the embeddable Voice-Companion building blocks that
-were previously only available through product adapters. The release is
-additive: host applications should import public SDK packages and leave Go
-`internal` packages to this repository's own binaries.
+The v0.40 line promoted the embeddable Voice-Companion building blocks that
+were previously only available through product adapters. This hardening branch
+is an explicit breaking cleanup: host applications should import public SDK
+packages and leave Go `internal` packages to this repository's own binaries.
 
 ## Public Packages
 
@@ -26,6 +28,7 @@ additive: host applications should import public SDK packages and leave Go
 | `pkg/speechkit/wakeword/sherpa` | Sherpa-onnx adapter behind the public wake-word detector contracts, with cgo/no-cgo build behavior. |
 | `pkg/speechkit/tts` | Provider, ProviderKind, Router, Service, fallback strategy, synthesis options, and result contract. |
 | `pkg/speechkit/companion` | `NewHandsFree(...)` composer for hands-free target routing across Assist, Voice Agent, and UI-assisted Dictation using wake detections, host transcript requests, optional TTS, and EventBus lifecycle. |
+| `pkg/speechkit/speaker` | Provider-neutral speaker options, diarization results, speaker words/segments, provider profiles, streaming audio format, and `SpeakerFrame` contracts. |
 
 ## Boundary Rules
 
@@ -41,14 +44,14 @@ additive: host applications should import public SDK packages and leave Go
 5. Additive event types are allowed in patch releases. Removing event types,
    changing struct field semantics, or changing exported method signatures
    requires a release-plan callout and an API diff.
-6. Deprecated exported fields and methods remain source-compatible through the
-   v0.40.x line. Removing `LiveConfig.Instruction`,
-   `LiveConfig.SystemPrompt`, or similar public compatibility symbols is v1 or
-   explicit breaking-release work.
+6. Deprecated exported fields and methods may be removed only on a branch that
+   documents the break and carries the `breaking-api-approved` PR label. This
+   branch removes the `LiveConfig.Instruction` and `LiveConfig.SystemPrompt`
+   aliases; embedders must use `LiveConfig.FrameworkPrompt`.
 
 ## Current Verification
 
-Verified on 2026-05-26 and updated on 2026-05-27:
+Verified on 2026-05-26 and updated on 2026-05-27 and 2026-06-02:
 
 - `go test ./pkg/speechkit/...` passes with `CGO_ENABLED=0`.
 - `go test ./pkg/speechkit/...` passes with MinGW cgo enabled.
@@ -66,11 +69,15 @@ Verified on 2026-05-26 and updated on 2026-05-27:
   imports `github.com/kombifyio/SpeechKit/pkg/speechkit/{assist,companion,tts,wakeword}`
   from a clean public export, wires `companion.TargetAssist`, and builds
   without depending on public-invisible `internal/*` packages.
+- 2026-06-02 update: `go test ./pkg/speechkit/speaker` passes and the package
+  carries the provider-neutral Speaker Layer contracts. Provider adapters remain
+  internal so embedders can depend on the contract without importing runtime
+  provider code.
 
 ## Release Gates
 
 - API diff for every package returned by `go list ./pkg/speechkit/...` should
-  show no breaking removals inside the v0.40 patch line.
+  show no breaking removals unless the PR has the `breaking-api-approved` label.
 - Docker/server release gates must pass before a public tag is cut.
 - Public source exports must include the SDK, self-host server, CLI, MCP, docs,
   and examples needed by agents, while excluding desktop source, installer

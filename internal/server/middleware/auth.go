@@ -12,10 +12,12 @@ import (
 	"encoding/json"
 	"net/http"
 	"os"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
 
+	"github.com/kombifyio/SpeechKit/internal/server/httpx"
 	"golang.org/x/crypto/bcrypt"
 )
 
@@ -110,6 +112,12 @@ const (
 	// single deployment serves both internal services (bearer) and
 	// browser-originated traffic (edge-signed).
 	AuthModeBearerOrEdge AuthMode = "bearer_or_edge"
+	// AuthModeOIDC validates a Bearer JWT issued by an external identity
+	// provider (Azure AD, Okta, Google Workspace, Auth0, ...) against a
+	// configured JWKS endpoint. The caller identity — UserID, OrgID, Role —
+	// is sourced from the token's claims, giving self-hosted deployments real
+	// multi-tenancy without writing an edge-HMAC proxy. See oidc.go.
+	AuthModeOIDC AuthMode = "oidc"
 )
 
 // AuthOptions configures the Auth middleware.
@@ -152,6 +160,10 @@ type AuthOptions struct {
 	// public internet. Admin-session and smoke-token fallbacks remain
 	// available — only the implicit anonymous identity is suppressed.
 	RequireAuthenticatedMode bool
+	TrustedProxyCIDRs        []string
+	// OIDCVerifier validates a request's Bearer JWT and maps its claims to an
+	// Identity. Set by bootstrap only when AuthMode is "oidc"; nil otherwise.
+	OIDCVerifier func(*http.Request) (Identity, bool)
 }
 
 type PublicRoute struct {
@@ -316,12 +328,14 @@ type authRuntime struct {
 	adminUsernameProvider     func() string
 	adminPasswordHashProvider func() string
 	smokeTokenProvider        func() string
+	oidcVerifier              func(*http.Request) (Identity, bool)
 	publicSet                 map[string]struct{}
 	publicRoutes              []PublicRoute
 	bootstrapSet              map[string]struct{}
 	bootstrapRoutes           []PublicRoute
 	htmlUnauthorizedSet       map[string]struct{}
 	htmlUnauthorizedRoutes    []PublicRoute
+	trustedProxies            httpx.TrustedProxies
 }
 
 func newAuthRuntime(opts AuthOptions) authRuntime {
@@ -356,6 +370,7 @@ func newAuthRuntime(opts AuthOptions) authRuntime {
 	if smokeTokenProvider == nil {
 		smokeTokenProvider = func() string { return "" }
 	}
+	trustedProxies, _ := httpx.NewTrustedProxies(opts.TrustedProxyCIDRs)
 	publicSet := make(map[string]struct{}, len(opts.AllowPublicPaths))
 	for _, p := range opts.AllowPublicPaths {
 		if trimmed := strings.TrimSpace(p); trimmed != "" {
@@ -384,12 +399,14 @@ func newAuthRuntime(opts AuthOptions) authRuntime {
 		adminUsernameProvider:     adminUsernameProvider,
 		adminPasswordHashProvider: adminPasswordHashProvider,
 		smokeTokenProvider:        smokeTokenProvider,
+		oidcVerifier:              opts.OIDCVerifier,
 		publicSet:                 publicSet,
 		publicRoutes:              opts.AllowPublicRoutes,
 		bootstrapSet:              bootstrapSet,
 		bootstrapRoutes:           opts.AllowBootstrapRoutes,
 		htmlUnauthorizedSet:       htmlUnauthorizedSet,
 		htmlUnauthorizedRoutes:    opts.HTMLUnauthorizedRoutes,
+		trustedProxies:            trustedProxies,
 	}
 }
 
@@ -400,15 +417,15 @@ func (a authRuntime) serveHTTP(w http.ResponseWriter, r *http.Request, next http
 	}
 
 	adminUsername, adminPasswordHash := a.adminCredentials()
-	if handleAdminSessionEndpoint(w, r, adminUsername, adminPasswordHash) {
+	if a.handleAdminSessionEndpoint(w, r, adminUsername, adminPasswordHash) {
 		return
 	}
 	if id, ok := a.authenticateAdmin(r, adminUsername, adminPasswordHash); ok {
-		a.serveAuthenticated(next, w, r, id, adminUsername, adminPasswordHash)
+		a.serveAuthenticated(next, w, r, id)
 		return
 	}
 	if id, ok := a.authenticateConfiguredMode(r); ok {
-		a.serveAuthenticated(next, w, r, id, "", "")
+		a.serveAuthenticated(next, w, r, id)
 		return
 	}
 	a.writeUnauthorized(w, r, adminUsername, adminPasswordHash)
@@ -450,6 +467,16 @@ func (a authRuntime) authenticateConfiguredMode(r *http.Request) (Identity, bool
 	if mode == "" {
 		mode = AuthModeNone
 	}
+	if mode == AuthModeOIDC {
+		// OIDC validation lives in a stateful validator (JWKS cache), injected
+		// as a verifier rather than threaded through the pure verify() switch.
+		if a.oidcVerifier != nil {
+			if id, ok := a.oidcVerifier(r); ok {
+				return id, true
+			}
+		}
+		return verifySmoke(r, strings.TrimSpace(a.smokeTokenProvider()))
+	}
 	if id, ok := verify(
 		mode,
 		r,
@@ -463,9 +490,10 @@ func (a authRuntime) authenticateConfiguredMode(r *http.Request) (Identity, bool
 	return verifySmoke(r, strings.TrimSpace(a.smokeTokenProvider()))
 }
 
-func (a authRuntime) serveAuthenticated(next http.Handler, w http.ResponseWriter, r *http.Request, id Identity, adminUsername, adminPasswordHash string) {
+func (a authRuntime) serveAuthenticated(next http.Handler, w http.ResponseWriter, r *http.Request, id Identity) {
 	if id.Source == "basic" {
-		setAdminSessionCookie(w, r, adminUsername, adminPasswordHash)
+		username, passwordHash := a.adminCredentials()
+		a.setAdminSessionCookie(w, r, username, passwordHash)
 	}
 	ctx := context.WithValue(r.Context(), identityCtxKey{}, id)
 	next.ServeHTTP(w, r.WithContext(ctx))
@@ -658,7 +686,7 @@ func NewAdminCSRFCookie(sessionCookieValue string, secure bool, now time.Time) *
 	}
 }
 
-func handleAdminSessionEndpoint(w http.ResponseWriter, r *http.Request, username, passwordHash string) bool {
+func (a authRuntime) handleAdminSessionEndpoint(w http.ResponseWriter, r *http.Request, username, passwordHash string) bool {
 	if r == nil || !isAdminSessionPath(r.URL.Path) {
 		return false
 	}
@@ -676,11 +704,11 @@ func handleAdminSessionEndpoint(w http.ResponseWriter, r *http.Request, username
 			writeAuthError(w)
 			return true
 		}
-		setAdminSessionCookie(w, r, username, passwordHash)
+		a.setAdminSessionCookie(w, r, username, passwordHash)
 		writeAdminSessionJSON(w, true, id)
 		return true
 	case http.MethodDelete:
-		clearAdminSessionCookie(w, r)
+		a.clearAdminSessionCookie(w, r)
 		w.WriteHeader(http.StatusNoContent)
 		return true
 	case http.MethodOptions:
@@ -723,8 +751,9 @@ func verifyAdminSession(r *http.Request, username, passwordHash string) (Identit
 	}, true
 }
 
-func setAdminSessionCookie(w http.ResponseWriter, r *http.Request, username, passwordHash string) {
+func (a authRuntime) setAdminSessionCookie(w http.ResponseWriter, r *http.Request, username, passwordHash string) {
 	expires := time.Now().Add(adminSessionTTL)
+	secure := a.trustedProxies.RequestIsHTTPS(r)
 	token := signAdminSessionToken(adminSessionClaims{
 		User:      username,
 		ExpiresAt: expires.Unix(),
@@ -737,7 +766,7 @@ func setAdminSessionCookie(w http.ResponseWriter, r *http.Request, username, pas
 		Expires:  expires,
 		MaxAge:   int(adminSessionTTL.Seconds()),
 		HttpOnly: true,
-		Secure:   requestIsHTTPS(r),
+		Secure:   secure,
 		SameSite: http.SameSiteLaxMode,
 	})
 	http.SetCookie(w, &http.Cookie{
@@ -750,7 +779,7 @@ func setAdminSessionCookie(w http.ResponseWriter, r *http.Request, username, pas
 		Expires:  expires,
 		MaxAge:   int(adminSessionTTL.Seconds()),
 		HttpOnly: false, // JS must read this to set the X-CSRF-Token header.
-		Secure:   requestIsHTTPS(r),
+		Secure:   secure,
 		// Strict because the cookie is only consumed by our own SPA
 		// running on the same origin; tightening from Lax (used by the
 		// session cookie for top-level navigation) costs nothing here.
@@ -758,7 +787,8 @@ func setAdminSessionCookie(w http.ResponseWriter, r *http.Request, username, pas
 	})
 }
 
-func clearAdminSessionCookie(w http.ResponseWriter, r *http.Request) {
+func (a authRuntime) clearAdminSessionCookie(w http.ResponseWriter, r *http.Request) {
+	secure := a.trustedProxies.RequestIsHTTPS(r)
 	http.SetCookie(w, &http.Cookie{
 		Name:     adminSessionCookieName,
 		Value:    "",
@@ -766,7 +796,7 @@ func clearAdminSessionCookie(w http.ResponseWriter, r *http.Request) {
 		Expires:  time.Unix(0, 0),
 		MaxAge:   -1,
 		HttpOnly: true,
-		Secure:   requestIsHTTPS(r),
+		Secure:   secure,
 		SameSite: http.SameSiteLaxMode,
 	})
 	http.SetCookie(w, &http.Cookie{
@@ -776,7 +806,7 @@ func clearAdminSessionCookie(w http.ResponseWriter, r *http.Request) {
 		Expires:  time.Unix(0, 0),
 		MaxAge:   -1,
 		HttpOnly: false,
-		Secure:   requestIsHTTPS(r),
+		Secure:   secure,
 		SameSite: http.SameSiteStrictMode,
 	})
 }
@@ -896,13 +926,6 @@ func adminSessionSigningSecret(passwordHash string) []byte {
 	return mac.Sum(nil)
 }
 
-func requestIsHTTPS(r *http.Request) bool {
-	if r == nil {
-		return false
-	}
-	return r.TLS != nil || strings.EqualFold(strings.TrimSpace(r.Header.Get("X-Forwarded-Proto")), "https")
-}
-
 func mustRandomBytes(size int) []byte {
 	buf := make([]byte, size)
 	if _, err := rand.Read(buf); err != nil {
@@ -971,6 +994,11 @@ func verifyBearer(r *http.Request, expected, role string) (Identity, bool) {
 	}, true
 }
 
+// edgeHMACMaxSkew bounds how far the optional X-Edge-Auth-Ts may deviate from
+// server time. It is the replay window: a captured edge-signed header is only
+// accepted within this interval once the edge starts sending a timestamp.
+const edgeHMACMaxSkew = 5 * time.Minute
+
 func verifyEdgeHMAC(r *http.Request, secret string) (Identity, bool) {
 	if secret == "" {
 		return Identity{}, false
@@ -980,10 +1008,21 @@ func verifyEdgeHMAC(r *http.Request, secret string) (Identity, bool) {
 	orgID := strings.TrimSpace(r.Header.Get("X-Edge-Org-Id"))
 	plan := strings.TrimSpace(r.Header.Get("X-Edge-Plan"))
 	role := strings.TrimSpace(r.Header.Get("X-Edge-Role"))
+	ts := strings.TrimSpace(r.Header.Get("X-Edge-Auth-Ts"))
 	if presented == "" || userID == "" || orgID == "" {
 		return Identity{}, false
 	}
-	// Signature base: userID + "\n" + orgID + "\n" + plan + "\n" + role.
+	// Signature base: userID + "\n" + orgID + "\n" + plan + "\n" + role,
+	// with the timestamp appended as a fifth field ("\n" + ts) when the edge
+	// supplies one. Binding the timestamp into the MAC bounds replayability;
+	// a request without X-Edge-Auth-Ts uses the legacy unbound base so an
+	// older edge signer keeps working (backward compatible). A downgrade —
+	// stripping the timestamp from a captured ts-bound request — fails
+	// because the presented HMAC was computed over the ts-bound base and
+	// will not match the legacy base recomputed here.
+	if ts != "" && !edgeTimestampFresh(ts, time.Now()) {
+		return Identity{}, false
+	}
 	mac := hmac.New(sha256.New, []byte(secret))
 	mac.Write([]byte(userID))
 	mac.Write([]byte{'\n'})
@@ -992,6 +1031,10 @@ func verifyEdgeHMAC(r *http.Request, secret string) (Identity, bool) {
 	mac.Write([]byte(plan))
 	mac.Write([]byte{'\n'})
 	mac.Write([]byte(role))
+	if ts != "" {
+		mac.Write([]byte{'\n'})
+		mac.Write([]byte(ts))
+	}
 	want := hex.EncodeToString(mac.Sum(nil))
 	if !hmacEqual([]byte(presented), []byte(want)) {
 		return Identity{}, false
@@ -1003,6 +1046,21 @@ func verifyEdgeHMAC(r *http.Request, secret string) (Identity, bool) {
 		Role:   role,
 		Source: "edge_hmac",
 	}, true
+}
+
+// edgeTimestampFresh reports whether ts (Unix seconds as a decimal string) is
+// within edgeHMACMaxSkew of now. A malformed timestamp is rejected so a
+// garbage value cannot bypass the freshness check.
+func edgeTimestampFresh(ts string, now time.Time) bool {
+	secs, err := strconv.ParseInt(ts, 10, 64)
+	if err != nil {
+		return false
+	}
+	delta := now.Sub(time.Unix(secs, 0))
+	if delta < 0 {
+		delta = -delta
+	}
+	return delta <= edgeHMACMaxSkew
 }
 
 func hmacEqual(a, b []byte) bool {
@@ -1021,21 +1079,13 @@ func writeAuthError(w http.ResponseWriter) {
 	})
 }
 
-func writeBrowserAuthError(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	w.Header().Set("Cache-Control", "no-store")
-	w.Header().Set("X-Content-Type-Options", "nosniff")
-	w.WriteHeader(http.StatusUnauthorized)
-	if r.Method == http.MethodHead {
-		return
-	}
-	_, _ = w.Write([]byte(`<!doctype html>
-<html lang="en">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>SpeechKit Admin Sign-In Required</title>
-  <style>
+// adminAuthErrorStyleCSS and adminAuthErrorScriptJS hold the exact inline
+// <style>/<script> bodies of the admin sign-in page. They are kept as named
+// constants so their sha256 hashes can be pinned in the page's
+// Content-Security-Policy — letting the page keep its inline assets without
+// 'unsafe-inline'. The hash is computed over these constants and the page is
+// assembled from the same constants, so the two can never drift.
+const adminAuthErrorStyleCSS = `
     :root { color-scheme: light dark; font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
     * { box-sizing: border-box; }
     body { margin: 0; min-height: 100vh; display: grid; place-items: center; background: #f7f8fa; color: #1f2933; }
@@ -1049,25 +1099,9 @@ func writeBrowserAuthError(w http.ResponseWriter, r *http.Request) {
     .error { color: #b91c1c; min-height: 1.4rem; }
     code { font-family: ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace; }
     @media (prefers-color-scheme: dark) { body { background: #111827; color: #f3f4f6; } input { background: #0b1220; color: #f3f4f6; border-color: #374151; } button { background: #2563eb; } .error { color: #fca5a5; } }
-  </style>
-</head>
-<body>
-  <main>
-    <h1>SpeechKit Admin Sign-In Required</h1>
-    <p>The server setup UI is protected after bootstrap. Sign in with the admin account created during setup.</p>
-    <form id="adminLogin">
-      <label for="adminUsername">Admin username
-        <input id="adminUsername" autocomplete="username" required>
-      </label>
-      <label for="adminPassword">Admin password
-        <input id="adminPassword" type="password" autocomplete="current-password" required>
-      </label>
-      <button type="submit">Sign In</button>
-      <div class="error" id="loginError" role="status"></div>
-    </form>
-    <p>API clients can continue to call <code>/api/v1/*</code> or <code>/v1/*</code> with their configured bearer token.</p>
-  </main>
-  <script>
+  `
+
+const adminAuthErrorScriptJS = `
     (function () {
       const form = document.getElementById("adminLogin");
       const error = document.getElementById("loginError");
@@ -1093,7 +1127,60 @@ func writeBrowserAuthError(w http.ResponseWriter, r *http.Request) {
         });
       });
     })();
-  </script>
+  `
+
+// cspSourceHash returns the CSP source-expression (e.g. 'sha256-<base64>') for
+// an inline element body, so it can be allow-listed without 'unsafe-inline'.
+func cspSourceHash(body string) string {
+	sum := sha256.Sum256([]byte(body))
+	return "'sha256-" + base64.StdEncoding.EncodeToString(sum[:]) + "'"
+}
+
+// adminAuthErrorCSP locks the admin sign-in page to its own hashed inline
+// style+script; connect-src 'self' lets the form POST the same-origin admin
+// session endpoint. Computed once at init from the constants above.
+var adminAuthErrorCSP = "default-src 'none'; style-src " + cspSourceHash(adminAuthErrorStyleCSS) +
+	"; script-src " + cspSourceHash(adminAuthErrorScriptJS) +
+	"; connect-src 'self'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'"
+
+var adminAuthErrorHTML = `<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>SpeechKit Admin Sign-In Required</title>
+  <style>` + adminAuthErrorStyleCSS + `</style>
+</head>
+<body>
+  <main>
+    <h1>SpeechKit Admin Sign-In Required</h1>
+    <p>The server setup UI is protected after bootstrap. Sign in with the admin account created during setup.</p>
+    <form id="adminLogin">
+      <label for="adminUsername">Admin username
+        <input id="adminUsername" autocomplete="username" required>
+      </label>
+      <label for="adminPassword">Admin password
+        <input id="adminPassword" type="password" autocomplete="current-password" required>
+      </label>
+      <button type="submit">Sign In</button>
+      <div class="error" id="loginError" role="status"></div>
+    </form>
+    <p>API clients can continue to call <code>/api/v1/*</code> or <code>/v1/*</code> with their configured bearer token.</p>
+  </main>
+  <script>` + adminAuthErrorScriptJS + `</script>
 </body>
-</html>`))
+</html>`
+
+func writeBrowserAuthError(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.Header().Set("Cache-Control", "no-store")
+	w.Header().Set("X-Content-Type-Options", "nosniff")
+	// Override the strict default CSP from SecurityHeaders with a per-page
+	// policy that permits only this page's hashed inline assets.
+	w.Header().Set("Content-Security-Policy", adminAuthErrorCSP)
+	w.WriteHeader(http.StatusUnauthorized)
+	if r.Method == http.MethodHead {
+		return
+	}
+	_, _ = w.Write([]byte(adminAuthErrorHTML))
 }

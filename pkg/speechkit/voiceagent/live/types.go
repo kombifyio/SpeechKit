@@ -14,6 +14,8 @@ package live
 import (
 	"context"
 	"time"
+
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/speaker"
 )
 
 // State represents the current state of a Voice Agent session.
@@ -209,8 +211,6 @@ type LiveConfig struct {
 	Voice            string // Voice name
 	FrameworkPrompt  string
 	RefinementPrompt string
-	Instruction      string // Deprecated: kept as compat alias for FrameworkPrompt.
-	SystemPrompt     string // Deprecated: kept as compat alias, prefer FrameworkPrompt.
 	VocabularyHint   string
 	Locale           string
 	// Region is the Google Cloud region the caller's API key / project is
@@ -227,6 +227,7 @@ type LiveConfig struct {
 	Policies LivePolicies
 	Tools    []ToolDefinition
 	Workflow *WorkflowConfig
+	Speaker  speaker.Options
 }
 
 // LiveMessage is a message received from the real-time model.
@@ -236,10 +237,14 @@ type LiveMessage struct {
 	Done  bool   // True when the model's turn is complete
 
 	// Transcription fields (populated when transcription is enabled).
-	InputTranscript      string // User speech transcribed by server
-	InputTranscriptDone  bool   // True when input transcription segment is final
-	OutputTranscript     string // Model speech transcribed by server
-	OutputTranscriptDone bool   // True when output transcription segment is final
+	InputTranscript        string  // User speech transcribed by server
+	InputTranscriptDone    bool    // True when input transcription segment is final
+	InputSpeakerLabel      string  // Optional diarized speaker label for input transcript segments
+	InputPersonID          string  // Optional known person id for input transcript segments
+	InputDisplayName       string  // Optional known display name for input transcript segments
+	InputSpeakerConfidence float64 // Optional speaker-label confidence
+	OutputTranscript       string  // Model speech transcribed by server
+	OutputTranscriptDone   bool    // True when output transcription segment is final
 
 	ToolCalls               []ToolCall
 	ToolCallCancellationIDs []string

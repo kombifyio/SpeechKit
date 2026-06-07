@@ -3,5 +3,3 @@
 *.yml text eol=lf
 *.yaml text eol=lf
 *.mjs text eol=lf
-release/latest/windows/*.exe binary
-release/latest/windows/*.msi binary

@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"github.com/kombifyio/SpeechKit/internal/stt"
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/speaker"
 )
 
 // fakeRouter is the test double we wire into the handler. It records the last
@@ -192,6 +193,51 @@ func TestHandler_JSONBase64HappyPath(t *testing.T) {
 	}
 }
 
+func TestHandler_JSONForwardsSpeakerOptionsAndReturnsSpeakers(t *testing.T) {
+	fake := &fakeRouter{result: okResult()}
+	fake.result.Speakers = &speaker.DiarizationResult{
+		Provider: "fake",
+		Level:    speaker.IdentificationDiarization,
+		Segments: []speaker.SpeakerSegment{{Text: "hello world", SpeakerLabel: "speaker_0"}},
+	}
+	h := mustHandler(t, fake)
+
+	pcm := synthSine(16000, 1, 440.0, 100)
+	wav := wrapWAV(pcm, 16000, 1)
+	payload := map[string]any{
+		"audio_base64": base64.StdEncoding.EncodeToString(wav),
+		"format":       "wav",
+		"language":     "de",
+		"speaker": map[string]any{
+			"diarization":         true,
+			"minSpeakersExpected": 2,
+			"maxSpeakersExpected": 2,
+		},
+	}
+	body, _ := json.Marshal(payload)
+
+	req := httptest.NewRequest(http.MethodPost, "/v1/dictation/transcribe", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d body=%s", rec.Code, rec.Body.String())
+	}
+	if !fake.lastOpts.Speaker.WantsDiarization() {
+		t.Fatalf("speaker options not forwarded: %+v", fake.lastOpts.Speaker)
+	}
+	var resp struct {
+		Speakers *speaker.DiarizationResult `json:"speakers"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if resp.Speakers == nil || len(resp.Speakers.Segments) != 1 {
+		t.Fatalf("speakers = %+v", resp.Speakers)
+	}
+}
+
 func TestHandler_DefaultPromptFeedsDictionaryHint(t *testing.T) {
 	fake := &fakeRouter{result: okResult()}
 	h, err := New(Options{
@@ -340,6 +386,34 @@ func TestHandler_PayloadTooLarge_JSON(t *testing.T) {
 
 	if rec.Code != http.StatusRequestEntityTooLarge {
 		t.Fatalf("status = %d, want 413", rec.Code)
+	}
+}
+
+func TestHandler_DecodedAudioLimitMapsTo413(t *testing.T) {
+	fake := &fakeRouter{result: okResult()}
+	h, err := New(Options{Router: fake, MaxUploadMB: 25, MaxDecodedAudioSeconds: 1})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+
+	pcm := synthSine(16000, 1, 440.0, 1100)
+	body, _ := json.Marshal(map[string]string{
+		"audio_base64": base64.StdEncoding.EncodeToString(pcm),
+		"format":       "pcm16",
+	})
+	req := httptest.NewRequest(http.MethodPost, "/v1/dictation/transcribe", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusRequestEntityTooLarge {
+		t.Fatalf("status = %d body=%s, want 413", rec.Code, rec.Body.String())
+	}
+	if fake.called {
+		t.Fatalf("router should not be called when decoded audio exceeds duration limit")
+	}
+	if !strings.Contains(rec.Body.String(), "payload_too_large") {
+		t.Fatalf("expected payload_too_large error code, got %s", rec.Body.String())
 	}
 }
 

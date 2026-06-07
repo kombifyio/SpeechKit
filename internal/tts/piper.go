@@ -76,7 +76,11 @@ func NewPiper(opts PiperOpts) (*Piper, error) {
 		"de": "de_DE-thorsten-medium.onnx",
 	}
 	for k, v := range opts.DefaultVoices {
-		defaults[normaliseLocaleShort(k)] = v
+		filename, err := validatePiperVoiceFilename(v)
+		if err != nil {
+			return nil, err
+		}
+		defaults[normaliseLocaleShort(k)] = filename
 	}
 	timeout := opts.Timeout
 	if timeout <= 0 {
@@ -170,19 +174,68 @@ func (p *Piper) resolveVoice(requested, locale string) (string, error) {
 	if requested = strings.TrimSpace(requested); requested != "" {
 		// Allow callers to pass either "en_US-amy-medium" or the
 		// full filename; normalise to .onnx.
-		if !strings.HasSuffix(requested, ".onnx") {
-			requested += ".onnx"
+		filename, err := validatePiperVoiceFilename(requested)
+		if err != nil {
+			return "", err
 		}
-		return filepath.Join(p.voiceDir, requested), nil
+		return p.voicePath(filename)
 	}
 	key := normaliseLocaleShort(locale)
 	if voice := p.defaults[key]; voice != "" {
-		return filepath.Join(p.voiceDir, voice), nil
+		return p.voicePath(voice)
 	}
 	if voice := p.defaults["en"]; voice != "" {
-		return filepath.Join(p.voiceDir, voice), nil
+		return p.voicePath(voice)
 	}
 	return "", fmt.Errorf("piper: no default voice configured for locale %q", locale)
+}
+
+func (p *Piper) voicePath(filename string) (string, error) {
+	filename, err := validatePiperVoiceFilename(filename)
+	if err != nil {
+		return "", err
+	}
+	model := filepath.Join(p.voiceDir, filename)
+	dirAbs, err := filepath.Abs(p.voiceDir)
+	if err != nil {
+		return "", fmt.Errorf("piper: resolve voice dir: %w", err)
+	}
+	modelAbs, err := filepath.Abs(model)
+	if err != nil {
+		return "", fmt.Errorf("piper: resolve voice model: %w", err)
+	}
+	rel, err := filepath.Rel(dirAbs, modelAbs)
+	if err != nil || rel == "." || strings.HasPrefix(rel, "..") || filepath.IsAbs(rel) {
+		return "", fmt.Errorf("piper: voice %q resolves outside VoiceDir", filename)
+	}
+	info, err := os.Stat(modelAbs)
+	if err != nil {
+		return "", fmt.Errorf("piper: voice file %q not found: %w", filename, err)
+	}
+	if info.IsDir() {
+		return "", fmt.Errorf("piper: voice file %q is a directory", filename)
+	}
+	return modelAbs, nil
+}
+
+func validatePiperVoiceFilename(name string) (string, error) {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return "", errors.New("piper: voice filename is empty")
+	}
+	if !strings.HasSuffix(strings.ToLower(name), ".onnx") {
+		name += ".onnx"
+	}
+	if filepath.IsAbs(name) || filepath.Base(name) != name || strings.ContainsAny(name, `/\`) || strings.Contains(name, "..") {
+		return "", fmt.Errorf("piper: voice %q must be a .onnx filename inside VoiceDir", name)
+	}
+	for _, r := range name {
+		if r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' || r == '-' || r == '_' || r == '.' {
+			continue
+		}
+		return "", fmt.Errorf("piper: voice %q contains unsupported character %q", name, r)
+	}
+	return name, nil
 }
 
 // normaliseLocaleShort drops the region and lowercases — "de-DE"

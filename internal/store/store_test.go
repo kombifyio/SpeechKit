@@ -329,15 +329,14 @@ func TestAudioAssetHelpersRecordAndDelete(t *testing.T) {
 }
 
 func TestNormalizedLanguageFilterHelpers(t *testing.T) {
-	clauses, args := appendSQLiteNormalizedLanguageFilter(nil, nil, "de-DE")
+	clauses, args := appendNormalizedLanguageFilter(nil, nil, "de-DE")
 	if len(clauses) != 1 || len(args) != 1 {
-		t.Fatalf("sqlite filter clauses=%v args=%v, want one clause and one arg", clauses, args)
+		t.Fatalf("filter clauses=%v args=%v, want one clause and one arg", clauses, args)
 	}
-	clauses, args = appendPostgresNormalizedLanguageFilter(nil, nil, "en_US")
-	if len(clauses) != 1 || len(args) != 1 {
-		t.Fatalf("postgres filter clauses=%v args=%v, want one clause and one arg", clauses, args)
+	if !strings.Contains(clauses[0], "?") {
+		t.Fatalf("filter clause must use a `?` placeholder (rebound per dialect): %s", clauses[0])
 	}
-	clauses, args = appendSQLiteNormalizedLanguageFilter(clauses, args, " ")
+	clauses, args = appendNormalizedLanguageFilter(clauses, args, " ")
 	if len(clauses) != 1 || len(args) != 1 {
 		t.Fatalf("empty filter should not append: clauses=%v args=%v", clauses, args)
 	}
@@ -1496,7 +1495,10 @@ func TestPostgresStoreParity(t *testing.T) {
 	if !ok {
 		t.Fatalf("store type = %T, want *PostgresStore", s)
 	}
-	if _, err := pg.db.Exec(`TRUNCATE TABLE quick_notes, transcriptions RESTART IDENTITY`); err != nil {
+	// CASCADE is required because audio_assets link tables FK-reference
+	// transcriptions and quick_notes; a plain TRUNCATE is rejected with
+	// SQLSTATE 0A000 once those links exist.
+	if _, err := pg.db.Exec(`TRUNCATE TABLE quick_notes, transcriptions RESTART IDENTITY CASCADE`); err != nil {
 		t.Fatalf("truncate tables: %v", err)
 	}
 

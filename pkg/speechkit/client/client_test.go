@@ -12,6 +12,7 @@ import (
 	"testing"
 
 	ws "github.com/coder/websocket"
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/speaker"
 )
 
 func TestClientAddsBearerAndDecodesStatus(t *testing.T) {
@@ -150,7 +151,7 @@ func TestClientEndpointMethodsUseExpectedRoutes(t *testing.T) {
 			if err != nil {
 				t.Fatalf("read multipart body: %v", err)
 			}
-			for _, want := range []string{"language", "en", "model", "tiny", "prompt", "prompt-text", "audio-bytes"} {
+			for _, want := range []string{"language", "en", "model", "tiny", "prompt", "prompt-text", "speaker_diarization", "speaker_min", "audio-bytes"} {
 				if !strings.Contains(string(body), want) {
 					t.Fatalf("multipart body missing %q: %s", want, body)
 				}
@@ -206,7 +207,7 @@ func TestClientEndpointMethodsUseExpectedRoutes(t *testing.T) {
 		{"VoiceAgentSessionSummary", func() error { _, err := c.VoiceAgentSessionSummary(ctx, 7); return err }},
 		{"TTSVoices", func() error { _, err := c.TTSVoices(ctx); return err }},
 		{"TranscribeFile", func() error {
-			_, err := c.TranscribeFile(ctx, audioPath, TranscribeOptions{Language: "en", Model: "tiny", Prompt: "prompt-text"})
+			_, err := c.TranscribeFile(ctx, audioPath, TranscribeOptions{Language: "en", Model: "tiny", Prompt: "prompt-text", Speaker: speaker.Options{Diarization: true, MinSpeakersExpected: 2}})
 			return err
 		}},
 		{"RawJSON", func() error { _, err := c.RawJSON(ctx, http.MethodPost, "/v1/custom", payload); return err }},
@@ -303,7 +304,6 @@ func TestVoiceAgentSessionLifecycle(t *testing.T) {
 				"session_id":     "session-1",
 				"ws_url":         "ws://" + r.Host + "/v1/voiceagent/ws",
 				"ws_subprotocol": "ticket.ticket-1",
-				"legacy_ws_url":  "ws://" + r.Host + "/v1/voiceagent/ws?ticket=ticket-1",
 				"ticket":         "ticket-1",
 				"expires_at":     "2026-05-16T15:00:00Z",
 			})

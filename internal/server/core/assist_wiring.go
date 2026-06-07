@@ -17,6 +17,7 @@ import (
 	"github.com/kombifyio/SpeechKit/internal/config"
 	"github.com/kombifyio/SpeechKit/internal/shortcuts"
 	"github.com/kombifyio/SpeechKit/internal/tts"
+	"github.com/kombifyio/SpeechKit/internal/ttswiring"
 )
 
 // ensureSharedAIDeps lazily builds Genkit runtime + TTS router + assist/agent
@@ -45,7 +46,7 @@ func ensureSharedAIDeps(ctx context.Context, app *App) []string {
 		app.AgentFlow = agentFlowFromRuntime(genkitRT)
 		app.Health.SetReady("genkit", StatusOK, "ready")
 	}
-	registerLocalLLMHealth(app)
+	registerLocalLLMHealth(ctx, app)
 
 	ttsRouter, ttsEnabled, ttsNotes := buildTTSRouter(app.Cfg)
 	notes = append(notes, ttsNotes...)
@@ -63,7 +64,7 @@ func ensureSharedAIDeps(ctx context.Context, app *App) []string {
 	return notes
 }
 
-func registerLocalLLMHealth(app *App) {
+func registerLocalLLMHealth(ctx context.Context, app *App) {
 	if app == nil || app.Cfg == nil || !app.Cfg.LocalLLM.Enabled || strings.TrimSpace(app.Cfg.LocalLLM.BaseURL) == "" {
 		return
 	}
@@ -74,7 +75,7 @@ func registerLocalLLMHealth(app *App) {
 		deadline := time.Now().Add(15 * time.Minute)
 		var lastErr error
 		for {
-			req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, healthURL, http.NoBody)
+			req, err := http.NewRequestWithContext(ctx, http.MethodGet, healthURL, http.NoBody)
 			if err == nil {
 				resp, err := client.Do(req)
 				if err == nil {
@@ -115,7 +116,7 @@ func localLLMHealthURL(baseURL string) string {
 // shortcuts) still yields a viable pipeline — the Framework's Assist code
 // gracefully degrades from LLM → shortcuts → action-only, and Assist
 // responses stay functional for every valid caller.
-func buildAssistPipeline(ctx context.Context, cfg *config.Config, app *App) (*assist.Pipeline, []string, error) {
+func buildAssistPipeline(ctx context.Context, cfg *config.Config, app *App) (*assist.Pipeline, []string) {
 	notes := ensureSharedAIDeps(ctx, app)
 
 	shortcutResolver := buildShortcutResolver(cfg)
@@ -166,7 +167,7 @@ func buildAssistPipeline(ctx context.Context, cfg *config.Config, app *App) (*as
 		)),
 		assist.WithSkillContextStore(skillContexts),
 	)
-	return pipeline, notes, nil
+	return pipeline, notes
 }
 
 // enableHomeAssistantUtility flips the HomeAssistant UtilityDefinition
@@ -348,81 +349,17 @@ func buildTTSRouter(cfg *config.Config) (*tts.Router, bool, []string) {
 		return nil, false, []string{"TTS: disabled in config"}
 	}
 
-	var providers []tts.Provider
-	var notes []string
+	// Resolve config → enabled-provider opts (shared with the Device-Target via
+	// ttswiring), then delegate the actual router assembly + model_selection
+	// pinning to the shared tts.BuildRouter SSOT.
+	enabled, preNotes := ttswiring.ResolveEnabledProviders(cfg)
 
-	if cfg.TTS.OpenAI.Enabled {
-		if key := strings.TrimSpace(config.ResolveSecret(cfg.Providers.OpenAI.APIKeyEnv)); key != "" {
-			providers = append(providers, tts.NewOpenAI(tts.OpenAIOpts{
-				APIKey: key,
-				Model:  firstNonEmpty(cfg.TTS.OpenAI.Model, "tts-1"),
-				Voice:  firstNonEmpty(cfg.TTS.OpenAI.Voice, cfg.TTS.Voice, "nova"),
-			}))
-			notes = append(notes, "TTS: OpenAI registered (voice="+cfg.TTS.OpenAI.Voice+")")
-		}
-	}
-	if cfg.TTS.Google.Enabled {
-		if key := strings.TrimSpace(config.ResolveSecret(cfg.Providers.Google.APIKeyEnv)); key != "" {
-			providers = append(providers, tts.NewGoogle(tts.GoogleOpts{
-				APIKey: key,
-				Voice:  firstNonEmpty(cfg.TTS.Google.Voice, cfg.TTS.Voice),
-			}))
-			notes = append(notes, "TTS: Google registered (voice="+cfg.TTS.Google.Voice+")")
-		}
-	}
-	if cfg.TTS.HuggingFace.Enabled {
-		if token, _, err := config.ResolveHuggingFaceToken(cfg); err == nil && token != "" {
-			providers = append(providers, tts.NewHuggingFace(tts.HuggingFaceOpts{
-				Token: token,
-				Model: firstNonEmpty(cfg.TTS.HuggingFace.Model, "parler-tts/parler-tts-mini-multilingual-v1.1"),
-			}))
-			notes = append(notes, "TTS: HuggingFace registered")
-		}
-	}
-	if cfg.TTS.Piper.Enabled {
-		voiceDir := strings.TrimSpace(cfg.TTS.Piper.VoiceDir)
-		if voiceDir == "" {
-			notes = append(notes, "TTS: Piper enabled but voice_dir is empty; skipping")
-		} else {
-			piper, err := tts.NewPiper(tts.PiperOpts{
-				Binary:        cfg.TTS.Piper.Binary,
-				VoiceDir:      voiceDir,
-				DefaultVoices: cfg.TTS.Piper.DefaultVoices,
-				Timeout:       time.Duration(cfg.TTS.Piper.TimeoutSec) * time.Second,
-			})
-			if err != nil {
-				notes = append(notes, "TTS: Piper init failed: "+err.Error())
-			} else {
-				providers = append(providers, piper)
-				notes = append(notes, "TTS: Piper registered (voice_dir="+voiceDir+")")
-			}
-		}
-	}
-
-	if len(providers) == 0 {
+	router, ok, notes := tts.BuildRouter(tts.Strategy(strings.TrimSpace(cfg.TTS.Strategy)), enabled)
+	notes = append(notes, preNotes...)
+	if !ok {
 		return nil, false, append(notes, "TTS: no providers configured; Assist responses will be text-only")
 	}
-	strategy := tts.Strategy(strings.TrimSpace(cfg.TTS.Strategy))
-
-	// Honour [model_selection.tts] when set — pin the preferred provider
-	// to the front of the strategy-determined order. The model_selection
-	// layer is the host-facing "which voice does Thalia speak with"
-	// switch; the strategy still controls cloud-first / local-first
-	// fallback behaviour. Empty profile = no pinning, fall back to the
-	// natural provider order.
-	primaryProfile := strings.TrimSpace(cfg.ModelSelection.TTS.PrimaryProfileID)
-	preferred := tts.PreferredProviderForProfileID(primaryProfile)
-	if preferred != "" {
-		ordered := tts.OrderByPreferredProvider(providers, preferred)
-		if len(ordered) > 0 && ordered[0].Name() == preferred {
-			notes = append(notes, "TTS: model_selection profile "+primaryProfile+" pinned provider "+preferred+" first")
-		} else {
-			notes = append(notes, "TTS: model_selection profile "+primaryProfile+" requested provider "+preferred+" but it is not configured; using strategy order")
-		}
-		providers = ordered
-	}
-
-	return tts.NewRouter(strategy, providers...), true, notes
+	return router, true, notes
 }
 
 // buildShortcutResolver translates config.Shortcuts.Locale into a runtime

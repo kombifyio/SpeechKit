@@ -15,6 +15,7 @@ import (
 	"time"
 
 	framework "github.com/kombifyio/SpeechKit/pkg/speechkit"
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/speaker"
 )
 
 const defaultUserAgent = "speechkit-client/0.1"
@@ -297,6 +298,7 @@ func (c *Client) TranscribeFile(ctx context.Context, path string, opts Transcrib
 	writeFormField(writer, "language", opts.Language)
 	writeFormField(writer, "model", opts.Model)
 	writeFormField(writer, "prompt", opts.Prompt)
+	writeSpeakerFormFields(writer, opts.Speaker)
 	if err := writer.Close(); err != nil {
 		return nil, fmt.Errorf("finish multipart request: %w", err)
 	}
@@ -383,6 +385,39 @@ func (c *Client) resolve(path string) string {
 func writeFormField(w *multipart.Writer, key, value string) {
 	if strings.TrimSpace(value) != "" {
 		_ = w.WriteField(key, value)
+	}
+}
+
+func writeSpeakerFormFields(w *multipart.Writer, opts speaker.Options) {
+	opts = opts.Normalized()
+	if !opts.WantsDiarization() {
+		return
+	}
+	_ = w.WriteField("speaker_enabled", "true")
+	if opts.Diarization || opts.Enabled {
+		_ = w.WriteField("speaker_diarization", "true")
+	}
+	if opts.Identification {
+		_ = w.WriteField("speaker_identification", "true")
+	}
+	if opts.Attribution {
+		_ = w.WriteField("speaker_attribution", "true")
+	}
+	writeFormField(w, "speaker_provider_profile_id", opts.ProviderProfileID)
+	writeFormField(w, "speaker_model", opts.Model)
+	writeFormField(w, "speaker_diarization_model", opts.DiarizationModel)
+	writeFormField(w, "speaker_type", opts.SpeakerType)
+	if opts.SpeakersExpected > 0 {
+		_ = w.WriteField("speakers_expected", fmt.Sprint(opts.SpeakersExpected))
+	}
+	if opts.MinSpeakersExpected > 0 {
+		_ = w.WriteField("speaker_min", fmt.Sprint(opts.MinSpeakersExpected))
+	}
+	if opts.MaxSpeakersExpected > 0 {
+		_ = w.WriteField("speaker_max", fmt.Sprint(opts.MaxSpeakersExpected))
+	}
+	if len(opts.KnownValues) > 0 {
+		_ = w.WriteField("speaker_known_values", strings.Join(opts.KnownValues, ","))
 	}
 }
 

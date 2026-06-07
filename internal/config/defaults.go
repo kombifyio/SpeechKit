@@ -21,6 +21,7 @@ func defaults() *Config {
 			AssistEnabled:            false,
 			VoiceAgentEnabled:        false,
 			AutoStartOnLaunch:        false,
+			EagerWarmup:              false,
 			AgentHotkey:              "win+alt",
 			AgentMode:                "assist",
 			ActiveMode:               "none",
@@ -184,7 +185,6 @@ func defaults() *Config {
 			AgentSequenceID:                 "",
 			FrameworkPrompt:                 "",
 			RefinementPrompt:                "",
-			Instruction:                     "",
 			AutoStartOnLaunch:               false,
 			CloseBehavior:                   VoiceAgentCloseBehaviorContinue,
 			ReminderAfterIdleSec:            300,
@@ -230,15 +230,28 @@ func defaults() *Config {
 				AgentModel:   "llama-3.3-70b-versatile",
 			},
 			Google: GoogleProviderConfig{
-				APIKeyEnv:    GoogleAIAPIKeyEnv,         //nolint:gosec // not a credential, field name triggers false positive
-				STTAPIKeyEnv: GoogleSTTDefaultAPIKeyEnv, //nolint:gosec // not a credential, field name triggers false positive
-				STTModel:     "chirp_3",
-				UtilityModel: "gemini-2.5-flash-lite",
-				AssistModel:  "gemini-2.5-flash",
-				AgentModel:   "gemini-2.5-pro",
+				APIKeyEnv:                 GoogleAIAPIKeyEnv,               //nolint:gosec // not a credential, field name triggers false positive
+				STTAPIKeyEnv:              GoogleSTTDefaultAPIKeyEnv,       //nolint:gosec // not a credential, field name triggers false positive
+				STTCredentialsJSONEnv:     GoogleSTTCredentialsJSONEnv,     //nolint:gosec // not a credential, field name triggers false positive
+				ApplicationCredentialsEnv: GoogleApplicationCredentialsEnv, //nolint:gosec // not a credential, field name triggers false positive
+				STTModel:                  "latest_long",
+				UtilityModel:              "gemini-2.5-flash-lite",
+				AssistModel:               "gemini-2.5-flash",
+				AgentModel:                "gemini-2.5-pro",
 				// EU default: reflects target enterprise customer base.
 				// US customers override with "us-central1" in config.toml.
 				Region: "europe-west3",
+			},
+			Deepgram: DeepgramProviderConfig{
+				APIKeyEnv:        DeepgramAPIKeyEnv, //nolint:gosec // not a credential, field name triggers false positive
+				STTModel:         "nova-3",
+				DiarizationModel: "latest",
+			},
+			AssemblyAI: AssemblyAIProviderConfig{
+				APIKeyEnv:        AssemblyAIAPIKeyEnv, //nolint:gosec // not a credential, field name triggers false positive
+				STTModels:        "universal-3-pro,universal-2",
+				StreamingModel:   "u3-rt-pro",
+				StreamingBaseURL: "wss://streaming.assemblyai.com",
 			},
 			Ollama: OllamaProviderConfig{
 				BaseURL:      "http://localhost:11434",
@@ -286,6 +299,11 @@ func defaults() *Config {
 			RateLimitRPS:             10,
 			RateLimitBurst:           20,
 			MaxUploadMB:              25,
+			ReadHeaderTimeoutSec:     15,
+			ReadTimeoutSec:           120,
+			IdleTimeoutSec:           120,
+			MaxHeaderBytes:           1 << 20,
+			MaxDecodedAudioSeconds:   600,
 			MaxVoiceAgentSessions:    100,
 			MaxSessionsPerUser:       3,
 			TicketTTLSec:             90,

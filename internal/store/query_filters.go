@@ -1,11 +1,12 @@
 package store
 
-import (
-	"fmt"
-	"strings"
-)
+import "strings"
 
-func appendSQLiteNormalizedLanguageFilter(clauses []string, args []any, language string) ([]string, []any) {
+// Filter helpers append `?`-placeholder WHERE clauses shared by both backends.
+// The caller rebinds the assembled query to the backend's placeholder style
+// (sqlDialect.rebind), so these helpers stay dialect-neutral.
+
+func appendNormalizedLanguageFilter(clauses []string, args []any, language string) ([]string, []any) {
 	language = normalizeDictionaryLanguage(language)
 	if language == "" {
 		return clauses, args
@@ -15,7 +16,7 @@ func appendSQLiteNormalizedLanguageFilter(clauses []string, args []any, language
 	return clauses, args
 }
 
-func appendSQLiteOwnerFilter(clauses []string, args []any, opts ListOpts) ([]string, []any) {
+func appendOwnerFilter(clauses []string, args []any, opts ListOpts) ([]string, []any) {
 	if opts.IncludeAllOwners {
 		return clauses, args
 	}
@@ -30,37 +31,5 @@ func appendSQLiteOwnerFilter(clauses []string, args []any, opts ListOpts) ([]str
 		clauses = append(clauses, `(COALESCE(owner_user_id, '') = ? AND COALESCE(owner_org_id, '') = ?)`)
 	}
 	args = append(args, userID, orgID)
-	return clauses, args
-}
-
-func appendPostgresNormalizedLanguageFilter(clauses []string, args []any, language string) ([]string, []any) {
-	language = normalizeDictionaryLanguage(language)
-	if language == "" {
-		return clauses, args
-	}
-	args = append(args, language)
-	param := len(args)
-	clauses = append(clauses, fmt.Sprintf("language_base = $%d", param))
-	return clauses, args
-}
-
-func appendPostgresOwnerFilter(clauses []string, args []any, opts ListOpts) ([]string, []any) {
-	if opts.IncludeAllOwners {
-		return clauses, args
-	}
-	userID := strings.TrimSpace(opts.OwnerUserID)
-	orgID := strings.TrimSpace(opts.OwnerOrgID)
-	if userID == "" && orgID == "" {
-		return clauses, args
-	}
-	args = append(args, userID)
-	userParam := len(args)
-	args = append(args, orgID)
-	orgParam := len(args)
-	if opts.IncludeOwnerless {
-		clauses = append(clauses, fmt.Sprintf(`((COALESCE(owner_user_id, '') = $%d AND COALESCE(owner_org_id, '') = $%d) OR (COALESCE(owner_user_id, '') = '' AND COALESCE(owner_org_id, '') = ''))`, userParam, orgParam))
-	} else {
-		clauses = append(clauses, fmt.Sprintf(`(COALESCE(owner_user_id, '') = $%d AND COALESCE(owner_org_id, '') = $%d)`, userParam, orgParam))
-	}
 	return clauses, args
 }

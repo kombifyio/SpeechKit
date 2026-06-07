@@ -79,14 +79,22 @@ func deploymentStatusSnapshot(app *App) map[string]any {
 		},
 		"providers": map[string]any{
 			"google": map[string]any{
-				"api_key": envStatus(firstNonEmpty(cfg.Providers.Google.APIKeyEnv, config.GoogleAIAPIKeyEnv)),
-				"stt_key": envStatus(config.GoogleSTTAPIKeyEnvName(cfg)),
+				"api_key":                 envStatus(firstNonEmpty(cfg.Providers.Google.APIKeyEnv, config.GoogleAIAPIKeyEnv)),
+				"stt_key":                 envStatus(config.GoogleSTTAPIKeyEnvName(cfg)),
+				"stt_credentials_json":    envStatus(config.GoogleSTTCredentialsJSONEnvName(cfg)),
+				"application_credentials": envStatus(config.GoogleApplicationCredentialsEnvName(cfg)),
 			},
 			"openai": map[string]any{
 				"api_key": envStatus(firstNonEmpty(cfg.Providers.OpenAI.APIKeyEnv, "OPENAI_API_KEY")),
 			},
 			"groq": map[string]any{
 				"api_key": envStatus(firstNonEmpty(cfg.Providers.Groq.APIKeyEnv, "GROQ_API_KEY")),
+			},
+			"deepgram": map[string]any{
+				"api_key": envStatus(firstNonEmpty(cfg.Providers.Deepgram.APIKeyEnv, config.DeepgramAPIKeyEnv)),
+			},
+			"assemblyai": map[string]any{
+				"api_key": envStatus(firstNonEmpty(cfg.Providers.AssemblyAI.APIKeyEnv, config.AssemblyAIAPIKeyEnv)),
 			},
 			"huggingface": map[string]any{
 				"token": envStatus(config.HuggingFaceTokenEnvName(cfg)),

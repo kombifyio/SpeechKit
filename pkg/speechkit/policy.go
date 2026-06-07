@@ -1,9 +1,6 @@
 package speechkit
 
-import (
-	"fmt"
-	"strings"
-)
+import "fmt"
 
 // ModeBehavior describes how much mode-specific intelligence a host enables.
 type ModeBehavior string
@@ -61,7 +58,7 @@ func ValidateRuntimePolicy(profiles []ProviderProfile, policy RuntimePolicy) err
 	allowedProfiles := policyAllowedProfileSet(policy.AllowedProfiles)
 
 	for _, profileID := range policy.AllowedProfiles {
-		profileID = strings.TrimSpace(profileID)
+		profileID = NormalizeProviderProfileID(profileID)
 		if profileID == "" {
 			continue
 		}
@@ -80,7 +77,7 @@ func ValidateRuntimePolicy(profiles []ProviderProfile, policy RuntimePolicy) err
 
 	for rawMode, rawProfileID := range policy.FixedProfiles {
 		mode := NormalizeMode(rawMode)
-		profileID := strings.TrimSpace(rawProfileID)
+		profileID := NormalizeProviderProfileID(rawProfileID)
 		if mode == ModeNone {
 			return fmt.Errorf("speechkit: fixed profile %q uses unsupported mode %q", profileID, rawMode)
 		}
@@ -129,8 +126,8 @@ func ValidateModeSettingsForPolicy(profiles []ProviderProfile, settings ModeSett
 			continue
 		}
 		for label, profileID := range map[string]string{
-			"primary":  strings.TrimSpace(setting.PrimaryProfileID),
-			"fallback": strings.TrimSpace(setting.FallbackProfileID),
+			"primary":  NormalizeProviderProfileID(setting.PrimaryProfileID),
+			"fallback": NormalizeProviderProfileID(setting.FallbackProfileID),
 		} {
 			if profileID == "" {
 				continue
@@ -178,7 +175,7 @@ func policyEnabledModeSet(modes []Mode) map[Mode]bool {
 func policyAllowedProfileSet(profileIDs []string) map[string]bool {
 	allowed := map[string]bool{}
 	for _, profileID := range profileIDs {
-		profileID = strings.TrimSpace(profileID)
+		profileID = NormalizeProviderProfileID(profileID)
 		if profileID != "" {
 			allowed[profileID] = true
 		}
@@ -190,7 +187,7 @@ func policyFixedProfileSet(input map[Mode]string) map[Mode]string {
 	fixed := map[Mode]string{}
 	for rawMode, rawProfileID := range input {
 		mode := NormalizeMode(rawMode)
-		profileID := strings.TrimSpace(rawProfileID)
+		profileID := NormalizeProviderProfileID(rawProfileID)
 		if mode != ModeNone && profileID != "" {
 			fixed[mode] = profileID
 		}
@@ -202,6 +199,9 @@ func providerProfilesByID(profiles []ProviderProfile) map[string]ProviderProfile
 	byID := make(map[string]ProviderProfile, len(profiles))
 	for _, profile := range profiles {
 		byID[profile.ID] = profile
+		if normalized := NormalizeProviderProfileID(profile.ID); normalized != "" {
+			byID[normalized] = profile
+		}
 	}
 	return byID
 }

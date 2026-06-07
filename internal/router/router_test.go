@@ -12,6 +12,7 @@ import (
 	"github.com/kombifyio/SpeechKit/internal/auditlog"
 	"github.com/kombifyio/SpeechKit/internal/auditlogtest"
 	"github.com/kombifyio/SpeechKit/internal/stt"
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/speaker"
 )
 
 // mockProvider implements stt.STTProvider for testing.
@@ -46,6 +47,25 @@ func (m *mockProvider) Health(ctx context.Context) error {
 	}
 	return nil
 }
+
+type mockStreamingProvider struct {
+	mockProvider
+	started bool
+}
+
+func (m *mockStreamingProvider) StartSpeakerStream(_ context.Context, _ speaker.Options, _ speaker.AudioFormat) (speaker.SpeakerStream, error) {
+	m.started = true
+	return &mockSpeakerStream{}, nil
+}
+
+type mockSpeakerStream struct{}
+
+func (mockSpeakerStream) SendAudio(context.Context, []byte) error { return nil }
+func (mockSpeakerStream) EndAudio(context.Context) error          { return nil }
+func (mockSpeakerStream) Receive(context.Context) (*speaker.SpeakerFrame, error) {
+	return nil, context.Canceled
+}
+func (mockSpeakerStream) Close() error { return nil }
 
 func newTestRouter(local, vps, hf stt.STTProvider, strategy Strategy) *Router {
 	r := &Router{
@@ -226,6 +246,29 @@ func TestAvailableProviders(t *testing.T) {
 	providers := r.AvailableProviders()
 	if len(providers) != 2 {
 		t.Errorf("expected 2 providers, got %d", len(providers))
+	}
+}
+
+func TestStartSpeakerStreamSelectsMatchingProviderProfile(t *testing.T) {
+	deepgram := &mockStreamingProvider{mockProvider: mockProvider{name: "deepgram"}}
+	assembly := &mockStreamingProvider{mockProvider: mockProvider{name: "assemblyai"}}
+	r := newTestRouter(nil, deepgram, assembly, StrategyCloudOnly)
+
+	stream, err := r.StartSpeakerStream(context.Background(),
+		speaker.Options{Diarization: true, ProviderProfileID: "speaker.assemblyai.diarization"},
+		speaker.AudioFormat{},
+	)
+	if err != nil {
+		t.Fatalf("StartSpeakerStream: %v", err)
+	}
+	if stream == nil {
+		t.Fatal("expected stream")
+	}
+	if !assembly.started {
+		t.Fatal("expected assemblyai provider to start")
+	}
+	if deepgram.started {
+		t.Fatal("deepgram should not start when assemblyai profile is requested")
 	}
 }
 

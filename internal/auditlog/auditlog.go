@@ -2,8 +2,10 @@ package auditlog
 
 import (
 	"context"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -20,6 +22,13 @@ var (
 	logDir        string
 	retentionDays int
 	enabled       bool
+	// hmacKey keys the tamper-evidence chain (HMAC-SHA256). Empty => plain
+	// SHA-256 chain (integrity/ordering only).
+	hmacKey []byte
+	// lastHash is the Hash of the most recently written record, used as the
+	// next record's PrevHash. Re-seeded from the active file's tail on (re)open
+	// so the chain survives process restarts.
+	lastHash string
 )
 
 // ConfigOptions holds all configuration for the audit-log package.
@@ -44,6 +53,11 @@ type ConfigOptions struct {
 	OTLPCertFile string
 	OTLPKeyFile  string
 	OTLPCAFile   string
+	// HMACKey keys the tamper-evidence chain. When empty, the package falls
+	// back to the AUDIT_INTEGRITY_KEY env var (hex-encoded); if that is also
+	// empty the chain uses plain SHA-256 (integrity/ordering only, not
+	// forgery-proof). Provide a stable per-install key for real tamper-evidence.
+	HMACKey []byte
 }
 
 // ConfigureFromOptions configures the audit-log package from a ConfigOptions
@@ -61,6 +75,24 @@ func ConfigureFromOptions(opts ConfigOptions) error {
 	} else {
 		retentionDays = opts.RetentionDays
 	}
+	hmacKey = opts.HMACKey
+	if len(hmacKey) == 0 {
+		if hexKey := strings.TrimSpace(os.Getenv("AUDIT_INTEGRITY_KEY")); hexKey != "" {
+			if decoded, err := hex.DecodeString(hexKey); err == nil {
+				hmacKey = decoded
+			} else {
+				slog.Warn("auditlog: AUDIT_INTEGRITY_KEY is not valid hex; falling back to keyless integrity chain")
+			}
+		}
+	}
+	// Start fresh: close any prior file and clear the in-memory chain head so
+	// the next write re-seeds from the active file's tail.
+	if currentFile != nil {
+		_ = currentFile.Close()
+		currentFile = nil
+	}
+	currentDate = ""
+	lastHash = ""
 	mu.Unlock()
 
 	if opts.EventLogEnabled {
@@ -121,6 +153,22 @@ func AppendEvent(ctx context.Context, ev Record) error {
 		return err
 	}
 
+	// Tamper-evidence chain: normalize so the write-time hash input matches
+	// what a verifier reconstructs from disk, link to the previous record via
+	// PrevHash, then stamp this record's own Hash.
+	normalized, err := normalizeRecord(ev)
+	if err != nil {
+		return fmt.Errorf("normalize: %w", err)
+	}
+	ev = normalized
+	ev.PrevHash = lastHash
+	ev.Hash = ""
+	hash, err := RecordHash(hmacKey, ev)
+	if err != nil {
+		return err
+	}
+	ev.Hash = hash
+
 	line, err := json.Marshal(ev)
 	if err != nil {
 		return fmt.Errorf("marshal: %w", err)
@@ -128,6 +176,7 @@ func AppendEvent(ctx context.Context, ev Record) error {
 	if _, err := currentFile.Write(append(line, '\n')); err != nil {
 		return fmt.Errorf("write: %w", err)
 	}
+	lastHash = ev.Hash
 	// Mirror to the Windows Event Log sink when enabled. emitToEventLog is a
 	// no-op when eventLogHandle is nil (sink not opened) or on non-Windows.
 	// Uses its own eventLogMu — no deadlock risk with the outer mu.
@@ -159,8 +208,53 @@ func ensureCurrentFileLocked(dateKey string) error {
 	currentFile = f
 	currentDate = dateKey
 
+	// Continue the chain across process restarts: if we have no in-memory head
+	// yet but the file already holds records, seed from its last record. A
+	// non-empty in-memory head (e.g. a day-boundary roll mid-process) is kept
+	// so the chain links across day files.
+	if lastHash == "" {
+		lastHash = lastHashFromFile(path)
+	}
+
 	pruneOldAuditFilesLocked()
 	return nil
+}
+
+// lastHashFromFile returns the Hash of the last record in an audit file, or ""
+// when the file is empty/unreadable. It reads only the file tail to avoid
+// loading a full day of records.
+func lastHashFromFile(path string) string {
+	f, err := os.Open(path) // #nosec G304 -- path composed under logDir
+	if err != nil {
+		return ""
+	}
+	defer func() { _ = f.Close() }()
+	info, err := f.Stat()
+	if err != nil || info.Size() == 0 {
+		return ""
+	}
+	const tailWindow = 64 * 1024
+	start := int64(0)
+	if info.Size() > tailWindow {
+		start = info.Size() - tailWindow
+	}
+	buf := make([]byte, info.Size()-start)
+	if _, err := f.ReadAt(buf, start); err != nil && err != io.EOF {
+		return ""
+	}
+	lines := strings.Split(strings.TrimRight(string(buf), "\n"), "\n")
+	for i := len(lines) - 1; i >= 0; i-- {
+		line := strings.TrimSpace(lines[i])
+		if line == "" {
+			continue
+		}
+		var rec Record
+		if json.Unmarshal([]byte(line), &rec) != nil {
+			return "" // tail window cut mid-line; cannot trust it
+		}
+		return rec.Hash
+	}
+	return ""
 }
 
 // pruneOldAuditFilesLocked removes audit-YYYY-MM-DD.log files older than

@@ -38,6 +38,10 @@ optional speaker output. Assist uses it for Siri/Alexa-style Voice Companion
 requests, Voice Agent uses it for continuous dialogue, and Dictation uses it
 only as UI-assisted activation with a visible text target or commit surface.
 
+Speaker diarization, speaker identification, and speaker attribution are also
+add-on capabilities over the three modes. Provider support and auth status are
+tracked in the [voice capability matrix](./docs/capabilities/voice-capability-matrix.json).
+
 ## Why SpeechKit
 
 ### Local-first Go backend
@@ -136,8 +140,9 @@ Import only the components your host needs. A dictation-only app can use
 `pkg/speechkit/dictation`; an activation-only integration can use
 `pkg/speechkit/wakeword`; spoken output can use `pkg/speechkit/tts`; one-shot
 Voice Companion hosts use `pkg/speechkit/companion` plus Assist/TTS adapters;
-server-connected apps use `pkg/speechkit/client`. You do not need to load the
-Windows client or the whole framework for a single component.
+speaker-aware apps can use `pkg/speechkit/speaker`; server-connected apps use
+`pkg/speechkit/client`. You do not need to load the Windows client or the whole
+framework for a single component.
 
 For a single-prompt Go starter:
 
@@ -167,6 +172,7 @@ contracts, deployment steps, or release rules:
 
 - [Docs index](./docs/README.md)
 - [Framework API](./docs/speechkit-framework-api.md)
+- [Voice Capability Matrix](./docs/capabilities/voice-capability-matrix.json)
 - [Local OpenAPI](./docs/api/openapi.v1.yaml)
 - [SpeechKit Server docs](./docs/server/README.md)
 - [SpeechKit Server OpenAPI](./docs/server/openapi.v1.yaml)

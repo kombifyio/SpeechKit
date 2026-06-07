@@ -4,7 +4,9 @@ package audio
 
 import (
 	"bytes"
+	"context"
 	"encoding/binary"
+	"errors"
 	"math"
 	"testing"
 )
@@ -98,6 +100,22 @@ func TestDecode_RawPCM_Passthrough(t *testing.T) {
 	}
 	if !bytes.Equal(got.PCM, pcm) {
 		t.Fatalf("raw PCM should pass through unchanged")
+	}
+}
+
+func TestDecodeWithLimits_RejectsDecodedAudioOverDurationLimit(t *testing.T) {
+	pcm := synthSine(TargetSampleRate, 1, 440.0, 1100)
+	_, err := DecodeWithLimits(context.Background(), pcm, "audio/L16;rate=16000;channels=1", DecodeLimits{MaxDecodedAudioSeconds: 1})
+	if !errors.Is(err, ErrDecodedAudioTooLarge) {
+		t.Fatalf("error = %v, want ErrDecodedAudioTooLarge", err)
+	}
+
+	var limitErr *DecodeLimitError
+	if !errors.As(err, &limitErr) {
+		t.Fatalf("error = %T, want *DecodeLimitError", err)
+	}
+	if limitErr.MaxSeconds != 1 || limitErr.ActualBytes <= limitErr.MaxBytes {
+		t.Fatalf("limit error = %+v, want actual bytes over configured max", limitErr)
 	}
 }
 

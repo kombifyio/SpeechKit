@@ -17,6 +17,7 @@ import (
 	"log/slog"
 	"mime"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -25,6 +26,7 @@ import (
 	"github.com/kombifyio/SpeechKit/internal/server/storageauth"
 	"github.com/kombifyio/SpeechKit/internal/store"
 	"github.com/kombifyio/SpeechKit/internal/stt"
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/speaker"
 )
 
 // Transcriber is the minimal surface the handler needs from an STT router.
@@ -36,16 +38,18 @@ type Transcriber interface {
 
 // Options configures a single handler instance.
 type Options struct {
-	Router        Transcriber
-	MaxUploadMB   int    // request body ceiling; 0 disables the limit (discouraged)
-	DefaultPrompt string // applied when the request does not provide a prompt
-	Store         store.Store
+	Router                 Transcriber
+	MaxUploadMB            int    // request body ceiling; 0 disables the limit (discouraged)
+	MaxDecodedAudioSeconds int    // decoded PCM duration ceiling; 0 disables the decode-duration cap
+	DefaultPrompt          string // applied when the request does not provide a prompt
+	Store                  store.Store
 }
 
 // Handler implements the dictation HTTP surface.
 type Handler struct {
 	router        Transcriber
 	maxBytes      int64
+	decodeLimits  audio.DecodeLimits
 	defaultPrompt string
 	store         store.Store
 }
@@ -63,6 +67,7 @@ func New(opts Options) (*Handler, error) {
 	return &Handler{
 		router:        opts.Router,
 		maxBytes:      maxBytes,
+		decodeLimits:  audio.DecodeLimits{MaxDecodedAudioSeconds: opts.MaxDecodedAudioSeconds},
 		defaultPrompt: strings.TrimSpace(opts.DefaultPrompt),
 		store:         opts.Store,
 	}, nil
@@ -76,14 +81,15 @@ func (h *Handler) Mount(mux *http.ServeMux) {
 // response body shape — kept stable across versions so kombify-AI and future
 // OSS consumers can pin to this contract.
 type transcribeResponse struct {
-	Text       string      `json:"text"`
-	Language   string      `json:"language,omitempty"`
-	DurationMs int64       `json:"duration_ms"`
-	LatencyMs  int64       `json:"latency_ms"`
-	Provider   string      `json:"provider,omitempty"`
-	Model      string      `json:"model,omitempty"`
-	Confidence float64     `json:"confidence,omitempty"`
-	SourceInfo *sourceMeta `json:"source,omitempty"`
+	Text       string                     `json:"text"`
+	Language   string                     `json:"language,omitempty"`
+	DurationMs int64                      `json:"duration_ms"`
+	LatencyMs  int64                      `json:"latency_ms"`
+	Provider   string                     `json:"provider,omitempty"`
+	Model      string                     `json:"model,omitempty"`
+	Confidence float64                    `json:"confidence,omitempty"`
+	SourceInfo *sourceMeta                `json:"source,omitempty"`
+	Speakers   *speaker.DiarizationResult `json:"speakers,omitempty"`
 }
 
 type sourceMeta struct {
@@ -94,11 +100,13 @@ type sourceMeta struct {
 }
 
 type transcribeJSONRequest struct {
-	AudioBase64 string `json:"audio_base64"`
-	Format      string `json:"format"`   // "wav" | "mp3" | "pcm16"
-	Language    string `json:"language"` // "de" | "en" | "auto"
-	Model       string `json:"model"`
-	Prompt      string `json:"prompt"`
+	AudioBase64    string          `json:"audio_base64"`
+	Format         string          `json:"format"`   // "wav" | "mp3" | "pcm16"
+	Language       string          `json:"language"` // "de" | "en" | "auto"
+	Model          string          `json:"model"`
+	Prompt         string          `json:"prompt"`
+	Speaker        speaker.Options `json:"speaker"`
+	SpeakerOptions speaker.Options `json:"speaker_options"`
 }
 
 // ServeHTTP routes the request by Content-Type.
@@ -123,10 +131,17 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) handleMultipart(w http.ResponseWriter, r *http.Request) {
+	r.Body = http.MaxBytesReader(w, r.Body, h.maxBytes)
+	defer func() { _ = r.Body.Close() }()
+
 	// Bound memory: up to 32 KB in-memory before spilling to tmp.
 	if err := r.ParseMultipartForm(32 << 10); err != nil {
-		httpx.WriteError(w, http.StatusBadRequest, "invalid_multipart",
-			"failed to parse multipart body: "+err.Error())
+		if errors.As(err, new(*http.MaxBytesError)) {
+			httpx.WriteError(w, http.StatusRequestEntityTooLarge, "payload_too_large",
+				fmt.Sprintf("request body exceeds maximum %d bytes", h.maxBytes))
+			return
+		}
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_multipart", "failed to parse multipart body: "+err.Error())
 		return
 	}
 
@@ -151,6 +166,7 @@ func (h *Handler) handleMultipart(w http.ResponseWriter, r *http.Request) {
 		Language: strings.TrimSpace(r.FormValue("language")),
 		Model:    strings.TrimSpace(r.FormValue("model")),
 		Prompt:   strings.TrimSpace(r.FormValue("prompt")),
+		Speaker:  parseSpeakerOptionsFromForm(r),
 	}
 	opts.Prompt = h.resolvePrompt(opts.Prompt)
 	h.transcribeAndReply(w, r, file, partCT, opts)
@@ -201,6 +217,7 @@ func (h *Handler) handleJSON(w http.ResponseWriter, r *http.Request) {
 		Language: strings.TrimSpace(body.Language),
 		Model:    strings.TrimSpace(body.Model),
 		Prompt:   strings.TrimSpace(body.Prompt),
+		Speaker:  resolveSpeakerOptions(body.Speaker, body.SpeakerOptions),
 	}
 	opts.Prompt = h.resolvePrompt(opts.Prompt)
 
@@ -233,11 +250,15 @@ func (h *Handler) transcribeAndReply(w http.ResponseWriter, r *http.Request, rea
 }
 
 func (h *Handler) transcribeBytes(w http.ResponseWriter, r *http.Request, raw []byte, contentType string, opts stt.TranscribeOpts) {
-	decoded, err := audio.Decode(raw, contentType)
+	decoded, err := audio.DecodeWithLimits(r.Context(), raw, contentType, h.decodeLimits)
 	if err != nil {
 		if errors.Is(err, audio.ErrUnsupportedFormat) {
 			httpx.WriteError(w, http.StatusUnsupportedMediaType, "unsupported_audio_format",
 				err.Error())
+			return
+		}
+		if errors.Is(err, audio.ErrDecodedAudioTooLarge) {
+			httpx.WriteError(w, http.StatusRequestEntityTooLarge, "payload_too_large", err.Error())
 			return
 		}
 		httpx.WriteError(w, http.StatusBadRequest, "invalid_audio",
@@ -259,7 +280,7 @@ func (h *Handler) transcribeBytes(w http.ResponseWriter, r *http.Request, raw []
 	if err != nil {
 		// Router errors map to 503 (provider unavailable) in v1 since we
 		// don't yet distinguish transient vs permanent. Revisit in v1.1.
-		slog.Warn("dictation: router error",
+		slog.Warn("dictation: router error", // #nosec G706 -- slog writes structured fields; request-derived values are attributes, not message format.
 			"err", err,
 			"duration_ms", decoded.DurationMs,
 			"format", decoded.SourceFormat,
@@ -293,14 +314,18 @@ func (h *Handler) transcribeBytes(w http.ResponseWriter, r *http.Request, raw []
 			Channels:   decoded.SourceCh,
 			DurationMs: decoded.DurationMs,
 		},
+		Speakers: result.Speakers,
 	}
 	if h.store != nil {
 		persistCtx := storageauth.ContextWithRequestOwner(ctx, r)
 		audioAsset := audioAssetInput(raw, contentType, decoded.SourceFormat, decoded.DurationMs)
 		var err error
-		if saver, ok := h.store.(store.TranscriptionAudioStore); ok {
+		switch saver := h.store.(type) {
+		case store.TranscriptionSpeakerStore:
+			err = saver.SaveTranscriptionWithAudioAndSpeakers(persistCtx, result.Text, resp.Language, result.Provider, result.Model, decoded.DurationMs, latency.Milliseconds(), audioAsset, result.Speakers)
+		case store.TranscriptionAudioStore:
 			err = saver.SaveTranscriptionWithAudio(persistCtx, result.Text, resp.Language, result.Provider, result.Model, decoded.DurationMs, latency.Milliseconds(), audioAsset)
-		} else {
+		default:
 			err = h.store.SaveTranscription(persistCtx, result.Text, resp.Language, result.Provider, result.Model, decoded.DurationMs, latency.Milliseconds(), raw)
 		}
 		if err != nil {
@@ -385,4 +410,67 @@ func audioMimeType(extension string) string {
 	default:
 		return "audio/wav"
 	}
+}
+
+func resolveSpeakerOptions(primary, fallback speaker.Options) speaker.Options {
+	if primary.WantsDiarization() || primary.Enabled {
+		return primary.Normalized()
+	}
+	return fallback.Normalized()
+}
+
+func parseSpeakerOptionsFromForm(r *http.Request) speaker.Options {
+	if r == nil {
+		return speaker.Options{}
+	}
+	opts := speaker.Options{
+		Enabled:             parseFormBool(r, "speaker_enabled"),
+		Diarization:         parseFormBool(r, "speaker_diarization"),
+		Identification:      parseFormBool(r, "speaker_identification"),
+		Attribution:         parseFormBool(r, "speaker_attribution"),
+		ProviderProfileID:   strings.TrimSpace(r.FormValue("speaker_provider_profile_id")),
+		Model:               strings.TrimSpace(r.FormValue("speaker_model")),
+		DiarizationModel:    strings.TrimSpace(r.FormValue("speaker_diarization_model")),
+		SpeakerType:         strings.TrimSpace(r.FormValue("speaker_type")),
+		SpeakersExpected:    parseFormInt(r, "speakers_expected"),
+		MinSpeakersExpected: parseFormInt(r, "speaker_min"),
+		MaxSpeakersExpected: parseFormInt(r, "speaker_max"),
+		KnownValues:         splitCSV(r.FormValue("speaker_known_values")),
+	}
+	return opts.Normalized()
+}
+
+func parseFormBool(r *http.Request, name string) bool {
+	switch strings.ToLower(strings.TrimSpace(r.FormValue(name))) {
+	case "1", "true", "yes", "on":
+		return true
+	default:
+		return false
+	}
+}
+
+func parseFormInt(r *http.Request, name string) int {
+	raw := strings.TrimSpace(r.FormValue(name))
+	if raw == "" {
+		return 0
+	}
+	value, err := strconv.Atoi(raw)
+	if err != nil || value < 0 {
+		return 0
+	}
+	return value
+}
+
+func splitCSV(raw string) []string {
+	if strings.TrimSpace(raw) == "" {
+		return nil
+	}
+	parts := strings.Split(raw, ",")
+	out := make([]string, 0, len(parts))
+	for _, part := range parts {
+		if part = strings.TrimSpace(part); part != "" {
+			out = append(out, part)
+		}
+	}
+	return out
 }

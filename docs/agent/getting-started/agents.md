@@ -68,7 +68,7 @@ Hi Codex, configure `speechkit-mcp` in docs mode and verify the SpeechKit API be
 6. Use `speechkit_install_plan` before changing a host.
 7. Use `speechkit_self_check_plan` after installation and before writing integration code.
 8. Use `speechkit_scaffold_integration` for a starter app before inventing boilerplate.
-9. For browser Docker Compose, use `https://speechkit.cc/install-server/docker-compose.example.yml` and set `SPEECHKIT_PUBLIC_URL` (canonical) or `SPEECHKIT_SERVER_PUBLIC_URL` (alias) to the browser-reachable server origin.
+9. For browser Docker Compose, use `https://speechkit.cc/install-server/docker-compose.example.yml` and set `SPEECHKIT_PUBLIC_URL` to the browser-reachable server origin.
 10. Use the stable install channel unless the user explicitly asks for a documented preview build.
 11. For automation, prefer setting `SPEECHKIT_SERVER_TOKEN` before first start. Otherwise complete `/v1/server/settings` setup and enable `admin_auth.enabled=true` with a generated admin username/password unless the host has an authenticated edge that already protects `/setup`.
 
@@ -95,5 +95,5 @@ files before applying them to a repository.
 - Do not commit secrets.
 - Do not expose `auth_mode = "none"` on a public host.
 - Keep Dictation, Assist, and Voice Agent behavior separate.
-- Voice Agent WebSocket auth is subprotocol-first: use the session response `ws_url` with `ws_subprotocol` (`ticket.<value>`). The legacy `legacy_ws_url` query form exists only for compatibility; do not teach new browser clients to put tickets in URLs.
+- Voice Agent WebSocket auth is subprotocol-first: use the session response `ws_url` with `ws_subprotocol` (`ticket.<value>`); do not teach browser clients to put tickets in URLs.
 - Voice Agent tickets default to 90 seconds. Expired tickets are not refreshed in v1; create a new session instead.

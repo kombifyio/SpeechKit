@@ -16,8 +16,8 @@ type Handler struct {
 	store store.UserDictionaryStore
 }
 
-func New(store store.UserDictionaryStore) *Handler {
-	return &Handler{store: store}
+func New(dictionaryStore store.UserDictionaryStore) *Handler {
+	return &Handler{store: dictionaryStore}
 }
 
 func (h *Handler) Mount(mux *http.ServeMux) {
@@ -62,7 +62,7 @@ func (h *Handler) dictionary(w http.ResponseWriter, r *http.Request) {
 		entries, _ := h.store.ListUserDictionaryEntries(r.Context(), body.Language)
 		writeJSON(w, http.StatusOK, map[string]any{"entries": entries})
 	default:
-		w.Header().Set("Allow", strings.Join([]string{http.MethodGet, http.MethodPost}, ", "))
+		w.Header().Set("Allow", http.MethodGet+", "+http.MethodPost)
 		httpx.WriteError(w, http.StatusMethodNotAllowed, "method_not_allowed", "method not allowed on this resource")
 	}
 }

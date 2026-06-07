@@ -90,7 +90,7 @@ func (h *Handler) dispatchPersonas(w http.ResponseWriter, r *http.Request) {
 		if !decodeJSON(w, r, &p) {
 			return
 		}
-		created, err := h.registry.UpsertPersona(p)
+		created, err := h.registry.UpsertPersona(p) //nolint:contextcheck // Registry exposes contextless writes; persistence calls are bounded by the SQL driver and surfaced synchronously.
 		if err != nil {
 			writeUpsertError(w, "invalid_persona", err)
 			return
@@ -125,7 +125,7 @@ func (h *Handler) dispatchPersonaItem(w http.ResponseWriter, r *http.Request) {
 		}
 		// URL id wins; body id is ignored if inconsistent.
 		p.ID = id
-		updated, err := h.registry.UpsertPersona(p)
+		updated, err := h.registry.UpsertPersona(p) //nolint:contextcheck // Registry exposes contextless writes; persistence calls are bounded by the SQL driver and surfaced synchronously.
 		if err != nil {
 			writeUpsertError(w, "invalid_persona", err)
 			return
@@ -135,7 +135,7 @@ func (h *Handler) dispatchPersonaItem(w http.ResponseWriter, r *http.Request) {
 		if !h.requireWrite(w, r) {
 			return
 		}
-		if err := h.registry.DeletePersona(id); err != nil {
+		if err := h.registry.DeletePersona(id); err != nil { //nolint:contextcheck // Registry exposes contextless deletes; persistence calls are bounded by the SQL driver and surfaced synchronously.
 			writeDeleteError(w, "persona_not_found", err)
 			return
 		}
@@ -159,7 +159,7 @@ func (h *Handler) dispatchRoles(w http.ResponseWriter, r *http.Request) {
 		if !decodeJSON(w, r, &role) {
 			return
 		}
-		created, err := h.registry.UpsertRole(role)
+		created, err := h.registry.UpsertRole(role) //nolint:contextcheck // Registry exposes contextless writes; persistence calls are bounded by the SQL driver and surfaced synchronously.
 		if err != nil {
 			writeUpsertError(w, "invalid_role", err)
 			return
@@ -193,7 +193,7 @@ func (h *Handler) dispatchRoleItem(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		role.ID = id
-		updated, err := h.registry.UpsertRole(role)
+		updated, err := h.registry.UpsertRole(role) //nolint:contextcheck // Registry exposes contextless writes; persistence calls are bounded by the SQL driver and surfaced synchronously.
 		if err != nil {
 			writeUpsertError(w, "invalid_role", err)
 			return
@@ -203,7 +203,7 @@ func (h *Handler) dispatchRoleItem(w http.ResponseWriter, r *http.Request) {
 		if !h.requireWrite(w, r) {
 			return
 		}
-		if err := h.registry.DeleteRole(id); err != nil {
+		if err := h.registry.DeleteRole(id); err != nil { //nolint:contextcheck // Registry exposes contextless deletes; persistence calls are bounded by the SQL driver and surfaced synchronously.
 			writeDeleteError(w, "role_not_found", err)
 			return
 		}
@@ -227,7 +227,7 @@ func (h *Handler) dispatchSequences(w http.ResponseWriter, r *http.Request) {
 		if !decodeJSON(w, r, &s) {
 			return
 		}
-		created, err := h.registry.UpsertSequence(s)
+		created, err := h.registry.UpsertSequence(s) //nolint:contextcheck // Registry exposes contextless writes; persistence calls are bounded by the SQL driver and surfaced synchronously.
 		if err != nil {
 			writeUpsertError(w, "invalid_sequence", err)
 			return
@@ -261,7 +261,7 @@ func (h *Handler) dispatchSequenceItem(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		s.ID = id
-		updated, err := h.registry.UpsertSequence(s)
+		updated, err := h.registry.UpsertSequence(s) //nolint:contextcheck // Registry exposes contextless writes; persistence calls are bounded by the SQL driver and surfaced synchronously.
 		if err != nil {
 			writeUpsertError(w, "invalid_sequence", err)
 			return
@@ -271,7 +271,7 @@ func (h *Handler) dispatchSequenceItem(w http.ResponseWriter, r *http.Request) {
 		if !h.requireWrite(w, r) {
 			return
 		}
-		if err := h.registry.DeleteSequence(id); err != nil {
+		if err := h.registry.DeleteSequence(id); err != nil { //nolint:contextcheck // Registry exposes contextless deletes; persistence calls are bounded by the SQL driver and surfaced synchronously.
 			writeDeleteError(w, "sequence_not_found", err)
 			return
 		}

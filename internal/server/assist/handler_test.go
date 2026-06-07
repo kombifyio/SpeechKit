@@ -18,6 +18,7 @@ import (
 
 	assistpkg "github.com/kombifyio/SpeechKit/internal/assist"
 	"github.com/kombifyio/SpeechKit/internal/stt"
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/speaker"
 )
 
 // ── fakes ───────────────────────────────────────────────────────────────────
@@ -41,11 +42,13 @@ func (f *fakeProcessor) Process(_ context.Context, transcript string, opts assis
 }
 
 type fakeTranscriber struct {
-	result *stt.Result
-	err    error
+	result   *stt.Result
+	err      error
+	lastOpts stt.TranscribeOpts
 }
 
-func (f *fakeTranscriber) Route(_ context.Context, _ []byte, _ float64, _ stt.TranscribeOpts) (*stt.Result, error) {
+func (f *fakeTranscriber) Route(_ context.Context, _ []byte, _ float64, opts stt.TranscribeOpts) (*stt.Result, error) {
+	f.lastOpts = opts
 	if f.err != nil {
 		return nil, f.err
 	}
@@ -249,6 +252,56 @@ func TestHandler_JSON_AudioInput_HappyPath(t *testing.T) {
 	}
 	if resp.Source == nil || resp.Source.Format != "wav" {
 		t.Fatalf("source meta = %+v", resp.Source)
+	}
+}
+
+func TestHandler_JSON_AudioInputSpeakerOptions(t *testing.T) {
+	fp := &fakeProcessor{result: okAssistResult()}
+	ft := &fakeTranscriber{result: &stt.Result{
+		Text:     "hello there",
+		Language: "en",
+		Provider: "fake",
+		Speakers: &speaker.DiarizationResult{
+			Provider: "fake",
+			Level:    speaker.IdentificationDiarization,
+			Segments: []speaker.SpeakerSegment{{Text: "hello there", SpeakerLabel: "speaker_0"}},
+		},
+	}}
+	h := mustHandler(t, Options{Processor: fp, Transcriber: ft, DefaultLocale: "en"})
+
+	pcm := synthSine(16000, 100)
+	wav := wrapWAV(pcm, 16000)
+	body, _ := json.Marshal(map[string]any{
+		"audio_base64": base64Encode(wav),
+		"format":       "wav",
+		"locale":       "en",
+		"speaker": map[string]any{
+			"diarization":         true,
+			"minSpeakersExpected": 2,
+		},
+	})
+	req := httptest.NewRequest(http.MethodPost, "/v1/assist/process", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d body=%s", rec.Code, rec.Body.String())
+	}
+	if !ft.lastOpts.Speaker.WantsDiarization() {
+		t.Fatalf("speaker options not forwarded: %+v", ft.lastOpts.Speaker)
+	}
+	if !strings.Contains(fp.lastOpts.Context, "Speaker transcript") {
+		t.Fatalf("speaker context not appended: %q", fp.lastOpts.Context)
+	}
+	var resp struct {
+		Speakers *speaker.DiarizationResult `json:"speakers"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if resp.Speakers == nil || len(resp.Speakers.Segments) != 1 {
+		t.Fatalf("speakers = %+v", resp.Speakers)
 	}
 }
 

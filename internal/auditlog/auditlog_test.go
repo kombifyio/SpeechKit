@@ -67,8 +67,8 @@ func TestAppendEventWritesValidJSON(t *testing.T) {
 		t.Fatalf("unmarshal: %v", err)
 	}
 
-	if got.SchemaVersion != "1" {
-		t.Errorf("SchemaVersion: want 1, got %q", got.SchemaVersion)
+	if got.SchemaVersion != "2" {
+		t.Errorf("SchemaVersion: want 2, got %q", got.SchemaVersion)
 	}
 	if got.Event != EventProviderSelected {
 		t.Errorf("Event: want %q, got %q", EventProviderSelected, got.Event)

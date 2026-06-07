@@ -325,12 +325,16 @@ func (h *Handler) upload(w http.ResponseWriter, r *http.Request) {
 	// client-supplied ID as filename so the row + filesystem stay
 	// trivially co-located.
 	relPath := filepath.Join(safePathSegment(id.OrgID), safePathSegment(id.UserID), safePathSegment(meta.ID)+".wav")
-	absPath := filepath.Join(h.audioDir, relPath)
+	absPath, err := h.audioPath(relPath)
+	if err != nil {
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_audio_path", err.Error())
+		return
+	}
 	if err := os.MkdirAll(filepath.Dir(absPath), 0o700); err != nil {
 		httpx.WriteError(w, http.StatusInternalServerError, "storage_init_failed", err.Error())
 		return
 	}
-	out, err := os.OpenFile(absPath, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
+	out, err := os.OpenFile(absPath, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600) // #nosec G304 -- absPath is validated by audioPath to stay under Handler.audioDir.
 	if err != nil {
 		if errors.Is(err, os.ErrExist) {
 			httpx.WriteError(w, http.StatusConflict, "duplicate_activation",
@@ -432,8 +436,12 @@ func (h *Handler) getAudio(w http.ResponseWriter, r *http.Request, id string) {
 		writeStoreError(w, err)
 		return
 	}
-	absPath := filepath.Join(h.audioDir, row.AudioPath)
-	f, err := os.Open(absPath)
+	absPath, err := h.audioPath(row.AudioPath)
+	if err != nil {
+		httpx.WriteError(w, http.StatusGone, "audio_missing", "stored audio path is invalid")
+		return
+	}
+	f, err := os.Open(absPath) // #nosec G304 -- absPath is validated by audioPath to stay under Handler.audioDir.
 	if err != nil {
 		httpx.WriteError(w, http.StatusGone, "audio_missing", "audio file no longer on disk")
 		return
@@ -483,7 +491,9 @@ func (h *Handler) delete(w http.ResponseWriter, r *http.Request, id string) {
 		return
 	}
 	if audioPath != "" {
-		_ = os.Remove(filepath.Join(h.audioDir, audioPath))
+		if absPath, err := h.audioPath(audioPath); err == nil {
+			_ = os.Remove(absPath) // #nosec G703 -- absPath is validated by audioPath to stay under Handler.audioDir.
+		}
 	}
 	w.WriteHeader(http.StatusNoContent)
 }
@@ -527,6 +537,37 @@ func safePathSegment(s string) string {
 		return "_"
 	}
 	return string(out)
+}
+
+func (h *Handler) audioPath(rel string) (string, error) {
+	rel = filepath.Clean(strings.TrimSpace(rel))
+	if rel == "." || filepath.IsAbs(rel) || strings.HasPrefix(rel, ".."+string(filepath.Separator)) || rel == ".." {
+		return "", fmt.Errorf("audio path %q escapes audio_dir", rel)
+	}
+	baseAbs, err := filepath.Abs(h.audioDir)
+	if err != nil {
+		return "", fmt.Errorf("resolve audio_dir: %w", err)
+	}
+	targetAbs, err := filepath.Abs(filepath.Join(baseAbs, rel))
+	if err != nil {
+		return "", fmt.Errorf("resolve audio path: %w", err)
+	}
+	within, err := pathWithinBase(baseAbs, targetAbs)
+	if err != nil {
+		return "", err
+	}
+	if !within {
+		return "", fmt.Errorf("audio path %q escapes audio_dir", rel)
+	}
+	return targetAbs, nil
+}
+
+func pathWithinBase(baseAbs, targetAbs string) (bool, error) {
+	rel, err := filepath.Rel(baseAbs, targetAbs)
+	if err != nil {
+		return false, fmt.Errorf("compare audio path: %w", err)
+	}
+	return rel != "." && !filepath.IsAbs(rel) && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)), nil
 }
 
 // writeStoreError maps the small set of store errors we care about

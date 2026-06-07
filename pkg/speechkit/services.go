@@ -3,19 +3,22 @@ package speechkit
 import (
 	"context"
 	"time"
+
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/speaker"
 )
 
 // DictationRun is the public record produced by a completed Dictation request.
 // Hosts may persist it directly or map it into their own history model.
 type DictationRun struct {
-	ID               string     `json:"id,omitempty"`
-	Transcript       Transcript `json:"transcript"`
-	StartedAt        time.Time  `json:"startedAt,omitempty"`
-	CompletedAt      time.Time  `json:"completedAt,omitempty"`
-	ProviderProfile  string     `json:"providerProfile,omitempty"`
-	DictionaryTerms  []string   `json:"dictionaryTerms,omitempty"`
-	AudioDurationMs  int64      `json:"audioDurationMs,omitempty"`
-	ProcessingTimeMs int64      `json:"processingTimeMs,omitempty"`
+	ID               string                     `json:"id,omitempty"`
+	Transcript       Transcript                 `json:"transcript"`
+	StartedAt        time.Time                  `json:"startedAt,omitempty"`
+	CompletedAt      time.Time                  `json:"completedAt,omitempty"`
+	ProviderProfile  string                     `json:"providerProfile,omitempty"`
+	DictionaryTerms  []string                   `json:"dictionaryTerms,omitempty"`
+	AudioDurationMs  int64                      `json:"audioDurationMs,omitempty"`
+	ProcessingTimeMs int64                      `json:"processingTimeMs,omitempty"`
+	Speakers         *speaker.DiarizationResult `json:"speakers,omitempty"`
 }
 
 // AssistSurfaceDecision describes where an Assist result should be presented.
@@ -31,13 +34,15 @@ const (
 
 // AssistRequest is the mode-scoped input for Assist integrations.
 type AssistRequest struct {
-	Text              string `json:"text"`
-	Locale            string `json:"locale,omitempty"`
-	Selection         string `json:"selection,omitempty"`
-	Context           string `json:"context,omitempty"`
-	EditableTarget    bool   `json:"editableTarget,omitempty"`
-	ProviderProfileID string `json:"providerProfileId,omitempty"`
-	SessionKey        string `json:"sessionKey,omitempty"`
+	Text              string                     `json:"text"`
+	Locale            string                     `json:"locale,omitempty"`
+	Selection         string                     `json:"selection,omitempty"`
+	Context           string                     `json:"context,omitempty"`
+	EditableTarget    bool                       `json:"editableTarget,omitempty"`
+	ProviderProfileID string                     `json:"providerProfileId,omitempty"`
+	SessionKey        string                     `json:"sessionKey,omitempty"`
+	SpeakerOptions    speaker.Options            `json:"speakerOptions,omitempty"`
+	Speakers          *speaker.DiarizationResult `json:"speakers,omitempty"`
 }
 
 // AudioData carries optional synthesized audio without making AssistResult
@@ -68,22 +73,27 @@ func (a *AudioData) Len() int {
 
 // AssistResult is the public one-shot output contract for Assist Mode.
 type AssistResult struct {
-	Text       string                `json:"text"`
-	SpeakText  string                `json:"speakText,omitempty"`
-	Action     string                `json:"action,omitempty"`
-	Kind       string                `json:"kind,omitempty"`
-	Surface    AssistSurfaceDecision `json:"surface"`
-	ShortcutID string                `json:"shortcutId,omitempty"`
-	Locale     string                `json:"locale,omitempty"`
-	Audio      *AudioData            `json:"audio,omitempty"`
-	Format     string                `json:"format,omitempty"`
+	Text       string                     `json:"text"`
+	SpeakText  string                     `json:"speakText,omitempty"`
+	Action     string                     `json:"action,omitempty"`
+	Kind       string                     `json:"kind,omitempty"`
+	Surface    AssistSurfaceDecision      `json:"surface"`
+	ShortcutID string                     `json:"shortcutId,omitempty"`
+	Locale     string                     `json:"locale,omitempty"`
+	Audio      *AudioData                 `json:"audio,omitempty"`
+	Format     string                     `json:"format,omitempty"`
+	Speakers   *speaker.DiarizationResult `json:"speakers,omitempty"`
 }
 
 // VoiceAgentTurn is one finalized turn in a realtime or fallback dialogue.
 type VoiceAgentTurn struct {
-	Role      string    `json:"role"`
-	Text      string    `json:"text"`
-	CreatedAt time.Time `json:"createdAt,omitempty"`
+	Role              string    `json:"role"`
+	Text              string    `json:"text"`
+	CreatedAt         time.Time `json:"createdAt,omitempty"`
+	SpeakerLabel      string    `json:"speakerLabel,omitempty"`
+	PersonID          string    `json:"personId,omitempty"`
+	DisplayName       string    `json:"displayName,omitempty"`
+	SpeakerConfidence float64   `json:"speakerConfidence,omitempty"`
 }
 
 // VoiceAgentSessionSummary is the structured handoff produced when a Voice
@@ -100,14 +110,15 @@ type VoiceAgentSessionSummary struct {
 
 // VoiceAgentSession is the public record for a live dialogue.
 type VoiceAgentSession struct {
-	ID                string                   `json:"id,omitempty"`
-	StartedAt         time.Time                `json:"startedAt,omitempty"`
-	EndedAt           time.Time                `json:"endedAt,omitempty"`
-	Locale            string                   `json:"locale,omitempty"`
-	ProviderProfileID string                   `json:"providerProfileId,omitempty"`
-	RuntimeKind       string                   `json:"runtimeKind,omitempty"`
-	Turns             []VoiceAgentTurn         `json:"turns,omitempty"`
-	Summary           VoiceAgentSessionSummary `json:"summary"`
+	ID                string                     `json:"id,omitempty"`
+	StartedAt         time.Time                  `json:"startedAt,omitempty"`
+	EndedAt           time.Time                  `json:"endedAt,omitempty"`
+	Locale            string                     `json:"locale,omitempty"`
+	ProviderProfileID string                     `json:"providerProfileId,omitempty"`
+	RuntimeKind       string                     `json:"runtimeKind,omitempty"`
+	Turns             []VoiceAgentTurn           `json:"turns,omitempty"`
+	Summary           VoiceAgentSessionSummary   `json:"summary"`
+	Speakers          *speaker.DiarizationResult `json:"speakers,omitempty"`
 }
 
 // DictationService is the mode-scoped SDK contract for text-only dictation.

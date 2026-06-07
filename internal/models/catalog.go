@@ -32,6 +32,8 @@ const (
 	ExecutionModeOpenAI         ExecutionMode = "openai_api"
 	ExecutionModeGroq           ExecutionMode = "groq_api"
 	ExecutionModeGoogle         ExecutionMode = "google_api"
+	ExecutionModeDeepgram       ExecutionMode = "deepgram_api"
+	ExecutionModeAssemblyAI     ExecutionMode = "assemblyai_api"
 	ExecutionModeOllama         ExecutionMode = "ollama_local"
 	ExecutionModeOpenRouter     ExecutionMode = "openrouter_api"
 )
@@ -59,6 +61,10 @@ const (
 	CapabilityDictionaryPrompt      Capability = "dictionary_prompt"
 	CapabilityDictionaryNativeHints Capability = "dictionary_native_hints"
 	CapabilitySessionSummary        Capability = "session_summary"
+	CapabilitySpeakerDiarization    Capability = "speaker_diarization"
+	CapabilitySpeakerIdentification Capability = "speaker_identification"
+	CapabilitySpeakerAttribution    Capability = "speaker_attribution"
+	CapabilitySpeakerEnrollment     Capability = "speaker_enrollment"
 )
 
 type ModelVariant struct {

@@ -55,6 +55,10 @@ linters:
         # G101: hardcoded credentials. Existing hits are secret/env key names,
         # not credential values.
         - G101
+        # G704: SSRF via tainted endpoint. All provider HTTP is built through
+        # netsec.BuildEndpoint and dialed via netsec.NewSafeHTTPClient, which
+        # validate the host at dial time, so the tainted-URL path is mitigated.
+        - G704
       config:
         global:
           audit: true
@@ -130,6 +134,12 @@ linters:
           - bodyclose
           - unparam
           - rowserrcheck
+      # Test helpers conventionally lead with *testing.T before ctx; the
+      # context-first rule is a production convention, not a test one.
+      - path: _test\.go
+        text: context-as-argument
+        linters:
+          - revive
       - path: internal/winapi/
         linters:
           - revive
@@ -141,20 +151,6 @@ linters:
       - path: internal/vad/
         linters:
           - revive
-      # Server-target packages have a known hygiene backlog from code that
-      # originally ran under Windows-only CI. Linux server CI still builds,
-      # vets, race-tests, docker-builds, and smoke-tests this surface. Remove
-      # this exclusion set when the dedicated server lint hardening sweep lands.
-      - path: internal/server/
-        linters:
-          - contextcheck
-          - gosec
-          - revive
-          - gocritic
-          - staticcheck
-          - noctx
-          - unparam
-          - unused
 
 issues:
   max-same-issues: 0

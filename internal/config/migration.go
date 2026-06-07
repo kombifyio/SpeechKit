@@ -1,10 +1,18 @@
 package config
 
 import (
+	"errors"
 	"strings"
 
 	"github.com/BurntSushi/toml"
 )
+
+func rejectRemovedConfigAliases(meta toml.MetaData) error {
+	if meta.IsDefined("voice_agent", "instruction") {
+		return errors.New("config [voice_agent].instruction was removed; use [voice_agent].framework_prompt")
+	}
+	return nil
+}
 
 func backfillLegacyModeHotkeys(meta toml.MetaData, cfg *Config) {
 	if cfg == nil {
@@ -114,24 +122,13 @@ func backfillStartupBehavior(meta toml.MetaData, cfg *Config) {
 	}
 }
 
-func backfillVoiceAgentPromptLayers(meta toml.MetaData, cfg *Config) {
+func backfillVoiceAgentPromptLayers(cfg *Config) {
 	if cfg == nil {
 		return
 	}
 
-	frameworkPrompt := strings.TrimSpace(cfg.VoiceAgent.FrameworkPrompt)
-	legacyInstruction := strings.TrimSpace(cfg.VoiceAgent.Instruction)
-
-	if frameworkPrompt == "" && !meta.IsDefined("voice_agent", "framework_prompt") {
-		frameworkPrompt = legacyInstruction
-	}
-	if legacyInstruction == "" && frameworkPrompt != "" {
-		legacyInstruction = frameworkPrompt
-	}
-
-	cfg.VoiceAgent.FrameworkPrompt = frameworkPrompt
+	cfg.VoiceAgent.FrameworkPrompt = strings.TrimSpace(cfg.VoiceAgent.FrameworkPrompt)
 	cfg.VoiceAgent.RefinementPrompt = strings.TrimSpace(cfg.VoiceAgent.RefinementPrompt)
-	cfg.VoiceAgent.Instruction = legacyInstruction
 }
 
 func backfillVoiceAgentSessionSummary(meta toml.MetaData, cfg *Config) {

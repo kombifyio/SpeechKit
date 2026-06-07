@@ -12,6 +12,95 @@ IDs, source paths, and other maintainer-only vocabulary.
 
 ## [Unreleased]
 
+### Changed
+
+- Internal: speech-to-text provider construction is now centralized in a single
+  registry, so every entry point builds providers from one mapping instead of
+  duplicating the per-provider wiring. No user-facing behavior change.
+- Internal: the voice-output profile-to-provider mapping is now shared between
+  the framework kernel and the embeddable SDK from one source of truth, removing
+  a duplicated copy. No user-facing behavior change.
+- Internal: the device and server adapters now resolve text-to-speech provider
+  credentials and defaults through one shared helper instead of two near-identical
+  copies, so configuration precedence stays consistent across both. No user-facing
+  behavior change in common configurations.
+
+## [0.42.0] - 2026-06-05
+
+Enterprise hardening and observability release. No breaking public API change.
+
+### Highlights
+
+- **Enterprise single sign-on**: Sign in with your company identity provider (Azure AD, Okta, Google Workspace), with each organization's data kept isolated.
+- **Tamper-evident audit trail**: Every audit entry is hash-chained, so any later edit, reordering, or deletion is detectable — with a tool to verify a log.
+- **Hardened by default**: Strict browser-security response headers, replay-resistant request authentication, and end-to-end request tracing out of the box.
+
+### Security
+
+- The server now sends strict security response headers on every request —
+  Content-Security-Policy, X-Frame-Options, Referrer-Policy, and
+  X-Content-Type-Options — with optional HSTS for TLS-terminated deployments.
+  The admin sign-in page allow-lists only its own inline assets by hash, so no
+  `unsafe-inline` is required.
+- Audit-log entries are now tamper-evident: each record carries a hash that
+  chains to the previous one, so any later edit, reordering, or deletion is
+  detectable. Set an integrity key (`AUDIT_INTEGRITY_KEY`) for HMAC-backed
+  evidence; the new `speechkit-audit-verify` tool checks a log and reports the
+  exact record where the chain breaks.
+
+### Added
+
+- OIDC authentication mode (`auth_mode = "oidc"`): the server can validate
+  Bearer JWTs from an external identity provider — Azure AD, Okta, Google
+  Workspace, Auth0, and the like — against its JWKS endpoint, sourcing the
+  caller's user, organization, and role from the verified token. Self-hosted
+  deployments get real multi-tenancy without writing an edge-HMAC proxy.
+- Optional pprof profiling endpoints for production debugging, off by default
+  and enabled with `[server.debug] pprof_enabled`. When on, they stay bound to
+  loopback and auth-gated unless the operator also sets `pprof_public`.
+- Request correlation and tracing: every server request now carries an
+  `X-Request-Id` (reused from the edge or generated, echoed on the response and
+  included in logs), and transcription and speech-synthesis calls emit
+  OpenTelemetry spans with provider, language/format, and latency so a
+  configured collector can trace requests end to end.
+
+## [0.41.0] - 2026-06-04
+
+Feature and hardening release for the voice framework. No breaking public API change.
+
+### Highlights
+
+- **Speaker labels in transcripts**: Dictation and Assist can now show who said what, with speaker segments and word-level labels.
+- **Replay-resistant server auth**: Captured authentication headers can no longer be replayed against the server later.
+- **Safer defaults, patched runtime**: A stray wildcard no longer opens voice sessions to other sites, and the runtime ships the latest security fixes.
+
+### Added
+
+- Speaker diarization for Dictation and Assist. Transcripts can now include
+  per-speaker segments and word-level speaker labels when you send speaker
+  options on the request; without them, transcription stays text-only.
+  Available through Deepgram, AssemblyAI, and Google Speech-to-Text (batch
+  audio), enabled with `DEEPGRAM_API_KEY`, `ASSEMBLYAI_API_KEY`, or the
+  dedicated Google Speech-to-Text key. AssemblyAI can additionally attribute
+  speakers to names or roles you supply. Speaker results are stored with the
+  transcript and removed by the existing privacy deletion. Real-time streaming
+  diarization and biometric voiceprint recognition are not part of this change.
+
+### Security
+
+- Edge-authenticated requests (`edge_hmac` mode) can now carry an optional
+  `X-Edge-Auth-Ts` timestamp that is bound into the HMAC signature. When present,
+  the server rejects requests whose timestamp is more than 5 minutes old,
+  limiting how long a captured edge-signed header can be replayed. The header is
+  optional and backward compatible — edges that do not send it keep working.
+- Voice Agent WebSocket upgrades now ignore a wildcard `*` in the allowed-origins
+  list by default. A stray wildcard in configuration no longer opens cross-origin
+  WebSocket access — such upgrades stay denied and a warning is logged. Operators
+  who genuinely need wildcard origins for local development can opt in with
+  `SPEECHKIT_ALLOW_WILDCARD_ORIGIN=1`.
+- Updated the bundled Go toolchain to 1.26.4, picking up upstream Go
+  standard-library security fixes.
+
 ## [0.40.7] - 2026-05-28
 
 ### Added
@@ -164,8 +253,8 @@ SDK-surface modularity patch on top of the v0.40 runtime-modularity work.
 
 - **Voice Agent session responses are subprotocol-first.** New clients
   use `ws_url` plus `ws_subprotocol` so one-time WebSocket tickets do
-  not ride in URLs. The server still accepts the legacy query form and
-  returns `legacy_ws_url` only for compatibility.
+  not ride in URLs. The deprecated query-ticket compatibility response
+  field has been removed in the breaking hardening branch.
 - **TTS routing uses provider kinds instead of provider names.**
   Local-only and cloud-only routing now works for Piper, Kokoro-local,
   self-hosted local providers, Hugging Face, OpenAI, and Google without

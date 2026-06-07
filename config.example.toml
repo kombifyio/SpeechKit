@@ -12,6 +12,7 @@ voice_agent_hotkey_behavior = "hold_to_talk"
 dictate_enabled = true
 assist_enabled = false
 voice_agent_enabled = false
+eager_warmup = false                 # Optional: call mode Warmup before Start when a runtime implements it.
 active_mode = "none"               # none, dictate, assist, voice_agent
 agent_hotkey = "win+alt"           # Deprecated compatibility alias. SpeechKit now persists assist_hotkey + voice_agent_hotkey separately.
 agent_mode = "assist"              # Deprecated compatibility alias for legacy agent_hotkey readers.
@@ -125,7 +126,8 @@ dictionary = ""           # One entry per line. Use "spoken => canonical" for co
 # Each mode also has an optional `mode_source` field:
 #   "local"  — run the mode against the in-process Framework kernel (default).
 #   "server" — route the mode through [server_connection] to a remote
-#              speechkit-server. Requires server_connection.enabled = true.
+#              speechkit-server. The mode source is the runtime routing gate;
+#              server_connection.enabled is kept as a compatibility mirror.
 # Empty / missing is treated as "local" so existing configs keep their
 # pre-0.26 behaviour.
 # ──────────────────────────────────────────────
@@ -171,6 +173,12 @@ rate_limit_endpoint_costs = { "POST /v1/dictation/transcribe" = 5.0, "POST /v1/a
 # Keyed by UserID + client IP. Zero disables the quota. Audit S-5.
 demo_daily_quota = 100
 max_upload_mb = 25
+read_header_timeout_sec = 15
+read_timeout_sec = 120
+idle_timeout_sec = 120
+max_header_bytes = 1048576
+max_decoded_audio_seconds = 600
+trusted_proxy_cidrs = []                      # CIDRs allowed to supply X-Forwarded-* headers; loopback is always trusted.
 max_voice_agent_sessions = 100
 max_sessions_per_user = 3
 ticket_ttl_sec = 90
@@ -281,7 +289,6 @@ agent_profile_id = "default"               # default, brainstorming_companion, h
 agent_sequence_id = ""                     # Optional workflow sequence override. Empty = selected profile/persona default.
 framework_prompt = ""                      # Durable host/framework prompt. Empty = SpeechKit default Voice Agent framework behavior.
 refinement_prompt = ""                     # Optional personal refinement prompt layered on top of the framework prompt.
-instruction = ""                           # Legacy alias for framework_prompt. Keep empty for new configs.
 reminder_after_idle_sec = 300              # Remind user after 5 min silence
 deactivate_after_idle_sec = 900            # Auto-deactivate after 15 min silence
 hold_release_grace_sec = 10                # Hold-to-talk: how long the Voice Agent stays open after release so the model can finish its reply. 0 -> default (10), capped at 30.
@@ -335,10 +342,25 @@ vad_silence_duration_ms = 700
 # enabled = false
 # api_key_env = "GOOGLE_AI_API_KEY"
 # stt_api_key_env = "SPEECHKIT_GOOGLE_STT_API_KEY"
-# stt_model = "chirp_3"
+# stt_credentials_json_env = "SPEECHKIT_GOOGLE_STT_CREDENTIALS_JSON"
+# application_credentials_env = "GOOGLE_APPLICATION_CREDENTIALS"
+# stt_model = "latest_long"
 # utility_model = "gemini-2.5-flash-lite"
 # assist_model = "gemini-2.5-flash"
 # agent_model = "gemini-2.5-pro"
+
+# [providers.deepgram]
+# enabled = false
+# api_key_env = "DEEPGRAM_API_KEY"
+# stt_model = "nova-3"
+# diarization_model = "latest"
+
+# [providers.assemblyai]
+# enabled = false
+# api_key_env = "ASSEMBLYAI_API_KEY"
+# stt_models = "universal-3-pro,universal-2"
+# streaming_model = "u3-rt-pro"
+# streaming_base_url = "wss://streaming.assemblyai.com"
 
 # [providers.ollama]        # Local Provider: externally managed Ollama, not SpeechKit Built-in
 # enabled = false

@@ -153,3 +153,29 @@ func TestValidateServerProductionAuthRejectsBearerOrEdgeWithoutCredentials(t *te
 		t.Fatalf("ValidateServerProductionAuth error = %q, want both env names", err.Error())
 	}
 }
+
+func TestValidateServerProductionAuthRejectsNegativeResourceLimits(t *testing.T) {
+	cfg := &Config{}
+	cfg.Server.ReadTimeoutSec = -1
+
+	err := ValidateServerProductionAuth(cfg)
+	if err == nil {
+		t.Fatal("ValidateServerProductionAuth error = nil, want negative timeout rejection")
+	}
+	if !strings.Contains(err.Error(), "read_timeout_sec") {
+		t.Fatalf("ValidateServerProductionAuth error = %q, want read_timeout_sec context", err.Error())
+	}
+}
+
+func TestValidateServerProductionAuthRejectsInvalidTrustedProxyCIDR(t *testing.T) {
+	cfg := &Config{}
+	cfg.Server.TrustedProxyCIDRs = []string{"not-a-cidr"}
+
+	err := ValidateServerProductionAuth(cfg)
+	if err == nil {
+		t.Fatal("ValidateServerProductionAuth error = nil, want invalid trusted proxy CIDR rejection")
+	}
+	if !strings.Contains(err.Error(), "trusted_proxy_cidrs") {
+		t.Fatalf("ValidateServerProductionAuth error = %q, want trusted_proxy_cidrs context", err.Error())
+	}
+}

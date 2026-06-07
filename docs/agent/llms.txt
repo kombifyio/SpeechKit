@@ -76,6 +76,6 @@ Safety:
 
 - Keep the default local bind unless the user explicitly asks for public access.
 - Keep secrets in environment variables or generated `.env` files, never in repo files.
-- For browser clients behind Docker Compose, set `SPEECHKIT_PUBLIC_URL` (or alias `SPEECHKIT_SERVER_PUBLIC_URL`) to the browser-reachable origin so returned `ws_url` values do not use container-internal hostnames.
-- Voice Agent WebSocket auth is subprotocol-first: use `ws_url` plus `ws_subprotocol` from `POST /v1/voiceagent/sessions`; do not send bearer tokens in the browser WS handshake. `legacy_ws_url` is compatibility-only.
+- For browser clients behind Docker Compose, set `SPEECHKIT_PUBLIC_URL` to the browser-reachable origin so returned `ws_url` values do not use container-internal hostnames.
+- Voice Agent WebSocket auth is subprotocol-first: use `ws_url` plus `ws_subprotocol` from `POST /v1/voiceagent/sessions`; do not send bearer tokens in the browser WS handshake.
 - One-shot results use canonical `modes.voiceagent`; `modes.voice_agent` is not the v1 result shape. Extra evidence fields such as `app_url_reachable` and `latency_seconds` are allowed.

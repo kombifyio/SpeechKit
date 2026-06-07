@@ -87,23 +87,3 @@ func TestLocalVoiceAgentProviderConnectAcceptsLiveConfig(t *testing.T) {
 		t.Fatalf("UpdateInstructions: %v", err)
 	}
 }
-
-func TestPickSystemPromptPrefersFrameworkPrompt(t *testing.T) {
-	cases := []struct {
-		name string
-		cfg  live.LiveConfig
-		want string
-	}{
-		{"framework wins", live.LiveConfig{FrameworkPrompt: "fw", SystemPrompt: "sys", Instruction: "ins"}, "fw"},
-		{"system fallback", live.LiveConfig{SystemPrompt: "sys", Instruction: "ins"}, "sys"},
-		{"instruction last", live.LiveConfig{Instruction: "ins"}, "ins"},
-		{"all empty", live.LiveConfig{}, ""},
-	}
-	for _, c := range cases {
-		t.Run(c.name, func(t *testing.T) {
-			if got := pickSystemPrompt(c.cfg); got != c.want {
-				t.Fatalf("pickSystemPrompt(%+v) = %q, want %q", c.cfg, got, c.want)
-			}
-		})
-	}
-}

@@ -54,7 +54,7 @@ function extractBulletBlocks(body) {
   return bullets
 }
 
-function toReleaseNote(rawLine, index) {
+function toReleaseNote(rawLine) {
   const raw = rawLine.slice(2).trim()
   const boldMatch = raw.match(/^\*\*(.+?)\*\*(?::|\.)?\s*(.+)$/)
   if (boldMatch) {
@@ -72,8 +72,15 @@ function toReleaseNote(rawLine, index) {
     }
   }
 
+  // No explicit "**Title**:" or "Title:" form. Derive a short lead-in title
+  // instead of an opaque "Update N" label so the surface degrades
+  // gracefully. Curated `### Highlights` (required by the website build and
+  // the release lint via validateMarketingNotes) is what should actually
+  // feed the public marketing surface — this path is a safety net only.
+  const words = raw.split(/\s+/)
+  const lead = words.slice(0, 7).join(' ').replace(/[.,;:]+$/, '')
   return {
-    title: `Update ${index + 1}`,
+    title: words.length > 7 ? `${lead}…` : lead,
     body: raw,
   }
 }
@@ -203,4 +210,69 @@ export function renderReleaseNotes({ markdown, version, repoUrl, compareUrl }) {
   }
 
   return notes.filter(Boolean).join('\n\n').trim()
+}
+
+// Marketing surfaces (the website "What is new in vX.Y" cards) must show
+// short, curated, titled highlights — never an auto-degraded dump of
+// technical changelog prose. These caps keep the cards scannable.
+export const MAX_HIGHLIGHT_TITLE_LENGTH = 70
+export const MAX_HIGHLIGHT_BODY_LENGTH = 240
+
+// getHighlightNotesForVersion returns the parsed { title, body } notes from
+// the `### Highlights` subsection of a specific release entry, or [] when the
+// entry is missing or has no Highlights section.
+export function getHighlightNotesForVersion(markdown, version) {
+  const normalized = normalizeVersion(version)
+  const section = parseChangelogSections(markdown).find(item => item.version === normalized)
+  if (!section) {
+    return []
+  }
+  const highlightsBody = getSubsectionBody(section.body, 'Highlights')
+  if (!highlightsBody) {
+    return []
+  }
+  return extractBulletBlocks(highlightsBody).map(toReleaseNote)
+}
+
+// findMarketingNoteProblems returns a list of human-readable problems with the
+// notes a marketing surface is about to render. Empty array == website-ready.
+export function findMarketingNoteProblems(notes, { version = '' } = {}) {
+  const problems = []
+  if (!Array.isArray(notes) || notes.length === 0) {
+    problems.push('no highlight bullets were found — add a `### Highlights` section with 2-4 short bullets')
+    return problems
+  }
+  notes.forEach((note, index) => {
+    const title = (note?.title ?? '').trim()
+    const body = (note?.body ?? '').trim()
+    if (!title || /^Update \d+$/.test(title) || title.endsWith('…')) {
+      problems.push(
+        `note ${index + 1}: missing or auto-generated title ("${title}") — write the bullet as "- **Short Title**: benefit"`,
+      )
+    } else if (title.length > MAX_HIGHLIGHT_TITLE_LENGTH) {
+      problems.push(`note ${index + 1}: title is ${title.length} chars (max ${MAX_HIGHLIGHT_TITLE_LENGTH}) — shorten the heading`)
+    }
+    if (body.length > MAX_HIGHLIGHT_BODY_LENGTH) {
+      problems.push(
+        `note ${index + 1}: body is ${body.length} chars (max ${MAX_HIGHLIGHT_BODY_LENGTH}) — keep website cards short; move detail into ### Added/Fixed/Changed`,
+      )
+    }
+  })
+  return problems
+}
+
+// validateMarketingNotes throws a descriptive error when the notes a marketing
+// surface is about to render are not curated and short. Used by the website
+// build and the release lint so a degraded "Update 1/2/3" reel fails loudly
+// instead of shipping. Returns the notes unchanged when they pass.
+export function validateMarketingNotes(notes, { version = '' } = {}) {
+  const problems = findMarketingNoteProblems(notes, { version })
+  if (problems.length > 0) {
+    const scope = version ? ` for ${version}` : ''
+    throw new Error(
+      `Website release highlights${scope} are not marketing-ready:\n  - ${problems.join('\n  - ')}\n` +
+        'Fix the `### Highlights` section in CHANGELOG.md (see docs/changelog-style.md).',
+    )
+  }
+  return notes
 }

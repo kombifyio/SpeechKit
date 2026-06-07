@@ -64,6 +64,67 @@ func TestExportScopeReturnsAllScopedRows(t *testing.T) {
 	}
 }
 
+func TestScopePrivacyStoreContractAcrossBackends(t *testing.T) {
+	eachBackend(t, func(t *testing.T, s Store) {
+		privacy, ok := s.(ScopePrivacyStore)
+		if !ok {
+			t.Fatalf("%T does not implement ScopePrivacyStore", s)
+		}
+
+		alice := speechstorage.Scope{InstallID: "contract-install", UserID: "alice"}
+		bob := speechstorage.Scope{InstallID: "contract-install", UserID: "bob"}
+		if err := s.SaveTranscription(scopeCtx(alice), "alice contract text", "en", "p", "m", 1000, 50, []byte{0, 1, 2, 3}); err != nil {
+			t.Fatalf("SaveTranscription alice: %v", err)
+		}
+		if _, err := s.SaveQuickNote(scopeCtx(alice), "alice contract note", "en", "p", 500, 30, nil); err != nil {
+			t.Fatalf("SaveQuickNote alice: %v", err)
+		}
+		if err := s.SaveTranscription(scopeCtx(bob), "bob contract text", "en", "p", "m", 1000, 50, nil); err != nil {
+			t.Fatalf("SaveTranscription bob: %v", err)
+		}
+
+		export, err := privacy.ExportScope(context.Background(), alice)
+		if err != nil {
+			t.Fatalf("ExportScope alice: %v", err)
+		}
+		if len(export.Transcriptions) != 1 || export.Transcriptions[0].Text != "alice contract text" {
+			t.Fatalf("alice transcriptions = %+v", export.Transcriptions)
+		}
+		if len(export.QuickNotes) != 1 || export.QuickNotes[0].Text != "alice contract note" {
+			t.Fatalf("alice quick notes = %+v", export.QuickNotes)
+		}
+		if len(export.AudioAssetPaths) != 1 {
+			t.Fatalf("alice audio paths = %+v, want one saved audio path", export.AudioAssetPaths)
+		}
+
+		deleted, err := privacy.DeleteScope(context.Background(), alice)
+		if err != nil {
+			t.Fatalf("DeleteScope alice: %v", err)
+		}
+		if deleted.RowsDeleted < 2 {
+			t.Fatalf("RowsDeleted = %d, want at least transcription + quick note rows", deleted.RowsDeleted)
+		}
+		if len(deleted.AudioFilePaths) != 1 {
+			t.Fatalf("AudioFilePaths = %+v, want one saved audio path", deleted.AudioFilePaths)
+		}
+
+		aliceAfter, err := privacy.ExportScope(context.Background(), alice)
+		if err != nil {
+			t.Fatalf("ExportScope alice after delete: %v", err)
+		}
+		if len(aliceAfter.Transcriptions) != 0 || len(aliceAfter.QuickNotes) != 0 {
+			t.Fatalf("alice data remained after delete: transcriptions=%+v quick_notes=%+v", aliceAfter.Transcriptions, aliceAfter.QuickNotes)
+		}
+		bobAfter, err := privacy.ExportScope(context.Background(), bob)
+		if err != nil {
+			t.Fatalf("ExportScope bob after delete: %v", err)
+		}
+		if len(bobAfter.Transcriptions) != 1 || bobAfter.Transcriptions[0].Text != "bob contract text" {
+			t.Fatalf("bob data not preserved: %+v", bobAfter.Transcriptions)
+		}
+	})
+}
+
 func TestExportScopeDoesNotLeakOtherScopeData(t *testing.T) {
 	s := newSQLiteStoreForPrivacyTest(t)
 	ctx := context.Background()

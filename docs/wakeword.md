@@ -38,6 +38,18 @@ Hands-free targets:
    use for hotkey activation.
 5. Stop or pause detection while a mode owns the microphone.
 
+## Runtime Split
+
+The desktop host does not link Sherpa directly. Sherpa KWS support is isolated
+in `speechkit-wakeword.exe`, built from `cmd/speechkit-wakeword` with
+`-tags sherpa_kws_sidecar` and bundled next to its private Sherpa runtime DLLs.
+
+OpenWakeWord stays a separate sidecar, `speechkit-openwakeword.exe`, built from
+`cmd/speechkit-openwakeword` with `-tags openwakeword_sidecar`. Keep these
+sidecars independent: the host starts them as subprocesses and communicates
+over the sidecar protocol instead of importing provider-specific runtime
+packages.
+
 ## Agent Guidance
 
 Agents should import only public packages from `pkg/speechkit/...`. Do not

@@ -6,16 +6,12 @@
 #   export GOOGLE_AI_API_KEY="..." # required for Gemini Live Voice Agent
 #   docker compose -f docker-compose.example.yml up -d
 #
-# `SPEECHKIT_PUBLIC_URL` is canonical. `SPEECHKIT_SERVER_PUBLIC_URL` is accepted
-# as an alias for agent-generated browser stacks.
-
 services:
   speechkit-server:
     image: ghcr.io/kombifyio/speechkit-server:latest
     environment:
       SPEECHKIT_SERVER_TOKEN: ${SPEECHKIT_SERVER_TOKEN:?set SPEECHKIT_SERVER_TOKEN}
       SPEECHKIT_PUBLIC_URL: ${SPEECHKIT_PUBLIC_URL:-http://localhost:8080}
-      SPEECHKIT_SERVER_PUBLIC_URL: ${SPEECHKIT_SERVER_PUBLIC_URL:-}
       HF_TOKEN: ${HF_TOKEN:-}
       GOOGLE_AI_API_KEY: ${GOOGLE_AI_API_KEY:-}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}

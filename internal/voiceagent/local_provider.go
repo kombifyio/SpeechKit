@@ -15,10 +15,11 @@ import (
 // cascaded turn-based architecture. The latter is an implementation
 // detail of the local path.
 type LocalVoiceAgentDeps struct {
-	STT    cascaded.STT
-	Agent  cascaded.Agent
-	TTS    cascaded.TTS
-	Config cascaded.Config
+	STT             cascaded.STT
+	Agent           cascaded.Agent
+	TTS             cascaded.TTS
+	SpeakerStreamer cascaded.SpeakerStreamer
+	Config          cascaded.Config
 }
 
 // LocalVoiceAgentProvider is the Device-Target-side local Voice Agent
@@ -41,10 +42,11 @@ func NewLocalVoiceAgentProvider(deps LocalVoiceAgentDeps) *LocalVoiceAgentProvid
 		panic("voiceagent: LocalVoiceAgentDeps.Agent is nil")
 	}
 	inner := cascaded.NewProvider(cascaded.Deps{
-		STT:    deps.STT,
-		Agent:  deps.Agent,
-		TTS:    deps.TTS,
-		Config: deps.Config,
+		STT:             deps.STT,
+		Agent:           deps.Agent,
+		TTS:             deps.TTS,
+		SpeakerStreamer: deps.SpeakerStreamer,
+		Config:          deps.Config,
 	})
 	return &LocalVoiceAgentProvider{inner: inner}
 }
@@ -54,23 +56,10 @@ func (p *LocalVoiceAgentProvider) Connect(ctx context.Context, cfg live.LiveConf
 	return p.inner.Connect(ctx, cascaded.SessionConfig{
 		Locale:           cfg.Locale,
 		Voice:            cfg.Voice,
-		SystemPrompt:     pickSystemPrompt(cfg),
+		SystemPrompt:     cfg.FrameworkPrompt,
 		RefinementPrompt: cfg.RefinementPrompt,
+		Speaker:          cfg.Speaker,
 	})
-}
-
-// pickSystemPrompt chooses the most specific instruction the caller
-// provided. live.LiveConfig keeps three overlapping fields for
-// backwards-compat (FrameworkPrompt / Instruction / SystemPrompt); we
-// prefer the explicit framework prompt and fall back to the others.
-func pickSystemPrompt(cfg live.LiveConfig) string {
-	if cfg.FrameworkPrompt != "" {
-		return cfg.FrameworkPrompt
-	}
-	if cfg.SystemPrompt != "" {
-		return cfg.SystemPrompt
-	}
-	return cfg.Instruction
 }
 
 // SendAudio delegates.
@@ -106,11 +95,15 @@ func (p *LocalVoiceAgentProvider) Receive(ctx context.Context) (*live.LiveMessag
 		return nil, nil
 	}
 	return &live.LiveMessage{
-		Audio:                msg.Audio,
-		InputTranscript:      msg.InputTranscript,
-		InputTranscriptDone:  msg.InputTranscriptDone,
-		OutputTranscript:     msg.OutputTranscript,
-		OutputTranscriptDone: msg.OutputTranscriptDone,
+		Audio:                  msg.Audio,
+		InputTranscript:        msg.InputTranscript,
+		InputTranscriptDone:    msg.InputTranscriptDone,
+		InputSpeakerLabel:      msg.InputSpeakerLabel,
+		InputPersonID:          msg.InputPersonID,
+		InputDisplayName:       msg.InputDisplayName,
+		InputSpeakerConfidence: msg.InputSpeakerConfidence,
+		OutputTranscript:       msg.OutputTranscript,
+		OutputTranscriptDone:   msg.OutputTranscriptDone,
 	}, nil
 }
 
@@ -128,8 +121,9 @@ func (p *LocalVoiceAgentProvider) UpdateInstructions(ctx context.Context, cfg li
 	return p.inner.UpdateInstructions(ctx, cascaded.SessionConfig{
 		Locale:           cfg.Locale,
 		Voice:            cfg.Voice,
-		SystemPrompt:     pickSystemPrompt(cfg),
+		SystemPrompt:     cfg.FrameworkPrompt,
 		RefinementPrompt: cfg.RefinementPrompt,
+		Speaker:          cfg.Speaker,
 	})
 }
 

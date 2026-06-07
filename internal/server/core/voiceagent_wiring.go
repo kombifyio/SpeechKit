@@ -14,6 +14,7 @@ import (
 	vsserver "github.com/kombifyio/SpeechKit/internal/server/voiceagent"
 	vskernel "github.com/kombifyio/SpeechKit/internal/voiceagent"
 	"github.com/kombifyio/SpeechKit/internal/voiceagentprofile"
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/speaker"
 )
 
 // Supported provider strings for cfg.VoiceAgent.Provider.
@@ -72,15 +73,16 @@ func buildVoiceAgentHandler(ctx context.Context, cfg *config.Config, app *App) (
 	}
 
 	h, err := vsserver.New(vsserver.HandlerOptions{
-		Manager:        manager,
-		Provider:       factory,
-		Persona:        resolver,
-		PublicURL:      cfg.Server.PublicURL,
-		AllowedOrigins: cfg.Server.CORSAllowedOrigins,
-		IdleTimeout:    idleTimeout,
-		Store:          app.Store,
-		LiveKit:        buildLiveKitIssuer(cfg, app),
-		ReadLimit:      cfg.Server.WSReadLimitBytes,
+		Manager:           manager,
+		Provider:          factory,
+		Persona:           resolver,
+		PublicURL:         cfg.Server.PublicURL,
+		AllowedOrigins:    cfg.Server.CORSAllowedOrigins,
+		TrustedProxyCIDRs: cfg.Server.TrustedProxyCIDRs,
+		IdleTimeout:       idleTimeout,
+		Store:             app.Store,
+		LiveKit:           buildLiveKitIssuer(cfg, app),
+		ReadLimit:         cfg.Server.WSReadLimitBytes,
 	})
 	if err != nil {
 		return nil, status, err
@@ -160,10 +162,11 @@ func buildProviderFactory(ctx context.Context, cfg *config.Config, app *App, pro
 			ttsImpl = app.TTSRouter
 		}
 		factory := &cascadedProviderFactory{
-			stt:   app.STTRouter,
-			agent: vsserver.NewAgentFlowAdapter(app.AgentFlow),
-			tts:   ttsImpl,
-			cfg:   cfg,
+			stt:             app.STTRouter,
+			speakerStreamer: app.STTRouter,
+			agent:           vsserver.NewAgentFlowAdapter(app.AgentFlow),
+			tts:             ttsImpl,
+			cfg:             cfg,
 		}
 		return factory, status, nil
 
@@ -204,6 +207,13 @@ func (r *personaResolver) ResolveStep(start vsserver.StartFrame, stepIndex int) 
 	return r.resolve(start, stepIndex)
 }
 
+func normalizeStartSpeakerOptions(opts *speaker.Options) speaker.Options {
+	if opts == nil {
+		return speaker.Options{}
+	}
+	return opts.Normalized()
+}
+
 func (r *personaResolver) resolve(start vsserver.StartFrame, stepIndex int) (vsserver.LiveConfigFrame, error) {
 	va := r.cfg.VoiceAgent
 
@@ -218,10 +228,11 @@ func (r *personaResolver) resolve(start vsserver.StartFrame, stepIndex int) (vss
 		Automatic:         va.AutomaticActivityDetection,
 		StartSensitivity:  va.VADStartSensitivity,
 		EndSensitivity:    va.VADEndSensitivity,
-		PrefixPaddingMs:   int32(va.VADPrefixPaddingMs),
-		SilenceDurationMs: int32(va.VADSilenceDurationMs),
+		PrefixPaddingMs:   intToInt32Clamp(va.VADPrefixPaddingMs),
+		SilenceDurationMs: intToInt32Clamp(va.VADSilenceDurationMs),
 		ActivityHandling:  va.ActivityHandling,
 		TurnCoverage:      va.TurnCoverage,
+		Speaker:           normalizeStartSpeakerOptions(start.Speaker),
 	}
 
 	// Layer (2): persona + role + sequence. Explicit start-frame personas win;
@@ -315,6 +326,21 @@ func (r *personaResolver) resolve(start vsserver.StartFrame, stepIndex int) (vss
 	return frame, nil
 }
 
+func intToInt32Clamp(value int) int32 {
+	const (
+		maxInt32 = 1<<31 - 1
+		minInt32 = -1 << 31
+	)
+	switch {
+	case value > maxInt32:
+		return maxInt32
+	case value < minInt32:
+		return minInt32
+	default:
+		return int32(value) // #nosec G115 -- value is clamped to the int32 range above.
+	}
+}
+
 func (r *personaResolver) resolveModel(startModel string) string {
 	if strings.EqualFold(strings.TrimSpace(r.cfg.VoiceAgent.Provider), ProviderOpenAI) {
 		return firstNonEmpty(startModel, r.cfg.Providers.OpenAI.RealtimeModel, vskernel.DefaultOpenAIRealtimeModel)
@@ -375,6 +401,7 @@ func (b *geminiLiveBridge) Connect(ctx context.Context, cfg vsserver.LiveConfigF
 		FrameworkPrompt:  cfg.SystemPrompt,
 		RefinementPrompt: cfg.RefinementPrompt,
 		Locale:           cfg.Locale,
+		Speaker:          cfg.Speaker,
 		Policies: vskernel.LivePolicies{
 			EnableInputAudioTranscription:  true,
 			EnableOutputAudioTranscription: true,
@@ -430,14 +457,18 @@ func (b *geminiLiveBridge) Receive(ctx context.Context) (*vsserver.LiveMessage, 
 		return nil, nil
 	}
 	return &vsserver.LiveMessage{
-		Audio:                msg.Audio,
-		InputTranscript:      msg.InputTranscript,
-		InputTranscriptDone:  msg.InputTranscriptDone,
-		OutputTranscript:     msg.OutputTranscript,
-		OutputTranscriptDone: msg.OutputTranscriptDone,
-		ToolCalls:            mapKernelToolCalls(msg.ToolCalls),
-		Interrupted:          msg.Interrupted,
-		GoAway:               msg.GoAway,
+		Audio:                  msg.Audio,
+		InputTranscript:        msg.InputTranscript,
+		InputTranscriptDone:    msg.InputTranscriptDone,
+		InputSpeakerLabel:      msg.InputSpeakerLabel,
+		InputPersonID:          msg.InputPersonID,
+		InputDisplayName:       msg.InputDisplayName,
+		InputSpeakerConfidence: msg.InputSpeakerConfidence,
+		OutputTranscript:       msg.OutputTranscript,
+		OutputTranscriptDone:   msg.OutputTranscriptDone,
+		ToolCalls:              mapKernelToolCalls(msg.ToolCalls),
+		Interrupted:            msg.Interrupted,
+		GoAway:                 msg.GoAway,
 	}, nil
 }
 
@@ -484,6 +515,7 @@ func (b *openaiLiveBridge) Connect(ctx context.Context, cfg vsserver.LiveConfigF
 		FrameworkPrompt:  cfg.SystemPrompt,
 		RefinementPrompt: cfg.RefinementPrompt,
 		Locale:           cfg.Locale,
+		Speaker:          cfg.Speaker,
 		Policies: vskernel.LivePolicies{
 			EnableInputAudioTranscription:  true,
 			EnableOutputAudioTranscription: true,
@@ -521,6 +553,7 @@ func (b *openaiLiveBridge) UpdateInstructions(ctx context.Context, cfg vsserver.
 		FrameworkPrompt:  cfg.SystemPrompt,
 		RefinementPrompt: cfg.RefinementPrompt,
 		Locale:           cfg.Locale,
+		Speaker:          cfg.Speaker,
 	}
 	return b.inner.UpdateInstructions(ctx, liveCfg)
 }
@@ -542,14 +575,18 @@ func (b *openaiLiveBridge) Receive(ctx context.Context) (*vsserver.LiveMessage, 
 		return nil, nil
 	}
 	return &vsserver.LiveMessage{
-		Audio:                msg.Audio,
-		InputTranscript:      msg.InputTranscript,
-		InputTranscriptDone:  msg.InputTranscriptDone,
-		OutputTranscript:     msg.OutputTranscript,
-		OutputTranscriptDone: msg.OutputTranscriptDone,
-		ToolCalls:            mapKernelToolCalls(msg.ToolCalls),
-		Interrupted:          msg.Interrupted,
-		GoAway:               msg.GoAway,
+		Audio:                  msg.Audio,
+		InputTranscript:        msg.InputTranscript,
+		InputTranscriptDone:    msg.InputTranscriptDone,
+		InputSpeakerLabel:      msg.InputSpeakerLabel,
+		InputPersonID:          msg.InputPersonID,
+		InputDisplayName:       msg.InputDisplayName,
+		InputSpeakerConfidence: msg.InputSpeakerConfidence,
+		OutputTranscript:       msg.OutputTranscript,
+		OutputTranscriptDone:   msg.OutputTranscriptDone,
+		ToolCalls:              mapKernelToolCalls(msg.ToolCalls),
+		Interrupted:            msg.Interrupted,
+		GoAway:                 msg.GoAway,
 	}, nil
 }
 
@@ -562,17 +599,19 @@ func (b *openaiLiveBridge) Receive(ctx context.Context) (*vsserver.LiveMessage, 
 // TTS router themselves are stateless/thread-safe and are reused across
 // sessions.
 type cascadedProviderFactory struct {
-	stt   vsserver.CascadedSTT
-	agent vsserver.CascadedAgent
-	tts   vsserver.CascadedTTS
-	cfg   *config.Config
+	stt             vsserver.CascadedSTT
+	speakerStreamer speaker.StreamingProvider
+	agent           vsserver.CascadedAgent
+	tts             vsserver.CascadedTTS
+	cfg             *config.Config
 }
 
 func (f *cascadedProviderFactory) NewProvider() vsserver.LiveProviderAdapter {
 	return vsserver.NewCascadedProvider(vsserver.CascadedDeps{
-		STT:   f.stt,
-		Agent: f.agent,
-		TTS:   f.tts,
+		STT:             f.stt,
+		SpeakerStreamer: f.speakerStreamer,
+		Agent:           f.agent,
+		TTS:             f.tts,
 		Config: vsserver.CascadedConfig{
 			TTSFormat: firstNonEmpty(f.cfg.TTS.Format, "mp3"),
 			TTSSpeed:  nonZeroFloat(f.cfg.TTS.Speed, 1.0),

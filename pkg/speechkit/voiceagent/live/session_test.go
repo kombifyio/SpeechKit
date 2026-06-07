@@ -400,9 +400,6 @@ func TestSessionAppliesInitialWorkflowStep(t *testing.T) {
 	if !strings.Contains(cfg.FrameworkPrompt, "Open the dialog") {
 		t.Fatalf("FrameworkPrompt = %q, want initial step instruction", cfg.FrameworkPrompt)
 	}
-	if cfg.Instruction != cfg.FrameworkPrompt {
-		t.Fatalf("Instruction = %q, want FrameworkPrompt alias", cfg.Instruction)
-	}
 }
 
 func TestSessionAutoAdvancesWorkflowStepAfterMaxTurns(t *testing.T) {

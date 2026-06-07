@@ -37,6 +37,11 @@
 // down all goroutines they spawned before returning from Stop —
 // see [TestRegistryLeak] for the enforcement contract.
 //
+// Runtimes that can cheaply validate or preload heavyweight resources before
+// Start may also implement [WarmableModeRuntime]. Hosts opt in with
+// [Registry.ApplyWithOptions] and [ApplyOptions.EagerWarmup]; plain
+// [Registry.Apply] preserves the existing cold-start behavior.
+//
 // # Audit events
 //
 // Hosts wire audit logging on top of [Registry.Subscribe] — the

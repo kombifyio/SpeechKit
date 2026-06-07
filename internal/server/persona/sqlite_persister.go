@@ -84,7 +84,7 @@ func (p *SQLitePersister) LoadPersonas(ctx context.Context) ([]Persona, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close() //nolint:errcheck
+	defer rows.Close() //nolint:errcheck // rows.Err below reports iteration failures; close errors are not actionable here.
 
 	var out []Persona
 	for rows.Next() {
@@ -191,7 +191,7 @@ func (p *SQLitePersister) LoadRoles(ctx context.Context) ([]Role, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close() //nolint:errcheck
+	defer rows.Close() //nolint:errcheck // rows.Err below reports iteration failures; close errors are not actionable here.
 	var out []Role
 	for rows.Next() {
 		var (
@@ -269,7 +269,7 @@ func (p *SQLitePersister) LoadSequences(ctx context.Context) ([]Sequence, error)
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close() //nolint:errcheck
+	defer rows.Close() //nolint:errcheck // rows.Err below reports iteration failures; close errors are not actionable here.
 	var out []Sequence
 	for rows.Next() {
 		var (

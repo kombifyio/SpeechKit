@@ -52,6 +52,23 @@ func TestRuntimePolicyRejectsFallbackWhenDisabled(t *testing.T) {
 	}
 }
 
+func TestRuntimePolicyAcceptsLegacyGoogleSTTProfileID(t *testing.T) {
+	err := ValidateModeSettingsForPolicy(DefaultProviderProfiles(), ModeSettings{
+		Dictation: DictationSetting{
+			ModeSetting: ModeSetting{
+				Enabled:          true,
+				PrimaryProfileID: "stt.google.chirp-3",
+			},
+		},
+	}, RuntimePolicy{
+		EnabledModes: []Mode{ModeDictation},
+	})
+
+	if err != nil {
+		t.Fatalf("ValidateModeSettingsForPolicy() error = %v, want legacy Google profile accepted", err)
+	}
+}
+
 func TestRuntimePolicyRejectsUnknownFixedProfile(t *testing.T) {
 	err := ValidateRuntimePolicy(DefaultProviderProfiles(), RuntimePolicy{
 		EnabledModes: []Mode{ModeDictation},

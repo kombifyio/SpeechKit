@@ -20,7 +20,7 @@ func Recover() Middleware {
 				if rec == nil {
 					return
 				}
-				slog.Error("handler panic",
+				slog.Error("handler panic", // #nosec G706 -- slog writes panic details as structured attributes, not interpolated log text.
 					"err", rec,
 					"method", r.Method,
 					"path", r.URL.Path,

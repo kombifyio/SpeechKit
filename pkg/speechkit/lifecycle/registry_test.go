@@ -19,8 +19,10 @@ type fakeRuntime struct {
 	status      Status
 	startCalls  int32
 	stopCalls   int32
+	warmupCalls int32
 	startErr    error
 	stopErr     error
+	warmupErr   error
 	lastDepKeys []SharedDepKey
 
 	// background simulates a goroutine the mode would normally own.
@@ -69,6 +71,18 @@ func (f *fakeRuntime) Start(ctx context.Context, deps Deps) error {
 	}(f.background, f.bgDone)
 	f.mu.Unlock()
 	return nil
+}
+
+func (f *fakeRuntime) Warmup(ctx context.Context, deps Deps) error {
+	atomic.AddInt32(&f.warmupCalls, 1)
+	f.mu.Lock()
+	f.lastDepKeys = make([]SharedDepKey, 0, len(deps.Values))
+	for k := range deps.Values {
+		f.lastDepKeys = append(f.lastDepKeys, k)
+	}
+	err := f.warmupErr
+	f.mu.Unlock()
+	return err
 }
 
 func (f *fakeRuntime) Stop(ctx context.Context) error {
@@ -219,6 +233,64 @@ func TestRegistryStartReleasesOnFailure(t *testing.T) {
 	}
 	if got := atomic.LoadInt32(&tornDown); got != 1 {
 		t.Errorf("acquired dep teardown ran %d times; want 1 (rollback)", got)
+	}
+}
+
+func TestRegistryApplyWithOptionsWarmsRuntimeBeforeStart(t *testing.T) {
+	deps := NewSharedDepRegistry()
+	deps.Register("audio.capture", func(ctx context.Context) (any, func() error, error) {
+		return "audio", nil, nil
+	})
+
+	reg := NewRegistry(deps)
+	rt := newFakeRuntime(ModeDictation, "audio.capture")
+	_ = reg.Register(rt)
+
+	if err := reg.Apply(context.Background(), Target{ModeDictation: true}); err != nil {
+		t.Fatalf("Apply: %v", err)
+	}
+	if got := atomic.LoadInt32(&rt.warmupCalls); got != 0 {
+		t.Fatalf("warmup calls after Apply = %d, want 0", got)
+	}
+	if err := reg.Apply(context.Background(), Target{ModeDictation: false}); err != nil {
+		t.Fatalf("Apply off: %v", err)
+	}
+
+	if err := reg.ApplyWithOptions(context.Background(), Target{ModeDictation: true}, ApplyOptions{EagerWarmup: true}); err != nil {
+		t.Fatalf("ApplyWithOptions: %v", err)
+	}
+	if got := atomic.LoadInt32(&rt.warmupCalls); got != 1 {
+		t.Fatalf("warmup calls = %d, want 1", got)
+	}
+	if got := atomic.LoadInt32(&rt.startCalls); got != 2 {
+		t.Fatalf("start calls = %d, want 2", got)
+	}
+	if len(rt.lastDepKeys) != 1 || rt.lastDepKeys[0] != "audio.capture" {
+		t.Fatalf("last dep keys = %v, want [audio.capture]", rt.lastDepKeys)
+	}
+}
+
+func TestRegistryWarmupFailureReleasesDepsAndDoesNotStart(t *testing.T) {
+	deps := NewSharedDepRegistry()
+	var tornDown int32
+	deps.Register("audio.capture", func(ctx context.Context) (any, func() error, error) {
+		return "audio", func() error { atomic.AddInt32(&tornDown, 1); return nil }, nil
+	})
+
+	reg := NewRegistry(deps)
+	rt := newFakeRuntime(ModeDictation, "audio.capture")
+	rt.warmupErr = errors.New("warmup failed")
+	_ = reg.Register(rt)
+
+	err := reg.ApplyWithOptions(context.Background(), Target{ModeDictation: true}, ApplyOptions{EagerWarmup: true})
+	if err == nil || !errors.Is(err, rt.warmupErr) {
+		t.Fatalf("ApplyWithOptions err = %v; want wrap of %v", err, rt.warmupErr)
+	}
+	if got := atomic.LoadInt32(&rt.startCalls); got != 0 {
+		t.Fatalf("start calls = %d, want 0", got)
+	}
+	if got := atomic.LoadInt32(&tornDown); got != 1 {
+		t.Fatalf("dep teardown calls = %d, want 1", got)
 	}
 }
 
@@ -380,3 +452,4 @@ func drainEvents(ch <-chan TransitionEvent, want int, timeout time.Duration) []T
 
 // Compile-time check: ensure fakeRuntime satisfies the interface.
 var _ ModeRuntime = (*fakeRuntime)(nil)
+var _ WarmableModeRuntime = (*fakeRuntime)(nil)

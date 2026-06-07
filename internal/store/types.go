@@ -4,6 +4,7 @@ import (
 	"context"
 	"time"
 
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/speaker"
 	speechstorage "github.com/kombifyio/SpeechKit/pkg/speechkit/storage"
 )
 
@@ -241,6 +242,12 @@ type TranscriptionAudioStore interface {
 	SaveTranscriptionWithAudio(ctx context.Context, text, language, provider, model string, durationMs, latencyMs int64, audio AudioAssetInput) error
 }
 
+// TranscriptionSpeakerStore is implemented by stores that can persist
+// normalized speaker diarization metadata alongside a transcription.
+type TranscriptionSpeakerStore interface {
+	SaveTranscriptionWithAudioAndSpeakers(ctx context.Context, text, language, provider, model string, durationMs, latencyMs int64, audio AudioAssetInput, speakers *speaker.DiarizationResult) error
+}
+
 type SemanticCapabilities struct {
 	Provider     SemanticProvider `json:"provider"`
 	FullText     bool             `json:"fullText"`
@@ -250,19 +257,20 @@ type SemanticCapabilities struct {
 
 // Transcription represents a saved transcription record.
 type Transcription struct {
-	ID          int64       `json:"id"`
-	Text        string      `json:"text"`
-	Language    string      `json:"language"`
-	Provider    string      `json:"provider"`
-	Model       string      `json:"model"`
-	DurationMs  int64       `json:"durationMs"`
-	LatencyMs   int64       `json:"latencyMs"`
-	AudioPath   string      `json:"audioPath,omitempty"`
-	Audio       *AudioAsset `json:"audio,omitempty"`
-	CreatedAt   time.Time   `json:"createdAt"`
-	OwnerUserID string      `json:"ownerUserId,omitempty"`
-	OwnerOrgID  string      `json:"ownerOrgId,omitempty"`
-	OwnerSource string      `json:"ownerSource,omitempty"`
+	ID          int64                      `json:"id"`
+	Text        string                     `json:"text"`
+	Language    string                     `json:"language"`
+	Provider    string                     `json:"provider"`
+	Model       string                     `json:"model"`
+	DurationMs  int64                      `json:"durationMs"`
+	LatencyMs   int64                      `json:"latencyMs"`
+	AudioPath   string                     `json:"audioPath,omitempty"`
+	Audio       *AudioAsset                `json:"audio,omitempty"`
+	CreatedAt   time.Time                  `json:"createdAt"`
+	OwnerUserID string                     `json:"ownerUserId,omitempty"`
+	OwnerOrgID  string                     `json:"ownerOrgId,omitempty"`
+	OwnerSource string                     `json:"ownerSource,omitempty"`
+	Speakers    *speaker.DiarizationResult `json:"speakers,omitempty"`
 }
 
 type UserDictionaryEntry struct {

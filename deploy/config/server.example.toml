@@ -15,6 +15,7 @@
 
 [general]
 language = "en"
+eager_warmup = false # Optional: warm supported mode runtimes before Start.
 
 [server]
 listen_addr            = ":8080"
@@ -25,7 +26,7 @@ public_url             = ""
 # entries to disable a mode for a given deployment (e.g. a Dictation-only
 # pool).
 modes                  = ["dictation", "assist", "voiceagent"]
-auth_mode              = "bearer_or_edge"       # Production default. Accepts service bearer tokens and Gateway X-Edge-* HMAC.
+auth_mode              = "bearer_or_edge"       # bearer | edge_hmac | bearer_or_edge | oidc | none. Production default accepts service bearer tokens and Gateway X-Edge-* HMAC. Use "oidc" to validate JWTs from an external IdP (see [server.oidc]).
 bearer_token_env       = "SPEECHKIT_SERVER_TOKEN"
 # Optional public demo token. When SPEECHKIT_SMOKE_TOKEN is set in the env,
 # the smoke UI on `/` embeds it so visitors can drive all three modes from
@@ -54,6 +55,36 @@ whisper_port            = 8180
 model_dir               = "/var/lib/speechkit/models"
 log_format              = "json"                 # "json" | "text"
 log_level               = "info"                 # "debug" | "info" | "warn" | "error"
+
+[server.security]
+# Strict security response headers are ON by default; you only need this
+# section to relax or extend the baseline. The default CSP is API-strict
+# (default-src 'none'); the admin sign-in page ships its own hashed inline
+# assets, so leave it unless you front the server with a custom UI.
+# disabled                = false                # set true only to turn the headers off (not recommended)
+# content_security_policy = ""                   # override the default strict CSP
+# frame_options           = "DENY"               # X-Frame-Options
+# referrer_policy         = "no-referrer"        # Referrer-Policy
+hsts                      = false                # set true only when behind TLS termination
+# hsts_max_age_seconds    = 63072000             # 2 years; applies when hsts = true
+
+[server.debug]
+# pprof exposes process internals — keep it OFF in production. When enabled it
+# stays loopback-only and behind auth unless pprof_public is also set.
+pprof_enabled = false
+pprof_public  = false
+
+[server.oidc]
+# Only used when auth_mode = "oidc". The server validates each Bearer JWT
+# against the provider's JWKS (signature, issuer, audience, expiry) and maps
+# token claims onto the caller identity, giving real multi-tenancy from your
+# IdP (Azure AD / Okta / Google Workspace / Auth0 / ...).
+jwks_url           = ""            # e.g. "https://login.microsoftonline.com/<tenant>/discovery/v2.0/keys"
+issuer             = ""            # exact "iss" claim to require
+audience           = ""            # exact "aud" claim to require (your API's client/app id)
+clock_skew_seconds = 60            # tolerated exp/nbf skew
+org_claim          = "org_id"      # token claim mapped to the caller's organization
+role_claim         = "role"        # token claim mapped to the caller's role
 
 [server.livekit]
 # When enabled, POST /v1/voiceagent/sessions returns a short-lived LiveKit
@@ -96,10 +127,25 @@ realtime_model = "gpt-realtime-2"  # Used when [voice_agent].provider = "openai"
 enabled        = true
 api_key_env    = "GOOGLE_AI_API_KEY"
 stt_api_key_env = "SPEECHKIT_GOOGLE_STT_API_KEY"
-stt_model      = "chirp_3"
+stt_credentials_json_env = "SPEECHKIT_GOOGLE_STT_CREDENTIALS_JSON"
+application_credentials_env = "GOOGLE_APPLICATION_CREDENTIALS"
+stt_model      = "latest_long"
 utility_model  = "gemini-2.5-flash-lite"
 assist_model   = "gemini-2.5-flash"
 agent_model    = "gemini-2.5-pro"
+
+[providers.deepgram]
+enabled           = false
+api_key_env       = "DEEPGRAM_API_KEY"
+stt_model         = "nova-3"
+diarization_model = "latest"
+
+[providers.assemblyai]
+enabled    = false
+api_key_env = "ASSEMBLYAI_API_KEY"
+stt_models  = "universal-3-pro,universal-2"
+streaming_model = "u3-rt-pro"
+streaming_base_url = "wss://streaming.assemblyai.com"
 
 [providers.groq]
 enabled        = false

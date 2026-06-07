@@ -50,7 +50,7 @@ func (h *Handler) profiles(w http.ResponseWriter, r *http.Request) {
 		}
 		profiles = framework.ProfilesForMode(mode)
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"profiles": profiles})
+	writeOKJSON(w, map[string]any{"profiles": profiles})
 }
 
 func (h *Handler) contracts(w http.ResponseWriter, r *http.Request) {
@@ -58,7 +58,7 @@ func (h *Handler) contracts(w http.ResponseWriter, r *http.Request) {
 		methodNotAllowed(w, http.MethodGet)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"contracts": framework.DefaultModeContracts()})
+	writeOKJSON(w, map[string]any{"contracts": framework.DefaultModeContracts()})
 }
 
 func (h *Handler) readiness(w http.ResponseWriter, r *http.Request) {
@@ -70,7 +70,7 @@ func (h *Handler) readiness(w http.ResponseWriter, r *http.Request) {
 	for _, profile := range framework.DefaultProviderProfiles() {
 		readiness = append(readiness, h.profileReadinessSummary(profile))
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"readiness": readiness})
+	writeOKJSON(w, map[string]any{"readiness": readiness})
 }
 
 func (h *Handler) profileReadiness(w http.ResponseWriter, r *http.Request) {
@@ -89,9 +89,10 @@ func (h *Handler) profileReadiness(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteError(w, http.StatusNotFound, "profile_not_found", "profile id missing")
 		return
 	}
+	id = framework.NormalizeProviderProfileID(id)
 	for _, profile := range framework.DefaultProviderProfiles() {
 		if profile.ID == id {
-			writeJSON(w, http.StatusOK, h.profileReadinessSummary(profile))
+			writeOKJSON(w, h.profileReadinessSummary(profile))
 			return
 		}
 	}
@@ -209,6 +210,10 @@ func (h *Handler) providerEnabled(profile framework.ProviderProfile) bool {
 		return h.cfg.Providers.Groq.Enabled
 	case framework.ExecutionModeGoogle:
 		return h.cfg.Providers.Google.Enabled
+	case framework.ExecutionModeDeepgram:
+		return h.cfg.Providers.Deepgram.Enabled
+	case framework.ExecutionModeAssemblyAI:
+		return h.cfg.Providers.AssemblyAI.Enabled
 	case framework.ExecutionModeOpenRouter:
 		return h.cfg.Providers.OpenRouter.Enabled
 	default:
@@ -228,6 +233,12 @@ func (h *Handler) credentialsReady(profile framework.ProviderProfile) bool {
 			return source != ""
 		}
 		return envPresent(h.cfg.Providers.Google.APIKeyEnv)
+	case framework.ExecutionModeDeepgram:
+		_, source := config.ResolveDeepgramKey(h.cfg)
+		return envPresent(source)
+	case framework.ExecutionModeAssemblyAI:
+		_, source := config.ResolveAssemblyAIKey(h.cfg)
+		return envPresent(source)
 	case framework.ExecutionModeHFRouted:
 		return envPresent(config.HuggingFaceTokenEnvName(h.cfg))
 	case framework.ExecutionModeOpenRouter:
@@ -296,9 +307,9 @@ func normalizeMode(raw string) framework.Mode {
 	return framework.NormalizeMode(framework.Mode(raw))
 }
 
-func writeJSON(w http.ResponseWriter, status int, body any) {
+func writeOKJSON(w http.ResponseWriter, body any) {
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
+	w.WriteHeader(http.StatusOK)
 	_ = json.NewEncoder(w).Encode(body)
 }
 

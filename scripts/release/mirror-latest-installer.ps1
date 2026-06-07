@@ -7,6 +7,7 @@ param(
     [string]$SourceReleaseUrl = '',
     [string]$CommitSha = '',
     [switch]$RequireInstaller,
+    [switch]$MetadataOnly,
     [int64]$MaxInstallerBytes = 300000000
 )
 
@@ -56,21 +57,28 @@ foreach ($assetName in $assetNames) {
         if (($sourceItem.Extension -in @('.exe', '.msi')) -and $sourceItem.Length -gt $MaxInstallerBytes) {
             throw "$assetName is $($sourceItem.Length) bytes, above the repository mirror limit of $MaxInstallerBytes bytes. Keep it as a release asset only or raise the limit deliberately."
         }
-        Copy-Item -LiteralPath $source -Destination $target -Force
+        if (-not $MetadataOnly) {
+            Copy-Item -LiteralPath $source -Destination $target -Force
+        }
     }
 }
 
 $mirroredFiles = foreach ($assetName in $assetNames) {
-    $path = Join-Path $destinationRoot $assetName
+    $path = if ($MetadataOnly) { Join-Path $sourceRoot $assetName } else { Join-Path $destinationRoot $assetName }
     if (-not (Test-Path -LiteralPath $path)) {
         continue
     }
     $item = Get-Item -LiteralPath $path
     $hash = (Get-FileHash -Algorithm SHA256 -LiteralPath $path).Hash.ToLowerInvariant()
+    $downloadUrl = ''
+    if (-not [string]::IsNullOrWhiteSpace($Version)) {
+        $downloadUrl = "https://github.com/$SourceRepo/releases/download/$Version/$assetName"
+    }
     [ordered]@{
         name = $assetName
         size_bytes = $item.Length
         sha256 = $hash
+        download_url = $downloadUrl
     }
 }
 
@@ -88,7 +96,7 @@ if ([string]::IsNullOrWhiteSpace($SourceReleaseUrl) -and -not [string]::IsNullOr
 }
 
 $manifest = [ordered]@{
-    schema = 'speechkit.latest-installer@1'
+    schema = 'speechkit.latest-installer@2'
     version = $Version
     source_repo = $SourceRepo
     source_release_url = $SourceReleaseUrl
@@ -102,20 +110,19 @@ $manifest | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath (Join-Path $desti
 $readme = @"
 # Latest Windows Installer
 
-This directory intentionally mirrors the current installable Windows release
-inside the repository so a fresh clone can install SpeechKit without browsing
-GitHub Actions artifacts first.
+This directory intentionally mirrors metadata for the current installable
+Windows release. Installer binaries are kept as GitHub Release assets, not as
+tracked source files.
 
-Use `SpeechKit-Setup.exe` for the per-user Windows install. If
-`SpeechKit-x64.msi` is present, it is the per-machine MSI for SCCM/Intune-style
-deployment.
+Use `INSTALLER-MANIFEST.json` to find the canonical `download_url`, size, and
+SHA-256 for `SpeechKit-Setup.exe` and `SpeechKit-x64.msi`.
 
 The canonical release assets are still the GitHub Release files for `$Version`
 in `$SourceRepo`. Verify local files with `SHA256SUMS.txt` or inspect
 `INSTALLER-MANIFEST.json` for source and hash metadata.
 
-Do not put generated installers under `dist/`; `dist/` is local build output.
-Only this directory is allowed to carry mirrored installer binaries.
+Do not commit generated installers under `release/latest/windows` or `dist/`;
+both are local/generated artifact locations.
 "@
 Set-Content -LiteralPath (Join-Path $destinationRoot 'README.md') -Value $readme -Encoding utf8
 

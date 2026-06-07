@@ -12,7 +12,7 @@ import (
 var _ VoiceAgentSessionStore = (*SQLiteStore)(nil)
 var _ VoiceAgentSessionStore = (*PostgresStore)(nil)
 
-func (s *SQLiteStore) SaveVoiceAgentSession(ctx context.Context, session VoiceAgentSession) (int64, error) {
+func (s *sqlStore) SaveVoiceAgentSession(ctx context.Context, session VoiceAgentSession) (int64, error) {
 	scopeID, err := s.scopeID(ctx)
 	if err != nil {
 		return 0, err
@@ -30,12 +30,13 @@ func (s *SQLiteStore) SaveVoiceAgentSession(ctx context.Context, session VoiceAg
 	}
 	defer tx.Rollback() //nolint:errcheck // deferred rollback is harmless after commit and not actionable.
 
-	result, err := tx.ExecContext(ctx,
+	jc := s.dialect.jsonbInsert()
+	id, err := s.dialect.insertReturningID(ctx, tx,
 		`INSERT INTO voice_agent_sessions (
 			scope_id, title, summary, raw_summary, transcript, language, language_base, provider_profile_id, runtime_kind,
 			turns_json, ideas_json, decisions_json, open_questions_json, next_steps_json, started_at, ended_at,
 			owner_user_id, owner_org_id, owner_source
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?`+jc+`, ?`+jc+`, ?`+jc+`, ?`+jc+`, ?`+jc+`, ?, ?, ?, ?, ?)`,
 		scopeID,
 		session.Summary.Title,
 		session.Summary.Summary,
@@ -59,11 +60,7 @@ func (s *SQLiteStore) SaveVoiceAgentSession(ctx context.Context, session VoiceAg
 	if err != nil {
 		return 0, fmt.Errorf("insert voice agent session: %w", err)
 	}
-	id, err := result.LastInsertId()
-	if err != nil {
-		return 0, err
-	}
-	if err = replaceVoiceAgentSessionChildren(ctx, tx, "sqlite", id, session); err != nil {
+	if err = replaceVoiceAgentSessionChildren(ctx, tx, s.dialect, id, session); err != nil {
 		return 0, fmt.Errorf("insert voice agent session children: %w", err)
 	}
 	if err := tx.Commit(); err != nil {
@@ -72,7 +69,7 @@ func (s *SQLiteStore) SaveVoiceAgentSession(ctx context.Context, session VoiceAg
 	return id, nil
 }
 
-func (s *SQLiteStore) ListVoiceAgentSessions(ctx context.Context, opts ListOpts) ([]VoiceAgentSession, error) {
+func (s *sqlStore) ListVoiceAgentSessions(ctx context.Context, opts ListOpts) ([]VoiceAgentSession, error) {
 	scopeID, err := s.scopeID(ctx)
 	if err != nil {
 		return nil, err
@@ -88,11 +85,11 @@ func (s *SQLiteStore) ListVoiceAgentSessions(ctx context.Context, opts ListOpts)
 		 FROM voice_agent_sessions`
 	args := []any{scopeID}
 	clauses := []string{"scope_id = ?"}
-	clauses, args = appendSQLiteNormalizedLanguageFilter(clauses, args, opts.Language)
-	clauses, args = appendSQLiteOwnerFilter(clauses, args, opts)
+	clauses, args = appendNormalizedLanguageFilter(clauses, args, opts.Language)
+	clauses, args = appendOwnerFilter(clauses, args, opts)
 	if !opts.After.IsZero() {
 		clauses = append(clauses, "created_at > ?")
-		args = append(args, sqliteTime(opts.After))
+		args = append(args, s.dialect.timeArg(opts.After))
 	}
 	if len(clauses) > 0 {
 		query += " WHERE " + strings.Join(clauses, " AND ") // #nosec G202 -- clauses are fixed internal snippets; values are parameterized.
@@ -100,9 +97,7 @@ func (s *SQLiteStore) ListVoiceAgentSessions(ctx context.Context, opts ListOpts)
 	query += " ORDER BY created_at DESC, id DESC LIMIT ? OFFSET ?"
 	args = append(args, limit, offset)
 
-	rows, err := s.db.QueryContext(ctx, //nolint:rowserrcheck // rows.Err() is checked inside scanVoiceAgentSessions
-		query, args...,
-	)
+	rows, err := s.db.QueryContext(ctx, s.dialect.rebind(query), args...) //nolint:rowserrcheck // rows.Err() is checked inside scanVoiceAgentSessionList
 	if err != nil {
 		return nil, err
 	}
@@ -111,176 +106,41 @@ func (s *SQLiteStore) ListVoiceAgentSessions(ctx context.Context, opts ListOpts)
 	return scanVoiceAgentSessionList(rows)
 }
 
-func (s *SQLiteStore) GetVoiceAgentSession(ctx context.Context, id int64) (*VoiceAgentSession, error) {
+func (s *sqlStore) GetVoiceAgentSession(ctx context.Context, id int64) (*VoiceAgentSession, error) {
 	scopeID, err := s.scopeID(ctx)
 	if err != nil {
 		return nil, err
 	}
-	row := s.db.QueryRowContext(ctx,
+	row := s.db.QueryRowContext(ctx, s.dialect.rebind(
 		`SELECT id, title, summary, raw_summary, transcript, language, provider_profile_id, runtime_kind, started_at, ended_at, created_at,
 			COALESCE(owner_user_id, ''), COALESCE(owner_org_id, ''), COALESCE(owner_source, '')
-		 FROM voice_agent_sessions WHERE id = ? AND scope_id = ?`,
+		 FROM voice_agent_sessions WHERE id = ? AND scope_id = ?`),
 		id, scopeID,
 	)
 	session, err := scanVoiceAgentSessionDetailRow(row)
 	if err != nil {
 		return nil, err
 	}
-	if err := loadSQLiteVoiceAgentSessionChildren(ctx, s.db, session); err != nil {
+	if err := loadVoiceAgentSessionChildren(ctx, s.db, s.dialect, session); err != nil {
 		return nil, err
 	}
 	return session, nil
 }
 
-func (s *PostgresStore) SaveVoiceAgentSession(ctx context.Context, session VoiceAgentSession) (int64, error) {
-	scopeID, err := s.scopeID(ctx)
-	if err != nil {
-		return 0, err
-	}
-	owner, _ := RecordOwnerFromContext(ctx)
-	session = normalizeVoiceAgentSession(session)
-	j, err := marshalVoiceAgentSessionJSON(session)
-	if err != nil {
-		return 0, err
-	}
-
-	tx, err := s.db.BeginTx(ctx, nil)
-	if err != nil {
-		return 0, err
-	}
-	defer tx.Rollback() //nolint:errcheck // deferred rollback is harmless after commit and not actionable.
-
-	var id int64
-	err = tx.QueryRowContext(ctx,
-		`INSERT INTO voice_agent_sessions (
-			scope_id, title, summary, raw_summary, transcript, language, language_base, provider_profile_id, runtime_kind,
-			turns_json, ideas_json, decisions_json, open_questions_json, next_steps_json, started_at, ended_at,
-			owner_user_id, owner_org_id, owner_source
-		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10::jsonb, $11::jsonb, $12::jsonb, $13::jsonb, $14::jsonb, $15, $16, $17, $18, $19)
-		RETURNING id`,
-		scopeID,
-		session.Summary.Title,
-		session.Summary.Summary,
-		session.Summary.RawText,
-		session.Transcript,
-		session.Language,
-		normalizeDictionaryLanguage(session.Language),
-		session.ProviderProfileID,
-		session.RuntimeKind,
-		j.Turns,
-		j.Ideas,
-		j.Decisions,
-		j.Questions,
-		j.Steps,
-		session.StartedAt,
-		session.EndedAt,
-		owner.UserID,
-		owner.OrgID,
-		owner.Source,
-	).Scan(&id)
-	if err != nil {
-		return 0, fmt.Errorf("insert voice agent session: %w", err)
-	}
-	if err = replaceVoiceAgentSessionChildren(ctx, tx, "postgres", id, session); err != nil {
-		return 0, fmt.Errorf("insert voice agent session children: %w", err)
-	}
-	if err := tx.Commit(); err != nil {
-		return 0, err
-	}
-	return id, nil
-}
-
-func (s *PostgresStore) ListVoiceAgentSessions(ctx context.Context, opts ListOpts) ([]VoiceAgentSession, error) {
-	scopeID, err := s.scopeID(ctx)
-	if err != nil {
-		return nil, err
-	}
-	limit, offset := normalizedListPagination(opts)
-
-	transcriptSelect := "''"
-	if voiceAgentListIncludesTranscript(opts) {
-		transcriptSelect = "transcript"
-	}
-	query := `SELECT id, title, summary, ` + transcriptSelect + `, language, provider_profile_id, runtime_kind, started_at, ended_at, created_at,
-			COALESCE(owner_user_id, ''), COALESCE(owner_org_id, ''), COALESCE(owner_source, '')
-		 FROM voice_agent_sessions`
-	args := []any{scopeID}
-	clauses := []string{"scope_id = $1"}
-	clauses, args = appendPostgresNormalizedLanguageFilter(clauses, args, opts.Language)
-	clauses, args = appendPostgresOwnerFilter(clauses, args, opts)
-	if !opts.After.IsZero() {
-		args = append(args, opts.After.UTC())
-		clauses = append(clauses, fmt.Sprintf("created_at > $%d", len(args)))
-	}
-	if len(clauses) > 0 {
-		query += " WHERE " + strings.Join(clauses, " AND ") // #nosec G202 -- clauses are fixed internal snippets; values are parameterized.
-	}
-	args = append(args, limit)
-	limitParam := len(args)
-	args = append(args, offset)
-	offsetParam := len(args)
-	query += fmt.Sprintf(" ORDER BY created_at DESC, id DESC LIMIT $%d OFFSET $%d", limitParam, offsetParam) // #nosec G202 -- limit/offset positions are derived from argument indexes.
-
-	rows, err := s.db.QueryContext(ctx, //nolint:rowserrcheck // rows.Err() is checked inside scanVoiceAgentSessions
-		query, args...,
-	)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close() //nolint:errcheck // deferred rows close, error not actionable
-
-	return scanVoiceAgentSessionList(rows)
-}
-
-func (s *PostgresStore) GetVoiceAgentSession(ctx context.Context, id int64) (*VoiceAgentSession, error) {
-	scopeID, err := s.scopeID(ctx)
-	if err != nil {
-		return nil, err
-	}
-	row := s.db.QueryRowContext(ctx,
-		`SELECT id, title, summary, raw_summary, transcript, language, provider_profile_id, runtime_kind, started_at, ended_at, created_at,
-			COALESCE(owner_user_id, ''), COALESCE(owner_org_id, ''), COALESCE(owner_source, '')
-		 FROM voice_agent_sessions WHERE id = $1 AND scope_id = $2`,
-		id, scopeID,
-	)
-	session, err := scanVoiceAgentSessionDetailRow(row)
-	if err != nil {
-		return nil, err
-	}
-	if err := loadPostgresVoiceAgentSessionChildren(ctx, s.db, session); err != nil {
-		return nil, err
-	}
-	return session, nil
-}
-
-func replaceVoiceAgentSessionChildren(ctx context.Context, db execContexter, dialect string, sessionID int64, session VoiceAgentSession) error {
-	deleteTurns := `DELETE FROM voice_agent_session_turns WHERE session_id = ?`
-	deleteItems := `DELETE FROM voice_agent_session_summary_items WHERE session_id = ?`
-	if dialect == "postgres" {
-		deleteTurns = `DELETE FROM voice_agent_session_turns WHERE session_id = $1`
-		deleteItems = `DELETE FROM voice_agent_session_summary_items WHERE session_id = $1`
-	}
-	if _, err := db.ExecContext(ctx, deleteTurns, sessionID); err != nil {
+func replaceVoiceAgentSessionChildren(ctx context.Context, db execContexter, d sqlDialect, sessionID int64, session VoiceAgentSession) error {
+	if _, err := db.ExecContext(ctx, d.rebind(`DELETE FROM voice_agent_session_turns WHERE session_id = ?`), sessionID); err != nil {
 		return err
 	}
-	if _, err := db.ExecContext(ctx, deleteItems, sessionID); err != nil {
+	if _, err := db.ExecContext(ctx, d.rebind(`DELETE FROM voice_agent_session_summary_items WHERE session_id = ?`), sessionID); err != nil {
 		return err
 	}
 
-	turnQuery := `INSERT INTO voice_agent_session_turns
+	turnQuery := d.rebind(`INSERT INTO voice_agent_session_turns
 		(session_id, turn_index, role, text, created_at)
-		VALUES (?, ?, ?, ?, ?)`
-	itemQuery := `INSERT INTO voice_agent_session_summary_items
+		VALUES (?, ?, ?, ?, ?)`)
+	itemQuery := d.rebind(`INSERT INTO voice_agent_session_summary_items
 		(session_id, item_type, item_index, text)
-		VALUES (?, ?, ?, ?)`
-	if dialect == "postgres" {
-		turnQuery = `INSERT INTO voice_agent_session_turns
-			(session_id, turn_index, role, text, created_at)
-			VALUES ($1, $2, $3, $4, $5)`
-		itemQuery = `INSERT INTO voice_agent_session_summary_items
-			(session_id, item_type, item_index, text)
-			VALUES ($1, $2, $3, $4)`
-	}
+		VALUES (?, ?, ?, ?)`)
 
 	for i, turn := range session.Turns {
 		if _, err := db.ExecContext(ctx, turnQuery,
@@ -389,23 +249,8 @@ func scanVoiceAgentSessionDetailRow(row voiceAgentSessionRow) (*VoiceAgentSessio
 	return &session, nil
 }
 
-func loadSQLiteVoiceAgentSessionChildren(ctx context.Context, db *sql.DB, session *VoiceAgentSession) error {
-	return loadVoiceAgentSessionChildren(ctx, db, "sqlite", session)
-}
-
-func loadPostgresVoiceAgentSessionChildren(ctx context.Context, db *sql.DB, session *VoiceAgentSession) error {
-	return loadVoiceAgentSessionChildren(ctx, db, "postgres", session)
-}
-
-func loadVoiceAgentSessionChildren(ctx context.Context, db *sql.DB, dialect string, session *VoiceAgentSession) error {
-	turnQuery := `SELECT role, text, created_at FROM voice_agent_session_turns WHERE session_id = ? ORDER BY turn_index ASC`
-	itemQuery := `SELECT item_type, text FROM voice_agent_session_summary_items WHERE session_id = ? ORDER BY item_type ASC, item_index ASC`
-	if dialect == "postgres" {
-		turnQuery = `SELECT role, text, created_at FROM voice_agent_session_turns WHERE session_id = $1 ORDER BY turn_index ASC`
-		itemQuery = `SELECT item_type, text FROM voice_agent_session_summary_items WHERE session_id = $1 ORDER BY item_type ASC, item_index ASC`
-	}
-
-	turnRows, err := db.QueryContext(ctx, turnQuery, session.ID)
+func loadVoiceAgentSessionChildren(ctx context.Context, db *sql.DB, d sqlDialect, session *VoiceAgentSession) error {
+	turnRows, err := db.QueryContext(ctx, d.rebind(`SELECT role, text, created_at FROM voice_agent_session_turns WHERE session_id = ? ORDER BY turn_index ASC`), session.ID)
 	if err != nil {
 		return err
 	}
@@ -425,7 +270,7 @@ func loadVoiceAgentSessionChildren(ctx context.Context, db *sql.DB, dialect stri
 		return err
 	}
 
-	itemRows, err := db.QueryContext(ctx, itemQuery, session.ID)
+	itemRows, err := db.QueryContext(ctx, d.rebind(`SELECT item_type, text FROM voice_agent_session_summary_items WHERE session_id = ? ORDER BY item_type ASC, item_index ASC`), session.ID)
 	if err != nil {
 		return err
 	}

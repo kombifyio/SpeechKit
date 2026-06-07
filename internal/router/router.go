@@ -13,13 +13,23 @@ import (
 	"fmt"
 	"log/slog"
 	"net"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
 
 	"github.com/kombifyio/SpeechKit/internal/auditlog"
 	"github.com/kombifyio/SpeechKit/internal/stt"
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/speaker"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/trace"
 )
+
+// sttTracer instruments STT routing. When no OpenTelemetry provider is
+// installed, otel.Tracer returns a no-op, so spans cost nothing.
+var sttTracer = otel.Tracer("github.com/kombifyio/SpeechKit/internal/router")
 
 // emitProviderSelected records a provider.selected audit event on successful
 // transcription. Errors from AppendEvent are intentionally discarded —
@@ -191,7 +201,25 @@ func (r *Router) snapshot() (local stt.STTProvider, cloud []stt.STTProvider) {
 }
 
 // Route selects the appropriate provider(s) and returns the transcription result.
-func (r *Router) Route(ctx context.Context, audio []byte, audioDurationSecs float64, opts stt.TranscribeOpts) (*stt.Result, error) {
+func (r *Router) Route(ctx context.Context, audio []byte, audioDurationSecs float64, opts stt.TranscribeOpts) (res *stt.Result, err error) {
+	ctx, span := sttTracer.Start(ctx, "stt.transcribe", trace.WithAttributes(
+		attribute.String("speechkit.stt.strategy", string(r.Strategy)),
+		attribute.String("speechkit.stt.language", opts.Language),
+	))
+	defer func() {
+		switch {
+		case err != nil:
+			span.RecordError(err)
+			span.SetStatus(codes.Error, "transcribe failed")
+		case res != nil:
+			span.SetAttributes(
+				attribute.String("speechkit.stt.provider", res.Provider),
+				attribute.String("speechkit.stt.model", res.Model),
+			)
+		}
+		span.End()
+	}()
+
 	switch r.Strategy {
 	case StrategyLocalOnly:
 		return r.transcribeLocal(ctx, audio, opts)
@@ -200,6 +228,30 @@ func (r *Router) Route(ctx context.Context, audio []byte, audioDurationSecs floa
 	default:
 		return r.transcribeDynamic(ctx, audio, audioDurationSecs, opts)
 	}
+}
+
+// StartSpeakerStream selects the first configured provider that can perform
+// realtime speaker attribution. The stream is an add-on path and never changes
+// the normal STT routing decision for Dictation/Assist.
+func (r *Router) StartSpeakerStream(ctx context.Context, opts speaker.Options, format speaker.AudioFormat) (speaker.SpeakerStream, error) {
+	candidates := r.streamingCandidates(opts)
+	var lastErr error
+	for _, p := range candidates {
+		streamer, ok := p.(speaker.StreamingProvider)
+		if !ok {
+			continue
+		}
+		stream, err := streamer.StartSpeakerStream(ctx, opts, format)
+		if err == nil {
+			return stream, nil
+		}
+		lastErr = err
+		slog.Warn("speaker streaming provider failed", "provider", p.Name(), "err", err)
+	}
+	if lastErr != nil {
+		return nil, fmt.Errorf("no speaker streaming provider available: %w", lastErr)
+	}
+	return nil, fmt.Errorf("no speaker streaming provider available")
 }
 
 func (r *Router) transcribeDynamic(ctx context.Context, audio []byte, durationSecs float64, opts stt.TranscribeOpts) (*stt.Result, error) {
@@ -256,6 +308,58 @@ func (r *Router) transcribeDynamic(ctx context.Context, audio []byte, durationSe
 	}
 
 	return nil, fmt.Errorf("no STT provider available")
+}
+
+func (r *Router) streamingCandidates(opts speaker.Options) []stt.STTProvider {
+	local, cloud := r.snapshot()
+	var candidates []stt.STTProvider
+	switch r.Strategy {
+	case StrategyLocalOnly:
+		if local != nil {
+			candidates = append(candidates, local)
+		}
+	case StrategyCloudOnly:
+		candidates = append(candidates, cloud...)
+	default:
+		candidates = append(candidates, cloud...)
+		if local != nil {
+			candidates = append(candidates, local)
+		}
+	}
+	return prioritizeSpeakerProfile(candidates, opts.ProviderProfileID)
+}
+
+func prioritizeSpeakerProfile(candidates []stt.STTProvider, profileID string) []stt.STTProvider {
+	want := providerNameFromSpeakerProfile(profileID)
+	if want == "" || len(candidates) < 2 {
+		return candidates
+	}
+	out := make([]stt.STTProvider, 0, len(candidates))
+	for _, candidate := range candidates {
+		if strings.EqualFold(candidate.Name(), want) {
+			out = append(out, candidate)
+		}
+	}
+	for _, candidate := range candidates {
+		if !strings.EqualFold(candidate.Name(), want) {
+			out = append(out, candidate)
+		}
+	}
+	return out
+}
+
+func providerNameFromSpeakerProfile(profileID string) string {
+	profileID = strings.ToLower(strings.TrimSpace(profileID))
+	switch {
+	case strings.Contains(profileID, "deepgram"):
+		return "deepgram"
+	case strings.Contains(profileID, "assemblyai"):
+		return "assemblyai"
+	case strings.Contains(profileID, "google"):
+		return "google"
+	default:
+		return ""
+	}
 }
 
 // checkInternet returns cached connectivity status, refreshing if stale.

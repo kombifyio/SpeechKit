@@ -187,7 +187,7 @@ func handleServerSettingsPatch(w http.ResponseWriter, r *http.Request, app *App)
 	}
 	if strings.TrimSpace(patch.AdminAuth.PasswordValue) != "" {
 		now := time.Now()
-		secure := requestIsSecure(r)
+		secure := serverRequestIsSecure(app, r)
 		if cookie, err := middleware.NewAdminSessionCookie(app.Cfg.Server.AdminUsername, app.Cfg.Server.AdminPasswordHash, secure, now); err == nil && cookie != nil {
 			http.SetCookie(w, cookie)
 			// Audit S-13: pair the session cookie with the CSRF
@@ -717,13 +717,14 @@ func serverModelSettingsEqual(a, b config.ServerModelSettings) bool {
 
 func ensureSingleJSONValue(dec *json.Decoder) error {
 	var extra any
-	if err := dec.Decode(&extra); errors.Is(err, io.EOF) {
+	err := dec.Decode(&extra)
+	if errors.Is(err, io.EOF) {
 		return nil
-	} else if err == nil {
-		return errors.New("request body must contain a single JSON object")
-	} else {
-		return err
 	}
+	if err == nil {
+		return errors.New("request body must contain a single JSON object")
+	}
+	return err
 }
 
 func boolPtr(v bool) *bool {

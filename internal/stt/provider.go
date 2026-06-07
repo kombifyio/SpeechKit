@@ -12,6 +12,8 @@ package stt
 import (
 	"context"
 	"time"
+
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/speaker"
 )
 
 // STTProvider defines the interface for all speech-to-text backends.
@@ -28,9 +30,10 @@ type STTProvider interface {
 
 // TranscribeOpts configures a single transcription request.
 type TranscribeOpts struct {
-	Language string // "de", "en", "auto"
-	Model    string // Optional: model override
-	Prompt   string // Optional: provider-specific hint prompt for better recognition
+	Language string          // "de", "en", "auto"
+	Model    string          // Optional: model override
+	Prompt   string          // Optional: provider-specific hint prompt for better recognition
+	Speaker  speaker.Options // Optional speaker diarization / attribution request
 }
 
 // Result holds the output of a transcription.
@@ -41,4 +44,5 @@ type Result struct {
 	Provider   string
 	Model      string
 	Confidence float64 // If available from the provider
+	Speakers   *speaker.DiarizationResult
 }

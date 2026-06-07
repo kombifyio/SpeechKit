@@ -57,6 +57,48 @@ func TestResolveGoogleSTTKeyAllowsCustomNonGeminiAPIKeyEnv(t *testing.T) {
 	}
 }
 
+func TestResolveDeepgramKeyUsesConfiguredEnv(t *testing.T) {
+	disableDopplerForCredentialTest(t)
+	t.Setenv(DeepgramAPIKeyEnv, "")
+	t.Setenv("CUSTOM_DEEPGRAM_KEY", "deepgram-key")
+
+	cfg := &Config{}
+	cfg.Providers.Deepgram.APIKeyEnv = "CUSTOM_DEEPGRAM_KEY"
+
+	key, source := ResolveDeepgramKey(cfg)
+	if key != "deepgram-key" || source != "CUSTOM_DEEPGRAM_KEY" {
+		t.Fatalf("ResolveDeepgramKey() = (%q, %q)", key, source)
+	}
+}
+
+func TestResolveAssemblyAIKeyUsesDefaultEnv(t *testing.T) {
+	disableDopplerForCredentialTest(t)
+	t.Setenv(AssemblyAIAPIKeyEnv, "assembly-key")
+
+	key, source := ResolveAssemblyAIKey(&Config{})
+	if key != "assembly-key" || source != AssemblyAIAPIKeyEnv {
+		t.Fatalf("ResolveAssemblyAIKey() = (%q, %q)", key, source)
+	}
+}
+
+func TestGoogleSTTCredentialEnvNamesUseDefaultsAndOverrides(t *testing.T) {
+	if got := GoogleSTTCredentialsJSONEnvName(nil); got != GoogleSTTCredentialsJSONEnv {
+		t.Fatalf("GoogleSTTCredentialsJSONEnvName(nil) = %q", got)
+	}
+	if got := GoogleApplicationCredentialsEnvName(nil); got != GoogleApplicationCredentialsEnv {
+		t.Fatalf("GoogleApplicationCredentialsEnvName(nil) = %q", got)
+	}
+	cfg := &Config{}
+	cfg.Providers.Google.STTCredentialsJSONEnv = "CUSTOM_GOOGLE_JSON"
+	cfg.Providers.Google.ApplicationCredentialsEnv = "CUSTOM_GOOGLE_ADC"
+	if got := GoogleSTTCredentialsJSONEnvName(cfg); got != "CUSTOM_GOOGLE_JSON" {
+		t.Fatalf("GoogleSTTCredentialsJSONEnvName(cfg) = %q", got)
+	}
+	if got := GoogleApplicationCredentialsEnvName(cfg); got != "CUSTOM_GOOGLE_ADC" {
+		t.Fatalf("GoogleApplicationCredentialsEnvName(cfg) = %q", got)
+	}
+}
+
 func disableDopplerForCredentialTest(t *testing.T) {
 	t.Helper()
 	previousLookPath := dopplerLookPath

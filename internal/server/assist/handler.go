@@ -21,6 +21,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -29,6 +30,7 @@ import (
 	"github.com/kombifyio/SpeechKit/internal/server/httpx"
 	"github.com/kombifyio/SpeechKit/internal/server/middleware"
 	"github.com/kombifyio/SpeechKit/internal/stt"
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/speaker"
 )
 
 // sessionKeyFromRequest derives a stable v0.38.0 multi-turn session
@@ -61,10 +63,11 @@ type Processor interface {
 
 // Options configures a single Handler instance.
 type Options struct {
-	Processor     Processor
-	Transcriber   Transcriber // optional; nil disables audio input
-	MaxUploadMB   int
-	DefaultLocale string
+	Processor              Processor
+	Transcriber            Transcriber // optional; nil disables audio input
+	MaxUploadMB            int
+	MaxDecodedAudioSeconds int
+	DefaultLocale          string
 }
 
 // Handler implements the /v1/assist/process HTTP surface.
@@ -72,6 +75,7 @@ type Handler struct {
 	processor     Processor
 	transcriber   Transcriber
 	maxBytes      int64
+	decodeLimits  audio.DecodeLimits
 	defaultLocale string
 }
 
@@ -90,6 +94,7 @@ func New(opts Options) (*Handler, error) {
 		processor:     opts.Processor,
 		transcriber:   opts.Transcriber,
 		maxBytes:      maxBytes,
+		decodeLimits:  audio.DecodeLimits{MaxDecodedAudioSeconds: opts.MaxDecodedAudioSeconds},
 		defaultLocale: strings.TrimSpace(opts.DefaultLocale),
 	}, nil
 }
@@ -111,25 +116,28 @@ type processJSONRequest struct {
 	Context     string `json:"context"`
 	// TTS overrides — the Pipeline already knows whether TTS is globally
 	// enabled; these fields let the caller opt out per-request.
-	TTS       *bool   `json:"tts,omitempty"`
-	TTSFormat string  `json:"tts_format,omitempty"`
-	TTSVoice  string  `json:"tts_voice,omitempty"`
-	TTSSpeed  float64 `json:"tts_speed,omitempty"`
+	TTS            *bool           `json:"tts,omitempty"`
+	TTSFormat      string          `json:"tts_format,omitempty"`
+	TTSVoice       string          `json:"tts_voice,omitempty"`
+	TTSSpeed       float64         `json:"tts_speed,omitempty"`
+	Speaker        speaker.Options `json:"speaker,omitempty"`
+	SpeakerOptions speaker.Options `json:"speaker_options,omitempty"`
 }
 
 type processResponse struct {
-	Text        string      `json:"text"`
-	SpeakText   string      `json:"speak_text,omitempty"`
-	Action      string      `json:"action"`
-	Locale      string      `json:"locale,omitempty"`
-	Shortcut    string      `json:"shortcut,omitempty"`
-	Surface     string      `json:"surface,omitempty"`
-	Kind        string      `json:"kind,omitempty"`
-	Transcript  string      `json:"transcript,omitempty"`
-	AudioBase64 string      `json:"audio_base64,omitempty"`
-	AudioFormat string      `json:"audio_format,omitempty"`
-	LatencyMs   int64       `json:"latency_ms"`
-	SourceInfo  *sourceMeta `json:"source,omitempty"`
+	Text        string                     `json:"text"`
+	SpeakText   string                     `json:"speak_text,omitempty"`
+	Action      string                     `json:"action"`
+	Locale      string                     `json:"locale,omitempty"`
+	Shortcut    string                     `json:"shortcut,omitempty"`
+	Surface     string                     `json:"surface,omitempty"`
+	Kind        string                     `json:"kind,omitempty"`
+	Transcript  string                     `json:"transcript,omitempty"`
+	AudioBase64 string                     `json:"audio_base64,omitempty"`
+	AudioFormat string                     `json:"audio_format,omitempty"`
+	LatencyMs   int64                      `json:"latency_ms"`
+	SourceInfo  *sourceMeta                `json:"source,omitempty"`
+	Speakers    *speaker.DiarizationResult `json:"speakers,omitempty"`
 }
 
 type selfTestResponse struct {
@@ -208,9 +216,16 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) handleMultipart(w http.ResponseWriter, r *http.Request) {
+	r.Body = http.MaxBytesReader(w, r.Body, h.maxBytes)
+	defer func() { _ = r.Body.Close() }()
+
 	if err := r.ParseMultipartForm(32 << 10); err != nil {
-		httpx.WriteError(w, http.StatusBadRequest, "invalid_multipart",
-			"failed to parse multipart body: "+err.Error())
+		if errors.As(err, new(*http.MaxBytesError)) {
+			httpx.WriteError(w, http.StatusRequestEntityTooLarge, "payload_too_large",
+				fmt.Sprintf("request body exceeds maximum %d bytes", h.maxBytes))
+			return
+		}
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_multipart", "failed to parse multipart body: "+err.Error())
 		return
 	}
 
@@ -218,6 +233,7 @@ func (h *Handler) handleMultipart(w http.ResponseWriter, r *http.Request) {
 	selection := r.FormValue("selection")
 	contextStr := r.FormValue("context")
 	ttsOverride, ttsFormat, ttsVoice := parseTTSOverrides(r.FormValue("tts"), r.FormValue("tts_format"), r.FormValue("tts_voice"))
+	speakerOpts := parseSpeakerOptionsFromForm(r)
 
 	text := strings.TrimSpace(r.FormValue("text"))
 	file, header, fileErr := r.FormFile("audio")
@@ -225,7 +241,7 @@ func (h *Handler) handleMultipart(w http.ResponseWriter, r *http.Request) {
 	switch {
 	case text != "" && fileErr != nil:
 		// Text-only path.
-		h.processTranscript(w, r.Context(), text, nil, assistpkg.ProcessOpts{
+		h.processTranscript(r.Context(), w, text, nil, nil, assistpkg.ProcessOpts{
 			Locale:     h.resolveLocale(locale),
 			Selection:  selection,
 			Context:    contextStr,
@@ -239,12 +255,12 @@ func (h *Handler) handleMultipart(w http.ResponseWriter, r *http.Request) {
 				fmt.Sprintf("audio file %d bytes exceeds maximum %d bytes", header.Size, h.maxBytes))
 			return
 		}
-		h.processAudio(w, r.Context(), file, header.Header.Get("Content-Type"), assistpkg.ProcessOpts{
+		h.processAudio(r.Context(), w, file, header.Header.Get("Content-Type"), assistpkg.ProcessOpts{
 			Locale:     h.resolveLocale(locale),
 			Selection:  selection,
 			Context:    contextStr,
 			SessionKey: sessionKeyFromRequest(r),
-		}, ttsOverride, ttsFormat, ttsVoice)
+		}, speakerOpts, ttsOverride, ttsFormat, ttsVoice)
 		return
 	default:
 		httpx.WriteError(w, http.StatusBadRequest, "missing_input",
@@ -278,7 +294,7 @@ func (h *Handler) handleJSON(w http.ResponseWriter, r *http.Request) {
 	text := strings.TrimSpace(body.Text)
 	switch {
 	case text != "":
-		h.processTranscript(w, r.Context(), text, nil, opts, body.TTS, body.TTSFormat, body.TTSVoice)
+		h.processTranscript(r.Context(), w, text, nil, nil, opts, body.TTS, body.TTSFormat, body.TTSVoice)
 	case strings.TrimSpace(body.AudioBase64) != "":
 		raw, err := base64.StdEncoding.DecodeString(body.AudioBase64)
 		if err != nil {
@@ -287,7 +303,7 @@ func (h *Handler) handleJSON(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		formatHint := audioFormatHint(body.Format)
-		h.processAudioBytes(w, r.Context(), raw, formatHint, opts, body.TTS, body.TTSFormat, body.TTSVoice)
+		h.processAudioBytes(r.Context(), w, raw, formatHint, opts, resolveSpeakerOptions(body.Speaker, body.SpeakerOptions), body.TTS, body.TTSFormat, body.TTSVoice)
 	default:
 		httpx.WriteError(w, http.StatusBadRequest, "missing_input",
 			"JSON body must include either 'text' or 'audio_base64'")
@@ -296,7 +312,7 @@ func (h *Handler) handleJSON(w http.ResponseWriter, r *http.Request) {
 
 // ── core flow ───────────────────────────────────────────────────────────────
 
-func (h *Handler) processAudio(w http.ResponseWriter, ctx context.Context, reader io.Reader, contentType string, opts assistpkg.ProcessOpts, ttsOverride *bool, ttsFormat, ttsVoice string) {
+func (h *Handler) processAudio(ctx context.Context, w http.ResponseWriter, reader io.Reader, contentType string, opts assistpkg.ProcessOpts, speakerOpts speaker.Options, ttsOverride *bool, ttsFormat, ttsVoice string) {
 	lr := io.LimitReader(reader, h.maxBytes+1)
 	raw, err := io.ReadAll(lr)
 	if err != nil {
@@ -308,20 +324,24 @@ func (h *Handler) processAudio(w http.ResponseWriter, ctx context.Context, reade
 			fmt.Sprintf("audio exceeds maximum %d bytes", h.maxBytes))
 		return
 	}
-	h.processAudioBytes(w, ctx, raw, contentType, opts, ttsOverride, ttsFormat, ttsVoice)
+	h.processAudioBytes(ctx, w, raw, contentType, opts, speakerOpts, ttsOverride, ttsFormat, ttsVoice)
 }
 
-func (h *Handler) processAudioBytes(w http.ResponseWriter, ctx context.Context, raw []byte, contentType string, opts assistpkg.ProcessOpts, ttsOverride *bool, ttsFormat, ttsVoice string) {
+func (h *Handler) processAudioBytes(ctx context.Context, w http.ResponseWriter, raw []byte, contentType string, opts assistpkg.ProcessOpts, speakerOpts speaker.Options, ttsOverride *bool, ttsFormat, ttsVoice string) {
 	if h.transcriber == nil {
 		httpx.WriteError(w, http.StatusServiceUnavailable, "stt_unavailable",
 			"this deployment does not expose an STT router; send 'text' instead of 'audio'")
 		return
 	}
 
-	decoded, err := audio.Decode(raw, contentType)
+	decoded, err := audio.DecodeWithLimits(ctx, raw, contentType, h.decodeLimits)
 	if err != nil {
 		if errors.Is(err, audio.ErrUnsupportedFormat) {
 			httpx.WriteError(w, http.StatusUnsupportedMediaType, "unsupported_audio_format", err.Error())
+			return
+		}
+		if errors.Is(err, audio.ErrDecodedAudioTooLarge) {
+			httpx.WriteError(w, http.StatusRequestEntityTooLarge, "payload_too_large", err.Error())
 			return
 		}
 		httpx.WriteError(w, http.StatusBadRequest, "invalid_audio", "failed to decode audio: "+err.Error())
@@ -333,9 +353,9 @@ func (h *Handler) processAudioBytes(w http.ResponseWriter, ctx context.Context, 
 	}
 
 	durationSecs := float64(decoded.DurationMs) / 1000.0
-	sttResult, err := h.transcriber.Route(ctx, decoded.PCM, durationSecs, stt.TranscribeOpts{Language: opts.Locale})
+	sttResult, err := h.transcriber.Route(ctx, decoded.PCM, durationSecs, stt.TranscribeOpts{Language: opts.Locale, Speaker: speakerOpts})
 	if err != nil {
-		slog.Warn("assist: STT failed", "err", err, "duration_ms", decoded.DurationMs)
+		slog.Warn("assist: STT failed", "err", err, "duration_ms", decoded.DurationMs) // #nosec G706 -- slog writes structured fields; provider errors are attributes, not message format.
 		httpx.WriteError(w, http.StatusServiceUnavailable, "stt_provider_unavailable",
 			"no STT provider could satisfy the request: "+err.Error())
 		return
@@ -349,16 +369,19 @@ func (h *Handler) processAudioBytes(w http.ResponseWriter, ctx context.Context, 
 	if opts.Locale == "" && sttResult.Language != "" {
 		opts.Locale = sttResult.Language
 	}
+	if sttResult.Speakers != nil {
+		opts.Context = appendSpeakerContext(opts.Context, sttResult.Speakers)
+	}
 	source := &sourceMeta{
 		Format:     decoded.SourceFormat,
 		SampleRate: decoded.SourceRate,
 		Channels:   decoded.SourceCh,
 		DurationMs: decoded.DurationMs,
 	}
-	h.processTranscript(w, ctx, sttResult.Text, source, opts, ttsOverride, ttsFormat, ttsVoice)
+	h.processTranscript(ctx, w, sttResult.Text, source, sttResult.Speakers, opts, ttsOverride, ttsFormat, ttsVoice)
 }
 
-func (h *Handler) processTranscript(w http.ResponseWriter, ctx context.Context, transcript string, source *sourceMeta, opts assistpkg.ProcessOpts, ttsOverride *bool, ttsFormat, ttsVoice string) {
+func (h *Handler) processTranscript(ctx context.Context, w http.ResponseWriter, transcript string, source *sourceMeta, speakers *speaker.DiarizationResult, opts assistpkg.ProcessOpts, ttsOverride *bool, ttsFormat, ttsVoice string) {
 	if strings.TrimSpace(transcript) == "" {
 		httpx.WriteError(w, http.StatusBadRequest, "empty_transcript", "transcript or text field must not be empty")
 		return
@@ -368,7 +391,7 @@ func (h *Handler) processTranscript(w http.ResponseWriter, ctx context.Context, 
 	result, err := h.processor.Process(ctx, transcript, opts)
 	latency := time.Since(started)
 	if err != nil {
-		slog.Warn("assist: pipeline error", "err", err, "transcript_chars", len(transcript))
+		slog.Warn("assist: pipeline error", "err", err, "transcript_chars", len(transcript)) // #nosec G706 -- slog writes structured fields; provider errors are attributes, not message format.
 		writePipelineError(w, err, latency)
 		return
 	}
@@ -409,6 +432,7 @@ func (h *Handler) processTranscript(w http.ResponseWriter, ctx context.Context, 
 		LatencyMs:   latency.Milliseconds(),
 		SourceInfo:  source,
 		AudioFormat: result.Format,
+		Speakers:    speakers,
 	}
 	if len(result.Audio) > 0 {
 		resp.AudioBase64 = base64.StdEncoding.EncodeToString(result.Audio)
@@ -515,4 +539,95 @@ func classifyPipelineError(err error) map[string]any {
 		return details
 	}
 	return details
+}
+
+func resolveSpeakerOptions(primary, fallback speaker.Options) speaker.Options {
+	if primary.WantsDiarization() || primary.Enabled {
+		return primary.Normalized()
+	}
+	return fallback.Normalized()
+}
+
+func parseSpeakerOptionsFromForm(r *http.Request) speaker.Options {
+	if r == nil {
+		return speaker.Options{}
+	}
+	opts := speaker.Options{
+		Enabled:             parseFormBool(r, "speaker_enabled"),
+		Diarization:         parseFormBool(r, "speaker_diarization"),
+		Identification:      parseFormBool(r, "speaker_identification"),
+		Attribution:         parseFormBool(r, "speaker_attribution"),
+		ProviderProfileID:   strings.TrimSpace(r.FormValue("speaker_provider_profile_id")),
+		Model:               strings.TrimSpace(r.FormValue("speaker_model")),
+		DiarizationModel:    strings.TrimSpace(r.FormValue("speaker_diarization_model")),
+		SpeakerType:         strings.TrimSpace(r.FormValue("speaker_type")),
+		SpeakersExpected:    parseFormInt(r, "speakers_expected"),
+		MinSpeakersExpected: parseFormInt(r, "speaker_min"),
+		MaxSpeakersExpected: parseFormInt(r, "speaker_max"),
+		KnownValues:         splitCSV(r.FormValue("speaker_known_values")),
+	}
+	return opts.Normalized()
+}
+
+func parseFormBool(r *http.Request, name string) bool {
+	switch strings.ToLower(strings.TrimSpace(r.FormValue(name))) {
+	case "1", "true", "yes", "on":
+		return true
+	default:
+		return false
+	}
+}
+
+func parseFormInt(r *http.Request, name string) int {
+	raw := strings.TrimSpace(r.FormValue(name))
+	if raw == "" {
+		return 0
+	}
+	value, err := strconv.Atoi(raw)
+	if err != nil || value < 0 {
+		return 0
+	}
+	return value
+}
+
+func splitCSV(raw string) []string {
+	if strings.TrimSpace(raw) == "" {
+		return nil
+	}
+	parts := strings.Split(raw, ",")
+	out := make([]string, 0, len(parts))
+	for _, part := range parts {
+		if part = strings.TrimSpace(part); part != "" {
+			out = append(out, part)
+		}
+	}
+	return out
+}
+
+func appendSpeakerContext(existing string, result *speaker.DiarizationResult) string {
+	if result == nil || len(result.Segments) == 0 {
+		return existing
+	}
+	var b strings.Builder
+	if strings.TrimSpace(existing) != "" {
+		b.WriteString(strings.TrimSpace(existing))
+		b.WriteString("\n\n")
+	}
+	b.WriteString("Speaker transcript:\n")
+	for _, segment := range result.Segments {
+		label := firstNonEmptyString(segment.DisplayName, segment.Role, segment.SpeakerLabel)
+		if label == "" {
+			label = "speaker"
+		}
+		text := strings.TrimSpace(segment.Text)
+		if text == "" {
+			continue
+		}
+		b.WriteString("[")
+		b.WriteString(label)
+		b.WriteString("] ")
+		b.WriteString(text)
+		b.WriteString("\n")
+	}
+	return strings.TrimSpace(b.String())
 }

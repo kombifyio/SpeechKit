@@ -27,6 +27,14 @@ func TestNewPiper_DefaultBinaryAndTimeout(t *testing.T) {
 
 func TestPiper_ResolveVoice(t *testing.T) {
 	dir := t.TempDir()
+	for _, name := range []string{
+		"voice-en.onnx",
+		"en_US-amy-medium.onnx",
+		"de_DE-thorsten-medium.onnx",
+		"fr_FR-siwis-medium.onnx",
+	} {
+		mustWrite(t, filepath.Join(dir, name), []byte("fake-model"))
+	}
 	p, _ := NewPiper(PiperOpts{
 		VoiceDir: dir,
 		DefaultVoices: map[string]string{
@@ -59,6 +67,41 @@ func TestPiper_ResolveVoice(t *testing.T) {
 				t.Errorf("resolveVoice(%q, %q) = %q, want it to end with %q", c.requestedVoice, c.requestedLocale, path, c.wantBasenameLike)
 			}
 		})
+	}
+}
+
+func TestPiper_ResolveVoiceRejectsTraversal(t *testing.T) {
+	dir := t.TempDir()
+	mustWrite(t, filepath.Join(dir, "voice-en.onnx"), []byte("fake-model"))
+	p, err := NewPiper(PiperOpts{VoiceDir: dir})
+	if err != nil {
+		t.Fatalf("NewPiper: %v", err)
+	}
+
+	for _, voice := range []string{
+		"../voice-en",
+		"..\\voice-en",
+		"/tmp/voice-en.onnx",
+		`C:\tmp\voice-en.onnx`,
+		"voice..en",
+		"voice/en",
+		"voice en",
+	} {
+		t.Run(voice, func(t *testing.T) {
+			if _, err := p.resolveVoice(voice, ""); err == nil {
+				t.Fatalf("resolveVoice(%q) error = nil, want traversal/filename rejection", voice)
+			}
+		})
+	}
+}
+
+func TestPiper_ResolveVoiceRequiresInstalledModel(t *testing.T) {
+	p, err := NewPiper(PiperOpts{VoiceDir: t.TempDir()})
+	if err != nil {
+		t.Fatalf("NewPiper: %v", err)
+	}
+	if _, err := p.resolveVoice("missing-voice", ""); err == nil {
+		t.Fatal("expected missing voice file error")
 	}
 }
 

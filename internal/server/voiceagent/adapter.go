@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"log/slog"
+	"runtime/debug"
 	"strings"
 	"sync"
 	"time"
@@ -63,32 +64,32 @@ func (a *Adapter) Run(parent context.Context) {
 
 	start, err := a.waitForStart(ctx)
 	if err != nil {
-		a.sendError("start_required", err.Error())
+		a.sendError(ctx, "start_required", err.Error())
 		return
 	}
 	transport, err := normalizeMediaTransport(start.MediaTransport)
 	if err != nil {
-		a.sendError("invalid_media_transport", err.Error())
+		a.sendError(ctx, "invalid_media_transport", err.Error())
 		return
 	}
 	a.mediaTransport = transport
 	if transport == MediaTransportLiveKit {
 		if !providerSupportsLiveKitTransport(a.Provider) {
-			a.sendError("media_transport_unsupported", "media_transport=livekit requires a native realtime PCM provider")
+			a.sendError(ctx, "media_transport_unsupported", "media_transport=livekit requires a native realtime PCM provider")
 			return
 		}
 		if a.MediaBridge == nil {
-			a.sendError("media_transport_unavailable", "LiveKit media bridge is not configured")
+			a.sendError(ctx, "media_transport_unavailable", "LiveKit media bridge is not configured")
 			return
 		}
 	}
 	cfg, err := a.Persona.Resolve(start)
 	if err != nil {
-		a.sendError("persona_unresolved", err.Error())
+		a.sendError(ctx, "persona_unresolved", err.Error())
 		return
 	}
 	if err := a.Provider.Connect(ctx, cfg); err != nil {
-		a.sendError("provider_connect_failed", err.Error())
+		a.sendError(ctx, "provider_connect_failed", err.Error())
 		return
 	}
 	defer func() {
@@ -103,7 +104,7 @@ func (a *Adapter) Run(parent context.Context) {
 			Provider:  a.Provider,
 		})
 		if err != nil {
-			a.sendError("media_bridge_failed", err.Error())
+			a.sendError(ctx, "media_bridge_failed", err.Error())
 			return
 		}
 		a.mediaBridge = bridge
@@ -114,14 +115,14 @@ func (a *Adapter) Run(parent context.Context) {
 		}()
 	}
 
-	a.sendJSON(StateFrame{Type: MsgState, State: "listening"})
+	a.sendJSON(ctx, StateFrame{Type: MsgState, State: "listening"})
 	if stepResolver, ok := a.Persona.(StepResolver); ok {
 		a.flow = NewSequenceRunner(start, cfg, stepResolver)
 	} else {
 		a.flow = NewSequenceRunner(start, cfg, nil)
 	}
 	if entered := a.flow.InitialEnteredFrame(); entered != nil {
-		a.sendJSON(*entered)
+		a.sendJSON(ctx, *entered)
 	}
 
 	a.idle = newIdleWatchdog(a.IdleTimeout)
@@ -130,8 +131,8 @@ func (a *Adapter) Run(parent context.Context) {
 	done := make(chan struct{}, 2)
 	var wg sync.WaitGroup
 	wg.Add(2)
-	go func() { defer wg.Done(); a.readPump(ctx, done) }()
-	go func() { defer wg.Done(); a.writePump(ctx, done) }()
+	go func() { defer wg.Done(); defer a.guardPump("read", done); a.readPump(ctx, done) }()
+	go func() { defer wg.Done(); defer a.guardPump("write", done); a.writePump(ctx, done) }()
 
 	select {
 	case <-done:
@@ -143,10 +144,32 @@ func (a *Adapter) Run(parent context.Context) {
 			"session_id", a.Session.ID,
 			"timeout", a.IdleTimeout,
 		)
-		a.sendJSON(SessionEndFrame{Type: MsgSessionEnd, Reason: "idle"})
+		a.sendJSON(ctx, SessionEndFrame{Type: MsgSessionEnd, Reason: "idle"})
 	}
 	cancel()
 	wg.Wait()
+}
+
+// guardPump converts a panic in a spawned session pump into a clean session
+// teardown. The read/write pumps run in goroutines that the HTTP Recover
+// middleware cannot reach, so an unrecovered panic here would crash the whole
+// server process instead of ending a single session. Signalling done mirrors
+// the pumps' normal exit path so the session shuts down gracefully.
+func (a *Adapter) guardPump(name string, done chan<- struct{}) {
+	rec := recover()
+	if rec == nil {
+		return
+	}
+	slog.Error("voiceagent: session pump panic recovered",
+		"session_id", a.Session.ID,
+		"pump", name,
+		"err", rec,
+		"stack", string(debug.Stack()),
+	)
+	select {
+	case done <- struct{}{}:
+	default:
+	}
 }
 
 func (a *Adapter) waitForStart(ctx context.Context) (StartFrame, error) {
@@ -192,18 +215,18 @@ func (a *Adapter) readPump(ctx context.Context, done chan<- struct{}) {
 		switch typ {
 		case websocket.MessageBinary:
 			if a.mediaTransport == MediaTransportLiveKit {
-				a.sendError("audio_transport_mismatch", "binary audio frames are disabled when media_transport=livekit")
+				a.sendError(ctx, "audio_transport_mismatch", "binary audio frames are disabled when media_transport=livekit")
 				continue
 			}
 			if err := a.Provider.SendAudio(data); err != nil {
 				slog.Warn("voiceagent: send audio failed", "err", err)
-				a.sendError("audio_upstream_failed", err.Error())
+				a.sendError(ctx, "audio_upstream_failed", err.Error())
 				return
 			}
 		case websocket.MessageText:
 			var env envelope
 			if err := json.Unmarshal(data, &env); err != nil {
-				a.sendError("invalid_frame", err.Error())
+				a.sendError(ctx, "invalid_frame", err.Error())
 				continue
 			}
 			switch env.Type {
@@ -221,27 +244,27 @@ func (a *Adapter) readPump(ctx context.Context, done chan<- struct{}) {
 			case MsgToolResponse:
 				var tr ToolResponseFrame
 				if err := json.Unmarshal(data, &tr); err != nil {
-					a.sendError("invalid_frame", err.Error())
+					a.sendError(ctx, "invalid_frame", err.Error())
 					continue
 				}
 				responder, ok := a.Provider.(LiveToolResponder)
 				if !ok {
-					a.sendError("tool_response_unsupported", "provider does not accept tool responses")
+					a.sendError(ctx, "tool_response_unsupported", "provider does not accept tool responses")
 					continue
 				}
 				if err := responder.SendToolResponse(tr); err != nil {
 					slog.Warn("voiceagent: tool response upstream failed", "err", err)
-					a.sendError("tool_response_failed", err.Error())
+					a.sendError(ctx, "tool_response_failed", err.Error())
 				}
 			case MsgPing:
-				a.sendJSON(PongFrame{Type: MsgPong})
+				a.sendJSON(ctx, PongFrame{Type: MsgPong})
 			case MsgStop:
-				a.sendJSON(SessionEndFrame{Type: MsgSessionEnd, Reason: "client"})
+				a.sendJSON(ctx, SessionEndFrame{Type: MsgSessionEnd, Reason: "client"})
 				return
 			case MsgAdvanceStep:
 				var advance AdvanceStepFrame
 				if err := json.Unmarshal(data, &advance); err != nil {
-					a.sendError("invalid_frame", err.Error())
+					a.sendError(ctx, "invalid_frame", err.Error())
 					continue
 				}
 				if advance.Reason == "" {
@@ -249,7 +272,7 @@ func (a *Adapter) readPump(ctx context.Context, done chan<- struct{}) {
 				}
 				if err := a.advanceWorkflowStep(ctx, advance); err != nil {
 					slog.Warn("voiceagent: advance_step failed", "err", err)
-					a.sendError("advance_step_failed", err.Error())
+					a.sendError(ctx, "advance_step_failed", err.Error())
 				}
 			default:
 				// Unknown frames are tolerated (forward-compat); we log
@@ -272,7 +295,7 @@ func (a *Adapter) writePump(ctx context.Context, done chan<- struct{}) {
 		msg, err := a.Provider.Receive(ctx)
 		if err != nil {
 			if ctx.Err() == nil {
-				a.sendError("provider_receive_failed", err.Error())
+				a.sendError(ctx, "provider_receive_failed", err.Error())
 			}
 			return
 		}
@@ -286,30 +309,38 @@ func (a *Adapter) writePump(ctx context.Context, done chan<- struct{}) {
 			if a.mediaBridge != nil {
 				if err := a.mediaBridge.SendAudio(msg.Audio); err != nil {
 					slog.Warn("voiceagent: send media bridge audio failed", "err", err)
-					a.sendError("audio_downstream_failed", err.Error())
+					a.sendError(ctx, "audio_downstream_failed", err.Error())
 					return
 				}
 			} else {
-				a.sendBinary(msg.Audio)
+				a.sendBinary(ctx, msg.Audio)
 			}
 		}
 		if msg.InputTranscript != "" {
-			a.sendJSON(TranscriptFrame{Type: MsgInputTranscript, Text: msg.InputTranscript, Done: msg.InputTranscriptDone})
+			a.sendJSON(ctx, TranscriptFrame{
+				Type:              MsgInputTranscript,
+				Text:              msg.InputTranscript,
+				Done:              msg.InputTranscriptDone,
+				SpeakerLabel:      msg.InputSpeakerLabel,
+				PersonID:          msg.InputPersonID,
+				DisplayName:       msg.InputDisplayName,
+				SpeakerConfidence: msg.InputSpeakerConfidence,
+			})
 			if msg.InputTranscriptDone {
 				a.recordUserTurn(ctx)
 			}
 		}
 		if msg.OutputTranscript != "" {
-			a.sendJSON(TranscriptFrame{Type: MsgOutputTranscript, Text: msg.OutputTranscript, Done: msg.OutputTranscriptDone})
+			a.sendJSON(ctx, TranscriptFrame{Type: MsgOutputTranscript, Text: msg.OutputTranscript, Done: msg.OutputTranscriptDone})
 		}
 		for _, call := range msg.ToolCalls {
-			a.sendJSON(ToolCallFrame{Type: MsgToolCall, ID: call.ID, Name: call.Name, Args: call.Args})
+			a.sendJSON(ctx, ToolCallFrame{Type: MsgToolCall, ID: call.ID, Name: call.Name, Args: call.Args})
 		}
 		if msg.Interrupted {
-			a.sendJSON(InterruptedFrame{Type: MsgInterrupted})
+			a.sendJSON(ctx, InterruptedFrame{Type: MsgInterrupted})
 		}
 		if msg.GoAway {
-			a.sendJSON(SessionEndFrame{Type: MsgSessionEnd, Reason: "go_away"})
+			a.sendJSON(ctx, SessionEndFrame{Type: MsgSessionEnd, Reason: "go_away"})
 			return
 		}
 	}
@@ -321,7 +352,7 @@ func (a *Adapter) recordUserTurn(ctx context.Context) {
 	}
 	if err := a.advanceWorkflowStep(ctx, AdvanceStepFrame{Type: MsgAdvanceStep, Reason: "max_turns"}); err != nil {
 		slog.Warn("voiceagent: max-turn workflow advance failed", "err", err)
-		a.sendError("advance_step_failed", err.Error())
+		a.sendError(ctx, "advance_step_failed", err.Error())
 	}
 }
 
@@ -334,19 +365,19 @@ func (a *Adapter) advanceWorkflowStep(ctx context.Context, frame AdvanceStepFram
 		return err
 	}
 	if transition.Completed != nil {
-		a.sendJSON(*transition.Completed)
+		a.sendJSON(ctx, *transition.Completed)
 	}
 	if transition.SequenceCompleted {
 		current := a.flow.Current()
-		a.sendJSON(sequenceCompletedFrame(current, frame.Reason))
+		a.sendJSON(ctx, sequenceCompletedFrame(current, frame.Reason))
 		return nil
 	}
 	if transition.Entered != nil {
 		if err := a.applyInstructionUpdate(ctx, transition.NextConfig); err != nil {
 			slog.Warn("voiceagent: workflow instruction update failed", "err", err)
-			a.sendError("instruction_update_failed", err.Error())
+			a.sendError(ctx, "instruction_update_failed", err.Error())
 		}
-		a.sendJSON(*transition.Entered)
+		a.sendJSON(ctx, *transition.Entered)
 	}
 	return nil
 }
@@ -391,7 +422,7 @@ func RenderHostInstructionUpdate(cfg LiveConfigFrame) string {
 
 // ── helpers ─────────────────────────────────────────────────────────────────
 
-func (a *Adapter) sendJSON(v any) {
+func (a *Adapter) sendJSON(ctx context.Context, v any) {
 	a.writeMu.Lock()
 	defer a.writeMu.Unlock()
 	if a.closed.get() {
@@ -402,28 +433,28 @@ func (a *Adapter) sendJSON(v any) {
 		slog.Warn("voiceagent: marshal frame", "err", err)
 		return
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	writeCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
-	if err := a.Conn.Write(ctx, websocket.MessageText, data); err != nil {
+	if err := a.Conn.Write(writeCtx, websocket.MessageText, data); err != nil {
 		slog.Debug("voiceagent: write text failed", "err", err)
 	}
 }
 
-func (a *Adapter) sendBinary(data []byte) {
+func (a *Adapter) sendBinary(ctx context.Context, data []byte) {
 	a.writeMu.Lock()
 	defer a.writeMu.Unlock()
 	if a.closed.get() {
 		return
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	writeCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
-	if err := a.Conn.Write(ctx, websocket.MessageBinary, data); err != nil {
+	if err := a.Conn.Write(writeCtx, websocket.MessageBinary, data); err != nil {
 		slog.Debug("voiceagent: write binary failed", "err", err)
 	}
 }
 
-func (a *Adapter) sendError(code, message string) {
-	a.sendJSON(ErrorFrame{Type: MsgError, Code: code, Message: message})
+func (a *Adapter) sendError(ctx context.Context, code, message string) {
+	a.sendJSON(ctx, ErrorFrame{Type: MsgError, Code: code, Message: message})
 }
 
 func (a *Adapter) closeSocket(status websocket.StatusCode, reason string) {

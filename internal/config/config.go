@@ -378,11 +378,16 @@ type ServerConfig struct {
 	// DemoDailyQuota caps how many requests a Plan="demo" identity
 	// (the smoke-token surface) may make per UTC day, keyed by
 	// UserID + client IP. Zero disables the quota. Audit S-5.
-	DemoDailyQuota        int `toml:"demo_daily_quota"`
-	MaxUploadMB           int `toml:"max_upload_mb"`
-	MaxVoiceAgentSessions int `toml:"max_voiceagent_sessions"` // global cap
-	MaxSessionsPerUser    int `toml:"max_sessions_per_user"`
-	TicketTTLSec          int `toml:"ticket_ttl_sec"` // Voice Agent WS ticket TTL
+	DemoDailyQuota         int `toml:"demo_daily_quota"`
+	MaxUploadMB            int `toml:"max_upload_mb"`
+	ReadHeaderTimeoutSec   int `toml:"read_header_timeout_sec"`
+	ReadTimeoutSec         int `toml:"read_timeout_sec"`
+	IdleTimeoutSec         int `toml:"idle_timeout_sec"`
+	MaxHeaderBytes         int `toml:"max_header_bytes"`
+	MaxDecodedAudioSeconds int `toml:"max_decoded_audio_seconds"`
+	MaxVoiceAgentSessions  int `toml:"max_voiceagent_sessions"` // global cap
+	MaxSessionsPerUser     int `toml:"max_sessions_per_user"`
+	TicketTTLSec           int `toml:"ticket_ttl_sec"` // Voice Agent WS ticket TTL
 	// VoiceAgentIdleTimeoutSec terminates a Voice Agent WebSocket session
 	// after N seconds without any client- or provider-side activity.
 	// Defaults to 900 (15 min). Set to 0 to disable the server-side idle
@@ -407,6 +412,51 @@ type ServerConfig struct {
 	// accept training-data uploads from clients. See
 	// docs/wakeword-training-data.md.
 	TrainingData ServerTrainingDataConfig `toml:"training_data"`
+
+	// Security configures the HTTP security-header middleware (CSP,
+	// X-Frame-Options, Referrer-Policy, optional HSTS). Headers are on by
+	// default; the zero value yields a strict baseline.
+	Security ServerSecurityConfig `toml:"security"`
+
+	// Debug gates runtime debugging surfaces (pprof). Off by default.
+	Debug ServerDebugConfig `toml:"debug"`
+
+	// OIDC configures JWT validation against an external identity provider,
+	// used only when auth_mode = "oidc".
+	OIDC ServerOIDCConfig `toml:"oidc"`
+}
+
+// ServerOIDCConfig configures Bearer-JWT validation against an external
+// identity provider (Azure AD, Okta, Google Workspace, Auth0, ...). Used only
+// when [server] auth_mode = "oidc". JWKSURL, Issuer, and Audience are required
+// in that mode; the *Claim fields map token claims onto the caller identity.
+type ServerOIDCConfig struct {
+	JWKSURL          string `toml:"jwks_url"`
+	Issuer           string `toml:"issuer"`
+	Audience         string `toml:"audience"`
+	ClockSkewSeconds int    `toml:"clock_skew_seconds"` // tolerated exp/nbf skew; default 60
+	OrgClaim         string `toml:"org_claim"`          // claim -> OrgID; default "org_id"
+	RoleClaim        string `toml:"role_claim"`         // claim -> Role; default "role"
+}
+
+// ServerSecurityConfig configures the HTTP security-header middleware. All
+// headers are emitted by default; an operator only sets fields here to relax
+// or extend the baseline (e.g. enable HSTS behind TLS, or supply a custom CSP).
+type ServerSecurityConfig struct {
+	Disabled              bool   `toml:"disabled"`                // turn the middleware off entirely (not recommended)
+	ContentSecurityPolicy string `toml:"content_security_policy"` // override the default strict API CSP
+	FrameOptions          string `toml:"frame_options"`           // override X-Frame-Options (default "DENY")
+	ReferrerPolicy        string `toml:"referrer_policy"`         // override Referrer-Policy (default "no-referrer")
+	HSTS                  bool   `toml:"hsts"`                    // emit Strict-Transport-Security (only meaningful behind TLS)
+	HSTSMaxAgeSeconds     int    `toml:"hsts_max_age_seconds"`    // HSTS max-age; default 63072000 (2y) when HSTS is on
+}
+
+// ServerDebugConfig gates runtime debugging surfaces. pprof is OFF by default
+// and, when on, refuses to mount on a non-loopback listener unless PprofPublic
+// is also set (strongly discouraged on a public listener).
+type ServerDebugConfig struct {
+	PprofEnabled bool `toml:"pprof_enabled"`
+	PprofPublic  bool `toml:"pprof_public"`
 }
 
 // VoiceAgentLimitsConfig configures Voice Agent session capacity. Zero values
@@ -542,6 +592,7 @@ type GeneralConfig struct {
 	AssistEnabled            bool   `toml:"assist_enabled"`
 	VoiceAgentEnabled        bool   `toml:"voice_agent_enabled"`
 	AutoStartOnLaunch        bool   `toml:"auto_start_on_launch"`
+	EagerWarmup              bool   `toml:"eager_warmup"`
 	AgentHotkey              string `toml:"agent_hotkey"`
 	AgentMode                string `toml:"agent_mode"`  // "assist" or "voice_agent" — determines what agent_hotkey triggers
 	ActiveMode               string `toml:"active_mode"` // legacy compat
@@ -652,9 +703,9 @@ type ModeModelSelection struct {
 // caller) when a ModeModelSelection has mode_source = "server"; the
 // Server-Target itself ignores this section.
 type ServerConnectionConfig struct {
-	// Enabled gates the entire server connection. When false, every mode is
-	// forced to run locally regardless of its mode_source. Lets users keep
-	// their server URL in config but temporarily flip back to fully local.
+	// Enabled is a compatibility mirror for clients that still display a
+	// top-level server toggle. Runtime routing is determined by each mode's
+	// mode_source; do not use Enabled as a second execution gate.
 	Enabled bool `toml:"enabled"`
 
 	// URL is the base URL of the speechkit-server, e.g.
@@ -866,6 +917,8 @@ type ProvidersConfig struct {
 	OpenAI     OpenAIProviderConfig     `toml:"openai"`
 	Groq       GroqProviderConfig       `toml:"groq"`
 	Google     GoogleProviderConfig     `toml:"google"`
+	Deepgram   DeepgramProviderConfig   `toml:"deepgram"`
+	AssemblyAI AssemblyAIProviderConfig `toml:"assemblyai"`
 	Ollama     OllamaProviderConfig     `toml:"ollama"`
 	OpenRouter OpenRouterProviderConfig `toml:"openrouter"`
 }
@@ -892,13 +945,15 @@ type GroqProviderConfig struct {
 }
 
 type GoogleProviderConfig struct {
-	Enabled      bool   `toml:"enabled"`
-	APIKeyEnv    string `toml:"api_key_env"`
-	STTAPIKeyEnv string `toml:"stt_api_key_env"`
-	STTModel     string `toml:"stt_model"`
-	UtilityModel string `toml:"utility_model"`
-	AssistModel  string `toml:"assist_model"`
-	AgentModel   string `toml:"agent_model"`
+	Enabled                   bool   `toml:"enabled"`
+	APIKeyEnv                 string `toml:"api_key_env"`
+	STTAPIKeyEnv              string `toml:"stt_api_key_env"`
+	STTCredentialsJSONEnv     string `toml:"stt_credentials_json_env"`
+	ApplicationCredentialsEnv string `toml:"application_credentials_env"`
+	STTModel                  string `toml:"stt_model"`
+	UtilityModel              string `toml:"utility_model"`
+	AssistModel               string `toml:"assist_model"`
+	AgentModel                string `toml:"agent_model"`
 	// Region is the Google Cloud region the customer's API key / project is
 	// pinned to. Default "europe-west3" (Frankfurt) reflects the EU-enterprise
 	// compliance posture. US customers should explicitly set "us-central1".
@@ -910,6 +965,21 @@ type GoogleProviderConfig struct {
 	// project region AND this field must match for the audit event to be
 	// accurate. See docs/compliance/byok-gemini-region-pinning.md.
 	Region string `toml:"region"`
+}
+
+type DeepgramProviderConfig struct {
+	Enabled          bool   `toml:"enabled"`
+	APIKeyEnv        string `toml:"api_key_env"`
+	STTModel         string `toml:"stt_model"`
+	DiarizationModel string `toml:"diarization_model"`
+}
+
+type AssemblyAIProviderConfig struct {
+	Enabled          bool   `toml:"enabled"`
+	APIKeyEnv        string `toml:"api_key_env"`
+	STTModels        string `toml:"stt_models"`
+	StreamingModel   string `toml:"streaming_model"`
+	StreamingBaseURL string `toml:"streaming_base_url"`
 }
 
 type OllamaProviderConfig struct {
@@ -1003,7 +1073,6 @@ type VoiceAgentConfig struct {
 	AgentSequenceID        string `toml:"agent_sequence_id"` // Optional workflow sequence ID; empty uses the selected persona default.
 	FrameworkPrompt        string `toml:"framework_prompt"`  // Durable host/framework instruction that defines the Voice Agent behavior
 	RefinementPrompt       string `toml:"refinement_prompt"` // User-specific refinement appended to the framework prompt
-	Instruction            string `toml:"instruction"`       // Legacy alias for FrameworkPrompt
 	AutoStartOnLaunch      bool   `toml:"auto_start_on_launch"`
 	CloseBehavior          string `toml:"close_behavior"` // "continue" keeps the conversation window in the taskbar; "new_chat" ends the current chat on close
 	ReminderAfterIdleSec   int    `toml:"reminder_after_idle_sec"`

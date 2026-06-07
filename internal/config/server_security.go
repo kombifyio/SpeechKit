@@ -15,6 +15,9 @@ func ValidateServerProductionAuth(cfg *Config) error {
 	if cfg == nil {
 		return nil
 	}
+	if err := validateServerResourceLimits(cfg); err != nil {
+		return err
+	}
 	authMode := strings.ToLower(strings.TrimSpace(cfg.Server.AuthMode))
 	if authMode == "" {
 		authMode = "none"
@@ -42,6 +45,34 @@ func ValidateServerProductionAuth(cfg *Config) error {
 		return nil
 	}
 	return fmt.Errorf("auth_mode=none is only allowed on loopback listen addresses; set %s=1 only for explicit local test runs", AllowInsecureNoAuthEnv)
+}
+
+func validateServerResourceLimits(cfg *Config) error {
+	if cfg.Server.ReadHeaderTimeoutSec < 0 {
+		return fmt.Errorf("read_header_timeout_sec must be >= 0")
+	}
+	if cfg.Server.ReadTimeoutSec < 0 {
+		return fmt.Errorf("read_timeout_sec must be >= 0")
+	}
+	if cfg.Server.IdleTimeoutSec < 0 {
+		return fmt.Errorf("idle_timeout_sec must be >= 0")
+	}
+	if cfg.Server.MaxHeaderBytes < 0 {
+		return fmt.Errorf("max_header_bytes must be >= 0")
+	}
+	if cfg.Server.MaxDecodedAudioSeconds < 0 {
+		return fmt.Errorf("max_decoded_audio_seconds must be >= 0")
+	}
+	for _, raw := range cfg.Server.TrustedProxyCIDRs {
+		cidr := strings.TrimSpace(raw)
+		if cidr == "" {
+			continue
+		}
+		if _, _, err := net.ParseCIDR(cidr); err != nil {
+			return fmt.Errorf("trusted_proxy_cidrs contains invalid CIDR %q: %w", cidr, err)
+		}
+	}
+	return nil
 }
 
 func validateServerAuthCredentials(cfg *Config, authMode string) error {

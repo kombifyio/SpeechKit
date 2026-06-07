@@ -59,10 +59,42 @@ var supportedMimeTypes = map[string]string{
 // payload's magic bytes identify a format we can decode.
 var ErrUnsupportedFormat = errors.New("audio: unsupported format (supported: wav, mp3, raw pcm16 @ 16kHz mono, webm/opus, ogg/opus)")
 
+// ErrDecodedAudioTooLarge is wrapped by DecodeLimitError when a compressed
+// payload expands beyond the configured decoded-duration ceiling.
+var ErrDecodedAudioTooLarge = errors.New("audio: decoded audio exceeds configured duration limit")
+
 // ErrFFmpegUnavailable is returned when a payload requires ffmpeg but the
 // binary is not on PATH. Container deployments include ffmpeg; bare-metal
 // dev environments may need to install it.
 var ErrFFmpegUnavailable = errors.New("audio: ffmpeg not available — install ffmpeg or send WAV/MP3/raw-PCM instead")
+
+// DecodeLimits bounds resource amplification after compressed/container audio
+// is decoded to PCM. Zero values preserve the historical unbounded behavior
+// for internal callers; server handlers pass the production limit from config.
+type DecodeLimits struct {
+	MaxDecodedAudioSeconds int
+}
+
+// DecodeLimitError carries the configured ceiling and observed decoded
+// size/duration for callers that need to map the failure to HTTP 413.
+type DecodeLimitError struct {
+	MaxSeconds  int
+	DurationMs  int64
+	MaxBytes    int64
+	ActualBytes int64
+}
+
+func (e *DecodeLimitError) Error() string {
+	if e == nil {
+		return ErrDecodedAudioTooLarge.Error()
+	}
+	if e.DurationMs > 0 {
+		return fmt.Sprintf("audio: decoded duration %dms exceeds maximum %ds", e.DurationMs, e.MaxSeconds)
+	}
+	return fmt.Sprintf("audio: decoded audio %d bytes exceeds maximum %d bytes", e.ActualBytes, e.MaxBytes)
+}
+
+func (e *DecodeLimitError) Unwrap() error { return ErrDecodedAudioTooLarge }
 
 // DecodedAudio is the canonical 16 kHz, mono, S16LE PCM payload plus the
 // metadata recovered from the source.
@@ -78,6 +110,12 @@ type DecodedAudio struct {
 // canonical DecodedAudio ready for the STT router. contentType may be empty;
 // in that case magic-byte sniffing is attempted.
 func Decode(raw []byte, contentType string) (*DecodedAudio, error) {
+	return DecodeWithLimits(context.Background(), raw, contentType, DecodeLimits{})
+}
+
+// DecodeWithLimits consumes raw bytes and enforces optional decoded-audio
+// limits while normalizing to canonical PCM.
+func DecodeWithLimits(ctx context.Context, raw []byte, contentType string, limits DecodeLimits) (*DecodedAudio, error) {
 	if len(raw) == 0 {
 		return nil, errors.New("audio: empty payload")
 	}
@@ -85,17 +123,17 @@ func Decode(raw []byte, contentType string) (*DecodedAudio, error) {
 	kind := detectFormat(raw, contentType)
 	switch kind {
 	case "wav":
-		return decodeWAV(raw)
+		return decodeWAV(raw, limits)
 	case "mp3":
-		return decodeMP3(raw)
+		return decodeMP3(raw, limits)
 	case "pcm16":
 		// Bare PCM is only acceptable when the client explicitly labels it
 		// — we can't sniff it from bytes alone without false positives.
-		return decodeRawPCM(raw)
+		return decodeRawPCM(raw, limits)
 	case "webm":
-		return decodeViaFFmpeg(raw, "webm", "matroska,webm")
+		return decodeViaFFmpeg(ctx, raw, "webm", "matroska,webm", limits)
 	case "ogg":
-		return decodeViaFFmpeg(raw, "ogg", "ogg")
+		return decodeViaFFmpeg(ctx, raw, "ogg", "ogg", limits)
 	default:
 		return nil, ErrUnsupportedFormat
 	}
@@ -151,7 +189,7 @@ func detectFormat(raw []byte, contentType string) string {
 
 // decodeWAV parses a canonical PCM WAV file, extracts the data chunk, and
 // normalizes to 16 kHz mono S16LE.
-func decodeWAV(raw []byte) (*DecodedAudio, error) {
+func decodeWAV(raw []byte, limits DecodeLimits) (*DecodedAudio, error) {
 	if len(raw) < 44 || !bytes.Equal(raw[0:4], []byte("RIFF")) || !bytes.Equal(raw[8:12], []byte("WAVE")) {
 		return nil, errors.New("audio: invalid WAV header")
 	}
@@ -220,56 +258,67 @@ func decodeWAV(raw []byte) (*DecodedAudio, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &DecodedAudio{
+	decoded := &DecodedAudio{
 		PCM:          normalized,
 		SourceFormat: "wav",
 		SourceRate:   int(sampleRate),
 		SourceCh:     int(channels),
 		DurationMs:   pcmDurationMs(normalized),
-	}, nil
+	}
+	return decoded, enforceDecodedLimit(decoded, limits)
 }
 
 // decodeMP3 uses hajimehoshi/go-mp3 (pure-Go) to produce S16LE PCM at the
 // decoder's native rate, then normalizes to 16 kHz mono.
-func decodeMP3(raw []byte) (*DecodedAudio, error) {
+func decodeMP3(raw []byte, limits DecodeLimits) (*DecodedAudio, error) {
 	dec, err := mp3.NewDecoder(bytes.NewReader(raw))
 	if err != nil {
 		return nil, fmt.Errorf("audio: decode MP3: %w", err)
 	}
 	// go-mp3 always outputs S16LE stereo at its native sample rate.
-	pcm, err := io.ReadAll(dec)
+	reader := io.Reader(dec)
+	maxNativeBytes := decodedBytesLimitFor(limits, dec.SampleRate(), 2)
+	if maxNativeBytes > 0 {
+		reader = io.LimitReader(dec, maxNativeBytes+1)
+	}
+	pcm, err := io.ReadAll(reader)
 	if err != nil {
 		return nil, fmt.Errorf("audio: read MP3 stream: %w", err)
+	}
+	if maxNativeBytes > 0 && int64(len(pcm)) > maxNativeBytes {
+		return nil, decodeLimitError(limits, maxNativeBytes, int64(len(pcm)), 0)
 	}
 	normalized, err := normalize(pcm, dec.SampleRate(), 2)
 	if err != nil {
 		return nil, err
 	}
-	return &DecodedAudio{
+	decoded := &DecodedAudio{
 		PCM:          normalized,
 		SourceFormat: "mp3",
 		SourceRate:   dec.SampleRate(),
 		SourceCh:     2,
 		DurationMs:   pcmDurationMs(normalized),
-	}, nil
+	}
+	return decoded, enforceDecodedLimit(decoded, limits)
 }
 
 // decodeRawPCM accepts bytes already claimed to be 16-bit PCM. If the payload
 // is not in 16 kHz mono we still try to normalize, treating the bytes as
 // S16LE at the declared rate. v1 assumes clients label raw PCM with
 // `audio/L16;rate=16000;channels=1` — non-16k mono raw requires future work.
-func decodeRawPCM(raw []byte) (*DecodedAudio, error) {
+func decodeRawPCM(raw []byte, limits DecodeLimits) (*DecodedAudio, error) {
 	if len(raw)%TargetBytesPerSample != 0 {
 		return nil, fmt.Errorf("audio: raw PCM length %d is not aligned to %d-byte samples", len(raw), TargetBytesPerSample)
 	}
 	// We can't know rate/channels without parameters; assume canonical.
-	return &DecodedAudio{
+	decoded := &DecodedAudio{
 		PCM:          raw,
 		SourceFormat: "pcm16",
 		SourceRate:   TargetSampleRate,
 		SourceCh:     TargetChannels,
 		DurationMs:   pcmDurationMs(raw),
-	}, nil
+	}
+	return decoded, enforceDecodedLimit(decoded, limits)
 }
 
 // normalize downmixes multi-channel PCM to mono and resamples to 16 kHz.
@@ -305,16 +354,16 @@ func downmixToMono(pcm []byte, channels int) []byte {
 		base := f * frameBytes
 		for c := 0; c < channels; c++ {
 			o := base + c*TargetBytesPerSample
-			s := int16(binary.LittleEndian.Uint16(pcm[o : o+2]))
+			s := int16(binary.LittleEndian.Uint16(pcm[o : o+2])) // #nosec G115 -- PCM sample reinterpretation intentionally preserves two's-complement bits.
 			sum += int32(s)
 		}
-		avg := sum / int32(channels)
+		avg := sum / int32(channels) // #nosec G115 -- channel count is validated positive and tiny for decoded audio.
 		if avg > math.MaxInt16 {
 			avg = math.MaxInt16
 		} else if avg < math.MinInt16 {
 			avg = math.MinInt16
 		}
-		binary.LittleEndian.PutUint16(out[f*TargetBytesPerSample:], uint16(int16(avg)))
+		binary.LittleEndian.PutUint16(out[f*TargetBytesPerSample:], uint16(int16(avg))) // #nosec G115 -- PCM sample reinterpretation intentionally preserves two's-complement bits.
 	}
 	return out
 }
@@ -344,10 +393,10 @@ func resampleLinear(mono []byte, srcRate, dstRate int) []byte {
 			srcIdx = srcSamples - 1
 			frac = 0
 		}
-		s0 := int16(binary.LittleEndian.Uint16(mono[srcIdx*TargetBytesPerSample:]))
+		s0 := int16(binary.LittleEndian.Uint16(mono[srcIdx*TargetBytesPerSample:])) // #nosec G115 -- PCM sample reinterpretation intentionally preserves two's-complement bits.
 		var s1 int16
 		if srcIdx+1 < srcSamples {
-			s1 = int16(binary.LittleEndian.Uint16(mono[(srcIdx+1)*TargetBytesPerSample:]))
+			s1 = int16(binary.LittleEndian.Uint16(mono[(srcIdx+1)*TargetBytesPerSample:])) // #nosec G115 -- PCM sample reinterpretation intentionally preserves two's-complement bits.
 		} else {
 			s1 = s0
 		}
@@ -357,7 +406,7 @@ func resampleLinear(mono []byte, srcRate, dstRate int) []byte {
 		} else if v < math.MinInt16 {
 			v = math.MinInt16
 		}
-		binary.LittleEndian.PutUint16(out[i*TargetBytesPerSample:], uint16(int16(v)))
+		binary.LittleEndian.PutUint16(out[i*TargetBytesPerSample:], uint16(int16(v))) // #nosec G115 -- v is clamped to the int16 PCM range above.
 	}
 	return out
 }
@@ -366,6 +415,76 @@ func pcmDurationMs(pcm []byte) int64 {
 	samples := int64(len(pcm) / TargetBytesPerSample)
 	return samples * 1000 / int64(TargetSampleRate)
 }
+
+func enforceDecodedLimit(decoded *DecodedAudio, limits DecodeLimits) error {
+	if decoded == nil || limits.MaxDecodedAudioSeconds <= 0 {
+		return nil
+	}
+	maxBytes := decodedBytesLimitFor(limits, TargetSampleRate, TargetChannels)
+	if maxBytes > 0 && int64(len(decoded.PCM)) > maxBytes {
+		return decodeLimitError(limits, maxBytes, int64(len(decoded.PCM)), decoded.DurationMs)
+	}
+	maxDurationMs := int64(limits.MaxDecodedAudioSeconds) * 1000
+	if decoded.DurationMs > maxDurationMs {
+		return decodeLimitError(limits, maxBytes, int64(len(decoded.PCM)), decoded.DurationMs)
+	}
+	return nil
+}
+
+func decodedBytesLimitFor(limits DecodeLimits, sampleRate, channels int) int64 {
+	if limits.MaxDecodedAudioSeconds <= 0 || sampleRate <= 0 || channels <= 0 {
+		return 0
+	}
+	return int64(limits.MaxDecodedAudioSeconds) * int64(sampleRate) * int64(channels) * int64(TargetBytesPerSample)
+}
+
+func decodeLimitError(limits DecodeLimits, maxBytes, actualBytes, durationMs int64) error {
+	return &DecodeLimitError{
+		MaxSeconds:  limits.MaxDecodedAudioSeconds,
+		DurationMs:  durationMs,
+		MaxBytes:    maxBytes,
+		ActualBytes: actualBytes,
+	}
+}
+
+type cappedBuffer struct {
+	buf         bytes.Buffer
+	limit       int64
+	actualBytes int64
+	exceeded    bool
+}
+
+func newCappedBuffer(limit int64) cappedBuffer {
+	return cappedBuffer{limit: limit}
+}
+
+func (b *cappedBuffer) Write(p []byte) (int, error) {
+	b.actualBytes += int64(len(p))
+	if b.limit <= 0 {
+		return b.buf.Write(p)
+	}
+	remaining := b.limit - int64(b.buf.Len())
+	if remaining <= 0 {
+		b.exceeded = true
+		return len(p), nil
+	}
+	if int64(len(p)) > remaining {
+		b.exceeded = true
+		_, _ = b.buf.Write(p[:int(remaining)])
+		return len(p), nil
+	}
+	return b.buf.Write(p)
+}
+
+func (b *cappedBuffer) Bytes() []byte { return b.buf.Bytes() }
+
+func (b *cappedBuffer) String() string { return b.buf.String() }
+
+func (b *cappedBuffer) Exceeded() bool { return b.exceeded }
+
+func (b *cappedBuffer) Limit() int64 { return b.limit }
+
+func (b *cappedBuffer) ActualBytes() int64 { return b.actualBytes }
 
 // ffmpegBinary is overridable in tests. Production uses whichever ffmpeg
 // is on PATH (the Server-Target Dockerfile installs it).
@@ -380,12 +499,12 @@ const ffmpegTimeout = 30 * time.Second
 // passed as the demuxer hint so ffmpeg doesn't have to probe a piped
 // stream that lacks seekable file boundaries. label is what ends up in
 // DecodedAudio.SourceFormat so the response carries a stable identifier.
-func decodeViaFFmpeg(raw []byte, label, inputFormat string) (*DecodedAudio, error) {
+func decodeViaFFmpeg(ctx context.Context, raw []byte, label, inputFormat string, limits DecodeLimits) (*DecodedAudio, error) {
 	if _, err := exec.LookPath(ffmpegBinary); err != nil {
 		return nil, ErrFFmpegUnavailable
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), ffmpegTimeout)
+	ctx, cancel := context.WithTimeout(ctx, ffmpegTimeout)
 	defer cancel()
 
 	args := []string{
@@ -399,10 +518,10 @@ func decodeViaFFmpeg(raw []byte, label, inputFormat string) (*DecodedAudio, erro
 		"-f", "s16le",
 		"pipe:1",
 	}
-	cmd := exec.CommandContext(ctx, ffmpegBinary, args...)
+	cmd := exec.CommandContext(ctx, ffmpegBinary, args...) // #nosec G204 -- ffmpegBinary is deployment/operator controlled; arguments are fixed, non-shell argv values.
 	cmd.Stdin = bytes.NewReader(raw)
-	var stdout bytes.Buffer
-	var stderr bytes.Buffer
+	stdout := newCappedBuffer(decodedBytesLimitFor(limits, TargetSampleRate, TargetChannels))
+	stderr := newCappedBuffer(64 << 10)
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
 
@@ -410,12 +529,15 @@ func decodeViaFFmpeg(raw []byte, label, inputFormat string) (*DecodedAudio, erro
 		return nil, fmt.Errorf("audio: ffmpeg decode (%s): %w; stderr=%q",
 			label, err, strings.TrimSpace(stderr.String()))
 	}
+	if stdout.Exceeded() {
+		return nil, decodeLimitError(limits, stdout.Limit(), stdout.ActualBytes(), 0)
+	}
 	pcm := stdout.Bytes()
 	if len(pcm) == 0 {
 		return nil, fmt.Errorf("audio: ffmpeg decode (%s) produced 0 bytes; stderr=%q",
 			label, strings.TrimSpace(stderr.String()))
 	}
-	return &DecodedAudio{
+	decoded := &DecodedAudio{
 		PCM:          pcm,
 		SourceFormat: label,
 		// We don't know the source rate/channels without parsing the
@@ -425,5 +547,6 @@ func decodeViaFFmpeg(raw []byte, label, inputFormat string) (*DecodedAudio, erro
 		SourceRate: TargetSampleRate,
 		SourceCh:   TargetChannels,
 		DurationMs: pcmDurationMs(pcm),
-	}, nil
+	}
+	return decoded, enforceDecodedLimit(decoded, limits)
 }

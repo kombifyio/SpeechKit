@@ -37,6 +37,15 @@ type Diff struct {
 // IsEmpty reports whether the diff would perform no work.
 func (d Diff) IsEmpty() bool { return len(d.ToStart) == 0 && len(d.ToStop) == 0 }
 
+// ApplyOptions carries additive lifecycle behavior for [Registry.ApplyWithOptions].
+// The zero value matches [Registry.Apply].
+type ApplyOptions struct {
+	// EagerWarmup calls Warmup on runtimes that implement
+	// [WarmableModeRuntime] after shared dependencies are acquired and before
+	// Start is invoked.
+	EagerWarmup bool
+}
+
 // Registry orchestrates mode runtimes and their shared dependencies.
 //
 // Typical wiring:
@@ -123,10 +132,17 @@ func (r *Registry) Register(rt ModeRuntime) error {
 // because partial state may be desirable (e.g. Dictation stays up
 // even if Voice Agent failed to acquire Gemini Live).
 func (r *Registry) Apply(ctx context.Context, target Target) error {
+	return r.ApplyWithOptions(ctx, target, ApplyOptions{})
+}
+
+// ApplyWithOptions transitions registered modes like [Registry.Apply], with
+// optional additive lifecycle behavior. The zero-value options preserve the
+// Apply contract exactly.
+func (r *Registry) ApplyWithOptions(ctx context.Context, target Target, opts ApplyOptions) error {
 	r.mu.Lock()
 	diff := r.diffLocked(target)
 	r.mu.Unlock()
-	return r.transition(ctx, diff)
+	return r.transition(ctx, diff, opts)
 }
 
 // Diff computes what Apply would do without performing it. Useful
@@ -155,21 +171,21 @@ func (r *Registry) diffLocked(target Target) Diff {
 	return Diff{ToStart: toStart, ToStop: toStop}
 }
 
-func (r *Registry) transition(ctx context.Context, diff Diff) error {
+func (r *Registry) transition(ctx context.Context, diff Diff, opts ApplyOptions) error {
 	for _, mode := range diff.ToStop {
 		if err := r.stopMode(ctx, mode); err != nil {
 			return err
 		}
 	}
 	for _, mode := range diff.ToStart {
-		if err := r.startMode(ctx, mode); err != nil {
+		if err := r.startMode(ctx, mode, opts); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-func (r *Registry) startMode(ctx context.Context, mode ModeKey) error {
+func (r *Registry) startMode(ctx context.Context, mode ModeKey, opts ApplyOptions) error {
 	r.mu.Lock()
 	rt, ok := r.runtimes[mode]
 	clock := r.clock
@@ -198,6 +214,18 @@ func (r *Registry) startMode(ctx context.Context, mode ModeKey) error {
 	}
 
 	r.emit(TransitionEvent{Mode: mode, From: from, To: StatusStarting, Timestamp: clock()})
+
+	if opts.EagerWarmup {
+		if warmable, ok := rt.(WarmableModeRuntime); ok {
+			if err := warmable.Warmup(ctx, deps); err != nil {
+				for _, rel := range acquired {
+					_ = rel()
+				}
+				r.emit(TransitionEvent{Mode: mode, From: StatusStarting, To: StatusFailed, Err: err, Timestamp: clock()})
+				return fmt.Errorf("lifecycle: warmup %s: %w", mode, err)
+			}
+		}
+	}
 
 	if err := rt.Start(ctx, deps); err != nil {
 		for _, rel := range acquired {

@@ -6,9 +6,10 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"strings"
 	"sync"
 	"time"
+
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/ttsroute"
 )
 
 var ErrMissingRouter = errors.New("speechkit tts: router is required")
@@ -182,31 +183,9 @@ func OrderByPreferredProvider(providers []Provider, preferred string) []Provider
 }
 
 // PreferredProviderForProfileID maps a Voice-Output profile ID to Provider.Name.
+// The mapping is shared with the kernel via the ttsroute leaf package.
 func PreferredProviderForProfileID(profileID string) string {
-	id := strings.TrimSpace(profileID)
-	if id == "" {
-		return ""
-	}
-	switch {
-	case strings.HasPrefix(id, "tts.openai."):
-		return "openai"
-	case strings.HasPrefix(id, "tts.google."):
-		return "google"
-	case strings.HasPrefix(id, "tts.huggingface."):
-		return "huggingface"
-	case strings.HasPrefix(id, "tts.openedai."), strings.HasPrefix(id, "tts.kokoro."):
-		return "kokoro"
-	case strings.HasPrefix(id, "tts.local.kokoro"):
-		return "kokoro_local"
-	case strings.HasPrefix(id, "tts.local.supertonic"):
-		return "supertonic_local"
-	case strings.HasPrefix(id, "tts.local.chatterbox"):
-		return "chatterbox_local"
-	case id == "tts.local.piper", strings.HasPrefix(id, "tts.local.piper-"):
-		return "piper"
-	default:
-		return ""
-	}
+	return ttsroute.PreferredProvider(profileID)
 }
 
 // Service is a small stable facade over Router. It gives embedders one

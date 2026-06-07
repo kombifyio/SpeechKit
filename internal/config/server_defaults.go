@@ -15,7 +15,6 @@ const (
 	defaultServerSQLitePath = "/var/lib/speechkit/data/speechkit.db"
 
 	serverPublicURLEnv         = "SPEECHKIT_PUBLIC_URL"
-	serverPublicURLAliasEnv    = "SPEECHKIT_SERVER_PUBLIC_URL"
 	serverPostgresDSNEnv       = "POSTGRES_DSN"
 	serverSpeechKitPostgresEnv = "SPEECHKIT_POSTGRES_DSN"
 	serverLiveKitURLEnv        = "LIVEKIT_URL"
@@ -32,9 +31,12 @@ func ApplyServerRuntimeDefaults(cfg *Config) []string {
 
 	var notes []string
 
-	if publicURL, envName := firstPresentEnv(serverPublicURLEnv, serverPublicURLAliasEnv); publicURL != "" && strings.TrimSpace(cfg.Server.PublicURL) == "" {
+	if publicURL, envName := firstPresentEnv(serverPublicURLEnv); publicURL != "" && strings.TrimSpace(cfg.Server.PublicURL) == "" {
 		cfg.Server.PublicURL = strings.TrimRight(publicURL, "/")
 		notes = append(notes, "server public URL default from "+envName+": "+cfg.Server.PublicURL)
+	}
+	if strings.TrimSpace(os.Getenv("SPEECHKIT_SERVER_PUBLIC_URL")) != "" {
+		notes = append(notes, "SPEECHKIT_SERVER_PUBLIC_URL was removed; use SPEECHKIT_PUBLIC_URL")
 	}
 
 	// Same-origin browser smoke + Voice Agent WebSocket: if PublicURL is set

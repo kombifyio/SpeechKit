@@ -103,6 +103,17 @@ type ModeRuntime interface {
 	Requires() []SharedDepKey
 }
 
+// WarmableModeRuntime is an optional extension for runtimes that can prepare
+// heavyweight dependencies before Start flips the mode to Running. Registry
+// callers opt in through ApplyWithOptions; plain Apply never calls Warmup.
+//
+// Warmup receives the same already-acquired shared dependencies as Start. It
+// must not retain borrowed dependency values past Stop.
+type WarmableModeRuntime interface {
+	ModeRuntime
+	Warmup(ctx context.Context, deps Deps) error
+}
+
 // TransitionEvent is published by [Registry.Subscribe] consumers.
 // One event is emitted per status change.
 //

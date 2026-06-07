@@ -9,15 +9,13 @@ info:
     to obtain a session id, `ws_url`, and a single-use `ws_subprotocol`, then
     upgrades a WebSocket to `GET /v1/voiceagent/sessions/{id}/ws` with
     `Sec-WebSocket-Protocol: ticket.<value>`. Do not send the HTTP bearer token
-    in the browser WebSocket handshake. The legacy `?ticket=` URL form remains
-    accepted only for compatibility.
+    in the browser WebSocket handshake.
 
     Tickets default to 90 seconds, are single-use, and are not refreshed in v1.
     If a ticket expires before upgrade, create a new Voice Agent session.
     Browser-facing Docker/proxy deployments should set `SPEECHKIT_PUBLIC_URL`
-    (or compatibility alias `SPEECHKIT_SERVER_PUBLIC_URL`) so the HTTP session
-    response returns a browser-reachable `ws_url` rather than a container
-    hostname.
+    so the HTTP session response returns a browser-reachable `ws_url` rather
+    than a container hostname.
 
     The protocol multiplexes two kinds of frames over the same WebSocket:
 

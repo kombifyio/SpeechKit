@@ -5,6 +5,7 @@ package core
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"os/signal"
 	"sync"
 	"syscall"
@@ -34,13 +35,17 @@ func initServerLifecycle(app *App) {
 	})
 	shared.Register(serverDepAIGenkit, func(ctx context.Context) (any, func() error, error) {
 		if app.GenkitRuntime == nil {
-			_ = ensureSharedAIDeps(ctx, app)
+			if err := ensureSharedAIDeps(ctx, app); err != nil {
+				slog.Warn("server lifecycle: shared AI deps unavailable for Genkit runtime", "err", err)
+			}
 		}
 		return app.GenkitRuntime, nil, nil
 	})
 	shared.Register(serverDepTTSRouter, func(ctx context.Context) (any, func() error, error) {
 		if app.TTSRouter == nil {
-			_ = ensureSharedAIDeps(ctx, app)
+			if err := ensureSharedAIDeps(ctx, app); err != nil {
+				slog.Warn("server lifecycle: shared AI deps unavailable for TTS router", "err", err)
+			}
 		}
 		return app.TTSRouter, nil, nil
 	})
@@ -54,16 +59,22 @@ func initServerLifecycle(app *App) {
 		{mode: lifecycle.ModeAssist, requires: []lifecycle.SharedDepKey{serverDepSTTRouter, serverDepAIGenkit, serverDepTTSRouter}},
 		{mode: lifecycle.ModeVoiceAgent, requires: []lifecycle.SharedDepKey{serverDepSTTRouter, serverDepAIGenkit, serverDepTTSRouter}},
 	} {
-		_ = reg.Register(&serverModeRuntime{name: spec.mode, requires: spec.requires})
+		if err := reg.Register(&serverModeRuntime{name: spec.mode, requires: spec.requires}); err != nil {
+			slog.Warn("server lifecycle: mode runtime registration failed", "mode", spec.mode, "err", err)
+		}
 	}
 
 	app.SharedDeps = shared
 	app.Lifecycle = reg
-	_ = reg.Apply(context.Background(), lifecycle.Target{
+	if err := reg.ApplyWithOptions(context.Background(), lifecycle.Target{
 		lifecycle.ModeDictation:  app.ModeEnabled(ModeDictation),
 		lifecycle.ModeAssist:     app.ModeEnabled(ModeAssist),
 		lifecycle.ModeVoiceAgent: app.ModeEnabled(ModeVoiceAgent),
-	})
+	}, lifecycle.ApplyOptions{
+		EagerWarmup: app.Cfg != nil && app.Cfg.General.EagerWarmup,
+	}); err != nil {
+		slog.Warn("server lifecycle: applying initial mode target failed", "err", err)
+	}
 }
 
 type serverModeRuntime struct {

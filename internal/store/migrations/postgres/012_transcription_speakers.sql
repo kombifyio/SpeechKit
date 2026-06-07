@@ -1,0 +1,2 @@
+ALTER TABLE transcriptions
+	ADD COLUMN IF NOT EXISTS speaker_json TEXT NOT NULL DEFAULT '';

@@ -1022,6 +1022,13 @@ components:
         when fronted by a Cloudflare Worker / reverse proxy that has
         already validated a user JWT.
 
+        Optional replay protection: when the edge also sends `X-Edge-Auth-Ts`
+        (Unix seconds), the timestamp is appended to the signed string as a
+        fifth field (`... + "\n" + ts`) and the server rejects requests whose
+        timestamp is more than 5 minutes from server time. The header is
+        optional and backward compatible — an edge that omits it uses the
+        legacy four-field signature.
+
   parameters:
     SessionID:
       name: id
@@ -1387,6 +1394,11 @@ components:
         auth_mode: { type: string }
         bearer_role: { type: string }
         max_upload_mb: { type: integer }
+        read_header_timeout_sec: { type: integer }
+        read_timeout_sec: { type: integer }
+        idle_timeout_sec: { type: integer }
+        max_header_bytes: { type: integer }
+        max_decoded_audio_seconds: { type: integer }
         features:
           type: object
           additionalProperties: { type: boolean }
@@ -1500,6 +1512,10 @@ components:
         language: { type: string }
         model: { type: string }
         prompt: { type: string }
+        speaker:
+          $ref: '#/components/schemas/SpeakerOptions'
+        speaker_options:
+          $ref: '#/components/schemas/SpeakerOptions'
 
     DictateResponse:
       type: object
@@ -1516,6 +1532,8 @@ components:
           format: double
         source:
           $ref: '#/components/schemas/SourceMeta'
+        speakers:
+          $ref: '#/components/schemas/DiarizationResult'
 
     AssistJSONRequest:
       type: object
@@ -1536,6 +1554,10 @@ components:
         tts_speed:
           type: number
           format: double
+        speaker:
+          $ref: '#/components/schemas/SpeakerOptions'
+        speaker_options:
+          $ref: '#/components/schemas/SpeakerOptions'
 
     AssistResponse:
       type: object
@@ -1556,6 +1578,134 @@ components:
         latency_ms: { type: integer }
         source:
           $ref: '#/components/schemas/SourceMeta'
+        speakers:
+          $ref: '#/components/schemas/DiarizationResult'
+
+    SpeakerOptions:
+      type: object
+      description: Optional speaker diarization/identification request. Omit it for text-only transcription.
+      properties:
+        enabled: { type: boolean }
+        diarization: { type: boolean }
+        identification: { type: boolean }
+        attribution: { type: boolean }
+        providerProfileId: { type: string }
+        model: { type: string }
+        diarizationModel: { type: string }
+        language: { type: string }
+        speakersExpected: { type: integer }
+        minSpeakersExpected: { type: integer }
+        maxSpeakersExpected: { type: integer }
+        speakerType:
+          type: string
+          enum: [name, role]
+        knownValues:
+          type: array
+          items: { type: string }
+        knownSpeakers:
+          type: array
+          items:
+            type: object
+            properties:
+              id: { type: string }
+              displayName: { type: string }
+              role: { type: string }
+              description: { type: string }
+        preferStreaming:
+          type: boolean
+          description: >-
+            Reserved. Real-time streaming diarization is not implemented yet; all
+            providers run batch today, so this flag has no effect.
+        allowProviderMapping: { type: boolean }
+
+    DiarizationResult:
+      type: object
+      properties:
+        provider: { type: string }
+        model: { type: string }
+        level:
+          type: string
+          description: >-
+            Speaker resolution depth actually produced. `biometric` is reserved
+            for future voiceprint enrollment and is not produced by any provider
+            today; current providers reach at most `provider_identification`.
+          enum: [none, diarization, attribution, provider_identification, biometric]
+        text: { type: string }
+        language: { type: string }
+        speakers:
+          type: array
+          items:
+            $ref: '#/components/schemas/Speaker'
+        segments:
+          type: array
+          items:
+            $ref: '#/components/schemas/SpeakerSegment'
+        words:
+          type: array
+          items:
+            $ref: '#/components/schemas/SpeakerWord'
+
+    SpeakerFrame:
+      type: object
+      description: Realtime speaker attribution frame emitted by Voice Agent streaming speaker add-ons.
+      properties:
+        provider: { type: string }
+        model: { type: string }
+        sequence: { type: integer }
+        text: { type: string }
+        isFinal: { type: boolean }
+        segment:
+          $ref: '#/components/schemas/SpeakerSegment'
+        words:
+          type: array
+          items:
+            $ref: '#/components/schemas/SpeakerWord'
+        speakers:
+          type: array
+          items:
+            $ref: '#/components/schemas/Speaker'
+        latencyMs: { type: integer }
+
+    Speaker:
+      type: object
+      properties:
+        label: { type: string }
+        personId: { type: string }
+        displayName: { type: string }
+        role: { type: string }
+        confidence: { type: number }
+        attributionConfidence: { type: number }
+
+    SpeakerSegment:
+      type: object
+      properties:
+        text: { type: string }
+        startMs: { type: integer }
+        endMs: { type: integer }
+        speakerLabel: { type: string }
+        speakerConfidence: { type: number }
+        personId: { type: string }
+        displayName: { type: string }
+        role: { type: string }
+        attributionConfidence: { type: number }
+        words:
+          type: array
+          items:
+            $ref: '#/components/schemas/SpeakerWord'
+
+    SpeakerWord:
+      type: object
+      properties:
+        text: { type: string }
+        startMs: { type: integer }
+        endMs: { type: integer }
+        confidence: { type: number }
+        speakerLabel: { type: string }
+        speakerConfidence: { type: number }
+        personId: { type: string }
+        displayName: { type: string }
+        role: { type: string }
+        attributionConfidence: { type: number }
 
     AssistSelfTestResponse:
       type: object
@@ -1584,16 +1734,11 @@ components:
             Tickets are HMAC-bound to the session id, single-use, and expire
             after the configured TTL (default 90 s). Expired tickets are not
             refreshed in v1; create a new session. Set SPEECHKIT_PUBLIC_URL
-            (or alias
-            SPEECHKIT_SERVER_PUBLIC_URL) for browser-facing Docker/proxy
-            deployments so `ws_url` uses the public origin.
+            for browser-facing Docker/proxy deployments so `ws_url` uses the
+            public origin.
         ws_subprotocol:
           type: string
           description: WebSocket subprotocol value to pass during upgrade, e.g. `ticket.<value>`.
-        legacy_ws_url:
-          type: string
-          format: uri
-          description: Deprecated compatibility URL with `?ticket=...`; new clients should use `ws_url` plus `ws_subprotocol`.
         ticket:
           type: string
           description: One-time WebSocket upgrade ticket. Prefer `ws_subprotocol` rather than putting this value in URLs.

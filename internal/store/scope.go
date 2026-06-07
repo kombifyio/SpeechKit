@@ -84,18 +84,5 @@ func marshalScopeLabels(scope speechstorage.Scope) (string, error) {
 	return string(raw), nil
 }
 
-func (s *SQLiteStore) scopeID(ctx context.Context) (int64, error) {
-	scope, err := effectiveStoreScope(ctx, s.defaultScope, s.scopePolicy)
-	if err != nil {
-		return 0, err
-	}
-	return ensureSQLiteScopeID(ctx, s.db, scope)
-}
-
-func (s *PostgresStore) scopeID(ctx context.Context) (int64, error) {
-	scope, err := effectiveStoreScope(ctx, s.defaultScope, s.scopePolicy)
-	if err != nil {
-		return 0, err
-	}
-	return ensurePostgresScopeID(ctx, s.db, scope)
-}
+// scopeID resolution now lives on the shared *sqlStore (see sqlstore.go), which
+// dispatches to ensureSQLiteScopeID / ensurePostgresScopeID by dialect.

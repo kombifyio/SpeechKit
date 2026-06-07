@@ -113,7 +113,7 @@ func TestRegisterHealth_StrictReadinessEndpointsIncludeOptionalFailures(t *testi
 type readinessBodyForTest struct {
 	Status       string                    `json:"status"`
 	StrictStatus string                    `json:"strict_status"`
-	Components   map[string]componentEntry `json:"components"`
+	Components   map[string]ComponentEntry `json:"components"`
 }
 
 func decodeReadinessBody(t *testing.T, data []byte) readinessBodyForTest {

@@ -39,10 +39,7 @@ func TestBuildAssistPipelineReturnsClientExecutableToolActions(t *testing.T) {
 		t.Fatalf("load default config: %v", err)
 	}
 	app := &App{Cfg: cfg, Health: NewHealthRegistry()}
-	pipeline, _, err := buildAssistPipeline(context.Background(), cfg, app)
-	if err != nil {
-		t.Fatalf("buildAssistPipeline: %v", err)
-	}
+	pipeline, _ := buildAssistPipeline(context.Background(), cfg, app)
 
 	for _, tt := range []struct {
 		name       string

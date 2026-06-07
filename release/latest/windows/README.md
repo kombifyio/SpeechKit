@@ -1,16 +1,15 @@
 # Latest Windows Installer
 
-This directory intentionally mirrors the current installable Windows release
-inside the repository so a fresh clone can install SpeechKit without browsing
-GitHub Actions artifacts first.
+This directory intentionally mirrors metadata for the current installable
+Windows release. Installer binaries are kept as GitHub Release assets, not as
+tracked source files.
 
-Use SpeechKit-Setup.exe for the per-user Windows install. If
-SpeechKit-x64.msi is present, it is the per-machine MSI for SCCM/Intune-style
-deployment.
+Use INSTALLER-MANIFEST.json to find the canonical download URL, size, and
+SHA-256 for SpeechKit-Setup.exe and SpeechKit-x64.msi.
 
 The canonical release assets are still the GitHub Release files for $Version
 in $SourceRepo. Verify local files with SHA256SUMS.txt or inspect
 INSTALLER-MANIFEST.json for source and hash metadata.
 
-Do not put generated installers under dist/; dist/ is local build output.
-Only this directory is allowed to carry mirrored installer binaries.
+Do not commit generated installers under release/latest/windows or dist/; both
+are local/generated artifact locations.

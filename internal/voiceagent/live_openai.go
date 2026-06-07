@@ -344,12 +344,6 @@ func (p *OpenAILive) sendSessionUpdate(ctx context.Context, cfg LiveConfig) erro
 	}
 
 	instructions := strings.TrimSpace(cfg.FrameworkPrompt)
-	if instructions == "" {
-		instructions = strings.TrimSpace(cfg.SystemPrompt)
-	}
-	if instructions == "" {
-		instructions = strings.TrimSpace(cfg.Instruction)
-	}
 	if refinement := strings.TrimSpace(cfg.RefinementPrompt); refinement != "" {
 		if instructions == "" {
 			instructions = refinement

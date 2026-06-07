@@ -63,6 +63,12 @@ type OrderedModelSelection struct {
 	Model    string
 }
 
+type modelSpec struct {
+	provider string
+	model    string
+	enabled  bool
+}
+
 // ModelInfo describes a registered model for the UI.
 type ModelInfo struct {
 	ID       string `json:"id"`
@@ -106,22 +112,7 @@ func Init(ctx context.Context, cfg Config) (*Runtime, error) {
 		allModels: make(map[string]ai.Model),
 	}
 
-	// Resolve utility models from config.
-	utilitySpecs := []struct {
-		provider string
-		model    string
-		enabled  bool
-	}{
-		{"googleai", cfg.GoogleUtilityModel, cfg.GoogleAPIKey != "" && cfg.GoogleUtilityModel != ""},
-		{"openai", cfg.OpenAIUtilityModel, cfg.OpenAIAPIKey != "" && cfg.OpenAIUtilityModel != ""},
-		{"groq", cfg.GroqUtilityModel, cfg.GroqAPIKey != "" && cfg.GroqUtilityModel != ""},
-		{"huggingface", cfg.HFUtilityModel, cfg.HuggingFaceToken != "" && cfg.HFUtilityModel != ""},
-		{"local", cfg.LocalLLMUtilityModel, cfg.LocalLLMBaseURL != "" && cfg.LocalLLMUtilityModel != ""},
-		{"ollama", cfg.OllamaUtilityModel, cfg.OllamaBaseURL != "" && cfg.OllamaUtilityModel != ""},
-		{"openrouter", cfg.OpenRouterUtilityModel, cfg.OpenRouterAPIKey != "" && cfg.OpenRouterUtilityModel != ""},
-	}
-
-	for _, spec := range utilitySpecs {
+	for _, spec := range tierModelSpecs(cfg, "utility") {
 		if !spec.enabled {
 			continue
 		}
@@ -135,35 +126,11 @@ func Init(ctx context.Context, cfg Config) (*Runtime, error) {
 		slog.Info("utility model registered", "provider", spec.provider, "model", spec.model)
 	}
 
-	resolveOrderedOrLegacyModels(rt, g, "assist", cfg.UseOrderedAssistModels, cfg.OrderedAssistModels, []struct {
-		provider string
-		model    string
-		enabled  bool
-	}{
-		{"googleai", cfg.GoogleAssistModel, cfg.GoogleAPIKey != "" && cfg.GoogleAssistModel != ""},
-		{"openai", cfg.OpenAIAssistModel, cfg.OpenAIAPIKey != "" && cfg.OpenAIAssistModel != ""},
-		{"groq", cfg.GroqAssistModel, cfg.GroqAPIKey != "" && cfg.GroqAssistModel != ""},
-		{"huggingface", cfg.HFAssistModel, cfg.HuggingFaceToken != "" && cfg.HFAssistModel != ""},
-		{"local", cfg.LocalLLMAssistModel, cfg.LocalLLMBaseURL != "" && cfg.LocalLLMAssistModel != ""},
-		{"ollama", cfg.OllamaAssistModel, cfg.OllamaBaseURL != "" && cfg.OllamaAssistModel != ""},
-		{"openrouter", cfg.OpenRouterAssistModel, cfg.OpenRouterAPIKey != "" && cfg.OpenRouterAssistModel != ""},
-	}, func(model ai.Model) {
+	resolveOrderedOrLegacyModels(rt, g, "assist", cfg.UseOrderedAssistModels, cfg.OrderedAssistModels, tierModelSpecs(cfg, "assist"), func(model ai.Model) {
 		rt.assistModels = append(rt.assistModels, model)
 	})
 
-	resolveOrderedOrLegacyModels(rt, g, "agent", cfg.UseOrderedAgentModels, cfg.OrderedAgentModels, []struct {
-		provider string
-		model    string
-		enabled  bool
-	}{
-		{"googleai", cfg.GoogleAgentModel, cfg.GoogleAPIKey != "" && cfg.GoogleAgentModel != ""},
-		{"openai", cfg.OpenAIAgentModel, cfg.OpenAIAPIKey != "" && cfg.OpenAIAgentModel != ""},
-		{"groq", cfg.GroqAgentModel, cfg.GroqAPIKey != "" && cfg.GroqAgentModel != ""},
-		{"huggingface", cfg.HFAgentModel, cfg.HuggingFaceToken != "" && cfg.HFAgentModel != ""},
-		{"local", cfg.LocalLLMAgentModel, cfg.LocalLLMBaseURL != "" && cfg.LocalLLMAgentModel != ""},
-		{"ollama", cfg.OllamaAgentModel, cfg.OllamaBaseURL != "" && cfg.OllamaAgentModel != ""},
-		{"openrouter", cfg.OpenRouterAgentModel, cfg.OpenRouterAPIKey != "" && cfg.OpenRouterAgentModel != ""},
-	}, func(model ai.Model) {
+	resolveOrderedOrLegacyModels(rt, g, "agent", cfg.UseOrderedAgentModels, cfg.OrderedAgentModels, tierModelSpecs(cfg, "agent"), func(model ai.Model) {
 		rt.agentModels = append(rt.agentModels, model)
 	})
 
@@ -213,17 +180,50 @@ func localLLMModelNames(cfg Config) []string {
 	return names
 }
 
+func tierModelSpecs(cfg Config, tier string) []modelSpec {
+	switch tier {
+	case "utility":
+		return []modelSpec{
+			{"googleai", cfg.GoogleUtilityModel, cfg.GoogleAPIKey != "" && cfg.GoogleUtilityModel != ""},
+			{"openai", cfg.OpenAIUtilityModel, cfg.OpenAIAPIKey != "" && cfg.OpenAIUtilityModel != ""},
+			{"groq", cfg.GroqUtilityModel, cfg.GroqAPIKey != "" && cfg.GroqUtilityModel != ""},
+			{"huggingface", cfg.HFUtilityModel, cfg.HuggingFaceToken != "" && cfg.HFUtilityModel != ""},
+			{"local", cfg.LocalLLMUtilityModel, cfg.LocalLLMBaseURL != "" && cfg.LocalLLMUtilityModel != ""},
+			{"ollama", cfg.OllamaUtilityModel, cfg.OllamaBaseURL != "" && cfg.OllamaUtilityModel != ""},
+			{"openrouter", cfg.OpenRouterUtilityModel, cfg.OpenRouterAPIKey != "" && cfg.OpenRouterUtilityModel != ""},
+		}
+	case "assist":
+		return []modelSpec{
+			{"googleai", cfg.GoogleAssistModel, cfg.GoogleAPIKey != "" && cfg.GoogleAssistModel != ""},
+			{"openai", cfg.OpenAIAssistModel, cfg.OpenAIAPIKey != "" && cfg.OpenAIAssistModel != ""},
+			{"groq", cfg.GroqAssistModel, cfg.GroqAPIKey != "" && cfg.GroqAssistModel != ""},
+			{"huggingface", cfg.HFAssistModel, cfg.HuggingFaceToken != "" && cfg.HFAssistModel != ""},
+			{"local", cfg.LocalLLMAssistModel, cfg.LocalLLMBaseURL != "" && cfg.LocalLLMAssistModel != ""},
+			{"ollama", cfg.OllamaAssistModel, cfg.OllamaBaseURL != "" && cfg.OllamaAssistModel != ""},
+			{"openrouter", cfg.OpenRouterAssistModel, cfg.OpenRouterAPIKey != "" && cfg.OpenRouterAssistModel != ""},
+		}
+	case "agent":
+		return []modelSpec{
+			{"googleai", cfg.GoogleAgentModel, cfg.GoogleAPIKey != "" && cfg.GoogleAgentModel != ""},
+			{"openai", cfg.OpenAIAgentModel, cfg.OpenAIAPIKey != "" && cfg.OpenAIAgentModel != ""},
+			{"groq", cfg.GroqAgentModel, cfg.GroqAPIKey != "" && cfg.GroqAgentModel != ""},
+			{"huggingface", cfg.HFAgentModel, cfg.HuggingFaceToken != "" && cfg.HFAgentModel != ""},
+			{"local", cfg.LocalLLMAgentModel, cfg.LocalLLMBaseURL != "" && cfg.LocalLLMAgentModel != ""},
+			{"ollama", cfg.OllamaAgentModel, cfg.OllamaBaseURL != "" && cfg.OllamaAgentModel != ""},
+			{"openrouter", cfg.OpenRouterAgentModel, cfg.OpenRouterAPIKey != "" && cfg.OpenRouterAgentModel != ""},
+		}
+	default:
+		return nil
+	}
+}
+
 func resolveOrderedOrLegacyModels(
 	rt *Runtime,
 	g *genkit.Genkit,
 	tier string,
 	useOrdered bool,
 	ordered []OrderedModelSelection,
-	legacy []struct {
-		provider string
-		model    string
-		enabled  bool
-	},
+	legacy []modelSpec,
 	appendModel func(ai.Model),
 ) {
 	if useOrdered {

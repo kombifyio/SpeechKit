@@ -13,11 +13,19 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
-	"strings"
 	"sync"
 
 	"github.com/kombifyio/SpeechKit/internal/models"
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/ttsroute"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/trace"
 )
+
+// ttsTracer instruments TTS synthesis. A no-op tracer is used when no
+// OpenTelemetry provider is installed, so spans cost nothing.
+var ttsTracer = otel.Tracer("github.com/kombifyio/SpeechKit/internal/tts")
 
 // Strategy determines how the TTS router selects a provider.
 type Strategy string
@@ -56,7 +64,22 @@ func (r *Router) SetProviders(providers ...Provider) {
 }
 
 // Synthesize tries each provider in order until one succeeds.
-func (r *Router) Synthesize(ctx context.Context, text string, opts SynthesizeOpts) (*Result, error) {
+func (r *Router) Synthesize(ctx context.Context, text string, opts SynthesizeOpts) (res *Result, err error) {
+	ctx, span := ttsTracer.Start(ctx, "tts.synthesize", trace.WithAttributes(
+		attribute.String("speechkit.tts.strategy", string(r.strategy)),
+		attribute.String("speechkit.tts.format", opts.Format),
+	))
+	defer func() {
+		switch {
+		case err != nil:
+			span.RecordError(err)
+			span.SetStatus(codes.Error, "synthesize failed")
+		case res != nil:
+			span.SetAttributes(attribute.String("speechkit.tts.provider", res.Provider))
+		}
+		span.End()
+	}()
+
 	r.mu.RLock()
 	providers := make([]Provider, len(r.providers))
 	copy(providers, r.providers)
@@ -169,39 +192,8 @@ func OrderByPreferredProvider(providers []Provider, preferred string) []Provider
 // or unset — callers should treat that as "no preference, use default
 // strategy ordering".
 //
-// Mapping (kept in sync with pkg/speechkit/catalog.go TTS entries):
-//
-//	tts.openai.*                     → "openai"
-//	tts.google.*                     → "google"
-//	tts.huggingface.*                → "huggingface"
-//	tts.openedai.*                   → "kokoro"           (OpenAI-compatible self-hosted endpoint)
-//	tts.local.kokoro-*               → "kokoro_local"     (v0.37.3 ONNX in-process, Phase-3 runtime)
-//	tts.local.supertonic-*           → "supertonic_local" (v0.37.3 ONNX in-process, multilingual)
-//	tts.local.chatterbox-*           → "chatterbox_local" (v0.37.3 ONNX in-process, voice-clone)
-//	tts.local.piper / tts.local.piper-* → "piper"          (HA-compatible Piper subprocess)
+// The mapping itself lives in the zero-dependency ttsroute leaf package so the
+// kernel and the public pkg/speechkit/tts surface share one source of truth.
 func PreferredProviderForProfileID(profileID string) string {
-	id := strings.TrimSpace(profileID)
-	if id == "" {
-		return ""
-	}
-	switch {
-	case strings.HasPrefix(id, "tts.openai."):
-		return "openai"
-	case strings.HasPrefix(id, "tts.google."):
-		return "google"
-	case strings.HasPrefix(id, "tts.huggingface."):
-		return "huggingface"
-	case strings.HasPrefix(id, "tts.openedai."), strings.HasPrefix(id, "tts.kokoro."):
-		return "kokoro"
-	case strings.HasPrefix(id, "tts.local.kokoro"):
-		return "kokoro_local"
-	case strings.HasPrefix(id, "tts.local.supertonic"):
-		return "supertonic_local"
-	case strings.HasPrefix(id, "tts.local.chatterbox"):
-		return "chatterbox_local"
-	case id == "tts.local.piper", strings.HasPrefix(id, "tts.local.piper-"):
-		return "piper"
-	default:
-		return ""
-	}
+	return ttsroute.PreferredProvider(profileID)
 }

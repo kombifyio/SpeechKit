@@ -9,11 +9,13 @@
 installer/wix/llama-fragment.wxs
 SpeechKit-Portable-v*.zip
 
-# Intentional, bounded latest-installer mirror for clone-and-install testing.
+# Intentional latest-installer metadata mirror; binaries live on GitHub Releases.
 !/release/
 !/release/latest/
 !/release/latest/windows/
-!/release/latest/windows/SpeechKit-Setup.exe
+release/latest/windows/*.exe
+release/latest/windows/*.msi
+release/latest/windows/*.zip
 
 # Server-target Linux binary (no extension, dropped at repo root by
 # `go build ./cmd/speechkit-server`). Catches it on Windows dev hosts

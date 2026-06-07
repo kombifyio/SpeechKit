@@ -444,12 +444,6 @@ func buildInstructionText(cfg LiveConfig) string {
 func resolvedFrameworkPrompt(cfg LiveConfig) string {
 	instruction := strings.TrimSpace(cfg.FrameworkPrompt)
 	if instruction == "" {
-		instruction = strings.TrimSpace(cfg.Instruction)
-	}
-	if instruction == "" {
-		instruction = strings.TrimSpace(cfg.SystemPrompt)
-	}
-	if instruction == "" {
 		instruction = defaultVoiceAgentInstruction(cfg.Locale)
 	}
 	return instruction

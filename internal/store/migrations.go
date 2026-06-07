@@ -60,6 +60,9 @@ func runSQLiteMigrations(ctx context.Context, db *sql.DB) error {
 		{version: "sqlite:013_storage_scopes", run: runSQLiteStorageScopesMigration},
 		{version: "sqlite:014_storage_v3_model", run: runSQLiteStorage3ModelMigration},
 		sqliteSQLMigration("sqlite:015_wakeword_activations", sqliteMigration015),
+		{version: "sqlite:016_transcription_speakers", run: func(ctx context.Context, db *sql.DB) error {
+			return ensureSQLiteColumn(ctx, db, "transcriptions", "speaker_json", "TEXT NOT NULL DEFAULT ''")
+		}},
 	}
 	for _, migration := range migrations {
 		if err := applyMigration(ctx, db, "sqlite", migration); err != nil {
@@ -94,6 +97,8 @@ func runPostgresMigrations(ctx context.Context, db *sql.DB) error {
 		postgresSQLMigration("postgres:008_storage_scopes", postgresMigration008),
 		{version: "postgres:009_storage_v3_model", run: runPostgresStorage3ModelMigration},
 		postgresSQLMigration("postgres:010_wakeword_activations", postgresMigration010),
+		postgresSQLMigration("postgres:011_storage_scope_sequence", postgresMigration011),
+		postgresSQLMigration("postgres:012_transcription_speakers", postgresMigration012),
 	}
 	for _, migration := range migrations {
 		if err := applyMigration(ctx, db, "postgres", migration); err != nil {
@@ -125,6 +130,7 @@ func ensureSQLiteLegacyColumnsForCurrentMigrations(ctx context.Context, db *sql.
 			"owner_user_id": "TEXT NOT NULL DEFAULT ''",
 			"owner_org_id":  "TEXT NOT NULL DEFAULT ''",
 			"owner_source":  "TEXT NOT NULL DEFAULT ''",
+			"speaker_json":  "TEXT NOT NULL DEFAULT ''",
 		},
 		"quick_notes": {
 			"language_base": "TEXT NOT NULL DEFAULT ''",
@@ -626,7 +632,7 @@ func backfillSQLiteVoiceAgentNormalized(ctx context.Context, db *sql.DB) error {
 		return err
 	}
 	for _, session := range sessions {
-		if err := replaceVoiceAgentSessionChildren(ctx, db, "sqlite", session.ID, session); err != nil {
+		if err := replaceVoiceAgentSessionChildren(ctx, db, dialectSQLite, session.ID, session); err != nil {
 			return err
 		}
 	}
@@ -655,7 +661,7 @@ func backfillPostgresVoiceAgentNormalized(ctx context.Context, db *sql.DB) error
 		return err
 	}
 	for _, session := range sessions {
-		if err := replaceVoiceAgentSessionChildren(ctx, db, "postgres", session.ID, session); err != nil {
+		if err := replaceVoiceAgentSessionChildren(ctx, db, dialectPostgres, session.ID, session); err != nil {
 			return err
 		}
 	}

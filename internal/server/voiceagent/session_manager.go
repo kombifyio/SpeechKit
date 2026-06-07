@@ -192,8 +192,8 @@ func (m *SessionManager) List(userID string) []*ManagedSession {
 	out := make([]*ManagedSession, 0, len(m.sessions))
 	for _, s := range m.sessions {
 		if userID == "" || s.Owner.UserID == userID {
-			copy := *s
-			out = append(out, &copy)
+			snapshot := *s
+			out = append(out, &snapshot)
 		}
 	}
 	return out
@@ -255,7 +255,7 @@ func (m *SessionManager) Remove(id string) {
 	if m.byUser[s.Owner.UserID] > 0 {
 		m.byUser[s.Owner.UserID]--
 	}
-	slog.Debug("voiceagent: session removed", "session_id", id, "user_id", s.Owner.UserID)
+	slog.Debug("voiceagent: session removed", "session_id", id, "user_id", s.Owner.UserID) // #nosec G706 -- slog writes session identifiers as structured attributes, not interpolated log text.
 }
 
 // VerifyTicket validates a ticket string against its expected session ID.
@@ -270,7 +270,12 @@ func (m *SessionManager) VerifyTicket(sessionID, ticket string) error {
 	if err != nil || len(raw) < 8+len(sessionID)+sha256.Size {
 		return ErrInvalidTicket
 	}
-	expiryUnix := int64(binary.BigEndian.Uint64(raw[:8]))
+	expiryUint := binary.BigEndian.Uint64(raw[:8])
+	const maxInt64AsUint = uint64(1<<63 - 1)
+	if expiryUint > maxInt64AsUint {
+		return ErrInvalidTicket
+	}
+	expiryUnix := int64(expiryUint) // #nosec G115 -- expiryUint is checked against MaxInt64 above.
 	payloadEnd := len(raw) - sha256.Size
 	sid := string(raw[8:payloadEnd])
 	sig := raw[payloadEnd:]
@@ -293,7 +298,11 @@ func (m *SessionManager) VerifyTicket(sessionID, ticket string) error {
 // WS URLs.
 func (m *SessionManager) mintTicket(sessionID string, expiry time.Time) string {
 	buf := make([]byte, 8+len(sessionID))
-	binary.BigEndian.PutUint64(buf[:8], uint64(expiry.UTC().Unix()))
+	expiryUnix := expiry.UTC().Unix()
+	if expiryUnix < 0 {
+		expiryUnix = 0
+	}
+	binary.BigEndian.PutUint64(buf[:8], uint64(expiryUnix)) // #nosec G115 -- negative expiries are clamped to zero above.
 	copy(buf[8:], sessionID)
 	mac := m.hmacTicket(buf)
 	out := make([]byte, len(buf)+len(mac))

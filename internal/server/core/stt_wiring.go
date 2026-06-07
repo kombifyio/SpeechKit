@@ -99,10 +99,38 @@ func buildSTTRouter(cfg *config.Config) (*router.Router, []namedProvider, []stri
 		}
 	}
 
+	// Deepgram (direct cloud STT + diarization).
+	if cfg.Providers.Deepgram.Enabled {
+		if key, source := config.ResolveDeepgramKey(cfg); key != "" {
+			p := stt.NewDeepgramProvider(key, cfg.Providers.Deepgram.STTModel)
+			p.DiarizationModel = firstNonEmpty(cfg.Providers.Deepgram.DiarizationModel, "latest")
+			r.AddCloud(p)
+			providers = append(providers, namedProvider{name: "stt.deepgram", provider: p})
+			notes = append(notes, "Deepgram STT registered (model="+p.Model+", source="+source+")")
+		} else {
+			notes = append(notes, "Deepgram STT disabled ("+source+" not set)")
+		}
+	}
+
+	// AssemblyAI (direct cloud STT + batch diarization / speaker identification).
+	if cfg.Providers.AssemblyAI.Enabled {
+		if key, source := config.ResolveAssemblyAIKey(cfg); key != "" {
+			p := stt.NewAssemblyAIProvider(key, cfg.Providers.AssemblyAI.STTModels)
+			p.StreamingModel = firstNonEmpty(cfg.Providers.AssemblyAI.StreamingModel, p.StreamingModel)
+			p.StreamingBaseURL = firstNonEmpty(cfg.Providers.AssemblyAI.StreamingBaseURL, p.StreamingBaseURL)
+			r.AddCloud(p)
+			providers = append(providers, namedProvider{name: "stt.assemblyai", provider: p})
+			notes = append(notes, "AssemblyAI STT registered (models="+strings.Join(p.Models, ",")+", source="+source+")")
+		} else {
+			notes = append(notes, "AssemblyAI STT disabled ("+source+" not set)")
+		}
+	}
+
 	// Google Cloud STT.
 	if cfg.Providers.Google.Enabled {
 		if key, source := config.ResolveGoogleSTTKey(cfg); key != "" {
 			p := stt.NewGoogleSTTProvider(key, cfg.Providers.Google.STTModel)
+			p.SetStreamingCredentialEnvs(config.GoogleSTTCredentialsJSONEnvName(cfg), config.GoogleApplicationCredentialsEnvName(cfg))
 			r.AddCloud(p)
 			providers = append(providers, namedProvider{name: "stt.google", provider: p})
 			notes = append(notes, "Google STT registered (model="+cfg.Providers.Google.STTModel+", source="+source+")")
@@ -153,10 +181,10 @@ func registerProviderHealth(app *App, providers []namedProvider, blockSTT bool) 
 	}
 	if blockSTT {
 		if len(providers) == 0 {
-			app.Health.SetReadyWithOptions(sttAggregateComponent, StatusUnavailable, "no STT providers configured", sttAggregateOptions(true))
+			app.Health.SetReadyWithOptions(sttAggregateComponent, StatusUnavailable, "no STT providers configured", sttAggregateOptions())
 			return
 		}
-		app.Health.SetReadyWithOptions(sttAggregateComponent, StatusStarting, "probing STT providers", sttAggregateOptions(true))
+		app.Health.SetReadyWithOptions(sttAggregateComponent, StatusStarting, "probing STT providers", sttAggregateOptions())
 	}
 	for _, np := range providers {
 		app.Health.SetReadyWithOptions(np.name, StatusStarting, "probing", sttProviderOptions(np))
@@ -210,7 +238,7 @@ func updateSTTAggregate(app *App) {
 		}
 		switch entry.Status {
 		case StatusOK:
-			app.Health.SetReadyWithOptions(sttAggregateComponent, StatusOK, "at least one STT provider ready", sttAggregateOptions(true))
+			app.Health.SetReadyWithOptions(sttAggregateComponent, StatusOK, "at least one STT provider ready", sttAggregateOptions())
 			return
 		case StatusStarting:
 			providers++
@@ -225,15 +253,15 @@ func updateSTTAggregate(app *App) {
 		}
 	}
 	if providers == 0 {
-		app.Health.SetReadyWithOptions(sttAggregateComponent, StatusUnavailable, "no STT providers configured", sttAggregateOptions(true))
+		app.Health.SetReadyWithOptions(sttAggregateComponent, StatusUnavailable, "no STT providers configured", sttAggregateOptions())
 		return
 	}
 	if starting > 0 {
-		app.Health.SetReadyWithOptions(sttAggregateComponent, StatusStarting, "probing STT providers", sttAggregateOptions(true))
+		app.Health.SetReadyWithOptions(sttAggregateComponent, StatusStarting, "probing STT providers", sttAggregateOptions())
 		return
 	}
 	if degraded > 0 {
-		app.Health.SetReadyWithOptions(sttAggregateComponent, StatusDegraded, "no STT provider is currently ready", sttAggregateOptions(true))
+		app.Health.SetReadyWithOptions(sttAggregateComponent, StatusDegraded, "no STT provider is currently ready", sttAggregateOptions())
 		return
 	}
 }
@@ -248,9 +276,9 @@ func sttProviderOptions(np namedProvider) ComponentOptions {
 	}
 }
 
-func sttAggregateOptions(blocking bool) ComponentOptions {
+func sttAggregateOptions() ComponentOptions {
 	return ComponentOptions{
-		Blocking: blocking,
+		Blocking: true,
 		Kind:     "dependency",
 		Modes:    []string{string(ModeDictation)},
 	}

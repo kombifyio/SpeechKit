@@ -148,11 +148,11 @@ func contains(haystack, needle string) bool {
 }
 
 func TestBucketStore_EvictsOldestWhenCapHit(t *testing.T) {
-	const cap = 4
+	const bucketCap = 4
 	store := &bucketStore{
 		perSecond:  100, // generous so token math doesn't reject
 		burst:      10,
-		maxBuckets: cap,
+		maxBuckets: bucketCap,
 		m:          map[string]*list.Element{},
 		lru:        list.New(),
 	}
@@ -163,8 +163,8 @@ func TestBucketStore_EvictsOldestWhenCapHit(t *testing.T) {
 			t.Fatalf("first request for %s should be allowed", key)
 		}
 	}
-	if got := store.size(); got != cap {
-		t.Fatalf("size after fill = %d, want %d", got, cap)
+	if got := store.size(); got != bucketCap {
+		t.Fatalf("size after fill = %d, want %d", got, bucketCap)
 	}
 
 	// Touch "u:b" so it becomes most-recent. "u:a" is now LRU.
@@ -176,8 +176,8 @@ func TestBucketStore_EvictsOldestWhenCapHit(t *testing.T) {
 	if !store.allow("u:e") {
 		t.Fatalf("new key u:e should be allowed")
 	}
-	if got := store.size(); got != cap {
-		t.Fatalf("size after eviction = %d, want %d", got, cap)
+	if got := store.size(); got != bucketCap {
+		t.Fatalf("size after eviction = %d, want %d", got, bucketCap)
 	}
 	store.mu.Lock()
 	_, hasA := store.m["u:a"]

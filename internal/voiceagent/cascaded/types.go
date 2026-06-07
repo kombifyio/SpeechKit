@@ -14,6 +14,11 @@
 // heuristic.
 package cascaded
 
+import "github.com/kombifyio/SpeechKit/pkg/speechkit/speaker"
+
+// SpeakerStreamer is the optional realtime speaker attribution add-on.
+type SpeakerStreamer = speaker.StreamingProvider
+
 // SessionConfig is the minimal per-session configuration the cascaded
 // provider needs. Adapters in internal/server/voiceagent and
 // internal/voiceagent translate their richer config types into this
@@ -23,15 +28,20 @@ type SessionConfig struct {
 	Voice            string
 	SystemPrompt     string
 	RefinementPrompt string
+	Speaker          speaker.Options
 }
 
 // Message is the subset of voice-agent message fields the cascaded path
 // emits. Adapters wrap this into their richer LiveMessage type when
 // forwarding to clients.
 type Message struct {
-	Audio                []byte
-	InputTranscript      string
-	InputTranscriptDone  bool
-	OutputTranscript     string
-	OutputTranscriptDone bool
+	Audio                  []byte
+	InputTranscript        string
+	InputTranscriptDone    bool
+	InputSpeakerLabel      string
+	InputPersonID          string
+	InputDisplayName       string
+	InputSpeakerConfidence float64
+	OutputTranscript       string
+	OutputTranscriptDone   bool
 }

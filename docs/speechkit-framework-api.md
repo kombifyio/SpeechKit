@@ -16,6 +16,10 @@ speaker output. Assist targets the Siri/Alexa-style Voice Companion path, Voice
 Agent targets continuous dialogue, and Dictation remains UI-assisted because
 text output needs a visible target or explicit commit surface.
 
+Speaker diarization, speaker identification, and speaker attribution are also
+capability layers over the same three modes, not new modes. Hosts opt in with
+speaker options where a selected STT or streaming provider supports them.
+
 The public SDK exposes these contracts through:
 
 - `speechkit.DefaultModeContracts()`
@@ -44,6 +48,7 @@ full mode runtime:
 | Wake activation only | `pkg/speechkit/wakeword` |
 | Spoken output only | `pkg/speechkit/tts` |
 | Hands-Free composition | `pkg/speechkit/companion` |
+| Speaker diarization/attribution contracts | `pkg/speechkit/speaker` |
 | Server-connected mode calls | `pkg/speechkit/client` |
 | Embedded Voice Agent tools/session harness | `pkg/speechkit/agentkit`, `pkg/speechkit/voiceagent/live` |
 
@@ -66,6 +71,7 @@ The v0.40 patch line extends the public SDK surface without breaking the existin
 - `pkg/speechkit/tts` exposes `Provider`, `ProviderKind`, `Router`, `Service`, `NewService`, synthesis options, and fallback strategy for SDK hosts that need spoken output without importing desktop internals.
 - `pkg/speechkit/companion.NewHandsFree(...)` composes wake detections, target-mode routing, host-provided transcript requests, Assist, Voice Agent activation, optional TTS, and Event-Bus publication for hands-free hosts. Set `Options.TargetMode` to `companion.TargetAssist`, `companion.TargetVoiceAgent`, or `companion.TargetDictationUIAssisted`.
 - `pkg/speechkit/assist.Service` supports multi-turn `SessionKey`, skill context storage, codeword routing, TTS routing, and the optional `pkg/speechkit/assist/genkitadapter`.
+- `pkg/speechkit/speaker` exposes speaker options, normalized words/segments, diarization results, provider profiles, streaming audio formats, and `SpeakerFrame` for realtime attribution. Provider-specific adapters stay in internal STT/router packages.
 - `speechkit.Runtime.Events()` publishes additive Event-Bus events for wake detections, skill execution, companion sessions, Voice-Agent finalized turns, and TTS lifecycle.
 
 Compatibility note: additive event metadata, Assist audio, and Assist follow-up
@@ -85,6 +91,12 @@ The CLI also ships Go-only scaffolds for agent-created companions:
 `go-dictation-handsfree-ui`.
 
 Release status: shipped in the v0.40.1 SDK-surface merge and carried forward in the current v0.40 rollup. No standalone v0.40.0 tag exists or should be backfilled; public API checks compare the shipped v0.40 surface against the factual release line and keep deprecated public fields compatible through v0.40.x.
+
+Speaker Layer status: the provider-neutral public contracts are implemented in
+the current workspace and tracked for realtime live gates under Beads epic
+`kombify-SpeechKit-spk`. See
+[`docs/capabilities/voice-capability-matrix.json`](./capabilities/voice-capability-matrix.json)
+for provider support and auth status.
 
 ## Provider Catalog
 

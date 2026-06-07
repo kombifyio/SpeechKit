@@ -2,6 +2,8 @@
 
 package voiceagent
 
+import "github.com/kombifyio/SpeechKit/pkg/speechkit/speaker"
+
 // Wire protocol constants and shapes for the Voice Agent WebSocket.
 //
 // Control frames are JSON text messages with a required "type" field.
@@ -56,6 +58,7 @@ type StartFrame struct {
 	// Raw activity-detection policy override. Pipeline translates these to
 	// the kernel's internal enums.
 	ActivityDetection *ActivityDetectionFrame `json:"activity_detection,omitempty"`
+	Speaker           *speaker.Options        `json:"speaker,omitempty"`
 	// Optional durable instruction layered on top of the role's prompt.
 	SystemPromptOverride string `json:"system_prompt_override,omitempty"`
 }
@@ -102,9 +105,13 @@ type StateFrame struct {
 }
 
 type TranscriptFrame struct {
-	Type string `json:"type"` // "input_transcript" | "output_transcript"
-	Text string `json:"text"`
-	Done bool   `json:"done"`
+	Type              string  `json:"type"` // "input_transcript" | "output_transcript"
+	Text              string  `json:"text"`
+	Done              bool    `json:"done"`
+	SpeakerLabel      string  `json:"speaker_label,omitempty"`
+	PersonID          string  `json:"person_id,omitempty"`
+	DisplayName       string  `json:"display_name,omitempty"`
+	SpeakerConfidence float64 `json:"speaker_confidence,omitempty"`
 }
 
 type ToolCallFrame struct {

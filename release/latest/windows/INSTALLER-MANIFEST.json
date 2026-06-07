@@ -1,5 +1,5 @@
 {
-  "schema": "speechkit.latest-installer@1",
+  "schema": "speechkit.latest-installer@2",
   "version": "v0.40.6",
   "source_repo": "kombifyio/SpeechKit",
   "source_release_url": "https://github.com/kombifyio/SpeechKit/releases/tag/v0.40.6",
@@ -10,17 +10,20 @@
     {
       "name": "SpeechKit-Setup.exe",
       "size_bytes": 84166473,
-      "sha256": "fd0acd32c04af3a86b9daaecab6c3b9c63a27dcf5af8ad1f844fc2e89dabe137"
+      "sha256": "fd0acd32c04af3a86b9daaecab6c3b9c63a27dcf5af8ad1f844fc2e89dabe137",
+      "download_url": "https://github.com/kombifyio/SpeechKit/releases/download/v0.40.6/SpeechKit-Setup.exe"
     },
     {
       "name": "SpeechKit-x64.msi",
       "size_bytes": 70082560,
-      "sha256": "3531461e8ab0eaa5272fcc65c313ba66cc16f8bd4c554b1adb0d12f9ae10017a"
+      "sha256": "3531461e8ab0eaa5272fcc65c313ba66cc16f8bd4c554b1adb0d12f9ae10017a",
+      "download_url": "https://github.com/kombifyio/SpeechKit/releases/download/v0.40.6/SpeechKit-x64.msi"
     },
     {
       "name": "UNSIGNED-WINDOWS-RELEASE.txt",
       "size_bytes": 543,
-      "sha256": "d9d1e237db263389cbbcab387b764004b1460f3cb3c69c4887f16cdf014a3949"
+      "sha256": "d9d1e237db263389cbbcab387b764004b1460f3cb3c69c4887f16cdf014a3949",
+      "download_url": "https://github.com/kombifyio/SpeechKit/releases/download/v0.40.6/UNSIGNED-WINDOWS-RELEASE.txt"
     }
   ]
 }
