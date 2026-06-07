@@ -12,18 +12,15 @@ IDs, source paths, and other maintainer-only vocabulary.
 
 ## [Unreleased]
 
-### Changed
+## [0.42.1] - 2026-06-07
 
-- Internal: speech-to-text provider construction is now centralized in a single
-  registry, so every entry point builds providers from one mapping instead of
-  duplicating the per-provider wiring. No user-facing behavior change.
-- Internal: the voice-output profile-to-provider mapping is now shared between
-  the framework kernel and the embeddable SDK from one source of truth, removing
-  a duplicated copy. No user-facing behavior change.
-- Internal: the device and server adapters now resolve text-to-speech provider
-  credentials and defaults through one shared helper instead of two near-identical
-  copies, so configuration precedence stays consistent across both. No user-facing
-  behavior change in common configurations.
+Maintenance release that ships the v0.42 line as its first published build; no
+functional changes since 0.42.0.
+
+### Fixed
+
+- Restored and hardened the release pipeline so the published artifacts and the
+  GitHub Release stay in lockstep with the version shown on the website.
 
 ## [0.42.0] - 2026-06-05
 
@@ -63,6 +60,19 @@ Enterprise hardening and observability release. No breaking public API change.
   included in logs), and transcription and speech-synthesis calls emit
   OpenTelemetry spans with provider, language/format, and latency so a
   configured collector can trace requests end to end.
+
+### Changed
+
+- Internal: speech-to-text provider construction is now centralized in a single
+  registry, so every entry point builds providers from one mapping instead of
+  duplicating the per-provider wiring. No user-facing behavior change.
+- Internal: the voice-output profile-to-provider mapping is now shared between
+  the framework kernel and the embeddable SDK from one source of truth, removing
+  a duplicated copy. No user-facing behavior change.
+- Internal: the device and server adapters now resolve text-to-speech provider
+  credentials and defaults through one shared helper instead of two near-identical
+  copies, so configuration precedence stays consistent across both. No user-facing
+  behavior change in common configurations.
 
 ## [0.41.0] - 2026-06-04
 

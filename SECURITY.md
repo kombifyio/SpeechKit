@@ -43,51 +43,37 @@ Please include:
 - `gosec` intentionally excludes `G101` because SpeechKit stores environment variable names such as `OPENAI_API_KEY`, not credential values, in committed config defaults. It also excludes `G104` because unchecked Windows API return values are covered by `errcheck`/local review where those calls are meaningful.
 - Windows DPAPI and Win32 `unsafe` usage in `internal/secrets`, `internal/voiceagent`, `internal/hotkey`, and `internal/output` is treated as audited native interop. Changes to those files should keep comments explaining why each unsafe call is required and should include Windows-specific tests when practical.
 
-## Long-Lived Credentials & Rotation
+## Release Automation Credentials
 
-SpeechKit's automation surface depends on one long-lived credential that
-deserves explicit policy because Dependabot cannot rotate it: the
-`WORKFLOWS_SYNC_PAT` repository secret used by
-`.github/workflows/publish-oss.yml` to push the OSS export to
-`github.com/kombifyio/SpeechKit`.
+SpeechKit's release pipeline performs two pushes the workflow's default
+`GITHUB_TOKEN` cannot: it tags the private upstream so the downstream release
+workflows fire (`auto-tag-release.yml`), and it pushes the sanitized export —
+code **and** `.github/workflows` — to the OSS mirror
+`github.com/kombifyio/SpeechKit` (`publish-oss.yml`).
 
-**Why it exists.** The release GitHub App's token (the rest of the
-release path) has `Contents:write` but not `Workflows:write`. When the
-publish-oss workflow touches files under the mirror's
-`.github/workflows/`, GitHub rejects the push with
-`refusing to allow a GitHub App to create or update workflow`. The
-classic PAT carries `workflow` scope and is the documented escape
-hatch for this exact case.
+**Standardized on a GitHub App (no long-lived PAT).** Both pushes authenticate
+with a **GitHub App installation token**, minted fresh on every run from
+`vars.RELEASE_APP_ID` + `secrets.RELEASE_APP_PRIVATE_KEY` via
+`scripts/ci/create-github-app-token.mjs`. Installation tokens are short-lived
+(~1 hour), so there is no 90-day PAT to rotate and no silent-expiry failure
+mode. App-token tag pushes still trigger downstream workflows (unlike
+`GITHUB_TOKEN`). This replaces the former `WORKFLOWS_SYNC_PAT` classic PAT,
+whose expiry repeatedly stalled releases.
 
-**Rotation cadence: every 90 days.** GitHub silently rejects pushes
-once a classic PAT expires; the publish-oss run will fail with
-`403 forbidden` and the OSS release will stall until the secret is
-replaced. The rotation procedure:
+**One-time App setup.** The release App must be installed on both repositories
+with these permissions:
 
-1. Mint a new classic PAT under the maintainer's GitHub account.
-   Scopes: only `workflow`. Expiration: 90 days from today.
-2. Update the `WORKFLOWS_SYNC_PAT` secret in the SpeechKit
-   repository settings (`Secrets and variables → Actions`).
-3. Revoke the old PAT in the GitHub account's developer settings.
-4. Trigger `publish-oss.yml` manually (dispatch) or wait for the
-   next tag push and confirm the workflow's `Commit and push` step
-   completes green.
+- The private upstream repository: `Contents: write`
+  (the tag push in `auto-tag-release.yml`).
+- `kombifyio/SpeechKit` (OSS mirror): `Contents: write` + `Workflows: write`
+  (so the export, including `.github/workflows`, lands in one commit).
 
-**Migration plan (post-Sprint-6 follow-up).** The long-term fix is a
-dedicated GitHub App that the release pipeline mints a short-lived
-token from. Outline:
+**The only long-lived release secret is the App private key**
+(`RELEASE_APP_PRIVATE_KEY`). Rotate it only if it is exposed: generate a new
+private key in the App's settings, update the `RELEASE_APP_PRIVATE_KEY` secret,
+and delete the old key. No per-release token handling is required.
 
-- Create a `kombify-speechkit-publisher` GitHub App with the minimum
-  permissions: `Contents:write` and `Workflows:write`. Scope the
-  installation to the `kombifyio/SpeechKit` repository only.
-- Wire the publish-oss workflow to mint an installation token via
-  `actions/create-github-app-token` (the same action `publish-oss.yml`
-  already uses for the release App's token).
-- Run one publish-oss with both credentials available, confirm the
-  App-minted token succeeds for the workflows path, then remove
-  `WORKFLOWS_SYNC_PAT` from repository secrets and revoke the PAT.
-
-**Detection signal.** Any 90-day-old PAT is a hygiene finding; the
-`workflows-sync-pat-rotation` bd label tracks the next due date. CI
-itself flags a hard failure once the PAT expires (publish-oss fails
-with `Bad credentials` / `403`).
+**Detection signal.** If the App is missing an installation or permission, the
+tag step and the OSS `Commit and push` step fail with an explicit error naming
+the repository and the missing `Contents`/`Workflows` permission, rather than
+pushing a non-triggering ref.

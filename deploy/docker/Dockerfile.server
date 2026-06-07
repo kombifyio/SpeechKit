@@ -90,11 +90,18 @@ RUN apt-get update \
 # ONNX Runtime shared lib for the Silero VAD kernel. Pinned version must stay
 # in sync with `github.com/yalue/onnxruntime_go` in go.mod.
 ARG ONNX_VERSION=1.17.1
-RUN curl -Ls "https://github.com/microsoft/onnxruntime/releases/download/v${ONNX_VERSION}/onnxruntime-linux-x64-${ONNX_VERSION}.tgz" \
-      | tar -xz -C /tmp \
-    && cp -a "/tmp/onnxruntime-linux-x64-${ONNX_VERSION}/lib/." /usr/local/lib/ \
-    && ldconfig \
-    && rm -rf "/tmp/onnxruntime-linux-x64-${ONNX_VERSION}"
+# Download to a file with retries instead of streaming `curl | tar`: a piped
+# stream that drops mid-transfer (a recurring GitHub-release-asset flake)
+# would otherwise fail the whole release build with no retry. --retry-all-errors
+# also retries on transient 5xx/connection resets, not just curl's own errors.
+RUN set -eux; \
+    curl -fL --retry 5 --retry-all-errors --retry-delay 3 --connect-timeout 30 \
+      -o /tmp/onnxruntime.tgz \
+      "https://github.com/microsoft/onnxruntime/releases/download/v${ONNX_VERSION}/onnxruntime-linux-x64-${ONNX_VERSION}.tgz"; \
+    tar -xzf /tmp/onnxruntime.tgz -C /tmp; \
+    cp -a "/tmp/onnxruntime-linux-x64-${ONNX_VERSION}/lib/." /usr/local/lib/; \
+    ldconfig; \
+    rm -rf /tmp/onnxruntime.tgz "/tmp/onnxruntime-linux-x64-${ONNX_VERSION}"
 
 # Non-root runtime user with a fixed UID so persistent volumes keep stable
 # ownership across container restarts.

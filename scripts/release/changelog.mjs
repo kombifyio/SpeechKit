@@ -188,6 +188,29 @@ export function toMinorVersionLabel(version) {
   return `${match[1]}.${match[2]}`
 }
 
+// Compare the "X.Y" minor release lines of two version strings (a leading
+// "v" is tolerated). Returns 1 when `a` is a newer minor line than `b`,
+// -1 when older, and 0 when they share the same minor line. Unparseable
+// inputs collapse to 0.0 so an unknown value never reports as "ahead" of a
+// real release. Used by the website release verification to catch the case
+// where the marketing surface advertises a version whose download artifacts
+// have not actually been published yet.
+export function compareMinorLines(a, b) {
+  const parse = value => {
+    const match = /^v?(\d+)\.(\d+)/.exec(String(value).trim())
+    return match ? [Number(match[1]), Number(match[2])] : [0, 0]
+  }
+  const [aMajor, aMinor] = parse(a)
+  const [bMajor, bMinor] = parse(b)
+  if (aMajor !== bMajor) {
+    return aMajor > bMajor ? 1 : -1
+  }
+  if (aMinor !== bMinor) {
+    return aMinor > bMinor ? 1 : -1
+  }
+  return 0
+}
+
 export function renderReleaseNotes({ markdown, version, repoUrl, compareUrl }) {
   const sections = parseChangelogSections(markdown)
   const normalizedVersion = normalizeVersion(version)
