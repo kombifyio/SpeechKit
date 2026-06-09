@@ -142,6 +142,65 @@ func ResolveAssemblyAIKey(cfg *Config) (string, string) {
 	return "", envName
 }
 
+// ResolveDeepgramThinkKey resolves the bring-your-own think-LLM credential for
+// the Deepgram Voice Agent from the env var named in
+// [voice_agent].deepgram_think_api_key_env. It returns ("", "") when no env
+// name is configured — Deepgram's managed think LLM needs no client-supplied
+// key, so the absence of a configured env var is the normal managed case, not
+// an error.
+func ResolveDeepgramThinkKey(cfg *Config) (string, string) {
+	if cfg == nil {
+		return "", ""
+	}
+	envName := strings.TrimSpace(cfg.VoiceAgent.DeepgramThinkAPIKeyEnv)
+	if envName == "" {
+		return "", ""
+	}
+	if key := strings.TrimSpace(ResolveSecret(envName)); key != "" {
+		return key, envName
+	}
+	return "", envName
+}
+
+// DeepgramThinkSettings holds the resolved Deepgram Voice Agent think-LLM
+// parameters for the Server- and Device-Target wiring to apply to the kernel
+// provider via DeepgramLive.ConfigureThink. APIKey is already resolved from the
+// configured env var and is empty in managed-LLM mode.
+type DeepgramThinkSettings struct {
+	Provider    string
+	Model       string
+	EndpointURL string
+	APIKey      string
+}
+
+// DeepgramThinkConfig resolves the Deepgram Voice Agent think-LLM settings from
+// config. Model precedence: an explicit deepgram_think_model wins; otherwise a
+// non-Gemini [voice_agent].model is reused as the think model (preserving prior
+// behavior); a Gemini model id is ignored so it can't pin a non-existent
+// Deepgram think model. The bring-your-own credential is resolved only when an
+// endpoint URL is configured (managed LLMs need no client-supplied key).
+func (cfg *Config) DeepgramThinkConfig() DeepgramThinkSettings {
+	if cfg == nil {
+		return DeepgramThinkSettings{}
+	}
+	out := DeepgramThinkSettings{
+		Provider: strings.TrimSpace(cfg.VoiceAgent.DeepgramThinkProvider),
+		Model:    strings.TrimSpace(cfg.VoiceAgent.DeepgramThinkModel),
+	}
+	if out.Model == "" {
+		if m := strings.TrimSpace(cfg.VoiceAgent.Model); m != "" && !strings.Contains(strings.ToLower(m), "gemini") {
+			out.Model = m
+		}
+	}
+	if url := strings.TrimSpace(cfg.VoiceAgent.DeepgramThinkEndpointURL); url != "" {
+		out.EndpointURL = url
+		if key, _ := ResolveDeepgramThinkKey(cfg); key != "" {
+			out.APIKey = key
+		}
+	}
+	return out
+}
+
 func googleSTTKeyEnvCandidates(cfg *Config) []string {
 	candidates := []string{GoogleSTTAPIKeyEnvName(cfg), GoogleCloudSTTAPIKeyEnv, GoogleLegacySTTAPIKeyEnv}
 	if cfg != nil {

@@ -898,11 +898,51 @@ type AuditConfig struct {
 }
 
 // TelemetryConfig is the single switch surface for every outbound non-provider
-// HTTP call SpeechKit may make. Today the only such call is the auto-update
-// check; future calls (crash reports, usage stats) must add a field here
-// rather than create a parallel toggle.
+// HTTP call SpeechKit may make. Today such calls are the auto-update check and
+// the OpenTelemetry trace export; future calls (crash reports, usage stats)
+// must add a field here rather than create a parallel toggle.
 type TelemetryConfig struct {
 	UpdateCheck bool `toml:"update_check"`
+
+	// TracesOTLPEndpoint enables exporting the framework's OpenTelemetry spans
+	// (STT routing, TTS, Voice Agent, server lifecycle) to a vendor-neutral
+	// OTLP/HTTP traces receiver. When empty (the default) the server installs
+	// no TracerProvider, so every otel.Tracer span stays a zero-cost no-op and
+	// behaviour is unchanged. Point it at any OTLP/HTTP collector; for Sentry's
+	// OTLP ingestion use the full URL
+	// https://<org>.ingest.<region>.sentry.io/api/<project>/otlp/v1/traces.
+	TracesOTLPEndpoint string `toml:"traces_otlp_endpoint"`
+	// TracesSampleRate is the head sampling ratio in [0,1]. 0 (or >=1) means
+	// always-sample, which is the right default for a low-traffic dogfood
+	// deployment where we want to see every trace.
+	TracesSampleRate float64 `toml:"traces_sample_rate"`
+	// The OTLP auth secret stays out of config files. OTLPAuthHeaderName is the
+	// HTTP header to attach (e.g. "x-sentry-auth"); its value is read at startup
+	// from the environment variable named by OTLPAuthHeaderEnv (e.g. a
+	// Doppler/Render secret holding "sentry sentry_key=<public_key>"). When
+	// either is empty no auth header is sent (suitable for a local collector).
+	OTLPAuthHeaderName string `toml:"otlp_auth_header_name"`
+	OTLPAuthHeaderEnv  string `toml:"otlp_auth_header_env"`
+	// ServiceName + Environment tag every exported span's resource so Sentry can
+	// separate speechkit-server from other services and staging from prod.
+	ServiceName string `toml:"service_name"`
+	Environment string `toml:"environment"`
+}
+
+// TraceExportEnabled reports whether OTLP trace export is configured.
+func (t TelemetryConfig) TraceExportEnabled() bool {
+	return strings.TrimSpace(t.TracesOTLPEndpoint) != ""
+}
+
+// ResolveOTLPAuthHeader returns the configured OTLP auth header name and its
+// value resolved from the environment, or empty strings when not configured.
+func (t TelemetryConfig) ResolveOTLPAuthHeader() (name, value string) {
+	name = strings.TrimSpace(t.OTLPAuthHeaderName)
+	envName := strings.TrimSpace(t.OTLPAuthHeaderEnv)
+	if name == "" || envName == "" {
+		return "", ""
+	}
+	return name, strings.TrimSpace(ResolveSecret(envName))
 }
 
 type FeedbackConfig struct {
@@ -1009,6 +1049,7 @@ type TTSConfig struct {
 	Format      string         `toml:"format"`   // "mp3", "wav", "opus", "pcm"
 	OpenAI      TTSOpenAI      `toml:"openai"`
 	Google      TTSGoogle      `toml:"google"`
+	Deepgram    TTSDeepgram    `toml:"deepgram"`
 	HuggingFace TTSHuggingFace `toml:"huggingface"`
 	Local       TTSLocal       `toml:"local"`
 	Piper       TTSPiper       `toml:"piper"`
@@ -1023,6 +1064,15 @@ type TTSOpenAI struct {
 type TTSGoogle struct {
 	Enabled bool   `toml:"enabled"`
 	Voice   string `toml:"voice"` // e.g. "de-DE-Neural2-B"
+}
+
+// TTSDeepgram configures the Deepgram Aura-2 TTS provider. It reuses the
+// Deepgram API key from [providers.deepgram] (DEEPGRAM_API_KEY) — no separate
+// credential. Model is an Aura-2 voice id like "aura-2-thalia-en".
+type TTSDeepgram struct {
+	Enabled bool   `toml:"enabled"`
+	Model   string `toml:"model"` // Aura-2 voice id, e.g. "aura-2-thalia-en"
+	Voice   string `toml:"voice"` // optional explicit voice override (alias of Model)
 }
 
 type TTSHuggingFace struct {
@@ -1065,18 +1115,29 @@ type VoiceAgentConfig struct {
 	//
 	// The Server-Target reads this field via cmd/speechkit-server; the Device-
 	// Target currently always uses "gemini" and ignores it.
-	Provider               string `toml:"provider"`
-	Model                  string `toml:"model"`             // Real-time model ID (e.g. "gemini-3.1-flash-live-preview")
-	FallbackModel          string `toml:"fallback_model"`    // Fallback real-time model
-	Voice                  string `toml:"voice"`             // Voice name for real-time model
-	AgentProfileID         string `toml:"agent_profile_id"`  // Built-in Voice Agent profile ID; "default" preserves current behavior.
-	AgentSequenceID        string `toml:"agent_sequence_id"` // Optional workflow sequence ID; empty uses the selected persona default.
-	FrameworkPrompt        string `toml:"framework_prompt"`  // Durable host/framework instruction that defines the Voice Agent behavior
-	RefinementPrompt       string `toml:"refinement_prompt"` // User-specific refinement appended to the framework prompt
-	AutoStartOnLaunch      bool   `toml:"auto_start_on_launch"`
-	CloseBehavior          string `toml:"close_behavior"` // "continue" keeps the conversation window in the taskbar; "new_chat" ends the current chat on close
-	ReminderAfterIdleSec   int    `toml:"reminder_after_idle_sec"`
-	DeactivateAfterIdleSec int    `toml:"deactivate_after_idle_sec"`
+	Provider      string `toml:"provider"`
+	Model         string `toml:"model"`          // Real-time model ID (e.g. "gemini-3.1-flash-live-preview")
+	FallbackModel string `toml:"fallback_model"` // Fallback real-time model
+	Voice         string `toml:"voice"`          // Voice name for real-time model
+	// Deepgram Voice Agent think-LLM overrides. The think leg reasons over the
+	// transcript; listen (Nova-3) and speak (Aura-2) stay Deepgram. When unset,
+	// the kernel default (Deepgram-managed open_ai/gpt-4o-mini) applies. Setting
+	// DeepgramThinkEndpointURL + DeepgramThinkAPIKeyEnv switches the think leg to
+	// a bring-your-own LLM deployment, with the credential resolved from the
+	// named env var (env -> Doppler). Read by the Server- and Device-Target
+	// Deepgram Voice Agent wiring; ignored by the Gemini/cascaded backends.
+	DeepgramThinkProvider    string `toml:"deepgram_think_provider"`
+	DeepgramThinkModel       string `toml:"deepgram_think_model"`
+	DeepgramThinkEndpointURL string `toml:"deepgram_think_endpoint_url"`
+	DeepgramThinkAPIKeyEnv   string `toml:"deepgram_think_api_key_env"`
+	AgentProfileID           string `toml:"agent_profile_id"`  // Built-in Voice Agent profile ID; "default" preserves current behavior.
+	AgentSequenceID          string `toml:"agent_sequence_id"` // Optional workflow sequence ID; empty uses the selected persona default.
+	FrameworkPrompt          string `toml:"framework_prompt"`  // Durable host/framework instruction that defines the Voice Agent behavior
+	RefinementPrompt         string `toml:"refinement_prompt"` // User-specific refinement appended to the framework prompt
+	AutoStartOnLaunch        bool   `toml:"auto_start_on_launch"`
+	CloseBehavior            string `toml:"close_behavior"` // "continue" keeps the conversation window in the taskbar; "new_chat" ends the current chat on close
+	ReminderAfterIdleSec     int    `toml:"reminder_after_idle_sec"`
+	DeactivateAfterIdleSec   int    `toml:"deactivate_after_idle_sec"`
 	// HoldReleaseGraceSec controls how long the Voice Agent stays open after
 	// the user releases a hold-to-talk shortcut so the model has time to
 	// deliver its reply. 0 (or unset) falls back to the kernel default

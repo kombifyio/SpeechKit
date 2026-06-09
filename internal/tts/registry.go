@@ -9,6 +9,7 @@ import "strings"
 type EnabledProviders struct {
 	OpenAI      *OpenAIOpts
 	Google      *GoogleOpts
+	Deepgram    *DeepgramOpts
 	HuggingFace *HuggingFaceOpts
 	Piper       *PiperOpts
 	// PreferredProfileID optionally pins the provider matching this
@@ -30,6 +31,10 @@ func BuildRouter(strategy Strategy, enabled EnabledProviders) (router *Router, o
 	if enabled.Google != nil {
 		providers = append(providers, NewGoogle(*enabled.Google))
 		notes = append(notes, "TTS: Google registered (voice="+enabled.Google.Voice+")")
+	}
+	if enabled.Deepgram != nil {
+		providers = append(providers, NewDeepgram(*enabled.Deepgram))
+		notes = append(notes, "TTS: Deepgram Aura registered (model="+enabled.Deepgram.Model+")")
 	}
 	if enabled.HuggingFace != nil {
 		providers = append(providers, NewHuggingFace(*enabled.HuggingFace))

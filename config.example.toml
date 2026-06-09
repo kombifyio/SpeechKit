@@ -252,6 +252,11 @@ voice = "nova"                # alloy, echo, fable, onyx, nova, shimmer
 enabled = false
 voice = "de-DE-Neural2-B"     # Google Cloud TTS voice name
 
+[tts.deepgram]
+enabled = false
+model = "aura-2-thalia-en"    # Deepgram Aura-2 voice id; reuses DEEPGRAM_API_KEY from [providers.deepgram]
+voice = ""                    # optional explicit voice override (alias of model)
+
 [tts.huggingface]
 enabled = false
 model = "parler-tts/parler-tts-mini-multilingual-v1.1"  # Multilingual TTS via HF Inference API

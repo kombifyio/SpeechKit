@@ -31,6 +31,14 @@ func ensureSharedAIDeps(ctx context.Context, app *App) []string {
 	if app.aiDepsOnce {
 		return nil
 	}
+	// Without a config there is nothing to build; leave the AI deps nil so
+	// callers that need them (e.g. the cascaded Voice Agent provider) degrade
+	// to a clean "unavailable" error instead of dereferencing a nil config.
+	// app.Cfg is always set in production (newServerApp); this guards tests and
+	// any embedder that builds an App without one.
+	if app.Cfg == nil {
+		return nil
+	}
 	app.aiDepsOnce = true
 
 	var notes []string

@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"sort"
 	"strings"
 	"time"
 
@@ -21,6 +22,7 @@ import (
 const (
 	ProviderGemini   = "gemini"
 	ProviderOpenAI   = "openai"
+	ProviderDeepgram = "deepgram"
 	ProviderCascaded = "cascaded"
 	ProviderMoshi    = "moshi"
 )
@@ -35,14 +37,47 @@ const (
 // upgrade rather than a 404 at session creation — operators can then read
 // /readyz to see why).
 func buildVoiceAgentHandler(ctx context.Context, cfg *config.Config, app *App) (*vsserver.Handler, string, error) {
-	provider := strings.ToLower(strings.TrimSpace(cfg.VoiceAgent.Provider))
-	if provider == "" {
-		provider = ProviderGemini
+	defaultProvider := strings.ToLower(strings.TrimSpace(cfg.VoiceAgent.Provider))
+	if defaultProvider == "" {
+		defaultProvider = ProviderGemini
 	}
 
-	factory, status, err := buildProviderFactory(ctx, cfg, app, provider)
-	if err != nil {
-		return nil, status, err
+	// Register a factory for every Voice-Agent-capable provider that builds on
+	// this deployment so a client can switch backend per session via the WS
+	// start frame ("laufend wechseln" without a redeploy). The switchable set
+	// is the configured default plus Deepgram (native), Gemini Live (native),
+	// and Cascaded (STT router -> LLM -> TTS — the path through which AssemblyAI
+	// STT serves the Voice Agent). Providers whose keys/deps are missing are
+	// skipped and surfaced in the status line rather than failing the handler.
+	candidates := dedupeProviders(defaultProvider, ProviderDeepgram, ProviderGemini, ProviderCascaded)
+	factories := make(map[string]vsserver.ProviderFactory, len(candidates))
+	statusByProvider := make(map[string]string, len(candidates))
+	for _, p := range candidates {
+		f, st, err := buildProviderFactory(ctx, cfg, app, p)
+		if err != nil {
+			statusByProvider[p] = "unavailable: " + err.Error()
+			slog.Info("voiceagent: provider not registered (per-session switch disabled for it)", "provider", p, "reason", err)
+			continue
+		}
+		factories[p] = f
+		statusByProvider[p] = st
+	}
+	if factories[defaultProvider] == nil {
+		return nil, "no usable default voice agent provider", errors.New("voiceagent: default provider " + defaultProvider + " is unavailable: " + statusByProvider[defaultProvider])
+	}
+	// Status line leads with the default provider's status (bootstrap prefix-
+	// matches "ready"/"degraded"/"partial" on it), then lists the switchable
+	// alternates that registered successfully.
+	alts := make([]string, 0, len(factories))
+	for p := range factories {
+		if p != defaultProvider {
+			alts = append(alts, p)
+		}
+	}
+	sort.Strings(alts)
+	status := statusByProvider[defaultProvider]
+	if len(alts) > 0 {
+		status += "; switchable: " + strings.Join(alts, ", ")
 	}
 
 	ticketTTL := time.Duration(cfg.Server.TicketTTLSec) * time.Second
@@ -61,7 +96,6 @@ func buildVoiceAgentHandler(ctx context.Context, cfg *config.Config, app *App) (
 
 	resolver := &personaResolver{
 		cfg:      cfg,
-		apiKey:   resolveRealtimeAPIKey(cfg, provider),
 		registry: app.PersonaRegistry,
 	}
 
@@ -74,7 +108,8 @@ func buildVoiceAgentHandler(ctx context.Context, cfg *config.Config, app *App) (
 
 	h, err := vsserver.New(vsserver.HandlerOptions{
 		Manager:           manager,
-		Provider:          factory,
+		Providers:         factories,
+		DefaultProvider:   defaultProvider,
 		Persona:           resolver,
 		PublicURL:         cfg.Server.PublicURL,
 		AllowedOrigins:    cfg.Server.CORSAllowedOrigins,
@@ -145,6 +180,14 @@ func buildProviderFactory(ctx context.Context, cfg *config.Config, app *App, pro
 		}
 		return &openaiProviderFactory{}, status, nil
 
+	case ProviderDeepgram:
+		key, _ := config.ResolveDeepgramKey(cfg)
+		status := "ready (deepgram)"
+		if strings.TrimSpace(key) == "" {
+			status = "degraded: no Deepgram API key; Deepgram Voice Agent sessions will fail at upgrade"
+		}
+		return &deepgramProviderFactory{cfg: cfg}, status, nil
+
 	case ProviderCascaded:
 		ensureSharedAIDeps(ctx, app)
 		if app.STTRouter == nil {
@@ -181,6 +224,26 @@ func buildProviderFactory(ctx context.Context, cfg *config.Config, app *App, pro
 	}
 }
 
+// dedupeProviders normalises and de-duplicates a provider list while preserving
+// first-seen order, dropping empties. Used to assemble the switchable Voice
+// Agent provider set without registering the same backend twice.
+func dedupeProviders(providers ...string) []string {
+	seen := make(map[string]struct{}, len(providers))
+	out := make([]string, 0, len(providers))
+	for _, p := range providers {
+		n := strings.ToLower(strings.TrimSpace(p))
+		if n == "" {
+			continue
+		}
+		if _, ok := seen[n]; ok {
+			continue
+		}
+		seen[n] = struct{}{}
+		out = append(out, n)
+	}
+	return out
+}
+
 // ── persona resolver ────────────────────────────────────────────────────────
 
 // personaResolver implements vsserver.PersonaResolver by composing a
@@ -195,7 +258,6 @@ func buildProviderFactory(ctx context.Context, cfg *config.Config, app *App, pro
 // pick a persona.
 type personaResolver struct {
 	cfg      *config.Config
-	apiKey   string
 	registry *persona.Registry
 }
 
@@ -217,10 +279,18 @@ func normalizeStartSpeakerOptions(opts *speaker.Options) speaker.Options {
 func (r *personaResolver) resolve(start vsserver.StartFrame, stepIndex int) (vsserver.LiveConfigFrame, error) {
 	va := r.cfg.VoiceAgent
 
+	// The adapter normalises start.Provider to the resolved backend before
+	// calling Resolve, so the API key + model match THIS session's provider
+	// (empty falls back to the configured default provider's credentials).
+	provider := strings.ToLower(strings.TrimSpace(start.Provider))
+	if provider == "" {
+		provider = strings.ToLower(strings.TrimSpace(va.Provider))
+	}
+
 	frame := vsserver.LiveConfigFrame{
-		Model:             r.resolveModel(start.Model),
+		Model:             r.resolveModel(start.Model, provider),
 		FallbackModel:     va.FallbackModel,
-		APIKey:            r.apiKey,
+		APIKey:            resolveRealtimeAPIKey(r.cfg, provider),
 		Voice:             firstNonEmpty(start.Voice, va.Voice),
 		SystemPrompt:      firstNonEmpty(start.SystemPromptOverride, va.FrameworkPrompt),
 		RefinementPrompt:  va.RefinementPrompt,
@@ -341,8 +411,8 @@ func intToInt32Clamp(value int) int32 {
 	}
 }
 
-func (r *personaResolver) resolveModel(startModel string) string {
-	if strings.EqualFold(strings.TrimSpace(r.cfg.VoiceAgent.Provider), ProviderOpenAI) {
+func (r *personaResolver) resolveModel(startModel, provider string) string {
+	if strings.EqualFold(strings.TrimSpace(provider), ProviderOpenAI) {
 		return firstNonEmpty(startModel, r.cfg.Providers.OpenAI.RealtimeModel, vskernel.DefaultOpenAIRealtimeModel)
 	}
 	return firstNonEmpty(startModel, r.cfg.VoiceAgent.Model)
@@ -368,6 +438,9 @@ func resolveRealtimeAPIKey(cfg *config.Config, provider string) string {
 	switch provider {
 	case ProviderOpenAI:
 		return strings.TrimSpace(config.ResolveSecret(cfg.Providers.OpenAI.APIKeyEnv))
+	case ProviderDeepgram:
+		key, _ := config.ResolveDeepgramKey(cfg)
+		return strings.TrimSpace(key)
 	default:
 		return strings.TrimSpace(config.ResolveSecret(cfg.Providers.Google.APIKeyEnv))
 	}
@@ -647,4 +720,98 @@ func nonZeroFloat(v, fallback float64) float64 {
 		return v
 	}
 	return fallback
+}
+
+// ── Deepgram Voice Agent provider factory + bridge ───────────────────────────
+
+type deepgramProviderFactory struct {
+	cfg *config.Config
+}
+
+func (f *deepgramProviderFactory) NewProvider() vsserver.LiveProviderAdapter {
+	inner := vskernel.NewDeepgramLive()
+	// Listen (Nova-3) and speak (Aura-2) are fixed Deepgram legs; the think LLM
+	// is configurable. deepgram_think_* config selects provider/model and an
+	// optional bring-your-own endpoint+credential; a non-Gemini
+	// [voice_agent].model is reused as the think model for back-compat. A Gemini
+	// model id is ignored so it can't pin a non-existent Deepgram think model.
+	if f.cfg != nil {
+		think := f.cfg.DeepgramThinkConfig()
+		inner.ConfigureThink(think.Provider, think.Model, think.EndpointURL, think.APIKey)
+	}
+	return &deepgramLiveBridge{inner: inner}
+}
+
+// deepgramLiveBridge adapts the kernel's DeepgramLive provider to the narrow
+// interface the WebSocket handler consumes. Same translation pattern as
+// geminiLiveBridge / openaiLiveBridge.
+type deepgramLiveBridge struct {
+	inner *vskernel.DeepgramLive
+}
+
+func (b *deepgramLiveBridge) Connect(ctx context.Context, cfg vsserver.LiveConfigFrame) error {
+	if cfg.APIKey == "" {
+		return errors.New("voiceagent: no Deepgram API key configured for this deployment")
+	}
+	liveCfg := vskernel.LiveConfig{
+		APIKey:           cfg.APIKey,
+		Voice:            cfg.Voice,
+		FrameworkPrompt:  cfg.SystemPrompt,
+		RefinementPrompt: cfg.RefinementPrompt,
+		Locale:           cfg.Locale,
+		Speaker:          cfg.Speaker,
+	}
+	if err := b.inner.Connect(ctx, liveCfg); err != nil {
+		slog.Warn("voiceagent: Deepgram Voice Agent connect failed", "err", err)
+		return err
+	}
+	return nil
+}
+
+func (b *deepgramLiveBridge) SendAudio(chunk []byte) error   { return b.inner.SendAudio(chunk) }
+func (b *deepgramLiveBridge) SendAudioStreamEnd() error      { return b.inner.SendAudioStreamEnd() }
+func (b *deepgramLiveBridge) SendText(text string) error     { return b.inner.SendText(text) }
+func (b *deepgramLiveBridge) Close() error                   { return b.inner.Close() }
+func (b *deepgramLiveBridge) Name() string                   { return b.inner.Name() }
+func (b *deepgramLiveBridge) SupportsLiveKitTransport() bool { return true }
+
+func (b *deepgramLiveBridge) UpdateInstructions(ctx context.Context, cfg vsserver.LiveConfigFrame) error {
+	return b.inner.UpdateInstructions(ctx, vskernel.LiveConfig{
+		FrameworkPrompt:  cfg.SystemPrompt,
+		RefinementPrompt: cfg.RefinementPrompt,
+		Locale:           cfg.Locale,
+		Voice:            cfg.Voice,
+	})
+}
+
+func (b *deepgramLiveBridge) SendToolResponse(frame vsserver.ToolResponseFrame) error {
+	return b.inner.SendToolResponse(vskernel.ToolResponse{
+		ID:       frame.ID,
+		Name:     frame.Name,
+		Response: frame.Response,
+	})
+}
+
+func (b *deepgramLiveBridge) Receive(ctx context.Context) (*vsserver.LiveMessage, error) {
+	msg, err := b.inner.Receive(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if msg == nil {
+		return nil, nil
+	}
+	return &vsserver.LiveMessage{
+		Audio:                  msg.Audio,
+		InputTranscript:        msg.InputTranscript,
+		InputTranscriptDone:    msg.InputTranscriptDone,
+		InputSpeakerLabel:      msg.InputSpeakerLabel,
+		InputPersonID:          msg.InputPersonID,
+		InputDisplayName:       msg.InputDisplayName,
+		InputSpeakerConfidence: msg.InputSpeakerConfidence,
+		OutputTranscript:       msg.OutputTranscript,
+		OutputTranscriptDone:   msg.OutputTranscriptDone,
+		ToolCalls:              mapKernelToolCalls(msg.ToolCalls),
+		Interrupted:            msg.Interrupted,
+		GoAway:                 msg.GoAway,
+	}, nil
 }

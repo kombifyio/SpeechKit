@@ -3,6 +3,8 @@
 package core
 
 import (
+	"crypto/sha256"
+	"encoding/base64"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -195,9 +197,52 @@ func writeHTML(w http.ResponseWriter, r *http.Request, html string) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("X-Content-Type-Options", "nosniff")
+	w.Header().Set("Content-Security-Policy", inlineHTMLCSP(html))
 	w.WriteHeader(http.StatusOK)
 	if r.Method == http.MethodHead {
 		return
 	}
 	_, _ = io.WriteString(w, html)
+}
+
+func inlineHTMLCSP(html string) string {
+	return strings.Join([]string{
+		"default-src 'none'",
+		"style-src " + cspSources(cspBlockHashes(html, "<style>", "</style>")),
+		"script-src " + cspSources(cspBlockHashes(html, "<script>", "</script>")),
+		"connect-src 'self' ws: wss:",
+		"object-src 'none'",
+		"frame-ancestors 'none'",
+		"base-uri 'none'",
+		"form-action 'self'",
+	}, "; ")
+}
+
+func cspSources(hashes []string) string {
+	if len(hashes) == 0 {
+		return "'none'"
+	}
+	return strings.Join(hashes, " ")
+}
+
+func cspBlockHashes(html, openTag, closeTag string) []string {
+	var hashes []string
+	for {
+		start := strings.Index(html, openTag)
+		if start < 0 {
+			return hashes
+		}
+		html = html[start+len(openTag):]
+		end := strings.Index(html, closeTag)
+		if end < 0 {
+			return hashes
+		}
+		hashes = append(hashes, cspSourceHash(html[:end]))
+		html = html[end+len(closeTag):]
+	}
+}
+
+func cspSourceHash(source string) string {
+	sum := sha256.Sum256([]byte(source))
+	return "'sha256-" + base64.StdEncoding.EncodeToString(sum[:]) + "'"
 }

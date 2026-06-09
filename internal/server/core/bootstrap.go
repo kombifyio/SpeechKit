@@ -104,6 +104,10 @@ type App struct {
 	bootstrapSealed atomic.Bool
 
 	aiDepsOnce bool
+
+	// telemetryShutdown flushes and stops the OpenTelemetry trace pipeline
+	// installed by initServerTelemetry. Nil when trace export is disabled.
+	telemetryShutdown func(context.Context) error
 }
 
 func dictationPromptFromDictionary(dictionary string) string {
@@ -141,6 +145,7 @@ func Run(ctx context.Context, cfg *config.Config, opts RunOptions) error {
 
 	app := newServerApp(cfg, opts)
 	registerCoreEndpoints(app)
+	initServerTelemetry(ctx, app) //nolint:contextcheck // the trace provider is process-scoped startup state, not request-scoped work.
 
 	// Build the STT router and register dictation/assist/voiceagent handlers
 	// for whichever modes are enabled. The router is shared across all three
@@ -532,6 +537,13 @@ func serveServer(ctx context.Context, cfg *config.Config, app *App) error {
 	if app.Lifecycle != nil {
 		if err := app.Lifecycle.Shutdown(shutdownCtx); err != nil {
 			slog.Warn("server lifecycle shutdown", "err", err)
+		}
+	}
+	// Flush the OpenTelemetry trace pipeline last so spans emitted during
+	// lifecycle shutdown are exported before the batch processor stops.
+	if app.telemetryShutdown != nil {
+		if err := app.telemetryShutdown(shutdownCtx); err != nil {
+			slog.Warn("telemetry flush/shutdown failed", "err", err)
 		}
 	}
 

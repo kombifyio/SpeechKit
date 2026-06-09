@@ -41,6 +41,27 @@ func TestRegisterTestUI_ServesModeTester(t *testing.T) {
 	}
 }
 
+func TestRegisterTestUI_ServesSmokeWithInlineAssetCSPHashes(t *testing.T) {
+	app := &App{Mux: http.NewServeMux()}
+	registerTestUI(app)
+
+	rec := httptest.NewRecorder()
+	app.Mux.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/", nil))
+
+	csp := rec.Header().Get("Content-Security-Policy")
+	if csp == "" {
+		t.Fatal("smoke UI must set a CSP for its inline assets")
+	}
+	for _, want := range []string{"style-src 'sha256-", "script-src 'sha256-", "connect-src 'self' ws: wss:"} {
+		if !strings.Contains(csp, want) {
+			t.Fatalf("smoke UI CSP missing %q: %s", want, csp)
+		}
+	}
+	if strings.Contains(csp, "'unsafe-inline'") {
+		t.Fatalf("smoke UI CSP must use hashes instead of unsafe-inline: %s", csp)
+	}
+}
+
 func TestRegisterTestUI_ServesSetupOnly(t *testing.T) {
 	app := &App{Mux: http.NewServeMux()}
 	registerTestUI(app)

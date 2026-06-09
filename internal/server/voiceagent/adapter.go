@@ -8,6 +8,8 @@ import (
 	"errors"
 	"log/slog"
 	"runtime/debug"
+	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -27,10 +29,16 @@ import (
 // When either pump errors or the provider reports session_end, the adapter
 // closes the socket, calls OnClose, and returns from Run.
 type Adapter struct {
-	Session  *ManagedSession
-	Conn     *websocket.Conn
-	Provider LiveProviderAdapter
-	Persona  PersonaResolver
+	Session *ManagedSession
+	Conn    *websocket.Conn
+	// Provider, when set, is used directly (tests pre-inject a fake). In
+	// production it is nil and the provider is chosen per session from
+	// Providers[StartFrame.Provider || DefaultProvider] after the start frame
+	// is read — this is what makes the backend switchable per session.
+	Provider        LiveProviderAdapter
+	Providers       map[string]ProviderFactory
+	DefaultProvider string
+	Persona         PersonaResolver
 	// MediaBridge starts an optional LiveKit media bridge for sessions that
 	// keep this WebSocket as control transport and move audio through LiveKit.
 	MediaBridge MediaBridgeFactory
@@ -66,6 +74,21 @@ func (a *Adapter) Run(parent context.Context) {
 	if err != nil {
 		a.sendError(ctx, "start_required", err.Error())
 		return
+	}
+	// Select the realtime backend for this session. Tests pre-set a.Provider;
+	// production picks from the factory map by the client-requested provider
+	// (falling back to the server default) so backends are switchable per
+	// session without a redeploy.
+	if a.Provider == nil {
+		provider, resolved, err := a.selectProvider(start.Provider)
+		if err != nil {
+			a.sendError(ctx, "provider_unavailable", err.Error())
+			return
+		}
+		a.Provider = provider
+		// Normalise so the persona resolver (which picks the API key + model
+		// per provider) and the sequence runner see the resolved backend.
+		start.Provider = resolved
 	}
 	transport, err := normalizeMediaTransport(start.MediaTransport)
 	if err != nil {
@@ -170,6 +193,30 @@ func (a *Adapter) guardPump(name string, done chan<- struct{}) {
 	case done <- struct{}{}:
 	default:
 	}
+}
+
+// selectProvider resolves the client-requested provider name (or the server
+// default when empty) to a fresh provider instance. Returns the resolved name
+// so the caller can normalise the StartFrame for downstream resolution.
+func (a *Adapter) selectProvider(requested string) (LiveProviderAdapter, string, error) {
+	name := strings.ToLower(strings.TrimSpace(requested))
+	if name == "" {
+		name = strings.ToLower(strings.TrimSpace(a.DefaultProvider))
+	}
+	if name == "" {
+		return nil, "", errors.New("no voice agent provider requested and no server default configured")
+	}
+	factory, ok := a.Providers[name]
+	if !ok || factory == nil {
+		available := make([]string, 0, len(a.Providers))
+		for k := range a.Providers {
+			available = append(available, k)
+		}
+		sort.Strings(available)
+		return nil, name, errors.New("voice agent provider " + strconv.Quote(name) +
+			" is not available on this server; configured: " + strings.Join(available, ", "))
+	}
+	return factory.NewProvider(), name, nil
 }
 
 func (a *Adapter) waitForStart(ctx context.Context) (StartFrame, error) {

@@ -235,7 +235,7 @@ func (h *Handler) upload(w http.ResponseWriter, r *http.Request) {
 	}
 
 	r.Body = http.MaxBytesReader(w, r.Body, h.maxUploadBytes+(64<<10))
-	if err := r.ParseMultipartForm(64 << 10); err != nil {
+	if err := r.ParseMultipartForm(64 << 10); err != nil { // #nosec G120 -- request body is capped by MaxBytesReader immediately above.
 		httpx.WriteError(w, http.StatusBadRequest, "invalid_multipart",
 			"failed to parse multipart body: "+err.Error())
 		return

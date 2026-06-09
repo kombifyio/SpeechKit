@@ -47,6 +47,12 @@ type StartFrame struct {
 	PersonaID  string `json:"persona_id,omitempty"`
 	RoleID     string `json:"role_id,omitempty"`
 	SequenceID string `json:"sequence_id,omitempty"`
+	// Provider selects the realtime backend for THIS session, e.g. "deepgram",
+	// "gemini", or "cascaded". Empty uses the server's configured default. An
+	// unknown or unconfigured provider is rejected at start with a
+	// provider_unavailable error. This is what lets a tester switch backends
+	// per session ("laufend wechseln") without a server redeploy.
+	Provider string `json:"provider,omitempty"`
 	// MediaTransport selects where microphone and model audio move. Empty
 	// defaults to "websocket" for existing clients. "livekit" keeps this
 	// WebSocket as the control channel and moves audio through LiveKit tracks.

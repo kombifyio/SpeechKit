@@ -18,6 +18,7 @@ import "strings"
 //
 //	tts.openai.*                        → "openai"
 //	tts.google.*                        → "google"
+//	tts.deepgram.*                      → "deepgram"
 //	tts.huggingface.*                   → "huggingface"
 //	tts.openedai.* / tts.kokoro.*       → "kokoro"            (OpenAI-compatible self-hosted endpoint)
 //	tts.local.kokoro*                   → "kokoro_local"      (ONNX in-process)
@@ -34,6 +35,8 @@ func PreferredProvider(profileID string) string {
 		return "openai"
 	case strings.HasPrefix(id, "tts.google."):
 		return "google"
+	case strings.HasPrefix(id, "tts.deepgram."):
+		return "deepgram"
 	case strings.HasPrefix(id, "tts.huggingface."):
 		return "huggingface"
 	case strings.HasPrefix(id, "tts.openedai."), strings.HasPrefix(id, "tts.kokoro."):

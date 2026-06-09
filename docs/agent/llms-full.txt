@@ -1,4 +1,4 @@
-# SpeechKit v0.42 Agent Context
+# SpeechKit v0.43 Agent Context
 
 SpeechKit is a voice framework for products and automation hosts. It has three
 strict modes:
@@ -7,8 +7,9 @@ strict modes:
 - Assist: one-shot utility, codeword, or LLM result with optional TTS.
 - Voice Agent: realtime audio-to-audio dialogue for fast follow-ups.
 
-v0.42 is the SDK-surface release line: wake-word, Assist, Voice-Companion,
-Event-Bus, and TTS building blocks are embeddable from `pkg/speechkit/...`.
+v0.43 is the provider expansion release line: Deepgram and AssemblyAI provider
+choices, speaker-aware transcription, and Deepgram Voice Agent support sit
+alongside the embeddable `pkg/speechkit/...` building blocks.
 Hands-Free is the activation and voice-output layer for Dictation, Assist, and
 Voice Agent; it is not a fourth mode.
 The latest GitHub Release is the canonical source for desktop installers.
@@ -89,7 +90,7 @@ Browser WebSocket auth is subprotocol-first. Use the `ws_url` and
 server bearer token into a browser WebSocket handshake. Tickets default to 90
 seconds; expired tickets are not refreshed in v1, so create a new session.
 
-Important v0.42 surfaces:
+Important v0.43 surfaces:
 
 - `GET /v1/catalog/profiles`
 - `GET /v1/catalog/contracts`

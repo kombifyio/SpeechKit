@@ -81,6 +81,56 @@ func TestResolveAssemblyAIKeyUsesDefaultEnv(t *testing.T) {
 	}
 }
 
+func TestResolveDeepgramThinkKey(t *testing.T) {
+	disableDopplerForCredentialTest(t)
+
+	// No env name configured -> managed mode, no key, no error.
+	if key, source := ResolveDeepgramThinkKey(&Config{}); key != "" || source != "" {
+		t.Fatalf("ResolveDeepgramThinkKey(managed) = (%q, %q), want empty", key, source)
+	}
+
+	// Configured env name resolves the key and reports its source.
+	t.Setenv("CUSTOM_THINK_KEY", "think-byo-key")
+	cfg := &Config{}
+	cfg.VoiceAgent.DeepgramThinkAPIKeyEnv = "CUSTOM_THINK_KEY"
+	if key, source := ResolveDeepgramThinkKey(cfg); key != "think-byo-key" || source != "CUSTOM_THINK_KEY" {
+		t.Fatalf("ResolveDeepgramThinkKey(byo) = (%q, %q)", key, source)
+	}
+}
+
+func TestDeepgramThinkConfig(t *testing.T) {
+	disableDopplerForCredentialTest(t)
+
+	// Back-compat: a non-Gemini [voice_agent].model is reused as the think model;
+	// no endpoint -> managed mode, no key.
+	cfg := &Config{}
+	cfg.VoiceAgent.Model = "gpt-4o-mini"
+	if got := cfg.DeepgramThinkConfig(); got.Model != "gpt-4o-mini" || got.EndpointURL != "" || got.APIKey != "" {
+		t.Fatalf("back-compat model reuse mismatch: %#v", got)
+	}
+
+	// A Gemini realtime model id must NOT leak into the Deepgram think model.
+	cfg = &Config{}
+	cfg.VoiceAgent.Model = "gemini-3.1-flash-live-preview"
+	if got := cfg.DeepgramThinkConfig(); got.Model != "" {
+		t.Fatalf("Gemini model must be ignored for Deepgram think, got %q", got.Model)
+	}
+
+	// Explicit think model wins over the realtime model; BYO endpoint resolves
+	// the credential from the configured env.
+	t.Setenv("CUSTOM_THINK_KEY", "think-byo-key")
+	cfg = &Config{}
+	cfg.VoiceAgent.Model = "gpt-4o-mini"
+	cfg.VoiceAgent.DeepgramThinkProvider = "open_ai"
+	cfg.VoiceAgent.DeepgramThinkModel = "gpt-4o"
+	cfg.VoiceAgent.DeepgramThinkEndpointURL = "https://llm.example/v1"
+	cfg.VoiceAgent.DeepgramThinkAPIKeyEnv = "CUSTOM_THINK_KEY"
+	got := cfg.DeepgramThinkConfig()
+	if got.Provider != "open_ai" || got.Model != "gpt-4o" || got.EndpointURL != "https://llm.example/v1" || got.APIKey != "think-byo-key" {
+		t.Fatalf("explicit think config mismatch: %#v", got)
+	}
+}
+
 func TestGoogleSTTCredentialEnvNamesUseDefaultsAndOverrides(t *testing.T) {
 	if got := GoogleSTTCredentialsJSONEnvName(nil); got != GoogleSTTCredentialsJSONEnv {
 		t.Fatalf("GoogleSTTCredentialsJSONEnvName(nil) = %q", got)

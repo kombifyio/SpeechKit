@@ -8,6 +8,21 @@ import (
 	"time"
 )
 
+// configureForTest configures the package-global audit logger for a test and
+// registers a cleanup that closes the active log file. ConfigureFromOptions
+// keeps the daily log file open for appends; on Windows an open file cannot be
+// removed, so without releasing it first the t.TempDir() RemoveAll cleanup
+// fails with "The process cannot access the file because it is being used by
+// another process." Registering this after t.TempDir() means it runs first
+// (t.Cleanup is LIFO), closing the file before the directory is removed.
+func configureForTest(t *testing.T, opts ConfigOptions) {
+	t.Helper()
+	if err := ConfigureFromOptions(opts); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = ConfigureFromOptions(ConfigOptions{}) })
+}
+
 func readChain(t *testing.T, dir string) []Record {
 	t.Helper()
 	dateKey := time.Now().UTC().Format("2006-01-02")
@@ -39,9 +54,7 @@ func appendN(t *testing.T, n int) {
 func TestChain_IntactVerifies(t *testing.T) {
 	dir := t.TempDir()
 	key := []byte("test-integrity-key")
-	if err := ConfigureFromOptions(ConfigOptions{Enabled: true, Dir: dir, HMACKey: key}); err != nil {
-		t.Fatal(err)
-	}
+	configureForTest(t, ConfigOptions{Enabled: true, Dir: dir, HMACKey: key})
 	appendN(t, 5)
 
 	recs := readChain(t, dir)
@@ -64,7 +77,7 @@ func TestChain_IntactVerifies(t *testing.T) {
 func TestChain_DetectsContentTampering(t *testing.T) {
 	dir := t.TempDir()
 	key := []byte("k")
-	_ = ConfigureFromOptions(ConfigOptions{Enabled: true, Dir: dir, HMACKey: key})
+	configureForTest(t, ConfigOptions{Enabled: true, Dir: dir, HMACKey: key})
 	appendN(t, 4)
 
 	recs := readChain(t, dir)
@@ -78,7 +91,7 @@ func TestChain_DetectsContentTampering(t *testing.T) {
 func TestChain_DetectsDeletion(t *testing.T) {
 	dir := t.TempDir()
 	key := []byte("k")
-	_ = ConfigureFromOptions(ConfigOptions{Enabled: true, Dir: dir, HMACKey: key})
+	configureForTest(t, ConfigOptions{Enabled: true, Dir: dir, HMACKey: key})
 	appendN(t, 4)
 
 	recs := readChain(t, dir)
@@ -91,7 +104,7 @@ func TestChain_DetectsDeletion(t *testing.T) {
 
 func TestChain_WrongKeyFails(t *testing.T) {
 	dir := t.TempDir()
-	_ = ConfigureFromOptions(ConfigOptions{Enabled: true, Dir: dir, HMACKey: []byte("real-key")})
+	configureForTest(t, ConfigOptions{Enabled: true, Dir: dir, HMACKey: []byte("real-key")})
 	appendN(t, 3)
 
 	recs := readChain(t, dir)
@@ -103,10 +116,11 @@ func TestChain_WrongKeyFails(t *testing.T) {
 func TestChain_SurvivesRestart(t *testing.T) {
 	dir := t.TempDir()
 	key := []byte("k")
-	_ = ConfigureFromOptions(ConfigOptions{Enabled: true, Dir: dir, HMACKey: key})
+	configureForTest(t, ConfigOptions{Enabled: true, Dir: dir, HMACKey: key})
 	appendN(t, 2)
 	// Simulate a process restart: reconfigure clears the in-memory chain head,
-	// forcing a re-seed from the file tail on the next write.
+	// forcing a re-seed from the file tail on the next write. The configureForTest
+	// cleanup above still closes whichever file is open when the test ends.
 	_ = ConfigureFromOptions(ConfigOptions{Enabled: true, Dir: dir, HMACKey: key})
 	appendN(t, 2)
 
@@ -121,7 +135,7 @@ func TestChain_SurvivesRestart(t *testing.T) {
 
 func TestChain_KeylessStillChains(t *testing.T) {
 	dir := t.TempDir()
-	_ = ConfigureFromOptions(ConfigOptions{Enabled: true, Dir: dir}) // no key
+	configureForTest(t, ConfigOptions{Enabled: true, Dir: dir}) // no key
 	appendN(t, 3)
 
 	recs := readChain(t, dir)

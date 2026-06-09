@@ -643,7 +643,7 @@ func NewAdminSessionCookie(username, passwordHash string, secure bool, now time.
 	if token == "" {
 		return nil, http.ErrNoCookie
 	}
-	return &http.Cookie{
+	return &http.Cookie{ // #nosec G124 -- Secure follows the request/proxy scheme so local HTTP admin login keeps working.
 		Name:     adminSessionCookieName,
 		Value:    token,
 		Path:     "/",
@@ -674,7 +674,7 @@ func NewAdminCSRFCookie(sessionCookieValue string, secure bool, now time.Time) *
 		now = time.Now()
 	}
 	expires := now.Add(adminSessionTTL)
-	return &http.Cookie{
+	return &http.Cookie{ // #nosec G124 -- CSRF double-submit cookie must be JS-readable; SameSite Strict binds it to same-origin requests.
 		Name:     adminCSRFCookieName,
 		Value:    csrfTokenFor(sessionCookieValue),
 		Path:     "/",
@@ -759,7 +759,7 @@ func (a authRuntime) setAdminSessionCookie(w http.ResponseWriter, r *http.Reques
 		ExpiresAt: expires.Unix(),
 		Nonce:     base64.RawURLEncoding.EncodeToString(mustRandomBytes(16)),
 	}, passwordHash)
-	http.SetCookie(w, &http.Cookie{
+	http.SetCookie(w, &http.Cookie{ // #nosec G124 -- Secure follows the request/proxy scheme so local HTTP admin login keeps working.
 		Name:     adminSessionCookieName,
 		Value:    token,
 		Path:     "/",
@@ -769,7 +769,7 @@ func (a authRuntime) setAdminSessionCookie(w http.ResponseWriter, r *http.Reques
 		Secure:   secure,
 		SameSite: http.SameSiteLaxMode,
 	})
-	http.SetCookie(w, &http.Cookie{
+	http.SetCookie(w, &http.Cookie{ // #nosec G124 -- CSRF double-submit cookie must be JS-readable; SameSite Strict binds it to same-origin requests.
 		Name:  adminCSRFCookieName,
 		Value: csrfTokenFor(token),
 		Path:  "/",
@@ -789,7 +789,7 @@ func (a authRuntime) setAdminSessionCookie(w http.ResponseWriter, r *http.Reques
 
 func (a authRuntime) clearAdminSessionCookie(w http.ResponseWriter, r *http.Request) {
 	secure := a.trustedProxies.RequestIsHTTPS(r)
-	http.SetCookie(w, &http.Cookie{
+	http.SetCookie(w, &http.Cookie{ // #nosec G124 -- deletion cookie mirrors the session cookie attributes for reliable expiry.
 		Name:     adminSessionCookieName,
 		Value:    "",
 		Path:     "/",
@@ -799,7 +799,7 @@ func (a authRuntime) clearAdminSessionCookie(w http.ResponseWriter, r *http.Requ
 		Secure:   secure,
 		SameSite: http.SameSiteLaxMode,
 	})
-	http.SetCookie(w, &http.Cookie{
+	http.SetCookie(w, &http.Cookie{ // #nosec G124 -- deletion cookie mirrors the JS-readable CSRF cookie attributes for reliable expiry.
 		Name:     adminCSRFCookieName,
 		Value:    "",
 		Path:     "/",

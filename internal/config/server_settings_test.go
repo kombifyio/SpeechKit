@@ -330,7 +330,7 @@ func TestSaveServerModelSettings_RejectsInvalidSecurityAndProviderSettings(t *te
 			settings: ServerModelSettings{
 				VoiceAgent: ServerVoiceAgentSettings{Provider: "shell"},
 			},
-			want: "voice_agent.provider must be cascaded, gemini, or moshi",
+			want: "voice_agent.provider must be cascaded, gemini, openai, deepgram, or moshi",
 		},
 		{
 			name: "oversized raw credential value",

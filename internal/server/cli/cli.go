@@ -99,6 +99,9 @@ func runOnce(opts Options) int {
 	}
 
 	defaultNotes := config.ApplyServerRuntimeDefaults(cfg)
+	if config.KombifyDeploymentDefaultsRequested() {
+		defaultNotes = append(defaultNotes, config.ApplyKombifyDeploymentDefaults(cfg)...)
+	}
 	settingsNotes, err := config.ApplyServerModelSettingsFile(cfg)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "%s: load server model settings: %v\n", banner, err)

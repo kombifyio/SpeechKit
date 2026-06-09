@@ -12,6 +12,43 @@ IDs, source paths, and other maintainer-only vocabulary.
 
 ## [Unreleased]
 
+## [0.43.0] - 2026-06-09
+
+Provider expansion release for cloud speech, speaker-aware transcription, and
+real-time voice. No breaking public API change.
+
+### Highlights
+
+- **More Speech Providers**: Deepgram and AssemblyAI join the provider lineup, giving teams more choice for Dictation, Assist, and Voice Agent workflows.
+- **Realtime Voice Options**: Deepgram Voice Agent support adds another low-latency conversation path for brainstorming and follow-up work.
+- **Speaker-Aware Notes**: Provider speaker labels make multi-person transcripts easier to review, summarize, and reuse.
+
+### Added
+
+- **Deepgram is now a first-class provider** across all three modes: Nova-3
+  speech-to-text with speaker labels, Aura-2 text-to-speech, and the Deepgram
+  Voice Agent for real-time conversations. Add your Deepgram API key in Settings
+  to turn it on.
+- **AssemblyAI is now a first-class speech-to-text provider**, including speaker
+  identification, selectable for Dictation and Assist.
+- You can now choose which language model powers the Deepgram Voice Agent's
+  replies, and point it at your own model deployment (bring-your-own-key)
+  instead of the built-in default.
+
+### Fixed
+
+- Long replies spoken by the Deepgram Aura voice now always produce a single,
+  valid audio file. Previously, text longer than about 1,900 characters
+  requested in WAV format could produce a malformed file that some players
+  refused to play.
+- Self-hosted source releases now include the tracing support required by
+  server builds, so downstream builds compile cleanly.
+- The server smoke page now works with strict browser-security headers, so
+  deployment readiness checks can run without weakening the policy.
+- Self-hosted local-only Docker installs now allow the compose-internal Voice
+  Agent WebSocket origin, so installer E2E checks exercise all three modes
+  without weakening production defaults.
+
 ## [0.42.1] - 2026-06-07
 
 Maintenance release that ships the v0.42 line as its first published build; no

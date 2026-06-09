@@ -62,6 +62,16 @@ func ResolveEnabledProviders(cfg *config.Config) (tts.EnabledProviders, []string
 		}
 	}
 
+	// Deepgram Aura reuses the shared DEEPGRAM_API_KEY (no separate credential).
+	if cfg.TTS.Deepgram.Enabled {
+		if key, _ := config.ResolveDeepgramKey(cfg); strings.TrimSpace(key) != "" {
+			enabled.Deepgram = &tts.DeepgramOpts{
+				APIKey: key,
+				Model:  firstNonEmpty(cfg.TTS.Deepgram.Voice, cfg.TTS.Deepgram.Model),
+			}
+		}
+	}
+
 	if cfg.TTS.HuggingFace.Enabled {
 		if token, _, err := config.ResolveHuggingFaceToken(cfg); err == nil && token != "" {
 			enabled.HuggingFace = &tts.HuggingFaceOpts{

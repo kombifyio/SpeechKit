@@ -160,8 +160,16 @@ type PersonaResolver interface {
 
 // HandlerOptions configures the WebSocket handler.
 type HandlerOptions struct {
-	Manager             *SessionManager
-	Provider            ProviderFactory
+	Manager *SessionManager
+	// Provider is the single-provider form (back-compat): when Providers is
+	// empty this factory becomes the sole, default backend.
+	Provider ProviderFactory
+	// Providers is the multi-provider form: a name→factory map (e.g.
+	// "deepgram", "gemini", "cascaded") that the client selects between
+	// per session via StartFrame.Provider. DefaultProvider names the entry
+	// used when a session omits an explicit provider.
+	Providers           map[string]ProviderFactory
+	DefaultProvider     string
 	Persona             PersonaResolver
 	PublicURL           string
 	AllowedOrigins      []string
@@ -183,17 +191,18 @@ type HandlerOptions struct {
 // Handler exposes both the HTTP session-creation endpoint and the WS
 // upgrade endpoint under /v1/voiceagent/*.
 type Handler struct {
-	manager        *SessionManager
-	provider       ProviderFactory
-	persona        PersonaResolver
-	publicURL      string
-	allowedOrigins []string
-	idleTimeout    time.Duration
-	store          store.Store
-	liveKit        *LiveKitTokenIssuer
-	mediaBridge    MediaBridgeFactory
-	readLimit      int64
-	trustedProxies httpx.TrustedProxies
+	manager         *SessionManager
+	providers       map[string]ProviderFactory
+	defaultProvider string
+	persona         PersonaResolver
+	publicURL       string
+	allowedOrigins  []string
+	idleTimeout     time.Duration
+	store           store.Store
+	liveKit         *LiveKitTokenIssuer
+	mediaBridge     MediaBridgeFactory
+	readLimit       int64
+	trustedProxies  httpx.TrustedProxies
 }
 
 // New constructs a handler. All options except MaxAllowedClockSkew are
@@ -203,11 +212,31 @@ func New(opts HandlerOptions) (*Handler, error) {
 	if opts.Manager == nil {
 		return nil, errors.New("voiceagent: Manager is required")
 	}
-	if opts.Provider == nil {
-		return nil, errors.New("voiceagent: Provider is required")
-	}
 	if opts.Persona == nil {
 		return nil, errors.New("voiceagent: Persona resolver is required")
+	}
+	// Build the provider registry. Multi-provider (Providers map) takes
+	// precedence; a lone Provider is accepted as the single default backend
+	// so existing callers and tests keep working unchanged.
+	providers := make(map[string]ProviderFactory, len(opts.Providers)+1)
+	for name, f := range opts.Providers {
+		n := strings.ToLower(strings.TrimSpace(name))
+		if n != "" && f != nil {
+			providers[n] = f
+		}
+	}
+	defaultProvider := strings.ToLower(strings.TrimSpace(opts.DefaultProvider))
+	if len(providers) == 0 {
+		if opts.Provider == nil {
+			return nil, errors.New("voiceagent: at least one Provider is required")
+		}
+		if defaultProvider == "" {
+			defaultProvider = "default"
+		}
+		providers[defaultProvider] = opts.Provider
+	}
+	if defaultProvider == "" || providers[defaultProvider] == nil {
+		return nil, errors.New("voiceagent: DefaultProvider must name one of the configured Providers")
 	}
 	idle := opts.IdleTimeout
 	if idle == 0 {
@@ -225,17 +254,18 @@ func New(opts HandlerOptions) (*Handler, error) {
 	}
 	trustedProxies, _ := httpx.NewTrustedProxies(opts.TrustedProxyCIDRs)
 	return &Handler{
-		manager:        opts.Manager,
-		provider:       opts.Provider,
-		persona:        opts.Persona,
-		publicURL:      strings.TrimSpace(opts.PublicURL),
-		allowedOrigins: normalizeAllowedOrigins(opts.AllowedOrigins),
-		idleTimeout:    idle,
-		store:          opts.Store,
-		liveKit:        opts.LiveKit,
-		mediaBridge:    mediaBridge,
-		readLimit:      readLimit,
-		trustedProxies: trustedProxies,
+		manager:         opts.Manager,
+		providers:       providers,
+		defaultProvider: defaultProvider,
+		persona:         opts.Persona,
+		publicURL:       strings.TrimSpace(opts.PublicURL),
+		allowedOrigins:  normalizeAllowedOrigins(opts.AllowedOrigins),
+		idleTimeout:     idle,
+		store:           opts.Store,
+		liveKit:         opts.LiveKit,
+		mediaBridge:     mediaBridge,
+		readLimit:       readLimit,
+		trustedProxies:  trustedProxies,
 	}, nil
 }
 
@@ -538,12 +568,13 @@ func (h *Handler) upgradeWS(w http.ResponseWriter, r *http.Request, sessionID st
 	conn.SetReadLimit(h.readLimit)
 
 	adapter := &Adapter{
-		Session:     session,
-		Conn:        conn,
-		Provider:    h.provider.NewProvider(),
-		Persona:     h.persona,
-		MediaBridge: h.mediaBridge,
-		IdleTimeout: h.idleTimeout,
+		Session:         session,
+		Conn:            conn,
+		Providers:       h.providers,
+		DefaultProvider: h.defaultProvider,
+		Persona:         h.persona,
+		MediaBridge:     h.mediaBridge,
+		IdleTimeout:     h.idleTimeout,
 		OnClose: func() {
 			h.manager.Remove(sessionID)
 		},
