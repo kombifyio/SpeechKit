@@ -264,7 +264,7 @@ func (r *Router) transcribeDynamic(ctx context.Context, audio []byte, durationSe
 	if !online {
 		slog.Info("internet probe unavailable; trying providers with local preference")
 		if local != nil {
-			result, err := local.Transcribe(ctx, audio, opts)
+			result, err := local.Transcribe(ctx, audio, opts.ForProvider(local.Name()))
 			if err == nil {
 				return result, nil
 			}
@@ -285,7 +285,7 @@ func (r *Router) transcribeDynamic(ctx context.Context, audio []byte, durationSe
 		if r.ParallelCloud && cloudAvailable {
 			return r.transcribeParallel(ctx, audio, opts)
 		}
-		result, err := local.Transcribe(ctx, audio, opts)
+		result, err := local.Transcribe(ctx, audio, opts.ForProvider(local.Name()))
 		if err == nil {
 			return result, nil
 		}
@@ -399,7 +399,7 @@ func (r *Router) transcribeCloud(ctx context.Context, audio []byte, opts stt.Tra
 	_, cloud := r.snapshot()
 
 	for _, p := range cloud {
-		result, err := p.Transcribe(ctx, audio, opts)
+		result, err := p.Transcribe(ctx, audio, opts.ForProvider(p.Name()))
 		if err == nil {
 			emitProviderSelected(ctx, p.Name(), r.Strategy)
 			return result, nil
@@ -415,7 +415,7 @@ func (r *Router) transcribeLocal(ctx context.Context, audio []byte, opts stt.Tra
 	if local == nil {
 		return nil, fmt.Errorf("local provider not configured")
 	}
-	result, err := local.Transcribe(ctx, audio, opts)
+	result, err := local.Transcribe(ctx, audio, opts.ForProvider(local.Name()))
 	if err == nil {
 		emitProviderSelected(ctx, local.Name(), r.Strategy)
 	}
@@ -436,7 +436,7 @@ func (r *Router) transcribeParallel(ctx context.Context, audio []byte, opts stt.
 	// Local
 	if local != nil {
 		go func() {
-			result, err := local.Transcribe(ctx, audio, opts)
+			result, err := local.Transcribe(ctx, audio, opts.ForProvider(local.Name()))
 			if err == nil {
 				emitProviderSelected(ctx, local.Name(), r.Strategy)
 			}

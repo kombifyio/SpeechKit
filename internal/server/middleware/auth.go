@@ -1086,19 +1086,133 @@ func writeAuthError(w http.ResponseWriter) {
 // 'unsafe-inline'. The hash is computed over these constants and the page is
 // assembled from the same constants, so the two can never drift.
 const adminAuthErrorStyleCSS = `
-    :root { color-scheme: light dark; font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+    :root {
+      color-scheme: dark;
+      --sk-bg: #0d131c;
+      --sk-surface-0: #0b1118;
+      --sk-surface-1: #111923;
+      --sk-surface-2: #17212f;
+      --sk-panel-border: rgba(224, 235, 255, .12);
+      --sk-border: #334055;
+      --sk-text: #e7eefb;
+      --sk-text-muted: #97a4bc;
+      --sk-accent: #a8bfff;
+      --sk-accent-soft: rgba(168, 191, 255, .16);
+      --fail: #ff9a9a;
+      font-family: "Segoe UI Variable", "Segoe UI", "Aptos", sans-serif;
+    }
     * { box-sizing: border-box; }
-    body { margin: 0; min-height: 100vh; display: grid; place-items: center; background: #f7f8fa; color: #1f2933; }
-    main { max-width: 38rem; padding: 2rem; }
-    h1 { font-size: 1.75rem; margin: 0 0 0.75rem; }
-    p { line-height: 1.55; margin: 0.5rem 0; }
-    form { display: grid; gap: .85rem; margin-top: 1.25rem; }
-    label { display: grid; gap: .35rem; font-size: .94rem; }
-    input { min-height: 2.5rem; border: 1px solid #cbd5e1; border-radius: .4rem; padding: .55rem .7rem; font: inherit; }
-    button { min-height: 2.6rem; border: 0; border-radius: .4rem; background: #111827; color: #fff; font: inherit; cursor: pointer; }
-    .error { color: #b91c1c; min-height: 1.4rem; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      display: grid;
+      place-items: center;
+      background:
+        radial-gradient(circle at top left, rgba(130, 161, 255, .14), transparent 32%),
+        linear-gradient(180deg, #0f1622 0%, #0a1017 100%);
+      color: var(--sk-text);
+      font-size: 14px;
+      -webkit-font-smoothing: antialiased;
+    }
+    main {
+      width: min(440px, calc(100vw - 32px));
+      overflow: hidden;
+      border: 1px solid var(--sk-panel-border);
+      border-radius: 8px;
+      background: rgba(17, 25, 35, .9);
+      box-shadow: 0 28px 80px rgba(0, 0, 0, .28);
+    }
+    .topbar {
+      display: flex;
+      gap: 12px;
+      align-items: center;
+      border-bottom: 1px solid rgba(224, 235, 255, .08);
+      padding: 16px;
+      background: linear-gradient(180deg, rgba(19, 27, 38, .94), rgba(19, 27, 38, .68));
+    }
+    .mark {
+      display: grid;
+      width: 42px;
+      height: 42px;
+      flex: 0 0 auto;
+      place-items: center;
+      border: 1px solid var(--sk-panel-border);
+      border-radius: 8px;
+      background: var(--sk-surface-2);
+      color: var(--sk-accent);
+      font-weight: 800;
+    }
+    .kicker {
+      margin: 0;
+      color: var(--sk-text-muted);
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: .14em;
+      text-transform: uppercase;
+    }
+    h1 {
+      margin: 0;
+      font-size: 21px;
+      line-height: 1.1;
+    }
+    .content {
+      display: grid;
+      gap: 16px;
+      padding: 16px;
+    }
+    p {
+      line-height: 1.55;
+      margin: 0;
+      color: var(--sk-text-muted);
+    }
+    form {
+      display: grid;
+      gap: 12px;
+    }
+    label {
+      display: grid;
+      gap: 7px;
+      color: var(--sk-text-muted);
+      font-size: 13px;
+    }
+    input {
+      min-height: 40px;
+      border: 1px solid var(--sk-border);
+      border-radius: 6px;
+      background: var(--sk-surface-0);
+      color: var(--sk-text);
+      padding: 8px 10px;
+      font: inherit;
+      outline: none;
+    }
+    input:focus {
+      border-color: rgba(168, 191, 255, .48);
+      box-shadow: 0 0 0 3px var(--sk-accent-soft);
+    }
+    button {
+      min-height: 42px;
+      border: 1px solid rgba(168, 191, 255, .34);
+      border-radius: 6px;
+      background: var(--sk-accent-soft);
+      color: var(--sk-accent);
+      font: inherit;
+      font-weight: 700;
+      cursor: pointer;
+    }
+    button:hover {
+      border-color: var(--sk-accent);
+    }
+    .error {
+      color: var(--fail);
+      min-height: 1.4rem;
+    }
+    .note {
+      border: 1px solid var(--sk-panel-border);
+      border-radius: 6px;
+      padding: 10px;
+      background: var(--sk-surface-2);
+    }
     code { font-family: ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace; }
-    @media (prefers-color-scheme: dark) { body { background: #111827; color: #f3f4f6; } input { background: #0b1220; color: #f3f4f6; border-color: #374151; } button { background: #2563eb; } .error { color: #fca5a5; } }
   `
 
 const adminAuthErrorScriptJS = `
@@ -1153,19 +1267,27 @@ var adminAuthErrorHTML = `<!doctype html>
 </head>
 <body>
   <main>
-    <h1>SpeechKit Admin Sign-In Required</h1>
-    <p>The server setup UI is protected after bootstrap. Sign in with the admin account created during setup.</p>
-    <form id="adminLogin">
-      <label for="adminUsername">Admin username
-        <input id="adminUsername" autocomplete="username" required>
-      </label>
-      <label for="adminPassword">Admin password
-        <input id="adminPassword" type="password" autocomplete="current-password" required>
-      </label>
-      <button type="submit">Sign In</button>
-      <div class="error" id="loginError" role="status"></div>
-    </form>
-    <p>API clients can continue to call <code>/api/v1/*</code> or <code>/v1/*</code> with their configured bearer token.</p>
+    <header class="topbar">
+      <div class="mark" aria-hidden="true">SK</div>
+      <div>
+        <p class="kicker">kombify SpeechKit</p>
+        <h1>SpeechKit Admin Sign-In Required</h1>
+      </div>
+    </header>
+    <div class="content" data-ui-surface="speechkit-server-admin-login">
+      <p>The server setup UI is protected after bootstrap. Sign in with the admin account created during setup.</p>
+      <form id="adminLogin">
+        <label for="adminUsername">Admin username
+          <input id="adminUsername" autocomplete="username" required>
+        </label>
+        <label for="adminPassword">Admin password
+          <input id="adminPassword" type="password" autocomplete="current-password" required>
+        </label>
+        <button type="submit">Sign In</button>
+        <div class="error" id="loginError" role="status"></div>
+      </form>
+      <p class="note">API clients can continue to call <code>/api/v1/*</code> or <code>/v1/*</code> with their configured bearer token.</p>
+    </div>
   </main>
   <script>` + adminAuthErrorScriptJS + `</script>
 </body>

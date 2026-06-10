@@ -13,6 +13,7 @@ import (
 
 	"github.com/kombifyio/SpeechKit/internal/models"
 	"github.com/kombifyio/SpeechKit/internal/netsec"
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/provideropts"
 )
 
 const (
@@ -152,10 +153,17 @@ func (g *Google) Synthesize(ctx context.Context, text string, opts SynthesizeOpt
 	q.Set("key", g.apiKey)
 	endpoint := validated + "?" + q.Encode()
 
-	voice := opts.Voice
-	locale := opts.Locale
+	resolved := ResolveSynthesizeOptions("google", "", opts, provideropts.Values{
+		provideropts.OptionLanguage:    googleDefaultLanguage,
+		provideropts.OptionVoice:       g.voice,
+		provideropts.OptionSpeed:       1.0,
+		provideropts.OptionAudioFormat: "mp3",
+	}, nil)
+
+	voice := resolved.Voice
+	locale := resolved.Locale
 	if locale == "" {
-		locale = "en-US"
+		locale = googleDefaultLanguage
 	}
 	langCode := localeToLanguageCode(locale)
 	if voice == "" {
@@ -165,12 +173,12 @@ func (g *Google) Synthesize(ctx context.Context, text string, opts SynthesizeOpt
 	// Google TTS returns LINEAR16 (WAV) or MP3.
 	audioEncoding := "MP3"
 	format := "mp3"
-	if opts.Format == "wav" || opts.Format == "pcm" {
+	if resolved.Format == "wav" || resolved.Format == "pcm" {
 		audioEncoding = "LINEAR16"
 		format = "wav"
 	}
 
-	speed := opts.Speed
+	speed := resolved.Speed
 	if speed <= 0 {
 		speed = 1.0
 	}

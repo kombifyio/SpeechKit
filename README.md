@@ -42,6 +42,15 @@ Speaker diarization, speaker identification, and speaker attribution are also
 add-on capabilities over the three modes. Provider support and auth status are
 tracked in the [voice capability matrix](./docs/capabilities/voice-capability-matrix.json).
 
+Words and Replacements are the first-class customization axis over the same
+three modes. Words teach SpeechKit terms to recognize; Replacements define
+deterministic text, command, snippet, synonym, and template transformations.
+Native Templates are versioned curated packs of the same Words/Replacements
+data, for example the default punctuation template and the opt-in developer
+template. They replace the narrow dictionary concept without creating another
+mode. See the
+[Words And Replacements standard](./docs/words-and-replacements-standard.md).
+
 ## Why SpeechKit
 
 ### Local-first Go backend
@@ -172,6 +181,7 @@ contracts, deployment steps, or release rules:
 
 - [Docs index](./docs/README.md)
 - [Framework API](./docs/speechkit-framework-api.md)
+- [Words And Replacements standard](./docs/words-and-replacements-standard.md)
 - [Voice Capability Matrix](./docs/capabilities/voice-capability-matrix.json)
 - [Local OpenAPI](./docs/api/openapi.v1.yaml)
 - [SpeechKit Server docs](./docs/server/README.md)

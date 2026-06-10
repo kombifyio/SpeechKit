@@ -12,21 +12,48 @@ import (
 	"time"
 
 	"github.com/kombifyio/SpeechKit/internal/netsec"
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/provideropts"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/speaker"
 )
 
 const (
 	deepgramBaseURL          = "https://api.deepgram.com"
 	deepgramMaxResponseBytes = 16 << 20
+	deepgramMaxKeyterms      = 100
 )
 
+// DeepgramOptions holds provider-specific Deepgram STT controls. These map to
+// Deepgram Listen query parameters while keeping SpeechKit's public STT router
+// interface provider-neutral.
+type DeepgramOptions struct {
+	Configured            bool
+	SmartFormat           bool
+	Dictation             bool
+	FillerWords           bool
+	Numerals              bool
+	DetectLanguage        bool
+	LanguageOverride      string
+	UseVocabularyKeyterms bool
+	Keyterms              []string
+	EndpointingMs         int
+}
+
 type DeepgramProvider struct {
-	APIKey           string
-	Model            string
-	DiarizationModel string
-	BaseURL          string
-	Validation       netsec.ValidationOptions
-	client           *http.Client
+	APIKey                string
+	Model                 string
+	DiarizationModel      string
+	BaseURL               string
+	Validation            netsec.ValidationOptions
+	SmartFormat           bool
+	Dictation             bool
+	FillerWords           bool
+	Numerals              bool
+	DetectLanguage        bool
+	LanguageOverride      string
+	UseVocabularyKeyterms bool
+	Keyterms              []string
+	EndpointingMs         int
+	client                *http.Client
 }
 
 func NewDeepgramProvider(apiKey, model string) *DeepgramProvider {
@@ -35,20 +62,40 @@ func NewDeepgramProvider(apiKey, model string) *DeepgramProvider {
 		model = "nova-3"
 	}
 	p := &DeepgramProvider{
-		APIKey:           apiKey,
-		Model:            model,
-		DiarizationModel: "latest",
-		BaseURL:          deepgramBaseURL,
+		APIKey:                apiKey,
+		Model:                 model,
+		DiarizationModel:      "latest",
+		BaseURL:               deepgramBaseURL,
+		SmartFormat:           true,
+		UseVocabularyKeyterms: true,
 	}
 	p.client = netsec.NewSafeHTTPClient(netsec.ClientOptions{Timeout: 90 * time.Second, DialValidation: &p.Validation})
 	return p
 }
 
+func (p *DeepgramProvider) ApplyOptions(opts DeepgramOptions) {
+	if p == nil {
+		return
+	}
+	p.SmartFormat = opts.SmartFormat
+	p.Dictation = opts.Dictation
+	p.FillerWords = opts.FillerWords
+	p.Numerals = opts.Numerals
+	p.DetectLanguage = opts.DetectLanguage
+	p.LanguageOverride = strings.TrimSpace(opts.LanguageOverride)
+	p.UseVocabularyKeyterms = opts.UseVocabularyKeyterms
+	p.Keyterms = normalizedDeepgramTerms(opts.Keyterms, deepgramMaxKeyterms)
+	if opts.EndpointingMs >= 0 {
+		p.EndpointingMs = opts.EndpointingMs
+	}
+}
+
 func (p *DeepgramProvider) Transcribe(ctx context.Context, audio []byte, opts TranscribeOpts) (*Result, error) {
 	model := firstNonEmptyTrimmed(opts.Model, p.Model, "nova-3")
-	speakerOpts := opts.Speaker.Normalized()
+	resolved := p.resolveOptions(model, opts)
+	speakerOpts := resolved.Speaker
 
-	endpoint, err := p.deepgramListenEndpoint(model, opts.Language, speakerOpts)
+	endpoint, err := p.deepgramListenEndpoint(model, resolved)
 	if err != nil {
 		return nil, err
 	}
@@ -80,7 +127,7 @@ func (p *DeepgramProvider) Transcribe(ctx context.Context, audio []byte, opts Tr
 		return nil, fmt.Errorf("parse response: %w", err)
 	}
 	text, confidence := parsed.bestTranscript()
-	lang := firstNonEmptyTrimmed(parsed.detectedLanguage(), opts.Language, "de")
+	lang := firstNonEmptyTrimmed(parsed.detectedLanguage(), resolved.Language, "de")
 
 	result := &Result{
 		Text:       text,
@@ -122,21 +169,37 @@ func (p *DeepgramProvider) Health(ctx context.Context) error {
 	return nil
 }
 
-func (p *DeepgramProvider) deepgramListenEndpoint(model, language string, speakerOpts speaker.Options) (string, error) {
+func (p *DeepgramProvider) deepgramListenEndpoint(model string, resolved ResolvedTranscribeOptions) (string, error) {
 	endpoint, err := netsec.BuildEndpoint(firstNonEmptyTrimmed(p.BaseURL, deepgramBaseURL), "v1/listen", p.Validation)
 	if err != nil {
 		return "", fmt.Errorf("deepgram endpoint: %w", err)
 	}
 	q := url.Values{}
 	q.Set("model", model)
-	q.Set("punctuate", "true")
-	language = strings.TrimSpace(language)
-	if language != "" && language != "auto" {
+	if resolved.Punctuation {
+		q.Set("punctuate", "true")
+	}
+	if resolved.SmartFormat {
+		q.Set("smart_format", "true")
+	}
+	if resolved.Dictation {
+		q.Set("dictation", "true")
+	}
+	if resolved.FillerWords {
+		q.Set("filler_words", "true")
+	}
+	if resolved.Numerals {
+		q.Set("numerals", "true")
+	}
+	if resolved.DetectLanguage {
+		q.Set("detect_language", "true")
+	} else if language := normalizedDeepgramLanguage(resolved.APILanguage()); language != "" {
 		q.Set("language", language)
 	}
-	if speakerOpts.WantsDiarization() {
+	p.applyVocabularyBias(q, model, resolved.Keyterms, resolved.UseVocabularyKeyterms)
+	if resolved.Speaker.WantsDiarization() {
 		q.Set("utterances", "true")
-		diarizationModel := firstNonEmptyTrimmed(speakerOpts.DiarizationModel, p.DiarizationModel, "latest")
+		diarizationModel := firstNonEmptyTrimmed(resolved.Speaker.DiarizationModel, p.DiarizationModel, "latest")
 		if strings.EqualFold(diarizationModel, "legacy") || strings.EqualFold(diarizationModel, "v1_legacy") {
 			q.Set("diarize", "true")
 		} else {
@@ -144,6 +207,118 @@ func (p *DeepgramProvider) deepgramListenEndpoint(model, language string, speake
 		}
 	}
 	return endpoint + "?" + q.Encode(), nil
+}
+
+func (p *DeepgramProvider) resolveOptions(model string, opts TranscribeOpts) ResolvedTranscribeOptions {
+	providerDefaults := provideropts.Values{
+		provideropts.OptionLanguage:       "de",
+		provideropts.OptionPunctuation:    true,
+		provideropts.OptionSmartFormat:    true,
+		provideropts.OptionVocabularyBias: true,
+	}
+	providerOverrides := provideropts.Values{}
+	if language := strings.TrimSpace(p.LanguageOverride); language != "" {
+		providerOverrides[provideropts.OptionLanguage] = language
+	}
+	if !p.SmartFormat {
+		providerOverrides[provideropts.OptionSmartFormat] = false
+	}
+	if p.Dictation {
+		providerOverrides[provideropts.OptionDictation] = true
+	}
+	if p.FillerWords {
+		providerOverrides[provideropts.OptionFillerWords] = true
+	}
+	if p.Numerals {
+		providerOverrides[provideropts.OptionNumerals] = true
+	}
+	if p.DetectLanguage {
+		providerOverrides[provideropts.OptionDetectLanguage] = true
+	}
+	if !p.UseVocabularyKeyterms {
+		providerOverrides[provideropts.OptionVocabularyBias] = false
+	}
+	if p.EndpointingMs > 0 {
+		providerOverrides[provideropts.OptionEndpointingMs] = p.EndpointingMs
+	}
+	if len(p.Keyterms) > 0 {
+		providerOverrides[provideropts.OptionKeyterms] = append([]string(nil), p.Keyterms...)
+	}
+	return ResolveTranscribeOptions("deepgram", deepgramProfileID(model), opts, providerDefaults, providerOverrides)
+}
+
+func (p *DeepgramProvider) applyVocabularyBias(q url.Values, model string, requestTerms []string, useVocabulary bool) {
+	if p == nil {
+		return
+	}
+	termInput := append([]string(nil), p.Keyterms...)
+	if useVocabulary {
+		termInput = append(termInput, requestTerms...)
+	}
+	terms := normalizedDeepgramTerms(termInput, deepgramMaxKeyterms)
+	if len(terms) == 0 {
+		return
+	}
+	param := deepgramVocabularyParam(model)
+	for _, term := range terms {
+		q.Add(param, term)
+	}
+}
+
+func deepgramProfileID(model string) string {
+	if strings.Contains(strings.ToLower(strings.TrimSpace(model)), "nova-3") {
+		return "stt.deepgram.nova-3"
+	}
+	return ""
+}
+
+func deepgramVocabularyParam(model string) string {
+	model = strings.ToLower(strings.TrimSpace(model))
+	if strings.Contains(model, "nova-3") || strings.HasPrefix(model, "flux") {
+		return "keyterm"
+	}
+	return "keywords"
+}
+
+func normalizedDeepgramLanguage(language string) string {
+	language = strings.TrimSpace(language)
+	if language == "" || strings.EqualFold(language, "auto") {
+		return ""
+	}
+	return language
+}
+
+func normalizedDeepgramTerms(terms []string, limit int) []string {
+	if len(terms) == 0 || limit == 0 {
+		return nil
+	}
+	out := make([]string, 0, min(len(terms), limit))
+	seen := make(map[string]struct{}, len(terms))
+	for _, term := range terms {
+		term = strings.TrimSpace(term)
+		if term == "" {
+			continue
+		}
+		key := strings.ToLower(term)
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		seen[key] = struct{}{}
+		out = append(out, term)
+		if limit > 0 && len(out) >= limit {
+			break
+		}
+	}
+	return out
+}
+
+func ParseDeepgramKeyterms(raw string) []string {
+	raw = strings.ReplaceAll(raw, "\r\n", "\n")
+	raw = strings.ReplaceAll(raw, "\r", "\n")
+	terms := strings.FieldsFunc(raw, func(r rune) bool {
+		return r == '\n' || r == ',' || r == ';'
+	})
+	return normalizedDeepgramTerms(terms, deepgramMaxKeyterms)
 }
 
 type deepgramResponse struct {

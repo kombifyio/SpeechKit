@@ -3,6 +3,7 @@ package config
 import (
 	"strings"
 
+	customtemplates "github.com/kombifyio/SpeechKit/internal/customize/templates"
 	"github.com/kombifyio/SpeechKit/internal/voiceagentprofile"
 )
 
@@ -26,9 +27,9 @@ func defaults() *Config {
 			AgentMode:                "assist",
 			ActiveMode:               "none",
 			HotkeyMode:               HotkeyBehaviorHoldToTalk,
-			AutoStopSilenceMs:        500,
+			AutoStopSilenceMs:        DefaultDictationPauseMs,
 			FastModeSilenceMs:        1500,
-			DictateSilenceTimeoutSec: 3,
+			DictateSilenceTimeoutSec: DefaultDictateSilenceTimeoutSec,
 		},
 		Audio: AudioConfig{
 			Backend:     "windows-wasapi-malgo",
@@ -39,6 +40,9 @@ func defaults() *Config {
 		},
 		Vocabulary: VocabularyConfig{
 			Dictionary: "",
+		},
+		Customization: CustomizationConfig{
+			ActiveTemplateIDs: customtemplates.DefaultActiveTemplateIDs(),
 		},
 		ModelSelection: BuiltInPrimaryModelSelectionDefaults(),
 		ServerConnection: ServerConnectionConfig{
@@ -83,11 +87,20 @@ func defaults() *Config {
 		},
 		HuggingFace: HuggingFaceConfig{
 			Enabled:      false,
-			Model:        "openai/whisper-large-v3",
+			Model:        "openai/whisper-large-v3-turbo",
 			UtilityModel: "",
 			AssistModel:  "",
 			AgentModel:   "",
 			TokenEnv:     "HF_TOKEN", //nolint:gosec // not a credential, field name triggers false positive
+		},
+		Speech: SpeechDefaultsConfig{
+			Language:       "de",
+			Punctuation:    true,
+			SmartFormat:    true,
+			VocabularyBias: true,
+			TurnDetection:  true,
+			Speed:          1.0,
+			AudioFormat:    "mp3",
 		},
 		Routing: RoutingConfig{
 			Strategy:                "local-only",
@@ -158,7 +171,7 @@ func defaults() *Config {
 			},
 			HuggingFace: TTSHuggingFace{
 				Enabled: false,
-				Model:   "parler-tts/parler-tts-mini-multilingual-v1.1",
+				Model:   "Qwen/Qwen3-TTS-12Hz-1.7B-Base",
 			},
 			Local: TTSLocal{
 				Enabled: false,
@@ -187,6 +200,7 @@ func defaults() *Config {
 			RefinementPrompt:                "",
 			AutoStartOnLaunch:               false,
 			CloseBehavior:                   VoiceAgentCloseBehaviorContinue,
+			BargeIn:                         VoiceAgentBargeInAuto,
 			ReminderAfterIdleSec:            300,
 			DeactivateAfterIdleSec:          900,
 			HoldReleaseGraceSec:             10,
@@ -243,9 +257,12 @@ func defaults() *Config {
 				Region: "europe-west3",
 			},
 			Deepgram: DeepgramProviderConfig{
-				APIKeyEnv:        DeepgramAPIKeyEnv, //nolint:gosec // not a credential, field name triggers false positive
-				STTModel:         "nova-3",
-				DiarizationModel: "latest",
+				APIKeyEnv:                DeepgramAPIKeyEnv, //nolint:gosec // not a credential, field name triggers false positive
+				STTModel:                 "nova-3",
+				STTLanguage:              "multi",
+				STTSmartFormat:           true,
+				STTUseVocabularyKeyterms: true,
+				DiarizationModel:         "latest",
 			},
 			AssemblyAI: AssemblyAIProviderConfig{
 				APIKeyEnv:        AssemblyAIAPIKeyEnv, //nolint:gosec // not a credential, field name triggers false positive

@@ -61,7 +61,7 @@ func readRegistryTree(hive registry.Key, rootPath string) registryTree {
 
 	// Update\Enabled (DWORD) + Update\ManifestURL (REG_SZ)
 	if k, err := registry.OpenKey(hive, rootPath+`\Update`, registry.QUERY_VALUE); err == nil {
-		defer k.Close()
+		defer k.Close() //nolint:errcheck // Windows registry key close error is not actionable for read-only policy probes
 		if v, _, err := k.GetIntegerValue("Enabled"); err == nil {
 			b := v != 0
 			t.updateEnabled = &b
@@ -75,7 +75,7 @@ func readRegistryTree(hive registry.Key, rootPath string) registryTree {
 
 	// Telemetry\UpdateCheck (DWORD)
 	if k, err := registry.OpenKey(hive, rootPath+`\Telemetry`, registry.QUERY_VALUE); err == nil {
-		defer k.Close()
+		defer k.Close() //nolint:errcheck // Windows registry key close error is not actionable for read-only policy probes
 		if v, _, err := k.GetIntegerValue("UpdateCheck"); err == nil {
 			b := v != 0
 			t.telemetryUpdateCheck = &b
@@ -85,7 +85,7 @@ func readRegistryTree(hive registry.Key, rootPath string) registryTree {
 
 	// Providers\EnforceLocalOnly (DWORD)
 	if k, err := registry.OpenKey(hive, rootPath+`\Providers`, registry.QUERY_VALUE); err == nil {
-		defer k.Close()
+		defer k.Close() //nolint:errcheck // Windows registry key close error is not actionable for read-only policy probes
 		if v, _, err := k.GetIntegerValue("EnforceLocalOnly"); err == nil {
 			b := v != 0
 			t.providersEnforceLocal = &b
@@ -95,7 +95,7 @@ func readRegistryTree(hive registry.Key, rootPath string) registryTree {
 
 	// VoiceAgent\AllowCloudProviders (DWORD)
 	if k, err := registry.OpenKey(hive, rootPath+`\VoiceAgent`, registry.QUERY_VALUE); err == nil {
-		defer k.Close()
+		defer k.Close() //nolint:errcheck // Windows registry key close error is not actionable for read-only policy probes
 		if v, _, err := k.GetIntegerValue("AllowCloudProviders"); err == nil {
 			b := v != 0
 			t.voiceAgentAllowCloud = &b
@@ -105,7 +105,7 @@ func readRegistryTree(hive registry.Key, rootPath string) registryTree {
 
 	// Audit\RetentionDays (DWORD) + Audit\EventLogEnabled (DWORD) + Audit\OTLPEndpoint (REG_SZ)
 	if k, err := registry.OpenKey(hive, rootPath+`\Audit`, registry.QUERY_VALUE); err == nil {
-		defer k.Close()
+		defer k.Close() //nolint:errcheck // Windows registry key close error is not actionable for read-only policy probes
 		if v, _, err := k.GetIntegerValue("RetentionDays"); err == nil {
 			if v <= uint64(int(^uint(0)>>1)) {
 				i := int(v) // #nosec G115 -- guarded against int overflow before conversion.

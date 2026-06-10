@@ -306,16 +306,28 @@ paths:
   /v1/vocabulary/dictionary:
     get:
       operationId: listVocabularyDictionaryEntries
-      summary: List dictionary entries
+      summary: List old dictionary-shaped migration entries
       tags: [vocabulary]
       parameters:
         - name: language
           in: query
           required: false
           schema: { type: string }
+        - name: scope
+          in: query
+          required: false
+          schema: { type: string, enum: [builtin, app, install, org, workspace, user, session] }
+        - name: scope_key
+          in: query
+          required: false
+          schema: { type: string }
+        - name: source
+          in: query
+          required: false
+          schema: { type: string }
       responses:
         '200':
-          description: Dictionary entries.
+          description: Migration projection entries.
           content:
             application/json:
               schema:
@@ -328,7 +340,7 @@ paths:
         '503': { $ref: '#/components/responses/ProviderUnavailable' }
     post:
       operationId: replaceVocabularyDictionaryEntries
-      summary: Replace dictionary entries
+      summary: Replace old dictionary-shaped migration entries
       description: Requires an admin identity.
       tags: [vocabulary]
       requestBody:
@@ -355,6 +367,310 @@ paths:
                     items: { $ref: '#/components/schemas/DictionaryEntry' }
         '401': { $ref: '#/components/responses/Unauthenticated' }
         '403': { $ref: '#/components/responses/AdminRequired' }
+
+  /v1/words:
+    get:
+      operationId: listWords
+      summary: List Words used for recognition bias
+      tags: [vocabulary]
+      parameters:
+        - name: language
+          in: query
+          required: false
+          schema: { type: string }
+      responses:
+        '200':
+          description: Words.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/WordsResponse' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+    post:
+      operationId: replaceWords
+      summary: Replace settings-sourced Words
+      description: Requires an admin identity.
+      tags: [vocabulary]
+      parameters:
+        - name: scope
+          in: query
+          required: false
+          schema: { type: string, enum: [builtin, app, install, org, workspace, user, session] }
+        - name: scope_key
+          in: query
+          required: false
+          schema: { type: string }
+        - name: source
+          in: query
+          required: false
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/WordsReplaceRequest' }
+      responses:
+        '200':
+          description: Updated Words.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/WordsResponse' }
+        '403': { $ref: '#/components/responses/AdminRequired' }
+
+  /v1/replacements:
+    get:
+      operationId: listReplacements
+      summary: List Replacements
+      tags: [vocabulary]
+      parameters:
+        - name: language
+          in: query
+          required: false
+          schema: { type: string }
+        - name: stage
+          in: query
+          required: false
+          schema: { type: string }
+        - name: scope
+          in: query
+          required: false
+          schema: { type: string, enum: [builtin, app, install, org, workspace, user, session] }
+        - name: scope_key
+          in: query
+          required: false
+          schema: { type: string }
+        - name: source
+          in: query
+          required: false
+          schema: { type: string }
+      responses:
+        '200':
+          description: Replacements.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ReplacementsResponse' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+    post:
+      operationId: replaceReplacements
+      summary: Replace settings-sourced Replacements
+      description: Requires an admin identity.
+      tags: [vocabulary]
+      parameters:
+        - name: scope
+          in: query
+          required: false
+          schema: { type: string, enum: [builtin, app, install, org, workspace, user, session] }
+        - name: scope_key
+          in: query
+          required: false
+          schema: { type: string }
+        - name: source
+          in: query
+          required: false
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ReplacementsReplaceRequest' }
+      responses:
+        '200':
+          description: Updated Replacements.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ReplacementsResponse' }
+        '403': { $ref: '#/components/responses/AdminRequired' }
+
+  /v1/lexicons:
+    get:
+      operationId: listLexicons
+      summary: List Lexicons
+      tags: [vocabulary]
+      parameters:
+        - name: scope
+          in: query
+          required: false
+          schema: { type: string, enum: [builtin, app, install, org, workspace, user, session] }
+        - name: scope_key
+          in: query
+          required: false
+          schema: { type: string }
+        - name: source
+          in: query
+          required: false
+          schema: { type: string }
+      responses:
+        '200':
+          description: Lexicons.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/LexiconsResponse' }
+    post:
+      operationId: replaceLexicons
+      summary: Replace settings-sourced Lexicons
+      description: Requires an admin identity.
+      tags: [vocabulary]
+      parameters:
+        - name: scope
+          in: query
+          required: false
+          schema: { type: string, enum: [builtin, app, install, org, workspace, user, session] }
+        - name: scope_key
+          in: query
+          required: false
+          schema: { type: string }
+        - name: source
+          in: query
+          required: false
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/LexiconsReplaceRequest' }
+      responses:
+        '200':
+          description: Updated Lexicons.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/LexiconsResponse' }
+        '403': { $ref: '#/components/responses/AdminRequired' }
+
+  /v1/rulesets:
+    get:
+      operationId: listRulesets
+      summary: List Rulesets
+      tags: [vocabulary]
+      parameters:
+        - name: scope
+          in: query
+          required: false
+          schema: { type: string, enum: [builtin, app, install, org, workspace, user, session] }
+        - name: scope_key
+          in: query
+          required: false
+          schema: { type: string }
+        - name: source
+          in: query
+          required: false
+          schema: { type: string }
+      responses:
+        '200':
+          description: Rulesets.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/RulesetsResponse' }
+    post:
+      operationId: replaceRulesets
+      summary: Replace settings-sourced Rulesets
+      description: Requires an admin identity.
+      tags: [vocabulary]
+      parameters:
+        - name: scope
+          in: query
+          required: false
+          schema: { type: string, enum: [builtin, app, install, org, workspace, user, session] }
+        - name: scope_key
+          in: query
+          required: false
+          schema: { type: string }
+        - name: source
+          in: query
+          required: false
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RulesetsReplaceRequest' }
+      responses:
+        '200':
+          description: Updated Rulesets.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/RulesetsResponse' }
+        '403': { $ref: '#/components/responses/AdminRequired' }
+
+  /v1/customization/pack:
+    get:
+      operationId: exportCustomizationPack
+      summary: Export customization pack
+      tags: [vocabulary]
+      parameters:
+        - name: scope
+          in: query
+          required: false
+          schema: { type: string, enum: [builtin, app, install, org, workspace, user, session] }
+        - name: scope_key
+          in: query
+          required: false
+          schema: { type: string }
+      responses:
+        '200':
+          description: Customization pack.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CustomizationPack' }
+    post:
+      operationId: importCustomizationPack
+      summary: Import customization pack
+      description: Requires an admin identity.
+      tags: [vocabulary]
+      parameters:
+        - name: scope
+          in: query
+          required: false
+          schema: { type: string, enum: [builtin, app, install, org, workspace, user, session] }
+        - name: scope_key
+          in: query
+          required: false
+          schema: { type: string }
+        - name: source
+          in: query
+          required: false
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CustomizationPack' }
+      responses:
+        '200':
+          description: Pack imported.
+        '403': { $ref: '#/components/responses/AdminRequired' }
+
+  /v1/customization/templates:
+    get:
+      operationId: listCustomizationTemplates
+      summary: List Native Templates and active selections
+      tags: [vocabulary]
+      responses:
+        '200':
+          description: Customization templates.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CustomizationTemplatesResponse' }
+
+  /v1/customization/templates/{templateId}/pack:
+    get:
+      operationId: getCustomizationTemplatePack
+      summary: Export one Native Template as a Customization Pack
+      tags: [vocabulary]
+      parameters:
+        - name: templateId
+          in: path
+          required: true
+          schema: { type: string }
+        - name: version
+          in: query
+          required: false
+          schema: { type: string }
+      responses:
+        '200':
+          description: Customization template pack.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CustomizationPack' }
+        '404': { $ref: '#/components/responses/NotFound' }
 
   /v1/transcripts:
     get:
@@ -1093,6 +1409,11 @@ components:
       content:
         application/json:
           schema: { $ref: '#/components/schemas/Error' }
+    NotFound:
+      description: Resource was not found.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
     Unauthenticated:
       description: Missing or invalid credentials.
       content:
@@ -1416,6 +1737,220 @@ components:
         usageCount: { type: integer }
         createdAt: { type: string, format: date-time }
         updatedAt: { type: string, format: date-time }
+
+    CustomizationMatch:
+      type: object
+      properties:
+        type: { type: string, enum: [literal, phrase, regex, spoken_alias] }
+        pattern: { type: string }
+        case_sensitive: { type: boolean }
+        word_boundary: { type: boolean }
+
+    CustomizationOutput:
+      type: object
+      properties:
+        text: { type: string }
+        intent: { type: string }
+        template: { type: string }
+        payload:
+          type: object
+          additionalProperties: true
+
+    Word:
+      type: object
+      properties:
+        id: { type: string }
+        term: { type: string }
+        sounds_like:
+          type: array
+          items: { type: string }
+        language: { type: string }
+        weight: { type: number }
+        tags:
+          type: array
+          items: { type: string }
+        scope: { $ref: '#/components/schemas/CustomizationScopeRef' }
+        source: { type: string }
+        enabled: { type: boolean }
+        usage_count: { type: integer }
+
+    CustomizationScopeRef:
+      type: object
+      properties:
+        kind: { type: string, enum: [builtin, app, install, org, workspace, user, session] }
+        key: { type: string }
+
+    Replacement:
+      type: object
+      properties:
+        id: { type: string }
+        kind: { type: string, enum: [substitution, synonym, snippet, command, template] }
+        match: { $ref: '#/components/schemas/CustomizationMatch' }
+        output: { $ref: '#/components/schemas/CustomizationOutput' }
+        language: { type: string }
+        modes:
+          type: array
+          items: { type: string, enum: [dictation, assist, voice_agent] }
+        stage: { type: string, enum: [pre_recognition_cleanup, post_stt, post_llm, output] }
+        priority: { type: integer }
+        tags:
+          type: array
+          items: { type: string }
+        scope: { $ref: '#/components/schemas/CustomizationScopeRef' }
+        source: { type: string }
+        enabled: { type: boolean }
+        usage_count: { type: integer }
+
+    Lexicon:
+      type: object
+      properties:
+        id: { type: string }
+        name: { type: string }
+        description: { type: string }
+        language: { type: string }
+        word_ids:
+          type: array
+          items: { type: string }
+        tags:
+          type: array
+          items: { type: string }
+        scope: { $ref: '#/components/schemas/CustomizationScopeRef' }
+        source: { type: string }
+        enabled: { type: boolean }
+
+    Ruleset:
+      type: object
+      properties:
+        id: { type: string }
+        name: { type: string }
+        description: { type: string }
+        language: { type: string }
+        replacement_ids:
+          type: array
+          items: { type: string }
+        tags:
+          type: array
+          items: { type: string }
+        scope: { $ref: '#/components/schemas/CustomizationScopeRef' }
+        source: { type: string }
+        enabled: { type: boolean }
+
+    WordsResponse:
+      type: object
+      properties:
+        words:
+          type: array
+          items: { $ref: '#/components/schemas/Word' }
+
+    WordsReplaceRequest:
+      type: object
+      properties:
+        language: { type: string }
+        scope: { $ref: '#/components/schemas/CustomizationScopeRef' }
+        source: { type: string }
+        words:
+          type: array
+          items: { $ref: '#/components/schemas/Word' }
+
+    ReplacementsResponse:
+      type: object
+      properties:
+        replacements:
+          type: array
+          items: { $ref: '#/components/schemas/Replacement' }
+
+    ReplacementsReplaceRequest:
+      type: object
+      properties:
+        language: { type: string }
+        scope: { $ref: '#/components/schemas/CustomizationScopeRef' }
+        source: { type: string }
+        replacements:
+          type: array
+          items: { $ref: '#/components/schemas/Replacement' }
+
+    LexiconsResponse:
+      type: object
+      properties:
+        lexicons:
+          type: array
+          items: { $ref: '#/components/schemas/Lexicon' }
+
+    LexiconsReplaceRequest:
+      type: object
+      properties:
+        language: { type: string }
+        scope: { $ref: '#/components/schemas/CustomizationScopeRef' }
+        source: { type: string }
+        lexicons:
+          type: array
+          items: { $ref: '#/components/schemas/Lexicon' }
+
+    RulesetsResponse:
+      type: object
+      properties:
+        rulesets:
+          type: array
+          items: { $ref: '#/components/schemas/Ruleset' }
+
+    RulesetsReplaceRequest:
+      type: object
+      properties:
+        language: { type: string }
+        scope: { $ref: '#/components/schemas/CustomizationScopeRef' }
+        source: { type: string }
+        rulesets:
+          type: array
+          items: { $ref: '#/components/schemas/Ruleset' }
+
+    CustomizationTemplate:
+      type: object
+      properties:
+        id: { type: string }
+        version: { type: string }
+        name: { type: string }
+        description: { type: string }
+        source: { type: string }
+        languages:
+          type: array
+          items: { type: string }
+        modes:
+          type: array
+          items: { type: string, enum: [dictation, assist, voice_agent] }
+        builtIn: { type: boolean }
+        defaultActive: { type: boolean }
+        wordCount: { type: integer }
+        replacementCount: { type: integer }
+
+    CustomizationTemplatesResponse:
+      type: object
+      properties:
+        templates:
+          type: array
+          items: { $ref: '#/components/schemas/CustomizationTemplate' }
+        activeTemplateIds:
+          type: array
+          items: { type: string }
+
+    CustomizationPack:
+      type: object
+      properties:
+        schema_version: { type: string, enum: [speechkit.customization.pack.v1] }
+        id: { type: string }
+        name: { type: string }
+        description: { type: string }
+        words:
+          type: array
+          items: { $ref: '#/components/schemas/Word' }
+        replacements:
+          type: array
+          items: { $ref: '#/components/schemas/Replacement' }
+        lexicons:
+          type: array
+          items: { $ref: '#/components/schemas/Lexicon' }
+        rulesets:
+          type: array
+          items: { $ref: '#/components/schemas/Ruleset' }
 
     Transcript:
       type: object

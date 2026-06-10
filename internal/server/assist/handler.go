@@ -26,11 +26,15 @@ import (
 	"time"
 
 	assistpkg "github.com/kombifyio/SpeechKit/internal/assist"
+	internalcustomize "github.com/kombifyio/SpeechKit/internal/customize"
 	"github.com/kombifyio/SpeechKit/internal/server/audio"
 	"github.com/kombifyio/SpeechKit/internal/server/httpx"
 	"github.com/kombifyio/SpeechKit/internal/server/middleware"
+	"github.com/kombifyio/SpeechKit/internal/store"
 	"github.com/kombifyio/SpeechKit/internal/stt"
+	speechcustomize "github.com/kombifyio/SpeechKit/pkg/speechkit/customize"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/speaker"
+	speechstorage "github.com/kombifyio/SpeechKit/pkg/speechkit/storage"
 )
 
 // sessionKeyFromRequest derives a stable v0.38.0 multi-turn session
@@ -68,15 +72,19 @@ type Options struct {
 	MaxUploadMB            int
 	MaxDecodedAudioSeconds int
 	DefaultLocale          string
+	Store                  store.Store
+	ActiveTemplateIDs      []string
 }
 
 // Handler implements the /v1/assist/process HTTP surface.
 type Handler struct {
-	processor     Processor
-	transcriber   Transcriber
-	maxBytes      int64
-	decodeLimits  audio.DecodeLimits
-	defaultLocale string
+	processor       Processor
+	transcriber     Transcriber
+	maxBytes        int64
+	decodeLimits    audio.DecodeLimits
+	defaultLocale   string
+	store           store.Store
+	activeTemplates []string
 }
 
 // New constructs a Handler. processor must be non-nil. Transcriber is
@@ -91,11 +99,13 @@ func New(opts Options) (*Handler, error) {
 		maxBytes = int64(opts.MaxUploadMB) << 20
 	}
 	return &Handler{
-		processor:     opts.Processor,
-		transcriber:   opts.Transcriber,
-		maxBytes:      maxBytes,
-		decodeLimits:  audio.DecodeLimits{MaxDecodedAudioSeconds: opts.MaxDecodedAudioSeconds},
-		defaultLocale: strings.TrimSpace(opts.DefaultLocale),
+		processor:       opts.Processor,
+		transcriber:     opts.Transcriber,
+		maxBytes:        maxBytes,
+		decodeLimits:    audio.DecodeLimits{MaxDecodedAudioSeconds: opts.MaxDecodedAudioSeconds},
+		defaultLocale:   strings.TrimSpace(opts.DefaultLocale),
+		store:           opts.Store,
+		activeTemplates: append([]string(nil), opts.ActiveTemplateIDs...),
 	}, nil
 }
 
@@ -353,7 +363,8 @@ func (h *Handler) processAudioBytes(ctx context.Context, w http.ResponseWriter, 
 	}
 
 	durationSecs := float64(decoded.DurationMs) / 1000.0
-	sttResult, err := h.transcriber.Route(ctx, decoded.PCM, durationSecs, stt.TranscribeOpts{Language: opts.Locale, Speaker: speakerOpts})
+	sttOpts, _ := h.applyCustomizationHints(ctx, stt.TranscribeOpts{Language: opts.Locale, Speaker: speakerOpts})
+	sttResult, err := h.transcriber.Route(ctx, decoded.PCM, durationSecs, sttOpts)
 	if err != nil {
 		slog.Warn("assist: STT failed", "err", err, "duration_ms", decoded.DurationMs) // #nosec G706 -- slog writes structured fields; provider errors are attributes, not message format.
 		httpx.WriteError(w, http.StatusServiceUnavailable, "stt_provider_unavailable",
@@ -386,6 +397,7 @@ func (h *Handler) processTranscript(ctx context.Context, w http.ResponseWriter, 
 		httpx.WriteError(w, http.StatusBadRequest, "empty_transcript", "transcript or text field must not be empty")
 		return
 	}
+	transcript = h.applyTranscriptCustomization(ctx, transcript, opts.Locale)
 
 	started := time.Now()
 	result, err := h.processor.Process(ctx, transcript, opts)
@@ -450,6 +462,121 @@ func (h *Handler) resolveLocale(requested string) string {
 		return trimmed
 	}
 	return h.defaultLocale
+}
+
+func (h *Handler) resolveAssistCustomization(ctx context.Context, locale string) (internalcustomize.ResolvedSet, error) {
+	service := internalcustomize.NewService(internalcustomize.ServiceOptions{
+		Store:             h.store,
+		ScopeOrder:        speechcustomize.DefaultServerScopeOrder(),
+		ActiveTemplateIDs: h.activeTemplates,
+	})
+	return service.Resolve(ctx, speechcustomize.Context{
+		Mode:              speechcustomize.ModeAssist,
+		Language:          locale,
+		Stage:             speechcustomize.StagePostSTT,
+		ActiveTemplateIDs: h.activeTemplates,
+	})
+}
+
+func (h *Handler) applyCustomizationHints(ctx context.Context, opts stt.TranscribeOpts) (stt.TranscribeOpts, []speechcustomize.Replacement) {
+	resolved, err := h.resolveAssistCustomization(ctx, opts.Language)
+	if err != nil {
+		slog.Debug("assist: resolve customization failed", "err", err)
+		return opts, nil
+	}
+	if resolved.Prompt != "" && !strings.Contains(opts.Prompt, resolved.Prompt) {
+		if strings.TrimSpace(opts.Prompt) == "" {
+			opts.Prompt = resolved.Prompt
+		} else {
+			opts.Prompt = strings.TrimSpace(opts.Prompt) + "\n" + resolved.Prompt
+		}
+	}
+	opts.Keyterms = mergeKeyterms(opts.Keyterms, resolved.Keyterms)
+	return opts, resolved.Replacements
+}
+
+func (h *Handler) applyTranscriptCustomization(ctx context.Context, transcript, locale string) string {
+	resolved, err := h.resolveAssistCustomization(ctx, locale)
+	if err != nil {
+		slog.Debug("assist: resolve transcript customization failed", "err", err)
+		return transcript
+	}
+	if resolved.Applier == nil {
+		return transcript
+	}
+	applied := resolved.Applier.Apply(transcript)
+	if len(applied.Matches) > 0 {
+		h.recordCustomizationUsage(ctx, resolved.Replacements, applied.Matches, locale)
+	}
+	return applied.Text
+}
+
+func (h *Handler) recordCustomizationUsage(ctx context.Context, replacements []speechcustomize.Replacement, matches []internalcustomize.MatchRecord, language string) {
+	if h.store == nil || len(matches) == 0 {
+		return
+	}
+	wordStore, _ := h.store.(store.WordStore)
+	dictionaryStore, _ := h.store.(store.UserDictionaryStore)
+	replacementStore, _ := h.store.(store.ReplacementStore)
+	if wordStore == nil && dictionaryStore == nil && replacementStore == nil {
+		return
+	}
+	replacementsByID := map[string]speechcustomize.Replacement{}
+	for _, replacement := range replacements {
+		replacementsByID[replacement.ID] = replacement
+	}
+	baseScope := speechstorage.ScopeFromContext(ctx)
+	for _, match := range matches {
+		usageCtx := ctx
+		replacement := replacementsByID[match.ReplacementID]
+		if replacement.Scope != nil {
+			if scoped, ok := internalcustomize.StorageScopeForRef(baseScope, *replacement.Scope); ok {
+				usageCtx = speechstorage.WithScope(ctx, scoped)
+			}
+		}
+		if replacementStore != nil && match.ReplacementID != "" {
+			if err := replacementStore.RecordReplacementUsage(usageCtx, match.ReplacementID); err != nil {
+				slog.Debug("assist: record replacement usage failed", "err", err)
+			}
+		}
+		term := match.Term
+		if strings.TrimSpace(replacement.Output.Text) != "" {
+			term = replacement.Output.Text
+		}
+		if wordStore != nil {
+			if err := wordStore.RecordWordUsage(usageCtx, term, language); err != nil {
+				slog.Debug("assist: record word usage failed", "err", err)
+			}
+		}
+		if dictionaryStore != nil {
+			if err := dictionaryStore.RecordUserDictionaryUsage(ctx, term, language); err != nil {
+				slog.Debug("assist: record dictionary usage failed", "err", err)
+			}
+		}
+	}
+}
+
+func mergeKeyterms(existing, next []string) []string {
+	if len(next) == 0 {
+		return existing
+	}
+	merged := append([]string(nil), existing...)
+	seen := map[string]struct{}{}
+	for _, value := range merged {
+		seen[strings.ToLower(strings.TrimSpace(value))] = struct{}{}
+	}
+	for _, value := range next {
+		key := strings.ToLower(strings.TrimSpace(value))
+		if key == "" {
+			continue
+		}
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		seen[key] = struct{}{}
+		merged = append(merged, strings.TrimSpace(value))
+	}
+	return merged
 }
 
 func audioFormatHint(raw string) string {

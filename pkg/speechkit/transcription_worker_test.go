@@ -22,6 +22,75 @@ func (s stubTranscriber) Transcribe(_ context.Context, _ []byte, _ float64, _ st
 	return s.transcript, nil
 }
 
+type parallelSegmentTranscriber struct {
+	expected int
+	release  chan struct{}
+	started  chan struct{}
+
+	mu          sync.Mutex
+	active      int
+	maxActive   int
+	starts      int
+	startedOnce sync.Once
+}
+
+func newParallelSegmentTranscriber(expected int) *parallelSegmentTranscriber {
+	return &parallelSegmentTranscriber{
+		expected: expected,
+		release:  make(chan struct{}),
+		started:  make(chan struct{}),
+	}
+}
+
+func (s *parallelSegmentTranscriber) Transcribe(ctx context.Context, audio []byte, _ float64, language string) (Transcript, error) {
+	s.mu.Lock()
+	s.active++
+	if s.active > s.maxActive {
+		s.maxActive = s.active
+	}
+	s.starts++
+	if s.starts == s.expected {
+		s.startedOnce.Do(func() { close(s.started) })
+	}
+	s.mu.Unlock()
+	defer func() {
+		s.mu.Lock()
+		s.active--
+		s.mu.Unlock()
+	}()
+
+	select {
+	case <-s.release:
+	case <-ctx.Done():
+		return Transcript{}, ctx.Err()
+	}
+
+	textByAudio := map[string]string{
+		"segment-1": "kombi",
+		"segment-2": "fire",
+	}
+	return Transcript{
+		Text:     textByAudio[string(audio)],
+		Language: language,
+		Provider: "test",
+		Model:    "parallel",
+		Duration: 10 * time.Millisecond,
+	}, nil
+}
+
+func (s *parallelSegmentTranscriber) maxConcurrency() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.maxActive
+}
+
+type replacingTranscriptTransformer struct{}
+
+func (replacingTranscriptTransformer) Transform(_ context.Context, transcript Transcript) (Transcript, error) {
+	transcript.Text = strings.ReplaceAll(transcript.Text, "kombi fire", "Kombify")
+	return transcript, nil
+}
+
 type deliveredTranscript struct {
 	transcript Transcript
 	target     any
@@ -177,6 +246,74 @@ func TestTranscriptionWorkerProcessesJobs(t *testing.T) {
 	}
 	if got, want := output.delivered[0].transcript.Text, "\n\nhello world"; got != want {
 		t.Fatalf("delivered transcript = %q, want %q", got, want)
+	}
+}
+
+func TestTranscriptionWorkerTranscribesSegmentsInParallelAndDeliversCombinedTranscript(t *testing.T) {
+	transcriber := newParallelSegmentTranscriber(2)
+	observer := &recordingObserver{}
+	output := &recordingOutput{}
+	runner := NewTranscriptionRunner(transcriber, nil)
+
+	worker, err := NewTranscriptionWorker(TranscriptionWorkerConfig{
+		Timeout:     time.Second,
+		QueueSize:   1,
+		Runner:      runner,
+		Output:      output,
+		Transformer: replacingTranscriptTransformer{},
+		Observer:    observer,
+	})
+	if err != nil {
+		t.Fatalf("NewTranscriptionWorker() error = %v", err)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	worker.Start(ctx)
+
+	if err := worker.Submit(TranscriptionJob{
+		Submission: Submission{
+			PCM:          []byte(strings.Repeat("x", 12800)),
+			WAV:          []byte("full-session"),
+			DurationSecs: 0.4,
+			Language:     "de",
+		},
+		Segments: []Submission{
+			{WAV: []byte("segment-1"), DurationSecs: 0.2, Language: "de"},
+			{WAV: []byte("segment-2"), DurationSecs: 0.2, Language: "de"},
+		},
+		Target: "editor",
+	}); err != nil {
+		t.Fatalf("Submit() error = %v", err)
+	}
+
+	select {
+	case <-transcriber.started:
+	case <-time.After(time.Second):
+		t.Fatal("segments were not started in parallel")
+	}
+	if got := output.snapshot(); len(got) != 0 {
+		t.Fatalf("delivered before all segment transcripts completed: %#v", got)
+	}
+	close(transcriber.release)
+	worker.Close()
+	worker.Wait()
+
+	if got := transcriber.maxConcurrency(); got < 2 {
+		t.Fatalf("max segment concurrency = %d, want at least 2", got)
+	}
+	delivered := output.snapshot()
+	if len(delivered) != 1 {
+		t.Fatalf("delivered outputs = %d, want 1", len(delivered))
+	}
+	if got, want := delivered[0].transcript.Text, "Kombify"; got != want {
+		t.Fatalf("delivered transcript = %q, want %q", got, want)
+	}
+	if got, want := delivered[0].target, any("editor"); got != want {
+		t.Fatalf("delivered target = %v, want %v", got, want)
+	}
+	if got := observer.committed; len(got) != 1 || got[0] != "Kombify" {
+		t.Fatalf("observer committed = %#v", got)
 	}
 }
 

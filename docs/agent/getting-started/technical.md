@@ -54,6 +54,8 @@ Core endpoints:
 - `POST /v1/dictation/transcribe`
 - `POST /v1/assist/process`
 - `POST /v1/voiceagent/sessions`
+- `GET /v1/customization/templates`
+- `GET /v1/customization/templates/{templateId}/pack`
 - `GET /v1/catalog/profiles`
 - `GET /v1/config`
 - `POST /v1/tts/synthesize`
@@ -66,7 +68,7 @@ go get github.com/kombifyio/SpeechKit
 
 Use `pkg/speechkit/client` when you want to call a running SpeechKit Server.
 
-Use the v0.43 SDK packages when you embed SpeechKit directly into another Go
+Use the v0.44 SDK packages when you embed SpeechKit directly into another Go
 host. Import the smallest public component that matches the job instead of
 loading the whole framework:
 
@@ -83,6 +85,9 @@ Important packages:
 - `pkg/speechkit/tts` for Provider, Router, Service, and provider-kind routing.
 - `pkg/speechkit/assist` for one-shot Assist services, multi-turn skill context, codeword routing, and optional Genkit adapters.
 - `pkg/speechkit/dictation` for strict STT-only embedded dictation.
+- `pkg/speechkit/customize` for Words, Replacements, Lexicons, Rulesets, and
+  portable Customization Packs. Native Templates are curated pack sources
+  selected through `active_template_ids`.
 - `pkg/speechkit/agentkit` and `pkg/speechkit/voiceagent/live` for embedded realtime Voice Agent hosts.
 
 Hands-Free is an activation and voice-output layer, not a fourth mode. Voice

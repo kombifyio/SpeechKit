@@ -65,6 +65,10 @@ type RecordingStartOptions struct {
 
 type RecordingStopOptions struct {
 	Label string
+	// TailDelay keeps the recorder physically open for a short grace period
+	// after a stop request. Hold-to-talk callers use this to avoid clipping
+	// final syllables when the shortcut is released a few milliseconds early.
+	TailDelay time.Duration
 }
 
 // RecordingController manages the start/stop lifecycle of a single recording
@@ -82,6 +86,7 @@ type RecordingController struct {
 
 	mu            sync.Mutex
 	recording     bool
+	stopping      bool
 	sessionID     uint64
 	current       RecordingStartOptions
 	collector     SegmentCollector
@@ -118,7 +123,7 @@ func (c *RecordingController) IsRecording() bool {
 	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	return c.recording
+	return c.recording || c.stopping
 }
 
 func (c *RecordingController) Start(opts RecordingStartOptions) error {
@@ -170,11 +175,6 @@ func (c *RecordingController) Start(opts RecordingStartOptions) error {
 		c.recorder.SetPCMHandler(nil)
 	}
 
-	c.onState("recording", c.recordingMessage)
-	if opts.Label != "" {
-		c.onLog(opts.Label, "info")
-	}
-
 	if err := c.recorder.Start(); err != nil {
 		c.mu.Lock()
 		if c.sessionID == sessionID {
@@ -186,6 +186,11 @@ func (c *RecordingController) Start(opts RecordingStartOptions) error {
 		c.onLog(fmt.Sprintf("Capture error: %v", err), "error")
 		c.onState("idle", "")
 		return err
+	}
+
+	c.onState("recording", c.recordingMessage)
+	if opts.Label != "" {
+		c.onLog(opts.Label, "info")
 	}
 
 	// Arm the silence-based auto-stop watcher when both pieces are
@@ -257,14 +262,12 @@ func (c *RecordingController) Stop(opts RecordingStopOptions) error {
 	}
 
 	c.mu.Lock()
-	if !c.recording {
+	if !c.recording || c.stopping {
 		c.mu.Unlock()
 		return nil
 	}
-	c.recording = false
-	current := c.current
-	collector := c.collector
-	c.collector = nil
+	c.stopping = true
+	sessionID := c.sessionID
 	// Tear down any active idle watcher so it does not fire a stale
 	// callback against the next session. Closing the channel signals
 	// the goroutine to exit on its next select iteration.
@@ -272,6 +275,22 @@ func (c *RecordingController) Stop(opts RecordingStopOptions) error {
 		close(c.idleWatcherCh)
 		c.idleWatcherCh = nil
 	}
+	c.mu.Unlock()
+	defer c.clearStopping()
+
+	if opts.TailDelay > 0 {
+		time.Sleep(opts.TailDelay)
+	}
+
+	c.mu.Lock()
+	if c.sessionID != sessionID {
+		c.mu.Unlock()
+		return nil
+	}
+	c.recording = false
+	current := c.current
+	collector := c.collector
+	c.collector = nil
 	c.mu.Unlock()
 
 	c.recorder.SetPCMHandler(nil)
@@ -300,31 +319,49 @@ func (c *RecordingController) Stop(opts RecordingStopOptions) error {
 		}
 	}
 
+	if len(segments) == 0 {
+		return nil
+	}
+
+	segmentSubmissions := make([]Submission, 0, len(segments))
 	for _, segment := range segments {
 		prefix := ""
 		if segment.Paragraph {
 			prefix = "\n\n"
 		}
+		segmentSubmissions = append(segmentSubmissions, Submission{
+			PCM:          segment.PCM,
+			WAV:          PCMToWAV(segment.PCM),
+			DurationSecs: PCMDurationSecs(segment.PCM),
+			Language:     current.Language,
+			Prefix:       prefix,
+		})
+	}
 
-		if err := c.submitter.Submit(TranscriptionJob{
-			Submission: Submission{
-				PCM:          segment.PCM,
-				WAV:          PCMToWAV(segment.PCM),
-				DurationSecs: PCMDurationSecs(segment.PCM),
-				Language:     current.Language,
-				Prefix:       prefix,
-				QuickNote:    current.QuickNote,
-				QuickNoteID:  current.QuickNoteID,
-			},
-			Target: current.Target,
-		}); err != nil {
-			c.onLog(fmt.Sprintf("Queue error: %v", err), "error")
-			c.onState("idle", "")
-			return err
-		}
+	if err := c.submitter.Submit(TranscriptionJob{
+		Submission: Submission{
+			PCM:          pcm,
+			WAV:          PCMToWAV(pcm),
+			DurationSecs: dur,
+			Language:     current.Language,
+			QuickNote:    current.QuickNote,
+			QuickNoteID:  current.QuickNoteID,
+		},
+		Segments: segmentSubmissions,
+		Target:   current.Target,
+	}); err != nil {
+		c.onLog(fmt.Sprintf("Queue error: %v", err), "error")
+		c.onState("idle", "")
+		return err
 	}
 
 	return nil
+}
+
+func (c *RecordingController) clearStopping() {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.stopping = false
 }
 
 func (c *RecordingController) onState(status, text string) {

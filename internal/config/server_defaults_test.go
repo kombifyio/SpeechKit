@@ -22,8 +22,8 @@ func TestApplyServerRuntimeDefaults_OptInConfiguresSelfHostedStack(t *testing.T)
 	if !cfg.LocalLLM.Enabled || cfg.LocalLLM.BaseURL != defaultServerLLMBaseURL {
 		t.Fatalf("LocalLLM default = enabled %v base %q", cfg.LocalLLM.Enabled, cfg.LocalLLM.BaseURL)
 	}
-	if defaultServerLLMModel != "ggml-org/gemma-4-E4B-it-GGUF:Q4_K_M" {
-		t.Fatalf("default server LLM model = %q, want ggml-org/gemma-4-E4B-it-GGUF:Q4_K_M", defaultServerLLMModel)
+	if defaultServerLLMModel != "ggml-org/gemma-4-E2B-it-GGUF:Q8_0" {
+		t.Fatalf("default server LLM model = %q, want ggml-org/gemma-4-E2B-it-GGUF:Q8_0", defaultServerLLMModel)
 	}
 	if cfg.LocalLLM.AssistModel != defaultServerLLMModel || cfg.LocalLLM.AgentModel != defaultServerLLMModel {
 		t.Fatalf("LocalLLM models = assist %q agent %q", cfg.LocalLLM.AssistModel, cfg.LocalLLM.AgentModel)

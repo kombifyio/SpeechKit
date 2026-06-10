@@ -108,4 +108,12 @@ func TestWriteBrowserAuthError_CSPHashesInlineAssets(t *testing.T) {
 	if !strings.Contains(body, "<script>"+adminAuthErrorScriptJS+"</script>") {
 		t.Error("served <script> body does not match the hashed constant")
 	}
+	if !strings.Contains(body, `data-ui-surface="speechkit-server-admin-login"`) {
+		t.Error("admin sign-in page should carry the refreshed server UI marker")
+	}
+	for _, forbidden := range []string{`<link`, `rel="stylesheet"`, `@import`, `src="`, "localStorage", "sessionStorage"} {
+		if strings.Contains(body, forbidden) {
+			t.Fatalf("admin sign-in page must stay self-contained and avoid browser storage, found %q", forbidden)
+		}
+	}
 }

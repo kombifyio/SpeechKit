@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/coder/websocket"
+	liveopts "github.com/kombifyio/SpeechKit/pkg/speechkit/voiceagent/live"
 )
 
 // defaultOpenAIRealtimeModel is the kernel-level default for the OpenAI
@@ -374,7 +375,16 @@ func (p *OpenAILive) sendSessionUpdate(ctx context.Context, cfg LiveConfig) erro
 }
 
 func buildOpenAISession(cfg LiveConfig) map[string]any {
-	turnDetection := buildOpenAITurnDetection(cfg.Policies.ActivityDetection)
+	resolved := liveopts.ResolveLiveOptions("openai", "realtime.openai.gpt-realtime-2", cfg, nil, nil)
+	activity := cfg.Policies.ActivityDetection
+	if resolved.HasEndpointingOverride() && resolved.EndpointingMs > 0 {
+		activity.Automatic = true
+		activity.SilenceDurationMs = endpointingMsToInt32(resolved.EndpointingMs)
+	}
+	if resolved.HasTurnDetectionOverride() && !resolved.TurnDetection {
+		activity.Automatic = false
+	}
+	turnDetection := buildOpenAITurnDetection(activity)
 	inputAudio := map[string]any{
 		"format": map[string]any{
 			"type": "audio/pcm",
@@ -400,7 +410,7 @@ func buildOpenAISession(cfg LiveConfig) map[string]any {
 					"type": "audio/pcm",
 					"rate": openaiInputSampleRate,
 				},
-				"voice": firstNonEmptyOpenAIVoice(cfg.Voice),
+				"voice": firstNonEmptyOpenAIVoice(resolved.Voice),
 			},
 		},
 	}
@@ -409,6 +419,17 @@ func buildOpenAISession(cfg LiveConfig) map[string]any {
 		session["tool_choice"] = "auto"
 	}
 	return session
+}
+
+func endpointingMsToInt32(value int) int32 {
+	if value <= 0 {
+		return 0
+	}
+	const maxInt32 = int(^uint32(0) >> 1)
+	if value > maxInt32 {
+		return int32(maxInt32)
+	}
+	return int32(value) // #nosec G115 -- value is clamped to int32 range above.
 }
 
 // firstNonEmptyOpenAIVoice maps the kernel's voice name to a value the

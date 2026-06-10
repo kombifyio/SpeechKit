@@ -9,6 +9,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/provideropts"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/ttsroute"
 )
 
@@ -35,10 +36,12 @@ const (
 
 // SynthesizeOpts configures a single TTS request.
 type SynthesizeOpts struct {
-	Locale string
-	Voice  string
-	Speed  float64
-	Format string
+	Locale          string
+	Voice           string
+	Speed           float64
+	Format          string
+	Options         provideropts.Values
+	ProviderOptions provideropts.Values
 }
 
 // Result holds the output of a TTS synthesis.
@@ -246,6 +249,14 @@ func mergeOpts(base, override SynthesizeOpts) SynthesizeOpts {
 	}
 	if override.Format != "" {
 		base.Format = override.Format
+	}
+	if len(override.Options) > 0 {
+		base.Options = base.Options.Clone()
+		base.Options = base.Options.Merge(override.Options)
+	}
+	if len(override.ProviderOptions) > 0 {
+		base.ProviderOptions = base.ProviderOptions.Clone()
+		base.ProviderOptions = base.ProviderOptions.Merge(override.ProviderOptions)
 	}
 	return base
 }

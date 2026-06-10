@@ -100,7 +100,7 @@ func (h *Handler) voices(w http.ResponseWriter, r *http.Request) {
 	if h.cfg != nil && h.cfg.TTS.HuggingFace.Enabled {
 		voices = append(voices, map[string]any{
 			"provider":  "huggingface",
-			"id":        firstNonEmpty(h.cfg.TTS.HuggingFace.Model, "parler-tts/parler-tts-mini-multilingual-v1.1"),
+			"id":        firstNonEmpty(h.cfg.TTS.HuggingFace.Model, "Qwen/Qwen3-TTS-12Hz-1.7B-Base"),
 			"locale":    "auto",
 			"default":   len(voices) == 0,
 			"discovery": "configured",

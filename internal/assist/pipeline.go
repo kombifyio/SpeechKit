@@ -11,6 +11,7 @@ import (
 	"github.com/firebase/genkit/go/core"
 	"github.com/kombifyio/SpeechKit/internal/ai/flows"
 	"github.com/kombifyio/SpeechKit/internal/tts"
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/provideropts"
 )
 
 // Result is the framework output for Assist Mode.
@@ -29,12 +30,14 @@ type Result struct {
 
 // Pipeline orchestrates the Assist Mode flow.
 type Pipeline struct {
-	router        *Router
-	assistFlow    *core.Flow[flows.AssistInput, flows.AssistOutput, struct{}]
-	executor      ToolExecutor
-	ttsRouter     *tts.Router
-	ttsEnabled    bool
-	skillContexts SkillContextStore // v0.38.0 multi-turn store; nil = disabled
+	router             *Router
+	assistFlow         *core.Flow[flows.AssistInput, flows.AssistOutput, struct{}]
+	executor           ToolExecutor
+	ttsRouter          *tts.Router
+	ttsEnabled         bool
+	speechDefaults     provideropts.Values
+	ttsProviderOptions map[string]provideropts.Values
+	skillContexts      SkillContextStore // v0.38.0 multi-turn store; nil = disabled
 }
 
 type PipelineOption func(*Pipeline)
@@ -55,6 +58,18 @@ func WithRouter(router *Router) PipelineOption {
 func WithSkillContextStore(store SkillContextStore) PipelineOption {
 	return func(p *Pipeline) {
 		p.skillContexts = store
+	}
+}
+
+func WithSpeechDefaults(defaults provideropts.Values) PipelineOption {
+	return func(p *Pipeline) {
+		p.speechDefaults = defaults.Clone()
+	}
+}
+
+func WithTTSProviderOptions(options map[string]provideropts.Values) PipelineOption {
+	return func(p *Pipeline) {
+		p.ttsProviderOptions = cloneProviderOptionMap(options)
 	}
 }
 
@@ -271,7 +286,9 @@ func (p *Pipeline) synthesize(ctx context.Context, result *Result) error {
 	}
 
 	ttsResult, err := p.ttsRouter.Synthesize(ctx, text, tts.SynthesizeOpts{
-		Locale: result.Locale,
+		Locale:                    result.Locale,
+		Options:                   p.speechDefaults.Clone(),
+		ProviderOptionsByProvider: cloneProviderOptionMap(p.ttsProviderOptions),
 	})
 	if err != nil {
 		return err
@@ -280,6 +297,22 @@ func (p *Pipeline) synthesize(ctx context.Context, result *Result) error {
 	result.Audio = ttsResult.Audio
 	result.Format = ttsResult.Format
 	return nil
+}
+
+func cloneProviderOptionMap(input map[string]provideropts.Values) map[string]provideropts.Values {
+	if len(input) == 0 {
+		return nil
+	}
+	out := make(map[string]provideropts.Values, len(input))
+	for provider, values := range input {
+		if len(values) > 0 {
+			out[provider] = values.Clone()
+		}
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
 }
 
 func firstNonEmpty(values ...string) string {

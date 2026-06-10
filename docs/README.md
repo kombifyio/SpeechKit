@@ -7,6 +7,7 @@ Start with the module you are working on, then jump into the detailed docs.
 - [../README.md](../README.md) — short module overview.
 - [speechkit-framework-api.md](./speechkit-framework-api.md) — local-first Go backend API, mode contracts, provider catalog, and local control API.
 - [architecture/sdk-surface-boundary.md](./architecture/sdk-surface-boundary.md) — public `pkg/speechkit/` boundary for v0.40.1 embedders.
+- [words-and-replacements-standard.md](./words-and-replacements-standard.md) — active first-class customization axis: Words for recognition, Replacements for deterministic transformations, and Native Templates as curated pack sources.
 - [capabilities/voice-capability-matrix.json](./capabilities/voice-capability-matrix.json) — source of truth for mode/capability/provider support and future Notion sync.
 - [voice-companion.md](./voice-companion.md) — hands-free capability model, Assist companion architecture, skills, latency budgets, and embed targets.
 - [wakeword.md](./wakeword.md) — wake activation setup, model policy, training data, and SDK promotion notes.

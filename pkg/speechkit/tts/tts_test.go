@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/kombifyio/SpeechKit/internal/sdkparity"
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/provideropts"
 )
 
 type testProvider struct {
@@ -100,13 +101,27 @@ func TestServiceMergesDefaultAndRequestOptions(t *testing.T) {
 			Voice:  "default",
 			Speed:  1.1,
 			Format: "wav",
+			Options: provideropts.Values{
+				provideropts.OptionLanguage: "de-DE",
+			},
+			ProviderOptions: provideropts.Values{
+				provideropts.OptionVoice: "default-provider-voice",
+			},
 		}),
 	)
 	if err != nil {
 		t.Fatalf("NewService: %v", err)
 	}
 
-	if _, err := service.Synthesize(context.Background(), "hello", SynthesizeOpts{Voice: "custom"}); err != nil {
+	if _, err := service.Synthesize(context.Background(), "hello", SynthesizeOpts{
+		Voice: "custom",
+		Options: provideropts.Values{
+			provideropts.OptionAudioFormat: "mp3",
+		},
+		ProviderOptions: provideropts.Values{
+			provideropts.OptionSpeed: 1.25,
+		},
+	}); err != nil {
 		t.Fatalf("Synthesize: %v", err)
 	}
 	if len(got) != 1 {
@@ -114,6 +129,18 @@ func TestServiceMergesDefaultAndRequestOptions(t *testing.T) {
 	}
 	if got[0].Locale != "en-US" || got[0].Voice != "custom" || got[0].Speed != 1.1 || got[0].Format != "wav" {
 		t.Fatalf("merged opts = %+v", got[0])
+	}
+	if got[0].Options.String(provideropts.OptionLanguage) != "de-DE" {
+		t.Fatalf("merged global language = %q", got[0].Options.String(provideropts.OptionLanguage))
+	}
+	if got[0].Options.String(provideropts.OptionAudioFormat) != "mp3" {
+		t.Fatalf("merged global audio_format = %q", got[0].Options.String(provideropts.OptionAudioFormat))
+	}
+	if got[0].ProviderOptions.String(provideropts.OptionVoice) != "default-provider-voice" {
+		t.Fatalf("merged provider voice = %q", got[0].ProviderOptions.String(provideropts.OptionVoice))
+	}
+	if got[0].ProviderOptions.Float(provideropts.OptionSpeed) != 1.25 {
+		t.Fatalf("merged provider speed = %v", got[0].ProviderOptions.Float(provideropts.OptionSpeed))
 	}
 	if service.Router() == nil {
 		t.Fatal("Router should expose the configured router")

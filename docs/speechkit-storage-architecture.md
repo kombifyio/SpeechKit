@@ -41,6 +41,12 @@ Scoped tables:
 - `audio_assets`
 - `store_stats`
 
+Words And Replacements are the v0.44 replacement for the narrow dictionary data
+model. `user_dictionary_entries` remains only as an old-data migration table
+where needed. The migration projects each dictionary row into a `Word` plus a
+`Replacement{substitution}` while preserving scoped data ownership. See
+[words-and-replacements-standard.md](words-and-replacements-standard.md).
+
 Audio is represented through `audio_assets` plus owner link tables:
 
 - `transcription_audio_assets`

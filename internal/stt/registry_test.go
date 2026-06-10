@@ -84,6 +84,34 @@ func TestBuildDeepgramDiarizationOverride(t *testing.T) {
 	}
 }
 
+func TestBuildDeepgramOptions(t *testing.T) {
+	_, provider, err := Build(BuildSpec{
+		ExecutionMode: models.ExecutionModeDeepgram,
+		ModelID:       "nova-3",
+		APIKey:        "key",
+		Deepgram: DeepgramOptions{
+			Configured:            true,
+			SmartFormat:           false,
+			UseVocabularyKeyterms: false,
+			LanguageOverride:      "multi",
+			EndpointingMs:         100,
+		},
+	})
+	if err != nil {
+		t.Fatalf("Build(deepgram) error: %v", err)
+	}
+	dg, ok := provider.(*DeepgramProvider)
+	if !ok {
+		t.Fatalf("Build(deepgram) returned %T, want *DeepgramProvider", provider)
+	}
+	if dg.SmartFormat || dg.UseVocabularyKeyterms {
+		t.Errorf("Deepgram boolean options = smart:%v keyterms:%v, want false/false", dg.SmartFormat, dg.UseVocabularyKeyterms)
+	}
+	if dg.LanguageOverride != "multi" || dg.EndpointingMs != 100 {
+		t.Errorf("Deepgram options = language:%q endpointing:%d", dg.LanguageOverride, dg.EndpointingMs)
+	}
+}
+
 func TestBuildOllamaDefaultsBaseURL(t *testing.T) {
 	_, provider, err := Build(BuildSpec{
 		ExecutionMode: models.ExecutionModeOllama,

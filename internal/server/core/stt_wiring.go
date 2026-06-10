@@ -104,6 +104,7 @@ func buildSTTRouter(cfg *config.Config) (*router.Router, []namedProvider, []stri
 		if key, source := config.ResolveDeepgramKey(cfg); key != "" {
 			p := stt.NewDeepgramProvider(key, cfg.Providers.Deepgram.STTModel)
 			p.DiarizationModel = firstNonEmpty(cfg.Providers.Deepgram.DiarizationModel, "latest")
+			p.ApplyOptions(deepgramOptionsFromConfig(cfg))
 			r.AddCloud(p)
 			providers = append(providers, namedProvider{name: "stt.deepgram", provider: p})
 			notes = append(notes, "Deepgram STT registered (model="+p.Model+", source="+source+")")

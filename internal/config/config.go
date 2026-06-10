@@ -18,13 +18,21 @@ const (
 	VoiceAgentCloseBehaviorContinue = "continue"
 	VoiceAgentCloseBehaviorNewChat  = "new_chat"
 
+	// VoiceAgentBargeIn* control whether the microphone stays open while the
+	// agent is speaking so the user can interrupt mid-answer (full duplex).
+	VoiceAgentBargeInAuto   = "auto"
+	VoiceAgentBargeInAlways = "always"
+	VoiceAgentBargeInNever  = "never"
+
 	OverlayFeedbackModeBigProductivity = "big_productivity"
 	OverlayFeedbackModeSmallFeedback   = "small_feedback"
 
-	DefaultLocalLLMBaseURL = "http://127.0.0.1:8082/v1"
-	DefaultLocalLLMModel   = "ggml-org/gemma-4-E4B-it-GGUF:Q4_K_M"
-	DefaultLocalSTTModel   = "ggml-small.bin"
-	DefaultLocalSTTPort    = 9000
+	DefaultLocalLLMBaseURL          = "http://127.0.0.1:8082/v1"
+	DefaultLocalLLMModel            = "ggml-org/gemma-4-E2B-it-GGUF:Q8_0"
+	DefaultLocalSTTModel            = "ggml-small.bin"
+	DefaultLocalSTTPort             = 9000
+	DefaultDictationPauseMs         = 1500
+	DefaultDictateSilenceTimeoutSec = 15
 
 	// ManagedDevServerURL and ManagedLiveKitURL are referenced by the
 	// pre-rewrite internal/config/credentials.go ServerConnection
@@ -67,6 +75,8 @@ type Config struct {
 	Audio          AudioConfig          `toml:"audio"`
 	UI             UIConfig             `toml:"ui"`
 	Vocabulary     VocabularyConfig     `toml:"vocabulary"`
+	Customization  CustomizationConfig  `toml:"customization"`
+	Speech         SpeechDefaultsConfig `toml:"speech"`
 	Assist         AssistConfig         `toml:"assist"`
 	Shortcuts      ShortcutsConfig      `toml:"shortcuts"`
 	ModelSelection ModelSelectionConfig `toml:"model_selection"`
@@ -78,20 +88,21 @@ type Config struct {
 	// execution (typically via onboarding or settings).
 	ServerConnection ServerConnectionConfig `toml:"server_connection"`
 
-	Local       LocalConfig       `toml:"local"`
-	LocalLLM    LocalLLMConfig    `toml:"local_llm"`
-	VPS         VPSConfig         `toml:"vps"`
-	HuggingFace HuggingFaceConfig `toml:"huggingface"`
-	Routing     RoutingConfig     `toml:"routing"`
-	Update      UpdateConfig      `toml:"update"`
-	Logging     LoggingConfig     `toml:"logging"`
-	Audit       AuditConfig       `toml:"audit"`
-	Telemetry   TelemetryConfig   `toml:"telemetry"`
-	Feedback    FeedbackConfig    `toml:"feedback"` // legacy compat; prefer Store
-	Store       StoreConfig       `toml:"store"`
-	Providers   ProvidersConfig   `toml:"providers"`
-	TTS         TTSConfig         `toml:"tts"`
-	VoiceAgent  VoiceAgentConfig  `toml:"voice_agent"`
+	Local           LocalConfig           `toml:"local"`
+	LocalLLM        LocalLLMConfig        `toml:"local_llm"`
+	VPS             VPSConfig             `toml:"vps"`
+	HuggingFace     HuggingFaceConfig     `toml:"huggingface"`
+	Routing         RoutingConfig         `toml:"routing"`
+	Update          UpdateConfig          `toml:"update"`
+	Logging         LoggingConfig         `toml:"logging"`
+	Audit           AuditConfig           `toml:"audit"`
+	Telemetry       TelemetryConfig       `toml:"telemetry"`
+	Feedback        FeedbackConfig        `toml:"feedback"` // legacy compat; prefer Store
+	Store           StoreConfig           `toml:"store"`
+	Providers       ProvidersConfig       `toml:"providers"`
+	ProviderOptions ProviderOptionsConfig `toml:"provider_options"`
+	TTS             TTSConfig             `toml:"tts"`
+	VoiceAgent      VoiceAgentConfig      `toml:"voice_agent"`
 
 	// Server configures the standalone Linux server binary (cmd/speechkit-server).
 	// All fields are optional; the desktop app (cmd/speechkit) ignores them entirely.
@@ -617,6 +628,26 @@ type VocabularyConfig struct {
 	Dictionary string `toml:"dictionary"`
 }
 
+type CustomizationConfig struct {
+	ActiveTemplateIDs []string `toml:"active_template_ids"`
+}
+
+// SpeechDefaultsConfig holds provider-neutral voice defaults that can be
+// projected into STT, TTS, and Voice Agent provider adapters when supported.
+type SpeechDefaultsConfig struct {
+	Language       string  `toml:"language"`
+	DetectLanguage bool    `toml:"detect_language"`
+	Punctuation    bool    `toml:"punctuation"`
+	SmartFormat    bool    `toml:"smart_format"`
+	VocabularyBias bool    `toml:"vocabulary_bias"`
+	Timestamps     bool    `toml:"timestamps"`
+	EndpointingMs  int     `toml:"endpointing_ms"`
+	TurnDetection  bool    `toml:"turn_detection"`
+	Voice          string  `toml:"voice"`
+	Speed          float64 `toml:"speed"`
+	AudioFormat    string  `toml:"audio_format"`
+}
+
 type AssistConfig struct {
 	EnabledTools []string `toml:"enabled_tools"`
 
@@ -1008,10 +1039,19 @@ type GoogleProviderConfig struct {
 }
 
 type DeepgramProviderConfig struct {
-	Enabled          bool   `toml:"enabled"`
-	APIKeyEnv        string `toml:"api_key_env"`
-	STTModel         string `toml:"stt_model"`
-	DiarizationModel string `toml:"diarization_model"`
+	Enabled                  bool   `toml:"enabled"`
+	APIKeyEnv                string `toml:"api_key_env"`
+	STTModel                 string `toml:"stt_model"`
+	STTLanguage              string `toml:"stt_language"`
+	STTSmartFormat           bool   `toml:"stt_smart_format"`
+	STTDictation             bool   `toml:"stt_dictation"`
+	STTFillerWords           bool   `toml:"stt_filler_words"`
+	STTNumerals              bool   `toml:"stt_numerals"`
+	STTDetectLanguage        bool   `toml:"stt_detect_language"`
+	STTUseVocabularyKeyterms bool   `toml:"stt_use_vocabulary_keyterms"`
+	STTKeyterms              string `toml:"stt_keyterms"`
+	STTEndpointingMs         int    `toml:"stt_endpointing_ms"`
+	DiarizationModel         string `toml:"diarization_model"`
 }
 
 type AssemblyAIProviderConfig struct {
@@ -1077,7 +1117,7 @@ type TTSDeepgram struct {
 
 type TTSHuggingFace struct {
 	Enabled bool   `toml:"enabled"`
-	Model   string `toml:"model"` // e.g. "parler-tts/parler-tts-mini-multilingual-v1.1"
+	Model   string `toml:"model"` // e.g. "Qwen/Qwen3-TTS-12Hz-1.7B-Base"
 }
 
 type TTSLocal struct {
@@ -1109,12 +1149,15 @@ type VoiceAgentConfig struct {
 	// Supported values:
 	//   ""          (default) — same as "gemini"
 	//   "gemini"    — Google Gemini Live (cloud, GOOGLE_AI_API_KEY required)
+	//   "openai"    — OpenAI Realtime API (cloud, OPENAI_API_KEY required)
+	//   "deepgram"  — Deepgram Voice Agent (cloud, DEEPGRAM_API_KEY required)
 	//   "cascaded"  — self-hosted whisper.cpp → Genkit agent LLM → TTS pipeline
 	//                 (CPU-capable; no external realtime dependency)
 	//   "moshi"     — self-hosted Kyutai Moshi Rust server (GPU required, M9b)
 	//
-	// The Server-Target reads this field via cmd/speechkit-server; the Device-
-	// Target currently always uses "gemini" and ignores it.
+	// The Server-Target reads this field via cmd/speechkit-server. The Device-
+	// Target runs "gemini", "openai", and "deepgram" in-process; other values
+	// fall back to Gemini Live (or the pipeline fallback when enabled).
 	Provider      string `toml:"provider"`
 	Model         string `toml:"model"`          // Real-time model ID (e.g. "gemini-3.1-flash-live-preview")
 	FallbackModel string `toml:"fallback_model"` // Fallback real-time model
@@ -1136,8 +1179,19 @@ type VoiceAgentConfig struct {
 	RefinementPrompt         string `toml:"refinement_prompt"` // User-specific refinement appended to the framework prompt
 	AutoStartOnLaunch        bool   `toml:"auto_start_on_launch"`
 	CloseBehavior            string `toml:"close_behavior"` // "continue" keeps the conversation window in the taskbar; "new_chat" ends the current chat on close
-	ReminderAfterIdleSec     int    `toml:"reminder_after_idle_sec"`
-	DeactivateAfterIdleSec   int    `toml:"deactivate_after_idle_sec"`
+	// BargeIn controls whether the microphone stays open while the agent is
+	// speaking so the user can interrupt mid-answer:
+	//   "auto"   (default) — full duplex when the active output device looks
+	//            like a headset (closed acoustic path, no speaker bleed);
+	//            half duplex otherwise. Evaluated at session start.
+	//   "always" — full duplex on every output device. Only sensible with
+	//            hardware/OS echo cancellation; without it the agent hears
+	//            itself through the speakers and interrupts itself.
+	//   "never"  — half duplex: the mic is muted while the agent speaks and
+	//            until the buffered answer finished playing.
+	BargeIn                string `toml:"barge_in"`
+	ReminderAfterIdleSec   int    `toml:"reminder_after_idle_sec"`
+	DeactivateAfterIdleSec int    `toml:"deactivate_after_idle_sec"`
 	// HoldReleaseGraceSec controls how long the Voice Agent stays open after
 	// the user releases a hold-to-talk shortcut so the model has time to
 	// deliver its reply. 0 (or unset) falls back to the kernel default

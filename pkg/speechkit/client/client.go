@@ -223,6 +223,130 @@ func (c *Client) ReplaceVocabularyEntries(ctx context.Context, language string, 
 	return out.Entries, nil
 }
 
+func (c *Client) Words(ctx context.Context, language string) ([]Word, error) {
+	path := "/v1/words"
+	if strings.TrimSpace(language) != "" {
+		path += "?language=" + url.QueryEscape(strings.TrimSpace(language))
+	}
+	var out struct {
+		Words []Word `json:"words"`
+	}
+	if err := c.DoJSON(ctx, http.MethodGet, path, nil, &out); err != nil {
+		return nil, err
+	}
+	return out.Words, nil
+}
+
+func (c *Client) ReplaceWords(ctx context.Context, language string, words []Word) ([]Word, error) {
+	var out struct {
+		Words []Word `json:"words"`
+	}
+	if err := c.DoJSON(ctx, http.MethodPost, "/v1/words", map[string]any{
+		"language": strings.TrimSpace(language),
+		"words":    words,
+	}, &out); err != nil {
+		return nil, err
+	}
+	return out.Words, nil
+}
+
+func (c *Client) Replacements(ctx context.Context, language string) ([]Replacement, error) {
+	path := "/v1/replacements"
+	if strings.TrimSpace(language) != "" {
+		path += "?language=" + url.QueryEscape(strings.TrimSpace(language))
+	}
+	var out struct {
+		Replacements []Replacement `json:"replacements"`
+	}
+	if err := c.DoJSON(ctx, http.MethodGet, path, nil, &out); err != nil {
+		return nil, err
+	}
+	return out.Replacements, nil
+}
+
+func (c *Client) ReplaceReplacements(ctx context.Context, language string, replacements []Replacement) ([]Replacement, error) {
+	var out struct {
+		Replacements []Replacement `json:"replacements"`
+	}
+	if err := c.DoJSON(ctx, http.MethodPost, "/v1/replacements", map[string]any{
+		"language":     strings.TrimSpace(language),
+		"replacements": replacements,
+	}, &out); err != nil {
+		return nil, err
+	}
+	return out.Replacements, nil
+}
+
+func (c *Client) Lexicons(ctx context.Context, language string) ([]Lexicon, error) {
+	path := "/v1/lexicons"
+	if strings.TrimSpace(language) != "" {
+		path += "?language=" + url.QueryEscape(strings.TrimSpace(language))
+	}
+	var out struct {
+		Lexicons []Lexicon `json:"lexicons"`
+	}
+	if err := c.DoJSON(ctx, http.MethodGet, path, nil, &out); err != nil {
+		return nil, err
+	}
+	return out.Lexicons, nil
+}
+
+func (c *Client) ReplaceLexicons(ctx context.Context, language string, lexicons []Lexicon) ([]Lexicon, error) {
+	var out struct {
+		Lexicons []Lexicon `json:"lexicons"`
+	}
+	if err := c.DoJSON(ctx, http.MethodPost, "/v1/lexicons", map[string]any{
+		"language": strings.TrimSpace(language),
+		"lexicons": lexicons,
+	}, &out); err != nil {
+		return nil, err
+	}
+	return out.Lexicons, nil
+}
+
+func (c *Client) Rulesets(ctx context.Context, language string) ([]Ruleset, error) {
+	path := "/v1/rulesets"
+	if strings.TrimSpace(language) != "" {
+		path += "?language=" + url.QueryEscape(strings.TrimSpace(language))
+	}
+	var out struct {
+		Rulesets []Ruleset `json:"rulesets"`
+	}
+	if err := c.DoJSON(ctx, http.MethodGet, path, nil, &out); err != nil {
+		return nil, err
+	}
+	return out.Rulesets, nil
+}
+
+func (c *Client) ReplaceRulesets(ctx context.Context, language string, rulesets []Ruleset) ([]Ruleset, error) {
+	var out struct {
+		Rulesets []Ruleset `json:"rulesets"`
+	}
+	if err := c.DoJSON(ctx, http.MethodPost, "/v1/rulesets", map[string]any{
+		"language": strings.TrimSpace(language),
+		"rulesets": rulesets,
+	}, &out); err != nil {
+		return nil, err
+	}
+	return out.Rulesets, nil
+}
+
+func (c *Client) CustomizationPack(ctx context.Context, language string) (*Pack, error) {
+	path := "/v1/customization/pack"
+	if strings.TrimSpace(language) != "" {
+		path += "?language=" + url.QueryEscape(strings.TrimSpace(language))
+	}
+	var out Pack
+	if err := c.DoJSON(ctx, http.MethodGet, path, nil, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+func (c *Client) ImportCustomizationPack(ctx context.Context, pack Pack) error {
+	return c.DoJSON(ctx, http.MethodPost, "/v1/customization/pack", pack, nil)
+}
+
 func (c *Client) Transcripts(ctx context.Context, limit int) ([]Transcript, error) {
 	path := "/v1/transcripts"
 	if limit > 0 {

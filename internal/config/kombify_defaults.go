@@ -53,6 +53,8 @@ func ApplyKombifyDeploymentDefaults(cfg *Config) []string {
 	}
 	if strings.TrimSpace(cfg.Providers.Deepgram.STTModel) == "" {
 		cfg.Providers.Deepgram.STTModel = kombifyDeepgramSTTModel
+		cfg.Providers.Deepgram.STTSmartFormat = true
+		cfg.Providers.Deepgram.STTUseVocabularyKeyterms = true
 	}
 	if setModePrimaryWithFallback(&cfg.ModelSelection.Dictate, kombifyDeepgramSTTProfileID, DefaultDictatePrimaryProfileID) {
 		notes = append(notes, "kombify defaults: Dictate primary = "+kombifyDeepgramSTTProfileID)

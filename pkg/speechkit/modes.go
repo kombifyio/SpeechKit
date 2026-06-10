@@ -75,6 +75,9 @@ const (
 	CapabilityToolCalling           Capability = "tool_calling"
 	CapabilityDictionaryPrompt      Capability = "dictionary_prompt"
 	CapabilityDictionaryNativeHints Capability = "dictionary_native_hints"
+	CapabilityWordsPrompt           Capability = "words_prompt"
+	CapabilityWordsNativeHints      Capability = "words_native_hints"
+	CapabilityPostSTTReplacements   Capability = "post_stt_replacements"
 	CapabilitySessionSummary        Capability = "session_summary"
 	CapabilitySpeakerDiarization    Capability = "speaker_diarization"
 	CapabilitySpeakerIdentification Capability = "speaker_identification"
@@ -303,7 +306,7 @@ func DefaultModeContracts() []ModeContract {
 			Intelligence: IntelligenceUser,
 			Input:        "audio",
 			Output:       "text",
-			Allowed:      []Capability{CapabilityTranscription, CapabilitySTT, CapabilityAudioInput, CapabilityDictionaryPrompt, CapabilityDictionaryNativeHints, CapabilitySpeakerDiarization, CapabilitySpeakerIdentification, CapabilitySpeakerAttribution},
+			Allowed:      []Capability{CapabilityTranscription, CapabilitySTT, CapabilityAudioInput, CapabilityDictionaryPrompt, CapabilityDictionaryNativeHints, CapabilityWordsPrompt, CapabilityWordsNativeHints, CapabilityPostSTTReplacements, CapabilitySpeakerDiarization, CapabilitySpeakerIdentification, CapabilitySpeakerAttribution},
 			Forbidden:    []Capability{CapabilityToolCalling, CapabilityLLM, CapabilityRealtimeAudio, CapabilityTTS},
 		},
 		{
@@ -311,7 +314,7 @@ func DefaultModeContracts() []ModeContract {
 			Intelligence: IntelligenceUtility,
 			Input:        "audio_or_text_with_optional_context",
 			Output:       "one_shot_result",
-			Allowed:      []Capability{CapabilityLLM, CapabilityToolCalling, CapabilityTTS, CapabilitySessionSummary, CapabilitySpeakerDiarization, CapabilitySpeakerIdentification, CapabilitySpeakerAttribution},
+			Allowed:      []Capability{CapabilityLLM, CapabilityToolCalling, CapabilityTTS, CapabilitySessionSummary, CapabilityPostSTTReplacements, CapabilitySpeakerDiarization, CapabilitySpeakerIdentification, CapabilitySpeakerAttribution},
 			Forbidden:    []Capability{CapabilityRealtimeAudio},
 		},
 		{
@@ -319,7 +322,7 @@ func DefaultModeContracts() []ModeContract {
 			Intelligence: IntelligenceBrainstorming,
 			Input:        "realtime_audio_dialogue",
 			Output:       "dialogue_transcript_and_optional_summary",
-			Allowed:      []Capability{CapabilityRealtimeAudio, CapabilityPipelineFallback, CapabilityAudioInput, CapabilityTTS, CapabilitySessionSummary, CapabilityToolCalling, CapabilitySpeakerDiarization, CapabilitySpeakerIdentification, CapabilitySpeakerAttribution},
+			Allowed:      []Capability{CapabilityRealtimeAudio, CapabilityPipelineFallback, CapabilityAudioInput, CapabilityTTS, CapabilitySessionSummary, CapabilityToolCalling, CapabilityWordsPrompt, CapabilityWordsNativeHints, CapabilitySpeakerDiarization, CapabilitySpeakerIdentification, CapabilitySpeakerAttribution},
 			Forbidden:    []Capability{CapabilityTranscription},
 		},
 		{
@@ -328,7 +331,7 @@ func DefaultModeContracts() []ModeContract {
 			Input:        "text",
 			Output:       "audio",
 			Allowed:      []Capability{CapabilityTTS},
-			Forbidden:    []Capability{CapabilityTranscription, CapabilitySTT, CapabilityLLM, CapabilityRealtimeAudio, CapabilityToolCalling, CapabilityPipelineFallback, CapabilityDictionaryPrompt, CapabilityDictionaryNativeHints, CapabilitySessionSummary},
+			Forbidden:    []Capability{CapabilityTranscription, CapabilitySTT, CapabilityLLM, CapabilityRealtimeAudio, CapabilityToolCalling, CapabilityPipelineFallback, CapabilityDictionaryPrompt, CapabilityDictionaryNativeHints, CapabilityWordsPrompt, CapabilityWordsNativeHints, CapabilityPostSTTReplacements, CapabilitySessionSummary},
 		},
 	}
 }

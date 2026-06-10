@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/kombifyio/SpeechKit/internal/netsec"
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/provideropts"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/speaker"
 )
 
@@ -53,8 +54,11 @@ func (p *AssemblyAIProvider) Transcribe(ctx context.Context, audio []byte, opts 
 	if err != nil {
 		return nil, err
 	}
-	speakerOpts := opts.Speaker.Normalized()
-	transcriptID, err := p.createTranscript(ctx, uploadURL, opts, speakerOpts)
+	resolved := ResolveTranscribeOptions("assemblyai", assemblyAIProfileID(opts.Model), opts, provideropts.Values{
+		provideropts.OptionLanguage: "de",
+	}, nil)
+	speakerOpts := resolved.Speaker
+	transcriptID, err := p.createTranscript(ctx, uploadURL, opts, resolved)
 	if err != nil {
 		return nil, err
 	}
@@ -63,7 +67,7 @@ func (p *AssemblyAIProvider) Transcribe(ctx context.Context, audio []byte, opts 
 		return nil, err
 	}
 
-	lang := firstNonEmptyTrimmed(transcript.LanguageCode, opts.Language, "de")
+	lang := firstNonEmptyTrimmed(transcript.LanguageCode, resolved.Language, "de")
 	model := strings.Join(p.modelsForRequest(opts.Model), ",")
 	result := &Result{
 		Text:       strings.TrimSpace(transcript.Text),
@@ -127,7 +131,7 @@ func (p *AssemblyAIProvider) upload(ctx context.Context, audio []byte) (string, 
 	return response.UploadURL, nil
 }
 
-func (p *AssemblyAIProvider) createTranscript(ctx context.Context, audioURL string, opts TranscribeOpts, speakerOpts speaker.Options) (string, error) {
+func (p *AssemblyAIProvider) createTranscript(ctx context.Context, audioURL string, opts TranscribeOpts, resolved ResolvedTranscribeOptions) (string, error) {
 	endpoint, err := netsec.BuildEndpoint(firstNonEmptyTrimmed(p.BaseURL, assemblyAIBaseURL), "v2/transcript", p.Validation)
 	if err != nil {
 		return "", fmt.Errorf("assemblyai endpoint: %w", err)
@@ -136,11 +140,18 @@ func (p *AssemblyAIProvider) createTranscript(ctx context.Context, audioURL stri
 	body := assemblyAITranscriptRequest{
 		AudioURL:          audioURL,
 		SpeechModels:      p.modelsForRequest(opts.Model),
-		LanguageDetection: opts.Language == "" || opts.Language == "auto",
+		LanguageDetection: resolved.DetectLanguage || strings.EqualFold(resolved.APILanguage(), "auto") || strings.TrimSpace(resolved.APILanguage()) == "",
 	}
-	if opts.Language != "" && opts.Language != "auto" {
-		body.LanguageCode = opts.Language
+	if language := resolved.APILanguage(); language != "" {
+		body.LanguageCode = language
 	}
+	if resolved.Punctuation {
+		body.Punctuate = true
+	}
+	if resolved.SmartFormat {
+		body.FormatText = true
+	}
+	speakerOpts := resolved.Speaker
 	if speakerOpts.WantsDiarization() {
 		body.SpeakerLabels = true
 		// AssemblyAI rejects requests that send both speakers_expected and
@@ -279,6 +290,13 @@ func (p *AssemblyAIProvider) modelsForRequest(override string) []string {
 	return append([]string(nil), models...)
 }
 
+func assemblyAIProfileID(model string) string {
+	if strings.Contains(strings.ToLower(strings.TrimSpace(model)), "diarization") {
+		return "stt.assemblyai.universal-diarization"
+	}
+	return "stt.assemblyai.universal"
+}
+
 type assemblyAIUploadResponse struct {
 	UploadURL string `json:"upload_url"`
 }
@@ -288,6 +306,8 @@ type assemblyAITranscriptRequest struct {
 	SpeechModels        []string                       `json:"speech_models,omitempty"`
 	LanguageDetection   bool                           `json:"language_detection,omitempty"`
 	LanguageCode        string                         `json:"language_code,omitempty"`
+	Punctuate           bool                           `json:"punctuate,omitempty"`
+	FormatText          bool                           `json:"format_text,omitempty"`
 	SpeakerLabels       bool                           `json:"speaker_labels,omitempty"`
 	SpeakersExpected    int                            `json:"speakers_expected,omitempty"`
 	SpeakerOptions      *assemblyAISpeakerOptions      `json:"speaker_options,omitempty"`

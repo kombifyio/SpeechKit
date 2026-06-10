@@ -12,6 +12,148 @@ IDs, source paths, and other maintainer-only vocabulary.
 
 ## [Unreleased]
 
+## [0.45.0] - 2026-06-10
+
+Voice Agent professionalization release: OpenAI Realtime joins Gemini Live and
+Deepgram as a realtime backend on both the desktop app and the server, holding
+the Voice Agent shortcut now carries a full conversation, and the settings
+experience gets a unified integrations layout.
+
+### Highlights
+
+- **OpenAI Realtime Everywhere**: pick OpenAI Realtime as the Voice Agent
+  backend on the desktop app or switch any server session to it on the fly —
+  alongside Gemini Live, Deepgram, and the local pipeline.
+- **Hold-to-Talk Conversations**: keep the shortcut held for a full dialog —
+  speak, hear the answer, and speak again — with a playback-aware echo guard
+  and headset barge-in for interrupting the agent mid-answer.
+- **Redesigned Voice Agent Window**: a clearer status area, an animated voice
+  visualizer, and a scrolling conversation view.
+- **One Settings Experience**: speech defaults live on the General page,
+  Home Assistant and Piper become integration cards with dialog configuration,
+  and every language picker is a curated dropdown.
+
+### Added
+
+- Voice Agent now supports OpenAI Realtime as a selectable backend on the
+  desktop app: set the Voice Agent provider to `openai` and SpeechKit runs the
+  realtime dialog against the configured OpenAI realtime model, alongside the
+  existing Gemini Live and Deepgram options.
+- Pressing the Voice Agent shortcut again right after releasing it now resumes
+  the running conversation instead of starting a new session.
+- You can now interrupt the Voice Agent mid-answer when using headphones:
+  with a headset connected the microphone stays live while the agent speaks,
+  so simply talking stops the answer and starts your turn. A new
+  `barge_in` setting controls this (`auto` by default, `always` for setups
+  with echo cancellation, `never` for the previous push-style behavior).
+
+### Changed
+
+- Holding the Voice Agent shortcut now carries a full conversation: speak,
+  hear the answer, and speak again while keeping the key held. Releasing the
+  key lets the agent finish its current answer — including the audio that is
+  still playing — before the session closes, instead of cutting it off after a
+  fixed timer.
+- The Voice Agent now keeps the microphone muted until the agent's answer has
+  actually finished playing, so the agent no longer hears itself through the
+  speakers and multi-turn conversations stay stable.
+- The Voice Agent window status now follows what you hear: it shows
+  "Speaking" until the answer has finished playing, then returns to
+  "Listening".
+- The expanded Voice Agent window has a redesigned live-dialog surface with a
+  clearer status area, an animated voice visualizer, and a scrolling
+  conversation view.
+- Speech defaults (language, audio format, endpointing, TTS speed, and the
+  punctuation/formatting toggles) moved from the Integrations page to the
+  General settings page. Providers still override individual options in their
+  Advanced dialog on the Integrations page.
+- Home Assistant and Piper now appear as integration cards in a new Extended
+  Integrations group on the Integrations page. Their configuration opens in a
+  dialog, matching the cloud provider cards, instead of inline forms on the
+  page.
+- Every language selection in Settings is now a dropdown with a curated
+  language list instead of a free-text field. A previously saved custom
+  language stays selectable.
+
+### Fixed
+
+- Selecting the OpenAI realtime backend for a Voice Agent session on the
+  SpeechKit server now works regardless of the server's configured default
+  provider. Previously the per-session backend switch only offered Deepgram,
+  Gemini, and the local pipeline.
+- The configured Voice Agent fallback model is now used when the primary
+  realtime model is unavailable.
+- Restarting the Voice Agent immediately after a session ended no longer
+  risks a silent or muted session: the previous session's cleanup could stop
+  the new session's audio output and microphone stream while it was still
+  finishing the conversation summary.
+
+## [0.44.0] - 2026-06-09
+
+Customization release for Words and Replacements, provider options, and more
+reliable segmented transcription. This release turns voice customization into a
+framework concept instead of a mode-specific vocabulary feature.
+
+### Highlights
+
+- **Two Core Extension Primitives**: Words teach SpeechKit what terms to
+  recognize, while Replacements shape final text with deterministic
+  substitutions and synonyms.
+- **Customization Packs**: Words, Replacements, Lexicons, and Rulesets can now
+  move between local apps, server deployments, and embedded hosts through one
+  portable pack format.
+- **Provider Options**: Speech, text, and realtime providers now expose
+  structured option contracts, making provider-specific controls visible and
+  easier to validate.
+
+### Added
+
+- Added first-class Words and Replacements APIs for Device and Server targets,
+  including Lexicon, Ruleset, and Customization Pack surfaces.
+- Added a Settings Customization page for user-managed Words and
+  substitution/synonym rules.
+- Added scoped storage for customization records so hosts can author global,
+  app, install, organization, user, or session-level behavior without changing
+  runtime hooks.
+- Added provider option metadata for STT, TTS, and realtime voice providers.
+
+### Changed
+
+- Dictation now applies resolved post-transcription substitutions and synonyms
+  after segmented STT output has been merged.
+- Assist transcript cleanup now consumes the same customization service before
+  the existing one-shot utility and model path.
+- Voice Agent sessions can receive active Words as recognition and context
+  hints.
+- The website and technical docs now position Words and Replacements as the
+  public customization model. Dictionary-shaped surfaces are treated as
+  migration projections, not as the framework extension concept.
+
+### Fixed
+
+- Multi-segment recordings are now submitted as one transcription job, processed
+  in parallel, merged in order, and transformed once before output delivery.
+
+## [0.43.1] - 2026-06-09
+
+Server web experience refresh patch. No public API change.
+
+### Highlights
+
+- **First-Class Server Setup**: The self-hosted server setup flow now feels closer to the Windows client with a cleaner, more operational interface.
+- **Clearer Runtime Checks**: The browser smoke dashboard now presents server readiness and mode checks with stronger status hierarchy and easier navigation.
+
+### Changed
+
+- The server setup, settings, smoke dashboard, and admin sign-in pages now share
+  a polished SpeechKit visual system with clearer status chips, responsive
+  layouts, and direct navigation between setup and smoke checks.
+
+### Fixed
+
+- Server web pages stay fully styled under strict browser-security headers
+  without relying on external stylesheets or weakening the inline asset policy.
+
 ## [0.43.0] - 2026-06-09
 
 Provider expansion release for cloud speech, speaker-aware transcription, and

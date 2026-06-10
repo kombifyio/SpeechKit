@@ -14,6 +14,7 @@ import (
 
 	"github.com/kombifyio/SpeechKit/internal/models"
 	"github.com/kombifyio/SpeechKit/internal/netsec"
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/provideropts"
 )
 
 const (
@@ -119,8 +120,16 @@ func (d *Deepgram) Synthesize(ctx context.Context, text string, opts SynthesizeO
 		return nil, fmt.Errorf("deepgram tts: no API key configured")
 	}
 
-	model := d.resolveModel(opts)
-	_, actualFormat := speakParams(model, opts.Format)
+	providerOverrides := provideropts.Values{}
+	if strings.TrimSpace(d.model) != "" {
+		providerOverrides[provideropts.OptionVoice] = strings.TrimSpace(d.model)
+	}
+	resolved := ResolveSynthesizeOptions("deepgram", "tts.deepgram.aura-2", opts, provideropts.Values{
+		provideropts.OptionAudioFormat: "mp3",
+	}, providerOverrides)
+
+	model := d.resolveModel(SynthesizeOpts{Locale: resolved.Locale, Voice: resolved.Voice})
+	_, actualFormat := speakParams(model, resolved.Format)
 	chunks := splitForDeepgramTTS(text, deepgramTTSMaxChars)
 
 	// Multi-chunk WAV needs special handling: each /v1/speak WAV response is a
@@ -150,7 +159,7 @@ func (d *Deepgram) Synthesize(ctx context.Context, text string, opts SynthesizeO
 		}, nil
 	}
 
-	endpoint, err := d.buildSpeakEndpoint(model, opts.Format)
+	endpoint, err := d.buildSpeakEndpoint(model, resolved.Format)
 	if err != nil {
 		return nil, err
 	}

@@ -167,8 +167,8 @@ func TestRegisterServerSettings_PatchSavesProviderMatrixWithoutLeakingCredential
 		"onboarding_complete": true,
 		"modes": {
 			"dictation": {"provider_kind":"local_built_in","profile_id":"stt.local.whispercpp","model":"whisper-1"},
-			"assist": {"provider_kind":"local_built_in","profile_id":"assist.builtin.gemma4-e4b","model":"ggml-org/gemma-4-E4B-it-GGUF:Q4_K_M"},
-			"voice_agent": {"provider_kind":"local_built_in","profile_id":"realtime.builtin.pipeline","model":"ggml-org/gemma-4-E4B-it-GGUF:Q4_K_M"}
+			"assist": {"provider_kind":"local_built_in","profile_id":"assist.builtin.gemma4-e4b","model":"ggml-org/gemma-4-E2B-it-GGUF:Q8_0"},
+			"voice_agent": {"provider_kind":"local_built_in","profile_id":"realtime.builtin.pipeline","model":"ggml-org/gemma-4-E2B-it-GGUF:Q8_0"}
 		},
 		"credentials": {
 			"google": {"enabled": true, "env": "GOOGLE_AI_API_KEY", "value": "google-secret"}
@@ -551,7 +551,7 @@ func TestRegisterServerSettings_RequiresOnboardingAfterDeployVersionChanges(t *t
 			Assist: config.ServerModeSetting{
 				ProviderKind: "local_built_in",
 				ProfileID:    "assist.builtin.gemma4-e4b",
-				Model:        "ggml-org/gemma-4-E4B-it-GGUF:Q4_K_M",
+				Model:        "ggml-org/gemma-4-E2B-it-GGUF:Q8_0",
 			},
 		},
 	}); err != nil {

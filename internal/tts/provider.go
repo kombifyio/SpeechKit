@@ -2,9 +2,11 @@ package tts
 
 import (
 	"context"
+	"strings"
 	"time"
 
 	"github.com/kombifyio/SpeechKit/internal/models"
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/provideropts"
 )
 
 // Provider defines the interface for all text-to-speech backends.
@@ -24,10 +26,29 @@ type Provider interface {
 
 // SynthesizeOpts configures a single TTS request.
 type SynthesizeOpts struct {
-	Locale string  // "de-DE", "en-US", "auto"
-	Voice  string  // Provider-specific voice ID; empty = default
-	Speed  float64 // 0.25 - 4.0, default 1.0
-	Format string  // "wav", "mp3", "opus", "pcm"; default "mp3"
+	Locale                    string                         // "de-DE", "en-US", "auto"
+	Voice                     string                         // Provider-specific voice ID; empty = default
+	Speed                     float64                        // 0.25 - 4.0, default 1.0
+	Format                    string                         // "wav", "mp3", "opus", "pcm"; default "mp3"
+	Options                   provideropts.Values            // Provider-neutral global/default options.
+	ProviderOptions           provideropts.Values            // Provider-specific overrides for the selected provider.
+	ProviderOptionsByProvider map[string]provideropts.Values // Provider-keyed overrides used by routers.
+}
+
+func (o SynthesizeOpts) ForProvider(provider string) SynthesizeOpts {
+	provider = normalizeProviderKey(provider)
+	if len(o.ProviderOptionsByProvider) == 0 {
+		o.ProviderOptions = o.ProviderOptions.Clone()
+		return o
+	}
+	values := o.ProviderOptions.Clone()
+	values = values.Merge(o.ProviderOptionsByProvider[provider])
+	o.ProviderOptions = values
+	return o
+}
+
+func normalizeProviderKey(provider string) string {
+	return strings.ToLower(strings.TrimSpace(provider))
 }
 
 // Result holds the output of a TTS synthesis.

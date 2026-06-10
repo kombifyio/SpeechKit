@@ -45,6 +45,7 @@ tools/wakeword-training/output/
 AUDIT-REPORT.md
 _export/
 coverage
+$cover
 /landing.html
 /getting_started.html
 /integrations.html

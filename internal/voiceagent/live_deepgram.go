@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/coder/websocket"
+	liveopts "github.com/kombifyio/SpeechKit/pkg/speechkit/voiceagent/live"
 )
 
 // Deepgram Voice Agent API constants. The Agent WebSocket carries the full
@@ -306,6 +307,7 @@ func (p *DeepgramLive) sendSettings(ctx context.Context, cfg LiveConfig) error {
 // the listen/think/speak providers, the system prompt, and any tool functions.
 // It is pure (no I/O) so the listen/think/speak wiring can be unit-tested.
 func (p *DeepgramLive) buildSettings(cfg LiveConfig) map[string]any {
+	resolved := liveopts.ResolveLiveOptions("deepgram", "realtime.deepgram.voice-agent", cfg, nil, nil)
 	think := map[string]any{
 		"provider": map[string]any{
 			"type":  dgFirst(p.ThinkProvider, deepgramThinkProviderDefault),
@@ -328,7 +330,7 @@ func (p *DeepgramLive) buildSettings(cfg LiveConfig) map[string]any {
 	}
 	// VocabularyHint boosts recognition of domain terms — Nova-3 exposes this
 	// as keyterms on the listen provider.
-	if keyterms := splitKeyterms(cfg.VocabularyHint); len(keyterms) > 0 {
+	if keyterms := resolved.Keyterms; len(keyterms) > 0 {
 		listenProvider["keyterms"] = keyterms
 	}
 
@@ -338,11 +340,11 @@ func (p *DeepgramLive) buildSettings(cfg LiveConfig) map[string]any {
 		"speak": map[string]any{
 			"provider": map[string]any{
 				"type":  "deepgram",
-				"model": p.resolveSpeakModel(cfg),
+				"model": p.resolveSpeakModel(LiveConfig{Locale: resolved.Locale, Voice: resolved.Voice}),
 			},
 		},
 	}
-	if lang := deepgramAgentLanguage(cfg.Locale); lang != "" {
+	if lang := deepgramAgentLanguage(resolved.Locale); lang != "" {
 		agent["language"] = lang
 	}
 

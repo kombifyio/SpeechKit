@@ -22,12 +22,12 @@ func TestApplyServerModelSettings_AppliesProviderMatrixAndCredentialEnv(t *testi
 			Assist: ServerModeSetting{
 				ProviderKind: "local_built_in",
 				ProfileID:    "assist.builtin.gemma4-e4b",
-				Model:        "ggml-org/gemma-4-E4B-it-GGUF:Q4_K_M",
+				Model:        "ggml-org/gemma-4-E2B-it-GGUF:Q8_0",
 			},
 			VoiceAgent: ServerModeSetting{
 				ProviderKind: "local_built_in",
 				ProfileID:    "realtime.builtin.pipeline",
-				Model:        "ggml-org/gemma-4-E4B-it-GGUF:Q4_K_M",
+				Model:        "ggml-org/gemma-4-E2B-it-GGUF:Q8_0",
 			},
 		},
 		Credentials: ServerCredentialSettings{
@@ -71,7 +71,7 @@ func TestApplyServerModelSettings_AppliesProviderMatrixAndCredentialEnv(t *testi
 	if got := os.Getenv("SPEECHKIT_UI_OPENAI_KEY"); got != "sk-test-value" {
 		t.Fatalf("OpenAI key env value = %q", got)
 	}
-	if !cfg.LocalLLM.Enabled || cfg.LocalLLM.AssistModel != "ggml-org/gemma-4-E4B-it-GGUF:Q4_K_M" || cfg.LocalLLM.AgentModel != "ggml-org/gemma-4-E4B-it-GGUF:Q4_K_M" {
+	if !cfg.LocalLLM.Enabled || cfg.LocalLLM.AssistModel != "ggml-org/gemma-4-E2B-it-GGUF:Q8_0" || cfg.LocalLLM.AgentModel != "ggml-org/gemma-4-E2B-it-GGUF:Q8_0" {
 		t.Fatalf("local LLM = enabled %v assist %q agent %q", cfg.LocalLLM.Enabled, cfg.LocalLLM.AssistModel, cfg.LocalLLM.AgentModel)
 	}
 	if cfg.VoiceAgent.Provider != "cascaded" {
@@ -230,7 +230,7 @@ func TestLoadServerModelSettings_NormalizesLegacyServerLLMAlias(t *testing.T) {
 	if !ok {
 		t.Fatal("expected saved settings")
 	}
-	if loaded.Modes.Assist.Model != "ggml-org/gemma-4-E4B-it-GGUF:Q4_K_M" || loaded.Modes.VoiceAgent.Model != "ggml-org/gemma-4-E4B-it-GGUF:Q4_K_M" {
+	if loaded.Modes.Assist.Model != "ggml-org/gemma-4-E2B-it-GGUF:Q8_0" || loaded.Modes.VoiceAgent.Model != "ggml-org/gemma-4-E2B-it-GGUF:Q8_0" {
 		t.Fatalf("models = assist %q voice %q", loaded.Modes.Assist.Model, loaded.Modes.VoiceAgent.Model)
 	}
 }

@@ -2,7 +2,7 @@ package speechkit
 
 import "sort"
 
-const DefaultLocalBuiltInLLMModel = "ggml-org/gemma-4-E4B-it-GGUF:Q4_K_M"
+const DefaultLocalBuiltInLLMModel = "ggml-org/gemma-4-E2B-it-GGUF:Q8_0"
 
 // DefaultProviderProfiles returns the built-in framework provider catalog for
 // the three strict SpeechKit modes. The Windows desktop host adapts this
@@ -49,13 +49,13 @@ func DefaultProviderProfiles() []ProviderProfile {
 		{
 			ID:             "stt.routed.whisper-large-v3",
 			Mode:           ModeDictation,
-			Name:           "Whisper Large v3 (Hugging Face)",
+			Name:           "Whisper Large v3 Turbo (Hugging Face)",
 			ProviderKind:   ProviderKindCloudProvider,
 			ExecutionMode:  ExecutionModeHFRouted,
-			ModelID:        "openai/whisper-large-v3",
+			ModelID:        "openai/whisper-large-v3-turbo",
 			Source:         "Hugging Face",
-			Description:    "High-accuracy transcription over the Hugging Face Inference Router. Requires an HF token.",
-			License:        "apache-2.0",
+			Description:    "Fast multilingual transcription over the Hugging Face Inference Router. Requires an HF token.",
+			License:        "mit",
 			Capabilities:   []Capability{CapabilityTranscription, CapabilitySTT, CapabilityAudioInput, CapabilityDictionaryPrompt},
 			AdapterKind:    "stt_router",
 			AllowInference: true,
@@ -205,8 +205,8 @@ func DefaultProviderProfiles() []ProviderProfile {
 			Capabilities:  []Capability{CapabilityLLM, CapabilityToolCalling, CapabilitySessionSummary},
 			AdapterKind:   "genkit_llm",
 			Variants: []ModelVariant{
-				{ID: "llamacpp.gemma-4-e4b-it-q4-k-m", Name: "Gemma 4 E4B IT Q4_K_M", ModelID: "gemma-4-E4B-it-Q4_K_M.gguf", Description: "Recommended balanced GGUF model for local Assist usage.", Recommended: true},
-				{ID: "llamacpp.gemma-4-e2b-it-q8-0", Name: "Gemma 4 E2B IT Q8_0", ModelID: "gemma-4-E2B-it-Q8_0.gguf", Description: "Smaller Gemma 4 GGUF model for lighter local Assist usage."},
+				{ID: "llamacpp.gemma-4-e2b-it-q8-0", Name: "Gemma 4 E2B IT Q8_0", ModelID: "gemma-4-E2B-it-Q8_0.gguf", Description: "Default lightweight GGUF model for local Assist usage.", Recommended: true},
+				{ID: "llamacpp.gemma-4-e4b-it-q4-k-m", Name: "Gemma 4 E4B IT Q4_K_M", ModelID: "gemma-4-E4B-it-Q4_K_M.gguf", Description: "Stronger optional GGUF model for devices with enough memory."},
 			},
 			AllowInference: true,
 			Default:        true,
@@ -312,8 +312,8 @@ func DefaultProviderProfiles() []ProviderProfile {
 			Capabilities:  []Capability{CapabilityAudioInput, CapabilityPipelineFallback, CapabilitySessionSummary},
 			AdapterKind:   "voice_pipeline",
 			Variants: []ModelVariant{
-				{ID: "llamacpp.gemma-4-e4b-it-q4-k-m-voice", Name: "Gemma 4 E4B IT Q4_K_M", ModelID: "gemma-4-E4B-it-Q4_K_M.gguf", Description: "Recommended balanced GGUF model for local Voice Agent pipeline fallback.", Recommended: true},
-				{ID: "llamacpp.gemma-4-e2b-it-q8-0-voice", Name: "Gemma 4 E2B IT Q8_0", ModelID: "gemma-4-E2B-it-Q8_0.gguf", Description: "Smaller Gemma 4 GGUF model for local Voice Agent pipeline fallback."},
+				{ID: "llamacpp.gemma-4-e2b-it-q8-0-voice", Name: "Gemma 4 E2B IT Q8_0", ModelID: "gemma-4-E2B-it-Q8_0.gguf", Description: "Default lightweight GGUF model for local Voice Agent pipeline fallback.", Recommended: true},
+				{ID: "llamacpp.gemma-4-e4b-it-q4-k-m-voice", Name: "Gemma 4 E4B IT Q4_K_M", ModelID: "gemma-4-E4B-it-Q4_K_M.gguf", Description: "Stronger optional GGUF model for Voice Agent pipeline fallback."},
 			},
 			AllowInference: true,
 			Default:        true,
@@ -530,7 +530,7 @@ func DefaultProviderProfiles() []ProviderProfile {
 			Name:           "Parler-TTS Mini Multilingual (Hugging Face)",
 			ProviderKind:   ProviderKindCloudProvider,
 			ExecutionMode:  ExecutionModeHFRouted,
-			ModelID:        "parler-tts/parler-tts-mini-multilingual-v1.1",
+			ModelID:        "Qwen/Qwen3-TTS-12Hz-1.7B-Base",
 			Source:         "Hugging Face",
 			Description:    "Hugging Face Inference Router serves the Parler multilingual voice. Requires an HF token. Good baseline cloud option without OpenAI / Google credentials.",
 			License:        "apache-2.0",

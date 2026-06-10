@@ -77,6 +77,46 @@ func TestDeepgram_StartSpeakerStream_UsesStreamingDiarizeQuery(t *testing.T) {
 	}
 }
 
+func TestDeepgram_StartSpeakerStream_AppliesStreamingOptions(t *testing.T) {
+	var gotQuery string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotQuery = r.URL.RawQuery
+		conn, err := websocket.Accept(w, r, &websocket.AcceptOptions{InsecureSkipVerify: true})
+		if err != nil {
+			t.Fatalf("accept: %v", err)
+		}
+		defer conn.Close(websocket.StatusNormalClosure, "done")
+		_, _, _ = conn.Read(context.Background())
+	}))
+	defer server.Close()
+
+	p := newTestDeepgramProvider(server.URL)
+	p.ApplyOptions(DeepgramOptions{
+		Configured:            true,
+		SmartFormat:           true,
+		FillerWords:           true,
+		LanguageOverride:      "multi",
+		UseVocabularyKeyterms: true,
+		Keyterms:              []string{"Kombify"},
+		EndpointingMs:         100,
+	})
+	stream, err := p.StartSpeakerStream(context.Background(),
+		speaker.Options{Diarization: true, Language: "de"},
+		speaker.AudioFormat{Encoding: speaker.AudioEncodingLinear16, SampleRateHz: 16000, Channels: 1},
+	)
+	if err != nil {
+		t.Fatalf("StartSpeakerStream: %v", err)
+	}
+	defer stream.Close()
+	_ = stream.EndAudio(context.Background())
+
+	for _, want := range []string{"smart_format=true", "filler_words=true", "language=multi", "endpointing=100", "keyterm=Kombify"} {
+		if !strings.Contains(gotQuery, want) {
+			t.Fatalf("query = %q, want %q", gotQuery, want)
+		}
+	}
+}
+
 func TestDeepgram_StartSpeakerStream_SendsAudioAndCloseStream(t *testing.T) {
 	gotAudio := make(chan []byte, 1)
 	gotClose := make(chan string, 1)

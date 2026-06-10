@@ -351,10 +351,21 @@ func (s *sqlStore) ReplaceUserDictionaryEntries(ctx context.Context, language st
 	if err = tx.Commit(); err != nil {
 		return fmt.Errorf("commit user dictionary entries: %w", err)
 	}
+	if err := s.replaceDictionaryCustomizationProjection(ctx, language, entries); err != nil {
+		return fmt.Errorf("sync customization projection: %w", err)
+	}
 	return nil
 }
 
 func (s *sqlStore) ListUserDictionaryEntries(ctx context.Context, language string) ([]UserDictionaryEntry, error) {
+	projected, projectionErr := s.listProjectedUserDictionaryEntries(ctx, language)
+	if projectionErr == nil && len(projected) > 0 {
+		return projected, nil
+	}
+	if projectionErr != nil && !isMissingCustomizationTable(projectionErr) {
+		return nil, projectionErr
+	}
+
 	scopeID, err := s.scopeID(ctx)
 	if err != nil {
 		return nil, err
@@ -407,6 +418,19 @@ func (s *sqlStore) RecordUserDictionaryUsage(ctx context.Context, canonical, lan
 	)
 	if err != nil {
 		return fmt.Errorf("record user dictionary usage: %w", err)
+	}
+	if err := s.RecordWordUsage(ctx, canonical, language); err != nil && !isMissingCustomizationTable(err) {
+		return fmt.Errorf("record customization word usage: %w", err)
+	}
+	_, err = s.db.ExecContext(ctx, s.dialect.rebind(fmt.Sprintf(
+		`UPDATE customization_replacements
+		 SET usage_count = usage_count + 1, updated_at = %s
+		 WHERE scope_id = ? AND enabled = %s AND lower(output_text) = lower(?) AND (? = '' OR language = ? OR language = '') AND stage = 'post_stt'`,
+		s.dialect.now(), s.dialect.boolLit(true))),
+		scopeID, canonical, language, language,
+	)
+	if err != nil && !isMissingCustomizationTable(err) {
+		return fmt.Errorf("record customization replacement usage: %w", err)
 	}
 	return nil
 }

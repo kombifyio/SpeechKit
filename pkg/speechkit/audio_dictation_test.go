@@ -1,6 +1,7 @@
 package speechkit
 
 import (
+	"bytes"
 	"encoding/binary"
 	"errors"
 	"testing"
@@ -55,8 +56,10 @@ func TestPCMToWAVWritesCanonicalHeaderAndDuration(t *testing.T) {
 	}
 }
 
-func TestDictationSegmenterEmitsSpeechSegmentAndResetsOnStop(t *testing.T) {
+func TestDictationSegmenterHoldsShortPauseUntilStop(t *testing.T) {
 	probs := append([]float32{0, 0}, repeatProb(0.8, 40)...)
+	probs = append(probs, repeatProb(0, 4)...)
+	probs = append(probs, repeatProb(0.8, 10)...)
 	probs = append(probs, repeatProb(0, 4)...)
 	vad := &fakeVAD{probs: probs}
 	segmenter := NewDictationSegmenter(vad, 64*time.Millisecond)
@@ -64,7 +67,7 @@ func TestDictationSegmenterEmitsSpeechSegmentAndResetsOnStop(t *testing.T) {
 		t.Fatal("expected segmenter")
 	}
 
-	if err := segmenter.FeedPCM(repeatFrame(46)); err != nil {
+	if err := segmenter.FeedPCM(repeatFrame(60)); err != nil {
 		t.Fatalf("FeedPCM: %v", err)
 	}
 	segments, err := segmenter.CollectStopSegments(repeatFrame(1))
@@ -81,11 +84,149 @@ func TestDictationSegmenterEmitsSpeechSegmentAndResetsOnStop(t *testing.T) {
 	if segments[0].Paragraph {
 		t.Fatal("first emitted segment should not request paragraph prefix")
 	}
-	if segments[0].Final {
-		t.Fatal("pause-emitted segment should not be marked final")
+	if !segments[0].Final {
+		t.Fatal("short pause should be flushed only as final segment on stop")
 	}
 	if !vad.reset {
 		t.Fatal("detector should reset when stop segments are collected")
+	}
+}
+
+func TestDictationSegmenterCollectStopSegmentsIncludesUnfedStopTail(t *testing.T) {
+	liveFrames := framesForDuration(DefaultDictationMinSegment + dictationFrameDuration())
+	tailFrames := 3
+	vad := &fakeVAD{probs: repeatProb(0.8, liveFrames)}
+	segmenter := NewDictationSegmenter(vad, 0)
+	if segmenter == nil {
+		t.Fatal("expected segmenter")
+	}
+
+	livePCM := bytes.Repeat([]byte{0x11}, liveFrames*dictationFrameBytes)
+	pendingPCM := bytes.Repeat([]byte{0x22}, dictationFrameBytes/2)
+	tailPCM := bytes.Repeat([]byte{0x33}, tailFrames*dictationFrameBytes)
+	fedPCM := append(append([]byte(nil), livePCM...), pendingPCM...)
+	fullPCM := append(append([]byte(nil), fedPCM...), tailPCM...)
+	if err := segmenter.FeedPCM(fedPCM); err != nil {
+		t.Fatalf("FeedPCM: %v", err)
+	}
+	segments, err := segmenter.CollectStopSegments(fullPCM)
+	if err != nil {
+		t.Fatalf("CollectStopSegments: %v", err)
+	}
+
+	if len(segments) != 1 {
+		t.Fatalf("segments = %d, want 1", len(segments))
+	}
+	if got, want := len(segments[0].PCM), len(fullPCM); got != want {
+		t.Fatalf("segment PCM length = %d, want %d", got, want)
+	}
+	if !bytes.Equal(segments[0].PCM, fullPCM) {
+		t.Fatalf("segment PCM does not preserve pending-before-stop-tail order")
+	}
+	if !segments[0].Final {
+		t.Fatal("stop tail should be flushed as a final segment")
+	}
+}
+
+func TestDictationSegmenterEmitsLongIntermediateSegmentAndResetsOnStop(t *testing.T) {
+	speechFrames := framesForDuration(DefaultDictationMinIntermediateSegment + dictationFrameDuration())
+	probs := append([]float32{0, 0}, repeatProb(0.8, speechFrames)...)
+	probs = append(probs, repeatProb(0, 4)...)
+	vad := &fakeVAD{probs: probs}
+	segmenter := NewDictationSegmenter(vad, 64*time.Millisecond)
+	if segmenter == nil {
+		t.Fatal("expected segmenter")
+	}
+
+	if err := segmenter.FeedPCM(repeatFrame(speechFrames + 6)); err != nil {
+		t.Fatalf("FeedPCM: %v", err)
+	}
+	segments, err := segmenter.CollectStopSegments(repeatFrame(1))
+	if err != nil {
+		t.Fatalf("CollectStopSegments: %v", err)
+	}
+
+	if len(segments) != 1 {
+		t.Fatalf("segments = %d, want 1", len(segments))
+	}
+	if segments[0].Duration < DefaultDictationMinIntermediateSegment {
+		t.Fatalf("segment duration = %s, want at least %s", segments[0].Duration, DefaultDictationMinIntermediateSegment)
+	}
+	if segments[0].Paragraph {
+		t.Fatal("first emitted segment should not request paragraph prefix")
+	}
+	if segments[0].Final {
+		t.Fatal("pause-emitted long segment should not be marked final")
+	}
+	if !vad.reset {
+		t.Fatal("detector should reset when stop segments are collected")
+	}
+}
+
+func TestDictationSegmenterDoesNotStartParagraphAfterShortPause(t *testing.T) {
+	speechFrames := framesForDuration(DefaultDictationMinIntermediateSegment + dictationFrameDuration())
+	probs := repeatProb(0.8, speechFrames)
+	probs = append(probs, repeatProb(0, 2)...)
+	probs = append(probs, repeatProb(0.8, speechFrames)...)
+	probs = append(probs, repeatProb(0, 2)...)
+	vad := &fakeVAD{probs: probs}
+	segmenter := NewDictationSegmenter(vad, 64*time.Millisecond)
+	if segmenter == nil {
+		t.Fatal("expected segmenter")
+	}
+
+	if err := segmenter.FeedPCM(repeatFrame(len(probs))); err != nil {
+		t.Fatalf("FeedPCM: %v", err)
+	}
+	segments, err := segmenter.CollectStopSegments(repeatFrame(1))
+	if err != nil {
+		t.Fatalf("CollectStopSegments: %v", err)
+	}
+
+	if len(segments) != 2 {
+		t.Fatalf("segments = %d, want 2", len(segments))
+	}
+	if segments[0].Paragraph {
+		t.Fatal("first emitted segment should not request paragraph prefix")
+	}
+	if segments[1].Paragraph {
+		t.Fatal("second segment should not request paragraph prefix after a short pause")
+	}
+}
+
+func TestDictationSegmenterStartsParagraphAfterLongPause(t *testing.T) {
+	firstSpeechFrames := framesForDuration(DefaultDictationMinIntermediateSegment + dictationFrameDuration())
+	idleFrames := framesForDuration(DefaultDictationParagraphPause + dictationFrameDuration())
+	secondSpeechFrames := framesForDuration(DefaultDictationMinSegment + dictationFrameDuration())
+	probs := repeatProb(0.8, firstSpeechFrames)
+	probs = append(probs, repeatProb(0, 2)...)
+	probs = append(probs, repeatProb(0, idleFrames)...)
+	probs = append(probs, repeatProb(0.8, secondSpeechFrames)...)
+	vad := &fakeVAD{probs: probs}
+	segmenter := NewDictationSegmenter(vad, 64*time.Millisecond)
+	if segmenter == nil {
+		t.Fatal("expected segmenter")
+	}
+
+	if err := segmenter.FeedPCM(repeatFrame(len(probs))); err != nil {
+		t.Fatalf("FeedPCM: %v", err)
+	}
+	segments, err := segmenter.CollectStopSegments(repeatFrame(1))
+	if err != nil {
+		t.Fatalf("CollectStopSegments: %v", err)
+	}
+
+	if len(segments) != 2 {
+		t.Fatalf("segments = %d, want 2", len(segments))
+	}
+	if segments[0].Paragraph {
+		t.Fatal("first emitted segment should not request paragraph prefix")
+	}
+	if !segments[1].Paragraph {
+		t.Fatal("second segment should request paragraph prefix after a long pause")
+	}
+	if !segments[1].Final {
+		t.Fatal("second segment should be flushed as final on stop")
 	}
 }
 
@@ -111,6 +252,11 @@ func repeatProb(prob float32, n int) []float32 {
 		values[i] = prob
 	}
 	return values
+}
+
+func framesForDuration(d time.Duration) int {
+	frame := dictationFrameDuration()
+	return int((d + frame - time.Nanosecond) / frame)
 }
 
 func repeatFrame(n int) []byte {

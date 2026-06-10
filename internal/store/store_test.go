@@ -9,6 +9,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	speechcustomize "github.com/kombifyio/SpeechKit/pkg/speechkit/customize"
 )
 
 // waitForNextSecond busy-waits until time.Now() crosses the next
@@ -578,6 +580,105 @@ func TestUserDictionaryEntriesReplaceListAndRecordUsage(t *testing.T) {
 	}
 	if len(entries) != 1 || entries[0].Canonical != "AcmeOS" {
 		t.Fatalf("entries after replace = %+v, want only AcmeOS", entries)
+	}
+}
+
+func TestCustomizationStoreWordsReplacementsAndDictionaryProjection(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "test.db")
+	s, err := New(StoreConfig{Backend: "sqlite", SQLitePath: dbPath, MaxAudioStorageMB: 100})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	defer s.Close()
+
+	customizationStore, ok := s.(CustomizationStore)
+	if !ok {
+		t.Fatal("sqlite store does not implement CustomizationStore")
+	}
+
+	ctx := context.Background()
+	if err := customizationStore.ReplaceWords(ctx, "de", []speechcustomize.Word{
+		{Term: "Kombify", Language: "de-DE", Source: "settings", Enabled: true},
+		{Term: "AcmeOS", Language: "de", Source: "settings", Enabled: true},
+	}); err != nil {
+		t.Fatalf("ReplaceWords: %v", err)
+	}
+	if err := customizationStore.ReplaceReplacements(ctx, "de", []speechcustomize.Replacement{
+		{
+			Kind:     speechcustomize.KindSubstitution,
+			Language: "de",
+			Modes:    []speechcustomize.Mode{speechcustomize.ModeDictation, speechcustomize.ModeAssist},
+			Stage:    speechcustomize.StagePostSTT,
+			Match:    speechcustomize.Match{Type: speechcustomize.MatchSpokenAlias, Pattern: "kombi fire", WordBoundary: true},
+			Output:   speechcustomize.ReplacementOutput{Text: "Kombify"},
+			Enabled:  true,
+			Source:   "settings",
+		},
+	}); err != nil {
+		t.Fatalf("ReplaceReplacements: %v", err)
+	}
+
+	words, err := customizationStore.ListWords(ctx, CustomizationListOpts{Language: "de-DE"})
+	if err != nil {
+		t.Fatalf("ListWords: %v", err)
+	}
+	if len(words) != 2 {
+		t.Fatalf("ListWords len = %d, want 2", len(words))
+	}
+	replacements, err := customizationStore.ListReplacements(ctx, CustomizationListOpts{Language: "de", Mode: speechcustomize.ModeAssist, Stage: speechcustomize.StagePostSTT})
+	if err != nil {
+		t.Fatalf("ListReplacements: %v", err)
+	}
+	if len(replacements) != 1 || replacements[0].Output.Text != "Kombify" {
+		t.Fatalf("ListReplacements = %+v", replacements)
+	}
+
+	dictionaryStore := s.(UserDictionaryStore)
+	entries, err := dictionaryStore.ListUserDictionaryEntries(ctx, "de")
+	if err != nil {
+		t.Fatalf("ListUserDictionaryEntries: %v", err)
+	}
+	if len(entries) != 2 || entries[0].Spoken != "kombi fire" || entries[0].Canonical != "Kombify" {
+		t.Fatalf("dictionary projection = %+v", entries)
+	}
+}
+
+func TestCustomizationStoreReplaceWordsWithOptionsIsSourceAware(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "test.db")
+	s, err := New(StoreConfig{Backend: "sqlite", SQLitePath: dbPath, MaxAudioStorageMB: 100})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	defer s.Close()
+
+	customizationStore := s.(CustomizationStore)
+	sourceStore := s.(CustomizationSourceStore)
+	ctx := context.Background()
+	if err := customizationStore.ReplaceWords(ctx, "de", []speechcustomize.Word{
+		{Term: "UserTerm", Language: "de", Source: "settings", Enabled: true},
+	}); err != nil {
+		t.Fatalf("ReplaceWords settings: %v", err)
+	}
+	if err := sourceStore.ReplaceWordsWithOptions(ctx, CustomizationReplaceOpts{Language: "de", Source: "pack:demo"}, []speechcustomize.Word{
+		{Term: "PackTerm", Language: "de", Source: "pack:demo", Enabled: true},
+	}); err != nil {
+		t.Fatalf("ReplaceWords pack: %v", err)
+	}
+	if err := sourceStore.ReplaceWordsWithOptions(ctx, CustomizationReplaceOpts{Language: "de", Source: "pack:demo"}, []speechcustomize.Word{
+		{Term: "PackTerm2", Language: "de", Source: "pack:demo", Enabled: true},
+	}); err != nil {
+		t.Fatalf("ReplaceWords pack second import: %v", err)
+	}
+	words, err := customizationStore.ListWords(ctx, CustomizationListOpts{Language: "de", IncludeDisabled: true})
+	if err != nil {
+		t.Fatalf("ListWords: %v", err)
+	}
+	got := map[string]bool{}
+	for _, word := range words {
+		got[word.Term] = true
+	}
+	if !got["UserTerm"] || !got["PackTerm2"] || got["PackTerm"] {
+		t.Fatalf("source-aware words = %+v", words)
 	}
 }
 

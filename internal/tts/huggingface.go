@@ -16,7 +16,7 @@ import (
 
 const (
 	hfTTSBaseURL      = "https://router.huggingface.co/hf-inference/models"
-	hfDefaultTTSModel = "parler-tts/parler-tts-mini-multilingual-v1.1"
+	hfDefaultTTSModel = "Qwen/Qwen3-TTS-12Hz-1.7B-Base"
 	hfTTSSampleRate   = 24000
 	hfMaxResponseBody = 50 * 1024 * 1024 // 50 MB
 )
@@ -41,7 +41,7 @@ type HuggingFace struct {
 // HuggingFaceOpts configures the HuggingFace TTS provider.
 type HuggingFaceOpts struct {
 	Token string // HF API token
-	Model string // Model ID, e.g. "parler-tts/parler-tts-mini-multilingual-v1.1"
+	Model string // Model ID, e.g. "Qwen/Qwen3-TTS-12Hz-1.7B-Base"
 }
 
 // NewHuggingFace creates a HuggingFace TTS provider.

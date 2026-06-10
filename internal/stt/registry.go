@@ -20,6 +20,8 @@ type BuildSpec struct {
 
 	// DiarizationModel overrides the Deepgram diarization model (optional).
 	DiarizationModel string
+	// Deepgram forwards provider-specific Listen options (optional).
+	Deepgram DeepgramOptions
 	// Google streaming credential env-var names (optional), forwarded to the
 	// Google provider so realtime transcription can authenticate.
 	GoogleStreamingCredentialsEnv   string
@@ -49,6 +51,9 @@ func Build(spec BuildSpec) (string, STTProvider, error) {
 		if spec.DiarizationModel != "" {
 			provider.DiarizationModel = spec.DiarizationModel
 		}
+		if hasDeepgramOptions(spec.Deepgram) {
+			provider.ApplyOptions(spec.Deepgram)
+		}
 		return "deepgram", provider, nil
 	case models.ExecutionModeAssemblyAI:
 		return "assemblyai", NewAssemblyAIProvider(spec.APIKey, spec.ModelID), nil
@@ -63,4 +68,17 @@ func Build(spec BuildSpec) (string, STTProvider, error) {
 	default:
 		return "", nil, fmt.Errorf("stt: unsupported execution mode %q", spec.ExecutionMode)
 	}
+}
+
+func hasDeepgramOptions(opts DeepgramOptions) bool {
+	return opts.Configured ||
+		opts.SmartFormat ||
+		opts.Dictation ||
+		opts.FillerWords ||
+		opts.Numerals ||
+		opts.DetectLanguage ||
+		opts.UseVocabularyKeyterms ||
+		opts.LanguageOverride != "" ||
+		len(opts.Keyterms) > 0 ||
+		opts.EndpointingMs != 0
 }

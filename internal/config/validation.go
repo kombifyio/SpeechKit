@@ -38,6 +38,28 @@ func NormalizeVoiceAgentCloseBehavior(value, fallback string) string {
 	}
 }
 
+// NormalizeVoiceAgentBargeIn coerces config/UI values to the supported
+// Voice Agent barge-in modes. Unknown values fall back to the given fallback,
+// then to "auto" (headset-detected full duplex).
+func NormalizeVoiceAgentBargeIn(value, fallback string) string {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case VoiceAgentBargeInAuto:
+		return VoiceAgentBargeInAuto
+	case VoiceAgentBargeInAlways:
+		return VoiceAgentBargeInAlways
+	case VoiceAgentBargeInNever:
+		return VoiceAgentBargeInNever
+	default:
+		if strings.TrimSpace(fallback) == "" {
+			return VoiceAgentBargeInAuto
+		}
+		if strings.EqualFold(strings.TrimSpace(fallback), value) {
+			return VoiceAgentBargeInAuto
+		}
+		return NormalizeVoiceAgentBargeIn(fallback, VoiceAgentBargeInAuto)
+	}
+}
+
 // NormalizeWakewordDefaultMode coerces an arbitrary mode string to one of
 // the supported wake-word target modes. Unknown values fall back to
 // WakewordDefaultModeVoiceAgent (the most common consumer use case).

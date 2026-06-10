@@ -103,6 +103,31 @@ func TestBuildVoiceAgentHandlerUsesConfiguredTicketTTL(t *testing.T) {
 	}
 }
 
+func TestBuildVoiceAgentHandlerRegistersOpenAIAsSwitchableProvider(t *testing.T) {
+	cfg := &config.Config{}
+	cfg.General.Language = "en"
+	cfg.Server.MaxVoiceAgentSessions = 10
+	cfg.Server.MaxSessionsPerUser = 10
+	cfg.VoiceAgent.Provider = ProviderGemini
+	app := &App{PersonaRegistry: persona.NewRegistry()}
+
+	_, status, err := buildVoiceAgentHandler(context.Background(), cfg, app)
+	if err != nil {
+		t.Fatalf("buildVoiceAgentHandler() error = %v", err)
+	}
+	if !strings.Contains(status, "switchable:") {
+		t.Fatalf("status = %q, want a switchable provider list", status)
+	}
+	// Native realtime providers must be per-session switchable regardless of
+	// the configured default; missing keys degrade the session at upgrade,
+	// they must not silently drop the provider from the switchable set.
+	for _, p := range []string{ProviderDeepgram, ProviderOpenAI} {
+		if !strings.Contains(status, p) {
+			t.Fatalf("status = %q, want switchable provider %q registered", status, p)
+		}
+	}
+}
+
 func TestBuildVoiceAgentHandlerUsesVoiceAgentLimitsSection(t *testing.T) {
 	cfg := &config.Config{}
 	cfg.General.Language = "en"

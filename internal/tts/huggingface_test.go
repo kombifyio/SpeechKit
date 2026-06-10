@@ -56,7 +56,7 @@ func TestHuggingFace_Synthesize_Success(t *testing.T) {
 			t.Errorf("content-type = %q, want application/json", ct)
 		}
 		// Endpoint must contain the model ID.
-		if !strings.Contains(r.URL.Path, "parler-tts/parler-tts-mini-multilingual-v1.1") {
+		if !strings.Contains(r.URL.Path, "Qwen/Qwen3-TTS-12Hz-1.7B-Base") {
 			t.Errorf("path = %q, missing model id", r.URL.Path)
 		}
 

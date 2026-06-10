@@ -95,7 +95,7 @@ func (r *Router) Synthesize(ctx context.Context, text string, opts SynthesizeOpt
 			continue
 		}
 
-		result, err := p.Synthesize(ctx, text, opts)
+		result, err := p.Synthesize(ctx, text, opts.ForProvider(p.Name()))
 		if err != nil {
 			lastErr = err
 			slog.Warn("TTS router: provider failed", "provider", p.Name(), "err", err)

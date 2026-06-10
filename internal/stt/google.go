@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/kombifyio/SpeechKit/internal/netsec"
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/provideropts"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/speaker"
 )
 
@@ -72,16 +73,22 @@ type googleRecognizeRequest struct {
 }
 
 type googleRecognitionConfig struct {
-	Encoding              string                   `json:"encoding"`
-	SampleRateHertz       int                      `json:"sampleRateHertz"`
-	LanguageCode          string                   `json:"languageCode,omitempty"`
-	Model                 string                   `json:"model,omitempty"`
-	EnableWordTimeOffsets bool                     `json:"enableWordTimeOffsets,omitempty"`
-	DiarizationConfig     *googleDiarizationConfig `json:"diarizationConfig,omitempty"`
+	Encoding                   string                   `json:"encoding"`
+	SampleRateHertz            int                      `json:"sampleRateHertz"`
+	LanguageCode               string                   `json:"languageCode,omitempty"`
+	Model                      string                   `json:"model,omitempty"`
+	EnableAutomaticPunctuation bool                     `json:"enableAutomaticPunctuation,omitempty"`
+	EnableWordTimeOffsets      bool                     `json:"enableWordTimeOffsets,omitempty"`
+	SpeechContexts             []googleSpeechContext    `json:"speechContexts,omitempty"`
+	DiarizationConfig          *googleDiarizationConfig `json:"diarizationConfig,omitempty"`
 }
 
 type googleRecognitionAudio struct {
 	Content string `json:"content"` // base64-encoded audio
+}
+
+type googleSpeechContext struct {
+	Phrases []string `json:"phrases,omitempty"`
 }
 
 type googleDiarizationConfig struct {
@@ -136,6 +143,14 @@ func mapLanguageCode(lang string) string {
 	}
 }
 
+func googleProfileID(model string) string {
+	model = strings.TrimSpace(model)
+	if model == "" {
+		return ""
+	}
+	return "stt.google.latest-long"
+}
+
 // googleEndpoint builds a validated Google STT URL with an api-key query param.
 func (p *GoogleSTTProvider) googleEndpoint(path string) (string, error) {
 	base := p.BaseURL
@@ -163,8 +178,12 @@ func (p *GoogleSTTProvider) Transcribe(ctx context.Context, audio []byte, opts T
 		model = opts.Model
 	}
 
-	langCode := mapLanguageCode(opts.Language)
-	speakerOpts := opts.Speaker.Normalized()
+	resolved := ResolveTranscribeOptions("google", googleProfileID(model), opts, provideropts.Values{
+		provideropts.OptionLanguage:       "de",
+		provideropts.OptionVocabularyBias: true,
+	}, nil)
+	langCode := mapLanguageCode(resolved.APILanguage())
+	speakerOpts := resolved.Speaker
 
 	// Google STT v1 rejects a sample-rate mismatch with HTTP 400. Derive the
 	// real rate from the WAV header and send raw PCM; fall back to 16 kHz for
@@ -194,6 +213,15 @@ func (p *GoogleSTTProvider) Transcribe(ctx context.Context, audio []byte, opts T
 			MinSpeakerCount:          speakerMin(speakerOpts),
 			MaxSpeakerCount:          speakerMax(speakerOpts),
 		}
+	}
+	if resolved.Punctuation {
+		reqBody.Config.EnableAutomaticPunctuation = true
+	}
+	if resolved.Timestamps {
+		reqBody.Config.EnableWordTimeOffsets = true
+	}
+	if resolved.UseVocabularyKeyterms && len(resolved.Keyterms) > 0 {
+		reqBody.Config.SpeechContexts = []googleSpeechContext{{Phrases: resolved.Keyterms}}
 	}
 
 	jsonBody, err := json.Marshal(reqBody)
@@ -240,10 +268,7 @@ func (p *GoogleSTTProvider) Transcribe(ctx context.Context, audio []byte, opts T
 		}
 	}
 
-	lang := opts.Language
-	if lang == "" {
-		lang = "de"
-	}
+	lang := firstNonEmptyTrimmed(resolved.Language, "de")
 	if speakerOpts.WantsDiarization() {
 		diarization = googleDiarizationFromResponse(gResp, p.Name(), model, text, lang)
 	}

@@ -63,6 +63,7 @@ func runSQLiteMigrations(ctx context.Context, db *sql.DB) error {
 		{version: "sqlite:016_transcription_speakers", run: func(ctx context.Context, db *sql.DB) error {
 			return ensureSQLiteColumn(ctx, db, "transcriptions", "speaker_json", "TEXT NOT NULL DEFAULT ''")
 		}},
+		sqliteSQLMigration("sqlite:017_customization", sqliteMigration017),
 	}
 	for _, migration := range migrations {
 		if err := applyMigration(ctx, db, "sqlite", migration); err != nil {
@@ -99,6 +100,7 @@ func runPostgresMigrations(ctx context.Context, db *sql.DB) error {
 		postgresSQLMigration("postgres:010_wakeword_activations", postgresMigration010),
 		postgresSQLMigration("postgres:011_storage_scope_sequence", postgresMigration011),
 		postgresSQLMigration("postgres:012_transcription_speakers", postgresMigration012),
+		postgresSQLMigration("postgres:013_customization", postgresMigration013),
 	}
 	for _, migration := range migrations {
 		if err := applyMigration(ctx, db, "postgres", migration); err != nil {

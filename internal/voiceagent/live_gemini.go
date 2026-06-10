@@ -7,6 +7,7 @@ import (
 	"strings"
 	"sync"
 
+	liveopts "github.com/kombifyio/SpeechKit/pkg/speechkit/voiceagent/live"
 	"google.golang.org/genai"
 )
 
@@ -344,8 +345,12 @@ func (g *GeminiLive) Close() error {
 func (g *GeminiLive) Name() string { return "gemini-live" }
 
 func buildGeminiLiveConnectConfig(cfg LiveConfig) *genai.LiveConnectConfig {
+	resolved := liveopts.ResolveLiveOptions("google", "realtime.google.gemini-native-audio", cfg, nil, nil)
 	policies := normalizeLivePolicies(cfg.Policies)
-	voiceName := cfg.Voice
+	if resolved.HasTurnDetectionOverride() && !resolved.TurnDetection {
+		policies.ActivityDetection.Automatic = false
+	}
+	voiceName := resolved.Voice
 	if voiceName == "" {
 		voiceName = "Kore"
 	}

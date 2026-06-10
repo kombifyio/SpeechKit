@@ -16,6 +16,9 @@ func TestTestUIHTMLContainsSmokeMarkers(t *testing.T) {
 		`id="refreshSettings"`,
 		`id="runSmoke"`,
 		`id="settingsStatus"`,
+		`data-ui-surface="speechkit-server-smoke"`,
+		`class="topbar-actions"`,
+		`class="nav-link" href="/setup"`,
 		"updateRuntimePanel",
 		`fetch(path, opts)`,
 		"/v1/server/settings",
@@ -62,6 +65,10 @@ func TestTestUIHTMLContainsSmokeMarkers(t *testing.T) {
 		`id="bearerToken"`,
 		`id="serverToken"`,
 		`name="bearerToken"`,
+		`<link`,
+		`rel="stylesheet"`,
+		`@import`,
+		`src="`,
 	} {
 		if strings.Contains(body, forbidden) {
 			t.Fatalf("test UI body should not contain client setup field %q", forbidden)
@@ -138,6 +145,9 @@ func TestSetupUIHTMLContainsOnboardingMarkers(t *testing.T) {
 		`id="setupWizard"`,
 		`id="setupHeading"`,
 		`id="setupSubtitle"`,
+		`data-ui-surface="speechkit-server-setup"`,
+		`class="topbar-actions"`,
+		`class="nav-link" href="/"`,
 		`id="settingsPanel"`,
 		`id="dictationKind"`,
 		`id="assistKind"`,
@@ -163,7 +173,7 @@ func TestSetupUIHTMLContainsOnboardingMarkers(t *testing.T) {
 		`id="dictationProfile"`,
 		`id="assistProfile"`,
 		`id="voiceAgentProfile"`,
-		"ggml-org/gemma-4-E4B-it-GGUF:Q4_K_M",
+		"ggml-org/gemma-4-E2B-it-GGUF:Q8_0",
 		`id="saveModelSettings"`,
 		`type="button">Save Settings</button>`,
 		"SpeechKit Server Settings",
@@ -205,6 +215,10 @@ func TestSetupUIHTMLContainsOnboardingMarkers(t *testing.T) {
 		"checkAssist",
 		"checkVoiceAgent",
 		"system_prompt_override",
+		`<link`,
+		`rel="stylesheet"`,
+		`@import`,
+		`src="`,
 	} {
 		if strings.Contains(body, forbidden) {
 			t.Fatalf("setup UI body should not contain smoke-test field %q", forbidden)

@@ -7,67 +7,156 @@
   <style>
     :root {
       color-scheme: dark;
-      --bg: #0f1115;
-      --surface: #171a20;
-      --line: #343a45;
-      --text: #f3f5f8;
-      --muted: #a7b0bd;
-      --ok: #73d28d;
-      --warn: #e6bd68;
-      --fail: #ff7878;
-      --run: #8bbcff;
-      font-family: "Segoe UI", "Aptos", sans-serif;
+      --sk-bg: #0d131c;
+      --sk-surface-0: #0b1118;
+      --sk-surface-1: #111923;
+      --sk-surface-2: #17212f;
+      --sk-surface-3: #1c2939;
+      --sk-panel-border: rgba(224, 235, 255, .12);
+      --sk-shell-divider: rgba(224, 235, 255, .08);
+      --sk-border: #334055;
+      --sk-border-strong: #51617c;
+      --sk-text: #e7eefb;
+      --sk-text-muted: #97a4bc;
+      --sk-text-subtle: #6f809b;
+      --sk-accent: #a8bfff;
+      --sk-accent-strong: #88a0ff;
+      --sk-accent-soft: rgba(168, 191, 255, .16);
+      --ok: #7de2a1;
+      --warn: #f0c674;
+      --fail: #ff9a9a;
+      --run: #9bc2ff;
+      font-family: "Segoe UI Variable", "Segoe UI", "Aptos", sans-serif;
     }
 
     * { box-sizing: border-box; }
 
+    html {
+      min-width: 0;
+      background: var(--sk-bg);
+    }
+
     body {
       margin: 0;
       min-height: 100vh;
-      background: var(--bg);
-      color: var(--text);
+      background:
+        radial-gradient(circle at top left, rgba(130, 161, 255, .14), transparent 32%),
+        linear-gradient(180deg, #0f1622 0%, #0a1017 100%);
+      color: var(--sk-text);
+      font-size: 14px;
+      -webkit-font-smoothing: antialiased;
     }
 
-    button, input, select {
+    button, input, select, textarea {
       font: inherit;
     }
 
     .shell {
-      width: min(960px, calc(100vw - 32px));
+      width: min(1180px, calc(100vw - 32px));
       margin: 0 auto;
-      padding: 28px 0 40px;
+      padding: 18px 0 32px;
     }
 
-    header {
+    .server-frame {
+      min-height: calc(100vh - 36px);
+      overflow: hidden;
+      border: 1px solid var(--sk-panel-border);
+      border-radius: 8px;
+      background: rgba(17, 25, 35, .84);
+      box-shadow: 0 28px 80px rgba(0, 0, 0, .28);
+    }
+
+    .topbar {
       display: flex;
       justify-content: space-between;
-      align-items: flex-end;
-      gap: 18px;
-      border-bottom: 1px solid var(--line);
-      padding-bottom: 18px;
+      align-items: center;
+      gap: 16px;
+      border-bottom: 1px solid var(--sk-shell-divider);
+      background: linear-gradient(180deg, rgba(19, 27, 38, .94), rgba(19, 27, 38, .68));
+      padding: 16px 18px;
+    }
+
+    .topbar-actions {
+      display: flex;
+      flex: 0 0 auto;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .brand {
+      display: flex;
+      min-width: 0;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .mark {
+      display: grid;
+      width: 42px;
+      height: 42px;
+      flex: 0 0 auto;
+      place-items: center;
+      border: 1px solid var(--sk-panel-border);
+      border-radius: 8px;
+      background: var(--sk-surface-2);
+      color: var(--sk-accent);
+      font-weight: 800;
+    }
+
+    .kicker {
+      margin: 0;
+      color: var(--sk-text-muted);
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: .14em;
+      text-transform: uppercase;
     }
 
     h1 {
       margin: 0;
-      font-size: 32px;
+      font-size: 22px;
       line-height: 1.1;
       letter-spacing: 0;
     }
 
+    h3 {
+      margin: 0;
+      font-size: 15px;
+      line-height: 1.25;
+    }
+
     .subtitle {
-      margin: 8px 0 0;
-      color: var(--muted);
+      margin: 5px 0 0;
+      color: var(--sk-text-muted);
       max-width: 680px;
       line-height: 1.45;
     }
 
     .state {
-      border: 1px solid var(--line);
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      justify-content: center;
+      min-height: 34px;
+      border: 1px solid var(--sk-border);
       border-radius: 8px;
-      padding: 9px 12px;
-      color: var(--muted);
-      background: #12151a;
+      padding: 0 14px;
+      color: var(--sk-text-muted);
+      background: var(--sk-surface-2);
+      font-size: 12px;
+      font-weight: 700;
+      text-transform: uppercase;
       white-space: nowrap;
+    }
+
+    .state::before {
+      content: "";
+      width: 7px;
+      height: 7px;
+      flex: 0 0 auto;
+      border-radius: 999px;
+      background: currentColor;
+      opacity: .75;
     }
 
     .state.ok { color: var(--ok); border-color: rgba(115, 210, 141, .55); }
@@ -76,31 +165,32 @@
     .state.run { color: var(--run); border-color: rgba(139, 188, 255, .55); }
 
     .panel {
-      margin-top: 18px;
-      border: 1px solid var(--line);
+      margin: 18px;
+      border: 1px solid var(--sk-panel-border);
       border-radius: 8px;
-      background: var(--surface);
+      background: var(--sk-surface-1);
       padding: 16px;
     }
 
     .stepper {
       display: grid;
       grid-template-columns: repeat(4, minmax(0, 1fr));
-      gap: 8px;
+      gap: 10px;
     }
 
     .step {
-      min-height: 42px;
-      border-color: var(--line);
-      background: #12151a;
-      color: var(--muted);
+      min-height: 46px;
+      border-color: var(--sk-border);
+      background: var(--sk-surface-2);
+      color: var(--sk-text-muted);
       text-align: left;
+      font-weight: 650;
     }
 
     .step.active {
-      color: var(--text);
-      border-color: rgba(139, 188, 255, .7);
-      background: #172133;
+      color: var(--sk-accent);
+      border-color: color-mix(in srgb, var(--sk-accent) 44%, transparent);
+      background: var(--sk-accent-soft);
     }
 
     .step.done {
@@ -117,18 +207,18 @@
       display: none;
     }
 
-    .intro-copy, .review-copy {
-      color: var(--muted);
+    .intro-copy, .review-copy, .settings-copy {
+      color: var(--sk-text-muted);
       line-height: 1.45;
       margin: 0;
     }
 
     .callout {
-      padding: 12px;
-      border: 1px solid rgba(139, 188, 255, .35);
-      border-radius: 6px;
-      background: #111827;
-      color: var(--text);
+      padding: 14px;
+      border: 1px solid color-mix(in srgb, var(--sk-accent) 28%, transparent);
+      border-radius: 8px;
+      background: var(--sk-accent-soft);
+      color: var(--sk-text);
       overflow-wrap: anywhere;
     }
 
@@ -136,20 +226,22 @@
       display: grid;
       grid-template-columns: repeat(3, minmax(0, 1fr));
       gap: 12px;
-      margin-top: 14px;
+      margin-top: 16px;
     }
 
     .metric {
-      min-height: 76px;
-      padding: 11px 12px;
-      border: 1px solid var(--line);
+      min-height: 88px;
+      padding: 12px;
+      border: 1px solid var(--sk-panel-border);
       border-radius: 6px;
-      background: #12151a;
+      background: var(--sk-surface-2);
     }
 
     .metric span {
-      color: var(--muted);
-      font-size: 11px;
+      color: var(--sk-text-muted);
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: .12em;
       text-transform: uppercase;
     }
 
@@ -162,7 +254,7 @@
     .metric small {
       display: block;
       margin-top: 6px;
-      color: var(--muted);
+      color: var(--sk-text-muted);
       line-height: 1.35;
       overflow-wrap: anywhere;
     }
@@ -172,13 +264,13 @@
       gap: 16px;
       margin-top: 16px;
       padding-top: 16px;
-      border-top: 1px solid var(--line);
+      border-top: 1px solid var(--sk-shell-divider);
     }
 
     .provider-matrix {
       grid-column: 1 / -1;
       display: grid;
-      gap: 8px;
+      gap: 10px;
     }
 
     .provider-row {
@@ -186,10 +278,10 @@
       grid-template-columns: 120px minmax(150px, .75fr) minmax(190px, 1fr) minmax(150px, .75fr);
       gap: 10px;
       align-items: end;
-      padding: 10px;
-      border: 1px solid var(--line);
+      padding: 12px;
+      border: 1px solid var(--sk-panel-border);
       border-radius: 6px;
-      background: #12151a;
+      background: var(--sk-surface-2);
     }
 
     .mode-name {
@@ -200,17 +292,17 @@
     .mode-options {
       display: grid;
       grid-template-columns: repeat(3, minmax(0, 1fr));
-      gap: 10px;
-      margin-top: 8px;
+      gap: 12px;
+      margin-top: 10px;
     }
 
     .mode-option-card {
       display: grid;
       gap: 10px;
-      padding: 10px;
-      border: 1px solid var(--line);
+      padding: 12px;
+      border: 1px solid var(--sk-panel-border);
       border-radius: 6px;
-      background: #12151a;
+      background: var(--sk-surface-2);
     }
 
     .mode-option-card h3 {
@@ -227,17 +319,17 @@
     .credential-grid {
       grid-column: 1 / -1;
       display: grid;
-      grid-template-columns: repeat(5, minmax(0, 1fr));
-      gap: 10px;
+      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      gap: 12px;
     }
 
     .credential-card {
       display: grid;
       gap: 8px;
-      padding: 10px;
-      border: 1px solid var(--line);
+      padding: 12px;
+      border: 1px solid var(--sk-panel-border);
       border-radius: 6px;
-      background: #12151a;
+      background: var(--sk-surface-2);
     }
 
     .server-auth-card {
@@ -255,10 +347,10 @@
     .token-output {
       display: grid;
       gap: 8px;
-      border: 1px solid rgba(115, 210, 141, .35);
+      border: 1px solid rgba(125, 226, 161, .35);
       border-radius: 6px;
-      padding: 10px;
-      background: #0f1b13;
+      padding: 12px;
+      background: rgba(125, 226, 161, .09);
     }
 
     .token-output.hidden {
@@ -268,16 +360,16 @@
     .token-output code {
       display: block;
       overflow-wrap: anywhere;
-      border: 1px solid var(--line);
+      border: 1px solid var(--sk-border);
       border-radius: 6px;
-      background: #0b0d11;
+      background: var(--sk-surface-0);
       padding: 8px 10px;
       color: var(--ok);
       line-height: 1.45;
     }
 
     .token-output small {
-      color: var(--muted);
+      color: var(--sk-text-muted);
       line-height: 1.35;
     }
 
@@ -286,11 +378,13 @@
       align-items: center;
       min-height: 24px;
       width: fit-content;
-      border: 1px solid var(--line);
+      border: 1px solid var(--sk-border);
       border-radius: 999px;
       padding: 2px 8px;
-      color: var(--muted);
-      font-size: 12px;
+      color: var(--sk-text-muted);
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
     }
 
     .badge.ok {
@@ -306,16 +400,16 @@
     label {
       display: grid;
       gap: 7px;
-      color: var(--muted);
+      color: var(--sk-text-muted);
       font-size: 13px;
     }
 
     input, select, textarea {
       min-height: 38px;
-      border: 1px solid var(--line);
+      border: 1px solid var(--sk-border);
       border-radius: 6px;
-      background: #0b0d11;
-      color: var(--text);
+      background: var(--sk-surface-0);
+      color: var(--sk-text);
       padding: 8px 10px;
       outline: none;
       line-height: 1.4;
@@ -327,8 +421,8 @@
     }
 
     input:focus, select:focus, textarea:focus {
-      border-color: var(--run);
-      box-shadow: 0 0 0 3px rgba(139, 188, 255, .13);
+      border-color: color-mix(in srgb, var(--sk-accent) 48%, transparent);
+      box-shadow: 0 0 0 3px var(--sk-accent-soft);
     }
 
     .inline {
@@ -336,7 +430,7 @@
       display: flex;
       gap: 8px;
       align-items: center;
-      color: var(--text);
+      color: var(--sk-text);
     }
 
     .inline input {
@@ -350,27 +444,35 @@
       gap: 10px;
       align-items: center;
       justify-content: flex-end;
+      flex-wrap: wrap;
     }
 
     .save-status {
       min-height: 20px;
-      color: var(--muted);
+      color: var(--sk-text-muted);
       font-size: 13px;
       overflow-wrap: anywhere;
     }
 
     button {
       min-height: 42px;
-      border: 1px solid rgba(115, 210, 141, .62);
+      border: 1px solid color-mix(in srgb, var(--sk-accent) 34%, transparent);
       border-radius: 6px;
-      background: #203126;
-      color: var(--text);
-      padding: 0 16px;
+      background: var(--sk-accent-soft);
+      color: var(--sk-accent);
+      padding: 0 18px;
       cursor: pointer;
+      font-weight: 700;
     }
 
     button:hover {
-      border-color: var(--ok);
+      border-color: var(--sk-accent);
+    }
+
+    button:focus-visible, .nav-link:focus-visible {
+      border-color: var(--sk-accent);
+      outline: 3px solid var(--sk-accent-soft);
+      outline-offset: 2px;
     }
 
     button:disabled {
@@ -380,38 +482,76 @@
 
     button.secondary {
       min-height: 34px;
-      border-color: var(--line);
-      background: #151a22;
-      color: var(--muted);
+      border-color: var(--sk-border);
+      background: var(--sk-surface-2);
+      color: var(--sk-text-muted);
+    }
+
+    .nav-link {
+      display: inline-flex;
+      min-height: 34px;
+      align-items: center;
+      justify-content: center;
+      border: 1px solid var(--sk-border);
+      border-radius: 6px;
+      background: var(--sk-surface-2);
+      color: var(--sk-text-muted);
+      padding: 0 12px;
+      font-size: 12px;
+      font-weight: 700;
+      text-decoration: none;
+      white-space: nowrap;
+    }
+
+    .nav-link:hover {
+      border-color: var(--sk-accent);
+    }
+
+    a {
+      color: var(--sk-accent);
     }
 
     @media (max-width: 760px) {
-      header, .stepper, .setup-grid, .provider-row, .mode-options, .credential-grid, .model-form {
+      .topbar, .stepper, .setup-grid, .provider-row, .mode-options, .credential-grid, .model-form {
         grid-template-columns: 1fr;
       }
 
-      header {
+      .topbar, .topbar-actions {
         display: grid;
         align-items: start;
       }
 
-      button {
+      button, .nav-link {
         width: 100%;
+      }
+    }
+
+    @media (max-width: 1040px) {
+      .mode-options {
+        grid-template-columns: 1fr;
       }
     }
   </style>
 </head>
 <body>
   <main class="shell">
-    <header>
-      <div>
-        <h1 id="setupHeading">SpeechKit Server Setup</h1>
-        <p class="subtitle" id="setupSubtitle">Guided onboarding for provider, model, and credential settings on this server instance.</p>
-      </div>
-      <div class="state" id="setupStatus">Loading</div>
-    </header>
+    <div class="server-frame" data-ui-surface="speechkit-server-setup">
+      <header class="topbar">
+        <div class="brand">
+          <div class="mark" aria-hidden="true">SK</div>
+          <div>
+            <p class="kicker">kombify SpeechKit</p>
+            <h1 id="setupHeading">SpeechKit Server Setup</h1>
+            <p class="subtitle" id="setupSubtitle">Guided onboarding for provider, model, and credential settings on this server instance.</p>
+          </div>
+        </div>
+        <div class="topbar-actions">
+          <a class="nav-link" href="/">Smoke</a>
+          <div class="state" id="setupStatus">Loading</div>
+        </div>
+      </header>
 
-    <section class="panel" id="setupWizard" data-setup-mode="onboarding">
+      <section class="panel" id="setupWizard" data-setup-mode="onboarding">
       <div class="stepper" aria-label="Setup steps">
         <button class="step active" data-step-target="welcome" type="button">1. Welcome</button>
         <button class="step" data-step-target="models" type="button">2. Models</button>
@@ -422,7 +562,7 @@
       <form class="model-form" id="onboardingPanel">
         <section class="step-panel" data-step-panel="welcome">
           <p class="intro-copy">SpeechKit can run fully self-hosted out of the box. The default stack uses Whisper Large v3 Turbo for dictation and a local llama.cpp model for Assist and the Voice Agent pipeline.</p>
-          <div class="callout">Default local LLM: <strong>ggml-org/gemma-4-E4B-it-GGUF:Q4_K_M</strong></div>
+          <div class="callout">Default local LLM: <strong>ggml-org/gemma-4-E2B-it-GGUF:Q8_0</strong></div>
           <div class="setup-grid">
             <div class="metric">
               <span>Runtime</span>
@@ -477,7 +617,7 @@
               <select id="assistProfile"></select>
             </label>
             <label for="assistModel">Model
-              <input id="assistModel" autocomplete="off" value="ggml-org/gemma-4-E4B-it-GGUF:Q4_K_M">
+              <input id="assistModel" autocomplete="off" value="ggml-org/gemma-4-E2B-it-GGUF:Q8_0">
             </label>
           </div>
           <div class="provider-row">
@@ -494,7 +634,7 @@
               <select id="voiceAgentProfile"></select>
             </label>
             <label for="voiceAgentModel">Model
-              <input id="voiceAgentModel" autocomplete="off" value="ggml-org/gemma-4-E4B-it-GGUF:Q4_K_M">
+              <input id="voiceAgentModel" autocomplete="off" value="ggml-org/gemma-4-E2B-it-GGUF:Q8_0">
             </label>
           </div>
           <div class="mode-options" id="modeOptions">
@@ -637,11 +777,12 @@
           <button id="saveModelSettings" type="button">Save Settings</button>
         </div>
       </form>
-    </section>
+      </section>
+    </div>
   </main>
 
   <script>
-    const defaultLocalLLMModel = "ggml-org/gemma-4-E4B-it-GGUF:Q4_K_M";
+    const defaultLocalLLMModel = "ggml-org/gemma-4-E2B-it-GGUF:Q8_0";
     const providerKinds = ["local_built_in", "local_provider", "cloud_provider", "direct_provider"];
     const setupSteps = ["welcome", "models", "credentials", "review"];
     let currentStep = 0;

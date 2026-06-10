@@ -1,4 +1,4 @@
-# SpeechKit v0.43 Agent Context
+# SpeechKit v0.44 Agent Context
 
 SpeechKit is a voice framework for products and automation hosts. It has three
 strict modes:
@@ -7,9 +7,11 @@ strict modes:
 - Assist: one-shot utility, codeword, or LLM result with optional TTS.
 - Voice Agent: realtime audio-to-audio dialogue for fast follow-ups.
 
-v0.43 is the provider expansion release line: Deepgram and AssemblyAI provider
-choices, speaker-aware transcription, and Deepgram Voice Agent support sit
-alongside the embeddable `pkg/speechkit/...` building blocks.
+v0.44 is the customization release line: Words teach recognition, Replacements
+shape final text, Native Templates provide curated pack defaults/profiles,
+provider options are structured, and segmented transcription is finalized
+before output. Deepgram, AssemblyAI, speaker-aware transcription, and realtime
+provider choices remain part of the current provider surface.
 Hands-Free is the activation and voice-output layer for Dictation, Assist, and
 Voice Agent; it is not a fourth mode.
 The latest GitHub Release is the canonical source for desktop installers.
@@ -90,14 +92,20 @@ Browser WebSocket auth is subprotocol-first. Use the `ws_url` and
 server bearer token into a browser WebSocket handshake. Tickets default to 90
 seconds; expired tickets are not refreshed in v1, so create a new session.
 
-Important v0.43 surfaces:
+Important v0.44 surfaces:
 
 - `GET /v1/catalog/profiles`
 - `GET /v1/catalog/contracts`
 - `GET /v1/catalog/readiness`
 - `GET /v1/config`
-- `GET /v1/vocabulary/dictionary`
-- `POST /v1/vocabulary/dictionary`
+- `GET /v1/words`
+- `POST /v1/words`
+- `GET /v1/replacements`
+- `POST /v1/replacements`
+- `GET /v1/customization/templates`
+- `GET /v1/customization/templates/{templateId}/pack`
+- `GET /v1/customization/pack`
+- `POST /v1/customization/pack`
 - `GET /v1/transcripts`
 - `GET /v1/transcripts/{id}`
 - `GET /v1/voiceagent/sessions/{id}/transcript`

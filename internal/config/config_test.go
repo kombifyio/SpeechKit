@@ -71,8 +71,11 @@ func TestLoadDefaults(t *testing.T) {
 	if cfg.General.VoiceAgentEnabled {
 		t.Fatal("voice agent should be disabled by default")
 	}
-	if cfg.General.AutoStopSilenceMs != 500 {
-		t.Errorf("default silence ms = %d, want 500", cfg.General.AutoStopSilenceMs)
+	if cfg.General.AutoStopSilenceMs != DefaultDictationPauseMs {
+		t.Errorf("default silence ms = %d, want %d", cfg.General.AutoStopSilenceMs, DefaultDictationPauseMs)
+	}
+	if cfg.General.DictateSilenceTimeoutSec != DefaultDictateSilenceTimeoutSec {
+		t.Errorf("default dictate silence timeout = %d, want %d", cfg.General.DictateSilenceTimeoutSec, DefaultDictateSilenceTimeoutSec)
 	}
 	if cfg.General.AutoStartOnLaunch {
 		t.Fatal("general auto-start should be disabled by default")
@@ -149,7 +152,7 @@ func TestLoadDefaults(t *testing.T) {
 	if cfg.HuggingFace.Enabled {
 		t.Error("default HuggingFace should stay disabled until explicitly enabled")
 	}
-	if cfg.HuggingFace.Model != "openai/whisper-large-v3" {
+	if cfg.HuggingFace.Model != "openai/whisper-large-v3-turbo" {
 		t.Errorf("default HF model = %q", cfg.HuggingFace.Model)
 	}
 	if cfg.VoiceAgent.Model != "gemini-3.1-flash-live-preview" {
@@ -202,6 +205,15 @@ func TestLoadDefaults(t *testing.T) {
 	}
 	if cfg.Providers.Google.Region != "europe-west3" {
 		t.Errorf("default Google region = %q, want europe-west3 (EU compliance default)", cfg.Providers.Google.Region)
+	}
+	if cfg.Providers.Deepgram.STTModel != "nova-3" {
+		t.Errorf("default Deepgram STT model = %q, want nova-3", cfg.Providers.Deepgram.STTModel)
+	}
+	if !cfg.Providers.Deepgram.STTSmartFormat {
+		t.Error("default Deepgram smart format should be enabled")
+	}
+	if !cfg.Providers.Deepgram.STTUseVocabularyKeyterms {
+		t.Error("default Deepgram vocabulary keyterms should be enabled")
 	}
 	if cfg.Wakeword.Backend != WakewordBackendSherpaKWS {
 		t.Errorf("default wake-word backend = %q, want %q", cfg.Wakeword.Backend, WakewordBackendSherpaKWS)

@@ -69,11 +69,15 @@ func (s *fakeSubmitter) Submit(job TranscriptionJob) error {
 }
 
 type fakeObserver struct {
-	states []string
-	logs   []string
+	states  []string
+	logs    []string
+	onState func(status, text string)
 }
 
 func (o *fakeObserver) OnState(status, text string) {
+	if o.onState != nil {
+		o.onState(status, text)
+	}
 	o.states = append(o.states, status+":"+text)
 }
 
@@ -84,6 +88,7 @@ func (o *fakeObserver) OnLog(message, kind string) {
 type fakeCollector struct {
 	feedErr  error
 	segments []dictationSegment
+	fedPCM   [][]byte
 }
 
 type dictationSegment struct {
@@ -91,7 +96,8 @@ type dictationSegment struct {
 	paragraph bool
 }
 
-func (c *fakeCollector) FeedPCM(_ []byte) error {
+func (c *fakeCollector) FeedPCM(pcm []byte) error {
+	c.fedPCM = append(c.fedPCM, append([]byte(nil), pcm...))
 	return c.feedErr
 }
 
@@ -127,17 +133,96 @@ func TestRecordingControllerStartStopSubmitsSegments(t *testing.T) {
 		t.Fatalf("Stop() error = %v", err)
 	}
 
-	if len(submitter.jobs) != 2 {
-		t.Fatalf("jobs = %d, want 2", len(submitter.jobs))
+	if len(submitter.jobs) != 1 {
+		t.Fatalf("jobs = %d, want 1", len(submitter.jobs))
 	}
-	if got, want := submitter.jobs[0].Language, "en"; got != want {
-		t.Fatalf("job[0].Language = %q, want %q", got, want)
+	job := submitter.jobs[0]
+	if len(job.Segments) != 2 {
+		t.Fatalf("job segments = %d, want 2", len(job.Segments))
 	}
-	if got, want := submitter.jobs[1].Prefix, "\n\n"; got != want {
-		t.Fatalf("job[1].Prefix = %q, want %q", got, want)
+	if got, want := job.Language, "en"; got != want {
+		t.Fatalf("job.Language = %q, want %q", got, want)
 	}
-	if got, want := submitter.jobs[1].QuickNoteID, int64(7); got != want {
-		t.Fatalf("job[1].QuickNoteID = %d, want %d", got, want)
+	if got, want := job.Segments[1].Prefix, "\n\n"; got != want {
+		t.Fatalf("job.Segments[1].Prefix = %q, want %q", got, want)
+	}
+	if got, want := job.QuickNoteID, int64(7); got != want {
+		t.Fatalf("job quick note id = %d, want %d", got, want)
+	}
+}
+
+func TestRecordingControllerSignalsRecordingAfterRecorderStarts(t *testing.T) {
+	recorder := &fakeRecorder{stopPCM: []byte(strings.Repeat("a", 6400))}
+	submitter := &fakeSubmitter{}
+	observedRecordingAfterStart := false
+	observer := &fakeObserver{
+		onState: func(status, _ string) {
+			if status == "recording" {
+				observedRecordingAfterStart = recorder.started
+			}
+		},
+	}
+	controller := NewRecordingController(recorder, submitter, observer, nil)
+
+	if err := controller.Start(RecordingStartOptions{Language: "de"}); err != nil {
+		t.Fatalf("Start() error = %v", err)
+	}
+	if err := controller.Stop(RecordingStopOptions{Label: "Captured"}); err != nil {
+		t.Fatalf("Stop() error = %v", err)
+	}
+
+	if !observedRecordingAfterStart {
+		t.Fatalf("recording state was signaled before recorder.Start completed")
+	}
+}
+
+func TestRecordingControllerStopTailDelayKeepsCaptureOpen(t *testing.T) {
+	recorder := &fakeRecorder{stopPCM: []byte(strings.Repeat("a", 6400))}
+	submitter := &fakeSubmitter{}
+	collector := &fakeCollector{}
+	controller := NewRecordingController(recorder, submitter, &fakeObserver{}, func() SegmentCollector {
+		return collector
+	})
+
+	if err := controller.Start(RecordingStartOptions{Language: "de"}); err != nil {
+		t.Fatalf("Start() error = %v", err)
+	}
+	handler := recorder.pcmHandler
+	if handler == nil {
+		t.Fatal("recorder PCM handler was not installed")
+	}
+
+	done := make(chan error, 1)
+	go func() {
+		done <- controller.Stop(RecordingStopOptions{
+			Label:     "Captured",
+			TailDelay: 40 * time.Millisecond,
+		})
+	}()
+
+	time.Sleep(10 * time.Millisecond)
+	if !controller.IsRecording() {
+		t.Fatal("controller should still report recording during stop tail delay")
+	}
+	handler([]byte("tail"))
+
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("Stop() error = %v", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("Stop() timed out")
+	}
+
+	if len(collector.fedPCM) != 1 {
+		t.Fatalf("collector FeedPCM calls = %d, want 1", len(collector.fedPCM))
+	}
+	if got, want := string(collector.fedPCM[0]), "tail"; got != want {
+		t.Fatalf("collector FeedPCM = %q, want %q", got, want)
+	}
+	if controller.IsRecording() {
+		t.Fatal("controller should not report recording after stop completes")
 	}
 }
 
@@ -287,7 +372,7 @@ func TestRecordingControllerStartErrorResetsState(t *testing.T) {
 	if controller.IsRecording() {
 		t.Fatal("controller.IsRecording() = true, want false")
 	}
-	if got := observer.states; len(got) < 2 || got[1] != "idle:" {
+	if got := observer.states; len(got) != 1 || got[0] != "idle:" {
 		t.Fatalf("states = %#v", got)
 	}
 }

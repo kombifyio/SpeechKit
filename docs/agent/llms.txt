@@ -1,12 +1,13 @@
-# SpeechKit v0.43
+# SpeechKit v0.44
 
 > Agent entrypoint for SpeechKit Server, Framework API, and MCP integration.
 
 SpeechKit is a Windows-first voice framework with three strict modes:
-Dictation, Assist, and Voice Agent. The v0.43 line adds broader provider choice
-with Deepgram and AssemblyAI, speaker-aware transcription, and Deepgram Voice
-Agent support while keeping the API-first server, Go client, CLI, MCP server,
-and embeddable SDK surfaces.
+Dictation, Assist, and Voice Agent. The v0.44 line adds Words and Replacements
+as the two core extension primitives, structured provider options, and
+segmented transcription finalization while keeping the API-first server, Go
+client, CLI, MCP server, and embeddable SDK surfaces. Native Templates are
+curated Words/Replacements packs selected through `active_template_ids`.
 Hands-Free is an activation and voice-output layer for those modes, not a
 fourth mode.
 
@@ -23,6 +24,7 @@ Use these links first:
 - SpeechKit MCP guide: https://speechkit.cc/mcp/speechkit-mcp.md
 - OpenAPI: https://speechkit.cc/api/openapi.v1.yaml
 - Voice Agent AsyncAPI: https://speechkit.cc/api/asyncapi.v1.yaml
+- Extension primitives: https://speechkit.cc/standards
 - One-shot manifest schema: https://speechkit.cc/schemas/speechkit-one-shot-manifest.schema.json
 - One-shot functional result schema: https://speechkit.cc/schemas/speechkit-one-shot-functional-result.schema.json
 

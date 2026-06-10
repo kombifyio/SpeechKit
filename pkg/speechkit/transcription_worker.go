@@ -31,6 +31,13 @@ type TranscriptInterceptor interface {
 	Intercept(ctx context.Context, transcript Transcript, target any) (bool, error)
 }
 
+// TranscriptTransformer can apply final post-STT changes after all audio
+// segments have been transcribed and merged, but before command routing or
+// user-visible output.
+type TranscriptTransformer interface {
+	Transform(ctx context.Context, transcript Transcript) (Transcript, error)
+}
+
 // TranscriptionObserver receives real-time status and log updates from a
 // [TranscriptionWorker] during processing.
 type TranscriptionObserver interface {
@@ -42,19 +49,38 @@ type TranscriptionObserver interface {
 // TranscriptionJob pairs a [Submission] with its delivery target.
 type TranscriptionJob struct {
 	Submission
-	Target any
+	Segments []Submission
+	Target   any
 }
 
 func (j TranscriptionJob) Clone() TranscriptionJob {
 	clone := j
-	clone.Submission = j.Submission
-	if j.PCM != nil {
-		clone.PCM = append([]byte(nil), j.PCM...)
-	}
-	if j.WAV != nil {
-		clone.WAV = append([]byte(nil), j.WAV...)
+	clone.Submission = cloneSubmission(j.Submission)
+	if j.Segments != nil {
+		clone.Segments = make([]Submission, 0, len(j.Segments))
+		for _, segment := range j.Segments {
+			clone.Segments = append(clone.Segments, cloneSubmission(segment))
+		}
 	}
 	return clone
+}
+
+func cloneSubmission(submission Submission) Submission {
+	clone := submission
+	if submission.PCM != nil {
+		clone.PCM = append([]byte(nil), submission.PCM...)
+	}
+	if submission.WAV != nil {
+		clone.WAV = append([]byte(nil), submission.WAV...)
+	}
+	return clone
+}
+
+func (j TranscriptionJob) transcriptionSegments() []Submission {
+	if len(j.Segments) > 0 {
+		return j.Segments
+	}
+	return []Submission{j.Submission}
 }
 
 // TranscriptionWorkerConfig configures a [TranscriptionWorker].
@@ -65,6 +91,7 @@ type TranscriptionWorkerConfig struct {
 	Runner      *TranscriptionRunner
 	Output      TranscriptOutput
 	Interceptor TranscriptInterceptor
+	Transformer TranscriptTransformer
 	Observer    TranscriptionObserver
 }
 
@@ -76,6 +103,7 @@ type TranscriptionWorker struct {
 	runner      *TranscriptionRunner
 	output      TranscriptOutput
 	interceptor TranscriptInterceptor
+	transformer TranscriptTransformer
 	observer    TranscriptionObserver
 
 	mu        sync.Mutex
@@ -105,6 +133,7 @@ func NewTranscriptionWorker(cfg TranscriptionWorkerConfig) (*TranscriptionWorker
 		runner:      cfg.Runner,
 		output:      cfg.Output,
 		interceptor: cfg.Interceptor,
+		transformer: cfg.Transformer,
 		observer:    cfg.Observer,
 		jobs:        make(chan TranscriptionJob, cfg.QueueSize),
 		done:        make(chan struct{}),
@@ -174,15 +203,29 @@ func (w *TranscriptionWorker) Wait() {
 
 func (w *TranscriptionWorker) handleJob(ctx context.Context, job TranscriptionJob) {
 	w.onState("processing", DefaultProcessingMessage)
-	w.onLog("Sending to STT...", "info")
 
-	transcribeCtx, cancel := context.WithTimeout(ctx, transcriptionTimeoutForDuration(w.timeout, job.DurationSecs))
-	transcript, err := w.runner.transcriber.Transcribe(transcribeCtx, job.WAV, job.DurationSecs, job.Language)
-	cancel()
+	segments := job.transcriptionSegments()
+	if len(segments) > 1 {
+		w.onLog(fmt.Sprintf("Sending %d segments to STT in parallel...", len(segments)), "info")
+	} else {
+		w.onLog("Sending to STT...", "info")
+	}
+
+	transcript, err := w.transcribeJob(ctx, job, segments)
 	if err != nil {
 		w.onLog(fmt.Sprintf("STT error: %v", err), "error")
 		w.onState("idle", "")
 		return
+	}
+
+	if w.transformer != nil {
+		transformed, transformErr := w.transformer.Transform(ctx, transcript)
+		if transformErr != nil {
+			w.onLog(fmt.Sprintf("Transcript transform error: %v", transformErr), "error")
+			w.onState("idle", "")
+			return
+		}
+		transcript = transformed
 	}
 
 	if w.interceptor != nil {
@@ -240,6 +283,134 @@ func (w *TranscriptionWorker) handleJob(ctx context.Context, job TranscriptionJo
 	if !job.QuickNote {
 		w.persistTranscriptionAsync(job.Submission, transcript) //nolint:contextcheck // fire-and-forget history write; uses its own 15s timeout context
 	}
+}
+
+func (w *TranscriptionWorker) transcribeJob(ctx context.Context, job TranscriptionJob, segments []Submission) (Transcript, error) {
+	if len(segments) == 0 {
+		return Transcript{}, fmt.Errorf("empty transcription job")
+	}
+
+	durationSecs := job.DurationSecs
+	if durationSecs <= 0 {
+		for _, segment := range segments {
+			durationSecs += segment.DurationSecs
+		}
+	}
+
+	started := time.Now()
+	transcribeCtx, cancel := context.WithTimeout(ctx, transcriptionTimeoutForDuration(w.timeout, durationSecs))
+	defer cancel()
+
+	if len(segments) == 1 {
+		segment := inheritSegmentDefaults(job.Submission, segments[0])
+		transcript, err := w.runner.transcriber.Transcribe(transcribeCtx, segment.WAV, segment.DurationSecs, segment.Language)
+		if err != nil {
+			return Transcript{}, err
+		}
+		if len(job.Segments) > 0 {
+			return combineSegmentTranscripts(job.Submission, []Submission{segment}, []Transcript{transcript}, time.Since(started)), nil
+		}
+		return transcript, nil
+	}
+
+	return w.transcribeSegmentsParallel(transcribeCtx, cancel, job, segments, started)
+}
+
+func (w *TranscriptionWorker) transcribeSegmentsParallel(ctx context.Context, cancel context.CancelFunc, job TranscriptionJob, segments []Submission, started time.Time) (Transcript, error) {
+	transcripts := make([]Transcript, len(segments))
+	errs := make([]error, len(segments))
+
+	var wg sync.WaitGroup
+	for i, segment := range segments {
+		i, segment := i, inheritSegmentDefaults(job.Submission, segment)
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			transcript, err := w.runner.transcriber.Transcribe(ctx, segment.WAV, segment.DurationSecs, segment.Language)
+			if err != nil {
+				errs[i] = err
+				cancel()
+				return
+			}
+			transcripts[i] = transcript
+			segments[i] = segment
+		}()
+	}
+	wg.Wait()
+
+	for i, err := range errs {
+		if err != nil {
+			return Transcript{}, fmt.Errorf("segment %d: %w", i+1, err)
+		}
+	}
+
+	return combineSegmentTranscripts(job.Submission, segments, transcripts, time.Since(started)), nil
+}
+
+func inheritSegmentDefaults(parent, segment Submission) Submission {
+	if segment.Language == "" {
+		segment.Language = parent.Language
+	}
+	if segment.DurationSecs <= 0 && len(segment.PCM) > 0 {
+		segment.DurationSecs = PCMDurationSecs(segment.PCM)
+	}
+	if len(segment.WAV) == 0 && len(segment.PCM) > 0 {
+		segment.WAV = PCMToWAV(segment.PCM)
+	}
+	return segment
+}
+
+func combineSegmentTranscripts(parent Submission, segments []Submission, transcripts []Transcript, elapsed time.Duration) Transcript {
+	combined := Transcript{
+		Language: parent.Language,
+		Duration: elapsed,
+	}
+	var text strings.Builder
+	var confidenceSum float64
+	var confidenceCount int
+
+	for i, transcript := range transcripts {
+		if combined.Provider == "" {
+			combined.Provider = transcript.Provider
+		}
+		if combined.Model == "" {
+			combined.Model = transcript.Model
+		}
+		if combined.Language == "" {
+			combined.Language = transcript.Language
+		}
+		if transcript.Confidence > 0 {
+			confidenceSum += transcript.Confidence
+			confidenceCount++
+		}
+		prefix := ""
+		if i < len(segments) {
+			prefix = segments[i].Prefix
+		}
+		appendTranscriptPart(&text, normalizeTranscriptText(transcript.Text, prefix))
+	}
+
+	combined.Text = text.String()
+	if confidenceCount > 0 {
+		combined.Confidence = confidenceSum / float64(confidenceCount)
+	}
+	return combined
+}
+
+func appendTranscriptPart(builder *strings.Builder, part string) {
+	if builder == nil {
+		return
+	}
+	part = strings.TrimRight(part, " \t")
+	if strings.TrimSpace(part) == "" {
+		return
+	}
+	if builder.Len() == 0 || strings.HasPrefix(part, "\n") {
+		builder.WriteString(part)
+		return
+	}
+	builder.WriteByte(' ')
+	builder.WriteString(strings.TrimLeft(part, " \t"))
 }
 
 func (w *TranscriptionWorker) logTranscriptReady(transcript Transcript, marker string) {

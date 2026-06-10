@@ -4,6 +4,7 @@ import (
 	"context"
 	"time"
 
+	speechcustomize "github.com/kombifyio/SpeechKit/pkg/speechkit/customize"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/speaker"
 	speechstorage "github.com/kombifyio/SpeechKit/pkg/speechkit/storage"
 )
@@ -55,6 +56,45 @@ type UserDictionaryStore interface {
 	ReplaceUserDictionaryEntries(ctx context.Context, language string, entries []UserDictionaryEntry) error
 	ListUserDictionaryEntries(ctx context.Context, language string) ([]UserDictionaryEntry, error)
 	RecordUserDictionaryUsage(ctx context.Context, canonical, language string) error
+}
+
+type CustomizationListOpts = speechcustomize.ListOptions
+type CustomizationReplaceOpts = speechcustomize.ReplaceOptions
+
+type WordStore interface {
+	ReplaceWords(ctx context.Context, language string, words []speechcustomize.Word) error
+	ListWords(ctx context.Context, opts CustomizationListOpts) ([]speechcustomize.Word, error)
+	RecordWordUsage(ctx context.Context, term, language string) error
+}
+
+type ReplacementStore interface {
+	ReplaceReplacements(ctx context.Context, language string, replacements []speechcustomize.Replacement) error
+	ListReplacements(ctx context.Context, opts CustomizationListOpts) ([]speechcustomize.Replacement, error)
+	RecordReplacementUsage(ctx context.Context, id string) error
+}
+
+type LexiconStore interface {
+	ReplaceLexicons(ctx context.Context, language string, lexicons []speechcustomize.Lexicon) error
+	ListLexicons(ctx context.Context, opts CustomizationListOpts) ([]speechcustomize.Lexicon, error)
+}
+
+type RulesetStore interface {
+	ReplaceRulesets(ctx context.Context, language string, rulesets []speechcustomize.Ruleset) error
+	ListRulesets(ctx context.Context, opts CustomizationListOpts) ([]speechcustomize.Ruleset, error)
+}
+
+type CustomizationStore interface {
+	WordStore
+	ReplacementStore
+	LexiconStore
+	RulesetStore
+}
+
+type CustomizationSourceStore interface {
+	ReplaceWordsWithOptions(ctx context.Context, opts CustomizationReplaceOpts, words []speechcustomize.Word) error
+	ReplaceReplacementsWithOptions(ctx context.Context, opts CustomizationReplaceOpts, replacements []speechcustomize.Replacement) error
+	ReplaceLexiconsWithOptions(ctx context.Context, opts CustomizationReplaceOpts, lexicons []speechcustomize.Lexicon) error
+	ReplaceRulesetsWithOptions(ctx context.Context, opts CustomizationReplaceOpts, rulesets []speechcustomize.Ruleset) error
 }
 
 // VoiceAgentSessionStore is an optional extension for backends that persist

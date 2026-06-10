@@ -174,6 +174,7 @@ func buildAssistPipeline(ctx context.Context, cfg *config.Config, app *App) (*as
 			assist.WithUtilityRegistry(utilityRegistry),
 		)),
 		assist.WithSkillContextStore(skillContexts),
+		assist.WithSpeechDefaults(config.SpeechDefaultsValues(app.Cfg)),
 	)
 	return pipeline, notes
 }

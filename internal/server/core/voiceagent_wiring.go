@@ -46,10 +46,11 @@ func buildVoiceAgentHandler(ctx context.Context, cfg *config.Config, app *App) (
 	// this deployment so a client can switch backend per session via the WS
 	// start frame ("laufend wechseln" without a redeploy). The switchable set
 	// is the configured default plus Deepgram (native), Gemini Live (native),
-	// and Cascaded (STT router -> LLM -> TTS — the path through which AssemblyAI
-	// STT serves the Voice Agent). Providers whose keys/deps are missing are
-	// skipped and surfaced in the status line rather than failing the handler.
-	candidates := dedupeProviders(defaultProvider, ProviderDeepgram, ProviderGemini, ProviderCascaded)
+	// OpenAI gpt-realtime (native), and Cascaded (STT router -> LLM -> TTS —
+	// the path through which AssemblyAI STT serves the Voice Agent). Providers
+	// whose keys/deps are missing are skipped and surfaced in the status line
+	// rather than failing the handler.
+	candidates := dedupeProviders(defaultProvider, ProviderDeepgram, ProviderGemini, ProviderOpenAI, ProviderCascaded)
 	factories := make(map[string]vsserver.ProviderFactory, len(candidates))
 	statusByProvider := make(map[string]string, len(candidates))
 	for _, p := range candidates {

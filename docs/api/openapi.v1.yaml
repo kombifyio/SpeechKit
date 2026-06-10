@@ -22,6 +22,7 @@ tags:
   - name: Server
   - name: Providers
   - name: Data
+  - name: Customization
 paths:
   /api/v1/modes:
     get:
@@ -224,7 +225,7 @@ paths:
     get:
       tags: [Data]
       operationId: getDictionary
-      summary: Export user dictionary entries with usage counts.
+      summary: Export old dictionary-shaped migration entries with usage counts.
       parameters:
         - name: language
           in: query
@@ -233,7 +234,7 @@ paths:
             type: string
       responses:
         "200":
-          description: Current dictionary entries.
+          description: Current migration projection entries.
           content:
             application/json:
               schema:
@@ -241,7 +242,7 @@ paths:
     post:
       tags: [Data]
       operationId: importDictionary
-      summary: Import dictionary entries and persist them to settings/store.
+      summary: Import old dictionary-shaped entries as a migration projection.
       security:
         - ControlPlaneHeader: []
         - ControlPlaneCookie: []
@@ -253,7 +254,7 @@ paths:
               $ref: "#/components/schemas/DictionaryImportRequest"
       responses:
         "200":
-          description: Updated dictionary entries.
+          description: Updated migration projection entries.
           content:
             application/json:
               schema:
@@ -262,6 +263,260 @@ paths:
           $ref: "#/components/responses/BadRequest"
         "403":
           $ref: "#/components/responses/Forbidden"
+  /api/v1/customization/words:
+    get:
+      tags: [Customization]
+      operationId: listCustomizationWords
+      summary: List Words used for recognition bias.
+      parameters:
+        - $ref: "#/components/parameters/CustomizationLanguage"
+        - $ref: "#/components/parameters/CustomizationScope"
+        - $ref: "#/components/parameters/CustomizationScopeKey"
+        - $ref: "#/components/parameters/CustomizationSource"
+      responses:
+        "200":
+          description: Words.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WordsResponse"
+    post:
+      tags: [Customization]
+      operationId: replaceCustomizationWords
+      summary: Replace settings-sourced Words for a language.
+      parameters:
+        - $ref: "#/components/parameters/CustomizationScope"
+        - $ref: "#/components/parameters/CustomizationScopeKey"
+        - $ref: "#/components/parameters/CustomizationSource"
+      security:
+        - ControlPlaneHeader: []
+        - ControlPlaneCookie: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/WordsReplaceRequest"
+      responses:
+        "200":
+          description: Updated Words.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WordsResponse"
+  /api/v1/customization/replacements:
+    get:
+      tags: [Customization]
+      operationId: listCustomizationReplacements
+      summary: List Replacements.
+      parameters:
+        - $ref: "#/components/parameters/CustomizationLanguage"
+        - $ref: "#/components/parameters/CustomizationScope"
+        - $ref: "#/components/parameters/CustomizationScopeKey"
+        - $ref: "#/components/parameters/CustomizationSource"
+      responses:
+        "200":
+          description: Replacements.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ReplacementsResponse"
+    post:
+      tags: [Customization]
+      operationId: replaceCustomizationReplacements
+      summary: Replace settings-sourced Replacements for a language.
+      parameters:
+        - $ref: "#/components/parameters/CustomizationScope"
+        - $ref: "#/components/parameters/CustomizationScopeKey"
+        - $ref: "#/components/parameters/CustomizationSource"
+      security:
+        - ControlPlaneHeader: []
+        - ControlPlaneCookie: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ReplacementsReplaceRequest"
+      responses:
+        "200":
+          description: Updated Replacements.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ReplacementsResponse"
+  /api/v1/customization/lexicons:
+    get:
+      tags: [Customization]
+      operationId: listCustomizationLexicons
+      summary: List Lexicons.
+      parameters:
+        - $ref: "#/components/parameters/CustomizationScope"
+        - $ref: "#/components/parameters/CustomizationScopeKey"
+        - $ref: "#/components/parameters/CustomizationSource"
+      responses:
+        "200":
+          description: Lexicons.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LexiconsResponse"
+    post:
+      tags: [Customization]
+      operationId: replaceCustomizationLexicons
+      summary: Replace settings-sourced Lexicons for a language.
+      parameters:
+        - $ref: "#/components/parameters/CustomizationScope"
+        - $ref: "#/components/parameters/CustomizationScopeKey"
+        - $ref: "#/components/parameters/CustomizationSource"
+      security:
+        - ControlPlaneHeader: []
+        - ControlPlaneCookie: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LexiconsReplaceRequest"
+      responses:
+        "200":
+          description: Updated Lexicons.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LexiconsResponse"
+  /api/v1/customization/rulesets:
+    get:
+      tags: [Customization]
+      operationId: listCustomizationRulesets
+      summary: List Rulesets.
+      parameters:
+        - $ref: "#/components/parameters/CustomizationScope"
+        - $ref: "#/components/parameters/CustomizationScopeKey"
+        - $ref: "#/components/parameters/CustomizationSource"
+      responses:
+        "200":
+          description: Rulesets.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RulesetsResponse"
+    post:
+      tags: [Customization]
+      operationId: replaceCustomizationRulesets
+      summary: Replace settings-sourced Rulesets for a language.
+      parameters:
+        - $ref: "#/components/parameters/CustomizationScope"
+        - $ref: "#/components/parameters/CustomizationScopeKey"
+        - $ref: "#/components/parameters/CustomizationSource"
+      security:
+        - ControlPlaneHeader: []
+        - ControlPlaneCookie: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RulesetsReplaceRequest"
+      responses:
+        "200":
+          description: Updated Rulesets.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RulesetsResponse"
+  /api/v1/customization/templates:
+    get:
+      tags: [Customization]
+      operationId: listCustomizationTemplates
+      summary: List Native Templates and active selections.
+      responses:
+        "200":
+          description: Customization templates.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CustomizationTemplatesResponse"
+    post:
+      tags: [Customization]
+      operationId: replaceActiveCustomizationTemplates
+      summary: Replace the active Native Template list.
+      security:
+        - ControlPlaneHeader: []
+        - ControlPlaneCookie: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CustomizationTemplatesReplaceRequest"
+      responses:
+        "200":
+          description: Active customization templates.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CustomizationTemplatesResponse"
+  /api/v1/customization/templates/{templateId}/pack:
+    get:
+      tags: [Customization]
+      operationId: getCustomizationTemplatePack
+      summary: Export one Native Template as a Customization Pack.
+      parameters:
+        - name: templateId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: version
+          in: query
+          required: false
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Customization template pack.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CustomizationPack"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /api/v1/customization/pack:
+    get:
+      tags: [Customization]
+      operationId: exportCustomizationPack
+      summary: Export Words, Replacements, Lexicons, and Rulesets as a pack.
+      parameters:
+        - $ref: "#/components/parameters/CustomizationScope"
+        - $ref: "#/components/parameters/CustomizationScopeKey"
+      responses:
+        "200":
+          description: Customization pack.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CustomizationPack"
+    post:
+      tags: [Customization]
+      operationId: importCustomizationPack
+      summary: Import a customization pack.
+      parameters:
+        - $ref: "#/components/parameters/CustomizationScope"
+        - $ref: "#/components/parameters/CustomizationScopeKey"
+        - $ref: "#/components/parameters/CustomizationSource"
+      security:
+        - ControlPlaneHeader: []
+        - ControlPlaneCookie: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CustomizationPack"
+      responses:
+        "200":
+          description: Pack imported.
   /api/v1/voice-sessions:
     get:
       tags: [Data]
@@ -442,6 +697,35 @@ components:
       schema:
         type: string
       description: Stable provider artifact ID from `/api/v1/providers/artifacts`.
+    CustomizationLanguage:
+      name: language
+      in: query
+      required: false
+      schema:
+        type: string
+      description: Optional BCP-47 language scope. Implementations normalize region tags to the base language.
+    CustomizationScope:
+      name: scope
+      in: query
+      required: false
+      schema:
+        type: string
+        enum: [builtin, app, install, org, workspace, user, session]
+      description: Optional customization applicability scope. Device Settings defaults to user.
+    CustomizationScopeKey:
+      name: scope_key
+      in: query
+      required: false
+      schema:
+        type: string
+      description: Optional key for keyed scopes such as org, workspace, user, or session.
+    CustomizationSource:
+      name: source
+      in: query
+      required: false
+      schema:
+        type: string
+      description: Optional customization provenance such as settings, api, developer, migration, or pack:<id>.
   responses:
     BadRequest:
       description: Invalid request or unsupported profile selection.
@@ -1037,6 +1321,254 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/DictionaryEntry"
+    CustomizationMatch:
+      type: object
+      required: [type, pattern]
+      properties:
+        type:
+          type: string
+          enum: [literal, phrase, regex, spoken_alias]
+        pattern:
+          type: string
+        case_sensitive:
+          type: boolean
+        word_boundary:
+          type: boolean
+    CustomizationOutput:
+      type: object
+      properties:
+        text:
+          type: string
+        intent:
+          type: string
+        template:
+          type: string
+        payload:
+          type: object
+          additionalProperties: true
+    Word:
+      type: object
+      required: [term, enabled]
+      properties:
+        id: { type: string }
+        term: { type: string }
+        sounds_like:
+          type: array
+          items: { type: string }
+        language: { type: string }
+        weight: { type: number }
+        tags:
+          type: array
+          items: { type: string }
+        scope:
+          $ref: "#/components/schemas/CustomizationScopeRef"
+        source: { type: string }
+        enabled: { type: boolean }
+        usage_count: { type: integer }
+    CustomizationScopeRef:
+      type: object
+      properties:
+        kind:
+          type: string
+          enum: [builtin, app, install, org, workspace, user, session]
+        key: { type: string }
+    Replacement:
+      type: object
+      required: [kind, match, output, stage, enabled]
+      properties:
+        id: { type: string }
+        kind:
+          type: string
+          enum: [substitution, synonym, snippet, command, template]
+        match:
+          $ref: "#/components/schemas/CustomizationMatch"
+        output:
+          $ref: "#/components/schemas/CustomizationOutput"
+        language: { type: string }
+        modes:
+          type: array
+          items:
+            type: string
+            enum: [dictation, assist, voice_agent]
+        stage:
+          type: string
+          enum: [pre_recognition_cleanup, post_stt, post_llm, output]
+        priority: { type: integer }
+        tags:
+          type: array
+          items: { type: string }
+        scope:
+          $ref: "#/components/schemas/CustomizationScopeRef"
+        source: { type: string }
+        enabled: { type: boolean }
+        usage_count: { type: integer }
+    Lexicon:
+      type: object
+      required: [name, enabled]
+      properties:
+        id: { type: string }
+        name: { type: string }
+        description: { type: string }
+        language: { type: string }
+        word_ids:
+          type: array
+          items: { type: string }
+        tags:
+          type: array
+          items: { type: string }
+        scope:
+          $ref: "#/components/schemas/CustomizationScopeRef"
+        source: { type: string }
+        enabled: { type: boolean }
+    Ruleset:
+      type: object
+      required: [name, enabled]
+      properties:
+        id: { type: string }
+        name: { type: string }
+        description: { type: string }
+        language: { type: string }
+        replacement_ids:
+          type: array
+          items: { type: string }
+        tags:
+          type: array
+          items: { type: string }
+        scope:
+          $ref: "#/components/schemas/CustomizationScopeRef"
+        source: { type: string }
+        enabled: { type: boolean }
+    WordsResponse:
+      type: object
+      required: [words]
+      properties:
+        words:
+          type: array
+          items: { $ref: "#/components/schemas/Word" }
+    WordsReplaceRequest:
+      type: object
+      required: [words]
+      properties:
+        language: { type: string }
+        scope:
+          $ref: "#/components/schemas/CustomizationScopeRef"
+        source: { type: string }
+        words:
+          type: array
+          items: { $ref: "#/components/schemas/Word" }
+    ReplacementsResponse:
+      type: object
+      required: [replacements]
+      properties:
+        replacements:
+          type: array
+          items: { $ref: "#/components/schemas/Replacement" }
+    ReplacementsReplaceRequest:
+      type: object
+      required: [replacements]
+      properties:
+        language: { type: string }
+        scope:
+          $ref: "#/components/schemas/CustomizationScopeRef"
+        source: { type: string }
+        replacements:
+          type: array
+          items: { $ref: "#/components/schemas/Replacement" }
+    LexiconsResponse:
+      type: object
+      required: [lexicons]
+      properties:
+        lexicons:
+          type: array
+          items: { $ref: "#/components/schemas/Lexicon" }
+    LexiconsReplaceRequest:
+      type: object
+      required: [lexicons]
+      properties:
+        language: { type: string }
+        scope:
+          $ref: "#/components/schemas/CustomizationScopeRef"
+        source: { type: string }
+        lexicons:
+          type: array
+          items: { $ref: "#/components/schemas/Lexicon" }
+    RulesetsResponse:
+      type: object
+      required: [rulesets]
+      properties:
+        rulesets:
+          type: array
+          items: { $ref: "#/components/schemas/Ruleset" }
+    RulesetsReplaceRequest:
+      type: object
+      required: [rulesets]
+      properties:
+        language: { type: string }
+        scope:
+          $ref: "#/components/schemas/CustomizationScopeRef"
+        source: { type: string }
+        rulesets:
+          type: array
+          items: { $ref: "#/components/schemas/Ruleset" }
+    CustomizationTemplate:
+      type: object
+      required: [id, version, name, source, builtIn, wordCount, replacementCount]
+      properties:
+        id: { type: string }
+        version: { type: string }
+        name: { type: string }
+        description: { type: string }
+        source: { type: string }
+        languages:
+          type: array
+          items: { type: string }
+        modes:
+          type: array
+          items:
+            type: string
+            enum: [dictation, assist, voice_agent]
+        builtIn: { type: boolean }
+        defaultActive: { type: boolean }
+        wordCount: { type: integer }
+        replacementCount: { type: integer }
+    CustomizationTemplatesResponse:
+      type: object
+      required: [templates, activeTemplateIds]
+      properties:
+        templates:
+          type: array
+          items: { $ref: "#/components/schemas/CustomizationTemplate" }
+        activeTemplateIds:
+          type: array
+          items: { type: string }
+    CustomizationTemplatesReplaceRequest:
+      type: object
+      required: [activeTemplateIds]
+      properties:
+        activeTemplateIds:
+          type: array
+          items: { type: string }
+    CustomizationPack:
+      type: object
+      properties:
+        schema_version:
+          type: string
+          enum: [speechkit.customization.pack.v1]
+        id: { type: string }
+        name: { type: string }
+        description: { type: string }
+        words:
+          type: array
+          items: { $ref: "#/components/schemas/Word" }
+        replacements:
+          type: array
+          items: { $ref: "#/components/schemas/Replacement" }
+        lexicons:
+          type: array
+          items: { $ref: "#/components/schemas/Lexicon" }
+        rulesets:
+          type: array
+          items: { $ref: "#/components/schemas/Ruleset" }
     VoiceAgentTurn:
       type: object
       required: [role, text]

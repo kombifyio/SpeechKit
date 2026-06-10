@@ -9,6 +9,7 @@ import (
 	"sync"
 
 	"github.com/BurntSushi/toml"
+	customtemplates "github.com/kombifyio/SpeechKit/internal/customize/templates"
 	"github.com/kombifyio/SpeechKit/internal/voiceagentprofile"
 )
 
@@ -38,6 +39,8 @@ func Load(path string) (*Config, error) {
 	data, err := os.ReadFile(path) // #nosec G304 -- path is the application config path supplied by startup/config plumbing.
 	if err != nil {
 		if os.IsNotExist(err) {
+			NormalizeSpeechDefaults(cfg)
+			NormalizeCustomizationDefaults(cfg)
 			NormalizeHandsFreeConfig(cfg, true)
 			return cfg, nil
 		}
@@ -97,6 +100,8 @@ func Load(path string) (*Config, error) {
 	backfillVoiceAgentPromptLayers(cfg)
 	backfillVoiceAgentSessionSummary(meta, cfg)
 	backfillServerConnectionCustomURLAuth(meta, cfg)
+	normalizeSpeechDefaults(cfg, meta.IsDefined("speech"), meta.IsDefined("speech", "language"), meta.IsDefined("general", "language"))
+	NormalizeCustomizationDefaults(cfg)
 	NormalizeHandsFreeConfig(cfg, meta.IsDefined("hands_free"))
 	// Backfill: Telemetry.UpdateCheck mirrors Update.Enabled when update is disabled.
 	// Phase 0 has only the update-check as telemetry; later phases may diverge.
@@ -108,6 +113,10 @@ func Load(path string) (*Config, error) {
 	cfg.VoiceAgent.CloseBehavior = NormalizeVoiceAgentCloseBehavior(
 		cfg.VoiceAgent.CloseBehavior,
 		VoiceAgentCloseBehaviorContinue,
+	)
+	cfg.VoiceAgent.BargeIn = NormalizeVoiceAgentBargeIn(
+		cfg.VoiceAgent.BargeIn,
+		VoiceAgentBargeInAuto,
 	)
 	cfg.UI.AssistOverlayMode = NormalizeOverlayFeedbackMode(
 		cfg.UI.AssistOverlayMode,
@@ -138,6 +147,8 @@ func Save(path string, cfg *Config) error {
 	if path == "" {
 		path = defaultConfigPath()
 	}
+	NormalizeSpeechDefaults(cfg)
+	NormalizeCustomizationDefaults(cfg)
 	NormalizeHandsFreeConfig(cfg, true)
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return fmt.Errorf("create config dir: %w", err)
@@ -154,6 +165,59 @@ func Save(path string, cfg *Config) error {
 	}
 
 	return nil
+}
+
+func NormalizeSpeechDefaults(cfg *Config) {
+	if cfg == nil {
+		return
+	}
+	normalizeSpeechDefaults(cfg, true, strings.TrimSpace(cfg.Speech.Language) != "", strings.TrimSpace(cfg.General.Language) != "")
+}
+
+func NormalizeCustomizationDefaults(cfg *Config) {
+	if cfg == nil {
+		return
+	}
+	cfg.Customization.ActiveTemplateIDs = customtemplates.NormalizeActiveTemplateIDs(cfg.Customization.ActiveTemplateIDs)
+}
+
+func normalizeSpeechDefaults(cfg *Config, speechDefined, speechLanguageDefined, generalLanguageDefined bool) {
+	if cfg == nil {
+		return
+	}
+	cfg.Speech.Language = strings.TrimSpace(cfg.Speech.Language)
+	cfg.General.Language = strings.TrimSpace(cfg.General.Language)
+	switch {
+	case !speechDefined || !speechLanguageDefined:
+		cfg.Speech.Language = firstNonEmptyConfig(cfg.General.Language, cfg.Speech.Language, "de")
+	case !generalLanguageDefined:
+		cfg.General.Language = firstNonEmptyConfig(cfg.Speech.Language, cfg.General.Language, "de")
+	}
+	if cfg.General.Language == "" {
+		cfg.General.Language = firstNonEmptyConfig(cfg.Speech.Language, "de")
+	}
+	if cfg.Speech.Language == "" {
+		cfg.Speech.Language = cfg.General.Language
+	}
+	if cfg.Speech.EndpointingMs < 0 {
+		cfg.Speech.EndpointingMs = 0
+	}
+	if cfg.Speech.Speed <= 0 {
+		cfg.Speech.Speed = 1
+	}
+	cfg.Speech.AudioFormat = strings.TrimSpace(cfg.Speech.AudioFormat)
+	if cfg.Speech.AudioFormat == "" {
+		cfg.Speech.AudioFormat = "mp3"
+	}
+}
+
+func firstNonEmptyConfig(values ...string) string {
+	for _, value := range values {
+		if strings.TrimSpace(value) != "" {
+			return strings.TrimSpace(value)
+		}
+	}
+	return ""
 }
 
 func defaultConfigPath() string {

@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/kombifyio/SpeechKit/internal/netsec"
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/provideropts"
 )
 
 const (
@@ -77,6 +78,9 @@ func (p *OpenRouterSTTProvider) Transcribe(ctx context.Context, audio []byte, op
 	if opts.Model != "" {
 		model = opts.Model
 	}
+	resolved := ResolveTranscribeOptions("openrouter", "stt.openrouter.whisper-1", opts, provideropts.Values{
+		provideropts.OptionLanguage: "de",
+	}, nil)
 	requestBody := openRouterTranscriptionRequest{
 		InputAudio: openRouterInputAudio{
 			Data:   base64.StdEncoding.EncodeToString(ensureTranscriptionWAV(audio)),
@@ -84,8 +88,8 @@ func (p *OpenRouterSTTProvider) Transcribe(ctx context.Context, audio []byte, op
 		},
 		Model: model,
 	}
-	if opts.Language != "" && opts.Language != "auto" {
-		requestBody.Language = opts.Language
+	if language := resolved.APILanguage(); language != "" {
+		requestBody.Language = language
 	}
 
 	jsonBody, err := json.Marshal(requestBody)
@@ -121,10 +125,7 @@ func (p *OpenRouterSTTProvider) Transcribe(ctx context.Context, audio []byte, op
 		return nil, fmt.Errorf("parse openrouter response: %w", err)
 	}
 
-	lang := opts.Language
-	if lang == "" {
-		lang = "de"
-	}
+	lang := firstNonEmptyTrimmed(resolved.Language, "de")
 
 	return &Result{
 		Text:     result.Text,

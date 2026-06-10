@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/kombifyio/SpeechKit/internal/netsec"
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/provideropts"
 )
 
 const (
@@ -64,6 +65,9 @@ func (p *HuggingFaceProvider) Transcribe(ctx context.Context, audio []byte, opts
 	if opts.Model != "" {
 		model = opts.Model
 	}
+	resolved := ResolveTranscribeOptions("huggingface", "stt.routed.whisper-large-v3", opts, provideropts.Values{
+		provideropts.OptionLanguage: "de",
+	}, nil)
 	endpoint, err := p.hfEndpoint(model)
 	if err != nil {
 		return nil, fmt.Errorf("hf endpoint: %w", err)
@@ -105,10 +109,7 @@ func (p *HuggingFaceProvider) Transcribe(ctx context.Context, audio []byte, opts
 		return nil, fmt.Errorf("parse response: %w", err)
 	}
 
-	lang := opts.Language
-	if lang == "" {
-		lang = "de"
-	}
+	lang := firstNonEmptyTrimmed(resolved.Language, "de")
 
 	return &Result{
 		Text:     hfResp.Text,

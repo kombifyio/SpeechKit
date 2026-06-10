@@ -18,9 +18,23 @@ agent_hotkey = "win+alt"           # Deprecated compatibility alias. SpeechKit n
 agent_mode = "assist"              # Deprecated compatibility alias for legacy agent_hotkey readers.
 hotkey = "ctrl+win"                # Legacy alias for dictate_hotkey
 hotkey_mode = "hold_to_talk"
-auto_stop_silence_ms = 500
+auto_stop_silence_ms = 1500
 fast_mode_silence_ms = 1500
+dictate_silence_timeout_sec = 15  # Seconds of silence before toggle dictation auto-stops. 0 disables.
 model_download_dir = ""            # Blank = %LOCALAPPDATA%/SpeechKit/models. Set a dedicated folder for local model downloads.
+
+[speech]
+language = "de"          # Canonical cross-provider speech language. general.language remains a compatibility alias.
+detect_language = false  # When supported, omit/fill provider-native auto language detection.
+punctuation = true
+smart_format = true
+vocabulary_bias = true   # Use SpeechKit Words/Replacements as provider-native hints where available.
+timestamps = false
+endpointing_ms = 0       # Provider endpointing/turn silence where supported. 0 = provider/SpeechKit default.
+turn_detection = true
+voice = ""
+speed = 1.0
+audio_format = "mp3"
 
 [ui]
 overlay_enabled = true    # Show the top-center overlay
@@ -116,7 +130,10 @@ audio_retention_days = 7  # 0 disables automatic deletion
 max_audio_storage_mb = 500
 
 [vocabulary]
-dictionary = ""           # One entry per line. Use "spoken => canonical" for corrections, or a single term as a recognition hint.
+dictionary = ""           # Migration/compat only. One entry per line; mapped into Words plus substitution Replacements.
+
+[customization]
+active_template_ids = ["standard-punctuation-de-en"] # Native Words/Replacements templates. Add "developer-de-en" for developer dictation.
 
 # ──────────────────────────────────────────────
 # Mode Model Selection — same per-mode provider settings exposed by /api/v1/modes/{mode}/settings
@@ -287,6 +304,7 @@ timeout_sec = 30                         # subprocess timeout
 
 [voice_agent]
 enabled = true
+provider = "gemini"                        # Realtime backend: "gemini" (default), "openai", "deepgram"; Server-Target also accepts "cascaded"/"moshi"
 model = "gemini-2.5-flash-native-audio-preview-12-2025" # Recommended Voice Agent default
 fallback_model = "gpt-realtime-mini"       # Fallback if primary unavailable
 voice = "Kore"                             # Voice for real-time model
@@ -294,9 +312,10 @@ agent_profile_id = "default"               # default, brainstorming_companion, h
 agent_sequence_id = ""                     # Optional workflow sequence override. Empty = selected profile/persona default.
 framework_prompt = ""                      # Durable host/framework prompt. Empty = SpeechKit default Voice Agent framework behavior.
 refinement_prompt = ""                     # Optional personal refinement prompt layered on top of the framework prompt.
+barge_in = "auto"                          # Interrupt the agent mid-answer: "auto" (full duplex on headsets), "always", "never"
 reminder_after_idle_sec = 300              # Remind user after 5 min silence
 deactivate_after_idle_sec = 900            # Auto-deactivate after 15 min silence
-hold_release_grace_sec = 10                # Hold-to-talk: how long the Voice Agent stays open after release so the model can finish its reply. 0 -> default (10), capped at 30.
+hold_release_grace_sec = 10                # Hold-to-talk: how long a release waits for the final answer to START. An in-flight answer always finishes playing (capped at 30s total). 0 -> default (10).
 pipeline_fallback = false                  # Uses STT -> Agent LLM -> optional TTS for non-realtime Voice Agent profiles.
 show_prompter = true                       # Show live transcript window during voice agent
 enable_session_summary = true              # Generate a structured dialogue summary when a session ends
@@ -358,6 +377,15 @@ vad_silence_duration_ms = 700
 # enabled = false
 # api_key_env = "DEEPGRAM_API_KEY"
 # stt_model = "nova-3"
+# stt_language = ""                  # empty = SpeechKit language, "multi" = code switching, "de"/"en" = fixed override
+# stt_smart_format = true            # readability formatting; recommended default
+# stt_dictation = false              # spoken punctuation, English-focused
+# stt_filler_words = false
+# stt_numerals = false
+# stt_detect_language = false        # batch Listen only; omit language when enabled
+# stt_use_vocabulary_keyterms = true # send SpeechKit Words as native Deepgram keyterms/keywords
+# stt_keyterms = ""                  # optional comma/newline separated static terms
+# stt_endpointing_ms = 0             # streaming only; 0 = Deepgram default, 100 is useful for code-switching tests
 # diarization_model = "latest"
 
 # [providers.assemblyai]

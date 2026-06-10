@@ -15,6 +15,7 @@ import (
 	"context"
 	"time"
 
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/provideropts"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/speaker"
 )
 
@@ -223,11 +224,13 @@ type LiveConfig struct {
 	// at the Google Cloud project level; both the project region AND this field
 	// must agree for audit records to be accurate.
 	// See docs/compliance/byok-gemini-region-pinning.md.
-	Region   string
-	Policies LivePolicies
-	Tools    []ToolDefinition
-	Workflow *WorkflowConfig
-	Speaker  speaker.Options
+	Region          string
+	Policies        LivePolicies
+	Tools           []ToolDefinition
+	Workflow        *WorkflowConfig
+	Speaker         speaker.Options
+	Options         provideropts.Values
+	ProviderOptions provideropts.Values
 }
 
 // LiveMessage is a message received from the real-time model.

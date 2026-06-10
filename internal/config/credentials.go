@@ -314,7 +314,7 @@ func ApplyManagedIntegrationDefaults(cfg *Config) bool {
 
 	cfg.HuggingFace.Enabled = true
 	if strings.TrimSpace(cfg.HuggingFace.Model) == "" {
-		cfg.HuggingFace.Model = "openai/whisper-large-v3"
+		cfg.HuggingFace.Model = "openai/whisper-large-v3-turbo"
 	}
 	return true
 }

@@ -138,6 +138,8 @@ agent_model    = "gemini-2.5-pro"
 enabled           = false
 api_key_env       = "DEEPGRAM_API_KEY"
 stt_model         = "nova-3"
+stt_smart_format  = true
+stt_use_vocabulary_keyterms = true
 diarization_model = "latest"
 
 [providers.assemblyai]

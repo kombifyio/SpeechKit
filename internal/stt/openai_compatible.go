@@ -13,6 +13,7 @@ import (
 
 	audiofmt "github.com/kombifyio/SpeechKit/internal/audio"
 	"github.com/kombifyio/SpeechKit/internal/netsec"
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/provideropts"
 )
 
 const openAICompatMaxResponse = 1 << 20
@@ -112,6 +113,9 @@ func (p *OpenAICompatibleProvider) Transcribe(ctx context.Context, audio []byte,
 	if err != nil {
 		return nil, fmt.Errorf("%s endpoint: %w", p.name, err)
 	}
+	resolved := ResolveTranscribeOptions(p.name, "", opts, provideropts.Values{
+		provideropts.OptionLanguage: "de",
+	}, nil)
 
 	body := &bytes.Buffer{}
 	writer := multipart.NewWriter(body)
@@ -124,8 +128,8 @@ func (p *OpenAICompatibleProvider) Transcribe(ctx context.Context, audio []byte,
 		return nil, fmt.Errorf("write audio data: %w", err)
 	}
 
-	if opts.Language != "" && opts.Language != "auto" {
-		if err := writer.WriteField("language", opts.Language); err != nil {
+	if language := resolved.APILanguage(); language != "" {
+		if err := writer.WriteField("language", language); err != nil {
 			return nil, fmt.Errorf("write language field: %w", err)
 		}
 	}
@@ -137,8 +141,8 @@ func (p *OpenAICompatibleProvider) Transcribe(ctx context.Context, audio []byte,
 	if err := writer.WriteField("model", model); err != nil {
 		return nil, fmt.Errorf("write model field: %w", err)
 	}
-	if opts.Prompt != "" {
-		if err := writer.WriteField("prompt", opts.Prompt); err != nil {
+	if resolved.Prompt != "" {
+		if err := writer.WriteField("prompt", resolved.Prompt); err != nil {
 			return nil, fmt.Errorf("write prompt field: %w", err)
 		}
 	}
@@ -177,10 +181,7 @@ func (p *OpenAICompatibleProvider) Transcribe(ctx context.Context, audio []byte,
 		return nil, fmt.Errorf("parse response: %w", err)
 	}
 
-	lang := opts.Language
-	if lang == "" {
-		lang = "de"
-	}
+	lang := firstNonEmptyTrimmed(resolved.Language, "de")
 
 	return &Result{
 		Text:     result.Text,

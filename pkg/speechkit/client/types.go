@@ -5,6 +5,7 @@ import (
 	"time"
 
 	framework "github.com/kombifyio/SpeechKit/pkg/speechkit"
+	speechcustomize "github.com/kombifyio/SpeechKit/pkg/speechkit/customize"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/speaker"
 )
 
@@ -58,6 +59,12 @@ type DictionaryEntry struct {
 	CreatedAt  time.Time `json:"createdAt,omitempty"`
 	UpdatedAt  time.Time `json:"updatedAt,omitempty"`
 }
+
+type Word = speechcustomize.Word
+type Replacement = speechcustomize.Replacement
+type Lexicon = speechcustomize.Lexicon
+type Ruleset = speechcustomize.Ruleset
+type Pack = speechcustomize.Pack
 
 type AudioAsset struct {
 	StorageKind string `json:"storageKind"`

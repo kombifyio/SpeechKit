@@ -60,6 +60,9 @@ const (
 	CapabilityToolCalling           Capability = "tool_calling"
 	CapabilityDictionaryPrompt      Capability = "dictionary_prompt"
 	CapabilityDictionaryNativeHints Capability = "dictionary_native_hints"
+	CapabilityWordsPrompt           Capability = "words_prompt"
+	CapabilityWordsNativeHints      Capability = "words_native_hints"
+	CapabilityPostSTTReplacements   Capability = "post_stt_replacements"
 	CapabilitySessionSummary        Capability = "session_summary"
 	CapabilitySpeakerDiarization    Capability = "speaker_diarization"
 	CapabilitySpeakerIdentification Capability = "speaker_identification"
@@ -196,7 +199,7 @@ func supportProfiles() []Profile {
 			Modality:       ModalityTTS,
 			ProviderKind:   ProviderKindCloudProvider,
 			ExecutionMode:  ExecutionModeHFRouted,
-			ModelID:        "Qwen/Qwen3-TTS-12Hz-1.7B-VoiceDesign",
+			ModelID:        "Qwen/Qwen3-TTS-12Hz-1.7B-Base",
 			Source:         "huggingface",
 			License:        "apache-2.0",
 			Capabilities:   []Capability{CapabilityTTS},

@@ -20,6 +20,15 @@ Speaker diarization, speaker identification, and speaker attribution are also
 capability layers over the same three modes, not new modes. Hosts opt in with
 speaker options where a selected STT or streaming provider supports them.
 
+Words and Replacements are the framework customization layer over the same
+modes. A Word is recognition knowledge that biases STT and Voice Agent
+perception. A Replacement is a deterministic transformation that can normalize
+text, emit commands, expand snippets, or feed explicit templates. Native
+Templates are versioned curated packs of the same data; `ActiveTemplateIDs`
+selects which built-in or server-provided template data participates in
+Dictation, Assist, and Voice Agent resolution. The dictionary-shaped API remains
+a compatibility migration projection, not the extension model.
+
 The public SDK exposes these contracts through:
 
 - `speechkit.DefaultModeContracts()`
@@ -49,6 +58,7 @@ full mode runtime:
 | Spoken output only | `pkg/speechkit/tts` |
 | Hands-Free composition | `pkg/speechkit/companion` |
 | Speaker diarization/attribution contracts | `pkg/speechkit/speaker` |
+| Customization contracts | `pkg/speechkit/customize`, with runtime implementation in `internal/customize` and the semantic standard in `docs/words-and-replacements-standard.md` |
 | Server-connected mode calls | `pkg/speechkit/client` |
 | Embedded Voice Agent tools/session harness | `pkg/speechkit/agentkit`, `pkg/speechkit/voiceagent/live` |
 
@@ -126,9 +136,14 @@ The API and SDK use the same per-mode settings shape.
 
 | Mode | Settings |
 |------|----------|
-| Dictation | `enabled`, `hotkey`, `hotkeyBehavior`, `primaryProfileId`, `fallbackProfileId`, `dictionaryEnabled` |
+| Dictation | `enabled`, `hotkey`, `hotkeyBehavior`, `primaryProfileId`, `fallbackProfileId`, transitional `dictionaryEnabled` for old local settings |
 | Assist | `enabled`, `hotkey`, `hotkeyBehavior`, `primaryProfileId`, `fallbackProfileId`, `ttsEnabled`, `utilityRegistry` |
 | Voice Agent | `enabled`, `hotkey`, `hotkeyBehavior`, `primaryProfileId`, `fallbackProfileId`, `sessionSummary`, `pipelineFallback`, `closeBehavior` |
+
+Words/Replacements settings are cross-mode customizations, not per-mode
+settings. They resolve through context filters such as mode, language, persona,
+tags, active template IDs, and scope, then each mode consumes the resolved set.
+`dictionaryEnabled` stays only as a transitional local setting for old configs.
 
 ## Local Control API
 
@@ -149,7 +164,14 @@ The OpenAPI contract lives in [`docs/api/openapi.v1.yaml`](./api/openapi.v1.yaml
 | `/api/v1/providers/artifacts/{artifactId}/download` | `POST` | Download or pull a provider artifact. |
 | `/api/v1/providers/artifacts/{artifactId}/select` | `POST` | Select an already available provider artifact. |
 | `/api/v1/providers/{profileId}/activate` | `POST` | Activate a provider profile for its mode. |
-| `/api/v1/dictionary` | `GET`, `POST` | Export dictionary entries with usage counters or import normalized dictionary entries. |
+| `/api/v1/customization/words` | `GET`, `POST` | Read or replace Words for the selected language, source, and scope. |
+| `/api/v1/customization/replacements` | `GET`, `POST` | Read or replace Replacements for the selected language, source, and scope. |
+| `/api/v1/customization/lexicons` | `GET`, `POST` | Read or replace Lexicon collections. |
+| `/api/v1/customization/rulesets` | `GET`, `POST` | Read or replace Ruleset collections. |
+| `/api/v1/customization/templates` | `GET`, `POST` | Read the native Template Catalog and update the active template list. |
+| `/api/v1/customization/templates/{templateId}/pack` | `GET` | Export a native template as a portable Customization Pack. |
+| `/api/v1/customization/pack` | `GET`, `POST` | Export or import a portable Customization Pack. |
+| `/api/v1/dictionary` | `GET`, `POST` | Migration projection for old local dictionary-shaped data. New integrations should use customization routes. |
 | `/api/v1/voice-sessions` | `GET` | List stored Voice Agent session summaries without transcript or turn payloads. |
 | `/api/v1/voice-sessions/{id}` | `GET` | Read one Voice Agent session with transcript, turns, and full summary detail. |
 

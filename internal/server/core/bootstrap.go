@@ -28,6 +28,7 @@ import (
 	"github.com/kombifyio/SpeechKit/internal/server/assist"
 	"github.com/kombifyio/SpeechKit/internal/server/catalog"
 	"github.com/kombifyio/SpeechKit/internal/server/configapi"
+	"github.com/kombifyio/SpeechKit/internal/server/customization"
 	"github.com/kombifyio/SpeechKit/internal/server/dictation"
 	"github.com/kombifyio/SpeechKit/internal/server/httpx"
 	"github.com/kombifyio/SpeechKit/internal/server/middleware"
@@ -191,6 +192,7 @@ func Run(ctx context.Context, cfg *config.Config, opts RunOptions) error {
 				MaxDecodedAudioSeconds: cfg.Server.MaxDecodedAudioSeconds,
 				DefaultPrompt:          dictationPromptFromDictionary(cfg.Vocabulary.Dictionary),
 				Store:                  app.Store,
+				ActiveTemplateIDs:      cfg.Customization.ActiveTemplateIDs,
 			})
 			if err != nil {
 				return fmt.Errorf("core.Run: build dictation handler: %w", err)
@@ -222,11 +224,15 @@ func Run(ctx context.Context, cfg *config.Config, opts RunOptions) error {
 	if cfg.Server.Features.Vocabulary {
 		dictStore, _ := app.Store.(store.UserDictionaryStore)
 		vocabulary.New(dictStore).Mount(app.Mux)
+		customizationStore, _ := app.Store.(store.CustomizationStore)
+		customization.New(customizationStore, cfg.Customization.ActiveTemplateIDs).Mount(app.Mux)
 		switch {
 		case app.Store == nil:
 			app.Health.SetReady("api.vocabulary", StatusUnavailable, "store unavailable")
 		case dictStore == nil:
 			app.Health.SetReady("api.vocabulary", StatusUnavailable, "store does not support user dictionary")
+		case customizationStore == nil:
+			app.Health.SetReady("api.vocabulary", StatusDegraded, "dictionary listening; customization store unavailable")
 		default:
 			app.Health.SetReady("api.vocabulary", StatusOK, "listening")
 		}
@@ -281,6 +287,8 @@ func Run(ctx context.Context, cfg *config.Config, opts RunOptions) error {
 			MaxUploadMB:            cfg.Server.MaxUploadMB,
 			MaxDecodedAudioSeconds: cfg.Server.MaxDecodedAudioSeconds,
 			DefaultLocale:          cfg.General.Language,
+			Store:                  app.Store,
+			ActiveTemplateIDs:      cfg.Customization.ActiveTemplateIDs,
 		})
 		if err != nil {
 			return fmt.Errorf("core.Run: build assist handler: %w", err)

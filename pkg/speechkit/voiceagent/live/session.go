@@ -207,10 +207,28 @@ func (s *Session) setState(state State) {
 }
 
 func (s *Session) setProcessingUnlessSpeaking() {
-	if s.currentState() == StateSpeaking {
+	switch s.currentState() {
+	case StateSpeaking, StateDeactivating, StateInactive:
 		return
+	case StateConnecting, StateListening, StateProcessing, StateRecovering:
+		// Active, non-speaking states proceed to the Processing transition below.
 	}
 	s.setState(StateProcessing)
+}
+
+// setListeningIfActive transitions back to Listening unless the session is
+// already shutting down. Receive-loop messages (turn completion, barge-in)
+// race with Stop(); without this guard a late Done message would briefly
+// re-announce "listening" through OnStateChange mid-teardown.
+func (s *Session) setListeningIfActive() bool {
+	switch s.currentState() {
+	case StateDeactivating, StateInactive:
+		return false
+	case StateConnecting, StateListening, StateProcessing, StateSpeaking, StateRecovering:
+		// Active states proceed to the Listening transition below.
+	}
+	s.setState(StateListening)
+	return true
 }
 
 func (s *Session) receiveLoop(ctx context.Context) {
@@ -228,8 +246,9 @@ func (s *Session) receiveLoop(ctx context.Context) {
 				return
 			}
 			slog.Warn("voice agent speaking turn did not emit completion; returning to listening")
-			s.setState(StateListening)
-			s.resetIdleTimer()
+			if s.setListeningIfActive() {
+				s.resetIdleTimer()
+			}
 		})
 	}
 	defer stopSpeakingSettleTimer()
@@ -287,15 +306,16 @@ func (s *Session) handleLiveMessage(ctx context.Context, msg *LiveMessage, sched
 	}
 	if msg.Done || (msg.OutputTranscriptDone && len(msg.Audio) == 0) {
 		stopSpeakingSettleTimer()
-		s.setState(StateListening)
-		s.resetIdleTimer()
+		if s.setListeningIfActive() {
+			s.resetIdleTimer()
+		}
 	}
 	return true
 }
 
 func (s *Session) handleInterruption(stopSpeakingSettleTimer func()) {
 	stopSpeakingSettleTimer()
-	s.setState(StateListening)
+	s.setListeningIfActive()
 	if s.callbacks.OnInterrupted != nil {
 		s.callbacks.OnInterrupted()
 	}
@@ -343,6 +363,12 @@ func (s *Session) handleText(msg *LiveMessage) {
 func (s *Session) handleAudio(msg *LiveMessage, scheduleSpeakingSettle func()) {
 	if len(msg.Audio) == 0 {
 		return
+	}
+	switch s.currentState() {
+	case StateDeactivating, StateInactive:
+		return
+	case StateConnecting, StateListening, StateProcessing, StateSpeaking, StateRecovering:
+		// Audio for any active state proceeds to the Speaking transition below.
 	}
 	s.setState(StateSpeaking)
 	if s.callbacks.OnAudio != nil {

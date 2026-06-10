@@ -90,7 +90,7 @@ func TestResolveHuggingFaceModelDefault(t *testing.T) {
 	if enabled.HuggingFace == nil {
 		t.Fatal("HuggingFace not enabled despite token + flag")
 	}
-	if enabled.HuggingFace.Model != "parler-tts/parler-tts-mini-multilingual-v1.1" {
+	if enabled.HuggingFace.Model != "Qwen/Qwen3-TTS-12Hz-1.7B-Base" {
 		t.Fatalf("HF default model = %q", enabled.HuggingFace.Model)
 	}
 }

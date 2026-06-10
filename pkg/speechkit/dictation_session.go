@@ -8,9 +8,12 @@ import (
 )
 
 const (
-	DefaultDictationMinSegment = 1200 * time.Millisecond
-	DefaultDictationPadding    = 160 * time.Millisecond
-	DefaultDictationOverlap    = 200 * time.Millisecond
+	DefaultDictationPause                  = 1500 * time.Millisecond
+	DefaultDictationMinSegment             = 1200 * time.Millisecond
+	DefaultDictationMinIntermediateSegment = 15 * time.Second
+	DefaultDictationParagraphPause         = 4 * time.Second
+	DefaultDictationPadding                = 480 * time.Millisecond
+	DefaultDictationOverlap                = 200 * time.Millisecond
 
 	dictationFrameSize       = 512
 	dictationFrameBytes      = dictationFrameSize * AudioBytesPerSample
@@ -39,19 +42,28 @@ type VoiceActivityDetector interface {
 type DictationSegmenter struct {
 	detector VoiceActivityDetector
 
-	mu          sync.Mutex
-	pause       time.Duration
-	minSegment  time.Duration
-	padding     time.Duration
-	overlap     time.Duration
-	pending     []byte
-	preRoll     []byte
-	active      []byte
-	tailSilence []byte
-	inSpeech    bool
-	silenceTime time.Duration
-	emittedAny  bool
-	segments    []AudioSegment
+	mu         sync.Mutex
+	pause      time.Duration
+	minSegment time.Duration
+	// minIntermediateSegment keeps short dictations together even when the
+	// speaker makes a natural pause. Once a chunk reaches this duration, the
+	// next pause may close it as an intermediate transcription segment.
+	minIntermediateSegment time.Duration
+	paragraphPause         time.Duration
+	padding                time.Duration
+	overlap                time.Duration
+	pending                []byte
+	preRoll                []byte
+	active                 []byte
+	tailSilence            []byte
+	inSpeech               bool
+	silenceTime            time.Duration
+	idleSilenceTime        time.Duration
+	activeParagraph        bool
+	nextParagraph          bool
+	emittedAny             bool
+	segments               []AudioSegment
+	ingestedBytes          int
 
 	// nowFunc is injectable for tests; production uses time.Now.
 	nowFunc func() time.Time
@@ -68,17 +80,19 @@ func NewDictationSegmenter(detector VoiceActivityDetector, pauseThreshold time.D
 		return nil
 	}
 	if pauseThreshold <= 0 {
-		pauseThreshold = 700 * time.Millisecond
+		pauseThreshold = DefaultDictationPause
 	}
 
 	now := time.Now()
 	return &DictationSegmenter{
-		detector:   detector,
-		pause:      pauseThreshold,
-		minSegment: DefaultDictationMinSegment,
-		padding:    DefaultDictationPadding,
-		overlap:    DefaultDictationOverlap,
-		idleSince:  now,
+		detector:               detector,
+		pause:                  pauseThreshold,
+		minSegment:             DefaultDictationMinSegment,
+		minIntermediateSegment: DefaultDictationMinIntermediateSegment,
+		paragraphPause:         DefaultDictationParagraphPause,
+		padding:                DefaultDictationPadding,
+		overlap:                DefaultDictationOverlap,
+		idleSince:              now,
 	}
 }
 
@@ -117,6 +131,7 @@ func (s *DictationSegmenter) FeedPCM(pcm []byte) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
+	s.ingestedBytes += len(pcm)
 	s.pending = append(s.pending, pcm...)
 	for len(s.pending) >= dictationFrameBytes {
 		frame := s.pending[:dictationFrameBytes]
@@ -140,12 +155,17 @@ func (s *DictationSegmenter) CollectStopSegments(fullPCM []byte) ([]AudioSegment
 	defer s.mu.Unlock()
 
 	var flushed []AudioSegment
-	if s.inSpeech && len(s.pending) > 0 {
+	if len(s.pending) > 0 {
 		s.active = append(s.active, s.pending...)
 	}
 	s.pending = nil
-	if s.inSpeech && len(s.active) > 0 {
-		if segment := s.buildSegment(s.active, true); segment != nil {
+	s.appendUnfedStopTail(fullPCM)
+	if len(s.active) > 0 {
+		segmentPCM := append([]byte(nil), s.active...)
+		if len(s.tailSilence) > 0 {
+			segmentPCM = append(segmentPCM, s.tailSilence...)
+		}
+		if segment := s.buildSegment(segmentPCM, true); segment != nil {
 			flushed = append(flushed, *segment)
 		}
 	}
@@ -161,6 +181,25 @@ func (s *DictationSegmenter) CollectStopSegments(fullPCM []byte) ([]AudioSegment
 		return FallbackDictationSegments(fullPCM), nil
 	}
 	return segments, nil
+}
+
+func (s *DictationSegmenter) appendUnfedStopTail(fullPCM []byte) {
+	if len(fullPCM) <= s.ingestedBytes {
+		return
+	}
+	tail := fullPCM[s.ingestedBytes:]
+	if len(tail) == 0 {
+		return
+	}
+
+	switch {
+	case s.inSpeech || len(s.active) > 0:
+		s.active = append(s.active, tail...)
+	case len(s.pending) > 0:
+		s.pending = append(s.pending, tail...)
+	case len(s.segments) == 0:
+		s.pending = append(s.pending, tail...)
+	}
 }
 
 // FallbackDictationSegments wraps all of fullPCM in a single segment.
@@ -194,6 +233,11 @@ func (s *DictationSegmenter) feedFrame(frame []byte) ([]AudioSegment, error) {
 
 	if speaking {
 		if !s.inSpeech {
+			if len(s.active) == 0 {
+				s.activeParagraph = s.emittedAny && s.nextParagraph
+			}
+			s.nextParagraph = false
+			s.idleSilenceTime = 0
 			s.inSpeech = true
 			s.silenceTime = 0
 			// Clear idleSince so the poller does not see stale silence
@@ -210,10 +254,12 @@ func (s *DictationSegmenter) feedFrame(frame []byte) ([]AudioSegment, error) {
 		}
 		s.active = append(s.active, frame...)
 		s.silenceTime = 0
+		s.idleSilenceTime = 0
 		return nil, nil
 	}
 
 	if !s.inSpeech {
+		s.addIdleSilence(frameDur)
 		s.appendPreRoll(frame)
 		return nil, nil
 	}
@@ -228,21 +274,55 @@ func (s *DictationSegmenter) feedFrame(frame []byte) ([]AudioSegment, error) {
 	if len(s.tailSilence) > 0 {
 		segmentPCM = append(segmentPCM, s.tailSilence...)
 	}
+
+	if !s.shouldEmitIntermediate(segmentPCM) {
+		s.active = segmentPCM
+		s.tailSilence = nil
+		s.inSpeech = false
+		s.idleSince = s.now()
+		s.setIdleSilence(s.silenceTime)
+		s.silenceTime = 0
+		return nil, nil
+	}
+
 	segment := s.buildSegment(segmentPCM, false)
 
 	s.active = nil
 	s.tailSilence = nil
 	s.inSpeech = false
-	s.silenceTime = 0
 	// User stopped speaking — anchor the idle clock to "now" so the
 	// post-utterance silence countdown starts here, not from session
 	// start.
 	s.idleSince = s.now()
+	s.setIdleSilence(s.silenceTime)
+	s.silenceTime = 0
 
 	if segment == nil {
+		s.activeParagraph = false
 		return nil, nil
 	}
 	return []AudioSegment{*segment}, nil
+}
+
+func (s *DictationSegmenter) addIdleSilence(d time.Duration) {
+	s.setIdleSilence(s.idleSilenceTime + d)
+}
+
+func (s *DictationSegmenter) setIdleSilence(d time.Duration) {
+	if d < 0 {
+		d = 0
+	}
+	s.idleSilenceTime = d
+	if s.emittedAny && len(s.active) == 0 && s.paragraphPause > 0 && d >= s.paragraphPause {
+		s.nextParagraph = true
+	}
+}
+
+func (s *DictationSegmenter) shouldEmitIntermediate(pcm []byte) bool {
+	if s.minIntermediateSegment <= 0 {
+		return true
+	}
+	return dictationDuration(pcm) >= s.minIntermediateSegment
 }
 
 func (s *DictationSegmenter) buildSegment(pcm []byte, final bool) *AudioSegment {
@@ -250,7 +330,7 @@ func (s *DictationSegmenter) buildSegment(pcm []byte, final bool) *AudioSegment 
 		return nil
 	}
 
-	duration := time.Duration(len(pcm)) * time.Second / (AudioSampleRate * AudioBytesPerSample)
+	duration := dictationDuration(pcm)
 	if duration < s.minSegment {
 		return nil
 	}
@@ -258,11 +338,13 @@ func (s *DictationSegmenter) buildSegment(pcm []byte, final bool) *AudioSegment 
 	segment := &AudioSegment{
 		PCM:       append([]byte(nil), pcm...),
 		Duration:  duration,
-		Paragraph: s.emittedAny,
+		Paragraph: s.emittedAny && s.activeParagraph,
 		Final:     final,
 	}
 
 	s.emittedAny = true
+	s.activeParagraph = false
+	s.nextParagraph = false
 	s.appendOverlapTail(pcm)
 	return segment
 }
@@ -300,7 +382,11 @@ func (s *DictationSegmenter) resetSession() {
 	s.tailSilence = nil
 	s.inSpeech = false
 	s.silenceTime = 0
+	s.idleSilenceTime = 0
+	s.activeParagraph = false
+	s.nextParagraph = false
 	s.emittedAny = false
+	s.ingestedBytes = 0
 	// A new dictate session starts idle relative to "now" so the
 	// silence-timeout watcher gives the user a full window before
 	// auto-stopping.
@@ -309,6 +395,10 @@ func (s *DictationSegmenter) resetSession() {
 
 func dictationFrameDuration() time.Duration {
 	return time.Duration(dictationFrameSize) * time.Second / AudioSampleRate
+}
+
+func dictationDuration(pcm []byte) time.Duration {
+	return time.Duration(len(pcm)) * time.Second / (AudioSampleRate * AudioBytesPerSample)
 }
 
 func dictationBytesForDuration(d time.Duration) int {

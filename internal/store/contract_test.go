@@ -15,12 +15,14 @@ import (
 var (
 	_ Store                      = (*SQLiteStore)(nil)
 	_ UserDictionaryStore        = (*SQLiteStore)(nil)
+	_ CustomizationStore         = (*SQLiteStore)(nil)
 	_ VoiceAgentSessionStore     = (*SQLiteStore)(nil)
 	_ AudioAssetStore            = (*SQLiteStore)(nil)
 	_ SemanticCapabilityProvider = (*SQLiteStore)(nil)
 
 	_ Store                      = (*PostgresStore)(nil)
 	_ UserDictionaryStore        = (*PostgresStore)(nil)
+	_ CustomizationStore         = (*PostgresStore)(nil)
 	_ VoiceAgentSessionStore     = (*PostgresStore)(nil)
 	_ AudioAssetStore            = (*PostgresStore)(nil)
 	_ SemanticCapabilityProvider = (*PostgresStore)(nil)
@@ -81,6 +83,10 @@ func contractBackends() []backendFixture {
 				}
 				if _, err := pg.db.Exec(`TRUNCATE TABLE
 					audio_assets,
+					customization_rulesets,
+					customization_lexicons,
+					customization_replacements,
+					customization_words,
 					voice_agent_session_summary_items,
 					voice_agent_session_turns,
 					voice_agent_sessions,

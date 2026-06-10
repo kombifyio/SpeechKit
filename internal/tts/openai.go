@@ -11,6 +11,7 @@ import (
 
 	"github.com/kombifyio/SpeechKit/internal/models"
 	"github.com/kombifyio/SpeechKit/internal/netsec"
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/provideropts"
 )
 
 const (
@@ -86,12 +87,15 @@ func (o *OpenAI) Synthesize(ctx context.Context, text string, opts SynthesizeOpt
 		return nil, fmt.Errorf("openai tts: endpoint: %w", err)
 	}
 
-	voice := opts.Voice
-	if voice == "" {
-		voice = o.voice
-	}
+	resolved := ResolveSynthesizeOptions("openai", "", opts, provideropts.Values{
+		provideropts.OptionVoice:       o.voice,
+		provideropts.OptionSpeed:       1.0,
+		provideropts.OptionAudioFormat: openAIDefaultFormat,
+	}, nil)
 
-	format := opts.Format
+	voice := resolved.Voice
+
+	format := resolved.Format
 	if format == "" {
 		format = openAIDefaultFormat
 	}
@@ -111,7 +115,7 @@ func (o *OpenAI) Synthesize(ctx context.Context, text string, opts SynthesizeOpt
 		format = "mp3"
 	}
 
-	speed := opts.Speed
+	speed := resolved.Speed
 	if speed <= 0 {
 		speed = 1.0
 	}

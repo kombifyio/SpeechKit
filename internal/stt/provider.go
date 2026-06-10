@@ -11,8 +11,10 @@ package stt
 
 import (
 	"context"
+	"strings"
 	"time"
 
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/provideropts"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/speaker"
 )
 
@@ -30,10 +32,30 @@ type STTProvider interface {
 
 // TranscribeOpts configures a single transcription request.
 type TranscribeOpts struct {
-	Language string          // "de", "en", "auto"
-	Model    string          // Optional: model override
-	Prompt   string          // Optional: provider-specific hint prompt for better recognition
-	Speaker  speaker.Options // Optional speaker diarization / attribution request
+	Language                  string                         // "de", "en", "auto"; request override only
+	Model                     string                         // Optional: model override
+	Prompt                    string                         // Optional: provider-specific hint prompt for better recognition
+	Keyterms                  []string                       // Optional: provider-native vocabulary bias terms
+	Speaker                   speaker.Options                // Optional speaker diarization / attribution request
+	Options                   provideropts.Values            // Optional normalized global/default voice options
+	ProviderOptions           provideropts.Values            // Optional normalized overrides for the selected provider
+	ProviderOptionsByProvider map[string]provideropts.Values // Optional provider-keyed overrides used by routers
+}
+
+func (o TranscribeOpts) ForProvider(provider string) TranscribeOpts {
+	provider = normalizeProviderKey(provider)
+	if len(o.ProviderOptionsByProvider) == 0 {
+		o.ProviderOptions = o.ProviderOptions.Clone()
+		return o
+	}
+	values := o.ProviderOptions.Clone()
+	values = values.Merge(o.ProviderOptionsByProvider[provider])
+	o.ProviderOptions = values
+	return o
+}
+
+func normalizeProviderKey(provider string) string {
+	return strings.ToLower(strings.TrimSpace(provider))
 }
 
 // Result holds the output of a transcription.

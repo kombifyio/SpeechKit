@@ -34,7 +34,7 @@ func firstNonEmpty(values ...string) string {
 //   - OpenAI model:  TTS.OpenAI.Model → Providers.OpenAI.TTSModel → "tts-1"
 //   - OpenAI voice:  TTS.OpenAI.Voice → Providers.OpenAI.TTSVoice → TTS.Voice → "nova"
 //   - Google voice:  TTS.Google.Voice → TTS.Voice → Google default
-//   - HF model:      TTS.HuggingFace.Model → parler default
+//   - HF model:      TTS.HuggingFace.Model → Qwen3-TTS Base default
 //
 // The OpenAI/Google literal defaults match the provider constructors, so they
 // are equivalent to passing the empty string; they are spelled out here only so
@@ -76,7 +76,7 @@ func ResolveEnabledProviders(cfg *config.Config) (tts.EnabledProviders, []string
 		if token, _, err := config.ResolveHuggingFaceToken(cfg); err == nil && token != "" {
 			enabled.HuggingFace = &tts.HuggingFaceOpts{
 				Token: token,
-				Model: firstNonEmpty(cfg.TTS.HuggingFace.Model, "parler-tts/parler-tts-mini-multilingual-v1.1"),
+				Model: firstNonEmpty(cfg.TTS.HuggingFace.Model, "Qwen/Qwen3-TTS-12Hz-1.7B-Base"),
 			}
 		}
 	}

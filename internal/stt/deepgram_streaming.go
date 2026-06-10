@@ -78,15 +78,30 @@ func (p *DeepgramProvider) deepgramStreamingEndpoint(model, language string, for
 	q := u.Query()
 	q.Set("model", model)
 	q.Set("punctuate", "true")
+	if p.SmartFormat {
+		q.Set("smart_format", "true")
+	}
+	if p.Dictation {
+		q.Set("dictation", "true")
+	}
+	if p.FillerWords {
+		q.Set("filler_words", "true")
+	}
+	if p.Numerals {
+		q.Set("numerals", "true")
+	}
 	q.Set("diarize", "true")
 	q.Set("utterances", "true")
 	q.Set("encoding", deepgramEncoding(format.Encoding))
 	q.Set("sample_rate", strconv.Itoa(format.SampleRateHz))
 	q.Set("channels", strconv.Itoa(format.Channels))
-	language = strings.TrimSpace(language)
-	if language != "" && language != "auto" {
+	if p.EndpointingMs > 0 {
+		q.Set("endpointing", strconv.Itoa(p.EndpointingMs))
+	}
+	if language := normalizedDeepgramLanguage(firstNonEmptyTrimmed(p.LanguageOverride, language)); language != "" {
 		q.Set("language", language)
 	}
+	p.applyVocabularyBias(q, model, nil, p.UseVocabularyKeyterms)
 	u.RawQuery = q.Encode()
 	return u.String(), nil
 }
