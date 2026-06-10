@@ -1,0 +1,223 @@
+{
+  "schema": "speechkit.provider_option_matrix.v1",
+  "audited_at": "2026-06-09",
+  "source_of_truth": "pkg/speechkit/provideropts",
+  "option_ids": [
+    "language",
+    "detect_language",
+    "punctuation",
+    "smart_format",
+    "dictation",
+    "filler_words",
+    "numerals",
+    "vocabulary_bias",
+    "keyterms",
+    "prompt_hint",
+    "speaker_diarization",
+    "timestamps",
+    "endpointing_ms",
+    "turn_detection",
+    "voice",
+    "speed",
+    "audio_format"
+  ],
+  "rows": [
+    {
+      "provider": "deepgram",
+      "modality": "stt",
+      "profile_ids": ["stt.deepgram.nova-3", "stt.deepgram.nova-3-diarization"],
+      "recommended": true,
+      "evidence_url": "https://developers.deepgram.com/docs/endpointing",
+      "supports": {
+        "language": "native",
+        "detect_language": "native",
+        "punctuation": "native",
+        "smart_format": "native",
+        "dictation": "native",
+        "filler_words": "native",
+        "numerals": "native",
+        "vocabulary_bias": "native",
+        "keyterms": "native",
+        "speaker_diarization": "native",
+        "endpointing_ms": "native",
+        "prompt_hint": "unsupported",
+        "timestamps": "unsupported"
+      }
+    },
+    {
+      "provider": "deepgram",
+      "modality": "voice_agent",
+      "profile_ids": ["realtime.deepgram.voice-agent"],
+      "recommended": true,
+      "evidence_url": "https://developers.deepgram.com/docs/voice-agent-settings",
+      "supports": {
+        "language": "native",
+        "keyterms": "native",
+        "turn_detection": "derived",
+        "voice": "native"
+      }
+    },
+    {
+      "provider": "openai",
+      "modality": "stt",
+      "profile_ids": ["stt.openai.whisper-1"],
+      "evidence_url": "https://platform.openai.com/docs/guides/speech-to-text",
+      "supports": {
+        "language": "native",
+        "detect_language": "derived",
+        "prompt_hint": "native",
+        "timestamps": "native",
+        "vocabulary_bias": "derived",
+        "keyterms": "unsupported",
+        "smart_format": "unsupported",
+        "endpointing_ms": "unsupported",
+        "speaker_diarization": "unsupported"
+      }
+    },
+    {
+      "provider": "openai",
+      "modality": "tts",
+      "profile_ids": ["tts.openai.tts-1-hd", "tts.openai.tts-1"],
+      "evidence_url": "https://platform.openai.com/docs/guides/text-to-speech",
+      "supports": {
+        "voice": "native",
+        "speed": "native",
+        "audio_format": "native"
+      }
+    },
+    {
+      "provider": "openai",
+      "modality": "voice_agent",
+      "profile_ids": ["realtime.openai.gpt-realtime-2"],
+      "evidence_url": "https://platform.openai.com/docs/guides/realtime-transcription",
+      "supports": {
+        "voice": "native",
+        "turn_detection": "native",
+        "endpointing_ms": "native",
+        "detect_language": "native"
+      }
+    },
+    {
+      "provider": "google",
+      "modality": "stt",
+      "profile_ids": ["stt.google.latest-long", "stt.google.latest-long-diarization"],
+      "evidence_url": "https://docs.cloud.google.com/speech-to-text/docs/reference/rest/v1/RecognitionConfig",
+      "supports": {
+        "language": "native",
+        "punctuation": "native",
+        "vocabulary_bias": "native",
+        "keyterms": "native",
+        "speaker_diarization": "native",
+        "timestamps": "native",
+        "detect_language": "unsupported",
+        "smart_format": "unsupported",
+        "endpointing_ms": "unsupported"
+      }
+    },
+    {
+      "provider": "google",
+      "modality": "voice_agent",
+      "profile_ids": ["realtime.google.gemini-native-audio"],
+      "evidence_url": "https://ai.google.dev/gemini-api/docs/live-guide",
+      "supports": {
+        "language": "derived",
+        "voice": "native",
+        "turn_detection": "native"
+      }
+    },
+    {
+      "provider": "groq",
+      "modality": "stt",
+      "profile_ids": ["stt.groq.whisper-large-v3-turbo"],
+      "evidence_url": "https://console.groq.com/docs/speech-to-text",
+      "supports": {
+        "language": "native",
+        "detect_language": "derived",
+        "prompt_hint": "native",
+        "timestamps": "native",
+        "vocabulary_bias": "derived",
+        "keyterms": "unsupported",
+        "smart_format": "unsupported",
+        "speaker_diarization": "unsupported",
+        "endpointing_ms": "unsupported"
+      }
+    },
+    {
+      "provider": "assemblyai",
+      "modality": "stt",
+      "profile_ids": ["stt.assemblyai.universal", "stt.assemblyai.universal-diarization"],
+      "evidence_url": "https://www.assemblyai.com/docs/api-reference/transcripts/submit",
+      "supports": {
+        "language": "native",
+        "detect_language": "native",
+        "punctuation": "native",
+        "smart_format": "native",
+        "speaker_diarization": "native",
+        "keyterms": "unsupported",
+        "endpointing_ms": "unsupported"
+      }
+    },
+    {
+      "provider": "huggingface",
+      "modality": "stt",
+      "profile_ids": ["stt.routed.whisper-large-v3"],
+      "evidence_url": "https://huggingface.co/docs/inference-providers/tasks/automatic-speech-recognition",
+      "supports": {
+        "language": "derived",
+        "detect_language": "unsupported",
+        "prompt_hint": "unsupported",
+        "keyterms": "unsupported",
+        "endpointing_ms": "unsupported"
+      }
+    },
+    {
+      "provider": "openrouter",
+      "modality": "stt",
+      "profile_ids": ["stt.openrouter.whisper-1"],
+      "evidence_url": "https://openrouter.ai/docs/api/api-reference/transcriptions/create-audio-transcriptions",
+      "supports": {
+        "language": "native",
+        "detect_language": "derived",
+        "prompt_hint": "unsupported",
+        "keyterms": "unsupported",
+        "endpointing_ms": "unsupported"
+      }
+    },
+    {
+      "provider": "local",
+      "modality": "stt",
+      "profile_ids": ["stt.local.whispercpp"],
+      "evidence_url": "https://github.com/ggerganov/whisper.cpp",
+      "supports": {
+        "language": "derived",
+        "prompt_hint": "derived",
+        "endpointing_ms": "unsupported"
+      }
+    },
+    {
+      "provider": "deepgram",
+      "modality": "tts",
+      "profile_ids": ["tts.deepgram.aura-2"],
+      "recommended": true,
+      "evidence_url": "https://developers.deepgram.com/docs/tts-models",
+      "supports": {
+        "voice": "native",
+        "audio_format": "native",
+        "language": "derived",
+        "speed": "unsupported"
+      }
+    },
+    {
+      "provider": "google",
+      "modality": "tts",
+      "profile_ids": ["tts.google.studio-o-de"],
+      "evidence_url": "https://cloud.google.com/text-to-speech/docs/reference/rest/v1/text/synthesize",
+      "supports": {
+        "language": "native",
+        "voice": "native",
+        "speed": "native",
+        "audio_format": "native"
+      }
+    }
+  ]
+}
