@@ -44,6 +44,9 @@ func defaults() *Config {
 		Customization: CustomizationConfig{
 			ActiveTemplateIDs: customtemplates.DefaultActiveTemplateIDs(),
 		},
+		Assist: AssistConfig{
+			IncludeWindowContext: true,
+		},
 		ModelSelection: BuiltInPrimaryModelSelectionDefaults(),
 		ServerConnection: ServerConnectionConfig{
 			Enabled:           false,

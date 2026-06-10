@@ -20,6 +20,7 @@ type fakeDictStore struct {
 	entries     []store.UserDictionaryEntry
 	listErr     error
 	replaceErr  error
+	listCalls   int
 	lastLang    string
 	lastEntries []store.UserDictionaryEntry
 	replaced    bool
@@ -37,6 +38,7 @@ func (f *fakeDictStore) ReplaceUserDictionaryEntries(_ context.Context, language
 }
 
 func (f *fakeDictStore) ListUserDictionaryEntries(_ context.Context, _ string) ([]store.UserDictionaryEntry, error) {
+	f.listCalls++
 	if f.listErr != nil {
 		return nil, f.listErr
 	}
@@ -88,6 +90,25 @@ func TestDictionary_GET_StoreError(t *testing.T) {
 	h.dictionary(rec, httptest.NewRequest(http.MethodGet, "/v1/vocabulary/dictionary", nil))
 	if rec.Code != http.StatusInternalServerError {
 		t.Fatalf("status = %d, want 500", rec.Code)
+	}
+}
+
+func TestDictionary_GET_RejectsInvalidScope(t *testing.T) {
+	for _, scope := range []string{"bogus", "tenant", "", "%20org%20"} {
+		t.Run(scope, func(t *testing.T) {
+			fs := &fakeDictStore{}
+			h := New(fs)
+			rec := httptest.NewRecorder()
+
+			h.dictionary(rec, httptest.NewRequest(http.MethodGet, "/v1/vocabulary/dictionary?scope="+scope, nil))
+
+			if rec.Code != http.StatusBadRequest {
+				t.Fatalf("status = %d, want 400; body=%s", rec.Code, rec.Body.String())
+			}
+			if fs.listCalls != 0 {
+				t.Fatalf("store was called %d times for invalid scope", fs.listCalls)
+			}
+		})
 	}
 }
 

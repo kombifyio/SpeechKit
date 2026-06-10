@@ -336,6 +336,7 @@ paths:
                   entries:
                     type: array
                     items: { $ref: '#/components/schemas/DictionaryEntry' }
+        '400': { $ref: '#/components/responses/BadRequest' }
         '401': { $ref: '#/components/responses/Unauthenticated' }
         '503': { $ref: '#/components/responses/ProviderUnavailable' }
     post:
@@ -448,6 +449,7 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/ReplacementsResponse' }
+        '400': { $ref: '#/components/responses/BadRequest' }
         '401': { $ref: '#/components/responses/Unauthenticated' }
     post:
       operationId: replaceReplacements
@@ -504,6 +506,7 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/LexiconsResponse' }
+        '400': { $ref: '#/components/responses/BadRequest' }
     post:
       operationId: replaceLexicons
       summary: Replace settings-sourced Lexicons
@@ -559,6 +562,7 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/RulesetsResponse' }
+        '400': { $ref: '#/components/responses/BadRequest' }
     post:
       operationId: replaceRulesets
       summary: Replace settings-sourced Rulesets
@@ -610,6 +614,7 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/CustomizationPack' }
+        '400': { $ref: '#/components/responses/BadRequest' }
     post:
       operationId: importCustomizationPack
       summary: Import customization pack
@@ -875,6 +880,12 @@ paths:
                   type: string
                 context:
                   type: string
+                app:
+                  type: string
+                  description: Foreground application name on the client (e.g. "chrome"). Folded into the Assist LLM context.
+                window_title:
+                  type: string
+                  description: Foreground window title on the client. Folded into the Assist LLM context. May be sensitive — send only what you intend to share.
                 tts:
                   type: string
                   description: '"true"/"false" — opt out of TTS audio in the response.'
@@ -2081,6 +2092,12 @@ components:
         locale: { type: string }
         selection: { type: string }
         context: { type: string }
+        app:
+          type: string
+          description: Foreground application name on the client (e.g. "chrome"). Folded into the Assist LLM context.
+        window_title:
+          type: string
+          description: Foreground window title on the client. Folded into the Assist LLM context. May be sensitive — send only what you intend to share.
         tts: { type: boolean }
         tts_format:
           type: string

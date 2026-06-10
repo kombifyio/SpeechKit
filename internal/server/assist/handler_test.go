@@ -121,6 +121,32 @@ func TestHandler_New_RejectsNilProcessor(t *testing.T) {
 	}
 }
 
+func TestHandler_JSON_WindowContextForwarded(t *testing.T) {
+	fp := &fakeProcessor{result: okAssistResult()}
+	h := mustHandler(t, Options{Processor: fp, DefaultLocale: "en"})
+
+	body, _ := json.Marshal(map[string]any{
+		"text":         "summarize this",
+		"locale":       "en",
+		"app":          "chrome",
+		"window_title": "Inbox (2) - Gmail",
+	})
+	req := httptest.NewRequest(http.MethodPost, "/v1/assist/process", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d body=%s", rec.Code, rec.Body.String())
+	}
+	if fp.lastOpts.ActiveApp != "chrome" {
+		t.Fatalf("ActiveApp = %q, want %q", fp.lastOpts.ActiveApp, "chrome")
+	}
+	if fp.lastOpts.WindowTitle != "Inbox (2) - Gmail" {
+		t.Fatalf("WindowTitle = %q, want %q", fp.lastOpts.WindowTitle, "Inbox (2) - Gmail")
+	}
+}
+
 func TestHandler_MethodNotAllowed(t *testing.T) {
 	h := mustHandler(t, Options{Processor: &fakeProcessor{result: okAssistResult()}})
 	req := httptest.NewRequest(http.MethodGet, "/v1/assist/process", nil)

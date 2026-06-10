@@ -81,7 +81,11 @@ func (h *Handler) words(w http.ResponseWriter, r *http.Request) {
 	}
 	switch r.Method {
 	case http.MethodGet:
-		ctx := customizationScopeContext(r.Context(), scopeRef(r, speechcustomize.ScopeRef{}))
+		ref, ok := requestScopeRef(w, r, speechcustomize.ScopeRef{})
+		if !ok {
+			return
+		}
+		ctx := customizationScopeContext(r.Context(), ref)
 		words, err := h.store.ListWords(ctx, listOpts(r))
 		writeList(w, "words", words, err)
 	case http.MethodPost:
@@ -95,7 +99,11 @@ func (h *Handler) words(w http.ResponseWriter, r *http.Request) {
 		if body.Language == "" {
 			body.Language = r.URL.Query().Get("language")
 		}
-		ctx := customizationScopeContext(r.Context(), scopeRef(r, body.Scope))
+		ref, ok := requestScopeRef(w, r, body.Scope)
+		if !ok {
+			return
+		}
+		ctx := customizationScopeContext(r.Context(), ref)
 		if err := replaceWords(ctx, h.store, store.CustomizationReplaceOpts{Language: body.Language, Source: body.Source}, body.Words); err != nil {
 			httpx.WriteError(w, http.StatusBadRequest, "words_write_failed", err.Error())
 			return
@@ -114,7 +122,11 @@ func (h *Handler) replacements(w http.ResponseWriter, r *http.Request) {
 	}
 	switch r.Method {
 	case http.MethodGet:
-		ctx := customizationScopeContext(r.Context(), scopeRef(r, speechcustomize.ScopeRef{}))
+		ref, ok := requestScopeRef(w, r, speechcustomize.ScopeRef{})
+		if !ok {
+			return
+		}
+		ctx := customizationScopeContext(r.Context(), ref)
 		replacements, err := h.store.ListReplacements(ctx, listOpts(r))
 		writeList(w, "replacements", replacements, err)
 	case http.MethodPost:
@@ -128,7 +140,11 @@ func (h *Handler) replacements(w http.ResponseWriter, r *http.Request) {
 		if body.Language == "" {
 			body.Language = r.URL.Query().Get("language")
 		}
-		ctx := customizationScopeContext(r.Context(), scopeRef(r, body.Scope))
+		ref, ok := requestScopeRef(w, r, body.Scope)
+		if !ok {
+			return
+		}
+		ctx := customizationScopeContext(r.Context(), ref)
 		if err := replaceReplacements(ctx, h.store, store.CustomizationReplaceOpts{Language: body.Language, Source: body.Source}, body.Replacements); err != nil {
 			httpx.WriteError(w, http.StatusBadRequest, "replacements_write_failed", err.Error())
 			return
@@ -147,7 +163,11 @@ func (h *Handler) lexicons(w http.ResponseWriter, r *http.Request) {
 	}
 	switch r.Method {
 	case http.MethodGet:
-		ctx := customizationScopeContext(r.Context(), scopeRef(r, speechcustomize.ScopeRef{}))
+		ref, ok := requestScopeRef(w, r, speechcustomize.ScopeRef{})
+		if !ok {
+			return
+		}
+		ctx := customizationScopeContext(r.Context(), ref)
 		lexicons, err := h.store.ListLexicons(ctx, listOpts(r))
 		writeList(w, "lexicons", lexicons, err)
 	case http.MethodPost:
@@ -158,7 +178,11 @@ func (h *Handler) lexicons(w http.ResponseWriter, r *http.Request) {
 		if !decodeJSON(w, r, &body) {
 			return
 		}
-		ctx := customizationScopeContext(r.Context(), scopeRef(r, body.Scope))
+		ref, ok := requestScopeRef(w, r, body.Scope)
+		if !ok {
+			return
+		}
+		ctx := customizationScopeContext(r.Context(), ref)
 		if err := replaceLexicons(ctx, h.store, store.CustomizationReplaceOpts{Language: firstNonEmpty(body.Language, r.URL.Query().Get("language")), Source: body.Source}, body.Lexicons); err != nil {
 			httpx.WriteError(w, http.StatusBadRequest, "lexicons_write_failed", err.Error())
 			return
@@ -176,7 +200,11 @@ func (h *Handler) rulesets(w http.ResponseWriter, r *http.Request) {
 	}
 	switch r.Method {
 	case http.MethodGet:
-		ctx := customizationScopeContext(r.Context(), scopeRef(r, speechcustomize.ScopeRef{}))
+		ref, ok := requestScopeRef(w, r, speechcustomize.ScopeRef{})
+		if !ok {
+			return
+		}
+		ctx := customizationScopeContext(r.Context(), ref)
 		rulesets, err := h.store.ListRulesets(ctx, listOpts(r))
 		writeList(w, "rulesets", rulesets, err)
 	case http.MethodPost:
@@ -187,7 +215,11 @@ func (h *Handler) rulesets(w http.ResponseWriter, r *http.Request) {
 		if !decodeJSON(w, r, &body) {
 			return
 		}
-		ctx := customizationScopeContext(r.Context(), scopeRef(r, body.Scope))
+		ref, ok := requestScopeRef(w, r, body.Scope)
+		if !ok {
+			return
+		}
+		ctx := customizationScopeContext(r.Context(), ref)
 		if err := replaceRulesets(ctx, h.store, store.CustomizationReplaceOpts{Language: firstNonEmpty(body.Language, r.URL.Query().Get("language")), Source: body.Source}, body.Rulesets); err != nil {
 			httpx.WriteError(w, http.StatusBadRequest, "rulesets_write_failed", err.Error())
 			return
@@ -206,7 +238,11 @@ func (h *Handler) pack(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodGet:
 		opts := listOpts(r)
-		ctx := customizationScopeContext(r.Context(), scopeRef(r, speechcustomize.ScopeRef{}))
+		ref, ok := requestScopeRef(w, r, speechcustomize.ScopeRef{})
+		if !ok {
+			return
+		}
+		ctx := customizationScopeContext(r.Context(), ref)
 		words, err := h.store.ListWords(ctx, opts)
 		if err != nil {
 			httpx.WriteError(w, http.StatusInternalServerError, "pack_read_failed", err.Error())
@@ -239,7 +275,11 @@ func (h *Handler) pack(w http.ResponseWriter, r *http.Request) {
 			httpx.WriteError(w, http.StatusBadRequest, "pack_invalid", err.Error())
 			return
 		}
-		ctx := customizationScopeContext(r.Context(), scopeRef(r, speechcustomize.ScopeRef{}))
+		ref, ok := requestScopeRef(w, r, speechcustomize.ScopeRef{})
+		if !ok {
+			return
+		}
+		ctx := customizationScopeContext(r.Context(), ref)
 		if err := importPack(ctx, h.store, body, firstNonEmpty(r.URL.Query().Get("source"), packSource(body))); err != nil {
 			httpx.WriteError(w, http.StatusBadRequest, "pack_import_failed", err.Error())
 			return
@@ -314,11 +354,46 @@ func listOpts(r *http.Request) store.CustomizationListOpts {
 	}
 }
 
-func scopeRef(r *http.Request, fallback speechcustomize.ScopeRef) speechcustomize.ScopeRef {
-	if scope := strings.TrimSpace(r.URL.Query().Get("scope")); scope != "" {
-		return speechcustomize.ScopeRef{Kind: speechcustomize.ScopeKind(scope), Key: r.URL.Query().Get("scope_key")}
+func requestScopeRef(w http.ResponseWriter, r *http.Request, fallback speechcustomize.ScopeRef) (speechcustomize.ScopeRef, bool) {
+	ref, ok := scopeRef(r, fallback)
+	if !ok {
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_scope", "scope must be one of builtin, app, install, org, workspace, user, session")
+		return speechcustomize.ScopeRef{}, false
 	}
-	return fallback
+	return ref, true
+}
+
+func scopeRef(r *http.Request, fallback speechcustomize.ScopeRef) (speechcustomize.ScopeRef, bool) {
+	if values, exists := r.URL.Query()["scope"]; exists {
+		scope := ""
+		if len(values) > 0 {
+			scope = values[0]
+		}
+		kind := speechcustomize.ScopeKind(scope)
+		if !isPublishedScopeKind(kind) {
+			return speechcustomize.ScopeRef{}, false
+		}
+		return speechcustomize.ScopeRef{Kind: kind, Key: strings.TrimSpace(r.URL.Query().Get("scope_key"))}, true
+	}
+	if fallback.Kind != "" && !isPublishedScopeKind(fallback.Kind) {
+		return speechcustomize.ScopeRef{}, false
+	}
+	return fallback, true
+}
+
+func isPublishedScopeKind(kind speechcustomize.ScopeKind) bool {
+	switch kind {
+	case speechcustomize.ScopeBuiltin,
+		speechcustomize.ScopeApp,
+		speechcustomize.ScopeInstall,
+		speechcustomize.ScopeOrg,
+		speechcustomize.ScopeWorkspace,
+		speechcustomize.ScopeUser,
+		speechcustomize.ScopeSession:
+		return true
+	default:
+		return false
+	}
 }
 
 func customizationScopeContext(ctx context.Context, ref speechcustomize.ScopeRef) context.Context {

@@ -124,6 +124,11 @@ type processJSONRequest struct {
 	Locale      string `json:"locale"`
 	Selection   string `json:"selection"`
 	Context     string `json:"context"`
+	// App and WindowTitle describe the foreground application on the
+	// integrating client. The server has no desktop, so the caller
+	// supplies these; the kernel folds them into the LLM context block.
+	App         string `json:"app"`
+	WindowTitle string `json:"window_title"`
 	// TTS overrides — the Pipeline already knows whether TTS is globally
 	// enabled; these fields let the caller opt out per-request.
 	TTS            *bool           `json:"tts,omitempty"`
@@ -242,6 +247,8 @@ func (h *Handler) handleMultipart(w http.ResponseWriter, r *http.Request) {
 	locale := strings.TrimSpace(r.FormValue("locale"))
 	selection := r.FormValue("selection")
 	contextStr := r.FormValue("context")
+	app := r.FormValue("app")
+	windowTitle := r.FormValue("window_title")
 	ttsOverride, ttsFormat, ttsVoice := parseTTSOverrides(r.FormValue("tts"), r.FormValue("tts_format"), r.FormValue("tts_voice"))
 	speakerOpts := parseSpeakerOptionsFromForm(r)
 
@@ -252,10 +259,12 @@ func (h *Handler) handleMultipart(w http.ResponseWriter, r *http.Request) {
 	case text != "" && fileErr != nil:
 		// Text-only path.
 		h.processTranscript(r.Context(), w, text, nil, nil, assistpkg.ProcessOpts{
-			Locale:     h.resolveLocale(locale),
-			Selection:  selection,
-			Context:    contextStr,
-			SessionKey: sessionKeyFromRequest(r),
+			Locale:      h.resolveLocale(locale),
+			Selection:   selection,
+			Context:     contextStr,
+			ActiveApp:   app,
+			WindowTitle: windowTitle,
+			SessionKey:  sessionKeyFromRequest(r),
 		}, ttsOverride, ttsFormat, ttsVoice)
 		return
 	case fileErr == nil:
@@ -266,10 +275,12 @@ func (h *Handler) handleMultipart(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		h.processAudio(r.Context(), w, file, header.Header.Get("Content-Type"), assistpkg.ProcessOpts{
-			Locale:     h.resolveLocale(locale),
-			Selection:  selection,
-			Context:    contextStr,
-			SessionKey: sessionKeyFromRequest(r),
+			Locale:      h.resolveLocale(locale),
+			Selection:   selection,
+			Context:     contextStr,
+			ActiveApp:   app,
+			WindowTitle: windowTitle,
+			SessionKey:  sessionKeyFromRequest(r),
 		}, speakerOpts, ttsOverride, ttsFormat, ttsVoice)
 		return
 	default:
@@ -295,10 +306,12 @@ func (h *Handler) handleJSON(w http.ResponseWriter, r *http.Request) {
 	}
 
 	opts := assistpkg.ProcessOpts{
-		Locale:     h.resolveLocale(body.Locale),
-		Selection:  body.Selection,
-		Context:    body.Context,
-		SessionKey: sessionKeyFromRequest(r),
+		Locale:      h.resolveLocale(body.Locale),
+		Selection:   body.Selection,
+		Context:     body.Context,
+		ActiveApp:   body.App,
+		WindowTitle: body.WindowTitle,
+		SessionKey:  sessionKeyFromRequest(r),
 	}
 
 	text := strings.TrimSpace(body.Text)
@@ -398,6 +411,14 @@ func (h *Handler) processTranscript(ctx context.Context, w http.ResponseWriter, 
 		return
 	}
 	transcript = h.applyTranscriptCustomization(ctx, transcript, opts.Locale)
+
+	// Feed the resolved Words/Replacements customization into the Assist
+	// LLM prompt (not just the STT stage). VoiceAgentHint is the
+	// generation-oriented, mode-neutral phrasing ("Prefer these names and
+	// product terms …"); the kernel folds it into the context block.
+	if resolved, err := h.resolveAssistCustomization(ctx, opts.Locale); err == nil {
+		opts.VocabularyHint = resolved.VoiceAgentHint
+	}
 
 	started := time.Now()
 	result, err := h.processor.Process(ctx, transcript, opts)

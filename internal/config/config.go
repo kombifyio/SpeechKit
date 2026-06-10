@@ -651,6 +651,15 @@ type SpeechDefaultsConfig struct {
 type AssistConfig struct {
 	EnabledTools []string `toml:"enabled_tools"`
 
+	// IncludeWindowContext controls whether the Device-Target captures the
+	// foreground application name + window title and feeds them to the
+	// Assist LLM as context. Window titles can be sensitive (document
+	// names, chat partners, URLs), so this is an explicit opt-out. The
+	// Server-Target ignores this flag — there the integrating client
+	// decides whether to send the `app`/`window_title` request fields.
+	// Defaults to true (see config/defaults.go).
+	IncludeWindowContext bool `toml:"include_window_context"`
+
 	// HomeAssistant configures the optional Home Assistant Conversation
 	// API bridge used by the Voice-Companion skill catalog. When
 	// URL+TokenEnv are both set, the HA skill is wired automatically;

@@ -10,6 +10,7 @@ import (
 	"github.com/kombifyio/SpeechKit/internal/server/httpx"
 	"github.com/kombifyio/SpeechKit/internal/server/middleware"
 	"github.com/kombifyio/SpeechKit/internal/store"
+	speechcustomize "github.com/kombifyio/SpeechKit/pkg/speechkit/customize"
 )
 
 type Handler struct {
@@ -36,6 +37,9 @@ func (h *Handler) dictionary(w http.ResponseWriter, r *http.Request) {
 	}
 	switch r.Method {
 	case http.MethodGet:
+		if !validateScopeQuery(w, r) {
+			return
+		}
 		language := strings.TrimSpace(r.URL.Query().Get("language"))
 		entries, err := h.store.ListUserDictionaryEntries(r.Context(), language)
 		if err != nil {
@@ -64,6 +68,37 @@ func (h *Handler) dictionary(w http.ResponseWriter, r *http.Request) {
 	default:
 		w.Header().Set("Allow", http.MethodGet+", "+http.MethodPost)
 		httpx.WriteError(w, http.StatusMethodNotAllowed, "method_not_allowed", "method not allowed on this resource")
+	}
+}
+
+func validateScopeQuery(w http.ResponseWriter, r *http.Request) bool {
+	values, exists := r.URL.Query()["scope"]
+	if !exists {
+		return true
+	}
+	scope := ""
+	if len(values) > 0 {
+		scope = values[0]
+	}
+	if isPublishedScopeKind(speechcustomize.ScopeKind(scope)) {
+		return true
+	}
+	httpx.WriteError(w, http.StatusBadRequest, "invalid_scope", "scope must be one of builtin, app, install, org, workspace, user, session")
+	return false
+}
+
+func isPublishedScopeKind(kind speechcustomize.ScopeKind) bool {
+	switch kind {
+	case speechcustomize.ScopeBuiltin,
+		speechcustomize.ScopeApp,
+		speechcustomize.ScopeInstall,
+		speechcustomize.ScopeOrg,
+		speechcustomize.ScopeWorkspace,
+		speechcustomize.ScopeUser,
+		speechcustomize.ScopeSession:
+		return true
+	default:
+		return false
 	}
 }
 

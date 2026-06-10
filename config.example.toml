@@ -437,6 +437,15 @@ vad_silence_duration_ms = 700
 #   # Smart-Home (only useful when [assist.home_assistant] is configured):
 #   # "home_assistant",
 # ]
+# # include_window_context controls whether the Device-Target captures the
+# # foreground application name + window title and feeds them to the Assist
+# # LLM as context ("Active application: Code", "Active window: main.go").
+# # This lets answers adapt to where you are (an email client vs. an IDE).
+# # Window titles can be sensitive (document names, chat partners, URLs),
+# # so set this to false to opt out. Default: true. The Server-Target
+# # ignores this flag — there the integrating client decides whether to
+# # send the `app` / `window_title` request fields.
+# include_window_context = true
 
 # [assist.home_assistant]
 # # Optional Smart-Home bridge. When url + token_env are both set, the

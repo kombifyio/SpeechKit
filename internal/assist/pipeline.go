@@ -144,14 +144,56 @@ func (p *Pipeline) Process(ctx context.Context, transcript string, opts ProcessO
 type ProcessOpts struct {
 	Locale    string // "de", "en", etc.
 	Selection string // Currently selected text
-	Context   string // Additional context
+	Context   string // Additional free-form context (speaker labels, host hints, …)
 	Target    any    // Host-specific target for insertion/execution
+
+	// ActiveApp and WindowTitle describe the foreground application the
+	// user is in when they trigger Assist. Adapters populate these from
+	// the OS (Device-Target) or the request body (Server-Target). The
+	// kernel folds them into the context block handed to the LLM via
+	// composeAssistContext so the prompt-format stays platform-neutral.
+	// Empty values are omitted.
+	ActiveApp   string // e.g. "Visual Studio Code", "chrome"
+	WindowTitle string // foreground window title bar text
+
+	// VocabularyHint carries the user's resolved Words/Replacements
+	// customization as a short LLM guidance sentence (e.g. "Prefer these
+	// names and product terms …: Kombify, SpeechKit."). Adapters resolve
+	// it from the customization store/templates for the active mode and
+	// pass it in; the kernel folds it into the context block via
+	// composeAssistContext. This is the Assist-LLM-prompt leg of the
+	// Words/Replacements story — previously customization only biased STT.
+	// Empty = no customization terms.
+	VocabularyHint string
 
 	// SessionKey identifies the user conversation for v0.38.0 multi-
 	// turn follow-ups. Hosts derive this from the authenticated user
 	// (e.g. Identity.UserID) or a per-wake-word session id. Empty
 	// disables follow-ups for this call.
 	SessionKey string
+}
+
+// composeAssistContext folds the structured active-window fields, the
+// free-form Context, and the resolved vocabulary hint into a single
+// labelled block for the LLM. Order: active-window block, free-form
+// context, then the vocabulary guidance last. Returns "" when nothing is
+// set. Kept platform-neutral so adapters never need to know the prompt
+// format.
+func composeAssistContext(opts ProcessOpts) string {
+	var parts []string
+	if app := strings.TrimSpace(opts.ActiveApp); app != "" {
+		parts = append(parts, "Active application: "+app)
+	}
+	if title := strings.TrimSpace(opts.WindowTitle); title != "" {
+		parts = append(parts, "Active window: "+title)
+	}
+	if free := strings.TrimSpace(opts.Context); free != "" {
+		parts = append(parts, free)
+	}
+	if hint := strings.TrimSpace(opts.VocabularyHint); hint != "" {
+		parts = append(parts, hint)
+	}
+	return strings.Join(parts, "\n")
 }
 
 // withFollowupState returns a copy of opts with the FollowupState
@@ -189,7 +231,7 @@ func (p *Pipeline) handleTool(ctx context.Context, transcript string, decision D
 		Transcript: transcript,
 		Locale:     firstNonEmpty(decision.Locale, opts.Locale),
 		Selection:  opts.Selection,
-		Context:    opts.Context,
+		Context:    composeAssistContext(opts),
 		Target:     opts.Target,
 	})
 	if err != nil {
@@ -248,7 +290,7 @@ func (p *Pipeline) handleLLM(ctx context.Context, transcript string, opts Proces
 		Utterance: transcript,
 		Locale:    opts.Locale,
 		Selection: opts.Selection,
-		Context:   opts.Context,
+		Context:   composeAssistContext(opts),
 	})
 	if err != nil {
 		return nil, fmt.Errorf("assist: LLM failed: %w", err)

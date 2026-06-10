@@ -12,6 +12,32 @@ IDs, source paths, and other maintainer-only vocabulary.
 
 ## [Unreleased]
 
+## [0.45.1] - 2026-06-10
+
+### Added
+
+- Assist answers can now take into account which application and window you
+  are in when you trigger it, so a request like "summarize this" adapts to your
+  email client, browser, or editor. A new setting lets you turn this off if you
+  would rather not share window titles.
+- Assist now applies your custom vocabulary (Words & Replacements) when
+  generating answers, not only when transcribing — so your product names,
+  jargon, and preferred spellings carry through into the response.
+- Provider advanced settings now have Dictation, Assist, and Voice Agent tabs,
+  so each mode has its own model choices and provider options in one focused
+  view instead of one long list.
+
+### Fixed
+
+- Assist now reliably picks up the text you have selected: when nothing is
+  selected it no longer mistakes the previous clipboard contents for your
+  selection, and it waits a moment longer so slow apps still hand over the
+  selected text in time.
+- Provider advanced settings now label override and value switches, removing
+  the ambiguous duplicate-looking toggles in option rows.
+- SpeechKit Server now returns documented Bad Request errors for unsupported
+  customization and vocabulary scope filters.
+
 ## [0.45.0] - 2026-06-10
 
 Voice Agent professionalization release: OpenAI Realtime joins Gemini Live and
