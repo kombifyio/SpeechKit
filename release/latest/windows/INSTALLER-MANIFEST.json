@@ -3,8 +3,8 @@
   "version": "v0.45.1",
   "source_repo": "kombifyio/SpeechKit",
   "source_release_url": "https://github.com/kombifyio/SpeechKit/releases/tag/v0.45.1",
-  "source_commit": "8db638c783ec2eff7c6d2be5c43b8c6da4660f00",
-  "mirrored_at_utc": "2026-06-19T08:17:23Z",
+  "source_commit": "c7d61e2dfe8a80c5e5eb7ce046fafe979d53464d",
+  "mirrored_at_utc": "2026-06-20T07:39:40Z",
   "max_installer_bytes": 300000000,
   "files": [
     {
