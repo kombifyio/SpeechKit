@@ -1,5 +1,9 @@
 # SpeechKit
 
+[![Go Reference](https://pkg.go.dev/badge/github.com/kombifyio/SpeechKit.svg)](https://pkg.go.dev/github.com/kombifyio/SpeechKit)
+[![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
+[![Go](https://img.shields.io/badge/go-1.26%2B-00ADD8.svg)](go.mod)
+
 > **🚧 Beta.** SpeechKit is in active beta. Public APIs, config keys, and
 > defaults can still change between minor releases. Use it in production
 > only with version pins. Pre-1.0 releases use the
@@ -152,6 +156,29 @@ Voice Companion hosts use `pkg/speechkit/companion` plus Assist/TTS adapters;
 speaker-aware apps can use `pkg/speechkit/speaker`; server-connected apps use
 `pkg/speechkit/client`. You do not need to load the Windows client or the whole
 framework for a single component.
+
+To drive the framework from a `config.toml` instead of building settings by
+hand, `pkg/speechkit/hostconfig` turns a config file into the public
+`ModeSettings` and a starting `RuntimePolicy` in one call:
+
+```go
+settings, policy, err := hostconfig.Load("config.toml")
+```
+
+Real providers run **in-process — no SpeechKit server required**: realtime
+Voice Agents via `pkg/speechkit/voiceagent/live` (Gemini Live, OpenAI Realtime,
+Deepgram), speech-to-text via `pkg/speechkit/stt` (whisper.cpp, OpenAI, Groq,
+Google, Deepgram, AssemblyAI, Hugging Face, OpenRouter), text-to-speech via
+`pkg/speechkit/tts` (OpenAI, Google, Deepgram, Hugging Face, Piper), and a
+turn-based cascaded Voice Agent via `pkg/speechkit/voiceagent/cascaded`. Two
+runnable references:
+
+```bash
+# in-process Voice Agent (Gemini Live), no server:
+GOOGLE_AI_API_KEY=... go run ./examples/voice-agent/in-process
+# in-process Assist (host-owned LLM + optional public TTS), no server:
+GOOGLE_AI_API_KEY=... go run ./examples/assist/in-process
+```
 
 For a single-prompt Go starter:
 

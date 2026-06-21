@@ -34,6 +34,10 @@ const (
 // health-component after the router is built; keeping the check logic here
 // keeps the bootstrap file focused on lifecycle.
 func buildSTTRouter(cfg *config.Config) (*router.Router, []namedProvider, []string) {
+	// STT adapters are config-free (importable from pkg/speechkit/**); inject
+	// the host secret resolver so Google streaming credentials still resolve
+	// through env + Doppler + token store, not just os.Getenv.
+	stt.SetSecretResolver(config.ResolveSecret)
 	r := &router.Router{
 		Strategy:             router.Strategy(strings.TrimSpace(cfg.Routing.Strategy)),
 		PreferLocalUnderSecs: cfg.Routing.PreferLocalUnderSeconds,

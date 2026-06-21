@@ -537,6 +537,8 @@ func TestNormalizeServerConnectionAuthMode(t *testing.T) {
 		{in: "bearer", want: ServerConnectionAuthModeBearer},
 		{in: "api_key", want: ServerConnectionAuthModeAPIKey},
 		{in: "API_KEY", want: ServerConnectionAuthModeAPIKey},
+		{in: "edge_beta", want: ServerConnectionAuthModeEdgeBeta},
+		{in: "EDGE_BETA", want: ServerConnectionAuthModeEdgeBeta},
 		{in: "unknown", want: ServerConnectionAuthModeBearer},
 	}
 	for _, tt := range tests {

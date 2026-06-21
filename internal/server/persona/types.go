@@ -17,7 +17,7 @@ import "time"
 
 // Persona is a long-lived Voice Agent identity bound to a voice and a
 // default role. The ID is stable and safe to reference from clients
-// (e.g. kombify-AI selects a persona_id when creating a Voice Agent
+// (e.g. an integrating app selects a persona_id when creating a Voice Agent
 // session).
 type Persona struct {
 	ID              string            `json:"id"`

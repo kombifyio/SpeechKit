@@ -116,6 +116,16 @@ func TestDeepgramThinkConfig(t *testing.T) {
 		t.Fatalf("Gemini model must be ignored for Deepgram think, got %q", got.Model)
 	}
 
+	// Deepgram listen/speak audio ids (e.g. the catalog composite written by
+	// the Voice Agent profile selection) must not be pinned as the think LLM.
+	for _, audioModel := range []string{"nova-3+aura-2", "nova-3", "aura-2-viktoria-de"} {
+		cfg = &Config{}
+		cfg.VoiceAgent.Model = audioModel
+		if got := cfg.DeepgramThinkConfig(); got.Model != "" {
+			t.Fatalf("Deepgram audio model id %q must be ignored for think, got %q", audioModel, got.Model)
+		}
+	}
+
 	// Explicit think model wins over the realtime model; BYO endpoint resolves
 	// the credential from the configured env.
 	t.Setenv("CUSTOM_THINK_KEY", "think-byo-key")

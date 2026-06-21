@@ -6,14 +6,23 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"strings"
 	"sync"
 	"time"
 
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/provideropts"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/ttsroute"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/trace"
 )
 
 var ErrMissingRouter = errors.New("speechkit tts: router is required")
+
+// ttsTracer instruments TTS synthesis. A no-op tracer is used when no
+// OpenTelemetry provider is installed, so spans cost nothing.
+var ttsTracer = otel.Tracer("github.com/kombifyio/SpeechKit/pkg/speechkit/tts")
 
 // Provider defines the interface for text-to-speech backends.
 type Provider interface {
@@ -42,6 +51,29 @@ type SynthesizeOpts struct {
 	Format          string
 	Options         provideropts.Values
 	ProviderOptions provideropts.Values
+	// ProviderOptionsByProvider holds provider-keyed overrides that the Router
+	// applies to the selected provider via ForProvider, so one request can
+	// carry per-provider tuning without the caller knowing which provider wins.
+	ProviderOptionsByProvider map[string]provideropts.Values
+}
+
+// ForProvider returns a copy of opts with ProviderOptions merged from the
+// provider-keyed overrides for the named provider. The Router calls this for
+// the selected provider so per-provider tuning takes effect transparently.
+func (o SynthesizeOpts) ForProvider(provider string) SynthesizeOpts {
+	provider = normalizeProviderKey(provider)
+	if len(o.ProviderOptionsByProvider) == 0 {
+		o.ProviderOptions = o.ProviderOptions.Clone()
+		return o
+	}
+	values := o.ProviderOptions.Clone()
+	values = values.Merge(o.ProviderOptionsByProvider[provider])
+	o.ProviderOptions = values
+	return o
+}
+
+func normalizeProviderKey(provider string) string {
+	return strings.ToLower(strings.TrimSpace(provider))
 }
 
 // Result holds the output of a TTS synthesis.
@@ -86,8 +118,25 @@ func (r *Router) SetProviders(providers ...Provider) {
 	r.providers = providers
 }
 
-// Synthesize tries each eligible provider until one succeeds.
-func (r *Router) Synthesize(ctx context.Context, text string, opts SynthesizeOpts) (*Result, error) {
+// Synthesize tries each eligible provider until one succeeds. Per-provider
+// option overrides (SynthesizeOpts.ProviderOptionsByProvider) are applied to
+// the selected provider, and an OpenTelemetry span records strategy/provider.
+func (r *Router) Synthesize(ctx context.Context, text string, opts SynthesizeOpts) (res *Result, err error) {
+	ctx, span := ttsTracer.Start(ctx, "tts.synthesize", trace.WithAttributes(
+		attribute.String("speechkit.tts.strategy", string(r.strategy)),
+		attribute.String("speechkit.tts.format", opts.Format),
+	))
+	defer func() {
+		switch {
+		case err != nil:
+			span.RecordError(err)
+			span.SetStatus(codes.Error, "synthesize failed")
+		case res != nil:
+			span.SetAttributes(attribute.String("speechkit.tts.provider", res.Provider))
+		}
+		span.End()
+	}()
+
 	r.mu.RLock()
 	providers := make([]Provider, len(r.providers))
 	copy(providers, r.providers)
@@ -102,10 +151,10 @@ func (r *Router) Synthesize(ctx context.Context, text string, opts SynthesizeOpt
 		if !r.isAllowed(p) {
 			continue
 		}
-		result, err := p.Synthesize(ctx, text, opts)
-		if err != nil {
-			lastErr = err
-			slog.Warn("TTS router: provider failed", "provider", p.Name(), "err", err)
+		result, synthErr := p.Synthesize(ctx, text, opts.ForProvider(p.Name()))
+		if synthErr != nil {
+			lastErr = synthErr
+			slog.Warn("TTS router: provider failed", "provider", p.Name(), "err", synthErr)
 			continue
 		}
 		return result, nil
@@ -257,6 +306,16 @@ func mergeOpts(base, override SynthesizeOpts) SynthesizeOpts {
 	if len(override.ProviderOptions) > 0 {
 		base.ProviderOptions = base.ProviderOptions.Clone()
 		base.ProviderOptions = base.ProviderOptions.Merge(override.ProviderOptions)
+	}
+	if len(override.ProviderOptionsByProvider) > 0 {
+		merged := make(map[string]provideropts.Values, len(base.ProviderOptionsByProvider)+len(override.ProviderOptionsByProvider))
+		for k, v := range base.ProviderOptionsByProvider {
+			merged[k] = v
+		}
+		for k, v := range override.ProviderOptionsByProvider {
+			merged[k] = v
+		}
+		base.ProviderOptionsByProvider = merged
 	}
 	return base
 }

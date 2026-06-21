@@ -93,6 +93,11 @@ type TranscriptionWorkerConfig struct {
 	Interceptor TranscriptInterceptor
 	Transformer TranscriptTransformer
 	Observer    TranscriptionObserver
+	// LowConfidenceThreshold flags recognized words below this acoustic
+	// confidence (0..1) so the host can surface likely-misrecognized terms.
+	// <= 0 disables the check. Only providers that expose per-word confidence
+	// (Deepgram, AssemblyAI) produce data here.
+	LowConfidenceThreshold float64
 }
 
 // TranscriptionWorker processes [TranscriptionJob] values from an internal
@@ -105,6 +110,8 @@ type TranscriptionWorker struct {
 	interceptor TranscriptInterceptor
 	transformer TranscriptTransformer
 	observer    TranscriptionObserver
+
+	lowConfidenceThreshold float64
 
 	mu        sync.Mutex
 	persistWG sync.WaitGroup
@@ -129,14 +136,15 @@ func NewTranscriptionWorker(cfg TranscriptionWorkerConfig) (*TranscriptionWorker
 	}
 
 	return &TranscriptionWorker{
-		timeout:     cfg.Timeout,
-		runner:      cfg.Runner,
-		output:      cfg.Output,
-		interceptor: cfg.Interceptor,
-		transformer: cfg.Transformer,
-		observer:    cfg.Observer,
-		jobs:        make(chan TranscriptionJob, cfg.QueueSize),
-		done:        make(chan struct{}),
+		timeout:                cfg.Timeout,
+		runner:                 cfg.Runner,
+		output:                 cfg.Output,
+		interceptor:            cfg.Interceptor,
+		transformer:            cfg.Transformer,
+		observer:               cfg.Observer,
+		lowConfidenceThreshold: cfg.LowConfidenceThreshold,
+		jobs:                   make(chan TranscriptionJob, cfg.QueueSize),
+		done:                   make(chan struct{}),
 	}, nil
 }
 
@@ -216,6 +224,17 @@ func (w *TranscriptionWorker) handleJob(ctx context.Context, job TranscriptionJo
 		w.onLog(fmt.Sprintf("STT error: %v", err), "error")
 		w.onState("idle", "")
 		return
+	}
+
+	// Surface likely-misrecognized words so a silently-wrong transcript is at
+	// least visible in the log/status feed. Offsets are not reliable after
+	// downstream rewriting, so we report the raw low-confidence terms by text.
+	if terms, minConf := LowConfidenceWords(transcript.Words, w.lowConfidenceThreshold); len(terms) > 0 {
+		w.onLog(
+			fmt.Sprintf("Low-confidence words (min %.2f, threshold %.2f): %s — add recurring terms to Vocabulary to fix",
+				minConf, w.lowConfidenceThreshold, strings.Join(terms, ", ")),
+			"warn",
+		)
 	}
 
 	if w.transformer != nil {
@@ -388,6 +407,7 @@ func combineSegmentTranscripts(parent Submission, segments []Submission, transcr
 			prefix = segments[i].Prefix
 		}
 		appendTranscriptPart(&text, normalizeTranscriptText(transcript.Text, prefix))
+		combined.Words = append(combined.Words, transcript.Words...)
 	}
 
 	combined.Text = text.String()

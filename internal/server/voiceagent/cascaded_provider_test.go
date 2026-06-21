@@ -6,9 +6,9 @@ import (
 	"context"
 	"testing"
 
-	"github.com/kombifyio/SpeechKit/internal/ai/flows"
 	"github.com/kombifyio/SpeechKit/internal/stt"
 	"github.com/kombifyio/SpeechKit/internal/tts"
+	"github.com/kombifyio/SpeechKit/internal/voiceagent/cascaded"
 )
 
 // The bulk of cascaded provider tests live in
@@ -31,8 +31,8 @@ func (s smokeSTT) Route(_ context.Context, _ []byte, _ float64, _ stt.Transcribe
 
 type smokeAgent struct{ response string }
 
-func (a smokeAgent) Run(_ context.Context, _ flows.AgentInput) (flows.AgentOutput, error) {
-	return flows.AgentOutput{Text: a.response}, nil
+func (a smokeAgent) Run(_ context.Context, _ cascaded.AgentInput) (cascaded.AgentOutput, error) {
+	return cascaded.AgentOutput{Text: a.response}, nil
 }
 
 type smokeTTS struct{}

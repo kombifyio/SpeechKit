@@ -12,6 +12,90 @@ IDs, source paths, and other maintainer-only vocabulary.
 
 ## [Unreleased]
 
+## [0.46.0] - 2026-06-21
+
+Public in-process provider embeddability release. This release opens the real
+speech provider adapters to Go embedders and includes the latest Windows client
+and Voice Agent stability fixes.
+
+### Highlights
+
+- **Real Providers In Your App**: Build Dictation, Assist, and Voice Agent experiences with SpeechKit's public Go packages and no SpeechKit server in the path.
+- **Smoother Voice Agent Sessions**: Hold-to-talk conversations, session summaries, and brief pauses now feel more responsive and predictable.
+- **Reliable Text Delivery**: Transcripts land more consistently in terminals, browsers, and desktop apps with smarter paste and typing options.
+
+### Added
+
+- External Go embedders can now use the real provider adapters from
+  `pkg/speechkit/stt`, `pkg/speechkit/tts`,
+  `pkg/speechkit/voiceagent/live`, and
+  `pkg/speechkit/voiceagent/cascaded` without running a SpeechKit server.
+- `pkg/speechkit/netsec` and `pkg/speechkit/audio` now expose the network
+  safety and PCM audio helpers needed by custom provider hosts.
+- Dictation output now understands where it is pasting. SpeechKit detects the
+  app in focus and uses the right paste shortcut automatically: browsers and
+  Windows Terminal get Ctrl+V, terminals like Termius and Hyper get
+  Ctrl+Shift+V, and PuTTY-style terminals get Shift+Insert — so transcripts
+  land in SSH sessions and terminal windows without manual workarounds.
+- A new "Text Injection" section on the General settings page lets you choose
+  between the automatic per-app behavior, plain clipboard paste, or simulated
+  typing (which never touches your clipboard), and lets you turn clipboard
+  restore on or off. Per-app overrides are available in `config.toml` under
+  `[[output.app_overrides]]`.
+- The Voice Agent panel has a refreshed live visual: a soft, translucent
+  aurora that breathes and reacts to the live audio level, replacing the older
+  solid orb.
+- The hold-to-talk resume window is now configurable in Settings > Modes >
+  Voice Agent (0–120 seconds, default 60). After releasing the hotkey the
+  dialog stays resumable for that long; the session summary and the panel
+  only wrap up once the window expires without another press.
+- A new "Pause tolerance" setting (0–3000 ms, default 800) keeps the Voice
+  Agent from answering during brief thinking pauses: short silences are
+  filtered out of the mic stream, so the agent waits until you have actually
+  finished your sentence.
+- Session summaries now work out of the box: when no summary-capable model is
+  installed, the dashboard shows a one-time banner that downloads the
+  recommended local Gemma model with a single click — the same model that
+  powers Assist. The hint can be dismissed permanently.
+
+### Fixed
+
+- Switching from Dictation or Assist into another voice mode while recording no
+  longer submits the old audio through the newly selected mode. SpeechKit now
+  cancels and discards the interrupted capture before starting the next one.
+- Pressing the Voice Agent hotkey a second time now reliably stops the active
+  realtime session, and session summaries finish in the background instead of
+  delaying microphone and stream cleanup.
+- Starting the Windows app now opens the dashboard on normal launches, while
+  still using the first-run setup source for fresh local installs.
+- Pasting transcripts into browser and website form fields is far more
+  reliable. SpeechKit now waits until you have released the hotkey keys before
+  sending the paste shortcut (holding Alt or the Windows key used to turn the
+  paste into a different shortcut that browsers ignore), verifies the target
+  window actually has focus before injecting, and retries clipboard access
+  when another app briefly holds the clipboard.
+- Your previous clipboard content is no longer overwritten when you copy
+  something yourself in the moment right after a transcript was pasted.
+- Assist selection capture works again when you are still holding the Assist
+  hotkey keys at the moment the selection is read.
+- Voice Agent replies no longer repeat the speaker label on every streamed
+  sentence. A continuous answer now appears as one block that fills in line by
+  line, and a new block starts only when the other speaker talks.
+- The Voice Agent session summary is now an actual summary. When a text model
+  is available it is summarized by that model; when none is configured the
+  panel shows a short, clearly labeled recap of the assistant's points instead
+  of echoing the whole transcript back.
+- The collapsed Voice Agent panel now shows the latest line of the
+  conversation instead of only a generic status, so you can follow along while
+  it is folded.
+- Speech is no longer lost when you keep talking while the agent already
+  answers: as long as you hold the talk key, the microphone stays open and
+  your continuation interrupts the answer, so multi-part questions arrive
+  complete instead of only the last fragment.
+- The big Voice Agent panel got a cleaner look: the live aura sits centered at
+  the top above the status, and the panel itself is glassier and more
+  translucent.
+
 ## [0.45.1] - 2026-06-10
 
 ### Added

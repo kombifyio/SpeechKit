@@ -4,9 +4,9 @@ import (
 	"context"
 	"testing"
 
-	"github.com/kombifyio/SpeechKit/internal/ai/flows"
 	"github.com/kombifyio/SpeechKit/internal/stt"
 	"github.com/kombifyio/SpeechKit/internal/tts"
+	"github.com/kombifyio/SpeechKit/internal/voiceagent/cascaded"
 	live "github.com/kombifyio/SpeechKit/pkg/speechkit/voiceagent/live"
 )
 
@@ -18,8 +18,8 @@ func (stubSTT) Route(_ context.Context, _ []byte, _ float64, _ stt.TranscribeOpt
 
 type stubAgent struct{}
 
-func (stubAgent) Run(_ context.Context, _ flows.AgentInput) (flows.AgentOutput, error) {
-	return flows.AgentOutput{Text: "world"}, nil
+func (stubAgent) Run(_ context.Context, _ cascaded.AgentInput) (cascaded.AgentOutput, error) {
+	return cascaded.AgentOutput{Text: "world"}, nil
 }
 
 type stubTTS struct{}

@@ -180,9 +180,12 @@ type HandlerOptions struct {
 	// disables the server-side idle watchdog. Defaults to 15 minutes
 	// when zero is passed; pass a negative value to disable explicitly.
 	IdleTimeout time.Duration
-	Store       store.Store
-	LiveKit     *LiveKitTokenIssuer
-	MediaBridge MediaBridgeFactory
+	// MaxSessionDuration terminates a session after this wall-clock duration
+	// even if it remains active. Zero disables the hard cap.
+	MaxSessionDuration time.Duration
+	Store              store.Store
+	LiveKit            *LiveKitTokenIssuer
+	MediaBridge        MediaBridgeFactory
 	// ReadLimit caps per-frame bytes the upgraded WebSocket will read.
 	// Zero or negative falls back to defaultWSReadLimitBytes (64 KiB).
 	ReadLimit int64
@@ -191,18 +194,19 @@ type HandlerOptions struct {
 // Handler exposes both the HTTP session-creation endpoint and the WS
 // upgrade endpoint under /v1/voiceagent/*.
 type Handler struct {
-	manager         *SessionManager
-	providers       map[string]ProviderFactory
-	defaultProvider string
-	persona         PersonaResolver
-	publicURL       string
-	allowedOrigins  []string
-	idleTimeout     time.Duration
-	store           store.Store
-	liveKit         *LiveKitTokenIssuer
-	mediaBridge     MediaBridgeFactory
-	readLimit       int64
-	trustedProxies  httpx.TrustedProxies
+	manager            *SessionManager
+	providers          map[string]ProviderFactory
+	defaultProvider    string
+	persona            PersonaResolver
+	publicURL          string
+	allowedOrigins     []string
+	idleTimeout        time.Duration
+	maxSessionDuration time.Duration
+	store              store.Store
+	liveKit            *LiveKitTokenIssuer
+	mediaBridge        MediaBridgeFactory
+	readLimit          int64
+	trustedProxies     httpx.TrustedProxies
 }
 
 // New constructs a handler. All options except MaxAllowedClockSkew are
@@ -244,6 +248,10 @@ func New(opts HandlerOptions) (*Handler, error) {
 	} else if idle < 0 {
 		idle = 0
 	}
+	maxSessionDuration := opts.MaxSessionDuration
+	if maxSessionDuration < 0 {
+		maxSessionDuration = 0
+	}
 	mediaBridge := opts.MediaBridge
 	if mediaBridge == nil && opts.LiveKit != nil && opts.LiveKit.Enabled() {
 		mediaBridge = NewLiveKitMediaBridgeFactory(opts.LiveKit)
@@ -254,18 +262,19 @@ func New(opts HandlerOptions) (*Handler, error) {
 	}
 	trustedProxies, _ := httpx.NewTrustedProxies(opts.TrustedProxyCIDRs)
 	return &Handler{
-		manager:         opts.Manager,
-		providers:       providers,
-		defaultProvider: defaultProvider,
-		persona:         opts.Persona,
-		publicURL:       strings.TrimSpace(opts.PublicURL),
-		allowedOrigins:  normalizeAllowedOrigins(opts.AllowedOrigins),
-		idleTimeout:     idle,
-		store:           opts.Store,
-		liveKit:         opts.LiveKit,
-		mediaBridge:     mediaBridge,
-		readLimit:       readLimit,
-		trustedProxies:  trustedProxies,
+		manager:            opts.Manager,
+		providers:          providers,
+		defaultProvider:    defaultProvider,
+		persona:            opts.Persona,
+		publicURL:          strings.TrimSpace(opts.PublicURL),
+		allowedOrigins:     normalizeAllowedOrigins(opts.AllowedOrigins),
+		idleTimeout:        idle,
+		maxSessionDuration: maxSessionDuration,
+		store:              opts.Store,
+		liveKit:            opts.LiveKit,
+		mediaBridge:        mediaBridge,
+		readLimit:          readLimit,
+		trustedProxies:     trustedProxies,
 	}, nil
 }
 
@@ -575,6 +584,7 @@ func (h *Handler) upgradeWS(w http.ResponseWriter, r *http.Request, sessionID st
 		Persona:         h.persona,
 		MediaBridge:     h.mediaBridge,
 		IdleTimeout:     h.idleTimeout,
+		MaxDuration:     h.maxSessionDuration,
 		OnClose: func() {
 			h.manager.Remove(sessionID)
 		},

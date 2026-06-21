@@ -85,6 +85,15 @@ func (o *fakeObserver) OnLog(message, kind string) {
 	o.logs = append(o.logs, kind+":"+message)
 }
 
+func (o *fakeObserver) hasLog(message string) bool {
+	for _, log := range o.logs {
+		if strings.Contains(log, message) {
+			return true
+		}
+	}
+	return false
+}
+
 type fakeCollector struct {
 	feedErr  error
 	segments []dictationSegment
@@ -119,6 +128,7 @@ func TestRecordingControllerStartStopSubmitsSegments(t *testing.T) {
 			{pcm: []byte(strings.Repeat("b", 6400)), paragraph: true},
 		}}
 	})
+	controller.SetFragmentSegments(true) // asserts the opt-in parallel-segment path
 
 	if err := controller.Start(RecordingStartOptions{
 		Label:       "Recording started",
@@ -148,6 +158,68 @@ func TestRecordingControllerStartStopSubmitsSegments(t *testing.T) {
 	}
 	if got, want := job.QuickNoteID, int64(7); got != want {
 		t.Fatalf("job quick note id = %d, want %d", got, want)
+	}
+}
+
+func TestRecordingControllerStopWithNoSegmentsResetsIdle(t *testing.T) {
+	recorder := &fakeRecorder{stopPCM: []byte(strings.Repeat("a", 6400))}
+	submitter := &fakeSubmitter{}
+	observer := &fakeObserver{}
+	controller := NewRecordingController(recorder, submitter, observer, func() SegmentCollector {
+		return &fakeCollector{}
+	})
+	controller.SetFragmentSegments(true) // the no-speech skip only applies to the opt-in segment path
+
+	if err := controller.Start(RecordingStartOptions{Language: "en"}); err != nil {
+		t.Fatalf("Start() error = %v", err)
+	}
+	if err := controller.Stop(RecordingStopOptions{Label: "Captured"}); err != nil {
+		t.Fatalf("Stop() error = %v", err)
+	}
+
+	if got := len(submitter.jobs); got != 0 {
+		t.Fatalf("submitted jobs = %d, want 0", got)
+	}
+	if got := observer.states; len(got) < 2 || got[len(got)-1] != "idle:" {
+		t.Fatalf("states = %#v, want final idle", got)
+	}
+	if !observer.hasLog("No speech segments detected") {
+		t.Fatalf("observer logs = %v, want no-segments log", observer.logs)
+	}
+}
+
+// TestRecordingControllerTranscribesFullCaptureByDefault is the dropped-words
+// regression guard: in the default (non-fragmenting) mode the job must carry the
+// FULL captured PCM and NO segments, even when the VAD collector produced
+// segments — so the worker transcribes the complete audio and the crude RMS VAD
+// can never excise speech before STT.
+func TestRecordingControllerTranscribesFullCaptureByDefault(t *testing.T) {
+	full := []byte(strings.Repeat("a", 6400) + strings.Repeat("b", 6400))
+	recorder := &fakeRecorder{stopPCM: full}
+	submitter := &fakeSubmitter{}
+	observer := &fakeObserver{}
+	controller := NewRecordingController(recorder, submitter, observer, func() SegmentCollector {
+		return &fakeCollector{segments: []dictationSegment{
+			{pcm: []byte(strings.Repeat("a", 6400)), paragraph: false},
+		}}
+	})
+
+	if err := controller.Start(RecordingStartOptions{Language: "en"}); err != nil {
+		t.Fatalf("Start() error = %v", err)
+	}
+	if err := controller.Stop(RecordingStopOptions{Label: "Captured"}); err != nil {
+		t.Fatalf("Stop() error = %v", err)
+	}
+
+	if len(submitter.jobs) != 1 {
+		t.Fatalf("jobs = %d, want 1", len(submitter.jobs))
+	}
+	job := submitter.jobs[0]
+	if len(job.Segments) != 0 {
+		t.Fatalf("job.Segments = %d, want 0 (full-capture default must not fragment)", len(job.Segments))
+	}
+	if string(job.PCM) != string(full) {
+		t.Fatalf("job submission PCM = %d bytes, want the full %d-byte capture", len(job.PCM), len(full))
 	}
 }
 
@@ -223,6 +295,35 @@ func TestRecordingControllerStopTailDelayKeepsCaptureOpen(t *testing.T) {
 	}
 	if controller.IsRecording() {
 		t.Fatal("controller should not report recording after stop completes")
+	}
+}
+
+func TestRecordingControllerCancelStopsRecorderWithoutSubmitting(t *testing.T) {
+	recorder := &fakeRecorder{stopPCM: []byte(strings.Repeat("a", 6400))}
+	submitter := &fakeSubmitter{}
+	observer := &fakeObserver{}
+	controller := NewRecordingController(recorder, submitter, observer, func() SegmentCollector {
+		return &fakeCollector{}
+	})
+
+	if err := controller.Start(RecordingStartOptions{Language: "en"}); err != nil {
+		t.Fatalf("Start() error = %v", err)
+	}
+	if err := controller.Cancel(RecordingCancelOptions{Label: "Discarded for mode switch"}); err != nil {
+		t.Fatalf("Cancel() error = %v", err)
+	}
+
+	if controller.IsRecording() {
+		t.Fatal("controller should not report recording after cancel")
+	}
+	if got := len(submitter.jobs); got != 0 {
+		t.Fatalf("submitted jobs = %d, want 0 for cancel", got)
+	}
+	if got := recorder.pcmHandler; got != nil {
+		t.Fatal("recorder handler should be cleared after cancel")
+	}
+	if !observer.hasLog("Discarded for mode switch") {
+		t.Fatalf("observer logs = %v, want cancel label", observer.logs)
 	}
 }
 

@@ -42,6 +42,7 @@ func Load(path string) (*Config, error) {
 			NormalizeSpeechDefaults(cfg)
 			NormalizeCustomizationDefaults(cfg)
 			NormalizeHandsFreeConfig(cfg, true)
+			NormalizeOutputConfig(cfg)
 			return cfg, nil
 		}
 		return nil, fmt.Errorf("read config: %w", err)
@@ -103,6 +104,7 @@ func Load(path string) (*Config, error) {
 	normalizeSpeechDefaults(cfg, meta.IsDefined("speech"), meta.IsDefined("speech", "language"), meta.IsDefined("general", "language"))
 	NormalizeCustomizationDefaults(cfg)
 	NormalizeHandsFreeConfig(cfg, meta.IsDefined("hands_free"))
+	NormalizeOutputConfig(cfg)
 	// Backfill: Telemetry.UpdateCheck mirrors Update.Enabled when update is disabled.
 	// Phase 0 has only the update-check as telemetry; later phases may diverge.
 	if !cfg.Update.Enabled {
@@ -150,6 +152,7 @@ func Save(path string, cfg *Config) error {
 	NormalizeSpeechDefaults(cfg)
 	NormalizeCustomizationDefaults(cfg)
 	NormalizeHandsFreeConfig(cfg, true)
+	NormalizeOutputConfig(cfg)
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return fmt.Errorf("create config dir: %w", err)
 	}

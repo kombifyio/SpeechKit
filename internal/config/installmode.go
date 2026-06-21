@@ -25,6 +25,33 @@ type InstallState struct {
 	Mode      InstallMode `toml:"mode"`
 	SetupDone bool        `toml:"setup_done"`
 	DeviceID  string      `toml:"device_id"`
+	// DismissedHints records one-time UI hints (e.g. the summary-model
+	// download banner) the user explicitly dismissed, so they never reappear
+	// across app restarts.
+	DismissedHints []string `toml:"dismissed_hints,omitempty"`
+}
+
+// HintDismissed reports whether the given one-time UI hint was dismissed.
+func (s *InstallState) HintDismissed(id string) bool {
+	if s == nil {
+		return false
+	}
+	for _, dismissed := range s.DismissedHints {
+		if dismissed == id {
+			return true
+		}
+	}
+	return false
+}
+
+// DismissHint marks a one-time UI hint as dismissed. Returns true when the
+// state changed (caller should persist via SaveInstallState).
+func (s *InstallState) DismissHint(id string) bool {
+	if s == nil || id == "" || s.HintDismissed(id) {
+		return false
+	}
+	s.DismissedHints = append(s.DismissedHints, id)
+	return true
 }
 
 // installStateDir returns the directory for install state (APPDATA/SpeechKit).

@@ -48,13 +48,16 @@ func defaults() *Config {
 			IncludeWindowContext: true,
 		},
 		ModelSelection: BuiltInPrimaryModelSelectionDefaults(),
+		Output:         defaultOutputConfig(),
 		ServerConnection: ServerConnectionConfig{
-			Enabled:           false,
-			URL:               "",
-			BearerTokenEnv:    "SPEECHKIT_SERVER_TOKEN", //nolint:gosec // env var name, not a credential
-			AuthMode:          ServerConnectionAuthModeBearer,
-			FallbackToLocal:   true,
-			RequestTimeoutSec: 30,
+			Enabled:              false,
+			URL:                  "",
+			BearerTokenEnv:       "SPEECHKIT_SERVER_TOKEN", //nolint:gosec // env var name, not a credential
+			AuthMode:             ServerConnectionAuthModeBearer,
+			BetaInstallIDEnv:     DefaultBetaInstallIDEnv,
+			BetaInstallSecretEnv: DefaultBetaInstallSecretEnv,
+			FallbackToLocal:      true,
+			RequestTimeoutSec:    30,
 		},
 		UI: UIConfig{
 			OverlayEnabled:          true,
@@ -97,13 +100,14 @@ func defaults() *Config {
 			TokenEnv:     "HF_TOKEN", //nolint:gosec // not a credential, field name triggers false positive
 		},
 		Speech: SpeechDefaultsConfig{
-			Language:       "de",
-			Punctuation:    true,
-			SmartFormat:    true,
-			VocabularyBias: true,
-			TurnDetection:  true,
-			Speed:          1.0,
-			AudioFormat:    "mp3",
+			Language:               "de",
+			Punctuation:            true,
+			SmartFormat:            true,
+			VocabularyBias:         true,
+			TurnDetection:          true,
+			Speed:                  1.0,
+			AudioFormat:            "mp3",
+			LowConfidenceThreshold: 0.6,
 		},
 		Routing: RoutingConfig{
 			Strategy:                "local-only",
@@ -207,6 +211,8 @@ func defaults() *Config {
 			ReminderAfterIdleSec:            300,
 			DeactivateAfterIdleSec:          900,
 			HoldReleaseGraceSec:             10,
+			WarmSessionLingerSec:            60,
+			PauseToleranceMs:                800,
 			PipelineFallback:                false,
 			ShowPrompter:                    true,
 			EnableSessionSummary:            true,

@@ -14,7 +14,6 @@ import (
 	"time"
 
 	"github.com/kombifyio/SpeechKit/internal/config"
-	"github.com/kombifyio/SpeechKit/internal/models"
 	"github.com/kombifyio/SpeechKit/internal/tts"
 )
 
@@ -33,8 +32,8 @@ func (f *fakeProvider) Synthesize(_ context.Context, text string, _ tts.Synthesi
 	return f.result, nil
 }
 
-func (f *fakeProvider) Name() string              { return "fake" }
-func (f *fakeProvider) Kind() models.ProviderKind { return models.ProviderKindCloudProvider }
+func (f *fakeProvider) Name() string           { return "fake" }
+func (f *fakeProvider) Kind() tts.ProviderKind { return tts.ProviderKindCloudProvider }
 func (f *fakeProvider) Health(_ context.Context) error {
 	return nil
 }

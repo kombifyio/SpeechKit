@@ -189,6 +189,143 @@ func (o *recordingObserver) OnTranscriptCommitted(transcript Transcript, quickNo
 	o.quickNotes = append(o.quickNotes, quickNote)
 }
 
+func TestLowConfidenceWords(t *testing.T) {
+	words := []WordConfidence{
+		{Text: "Ich", Confidence: 0.99},
+		{Text: "Ultracord", Confidence: 0.42},
+		{Text: "mit", Confidence: 0.95},
+		{Text: "Stacket", Confidence: 0.55},
+		{Text: "stacket", Confidence: 0.51}, // case-insensitive duplicate of "Stacket"
+	}
+
+	terms, minConf := LowConfidenceWords(words, 0.6)
+	if got := strings.Join(terms, ","); got != "Ultracord,Stacket" {
+		t.Fatalf("terms = %q, want \"Ultracord,Stacket\" (distinct, below-threshold only)", got)
+	}
+	if minConf < 0.41 || minConf > 0.43 {
+		t.Fatalf("minConfidence = %v, want ~0.42 (floor across all words)", minConf)
+	}
+
+	if terms, gotMin := LowConfidenceWords(words, 0); terms != nil || gotMin != 0 {
+		t.Fatalf("threshold<=0 must disable detection, got (%#v, %v)", terms, gotMin)
+	}
+	if terms, _ := LowConfidenceWords(nil, 0.6); terms != nil {
+		t.Fatalf("nil words must yield nil terms, got %#v", terms)
+	}
+}
+
+// TestTranscriptionWorkerLogsLowConfidenceWords is the regression guard for the
+// "words vanish silently" complaint: when the provider reports per-word
+// confidence, the worker must surface the below-threshold terms in the
+// status/log feed so a mis-recognized word is visible, while high-confidence
+// words stay unflagged.
+func TestTranscriptionWorkerLogsLowConfidenceWords(t *testing.T) {
+	observer := &recordingObserver{}
+	output := &recordingOutput{}
+	runner := NewTranscriptionRunner(stubTranscriber{
+		transcript: Transcript{
+			Text:     "Ich nutze Ultracord",
+			Provider: "deepgram",
+			Duration: 100 * time.Millisecond,
+			Words: []WordConfidence{
+				{Text: "Ich", Confidence: 0.99},
+				{Text: "nutze", Confidence: 0.98},
+				{Text: "Ultracord", Confidence: 0.41},
+			},
+		},
+	}, nil)
+
+	worker, err := NewTranscriptionWorker(TranscriptionWorkerConfig{
+		Timeout:                time.Second,
+		QueueSize:              1,
+		Runner:                 runner,
+		Output:                 output,
+		Observer:               observer,
+		LowConfidenceThreshold: 0.6,
+	})
+	if err != nil {
+		t.Fatalf("NewTranscriptionWorker() error = %v", err)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	worker.Start(ctx)
+
+	if err := worker.Submit(TranscriptionJob{
+		Submission: Submission{WAV: []byte("wav"), DurationSecs: 0.2, Language: "de"},
+		Target:     "editor",
+	}); err != nil {
+		t.Fatalf("Submit() error = %v", err)
+	}
+
+	worker.Close()
+	worker.Wait()
+
+	var found string
+	observer.mu.Lock()
+	for _, l := range observer.logs {
+		if strings.HasPrefix(l, "warn:") && strings.Contains(l, "Low-confidence words") {
+			found = l
+		}
+	}
+	observer.mu.Unlock()
+
+	if found == "" {
+		t.Fatalf("expected a low-confidence warn log, got logs = %#v", observer.logs)
+	}
+	if !strings.Contains(found, "Ultracord") {
+		t.Fatalf("low-confidence log must name the uncertain word, got %q", found)
+	}
+	if strings.Contains(found, "nutze") {
+		t.Fatalf("high-confidence words must not be flagged, got %q", found)
+	}
+}
+
+func TestTranscriptionWorkerSkipsLowConfidenceWhenDisabled(t *testing.T) {
+	observer := &recordingObserver{}
+	output := &recordingOutput{}
+	runner := NewTranscriptionRunner(stubTranscriber{
+		transcript: Transcript{
+			Text:     "Ultracord",
+			Provider: "deepgram",
+			Duration: 50 * time.Millisecond,
+			Words:    []WordConfidence{{Text: "Ultracord", Confidence: 0.10}},
+		},
+	}, nil)
+
+	worker, err := NewTranscriptionWorker(TranscriptionWorkerConfig{
+		Timeout:                time.Second,
+		QueueSize:              1,
+		Runner:                 runner,
+		Output:                 output,
+		Observer:               observer,
+		LowConfidenceThreshold: 0, // disabled
+	})
+	if err != nil {
+		t.Fatalf("NewTranscriptionWorker() error = %v", err)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	worker.Start(ctx)
+	if err := worker.Submit(TranscriptionJob{
+		Submission: Submission{WAV: []byte("wav"), DurationSecs: 0.2, Language: "de"},
+		Target:     "editor",
+	}); err != nil {
+		t.Fatalf("Submit() error = %v", err)
+	}
+	worker.Close()
+	worker.Wait()
+
+	observer.mu.Lock()
+	defer observer.mu.Unlock()
+	for _, l := range observer.logs {
+		if strings.Contains(l, "Low-confidence words") {
+			t.Fatalf("threshold disabled, must not emit low-confidence log, got %q", l)
+		}
+	}
+}
+
 func TestTranscriptionWorkerProcessesJobs(t *testing.T) {
 	observer := &recordingObserver{}
 	output := &recordingOutput{}

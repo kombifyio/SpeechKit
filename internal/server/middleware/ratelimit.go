@@ -218,7 +218,7 @@ func startSweeper(opts RateLimitOptions, buckets *bucketStore) {
 func rateLimitKey(r *http.Request) string {
 	id := IdentityFromContext(r.Context())
 	// Audit S-4: when the entire bearer-auth surface shares one
-	// UserID="service" (the kombify-AI -> SpeechKit private-network
+	// UserID="service" (the upstream service-to-service private-network
 	// pattern), keying on that single string puts every consumer in
 	// one bucket and a single noisy neighbour DoS-es everyone else.
 	// Key on the remote IP instead so the budget is per-source.

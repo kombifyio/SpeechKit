@@ -46,6 +46,9 @@ type Adapter struct {
 	// both been silent for the duration. Zero disables the server-side
 	// idle watchdog. Defaults to 15 minutes when set by the WS handler.
 	IdleTimeout time.Duration
+	// MaxDuration terminates a session after this wall-clock duration even
+	// when it remains active. Zero disables the hard cap.
+	MaxDuration time.Duration
 	// OnClose runs after both pumps have returned. Typically removes the
 	// session from the manager.
 	OnClose func()
@@ -150,6 +153,13 @@ func (a *Adapter) Run(parent context.Context) {
 
 	a.idle = newIdleWatchdog(a.IdleTimeout)
 	defer a.idle.Stop()
+	var maxDuration <-chan time.Time
+	var maxTimer *time.Timer
+	if a.MaxDuration > 0 {
+		maxTimer = time.NewTimer(a.MaxDuration)
+		maxDuration = maxTimer.C
+		defer maxTimer.Stop()
+	}
 
 	done := make(chan struct{}, 2)
 	var wg sync.WaitGroup
@@ -168,6 +178,12 @@ func (a *Adapter) Run(parent context.Context) {
 			"timeout", a.IdleTimeout,
 		)
 		a.sendJSON(ctx, SessionEndFrame{Type: MsgSessionEnd, Reason: "idle"})
+	case <-maxDuration:
+		slog.Info("voiceagent: session max duration reached; closing",
+			"session_id", a.Session.ID,
+			"max_duration", a.MaxDuration,
+		)
+		a.sendJSON(ctx, SessionEndFrame{Type: MsgSessionEnd, Reason: "max_duration"})
 	}
 	cancel()
 	wg.Wait()

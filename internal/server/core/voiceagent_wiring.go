@@ -106,19 +106,24 @@ func buildVoiceAgentHandler(ctx context.Context, cfg *config.Config, app *App) (
 		// untouched; vsserver.New treats negatives as "disabled".
 		idleTimeout = -1
 	}
+	maxSessionDuration := time.Duration(cfg.Server.VoiceAgentMaxSessionSec) * time.Second
+	if cfg.Server.VoiceAgentMaxSessionSec <= 0 {
+		maxSessionDuration = 0
+	}
 
 	h, err := vsserver.New(vsserver.HandlerOptions{
-		Manager:           manager,
-		Providers:         factories,
-		DefaultProvider:   defaultProvider,
-		Persona:           resolver,
-		PublicURL:         cfg.Server.PublicURL,
-		AllowedOrigins:    cfg.Server.CORSAllowedOrigins,
-		TrustedProxyCIDRs: cfg.Server.TrustedProxyCIDRs,
-		IdleTimeout:       idleTimeout,
-		Store:             app.Store,
-		LiveKit:           buildLiveKitIssuer(cfg, app),
-		ReadLimit:         cfg.Server.WSReadLimitBytes,
+		Manager:            manager,
+		Providers:          factories,
+		DefaultProvider:    defaultProvider,
+		Persona:            resolver,
+		PublicURL:          cfg.Server.PublicURL,
+		AllowedOrigins:     cfg.Server.CORSAllowedOrigins,
+		TrustedProxyCIDRs:  cfg.Server.TrustedProxyCIDRs,
+		IdleTimeout:        idleTimeout,
+		MaxSessionDuration: maxSessionDuration,
+		Store:              app.Store,
+		LiveKit:            buildLiveKitIssuer(cfg, app),
+		ReadLimit:          cfg.Server.WSReadLimitBytes,
 	})
 	if err != nil {
 		return nil, status, err

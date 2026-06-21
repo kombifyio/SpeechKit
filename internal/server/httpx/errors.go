@@ -11,8 +11,8 @@ import (
 )
 
 // ErrorBody is the wire shape of every 4xx/5xx response from the SpeechKit
-// server adapter. It is deliberately minimal so consumers (kombify-AI, OSS
-// integrators) can pin to a stable contract.
+// server adapter. It is deliberately minimal so consumers (service-to-service
+// callers, OSS integrators) can pin to a stable contract.
 type ErrorBody struct {
 	Error ErrorDetail `json:"error"`
 }

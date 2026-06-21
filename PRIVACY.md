@@ -1,7 +1,7 @@
 # Privacy Policy — kombify SpeechKit
 
 **Effective date:** 2026-03-30
-**Last updated:** 2026-03-30
+**Last updated:** 2026-06-13
 
 kombify SpeechKit ("SpeechKit", "the App") is a speech-to-text framework with a desktop host application and an Android companion app. This privacy policy explains what data SpeechKit processes, where it is stored, and what choices you have.
 
@@ -34,7 +34,7 @@ Transcribed text is stored locally in a SQLite database next to the application.
 
 ## 2. Data We Do Not Collect
 
-SpeechKit does **not** collect, transmit, or store:
+The SpeechKit desktop host and Android app do **not** collect, transmit, or store:
 
 - usage analytics or telemetry
 - crash reports
@@ -44,6 +44,12 @@ SpeechKit does **not** collect, transmit, or store:
 - advertising identifiers
 
 SpeechKit operates **local-first**. No data leaves your device unless you explicitly configure a cloud provider.
+
+The public SpeechKit website is separate from the local apps. The default OSS
+website build also has analytics disabled. The Kombify-hosted SaaS website may
+capture privacy-safe PostHog product metrics only after explicit analytics
+consent, using an anonymous marketing identifier and the EU proxy
+`https://e.kombify.io`; it does not use Session Replay.
 
 ## 3. Third-Party Cloud Providers
 

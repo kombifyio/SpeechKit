@@ -12,7 +12,7 @@ import (
 
 	"github.com/firebase/genkit/go/ai"
 
-	"github.com/kombifyio/SpeechKit/internal/netsec"
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/netsec"
 )
 
 func init() {

@@ -176,9 +176,11 @@ type DeepgramThinkSettings struct {
 // DeepgramThinkConfig resolves the Deepgram Voice Agent think-LLM settings from
 // config. Model precedence: an explicit deepgram_think_model wins; otherwise a
 // non-Gemini [voice_agent].model is reused as the think model (preserving prior
-// behavior); a Gemini model id is ignored so it can't pin a non-existent
-// Deepgram think model. The bring-your-own credential is resolved only when an
-// endpoint URL is configured (managed LLMs need no client-supplied key).
+// behavior). Two classes of [voice_agent].model ids are ignored so they can't
+// pin a non-existent Deepgram think model: Gemini realtime ids, and Deepgram
+// listen/speak audio ids such as the catalog composite "nova-3+aura-2". The
+// bring-your-own credential is resolved only when an endpoint URL is configured
+// (managed LLMs need no client-supplied key).
 func (cfg *Config) DeepgramThinkConfig() DeepgramThinkSettings {
 	if cfg == nil {
 		return DeepgramThinkSettings{}
@@ -188,7 +190,9 @@ func (cfg *Config) DeepgramThinkConfig() DeepgramThinkSettings {
 		Model:    strings.TrimSpace(cfg.VoiceAgent.DeepgramThinkModel),
 	}
 	if out.Model == "" {
-		if m := strings.TrimSpace(cfg.VoiceAgent.Model); m != "" && !strings.Contains(strings.ToLower(m), "gemini") {
+		if m := strings.TrimSpace(cfg.VoiceAgent.Model); m != "" &&
+			!strings.Contains(strings.ToLower(m), "gemini") &&
+			!isDeepgramAudioModelID(m) {
 			out.Model = m
 		}
 	}
@@ -199,6 +203,17 @@ func (cfg *Config) DeepgramThinkConfig() DeepgramThinkSettings {
 		}
 	}
 	return out
+}
+
+// isDeepgramAudioModelID reports whether a [voice_agent].model value names
+// Deepgram listen/speak audio models (Nova STT, Aura TTS, or a "listen+speak"
+// composite like "nova-3+aura-2") rather than a think-capable LLM.
+func isDeepgramAudioModelID(model string) bool {
+	lower := strings.ToLower(strings.TrimSpace(model))
+	if strings.Contains(lower, "+") {
+		return true
+	}
+	return strings.HasPrefix(lower, "nova") || strings.HasPrefix(lower, "aura")
 }
 
 func googleSTTKeyEnvCandidates(cfg *Config) []string {

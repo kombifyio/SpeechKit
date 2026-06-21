@@ -54,7 +54,7 @@ const (
 	StrategyLocalOnly Strategy = "local-only"
 	StrategyCloudOnly Strategy = "cloud-only"
 
-	internetCacheTTL = 10 * time.Second
+	internetCacheTTL = 60 * time.Second
 )
 
 // Router selects the best STTProvider based on audio length, availability, and config.
@@ -366,14 +366,29 @@ func providerNameFromSpeakerProfile(profileID string) string {
 func (r *Router) checkInternet(ctx context.Context) bool {
 	now := time.Now().UnixNano()
 	lastCheck := r.internetAt.Load()
-	if now-lastCheck < int64(internetCacheTTL) {
+	if lastCheck != 0 && now-lastCheck < int64(internetCacheTTL) {
 		return r.internetOnline.Load()
 	}
 
-	online := r.probeInternet(ctx)
-	r.internetOnline.Store(online)
-	r.internetAt.Store(now)
-	return online
+	// First check ever: probe synchronously (short timeout) to establish a
+	// baseline. Every later refresh runs in the BACKGROUND and returns the last
+	// known value immediately — the probe used to run inline before every cloud
+	// transcribe, so a slow or egress-filtered probe target added up to its full
+	// timeout to the user's perceived dictation latency on every utterance more
+	// than internetCacheTTL apart. The CAS keeps the background refresh
+	// single-flight.
+	if lastCheck == 0 {
+		online := r.probeInternet(ctx)
+		r.internetOnline.Store(online)
+		r.internetAt.Store(now)
+		return online
+	}
+	if r.internetAt.CompareAndSwap(lastCheck, now) {
+		go func() {
+			r.internetOnline.Store(r.probeInternet(context.WithoutCancel(ctx)))
+		}()
+	}
+	return r.internetOnline.Load()
 }
 
 // probeInternet does a quick TCP check to detect connectivity.
@@ -383,7 +398,7 @@ func (r *Router) probeInternet(ctx context.Context) bool {
 	if addr == "" {
 		addr = "1.1.1.1:443"
 	}
-	ctx, cancel := context.WithTimeout(ctx, 2*time.Second)
+	ctx, cancel := context.WithTimeout(ctx, time.Second)
 	defer cancel()
 	conn, err := (&net.Dialer{}).DialContext(ctx, "tcp", addr)
 	if err != nil {

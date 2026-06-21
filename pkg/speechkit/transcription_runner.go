@@ -14,6 +14,17 @@ type Transcriber interface {
 	Transcribe(ctx context.Context, audio []byte, durationSecs float64, language string) (Transcript, error)
 }
 
+// WordConfidence is a recognized word with the provider's per-word acoustic
+// confidence in [0,1]. It mirrors stt.WordConfidence (the kernel keeps Transcript
+// decoupled from the stt package; the device adapter maps between them). nil
+// when the provider does not expose word-level confidence.
+type WordConfidence struct {
+	Text       string
+	Confidence float64
+	StartMs    int64
+	EndMs      int64
+}
+
 // Transcript holds the result of a single transcription call.
 type Transcript struct {
 	Text       string
@@ -22,7 +33,40 @@ type Transcript struct {
 	Provider   string
 	Model      string
 	Confidence float64
-	Speakers   *speaker.DiarizationResult
+	// Words carries per-word acoustic confidence when available (Deepgram,
+	// AssemblyAI). Used to surface likely-misrecognized terms; nil otherwise.
+	Words    []WordConfidence
+	Speakers *speaker.DiarizationResult
+}
+
+// LowConfidenceWords returns the distinct word texts whose per-word confidence
+// is below threshold, together with the minimum confidence observed across all
+// words. A threshold <= 0 disables detection. Words without per-word data
+// (providers that do not expose it) yield (nil, 0). The returned terms are the
+// raw STT tokens, so callers can match them against the (possibly rewritten)
+// display text without depending on character offsets.
+func LowConfidenceWords(words []WordConfidence, threshold float64) (terms []string, minConfidence float64) {
+	if threshold <= 0 || len(words) == 0 {
+		return nil, 0
+	}
+	minConfidence = words[0].Confidence
+	seen := map[string]struct{}{}
+	for _, w := range words {
+		if w.Confidence < minConfidence {
+			minConfidence = w.Confidence
+		}
+		text := strings.TrimSpace(w.Text)
+		if text == "" || w.Confidence >= threshold {
+			continue
+		}
+		key := strings.ToLower(text)
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		seen[key] = struct{}{}
+		terms = append(terms, text)
+	}
+	return terms, minConfidence
 }
 
 // QuickNoteStore persists and retrieves Quick Note records.

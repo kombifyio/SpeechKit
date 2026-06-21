@@ -71,6 +71,13 @@ type RecordingStopOptions struct {
 	TailDelay time.Duration
 }
 
+// RecordingCancelOptions controls cancellation of an active recording without
+// submitting captured audio. It is for host-level interruptions such as a mode
+// switch, where the old buffer must be discarded rather than transcribed.
+type RecordingCancelOptions struct {
+	Label string
+}
+
 // RecordingController manages the start/stop lifecycle of a single recording
 // session and hands audio segments to the submission queue.
 type RecordingController struct {
@@ -80,6 +87,12 @@ type RecordingController struct {
 	segmenterFactory SegmentCollectorFactory
 	recordingMessage string
 	minPCMBytes      int
+	// fragmentSegments, when true, submits the VAD-derived audio segments as the
+	// STT source (legacy parallel-segment path). When false (the default) the
+	// full captured audio is transcribed as a single submission so speech the
+	// crude RMS VAD mis-classified cannot be excised before STT — this is the
+	// dropped-words fix; the segmenter still drives silence-based auto-stop.
+	fragmentSegments bool
 	// idleWatchInterval is how often the idle watcher polls the
 	// IdleObserver. Defaults to 1s — overridable from tests.
 	idleWatchInterval time.Duration
@@ -103,6 +116,17 @@ func NewRecordingController(recorder AudioRecorder, submitter JobSubmitter, obse
 		minPCMBytes:       DefaultMinPCMBytes,
 		idleWatchInterval: defaultIdleWatchInterval,
 	}
+}
+
+// SetFragmentSegments controls whether Stop() submits the VAD-derived segments
+// as the STT source (true) or the full captured audio as a single submission
+// (false, default). The segmenter still drives silence-based auto-stop either
+// way; this only changes what audio is sent to transcription.
+func (c *RecordingController) SetFragmentSegments(enabled bool) {
+	if c == nil {
+		return
+	}
+	c.fragmentSegments = enabled
 }
 
 // SetIdleWatchInterval overrides the polling interval used by the
@@ -319,23 +343,42 @@ func (c *RecordingController) Stop(opts RecordingStopOptions) error {
 		}
 	}
 
-	if len(segments) == 0 {
-		return nil
-	}
-
-	segmentSubmissions := make([]Submission, 0, len(segments))
+	// Excision diagnostic: compare the full captured duration against what the
+	// VAD-segment path would have sent to STT. A large positive delta means the
+	// segmenter was dropping real speech — the dropped-words root cause.
+	var segTotalSecs float64
 	for _, segment := range segments {
-		prefix := ""
-		if segment.Paragraph {
-			prefix = "\n\n"
+		segTotalSecs += PCMDurationSecs(segment.PCM)
+	}
+	c.onLog(fmt.Sprintf("dictation audio: full=%.1fs vs %d VAD-segments totalling %.1fs (delta=%.1fs)", dur, len(segments), segTotalSecs, dur-segTotalSecs), "info")
+
+	// Default (fragmentSegments=false): transcribe the FULL captured audio as a
+	// single submission (job.Segments stays nil, so transcriptionSegments()
+	// falls back to the full-PCM Submission). This eliminates every VAD-excision
+	// word-loss path — onset clipping, low-energy word gating, short trailing
+	// word drop, and multi-segment all-or-nothing failure — at no latency cost
+	// for normal dictation (it was a single Deepgram call anyway).
+	var jobSegments []Submission
+	if c.fragmentSegments {
+		if len(segments) == 0 {
+			c.onLog("No speech segments detected, skipped", "error")
+			c.onState("idle", "")
+			return nil
 		}
-		segmentSubmissions = append(segmentSubmissions, Submission{
-			PCM:          segment.PCM,
-			WAV:          PCMToWAV(segment.PCM),
-			DurationSecs: PCMDurationSecs(segment.PCM),
-			Language:     current.Language,
-			Prefix:       prefix,
-		})
+		jobSegments = make([]Submission, 0, len(segments))
+		for _, segment := range segments {
+			prefix := ""
+			if segment.Paragraph {
+				prefix = "\n\n"
+			}
+			jobSegments = append(jobSegments, Submission{
+				PCM:          segment.PCM,
+				WAV:          PCMToWAV(segment.PCM),
+				DurationSecs: PCMDurationSecs(segment.PCM),
+				Language:     current.Language,
+				Prefix:       prefix,
+			})
+		}
 	}
 
 	if err := c.submitter.Submit(TranscriptionJob{
@@ -347,7 +390,7 @@ func (c *RecordingController) Stop(opts RecordingStopOptions) error {
 			QuickNote:    current.QuickNote,
 			QuickNoteID:  current.QuickNoteID,
 		},
-		Segments: segmentSubmissions,
+		Segments: jobSegments,
 		Target:   current.Target,
 	}); err != nil {
 		c.onLog(fmt.Sprintf("Queue error: %v", err), "error")
@@ -356,6 +399,57 @@ func (c *RecordingController) Stop(opts RecordingStopOptions) error {
 	}
 
 	return nil
+}
+
+// Cancel stops the active recorder and discards the captured audio. Hosts use
+// this when the user switches modes mid-capture; submitting the old buffer
+// would deliver stale speech through the newly selected mode.
+func (c *RecordingController) Cancel(opts RecordingCancelOptions) error {
+	if c == nil {
+		return nil
+	}
+
+	c.mu.Lock()
+	if !c.recording {
+		c.mu.Unlock()
+		return nil
+	}
+	if c.stopping {
+		c.mu.Unlock()
+		return fmt.Errorf("speechkit: recording is already stopping")
+	}
+	c.stopping = true
+	sessionID := c.sessionID
+	if c.idleWatcherCh != nil {
+		close(c.idleWatcherCh)
+		c.idleWatcherCh = nil
+	}
+	c.mu.Unlock()
+	defer c.clearStopping()
+
+	c.mu.Lock()
+	if c.sessionID != sessionID {
+		c.mu.Unlock()
+		return nil
+	}
+	c.recording = false
+	c.current = RecordingStartOptions{}
+	c.collector = nil
+	c.mu.Unlock()
+
+	c.recorder.SetPCMHandler(nil)
+	_, stopErr := c.recorder.Stop()
+	if stopErr != nil {
+		c.onLog(fmt.Sprintf("Capture cancel warning: %v", stopErr), "warn")
+	}
+
+	label := opts.Label
+	if label == "" {
+		label = "Capture discarded"
+	}
+	c.onLog(label, "info")
+	c.onState("idle", "")
+	return stopErr
 }
 
 func (c *RecordingController) clearStopping() {

@@ -23,6 +23,28 @@ fast_mode_silence_ms = 1500
 dictate_silence_timeout_sec = 15  # Seconds of silence before toggle dictation auto-stops. 0 disables.
 model_download_dir = ""            # Blank = %LOCALAPPDATA%/SpeechKit/models. Set a dedicated folder for local model downloads.
 
+# [output] tunes how the Device-Target injects transcribed text into the
+# focused application. "auto" picks a per-app paste shortcut from built-in
+# profiles (browsers and Windows Terminal use Ctrl+V, Termius/Hyper/Alacritty
+# Ctrl+Shift+V, PuTTY/mintty Shift+Insert) and waits for hotkey modifiers to
+# be physically released before pasting. "clipboard" always pastes with plain
+# Ctrl+V; "type" simulates Unicode typing and never touches the clipboard.
+[output]
+default_strategy = "auto"   # auto | clipboard | type
+modifier_wait_ms = 1000     # Max wait for held hotkey modifiers before injecting.
+focus_verify_ms = 300       # Max wait for the target window to reach the foreground.
+restore_clipboard = true    # Restore the previous clipboard content after paste.
+restore_delay_ms = 300      # Pause between paste and clipboard restore.
+# Per-app overrides force a strategy and/or paste chord for one executable
+# (base name without .exe, case-insensitive). Examples:
+# [[output.app_overrides]]
+# process_name = "someterminal"
+# paste_combo = "ctrl+shift+v"   # ctrl+v | ctrl+shift+v | shift+insert
+#
+# [[output.app_overrides]]
+# process_name = "legacyapp"
+# strategy = "type"              # clipboard | type
+
 [speech]
 language = "de"          # Canonical cross-provider speech language. general.language remains a compatibility alias.
 detect_language = false  # When supported, omit/fill provider-native auto language detection.
@@ -200,6 +222,9 @@ max_voice_agent_sessions = 100
 max_sessions_per_user = 3
 ticket_ttl_sec = 90
 voice_agent_idle_timeout_sec = 900
+# Optional hard cap for a single Voice Agent WebSocket session. Zero disables
+# the cap for normal self-hosted installs; public beta origins should set it.
+voiceagent_max_session_sec = 0
 # Per-frame size cap on the Voice Agent WebSocket. Defaults to 65536
 # (64 KiB) when unset or non-positive. Tightened from the historical
 # 1 MiB default in audit S-12 because raw PCM chunks are well under
@@ -228,9 +253,14 @@ tts_direct = true
 enabled = false                              # Master switch. When false, every mode forces back to local.
 url = ""                                      # Optional remote target. Local mode is still the startup default.
 bearer_token_env = "SPEECHKIT_SERVER_TOKEN"  # Env var name. The token value is never read from this file.
-auth_mode = "bearer"                         # bearer = Authorization header, api_key = X-Api-Key for custom servers.
+auth_mode = "bearer"                         # bearer = Authorization header, api_key = X-Api-Key, edge_beta = anonymous managed-beta edge broker.
 fallback_to_local = true                     # If a server call fails, retry against the in-process kernel.
 request_timeout_sec = 30                     # Caps non-streaming HTTP calls. WebSocket sessions are unaffected.
+# Only used by auth_mode = "edge_beta". Values are generated locally on first
+# use and stored via the host secret store; these are per-install beta IDs, not
+# shared server/provider credentials.
+beta_install_id_env = "SPEECHKIT_BETA_INSTALL_ID"
+beta_install_secret_env = "SPEECHKIT_BETA_INSTALL_SECRET"
 
 # ──────────────────────────────────────────────
 # Shortcuts — additive command aliases per locale
@@ -316,6 +346,8 @@ barge_in = "auto"                          # Interrupt the agent mid-answer: "au
 reminder_after_idle_sec = 300              # Remind user after 5 min silence
 deactivate_after_idle_sec = 900            # Auto-deactivate after 15 min silence
 hold_release_grace_sec = 10                # Hold-to-talk: how long a release waits for the final answer to START. An in-flight answer always finishes playing (capped at 30s total). 0 -> default (10).
+warm_session_linger_sec = 60               # Hold-to-talk resume window: keep the realtime connection warm this long after an answer so the next press resumes the dialog without a new handshake (~700ms). Session summary + panel close only run when the window expires. 0 -> deactivate immediately (legacy). Clamped to 120s.
+pause_tolerance_ms = 800                   # Short silences up to this tolerance are filtered from the mic stream so the agent does not answer during brief thinking pauses. Effective answer delay = tolerance + provider endpointing. 0 -> provider default. Clamped to 3000ms.
 pipeline_fallback = false                  # Uses STT -> Agent LLM -> optional TTS for non-realtime Voice Agent profiles.
 show_prompter = true                       # Show live transcript window during voice agent
 enable_session_summary = true              # Generate a structured dialogue summary when a session ends

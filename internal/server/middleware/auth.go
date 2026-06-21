@@ -100,7 +100,7 @@ const (
 	AuthModeNone AuthMode = "none"
 	// AuthModeBearer requires a static bearer token from the configured env
 	// var. Minimum viable auth; suitable for same-network service-to-service
-	// calls (e.g. kombify-AI → speechkit over Render private network).
+	// calls (e.g. an upstream service calling SpeechKit over a private network).
 	AuthModeBearer AuthMode = "bearer"
 	// AuthModeEdgeHMAC trusts HMAC-signed headers from a known edge
 	// (Cloudflare Worker / reverse proxy). The actual user identity comes

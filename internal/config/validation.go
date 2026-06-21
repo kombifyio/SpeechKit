@@ -60,6 +60,40 @@ func NormalizeVoiceAgentBargeIn(value, fallback string) string {
 	}
 }
 
+// NormalizeVoiceAgentWarmLinger clamps the hold-to-talk resume window
+// (seconds) to the supported range. 0 disables the warm linger; values above
+// 120 s are capped so a warm cloud connection cannot idle unboundedly.
+// Negative values fall back to the given fallback (itself clamped).
+func NormalizeVoiceAgentWarmLinger(value, fallback int) int {
+	if value < 0 {
+		if fallback < 0 {
+			return 0
+		}
+		value = fallback
+	}
+	if value > 120 {
+		return 120
+	}
+	return value
+}
+
+// NormalizeVoiceAgentPauseTolerance clamps the client-side pause tolerance
+// (milliseconds of silence filtered from the mic stream before the provider
+// may endpoint the turn) to [0, 3000]. 0 disables the filter. Negative values
+// fall back to the given fallback (itself clamped).
+func NormalizeVoiceAgentPauseTolerance(value, fallback int) int {
+	if value < 0 {
+		if fallback < 0 {
+			return 0
+		}
+		value = fallback
+	}
+	if value > 3000 {
+		return 3000
+	}
+	return value
+}
+
 // NormalizeWakewordDefaultMode coerces an arbitrary mode string to one of
 // the supported wake-word target modes. Unknown values fall back to
 // WakewordDefaultModeVoiceAgent (the most common consumer use case).
