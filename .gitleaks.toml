@@ -1,0 +1,41 @@
+title = "SpeechKit tracked-source secret scanning"
+
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "Documented local test bearer token used only by docker-compose smoke tests"
+paths = ['''(^|.*/)deploy/docker/docker-compose\.test\.yml$''']
+regexes = ['''e2e-dev-token''']
+
+[[allowlists]]
+description = "Redaction fixtures that intentionally use fake OpenAI-looking keys"
+paths = [
+  '''(^|.*/)cmd/speechkit/diagnostics_test\.go$''',
+  '''(^|.*/)docs/superpowers/plans/2026-05-18-enterprise-hardening-phase-2\.md$''',
+]
+regexes = ['''sk-1234567890''']
+
+[[allowlists]]
+description = "OpenAI-compatible adapter parameter names, not literal committed secrets"
+paths = [
+  '''(^|.*/)internal/stt/openai_compatible\.go$''',
+  '''(^|.*/)pkg/speechkit/stt/openai_compatible\.go$''',
+]
+regexes = ['''apiKey''']
+
+[[allowlists]]
+description = "Historical local Gateway example URL, not a committed secret"
+paths = ['''(^|.*/)docs/speechkit-integration-plan\.md$''']
+regexTarget = "line"
+regexes = ['''url: http://kombify-speechkit-api:8080/v1/speechkit''']
+
+[[allowlists]]
+description = "This gitleaks config documents the exact fake fixtures it allows"
+paths = ['''(^|.*/)\.gitleaks\.toml$''']
+regexes = [
+  '''e2e-dev-token''',
+  '''sk-1234567890''',
+  '''OPENAI_API_KEY=$''',
+  '''url: http://kombify-speechkit-api:8080/v1/speechkit''',
+]

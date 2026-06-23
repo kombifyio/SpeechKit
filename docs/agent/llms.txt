@@ -1,13 +1,15 @@
-# SpeechKit v0.44
+# SpeechKit v0.46
 
 > Agent entrypoint for SpeechKit Server, Framework API, and MCP integration.
 
 SpeechKit is a Windows-first voice framework with three strict modes:
-Dictation, Assist, and Voice Agent. The v0.44 line adds Words and Replacements
-as the two core extension primitives, structured provider options, and
-segmented transcription finalization while keeping the API-first server, Go
-client, CLI, MCP server, and embeddable SDK surfaces. Native Templates are
-curated Words/Replacements packs selected through `active_template_ids`.
+Dictation, Assist, and Voice Agent. The v0.46 line exposes the real provider
+adapters to Go embedders: in-process STT, TTS, Assist, and Voice Agent packages
+can run without a SpeechKit Server when the host wants local framework
+integration. The self-host Server, Go client, CLI, MCP server, and embeddable
+SDK surfaces remain the public integration paths. Words and Replacements are
+the customization primitives, with Native Templates selected through
+`active_template_ids`.
 Hands-Free is an activation and voice-output layer for those modes, not a
 fourth mode.
 

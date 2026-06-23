@@ -1,17 +1,1 @@
-{
-  "schema": "speechkit.latest-installer@2",
-  "version": "v0.46.0",
-  "source_repo": "kombifyio/SpeechKit",
-  "source_release_url": "https://github.com/kombifyio/SpeechKit/releases/tag/v0.46.0",
-  "source_commit": "7f6d49900492e7522c01268f7be7cff635cffcba",
-  "mirrored_at_utc": "2026-06-23T07:38:11Z",
-  "max_installer_bytes": 300000000,
-  "files": [
-    {
-      "name": "SpeechKit-Setup.exe",
-      "size_bytes": 91101183,
-      "sha256": "93c957ac12b0fa09f60864fa0a91d1d19bbbf5f1b834aa82472c203e29c05831",
-      "download_url": "https://github.com/kombifyio/SpeechKit/releases/download/v0.46.0/SpeechKit-Setup.exe"
-    }
-  ]
-}
+{"schema":"speechkit.latest-installer@2","version":"v0.46.0","source_repo":"kombifyio/SpeechKit","source_release_url":"https://github.com/kombifyio/SpeechKit/releases/tag/v0.46.0","source_commit":"327fc1040e595d91f062b1596510134368e321d0","mirrored_at_utc":"2026-06-21T21:37:35Z","max_installer_bytes":300000000,"files":[{"name":"SpeechKit-Setup.exe","size_bytes":91101183,"sha256":"93c957ac12b0fa09f60864fa0a91d1d19bbbf5f1b834aa82472c203e29c05831","download_url":"https://github.com/kombifyio/SpeechKit/releases/download/v0.46.0/SpeechKit-Setup.exe"},{"name":"SpeechKit-Portable.zip","size_bytes":92934995,"sha256":"cedb1a917e0de034bff5725eb7d52b4dcd2b726bc139e66f96c4b8f41d9f1172","download_url":"https://github.com/kombifyio/SpeechKit/releases/download/v0.46.0/SpeechKit-Portable.zip"},{"name":"UNSIGNED-WINDOWS-RELEASE.txt","size_bytes":294,"sha256":"900230f05290fda41cc730ca0c5f6e3d370bd8e2063088f4153b6adbc9e9e7de","download_url":"https://github.com/kombifyio/SpeechKit/releases/download/v0.46.0/UNSIGNED-WINDOWS-RELEASE.txt"}]}

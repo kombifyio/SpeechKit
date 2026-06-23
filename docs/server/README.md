@@ -34,7 +34,7 @@ The server:
 - Reads `/etc/speechkit/config.toml` (copy `deploy/config/server.example.toml`).
 - Takes secrets from environment variables whose names are referenced from config.
 - Exposes the same auth, health, readiness, and API conventions for all modes.
-- Exposes v0.44 Words/Replacements, Native Templates, Customization Packs, and active template selection so products can combine global defaults with scoped org/user/session rules.
+- Exposes Words/Replacements, Native Templates, Customization Packs, and active template selection so products can combine global defaults with scoped org/user/session rules.
 
 ## Quick start
 
@@ -177,7 +177,7 @@ Render it with any OpenAPI viewer or generate a typed client with
 `openapi-generator`. The canonical browser-facing API prefix is `/api/v1`; the
 original `/v1` paths remain available for compatibility.
 
-v0.44 customization is built around first-class `/words`, `/replacements`,
+Customization is built around first-class `/words`, `/replacements`,
 `/lexicons`, `/rulesets`, `/customization/templates`, and Customization Pack
 contracts. The template catalog routes let a server act as a live development
 catalog for the same curated packs that can later be vendored into the

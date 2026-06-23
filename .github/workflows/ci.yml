@@ -42,12 +42,22 @@ jobs:
         run: |
           node scripts/release/lint-version-sync.mjs
           node scripts/release/lint-changelog.mjs --unreleased
+          node scripts/release/check-doc-links.mjs
+
+      - name: Secret scan
+        run: |
+          go run github.com/zricethezav/gitleaks/v8@v8.30.1 detect --source . --redact --no-banner
 
       - name: Test public Go packages
         run: |
           go test ./pkg/... ./cmd/speechkit-cli/... ./cmd/speechkit-mcp/... ./examples/...
           GOOS=linux CGO_ENABLED=0 go test ./cmd/speechkit-server/...
           GOOS=linux CGO_ENABLED=0 go build ./cmd/speechkit-server ./cmd/speechkit-mcp ./cmd/speechkit-cli
+          go vet ./pkg/... ./cmd/speechkit-cli/... ./cmd/speechkit-mcp/... ./examples/...
+          go run ./examples/provider-catalog
+          go run ./examples/embed-companion
+          go run ./examples/embed-tts
+          go run ./examples/embed-event-bus
 
       - name: Verify no private source trees are exported
         shell: bash

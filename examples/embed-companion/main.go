@@ -9,6 +9,16 @@ import (
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/wakeword"
 )
 
+type echoAssist struct{}
+
+func (echoAssist) Process(_ context.Context, req speechkit.AssistRequest) (speechkit.AssistResult, error) {
+	return speechkit.AssistResult{
+		Text:    "assist handled: " + req.Text,
+		Surface: speechkit.AssistSurfacePanel,
+		Locale:  req.Locale,
+	}, nil
+}
+
 func main() {
 	ctx := context.Background()
 	runtime := speechkit.NewRuntime(speechkit.Snapshot{}, speechkit.Hooks{
@@ -24,6 +34,7 @@ func main() {
 	assistCompanion, err := companion.NewHandsFree(companion.Options{
 		Runtime:    runtime,
 		TargetMode: companion.TargetAssist,
+		Assist:     echoAssist{},
 		WakeRequest: func(_ context.Context, ev wakeword.DetectionEvent) (speechkit.AssistRequest, bool) {
 			return speechkit.AssistRequest{Text: ev.Phrase, Locale: "en-US"}, false
 		},

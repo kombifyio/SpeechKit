@@ -1,4 +1,4 @@
-# SpeechKit v0.44 Agent Context
+# SpeechKit v0.46 Agent Context
 
 SpeechKit is a voice framework for products and automation hosts. It has three
 strict modes:
@@ -7,11 +7,14 @@ strict modes:
 - Assist: one-shot utility, codeword, or LLM result with optional TTS.
 - Voice Agent: realtime audio-to-audio dialogue for fast follow-ups.
 
-v0.44 is the customization release line: Words teach recognition, Replacements
-shape final text, Native Templates provide curated pack defaults/profiles,
-provider options are structured, and segmented transcription is finalized
-before output. Deepgram, AssemblyAI, speaker-aware transcription, and realtime
-provider choices remain part of the current provider surface.
+v0.46 is the public in-process provider embeddability line. Go hosts can use
+the public STT, TTS, Assist, and Voice Agent packages directly without routing
+through a SpeechKit Server when an embedded framework integration is the right
+shape. Words teach recognition, Replacements shape final text, Native
+Templates provide curated pack defaults/profiles, provider options are
+structured, and segmented transcription is finalized before output. Deepgram,
+AssemblyAI, speaker-aware transcription, and realtime provider choices remain
+part of the current provider surface.
 Hands-Free is the activation and voice-output layer for Dictation, Assist, and
 Voice Agent; it is not a fourth mode.
 The latest GitHub Release is the canonical source for desktop installers.
@@ -92,7 +95,7 @@ Browser WebSocket auth is subprotocol-first. Use the `ws_url` and
 server bearer token into a browser WebSocket handshake. Tickets default to 90
 seconds; expired tickets are not refreshed in v1, so create a new session.
 
-Important v0.44 surfaces:
+Important v0.46 surfaces:
 
 - `GET /v1/catalog/profiles`
 - `GET /v1/catalog/contracts`

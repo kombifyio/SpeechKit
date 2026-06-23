@@ -15,14 +15,35 @@ $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 
 $projectDir = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
-$sourceRoot = [System.IO.Path]::GetFullPath((Join-Path $projectDir $SourceDir))
-if ([System.IO.Path]::IsPathRooted($SourceDir)) {
-    $sourceRoot = [System.IO.Path]::GetFullPath($SourceDir)
+
+function Resolve-ProjectPath {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Path
+    )
+
+    if ([System.IO.Path]::IsPathRooted($Path)) {
+        return [System.IO.Path]::GetFullPath($Path)
+    }
+
+    return [System.IO.Path]::GetFullPath((Join-Path $projectDir $Path))
 }
-$destinationRoot = [System.IO.Path]::GetFullPath((Join-Path $projectDir $DestinationDir))
-if ([System.IO.Path]::IsPathRooted($DestinationDir)) {
-    $destinationRoot = [System.IO.Path]::GetFullPath($DestinationDir)
+
+function Write-Utf8NoBomFile {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Path,
+        [Parameter(Mandatory = $true)]
+        [string]$Content
+    )
+
+    $normalized = $Content.TrimEnd("`r", "`n") + "`n"
+    $utf8NoBom = [System.Text.UTF8Encoding]::new($false)
+    [System.IO.File]::WriteAllText($Path, $normalized, $utf8NoBom)
 }
+
+$sourceRoot = Resolve-ProjectPath -Path $SourceDir
+$destinationRoot = Resolve-ProjectPath -Path $DestinationDir
 
 if (-not (Test-Path -LiteralPath $sourceRoot)) {
     throw "SourceDir not found: $sourceRoot"
@@ -41,7 +62,9 @@ New-Item -ItemType Directory -Path $destinationRoot -Force | Out-Null
 
 $assetNames = @(
     'SpeechKit-Setup.exe',
+    'SpeechKit-Portable.zip',
     'SpeechKit-x64.msi',
+    'SpeechKit.sbom.json',
     'UNSIGNED-WINDOWS-RELEASE.txt'
 )
 
@@ -57,8 +80,12 @@ foreach ($assetName in $assetNames) {
         if (($sourceItem.Extension -in @('.exe', '.msi')) -and $sourceItem.Length -gt $MaxInstallerBytes) {
             throw "$assetName is $($sourceItem.Length) bytes, above the repository mirror limit of $MaxInstallerBytes bytes. Keep it as a release asset only or raise the limit deliberately."
         }
-        if (-not $MetadataOnly) {
+        $copyInMetadataOnly = $assetName -in @('SpeechKit.sbom.json', 'UNSIGNED-WINDOWS-RELEASE.txt')
+        if ((-not $MetadataOnly) -or $copyInMetadataOnly) {
             Copy-Item -LiteralPath $source -Destination $target -Force
+            if ($copyInMetadataOnly -and $sourceItem.Extension -in @('.json', '.txt')) {
+                Write-Utf8NoBomFile -Path $target -Content ([System.IO.File]::ReadAllText($target))
+            }
         }
     }
 }
@@ -89,10 +116,39 @@ if ($RequireInstaller -and -not ($mirroredFiles | Where-Object { $_.name -eq 'Sp
 $checksumLines = foreach ($file in $mirroredFiles) {
     "$($file.sha256) *$($file.name)"
 }
-Set-Content -LiteralPath (Join-Path $destinationRoot 'SHA256SUMS.txt') -Value $checksumLines -Encoding ascii
+Write-Utf8NoBomFile -Path (Join-Path $destinationRoot 'SHA256SUMS.txt') -Content ($checksumLines -join "`n")
 
 if ([string]::IsNullOrWhiteSpace($SourceReleaseUrl) -and -not [string]::IsNullOrWhiteSpace($Version)) {
     $SourceReleaseUrl = "https://github.com/$SourceRepo/releases/tag/$Version"
+}
+
+$manifestPath = Join-Path $destinationRoot 'INSTALLER-MANIFEST.json'
+$mirroredAtUtc = (Get-Date).ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ssZ')
+if (Test-Path -LiteralPath $manifestPath) {
+    try {
+        $existingManifestRaw = Get-Content -LiteralPath $manifestPath -Raw
+        $existingManifest = $existingManifestRaw | ConvertFrom-Json
+        $existingMirroredAtUtc = ''
+        if ($existingManifestRaw -match '"mirrored_at_utc"\s*:\s*"([^"]+)"') {
+            $existingMirroredAtUtc = $Matches[1]
+        }
+        $existingFilesJson = @($existingManifest.files) | ConvertTo-Json -Depth 8 -Compress
+        $newFilesJson = @($mirroredFiles) | ConvertTo-Json -Depth 8 -Compress
+        $sameRelease = (
+            $existingManifest.schema -eq 'speechkit.latest-installer@2' -and
+            $existingManifest.version -eq $Version -and
+            $existingManifest.source_repo -eq $SourceRepo -and
+            $existingManifest.source_release_url -eq $SourceReleaseUrl -and
+            $existingManifest.source_commit -eq $CommitSha -and
+            [int64]$existingManifest.max_installer_bytes -eq $MaxInstallerBytes -and
+            $existingFilesJson -eq $newFilesJson
+        )
+        if ($sameRelease -and $existingMirroredAtUtc -match '^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$') {
+            $mirroredAtUtc = $existingMirroredAtUtc
+        }
+    } catch {
+        $mirroredAtUtc = (Get-Date).ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ssZ')
+    }
 }
 
 $manifest = [ordered]@{
@@ -101,11 +157,11 @@ $manifest = [ordered]@{
     source_repo = $SourceRepo
     source_release_url = $SourceReleaseUrl
     source_commit = $CommitSha
-    mirrored_at_utc = (Get-Date).ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ssZ')
+    mirrored_at_utc = $mirroredAtUtc
     max_installer_bytes = $MaxInstallerBytes
     files = @($mirroredFiles)
 }
-$manifest | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath (Join-Path $destinationRoot 'INSTALLER-MANIFEST.json') -Encoding utf8
+Write-Utf8NoBomFile -Path $manifestPath -Content ($manifest | ConvertTo-Json -Depth 8 -Compress)
 
 $readme = @"
 # Latest Windows Installer
@@ -114,17 +170,18 @@ This directory intentionally mirrors metadata for the current installable
 Windows release. Installer binaries are kept as GitHub Release assets, not as
 tracked source files.
 
-Use `INSTALLER-MANIFEST.json` to find the canonical `download_url`, size, and
-SHA-256 for `SpeechKit-Setup.exe` and `SpeechKit-x64.msi`.
+Use INSTALLER-MANIFEST.json to find the canonical download_url, size, and
+SHA-256 for mirrored release assets such as SpeechKit-Setup.exe,
+SpeechKit-Portable.zip, and optional enterprise artifacts.
 
-The canonical release assets are still the GitHub Release files for `$Version`
-in `$SourceRepo`. Verify local files with `SHA256SUMS.txt` or inspect
-`INSTALLER-MANIFEST.json` for source and hash metadata.
+The canonical release assets are still the GitHub Release files for $Version
+in $SourceRepo. Verify local files with SHA256SUMS.txt or inspect
+INSTALLER-MANIFEST.json for source and hash metadata.
 
-Do not commit generated installers under `release/latest/windows` or `dist/`;
+Do not commit generated installers under release/latest/windows or dist/;
 both are local/generated artifact locations.
 "@
-Set-Content -LiteralPath (Join-Path $destinationRoot 'README.md') -Value $readme -Encoding utf8
+Write-Utf8NoBomFile -Path (Join-Path $destinationRoot 'README.md') -Content $readme
 
 Write-Host "Mirrored installer assets to $destinationRoot"
 foreach ($file in $mirroredFiles) {

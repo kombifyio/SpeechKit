@@ -5,8 +5,7 @@ All notable changes to SpeechKit should be documented in this file.
 The format is based on Keep a Changelog and this project is intended
 to ship under Apache-2.0. Entries are the public-facing summary that
 lands on the GitHub Release page — write them for end users, not for
-maintainers. See [`docs/changelog-style.md`](docs/changelog-style.md)
-for the style guide and template. The linter
+maintainers. The release linter
 (`npm run release:lint -- --version vX.Y.Z`) refuses internal tracker
 IDs, source paths, and other maintainer-only vocabulary.
 
@@ -1512,7 +1511,7 @@ use-cases. No public API breakage from v0.36 — the new pipeline is
 opt-in via two TOML lines.
 
 Detailed walk-through:
-[docs/release-notes/v0.37.0.md](docs/release-notes/v0.37.0.md).
+The v0.37.0 release notes were folded into this changelog.
 
 ### Added
 - Seven new Voice-Companion skills under `internal/assist/skills/voice_companion/`
@@ -1567,7 +1566,7 @@ Gate. Plus two long-open Desktop Runtime Stability tasks closed
 changes from v0.35.x — drop-in upgrade.
 
 Detailed walk-through:
-[docs/release-notes/v0.36.0.md](docs/release-notes/v0.36.0.md).
+The v0.36.0 release notes were folded into this changelog.
 
 ### Added
 - First-run startup now explicitly creates every persistent runtime
@@ -2441,7 +2440,7 @@ customer enables it.
   Voice Agent against bundled Whisper + Gemma. The Linux gate runs
   `install-server.sh --strict-local-only` end-to-end against the same
   three modes through the public REST and WebSocket surfaces. See
-  [docs/server/local-only-guarantee.md](docs/server/local-only-guarantee.md).
+  the local-only server guarantee.
 - **`install-server.sh --strict-local-only` flag**: refuses to write
   the generated `.env` when any cloud provider key (Google, OpenAI,
   Groq, OpenRouter, Hugging Face) is set in the environment. Used by
@@ -2556,7 +2555,7 @@ customer enables it.
   current build still triggers a native crash inside the Wails-alpha
   runtime that is not present in the standalone test runner; the
   sidecar-process pivot tracked under
-  [`kombify-SpeechKit-x3w`](.beads/issues.jsonl) is the next step.
+  the follow-up public readiness issue is the next step.
 
 ## [0.34.4] - 2026-05-17
 

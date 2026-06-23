@@ -3,13 +3,21 @@ package live
 import (
 	"testing"
 	"time"
-
-	"github.com/kombifyio/SpeechKit/internal/testutil"
 )
 
 func waitForCondition(t *testing.T, timeout time.Duration, condition func() bool) {
 	t.Helper()
-	testutil.Eventually(t, timeout, 25*time.Millisecond, condition)
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		if condition() {
+			return
+		}
+		time.Sleep(25 * time.Millisecond)
+	}
+	if condition() {
+		return
+	}
+	t.Fatalf("condition was not met within %s", timeout)
 }
 
 func containsState(states []State, want State) bool {

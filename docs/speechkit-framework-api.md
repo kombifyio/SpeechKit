@@ -1,6 +1,6 @@
 # SpeechKit Framework API
 
-SpeechKit v23 exposes the three product modes as a reusable framework boundary. Host applications can either embed `pkg/speechkit` directly or control the Windows desktop host through the local `/api/v1` control plane.
+SpeechKit v0.46 exposes the three product modes as a reusable framework boundary. Host applications can embed `pkg/speechkit` directly, run real providers in-process, call the self-host server, or control the Windows desktop host through the local `/api/v1` control plane.
 
 ## Mode Contracts
 
@@ -74,7 +74,7 @@ The Windows desktop app remains the reference host and provider/model test bench
 
 ## Embeddable Hands-Free, Wake-Word, TTS, and Events
 
-The v0.40 patch line extends the public SDK surface without breaking the existing mode contracts. `v0.40.1` is the first factual API baseline for these packages, and the current v0.40 rollup keeps the same additive compatibility policy:
+The current beta line keeps these public SDK packages additive against the existing mode contracts:
 
 - `pkg/speechkit/wakeword` exposes wake-word phrase catalogs, detection events, dispatching, detector contracts, and `AutoEndPolicy`.
 - `pkg/speechkit/wakeword/sherpa` adapts sherpa-onnx wake-word detection behind the public detector contracts. Builds without cgo still compile against the public no-cgo surface.
@@ -100,11 +100,10 @@ The CLI also ships Go-only scaffolds for agent-created companions:
 `go-assist-voice-companion`, `go-voice-agent-companion`, and
 `go-dictation-handsfree-ui`.
 
-Release status: shipped in the v0.40.1 SDK-surface merge and carried forward in the current v0.40 rollup. No standalone v0.40.0 tag exists or should be backfilled; public API checks compare the shipped v0.40 surface against the factual release line and keep deprecated public fields compatible through v0.40.x.
+Release status: these SDK packages are part of the current public framework surface. Public API checks keep deprecated public fields compatible within the beta line unless a changelog entry explicitly calls out a breaking change.
 
 Speaker Layer status: the provider-neutral public contracts are implemented in
-the current workspace and tracked for realtime live gates under Beads epic
-`kombify-SpeechKit-spk`. See
+the current beta surface. See
 [`docs/capabilities/voice-capability-matrix.json`](./capabilities/voice-capability-matrix.json)
 for provider support and auth status.
 

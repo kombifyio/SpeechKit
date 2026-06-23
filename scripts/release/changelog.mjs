@@ -142,18 +142,40 @@ function minorKey(version) {
   return `${match[1]}.${match[2]}`
 }
 
+function compareVersionNumbers(a, b) {
+  const parse = value => {
+    const match = /^v?(\d+)\.(\d+)\.(\d+)(?:[-+].*)?$/.exec(String(value).trim())
+    return match ? [Number(match[1]), Number(match[2]), Number(match[3])] : [0, 0, 0]
+  }
+  const left = parse(a)
+  const right = parse(b)
+  for (let index = 0; index < left.length; index += 1) {
+    if (left[index] !== right[index]) {
+      return left[index] > right[index] ? 1 : -1
+    }
+  }
+  return 0
+}
+
 // Like `extractLatestReleaseNotes` but keeps the website anchored to the
 // current minor release line. Publishing a normal 0.30.1 patch does not replace
 // the highlight reel for v0.30, but an explicit `### Highlights` section in a
 // later rollup entry (for example 0.38.7) is allowed to become the public
 // "What is new in v0.38" source.
 export function extractLatestMinorReleaseNotes(markdown, options = {}) {
-  const { limit = 3, fallbackVersion = '0.0.0' } = options
+  const { limit = 3, fallbackVersion = '0.0.0', anchorVersion = '' } = options
   const sections = parseChangelogSections(markdown)
+  const normalizedAnchor = anchorVersion ? normalizeVersion(anchorVersion) : ''
+  const anchorMinorKey = normalizedAnchor ? minorKey(normalizedAnchor) : ''
   const firstVersionedSection = sections.find(section => minorKey(section.version))
-  const currentMinorKey = firstVersionedSection ? minorKey(firstVersionedSection.version) : ''
+  const currentMinorKey = anchorMinorKey || (firstVersionedSection ? minorKey(firstVersionedSection.version) : '')
   const currentMinorSections = currentMinorKey
-    ? sections.filter(section => minorKey(section.version) === currentMinorKey)
+    ? sections.filter(section => {
+        if (minorKey(section.version) !== currentMinorKey) {
+          return false
+        }
+        return !normalizedAnchor || compareVersionNumbers(section.version, normalizedAnchor) <= 0
+      })
     : []
   const latestWithHighlights = currentMinorSections.find(
     section => getSubsectionBody(section.body, 'Highlights'),

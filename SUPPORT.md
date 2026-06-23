@@ -13,7 +13,7 @@ Before opening an issue:
 
 - read [`README.md`](./README.md)
 - read [`CONTRIBUTING.md`](./CONTRIBUTING.md)
-- run the canonical build in [`scripts/build.ps1`](./scripts/build.ps1)
+- run the public verification commands in [`CONTRIBUTING.md`](./CONTRIBUTING.md)
 
 ## What to Include
 
@@ -21,7 +21,8 @@ For technical support, include:
 
 - Windows version
 - SpeechKit version or commit
-- whether you are using local, VPS, or Hugging Face providers
+- whether you are using the Go framework, self-host server, MCP/CLI, or Windows client
+- the selected STT, Assist, Voice Agent, or TTS provider
 - exact reproduction steps
 - logs or screenshots when relevant
 
