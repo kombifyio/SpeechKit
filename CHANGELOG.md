@@ -11,6 +11,30 @@ IDs, source paths, and other maintainer-only vocabulary.
 
 ## [Unreleased]
 
+## [0.46.1] - 2026-06-23
+
+Public SDK and Windows client stabilization patch. No public API change.
+
+### Fixed
+
+- Voice Agent sessions now create a compact session summary automatically when
+  a hold-to-talk dialog ends. SpeechKit prefers an active provider-native or
+  local summary integration and only falls back to a clearly labeled short
+  recap when no summary provider or model is active.
+- Deepgram-backed summary setup is now recognized by the dashboard and settings
+  surfaces, so users are not prompted to download a local model when an active
+  cloud summary integration is already available.
+- Mode toggles in Settings now round-trip through the local control API before
+  persisting UI state. This prevents disabled Dictation, Assist, or Voice Agent
+  hotkeys from staying visually enabled after the runtime rejects a change.
+- Disabled mode shortcuts now show an actionable hint instead of failing
+  silently, including for Voice Agent shortcut presses from the floating panel.
+- Deepgram credential checks now cover the same transcription configuration used
+  at runtime, improving readiness feedback for provider-backed Dictation and
+  Assist profiles.
+- The Voice Agent panel and tray icon now use the current transparent shell and
+  product icon assets consistently on Windows.
+
 ## [0.46.0] - 2026-06-21
 
 Public in-process provider embeddability release. This release opens the real
