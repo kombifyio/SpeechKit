@@ -48,16 +48,40 @@ jobs:
             tag="$(gh release view --repo "$SOURCE_REPO" --json tagName --jq '.tagName')"
           fi
 
+          mapfile -t asset_names < <(gh release view "$tag" --repo "$SOURCE_REPO" --json assets --jq '.assets[].name')
+          required_assets=(
+            "SpeechKit-Setup.exe"
+            "SpeechKit-Portable.zip"
+            "SHA256SUMS.txt"
+            "UNSIGNED-WINDOWS-RELEASE.txt"
+          )
+          missing_assets=()
+          for expected in "${required_assets[@]}"; do
+            if ! printf '%s\n' "${asset_names[@]}" | grep -Fxq "$expected"; then
+              missing_assets+=("$expected")
+            fi
+          done
+          if [ "${#missing_assets[@]}" -gt 0 ]; then
+            printf '::error::Release %s is missing required assets: %s\n' "$tag" "${missing_assets[*]}"
+            exit 1
+          fi
+
           asset_dir="${RUNNER_TEMP}/speechkit-installer-assets"
           rm -rf "$asset_dir"
           mkdir -p "$asset_dir"
 
           gh release download "$tag" --repo "$SOURCE_REPO" --dir "$asset_dir" --pattern 'SpeechKit-Setup.exe' --clobber
+          gh release download "$tag" --repo "$SOURCE_REPO" --dir "$asset_dir" --pattern 'SpeechKit-Portable.zip' --clobber
+          gh release download "$tag" --repo "$SOURCE_REPO" --dir "$asset_dir" --pattern 'UNSIGNED-WINDOWS-RELEASE.txt' --clobber
           gh release download "$tag" --repo "$SOURCE_REPO" --dir "$asset_dir" --pattern 'SpeechKit-x64.msi' --clobber || true
+          gh release download "$tag" --repo "$SOURCE_REPO" --dir "$asset_dir" --pattern 'SpeechKit.sbom.json' --clobber || true
+          source_commit="$(gh api "repos/$SOURCE_REPO/git/ref/tags/$tag" --jq '.object.sha')"
+
           {
             echo "tag=$tag"
             echo "asset_dir=$asset_dir"
             echo "release_url=https://github.com/$SOURCE_REPO/releases/tag/$tag"
+            echo "source_commit=$source_commit"
           } >> "$GITHUB_OUTPUT"
 
       - name: Mirror installer into repository
@@ -68,7 +92,7 @@ jobs:
           -Version '${{ steps.release.outputs.tag }}'
           -SourceRepo 'kombifyio/SpeechKit'
           -SourceReleaseUrl '${{ steps.release.outputs.release_url }}'
-          -CommitSha '${{ github.sha }}'
+          -CommitSha '${{ steps.release.outputs.source_commit }}'
           -RequireInstaller
           -MetadataOnly
 
