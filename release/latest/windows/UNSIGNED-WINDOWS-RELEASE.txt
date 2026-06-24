@@ -1,5 +1,0 @@
-SpeechKit Windows assets in this release were built by the private
-release workflow and are not Authenticode-signed yet. Verify the
-SHA256SUMS.txt checksums before installing. Productive signing must be
-re-enabled by configuring SIGNPATH_* secrets/variables before this
-marker is removed.
