@@ -1,15 +1,17 @@
-# SpeechKit v0.46
+# SpeechKit v0.47
 
 > Agent entrypoint for SpeechKit Server, Framework API, and MCP integration.
 
 SpeechKit is a Windows-first voice framework with three strict modes:
-Dictation, Assist, and Voice Agent. The v0.46 line exposes the real provider
-adapters to Go embedders: in-process STT, TTS, Assist, and Voice Agent packages
-can run without a SpeechKit Server when the host wants local framework
-integration. The self-host Server, Go client, CLI, MCP server, and embeddable
-SDK surfaces remain the public integration paths. Words and Replacements are
-the customization primitives, with Native Templates selected through
-`active_template_ids`.
+Dictation, Assist, and Voice Agent. The v0.47 line professionalizes provider
+switching for Go voice apps: in-process STT, TTS, Assist, and native Voice
+Agent packages can run without a SpeechKit Server when the host wants local
+framework integration. Current realtime baselines are Gemini 3.1 Flash Live,
+Deepgram Flux Voice Agent, AssemblyAI Voice Agent API, OpenAI Realtime, and
+cascaded fallback hosts. AssemblyAI realtime STT defaults to
+`universal-3-5-pro`; `u3-rt-pro` remains a legacy fallback. Words and Replacements
+are the customization primitives, with Native Templates selected through
+`active_template_ids` and provider-native keyterms used where supported.
 Hands-Free is an activation and voice-output layer for those modes, not a
 fourth mode.
 
@@ -47,6 +49,8 @@ Generate a working starter project:
 Embed a Voice Agent into your own app:
 
 - Reference: `examples/voice-agent/game-instructor/` (TOML preset + Go embedder + README).
+- Provider-switching reference: `examples/voice-agent/provider-switching/`
+  (credential-free fake provider, real public descriptors).
 - One prompt: "Build a 15-minute voice-agent game instructor into my app using SpeechKit. Use `pkg/speechkit/client` (CreateVoiceAgentSession + DialVoiceAgent), reuse the persona/role/sequence IDs `game-instructor` / `game-moderator` / `game-flow-15min`, and feed PCM 16 kHz S16LE mono via SendAudio."
 - Server-side: seed the persona/role/sequence via the TOML at `examples/voice-agent/game-instructor/config.toml` and run `speechkit-server` with `GOOGLE_AI_API_KEY` set. Idle timeout caps each session at 15 min by default.
 
@@ -57,6 +61,19 @@ Embed SpeechKit as a Go framework:
 - `speechkit-cli init --template go-assist-voice-companion|go-voice-agent-companion|go-dictation-handsfree-ui`: Go-only starters for single-prompt companion creation.
 - `examples/embed-tts/`: `pkg/speechkit/tts` ProviderKind-aware Router and Service.
 - `examples/embed-event-bus/`: wake, skill, companion, Voice-Agent, and TTS event publication.
+- `examples/voice-agent/provider-switching/`: select provider/profile/model at
+  runtime using `voiceagent/live.ProviderIntent`,
+  `ResolveProviderIntent`, and `DefaultProviderDescriptors`; inspect
+  `SelectedFallbackKind`, `Fallbacks`, and `RejectedProviders` before silently
+  changing provider/model behavior.
+- Server-Target Voice Agent WebSocket `start.provider` accepts `gemini`/`google`,
+  `deepgram`, `assemblyai`, `openai`, and `cascaded`; public profile IDs such as
+  `realtime.google.gemini-native-audio`, `realtime.deepgram.voice-agent`,
+  `realtime.assemblyai.voice-agent`, and `realtime.openai.gpt-realtime-2`
+  normalize to the same provider path.
+- The provider live gate covers Deepgram, AssemblyAI, Gemini, and OpenAI with
+  deterministic gate configs. Missing credentials report `blocked_by_auth` and
+  do not count as live proof.
 
 Component rule: import only the public package you need from
 `github.com/kombifyio/SpeechKit/pkg/speechkit/...`. Use `wakeword` for

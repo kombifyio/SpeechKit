@@ -25,6 +25,20 @@ type WordConfidence struct {
 	EndMs      int64
 }
 
+// CustomizationAction describes a command/snippet/template action produced by
+// Words and Replacements v2. Known command intents can be executed by hosts;
+// unknown intents remain structured metadata for event/API consumers.
+type CustomizationAction struct {
+	ReplacementID string         `json:"replacement_id,omitempty"`
+	Kind          string         `json:"kind,omitempty"`
+	Intent        string         `json:"intent,omitempty"`
+	Text          string         `json:"text,omitempty"`
+	Template      string         `json:"template,omitempty"`
+	Payload       map[string]any `json:"payload,omitempty"`
+	MatchedText   string         `json:"matched_text,omitempty"`
+	Count         int            `json:"count,omitempty"`
+}
+
 // Transcript holds the result of a single transcription call.
 type Transcript struct {
 	Text       string
@@ -35,8 +49,9 @@ type Transcript struct {
 	Confidence float64
 	// Words carries per-word acoustic confidence when available (Deepgram,
 	// AssemblyAI). Used to surface likely-misrecognized terms; nil otherwise.
-	Words    []WordConfidence
-	Speakers *speaker.DiarizationResult
+	Words                []WordConfidence
+	Speakers             *speaker.DiarizationResult
+	CustomizationActions []CustomizationAction `json:"customization_actions,omitempty"`
 }
 
 // LowConfidenceWords returns the distinct word texts whose per-word confidence
@@ -103,6 +118,10 @@ type Submission struct {
 	Prefix       string
 	QuickNote    bool
 	QuickNoteID  int64
+	// QueuedAt is set by TranscriptionWorker.Submit when the segment enters
+	// the worker queue. Hosts can prefill it when replaying externally queued
+	// work, but ordinary callers should leave it zero.
+	QueuedAt time.Time
 }
 
 // Completion describes the outcome of a [TranscriptionRunner.Commit] call.

@@ -463,7 +463,7 @@ func effectiveVoiceAgentProvider(cfg *config.Config) string {
 		return "gemini"
 	}
 	if provider := strings.TrimSpace(cfg.VoiceAgent.Provider); provider != "" {
-		return strings.ToLower(provider)
+		return normalizeVoiceAgentProvider(provider)
 	}
 	return "gemini"
 }
@@ -587,6 +587,8 @@ func mergeServerModelSettings(base, patch config.ServerModelSettings) config.Ser
 	base.Credentials.OpenAI = mergeServerCredentialSetting(base.Credentials.OpenAI, patch.Credentials.OpenAI)
 	base.Credentials.Groq = mergeServerCredentialSetting(base.Credentials.Groq, patch.Credentials.Groq)
 	base.Credentials.Google = mergeServerCredentialSetting(base.Credentials.Google, patch.Credentials.Google)
+	base.Credentials.Deepgram = mergeServerCredentialSetting(base.Credentials.Deepgram, patch.Credentials.Deepgram)
+	base.Credentials.AssemblyAI = mergeServerCredentialSetting(base.Credentials.AssemblyAI, patch.Credentials.AssemblyAI)
 	base.Credentials.HuggingFace = mergeServerCredentialSetting(base.Credentials.HuggingFace, patch.Credentials.HuggingFace)
 	base.Credentials.OpenRouter = mergeServerCredentialSetting(base.Credentials.OpenRouter, patch.Credentials.OpenRouter)
 	if patch.Dictation.Dictionary != nil {
@@ -770,8 +772,19 @@ func activeAssistModeSetting(cfg *config.Config) config.ServerModeSetting {
 }
 
 func activeVoiceAgentModeSetting(cfg *config.Config) config.ServerModeSetting {
-	if effectiveVoiceAgentProvider(cfg) == "gemini" {
-		return config.ServerModeSetting{ProviderKind: "direct_provider", ProfileID: "realtime.google.gemini-native-audio", Model: cfg.VoiceAgent.Model}
+	if cfg == nil {
+		cfg = &config.Config{}
+	}
+	provider := effectiveVoiceAgentProvider(cfg)
+	switch provider {
+	case ProviderGemini:
+		return config.ServerModeSetting{ProviderKind: "direct_provider", ProfileID: "realtime.google.gemini-native-audio", Model: firstNonEmpty(cfg.VoiceAgent.Model, liveDefaultModel(provider))}
+	case ProviderDeepgram:
+		return config.ServerModeSetting{ProviderKind: "direct_provider", ProfileID: "realtime.deepgram.voice-agent", Model: firstNonEmpty(cfg.VoiceAgent.Model, liveDefaultModel(provider))}
+	case ProviderAssemblyAI:
+		return config.ServerModeSetting{ProviderKind: "direct_provider", ProfileID: "realtime.assemblyai.voice-agent", Model: firstNonEmpty(cfg.VoiceAgent.Model, liveDefaultModel(provider))}
+	case ProviderOpenAI:
+		return config.ServerModeSetting{ProviderKind: "direct_provider", ProfileID: "realtime.openai.gpt-realtime-2", Model: firstNonEmpty(cfg.Providers.OpenAI.RealtimeModel, cfg.VoiceAgent.Model, liveDefaultModel(provider))}
 	}
 	return config.ServerModeSetting{ProviderKind: "local_built_in", ProfileID: "realtime.builtin.pipeline", Model: firstNonEmpty(cfg.LocalLLM.AgentModel, cfg.LocalLLM.Model)}
 }
@@ -781,6 +794,8 @@ func activeServerCredentialSettings(cfg *config.Config) config.ServerCredentialS
 		OpenAI:      activeCredential(cfg.Providers.OpenAI.Enabled, cfg.Providers.OpenAI.APIKeyEnv),
 		Groq:        activeCredential(cfg.Providers.Groq.Enabled, cfg.Providers.Groq.APIKeyEnv),
 		Google:      activeCredential(cfg.Providers.Google.Enabled, cfg.Providers.Google.APIKeyEnv),
+		Deepgram:    activeCredential(cfg.Providers.Deepgram.Enabled, cfg.Providers.Deepgram.APIKeyEnv),
+		AssemblyAI:  activeCredential(cfg.Providers.AssemblyAI.Enabled, cfg.Providers.AssemblyAI.APIKeyEnv),
 		HuggingFace: activeCredential(cfg.HuggingFace.Enabled, config.HuggingFaceTokenEnvName(cfg)),
 		OpenRouter:  activeCredential(cfg.Providers.OpenRouter.Enabled, cfg.Providers.OpenRouter.APIKeyEnv),
 	}

@@ -148,6 +148,49 @@ func TestSaveServerModelSettings_DropsWriteOnlyCredentialValues(t *testing.T) {
 	}
 }
 
+func TestApplyServerModelSettings_AppliesDirectVoiceAgentProviders(t *testing.T) {
+	tests := []struct {
+		name            string
+		profileID       string
+		model           string
+		wantProvider    string
+		wantModel       string
+		wantOpenAIModel string
+	}{
+		{name: "gemini", profileID: "realtime.google.gemini-native-audio", model: "gemini-3.1-flash-live-preview", wantProvider: "gemini", wantModel: "gemini-3.1-flash-live-preview"},
+		{name: "deepgram", profileID: "realtime.deepgram.voice-agent", model: "flux-general-multi", wantProvider: "deepgram", wantModel: "flux-general-multi"},
+		{name: "assemblyai", profileID: "realtime.assemblyai.voice-agent", model: "assemblyai-voice-agent", wantProvider: "assemblyai", wantModel: "assemblyai-voice-agent"},
+		{name: "openai", profileID: "realtime.openai.gpt-realtime-2", model: "gpt-realtime-2", wantProvider: "openai", wantOpenAIModel: "gpt-realtime-2"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := defaults()
+			ApplyServerModelSettings(cfg, ServerModelSettings{
+				Modes: ServerModeProviderSettings{
+					VoiceAgent: ServerModeSetting{
+						ProviderKind: "direct_provider",
+						ProfileID:    tt.profileID,
+						Model:        tt.model,
+					},
+				},
+			})
+
+			if cfg.VoiceAgent.Provider != tt.wantProvider {
+				t.Fatalf("VoiceAgent.Provider = %q, want %q", cfg.VoiceAgent.Provider, tt.wantProvider)
+			}
+			if tt.wantOpenAIModel != "" {
+				if cfg.Providers.OpenAI.RealtimeModel != tt.wantOpenAIModel {
+					t.Fatalf("OpenAI realtime model = %q, want %q", cfg.Providers.OpenAI.RealtimeModel, tt.wantOpenAIModel)
+				}
+				return
+			}
+			if cfg.VoiceAgent.Model != tt.wantModel {
+				t.Fatalf("VoiceAgent.Model = %q, want %q", cfg.VoiceAgent.Model, tt.wantModel)
+			}
+		})
+	}
+}
+
 func TestApplyServerModelSettings_AppliesAdminPasswordHash(t *testing.T) {
 	cfg := defaults()
 	settings := ServerModelSettings{
@@ -330,7 +373,7 @@ func TestSaveServerModelSettings_RejectsInvalidSecurityAndProviderSettings(t *te
 			settings: ServerModelSettings{
 				VoiceAgent: ServerVoiceAgentSettings{Provider: "shell"},
 			},
-			want: "voice_agent.provider must be cascaded, gemini, openai, deepgram, or moshi",
+			want: "voice_agent.provider must be cascaded, gemini/google, openai, deepgram, assemblyai, or moshi",
 		},
 		{
 			name: "oversized raw credential value",

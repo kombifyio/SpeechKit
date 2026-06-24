@@ -141,7 +141,11 @@ func (a *Adapter) Run(parent context.Context) {
 		}()
 	}
 
-	a.sendJSON(ctx, StateFrame{Type: MsgState, State: "listening"})
+	a.sendJSON(ctx, StateFrame{
+		Type:             MsgState,
+		EventFrameFields: eventFrameFields(nil, EventSessionReady),
+		State:            "listening",
+	})
 	if stepResolver, ok := a.Persona.(StepResolver); ok {
 		a.flow = NewSequenceRunner(start, cfg, stepResolver)
 	} else {
@@ -177,13 +181,21 @@ func (a *Adapter) Run(parent context.Context) {
 			"session_id", a.Session.ID,
 			"timeout", a.IdleTimeout,
 		)
-		a.sendJSON(ctx, SessionEndFrame{Type: MsgSessionEnd, Reason: "idle"})
+		a.sendJSON(ctx, SessionEndFrame{
+			Type:             MsgSessionEnd,
+			EventFrameFields: eventFrameFields(nil, EventSessionEnd),
+			Reason:           "idle",
+		})
 	case <-maxDuration:
 		slog.Info("voiceagent: session max duration reached; closing",
 			"session_id", a.Session.ID,
 			"max_duration", a.MaxDuration,
 		)
-		a.sendJSON(ctx, SessionEndFrame{Type: MsgSessionEnd, Reason: "max_duration"})
+		a.sendJSON(ctx, SessionEndFrame{
+			Type:             MsgSessionEnd,
+			EventFrameFields: eventFrameFields(nil, EventSessionEnd),
+			Reason:           "max_duration",
+		})
 	}
 	cancel()
 	wg.Wait()
@@ -215,9 +227,9 @@ func (a *Adapter) guardPump(name string, done chan<- struct{}) {
 // default when empty) to a fresh provider instance. Returns the resolved name
 // so the caller can normalise the StartFrame for downstream resolution.
 func (a *Adapter) selectProvider(requested string) (LiveProviderAdapter, string, error) {
-	name := strings.ToLower(strings.TrimSpace(requested))
+	name := normalizeProviderName(requested)
 	if name == "" {
-		name = strings.ToLower(strings.TrimSpace(a.DefaultProvider))
+		name = normalizeProviderName(a.DefaultProvider)
 	}
 	if name == "" {
 		return nil, "", errors.New("no voice agent provider requested and no server default configured")
@@ -233,6 +245,25 @@ func (a *Adapter) selectProvider(requested string) (LiveProviderAdapter, string,
 			" is not available on this server; configured: " + strings.Join(available, ", "))
 	}
 	return factory.NewProvider(), name, nil
+}
+
+func normalizeProviderName(provider string) string {
+	name := strings.ToLower(strings.TrimSpace(provider))
+	name = strings.ReplaceAll(name, "_", "-")
+	switch name {
+	case "google", "gemini", "gemini-live", "google-live", "realtime.google.gemini-native-audio":
+		return "gemini"
+	case "deepgram", "deepgram-agent", "deepgram-live", "realtime.deepgram.voice-agent":
+		return "deepgram"
+	case "assemblyai", "assembly-ai", "assemblyai-agent", "assemblyai-live", "realtime.assemblyai.voice-agent":
+		return "assemblyai"
+	case "openai", "openai-realtime", "openai-live", "realtime.openai.gpt-realtime-2":
+		return "openai"
+	case "cascaded", "local-cascaded", "pipeline", "pipeline-fallback", "voice-agent-cascaded", "voice-agent-cascaded-pipeline":
+		return "cascaded"
+	default:
+		return name
+	}
 }
 
 func (a *Adapter) waitForStart(ctx context.Context) (StartFrame, error) {
@@ -322,7 +353,11 @@ func (a *Adapter) readPump(ctx context.Context, done chan<- struct{}) {
 			case MsgPing:
 				a.sendJSON(ctx, PongFrame{Type: MsgPong})
 			case MsgStop:
-				a.sendJSON(ctx, SessionEndFrame{Type: MsgSessionEnd, Reason: "client"})
+				a.sendJSON(ctx, SessionEndFrame{
+					Type:             MsgSessionEnd,
+					EventFrameFields: eventFrameFields(nil, EventSessionEnd),
+					Reason:           "client",
+				})
 				return
 			case MsgAdvanceStep:
 				var advance AdvanceStepFrame
@@ -380,8 +415,13 @@ func (a *Adapter) writePump(ctx context.Context, done chan<- struct{}) {
 			}
 		}
 		if msg.InputTranscript != "" {
+			eventType := EventInputPartial
+			if msg.InputTranscriptDone {
+				eventType = EventInputFinal
+			}
 			a.sendJSON(ctx, TranscriptFrame{
 				Type:              MsgInputTranscript,
+				EventFrameFields:  eventFrameFields(msg, eventType),
 				Text:              msg.InputTranscript,
 				Done:              msg.InputTranscriptDone,
 				SpeakerLabel:      msg.InputSpeakerLabel,
@@ -394,19 +434,146 @@ func (a *Adapter) writePump(ctx context.Context, done chan<- struct{}) {
 			}
 		}
 		if msg.OutputTranscript != "" {
-			a.sendJSON(ctx, TranscriptFrame{Type: MsgOutputTranscript, Text: msg.OutputTranscript, Done: msg.OutputTranscriptDone})
+			a.sendJSON(ctx, TranscriptFrame{
+				Type:             MsgOutputTranscript,
+				EventFrameFields: eventFrameFields(msg, EventOutputText),
+				Text:             msg.OutputTranscript,
+				Done:             msg.OutputTranscriptDone,
+			})
 		}
 		for _, call := range msg.ToolCalls {
-			a.sendJSON(ctx, ToolCallFrame{Type: MsgToolCall, ID: call.ID, Name: call.Name, Args: call.Args})
+			a.sendJSON(ctx, ToolCallFrame{
+				Type:             MsgToolCall,
+				EventFrameFields: eventFrameFields(msg, EventToolCall),
+				ID:               call.ID,
+				Name:             call.Name,
+				Args:             call.Args,
+			})
 		}
 		if msg.Interrupted {
-			a.sendJSON(ctx, InterruptedFrame{Type: MsgInterrupted})
+			a.sendJSON(ctx, InterruptedFrame{
+				Type:             MsgInterrupted,
+				EventFrameFields: eventFrameFields(msg, EventInterrupted),
+			})
 		}
 		if msg.GoAway {
-			a.sendJSON(ctx, SessionEndFrame{Type: MsgSessionEnd, Reason: "go_away"})
+			a.sendJSON(ctx, SessionEndFrame{
+				Type:             MsgSessionEnd,
+				EventFrameFields: eventFrameFields(msg, EventSessionEnd),
+				Reason:           "go_away",
+			})
 			return
 		}
+		if eventType := standaloneEventType(msg); eventType != "" {
+			a.sendJSON(ctx, EventFrame{
+				Type:             MsgEvent,
+				EventFrameFields: eventFrameFields(msg, eventType),
+			})
+		}
 	}
+}
+
+func standaloneEventType(msg *LiveMessage) string {
+	if msg == nil {
+		return ""
+	}
+	if msg.InputTranscript != "" ||
+		msg.OutputTranscript != "" ||
+		len(msg.ToolCalls) > 0 ||
+		msg.Interrupted ||
+		msg.GoAway {
+		return ""
+	}
+	for _, eventType := range inferServerEventTypes(msg) {
+		if len(msg.Audio) > 0 && eventType == EventOutputAudio {
+			continue
+		}
+		return eventType
+	}
+	return ""
+}
+
+func eventFrameFields(msg *LiveMessage, primary string) EventFrameFields {
+	types := appendEventTypeString(nil, primary)
+	for _, eventType := range inferServerEventTypes(msg) {
+		types = appendEventTypeString(types, eventType)
+	}
+	eventType := strings.TrimSpace(primary)
+	if eventType == "" && len(types) > 0 {
+		eventType = types[0]
+	}
+	return EventFrameFields{
+		EventType:        eventType,
+		EventTypes:       types,
+		ProviderMetadata: copyProviderMetadata(msg),
+	}
+}
+
+func inferServerEventTypes(msg *LiveMessage) []string {
+	if msg == nil {
+		return nil
+	}
+	var out []string
+	out = appendEventTypeString(out, msg.EventType)
+	for _, eventType := range msg.EventTypes {
+		out = appendEventTypeString(out, eventType)
+	}
+	if len(out) > 0 {
+		return out
+	}
+	if msg.GoAway {
+		out = appendEventTypeString(out, EventSessionEnd)
+	}
+	if msg.SessionResumable {
+		out = appendEventTypeString(out, EventSessionResumable)
+	}
+	if msg.Interrupted {
+		out = appendEventTypeString(out, EventInterrupted)
+	}
+	if msg.InputTranscript != "" {
+		if msg.InputTranscriptDone {
+			out = appendEventTypeString(out, EventInputFinal)
+		} else {
+			out = appendEventTypeString(out, EventInputPartial)
+		}
+	}
+	if len(msg.Audio) > 0 {
+		out = appendEventTypeString(out, EventOutputAudio)
+	}
+	if msg.OutputTranscript != "" {
+		out = appendEventTypeString(out, EventOutputText)
+	}
+	if len(msg.ToolCalls) > 0 {
+		out = appendEventTypeString(out, EventToolCall)
+	}
+	if msg.Done {
+		out = appendEventTypeString(out, EventTurnEnd)
+	}
+	return out
+}
+
+func appendEventTypeString(base []string, value string) []string {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return base
+	}
+	for _, existing := range base {
+		if existing == value {
+			return base
+		}
+	}
+	return append(base, value)
+}
+
+func copyProviderMetadata(msg *LiveMessage) map[string]any {
+	if msg == nil || len(msg.ProviderMetadata) == 0 {
+		return nil
+	}
+	out := make(map[string]any, len(msg.ProviderMetadata))
+	for key, value := range msg.ProviderMetadata {
+		out[key] = value
+	}
+	return out
 }
 
 func (a *Adapter) recordUserTurn(ctx context.Context) {

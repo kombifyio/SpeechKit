@@ -2,7 +2,7 @@ package provideropts
 
 const (
 	SchemaProviderOptions = "speechkit.provider_options.v1"
-	ManifestUpdated       = "2026-06-09"
+	ManifestUpdated       = "2026-06-23"
 
 	ModalitySTT        = "stt"
 	ModalityTTS        = "tts"
@@ -23,6 +23,7 @@ func DefaultManifests() []ProviderOptionManifest {
 		openAITTSManifest(),
 		googleTTSManifest(),
 		deepgramVoiceAgentManifest(),
+		assemblyAIVoiceAgentManifest(),
 		geminiVoiceAgentManifest(),
 		openAIVoiceAgentManifest(),
 	}
@@ -47,8 +48,6 @@ func FindManifest(provider, modality string) (ProviderOptionManifest, bool) {
 
 func deepgramSTTManifest() ProviderOptionManifest {
 	return manifest("deepgram", "Deepgram", ModalitySTT, []string{"stt.deepgram.nova-3", "stt.deepgram.nova-3-diarization"}, []OptionSupport{
-		native(OptionLanguage, TypeString, "Language", "language", "https://developers.deepgram.com/docs/language"),
-		native(OptionDetectLanguage, TypeBool, "Detect language", "detect_language", "https://developers.deepgram.com/docs/language-detection"),
 		native(OptionPunctuation, TypeBool, "Punctuation", "punctuate", "https://developers.deepgram.com/docs/punctuation"),
 		native(OptionSmartFormat, TypeBool, "Smart format", "smart_format", "https://developers.deepgram.com/docs/smart-format"),
 		native(OptionDictation, TypeBool, "Dictation punctuation", "dictation", "https://developers.deepgram.com/docs/dictation"),
@@ -97,8 +96,13 @@ func assemblyAISTTManifest() ProviderOptionManifest {
 		native(OptionDetectLanguage, TypeBool, "Detect language", "language_detection", "https://www.assemblyai.com/docs/api-reference/transcripts/submit"),
 		native(OptionPunctuation, TypeBool, "Punctuation", "punctuate", "https://www.assemblyai.com/docs/api-reference/transcripts/submit"),
 		native(OptionSmartFormat, TypeBool, "Format text", "format_text", "https://www.assemblyai.com/docs/api-reference/transcripts/submit"),
+		native(OptionContextPrompt, TypeString, "Context prompt", "prompt", "https://www.assemblyai.com/docs/streaming/prompting-and-keyterms"),
+		native(OptionPrivacyRedaction, TypeBool, "PII redaction", "redact_pii", "https://www.assemblyai.com/docs/pre-recorded-audio/pii-redaction"),
+		native(OptionVoiceFocus, TypeBool, "Voice focus", "voice_focus", "https://www.assemblyai.com/docs/speech-to-text/voice-focus"),
+		native(OptionMedicalDomain, TypeBool, "Medical domain", "domain=medical-v1", "https://www.assemblyai.com/blog/introducing-medical-mode"),
 		native(OptionSpeakerDiarization, TypeBool, "Speaker labels", "speaker_labels", "https://www.assemblyai.com/docs/pre-recorded-audio/label-speakers"),
-		unsupported(OptionKeyterms, TypeStringList, "Native keyterms", "No SpeechKit AssemblyAI native keyterm mapping is wired yet."),
+		native(OptionVocabularyBias, TypeBool, "Use keyterms prompting", "keyterms_prompt", "https://www.assemblyai.com/docs/pre-recorded-audio/universal-3-pro/prompting"),
+		native(OptionKeyterms, TypeStringList, "Native keyterms", "keyterms_prompt", "https://www.assemblyai.com/docs/pre-recorded-audio/universal-3-pro/prompting"),
 		unsupported(OptionEndpointingMs, TypeInt, "Endpointing", "Pre-recorded transcription has no endpointing control."),
 	})
 }
@@ -160,9 +164,36 @@ func googleTTSManifest() ProviderOptionManifest {
 func deepgramVoiceAgentManifest() ProviderOptionManifest {
 	return manifest("deepgram", "Deepgram Voice Agent", ModalityVoiceAgent, []string{"realtime.deepgram.voice-agent"}, []OptionSupport{
 		native(OptionLanguage, TypeString, "Language", "agent.language", "https://developers.deepgram.com/docs/voice-agent-settings"),
+		native(OptionLanguageHints, TypeStringList, "Language hints", "agent.listen.provider.language_hints", "https://developers.deepgram.com/docs/multilingual-voice-agent"),
 		native(OptionKeyterms, TypeStringList, "Listen keyterms", "agent.listen.provider.keyterms", "https://developers.deepgram.com/docs/voice-agent-settings"),
 		native(OptionVoice, TypeString, "Speak model", "agent.speak.provider.model", "https://developers.deepgram.com/docs/voice-agent-settings"),
+		native(OptionContextPrompt, TypeString, "Context prompt", "agent.think.prompt", "https://developers.deepgram.com/docs/voice-agent-settings"),
 		derived(OptionTurnDetection, TypeBool, "Turn detection", "Deepgram Voice Agent performs endpointing server-side.", "https://developers.deepgram.com/docs/voice-agent-settings"),
+		unsupported(OptionResume, TypeBool, "Session resume", "Deepgram Voice Agent resume is not exposed through the current SpeechKit adapter."),
+		unsupported(OptionPrivacyRedaction, TypeBool, "PII redaction", "Deepgram Voice Agent redaction is not exposed through the current SpeechKit adapter."),
+		unsupported(OptionVoiceFocus, TypeBool, "Voice focus", "Deepgram Voice Agent has no AssemblyAI-style voice_focus switch in SpeechKit."),
+		unsupported(OptionMedicalDomain, TypeBool, "Medical domain", "Deepgram medical-domain routing is not exposed through the current SpeechKit Voice Agent adapter."),
+		unsupported(OptionReasoningEffort, TypeString, "Reasoning effort", "Deepgram Voice Agent reasoning is controlled by the configured think provider/model."),
+		unsupported(OptionTranslation, TypeBool, "Translation", "Realtime translation is not exposed through the current SpeechKit Deepgram adapter."),
+		unsupported(OptionTranscriptionOnly, TypeBool, "Transcription only", "Use Deepgram STT/Flux, not the full Voice Agent adapter, for transcription-only hosts."),
+	})
+}
+
+func assemblyAIVoiceAgentManifest() ProviderOptionManifest {
+	return manifest("assemblyai", "AssemblyAI Voice Agent", ModalityVoiceAgent, []string{"realtime.assemblyai.voice-agent"}, []OptionSupport{
+		native(OptionKeyterms, TypeStringList, "Input keyterms", "session.input.keyterms", "https://www.assemblyai.com/docs/voice-agents/voice-agent-api/session-configuration"),
+		native(OptionVoice, TypeString, "Voice", "session.output.voice", "https://www.assemblyai.com/docs/voice-agents/voice-agent-api/session-configuration"),
+		native(OptionTurnDetection, TypeBool, "Turn detection", "session.input.turn_detection", "https://www.assemblyai.com/docs/voice-agents/voice-agent-api/session-configuration"),
+		native(OptionContextPrompt, TypeString, "Context prompt", "session.system_prompt", "https://www.assemblyai.com/docs/voice-agents/voice-agent-api/session-configuration"),
+		native(OptionResume, TypeBool, "Session resume", "session.resume", "https://www.assemblyai.com/docs/voice-agents/voice-agent-api/events-reference"),
+		derived(OptionLanguage, TypeString, "Language", "AssemblyAI Voice Agent infers language from audio and prompt context.", "https://www.assemblyai.com/docs/voice-agents/voice-agent-api"),
+		unsupported(OptionLanguageHints, TypeStringList, "Language hints", "AssemblyAI Voice Agent uses audio and prompt context rather than explicit language_hints."),
+		unsupported(OptionPrivacyRedaction, TypeBool, "PII redaction", "AssemblyAI Voice Agent PII redaction is not exposed through the current SpeechKit adapter."),
+		unsupported(OptionVoiceFocus, TypeBool, "Voice focus", "AssemblyAI Voice Agent voice_focus is not exposed through the current SpeechKit adapter."),
+		unsupported(OptionMedicalDomain, TypeBool, "Medical domain", "AssemblyAI Voice Agent medical-domain routing is not exposed through the current SpeechKit adapter."),
+		unsupported(OptionReasoningEffort, TypeString, "Reasoning effort", "AssemblyAI Voice Agent reasoning is controlled by its session configuration and prompt."),
+		unsupported(OptionTranslation, TypeBool, "Translation", "Realtime translation is not exposed through the current SpeechKit AssemblyAI adapter."),
+		unsupported(OptionTranscriptionOnly, TypeBool, "Transcription only", "Use AssemblyAI streaming STT, not the full Voice Agent adapter, for transcription-only hosts."),
 	})
 }
 
@@ -171,6 +202,15 @@ func geminiVoiceAgentManifest() ProviderOptionManifest {
 		derived(OptionLanguage, TypeString, "Language", "SpeechKit injects locale guidance into the system instruction.", "https://ai.google.dev/gemini-api/docs/live-guide"),
 		native(OptionVoice, TypeString, "Voice", "speechConfig.voiceConfig", "https://ai.google.dev/gemini-api/docs/live-guide"),
 		native(OptionTurnDetection, TypeBool, "Turn detection", "realtimeInputConfig.automaticActivityDetection", "https://ai.google.dev/gemini-api/docs/live-guide"),
+		native(OptionContextPrompt, TypeString, "Context prompt", "systemInstruction", "https://ai.google.dev/gemini-api/docs/live-guide"),
+		native(OptionReasoningEffort, TypeString, "Reasoning effort", "thinkingConfig.thinkingLevel", "https://ai.google.dev/gemini-api/docs/live-api/capabilities"),
+		native(OptionResume, TypeBool, "Session resume", "sessionResumption", "https://ai.google.dev/gemini-api/docs/live-api/capabilities"),
+		unsupported(OptionLanguageHints, TypeStringList, "Language hints", "Gemini Live uses prompt/locale guidance rather than native language_hints."),
+		unsupported(OptionPrivacyRedaction, TypeBool, "PII redaction", "Gemini Live PII redaction is not exposed through the current SpeechKit adapter."),
+		unsupported(OptionVoiceFocus, TypeBool, "Voice focus", "Gemini Live has no AssemblyAI-style voice_focus switch."),
+		unsupported(OptionMedicalDomain, TypeBool, "Medical domain", "Gemini Live medical-domain routing is not exposed through the current SpeechKit adapter."),
+		unsupported(OptionTranslation, TypeBool, "Translation", "Realtime translation is not exposed through the current SpeechKit Gemini adapter."),
+		unsupported(OptionTranscriptionOnly, TypeBool, "Transcription only", "Gemini Live transcription-only sessions are not exposed through the current SpeechKit adapter."),
 	})
 }
 
@@ -180,6 +220,15 @@ func openAIVoiceAgentManifest() ProviderOptionManifest {
 		native(OptionTurnDetection, TypeBool, "Turn detection", "audio.input.turn_detection", "https://platform.openai.com/docs/guides/realtime"),
 		native(OptionEndpointingMs, TypeInt, "Silence duration", "silence_duration_ms", "https://platform.openai.com/docs/guides/realtime"),
 		native(OptionDetectLanguage, TypeBool, "Input transcription", "audio.input.transcription", "https://platform.openai.com/docs/guides/realtime-transcription"),
+		native(OptionContextPrompt, TypeString, "Context prompt", "instructions", "https://platform.openai.com/docs/guides/realtime"),
+		native(OptionReasoningEffort, TypeString, "Reasoning effort", "reasoning.effort", "https://platform.openai.com/docs/guides/realtime-models-prompting"),
+		unsupported(OptionLanguageHints, TypeStringList, "Language hints", "OpenAI Realtime language hints are not exposed through the current SpeechKit adapter."),
+		unsupported(OptionResume, TypeBool, "Session resume", "OpenAI Realtime resumable reconnect is not exposed through the current SpeechKit adapter."),
+		unsupported(OptionPrivacyRedaction, TypeBool, "PII redaction", "OpenAI Realtime PII redaction is not exposed through the current SpeechKit adapter."),
+		unsupported(OptionVoiceFocus, TypeBool, "Voice focus", "OpenAI Realtime has no AssemblyAI-style voice_focus switch."),
+		unsupported(OptionMedicalDomain, TypeBool, "Medical domain", "OpenAI Realtime medical-domain routing is not exposed through the current SpeechKit adapter."),
+		unsupported(OptionTranslation, TypeBool, "Translation", "Realtime translation is not exposed through the current SpeechKit OpenAI adapter."),
+		unsupported(OptionTranscriptionOnly, TypeBool, "Transcription only", "OpenAI transcription-only Realtime sessions are not exposed through the current SpeechKit adapter."),
 	})
 }
 

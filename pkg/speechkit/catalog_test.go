@@ -102,6 +102,107 @@ func TestLocalBuiltInAssistUsesConcreteGemmaGGUFModel(t *testing.T) {
 	t.Fatal("local built-in assist profile missing")
 }
 
+func TestV47RealtimeProviderCatalogUsesCurrentModelBaselines(t *testing.T) {
+	profiles := map[string]ProviderProfile{}
+	for _, profile := range ProfilesForMode(ModeVoiceAgent) {
+		profiles[profile.ID] = profile
+	}
+
+	if got := profiles["realtime.google.gemini-native-audio"].ModelID; got != ModelGemini31FlashLivePreview {
+		t.Fatalf("Gemini Live model = %q, want %q", got, ModelGemini31FlashLivePreview)
+	}
+	if got := profiles["realtime.deepgram.voice-agent"].ModelID; got != ModelDeepgramFluxGeneralMulti+"+aura-2" {
+		t.Fatalf("Deepgram Voice Agent model = %q, want Flux listen baseline", got)
+	}
+	for _, id := range []string{
+		"realtime.assemblyai.voice-agent",
+		"realtime.openai.gpt-realtime-2",
+	} {
+		profile, ok := profiles[id]
+		if !ok {
+			t.Fatalf("%s missing from realtime voice catalog", id)
+		}
+		if !profile.HasCapability(CapabilityRealtimeAudio) {
+			t.Fatalf("%s missing realtime audio capability", id)
+		}
+	}
+}
+
+func TestRealtimeProviderCatalogCarriesInterchangeabilityMetadata(t *testing.T) {
+	cases := map[string]struct {
+		provider     string
+		lifecycle    ModelLifecycle
+		capabilities []Capability
+	}{
+		"realtime.google.gemini-native-audio": {
+			provider:     "google",
+			lifecycle:    ModelLifecyclePreview,
+			capabilities: []Capability{CapabilityNativeContextPrompt, CapabilityReasoningEffort},
+		},
+		"realtime.deepgram.voice-agent": {
+			provider:     "deepgram",
+			lifecycle:    ModelLifecycleGA,
+			capabilities: []Capability{CapabilityNativeKeyterms, CapabilityLanguageHints},
+		},
+		"realtime.assemblyai.voice-agent": {
+			provider:     "assemblyai",
+			lifecycle:    ModelLifecycleGA,
+			capabilities: []Capability{CapabilityNativeKeyterms, CapabilitySessionResume},
+		},
+		"realtime.openai.gpt-realtime-2": {
+			provider:     "openai",
+			lifecycle:    ModelLifecycleGA,
+			capabilities: []Capability{CapabilityReasoningEffort, CapabilityTranscriptionOnly},
+		},
+	}
+
+	profiles := map[string]ProviderProfile{}
+	for _, profile := range ProfilesForMode(ModeVoiceAgent) {
+		profiles[profile.ID] = profile
+	}
+	for profileID, tc := range cases {
+		profile, ok := profiles[profileID]
+		if !ok {
+			t.Fatalf("missing realtime profile %q", profileID)
+		}
+		if profile.Provider != tc.provider {
+			t.Fatalf("%s provider = %q, want %q", profileID, profile.Provider, tc.provider)
+		}
+		if profile.Lifecycle != tc.lifecycle {
+			t.Fatalf("%s lifecycle = %q, want %q", profileID, profile.Lifecycle, tc.lifecycle)
+		}
+		if profile.AuthRequirement != "api_key" || profile.Transport != "websocket" || profile.EvidenceURL == "" {
+			t.Fatalf("%s metadata incomplete: auth=%q transport=%q evidence=%q", profileID, profile.AuthRequirement, profile.Transport, profile.EvidenceURL)
+		}
+		if len(profile.NativeOptions) == 0 {
+			t.Fatalf("%s native options missing", profileID)
+		}
+		for _, capability := range tc.capabilities {
+			if !profile.HasCapability(capability) {
+				t.Fatalf("%s missing capability %q", profileID, capability)
+			}
+		}
+	}
+}
+
+func TestDefaultModelRegistryRowsResolveToPublicCatalog(t *testing.T) {
+	profiles := map[string]ProviderProfile{}
+	for _, profile := range DefaultProviderProfiles() {
+		profiles[profile.ID] = profile
+	}
+	for _, descriptor := range DefaultModelRegistry() {
+		if descriptor.ModelID == "" || descriptor.Provider == "" || descriptor.SourceURL == "" {
+			t.Fatalf("invalid descriptor row: %#v", descriptor)
+		}
+		if descriptor.ProfileID == "" {
+			continue
+		}
+		if _, ok := profiles[descriptor.ProfileID]; !ok {
+			t.Fatalf("descriptor %s/%s references missing profile %q", descriptor.Provider, descriptor.ModelID, descriptor.ProfileID)
+		}
+	}
+}
+
 func TestFrameworkCatalogDoesNotImportDesktopInternals(t *testing.T) {
 	body, err := os.ReadFile("catalog.go")
 	if err != nil {

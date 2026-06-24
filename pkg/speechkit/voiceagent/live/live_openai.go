@@ -70,6 +70,10 @@ func NewOpenAILive() *OpenAILive {
 // Name identifies the provider in Voice Agent logs.
 func (p *OpenAILive) Name() string { return "openai-realtime" }
 
+func (p *OpenAILive) SessionCapabilities() SessionCapabilities {
+	return sessionCapabilitiesForProvider("openai")
+}
+
 // Connect dials the OpenAI Realtime WebSocket, sends the configured
 // instructions/voice/tools as a session.update, and waits for the
 // session.updated acknowledgement before returning.
@@ -343,6 +347,7 @@ func (p *OpenAILive) sendSessionUpdate(ctx context.Context, cfg LiveConfig) erro
 		return errors.New("openai realtime: not connected")
 	}
 
+	resolved := ResolveLiveOptions("openai", "realtime.openai.gpt-realtime-2", cfg, nil, nil)
 	instructions := strings.TrimSpace(cfg.FrameworkPrompt)
 	if refinement := strings.TrimSpace(cfg.RefinementPrompt); refinement != "" {
 		if instructions == "" {
@@ -351,6 +356,7 @@ func (p *OpenAILive) sendSessionUpdate(ctx context.Context, cfg LiveConfig) erro
 			instructions = instructions + "\n\n" + refinement
 		}
 	}
+	instructions = appendContextPrompt(instructions, resolved.ContextPrompt)
 
 	session := buildOpenAISession(cfg)
 	session["instructions"] = instructions
@@ -416,6 +422,9 @@ func buildOpenAISession(cfg LiveConfig) map[string]any {
 	if tools := buildOpenAITools(cfg.Tools); len(tools) > 0 {
 		session["tools"] = tools
 		session["tool_choice"] = "auto"
+	}
+	if effort := strings.TrimSpace(resolved.ReasoningEffort); effort != "" {
+		session["reasoning"] = map[string]any{"effort": effort}
 	}
 	return session
 }
@@ -570,7 +579,7 @@ func (p *OpenAILive) parseEvent(data []byte) (*LiveMessage, bool, error) {
 	case "input_audio_buffer.speech_started":
 		// User started speaking — used by the kernel state machine for
 		// barge-in / interruption detection.
-		return &LiveMessage{Interrupted: true}, false, nil
+		return normalizeLiveMessageEvents(&LiveMessage{EventType: LiveEventInterrupted, Interrupted: true}, env.Type), false, nil
 	case "input_audio_buffer.speech_stopped":
 		return nil, true, nil
 	case "conversation.item.input_audio_transcription.delta":
@@ -578,13 +587,20 @@ func (p *OpenAILive) parseEvent(data []byte) (*LiveMessage, bool, error) {
 			Delta string `json:"delta"`
 		}
 		_ = json.Unmarshal(data, &ev)
-		return &LiveMessage{InputTranscript: ev.Delta}, false, nil
+		return normalizeLiveMessageEvents(&LiveMessage{
+			EventType:       LiveEventInputPartial,
+			InputTranscript: ev.Delta,
+		}, env.Type), false, nil
 	case "conversation.item.input_audio_transcription.completed":
 		var ev struct {
 			Transcript string `json:"transcript"`
 		}
 		_ = json.Unmarshal(data, &ev)
-		return &LiveMessage{InputTranscript: ev.Transcript, InputTranscriptDone: true}, false, nil
+		return normalizeLiveMessageEvents(&LiveMessage{
+			EventType:           LiveEventInputFinal,
+			InputTranscript:     ev.Transcript,
+			InputTranscriptDone: true,
+		}, env.Type), false, nil
 	case "response.audio.delta", "response.output_audio.delta":
 		var ev struct {
 			Delta string `json:"delta"`
@@ -596,7 +612,7 @@ func (p *OpenAILive) parseEvent(data []byte) (*LiveMessage, bool, error) {
 		if err != nil {
 			return nil, false, fmt.Errorf("openai realtime: decode audio bytes: %w", err)
 		}
-		return &LiveMessage{Audio: audio}, false, nil
+		return normalizeLiveMessageEvents(&LiveMessage{EventType: LiveEventOutputAudio, Audio: audio}, env.Type), false, nil
 	case "response.audio.done", "response.output_audio.done":
 		// End-of-audio for this response — the server still owes us a
 		// response.done, which is where we signal turn completion to the
@@ -607,25 +623,41 @@ func (p *OpenAILive) parseEvent(data []byte) (*LiveMessage, bool, error) {
 			Delta string `json:"delta"`
 		}
 		_ = json.Unmarshal(data, &ev)
-		return &LiveMessage{OutputTranscript: ev.Delta}, false, nil
+		return normalizeLiveMessageEvents(&LiveMessage{
+			EventType:        LiveEventOutputText,
+			OutputTranscript: ev.Delta,
+		}, env.Type), false, nil
 	case "response.audio_transcript.done", "response.output_audio_transcript.done":
 		var ev struct {
 			Transcript string `json:"transcript"`
 		}
 		_ = json.Unmarshal(data, &ev)
-		return &LiveMessage{OutputTranscript: ev.Transcript, OutputTranscriptDone: true}, false, nil
+		return normalizeLiveMessageEvents(&LiveMessage{
+			EventType:            LiveEventOutputText,
+			OutputTranscript:     ev.Transcript,
+			OutputTranscriptDone: true,
+		}, env.Type), false, nil
 	case "response.text.delta", "response.output_text.delta":
 		var ev struct {
 			Delta string `json:"delta"`
 		}
 		_ = json.Unmarshal(data, &ev)
-		return &LiveMessage{Text: ev.Delta, OutputTranscript: ev.Delta}, false, nil
+		return normalizeLiveMessageEvents(&LiveMessage{
+			EventType:        LiveEventOutputText,
+			Text:             ev.Delta,
+			OutputTranscript: ev.Delta,
+		}, env.Type), false, nil
 	case "response.output_text.done":
 		var ev struct {
 			Text string `json:"text"`
 		}
 		_ = json.Unmarshal(data, &ev)
-		return &LiveMessage{Text: ev.Text, OutputTranscript: ev.Text, OutputTranscriptDone: true}, false, nil
+		return normalizeLiveMessageEvents(&LiveMessage{
+			EventType:            LiveEventOutputText,
+			Text:                 ev.Text,
+			OutputTranscript:     ev.Text,
+			OutputTranscriptDone: true,
+		}, env.Type), false, nil
 	case "response.function_call_arguments.done":
 		var ev struct {
 			CallID    string `json:"call_id"`
@@ -641,15 +673,16 @@ func (p *OpenAILive) parseEvent(data []byte) (*LiveMessage, bool, error) {
 				slog.Warn("openai realtime: function call arguments not valid JSON", "name", ev.Name, "raw", ev.Arguments)
 			}
 		}
-		return &LiveMessage{
+		return normalizeLiveMessageEvents(&LiveMessage{
+			EventType: LiveEventToolCall,
 			ToolCalls: []ToolCall{{
 				ID:   ev.CallID,
 				Name: ev.Name,
 				Args: args,
 			}},
-		}, false, nil
+		}, env.Type), false, nil
 	case "response.done":
-		return &LiveMessage{Done: true}, false, nil
+		return normalizeLiveMessageEvents(&LiveMessage{EventType: LiveEventTurnEnd, Done: true}, env.Type), false, nil
 	case "error":
 		var ev struct {
 			Error struct {

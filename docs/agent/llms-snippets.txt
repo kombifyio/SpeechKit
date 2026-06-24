@@ -41,6 +41,7 @@ import (
     "github.com/kombifyio/SpeechKit/pkg/speechkit/assist"
     "github.com/kombifyio/SpeechKit/pkg/speechkit/companion"
     "github.com/kombifyio/SpeechKit/pkg/speechkit/tts"
+    "github.com/kombifyio/SpeechKit/pkg/speechkit/voiceagent/live"
     "github.com/kombifyio/SpeechKit/pkg/speechkit/wakeword"
 )
 ```
@@ -51,6 +52,23 @@ one-shot utilities/LLM, `companion` for Hands-Free composition, and
 `internal/*`. For a new Go companion, start with `speechkit-cli init --template
 go-assist-voice-companion`, `go-voice-agent-companion`, or
 `go-dictation-handsfree-ui`.
+
+For native Voice Agent provider switching, read
+`live.DefaultProviderDescriptors()` and prefer `live.ResolveProviderIntent`
+when the host has capability requirements such as realtime audio, tool calls,
+native keyterms, session resume, or reasoning effort. Pass the resulting
+`ResolvedProviderPlan.LiveConfig()` to `live.NewProviderForConfig`. The
+credential-free example is `examples/voice-agent/provider-switching`; run it
+with `-provider auto -preferred openai,assemblyai -require-native-keyterms` to
+see structured cross-provider fallback and rejected-provider diagnostics.
+
+For Server-Target Voice Agent sessions, set the WebSocket start-frame
+`provider` to `gemini`/`google`, `deepgram`, `assemblyai`, `openai`, or
+`cascaded`. Public profile IDs such as `realtime.google.gemini-native-audio` and
+`realtime.assemblyai.voice-agent` normalize to the same server provider paths.
+The credential-gated provider-live workflow covers Deepgram, AssemblyAI, Gemini,
+and OpenAI; missing secrets must report `blocked_by_auth` rather than a false
+pass.
 
 ## Assist Voice Companion prompt
 
@@ -194,11 +212,11 @@ ws.onmessage = async (event) => {
 };
 ```
 
-The AsyncAPI 3.0 schema for every frame type is at
+The AsyncAPI 3.1 schema for every frame type is at
 <https://speechkit.cc/api/asyncapi.v1.yaml>. The full set:
 
 - Client to server: `start`, `text`, `tool_response`, `audio_end`, `ping`, `stop`, `advance_step`, plus binary PCM 16 kHz S16 mono.
-- Server to client: `state`, `input_transcript`, `output_transcript`, `tool_call`, `sequence_step`, `interrupted`, `error`, `session_end`, `pong`, plus binary PCM 24 kHz S16 mono.
+- Server to client: `state`, `input_transcript`, `output_transcript`, `tool_call`, `sequence_step`, `event`, `interrupted`, `error`, `session_end`, `pong`, plus binary PCM 24 kHz S16 mono. Semantic server frames may include `event_type`, `event_types`, and `provider_metadata`.
 
 ## Voice Agent custom tools (Go, agentkit)
 

@@ -95,9 +95,10 @@ func (o *fakeObserver) hasLog(message string) bool {
 }
 
 type fakeCollector struct {
-	feedErr  error
-	segments []dictationSegment
-	fedPCM   [][]byte
+	feedErr       error
+	segments      []dictationSegment
+	readySegments []dictationSegment
+	fedPCM        [][]byte
 }
 
 type dictationSegment struct {
@@ -116,6 +117,23 @@ func (c *fakeCollector) CollectStopSegments(_ []byte) ([]AudioSegment, error) {
 		segments = append(segments, AudioSegment{PCM: segment.pcm, Paragraph: segment.paragraph})
 	}
 	return segments, nil
+}
+
+func (c *fakeCollector) DrainReadySegments() []AudioSegment {
+	segments := make([]AudioSegment, 0, len(c.readySegments))
+	for _, segment := range c.readySegments {
+		segments = append(segments, AudioSegment{PCM: segment.pcm, Paragraph: segment.paragraph})
+	}
+	c.readySegments = nil
+	return segments
+}
+
+func makePCMForDuration(d time.Duration) []byte {
+	if d <= 0 {
+		return nil
+	}
+	const bytesPerSecond = 16000 * 2
+	return make([]byte, int(d.Seconds()*bytesPerSecond))
 }
 
 func TestRecordingControllerStartStopSubmitsSegments(t *testing.T) {
@@ -223,6 +241,167 @@ func TestRecordingControllerTranscribesFullCaptureByDefault(t *testing.T) {
 	}
 }
 
+func TestRecordingControllerStreamsReadySegmentsBeforeStop(t *testing.T) {
+	full := []byte(strings.Repeat("z", 6400))
+	readyPCM := []byte(strings.Repeat("a", 6400))
+	recorder := &fakeRecorder{stopPCM: full}
+	submitter := &fakeSubmitter{}
+	collector := &fakeCollector{readySegments: []dictationSegment{
+		{pcm: readyPCM, paragraph: true},
+	}}
+	controller := NewRecordingController(recorder, submitter, &fakeObserver{}, func() SegmentCollector {
+		return collector
+	})
+
+	if err := controller.Start(RecordingStartOptions{
+		Language:       "de",
+		QuickNote:      true,
+		QuickNoteID:    99,
+		Target:         "editor",
+		StreamSegments: true,
+	}); err != nil {
+		t.Fatalf("Start() error = %v", err)
+	}
+	if recorder.pcmHandler == nil {
+		t.Fatal("recorder PCM handler was not installed")
+	}
+	recorder.pcmHandler([]byte("frame"))
+
+	if len(submitter.jobs) != 1 {
+		t.Fatalf("jobs before Stop = %d, want 1 streamed segment", len(submitter.jobs))
+	}
+	job := submitter.jobs[0]
+	if got, want := string(job.PCM), string(readyPCM); got != want {
+		t.Fatalf("streamed job PCM = %q, want ready segment", got)
+	}
+	if len(job.Segments) != 0 {
+		t.Fatalf("streamed job nested segments = %d, want 0", len(job.Segments))
+	}
+	if got, want := job.Prefix, "\n\n"; got != want {
+		t.Fatalf("streamed job prefix = %q, want paragraph prefix", got)
+	}
+	if got, want := job.Language, "de"; got != want {
+		t.Fatalf("streamed job language = %q, want %q", got, want)
+	}
+	if got, want := job.QuickNoteID, int64(99); got != want {
+		t.Fatalf("streamed job quick note id = %d, want %d", got, want)
+	}
+	if got, want := job.Target, any("editor"); got != want {
+		t.Fatalf("streamed job target = %v, want %v", got, want)
+	}
+
+	if err := controller.Stop(RecordingStopOptions{Label: "Captured"}); err != nil {
+		t.Fatalf("Stop() error = %v", err)
+	}
+	if len(submitter.jobs) != 1 {
+		t.Fatalf("jobs after Stop = %d, want no full-capture duplicate", len(submitter.jobs))
+	}
+}
+
+func TestRecordingControllerDoesNotStreamReadySegmentsWithoutStartOption(t *testing.T) {
+	full := []byte(strings.Repeat("z", 6400))
+	readyPCM := []byte(strings.Repeat("a", 6400))
+	recorder := &fakeRecorder{stopPCM: full}
+	submitter := &fakeSubmitter{}
+	collector := &fakeCollector{readySegments: []dictationSegment{
+		{pcm: readyPCM},
+	}}
+	controller := NewRecordingController(recorder, submitter, &fakeObserver{}, func() SegmentCollector {
+		return collector
+	})
+
+	if err := controller.Start(RecordingStartOptions{Language: "de"}); err != nil {
+		t.Fatalf("Start() error = %v", err)
+	}
+	if recorder.pcmHandler == nil {
+		t.Fatal("recorder PCM handler was not installed")
+	}
+	recorder.pcmHandler([]byte("frame"))
+
+	if got := len(submitter.jobs); got != 0 {
+		t.Fatalf("jobs before Stop = %d, want no streamed segment", got)
+	}
+	if err := controller.Stop(RecordingStopOptions{Label: "Captured"}); err != nil {
+		t.Fatalf("Stop() error = %v", err)
+	}
+	if got := len(submitter.jobs); got != 1 {
+		t.Fatalf("jobs after Stop = %d, want full-capture job", got)
+	}
+}
+
+func TestRecordingControllerRetainsReadySegmentWhenQueueFull(t *testing.T) {
+	readyPCM := []byte(strings.Repeat("a", 6400))
+	recorder := &fakeRecorder{stopPCM: []byte(strings.Repeat("z", 6400))}
+	submitter := &fakeSubmitter{err: ErrWorkerQueueFull}
+	observer := &fakeObserver{}
+	collector := &fakeCollector{readySegments: []dictationSegment{
+		{pcm: readyPCM},
+	}}
+	controller := NewRecordingController(recorder, submitter, observer, func() SegmentCollector {
+		return collector
+	})
+
+	if err := controller.Start(RecordingStartOptions{Language: "de", StreamSegments: true}); err != nil {
+		t.Fatalf("Start() error = %v", err)
+	}
+	if recorder.pcmHandler == nil {
+		t.Fatal("recorder PCM handler was not installed")
+	}
+	recorder.pcmHandler([]byte("frame"))
+	if got := len(submitter.jobs); got != 0 {
+		t.Fatalf("jobs after full queue = %d, want 0", got)
+	}
+	if !observer.hasLog("segment retained for retry") {
+		t.Fatalf("observer logs = %v, want retained segment warning", observer.logs)
+	}
+
+	submitter.err = nil
+	recorder.pcmHandler([]byte("retry"))
+	if got := len(submitter.jobs); got != 1 {
+		t.Fatalf("jobs after retry = %d, want retained segment submitted", got)
+	}
+	if got, want := string(submitter.jobs[0].PCM), string(readyPCM); got != want {
+		t.Fatalf("submitted PCM = %q, want retained ready segment", got)
+	}
+
+	if err := controller.Cancel(RecordingCancelOptions{Label: "discard"}); err != nil {
+		t.Fatalf("Cancel() error = %v", err)
+	}
+}
+
+func TestRecordingControllerStreamSegmentsFlushesStopTail(t *testing.T) {
+	full := []byte(strings.Repeat("x", 12800))
+	tailPCM := []byte(strings.Repeat("b", 6400))
+	recorder := &fakeRecorder{stopPCM: full}
+	submitter := &fakeSubmitter{}
+	controller := NewRecordingController(recorder, submitter, &fakeObserver{}, func() SegmentCollector {
+		return &fakeCollector{segments: []dictationSegment{
+			{pcm: tailPCM, paragraph: false},
+		}}
+	})
+
+	if err := controller.Start(RecordingStartOptions{Language: "en", StreamSegments: true}); err != nil {
+		t.Fatalf("Start() error = %v", err)
+	}
+	if err := controller.Stop(RecordingStopOptions{Label: "Captured"}); err != nil {
+		t.Fatalf("Stop() error = %v", err)
+	}
+
+	if len(submitter.jobs) != 1 {
+		t.Fatalf("jobs = %d, want final tail job", len(submitter.jobs))
+	}
+	job := submitter.jobs[0]
+	if got, want := string(job.PCM), string(tailPCM); got != want {
+		t.Fatalf("tail job PCM = %q, want stop tail", got)
+	}
+	if len(job.Segments) != 0 {
+		t.Fatalf("tail job nested segments = %d, want 0", len(job.Segments))
+	}
+	if got, want := job.DurationSecs, PCMDurationSecs(tailPCM); got != want {
+		t.Fatalf("tail duration = %v, want %v", got, want)
+	}
+}
+
 func TestRecordingControllerSignalsRecordingAfterRecorderStarts(t *testing.T) {
 	recorder := &fakeRecorder{stopPCM: []byte(strings.Repeat("a", 6400))}
 	submitter := &fakeSubmitter{}
@@ -324,6 +503,34 @@ func TestRecordingControllerCancelStopsRecorderWithoutSubmitting(t *testing.T) {
 	}
 	if !observer.hasLog("Discarded for mode switch") {
 		t.Fatalf("observer logs = %v, want cancel label", observer.logs)
+	}
+}
+
+func TestRecordingControllerDiscardsStaleCaptureBuffer(t *testing.T) {
+	recorder := &fakeRecorder{stopPCM: makePCMForDuration(120 * time.Second)}
+	submitter := &fakeSubmitter{}
+	observer := &fakeObserver{}
+	controller := NewRecordingController(recorder, submitter, observer, nil)
+	startedAt := time.Date(2026, 6, 23, 12, 11, 4, 0, time.UTC)
+	now := startedAt
+	controller.now = func() time.Time { return now }
+
+	if err := controller.Start(RecordingStartOptions{Language: "en"}); err != nil {
+		t.Fatalf("Start() error = %v", err)
+	}
+	now = startedAt.Add(6 * time.Second)
+	if err := controller.Stop(RecordingStopOptions{Label: "Captured"}); err != nil {
+		t.Fatalf("Stop() error = %v", err)
+	}
+
+	if got := len(submitter.jobs); got != 0 {
+		t.Fatalf("submitted jobs = %d, want 0 for stale capture buffer", got)
+	}
+	if !observer.hasLog("stale microphone buffer suspected") {
+		t.Fatalf("observer logs = %v, want stale-buffer diagnostic", observer.logs)
+	}
+	if got := observer.states[len(observer.states)-1]; got != "idle:" {
+		t.Fatalf("last state = %q, want idle", got)
 	}
 }
 

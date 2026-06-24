@@ -6,6 +6,8 @@ import (
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/provideropts"
 )
 
+const DeepgramSTTMultilingualLanguage = "multi"
+
 // ProviderOptionsConfig stores provider-specific overrides for normalized
 // speech options. Empty fields mean "inherit global/provider default"; pointer
 // bools let the config preserve explicit false overrides.
@@ -59,6 +61,9 @@ func ProviderOptionOverridesFor(cfg *Config, provider, modality string) provider
 		values = values.Merge(legacyDeepgramSTTOverrides(cfg.Providers.Deepgram))
 	}
 	values = values.Merge(cfg.ProviderOptions.overrides(provider, modality))
+	if provider == "deepgram" && modality == provideropts.ModalitySTT {
+		values = normalizeDeepgramSTTProviderValues(values)
+	}
 	if len(values) == 0 {
 		return nil
 	}
@@ -266,7 +271,7 @@ func (o *ProviderOptionOverrides) setValue(id provideropts.OptionID, value any) 
 func legacyDeepgramSTTOverrides(dg DeepgramProviderConfig) provideropts.Values {
 	values := provideropts.Values{}
 	if value := strings.TrimSpace(dg.STTLanguage); value != "" {
-		values[provideropts.OptionLanguage] = value
+		values[provideropts.OptionLanguage] = DeepgramSTTLanguageOverride(value)
 	}
 	if !dg.STTSmartFormat {
 		values[provideropts.OptionSmartFormat] = false
@@ -293,6 +298,53 @@ func legacyDeepgramSTTOverrides(dg DeepgramProviderConfig) provideropts.Values {
 		values[provideropts.OptionKeyterms] = terms
 	}
 	return values
+}
+
+func NormalizeDeepgramSTTCodeSwitching(cfg *Config) {
+	if cfg == nil {
+		return
+	}
+	if strings.TrimSpace(cfg.Providers.Deepgram.STTLanguage) != "" {
+		cfg.Providers.Deepgram.STTLanguage = DeepgramSTTMultilingualLanguage
+	}
+	cfg.Providers.Deepgram.STTDetectLanguage = false
+	normalizeDeepgramSTTProviderOptionOverrides(&cfg.ProviderOptions.Deepgram.STT)
+}
+
+func DeepgramSTTLanguageOverride(language string) string {
+	if strings.TrimSpace(language) == "" {
+		return ""
+	}
+	return DeepgramSTTMultilingualLanguage
+}
+
+func normalizeDeepgramSTTProviderOptionOverrides(overrides *ProviderOptionOverrides) {
+	if overrides == nil {
+		return
+	}
+	if strings.TrimSpace(overrides.Language) != "" {
+		overrides.Language = DeepgramSTTMultilingualLanguage
+	}
+	overrides.DetectLanguage = nil
+}
+
+func normalizeDeepgramSTTProviderValues(values provideropts.Values) provideropts.Values {
+	if len(values) == 0 {
+		return nil
+	}
+	out := values.Clone()
+	if out.Has(provideropts.OptionLanguage) {
+		if strings.TrimSpace(out.String(provideropts.OptionLanguage)) == "" {
+			delete(out, provideropts.OptionLanguage)
+		} else {
+			out[provideropts.OptionLanguage] = DeepgramSTTMultilingualLanguage
+		}
+	}
+	delete(out, provideropts.OptionDetectLanguage)
+	if len(out) == 0 {
+		return nil
+	}
+	return out
 }
 
 func setBoolValue(values provideropts.Values, id provideropts.OptionID, value *bool) {

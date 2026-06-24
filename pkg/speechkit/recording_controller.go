@@ -1,6 +1,7 @@
 package speechkit
 
 import (
+	"errors"
 	"fmt"
 	"sync"
 	"time"
@@ -18,6 +19,12 @@ const defaultIdleWatchInterval = 1 * time.Second
 
 const DefaultMinPCMBytes = 3200
 
+const (
+	staleCaptureMinDuration = 30 * time.Second
+	staleCaptureGrace       = 5 * time.Second
+	staleCaptureMaxRatio    = 4.0
+)
+
 // AudioRecorder is the hardware abstraction for microphone capture.
 type AudioRecorder interface {
 	Start() error
@@ -30,6 +37,13 @@ type AudioRecorder interface {
 type SegmentCollector interface {
 	FeedPCM([]byte) error
 	CollectStopSegments(fullPCM []byte) ([]AudioSegment, error)
+}
+
+// ReadySegmentCollector is implemented by collectors that can hand completed
+// pause-bounded segments to the transcription queue before recording stops.
+type ReadySegmentCollector interface {
+	SegmentCollector
+	DrainReadySegments() []AudioSegment
 }
 
 type SegmentCollectorFactory func() SegmentCollector
@@ -50,6 +64,11 @@ type RecordingStartOptions struct {
 	Language    string
 	QuickNote   bool
 	QuickNoteID int64
+	// StreamSegments enables live-ish dictation for this recording session.
+	// Completed pause-bounded segments are queued before Stop(); Stop() then
+	// flushes only pending/remaining tail segments. Leave false for Assist and
+	// Voice Agent fallback capture, where a single full turn is the safer unit.
+	StreamSegments bool
 	// IdleTimeout, when greater than zero AND the underlying collector
 	// implements [IdleObserver], arms a watcher that calls
 	// OnIdleTimeoutCallback once the user has been silent for this long.
@@ -93,17 +112,28 @@ type RecordingController struct {
 	// crude RMS VAD mis-classified cannot be excised before STT — this is the
 	// dropped-words fix; the segmenter still drives silence-based auto-stop.
 	fragmentSegments bool
+	// streamSegments, when true, submits completed VAD-derived segments as soon
+	// as a sufficiently long utterance is closed by a pause. Stop() then submits
+	// only the remaining tail. This is opt-in so public framework users keep the
+	// safer full-capture default unless their host explicitly wants live-ish
+	// dictation behavior.
+	streamSegments bool
 	// idleWatchInterval is how often the idle watcher polls the
 	// IdleObserver. Defaults to 1s — overridable from tests.
 	idleWatchInterval time.Duration
+	now               func() time.Time
 
 	mu            sync.Mutex
 	recording     bool
 	stopping      bool
 	sessionID     uint64
+	startedAt     time.Time
 	current       RecordingStartOptions
 	collector     SegmentCollector
 	idleWatcherCh chan struct{}
+	streamedCount int
+	streamPending []AudioSegment
+	streamFlush   bool
 }
 
 func NewRecordingController(recorder AudioRecorder, submitter JobSubmitter, observer RecordingObserver, segmenterFactory SegmentCollectorFactory) *RecordingController {
@@ -115,6 +145,7 @@ func NewRecordingController(recorder AudioRecorder, submitter JobSubmitter, obse
 		recordingMessage:  "Speak now",
 		minPCMBytes:       DefaultMinPCMBytes,
 		idleWatchInterval: defaultIdleWatchInterval,
+		now:               time.Now,
 	}
 }
 
@@ -127,6 +158,20 @@ func (c *RecordingController) SetFragmentSegments(enabled bool) {
 		return
 	}
 	c.fragmentSegments = enabled
+}
+
+// SetStreamSegments controls whether completed pause-bounded segments are
+// submitted during recording instead of waiting until Stop(). The default is
+// false. This is intended for live-ish dictation surfaces; hosts that need the
+// strongest protection against VAD excision should keep the full-capture
+// default.
+func (c *RecordingController) SetStreamSegments(enabled bool) {
+	if c == nil {
+		return
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.streamSegments = enabled
 }
 
 // SetIdleWatchInterval overrides the polling interval used by the
@@ -162,8 +207,14 @@ func (c *RecordingController) Start(opts RecordingStartOptions) error {
 
 	c.mu.Lock()
 	c.recording = true
+	if c.streamSegments {
+		opts.StreamSegments = true
+	}
 	c.current = opts
 	c.collector = nil
+	c.streamedCount = 0
+	c.streamPending = nil
+	c.streamFlush = false
 	c.sessionID++
 	sessionID = c.sessionID
 
@@ -181,6 +232,7 @@ func (c *RecordingController) Start(opts RecordingStartOptions) error {
 				return
 			}
 			activeCollector := c.collector
+			current := c.current
 			c.mu.Unlock()
 			if activeCollector == nil {
 				return
@@ -193,6 +245,10 @@ func (c *RecordingController) Start(opts RecordingStartOptions) error {
 				}
 				c.mu.Unlock()
 				c.recorder.SetPCMHandler(nil)
+				return
+			}
+			if current.StreamSegments {
+				c.drainAndSubmitReadySegments(sessionID, current, activeCollector)
 			}
 		})
 	} else {
@@ -204,6 +260,7 @@ func (c *RecordingController) Start(opts RecordingStartOptions) error {
 		if c.sessionID == sessionID {
 			c.recording = false
 			c.collector = nil
+			c.startedAt = time.Time{}
 		}
 		c.mu.Unlock()
 		c.recorder.SetPCMHandler(nil)
@@ -211,6 +268,12 @@ func (c *RecordingController) Start(opts RecordingStartOptions) error {
 		c.onState("idle", "")
 		return err
 	}
+	startedAt := c.clockNow()
+	c.mu.Lock()
+	if c.sessionID == sessionID {
+		c.startedAt = startedAt
+	}
+	c.mu.Unlock()
 
 	c.onState("recording", c.recordingMessage)
 	if opts.Label != "" {
@@ -314,7 +377,11 @@ func (c *RecordingController) Stop(opts RecordingStopOptions) error {
 	c.recording = false
 	current := c.current
 	collector := c.collector
+	startedAt := c.startedAt
+	streamSegments := current.StreamSegments
+	streamedCount := c.streamedCount
 	c.collector = nil
+	c.startedAt = time.Time{}
 	c.mu.Unlock()
 
 	c.recorder.SetPCMHandler(nil)
@@ -325,6 +392,12 @@ func (c *RecordingController) Stop(opts RecordingStopOptions) error {
 
 	dur := PCMDurationSecs(pcm)
 	c.onLog(fmt.Sprintf("%s: %.1fs audio", opts.Label, dur), "info")
+	wallDuration := c.clockNow().Sub(startedAt)
+	if isStaleCapturedAudio(dur, wallDuration) {
+		c.onLog(fmt.Sprintf("Captured audio discarded: %.1fs audio exceeds the %.1fs wall-clock recording window; stale microphone buffer suspected", dur, wallDuration.Seconds()), "warn")
+		c.onState("idle", "")
+		return nil
+	}
 
 	if len(pcm) < c.minPCMBytes {
 		c.onLog("Too short, skipped", "error")
@@ -351,6 +424,26 @@ func (c *RecordingController) Stop(opts RecordingStopOptions) error {
 		segTotalSecs += PCMDurationSecs(segment.PCM)
 	}
 	c.onLog(fmt.Sprintf("dictation audio: full=%.1fs vs %d VAD-segments totalling %.1fs (delta=%.1fs)", dur, len(segments), segTotalSecs, dur-segTotalSecs), "info")
+
+	if streamSegments {
+		c.queueStreamSegments(sessionID, segments)
+		submitted, err := c.flushPendingStreamSegments(sessionID, current, "remaining dictation segment", c.clockNow().Add(5*time.Second))
+		if err != nil {
+			c.onLog(fmt.Sprintf("Queue error: %v", err), "error")
+			c.onState("idle", "")
+			return err
+		}
+		if submitted == 0 {
+			if streamedCount > 0 {
+				c.onLog("No remaining dictation tail after streamed segments", "info")
+				return nil
+			}
+			c.onLog("No speech segments detected, skipped", "error")
+			c.onState("idle", "")
+			return nil
+		}
+		return nil
+	}
 
 	// Default (fragmentSegments=false): transcribe the FULL captured audio as a
 	// single submission (job.Segments stays nil, so transcriptionSegments()
@@ -401,6 +494,162 @@ func (c *RecordingController) Stop(opts RecordingStopOptions) error {
 	return nil
 }
 
+func (c *RecordingController) drainAndSubmitReadySegments(sessionID uint64, current RecordingStartOptions, collector SegmentCollector) {
+	readyCollector, ok := collector.(ReadySegmentCollector)
+	if !ok {
+		return
+	}
+	segments := readyCollector.DrainReadySegments()
+	c.queueStreamSegments(sessionID, segments)
+	if _, err := c.flushPendingStreamSegments(sessionID, current, "dictation segment", time.Time{}); err != nil {
+		if errors.Is(err, ErrWorkerQueueFull) {
+			c.onLog("STT queue busy; dictation segment retained for retry", "warn")
+			return
+		}
+		c.onLog(fmt.Sprintf("Queue error: %v", err), "error")
+	}
+}
+
+func (c *RecordingController) submitSegmentsAsJobs(sessionID uint64, current RecordingStartOptions, segments []AudioSegment, label string) (int, error) {
+	submitted := 0
+	for _, segment := range segments {
+		if len(segment.PCM) < c.minPCMBytes {
+			continue
+		}
+		c.mu.Lock()
+		stillSession := c.sessionID == sessionID
+		c.mu.Unlock()
+		if !stillSession {
+			return submitted, nil
+		}
+		submission := submissionFromAudioSegment(segment, current)
+		if err := c.submitter.Submit(TranscriptionJob{
+			Submission: submission,
+			Target:     current.Target,
+		}); err != nil {
+			return submitted, err
+		}
+		submitted++
+		c.mu.Lock()
+		if c.sessionID == sessionID {
+			c.streamedCount++
+		}
+		c.mu.Unlock()
+		c.onLog(fmt.Sprintf("Queued %s: %.1fs audio", label, submission.DurationSecs), "info")
+	}
+	return submitted, nil
+}
+
+func (c *RecordingController) queueStreamSegments(sessionID uint64, segments []AudioSegment) bool {
+	if c == nil || len(segments) == 0 {
+		return false
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.sessionID != sessionID {
+		return false
+	}
+	c.streamPending = append(c.streamPending, cloneAudioSegments(segments)...)
+	return true
+}
+
+func (c *RecordingController) flushPendingStreamSegments(sessionID uint64, current RecordingStartOptions, label string, retryUntil time.Time) (int, error) {
+	if c == nil {
+		return 0, nil
+	}
+	for {
+		c.mu.Lock()
+		if !c.streamFlush {
+			c.streamFlush = true
+			c.mu.Unlock()
+			break
+		}
+		c.mu.Unlock()
+		if retryUntil.IsZero() || !c.clockNow().Before(retryUntil) {
+			return 0, nil
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	defer func() {
+		c.mu.Lock()
+		c.streamFlush = false
+		c.mu.Unlock()
+	}()
+
+	submitted := 0
+	for {
+		c.mu.Lock()
+		if c.sessionID != sessionID {
+			c.streamPending = nil
+			c.mu.Unlock()
+			return submitted, nil
+		}
+		if len(c.streamPending) == 0 {
+			c.mu.Unlock()
+			return submitted, nil
+		}
+		segment := cloneAudioSegments(c.streamPending[:1])[0]
+		c.mu.Unlock()
+
+		if len(segment.PCM) < c.minPCMBytes {
+			c.dropFirstPendingStreamSegment(sessionID)
+			continue
+		}
+
+		submission := submissionFromAudioSegment(segment, current)
+		if err := c.submitter.Submit(TranscriptionJob{
+			Submission: submission,
+			Target:     current.Target,
+		}); err != nil {
+			if errors.Is(err, ErrWorkerQueueFull) && !retryUntil.IsZero() && c.clockNow().Before(retryUntil) {
+				time.Sleep(50 * time.Millisecond)
+				continue
+			}
+			return submitted, err
+		}
+		c.dropFirstPendingStreamSegment(sessionID)
+		submitted++
+		c.mu.Lock()
+		if c.sessionID == sessionID {
+			c.streamedCount++
+		}
+		c.mu.Unlock()
+		c.onLog(fmt.Sprintf("Queued %s: %.1fs audio", label, submission.DurationSecs), "info")
+	}
+}
+
+func (c *RecordingController) dropFirstPendingStreamSegment(sessionID uint64) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.sessionID != sessionID || len(c.streamPending) == 0 {
+		return
+	}
+	c.streamPending[0].PCM = nil
+	c.streamPending = c.streamPending[1:]
+	if len(c.streamPending) == 0 {
+		c.streamPending = nil
+	}
+}
+
+func submissionFromAudioSegment(segment AudioSegment, current RecordingStartOptions) Submission {
+	prefix := ""
+	if segment.Paragraph {
+		prefix = "\n\n"
+	}
+	durationSecs := segment.Duration.Seconds()
+	if durationSecs <= 0 {
+		durationSecs = PCMDurationSecs(segment.PCM)
+	}
+	return Submission{
+		PCM:          append([]byte(nil), segment.PCM...),
+		DurationSecs: durationSecs,
+		Language:     current.Language,
+		Prefix:       prefix,
+		QuickNote:    current.QuickNote,
+		QuickNoteID:  current.QuickNoteID,
+	}
+}
+
 // Cancel stops the active recorder and discards the captured audio. Hosts use
 // this when the user switches modes mid-capture; submitting the old buffer
 // would deliver stale speech through the newly selected mode.
@@ -435,6 +684,9 @@ func (c *RecordingController) Cancel(opts RecordingCancelOptions) error {
 	c.recording = false
 	c.current = RecordingStartOptions{}
 	c.collector = nil
+	c.startedAt = time.Time{}
+	c.streamPending = nil
+	c.streamFlush = false
 	c.mu.Unlock()
 
 	c.recorder.SetPCMHandler(nil)
@@ -450,6 +702,24 @@ func (c *RecordingController) Cancel(opts RecordingCancelOptions) error {
 	c.onLog(label, "info")
 	c.onState("idle", "")
 	return stopErr
+}
+
+func (c *RecordingController) clockNow() time.Time {
+	if c != nil && c.now != nil {
+		return c.now()
+	}
+	return time.Now()
+}
+
+func isStaleCapturedAudio(capturedSecs float64, wall time.Duration) bool {
+	if capturedSecs <= staleCaptureMinDuration.Seconds() || wall <= 0 {
+		return false
+	}
+	maxAllowed := wall.Seconds() * staleCaptureMaxRatio
+	if minAllowed := wall.Seconds() + staleCaptureGrace.Seconds(); maxAllowed < minAllowed {
+		maxAllowed = minAllowed
+	}
+	return capturedSecs > maxAllowed
 }
 
 func (c *RecordingController) clearStopping() {

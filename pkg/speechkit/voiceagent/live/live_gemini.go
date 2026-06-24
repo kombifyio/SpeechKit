@@ -228,9 +228,10 @@ func (g *GeminiLive) Receive(ctx context.Context) (*LiveMessage, error) {
 	// memory dump cannot replay old sessions indefinitely.
 	if resp.SessionResumptionUpdate != nil && resp.SessionResumptionUpdate.NewHandle != "" {
 		g.resume.Set(resp.SessionResumptionUpdate.NewHandle)
+		msg.SessionResumable = true
 	}
 
-	return msg, nil
+	return normalizeLiveMessageEvents(msg, "live.server_message"), nil
 }
 
 func (g *GeminiLive) SendText(text string) error {
@@ -343,11 +344,21 @@ func (g *GeminiLive) Close() error {
 
 func (g *GeminiLive) Name() string { return "gemini-live" }
 
+func (g *GeminiLive) SessionCapabilities() SessionCapabilities {
+	return sessionCapabilitiesForProvider("google")
+}
+
 func buildGeminiLiveConnectConfig(cfg LiveConfig) *genai.LiveConnectConfig {
 	resolved := ResolveLiveOptions("google", "realtime.google.gemini-native-audio", cfg, nil, nil)
 	policies := normalizeLivePolicies(cfg.Policies)
 	if resolved.HasTurnDetectionOverride() && !resolved.TurnDetection {
 		policies.ActivityDetection.Automatic = false
+	}
+	if !policies.Thinking.Enabled {
+		if level := thinkingLevelFromReasoningEffort(resolved.ReasoningEffort); level != "" {
+			policies.Thinking.Enabled = true
+			policies.Thinking.ThinkingLevel = level
+		}
 	}
 	voiceName := resolved.Voice
 	if voiceName == "" {
@@ -364,7 +375,7 @@ func buildGeminiLiveConnectConfig(cfg LiveConfig) *genai.LiveConnectConfig {
 			},
 		},
 		SystemInstruction: &genai.Content{
-			Parts: []*genai.Part{genai.NewPartFromText(buildInstructionText(cfg))},
+			Parts: []*genai.Part{genai.NewPartFromText(appendContextPrompt(buildInstructionText(cfg), resolved.ContextPrompt))},
 		},
 		SessionResumption: buildGeminiLiveSessionResumptionConfig(""),
 		RealtimeInputConfig: &genai.RealtimeInputConfig{
@@ -624,6 +635,21 @@ func mapThinkingLevel(level ThinkingLevel) genai.ThinkingLevel {
 		return genai.ThinkingLevelHigh
 	default:
 		return genai.ThinkingLevelMinimal
+	}
+}
+
+func thinkingLevelFromReasoningEffort(effort string) ThinkingLevel {
+	switch strings.ToLower(strings.TrimSpace(effort)) {
+	case "off", "none", "minimal":
+		return ThinkingLevelOff
+	case "low":
+		return ThinkingLevelLow
+	case "medium", "normal", "balanced":
+		return ThinkingLevelMedium
+	case "high":
+		return ThinkingLevelHigh
+	default:
+		return ""
 	}
 }
 

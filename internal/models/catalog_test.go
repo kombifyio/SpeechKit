@@ -134,6 +134,32 @@ func TestDefaultCatalogAdaptsStrictProfilesFromFrameworkCatalog(t *testing.T) {
 		if got, want := string(internalProfile.ExecutionMode), string(frameworkProfile.ExecutionMode); got != want {
 			t.Fatalf("%s execution mode = %q, want %q", frameworkProfile.ID, got, want)
 		}
+		if got, want := internalProfile.Provider, frameworkProfile.Provider; got != want {
+			t.Fatalf("%s provider = %q, want %q", frameworkProfile.ID, got, want)
+		}
+		if got, want := internalProfile.Lifecycle, string(frameworkProfile.Lifecycle); got != want {
+			t.Fatalf("%s lifecycle = %q, want %q", frameworkProfile.ID, got, want)
+		}
+		if got, want := internalProfile.AuthRequirement, frameworkProfile.AuthRequirement; got != want {
+			t.Fatalf("%s auth requirement = %q, want %q", frameworkProfile.ID, got, want)
+		}
+	}
+}
+
+func TestDefaultCatalogKeepsRealtimeProviderMetadata(t *testing.T) {
+	catalog := DefaultCatalog()
+	profile, ok := findProfile(catalog, "realtime.assemblyai.voice-agent")
+	if !ok {
+		t.Fatal("AssemblyAI Voice Agent profile missing")
+	}
+	if profile.Provider != "assemblyai" || profile.Lifecycle != "ga" || profile.AuthRequirement != "api_key" || profile.Transport != "websocket" {
+		t.Fatalf("AssemblyAI metadata = provider=%q lifecycle=%q auth=%q transport=%q", profile.Provider, profile.Lifecycle, profile.AuthRequirement, profile.Transport)
+	}
+	if !profile.HasCapability(CapabilityNativeKeyterms) || !profile.HasCapability(CapabilitySessionResume) {
+		t.Fatalf("AssemblyAI capabilities = %#v, want native keyterms + resume", profile.Capabilities)
+	}
+	if len(profile.NativeOptions) == 0 || len(profile.SupportedLocales) == 0 || profile.EvidenceURL == "" {
+		t.Fatalf("AssemblyAI registry metadata incomplete: native=%#v locales=%#v evidence=%q", profile.NativeOptions, profile.SupportedLocales, profile.EvidenceURL)
 	}
 }
 

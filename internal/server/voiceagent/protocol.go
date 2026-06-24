@@ -34,10 +34,28 @@ const (
 	MsgOutputTranscript = "output_transcript"
 	MsgToolCall         = "tool_call"
 	MsgSequenceStep     = "sequence_step"
+	MsgEvent            = "event"
 	MsgInterrupted      = "interrupted"
 	MsgError            = "error"
 	MsgSessionEnd       = "session_end"
 	MsgPong             = "pong"
+)
+
+// Provider-neutral event types surfaced on JSON frames as event_type and
+// event_types. These mirror pkg/speechkit/voiceagent/live without forcing
+// WebSocket clients to understand Go package names.
+const (
+	EventSessionReady     = "session_ready"
+	EventInputPartial     = "input_partial"
+	EventInputFinal       = "input_final"
+	EventOutputAudio      = "output_audio"
+	EventOutputText       = "output_text"
+	EventToolCall         = "tool_call"
+	EventToolResultAck    = "tool_result_ack"
+	EventInterrupted      = "interrupted"
+	EventTurnEnd          = "turn_end"
+	EventSessionResumable = "session_resumable"
+	EventSessionEnd       = "session_end"
 )
 
 // StartFrame is the mandatory first client frame. Fields marked optional
@@ -47,9 +65,9 @@ type StartFrame struct {
 	PersonaID  string `json:"persona_id,omitempty"`
 	RoleID     string `json:"role_id,omitempty"`
 	SequenceID string `json:"sequence_id,omitempty"`
-	// Provider selects the realtime backend for THIS session, e.g. "deepgram",
-	// "gemini", or "cascaded". Empty uses the server's configured default. An
-	// unknown or unconfigured provider is rejected at start with a
+	// Provider selects the realtime backend for THIS session, e.g. "gemini",
+	// "deepgram", "assemblyai", "openai", or "cascaded". Empty uses the
+	// server's configured default. An unknown or unconfigured provider is rejected at start with a
 	// provider_unavailable error. This is what lets a tester switch backends
 	// per session ("laufend wechseln") without a server redeploy.
 	Provider string `json:"provider,omitempty"`
@@ -106,12 +124,14 @@ type AdvanceStepFrame struct {
 // ── server → client ─────────────────────────────────────────────────────────
 
 type StateFrame struct {
-	Type  string `json:"type"` // "state"
+	Type string `json:"type"` // "state"
+	EventFrameFields
 	State string `json:"state"`
 }
 
 type TranscriptFrame struct {
-	Type              string  `json:"type"` // "input_transcript" | "output_transcript"
+	Type string `json:"type"` // "input_transcript" | "output_transcript"
+	EventFrameFields
 	Text              string  `json:"text"`
 	Done              bool    `json:"done"`
 	SpeakerLabel      string  `json:"speaker_label,omitempty"`
@@ -121,7 +141,8 @@ type TranscriptFrame struct {
 }
 
 type ToolCallFrame struct {
-	Type string         `json:"type"` // "tool_call"
+	Type string `json:"type"` // "tool_call"
+	EventFrameFields
 	ID   string         `json:"id"`
 	Name string         `json:"name"`
 	Args map[string]any `json:"args,omitempty"`
@@ -136,8 +157,14 @@ type SequenceStepFrame struct {
 	Reason     string `json:"reason,omitempty"`
 }
 
+type EventFrame struct {
+	Type string `json:"type"` // "event"
+	EventFrameFields
+}
+
 type InterruptedFrame struct {
 	Type string `json:"type"` // "interrupted"
+	EventFrameFields
 }
 
 type ErrorFrame struct {
@@ -147,12 +174,19 @@ type ErrorFrame struct {
 }
 
 type SessionEndFrame struct {
-	Type   string `json:"type"`   // "session_end"
-	Reason string `json:"reason"` // "idle" | "go_away" | "client" | "error" | "shutdown"
+	Type string `json:"type"` // "session_end"
+	EventFrameFields
+	Reason string `json:"reason"` // "idle" | "go_away" | "client" | "error" | "shutdown" | "max_duration"
 }
 
 type PongFrame struct {
 	Type string `json:"type"` // "pong"
+}
+
+type EventFrameFields struct {
+	EventType        string         `json:"event_type,omitempty"`
+	EventTypes       []string       `json:"event_types,omitempty"`
+	ProviderMetadata map[string]any `json:"provider_metadata,omitempty"`
 }
 
 // envelope is a lightweight struct for peeking at incoming frames before

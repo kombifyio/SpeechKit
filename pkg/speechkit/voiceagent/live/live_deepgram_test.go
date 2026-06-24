@@ -1,6 +1,11 @@
 package live
 
-import "testing"
+import (
+	"strings"
+	"testing"
+
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/provideropts"
+)
 
 func TestDeepgramParseConversationText(t *testing.T) {
 	t.Parallel()
@@ -18,6 +23,9 @@ func TestDeepgramParseConversationText(t *testing.T) {
 	if msg.InputTranscript != "what's the weather" || !msg.InputTranscriptDone {
 		t.Errorf("user transcript mismatch: %+v", msg)
 	}
+	if msg.EventType != LiveEventInputFinal || msg.ProviderMetadata["provider_event"] != "ConversationText" {
+		t.Fatalf("user event metadata mismatch: %+v", msg)
+	}
 
 	agentFrame := mustMarshal(t, map[string]any{
 		"type":    "ConversationText",
@@ -30,6 +38,9 @@ func TestDeepgramParseConversationText(t *testing.T) {
 	}
 	if msg.OutputTranscript != "it is sunny" || !msg.OutputTranscriptDone || msg.Text != "it is sunny" {
 		t.Errorf("assistant transcript mismatch: %+v", msg)
+	}
+	if msg.EventType != LiveEventOutputText || msg.ProviderMetadata["provider_event"] != "ConversationText" {
+		t.Fatalf("assistant event metadata mismatch: %+v", msg)
 	}
 }
 
@@ -49,12 +60,24 @@ func TestDeepgramParseControlEvents(t *testing.T) {
 	}
 
 	started, _, _ := p.parseEvent(mustMarshal(t, map[string]any{"type": "UserStartedSpeaking"}))
-	if started == nil || !started.Interrupted {
+	if started == nil || !started.Interrupted || started.EventType != LiveEventInterrupted {
 		t.Errorf("UserStartedSpeaking should set Interrupted, got %+v", started)
+	}
+	for _, typ := range []string{"StartOfTurn", "TurnResumed"} {
+		turn, swallow, err := p.parseEvent(mustMarshal(t, map[string]any{"type": typ}))
+		if err != nil || swallow || turn == nil || !turn.Interrupted || turn.EventType != LiveEventInterrupted {
+			t.Errorf("%s should surface as interruption, msg=%+v swallow=%v err=%v", typ, turn, swallow, err)
+		}
+	}
+	for _, typ := range []string{"EagerEndOfTurn", "EndOfTurn"} {
+		turn, swallow, err := p.parseEvent(mustMarshal(t, map[string]any{"type": typ}))
+		if err != nil || swallow || turn == nil || turn.EventType != LiveEventTurnEnd {
+			t.Errorf("%s should surface as turn_end, msg=%+v swallow=%v err=%v", typ, turn, swallow, err)
+		}
 	}
 
 	done, _, _ := p.parseEvent(mustMarshal(t, map[string]any{"type": "AgentAudioDone"}))
-	if done == nil || !done.Done {
+	if done == nil || !done.Done || done.EventType != LiveEventTurnEnd {
 		t.Errorf("AgentAudioDone should set Done, got %+v", done)
 	}
 }
@@ -88,6 +111,9 @@ func TestDeepgramParseFunctionCall(t *testing.T) {
 	}
 	if len(msg.ToolCalls) != 1 {
 		t.Fatalf("expected 1 tool call, got %d", len(msg.ToolCalls))
+	}
+	if msg.EventType != LiveEventToolCall || msg.ProviderMetadata["provider_event"] != "FunctionCallRequest" {
+		t.Fatalf("tool call event metadata mismatch: %+v", msg)
 	}
 	tc := msg.ToolCalls[0]
 	if tc.ID != "call_1" || tc.Name != "get_time" || tc.Args["zone"] != "UTC" {
@@ -166,6 +192,51 @@ func TestDeepgramBuildSettingsBYOThink(t *testing.T) {
 	}
 }
 
+func TestDeepgramBuildSettingsMapsProviderNeutralLiveOptions(t *testing.T) {
+	t.Parallel()
+	settings := (&DeepgramLive{}).buildSettings(LiveConfig{
+		ProviderOptions: provideropts.Values{
+			provideropts.OptionContextPrompt: "Use the customer CRM glossary.",
+			provideropts.OptionLanguageHints: []string{"de", "en"},
+			provideropts.OptionKeyterms:      []string{"Kombify"},
+		},
+	})
+	think := deepgramThinkFromSettings(t, settings)
+	if got := think["prompt"].(string); !strings.Contains(got, "Use the customer CRM glossary.") {
+		t.Fatalf("think.prompt = %q", got)
+	}
+	listen := deepgramListenProviderFromSettings(t, settings)
+	if got := strings.Join(listen["keyterms"].([]string), ","); got != "Kombify" {
+		t.Fatalf("keyterms = %q", got)
+	}
+	if got := strings.Join(listen["language_hints"].([]string), ","); got != "de,en" {
+		t.Fatalf("language_hints = %q", got)
+	}
+}
+
+func TestDeepgramBuildSettingsOmitsAgentLanguageForFluxListen(t *testing.T) {
+	t.Parallel()
+	settings := (&DeepgramLive{}).buildSettings(LiveConfig{Locale: "en-US"})
+	agent := settings["agent"].(map[string]any)
+	if _, ok := agent["language"]; ok {
+		t.Fatalf("Flux settings must omit deprecated agent.language: %#v", agent["language"])
+	}
+	listen := deepgramListenProviderFromSettings(t, settings)
+	hints := listen["language_hints"].([]string)
+	if strings.Join(hints, ",") != "en" {
+		t.Fatalf("language_hints = %v, want en", hints)
+	}
+}
+
+func TestDeepgramBuildSettingsKeepsAgentLanguageForNonFluxListen(t *testing.T) {
+	t.Parallel()
+	settings := (&DeepgramLive{ListenModel: "nova-3"}).buildSettings(LiveConfig{Locale: "de-DE"})
+	agent := settings["agent"].(map[string]any)
+	if got := agent["language"]; got != "de" {
+		t.Fatalf("agent.language = %v, want de", got)
+	}
+}
+
 // deepgramThinkFromSettings extracts agent.think from a buildSettings result.
 func deepgramThinkFromSettings(t *testing.T, settings map[string]any) map[string]any {
 	t.Helper()
@@ -178,6 +249,23 @@ func deepgramThinkFromSettings(t *testing.T, settings map[string]any) map[string
 		t.Fatalf("agent.think missing or wrong type: %#v", agent["think"])
 	}
 	return think
+}
+
+func deepgramListenProviderFromSettings(t *testing.T, settings map[string]any) map[string]any {
+	t.Helper()
+	agent, ok := settings["agent"].(map[string]any)
+	if !ok {
+		t.Fatalf("settings.agent missing or wrong type: %#v", settings["agent"])
+	}
+	listen, ok := agent["listen"].(map[string]any)
+	if !ok {
+		t.Fatalf("agent.listen missing or wrong type: %#v", agent["listen"])
+	}
+	provider, ok := listen["provider"].(map[string]any)
+	if !ok {
+		t.Fatalf("agent.listen.provider missing or wrong type: %#v", listen["provider"])
+	}
+	return provider
 }
 
 func TestDeepgramResolveSpeakModel(t *testing.T) {

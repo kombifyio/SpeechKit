@@ -11,6 +11,48 @@ IDs, source paths, and other maintainer-only vocabulary.
 
 ## [Unreleased]
 
+## [0.47.0] - 2026-06-24
+
+Provider professionalization release for Go voice apps. This release makes
+SpeechKit's provider abstraction more interchangeable across Gemini, Deepgram,
+AssemblyAI, OpenAI, and cascaded fallback hosts while keeping the public API
+additive and compatible.
+
+### Highlights
+
+- **Provider Switching For Voice Apps**: Go hosts can select providers,
+  profiles, models, capabilities, and fallbacks through the shared live
+  provider metadata instead of branching on provider-specific constructors.
+- **Words And Replacements v2**: Custom vocabulary, snippets, templates, and
+  commands now flow through deterministic runtime contracts across Dictation,
+  Assist, and Voice Agent.
+- **Credential-Backed Provider Proof**: Deepgram, AssemblyAI, Gemini, and
+  OpenAI live gates now exercise the same Server-Target host code with clear
+  `blocked_by_auth` reporting when credentials are absent.
+
+### Added
+
+- Provider capabilities now include tested provider-option matrix coverage,
+  Deepgram/AssemblyAI/Google streaming evidence notes, and a reusable
+  LiveProvider contract harness for realtime Voice Agent adapters.
+- Words And Replacements v2 now resolves Words into native provider biasing
+  for Deepgram, AssemblyAI, and Google, with prompt-hint fallbacks for
+  providers that do not expose native keyterms.
+- Customization settings now default to install scope, require keys for explicit
+  user/org/workspace/session scopes, and include scope conflict visibility,
+  provider-bias preview, and first-class Snippet, Template, and Command rules.
+- Command rules now produce structured action metadata. Known intents
+  (`copy_last`, `insert_last`, `summarize`) dispatch through existing quick
+  actions on desktop, while unknown intents are exposed in transcript,
+  API-response, and event payloads without being executed.
+
+### Fixed
+
+- Voice Agent microphone capture now stops and discards its buffered PCM on
+  hold-to-talk release, activation teardown, and deactivation. Dictation and
+  Assist also reject suspicious stale capture buffers instead of sending
+  multi-hour phantom audio to STT.
+
 ## [0.46.1] - 2026-06-23
 
 Public SDK and Windows client stabilization patch. No public API change.

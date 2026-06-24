@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/provideropts"
 	"google.golang.org/genai"
 )
 
@@ -191,6 +192,27 @@ func TestBuildGeminiLiveConnectConfigUsesCustomInstructionAndPolicies(t *testing
 	}
 }
 
+func TestBuildGeminiLiveConnectConfigMapsProviderNeutralOptions(t *testing.T) {
+	t.Parallel()
+	connectCfg := buildGeminiLiveConnectConfig(LiveConfig{
+		FrameworkPrompt: "Base host prompt.",
+		ProviderOptions: provideropts.Values{
+			provideropts.OptionContextPrompt:   "Current tenant prefers short German answers.",
+			provideropts.OptionReasoningEffort: "high",
+		},
+	})
+	text := joinContentText(connectCfg.SystemInstruction)
+	if !strings.Contains(text, "Current tenant prefers short German answers.") {
+		t.Fatalf("system instruction = %q", text)
+	}
+	if connectCfg.ThinkingConfig == nil {
+		t.Fatal("expected reasoning_effort to enable thinking config")
+	}
+	if got := connectCfg.ThinkingConfig.ThinkingLevel; got != genai.ThinkingLevelHigh {
+		t.Fatalf("thinking level = %q, want %q", got, genai.ThinkingLevelHigh)
+	}
+}
+
 func TestBuildGeminiLiveConnectConfigUsesFrameworkPrompt(t *testing.T) {
 	cfg := LiveConfig{
 		Model:           "gemini-2.5-flash-native-audio-preview-12-2025",
@@ -301,6 +323,26 @@ func TestGeminiLiveReceiveMapsServerMessage(t *testing.T) {
 	}
 	if len(msg.ToolCallCancellationIDs) != 1 || msg.ToolCallCancellationIDs[0] != "call-2" {
 		t.Fatalf("tool cancellations = %#v", msg.ToolCallCancellationIDs)
+	}
+	if !msg.SessionResumable {
+		t.Fatalf("SessionResumable = false, want true")
+	}
+	for _, want := range []LiveEventType{
+		LiveEventSessionEnd,
+		LiveEventSessionResumable,
+		LiveEventInterrupted,
+		LiveEventInputFinal,
+		LiveEventOutputAudio,
+		LiveEventOutputText,
+		LiveEventToolCall,
+		LiveEventTurnEnd,
+	} {
+		if !liveEventTypesContain(msg.EventTypes, want) {
+			t.Fatalf("EventTypes = %v, missing %s", msg.EventTypes, want)
+		}
+	}
+	if msg.ProviderMetadata["provider_event"] != "live.server_message" {
+		t.Fatalf("ProviderMetadata = %#v", msg.ProviderMetadata)
 	}
 	if got := provider.resume.Get(); got != "resume-1" {
 		t.Fatalf("resume handle = %q, want resume-1", got)

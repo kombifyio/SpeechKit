@@ -16,14 +16,14 @@ import (
 )
 
 // Deepgram Voice Agent API constants. The Agent WebSocket carries the full
-// audio-to-audio loop (Nova-3 listen → configurable think LLM → Aura-2 speak)
+// audio-to-audio loop (Flux listen → configurable think LLM → Aura-2 speak)
 // over a single connection. SpeechKit's mic emits 16 kHz PCM16, which Deepgram
 // accepts directly on the input — no upsample needed. Output is requested at
 // 24 kHz to match the kernel's LiveMessage.Audio contract.
 const (
 	deepgramAgentURL = "wss://agent.deepgram.com/v1/agent/converse"
 
-	deepgramListenModelDefault   = "nova-3"
+	deepgramListenModelDefault   = "flux-general-multi"
 	deepgramSpeakModelDefaultEN  = "aura-2-thalia-en"
 	deepgramSpeakModelDefaultDE  = "aura-2-viktoria-de"
 	deepgramThinkProviderDefault = "open_ai"
@@ -44,8 +44,8 @@ const (
 // The think (LLM) leg is configurable: Deepgram drives the LLM server-side, so
 // ThinkProvider/ThinkModel select which model reasons over the transcript.
 // Defaults target a widely-available option; the wiring layer overrides them
-// from deployment config. Listen is always Deepgram Nova-3 and speak is always
-// a Deepgram Aura-2 voice — that is the point of routing a session here.
+// from deployment config. Listen defaults to Deepgram Flux for turn-aware
+// conversational STT and speak defaults to a Deepgram Aura-2 voice.
 type DeepgramLive struct {
 	// Optional overrides; zero values fall back to the package defaults.
 	ListenModel   string
@@ -94,6 +94,10 @@ func (p *DeepgramLive) ConfigureThink(provider, model, endpointURL, apiKey strin
 
 // Name identifies the provider in Voice Agent logs.
 func (p *DeepgramLive) Name() string { return "deepgram-agent" }
+
+func (p *DeepgramLive) SessionCapabilities() SessionCapabilities {
+	return sessionCapabilitiesForProvider("deepgram")
+}
 
 // Connect dials the Deepgram Voice Agent WebSocket and sends the initial
 // Settings message describing listen/think/speak and the audio formats. The
@@ -256,7 +260,10 @@ func (p *DeepgramLive) Receive(ctx context.Context) (*LiveMessage, error) {
 			if len(data) == 0 {
 				continue
 			}
-			return &LiveMessage{Audio: data}, nil
+			return normalizeLiveMessageEvents(&LiveMessage{
+				EventType: LiveEventOutputAudio,
+				Audio:     data,
+			}, "binary_audio"), nil
 		}
 		msg, swallow, err := p.parseEvent(data)
 		if err != nil {
@@ -316,21 +323,25 @@ func (p *DeepgramLive) buildSettings(cfg LiveConfig) map[string]any {
 	if endpoint := p.thinkEndpoint(); endpoint != nil {
 		think["endpoint"] = endpoint
 	}
-	if prompt := composeDeepgramPrompt(cfg); prompt != "" {
+	if prompt := appendContextPrompt(composeDeepgramPrompt(cfg), resolved.ContextPrompt); prompt != "" {
 		think["prompt"] = prompt
 	}
 	if funcs := buildDeepgramFunctions(cfg.Tools); len(funcs) > 0 {
 		think["functions"] = funcs
 	}
 
+	listenModel := dgFirst(p.ListenModel, deepgramListenModelDefault)
 	listenProvider := map[string]any{
 		"type":  "deepgram",
-		"model": dgFirst(p.ListenModel, deepgramListenModelDefault),
+		"model": listenModel,
 	}
 	// VocabularyHint boosts recognition of domain terms — Nova-3 exposes this
 	// as keyterms on the listen provider.
 	if keyterms := resolved.Keyterms; len(keyterms) > 0 {
 		listenProvider["keyterms"] = keyterms
+	}
+	if hints := deepgramListenLanguageHints(resolved.LanguageHints, resolved.Locale, listenModel); len(hints) > 0 {
+		listenProvider["language_hints"] = hints
 	}
 
 	agent := map[string]any{
@@ -343,7 +354,7 @@ func (p *DeepgramLive) buildSettings(cfg LiveConfig) map[string]any {
 			},
 		},
 	}
-	if lang := deepgramAgentLanguage(resolved.Locale); lang != "" {
+	if lang := deepgramAgentLanguage(resolved.Locale); lang != "" && !deepgramListenModelUsesFlux(listenModel) {
 		agent["language"] = lang
 	}
 
@@ -441,7 +452,14 @@ func (p *DeepgramLive) parseEvent(data []byte) (*LiveMessage, bool, error) {
 		return nil, true, nil
 	case "UserStartedSpeaking":
 		// Barge-in: the kernel state machine uses this for interruption.
-		return &LiveMessage{Interrupted: true}, false, nil
+		return normalizeLiveMessageEvents(&LiveMessage{EventType: LiveEventInterrupted, Interrupted: true}, env.Type), false, nil
+	case "StartOfTurn", "TurnResumed":
+		// Flux turn events signal fresh user activity. Surface them as
+		// interruptions so host UIs can stop playback across both Deepgram Voice
+		// Agent and lower-level Flux transports without provider-specific code.
+		return normalizeLiveMessageEvents(&LiveMessage{EventType: LiveEventInterrupted, Interrupted: true}, env.Type), false, nil
+	case "EagerEndOfTurn", "EndOfTurn":
+		return normalizeLiveMessageEvents(&LiveMessage{EventType: LiveEventTurnEnd}, env.Type), false, nil
 	case "ConversationText":
 		var ev struct {
 			Role    string `json:"role"`
@@ -449,12 +467,21 @@ func (p *DeepgramLive) parseEvent(data []byte) (*LiveMessage, bool, error) {
 		}
 		_ = json.Unmarshal(data, &ev)
 		if strings.EqualFold(ev.Role, "user") {
-			return &LiveMessage{InputTranscript: ev.Content, InputTranscriptDone: true}, false, nil
+			return normalizeLiveMessageEvents(&LiveMessage{
+				EventType:           LiveEventInputFinal,
+				InputTranscript:     ev.Content,
+				InputTranscriptDone: true,
+			}, env.Type), false, nil
 		}
-		return &LiveMessage{Text: ev.Content, OutputTranscript: ev.Content, OutputTranscriptDone: true}, false, nil
+		return normalizeLiveMessageEvents(&LiveMessage{
+			EventType:            LiveEventOutputText,
+			Text:                 ev.Content,
+			OutputTranscript:     ev.Content,
+			OutputTranscriptDone: true,
+		}, env.Type), false, nil
 	case "AgentAudioDone":
 		// End of the agent's spoken turn.
-		return &LiveMessage{Done: true}, false, nil
+		return normalizeLiveMessageEvents(&LiveMessage{EventType: LiveEventTurnEnd, Done: true}, env.Type), false, nil
 	case "FunctionCallRequest":
 		var ev struct {
 			FunctionCallID string          `json:"function_call_id"`
@@ -470,11 +497,14 @@ func (p *DeepgramLive) parseEvent(data []byte) (*LiveMessage, bool, error) {
 				slog.Warn("deepgram agent: function call input not an object", "name", ev.FunctionName)
 			}
 		}
-		return &LiveMessage{ToolCalls: []ToolCall{{
-			ID:   ev.FunctionCallID,
-			Name: ev.FunctionName,
-			Args: args,
-		}}}, false, nil
+		return normalizeLiveMessageEvents(&LiveMessage{
+			EventType: LiveEventToolCall,
+			ToolCalls: []ToolCall{{
+				ID:   ev.FunctionCallID,
+				Name: ev.FunctionName,
+				Args: args,
+			}},
+		}, env.Type), false, nil
 	case "Error":
 		var ev struct {
 			Code        string `json:"code"`
@@ -515,6 +545,36 @@ func deepgramAgentLanguage(locale string) string {
 		return locale[:idx]
 	}
 	return locale
+}
+
+func deepgramListenModelUsesFlux(model string) bool {
+	return strings.HasPrefix(strings.ToLower(strings.TrimSpace(model)), "flux-")
+}
+
+func deepgramListenLanguageHints(hints []string, locale, listenModel string) []string {
+	out := make([]string, 0, len(hints)+1)
+	seen := map[string]struct{}{}
+	add := func(value string) {
+		value = strings.ToLower(strings.TrimSpace(value))
+		if value == "" || value == "auto" {
+			return
+		}
+		if idx := strings.IndexAny(value, "-_"); idx > 0 {
+			value = value[:idx]
+		}
+		if _, ok := seen[value]; ok {
+			return
+		}
+		seen[value] = struct{}{}
+		out = append(out, value)
+	}
+	for _, hint := range hints {
+		add(hint)
+	}
+	if deepgramListenModelUsesFlux(listenModel) {
+		add(locale)
+	}
+	return out
 }
 
 // buildDeepgramFunctions translates kernel ToolDefinitions into the

@@ -93,7 +93,7 @@ func TestBuildSTTRouterRegistersAssemblyAIWhenKeyIsSet(t *testing.T) {
 	cfg.Providers.AssemblyAI.Enabled = true
 	cfg.Providers.AssemblyAI.APIKeyEnv = "ASSEMBLYAI_API_KEY"
 	cfg.Providers.AssemblyAI.STTModels = "universal-3-pro,universal-2"
-	cfg.Providers.AssemblyAI.StreamingModel = "u3-rt-pro"
+	cfg.Providers.AssemblyAI.StreamingModel = "universal-3-5-pro"
 	cfg.Providers.AssemblyAI.StreamingBaseURL = "wss://eu.streaming.assemblyai.com"
 
 	_, providers, notes := buildSTTRouter(cfg)
@@ -108,7 +108,7 @@ func TestBuildSTTRouterRegistersAssemblyAIWhenKeyIsSet(t *testing.T) {
 	if provider == nil {
 		t.Fatalf("providers = %+v, want AssemblyAIProvider", providers)
 	}
-	if provider.StreamingModel != "u3-rt-pro" || provider.StreamingBaseURL != "wss://eu.streaming.assemblyai.com" {
+	if provider.StreamingModel != "universal-3-5-pro" || provider.StreamingBaseURL != "wss://eu.streaming.assemblyai.com" {
 		t.Fatalf("AssemblyAI streaming config = %q/%q", provider.StreamingModel, provider.StreamingBaseURL)
 	}
 }

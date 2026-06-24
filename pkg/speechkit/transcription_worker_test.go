@@ -22,6 +22,20 @@ func (s stubTranscriber) Transcribe(_ context.Context, _ []byte, _ float64, _ st
 	return s.transcript, nil
 }
 
+type capturingAudioTranscriber struct {
+	audio      []byte
+	duration   float64
+	language   string
+	transcript Transcript
+}
+
+func (s *capturingAudioTranscriber) Transcribe(_ context.Context, audio []byte, durationSecs float64, language string) (Transcript, error) {
+	s.audio = append([]byte(nil), audio...)
+	s.duration = durationSecs
+	s.language = language
+	return s.transcript, nil
+}
+
 type parallelSegmentTranscriber struct {
 	expected int
 	release  chan struct{}
@@ -386,6 +400,58 @@ func TestTranscriptionWorkerProcessesJobs(t *testing.T) {
 	}
 }
 
+func TestTranscriptionWorkerNormalizesPCMOnlySubmission(t *testing.T) {
+	pcm := []byte(strings.Repeat("a", 6400))
+	transcriber := &capturingAudioTranscriber{
+		transcript: Transcript{
+			Text:     "pcm only",
+			Provider: "test",
+			Duration: 50 * time.Millisecond,
+		},
+	}
+	output := &recordingOutput{}
+	worker, err := NewTranscriptionWorker(TranscriptionWorkerConfig{
+		Timeout: time.Second,
+		Runner:  NewTranscriptionRunner(transcriber, nil),
+		Output:  output,
+	})
+	if err != nil {
+		t.Fatalf("NewTranscriptionWorker() error = %v", err)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	worker.Start(ctx)
+
+	if err := worker.Submit(TranscriptionJob{
+		Submission: Submission{
+			PCM:      pcm,
+			Language: "de",
+		},
+		Target: "editor",
+	}); err != nil {
+		t.Fatalf("Submit() error = %v", err)
+	}
+	worker.Close()
+	worker.Wait()
+
+	if len(transcriber.audio) != 44+len(pcm) {
+		t.Fatalf("transcriber audio len = %d, want WAV header plus PCM", len(transcriber.audio))
+	}
+	if string(transcriber.audio[:4]) != "RIFF" || string(transcriber.audio[8:12]) != "WAVE" {
+		t.Fatalf("transcriber audio is not a WAV payload")
+	}
+	if got, want := transcriber.duration, PCMDurationSecs(pcm); got != want {
+		t.Fatalf("transcriber duration = %v, want %v", got, want)
+	}
+	if got, want := transcriber.language, "de"; got != want {
+		t.Fatalf("transcriber language = %q, want %q", got, want)
+	}
+	if delivered := output.snapshot(); len(delivered) != 1 || delivered[0].transcript.Text != "pcm only" {
+		t.Fatalf("delivered = %#v, want pcm-only transcript", delivered)
+	}
+}
+
 func TestTranscriptionWorkerTranscribesSegmentsInParallelAndDeliversCombinedTranscript(t *testing.T) {
 	transcriber := newParallelSegmentTranscriber(2)
 	observer := &recordingObserver{}
@@ -494,8 +560,15 @@ func TestTranscriptionWorkerHandlesTranscriberErrors(t *testing.T) {
 	if got := observer.states; len(got) < 2 || got[0] != "processing:"+DefaultProcessingMessage || got[1] != "idle:" {
 		t.Fatalf("observer states = %#v", got)
 	}
-	if got := observer.logs; len(got) < 2 || !strings.HasPrefix(got[1], "error:STT error: boom") {
-		t.Fatalf("observer logs = %#v", got)
+	hasSTTError := false
+	for _, log := range observer.logs {
+		if strings.HasPrefix(log, "error:STT error: boom") {
+			hasSTTError = true
+			break
+		}
+	}
+	if !hasSTTError {
+		t.Fatalf("observer logs = %#v", observer.logs)
 	}
 }
 

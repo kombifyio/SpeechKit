@@ -94,7 +94,7 @@ func (p *LocalVoiceAgentProvider) Receive(ctx context.Context) (*live.LiveMessag
 	if msg == nil {
 		return nil, nil
 	}
-	return &live.LiveMessage{
+	out := &live.LiveMessage{
 		Audio:                  msg.Audio,
 		InputTranscript:        msg.InputTranscript,
 		InputTranscriptDone:    msg.InputTranscriptDone,
@@ -104,7 +104,13 @@ func (p *LocalVoiceAgentProvider) Receive(ctx context.Context) (*live.LiveMessag
 		InputSpeakerConfidence: msg.InputSpeakerConfidence,
 		OutputTranscript:       msg.OutputTranscript,
 		OutputTranscriptDone:   msg.OutputTranscriptDone,
-	}, nil
+		ProviderMetadata:       map[string]any{"provider_event": "cascaded.message"},
+	}
+	out.EventTypes = live.InferLiveEventTypes(out)
+	if len(out.EventTypes) > 0 {
+		out.EventType = out.EventTypes[0]
+	}
+	return out, nil
 }
 
 // Close delegates.

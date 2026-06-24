@@ -131,7 +131,11 @@ type LiveConfigFrame struct {
 // adapter relays to the client. Matching field names keep the translation
 // trivial.
 type LiveMessage struct {
+	EventType              string
+	EventTypes             []string
+	ProviderMetadata       map[string]any
 	Audio                  []byte
+	Done                   bool
 	OutputTranscript       string
 	OutputTranscriptDone   bool
 	InputTranscript        string
@@ -143,6 +147,7 @@ type LiveMessage struct {
 	ToolCalls              []ToolCall
 	Interrupted            bool
 	GoAway                 bool
+	SessionResumable       bool
 }
 
 type ToolCall struct {

@@ -1,4 +1,4 @@
-# SpeechKit v0.46 Agent Context
+# SpeechKit v0.47 Agent Context
 
 SpeechKit is a voice framework for products and automation hosts. It has three
 strict modes:
@@ -7,14 +7,17 @@ strict modes:
 - Assist: one-shot utility, codeword, or LLM result with optional TTS.
 - Voice Agent: realtime audio-to-audio dialogue for fast follow-ups.
 
-v0.46 is the public in-process provider embeddability line. Go hosts can use
-the public STT, TTS, Assist, and Voice Agent packages directly without routing
-through a SpeechKit Server when an embedded framework integration is the right
-shape. Words teach recognition, Replacements shape final text, Native
+v0.47 is the provider-professionalization line for Go voice apps. Go hosts can
+use the public STT, TTS, Assist, and Voice Agent packages directly without
+routing through a SpeechKit Server when an embedded framework integration is
+the right shape. Native Voice Agent switching is described by public provider
+descriptors for Gemini, Deepgram, AssemblyAI, OpenAI, and cascaded fallback
+hosts. The current realtime baselines are Gemini 3.1 Flash Live, Deepgram Flux
+Voice Agent, AssemblyAI Voice Agent API, and OpenAI Realtime. AssemblyAI
+realtime STT defaults to `universal-3-5-pro`; `u3-rt-pro` remains a legacy
+fallback. Words teach recognition, Replacements shape final text, Native
 Templates provide curated pack defaults/profiles, provider options are
-structured, and segmented transcription is finalized before output. Deepgram,
-AssemblyAI, speaker-aware transcription, and realtime provider choices remain
-part of the current provider surface.
+structured, and segmented transcription is finalized before output.
 Hands-Free is the activation and voice-output layer for Dictation, Assist, and
 Voice Agent; it is not a fourth mode.
 The latest GitHub Release is the canonical source for desktop installers.
@@ -95,7 +98,7 @@ Browser WebSocket auth is subprotocol-first. Use the `ws_url` and
 server bearer token into a browser WebSocket handshake. Tickets default to 90
 seconds; expired tickets are not refreshed in v1, so create a new session.
 
-Important v0.46 surfaces:
+Important v0.47 surfaces:
 
 - `GET /v1/catalog/profiles`
 - `GET /v1/catalog/contracts`
@@ -115,6 +118,20 @@ Important v0.46 surfaces:
 - `GET /v1/voiceagent/sessions/{id}/summary`
 - `POST /v1/tts/synthesize`
 - `GET /v1/tts/voices`
+
+## Provider Baselines
+
+- Gemini Live: `gemini-3.1-flash-live-preview` primary, with
+  `gemini-2.5-flash-native-audio-preview-12-2025` as previous-preview fallback.
+- Deepgram Voice Agent: Flux listen models (`flux-general-multi` or
+  `flux-general-en`) for conversational turn events; Nova-3 remains the general
+  dictation/diarization baseline.
+- AssemblyAI realtime STT: `speech_model=universal-3-5-pro` primary;
+  `u3-rt-pro` legacy fallback.
+- AssemblyAI Voice Agent: native `wss://agents.assemblyai.com/v1/ws` adapter
+  with `session.update`, `session.ready`, `input.audio`, `reply.audio`,
+  user/agent transcripts, tool calls/results, interruptions, and `session.end`.
+- OpenAI Realtime: `gpt-realtime-2` under the same LiveProvider contract.
 
 ## MCP
 
@@ -172,6 +189,7 @@ Smoke examples:
 go run ./examples/embed-companion
 go run ./examples/embed-tts
 go run ./examples/embed-event-bus
+go run ./examples/voice-agent/provider-switching -provider assemblyai
 ```
 
 ## Go AgentKit Harness
@@ -181,6 +199,29 @@ a Go host. It provides a session wrapper, tool registry, lifecycle hooks, and a
 session-scoped memory interface on top of the Voice Agent runtime. Register
 host-side tools with `agentkit.NewRegistry()` and pass the registry to
 `agentkit.NewAgentSession(...)` before calling `Start`.
+
+Use `pkg/speechkit/voiceagent/live.ResolveProviderIntent` when the host needs a
+provider/profile/model picker with capability requirements. `ProviderIntent`
+can require realtime audio, tool calls, native keyterms, session resume,
+language hints, context prompts, or reasoning effort, and
+`ResolvedProviderPlan.LiveConfig()` feeds `live.NewProviderForConfig` without
+provider-specific constructors. Inspect `SelectedFallbackKind`, `Fallbacks`,
+and `RejectedProviders` when you need to explain same-provider model fallback,
+cross-provider fallback, cascaded fallback, or missing capabilities to users.
+
+Server-Target Voice Agent sessions use the same provider vocabulary on the
+WebSocket `start.provider` field. Accepted values include `gemini`/`google`,
+`deepgram`, `assemblyai`, `openai`, and `cascaded`, plus public realtime profile
+IDs such as `realtime.google.gemini-native-audio`,
+`realtime.deepgram.voice-agent`, `realtime.assemblyai.voice-agent`, and
+`realtime.openai.gpt-realtime-2`.
+Per-session switching resolves provider-specific API keys and model defaults,
+so an OpenAI session does not inherit a Gemini model and an AssemblyAI session
+does not inherit a Gemini model.
+
+The credential-gated `.github/workflows/provider-live-gate.yml` covers four
+providers: Deepgram, AssemblyAI, Gemini, and OpenAI. Missing credentials must
+surface as `blocked_by_auth`; a blocked leg is not live provider proof.
 
 For a browser starter, use `speechkitctl init browser-dictation-react --output
 ./speechkit-demo` or ask `speechkit-mcp` for `speechkit_scaffold_integration`.

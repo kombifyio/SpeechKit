@@ -30,6 +30,29 @@ func TestResolveLiveOptionsUsesRequestAndGlobalDefaults(t *testing.T) {
 	}
 }
 
+func TestResolveLiveOptionsDoesNotParseProseHintAsDeepgramKeyterms(t *testing.T) {
+	resolved := ResolveLiveOptions("deepgram", "realtime.deepgram.voice-agent", LiveConfig{
+		VocabularyHint: "Prefer these names and product terms in recognition and responses: Kombify, SpeechKit.",
+		ProviderOptions: provideropts.Values{
+			provideropts.OptionKeyterms: []string{"Kombify"},
+		},
+	}, nil, nil)
+
+	if got := resolved.Keyterms; len(got) != 1 || got[0] != "Kombify" {
+		t.Fatalf("Keyterms = %#v, want structured Kombify only", got)
+	}
+}
+
+func TestResolveLiveOptionsKeepsProseHintOutOfKeyterms(t *testing.T) {
+	resolved := ResolveLiveOptions("deepgram", "realtime.deepgram.voice-agent", LiveConfig{
+		VocabularyHint: "Prefer these names and product terms in recognition and responses: Kombify, SpeechKit.",
+	}, nil, nil)
+
+	if len(resolved.Keyterms) != 0 {
+		t.Fatalf("Keyterms = %#v, want none from prose hint", resolved.Keyterms)
+	}
+}
+
 func TestResolveLiveOptionsReportsUnsupportedEndpointing(t *testing.T) {
 	resolved := ResolveLiveOptions("google", "realtime.google.gemini-native-audio", LiveConfig{
 		Options: provideropts.Values{

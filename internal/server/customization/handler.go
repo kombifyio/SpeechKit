@@ -5,6 +5,7 @@ package customization
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"strings"
 	"time"
@@ -355,15 +356,26 @@ func listOpts(r *http.Request) store.CustomizationListOpts {
 }
 
 func requestScopeRef(w http.ResponseWriter, r *http.Request, fallback speechcustomize.ScopeRef) (speechcustomize.ScopeRef, bool) {
-	ref, ok := scopeRef(r, fallback)
+	ref, explicit, ok := scopeRef(r, fallback)
 	if !ok {
 		httpx.WriteError(w, http.StatusBadRequest, "invalid_scope", "scope must be one of builtin, app, install, org, workspace, user, session")
 		return speechcustomize.ScopeRef{}, false
 	}
+	ref = speechcustomize.NormalizeScopeRef(ref)
+	if explicit && scopeRequiresKey(ref.Kind) && strings.TrimSpace(ref.Key) == "" {
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_scope", fmt.Sprintf("scope_key is required for %s scope", ref.Kind))
+		return speechcustomize.ScopeRef{}, false
+	}
+	if explicit {
+		if _, ok := internalcustomize.StorageScopeForRef(speechstorage.ScopeFromContext(r.Context()), ref); !ok {
+			httpx.WriteError(w, http.StatusBadRequest, "invalid_scope", fmt.Sprintf("scope %s is not resolvable", ref.Kind))
+			return speechcustomize.ScopeRef{}, false
+		}
+	}
 	return ref, true
 }
 
-func scopeRef(r *http.Request, fallback speechcustomize.ScopeRef) (speechcustomize.ScopeRef, bool) {
+func scopeRef(r *http.Request, fallback speechcustomize.ScopeRef) (speechcustomize.ScopeRef, bool, bool) {
 	if values, exists := r.URL.Query()["scope"]; exists {
 		scope := ""
 		if len(values) > 0 {
@@ -371,14 +383,14 @@ func scopeRef(r *http.Request, fallback speechcustomize.ScopeRef) (speechcustomi
 		}
 		kind := speechcustomize.ScopeKind(scope)
 		if !isPublishedScopeKind(kind) {
-			return speechcustomize.ScopeRef{}, false
+			return speechcustomize.ScopeRef{}, true, false
 		}
-		return speechcustomize.ScopeRef{Kind: kind, Key: strings.TrimSpace(r.URL.Query().Get("scope_key"))}, true
+		return speechcustomize.ScopeRef{Kind: kind, Key: strings.TrimSpace(r.URL.Query().Get("scope_key"))}, true, true
 	}
 	if fallback.Kind != "" && !isPublishedScopeKind(fallback.Kind) {
-		return speechcustomize.ScopeRef{}, false
+		return speechcustomize.ScopeRef{}, true, false
 	}
-	return fallback, true
+	return fallback, strings.TrimSpace(string(fallback.Kind)) != "" || strings.TrimSpace(fallback.Key) != "", true
 }
 
 func isPublishedScopeKind(kind speechcustomize.ScopeKind) bool {
@@ -405,6 +417,15 @@ func customizationScopeContext(ctx context.Context, ref speechcustomize.ScopeRef
 		return speechstorage.WithScope(ctx, scoped)
 	}
 	return ctx
+}
+
+func scopeRequiresKey(kind speechcustomize.ScopeKind) bool {
+	switch kind {
+	case speechcustomize.ScopeOrg, speechcustomize.ScopeWorkspace, speechcustomize.ScopeUser, speechcustomize.ScopeSession:
+		return true
+	default:
+		return false
+	}
 }
 
 func replaceWords(ctx context.Context, s store.CustomizationStore, opts store.CustomizationReplaceOpts, words []speechcustomize.Word) error {

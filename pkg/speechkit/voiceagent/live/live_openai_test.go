@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"strings"
 	"testing"
+
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/provideropts"
 )
 
 func TestUpsampleMicPCM16Mono16to24(t *testing.T) {
@@ -66,6 +68,9 @@ func TestParseEventAudioDelta(t *testing.T) {
 	if string(msg.Audio) != string(audioBytes) {
 		t.Fatalf("audio bytes mismatch: got % x, want % x", msg.Audio, audioBytes)
 	}
+	if msg.EventType != LiveEventOutputAudio || msg.ProviderMetadata["provider_event"] != "response.audio.delta" {
+		t.Fatalf("event metadata mismatch: %+v", msg)
+	}
 }
 
 func TestParseEventOutputAudioDeltaGA(t *testing.T) {
@@ -87,6 +92,9 @@ func TestParseEventOutputAudioDeltaGA(t *testing.T) {
 	if string(msg.Audio) != string(audioBytes) {
 		t.Fatalf("audio bytes mismatch: got % x, want % x", msg.Audio, audioBytes)
 	}
+	if msg.EventType != LiveEventOutputAudio || msg.ProviderMetadata["provider_event"] != "response.output_audio.delta" {
+		t.Fatalf("event metadata mismatch: %+v", msg)
+	}
 }
 
 func TestParseEventOutputTranscriptDelta(t *testing.T) {
@@ -102,6 +110,35 @@ func TestParseEventOutputTranscriptDelta(t *testing.T) {
 	}
 	if msg.OutputTranscript != "Hello" || msg.OutputTranscriptDone {
 		t.Fatalf("expected partial transcript 'Hello', got %+v", msg)
+	}
+	if msg.EventType != LiveEventOutputText || msg.ProviderMetadata["provider_event"] != "response.audio_transcript.delta" {
+		t.Fatalf("event metadata mismatch: %+v", msg)
+	}
+}
+
+func TestParseEventInputTranscriptEvents(t *testing.T) {
+	t.Parallel()
+	p := &OpenAILive{}
+	partial, swallow, err := p.parseEvent(mustMarshal(t, map[string]any{
+		"type":  "conversation.item.input_audio_transcription.delta",
+		"delta": "Hal",
+	}))
+	if err != nil || swallow {
+		t.Fatalf("input transcription delta: swallow=%v err=%v", swallow, err)
+	}
+	if partial.InputTranscript != "Hal" || partial.InputTranscriptDone || partial.EventType != LiveEventInputPartial {
+		t.Fatalf("partial input transcript mismatch: %+v", partial)
+	}
+
+	final, swallow, err := p.parseEvent(mustMarshal(t, map[string]any{
+		"type":       "conversation.item.input_audio_transcription.completed",
+		"transcript": "Hallo",
+	}))
+	if err != nil || swallow {
+		t.Fatalf("input transcription completed: swallow=%v err=%v", swallow, err)
+	}
+	if final.InputTranscript != "Hallo" || !final.InputTranscriptDone || final.EventType != LiveEventInputFinal {
+		t.Fatalf("final input transcript mismatch: %+v", final)
 	}
 }
 
@@ -119,6 +156,9 @@ func TestParseEventOutputTranscriptDeltaGA(t *testing.T) {
 	if msg.OutputTranscript != "Hello" || msg.OutputTranscriptDone {
 		t.Fatalf("expected partial transcript 'Hello', got %+v", msg)
 	}
+	if msg.EventType != LiveEventOutputText || msg.ProviderMetadata["provider_event"] != "response.output_audio_transcript.delta" {
+		t.Fatalf("event metadata mismatch: %+v", msg)
+	}
 }
 
 func TestParseEventOutputTranscriptDone(t *testing.T) {
@@ -134,6 +174,9 @@ func TestParseEventOutputTranscriptDone(t *testing.T) {
 	}
 	if msg.OutputTranscript != "Final answer." || !msg.OutputTranscriptDone {
 		t.Fatalf("expected final transcript, got %+v", msg)
+	}
+	if msg.EventType != LiveEventOutputText || msg.ProviderMetadata["provider_event"] != "response.audio_transcript.done" {
+		t.Fatalf("event metadata mismatch: %+v", msg)
 	}
 }
 
@@ -151,6 +194,9 @@ func TestParseEventOutputTranscriptDoneGA(t *testing.T) {
 	if msg.OutputTranscript != "Final answer." || !msg.OutputTranscriptDone {
 		t.Fatalf("expected final transcript, got %+v", msg)
 	}
+	if msg.EventType != LiveEventOutputText || msg.ProviderMetadata["provider_event"] != "response.output_audio_transcript.done" {
+		t.Fatalf("event metadata mismatch: %+v", msg)
+	}
 }
 
 func TestParseEventOutputTextDeltaAlsoSetsTranscript(t *testing.T) {
@@ -166,6 +212,9 @@ func TestParseEventOutputTextDeltaAlsoSetsTranscript(t *testing.T) {
 	}
 	if msg.Text != "Text answer" || msg.OutputTranscript != "Text answer" {
 		t.Fatalf("expected text delta to populate text and transcript, got %+v", msg)
+	}
+	if msg.EventType != LiveEventOutputText || msg.ProviderMetadata["provider_event"] != "response.output_text.delta" {
+		t.Fatalf("event metadata mismatch: %+v", msg)
 	}
 }
 
@@ -191,6 +240,9 @@ func TestParseEventFunctionCallDone(t *testing.T) {
 	if tc.ID != "call_42" || tc.Name != "get_weather" || tc.Args["city"] != "Berlin" {
 		t.Fatalf("unexpected tool call: %+v", tc)
 	}
+	if msg.EventType != LiveEventToolCall || msg.ProviderMetadata["provider_event"] != "response.function_call_arguments.done" {
+		t.Fatalf("event metadata mismatch: %+v", msg)
+	}
 }
 
 func TestParseEventResponseDone(t *testing.T) {
@@ -203,6 +255,9 @@ func TestParseEventResponseDone(t *testing.T) {
 	}
 	if !msg.Done {
 		t.Fatalf("response.done should set msg.Done")
+	}
+	if msg.EventType != LiveEventTurnEnd || msg.ProviderMetadata["provider_event"] != "response.done" {
+		t.Fatalf("event metadata mismatch: %+v", msg)
 	}
 }
 
@@ -260,6 +315,9 @@ func TestParseEventInterruption(t *testing.T) {
 	}
 	if !msg.Interrupted {
 		t.Fatalf("expected Interrupted = true, got %+v", msg)
+	}
+	if msg.EventType != LiveEventInterrupted || msg.ProviderMetadata["provider_event"] != "input_audio_buffer.speech_started" {
+		t.Fatalf("event metadata mismatch: %+v", msg)
 	}
 }
 
@@ -402,6 +460,20 @@ func TestBuildOpenAISessionIncludesGAType(t *testing.T) {
 	outputFormat, ok := output["format"].(map[string]any)
 	if !ok || outputFormat["type"] != "audio/pcm" || outputFormat["rate"] != openaiInputSampleRate {
 		t.Fatalf("session.audio.output.format = %#v", output["format"])
+	}
+}
+
+func TestBuildOpenAISessionMapsReasoningEffort(t *testing.T) {
+	t.Parallel()
+	session := buildOpenAISession(LiveConfig{
+		Model: "gpt-realtime-2",
+		ProviderOptions: provideropts.Values{
+			provideropts.OptionReasoningEffort: "high",
+		},
+	})
+	reasoning, ok := session["reasoning"].(map[string]any)
+	if !ok || reasoning["effort"] != "high" {
+		t.Fatalf("reasoning = %#v", session["reasoning"])
 	}
 }
 

@@ -711,14 +711,14 @@ components:
       schema:
         type: string
         enum: [builtin, app, install, org, workspace, user, session]
-      description: Optional customization applicability scope. Device Settings defaults to user.
+      description: Optional customization applicability scope. Device Settings defaults to install; user, org, workspace, and session require scope_key.
     CustomizationScopeKey:
       name: scope_key
       in: query
       required: false
       schema:
         type: string
-      description: Optional key for keyed scopes such as org, workspace, user, or session.
+      description: Required key for explicit user, org, workspace, or session scopes.
     CustomizationSource:
       name: source
       in: query

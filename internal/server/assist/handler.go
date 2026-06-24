@@ -32,6 +32,7 @@ import (
 	"github.com/kombifyio/SpeechKit/internal/server/middleware"
 	"github.com/kombifyio/SpeechKit/internal/store"
 	"github.com/kombifyio/SpeechKit/internal/stt"
+	"github.com/kombifyio/SpeechKit/pkg/speechkit"
 	speechcustomize "github.com/kombifyio/SpeechKit/pkg/speechkit/customize"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/speaker"
 	speechstorage "github.com/kombifyio/SpeechKit/pkg/speechkit/storage"
@@ -140,19 +141,20 @@ type processJSONRequest struct {
 }
 
 type processResponse struct {
-	Text        string                     `json:"text"`
-	SpeakText   string                     `json:"speak_text,omitempty"`
-	Action      string                     `json:"action"`
-	Locale      string                     `json:"locale,omitempty"`
-	Shortcut    string                     `json:"shortcut,omitempty"`
-	Surface     string                     `json:"surface,omitempty"`
-	Kind        string                     `json:"kind,omitempty"`
-	Transcript  string                     `json:"transcript,omitempty"`
-	AudioBase64 string                     `json:"audio_base64,omitempty"`
-	AudioFormat string                     `json:"audio_format,omitempty"`
-	LatencyMs   int64                      `json:"latency_ms"`
-	SourceInfo  *sourceMeta                `json:"source,omitempty"`
-	Speakers    *speaker.DiarizationResult `json:"speakers,omitempty"`
+	Text                 string                          `json:"text"`
+	SpeakText            string                          `json:"speak_text,omitempty"`
+	Action               string                          `json:"action"`
+	Locale               string                          `json:"locale,omitempty"`
+	Shortcut             string                          `json:"shortcut,omitempty"`
+	Surface              string                          `json:"surface,omitempty"`
+	Kind                 string                          `json:"kind,omitempty"`
+	Transcript           string                          `json:"transcript,omitempty"`
+	AudioBase64          string                          `json:"audio_base64,omitempty"`
+	AudioFormat          string                          `json:"audio_format,omitempty"`
+	LatencyMs            int64                           `json:"latency_ms"`
+	SourceInfo           *sourceMeta                     `json:"source,omitempty"`
+	Speakers             *speaker.DiarizationResult      `json:"speakers,omitempty"`
+	CustomizationActions []speechkit.CustomizationAction `json:"customization_actions,omitempty"`
 }
 
 type selfTestResponse struct {
@@ -410,7 +412,8 @@ func (h *Handler) processTranscript(ctx context.Context, w http.ResponseWriter, 
 		httpx.WriteError(w, http.StatusBadRequest, "empty_transcript", "transcript or text field must not be empty")
 		return
 	}
-	transcript = h.applyTranscriptCustomization(ctx, transcript, opts.Locale)
+	var customizationActions []speechkit.CustomizationAction
+	transcript, customizationActions = h.applyTranscriptCustomization(ctx, transcript, opts.Locale)
 
 	// Feed the resolved Words/Replacements customization into the Assist
 	// LLM prompt (not just the STT stage). VoiceAgentHint is the
@@ -454,18 +457,19 @@ func (h *Handler) processTranscript(ctx context.Context, w http.ResponseWriter, 
 	_ = ttsVoice  // reserved for per-request voice override (v1.1)
 
 	resp := processResponse{
-		Text:        result.Text,
-		SpeakText:   result.SpeakText,
-		Action:      result.Action,
-		Locale:      firstNonEmptyString(result.Locale, opts.Locale),
-		Shortcut:    result.Shortcut,
-		Surface:     string(result.Surface),
-		Kind:        string(result.Kind),
-		Transcript:  transcript,
-		LatencyMs:   latency.Milliseconds(),
-		SourceInfo:  source,
-		AudioFormat: result.Format,
-		Speakers:    speakers,
+		Text:                 result.Text,
+		SpeakText:            result.SpeakText,
+		Action:               result.Action,
+		Locale:               firstNonEmptyString(result.Locale, opts.Locale),
+		Shortcut:             result.Shortcut,
+		Surface:              string(result.Surface),
+		Kind:                 string(result.Kind),
+		Transcript:           transcript,
+		LatencyMs:            latency.Milliseconds(),
+		SourceInfo:           source,
+		AudioFormat:          result.Format,
+		Speakers:             speakers,
+		CustomizationActions: customizationActions,
 	}
 	if len(result.Audio) > 0 {
 		resp.AudioBase64 = base64.StdEncoding.EncodeToString(result.Audio)
@@ -516,20 +520,20 @@ func (h *Handler) applyCustomizationHints(ctx context.Context, opts stt.Transcri
 	return opts, resolved.Replacements
 }
 
-func (h *Handler) applyTranscriptCustomization(ctx context.Context, transcript, locale string) string {
+func (h *Handler) applyTranscriptCustomization(ctx context.Context, transcript, locale string) (string, []speechkit.CustomizationAction) {
 	resolved, err := h.resolveAssistCustomization(ctx, locale)
 	if err != nil {
 		slog.Debug("assist: resolve transcript customization failed", "err", err)
-		return transcript
+		return transcript, nil
 	}
 	if resolved.Applier == nil {
-		return transcript
+		return transcript, nil
 	}
 	applied := resolved.Applier.Apply(transcript)
 	if len(applied.Matches) > 0 {
 		h.recordCustomizationUsage(ctx, resolved.Replacements, applied.Matches, locale)
 	}
-	return applied.Text
+	return applied.Text, internalcustomize.PublicActions(applied.Actions)
 }
 
 func (h *Handler) recordCustomizationUsage(ctx context.Context, replacements []speechcustomize.Replacement, matches []internalcustomize.MatchRecord, language string) {

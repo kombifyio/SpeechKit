@@ -202,7 +202,9 @@ type LiveReconnector interface {
 
 // LiveConfig configures a real-time session.
 type LiveConfig struct {
-	Model string // e.g. "gemini-3.1-flash-live-preview"
+	Provider  string // e.g. "google", "deepgram", "assemblyai", "openai"
+	ProfileID string // e.g. "realtime.google.gemini-native-audio"
+	Model     string // e.g. "gemini-3.1-flash-live-preview"
 	// FallbackModel is tried when the primary Model's Connect fails. Empty
 	// disables the fallback. Typical pairing in 2026: a preview model as
 	// Model + the last GA model as FallbackModel, so transient preview
@@ -233,8 +235,28 @@ type LiveConfig struct {
 	ProviderOptions provideropts.Values
 }
 
+type LiveEventType string
+
+const (
+	LiveEventSessionReady     LiveEventType = "session_ready"
+	LiveEventInputPartial     LiveEventType = "input_partial"
+	LiveEventInputFinal       LiveEventType = "input_final"
+	LiveEventOutputAudio      LiveEventType = "output_audio"
+	LiveEventOutputText       LiveEventType = "output_text"
+	LiveEventToolCall         LiveEventType = "tool_call"
+	LiveEventToolResultAck    LiveEventType = "tool_result_ack"
+	LiveEventInterrupted      LiveEventType = "interrupted"
+	LiveEventTurnEnd          LiveEventType = "turn_end"
+	LiveEventSessionResumable LiveEventType = "session_resumable"
+	LiveEventSessionEnd       LiveEventType = "session_end"
+)
+
 // LiveMessage is a message received from the real-time model.
 type LiveMessage struct {
+	EventType        LiveEventType   // Provider-neutral event type for hosts that need precise routing.
+	EventTypes       []LiveEventType // All provider-neutral event meanings when a provider combines multiple events in one frame.
+	ProviderMetadata map[string]any  // Optional provider-native metadata for debugging and advanced hosts.
+
 	Audio []byte // PCM audio chunk (24kHz 16-bit mono)
 	Text  string // Text transcript (may be partial or empty)
 	Done  bool   // True when the model's turn is complete
@@ -253,6 +275,7 @@ type LiveMessage struct {
 	ToolCallCancellationIDs []string
 	Interrupted             bool // True when user interrupted model (barge-in)
 	GoAway                  bool // True when server signals imminent session end
+	SessionResumable        bool // True when the provider indicates reconnect/resume is possible.
 }
 
 // Callbacks are event handlers for UI integration with a low-level Session.

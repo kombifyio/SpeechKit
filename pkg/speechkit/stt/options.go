@@ -12,6 +12,8 @@ type ResolvedTranscribeOptions struct {
 	Language              string
 	Model                 string
 	Prompt                string
+	ContextPrompt         string
+	LanguageHints         []string
 	Keyterms              []string
 	Speaker               speaker.Options
 	DetectLanguage        bool
@@ -23,6 +25,9 @@ type ResolvedTranscribeOptions struct {
 	UseVocabularyKeyterms bool
 	Timestamps            bool
 	EndpointingMs         int
+	PrivacyRedaction      bool
+	VoiceFocus            bool
+	MedicalDomain         bool
 	Effective             provideropts.EffectiveOptions
 }
 
@@ -68,6 +73,8 @@ func ResolveTranscribeOptions(provider, profileID string, opts TranscribeOpts, p
 		Language:              effective.String(provideropts.OptionLanguage),
 		Model:                 strings.TrimSpace(opts.Model),
 		Prompt:                effective.String(provideropts.OptionPromptHint),
+		ContextPrompt:         effective.String(provideropts.OptionContextPrompt),
+		LanguageHints:         effective.StringList(provideropts.OptionLanguageHints),
 		Keyterms:              terms,
 		Speaker:               opts.Speaker.Normalized(),
 		DetectLanguage:        effective.Bool(provideropts.OptionDetectLanguage),
@@ -79,6 +86,9 @@ func ResolveTranscribeOptions(provider, profileID string, opts TranscribeOpts, p
 		UseVocabularyKeyterms: effective.Bool(provideropts.OptionVocabularyBias),
 		Timestamps:            effective.Bool(provideropts.OptionTimestamps),
 		EndpointingMs:         effective.Int(provideropts.OptionEndpointingMs),
+		PrivacyRedaction:      effective.Bool(provideropts.OptionPrivacyRedaction),
+		VoiceFocus:            effective.Bool(provideropts.OptionVoiceFocus),
+		MedicalDomain:         effective.Bool(provideropts.OptionMedicalDomain),
 		Effective:             effective,
 	}
 	if resolved.Prompt == "" {

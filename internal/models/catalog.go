@@ -64,6 +64,19 @@ const (
 	CapabilityWordsNativeHints      Capability = "words_native_hints"
 	CapabilityPostSTTReplacements   Capability = "post_stt_replacements"
 	CapabilitySessionSummary        Capability = "session_summary"
+	CapabilityTranscript            Capability = "transcript"
+	CapabilityInterruptions         Capability = "interruptions"
+	CapabilitySessionResume         Capability = "session_resume"
+	CapabilityNativeContextPrompt   Capability = "native_context_prompt"
+	CapabilityNativeKeyterms        Capability = "native_keyterms"
+	CapabilityLanguageHints         Capability = "language_hints"
+	CapabilitySpeakerStreaming      Capability = "speaker_streaming"
+	CapabilityPrivacyRedaction      Capability = "privacy_redaction"
+	CapabilityVoiceFocus            Capability = "voice_focus"
+	CapabilityMedicalDomain         Capability = "medical_domain"
+	CapabilityReasoningEffort       Capability = "reasoning_effort"
+	CapabilityTranslation           Capability = "translation"
+	CapabilityTranscriptionOnly     Capability = "transcription_only"
 	CapabilitySpeakerDiarization    Capability = "speaker_diarization"
 	CapabilitySpeakerIdentification Capability = "speaker_identification"
 	CapabilitySpeakerAttribution    Capability = "speaker_attribution"
@@ -79,22 +92,29 @@ type ModelVariant struct {
 }
 
 type Profile struct {
-	ID             string         `json:"id"`
-	Name           string         `json:"name"`
-	Modality       Modality       `json:"modality"`
-	ProviderKind   ProviderKind   `json:"providerKind,omitempty"`
-	ExecutionMode  ExecutionMode  `json:"executionMode,omitempty"`
-	ModelID        string         `json:"modelId,omitempty"`
-	Source         string         `json:"source,omitempty"`
-	Description    string         `json:"description,omitempty"`
-	License        string         `json:"license,omitempty"`
-	Capabilities   []Capability   `json:"capabilities,omitempty"`
-	AdapterKind    string         `json:"adapterKind,omitempty"`
-	Variants       []ModelVariant `json:"variants,omitempty"`
-	AllowInference bool           `json:"inferenceAllowed,omitempty"`
-	Default        bool           `json:"default,omitempty"`
-	Recommended    bool           `json:"recommended,omitempty"`
-	Experimental   bool           `json:"experimental,omitempty"`
+	ID               string         `json:"id"`
+	Name             string         `json:"name"`
+	Modality         Modality       `json:"modality"`
+	ProviderKind     ProviderKind   `json:"providerKind,omitempty"`
+	ExecutionMode    ExecutionMode  `json:"executionMode,omitempty"`
+	Provider         string         `json:"provider,omitempty"`
+	ModelID          string         `json:"modelId,omitempty"`
+	Lifecycle        string         `json:"lifecycle,omitempty"`
+	Source           string         `json:"source,omitempty"`
+	Description      string         `json:"description,omitempty"`
+	License          string         `json:"license,omitempty"`
+	Capabilities     []Capability   `json:"capabilities,omitempty"`
+	SupportedLocales []string       `json:"supportedLocales,omitempty"`
+	NativeOptions    []string       `json:"nativeOptions,omitempty"`
+	AuthRequirement  string         `json:"authRequirement,omitempty"`
+	Transport        string         `json:"transport,omitempty"`
+	EvidenceURL      string         `json:"evidenceUrl,omitempty"`
+	AdapterKind      string         `json:"adapterKind,omitempty"`
+	Variants         []ModelVariant `json:"variants,omitempty"`
+	AllowInference   bool           `json:"inferenceAllowed,omitempty"`
+	Default          bool           `json:"default,omitempty"`
+	Recommended      bool           `json:"recommended,omitempty"`
+	Experimental     bool           `json:"experimental,omitempty"`
 }
 
 func (p Profile) HasCapability(capability Capability) bool {
@@ -129,22 +149,29 @@ func profilesFromFrameworkCatalog(frameworkProfiles []speechkit.ProviderProfile)
 
 func profileFromFramework(profile speechkit.ProviderProfile) Profile {
 	return Profile{
-		ID:             profile.ID,
-		Name:           profile.Name,
-		Modality:       modalityFromFrameworkMode(profile.Mode),
-		ProviderKind:   ProviderKind(profile.ProviderKind),
-		ExecutionMode:  ExecutionMode(profile.ExecutionMode),
-		ModelID:        profile.ModelID,
-		Source:         profile.Source,
-		Description:    profile.Description,
-		License:        profile.License,
-		Capabilities:   capabilitiesFromFramework(profile.Capabilities),
-		AdapterKind:    profile.AdapterKind,
-		Variants:       variantsFromFramework(profile.Variants),
-		AllowInference: profile.AllowInference,
-		Default:        profile.Default,
-		Recommended:    profile.Recommended,
-		Experimental:   profile.Experimental,
+		ID:               profile.ID,
+		Name:             profile.Name,
+		Modality:         modalityFromFrameworkMode(profile.Mode),
+		ProviderKind:     ProviderKind(profile.ProviderKind),
+		ExecutionMode:    ExecutionMode(profile.ExecutionMode),
+		Provider:         profile.Provider,
+		ModelID:          profile.ModelID,
+		Lifecycle:        string(profile.Lifecycle),
+		Source:           profile.Source,
+		Description:      profile.Description,
+		License:          profile.License,
+		Capabilities:     capabilitiesFromFramework(profile.Capabilities),
+		SupportedLocales: append([]string(nil), profile.SupportedLocales...),
+		NativeOptions:    append([]string(nil), profile.NativeOptions...),
+		AuthRequirement:  profile.AuthRequirement,
+		Transport:        profile.Transport,
+		EvidenceURL:      profile.EvidenceURL,
+		AdapterKind:      profile.AdapterKind,
+		Variants:         variantsFromFramework(profile.Variants),
+		AllowInference:   profile.AllowInference,
+		Default:          profile.Default,
+		Recommended:      profile.Recommended,
+		Experimental:     profile.Experimental,
 	}
 }
 

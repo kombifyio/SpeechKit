@@ -36,14 +36,15 @@ type TranscribeOptions struct {
 }
 
 type TranscribeResponse struct {
-	Text       string                     `json:"text"`
-	Language   string                     `json:"language,omitempty"`
-	DurationMs int64                      `json:"duration_ms"`
-	LatencyMs  int64                      `json:"latency_ms"`
-	Provider   string                     `json:"provider,omitempty"`
-	Model      string                     `json:"model,omitempty"`
-	Confidence float64                    `json:"confidence,omitempty"`
-	Speakers   *speaker.DiarizationResult `json:"speakers,omitempty"`
+	Text                 string                          `json:"text"`
+	Language             string                          `json:"language,omitempty"`
+	DurationMs           int64                           `json:"duration_ms"`
+	LatencyMs            int64                           `json:"latency_ms"`
+	Provider             string                          `json:"provider,omitempty"`
+	Model                string                          `json:"model,omitempty"`
+	Confidence           float64                         `json:"confidence,omitempty"`
+	Speakers             *speaker.DiarizationResult      `json:"speakers,omitempty"`
+	CustomizationActions []framework.CustomizationAction `json:"customization_actions,omitempty"`
 }
 
 type ConfigSummary map[string]any

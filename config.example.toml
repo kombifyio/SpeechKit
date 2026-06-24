@@ -20,7 +20,7 @@ hotkey = "ctrl+win"                # Legacy alias for dictate_hotkey
 hotkey_mode = "hold_to_talk"
 auto_stop_silence_ms = 1500
 fast_mode_silence_ms = 1500
-dictate_silence_timeout_sec = 15  # Seconds of silence before toggle dictation auto-stops. 0 disables.
+dictate_silence_timeout_sec = 3  # Seconds of silence before toggle dictation auto-stops. 0 disables.
 model_download_dir = ""            # Blank = %LOCALAPPDATA%/SpeechKit/models. Set a dedicated folder for local model downloads.
 
 # [output] tunes how the Device-Target injects transcribed text into the
@@ -334,9 +334,9 @@ timeout_sec = 30                         # subprocess timeout
 
 [voice_agent]
 enabled = true
-provider = "gemini"                        # Realtime backend: "gemini" (default), "openai", "deepgram"; Server-Target also accepts "cascaded"/"moshi"
-model = "gemini-2.5-flash-native-audio-preview-12-2025" # Recommended Voice Agent default
-fallback_model = "gpt-realtime-mini"       # Fallback if primary unavailable
+provider = "gemini"                        # Realtime backend: "gemini" (default), "openai", "deepgram", "assemblyai"; Server-Target also accepts "cascaded"/"moshi"
+model = "gemini-3.1-flash-live-preview"    # Recommended Voice Agent default
+fallback_model = "gemini-2.5-flash-native-audio-preview-12-2025"
 voice = "Kore"                             # Voice for real-time model
 agent_profile_id = "default"               # default, brainstorming_companion, humor_companion, support_companion
 agent_sequence_id = ""                     # Optional workflow sequence override. Empty = selected profile/persona default.
@@ -409,7 +409,7 @@ vad_silence_duration_ms = 700
 # enabled = false
 # api_key_env = "DEEPGRAM_API_KEY"
 # stt_model = "nova-3"
-# stt_language = ""                  # empty = SpeechKit language, "multi" = code switching, "de"/"en" = fixed override
+# stt_language = "multi"             # Deepgram STT is always multilingual in SpeechKit; fixed-language overrides are ignored.
 # stt_smart_format = true            # readability formatting; recommended default
 # stt_dictation = false              # spoken punctuation, English-focused
 # stt_filler_words = false
@@ -424,7 +424,7 @@ vad_silence_duration_ms = 700
 # enabled = false
 # api_key_env = "ASSEMBLYAI_API_KEY"
 # stt_models = "universal-3-pro,universal-2"
-# streaming_model = "u3-rt-pro"
+# streaming_model = "universal-3-5-pro"
 # streaming_base_url = "wss://streaming.assemblyai.com"
 
 # [providers.ollama]        # Local Provider: externally managed Ollama, not SpeechKit Built-in

@@ -27,6 +27,7 @@ import (
 	"github.com/kombifyio/SpeechKit/internal/server/storageauth"
 	"github.com/kombifyio/SpeechKit/internal/store"
 	"github.com/kombifyio/SpeechKit/internal/stt"
+	"github.com/kombifyio/SpeechKit/pkg/speechkit"
 	speechcustomize "github.com/kombifyio/SpeechKit/pkg/speechkit/customize"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/speaker"
 	speechstorage "github.com/kombifyio/SpeechKit/pkg/speechkit/storage"
@@ -87,15 +88,16 @@ func (h *Handler) Mount(mux *http.ServeMux) {
 // response body shape — kept stable across versions so API consumers and
 // future OSS integrators can pin to this contract.
 type transcribeResponse struct {
-	Text       string                     `json:"text"`
-	Language   string                     `json:"language,omitempty"`
-	DurationMs int64                      `json:"duration_ms"`
-	LatencyMs  int64                      `json:"latency_ms"`
-	Provider   string                     `json:"provider,omitempty"`
-	Model      string                     `json:"model,omitempty"`
-	Confidence float64                    `json:"confidence,omitempty"`
-	SourceInfo *sourceMeta                `json:"source,omitempty"`
-	Speakers   *speaker.DiarizationResult `json:"speakers,omitempty"`
+	Text                 string                          `json:"text"`
+	Language             string                          `json:"language,omitempty"`
+	DurationMs           int64                           `json:"duration_ms"`
+	LatencyMs            int64                           `json:"latency_ms"`
+	Provider             string                          `json:"provider,omitempty"`
+	Model                string                          `json:"model,omitempty"`
+	Confidence           float64                         `json:"confidence,omitempty"`
+	SourceInfo           *sourceMeta                     `json:"source,omitempty"`
+	Speakers             *speaker.DiarizationResult      `json:"speakers,omitempty"`
+	CustomizationActions []speechkit.CustomizationAction `json:"customization_actions,omitempty"`
 }
 
 type sourceMeta struct {
@@ -306,12 +308,14 @@ func (h *Handler) transcribeBytes(w http.ResponseWriter, r *http.Request, raw []
 			"STT returned an empty transcript; the audio may contain no speech")
 		return
 	}
+	var customizationActions []speechkit.CustomizationAction
 	if len(replacements) > 0 {
 		applied, err := internalcustomize.Apply(result.Text, replacements, speechcustomize.StagePostSTT)
 		if err != nil {
 			slog.Debug("dictation: customization replacements skipped", "err", err)
 		} else {
 			result.Text = applied.Text
+			customizationActions = internalcustomize.PublicActions(applied.Actions)
 			h.recordCustomizationUsage(ctx, replacements, applied.Matches, firstNonEmpty(result.Language, opts.Language))
 		}
 	}
@@ -330,7 +334,8 @@ func (h *Handler) transcribeBytes(w http.ResponseWriter, r *http.Request, raw []
 			Channels:   decoded.SourceCh,
 			DurationMs: decoded.DurationMs,
 		},
-		Speakers: result.Speakers,
+		Speakers:             result.Speakers,
+		CustomizationActions: customizationActions,
 	}
 	if h.store != nil {
 		persistCtx := storageauth.ContextWithRequestOwner(ctx, r)

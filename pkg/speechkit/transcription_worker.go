@@ -177,6 +177,15 @@ func (w *TranscriptionWorker) Start(ctx context.Context) {
 
 func (w *TranscriptionWorker) Submit(job TranscriptionJob) error {
 	job = job.Clone()
+	now := time.Now()
+	if job.QueuedAt.IsZero() {
+		job.QueuedAt = now
+	}
+	for i := range job.Segments {
+		if job.Segments[i].QueuedAt.IsZero() {
+			job.Segments[i].QueuedAt = job.QueuedAt
+		}
+	}
 
 	w.mu.Lock()
 	defer w.mu.Unlock()
@@ -212,7 +221,18 @@ func (w *TranscriptionWorker) Wait() {
 func (w *TranscriptionWorker) handleJob(ctx context.Context, job TranscriptionJob) {
 	w.onState("processing", DefaultProcessingMessage)
 
+	job.Submission = inheritSegmentDefaults(Submission{}, job.Submission)
 	segments := job.transcriptionSegments()
+	if queuedAt := earliestQueuedAt(job, segments); !queuedAt.IsZero() {
+		w.onLog(
+			fmt.Sprintf("STT timing: queue_wait=%dms segments=%d audio=%.1fs",
+				time.Since(queuedAt).Milliseconds(),
+				len(segments),
+				totalSubmissionDuration(job, segments),
+			),
+			"info",
+		)
+	}
 	if len(segments) > 1 {
 		w.onLog(fmt.Sprintf("Sending %d segments to STT in parallel...", len(segments)), "info")
 	} else {
@@ -296,9 +316,11 @@ func (w *TranscriptionWorker) handleJob(ctx context.Context, job TranscriptionJo
 		}
 		return
 	}
+	deliverStarted := time.Now()
 	if err := w.output.Deliver(ctx, transcript, job.Target); err != nil {
 		w.onLog(fmt.Sprintf("Output error: %v", err), "error")
 	}
+	w.onLog(fmt.Sprintf("STT timing: output_delivery=%dms", time.Since(deliverStarted).Milliseconds()), "info")
 	if !job.QuickNote {
 		w.persistTranscriptionAsync(job.Submission, transcript) //nolint:contextcheck // fire-and-forget history write; uses its own 15s timeout context
 	}
@@ -321,11 +343,35 @@ func (w *TranscriptionWorker) transcribeJob(ctx context.Context, job Transcripti
 	defer cancel()
 
 	if len(segments) == 1 {
+		normalizeStarted := time.Now()
 		segment := inheritSegmentDefaults(job.Submission, segments[0])
+		normalizeElapsed := time.Since(normalizeStarted)
+		providerStarted := time.Now()
 		transcript, err := w.runner.transcriber.Transcribe(transcribeCtx, segment.WAV, segment.DurationSecs, segment.Language)
+		providerElapsed := time.Since(providerStarted)
 		if err != nil {
+			w.onLog(
+				fmt.Sprintf("STT timing: normalize=%dms provider_roundtrip=%dms audio=%.1fs provider=unknown model=unknown language=%s status=error",
+					normalizeElapsed.Milliseconds(),
+					providerElapsed.Milliseconds(),
+					segment.DurationSecs,
+					timingLogValue(segment.Language),
+				),
+				"info",
+			)
 			return Transcript{}, err
 		}
+		w.onLog(
+			fmt.Sprintf("STT timing: normalize=%dms provider_roundtrip=%dms audio=%.1fs provider=%s model=%s language=%s status=ok",
+				normalizeElapsed.Milliseconds(),
+				providerElapsed.Milliseconds(),
+				segment.DurationSecs,
+				timingLogValue(transcript.Provider),
+				timingLogValue(transcript.Model),
+				timingLogValue(transcript.Language),
+			),
+			"info",
+		)
 		if len(job.Segments) > 0 {
 			return combineSegmentTranscripts(job.Submission, []Submission{segment}, []Transcript{transcript}, time.Since(started)), nil
 		}
@@ -341,16 +387,43 @@ func (w *TranscriptionWorker) transcribeSegmentsParallel(ctx context.Context, ca
 
 	var wg sync.WaitGroup
 	for i, segment := range segments {
-		i, segment := i, inheritSegmentDefaults(job.Submission, segment)
+		i, segment := i, segment
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
+			normalizeStarted := time.Now()
+			segment = inheritSegmentDefaults(job.Submission, segment)
+			normalizeElapsed := time.Since(normalizeStarted)
+			providerStarted := time.Now()
 			transcript, err := w.runner.transcriber.Transcribe(ctx, segment.WAV, segment.DurationSecs, segment.Language)
+			providerElapsed := time.Since(providerStarted)
 			if err != nil {
+				w.onLog(
+					fmt.Sprintf("STT timing: segment=%d normalize=%dms provider_roundtrip=%dms audio=%.1fs provider=unknown model=unknown language=%s status=error",
+						i+1,
+						normalizeElapsed.Milliseconds(),
+						providerElapsed.Milliseconds(),
+						segment.DurationSecs,
+						timingLogValue(segment.Language),
+					),
+					"info",
+				)
 				errs[i] = err
 				cancel()
 				return
 			}
+			w.onLog(
+				fmt.Sprintf("STT timing: segment=%d normalize=%dms provider_roundtrip=%dms audio=%.1fs provider=%s model=%s language=%s status=ok",
+					i+1,
+					normalizeElapsed.Milliseconds(),
+					providerElapsed.Milliseconds(),
+					segment.DurationSecs,
+					timingLogValue(transcript.Provider),
+					timingLogValue(transcript.Model),
+					timingLogValue(transcript.Language),
+				),
+				"info",
+			)
 			transcripts[i] = transcript
 			segments[i] = segment
 		}()
@@ -364,6 +437,34 @@ func (w *TranscriptionWorker) transcribeSegmentsParallel(ctx context.Context, ca
 	}
 
 	return combineSegmentTranscripts(job.Submission, segments, transcripts, time.Since(started)), nil
+}
+
+func earliestQueuedAt(job TranscriptionJob, segments []Submission) time.Time {
+	queuedAt := job.QueuedAt
+	for _, segment := range segments {
+		if segment.QueuedAt.IsZero() {
+			continue
+		}
+		if queuedAt.IsZero() || segment.QueuedAt.Before(queuedAt) {
+			queuedAt = segment.QueuedAt
+		}
+	}
+	return queuedAt
+}
+
+func totalSubmissionDuration(job TranscriptionJob, segments []Submission) float64 {
+	if job.DurationSecs > 0 {
+		return job.DurationSecs
+	}
+	var total float64
+	for _, segment := range segments {
+		if segment.DurationSecs > 0 {
+			total += segment.DurationSecs
+			continue
+		}
+		total += PCMDurationSecs(segment.PCM)
+	}
+	return total
 }
 
 func inheritSegmentDefaults(parent, segment Submission) Submission {
@@ -447,6 +548,14 @@ func (w *TranscriptionWorker) logTranscriptReady(transcript Transcript, marker s
 		),
 		"success",
 	)
+}
+
+func timingLogValue(value string) string {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return "unknown"
+	}
+	return value
 }
 
 func (w *TranscriptionWorker) persistTranscriptionAsync(submission Submission, transcript Transcript) {

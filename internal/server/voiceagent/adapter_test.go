@@ -256,6 +256,71 @@ func sendStart(t *testing.T, conn *websocket.Conn, frame StartFrame) {
 	}
 }
 
+func TestAdapterSelectProviderNormalizesPublicAliases(t *testing.T) {
+	gemini := newFakeProvider()
+	assemblyAI := newFakeProvider()
+	openAI := newFakeProvider()
+	cascaded := newFakeProvider()
+	adapter := &Adapter{
+		DefaultProvider: "google",
+		Providers: map[string]ProviderFactory{
+			"gemini":     staticProviderFactory{provider: gemini},
+			"assemblyai": staticProviderFactory{provider: assemblyAI},
+			"openai":     staticProviderFactory{provider: openAI},
+			"cascaded":   staticProviderFactory{provider: cascaded},
+		},
+	}
+
+	tests := []struct {
+		name      string
+		requested string
+		wantName  string
+		want      LiveProviderAdapter
+	}{
+		{name: "default google alias", requested: "", wantName: "gemini", want: gemini},
+		{name: "google alias", requested: "google", wantName: "gemini", want: gemini},
+		{name: "gemini profile id", requested: "realtime.google.gemini-native-audio", wantName: "gemini", want: gemini},
+		{name: "assembly alias", requested: "assembly-ai", wantName: "assemblyai", want: assemblyAI},
+		{name: "assembly profile id", requested: "realtime.assemblyai.voice-agent", wantName: "assemblyai", want: assemblyAI},
+		{name: "openai profile id", requested: "realtime.openai.gpt-realtime-2", wantName: "openai", want: openAI},
+		{name: "cascaded alias", requested: "pipeline-fallback", wantName: "cascaded", want: cascaded},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, resolved, err := adapter.selectProvider(tt.requested)
+			if err != nil {
+				t.Fatalf("selectProvider() error = %v", err)
+			}
+			if resolved != tt.wantName {
+				t.Fatalf("resolved = %q, want %q", resolved, tt.wantName)
+			}
+			if got != tt.want {
+				t.Fatalf("provider = %T/%p, want %T/%p", got, got, tt.want, tt.want)
+			}
+		})
+	}
+}
+
+func TestAdapterSelectProviderReportsNormalizedUnknownProvider(t *testing.T) {
+	adapter := &Adapter{
+		Providers: map[string]ProviderFactory{
+			"gemini": staticProviderFactory{provider: newFakeProvider()},
+		},
+	}
+
+	_, resolved, err := adapter.selectProvider("realtime.assemblyai.voice-agent")
+	if err == nil {
+		t.Fatal("selectProvider() error = nil, want unavailable provider")
+	}
+	if resolved != "assemblyai" {
+		t.Fatalf("resolved = %q, want assemblyai", resolved)
+	}
+	if !strings.Contains(err.Error(), `"assemblyai"`) || !strings.Contains(err.Error(), "gemini") {
+		t.Fatalf("error = %q, want normalized provider and configured list", err.Error())
+	}
+}
+
 // readJSONFrame blocks on a single text frame and decodes it as the given
 // target type. Times out after 2 seconds.
 func readJSONFrame(t *testing.T, conn *websocket.Conn, dst any) {
@@ -306,6 +371,15 @@ func readEnvelope(t *testing.T, conn *websocket.Conn) (string, []byte) {
 	return env.Type, data
 }
 
+func eventTypesContain(values []string, want string) bool {
+	for _, value := range values {
+		if value == want {
+			return true
+		}
+	}
+	return false
+}
+
 // ── tests ───────────────────────────────────────────────────────────────────
 
 func TestAdapter_StartFrameTriggersConnectAndStateListening(t *testing.T) {
@@ -320,6 +394,9 @@ func TestAdapter_StartFrameTriggersConnectAndStateListening(t *testing.T) {
 	readJSONFrame(t, env.conn, &stateMsg)
 	if stateMsg.Type != MsgState || stateMsg.State != "listening" {
 		t.Fatalf("expected state listening, got %+v", stateMsg)
+	}
+	if stateMsg.EventType != EventSessionReady || !eventTypesContain(stateMsg.EventTypes, EventSessionReady) {
+		t.Fatalf("state event fields = %+v, want session_ready", stateMsg.EventFrameFields)
 	}
 
 	provider.mu.Lock()
@@ -517,7 +594,12 @@ func TestAdapter_ProviderMessagesRelayedToClient(t *testing.T) {
 	readJSONFrame(t, env.conn, &stateMsg)
 
 	// Push input transcript + audio chunk.
-	provider.push(&LiveMessage{InputTranscript: "hello", InputTranscriptDone: true})
+	provider.push(&LiveMessage{
+		InputTranscript:     "hello",
+		InputTranscriptDone: true,
+		ProviderMetadata:    map[string]any{"provider_event": "fake.input.final"},
+		SessionResumable:    true,
+	})
 	provider.push(&LiveMessage{Audio: []byte{0xAA, 0xBB}})
 
 	typeName, raw := readEnvelope(t, env.conn)
@@ -531,10 +613,76 @@ func TestAdapter_ProviderMessagesRelayedToClient(t *testing.T) {
 	if transcript.Text != "hello" || !transcript.Done {
 		t.Fatalf("unexpected transcript frame: %+v", transcript)
 	}
+	if transcript.EventType != EventInputFinal ||
+		!eventTypesContain(transcript.EventTypes, EventInputFinal) ||
+		!eventTypesContain(transcript.EventTypes, EventSessionResumable) {
+		t.Fatalf("transcript event fields = %+v", transcript.EventFrameFields)
+	}
+	if transcript.ProviderMetadata["provider_event"] != "fake.input.final" {
+		t.Fatalf("provider metadata = %#v", transcript.ProviderMetadata)
+	}
 
 	got := readBinaryFrame(t, env.conn)
 	if len(got) != 2 || got[0] != 0xAA || got[1] != 0xBB {
 		t.Fatalf("unexpected audio bytes: %x", got)
+	}
+}
+
+func TestAdapter_StandaloneProviderEventRelayedToClient(t *testing.T) {
+	provider := newFakeProvider()
+	defer provider.Close() //nolint:errcheck
+	resolver := &fakeResolver{}
+	env := startAdapterEnv(t, 0, provider, resolver)
+
+	sendStart(t, env.conn, StartFrame{})
+	var stateMsg StateFrame
+	readJSONFrame(t, env.conn, &stateMsg)
+
+	provider.push(&LiveMessage{
+		Done:             true,
+		SessionResumable: true,
+		ProviderMetadata: map[string]any{"provider_event": "fake.turn.done"},
+	})
+
+	typeName, raw := readEnvelope(t, env.conn)
+	if typeName != MsgEvent {
+		t.Fatalf("expected event, got %s body=%s", typeName, string(raw))
+	}
+	var frame EventFrame
+	if err := json.Unmarshal(raw, &frame); err != nil {
+		t.Fatalf("unmarshal event: %v", err)
+	}
+	if frame.EventType != EventSessionResumable ||
+		!eventTypesContain(frame.EventTypes, EventSessionResumable) ||
+		!eventTypesContain(frame.EventTypes, EventTurnEnd) {
+		t.Fatalf("event fields = %+v", frame.EventFrameFields)
+	}
+	if frame.ProviderMetadata["provider_event"] != "fake.turn.done" {
+		t.Fatalf("provider metadata = %#v", frame.ProviderMetadata)
+	}
+
+	provider.push(&LiveMessage{
+		Audio:            []byte{0xCC},
+		Done:             true,
+		ProviderMetadata: map[string]any{"provider_event": "fake.audio.done"},
+	})
+	if got := readBinaryFrame(t, env.conn); len(got) != 1 || got[0] != 0xCC {
+		t.Fatalf("audio frame = %x, want cc", got)
+	}
+	typeName, raw = readEnvelope(t, env.conn)
+	if typeName != MsgEvent {
+		t.Fatalf("expected audio follow-up event, got %s body=%s", typeName, string(raw))
+	}
+	if err := json.Unmarshal(raw, &frame); err != nil {
+		t.Fatalf("unmarshal audio follow-up event: %v", err)
+	}
+	if frame.EventType != EventTurnEnd ||
+		!eventTypesContain(frame.EventTypes, EventOutputAudio) ||
+		!eventTypesContain(frame.EventTypes, EventTurnEnd) {
+		t.Fatalf("audio follow-up event fields = %+v", frame.EventFrameFields)
+	}
+	if frame.ProviderMetadata["provider_event"] != "fake.audio.done" {
+		t.Fatalf("audio follow-up provider metadata = %#v", frame.ProviderMetadata)
 	}
 }
 
@@ -566,6 +714,9 @@ func TestAdapter_ClientStopProducesSessionEnd(t *testing.T) {
 	}
 	if seq.Reason != "client" {
 		t.Fatalf("expected reason=client, got %q", seq.Reason)
+	}
+	if seq.EventType != EventSessionEnd || !eventTypesContain(seq.EventTypes, EventSessionEnd) {
+		t.Fatalf("session_end event fields = %+v", seq.EventFrameFields)
 	}
 
 	// Adapter should call OnClose shortly. The deadline is generous to
@@ -599,6 +750,9 @@ func TestAdapter_GoAwayClosesSessionWithReason(t *testing.T) {
 	_ = json.Unmarshal(raw, &seq)
 	if seq.Reason != "go_away" {
 		t.Fatalf("expected reason=go_away, got %q", seq.Reason)
+	}
+	if seq.EventType != EventSessionEnd || !eventTypesContain(seq.EventTypes, EventSessionEnd) {
+		t.Fatalf("go_away event fields = %+v", seq.EventFrameFields)
 	}
 
 	select {
@@ -997,11 +1151,14 @@ func TestAdapter_ProviderToolCallRelayedToClient(t *testing.T) {
 	var stateMsg StateFrame
 	readJSONFrame(t, env.conn, &stateMsg)
 
-	provider.push(&LiveMessage{ToolCalls: []ToolCall{{
-		ID:   "call-1",
-		Name: "summarize",
-		Args: map[string]any{"text": "raw notes"},
-	}}})
+	provider.push(&LiveMessage{
+		ToolCalls: []ToolCall{{
+			ID:   "call-1",
+			Name: "summarize",
+			Args: map[string]any{"text": "raw notes"},
+		}},
+		ProviderMetadata: map[string]any{"provider_event": "fake.tool.call"},
+	})
 
 	typeName, raw := readEnvelope(t, env.conn)
 	if typeName != MsgToolCall {
@@ -1013,6 +1170,12 @@ func TestAdapter_ProviderToolCallRelayedToClient(t *testing.T) {
 	}
 	if frame.ID != "call-1" || frame.Name != "summarize" || frame.Args["text"] != "raw notes" {
 		t.Fatalf("unexpected tool_call frame: %+v", frame)
+	}
+	if frame.EventType != EventToolCall || !eventTypesContain(frame.EventTypes, EventToolCall) {
+		t.Fatalf("tool_call event fields = %+v", frame.EventFrameFields)
+	}
+	if frame.ProviderMetadata["provider_event"] != "fake.tool.call" {
+		t.Fatalf("tool_call provider metadata = %#v", frame.ProviderMetadata)
 	}
 }
 

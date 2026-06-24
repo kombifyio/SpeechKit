@@ -25,12 +25,13 @@ const (
 	OverlayFeedbackModeBigProductivity = "big_productivity"
 	OverlayFeedbackModeSmallFeedback   = "small_feedback"
 
-	DefaultLocalLLMBaseURL          = "http://127.0.0.1:8082/v1"
-	DefaultLocalLLMModel            = "ggml-org/gemma-4-E2B-it-GGUF:Q8_0"
-	DefaultLocalSTTModel            = "ggml-small.bin"
-	DefaultLocalSTTPort             = 9000
-	DefaultDictationPauseMs         = 1500
-	DefaultDictateSilenceTimeoutSec = 15
+	DefaultLocalLLMBaseURL                = "http://127.0.0.1:8082/v1"
+	DefaultLocalLLMModel                  = "ggml-org/gemma-4-E2B-it-GGUF:Q8_0"
+	DefaultLocalSTTModel                  = "ggml-small.bin"
+	DefaultLocalSTTPort                   = 9000
+	DefaultDictationPauseMs               = 1500
+	DefaultDictationIntermediateSegmentMs = 6000
+	DefaultDictateSilenceTimeoutSec       = 3
 
 	// ManagedDevServerURL and ManagedLiveKitURL are referenced by the
 	// pre-rewrite internal/config/credentials.go ServerConnection

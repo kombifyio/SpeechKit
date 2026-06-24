@@ -13,27 +13,28 @@ type StoreConfig struct {
 }
 
 type GeneralConfig struct {
-	Language                 string `toml:"language"`
-	Hotkey                   string `toml:"hotkey"` // Deprecated: legacy single-hotkey field kept for config file compat. Use DictateHotkey.
-	DictateHotkey            string `toml:"dictate_hotkey"`
-	AssistHotkey             string `toml:"assist_hotkey"`
-	VoiceAgentHotkey         string `toml:"voice_agent_hotkey"`
-	DictateHotkeyBehavior    string `toml:"dictate_hotkey_behavior"`
-	AssistHotkeyBehavior     string `toml:"assist_hotkey_behavior"`
-	VoiceAgentHotkeyBehavior string `toml:"voice_agent_hotkey_behavior"`
-	DictateEnabled           bool   `toml:"dictate_enabled"`
-	AssistEnabled            bool   `toml:"assist_enabled"`
-	VoiceAgentEnabled        bool   `toml:"voice_agent_enabled"`
-	AutoStartOnLaunch        bool   `toml:"auto_start_on_launch"`
-	EagerWarmup              bool   `toml:"eager_warmup"`
-	AgentHotkey              string `toml:"agent_hotkey"`
-	AgentMode                string `toml:"agent_mode"`  // "assist" or "voice_agent" — determines what agent_hotkey triggers
-	ActiveMode               string `toml:"active_mode"` // legacy compat
-	HotkeyMode               string `toml:"hotkey_mode"` // legacy compat for single behavior setting
-	AutoStopSilenceMs        int    `toml:"auto_stop_silence_ms"`
-	FastModeSilenceMs        int    `toml:"fast_mode_silence_ms"`        // silence threshold for Quick Capture auto-stop
-	DictateSilenceTimeoutSec int    `toml:"dictate_silence_timeout_sec"` // total silence in seconds before dictate auto-stops; 0 disables
-	ModelDownloadDir         string `toml:"model_download_dir"`          // Default directory for downloaded local model files
+	Language                       string `toml:"language"`
+	Hotkey                         string `toml:"hotkey"` // Deprecated: legacy single-hotkey field kept for config file compat. Use DictateHotkey.
+	DictateHotkey                  string `toml:"dictate_hotkey"`
+	AssistHotkey                   string `toml:"assist_hotkey"`
+	VoiceAgentHotkey               string `toml:"voice_agent_hotkey"`
+	DictateHotkeyBehavior          string `toml:"dictate_hotkey_behavior"`
+	AssistHotkeyBehavior           string `toml:"assist_hotkey_behavior"`
+	VoiceAgentHotkeyBehavior       string `toml:"voice_agent_hotkey_behavior"`
+	DictateEnabled                 bool   `toml:"dictate_enabled"`
+	AssistEnabled                  bool   `toml:"assist_enabled"`
+	VoiceAgentEnabled              bool   `toml:"voice_agent_enabled"`
+	AutoStartOnLaunch              bool   `toml:"auto_start_on_launch"`
+	EagerWarmup                    bool   `toml:"eager_warmup"`
+	AgentHotkey                    string `toml:"agent_hotkey"`
+	AgentMode                      string `toml:"agent_mode"`  // "assist" or "voice_agent" — determines what agent_hotkey triggers
+	ActiveMode                     string `toml:"active_mode"` // legacy compat
+	HotkeyMode                     string `toml:"hotkey_mode"` // legacy compat for single behavior setting
+	AutoStopSilenceMs              int    `toml:"auto_stop_silence_ms"`
+	FastModeSilenceMs              int    `toml:"fast_mode_silence_ms"`              // silence threshold for Quick Capture auto-stop
+	DictateSilenceTimeoutSec       int    `toml:"dictate_silence_timeout_sec"`       // total silence in seconds before dictate auto-stops; 0 disables
+	DictationIntermediateSegmentMs int    `toml:"dictation_intermediate_segment_ms"` // minimum utterance size before live dictation emits a pause-bounded segment
+	ModelDownloadDir               string `toml:"model_download_dir"`                // Default directory for downloaded local model files
 }
 
 type AudioConfig struct {

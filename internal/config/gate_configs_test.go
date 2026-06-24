@@ -5,12 +5,12 @@ import (
 	"testing"
 )
 
-// TestProviderGateConfigsEnableExactlyOneSTTProvider verifies the per-provider
-// functional-gate reference configs load and enable only their target STT
-// provider. The provider-live-gate workflow relies on this single-provider
+// TestProviderGateConfigsLoadDeterministically verifies the per-provider
+// functional-gate reference configs load and enable only the target provider
+// surface for each gate. The provider-live-gate workflow relies on this
 // determinism so `sk-e2e --expect-provider <name>` proves real routing rather
 // than a silent fallback to another configured provider.
-func TestProviderGateConfigsEnableExactlyOneSTTProvider(t *testing.T) {
+func TestProviderGateConfigsLoadDeterministically(t *testing.T) {
 	t.Run("deepgram", func(t *testing.T) {
 		cfg, err := Load(filepath.Join("..", "..", "deploy", "config", "server.deepgram-gate.toml"))
 		if err != nil {
@@ -55,6 +55,65 @@ func TestProviderGateConfigsEnableExactlyOneSTTProvider(t *testing.T) {
 		if cfg.Routing.Strategy != "cloud-only" {
 			t.Errorf("routing.strategy = %q, want cloud-only", cfg.Routing.Strategy)
 		}
+		if cfg.VoiceAgent.Provider != "assemblyai" {
+			t.Errorf("voice_agent.provider = %q, want assemblyai", cfg.VoiceAgent.Provider)
+		}
+		if cfg.VoiceAgent.Model != "assemblyai-voice-agent" {
+			t.Errorf("voice_agent.model = %q, want assemblyai-voice-agent", cfg.VoiceAgent.Model)
+		}
+	})
+
+	t.Run("openai", func(t *testing.T) {
+		cfg, err := Load(filepath.Join("..", "..", "deploy", "config", "server.openai-gate.toml"))
+		if err != nil {
+			t.Fatalf("load openai gate config: %v", err)
+		}
+		if !cfg.Providers.OpenAI.Enabled {
+			t.Error("openai provider must be enabled")
+		}
+		assertProvidersDisabled(t, "openai gate", map[string]bool{
+			"deepgram":    cfg.Providers.Deepgram.Enabled,
+			"assemblyai":  cfg.Providers.AssemblyAI.Enabled,
+			"google":      cfg.Providers.Google.Enabled,
+			"groq":        cfg.Providers.Groq.Enabled,
+			"huggingface": cfg.HuggingFace.Enabled,
+		})
+		if cfg.Routing.Strategy != "cloud-only" {
+			t.Errorf("routing.strategy = %q, want cloud-only", cfg.Routing.Strategy)
+		}
+		if cfg.VoiceAgent.Provider != "openai" {
+			t.Errorf("voice_agent.provider = %q, want openai", cfg.VoiceAgent.Provider)
+		}
+		if cfg.Providers.OpenAI.RealtimeModel != "gpt-realtime-2" {
+			t.Errorf("providers.openai.realtime_model = %q, want gpt-realtime-2", cfg.Providers.OpenAI.RealtimeModel)
+		}
+	})
+
+	t.Run("gemini", func(t *testing.T) {
+		cfg, err := Load(filepath.Join("..", "..", "deploy", "config", "server.gemini-gate.toml"))
+		if err != nil {
+			t.Fatalf("load gemini gate config: %v", err)
+		}
+		if !cfg.Providers.Google.Enabled {
+			t.Error("google provider must be enabled for Gemini Live")
+		}
+		assertProvidersDisabled(t, "gemini gate", map[string]bool{
+			"deepgram":    cfg.Providers.Deepgram.Enabled,
+			"assemblyai":  cfg.Providers.AssemblyAI.Enabled,
+			"openai":      cfg.Providers.OpenAI.Enabled,
+			"groq":        cfg.Providers.Groq.Enabled,
+			"huggingface": cfg.HuggingFace.Enabled,
+		})
+		if cfg.Routing.Strategy != "cloud-only" {
+			t.Errorf("routing.strategy = %q, want cloud-only", cfg.Routing.Strategy)
+		}
+		if cfg.VoiceAgent.Provider != "gemini" {
+			t.Errorf("voice_agent.provider = %q, want gemini", cfg.VoiceAgent.Provider)
+		}
+		if cfg.VoiceAgent.Model != "gemini-3.1-flash-live-preview" {
+			t.Errorf("voice_agent.model = %q, want gemini-3.1-flash-live-preview", cfg.VoiceAgent.Model)
+		}
+		assertModes(t, cfg.Server.Modes, map[string]bool{"voiceagent": true})
 	})
 }
 
@@ -92,5 +151,25 @@ func assertProvidersDisabled(t *testing.T, gate string, providers map[string]boo
 		if enabled {
 			t.Errorf("%s: %s must be disabled for deterministic single-provider routing", gate, name)
 		}
+	}
+}
+
+func assertModes(t *testing.T, got []string, want map[string]bool) {
+	t.Helper()
+	remaining := map[string]bool{}
+	for mode, expected := range want {
+		if expected {
+			remaining[mode] = true
+		}
+	}
+	for _, mode := range got {
+		if !want[mode] {
+			t.Errorf("unexpected server mode %q", mode)
+			continue
+		}
+		delete(remaining, mode)
+	}
+	for mode := range remaining {
+		t.Errorf("missing server mode %q", mode)
 	}
 }

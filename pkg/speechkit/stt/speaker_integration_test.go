@@ -105,7 +105,7 @@ func TestIntegrationAssemblyAISpeakerStreaming(t *testing.T) {
 	opts := speakerIntegrationOptions().Speaker
 	opts.PreferStreaming = true
 	provider := NewAssemblyAIProvider(key, "universal-3-pro,universal-2")
-	provider.StreamingModel = "u3-rt-pro"
+	provider.StreamingModel = "universal-3-5-pro"
 	stream, err := provider.StartSpeakerStream(ctx, opts, format)
 	if err != nil {
 		t.Fatalf("AssemblyAI StartSpeakerStream: %v", err)

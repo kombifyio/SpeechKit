@@ -79,6 +79,19 @@ const (
 	CapabilityWordsNativeHints      Capability = "words_native_hints"
 	CapabilityPostSTTReplacements   Capability = "post_stt_replacements"
 	CapabilitySessionSummary        Capability = "session_summary"
+	CapabilityTranscript            Capability = "transcript"
+	CapabilityInterruptions         Capability = "interruptions"
+	CapabilitySessionResume         Capability = "session_resume"
+	CapabilityNativeContextPrompt   Capability = "native_context_prompt"
+	CapabilityNativeKeyterms        Capability = "native_keyterms"
+	CapabilityLanguageHints         Capability = "language_hints"
+	CapabilitySpeakerStreaming      Capability = "speaker_streaming"
+	CapabilityPrivacyRedaction      Capability = "privacy_redaction"
+	CapabilityVoiceFocus            Capability = "voice_focus"
+	CapabilityMedicalDomain         Capability = "medical_domain"
+	CapabilityReasoningEffort       Capability = "reasoning_effort"
+	CapabilityTranslation           Capability = "translation"
+	CapabilityTranscriptionOnly     Capability = "transcription_only"
 	CapabilitySpeakerDiarization    Capability = "speaker_diarization"
 	CapabilitySpeakerIdentification Capability = "speaker_identification"
 	CapabilitySpeakerAttribution    Capability = "speaker_attribution"
@@ -98,22 +111,29 @@ type ModelVariant struct {
 // activate. ProviderKind is the stable user-facing grouping; ExecutionMode is
 // the technical adapter underneath it.
 type ProviderProfile struct {
-	ID             string         `json:"id"`
-	Mode           Mode           `json:"mode"`
-	Name           string         `json:"name"`
-	ProviderKind   ProviderKind   `json:"providerKind"`
-	ExecutionMode  ExecutionMode  `json:"executionMode,omitempty"`
-	ModelID        string         `json:"modelId,omitempty"`
-	Source         string         `json:"source,omitempty"`
-	Description    string         `json:"description,omitempty"`
-	License        string         `json:"license,omitempty"`
-	Capabilities   []Capability   `json:"capabilities,omitempty"`
-	AdapterKind    string         `json:"adapterKind,omitempty"`
-	Variants       []ModelVariant `json:"variants,omitempty"`
-	AllowInference bool           `json:"inferenceAllowed,omitempty"`
-	Default        bool           `json:"default,omitempty"`
-	Recommended    bool           `json:"recommended,omitempty"`
-	Experimental   bool           `json:"experimental,omitempty"`
+	ID               string         `json:"id"`
+	Mode             Mode           `json:"mode"`
+	Name             string         `json:"name"`
+	ProviderKind     ProviderKind   `json:"providerKind"`
+	ExecutionMode    ExecutionMode  `json:"executionMode,omitempty"`
+	Provider         string         `json:"provider,omitempty"`
+	ModelID          string         `json:"modelId,omitempty"`
+	Lifecycle        ModelLifecycle `json:"lifecycle,omitempty"`
+	Source           string         `json:"source,omitempty"`
+	Description      string         `json:"description,omitempty"`
+	License          string         `json:"license,omitempty"`
+	Capabilities     []Capability   `json:"capabilities,omitempty"`
+	SupportedLocales []string       `json:"supportedLocales,omitempty"`
+	NativeOptions    []string       `json:"nativeOptions,omitempty"`
+	AuthRequirement  string         `json:"authRequirement,omitempty"`
+	Transport        string         `json:"transport,omitempty"`
+	EvidenceURL      string         `json:"evidenceUrl,omitempty"`
+	AdapterKind      string         `json:"adapterKind,omitempty"`
+	Variants         []ModelVariant `json:"variants,omitempty"`
+	AllowInference   bool           `json:"inferenceAllowed,omitempty"`
+	Default          bool           `json:"default,omitempty"`
+	Recommended      bool           `json:"recommended,omitempty"`
+	Experimental     bool           `json:"experimental,omitempty"`
 }
 
 // NormalizeProviderProfileID maps legacy profile IDs to their current
@@ -326,8 +346,33 @@ func DefaultModeContracts() []ModeContract {
 			Intelligence: IntelligenceBrainstorming,
 			Input:        "realtime_audio_dialogue",
 			Output:       "dialogue_transcript_and_optional_summary",
-			Allowed:      []Capability{CapabilityRealtimeAudio, CapabilityPipelineFallback, CapabilityAudioInput, CapabilityTTS, CapabilitySessionSummary, CapabilityToolCalling, CapabilityWordsPrompt, CapabilityWordsNativeHints, CapabilitySpeakerDiarization, CapabilitySpeakerIdentification, CapabilitySpeakerAttribution},
-			Forbidden:    []Capability{CapabilityTranscription},
+			Allowed: []Capability{
+				CapabilityRealtimeAudio,
+				CapabilityPipelineFallback,
+				CapabilityAudioInput,
+				CapabilityTTS,
+				CapabilitySessionSummary,
+				CapabilityToolCalling,
+				CapabilityWordsPrompt,
+				CapabilityWordsNativeHints,
+				CapabilityTranscript,
+				CapabilityInterruptions,
+				CapabilitySessionResume,
+				CapabilityNativeContextPrompt,
+				CapabilityNativeKeyterms,
+				CapabilityLanguageHints,
+				CapabilitySpeakerStreaming,
+				CapabilityReasoningEffort,
+				CapabilityTranslation,
+				CapabilityTranscriptionOnly,
+				CapabilityPrivacyRedaction,
+				CapabilityVoiceFocus,
+				CapabilityMedicalDomain,
+				CapabilitySpeakerDiarization,
+				CapabilitySpeakerIdentification,
+				CapabilitySpeakerAttribution,
+			},
+			Forbidden: []Capability{CapabilityTranscription},
 		},
 		{
 			Mode:         ModeTTS,

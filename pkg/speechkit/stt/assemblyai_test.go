@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/internal/speakercontract"
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/provideropts"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/speaker"
 )
 
@@ -141,6 +142,73 @@ func TestAssemblyAI_Transcribe_TextOnlyDoesNotSendSpeakerLabels(t *testing.T) {
 	}
 	if result.Speakers != nil {
 		t.Fatalf("speakers = %+v, want nil", result.Speakers)
+	}
+}
+
+func TestAssemblyAI_Transcribe_SendsKeytermsPrompt(t *testing.T) {
+	var gotRequest assemblyAITranscriptRequest
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/v2/upload":
+			_ = json.NewEncoder(w).Encode(assemblyAIUploadResponse{UploadURL: "https://uploads.test/audio.wav"})
+		case "/v2/transcript":
+			_ = json.NewDecoder(r.Body).Decode(&gotRequest)
+			_ = json.NewEncoder(w).Encode(assemblyAITranscriptResponse{ID: "tx-1", Status: "queued"})
+		case "/v2/transcript/tx-1":
+			_ = json.NewEncoder(w).Encode(assemblyAITranscriptResponse{ID: "tx-1", Status: "completed", Text: "Kombify", Confidence: 0.91})
+		default:
+			t.Fatalf("unexpected path: %s", r.URL.Path)
+		}
+	}))
+	defer server.Close()
+
+	p := newTestAssemblyAIProvider(server.URL)
+	_, err := p.Transcribe(context.Background(), []byte("pcm"), TranscribeOpts{
+		Language: "de",
+		Keyterms: []string{"Kombify", "SpeechKit"},
+	})
+	if err != nil {
+		t.Fatalf("Transcribe: %v", err)
+	}
+	if got := strings.Join(gotRequest.KeytermsPrompt, ","); got != "Kombify,SpeechKit" {
+		t.Fatalf("keyterms_prompt = %q", got)
+	}
+}
+
+func TestAssemblyAI_Transcribe_SendsNativeAdvancedOptions(t *testing.T) {
+	var gotRequest assemblyAITranscriptRequest
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/v2/upload":
+			_ = json.NewEncoder(w).Encode(assemblyAIUploadResponse{UploadURL: "https://uploads.test/audio.wav"})
+		case "/v2/transcript":
+			_ = json.NewDecoder(r.Body).Decode(&gotRequest)
+			_ = json.NewEncoder(w).Encode(assemblyAITranscriptResponse{ID: "tx-1", Status: "queued"})
+		case "/v2/transcript/tx-1":
+			_ = json.NewEncoder(w).Encode(assemblyAITranscriptResponse{ID: "tx-1", Status: "completed", Text: "Kombify", Confidence: 0.91})
+		default:
+			t.Fatalf("unexpected path: %s", r.URL.Path)
+		}
+	}))
+	defer server.Close()
+
+	p := newTestAssemblyAIProvider(server.URL)
+	_, err := p.Transcribe(context.Background(), []byte("pcm"), TranscribeOpts{
+		Options: provideropts.Values{
+			provideropts.OptionContextPrompt:    "Names: Kombify, SpeechKit.",
+			provideropts.OptionPrivacyRedaction: true,
+			provideropts.OptionVoiceFocus:       true,
+			provideropts.OptionMedicalDomain:    true,
+		},
+	})
+	if err != nil {
+		t.Fatalf("Transcribe: %v", err)
+	}
+	if gotRequest.Prompt != "Names: Kombify, SpeechKit." {
+		t.Fatalf("prompt = %q", gotRequest.Prompt)
+	}
+	if !gotRequest.RedactPII || !gotRequest.VoiceFocus || gotRequest.Domain != "medical-v1" {
+		t.Fatalf("advanced AssemblyAI options = redact:%v voice_focus:%v domain:%q", gotRequest.RedactPII, gotRequest.VoiceFocus, gotRequest.Domain)
 	}
 }
 

@@ -280,8 +280,8 @@ provider with the composed prompt, and emits `sequence_step` with
 
 | `media_transport` | Control frames | Client audio | Model audio | Provider support |
 |---|---|---|---|---|
-| `websocket` (default) | JSON over SpeechKit WS | binary PCM frames on SpeechKit WS | binary PCM frames on SpeechKit WS | Gemini, OpenAI, cascaded providers |
-| `livekit` | JSON over SpeechKit WS | LiveKit track | LiveKit track | Gemini and OpenAI native realtime providers |
+| `websocket` (default) | JSON over SpeechKit WS | binary PCM frames on SpeechKit WS | binary PCM frames on SpeechKit WS | Gemini, Deepgram, AssemblyAI, OpenAI, cascaded providers |
+| `livekit` | JSON over SpeechKit WS | LiveKit track | LiveKit track | LiveKit-enabled native realtime providers |
 
 Clients can advance the workflow by sending:
 

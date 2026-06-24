@@ -33,29 +33,50 @@ const (
 	EventVoiceAgentTurnFinalized EventType = "voiceagent.turn.finalized"
 	EventTTSStarted              EventType = "tts.started"
 	EventTTSFinished             EventType = "tts.finished"
+	EventCustomizationAction     EventType = "customization.action"
 )
 
 // Event is a notification published to the event channel returned by
 // [Runtime.Events]. Consumers should switch on Type and inspect the
 // relevant fields.
 type Event struct {
-	Type      EventType
-	Time      time.Time
-	Message   string
-	Text      string
-	Provider  string
-	Mode      string
-	SessionID string
-	QuickNote bool
-	Err       error
-	Shortcut  string
-	Metadata  *Metadata
+	Type                 EventType
+	Time                 time.Time
+	Message              string
+	Text                 string
+	Provider             string
+	Mode                 string
+	SessionID            string
+	QuickNote            bool
+	Err                  error
+	Shortcut             string
+	Metadata             *Metadata
+	CustomizationActions []CustomizationAction
 }
 
 func (e Event) Clone() Event {
 	clone := e
 	clone.Metadata = e.Metadata.Clone()
+	clone.CustomizationActions = cloneCustomizationActions(e.CustomizationActions)
 	return clone
+}
+
+func cloneCustomizationActions(actions []CustomizationAction) []CustomizationAction {
+	if len(actions) == 0 {
+		return nil
+	}
+	out := make([]CustomizationAction, 0, len(actions))
+	for _, action := range actions {
+		clone := action
+		if len(action.Payload) > 0 {
+			clone.Payload = make(map[string]any, len(action.Payload))
+			for key, value := range action.Payload {
+				clone.Payload[key] = value
+			}
+		}
+		out = append(out, clone)
+	}
+	return out
 }
 
 // Metadata carries optional event key/value data without making Event

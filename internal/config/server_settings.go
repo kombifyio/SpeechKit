@@ -71,6 +71,8 @@ type ServerCredentialSettings struct {
 	OpenAI      ServerProviderCredentialSettings `json:"openai,omitempty"`
 	Groq        ServerProviderCredentialSettings `json:"groq,omitempty"`
 	Google      ServerProviderCredentialSettings `json:"google,omitempty"`
+	Deepgram    ServerProviderCredentialSettings `json:"deepgram,omitempty"`
+	AssemblyAI  ServerProviderCredentialSettings `json:"assemblyai,omitempty"`
 	HuggingFace ServerProviderCredentialSettings `json:"huggingface,omitempty"`
 	OpenRouter  ServerProviderCredentialSettings `json:"openrouter,omitempty"`
 }
@@ -194,6 +196,8 @@ func SanitizeServerModelSettings(settings ServerModelSettings) ServerModelSettin
 	settings.Credentials.OpenAI.Value = ""
 	settings.Credentials.Groq.Value = ""
 	settings.Credentials.Google.Value = ""
+	settings.Credentials.Deepgram.Value = ""
+	settings.Credentials.AssemblyAI.Value = ""
 	settings.Credentials.HuggingFace.Value = ""
 	settings.Credentials.OpenRouter.Value = ""
 	return settings
@@ -375,6 +379,8 @@ func applyServerCredentialSettings(cfg *Config, credentials ServerCredentialSett
 	notes = append(notes, applyOpenAICredential(cfg, credentials.OpenAI)...)
 	notes = append(notes, applyGroqCredential(cfg, credentials.Groq)...)
 	notes = append(notes, applyGoogleCredential(cfg, credentials.Google)...)
+	notes = append(notes, applyDeepgramCredential(cfg, credentials.Deepgram)...)
+	notes = append(notes, applyAssemblyAICredential(cfg, credentials.AssemblyAI)...)
 	notes = append(notes, applyHuggingFaceCredential(cfg, credentials.HuggingFace)...)
 	notes = append(notes, applyOpenRouterCredential(cfg, credentials.OpenRouter)...)
 	return notes
@@ -427,6 +433,40 @@ func applyGoogleCredential(cfg *Config, credential ServerProviderCredentialSetti
 	if value := cleanSetting(credential.Value); value != "" {
 		setCredentialEnv(cfg.Providers.Google.APIKeyEnv, "GOOGLE_AI_API_KEY", value)
 		notes = append(notes, "server settings: Google key value loaded")
+	}
+	return notes
+}
+
+func applyDeepgramCredential(cfg *Config, credential ServerProviderCredentialSettings) []string {
+	var notes []string
+	if credential.Enabled != nil {
+		cfg.Providers.Deepgram.Enabled = *credential.Enabled
+		notes = append(notes, "server settings: Deepgram enabled updated")
+	}
+	if env := cleanSetting(credential.Env); env != "" {
+		cfg.Providers.Deepgram.APIKeyEnv = env
+		notes = append(notes, "server settings: Deepgram key env updated")
+	}
+	if value := cleanSetting(credential.Value); value != "" {
+		setCredentialEnv(cfg.Providers.Deepgram.APIKeyEnv, DeepgramAPIKeyEnv, value)
+		notes = append(notes, "server settings: Deepgram key value loaded")
+	}
+	return notes
+}
+
+func applyAssemblyAICredential(cfg *Config, credential ServerProviderCredentialSettings) []string {
+	var notes []string
+	if credential.Enabled != nil {
+		cfg.Providers.AssemblyAI.Enabled = *credential.Enabled
+		notes = append(notes, "server settings: AssemblyAI enabled updated")
+	}
+	if env := cleanSetting(credential.Env); env != "" {
+		cfg.Providers.AssemblyAI.APIKeyEnv = env
+		notes = append(notes, "server settings: AssemblyAI key env updated")
+	}
+	if value := cleanSetting(credential.Value); value != "" {
+		setCredentialEnv(cfg.Providers.AssemblyAI.APIKeyEnv, AssemblyAIAPIKeyEnv, value)
+		notes = append(notes, "server settings: AssemblyAI key value loaded")
 	}
 	return notes
 }
@@ -611,12 +651,34 @@ func applyVoiceAgentModeSetting(cfg *Config, mode ServerModeSetting) []string {
 	}
 	switch kind {
 	case "direct_provider":
-		cfg.VoiceAgent.Provider = "gemini"
-		cfg.Providers.Google.Enabled = true
-		if model != "" {
-			cfg.VoiceAgent.Model = model
+		provider := directVoiceAgentProviderForProfile(mode.ProfileID)
+		switch provider {
+		case "openai":
+			cfg.VoiceAgent.Provider = "openai"
+			cfg.Providers.OpenAI.Enabled = true
+			if model != "" {
+				cfg.Providers.OpenAI.RealtimeModel = model
+			}
+		case "deepgram":
+			cfg.VoiceAgent.Provider = "deepgram"
+			cfg.Providers.Deepgram.Enabled = true
+			if model != "" {
+				cfg.VoiceAgent.Model = model
+			}
+		case "assemblyai":
+			cfg.VoiceAgent.Provider = "assemblyai"
+			cfg.Providers.AssemblyAI.Enabled = true
+			if model != "" {
+				cfg.VoiceAgent.Model = model
+			}
+		default:
+			cfg.VoiceAgent.Provider = "gemini"
+			cfg.Providers.Google.Enabled = true
+			if model != "" {
+				cfg.VoiceAgent.Model = model
+			}
 		}
-		notes = append(notes, "server settings: Voice Agent uses direct provider")
+		notes = append(notes, "server settings: Voice Agent uses "+cfg.VoiceAgent.Provider+" direct provider")
 	case "cloud_provider":
 		cfg.VoiceAgent.Provider = "cascaded"
 		if strings.Contains(strings.ToLower(mode.ProfileID), "openrouter") {
@@ -648,6 +710,22 @@ func applyVoiceAgentModeSetting(cfg *Config, mode ServerModeSetting) []string {
 		notes = append(notes, "server settings: Voice Agent uses built-in provider")
 	}
 	return notes
+}
+
+func directVoiceAgentProviderForProfile(profileID string) string {
+	value := strings.ToLower(strings.TrimSpace(profileID))
+	switch {
+	case strings.Contains(value, "openai"):
+		return "openai"
+	case strings.Contains(value, "deepgram"):
+		return "deepgram"
+	case strings.Contains(value, "assemblyai"):
+		return "assemblyai"
+	case strings.Contains(value, "google") || strings.Contains(value, "gemini"):
+		return "gemini"
+	default:
+		return "gemini"
+	}
 }
 
 func validateServerModelSettings(settings ServerModelSettings) error {
@@ -707,6 +785,8 @@ func validateServerSettingsStringLengths(settings ServerModelSettings) error {
 		{"openai.value", settings.Credentials.OpenAI.Value, 4096},
 		{"groq.value", settings.Credentials.Groq.Value, 4096},
 		{"google.value", settings.Credentials.Google.Value, 4096},
+		{"deepgram.value", settings.Credentials.Deepgram.Value, 4096},
+		{"assemblyai.value", settings.Credentials.AssemblyAI.Value, 4096},
 		{"huggingface.value", settings.Credentials.HuggingFace.Value, 4096},
 		{"openrouter.value", settings.Credentials.OpenRouter.Value, 4096},
 	}
@@ -789,10 +869,10 @@ func validateServerProviderURL(name, value string) error {
 
 func validateServerVoiceAgentProvider(provider string) error {
 	switch strings.ToLower(strings.TrimSpace(provider)) {
-	case "", "cascaded", "gemini", "openai", "deepgram", "moshi":
+	case "", "cascaded", "gemini", "google", "openai", "deepgram", "assemblyai", "moshi":
 		return nil
 	default:
-		return fmt.Errorf("voice_agent.provider must be cascaded, gemini, openai, deepgram, or moshi")
+		return fmt.Errorf("voice_agent.provider must be cascaded, gemini/google, openai, deepgram, assemblyai, or moshi")
 	}
 }
 
@@ -814,6 +894,8 @@ func validateServerCredentialSettings(settings ServerCredentialSettings) error {
 		{"openai.env", settings.OpenAI.Env, 0},
 		{"groq.env", settings.Groq.Env, 0},
 		{"google.env", settings.Google.Env, 0},
+		{"deepgram.env", settings.Deepgram.Env, 0},
+		{"assemblyai.env", settings.AssemblyAI.Env, 0},
 		{"huggingface.env", settings.HuggingFace.Env, 0},
 		{"openrouter.env", settings.OpenRouter.Env, 0},
 	} {

@@ -86,7 +86,7 @@ func (p *CascadedProvider) Receive(ctx context.Context) (*LiveMessage, error) {
 	if msg == nil {
 		return nil, nil
 	}
-	return &LiveMessage{
+	out := &LiveMessage{
 		Audio:                  msg.Audio,
 		InputTranscript:        msg.InputTranscript,
 		InputTranscriptDone:    msg.InputTranscriptDone,
@@ -96,7 +96,13 @@ func (p *CascadedProvider) Receive(ctx context.Context) (*LiveMessage, error) {
 		InputSpeakerConfidence: msg.InputSpeakerConfidence,
 		OutputTranscript:       msg.OutputTranscript,
 		OutputTranscriptDone:   msg.OutputTranscriptDone,
-	}, nil
+		ProviderMetadata:       map[string]any{"provider_event": "cascaded.message"},
+	}
+	out.EventTypes = inferServerEventTypes(out)
+	if len(out.EventTypes) > 0 {
+		out.EventType = out.EventTypes[0]
+	}
+	return out, nil
 }
 
 // Close delegates.

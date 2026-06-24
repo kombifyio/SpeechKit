@@ -3,6 +3,7 @@ package voiceagent
 import (
 	"context"
 	"testing"
+	"time"
 
 	"github.com/kombifyio/SpeechKit/internal/stt"
 	"github.com/kombifyio/SpeechKit/internal/tts"
@@ -86,4 +87,57 @@ func TestLocalVoiceAgentProviderConnectAcceptsLiveConfig(t *testing.T) {
 	if err := p.UpdateInstructions(context.Background(), cfg); err != nil {
 		t.Fatalf("UpdateInstructions: %v", err)
 	}
+}
+
+func TestLocalVoiceAgentProviderReceiveAddsEventAttribution(t *testing.T) {
+	p := NewLocalVoiceAgentProvider(LocalVoiceAgentDeps{STT: stubSTT{}, Agent: stubAgent{}, TTS: stubTTS{}})
+	t.Cleanup(func() { _ = p.Close() })
+	if err := p.Connect(context.Background(), live.LiveConfig{Locale: "en"}); err != nil {
+		t.Fatalf("Connect: %v", err)
+	}
+	if err := p.SendText("hello"); err != nil {
+		t.Fatalf("SendText: %v", err)
+	}
+
+	textMsg := receiveUntil(t, p, func(msg *live.LiveMessage) bool {
+		return msg.OutputTranscript == "world"
+	})
+	if textMsg.EventType != live.LiveEventOutputText ||
+		!liveEventTypesContain(textMsg.EventTypes, live.LiveEventOutputText) ||
+		textMsg.ProviderMetadata["provider_event"] != "cascaded.message" {
+		t.Fatalf("text event metadata = %+v", textMsg)
+	}
+
+	audioMsg := receiveUntil(t, p, func(msg *live.LiveMessage) bool {
+		return len(msg.Audio) > 0
+	})
+	if audioMsg.EventType != live.LiveEventOutputAudio ||
+		!liveEventTypesContain(audioMsg.EventTypes, live.LiveEventOutputAudio) ||
+		audioMsg.ProviderMetadata["provider_event"] != "cascaded.message" {
+		t.Fatalf("audio event metadata = %+v", audioMsg)
+	}
+}
+
+func receiveUntil(t *testing.T, p *LocalVoiceAgentProvider, match func(*live.LiveMessage) bool) *live.LiveMessage {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	for {
+		msg, err := p.Receive(ctx)
+		if err != nil {
+			t.Fatalf("Receive: %v", err)
+		}
+		if match(msg) {
+			return msg
+		}
+	}
+}
+
+func liveEventTypesContain(values []live.LiveEventType, want live.LiveEventType) bool {
+	for _, value := range values {
+		if value == want {
+			return true
+		}
+	}
+	return false
 }

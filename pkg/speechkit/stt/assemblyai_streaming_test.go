@@ -73,7 +73,7 @@ func TestAssemblyAI_StartSpeakerStream_LabelsSpeakersAndUnknown(t *testing.T) {
 	}
 	if !strings.Contains(gotQuery, "speaker_labels=true") ||
 		!strings.Contains(gotQuery, "max_speakers=2") ||
-		!strings.Contains(gotQuery, "speech_model=u3-rt-pro") {
+		!strings.Contains(gotQuery, "speech_model=universal-3-5-pro") {
 		t.Fatalf("query = %q", gotQuery)
 	}
 }

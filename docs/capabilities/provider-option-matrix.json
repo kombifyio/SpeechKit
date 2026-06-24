@@ -1,6 +1,6 @@
 {
   "schema": "speechkit.provider_option_matrix.v1",
-  "audited_at": "2026-06-09",
+  "audited_at": "2026-06-23",
   "source_of_truth": "pkg/speechkit/provideropts",
   "option_ids": [
     "language",
@@ -19,7 +19,16 @@
     "turn_detection",
     "voice",
     "speed",
-    "audio_format"
+    "audio_format",
+    "context_prompt",
+    "language_hints",
+    "privacy_redaction",
+    "voice_focus",
+    "medical_domain",
+    "reasoning_effort",
+    "translation",
+    "transcription_only",
+    "resume"
   ],
   "rows": [
     {
@@ -29,8 +38,6 @@
       "recommended": true,
       "evidence_url": "https://developers.deepgram.com/docs/endpointing",
       "supports": {
-        "language": "native",
-        "detect_language": "native",
         "punctuation": "native",
         "smart_format": "native",
         "dictation": "native",
@@ -52,9 +59,18 @@
       "evidence_url": "https://developers.deepgram.com/docs/voice-agent-settings",
       "supports": {
         "language": "native",
+        "language_hints": "native",
         "keyterms": "native",
+        "context_prompt": "native",
         "turn_detection": "derived",
-        "voice": "native"
+        "voice": "native",
+        "resume": "unsupported",
+        "privacy_redaction": "unsupported",
+        "voice_focus": "unsupported",
+        "medical_domain": "unsupported",
+        "reasoning_effort": "unsupported",
+        "translation": "unsupported",
+        "transcription_only": "unsupported"
       }
     },
     {
@@ -94,7 +110,16 @@
         "voice": "native",
         "turn_detection": "native",
         "endpointing_ms": "native",
-        "detect_language": "native"
+        "detect_language": "native",
+        "context_prompt": "native",
+        "reasoning_effort": "native",
+        "language_hints": "unsupported",
+        "resume": "unsupported",
+        "privacy_redaction": "unsupported",
+        "voice_focus": "unsupported",
+        "medical_domain": "unsupported",
+        "translation": "unsupported",
+        "transcription_only": "unsupported"
       }
     },
     {
@@ -122,7 +147,16 @@
       "supports": {
         "language": "derived",
         "voice": "native",
-        "turn_detection": "native"
+        "turn_detection": "native",
+        "context_prompt": "native",
+        "reasoning_effort": "native",
+        "resume": "native",
+        "language_hints": "unsupported",
+        "privacy_redaction": "unsupported",
+        "voice_focus": "unsupported",
+        "medical_domain": "unsupported",
+        "translation": "unsupported",
+        "transcription_only": "unsupported"
       }
     },
     {
@@ -146,15 +180,41 @@
       "provider": "assemblyai",
       "modality": "stt",
       "profile_ids": ["stt.assemblyai.universal", "stt.assemblyai.universal-diarization"],
-      "evidence_url": "https://www.assemblyai.com/docs/api-reference/transcripts/submit",
+      "evidence_url": "https://www.assemblyai.com/docs/pre-recorded-audio/universal-3-pro/prompting",
       "supports": {
         "language": "native",
         "detect_language": "native",
         "punctuation": "native",
         "smart_format": "native",
+        "context_prompt": "native",
+        "privacy_redaction": "native",
+        "voice_focus": "native",
+        "medical_domain": "native",
         "speaker_diarization": "native",
-        "keyterms": "unsupported",
+        "vocabulary_bias": "native",
+        "keyterms": "native",
         "endpointing_ms": "unsupported"
+      }
+    },
+    {
+      "provider": "assemblyai",
+      "modality": "voice_agent",
+      "profile_ids": ["realtime.assemblyai.voice-agent"],
+      "evidence_url": "https://www.assemblyai.com/docs/voice-agents/voice-agent-api/session-configuration",
+      "supports": {
+        "keyterms": "native",
+        "voice": "native",
+        "turn_detection": "native",
+        "context_prompt": "native",
+        "resume": "native",
+        "language": "derived",
+        "language_hints": "unsupported",
+        "privacy_redaction": "unsupported",
+        "voice_focus": "unsupported",
+        "medical_domain": "unsupported",
+        "reasoning_effort": "unsupported",
+        "translation": "unsupported",
+        "transcription_only": "unsupported"
       }
     },
     {

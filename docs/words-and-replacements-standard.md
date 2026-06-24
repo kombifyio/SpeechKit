@@ -88,7 +88,7 @@ A `Word` is declarative recognition knowledge. It never rewrites text by itself.
 | `language` | string | BCP-47 prefix such as `en`, `de`, or empty for all languages. |
 | `weight` | float | Optional relative boost, mapped to provider-native scales where supported. |
 | `tags` | []string | Context selection, for example `medical` or `project-x`. |
-| `scope` | object | Where it applies, for example `app`, `org`, `user`, or `session` plus optional key. |
+| `scope` | object | Where it applies, for example `app`, `install`, `org`, `workspace`, `user`, or `session`; `org`, `workspace`, `user`, and `session` require an explicit key when selected directly. |
 | `source` | string | Where it came from, for example `settings`, `api`, `developer`, `migration`, or `pack:<id>`. |
 | `enabled` | bool | Active flag. |
 | `usage_count` | int | Telemetry for future learned weighting. |

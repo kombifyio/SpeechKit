@@ -163,6 +163,39 @@ func TestDictationSegmenterEmitsLongIntermediateSegmentAndResetsOnStop(t *testin
 	}
 }
 
+func TestDictationSegmenterDrainReadySegmentsPreventsStopFallbackDuplicate(t *testing.T) {
+	speechFrames := framesForDuration(DefaultDictationMinIntermediateSegment + dictationFrameDuration())
+	probs := append(repeatProb(0.8, speechFrames), repeatProb(0, 4)...)
+	vad := &fakeVAD{probs: probs}
+	segmenter := NewDictationSegmenter(vad, 64*time.Millisecond)
+	if segmenter == nil {
+		t.Fatal("expected segmenter")
+	}
+
+	pcm := repeatFrame(speechFrames + 4)
+	if err := segmenter.FeedPCM(pcm); err != nil {
+		t.Fatalf("FeedPCM: %v", err)
+	}
+	ready := segmenter.DrainReadySegments()
+	if len(ready) != 1 {
+		t.Fatalf("ready segments = %d, want 1", len(ready))
+	}
+	if ready[0].Final {
+		t.Fatal("drained pause segment should be intermediate")
+	}
+
+	remaining, err := segmenter.CollectStopSegments(pcm)
+	if err != nil {
+		t.Fatalf("CollectStopSegments: %v", err)
+	}
+	if len(remaining) != 0 {
+		t.Fatalf("remaining stop segments = %d, want none after drain; first duration=%s", len(remaining), remaining[0].Duration)
+	}
+	if !vad.reset {
+		t.Fatal("detector should reset when stop segments are collected")
+	}
+}
+
 func TestDictationSegmenterDoesNotStartParagraphAfterShortPause(t *testing.T) {
 	speechFrames := framesForDuration(DefaultDictationMinIntermediateSegment + dictationFrameDuration())
 	probs := repeatProb(0.8, speechFrames)

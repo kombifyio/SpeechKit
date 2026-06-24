@@ -1,6 +1,6 @@
 {
   "schema": "speechkit.voice_capability_matrix.v2",
-  "updated": "2026-06-02",
+  "updated": "2026-06-23",
   "rows": [
     {
       "mode": "dictation",
@@ -17,7 +17,8 @@
       "evidence_url": "https://developers.deepgram.com/docs/diarization",
       "status": "implemented",
       "implementation_status": "implemented",
-      "runtime_status": "batch_live_gate_passed_2026_06_02"
+      "runtime_status": "live_gate_passed",
+      "runtime_detail": "batch_live_gate_passed_2026_06_02"
     },
     {
       "mode": "voice_agent",
@@ -34,7 +35,44 @@
       "evidence_url": "https://developers.deepgram.com/docs/diarization",
       "status": "implemented",
       "implementation_status": "implemented",
-      "runtime_status": "streaming_live_gate_passed_2026_06_02"
+      "runtime_status": "live_gate_passed",
+      "runtime_detail": "streaming_live_gate_passed_2026_06_02"
+    },
+    {
+      "mode": "voice_agent",
+      "capability": "turn_detection",
+      "provider": "Deepgram",
+      "framework_api": "Deepgram Flux /v2/listen turn events",
+      "local_or_cloud": "cloud",
+      "streaming_or_batch": "streaming",
+      "identification_level": "none",
+      "identity_method": "provider_turn_events",
+      "auth_method": "DEEPGRAM_API_KEY websocket Authorization header",
+      "required_env_vars": ["DEEPGRAM_API_KEY"],
+      "profile_id": "realtime.deepgram.voice-agent",
+      "evidence_url": "https://developers.deepgram.com/docs/flux/nova-3-migration",
+      "status": "implemented",
+      "implementation_status": "implemented",
+      "runtime_status": "adapter_wired",
+      "runtime_detail": "flux_turn_event_mapping_requires_live_gate"
+    },
+    {
+      "mode": "voice_agent",
+      "capability": "native_voice_agent",
+      "provider": "Gemini",
+      "framework_api": "Google Gemini Live API",
+      "local_or_cloud": "cloud",
+      "streaming_or_batch": "streaming",
+      "identification_level": "transcript_roles",
+      "identity_method": "provider_user_agent_transcripts",
+      "auth_method": "GOOGLE_AI_API_KEY websocket bearer token",
+      "required_env_vars": ["GOOGLE_AI_API_KEY"],
+      "profile_id": "realtime.google.gemini-native-audio",
+      "evidence_url": "https://ai.google.dev/gemini-api/docs/live-guide",
+      "status": "implemented",
+      "implementation_status": "implemented",
+      "runtime_status": "adapter_wired",
+      "runtime_detail": "gemini_live_adapter_wired_provider_live_gate_required_before_tag"
     },
     {
       "mode": "dictation",
@@ -51,7 +89,8 @@
       "evidence_url": "https://www.assemblyai.com/docs/pre-recorded-audio/label-speakers",
       "status": "implemented",
       "implementation_status": "implemented",
-      "runtime_status": "batch_live_gate_passed_2026_06_02"
+      "runtime_status": "live_gate_passed",
+      "runtime_detail": "batch_live_gate_passed_2026_06_02"
     },
     {
       "mode": "dictation",
@@ -68,7 +107,8 @@
       "evidence_url": "https://www.assemblyai.com/docs/speech-understanding/speaker-identification",
       "status": "implemented",
       "implementation_status": "implemented",
-      "runtime_status": "batch_ready"
+      "runtime_status": "adapter_wired",
+      "runtime_detail": "batch_ready"
     },
     {
       "mode": "voice_agent",
@@ -85,7 +125,44 @@
       "evidence_url": "https://www.assemblyai.com/docs/streaming/label-speakers-and-separate-channels",
       "status": "implemented",
       "implementation_status": "implemented",
-      "runtime_status": "streaming_live_gate_passed_2026_06_02"
+      "runtime_status": "live_gate_passed",
+      "runtime_detail": "streaming_live_gate_passed_2026_06_02"
+    },
+    {
+      "mode": "voice_agent",
+      "capability": "native_voice_agent",
+      "provider": "AssemblyAI",
+      "framework_api": "AssemblyAI Voice Agent API WebSocket",
+      "local_or_cloud": "cloud",
+      "streaming_or_batch": "streaming",
+      "identification_level": "transcript_roles",
+      "identity_method": "provider_user_agent_transcripts",
+      "auth_method": "ASSEMBLYAI_API_KEY bearer token",
+      "required_env_vars": ["ASSEMBLYAI_API_KEY"],
+      "profile_id": "realtime.assemblyai.voice-agent",
+      "evidence_url": "https://www.assemblyai.com/docs/voice-agents/voice-agent-api",
+      "status": "implemented",
+      "implementation_status": "implemented",
+      "runtime_status": "adapter_wired",
+      "runtime_detail": "native_adapter_wired_fake_gate_required_before_tag"
+    },
+    {
+      "mode": "voice_agent",
+      "capability": "native_voice_agent",
+      "provider": "OpenAI",
+      "framework_api": "OpenAI Realtime API",
+      "local_or_cloud": "cloud",
+      "streaming_or_batch": "streaming",
+      "identification_level": "transcript_roles",
+      "identity_method": "provider_user_agent_transcripts",
+      "auth_method": "OPENAI_API_KEY bearer token",
+      "required_env_vars": ["OPENAI_API_KEY"],
+      "profile_id": "realtime.openai.gpt-realtime-2",
+      "evidence_url": "https://platform.openai.com/docs/guides/realtime",
+      "status": "implemented",
+      "implementation_status": "implemented",
+      "runtime_status": "adapter_wired",
+      "runtime_detail": "openai_realtime_adapter_wired_provider_live_gate_required_before_tag"
     },
     {
       "mode": "dictation",
@@ -102,7 +179,8 @@
       "evidence_url": "https://docs.cloud.google.com/speech-to-text/docs/v1/multiple-voices",
       "status": "implemented",
       "implementation_status": "implemented",
-      "runtime_status": "batch_live_gate_passed_2026_06_02"
+      "runtime_status": "live_gate_passed",
+      "runtime_detail": "batch_live_gate_passed_2026_06_02"
     },
     {
       "mode": "voice_agent",
@@ -119,7 +197,8 @@
       "evidence_url": "https://docs.cloud.google.com/speech-to-text/docs/models/chirp-3",
       "status": "not_supported",
       "implementation_status": "not_supported",
-      "runtime_status": "v2_streaming_is_transcription_only_diarization_requires_batch_2026_06_02"
+      "runtime_status": "not_supported",
+      "runtime_detail": "v2_streaming_is_transcription_only_diarization_requires_batch_2026_06_02"
     },
     {
       "mode": "assist",
@@ -136,7 +215,8 @@
       "evidence_url": "https://github.com/kombifyio/SpeechKit",
       "status": "implemented",
       "implementation_status": "implemented",
-      "runtime_status": "api_ready"
+      "runtime_status": "adapter_wired",
+      "runtime_detail": "api_ready"
     },
     {
       "mode": "voice_agent",
@@ -153,7 +233,8 @@
       "evidence_url": "https://github.com/kombifyio/SpeechKit",
       "status": "partial",
       "implementation_status": "partial",
-      "runtime_status": "cascaded_streaming_wired_native_realtime_passthrough"
+      "runtime_status": "adapter_wired",
+      "runtime_detail": "cascaded_streaming_wired_native_realtime_passthrough"
     }
   ]
 }

@@ -22,20 +22,28 @@ info:
     - **JSON control frames** (`text` opcode): a JSON object with a required
       `type` field. The full set is enumerated below.
     - **Binary audio frames** (`binary` opcode): raw PCM, **16 kHz S16 mono**
-      from client to server, **24 kHz S16 mono** from server to client
-      (matching Gemini Live's native output rate) when the StartFrame uses
-      the default `media_transport: "websocket"`.
+      from client to server. Server-to-client model audio defaults to
+      **24 kHz S16 mono** over the SpeechKit WebSocket; provider-native
+      adapters may preserve their native output rate and surface the effective
+      format in `provider_metadata` when it differs.
 
     If the StartFrame uses `media_transport: "livekit"`, this WebSocket remains
     the control channel for start, transcripts, tool calls, errors, workflow
     steps, and shutdown. Microphone and model audio move through LiveKit audio
     tracks; WebSocket binary audio is rejected for that session.
 
+    Server JSON frames that represent provider semantics carry optional
+    `event_type`, `event_types`, and `provider_metadata` fields. `event_type`
+    is the primary SpeechKit-normalized event for routing, `event_types`
+    includes every normalized meaning when a provider combines multiple native
+    events in one frame, and `provider_metadata` keeps provider-native debug
+    details such as the original provider event name.
+
     Media transport matrix:
 
     | media_transport | Control frames | Client audio | Model audio | Provider support |
     |---|---|---|---|---|
-    | websocket (default) | SpeechKit WS JSON | SpeechKit WS binary PCM | SpeechKit WS binary PCM | Gemini, OpenAI, cascaded providers |
+    | websocket (default) | SpeechKit WS JSON | SpeechKit WS binary PCM | SpeechKit WS binary PCM | Gemini, Deepgram, AssemblyAI, OpenAI, cascaded providers |
     | livekit | SpeechKit WS JSON | LiveKit audio track | LiveKit audio track | Gemini and OpenAI native realtime providers |
 
     Field guarantees follow the same rules as openapi.v1.yaml: additive
@@ -99,6 +107,8 @@ channels:
         $ref: '#/components/messages/ToolCallFrame'
       SequenceStepFrame:
         $ref: '#/components/messages/SequenceStepFrame'
+      EventFrame:
+        $ref: '#/components/messages/EventFrame'
       InterruptedFrame:
         $ref: '#/components/messages/InterruptedFrame'
       ErrorFrame:
@@ -146,6 +156,7 @@ operations:
       - $ref: '#/channels/voiceAgentSession/messages/OutputTranscriptFrame'
       - $ref: '#/channels/voiceAgentSession/messages/ToolCallFrame'
       - $ref: '#/channels/voiceAgentSession/messages/SequenceStepFrame'
+      - $ref: '#/channels/voiceAgentSession/messages/EventFrame'
       - $ref: '#/channels/voiceAgentSession/messages/InterruptedFrame'
       - $ref: '#/channels/voiceAgentSession/messages/ErrorFrame'
       - $ref: '#/channels/voiceAgentSession/messages/SessionEndFrame'
@@ -259,6 +270,13 @@ components:
       payload:
         $ref: '#/components/schemas/SequenceStepFrame'
 
+    EventFrame:
+      title: Provider event
+      summary: Provider-neutral event without transcript, tool, or terminal JSON payload.
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/EventFrame'
+
     InterruptedFrame:
       title: Interrupted
       summary: User interrupted the model (barge-in).
@@ -312,9 +330,11 @@ components:
             Selects where microphone and model audio move. `websocket` keeps
             the v1 binary-frame audio path. `livekit` keeps this WebSocket as
             the control channel and moves audio through the LiveKit room minted
-            by `POST /v1/voiceagent/sessions`. v1 LiveKit media is limited to
-            native realtime PCM providers (Gemini/OpenAI); cascaded providers
-            stay on WebSocket audio until explicit transcoding is added.
+            by `POST /v1/voiceagent/sessions`. The default WebSocket path
+            supports Gemini, Deepgram, AssemblyAI, OpenAI, and cascaded
+            providers. v1 LiveKit media is limited to providers that advertise
+            LiveKit support; cascaded providers stay on WebSocket audio until
+            explicit transcoding is added.
         voice: { type: string }
         locale: { type: string }
         model: { type: string }
@@ -408,11 +428,50 @@ components:
         when the session uses `media_transport: "websocket"`.
 
     # server to client
+    LiveEventType:
+      type: string
+      enum:
+        - session_ready
+        - input_partial
+        - input_final
+        - output_audio
+        - output_text
+        - tool_call
+        - tool_result_ack
+        - interrupted
+        - turn_end
+        - session_resumable
+        - session_end
+
+    EventFrameFields:
+      type: object
+      properties:
+        event_type:
+          $ref: '#/components/schemas/LiveEventType'
+        event_types:
+          type: array
+          items:
+            $ref: '#/components/schemas/LiveEventType'
+          description: All SpeechKit-normalized event meanings for this frame.
+        provider_metadata:
+          type: object
+          additionalProperties: true
+          description: Provider-native event details for diagnostics and advanced hosts.
+
     StateFrame:
       type: object
       required: [type, state]
       properties:
         type: { type: string, const: state }
+        event_type:
+          $ref: '#/components/schemas/LiveEventType'
+        event_types:
+          type: array
+          items:
+            $ref: '#/components/schemas/LiveEventType'
+        provider_metadata:
+          type: object
+          additionalProperties: true
         state:
           type: string
           enum: [connecting, listening, processing, speaking, recovering, deactivating, inactive]
@@ -424,6 +483,15 @@ components:
         type:
           type: string
           enum: [input_transcript, output_transcript]
+        event_type:
+          $ref: '#/components/schemas/LiveEventType'
+        event_types:
+          type: array
+          items:
+            $ref: '#/components/schemas/LiveEventType'
+        provider_metadata:
+          type: object
+          additionalProperties: true
         text:
           type: string
           description: Partial or full transcript chunk.
@@ -436,6 +504,15 @@ components:
       required: [type, id, name]
       properties:
         type: { type: string, const: tool_call }
+        event_type:
+          $ref: '#/components/schemas/LiveEventType'
+        event_types:
+          type: array
+          items:
+            $ref: '#/components/schemas/LiveEventType'
+        provider_metadata:
+          type: object
+          additionalProperties: true
         id:
           type: string
           description: Unique within this session; echo back in ToolResponseFrame.id.
@@ -457,11 +534,35 @@ components:
           enum: [entered, completed, sequence_completed]
         reason: { type: string }
 
+    EventFrame:
+      type: object
+      required: [type, event_type]
+      properties:
+        type: { type: string, const: event }
+        event_type:
+          $ref: '#/components/schemas/LiveEventType'
+        event_types:
+          type: array
+          items:
+            $ref: '#/components/schemas/LiveEventType'
+        provider_metadata:
+          type: object
+          additionalProperties: true
+
     InterruptedFrame:
       type: object
       required: [type]
       properties:
         type: { type: string, const: interrupted }
+        event_type:
+          $ref: '#/components/schemas/LiveEventType'
+        event_types:
+          type: array
+          items:
+            $ref: '#/components/schemas/LiveEventType'
+        provider_metadata:
+          type: object
+          additionalProperties: true
 
     ErrorFrame:
       type: object
@@ -478,9 +579,18 @@ components:
       required: [type, reason]
       properties:
         type: { type: string, const: session_end }
+        event_type:
+          $ref: '#/components/schemas/LiveEventType'
+        event_types:
+          type: array
+          items:
+            $ref: '#/components/schemas/LiveEventType'
+        provider_metadata:
+          type: object
+          additionalProperties: true
         reason:
           type: string
-          enum: [idle, go_away, client, error, shutdown]
+          enum: [idle, go_away, client, error, shutdown, max_duration]
 
     PongFrame:
       type: object

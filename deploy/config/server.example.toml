@@ -146,7 +146,7 @@ diarization_model = "latest"
 enabled    = false
 api_key_env = "ASSEMBLYAI_API_KEY"
 stt_models  = "universal-3-pro,universal-2"
-streaming_model = "u3-rt-pro"
+streaming_model = "universal-3-5-pro"
 streaming_base_url = "wss://streaming.assemblyai.com"
 
 [providers.groq]

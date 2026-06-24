@@ -10,7 +10,11 @@ import (
 type ResolvedLiveOptions struct {
 	Locale              string
 	Voice               string
+	ContextPrompt       string
+	LanguageHints       []string
 	Keyterms            []string
+	ReasoningEffort     string
+	Resume              bool
 	TurnDetection       bool
 	TurnDetectionSource provideropts.ValueSource
 	EndpointingMs       int
@@ -28,6 +32,8 @@ func ResolveLiveOptions(provider, profileID string, cfg LiveConfig, providerDefa
 			Modality: provideropts.ModalityVoiceAgent,
 		}
 	}
+	mergedProviderOverrides := providerOverrides.Clone()
+	mergedProviderOverrides = mergedProviderOverrides.Merge(cfg.ProviderOptions)
 	request := provideropts.Values{}
 	if locale := strings.TrimSpace(cfg.Locale); locale != "" {
 		request[provideropts.OptionLanguage] = locale
@@ -35,11 +41,12 @@ func ResolveLiveOptions(provider, profileID string, cfg LiveConfig, providerDefa
 	if voice := strings.TrimSpace(cfg.Voice); voice != "" {
 		request[provideropts.OptionVoice] = voice
 	}
-	if keyterms := splitOptionTerms(cfg.VocabularyHint); len(keyterms) > 0 {
-		request[provideropts.OptionKeyterms] = keyterms
+	if len(mergedProviderOverrides.StringList(provideropts.OptionKeyterms)) == 0 &&
+		len(cfg.Options.StringList(provideropts.OptionKeyterms)) == 0 {
+		if keyterms := splitOptionTerms(cfg.VocabularyHint); len(keyterms) > 0 {
+			request[provideropts.OptionKeyterms] = keyterms
+		}
 	}
-	mergedProviderOverrides := providerOverrides.Clone()
-	mergedProviderOverrides = mergedProviderOverrides.Merge(cfg.ProviderOptions)
 	effective := provideropts.Resolve(provideropts.ResolveInput{
 		Manifest:          manifest,
 		ProfileID:         profileID,
@@ -60,7 +67,11 @@ func ResolveLiveOptions(provider, profileID string, cfg LiveConfig, providerDefa
 	return ResolvedLiveOptions{
 		Locale:              effective.String(provideropts.OptionLanguage),
 		Voice:               effective.String(provideropts.OptionVoice),
+		ContextPrompt:       effective.String(provideropts.OptionContextPrompt),
+		LanguageHints:       effective.StringList(provideropts.OptionLanguageHints),
 		Keyterms:            effective.StringList(provideropts.OptionKeyterms),
+		ReasoningEffort:     effective.String(provideropts.OptionReasoningEffort),
+		Resume:              effective.Bool(provideropts.OptionResume),
 		TurnDetection:       effective.Bool(provideropts.OptionTurnDetection),
 		TurnDetectionSource: turnDetectionSource,
 		EndpointingMs:       effective.Int(provideropts.OptionEndpointingMs),
@@ -96,6 +107,14 @@ func splitOptionTerms(raw string) []string {
 	if raw == "" {
 		return nil
 	}
+	lower := strings.ToLower(raw)
+	if strings.Contains(raw, ":") || strings.ContainsAny(raw, ".!?") ||
+		strings.Contains(lower, "prefer ") ||
+		strings.Contains(lower, "recognition") ||
+		strings.Contains(lower, "transcribing") ||
+		strings.Contains(lower, "responses") {
+		return nil
+	}
 	parts := strings.FieldsFunc(raw, func(r rune) bool {
 		return r == '\n' || r == '\r' || r == ',' || r == ';'
 	})
@@ -114,4 +133,16 @@ func splitOptionTerms(raw string) []string {
 		out = append(out, part)
 	}
 	return out
+}
+
+func appendContextPrompt(base, contextPrompt string) string {
+	base = strings.TrimSpace(base)
+	contextPrompt = strings.TrimSpace(contextPrompt)
+	if contextPrompt == "" {
+		return base
+	}
+	if base == "" {
+		return contextPrompt
+	}
+	return base + "\n\nContext:\n" + contextPrompt
 }

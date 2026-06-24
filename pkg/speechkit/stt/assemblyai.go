@@ -18,7 +18,7 @@ import (
 const (
 	assemblyAIBaseURL          = "https://api.assemblyai.com"
 	assemblyAIStreamingBaseURL = "wss://streaming.assemblyai.com"
-	assemblyAIStreamingModel   = "u3-rt-pro"
+	assemblyAIStreamingModel   = "universal-3-5-pro"
 	assemblyAIMaxResponseBytes = 16 << 20
 )
 
@@ -55,7 +55,8 @@ func (p *AssemblyAIProvider) Transcribe(ctx context.Context, audio []byte, opts 
 		return nil, err
 	}
 	resolved := ResolveTranscribeOptions("assemblyai", assemblyAIProfileID(opts.Model), opts, provideropts.Values{
-		provideropts.OptionLanguage: "de",
+		provideropts.OptionLanguage:       "de",
+		provideropts.OptionVocabularyBias: true,
 	}, nil)
 	speakerOpts := resolved.Speaker
 	transcriptID, err := p.createTranscript(ctx, uploadURL, opts, resolved)
@@ -150,6 +151,21 @@ func (p *AssemblyAIProvider) createTranscript(ctx context.Context, audioURL stri
 	}
 	if resolved.SmartFormat {
 		body.FormatText = true
+	}
+	if resolved.UseVocabularyKeyterms && len(resolved.Keyterms) > 0 {
+		body.KeytermsPrompt = append([]string(nil), resolved.Keyterms...)
+	}
+	if prompt := firstNonEmptyTrimmed(resolved.ContextPrompt, resolved.Prompt); prompt != "" {
+		body.Prompt = prompt
+	}
+	if resolved.PrivacyRedaction {
+		body.RedactPII = true
+	}
+	if resolved.VoiceFocus {
+		body.VoiceFocus = true
+	}
+	if resolved.MedicalDomain {
+		body.Domain = "medical-v1"
 	}
 	speakerOpts := resolved.Speaker
 	if speakerOpts.WantsDiarization() {
@@ -308,6 +324,11 @@ type assemblyAITranscriptRequest struct {
 	LanguageCode        string                         `json:"language_code,omitempty"`
 	Punctuate           bool                           `json:"punctuate,omitempty"`
 	FormatText          bool                           `json:"format_text,omitempty"`
+	KeytermsPrompt      []string                       `json:"keyterms_prompt,omitempty"`
+	Prompt              string                         `json:"prompt,omitempty"`
+	RedactPII           bool                           `json:"redact_pii,omitempty"`
+	VoiceFocus          bool                           `json:"voice_focus,omitempty"`
+	Domain              string                         `json:"domain,omitempty"`
 	SpeakerLabels       bool                           `json:"speaker_labels,omitempty"`
 	SpeakersExpected    int                            `json:"speakers_expected,omitempty"`
 	SpeakerOptions      *assemblyAISpeakerOptions      `json:"speaker_options,omitempty"`

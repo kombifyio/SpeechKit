@@ -72,6 +72,9 @@ func TestServiceResolveScopePrecedence(t *testing.T) {
 			t.Fatalf("user word did not override app word: %+v", word)
 		}
 	}
+	if len(resolved.ProviderBias.ByProvider["assemblyai"].StringList("keyterms")) == 0 {
+		t.Fatalf("provider bias did not include assemblyai keyterms: %+v", resolved.ProviderBias)
+	}
 }
 
 func TestServiceApplyRespectsModeFilter(t *testing.T) {

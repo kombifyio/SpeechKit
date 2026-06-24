@@ -1,7 +1,7 @@
 {
   "name": "speechkit-release",
   "private": true,
-  "version": "0.46.1",
+  "version": "0.47.0",
   "type": "module",
   "engines": {
     "node": ">=24.0.0"
@@ -28,6 +28,10 @@
     "release:lint:test": "node --test ./scripts/release/lint-changelog.test.mjs",
     "release:cloudflare-quality-gate:test": "node --test ./scripts/release/cloudflare-quality-gate.test.mjs",
     "release:dry-run:private": "powershell -ExecutionPolicy Bypass -File ./scripts/private-release-dry-run.ps1",
+    "quality:quick": "powershell -NoProfile -ExecutionPolicy Bypass -File ./scripts/ci/quality-gate.ps1 -Suite quick",
+    "quality:public": "powershell -NoProfile -ExecutionPolicy Bypass -File ./scripts/ci/quality-gate.ps1 -Suite public",
+    "quality:release": "powershell -NoProfile -ExecutionPolicy Bypass -File ./scripts/ci/quality-gate.ps1 -Suite release",
+    "quality:windows": "powershell -NoProfile -ExecutionPolicy Bypass -File ./scripts/ci/quality-gate.ps1 -Suite windows",
     "security:secrets": "powershell -NoProfile -ExecutionPolicy Bypass -File ./scripts/security/scan-tracked-secrets.ps1",
     "version:sync": "node ./scripts/sync-version.mjs",
     "version:sync:windows": "node ./scripts/sync-version.mjs --targets=frontend,windows",

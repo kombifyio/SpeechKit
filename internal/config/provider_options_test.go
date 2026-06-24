@@ -91,3 +91,53 @@ func TestLegacyDeepgramDefaultsDoNotBecomeProviderOverrides(t *testing.T) {
 		t.Fatalf("legacy deepgram language = %q, want multi", got)
 	}
 }
+
+func TestDeepgramSTTLanguageOverridesAreMultilingualOnly(t *testing.T) {
+	cfg := defaults()
+	cfg.Providers.Deepgram.STTLanguage = "de"
+	cfg.Providers.Deepgram.STTDetectLanguage = true
+	cfg.ProviderOptions.SetOverrides("deepgram", provideropts.ModalitySTT, provideropts.Values{
+		provideropts.OptionLanguage:       "en",
+		provideropts.OptionDetectLanguage: true,
+		provideropts.OptionFillerWords:    true,
+	})
+
+	NormalizeDeepgramSTTCodeSwitching(cfg)
+	if got := cfg.Providers.Deepgram.STTLanguage; got != DeepgramSTTMultilingualLanguage {
+		t.Fatalf("legacy deepgram stt_language = %q, want %q", got, DeepgramSTTMultilingualLanguage)
+	}
+	if cfg.Providers.Deepgram.STTDetectLanguage {
+		t.Fatal("legacy deepgram detect_language = true, want false")
+	}
+	if got := cfg.ProviderOptions.Deepgram.STT.Language; got != DeepgramSTTMultilingualLanguage {
+		t.Fatalf("provider_options.deepgram.stt.language = %q, want %q", got, DeepgramSTTMultilingualLanguage)
+	}
+	if cfg.ProviderOptions.Deepgram.STT.DetectLanguage != nil {
+		t.Fatalf("provider_options.deepgram.stt.detect_language = %#v, want nil", cfg.ProviderOptions.Deepgram.STT.DetectLanguage)
+	}
+
+	values := ProviderOptionOverridesFor(cfg, "deepgram", provideropts.ModalitySTT)
+	if got := values.String(provideropts.OptionLanguage); got != DeepgramSTTMultilingualLanguage {
+		t.Fatalf("effective deepgram language = %q, want %q", got, DeepgramSTTMultilingualLanguage)
+	}
+	if values.Has(provideropts.OptionDetectLanguage) {
+		t.Fatalf("effective deepgram detect_language should be removed, got %#v", values.Get(provideropts.OptionDetectLanguage))
+	}
+	if !values.Bool(provideropts.OptionFillerWords) {
+		t.Fatal("non-language Deepgram override was not preserved")
+	}
+}
+
+func TestDeepgramSTTManifestDoesNotExposeFixedLanguageControls(t *testing.T) {
+	manifest, ok := provideropts.FindManifest("deepgram", provideropts.ModalitySTT)
+	if !ok {
+		t.Fatal("deepgram STT manifest missing")
+	}
+	support := manifest.SupportByID()
+	if _, ok := support[provideropts.OptionLanguage]; ok {
+		t.Fatal("deepgram STT manifest exposes language override")
+	}
+	if _, ok := support[provideropts.OptionDetectLanguage]; ok {
+		t.Fatal("deepgram STT manifest exposes detect_language")
+	}
+}

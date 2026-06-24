@@ -967,13 +967,19 @@ paths:
         `media_transport` defaults to `websocket` for backwards compatibility.
         Set `media_transport` to `livekit` to keep the WebSocket as the
         control channel while microphone and model audio move through the
-        LiveKit room from this response. v1 LiveKit media is limited to native
-        realtime PCM providers (Gemini/OpenAI); cascaded providers remain on
-        WebSocket audio until explicit transcoding is added. During a
+        LiveKit room from this response. The default WebSocket audio path
+        supports Gemini, Deepgram, AssemblyAI, OpenAI, and cascaded providers.
+        v1 LiveKit media is limited to providers that advertise LiveKit
+        support; cascaded providers remain on WebSocket audio until explicit
+        transcoding is added. During a
         workflow, clients send `{"type":"advance_step","reason":"host"}` to
         move to the next sequence step. The server emits `sequence_step`
         frames with `status` values `entered`, `completed`, and
         `sequence_completed`. Tool calls use `tool_call` and `tool_response`.
+        Provider-semantic server frames also carry optional `event_type`,
+        `event_types`, and `provider_metadata` fields documented in
+        `asyncapi.v1.yaml`; pure provider events such as `turn_end` and
+        `session_resumable` are emitted as `{"type":"event", ...}` frames.
       tags: [voiceagent]
       responses:
         '201':
@@ -1787,6 +1793,7 @@ components:
 
     CustomizationScopeRef:
       type: object
+      description: Optional customization applicability scope. Explicit user, org, workspace, and session scopes require key.
       properties:
         kind: { type: string, enum: [builtin, app, install, org, workspace, user, session] }
         key: { type: string }
@@ -2080,6 +2087,25 @@ components:
           $ref: '#/components/schemas/SourceMeta'
         speakers:
           $ref: '#/components/schemas/DiarizationResult'
+        customization_actions:
+          type: array
+          items:
+            $ref: '#/components/schemas/CustomizationAction'
+
+    CustomizationAction:
+      type: object
+      description: Structured action emitted by Words and Replacements command rules. Known desktop clients may execute supported intents; unknown intents are metadata only.
+      properties:
+        replacement_id: { type: string }
+        kind: { type: string }
+        intent: { type: string }
+        text: { type: string }
+        template: { type: string }
+        payload:
+          type: object
+          additionalProperties: true
+        matched_text: { type: string }
+        count: { type: integer }
 
     AssistJSONRequest:
       type: object
@@ -2132,6 +2158,10 @@ components:
           $ref: '#/components/schemas/SourceMeta'
         speakers:
           $ref: '#/components/schemas/DiarizationResult'
+        customization_actions:
+          type: array
+          items:
+            $ref: '#/components/schemas/CustomizationAction'
 
     SpeakerOptions:
       type: object

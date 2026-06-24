@@ -48,9 +48,14 @@ func TestDefaultManifestsIncludeDeepgramSTT(t *testing.T) {
 		t.Fatal("missing deepgram STT manifest")
 	}
 	support := manifest.SupportByID()
-	for _, id := range []OptionID{OptionLanguage, OptionSmartFormat, OptionKeyterms, OptionEndpointingMs} {
+	for _, id := range []OptionID{OptionSmartFormat, OptionKeyterms, OptionEndpointingMs} {
 		if support[id].Status != SupportNative {
 			t.Fatalf("%s support = %#v, want native", id, support[id])
+		}
+	}
+	for _, id := range []OptionID{OptionLanguage, OptionDetectLanguage} {
+		if opt, ok := support[id]; ok {
+			t.Fatalf("%s support = %#v, want omitted for Deepgram STT", id, opt)
 		}
 	}
 }

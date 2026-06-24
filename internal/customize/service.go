@@ -43,6 +43,7 @@ type ResolvedSet struct {
 	Prompt         string
 	Keyterms       []string
 	VoiceAgentHint string
+	ProviderBias   ProviderBias
 	Applier        *CompiledApplier
 }
 
@@ -189,6 +190,7 @@ func (s *Service) resolveUncached(ctx context.Context, request speechcustomize.C
 	if err != nil {
 		return ResolvedSet{}, err
 	}
+	providerBias := BuildProviderBias(words)
 	return ResolvedSet{
 		Context:        request,
 		Words:          words,
@@ -196,6 +198,7 @@ func (s *Service) resolveUncached(ctx context.Context, request speechcustomize.C
 		Prompt:         BuildPrompt(words),
 		Keyterms:       BuildKeyterms(words),
 		VoiceAgentHint: BuildVoiceAgentHint(words),
+		ProviderBias:   providerBias,
 		Applier:        applier,
 	}, nil
 }
@@ -285,7 +288,7 @@ func templateWordMatchesContext(word speechcustomize.Word, request speechcustomi
 }
 
 func templateReplacementMatchesContext(replacement speechcustomize.Replacement, request speechcustomize.Context) bool {
-	if !replacement.Enabled || strings.TrimSpace(replacement.Match.Pattern) == "" || strings.TrimSpace(replacement.Output.Text) == "" {
+	if !replacement.Enabled || strings.TrimSpace(replacement.Match.Pattern) == "" || !replacementHasRunnableOutput(replacement) {
 		return false
 	}
 	if !languageMatches(replacement.Language, request.Language) {

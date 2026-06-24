@@ -13,6 +13,7 @@ type VoiceAgentConfig struct {
 	//   "gemini"    — Google Gemini Live (cloud, GOOGLE_AI_API_KEY required)
 	//   "openai"    — OpenAI Realtime API (cloud, OPENAI_API_KEY required)
 	//   "deepgram"  — Deepgram Voice Agent (cloud, DEEPGRAM_API_KEY required)
+	//   "assemblyai" — AssemblyAI Voice Agent API (cloud, ASSEMBLYAI_API_KEY required)
 	//   "cascaded"  — self-hosted whisper.cpp → Genkit agent LLM → TTS pipeline
 	//                 (CPU-capable; no external realtime dependency)
 	//   "moshi"     — self-hosted Kyutai Moshi Rust server (GPU required, M9b)

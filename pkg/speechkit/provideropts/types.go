@@ -29,6 +29,15 @@ const (
 	OptionVoice              OptionID = "voice"
 	OptionSpeed              OptionID = "speed"
 	OptionAudioFormat        OptionID = "audio_format"
+	OptionContextPrompt      OptionID = "context_prompt"
+	OptionLanguageHints      OptionID = "language_hints"
+	OptionPrivacyRedaction   OptionID = "privacy_redaction"
+	OptionVoiceFocus         OptionID = "voice_focus"
+	OptionMedicalDomain      OptionID = "medical_domain"
+	OptionReasoningEffort    OptionID = "reasoning_effort"
+	OptionTranslation        OptionID = "translation"
+	OptionTranscriptionOnly  OptionID = "transcription_only"
+	OptionResume             OptionID = "resume"
 )
 
 type OptionType string

@@ -3,8 +3,6 @@
 package core
 
 import (
-	"strings"
-
 	"github.com/kombifyio/SpeechKit/internal/config"
 	"github.com/kombifyio/SpeechKit/internal/stt"
 )
@@ -21,7 +19,7 @@ func deepgramOptionsFromConfig(cfg *config.Config) stt.DeepgramOptions {
 		FillerWords:           dg.STTFillerWords,
 		Numerals:              dg.STTNumerals,
 		DetectLanguage:        dg.STTDetectLanguage,
-		LanguageOverride:      strings.TrimSpace(dg.STTLanguage),
+		LanguageOverride:      config.DeepgramSTTLanguageOverride(dg.STTLanguage),
 		UseVocabularyKeyterms: dg.STTUseVocabularyKeyterms,
 		Keyterms:              stt.ParseDeepgramKeyterms(dg.STTKeyterms),
 		EndpointingMs:         dg.STTEndpointingMs,

@@ -63,6 +63,41 @@ func TestMoshiProviderFactoryIsExplicitlyExperimentalUnavailable(t *testing.T) {
 	}
 }
 
+func TestNormalizeVoiceAgentProviderAliases(t *testing.T) {
+	tests := map[string]string{
+		"google":                              ProviderGemini,
+		"realtime.google.gemini-native-audio": ProviderGemini,
+		"assembly-ai":                         ProviderAssemblyAI,
+		"realtime.assemblyai.voice-agent":     ProviderAssemblyAI,
+		"openai-realtime":                     ProviderOpenAI,
+		"realtime.openai.gpt-realtime-2":      ProviderOpenAI,
+		"pipeline-fallback":                   ProviderCascaded,
+	}
+
+	for input, want := range tests {
+		if got := normalizeVoiceAgentProvider(input); got != want {
+			t.Fatalf("normalizeVoiceAgentProvider(%q) = %q, want %q", input, got, want)
+		}
+	}
+}
+
+func TestBuildVoiceAgentHandlerAcceptsGoogleProviderAlias(t *testing.T) {
+	cfg := &config.Config{}
+	cfg.General.Language = "en"
+	cfg.Server.MaxVoiceAgentSessions = 10
+	cfg.Server.MaxSessionsPerUser = 10
+	cfg.VoiceAgent.Provider = "google"
+	app := &App{PersonaRegistry: persona.NewRegistry()}
+
+	_, status, err := buildVoiceAgentHandler(context.Background(), cfg, app)
+	if err != nil {
+		t.Fatalf("buildVoiceAgentHandler() error = %v", err)
+	}
+	if !strings.HasPrefix(status, "degraded: no Google API key") {
+		t.Fatalf("status = %q, want Gemini/Google default degradation", status)
+	}
+}
+
 func TestBuildVoiceAgentHandlerUsesConfiguredTicketTTL(t *testing.T) {
 	cfg := &config.Config{}
 	cfg.General.Language = "en"
@@ -103,7 +138,7 @@ func TestBuildVoiceAgentHandlerUsesConfiguredTicketTTL(t *testing.T) {
 	}
 }
 
-func TestBuildVoiceAgentHandlerRegistersOpenAIAsSwitchableProvider(t *testing.T) {
+func TestBuildVoiceAgentHandlerRegistersNativeProvidersAsSwitchable(t *testing.T) {
 	cfg := &config.Config{}
 	cfg.General.Language = "en"
 	cfg.Server.MaxVoiceAgentSessions = 10
@@ -121,10 +156,93 @@ func TestBuildVoiceAgentHandlerRegistersOpenAIAsSwitchableProvider(t *testing.T)
 	// Native realtime providers must be per-session switchable regardless of
 	// the configured default; missing keys degrade the session at upgrade,
 	// they must not silently drop the provider from the switchable set.
-	for _, p := range []string{ProviderDeepgram, ProviderOpenAI} {
+	for _, p := range []string{ProviderDeepgram, ProviderOpenAI, ProviderAssemblyAI} {
 		if !strings.Contains(status, p) {
 			t.Fatalf("status = %q, want switchable provider %q registered", status, p)
 		}
+	}
+}
+
+func TestBuildProviderFactoryRegistersAssemblyAINativeProvider(t *testing.T) {
+	cfg := &config.Config{}
+	cfg.Providers.AssemblyAI.APIKeyEnv = "ASSEMBLYAI_API_KEY"
+	app := &App{}
+
+	factory, status, err := buildProviderFactory(context.Background(), cfg, app, ProviderAssemblyAI)
+	if err != nil {
+		t.Fatalf("buildProviderFactory() error = %v", err)
+	}
+	if factory == nil {
+		t.Fatal("AssemblyAI factory must be registered even when the key is missing")
+	}
+	if !strings.Contains(status, "degraded: no AssemblyAI API key") {
+		t.Fatalf("status = %q, want missing-key degradation", status)
+	}
+	if got := factory.NewProvider().Name(); got != "assemblyai-agent" {
+		t.Fatalf("provider name = %q, want assemblyai-agent", got)
+	}
+}
+
+func TestPersonaResolverAssemblyAIUsesNativeVoiceAgentModelDefault(t *testing.T) {
+	cfg := config.Config{}
+	cfg.VoiceAgent.Provider = ProviderAssemblyAI
+	cfg.VoiceAgent.Model = ""
+	cfg.Providers.AssemblyAI.APIKeyEnv = "ASSEMBLYAI_API_KEY"
+	t.Setenv("ASSEMBLYAI_API_KEY", "aai-test-key")
+
+	resolver := &personaResolver{cfg: &cfg, registry: persona.NewRegistry()}
+
+	frame, err := resolver.Resolve(vsserver.StartFrame{})
+	if err != nil {
+		t.Fatalf("Resolve() error = %v", err)
+	}
+	if frame.Model != "assemblyai-voice-agent" {
+		t.Fatalf("Model = %q, want assemblyai-voice-agent", frame.Model)
+	}
+	if frame.APIKey != "aai-test-key" {
+		t.Fatalf("APIKey was not resolved from AssemblyAI provider env")
+	}
+}
+
+func TestPersonaResolverAssemblyAISwitchDoesNotReuseGeminiModel(t *testing.T) {
+	cfg := config.Config{}
+	cfg.VoiceAgent.Provider = ProviderGemini
+	cfg.VoiceAgent.Model = "gemini-3.1-flash-live-preview"
+	cfg.Providers.AssemblyAI.APIKeyEnv = "ASSEMBLYAI_API_KEY"
+	t.Setenv("ASSEMBLYAI_API_KEY", "aai-test-key")
+
+	resolver := &personaResolver{cfg: &cfg, registry: persona.NewRegistry()}
+
+	frame, err := resolver.Resolve(vsserver.StartFrame{Provider: "assembly-ai"})
+	if err != nil {
+		t.Fatalf("Resolve() error = %v", err)
+	}
+	if frame.Model != "assemblyai-voice-agent" {
+		t.Fatalf("Model = %q, want assemblyai-voice-agent", frame.Model)
+	}
+	if frame.APIKey != "aai-test-key" {
+		t.Fatalf("APIKey was not resolved from AssemblyAI provider env")
+	}
+}
+
+func TestPersonaResolverGeminiSwitchDoesNotReuseOpenAIModel(t *testing.T) {
+	cfg := config.Config{}
+	cfg.VoiceAgent.Provider = ProviderOpenAI
+	cfg.VoiceAgent.Model = "gpt-realtime-2"
+	cfg.Providers.Google.APIKeyEnv = "GOOGLE_AI_API_KEY"
+	t.Setenv("GOOGLE_AI_API_KEY", "google-test-key")
+
+	resolver := &personaResolver{cfg: &cfg, registry: persona.NewRegistry()}
+
+	frame, err := resolver.Resolve(vsserver.StartFrame{Provider: "google"})
+	if err != nil {
+		t.Fatalf("Resolve() error = %v", err)
+	}
+	if frame.Model != "gemini-3.1-flash-live-preview" {
+		t.Fatalf("Model = %q, want gemini-3.1-flash-live-preview", frame.Model)
+	}
+	if frame.APIKey != "google-test-key" {
+		t.Fatalf("APIKey was not resolved from Google provider env")
 	}
 }
 

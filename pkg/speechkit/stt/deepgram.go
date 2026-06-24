@@ -96,6 +96,8 @@ func (p *DeepgramProvider) ApplyOptions(opts DeepgramOptions) {
 func (p *DeepgramProvider) Transcribe(ctx context.Context, audio []byte, opts TranscribeOpts) (*Result, error) {
 	model := firstNonEmptyTrimmed(opts.Model, p.Model, "nova-3")
 	resolved := p.resolveOptions(model, opts)
+	apiLanguage := deepgramCodeSwitchingLanguage()
+	languageSource := deepgramLanguageSource(resolved)
 	speakerOpts := resolved.Speaker
 
 	endpoint, err := p.deepgramListenEndpoint(model, resolved)
@@ -145,6 +147,11 @@ func (p *DeepgramProvider) Transcribe(ctx context.Context, audio []byte, opts Tr
 		"ttfb_ms", ttfb.Milliseconds(),
 		"total_ms", duration.Milliseconds(),
 		"audio_bytes", len(audio),
+		"provider", p.Name(),
+		"model", model,
+		"language", apiLanguage,
+		"language_source", languageSource,
+		"keyterm_count", len(resolved.Keyterms),
 	)
 
 	body, err := io.ReadAll(io.LimitReader(resp.Body, deepgramMaxResponseBytes))
@@ -160,7 +167,7 @@ func (p *DeepgramProvider) Transcribe(ctx context.Context, audio []byte, opts Tr
 		return nil, fmt.Errorf("parse response: %w", err)
 	}
 	text, confidence := parsed.bestTranscript()
-	lang := firstNonEmptyTrimmed(parsed.detectedLanguage(), resolved.Language, "de")
+	lang := firstNonEmptyTrimmed(parsed.detectedLanguage(), apiLanguage, "multi")
 
 	result := &Result{
 		Text:       text,
@@ -225,9 +232,7 @@ func (p *DeepgramProvider) deepgramListenEndpoint(model string, resolved Resolve
 	if resolved.Numerals {
 		q.Set("numerals", "true")
 	}
-	if resolved.DetectLanguage {
-		q.Set("detect_language", "true")
-	} else if language := normalizedDeepgramLanguage(resolved.APILanguage()); language != "" {
+	if language := normalizedDeepgramLanguage(deepgramCodeSwitchingLanguage()); language != "" {
 		q.Set("language", language)
 	}
 	p.applyVocabularyBias(q, model, resolved.Keyterms, resolved.UseVocabularyKeyterms)
@@ -245,14 +250,14 @@ func (p *DeepgramProvider) deepgramListenEndpoint(model string, resolved Resolve
 
 func (p *DeepgramProvider) resolveOptions(model string, opts TranscribeOpts) ResolvedTranscribeOptions {
 	providerDefaults := provideropts.Values{
-		provideropts.OptionLanguage:       "de",
+		provideropts.OptionLanguage:       deepgramCodeSwitchingLanguage(),
 		provideropts.OptionPunctuation:    true,
 		provideropts.OptionSmartFormat:    true,
 		provideropts.OptionVocabularyBias: true,
 	}
 	providerOverrides := provideropts.Values{}
 	if language := strings.TrimSpace(p.LanguageOverride); language != "" {
-		providerOverrides[provideropts.OptionLanguage] = language
+		providerOverrides[provideropts.OptionLanguage] = deepgramCodeSwitchingLanguage()
 	}
 	if !p.SmartFormat {
 		providerOverrides[provideropts.OptionSmartFormat] = false
@@ -279,6 +284,21 @@ func (p *DeepgramProvider) resolveOptions(model string, opts TranscribeOpts) Res
 		providerOverrides[provideropts.OptionKeyterms] = append([]string(nil), p.Keyterms...)
 	}
 	return ResolveTranscribeOptions("deepgram", deepgramProfileID(model), opts, providerDefaults, providerOverrides)
+}
+
+func deepgramCodeSwitchingLanguage() string {
+	return "multi"
+}
+
+func deepgramLanguageSource(resolved ResolvedTranscribeOptions) string {
+	option, ok := resolved.Effective.Options[provideropts.OptionLanguage]
+	if !ok {
+		return string(provideropts.SourceProviderDefault)
+	}
+	if value, ok := option.Value.(string); ok && strings.EqualFold(strings.TrimSpace(value), deepgramCodeSwitchingLanguage()) {
+		return string(option.Source)
+	}
+	return "speechkit_forced_multilingual"
 }
 
 func (p *DeepgramProvider) applyVocabularyBias(q url.Values, model string, requestTerms []string, useVocabulary bool) {

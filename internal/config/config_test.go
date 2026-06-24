@@ -77,6 +77,9 @@ func TestLoadDefaults(t *testing.T) {
 	if cfg.General.DictateSilenceTimeoutSec != DefaultDictateSilenceTimeoutSec {
 		t.Errorf("default dictate silence timeout = %d, want %d", cfg.General.DictateSilenceTimeoutSec, DefaultDictateSilenceTimeoutSec)
 	}
+	if cfg.General.DictationIntermediateSegmentMs != DefaultDictationIntermediateSegmentMs {
+		t.Errorf("default dictation intermediate segment ms = %d, want %d", cfg.General.DictationIntermediateSegmentMs, DefaultDictationIntermediateSegmentMs)
+	}
 	if cfg.General.AutoStartOnLaunch {
 		t.Fatal("general auto-start should be disabled by default")
 	}

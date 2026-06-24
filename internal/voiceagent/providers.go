@@ -12,9 +12,10 @@ import (
 
 // Concrete realtime providers (formerly internal/voiceagent.{GeminiLive,…}).
 type (
-	GeminiLive   = live.GeminiLive
-	OpenAILive   = live.OpenAILive
-	DeepgramLive = live.DeepgramLive
+	GeminiLive     = live.GeminiLive
+	OpenAILive     = live.OpenAILive
+	DeepgramLive   = live.DeepgramLive
+	AssemblyAILive = live.AssemblyAILive
 )
 
 // DefaultOpenAIRealtimeModel is the public runtime default for OpenAI-backed
@@ -25,7 +26,8 @@ const DefaultOpenAIRealtimeModel = live.DefaultOpenAIRealtimeModel
 // signature-agnostic: changing a constructor's parameters in the live package
 // does not require editing this file.
 var (
-	NewGeminiLive   = live.NewGeminiLive
-	NewOpenAILive   = live.NewOpenAILive
-	NewDeepgramLive = live.NewDeepgramLive
+	NewGeminiLive     = live.NewGeminiLive
+	NewOpenAILive     = live.NewOpenAILive
+	NewDeepgramLive   = live.NewDeepgramLive
+	NewAssemblyAILive = live.NewAssemblyAILive
 )

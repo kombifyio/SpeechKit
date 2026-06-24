@@ -1,12 +1,16 @@
 package customize
 
 import (
+	"bytes"
 	"fmt"
 	"regexp"
 	"sort"
 	"strings"
+	"text/template"
 
+	"github.com/kombifyio/SpeechKit/pkg/speechkit"
 	speechcustomize "github.com/kombifyio/SpeechKit/pkg/speechkit/customize"
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/provideropts"
 )
 
 type Set struct {
@@ -29,9 +33,57 @@ type MatchRecord struct {
 	Count         int    `json:"count"`
 }
 
+type Action struct {
+	ReplacementID string               `json:"replacement_id,omitempty"`
+	Kind          speechcustomize.Kind `json:"kind"`
+	Intent        string               `json:"intent,omitempty"`
+	Text          string               `json:"text,omitempty"`
+	Template      string               `json:"template,omitempty"`
+	Payload       map[string]any       `json:"payload,omitempty"`
+	MatchedText   string               `json:"matched_text,omitempty"`
+	Count         int                  `json:"count"`
+}
+
 type ApplyResult struct {
 	Text    string
 	Matches []MatchRecord
+	Actions []Action
+}
+
+func PublicActions(actions []Action) []speechkit.CustomizationAction {
+	if len(actions) == 0 {
+		return nil
+	}
+	out := make([]speechkit.CustomizationAction, 0, len(actions))
+	for _, action := range actions {
+		out = append(out, speechkit.CustomizationAction{
+			ReplacementID: action.ReplacementID,
+			Kind:          string(action.Kind),
+			Intent:        action.Intent,
+			Text:          action.Text,
+			Template:      action.Template,
+			Payload:       clonePayload(action.Payload),
+			MatchedText:   action.MatchedText,
+			Count:         action.Count,
+		})
+	}
+	return out
+}
+
+type ProviderBias struct {
+	Prompt     string
+	Keyterms   []string
+	ByProvider map[string]provideropts.Values
+	Preview    []ProviderBiasPreview
+}
+
+type ProviderBiasPreview struct {
+	Provider string
+	Modality string
+	Strategy string
+	Native   bool
+	Keyterms []string
+	Prompt   string
 }
 
 type CompiledApplier struct {
@@ -186,6 +238,61 @@ func BuildVoiceAgentHint(words []speechcustomize.Word) string {
 	return "Prefer these names and product terms in recognition and responses: " + strings.Join(terms, ", ") + "."
 }
 
+func BuildProviderBias(words []speechcustomize.Word) ProviderBias {
+	return BuildProviderBiasForModality(words, provideropts.ModalitySTT)
+}
+
+func BuildProviderBiasForModality(words []speechcustomize.Word, modality string) ProviderBias {
+	modality = strings.TrimSpace(modality)
+	if modality == "" {
+		modality = provideropts.ModalitySTT
+	}
+	keyterms := BuildKeyterms(words)
+	prompt := BuildPrompt(words)
+	bias := ProviderBias{
+		Prompt:     prompt,
+		Keyterms:   keyterms,
+		ByProvider: map[string]provideropts.Values{},
+	}
+	if len(keyterms) == 0 && prompt == "" {
+		return bias
+	}
+	for _, manifest := range provideropts.DefaultManifests() {
+		if manifest.Modality != modality {
+			continue
+		}
+		support := manifest.SupportByID()
+		values := provideropts.Values{}
+		strategy := ""
+		if opt, ok := support[provideropts.OptionKeyterms]; ok && optionCanCarryBias(opt) && len(keyterms) > 0 {
+			if vocab, ok := support[provideropts.OptionVocabularyBias]; !ok || optionCanCarryBias(vocab) {
+				values[provideropts.OptionVocabularyBias] = true
+			}
+			values[provideropts.OptionKeyterms] = append([]string(nil), keyterms...)
+			strategy = string(opt.Status)
+		} else if opt, ok := support[provideropts.OptionPromptHint]; ok && optionCanCarryBias(opt) && prompt != "" {
+			if vocab, ok := support[provideropts.OptionVocabularyBias]; ok && optionCanCarryBias(vocab) {
+				values[provideropts.OptionVocabularyBias] = true
+			}
+			values[provideropts.OptionPromptHint] = prompt
+			strategy = string(opt.Status)
+		}
+		if len(values) == 0 {
+			continue
+		}
+		bias.ByProvider[manifest.Provider] = values
+		bias.Preview = append(bias.Preview, ProviderBiasPreview{
+			Provider: manifest.Provider,
+			Modality: manifest.Modality,
+			Strategy: strategy,
+			Native:   strategy == string(provideropts.SupportNative),
+			Keyterms: append([]string(nil), keyterms...),
+			Prompt:   prompt,
+		})
+	}
+	return bias
+}
+
 func CanonicalTerms(words []speechcustomize.Word) []string {
 	terms := make([]string, 0, len(words))
 	seen := map[string]struct{}{}
@@ -235,12 +342,46 @@ func (a *CompiledApplier) Apply(text string) ApplyResult {
 	}
 	for _, replacement := range a.compiled {
 		total := 0
+		if replacement.Replacement.Kind == speechcustomize.KindCommand {
+			matches := replacement.Regexp.FindAllString(result.Text, -1)
+			if len(matches) == 0 {
+				continue
+			}
+			total = len(matches)
+			firstMatch := matches[0]
+			rendered := renderReplacementOutput(replacement.Replacement, result.Text, firstMatch)
+			result.Actions = append(result.Actions, Action{
+				ReplacementID: replacement.Replacement.ID,
+				Kind:          replacement.Replacement.Kind,
+				Intent:        strings.TrimSpace(replacement.Replacement.Output.Intent),
+				Text:          rendered,
+				Template:      strings.TrimSpace(replacement.Replacement.Output.Template),
+				Payload:       clonePayload(replacement.Replacement.Output.Payload),
+				MatchedText:   firstMatch,
+				Count:         total,
+			})
+			result.Matches = append(result.Matches, MatchRecord{
+				ReplacementID: replacement.Replacement.ID,
+				Term:          firstNonEmpty(replacement.Replacement.Output.Intent, firstMatch),
+				Count:         total,
+			})
+			continue
+		}
 		for pass := 0; pass < maxReplacementApplyPasses; pass++ {
-			count := len(replacement.Regexp.FindAllStringIndex(result.Text, -1))
-			if count == 0 {
+			matches := replacement.Regexp.FindAllString(result.Text, -1)
+			if len(matches) == 0 {
 				break
 			}
-			next := replacement.Regexp.ReplaceAllString(result.Text, replacement.Replacement.Output.Text)
+			count := len(matches)
+			var next string
+			if strings.TrimSpace(replacement.Replacement.Output.Template) == "" {
+				next = replacement.Regexp.ReplaceAllString(result.Text, replacement.Replacement.Output.Text)
+			} else {
+				current := result.Text
+				next = replacement.Regexp.ReplaceAllStringFunc(result.Text, func(match string) string {
+					return renderReplacementOutput(replacement.Replacement, current, match)
+				})
+			}
 			if next == result.Text {
 				break
 			}
@@ -250,7 +391,7 @@ func (a *CompiledApplier) Apply(text string) ApplyResult {
 		if total > 0 {
 			result.Matches = append(result.Matches, MatchRecord{
 				ReplacementID: replacement.Replacement.ID,
-				Term:          replacement.Replacement.Output.Text,
+				Term:          renderReplacementOutput(replacement.Replacement, text, ""),
 				Count:         total,
 			})
 		}
@@ -270,7 +411,7 @@ func activeReplacements(replacements []speechcustomize.Replacement, context spee
 		if stage != "" && replacement.Stage != stage {
 			continue
 		}
-		if replacement.Kind != speechcustomize.KindSubstitution && replacement.Kind != speechcustomize.KindSynonym {
+		if !replacementKindIsActive(replacement.Kind) {
 			continue
 		}
 		if mode != "" && len(replacement.Modes) > 0 && !replacementHasMode(replacement, mode) {
@@ -279,7 +420,7 @@ func activeReplacements(replacements []speechcustomize.Replacement, context spee
 		if !tagsMatch(context.Tags, replacement.Tags) {
 			continue
 		}
-		if strings.TrimSpace(replacement.Output.Text) == "" || strings.TrimSpace(replacement.Match.Pattern) == "" {
+		if !replacementHasRunnableOutput(replacement) || strings.TrimSpace(replacement.Match.Pattern) == "" {
 			continue
 		}
 		active = append(active, replacement)
@@ -322,6 +463,70 @@ func tagsMatch(contextTags, itemTags []string) bool {
 		}
 	}
 	return false
+}
+
+func optionCanCarryBias(opt provideropts.OptionSupport) bool {
+	return opt.Status != "" && opt.Status != provideropts.SupportUnsupported
+}
+
+func replacementKindIsActive(kind speechcustomize.Kind) bool {
+	switch kind {
+	case speechcustomize.KindSubstitution, speechcustomize.KindSynonym, speechcustomize.KindSnippet, speechcustomize.KindTemplate, speechcustomize.KindCommand:
+		return true
+	default:
+		return false
+	}
+}
+
+func replacementHasRunnableOutput(replacement speechcustomize.Replacement) bool {
+	output := replacement.Output
+	switch replacement.Kind {
+	case speechcustomize.KindCommand:
+		return strings.TrimSpace(output.Intent) != "" || strings.TrimSpace(output.Text) != "" || strings.TrimSpace(output.Template) != "" || len(output.Payload) > 0
+	case speechcustomize.KindSubstitution, speechcustomize.KindSynonym, speechcustomize.KindSnippet, speechcustomize.KindTemplate:
+		return strings.TrimSpace(output.Text) != "" || strings.TrimSpace(output.Template) != ""
+	default:
+		return false
+	}
+}
+
+func renderReplacementOutput(replacement speechcustomize.Replacement, input, match string) string {
+	raw := strings.TrimSpace(replacement.Output.Template)
+	if raw == "" {
+		return replacement.Output.Text
+	}
+	tmpl, err := template.New("replacement").Option("missingkey=zero").Funcs(template.FuncMap{
+		"lower": strings.ToLower,
+		"upper": strings.ToUpper,
+		"trim":  strings.TrimSpace,
+	}).Parse(raw)
+	if err != nil {
+		return raw
+	}
+	data := map[string]any{
+		"ID":      replacement.ID,
+		"Kind":    replacement.Kind,
+		"Input":   input,
+		"Match":   match,
+		"Intent":  replacement.Output.Intent,
+		"Payload": replacement.Output.Payload,
+	}
+	var buf bytes.Buffer
+	if err := tmpl.Execute(&buf, data); err != nil {
+		return raw
+	}
+	return buf.String()
+}
+
+func clonePayload(payload map[string]any) map[string]any {
+	if len(payload) == 0 {
+		return nil
+	}
+	out := make(map[string]any, len(payload))
+	for key, value := range payload {
+		out[key] = value
+	}
+	return out
 }
 
 func compileReplacement(replacement speechcustomize.Replacement) (*regexp.Regexp, error) {

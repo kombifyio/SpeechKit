@@ -197,8 +197,8 @@ func TestDeepgram_Transcribe_AppliesListenOptionsAndKeyterms(t *testing.T) {
 			t.Fatalf("%s = %q, want true (query=%s)", key, gotQuery.Get(key), gotQuery.Encode())
 		}
 	}
-	if gotQuery.Get("language") != "de" {
-		t.Fatalf("language = %q, want request override de", gotQuery.Get("language"))
+	if gotQuery.Get("language") != "multi" {
+		t.Fatalf("language = %q, want SpeechKit-forced multilingual mode (query=%s)", gotQuery.Get("language"), gotQuery.Encode())
 	}
 	if got := gotQuery["keyterm"]; len(got) != 2 || got[0] != "Kombify" || got[1] != "SpeechKit" {
 		t.Fatalf("keyterm = %v, want [Kombify SpeechKit]", got)
@@ -208,7 +208,7 @@ func TestDeepgram_Transcribe_AppliesListenOptionsAndKeyterms(t *testing.T) {
 	}
 }
 
-func TestDeepgram_Transcribe_DetectLanguageSkipsLanguage(t *testing.T) {
+func TestDeepgram_Transcribe_DetectLanguageIsIgnoredForCodeSwitching(t *testing.T) {
 	var gotQuery url.Values
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		gotQuery = r.URL.Query()
@@ -235,11 +235,11 @@ func TestDeepgram_Transcribe_DetectLanguageSkipsLanguage(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Transcribe: %v", err)
 	}
-	if gotQuery.Get("detect_language") != "true" {
-		t.Fatalf("detect_language = %q, want true", gotQuery.Get("detect_language"))
+	if gotQuery.Has("detect_language") {
+		t.Fatalf("detect_language should be ignored for Deepgram code-switching mode: %s", gotQuery.Encode())
 	}
-	if gotQuery.Has("language") {
-		t.Fatalf("language should be omitted when detect_language=true: %s", gotQuery.Encode())
+	if gotQuery.Get("language") != "multi" {
+		t.Fatalf("language = %q, want SpeechKit-forced multilingual mode (query=%s)", gotQuery.Get("language"), gotQuery.Encode())
 	}
 }
 

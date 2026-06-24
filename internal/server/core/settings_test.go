@@ -37,6 +37,54 @@ func serveServerSettingsWithBearerRole(app *App, req *http.Request, role string)
 	return rec
 }
 
+func TestActiveVoiceAgentModeSettingUsesDirectProviderProfiles(t *testing.T) {
+	tests := []struct {
+		provider  string
+		model     string
+		wantID    string
+		wantModel string
+	}{
+		{provider: "google", wantID: "realtime.google.gemini-native-audio", wantModel: "gemini-3.1-flash-live-preview"},
+		{provider: "deepgram", wantID: "realtime.deepgram.voice-agent", wantModel: "flux-general-multi"},
+		{provider: "assemblyai", wantID: "realtime.assemblyai.voice-agent", wantModel: "assemblyai-voice-agent"},
+		{provider: "openai", wantID: "realtime.openai.gpt-realtime-2", wantModel: "gpt-realtime-2"},
+		{provider: "assemblyai", model: "custom-agent", wantID: "realtime.assemblyai.voice-agent", wantModel: "custom-agent"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.provider+"/"+tt.model, func(t *testing.T) {
+			cfg := &config.Config{}
+			cfg.VoiceAgent.Provider = tt.provider
+			cfg.VoiceAgent.Model = tt.model
+			got := activeVoiceAgentModeSetting(cfg)
+			if got.ProviderKind != "direct_provider" {
+				t.Fatalf("provider kind = %q, want direct_provider", got.ProviderKind)
+			}
+			if got.ProfileID != tt.wantID {
+				t.Fatalf("profile id = %q, want %q", got.ProfileID, tt.wantID)
+			}
+			if got.Model != tt.wantModel {
+				t.Fatalf("model = %q, want %q", got.Model, tt.wantModel)
+			}
+		})
+	}
+}
+
+func TestActiveServerCredentialSettingsIncludesVoiceAgentProviders(t *testing.T) {
+	cfg := &config.Config{}
+	cfg.Providers.Deepgram.Enabled = true
+	cfg.Providers.Deepgram.APIKeyEnv = "DG_TEST_KEY"
+	cfg.Providers.AssemblyAI.Enabled = true
+	cfg.Providers.AssemblyAI.APIKeyEnv = "AAI_TEST_KEY"
+
+	got := activeServerCredentialSettings(cfg)
+	if got.Deepgram.Enabled == nil || !*got.Deepgram.Enabled || got.Deepgram.Env != "DG_TEST_KEY" {
+		t.Fatalf("Deepgram credential = %#v", got.Deepgram)
+	}
+	if got.AssemblyAI.Enabled == nil || !*got.AssemblyAI.Enabled || got.AssemblyAI.Env != "AAI_TEST_KEY" {
+		t.Fatalf("AssemblyAI credential = %#v", got.AssemblyAI)
+	}
+}
+
 func TestRegisterServerSettings_ServesSafeSnapshot(t *testing.T) {
 	t.Setenv("OPENAI_API_KEY", "secret-value")
 

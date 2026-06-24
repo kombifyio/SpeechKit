@@ -10,6 +10,7 @@ not the entire desktop application.
 - `embed-tts/`: demonstrates `pkg/speechkit/tts` Provider, Router, Service, and provider-kind routing.
 - `embed-event-bus/`: publishes and consumes the additive wake, skill, companion, Voice-Agent, and TTS events.
 - `voice-agent/game-instructor/`: end-to-end 15-minute Voice Agent embedded in a Go program (persona/role/sequence TOML + WebSocket client). Reference for the single-prompt "build a voice agent into my app" use case.
+- `voice-agent/provider-switching/`: credential-free provider/profile/model selection using the public `pkg/speechkit/voiceagent/live` descriptors, `ProviderIntent`, and config helpers.
 
 ## Agent prompts
 
@@ -38,4 +39,6 @@ go run ./examples/provider-catalog
 go run ./examples/embed-companion
 go run ./examples/embed-tts
 go run ./examples/embed-event-bus
+go run ./examples/voice-agent/provider-switching -provider assemblyai
+go run ./examples/voice-agent/provider-switching -provider auto -preferred openai,assemblyai -require-native-keyterms
 ```
