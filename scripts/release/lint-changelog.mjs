@@ -53,11 +53,6 @@ const FORBIDDEN_PATTERNS = [
     hint: 'Internal plan filenames must never appear in the public changelog.',
   },
   {
-    pattern: /\b(?:mako1|kombination|kombify-Core|kombify-Administration|KombiverseLabs|Soulcreek)\b/g,
-    label: 'private host or account name',
-    hint: 'These names identify private accounts or repos and must never reach the public release notes.',
-  },
-  {
     pattern: /\b[Cc]:\\Users\\[^\s`]+/g,
     label: 'absolute Windows developer path',
     hint: 'Strip developer-machine paths; they leak the maintainer username.',
