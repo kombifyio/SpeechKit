@@ -65,7 +65,7 @@ Verified on 2026-05-26 and updated on 2026-05-27 and 2026-06-02:
 - CI public API stability discovers the surface dynamically with
   `go list ./pkg/speechkit/...`, so new promoted SDK packages are checked by
   default.
-- `scripts/public/consumer-smoke.sh` validates a fresh external Go module that
+- The public consumer-smoke gate validates a fresh external Go module that
   imports `github.com/kombifyio/SpeechKit/pkg/speechkit/{assist,companion,tts,wakeword}`
   from a clean public export, wires `companion.TargetAssist`, and builds
   without depending on public-invisible `internal/*` packages.

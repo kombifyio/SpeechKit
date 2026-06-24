@@ -90,7 +90,7 @@ func (p *AssemblyAILive) SendAudio(chunk []byte) error {
 		return errors.New("assemblyai agent: session is not ready")
 	}
 	encoded := base64.StdEncoding.EncodeToString(upsampleMicPCM16Mono(chunk))
-	return p.sendJSON(conn, map[string]any{
+	return p.sendJSON(context.Background(), conn, map[string]any{
 		"type":  "input.audio",
 		"audio": encoded,
 	})
@@ -107,7 +107,7 @@ func (p *AssemblyAILive) SendText(text string) error {
 	if conn == nil {
 		return errors.New("assemblyai agent: not connected")
 	}
-	return p.sendJSON(conn, map[string]any{
+	return p.sendJSON(context.Background(), conn, map[string]any{
 		"type":         "reply.create",
 		"instructions": text,
 	})
@@ -126,7 +126,7 @@ func (p *AssemblyAILive) SendToolResponse(response ToolResponse) error {
 	if err != nil {
 		return fmt.Errorf("assemblyai agent: marshal tool result: %w", err)
 	}
-	return p.sendJSON(conn, map[string]any{
+	return p.sendJSON(context.Background(), conn, map[string]any{
 		"type":    "tool.result",
 		"call_id": response.ID,
 		"result":  string(raw),
@@ -169,7 +169,7 @@ func (p *AssemblyAILive) Reconnect(ctx context.Context) error {
 		return fmt.Errorf("assemblyai agent: resume dial: %w", err)
 	}
 	conn.SetReadLimit(assemblyAIAgentReadLimit)
-	if err := p.sendJSON(conn, map[string]any{"type": "session.resume", "session_id": sessionID}); err != nil {
+	if err := p.sendJSON(ctx, conn, map[string]any{"type": "session.resume", "session_id": sessionID}); err != nil {
 		_ = conn.Close(websocket.StatusInternalError, "session.resume failed")
 		return fmt.Errorf("assemblyai agent: session.resume: %w", err)
 	}
@@ -235,7 +235,7 @@ func (p *AssemblyAILive) Close() error {
 	if conn == nil {
 		return nil
 	}
-	_ = p.sendJSON(conn, map[string]any{"type": "session.end"})
+	_ = p.sendJSON(context.Background(), conn, map[string]any{"type": "session.end"})
 	err := conn.Close(websocket.StatusNormalClosure, "client close")
 	p.closeErr = err
 	return err
@@ -379,12 +379,14 @@ func (p *AssemblyAILive) parseEvent(data []byte) (*LiveMessage, bool, error) {
 	}
 }
 
-func (p *AssemblyAILive) sendJSON(conn *websocket.Conn, v any) error {
+func (p *AssemblyAILive) sendJSON(ctx context.Context, conn *websocket.Conn, v any) error {
 	body, err := json.Marshal(v)
 	if err != nil {
 		return fmt.Errorf("assemblyai agent: marshal frame: %w", err)
 	}
-	return conn.Write(context.Background(), websocket.MessageText, body)
+	writeCtx, cancel := context.WithTimeout(ctx, assemblyAIAgentWriteTimeout)
+	defer cancel()
+	return conn.Write(writeCtx, websocket.MessageText, body)
 }
 
 func (p *AssemblyAILive) snapshotConn() *websocket.Conn {
@@ -401,10 +403,11 @@ func (p *AssemblyAILive) snapshotSessionID() string {
 
 func assemblyAISessionUpdate(cfg LiveConfig) map[string]any {
 	resolved := ResolveLiveOptions("assemblyai", "realtime.assemblyai.voice-agent", cfg, nil, nil)
+	input := map[string]any{
+		"format": map[string]any{"encoding": "audio/pcm"},
+	}
 	session := map[string]any{
-		"input": map[string]any{
-			"format": map[string]any{"encoding": "audio/pcm"},
-		},
+		"input": input,
 		"output": map[string]any{
 			"voice":  assemblyAIVoice(aaFirst(resolved.Voice, cfg.Voice)),
 			"format": map[string]any{"encoding": "audio/pcm"},
@@ -414,11 +417,9 @@ func assemblyAISessionUpdate(cfg LiveConfig) map[string]any {
 		session["system_prompt"] = prompt
 	}
 	if keyterms := resolved.Keyterms; len(keyterms) > 0 {
-		input := session["input"].(map[string]any)
 		input["keyterms"] = keyterms
 	}
 	if turnDetection := assemblyAITurnDetection(cfg.Policies.ActivityDetection); len(turnDetection) > 0 {
-		input := session["input"].(map[string]any)
 		input["turn_detection"] = turnDetection
 	}
 	if tools := assemblyAITools(cfg.Tools); len(tools) > 0 {

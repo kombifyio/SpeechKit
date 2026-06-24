@@ -112,7 +112,7 @@ func TestBuildGeminiLiveConnectConfigUsesCustomInstructionAndPolicies(t *testing
 		Voice:            "Aoede",
 		FrameworkPrompt:  "You moderate a cooperative game session. Keep turns short and clearly summarize decisions.",
 		RefinementPrompt: "Address the user as captain and keep answers upbeat.",
-		VocabularyHint:   "Important names: Kombi v AI, Soulcreek",
+		VocabularyHint:   "Important names: Acme Voice, Harbor Labs",
 		Tools: []ToolDefinition{
 			{
 				Name:        "save_summary",
@@ -166,7 +166,7 @@ func TestBuildGeminiLiveConnectConfigUsesCustomInstructionAndPolicies(t *testing
 	if !strings.Contains(text, "higher-priority framework") {
 		t.Fatalf("instruction = %q, want precedence guidance for the refinement prompt", text)
 	}
-	if !strings.Contains(text, "Kombi v AI") {
+	if !strings.Contains(text, "Acme Voice") {
 		t.Fatalf("instruction = %q, want vocabulary hint merged into instruction", text)
 	}
 	if connectCfg.ThinkingConfig == nil {

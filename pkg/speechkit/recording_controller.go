@@ -510,47 +510,16 @@ func (c *RecordingController) drainAndSubmitReadySegments(sessionID uint64, curr
 	}
 }
 
-func (c *RecordingController) submitSegmentsAsJobs(sessionID uint64, current RecordingStartOptions, segments []AudioSegment, label string) (int, error) {
-	submitted := 0
-	for _, segment := range segments {
-		if len(segment.PCM) < c.minPCMBytes {
-			continue
-		}
-		c.mu.Lock()
-		stillSession := c.sessionID == sessionID
-		c.mu.Unlock()
-		if !stillSession {
-			return submitted, nil
-		}
-		submission := submissionFromAudioSegment(segment, current)
-		if err := c.submitter.Submit(TranscriptionJob{
-			Submission: submission,
-			Target:     current.Target,
-		}); err != nil {
-			return submitted, err
-		}
-		submitted++
-		c.mu.Lock()
-		if c.sessionID == sessionID {
-			c.streamedCount++
-		}
-		c.mu.Unlock()
-		c.onLog(fmt.Sprintf("Queued %s: %.1fs audio", label, submission.DurationSecs), "info")
-	}
-	return submitted, nil
-}
-
-func (c *RecordingController) queueStreamSegments(sessionID uint64, segments []AudioSegment) bool {
+func (c *RecordingController) queueStreamSegments(sessionID uint64, segments []AudioSegment) {
 	if c == nil || len(segments) == 0 {
-		return false
+		return
 	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if c.sessionID != sessionID {
-		return false
+		return
 	}
 	c.streamPending = append(c.streamPending, cloneAudioSegments(segments)...)
-	return true
 }
 
 func (c *RecordingController) flushPendingStreamSegments(sessionID uint64, current RecordingStartOptions, label string, retryUntil time.Time) (int, error) {

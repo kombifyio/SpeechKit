@@ -130,10 +130,9 @@ Key advantages:
 
 Download public builds from
 [GitHub Releases](https://github.com/kombifyio/SpeechKit/releases). A fresh
-repository clone also carries the current mirrored installer at
-`release/latest/windows/SpeechKit-Setup.exe` for direct Windows test installs.
-The GitHub Release asset remains canonical; the repo mirror is updated from it
-with hashes and source metadata in `release/latest/windows/`.
+repository clone also carries the current installer metadata in
+`release/latest/windows/`, including canonical download URLs and SHA-256
+hashes. The GitHub Release assets remain canonical.
 
 Default hotkeys:
 
@@ -230,8 +229,8 @@ GOOS=linux CGO_ENABLED=0 go build ./cmd/speechkit-server ./cmd/speechkit-mcp ./c
 Windows client builds are shipped as release assets from the maintained
 release pipeline. The installer is the recommended distribution format for
 end users. For clone-and-install testing on Windows, use
-`release/latest/windows/SpeechKit-Setup.exe`; it is a repository mirror of the
-latest public release asset with hashes and source metadata next to it.
+`release/latest/windows/INSTALLER-MANIFEST.json` to resolve the current
+`SpeechKit-Setup.exe` download URL and verify it against `SHA256SUMS.txt`.
 
 ## Repository Layout
 
@@ -248,8 +247,8 @@ scripts/                Public install and release-note helpers
 
 ## Trust
 
-Public releases include checksums, an SBOM, and an unsigned Windows notice while
-the no-cost unsigned release path is active. Download only from the official
+Public releases include checksums and an unsigned Windows notice while the
+no-cost unsigned release path is active. Download only from the official
 [kombifyio/SpeechKit releases](https://github.com/kombifyio/SpeechKit/releases).
 
 ## License

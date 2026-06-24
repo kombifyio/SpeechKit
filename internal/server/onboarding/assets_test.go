@@ -105,7 +105,7 @@ func TestTestUIHTMLSmokeTokenSentinelSurvivesRewrite(t *testing.T) {
 	// Production observed on v0.35.3: meta tag carried the token, but
 	// smokeBearerToken() returned "" because the literal guard had been
 	// rewritten to `value === "<real-token>"` (true → return "").
-	const realToken = "sk-smoke-regression-9aFp42xQ-not-a-real-secret"
+	const realToken = "smoke-regression-token-9aFp42xQ-not-a-real-secret"
 	body := TestUIHTML(realToken)
 
 	// The token MUST land in the meta tag (otherwise the page can't auth).

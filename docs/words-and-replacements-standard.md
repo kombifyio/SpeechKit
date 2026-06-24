@@ -1,6 +1,6 @@
 # Words And Replacements Standard
 
-> Status: active v0.46 framework standard, introduced in v0.44.
+> Status: active v0.47 framework standard, introduced in v0.44.
 > Scope: framework kernel, consumed by Dictation, Assist, Voice Agent, Device,
 > Server, and Local-Library embeddings.
 > Implementation: public SDK contracts, resolver / applier / service logic,
@@ -375,7 +375,7 @@ Regression requirement: an Assist-only Replacement must never affect Dictation.
 ## Rollout
 
 The implementation was introduced in the v0.44 beta line and remains active in
-the v0.46 public framework surface.
+the v0.47 public framework surface.
 
 | Phase | Outcome |
 | --- | --- |

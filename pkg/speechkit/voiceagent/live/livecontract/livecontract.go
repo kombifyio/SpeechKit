@@ -81,6 +81,7 @@ func Run(t testing.TB, c Case) {
 	}
 	if msg == nil {
 		t.Fatal("livecontract: Receive returned nil message")
+		return
 	}
 	if len(msg.Audio) == 0 && strings.TrimSpace(msg.Text) == "" && len(msg.ToolCalls) == 0 &&
 		msg.EventType == "" && len(msg.EventTypes) == 0 && !msg.Done && !msg.GoAway {

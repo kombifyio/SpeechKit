@@ -3,7 +3,6 @@ package config
 import (
 	"os"
 	"os/exec"
-	"runtime/debug"
 	"strings"
 
 	"github.com/kombifyio/SpeechKit/internal/secrets"
@@ -27,12 +26,7 @@ var (
 	managedHFDefaultOptIn        string
 	managedDopplerDefaultProject string
 	managedDopplerDefaultConfig  string
-	readBuildInfo                = defaultReadBuildInfo
 )
-
-type buildInfo struct {
-	MainPath string
-}
 
 // ResolveSecret resolves a secret by name. Checks environment first, then Doppler CLI
 // using either explicit DOPPLER_PROJECT/DOPPLER_CONFIG env vars or build-embedded
@@ -375,33 +369,6 @@ func parseManagedBool(value string) bool {
 	}
 }
 
-func defaultReadBuildInfo() (buildInfo, bool) {
-	info, ok := debug.ReadBuildInfo()
-	if !ok || info == nil {
-		return buildInfo{}, false
-	}
-	return buildInfo{MainPath: strings.TrimSpace(info.Main.Path)}, true
-}
-
 func defaultManagedHuggingFaceForModule() bool {
-	return defaultManagedPrivateFeatureForModule()
-}
-
-func defaultManagedPrivateFeatureForModule() bool {
-	info, ok := readBuildInfo()
-	if !ok {
-		return false
-	}
-	mainPath := strings.TrimSpace(info.MainPath)
-	if mainPath == privateModulePath() {
-		return true
-	}
-	if mainPath == "github.com/kombifyio/SpeechKit" {
-		return false
-	}
 	return false
-}
-
-func privateModulePath() string {
-	return "github.com/" + "Soulcreek" + "/kombify-SpeechKit"
 }

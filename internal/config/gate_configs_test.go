@@ -1,6 +1,7 @@
 package config
 
 import (
+	"os"
 	"path/filepath"
 	"testing"
 )
@@ -12,10 +13,7 @@ import (
 // than a silent fallback to another configured provider.
 func TestProviderGateConfigsLoadDeterministically(t *testing.T) {
 	t.Run("deepgram", func(t *testing.T) {
-		cfg, err := Load(filepath.Join("..", "..", "deploy", "config", "server.deepgram-gate.toml"))
-		if err != nil {
-			t.Fatalf("load deepgram gate config: %v", err)
-		}
+		cfg := loadPrivateGateConfig(t, filepath.Join("..", "..", "deploy", "config", "server.deepgram-gate.toml"))
 		if !cfg.Providers.Deepgram.Enabled {
 			t.Error("deepgram provider must be enabled")
 		}
@@ -38,10 +36,7 @@ func TestProviderGateConfigsLoadDeterministically(t *testing.T) {
 	})
 
 	t.Run("assemblyai", func(t *testing.T) {
-		cfg, err := Load(filepath.Join("..", "..", "deploy", "config", "server.assemblyai-gate.toml"))
-		if err != nil {
-			t.Fatalf("load assemblyai gate config: %v", err)
-		}
+		cfg := loadPrivateGateConfig(t, filepath.Join("..", "..", "deploy", "config", "server.assemblyai-gate.toml"))
 		if !cfg.Providers.AssemblyAI.Enabled {
 			t.Error("assemblyai provider must be enabled")
 		}
@@ -64,10 +59,7 @@ func TestProviderGateConfigsLoadDeterministically(t *testing.T) {
 	})
 
 	t.Run("openai", func(t *testing.T) {
-		cfg, err := Load(filepath.Join("..", "..", "deploy", "config", "server.openai-gate.toml"))
-		if err != nil {
-			t.Fatalf("load openai gate config: %v", err)
-		}
+		cfg := loadPrivateGateConfig(t, filepath.Join("..", "..", "deploy", "config", "server.openai-gate.toml"))
 		if !cfg.Providers.OpenAI.Enabled {
 			t.Error("openai provider must be enabled")
 		}
@@ -90,10 +82,7 @@ func TestProviderGateConfigsLoadDeterministically(t *testing.T) {
 	})
 
 	t.Run("gemini", func(t *testing.T) {
-		cfg, err := Load(filepath.Join("..", "..", "deploy", "config", "server.gemini-gate.toml"))
-		if err != nil {
-			t.Fatalf("load gemini gate config: %v", err)
-		}
+		cfg := loadPrivateGateConfig(t, filepath.Join("..", "..", "deploy", "config", "server.gemini-gate.toml"))
 		if !cfg.Providers.Google.Enabled {
 			t.Error("google provider must be enabled for Gemini Live")
 		}
@@ -122,10 +111,7 @@ func TestProviderGateConfigsLoadDeterministically(t *testing.T) {
 // AssemblyAI STT + Google Assist LLM). It is baked into the staging image via
 // the Dockerfile CONFIG_FILE build-arg.
 func TestStagingConfigLoads(t *testing.T) {
-	cfg, err := Load(filepath.Join("..", "..", "deploy", "config", "server.staging.toml"))
-	if err != nil {
-		t.Fatalf("load staging config: %v", err)
-	}
+	cfg := loadPrivateGateConfig(t, filepath.Join("..", "..", "deploy", "config", "server.staging.toml"))
 	if !cfg.Providers.Deepgram.Enabled || !cfg.Providers.AssemblyAI.Enabled || !cfg.Providers.Google.Enabled {
 		t.Errorf("staging must enable deepgram+assemblyai+google: dg=%v aai=%v google=%v",
 			cfg.Providers.Deepgram.Enabled, cfg.Providers.AssemblyAI.Enabled, cfg.Providers.Google.Enabled)
@@ -143,6 +129,21 @@ func TestStagingConfigLoads(t *testing.T) {
 	if len(wantModes) != 0 {
 		t.Errorf("staging must enable all three modes; missing %v", wantModes)
 	}
+}
+
+func loadPrivateGateConfig(t *testing.T, path string) *Config {
+	t.Helper()
+	if _, err := os.Stat(path); err != nil {
+		if os.IsNotExist(err) {
+			t.Skipf("%s is private deployment testdata and is not part of the OSS export", path)
+		}
+		t.Fatalf("stat %s: %v", path, err)
+	}
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("load %s: %v", path, err)
+	}
+	return cfg
 }
 
 func assertProvidersDisabled(t *testing.T, gate string, providers map[string]bool) {

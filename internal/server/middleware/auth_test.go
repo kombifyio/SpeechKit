@@ -1008,13 +1008,13 @@ func TestAuth_SmokeTokenIsLowTrustFallback(t *testing.T) {
 	// Bearer mode is on, smoke token is configured. A request with the
 	// SMOKE token (and no bearer) must succeed but get a smoke identity
 	// (Source=smoke, Plan=demo) — never an admin / bearer identity.
-	t.Setenv("TEST_SMOKE_TOKEN", "sk-smoke-public-demo-001")
+	t.Setenv("TEST_SMOKE_TOKEN", "smoke-token-public-demo-001")
 	var gotSource, gotPlan, gotUser, gotRole string
 	handler := Auth(AuthOptions{
 		Mode:               "bearer",
 		BearerTokenEnv:     "UNDEFINED_BEARER_VAR",
 		BearerRole:         "admin",
-		SmokeTokenProvider: func() string { return "sk-smoke-public-demo-001" },
+		SmokeTokenProvider: func() string { return "smoke-token-public-demo-001" },
 	})(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		id := IdentityFromContext(r.Context())
 		gotSource = id.Source
@@ -1025,7 +1025,7 @@ func TestAuth_SmokeTokenIsLowTrustFallback(t *testing.T) {
 	}))
 
 	req := httptest.NewRequest(http.MethodGet, "/v1/dictation/transcribe", nil)
-	req.Header.Set("Authorization", "Bearer sk-smoke-public-demo-001")
+	req.Header.Set("Authorization", "Bearer smoke-token-public-demo-001")
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
 
@@ -1069,7 +1069,7 @@ func TestAuth_SmokeTokenRejectsMismatch(t *testing.T) {
 	handler := Auth(AuthOptions{
 		Mode:               "bearer",
 		BearerTokenEnv:     "UNDEFINED_BEARER_VAR",
-		SmokeTokenProvider: func() string { return "sk-smoke-public-demo-001" },
+		SmokeTokenProvider: func() string { return "smoke-token-public-demo-001" },
 	})(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusOK) }))
 
 	req := httptest.NewRequest(http.MethodGet, "/v1/dictation/transcribe", nil)
@@ -1083,13 +1083,13 @@ func TestAuth_SmokeTokenRejectsMismatch(t *testing.T) {
 }
 
 func TestAuthState_SmokeTokenResolvesFromEnv(t *testing.T) {
-	t.Setenv("TEST_SMOKE_ENV", "sk-smoke-from-env")
+	t.Setenv("TEST_SMOKE_ENV", "smoke-token-from-env")
 	state := NewAuthState("bearer", "TEST_BEARER", "TEST_EDGE", "", "")
 	if got := state.SmokeToken(); got != "" {
 		t.Fatalf("smoke token must be empty until SetSmokeTokenEnv is called; got %q", got)
 	}
 	state.SetSmokeTokenEnv("TEST_SMOKE_ENV")
-	if got := state.SmokeToken(); got != "sk-smoke-from-env" {
-		t.Fatalf("smoke token = %q, want sk-smoke-from-env", got)
+	if got := state.SmokeToken(); got != "smoke-token-from-env" {
+		t.Fatalf("smoke token = %q, want smoke-token-from-env", got)
 	}
 }

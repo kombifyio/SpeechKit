@@ -139,7 +139,7 @@ func (p *DeepgramProvider) Transcribe(ctx context.Context, audio []byte, opts Tr
 	}
 	defer resp.Body.Close() //nolint:errcheck // response body close error is not actionable
 	duration := time.Since(start)
-	slog.Debug("deepgram.latency",
+	slog.Debug("deepgram.latency", // #nosec G706 -- slog writes provider telemetry as structured attributes, not interpolated log text.
 		"reused", reused,
 		"dns_ms", dnsDur.Milliseconds(),
 		"connect_ms", connDur.Milliseconds(),

@@ -4,20 +4,19 @@
 
 Security reports are welcome for:
 
-- the desktop app runtime
+- the Windows client runtime and release assets
 - the Go framework and provider integrations
-- installer packaging
-- build and release scripts
+- the self-host server, CLI, and MCP tools
+- installer packaging and release metadata
 - secret handling and credential resolution
 
 ## Reporting a Vulnerability
 
 Do not open a public GitHub issue for a suspected vulnerability.
 
-Use one of these private paths instead:
-
-1. GitHub private vulnerability reporting on the release repository, when enabled.
-2. Direct contact with the repository maintainers through the private maintainer channel used for SpeechKit.
+Use GitHub private vulnerability reporting on this repository when available.
+If that is unavailable, contact the maintainers through the official channels
+listed on the repository or organization profile.
 
 Please include:
 
@@ -37,43 +36,10 @@ Please include:
 - Give maintainers time to validate and fix the issue before public disclosure.
 - Avoid including live secrets, user data, or exploit material in public channels.
 
-## Maintainer Security Gates
+## Release Integrity
 
-- Go dependency exposure is checked with `govulncheck`; repository and container surfaces are checked with OSV, Trivy, and TruffleHog in GitHub Actions.
-- `gosec` intentionally excludes `G101` because SpeechKit stores environment variable names such as `OPENAI_API_KEY`, not credential values, in committed config defaults. It also excludes `G104` because unchecked Windows API return values are covered by `errcheck`/local review where those calls are meaningful.
-- Windows DPAPI and Win32 `unsafe` usage in `internal/secrets`, `internal/voiceagent`, `internal/hotkey`, and `internal/output` is treated as audited native interop. Changes to those files should keep comments explaining why each unsafe call is required and should include Windows-specific tests when practical.
-
-## Release Automation Credentials
-
-SpeechKit's release pipeline performs two pushes the workflow's default
-`GITHUB_TOKEN` cannot: it tags the private upstream so the downstream release
-workflows fire (`auto-tag-release.yml`), and it pushes the sanitized export —
-code **and** `.github/workflows` — to the OSS mirror
-`github.com/kombifyio/SpeechKit` (`publish-oss.yml`).
-
-**Standardized on a GitHub App (no long-lived PAT).** Both pushes authenticate
-with a **GitHub App installation token**, minted fresh on every run from
-`vars.RELEASE_APP_ID` + `secrets.RELEASE_APP_PRIVATE_KEY` via
-`scripts/ci/create-github-app-token.mjs`. Installation tokens are short-lived
-(~1 hour), so there is no 90-day PAT to rotate and no silent-expiry failure
-mode. App-token tag pushes still trigger downstream workflows (unlike
-`GITHUB_TOKEN`). This replaces the former `WORKFLOWS_SYNC_PAT` classic PAT,
-whose expiry repeatedly stalled releases.
-
-**One-time App setup.** The release App must be installed on both repositories
-with these permissions:
-
-- The private upstream repository: `Contents: write`
-  (the tag push in `auto-tag-release.yml`).
-- `kombifyio/SpeechKit` (OSS mirror): `Contents: write` + `Workflows: write`
-  (so the export, including `.github/workflows`, lands in one commit).
-
-**The only long-lived release secret is the App private key**
-(`RELEASE_APP_PRIVATE_KEY`). Rotate it only if it is exposed: generate a new
-private key in the App's settings, update the `RELEASE_APP_PRIVATE_KEY` secret,
-and delete the old key. No per-release token handling is required.
-
-**Detection signal.** If the App is missing an installation or permission, the
-tag step and the OSS `Commit and push` step fail with an explicit error naming
-the repository and the missing `Contents`/`Workflows` permission, rather than
-pushing a non-triggering ref.
+Download Windows assets only from the official
+[kombifyio/SpeechKit releases](https://github.com/kombifyio/SpeechKit/releases).
+Each release publishes checksums and, while the unsigned release path is active,
+an `UNSIGNED-WINDOWS-RELEASE.txt` notice. Verify SHA-256 checksums before
+installing.

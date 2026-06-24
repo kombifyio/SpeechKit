@@ -265,6 +265,17 @@ func (o *ProviderOptionOverrides) setValue(id provideropts.OptionID, value any) 
 		o.Speed = floatPtr(valueFloat(value))
 	case provideropts.OptionAudioFormat:
 		o.AudioFormat = strings.TrimSpace(valueString(value))
+	case provideropts.OptionContextPrompt,
+		provideropts.OptionLanguageHints,
+		provideropts.OptionPrivacyRedaction,
+		provideropts.OptionVoiceFocus,
+		provideropts.OptionMedicalDomain,
+		provideropts.OptionReasoningEffort,
+		provideropts.OptionTranslation,
+		provideropts.OptionTranscriptionOnly,
+		provideropts.OptionResume:
+		// These runtime/provider-intent options are resolved from manifests and
+		// request-level overrides, not persisted in ProviderOptionOverrides.
 	}
 }
 

@@ -1806,20 +1806,12 @@ func TestInstallModeConstants(t *testing.T) {
 	}
 }
 
-func TestManagedHuggingFaceAvailableInBuild_DefaultsToPrivateModuleWhenUnset(t *testing.T) {
+func TestManagedHuggingFaceAvailableInBuild_DefaultsDisabledWhenUnset(t *testing.T) {
 	restoreBuild := OverrideManagedHuggingFaceBuildForTests("")
 	defer restoreBuild()
 
-	prevReadBuildInfo := readBuildInfo
-	readBuildInfo = func() (buildInfo, bool) {
-		return buildInfo{MainPath: privateModulePath()}, true
-	}
-	defer func() {
-		readBuildInfo = prevReadBuildInfo
-	}()
-
-	if !ManagedHuggingFaceAvailableInBuild() {
-		t.Fatal("ManagedHuggingFaceAvailableInBuild() = false, want true for private module fallback")
+	if ManagedHuggingFaceAvailableInBuild() {
+		t.Fatal("ManagedHuggingFaceAvailableInBuild() = true, want false without explicit build ldflag")
 	}
 }
 
@@ -1827,16 +1819,8 @@ func TestManagedHuggingFaceAvailableInBuild_PublicModuleFallbackStaysDisabled(t 
 	restoreBuild := OverrideManagedHuggingFaceBuildForTests("")
 	defer restoreBuild()
 
-	prevReadBuildInfo := readBuildInfo
-	readBuildInfo = func() (buildInfo, bool) {
-		return buildInfo{MainPath: "github.com/kombifyio/SpeechKit"}, true
-	}
-	defer func() {
-		readBuildInfo = prevReadBuildInfo
-	}()
-
 	if ManagedHuggingFaceAvailableInBuild() {
-		t.Fatal("ManagedHuggingFaceAvailableInBuild() = true, want false for public module fallback")
+		t.Fatal("ManagedHuggingFaceAvailableInBuild() = true, want false without explicit build ldflag")
 	}
 }
 

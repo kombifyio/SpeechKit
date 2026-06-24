@@ -62,7 +62,9 @@ func main() {
 	if err := session.Connect(context.Background(), cfg); err != nil {
 		panic(err)
 	}
-	defer session.Close()
+	defer func() {
+		_ = session.Close()
+	}()
 
 	_ = session.SendText("Give me one sentence about provider switching.")
 	msg, err := session.Receive(context.Background())
