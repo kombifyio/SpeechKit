@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"github.com/kombifyio/SpeechKit/internal/models"
+	framework "github.com/kombifyio/SpeechKit/pkg/speechkit"
 )
 
 // BuildSpec carries the inputs needed to construct a cloud STT provider for a
@@ -12,6 +13,7 @@ import (
 // constructor — the mapping that was previously duplicated across call sites.
 type BuildSpec struct {
 	ExecutionMode models.ExecutionMode
+	Provider      string
 	ModelID       string
 
 	APIKey  string // cloud API key (OpenAI/Groq/Google/Deepgram/AssemblyAI/OpenRouter)
@@ -35,39 +37,92 @@ type BuildSpec struct {
 // ExecutionModeLocal is host-managed (whisper.cpp subprocess lifecycle) and is
 // intentionally not handled here.
 func Build(spec BuildSpec) (string, STTProvider, error) {
-	switch spec.ExecutionMode {
-	case models.ExecutionModeHFRouted:
-		return "huggingface", NewHuggingFaceProvider(spec.ModelID, spec.Token), nil
-	case models.ExecutionModeOpenAI:
-		return "openai", NewOpenAICompatibleProvider("openai", "https://api.openai.com", spec.APIKey, spec.ModelID), nil
-	case models.ExecutionModeGroq:
-		return "groq", NewOpenAICompatibleProvider("groq", "https://api.groq.com/openai", spec.APIKey, spec.ModelID), nil
-	case models.ExecutionModeGoogle:
-		provider := NewGoogleSTTProvider(spec.APIKey, spec.ModelID)
-		provider.SetStreamingCredentialEnvs(spec.GoogleStreamingCredentialsEnv, spec.GoogleApplicationCredentialsEnv)
-		return "google", provider, nil
-	case models.ExecutionModeDeepgram:
-		provider := NewDeepgramProvider(spec.APIKey, spec.ModelID)
-		if spec.DiarizationModel != "" {
-			provider.DiarizationModel = spec.DiarizationModel
-		}
-		if hasDeepgramOptions(spec.Deepgram) {
-			provider.ApplyOptions(spec.Deepgram)
-		}
-		return "deepgram", provider, nil
-	case models.ExecutionModeAssemblyAI:
-		return "assemblyai", NewAssemblyAIProvider(spec.APIKey, spec.ModelID), nil
-	case models.ExecutionModeOpenRouter:
-		return "openrouter", NewOpenRouterSTTProvider(spec.APIKey, spec.ModelID), nil
-	case models.ExecutionModeOllama:
-		baseURL := spec.BaseURL
-		if baseURL == "" {
-			baseURL = "http://localhost:11434"
-		}
-		return "ollama", NewOllamaSTTProvider(baseURL, spec.ModelID), nil
-	default:
-		return "", nil, fmt.Errorf("stt: unsupported execution mode %q", spec.ExecutionMode)
+	providerID := framework.NormalizeProviderID(spec.Provider)
+	if providerID == "" {
+		providerID = providerIDForExecutionMode(spec.ExecutionMode)
 	}
+	descriptor, ok := providerRegistry[providerID]
+	if !ok {
+		return "", nil, fmt.Errorf("stt: unsupported provider %q for execution mode %q", providerID, spec.ExecutionMode)
+	}
+	provider, err := descriptor.Build(spec)
+	if err != nil {
+		return "", nil, err
+	}
+	return descriptor.Name, provider, nil
+}
+
+type providerDescriptor struct {
+	Name  string
+	Build func(BuildSpec) (STTProvider, error)
+}
+
+var providerRegistry = map[string]providerDescriptor{
+	"huggingface": {
+		Name: "huggingface",
+		Build: func(spec BuildSpec) (STTProvider, error) {
+			return NewHuggingFaceProvider(spec.ModelID, spec.Token), nil
+		},
+	},
+	"openai": {
+		Name: "openai",
+		Build: func(spec BuildSpec) (STTProvider, error) {
+			return NewOpenAICompatibleProvider("openai", "https://api.openai.com", spec.APIKey, spec.ModelID), nil
+		},
+	},
+	"groq": {
+		Name: "groq",
+		Build: func(spec BuildSpec) (STTProvider, error) {
+			return NewOpenAICompatibleProvider("groq", "https://api.groq.com/openai", spec.APIKey, spec.ModelID), nil
+		},
+	},
+	"google": {
+		Name: "google",
+		Build: func(spec BuildSpec) (STTProvider, error) {
+			provider := NewGoogleSTTProvider(spec.APIKey, spec.ModelID)
+			provider.SetStreamingCredentialEnvs(spec.GoogleStreamingCredentialsEnv, spec.GoogleApplicationCredentialsEnv)
+			return provider, nil
+		},
+	},
+	"deepgram": {
+		Name: "deepgram",
+		Build: func(spec BuildSpec) (STTProvider, error) {
+			provider := NewDeepgramProvider(spec.APIKey, spec.ModelID)
+			if spec.DiarizationModel != "" {
+				provider.DiarizationModel = spec.DiarizationModel
+			}
+			if hasDeepgramOptions(spec.Deepgram) {
+				provider.ApplyOptions(spec.Deepgram)
+			}
+			return provider, nil
+		},
+	},
+	"assemblyai": {
+		Name: "assemblyai",
+		Build: func(spec BuildSpec) (STTProvider, error) {
+			return NewAssemblyAIProvider(spec.APIKey, spec.ModelID), nil
+		},
+	},
+	"openrouter": {
+		Name: "openrouter",
+		Build: func(spec BuildSpec) (STTProvider, error) {
+			return NewOpenRouterSTTProvider(spec.APIKey, spec.ModelID), nil
+		},
+	},
+	"ollama": {
+		Name: "ollama",
+		Build: func(spec BuildSpec) (STTProvider, error) {
+			baseURL := spec.BaseURL
+			if baseURL == "" {
+				baseURL = "http://localhost:11434"
+			}
+			return NewOllamaSTTProvider(baseURL, spec.ModelID), nil
+		},
+	},
+}
+
+func providerIDForExecutionMode(mode models.ExecutionMode) string {
+	return framework.ProviderIDForExecutionMode(framework.ExecutionMode(mode))
 }
 
 func hasDeepgramOptions(opts DeepgramOptions) bool {

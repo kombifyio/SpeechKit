@@ -20,6 +20,7 @@ import (
 
 	"github.com/kombifyio/SpeechKit/internal/auditlog"
 	"github.com/kombifyio/SpeechKit/internal/stt"
+	"github.com/kombifyio/SpeechKit/pkg/speechkit"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/speaker"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
@@ -254,6 +255,30 @@ func (r *Router) StartSpeakerStream(ctx context.Context, opts speaker.Options, f
 	return nil, fmt.Errorf("no speaker streaming provider available")
 }
 
+// StartDictationStream selects the first configured provider that can perform
+// provider-native realtime dictation. It never changes batch routing; callers
+// choose this path explicitly per recording session.
+func (r *Router) StartDictationStream(ctx context.Context, opts speechkit.DictationStreamOptions, format speaker.AudioFormat) (speechkit.DictationStream, error) {
+	candidates := prioritizeProviderProfile(r.dictationStreamingCandidates(), opts.ProviderProfileID)
+	var lastErr error
+	for _, p := range candidates {
+		streamer, ok := p.(speechkit.DictationStreamProvider)
+		if !ok {
+			continue
+		}
+		stream, err := streamer.StartDictationStream(ctx, opts, format)
+		if err == nil {
+			return stream, nil
+		}
+		lastErr = err
+		slog.Warn("dictation streaming provider failed", "provider", p.Name(), "err", err)
+	}
+	if lastErr != nil {
+		return nil, fmt.Errorf("no dictation streaming provider available: %w", lastErr)
+	}
+	return nil, fmt.Errorf("no dictation streaming provider available")
+}
+
 func (r *Router) transcribeDynamic(ctx context.Context, audio []byte, durationSecs float64, opts stt.TranscribeOpts) (*stt.Result, error) {
 	local, cloud := r.snapshot()
 	online := r.checkInternet(ctx)
@@ -329,8 +354,31 @@ func (r *Router) streamingCandidates(opts speaker.Options) []stt.STTProvider {
 	return prioritizeSpeakerProfile(candidates, opts.ProviderProfileID)
 }
 
+func (r *Router) dictationStreamingCandidates() []stt.STTProvider {
+	local, cloud := r.snapshot()
+	var candidates []stt.STTProvider
+	switch r.Strategy {
+	case StrategyLocalOnly:
+		if local != nil {
+			candidates = append(candidates, local)
+		}
+	case StrategyCloudOnly:
+		candidates = append(candidates, cloud...)
+	default:
+		candidates = append(candidates, cloud...)
+		if local != nil {
+			candidates = append(candidates, local)
+		}
+	}
+	return candidates
+}
+
 func prioritizeSpeakerProfile(candidates []stt.STTProvider, profileID string) []stt.STTProvider {
-	want := providerNameFromSpeakerProfile(profileID)
+	return prioritizeProviderProfile(candidates, profileID)
+}
+
+func prioritizeProviderProfile(candidates []stt.STTProvider, profileID string) []stt.STTProvider {
+	want := providerNameFromProfileID(profileID)
 	if want == "" || len(candidates) < 2 {
 		return candidates
 	}
@@ -348,18 +396,12 @@ func prioritizeSpeakerProfile(candidates []stt.STTProvider, profileID string) []
 	return out
 }
 
-func providerNameFromSpeakerProfile(profileID string) string {
-	profileID = strings.ToLower(strings.TrimSpace(profileID))
-	switch {
-	case strings.Contains(profileID, "deepgram"):
-		return "deepgram"
-	case strings.Contains(profileID, "assemblyai"):
-		return "assemblyai"
-	case strings.Contains(profileID, "google"):
-		return "google"
-	default:
+func providerNameFromProfileID(profileID string) string {
+	provider := speechkit.NormalizeProviderID(profileID)
+	if strings.Contains(provider, ".") {
 		return ""
 	}
+	return provider
 }
 
 // checkInternet returns cached connectivity status, refreshing if stale.

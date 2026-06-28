@@ -120,6 +120,14 @@ func backfillStartupBehavior(meta toml.MetaData, cfg *Config) {
 	default:
 		cfg.VoiceAgent.AutoStartOnLaunch = cfg.General.AutoStartOnLaunch
 	}
+
+	// v0.48 splits the old ambiguous "auto-start" preference into two
+	// explicit controls: Windows login start and dashboard auto-open after the
+	// app process starts. If a user had enabled the old setting and has not yet
+	// written the new field, carry that intent into the real login-start flag.
+	if !meta.IsDefined("general", "start_at_login") {
+		cfg.General.StartAtLogin = cfg.General.AutoStartOnLaunch
+	}
 }
 
 func backfillVoiceAgentPromptLayers(cfg *Config) {

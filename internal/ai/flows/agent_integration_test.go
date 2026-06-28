@@ -10,17 +10,14 @@ package flows
 
 import (
 	"context"
-	"os"
 	"testing"
 
 	appai "github.com/kombifyio/SpeechKit/internal/ai"
+	"github.com/kombifyio/SpeechKit/internal/testutil"
 )
 
 func TestAgentFlow_Integration(t *testing.T) {
-	groqKey := os.Getenv("GROQ_API_KEY")
-	if groqKey == "" {
-		t.Skip("GROQ_API_KEY not set — integration test requires live Groq credentials")
-	}
+	groqKey := testutil.RequireEnvOrSkip(t, "GROQ_API_KEY", "Integration test requires live Groq credentials.")
 
 	rt, err := appai.Init(context.Background(), appai.Config{
 		GroqAPIKey:     groqKey,

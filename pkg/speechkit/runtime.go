@@ -19,6 +19,7 @@ const (
 	EventStateChanged            EventType = "state.changed"
 	EventRecordingStarted        EventType = "recording.started"
 	EventProcessingStarted       EventType = "processing.started"
+	EventTranscriptionDraft      EventType = "transcription.draft"
 	EventTranscriptionReady      EventType = "transcription.ready"
 	EventTranscriptCommitted     EventType = "transcription.committed"
 	EventQuickNoteModeArmed      EventType = "quicknote.mode_armed"

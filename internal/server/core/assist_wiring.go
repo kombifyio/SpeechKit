@@ -275,9 +275,16 @@ func agentFlowFromRuntime(rt *ai.Runtime) *core.Flow[flows.AgentInput, flows.Age
 func buildGenkitRuntime(ctx context.Context, cfg *config.Config) (*ai.Runtime, []string, error) {
 	var notes []string
 	aiCfg := ai.Config{}
+	credential := func(target string) string {
+		key, _, err := config.ResolveProviderCredentialValue(cfg, target)
+		if err != nil {
+			return ""
+		}
+		return strings.TrimSpace(key)
+	}
 
 	if cfg.Providers.Google.Enabled {
-		if key := strings.TrimSpace(config.ResolveSecret(cfg.Providers.Google.APIKeyEnv)); key != "" {
+		if key := credential("google"); key != "" {
 			aiCfg.GoogleAPIKey = key
 			aiCfg.GoogleUtilityModel = cfg.Providers.Google.UtilityModel
 			aiCfg.GoogleAssistModel = cfg.Providers.Google.AssistModel
@@ -286,7 +293,7 @@ func buildGenkitRuntime(ctx context.Context, cfg *config.Config) (*ai.Runtime, [
 		}
 	}
 	if cfg.Providers.OpenAI.Enabled {
-		if key := strings.TrimSpace(config.ResolveSecret(cfg.Providers.OpenAI.APIKeyEnv)); key != "" {
+		if key := credential("openai"); key != "" {
 			aiCfg.OpenAIAPIKey = key
 			aiCfg.OpenAIUtilityModel = cfg.Providers.OpenAI.UtilityModel
 			aiCfg.OpenAIAssistModel = cfg.Providers.OpenAI.AssistModel
@@ -295,7 +302,7 @@ func buildGenkitRuntime(ctx context.Context, cfg *config.Config) (*ai.Runtime, [
 		}
 	}
 	if cfg.Providers.Groq.Enabled {
-		if key := strings.TrimSpace(config.ResolveSecret(cfg.Providers.Groq.APIKeyEnv)); key != "" {
+		if key := credential("groq"); key != "" {
 			aiCfg.GroqAPIKey = key
 			aiCfg.GroqUtilityModel = cfg.Providers.Groq.UtilityModel
 			aiCfg.GroqAssistModel = cfg.Providers.Groq.AssistModel
@@ -304,7 +311,7 @@ func buildGenkitRuntime(ctx context.Context, cfg *config.Config) (*ai.Runtime, [
 		}
 	}
 	if cfg.HuggingFace.Enabled {
-		if token, _, err := config.ResolveHuggingFaceToken(cfg); err == nil && token != "" {
+		if token := credential("huggingface"); token != "" {
 			aiCfg.HuggingFaceToken = token
 			aiCfg.HFUtilityModel = cfg.HuggingFace.UtilityModel
 			aiCfg.HFAssistModel = cfg.HuggingFace.AssistModel
@@ -313,7 +320,7 @@ func buildGenkitRuntime(ctx context.Context, cfg *config.Config) (*ai.Runtime, [
 		}
 	}
 	if cfg.Providers.OpenRouter.Enabled {
-		if key := strings.TrimSpace(config.ResolveSecret(cfg.Providers.OpenRouter.APIKeyEnv)); key != "" {
+		if key := credential("openrouter"); key != "" {
 			aiCfg.OpenRouterAPIKey = key
 			aiCfg.OpenRouterUtilityModel = cfg.Providers.OpenRouter.UtilityModel
 			aiCfg.OpenRouterAssistModel = cfg.Providers.OpenRouter.AssistModel

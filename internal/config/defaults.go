@@ -22,6 +22,7 @@ func defaults() *Config {
 			AssistEnabled:                  false,
 			VoiceAgentEnabled:              false,
 			AutoStartOnLaunch:              false,
+			StartAtLogin:                   false,
 			EagerWarmup:                    false,
 			AgentHotkey:                    "win+alt",
 			AgentMode:                      "assist",
@@ -31,9 +32,11 @@ func defaults() *Config {
 			FastModeSilenceMs:              1500,
 			DictateSilenceTimeoutSec:       DefaultDictateSilenceTimeoutSec,
 			DictationIntermediateSegmentMs: DefaultDictationIntermediateSegmentMs,
+			DictationProcessingMode:        DictationProcessingModeFinalFull,
 		},
 		Audio: AudioConfig{
 			Backend:     "windows-wasapi-malgo",
+			InputSource: AudioInputSourceMicrophone,
 			SampleRate:  16000,
 			Channels:    1,
 			FrameSizeMs: 32,
@@ -238,7 +241,7 @@ func defaults() *Config {
 		Providers: ProvidersConfig{
 			OpenAI: OpenAIProviderConfig{
 				APIKeyEnv:     "OPENAI_API_KEY", //nolint:gosec // not a credential, field name triggers false positive
-				STTModel:      "whisper-1",      // Fallback only; HuggingFace is primary STT
+				STTModel:      "gpt-4o-transcribe",
 				UtilityModel:  "gpt-5.4-mini-2026-03-17",
 				AssistModel:   "gpt-5.4-2026-03-05",
 				AgentModel:    "gpt-5.4-2026-03-05",

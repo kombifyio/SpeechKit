@@ -12,6 +12,7 @@ import (
 	"github.com/kombifyio/SpeechKit/internal/auditlog"
 	"github.com/kombifyio/SpeechKit/internal/auditlogtest"
 	"github.com/kombifyio/SpeechKit/internal/stt"
+	"github.com/kombifyio/SpeechKit/pkg/speechkit"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/speaker"
 )
 
@@ -58,6 +59,18 @@ func (m *mockStreamingProvider) StartSpeakerStream(_ context.Context, _ speaker.
 	return &mockSpeakerStream{}, nil
 }
 
+type mockDictationStreamingProvider struct {
+	mockProvider
+	started bool
+	opts    speechkit.DictationStreamOptions
+}
+
+func (m *mockDictationStreamingProvider) StartDictationStream(_ context.Context, opts speechkit.DictationStreamOptions, _ speaker.AudioFormat) (speechkit.DictationStream, error) {
+	m.started = true
+	m.opts = opts
+	return mockDictationStream{}, nil
+}
+
 type mockSpeakerStream struct{}
 
 func (mockSpeakerStream) SendAudio(context.Context, []byte) error { return nil }
@@ -66,6 +79,15 @@ func (mockSpeakerStream) Receive(context.Context) (*speaker.SpeakerFrame, error)
 	return nil, context.Canceled
 }
 func (mockSpeakerStream) Close() error { return nil }
+
+type mockDictationStream struct{}
+
+func (mockDictationStream) SendPCM(context.Context, []byte) error { return nil }
+func (mockDictationStream) Finalize(context.Context) error        { return nil }
+func (mockDictationStream) Receive(context.Context) (speechkit.DictationStreamEvent, error) {
+	return speechkit.DictationStreamEvent{}, context.Canceled
+}
+func (mockDictationStream) Close() error { return nil }
 
 func newTestRouter(local, vps, hf stt.STTProvider, strategy Strategy) *Router {
 	r := &Router{
@@ -260,6 +282,55 @@ func TestStartSpeakerStreamSelectsMatchingProviderProfile(t *testing.T) {
 	)
 	if err != nil {
 		t.Fatalf("StartSpeakerStream: %v", err)
+	}
+	if stream == nil {
+		t.Fatal("expected stream")
+	}
+	if !assembly.started {
+		t.Fatal("expected assemblyai provider to start")
+	}
+	if deepgram.started {
+		t.Fatal("deepgram should not start when assemblyai profile is requested")
+	}
+}
+
+func TestStartDictationStreamPrefersCloudStreamingProvider(t *testing.T) {
+	local := &mockDictationStreamingProvider{mockProvider: mockProvider{name: "local"}}
+	cloud := &mockDictationStreamingProvider{mockProvider: mockProvider{name: "deepgram"}}
+	r := newTestRouter(local, nil, cloud, StrategyDynamic)
+
+	stream, err := r.StartDictationStream(context.Background(),
+		speechkit.DictationStreamOptions{Language: "de", InterimResults: true},
+		speaker.AudioFormat{},
+	)
+	if err != nil {
+		t.Fatalf("StartDictationStream: %v", err)
+	}
+	if stream == nil {
+		t.Fatal("expected stream")
+	}
+	if !cloud.started {
+		t.Fatal("expected cloud streaming provider to start")
+	}
+	if local.started {
+		t.Fatal("local stream should not start when cloud streaming provider is available")
+	}
+	if got, want := cloud.opts.Language, "de"; got != want {
+		t.Fatalf("stream language = %q, want %q", got, want)
+	}
+}
+
+func TestStartDictationStreamPrioritizesRequestedProviderProfile(t *testing.T) {
+	deepgram := &mockDictationStreamingProvider{mockProvider: mockProvider{name: "deepgram"}}
+	assembly := &mockDictationStreamingProvider{mockProvider: mockProvider{name: "assemblyai"}}
+	r := newTestRouter(nil, deepgram, assembly, StrategyCloudOnly)
+
+	stream, err := r.StartDictationStream(context.Background(),
+		speechkit.DictationStreamOptions{ProviderProfileID: "stt.assemblyai.universal", Language: "en"},
+		speaker.AudioFormat{},
+	)
+	if err != nil {
+		t.Fatalf("StartDictationStream: %v", err)
 	}
 	if stream == nil {
 		t.Fatal("expected stream")

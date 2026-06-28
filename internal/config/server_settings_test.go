@@ -16,8 +16,8 @@ func TestApplyServerModelSettings_AppliesProviderMatrixAndCredentialEnv(t *testi
 		Modes: ServerModeProviderSettings{
 			Dictation: ServerModeSetting{
 				ProviderKind: "direct_provider",
-				ProfileID:    "stt.openai.whisper-1",
-				Model:        "whisper-1",
+				ProfileID:    "stt.openai.gpt-4o-transcribe",
+				Model:        "gpt-4o-transcribe",
 			},
 			Assist: ServerModeSetting{
 				ProviderKind: "local_built_in",
@@ -188,6 +188,96 @@ func TestApplyServerModelSettings_AppliesDirectVoiceAgentProviders(t *testing.T)
 				t.Fatalf("VoiceAgent.Model = %q, want %q", cfg.VoiceAgent.Model, tt.wantModel)
 			}
 		})
+	}
+}
+
+func TestApplyServerModelSettings_AppliesDirectDictationProviders(t *testing.T) {
+	tests := []struct {
+		name       string
+		profileID  string
+		model      string
+		assertFunc func(*testing.T, *Config)
+	}{
+		{
+			name:      "openai",
+			profileID: "stt.openai.gpt-4o-transcribe",
+			model:     "gpt-4o-transcribe",
+			assertFunc: func(t *testing.T, cfg *Config) {
+				t.Helper()
+				if !cfg.Providers.OpenAI.Enabled || cfg.Providers.OpenAI.STTModel != "gpt-4o-transcribe" {
+					t.Fatalf("OpenAI STT = enabled %v model %q", cfg.Providers.OpenAI.Enabled, cfg.Providers.OpenAI.STTModel)
+				}
+			},
+		},
+		{
+			name:      "groq",
+			profileID: "stt.groq.whisper-large-v3-turbo",
+			model:     "whisper-large-v3-turbo",
+			assertFunc: func(t *testing.T, cfg *Config) {
+				t.Helper()
+				if !cfg.Providers.Groq.Enabled || cfg.Providers.Groq.STTModel != "whisper-large-v3-turbo" {
+					t.Fatalf("Groq STT = enabled %v model %q", cfg.Providers.Groq.Enabled, cfg.Providers.Groq.STTModel)
+				}
+			},
+		},
+		{
+			name:      "deepgram",
+			profileID: "stt.deepgram.nova-3",
+			model:     "nova-3",
+			assertFunc: func(t *testing.T, cfg *Config) {
+				t.Helper()
+				if !cfg.Providers.Deepgram.Enabled || cfg.Providers.Deepgram.STTModel != "nova-3" {
+					t.Fatalf("Deepgram STT = enabled %v model %q", cfg.Providers.Deepgram.Enabled, cfg.Providers.Deepgram.STTModel)
+				}
+			},
+		},
+		{
+			name:      "assemblyai",
+			profileID: "stt.assemblyai.universal",
+			model:     "universal-3-pro,universal-2",
+			assertFunc: func(t *testing.T, cfg *Config) {
+				t.Helper()
+				if !cfg.Providers.AssemblyAI.Enabled || cfg.Providers.AssemblyAI.STTModels != "universal-3-pro,universal-2" {
+					t.Fatalf("AssemblyAI STT = enabled %v models %q", cfg.Providers.AssemblyAI.Enabled, cfg.Providers.AssemblyAI.STTModels)
+				}
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := defaults()
+			ApplyServerModelSettings(cfg, ServerModelSettings{
+				Modes: ServerModeProviderSettings{
+					Dictation: ServerModeSetting{
+						ProviderKind: "direct_provider",
+						ProfileID:    tt.profileID,
+						Model:        tt.model,
+					},
+				},
+			})
+
+			if cfg.Routing.Strategy != "cloud-only" || cfg.Local.Enabled || cfg.VPS.Enabled {
+				t.Fatalf("direct dictation routing = strategy %q local %v vps %v", cfg.Routing.Strategy, cfg.Local.Enabled, cfg.VPS.Enabled)
+			}
+			tt.assertFunc(t, cfg)
+		})
+	}
+}
+
+func TestNormalizedProviderKindUsesFrameworkProfileCatalog(t *testing.T) {
+	cases := map[string]string{
+		"stt.local.whispercpp":          "local_built_in",
+		"assist.ollama.gemma4-e4b":      "local_provider",
+		"stt.openrouter.whisper-1":      "cloud_provider",
+		"assist.groq.llama-3.3-70b":     "direct_provider",
+		"realtime.deepgram.voice-agent": "direct_provider",
+		"tts.openedai.kokoro":           "local_provider",
+		"stt.google.chirp-3":            "direct_provider",
+	}
+	for profileID, want := range cases {
+		if got := normalizedProviderKind(ServerModeSetting{ProfileID: profileID}); got != want {
+			t.Fatalf("normalizedProviderKind(%q) = %q, want %q", profileID, got, want)
+		}
 	}
 }
 

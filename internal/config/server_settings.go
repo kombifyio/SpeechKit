@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/kombifyio/SpeechKit/internal/voiceagentprofile"
+	framework "github.com/kombifyio/SpeechKit/pkg/speechkit"
 	"golang.org/x/crypto/bcrypt"
 )
 
@@ -376,131 +377,43 @@ func ApplyServerAuthSettings(cfg *Config, auth ServerAuthSettings) []string {
 
 func applyServerCredentialSettings(cfg *Config, credentials ServerCredentialSettings) []string {
 	var notes []string
-	notes = append(notes, applyOpenAICredential(cfg, credentials.OpenAI)...)
-	notes = append(notes, applyGroqCredential(cfg, credentials.Groq)...)
-	notes = append(notes, applyGoogleCredential(cfg, credentials.Google)...)
-	notes = append(notes, applyDeepgramCredential(cfg, credentials.Deepgram)...)
-	notes = append(notes, applyAssemblyAICredential(cfg, credentials.AssemblyAI)...)
-	notes = append(notes, applyHuggingFaceCredential(cfg, credentials.HuggingFace)...)
-	notes = append(notes, applyOpenRouterCredential(cfg, credentials.OpenRouter)...)
-	return notes
-}
-
-func applyOpenAICredential(cfg *Config, credential ServerProviderCredentialSettings) []string {
-	var notes []string
-	if credential.Enabled != nil {
-		cfg.Providers.OpenAI.Enabled = *credential.Enabled
-		notes = append(notes, "server settings: OpenAI enabled updated")
-	}
-	if env := cleanSetting(credential.Env); env != "" {
-		cfg.Providers.OpenAI.APIKeyEnv = env
-		notes = append(notes, "server settings: OpenAI key env updated")
-	}
-	if value := cleanSetting(credential.Value); value != "" {
-		setCredentialEnv(cfg.Providers.OpenAI.APIKeyEnv, "OPENAI_API_KEY", value)
-		notes = append(notes, "server settings: OpenAI key value loaded")
+	for _, entry := range []struct {
+		target     string
+		credential ServerProviderCredentialSettings
+	}{
+		{target: "openai", credential: credentials.OpenAI},
+		{target: "groq", credential: credentials.Groq},
+		{target: "google", credential: credentials.Google},
+		{target: "deepgram", credential: credentials.Deepgram},
+		{target: "assemblyai", credential: credentials.AssemblyAI},
+		{target: "huggingface", credential: credentials.HuggingFace},
+		{target: "openrouter", credential: credentials.OpenRouter},
+	} {
+		notes = append(notes, applyServerProviderCredential(cfg, entry.target, entry.credential)...)
 	}
 	return notes
 }
 
-func applyGroqCredential(cfg *Config, credential ServerProviderCredentialSettings) []string {
+func applyServerProviderCredential(cfg *Config, target string, credential ServerProviderCredentialSettings) []string {
 	var notes []string
+	target = NormalizeProviderCredentialTarget(target)
+	if target == "" {
+		return notes
+	}
+	label := ProviderLabel(target)
 	if credential.Enabled != nil {
-		cfg.Providers.Groq.Enabled = *credential.Enabled
-		notes = append(notes, "server settings: Groq enabled updated")
+		if err := SetProviderEnabled(cfg, ProviderForCredentialTarget(target), *credential.Enabled); err == nil {
+			notes = append(notes, "server settings: "+label+" enabled updated")
+		}
 	}
 	if env := cleanSetting(credential.Env); env != "" {
-		cfg.Providers.Groq.APIKeyEnv = env
-		notes = append(notes, "server settings: Groq key env updated")
+		if err := SetProviderCredentialEnvName(cfg, target, env); err == nil {
+			notes = append(notes, "server settings: "+label+" credential env updated")
+		}
 	}
 	if value := cleanSetting(credential.Value); value != "" {
-		setCredentialEnv(cfg.Providers.Groq.APIKeyEnv, "GROQ_API_KEY", value)
-		notes = append(notes, "server settings: Groq key value loaded")
-	}
-	return notes
-}
-
-func applyGoogleCredential(cfg *Config, credential ServerProviderCredentialSettings) []string {
-	var notes []string
-	if credential.Enabled != nil {
-		cfg.Providers.Google.Enabled = *credential.Enabled
-		notes = append(notes, "server settings: Google enabled updated")
-	}
-	if env := cleanSetting(credential.Env); env != "" {
-		cfg.Providers.Google.APIKeyEnv = env
-		notes = append(notes, "server settings: Google key env updated")
-	}
-	if value := cleanSetting(credential.Value); value != "" {
-		setCredentialEnv(cfg.Providers.Google.APIKeyEnv, "GOOGLE_AI_API_KEY", value)
-		notes = append(notes, "server settings: Google key value loaded")
-	}
-	return notes
-}
-
-func applyDeepgramCredential(cfg *Config, credential ServerProviderCredentialSettings) []string {
-	var notes []string
-	if credential.Enabled != nil {
-		cfg.Providers.Deepgram.Enabled = *credential.Enabled
-		notes = append(notes, "server settings: Deepgram enabled updated")
-	}
-	if env := cleanSetting(credential.Env); env != "" {
-		cfg.Providers.Deepgram.APIKeyEnv = env
-		notes = append(notes, "server settings: Deepgram key env updated")
-	}
-	if value := cleanSetting(credential.Value); value != "" {
-		setCredentialEnv(cfg.Providers.Deepgram.APIKeyEnv, DeepgramAPIKeyEnv, value)
-		notes = append(notes, "server settings: Deepgram key value loaded")
-	}
-	return notes
-}
-
-func applyAssemblyAICredential(cfg *Config, credential ServerProviderCredentialSettings) []string {
-	var notes []string
-	if credential.Enabled != nil {
-		cfg.Providers.AssemblyAI.Enabled = *credential.Enabled
-		notes = append(notes, "server settings: AssemblyAI enabled updated")
-	}
-	if env := cleanSetting(credential.Env); env != "" {
-		cfg.Providers.AssemblyAI.APIKeyEnv = env
-		notes = append(notes, "server settings: AssemblyAI key env updated")
-	}
-	if value := cleanSetting(credential.Value); value != "" {
-		setCredentialEnv(cfg.Providers.AssemblyAI.APIKeyEnv, AssemblyAIAPIKeyEnv, value)
-		notes = append(notes, "server settings: AssemblyAI key value loaded")
-	}
-	return notes
-}
-
-func applyHuggingFaceCredential(cfg *Config, credential ServerProviderCredentialSettings) []string {
-	var notes []string
-	if credential.Enabled != nil {
-		cfg.HuggingFace.Enabled = *credential.Enabled
-		notes = append(notes, "server settings: Hugging Face enabled updated")
-	}
-	if env := cleanSetting(credential.Env); env != "" {
-		cfg.HuggingFace.TokenEnv = env
-		notes = append(notes, "server settings: Hugging Face token env updated")
-	}
-	if value := cleanSetting(credential.Value); value != "" {
-		setCredentialEnv(cfg.HuggingFace.TokenEnv, "HF_TOKEN", value)
-		notes = append(notes, "server settings: Hugging Face token value loaded")
-	}
-	return notes
-}
-
-func applyOpenRouterCredential(cfg *Config, credential ServerProviderCredentialSettings) []string {
-	var notes []string
-	if credential.Enabled != nil {
-		cfg.Providers.OpenRouter.Enabled = *credential.Enabled
-		notes = append(notes, "server settings: OpenRouter enabled updated")
-	}
-	if env := cleanSetting(credential.Env); env != "" {
-		cfg.Providers.OpenRouter.APIKeyEnv = env
-		notes = append(notes, "server settings: OpenRouter key env updated")
-	}
-	if value := cleanSetting(credential.Value); value != "" {
-		setCredentialEnv(cfg.Providers.OpenRouter.APIKeyEnv, "OPENROUTER_API_KEY", value)
-		notes = append(notes, "server settings: OpenRouter key value loaded")
+		setCredentialEnv(ProviderCredentialEnvName(cfg, target), ProviderCredentialEnvName(nil, target), value)
+		notes = append(notes, "server settings: "+label+" credential value loaded")
 	}
 	return notes
 }
@@ -533,17 +446,13 @@ func applyDictationModeSetting(cfg *Config, mode ServerModeSetting) []string {
 		cfg.Local.Enabled = false
 		cfg.Routing.Strategy = "cloud-only"
 		cfg.VPS.Enabled = false
-		cfg.HuggingFace.Enabled = false
-		cfg.Providers.OpenAI.Enabled = true
-		if model != "" {
-			cfg.Providers.OpenAI.STTModel = model
-		}
+		applyDirectDictationProvider(cfg, providerForModeSetting(mode), model)
 		notes = append(notes, "server settings: Dictation uses direct provider")
 	case "cloud_provider":
 		cfg.Local.Enabled = false
 		cfg.Routing.Strategy = "cloud-only"
 		cfg.VPS.Enabled = false
-		if strings.Contains(strings.ToLower(mode.ProfileID), "openrouter") {
+		if providerForModeSetting(mode) == "openrouter" {
 			cfg.HuggingFace.Enabled = false
 			cfg.Providers.OpenRouter.Enabled = true
 			if model != "" {
@@ -589,17 +498,23 @@ func applyAssistModeSetting(cfg *Config, mode ServerModeSetting) []string {
 	switch kind {
 	case "direct_provider":
 		cfg.LocalLLM.Enabled = false
-		if strings.Contains(strings.ToLower(mode.ProfileID), "openrouter") {
+		switch providerForModeSetting(mode) {
+		case "openrouter":
 			cfg.Providers.OpenRouter.Enabled = true
 			if model != "" {
 				cfg.Providers.OpenRouter.AssistModel = model
 			}
-		} else if strings.Contains(strings.ToLower(mode.ProfileID), "google") {
+		case "google":
 			cfg.Providers.Google.Enabled = true
 			if model != "" {
 				cfg.Providers.Google.AssistModel = model
 			}
-		} else {
+		case "groq":
+			cfg.Providers.Groq.Enabled = true
+			if model != "" {
+				cfg.Providers.Groq.AssistModel = model
+			}
+		default:
 			cfg.Providers.OpenAI.Enabled = true
 			if model != "" {
 				cfg.Providers.OpenAI.AssistModel = model
@@ -608,7 +523,7 @@ func applyAssistModeSetting(cfg *Config, mode ServerModeSetting) []string {
 		notes = append(notes, "server settings: Assist uses direct provider")
 	case "cloud_provider":
 		cfg.LocalLLM.Enabled = false
-		if strings.Contains(strings.ToLower(mode.ProfileID), "openrouter") {
+		if providerForModeSetting(mode) == "openrouter" {
 			cfg.HuggingFace.Enabled = false
 			cfg.Providers.OpenRouter.Enabled = true
 			if model != "" {
@@ -681,7 +596,7 @@ func applyVoiceAgentModeSetting(cfg *Config, mode ServerModeSetting) []string {
 		notes = append(notes, "server settings: Voice Agent uses "+cfg.VoiceAgent.Provider+" direct provider")
 	case "cloud_provider":
 		cfg.VoiceAgent.Provider = "cascaded"
-		if strings.Contains(strings.ToLower(mode.ProfileID), "openrouter") {
+		if providerForModeSetting(mode) == "openrouter" {
 			cfg.HuggingFace.Enabled = false
 			cfg.Providers.OpenRouter.Enabled = true
 			if model != "" {
@@ -713,18 +628,74 @@ func applyVoiceAgentModeSetting(cfg *Config, mode ServerModeSetting) []string {
 }
 
 func directVoiceAgentProviderForProfile(profileID string) string {
-	value := strings.ToLower(strings.TrimSpace(profileID))
-	switch {
-	case strings.Contains(value, "openai"):
-		return "openai"
-	case strings.Contains(value, "deepgram"):
-		return "deepgram"
-	case strings.Contains(value, "assemblyai"):
-		return "assemblyai"
-	case strings.Contains(value, "google") || strings.Contains(value, "gemini"):
+	switch providerForProfileID(profileID) {
+	case "openai", "deepgram", "assemblyai":
+		return providerForProfileID(profileID)
+	case "google":
 		return "gemini"
 	default:
 		return "gemini"
+	}
+}
+
+func providerForModeSetting(mode ServerModeSetting) string {
+	provider := providerForProfileID(mode.ProfileID)
+	if provider != "" {
+		return provider
+	}
+	switch normalizedProviderKind(mode) {
+	case "local_provider":
+		return "ollama"
+	case "cloud_provider":
+		return "huggingface"
+	case "direct_provider":
+		return "openai"
+	default:
+		return "local"
+	}
+}
+
+func providerForProfileID(profileID string) string {
+	provider := framework.NormalizeProviderID(profileID)
+	if strings.Contains(provider, ".") {
+		return ""
+	}
+	return provider
+}
+
+func applyDirectDictationProvider(cfg *Config, provider, model string) {
+	cfg.HuggingFace.Enabled = false
+	switch provider {
+	case "groq":
+		cfg.Providers.Groq.Enabled = true
+		if model != "" {
+			cfg.Providers.Groq.STTModel = model
+		}
+	case "google":
+		cfg.Providers.Google.Enabled = true
+		if model != "" {
+			cfg.Providers.Google.STTModel = model
+		}
+	case "deepgram":
+		cfg.Providers.Deepgram.Enabled = true
+		if model != "" {
+			cfg.Providers.Deepgram.STTModel = model
+		}
+	case "assemblyai":
+		cfg.Providers.AssemblyAI.Enabled = true
+		if model != "" {
+			cfg.Providers.AssemblyAI.STTModels = model
+		}
+	case "openrouter":
+		cfg.Providers.OpenRouter.Enabled = true
+		if model != "" {
+			cfg.Providers.OpenRouter.STTModel = model
+		}
+	default:
+		cfg.Providers.OpenAI.Enabled = true
+		if model != "" {
+			cfg.Providers.OpenAI.STTModel = model
+		}
 	}
 }
 
@@ -948,18 +919,30 @@ func normalizedProviderKind(mode ServerModeSetting) string {
 	if kind := strings.ToLower(cleanSetting(mode.ProviderKind)); kind != "" {
 		return kind
 	}
-	profileID := strings.ToLower(cleanSetting(mode.ProfileID))
-	switch {
-	case strings.Contains(profileID, ".builtin.") || strings.Contains(profileID, ".local."):
-		return "local_built_in"
-	case strings.Contains(profileID, ".ollama."):
-		return "local_provider"
-	case strings.Contains(profileID, ".routed.") || strings.Contains(profileID, ".hf."):
-		return "cloud_provider"
-	case profileID != "":
-		return "direct_provider"
-	default:
+	return providerKindForProfileID(mode.ProfileID)
+}
+
+func providerKindForProfileID(profileID string) string {
+	profileID = framework.NormalizeProviderProfileID(cleanSetting(profileID))
+	if profileID == "" {
 		return ""
+	}
+	for _, profile := range framework.DefaultProviderProfiles() {
+		if profile.ID == profileID {
+			return string(profile.ProviderKind)
+		}
+	}
+	switch providerForProfileID(profileID) {
+	case "local":
+		return "local_built_in"
+	case "ollama", "openedai", "selfhosted":
+		return "local_provider"
+	case "huggingface", "openrouter":
+		return "cloud_provider"
+	case "":
+		return ""
+	default:
+		return "direct_provider"
 	}
 }
 

@@ -76,7 +76,7 @@
     {
       "provider": "openai",
       "modality": "stt",
-      "profile_ids": ["stt.openai.whisper-1"],
+      "profile_ids": ["stt.openai.gpt-4o-transcribe", "stt.openai.whisper-1"],
       "evidence_url": "https://platform.openai.com/docs/guides/speech-to-text",
       "supports": {
         "language": "native",
@@ -142,7 +142,7 @@
     {
       "provider": "google",
       "modality": "voice_agent",
-      "profile_ids": ["realtime.google.gemini-native-audio"],
+      "profile_ids": ["realtime.google.gemini-native-audio", "realtime.google.gemini-live-translate"],
       "evidence_url": "https://ai.google.dev/gemini-api/docs/live-guide",
       "supports": {
         "language": "derived",
@@ -155,7 +155,7 @@
         "privacy_redaction": "unsupported",
         "voice_focus": "unsupported",
         "medical_domain": "unsupported",
-        "translation": "unsupported",
+        "translation": "native",
         "transcription_only": "unsupported"
       }
     },

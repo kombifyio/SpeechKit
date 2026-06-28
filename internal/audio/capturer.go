@@ -14,9 +14,19 @@ const (
 	BackendWindowsWASAPINative Backend = "windows-wasapi-native"
 )
 
+type InputSource string
+
+const (
+	InputSourceMicrophone     InputSource = "microphone"
+	InputSourceSystemLoopback InputSource = "system_loopback"
+	InputSourceMicAndSystem   InputSource = "mic_and_system"
+)
+
 var (
-	ErrUnsupportedBackend = errors.New("unsupported audio backend")
-	ErrBackendUnavailable = errors.New("audio backend unavailable in this build")
+	ErrUnsupportedBackend      = errors.New("unsupported audio backend")
+	ErrBackendUnavailable      = errors.New("audio backend unavailable in this build")
+	ErrUnsupportedSource       = errors.New("unsupported audio input source")
+	ErrOutputDeviceUnavailable = errors.New("audio output device unavailable")
 )
 
 type EventType string
@@ -36,12 +46,14 @@ type Event struct {
 }
 
 type Config struct {
-	Backend     Backend
-	DeviceID    string
-	SampleRate  int
-	Channels    int
-	FrameSizeMs int
-	LatencyHint string
+	Backend        Backend
+	InputSource    InputSource
+	DeviceID       string
+	OutputDeviceID string
+	SampleRate     int
+	Channels       int
+	FrameSizeMs    int
+	LatencyHint    string
 }
 
 // Session records microphone PCM and exposes both level and live-audio callbacks.
@@ -153,6 +165,9 @@ func NewCapturerWithConfig(cfg Config) (Capturer, error) {
 func normalizeConfig(cfg Config) Config {
 	if cfg.Backend == "" || cfg.Backend == BackendAuto {
 		cfg.Backend = defaultBackend()
+	}
+	if cfg.InputSource == "" {
+		cfg.InputSource = InputSourceMicrophone
 	}
 	if cfg.SampleRate <= 0 {
 		cfg.SampleRate = SampleRate

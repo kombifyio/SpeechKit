@@ -98,6 +98,24 @@ func resolveOutputDeviceID(cfg Config) (malgo.DeviceID, bool, error) {
 	return deviceIDFromHexString(selected)
 }
 
+func ensureLoopbackOutputDeviceAvailable(cfg Config) error {
+	devices, err := ListOutputDevices(Config{Backend: cfg.Backend})
+	if err != nil {
+		return err
+	}
+	if len(devices) == 0 {
+		return fmt.Errorf("%w: system loopback requires at least one active Windows playback/render device", ErrOutputDeviceUnavailable)
+	}
+	requested := strings.TrimSpace(cfg.OutputDeviceID)
+	if requested == "" {
+		return nil
+	}
+	if selected := selectOutputDeviceID(requested, devices); selected == "" {
+		return fmt.Errorf("%w: configured system loopback output device %q is not available", ErrOutputDeviceUnavailable, requested)
+	}
+	return nil
+}
+
 func deviceIDFromHexString(value string) (malgo.DeviceID, bool, error) {
 	var id malgo.DeviceID
 

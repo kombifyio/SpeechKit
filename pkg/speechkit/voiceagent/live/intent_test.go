@@ -53,6 +53,62 @@ func TestResolveProviderIntentHonorsPreferredProviderOrder(t *testing.T) {
 	}
 }
 
+func TestResolveProviderIntentUsesCustomDescriptorWithoutBuiltInProvider(t *testing.T) {
+	t.Parallel()
+	descriptors := []ProviderDescriptor{
+		{
+			Provider:    "acme",
+			DisplayName: "Acme Realtime",
+			ProfileID:   "realtime.acme.voice",
+			Capabilities: []LiveCapabilityFlag{
+				LiveCapabilityRealtimeAudio,
+				LiveCapabilityToolCalling,
+				LiveCapabilityLanguageHints,
+			},
+			Models: []LiveModelDescriptor{
+				{
+					Provider:  "acme",
+					ModelID:   "acme-live-1",
+					Name:      "Acme Live 1",
+					Lifecycle: "ga",
+					Default:   true,
+					SourceURL: "https://example.test/acme-live",
+				},
+			},
+			SupportedLocales: []string{"de", "en"},
+			NativeOptions:    []provideropts.OptionID{provideropts.OptionLanguageHints},
+			AuthRequirement:  "api_key",
+			Transport:        "websocket",
+			EvidenceURL:      "https://example.test/acme-live",
+		},
+	}
+
+	plan, err := ResolveProviderIntent(ProviderIntent{
+		Provider:             "acme",
+		RequiredCapabilities: []LiveCapabilityFlag{LiveCapabilityRealtimeAudio},
+		RequiredOptions:      []provideropts.OptionID{provideropts.OptionLanguageHints},
+		Locale:               "de-DE",
+		SelectionPolicy: ProviderSelectionPolicy{
+			ModelLifecycle: ModelLifecycleRequireGA,
+		},
+	}, descriptors)
+	if err != nil {
+		t.Fatalf("ResolveProviderIntent: %v", err)
+	}
+	if plan.Provider != "acme" || plan.ProfileID != "realtime.acme.voice" || plan.Model != "acme-live-1" {
+		t.Fatalf("plan = %+v, want custom provider descriptor selected", plan)
+	}
+	if !capabilityFlagsContain(plan.MatchedRequiredCapabilities, LiveCapabilityRealtimeAudio) {
+		t.Fatalf("matched required capabilities = %v, want realtime audio", plan.MatchedRequiredCapabilities)
+	}
+	if !optionIDsContain(plan.MatchedRequiredOptions, provideropts.OptionLanguageHints) {
+		t.Fatalf("matched required options = %v, want language hints", plan.MatchedRequiredOptions)
+	}
+	if plan.AuthRequirement != "api_key" || plan.Transport != "websocket" {
+		t.Fatalf("plan diagnostics = auth %q transport %q", plan.AuthRequirement, plan.Transport)
+	}
+}
+
 func TestResolveProviderIntentReportsMissingRequiredCapabilities(t *testing.T) {
 	t.Parallel()
 	_, err := ResolveProviderIntent(ProviderIntent{

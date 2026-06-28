@@ -69,6 +69,7 @@ const (
 	CapabilitySessionResume         Capability = "session_resume"
 	CapabilityNativeContextPrompt   Capability = "native_context_prompt"
 	CapabilityNativeKeyterms        Capability = "native_keyterms"
+	CapabilityNativeDictationStream Capability = "native_dictation_stream"
 	CapabilityLanguageHints         Capability = "language_hints"
 	CapabilitySpeakerStreaming      Capability = "speaker_streaming"
 	CapabilityPrivacyRedaction      Capability = "privacy_redaction"
@@ -136,6 +137,9 @@ type Catalog struct {
 func DefaultCatalog() Catalog {
 	profiles := profilesFromFrameworkCatalog(speechkit.DefaultProviderProfiles())
 	profiles = append(profiles, supportProfiles()...)
+	for i := range profiles {
+		profiles[i] = profileWithRuntimeDefaults(profiles[i])
+	}
 	return Catalog{Profiles: profiles}
 }
 
@@ -148,6 +152,7 @@ func profilesFromFrameworkCatalog(frameworkProfiles []speechkit.ProviderProfile)
 }
 
 func profileFromFramework(profile speechkit.ProviderProfile) Profile {
+	profile = speechkit.ProviderProfileWithDefaults(profile)
 	return Profile{
 		ID:               profile.ID,
 		Name:             profile.Name,
@@ -175,6 +180,23 @@ func profileFromFramework(profile speechkit.ProviderProfile) Profile {
 	}
 }
 
+func profileWithRuntimeDefaults(profile Profile) Profile {
+	publicProfile := speechkit.ProviderProfileWithDefaults(speechkit.ProviderProfile{
+		ID:              profile.ID,
+		Mode:            frameworkModeFromModality(profile.Modality),
+		ProviderKind:    speechkit.ProviderKind(profile.ProviderKind),
+		ExecutionMode:   speechkit.ExecutionMode(profile.ExecutionMode),
+		Provider:        profile.Provider,
+		Capabilities:    frameworkCapabilitiesFromModels(profile.Capabilities),
+		AuthRequirement: profile.AuthRequirement,
+		Transport:       profile.Transport,
+	})
+	profile.Provider = publicProfile.Provider
+	profile.AuthRequirement = publicProfile.AuthRequirement
+	profile.Transport = publicProfile.Transport
+	return profile
+}
+
 func modalityFromFrameworkMode(mode speechkit.Mode) Modality {
 	switch speechkit.NormalizeMode(mode) {
 	case speechkit.ModeDictation:
@@ -190,6 +212,21 @@ func modalityFromFrameworkMode(mode speechkit.Mode) Modality {
 	}
 }
 
+func frameworkModeFromModality(modality Modality) speechkit.Mode {
+	switch modality {
+	case ModalitySTT:
+		return speechkit.ModeDictation
+	case ModalityAssist:
+		return speechkit.ModeAssist
+	case ModalityRealtimeVoice:
+		return speechkit.ModeVoiceAgent
+	case ModalityTTS:
+		return speechkit.ModeTTS
+	default:
+		return speechkit.ModeNone
+	}
+}
+
 func capabilitiesFromFramework(input []speechkit.Capability) []Capability {
 	if len(input) == 0 {
 		return nil
@@ -197,6 +234,17 @@ func capabilitiesFromFramework(input []speechkit.Capability) []Capability {
 	out := make([]Capability, 0, len(input))
 	for _, capability := range input {
 		out = append(out, Capability(capability))
+	}
+	return out
+}
+
+func frameworkCapabilitiesFromModels(input []Capability) []speechkit.Capability {
+	if len(input) == 0 {
+		return nil
+	}
+	out := make([]speechkit.Capability, 0, len(input))
+	for _, capability := range input {
+		out = append(out, speechkit.Capability(capability))
 	}
 	return out
 }

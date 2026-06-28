@@ -270,7 +270,7 @@ func serverSettingsSnapshot(app *App) map[string]any {
 			"huggingface": map[string]any{
 				"enabled":    cfg.HuggingFace.Enabled,
 				"model":      cfg.HuggingFace.Model,
-				"configured": envPresent(cfg.HuggingFace.TokenEnv),
+				"configured": config.ProviderCredentialStatusFor(cfg, "huggingface").Available,
 			},
 		},
 		"llm": map[string]any{
@@ -284,10 +284,10 @@ func serverSettingsSnapshot(app *App) map[string]any {
 				"runtime_name": "llama.cpp",
 			},
 			"cloud": map[string]any{
-				"openai":      providerConfigured(cfg.Providers.OpenAI.Enabled, cfg.Providers.OpenAI.APIKeyEnv),
-				"groq":        providerConfigured(cfg.Providers.Groq.Enabled, cfg.Providers.Groq.APIKeyEnv),
-				"google":      providerConfigured(cfg.Providers.Google.Enabled, cfg.Providers.Google.APIKeyEnv),
-				"open_router": providerConfigured(cfg.Providers.OpenRouter.Enabled, cfg.Providers.OpenRouter.APIKeyEnv),
+				"openai":      providerConfigured(cfg, "openai", cfg.Providers.OpenAI.Enabled),
+				"groq":        providerConfigured(cfg, "groq", cfg.Providers.Groq.Enabled),
+				"google":      providerConfigured(cfg, "google", cfg.Providers.Google.Enabled),
+				"open_router": providerConfigured(cfg, "openrouter", cfg.Providers.OpenRouter.Enabled),
 			},
 		},
 		"voice_agent": map[string]any{
@@ -295,7 +295,7 @@ func serverSettingsSnapshot(app *App) map[string]any {
 			"agent_profile_id": voiceagentprofile.NormalizeID(cfg.VoiceAgent.AgentProfileID),
 			"agent_profiles":   voiceAgentProfileCatalog(),
 			"gemini": map[string]any{
-				"configured": providerConfigured(true, cfg.Providers.Google.APIKeyEnv)["configured"],
+				"configured": providerConfigured(cfg, "google", true)["configured"],
 				"model":      cfg.VoiceAgent.Model,
 				"fallback":   cfg.VoiceAgent.FallbackModel,
 			},
@@ -451,10 +451,12 @@ func serverAdminConfigured(app *App) bool {
 	return app.Cfg != nil && app.Cfg.Server.AdminAuthEnabled && strings.TrimSpace(app.Cfg.Server.AdminPasswordHash) != ""
 }
 
-func providerConfigured(enabled bool, envName string) map[string]any {
+func providerConfigured(cfg *config.Config, target string, enabled bool) map[string]any {
+	status := config.ProviderCredentialStatusFor(cfg, target)
 	return map[string]any{
 		"enabled":    enabled,
-		"configured": envPresent(envName),
+		"configured": status.Available,
+		"env":        status.EnvName,
 	}
 }
 
@@ -748,26 +750,26 @@ func activeServerModeSettings(cfg *config.Config) config.ServerModeProviderSetti
 func activeDictationModeSetting(cfg *config.Config) config.ServerModeSetting {
 	switch {
 	case cfg.VPS.Enabled:
-		return config.ServerModeSetting{ProviderKind: "local_built_in", ProfileID: "stt.local.whispercpp", Model: firstNonEmpty(cfg.VPS.Model, "whisper-1")}
+		return serverModeSettingFromProvider("local", framework.ModeDictation, firstNonEmpty(cfg.VPS.Model, "whisper-1"))
 	case cfg.HuggingFace.Enabled:
-		return config.ServerModeSetting{ProviderKind: "cloud_provider", ProfileID: "stt.routed.whisper-large-v3", Model: cfg.HuggingFace.Model}
+		return serverModeSettingFromProvider("huggingface", framework.ModeDictation, cfg.HuggingFace.Model)
 	case cfg.Providers.Ollama.Enabled:
-		return config.ServerModeSetting{ProviderKind: "local_provider", ProfileID: "stt.ollama.gemma4-e4b-transcribe", Model: cfg.Providers.Ollama.STTModel}
+		return serverModeSettingFromProvider("ollama", framework.ModeDictation, cfg.Providers.Ollama.STTModel)
 	default:
-		return config.ServerModeSetting{ProviderKind: "direct_provider", ProfileID: "stt.openai.whisper-1", Model: cfg.Providers.OpenAI.STTModel}
+		return serverModeSettingFromProvider("openai", framework.ModeDictation, cfg.Providers.OpenAI.STTModel)
 	}
 }
 
 func activeAssistModeSetting(cfg *config.Config) config.ServerModeSetting {
 	switch {
 	case cfg.LocalLLM.Enabled:
-		return config.ServerModeSetting{ProviderKind: "local_built_in", ProfileID: "assist.builtin.gemma4-e4b", Model: firstNonEmpty(cfg.LocalLLM.AssistModel, cfg.LocalLLM.Model)}
+		return serverModeSettingFromProvider("local", framework.ModeAssist, firstNonEmpty(cfg.LocalLLM.AssistModel, cfg.LocalLLM.Model))
 	case cfg.Providers.Ollama.Enabled:
-		return config.ServerModeSetting{ProviderKind: "local_provider", ProfileID: "assist.ollama.gemma4-e4b", Model: cfg.Providers.Ollama.AssistModel}
+		return serverModeSettingFromProvider("ollama", framework.ModeAssist, cfg.Providers.Ollama.AssistModel)
 	case cfg.HuggingFace.Enabled:
-		return config.ServerModeSetting{ProviderKind: "cloud_provider", ProfileID: "assist.routed.qwen35-27b", Model: cfg.HuggingFace.AssistModel}
+		return serverModeSettingFromProvider("huggingface", framework.ModeAssist, cfg.HuggingFace.AssistModel)
 	default:
-		return config.ServerModeSetting{ProviderKind: "direct_provider", ProfileID: "assist.openai.gpt-5.4", Model: cfg.Providers.OpenAI.AssistModel}
+		return serverModeSettingFromProvider("openai", framework.ModeAssist, cfg.Providers.OpenAI.AssistModel)
 	}
 }
 
@@ -778,26 +780,70 @@ func activeVoiceAgentModeSetting(cfg *config.Config) config.ServerModeSetting {
 	provider := effectiveVoiceAgentProvider(cfg)
 	switch provider {
 	case ProviderGemini:
-		return config.ServerModeSetting{ProviderKind: "direct_provider", ProfileID: "realtime.google.gemini-native-audio", Model: firstNonEmpty(cfg.VoiceAgent.Model, liveDefaultModel(provider))}
+		return serverModeSettingFromProvider("google", framework.ModeVoiceAgent, firstNonEmpty(cfg.VoiceAgent.Model, liveDefaultModel(provider)))
 	case ProviderDeepgram:
-		return config.ServerModeSetting{ProviderKind: "direct_provider", ProfileID: "realtime.deepgram.voice-agent", Model: firstNonEmpty(cfg.VoiceAgent.Model, liveDefaultModel(provider))}
+		return serverModeSettingFromProvider("deepgram", framework.ModeVoiceAgent, firstNonEmpty(cfg.VoiceAgent.Model, liveDefaultModel(provider)))
 	case ProviderAssemblyAI:
-		return config.ServerModeSetting{ProviderKind: "direct_provider", ProfileID: "realtime.assemblyai.voice-agent", Model: firstNonEmpty(cfg.VoiceAgent.Model, liveDefaultModel(provider))}
+		return serverModeSettingFromProvider("assemblyai", framework.ModeVoiceAgent, firstNonEmpty(cfg.VoiceAgent.Model, liveDefaultModel(provider)))
 	case ProviderOpenAI:
-		return config.ServerModeSetting{ProviderKind: "direct_provider", ProfileID: "realtime.openai.gpt-realtime-2", Model: firstNonEmpty(cfg.Providers.OpenAI.RealtimeModel, cfg.VoiceAgent.Model, liveDefaultModel(provider))}
+		return serverModeSettingFromProvider("openai", framework.ModeVoiceAgent, firstNonEmpty(cfg.Providers.OpenAI.RealtimeModel, cfg.VoiceAgent.Model, liveDefaultModel(provider)))
 	}
-	return config.ServerModeSetting{ProviderKind: "local_built_in", ProfileID: "realtime.builtin.pipeline", Model: firstNonEmpty(cfg.LocalLLM.AgentModel, cfg.LocalLLM.Model)}
+	return serverModeSettingFromProvider("local", framework.ModeVoiceAgent, firstNonEmpty(cfg.LocalLLM.AgentModel, cfg.LocalLLM.Model))
+}
+
+func serverModeSettingFromProvider(provider string, mode framework.Mode, model string) config.ServerModeSetting {
+	if profile, ok := findProviderProfileForModel(provider, mode, model); ok {
+		return config.ServerModeSetting{
+			ProviderKind: string(profile.ProviderKind),
+			ProfileID:    profile.ID,
+			Model:        firstNonEmpty(model, profile.ModelID),
+		}
+	}
+	if profile, ok := framework.FindProviderDefault(provider, mode); ok {
+		return config.ServerModeSetting{
+			ProviderKind: string(profile.ProviderKind),
+			ProfileID:    profile.ProfileID,
+			Model:        firstNonEmpty(model, profile.ModelID),
+		}
+	}
+	return config.ServerModeSetting{Model: model}
+}
+
+func findProviderProfileForModel(provider string, mode framework.Mode, model string) (framework.ProviderProfile, bool) {
+	provider = framework.NormalizeProviderID(provider)
+	mode = framework.NormalizeMode(mode)
+	model = strings.TrimSpace(model)
+	if provider == "" || mode == framework.ModeNone || model == "" {
+		return framework.ProviderProfile{}, false
+	}
+	for _, profile := range framework.DefaultProviderProfiles() {
+		if framework.NormalizeProviderID(profile.Provider) != provider {
+			continue
+		}
+		if framework.NormalizeMode(profile.Mode) != mode {
+			continue
+		}
+		if strings.EqualFold(strings.TrimSpace(profile.ModelID), model) {
+			return profile, true
+		}
+		for _, variant := range profile.Variants {
+			if strings.EqualFold(strings.TrimSpace(variant.ModelID), model) {
+				return profile, true
+			}
+		}
+	}
+	return framework.ProviderProfile{}, false
 }
 
 func activeServerCredentialSettings(cfg *config.Config) config.ServerCredentialSettings {
 	return config.ServerCredentialSettings{
-		OpenAI:      activeCredential(cfg.Providers.OpenAI.Enabled, cfg.Providers.OpenAI.APIKeyEnv),
-		Groq:        activeCredential(cfg.Providers.Groq.Enabled, cfg.Providers.Groq.APIKeyEnv),
-		Google:      activeCredential(cfg.Providers.Google.Enabled, cfg.Providers.Google.APIKeyEnv),
-		Deepgram:    activeCredential(cfg.Providers.Deepgram.Enabled, cfg.Providers.Deepgram.APIKeyEnv),
-		AssemblyAI:  activeCredential(cfg.Providers.AssemblyAI.Enabled, cfg.Providers.AssemblyAI.APIKeyEnv),
-		HuggingFace: activeCredential(cfg.HuggingFace.Enabled, config.HuggingFaceTokenEnvName(cfg)),
-		OpenRouter:  activeCredential(cfg.Providers.OpenRouter.Enabled, cfg.Providers.OpenRouter.APIKeyEnv),
+		OpenAI:      activeCredential(cfg.Providers.OpenAI.Enabled, config.ProviderCredentialEnvName(cfg, "openai")),
+		Groq:        activeCredential(cfg.Providers.Groq.Enabled, config.ProviderCredentialEnvName(cfg, "groq")),
+		Google:      activeCredential(cfg.Providers.Google.Enabled, config.ProviderCredentialEnvName(cfg, "google")),
+		Deepgram:    activeCredential(cfg.Providers.Deepgram.Enabled, config.ProviderCredentialEnvName(cfg, "deepgram")),
+		AssemblyAI:  activeCredential(cfg.Providers.AssemblyAI.Enabled, config.ProviderCredentialEnvName(cfg, "assemblyai")),
+		HuggingFace: activeCredential(cfg.HuggingFace.Enabled, config.ProviderCredentialEnvName(cfg, "huggingface")),
+		OpenRouter:  activeCredential(cfg.Providers.OpenRouter.Enabled, config.ProviderCredentialEnvName(cfg, "openrouter")),
 	}
 }
 
@@ -868,8 +914,10 @@ func serverProviderCatalog() map[string]any {
 			framework.ProviderKindCloudProvider,
 			framework.ProviderKindDirectProvider,
 		},
-		"modes":        modes,
-		"assist_tools": assistToolCatalog(),
+		"modes":             modes,
+		"provider_matrix":   framework.DefaultProviderMatrix(),
+		"provider_defaults": framework.DefaultProviderDefaults(),
+		"assist_tools":      assistToolCatalog(),
 	}
 }
 

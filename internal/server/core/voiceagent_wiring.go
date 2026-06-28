@@ -175,7 +175,7 @@ func buildProviderFactory(ctx context.Context, cfg *config.Config, app *App, pro
 	provider = normalizeVoiceAgentProvider(provider)
 	switch provider {
 	case ProviderGemini:
-		apiKey := strings.TrimSpace(config.ResolveSecret(cfg.Providers.Google.APIKeyEnv))
+		apiKey := resolveRealtimeAPIKey(cfg, provider)
 		status := "ready (gemini)"
 		if apiKey == "" {
 			status = "degraded: no Google API key; Gemini Live sessions will fail at upgrade"
@@ -183,7 +183,7 @@ func buildProviderFactory(ctx context.Context, cfg *config.Config, app *App, pro
 		return &geminiProviderFactory{}, status, nil
 
 	case ProviderOpenAI:
-		apiKey := strings.TrimSpace(config.ResolveSecret(cfg.Providers.OpenAI.APIKeyEnv))
+		apiKey := resolveRealtimeAPIKey(cfg, provider)
 		status := "ready (openai)"
 		if apiKey == "" {
 			status = "degraded: no OpenAI API key; gpt-realtime-2 sessions will fail at upgrade"
@@ -191,7 +191,7 @@ func buildProviderFactory(ctx context.Context, cfg *config.Config, app *App, pro
 		return &openaiProviderFactory{}, status, nil
 
 	case ProviderDeepgram:
-		key, _ := config.ResolveDeepgramKey(cfg)
+		key := resolveRealtimeAPIKey(cfg, provider)
 		status := "ready (deepgram)"
 		if strings.TrimSpace(key) == "" {
 			status = "degraded: no Deepgram API key; Deepgram Voice Agent sessions will fail at upgrade"
@@ -199,7 +199,7 @@ func buildProviderFactory(ctx context.Context, cfg *config.Config, app *App, pro
 		return &deepgramProviderFactory{cfg: cfg}, status, nil
 
 	case ProviderAssemblyAI:
-		key, _ := config.ResolveAssemblyAIKey(cfg)
+		key := resolveRealtimeAPIKey(cfg, provider)
 		status := "ready (assemblyai)"
 		if strings.TrimSpace(key) == "" {
 			status = "degraded: no AssemblyAI API key; AssemblyAI Voice Agent sessions will fail at upgrade"
@@ -472,17 +472,23 @@ func composeStartOverrideWithStep(prompt, stepID, stepInstruction string) string
 // it produces carries the right credential downstream — Gemini Live, Deepgram,
 // AssemblyAI, OpenAI Realtime, and the Cascaded pipeline have distinct env vars.
 func resolveRealtimeAPIKey(cfg *config.Config, provider string) string {
-	switch provider {
+	value, _, err := config.ResolveProviderCredentialValue(cfg, realtimeCredentialTarget(provider))
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(value)
+}
+
+func realtimeCredentialTarget(provider string) string {
+	switch normalizeVoiceAgentProvider(provider) {
 	case ProviderOpenAI:
-		return strings.TrimSpace(config.ResolveSecret(cfg.Providers.OpenAI.APIKeyEnv))
+		return "openai"
 	case ProviderDeepgram:
-		key, _ := config.ResolveDeepgramKey(cfg)
-		return strings.TrimSpace(key)
+		return "deepgram"
 	case ProviderAssemblyAI:
-		key, _ := config.ResolveAssemblyAIKey(cfg)
-		return strings.TrimSpace(key)
+		return "assemblyai"
 	default:
-		return strings.TrimSpace(config.ResolveSecret(cfg.Providers.Google.APIKeyEnv))
+		return "google"
 	}
 }
 

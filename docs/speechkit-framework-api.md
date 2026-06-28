@@ -1,6 +1,6 @@
 # SpeechKit Framework API
 
-SpeechKit v0.47 exposes the three product modes as a reusable framework boundary. Host applications can embed `pkg/speechkit` directly, run real providers in-process, call the self-host server, or control the Windows desktop host through the local `/api/v1` control plane.
+SpeechKit v0.48 exposes the three product modes as a reusable framework boundary. Host applications can embed `pkg/speechkit` directly, run real providers in-process, call the self-host server, or control the Windows desktop host through the local `/api/v1` control plane. Long dictation and meeting capture build on the same boundary with segmented STT, provider-safe processing defaults, and system-audio meeting transcripts.
 
 ## Mode Contracts
 
@@ -121,11 +121,28 @@ Every main mode exposes the same four provider groups:
 The SDK owns the reusable catalog through:
 
 - `speechkit.DefaultProviderProfiles()`
+- `speechkit.DefaultProviderMatrix()`
+- `speechkit.DefaultProviderDefaults()`
 - `speechkit.ProfilesForMode(mode)`
 - `speechkit.ProviderKindsForMode(mode)`
+- `speechkit.FindProviderDefault(provider, mode)`
+- `speechkit.FindProviderMatrixRow(provider)`
 - `speechkit.ValidateDefaultCatalog()`
 
 Provider profiles include stable IDs, provider group, execution mode, model variants, capabilities, and metadata that host applications can use to build their own settings UI.
+
+`DefaultProviderMatrix()` is the provider-agnostic view for settings, onboarding,
+and Workbench-style clients. It normalizes the 10+ supported provider IDs into a
+single matrix and classifies each feature as `native`, `routed`, `cascaded`,
+`planned`, or `unsupported` for Dictation, streaming dictation, long
+transcription, diarization, speaker identification, Assist, realtime voice, and
+TTS. `DefaultProviderDefaults()` then selects one canonical profile per
+provider/mode, preserving the stricter mode contracts from the profile catalog.
+Each `ProviderDefault` carries the same canonical provider id, `authRequirement`,
+`credentialRequired`, `credentialTarget`, and `transport` metadata so hosts can
+render setup and readiness flows without hard-coding provider-specific branches
+for OpenAI, Google STT, Deepgram, AssemblyAI, Hugging Face, OpenRouter, Ollama,
+or local runtimes.
 
 `pkg/speechkit` is the framework boundary and the source of truth for the three strict mode profiles. The Windows desktop host adapts those public profiles into its internal runtime catalog and appends host-only support profiles such as TTS, utility, and embedding models. That keeps the backend reusable for other hosts while allowing the Windows module to remain a full reference client.
 
@@ -149,6 +166,22 @@ tags, active template IDs, and scope, then each mode consumes the resolved set.
 The desktop host exposes a local HTTP API. Read-only introspection routes are available to local callers; mutating routes require the control-plane token through `ControlPlaneHeader` or `ControlPlaneCookie`.
 
 The OpenAPI contract lives in [`docs/api/openapi.v1.yaml`](./api/openapi.v1.yaml).
+System-audio diagnostics that are intentionally operator-only live outside the
+versioned control-plane contract. `/api/audio/loopback-selftest` checks bounded
+WASAPI loopback capture while the desktop app is running. For release evidence,
+use `scripts/smoke-system-loopback.ps1`; it plays a short synthetic tone through
+the selected Windows output device, captures it via loopback, and writes a JSON
+report under `.cache/loopback-smoke/` by default.
+
+Long-dictation release evidence has a separate local gate:
+`scripts/long-dictation-golden-gate.ps1` runs a five-minute fast-forwarded
+golden fixture through the Dictation live segment queue, transcription worker,
+duplicate ledger, paragraph handling, and final output. It writes
+`.cache/long-dictation-gate/golden-long-dictation.json` by default. This proves
+the kernel long-session behavior without cloud credentials; provider-backed
+spoken audio evidence belongs in `scripts/long-dictation-provider-gate.ps1`,
+which wraps `sk-e2e --strict-ready --require-functional` and requires
+`--min-dictation-duration-ms` so short fixtures cannot pass the long-audio gate.
 
 | Endpoint | Methods | Purpose |
 |----------|---------|---------|
@@ -173,6 +206,16 @@ The OpenAPI contract lives in [`docs/api/openapi.v1.yaml`](./api/openapi.v1.yaml
 | `/api/v1/dictionary` | `GET`, `POST` | Migration projection for old local dictionary-shaped data. New integrations should use customization routes. |
 | `/api/v1/voice-sessions` | `GET` | List stored Voice Agent session summaries without transcript or turn payloads. |
 | `/api/v1/voice-sessions/{id}` | `GET` | Read one Voice Agent session with transcript, turns, and full summary detail. |
+| `/api/v1/recording-sessions` | `GET`, `POST` | List or create long-running Dictation and Meeting recording sessions. |
+| `/api/v1/recording-sessions/{id}` | `GET`, `DELETE` | Read or delete one recording session with ordered segment detail. |
+| `/api/v1/recording-sessions/{id}/start` | `POST` | Start Dictation capture and bind finalized commits to the recording session. |
+| `/api/v1/recording-sessions/{id}/pause` | `POST` | Pause bound Dictation capture while keeping the recording session active. |
+| `/api/v1/recording-sessions/{id}/resume` | `POST` | Resume bound Dictation capture for a paused recording session. |
+| `/api/v1/recording-sessions/{id}/stop` | `POST` | Stop Dictation capture without finishing the recording-session record. |
+| `/api/v1/recording-sessions/{id}/segments` | `POST` | Append or replace one draft or finalized transcript segment by segment index. |
+| `/api/v1/recording-sessions/{id}/finish` | `POST` | Mark the session finished and persist a supplied or derived summary. |
+| `/api/v1/recording-sessions/{id}/summary` | `GET`, `POST` | Read or attach a recording-session summary. |
+| `/api/v1/recording-sessions/{id}/summary-job` | `POST` | Start a non-blocking provider-capable summary job over ordered final segments. |
 
 Accepted mode aliases include `dictation`, `dictate`, `transcribe`, `assist`, `voice_agent`, `voiceAgent`, and `voice-agent`.
 

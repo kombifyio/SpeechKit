@@ -25,6 +25,14 @@ func firstNonEmpty(values ...string) string {
 	return ""
 }
 
+func providerCredential(cfg *config.Config, target string) string {
+	value, _, err := config.ResolveProviderCredentialValue(cfg, target)
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(value)
+}
+
 // ResolveEnabledProviders inspects cfg.TTS and returns the providers that are
 // both enabled and have a usable credential/config, plus human-readable notes
 // for the startup log (callers that don't log notes can ignore them).
@@ -44,7 +52,7 @@ func ResolveEnabledProviders(cfg *config.Config) (tts.EnabledProviders, []string
 	var notes []string
 
 	if cfg.TTS.OpenAI.Enabled {
-		if apiKey := strings.TrimSpace(config.ResolveSecret(cfg.Providers.OpenAI.APIKeyEnv)); apiKey != "" {
+		if apiKey := providerCredential(cfg, "openai"); apiKey != "" {
 			enabled.OpenAI = &tts.OpenAIOpts{
 				APIKey: apiKey,
 				Model:  firstNonEmpty(cfg.TTS.OpenAI.Model, cfg.Providers.OpenAI.TTSModel, "tts-1"),
@@ -54,7 +62,7 @@ func ResolveEnabledProviders(cfg *config.Config) (tts.EnabledProviders, []string
 	}
 
 	if cfg.TTS.Google.Enabled {
-		if apiKey := strings.TrimSpace(config.ResolveSecret(cfg.Providers.Google.APIKeyEnv)); apiKey != "" {
+		if apiKey := providerCredential(cfg, "google"); apiKey != "" {
 			enabled.Google = &tts.GoogleOpts{
 				APIKey: apiKey,
 				Voice:  firstNonEmpty(cfg.TTS.Google.Voice, cfg.TTS.Voice),
@@ -64,7 +72,7 @@ func ResolveEnabledProviders(cfg *config.Config) (tts.EnabledProviders, []string
 
 	// Deepgram Aura reuses the shared DEEPGRAM_API_KEY (no separate credential).
 	if cfg.TTS.Deepgram.Enabled {
-		if key, _ := config.ResolveDeepgramKey(cfg); strings.TrimSpace(key) != "" {
+		if key := providerCredential(cfg, "deepgram"); key != "" {
 			enabled.Deepgram = &tts.DeepgramOpts{
 				APIKey: key,
 				Model:  firstNonEmpty(cfg.TTS.Deepgram.Voice, cfg.TTS.Deepgram.Model),
@@ -73,7 +81,7 @@ func ResolveEnabledProviders(cfg *config.Config) (tts.EnabledProviders, []string
 	}
 
 	if cfg.TTS.HuggingFace.Enabled {
-		if token, _, err := config.ResolveHuggingFaceToken(cfg); err == nil && token != "" {
+		if token := providerCredential(cfg, "huggingface"); token != "" {
 			enabled.HuggingFace = &tts.HuggingFaceOpts{
 				Token: token,
 				Model: firstNonEmpty(cfg.TTS.HuggingFace.Model, "Qwen/Qwen3-TTS-12Hz-1.7B-Base"),

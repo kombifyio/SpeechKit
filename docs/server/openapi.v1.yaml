@@ -235,6 +235,27 @@ paths:
         '400': { $ref: '#/components/responses/BadRequest' }
         '401': { $ref: '#/components/responses/Unauthenticated' }
 
+  /v1/catalog/providers:
+    get:
+      operationId: listCatalogProviders
+      summary: List normalized provider matrix
+      tags: [catalog]
+      responses:
+        '200':
+          description: Provider-agnostic defaults and feature matrix.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  provider_matrix:
+                    type: array
+                    items: { $ref: '#/components/schemas/ProviderMatrixRow' }
+                  provider_defaults:
+                    type: array
+                    items: { $ref: '#/components/schemas/ProviderDefault' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+
   /v1/catalog/contracts:
     get:
       operationId: listCatalogContracts
@@ -1594,7 +1615,9 @@ components:
         name: { type: string }
         providerKind: { type: string }
         executionMode: { type: string }
+        provider: { type: string }
         modelId: { type: string }
+        lifecycle: { type: string }
         source: { type: string }
         description: { type: string }
         license: { type: string }
@@ -1605,6 +1628,82 @@ components:
         inferenceAllowed: { type: boolean }
         default: { type: boolean }
         recommended: { type: boolean }
+        experimental: { type: boolean }
+
+    ProviderDefault:
+      type: object
+      properties:
+        provider: { type: string }
+        displayName: { type: string }
+        mode: { type: string }
+        profileId: { type: string }
+        modelId: { type: string }
+        providerKind: { type: string }
+        executionMode: { type: string }
+        support:
+          type: string
+          enum: [unsupported, planned, cascaded, routed, native]
+        capabilities:
+          type: array
+          items: { type: string }
+        nativeOptions:
+          type: array
+          items: { type: string }
+        authRequirement: { type: string }
+        credentialRequired: { type: boolean }
+        credentialTarget: { type: string }
+        transport: { type: string }
+        evidenceUrl: { type: string }
+        default: { type: boolean }
+        recommended: { type: boolean }
+        experimental: { type: boolean }
+        variants:
+          type: array
+          items:
+            type: object
+            properties:
+              id: { type: string }
+              name: { type: string }
+              modelId: { type: string }
+              description: { type: string }
+              recommended: { type: boolean }
+
+    ProviderFeatureSupport:
+      type: object
+      properties:
+        feature:
+          type: string
+          enum:
+            - dictation
+            - dictation_streaming
+            - long_transcription
+            - speaker_diarization
+            - speaker_identification
+            - assist
+            - realtime_voice
+            - tts
+        support:
+          type: string
+          enum: [unsupported, planned, cascaded, routed, native]
+        mode: { type: string }
+        profileId: { type: string }
+        modelId: { type: string }
+        nativeOptions:
+          type: array
+          items: { type: string }
+        evidenceUrl: { type: string }
+
+    ProviderMatrixRow:
+      type: object
+      properties:
+        provider: { type: string }
+        displayName: { type: string }
+        profiles:
+          type: array
+          items: { $ref: '#/components/schemas/ProviderDefault' }
+        features:
+          type: array
+          items: { $ref: '#/components/schemas/ProviderFeatureSupport' }
 
     ServerSettingsSnapshot:
       type: object

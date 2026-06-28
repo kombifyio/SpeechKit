@@ -2,8 +2,8 @@
 
 // Live smoke test against the Hugging Face Inference API.
 // Gated by the `integration` build tag so it is excluded from default
-// `go test ./...` runs. Additionally skips cleanly when HF_TOKEN is not
-// injected (e.g. OSS contributors without credentials).
+// `go test ./...` runs. Locally skips cleanly when HF_TOKEN is not injected;
+// CI/required-config runs fail closed.
 //
 // Run locally with a token in env:
 //   HF_TOKEN=... go test -tags=integration -run TestHF_IntegrationUploadSmoke ./internal/stt/
@@ -15,14 +15,12 @@ import (
 	"os"
 	"testing"
 
+	"github.com/kombifyio/SpeechKit/internal/testutil"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/audio"
 )
 
 func TestHF_IntegrationUploadSmoke(t *testing.T) {
-	token := os.Getenv("HF_TOKEN")
-	if token == "" {
-		t.Skip("HF_TOKEN not set — integration test requires live Hugging Face credentials")
-	}
+	token := testutil.RequireEnvOrSkip(t, "HF_TOKEN", "Integration test requires live Hugging Face credentials.")
 
 	model := os.Getenv("HF_MODEL")
 	if model == "" {

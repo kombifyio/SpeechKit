@@ -92,12 +92,32 @@ func DefaultProviderDescriptors() []ProviderDescriptor {
 				LiveCapabilityTranscript,
 				LiveCapabilityInterruptions,
 			},
-			Models:           liveModelsForProvider("google"),
+			Models:           liveModelsForProviderProfile("google", "realtime.google.gemini-native-audio"),
 			SupportedLocales: []string{"*"},
 			NativeOptions:    nativeLiveOptions("google"),
 			AuthRequirement:  "api_key",
 			Transport:        "websocket",
 			EvidenceURL:      "https://ai.google.dev/gemini-api/docs/live-guide",
+		},
+		{
+			Provider:    "google",
+			DisplayName: "Gemini Live Translate",
+			ProfileID:   "realtime.google.gemini-live-translate",
+			Capabilities: []LiveCapabilityFlag{
+				LiveCapabilityRealtimeAudio,
+				LiveCapabilityTranslation,
+				LiveCapabilityTranscript,
+				LiveCapabilityInterruptions,
+			},
+			Models:           liveModelsForProviderProfile("google", "realtime.google.gemini-live-translate"),
+			SupportedLocales: []string{"*"},
+			NativeOptions: []provideropts.OptionID{
+				provideropts.OptionTranslation,
+				provideropts.OptionTurnDetection,
+			},
+			AuthRequirement: "api_key",
+			Transport:       "websocket",
+			EvidenceURL:     "https://ai.google.dev/gemini-api/docs/live-api/translation",
 		},
 		{
 			Provider:    "deepgram",
@@ -168,10 +188,15 @@ func DefaultProviderDescriptors() []ProviderDescriptor {
 // FindProviderDescriptor resolves provider ids, provider aliases, and profile
 // ids to the canonical public descriptor.
 func FindProviderDescriptor(providerOrProfile string) (ProviderDescriptor, bool) {
+	profileID := strings.TrimSpace(providerOrProfile)
+	for _, descriptor := range DefaultProviderDescriptors() {
+		if strings.EqualFold(descriptor.ProfileID, profileID) {
+			return descriptor, true
+		}
+	}
 	canonical := NormalizeProviderID(providerOrProfile)
 	for _, descriptor := range DefaultProviderDescriptors() {
-		if descriptor.Provider == canonical ||
-			strings.EqualFold(descriptor.ProfileID, strings.TrimSpace(providerOrProfile)) {
+		if descriptor.Provider == canonical {
 			return descriptor, true
 		}
 	}
@@ -202,7 +227,7 @@ func NormalizeProviderID(providerOrProfile string) string {
 	value := strings.ToLower(strings.TrimSpace(providerOrProfile))
 	value = strings.ReplaceAll(value, "_", "-")
 	switch value {
-	case "google", "gemini", "gemini-live", "google-live", "realtime.google.gemini-native-audio":
+	case "google", "gemini", "gemini-live", "google-live", "realtime.google.gemini-native-audio", "realtime.google.gemini-live-translate":
 		return "google"
 	case "deepgram", "deepgram-agent", "deepgram-live", "realtime.deepgram.voice-agent":
 		return "deepgram"
@@ -218,9 +243,16 @@ func NormalizeProviderID(providerOrProfile string) string {
 }
 
 func liveModelsForProvider(provider string) []LiveModelDescriptor {
+	return liveModelsForProviderProfile(provider, "")
+}
+
+func liveModelsForProviderProfile(provider, profileID string) []LiveModelDescriptor {
 	var out []LiveModelDescriptor
 	for _, row := range framework.DefaultModelRegistry() {
 		if row.Provider != provider || row.Mode != framework.ModeVoiceAgent {
+			continue
+		}
+		if profileID != "" && !strings.EqualFold(row.ProfileID, profileID) {
 			continue
 		}
 		out = append(out, LiveModelDescriptor{

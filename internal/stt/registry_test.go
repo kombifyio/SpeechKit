@@ -46,6 +46,103 @@ func TestBuildReturnsProviderPerExecutionMode(t *testing.T) {
 	}
 }
 
+func TestBuildAcceptsCanonicalProviderID(t *testing.T) {
+	name, provider, err := Build(BuildSpec{
+		Provider: "deepgram",
+		ModelID:  "nova-3",
+		APIKey:   "key",
+	})
+	if err != nil {
+		t.Fatalf("Build(provider=deepgram) returned error: %v", err)
+	}
+	if name != "deepgram" {
+		t.Fatalf("Build(provider=deepgram) name = %q, want deepgram", name)
+	}
+	if provider == nil || provider.Name() != "deepgram" {
+		t.Fatalf("Build(provider=deepgram) provider = %v", provider)
+	}
+}
+
+func TestBuildAcceptsProfileIDsAsProviderSelectors(t *testing.T) {
+	cases := []struct {
+		name        string
+		providerID  string
+		modelID     string
+		wantName    string
+		wantBaseURL string
+	}{
+		{
+			name:        "openai current stt profile",
+			providerID:  "stt.openai.gpt-4o-transcribe",
+			modelID:     "gpt-4o-mini-transcribe",
+			wantName:    "openai",
+			wantBaseURL: "https://api.openai.com",
+		},
+		{
+			name:        "groq turbo profile",
+			providerID:  "stt.groq.whisper-large-v3-turbo",
+			modelID:     "whisper-large-v3",
+			wantName:    "groq",
+			wantBaseURL: "https://api.groq.com/openai",
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			name, provider, err := Build(BuildSpec{
+				Provider: tc.providerID,
+				ModelID:  tc.modelID,
+				APIKey:   "key",
+			})
+			if err != nil {
+				t.Fatalf("Build(provider=%s) returned error: %v", tc.providerID, err)
+			}
+			if name != tc.wantName {
+				t.Fatalf("Build(provider=%s) name = %q, want %q", tc.providerID, name, tc.wantName)
+			}
+			openaiCompat, ok := provider.(*OpenAICompatibleProvider)
+			if !ok {
+				t.Fatalf("Build(provider=%s) returned %T, want *OpenAICompatibleProvider", tc.providerID, provider)
+			}
+			if openaiCompat.Name() != tc.wantName {
+				t.Fatalf("provider.Name() = %q, want %q", openaiCompat.Name(), tc.wantName)
+			}
+			if openaiCompat.Model != tc.modelID {
+				t.Fatalf("provider model = %q, want %q", openaiCompat.Model, tc.modelID)
+			}
+			if openaiCompat.BaseURL != tc.wantBaseURL {
+				t.Fatalf("provider base URL = %q, want %q", openaiCompat.BaseURL, tc.wantBaseURL)
+			}
+		})
+	}
+}
+
+func TestBuildGoogleForwardsStreamingCredentialEnvNames(t *testing.T) {
+	_, provider, err := Build(BuildSpec{
+		Provider:                        "stt.google.latest-long",
+		ModelID:                         "latest_long",
+		APIKey:                          "key",
+		GoogleStreamingCredentialsEnv:   "CUSTOM_GOOGLE_STT_JSON",
+		GoogleApplicationCredentialsEnv: "CUSTOM_GOOGLE_APPLICATION_CREDENTIALS",
+	})
+	if err != nil {
+		t.Fatalf("Build(google) returned error: %v", err)
+	}
+	google, ok := provider.(*GoogleSTTProvider)
+	if !ok {
+		t.Fatalf("Build(google) returned %T, want *GoogleSTTProvider", provider)
+	}
+	if google.Model != "latest_long" {
+		t.Fatalf("google model = %q, want latest_long", google.Model)
+	}
+	if google.STTCredentialsJSONEnv != "CUSTOM_GOOGLE_STT_JSON" {
+		t.Fatalf("google STT credential env = %q", google.STTCredentialsJSONEnv)
+	}
+	if google.ApplicationCredentialsEnv != "CUSTOM_GOOGLE_APPLICATION_CREDENTIALS" {
+		t.Fatalf("google application credentials env = %q", google.ApplicationCredentialsEnv)
+	}
+}
+
 func TestBuildLocalIsHostManaged(t *testing.T) {
 	// ExecutionModeLocal is owned by the host (whisper.cpp subprocess) and is
 	// intentionally not constructed by the registry.

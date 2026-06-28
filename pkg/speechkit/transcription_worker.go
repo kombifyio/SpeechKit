@@ -46,6 +46,12 @@ type TranscriptionObserver interface {
 	OnTranscriptCommitted(transcript Transcript, quickNote bool)
 }
 
+// TranscriptionDraftObserver is optionally implemented by observers that can
+// surface live provider draft text. Drafts are never passed to output handlers.
+type TranscriptionDraftObserver interface {
+	OnTranscriptDraft(transcript Transcript)
+}
+
 // TranscriptionJob pairs a [Submission] with its delivery target.
 type TranscriptionJob struct {
 	Submission
@@ -93,6 +99,7 @@ type TranscriptionWorkerConfig struct {
 	Interceptor TranscriptInterceptor
 	Transformer TranscriptTransformer
 	Observer    TranscriptionObserver
+	Ledger      *TranscriptSessionLedger
 	// LowConfidenceThreshold flags recognized words below this acoustic
 	// confidence (0..1) so the host can surface likely-misrecognized terms.
 	// <= 0 disables the check. Only providers that expose per-word confidence
@@ -110,6 +117,7 @@ type TranscriptionWorker struct {
 	interceptor TranscriptInterceptor
 	transformer TranscriptTransformer
 	observer    TranscriptionObserver
+	ledger      *TranscriptSessionLedger
 
 	lowConfidenceThreshold float64
 
@@ -142,6 +150,7 @@ func NewTranscriptionWorker(cfg TranscriptionWorkerConfig) (*TranscriptionWorker
 		interceptor:            cfg.Interceptor,
 		transformer:            cfg.Transformer,
 		observer:               cfg.Observer,
+		ledger:                 firstNonNilLedger(cfg.Ledger),
 		lowConfidenceThreshold: cfg.LowConfidenceThreshold,
 		jobs:                   make(chan TranscriptionJob, cfg.QueueSize),
 		done:                   make(chan struct{}),
@@ -222,6 +231,21 @@ func (w *TranscriptionWorker) handleJob(ctx context.Context, job TranscriptionJo
 	w.onState("processing", DefaultProcessingMessage)
 
 	job.Submission = inheritSegmentDefaults(Submission{}, job.Submission)
+	segmentKey := transcriptSegmentKey(job.Submission)
+	if !w.ledger.Begin(segmentKey) {
+		w.onLog("Duplicate transcript segment skipped", "warn")
+		w.onState("idle", "")
+		return
+	}
+	segmentCommitted := false
+	defer func() {
+		if segmentCommitted {
+			w.ledger.Commit(segmentKey)
+			return
+		}
+		w.ledger.Release(segmentKey)
+	}()
+
 	segments := job.transcriptionSegments()
 	if queuedAt := earliestQueuedAt(job, segments); !queuedAt.IsZero() {
 		w.onLog(
@@ -245,7 +269,63 @@ func (w *TranscriptionWorker) handleJob(ctx context.Context, job TranscriptionJo
 		w.onState("idle", "")
 		return
 	}
+	applyTranscriptSessionMetadata(&transcript, job.Submission)
 
+	segmentCommitted = w.commitFinalTranscript(ctx, job, transcript)
+}
+
+// HandleDictationStreamEvent routes provider-native dictation events through
+// the same final-commit path as batch transcription. Interim/draft events are
+// UI/status-only and must never call output or persistence.
+func (w *TranscriptionWorker) HandleDictationStreamEvent(ctx context.Context, event DictationStreamEvent, opts DictationStreamSinkOptions) error {
+	if w == nil {
+		return ErrMissingRunner
+	}
+	transcript := event.Transcript()
+	if transcript.Language == "" {
+		transcript.Language = opts.Language
+	}
+	if !event.IsFinal {
+		w.onTranscriptDraft(transcript)
+		w.onState("transcribing", transcript.Text)
+		return nil
+	}
+	submission := Submission{
+		Language:           opts.Language,
+		QuickNote:          opts.QuickNote,
+		QuickNoteID:        opts.QuickNoteID,
+		SessionID:          transcript.SessionID,
+		SegmentID:          transcript.SegmentID,
+		ProviderItemID:     transcript.ProviderItemID,
+		SegmentFinal:       true,
+		RecordingSessionID: opts.RecordingSessionID,
+		QueuedAt:           time.Now(),
+	}
+	transcript.RecordingSessionID = opts.RecordingSessionID
+	job := TranscriptionJob{
+		Submission: submission,
+		Target:     opts.Target,
+	}
+	w.onState("processing", DefaultProcessingMessage)
+	segmentKey := transcriptSegmentKey(job.Submission)
+	if !w.ledger.Begin(segmentKey) {
+		w.onLog("Duplicate transcript segment skipped", "warn")
+		w.onState("idle", "")
+		return nil
+	}
+	segmentCommitted := false
+	defer func() {
+		if segmentCommitted {
+			w.ledger.Commit(segmentKey)
+			return
+		}
+		w.ledger.Release(segmentKey)
+	}()
+	segmentCommitted = w.commitFinalTranscript(ctx, job, transcript)
+	return nil
+}
+
+func (w *TranscriptionWorker) commitFinalTranscript(ctx context.Context, job TranscriptionJob, transcript Transcript) bool {
 	// Surface likely-misrecognized words so a silently-wrong transcript is at
 	// least visible in the log/status feed. Offsets are not reliable after
 	// downstream rewriting, so we report the raw low-confidence terms by text.
@@ -262,9 +342,10 @@ func (w *TranscriptionWorker) handleJob(ctx context.Context, job TranscriptionJo
 		if transformErr != nil {
 			w.onLog(fmt.Sprintf("Transcript transform error: %v", transformErr), "error")
 			w.onState("idle", "")
-			return
+			return false
 		}
 		transcript = transformed
+		applyTranscriptSessionMetadata(&transcript, job.Submission)
 	}
 
 	if w.interceptor != nil {
@@ -272,12 +353,12 @@ func (w *TranscriptionWorker) handleJob(ctx context.Context, job TranscriptionJo
 		if interceptErr != nil {
 			w.onLog(fmt.Sprintf("Quick command error: %v", interceptErr), "error")
 			w.onState("idle", "")
-			return
+			return false
 		}
 		if handled {
 			w.onLog("Quick command handled", "success")
 			w.onState("done", "")
-			return
+			return true
 		}
 	}
 
@@ -286,7 +367,7 @@ func (w *TranscriptionWorker) handleJob(ctx context.Context, job TranscriptionJo
 		if err != nil {
 			w.onLog(fmt.Sprintf("Commit error: %v", err), "error")
 			w.onState("idle", "")
-			return
+			return false
 		}
 
 		w.logTranscriptReady(completion.Transcript, "transcript committed")
@@ -299,7 +380,7 @@ func (w *TranscriptionWorker) handleJob(ctx context.Context, job TranscriptionJo
 			} else {
 				w.onLog(fmt.Sprintf("Quick Note #%d updated", completion.QuickNoteID), "success")
 			}
-			return
+			return true
 		}
 
 		transcript = completion.Transcript
@@ -314,7 +395,7 @@ func (w *TranscriptionWorker) handleJob(ctx context.Context, job TranscriptionJo
 		if !job.QuickNote {
 			w.persistTranscriptionAsync(job.Submission, transcript) //nolint:contextcheck // fire-and-forget history write; uses its own 15s timeout context
 		}
-		return
+		return true
 	}
 	deliverStarted := time.Now()
 	if err := w.output.Deliver(ctx, transcript, job.Target); err != nil {
@@ -324,6 +405,14 @@ func (w *TranscriptionWorker) handleJob(ctx context.Context, job TranscriptionJo
 	if !job.QuickNote {
 		w.persistTranscriptionAsync(job.Submission, transcript) //nolint:contextcheck // fire-and-forget history write; uses its own 15s timeout context
 	}
+	return true
+}
+
+func firstNonNilLedger(ledger *TranscriptSessionLedger) *TranscriptSessionLedger {
+	if ledger != nil {
+		return ledger
+	}
+	return NewTranscriptSessionLedger()
 }
 
 func (w *TranscriptionWorker) transcribeJob(ctx context.Context, job TranscriptionJob, segments []Submission) (Transcript, error) {
@@ -471,6 +560,9 @@ func inheritSegmentDefaults(parent, segment Submission) Submission {
 	if segment.Language == "" {
 		segment.Language = parent.Language
 	}
+	if segment.RecordingSessionID == 0 {
+		segment.RecordingSessionID = parent.RecordingSessionID
+	}
 	if segment.DurationSecs <= 0 && len(segment.PCM) > 0 {
 		segment.DurationSecs = PCMDurationSecs(segment.PCM)
 	}
@@ -482,8 +574,9 @@ func inheritSegmentDefaults(parent, segment Submission) Submission {
 
 func combineSegmentTranscripts(parent Submission, segments []Submission, transcripts []Transcript, elapsed time.Duration) Transcript {
 	combined := Transcript{
-		Language: parent.Language,
-		Duration: elapsed,
+		Language:           parent.Language,
+		Duration:           elapsed,
+		RecordingSessionID: parent.RecordingSessionID,
 	}
 	var text strings.Builder
 	var confidenceSum float64
@@ -562,8 +655,9 @@ func (w *TranscriptionWorker) persistTranscriptionAsync(submission Submission, t
 	if w.runner == nil {
 		return
 	}
+	durationMs := int64(submission.DurationSecs * 1000)
 	if w.runner.store == nil {
-		w.runner.notifyCommit(Completion{Transcript: transcript})
+		w.runner.notifyCommit(Completion{Transcript: transcript, AudioDurationMs: durationMs})
 		return
 	}
 
@@ -574,7 +668,6 @@ func (w *TranscriptionWorker) persistTranscriptionAsync(submission Submission, t
 		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 		defer cancel()
 
-		durationMs := int64(submission.DurationSecs * 1000)
 		latencyMs := transcript.Duration.Milliseconds()
 		if err := w.runner.store.SaveTranscription(ctx, transcript.Text, transcript.Language, transcript.Provider, transcript.Model, durationMs, latencyMs, submission.WAV); err != nil {
 			w.onLog(fmt.Sprintf("Transcription history error: %v", err), "warn")
@@ -584,6 +677,7 @@ func (w *TranscriptionWorker) persistTranscriptionAsync(submission Submission, t
 		w.runner.notifyCommit(Completion{
 			Transcript:             transcript,
 			TranscriptionPersisted: true,
+			AudioDurationMs:        durationMs,
 		})
 	}()
 }
@@ -623,5 +717,14 @@ func (w *TranscriptionWorker) onLog(message, kind string) {
 func (w *TranscriptionWorker) onTranscriptCommitted(transcript Transcript, quickNote bool) {
 	if w.observer != nil {
 		w.observer.OnTranscriptCommitted(transcript, quickNote)
+	}
+}
+
+func (w *TranscriptionWorker) onTranscriptDraft(transcript Transcript) {
+	if w.observer == nil {
+		return
+	}
+	if observer, ok := w.observer.(TranscriptionDraftObserver); ok {
+		observer.OnTranscriptDraft(transcript)
 	}
 }

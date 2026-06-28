@@ -26,6 +26,9 @@ func TestNormalizeConfigAppliesAudioDefaults(t *testing.T) {
 	if cfg.Backend != defaultBackend() {
 		t.Fatalf("Backend = %q, want %q", cfg.Backend, defaultBackend())
 	}
+	if cfg.InputSource != InputSourceMicrophone {
+		t.Fatalf("InputSource = %q, want %q", cfg.InputSource, InputSourceMicrophone)
+	}
 }
 
 func TestNewCapturerWithConfigRejectsUnknownBackend(t *testing.T) {
@@ -87,7 +90,7 @@ func TestOpenRegisteredBackendReceivesNormalizedConfig(t *testing.T) {
 	if session == nil {
 		t.Fatal("Open() returned nil session")
 	}
-	if got.SampleRate != SampleRate || got.Channels != Channels || got.FrameSizeMs != 32 {
+	if got.SampleRate != SampleRate || got.Channels != Channels || got.FrameSizeMs != 32 || got.InputSource != InputSourceMicrophone {
 		t.Fatalf("normalized config = %+v", got)
 	}
 }

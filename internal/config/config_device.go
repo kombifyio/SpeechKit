@@ -25,6 +25,7 @@ type GeneralConfig struct {
 	AssistEnabled                  bool   `toml:"assist_enabled"`
 	VoiceAgentEnabled              bool   `toml:"voice_agent_enabled"`
 	AutoStartOnLaunch              bool   `toml:"auto_start_on_launch"`
+	StartAtLogin                   bool   `toml:"start_at_login"`
 	EagerWarmup                    bool   `toml:"eager_warmup"`
 	AgentHotkey                    string `toml:"agent_hotkey"`
 	AgentMode                      string `toml:"agent_mode"`  // "assist" or "voice_agent" — determines what agent_hotkey triggers
@@ -34,11 +35,13 @@ type GeneralConfig struct {
 	FastModeSilenceMs              int    `toml:"fast_mode_silence_ms"`              // silence threshold for Quick Capture auto-stop
 	DictateSilenceTimeoutSec       int    `toml:"dictate_silence_timeout_sec"`       // total silence in seconds before dictate auto-stops; 0 disables
 	DictationIntermediateSegmentMs int    `toml:"dictation_intermediate_segment_ms"` // minimum utterance size before live dictation emits a pause-bounded segment
+	DictationProcessingMode        string `toml:"dictation_processing_mode"`         // final_full | segment_batch | provider_stream | auto
 	ModelDownloadDir               string `toml:"model_download_dir"`                // Default directory for downloaded local model files
 }
 
 type AudioConfig struct {
 	Backend        string `toml:"backend"`
+	InputSource    string `toml:"input_source"` // microphone | system_loopback | mic_and_system
 	DeviceID       string `toml:"device_id"`
 	OutputDeviceID string `toml:"output_device_id"`
 	SampleRate     int    `toml:"sample_rate"`

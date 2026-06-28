@@ -122,6 +122,17 @@ func (c *Client) CatalogProfiles(ctx context.Context, mode string) ([]framework.
 	return out.Profiles, nil
 }
 
+func (c *Client) CatalogProviders(ctx context.Context) ([]framework.ProviderMatrixRow, []framework.ProviderDefault, error) {
+	var out struct {
+		ProviderMatrix   []framework.ProviderMatrixRow `json:"provider_matrix"`
+		ProviderDefaults []framework.ProviderDefault   `json:"provider_defaults"`
+	}
+	if err := c.DoJSON(ctx, http.MethodGet, "/v1/catalog/providers", nil, &out); err != nil {
+		return nil, nil, err
+	}
+	return out.ProviderMatrix, out.ProviderDefaults, nil
+}
+
 func (c *Client) CatalogContracts(ctx context.Context) ([]framework.ModeContract, error) {
 	var out struct {
 		Contracts []framework.ModeContract `json:"contracts"`

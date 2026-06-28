@@ -113,6 +113,50 @@ func TestBuildSTTRouterRegistersAssemblyAIWhenKeyIsSet(t *testing.T) {
 	}
 }
 
+func TestBuildSTTRouterUsesConfiguredOpenAIModel(t *testing.T) {
+	t.Setenv("OPENAI_API_KEY", "openai-key")
+
+	cfg := &config.Config{}
+	cfg.Providers.OpenAI.Enabled = true
+	cfg.Providers.OpenAI.APIKeyEnv = "OPENAI_API_KEY"
+	cfg.Providers.OpenAI.STTModel = "gpt-4o-transcribe"
+
+	_, providers, notes := buildSTTRouter(cfg)
+
+	provider := findProvider[stt.OpenAICompatibleProvider](providers, "stt.openai")
+	if provider == nil {
+		t.Fatalf("providers = %+v, want OpenAICompatibleProvider", providers)
+	}
+	if provider.Model != "gpt-4o-transcribe" {
+		t.Fatalf("OpenAI model = %q, want gpt-4o-transcribe", provider.Model)
+	}
+	if !hasNote(notes, "OpenAI STT registered (model=gpt-4o-transcribe") {
+		t.Fatalf("notes = %v, want OpenAI model note", notes)
+	}
+}
+
+func TestBuildSTTRouterUsesConfiguredGroqModel(t *testing.T) {
+	t.Setenv("GROQ_API_KEY", "groq-key")
+
+	cfg := &config.Config{}
+	cfg.Providers.Groq.Enabled = true
+	cfg.Providers.Groq.APIKeyEnv = "GROQ_API_KEY"
+	cfg.Providers.Groq.STTModel = "whisper-large-v3"
+
+	_, providers, notes := buildSTTRouter(cfg)
+
+	provider := findProvider[stt.OpenAICompatibleProvider](providers, "stt.groq")
+	if provider == nil {
+		t.Fatalf("providers = %+v, want OpenAICompatibleProvider", providers)
+	}
+	if provider.Model != "whisper-large-v3" {
+		t.Fatalf("Groq model = %q, want whisper-large-v3", provider.Model)
+	}
+	if !hasNote(notes, "Groq STT registered (model=whisper-large-v3") {
+		t.Fatalf("notes = %v, want Groq model note", notes)
+	}
+}
+
 func TestUpdateSTTAggregateIgnoresDisabledProviders(t *testing.T) {
 	app := &App{Health: NewHealthRegistry()}
 	app.Health.SetReadyWithOptions("stt.disabled", StatusDisabled, "configured off", sttProviderOptions(namedProvider{name: "stt.disabled"}))

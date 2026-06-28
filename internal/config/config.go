@@ -25,6 +25,15 @@ const (
 	OverlayFeedbackModeBigProductivity = "big_productivity"
 	OverlayFeedbackModeSmallFeedback   = "small_feedback"
 
+	DictationProcessingModeFinalFull      = "final_full"
+	DictationProcessingModeSegmentBatch   = "segment_batch"
+	DictationProcessingModeProviderStream = "provider_stream"
+	DictationProcessingModeAuto           = "auto"
+
+	AudioInputSourceMicrophone     = "microphone"
+	AudioInputSourceSystemLoopback = "system_loopback"
+	AudioInputSourceMicAndSystem   = "mic_and_system"
+
 	DefaultLocalLLMBaseURL                = "http://127.0.0.1:8082/v1"
 	DefaultLocalLLMModel                  = "ggml-org/gemma-4-E2B-it-GGUF:Q8_0"
 	DefaultLocalSTTModel                  = "ggml-small.bin"
@@ -53,19 +62,21 @@ const (
 	DefaultTTSPrimaryProfileID  = "tts.google.studio-o-de"
 	DefaultTTSFallbackProfileID = "tts.openai.tts-1-hd"
 
-	// defaultGeminiNativeAudioModel is the primary real-time audio-to-audio
-	// model. As of April 2026 this is Gemini 3.1 Flash Live (preview) —
-	// Google's latest native-audio model per
+	// defaultGeminiNativeAudioModel is the primary general-purpose real-time
+	// audio-to-audio dialogue model. As of June 2026 this is Gemini 3.1 Flash
+	// Live (preview) per
 	// https://ai.google.dev/gemini-api/docs/models/gemini-3.1-flash-live-preview.
+	// Google's Gemini 3.5 Live model is currently exposed as the separate
+	// live-translation profile, not as the default dialogue Voice Agent.
 	//
 	// Note: "preview" means the model ID may change; the stable 2.5 model
 	// below is kept as a same-provider fallback so deployments never break
 	// when 3.1 has upstream hiccups.
 	defaultGeminiNativeAudioModel = "gemini-3.1-flash-live-preview"
 
-	// fallbackGeminiNativeAudioModel is the last-GA Gemini Live model, used
-	// as primary fallback when gemini-3.1-flash-live-preview is unavailable
-	// or the preview endpoint returns an error.
+	// fallbackGeminiNativeAudioModel is the older same-provider Gemini Live
+	// fallback when gemini-3.1-flash-live-preview is unavailable or the
+	// preview endpoint returns an error.
 	fallbackGeminiNativeAudioModel = "gemini-2.5-flash-native-audio-preview-12-2025"
 )
 

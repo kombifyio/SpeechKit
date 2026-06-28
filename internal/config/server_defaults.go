@@ -213,24 +213,20 @@ func shouldUseCascadedVoiceAgent(cfg *Config) bool {
 	if provider != "" && provider != "gemini" {
 		return false
 	}
-	googleEnv := strings.TrimSpace(cfg.Providers.Google.APIKeyEnv)
-	if googleEnv == "" {
-		googleEnv = GoogleAIAPIKeyEnv
-	}
-	return strings.TrimSpace(os.Getenv(googleEnv)) == ""
+	return !ProviderCredentialAvailable(cfg, "google")
 }
 
 func noConfiguredTTSSecret(cfg *Config) bool {
 	if cfg == nil || !cfg.TTS.Enabled {
 		return false
 	}
-	if cfg.TTS.OpenAI.Enabled && envPresent(cfg.Providers.OpenAI.APIKeyEnv) {
+	if cfg.TTS.OpenAI.Enabled && ProviderCredentialAvailable(cfg, "openai") {
 		return false
 	}
-	if cfg.TTS.Google.Enabled && envPresent(cfg.Providers.Google.APIKeyEnv) {
+	if cfg.TTS.Google.Enabled && ProviderCredentialAvailable(cfg, "google") {
 		return false
 	}
-	if cfg.TTS.HuggingFace.Enabled && envPresent(HuggingFaceTokenEnvName(cfg)) {
+	if cfg.TTS.HuggingFace.Enabled && ProviderCredentialAvailable(cfg, "huggingface") {
 		return false
 	}
 	return true

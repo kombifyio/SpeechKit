@@ -1,3 +1,5 @@
+//go:build integration
+
 package live
 
 import (
@@ -9,16 +11,17 @@ import (
 	"time"
 
 	"github.com/kombifyio/SpeechKit/internal/config"
+	"github.com/kombifyio/SpeechKit/internal/testutil"
 )
 
 func TestGeminiLiveConnectIntegration(t *testing.T) {
 	if os.Getenv("SPEECHKIT_RUN_LIVE_GEMINI_TEST") != "1" {
-		t.Skip("set SPEECHKIT_RUN_LIVE_GEMINI_TEST=1 to run live Gemini integration")
+		testutil.SkipOrFailMissingConfig(t, "SPEECHKIT_RUN_LIVE_GEMINI_TEST=1", "Set it to run live Gemini integration.")
 	}
 
 	apiKey := config.ResolveSecret("GOOGLE_AI_API_KEY")
 	if apiKey == "" {
-		t.Skip("GOOGLE_AI_API_KEY is not available")
+		testutil.SkipOrFailMissingConfig(t, "GOOGLE_AI_API_KEY", "Live Gemini integration requires Google AI credentials.")
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
@@ -44,12 +47,12 @@ func TestGeminiLiveConnectIntegration(t *testing.T) {
 
 func TestGeminiLiveDialogIntegration(t *testing.T) {
 	if os.Getenv("SPEECHKIT_RUN_LIVE_GEMINI_TEST") != "1" {
-		t.Skip("set SPEECHKIT_RUN_LIVE_GEMINI_TEST=1 to run live Gemini integration")
+		testutil.SkipOrFailMissingConfig(t, "SPEECHKIT_RUN_LIVE_GEMINI_TEST=1", "Set it to run live Gemini integration.")
 	}
 
 	apiKey := config.ResolveSecret("GOOGLE_AI_API_KEY")
 	if apiKey == "" {
-		t.Skip("GOOGLE_AI_API_KEY is not available")
+		testutil.SkipOrFailMissingConfig(t, "GOOGLE_AI_API_KEY", "Live Gemini integration requires Google AI credentials.")
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)

@@ -21,6 +21,46 @@ func NormalizeHotkeyBehavior(value, fallback string) string {
 	}
 }
 
+func NormalizeDictationProcessingMode(value, fallback string) string {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case DictationProcessingModeFinalFull, "":
+		return DictationProcessingModeFinalFull
+	case DictationProcessingModeSegmentBatch:
+		return DictationProcessingModeSegmentBatch
+	case DictationProcessingModeProviderStream:
+		return DictationProcessingModeProviderStream
+	case DictationProcessingModeAuto:
+		return DictationProcessingModeAuto
+	default:
+		if strings.TrimSpace(fallback) == "" {
+			return DictationProcessingModeFinalFull
+		}
+		if strings.EqualFold(strings.TrimSpace(fallback), value) {
+			return DictationProcessingModeFinalFull
+		}
+		return NormalizeDictationProcessingMode(fallback, DictationProcessingModeFinalFull)
+	}
+}
+
+func NormalizeAudioInputSource(value, fallback string) string {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case AudioInputSourceMicrophone, "":
+		return AudioInputSourceMicrophone
+	case AudioInputSourceSystemLoopback, "system", "loopback":
+		return AudioInputSourceSystemLoopback
+	case AudioInputSourceMicAndSystem, "microphone_and_system", "mic+system", "microphone+system":
+		return AudioInputSourceMicAndSystem
+	default:
+		if strings.TrimSpace(fallback) == "" {
+			return AudioInputSourceMicrophone
+		}
+		if strings.EqualFold(strings.TrimSpace(fallback), value) {
+			return AudioInputSourceMicrophone
+		}
+		return NormalizeAudioInputSource(fallback, AudioInputSourceMicrophone)
+	}
+}
+
 func NormalizeVoiceAgentCloseBehavior(value, fallback string) string {
 	switch strings.ToLower(strings.TrimSpace(value)) {
 	case VoiceAgentCloseBehaviorContinue:

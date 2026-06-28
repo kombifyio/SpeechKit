@@ -33,6 +33,75 @@ func TestEveryModeExposesFourProviderKinds(t *testing.T) {
 	}
 }
 
+func TestDefaultProviderCatalogIDsAreCanonicalAndUnique(t *testing.T) {
+	seen := map[string]ProviderProfile{}
+	for _, profile := range DefaultProviderProfiles() {
+		if profile.ID == "" || profile.Name == "" {
+			t.Fatalf("profile has incomplete identity: %#v", profile)
+		}
+		if NormalizeMode(profile.Mode) == ModeNone {
+			t.Fatalf("profile %q has unsupported mode %q", profile.ID, profile.Mode)
+		}
+		if profile.ProviderKind == "" {
+			t.Fatalf("profile %q missing provider kind", profile.ID)
+		}
+		if len(profile.Capabilities) == 0 {
+			t.Fatalf("profile %q missing capabilities", profile.ID)
+		}
+		normalized := NormalizeProviderProfileID(profile.ID)
+		if normalized != profile.ID {
+			t.Fatalf("catalog profile %q should already use canonical profile ID %q", profile.ID, normalized)
+		}
+		if prior, ok := seen[normalized]; ok {
+			t.Fatalf("profiles %q and %q normalize to the same ID %q", prior.ID, profile.ID, normalized)
+		}
+		seen[normalized] = profile
+	}
+}
+
+func TestDefaultProviderCatalogCapabilitiesStayInsideModeContracts(t *testing.T) {
+	contracts := modeContractsByMode()
+	for _, profile := range DefaultProviderProfiles() {
+		mode := NormalizeMode(profile.Mode)
+		contract, ok := contracts[mode]
+		if !ok {
+			t.Fatalf("profile %q mode %q has no mode contract", profile.ID, mode)
+		}
+		for _, capability := range profile.Capabilities {
+			if capabilitiesContain(contract.Forbidden, capability) {
+				t.Fatalf("profile %q exposes forbidden capability %q for %q", profile.ID, capability, mode)
+			}
+			if !capabilitiesContain(contract.Allowed, capability) {
+				t.Fatalf("profile %q exposes capability %q outside %q contract", profile.ID, capability, mode)
+			}
+		}
+	}
+}
+
+func TestDefaultProviderCatalogHasConcreteProfileForEachModeKind(t *testing.T) {
+	profilesByModeKind := map[Mode]map[ProviderKind]int{}
+	for _, profile := range DefaultProviderProfiles() {
+		mode := NormalizeMode(profile.Mode)
+		if profilesByModeKind[mode] == nil {
+			profilesByModeKind[mode] = map[ProviderKind]int{}
+		}
+		profilesByModeKind[mode][profile.ProviderKind]++
+	}
+
+	for _, mode := range []Mode{ModeDictation, ModeAssist, ModeVoiceAgent, ModeTTS} {
+		for _, kind := range []ProviderKind{
+			ProviderKindLocalBuiltIn,
+			ProviderKindLocalProvider,
+			ProviderKindCloudProvider,
+			ProviderKindDirectProvider,
+		} {
+			if profilesByModeKind[mode][kind] == 0 {
+				t.Fatalf("mode %q has no concrete %q provider profile", mode, kind)
+			}
+		}
+	}
+}
+
 func TestTTSProfilesAdvertiseTTSCapability(t *testing.T) {
 	for _, profile := range ProfilesForMode(ModeTTS) {
 		if !profile.HasCapability(CapabilityTTS) {
@@ -54,6 +123,23 @@ func TestTTSProfilesAdvertiseTTSCapability(t *testing.T) {
 	}
 }
 
+func modeContractsByMode() map[Mode]ModeContract {
+	contracts := map[Mode]ModeContract{}
+	for _, contract := range DefaultModeContracts() {
+		contracts[NormalizeMode(contract.Mode)] = contract
+	}
+	return contracts
+}
+
+func capabilitiesContain(values []Capability, want Capability) bool {
+	for _, value := range values {
+		if value == want {
+			return true
+		}
+	}
+	return false
+}
+
 func TestNormalizeMode_TTSAliases(t *testing.T) {
 	for _, alias := range []string{"tts", "voice_output", "speak", "speech"} {
 		if got := NormalizeMode(Mode(alias)); got != ModeTTS {
@@ -72,6 +158,35 @@ func TestDictationProfilesStayTextOnly(t *testing.T) {
 		}
 		if err := ValidateProfileForMode(profile, ModeDictation); err != nil {
 			t.Fatalf("dictation profile %q invalid: %v", profile.ID, err)
+		}
+	}
+}
+
+func TestNativeDictationStreamCapabilityIsExplicitlyImplemented(t *testing.T) {
+	profiles := map[string]ProviderProfile{}
+	for _, profile := range ProfilesForMode(ModeDictation) {
+		profiles[profile.ID] = profile
+	}
+
+	if !profiles["stt.deepgram.nova-3"].HasCapability(CapabilityNativeDictationStream) {
+		t.Fatal("stt.deepgram.nova-3 must advertise native dictation streaming")
+	}
+	for _, profileID := range []string{
+		"stt.local.whispercpp",
+		"stt.routed.whisper-large-v3",
+		"stt.openrouter.whisper-1",
+		"stt.openai.gpt-4o-transcribe",
+		"stt.openai.whisper-1",
+		"stt.google.latest-long",
+		"stt.assemblyai.universal",
+		"stt.groq.whisper-large-v3-turbo",
+	} {
+		profile, ok := profiles[profileID]
+		if !ok {
+			t.Fatalf("missing dictation profile %q", profileID)
+		}
+		if profile.HasCapability(CapabilityNativeDictationStream) {
+			t.Fatalf("%s advertises native dictation streaming without an implemented adapter", profileID)
 		}
 	}
 }
@@ -111,6 +226,12 @@ func TestV47RealtimeProviderCatalogUsesCurrentModelBaselines(t *testing.T) {
 	if got := profiles["realtime.google.gemini-native-audio"].ModelID; got != ModelGemini31FlashLivePreview {
 		t.Fatalf("Gemini Live model = %q, want %q", got, ModelGemini31FlashLivePreview)
 	}
+	if got := profiles["realtime.google.gemini-live-translate"].ModelID; got != ModelGemini35LiveTranslatePreview {
+		t.Fatalf("Gemini Live Translate model = %q, want %q", got, ModelGemini35LiveTranslatePreview)
+	}
+	if !profiles["realtime.google.gemini-live-translate"].HasCapability(CapabilityTranslation) {
+		t.Fatal("Gemini Live Translate profile missing translation capability")
+	}
 	if got := profiles["realtime.deepgram.voice-agent"].ModelID; got != ModelDeepgramFluxGeneralMulti+"+aura-2" {
 		t.Fatalf("Deepgram Voice Agent model = %q, want Flux listen baseline", got)
 	}
@@ -138,6 +259,11 @@ func TestRealtimeProviderCatalogCarriesInterchangeabilityMetadata(t *testing.T) 
 			provider:     "google",
 			lifecycle:    ModelLifecyclePreview,
 			capabilities: []Capability{CapabilityNativeContextPrompt, CapabilityReasoningEffort},
+		},
+		"realtime.google.gemini-live-translate": {
+			provider:     "google",
+			lifecycle:    ModelLifecyclePreview,
+			capabilities: []Capability{CapabilityTranslation, CapabilityTranscript},
 		},
 		"realtime.deepgram.voice-agent": {
 			provider:     "deepgram",

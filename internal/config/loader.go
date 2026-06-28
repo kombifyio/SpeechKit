@@ -43,6 +43,7 @@ func Load(path string) (*Config, error) {
 			NormalizeCustomizationDefaults(cfg)
 			NormalizeHandsFreeConfig(cfg, true)
 			NormalizeOutputConfig(cfg)
+			NormalizeCaptureConfig(cfg)
 			NormalizeDeepgramSTTCodeSwitching(cfg)
 			return cfg, nil
 		}
@@ -60,6 +61,7 @@ func Load(path string) (*Config, error) {
 	if err != nil {
 		slog.Warn("malformed config.toml, using defaults", "err", err)
 		cfg := defaults()
+		NormalizeCaptureConfig(cfg)
 		NormalizeDeepgramSTTCodeSwitching(cfg)
 		return cfg, nil
 	}
@@ -108,6 +110,7 @@ func Load(path string) (*Config, error) {
 	NormalizeCustomizationDefaults(cfg)
 	NormalizeHandsFreeConfig(cfg, meta.IsDefined("hands_free"))
 	NormalizeOutputConfig(cfg)
+	NormalizeCaptureConfig(cfg)
 	NormalizeDeepgramSTTCodeSwitching(cfg)
 	// Backfill: Telemetry.UpdateCheck mirrors Update.Enabled when update is disabled.
 	// Phase 0 has only the update-check as telemetry; later phases may diverge.
@@ -157,6 +160,7 @@ func Save(path string, cfg *Config) error {
 	NormalizeCustomizationDefaults(cfg)
 	NormalizeHandsFreeConfig(cfg, true)
 	NormalizeOutputConfig(cfg)
+	NormalizeCaptureConfig(cfg)
 	NormalizeDeepgramSTTCodeSwitching(cfg)
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return fmt.Errorf("create config dir: %w", err)
@@ -173,6 +177,20 @@ func Save(path string, cfg *Config) error {
 	}
 
 	return nil
+}
+
+func NormalizeCaptureConfig(cfg *Config) {
+	if cfg == nil {
+		return
+	}
+	cfg.General.DictationProcessingMode = NormalizeDictationProcessingMode(
+		cfg.General.DictationProcessingMode,
+		DictationProcessingModeFinalFull,
+	)
+	cfg.Audio.InputSource = NormalizeAudioInputSource(
+		cfg.Audio.InputSource,
+		AudioInputSourceMicrophone,
+	)
 }
 
 func NormalizeSpeechDefaults(cfg *Config) {

@@ -628,6 +628,76 @@ func TestAdapter_ProviderMessagesRelayedToClient(t *testing.T) {
 	}
 }
 
+func TestAdapter_OutputTranscriptCarriesProviderEventFields(t *testing.T) {
+	provider := newFakeProvider()
+	defer provider.Close() //nolint:errcheck
+	resolver := &fakeResolver{}
+	env := startAdapterEnv(t, 0, provider, resolver)
+
+	sendStart(t, env.conn, StartFrame{})
+	var stateMsg StateFrame
+	readJSONFrame(t, env.conn, &stateMsg)
+
+	provider.push(&LiveMessage{
+		EventType:            EventOutputText,
+		EventTypes:           []string{EventOutputText, EventTurnEnd},
+		OutputTranscript:     "done",
+		OutputTranscriptDone: true,
+		ProviderMetadata:     map[string]any{"provider_event": "fake.output.final"},
+	})
+
+	typeName, raw := readEnvelope(t, env.conn)
+	if typeName != MsgOutputTranscript {
+		t.Fatalf("expected output_transcript, got %s body=%s", typeName, string(raw))
+	}
+	var transcript TranscriptFrame
+	if err := json.Unmarshal(raw, &transcript); err != nil {
+		t.Fatalf("unmarshal output transcript: %v", err)
+	}
+	if transcript.Text != "done" || !transcript.Done {
+		t.Fatalf("unexpected output transcript frame: %+v", transcript)
+	}
+	if transcript.EventType != EventOutputText ||
+		!eventTypesContain(transcript.EventTypes, EventOutputText) ||
+		!eventTypesContain(transcript.EventTypes, EventTurnEnd) {
+		t.Fatalf("output transcript event fields = %+v", transcript.EventFrameFields)
+	}
+	if transcript.ProviderMetadata["provider_event"] != "fake.output.final" {
+		t.Fatalf("output transcript provider metadata = %#v", transcript.ProviderMetadata)
+	}
+}
+
+func TestAdapter_InterruptedCarriesProviderEventFields(t *testing.T) {
+	provider := newFakeProvider()
+	defer provider.Close() //nolint:errcheck
+	resolver := &fakeResolver{}
+	env := startAdapterEnv(t, 0, provider, resolver)
+
+	sendStart(t, env.conn, StartFrame{})
+	var stateMsg StateFrame
+	readJSONFrame(t, env.conn, &stateMsg)
+
+	provider.push(&LiveMessage{
+		Interrupted:      true,
+		ProviderMetadata: map[string]any{"provider_event": "fake.barge_in"},
+	})
+
+	typeName, raw := readEnvelope(t, env.conn)
+	if typeName != MsgInterrupted {
+		t.Fatalf("expected interrupted, got %s body=%s", typeName, string(raw))
+	}
+	var frame InterruptedFrame
+	if err := json.Unmarshal(raw, &frame); err != nil {
+		t.Fatalf("unmarshal interrupted: %v", err)
+	}
+	if frame.EventType != EventInterrupted || !eventTypesContain(frame.EventTypes, EventInterrupted) {
+		t.Fatalf("interrupted event fields = %+v", frame.EventFrameFields)
+	}
+	if frame.ProviderMetadata["provider_event"] != "fake.barge_in" {
+		t.Fatalf("interrupted provider metadata = %#v", frame.ProviderMetadata)
+	}
+}
+
 func TestAdapter_StandaloneProviderEventRelayedToClient(t *testing.T) {
 	provider := newFakeProvider()
 	defer provider.Close() //nolint:errcheck

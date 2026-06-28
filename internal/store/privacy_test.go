@@ -45,6 +45,19 @@ func TestExportScopeReturnsAllScopedRows(t *testing.T) {
 	if _, err := s.SaveQuickNote(scopeCtx(alice), "alice note", "en", "test-provider", 500, 30, nil); err != nil {
 		t.Fatalf("SaveQuickNote: %v", err)
 	}
+	recordingID, err := s.SaveRecordingSession(scopeCtx(alice), RecordingSession{
+		Kind:           RecordingSessionKindMeeting,
+		Title:          "alice meeting",
+		Language:       "en",
+		InputSource:    "system_loopback",
+		ProcessingMode: "segment_batch",
+	})
+	if err != nil {
+		t.Fatalf("SaveRecordingSession: %v", err)
+	}
+	if _, err := s.AppendRecordingSessionSegment(scopeCtx(alice), recordingID, RecordingSessionSegment{SegmentIndex: 0, Text: "alice segment", IsFinal: true}); err != nil {
+		t.Fatalf("AppendRecordingSessionSegment: %v", err)
+	}
 
 	export, err := s.ExportScope(ctx, alice)
 	if err != nil {
@@ -61,6 +74,12 @@ func TestExportScopeReturnsAllScopedRows(t *testing.T) {
 	}
 	if export.QuickNotes[0].Text != "alice note" {
 		t.Errorf("QuickNote text: want %q, got %q", "alice note", export.QuickNotes[0].Text)
+	}
+	if len(export.RecordingSessions) != 1 || export.RecordingSessions[0].Title != "alice meeting" {
+		t.Errorf("RecordingSessions: got %+v, want alice meeting", export.RecordingSessions)
+	}
+	if len(export.RecordingSessions[0].Segments) != 1 || export.RecordingSessions[0].Segments[0].Text != "alice segment" {
+		t.Errorf("RecordingSession segments: %+v", export.RecordingSessions[0].Segments)
 	}
 }
 
@@ -166,6 +185,13 @@ func TestDeleteScopeRemovesAllScopedRowsAndOnlyThose(t *testing.T) {
 	if _, err := s.SaveQuickNote(scopeCtx(alice), "alice note", "en", "p", 500, 30, nil); err != nil {
 		t.Fatalf("SaveQuickNote alice: %v", err)
 	}
+	recordingID, err := s.SaveRecordingSession(scopeCtx(alice), RecordingSession{Kind: RecordingSessionKindMeeting, Title: "alice meeting", Language: "en"})
+	if err != nil {
+		t.Fatalf("SaveRecordingSession alice: %v", err)
+	}
+	if _, err := s.AppendRecordingSessionSegment(scopeCtx(alice), recordingID, RecordingSessionSegment{SegmentIndex: 0, Text: "alice segment", IsFinal: true}); err != nil {
+		t.Fatalf("AppendRecordingSessionSegment alice: %v", err)
+	}
 	if err := s.SaveTranscription(scopeCtx(bob), "bob-data", "en", "p", "m", 1000, 50, nil); err != nil {
 		t.Fatalf("SaveTranscription bob: %v", err)
 	}
@@ -188,6 +214,9 @@ func TestDeleteScopeRemovesAllScopedRowsAndOnlyThose(t *testing.T) {
 	}
 	if len(aliceExport.QuickNotes) != 0 {
 		t.Errorf("alice quick notes should be gone: %d remain", len(aliceExport.QuickNotes))
+	}
+	if len(aliceExport.RecordingSessions) != 0 {
+		t.Errorf("alice recording sessions should be gone: %d remain", len(aliceExport.RecordingSessions))
 	}
 
 	// Bob's data must remain.

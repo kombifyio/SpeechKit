@@ -84,6 +84,7 @@ const (
 	CapabilitySessionResume         Capability = "session_resume"
 	CapabilityNativeContextPrompt   Capability = "native_context_prompt"
 	CapabilityNativeKeyterms        Capability = "native_keyterms"
+	CapabilityNativeDictationStream Capability = "native_dictation_stream"
 	CapabilityLanguageHints         Capability = "language_hints"
 	CapabilitySpeakerStreaming      Capability = "speaker_streaming"
 	CapabilityPrivacyRedaction      Capability = "privacy_redaction"
@@ -330,7 +331,7 @@ func DefaultModeContracts() []ModeContract {
 			Intelligence: IntelligenceUser,
 			Input:        "audio",
 			Output:       "text",
-			Allowed:      []Capability{CapabilityTranscription, CapabilitySTT, CapabilityAudioInput, CapabilityDictionaryPrompt, CapabilityDictionaryNativeHints, CapabilityWordsPrompt, CapabilityWordsNativeHints, CapabilityPostSTTReplacements, CapabilitySpeakerDiarization, CapabilitySpeakerIdentification, CapabilitySpeakerAttribution},
+			Allowed:      []Capability{CapabilityTranscription, CapabilitySTT, CapabilityAudioInput, CapabilityDictionaryPrompt, CapabilityDictionaryNativeHints, CapabilityWordsPrompt, CapabilityWordsNativeHints, CapabilityPostSTTReplacements, CapabilityNativeDictationStream, CapabilitySpeakerDiarization, CapabilitySpeakerIdentification, CapabilitySpeakerAttribution},
 			Forbidden:    []Capability{CapabilityToolCalling, CapabilityLLM, CapabilityRealtimeAudio, CapabilityTTS},
 		},
 		{

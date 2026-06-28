@@ -53,15 +53,25 @@ func buildSTTRouter(cfg *config.Config) (*router.Router, []namedProvider, []stri
 
 	var providers []namedProvider
 	var notes []string
+	credential := func(target string) (string, string) {
+		key, source, err := config.ResolveProviderCredentialValue(cfg, target)
+		if err != nil {
+			source = config.ProviderCredentialEnvName(cfg, target)
+		}
+		if strings.TrimSpace(source) == "" {
+			source = config.ProviderCredentialEnvName(cfg, target)
+		}
+		return strings.TrimSpace(key), strings.TrimSpace(source)
+	}
 
 	// HuggingFace (cloud). Resolves token via standard precedence.
 	if cfg.HuggingFace.Enabled {
-		token, status, err := config.ResolveHuggingFaceToken(cfg)
-		if err == nil && token != "" {
+		token, source := credential("huggingface")
+		if token != "" {
 			p := stt.NewHuggingFaceProvider(cfg.HuggingFace.Model, token)
 			r.AddCloud(p)
 			providers = append(providers, namedProvider{name: "stt.huggingface", provider: p})
-			notes = append(notes, "HuggingFace STT registered (model="+cfg.HuggingFace.Model+", source="+string(status.ActiveSource)+")")
+			notes = append(notes, "HuggingFace STT registered (model="+cfg.HuggingFace.Model+", source="+source+")")
 		} else {
 			notes = append(notes, "HuggingFace STT disabled (token missing)")
 		}
@@ -69,43 +79,50 @@ func buildSTTRouter(cfg *config.Config) (*router.Router, []namedProvider, []stri
 
 	// OpenRouter speech-to-text (cloud gateway).
 	if cfg.Providers.OpenRouter.Enabled {
-		if key := strings.TrimSpace(config.ResolveSecret(cfg.Providers.OpenRouter.APIKeyEnv)); key != "" {
+		if key, source := credential("openrouter"); key != "" {
 			p := stt.NewOpenRouterSTTProvider(key, cfg.Providers.OpenRouter.STTModel)
 			r.AddCloud(p)
 			providers = append(providers, namedProvider{name: "stt.openrouter", provider: p})
 			notes = append(notes, "OpenRouter STT registered (model="+p.Model+")")
 		} else {
-			notes = append(notes, "OpenRouter STT disabled ("+cfg.Providers.OpenRouter.APIKeyEnv+" not set)")
+			notes = append(notes, "OpenRouter STT disabled ("+source+" not set)")
 		}
 	}
 
 	// OpenAI Whisper (cloud).
 	if cfg.Providers.OpenAI.Enabled {
-		if key := strings.TrimSpace(config.ResolveSecret(cfg.Providers.OpenAI.APIKeyEnv)); key != "" {
-			p := stt.NewOpenAISTTProvider(key)
+		if key, source := credential("openai"); key != "" {
+			model := strings.TrimSpace(cfg.Providers.OpenAI.STTModel)
+			var p *stt.OpenAICompatibleProvider
+			if model == "" {
+				p = stt.NewOpenAISTTProvider(key)
+			} else {
+				p = stt.NewOpenAICompatibleProvider("openai", "https://api.openai.com", key, model)
+			}
 			r.AddCloud(p)
 			providers = append(providers, namedProvider{name: "stt.openai", provider: p})
-			notes = append(notes, "OpenAI STT registered")
+			notes = append(notes, "OpenAI STT registered (model="+p.Model+", source="+source+")")
 		} else {
-			notes = append(notes, "OpenAI STT disabled ("+cfg.Providers.OpenAI.APIKeyEnv+" not set)")
+			notes = append(notes, "OpenAI STT disabled ("+source+" not set)")
 		}
 	}
 
 	// Groq (cloud).
 	if cfg.Providers.Groq.Enabled {
-		if key := strings.TrimSpace(config.ResolveSecret(cfg.Providers.Groq.APIKeyEnv)); key != "" {
-			p := stt.NewGroqSTTProvider(key)
+		if key, source := credential("groq"); key != "" {
+			model := firstNonEmpty(cfg.Providers.Groq.STTModel, "whisper-large-v3-turbo")
+			p := stt.NewOpenAICompatibleProvider("groq", "https://api.groq.com/openai", key, model)
 			r.AddCloud(p)
 			providers = append(providers, namedProvider{name: "stt.groq", provider: p})
-			notes = append(notes, "Groq STT registered")
+			notes = append(notes, "Groq STT registered (model="+p.Model+", source="+source+")")
 		} else {
-			notes = append(notes, "Groq STT disabled ("+cfg.Providers.Groq.APIKeyEnv+" not set)")
+			notes = append(notes, "Groq STT disabled ("+source+" not set)")
 		}
 	}
 
 	// Deepgram (direct cloud STT + diarization).
 	if cfg.Providers.Deepgram.Enabled {
-		if key, source := config.ResolveDeepgramKey(cfg); key != "" {
+		if key, source := credential("deepgram"); key != "" {
 			p := stt.NewDeepgramProvider(key, cfg.Providers.Deepgram.STTModel)
 			p.DiarizationModel = firstNonEmpty(cfg.Providers.Deepgram.DiarizationModel, "latest")
 			p.ApplyOptions(deepgramOptionsFromConfig(cfg))
@@ -119,7 +136,7 @@ func buildSTTRouter(cfg *config.Config) (*router.Router, []namedProvider, []stri
 
 	// AssemblyAI (direct cloud STT + batch diarization / speaker identification).
 	if cfg.Providers.AssemblyAI.Enabled {
-		if key, source := config.ResolveAssemblyAIKey(cfg); key != "" {
+		if key, source := credential("assemblyai"); key != "" {
 			p := stt.NewAssemblyAIProvider(key, cfg.Providers.AssemblyAI.STTModels)
 			p.StreamingModel = firstNonEmpty(cfg.Providers.AssemblyAI.StreamingModel, p.StreamingModel)
 			p.StreamingBaseURL = firstNonEmpty(cfg.Providers.AssemblyAI.StreamingBaseURL, p.StreamingBaseURL)
@@ -133,7 +150,7 @@ func buildSTTRouter(cfg *config.Config) (*router.Router, []namedProvider, []stri
 
 	// Google Cloud STT.
 	if cfg.Providers.Google.Enabled {
-		if key, source := config.ResolveGoogleSTTKey(cfg); key != "" {
+		if key, source := credential("google_stt"); key != "" {
 			p := stt.NewGoogleSTTProvider(key, cfg.Providers.Google.STTModel)
 			p.SetStreamingCredentialEnvs(config.GoogleSTTCredentialsJSONEnvName(cfg), config.GoogleApplicationCredentialsEnvName(cfg))
 			r.AddCloud(p)

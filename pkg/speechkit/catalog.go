@@ -9,7 +9,7 @@ const DefaultLocalBuiltInLLMModel = "ggml-org/gemma-4-E2B-it-GGUF:Q8_0"
 // public catalog into its internal runtime model; the catalog itself belongs to
 // the reusable framework layer.
 func DefaultProviderProfiles() []ProviderProfile {
-	return []ProviderProfile{
+	profiles := []ProviderProfile{
 		{
 			ID:            "stt.local.whispercpp",
 			Mode:          ModeDictation,
@@ -76,19 +76,44 @@ func DefaultProviderProfiles() []ProviderProfile {
 			AllowInference: true,
 		},
 		{
+			ID:            "stt.openai.gpt-4o-transcribe",
+			Mode:          ModeDictation,
+			Name:          "GPT-4o Transcribe (OpenAI)",
+			ProviderKind:  ProviderKindDirectProvider,
+			ExecutionMode: ExecutionModeOpenAI,
+			ModelID:       ModelOpenAIGPT4OTranscribe,
+			Lifecycle:     ModelLifecycleGA,
+			Source:        "OpenAI",
+			Description:   "Current OpenAI direct transcription profile for long dictation and meeting audio when an OpenAI API key is configured. Speaker diarization is kept out of this profile until the adapter maps diarized_json segments.",
+			License:       "proprietary",
+			Capabilities:  []Capability{CapabilityTranscription, CapabilitySTT, CapabilityAudioInput, CapabilityDictionaryPrompt},
+			AdapterKind:   "stt_router",
+			EvidenceURL:   "https://platform.openai.com/docs/guides/speech-to-text",
+			Variants: []ModelVariant{
+				{ID: "openai.gpt-4o-transcribe", Name: "GPT-4o Transcribe", ModelID: ModelOpenAIGPT4OTranscribe, Recommended: true},
+				{ID: "openai.gpt-4o-mini-transcribe", Name: "GPT-4o mini Transcribe", ModelID: ModelOpenAIGPT4OMiniTranscribe},
+				{ID: "openai.gpt-4o-transcribe-diarize", Name: "GPT-4o Transcribe Diarize", ModelID: ModelOpenAIGPT4OTranscribeDiarize, Description: "Catalog-only variant until SpeechKit maps diarized_json speaker segments."},
+				{ID: "openai.whisper-1", Name: "Whisper-1", ModelID: "whisper-1", Description: "Legacy fallback for older OpenAI-compatible deployments."},
+			},
+			AllowInference: true,
+			Default:        true,
+			Recommended:    true,
+		},
+		{
 			ID:             "stt.openai.whisper-1",
 			Mode:           ModeDictation,
 			Name:           "Whisper-1 (OpenAI)",
 			ProviderKind:   ProviderKindDirectProvider,
 			ExecutionMode:  ExecutionModeOpenAI,
 			ModelID:        "whisper-1",
+			Lifecycle:      ModelLifecycleLegacy,
 			Source:         "OpenAI",
-			Description:    "Simple fallback transcription path when you want to use one paid API key.",
+			Description:    "Legacy direct transcription fallback for older deployments that still pin OpenAI whisper-1.",
 			License:        "apache-2.0",
 			Capabilities:   []Capability{CapabilityTranscription, CapabilitySTT, CapabilityAudioInput, CapabilityDictionaryPrompt},
 			AdapterKind:    "stt_router",
+			EvidenceURL:    "https://platform.openai.com/docs/guides/speech-to-text",
 			AllowInference: true,
-			Recommended:    true,
 		},
 		{
 			ID:             "stt.google.latest-long",
@@ -128,7 +153,7 @@ func DefaultProviderProfiles() []ProviderProfile {
 			Source:         "Deepgram",
 			Description:    "Deepgram-hosted Nova-3 transcription. Low-latency streaming + batch STT; the recommended first-level cloud transcription path for kombify reference deployments.",
 			License:        "proprietary",
-			Capabilities:   []Capability{CapabilityTranscription, CapabilitySTT, CapabilityAudioInput, CapabilityDictionaryPrompt},
+			Capabilities:   []Capability{CapabilityTranscription, CapabilitySTT, CapabilityAudioInput, CapabilityDictionaryPrompt, CapabilityNativeDictationStream},
 			AdapterKind:    "deepgram_stt",
 			AllowInference: true,
 			Recommended:    true,
@@ -179,18 +204,24 @@ func DefaultProviderProfiles() []ProviderProfile {
 			Recommended:    true,
 		},
 		{
-			ID:             "stt.groq.whisper-large-v3-turbo",
-			Mode:           ModeDictation,
-			Name:           "Whisper Large v3 Turbo (Groq)",
-			ProviderKind:   ProviderKindDirectProvider,
-			ExecutionMode:  ExecutionModeGroq,
-			ModelID:        "whisper-large-v3-turbo",
-			Source:         "Groq",
-			Description:    "Fast direct API transcription profile for low-latency dictation fallbacks.",
-			License:        "proprietary",
-			Capabilities:   []Capability{CapabilityTranscription, CapabilitySTT, CapabilityAudioInput, CapabilityDictionaryPrompt},
-			AdapterKind:    "stt_router",
+			ID:            "stt.groq.whisper-large-v3-turbo",
+			Mode:          ModeDictation,
+			Name:          "Whisper Large v3 Turbo (Groq)",
+			ProviderKind:  ProviderKindDirectProvider,
+			ExecutionMode: ExecutionModeGroq,
+			ModelID:       ModelGroqWhisperLargeV3Turbo,
+			Source:        "Groq",
+			Description:   "Fast direct API transcription profile for low-latency dictation fallbacks.",
+			License:       "proprietary",
+			Capabilities:  []Capability{CapabilityTranscription, CapabilitySTT, CapabilityAudioInput, CapabilityDictionaryPrompt},
+			AdapterKind:   "stt_router",
+			EvidenceURL:   "https://console.groq.com/docs/speech-to-text",
+			Variants: []ModelVariant{
+				{ID: "groq.whisper-large-v3-turbo", Name: "Whisper Large v3 Turbo", ModelID: ModelGroqWhisperLargeV3Turbo, Recommended: true},
+				{ID: "groq.whisper-large-v3", Name: "Whisper Large v3", ModelID: ModelGroqWhisperLargeV3, Description: "Higher-accuracy Groq STT option for hosts that prefer quality over the turbo profile."},
+			},
 			AllowInference: true,
+			Recommended:    true,
 		},
 		{
 			ID:            "assist.builtin.gemma4-e4b",
@@ -401,6 +432,39 @@ func DefaultProviderProfiles() []ProviderProfile {
 			},
 			AllowInference: true,
 			Recommended:    true,
+		},
+		{
+			ID:            "realtime.google.gemini-live-translate",
+			Mode:          ModeVoiceAgent,
+			Name:          "Gemini 3.5 Live Translate",
+			ProviderKind:  ProviderKindDirectProvider,
+			ExecutionMode: ExecutionModeGoogle,
+			Provider:      "google",
+			ModelID:       ModelGemini35LiveTranslatePreview,
+			Lifecycle:     ModelLifecyclePreview,
+			Source:        "Google",
+			Description:   "Specialized Live API speech-to-speech translation profile. It is deliberately separate from the general Gemini Live dialogue profile so Voice Agent defaults do not point at a translation-only model.",
+			License:       "proprietary",
+			Capabilities: []Capability{
+				CapabilityAudioInput,
+				CapabilityRealtimeAudio,
+				CapabilityTranslation,
+				CapabilityTranscript,
+				CapabilityInterruptions,
+				CapabilitySessionSummary,
+			},
+			SupportedLocales: []string{"*"},
+			NativeOptions:    []string{"translation", "turn_detection"},
+			AuthRequirement:  "api_key",
+			Transport:        "websocket",
+			EvidenceURL:      "https://ai.google.dev/gemini-api/docs/live-api/translation",
+			AdapterKind:      "gemini_live_translate",
+			Variants: []ModelVariant{
+				{ID: "gemini.3.5.live-translate-preview", Name: "Gemini 3.5 Live Translate Preview", ModelID: ModelGemini35LiveTranslatePreview, Recommended: true},
+			},
+			AllowInference: true,
+			Recommended:    true,
+			Experimental:   true,
 		},
 		{
 			ID:            "realtime.deepgram.voice-agent",
@@ -718,6 +782,10 @@ func DefaultProviderProfiles() []ProviderProfile {
 			Recommended:    true,
 		},
 	}
+	for i := range profiles {
+		profiles[i] = ProviderProfileWithDefaults(profiles[i])
+	}
+	return profiles
 }
 
 func ProfilesForMode(mode Mode) []ProviderProfile {

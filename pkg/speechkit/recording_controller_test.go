@@ -1,12 +1,16 @@
 package speechkit
 
 import (
+	"context"
 	"errors"
+	"io"
 	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/speaker"
 )
 
 // fakeIdleCollector lets a test pin an idle-since timestamp so the
@@ -66,6 +70,116 @@ func (s *fakeSubmitter) Submit(job TranscriptionJob) error {
 	}
 	s.jobs = append(s.jobs, job.Clone())
 	return nil
+}
+
+type fakeDictationStreamProvider struct {
+	stream  *fakeDictationStream
+	err     error
+	opts    []DictationStreamOptions
+	formats []speaker.AudioFormat
+}
+
+func (p *fakeDictationStreamProvider) StartDictationStream(_ context.Context, opts DictationStreamOptions, format speaker.AudioFormat) (DictationStream, error) {
+	if p.err != nil {
+		return nil, p.err
+	}
+	p.opts = append(p.opts, opts)
+	p.formats = append(p.formats, format)
+	if p.stream == nil {
+		p.stream = newFakeDictationStream(DictationStreamEvent{})
+	}
+	return p.stream, nil
+}
+
+type fakeDictationStream struct {
+	finalEvent DictationStreamEvent
+	events     chan DictationStreamEvent
+	finalOnce  sync.Once
+	closeOnce  sync.Once
+	mu         sync.Mutex
+	pcm        [][]byte
+	finalized  bool
+	closed     bool
+}
+
+func newFakeDictationStream(finalEvent DictationStreamEvent) *fakeDictationStream {
+	return &fakeDictationStream{
+		finalEvent: finalEvent,
+		events:     make(chan DictationStreamEvent, 2),
+	}
+}
+
+func (s *fakeDictationStream) SendPCM(_ context.Context, pcm []byte) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.pcm = append(s.pcm, append([]byte(nil), pcm...))
+	return nil
+}
+
+func (s *fakeDictationStream) Finalize(context.Context) error {
+	s.mu.Lock()
+	s.finalized = true
+	s.mu.Unlock()
+	s.finalOnce.Do(func() {
+		if strings.TrimSpace(s.finalEvent.Text) != "" || len(s.finalEvent.Words) > 0 {
+			s.events <- s.finalEvent
+		}
+		close(s.events)
+	})
+	return nil
+}
+
+func (s *fakeDictationStream) Receive(ctx context.Context) (DictationStreamEvent, error) {
+	select {
+	case event, ok := <-s.events:
+		if !ok {
+			return DictationStreamEvent{}, io.EOF
+		}
+		return event, nil
+	case <-ctx.Done():
+		return DictationStreamEvent{}, ctx.Err()
+	}
+}
+
+func (s *fakeDictationStream) Close() error {
+	s.closeOnce.Do(func() {
+		s.mu.Lock()
+		s.closed = true
+		s.mu.Unlock()
+	})
+	return nil
+}
+
+func (s *fakeDictationStream) pcmFrames() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return len(s.pcm)
+}
+
+type fakeDictationStreamSink struct {
+	mu     sync.Mutex
+	events []DictationStreamEvent
+	opts   []DictationStreamSinkOptions
+}
+
+func (s *fakeDictationStreamSink) HandleDictationStreamEvent(_ context.Context, event DictationStreamEvent, opts DictationStreamSinkOptions) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.events = append(s.events, event)
+	s.opts = append(s.opts, opts)
+	return nil
+}
+
+func (s *fakeDictationStreamSink) finalEvents() []DictationStreamEvent {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	var out []DictationStreamEvent
+	for _, event := range s.events {
+		if event.IsFinal {
+			out = append(out, event)
+		}
+	}
+	return out
 }
 
 type fakeObserver struct {
@@ -286,6 +400,15 @@ func TestRecordingControllerStreamsReadySegmentsBeforeStop(t *testing.T) {
 	if got, want := job.QuickNoteID, int64(99); got != want {
 		t.Fatalf("streamed job quick note id = %d, want %d", got, want)
 	}
+	if job.SessionID == 0 {
+		t.Fatal("streamed job session id = 0, want non-zero")
+	}
+	if got, want := job.SegmentID, uint64(1); got != want {
+		t.Fatalf("streamed job segment id = %d, want %d", got, want)
+	}
+	if !job.SegmentFinal {
+		t.Fatal("streamed job SegmentFinal = false, want true")
+	}
 	if got, want := job.Target, any("editor"); got != want {
 		t.Fatalf("streamed job target = %v, want %v", got, want)
 	}
@@ -399,6 +522,101 @@ func TestRecordingControllerStreamSegmentsFlushesStopTail(t *testing.T) {
 	}
 	if got, want := job.DurationSecs, PCMDurationSecs(tailPCM); got != want {
 		t.Fatalf("tail duration = %v, want %v", got, want)
+	}
+	if job.SessionID == 0 || job.SegmentID != 1 || !job.SegmentFinal {
+		t.Fatalf("tail segment metadata = session:%d segment:%d final:%v, want non-zero/1/final", job.SessionID, job.SegmentID, job.SegmentFinal)
+	}
+}
+
+func TestRecordingControllerProviderStreamCommitsFinalWithoutBatchDuplicate(t *testing.T) {
+	full := []byte(strings.Repeat("z", 6400))
+	recorder := &fakeRecorder{stopPCM: full}
+	submitter := &fakeSubmitter{}
+	provider := &fakeDictationStreamProvider{
+		stream: newFakeDictationStream(DictationStreamEvent{
+			Text:      "native final",
+			IsFinal:   true,
+			Provider:  "fake-stream",
+			Model:     "stream-model",
+			SegmentID: 1,
+		}),
+	}
+	sink := &fakeDictationStreamSink{}
+	collector := &fakeCollector{readySegments: []dictationSegment{{pcm: []byte(strings.Repeat("a", 6400))}}}
+	controller := NewRecordingController(recorder, submitter, &fakeObserver{}, func() SegmentCollector {
+		return collector
+	})
+	controller.SetDictationStream(provider, sink)
+
+	if err := controller.Start(RecordingStartOptions{
+		Language:       "de",
+		Target:         "editor",
+		StreamSegments: true,
+		ProviderStream: true,
+	}); err != nil {
+		t.Fatalf("Start() error = %v", err)
+	}
+	if recorder.pcmHandler == nil {
+		t.Fatal("recorder PCM handler was not installed")
+	}
+	recorder.pcmHandler([]byte("frame"))
+	if got := len(submitter.jobs); got != 0 {
+		t.Fatalf("batch jobs before Stop = %d, want 0 while native stream is active", got)
+	}
+	if err := controller.Stop(RecordingStopOptions{Label: "Captured"}); err != nil {
+		t.Fatalf("Stop() error = %v", err)
+	}
+
+	if got := len(submitter.jobs); got != 0 {
+		t.Fatalf("batch jobs after native final = %d, want 0", got)
+	}
+	finals := sink.finalEvents()
+	if len(finals) != 1 {
+		t.Fatalf("final stream events = %d, want 1", len(finals))
+	}
+	if got, want := finals[0].SessionID, uint64(1); got != want {
+		t.Fatalf("stream final session id = %d, want %d", got, want)
+	}
+	if got := provider.stream.pcmFrames(); got == 0 {
+		t.Fatal("provider stream received no PCM frames")
+	}
+	if len(provider.opts) != 1 || !provider.opts[0].InterimResults {
+		t.Fatalf("provider opts = %#v, want interim stream opts", provider.opts)
+	}
+}
+
+func TestRecordingControllerProviderStreamStartFailureFallsBackToSegmentBatch(t *testing.T) {
+	readyPCM := []byte(strings.Repeat("a", 6400))
+	recorder := &fakeRecorder{stopPCM: []byte(strings.Repeat("z", 6400))}
+	submitter := &fakeSubmitter{}
+	provider := &fakeDictationStreamProvider{err: errors.New("dial failed")}
+	sink := &fakeDictationStreamSink{}
+	collector := &fakeCollector{readySegments: []dictationSegment{{pcm: readyPCM}}}
+	controller := NewRecordingController(recorder, submitter, &fakeObserver{}, func() SegmentCollector {
+		return collector
+	})
+	controller.SetDictationStream(provider, sink)
+
+	if err := controller.Start(RecordingStartOptions{
+		Language:       "de",
+		StreamSegments: true,
+		ProviderStream: true,
+	}); err != nil {
+		t.Fatalf("Start() error = %v", err)
+	}
+	if recorder.pcmHandler == nil {
+		t.Fatal("recorder PCM handler was not installed")
+	}
+	recorder.pcmHandler([]byte("frame"))
+
+	if len(submitter.jobs) != 1 {
+		t.Fatalf("segment-batch fallback jobs = %d, want 1", len(submitter.jobs))
+	}
+	if got, want := string(submitter.jobs[0].PCM), string(readyPCM); got != want {
+		t.Fatalf("fallback job PCM = %q, want ready segment", got)
+	}
+	if err := controller.Stop(RecordingStopOptions{Label: "Captured"}); err != nil {
+		t.Fatalf("Stop() error = %v", err)
 	}
 }
 
