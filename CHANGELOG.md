@@ -11,6 +11,21 @@ IDs, source paths, and other maintainer-only vocabulary.
 
 ## [Unreleased]
 
+## [0.48.1] - 2026-06-28
+
+Patch release for the v0.48 Windows desktop line.
+
+### Fixed
+
+- Dictation now keeps transcript content out of the overlay and only inserts the
+  final text into the active target.
+- The Voice Agent conversation surface no longer owns a Windows taskbar button,
+  so taskbar activation belongs to the dashboard window.
+- A normal tray icon click now opens the dashboard, matching the existing tray
+  menu and double-click behavior.
+- The recording-session state migration is now idempotent on existing local
+  databases, avoiding duplicate-column warnings during startup.
+
 ## [0.48.0] - 2026-06-28
 
 Long dictation and meeting capture release candidate. This release moves

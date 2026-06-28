@@ -65,7 +65,7 @@ func runSQLiteMigrations(ctx context.Context, db *sql.DB) error {
 		}},
 		sqliteSQLMigration("sqlite:017_customization", sqliteMigration017),
 		sqliteSQLMigration("sqlite:018_recording_sessions", sqliteMigration018),
-		sqliteSQLMigration("sqlite:019_recording_session_state", sqliteMigration019),
+		{version: "sqlite:019_recording_session_state", run: runSQLiteRecordingSessionStateMigration},
 	}
 	for _, migration := range migrations {
 		if err := applyMigration(ctx, db, "sqlite", migration); err != nil {
@@ -392,6 +392,31 @@ func runSQLiteStorage3ModelMigration(ctx context.Context, db *sql.DB) error {
 		return err
 	}
 	return refreshAllSQLiteStoreStats(ctx, db)
+}
+
+func runSQLiteRecordingSessionStateMigration(ctx context.Context, db *sql.DB) error {
+	columns := []struct {
+		name       string
+		definition string
+	}{
+		{name: "capture_status", definition: "TEXT NOT NULL DEFAULT 'idle'"},
+		{name: "capture_started_at", definition: "DATETIME"},
+		{name: "capture_paused_at", definition: "DATETIME"},
+		{name: "capture_stopped_at", definition: "DATETIME"},
+		{name: "summary_status", definition: "TEXT NOT NULL DEFAULT 'idle'"},
+		{name: "summary_error", definition: "TEXT NOT NULL DEFAULT ''"},
+		{name: "summary_updated_at", definition: "DATETIME"},
+	}
+	for _, column := range columns {
+		if err := ensureSQLiteColumn(ctx, db, "recording_sessions", column.name, column.definition); err != nil {
+			return err
+		}
+	}
+	_, err := db.ExecContext(ctx, `
+CREATE INDEX IF NOT EXISTS idx_recording_sessions_scope_capture
+    ON recording_sessions(scope_id, capture_status, updated_at DESC, id DESC);
+`)
+	return err
 }
 
 func runPostgresStorage3ModelMigration(ctx context.Context, db *sql.DB) error {
