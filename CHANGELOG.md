@@ -11,6 +11,53 @@ IDs, source paths, and other maintainer-only vocabulary.
 
 ## [Unreleased]
 
+## [0.48.0] - 2026-06-28
+
+Long dictation and meeting capture release candidate. This release moves
+long-form transcription from one large final upload toward stable segments,
+meeting-style system audio capture, and provider-safe live behavior.
+
+### Highlights
+
+- **Long Dictation That Keeps Up**: Longer speaking sessions now finalize in stable segments instead of waiting for one large upload.
+- **Meeting Capture Foundation**: SpeechKit can now record system audio into editable meeting transcripts and prepare them for summaries.
+- **Safer Live Transcription**: Provider streaming stays capability-gated so unsupported providers fall back to the stable segmented path.
+
+### Added
+
+- Long dictation now has an explicit segmented processing path that can commit
+  finalized sections while the recording continues, with duplicate protection
+  for repeated provider results.
+- Windows system-audio capture can now be used for meeting-style sessions with
+  ordered transcript segments, editable session details, JSON export, and
+  summary generation.
+- The dashboard now includes a Meetings surface for creating, inspecting,
+  correcting, summarizing, finishing, exporting, and deleting captured
+  sessions.
+- Local release checks now cover long dictation fixtures, system-audio
+  loopback capture, provider-backed long audio, and provider-backed meeting
+  transcription from real playback.
+
+### Changed
+
+- Dictation processing can be selected as full final upload, segmented batch,
+  provider-native streaming where supported, or automatic selection.
+- Providers without a verified native live dictation adapter now use segmented
+  batch processing instead of pretending to stream live.
+- The compact overlay now shows live draft feedback and finalized dictation
+  segments without pasting draft text into the target app.
+
+### Fixed
+
+- Long pauses during dictation no longer end the entire transcript path early
+  when segmented processing is active.
+- Repeated phrases are preserved across distinct segments while duplicate
+  provider commits for the same segment are ignored.
+- The Windows client now separates login startup from dashboard auto-open:
+  enabling Windows startup writes the per-user Run entry immediately and
+  refreshes it on every app launch, while dashboard auto-open remains a
+  separate tray/window preference.
+
 ## [0.47.0] - 2026-06-24
 
 Provider professionalization release for Go voice apps. This release makes

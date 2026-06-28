@@ -79,28 +79,28 @@ func deploymentStatusSnapshot(app *App) map[string]any {
 		},
 		"providers": map[string]any{
 			"google": map[string]any{
-				"api_key":                 envStatus(firstNonEmpty(cfg.Providers.Google.APIKeyEnv, config.GoogleAIAPIKeyEnv)),
-				"stt_key":                 envStatus(config.GoogleSTTAPIKeyEnvName(cfg)),
+				"api_key":                 providerEnvStatus(cfg, "google"),
+				"stt_key":                 providerEnvStatus(cfg, "google_stt"),
 				"stt_credentials_json":    envStatus(config.GoogleSTTCredentialsJSONEnvName(cfg)),
 				"application_credentials": envStatus(config.GoogleApplicationCredentialsEnvName(cfg)),
 			},
 			"openai": map[string]any{
-				"api_key": envStatus(firstNonEmpty(cfg.Providers.OpenAI.APIKeyEnv, "OPENAI_API_KEY")),
+				"api_key": providerEnvStatus(cfg, "openai"),
 			},
 			"groq": map[string]any{
-				"api_key": envStatus(firstNonEmpty(cfg.Providers.Groq.APIKeyEnv, "GROQ_API_KEY")),
+				"api_key": providerEnvStatus(cfg, "groq"),
 			},
 			"deepgram": map[string]any{
-				"api_key": envStatus(firstNonEmpty(cfg.Providers.Deepgram.APIKeyEnv, config.DeepgramAPIKeyEnv)),
+				"api_key": providerEnvStatus(cfg, "deepgram"),
 			},
 			"assemblyai": map[string]any{
-				"api_key": envStatus(firstNonEmpty(cfg.Providers.AssemblyAI.APIKeyEnv, config.AssemblyAIAPIKeyEnv)),
+				"api_key": providerEnvStatus(cfg, "assemblyai"),
 			},
 			"huggingface": map[string]any{
-				"token": envStatus(config.HuggingFaceTokenEnvName(cfg)),
+				"token": providerEnvStatus(cfg, "huggingface"),
 			},
 			"openrouter": map[string]any{
-				"api_key": envStatus(firstNonEmpty(cfg.Providers.OpenRouter.APIKeyEnv, "OPENROUTER_API_KEY")),
+				"api_key": providerEnvStatus(cfg, "openrouter"),
 			},
 			// cloud_keys_present is the load-bearing flag for the install-E2E
 			// local-only gate (install-e2e-linux.yml). True when ANY of the
@@ -112,6 +112,10 @@ func deploymentStatusSnapshot(app *App) map[string]any {
 		},
 		"modes": enabledModeNames(app),
 	}
+}
+
+func providerEnvStatus(cfg *config.Config, target string) map[string]any {
+	return envStatus(config.ProviderCredentialEnvName(cfg, target))
 }
 
 func envStatus(envName string) map[string]any {

@@ -34,6 +34,22 @@ func TestInferLiveEventTypesCoversCombinedProviderFrames(t *testing.T) {
 	}
 }
 
+func TestInferLiveEventTypesReturnsCopyOfExplicitEvents(t *testing.T) {
+	msg := &LiveMessage{
+		EventTypes: []LiveEventType{LiveEventInputPartial, LiveEventOutputText},
+		Text:       "ignored because provider was explicit",
+	}
+
+	got := InferLiveEventTypes(msg)
+	if len(got) != 2 || got[0] != LiveEventInputPartial || got[1] != LiveEventOutputText {
+		t.Fatalf("InferLiveEventTypes = %v, want explicit event order", got)
+	}
+	got[0] = LiveEventSessionEnd
+	if msg.EventTypes[0] != LiveEventInputPartial {
+		t.Fatalf("InferLiveEventTypes should not expose the provider-owned EventTypes slice: %v", msg.EventTypes)
+	}
+}
+
 func TestNormalizeLiveMessageEventsAddsProviderMetadata(t *testing.T) {
 	msg := normalizeLiveMessageEvents(&LiveMessage{Audio: []byte{1}}, "response.audio.delta")
 	if msg.EventType != LiveEventOutputAudio {
@@ -44,5 +60,21 @@ func TestNormalizeLiveMessageEventsAddsProviderMetadata(t *testing.T) {
 	}
 	if msg.ProviderMetadata["provider_event"] != "response.audio.delta" {
 		t.Fatalf("ProviderMetadata = %#v", msg.ProviderMetadata)
+	}
+}
+
+func TestNormalizeLiveMessageEventsPreservesProviderSuppliedMetadataEvent(t *testing.T) {
+	msg := normalizeLiveMessageEvents(&LiveMessage{
+		Text: "hello",
+		ProviderMetadata: map[string]any{
+			"provider_event": "native.output.text",
+		},
+	}, "fallback.output.text")
+
+	if msg.EventType != LiveEventOutputText {
+		t.Fatalf("EventType = %q, want output_text", msg.EventType)
+	}
+	if msg.ProviderMetadata["provider_event"] != "native.output.text" {
+		t.Fatalf("ProviderMetadata provider_event = %#v, want native event preserved", msg.ProviderMetadata["provider_event"])
 	}
 }

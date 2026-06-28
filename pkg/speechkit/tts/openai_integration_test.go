@@ -2,8 +2,8 @@
 
 // Live smoke test against the OpenAI TTS API.
 // Gated by the `integration` build tag so it is excluded from default
-// `go test ./...` runs. Additionally skips cleanly when OPENAI_API_KEY
-// is not injected (e.g. OSS contributors without credentials).
+// `go test ./...` runs. Locally skips cleanly when OPENAI_API_KEY is not
+// injected; CI/required-config runs fail closed.
 //
 // Run locally with a key in env:
 //   OPENAI_API_KEY=... go test -tags=integration -run TestOpenAI_Integration ./internal/tts/
@@ -12,15 +12,13 @@ package tts
 
 import (
 	"context"
-	"os"
 	"testing"
+
+	"github.com/kombifyio/SpeechKit/internal/testutil"
 )
 
 func TestOpenAI_IntegrationSynthesizeSmoke(t *testing.T) {
-	apiKey := os.Getenv("OPENAI_API_KEY")
-	if apiKey == "" {
-		t.Skip("OPENAI_API_KEY not set — integration test requires live OpenAI credentials")
-	}
+	apiKey := testutil.RequireEnvOrSkip(t, "OPENAI_API_KEY", "Integration test requires live OpenAI credentials.")
 
 	provider := NewOpenAI(OpenAIOpts{APIKey: apiKey})
 

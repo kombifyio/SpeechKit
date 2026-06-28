@@ -411,91 +411,10 @@ func serverSecurityHeaders(cfg *config.Config) middleware.Middleware {
 }
 
 func serveServer(ctx context.Context, cfg *config.Config, app *App) error {
-	// Order matters: Recover wraps everything (panics from any middleware
-	// or handler land in the JSON 500), Logging runs early so even auth
-	// failures get an access-log line, CORS runs before Auth so preflight
-	// OPTIONS bypasses the bearer check, Auth attaches Identity to the
-	// context, and RateLimit reads that Identity to bucket per-user
-	// rather than per-IP.
-	app.AuthState = middleware.NewAuthState(
-		cfg.Server.AuthMode,
-		cfg.Server.BearerTokenEnv,
-		cfg.Server.EdgeAuthSecretEnv,
-		cfg.Server.AdminUsername,
-		cfg.Server.AdminPasswordHash,
-	)
-	app.AuthState.SetSmokeTokenEnv(cfg.Server.SmokeTokenEnv)
-	publicPaths := serverPublicPaths()
-	publicRoutes := serverPublicRoutes()
-	bootstrapPaths := serverBootstrapPaths()
-	oidcVerifier, err := serverOIDCVerifier(cfg)
+	chain, err := serverMiddlewareChain(ctx, cfg, app)
 	if err != nil {
-		return fmt.Errorf("core.Run: %w", err)
+		return err
 	}
-	chain := middleware.Chain(
-		middleware.Recover(),
-		middleware.RequestID(),
-		middleware.Logging(),
-		middleware.CORS(cfg.Server.CORSAllowedOrigins),
-		serverSecurityHeaders(cfg),
-		middleware.Auth(middleware.AuthOptions{
-			ModeProvider:        app.AuthState.Mode,
-			BearerTokenProvider: app.AuthState.BearerToken,
-			EdgeSecretProvider:  app.AuthState.EdgeSecret,
-			AdminUsernameProvider: func() string {
-				if app.Cfg == nil || !app.Cfg.Server.AdminAuthEnabled {
-					return ""
-				}
-				return app.AuthState.AdminUsername()
-			},
-			AdminPasswordHashProvider: func() string {
-				if app.Cfg == nil || !app.Cfg.Server.AdminAuthEnabled {
-					return ""
-				}
-				return app.AuthState.AdminPasswordHash()
-			},
-			SmokeTokenProvider: app.AuthState.SmokeToken,
-			// Health endpoints are always public so external probes (Render,
-			// Kubernetes) can hit them without credentials.
-			AllowPublicPaths:      publicPaths,
-			AllowPublicRoutes:     publicRoutes,
-			HTMLUnauthorizedPaths: serverAdminUIPaths(),
-			AllowBootstrapPaths:   bootstrapPaths,
-			AllowBootstrapRoutes:  serverBootstrapAuthRoutes(),
-			BearerRole:            cfg.Server.BearerRole,
-			BootstrapAllowed: func(r *http.Request) bool {
-				return serverSettingsBootstrapWriteAllowed(app)
-			},
-			// Defence-in-depth: if the operator bound to a non-loopback
-			// address, refuse to issue the implicit anonymous Identity
-			// from AuthModeNone even if config validation was bypassed.
-			// ValidateServerProductionAuth already rejects this at
-			// startup; this is a runtime backstop for code paths that
-			// embed the server without calling that validator (tests,
-			// in-process hosts, future helper binaries).
-			RequireAuthenticatedMode: !config.IsLoopbackListenAddr(cfg.Server.ListenAddr),
-			TrustedProxyCIDRs:        cfg.Server.TrustedProxyCIDRs,
-			OIDCVerifier:             oidcVerifier,
-		}),
-		middleware.RateLimit(middleware.RateLimitOptions{ //nolint:contextcheck // RateLimit receives the server lifetime context via options.Context; contextcheck does not model contained context fields.
-			RequestsPerSecond: cfg.Server.RateLimitRPS,
-			Burst:             cfg.Server.RateLimitBurst,
-			Context:           ctx,
-			// Health probes must never be rate-limited; otherwise a busy
-			// neighbour could starve out Render's readiness checks during
-			// real outages.
-			AllowPublicPaths: publicPaths,
-			// Audit S-4: cost-weighted bucket so a few expensive calls
-			// (LLM, transcription, voice-agent session create) drain
-			// the budget appropriately. Empty map falls back to flat
-			// cost=1 — backwards compatible.
-			EndpointCosts: cfg.Server.RateLimitEndpointCosts,
-			// Audit S-5: hard daily ceiling for Plan="demo" (smoke
-			// token) surface so a casual scraper can't burn provider
-			// budget overnight. Zero disables.
-			DemoDailyQuota: cfg.Server.DemoDailyQuota,
-		}),
-	)
 
 	addr := strings.TrimSpace(cfg.Server.ListenAddr)
 	if addr == "" {
@@ -560,6 +479,94 @@ func serveServer(ctx context.Context, cfg *config.Config, app *App) error {
 		return fmt.Errorf("core.Run: serve (post-shutdown): %w", err)
 	}
 	return nil
+}
+
+func serverMiddlewareChain(ctx context.Context, cfg *config.Config, app *App) (func(http.Handler) http.Handler, error) {
+	// Order matters: Recover wraps everything (panics from any middleware
+	// or handler land in the JSON 500), Logging runs early so even auth
+	// failures get an access-log line, CORS runs before Auth so preflight
+	// OPTIONS bypasses the bearer check, Auth attaches Identity to the
+	// context, and RateLimit reads that Identity to bucket per-user
+	// rather than per-IP.
+	app.AuthState = middleware.NewAuthState(
+		cfg.Server.AuthMode,
+		cfg.Server.BearerTokenEnv,
+		cfg.Server.EdgeAuthSecretEnv,
+		cfg.Server.AdminUsername,
+		cfg.Server.AdminPasswordHash,
+	)
+	app.AuthState.SetSmokeTokenEnv(cfg.Server.SmokeTokenEnv)
+	publicPaths := serverPublicPaths()
+	publicRoutes := serverPublicRoutes()
+	bootstrapPaths := serverBootstrapPaths()
+	oidcVerifier, err := serverOIDCVerifier(cfg)
+	if err != nil {
+		return nil, fmt.Errorf("core.Run: %w", err)
+	}
+	return middleware.Chain(
+		middleware.Recover(),
+		middleware.RequestID(),
+		middleware.Logging(),
+		middleware.CORS(cfg.Server.CORSAllowedOrigins),
+		serverSecurityHeaders(cfg),
+		middleware.Auth(middleware.AuthOptions{
+			ModeProvider:        app.AuthState.Mode,
+			BearerTokenProvider: app.AuthState.BearerToken,
+			EdgeSecretProvider:  app.AuthState.EdgeSecret,
+			AdminUsernameProvider: func() string {
+				if app.Cfg == nil || !app.Cfg.Server.AdminAuthEnabled {
+					return ""
+				}
+				return app.AuthState.AdminUsername()
+			},
+			AdminPasswordHashProvider: func() string {
+				if app.Cfg == nil || !app.Cfg.Server.AdminAuthEnabled {
+					return ""
+				}
+				return app.AuthState.AdminPasswordHash()
+			},
+			SmokeTokenProvider: app.AuthState.SmokeToken,
+			// Health endpoints are always public so external probes (Render,
+			// Kubernetes) can hit them without credentials.
+			AllowPublicPaths:      publicPaths,
+			AllowPublicRoutes:     publicRoutes,
+			HTMLUnauthorizedPaths: serverAdminUIPaths(),
+			AllowBootstrapPaths:   bootstrapPaths,
+			AllowBootstrapRoutes:  serverBootstrapAuthRoutes(),
+			BearerRole:            cfg.Server.BearerRole,
+			BootstrapAllowed: func(r *http.Request) bool {
+				return serverSettingsBootstrapWriteAllowed(app)
+			},
+			// Defence-in-depth: if the operator bound to a non-loopback
+			// address, refuse to issue the implicit anonymous Identity
+			// from AuthModeNone even if config validation was bypassed.
+			// ValidateServerProductionAuth already rejects this at
+			// startup; this is a runtime backstop for code paths that
+			// embed the server without calling that validator (tests,
+			// in-process hosts, future helper binaries).
+			RequireAuthenticatedMode: !config.IsLoopbackListenAddr(cfg.Server.ListenAddr),
+			TrustedProxyCIDRs:        cfg.Server.TrustedProxyCIDRs,
+			OIDCVerifier:             oidcVerifier,
+		}),
+		middleware.RateLimit(middleware.RateLimitOptions{ //nolint:contextcheck // RateLimit receives the server lifetime context via options.Context; contextcheck does not model contained context fields.
+			RequestsPerSecond: cfg.Server.RateLimitRPS,
+			Burst:             cfg.Server.RateLimitBurst,
+			Context:           ctx,
+			// Health probes must never be rate-limited; otherwise a busy
+			// neighbour could starve out Render's readiness checks during
+			// real outages.
+			AllowPublicPaths: publicPaths,
+			// Audit S-4: cost-weighted bucket so a few expensive calls
+			// (LLM, transcription, voice-agent session create) drain
+			// the budget appropriately. Empty map falls back to flat
+			// cost=1 — backwards compatible.
+			EndpointCosts: cfg.Server.RateLimitEndpointCosts,
+			// Audit S-5: hard daily ceiling for Plan="demo" (smoke
+			// token) surface so a casual scraper can't burn provider
+			// budget overnight. Zero disables.
+			DemoDailyQuota: cfg.Server.DemoDailyQuota,
+		}),
+	), nil
 }
 
 func serverDurationDefault(seconds int, fallback time.Duration) time.Duration {

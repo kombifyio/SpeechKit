@@ -57,6 +57,7 @@ Core endpoints:
 - `GET /v1/customization/templates`
 - `GET /v1/customization/templates/{templateId}/pack`
 - `GET /v1/catalog/profiles`
+- `GET /v1/catalog/providers`
 - `GET /v1/config`
 - `POST /v1/tts/synthesize`
 
@@ -68,7 +69,7 @@ go get github.com/kombifyio/SpeechKit
 
 Use `pkg/speechkit/client` when you want to call a running SpeechKit Server.
 
-Use the v0.47 SDK packages when you embed SpeechKit directly into another Go
+Use the v0.48 SDK packages when you embed SpeechKit directly into another Go
 host. Import the smallest public component that matches the job instead of
 loading the whole framework:
 

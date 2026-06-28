@@ -12,7 +12,7 @@ const (
 func DefaultManifests() []ProviderOptionManifest {
 	return []ProviderOptionManifest{
 		deepgramSTTManifest(),
-		openAISTTManifest("openai", "OpenAI", []string{"stt.openai.whisper-1"}, "https://platform.openai.com/docs/guides/speech-to-text"),
+		openAISTTManifest("openai", "OpenAI", []string{"stt.openai.gpt-4o-transcribe", "stt.openai.whisper-1"}, "https://platform.openai.com/docs/guides/speech-to-text"),
 		openAISTTManifest("groq", "Groq", []string{"stt.groq.whisper-large-v3-turbo"}, "https://console.groq.com/docs/speech-to-text"),
 		googleSTTManifest(),
 		assemblyAISTTManifest(),
@@ -198,18 +198,18 @@ func assemblyAIVoiceAgentManifest() ProviderOptionManifest {
 }
 
 func geminiVoiceAgentManifest() ProviderOptionManifest {
-	return manifest("google", "Gemini Live", ModalityVoiceAgent, []string{"realtime.google.gemini-native-audio"}, []OptionSupport{
+	return manifest("google", "Gemini Live", ModalityVoiceAgent, []string{"realtime.google.gemini-native-audio", "realtime.google.gemini-live-translate"}, []OptionSupport{
 		derived(OptionLanguage, TypeString, "Language", "SpeechKit injects locale guidance into the system instruction.", "https://ai.google.dev/gemini-api/docs/live-guide"),
 		native(OptionVoice, TypeString, "Voice", "speechConfig.voiceConfig", "https://ai.google.dev/gemini-api/docs/live-guide"),
 		native(OptionTurnDetection, TypeBool, "Turn detection", "realtimeInputConfig.automaticActivityDetection", "https://ai.google.dev/gemini-api/docs/live-guide"),
 		native(OptionContextPrompt, TypeString, "Context prompt", "systemInstruction", "https://ai.google.dev/gemini-api/docs/live-guide"),
 		native(OptionReasoningEffort, TypeString, "Reasoning effort", "thinkingConfig.thinkingLevel", "https://ai.google.dev/gemini-api/docs/live-api/capabilities"),
 		native(OptionResume, TypeBool, "Session resume", "sessionResumption", "https://ai.google.dev/gemini-api/docs/live-api/capabilities"),
+		native(OptionTranslation, TypeBool, "Translation", "model", "https://ai.google.dev/gemini-api/docs/live-api/translation"),
 		unsupported(OptionLanguageHints, TypeStringList, "Language hints", "Gemini Live uses prompt/locale guidance rather than native language_hints."),
 		unsupported(OptionPrivacyRedaction, TypeBool, "PII redaction", "Gemini Live PII redaction is not exposed through the current SpeechKit adapter."),
 		unsupported(OptionVoiceFocus, TypeBool, "Voice focus", "Gemini Live has no AssemblyAI-style voice_focus switch."),
 		unsupported(OptionMedicalDomain, TypeBool, "Medical domain", "Gemini Live medical-domain routing is not exposed through the current SpeechKit adapter."),
-		unsupported(OptionTranslation, TypeBool, "Translation", "Realtime translation is not exposed through the current SpeechKit Gemini adapter."),
 		unsupported(OptionTranscriptionOnly, TypeBool, "Transcription only", "Gemini Live transcription-only sessions are not exposed through the current SpeechKit adapter."),
 	})
 }

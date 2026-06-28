@@ -1,4 +1,4 @@
-# SpeechKit v0.47 Agent Context
+# SpeechKit v0.48 Agent Context
 
 SpeechKit is a voice framework for products and automation hosts. It has three
 strict modes:
@@ -7,13 +7,17 @@ strict modes:
 - Assist: one-shot utility, codeword, or LLM result with optional TTS.
 - Voice Agent: realtime audio-to-audio dialogue for fast follow-ups.
 
-v0.47 is the provider-professionalization line for Go voice apps. Go hosts can
-use the public STT, TTS, Assist, and Voice Agent packages directly without
-routing through a SpeechKit Server when an embedded framework integration is
-the right shape. Native Voice Agent switching is described by public provider
-descriptors for Gemini, Deepgram, AssemblyAI, OpenAI, and cascaded fallback
-hosts. The current realtime baselines are Gemini 3.1 Flash Live, Deepgram Flux
-Voice Agent, AssemblyAI Voice Agent API, and OpenAI Realtime. AssemblyAI
+v0.48 is the long-form dictation and meeting capture line on top of the
+provider-professionalized Go framework. Go hosts can use the public STT, TTS,
+Assist, and Voice Agent packages directly without routing through a SpeechKit
+Server when an embedded framework integration is the right shape. Long
+dictation can use stable segmented processing while provider-native streaming
+stays capability-gated. Meeting sessions can capture system audio into ordered
+transcript segments for correction, summaries, and export. Native Voice Agent
+switching is described by public provider descriptors for Gemini, Deepgram,
+AssemblyAI, OpenAI, and cascaded fallback hosts. The current realtime baselines
+are Gemini 3.1 Flash Live, Deepgram Flux Voice Agent, AssemblyAI Voice Agent
+API, and OpenAI Realtime. AssemblyAI
 realtime STT defaults to `universal-3-5-pro`; `u3-rt-pro` remains a legacy
 fallback. Words teach recognition, Replacements shape final text, Native
 Templates provide curated pack defaults/profiles, provider options are
@@ -98,9 +102,10 @@ Browser WebSocket auth is subprotocol-first. Use the `ws_url` and
 server bearer token into a browser WebSocket handshake. Tickets default to 90
 seconds; expired tickets are not refreshed in v1, so create a new session.
 
-Important v0.47 surfaces:
+Important v0.48 surfaces:
 
 - `GET /v1/catalog/profiles`
+- `GET /v1/catalog/providers`
 - `GET /v1/catalog/contracts`
 - `GET /v1/catalog/readiness`
 - `GET /v1/config`
@@ -123,6 +128,9 @@ Important v0.47 surfaces:
 
 - Gemini Live: `gemini-3.1-flash-live-preview` primary, with
   `gemini-2.5-flash-native-audio-preview-12-2025` as previous-preview fallback.
+- Gemini Live Translate: `gemini-3.5-live-translate-preview` via profile
+  `realtime.google.gemini-live-translate`; keep it separate from the general
+  dialogue profile.
 - Deepgram Voice Agent: Flux listen models (`flux-general-multi` or
   `flux-general-en`) for conversational turn events; Nova-3 remains the general
   dictation/diarization baseline.
@@ -213,6 +221,7 @@ Server-Target Voice Agent sessions use the same provider vocabulary on the
 WebSocket `start.provider` field. Accepted values include `gemini`/`google`,
 `deepgram`, `assemblyai`, `openai`, and `cascaded`, plus public realtime profile
 IDs such as `realtime.google.gemini-native-audio`,
+`realtime.google.gemini-live-translate`,
 `realtime.deepgram.voice-agent`, `realtime.assemblyai.voice-agent`, and
 `realtime.openai.gpt-realtime-2`.
 Per-session switching resolves provider-specific API keys and model defaults,

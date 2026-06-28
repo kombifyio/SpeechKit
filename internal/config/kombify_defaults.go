@@ -39,7 +39,10 @@ func ApplyKombifyDeploymentDefaults(cfg *Config) []string {
 	if cfg == nil {
 		return nil
 	}
-	key, env := ResolveDeepgramKey(cfg)
+	key, env, _ := ResolveProviderCredentialValue(cfg, "deepgram")
+	if strings.TrimSpace(env) == "" {
+		env = ProviderCredentialEnvName(cfg, "deepgram")
+	}
 	if strings.TrimSpace(key) == "" {
 		return []string{"kombify defaults: DEEPGRAM_API_KEY not resolved (env=" + env + "); Deepgram-first defaults skipped"}
 	}

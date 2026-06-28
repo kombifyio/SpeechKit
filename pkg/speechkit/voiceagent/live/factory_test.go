@@ -9,14 +9,15 @@ import (
 func TestNormalizeProviderIDAliases(t *testing.T) {
 	t.Parallel()
 	cases := map[string]string{
-		"gemini":                              "google",
-		"realtime.google.gemini-native-audio": "google",
-		"deepgram-agent":                      "deepgram",
-		"realtime.deepgram.voice-agent":       "deepgram",
-		"assembly-ai":                         "assemblyai",
-		"realtime.assemblyai.voice-agent":     "assemblyai",
-		"openai-realtime":                     "openai",
-		"realtime.openai.gpt-realtime-2":      "openai",
+		"gemini":                                "google",
+		"realtime.google.gemini-native-audio":   "google",
+		"realtime.google.gemini-live-translate": "google",
+		"deepgram-agent":                        "deepgram",
+		"realtime.deepgram.voice-agent":         "deepgram",
+		"assembly-ai":                           "assemblyai",
+		"realtime.assemblyai.voice-agent":       "assemblyai",
+		"openai-realtime":                       "openai",
+		"realtime.openai.gpt-realtime-2":        "openai",
 	}
 	for in, want := range cases {
 		if got := NormalizeProviderID(in); got != want {
@@ -52,6 +53,14 @@ func TestNormalizeLiveConfigFillsProviderProfileAndModel(t *testing.T) {
 	}
 	if cfg.Provider != "google" || cfg.ProfileID != "realtime.google.gemini-native-audio" || cfg.Model != "gemini-3.1-flash-live-preview" {
 		t.Fatalf("normalized gemini config = %+v", cfg)
+	}
+
+	cfg, err = NormalizeLiveConfig(LiveConfig{ProfileID: "realtime.google.gemini-live-translate"})
+	if err != nil {
+		t.Fatalf("NormalizeLiveConfig translate profile: %v", err)
+	}
+	if cfg.Provider != "google" || cfg.ProfileID != "realtime.google.gemini-live-translate" || cfg.Model != "gemini-3.5-live-translate-preview" {
+		t.Fatalf("normalized gemini translate config = %+v", cfg)
 	}
 }
 

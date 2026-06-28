@@ -5,7 +5,6 @@ package catalog
 import (
 	"encoding/json"
 	"net/http"
-	"os"
 	"strings"
 
 	framework "github.com/kombifyio/SpeechKit/pkg/speechkit"
@@ -26,6 +25,7 @@ func New(cfg *config.Config, healthStatus func(component string) string, version
 
 func (h *Handler) Mount(mux *http.ServeMux) {
 	mux.HandleFunc("/v1/catalog/profiles", h.profiles)
+	mux.HandleFunc("/v1/catalog/providers", h.providers)
 	mux.HandleFunc("/v1/catalog/contracts", h.contracts)
 	mux.HandleFunc("/v1/catalog/readiness", h.readiness)
 	mux.HandleFunc("/v1/catalog/profiles/", h.profileReadiness)
@@ -51,6 +51,17 @@ func (h *Handler) profiles(w http.ResponseWriter, r *http.Request) {
 		profiles = framework.ProfilesForMode(mode)
 	}
 	writeOKJSON(w, map[string]any{"profiles": profiles})
+}
+
+func (h *Handler) providers(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		methodNotAllowed(w, http.MethodGet)
+		return
+	}
+	writeOKJSON(w, map[string]any{
+		"provider_matrix":   framework.DefaultProviderMatrix(),
+		"provider_defaults": framework.DefaultProviderDefaults(),
+	})
 }
 
 func (h *Handler) contracts(w http.ResponseWriter, r *http.Request) {
@@ -185,67 +196,14 @@ func (h *Handler) selectedProfiles(mode framework.Mode) map[string]bool {
 }
 
 func (h *Handler) providerEnabled(profile framework.ProviderProfile) bool {
-	if h.cfg == nil {
-		return true
-	}
-	switch profile.ExecutionMode {
-	case framework.ExecutionModeLocal:
-		switch normalizeMode(string(profile.Mode)) {
-		case framework.ModeDictation:
-			return h.cfg.Local.Enabled
-		case framework.ModeAssist:
-			return h.cfg.LocalLLM.Enabled
-		case framework.ModeVoiceAgent:
-			return h.cfg.VoiceAgent.Enabled
-		default:
-			return true
-		}
-	case framework.ExecutionModeOllama:
-		return h.cfg.Providers.Ollama.Enabled
-	case framework.ExecutionModeHFRouted:
-		return h.cfg.HuggingFace.Enabled
-	case framework.ExecutionModeOpenAI:
-		return h.cfg.Providers.OpenAI.Enabled
-	case framework.ExecutionModeGroq:
-		return h.cfg.Providers.Groq.Enabled
-	case framework.ExecutionModeGoogle:
-		return h.cfg.Providers.Google.Enabled
-	case framework.ExecutionModeDeepgram:
-		return h.cfg.Providers.Deepgram.Enabled
-	case framework.ExecutionModeAssemblyAI:
-		return h.cfg.Providers.AssemblyAI.Enabled
-	case framework.ExecutionModeOpenRouter:
-		return h.cfg.Providers.OpenRouter.Enabled
-	default:
-		return true
-	}
+	return config.ProviderEnabledForProfile(h.cfg, profile)
 }
 
 func (h *Handler) credentialsReady(profile framework.ProviderProfile) bool {
-	switch profile.ExecutionMode {
-	case framework.ExecutionModeOpenAI:
-		return envPresent(h.cfg.Providers.OpenAI.APIKeyEnv)
-	case framework.ExecutionModeGroq:
-		return envPresent(h.cfg.Providers.Groq.APIKeyEnv)
-	case framework.ExecutionModeGoogle:
-		if profile.Mode == framework.ModeDictation || strings.HasPrefix(profile.ID, "stt.google.") {
-			_, source := config.ResolveGoogleSTTKey(h.cfg)
-			return source != ""
-		}
-		return envPresent(h.cfg.Providers.Google.APIKeyEnv)
-	case framework.ExecutionModeDeepgram:
-		_, source := config.ResolveDeepgramKey(h.cfg)
-		return envPresent(source)
-	case framework.ExecutionModeAssemblyAI:
-		_, source := config.ResolveAssemblyAIKey(h.cfg)
-		return envPresent(source)
-	case framework.ExecutionModeHFRouted:
-		return envPresent(config.HuggingFaceTokenEnvName(h.cfg))
-	case framework.ExecutionModeOpenRouter:
-		return envPresent(h.cfg.Providers.OpenRouter.APIKeyEnv)
-	default:
+	if h.cfg == nil {
 		return true
 	}
+	return config.ProviderCredentialAvailableForProfile(h.cfg, profile)
 }
 
 func (h *Handler) runtimeReady(profile framework.ProviderProfile) bool {
@@ -277,10 +235,6 @@ func (h *Handler) statusOK(component string) bool {
 		return false
 	}
 	return h.healthStatus(component) == "ok"
-}
-
-func envPresent(name string) bool {
-	return strings.TrimSpace(os.Getenv(strings.TrimSpace(name))) != ""
 }
 
 func missing(modeEnabled, providerEnabled, credentialsReady, runtimeReady bool) []string {

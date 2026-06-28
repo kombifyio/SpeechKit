@@ -1,10 +1,16 @@
 package speechkit
 
 import (
+	"context"
 	"errors"
 	"fmt"
+	"io"
+	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
+
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/speaker"
 )
 
 // IdleObserver is implemented by SegmentCollectors that want to drive
@@ -59,16 +65,30 @@ type RecordingObserver interface {
 }
 
 type RecordingStartOptions struct {
+	// Context scopes provider-native streaming sessions. When nil,
+	// context.Background is used.
+	Context     context.Context
 	Label       string
 	Target      any
 	Language    string
 	QuickNote   bool
 	QuickNoteID int64
+	// RecordingSessionID links final transcript commits to a persisted
+	// long-running dictation or meeting session owned by the host.
+	RecordingSessionID int64
 	// StreamSegments enables live-ish dictation for this recording session.
 	// Completed pause-bounded segments are queued before Stop(); Stop() then
 	// flushes only pending/remaining tail segments. Leave false for Assist and
 	// Voice Agent fallback capture, where a single full turn is the safer unit.
 	StreamSegments bool
+	// ProviderStream enables provider-native realtime dictation when the host
+	// configured a DictationStreamProvider and DictationStreamSink. If stream
+	// startup fails, the controller keeps using StreamSegments/full-capture
+	// fallback behavior.
+	ProviderStream bool
+	// DictationStreamOptions are passed to the native provider stream. SessionID
+	// and Language are filled from the active recording when left empty.
+	DictationStreamOptions DictationStreamOptions
 	// IdleTimeout, when greater than zero AND the underlying collector
 	// implements [IdleObserver], arms a watcher that calls
 	// OnIdleTimeoutCallback once the user has been silent for this long.
@@ -104,6 +124,8 @@ type RecordingController struct {
 	submitter        JobSubmitter
 	observer         RecordingObserver
 	segmenterFactory SegmentCollectorFactory
+	streamProvider   DictationStreamProvider
+	streamSink       DictationStreamSink
 	recordingMessage string
 	minPCMBytes      int
 	// fragmentSegments, when true, submits the VAD-derived audio segments as the
@@ -123,17 +145,38 @@ type RecordingController struct {
 	idleWatchInterval time.Duration
 	now               func() time.Time
 
-	mu            sync.Mutex
-	recording     bool
-	stopping      bool
-	sessionID     uint64
-	startedAt     time.Time
-	current       RecordingStartOptions
-	collector     SegmentCollector
-	idleWatcherCh chan struct{}
-	streamedCount int
-	streamPending []AudioSegment
-	streamFlush   bool
+	mu               sync.Mutex
+	recording        bool
+	stopping         bool
+	sessionID        uint64
+	startedAt        time.Time
+	current          RecordingStartOptions
+	collector        SegmentCollector
+	idleWatcherCh    chan struct{}
+	streamedCount    int
+	streamSegmentSeq uint64
+	streamPending    []AudioSegment
+	streamFlush      bool
+	nativeStream     *dictationStreamRuntime
+}
+
+type dictationStreamRuntime struct {
+	sessionID uint64
+	stream    DictationStream
+	sink      DictationStreamSink
+	sinkOpts  DictationStreamSinkOptions
+	ctx       context.Context
+	cancel    context.CancelFunc
+
+	inputMu sync.Mutex
+	closed  bool
+	pcm     chan []byte
+
+	senderDone   chan struct{}
+	receiverDone chan struct{}
+	eventSeq     atomic.Uint64
+	finalCount   atomic.Int64
+	droppedPCM   atomic.Int64
 }
 
 func NewRecordingController(recorder AudioRecorder, submitter JobSubmitter, observer RecordingObserver, segmenterFactory SegmentCollectorFactory) *RecordingController {
@@ -172,6 +215,18 @@ func (c *RecordingController) SetStreamSegments(enabled bool) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.streamSegments = enabled
+}
+
+// SetDictationStream configures the optional provider-native live dictation
+// path. Hosts can leave this unset to keep the public full-capture default.
+func (c *RecordingController) SetDictationStream(provider DictationStreamProvider, sink DictationStreamSink) {
+	if c == nil {
+		return
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.streamProvider = provider
+	c.streamSink = sink
 }
 
 // SetIdleWatchInterval overrides the polling interval used by the
@@ -213,6 +268,7 @@ func (c *RecordingController) Start(opts RecordingStartOptions) error {
 	c.current = opts
 	c.collector = nil
 	c.streamedCount = 0
+	c.streamSegmentSeq = 0
 	c.streamPending = nil
 	c.streamFlush = false
 	c.sessionID++
@@ -224,7 +280,28 @@ func (c *RecordingController) Start(opts RecordingStartOptions) error {
 	}
 	c.mu.Unlock()
 
-	if collector != nil {
+	if opts.ProviderStream {
+		nativeStream, err := c.startNativeDictationStream(sessionID, opts)
+		if err != nil {
+			c.onLog(fmt.Sprintf("Provider-stream dictation unavailable; falling back to segment-batch: %v", err), "warn")
+		} else {
+			c.mu.Lock()
+			if c.sessionID == sessionID && c.recording {
+				opts.StreamSegments = false
+				c.current.StreamSegments = false
+				c.nativeStream = nativeStream
+			} else {
+				nativeStream.cancel()
+				_ = nativeStream.stream.Close()
+			}
+			c.mu.Unlock()
+		}
+	}
+
+	c.mu.Lock()
+	hasNativeStream := c.sessionID == sessionID && c.nativeStream != nil
+	c.mu.Unlock()
+	if collector != nil || hasNativeStream {
 		c.recorder.SetPCMHandler(func(pcm []byte) {
 			c.mu.Lock()
 			if c.sessionID != sessionID || !c.recording {
@@ -233,7 +310,11 @@ func (c *RecordingController) Start(opts RecordingStartOptions) error {
 			}
 			activeCollector := c.collector
 			current := c.current
+			nativeStream := c.nativeStream
 			c.mu.Unlock()
+			if nativeStream != nil {
+				nativeStream.enqueuePCM(pcm, c)
+			}
 			if activeCollector == nil {
 				return
 			}
@@ -257,12 +338,17 @@ func (c *RecordingController) Start(opts RecordingStartOptions) error {
 
 	if err := c.recorder.Start(); err != nil {
 		c.mu.Lock()
+		nativeStream := c.nativeStream
 		if c.sessionID == sessionID {
 			c.recording = false
 			c.collector = nil
 			c.startedAt = time.Time{}
+			c.nativeStream = nil
 		}
 		c.mu.Unlock()
+		if nativeStream != nil {
+			c.stopNativeDictationStream(nativeStream)
+		}
 		c.recorder.SetPCMHandler(nil)
 		c.onLog(fmt.Sprintf("Capture error: %v", err), "error")
 		c.onState("idle", "")
@@ -380,8 +466,10 @@ func (c *RecordingController) Stop(opts RecordingStopOptions) error {
 	startedAt := c.startedAt
 	streamSegments := current.StreamSegments
 	streamedCount := c.streamedCount
+	nativeStream := c.nativeStream
 	c.collector = nil
 	c.startedAt = time.Time{}
+	c.nativeStream = nil
 	c.mu.Unlock()
 
 	c.recorder.SetPCMHandler(nil)
@@ -394,12 +482,24 @@ func (c *RecordingController) Stop(opts RecordingStopOptions) error {
 	c.onLog(fmt.Sprintf("%s: %.1fs audio", opts.Label, dur), "info")
 	wallDuration := c.clockNow().Sub(startedAt)
 	if isStaleCapturedAudio(dur, wallDuration) {
+		if nativeStream != nil {
+			if finals := c.stopNativeDictationStream(nativeStream); finals > 0 {
+				c.onLog(fmt.Sprintf("Provider-stream dictation finalized with %d committed segment(s)", finals), "info")
+				return nil
+			}
+		}
 		c.onLog(fmt.Sprintf("Captured audio discarded: %.1fs audio exceeds the %.1fs wall-clock recording window; stale microphone buffer suspected", dur, wallDuration.Seconds()), "warn")
 		c.onState("idle", "")
 		return nil
 	}
 
 	if len(pcm) < c.minPCMBytes {
+		if nativeStream != nil {
+			if finals := c.stopNativeDictationStream(nativeStream); finals > 0 {
+				c.onLog(fmt.Sprintf("Provider-stream dictation finalized with %d committed segment(s)", finals), "info")
+				return nil
+			}
+		}
 		c.onLog("Too short, skipped", "error")
 		c.onState("idle", "")
 		c.collector = nil
@@ -424,6 +524,16 @@ func (c *RecordingController) Stop(opts RecordingStopOptions) error {
 		segTotalSecs += PCMDurationSecs(segment.PCM)
 	}
 	c.onLog(fmt.Sprintf("dictation audio: full=%.1fs vs %d VAD-segments totalling %.1fs (delta=%.1fs)", dur, len(segments), segTotalSecs, dur-segTotalSecs), "info")
+
+	if nativeStream != nil {
+		finals := c.stopNativeDictationStream(nativeStream)
+		if finals > 0 {
+			c.onLog(fmt.Sprintf("Provider-stream dictation finalized with %d committed segment(s)", finals), "info")
+			return nil
+		}
+		c.onLog("Provider-stream dictation produced no final transcript; falling back to full capture", "warn")
+		streamSegments = false
+	}
 
 	if streamSegments {
 		c.queueStreamSegments(sessionID, segments)
@@ -465,23 +575,25 @@ func (c *RecordingController) Stop(opts RecordingStopOptions) error {
 				prefix = "\n\n"
 			}
 			jobSegments = append(jobSegments, Submission{
-				PCM:          segment.PCM,
-				WAV:          PCMToWAV(segment.PCM),
-				DurationSecs: PCMDurationSecs(segment.PCM),
-				Language:     current.Language,
-				Prefix:       prefix,
+				PCM:                segment.PCM,
+				WAV:                PCMToWAV(segment.PCM),
+				DurationSecs:       PCMDurationSecs(segment.PCM),
+				Language:           current.Language,
+				Prefix:             prefix,
+				RecordingSessionID: current.RecordingSessionID,
 			})
 		}
 	}
 
 	if err := c.submitter.Submit(TranscriptionJob{
 		Submission: Submission{
-			PCM:          pcm,
-			WAV:          PCMToWAV(pcm),
-			DurationSecs: dur,
-			Language:     current.Language,
-			QuickNote:    current.QuickNote,
-			QuickNoteID:  current.QuickNoteID,
+			PCM:                pcm,
+			WAV:                PCMToWAV(pcm),
+			DurationSecs:       dur,
+			Language:           current.Language,
+			QuickNote:          current.QuickNote,
+			QuickNoteID:        current.QuickNoteID,
+			RecordingSessionID: current.RecordingSessionID,
 		},
 		Segments: jobSegments,
 		Target:   current.Target,
@@ -566,6 +678,20 @@ func (c *RecordingController) flushPendingStreamSegments(sessionID uint64, curre
 		}
 
 		submission := submissionFromAudioSegment(segment, current)
+		sessionActive := true
+		c.mu.Lock()
+		if c.sessionID == sessionID {
+			c.streamSegmentSeq++
+			submission.SessionID = sessionID
+			submission.SegmentID = c.streamSegmentSeq
+			submission.SegmentFinal = true
+		} else {
+			sessionActive = false
+		}
+		c.mu.Unlock()
+		if !sessionActive {
+			return submitted, nil
+		}
 		if err := c.submitter.Submit(TranscriptionJob{
 			Submission: submission,
 			Target:     current.Target,
@@ -610,12 +736,13 @@ func submissionFromAudioSegment(segment AudioSegment, current RecordingStartOpti
 		durationSecs = PCMDurationSecs(segment.PCM)
 	}
 	return Submission{
-		PCM:          append([]byte(nil), segment.PCM...),
-		DurationSecs: durationSecs,
-		Language:     current.Language,
-		Prefix:       prefix,
-		QuickNote:    current.QuickNote,
-		QuickNoteID:  current.QuickNoteID,
+		PCM:                append([]byte(nil), segment.PCM...),
+		DurationSecs:       durationSecs,
+		Language:           current.Language,
+		Prefix:             prefix,
+		QuickNote:          current.QuickNote,
+		QuickNoteID:        current.QuickNoteID,
+		RecordingSessionID: current.RecordingSessionID,
 	}
 }
 
@@ -656,7 +783,12 @@ func (c *RecordingController) Cancel(opts RecordingCancelOptions) error {
 	c.startedAt = time.Time{}
 	c.streamPending = nil
 	c.streamFlush = false
+	nativeStream := c.nativeStream
+	c.nativeStream = nil
 	c.mu.Unlock()
+	if nativeStream != nil {
+		c.stopNativeDictationStream(nativeStream)
+	}
 
 	c.recorder.SetPCMHandler(nil)
 	_, stopErr := c.recorder.Stop()
@@ -706,5 +838,190 @@ func (c *RecordingController) onState(status, text string) {
 func (c *RecordingController) onLog(message, kind string) {
 	if c.observer != nil {
 		c.observer.OnLog(message, kind)
+	}
+}
+
+func (c *RecordingController) startNativeDictationStream(sessionID uint64, opts RecordingStartOptions) (*dictationStreamRuntime, error) {
+	c.mu.Lock()
+	provider := c.streamProvider
+	sink := c.streamSink
+	c.mu.Unlock()
+	if provider == nil {
+		return nil, fmt.Errorf("provider not configured")
+	}
+	if sink == nil {
+		return nil, fmt.Errorf("event sink not configured")
+	}
+	parent := opts.Context
+	if parent == nil {
+		parent = context.Background()
+	}
+	streamCtx, cancel := context.WithCancel(parent)
+	streamOpts := opts.DictationStreamOptions
+	streamOpts.SessionID = sessionID
+	if streamOpts.Language == "" {
+		streamOpts.Language = opts.Language
+	}
+	streamOpts.InterimResults = true
+	stream, err := provider.StartDictationStream(streamCtx, streamOpts, speaker.AudioFormat{
+		Encoding:     speaker.AudioEncodingPCM16,
+		SampleRateHz: 16000,
+		Channels:     1,
+	})
+	if err != nil {
+		cancel()
+		return nil, err
+	}
+	runtime := &dictationStreamRuntime{
+		sessionID: sessionID,
+		stream:    stream,
+		sink:      sink,
+		sinkOpts: DictationStreamSinkOptions{
+			Target:             opts.Target,
+			QuickNote:          opts.QuickNote,
+			QuickNoteID:        opts.QuickNoteID,
+			Language:           opts.Language,
+			RecordingSessionID: opts.RecordingSessionID,
+		},
+		ctx:          streamCtx,
+		cancel:       cancel,
+		pcm:          make(chan []byte, 64),
+		senderDone:   make(chan struct{}),
+		receiverDone: make(chan struct{}),
+	}
+	go runtime.sendLoop(c)
+	go runtime.receiveLoop(c)
+	c.onLog("Provider-stream dictation started", "info")
+	return runtime, nil
+}
+
+func (r *dictationStreamRuntime) enqueuePCM(pcm []byte, controller *RecordingController) {
+	if r == nil || len(pcm) == 0 {
+		return
+	}
+	frame := append([]byte(nil), pcm...)
+	r.inputMu.Lock()
+	defer r.inputMu.Unlock()
+	if r.closed {
+		return
+	}
+	select {
+	case r.pcm <- frame:
+	default:
+		dropped := r.droppedPCM.Add(1)
+		if dropped == 1 || dropped%100 == 0 {
+			controller.onLog(fmt.Sprintf("Provider-stream PCM queue full; dropped %d frame(s)", dropped), "warn")
+		}
+	}
+}
+
+func (r *dictationStreamRuntime) closeInput() {
+	if r == nil {
+		return
+	}
+	r.inputMu.Lock()
+	defer r.inputMu.Unlock()
+	if r.closed {
+		return
+	}
+	r.closed = true
+	close(r.pcm)
+}
+
+func (r *dictationStreamRuntime) sendLoop(controller *RecordingController) {
+	defer close(r.senderDone)
+	for pcm := range r.pcm {
+		if err := r.stream.SendPCM(r.ctx, pcm); err != nil {
+			if r.ctx.Err() == nil {
+				controller.onLog(fmt.Sprintf("Provider-stream send error: %v", err), "error")
+			}
+			r.cancel()
+			return
+		}
+	}
+}
+
+func (r *dictationStreamRuntime) receiveLoop(controller *RecordingController) {
+	defer close(r.receiverDone)
+	for {
+		event, err := r.stream.Receive(r.ctx)
+		if err != nil {
+			switch {
+			case r.ctx.Err() != nil, errors.Is(err, context.Canceled), errors.Is(err, io.EOF):
+				return
+			default:
+				controller.onLog(fmt.Sprintf("Provider-stream receive error: %v", err), "error")
+				r.cancel()
+				return
+			}
+		}
+		if event.SessionID == 0 {
+			event.SessionID = r.sessionID
+		}
+		if event.SegmentID == 0 {
+			if event.Sequence > 0 {
+				event.SegmentID = uint64(event.Sequence)
+			} else {
+				event.SegmentID = r.eventSeq.Add(1)
+			}
+		}
+		if event.ProviderItemID == "" && event.IsFinal {
+			event.ProviderItemID = fmt.Sprintf("stream:%d:%d", event.SessionID, event.SegmentID)
+		}
+		if strings.TrimSpace(event.Text) == "" && len(event.Words) == 0 {
+			continue
+		}
+		if err := r.sink.HandleDictationStreamEvent(r.ctx, event, r.sinkOpts); err != nil {
+			controller.onLog(fmt.Sprintf("Provider-stream transcript error: %v", err), "error")
+			continue
+		}
+		if event.IsFinal {
+			r.finalCount.Add(1)
+		}
+	}
+}
+
+func (c *RecordingController) stopNativeDictationStream(runtime *dictationStreamRuntime) int64 {
+	if runtime == nil {
+		return 0
+	}
+	runtime.closeInput()
+	if !waitForChannel(runtime.senderDone, 3*time.Second) {
+		c.onLog("Provider-stream sender did not drain before finalize; cancelling stream", "warn")
+		runtime.cancel()
+	}
+	finalizeCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	if err := runtime.stream.Finalize(finalizeCtx); err != nil && finalizeCtx.Err() == nil {
+		c.onLog(fmt.Sprintf("Provider-stream finalize warning: %v", err), "warn")
+	}
+	cancel()
+	if !waitForChannel(runtime.receiverDone, 5*time.Second) {
+		c.onLog("Provider-stream receiver did not finish after finalize; cancelling stream", "warn")
+		runtime.cancel()
+	}
+	runtime.cancel()
+	_ = runtime.stream.Close()
+	return runtime.finalCount.Load()
+}
+
+func waitForChannel(done <-chan struct{}, timeout time.Duration) bool {
+	if done == nil {
+		return true
+	}
+	if timeout <= 0 {
+		select {
+		case <-done:
+			return true
+		default:
+			return false
+		}
+	}
+	timer := time.NewTimer(timeout)
+	defer timer.Stop()
+	select {
+	case <-done:
+		return true
+	case <-timer.C:
+		return false
 	}
 }

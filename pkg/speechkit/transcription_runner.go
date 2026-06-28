@@ -47,6 +47,16 @@ type Transcript struct {
 	Provider   string
 	Model      string
 	Confidence float64
+	// Session metadata is set for progressive dictation/meeting pipelines.
+	// Draft transcripts may be replaced by later revisions; only final
+	// segment IDs are committed by the worker ledger.
+	SessionID      uint64
+	SegmentID      uint64
+	ProviderItemID string
+	SegmentFinal   bool
+	// RecordingSessionID links this transcript to a persisted long-running
+	// dictation or meeting session in the host store.
+	RecordingSessionID int64
 	// Words carries per-word acoustic confidence when available (Deepgram,
 	// AssemblyAI). Used to surface likely-misrecognized terms; nil otherwise.
 	Words                []WordConfidence
@@ -118,6 +128,16 @@ type Submission struct {
 	Prefix       string
 	QuickNote    bool
 	QuickNoteID  int64
+	SessionID    uint64
+	SegmentID    uint64
+	// RecordingSessionID is copied into the final Transcript and Completion so
+	// host observers can attach committed text to a long-running session after
+	// persistence/output succeeds.
+	RecordingSessionID int64
+	// ProviderItemID carries provider-native turn/item IDs for realtime
+	// streams. Segment-batch jobs leave it empty and rely on SessionID+SegmentID.
+	ProviderItemID string
+	SegmentFinal   bool
 	// QueuedAt is set by TranscriptionWorker.Submit when the segment enters
 	// the worker queue. Hosts can prefill it when replaying externally queued
 	// work, but ordinary callers should leave it zero.
@@ -131,6 +151,7 @@ type Completion struct {
 	QuickNoteCreated       bool
 	QuickNoteID            int64
 	TranscriptionPersisted bool
+	AudioDurationMs        int64
 }
 
 // TranscriptionRunner transcribes audio submissions and persists results.
@@ -165,10 +186,11 @@ func (r *TranscriptionRunner) Commit(ctx context.Context, submission Submission,
 
 	transcript.Text = normalizeTranscriptText(transcript.Text, submission.Prefix)
 	completion := Completion{
-		Transcript: transcript,
+		Transcript:      transcript,
+		AudioDurationMs: int64(submission.DurationSecs * 1000),
 	}
 
-	durationMs := int64(submission.DurationSecs * 1000)
+	durationMs := completion.AudioDurationMs
 	latencyMs := transcript.Duration.Milliseconds()
 	if submission.QuickNote && r.store != nil {
 		if submission.QuickNoteID > 0 {

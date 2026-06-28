@@ -1,12 +1,14 @@
-# SpeechKit v0.47
+# SpeechKit v0.48
 
 > Agent entrypoint for SpeechKit Server, Framework API, and MCP integration.
 
 SpeechKit is a Windows-first voice framework with three strict modes:
-Dictation, Assist, and Voice Agent. The v0.47 line professionalizes provider
-switching for Go voice apps: in-process STT, TTS, Assist, and native Voice
-Agent packages can run without a SpeechKit Server when the host wants local
-framework integration. Current realtime baselines are Gemini 3.1 Flash Live,
+Dictation, Assist, and Voice Agent. The v0.48 line adds long-form dictation and
+meeting capture on top of the provider-professionalized Go framework:
+in-process STT, TTS, Assist, and native Voice Agent packages can run without a
+SpeechKit Server when the host wants local framework integration. Long
+dictation can use stable segmented processing while provider-native streaming
+stays capability-gated. Current realtime baselines are Gemini 3.1 Flash Live,
 Deepgram Flux Voice Agent, AssemblyAI Voice Agent API, OpenAI Realtime, and
 cascaded fallback hosts. AssemblyAI realtime STT defaults to
 `universal-3-5-pro`; `u3-rt-pro` remains a legacy fallback. Words and Replacements
@@ -68,7 +70,8 @@ Embed SpeechKit as a Go framework:
   changing provider/model behavior.
 - Server-Target Voice Agent WebSocket `start.provider` accepts `gemini`/`google`,
   `deepgram`, `assemblyai`, `openai`, and `cascaded`; public profile IDs such as
-  `realtime.google.gemini-native-audio`, `realtime.deepgram.voice-agent`,
+  `realtime.google.gemini-native-audio`,
+  `realtime.google.gemini-live-translate`, `realtime.deepgram.voice-agent`,
   `realtime.assemblyai.voice-agent`, and `realtime.openai.gpt-realtime-2`
   normalize to the same provider path.
 - The provider live gate covers Deepgram, AssemblyAI, Gemini, and OpenAI with

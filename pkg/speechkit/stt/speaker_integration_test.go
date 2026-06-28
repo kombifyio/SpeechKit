@@ -15,16 +15,14 @@ import (
 	"testing"
 	"time"
 
+	"github.com/kombifyio/SpeechKit/internal/testutil"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/speaker"
 )
 
 const speakerIntegrationTimeout = 4 * time.Minute
 
 func TestIntegrationDeepgramDiarization(t *testing.T) {
-	key := strings.TrimSpace(os.Getenv(envDeepgramAPIKey))
-	if key == "" {
-		t.Skip(envDeepgramAPIKey + " not set")
-	}
+	key := testutil.RequireEnvOrSkip(t, envDeepgramAPIKey, "Deepgram speaker diarization integration requires live Deepgram credentials.")
 	audio := loadSpeakerIntegrationAudio(t)
 
 	ctx, cancel := context.WithTimeout(context.Background(), speakerIntegrationTimeout)
@@ -38,10 +36,7 @@ func TestIntegrationDeepgramDiarization(t *testing.T) {
 }
 
 func TestIntegrationAssemblyAIDiarization(t *testing.T) {
-	key := strings.TrimSpace(os.Getenv(envAssemblyAIAPIKey))
-	if key == "" {
-		t.Skip(envAssemblyAIAPIKey + " not set")
-	}
+	key := testutil.RequireEnvOrSkip(t, envAssemblyAIAPIKey, "AssemblyAI speaker diarization integration requires live AssemblyAI credentials.")
 	audio := loadSpeakerIntegrationAudio(t)
 
 	ctx, cancel := context.WithTimeout(context.Background(), speakerIntegrationTimeout)
@@ -57,10 +52,7 @@ func TestIntegrationAssemblyAIDiarization(t *testing.T) {
 }
 
 func TestIntegrationGoogleSTTDiarization(t *testing.T) {
-	key := firstEnvValue(envGoogleSTTAPIKey, envGoogleCloudSTTAPIKey, envGoogleLegacySTTAPIKey)
-	if key == "" {
-		t.Skip(envGoogleSTTAPIKey + " not set")
-	}
+	key := testutil.RequireAnyEnvOrSkip(t, []string{envGoogleSTTAPIKey, envGoogleCloudSTTAPIKey, envGoogleLegacySTTAPIKey}, "Google STT diarization integration requires live Google STT credentials.")
 	audio := loadSpeakerIntegrationAudio(t)
 
 	ctx, cancel := context.WithTimeout(context.Background(), speakerIntegrationTimeout)
@@ -74,10 +66,7 @@ func TestIntegrationGoogleSTTDiarization(t *testing.T) {
 }
 
 func TestIntegrationDeepgramSpeakerStreaming(t *testing.T) {
-	key := strings.TrimSpace(os.Getenv(envDeepgramAPIKey))
-	if key == "" {
-		t.Skip(envDeepgramAPIKey + " not set")
-	}
+	key := testutil.RequireEnvOrSkip(t, envDeepgramAPIKey, "Deepgram speaker streaming integration requires live Deepgram credentials.")
 	audio, format := loadSpeakerIntegrationPCM(t)
 
 	ctx, cancel := context.WithTimeout(context.Background(), speakerIntegrationTimeout)
@@ -93,10 +82,7 @@ func TestIntegrationDeepgramSpeakerStreaming(t *testing.T) {
 }
 
 func TestIntegrationAssemblyAISpeakerStreaming(t *testing.T) {
-	key := strings.TrimSpace(os.Getenv(envAssemblyAIAPIKey))
-	if key == "" {
-		t.Skip(envAssemblyAIAPIKey + " not set")
-	}
+	key := testutil.RequireEnvOrSkip(t, envAssemblyAIAPIKey, "AssemblyAI speaker streaming integration requires live AssemblyAI credentials.")
 	audio, format := loadSpeakerIntegrationPCM(t)
 
 	ctx, cancel := context.WithTimeout(context.Background(), speakerIntegrationTimeout)
@@ -161,7 +147,7 @@ func loadSpeakerIntegrationAudio(t *testing.T) []byte {
 		}
 		return audio
 	}
-	t.Skip("set SPEECHKIT_SPEAKER_TEST_AUDIO, SPEECHKIT_E2E_DICTATION_AUDIO, or SPEECHKIT_SPEAKER_TEST_AUDIO_B64 to run speaker integration tests")
+	testutil.SkipOrFailMissingConfig(t, "SPEECHKIT_SPEAKER_TEST_AUDIO or SPEECHKIT_E2E_DICTATION_AUDIO or SPEECHKIT_SPEAKER_TEST_AUDIO_B64", "Speaker integration tests require a spoken audio fixture.")
 	return nil
 }
 
@@ -404,22 +390,13 @@ func collectSpeakerLabels(labels map[string]bool, frame *speaker.SpeakerFrame) {
 	}
 }
 
-func firstEnvValue(envNames ...string) string {
-	for _, envName := range envNames {
-		if value := strings.TrimSpace(os.Getenv(envName)); value != "" {
-			return value
-		}
-	}
-	return ""
-}
-
 // TestIntegrationGoogleSTTStreamingTranscription gates Google STT v2
 // StreamingRecognize. v2 streaming cannot diarize (Chirp-3 docs), so this
 // proves realtime TRANSCRIPTION only: transcript text must arrive and frames
 // must carry no speaker labels. Requires service-account/ADC credentials.
 func TestIntegrationGoogleSTTStreamingTranscription(t *testing.T) {
 	if !googleStreamingCredentialsPresent(envGoogleApplicationCreds, envGoogleSTTCredentialsJSON) {
-		t.Skip(envGoogleSTTCredentialsJSON + " / " + envGoogleApplicationCreds + " not set")
+		testutil.SkipOrFailMissingConfig(t, envGoogleSTTCredentialsJSON+" or "+envGoogleApplicationCreds, "Google STT streaming integration requires service-account or ADC credentials.")
 	}
 	audio, format := loadSpeakerIntegrationPCM(t)
 

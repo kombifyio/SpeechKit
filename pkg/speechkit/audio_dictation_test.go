@@ -196,6 +196,67 @@ func TestDictationSegmenterDrainReadySegmentsPreventsStopFallbackDuplicate(t *te
 	}
 }
 
+func TestDictationSegmenterFiveMinuteLongPauseFixtureMaintainsOrderedSegments(t *testing.T) {
+	speechFrames := framesForDuration(70 * time.Second)
+	pauseFrames := framesForDuration(2 * time.Second)
+	longPauseFrames := framesForDuration(DefaultDictationParagraphPause + 2*time.Second)
+	segmentBytes := []byte{0x11, 0x22, 0x33, 0x44}
+
+	var probs []float32
+	var pcm []byte
+	for i, marker := range segmentBytes {
+		probs = append(probs, repeatProb(0.8, speechFrames)...)
+		pcm = append(pcm, repeatMarkedFrame(speechFrames, marker)...)
+		silenceFrames := pauseFrames
+		if i == 1 {
+			silenceFrames = longPauseFrames
+		}
+		probs = append(probs, repeatProb(0, silenceFrames)...)
+		pcm = append(pcm, make([]byte, silenceFrames*dictationFrameBytes)...)
+	}
+
+	vad := &fakeVAD{probs: probs}
+	segmenter := NewDictationSegmenter(vad, 500*time.Millisecond)
+	if segmenter == nil {
+		t.Fatal("expected segmenter")
+	}
+
+	if err := segmenter.FeedPCM(pcm); err != nil {
+		t.Fatalf("FeedPCM: %v", err)
+	}
+	ready := segmenter.DrainReadySegments()
+	if len(ready) != len(segmentBytes) {
+		t.Fatalf("ready segments = %d, want %d", len(ready), len(segmentBytes))
+	}
+	for i, segment := range ready {
+		if segment.Final {
+			t.Fatalf("ready segment %d Final = true, want intermediate segment", i)
+		}
+		if segment.Duration < DefaultDictationMinIntermediateSegment {
+			t.Fatalf("ready segment %d duration = %s, want at least %s", i, segment.Duration, DefaultDictationMinIntermediateSegment)
+		}
+		if got, want := dominantNonZeroByte(segment.PCM), segmentBytes[i]; got != want {
+			t.Fatalf("ready segment %d dominant marker = 0x%x, want 0x%x", i, got, want)
+		}
+	}
+	if !ready[2].Paragraph {
+		t.Fatal("segment after long pause should request paragraph prefix")
+	}
+	for _, idx := range []int{0, 1, 3} {
+		if ready[idx].Paragraph {
+			t.Fatalf("segment %d should not request paragraph prefix", idx)
+		}
+	}
+
+	remaining, err := segmenter.CollectStopSegments(pcm)
+	if err != nil {
+		t.Fatalf("CollectStopSegments: %v", err)
+	}
+	if len(remaining) != 0 {
+		t.Fatalf("remaining stop segments = %d, want none after drained five-minute fixture", len(remaining))
+	}
+}
+
 func TestDictationSegmenterDoesNotStartParagraphAfterShortPause(t *testing.T) {
 	speechFrames := framesForDuration(DefaultDictationMinIntermediateSegment + dictationFrameDuration())
 	probs := repeatProb(0.8, speechFrames)
@@ -298,4 +359,27 @@ func repeatFrame(n int) []byte {
 		binary.LittleEndian.PutUint16(pcm[i*AudioBytesPerSample:], uint16(i+1))
 	}
 	return pcm
+}
+
+func repeatMarkedFrame(n int, marker byte) []byte {
+	pcm := make([]byte, n*dictationFrameBytes)
+	for i := range pcm {
+		pcm[i] = marker
+	}
+	return pcm
+}
+
+func dominantNonZeroByte(pcm []byte) byte {
+	counts := map[byte]int{}
+	var best byte
+	for _, value := range pcm {
+		if value == 0 {
+			continue
+		}
+		counts[value]++
+		if counts[value] > counts[best] {
+			best = value
+		}
+	}
+	return best
 }

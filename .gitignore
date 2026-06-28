@@ -58,6 +58,7 @@ config.toml
 *.db
 *.db-journal
 *.db-wal
+/SpeechKit/
 /audio/
 /data/
 /internal/store/audio/

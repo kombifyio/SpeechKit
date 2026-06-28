@@ -105,6 +105,21 @@ type VoiceAgentSessionStore interface {
 	ListVoiceAgentSessions(ctx context.Context, opts ListOpts) ([]VoiceAgentSession, error)
 }
 
+// RecordingSessionStore is an optional extension for long-running dictation
+// and meeting capture sessions. Segment rows can link to ordinary
+// transcriptions, so the existing dashboard/library records stay reusable.
+type RecordingSessionStore interface {
+	SaveRecordingSession(ctx context.Context, session RecordingSession) (int64, error)
+	ListRecordingSessions(ctx context.Context, opts ListOpts) ([]RecordingSession, error)
+	AppendRecordingSessionSegment(ctx context.Context, sessionID int64, segment RecordingSessionSegment) (int64, error)
+	UpdateRecordingSessionSummary(ctx context.Context, id int64, summary string) error
+	UpdateRecordingSessionCaptureStatus(ctx context.Context, id int64, status RecordingSessionCaptureStatus, at time.Time) error
+	UpdateRecordingSessionSummaryStatus(ctx context.Context, id int64, status RecordingSessionSummaryStatus, message string, at time.Time) error
+	FinishRecordingSession(ctx context.Context, id int64, summary string, endedAt time.Time) error
+	GetRecordingSession(ctx context.Context, id int64) (*RecordingSession, error)
+	DeleteRecordingSession(ctx context.Context, id int64) error
+}
+
 // AudioAssetStore is an optional extension for backends that persist
 // first-class audio asset metadata alongside legacy audio_path columns.
 type AudioAssetStore interface {
@@ -238,6 +253,7 @@ type ScopeExport struct {
 	Transcriptions     []Transcription       `json:"transcriptions"`
 	QuickNotes         []QuickNote           `json:"quick_notes"`
 	VoiceAgentSessions []VoiceAgentSession   `json:"voice_agent_sessions"`
+	RecordingSessions  []RecordingSession    `json:"recording_sessions,omitempty"`
 	DictionaryEntries  []UserDictionaryEntry `json:"dictionary_entries,omitempty"`
 	AudioAssetPaths    []string              `json:"audio_asset_paths"`
 }
@@ -370,6 +386,81 @@ type VoiceAgentSession struct {
 	OwnerUserID       string                   `json:"ownerUserId,omitempty"`
 	OwnerOrgID        string                   `json:"ownerOrgId,omitempty"`
 	OwnerSource       string                   `json:"ownerSource,omitempty"`
+}
+
+type RecordingSessionKind string
+
+const (
+	RecordingSessionKindDictation RecordingSessionKind = "dictation"
+	RecordingSessionKindMeeting   RecordingSessionKind = "meeting"
+)
+
+type RecordingSessionStatus string
+
+const (
+	RecordingSessionStatusActive   RecordingSessionStatus = "active"
+	RecordingSessionStatusFinished RecordingSessionStatus = "finished"
+	RecordingSessionStatusFailed   RecordingSessionStatus = "failed"
+)
+
+type RecordingSessionCaptureStatus string
+
+const (
+	RecordingSessionCaptureIdle      RecordingSessionCaptureStatus = "idle"
+	RecordingSessionCaptureRecording RecordingSessionCaptureStatus = "recording"
+	RecordingSessionCapturePaused    RecordingSessionCaptureStatus = "paused"
+	RecordingSessionCaptureStopped   RecordingSessionCaptureStatus = "stopped"
+)
+
+type RecordingSessionSummaryStatus string
+
+const (
+	RecordingSessionSummaryIdle    RecordingSessionSummaryStatus = "idle"
+	RecordingSessionSummaryRunning RecordingSessionSummaryStatus = "running"
+	RecordingSessionSummaryReady   RecordingSessionSummaryStatus = "ready"
+	RecordingSessionSummaryFailed  RecordingSessionSummaryStatus = "failed"
+)
+
+type RecordingSession struct {
+	ID               int64                         `json:"id"`
+	ExternalID       string                        `json:"externalId,omitempty"`
+	Kind             RecordingSessionKind          `json:"kind"`
+	Status           RecordingSessionStatus        `json:"status"`
+	CaptureStatus    RecordingSessionCaptureStatus `json:"captureStatus"`
+	SummaryStatus    RecordingSessionSummaryStatus `json:"summaryStatus"`
+	SummaryError     string                        `json:"summaryError,omitempty"`
+	Title            string                        `json:"title,omitempty"`
+	Language         string                        `json:"language"`
+	Provider         string                        `json:"provider,omitempty"`
+	Model            string                        `json:"model,omitempty"`
+	InputSource      string                        `json:"inputSource,omitempty"`
+	ProcessingMode   string                        `json:"processingMode,omitempty"`
+	Summary          string                        `json:"summary,omitempty"`
+	StartedAt        time.Time                     `json:"startedAt"`
+	EndedAt          time.Time                     `json:"endedAt,omitempty"`
+	CaptureStartedAt time.Time                     `json:"captureStartedAt,omitempty"`
+	CapturePausedAt  time.Time                     `json:"capturePausedAt,omitempty"`
+	CaptureStoppedAt time.Time                     `json:"captureStoppedAt,omitempty"`
+	SummaryUpdatedAt time.Time                     `json:"summaryUpdatedAt,omitempty"`
+	CreatedAt        time.Time                     `json:"createdAt"`
+	UpdatedAt        time.Time                     `json:"updatedAt"`
+	OwnerUserID      string                        `json:"ownerUserId,omitempty"`
+	OwnerOrgID       string                        `json:"ownerOrgId,omitempty"`
+	OwnerSource      string                        `json:"ownerSource,omitempty"`
+	Segments         []RecordingSessionSegment     `json:"segments,omitempty"`
+}
+
+type RecordingSessionSegment struct {
+	ID              int64     `json:"id"`
+	SessionID       int64     `json:"sessionId"`
+	SegmentIndex    int       `json:"segmentIndex"`
+	TranscriptionID int64     `json:"transcriptionId,omitempty"`
+	ProviderItemID  string    `json:"providerItemId,omitempty"`
+	Text            string    `json:"text"`
+	IsFinal         bool      `json:"isFinal"`
+	StartedMs       int64     `json:"startedMs"`
+	EndedMs         int64     `json:"endedMs"`
+	CreatedAt       time.Time `json:"createdAt"`
 }
 
 type Stats struct {

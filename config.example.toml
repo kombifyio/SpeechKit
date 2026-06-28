@@ -12,6 +12,8 @@ voice_agent_hotkey_behavior = "hold_to_talk"
 dictate_enabled = true
 assist_enabled = false
 voice_agent_enabled = false
+start_at_login = false                  # Windows client: start SpeechKit for this user at Windows login.
+auto_start_on_launch = false            # Open the dashboard when SpeechKit starts; otherwise stay in the tray.
 eager_warmup = false                 # Optional: call mode Warmup before Start when a runtime implements it.
 active_mode = "none"               # none, dictate, assist, voice_agent
 agent_hotkey = "win+alt"           # Deprecated compatibility alias. SpeechKit now persists assist_hotkey + voice_agent_hotkey separately.
@@ -21,7 +23,19 @@ hotkey_mode = "hold_to_talk"
 auto_stop_silence_ms = 1500
 fast_mode_silence_ms = 1500
 dictate_silence_timeout_sec = 3  # Seconds of silence before toggle dictation auto-stops. 0 disables.
+dictation_intermediate_segment_ms = 6000 # Minimum utterance duration before segment_batch emits a pause-bounded live segment.
+dictation_processing_mode = "final_full" # final_full | segment_batch | provider_stream | auto. Live modes are beta/opt-in.
 model_download_dir = ""            # Blank = %LOCALAPPDATA%/SpeechKit/models. Set a dedicated folder for local model downloads.
+
+[audio]
+backend = "windows-wasapi-malgo"
+input_source = "microphone"     # microphone | system_loopback | mic_and_system. mic_and_system requires the future mixer path.
+device_id = ""                  # Blank = default microphone.
+output_device_id = ""           # Blank = default speaker; used by system_loopback.
+sample_rate = 16000
+channels = 1
+frame_size_ms = 32
+latency_hint = "interactive"
 
 # [output] tunes how the Device-Target injects transcribed text into the
 # focused application. "auto" picks a per-app paste shortcut from built-in
@@ -172,7 +186,7 @@ active_template_ids = ["standard-punctuation-de-en"] # Native Words/Replacements
 # ──────────────────────────────────────────────
 
 [model_selection.dictate]
-primary_profile_id = "stt.local.whispercpp"    # Default local built-in primary. Alternatives: stt.ollama.gemma4-e4b-transcribe, stt.routed.whisper-large-v3, stt.openai.whisper-1
+primary_profile_id = "stt.local.whispercpp"    # Default local built-in primary. Alternatives: stt.ollama.gemma4-e4b-transcribe, stt.routed.whisper-large-v3, stt.openai.gpt-4o-transcribe
 fallback_profile_id = ""
 mode_source = "local"  # "local" | "server"
 
@@ -182,7 +196,7 @@ fallback_profile_id = ""
 mode_source = "local"
 
 [model_selection.voice_agent]
-primary_profile_id = "realtime.builtin.pipeline" # Default local Voice Agent pipeline. Enable Gemini / Google AI to use realtime.google.gemini-native-audio.
+primary_profile_id = "realtime.builtin.pipeline" # Default local Voice Agent pipeline. Enable Gemini / Google AI to use realtime.google.gemini-native-audio or realtime.google.gemini-live-translate.
 fallback_profile_id = ""
 mode_source = "local"
 
@@ -335,7 +349,7 @@ timeout_sec = 30                         # subprocess timeout
 [voice_agent]
 enabled = true
 provider = "gemini"                        # Realtime backend: "gemini" (default), "openai", "deepgram", "assemblyai"; Server-Target also accepts "cascaded"/"moshi"
-model = "gemini-3.1-flash-live-preview"    # Recommended Voice Agent default
+model = "gemini-3.1-flash-live-preview"    # Recommended general Voice Agent default. Use realtime.google.gemini-live-translate for Gemini 3.5 Live Translate.
 fallback_model = "gemini-2.5-flash-native-audio-preview-12-2025"
 voice = "Kore"                             # Voice for real-time model
 agent_profile_id = "default"               # default, brainstorming_companion, humor_companion, support_companion

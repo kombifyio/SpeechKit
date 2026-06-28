@@ -77,10 +77,7 @@ jobs:
     needs: plan
     if: needs.plan.outputs.should_publish == 'true'
     runs-on: ubuntu-24.04
-    # CGo + ONNX runtime + full source tree can brush the old 15-min limit on a
-    # cold buildx cache; 30 leaves headroom so a slow-but-healthy build is not
-    # killed mid-release.
-    timeout-minutes: 30
+    timeout-minutes: 15
     env:
       REGISTRY: ghcr.io
       IMAGE: ${{ github.repository_owner == 'kombifyio' && 'kombifyio/speechkit-server' || 'kombify/speechkit-server' }}

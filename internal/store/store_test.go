@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -10,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/kombifyio/SpeechKit/internal/testutil"
 	speechcustomize "github.com/kombifyio/SpeechKit/pkg/speechkit/customize"
 )
 
@@ -383,6 +385,106 @@ func TestSaveAndRecent(t *testing.T) {
 	}
 	if recent[0].LatencyMs != 120 {
 		t.Errorf("expected latency = 120, got %d", recent[0].LatencyMs)
+	}
+}
+
+func TestRecordingSessionStoreLifecycle(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "recording_sessions.db")
+	s, err := NewSQLiteStore(StoreConfig{SQLitePath: dbPath, MaxAudioStorageMB: 100})
+	if err != nil {
+		t.Fatalf("NewSQLiteStore: %v", err)
+	}
+	defer s.Close()
+
+	ctx := context.Background()
+	sessionID, err := s.SaveRecordingSession(ctx, RecordingSession{
+		ExternalID:     "meeting-1",
+		Kind:           RecordingSessionKindMeeting,
+		Title:          "Planning meeting",
+		Language:       "de-DE",
+		Provider:       "deepgram",
+		Model:          "nova-3",
+		InputSource:    "system_loopback",
+		ProcessingMode: "segment_batch",
+	})
+	if err != nil {
+		t.Fatalf("SaveRecordingSession: %v", err)
+	}
+	segmentID, err := s.AppendRecordingSessionSegment(ctx, sessionID, RecordingSessionSegment{
+		SegmentIndex:   0,
+		ProviderItemID: "deepgram:1",
+		Text:           "Hallo zusammen",
+		IsFinal:        true,
+		StartedMs:      0,
+		EndedMs:        1200,
+	})
+	if err != nil {
+		t.Fatalf("AppendRecordingSessionSegment: %v", err)
+	}
+	updatedSegmentID, err := s.AppendRecordingSessionSegment(ctx, sessionID, RecordingSessionSegment{
+		SegmentIndex:   0,
+		ProviderItemID: "deepgram:retry-1",
+		Text:           "Hallo zusammen korrigiert",
+		IsFinal:        true,
+		StartedMs:      0,
+		EndedMs:        1300,
+	})
+	if err != nil {
+		t.Fatalf("AppendRecordingSessionSegment retry: %v", err)
+	}
+	if updatedSegmentID != segmentID {
+		t.Fatalf("retry segment id = %d, want original %d", updatedSegmentID, segmentID)
+	}
+	if err := s.UpdateRecordingSessionCaptureStatus(ctx, sessionID, RecordingSessionCaptureRecording, time.Now()); err != nil {
+		t.Fatalf("UpdateRecordingSessionCaptureStatus recording: %v", err)
+	}
+	if err := s.UpdateRecordingSessionCaptureStatus(ctx, sessionID, RecordingSessionCapturePaused, time.Now()); err != nil {
+		t.Fatalf("UpdateRecordingSessionCaptureStatus paused: %v", err)
+	}
+	if err := s.UpdateRecordingSessionSummaryStatus(ctx, sessionID, RecordingSessionSummaryRunning, "", time.Now()); err != nil {
+		t.Fatalf("UpdateRecordingSessionSummaryStatus running: %v", err)
+	}
+	if err := s.UpdateRecordingSessionSummary(ctx, sessionID, "Vorab Zusammenfassung"); err != nil {
+		t.Fatalf("UpdateRecordingSessionSummary: %v", err)
+	}
+	if err := s.FinishRecordingSession(ctx, sessionID, "Kurze Zusammenfassung", time.Now()); err != nil {
+		t.Fatalf("FinishRecordingSession: %v", err)
+	}
+	listed, err := s.ListRecordingSessions(ctx, ListOpts{Limit: 10})
+	if err != nil {
+		t.Fatalf("ListRecordingSessions: %v", err)
+	}
+	if len(listed) != 1 || listed[0].ID != sessionID {
+		t.Fatalf("listed recording sessions = %+v", listed)
+	}
+
+	got, err := s.GetRecordingSession(ctx, sessionID)
+	if err != nil {
+		t.Fatalf("GetRecordingSession: %v", err)
+	}
+	if got.Kind != RecordingSessionKindMeeting || got.Status != RecordingSessionStatusFinished {
+		t.Fatalf("recording session status = %s/%s", got.Kind, got.Status)
+	}
+	if got.CaptureStatus != RecordingSessionCaptureStopped || got.CaptureStartedAt.IsZero() || got.CapturePausedAt.IsZero() || got.CaptureStoppedAt.IsZero() {
+		t.Fatalf("recording session capture fields = %+v", got)
+	}
+	if got.SummaryStatus != RecordingSessionSummaryReady || got.SummaryUpdatedAt.IsZero() || got.SummaryError != "" {
+		t.Fatalf("recording session summary fields = %+v", got)
+	}
+	if got.Language != "de-DE" || got.InputSource != "system_loopback" || got.ProcessingMode != "segment_batch" {
+		t.Fatalf("recording session metadata = %+v", got)
+	}
+	if len(got.Segments) != 1 || got.Segments[0].Text != "Hallo zusammen korrigiert" || got.Segments[0].ProviderItemID != "deepgram:retry-1" || !got.Segments[0].IsFinal {
+		t.Fatalf("recording session segments = %+v", got.Segments)
+	}
+	if got.Summary != "Kurze Zusammenfassung" || got.EndedAt.IsZero() {
+		t.Fatalf("recording session finish fields = %+v", got)
+	}
+	if err := s.DeleteRecordingSession(ctx, sessionID); err != nil {
+		t.Fatalf("DeleteRecordingSession: %v", err)
+	}
+	if _, err := s.GetRecordingSession(ctx, sessionID); !errors.Is(err, sql.ErrNoRows) {
+		t.Fatalf("GetRecordingSession after delete err = %v, want sql.ErrNoRows", err)
 	}
 }
 
@@ -1577,7 +1679,7 @@ func TestStoreInterface_CompileCheck(t *testing.T) {
 func TestPostgresStoreParity(t *testing.T) {
 	dsn := strings.TrimSpace(os.Getenv("SPEECHKIT_POSTGRES_TEST_DSN"))
 	if dsn == "" {
-		t.Skip("set SPEECHKIT_POSTGRES_TEST_DSN to run postgres parity tests")
+		testutil.SkipOrFailExplicitMissingConfig(t, "SPEECHKIT_POSTGRES_TEST_DSN", "Set it to run postgres parity tests.")
 	}
 
 	t.Setenv("APPDATA", t.TempDir())

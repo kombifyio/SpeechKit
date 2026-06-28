@@ -160,6 +160,7 @@ func policyEnabledModeSet(modes []Mode) map[Mode]bool {
 			ModeDictation:  true,
 			ModeAssist:     true,
 			ModeVoiceAgent: true,
+			ModeTTS:        true,
 		}
 	}
 	enabled := map[Mode]bool{}

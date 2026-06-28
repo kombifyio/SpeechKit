@@ -2,8 +2,8 @@
 
 // Live end-to-end smoke test for the assist Genkit flow against a real
 // Gemini model. Gated by the `integration` build tag so it is excluded
-// from default `go test ./...` runs. Skips cleanly when GOOGLE_AI_API_KEY
-// is not injected.
+// from default `go test ./...` runs. Locally skips cleanly when
+// GOOGLE_AI_API_KEY is not injected; CI/required-config runs fail closed.
 //
 // Run locally with a key in env:
 //   GOOGLE_AI_API_KEY=... go test -tags=integration -run TestAssistFlow_Integration ./internal/ai/flows/
@@ -12,7 +12,6 @@ package flows
 
 import (
 	"context"
-	"os"
 	"strings"
 	"testing"
 	"time"
@@ -20,13 +19,11 @@ import (
 	"github.com/firebase/genkit/go/ai"
 	"github.com/firebase/genkit/go/genkit"
 	"github.com/firebase/genkit/go/plugins/googlegenai"
+	"github.com/kombifyio/SpeechKit/internal/testutil"
 )
 
 func TestAssistFlow_IntegrationWithGemini(t *testing.T) {
-	apiKey := os.Getenv("GOOGLE_AI_API_KEY")
-	if apiKey == "" {
-		t.Skip("GOOGLE_AI_API_KEY not set — integration test requires live Google AI credentials")
-	}
+	apiKey := testutil.RequireEnvOrSkip(t, "GOOGLE_AI_API_KEY", "Integration test requires live Google AI credentials.")
 
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()

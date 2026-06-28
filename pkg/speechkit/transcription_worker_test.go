@@ -36,6 +36,29 @@ func (s *capturingAudioTranscriber) Transcribe(_ context.Context, audio []byte, 
 	return s.transcript, nil
 }
 
+type countingTranscriber struct {
+	mu         sync.Mutex
+	calls      int
+	transcript Transcript
+}
+
+func (s *countingTranscriber) Transcribe(_ context.Context, _ []byte, _ float64, language string) (Transcript, error) {
+	s.mu.Lock()
+	s.calls++
+	s.mu.Unlock()
+	transcript := s.transcript
+	if transcript.Language == "" {
+		transcript.Language = language
+	}
+	return transcript, nil
+}
+
+func (s *countingTranscriber) count() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.calls
+}
+
 type parallelSegmentTranscriber struct {
 	expected int
 	release  chan struct{}
@@ -180,6 +203,7 @@ type recordingObserver struct {
 	mu         sync.Mutex
 	states     []string
 	logs       []string
+	drafts     []string
 	committed  []string
 	quickNotes []bool
 }
@@ -201,6 +225,23 @@ func (o *recordingObserver) OnTranscriptCommitted(transcript Transcript, quickNo
 	defer o.mu.Unlock()
 	o.committed = append(o.committed, transcript.Text)
 	o.quickNotes = append(o.quickNotes, quickNote)
+}
+
+func (o *recordingObserver) OnTranscriptDraft(transcript Transcript) {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	o.drafts = append(o.drafts, transcript.Text)
+}
+
+func (o *recordingObserver) hasLog(message string) bool {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	for _, log := range o.logs {
+		if strings.Contains(log, message) {
+			return true
+		}
+	}
+	return false
 }
 
 func TestLowConfidenceWords(t *testing.T) {
@@ -449,6 +490,185 @@ func TestTranscriptionWorkerNormalizesPCMOnlySubmission(t *testing.T) {
 	}
 	if delivered := output.snapshot(); len(delivered) != 1 || delivered[0].transcript.Text != "pcm only" {
 		t.Fatalf("delivered = %#v, want pcm-only transcript", delivered)
+	}
+}
+
+func TestTranscriptionWorkerSkipsDuplicateSegmentCommit(t *testing.T) {
+	transcriber := &countingTranscriber{
+		transcript: Transcript{
+			Text:     "segment text",
+			Provider: "test",
+			Duration: 25 * time.Millisecond,
+		},
+	}
+	output := &recordingOutput{}
+	observer := &recordingObserver{}
+	worker, err := NewTranscriptionWorker(TranscriptionWorkerConfig{
+		Timeout:   time.Second,
+		QueueSize: 2,
+		Runner:    NewTranscriptionRunner(transcriber, nil),
+		Output:    output,
+		Observer:  observer,
+	})
+	if err != nil {
+		t.Fatalf("NewTranscriptionWorker() error = %v", err)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	worker.Start(ctx)
+
+	job := TranscriptionJob{
+		Submission: Submission{
+			PCM:          []byte(strings.Repeat("d", 6400)),
+			WAV:          []byte("wav"),
+			DurationSecs: 0.2,
+			Language:     "de",
+			SessionID:    42,
+			SegmentID:    7,
+			SegmentFinal: true,
+		},
+		Target: "editor",
+	}
+	if err := worker.Submit(job); err != nil {
+		t.Fatalf("Submit(first) error = %v", err)
+	}
+	if err := worker.Submit(job); err != nil {
+		t.Fatalf("Submit(duplicate) error = %v", err)
+	}
+	worker.Close()
+	worker.Wait()
+
+	if got := transcriber.count(); got != 1 {
+		t.Fatalf("transcriber calls = %d, want 1", got)
+	}
+	delivered := output.snapshot()
+	if len(delivered) != 1 {
+		t.Fatalf("delivered = %d, want 1", len(delivered))
+	}
+	if got := delivered[0].transcript.SessionID; got != 42 {
+		t.Fatalf("delivered session id = %d, want 42", got)
+	}
+	if got := delivered[0].transcript.SegmentID; got != 7 {
+		t.Fatalf("delivered segment id = %d, want 7", got)
+	}
+	if !delivered[0].transcript.SegmentFinal {
+		t.Fatal("delivered SegmentFinal = false, want true")
+	}
+	if !observer.hasLog("Duplicate transcript segment skipped") {
+		t.Fatalf("observer logs = %#v, want duplicate skip log", observer.logs)
+	}
+}
+
+func TestTranscriptionWorkerProviderStreamDraftsDoNotDeliverAndFinalsDeduplicate(t *testing.T) {
+	output := &recordingOutput{}
+	observer := &recordingObserver{}
+	worker, err := NewTranscriptionWorker(TranscriptionWorkerConfig{
+		Timeout:   time.Second,
+		QueueSize: 1,
+		Runner:    NewTranscriptionRunner(stubTranscriber{}, nil),
+		Output:    output,
+		Observer:  observer,
+	})
+	if err != nil {
+		t.Fatalf("NewTranscriptionWorker() error = %v", err)
+	}
+
+	ctx := context.Background()
+	draft := DictationStreamEvent{
+		SessionID:      99,
+		SegmentID:      3,
+		ProviderItemID: "provider:3",
+		Text:           "draft text",
+		Provider:       "fake",
+		Model:          "stream",
+	}
+	if err := worker.HandleDictationStreamEvent(ctx, draft, DictationStreamSinkOptions{Target: "editor", Language: "de"}); err != nil {
+		t.Fatalf("HandleDictationStreamEvent(draft) error = %v", err)
+	}
+	if delivered := output.snapshot(); len(delivered) != 0 {
+		t.Fatalf("draft delivered output = %d, want 0", len(delivered))
+	}
+	if len(observer.drafts) != 1 || observer.drafts[0] != "draft text" {
+		t.Fatalf("observer drafts = %#v, want draft text", observer.drafts)
+	}
+
+	final := draft
+	final.Text = "final text"
+	final.IsFinal = true
+	if err := worker.HandleDictationStreamEvent(ctx, final, DictationStreamSinkOptions{Target: "editor", Language: "de"}); err != nil {
+		t.Fatalf("HandleDictationStreamEvent(final) error = %v", err)
+	}
+	if err := worker.HandleDictationStreamEvent(ctx, final, DictationStreamSinkOptions{Target: "editor", Language: "de"}); err != nil {
+		t.Fatalf("HandleDictationStreamEvent(duplicate final) error = %v", err)
+	}
+
+	delivered := output.snapshot()
+	if len(delivered) != 1 {
+		t.Fatalf("delivered finals = %d, want 1", len(delivered))
+	}
+	if got := delivered[0].transcript.Text; got != "final text" {
+		t.Fatalf("delivered text = %q, want final text", got)
+	}
+	if got := delivered[0].transcript.SessionID; got != 99 {
+		t.Fatalf("delivered session id = %d, want 99", got)
+	}
+	if got := delivered[0].transcript.SegmentID; got != 3 {
+		t.Fatalf("delivered segment id = %d, want 3", got)
+	}
+	if !delivered[0].transcript.SegmentFinal {
+		t.Fatal("delivered SegmentFinal = false, want true")
+	}
+	if !observer.hasLog("Duplicate transcript segment skipped") {
+		t.Fatalf("observer logs = %#v, want duplicate skip log", observer.logs)
+	}
+}
+
+func TestTranscriptionWorkerAllowsRepeatedTextAcrossDistinctSegments(t *testing.T) {
+	transcriber := &countingTranscriber{
+		transcript: Transcript{
+			Text:     "same repeated phrase",
+			Provider: "test",
+			Duration: 20 * time.Millisecond,
+		},
+	}
+	output := &recordingOutput{}
+	worker, err := NewTranscriptionWorker(TranscriptionWorkerConfig{
+		Timeout:   time.Second,
+		QueueSize: 2,
+		Runner:    NewTranscriptionRunner(transcriber, nil),
+		Output:    output,
+	})
+	if err != nil {
+		t.Fatalf("NewTranscriptionWorker() error = %v", err)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	worker.Start(ctx)
+	for i := uint64(1); i <= 2; i++ {
+		if err := worker.Submit(TranscriptionJob{
+			Submission: Submission{
+				PCM:          []byte(strings.Repeat("r", 6400)),
+				WAV:          []byte("wav"),
+				DurationSecs: 0.2,
+				Language:     "de",
+				SessionID:    123,
+				SegmentID:    i,
+				SegmentFinal: true,
+			},
+		}); err != nil {
+			t.Fatalf("Submit(segment %d) error = %v", i, err)
+		}
+	}
+	worker.Close()
+	worker.Wait()
+
+	if got := transcriber.count(); got != 2 {
+		t.Fatalf("transcriber calls = %d, want 2 for repeated text in distinct segments", got)
+	}
+	if delivered := output.snapshot(); len(delivered) != 2 {
+		t.Fatalf("delivered repeated segments = %d, want 2", len(delivered))
 	}
 }
 

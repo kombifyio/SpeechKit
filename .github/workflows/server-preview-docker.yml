@@ -1,0 +1,125 @@
+name: server-preview-docker
+
+# Publishes the non-release SpeechKit Server preview image used by
+# speechkit.cc/install-server.sh --channel preview. This workflow runs only in
+# kombifyio/SpeechKit and intentionally uses GitHub-hosted Docker Buildx so it
+# does not require private-org Depot secrets.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "cmd/speechkit-server/**"
+      - "internal/server/**"
+      - "internal/config/**"
+      - "internal/store/**"
+      - "pkg/speechkit/**"
+      - "deploy/docker/**"
+      - "deploy/config/**"
+      - "docs/server/openapi.v1.yaml"
+      - "go.mod"
+      - "go.sum"
+      - ".github/workflows/server-preview-docker.yml"
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+  packages: write
+  id-token: write
+  attestations: write
+
+concurrency:
+  group: server-preview-docker-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
+
+jobs:
+  publish-preview:
+    name: Build & publish v0.30 preview server image
+    if: github.repository == 'kombifyio/SpeechKit'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      REGISTRY: ghcr.io
+      IMAGE: kombifyio/speechkit-server
+      PREVIEW_TAG: v0.30-preview
+
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+
+      - name: Log in to GHCR
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f
+
+      - name: Build preview image for smoke test
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8
+        with:
+          context: .
+          file: deploy/docker/Dockerfile.server
+          target: speechkit-server
+          push: false
+          load: true
+          platforms: linux/amd64
+          tags: speechkit-server:preview-smoke
+          build-args: |
+            VERSION=${{ env.PREVIEW_TAG }}
+          cache-from: type=gha,scope=speechkit-server-preview
+          cache-to: type=gha,mode=max,scope=speechkit-server-preview
+
+      - name: Smoke-test preview image
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="$(docker run --rm --entrypoint /app/speechkit-server speechkit-server:preview-smoke --version)"
+          if [ "$version" != "${PREVIEW_TAG}" ]; then
+            echo "preview image version = $version, want ${PREVIEW_TAG}" >&2
+            exit 1
+          fi
+
+      - name: Build & push preview image
+        id: build
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8
+        with:
+          context: .
+          file: deploy/docker/Dockerfile.server
+          target: speechkit-server
+          push: true
+          platforms: linux/amd64
+          tags: |
+            ${{ env.REGISTRY }}/${{ env.IMAGE }}:${{ env.PREVIEW_TAG }}
+            ${{ env.REGISTRY }}/${{ env.IMAGE }}:git-${{ github.sha }}
+          labels: |
+            org.opencontainers.image.title=SpeechKit Server Preview
+            org.opencontainers.image.description=SpeechKit v0.30 Preview server image. Non-release, no latest tag.
+            org.opencontainers.image.version=${{ env.PREVIEW_TAG }}
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+          build-args: |
+            VERSION=${{ env.PREVIEW_TAG }}
+          cache-from: type=gha,scope=speechkit-server-preview
+          cache-to: type=gha,mode=max,scope=speechkit-server-preview
+
+      - name: Attest provenance
+        uses: actions/attest-build-provenance@92c65d2898f1f53cfdc910b962cecff86e7f8fcc
+        with:
+          subject-name: ${{ env.REGISTRY }}/${{ env.IMAGE }}
+          subject-digest: ${{ steps.build.outputs.digest }}
+          push-to-registry: true
+
+      - name: Summary
+        shell: bash
+        run: |
+          echo "### SpeechKit Server preview image published" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "- \`${{ env.REGISTRY }}/${{ env.IMAGE }}:${{ env.PREVIEW_TAG }}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- \`${{ env.REGISTRY }}/${{ env.IMAGE }}:git-${{ github.sha }}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- digest: \`${{ steps.build.outputs.digest }}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- \`latest\` was not published by this workflow." >> "$GITHUB_STEP_SUMMARY"

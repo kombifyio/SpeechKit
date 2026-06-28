@@ -21,16 +21,16 @@ func anyCloudKeyEnvSet(cfg *config.Config) bool {
 		cfg = &config.Config{}
 	}
 	envs := []string{
-		firstNonEmpty(cfg.Providers.Google.APIKeyEnv, config.GoogleAIAPIKeyEnv),
-		config.GoogleSTTAPIKeyEnvName(cfg),
+		config.ProviderCredentialEnvName(cfg, "google"),
+		config.ProviderCredentialEnvName(cfg, "google_stt"),
 		config.GoogleSTTCredentialsJSONEnvName(cfg),
 		config.GoogleApplicationCredentialsEnvName(cfg),
-		firstNonEmpty(cfg.Providers.OpenAI.APIKeyEnv, "OPENAI_API_KEY"),
-		firstNonEmpty(cfg.Providers.Groq.APIKeyEnv, "GROQ_API_KEY"),
-		firstNonEmpty(cfg.Providers.Deepgram.APIKeyEnv, config.DeepgramAPIKeyEnv),
-		firstNonEmpty(cfg.Providers.AssemblyAI.APIKeyEnv, config.AssemblyAIAPIKeyEnv),
-		config.HuggingFaceTokenEnvName(cfg),
-		firstNonEmpty(cfg.Providers.OpenRouter.APIKeyEnv, "OPENROUTER_API_KEY"),
+		config.ProviderCredentialEnvName(cfg, "openai"),
+		config.ProviderCredentialEnvName(cfg, "groq"),
+		config.ProviderCredentialEnvName(cfg, "deepgram"),
+		config.ProviderCredentialEnvName(cfg, "assemblyai"),
+		config.ProviderCredentialEnvName(cfg, "huggingface"),
+		config.ProviderCredentialEnvName(cfg, "openrouter"),
 	}
 	for _, name := range envs {
 		if envPresent(name) {

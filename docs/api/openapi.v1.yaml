@@ -560,6 +560,386 @@ paths:
                 $ref: "#/components/schemas/VoiceAgentSession"
         "404":
           $ref: "#/components/responses/NotFound"
+  /api/v1/recording-sessions:
+    get:
+      tags: [Data]
+      operationId: listRecordingSessions
+      summary: List long-running dictation and meeting recording sessions.
+      parameters:
+        - name: kind
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [dictation, meeting]
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+        - name: include_segments
+          in: query
+          required: false
+          schema:
+            type: boolean
+      responses:
+        "200":
+          description: Recording sessions.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/RecordingSession"
+        "501":
+          $ref: "#/components/responses/NotImplemented"
+    post:
+      tags: [Data]
+      operationId: createRecordingSession
+      summary: Start a long-running dictation or meeting recording session record.
+      security:
+        - ControlPlaneHeader: []
+        - ControlPlaneCookie: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RecordingSessionCreateRequest"
+      responses:
+        "200":
+          description: Created recording session.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RecordingSession"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "501":
+          $ref: "#/components/responses/NotImplemented"
+  /api/v1/recording-sessions/{sessionId}:
+    get:
+      tags: [Data]
+      operationId: getRecordingSession
+      summary: Get one recording session with ordered segment detail.
+      parameters:
+        - name: sessionId
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+            minimum: 1
+      responses:
+        "200":
+          description: Recording session detail.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RecordingSession"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "501":
+          $ref: "#/components/responses/NotImplemented"
+    delete:
+      tags: [Data]
+      operationId: deleteRecordingSession
+      summary: Delete one recording session and its ordered transcript segments.
+      security:
+        - ControlPlaneHeader: []
+        - ControlPlaneCookie: []
+      parameters:
+        - name: sessionId
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+            minimum: 1
+      responses:
+        "200":
+          description: Recording session deleted.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [id, deleted]
+                properties:
+                  id:
+                    type: integer
+                    format: int64
+                  deleted:
+                    type: boolean
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "501":
+          $ref: "#/components/responses/NotImplemented"
+  /api/v1/recording-sessions/{sessionId}/start:
+    post:
+      tags: [Data]
+      operationId: startRecordingSessionCapture
+      summary: Start Dictation capture and bind finalized commits to a recording session.
+      security:
+        - ControlPlaneHeader: []
+        - ControlPlaneCookie: []
+      parameters:
+        - name: sessionId
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+            minimum: 1
+      responses:
+        "200":
+          description: Recording-session capture started.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RecordingSessionCaptureResponse"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+  /api/v1/recording-sessions/{sessionId}/pause:
+    post:
+      tags: [Data]
+      operationId: pauseRecordingSessionCapture
+      summary: Pause Dictation capture for a recording session without finishing the session record.
+      security:
+        - ControlPlaneHeader: []
+        - ControlPlaneCookie: []
+      parameters:
+        - name: sessionId
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+            minimum: 1
+      responses:
+        "200":
+          description: Recording-session capture paused.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RecordingSessionCaptureResponse"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+  /api/v1/recording-sessions/{sessionId}/resume:
+    post:
+      tags: [Data]
+      operationId: resumeRecordingSessionCapture
+      summary: Resume Dictation capture for a paused recording session.
+      security:
+        - ControlPlaneHeader: []
+        - ControlPlaneCookie: []
+      parameters:
+        - name: sessionId
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+            minimum: 1
+      responses:
+        "200":
+          description: Recording-session capture resumed.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RecordingSessionCaptureResponse"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+  /api/v1/recording-sessions/{sessionId}/stop:
+    post:
+      tags: [Data]
+      operationId: stopRecordingSessionCapture
+      summary: Stop Dictation capture for a recording session without finishing the session record.
+      security:
+        - ControlPlaneHeader: []
+        - ControlPlaneCookie: []
+      parameters:
+        - name: sessionId
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+            minimum: 1
+      responses:
+        "200":
+          description: Recording-session capture stopped.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RecordingSessionCaptureResponse"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+  /api/v1/recording-sessions/{sessionId}/segments:
+    post:
+      tags: [Data]
+      operationId: appendRecordingSessionSegment
+      summary: Append or replace one finalized or draft transcript segment in a recording session.
+      security:
+        - ControlPlaneHeader: []
+        - ControlPlaneCookie: []
+      parameters:
+        - name: sessionId
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+            minimum: 1
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RecordingSessionSegmentRequest"
+      responses:
+        "200":
+          description: Created recording segment.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RecordingSessionSegment"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "501":
+          $ref: "#/components/responses/NotImplemented"
+  /api/v1/recording-sessions/{sessionId}/finish:
+    post:
+      tags: [Data]
+      operationId: finishRecordingSession
+      summary: Mark a recording session finished and persist a supplied or derived summary.
+      security:
+        - ControlPlaneHeader: []
+        - ControlPlaneCookie: []
+      parameters:
+        - name: sessionId
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+            minimum: 1
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RecordingSessionSummaryRequest"
+      responses:
+        "200":
+          description: Finished recording session.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RecordingSession"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "501":
+          $ref: "#/components/responses/NotImplemented"
+  /api/v1/recording-sessions/{sessionId}/summary:
+    get:
+      tags: [Data]
+      operationId: getRecordingSessionSummary
+      summary: Read the persisted or derived summary for a recording session.
+      parameters:
+        - name: sessionId
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+            minimum: 1
+      responses:
+        "200":
+          description: Recording session summary.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RecordingSessionSummaryResponse"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "501":
+          $ref: "#/components/responses/NotImplemented"
+    post:
+      tags: [Data]
+      operationId: updateRecordingSessionSummary
+      summary: Attach or replace a recording session summary without finishing capture.
+      security:
+        - ControlPlaneHeader: []
+        - ControlPlaneCookie: []
+      parameters:
+        - name: sessionId
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+            minimum: 1
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RecordingSessionSummaryRequest"
+      responses:
+        "200":
+          description: Persisted recording session summary.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RecordingSessionSummaryResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "501":
+          $ref: "#/components/responses/NotImplemented"
+  /api/v1/recording-sessions/{sessionId}/summary-job:
+    post:
+      tags: [Data]
+      operationId: startRecordingSessionSummaryJob
+      summary: Start an asynchronous provider-capable summary job for ordered final recording-session segments.
+      security:
+        - ControlPlaneHeader: []
+        - ControlPlaneCookie: []
+      parameters:
+        - name: sessionId
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+            minimum: 1
+      responses:
+        "200":
+          description: Summary job accepted.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RecordingSessionSummaryResponse"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "501":
+          $ref: "#/components/responses/NotImplemented"
   /api/v1/providers/artifacts:
     get:
       tags: [Providers]
@@ -741,8 +1121,26 @@ components:
             type: string
     NotFound:
       description: Route, mode, or profile not found.
+    Conflict:
+      description: Request conflicts with the current mode, session, or capability state.
+      content:
+        text/plain:
+          schema:
+            type: string
+    NotImplemented:
+      description: The configured storage backend does not support this operation.
+      content:
+        text/plain:
+          schema:
+            type: string
     Unavailable:
       description: Runtime command bus unavailable.
+      content:
+        text/plain:
+          schema:
+            type: string
+    ServiceUnavailable:
+      description: Runtime command bus or dependent service unavailable.
       content:
         text/plain:
           schema:
@@ -1638,6 +2036,174 @@ components:
         createdAt:
           type: string
           format: date-time
+    RecordingSession:
+      type: object
+      required: [id, kind, status, captureStatus, summaryStatus, language, startedAt, createdAt, updatedAt]
+      properties:
+        id:
+          type: integer
+          format: int64
+        externalId:
+          type: string
+        kind:
+          type: string
+          enum: [dictation, meeting]
+        status:
+          type: string
+          enum: [active, finished, failed]
+        captureStatus:
+          type: string
+          enum: [idle, recording, paused, stopped]
+        summaryStatus:
+          type: string
+          enum: [idle, running, ready, failed]
+        summaryError:
+          type: string
+        title:
+          type: string
+        language:
+          type: string
+        provider:
+          type: string
+        model:
+          type: string
+        inputSource:
+          type: string
+          enum: [microphone, system_loopback, mic_and_system]
+        processingMode:
+          type: string
+          enum: [final_full, segment_batch, provider_stream, auto]
+        summary:
+          type: string
+        startedAt:
+          type: string
+          format: date-time
+        endedAt:
+          type: string
+          format: date-time
+        captureStartedAt:
+          type: string
+          format: date-time
+        capturePausedAt:
+          type: string
+          format: date-time
+        captureStoppedAt:
+          type: string
+          format: date-time
+        summaryUpdatedAt:
+          type: string
+          format: date-time
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+        segments:
+          type: array
+          items:
+            $ref: "#/components/schemas/RecordingSessionSegment"
+    RecordingSessionSegment:
+      type: object
+      required: [id, sessionId, segmentIndex, text, isFinal, startedMs, endedMs, createdAt]
+      properties:
+        id:
+          type: integer
+          format: int64
+        sessionId:
+          type: integer
+          format: int64
+        segmentIndex:
+          type: integer
+        transcriptionId:
+          type: integer
+          format: int64
+        providerItemId:
+          type: string
+        text:
+          type: string
+        isFinal:
+          type: boolean
+        startedMs:
+          type: integer
+          format: int64
+        endedMs:
+          type: integer
+          format: int64
+        createdAt:
+          type: string
+          format: date-time
+    RecordingSessionCreateRequest:
+      type: object
+      properties:
+        externalId: { type: string }
+        kind:
+          type: string
+          enum: [dictation, meeting]
+        title: { type: string }
+        language: { type: string }
+        provider: { type: string }
+        model: { type: string }
+        inputSource:
+          type: string
+          enum: [microphone, system_loopback, mic_and_system]
+        processingMode:
+          type: string
+          enum: [final_full, segment_batch, provider_stream, auto]
+        startedAt:
+          type: string
+          format: date-time
+    RecordingSessionSegmentRequest:
+      type: object
+      required: [text]
+      properties:
+        segmentIndex: { type: integer }
+        transcriptionId:
+          type: integer
+          format: int64
+        providerItemId: { type: string }
+        text: { type: string }
+        isFinal: { type: boolean }
+        startedMs:
+          type: integer
+          format: int64
+        endedMs:
+          type: integer
+          format: int64
+    RecordingSessionCaptureResponse:
+      type: object
+      required: [id, status, captureStatus]
+      properties:
+        id:
+          type: integer
+          format: int64
+        status:
+          type: string
+          enum: [capture_started, capture_paused, capture_resumed, capture_stopped]
+        captureStatus:
+          type: string
+          enum: [idle, recording, paused, stopped]
+    RecordingSessionSummaryRequest:
+      type: object
+      properties:
+        summary: { type: string }
+        endedAt:
+          type: string
+          format: date-time
+    RecordingSessionSummaryResponse:
+      type: object
+      required: [id, summary, status, generated, persisted]
+      properties:
+        id:
+          type: integer
+          format: int64
+        summary: { type: string }
+        status:
+          type: string
+          enum: [idle, running, ready, failed]
+        error: { type: string }
+        generated: { type: boolean }
+        persisted: { type: boolean }
     SelectedArtifact:
       type: object
       required: [message, artifactId, profileId]

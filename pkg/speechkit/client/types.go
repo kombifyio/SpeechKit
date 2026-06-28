@@ -137,3 +137,5 @@ type RoleResource map[string]any
 type SequenceResource map[string]any
 
 type CatalogReadiness = framework.Readiness
+type ProviderDefault = framework.ProviderDefault
+type ProviderMatrixRow = framework.ProviderMatrixRow

@@ -7,8 +7,14 @@ const (
 	ModelDeepgramFluxGeneralEN            = "flux-general-en"
 	ModelDeepgramFluxGeneralMulti         = "flux-general-multi"
 	ModelDeepgramNova3                    = "nova-3"
+	ModelGroqWhisperLargeV3               = "whisper-large-v3"
+	ModelGroqWhisperLargeV3Turbo          = "whisper-large-v3-turbo"
+	ModelGemini35LiveTranslatePreview     = "gemini-3.5-live-translate-preview"
 	ModelGemini31FlashLivePreview         = "gemini-3.1-flash-live-preview"
 	ModelGemini25FlashNativeAudioPreview  = "gemini-2.5-flash-native-audio-preview-12-2025"
+	ModelOpenAIGPT4OTranscribe            = "gpt-4o-transcribe"
+	ModelOpenAIGPT4OMiniTranscribe        = "gpt-4o-mini-transcribe"
+	ModelOpenAIGPT4OTranscribeDiarize     = "gpt-4o-transcribe-diarize"
 	ModelOpenAIRealtime2                  = "gpt-realtime-2"
 )
 
@@ -102,6 +108,16 @@ func DefaultModelRegistry() []ProviderModelDescriptor {
 		},
 		{
 			Provider:    "google",
+			ModelID:     ModelGemini35LiveTranslatePreview,
+			ProfileID:   "realtime.google.gemini-live-translate",
+			Mode:        ModeVoiceAgent,
+			Name:        "Gemini 3.5 Live Translate Preview",
+			Lifecycle:   ModelLifecyclePreview,
+			Recommended: true,
+			SourceURL:   "https://ai.google.dev/gemini-api/docs/live-api/translation",
+		},
+		{
+			Provider:    "google",
 			ModelID:     ModelGemini31FlashLivePreview,
 			ProfileID:   "realtime.google.gemini-native-audio",
 			Mode:        ModeVoiceAgent,
@@ -119,6 +135,17 @@ func DefaultModelRegistry() []ProviderModelDescriptor {
 			Name:      "Gemini 2.5 Flash Native Audio Preview",
 			Lifecycle: ModelLifecycleLegacy,
 			SourceURL: "https://ai.google.dev/gemini-api/docs/live-api/capabilities",
+		},
+		{
+			Provider:    "openai",
+			ModelID:     ModelOpenAIGPT4OTranscribe,
+			ProfileID:   "stt.openai.gpt-4o-transcribe",
+			Mode:        ModeDictation,
+			Name:        "GPT-4o Transcribe",
+			Lifecycle:   ModelLifecycleGA,
+			Default:     true,
+			Recommended: true,
+			SourceURL:   "https://platform.openai.com/docs/guides/speech-to-text",
 		},
 		{
 			Provider:    "openai",

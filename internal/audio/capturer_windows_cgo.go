@@ -46,6 +46,10 @@ type MalgoSession struct {
 var _ Session = (*MalgoSession)(nil)
 
 func newMalgoSession(cfg Config) (Session, error) {
+	if cfg.InputSource == InputSourceMicAndSystem {
+		return nil, ErrUnsupportedSource
+	}
+
 	ctx, err := malgo.InitContext([]malgo.Backend{malgo.BackendWasapi}, malgo.ContextConfig{}, nil)
 	if err != nil {
 		return nil, err
@@ -69,13 +73,20 @@ func (s *MalgoSession) Start() error {
 	s.buffer.Reset()
 	s.mu.Unlock()
 
-	deviceConfig := malgo.DefaultDeviceConfig(malgo.Capture)
+	deviceType := malgo.Capture
+	if s.cfg.InputSource == InputSourceSystemLoopback {
+		if err := ensureLoopbackOutputDeviceAvailable(s.cfg); err != nil {
+			return err
+		}
+		deviceType = malgo.Loopback
+	}
+	deviceConfig := malgo.DefaultDeviceConfig(deviceType)
 	deviceConfig.Capture.Format = malgo.FormatS16
 	deviceConfig.Capture.Channels = uint32(s.cfg.Channels)
 	deviceConfig.SampleRate = uint32(s.cfg.SampleRate)
 
 	var releaseDeviceID func()
-	if deviceID, ok, err := resolveCaptureDeviceID(s.cfg); err != nil {
+	if deviceID, ok, err := resolveMalgoInputDeviceID(s.cfg); err != nil {
 		return err
 	} else if ok {
 		deviceIDPtr := deviceID.Pointer()
@@ -164,6 +175,16 @@ func (s *MalgoSession) Start() error {
 		Message: "malgo capture started",
 	})
 	return nil
+}
+
+func resolveMalgoInputDeviceID(cfg Config) (malgo.DeviceID, bool, error) {
+	if cfg.InputSource == InputSourceSystemLoopback {
+		return resolveOutputDeviceID(Config{
+			Backend:  cfg.Backend,
+			DeviceID: cfg.OutputDeviceID,
+		})
+	}
+	return resolveCaptureDeviceID(cfg)
 }
 
 // Stop stops recording and returns the captured PCM data. Resets the buffer.

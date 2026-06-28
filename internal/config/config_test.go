@@ -80,8 +80,17 @@ func TestLoadDefaults(t *testing.T) {
 	if cfg.General.DictationIntermediateSegmentMs != DefaultDictationIntermediateSegmentMs {
 		t.Errorf("default dictation intermediate segment ms = %d, want %d", cfg.General.DictationIntermediateSegmentMs, DefaultDictationIntermediateSegmentMs)
 	}
+	if cfg.General.DictationProcessingMode != DictationProcessingModeFinalFull {
+		t.Errorf("default dictation processing mode = %q, want %q", cfg.General.DictationProcessingMode, DictationProcessingModeFinalFull)
+	}
+	if cfg.Audio.InputSource != AudioInputSourceMicrophone {
+		t.Errorf("default audio input source = %q, want %q", cfg.Audio.InputSource, AudioInputSourceMicrophone)
+	}
 	if cfg.General.AutoStartOnLaunch {
-		t.Fatal("general auto-start should be disabled by default")
+		t.Fatal("general dashboard auto-open should be disabled by default")
+	}
+	if cfg.General.StartAtLogin {
+		t.Fatal("general start-at-login should be disabled by default")
 	}
 	if cfg.General.EagerWarmup {
 		t.Fatal("general eager warmup should be disabled by default")
@@ -1323,6 +1332,48 @@ func TestDefaultHotkeyBehaviors(t *testing.T) {
 	}
 }
 
+func TestNormalizeDictationProcessingMode(t *testing.T) {
+	tests := []struct {
+		in       string
+		fallback string
+		want     string
+	}{
+		{in: "", want: DictationProcessingModeFinalFull},
+		{in: "final_full", want: DictationProcessingModeFinalFull},
+		{in: "SEGMENT_BATCH", want: DictationProcessingModeSegmentBatch},
+		{in: " provider_stream ", want: DictationProcessingModeProviderStream},
+		{in: "auto", want: DictationProcessingModeAuto},
+		{in: "bad", fallback: DictationProcessingModeSegmentBatch, want: DictationProcessingModeSegmentBatch},
+		{in: "bad", fallback: "bad", want: DictationProcessingModeFinalFull},
+	}
+	for _, tt := range tests {
+		if got := NormalizeDictationProcessingMode(tt.in, tt.fallback); got != tt.want {
+			t.Fatalf("NormalizeDictationProcessingMode(%q, %q) = %q, want %q", tt.in, tt.fallback, got, tt.want)
+		}
+	}
+}
+
+func TestNormalizeAudioInputSource(t *testing.T) {
+	tests := []struct {
+		in       string
+		fallback string
+		want     string
+	}{
+		{in: "", want: AudioInputSourceMicrophone},
+		{in: "microphone", want: AudioInputSourceMicrophone},
+		{in: "system", want: AudioInputSourceSystemLoopback},
+		{in: "loopback", want: AudioInputSourceSystemLoopback},
+		{in: "MIC+SYSTEM", want: AudioInputSourceMicAndSystem},
+		{in: "bad", fallback: AudioInputSourceSystemLoopback, want: AudioInputSourceSystemLoopback},
+		{in: "bad", fallback: "bad", want: AudioInputSourceMicrophone},
+	}
+	for _, tt := range tests {
+		if got := NormalizeAudioInputSource(tt.in, tt.fallback); got != tt.want {
+			t.Fatalf("NormalizeAudioInputSource(%q, %q) = %q, want %q", tt.in, tt.fallback, got, tt.want)
+		}
+	}
+}
+
 func TestDefaultOverlayPosition(t *testing.T) {
 	cfg := defaults()
 	if cfg.UI.OverlayPosition != "bottom" {
@@ -1367,6 +1418,8 @@ func TestSaveRoundTripNewFields(t *testing.T) {
 	cfg.General.DictateHotkeyBehavior = HotkeyBehaviorToggle
 	cfg.General.AssistHotkeyBehavior = HotkeyBehaviorHoldToTalk
 	cfg.General.VoiceAgentHotkeyBehavior = HotkeyBehaviorToggle
+	cfg.General.DictationProcessingMode = DictationProcessingModeSegmentBatch
+	cfg.Audio.InputSource = AudioInputSourceSystemLoopback
 	cfg.UI.OverlayPosition = "bottom"
 	cfg.UI.OverlayMovable = true
 	cfg.UI.OverlayFreeX = 864
@@ -1391,6 +1444,12 @@ func TestSaveRoundTripNewFields(t *testing.T) {
 	}
 	if reloaded.General.VoiceAgentHotkeyBehavior != HotkeyBehaviorToggle {
 		t.Fatalf("VoiceAgentHotkeyBehavior = %q, want %q", reloaded.General.VoiceAgentHotkeyBehavior, HotkeyBehaviorToggle)
+	}
+	if reloaded.General.DictationProcessingMode != DictationProcessingModeSegmentBatch {
+		t.Fatalf("DictationProcessingMode = %q, want %q", reloaded.General.DictationProcessingMode, DictationProcessingModeSegmentBatch)
+	}
+	if reloaded.Audio.InputSource != AudioInputSourceSystemLoopback {
+		t.Fatalf("Audio.InputSource = %q, want %q", reloaded.Audio.InputSource, AudioInputSourceSystemLoopback)
 	}
 	if reloaded.UI.OverlayPosition != "bottom" {
 		t.Fatalf("OverlayPosition = %q, want %q", reloaded.UI.OverlayPosition, "bottom")
@@ -1442,6 +1501,12 @@ design = "default"
 	}
 	if cfg.VoiceAgent.CloseBehavior != VoiceAgentCloseBehaviorContinue {
 		t.Fatalf("VoiceAgent.CloseBehavior = %q, want default %q", cfg.VoiceAgent.CloseBehavior, VoiceAgentCloseBehaviorContinue)
+	}
+	if cfg.General.DictationProcessingMode != DictationProcessingModeFinalFull {
+		t.Fatalf("DictationProcessingMode = %q, want default %q", cfg.General.DictationProcessingMode, DictationProcessingModeFinalFull)
+	}
+	if cfg.Audio.InputSource != AudioInputSourceMicrophone {
+		t.Fatalf("Audio.InputSource = %q, want default %q", cfg.Audio.InputSource, AudioInputSourceMicrophone)
 	}
 	if cfg.UI.OverlayPosition != "bottom" {
 		t.Fatalf("OverlayPosition = %q, want default %q", cfg.UI.OverlayPosition, "bottom")
@@ -1595,6 +1660,9 @@ auto_start_on_launch = true
 	if !cfg.VoiceAgent.AutoStartOnLaunch {
 		t.Fatal("VoiceAgent.AutoStartOnLaunch = false, want true after sync")
 	}
+	if !cfg.General.StartAtLogin {
+		t.Fatal("General.StartAtLogin = false, want true from legacy startup preference")
+	}
 }
 
 func TestLoadPrefersGeneralAutoStartOverLegacyVoiceAgentSection(t *testing.T) {
@@ -1626,6 +1694,39 @@ auto_start_on_launch = true
 	}
 	if cfg.VoiceAgent.AutoStartOnLaunch {
 		t.Fatal("VoiceAgent.AutoStartOnLaunch = true, want sync from explicit general setting")
+	}
+	if cfg.General.StartAtLogin {
+		t.Fatal("General.StartAtLogin = true, want explicit dashboard auto-open setting to keep login start disabled")
+	}
+}
+
+func TestLoadPrefersExplicitStartAtLoginOverLegacyAutoStart(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.toml")
+
+	content := `
+[general]
+dictate_hotkey = "win+alt"
+assist_hotkey = "ctrl+win"
+voice_agent_hotkey = "ctrl+shift"
+auto_start_on_launch = true
+start_at_login = false
+`
+
+	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+
+	if !cfg.General.AutoStartOnLaunch {
+		t.Fatal("General.AutoStartOnLaunch = false, want true from explicit config")
+	}
+	if cfg.General.StartAtLogin {
+		t.Fatal("General.StartAtLogin = true, want explicit start_at_login=false to win")
 	}
 }
 

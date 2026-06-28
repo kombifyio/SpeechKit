@@ -40,6 +40,9 @@ func (s *sqlStore) ExportScope(ctx context.Context, scope speechstorage.Scope) (
 	if export.VoiceAgentSessions, err = s.listVoiceAgentSessionsByScopeID(ctx, scopeID); err != nil {
 		return nil, err
 	}
+	if export.RecordingSessions, err = s.listRecordingSessionsByScopeID(ctx, scopeID); err != nil {
+		return nil, err
+	}
 	if export.DictionaryEntries, err = s.listUserDictionaryEntriesByScopeID(ctx, scopeID); err != nil {
 		return nil, err
 	}
@@ -59,11 +62,12 @@ func (s *sqlStore) ExportScope(ctx context.Context, scope speechstorage.Scope) (
 //  2. Link tables (transcription_audio_assets, quick_note_audio_assets)
 //  3. audio_assets
 //  4. voice_agent_session_turns, voice_agent_session_summary_items
-//  5. voice_agent_sessions
-//  6. transcriptions
-//  7. quick_notes
-//  8. user_dictionary_entries
-//  9. store_stats row (reset to zero counts)
+//  5. recording_session_segments, recording_sessions
+//  6. voice_agent_sessions
+//  7. transcriptions
+//  8. quick_notes
+//  9. user_dictionary_entries
+//  10. store_stats row (reset to zero counts)
 //
 // NOTE: Audio files on disk are NOT deleted here; only DB rows are removed.
 // The caller receives AudioFilePaths in the returned DeleteResult and is
@@ -102,7 +106,11 @@ func (s *sqlStore) DeleteScope(ctx context.Context, scope speechstorage.Scope) (
 		 WHERE session_id IN (SELECT id FROM voice_agent_sessions WHERE scope_id = ?)`,
 		`DELETE FROM voice_agent_session_summary_items
 		 WHERE session_id IN (SELECT id FROM voice_agent_sessions WHERE scope_id = ?)`,
-		// 5–8. Owner tables
+		// 5. Long recording children
+		`DELETE FROM recording_session_segments
+		 WHERE session_id IN (SELECT id FROM recording_sessions WHERE scope_id = ?)`,
+		`DELETE FROM recording_sessions WHERE scope_id = ?`,
+		// 6–9. Owner tables
 		`DELETE FROM voice_agent_sessions WHERE scope_id = ?`,
 		`DELETE FROM transcriptions WHERE scope_id = ?`,
 		`DELETE FROM quick_notes WHERE scope_id = ?`,

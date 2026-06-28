@@ -51,7 +51,7 @@ token_env = "HF_TOKEN"
 [providers.openai]
 enabled = true
 api_key_env = "OPENAI_API_KEY"
-stt_model = "whisper-1"
+stt_model = "gpt-4o-transcribe"
 utility_model = "gpt-4o-mini"
 assist_model = "gpt-4o"
 agent_model = "gpt-4o"
