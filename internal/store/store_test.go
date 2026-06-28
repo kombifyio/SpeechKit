@@ -45,6 +45,41 @@ func TestNewAndMigrate(t *testing.T) {
 	}
 }
 
+func TestSQLiteRecordingSessionStateMigrationIsIdempotent(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "test.db")
+	first, err := NewSQLiteStore(StoreConfig{SQLitePath: dbPath, MaxAudioStorageMB: 100})
+	if err != nil {
+		t.Fatalf("first NewSQLiteStore: %v", err)
+	}
+	if err := first.Close(); err != nil {
+		t.Fatalf("first close: %v", err)
+	}
+
+	second, err := NewSQLiteStore(StoreConfig{SQLitePath: dbPath, MaxAudioStorageMB: 100})
+	if err != nil {
+		t.Fatalf("second NewSQLiteStore should rerun migration 019 idempotently: %v", err)
+	}
+	defer second.Close()
+
+	for _, column := range []string{
+		"capture_status",
+		"capture_started_at",
+		"capture_paused_at",
+		"capture_stopped_at",
+		"summary_status",
+		"summary_error",
+		"summary_updated_at",
+	} {
+		exists, err := sqliteColumnExists(context.Background(), second.db, "recording_sessions", column)
+		if err != nil {
+			t.Fatalf("check column %s: %v", column, err)
+		}
+		if !exists {
+			t.Fatalf("recording_sessions.%s missing after idempotent migration", column)
+		}
+	}
+}
+
 func TestSQLiteMigrationRepairsLegacyPersonaDefaultSequence(t *testing.T) {
 	dbPath := filepath.Join(t.TempDir(), "legacy.db")
 	db, err := sql.Open("sqlite", dbPath)
