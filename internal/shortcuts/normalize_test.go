@@ -106,3 +106,19 @@ func TestLocaleRankFindsMatchOrReturnsNegativeOne(t *testing.T) {
 		}
 	}
 }
+
+func TestLocaleChainRetainsScriptFallback(t *testing.T) {
+	chain, defaulted := localeChain("zh-Hans-CN")
+	if defaulted {
+		t.Fatal("script locale unexpectedly defaulted")
+	}
+	want := []string{"zh-hans-cn", "zh-hans", "zh", "default"}
+	if len(chain) != len(want) {
+		t.Fatalf("locale chain = %v, want %v", chain, want)
+	}
+	for i := range want {
+		if chain[i] != want[i] {
+			t.Fatalf("locale chain = %v, want %v", chain, want)
+		}
+	}
+}

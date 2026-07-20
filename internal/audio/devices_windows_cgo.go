@@ -5,6 +5,7 @@ package audio
 import (
 	"encoding/hex"
 	"fmt"
+	"log/slog"
 	"strings"
 
 	"github.com/gen2brain/malgo"
@@ -71,9 +72,27 @@ func resolveCaptureDeviceID(cfg Config) (malgo.DeviceID, bool, error) {
 		return malgo.DeviceID{}, false, err
 	}
 
-	selected := selectCaptureDeviceID(requested, devices)
+	selected := selectCaptureDeviceID(requested, cfg.DeviceName, devices)
 	if selected == "" {
+		names := make([]string, 0, len(devices))
+		for _, device := range devices {
+			names = append(names, device.Name)
+		}
+		slog.Warn("configured capture device not found; falling back to system default",
+			"requested_device_id", requested,
+			"requested_device_name", cfg.DeviceName,
+			"available_devices", strings.Join(names, "; "))
 		return malgo.DeviceID{}, false, nil
+	}
+
+	if !strings.EqualFold(selected, requested) {
+		slog.Warn("capture device re-enumerated with a new endpoint id; matched by persisted name",
+			"old_device_id", requested,
+			"new_device_id", selected,
+			"device_name", cfg.DeviceName)
+		if OnCaptureDeviceRebound != nil {
+			OnCaptureDeviceRebound(requested, selected, strings.TrimSpace(cfg.DeviceName))
+		}
 	}
 
 	return deviceIDFromHexString(selected)

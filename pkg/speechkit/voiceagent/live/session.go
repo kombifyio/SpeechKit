@@ -2,6 +2,7 @@ package live
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"sync"
@@ -9,20 +10,23 @@ import (
 	"time"
 )
 
+var errHostPromptRejected = errors.New("voiceagent: host prompt rejected")
+
 const speakingSettleDelay = 900 * time.Millisecond
 
 // Session manages a Voice Agent conversation.
 type Session struct {
-	mu        sync.Mutex
-	state     atomic.Value // State
-	provider  LiveProvider
-	callbacks Callbacks
-	idleTimer *IdleTimer
-	cancelFn  context.CancelFunc
-	locale    string
-	lastCfg   LiveConfig // Stored for reconnection
-	lastIdle  IdleConfig // Stored for reconnection
-	workflow  *workflowState
+	mu            sync.Mutex
+	state         atomic.Value // State
+	provider      LiveProvider
+	callbacks     Callbacks
+	idleTimer     *IdleTimer
+	cancelFn      context.CancelFunc
+	locale        string
+	lastCfg       LiveConfig // Stored for reconnection
+	lastIdle      IdleConfig // Stored for reconnection
+	workflow      *workflowState
+	hostPromptSeq atomic.Uint64
 }
 
 // NewSession creates a Voice Agent session with the given provider.
@@ -127,6 +131,28 @@ func (s *Session) SendToolResponse(response ToolResponse) error {
 		return nil
 	}
 	return s.provider.SendToolResponse(response)
+}
+
+// sendHostPrompt opens a host-observable output generation before sending the
+// trusted local prompt. The callback deliberately runs first because some
+// provider implementations can produce receive-loop events immediately after
+// SendText writes to the connection.
+func (s *Session) sendHostPrompt(kind HostPromptKind, prompt string) error {
+	id := s.hostPromptSeq.Add(1)
+	if s.callbacks.OnHostPrompt != nil {
+		if !s.callbacks.OnHostPrompt(HostPromptEvent{ID: id, Kind: kind, Type: HostPromptStarted}) {
+			return errHostPromptRejected
+		}
+	}
+	err := s.provider.SendText(prompt)
+	if s.callbacks.OnHostPrompt != nil {
+		eventType := HostPromptSent
+		if err != nil {
+			eventType = HostPromptSendFailed
+		}
+		_ = s.callbacks.OnHostPrompt(HostPromptEvent{ID: id, Kind: kind, Type: eventType})
+	}
+	return err
 }
 
 // AdvanceWorkflowStep moves a configured local workflow to its next step and
@@ -242,10 +268,13 @@ func (s *Session) receiveLoop(ctx context.Context) {
 	scheduleSpeakingSettle := func() {
 		stopSpeakingSettleTimer()
 		speakingSettleTimer = time.AfterFunc(speakingSettleDelay, func() {
-			if s.currentState() != StateSpeaking {
+			// Speaking: Audio riss ohne Done ab. Processing: reiner
+			// Text-Turn, dessen Transcript-Ende nur den Timer armiert hat
+			// (siehe handleLiveMessage). Beides faellt zurueck auf Listening.
+			if st := s.currentState(); st != StateSpeaking && st != StateProcessing {
 				return
 			}
-			slog.Warn("voice agent speaking turn did not emit completion; returning to listening")
+			slog.Warn("voice agent turn did not emit completion; returning to listening")
 			if s.setListeningIfActive() {
 				s.resetIdleTimer()
 			}
@@ -304,11 +333,21 @@ func (s *Session) handleLiveMessage(ctx context.Context, msg *LiveMessage, sched
 	if msg.GoAway {
 		return s.handleGoAway(ctx)
 	}
-	if msg.Done || (msg.OutputTranscriptDone && len(msg.Audio) == 0) {
+	if msg.Done {
 		stopSpeakingSettleTimer()
 		if s.setListeningIfActive() {
 			s.resetIdleTimer()
 		}
+	} else if msg.OutputTranscriptDone && len(msg.Audio) == 0 {
+		// Transcript-Ende ist KEIN verlaessliches Turn-Ende: Deepgram sendet
+		// den vollstaendigen Assistant-Text (ConversationText), bevor die
+		// TTS-Audio-Chunks fertig gestreamt sind - ein sofortiger Wechsel
+		// nach Listening schnitt die letzten Worte der Antwort ab (live
+		// beobachtet 2026-07-09). Stattdessen als Fallback den Settle-Timer
+		// armieren: folgt Audio, uebernimmt der Speaking-Pfad und Done/
+		// AgentAudioDone beendet den Turn; folgt nichts (reiner Text-Turn),
+		// kehrt der Timer nach settleDelay zu Listening zurueck.
+		scheduleSpeakingSettle()
 	}
 	return true
 }

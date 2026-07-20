@@ -32,10 +32,26 @@ type STTProvider interface {
 
 // TranscribeOpts configures a single transcription request.
 type TranscribeOpts struct {
-	Language                  string                         // "de", "en", "auto"; request override only
-	Model                     string                         // Optional: model override
-	Prompt                    string                         // Optional: provider-specific hint prompt for better recognition
-	Keyterms                  []string                       // Optional: provider-native vocabulary bias terms
+	Language string   // "de", "en", "auto"; request override only
+	Model    string   // Optional: model override
+	Prompt   string   // Optional: provider-specific hint prompt for better recognition
+	Keyterms []string // Optional: provider-native vocabulary bias terms
+	// ConversationContext carries the preceding dialogue turns (oldest
+	// first, no speaker labels) for providers whose models condition on
+	// conversational context — e.g. AssemblyAI Universal-3.5 Pro sync
+	// accepts up to 100 turns / 4096 chars via conversation_context.
+	// Distinct from Prompt (which describes the domain/scenario) and
+	// Keyterms (explicit vocabulary). Providers without native support
+	// ignore it.
+	ConversationContext []string
+	// ProviderProfileID prioritizes a provider for this request. Accepts a
+	// full provider-profile ID (e.g. "stt.deepgram.nova-3") or a bare
+	// provider ID (e.g. "deepgram"); routers move matching providers to the
+	// front of their candidate list while keeping the remaining providers as
+	// fallbacks. An unknown or unconfigured value changes nothing — a
+	// request never hard-fails on an unsatisfiable preference. Mirrors
+	// speechkit.DictationStreamOptions.ProviderProfileID for the batch path.
+	ProviderProfileID         string
 	Speaker                   speaker.Options                // Optional speaker diarization / attribution request
 	Options                   provideropts.Values            // Optional normalized global/default voice options
 	ProviderOptions           provideropts.Values            // Optional normalized overrides for the selected provider

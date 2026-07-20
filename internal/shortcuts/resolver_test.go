@@ -254,3 +254,86 @@ func TestResolverFallsBackToBaseLocale(t *testing.T) {
 		t.Fatalf("Payload = %q, want %q", got, want)
 	}
 }
+
+func TestResolveHomeAssistantAcrossInitialLocales(t *testing.T) {
+	tests := []struct {
+		name   string
+		text   string
+		locale string
+	}{
+		{name: "English", text: "turn on the kitchen light", locale: "en-US"},
+		{name: "German", text: "schalte das Küchenlicht ein", locale: "de-DE"},
+		{name: "Spanish", text: "enciende la luz de la cocina", locale: "es-MX"},
+		{name: "Simplified Chinese no-space prefix", text: "家庭助理打开客厅灯", locale: "zh-Hans-CN"},
+		{name: "Hindi", text: "लाइट चालू करो", locale: "hi-IN"},
+		{name: "Arabic", text: "شغّل الضوء في المطبخ", locale: "ar-EG"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := ResolveWithLocale(tc.text, tc.locale)
+			if got.Intent != IntentHomeAssistant {
+				t.Fatalf("ResolveWithLocale(%q, %q) intent = %q", tc.text, tc.locale, got.Intent)
+			}
+		})
+	}
+}
+
+func TestHanNoSpacePrefixIsScopedToRegisteredHAPhrases(t *testing.T) {
+	got := ResolveWithLocale("家庭助理打开客厅灯", "zh-Hans")
+	if got.Intent != IntentHomeAssistant || got.Payload != "打开客厅灯" {
+		t.Fatalf("explicit HA prefix resolution = %#v", got)
+	}
+	if got := ResolveWithLocale("打开文档", "zh-Hans"); got.Intent != IntentNone {
+		t.Fatalf("unregistered Han verb was classified as %q", got.Intent)
+	}
+}
+
+func TestHomeAssistantCatalogIsIntentScopedAndComplete(t *testing.T) {
+	wantLocales := map[string]bool{"en": false, "de": false, "es": false, "zh-hans": false, "hi": false, "ar": false}
+	for _, lexicon := range homeAssistantLexicons {
+		if lexicon.Intent != IntentHomeAssistant {
+			t.Fatalf("external HA catalog contains intent %q", lexicon.Intent)
+		}
+		locale := normalizeLocaleKey(lexicon.Locale)
+		if _, ok := wantLocales[locale]; !ok {
+			t.Fatalf("external HA catalog contains locale %q", lexicon.Locale)
+		}
+		wantLocales[locale] = true
+	}
+	for locale, found := range wantLocales {
+		if !found {
+			t.Fatalf("external HA catalog is missing locale %q", locale)
+		}
+	}
+}
+
+func TestHomeAssistantCatalogRejectsNonCanonicalLocalesAndNestedIntent(t *testing.T) {
+	tests := []struct {
+		name string
+		raw  string
+	}{
+		{
+			name: "underscore locale",
+			raw:  `{"intent":"home_assistant","translation_status":"proposal","lexicons":[{"locale":"zh_Hans","phrases":[{"value":"x","prefix":true}]}]}`,
+		},
+		{
+			name: "whitespace padded locale",
+			raw:  `{"intent":"home_assistant","translation_status":"proposal","lexicons":[{"locale":" zh-Hans","phrases":[{"value":"x","prefix":true}]}]}`,
+		},
+		{
+			name: "wrong locale casing",
+			raw:  `{"intent":"home_assistant","translation_status":"proposal","lexicons":[{"locale":"ZH-hans","phrases":[{"value":"x","prefix":true}]}]}`,
+		},
+		{
+			name: "nested conflicting intent",
+			raw:  `{"intent":"home_assistant","translation_status":"proposal","lexicons":[{"intent":"math","locale":"en","phrases":[{"value":"x","prefix":true}]}]}`,
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if _, err := decodeHomeAssistantLexicons([]byte(tc.raw)); err == nil {
+				t.Fatal("decodeHomeAssistantLexicons accepted invalid catalog data")
+			}
+		})
+	}
+}

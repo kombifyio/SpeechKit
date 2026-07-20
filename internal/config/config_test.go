@@ -588,12 +588,12 @@ func TestNormalizeWakewordBackend(t *testing.T) {
 		in   string
 		want string
 	}{
-		{name: "empty defaults to openWakeWord (per-phrase trained models)", in: "", want: WakewordBackendLiveKitOpenWakeWord},
+		{name: "empty defaults to sherpa_kws (bundle-consistent default)", in: "", want: WakewordBackendSherpaKWS},
 		{name: "sherpa explicit pin survives", in: "sherpa_kws", want: WakewordBackendSherpaKWS},
-		{name: "livekit", in: "livekit", want: WakewordBackendLiveKitOpenWakeWord},
-		{name: "openwakeword alias", in: "openWakeWord", want: WakewordBackendLiveKitOpenWakeWord},
+		{name: "livekit explicit pin survives", in: "livekit", want: WakewordBackendLiveKitOpenWakeWord},
+		{name: "openwakeword alias survives", in: "openWakeWord", want: WakewordBackendLiveKitOpenWakeWord},
 		{name: "stt alias", in: "phrase_match", want: WakewordBackendSTTPhrase},
-		{name: "unknown falls back to openWakeWord (new default)", in: "unknown", want: WakewordBackendLiveKitOpenWakeWord},
+		{name: "unknown falls back to sherpa_kws (bundle-consistent default)", in: "unknown", want: WakewordBackendSherpaKWS},
 	}
 
 	for _, tt := range tests {

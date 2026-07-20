@@ -114,7 +114,15 @@ type WakewordConfig struct {
 
 	// MinConsecutiveFrames is the number of consecutive above-threshold
 	// frames required before a trigger fires. Higher = fewer false-accepts,
-	// more false-rejects. Defaults to 2.
+	// more false-rejects. Defaults to 1.
+	//
+	// openWakeWord scores one frame per 80ms, so this is a duration gate:
+	// N frames demands the score hold above Threshold for N*80ms without a
+	// single dip. A wake phrase is only ~500ms long and the score spikes
+	// rather than plateaus, so values above 3 (240ms) make the phrase
+	// effectively undetectable — the counter resets on the first dip and
+	// never reaches N. Raise Threshold to cut false-accepts; do not raise
+	// this past 3.
 	MinConsecutiveFrames int `toml:"min_consecutive_frames"`
 
 	// CooldownMs is the minimum gap between two triggers, in milliseconds.

@@ -34,6 +34,7 @@ import (
 	"github.com/kombifyio/SpeechKit/internal/stt"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit"
 	speechcustomize "github.com/kombifyio/SpeechKit/pkg/speechkit/customize"
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/localization"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/speaker"
 	speechstorage "github.com/kombifyio/SpeechKit/pkg/speechkit/storage"
 )
@@ -148,6 +149,8 @@ type processResponse struct {
 	Shortcut             string                          `json:"shortcut,omitempty"`
 	Surface              string                          `json:"surface,omitempty"`
 	Kind                 string                          `json:"kind,omitempty"`
+	MessageID            localization.MessageID          `json:"message_id,omitempty"`
+	ReasonCode           string                          `json:"reason_code,omitempty"`
 	Transcript           string                          `json:"transcript,omitempty"`
 	AudioBase64          string                          `json:"audio_base64,omitempty"`
 	AudioFormat          string                          `json:"audio_format,omitempty"`
@@ -464,6 +467,8 @@ func (h *Handler) processTranscript(ctx context.Context, w http.ResponseWriter, 
 		Shortcut:             result.Shortcut,
 		Surface:              string(result.Surface),
 		Kind:                 string(result.Kind),
+		MessageID:            result.MessageID,
+		ReasonCode:           result.ReasonCode,
 		Transcript:           transcript,
 		LatencyMs:            latency.Milliseconds(),
 		SourceInfo:           source,

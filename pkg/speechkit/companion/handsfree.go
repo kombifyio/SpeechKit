@@ -39,6 +39,21 @@ const (
 // it to attach their transcript/capture result to the framework composer.
 type WakeRequestFunc func(context.Context, wakeword.DetectionEvent) (speechkit.AssistRequest, bool)
 
+// Stage identifies a coarse phase of a hands-free turn. Stages are a UI
+// vocabulary (status ring, tray icon, LED), deliberately smaller than the
+// runtime event stream: one linear wake → listening → thinking → speaking →
+// idle sequence per Assist turn, with error as the terminal failure stage.
+type Stage string
+
+const (
+	StageWake      Stage = "wake"
+	StageListening Stage = "listening"
+	StageThinking  Stage = "thinking"
+	StageSpeaking  Stage = "speaking"
+	StageIdle      Stage = "idle"
+	StageError     Stage = "error"
+)
+
 type Options struct {
 	Runtime     *speechkit.Runtime
 	TargetMode  HandsFreeTarget
@@ -47,6 +62,15 @@ type Options struct {
 	Assist      speechkit.AssistService
 	VoiceAgent  speechkit.VoiceAgentService
 	TTS         *tts.Service
+	// OnResult, when set, receives the AssistResult (including any synthesized
+	// Audio) produced by a wake-triggered Assist turn, so the host can play it
+	// back. It runs synchronously inside HandleWake after ProcessAssist
+	// succeeds; hosts that want async playback should spawn their own goroutine.
+	OnResult func(context.Context, speechkit.AssistResult)
+	// OnStage, when set, receives turn-lifecycle stages so hosts can drive a
+	// status UI (e.g. the kombify box ring) from the canonical flow instead of
+	// scraping logs or events. Called synchronously — keep handlers fast.
+	OnStage func(Stage)
 }
 
 type HandsFree struct {
@@ -57,6 +81,8 @@ type HandsFree struct {
 	assist             speechkit.AssistService
 	voiceAgent         speechkit.VoiceAgentService
 	tts                *tts.Service
+	onResult           func(context.Context, speechkit.AssistResult)
+	onStage            func(Stage)
 }
 
 func NewHandsFree(opts Options) (*HandsFree, error) {
@@ -75,7 +101,15 @@ func NewHandsFree(opts Options) (*HandsFree, error) {
 		assist:             opts.Assist,
 		voiceAgent:         opts.VoiceAgent,
 		tts:                opts.TTS,
+		onResult:           opts.OnResult,
+		onStage:            opts.OnStage,
 	}, nil
+}
+
+func (h *HandsFree) stage(s Stage) {
+	if h != nil && h.onStage != nil {
+		h.onStage(s)
+	}
 }
 
 func (h *HandsFree) Runtime() *speechkit.Runtime {
@@ -138,6 +172,7 @@ func (h *HandsFree) HandleWake(ctx context.Context, ev wakeword.DetectionEvent) 
 		Message:  ev.Phrase,
 		Metadata: speechkit.NewMetadata(wakeMetadata(ev)),
 	})
+	h.stage(StageWake)
 	if h.downstreamWakeSink != nil {
 		h.downstreamWakeSink.Emit(ev)
 	}
@@ -165,14 +200,29 @@ func (h *HandsFree) HandleWake(ctx context.Context, ev wakeword.DetectionEvent) 
 			return nil
 		}
 		if h.assist == nil {
+			h.stage(StageError)
 			return ErrMissingAssist
 		}
+		h.stage(StageListening)
 		req, ok := h.wakeRequest(ctx, ev)
 		if !ok {
+			h.stage(StageIdle)
 			return nil
 		}
-		_, err := h.ProcessAssist(ctx, req)
-		return err
+		h.stage(StageThinking)
+		result, err := h.ProcessAssist(ctx, req)
+		if err != nil {
+			h.stage(StageError)
+			return err
+		}
+		if result.Audio.Len() > 0 || strings.TrimSpace(result.SpeakText) != "" {
+			h.stage(StageSpeaking)
+		}
+		if h.onResult != nil {
+			h.onResult(ctx, result)
+		}
+		h.stage(StageIdle)
+		return nil
 	}
 }
 

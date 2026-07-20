@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"github.com/kombifyio/SpeechKit/internal/shortcuts"
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/localization"
 )
 
 type Route string
@@ -49,12 +50,14 @@ type ToolCall struct {
 }
 
 type ToolResult struct {
-	Text      string
-	SpeakText string
-	Action    string
-	Locale    string
-	Surface   ResultSurface
-	Kind      ResultKind
+	Text       string
+	SpeakText  string
+	Action     string
+	Locale     string
+	Surface    ResultSurface
+	Kind       ResultKind
+	MessageID  localization.MessageID
+	ReasonCode string
 
 	// FollowupNeeded signals a multi-turn skill: the pipeline stores
 	// the current Intent + FollowupState under the caller's session

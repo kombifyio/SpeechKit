@@ -7,11 +7,8 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"log/slog"
 	"net/http"
-	"net/url"
-	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -20,6 +17,7 @@ import (
 	"github.com/kombifyio/SpeechKit/internal/server/httpx"
 	"github.com/kombifyio/SpeechKit/internal/server/middleware"
 	"github.com/kombifyio/SpeechKit/internal/server/storageauth"
+	"github.com/kombifyio/SpeechKit/internal/server/wssession"
 	"github.com/kombifyio/SpeechKit/internal/store"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/speaker"
 )
@@ -30,25 +28,14 @@ import (
 // without giving attackers a 1 MB memory amplification vector per frame.
 const defaultWSReadLimitBytes int64 = 64 * 1024
 
-// envAllowEmptyWSOriginVar opts requests in that do not send an Origin
-// header (CLIs, native clients, server-to-server tests) past the WebSocket
-// upgrade gate. Default behaviour rejects empty Origin so a browser
-// without CSRF protection cannot establish a session by stripping the
-// header.
-const envAllowEmptyWSOriginVar = "SPEECHKIT_ALLOW_EMPTY_ORIGIN"
-
-// envAllowWildcardOriginVar permits a literal "*" entry in AllowedOrigins to
-// match every Origin. This disables CSRF-style protection for the WebSocket
-// upgrade and is intended for local development only. By default a "*" entry
-// is dropped (fail-closed) and a loud warning is emitted at handler
-// construction, so a stray wildcard in config cannot silently open the
-// cross-origin surface in production.
-const envAllowWildcardOriginVar = "SPEECHKIT_ALLOW_WILDCARD_ORIGIN"
-
-// wsTicketSubprotocolPrefix carries the session ticket as a WebSocket
-// subprotocol, e.g. "ticket.AbCd...". This keeps the ticket out of the
-// URL and therefore out of any fronting reverse proxy's access log.
-const wsTicketSubprotocolPrefix = "ticket."
+// Origin/ticket plumbing is shared with the streaming-Dictation surface via
+// internal/server/wssession; the aliases keep this package's names (and their
+// tests) stable.
+const (
+	envAllowEmptyWSOriginVar  = wssession.EnvAllowEmptyOrigin
+	envAllowWildcardOriginVar = wssession.EnvAllowWildcardOrigin
+	wsTicketSubprotocolPrefix = wssession.TicketSubprotocolPrefix
+)
 
 // ProviderFactory builds a Framework kernel voice-agent provider on demand.
 // Each WebSocket session gets its own provider instance so concurrent
@@ -125,6 +112,11 @@ type LiveConfigFrame struct {
 	ActivityHandling  string
 	TurnCoverage      string
 	Speaker           speaker.Options
+	// Tools are server-executed tool definitions merged in by the adapter
+	// from the SessionToolRouter (tool bridge). Provider bridges that support
+	// session tools map these onto the kernel's LiveConfig.Tools; providers
+	// without tool support ignore them.
+	Tools []ToolDefinitionFrame
 }
 
 // LiveMessage is the subset of kernel/internal/voiceagent.LiveMessage the
@@ -194,6 +186,11 @@ type HandlerOptions struct {
 	// ReadLimit caps per-frame bytes the upgraded WebSocket will read.
 	// Zero or negative falls back to defaultWSReadLimitBytes (64 KiB).
 	ReadLimit int64
+	// ToolRouter, when non-nil, supplies server-executed tools for each
+	// session (voice-agent tool bridge). Nil disables server-side tool
+	// execution; all provider tool calls pass through to the client as
+	// before.
+	ToolRouter SessionToolRouter
 }
 
 // Handler exposes both the HTTP session-creation endpoint and the WS
@@ -212,6 +209,7 @@ type Handler struct {
 	mediaBridge        MediaBridgeFactory
 	readLimit          int64
 	trustedProxies     httpx.TrustedProxies
+	toolRouter         SessionToolRouter
 }
 
 // New constructs a handler. All options except MaxAllowedClockSkew are
@@ -280,6 +278,7 @@ func New(opts HandlerOptions) (*Handler, error) {
 		mediaBridge:        mediaBridge,
 		readLimit:          readLimit,
 		trustedProxies:     trustedProxies,
+		toolRouter:         opts.ToolRouter,
 	}, nil
 }
 
@@ -420,6 +419,20 @@ func (h *Handler) createSession(w http.ResponseWriter, r *http.Request) {
 		Plan:   id.Plan,
 		Role:   id.Role,
 	})
+	if err == nil {
+		// Capture the optional per-session tool-bridge credential the edge
+		// forwarded with this request. The middleware only attaches it when
+		// edge-HMAC auth succeeded, so a plain bearer/browser caller cannot
+		// inject one. Memory-only secret: it is stored on the session record
+		// exclusively — never in the ticket, the JSON response, or logs.
+		session.BridgeCredential = middleware.EdgeOboSubjectTokenFromContext(r.Context())
+		// Same trust boundary, non-secret payload: the edge-resolved voice
+		// preferences (provider/persona names) captured at mint time. The WS
+		// upgrade authenticates via ticket and never sees the edge headers,
+		// so the session record is the only carrier. Used by the adapter as
+		// defaults when the start frame omits provider or persona_id.
+		session.VoicePrefs = wssession.VoicePrefs(middleware.VoicePrefsFromContext(r.Context()))
+	}
 	if err != nil {
 		switch {
 		case errors.Is(err, ErrIdentityLimitExceeded):
@@ -434,7 +447,7 @@ func (h *Handler) createSession(w http.ResponseWriter, r *http.Request) {
 
 	wsURL := h.webSocketURL(r, session.ID)
 	wsSubprotocol := wsTicketSubprotocol(ticket)
-	expires := h.manager.opts.Clock().Add(h.manager.opts.TicketTTL).UTC().Format(time.RFC3339)
+	expires := h.manager.TicketExpiresAt().Format(time.RFC3339)
 	var liveKit *LiveKitJoinInfo
 	if h.liveKit != nil && h.liveKit.Enabled() {
 		info, err := h.liveKit.IssueJoinToken(r.Context(), session.ID, session.Owner)
@@ -533,7 +546,9 @@ func (h *Handler) liveKitToken(w http.ResponseWriter, r *http.Request, sessionID
 // ── WebSocket upgrade ───────────────────────────────────────────────────────
 
 func (h *Handler) upgradeWS(w http.ResponseWriter, r *http.Request, sessionID string) {
-	if !originAllowedForWebSocket(r.Header.Get("Origin"), h.allowedOrigins) {
+	// Ticketed native clients (no Origin header) proceed to ticket
+	// verification; browser requests stay subject to the Origin allowlist.
+	if !wssession.UpgradeOriginAllowed(r, h.allowedOrigins) {
 		httpx.WriteError(w, http.StatusForbidden, "origin_not_allowed", "websocket origin is not allowed")
 		return
 	}
@@ -590,6 +605,7 @@ func (h *Handler) upgradeWS(w http.ResponseWriter, r *http.Request, sessionID st
 		MediaBridge:     h.mediaBridge,
 		IdleTimeout:     h.idleTimeout,
 		MaxDuration:     h.maxSessionDuration,
+		ToolRouter:      h.toolRouter,
 		OnClose: func() {
 			h.manager.Remove(sessionID)
 		},
@@ -602,162 +618,30 @@ func (h *Handler) upgradeWS(w http.ResponseWriter, r *http.Request, sessionID st
 }
 
 func (h *Handler) webSocketURL(r *http.Request, sessionID string) string {
-	scheme, host, prefix := h.requestWebSocketParts(r)
-	if h.publicURL != "" {
-		if parsed, ok := parsePublicURL(h.publicURL); ok {
-			scheme = parsed.scheme
-			host = parsed.host
-			prefix = parsed.prefix
-		}
+	requestIsHTTPS := h != nil && h.trustedProxies.RequestIsHTTPS(r)
+	publicURL := ""
+	if h != nil {
+		publicURL = h.publicURL
 	}
-	return fmt.Sprintf("%s://%s%s/voiceagent/sessions/%s/ws", scheme, host, voiceAgentPublicBase(prefix), sessionID)
+	return wssession.WebSocketURL(r.Host, r.Header.Get(httpx.APIPrefixHeader), publicURL,
+		requestIsHTTPS, "/voiceagent/sessions/"+sessionID+"/ws")
 }
 
 func wsTicketSubprotocol(ticket string) string {
-	ticket = strings.TrimSpace(ticket)
-	if ticket == "" {
-		return ""
-	}
-	return wsTicketSubprotocolPrefix + ticket
-}
-
-type publicURLParts struct {
-	scheme string
-	host   string
-	prefix string
-}
-
-func parsePublicURL(raw string) (publicURLParts, bool) {
-	u, err := url.Parse(strings.TrimSpace(raw))
-	if err != nil || u.Host == "" {
-		return publicURLParts{}, false
-	}
-	var scheme string
-	switch strings.ToLower(u.Scheme) {
-	case "https", "wss":
-		scheme = "wss"
-	case "http", "ws":
-		scheme = "ws"
-	default:
-		return publicURLParts{}, false
-	}
-	return publicURLParts{
-		scheme: scheme,
-		host:   u.Host,
-		prefix: cleanPublicAPIPrefix(u.EscapedPath()),
-	}, true
-}
-
-func (h *Handler) requestWebSocketParts(r *http.Request) (scheme, host, prefix string) {
-	scheme = "wss"
-	if h == nil || !h.trustedProxies.RequestIsHTTPS(r) {
-		scheme = "ws"
-	}
-	host = sanitizeRequestHost(r.Host)
-	if host == "" {
-		host = "localhost"
-	}
-	prefix = cleanPublicAPIPrefix(r.Header.Get(httpx.APIPrefixHeader))
-	return scheme, host, prefix
-}
-
-func sanitizeRequestHost(host string) string {
-	host = strings.TrimSpace(host)
-	if host == "" || strings.ContainsAny(host, "/\\@ \t\r\n") {
-		return ""
-	}
-	return host
-}
-
-func cleanPublicAPIPrefix(prefix string) string {
-	prefix = strings.TrimRight(strings.TrimSpace(prefix), "/")
-	if prefix == "" {
-		return ""
-	}
-	if prefix == "/api" || prefix == "/api/v1" || prefix == "/v1" || strings.HasPrefix(prefix, "/v1/") {
-		return prefix
-	}
-	return ""
-}
-
-func voiceAgentPublicBase(prefix string) string {
-	switch prefix {
-	case "":
-		return "/v1"
-	case "/api":
-		return "/api/v1"
-	default:
-		return prefix
-	}
+	return wssession.TicketSubprotocol(ticket)
 }
 
 // extractWSTicket reads only the Sec-WebSocket-Protocol subprotocol form.
-// The subprotocol must look like "ticket.<value>"; the returned subproto
-// string MUST be echoed back to the client via AcceptOptions.Subprotocols
-// so the WS handshake completes per RFC 6455.
+// The returned subproto string MUST be echoed back to the client via
+// AcceptOptions.Subprotocols so the WS handshake completes per RFC 6455.
 func extractWSTicket(r *http.Request) (ticket, subproto string) {
-	for _, header := range r.Header.Values("Sec-WebSocket-Protocol") {
-		for _, raw := range strings.Split(header, ",") {
-			candidate := strings.TrimSpace(raw)
-			if !strings.HasPrefix(candidate, wsTicketSubprotocolPrefix) {
-				continue
-			}
-			value := strings.TrimSpace(strings.TrimPrefix(candidate, wsTicketSubprotocolPrefix))
-			if value != "" {
-				return value, candidate
-			}
-		}
-	}
-	return "", ""
-}
-
-// wsEnvBoolTrue returns true when the named env var holds 1/true/yes/on
-// (case-insensitive). Kept package-local so the upgrade path doesn't
-// pull in config or another helper package.
-func wsEnvBoolTrue(name string) bool {
-	switch strings.ToLower(strings.TrimSpace(os.Getenv(name))) {
-	case "1", "true", "yes", "on":
-		return true
-	default:
-		return false
-	}
+	return wssession.ExtractTicket(r)
 }
 
 func normalizeAllowedOrigins(origins []string) []string {
-	wildcardOptIn := wsEnvBoolTrue(envAllowWildcardOriginVar)
-	out := make([]string, 0, len(origins))
-	for _, origin := range origins {
-		trimmed := strings.TrimSpace(origin)
-		if trimmed == "" {
-			continue
-		}
-		if trimmed == "*" && !wildcardOptIn {
-			// Fail-closed: drop the wildcard so it cannot match every
-			// Origin in production. Warn loudly so a misconfiguration is
-			// visible in logs rather than silently honoured.
-			slog.Warn("voiceagent: dropping wildcard '*' from allowed WebSocket origins; "+
-				"cross-origin upgrades stay denied. Set "+envAllowWildcardOriginVar+"=1 to permit it (development only).",
-				"hint", "configure explicit origins instead of '*'")
-			continue
-		}
-		out = append(out, trimmed)
-	}
-	return out
+	return wssession.NormalizeAllowedOrigins(origins)
 }
 
 func originAllowedForWebSocket(origin string, allowed []string) bool {
-	origin = strings.TrimSpace(origin)
-	if origin == "" {
-		// Default deny: a browser that omits Origin defeats CSRF-style
-		// protection. CLIs, native clients, and server-to-server tests
-		// that never send Origin can opt in via
-		// SPEECHKIT_ALLOW_EMPTY_ORIGIN=1.
-		return wsEnvBoolTrue(envAllowEmptyWSOriginVar)
-	}
-	for _, candidate := range allowed {
-		if candidate == "*" || origin == candidate {
-			return true
-		}
-	}
-	return false
+	return wssession.OriginAllowed(origin, allowed)
 }

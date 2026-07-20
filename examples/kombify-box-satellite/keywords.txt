@@ -1,0 +1,6 @@
+▁K OM B IF Y :2.0 @kombify
+▁HE Y ▁K OM B IF Y :1.8 @hey_kombify
+▁HE Y ▁JA R VI S :3.5 #0.05 @hey_jarvis
+▁JA R VI S :3.2 #0.05 @jarvis
+▁A LE X A :1.5 #0.25 @alexa
+▁HE Y ▁S I RI :1.5 #0.25 @hey_siri

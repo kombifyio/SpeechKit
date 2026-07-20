@@ -1,0 +1,7 @@
+{
+  "companion.home_assistant.not_configured": "لم يتم إعداد Home Assistant لأوامر المنزل الذكي.",
+  "companion.home_assistant.command.empty": "كان أمر المنزل الذكي فارغًا.",
+  "companion.home_assistant.command.not_matched": "تعذّر على Home Assistant مطابقة أمر المنزل الذكي هذا مع أي هدف.",
+  "companion.home_assistant.command.rejected": "رفض Home Assistant أمر المنزل الذكي هذا.",
+  "companion.home_assistant.unavailable": "Home Assistant غير متاح حاليًا. لم تتم إعادة توجيه أمر المنزل الذكي."
+}

@@ -46,6 +46,12 @@ func TestValidateProviderURL(t *testing.T) {
 
 		// AllowHTTP edge case (disallowed for non-loopback unless opted in)
 		{"http allowed explicit", "http://api.example.com", ValidationOptions{AllowHTTP: true}, nil},
+
+		// Local-only bridges must reject public literals before dialing. DNS
+		// names are checked again against resolved IPs by NewSafeHTTPClient.
+		{"local-only public literal rejected", "https://8.8.8.8", ValidationOptions{RequireLocal: true}, ErrPublicBlocked},
+		{"local-only loopback allowed", "http://127.0.0.1:8123", ValidationOptions{AllowLoopback: true, AllowHTTP: true, RequireLocal: true}, nil},
+		{"local-only private allowed", "http://192.168.1.10:8123", ValidationOptions{AllowPrivate: true, AllowHTTP: true, RequireLocal: true}, nil},
 	}
 
 	for _, tc := range cases {
@@ -117,6 +123,9 @@ func TestValidateResolvedIP(t *testing.T) {
 		{"private blocked", "192.168.1.10", ValidationOptions{}, ErrPrivateBlocked},
 		{"private allowed", "192.168.1.10", ValidationOptions{AllowPrivate: true}, nil},
 		{"link local blocked", "169.254.169.254", ValidationOptions{}, ErrPrivateBlocked},
+		{"local-only public IPv4 blocked", "8.8.8.8", ValidationOptions{RequireLocal: true}, ErrPublicBlocked},
+		{"local-only public IPv6 blocked", "2001:4860:4860::8888", ValidationOptions{RequireLocal: true}, ErrPublicBlocked},
+		{"local-only private allowed", "10.0.0.5", ValidationOptions{AllowPrivate: true, RequireLocal: true}, nil},
 		{"invalid host", "", ValidationOptions{}, ErrInvalidHost},
 	}
 

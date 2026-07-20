@@ -1,0 +1,7 @@
+{
+  "companion.home_assistant.not_configured": "Home Assistant is not configured for smart-home commands.",
+  "companion.home_assistant.command.empty": "The smart-home command was empty.",
+  "companion.home_assistant.command.not_matched": "Home Assistant could not match that smart-home command to a target.",
+  "companion.home_assistant.command.rejected": "Home Assistant rejected that smart-home command.",
+  "companion.home_assistant.unavailable": "Home Assistant is currently unavailable. The smart-home command was not forwarded."
+}

@@ -15,6 +15,11 @@ Website/.next
 # Local build/test artifacts
 bin
 build
+android/**/build
+android/.gradle
+tools/wakeword-training/corpus-packages
+tools/wakeword-training/output
+**/__pycache__
 dist
 coverage.out
 *.test

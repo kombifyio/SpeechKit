@@ -19,6 +19,12 @@ func registerAPIAlias(mux *http.ServeMux) {
 			http.NotFound(w, r)
 			return
 		}
+		// The device-agent bridge is a physically local, separately paired
+		// surface. Never project it onto the general/public API alias.
+		if targetPath == "/v1/device-agent" || strings.HasPrefix(targetPath, "/v1/device-agent/") {
+			http.NotFound(w, r)
+			return
+		}
 
 		cloned := r.Clone(r.Context())
 		cloned.URL.Path = targetPath

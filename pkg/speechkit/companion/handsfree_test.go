@@ -12,12 +12,16 @@ import (
 type fakeAssist struct {
 	request speechkit.AssistRequest
 	result  speechkit.AssistResult
+	err     error
 	calls   int
 }
 
 func (f *fakeAssist) Process(_ context.Context, req speechkit.AssistRequest) (speechkit.AssistResult, error) {
 	f.calls++
 	f.request = req
+	if f.err != nil {
+		return speechkit.AssistResult{}, f.err
+	}
 	return f.result, nil
 }
 
@@ -97,6 +101,157 @@ func TestHandsFreeWakeRunsAssistAndTTS(t *testing.T) {
 		event := <-runtime.Events()
 		if event.Type != typ {
 			t.Fatalf("event = %s, want %s", event.Type, typ)
+		}
+	}
+}
+
+func TestHandsFreeWakeInvokesOnResult(t *testing.T) {
+	runtime := speechkit.NewRuntime(speechkit.Snapshot{}, speechkit.Hooks{})
+	defer runtime.Close()
+
+	assist := &fakeAssist{result: speechkit.AssistResult{
+		Text:      "Timer set.",
+		SpeakText: "Timer set.",
+		Locale:    "en-US",
+		Surface:   speechkit.AssistSurfaceActionAck,
+	}}
+	provider := &fakeTTSProvider{}
+	ttsService, err := tts.NewService(tts.NewRouter(tts.StrategyLocalOnly, provider))
+	if err != nil {
+		t.Fatalf("NewService: %v", err)
+	}
+
+	var got speechkit.AssistResult
+	calls := 0
+	handsFree, err := NewHandsFree(Options{
+		Runtime: runtime,
+		WakeRequest: func(_ context.Context, ev wakeword.DetectionEvent) (speechkit.AssistRequest, bool) {
+			return speechkit.AssistRequest{Text: ev.Phrase, Locale: "en-US"}, true
+		},
+		Assist: assist,
+		TTS:    ttsService,
+		OnResult: func(_ context.Context, r speechkit.AssistResult) {
+			calls++
+			got = r
+		},
+	})
+	if err != nil {
+		t.Fatalf("NewHandsFree: %v", err)
+	}
+
+	if err := handsFree.HandleWake(context.Background(), wakeword.DetectionEvent{
+		Phrase: "set a timer",
+		Mode:   "assist",
+	}); err != nil {
+		t.Fatalf("HandleWake: %v", err)
+	}
+
+	if calls != 1 {
+		t.Fatalf("OnResult calls = %d, want 1", calls)
+	}
+	if got.Text != "Timer set." {
+		t.Fatalf("OnResult result text = %q", got.Text)
+	}
+	if got.Audio.Len() == 0 {
+		t.Fatal("OnResult result should carry synthesized audio for host playback")
+	}
+}
+
+func TestHandsFreeWakePublishesStagesInOrder(t *testing.T) {
+	runtime := speechkit.NewRuntime(speechkit.Snapshot{}, speechkit.Hooks{})
+	defer runtime.Close()
+
+	assist := &fakeAssist{result: speechkit.AssistResult{
+		Text:      "Es sind 21 Grad.",
+		SpeakText: "Es sind 21 Grad.",
+		Locale:    "de-DE",
+	}}
+	ttsService, err := tts.NewService(tts.NewRouter(tts.StrategyLocalOnly, &fakeTTSProvider{}))
+	if err != nil {
+		t.Fatalf("NewService: %v", err)
+	}
+
+	var stages []Stage
+	handsFree, err := NewHandsFree(Options{
+		Runtime: runtime,
+		WakeRequest: func(_ context.Context, ev wakeword.DetectionEvent) (speechkit.AssistRequest, bool) {
+			return speechkit.AssistRequest{Text: ev.Phrase, Locale: "de-DE"}, true
+		},
+		Assist:  assist,
+		TTS:     ttsService,
+		OnStage: func(s Stage) { stages = append(stages, s) },
+	})
+	if err != nil {
+		t.Fatalf("NewHandsFree: %v", err)
+	}
+
+	if err := handsFree.HandleWake(context.Background(), wakeword.DetectionEvent{
+		Phrase: "wie warm ist es",
+		Mode:   "assist",
+	}); err != nil {
+		t.Fatalf("HandleWake: %v", err)
+	}
+
+	want := []Stage{StageWake, StageListening, StageThinking, StageSpeaking, StageIdle}
+	assertStages(t, stages, want)
+}
+
+func TestHandsFreeWakeStagesOnAbortedCapture(t *testing.T) {
+	runtime := speechkit.NewRuntime(speechkit.Snapshot{}, speechkit.Hooks{})
+	defer runtime.Close()
+
+	var stages []Stage
+	handsFree, err := NewHandsFree(Options{
+		Runtime: runtime,
+		WakeRequest: func(context.Context, wakeword.DetectionEvent) (speechkit.AssistRequest, bool) {
+			return speechkit.AssistRequest{}, false
+		},
+		Assist:  &fakeAssist{},
+		OnStage: func(s Stage) { stages = append(stages, s) },
+	})
+	if err != nil {
+		t.Fatalf("NewHandsFree: %v", err)
+	}
+
+	if err := handsFree.HandleWake(context.Background(), wakeword.DetectionEvent{Mode: "assist"}); err != nil {
+		t.Fatalf("HandleWake: %v", err)
+	}
+
+	assertStages(t, stages, []Stage{StageWake, StageListening, StageIdle})
+}
+
+func TestHandsFreeWakeStagesOnAssistError(t *testing.T) {
+	runtime := speechkit.NewRuntime(speechkit.Snapshot{}, speechkit.Hooks{})
+	defer runtime.Close()
+
+	var stages []Stage
+	handsFree, err := NewHandsFree(Options{
+		Runtime: runtime,
+		WakeRequest: func(_ context.Context, ev wakeword.DetectionEvent) (speechkit.AssistRequest, bool) {
+			return speechkit.AssistRequest{Text: ev.Phrase}, true
+		},
+		Assist:  &fakeAssist{err: context.DeadlineExceeded},
+		OnStage: func(s Stage) { stages = append(stages, s) },
+	})
+	if err != nil {
+		t.Fatalf("NewHandsFree: %v", err)
+	}
+
+	if err := handsFree.HandleWake(context.Background(), wakeword.DetectionEvent{Mode: "assist"}); err == nil {
+		t.Fatal("HandleWake should propagate the assist error")
+	}
+
+	assertStages(t, stages, []Stage{StageWake, StageListening, StageThinking, StageError})
+}
+
+func assertStages(t *testing.T, got, want []Stage) {
+	t.Helper()
+	if len(got) != len(want) {
+		t.Fatalf("stages = %v, want %v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("stage[%d] = %q, want %q (full: %v)", i, got[i], want[i], got)
 		}
 	}
 }

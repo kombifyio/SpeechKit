@@ -43,6 +43,7 @@ type AudioConfig struct {
 	Backend        string `toml:"backend"`
 	InputSource    string `toml:"input_source"` // microphone | system_loopback | mic_and_system
 	DeviceID       string `toml:"device_id"`
+	DeviceName     string `toml:"device_name"`
 	OutputDeviceID string `toml:"output_device_id"`
 	SampleRate     int    `toml:"sample_rate"`
 	Channels       int    `toml:"channels"`
@@ -91,11 +92,11 @@ type AssistConfig struct {
 	// Defaults to true (see config/defaults.go).
 	IncludeWindowContext bool `toml:"include_window_context"`
 
-	// HomeAssistant configures the optional Home Assistant Conversation
-	// API bridge used by the Voice-Companion skill catalog. When
-	// URL+TokenEnv are both set, the HA skill is wired automatically;
-	// otherwise the skill stays disabled and Voice-Companion commands
-	// fall through to the LLM.
+	// HomeAssistant configures the Home Assistant Conversation API boundary
+	// used by the Voice-Companion skill catalog. Home Assistant remains the
+	// sole semantic authority for recognized smart-home commands. When URL or
+	// TokenEnv is missing, those commands fail closed with a terminal local
+	// response; they never fall through to the general Assist model.
 	HomeAssistant AssistHomeAssistantConfig `toml:"home_assistant"`
 }
 
@@ -112,6 +113,10 @@ type AssistHomeAssistantConfig struct {
 	// Long-Lived Access Tokens. The value itself is NEVER stored in
 	// the TOML file.
 	TokenEnv string `toml:"token_env"`
+
+	// AgentID optionally selects a Home Assistant Conversation agent. Empty
+	// delegates to Home Assistant's configured default agent.
+	AgentID string `toml:"agent_id"`
 
 	// Language overrides the language sent to HA's Conversation API.
 	// When empty, the user's locale is used.

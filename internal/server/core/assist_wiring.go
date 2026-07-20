@@ -145,16 +145,16 @@ func buildAssistPipeline(ctx context.Context, cfg *config.Config, app *App) (*as
 	case haConfigured:
 		notes = append(notes, "Assist: HomeAssistant bridge wired ("+haURL+")")
 	case haURL != "":
-		notes = append(notes, "Assist: HomeAssistant URL configured but token env unresolved; skill disabled")
+		notes = append(notes, "Assist: HomeAssistant URL configured but token env unresolved; smart-home intents fail closed")
 	}
 	notes = append(notes, "Assist: Voice-Companion skill catalog active (Time/Date/Math/Weather/Timer/Reminder/Wikipedia)")
 
 	utilityRegistry := buildAssistUtilityRegistry(cfg)
 	if haConfigured {
 		// Flip the HomeAssistant UtilityDefinition to Enabled=true so the
-		// router actually routes HA-prefix matches ("schalte ...", "turn
-		// on ...") to the CompositeExecutor instead of skipping the
-		// intent and falling through to the LLM.
+		// router routes HA-prefix matches ("schalte ...", "turn on ...")
+		// to the CompositeExecutor. The Pipeline's secondary guard keeps
+		// the same intent terminal when the integration is unavailable.
 		enableHomeAssistantUtility(utilityRegistry)
 	}
 

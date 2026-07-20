@@ -10,22 +10,26 @@ import (
 
 	"github.com/firebase/genkit/go/core"
 	"github.com/kombifyio/SpeechKit/internal/ai/flows"
+	"github.com/kombifyio/SpeechKit/internal/shortcuts"
 	"github.com/kombifyio/SpeechKit/internal/tts"
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/localization"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/provideropts"
 )
 
 // Result is the framework output for Assist Mode.
 // Always contains Text. Contains Audio when TTS is enabled.
 type Result struct {
-	Text      string // Full response text (always present)
-	SpeakText string // TTS-optimized text
-	Audio     []byte // TTS audio bytes (present when TTS enabled)
-	Format    string // Audio format ("mp3", "wav", etc.)
-	Action    string // "respond", "execute", "silent", "shortcut"
-	Locale    string // Response language
-	Shortcut  string // Matched shortcut intent, if any
-	Surface   ResultSurface
-	Kind      ResultKind
+	Text       string // Full response text (always present)
+	SpeakText  string // TTS-optimized text
+	Audio      []byte // TTS audio bytes (present when TTS enabled)
+	Format     string // Audio format ("mp3", "wav", etc.)
+	Action     string // "respond", "execute", "silent", "shortcut"
+	Locale     string // Response language
+	Shortcut   string // Matched shortcut intent, if any
+	Surface    ResultSurface
+	Kind       ResultKind
+	MessageID  localization.MessageID
+	ReasonCode string
 }
 
 // Pipeline orchestrates the Assist Mode flow.
@@ -134,10 +138,40 @@ func (p *Pipeline) Process(ctx context.Context, transcript string, opts ProcessO
 
 	decision := p.router.Decide(transcript, opts)
 	if decision.Route == RouteToolIntent {
+		if decision.Intent == shortcuts.IntentHomeAssistant && p.executor == nil {
+			return p.smartHomeUnavailableResult(ctx, opts.Locale), nil
+		}
 		return p.handleTool(ctx, transcript, decision, opts)
+	}
+	// Home Assistant is the sole smart-home semantic authority. A resolver
+	// match must remain terminal even when the HA utility was disabled or not
+	// wired by a host; sending it to the general Assist model would silently
+	// expand the command's authority to an LLM/MCP/Gateway/cloud path.
+	if decision.Intent == shortcuts.IntentHomeAssistant {
+		return p.smartHomeUnavailableResult(ctx, opts.Locale), nil
 	}
 
 	return p.handleLLM(ctx, transcript, opts)
+}
+
+func (p *Pipeline) smartHomeUnavailableResult(ctx context.Context, locale string) *Result {
+	messageID := localization.CompanionHomeAssistantNotConfigured
+	message := localization.Resolve(locale, messageID)
+	result := &Result{
+		Text:       message.Text,
+		SpeakText:  message.Text,
+		Action:     "respond",
+		Locale:     message.Locale,
+		Shortcut:   string(shortcuts.IntentHomeAssistant),
+		Surface:    ResultSurfaceActionAck,
+		Kind:       ResultKindUtilityAction,
+		MessageID:  messageID,
+		ReasonCode: "not_configured",
+	}
+	if err := p.synthesize(ctx, result); err != nil {
+		slog.Warn("assist: TTS for unavailable Home Assistant result failed", "err", err)
+	}
+	return result
 }
 
 // ProcessOpts configures a single Assist request.
@@ -241,8 +275,8 @@ func (p *Pipeline) handleTool(ctx context.Context, transcript string, decision D
 	// Voice-Companion skills emit Action="silent" + empty Text to signal
 	// "I matched the intent but cannot answer this specific payload —
 	// please defer to the LLM" (e.g. MathSkill on "what is the meaning
-	// of life", HomeAssistantSkill when no URL+Token configured,
-	// WikipediaSkill on disambiguation pages). When that happens AND an
+	// of life" or WikipediaSkill on disambiguation pages). Home Assistant
+	// deliberately never emits this signal. When it happens AND an
 	// Assist LLM flow is available, fall through to handleLLM so the
 	// user gets a useful response instead of silence. Original Action
 	// "silent" semantics (host-side QuickNote with no audio reply) are
@@ -265,13 +299,15 @@ func (p *Pipeline) handleTool(ctx context.Context, transcript string, decision D
 	}
 
 	result := &Result{
-		Text:      toolResult.Text,
-		SpeakText: firstNonEmpty(toolResult.SpeakText, toolResult.Text),
-		Action:    firstNonEmpty(toolResult.Action, "execute"),
-		Locale:    firstNonEmpty(toolResult.Locale, decision.Locale, opts.Locale),
-		Shortcut:  string(decision.Intent),
-		Surface:   firstNonEmptySurface(toolResult.Surface, decision.Utility.DefaultSurface, ResultSurfaceActionAck),
-		Kind:      firstNonEmptyKind(toolResult.Kind, decision.Utility.DefaultKind, ResultKindUtilityAction),
+		Text:       toolResult.Text,
+		SpeakText:  firstNonEmpty(toolResult.SpeakText, toolResult.Text),
+		Action:     firstNonEmpty(toolResult.Action, "execute"),
+		Locale:     firstNonEmpty(toolResult.Locale, decision.Locale, opts.Locale),
+		Shortcut:   string(decision.Intent),
+		Surface:    firstNonEmptySurface(toolResult.Surface, decision.Utility.DefaultSurface, ResultSurfaceActionAck),
+		Kind:       firstNonEmptyKind(toolResult.Kind, decision.Utility.DefaultKind, ResultKindUtilityAction),
+		MessageID:  toolResult.MessageID,
+		ReasonCode: toolResult.ReasonCode,
 	}
 
 	if err := p.synthesize(ctx, result); err != nil {

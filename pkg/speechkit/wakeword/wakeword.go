@@ -35,9 +35,13 @@ type Config struct {
 
 // DetectionEvent is emitted when a keyword fires.
 type DetectionEvent struct {
-	Phrase      string
-	Keyword     string
-	Mode        string
+	Phrase  string
+	Keyword string
+	Mode    string
+	// Probability is a confidence lower bound for the detection. The
+	// sherpa-onnx KWS binding exposes no exact per-detection score, so the
+	// live pipeline reports the effective keyword threshold the detection
+	// cleared (i.e. "at least this confident") rather than a fabricated 1.0.
 	Probability float32
 	At          time.Time
 }

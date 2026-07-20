@@ -331,8 +331,13 @@ func DefaultModeContracts() []ModeContract {
 			Intelligence: IntelligenceUser,
 			Input:        "audio",
 			Output:       "text",
-			Allowed:      []Capability{CapabilityTranscription, CapabilitySTT, CapabilityAudioInput, CapabilityDictionaryPrompt, CapabilityDictionaryNativeHints, CapabilityWordsPrompt, CapabilityWordsNativeHints, CapabilityPostSTTReplacements, CapabilityNativeDictationStream, CapabilitySpeakerDiarization, CapabilitySpeakerIdentification, CapabilitySpeakerAttribution},
-			Forbidden:    []Capability{CapabilityToolCalling, CapabilityLLM, CapabilityRealtimeAudio, CapabilityTTS},
+			// native_context_prompt joined the dictation contract with
+			// AssemblyAI Universal-3.5 Pro: the sync endpoint accepts
+			// conversation_context and the realtime session agent_context, so
+			// a dictation profile may legitimately advertise that its speech
+			// model conditions on caller-supplied situational context.
+			Allowed:   []Capability{CapabilityTranscription, CapabilitySTT, CapabilityAudioInput, CapabilityDictionaryPrompt, CapabilityDictionaryNativeHints, CapabilityWordsPrompt, CapabilityWordsNativeHints, CapabilityPostSTTReplacements, CapabilityNativeDictationStream, CapabilityNativeContextPrompt, CapabilitySpeakerDiarization, CapabilitySpeakerIdentification, CapabilitySpeakerAttribution},
+			Forbidden: []Capability{CapabilityToolCalling, CapabilityLLM, CapabilityRealtimeAudio, CapabilityTTS},
 		},
 		{
 			Mode:         ModeAssist,

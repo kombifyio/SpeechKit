@@ -171,6 +171,11 @@ func TestNativeDictationStreamCapabilityIsExplicitlyImplemented(t *testing.T) {
 	if !profiles["stt.deepgram.nova-3"].HasCapability(CapabilityNativeDictationStream) {
 		t.Fatal("stt.deepgram.nova-3 must advertise native dictation streaming")
 	}
+	// AssemblyAI implements DictationStreamProvider via the Universal-3.5 Pro
+	// realtime session (assemblyai_streaming.go StartDictationStream).
+	if !profiles["stt.assemblyai.universal"].HasCapability(CapabilityNativeDictationStream) {
+		t.Fatal("stt.assemblyai.universal must advertise native dictation streaming")
+	}
 	for _, profileID := range []string{
 		"stt.local.whispercpp",
 		"stt.routed.whisper-large-v3",
@@ -178,7 +183,6 @@ func TestNativeDictationStreamCapabilityIsExplicitlyImplemented(t *testing.T) {
 		"stt.openai.gpt-4o-transcribe",
 		"stt.openai.whisper-1",
 		"stt.google.latest-long",
-		"stt.assemblyai.universal",
 		"stt.groq.whisper-large-v3-turbo",
 	} {
 		profile, ok := profiles[profileID]

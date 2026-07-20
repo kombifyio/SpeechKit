@@ -37,6 +37,27 @@ func serverPublicRoutes() []middleware.PublicRoute {
 			PathSuffix: "/ws",
 			Methods:    []string{http.MethodGet},
 		},
+		// Streaming Dictation WS upgrade: authenticated by the single-use
+		// HMAC ticket in Sec-WebSocket-Protocol (browsers cannot send
+		// Authorization on a WS handshake). Session creation stays behind
+		// the normal auth chain.
+		{
+			PathPrefix: "/v1/dictation/stream/sessions/",
+			PathSuffix: "/ws",
+			Methods:    []string{http.MethodGet},
+		},
+		{
+			PathPrefix: "/api/v1/dictation/stream/sessions/",
+			PathSuffix: "/ws",
+			Methods:    []string{http.MethodGet},
+		},
+		// Public wake-word model catalog: ESPHome satellites and the
+		// Kombify-Box fetch manifests/models without a bearer token. Read-only,
+		// already-public model metadata + redirects. The authenticated
+		// activation-collector (/v1/wakeword/activations) stays private.
+		{Path: "/v1/wakeword/models", Methods: []string{http.MethodGet, http.MethodHead}},
+		{PathPrefix: "/v1/wakeword/models/", Methods: []string{http.MethodGet, http.MethodHead}},
+		{PathPrefix: "/v1/wakeword/files/", Methods: []string{http.MethodGet, http.MethodHead}},
 	}
 }
 

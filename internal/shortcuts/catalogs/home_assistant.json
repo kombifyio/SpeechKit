@@ -1,0 +1,108 @@
+{
+  "intent": "home_assistant",
+  "translation_status": "proposal",
+  "lexicons": [
+    {
+      "locale": "en",
+      "phrases": [
+        {"value": "turn on", "prefix": true},
+        {"value": "turn off", "prefix": true},
+        {"value": "switch on", "prefix": true},
+        {"value": "switch off", "prefix": true},
+        {"value": "set the", "prefix": true},
+        {"value": "set", "prefix": true},
+        {"value": "start the", "prefix": true},
+        {"value": "stop the", "prefix": true},
+        {"value": "play", "prefix": true},
+        {"value": "pause", "prefix": true},
+        {"value": "resume", "prefix": true},
+        {"value": "open the", "prefix": true},
+        {"value": "close the", "prefix": true},
+        {"value": "lock the", "prefix": true},
+        {"value": "unlock the", "prefix": true},
+        {"value": "home assistant", "prefix": true}
+      ]
+    },
+    {
+      "locale": "de",
+      "phrases": [
+        {"value": "schalte ein", "prefix": true},
+        {"value": "schalte aus", "prefix": true},
+        {"value": "schalte an", "prefix": true},
+        {"value": "schalte das", "prefix": true},
+        {"value": "schalte die", "prefix": true},
+        {"value": "mach das", "prefix": true},
+        {"value": "mach die", "prefix": true},
+        {"value": "starte", "prefix": true},
+        {"value": "stoppe", "prefix": true},
+        {"value": "halte", "prefix": true},
+        {"value": "spiele", "prefix": true},
+        {"value": "pause", "prefix": true},
+        {"value": "oeffne die", "prefix": true},
+        {"value": "oeffne das", "prefix": true},
+        {"value": "schliesse die", "prefix": true},
+        {"value": "schliesse das", "prefix": true},
+        {"value": "home assistant", "prefix": true}
+      ]
+    },
+    {
+      "locale": "es",
+      "phrases": [
+        {"value": "enciende la luz", "prefix": true},
+        {"value": "enciende las luces", "prefix": true},
+        {"value": "apaga la luz", "prefix": true},
+        {"value": "apaga las luces", "prefix": true},
+        {"value": "abre la persiana", "prefix": true},
+        {"value": "cierra la persiana", "prefix": true},
+        {"value": "bloquea la puerta", "prefix": true},
+        {"value": "desbloquea la puerta", "prefix": true},
+        {"value": "ajusta el termostato", "prefix": true},
+        {"value": "home assistant", "prefix": true}
+      ]
+    },
+    {
+      "locale": "zh-Hans",
+      "phrases": [
+        {"value": "家庭助理", "prefix": true, "no_space_prefix": true},
+        {"value": "打开灯", "prefix": true, "no_space_prefix": true},
+        {"value": "关闭灯", "prefix": true, "no_space_prefix": true},
+        {"value": "打开空调", "prefix": true, "no_space_prefix": true},
+        {"value": "关闭空调", "prefix": true, "no_space_prefix": true},
+        {"value": "设置温度", "prefix": true, "no_space_prefix": true},
+        {"value": "锁门", "prefix": true, "no_space_prefix": true},
+        {"value": "解锁门", "prefix": true, "no_space_prefix": true},
+        {"value": "Home Assistant", "prefix": true}
+      ]
+    },
+    {
+      "locale": "hi",
+      "phrases": [
+        {"value": "लाइट चालू करो", "prefix": true},
+        {"value": "लाइट बंद करो", "prefix": true},
+        {"value": "पंखा चालू करो", "prefix": true},
+        {"value": "पंखा बंद करो", "prefix": true},
+        {"value": "दरवाज़ा लॉक करो", "prefix": true},
+        {"value": "दरवाज़ा अनलॉक करो", "prefix": true},
+        {"value": "तापमान सेट करो", "prefix": true},
+        {"value": "होम असिस्टेंट", "prefix": true},
+        {"value": "Home Assistant", "prefix": true}
+      ]
+    },
+    {
+      "locale": "ar",
+      "phrases": [
+        {"value": "شغّل الضوء", "prefix": true},
+        {"value": "أطفئ الضوء", "prefix": true},
+        {"value": "شغّل الأنوار", "prefix": true},
+        {"value": "أطفئ الأنوار", "prefix": true},
+        {"value": "افتح الستارة", "prefix": true},
+        {"value": "أغلق الستارة", "prefix": true},
+        {"value": "اقفل الباب", "prefix": true},
+        {"value": "افتح قفل الباب", "prefix": true},
+        {"value": "اضبط منظم الحرارة", "prefix": true},
+        {"value": "هوم أسيستنت", "prefix": true},
+        {"value": "Home Assistant", "prefix": true}
+      ]
+    }
+  ]
+}

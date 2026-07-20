@@ -180,6 +180,48 @@ func TestSessionReturnsToListeningWhenOutputTranscriptFinishesWithoutTurnComplet
 	}
 }
 
+// TestSessionKeepsSpeakingUntilTurnCompleteWhenTranscriptPrecedesAudio pins the
+// Deepgram Voice Agent ordering: the full agent transcript (OutputTranscriptDone)
+// arrives BEFORE the TTS audio has finished streaming. A premature return to
+// Listening on transcript-done truncated the spoken answer (companion buffers
+// audio until the turn ends, then plays it). The session must stay in the turn
+// until an explicit Done, so all audio chunks are captured.
+func TestSessionKeepsSpeakingUntilTurnCompleteWhenTranscriptPrecedesAudio(t *testing.T) {
+	provider := newSessionTestProvider()
+	stateChanges := make(chan State, 16)
+	session := NewSession(provider, Callbacks{
+		OnStateChange: func(state State) { stateChanges <- state },
+	})
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	if err := session.Start(ctx, LiveConfig{Model: "deepgram-agent-test"}, IdleConfig{}); err != nil {
+		t.Fatalf("Start() error = %v", err)
+	}
+	defer session.Stop()
+	drainStateChanges(stateChanges)
+
+	// Agent text lands first (Deepgram ConversationText), then audio streams.
+	provider.messages <- &LiveMessage{
+		OutputTranscript:     "die vollständige Antwort",
+		OutputTranscriptDone: true,
+	}
+	provider.messages <- &LiveMessage{Audio: []byte{1, 2, 3, 4}}
+	waitForState(t, stateChanges, StateSpeaking)
+
+	// More audio chunks follow the transcript-done; the session must NOT have
+	// returned to Listening in between (that would truncate playback).
+	provider.messages <- &LiveMessage{Audio: []byte{5, 6, 7, 8}}
+	assertNoStateWithin(t, stateChanges, StateListening, 150*time.Millisecond)
+	if got := session.CurrentState(); got != StateSpeaking {
+		t.Fatalf("state during audio = %s, want %s", got, StateSpeaking)
+	}
+
+	// Only the explicit turn-complete (AgentAudioDone -> Done) ends the turn.
+	provider.messages <- &LiveMessage{Done: true}
+	waitForState(t, stateChanges, StateListening)
+}
+
 func TestSessionDoesNotEmitDuplicateStateChangesForConsecutiveAudioChunks(t *testing.T) {
 	provider := newSessionTestProvider()
 	stateChanges := make(chan State, 16)

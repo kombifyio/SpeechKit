@@ -49,6 +49,11 @@ type Adapter struct {
 	// MaxDuration terminates a session after this wall-clock duration even
 	// when it remains active. Zero disables the hard cap.
 	MaxDuration time.Duration
+	// ToolRouter, when non-nil, supplies server-executed tools for this
+	// session. Tool names it claims (via Definitions) are executed
+	// server-side; all other provider tool calls keep the existing client
+	// pass-through wire contract.
+	ToolRouter SessionToolRouter
 	// OnClose runs after both pumps have returned. Typically removes the
 	// session from the manager.
 	OnClose func()
@@ -57,6 +62,15 @@ type Adapter struct {
 	closed  atomicBool
 	idle    *idleWatchdog
 	flow    *SequenceRunner
+
+	// bridgeTools is the set of tool names claimed by ToolRouter for this
+	// session, keyed by name. Written once before the pumps start; read-only
+	// afterwards, so no lock is needed.
+	bridgeTools map[string]ToolDefinitionFrame
+	// toolSem bounds concurrent server-side tool executions; toolWG lets Run
+	// wait for in-flight executions before tearing the provider down.
+	toolSem chan struct{}
+	toolWG  sync.WaitGroup
 
 	mediaTransport string
 	mediaBridge    MediaBridge
@@ -78,6 +92,11 @@ func (a *Adapter) Run(parent context.Context) {
 		a.sendError(ctx, "start_required", err.Error())
 		return
 	}
+	// Fill provider/persona fields the client omitted from the user's
+	// edge-resolved voice preferences captured at session mint. Explicit
+	// start-frame values always win; unsatisfiable preferences fall back to
+	// the server defaults instead of failing the session.
+	personaFromPref := a.applyVoicePrefDefaults(&start)
 	// Select the realtime backend for this session. Tests pre-set a.Provider;
 	// production picks from the factory map by the client-requested provider
 	// (falling back to the server default) so backends are switchable per
@@ -109,11 +128,15 @@ func (a *Adapter) Run(parent context.Context) {
 			return
 		}
 	}
-	cfg, err := a.Persona.Resolve(start)
+	cfg, err := a.resolvePersonaConfig(&start, personaFromPref)
 	if err != nil {
 		a.sendError(ctx, "persona_unresolved", err.Error())
 		return
 	}
+	// Merge server-executed tool definitions from the tool bridge into the
+	// provider config before Connect. Bounded and fail-open to tool-less:
+	// a slow or failing bridge never blocks or kills the voice session.
+	a.mergeBridgeTools(ctx, &cfg)
 	if err := a.Provider.Connect(ctx, cfg); err != nil {
 		a.sendError(ctx, "provider_connect_failed", err.Error())
 		return
@@ -155,6 +178,7 @@ func (a *Adapter) Run(parent context.Context) {
 		a.sendJSON(ctx, *entered)
 	}
 
+	a.toolSem = make(chan struct{}, maxConcurrentBridgeToolCalls)
 	a.idle = newIdleWatchdog(a.IdleTimeout)
 	defer a.idle.Stop()
 	var maxDuration <-chan time.Time
@@ -199,6 +223,9 @@ func (a *Adapter) Run(parent context.Context) {
 	}
 	cancel()
 	wg.Wait()
+	// Wait for in-flight server-side tool executions before the deferred
+	// provider Close runs; ctx is cancelled so they abort promptly.
+	a.toolWG.Wait()
 }
 
 // guardPump converts a panic in a spawned session pump into a clean session
@@ -221,6 +248,62 @@ func (a *Adapter) guardPump(name string, done chan<- struct{}) {
 	case done <- struct{}{}:
 	default:
 	}
+}
+
+// applyVoicePrefDefaults fills the provider and persona a client omitted from
+// the start frame with the user's edge-resolved voice preferences captured at
+// session-mint time (middleware.VoicePrefsFromContext → ManagedSession).
+// Explicit start-frame values always win. Preferences are best-effort per the
+// voice-preferences contract: a preferred provider that is not configured on
+// this server is skipped (the server default applies) instead of failing the
+// session, and the returned personaFromPref flag lets the caller retry
+// persona resolution without the preference when the preferred persona does
+// not resolve.
+func (a *Adapter) applyVoicePrefDefaults(start *StartFrame) (personaFromPref bool) {
+	if a.Session == nil || start == nil {
+		return false
+	}
+	prefs := a.Session.VoicePrefs
+	// Provider default only matters when production provider selection runs
+	// (a.Provider == nil); tests that pre-inject a provider keep their frame.
+	if a.Provider == nil && strings.TrimSpace(start.Provider) == "" {
+		if pref := normalizeProviderName(prefs.VAProvider); pref != "" {
+			if _, ok := a.Providers[pref]; ok {
+				start.Provider = pref
+			} else {
+				slog.Info("voiceagent: preferred provider not configured on this server; using default",
+					"preferred_provider", pref,
+					"session_id", a.Session.ID,
+				)
+			}
+		}
+	}
+	if strings.TrimSpace(start.PersonaID) == "" {
+		if pref := strings.TrimSpace(prefs.VAPersona); pref != "" {
+			start.PersonaID = pref
+			personaFromPref = true
+		}
+	}
+	return personaFromPref
+}
+
+// resolvePersonaConfig resolves the persona/role config for the session.
+// When the persona came from a user preference (not an explicit client
+// value) and does not resolve, the adapter retries with the server-default
+// persona instead of failing the session — preferences fall back, explicit
+// requests still error.
+func (a *Adapter) resolvePersonaConfig(start *StartFrame, personaFromPref bool) (LiveConfigFrame, error) {
+	cfg, err := a.Persona.Resolve(*start)
+	if err != nil && personaFromPref {
+		slog.Warn("voiceagent: preferred persona did not resolve; falling back to default persona",
+			"preferred_persona", start.PersonaID,
+			"session_id", a.Session.ID,
+			"err", err,
+		)
+		start.PersonaID = ""
+		cfg, err = a.Persona.Resolve(*start)
+	}
+	return cfg, err
 }
 
 // selectProvider resolves the client-requested provider name (or the server
@@ -442,6 +525,14 @@ func (a *Adapter) writePump(ctx context.Context, done chan<- struct{}) {
 			})
 		}
 		for _, call := range msg.ToolCalls {
+			if _, claimed := a.bridgeTools[call.Name]; claimed {
+				// Server-executed tool: the client still receives the
+				// tool_call frame for UI transparency (tagged
+				// execution=server) but must not answer it — the adapter
+				// resolves it against the tool router asynchronously.
+				a.dispatchBridgeToolCall(ctx, msg, call)
+				continue
+			}
 			a.sendJSON(ctx, ToolCallFrame{
 				Type:             MsgToolCall,
 				EventFrameFields: eventFrameFields(msg, EventToolCall),
@@ -471,6 +562,128 @@ func (a *Adapter) writePump(ctx context.Context, done chan<- struct{}) {
 			})
 		}
 	}
+}
+
+// mergeBridgeTools asks the session tool router for definitions (bounded by
+// bridgeDefinitionsTimeout) and merges them into cfg.Tools. Failure or an
+// empty manifest degrades to tool-less and surfaces an informational event
+// frame; the session always proceeds.
+func (a *Adapter) mergeBridgeTools(ctx context.Context, cfg *LiveConfigFrame) {
+	if a.ToolRouter == nil {
+		return
+	}
+	defsCtx, cancel := context.WithTimeout(ctx, bridgeDefinitionsTimeout)
+	defer cancel()
+	defs := a.ToolRouter.Definitions(defsCtx, a.Session, *cfg)
+	if len(defs) == 0 {
+		fields := eventFrameFields(nil, EventToolBridgeUnavailable)
+		fields.ProviderMetadata = map[string]any{"reason": "no_tool_definitions"}
+		a.sendJSON(ctx, EventFrame{Type: MsgEvent, EventFrameFields: fields})
+		return
+	}
+	a.bridgeTools = make(map[string]ToolDefinitionFrame, len(defs))
+	for _, def := range defs {
+		name := strings.TrimSpace(def.Name)
+		if name == "" {
+			continue
+		}
+		def.Name = name
+		a.bridgeTools[name] = def
+		cfg.Tools = append(cfg.Tools, def)
+	}
+}
+
+// dispatchBridgeToolCall handles one provider tool call claimed by the tool
+// router: emit the transparency tool_call frame, execute asynchronously under
+// the per-session concurrency bound, feed the result back to the provider via
+// SendToolResponse, and acknowledge to the client with a tool_result_ack
+// event frame.
+func (a *Adapter) dispatchBridgeToolCall(ctx context.Context, msg *LiveMessage, call ToolCall) {
+	fields := eventFrameFields(msg, EventToolCall)
+	metadata := make(map[string]any, len(fields.ProviderMetadata)+1)
+	for key, value := range fields.ProviderMetadata {
+		metadata[key] = value
+	}
+	metadata["execution"] = "server"
+	fields.ProviderMetadata = metadata
+	a.sendJSON(ctx, ToolCallFrame{
+		Type:             MsgToolCall,
+		EventFrameFields: fields,
+		ID:               call.ID,
+		Name:             call.Name,
+		Args:             call.Args,
+	})
+
+	select {
+	case a.toolSem <- struct{}{}:
+	default:
+		// Concurrency bound reached: answer immediately with a structured
+		// error so the model recovers verbally instead of stalling the turn.
+		a.sendBridgeToolResponse(ctx, call, map[string]any{
+			"error": map[string]any{
+				"code":    "tool_concurrency_exceeded",
+				"message": "too many concurrent server-side tool calls in this session; try again",
+			},
+		}, "error")
+		return
+	}
+	a.toolWG.Add(1)
+	go func() {
+		defer a.toolWG.Done()
+		defer func() { <-a.toolSem }()
+		defer func() {
+			if rec := recover(); rec != nil {
+				slog.Error("voiceagent: bridge tool execution panic recovered",
+					"session_id", a.Session.ID,
+					"tool", call.Name,
+					"err", rec,
+					"stack", string(debug.Stack()),
+				)
+			}
+		}()
+		response, handled := a.ToolRouter.Execute(ctx, a.Session, call)
+		status := "ok"
+		if !handled || response == nil {
+			status = "error"
+			response = map[string]any{
+				"error": map[string]any{
+					"code":    "tool_bridge_unavailable",
+					"message": "server-side tool execution failed",
+				},
+			}
+		} else if _, hasError := response["error"]; hasError {
+			status = "error"
+		}
+		a.sendBridgeToolResponse(ctx, call, response, status)
+	}()
+}
+
+// sendBridgeToolResponse feeds a server-side tool result back to the provider
+// and emits the client-facing tool_result_ack event frame carrying id/status.
+func (a *Adapter) sendBridgeToolResponse(ctx context.Context, call ToolCall, response map[string]any, status string) {
+	responder, ok := a.Provider.(LiveToolResponder)
+	if !ok {
+		slog.Warn("voiceagent: provider does not accept tool responses; dropping bridge result",
+			"session_id", a.Session.ID, "tool", call.Name)
+		status = "error"
+	} else if err := responder.SendToolResponse(ToolResponseFrame{
+		Type:     MsgToolResponse,
+		ID:       call.ID,
+		Name:     call.Name,
+		Response: response,
+	}); err != nil {
+		slog.Warn("voiceagent: bridge tool response upstream failed",
+			"session_id", a.Session.ID, "tool", call.Name, "err", err)
+		status = "error"
+	}
+	fields := eventFrameFields(nil, EventToolResultAck)
+	fields.ProviderMetadata = map[string]any{
+		"id":        call.ID,
+		"name":      call.Name,
+		"status":    status,
+		"execution": "server",
+	}
+	a.sendJSON(ctx, EventFrame{Type: MsgEvent, EventFrameFields: fields})
 }
 
 func standaloneEventType(msg *LiveMessage) string {

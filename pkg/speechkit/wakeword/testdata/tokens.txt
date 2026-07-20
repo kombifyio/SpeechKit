@@ -1,0 +1,10 @@
+<blk> 0
+<sos/eos> 1
+<unk> 2
+▁HE 3
+Y 4
+▁KOM 5
+B 6
+IF 7
+A 8
+▁A 9

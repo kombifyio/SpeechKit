@@ -1,20 +1,18 @@
-//go:build linux
-
-package voiceagent
+package wssession
 
 import (
 	"sync"
 	"time"
 )
 
-// idleWatchdog signals on its Fired channel when the configured timeout
-// elapses without a Reset call. Designed to be embedded in the WebSocket
+// IdleWatchdog signals on its Fired channel when the configured timeout
+// elapses without a Reset call. Designed to be embedded in a WebSocket
 // adapter so server-side idle sessions are torn down without waiting for
 // the client to disconnect.
 //
 // Lifecycle:
 //
-//	w := newIdleWatchdog(15 * time.Minute)
+//	w := NewIdleWatchdog(15 * time.Minute)
 //	defer w.Stop()
 //	for {
 //	    select {
@@ -28,7 +26,7 @@ import (
 // Safe for concurrent Reset/Stop. A timeout of 0 returns a watchdog whose
 // Fired channel never fires — useful for tests and for callers who want
 // to disable the timeout via config.
-type idleWatchdog struct {
+type IdleWatchdog struct {
 	mu      sync.Mutex
 	timer   *time.Timer
 	fired   chan struct{}
@@ -36,8 +34,9 @@ type idleWatchdog struct {
 	stopped bool
 }
 
-func newIdleWatchdog(timeout time.Duration) *idleWatchdog {
-	w := &idleWatchdog{
+// NewIdleWatchdog constructs a watchdog with the given timeout.
+func NewIdleWatchdog(timeout time.Duration) *IdleWatchdog {
+	w := &IdleWatchdog{
 		fired:   make(chan struct{}, 1),
 		timeout: timeout,
 	}
@@ -51,7 +50,7 @@ func newIdleWatchdog(timeout time.Duration) *idleWatchdog {
 
 // Reset restarts the timeout. No-op when the watchdog is stopped or the
 // timeout has already fired (one-shot).
-func (w *idleWatchdog) Reset() {
+func (w *IdleWatchdog) Reset() {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 	if w.stopped || w.timer == nil {
@@ -68,7 +67,7 @@ func (w *idleWatchdog) Reset() {
 
 // Stop halts the timer permanently. Idempotent. After Stop, Fired() will
 // not produce any new value.
-func (w *idleWatchdog) Stop() {
+func (w *IdleWatchdog) Stop() {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 	if w.stopped {
@@ -82,9 +81,9 @@ func (w *idleWatchdog) Stop() {
 
 // Fired returns a channel that receives once when the timeout elapses
 // without a Reset.
-func (w *idleWatchdog) Fired() <-chan struct{} { return w.fired }
+func (w *IdleWatchdog) Fired() <-chan struct{} { return w.fired }
 
-func (w *idleWatchdog) onFire() {
+func (w *IdleWatchdog) onFire() {
 	w.mu.Lock()
 	stopped := w.stopped
 	w.mu.Unlock()

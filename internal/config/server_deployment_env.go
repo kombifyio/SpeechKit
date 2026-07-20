@@ -2,7 +2,9 @@ package config
 
 import (
 	"fmt"
+	"net/url"
 	"os"
+	"strconv"
 	"strings"
 )
 
@@ -13,6 +15,18 @@ const (
 	ServerBearerRoleEnv        = "SPEECHKIT_SERVER_BEARER_ROLE"
 	ServerAdminUsernameEnv     = "SPEECHKIT_SERVER_ADMIN_USERNAME"
 	ServerAdminPasswordHashEnv = "SPEECHKIT_SERVER_ADMIN_PASSWORD_HASH"
+
+	// ServerToolBridgeURLEnv sets the voice-agent tool bridge base URL
+	// (e.g. https://api.kombify.io/v1/agents/voice-tools). Setting it enables
+	// the bridge and derives <base>/manifest and <base>/call so a rollout can
+	// flip the bridge on without editing the baked config file.
+	ServerToolBridgeURLEnv = "SPEECHKIT_TOOLBRIDGE_URL"
+	// ServerToolBridgeTimeoutMsEnv overrides [server.voiceagent.tool_bridge]
+	// timeout_ms.
+	ServerToolBridgeTimeoutMsEnv = "SPEECHKIT_TOOLBRIDGE_TIMEOUT_MS"
+	// ServerToolBridgeMaxCallsEnv overrides [server.voiceagent.tool_bridge]
+	// max_calls_per_session.
+	ServerToolBridgeMaxCallsEnv = "SPEECHKIT_TOOLBRIDGE_MAX_CALLS"
 )
 
 // ApplyServerDeploymentEnv applies the headless deployment contract after
@@ -81,6 +95,56 @@ func ApplyServerDeploymentEnv(cfg *Config) ([]string, error) {
 		notes = append(notes, "deployment env: admin password hash set from "+ServerAdminPasswordHashEnv)
 	}
 
+	toolBridgeNotes, err := applyServerToolBridgeEnv(cfg)
+	if err != nil {
+		return nil, err
+	}
+	notes = append(notes, toolBridgeNotes...)
+
+	return notes, nil
+}
+
+// applyServerToolBridgeEnv applies the SPEECHKIT_TOOLBRIDGE_* deployment env
+// contract for [server.voiceagent.tool_bridge]. Setting the base URL both
+// enables the bridge and derives the manifest/call endpoints, so a rollout can
+// flip the bridge via env alone (deploy/config/server.kombify-prod.toml ships
+// enabled = false). Malformed values fail startup loudly instead of silently
+// running with a broken bridge.
+func applyServerToolBridgeEnv(cfg *Config) ([]string, error) {
+	var notes []string
+	bridge := &cfg.Server.VoiceAgent.ToolBridge
+
+	if base := cleanSetting(os.Getenv(ServerToolBridgeURLEnv)); base != "" {
+		parsed, err := url.Parse(base)
+		if err != nil || parsed.Host == "" || (parsed.Scheme != "http" && parsed.Scheme != "https") {
+			return nil, fmt.Errorf("%s must be an absolute http(s) URL", ServerToolBridgeURLEnv)
+		}
+		base = strings.TrimRight(base, "/")
+		bridge.ManifestURL = base + "/manifest"
+		bridge.InvokeURL = base + "/call"
+		bridge.Enabled = true
+		notes = append(notes, "deployment env: voice-agent tool bridge enabled from "+ServerToolBridgeURLEnv)
+	}
+	if raw := cleanSetting(os.Getenv(ServerToolBridgeTimeoutMsEnv)); raw != "" {
+		timeoutMs, err := strconv.Atoi(raw)
+		if err != nil || timeoutMs <= 0 {
+			return nil, fmt.Errorf("%s must be a positive integer (milliseconds)", ServerToolBridgeTimeoutMsEnv)
+		}
+		if bridge.TimeoutMs != timeoutMs {
+			bridge.TimeoutMs = timeoutMs
+			notes = append(notes, "deployment env: tool bridge timeout set from "+ServerToolBridgeTimeoutMsEnv)
+		}
+	}
+	if raw := cleanSetting(os.Getenv(ServerToolBridgeMaxCallsEnv)); raw != "" {
+		maxCalls, err := strconv.Atoi(raw)
+		if err != nil || maxCalls <= 0 {
+			return nil, fmt.Errorf("%s must be a positive integer", ServerToolBridgeMaxCallsEnv)
+		}
+		if bridge.MaxCallsPerSession != maxCalls {
+			bridge.MaxCallsPerSession = maxCalls
+			notes = append(notes, "deployment env: tool bridge per-session call cap set from "+ServerToolBridgeMaxCallsEnv)
+		}
+	}
 	return notes, nil
 }
 
@@ -119,10 +183,10 @@ func inferServerDeploymentAuthMode(cfg *Config) []string {
 func normalizeServerDeploymentAuthMode(mode string) (string, error) {
 	mode = strings.ToLower(cleanSetting(mode))
 	switch mode {
-	case "none", "bearer", "edge_hmac", "bearer_or_edge":
+	case "none", "bearer", "edge_hmac", "bearer_or_edge", "oidc", "bearer_or_oidc":
 		return mode, nil
 	default:
-		return "", fmt.Errorf("%s must be one of none, bearer, edge_hmac, bearer_or_edge", ServerAuthModeEnv)
+		return "", fmt.Errorf("%s must be one of none, bearer, edge_hmac, bearer_or_edge, oidc, bearer_or_oidc", ServerAuthModeEnv)
 	}
 }
 

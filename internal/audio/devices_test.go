@@ -52,7 +52,7 @@ func TestSelectCaptureDeviceIDPrefersExactMatch(t *testing.T) {
 		{ID: "abc123", Name: "External"},
 	}
 
-	if got := selectCaptureDeviceID("abc123", devices); got != "abc123" {
+	if got := selectCaptureDeviceID("abc123", "", devices); got != "abc123" {
 		t.Fatalf("selectCaptureDeviceID() = %q, want %q", got, "abc123")
 	}
 }
@@ -62,7 +62,40 @@ func TestSelectCaptureDeviceIDReturnsEmptyForUnknownID(t *testing.T) {
 		{ID: "111", Name: "Default", IsDefault: true},
 	}
 
-	if got := selectCaptureDeviceID("does-not-exist", devices); got != "" {
+	if got := selectCaptureDeviceID("does-not-exist", "", devices); got != "" {
+		t.Fatalf("selectCaptureDeviceID() = %q, want empty", got)
+	}
+}
+
+func TestSelectCaptureDeviceIDFallsBackToNameMatch(t *testing.T) {
+	devices := []DeviceInfo{
+		{ID: "111", Name: "Default", IsDefault: true},
+		{ID: "new-id-after-replug", Name: "USB UAC Microphone"},
+	}
+
+	// USB/UAC device re-enumerated with a new endpoint ID; persisted name recovers it.
+	if got := selectCaptureDeviceID("old-stale-id", "usb uac microphone", devices); got != "new-id-after-replug" {
+		t.Fatalf("selectCaptureDeviceID() = %q, want new-id-after-replug", got)
+	}
+}
+
+func TestSelectCaptureDeviceIDPrefersIDMatchOverName(t *testing.T) {
+	devices := []DeviceInfo{
+		{ID: "id-a", Name: "Shared Name"},
+		{ID: "id-b", Name: "Shared Name"},
+	}
+
+	if got := selectCaptureDeviceID("id-b", "Shared Name", devices); got != "id-b" {
+		t.Fatalf("selectCaptureDeviceID() = %q, want id-b", got)
+	}
+}
+
+func TestSelectCaptureDeviceIDIgnoresEmptyNameFallback(t *testing.T) {
+	devices := []DeviceInfo{
+		{ID: "111", Name: ""},
+	}
+
+	if got := selectCaptureDeviceID("gone", "", devices); got != "" {
 		t.Fatalf("selectCaptureDeviceID() = %q, want empty", got)
 	}
 }

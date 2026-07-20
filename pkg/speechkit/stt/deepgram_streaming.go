@@ -330,10 +330,14 @@ func (r deepgramStreamingResponse) speakerFrame(provider, model string, sequence
 
 func (r deepgramStreamingResponse) dictationEvent(provider, model, fallbackLanguage string, sessionID uint64, sequence, _ int64) speechkit.DictationStreamEvent {
 	isFinal := r.IsFinal || r.SpeechFinal
+	segmentID := uint64(0)
+	if sequence > 0 {
+		segmentID = uint64(sequence)
+	}
 	event := speechkit.DictationStreamEvent{
 		Sequence:       sequence,
 		SessionID:      sessionID,
-		SegmentID:      uint64(sequence),
+		SegmentID:      segmentID,
 		ProviderItemID: fmt.Sprintf("deepgram:%d", sequence),
 		IsFinal:        isFinal,
 		Language:       firstNonEmptyTrimmed(r.Channel.DetectedLanguage, fallbackLanguage, deepgramCodeSwitchingLanguage()),

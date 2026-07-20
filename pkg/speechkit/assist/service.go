@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/kombifyio/SpeechKit/pkg/speechkit"
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/localization"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/tts"
 )
 
@@ -52,6 +53,8 @@ type ToolResult struct {
 	Kind           string
 	Surface        speechkit.AssistSurfaceDecision
 	Locale         string
+	MessageID      localization.MessageID
+	ReasonCode     string
 	FollowupNeeded bool
 	FollowupState  *FollowupState
 }
@@ -211,6 +214,21 @@ func (s *Service) Process(ctx context.Context, req speechkit.AssistRequest) (spe
 }
 
 func (s *Service) finalizeToolResult(ctx context.Context, req speechkit.AssistRequest, call ToolCall, result ToolResult) (speechkit.AssistResult, error) {
+	// A silent tool result means the matched skill recognized the intent but
+	// declined this specific payload (e.g. Math on non-math text). Fall through
+	// to the generator when one is configured, matching the internal Assist
+	// pipeline's silent→LLM behavior. Clean mode never uses the LLM, and a host
+	// without a generator keeps the silent result as-is.
+	if result.Surface == speechkit.AssistSurfaceSilent && s.generator != nil && s.behavior != speechkit.ModeBehaviorClean {
+		if s.skillContexts != nil && req.SessionKey != "" {
+			s.skillContexts.Clear(req.SessionKey)
+		}
+		generated, err := s.generator.GenerateAssist(ctx, req)
+		if err != nil {
+			return speechkit.AssistResult{}, err
+		}
+		return s.synthesize(ctx, generated)
+	}
 	if s.skillContexts != nil && req.SessionKey != "" {
 		if result.FollowupNeeded {
 			s.skillContexts.Set(req.SessionKey, call.Intent, result.FollowupState.Map())
@@ -260,6 +278,8 @@ func assistResultFromTool(call ToolCall, result ToolResult) speechkit.AssistResu
 		Surface:    surface,
 		ShortcutID: call.Intent,
 		Locale:     locale,
+		MessageID:  result.MessageID,
+		ReasonCode: result.ReasonCode,
 	}
 }
 

@@ -508,10 +508,10 @@ func TestWebSocketRejectsQueryOnlyTicket(t *testing.T) {
 
 func TestWebSocketRejectsClientWithoutOriginByDefault(t *testing.T) {
 	// Audit S-2 hardening: a browser that omits Origin defeats CSRF-style
-	// protection. Default is now to reject empty Origin; native clients
-	// opt in via SPEECHKIT_ALLOW_EMPTY_ORIGIN=1 (covered by the next
-	// test). Without that env, the upgrade returns 403 with body
-	// "origin_not_allowed".
+	// protection, so TICKETLESS empty-Origin upgrades stay denied by
+	// default (opt-in via SPEECHKIT_ALLOW_EMPTY_ORIGIN=1, covered by the
+	// next test). Ticketed native clients proceed to ticket verification
+	// instead — their HMAC session ticket is the credential.
 	manager := mustManager(t, Options{})
 	provider := newFakeProvider()
 	handler, err := New(HandlerOptions{
@@ -530,18 +530,16 @@ func TestWebSocketRejectsClientWithoutOriginByDefault(t *testing.T) {
 	defer server.Close()
 	defer provider.Close() //nolint:errcheck
 
-	session, ticket, err := manager.Create(Identity{UserID: "user-1", OrgID: "org-1"})
+	session, _, err := manager.Create(Identity{UserID: "user-1", OrgID: "org-1"})
 	if err != nil {
 		t.Fatalf("create session: %v", err)
 	}
 	wsURL := "ws" + strings.TrimPrefix(server.URL, "http") + "/v1/voiceagent/sessions/" + session.ID + "/ws"
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
-	_, resp, dialErr := websocket.Dial(ctx, wsURL, &websocket.DialOptions{
-		Subprotocols: []string{wsTicketSubprotocol(ticket)},
-	})
+	_, resp, dialErr := websocket.Dial(ctx, wsURL, nil)
 	if dialErr == nil {
-		t.Fatalf("websocket dial without Origin should fail")
+		t.Fatalf("ticketless websocket dial without Origin should fail")
 	}
 	if resp != nil && resp.StatusCode != http.StatusForbidden {
 		t.Fatalf("expected 403 from origin gate; got %d", resp.StatusCode)

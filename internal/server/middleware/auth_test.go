@@ -1093,3 +1093,80 @@ func TestAuthState_SmokeTokenResolvesFromEnv(t *testing.T) {
 		t.Fatalf("smoke token = %q, want smoke-token-from-env", got)
 	}
 }
+
+func TestAuth_BearerOrOIDCAcceptsStaticBearer(t *testing.T) {
+	t.Setenv("TEST_BEARER", "svc-token")
+	handler := Auth(AuthOptions{Mode: "bearer_or_oidc", BearerTokenEnv: "TEST_BEARER"})(
+		http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			id := IdentityFromContext(r.Context())
+			if id.Source != "bearer" {
+				t.Fatalf("identity source should be bearer, got %q", id.Source)
+			}
+			w.WriteHeader(http.StatusOK)
+		}),
+	)
+
+	req := httptest.NewRequest(http.MethodGet, "/v1/any", nil)
+	req.Header.Set("Authorization", "Bearer svc-token")
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 via static bearer, got %d", rec.Code)
+	}
+}
+
+func TestAuth_BearerOrOIDCFallsBackToOIDCVerifier(t *testing.T) {
+	t.Setenv("TEST_BEARER", "svc-token")
+	verifierCalled := false
+	handler := Auth(AuthOptions{
+		Mode:           "bearer_or_oidc",
+		BearerTokenEnv: "TEST_BEARER",
+		OIDCVerifier: func(r *http.Request) (Identity, bool) {
+			verifierCalled = true
+			if r.Header.Get("Authorization") == "Bearer valid-jwt" {
+				return Identity{UserID: "user-42", OrgID: "org-1", Source: "oidc"}, true
+			}
+			return Identity{}, false
+		},
+	})(
+		http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			id := IdentityFromContext(r.Context())
+			if id.UserID != "user-42" || id.Source != "oidc" {
+				t.Fatalf("unexpected identity %+v", id)
+			}
+			w.WriteHeader(http.StatusOK)
+		}),
+	)
+
+	req := httptest.NewRequest(http.MethodGet, "/v1/any", nil)
+	req.Header.Set("Authorization", "Bearer valid-jwt")
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 via OIDC verifier, got %d", rec.Code)
+	}
+	if !verifierCalled {
+		t.Fatal("OIDC verifier should have been consulted for a non-service bearer")
+	}
+}
+
+func TestAuth_BearerOrOIDCRejectsWithoutEitherCredential(t *testing.T) {
+	t.Setenv("TEST_BEARER", "svc-token")
+	handler := Auth(AuthOptions{
+		Mode:           "bearer_or_oidc",
+		BearerTokenEnv: "TEST_BEARER",
+		OIDCVerifier: func(*http.Request) (Identity, bool) {
+			return Identity{}, false
+		},
+	})(
+		http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) }),
+	)
+
+	req := httptest.NewRequest(http.MethodGet, "/v1/any", nil)
+	req.Header.Set("Authorization", "Bearer neither-valid")
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("expected 401 when neither credential matches, got %d", rec.Code)
+	}
+}

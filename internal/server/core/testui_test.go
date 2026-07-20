@@ -169,12 +169,19 @@ func TestServerBootstrapPaths_ExposeSetupOnlyDuringBootstrap(t *testing.T) {
 func TestServerPublicRoutes_ExposeOnlyTicketWebSocketRoutes(t *testing.T) {
 	routes := serverPublicRoutes()
 	wants := map[string]bool{
-		"/v1/server/settings":              false,
-		"/v1/server/admin/session":         false,
-		"/api/v1/server/settings":          false,
-		"/api/v1/server/admin/session":     false,
-		"/v1/voiceagent/sessions/|/ws":     false,
-		"/api/v1/voiceagent/sessions/|/ws": false,
+		"/v1/server/settings":                    false,
+		"/v1/server/admin/session":               false,
+		"/api/v1/server/settings":                false,
+		"/api/v1/server/admin/session":           false,
+		"/v1/voiceagent/sessions/|/ws":           false,
+		"/api/v1/voiceagent/sessions/|/ws":       false,
+		"/v1/dictation/stream/sessions/|/ws":     false,
+		"/api/v1/dictation/stream/sessions/|/ws": false,
+		// Wake-word model hub: intentionally public (devices hold no credential
+		// and the payloads are already-public model metadata / redirects).
+		"/v1/wakeword/models":   false,
+		"/v1/wakeword/models/|": false,
+		"/v1/wakeword/files/|":  false,
 	}
 	for _, route := range routes {
 		key := route.Path
@@ -197,6 +204,12 @@ func TestServerPublicRoutes_ExposeOnlyTicketWebSocketRoutes(t *testing.T) {
 			}
 			continue
 		}
+		if route.Path == "/v1/wakeword/models" || route.PathPrefix == "/v1/wakeword/models/" || route.PathPrefix == "/v1/wakeword/files/" {
+			if len(route.Methods) != 2 || route.Methods[0] != http.MethodGet || route.Methods[1] != http.MethodHead {
+				t.Fatalf("wakeword route should be read-only GET/HEAD, got %#v", route.Methods)
+			}
+			continue
+		}
 		if route.Path != "" {
 			t.Fatalf("public websocket route should use prefix/suffix matching, got path %q", route.Path)
 		}
@@ -209,7 +222,10 @@ func TestServerPublicRoutes_ExposeOnlyTicketWebSocketRoutes(t *testing.T) {
 			t.Fatalf("missing public websocket route %s in %#v", key, routes)
 		}
 	}
-	for _, forbidden := range []string{"/v1/voiceagent/sessions", "/api/v1/voiceagent/sessions"} {
+	for _, forbidden := range []string{
+		"/v1/voiceagent/sessions", "/api/v1/voiceagent/sessions",
+		"/v1/dictation/stream/sessions", "/api/v1/dictation/stream/sessions",
+	} {
 		for _, route := range routes {
 			prefixSuffixMatch := (route.PathPrefix != "" || route.PathSuffix != "") &&
 				strings.HasPrefix(forbidden, route.PathPrefix) &&

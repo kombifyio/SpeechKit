@@ -34,6 +34,13 @@ type ValidationOptions struct {
 	// AllowHTTP permits http:// for non-loopback hosts. Leave false unless
 	// an operator has a documented reason (e.g. test harness).
 	AllowHTTP bool
+
+	// RequireLocal rejects every public IP address, including public
+	// addresses returned by DNS after the URL passed syntactic validation.
+	// Combine it with AllowLoopback, AllowPrivate, and (when needed) AllowHTTP
+	// for LAN-only bridges such as a local Home Assistant instance. The zero
+	// value remains provider-oriented and permits public HTTPS endpoints.
+	RequireLocal bool
 }
 
 // Validation errors. Callers can match on these with errors.Is for UX.
@@ -46,6 +53,7 @@ var (
 	ErrInsecureHTTP      = errors.New("netsec: plain http:// not allowed for this host")
 	ErrLoopbackBlocked   = errors.New("netsec: loopback addresses not allowed")
 	ErrPrivateBlocked    = errors.New("netsec: private / link-local / ULA addresses not allowed")
+	ErrPublicBlocked     = errors.New("netsec: public addresses not allowed for a local-only endpoint")
 	ErrInvalidHost       = errors.New("netsec: URL host could not be resolved as a literal IP or name")
 	ErrUserInfoForbidden = errors.New("netsec: URL user-info (user:pass@) is not permitted")
 )
@@ -104,6 +112,9 @@ func ValidateProviderURL(raw string, opts ValidationOptions) error {
 		if isPrivateIP(ip) && !opts.AllowPrivate {
 			return fmt.Errorf("%w: host=%s", ErrPrivateBlocked, host)
 		}
+		if opts.RequireLocal && !isPrivateIP(ip) {
+			return fmt.Errorf("%w: host=%s", ErrPublicBlocked, host)
+		}
 	}
 
 	// Non-loopback: enforce https unless AllowHTTP is set.
@@ -128,6 +139,9 @@ func ValidateResolvedIP(ip net.IP, opts ValidationOptions) error {
 	}
 	if isPrivateIP(ip) && !opts.AllowPrivate {
 		return fmt.Errorf("%w: ip=%s", ErrPrivateBlocked, ip.String())
+	}
+	if opts.RequireLocal && !isPrivateIP(ip) {
+		return fmt.Errorf("%w: ip=%s", ErrPublicBlocked, ip.String())
 	}
 	return nil
 }

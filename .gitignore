@@ -34,6 +34,7 @@ clients/python/**/*.pyc
 *.bin
 *.ggml
 /models/
+examples/kombify-box-satellite/models/
 .public-export*/
 
 # Wake-word training artifacts (ONNX checkpoints + training logs land here,
@@ -134,8 +135,9 @@ scripts/whisper-server/whisper-server
 # Cloudflare local emulator state
 infra/cloudflare/**/.wrangler/
 
-# Android — local development only, not tracked in main repo
-/android/
+# Android device-target modules are tracked again (Android voice
+# integration track, 2026-07-15). Local Gradle/IDE artifacts stay
+# ignored via android/.gitignore.
 
 # Embedded frontend build output (regenerated on every frontend build)
 internal/frontendassets/dist/

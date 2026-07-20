@@ -33,6 +33,29 @@ type Identity struct {
 
 type identityCtxKey struct{}
 
+// EdgeOboSubjectTokenHeader is the default request header a fronting proxy
+// uses to hand the server an opaque per-session credential (e.g. an RFC 8693
+// subject token for on-behalf-of exchange downstream). The header is honoured
+// ONLY on requests whose identity was established via edge-HMAC — a bearer,
+// admin, smoke, or anonymous caller can present the header but it is ignored,
+// so a client can never smuggle a credential past the edge. The value is
+// treated as a secret: it lives on the request context only and MUST never be
+// logged or persisted.
+const EdgeOboSubjectTokenHeader = "X-Edge-Obo-Subject-Token" //nolint:gosec // header name, not a credential
+
+type edgeOboSubjectTokenCtxKey struct{}
+
+// EdgeOboSubjectTokenFromContext returns the edge-forwarded OBO subject token
+// attached by Auth, or "" when the request did not authenticate via edge-HMAC
+// or the edge did not forward a token. Callers must treat the value as a
+// secret (memory-only, never logged).
+func EdgeOboSubjectTokenFromContext(ctx context.Context) string {
+	if v, ok := ctx.Value(edgeOboSubjectTokenCtxKey{}).(string); ok {
+		return v
+	}
+	return ""
+}
+
 const (
 	adminSessionCookieName = "speechkit_admin_session"
 	adminSessionTTL        = 30 * time.Minute
@@ -118,6 +141,14 @@ const (
 	// is sourced from the token's claims, giving self-hosted deployments real
 	// multi-tenancy without writing an edge-HMAC proxy. See oidc.go.
 	AuthModeOIDC AuthMode = "oidc"
+	// AuthModeBearerOrOIDC accepts either the static service bearer token or
+	// an IdP-issued JWT on the same deployment. This is the mobile/native
+	// onboarding shape: existing service callers (box, CI, smoke) keep the
+	// static bearer while per-user clients present OIDC JWTs — no separate
+	// deployment or edge proxy required. The static bearer is compared
+	// first (constant-time, cheap); JWT validation runs only when it
+	// doesn't match.
+	AuthModeBearerOrOIDC AuthMode = "bearer_or_oidc"
 )
 
 // AuthOptions configures the Auth middleware.
@@ -164,6 +195,11 @@ type AuthOptions struct {
 	// OIDCVerifier validates a request's Bearer JWT and maps its claims to an
 	// Identity. Set by bootstrap only when AuthMode is "oidc"; nil otherwise.
 	OIDCVerifier func(*http.Request) (Identity, bool)
+	// OboSubjectTokenHeader overrides the header name carrying the
+	// edge-forwarded OBO subject token (see EdgeOboSubjectTokenHeader).
+	// Empty uses the default. The header is only honoured on identities
+	// whose Source is "edge_hmac"; its value is never logged.
+	OboSubjectTokenHeader string
 }
 
 type PublicRoute struct {
@@ -467,9 +503,16 @@ func (a authRuntime) authenticateConfiguredMode(r *http.Request) (Identity, bool
 	if mode == "" {
 		mode = AuthModeNone
 	}
-	if mode == AuthModeOIDC {
+	if mode == AuthModeOIDC || mode == AuthModeBearerOrOIDC {
 		// OIDC validation lives in a stateful validator (JWKS cache), injected
 		// as a verifier rather than threaded through the pure verify() switch.
+		// The combined mode tries the static bearer first: constant-time
+		// compare, no JWKS round trip for service callers.
+		if mode == AuthModeBearerOrOIDC {
+			if id, ok := verifyBearer(r, strings.TrimSpace(a.bearerTokenProvider()), strings.TrimSpace(a.bearerRoleProvider())); ok {
+				return id, true
+			}
+		}
 		if a.oidcVerifier != nil {
 			if id, ok := a.oidcVerifier(r); ok {
 				return id, true
@@ -496,6 +539,27 @@ func (a authRuntime) serveAuthenticated(next http.Handler, w http.ResponseWriter
 		a.setAdminSessionCookie(w, r, username, passwordHash)
 	}
 	ctx := context.WithValue(r.Context(), identityCtxKey{}, id)
+	// Attach the edge-forwarded OBO subject token ONLY when this request's
+	// identity was proven via edge-HMAC. Any other source (bearer, admin,
+	// smoke, none, oidc) cannot inject a credential through this header.
+	// The value is a secret: context-only, never logged.
+	if id.Source == "edge_hmac" {
+		header := strings.TrimSpace(a.opts.OboSubjectTokenHeader)
+		if header == "" {
+			header = EdgeOboSubjectTokenHeader
+		}
+		if token := strings.TrimSpace(r.Header.Get(header)); token != "" {
+			ctx = context.WithValue(ctx, edgeOboSubjectTokenCtxKey{}, token)
+		}
+		// Edge-resolved voice preferences carry their own versioned HMAC
+		// (same shared secret) bound to this verified identity plus a
+		// timestamp; an invalid overlay degrades to "no preference" and
+		// never fails the request. Non-secret provider/persona names; see
+		// voiceprefs.go for the contract.
+		if prefs := verifiedVoicePrefsFromRequest(r, id, strings.TrimSpace(a.edgeSecretProvider()), time.Now()); !prefs.IsZero() {
+			ctx = context.WithValue(ctx, voicePrefsCtxKey{}, prefs)
+		}
+	}
 	next.ServeHTTP(w, r.WithContext(ctx))
 }
 

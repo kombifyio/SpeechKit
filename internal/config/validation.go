@@ -191,22 +191,25 @@ func WakewordDefaultModeToHandsFreeTarget(mode string) string {
 // NormalizeWakewordBackend coerces arbitrary config/UI values to the small
 // set of detector backend IDs the desktop app understands.
 //
-// Empty resolves to LiveKit/openWakeWord because the bundled per-phrase
-// ONNX models (hey_quby/hey_mira/hey_kombify/hey_jarvis/hey_computer) are
-// purpose-trained for those exact phrases and significantly more reliable
-// than the generic Gigaspeech sherpa-onnx KWS for the curated catalog.
-// Existing installs that pinned "sherpa_kws" keep it; only fresh configs
-// and unset fields land on openWakeWord.
+// Empty/unset (and any unrecognized value) resolves to sherpa_kws — the only
+// backend whose KWS model and keywords file are unconditionally staged into
+// the bundle (scripts/build.ps1 + scripts/prepare-wakeword-model.ps1) and the
+// only backend the Box companion runs. This keeps a fresh or backend-less
+// config deterministic and self-consistent with the struct default in
+// defaults.go, instead of silently landing on openWakeWord, whose per-phrase
+// ONNX models can be absent on dev/partial builds and then disable wake-word
+// with no obvious cause. Existing installs that explicitly pinned another
+// backend keep it.
 func NormalizeWakewordBackend(value string) string {
 	switch strings.ToLower(strings.TrimSpace(value)) {
-	case WakewordBackendSherpaKWS:
-		return WakewordBackendSherpaKWS
-	case WakewordBackendLiveKitOpenWakeWord, "", "livekit", "openwakeword", "livekit_openwakeword_onnx":
+	case WakewordBackendLiveKitOpenWakeWord, "livekit", "openwakeword", "livekit_openwakeword_onnx":
 		return WakewordBackendLiveKitOpenWakeWord
 	case WakewordBackendSTTPhrase, "stt", "phrase_match", "stt_phrase_match":
 		return WakewordBackendSTTPhrase
+	case WakewordBackendSherpaKWS, "":
+		return WakewordBackendSherpaKWS
 	default:
-		return WakewordBackendLiveKitOpenWakeWord
+		return WakewordBackendSherpaKWS
 	}
 }
 

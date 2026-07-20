@@ -65,6 +65,13 @@ func (r *Router) Decide(transcript string, opts ProcessOpts) Decision {
 	}
 
 	resolution := resolver.Resolve(transcript, opts.Locale)
+	// Preserve the security-sensitive Home Assistant intent even when its
+	// utility is disabled. The pipeline uses it to fail closed instead of
+	// treating a smart-home request as a generic prompt. Other disabled utility
+	// intents retain the existing zero-value behavior.
+	if resolution.Intent == shortcuts.IntentHomeAssistant {
+		decision.Intent = resolution.Intent
+	}
 	registry := DefaultUtilityRegistry()
 	if r != nil && r.utilities != nil {
 		registry = r.utilities

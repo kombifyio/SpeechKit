@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/kombifyio/SpeechKit/pkg/speechkit"
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/localization"
 	ttspkg "github.com/kombifyio/SpeechKit/pkg/speechkit/tts"
 )
 
@@ -16,7 +17,12 @@ func TestServiceProcessesMatchedTool(t *testing.T) {
 			return ToolCall{Intent: "copy_last", Locale: "en"}, true, nil
 		}),
 		Executor: ToolExecutorFunc(func(context.Context, ToolCall) (ToolResult, error) {
-			return ToolResult{Text: "Copied", Action: "execute"}, nil
+			return ToolResult{
+				Text:       "Copied",
+				Action:     "execute",
+				MessageID:  localization.CompanionHomeAssistantUnavailable,
+				ReasonCode: "unavailable",
+			}, nil
 		}),
 	})
 	if err != nil {
@@ -32,6 +38,9 @@ func TestServiceProcessesMatchedTool(t *testing.T) {
 	}
 	if got, want := result.ShortcutID, "copy_last"; got != want {
 		t.Fatalf("shortcut = %q, want %q", got, want)
+	}
+	if result.MessageID != localization.CompanionHomeAssistantUnavailable || result.ReasonCode != "unavailable" {
+		t.Fatalf("result metadata = %q/%q", result.MessageID, result.ReasonCode)
 	}
 }
 

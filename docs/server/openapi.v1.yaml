@@ -828,6 +828,15 @@ paths:
         Supported audio formats: WAV (PCM 16-bit), MP3, raw PCM 16 kHz S16
         mono, WebM/Opus, OGG/Opus. WebM and OGG require ffmpeg in the
         container (default for Dockerfile.server).
+
+        Provider precedence per request: explicit `provider_profile_id`
+        override → edge-injected user voice-preference headers
+        (`x-speechkit-pref-stt-primary` / `-secondary`, honoured only under a
+        verified edge HMAC plus a valid `x-speechkit-pref-signature`) → the
+        server's configured `[model_selection]` primary → the router's
+        fallback order. Unsatisfiable preferences fall back instead of
+        erroring; the response's `provider` field reports the provider
+        actually used.
       tags: [dictation]
       requestBody:
         required: true
@@ -847,6 +856,11 @@ paths:
                   type: string
                 prompt:
                   type: string
+                provider_profile_id:
+                  type: string
+                  description: |
+                    Optional explicit STT provider-profile pin (e.g.
+                    `stt.deepgram.nova-3`), same semantics as the JSON field.
           application/json:
             schema:
               $ref: '#/components/schemas/DictateJSONRequest'
@@ -955,6 +969,76 @@ paths:
         '503': { $ref: '#/components/responses/ProviderUnavailable' }
 
   # ── Voice Agent ─────────────────────────────────────────────────────────
+  /v1/dictation/stream/sessions:
+    post:
+      operationId: createDictationStreamSession
+      summary: Create a streaming Dictation session and ticket
+      description: |
+        Creates a streaming Dictation session and returns a one-time HMAC
+        ticket for the WebSocket upgrade at
+        `GET /v1/dictation/stream/sessions/{id}/ws` (send the returned
+        `ws_subprotocol` as `Sec-WebSocket-Protocol`). The WS protocol —
+        JSON control frames plus binary PCM upstream, live partial/final
+        `transcript` frames downstream — is specified in
+        `asyncapi.dictation-stream.v1.yaml` with golden example frames in
+        `fixtures/dictation-stream.v1.json`.
+
+        One WebSocket carries any number of sequential segments: each
+        `start` frame opens a provider-native dictation stream, `finalize`
+        flushes it, and `segment_done` closes the segment so the next
+        `start` can follow on the same warm socket (a keyboard reuses one
+        connection across mic presses).
+
+        The `capabilities` block reports whether a streaming-capable STT
+        provider (e.g. Deepgram) is configured. When `streaming` is false,
+        a `start` frame would fail with `streaming_unavailable`; clients
+        should fall back to `POST /v1/dictation/transcribe` instead of
+        opening the socket.
+
+        Edge-injected user voice preferences (`x-speechkit-pref-stt-*`) are
+        captured at this session-mint request and applied as the default
+        `provider_profile_id` for `start` frames that omit one; the
+        ticket-authenticated WS upgrade itself carries no preference headers.
+      tags: [dictation]
+      responses:
+        '201':
+          description: Session created.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CreateDictationStreamSessionResponse' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '409':
+          description: Per-identity session limit exceeded.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '503':
+          description: Global session limit reached.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+
+  /v1/dictation/stream/sessions/{id}:
+    delete:
+      operationId: deleteDictationStreamSession
+      summary: Force close a streaming Dictation session
+      tags: [dictation]
+      parameters:
+        - { $ref: '#/components/parameters/SessionID' }
+      responses:
+        '204': { description: Closed. }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403':
+          description: Caller does not own the session and is not admin.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '404':
+          description: Session not found or already closed.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+
   /v1/voiceagent/sessions:
     post:
       operationId: createVoiceAgentSession
@@ -980,6 +1064,22 @@ paths:
         The session can still be created while `/readyz` reports the provider
         as degraded; the WebSocket start emits a provider connection error such
         as `provider_connect_failed`.
+
+        Deployments with the voice-agent tool bridge enabled
+        (`[server.voiceagent.tool_bridge]`) additionally accept an opaque
+        per-session credential header on this request (default
+        `X-Edge-Obo-Subject-Token`, configurable via `credential_header`).
+        The header is honoured only when the request authenticated via
+        edge-HMAC; its value is held memory-only for the session's
+        server-side tool calls and never appears in any response, ticket,
+        or log. See `docs/server/toolbridge.v1.md`.
+
+        Edge-injected user voice preferences (`x-speechkit-pref-va-provider`,
+        `x-speechkit-pref-va-persona`) are likewise captured at this
+        session-mint request. When the WebSocket `start` frame omits
+        `provider` or `persona_id`, the captured preference fills the gap; an
+        unconfigured preferred provider or unresolvable preferred persona
+        falls back to the server default instead of failing the session.
 
         WebSocket control frames are JSON text messages. The first client
         frame must be `{"type":"start"}` and may include `persona_id`,
@@ -1513,6 +1613,16 @@ components:
             details:
               type: object
               additionalProperties: true
+            remediation:
+              type: string
+              description: >-
+                Short machine-friendly hint on how to unblock the denied
+                capability (additive, optional).
+            request_id:
+              type: string
+              description: >-
+                Gateway/server correlation id for support and tracing
+                (additive, optional).
 
     EnvStatus:
       type: object
@@ -2164,6 +2274,25 @@ components:
         language: { type: string }
         model: { type: string }
         prompt: { type: string }
+        provider_profile_id:
+          type: string
+          description: |
+            Optional explicit STT provider-profile pin for this request
+            (ops parity with the streaming `start` frame), e.g.
+            `stt.deepgram.nova-3` or `stt.assemblyai.universal`. Must name a
+            profile from `GET /v1/catalog/profiles?mode=dictation`; unknown
+            values are rejected with 400 `invalid_provider_profile`. When
+            omitted, the server resolves the provider from the edge-injected
+            user preference headers and its configured model selection.
+        conversation_context:
+          type: array
+          items: { type: string }
+          description: |
+            Preceding dialogue turns (oldest first, no speaker labels) for
+            providers whose speech models condition on conversational
+            context — e.g. AssemblyAI Universal-3.5 Pro sync accepts up to
+            100 turns / 4096 characters. Providers without native support
+            ignore it.
         speaker:
           $ref: '#/components/schemas/SpeakerOptions'
         speaker_options:
@@ -2249,6 +2378,31 @@ components:
         shortcut: { type: string }
         surface: { type: string }
         kind: { type: string }
+        message_id:
+          type: string
+          description: Stable semantic ID for localized SpeechKit-owned result prose. Omitted for provider- or user-authored text.
+          enum:
+            - companion.home_assistant.not_configured
+            - companion.home_assistant.command.empty
+            - companion.home_assistant.command.not_matched
+            - companion.home_assistant.command.rejected
+            - companion.home_assistant.unavailable
+        reason_code:
+          type: string
+          description: Stable language-neutral reason for the localized result.
+          enum:
+            - not_configured
+            - empty_command
+            - unavailable
+            - request_encode_failed
+            - request_build_failed
+            - unreachable
+            - authentication_failed
+            - unexpected_status
+            - invalid_response
+            - empty_response
+            - not_matched
+            - rejected
         transcript: { type: string }
         audio_base64: { type: string }
         audio_format: { type: string }
@@ -2429,6 +2583,47 @@ components:
           description: Ticket expiry timestamp.
         livekit:
           $ref: '#/components/schemas/LiveKitJoinInfo'
+
+    CreateDictationStreamSessionResponse:
+      type: object
+      required: [session_id, ws_url, ws_subprotocol, ticket, expires_at, capabilities]
+      properties:
+        session_id: { type: string }
+        ws_url:
+          type: string
+          format: uri
+          description: |
+            WebSocket URL for the streaming Dictation upgrade. Open it with
+            `Sec-WebSocket-Protocol: <ws_subprotocol>`; tickets are
+            HMAC-bound to the session id, single-use, and expire after the
+            configured TTL (default 90 s).
+        ws_subprotocol:
+          type: string
+          description: WebSocket subprotocol value to pass during upgrade, e.g. `ticket.<value>`.
+        ticket:
+          type: string
+          description: One-time WebSocket upgrade ticket. Prefer `ws_subprotocol` rather than putting this value in URLs.
+        expires_at:
+          type: string
+          format: date-time
+          description: Ticket expiry timestamp.
+        capabilities:
+          $ref: '#/components/schemas/DictationStreamCapabilities'
+
+    DictationStreamCapabilities:
+      type: object
+      required: [streaming, emulation]
+      properties:
+        streaming:
+          type: boolean
+          description: |
+            True when a streaming-capable STT provider is configured. False
+            means a `start` frame would fail with `streaming_unavailable`;
+            fall back to `POST /v1/dictation/transcribe`.
+        emulation:
+          type: string
+          enum: [off]
+          description: Reserved for a future chunked-batch emulation mode; always `off` in v1.
 
     LiveKitJoinInfo:
       type: object

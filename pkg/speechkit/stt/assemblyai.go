@@ -17,8 +17,12 @@ import (
 
 const (
 	assemblyAIBaseURL          = "https://api.assemblyai.com"
+	assemblyAISyncBaseURL      = "https://sync.assemblyai.com"
 	assemblyAIStreamingBaseURL = "wss://streaming.assemblyai.com"
-	assemblyAIStreamingModel   = "universal-3-5-pro"
+	// assemblyAIFlagshipModel is Universal-3.5 Pro — AssemblyAI's flagship
+	// speech model, shared by the async, sync, and realtime products.
+	assemblyAIFlagshipModel    = "universal-3-5-pro"
+	assemblyAIStreamingModel   = assemblyAIFlagshipModel
 	assemblyAIMaxResponseBytes = 16 << 20
 )
 
@@ -28,10 +32,22 @@ type AssemblyAIProvider struct {
 	StreamingModel   string
 	BaseURL          string
 	StreamingBaseURL string
-	Validation       netsec.ValidationOptions
-	PollInterval     time.Duration
-	PollTimeout      time.Duration
-	client           *http.Client
+	// SyncBaseURL points at the synchronous transcription endpoint
+	// (https://sync.assemblyai.com; regional variants sync.us / sync.eu
+	// exist). The Sync API returns a finished Universal-3.5 Pro transcript
+	// in one request/response (~134 ms p50) for clips up to 120 s / 40 MB —
+	// the low-latency dictation path. Empty uses the global endpoint.
+	SyncBaseURL string
+	// SyncModel is the X-AAI-Model routing header value for sync requests.
+	// Empty uses universal-3-5-pro.
+	SyncModel string
+	// DisableSync forces every transcription through the classic async
+	// upload+poll flow, even for clips the Sync API could serve.
+	DisableSync  bool
+	Validation   netsec.ValidationOptions
+	PollInterval time.Duration
+	PollTimeout  time.Duration
+	client       *http.Client
 }
 
 func NewAssemblyAIProvider(apiKey, models string) *AssemblyAIProvider {
@@ -40,6 +56,7 @@ func NewAssemblyAIProvider(apiKey, models string) *AssemblyAIProvider {
 		Models:           parseAssemblyAIModels(models),
 		StreamingModel:   assemblyAIStreamingModel,
 		BaseURL:          assemblyAIBaseURL,
+		SyncBaseURL:      assemblyAISyncBaseURL,
 		StreamingBaseURL: assemblyAIStreamingBaseURL,
 		PollInterval:     3 * time.Second,
 		PollTimeout:      5 * time.Minute,
@@ -50,22 +67,39 @@ func NewAssemblyAIProvider(apiKey, models string) *AssemblyAIProvider {
 
 func (p *AssemblyAIProvider) Transcribe(ctx context.Context, audio []byte, opts TranscribeOpts) (*Result, error) {
 	start := time.Now()
-	uploadURL, err := p.upload(ctx, ensureTranscriptionWAV(audio))
-	if err != nil {
-		return nil, err
-	}
+	wav := ensureTranscriptionWAV(audio)
 	resolved := ResolveTranscribeOptions("assemblyai", assemblyAIProfileID(opts.Model), opts, provideropts.Values{
 		provideropts.OptionLanguage:       "de",
 		provideropts.OptionVocabularyBias: true,
 	}, nil)
 	speakerOpts := resolved.Speaker
+
+	// Sync-first: short plain dictation clips go through the synchronous
+	// Universal-3.5 Pro endpoint (single request, no upload+poll round
+	// trips). Requests that need async-only features — diarization, speaker
+	// identification, PII redaction, the medical domain overlay — or that
+	// exceed the sync limits keep the classic flow. A sync failure falls
+	// back to async so a regional sync outage never breaks dictation.
+	var syncErr error
+	if p.syncEligible(wav, opts, resolved) {
+		result, err := p.transcribeSync(ctx, wav, start, opts, resolved)
+		if err == nil {
+			return result, nil
+		}
+		syncErr = err
+	}
+
+	uploadURL, err := p.upload(ctx, wav)
+	if err != nil {
+		return nil, joinSyncErr(err, syncErr)
+	}
 	transcriptID, err := p.createTranscript(ctx, uploadURL, opts, resolved)
 	if err != nil {
-		return nil, err
+		return nil, joinSyncErr(err, syncErr)
 	}
 	transcript, err := p.pollTranscript(ctx, transcriptID)
 	if err != nil {
-		return nil, err
+		return nil, joinSyncErr(err, syncErr)
 	}
 
 	lang := firstNonEmptyTrimmed(transcript.LanguageCode, resolved.Language, "de")
@@ -82,6 +116,15 @@ func (p *AssemblyAIProvider) Transcribe(ctx context.Context, audio []byte, opts 
 		result.Speakers = transcript.diarizationResult(p.Name(), model, lang, speakerOpts)
 	}
 	return result, nil
+}
+
+// joinSyncErr keeps a preceding sync-path failure visible (and unwrappable)
+// when the async fallback also fails.
+func joinSyncErr(asyncErr, syncErr error) error {
+	if syncErr == nil {
+		return asyncErr
+	}
+	return fmt.Errorf("%w (sync attempt failed first: %w)", asyncErr, syncErr)
 }
 
 func (p *AssemblyAIProvider) Name() string {
@@ -123,7 +166,7 @@ func (p *AssemblyAIProvider) upload(ctx context.Context, audio []byte) (string, 
 	req.Header.Set("Content-Type", "application/octet-stream")
 
 	var response assemblyAIUploadResponse
-	if err := p.doJSON(req, http.StatusOK, &response); err != nil {
+	if err := p.doJSON(req, &response); err != nil {
 		return "", fmt.Errorf("assemblyai upload: %w", err)
 	}
 	if strings.TrimSpace(response.UploadURL) == "" {
@@ -216,7 +259,7 @@ func (p *AssemblyAIProvider) createTranscript(ctx context.Context, audioURL stri
 	req.Header.Set("Content-Type", "application/json")
 
 	var response assemblyAITranscriptResponse
-	if err := p.doJSON(req, http.StatusOK, &response); err != nil {
+	if err := p.doJSON(req, &response); err != nil {
 		return "", fmt.Errorf("assemblyai transcript: %w", err)
 	}
 	if strings.TrimSpace(response.ID) == "" {
@@ -254,7 +297,7 @@ func (p *AssemblyAIProvider) pollTranscript(ctx context.Context, transcriptID st
 			}
 			p.authorize(req)
 			var response assemblyAITranscriptResponse
-			if err := p.doJSON(req, http.StatusOK, &response); err != nil {
+			if err := p.doJSON(req, &response); err != nil {
 				return assemblyAITranscriptResponse{}, fmt.Errorf("assemblyai poll: %w", err)
 			}
 			switch strings.ToLower(strings.TrimSpace(response.Status)) {
@@ -269,7 +312,7 @@ func (p *AssemblyAIProvider) pollTranscript(ctx context.Context, transcriptID st
 	}
 }
 
-func (p *AssemblyAIProvider) doJSON(req *http.Request, wantStatus int, target any) error {
+func (p *AssemblyAIProvider) doJSON(req *http.Request, target any) error {
 	resp, err := p.client.Do(req)
 	if err != nil {
 		return err
@@ -279,7 +322,7 @@ func (p *AssemblyAIProvider) doJSON(req *http.Request, wantStatus int, target an
 	if err != nil {
 		return fmt.Errorf("read response: %w", err)
 	}
-	if resp.StatusCode != wantStatus {
+	if resp.StatusCode != http.StatusOK {
 		return netsec.ProviderStatusError("assemblyai", resp.StatusCode, body)
 	}
 	if target == nil {
@@ -301,7 +344,7 @@ func (p *AssemblyAIProvider) modelsForRequest(override string) []string {
 		models = p.Models
 	}
 	if len(models) == 0 {
-		models = []string{"universal-3-pro", "universal-2"}
+		models = []string{assemblyAIFlagshipModel, "universal-2"}
 	}
 	return append([]string(nil), models...)
 }

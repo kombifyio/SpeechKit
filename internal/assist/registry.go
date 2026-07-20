@@ -25,6 +25,7 @@ const (
 	UtilityReminder      UtilityID = "reminder"
 	UtilityMath          UtilityID = "math"
 	UtilityWikipedia     UtilityID = "wikipedia"
+	UtilityTemperature   UtilityID = "temperature"
 	UtilityHomeAssistant UtilityID = "home_assistant"
 )
 
@@ -160,11 +161,19 @@ func DefaultUtilityRegistry() *UtilityRegistry {
 		DefaultKind:    ResultKindAnswer,
 		Enabled:        true,
 	})
-	// HomeAssistant is registered but disabled by default — the host
-	// flips it on once a URL+Token are configured. Without that the
-	// CompositeExecutor short-circuits the skill to silent anyway, so
-	// the Enabled flag prevents the router from claiming an HA match
-	// when no integration is wired.
+	registry.Register(UtilityDefinition{
+		ID:             UtilityTemperature,
+		Intent:         shortcuts.IntentTemperature,
+		Label:          "Convert a temperature between Celsius, Fahrenheit, and Kelvin",
+		Input:          UtilityInputUtterance,
+		DefaultSurface: ResultSurfacePanel,
+		DefaultKind:    ResultKindAnswer,
+		Enabled:        true,
+	})
+	// HomeAssistant is registered but disabled by default; configured hosts
+	// enable it and dispatch to the skill. The Pipeline separately preserves a
+	// recognized disabled HA intent and returns a terminal local denial, so this
+	// flag can never turn a smart-home request into a general LLM prompt.
 	registry.Register(UtilityDefinition{
 		ID:             UtilityHomeAssistant,
 		Intent:         shortcuts.IntentHomeAssistant,

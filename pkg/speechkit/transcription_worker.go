@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
+	"runtime/debug"
 	"strings"
 	"sync"
 	"time"
@@ -176,12 +178,39 @@ func (w *TranscriptionWorker) Start(ctx context.Context) {
 				if !ok {
 					return
 				}
-				w.handleJob(ctx, job)
+				w.handleJobSafely(ctx, job)
 			case <-ctx.Done():
 				return
 			}
 		}
 	}()
+}
+
+// handleJobSafely runs handleJob under per-job panic recovery so a bug in
+// transcription delivery, transformation, persistence, or a host/observer
+// callback cannot crash the whole process. On panic the worker logs the stack
+// (see recoverWorkerGoroutine) and keeps running to process the next job.
+func (w *TranscriptionWorker) handleJobSafely(ctx context.Context, job TranscriptionJob) {
+	defer w.recoverWorkerGoroutine("handleJob")
+	w.handleJob(ctx, job)
+}
+
+// recoverWorkerGoroutine recovers a panic raised on one of the transcription
+// worker's goroutines (the job loop, the per-segment STT calls, and the async
+// persistence write) and logs the stack instead of letting it tear down the
+// app. These goroutines run outside any HTTP handler, so the server's Recover
+// middleware cannot protect them, and the Windows desktop host installs no
+// process-wide panic handler — an unrecovered panic here writes its stack only
+// to stderr, which a GUI-subsystem binary discards, so the app just vanishes
+// with no log. Use as: defer w.recoverWorkerGoroutine("name").
+func (w *TranscriptionWorker) recoverWorkerGoroutine(name string) {
+	if r := recover(); r != nil {
+		slog.Error("speechkit: transcription worker goroutine panic recovered",
+			"goroutine", name,
+			"err", r,
+			"stack", string(debug.Stack()),
+		)
+	}
 }
 
 func (w *TranscriptionWorker) Submit(job TranscriptionJob) error {
@@ -480,6 +509,17 @@ func (w *TranscriptionWorker) transcribeSegmentsParallel(ctx context.Context, ca
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
+			defer func() {
+				if r := recover(); r != nil {
+					slog.Error("speechkit: transcription worker segment panic recovered",
+						"segment", i+1,
+						"err", r,
+						"stack", string(debug.Stack()),
+					)
+					errs[i] = fmt.Errorf("speechkit: transcription segment %d panicked: %v", i+1, r)
+					cancel()
+				}
+			}()
 			normalizeStarted := time.Now()
 			segment = inheritSegmentDefaults(job.Submission, segment)
 			normalizeElapsed := time.Since(normalizeStarted)
@@ -664,6 +704,7 @@ func (w *TranscriptionWorker) persistTranscriptionAsync(submission Submission, t
 	w.persistWG.Add(1)
 	go func() {
 		defer w.persistWG.Done()
+		defer w.recoverWorkerGoroutine("persistTranscription")
 
 		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 		defer cancel()

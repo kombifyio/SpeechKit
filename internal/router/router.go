@@ -354,6 +354,19 @@ func (r *Router) streamingCandidates(opts speaker.Options) []stt.STTProvider {
 	return prioritizeSpeakerProfile(candidates, opts.ProviderProfileID)
 }
 
+// HasDictationStreaming reports whether at least one configured provider
+// (honoring the routing strategy) can serve provider-native realtime
+// dictation. Server surfaces use this for capability discovery so clients can
+// fall back to batch transcription without a doomed stream attempt.
+func (r *Router) HasDictationStreaming() bool {
+	for _, p := range r.dictationStreamingCandidates() {
+		if _, ok := p.(speechkit.DictationStreamProvider); ok {
+			return true
+		}
+	}
+	return false
+}
+
 func (r *Router) dictationStreamingCandidates() []stt.STTProvider {
 	local, cloud := r.snapshot()
 	var candidates []stt.STTProvider
@@ -452,8 +465,13 @@ func (r *Router) probeInternet(ctx context.Context) bool {
 
 // transcribeCloud tries cloud providers in order. Attempts Transcribe directly
 // without a separate Health check to avoid double round-trips in the hot path.
+// A per-request provider preference (opts.ProviderProfileID — profile ID or
+// bare provider name) moves the matching provider to the front; the remaining
+// providers stay as fallbacks, so an unsatisfiable preference degrades to the
+// configured order instead of failing the request.
 func (r *Router) transcribeCloud(ctx context.Context, audio []byte, opts stt.TranscribeOpts) (*stt.Result, error) {
 	_, cloud := r.snapshot()
+	cloud = prioritizeProviderProfile(cloud, opts.ProviderProfileID)
 
 	for _, p := range cloud {
 		result, err := p.Transcribe(ctx, audio, opts.ForProvider(p.Name()))

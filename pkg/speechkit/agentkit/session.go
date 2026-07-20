@@ -158,36 +158,90 @@ func (a *AgentSession) currentCtx() context.Context {
 }
 
 func (a *AgentSession) dispatchTool(call ToolCall) {
-	go func() {
-		ctx := a.currentCtx()
+	startDispatch := a.prepareToolDispatch(call)
+	startDispatch()
+}
 
-		if a.hooks.OnToolCall != nil {
-			a.hooks.OnToolCall(ctx, a.sc(), call)
+// prepareToolDispatch performs the synchronous event-arrival policy phase and
+// returns the asynchronous dispatch phase without starting it. Callback
+// wrapping uses this split to preserve the caller's raw OnToolCall observer
+// ordering while still authorizing before any observer can delay dispatch.
+func (a *AgentSession) prepareToolDispatch(call ToolCall) func() {
+	ctx := a.currentCtx()
+	sc := a.sc()
+	tool, ok := a.registry.Lookup(call.Name)
+	if !ok {
+		return func() {
+			go func() {
+				if a.hooks.OnToolCall != nil {
+					a.hooks.OnToolCall(ctx, sc, call)
+				}
+				_ = a.session.SendToolResponse(ToolResponse{
+					ID:       call.ID,
+					Name:     call.Name,
+					Response: map[string]any{"error": fmt.Sprintf("unknown tool: %q", call.Name)},
+				})
+			}()
 		}
+	}
 
-		tool, ok := a.registry.Lookup(call.Name)
-		if !ok {
-			_ = a.session.SendToolResponse(ToolResponse{
+	// Authorization deliberately runs in the receive callback before any
+	// dispatch goroutine is spawned. Hosts can therefore bind policy to the
+	// exact event-arrival state (for example, whether local capture is closed)
+	// without a scheduler TOCTOU between arrival and Invoke.
+	if a.hooks.AuthorizeToolCall != nil {
+		args, err := a.hooks.AuthorizeToolCall(ctx, sc, call)
+		if err != nil {
+			return func() {
+				go func() {
+					_ = a.session.SendToolResponse(ToolResponse{
+						ID:       call.ID,
+						Name:     call.Name,
+						Response: map[string]any{"error": "tool call denied by host policy"},
+					})
+				}()
+			}
+		}
+		call.Args = cloneToolArgs(args)
+	}
+
+	return func() {
+		go func() {
+			if a.hooks.OnToolCall != nil {
+				observed := call
+				observed.Args = cloneToolArgs(call.Args)
+				a.hooks.OnToolCall(ctx, sc, observed)
+			}
+
+			result, err := tool.Invoke(ctx, cloneToolArgs(call.Args))
+			if err != nil {
+				result = map[string]any{"error": err.Error()}
+			}
+			if result == nil {
+				result = map[string]any{}
+			}
+			response := ToolResponse{
 				ID:       call.ID,
 				Name:     call.Name,
-				Response: map[string]any{"error": fmt.Sprintf("unknown tool: %q", call.Name)},
-			})
-			return
-		}
+				Response: result,
+			}
+			if a.hooks.OnToolResult != nil {
+				a.hooks.OnToolResult(ctx, sc, call, response)
+			}
+			_ = a.session.SendToolResponse(response)
+		}()
+	}
+}
 
-		result, err := tool.Invoke(ctx, call.Args)
-		if err != nil {
-			result = map[string]any{"error": err.Error()}
-		}
-		if result == nil {
-			result = map[string]any{}
-		}
-		_ = a.session.SendToolResponse(ToolResponse{
-			ID:       call.ID,
-			Name:     call.Name,
-			Response: result,
-		})
-	}()
+func cloneToolArgs(args map[string]any) map[string]any {
+	if args == nil {
+		return nil
+	}
+	out := make(map[string]any, len(args))
+	for key, value := range args {
+		out[key] = value
+	}
+	return out
 }
 
 func (a *AgentSession) handleInputTranscript(text string, done bool) {
@@ -227,10 +281,11 @@ func wrapCallbacks(a *AgentSession, user Callbacks) Callbacks {
 
 	origToolCall := user.OnToolCall
 	out.OnToolCall = func(call ToolCall) {
+		startDispatch := a.prepareToolDispatch(call)
 		if origToolCall != nil {
 			origToolCall(call)
 		}
-		a.dispatchTool(call)
+		startDispatch()
 	}
 
 	origInput := user.OnInputTranscript

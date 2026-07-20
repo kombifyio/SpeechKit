@@ -10,14 +10,17 @@ import (
 	"github.com/kombifyio/SpeechKit/internal/ai/flows"
 	"github.com/kombifyio/SpeechKit/internal/shortcuts"
 	"github.com/kombifyio/SpeechKit/internal/tts"
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/localization"
 )
 
 type mockTTSProvider struct {
 	audio []byte
 	err   error
+	opts  tts.SynthesizeOpts
 }
 
-func (m *mockTTSProvider) Synthesize(_ context.Context, text string, _ tts.SynthesizeOpts) (*tts.Result, error) {
+func (m *mockTTSProvider) Synthesize(_ context.Context, text string, opts tts.SynthesizeOpts) (*tts.Result, error) {
+	m.opts = opts
 	if m.err != nil {
 		return nil, m.err
 	}
@@ -163,14 +166,64 @@ func TestProcessNoLLMFallsThrough(t *testing.T) {
 	}
 }
 
+func TestSmartHomeIntentNeverFallsThroughToLLMWhenHAIsUnavailable(t *testing.T) {
+	tests := []struct {
+		name       string
+		transcript string
+		locale     string
+		wantLocale string
+	}{
+		{name: "English", transcript: "turn on the kitchen light", locale: "en-US", wantLocale: "en"},
+		{name: "German", transcript: "schalte das Küchenlicht ein", locale: "de-DE", wantLocale: "de"},
+		{name: "Spanish", transcript: "enciende la luz de la cocina", locale: "es-MX", wantLocale: "es"},
+		{name: "Simplified Chinese", transcript: "家庭助理打开客厅灯", locale: "zh-Hans-CN", wantLocale: "zh-Hans"},
+		{name: "Hindi", transcript: "लाइट चालू करो", locale: "hi-IN", wantLocale: "hi"},
+		{name: "Arabic", transcript: "شغّل الضوء في المطبخ", locale: "ar-EG", wantLocale: "ar"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			mockTTS := &mockTTSProvider{audio: []byte("failure-audio")}
+			pipeline := NewPipeline(fixedAssistFlow(t, flows.AssistOutput{
+				Text:      "unsafe general model response",
+				SpeakText: "unsafe general model response",
+				Action:    "respond",
+				Locale:    "en",
+			}), nil, tts.NewRouter(tts.StrategyCloudFirst, mockTTS), true)
+
+			result, err := pipeline.Process(context.Background(), tc.transcript, ProcessOpts{Locale: tc.locale})
+			if err != nil {
+				t.Fatalf("Process: %v", err)
+			}
+			if result.Text == "unsafe general model response" {
+				t.Fatal("recognized smart-home request reached the general Assist model")
+			}
+			if result.Action == "silent" || result.Text == "" {
+				t.Fatalf("smart-home denial must be terminal: %#v", result)
+			}
+			if got, want := result.Shortcut, string(shortcuts.IntentHomeAssistant); got != want {
+				t.Fatalf("Shortcut = %q, want %q", got, want)
+			}
+			if result.MessageID != localization.CompanionHomeAssistantNotConfigured || result.ReasonCode != "not_configured" {
+				t.Fatalf("smart-home denial metadata = %q/%q", result.MessageID, result.ReasonCode)
+			}
+			if result.Locale != tc.wantLocale || mockTTS.opts.Locale != tc.wantLocale {
+				t.Fatalf("result/TTS locale = %q/%q, want %q", result.Locale, mockTTS.opts.Locale, tc.wantLocale)
+			}
+			if want := localization.Text(tc.wantLocale, result.MessageID); result.Text != want {
+				t.Fatalf("result text = %q, want %q", result.Text, want)
+			}
+		})
+	}
+}
+
 // TestSilentToolResultFallsThroughToLLM covers the Voice-Companion
 // fallthrough contract: when a registered skill matches an intent but
 // returns Action="silent" + empty Text (the documented "I can't answer
 // this specific payload — defer to LLM" signal), the pipeline must
 // re-route to handleLLM instead of returning silence. Documented in
 // docs/voice-companion.md and used by MathSkill on unparseable
-// expressions, WikipediaSkill on disambiguation, HomeAssistantSkill
-// when unconfigured.
+// expressions and WikipediaSkill on disambiguation. Home Assistant never
+// emits a silent result because smart-home requests are fail-closed.
 func TestSilentToolResultFallsThroughToLLM(t *testing.T) {
 	executor := &mockToolExecutor{
 		result: ToolResult{

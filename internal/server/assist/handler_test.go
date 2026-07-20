@@ -18,6 +18,7 @@ import (
 
 	assistpkg "github.com/kombifyio/SpeechKit/internal/assist"
 	"github.com/kombifyio/SpeechKit/internal/stt"
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/localization"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/speaker"
 )
 
@@ -158,7 +159,10 @@ func TestHandler_MethodNotAllowed(t *testing.T) {
 }
 
 func TestHandler_JSON_TextInput_HappyPath(t *testing.T) {
-	fp := &fakeProcessor{result: okAssistResult()}
+	result := okAssistResult()
+	result.MessageID = localization.CompanionHomeAssistantUnavailable
+	result.ReasonCode = "unavailable"
+	fp := &fakeProcessor{result: result}
 	h := mustHandler(t, Options{Processor: fp, DefaultLocale: "en"})
 
 	body, _ := json.Marshal(map[string]any{
@@ -184,13 +188,15 @@ func TestHandler_JSON_TextInput_HappyPath(t *testing.T) {
 	}
 
 	var resp struct {
-		Text        string `json:"text"`
-		Action      string `json:"action"`
-		Locale      string `json:"locale"`
-		Transcript  string `json:"transcript"`
-		AudioBase64 string `json:"audio_base64"`
-		AudioFormat string `json:"audio_format"`
-		LatencyMs   int64  `json:"latency_ms"`
+		Text        string                 `json:"text"`
+		Action      string                 `json:"action"`
+		Locale      string                 `json:"locale"`
+		Transcript  string                 `json:"transcript"`
+		AudioBase64 string                 `json:"audio_base64"`
+		AudioFormat string                 `json:"audio_format"`
+		LatencyMs   int64                  `json:"latency_ms"`
+		MessageID   localization.MessageID `json:"message_id"`
+		ReasonCode  string                 `json:"reason_code"`
 	}
 	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
 		t.Fatalf("decode: %v", err)
@@ -203,6 +209,9 @@ func TestHandler_JSON_TextInput_HappyPath(t *testing.T) {
 	}
 	if resp.AudioFormat != "mp3" || resp.AudioBase64 == "" {
 		t.Fatalf("expected audio in response; got format=%q base64_len=%d", resp.AudioFormat, len(resp.AudioBase64))
+	}
+	if resp.MessageID != localization.CompanionHomeAssistantUnavailable || resp.ReasonCode != "unavailable" {
+		t.Fatalf("response metadata = %q/%q", resp.MessageID, resp.ReasonCode)
 	}
 }
 

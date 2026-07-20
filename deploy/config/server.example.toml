@@ -26,7 +26,7 @@ public_url             = ""
 # entries to disable a mode for a given deployment (e.g. a Dictation-only
 # pool).
 modes                  = ["dictation", "assist", "voiceagent"]
-auth_mode              = "bearer_or_edge"       # bearer | edge_hmac | bearer_or_edge | oidc | none. Production default accepts service bearer tokens and Gateway X-Edge-* HMAC. Use "oidc" to validate JWTs from an external IdP (see [server.oidc]).
+auth_mode              = "bearer_or_edge"       # bearer | edge_hmac | bearer_or_edge | oidc | bearer_or_oidc | none. Production default accepts service bearer tokens and Gateway X-Edge-* HMAC. Use "oidc" to validate JWTs from an external IdP (see [server.oidc]); "bearer_or_oidc" additionally keeps the static service bearer working — the shape for mobile/native per-user clients next to existing service callers.
 bearer_token_env       = "SPEECHKIT_SERVER_TOKEN"
 # Optional public demo token. When SPEECHKIT_SMOKE_TOKEN is set in the env,
 # the smoke UI on `/` embeds it so visitors can drive all three modes from
@@ -55,6 +55,19 @@ whisper_port            = 8180
 model_dir               = "/var/lib/speechkit/models"
 log_format              = "json"                 # "json" | "text"
 log_level               = "info"                 # "debug" | "info" | "warn" | "error"
+
+# Streaming Dictation WebSocket (live partials): POST
+# /v1/dictation/stream/sessions → single-use ticket → GET .../{id}/ws with
+# Sec-WebSocket-Protocol: ticket.<value>. Needs a streaming-capable STT
+# provider (e.g. Deepgram); otherwise capabilities.streaming=false and
+# clients fall back to POST /v1/dictation/transcribe.
+[server.dictation_stream]
+enabled                   = true
+max_global_sessions       = 100
+max_per_identity_sessions = 3
+idle_timeout_sec          = 300   # negative disables the idle watchdog
+max_session_sec           = 0     # 0 disables; hosted deployments should set a finite budget
+max_stream_audio_seconds  = 0     # cumulative uploaded audio per session; 0 disables
 
 [server.security]
 # Strict security response headers are ON by default; you only need this
@@ -98,10 +111,81 @@ token_ttl_sec  = 600
 room_prefix    = "speechkit-va"
 
 [server.features]
-catalog       = true
-storage_reads = true
-vocabulary    = true
-tts_direct    = true
+catalog        = true
+storage_reads  = true
+vocabulary     = true
+tts_direct     = true
+# Public wake-word model catalog (GET /v1/wakeword/models*): openWakeWord ONNX
+# metadata for host consumers + microWakeWord v2 manifests for ESPHome / the
+# Kombify-Box on-device. Already-public model metadata + redirects; on by
+# default. Set false to hide the surface.
+wakeword_models = true
+
+# ── Local device-agent -> Home Assistant bridge (G0) ─────────────────────────
+# Disabled in this reference profile. When enabled, the local server owns the
+# Home Assistant origin/token and TTS provider. A paired device knows only this
+# SpeechKit origin, its token, expected server instance, and pairing epoch.
+# HTTP is loopback-only; LAN/DNS origins require HTTPS. Before enabling, change
+# the active [tts] block below to enabled=true and strategy="local-only", and
+# configure a ready local provider. Startup rejects every other TTS strategy.
+#
+# [assist.home_assistant]
+# url       = "https://homeassistant.home.arpa:8123"
+# token_env = "SPEECHKIT_HOME_ASSISTANT_TOKEN"
+# agent_id  = "conversation.home_assistant" # Optional; empty uses HA default.
+# language  = "de"                          # Optional locale override.
+#
+# [server.device_agent]
+# enabled             = true
+# server_instance_id  = "speechkit-home-01"
+# claim_store_path    = "/var/lib/speechkit/device-agent-claims.db"
+# max_request_age_sec = 600
+# future_skew_sec     = 120
+# claim_retention_sec = 86400
+# max_claims          = 10000
+#
+# [[server.device_agent.devices]]
+# device_id            = "speaker-kitchen-001"
+# pairing_id           = "pairing-kitchen-2026-07" # Rotate with the token; never reuse.
+# room_id              = "kitchen"
+# token_env            = "SPEECHKIT_DEVICE_KITCHEN_TOKEN"
+# allowed_client_cidrs = ["192.168.10.42/32"]
+#
+# # Immutable exact G0 rule: device + room + rule + phrase + locale + time +
+# # action + entity must match. Only turn_on/turn_off for light.* is accepted.
+# # This local allowlist is not a Workbench approval or Cloud standing grant.
+# [[server.device_agent.devices.local_rules]]
+# rule_id      = "kitchen-light-off"
+# trigger_text = "turn off the kitchen light"
+# locale       = "en-US"
+# action       = "turn_off"
+# entity_id    = "light.kitchen"
+# not_before   = "2026-07-19T00:00:00Z" # Replace with a current approved window.
+# expires_at   = "2026-08-18T00:00:00Z" # Maximum authorization window: 31 days.
+#
+# The bridge exposes only POST /v1/device-agent/{register,events,assist,tts}.
+# It is absent from /api/v1, MCP, Gateway, federation, and general Assist/LLM.
+# The durable ledger commits before HA dispatch. action_executed=yes requires
+# the exact successful HA target and a matching REST state readback; ambiguous
+# outcomes remain indeterminate and are never redispatched for that request ID.
+# POST /v1/device-agent/tts accepts only request_id + format. It resolves the
+# authenticated pairing's completed durable claim and synthesizes only the
+# persisted HA speech/language; arbitrary text/locale and cloud TTS are denied.
+
+# ── Wyoming voice backend (ESPHome / Home Assistant) ──────────────────────────
+# Expose SpeechKit STT + TTS as Wyoming services so an ESPHome voice satellite,
+# via Home Assistant's Assist pipeline, can use this server as its speech
+# backend. Opens a SEPARATE TCP listener (Wyoming is not HTTP). Wyoming has no
+# in-protocol auth: bind to a LAN interface, firewall the port, and optionally
+# restrict allowed_client_cidrs to the Home Assistant host. Provider keys stay
+# server-side — the device never holds a credential. See docs/server/wyoming.md.
+[server.wyoming]
+enabled      = false          # opt-in
+addr         = ":10300"       # one listener advertises both STT (asr) and TTS
+service_name = "speechkit"    # framework-neutral Info/attribution name
+languages    = ["en", "de"]
+voice        = "nova"         # advertised + default TTS voice
+# allowed_client_cidrs = ["192.168.1.10/32"]  # e.g. the Home Assistant host
 
 # ── STT / TTS / LLM providers ─────────────────────────────────────────────────
 # Enable whatever the deployment should support. Disabled providers are simply
@@ -145,9 +229,14 @@ diarization_model = "latest"
 [providers.assemblyai]
 enabled    = false
 api_key_env = "ASSEMBLYAI_API_KEY"
-stt_models  = "universal-3-pro,universal-2"
+stt_models  = "universal-3-5-pro,universal-2"
 streaming_model = "universal-3-5-pro"
 streaming_base_url = "wss://streaming.assemblyai.com"
+# Short clips (80ms–120s) use the synchronous Universal-3.5 Pro endpoint
+# (single request/response, ~134ms p50, prompt/keyterms/conversation-context
+# steering); diarization, PII redaction, and long audio stay async.
+sync_base_url = ""     # empty = https://sync.assemblyai.com; set sync.us / sync.eu for data-zone pinning
+disable_sync  = false  # true forces the classic async upload+poll flow
 
 [providers.groq]
 enabled        = false
@@ -185,7 +274,7 @@ parallel_cloud             = false
 
 [tts]
 enabled  = true
-strategy = "cloud-first"
+strategy = "cloud-first" # Change to local-only when enabling [server.device_agent].
 format   = "mp3"
 speed    = 1.0
 

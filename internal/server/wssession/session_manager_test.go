@@ -1,6 +1,4 @@
-//go:build linux
-
-package voiceagent
+package wssession
 
 import (
 	"crypto/sha256"

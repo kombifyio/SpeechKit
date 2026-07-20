@@ -4,6 +4,7 @@ import (
 	"context"
 	"time"
 
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/localization"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/speaker"
 )
 
@@ -80,6 +81,8 @@ type AssistResult struct {
 	Surface    AssistSurfaceDecision      `json:"surface"`
 	ShortcutID string                     `json:"shortcutId,omitempty"`
 	Locale     string                     `json:"locale,omitempty"`
+	MessageID  localization.MessageID     `json:"messageId,omitempty"`
+	ReasonCode string                     `json:"reasonCode,omitempty"`
 	Audio      *AudioData                 `json:"audio,omitempty"`
 	Format     string                     `json:"format,omitempty"`
 	Speakers   *speaker.DiarizationResult `json:"speakers,omitempty"`

@@ -85,7 +85,20 @@ RUN apt-get update \
         libopusfile0 \
         libsoxr0 \
         curl \
+        unzip \
     && rm -rf /var/lib/apt/lists/*
+
+# rclone: the entrypoint syncs the wake-word model bytes from Cloudflare R2 into
+# the models volume at startup (see deploy/docker/entrypoint.sh). Pinned.
+ARG RCLONE_VERSION=1.74.4
+RUN set -eux; \
+    curl -fL --retry 5 --retry-all-errors --retry-delay 3 --connect-timeout 30 \
+      -o /tmp/rclone.zip \
+      "https://downloads.rclone.org/v${RCLONE_VERSION}/rclone-v${RCLONE_VERSION}-linux-amd64.zip"; \
+    unzip -j /tmp/rclone.zip "rclone-v${RCLONE_VERSION}-linux-amd64/rclone" -d /usr/local/bin; \
+    chmod +x /usr/local/bin/rclone; \
+    rm -f /tmp/rclone.zip; \
+    rclone version | head -n 1
 
 # ONNX Runtime shared lib for the Silero VAD kernel. Pinned version must stay
 # in sync with `github.com/yalue/onnxruntime_go` in go.mod.
@@ -139,7 +152,13 @@ COPY --from=builder /out/speechkit-server /app/speechkit-server
 ARG CONFIG_FILE=deploy/config/server.example.toml
 COPY --chown=speechkit:speechkit ${CONFIG_FILE} /etc/speechkit/config.toml
 
+# Entrypoint syncs wake-word models from R2 (when R2 creds are present) into the
+# models volume, then execs the server. No R2 creds → sync skipped, server
+# starts unchanged (OSS/local-only path).
+COPY --chown=speechkit:speechkit deploy/docker/entrypoint.sh /app/entrypoint.sh
+RUN chmod +x /app/entrypoint.sh
+
 # Operators can wrap this image from the host or orchestrator; the image
 # itself stays secret-manager neutral and works with any env-var injector.
-ENTRYPOINT ["/app/speechkit-server"]
+ENTRYPOINT ["/app/entrypoint.sh"]
 CMD ["--config=/etc/speechkit/config.toml"]

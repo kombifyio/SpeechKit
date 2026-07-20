@@ -45,6 +45,7 @@ func Load(path string) (*Config, error) {
 			NormalizeOutputConfig(cfg)
 			NormalizeCaptureConfig(cfg)
 			NormalizeDeepgramSTTCodeSwitching(cfg)
+			normalizeWakewordConfig(cfg)
 			return cfg, nil
 		}
 		return nil, fmt.Errorf("read config: %w", err)
@@ -63,6 +64,7 @@ func Load(path string) (*Config, error) {
 		cfg := defaults()
 		NormalizeCaptureConfig(cfg)
 		NormalizeDeepgramSTTCodeSwitching(cfg)
+		normalizeWakewordConfig(cfg)
 		return cfg, nil
 	}
 	if err := rejectRemovedConfigAliases(meta); err != nil {
@@ -112,6 +114,7 @@ func Load(path string) (*Config, error) {
 	NormalizeOutputConfig(cfg)
 	NormalizeCaptureConfig(cfg)
 	NormalizeDeepgramSTTCodeSwitching(cfg)
+	normalizeWakewordConfig(cfg)
 	// Backfill: Telemetry.UpdateCheck mirrors Update.Enabled when update is disabled.
 	// Phase 0 has only the update-check as telemetry; later phases may diverge.
 	if !cfg.Update.Enabled {
@@ -162,6 +165,7 @@ func Save(path string, cfg *Config) error {
 	NormalizeOutputConfig(cfg)
 	NormalizeCaptureConfig(cfg)
 	NormalizeDeepgramSTTCodeSwitching(cfg)
+	normalizeWakewordConfig(cfg)
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return fmt.Errorf("create config dir: %w", err)
 	}
@@ -205,6 +209,23 @@ func NormalizeCustomizationDefaults(cfg *Config) {
 		return
 	}
 	cfg.Customization.ActiveTemplateIDs = customtemplates.NormalizeActiveTemplateIDs(cfg.Customization.ActiveTemplateIDs)
+}
+
+// normalizeWakewordConfig pins the wake-word backend to a canonical,
+// bundle-consistent value at load/save time so every reader (resolveWakeword,
+// the settings snapshot, the self-test, and the wake-word enable route) sees
+// the same backend. An empty or unrecognized value would otherwise resolve
+// lazily and inconsistently at each call site — the ambiguity behind the
+// "wake-word silently stopped firing" class of regressions.
+func normalizeWakewordConfig(cfg *Config) {
+	if cfg == nil {
+		return
+	}
+	resolved := NormalizeWakewordBackend(cfg.Wakeword.Backend)
+	if resolved != cfg.Wakeword.Backend {
+		slog.Info("wakeword backend normalized", "from", cfg.Wakeword.Backend, "to", resolved)
+	}
+	cfg.Wakeword.Backend = resolved
 }
 
 func normalizeSpeechDefaults(cfg *Config, speechDefined, speechLanguageDefined, generalLanguageDefined bool) {

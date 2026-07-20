@@ -154,6 +154,52 @@ func TestValidateServerProductionAuthRejectsBearerOrEdgeWithoutCredentials(t *te
 	}
 }
 
+func TestValidateServerProductionAuthRejectsBearerOrOIDCWithoutCredentials(t *testing.T) {
+	t.Setenv("SPEECHKIT_SERVER_TOKEN", "")
+	cfg := &Config{}
+	cfg.Server.ListenAddr = ":8080"
+	cfg.Server.AuthMode = "bearer_or_oidc"
+	cfg.Server.BearerTokenEnv = "SPEECHKIT_SERVER_TOKEN"
+
+	err := ValidateServerProductionAuth(cfg)
+	if err == nil {
+		t.Fatal("ValidateServerProductionAuth error = nil, want missing credentials rejection")
+	}
+	if !strings.Contains(err.Error(), "SPEECHKIT_SERVER_TOKEN") || !strings.Contains(err.Error(), "jwks_url") {
+		t.Fatalf("ValidateServerProductionAuth error = %q, want bearer env + jwks_url named", err.Error())
+	}
+}
+
+func TestValidateServerProductionAuthBearerOrOIDCRequiresJWKS(t *testing.T) {
+	// Bearer token alone must be rejected: bootstrap builds the OIDC
+	// validator unconditionally for this mode, so an empty jwks_url would
+	// crash the server after validation passed. Bearer-only deployments
+	// use auth_mode=bearer.
+	t.Setenv("SPEECHKIT_SERVER_TOKEN", "svc-token")
+	cfg := &Config{}
+	cfg.Server.ListenAddr = ":8080"
+	cfg.Server.AuthMode = "bearer_or_oidc"
+	cfg.Server.BearerTokenEnv = "SPEECHKIT_SERVER_TOKEN"
+	err := ValidateServerProductionAuth(cfg)
+	if err == nil {
+		t.Fatal("ValidateServerProductionAuth without jwks_url should fail for bearer_or_oidc")
+	}
+	if !strings.Contains(err.Error(), "jwks_url") {
+		t.Fatalf("ValidateServerProductionAuth error = %q, want jwks_url context", err.Error())
+	}
+
+	// OIDC config satisfies the mode; the bearer leg stays optional.
+	t.Setenv("SPEECHKIT_SERVER_TOKEN", "")
+	cfg2 := &Config{}
+	cfg2.Server.ListenAddr = ":8080"
+	cfg2.Server.AuthMode = "bearer_or_oidc"
+	cfg2.Server.BearerTokenEnv = "SPEECHKIT_SERVER_TOKEN"
+	cfg2.Server.OIDC.JWKSURL = "https://idp.example.com/.well-known/jwks.json"
+	if err := ValidateServerProductionAuth(cfg2); err != nil {
+		t.Fatalf("ValidateServerProductionAuth with jwks_url set: %v", err)
+	}
+}
+
 func TestValidateServerProductionAuthRejectsNegativeResourceLimits(t *testing.T) {
 	cfg := &Config{}
 	cfg.Server.ReadTimeoutSec = -1

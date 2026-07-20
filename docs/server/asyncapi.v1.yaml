@@ -573,6 +573,16 @@ components:
           type: string
           description: Stable machine-readable error code.
         message: { type: string }
+        remediation:
+          type: string
+          description: >-
+            Short machine-friendly hint on how to unblock the denied
+            capability (additive, optional).
+        request_id:
+          type: string
+          description: >-
+            Gateway/server correlation id for support and tracing
+            (additive, optional).
 
     SessionEndFrame:
       type: object

@@ -83,6 +83,12 @@ type App struct {
 	TTSRouter     *tts.Router
 	TTSEnabled    bool
 
+	// DeviceAgentBridgeMounted is set only after every bridge dependency has
+	// been constructed and the four credential-bearing local handlers have
+	// been mounted. The global auth carve-out is conditional on this runtime
+	// fact, never on configuration intent alone.
+	DeviceAgentBridgeMounted bool
+
 	// PersonaRegistry holds the in-memory persona / role / sequence catalog.
 	// Populated by ensurePersonaRegistry — loaded from TOML seeds at boot;
 	// admin CRUD writes land here too (M5a). Durable persistence is
@@ -152,7 +158,7 @@ func Run(ctx context.Context, cfg *config.Config, opts RunOptions) error {
 	// for whichever modes are enabled. The router is shared across all three
 	// mode packages (dictation uses it directly; assist and voiceagent pull
 	// the STT stage from it in M3/M4).
-	if needsSTT(app.Modes) {
+	if needsSTT(app.Modes) || wyomingNeedsSTT(cfg) {
 		sttRouter, providers, notes := buildSTTRouter(cfg)
 		app.STTRouter = sttRouter
 		for _, note := range notes {
@@ -165,7 +171,7 @@ func Run(ctx context.Context, cfg *config.Config, opts RunOptions) error {
 	if cfg.Server.Features.StorageReads || cfg.Server.Features.Vocabulary {
 		ensureStore(cfg, app) //nolint:contextcheck // store.Open has no context-aware API; startup migration is bounded by CI/runtime gates.
 	}
-	if cfg.Server.Features.TTSDirect && app.TTSRouter == nil {
+	if (cfg.Server.Features.TTSDirect || wyomingNeedsTTS(cfg) || cfg.Server.DeviceAgent.Enabled) && app.TTSRouter == nil {
 		ttsRouter, ttsEnabled, ttsNotes := buildTTSRouter(cfg)
 		for _, note := range ttsNotes {
 			slog.Info("TTS wiring", "msg", note)
@@ -182,6 +188,18 @@ func Run(ctx context.Context, cfg *config.Config, opts RunOptions) error {
 		}
 	}
 
+	deviceAgentClaims, err := wireDeviceAgentBridge(ctx, cfg, app)
+	if err != nil {
+		return fmt.Errorf("core.Run: wire local device-agent bridge: %w", err)
+	}
+	if deviceAgentClaims != nil {
+		defer func() {
+			if err := deviceAgentClaims.Close(); err != nil {
+				slog.Warn("close device-agent claim ledger", "err", err)
+			}
+		}()
+	}
+
 	if app.ModeEnabled(ModeDictation) {
 		if app.STTRouter == nil {
 			app.Health.SetReady("mode.dictation", StatusUnavailable, "STT router not initialized")
@@ -193,6 +211,10 @@ func Run(ctx context.Context, cfg *config.Config, opts RunOptions) error {
 				DefaultPrompt:          dictationPromptFromDictionary(cfg.Vocabulary.Dictionary),
 				Store:                  app.Store,
 				ActiveTemplateIDs:      cfg.Customization.ActiveTemplateIDs,
+				// Lowest-precedence provider preference (voice-prefs
+				// contract): explicit request override → edge-injected user
+				// preference → this ModelSelection primary → router order.
+				DefaultProviderProfileID: cfg.ModelSelection.Dictate.PrimaryProfileID,
 			})
 			if err != nil {
 				return fmt.Errorf("core.Run: build dictation handler: %w", err)
@@ -200,6 +222,9 @@ func Run(ctx context.Context, cfg *config.Config, opts RunOptions) error {
 			h.Mount(app.Mux)
 			app.Health.SetReady("mode.dictation", StatusOK, "listening")
 			slog.Info("mode enabled", "mode", "dictation", "path", "/v1/dictation/transcribe")
+			// Streaming dictation rides on the same mode + STT router:
+			// session create + ticket-authenticated WS with live partials.
+			wireDictationStream(cfg, app)
 		}
 	} else {
 		mountModeDisabled(app.Mux, ModeDictation, "/v1/dictation/transcribe")
@@ -273,6 +298,13 @@ func Run(ctx context.Context, cfg *config.Config, opts RunOptions) error {
 	// "training_data_disabled" payload. See
 	// docs/wakeword-training-data.md for the full privacy contract.
 	wireWakewordTraining(cfg, app)
+
+	// Wake-word model catalog (openWakeWord ONNX + microWakeWord manifests).
+	// Public + default-on: serves already-public model metadata so a
+	// SpeechKit-trained phrase can be individualized on ESPHome satellites and
+	// the Kombify-Box on-device (microWakeWord), while host consumers read the
+	// openWakeWord triplet.
+	wireWakewordModels(cfg, app)
 
 	if app.ModeEnabled(ModeAssist) {
 		pipeline, notes := buildAssistPipeline(ctx, cfg, app)
@@ -353,6 +385,11 @@ func Run(ctx context.Context, cfg *config.Config, opts RunOptions) error {
 	// Always-on server component. Mode handlers flip their own entries above.
 	app.Health.SetReady("server", StatusOK, "listening")
 
+	// Wyoming voice backend (ESPHome / Home Assistant). Non-blocking: launches
+	// its own TCP listener in a goroutine, torn down on ctx cancellation. No-op
+	// unless [server.wyoming].enabled.
+	startWyoming(ctx, cfg, app)
+
 	return serveServer(ctx, cfg, app)
 }
 
@@ -375,10 +412,13 @@ func registerCoreEndpoints(app *App) {
 	registerAPIAlias(app.Mux)
 }
 
-// serverOIDCVerifier builds the OIDC JWT verifier when auth_mode = "oidc".
-// Returns (nil, nil) for every other mode so the auth chain is unchanged.
+// serverOIDCVerifier builds the OIDC JWT verifier when auth_mode is "oidc"
+// or "bearer_or_oidc". Returns (nil, nil) for every other mode so the auth
+// chain is unchanged.
 func serverOIDCVerifier(cfg *config.Config) (func(*http.Request) (middleware.Identity, bool), error) {
-	if !strings.EqualFold(strings.TrimSpace(cfg.Server.AuthMode), string(middleware.AuthModeOIDC)) {
+	authMode := strings.TrimSpace(cfg.Server.AuthMode)
+	if !strings.EqualFold(authMode, string(middleware.AuthModeOIDC)) &&
+		!strings.EqualFold(authMode, string(middleware.AuthModeBearerOrOIDC)) {
 		return nil, nil
 	}
 	validator, err := middleware.NewOIDCValidator(middleware.OIDCConfig{
@@ -482,6 +522,9 @@ func serveServer(ctx context.Context, cfg *config.Config, app *App) error {
 }
 
 func serverMiddlewareChain(ctx context.Context, cfg *config.Config, app *App) (func(http.Handler) http.Handler, error) {
+	if app == nil {
+		return nil, errors.New("core.Run: app is required")
+	}
 	// Order matters: Recover wraps everything (panics from any middleware
 	// or handler land in the JSON 500), Logging runs early so even auth
 	// failures get an access-log line, CORS runs before Auth so preflight
@@ -498,6 +541,9 @@ func serverMiddlewareChain(ctx context.Context, cfg *config.Config, app *App) (f
 	app.AuthState.SetSmokeTokenEnv(cfg.Server.SmokeTokenEnv)
 	publicPaths := serverPublicPaths()
 	publicRoutes := serverPublicRoutes()
+	if app.DeviceAgentBridgeMounted {
+		publicRoutes = append(publicRoutes, deviceAgentAuthRoutes()...)
+	}
 	bootstrapPaths := serverBootstrapPaths()
 	oidcVerifier, err := serverOIDCVerifier(cfg)
 	if err != nil {
@@ -547,6 +593,9 @@ func serverMiddlewareChain(ctx context.Context, cfg *config.Config, app *App) (f
 			RequireAuthenticatedMode: !config.IsLoopbackListenAddr(cfg.Server.ListenAddr),
 			TrustedProxyCIDRs:        cfg.Server.TrustedProxyCIDRs,
 			OIDCVerifier:             oidcVerifier,
+			// Voice-agent tool bridge: the header carrying the per-session
+			// bridge credential (accepted only on edge-HMAC identities).
+			OboSubjectTokenHeader: cfg.Server.VoiceAgent.ToolBridge.CredentialHeader,
 		}),
 		middleware.RateLimit(middleware.RateLimitOptions{ //nolint:contextcheck // RateLimit receives the server lifetime context via options.Context; contextcheck does not model contained context fields.
 			RequestsPerSecond: cfg.Server.RateLimitRPS,

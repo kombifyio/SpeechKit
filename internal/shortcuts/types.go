@@ -21,6 +21,7 @@ const (
 	IntentReminder      Intent = "reminder"
 	IntentMath          Intent = "math"
 	IntentWikipedia     Intent = "wikipedia"
+	IntentTemperature   Intent = "temperature"
 	IntentHomeAssistant Intent = "home_assistant"
 )
 
@@ -31,9 +32,10 @@ type Resolution struct {
 }
 
 type Phrase struct {
-	Value    string
-	Prefix   bool
-	Priority int
+	Value         string `json:"value"`
+	Prefix        bool   `json:"prefix"`
+	NoSpacePrefix bool   `json:"no_space_prefix,omitempty"`
+	Priority      int    `json:"priority,omitempty"`
 }
 
 type IntentLexicon struct {

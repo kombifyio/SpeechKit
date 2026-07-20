@@ -21,6 +21,9 @@ func ExecutableDir() string {
 }
 
 func IsPortable() bool {
+	if portableDisabled() {
+		return false
+	}
 	exeDir := ExecutableDir()
 	if exeDir == "" {
 		return false
@@ -45,6 +48,15 @@ func IsPortable() bool {
 		}
 	}
 	return false
+}
+
+func portableDisabled() bool {
+	switch strings.ToLower(strings.TrimSpace(os.Getenv("SPEECHKIT_DISABLE_PORTABLE"))) {
+	case "1", "true", "yes", "on":
+		return true
+	default:
+		return false
+	}
 }
 
 func DataDir() string {

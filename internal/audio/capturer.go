@@ -46,9 +46,14 @@ type Event struct {
 }
 
 type Config struct {
-	Backend        Backend
-	InputSource    InputSource
-	DeviceID       string
+	Backend     Backend
+	InputSource InputSource
+	DeviceID    string
+	// DeviceName is the human-readable name of the capture device. USB/UAC
+	// devices can re-enumerate with a new WASAPI endpoint ID after a replug
+	// or firmware update; when DeviceID no longer matches, the capturer
+	// falls back to matching by this name.
+	DeviceName     string
 	OutputDeviceID string
 	SampleRate     int
 	Channels       int

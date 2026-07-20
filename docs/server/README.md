@@ -195,6 +195,7 @@ Customization catalog endpoints:
 | Mode | Transport | Entry path | Status |
 |---|---|---|---|
 | Dictation | HTTP POST | `/api/v1/dictation/transcribe` | ships |
+| Dictation streaming | HTTP + WS | `/api/v1/dictation/stream/sessions` + `/ws` | ships; needs a streaming-capable STT provider (e.g. Deepgram), see `asyncapi.dictation-stream.v1.yaml` |
 | Assist | HTTP POST | `/api/v1/assist/process` | ships |
 | Voice Agent | HTTP + WS | `/api/v1/voiceagent/sessions` + `/ws` | ships |
 | Voice Agent LiveKit token | HTTP GET | `/api/v1/voiceagent/sessions/{id}/livekit-token` | optional when `[server.livekit]` is enabled |
@@ -334,7 +335,9 @@ header `X-Edge-Role: admin`. Browser requests without valid admin credentials
 receive an HTML sign-in-required page; API requests still receive the JSON
 `unauthenticated` envelope. Voice Agent WebSocket upgrades at
 `/v1/voiceagent/sessions/{id}/ws` and
-`/api/v1/voiceagent/sessions/{id}/ws` bypass bearer/edge auth because the
+`/api/v1/voiceagent/sessions/{id}/ws` — and streaming Dictation upgrades at
+`/v1/dictation/stream/sessions/{id}/ws` and its `/api/v1` twin — bypass
+bearer/edge auth because the
 handler validates the short-lived session ticket itself. Browser clients should
 open `ws_url` with the returned `ws_subprotocol` (`ticket.<value>`). The bearer token is for HTTP
 requests and does not belong in the browser WebSocket handshake. When auth is enabled, all other
@@ -366,6 +369,48 @@ deviates more than 5 minutes from server time, bounding replay of a captured
 header. The timestamp is backward compatible: an edge that omits `X-Edge-Auth-Ts`
 keeps using the four-field signature above.
 
+### Edge-resolved user voice preferences
+
+An edge that manages per-user voice preferences (contract
+`speechkit.voice_prefs.v1`) may inject them on the requests it signs:
+
+| Header | Meaning |
+| --- | --- |
+| `x-speechkit-pref-stt-primary` | Preferred Dictation STT provider, e.g. `deepgram` |
+| `x-speechkit-pref-stt-secondary` | Second-choice Dictation STT provider, e.g. `assemblyai` |
+| `x-speechkit-pref-va-provider` | Default Voice Agent realtime backend |
+| `x-speechkit-pref-va-persona` | Default Voice Agent persona id |
+| `x-speechkit-pref-ts` | Unix-seconds timestamp of the preference signature |
+| `x-speechkit-pref-signature` | `v1=<hex>` HMAC covering the preference set |
+
+The identity HMAC above is unchanged; the preference headers carry their own
+versioned signature with the same shared secret so deployed verifiers keep
+working. The edge signs
+
+```
+v1 \n user_id \n org_id \n ts \n stt-primary \n stt-secondary \n va-provider \n va-persona
+```
+
+(absent values sign as empty strings; when the caller has no stored
+preferences, no pref header is sent at all). The server honours the
+preference headers only when the request's identity was established via a
+verified edge HMAC (`edge_hmac`, or the edge half of `bearer_or_edge`) AND
+this signature verifies against that identity within the same 5-minute
+replay window as `X-Edge-Auth-Ts`. A missing or invalid preference signature
+degrades to "no preference" — it never fails the request, because
+preferences are an overlay, not an authorization input. Values are
+provider/persona names only — never keys or credentials.
+
+Server-side precedence per request: explicit request override (batch or
+streaming `provider_profile_id`, Voice Agent `start.provider` / `persona_id`)
+→ injected preference header → the server's `[model_selection]` primary →
+the routing fallback order. Preferences are best-effort: an unknown or
+unconfigured provider or persona falls back to the next step instead of
+failing the request, and responses report the provider actually used. For
+WebSocket surfaces (streaming Dictation, Voice Agent) the preferences are
+captured at session-mint time — the ticket-authenticated upgrade itself never
+carries edge headers.
+
 ## Public URL and WebSocket origins
 
 Set `[server].public_url` when the server is behind a reverse proxy or mounted
@@ -385,9 +430,12 @@ expire, create a new session and use the new `ws_url` plus `ws_subprotocol`.
 
 Browser WebSocket clients must send an `Origin` that exactly matches
 `[server].cors_allowed_origins`, or the server rejects the upgrade with `403`.
-Native clients that send no `Origin` are allowed. Use `["*"]` only for
-explicit local no-auth OSS/dev mode; authenticated server modes reject wildcard
-CORS during startup.
+Native clients that send no `Origin` are allowed when they present the session
+ticket subprotocol (`Sec-WebSocket-Protocol: ticket.<v>`) — the ticket, not the
+Origin, is their credential and is verified immediately after. Ticketless
+requests without an `Origin` are denied unless `SPEECHKIT_ALLOW_EMPTY_ORIGIN=1`
+opts them in (development only). Use `["*"]` only for explicit local no-auth
+OSS/dev mode; authenticated server modes reject wildcard CORS during startup.
 
 Only loopback callers and proxies listed in `[server].trusted_proxy_cidrs` may
 influence security-sensitive behavior through `X-Forwarded-*` headers. This

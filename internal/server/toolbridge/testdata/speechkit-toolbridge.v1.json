@@ -1,0 +1,80 @@
+{
+  "version": "speechkit.toolbridge.v1",
+  "manifest": {
+    "version": "speechkit.toolbridge.v1",
+    "harness": "kombify-ai",
+    "tool_bridge": true,
+    "tools": [
+      {
+        "name": "kombify_knowledge_search",
+        "description": "Search kombify product knowledge and documentation. Use for questions about kombify products, features, setup, and how-tos. Returns short text snippets with source ids.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "query": {
+              "type": "string",
+              "description": "Natural-language search query, e.g. the user's question in their own words."
+            },
+            "max_results": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 5,
+              "description": "Maximum number of results to return. Defaults to 3."
+            }
+          },
+          "required": ["query"],
+          "additionalProperties": false
+        },
+        "timeout_ms": 10000
+      },
+      {
+        "name": "kombify_docs_lookup",
+        "description": "Fetch one kombify knowledge document by its source id. Use after kombify_knowledge_search returned a source id that needs more detail.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "source_id": {
+              "type": "string",
+              "description": "Source or document id from a previous kombify_knowledge_search result."
+            }
+          },
+          "required": ["source_id"],
+          "additionalProperties": false
+        },
+        "timeout_ms": 10000
+      }
+    ]
+  },
+  "call_request": {
+    "version": "speechkit.toolbridge.v1",
+    "tool": "kombify_knowledge_search",
+    "args": { "query": "What is kombify TechStack?" },
+    "session": {
+      "session_id": "vs_fixture_001",
+      "locale": "en-US",
+      "persona_id": "default"
+    }
+  },
+  "call_response_ok": {
+    "status": "ok",
+    "version": "speechkit.toolbridge.v1",
+    "tool": "kombify_knowledge_search",
+    "result_text": "kombify TechStack bundles reproducible homelab stacks with managed deployment templates and connects them to the kombify Cloud."
+  },
+  "call_response_denied": {
+    "status": "denied",
+    "version": "speechkit.toolbridge.v1",
+    "error_code": "voice_tools_disabled",
+    "reason_code": "voice_tools_mode_off",
+    "message": "The voice tool bridge is disabled on this deployment.",
+    "retryable": false,
+    "user_guidance": {
+      "title": "Voice tools unavailable",
+      "body": "Live knowledge tools are switched off for voice sessions in this environment. The voice session continues without tools."
+    },
+    "error": {
+      "code": "voice_tools_disabled",
+      "message": "The voice tool bridge is disabled on this deployment."
+    }
+  }
+}

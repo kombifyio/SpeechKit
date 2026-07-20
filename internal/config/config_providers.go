@@ -123,6 +123,14 @@ type AssemblyAIProviderConfig struct {
 	STTModels        string `toml:"stt_models"`
 	StreamingModel   string `toml:"streaming_model"`
 	StreamingBaseURL string `toml:"streaming_base_url"`
+	// SyncBaseURL overrides the synchronous Universal-3.5 Pro endpoint.
+	// Empty uses the global https://sync.assemblyai.com; set the regional
+	// https://sync.us.assemblyai.com or https://sync.eu.assemblyai.com for
+	// data-zone pinning.
+	SyncBaseURL string `toml:"sync_base_url"`
+	// DisableSync forces every transcription through the classic async
+	// upload+poll flow even for short clips the sync endpoint could serve.
+	DisableSync bool `toml:"disable_sync"`
 }
 
 type OllamaProviderConfig struct {

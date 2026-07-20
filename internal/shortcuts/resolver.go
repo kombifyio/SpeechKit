@@ -80,6 +80,13 @@ func matchPhrase(text string, phrase registeredPhrase) (string, string, bool) {
 			payload := strings.TrimLeft(text[len(alias):], " ,:.!?")
 			return alias, payload, true
 		}
+
+		if phrase.noSpacePrefix && strings.HasPrefix(text, alias) {
+			payload := strings.TrimSpace(strings.TrimPrefix(text, alias))
+			if payload != "" {
+				return alias, payload, true
+			}
+		}
 	}
 
 	return "", "", false

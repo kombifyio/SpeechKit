@@ -2,9 +2,24 @@ package speechkit
 
 import (
 	"context"
+	"errors"
 
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/speaker"
 )
+
+// ErrUnsupportedAudioFormat is returned by a DictationStreamProvider when the
+// requested speaker.AudioFormat is one its realtime API cannot accept — e.g.
+// AssemblyAI's v3 streaming API exposes no channel parameter and decodes the
+// socket as a single channel, so stereo would transcribe as braided garbage
+// rather than fail. Providers wrap it with %w.
+//
+// Format support is per-provider, not a property of the format (Deepgram
+// serves stereo natively), so this is deliberately not a protocol-level
+// validation: the router's fallback loop treats it like any other start
+// failure and tries the next candidate. Only when no provider can serve the
+// format does it reach a caller, who should errors.Is it to report a format
+// problem rather than invite a blind retry of the same doomed format.
+var ErrUnsupportedAudioFormat = errors.New("speechkit: unsupported audio format for this dictation stream provider")
 
 // DictationStreamOptions configures provider-native live transcription for
 // Dictation and meeting transcription. It is intentionally separate from

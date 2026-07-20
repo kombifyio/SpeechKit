@@ -105,10 +105,10 @@ func (c *CompositeExecutor) Intents() []shortcuts.Intent {
 	return out
 }
 
-// DefaultSkills returns the Phase-1 voice-companion skill catalog
-// (Time, Date, Math, Weather, Timer, Reminder, Wikipedia). The
-// HomeAssistant skill needs URL+Token configuration and is therefore
-// excluded — hosts wire it explicitly via WithHomeAssistant.
+// DefaultSkills returns the Phase-1 non-smart-home skill catalog (Time, Date,
+// Math, Weather, Timer, Reminder, Wikipedia). Hosts that route the standard
+// smart-home intent must use AllSkills so the fail-closed Home Assistant
+// semantic boundary is present even before credentials are configured.
 //
 // Hosts that want a subset can build their own CompositeExecutor by
 // passing only the skills they need. Timer and Reminder run in
@@ -123,19 +123,16 @@ func DefaultSkills() []Skill {
 		NewTimerSkill(),
 		NewReminderSkill(),
 		NewWikipediaSkill(),
+		NewTemperatureSkill(),
 	}
 }
 
-// AllSkills returns DefaultSkills + a configured HomeAssistant skill
-// when baseURL+token are non-empty. Use this in hosts that have HA
-// integration configured.
+// AllSkills returns DefaultSkills plus the Home Assistant semantic boundary.
+// The boundary is present even when configuration is missing so recognized
+// smart-home commands fail closed instead of falling through to a host LLM.
 func AllSkills(haBaseURL, haToken string) []Skill {
 	skills := DefaultSkills()
-	ha := NewHomeAssistantSkill(haBaseURL, haToken)
-	if ha.Configured() {
-		skills = append(skills, ha)
-	}
-	return skills
+	return append(skills, NewHomeAssistantSkill(haBaseURL, haToken))
 }
 
 // normalizeLocale collapses "de"/"de-DE"/"DE_de" to "de" and everything

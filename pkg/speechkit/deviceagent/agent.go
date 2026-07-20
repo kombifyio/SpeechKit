@@ -1,4 +1,5 @@
-// Package deviceagent implements the LAN-side SpeechKit device agent contract.
+// Package deviceagent implements the credential-minimal LAN-side SpeechKit
+// device-agent client and its versioned wire contract.
 package deviceagent
 
 import (
@@ -8,42 +9,90 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
 	"strings"
 	"time"
+
+	"github.com/google/uuid"
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/netsec"
 )
 
 const (
-	ProtocolVersion  = "speechkit.device_agent.v0"
-	defaultLocale    = "de-DE"
-	defaultUserAgent = "speechkit-device-agent/0.1"
+	// ProtocolVersion is the legacy v0 constant retained for source
+	// compatibility. New clients and servers must use CurrentProtocolVersion.
+	//
+	// Deprecated: v0 carries no server-owned pairing or authority guarantees.
+	ProtocolVersion = "speechkit.device_agent.v0"
+	// CurrentProtocolVersion is the only version emitted or accepted by the
+	// credential-minimal local bridge.
+	CurrentProtocolVersion   = "speechkit.device_agent.v1"
+	defaultLocale            = "de-DE"
+	defaultUserAgent         = "speechkit-device-agent/1.0"
+	minimumPairingTokenBytes = 32
+	maxJSONResponseBytes     = 2 << 20
+	maxTTSResponseBytes      = 12 << 20
+	maxErrorResponseBytes    = 64 << 10
+
+	CapabilityReady       = "ready"
+	CapabilityUnavailable = "unavailable"
+	CapabilityUnverified  = "unverified"
+	ServerInstanceHeader  = "X-SpeechKit-Server-Instance-ID"
 )
 
 var (
-	ErrMissingServerURL          = errors.New("speechkit deviceagent: server_url is required")
-	ErrMissingHomeAssistantURL   = errors.New("speechkit deviceagent: home_assistant_url is required")
-	ErrMissingHomeAssistantToken = errors.New("speechkit deviceagent: home_assistant_token is required")
-	ErrMissingAssistText         = errors.New("speechkit deviceagent: assist text is required")
+	ErrMissingServerURL = errors.New("speechkit deviceagent: server_url is required")
+	// Deprecated compatibility errors. The v1 client never accepts HA
+	// credentials or authority configuration from the device.
+	ErrMissingHomeAssistantURL        = errors.New("speechkit deviceagent: home_assistant_url is required")
+	ErrMissingHomeAssistantToken      = errors.New("speechkit deviceagent: home_assistant_token is required")
+	ErrLegacyClientConfig             = errors.New("speechkit deviceagent: legacy credential or transport configuration is forbidden")
+	ErrMissingPairingToken            = errors.New("speechkit deviceagent: pairing_token is required")
+	ErrPairingTokenTooShort           = errors.New("speechkit deviceagent: pairing_token must contain at least 32 bytes")
+	ErrPairingTokenInvalid            = errors.New("speechkit deviceagent: pairing_token must be a bounded bearer credential")
+	ErrMissingExpectedServerInstance  = errors.New("speechkit deviceagent: expected_server_instance_id is required")
+	ErrMissingExpectedPairingID       = errors.New("speechkit deviceagent: expected_pairing_id is required")
+	ErrMissingAssistText              = errors.New("speechkit deviceagent: assist text is required")
+	ErrMissingCommandID               = errors.New("speechkit deviceagent: command_id is required")
+	ErrServerIdentityMismatch         = errors.New("speechkit deviceagent: server instance identity mismatch")
+	ErrServerIdentityMissing          = errors.New("speechkit deviceagent: server instance identity header is missing")
+	ErrPairingIdentityMismatch        = errors.New("speechkit deviceagent: pairing epoch identity mismatch")
+	ErrAssistResponseMismatch         = errors.New("speechkit deviceagent: assist response does not match the request")
+	ErrResponseTooLarge               = errors.New("speechkit deviceagent: server response exceeds the protocol limit")
+	ErrInsecureServerTransport        = errors.New("speechkit deviceagent: plaintext HTTP is allowed only for a loopback server")
+	ErrHomeAssistantBridgeUnavailable = errors.New("speechkit deviceagent: Home Assistant bridge is not ready")
+	ErrTTSBridgeUnavailable           = errors.New("speechkit deviceagent: TTS bridge is not ready")
 )
 
 type Config struct {
-	ServerURL          string
-	ServerToken        string
+	ServerURL string
+	// Deprecated: v1 authenticates only with PairingToken. Setting this field
+	// makes New fail closed.
+	ServerToken string
+	// Deprecated: Home Assistant authority and credentials are server-owned.
+	// Setting any of these fields makes New fail closed.
 	HomeAssistantURL   string
 	HomeAssistantToken string
 	HomeAssistantAgent string
-	HTTPClient         *http.Client
-	UserAgent          string
-	Device             DeviceDescriptor
-	Locale             string
+	// Deprecated: v1 owns its redirect and local-dial policy. Supplying a
+	// custom client makes New fail closed.
+	HTTPClient               *http.Client
+	PairingToken             string
+	ExpectedServerInstanceID string
+	ExpectedPairingID        string
+	UserAgent                string
+	Device                   DeviceDescriptor
+	Capabilities             Capabilities
+	Health                   Health
+	Locale                   string
 }
 
 type DeviceDescriptor struct {
 	AgentID       string      `json:"agent_id"`
 	DeviceID      string      `json:"device_id"`
 	DisplayName   string      `json:"display_name,omitempty"`
-	RoomID        string      `json:"room_id,omitempty"`
+	RoomID        string      `json:"room_id"`
 	CaptureDevice AudioDevice `json:"capture_device"`
 	OutputDevice  AudioDevice `json:"output_device"`
 	Wakeword      Wakeword    `json:"wakeword"`
@@ -63,21 +112,8 @@ type Wakeword struct {
 	Status  string `json:"status"`
 }
 
-type Registration struct {
-	Version      string           `json:"version"`
-	RegisteredAt time.Time        `json:"registered_at"`
-	Device       DeviceDescriptor `json:"device"`
-	Capabilities Capabilities     `json:"capabilities"`
-	Health       Health           `json:"health"`
-	Pairing      Pairing          `json:"pairing"`
-}
-
-type RegistrationAck struct {
-	Status     string `json:"status"`
-	PairingID  string `json:"pairing_id,omitempty"`
-	ServerTime string `json:"server_time,omitempty"`
-}
-
+// Capabilities are device-reported facts. Pairing and server-side bridge
+// readiness are deliberately absent: only the server can attest those.
 type Capabilities struct {
 	Dictation     bool `json:"dictation"`
 	Assist        bool `json:"assist"`
@@ -85,7 +121,9 @@ type Capabilities struct {
 	WakewordLocal bool `json:"wakeword_local"`
 	TTS           bool `json:"tts"`
 	BargeIn       bool `json:"barge_in"`
-	LocalPairing  bool `json:"local_pairing"`
+	// Deprecated: pairing readiness is attested by the server response and is
+	// never serialized from the device.
+	LocalPairing bool `json:"-"`
 }
 
 type Health struct {
@@ -95,18 +133,51 @@ type Health struct {
 	WakeReady    bool   `json:"wake_ready"`
 }
 
+type Registration struct {
+	Version      string           `json:"version"`
+	RegisteredAt time.Time        `json:"registered_at"`
+	Device       DeviceDescriptor `json:"device"`
+	Capabilities Capabilities     `json:"capabilities"`
+	Health       Health           `json:"health"`
+	// Deprecated: v1 never accepts device-asserted pairing state.
+	Pairing Pairing `json:"-"`
+}
+
+// Pairing is retained only so v0 consumers continue to compile. The v1 wire
+// contract never serializes or trusts this device-owned assertion.
+//
+// Deprecated: use RegistrationAck pairing and capability state.
 type Pairing struct {
 	Status string `json:"status"`
 	Method string `json:"method"`
+}
+
+type CapabilityState struct {
+	Status     string `json:"status"`
+	ReasonCode string `json:"reason_code,omitempty"`
+}
+
+type BridgeCapabilities struct {
+	HomeAssistant CapabilityState `json:"home_assistant"`
+	TTS           CapabilityState `json:"tts"`
+}
+
+type RegistrationAck struct {
+	Status           string             `json:"status"`
+	PairingID        string             `json:"pairing_id"`
+	ServerInstanceID string             `json:"server_instance_id"`
+	ServerTime       string             `json:"server_time,omitempty"`
+	Capabilities     BridgeCapabilities `json:"capabilities"`
 }
 
 type Event struct {
 	Type          string            `json:"type"`
 	Surface       string            `json:"surface"`
 	Mode          string            `json:"mode"`
+	RequestID     string            `json:"request_id,omitempty"`
 	SessionID     string            `json:"session_id,omitempty"`
 	DeviceID      string            `json:"device_id"`
-	RoomID        string            `json:"room_id,omitempty"`
+	RoomID        string            `json:"room_id"`
 	CapturePolicy string            `json:"capture_policy,omitempty"`
 	Transport     string            `json:"transport,omitempty"`
 	Text          string            `json:"text,omitempty"`
@@ -116,78 +187,176 @@ type Event struct {
 	Metadata      map[string]string `json:"metadata,omitempty"`
 }
 
+type EventAck struct {
+	Status string `json:"status"`
+}
+
+type AssistRequest struct {
+	RequestID string `json:"request_id"`
+	SessionID string `json:"session_id"`
+	CommandID string `json:"command_id"`
+	DeviceID  string `json:"device_id"`
+	RoomID    string `json:"room_id"`
+	Text      string `json:"text"`
+	Locale    string `json:"locale"`
+}
+
+type AssistResponse struct {
+	Status         string `json:"status"`
+	RequestID      string `json:"request_id"`
+	ConversationID string `json:"conversation_id,omitempty"`
+	ResponseType   string `json:"response_type,omitempty"`
+	Speech         string `json:"speech,omitempty"`
+	ActionExecuted string `json:"action_executed"` // yes | no | unknown
+	Replayed       bool   `json:"replayed"`
+	ErrorCode      string `json:"error_code,omitempty"`
+	ReasonCode     string `json:"reason_code,omitempty"`
+	Retryable      bool   `json:"retryable"`
+	UserGuidance   string `json:"user_guidance,omitempty"`
+}
+
+type TTSRequest struct {
+	RequestID string `json:"request_id"`
+	Format    string `json:"format"`
+}
+
+type TTSResponse struct {
+	RequestID   string `json:"request_id"`
+	AudioBase64 string `json:"audio_base64"`
+	Format      string `json:"format"`
+	SampleRate  int    `json:"sample_rate"`
+	DurationMS  int64  `json:"duration_ms"`
+	Provider    string `json:"provider"`
+	Voice       string `json:"voice,omitempty"`
+}
+
+type ErrorEnvelope struct {
+	Error BridgeError `json:"error"`
+}
+
+type BridgeError struct {
+	ErrorCode      string `json:"error_code"`
+	ReasonCode     string `json:"reason_code"`
+	Retryable      bool   `json:"retryable"`
+	ActionExecuted string `json:"action_executed"`
+	UserGuidance   string `json:"user_guidance"`
+}
+
+type HTTPError struct {
+	Method     string
+	Path       string
+	StatusCode int
+	Envelope   ErrorEnvelope
+}
+
+func (e *HTTPError) Error() string {
+	if e == nil {
+		return "speechkit deviceagent: nil HTTP error"
+	}
+	code := strings.TrimSpace(e.Envelope.Error.ErrorCode)
+	if code != "" {
+		return fmt.Sprintf("%s %s returned %d (%s/%s)", e.Method, e.Path, e.StatusCode, code, e.Envelope.Error.ReasonCode)
+	}
+	return fmt.Sprintf("%s %s returned %d without a structured device-agent error", e.Method, e.Path, e.StatusCode)
+}
+
 type CycleOptions struct {
+	RequestID string
 	SessionID string
+	CommandID string
 	Text      string
 	Locale    string
 }
 
 type CycleResult struct {
-	SessionID        string  `json:"session_id"`
-	SpokenText       string  `json:"spoken_text"`
-	HomeAssistantRaw string  `json:"home_assistant_raw,omitempty"`
-	TTSProvider      string  `json:"tts_provider,omitempty"`
-	Events           []Event `json:"events"`
+	RequestID      string  `json:"request_id"`
+	SessionID      string  `json:"session_id"`
+	SpokenText     string  `json:"spoken_text"`
+	ConversationID string  `json:"conversation_id,omitempty"`
+	ResponseType   string  `json:"response_type,omitempty"`
+	TTSProvider    string  `json:"tts_provider,omitempty"`
+	Replayed       bool    `json:"replayed"`
+	Events         []Event `json:"events"`
+	// Deprecated: raw Home Assistant responses never cross the v1 boundary.
+	HomeAssistantRaw string `json:"-"`
 }
 
 type Agent struct {
 	cfg       Config
 	serverURL *url.URL
-	haURL     *url.URL
 	http      *http.Client
 	userAgent string
 }
 
 func New(cfg Config) (*Agent, error) {
-	serverURL, err := parseBaseURL(cfg.ServerURL)
+	if strings.TrimSpace(cfg.ServerToken) != "" ||
+		strings.TrimSpace(cfg.HomeAssistantURL) != "" ||
+		strings.TrimSpace(cfg.HomeAssistantToken) != "" ||
+		strings.TrimSpace(cfg.HomeAssistantAgent) != "" ||
+		cfg.HTTPClient != nil {
+		return nil, ErrLegacyClientConfig
+	}
+	serverURL, err := parseLocalBaseURL(cfg.ServerURL)
 	if err != nil {
-		return nil, fmt.Errorf("%w: %v", ErrMissingServerURL, err)
+		return nil, fmt.Errorf("%w: %w", ErrMissingServerURL, err)
 	}
-	var haURL *url.URL
-	if strings.TrimSpace(cfg.HomeAssistantURL) != "" {
-		haURL, err = parseBaseURL(cfg.HomeAssistantURL)
-		if err != nil {
-			return nil, fmt.Errorf("%w: %v", ErrMissingHomeAssistantURL, err)
-		}
+	if strings.TrimSpace(cfg.PairingToken) == "" {
+		return nil, ErrMissingPairingToken
 	}
-	httpClient := cfg.HTTPClient
-	if httpClient == nil {
-		httpClient = &http.Client{Timeout: 10 * time.Second}
+	if strings.TrimSpace(cfg.ExpectedServerInstanceID) == "" {
+		return nil, ErrMissingExpectedServerInstance
+	}
+	if strings.TrimSpace(cfg.ExpectedPairingID) == "" {
+		return nil, ErrMissingExpectedPairingID
+	}
+	if len(strings.TrimSpace(cfg.PairingToken)) < minimumPairingTokenBytes {
+		return nil, ErrPairingTokenTooShort
+	}
+	if !validPairingToken(strings.TrimSpace(cfg.PairingToken)) {
+		return nil, ErrPairingTokenInvalid
+	}
+	validation := localValidation()
+	httpClient := netsec.NewSafeHTTPClient(netsec.ClientOptions{
+		Timeout:        10 * time.Second,
+		DialValidation: &validation,
+	})
+	clientCopy := *httpClient
+	clientCopy.CheckRedirect = func(_ *http.Request, _ []*http.Request) error {
+		return http.ErrUseLastResponse
 	}
 	userAgent := strings.TrimSpace(cfg.UserAgent)
 	if userAgent == "" {
 		userAgent = defaultUserAgent
 	}
 	cfg.Locale = firstNonEmpty(cfg.Locale, defaultLocale)
+	cfg.PairingToken = strings.TrimSpace(cfg.PairingToken)
+	cfg.ExpectedServerInstanceID = strings.TrimSpace(cfg.ExpectedServerInstanceID)
+	cfg.ExpectedPairingID = strings.TrimSpace(cfg.ExpectedPairingID)
 	cfg.Device = normalizeDevice(cfg.Device)
-	return &Agent{cfg: cfg, serverURL: serverURL, haURL: haURL, http: httpClient, userAgent: userAgent}, nil
+	cfg.Health = normalizeHealth(cfg.Health)
+	return &Agent{cfg: cfg, serverURL: serverURL, http: &clientCopy, userAgent: userAgent}, nil
 }
 
 func (a *Agent) Register(ctx context.Context) (*RegistrationAck, error) {
 	reg := Registration{
-		Version:      ProtocolVersion,
+		Version:      CurrentProtocolVersion,
 		RegisteredAt: time.Now().UTC(),
 		Device:       a.cfg.Device,
-		Capabilities: Capabilities{
-			Dictation:     true,
-			Assist:        true,
-			VoiceAgent:    true,
-			WakewordLocal: true,
-			TTS:           true,
-			BargeIn:       true,
-			LocalPairing:  true,
-		},
-		Health: Health{
-			Status:       "ok",
-			CaptureReady: true,
-			OutputReady:  true,
-			WakeReady:    a.cfg.Device.Wakeword.Enabled,
-		},
-		Pairing: Pairing{Status: "paired", Method: "local_lan"},
+		Capabilities: a.cfg.Capabilities,
+		Health:       a.cfg.Health,
 	}
 	var ack RegistrationAck
 	if err := a.postServerJSON(ctx, "/v1/device-agent/register", reg, &ack); err != nil {
 		return nil, err
+	}
+	if strings.TrimSpace(ack.ServerInstanceID) != a.cfg.ExpectedServerInstanceID {
+		return nil, fmt.Errorf("%w: expected %q, got %q", ErrServerIdentityMismatch, a.cfg.ExpectedServerInstanceID, ack.ServerInstanceID)
+	}
+	if ack.Status != "paired" {
+		return nil, fmt.Errorf("speechkit deviceagent: registration status %q is not paired", ack.Status)
+	}
+	if strings.TrimSpace(ack.PairingID) != a.cfg.ExpectedPairingID {
+		return nil, fmt.Errorf("%w: expected %q, got %q", ErrPairingIdentityMismatch, a.cfg.ExpectedPairingID, ack.PairingID)
 	}
 	return &ack, nil
 }
@@ -197,15 +366,34 @@ func (a *Agent) RunFakeAssistCycle(ctx context.Context, opts CycleOptions) (*Cyc
 	if text == "" {
 		return nil, ErrMissingAssistText
 	}
-	sessionID := firstNonEmpty(opts.SessionID, fmt.Sprintf("device-agent-%d", time.Now().UnixNano()))
+	commandID := strings.TrimSpace(opts.CommandID)
+	if commandID == "" {
+		return nil, ErrMissingCommandID
+	}
+	requestID := strings.TrimSpace(opts.RequestID)
+	if requestID == "" {
+		id, err := uuid.NewV7()
+		if err != nil {
+			return nil, fmt.Errorf("generate UUIDv7 request id: %w", err)
+		}
+		requestID = id.String()
+	}
+	sessionID := firstNonEmpty(opts.SessionID, "device-agent-"+requestID)
 	locale := firstNonEmpty(opts.Locale, a.cfg.Locale, defaultLocale)
-	events := []Event{}
+	events := make([]Event, 0, 6)
 
-	if _, err := a.Register(ctx); err != nil {
+	ack, err := a.Register(ctx)
+	if err != nil {
 		return nil, fmt.Errorf("register: %w", err)
 	}
+	if ack.Capabilities.HomeAssistant.Status != CapabilityReady {
+		return nil, fmt.Errorf("%w: %s", ErrHomeAssistantBridgeUnavailable, ack.Capabilities.HomeAssistant.ReasonCode)
+	}
+	if ack.Capabilities.TTS.Status != CapabilityReady {
+		return nil, fmt.Errorf("%w: %s", ErrTTSBridgeUnavailable, ack.Capabilities.TTS.ReasonCode)
+	}
 	publish := func(ev Event) error {
-		ev = a.fillEventDefaults(ev, sessionID)
+		ev = a.fillEventDefaults(ev, requestID, sessionID)
 		if err := a.Publish(ctx, ev); err != nil {
 			return err
 		}
@@ -219,191 +407,220 @@ func (a *Agent) RunFakeAssistCycle(ctx context.Context, opts CycleOptions) (*Cyc
 	if err := publish(Event{Type: "voice.capture_started", Mode: "assist"}); err != nil {
 		return nil, fmt.Errorf("publish capture started: %w", err)
 	}
-	if err := publish(Event{Type: "voice.capture_stopped", Mode: "assist", ReasonCode: "fake_utterance_complete", Text: text}); err != nil {
+	if err := publish(Event{Type: "voice.capture_stopped", Mode: "assist", ReasonCode: "fake_utterance_complete"}); err != nil {
 		return nil, fmt.Errorf("publish capture stopped: %w", err)
 	}
 
-	ha, err := a.callHomeAssistant(ctx, text, locale)
+	assist, err := a.callAssist(ctx, AssistRequest{
+		RequestID: requestID,
+		SessionID: sessionID,
+		CommandID: commandID,
+		DeviceID:  a.cfg.Device.DeviceID,
+		RoomID:    a.cfg.Device.RoomID,
+		Text:      text,
+		Locale:    locale,
+	})
 	if err != nil {
-		return nil, fmt.Errorf("home assistant conversation: %w", err)
+		return nil, fmt.Errorf("local Home Assistant bridge: %w", err)
 	}
-	if err := publish(Event{Type: "voice.assist_result", Mode: "assist", Text: ha.Speech, SpeakText: ha.Speech}); err != nil {
+	if strings.TrimSpace(assist.Speech) == "" {
+		return nil, errors.New("local Home Assistant bridge returned no speech")
+	}
+	if err := publish(Event{Type: "voice.assist_result", Mode: "assist", SpeakText: assist.Speech, ReasonCode: assist.ReasonCode}); err != nil {
 		return nil, fmt.Errorf("publish assist result: %w", err)
 	}
 
-	if err := publish(Event{Type: "voice.tts_started", Mode: "assist", Text: ha.Speech}); err != nil {
+	if err := publish(Event{Type: "voice.tts_started", Mode: "assist"}); err != nil {
 		return nil, fmt.Errorf("publish tts started: %w", err)
 	}
-	tts, err := a.callSpeechKitTTS(ctx, ha.Speech, locale)
+	ttsResult, err := a.callSpeechKitTTS(ctx, requestID)
 	if err != nil {
-		return nil, fmt.Errorf("speechkit tts: %w", err)
+		return nil, fmt.Errorf("speechkit local tts bridge: %w", err)
 	}
 	if err := publish(Event{
 		Type:      "voice.tts_finished",
 		Mode:      "assist",
-		Text:      ha.Speech,
-		SpeakText: ha.Speech,
-		Metadata:  map[string]string{"provider": tts.Provider, "format": tts.Format},
+		SpeakText: assist.Speech,
+		Metadata:  map[string]string{"provider": ttsResult.Provider, "format": ttsResult.Format},
 	}); err != nil {
 		return nil, fmt.Errorf("publish tts finished: %w", err)
 	}
 
 	return &CycleResult{
-		SessionID:        sessionID,
-		SpokenText:       ha.Speech,
-		HomeAssistantRaw: ha.Raw,
-		TTSProvider:      tts.Provider,
-		Events:           events,
+		RequestID:      requestID,
+		SessionID:      sessionID,
+		SpokenText:     assist.Speech,
+		ConversationID: assist.ConversationID,
+		ResponseType:   assist.ResponseType,
+		TTSProvider:    ttsResult.Provider,
+		Replayed:       assist.Replayed,
+		Events:         events,
 	}, nil
 }
 
 func (a *Agent) Publish(ctx context.Context, ev Event) error {
-	ev = a.fillEventDefaults(ev, ev.SessionID)
-	return a.postServerJSON(ctx, "/v1/device-agent/events", ev, nil)
+	ev = a.fillEventDefaults(ev, ev.RequestID, ev.SessionID)
+	var ack EventAck
+	return a.postServerJSON(ctx, "/v1/device-agent/events", ev, &ack)
 }
 
-func (a *Agent) fillEventDefaults(ev Event, sessionID string) Event {
+func (a *Agent) fillEventDefaults(ev Event, requestID, sessionID string) Event {
 	ev.Surface = firstNonEmpty(ev.Surface, "device_agent")
 	ev.Mode = firstNonEmpty(ev.Mode, "assist")
+	ev.RequestID = firstNonEmpty(ev.RequestID, requestID)
 	ev.SessionID = firstNonEmpty(ev.SessionID, sessionID)
 	ev.DeviceID = firstNonEmpty(ev.DeviceID, a.cfg.Device.DeviceID)
 	ev.RoomID = firstNonEmpty(ev.RoomID, a.cfg.Device.RoomID)
 	ev.CapturePolicy = firstNonEmpty(ev.CapturePolicy, "device_agent")
-	ev.Transport = firstNonEmpty(ev.Transport, "local_http")
+	ev.Transport = "local_http"
 	if ev.At.IsZero() {
 		ev.At = time.Now().UTC()
 	}
 	return ev
 }
 
-type homeAssistantConversation struct {
-	Speech string
-	Raw    string
-}
-
-func (a *Agent) callHomeAssistant(ctx context.Context, text, locale string) (*homeAssistantConversation, error) {
-	if a.haURL == nil {
-		return nil, ErrMissingHomeAssistantURL
-	}
-	if strings.TrimSpace(a.cfg.HomeAssistantToken) == "" {
-		return nil, ErrMissingHomeAssistantToken
-	}
-	body := map[string]any{
-		"text":     text,
-		"language": locale,
-	}
-	if agent := strings.TrimSpace(a.cfg.HomeAssistantAgent); agent != "" {
-		body["agent_id"] = agent
-	}
-	var out struct {
-		ConversationID string `json:"conversation_id"`
-		Response       struct {
-			Speech struct {
-				Plain *struct {
-					Speech string `json:"speech"`
-				} `json:"plain"`
-				SSML *struct {
-					Speech string `json:"speech"`
-				} `json:"ssml"`
-			} `json:"speech"`
-		} `json:"response"`
-	}
-	raw, err := a.postHomeAssistantJSON(ctx, "/api/conversation/process", body, &out)
-	if err != nil {
+func (a *Agent) callAssist(ctx context.Context, request AssistRequest) (*AssistResponse, error) {
+	var out AssistResponse
+	if err := a.postServerJSON(ctx, "/v1/device-agent/assist", request, &out); err != nil {
 		return nil, err
 	}
-	speech := ""
-	if out.Response.Speech.Plain != nil {
-		speech = strings.TrimSpace(out.Response.Speech.Plain.Speech)
+	if strings.TrimSpace(out.RequestID) != strings.TrimSpace(request.RequestID) {
+		return nil, fmt.Errorf("%w: expected request_id %q, got %q", ErrAssistResponseMismatch, request.RequestID, out.RequestID)
 	}
-	if speech == "" && out.Response.Speech.SSML != nil {
-		speech = strings.TrimSpace(out.Response.Speech.SSML.Speech)
+	if out.Status != "success" && out.Status != "denied" {
+		return nil, fmt.Errorf("%w: unsupported status %q", ErrAssistResponseMismatch, out.Status)
 	}
-	if speech == "" {
-		return nil, errors.New("home assistant response did not include speech")
+	switch out.ActionExecuted {
+	case "yes", "no", "not_applicable":
+	default:
+		return nil, fmt.Errorf("%w: unsupported action_executed %q", ErrAssistResponseMismatch, out.ActionExecuted)
 	}
-	return &homeAssistantConversation{Speech: speech, Raw: string(raw)}, nil
+	return &out, nil
 }
 
-type ttsResult struct {
-	Provider string `json:"provider"`
-	Format   string `json:"format"`
-}
-
-func (a *Agent) callSpeechKitTTS(ctx context.Context, text, locale string) (*ttsResult, error) {
-	var out ttsResult
-	if err := a.postServerJSON(ctx, "/v1/tts/synthesize", map[string]any{
-		"text":   text,
-		"locale": locale,
-		"format": "wav",
+func (a *Agent) callSpeechKitTTS(ctx context.Context, requestID string) (*TTSResponse, error) {
+	var out TTSResponse
+	if err := a.postServerJSON(ctx, "/v1/device-agent/tts", TTSRequest{
+		RequestID: requestID,
+		Format:    "wav",
 	}, &out); err != nil {
 		return nil, err
+	}
+	if strings.TrimSpace(out.RequestID) != strings.TrimSpace(requestID) {
+		return nil, fmt.Errorf("%w: TTS request_id does not match", ErrAssistResponseMismatch)
 	}
 	return &out, nil
 }
 
 func (a *Agent) postServerJSON(ctx context.Context, path string, body, out any) error {
-	_, err := a.doJSON(ctx, a.serverURL, path, a.cfg.ServerToken, body, out)
-	return err
-}
-
-func (a *Agent) postHomeAssistantJSON(ctx context.Context, path string, body, out any) ([]byte, error) {
-	if a.haURL == nil {
-		return nil, ErrMissingHomeAssistantURL
-	}
-	return a.doJSON(ctx, a.haURL, path, a.cfg.HomeAssistantToken, body, out)
-}
-
-func (a *Agent) doJSON(ctx context.Context, base *url.URL, path, token string, body, out any) ([]byte, error) {
 	var buf bytes.Buffer
 	if body != nil {
 		if err := json.NewEncoder(&buf).Encode(body); err != nil {
-			return nil, err
+			return err
 		}
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, resolve(base, path), &buf)
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, resolve(a.serverURL, path), &buf)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	req.Header.Set("Accept", "application/json")
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("User-Agent", a.userAgent)
-	if token = strings.TrimSpace(token); token != "" {
-		req.Header.Set("Authorization", "Bearer "+token)
-	}
+	req.Header.Set("Authorization", "Bearer "+a.cfg.PairingToken)
+	req.Header.Set("X-SpeechKit-Device-ID", a.cfg.Device.DeviceID)
 	resp, err := a.http.Do(req)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	defer resp.Body.Close() //nolint:errcheck // response body is fully read below
-	raw, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, err
+	responseInstanceID := strings.TrimSpace(resp.Header.Get(ServerInstanceHeader))
+	if responseInstanceID == "" {
+		return ErrServerIdentityMissing
+	}
+	if responseInstanceID != "" && responseInstanceID != a.cfg.ExpectedServerInstanceID {
+		return fmt.Errorf("%w: expected %q, got %q", ErrServerIdentityMismatch, a.cfg.ExpectedServerInstanceID, responseInstanceID)
+	}
+	limit := int64(maxJSONResponseBytes)
+	if path == "/v1/device-agent/tts" {
+		limit = maxTTSResponseBytes
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return raw, fmt.Errorf("POST %s returned %d: %s", path, resp.StatusCode, strings.TrimSpace(string(raw)))
+		limit = maxErrorResponseBytes
+	}
+	raw, err := io.ReadAll(io.LimitReader(resp.Body, limit+1))
+	if err != nil {
+		return err
+	}
+	if int64(len(raw)) > limit {
+		return ErrResponseTooLarge
+	}
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		httpErr := &HTTPError{Method: http.MethodPost, Path: path, StatusCode: resp.StatusCode}
+		_ = json.Unmarshal(raw, &httpErr.Envelope)
+		return httpErr
 	}
 	if out != nil && len(bytes.TrimSpace(raw)) > 0 {
 		if err := json.Unmarshal(raw, out); err != nil {
-			return raw, fmt.Errorf("decode %s response: %w", path, err)
+			return fmt.Errorf("decode %s response: %w", path, err)
 		}
 	}
-	return raw, nil
+	return nil
 }
 
-func parseBaseURL(raw string) (*url.URL, error) {
+func parseLocalBaseURL(raw string) (*url.URL, error) {
 	raw = strings.TrimRight(strings.TrimSpace(raw), "/")
 	if raw == "" {
 		return nil, errors.New("empty URL")
+	}
+	if err := netsec.ValidateProviderURL(raw, localValidation()); err != nil {
+		return nil, err
 	}
 	u, err := url.Parse(raw)
 	if err != nil {
 		return nil, err
 	}
-	if u.Scheme == "" || u.Host == "" {
-		return nil, errors.New("URL must include scheme and host")
+	if u.RawQuery != "" || u.Fragment != "" || (u.Path != "" && u.Path != "/") {
+		return nil, fmt.Errorf("server URL must be an origin without path, query, or fragment")
+	}
+	if strings.EqualFold(u.Scheme, "http") && !localHTTPHostAllowed(u.Hostname()) {
+		return nil, ErrInsecureServerTransport
 	}
 	return u, nil
+}
+
+func localHTTPHostAllowed(host string) bool {
+	if strings.EqualFold(strings.TrimSpace(host), "localhost") {
+		return true
+	}
+	ip := net.ParseIP(strings.TrimSpace(host))
+	return ip != nil && ip.IsLoopback()
+}
+
+func validPairingToken(value string) bool {
+	if len(value) < minimumPairingTokenBytes || len(value) > 512 {
+		return false
+	}
+	for _, character := range value {
+		switch {
+		case character >= 'a' && character <= 'z':
+		case character >= 'A' && character <= 'Z':
+		case character >= '0' && character <= '9':
+		case character == '-', character == '.', character == '_', character == '~':
+		case character == '+', character == '/', character == '=':
+		default:
+			return false
+		}
+	}
+	return true
+}
+
+func localValidation() netsec.ValidationOptions {
+	return netsec.ValidationOptions{
+		AllowLoopback: true,
+		AllowPrivate:  true,
+		AllowHTTP:     true,
+		RequireLocal:  true,
+	}
 }
 
 func resolve(base *url.URL, path string) string {
@@ -416,19 +633,15 @@ func normalizeDevice(d DeviceDescriptor) DeviceDescriptor {
 	d.DeviceID = firstNonEmpty(d.DeviceID, "speechkit-device-agent-001")
 	d.DisplayName = firstNonEmpty(d.DisplayName, d.DeviceID)
 	d.RoomID = firstNonEmpty(d.RoomID, "default")
-	d.CaptureDevice.ID = firstNonEmpty(d.CaptureDevice.ID, "fake-mic")
-	d.CaptureDevice.Name = firstNonEmpty(d.CaptureDevice.Name, "Fake microphone")
 	d.CaptureDevice.Kind = firstNonEmpty(d.CaptureDevice.Kind, "microphone")
-	d.CaptureDevice.Transport = firstNonEmpty(d.CaptureDevice.Transport, "fake")
-	d.OutputDevice.ID = firstNonEmpty(d.OutputDevice.ID, "fake-speaker")
-	d.OutputDevice.Name = firstNonEmpty(d.OutputDevice.Name, "Fake speaker")
 	d.OutputDevice.Kind = firstNonEmpty(d.OutputDevice.Kind, "speaker")
-	d.OutputDevice.Transport = firstNonEmpty(d.OutputDevice.Transport, "fake")
-	d.Wakeword.Enabled = true
-	d.Wakeword.Phrase = firstNonEmpty(d.Wakeword.Phrase, "Hey Kombify")
-	d.Wakeword.Backend = firstNonEmpty(d.Wakeword.Backend, "fake")
-	d.Wakeword.Status = firstNonEmpty(d.Wakeword.Status, "ready")
+	d.Wakeword.Status = firstNonEmpty(d.Wakeword.Status, CapabilityUnverified)
 	return d
+}
+
+func normalizeHealth(h Health) Health {
+	h.Status = firstNonEmpty(h.Status, CapabilityUnverified)
+	return h
 }
 
 func firstNonEmpty(values ...string) string {

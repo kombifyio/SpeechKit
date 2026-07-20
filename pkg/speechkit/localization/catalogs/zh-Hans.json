@@ -1,0 +1,7 @@
+{
+  "companion.home_assistant.not_configured": "Home Assistant 未配置智能家居命令。",
+  "companion.home_assistant.command.empty": "智能家居命令为空。",
+  "companion.home_assistant.command.not_matched": "Home Assistant 无法将该智能家居命令匹配到目标。",
+  "companion.home_assistant.command.rejected": "Home Assistant 拒绝了该智能家居命令。",
+  "companion.home_assistant.unavailable": "Home Assistant 当前不可用。该智能家居命令未被转发。"
+}

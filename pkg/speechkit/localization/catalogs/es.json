@@ -1,0 +1,7 @@
+{
+  "companion.home_assistant.not_configured": "Home Assistant no está configurado para comandos de hogar inteligente.",
+  "companion.home_assistant.command.empty": "El comando de hogar inteligente estaba vacío.",
+  "companion.home_assistant.command.not_matched": "Home Assistant no pudo asociar ese comando de hogar inteligente con un destino.",
+  "companion.home_assistant.command.rejected": "Home Assistant rechazó ese comando de hogar inteligente.",
+  "companion.home_assistant.unavailable": "Home Assistant no está disponible en este momento. El comando de hogar inteligente no se reenvió."
+}

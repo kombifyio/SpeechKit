@@ -1,0 +1,373 @@
+asyncapi: 3.1.0
+info:
+  title: SpeechKit Streaming Dictation WebSocket API
+  version: 1.0.0
+  description: |
+    Stable v1 WebSocket contract for the SpeechKit Server's streaming
+    Dictation surface — live partial transcripts for keyboards and other
+    realtime text-entry clients.
+
+    A client first calls `POST /v1/dictation/stream/sessions` (see
+    openapi.v1.yaml) to obtain a session id, `ws_url`, a single-use
+    `ws_subprotocol`, and a `capabilities` block, then upgrades a WebSocket
+    to `GET /v1/dictation/stream/sessions/{id}/ws` with
+    `Sec-WebSocket-Protocol: ticket.<value>`. Do not send the HTTP bearer
+    token in the WebSocket handshake. Tickets default to 90 seconds, are
+    single-use, and are not refreshed in v1.
+
+    When the session-create response reports `capabilities.streaming: false`,
+    no streaming-capable STT provider is configured on this deployment and a
+    `start` frame would fail with `streaming_unavailable` — fall back to the
+    batch endpoint `POST /v1/dictation/transcribe` instead of upgrading.
+
+    The protocol multiplexes two kinds of frames over the same WebSocket:
+
+    - **JSON control frames** (`text` opcode): a JSON object with a required
+      `type` field. The full set is enumerated below.
+    - **Binary audio frames** (`binary` opcode): raw PCM from client to
+      server only (default **16 kHz S16 mono**; the `start` frame may
+      negotiate 8–48 kHz, 1–2 channels). The server never sends audio on
+      this surface.
+
+    Session vs. segment: one WebSocket session carries any number of
+    sequential **segments**. Each `start` frame opens a fresh provider-native
+    dictation stream and is acknowledged with `ready`; `finalize` flushes the
+    provider's buffered tail; `segment_done` closes the segment, after which
+    the next `start` may follow on the same socket. A keyboard maps one mic
+    press to one segment and keeps the socket warm between presses.
+
+    Transcript semantics: `transcript` frames with `done: false` are drafts
+    that may update UI state (e.g. composing text); only `done: true` finals
+    should be committed to the target text field. Finals arrive continuously
+    via provider endpointing during a segment and once more as the flushed
+    tail after `finalize`.
+
+    Golden example frames for every message type live in
+    `fixtures/dictation-stream.v1.json`; a Go test asserts the server's
+    marshaled frames match them byte-for-byte (producer drift check), and
+    client SDKs replay the same file against their codecs (consumer check).
+
+    Field guarantees follow the same rules as openapi.v1.yaml: additive
+    across minor releases, no rename or removal without a v2 bump.
+
+  contact:
+    url: https://github.com/kombifyio/SpeechKit
+  license:
+    name: Apache-2.0
+    url: https://www.apache.org/licenses/LICENSE-2.0
+
+defaultContentType: application/json
+
+servers:
+  production:
+    host: api.speechkit.dev
+    pathname: /v1/dictation/stream
+    protocol: wss
+    description: Replace with your deployment's public host.
+    security:
+      - $ref: '#/components/securitySchemes/sessionTicket'
+
+channels:
+  dictationStreamSession:
+    address: /sessions/{sessionId}/ws
+    title: Streaming Dictation session
+    description: |
+      One WebSocket per streaming Dictation session. The first message a
+      client sends MUST be a StartFrame; the server replies with ReadyFrame
+      and live TranscriptFrames follow as binary PCM arrives.
+    parameters:
+      sessionId:
+        description: Session id returned by `POST /v1/dictation/stream/sessions`.
+    messages:
+      # Client to server JSON control frames
+      StartFrame:
+        $ref: '#/components/messages/StartFrame'
+      FinalizeFrame:
+        $ref: '#/components/messages/FinalizeFrame'
+      PingFrame:
+        $ref: '#/components/messages/PingFrame'
+      StopFrame:
+        $ref: '#/components/messages/StopFrame'
+      # Client to server binary audio
+      AudioChunkClient:
+        $ref: '#/components/messages/AudioChunkClient'
+      # Server to client JSON control frames
+      ReadyFrame:
+        $ref: '#/components/messages/ReadyFrame'
+      TranscriptFrame:
+        $ref: '#/components/messages/TranscriptFrame'
+      SegmentDoneFrame:
+        $ref: '#/components/messages/SegmentDoneFrame'
+      ErrorFrame:
+        $ref: '#/components/messages/ErrorFrame'
+      SessionEndFrame:
+        $ref: '#/components/messages/SessionEndFrame'
+      PongFrame:
+        $ref: '#/components/messages/PongFrame'
+
+operations:
+  sendClientFrame:
+    action: send
+    channel:
+      $ref: '#/channels/dictationStreamSession'
+    summary: Frames the client sends to the server.
+    description: |
+      The first frame MUST be StartFrame. Binary PCM chunks may only be sent
+      while a segment is active (between ReadyFrame and SegmentDoneFrame);
+      audio racing a finalize is dropped silently. After SegmentDoneFrame,
+      the next StartFrame begins a new segment on the same socket.
+    messages:
+      - $ref: '#/channels/dictationStreamSession/messages/StartFrame'
+      - $ref: '#/channels/dictationStreamSession/messages/FinalizeFrame'
+      - $ref: '#/channels/dictationStreamSession/messages/PingFrame'
+      - $ref: '#/channels/dictationStreamSession/messages/StopFrame'
+      - $ref: '#/channels/dictationStreamSession/messages/AudioChunkClient'
+  receiveServerFrame:
+    action: receive
+    channel:
+      $ref: '#/channels/dictationStreamSession'
+    summary: Frames the server sends to the client.
+    description: |
+      ReadyFrame acknowledges each StartFrame. TranscriptFrames stream while
+      the segment is active. SegmentDoneFrame ends the segment. ErrorFrame
+      is recoverable unless followed by SessionEndFrame, which is terminal —
+      the server closes the socket after sending it.
+    messages:
+      - $ref: '#/channels/dictationStreamSession/messages/ReadyFrame'
+      - $ref: '#/channels/dictationStreamSession/messages/TranscriptFrame'
+      - $ref: '#/channels/dictationStreamSession/messages/SegmentDoneFrame'
+      - $ref: '#/channels/dictationStreamSession/messages/ErrorFrame'
+      - $ref: '#/channels/dictationStreamSession/messages/SessionEndFrame'
+      - $ref: '#/channels/dictationStreamSession/messages/PongFrame'
+
+components:
+  securitySchemes:
+    sessionTicket:
+      type: httpApiKey
+      name: Sec-WebSocket-Protocol
+      in: header
+      description: |
+        Single-use HMAC ticket carried as the WebSocket subprotocol
+        `ticket.<value>` (minted by `POST /v1/dictation/stream/sessions`).
+        Keeps the credential out of URLs and proxy access logs.
+
+  messages:
+    StartFrame:
+      name: start
+      title: Start a segment
+      payload:
+        $ref: '#/components/schemas/StartFrame'
+    FinalizeFrame:
+      name: finalize
+      title: Flush the active segment
+      payload:
+        $ref: '#/components/schemas/TypeOnlyFrame'
+    PingFrame:
+      name: ping
+      title: Liveness probe
+      payload:
+        $ref: '#/components/schemas/TypeOnlyFrame'
+    StopFrame:
+      name: stop
+      title: End the session
+      payload:
+        $ref: '#/components/schemas/TypeOnlyFrame'
+    AudioChunkClient:
+      name: audioChunkClient
+      title: Microphone PCM chunk
+      contentType: application/octet-stream
+      summary: Raw PCM frame in the format negotiated by the StartFrame (default 16 kHz S16 mono).
+    ReadyFrame:
+      name: ready
+      title: Segment acknowledged
+      payload:
+        $ref: '#/components/schemas/ReadyFrame'
+    TranscriptFrame:
+      name: transcript
+      title: Draft or final transcript
+      payload:
+        $ref: '#/components/schemas/TranscriptFrame'
+    SegmentDoneFrame:
+      name: segment_done
+      title: Segment closed
+      payload:
+        $ref: '#/components/schemas/SegmentDoneFrame'
+    ErrorFrame:
+      name: error
+      title: Recoverable error
+      payload:
+        $ref: '#/components/schemas/ErrorFrame'
+    SessionEndFrame:
+      name: session_end
+      title: Terminal session end
+      payload:
+        $ref: '#/components/schemas/SessionEndFrame'
+    PongFrame:
+      name: pong
+      title: Ping reply
+      payload:
+        $ref: '#/components/schemas/TypeOnlyFrame'
+
+  schemas:
+    TypeOnlyFrame:
+      type: object
+      required: [type]
+      properties:
+        type:
+          type: string
+          enum: [finalize, ping, stop, pong]
+
+    StartFrame:
+      type: object
+      required: [type]
+      properties:
+        type:
+          type: string
+          const: start
+        language:
+          type: string
+          description: BCP-47 / ISO language hint, e.g. `de`, `en`, `auto`.
+        model:
+          type: string
+          description: Provider-specific model override; empty uses the routed default.
+        provider_profile_id:
+          type: string
+          description: |
+            Catalog profile to prioritize, e.g. `stt.deepgram.nova-3`. When
+            omitted, the server defaults from the edge-resolved user voice
+            preference captured at session-mint time
+            (`x-speechkit-pref-stt-primary`, then `-secondary`); without
+            either, the router's configured order applies. Unknown or
+            unconfigured values never fail the segment — routing falls back.
+        interim_results:
+          type: boolean
+          default: true
+          description: Defaults to true when omitted — live drafts are the point of this endpoint.
+        endpointing_ms:
+          type: integer
+          description: Provider endpointing window in milliseconds; 0 uses the provider default.
+        turn_detection:
+          type: boolean
+        keyterms:
+          type: array
+          items: { type: string }
+          description: Vocabulary boost terms.
+        prompt_hint:
+          type: string
+        diarization:
+          type: boolean
+        format:
+          $ref: '#/components/schemas/AudioFormat'
+
+    AudioFormat:
+      type: object
+      properties:
+        encoding:
+          type: string
+          enum: [linear16, pcm16]
+          default: linear16
+        sample_rate_hz:
+          type: integer
+          minimum: 8000
+          maximum: 48000
+          default: 16000
+        channels:
+          type: integer
+          minimum: 1
+          maximum: 2
+          default: 1
+
+    ReadyFrame:
+      type: object
+      required: [type, segment_id]
+      properties:
+        type:
+          type: string
+          const: ready
+        segment_id:
+          type: integer
+          description: 1-based segment counter within this session.
+
+    TranscriptFrame:
+      type: object
+      required: [type, segment_id, text, done]
+      properties:
+        type:
+          type: string
+          const: transcript
+        segment_id:
+          type: integer
+        sequence:
+          type: integer
+          description: Provider-native monotonic sequence, when available.
+        text:
+          type: string
+        done:
+          type: boolean
+          description: false = draft (UI-only), true = final (commit to target).
+        language:
+          type: string
+        confidence:
+          type: number
+        provider:
+          type: string
+        model:
+          type: string
+        words:
+          type: array
+          items:
+            $ref: '#/components/schemas/Word'
+        speakers:
+          type: object
+          description: Diarization result (shape shared with the batch endpoint's `speakers`); present only when diarization was requested.
+
+    Word:
+      type: object
+      required: [text]
+      properties:
+        text: { type: string }
+        confidence: { type: number }
+        start_ms: { type: integer }
+        end_ms: { type: integer }
+
+    SegmentDoneFrame:
+      type: object
+      required: [type, segment_id]
+      properties:
+        type:
+          type: string
+          const: segment_done
+        segment_id:
+          type: integer
+
+    ErrorFrame:
+      type: object
+      required: [type, code, message]
+      properties:
+        type:
+          type: string
+          const: error
+        code:
+          type: string
+          enum:
+            - start_required
+            - segment_active
+            - no_active_segment
+            - streaming_unavailable
+            - provider_stream_failed
+            - provider_stream_closed
+            - format_unsupported
+            - invalid_frame
+        message:
+          type: string
+
+    SessionEndFrame:
+      type: object
+      required: [type, reason]
+      properties:
+        type:
+          type: string
+          const: session_end
+        reason:
+          type: string
+          enum: [client, idle, max_duration, max_audio, error, shutdown]

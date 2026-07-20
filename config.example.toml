@@ -211,7 +211,7 @@ mode_source = "local"
 listen_addr = ":8080"                         # Bind address for speechkit-server. Use "127.0.0.1:8080" for local-only no-auth tests.
 public_url = ""                               # External API base for generated WS URLs, e.g. "https://speechkit.example.com/api".
 modes = ["dictation", "assist", "voiceagent"] # Empty/missing enables all three modes.
-auth_mode = "bearer"                          # bearer, edge_hmac, bearer_or_edge, none
+auth_mode = "bearer"                          # bearer, edge_hmac, bearer_or_edge, oidc, bearer_or_oidc, none
 bearer_token_env = "SPEECHKIT_SERVER_TOKEN"   # Env var name only; token value must not be committed.
 bearer_role = ""                              # Optional static role for bearer callers, e.g. "admin" for trusted single-operator installs.
 edge_auth_secret_env = "EDGE_AUTH_SECRET"     # Env var name for edge_hmac mode.
@@ -221,7 +221,7 @@ rate_limit_burst = 20
 # Per-endpoint token costs. Keys: "METHOD PATH" (preferred) or bare PATH.
 # Default 1.0 for entries not listed. Audit S-4: ensure expensive
 # handlers drain the global bucket proportionally to their cost.
-rate_limit_endpoint_costs = { "POST /v1/dictation/transcribe" = 5.0, "POST /v1/assist/process" = 3.0, "POST /v1/voiceagent/sessions" = 10.0 }
+rate_limit_endpoint_costs = { "POST /v1/dictation/transcribe" = 5.0, "POST /v1/assist/process" = 3.0, "POST /v1/voiceagent/sessions" = 10.0, "POST /v1/dictation/stream/sessions" = 5.0 }
 # Hard daily ceiling for Plan="demo" identities (smoke-token surface).
 # Keyed by UserID + client IP. Zero disables the quota. Audit S-5.
 demo_daily_quota = 100
@@ -249,6 +249,22 @@ whisper_port = 8180
 model_dir = "/var/lib/speechkit/models"
 log_format = "json"
 log_level = "info"
+
+# Streaming Dictation WebSocket (live partial transcripts for keyboards and
+# other realtime clients): POST /v1/dictation/stream/sessions mints a
+# single-use ticket, then GET .../{id}/ws upgrades with
+# Sec-WebSocket-Protocol: ticket.<value>. Requires a streaming-capable STT
+# provider (e.g. Deepgram); without one, session creation reports
+# capabilities.streaming=false and clients fall back to the batch endpoint.
+# Ticket TTL and per-frame read limit reuse ticket_ttl_sec/ws_read_limit_bytes.
+[server.dictation_stream]
+enabled = true
+max_global_sessions = 100
+max_per_identity_sessions = 3
+idle_timeout_sec = 300        # negative disables the idle watchdog
+max_session_sec = 0           # 0 disables; hosted deployments should set a finite budget
+max_stream_audio_seconds = 0  # cumulative uploaded audio per session; 0 disables
+emulation = "off"             # reserved; v1 supports only "off"
 
 [server.features]
 catalog = true
@@ -300,6 +316,8 @@ beta_install_secret_env = "SPEECHKIT_BETA_INSTALL_SECRET"
 
 [tts]
 enabled = true
+# Change to local-only before enabling [server.device_agent]; startup rejects
+# every other TTS strategy for that profile.
 strategy = "cloud-first"      # cloud-first, local-first, cloud-only, local-only
 speed = 1.0                   # 0.25 - 4.0
 format = "mp3"                # mp3, wav, opus, pcm
@@ -437,9 +455,15 @@ vad_silence_duration_ms = 700
 # [providers.assemblyai]
 # enabled = false
 # api_key_env = "ASSEMBLYAI_API_KEY"
-# stt_models = "universal-3-pro,universal-2"
+# stt_models = "universal-3-5-pro,universal-2"
 # streaming_model = "universal-3-5-pro"
 # streaming_base_url = "wss://streaming.assemblyai.com"
+# Short clips (80ms–120s) ride the synchronous Universal-3.5 Pro endpoint
+# (finished transcript in one request, ~134ms p50) with prompt steering,
+# keyterms, and conversation context; diarization/PII/long audio stay on the
+# async flow automatically.
+# sync_base_url = "https://sync.assemblyai.com"  # or sync.us / sync.eu for data-zone pinning
+# disable_sync = false                            # true forces the classic async upload+poll flow
 
 # [providers.ollama]        # Local Provider: externally managed Ollama, not SpeechKit Built-in
 # enabled = false
@@ -494,15 +518,51 @@ vad_silence_duration_ms = 700
 # include_window_context = true
 
 # [assist.home_assistant]
-# # Optional Smart-Home bridge. When url + token_env are both set, the
-# # voice-companion HomeAssistant skill routes commands like
-# # "Hey Quby, schalte das Wohnzimmerlicht aus" through HA's
-# # Conversation API. The token itself is NEVER stored in TOML — only the
-# # environment variable name is configured here. Use Doppler / Windows
-# # Credential Manager / a process env var to provide the actual token.
-# url = "https://ha.example.lan:8123"
-# token_env = "HA_LONG_LIVED_TOKEN"
-# # language = "de"     # Optional override (default uses caller locale)
+# # Server-owned Smart-Home bridge. The local device-agent G0 path requires
+# # this block and never sends the Home Assistant origin or token to a device,
+# # MCP, Gateway, or federation surface. HTTP is loopback-only; LAN/DNS origins
+# # require HTTPS. The token value is NEVER stored in TOML.
+# url = "https://homeassistant.home.arpa:8123"
+# token_env = "SPEECHKIT_HOME_ASSISTANT_TOKEN"
+# agent_id = "conversation.home_assistant" # Optional HA Conversation agent.
+# language = "de"                          # Optional server-side override.
+#
+# # G0 local satellite bridge. Every device has an independent secret and
+# # non-recycled pairing epoch. The four routes are POST-only under
+# # /v1/device-agent/{register,events,assist,tts}; /api/v1, MCP, Gateway, and
+# # federation do not expose them. Before enabling, set the active [tts] block
+# # above to enabled=true and strategy="local-only", and configure a ready local
+# # provider. The TTS route accepts only request_id + format and synthesizes the
+# # persisted HA speech/language from that pairing's completed durable claim;
+# # caller-provided text/locale and cloud TTS are rejected. Zero claim settings
+# # select safe defaults.
+# [server.device_agent]
+# enabled = true
+# server_instance_id = "speechkit-home-01"
+# claim_store_path = "/var/lib/speechkit/device-agent-claims.db"
+# max_request_age_sec = 600
+# future_skew_sec = 120
+# claim_retention_sec = 86400
+# max_claims = 10000
+#
+# [[server.device_agent.devices]]
+# device_id = "speaker-kitchen-001"
+# pairing_id = "pairing-kitchen-2026-07"
+# room_id = "kitchen"
+# token_env = "SPEECHKIT_DEVICE_KITCHEN_TOKEN"
+# allowed_client_cidrs = ["192.168.10.42/32"]
+#
+# # Exact immutable G0 allowlist entry. This is not a Workbench approval or
+# # Cloud standing grant. Only turn_on/turn_off for one light.* entity is
+# # accepted, and the RFC3339 window must be positive and at most 31 days.
+# [[server.device_agent.devices.local_rules]]
+# rule_id = "kitchen-light-off"
+# trigger_text = "turn off the kitchen light"
+# locale = "en-US"
+# action = "turn_off"
+# entity_id = "light.kitchen"
+# not_before = "2026-07-19T00:00:00Z" # Replace with a current approved window.
+# expires_at = "2026-08-18T00:00:00Z"
 
 # [model_selection.tts]
 # # Voice-Output model selection — pins which TTS provider Assist and

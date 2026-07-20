@@ -1,0 +1,7 @@
+{
+  "companion.home_assistant.not_configured": "Home Assistant ist für Smart-Home-Befehle nicht konfiguriert.",
+  "companion.home_assistant.command.empty": "Der Smart-Home-Befehl war leer.",
+  "companion.home_assistant.command.not_matched": "Home Assistant konnte diesen Smart-Home-Befehl keinem Ziel zuordnen.",
+  "companion.home_assistant.command.rejected": "Home Assistant hat diesen Smart-Home-Befehl abgelehnt.",
+  "companion.home_assistant.unavailable": "Home Assistant ist derzeit nicht verfügbar. Der Smart-Home-Befehl wurde nicht weitergeleitet."
+}

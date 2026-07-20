@@ -11,6 +11,139 @@ IDs, source paths, and other maintainer-only vocabulary.
 
 ## [Unreleased]
 
+## [0.50.0] - 2026-07-19
+
+Unified Voice release. Streaming dictation over one warm WebSocket, a second
+first-class speech provider, account-level voice preferences, and sign-in
+support for per-user clients.
+
+### Highlights
+
+- **Live voice typing**: Streaming dictation delivers draft words while you
+  speak — the low-latency path keyboards and realtime text entry have been
+  waiting for, with automatic fallback to classic transcription.
+- **AssemblyAI joins Deepgram**: Both premium speech providers are now
+  first-class for transcription, including live streaming partials, and short
+  clips finish in a single round trip.
+- **Your providers, everywhere**: Pick your preferred speech providers once
+  and every hosted request follows them automatically, with graceful fallback
+  when a provider is unavailable.
+- **Sign in with your account**: One deployment now accepts both service
+  tokens and identity-provider logins, unlocking per-user mobile and web
+  clients.
+
+### Added
+
+- User voice preferences, end to end: a signed-in account's preferred
+  speech providers (for example Deepgram first, AssemblyAI second) now
+  travel with every hosted request and steer transcription automatically —
+  no per-request configuration in any app. Preferences are edited once in
+  the Workbench and apply across every surface; requests may still pin an
+  exact provider profile explicitly (`provider_profile_id`, also on batch
+  transcription now), and when a preferred provider is unavailable the
+  server falls back gracefully and reports which provider actually ran.
+
+- AssemblyAI Universal-3.5 Pro across all speech paths. Short dictation
+  clips (up to two minutes) now ride AssemblyAI's synchronous endpoint and
+  come back as a finished transcript in a single round trip — no more
+  upload-and-poll for everyday utterances — with automatic fallback to the
+  classic flow for long audio, diarization, and redaction requests.
+  Transcription quality can now be steered with a short situational prompt
+  ("homelab voice commands from a non-technical speaker"), explicit key
+  terms, and the new `conversation_context` field carrying the preceding
+  dialogue turns. AssemblyAI also becomes the second provider for live
+  streaming dictation partials, with the situational hint applied from the
+  first audio frame.
+
+- New server auth mode `bearer_or_oidc`: one deployment accepts both the
+  static service bearer token and IdP-issued JWTs (validated against the
+  configured JWKS endpoint). This lets per-user clients such as mobile apps
+  sign in through an identity provider while existing service callers keep
+  their bearer token — no second deployment or proxy needed.
+
+- Streaming Dictation over WebSocket: `POST /v1/dictation/stream/sessions`
+  mints a single-use ticket, then the client upgrades to
+  `GET /v1/dictation/stream/sessions/{id}/ws` and streams raw PCM up while
+  live draft and final transcripts flow down — the low-latency voice-typing
+  path for keyboards and other realtime text-entry clients. One warm socket
+  carries any number of sequential segments (one per mic press): `start` →
+  partial/final `transcript` frames → `finalize` → `segment_done`. Requires a
+  streaming-capable speech provider (Deepgram today); deployments without one
+  report `capabilities.streaming = false` at session creation so clients fall
+  back to the existing batch endpoint. Configurable via
+  `[server.dictation_stream]` (session caps, idle timeout, per-session audio
+  budget); the wire contract is specified in
+  `docs/server/asyncapi.dictation-stream.v1.yaml` with golden example frames
+  in `docs/server/fixtures/dictation-stream.v1.json` that CI verifies against
+  the server's actual frames.
+
+### Changed
+
+- Native WebSocket clients (mobile apps, CLIs) no longer need the
+  empty-Origin development override to reach the ticketed Voice Agent and
+  streaming Dictation sockets: a request without an `Origin` header that
+  presents its session ticket subprotocol now proceeds straight to ticket
+  verification. Browser requests remain subject to the configured origin
+  allowlist, and ticketless requests without an `Origin` stay denied by
+  default.
+
+### Fixed
+
+- Streaming dictation sessions that were created but never attached (for
+  example when a client falls back to batch transcription or loses its
+  network right after session creation) no longer occupy per-user session
+  slots forever — they are reaped automatically once their ticket expires,
+  so repeated fallbacks cannot lock an account out with a
+  "per user limit exceeded" error.
+- The streaming Dictation session response now honors the configured public
+  server URL when building `ws_url`, matching the Voice Agent behavior
+  behind reverse proxies and Docker port mappings.
+- Short dictation clips without an explicit language keep automatic language
+  detection instead of being transcribed as English: the synchronous
+  AssemblyAI fast path is only used when the request pins a language.
+
+## [0.49.0] - 2026-07-14
+
+Companion Device release. This release turns SpeechKit's voice-companion
+functions into a public, reusable part of the SDK and adds the pieces a
+standalone smart-speaker companion and ESPHome / Home Assistant voice
+satellites need.
+
+### Highlights
+
+- **Single-word "Kombify" wake word**: A new one-word wake model ("Kombify",
+  no "Hey") is available for the desktop app and companion hosts, alongside the
+  existing "Hey ..." phrases.
+- **Reusable Voice-Companion skills**: The built-in skills (time, date, math,
+  weather, timer, reminder, Wikipedia, temperature) are now a public SDK package
+  any Go host can embed, and timers and reminders now fire on their own.
+- **ESPHome / Home Assistant voice satellites**: A new opt-in Wyoming speech
+  backend lets Home-Assistant-mediated ESPHome satellites use SpeechKit for
+  speech-to-text and text-to-speech, and a public wake-word model endpoint
+  serves models to devices.
+
+### Added
+
+- A public voice-companion skill catalog that hosts can embed directly,
+  including a new temperature-conversion skill (Celsius / Fahrenheit / Kelvin)
+  in German and English.
+- A built-in timer and reminder scheduler so those skills ring on their own,
+  with a callback hosts can use to play their own alert sound.
+- A single-word "Kombify" wake-word model in the wake-word catalog and the
+  desktop download manager.
+- An opt-in Wyoming speech backend so ESPHome / Home Assistant voice satellites
+  can use SpeechKit for speech-to-text and text-to-speech over the local
+  network.
+- A public wake-word model endpoint that serves openWakeWord models today and
+  the ESPHome on-device wake-word manifest format when those models are
+  published.
+
+### Changed
+
+- When a matched companion skill cannot answer a request, hosts that have a
+  language model configured now fall through to that model instead of returning
+  an empty result, matching the built-in assistant behavior.
+
 ## [0.48.1] - 2026-06-28
 
 Patch release for the v0.48 Windows desktop line.

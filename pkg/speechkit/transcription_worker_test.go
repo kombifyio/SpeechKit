@@ -991,3 +991,94 @@ func TestTranscriptionWorkerSuccessLogRedactsTranscriptText(t *testing.T) {
 		t.Fatalf("expected success log marker, got logs: %s", joined)
 	}
 }
+
+// panicOutput panics on delivery, simulating a host output-injection callback
+// (e.g. WebView2/text-field paste) that faults during a transcript hand-off.
+type panicOutput struct{}
+
+func (panicOutput) Deliver(_ context.Context, _ Transcript, _ any) error {
+	panic("boom in output delivery")
+}
+
+// panicTranscriber panics on every call, simulating a provider adapter that
+// faults while transcribing a segment.
+type panicTranscriber struct{}
+
+func (panicTranscriber) Transcribe(_ context.Context, _ []byte, _ float64, _ string) (Transcript, error) {
+	panic("boom in transcriber")
+}
+
+// A panic in synchronous delivery runs on the worker's job-loop goroutine.
+// Without handleJobSafely's per-job recover it would crash the whole process
+// (the desktop host installs no top-level panic handler). The worker must
+// instead log the panic and keep processing the next job.
+func TestTranscriptionWorkerRecoversFromOutputPanic(t *testing.T) {
+	transcriber := &countingTranscriber{transcript: Transcript{Text: "hallo", Provider: "deepgram"}}
+	worker, err := NewTranscriptionWorker(TranscriptionWorkerConfig{
+		Timeout:   time.Second,
+		QueueSize: 4,
+		Runner:    NewTranscriptionRunner(transcriber, nil),
+		Output:    panicOutput{},
+	})
+	if err != nil {
+		t.Fatalf("NewTranscriptionWorker() error = %v", err)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	worker.Start(ctx)
+
+	for i := 0; i < 2; i++ {
+		if err := worker.Submit(TranscriptionJob{
+			Submission: Submission{WAV: []byte("wav"), DurationSecs: 0.2, Language: "de"},
+			Target:     "editor",
+		}); err != nil {
+			t.Fatalf("Submit() job %d error = %v", i, err)
+		}
+	}
+
+	worker.Close()
+	worker.Wait() // must return; a leaked panic would have aborted the test binary
+
+	if got := transcriber.count(); got != 2 {
+		t.Fatalf("transcriber calls = %d, want 2 (worker must keep running after a delivery panic)", got)
+	}
+}
+
+// A multi-segment job runs each segment on its own goroutine, so a panic there
+// is invisible to handleJobSafely's recover and needs the segment-level recover
+// added in transcribeSegmentsParallel. Without it, this crashes the process.
+func TestTranscriptionWorkerRecoversFromSegmentPanic(t *testing.T) {
+	output := &recordingOutput{}
+	worker, err := NewTranscriptionWorker(TranscriptionWorkerConfig{
+		Timeout:   time.Second,
+		QueueSize: 1,
+		Runner:    NewTranscriptionRunner(panicTranscriber{}, nil),
+		Output:    output,
+	})
+	if err != nil {
+		t.Fatalf("NewTranscriptionWorker() error = %v", err)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	worker.Start(ctx)
+
+	if err := worker.Submit(TranscriptionJob{
+		Submission: Submission{PCM: []byte(strings.Repeat("x", 6400)), WAV: []byte("full"), DurationSecs: 0.4, Language: "de"},
+		Segments: []Submission{
+			{WAV: []byte("segment-1"), DurationSecs: 0.2, Language: "de"},
+			{WAV: []byte("segment-2"), DurationSecs: 0.2, Language: "de"},
+		},
+		Target: "editor",
+	}); err != nil {
+		t.Fatalf("Submit() error = %v", err)
+	}
+
+	worker.Close()
+	worker.Wait() // must return despite both segment goroutines panicking
+
+	if got := output.snapshot(); len(got) != 0 {
+		t.Fatalf("expected no delivery after all segments panicked, got %#v", got)
+	}
+}

@@ -5,7 +5,17 @@
 // or normalize incoming transcripts before they reach the LLM path.
 package shortcuts
 
-import "sort"
+import (
+	"embed"
+	"encoding/json"
+	"fmt"
+	"io"
+	"sort"
+	"strings"
+	"unicode"
+
+	"golang.org/x/text/language"
+)
 
 type Registry struct {
 	phrases []registeredPhrase
@@ -14,12 +24,13 @@ type Registry struct {
 }
 
 type registeredPhrase struct {
-	intent   Intent
-	locale   string
-	value    string
-	prefix   bool
-	priority int
-	order    int
+	intent        Intent
+	locale        string
+	value         string
+	prefix        bool
+	noSpacePrefix bool
+	priority      int
+	order         int
 }
 
 type registeredFiller struct {
@@ -48,12 +59,13 @@ func (r *Registry) RegisterLexicon(lexicon IntentLexicon) {
 			continue
 		}
 		r.phrases = append(r.phrases, registeredPhrase{
-			intent:   lexicon.Intent,
-			locale:   locale,
-			value:    value,
-			prefix:   phrase.Prefix,
-			priority: phrase.Priority,
-			order:    r.order,
+			intent:        lexicon.Intent,
+			locale:        locale,
+			value:         value,
+			prefix:        phrase.Prefix,
+			noSpacePrefix: phrase.NoSpacePrefix,
+			priority:      phrase.Priority,
+			order:         r.order,
 		})
 		r.order++
 	}
@@ -169,6 +181,9 @@ func buildDefaultRegistry() *Registry {
 	registry := NewRegistry()
 
 	for _, lexicon := range defaultLexicons {
+		registry.RegisterLexicon(lexicon)
+	}
+	for _, lexicon := range homeAssistantLexicons {
 		registry.RegisterLexicon(lexicon)
 	}
 	for locale, fillers := range defaultLeadingFillers {
@@ -347,34 +362,17 @@ var defaultLexicons = []IntentLexicon{
 		Phrases: prefixPhrases("erzaehl mir was ueber", "erzaehl mir ueber", "wer ist", "wer war", "was weisst du ueber", "suche nach"),
 	},
 	{
-		Intent: IntentHomeAssistant,
+		Intent: IntentTemperature,
 		Locale: "en",
-		// "turn on/off" and "switch" cover Home-Assistant Assist Pipeline
-		// triggers; "play"/"stop"/"set" cover scenes and media; the
-		// fallback "home assistant" prefix lets users explicitly target
-		// the HA bridge ("Home Assistant, ...").
-		Phrases: prefixPhrases(
-			"turn on", "turn off", "switch on", "switch off",
-			"set the", "set",
-			"start the", "stop the",
-			"play", "pause", "resume",
-			"open the", "close the", "lock the", "unlock the",
-			"home assistant",
-		),
+		// Explicit "<value> <unit> to/in <unit>" phrasing only; "how many
+		// fahrenheit is …" is intentionally omitted because the target unit
+		// would live in the trigger, not the payload the skill parses.
+		Phrases: prefixPhrases("convert", "how many degrees is", "how many degrees"),
 	},
 	{
-		Intent: IntentHomeAssistant,
-		Locale: "de",
-		Phrases: prefixPhrases(
-			"schalte ein", "schalte aus", "schalte an",
-			"schalte das", "schalte die",
-			"mach das", "mach die",
-			"starte", "stoppe", "halte",
-			"spiele", "pause",
-			"oeffne die", "oeffne das",
-			"schliesse die", "schliesse das",
-			"home assistant",
-		),
+		Intent:  IntentTemperature,
+		Locale:  "de",
+		Phrases: prefixPhrases("umrechne", "umrechnen", "wandle", "wandel", "konvertiere"),
 	},
 }
 
@@ -407,6 +405,119 @@ var defaultLeadingFillers = map[string][]string{
 		"puedes",
 		"podrias",
 	},
+}
+
+type homeAssistantCatalogFile struct {
+	Intent            Intent                     `json:"intent"`
+	TranslationStatus string                     `json:"translation_status"`
+	Lexicons          []homeAssistantLexiconFile `json:"lexicons"`
+}
+
+// homeAssistantLexiconFile deliberately has no Intent field. The catalog owns
+// one exact intent at the root, so a nested intent is rejected as unknown JSON
+// instead of being silently overwritten during projection.
+type homeAssistantLexiconFile struct {
+	Locale  string   `json:"locale"`
+	Phrases []Phrase `json:"phrases"`
+}
+
+// The non-English Home Assistant phrases are registered intent-data
+// proposals. Their presence is not human-review or Wave 2 localization
+// evidence.
+//
+//go:embed catalogs/home_assistant.json
+var homeAssistantCatalogFS embed.FS
+
+var homeAssistantLexicons = mustLoadHomeAssistantLexicons()
+
+func mustLoadHomeAssistantLexicons() []IntentLexicon {
+	raw, err := homeAssistantCatalogFS.ReadFile("catalogs/home_assistant.json")
+	if err != nil {
+		panic(fmt.Sprintf("shortcuts: read Home Assistant catalog: %v", err))
+	}
+	lexicons, err := decodeHomeAssistantLexicons(raw)
+	if err != nil {
+		panic(fmt.Sprintf("shortcuts: decode Home Assistant catalog: %v", err))
+	}
+	return lexicons
+}
+
+func decodeHomeAssistantLexicons(raw []byte) ([]IntentLexicon, error) {
+	decoder := json.NewDecoder(strings.NewReader(string(raw)))
+	decoder.DisallowUnknownFields()
+	var catalog homeAssistantCatalogFile
+	if err := decoder.Decode(&catalog); err != nil {
+		return nil, err
+	}
+	if err := decoder.Decode(&struct{}{}); err != io.EOF {
+		return nil, fmt.Errorf("catalog contains trailing JSON")
+	}
+	if catalog.Intent != IntentHomeAssistant {
+		return nil, fmt.Errorf("catalog intent = %q", catalog.Intent)
+	}
+	if catalog.TranslationStatus != "proposal" {
+		return nil, fmt.Errorf("catalog translation_status = %q", catalog.TranslationStatus)
+	}
+
+	requiredLocales := map[string]bool{
+		"en": false, "de": false, "es": false, "zh-hans": false, "hi": false, "ar": false,
+	}
+	lexicons := make([]IntentLexicon, 0, len(catalog.Lexicons))
+	for _, wireLexicon := range catalog.Lexicons {
+		parsedLocale, err := language.Parse(wireLexicon.Locale)
+		if err != nil || parsedLocale.String() != wireLexicon.Locale {
+			return nil, fmt.Errorf("catalog locale %q is not canonical BCP-47", wireLexicon.Locale)
+		}
+		lexicon := IntentLexicon{
+			Intent:  catalog.Intent,
+			Locale:  wireLexicon.Locale,
+			Phrases: wireLexicon.Phrases,
+		}
+		locale := normalizeLocaleKey(lexicon.Locale)
+		seen, supported := requiredLocales[locale]
+		if !supported {
+			return nil, fmt.Errorf("unsupported catalog locale %q", lexicon.Locale)
+		}
+		if seen {
+			return nil, fmt.Errorf("duplicate catalog locale %q", lexicon.Locale)
+		}
+		requiredLocales[locale] = true
+		if len(lexicon.Phrases) == 0 {
+			return nil, fmt.Errorf("catalog locale %q has no phrases", lexicon.Locale)
+		}
+
+		seenPhrases := make(map[string]struct{}, len(lexicon.Phrases))
+		for phraseIndex := range lexicon.Phrases {
+			phrase := &lexicon.Phrases[phraseIndex]
+			normalized := normalize(phrase.Value)
+			if normalized == "" {
+				return nil, fmt.Errorf("catalog locale %q has an empty phrase", lexicon.Locale)
+			}
+			if _, duplicate := seenPhrases[normalized]; duplicate {
+				return nil, fmt.Errorf("duplicate catalog phrase %q for locale %q", phrase.Value, lexicon.Locale)
+			}
+			seenPhrases[normalized] = struct{}{}
+			if phrase.NoSpacePrefix && (!phrase.Prefix || locale != "zh-hans" || !containsHan(normalized)) {
+				return nil, fmt.Errorf("no_space_prefix is restricted to prefixed Han phrases, got %q/%q", lexicon.Locale, phrase.Value)
+			}
+		}
+		lexicons = append(lexicons, lexicon)
+	}
+	for locale, found := range requiredLocales {
+		if !found {
+			return nil, fmt.Errorf("catalog is missing locale %q", locale)
+		}
+	}
+	return lexicons, nil
+}
+
+func containsHan(value string) bool {
+	for _, r := range value {
+		if unicode.Is(unicode.Han, r) {
+			return true
+		}
+	}
+	return false
 }
 
 var defaultRegistry = buildDefaultRegistry()

@@ -251,6 +251,33 @@ const (
 	LiveEventSessionEnd       LiveEventType = "session_end"
 )
 
+// HostPromptKind identifies a trusted, locally generated text turn. These
+// prompts are distinct from user audio and let hosts open an explicit playback
+// generation instead of treating arbitrary out-of-turn model audio as an idle
+// response.
+type HostPromptKind string
+
+const (
+	HostPromptIdleReminder   HostPromptKind = "idle_reminder"
+	HostPromptIdleDeactivate HostPromptKind = "idle_deactivate"
+)
+
+type HostPromptEventType string
+
+const (
+	HostPromptStarted    HostPromptEventType = "started"
+	HostPromptSent       HostPromptEventType = "sent"
+	HostPromptSendFailed HostPromptEventType = "send_failed"
+)
+
+// HostPromptEvent correlates the synchronous authorization opening with a
+// possible provider send failure. IDs are session-local and never reused.
+type HostPromptEvent struct {
+	ID   uint64
+	Kind HostPromptKind
+	Type HostPromptEventType
+}
+
 // LiveMessage is a message received from the real-time model.
 type LiveMessage struct {
 	EventType        LiveEventType   // Provider-neutral event type for hosts that need precise routing.
@@ -294,8 +321,12 @@ type Callbacks struct {
 	OnOutputTranscript     func(text string, done bool) // Model speech transcribed
 	OnToolCall             func(call ToolCall)
 	OnToolCallCancellation func(ids []string)
-	OnInterrupted          func() // User interrupted model (barge-in)
-	OnSessionEnd           func() // Session ended (error, GoAway failure, or deactivation)
+	// OnHostPrompt may reject a Started event by returning false. Sent and
+	// SendFailed are correlated terminal phases for an accepted prompt; their
+	// return values are ignored.
+	OnHostPrompt  func(event HostPromptEvent) bool
+	OnInterrupted func() // User interrupted model (barge-in)
+	OnSessionEnd  func() // Session ended (error, GoAway failure, or deactivation)
 }
 
 // IdleConfig configures the idle timer behavior.

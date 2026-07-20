@@ -95,7 +95,7 @@ func (t *IdleTimer) onReminder() {
 	prompt := reminderPrompt(locale, reminderAfter)
 	slog.Info("voice agent idle reminder triggered")
 
-	if err := t.session.provider.SendText(prompt); err != nil {
+	if err := t.session.sendHostPrompt(HostPromptIdleReminder, prompt); err != nil {
 		slog.Warn("voice agent failed to send idle reminder", "err", err)
 	}
 }
@@ -113,7 +113,7 @@ func (t *IdleTimer) onDeactivate() {
 
 	// Ask the model to say goodbye before closing.
 	prompt := deactivatePrompt(locale)
-	if err := t.session.provider.SendText(prompt); err != nil {
+	if err := t.session.sendHostPrompt(HostPromptIdleDeactivate, prompt); err != nil {
 		slog.Warn("voice agent failed to send deactivation message", "err", err)
 	}
 

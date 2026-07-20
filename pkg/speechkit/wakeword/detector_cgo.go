@@ -44,11 +44,17 @@ func NewDetector(cfg DetectorConfig) (*Detector, error) {
 
 	kwFile := cfg.KeywordsFile
 	if kwFile == "" && len(cfg.Keywords) > 0 {
+		// Inline keywords are raw phrases; BPE-encode them so sherpa-onnx can
+		// match them (raw text silently never matches). See keywords.go.
+		encoded, err := EncodeKeywords(cfg.Tokens, cfg.Keywords)
+		if err != nil {
+			return nil, err
+		}
 		tmp, err := os.CreateTemp("", "speechkit-wakeword-keywords-*.txt")
 		if err != nil {
 			return nil, fmt.Errorf("wakeword: stage inline keywords: %w", err)
 		}
-		if _, err := tmp.WriteString(strings.Join(cfg.Keywords, "\n") + "\n"); err != nil {
+		if _, err := tmp.WriteString(strings.Join(encoded, "\n") + "\n"); err != nil {
 			_ = tmp.Close()
 			return nil, fmt.Errorf("wakeword: write keywords tmp file: %w", err)
 		}
@@ -62,6 +68,11 @@ func NewDetector(cfg DetectorConfig) (*Detector, error) {
 	}
 	if _, err := os.Stat(kwFile); err != nil {
 		return nil, fmt.Errorf("wakeword: keywords file missing %s: %w", kwFile, err)
+	}
+	// Fail loudly if the keywords file is raw text rather than BPE tokens —
+	// the most common silent wakeword misconfiguration.
+	if err := ValidateKeywordsFile(kwFile); err != nil {
+		return nil, err
 	}
 
 	sc := sherpa.KeywordSpotterConfig{}
@@ -83,6 +94,14 @@ func NewDetector(cfg DetectorConfig) (*Detector, error) {
 		return nil, fmt.Errorf("wakeword: sherpa NewKeywordSpotter returned nil (check model assets at %s)", filepath.Dir(cfg.Encoder))
 	}
 	return &Detector{spotter: spotter, cfg: cfg}, nil
+}
+
+// Threshold returns the configured keyword detection threshold (0 if unset).
+func (d *Detector) Threshold() float32 {
+	if d == nil {
+		return 0
+	}
+	return d.cfg.Threshold
 }
 
 // Close releases the underlying KeywordSpotter.

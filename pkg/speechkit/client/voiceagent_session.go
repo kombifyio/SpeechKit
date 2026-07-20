@@ -38,6 +38,7 @@ type VoiceAgentStartFrame struct {
 	PersonaID            string `json:"persona_id,omitempty"`
 	RoleID               string `json:"role_id,omitempty"`
 	SequenceID           string `json:"sequence_id,omitempty"`
+	Provider             string `json:"provider,omitempty"`
 	MediaTransport       string `json:"media_transport,omitempty"` // "websocket" (default) or "livekit"
 	Voice                string `json:"voice,omitempty"`
 	Locale               string `json:"locale,omitempty"`
@@ -49,19 +50,21 @@ type VoiceAgentStartFrame struct {
 // VoiceAgentFrame is the parsed shape of any inbound text frame. Binary
 // frames carry audio and are returned via VoiceAgentMessage.Audio instead.
 type VoiceAgentFrame struct {
-	Type       string `json:"type"`
-	State      string `json:"state,omitempty"`
-	Text       string `json:"text,omitempty"`
-	Done       bool   `json:"done,omitempty"`
-	ID         string `json:"id,omitempty"`
-	Name       string `json:"name,omitempty"`
-	Code       string `json:"code,omitempty"`
-	Message    string `json:"message,omitempty"`
-	Reason     string `json:"reason,omitempty"`
-	SequenceID string `json:"sequence_id,omitempty"`
-	StepID     string `json:"step_id,omitempty"`
-	StepIndex  int    `json:"step_index,omitempty"`
-	Status     string `json:"status,omitempty"`
+	Type       string   `json:"type"`
+	EventType  string   `json:"event_type,omitempty"`
+	EventTypes []string `json:"event_types,omitempty"`
+	State      string   `json:"state,omitempty"`
+	Text       string   `json:"text,omitempty"`
+	Done       bool     `json:"done,omitempty"`
+	ID         string   `json:"id,omitempty"`
+	Name       string   `json:"name,omitempty"`
+	Code       string   `json:"code,omitempty"`
+	Message    string   `json:"message,omitempty"`
+	Reason     string   `json:"reason,omitempty"`
+	SequenceID string   `json:"sequence_id,omitempty"`
+	StepID     string   `json:"step_id,omitempty"`
+	StepIndex  int      `json:"step_index,omitempty"`
+	Status     string   `json:"status,omitempty"`
 }
 
 // VoiceAgentMessage is a single inbound event. Exactly one of Audio or Frame
@@ -180,6 +183,9 @@ func (s *VoiceAgentSession) SendStart(ctx context.Context, frame VoiceAgentStart
 	}
 	if frame.SequenceID != "" {
 		payload["sequence_id"] = frame.SequenceID
+	}
+	if frame.Provider != "" {
+		payload["provider"] = frame.Provider
 	}
 	if frame.Voice != "" {
 		payload["voice"] = frame.Voice

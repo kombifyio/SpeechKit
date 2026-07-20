@@ -214,3 +214,25 @@ func TestRouterHealthCheck(t *testing.T) {
 		t.Errorf("google should be unhealthy")
 	}
 }
+
+func TestRouterReadyHealthCheckExcludesIneligibleProviders(t *testing.T) {
+	local := &mockProvider{name: "piper", kind: ProviderKindLocalBuiltIn}
+	cloud := &mockProvider{name: "openai", kind: ProviderKindDirectProvider}
+
+	router := NewRouter(StrategyLocalOnly, cloud, local)
+	results := router.ReadyHealthCheck(context.Background())
+	if len(results) != 1 {
+		t.Fatalf("ready health results = %#v, want only eligible local provider", results)
+	}
+	if _, ok := results["piper"]; !ok {
+		t.Fatalf("ready health results = %#v, want piper", results)
+	}
+	if _, ok := results["openai"]; ok {
+		t.Fatalf("ready health results included ineligible cloud provider: %#v", results)
+	}
+
+	cloudOnly := NewRouter(StrategyLocalOnly, cloud)
+	if results := cloudOnly.ReadyHealthCheck(context.Background()); len(results) != 0 {
+		t.Fatalf("local-only router with only cloud providers reported ready candidates: %#v", results)
+	}
+}

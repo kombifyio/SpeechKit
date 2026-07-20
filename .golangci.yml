@@ -59,6 +59,10 @@ linters:
         # netsec.BuildEndpoint and dialed via netsec.NewSafeHTTPClient, which
         # validate the host at dial time, so the tainted-URL path is mitigated.
         - G704
+        # G115: integer overflow on int->uintN conversions. Noisy on provably
+        # bounded values (WAV header fields, sample counts). Real overflow risk
+        # is guarded by explicit bounds where it matters.
+        - G115
       config:
         global:
           audit: true

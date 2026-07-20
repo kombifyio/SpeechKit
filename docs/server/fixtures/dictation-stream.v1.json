@@ -1,0 +1,56 @@
+{
+  "contract": "speechkit.dictation-stream.v1",
+  "description": "Golden example frames for the streaming Dictation WebSocket (GET /v1/dictation/stream/sessions/{id}/ws). Producer drift-check: internal/server/dictation/stream_protocol_test.go marshals the Go protocol structs and asserts equality with these frames. Consumers (Android/KMP clients) replay the same frames against their codecs.",
+  "frames": {
+    "start": {
+      "type": "start",
+      "language": "de",
+      "model": "nova-3",
+      "provider_profile_id": "stt.deepgram.nova-3",
+      "interim_results": true,
+      "endpointing_ms": 800,
+      "keyterms": ["Kombify", "SpeechKit"],
+      "format": {
+        "encoding": "linear16",
+        "sample_rate_hz": 16000,
+        "channels": 1
+      }
+    },
+    "finalize": { "type": "finalize" },
+    "stop": { "type": "stop" },
+    "ping": { "type": "ping" },
+    "ready": { "type": "ready", "segment_id": 1 },
+    "transcript_draft": {
+      "type": "transcript",
+      "segment_id": 1,
+      "sequence": 3,
+      "text": "hallo wel",
+      "done": false,
+      "provider": "deepgram",
+      "model": "nova-3"
+    },
+    "transcript_final": {
+      "type": "transcript",
+      "segment_id": 1,
+      "sequence": 4,
+      "text": "Hallo Welt.",
+      "done": true,
+      "language": "de",
+      "confidence": 0.94,
+      "provider": "deepgram",
+      "model": "nova-3",
+      "words": [
+        { "text": "Hallo", "confidence": 0.97, "start_ms": 120, "end_ms": 480 },
+        { "text": "Welt.", "confidence": 0.91, "start_ms": 520, "end_ms": 900 }
+      ]
+    },
+    "segment_done": { "type": "segment_done", "segment_id": 1 },
+    "error": {
+      "type": "error",
+      "code": "streaming_unavailable",
+      "message": "no streaming-capable STT provider is configured; fall back to POST /v1/dictation/transcribe"
+    },
+    "session_end": { "type": "session_end", "reason": "client" },
+    "pong": { "type": "pong" }
+  }
+}

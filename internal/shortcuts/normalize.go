@@ -58,11 +58,14 @@ func localeChain(locale string) ([]string, bool) {
 	}
 
 	chain := []string{normalized}
-	if idx := strings.IndexByte(normalized, '-'); idx > 0 {
-		base := normalized[:idx]
-		if base != "" && base != normalized {
-			chain = append(chain, base)
+	parent := normalized
+	for {
+		idx := strings.LastIndexByte(parent, '-')
+		if idx <= 0 {
+			break
 		}
+		parent = parent[:idx]
+		chain = append(chain, parent)
 	}
 	chain = append(chain, "default")
 	return chain, false

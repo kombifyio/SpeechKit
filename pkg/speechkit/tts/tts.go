@@ -197,6 +197,25 @@ func (r *Router) HealthCheck(ctx context.Context) map[string]error {
 	return results
 }
 
+// ReadyHealthCheck reports only providers eligible under the active routing
+// strategy. A local-only router with cloud providers configured must not be
+// advertised as ready when Synthesize would skip every one of them.
+func (r *Router) ReadyHealthCheck(ctx context.Context) map[string]error {
+	r.mu.RLock()
+	providers := make([]Provider, len(r.providers))
+	copy(providers, r.providers)
+	r.mu.RUnlock()
+
+	results := make(map[string]error, len(providers))
+	for _, provider := range providers {
+		if provider == nil || !r.isAllowed(provider) {
+			continue
+		}
+		results[provider.Name()] = provider.Health(ctx)
+	}
+	return results
+}
+
 // CloseIdleConnections asks HTTP-backed providers to drop idle connection pools.
 func (r *Router) CloseIdleConnections() {
 	if r == nil {

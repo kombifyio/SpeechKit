@@ -1,0 +1,7 @@
+{
+  "companion.home_assistant.not_configured": "Home Assistant स्मार्ट होम कमांड के लिए कॉन्फ़िगर नहीं है।",
+  "companion.home_assistant.command.empty": "स्मार्ट होम कमांड खाली था।",
+  "companion.home_assistant.command.not_matched": "Home Assistant उस स्मार्ट होम कमांड को किसी लक्ष्य से मिला नहीं सका।",
+  "companion.home_assistant.command.rejected": "Home Assistant ने उस स्मार्ट होम कमांड को अस्वीकार कर दिया।",
+  "companion.home_assistant.unavailable": "Home Assistant अभी उपलब्ध नहीं है। स्मार्ट होम कमांड आगे नहीं भेजा गया।"
+}

@@ -279,7 +279,7 @@ func defaults() *Config {
 			},
 			AssemblyAI: AssemblyAIProviderConfig{
 				APIKeyEnv:        AssemblyAIAPIKeyEnv, //nolint:gosec // not a credential, field name triggers false positive
-				STTModels:        "universal-3-pro,universal-2",
+				STTModels:        "universal-3-5-pro,universal-2",
 				StreamingModel:   "universal-3-5-pro",
 				StreamingBaseURL: "wss://streaming.assemblyai.com",
 			},
@@ -338,6 +338,15 @@ func defaults() *Config {
 			MaxSessionsPerUser:       3,
 			TicketTTLSec:             90,
 			VoiceAgentIdleTimeoutSec: 900,
+			DictationStream: ServerDictationStreamConfig{
+				Enabled:                true,
+				MaxGlobalSessions:      100,
+				MaxPerIdentitySessions: 3,
+				IdleTimeoutSec:         300,
+				MaxSessionSec:          0,
+				MaxStreamAudioSeconds:  0,
+				Emulation:              "off",
+			},
 			LiveKit: ServerLiveKitConfig{
 				Enabled:      false,
 				URL:          "",
@@ -346,16 +355,27 @@ func defaults() *Config {
 				TokenTTLSec:  600,
 				RoomPrefix:   "speechkit-va",
 			},
+			VoiceAgent: ServerVoiceAgentConfig{
+				ToolBridge: ServerToolBridgeConfig{
+					// Fail-closed default: no bridge unless an operator enables
+					// it in config or deployment env sets SPEECHKIT_TOOLBRIDGE_URL.
+					Enabled:            false,
+					TimeoutMs:          10000,
+					MaxCallsPerSession: 20,
+					CredentialHeader:   "X-Edge-Obo-Subject-Token", //nolint:gosec // header name, not a credential
+				},
+			},
 			WhisperBinary: "/usr/local/bin/whisper-server",
 			WhisperPort:   8180,
 			ModelDir:      "/var/lib/speechkit/models",
 			LogFormat:     "json",
 			LogLevel:      "info",
 			Features: ServerFeaturesConfig{
-				Catalog:      true,
-				StorageReads: true,
-				Vocabulary:   true,
-				TTSDirect:    true,
+				Catalog:        true,
+				StorageReads:   true,
+				Vocabulary:     true,
+				TTSDirect:      true,
+				WakewordModels: true,
 			},
 		},
 	}
