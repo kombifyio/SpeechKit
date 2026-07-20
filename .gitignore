@@ -29,6 +29,8 @@ release/latest/windows/*.zip
 /vendor/
 clients/python/**/__pycache__/
 clients/python/**/*.pyc
+__pycache__/
+*.pyc
 
 # Models (large files)
 *.bin

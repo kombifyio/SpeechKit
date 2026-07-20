@@ -70,6 +70,36 @@ func TestHMACDigestCanonicalAndDomainSeparated(t *testing.T) {
 	if changed == digest {
 		t.Fatal("different command text produced the same digest")
 	}
+	boundToAudio, err := HMACDigest(key, CanonicalRequest{
+		PairedDeviceID: req.PairedDeviceID,
+		RequestID:      req.RequestID,
+		RuleID:         req.RuleID,
+		Locale:         req.Locale,
+		Text:           req.Text,
+		EntityID:       req.EntityID,
+		ExpectedState:  req.ExpectedState,
+		InputSHA256:    strings.Repeat("a", 64),
+	})
+	if err != nil {
+		t.Fatalf("HMACDigest audio-bound: %v", err)
+	}
+	if boundToAudio == digest {
+		t.Fatal("audio-bound media request reused the legacy v1 digest")
+	}
+	otherAudio := req
+	otherAudio.InputSHA256 = strings.Repeat("b", 64)
+	otherAudioDigest, err := HMACDigest(key, otherAudio)
+	if err != nil {
+		t.Fatalf("HMACDigest other audio: %v", err)
+	}
+	if otherAudioDigest == boundToAudio {
+		t.Fatal("different exact audio digests produced the same claim digest")
+	}
+	invalidAudio := req
+	invalidAudio.InputSHA256 = strings.Repeat("A", 64)
+	if _, err := HMACDigest(key, invalidAudio); !errors.Is(err, ErrInvalidCanonicalRequest) {
+		t.Fatalf("uppercase audio digest error = %v, want ErrInvalidCanonicalRequest", err)
+	}
 	if _, err := HMACDigest([]byte("short"), req); !errors.Is(err, ErrDigestKeyTooShort) {
 		t.Fatalf("short key error = %v, want ErrDigestKeyTooShort", err)
 	}

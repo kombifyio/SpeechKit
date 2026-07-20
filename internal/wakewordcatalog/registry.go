@@ -12,9 +12,10 @@
 // tooling alike.
 //
 // microWakeWord artifacts carry an Available flag. It is false until the
-// microWakeWord training pipeline (tools/wakeword-training/microwakeword) has
-// produced and published a .tflite + measured its manifest params; the ONNX
-// artifacts are already trained and published.
+// microWakeWord candidate pipeline (tools/wakeword-training/microwakeword) has
+// produced a .tflite, all manifest params have independent measurements, the
+// exact bytes have passed physical validation, and publication is verified;
+// the ONNX artifacts are already trained and published.
 package wakewordcatalog
 
 import "strings"
@@ -59,7 +60,9 @@ func (f FileArtifact) present() bool { return strings.TrimSpace(f.URL) != "" }
 
 // MicroWakeWordParams mirrors the "micro" object of an ESPHome microWakeWord v2
 // model manifest. ProbabilityCutoff, SlidingWindowSize and TensorArenaSize are
-// measured during training; FeatureStepSize is fixed (see the const above).
+// evidence-bound before publication; FeatureStepSize is fixed (see the const
+// above). TensorArenaSize comes from the target runtime rather than the model
+// trainer.
 type MicroWakeWordParams struct {
 	ProbabilityCutoff     float64
 	SlidingWindowSize     int
@@ -70,7 +73,8 @@ type MicroWakeWordParams struct {
 
 // MicroWakeWordArtifact describes the on-device TFLite model plus the manifest
 // parameters ESPHome / esp-tflite-micro need to run it. Available is false
-// until the microWakeWord training pipeline has published the .tflite.
+// until governed publication has been independently verified at the serving
+// origin.
 type MicroWakeWordArtifact struct {
 	Available bool
 	File      FileArtifact
@@ -188,9 +192,9 @@ var models = []Model{
 	//
 	// "jarvis" has no single-word model yet (only the two-word "hey_jarvis"
 	// above): it is registered so the hub knows the id and reports it pending
-	// rather than 404. Publishing either variant is a one-place flip — fill the
-	// artifact + (for microWakeWord) the three measured Params from
-	// tools/wakeword-training/microwakeword finalize.py and set Available=true.
+	// rather than 404. Publishing either variant requires evidence-bound params,
+	// physical validation, publication approval, and serving-origin verification
+	// before the artifact is filled and Available is set to true.
 	{
 		ID:               "kombify",
 		WakeWord:         "Kombify",

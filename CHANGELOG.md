@@ -11,6 +11,39 @@ IDs, source paths, and other maintainer-only vocabulary.
 
 ## [Unreleased]
 
+## [0.51.0] - 2026-07-20
+
+Companion follow-up release. A paired Kombify Box can now complete a full voice
+turn through the device agent, and the on-device wake-word models ship from a
+reproducible, auditable training pipeline.
+
+### Highlights
+
+- **Talk to a paired Box**: A paired Kombify Box can take one complete voice
+  turn and speak back a local result — the Touch-to-Talk path for standalone
+  Companion hardware, each turn bound to the paired device and its Home
+  Assistant claim.
+- **Auditable wake-word models**: The on-device wake words ("Kombify",
+  "Jarvis") are now produced by a fully reproducible, pinned training pipeline,
+  so anyone can rebuild and verify the exact model that ships.
+
+### Added
+
+- Paired Box media turn: a paired Kombify Box submits one complete microphone
+  turn as raw `audio/L16` (16 kHz mono) to `POST /v1/box-media/turn` with its
+  pairing token and the SHA-256 of the exact audio, and receives one complete
+  local text-to-speech result. The turn reuses the durable Home Assistant
+  claim, exact target/state readback, and the claim-bound local TTS path; the
+  verified input-audio fingerprint joins the claim so replaying one request ID
+  with different audio fails closed. Touch-to-Talk can drive a turn today; an
+  on-device wake path follows once a verified wake model lands.
+
+### Changed
+
+- Wake-word model training is now a single, pinned, auditable pipeline with its
+  own tests, so the "Kombify" and "Jarvis" on-device models are reproducible
+  from source instead of relying on ad-hoc training steps.
+
 ## [0.50.0] - 2026-07-19
 
 Unified Voice release. Streaming dictation over one warm WebSocket, a second

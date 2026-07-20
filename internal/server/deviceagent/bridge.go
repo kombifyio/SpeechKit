@@ -465,7 +465,7 @@ func (b *Bridge) assist(w http.ResponseWriter, r *http.Request, binding deviceBi
 		return
 	}
 	key := ClaimKey{PairingID: binding.pairingID, RequestID: body.RequestID}
-	digest, err := assistDigest(binding.token, key, command)
+	digest, err := assistDigest(binding.token, key, command, turnInputSHA256(r.Context()))
 	if err != nil {
 		b.writeError(w, http.StatusUnprocessableEntity, "assist_request_invalid", "assist_request_digest_invalid", false, "no", "Use the paired device identity and bounded documented request fields.")
 		return
@@ -745,7 +745,7 @@ func validateUUIDv7Window(raw string, now time.Time, maxAge, futureSkew time.Dur
 	return ""
 }
 
-func assistDigest(pairingToken string, key ClaimKey, command AuthorizedCommand) ([32]byte, error) {
+func assistDigest(pairingToken string, key ClaimKey, command AuthorizedCommand, inputSHA256 string) ([32]byte, error) {
 	digest, err := claimstore.HMACDigest([]byte(pairingToken), claimstore.CanonicalRequest{
 		PairedDeviceID: key.PairingID,
 		RequestID:      key.RequestID,
@@ -754,6 +754,7 @@ func assistDigest(pairingToken string, key ClaimKey, command AuthorizedCommand) 
 		Text:           strings.TrimSpace(command.Utterance),
 		EntityID:       command.EntityID,
 		ExpectedState:  command.ExpectedState,
+		InputSHA256:    inputSHA256,
 	})
 	if err != nil {
 		return [32]byte{}, err

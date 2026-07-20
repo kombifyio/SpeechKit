@@ -37,6 +37,13 @@ type CanonicalRequest struct {
 	Text           string
 	EntityID       string
 	ExpectedState  string
+	// InputSHA256 optionally binds a higher-level, already authenticated
+	// transport payload to the same at-most-once claim. The legacy
+	// speechkit.device_agent.v1 JSON routes leave this empty, preserving their
+	// exact v1 digest. The separate Box media ingress supplies the verified
+	// L16 payload digest so a request_id cannot be replayed with different
+	// audio even when both clips happen to map to the same static command.
+	InputSHA256 string
 }
 
 // NormalizeCanonicalRequest trims the bounded textual fields used by both the
@@ -49,6 +56,7 @@ func NormalizeCanonicalRequest(req CanonicalRequest) (CanonicalRequest, error) {
 	req.Text = strings.TrimSpace(req.Text)
 	req.EntityID = strings.TrimSpace(req.EntityID)
 	req.ExpectedState = strings.TrimSpace(req.ExpectedState)
+	req.InputSHA256 = strings.TrimSpace(req.InputSHA256)
 
 	if err := validatePairedDeviceID(req.PairedDeviceID); err != nil {
 		return CanonicalRequest{}, fmt.Errorf("%w: %w", ErrInvalidCanonicalRequest, err)
@@ -71,7 +79,22 @@ func NormalizeCanonicalRequest(req CanonicalRequest) (CanonicalRequest, error) {
 	if req.ExpectedState != "on" && req.ExpectedState != "off" {
 		return CanonicalRequest{}, fmt.Errorf("%w: expected state must be on or off", ErrInvalidCanonicalRequest)
 	}
+	if req.InputSHA256 != "" && !validSHA256(req.InputSHA256) {
+		return CanonicalRequest{}, fmt.Errorf("%w: input sha256 must be lowercase hexadecimal", ErrInvalidCanonicalRequest)
+	}
 	return req, nil
+}
+
+func validSHA256(value string) bool {
+	if len(value) != sha256.Size*2 {
+		return false
+	}
+	for _, character := range value {
+		if (character < '0' || character > '9') && (character < 'a' || character > 'f') {
+			return false
+		}
+	}
+	return true
 }
 
 func validCanonicalLightEntityID(value string) bool {
@@ -109,6 +132,11 @@ func HMACDigest(key []byte, req CanonicalRequest) (Digest, error) {
 	writeDigestField(mac, normalized.Text)
 	writeDigestField(mac, normalized.EntityID)
 	writeDigestField(mac, normalized.ExpectedState)
+	// Preserve the established speechkit.device_agent.v1 digest exactly when
+	// no higher-level content binding is present.
+	if normalized.InputSHA256 != "" {
+		writeDigestField(mac, normalized.InputSHA256)
+	}
 
 	var out Digest
 	copy(out[:], mac.Sum(nil))
@@ -117,7 +145,7 @@ func HMACDigest(key []byte, req CanonicalRequest) (Digest, error) {
 
 func writeDigestField(dst hash.Hash, value string) {
 	var size [4]byte
-	binary.BigEndian.PutUint32(size[:], uint32(len(value)))
+	binary.BigEndian.PutUint32(size[:], uint32(len(value))) // #nosec G115 -- every canonical field is validated below 2^32 bytes before hashing.
 	_, _ = dst.Write(size[:])
 	_, _ = dst.Write([]byte(value))
 }
