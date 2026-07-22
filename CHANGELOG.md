@@ -11,6 +11,21 @@ IDs, source paths, and other maintainer-only vocabulary.
 
 ## [Unreleased]
 
+## [0.51.1] - 2026-07-22
+
+Patch release. Fixes a Windows wake-word / startup regression present in the
+v0.50.0 and v0.51.0 Windows installers.
+
+### Fixed
+
+- Windows: wake-word activation no longer fails on startup. The bundled speech
+  runtime was one C-API version behind what the on-device wake-word engine now
+  requires, so the wake-word helper aborted immediately and crash-looped — and
+  on some machines that cascaded into the app window failing to open at all. The
+  v0.50.0 and v0.51.0 Windows installers were affected; this build bundles a
+  compatible runtime. Update to this build if wake-word stopped working or the
+  app would not start after updating on Windows.
+
 ## [0.51.0] - 2026-07-20
 
 Companion follow-up release. A paired Kombify Box can now complete a full voice
