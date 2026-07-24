@@ -7,16 +7,39 @@ import "C"
 
 import (
 	"bytes"
+	"fmt"
+	"log/slog"
+	"runtime"
+	"strings"
 	"sync"
 	"sync/atomic"
+	"time"
 	"unsafe"
 
 	"github.com/gen2brain/malgo"
+
+	"github.com/kombifyio/SpeechKit/internal/winapi"
 )
 
 const (
 	// Pre-allocate for ~30s of audio to reduce GC pressure during recording.
 	initialBufferSize = SampleRate * BytesPerSample * 30
+
+	// frameDispatchDepth buffers ~2s of 32ms frames between the WASAPI
+	// callback and the drain goroutine. Deep enough to absorb GC pauses
+	// and scheduler hiccups under CPU load; overflow drops level/VAD
+	// frames (counted), never full-capture audio.
+	frameDispatchDepth = 64
+
+	// stallCheckInterval / stallWarnAfter drive the capture watchdog:
+	// when the device claims to be running but no frame arrived for
+	// stallWarnAfter, one EventStalled per episode is emitted.
+	stallCheckInterval = 2 * time.Second
+	stallWarnAfter     = 3 * time.Second
+
+	// drainStopTimeout bounds how long Stop waits for queued frames to
+	// finish draining before abandoning them.
+	drainStopTimeout = 2 * time.Second
 )
 
 func init() {
@@ -41,6 +64,25 @@ type MalgoSession struct {
 	events           chan Event
 	eventsMu         sync.RWMutex
 	eventsClosed     bool
+
+	// Frame dispatch: the WASAPI callback only copies each frame into a
+	// pooled buffer and enqueues it; level computation and PCM handlers
+	// run on a dedicated drain goroutine so slow consumers can never
+	// overrun the audio thread. Guarded by dispatchMu; overruns and
+	// lastFrameNano are atomics shared with the callback/watchdog.
+	dispatchMu    sync.Mutex
+	frames        chan []byte
+	drainDone     chan struct{}
+	watchdogDone  chan struct{}
+	overruns      atomic.Uint64
+	lastFrameNano atomic.Int64
+
+	// resolvedHex caches the outcome of the expensive WASAPI capture-device
+	// enumeration ("" = system default). Guarded by resolveMu; invalidated
+	// when opening the cached endpoint fails.
+	resolveMu        sync.Mutex
+	resolvedHex      string
+	resolvedHexValid bool
 }
 
 var _ Session = (*MalgoSession)(nil)
@@ -50,7 +92,16 @@ func newMalgoSession(cfg Config) (Session, error) {
 		return nil, ErrUnsupportedSource
 	}
 
-	ctx, err := malgo.InitContext([]malgo.Backend{malgo.BackendWasapi}, malgo.ContextConfig{}, nil)
+	// TIME_CRITICAL is safe for this callback: it only memcpys into the
+	// pre-grown capture buffer and enqueues a pooled frame (~1ms per
+	// 32ms period), so it cannot starve the UI — but it survives being
+	// scheduled against a fully loaded machine. malgo's own default is
+	// THREAD_PRIORITY_HIGHEST ("highest" opt-out).
+	threadPriority := malgo.ThreadPriorityRealtime
+	if cfg.CaptureThreadPriority == "highest" {
+		threadPriority = malgo.ThreadPriorityHighest
+	}
+	ctx, err := malgo.InitContext([]malgo.Backend{malgo.BackendWasapi}, malgo.ContextConfig{ThreadPriority: threadPriority}, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -61,6 +112,9 @@ func newMalgoSession(cfg Config) (Session, error) {
 		events: make(chan Event, 8),
 	}
 	s.buffer.Grow(initialBufferSize)
+	if cfg.InputSource != InputSourceSystemLoopback && strings.TrimSpace(cfg.DeviceID) != "" {
+		go s.warmResolvedCaptureDevice()
+	}
 	return s, nil
 }
 
@@ -73,6 +127,7 @@ func (s *MalgoSession) Start() error {
 	s.buffer.Reset()
 	s.mu.Unlock()
 
+	startAt := time.Now()
 	deviceType := malgo.Capture
 	if s.cfg.InputSource == InputSourceSystemLoopback {
 		if err := ensureLoopbackOutputDeviceAvailable(s.cfg); err != nil {
@@ -80,30 +135,155 @@ func (s *MalgoSession) Start() error {
 		}
 		deviceType = malgo.Loopback
 	}
-	deviceConfig := malgo.DefaultDeviceConfig(deviceType)
-	deviceConfig.Capture.Format = malgo.FormatS16
-	deviceConfig.Capture.Channels = uint32(s.cfg.Channels)
-	deviceConfig.SampleRate = uint32(s.cfg.SampleRate)
 
-	var releaseDeviceID func()
-	if deviceID, ok, err := resolveMalgoInputDeviceID(s.cfg); err != nil {
+	resolveStart := time.Now()
+	deviceID, haveDeviceID, fromCache, err := s.resolveInputDeviceID(deviceType)
+	if err != nil {
 		return err
-	} else if ok {
-		deviceIDPtr := deviceID.Pointer()
-		deviceConfig.Capture.DeviceID = deviceIDPtr
-		releaseDeviceID = func() {
-			if deviceIDPtr != nil {
-				C.free(unsafe.Pointer(deviceIDPtr))
-			}
+	}
+	resolveDur := time.Since(resolveStart)
+
+	// Arm the frame dispatcher before the device can invoke callbacks.
+	frames := s.startFrameDispatch()
+
+	openStart := time.Now()
+	device, err := s.openAndStartDevice(deviceType, deviceID, haveDeviceID, frames)
+	if err != nil && fromCache {
+		// The cached endpoint id may be stale (device unplugged or Windows
+		// re-enumerated it). Fall back to one fresh enumeration and retry
+		// before giving up — this is the slow path the cache normally skips.
+		s.invalidateResolvedCaptureDevice()
+		slog.Warn("capture start with cached device id failed; re-enumerating",
+			"err", err)
+		deviceID, haveDeviceID, _, err = s.resolveInputDeviceID(deviceType)
+		if err == nil {
+			device, err = s.openAndStartDevice(deviceType, deviceID, haveDeviceID, frames)
 		}
 	}
+	if err != nil {
+		s.stopFrameDispatch()
+		return err
+	}
+	openDur := time.Since(openStart)
 
-	onRecvFrames := func(outputSamples, inputSamples []byte, frameCount uint32) {
-		s.mu.Lock()
-		s.buffer.Write(inputSamples)
-		s.mu.Unlock()
+	s.device = device
+	s.running.Store(true)
 
-		level := PCMLevel(inputSamples)
+	totalDur := time.Since(startAt)
+	timingArgs := []any{
+		"resolve_ms", resolveDur.Milliseconds(),
+		"open_ms", openDur.Milliseconds(),
+		"total_ms", totalDur.Milliseconds(),
+		"device_id_cached", fromCache,
+		"specific_device", haveDeviceID,
+	}
+	if totalDur > 250*time.Millisecond {
+		slog.Info("capture start timing (slow)", timingArgs...)
+	} else {
+		slog.Debug("capture start timing", timingArgs...)
+	}
+
+	s.emit(Event{
+		Type:    EventStarted,
+		Backend: BackendWindowsWASAPIMalgo,
+		Message: "malgo capture started",
+	})
+	return nil
+}
+
+// resolveInputDeviceID returns the endpoint to open. Capture-device
+// resolution is cached per session because a fresh WASAPI enumeration costs
+// hundreds of milliseconds and Start runs on the hotkey hot path; the cache
+// is warmed at construction and invalidated when opening the device fails.
+func (s *MalgoSession) resolveInputDeviceID(deviceType malgo.DeviceType) (malgo.DeviceID, bool, bool, error) {
+	if deviceType == malgo.Loopback {
+		id, ok, err := resolveOutputDeviceID(Config{
+			Backend:  s.cfg.Backend,
+			DeviceID: s.cfg.OutputDeviceID,
+		})
+		return id, ok, false, err
+	}
+
+	s.resolveMu.Lock()
+	cachedHex, cached := s.resolvedHex, s.resolvedHexValid
+	s.resolveMu.Unlock()
+
+	hexID := cachedHex
+	if !cached {
+		fresh, err := resolveCaptureDeviceHex(s.cfg)
+		if err != nil {
+			return malgo.DeviceID{}, false, false, err
+		}
+		hexID = fresh
+		s.resolveMu.Lock()
+		s.resolvedHex = fresh
+		s.resolvedHexValid = true
+		s.resolveMu.Unlock()
+	}
+
+	id, ok, err := deviceIDFromHexString(hexID)
+	return id, ok, cached, err
+}
+
+func (s *MalgoSession) invalidateResolvedCaptureDevice() {
+	s.resolveMu.Lock()
+	s.resolvedHex = ""
+	s.resolvedHexValid = false
+	s.resolveMu.Unlock()
+}
+
+// warmResolvedCaptureDevice pre-resolves the configured capture device off
+// the hotkey path so the first Start after construction hits the cache.
+func (s *MalgoSession) warmResolvedCaptureDevice() {
+	hexID, err := resolveCaptureDeviceHex(s.cfg)
+	if err != nil {
+		slog.Debug("capture device pre-resolve failed", "err", err)
+		return
+	}
+	s.resolveMu.Lock()
+	if !s.resolvedHexValid {
+		s.resolvedHex = hexID
+		s.resolvedHexValid = true
+	}
+	s.resolveMu.Unlock()
+}
+
+// startFrameDispatch arms the per-session frame channel plus its drain
+// and watchdog goroutines and returns the channel for the device
+// callback to feed. Must run before the device starts delivering
+// callbacks.
+func (s *MalgoSession) startFrameDispatch() chan []byte {
+	frames := make(chan []byte, frameDispatchDepth)
+	drainDone := make(chan struct{})
+	watchdogDone := make(chan struct{})
+
+	s.dispatchMu.Lock()
+	s.frames = frames
+	s.drainDone = drainDone
+	s.watchdogDone = watchdogDone
+	s.dispatchMu.Unlock()
+	s.overruns.Store(0)
+	s.lastFrameNano.Store(time.Now().UnixNano())
+
+	go s.drainFrames(frames, drainDone)
+	go s.watchCaptureStall(watchdogDone)
+	return frames
+}
+
+// drainFrames runs level computation and the PCM handlers off the
+// WASAPI callback thread. Pinned to its own OS thread at ABOVE_NORMAL
+// priority so foreign NORMAL-priority load cannot starve live
+// segmentation while the audio thread stays essentially idle.
+func (s *MalgoSession) drainFrames(frames <-chan []byte, done chan<- struct{}) {
+	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
+	if err := winapi.SetCurrentThreadPriority(winapi.ThreadPriorityAboveNormal); err != nil {
+		slog.Debug("audio drain thread priority raise failed", "err", err)
+	}
+	defer close(done)
+
+	for buf := range frames {
+		level := PCMLevel(buf)
 		s.levelMu.RLock()
 		levelHandler := s.levelHandler
 		s.levelMu.RUnlock()
@@ -115,16 +295,11 @@ func (s *MalgoSession) Start() error {
 		pcmHandler := s.pcmHandler
 		pooledHandler := s.pooledPCMHandler
 		s.pcmMu.RUnlock()
-		if pooledHandler != nil && len(inputSamples) > 0 {
-			// Pool-aware path: lease a buffer, copy malgo's reused
-			// chunk into it, hand to the consumer with an explicit
-			// release. malgo's source buffer is reused after this
-			// callback returns, so the copy is still mandatory —
-			// what changes is the destination's lifecycle, which
-			// is now pool-managed (typically 26x less heap per
-			// frame; see internal/audio/framepool_bench_test.go).
-			buf := Get()
-			buf = append(buf, inputSamples...)
+		switch {
+		case pooledHandler != nil:
+			// Pool-aware path: hand the pooled buffer straight to the
+			// consumer with an explicit release (typically 26x less heap
+			// per frame; see internal/audio/framepool_bench_test.go).
 			released := false
 			pooledHandler(buf, func() {
 				if released {
@@ -133,12 +308,148 @@ func (s *MalgoSession) Start() error {
 				released = true
 				Put(buf)
 			})
-		} else if pcmHandler != nil && len(inputSamples) > 0 {
-			// Legacy path: malgo reuses callback buffers, so
-			// forward a stable copy. Existing handlers retain
-			// ownership.
-			pcmHandler(append([]byte(nil), inputSamples...))
+		case pcmHandler != nil:
+			// Legacy path: handlers own the slice they receive, so
+			// forward a stable copy and recycle the pooled buffer.
+			pcmHandler(append([]byte(nil), buf...))
+			Put(buf)
+		default:
+			Put(buf)
 		}
+	}
+}
+
+// watchCaptureStall emits one EventStalled per episode when the device
+// claims to be running but frames stopped arriving (driver stall,
+// device starvation). Detection only — restart semantics are the
+// host's decision.
+func (s *MalgoSession) watchCaptureStall(done <-chan struct{}) {
+	ticker := time.NewTicker(stallCheckInterval)
+	defer ticker.Stop()
+	stalled := false
+	for {
+		select {
+		case <-done:
+			return
+		case <-ticker.C:
+			if !s.running.Load() {
+				stalled = false
+				continue
+			}
+			since := time.Since(time.Unix(0, s.lastFrameNano.Load()))
+			if since < stallWarnAfter {
+				stalled = false
+				continue
+			}
+			if stalled {
+				continue
+			}
+			stalled = true
+			slog.Warn("audio capture stalled — device running but no frames arriving",
+				"since_ms", since.Milliseconds())
+			s.emit(Event{
+				Type:    EventStalled,
+				Backend: BackendWindowsWASAPIMalgo,
+				Message: fmt.Sprintf("no audio frames for %dms while device is running", since.Milliseconds()),
+			})
+		}
+	}
+}
+
+// enqueueFrame copies one captured chunk into a pooled buffer and
+// enqueues it for the drain goroutine. Never blocks: on a full channel
+// the frame is dropped and counted — full capture is unaffected because
+// the callback already wrote it to the session buffer.
+func (s *MalgoSession) enqueueFrame(frames chan<- []byte, inputSamples []byte) {
+	s.lastFrameNano.Store(time.Now().UnixNano())
+
+	buf := Get()
+	buf = append(buf, inputSamples...)
+	select {
+	case frames <- buf:
+	default:
+		Put(buf)
+		if n := s.overruns.Add(1); n == 1 || n%100 == 0 {
+			slog.Warn("audio frame dispatcher overrun — dropping level/VAD frames (full capture unaffected)",
+				"dropped_frames", n)
+			s.emit(Event{
+				Type:    EventOverrun,
+				Backend: BackendWindowsWASAPIMalgo,
+				Message: fmt.Sprintf("frame dispatcher overrun (%d dropped)", n),
+			})
+		}
+	}
+}
+
+// stopFrameDispatch tears down the dispatcher armed by
+// startFrameDispatch. Must run after the device stopped delivering
+// callbacks; waits (bounded) for queued frames to finish draining so
+// the segmenter has seen everything the callback enqueued.
+func (s *MalgoSession) stopFrameDispatch() {
+	s.dispatchMu.Lock()
+	frames := s.frames
+	drainDone := s.drainDone
+	watchdogDone := s.watchdogDone
+	s.frames = nil
+	s.drainDone = nil
+	s.watchdogDone = nil
+	s.dispatchMu.Unlock()
+
+	if watchdogDone != nil {
+		close(watchdogDone)
+	}
+	if frames != nil {
+		close(frames)
+		select {
+		case <-drainDone:
+		case <-time.After(drainStopTimeout):
+			slog.Warn("audio frame drain did not complete before stop timeout")
+		}
+	}
+	if n := s.overruns.Load(); n > 0 {
+		slog.Warn("audio frame dispatcher dropped frames this session (full capture unaffected)",
+			"dropped_frames", n)
+	}
+}
+
+func (s *MalgoSession) openAndStartDevice(deviceType malgo.DeviceType, deviceID malgo.DeviceID, haveDeviceID bool, frames chan<- []byte) (*malgo.Device, error) {
+	deviceConfig := malgo.DefaultDeviceConfig(deviceType)
+	deviceConfig.Capture.Format = malgo.FormatS16
+	deviceConfig.Capture.Channels = uint32(s.cfg.Channels)
+	deviceConfig.SampleRate = uint32(s.cfg.SampleRate)
+	if s.cfg.FrameSizeMs > 0 {
+		// Honour the configured frame size; previously this knob was
+		// plumbed through Config but silently ignored by the malgo backend.
+		deviceConfig.PeriodSizeInMilliseconds = uint32(s.cfg.FrameSizeMs)
+	}
+
+	var releaseDeviceID func()
+	if haveDeviceID {
+		deviceIDPtr := deviceID.Pointer()
+		deviceConfig.Capture.DeviceID = deviceIDPtr
+		releaseDeviceID = func() {
+			if deviceIDPtr != nil {
+				C.free(unsafe.Pointer(deviceIDPtr))
+			}
+		}
+	}
+
+	onRecvFrames := func(outputSamples, inputSamples []byte, frameCount uint32) {
+		// Keep the WASAPI callback minimal: an overrun here means the
+		// driver glitches audio at the hardware level. The authoritative
+		// full-capture write stays synchronous (a memcpy into a
+		// pre-grown buffer, contended only by Stop) so dictation audio
+		// can never be lost to a slow consumer; everything else moves to
+		// the drain goroutine. malgo reuses its chunk after the callback
+		// returns, so the pooled copy is mandatory either way.
+		s.mu.Lock()
+		s.buffer.Write(inputSamples)
+		s.mu.Unlock()
+
+		if len(inputSamples) == 0 {
+			return
+		}
+		s.enqueueFrame(frames, inputSamples)
 	}
 
 	callbacks := malgo.DeviceCallbacks{
@@ -156,7 +467,7 @@ func (s *MalgoSession) Start() error {
 		if releaseDeviceID != nil {
 			releaseDeviceID()
 		}
-		return err
+		return nil, err
 	}
 	if releaseDeviceID != nil {
 		defer releaseDeviceID()
@@ -164,27 +475,10 @@ func (s *MalgoSession) Start() error {
 
 	if err := device.Start(); err != nil {
 		device.Uninit()
-		return err
+		return nil, err
 	}
 
-	s.device = device
-	s.running.Store(true)
-	s.emit(Event{
-		Type:    EventStarted,
-		Backend: BackendWindowsWASAPIMalgo,
-		Message: "malgo capture started",
-	})
-	return nil
-}
-
-func resolveMalgoInputDeviceID(cfg Config) (malgo.DeviceID, bool, error) {
-	if cfg.InputSource == InputSourceSystemLoopback {
-		return resolveOutputDeviceID(Config{
-			Backend:  cfg.Backend,
-			DeviceID: cfg.OutputDeviceID,
-		})
-	}
-	return resolveCaptureDeviceID(cfg)
+	return device, nil
 }
 
 // Stop stops recording and returns the captured PCM data. Resets the buffer.
@@ -200,6 +494,11 @@ func (s *MalgoSession) Stop() ([]byte, error) {
 		s.device.Uninit()
 		s.device = nil
 	}
+
+	// The device no longer delivers callbacks; flush the dispatcher so
+	// the segmenter has processed every enqueued frame before the full
+	// capture is returned.
+	s.stopFrameDispatch()
 
 	s.mu.Lock()
 	defer s.mu.Unlock()

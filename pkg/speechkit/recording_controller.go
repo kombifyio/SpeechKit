@@ -10,6 +10,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	speechkitaudio "github.com/kombifyio/SpeechKit/pkg/speechkit/audio"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/speaker"
 )
 
@@ -21,7 +22,26 @@ type IdleObserver interface {
 	IdleSince() time.Time
 }
 
+// AudioIdleObserver is implemented by SegmentCollectors that can report
+// silence in audio time: the cumulative duration of processed silent
+// frames since the last detected speech, plus the wall-clock time of the
+// most recently processed frame. When a collector satisfies this
+// interface it is preferred over [IdleObserver], because audio-anchored
+// silence is immune to CPU-starvation stalls — when frame delivery
+// stalls, the silence counter freezes instead of counting wall-clock
+// seconds and auto-stopping mid-dictation.
+type AudioIdleObserver interface {
+	IdleAudio() (silence time.Duration, lastFrame time.Time)
+}
+
 const defaultIdleWatchInterval = 1 * time.Second
+
+// deadCaptureBackstopFloor is the minimum no-frames-at-all duration
+// before the audio-anchored idle watcher force-stops a session. High
+// enough that load-induced delivery stalls (sub-second to a few
+// seconds) can never trigger it; a genuinely dead capture device still
+// terminates the session.
+const deadCaptureBackstopFloor = 30 * time.Second
 
 const DefaultMinPCMBytes = 3200
 
@@ -31,11 +51,33 @@ const (
 	staleCaptureMaxRatio    = 4.0
 )
 
+// shortNoSpeechGateSecs bounds the junk-capture gate: only captures shorter
+// than this AND with all audio below the noise floor are dropped before STT
+// submission. Kept short so no legitimate one-word utterance is at risk.
+const shortNoSpeechGateSecs = 2.0
+
+// noiseFloorRMS is the normalised RMS ([0,1] against int16 full scale) below
+// which a capture is considered to contain no audio at all. Room silence on
+// desktop mics sits around 0.005; real speech sits an order of magnitude
+// higher.
+const noiseFloorRMS = 0.003
+
 // AudioRecorder is the hardware abstraction for microphone capture.
 type AudioRecorder interface {
 	Start() error
 	Stop() ([]byte, error)
 	SetPCMHandler(func([]byte))
+}
+
+// PooledPCMRecorder is optionally implemented by AudioRecorders whose
+// backend leases per-frame buffers from a pool instead of allocating a
+// fresh copy per frame (~33 allocations/sec during capture). When the
+// recorder satisfies this interface the controller installs the
+// pool-aware handler and releases each buffer as soon as the frame has
+// been fed to the collector/stream — the controller never retains a
+// frame. Structurally matches internal/audio's SetPooledPCMHandler.
+type PooledPCMRecorder interface {
+	SetPooledPCMHandler(func(buf []byte, release func()))
 }
 
 // SegmentCollector accumulates real-time PCM frames and splits them into
@@ -250,6 +292,29 @@ func (c *RecordingController) IsRecording() bool {
 	return c.recording || c.stopping
 }
 
+// IsCapturing reports whether the microphone is physically open. Unlike
+// [IsRecording] it excludes the stop/drain window, so hosts can
+// distinguish "user is still dictating" (suppress post-capture UI
+// states) from "capture ended, transcription in flight" (terminal
+// states must display).
+func (c *RecordingController) IsCapturing() bool {
+	if c == nil {
+		return false
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.recording
+}
+
+// clearPCMHandlers detaches both the legacy and (when supported) the
+// pool-aware PCM handler from the recorder.
+func (c *RecordingController) clearPCMHandlers() {
+	c.recorder.SetPCMHandler(nil)
+	if pooled, ok := c.recorder.(PooledPCMRecorder); ok {
+		pooled.SetPooledPCMHandler(nil)
+	}
+}
+
 func (c *RecordingController) Start(opts RecordingStartOptions) error {
 	if c == nil {
 		return fmt.Errorf("speechkit: recording controller not configured")
@@ -302,7 +367,7 @@ func (c *RecordingController) Start(opts RecordingStartOptions) error {
 	hasNativeStream := c.sessionID == sessionID && c.nativeStream != nil
 	c.mu.Unlock()
 	if collector != nil || hasNativeStream {
-		c.recorder.SetPCMHandler(func(pcm []byte) {
+		handlePCM := func(pcm []byte) {
 			c.mu.Lock()
 			if c.sessionID != sessionID || !c.recording {
 				c.mu.Unlock()
@@ -325,17 +390,30 @@ func (c *RecordingController) Start(opts RecordingStartOptions) error {
 					c.collector = nil
 				}
 				c.mu.Unlock()
-				c.recorder.SetPCMHandler(nil)
+				c.clearPCMHandlers()
 				return
 			}
 			if current.StreamSegments {
 				c.drainAndSubmitReadySegments(sessionID, current, activeCollector)
 			}
-		})
+		}
+		if pooled, ok := c.recorder.(PooledPCMRecorder); ok {
+			// Pool-aware path: neither enqueuePCM nor FeedPCM retains
+			// the frame (both copy), so the buffer can be released as
+			// soon as the handler returns.
+			c.recorder.SetPCMHandler(nil)
+			pooled.SetPooledPCMHandler(func(buf []byte, release func()) {
+				defer release()
+				handlePCM(buf)
+			})
+		} else {
+			c.recorder.SetPCMHandler(handlePCM)
+		}
 	} else {
-		c.recorder.SetPCMHandler(nil)
+		c.clearPCMHandlers()
 	}
 
+	recorderStartAt := c.clockNow()
 	if err := c.recorder.Start(); err != nil {
 		c.mu.Lock()
 		nativeStream := c.nativeStream
@@ -349,12 +427,18 @@ func (c *RecordingController) Start(opts RecordingStartOptions) error {
 		if nativeStream != nil {
 			c.stopNativeDictationStream(nativeStream)
 		}
-		c.recorder.SetPCMHandler(nil)
+		c.clearPCMHandlers()
 		c.onLog(fmt.Sprintf("Capture error: %v", err), "error")
 		c.onState("idle", "")
 		return err
 	}
 	startedAt := c.clockNow()
+	if openDur := startedAt.Sub(recorderStartAt); openDur > 300*time.Millisecond {
+		// Audio spoken before the device opened is lost — make a slow open
+		// visible so late-start regressions (e.g. device re-enumeration on
+		// the hot path) show up in the log instead of as missing words.
+		c.onLog(fmt.Sprintf("Capture device open took %dms — start of speech may be clipped", openDur.Milliseconds()), "warn")
+	}
 	c.mu.Lock()
 	if c.sessionID == sessionID {
 		c.startedAt = startedAt
@@ -371,7 +455,10 @@ func (c *RecordingController) Start(opts RecordingStartOptions) error {
 	// can report idle time. Wake-word/hold-to-talk paths leave the
 	// timeout at zero and skip the watcher entirely.
 	if opts.IdleTimeout > 0 && opts.OnIdleTimeoutCallback != nil {
-		if observer, ok := collector.(IdleObserver); ok {
+		switch observer := collector.(type) {
+		case AudioIdleObserver:
+			c.startAudioIdleWatcher(sessionID, observer, opts.IdleTimeout, opts.OnIdleTimeoutCallback)
+		case IdleObserver:
 			c.startIdleWatcher(sessionID, observer, opts.IdleTimeout, opts.OnIdleTimeoutCallback)
 		}
 	}
@@ -429,6 +516,74 @@ func (c *RecordingController) startIdleWatcher(sessionID uint64, observer IdleOb
 	}()
 }
 
+// startAudioIdleWatcher is the audio-anchored variant of startIdleWatcher:
+// it polls observer.IdleAudio() and fires callback once the *processed
+// audio* has been silent for timeout. Because silence only accumulates
+// while frames actually flow, a CPU-starvation delivery stall freezes the
+// countdown instead of auto-stopping mid-dictation. A dead-capture
+// backstop still terminates the session when no frames arrive at all for
+// max(timeout, deadCaptureBackstopFloor).
+func (c *RecordingController) startAudioIdleWatcher(sessionID uint64, observer AudioIdleObserver, timeout time.Duration, callback func()) {
+	done := make(chan struct{})
+	c.mu.Lock()
+	c.idleWatcherCh = done
+	interval := c.idleWatchInterval
+	c.mu.Unlock()
+	if interval <= 0 {
+		interval = defaultIdleWatchInterval
+	}
+
+	backstop := timeout
+	if backstop < deadCaptureBackstopFloor {
+		backstop = deadCaptureBackstopFloor
+	}
+	watcherStart := c.now()
+
+	go func() {
+		ticker := time.NewTicker(interval)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-done:
+				return
+			case <-ticker.C:
+				c.mu.Lock()
+				stillActive := c.sessionID == sessionID && c.recording
+				c.mu.Unlock()
+				if !stillActive {
+					return
+				}
+				silence, lastFrame := observer.IdleAudio()
+				fire := false
+				switch {
+				case silence >= timeout:
+					c.onLog(fmt.Sprintf("Silence timeout reached (%.0fs audio silence, limit %.0fs) — auto-stopping dictate.", silence.Seconds(), timeout.Seconds()), "info")
+					fire = true
+				case lastFrame.IsZero() && c.now().Sub(watcherStart) >= backstop:
+					// Capture never delivered a single frame — dead device.
+					c.onLog(fmt.Sprintf("Capture stalled — no audio frames since session start (%.0fs); stopping dictate.", backstop.Seconds()), "warning")
+					fire = true
+				case !lastFrame.IsZero() && c.now().Sub(lastFrame) >= backstop:
+					c.onLog(fmt.Sprintf("Capture stalled — no audio frames for %.0fs; stopping dictate.", c.now().Sub(lastFrame).Seconds()), "warning")
+					fire = true
+				}
+				if !fire {
+					continue
+				}
+				// Mark watcher done before firing the callback so a
+				// Stop() racing on the same channel does not deadlock.
+				c.mu.Lock()
+				if c.idleWatcherCh == done {
+					c.idleWatcherCh = nil
+				}
+				c.mu.Unlock()
+				callback()
+				return
+			}
+		}
+	}()
+}
+
 func (c *RecordingController) Stop(opts RecordingStopOptions) error {
 	if c == nil {
 		return nil
@@ -472,7 +627,7 @@ func (c *RecordingController) Stop(opts RecordingStopOptions) error {
 	c.nativeStream = nil
 	c.mu.Unlock()
 
-	c.recorder.SetPCMHandler(nil)
+	c.clearPCMHandlers()
 	pcm, stopErr := c.recorder.Stop()
 	if stopErr != nil {
 		c.onLog(fmt.Sprintf("Capture stop warning: %v", stopErr), "warn")
@@ -503,6 +658,20 @@ func (c *RecordingController) Stop(opts RecordingStopOptions) error {
 		c.onLog("Too short, skipped", "error")
 		c.onState("idle", "")
 		c.collector = nil
+		return nil
+	}
+
+	// Junk-capture gate: a very short capture whose audio never rises above
+	// the noise floor is key chatter or an accidental tap, not dictation.
+	// Submitting it anyway costs a full provider roundtrip (and, with a
+	// single worker, delays every real job queued behind it). The check is
+	// pure signal energy — deliberately NOT the VAD verdict, so the crude
+	// level VAD can never discard a capture that contains actual audio.
+	// Provider-stream sessions are exempt: their finalization below owns
+	// the speech/no-speech verdict.
+	if nativeStream == nil && dur < shortNoSpeechGateSecs && speechkitaudio.PCMLevel(pcm) < noiseFloorRMS {
+		c.onLog(fmt.Sprintf("No audio above noise floor in %.1fs capture, skipped", dur), "info")
+		c.onState("idle", "")
 		return nil
 	}
 
@@ -552,6 +721,7 @@ func (c *RecordingController) Stop(opts RecordingStopOptions) error {
 			c.onState("idle", "")
 			return nil
 		}
+		c.onState("processing", "")
 		return nil
 	}
 
@@ -602,6 +772,11 @@ func (c *RecordingController) Stop(opts RecordingStopOptions) error {
 		c.onState("idle", "")
 		return err
 	}
+
+	// Capture has physically stopped and the job is queued. Without this the
+	// UI keeps showing "recording" until the worker dequeues the job — which
+	// can lag by seconds when earlier jobs are still in flight.
+	c.onState("processing", "")
 
 	return nil
 }
@@ -790,7 +965,7 @@ func (c *RecordingController) Cancel(opts RecordingCancelOptions) error {
 		c.stopNativeDictationStream(nativeStream)
 	}
 
-	c.recorder.SetPCMHandler(nil)
+	c.clearPCMHandlers()
 	_, stopErr := c.recorder.Stop()
 	if stopErr != nil {
 		c.onLog(fmt.Sprintf("Capture cancel warning: %v", stopErr), "warn")

@@ -61,15 +61,19 @@ func malgoBackendsForConfig(cfg Config) ([]malgo.Backend, error) {
 	}
 }
 
-func resolveCaptureDeviceID(cfg Config) (malgo.DeviceID, bool, error) {
+// resolveCaptureDeviceHex runs a full WASAPI enumeration and returns the hex
+// endpoint id to open ("" = system default). Enumeration costs hundreds of
+// milliseconds — callers on the capture-start hot path must cache the result
+// and only re-resolve after an open/start failure.
+func resolveCaptureDeviceHex(cfg Config) (string, error) {
 	requested := strings.TrimSpace(cfg.DeviceID)
 	if requested == "" {
-		return malgo.DeviceID{}, false, nil
+		return "", nil
 	}
 
 	devices, err := ListCaptureDevices(cfg)
 	if err != nil {
-		return malgo.DeviceID{}, false, err
+		return "", err
 	}
 
 	selected := selectCaptureDeviceID(requested, cfg.DeviceName, devices)
@@ -82,7 +86,7 @@ func resolveCaptureDeviceID(cfg Config) (malgo.DeviceID, bool, error) {
 			"requested_device_id", requested,
 			"requested_device_name", cfg.DeviceName,
 			"available_devices", strings.Join(names, "; "))
-		return malgo.DeviceID{}, false, nil
+		return "", nil
 	}
 
 	if !strings.EqualFold(selected, requested) {
@@ -95,7 +99,7 @@ func resolveCaptureDeviceID(cfg Config) (malgo.DeviceID, bool, error) {
 		}
 	}
 
-	return deviceIDFromHexString(selected)
+	return selected, nil
 }
 
 func resolveOutputDeviceID(cfg Config) (malgo.DeviceID, bool, error) {

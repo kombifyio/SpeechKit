@@ -340,6 +340,82 @@ func TestDictationSegmenterFallsBackOnEmptyOrErrors(t *testing.T) {
 	}
 }
 
+func TestDictationSegmenterIdleAudioAccumulatesFrameTime(t *testing.T) {
+	frame := dictationFrameDuration()
+	probs := repeatProb(0, 5)
+	probs = append(probs, repeatProb(0.8, 40)...)
+	probs = append(probs, repeatProb(0, 3)...)
+	vad := &fakeVAD{probs: probs}
+	segmenter := NewDictationSegmenter(vad, 2*frame)
+	if segmenter == nil {
+		t.Fatal("expected segmenter")
+	}
+
+	// Leading silence before any speech accumulates per processed frame.
+	if err := segmenter.FeedPCM(repeatFrame(5)); err != nil {
+		t.Fatalf("FeedPCM: %v", err)
+	}
+	silence, lastFrame := segmenter.IdleAudio()
+	if want := 5 * frame; silence != want {
+		t.Fatalf("leading silence = %s, want %s", silence, want)
+	}
+	if lastFrame.IsZero() {
+		t.Fatal("lastFrame should be stamped after FeedPCM")
+	}
+
+	// Active speech reports zero silence.
+	if err := segmenter.FeedPCM(repeatFrame(40)); err != nil {
+		t.Fatalf("FeedPCM: %v", err)
+	}
+	silence, _ = segmenter.IdleAudio()
+	if silence != 0 {
+		t.Fatalf("silence during speech = %s, want 0", silence)
+	}
+
+	// Post-speech pause: 2 frames trip the pause threshold (credited to
+	// idle silence), the 3rd accumulates on top.
+	if err := segmenter.FeedPCM(repeatFrame(3)); err != nil {
+		t.Fatalf("FeedPCM: %v", err)
+	}
+	silence, _ = segmenter.IdleAudio()
+	if want := 3 * frame; silence != want {
+		t.Fatalf("post-speech silence = %s, want %s", silence, want)
+	}
+}
+
+func TestDictationSegmenterIdleAudioFreezesWithoutFrames(t *testing.T) {
+	frame := dictationFrameDuration()
+	probs := repeatProb(0.8, 40)
+	probs = append(probs, repeatProb(0, 3)...)
+	vad := &fakeVAD{probs: probs}
+	segmenter := NewDictationSegmenter(vad, 2*frame)
+	if segmenter == nil {
+		t.Fatal("expected segmenter")
+	}
+
+	current := time.Unix(1000, 0)
+	segmenter.nowFunc = func() time.Time { return current }
+
+	if err := segmenter.FeedPCM(repeatFrame(43)); err != nil {
+		t.Fatalf("FeedPCM: %v", err)
+	}
+	silenceBefore, lastFrameBefore := segmenter.IdleAudio()
+	if silenceBefore == 0 {
+		t.Fatal("expected accumulated post-speech silence")
+	}
+
+	// Wall clock advances 10s with NO frames delivered (CPU-starvation
+	// stall). Audio-anchored silence must not move.
+	current = current.Add(10 * time.Second)
+	silenceAfter, lastFrameAfter := segmenter.IdleAudio()
+	if silenceAfter != silenceBefore {
+		t.Fatalf("silence advanced during frame stall: %s -> %s", silenceBefore, silenceAfter)
+	}
+	if !lastFrameAfter.Equal(lastFrameBefore) {
+		t.Fatalf("lastFrame changed without frames: %s -> %s", lastFrameBefore, lastFrameAfter)
+	}
+}
+
 func repeatProb(prob float32, n int) []float32 {
 	values := make([]float32, n)
 	for i := range values {

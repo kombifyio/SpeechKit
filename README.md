@@ -1,6 +1,6 @@
 # SpeechKit
 
-[![Maturity: beta](https://img.shields.io/badge/maturity-beta-blue.svg)](CHANGELOG.md)
+[![Maturity: beta](https://img.shields.io/badge/maturity-beta-blue.svg)](STATUS.md)
 [![Go Reference](https://pkg.go.dev/badge/github.com/kombifyio/SpeechKit.svg)](https://pkg.go.dev/github.com/kombifyio/SpeechKit)
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
 [![Go](https://img.shields.io/badge/go-1.26%2B-00ADD8.svg)](go.mod)

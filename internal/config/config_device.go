@@ -35,7 +35,7 @@ type GeneralConfig struct {
 	FastModeSilenceMs              int    `toml:"fast_mode_silence_ms"`              // silence threshold for Quick Capture auto-stop
 	DictateSilenceTimeoutSec       int    `toml:"dictate_silence_timeout_sec"`       // total silence in seconds before dictate auto-stops; 0 disables
 	DictationIntermediateSegmentMs int    `toml:"dictation_intermediate_segment_ms"` // minimum utterance size before live dictation emits a pause-bounded segment
-	DictationProcessingMode        string `toml:"dictation_processing_mode"`         // final_full | segment_batch | provider_stream | auto
+	DictationProcessingMode        string `toml:"dictation_processing_mode"`         // auto | final_full | segment_batch | provider_stream
 	ModelDownloadDir               string `toml:"model_download_dir"`                // Default directory for downloaded local model files
 }
 
@@ -49,6 +49,17 @@ type AudioConfig struct {
 	Channels       int    `toml:"channels"`
 	FrameSizeMs    int    `toml:"frame_size_ms"`
 	LatencyHint    string `toml:"latency_hint"`
+}
+
+// VADConfig tunes the level-based dictation voice-activity detector (the
+// production fallback while the Silero binding is disabled). Zero values use
+// the built-in defaults. RMS levels are normalised to [0,1] against int16
+// full scale; typical desktop values: ~0.005 room silence, 0.01-0.03 speech
+// on a moderately-gained microphone.
+type VADConfig struct {
+	SilenceBelow float64 `toml:"silence_below"` // RMS at/below this is silence
+	SpeechAbove  float64 `toml:"speech_above"`  // RMS at/above this is speech
+	HangoverMs   int     `toml:"hangover_ms"`   // hold speech verdict this long after the last speech frame
 }
 
 type VocabularyConfig struct {
@@ -151,4 +162,24 @@ type UIConfig struct {
 type OverlayFreePosition struct {
 	X int `toml:"x"`
 	Y int `toml:"y"`
+}
+
+// PerformanceConfig tunes Windows scheduling protection for the
+// Device-Target so live capture stays reliable under CPU contention.
+// All fields default to the protective setting when empty; non-Windows
+// targets ignore the block entirely.
+type PerformanceConfig struct {
+	// ProcessPriority: "above_normal" (default) raises the desktop
+	// process priority class so capture/VAD/hotkeys preempt foreign
+	// NORMAL-priority load; "normal" leaves the class untouched.
+	ProcessPriority string `toml:"process_priority"`
+	// SubprocessPriority: "below_normal" (default) spawns CPU-heavy
+	// children (whisper-server, local LLM, wake-word sidecars) at
+	// BELOW_NORMAL so they cannot starve live capture; "normal" spawns
+	// them unadjusted.
+	SubprocessPriority string `toml:"subprocess_priority"`
+	// CaptureThreadPriority: "realtime" (default) runs the WASAPI
+	// capture thread at TIME_CRITICAL; "highest" keeps malgo's default
+	// THREAD_PRIORITY_HIGHEST.
+	CaptureThreadPriority string `toml:"capture_thread_priority"`
 }

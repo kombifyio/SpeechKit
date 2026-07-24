@@ -23,7 +23,21 @@ func NormalizeHotkeyBehavior(value, fallback string) string {
 
 func NormalizeDictationProcessingMode(value, fallback string) string {
 	switch strings.ToLower(strings.TrimSpace(value)) {
-	case DictationProcessingModeFinalFull, "":
+	case DictationProcessingModeFinalFull:
+		return DictationProcessingModeFinalFull
+	case DictationProcessingModeSegmentBatch:
+		return DictationProcessingModeSegmentBatch
+	case DictationProcessingModeProviderStream:
+		return DictationProcessingModeProviderStream
+	case DictationProcessingModeAuto:
+		return DictationProcessingModeAuto
+	}
+	// Empty or unrecognised: honour the caller's fallback (this is how the
+	// blank-config default flows through). Backstop to final_full only when
+	// the fallback is itself empty or invalid, so a slow-but-safe mode is the
+	// worst case rather than an undefined one.
+	switch strings.ToLower(strings.TrimSpace(fallback)) {
+	case DictationProcessingModeFinalFull:
 		return DictationProcessingModeFinalFull
 	case DictationProcessingModeSegmentBatch:
 		return DictationProcessingModeSegmentBatch
@@ -32,13 +46,7 @@ func NormalizeDictationProcessingMode(value, fallback string) string {
 	case DictationProcessingModeAuto:
 		return DictationProcessingModeAuto
 	default:
-		if strings.TrimSpace(fallback) == "" {
-			return DictationProcessingModeFinalFull
-		}
-		if strings.EqualFold(strings.TrimSpace(fallback), value) {
-			return DictationProcessingModeFinalFull
-		}
-		return NormalizeDictationProcessingMode(fallback, DictationProcessingModeFinalFull)
+		return DictationProcessingModeFinalFull
 	}
 }
 

@@ -36,6 +36,15 @@ const (
 	EventStopped EventType = "stopped"
 	EventWarning EventType = "warning"
 	EventError   EventType = "error"
+	// EventOverrun signals that the frame dispatcher dropped captured
+	// frames because the consumer (level/VAD handlers) could not keep
+	// up. The authoritative full-capture buffer is unaffected — only
+	// live level/segmentation frames were lost.
+	EventOverrun EventType = "overrun"
+	// EventStalled signals that the capture device stopped delivering
+	// frames while it claims to be running (driver stall, device
+	// starvation). Emitted once per stall episode.
+	EventStalled EventType = "stalled"
 )
 
 type Event struct {
@@ -59,6 +68,12 @@ type Config struct {
 	Channels       int
 	FrameSizeMs    int
 	LatencyHint    string
+	// CaptureThreadPriority selects the OS priority of the backend's
+	// audio worker thread: "realtime" (default, TIME_CRITICAL — safe
+	// because the callback only memcpys and enqueues) or "highest"
+	// (malgo's own default). Ignored by backends without native thread
+	// control.
+	CaptureThreadPriority string
 }
 
 // Session records microphone PCM and exposes both level and live-audio callbacks.
@@ -100,7 +115,12 @@ type Session interface {
 // optimisation only matters for sustained capture (~33 callbacks/sec
 // per session); short-lived recording paths can stay on the legacy
 // SetPCMHandler API without ceremony.
-type PooledPCMHandler func(buf []byte, release func())
+//
+// Declared as a type alias (not a defined type) so implementations of
+// [Session] structurally satisfy interfaces declared outside this
+// package (e.g. pkg/speechkit's PooledPCMRecorder) without importing
+// internal/audio.
+type PooledPCMHandler = func(buf []byte, release func())
 
 // Capturer is kept as an alias while the app migrates to the session terminology.
 type Capturer = Session
@@ -182,6 +202,9 @@ func normalizeConfig(cfg Config) Config {
 	}
 	if cfg.FrameSizeMs <= 0 {
 		cfg.FrameSizeMs = 32
+	}
+	if cfg.CaptureThreadPriority == "" {
+		cfg.CaptureThreadPriority = "realtime"
 	}
 	return cfg
 }

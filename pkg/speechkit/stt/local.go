@@ -150,7 +150,12 @@ func (p *LocalProvider) StartServer(ctx context.Context) error {
 	p.cmd.Stdout = os.Stderr // whisper-server logs to stdout
 	p.cmd.Stderr = os.Stderr
 
-	slog.Info("starting whisper-server", "binary", binaryPath, "args", args, "threads", threads)
+	// gpu_mode is the *requested* mode; whether inference actually runs on a
+	// GPU depends on how the bundled whisper-server was built (a CPU-only
+	// build silently ignores "auto"/"cuda" and transcription scales with
+	// audio length). whisper-server's own startup banner on stderr names the
+	// backend it actually initialised — check it when latency looks CPU-bound.
+	slog.Info("starting whisper-server", "binary", binaryPath, "args", args, "threads", threads, "gpu_mode", p.GPU)
 	if err := p.cmd.Start(); err != nil {
 		return fmt.Errorf("start whisper-server: %w", err)
 	}

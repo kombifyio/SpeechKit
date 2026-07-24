@@ -34,6 +34,28 @@ func (c *fakeIdleCollector) setIdleSince(t time.Time) {
 	c.idleSince = t
 }
 
+// fakeAudioIdleCollector pins audio-anchored idle facts so the
+// RecordingController's audio idle watcher runs deterministically.
+type fakeAudioIdleCollector struct {
+	fakeCollector
+	mu        sync.Mutex
+	silence   time.Duration
+	lastFrame time.Time
+}
+
+func (c *fakeAudioIdleCollector) IdleAudio() (time.Duration, time.Time) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.silence, c.lastFrame
+}
+
+func (c *fakeAudioIdleCollector) setIdleAudio(silence time.Duration, lastFrame time.Time) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.silence = silence
+	c.lastFrame = lastFrame
+}
+
 type fakeRecorder struct {
 	startErr   error
 	stopErr    error
@@ -57,6 +79,18 @@ func (r *fakeRecorder) Stop() ([]byte, error) {
 
 func (r *fakeRecorder) SetPCMHandler(handler func([]byte)) {
 	r.pcmHandler = handler
+}
+
+// fakePooledRecorder implements PooledPCMRecorder on top of
+// fakeRecorder so tests can verify the controller prefers the
+// pool-aware handler and releases every frame.
+type fakePooledRecorder struct {
+	fakeRecorder
+	pooledHandler func(buf []byte, release func())
+}
+
+func (r *fakePooledRecorder) SetPooledPCMHandler(handler func(buf []byte, release func())) {
+	r.pooledHandler = handler
 }
 
 type fakeSubmitter struct {
@@ -317,6 +351,51 @@ func TestRecordingControllerStopWithNoSegmentsResetsIdle(t *testing.T) {
 	}
 	if !observer.hasLog("No speech segments detected") {
 		t.Fatalf("observer logs = %v, want no-segments log", observer.logs)
+	}
+}
+
+// TestRecordingControllerSkipsShortNoiseFloorCapture pins the junk-capture
+// gate: a sub-2s capture whose signal never rises above the noise floor
+// (accidental hotkey tap, key chatter) must be dropped before it costs a
+// provider roundtrip. The gate is pure energy — a short but audible capture
+// must still be submitted.
+func TestRecordingControllerSkipsShortNoiseFloorCapture(t *testing.T) {
+	silent := make([]byte, 6400) // 0.2s of digital silence
+	recorder := &fakeRecorder{stopPCM: silent}
+	submitter := &fakeSubmitter{}
+	observer := &fakeObserver{}
+	controller := NewRecordingController(recorder, submitter, observer, nil)
+
+	if err := controller.Start(RecordingStartOptions{Language: "en"}); err != nil {
+		t.Fatalf("Start() error = %v", err)
+	}
+	if err := controller.Stop(RecordingStopOptions{Label: "Captured"}); err != nil {
+		t.Fatalf("Stop() error = %v", err)
+	}
+
+	if got := len(submitter.jobs); got != 0 {
+		t.Fatalf("submitted jobs = %d, want 0 for noise-floor capture", got)
+	}
+	if !observer.hasLog("No audio above noise floor") {
+		t.Fatalf("observer logs = %v, want noise-floor skip log", observer.logs)
+	}
+	if got := observer.states; len(got) == 0 || got[len(got)-1] != "idle:" {
+		t.Fatalf("states = %#v, want final idle", got)
+	}
+
+	// Same duration but audible content must be submitted.
+	recorder.stopPCM = []byte(strings.Repeat("a", 6400))
+	if err := controller.Start(RecordingStartOptions{Language: "en"}); err != nil {
+		t.Fatalf("Start() (audible) error = %v", err)
+	}
+	if err := controller.Stop(RecordingStopOptions{Label: "Captured"}); err != nil {
+		t.Fatalf("Stop() (audible) error = %v", err)
+	}
+	if got := len(submitter.jobs); got != 1 {
+		t.Fatalf("submitted jobs = %d, want 1 for audible capture", got)
+	}
+	if got := observer.states; len(got) == 0 || got[len(got)-1] != "processing:" {
+		t.Fatalf("states = %#v, want final processing after successful submit", got)
 	}
 }
 
@@ -850,6 +929,155 @@ func TestRecordingControllerIdleWatcherSkipsWhileSpeechActive(t *testing.T) {
 	}
 }
 
+func TestRecordingControllerAudioIdleWatcherFiresOnAudioSilence(t *testing.T) {
+	recorder := &fakeRecorder{stopPCM: []byte(strings.Repeat("a", 6400))}
+	submitter := &fakeSubmitter{}
+	observer := &fakeObserver{}
+	collector := &fakeAudioIdleCollector{}
+	collector.setIdleAudio(5*time.Second, time.Now())
+
+	controller := NewRecordingController(recorder, submitter, observer, func() SegmentCollector {
+		return collector
+	})
+	controller.SetIdleWatchInterval(5 * time.Millisecond)
+
+	var fired atomic.Int32
+	if err := controller.Start(RecordingStartOptions{
+		Language:    "en",
+		IdleTimeout: 100 * time.Millisecond,
+		OnIdleTimeoutCallback: func() {
+			fired.Add(1)
+		},
+	}); err != nil {
+		t.Fatalf("Start() error = %v", err)
+	}
+
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		if fired.Load() > 0 {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	if fired.Load() != 1 {
+		t.Fatalf("idle callback fired %d times, want 1", fired.Load())
+	}
+
+	if err := controller.Stop(RecordingStopOptions{Label: "Captured"}); err != nil {
+		t.Fatalf("Stop() error = %v", err)
+	}
+}
+
+func TestRecordingControllerAudioIdleWatcherIgnoresWallClockStall(t *testing.T) {
+	recorder := &fakeRecorder{stopPCM: []byte(strings.Repeat("a", 6400))}
+	submitter := &fakeSubmitter{}
+	observer := &fakeObserver{}
+	collector := &fakeAudioIdleCollector{}
+	// Frame delivery stalled right after a short pause: audio silence is
+	// pinned below the timeout while wall-clock time keeps passing.
+	collector.setIdleAudio(10*time.Millisecond, time.Now())
+
+	controller := NewRecordingController(recorder, submitter, observer, func() SegmentCollector {
+		return collector
+	})
+	controller.SetIdleWatchInterval(5 * time.Millisecond)
+
+	var fired atomic.Int32
+	if err := controller.Start(RecordingStartOptions{
+		Language:    "en",
+		IdleTimeout: 50 * time.Millisecond,
+		OnIdleTimeoutCallback: func() {
+			fired.Add(1)
+		},
+	}); err != nil {
+		t.Fatalf("Start() error = %v", err)
+	}
+
+	// Many wall-clock timeouts pass; the watcher must not fire because
+	// the *audio* has not been silent long enough.
+	time.Sleep(300 * time.Millisecond)
+	if fired.Load() != 0 {
+		t.Fatalf("idle callback fired on wall-clock stall (fired=%d)", fired.Load())
+	}
+
+	// Frames catch up in a burst and push audio silence past the
+	// timeout — now the watcher must fire exactly once.
+	collector.setIdleAudio(60*time.Millisecond, time.Now())
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		if fired.Load() > 0 {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	if fired.Load() != 1 {
+		t.Fatalf("idle callback fired %d times after burst, want 1", fired.Load())
+	}
+
+	if err := controller.Stop(RecordingStopOptions{Label: "Captured"}); err != nil {
+		t.Fatalf("Stop() error = %v", err)
+	}
+}
+
+func TestRecordingControllerAudioIdleWatcherDeadCaptureBackstop(t *testing.T) {
+	recorder := &fakeRecorder{stopPCM: []byte(strings.Repeat("a", 6400))}
+	submitter := &fakeSubmitter{}
+	observer := &fakeObserver{}
+	collector := &fakeAudioIdleCollector{}
+
+	start := time.Unix(2000, 0)
+	collector.setIdleAudio(0, start.Add(-time.Second))
+
+	var clock sync.Mutex
+	current := start
+	controller := NewRecordingController(recorder, submitter, observer, func() SegmentCollector {
+		return collector
+	})
+	controller.now = func() time.Time {
+		clock.Lock()
+		defer clock.Unlock()
+		return current
+	}
+	controller.SetIdleWatchInterval(5 * time.Millisecond)
+
+	var fired atomic.Int32
+	if err := controller.Start(RecordingStartOptions{
+		Language:    "en",
+		IdleTimeout: 100 * time.Millisecond,
+		OnIdleTimeoutCallback: func() {
+			fired.Add(1)
+		},
+	}); err != nil {
+		t.Fatalf("Start() error = %v", err)
+	}
+
+	// Below the 30s floor nothing may fire, even though the timeout is
+	// long exceeded in wall-clock terms.
+	time.Sleep(100 * time.Millisecond)
+	if fired.Load() != 0 {
+		t.Fatalf("backstop fired below the floor (fired=%d)", fired.Load())
+	}
+
+	clock.Lock()
+	current = start.Add(31 * time.Second)
+	clock.Unlock()
+
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		if fired.Load() > 0 {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	if fired.Load() != 1 {
+		t.Fatalf("dead-capture backstop fired %d times, want 1", fired.Load())
+	}
+
+	if err := controller.Stop(RecordingStopOptions{Label: "Captured"}); err != nil {
+		t.Fatalf("Stop() error = %v", err)
+	}
+}
+
 func TestRecordingControllerStopClearsIdleWatcher(t *testing.T) {
 	recorder := &fakeRecorder{stopPCM: []byte(strings.Repeat("a", 6400))}
 	submitter := &fakeSubmitter{}
@@ -883,6 +1111,65 @@ func TestRecordingControllerStopClearsIdleWatcher(t *testing.T) {
 	time.Sleep(100 * time.Millisecond)
 	if fired.Load() != 0 {
 		t.Fatalf("idle callback fired after Stop (fired=%d)", fired.Load())
+	}
+}
+
+func TestRecordingControllerPrefersPooledPCMHandler(t *testing.T) {
+	recorder := &fakePooledRecorder{fakeRecorder: fakeRecorder{stopPCM: []byte(strings.Repeat("a", 6400))}}
+	submitter := &fakeSubmitter{}
+	observer := &fakeObserver{}
+	collector := &fakeCollector{}
+
+	controller := NewRecordingController(recorder, submitter, observer, func() SegmentCollector {
+		return collector
+	})
+	if err := controller.Start(RecordingStartOptions{Language: "en"}); err != nil {
+		t.Fatalf("Start() error = %v", err)
+	}
+
+	if recorder.pooledHandler == nil {
+		t.Fatal("pooled PCM handler not installed on pooled recorder")
+	}
+	if recorder.pcmHandler != nil {
+		t.Fatal("legacy PCM handler must stay nil when the pooled path is active")
+	}
+
+	// A frame delivered through the pooled path reaches the collector
+	// and is released exactly once after the handler returns.
+	var releases int
+	recorder.pooledHandler([]byte{1, 2, 3, 4}, func() { releases++ })
+	if releases != 1 {
+		t.Fatalf("release calls = %d, want 1", releases)
+	}
+	if len(collector.fedPCM) != 1 || len(collector.fedPCM[0]) != 4 {
+		t.Fatalf("collector fedPCM = %#v, want one 4-byte frame", collector.fedPCM)
+	}
+
+	if err := controller.Stop(RecordingStopOptions{Label: "Captured"}); err != nil {
+		t.Fatalf("Stop() error = %v", err)
+	}
+	if recorder.pooledHandler != nil {
+		t.Fatal("pooled PCM handler not cleared on Stop")
+	}
+}
+
+func TestRecordingControllerLegacyRecorderStillUsesPCMHandler(t *testing.T) {
+	recorder := &fakeRecorder{stopPCM: []byte(strings.Repeat("a", 6400))}
+	submitter := &fakeSubmitter{}
+	observer := &fakeObserver{}
+	collector := &fakeCollector{}
+
+	controller := NewRecordingController(recorder, submitter, observer, func() SegmentCollector {
+		return collector
+	})
+	if err := controller.Start(RecordingStartOptions{Language: "en"}); err != nil {
+		t.Fatalf("Start() error = %v", err)
+	}
+	if recorder.pcmHandler == nil {
+		t.Fatal("legacy PCM handler not installed on plain recorder")
+	}
+	if err := controller.Stop(RecordingStopOptions{Label: "Captured"}); err != nil {
+		t.Fatalf("Stop() error = %v", err)
 	}
 }
 

@@ -80,8 +80,8 @@ func TestLoadDefaults(t *testing.T) {
 	if cfg.General.DictationIntermediateSegmentMs != DefaultDictationIntermediateSegmentMs {
 		t.Errorf("default dictation intermediate segment ms = %d, want %d", cfg.General.DictationIntermediateSegmentMs, DefaultDictationIntermediateSegmentMs)
 	}
-	if cfg.General.DictationProcessingMode != DictationProcessingModeFinalFull {
-		t.Errorf("default dictation processing mode = %q, want %q", cfg.General.DictationProcessingMode, DictationProcessingModeFinalFull)
+	if cfg.General.DictationProcessingMode != DictationProcessingModeAuto {
+		t.Errorf("default dictation processing mode = %q, want %q", cfg.General.DictationProcessingMode, DictationProcessingModeAuto)
 	}
 	if cfg.Audio.InputSource != AudioInputSourceMicrophone {
 		t.Errorf("default audio input source = %q, want %q", cfg.Audio.InputSource, AudioInputSourceMicrophone)
@@ -305,6 +305,42 @@ max_per_identity_sessions = 5
 	}
 	if got.MaxPerIdentitySessions != 5 {
 		t.Fatalf("MaxPerIdentitySessions = %d, want 5", got.MaxPerIdentitySessions)
+	}
+}
+
+func TestLoadPerformanceConfig(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.toml")
+	if err := os.WriteFile(path, []byte(`
+[performance]
+process_priority = "normal"
+subprocess_priority = "normal"
+capture_thread_priority = "highest"
+`), 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.Performance.ProcessPriority != "normal" {
+		t.Fatalf("ProcessPriority = %q, want normal", cfg.Performance.ProcessPriority)
+	}
+	if cfg.Performance.SubprocessPriority != "normal" {
+		t.Fatalf("SubprocessPriority = %q, want normal", cfg.Performance.SubprocessPriority)
+	}
+	if cfg.Performance.CaptureThreadPriority != "highest" {
+		t.Fatalf("CaptureThreadPriority = %q, want highest", cfg.Performance.CaptureThreadPriority)
+	}
+
+	// Absent block: all fields empty — consumers treat empty as the
+	// protective default (above_normal/below_normal/realtime).
+	defaults, err := Load(filepath.Join(t.TempDir(), "missing.toml"))
+	if err != nil {
+		t.Fatalf("Load defaults: %v", err)
+	}
+	if defaults.Performance != (PerformanceConfig{}) {
+		t.Fatalf("default Performance = %+v, want zero value", defaults.Performance)
 	}
 }
 
@@ -1502,8 +1538,8 @@ design = "default"
 	if cfg.VoiceAgent.CloseBehavior != VoiceAgentCloseBehaviorContinue {
 		t.Fatalf("VoiceAgent.CloseBehavior = %q, want default %q", cfg.VoiceAgent.CloseBehavior, VoiceAgentCloseBehaviorContinue)
 	}
-	if cfg.General.DictationProcessingMode != DictationProcessingModeFinalFull {
-		t.Fatalf("DictationProcessingMode = %q, want default %q", cfg.General.DictationProcessingMode, DictationProcessingModeFinalFull)
+	if cfg.General.DictationProcessingMode != DictationProcessingModeAuto {
+		t.Fatalf("DictationProcessingMode = %q, want default %q", cfg.General.DictationProcessingMode, DictationProcessingModeAuto)
 	}
 	if cfg.Audio.InputSource != AudioInputSourceMicrophone {
 		t.Fatalf("Audio.InputSource = %q, want default %q", cfg.Audio.InputSource, AudioInputSourceMicrophone)

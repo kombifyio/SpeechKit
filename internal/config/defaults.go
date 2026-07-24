@@ -32,7 +32,7 @@ func defaults() *Config {
 			FastModeSilenceMs:              1500,
 			DictateSilenceTimeoutSec:       DefaultDictateSilenceTimeoutSec,
 			DictationIntermediateSegmentMs: DefaultDictationIntermediateSegmentMs,
-			DictationProcessingMode:        DictationProcessingModeFinalFull,
+			DictationProcessingMode:        DictationProcessingModeAuto,
 		},
 		Audio: AudioConfig{
 			Backend:     "windows-wasapi-malgo",

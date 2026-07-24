@@ -11,6 +11,22 @@ IDs, source paths, and other maintainer-only vocabulary.
 
 ## [Unreleased]
 
+## [0.51.2] - 2026-07-24
+
+Patch release. Makes Windows dictation reliable when the PC is under heavy load.
+
+### Fixed
+
+- Windows: dictation no longer cuts out mid-sentence, and the status overlay no
+  longer gets stuck, when the machine is busy. Under heavy CPU load the recorder
+  could stop while you were still speaking, and the overlay could show
+  "processing" before you had finished. SpeechKit now runs its capture and its
+  helper processes at priorities that keep recording responsive even when other
+  programs saturate the processor, judges speech pauses by the recorded audio
+  itself instead of wall-clock time, and keeps the on-screen status in step with
+  what is actually being captured. A new optional performance settings block
+  lets you turn the priority tuning off if you prefer.
+
 ## [0.51.1] - 2026-07-22
 
 Patch release. Fixes a Windows wake-word / startup regression present in the

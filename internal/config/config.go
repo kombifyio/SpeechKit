@@ -83,6 +83,7 @@ const (
 type Config struct {
 	General        GeneralConfig        `toml:"general"`
 	Audio          AudioConfig          `toml:"audio"`
+	VAD            VADConfig            `toml:"vad"`
 	UI             UIConfig             `toml:"ui"`
 	Vocabulary     VocabularyConfig     `toml:"vocabulary"`
 	Customization  CustomizationConfig  `toml:"customization"`
@@ -109,6 +110,7 @@ type Config struct {
 	HuggingFace     HuggingFaceConfig     `toml:"huggingface"`
 	Routing         RoutingConfig         `toml:"routing"`
 	Update          UpdateConfig          `toml:"update"`
+	Performance     PerformanceConfig     `toml:"performance"`
 	Logging         LoggingConfig         `toml:"logging"`
 	Audit           AuditConfig           `toml:"audit"`
 	Telemetry       TelemetryConfig       `toml:"telemetry"`

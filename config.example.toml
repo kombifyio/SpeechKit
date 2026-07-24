@@ -24,7 +24,7 @@ auto_stop_silence_ms = 1500
 fast_mode_silence_ms = 1500
 dictate_silence_timeout_sec = 3  # Seconds of silence before toggle dictation auto-stops. 0 disables.
 dictation_intermediate_segment_ms = 6000 # Minimum utterance duration before segment_batch emits a pause-bounded live segment.
-dictation_processing_mode = "final_full" # final_full | segment_batch | provider_stream | auto. Live modes are beta/opt-in.
+dictation_processing_mode = "auto" # auto | final_full | segment_batch | provider_stream. auto = provider-native live streaming when the selected STT profile supports it (lowest latency), else final_full.
 model_download_dir = ""            # Blank = %LOCALAPPDATA%/SpeechKit/models. Set a dedicated folder for local model downloads.
 
 [audio]

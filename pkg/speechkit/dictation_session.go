@@ -73,6 +73,11 @@ type DictationSegmenter struct {
 	// RecordingController's idle watcher to auto-stop a dictate session
 	// after a configurable silence threshold.
 	idleSince time.Time
+	// lastFrameAt is the wall-clock time of the most recent FeedPCM call.
+	// Lets the idle watcher distinguish "audio is silent" from "audio
+	// delivery stalled" (CPU starvation): silence only accumulates while
+	// frames actually flow.
+	lastFrameAt time.Time
 }
 
 func NewDictationSegmenter(detector VoiceActivityDetector, pauseThreshold time.Duration) *DictationSegmenter {
@@ -129,6 +134,29 @@ func (s *DictationSegmenter) IdleSince() time.Time {
 	return s.idleSince
 }
 
+// IdleAudio reports silence measured in audio time rather than wall-clock
+// time: the cumulative duration of processed silent frames since the last
+// detected speech, plus the wall-clock time of the most recently processed
+// PCM frame. While speech is in progress the silence duration is zero.
+//
+// Audio-time anchoring makes silence-based auto-stop robust against CPU
+// starvation: when frame delivery stalls, the silence counter freezes
+// instead of counting real seconds against a stale timestamp.
+//
+// Satisfies the [AudioIdleObserver] contract consumed by
+// RecordingController; preferred over [IdleSince] when available.
+func (s *DictationSegmenter) IdleAudio() (time.Duration, time.Time) {
+	if s == nil {
+		return 0, time.Time{}
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.inSpeech {
+		return 0, s.lastFrameAt
+	}
+	return s.idleSilenceTime, s.lastFrameAt
+}
+
 func (s *DictationSegmenter) now() time.Time {
 	if s.nowFunc != nil {
 		return s.nowFunc()
@@ -144,6 +172,7 @@ func (s *DictationSegmenter) FeedPCM(pcm []byte) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
+	s.lastFrameAt = s.now()
 	s.ingestedBytes += len(pcm)
 	s.pending = append(s.pending, pcm...)
 	for len(s.pending) >= dictationFrameBytes {
@@ -438,6 +467,7 @@ func (s *DictationSegmenter) resetSession() {
 	// silence-timeout watcher gives the user a full window before
 	// auto-stopping.
 	s.idleSince = s.now()
+	s.lastFrameAt = time.Time{}
 }
 
 func dictationFrameDuration() time.Duration {

@@ -189,7 +189,7 @@ func NormalizeCaptureConfig(cfg *Config) {
 	}
 	cfg.General.DictationProcessingMode = NormalizeDictationProcessingMode(
 		cfg.General.DictationProcessingMode,
-		DictationProcessingModeFinalFull,
+		DictationProcessingModeAuto,
 	)
 	cfg.Audio.InputSource = NormalizeAudioInputSource(
 		cfg.Audio.InputSource,
