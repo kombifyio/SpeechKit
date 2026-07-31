@@ -89,7 +89,8 @@ jobs:
               exit 1
             fi
           done
-          for path in internal/desktop internal/frontendassets internal/hotkey internal/output internal/tray internal/winapi internal/testutil internal/voiceeval; do
+          # internal/voiceeval is public-test support for internal/server/voiceagent.
+          for path in internal/desktop internal/frontendassets internal/hotkey internal/output internal/tray internal/winapi internal/testutil; do
             if [ -e "$path" ]; then
               echo "::error title=Private implementation package exported::$path is not needed for the public server, SDK, CLI, or MCP tools"
               exit 1
