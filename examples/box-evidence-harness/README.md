@@ -2,12 +2,11 @@
 
 A headless **fake box**. It drives the exact Voice-Agent WebSocket path the
 kombify-Box firmware uses and reports the two runtime facts the firmware
-hardcodes against — so the ESP32 firmware
-([`kombify-box`](../../../kombify-box), milestones M1.3/M1.4) never bakes in a
-stale server assumption.
+hardcodes against — so the ESP32 firmware in `kombify-box` (milestones
+M1.3/M1.4) never bakes in a stale server assumption.
 
-This is the SpeechKit side of the box roadmap's **M1.0 Server-Evidence-Harness**
-([`kombify-box/docs/roadmap-standalone-voice.md`](../../../kombify-box/docs/roadmap-standalone-voice.md)).
+This is the SpeechKit side of the box roadmap's **M1.0
+Server-Evidence-Harness**.
 
 ## What it proves
 

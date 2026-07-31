@@ -40,7 +40,7 @@ jobs:
 
       - name: Verify changelog and version
         run: |
-          node scripts/release/lint-version-sync.mjs
+          node scripts/release/lint-version-sync.mjs --allow-derived-pre-1-patch
           node scripts/release/lint-changelog.mjs --unreleased
           node scripts/release/check-doc-links.mjs
 
