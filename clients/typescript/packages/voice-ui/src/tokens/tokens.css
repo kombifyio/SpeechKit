@@ -1,0 +1,61 @@
+/* GENERATED FILE — do not edit. Source: tokens.json (scripts/build-tokens.mjs). */
+
+:root {
+  --sk-blur: 16px;
+  --sk-radius: 14px;
+  --sk-radius-pill: 999px;
+  --sk-gap: 8px;
+  --sk-font-size: 13px;
+  --sk-font-size-small: 11px;
+  --sk-motion-fast: 80ms;
+  --sk-motion-slow: 1600ms;
+  --sk-orb-size: 56px;
+  --sk-orb-core-size: 22px;
+  --sk-accent: oklch(0.65 0.13 210);
+  --sk-accent-contrast: #ffffff;
+  --sk-surface: color-mix(in srgb, #ffffff 72%, transparent);
+  --sk-surface-strong: color-mix(in srgb, #ffffff 92%, transparent);
+  --sk-text: #101418;
+  --sk-text-muted: color-mix(in srgb, #101418 55%, transparent);
+  --sk-border: color-mix(in srgb, #101418 12%, transparent);
+  --sk-shadow: 0 12px 40px -12px rgba(16, 20, 24, 0.25);
+  --sk-live: #dc2626;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-sk-theme="light"]) {
+    --sk-accent: oklch(0.72 0.12 210);
+    --sk-accent-contrast: #0b1014;
+    --sk-surface: color-mix(in srgb, #14181d 68%, transparent);
+    --sk-surface-strong: color-mix(in srgb, #14181d 90%, transparent);
+    --sk-text: #f2f5f7;
+    --sk-text-muted: color-mix(in srgb, #f2f5f7 60%, transparent);
+    --sk-border: color-mix(in srgb, #f2f5f7 14%, transparent);
+    --sk-shadow: 0 12px 40px -12px rgba(0, 0, 0, 0.6);
+    --sk-live: #f87171;
+  }
+}
+
+[data-sk-theme="dark"] {
+  --sk-accent: oklch(0.72 0.12 210);
+  --sk-accent-contrast: #0b1014;
+  --sk-surface: color-mix(in srgb, #14181d 68%, transparent);
+  --sk-surface-strong: color-mix(in srgb, #14181d 90%, transparent);
+  --sk-text: #f2f5f7;
+  --sk-text-muted: color-mix(in srgb, #f2f5f7 60%, transparent);
+  --sk-border: color-mix(in srgb, #f2f5f7 14%, transparent);
+  --sk-shadow: 0 12px 40px -12px rgba(0, 0, 0, 0.6);
+  --sk-live: #f87171;
+}
+
+[data-sk-theme="light"] {
+  --sk-accent: oklch(0.65 0.13 210);
+  --sk-accent-contrast: #ffffff;
+  --sk-surface: color-mix(in srgb, #ffffff 72%, transparent);
+  --sk-surface-strong: color-mix(in srgb, #ffffff 92%, transparent);
+  --sk-text: #101418;
+  --sk-text-muted: color-mix(in srgb, #101418 55%, transparent);
+  --sk-border: color-mix(in srgb, #101418 12%, transparent);
+  --sk-shadow: 0 12px 40px -12px rgba(16, 20, 24, 0.25);
+  --sk-live: #dc2626;
+}

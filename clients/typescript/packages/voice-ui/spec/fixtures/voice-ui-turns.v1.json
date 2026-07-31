@@ -1,0 +1,116 @@
+{
+  "version": "speechkit.voice_ui.v1",
+  "description": "Shared event-sequence fixtures for the teleprompter turn reducer and the session-state reducer. Web (vitest) and native (Compose) implementations replay the same sequences and must produce identical outputs.",
+  "cases": [
+    {
+      "name": "user draft replaces open turn, final closes it",
+      "events": [
+        { "type": "voice.transcript_draft", "surface": "floating_panel", "mode": "voice_agent", "text": "hel" },
+        { "type": "voice.transcript_draft", "surface": "floating_panel", "mode": "voice_agent", "text": "hello there" },
+        { "type": "voice.transcript_final", "surface": "floating_panel", "mode": "voice_agent", "text": "Hello there.", "final": true }
+      ],
+      "expected_turns": [
+        { "role": "user", "text": "Hello there.", "final": true, "interrupted": false }
+      ],
+      "expected_status": "processing"
+    },
+    {
+      "name": "empty final keeps draft text",
+      "events": [
+        { "type": "voice.transcript_draft", "surface": "workbench", "mode": "voice_agent", "text": "keep me" },
+        { "type": "voice.transcript_final", "surface": "workbench", "mode": "voice_agent", "final": true }
+      ],
+      "expected_turns": [
+        { "role": "user", "text": "keep me", "final": true, "interrupted": false }
+      ],
+      "expected_status": "processing"
+    },
+    {
+      "name": "agent streaming turn accumulates and closes",
+      "events": [
+        { "type": "voice.agent_turn", "surface": "floating_panel", "mode": "voice_agent", "output_text": "Sure", "final": false },
+        { "type": "voice.agent_turn", "surface": "floating_panel", "mode": "voice_agent", "output_text": "Sure, here is", "final": false },
+        { "type": "voice.agent_turn", "surface": "floating_panel", "mode": "voice_agent", "output_text": "Sure, here is the answer.", "final": true }
+      ],
+      "expected_turns": [
+        { "role": "agent", "text": "Sure, here is the answer.", "final": true, "interrupted": false }
+      ],
+      "expected_status": "speaking"
+    },
+    {
+      "name": "barge-in closes and marks the open agent turn",
+      "events": [
+        { "type": "voice.agent_turn", "surface": "mobile", "mode": "voice_agent", "output_text": "Let me explain the full", "final": false },
+        { "type": "voice.barge_in", "surface": "mobile", "mode": "voice_agent", "reason_code": "user_spoke_during_tts" },
+        { "type": "voice.agent_turn", "surface": "mobile", "mode": "voice_agent", "output_text": "Okay, shorter:", "final": false }
+      ],
+      "expected_turns": [
+        { "role": "agent", "text": "Let me explain the full", "final": true, "interrupted": true },
+        { "role": "agent", "text": "Okay, shorter:", "final": false, "interrupted": false }
+      ],
+      "expected_status": "speaking"
+    },
+    {
+      "name": "barge-in without open agent turn is a no-op on turns",
+      "events": [
+        { "type": "voice.transcript_final", "surface": "workbench", "mode": "voice_agent", "text": "hi", "final": true },
+        { "type": "voice.barge_in", "surface": "workbench", "mode": "voice_agent" }
+      ],
+      "expected_turns": [
+        { "role": "user", "text": "hi", "final": true, "interrupted": false }
+      ],
+      "expected_status": "capturing"
+    },
+    {
+      "name": "interleaved dialogue keeps role ordering",
+      "events": [
+        { "type": "voice.capture_started", "surface": "floating_panel", "mode": "voice_agent" },
+        { "type": "voice.transcript_draft", "surface": "floating_panel", "mode": "voice_agent", "text": "what is" },
+        { "type": "voice.transcript_final", "surface": "floating_panel", "mode": "voice_agent", "text": "What is kombify?", "final": true },
+        { "type": "voice.agent_turn", "surface": "floating_panel", "mode": "voice_agent", "output_text": "kombify is", "final": false },
+        { "type": "voice.agent_turn", "surface": "floating_panel", "mode": "voice_agent", "output_text": "kombify is a platform.", "final": true },
+        { "type": "voice.transcript_draft", "surface": "floating_panel", "mode": "voice_agent", "text": "thanks" }
+      ],
+      "expected_turns": [
+        { "role": "user", "text": "What is kombify?", "final": true, "interrupted": false },
+        { "role": "agent", "text": "kombify is a platform.", "final": true, "interrupted": false },
+        { "role": "user", "text": "thanks", "final": false, "interrupted": false }
+      ],
+      "expected_status": "capturing"
+    },
+    {
+      "name": "denied carries the envelope and parks the session",
+      "events": [
+        { "type": "voice.capture_started", "surface": "embed", "mode": "dictation" },
+        {
+          "type": "voice.denied",
+          "surface": "embed",
+          "mode": "voice_agent",
+          "error": {
+            "error_code": "voice_mode_unavailable",
+            "reason_code": "voice_mode_capability_disabled",
+            "capability": "speechkit.voiceagent.live",
+            "required_features": ["speechkit.server.hosted", "speechkit.voiceagent.live"],
+            "missing_features": ["speechkit.voiceagent.live"],
+            "retryable": false,
+            "user_guidance": {
+              "title": "This voice mode is not available",
+              "body": "The requested voice mode is disabled for this surface, so no audio was captured.",
+              "next_steps": ["Use a different input method."]
+            }
+          }
+        }
+      ],
+      "expected_turns": [],
+      "expected_status": "denied"
+    },
+    {
+      "name": "empty draft opens no turn",
+      "events": [
+        { "type": "voice.transcript_draft", "surface": "workbench", "mode": "voice_agent", "text": "" }
+      ],
+      "expected_turns": [],
+      "expected_status": "capturing"
+    }
+  ]
+}

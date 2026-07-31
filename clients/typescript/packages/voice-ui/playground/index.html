@@ -1,0 +1,164 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>SpeechKit Voice UI Kit — Playground</title>
+    <link rel="stylesheet" href="../src/tokens/tokens.css" />
+    <style>
+      body {
+        margin: 0;
+        min-height: 100vh;
+        display: grid;
+        place-items: center;
+        gap: 24px;
+        font-family: system-ui, sans-serif;
+        background:
+          radial-gradient(1200px 600px at 20% 10%, #cde7f0 0%, transparent 60%),
+          radial-gradient(900px 500px at 85% 80%, #e8d9f5 0%, transparent 55%),
+          linear-gradient(160deg, #f6f8fa 0%, #e9eef2 100%);
+      }
+      main {
+        display: grid;
+        justify-items: center;
+        gap: 20px;
+        padding: 32px;
+      }
+      .row {
+        display: flex;
+        align-items: center;
+        gap: 16px;
+      }
+      h1 { font-size: 16px; color: #101418; margin: 0; }
+      p  { font-size: 12px; color: #52606d; margin: 0; max-width: 420px; text-align: center; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>SpeechKit Voice UI Kit</h1>
+      <p>
+        Playground with a scripted fake controller: the split button starts a
+        fake dictation; the chevron (or a long press) opens the voice-agent
+        overlay and plays a scripted dialogue with drafts, barge-in, and
+        session end.
+      </p>
+      <speechkit-voice-provider id="provider">
+        <div class="row">
+          <speechkit-voice-button id="btn" agent for="overlay">Dictate</speechkit-voice-button>
+          <speechkit-voice-button id="btn-locked" agent>Locked demo</speechkit-voice-button>
+          <speechkit-voice-visualizer id="viz" state="idle"></speechkit-voice-visualizer>
+        </div>
+        <speechkit-voice-overlay id="overlay"></speechkit-voice-overlay>
+      </speechkit-voice-provider>
+    </main>
+
+    <script src="../dist/cdn/speechkit-voice-ui.iife.min.js"></script>
+    <script>
+      const {
+        createSpeechKitVoiceSessionState,
+        reduceSpeechKitVoiceEvent
+      } = SpeechKitVoiceUi;
+
+      function makeController(voiceAgent) {
+        const contract = {
+          version: "speechkit.voice_surface.v1",
+          surface: "floating_panel",
+          mode: "dictation",
+          capture_policy: "push_to_talk",
+          transport: "gateway_http",
+          capabilities: {
+            dictation: true, assist: true, voice_agent: voiceAgent,
+            wakeword_local: false, tts: true, barge_in: voiceAgent, local_pairing: false
+          },
+          session: {},
+          provider: {}
+        };
+        let state = createSpeechKitVoiceSessionState(contract);
+        const listeners = new Set();
+        const levelListeners = new Set();
+        let timers = [];
+        function emit(type, payload = {}) {
+          const event = { type, surface: contract.surface, mode: contract.mode, ...payload };
+          state = reduceSpeechKitVoiceEvent(state, event);
+          listeners.forEach((l) => l(state));
+        }
+        function later(ms, fn) { timers.push(setTimeout(fn, ms)); }
+        function clearTimers() { timers.forEach(clearTimeout); timers = []; }
+        function fakeLevels() {
+          let t = 0;
+          const id = setInterval(() => {
+            t += 0.16;
+            const level = state.status === "speaking" || state.status === "capturing"
+              ? Math.abs(Math.sin(t)) * 0.9 : 0;
+            levelListeners.forEach((l) => l(level, "output"));
+          }, 80);
+          timers.push(id);
+        }
+        let activeMode = "dictation";
+        return {
+          contract,
+          start(mode) {
+            clearTimers();
+            activeMode = mode ?? contract.mode;
+            if (mode === "voice_agent" && !voiceAgent) {
+              emit("voice.denied", {
+                mode: "voice_agent",
+                error: {
+                  error_code: "voice_mode_unavailable",
+                  reason_code: "voice_agent_capability_disabled",
+                  capability: "speechkit.voiceagent.live",
+                  required_features: ["speechkit.server.hosted", "speechkit.voiceagent.live"],
+                  missing_features: ["speechkit.voiceagent.live"],
+                  retryable: false,
+                  user_guidance: {
+                    title: "Voice conversation is not available",
+                    body: "This demo account is not entitled for live voice sessions.",
+                    next_steps: ["Use dictation instead.", "Upgrade the plan to enable voice conversations."]
+                  }
+                }
+              });
+              return;
+            }
+            emit("voice.capture_started");
+            fakeLevels();
+            if (mode === "voice_agent") {
+              later(500, () => emit("voice.transcript_draft", { text: "what is" }));
+              later(1100, () => emit("voice.transcript_draft", { text: "what is the speechkit voice ui kit" }));
+              later(1700, () => emit("voice.transcript_final", { text: "What is the SpeechKit Voice UI Kit?", final: true }));
+              later(2400, () => emit("voice.agent_turn", { output_text: "It is the framework-neutral", final: false }));
+              later(3100, () => emit("voice.agent_turn", { output_text: "It is the framework-neutral set of voice primitives —", final: false }));
+              later(3900, () => emit("voice.agent_turn", { output_text: "It is the framework-neutral set of voice primitives — split button, overlay, visualizer and consent.", final: true }));
+              later(5200, () => emit("voice.transcript_draft", { text: "thanks" }));
+              later(5800, () => emit("voice.transcript_final", { text: "Thanks!", final: true }));
+              later(6600, () => emit("voice.agent_turn", { output_text: "Anytime.", final: true }));
+              later(8000, () => emit("voice.tts_finished"));
+            } else {
+              later(600, () => emit("voice.transcript_draft", { text: "dictating a" }));
+              later(1300, () => emit("voice.transcript_draft", { text: "dictating a demo sentence" }));
+            }
+          },
+          stop() {
+            clearTimers();
+            emit("voice.capture_stopped");
+            if (activeMode === "dictation") {
+              emit("voice.transcript_final", { text: "Dictating a demo sentence.", final: true });
+            }
+            emit("voice.tts_finished"); // settle to idle like the real controller
+          },
+          cancel() { clearTimers(); emit("voice.cancelled", { reason_code: "user_cancelled" }); },
+          interrupt() { emit("voice.barge_in", { reason_code: "user_spoke_during_tts" }); },
+          subscribe(l) { listeners.add(l); l(state); return () => listeners.delete(l); },
+          getState() { return state; },
+          subscribeLevel(l) { levelListeners.add(l); return () => levelListeners.delete(l); }
+        };
+      }
+
+      const controller = makeController(true);
+      document.getElementById("provider").controller = controller;
+      document.getElementById("btn").controller = controller;
+      document.getElementById("viz").controller = controller;
+      document.getElementById("btn-locked").controller = makeController(false);
+      document.getElementById("overlay").controller = controller;
+    </script>
+  </body>
+</html>

@@ -1,0 +1,22 @@
+{
+  "name": "@kombifyio/speechkit-typescript-clients",
+  "version": "0.1.0",
+  "private": true,
+  "description": "pnpm workspace for the OSS SpeechKit TypeScript client packages.",
+  "license": "Apache-2.0",
+  "type": "module",
+  "packageManager": "pnpm@11.5.3",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "build": "pnpm -r run build",
+    "test": "pnpm -r run test",
+    "typecheck": "pnpm -r run typecheck"
+  },
+  "devDependencies": {
+    "@types/node": "^22.19.17",
+    "typescript": "^5.9.3",
+    "vitest": "^3.2.4"
+  }
+}

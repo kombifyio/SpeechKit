@@ -1,0 +1,77 @@
+{
+  "name": "@kombifyio/speechkit-voiceagent-client",
+  "version": "0.1.0",
+  "description": "TypeScript WebSocket client for the SpeechKit Voice Agent: ticket sessions, frame protocol, browser microphone capture (16 kHz S16 mono) and 24 kHz playback, Node variant.",
+  "license": "Apache-2.0",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./browser": {
+      "types": "./dist/browser.d.ts",
+      "default": "./dist/browser.js"
+    },
+    "./node": {
+      "types": "./dist/node.d.ts",
+      "default": "./dist/node.js"
+    },
+    "./protocol": {
+      "types": "./dist/protocol.d.ts",
+      "default": "./dist/protocol.js"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "sideEffects": false,
+  "engines": {
+    "node": ">=20"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/kombifyio/SpeechKit.git",
+    "directory": "clients/typescript/packages/voiceagent-client"
+  },
+  "homepage": "https://github.com/kombifyio/SpeechKit#readme",
+  "bugs": {
+    "url": "https://github.com/kombifyio/SpeechKit/issues"
+  },
+  "keywords": [
+    "speechkit",
+    "kombify",
+    "voice-agent",
+    "websocket",
+    "realtime",
+    "speech"
+  ],
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run"
+  },
+  "peerDependencies": {
+    "ws": ">=8"
+  },
+  "peerDependenciesMeta": {
+    "ws": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "@types/node": "^22.19.17",
+    "@types/ws": "^8.18.1",
+    "typescript": "^5.9.3",
+    "vitest": "^3.2.4",
+    "ws": "^8.20.0"
+  }
+}

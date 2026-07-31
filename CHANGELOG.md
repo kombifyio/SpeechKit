@@ -11,6 +11,18 @@ IDs, source paths, and other maintainer-only vocabulary.
 
 ## [Unreleased]
 
+### Added
+
+- Voice UI Kit: a new framework-neutral web-component library
+  (`@kombifyio/speechkit-voice-ui`) ships the standard voice controls —
+  a split button (dictation plus voice conversation), a compact glass
+  voice-conversation overlay with live transcript, an audio-state visualizer,
+  and a fail-closed voice consent gate. The elements work in plain HTML and in
+  any framework, follow light/dark themes through CSS custom properties,
+  ship in six languages (with right-to-left support), and respect reduced
+  motion. Without a voice-conversation entitlement the button visibly locks
+  and explains what to do instead of disappearing.
+
 ## [0.51.2] - 2026-07-24
 
 Patch release. Makes Windows dictation reliable when the PC is under heavy load.

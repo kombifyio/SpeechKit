@@ -1,0 +1,55 @@
+{
+  "name": "@kombifyio/speechkit-client",
+  "version": "0.1.0",
+  "description": "TypeScript REST client for the SpeechKit Server v1 API: dictation transcribe, assist, voice agent sessions, TTS, catalog, transcripts.",
+  "license": "Apache-2.0",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "sideEffects": false,
+  "engines": {
+    "node": ">=20"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/kombifyio/SpeechKit.git",
+    "directory": "clients/typescript/packages/client"
+  },
+  "homepage": "https://github.com/kombifyio/SpeechKit#readme",
+  "bugs": {
+    "url": "https://github.com/kombifyio/SpeechKit/issues"
+  },
+  "keywords": [
+    "speechkit",
+    "kombify",
+    "speech-to-text",
+    "dictation",
+    "voice-agent",
+    "tts"
+  ],
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "@types/node": "^22.19.17",
+    "typescript": "^5.9.3",
+    "vitest": "^3.2.4"
+  }
+}

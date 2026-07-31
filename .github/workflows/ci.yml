@@ -59,6 +59,20 @@ jobs:
           go run ./examples/embed-tts
           go run ./examples/embed-event-bus
 
+      - name: Setup pnpm (clients workspace)
+        # Matches the "packageManager" pin in clients/typescript/package.json.
+        run: |
+          npm install -g pnpm@11.5.3
+          pnpm --version
+
+      - name: Build and test TypeScript clients & Voice UI Kit
+        working-directory: clients/typescript
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm run build
+          pnpm run test
+          pnpm run typecheck
+
       - name: Verify no private source trees are exported
         shell: bash
         run: |
