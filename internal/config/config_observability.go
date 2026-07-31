@@ -10,8 +10,14 @@ import "strings"
 // ManifestURL with an internal mirror that serves the same JSON shape as
 // https://api.github.com/repos/<owner>/<repo>/releases/latest.
 type UpdateConfig struct {
-	Enabled                bool   `toml:"enabled"`
-	ManifestURL            string `toml:"manifest_url"`
+	Enabled     bool   `toml:"enabled"`
+	ManifestURL string `toml:"manifest_url"`
+	// AutoDownload fetches an available update in the background as soon as
+	// the check finds one, so installing is a single click instead of a
+	// download wait. Installation is never automatic: the user always
+	// confirms, and the app never restarts itself. Set false to keep the
+	// fully manual flow (check -> download on demand).
+	AutoDownload           bool   `toml:"auto_download"`
 	CheckIntervalHours     int    `toml:"check_interval_hours"`
 	SignaturePinThumbprint string `toml:"signature_pin_thumbprint"` // optional Authenticode SHA-1 thumbprint; if set, installer signature verification additionally checks cert thumbprint matches (defense against compromised signing cert)
 }

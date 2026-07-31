@@ -123,6 +123,29 @@ prefer_local_under_seconds = 10
 parallel_cloud = false    # Start cloud parallel to local
 replace_on_better = false # Silently replace with better result
 
+[update]
+# Auto-update channel. Set enabled = false for a full air-gap: no manifest
+# is fetched and no outbound request is ever made.
+enabled = true
+# auto_download fetches an available update in the background so installing
+# is a single click. SpeechKit never installs and never restarts on its own
+# — the user always confirms. Set false to download only on demand.
+auto_download = true
+# check_interval_hours = 6
+# manifest_url = "https://api.github.com/repos/kombifyio/SpeechKit/releases/latest"
+#
+# How a downloaded installer is trusted, in order of strength:
+#   1. Authenticode signature (releases signed by the publisher certificate).
+#   2. SHA-256 digest published as SHA256SUMS.txt alongside the release —
+#      used while releases are not signed yet. Proves the download arrived
+#      intact; does not prove publisher identity.
+# A release offering neither is never installed automatically; the app links
+# to the release page instead.
+#
+# signature_pin_thumbprint pins the expected Authenticode SHA-1 thumbprint as
+# an extra check against a compromised signing certificate.
+# signature_pin_thumbprint = ""
+
 [logging]
 # General application log (transcription events, mode switches, wake-word
 # triggers). Shown live in the dashboard's "Logs" tab when enabled.

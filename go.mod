@@ -13,7 +13,7 @@ require (
 	github.com/ebitengine/oto/v3 v3.4.0
 	github.com/firebase/genkit/go v1.10.0
 	github.com/gen2brain/malgo v0.11.25
-	github.com/getkin/kin-openapi v0.141.0
+	github.com/getkin/kin-openapi v0.144.0
 	github.com/go-jose/go-jose/v3 v3.0.5
 	github.com/google/uuid v1.6.0
 	github.com/hajimehoshi/go-mp3 v0.3.4
@@ -95,7 +95,7 @@ require (
 	github.com/godbus/dbus/v5 v5.2.2 // indirect
 	github.com/golang-jwt/jwt/v5 v5.3.1 // indirect
 	github.com/golang/groupcache v0.0.0-20241129210726-2c02b8208cf8 // indirect
-	github.com/google/cel-go v0.28.1 // indirect
+	github.com/google/cel-go v0.29.0 // indirect
 	github.com/google/dotprompt/go v0.0.0-20251014011017-8d056e027254 // indirect
 	github.com/google/go-cmp v0.7.0 // indirect
 	github.com/google/jsonschema-go v0.4.3 // indirect
@@ -116,7 +116,7 @@ require (
 	github.com/k2-fsa/sherpa-onnx-go-macos v1.13.4 // indirect
 	github.com/k2-fsa/sherpa-onnx-go-windows v1.13.4 // indirect
 	github.com/kevinburke/ssh_config v1.4.0 // indirect
-	github.com/klauspost/compress v1.18.6 // indirect
+	github.com/klauspost/compress v1.18.7 // indirect
 	github.com/klauspost/cpuid/v2 v2.3.0 // indirect
 	github.com/leaanthony/go-ansi-parser v1.6.1 // indirect
 	github.com/leaanthony/u v1.1.1 // indirect

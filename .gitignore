@@ -151,3 +151,6 @@ clients/typescript/**/dist/
 # pulled via `doppler run`. Never commit. Use .env.example for templates.
 deploy/docker/.env.local*
 deploy/docker/.env
+
+# Local wakeword training pipeline output (generated corpus packages)
+tools/wakeword-training/corpus-packages/
