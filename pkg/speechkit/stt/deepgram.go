@@ -96,7 +96,7 @@ func (p *DeepgramProvider) ApplyOptions(opts DeepgramOptions) {
 func (p *DeepgramProvider) Transcribe(ctx context.Context, audio []byte, opts TranscribeOpts) (*Result, error) {
 	model := firstNonEmptyTrimmed(opts.Model, p.Model, "nova-3")
 	resolved := p.resolveOptions(model, opts)
-	apiLanguage := deepgramCodeSwitchingLanguage()
+	apiLanguage := deepgramResolvedLanguage(resolved)
 	languageSource := deepgramLanguageSource(resolved)
 	speakerOpts := resolved.Speaker
 
@@ -232,9 +232,7 @@ func (p *DeepgramProvider) deepgramListenEndpoint(model string, resolved Resolve
 	if resolved.Numerals {
 		q.Set("numerals", "true")
 	}
-	if language := normalizedDeepgramLanguage(deepgramCodeSwitchingLanguage()); language != "" {
-		q.Set("language", language)
-	}
+	q.Set("language", deepgramResolvedLanguage(resolved))
 	p.applyVocabularyBias(q, model, resolved.Keyterms, resolved.UseVocabularyKeyterms)
 	if resolved.Speaker.WantsDiarization() {
 		q.Set("utterances", "true")
@@ -257,7 +255,7 @@ func (p *DeepgramProvider) resolveOptions(model string, opts TranscribeOpts) Res
 	}
 	providerOverrides := provideropts.Values{}
 	if language := strings.TrimSpace(p.LanguageOverride); language != "" {
-		providerOverrides[provideropts.OptionLanguage] = deepgramCodeSwitchingLanguage()
+		providerOverrides[provideropts.OptionLanguage] = language
 	}
 	if !p.SmartFormat {
 		providerOverrides[provideropts.OptionSmartFormat] = false
@@ -286,8 +284,27 @@ func (p *DeepgramProvider) resolveOptions(model string, opts TranscribeOpts) Res
 	return ResolveTranscribeOptions("deepgram", deepgramProfileID(model), opts, providerDefaults, providerOverrides)
 }
 
+// deepgramCodeSwitchingLanguage is the language SpeechKit falls back to when
+// the user has not picked one: Deepgram's multilingual code-switching mode,
+// which transcribes speech that mixes languages without being told which.
+//
+// It is a default, not a mandate. Code-switching trades per-language
+// accuracy for the ability to follow a switch mid-sentence, and which side
+// of that trade wins depends on the speaker — so a configured language must
+// reach the API unchanged. `multi` is the only multilingual value Deepgram
+// accepts; there is no "German plus English" subset.
 func deepgramCodeSwitchingLanguage() string {
 	return "multi"
+}
+
+// deepgramResolvedLanguage returns the language to send for this request:
+// whatever the option resolution produced, falling back to code-switching
+// when nothing (or "auto") is configured.
+func deepgramResolvedLanguage(resolved ResolvedTranscribeOptions) string {
+	if language := normalizedDeepgramLanguage(resolved.Language); language != "" {
+		return language
+	}
+	return deepgramCodeSwitchingLanguage()
 }
 
 func deepgramLanguageSource(resolved ResolvedTranscribeOptions) string {
@@ -295,10 +312,7 @@ func deepgramLanguageSource(resolved ResolvedTranscribeOptions) string {
 	if !ok {
 		return string(provideropts.SourceProviderDefault)
 	}
-	if value, ok := option.Value.(string); ok && strings.EqualFold(strings.TrimSpace(value), deepgramCodeSwitchingLanguage()) {
-		return string(option.Source)
-	}
-	return "speechkit_forced_multilingual"
+	return string(option.Source)
 }
 
 func (p *DeepgramProvider) applyVocabularyBias(q url.Values, model string, requestTerms []string, useVocabulary bool) {

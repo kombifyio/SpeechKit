@@ -38,6 +38,8 @@
       "recommended": true,
       "evidence_url": "https://developers.deepgram.com/docs/endpointing",
       "supports": {
+        "language": "native",
+        "detect_language": "unsupported",
         "punctuation": "native",
         "smart_format": "native",
         "dictation": "native",

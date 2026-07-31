@@ -92,7 +92,9 @@ func TestLegacyDeepgramDefaultsDoNotBecomeProviderOverrides(t *testing.T) {
 	}
 }
 
-func TestDeepgramSTTLanguageOverridesAreMultilingualOnly(t *testing.T) {
+// Normalisation used to rewrite every configured Deepgram language to
+// "multi", so picking a language did nothing at all. It must now survive.
+func TestDeepgramSTTLanguageSurvivesNormalization(t *testing.T) {
 	cfg := defaults()
 	cfg.Providers.Deepgram.STTLanguage = "de"
 	cfg.Providers.Deepgram.STTDetectLanguage = true
@@ -102,23 +104,23 @@ func TestDeepgramSTTLanguageOverridesAreMultilingualOnly(t *testing.T) {
 		provideropts.OptionFillerWords:    true,
 	})
 
-	NormalizeDeepgramSTTCodeSwitching(cfg)
-	if got := cfg.Providers.Deepgram.STTLanguage; got != DeepgramSTTMultilingualLanguage {
-		t.Fatalf("legacy deepgram stt_language = %q, want %q", got, DeepgramSTTMultilingualLanguage)
+	NormalizeDeepgramSTTSettings(cfg)
+	if got := cfg.Providers.Deepgram.STTLanguage; got != "de" {
+		t.Fatalf("legacy deepgram stt_language = %q, want %q", got, "de")
 	}
 	if cfg.Providers.Deepgram.STTDetectLanguage {
 		t.Fatal("legacy deepgram detect_language = true, want false")
 	}
-	if got := cfg.ProviderOptions.Deepgram.STT.Language; got != DeepgramSTTMultilingualLanguage {
-		t.Fatalf("provider_options.deepgram.stt.language = %q, want %q", got, DeepgramSTTMultilingualLanguage)
+	if got := cfg.ProviderOptions.Deepgram.STT.Language; got != "en" {
+		t.Fatalf("provider_options.deepgram.stt.language = %q, want %q", got, "en")
 	}
 	if cfg.ProviderOptions.Deepgram.STT.DetectLanguage != nil {
 		t.Fatalf("provider_options.deepgram.stt.detect_language = %#v, want nil", cfg.ProviderOptions.Deepgram.STT.DetectLanguage)
 	}
 
 	values := ProviderOptionOverridesFor(cfg, "deepgram", provideropts.ModalitySTT)
-	if got := values.String(provideropts.OptionLanguage); got != DeepgramSTTMultilingualLanguage {
-		t.Fatalf("effective deepgram language = %q, want %q", got, DeepgramSTTMultilingualLanguage)
+	if got := values.String(provideropts.OptionLanguage); got != "en" {
+		t.Fatalf("effective deepgram language = %q, want %q", got, "en")
 	}
 	if values.Has(provideropts.OptionDetectLanguage) {
 		t.Fatalf("effective deepgram detect_language should be removed, got %#v", values.Get(provideropts.OptionDetectLanguage))
@@ -128,16 +130,16 @@ func TestDeepgramSTTLanguageOverridesAreMultilingualOnly(t *testing.T) {
 	}
 }
 
-func TestDeepgramSTTManifestDoesNotExposeFixedLanguageControls(t *testing.T) {
+func TestDeepgramSTTManifestExposesLanguageControl(t *testing.T) {
 	manifest, ok := provideropts.FindManifest("deepgram", provideropts.ModalitySTT)
 	if !ok {
 		t.Fatal("deepgram STT manifest missing")
 	}
 	support := manifest.SupportByID()
-	if _, ok := support[provideropts.OptionLanguage]; ok {
-		t.Fatal("deepgram STT manifest exposes language override")
+	if got := support[provideropts.OptionLanguage].Status; got != provideropts.SupportNative {
+		t.Fatalf("deepgram STT language support = %q, want native", got)
 	}
-	if _, ok := support[provideropts.OptionDetectLanguage]; ok {
-		t.Fatal("deepgram STT manifest exposes detect_language")
+	if got, ok := support[provideropts.OptionDetectLanguage]; !ok || got.Status != provideropts.SupportUnsupported {
+		t.Fatalf("deepgram STT detect_language support = %#v (present=%v), want unsupported", got, ok)
 	}
 }

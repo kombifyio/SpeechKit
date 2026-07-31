@@ -53,10 +53,13 @@ func TestDefaultManifestsIncludeDeepgramSTT(t *testing.T) {
 			t.Fatalf("%s support = %#v, want native", id, support[id])
 		}
 	}
-	for _, id := range []OptionID{OptionLanguage, OptionDetectLanguage} {
-		if opt, ok := support[id]; ok {
-			t.Fatalf("%s support = %#v, want omitted for Deepgram STT", id, opt)
-		}
+	// language must be declared: omitting it made the resolver discard every
+	// configured Deepgram language as unsupported, so the setting was inert.
+	if support[OptionLanguage].Status != SupportNative {
+		t.Fatalf("language support = %#v, want native", support[OptionLanguage])
+	}
+	if opt, ok := support[OptionDetectLanguage]; !ok || opt.Status != SupportUnsupported {
+		t.Fatalf("detect_language support = %#v (present=%v), want unsupported", opt, ok)
 	}
 }
 

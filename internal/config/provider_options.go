@@ -311,31 +311,41 @@ func legacyDeepgramSTTOverrides(dg DeepgramProviderConfig) provideropts.Values {
 	return values
 }
 
-func NormalizeDeepgramSTTCodeSwitching(cfg *Config) {
+// NormalizeDeepgramSTTSettings canonicalises the persisted Deepgram STT
+// settings. It deliberately does NOT rewrite the language: every chosen
+// language used to be coerced to [DeepgramSTTMultilingualLanguage] here and
+// at three sibling call sites, which made the language setting a no-op —
+// whatever the user picked, Deepgram was asked for code-switching. Multi
+// remains the fallback when nothing is set (see the provider default), but a
+// configured language now survives to the API.
+//
+// detect_language stays cleared because no SpeechKit request path sends it;
+// persisting it would advertise a control that does nothing.
+func NormalizeDeepgramSTTSettings(cfg *Config) {
 	if cfg == nil {
 		return
 	}
-	if strings.TrimSpace(cfg.Providers.Deepgram.STTLanguage) != "" {
-		cfg.Providers.Deepgram.STTLanguage = DeepgramSTTMultilingualLanguage
-	}
+	cfg.Providers.Deepgram.STTLanguage = DeepgramSTTLanguageOverride(cfg.Providers.Deepgram.STTLanguage)
 	cfg.Providers.Deepgram.STTDetectLanguage = false
 	normalizeDeepgramSTTProviderOptionOverrides(&cfg.ProviderOptions.Deepgram.STT)
 }
 
+// DeepgramSTTLanguageOverride canonicalises a configured Deepgram STT
+// language. Blank and "auto" mean "no explicit choice" and resolve to the
+// multilingual default further down the stack.
 func DeepgramSTTLanguageOverride(language string) string {
-	if strings.TrimSpace(language) == "" {
+	language = strings.TrimSpace(language)
+	if strings.EqualFold(language, "auto") {
 		return ""
 	}
-	return DeepgramSTTMultilingualLanguage
+	return language
 }
 
 func normalizeDeepgramSTTProviderOptionOverrides(overrides *ProviderOptionOverrides) {
 	if overrides == nil {
 		return
 	}
-	if strings.TrimSpace(overrides.Language) != "" {
-		overrides.Language = DeepgramSTTMultilingualLanguage
-	}
+	overrides.Language = DeepgramSTTLanguageOverride(overrides.Language)
 	overrides.DetectLanguage = nil
 }
 
@@ -345,10 +355,10 @@ func normalizeDeepgramSTTProviderValues(values provideropts.Values) provideropts
 	}
 	out := values.Clone()
 	if out.Has(provideropts.OptionLanguage) {
-		if strings.TrimSpace(out.String(provideropts.OptionLanguage)) == "" {
+		if language := DeepgramSTTLanguageOverride(out.String(provideropts.OptionLanguage)); language == "" {
 			delete(out, provideropts.OptionLanguage)
 		} else {
-			out[provideropts.OptionLanguage] = DeepgramSTTMultilingualLanguage
+			out[provideropts.OptionLanguage] = language
 		}
 	}
 	delete(out, provideropts.OptionDetectLanguage)

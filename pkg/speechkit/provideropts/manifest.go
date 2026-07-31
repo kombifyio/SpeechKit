@@ -48,6 +48,12 @@ func FindManifest(provider, modality string) (ProviderOptionManifest, bool) {
 
 func deepgramSTTManifest() ProviderOptionManifest {
 	return manifest("deepgram", "Deepgram", ModalitySTT, []string{"stt.deepgram.nova-3", "stt.deepgram.nova-3-diarization"}, []OptionSupport{
+		// Deepgram Listen takes a language, including the "multi" value that
+		// selects multilingual code-switching. Leaving it out of the manifest
+		// made the resolver drop every configured language as unsupported, so
+		// the picker in Settings could not influence the request at all.
+		native(OptionLanguage, TypeString, "Language", "language", "https://developers.deepgram.com/docs/multilingual-code-switching"),
+		unsupported(OptionDetectLanguage, TypeBool, "Detect language", "SpeechKit sends an explicit language (or \"multi\" for code-switching) and never requests Deepgram's detection."),
 		native(OptionPunctuation, TypeBool, "Punctuation", "punctuate", "https://developers.deepgram.com/docs/punctuation"),
 		native(OptionSmartFormat, TypeBool, "Smart format", "smart_format", "https://developers.deepgram.com/docs/smart-format"),
 		native(OptionDictation, TypeBool, "Dictation punctuation", "dictation", "https://developers.deepgram.com/docs/dictation"),

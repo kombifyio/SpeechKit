@@ -44,7 +44,7 @@ func Load(path string) (*Config, error) {
 			NormalizeHandsFreeConfig(cfg, true)
 			NormalizeOutputConfig(cfg)
 			NormalizeCaptureConfig(cfg)
-			NormalizeDeepgramSTTCodeSwitching(cfg)
+			NormalizeDeepgramSTTSettings(cfg)
 			normalizeWakewordConfig(cfg)
 			return cfg, nil
 		}
@@ -63,7 +63,7 @@ func Load(path string) (*Config, error) {
 		slog.Warn("malformed config.toml, using defaults", "err", err)
 		cfg := defaults()
 		NormalizeCaptureConfig(cfg)
-		NormalizeDeepgramSTTCodeSwitching(cfg)
+		NormalizeDeepgramSTTSettings(cfg)
 		normalizeWakewordConfig(cfg)
 		return cfg, nil
 	}
@@ -113,7 +113,7 @@ func Load(path string) (*Config, error) {
 	NormalizeHandsFreeConfig(cfg, meta.IsDefined("hands_free"))
 	NormalizeOutputConfig(cfg)
 	NormalizeCaptureConfig(cfg)
-	NormalizeDeepgramSTTCodeSwitching(cfg)
+	NormalizeDeepgramSTTSettings(cfg)
 	normalizeWakewordConfig(cfg)
 	// Backfill: Telemetry.UpdateCheck mirrors Update.Enabled when update is disabled.
 	// Phase 0 has only the update-check as telemetry; later phases may diverge.
@@ -164,7 +164,7 @@ func Save(path string, cfg *Config) error {
 	NormalizeHandsFreeConfig(cfg, true)
 	NormalizeOutputConfig(cfg)
 	NormalizeCaptureConfig(cfg)
-	NormalizeDeepgramSTTCodeSwitching(cfg)
+	NormalizeDeepgramSTTSettings(cfg)
 	normalizeWakewordConfig(cfg)
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return fmt.Errorf("create config dir: %w", err)

@@ -197,8 +197,12 @@ func TestDeepgram_Transcribe_AppliesListenOptionsAndKeyterms(t *testing.T) {
 			t.Fatalf("%s = %q, want true (query=%s)", key, gotQuery.Get(key), gotQuery.Encode())
 		}
 	}
-	if gotQuery.Get("language") != "multi" {
-		t.Fatalf("language = %q, want SpeechKit-forced multilingual mode (query=%s)", gotQuery.Get("language"), gotQuery.Encode())
+	// The request language outranks the provider-level override, per the
+	// standard option layering. Deepgram must receive it verbatim — a
+	// configured language that silently became "multi" is what made the
+	// language setting a no-op for batch transcription.
+	if gotQuery.Get("language") != "de" {
+		t.Fatalf("language = %q, want the configured request language (query=%s)", gotQuery.Get("language"), gotQuery.Encode())
 	}
 	if got := gotQuery["keyterm"]; len(got) != 2 || got[0] != "Kombify" || got[1] != "SpeechKit" {
 		t.Fatalf("keyterm = %v, want [Kombify SpeechKit]", got)
@@ -238,8 +242,35 @@ func TestDeepgram_Transcribe_DetectLanguageIsIgnoredForCodeSwitching(t *testing.
 	if gotQuery.Has("detect_language") {
 		t.Fatalf("detect_language should be ignored for Deepgram code-switching mode: %s", gotQuery.Encode())
 	}
-	if gotQuery.Get("language") != "multi" {
-		t.Fatalf("language = %q, want SpeechKit-forced multilingual mode (query=%s)", gotQuery.Get("language"), gotQuery.Encode())
+	if gotQuery.Get("language") != "de" {
+		t.Fatalf("language = %q, want the configured request language (query=%s)", gotQuery.Get("language"), gotQuery.Encode())
+	}
+}
+
+// A provider-level language override must reach the API when no per-request
+// language is set, instead of being replaced by the code-switching default.
+func TestDeepgram_Transcribe_HonoursProviderLanguageOverride(t *testing.T) {
+	var gotQuery url.Values
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotQuery = r.URL.Query()
+		resp := deepgramResponse{
+			Results: deepgramResults{
+				Channels: []deepgramChannel{
+					{Alternatives: []deepgramAlternative{{Transcript: "hello", Confidence: 0.7}}},
+				},
+			},
+		}
+		_ = json.NewEncoder(w).Encode(resp)
+	}))
+	defer server.Close()
+
+	p := newTestDeepgramProvider(server.URL)
+	p.ApplyOptions(DeepgramOptions{Configured: true, SmartFormat: true, LanguageOverride: "de"})
+	if _, err := p.Transcribe(context.Background(), []byte("pcm"), TranscribeOpts{}); err != nil {
+		t.Fatalf("Transcribe: %v", err)
+	}
+	if gotQuery.Get("language") != "de" {
+		t.Fatalf("language = %q, want the provider override (query=%s)", gotQuery.Get("language"), gotQuery.Encode())
 	}
 }
 
