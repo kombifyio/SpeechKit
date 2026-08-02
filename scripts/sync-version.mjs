@@ -102,6 +102,16 @@ export function syncVersion(argv = process.argv.slice(2)) {
     });
   }
 
+  // .kombify/VERSION is the authored product version the delivery platform
+  // reads to decide which release line to mint patches on. Nothing in this
+  // repository references it, so it silently drifted: package.json moved with
+  // every Version Packages merge while VERSION stayed behind, and the
+  // platform kept deriving patches on the stale line. It is not target-gated
+  // — the product version is one value regardless of which client is built.
+  if (fs.existsSync(path.join(repoRoot, ".kombify/VERSION"))) {
+    updateText(".kombify/VERSION", [[/^.*$/m, metadata.packageVersion]]);
+  }
+
   if (targets.has("frontend")) {
     updateJson("frontend/app/package.json", (data) => {
       data.version = metadata.packageVersion;

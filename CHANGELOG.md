@@ -11,6 +11,26 @@ IDs, source paths, and other maintainer-only vocabulary.
 
 ## [Unreleased]
 
+## [0.52.0] - 2026-08-02
+
+Dictation reliability release. Holding the dictation shortcut records one
+unbroken take again, the speech language you configure is the one actually
+used, and the app can find and offer its own updates.
+
+### Highlights
+
+- **Dictation stays in one piece**: Holding the shortcut records a single
+  continuous take. Brief dropouts from chattering keys, KVM switches or
+  accessibility filters no longer chop a dictation into quarter-second
+  fragments.
+- **Your speech language is respected**: A configured language now reaches the
+  speech provider instead of being replaced by automatic multilingual
+  detection, so mixed-language dictation follows your setting.
+- **Updates arrive again**: The app finds the releases it actually publishes
+  and offers them, with a clear manual path whenever a build is unsigned.
+- **Voice controls for the web**: A framework-neutral component library ships
+  the standard voice controls for any site or app.
+
 ### Added
 
 - Voice UI Kit: a new framework-neutral web-component library
@@ -22,6 +42,44 @@ IDs, source paths, and other maintainer-only vocabulary.
   ship in six languages (with right-to-left support), and respect reduced
   motion. Without a voice-conversation entitlement the button visibly locks
   and explains what to do instead of disappearing.
+- Automatic updates with a user-chosen manual path: the app checks for a new
+  version on a schedule, can fetch it in the background, and always leaves the
+  install to an explicit confirmation. It never restarts on its own.
+- Update channel: a new `channel` setting under `[update]` chooses which
+  releases are offered — `auto` (default) follows the app's own maturity,
+  while `stable` and `prerelease` pin the choice. This decides what is
+  offered, not what may be installed: an unsigned build still needs a matching
+  published checksum before it can be installed at all.
+
+### Fixed
+
+- Dictation no longer breaks into fragments while the shortcut is held. A
+  held shortcut is not the clean signal it looks like — chattering keys, KVM
+  and remote-input stacks and accessibility filters all produce brief
+  dropouts, and every one of them used to tear the recording down and start a
+  new one. Momentary dropouts are now absorbed; letting go still ends the take
+  immediately.
+- Toggle-mode shortcuts no longer swallow a quick second press, so a
+  deliberate double tap reliably stops the recording it started.
+- A dictation could get stuck recording with no way to stop it short of
+  restarting the app, when the two independent key-state sources disagreed.
+- The configured speech language is applied instead of being silently replaced
+  by multilingual detection. Picking a language in Settings had no effect on
+  Deepgram transcription before; it does now, and multilingual code-switching
+  remains the default when no language is set.
+- Streaming and batch transcription agree on which language wins when a client
+  asks for one and the server is configured for another: the request wins in
+  both, as documented.
+- Server-side assist no longer pins transcription to the server's reply
+  language when the caller did not ask for one.
+- Regional language variants such as `en-GB` and `de-DE` are passed through
+  instead of being rejected, and underscore spellings like `de_DE` are
+  corrected rather than failing the request.
+
+### Changed
+
+- The Deepgram language control is now offered in Settings as a real choice.
+  Existing installs keep multilingual code-switching unless a language is set.
 
 ## [0.51.2] - 2026-07-24
 

@@ -1,5 +1,6 @@
 // Verify that the root package.json version matches the most recent
-// non-Unreleased entry in CHANGELOG.md. Numeric pre-1.0 feedback builds may
+// non-Unreleased entry in CHANGELOG.md, and that the authored product
+// version in .kombify/VERSION agrees with it. Numeric pre-1.0 feedback builds may
 // opt into a newer derived patch within the same authored minor line; minor
 // changes and every 1.0+ release remain exact.
 //
@@ -9,7 +10,7 @@
 // Exits 0 if the versions are aligned, 1 if they drift, 2 on
 // configuration problems.
 
-import { readFileSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 
@@ -34,6 +35,19 @@ function readLatestChangelogVersion() {
     throw new Error(`No release entries found in ${changelogPath}`)
   }
   return sections[0].version
+}
+
+// .kombify/VERSION is the authored product version the delivery platform
+// reads to decide which release line to mint patches on. Nothing inside this
+// repository consumes it, so drift here is invisible until the platform keeps
+// publishing on a line the changelog has already moved past.
+function readProductVersion() {
+  const productPath = resolve(repoRoot, '.kombify', 'VERSION')
+  if (!existsSync(productPath)) {
+    return undefined
+  }
+  const version = readFileSync(productPath, 'utf8').trim()
+  return version || undefined
 }
 
 function parseNumericVersion(version) {
@@ -73,6 +87,7 @@ export function evaluateVersionAlignment({
 function run(argv = process.argv.slice(2)) {
   const packageVersion = readPackageVersion()
   const changelogVersion = readLatestChangelogVersion()
+  const productVersion = readProductVersion()
   const alignment = evaluateVersionAlignment({
     packageVersion,
     changelogVersion,
@@ -95,6 +110,25 @@ function run(argv = process.argv.slice(2)) {
         `    header that matches package.json, or`,
         `  - Run \`node scripts/sync-version.mjs --version=${changelogVersion}\``,
         `    to bump every manifest to the version named in the changelog.`,
+        ``,
+      ].join('\n'),
+    )
+    process.exit(1)
+  }
+
+  if (productVersion !== undefined && productVersion !== packageVersion) {
+    process.stderr.write(
+      [
+        `Product version drift detected:`,
+        `  package.json version: ${packageVersion}`,
+        `  .kombify/VERSION:     ${productVersion}`,
+        ``,
+        `The delivery platform mints release patches on the line named in`,
+        `.kombify/VERSION. While it lags, every published build stays on the`,
+        `old line no matter what the changelog says.`,
+        ``,
+        `To fix, run \`node scripts/sync-version.mjs\`, which now keeps this`,
+        `file in step with package.json.`,
         ``,
       ].join('\n'),
     )
