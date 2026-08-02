@@ -131,6 +131,16 @@ enabled = true
 # is a single click. SpeechKit never installs and never restarts on its own
 # — the user always confirms. Set false to download only on demand.
 auto_download = true
+# channel selects which published releases are offered:
+#   "auto"       (default) follow this build's maturity — a pre-1.0 app
+#                accepts prereleases, a 1.0+ app does not.
+#   "stable"     only releases not marked as prereleases.
+#   "prerelease" prereleases as well as stable releases.
+# Every pre-1.0 release is published as a prerelease and GitHub's
+# /releases/latest omits those, so "stable" on a pre-1.0 build means no
+# updates at all. The channel decides what is OFFERED; what may be installed
+# is unchanged — an unsigned build still needs a matching published digest.
+# channel = "auto"
 # check_interval_hours = 6
 # manifest_url = "https://api.github.com/repos/kombifyio/SpeechKit/releases/latest"
 #

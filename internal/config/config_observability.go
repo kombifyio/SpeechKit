@@ -17,7 +17,17 @@ type UpdateConfig struct {
 	// download wait. Installation is never automatic: the user always
 	// confirms, and the app never restarts itself. Set false to keep the
 	// fully manual flow (check -> download on demand).
-	AutoDownload           bool   `toml:"auto_download"`
+	AutoDownload bool `toml:"auto_download"`
+	// Channel selects which published releases are eligible: "auto"
+	// (default), "stable", or "prerelease". Auto follows the running
+	// build's own maturity — a pre-1.0 app accepts prereleases, a 1.0+ app
+	// does not. That default exists because the delivery pipeline publishes
+	// every pre-1.0 release as a prerelease, and GitHub's /releases/latest
+	// skips those, so a stable-only client below 1.0 would never see an
+	// update at all. The channel governs discovery only; whether an update
+	// may be installed automatically stays with the install-mode rules
+	// (unsigned builds still require a matching published digest).
+	Channel                string `toml:"channel"`
 	CheckIntervalHours     int    `toml:"check_interval_hours"`
 	SignaturePinThumbprint string `toml:"signature_pin_thumbprint"` // optional Authenticode SHA-1 thumbprint; if set, installer signature verification additionally checks cert thumbprint matches (defense against compromised signing cert)
 }

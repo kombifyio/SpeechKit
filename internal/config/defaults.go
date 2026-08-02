@@ -123,6 +123,7 @@ func defaults() *Config {
 			Enabled:            true,
 			ManifestURL:        "https://api.github.com/repos/kombifyio/SpeechKit/releases/latest",
 			AutoDownload:       true,
+			Channel:            "auto",
 			CheckIntervalHours: 6,
 		},
 		// SpeechKit has two log surfaces and BOTH are opt-in:
