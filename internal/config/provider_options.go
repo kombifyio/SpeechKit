@@ -6,8 +6,6 @@ import (
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/provideropts"
 )
 
-const DeepgramSTTMultilingualLanguage = "multi"
-
 // ProviderOptionsConfig stores provider-specific overrides for normalized
 // speech options. Empty fields mean "inherit global/provider default"; pointer
 // bools let the config preserve explicit false overrides.
@@ -313,7 +311,7 @@ func legacyDeepgramSTTOverrides(dg DeepgramProviderConfig) provideropts.Values {
 
 // NormalizeDeepgramSTTSettings canonicalises the persisted Deepgram STT
 // settings. It deliberately does NOT rewrite the language: every chosen
-// language used to be coerced to [DeepgramSTTMultilingualLanguage] here and
+// language used to be coerced to the multilingual value here and
 // at three sibling call sites, which made the language setting a no-op —
 // whatever the user picked, Deepgram was asked for code-switching. Multi
 // remains the fallback when nothing is set (see the provider default), but a

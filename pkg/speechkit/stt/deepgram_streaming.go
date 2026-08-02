@@ -73,7 +73,13 @@ func (p *DeepgramProvider) StartSpeakerStream(ctx context.Context, opts speaker.
 func (p *DeepgramProvider) StartDictationStream(ctx context.Context, opts speechkit.DictationStreamOptions, format speaker.AudioFormat) (speechkit.DictationStream, error) {
 	format = format.Normalized()
 	model := firstNonEmptyTrimmed(opts.Model, p.Model, "nova-3")
-	language := firstNonEmptyTrimmed(p.LanguageOverride, opts.Language, deepgramCodeSwitchingLanguage())
+	// Request before provider config, matching the option layering the
+	// batch path resolves through (request > provider override > global
+	// default > provider default). While every configured language was
+	// coerced to "multi" this ordering was invisible; honouring the
+	// setting made it a real conflict, in which a server config could
+	// override a client that explicitly asked for another language.
+	language := firstNonEmptyTrimmed(opts.Language, p.LanguageOverride, deepgramCodeSwitchingLanguage())
 	endpoint, err := p.deepgramDictationStreamingEndpoint(model, language, opts, format)
 	if err != nil {
 		return nil, err
@@ -140,7 +146,7 @@ func (p *DeepgramProvider) deepgramStreamingEndpoint(model, language string, for
 	if p.EndpointingMs > 0 {
 		q.Set("endpointing", strconv.Itoa(p.EndpointingMs))
 	}
-	if language := normalizedDeepgramLanguage(firstNonEmptyTrimmed(p.LanguageOverride, language)); language != "" {
+	if language := normalizedDeepgramLanguage(firstNonEmptyTrimmed(language, p.LanguageOverride)); language != "" {
 		q.Set("language", language)
 	}
 	p.applyVocabularyBias(q, model, nil, p.UseVocabularyKeyterms)

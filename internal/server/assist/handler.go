@@ -280,7 +280,12 @@ func (h *Handler) handleMultipart(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		h.processAudio(r.Context(), w, file, header.Header.Get("Content-Type"), assistpkg.ProcessOpts{
-			Locale:      h.resolveLocale(locale),
+			// Deliberately NOT resolved here: on the audio path the locale
+			// is handed to STT as a request-level override, so filling in
+			// the server default would pin every transcription to it. The
+			// default is applied after transcription instead, once the
+			// provider has had its chance to report a language.
+			Locale:      locale,
 			Selection:   selection,
 			Context:     contextStr,
 			ActiveApp:   app,
@@ -311,7 +316,11 @@ func (h *Handler) handleJSON(w http.ResponseWriter, r *http.Request) {
 	}
 
 	opts := assistpkg.ProcessOpts{
-		Locale:      h.resolveLocale(body.Locale),
+		// Left unresolved on purpose. The audio branch hands this to STT as
+		// a request-level override, where the server default would pin every
+		// transcription; the text branch has no STT to learn from and
+		// resolves it below.
+		Locale:      body.Locale,
 		Selection:   body.Selection,
 		Context:     body.Context,
 		ActiveApp:   body.App,
@@ -322,6 +331,7 @@ func (h *Handler) handleJSON(w http.ResponseWriter, r *http.Request) {
 	text := strings.TrimSpace(body.Text)
 	switch {
 	case text != "":
+		opts.Locale = h.resolveLocale(opts.Locale)
 		h.processTranscript(r.Context(), w, text, nil, nil, opts, body.TTS, body.TTSFormat, body.TTSVoice)
 	case strings.TrimSpace(body.AudioBase64) != "":
 		raw, err := base64.StdEncoding.DecodeString(body.AudioBase64)
@@ -395,9 +405,12 @@ func (h *Handler) processAudioBytes(ctx context.Context, w http.ResponseWriter, 
 		return
 	}
 
-	if opts.Locale == "" && sttResult.Language != "" {
+	if opts.Locale == "" && isConcreteLocale(sttResult.Language) {
 		opts.Locale = sttResult.Language
 	}
+	// Now that STT has had its say, fall back to the server default so the
+	// reply and any TTS still have a locale to work with.
+	opts.Locale = h.resolveLocale(opts.Locale)
 	if sttResult.Speakers != nil {
 		opts.Context = appendSpeakerContext(opts.Context, sttResult.Speakers)
 	}
@@ -486,6 +499,22 @@ func (h *Handler) processTranscript(ctx context.Context, w http.ResponseWriter, 
 }
 
 // ── helpers ─────────────────────────────────────────────────────────────────
+
+// isConcreteLocale reports whether a language reported by an STT provider
+// names an actual locale. Providers echo routing pseudo-values back on the
+// result — Deepgram returns "multi" for multilingual code-switching — and
+// those must not become the reply/TTS locale.
+func isConcreteLocale(language string) bool {
+	language = strings.TrimSpace(language)
+	if language == "" {
+		return false
+	}
+	switch strings.ToLower(language) {
+	case "multi", "auto":
+		return false
+	}
+	return true
+}
 
 func (h *Handler) resolveLocale(requested string) string {
 	if trimmed := strings.TrimSpace(requested); trimmed != "" {

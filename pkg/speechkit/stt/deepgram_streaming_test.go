@@ -111,7 +111,9 @@ func TestDeepgram_StartSpeakerStream_AppliesStreamingOptions(t *testing.T) {
 	defer stream.Close()
 	_ = stream.EndAudio(context.Background())
 
-	for _, want := range []string{"smart_format=true", "filler_words=true", "language=multi", "endpointing=100", "keyterm=Kombify"} {
+	// The caller asked for "de"; the provider-level "multi" must not
+	// override it, matching the batch path's option layering.
+	for _, want := range []string{"smart_format=true", "filler_words=true", "language=de", "endpointing=100", "keyterm=Kombify"} {
 		if !strings.Contains(gotQuery, want) {
 			t.Fatalf("query = %q, want %q", gotQuery, want)
 		}
@@ -262,7 +264,9 @@ func TestDeepgram_StartDictationStream_UsesRealtimeDictationQuery(t *testing.T) 
 	}
 	for _, want := range []string{
 		"interim_results=true",
-		"language=multi",
+		// The stream was started with Language "de"; a provider-level
+		// "multi" must not outrank it.
+		"language=de",
 		"endpointing=250",
 		"keyterm=SpeechKit",
 		"keyterm=Kombify",
@@ -276,5 +280,88 @@ func TestDeepgram_StartDictationStream_UsesRealtimeDictationQuery(t *testing.T) 
 	}
 	if strings.Contains(gotQuery, "diarize=true") {
 		t.Fatalf("dictation stream must not force diarization: %q", gotQuery)
+	}
+}
+
+// Deepgram Listen treats hyphenated BCP-47 codes as distinct models, so the
+// region subtag must survive; only the underscore separator is rejected
+// ("No such model/language/tier combination found"). Verified against the
+// live API.
+func TestNormalizedDeepgramLanguagePreservesRegionAndFixesSeparator(t *testing.T) {
+	cases := map[string]string{
+		"":       "",
+		"  ":     "",
+		"auto":   "",
+		"AUTO":   "",
+		"de":     "de",
+		"de-DE":  "de-DE",
+		"en-GB":  "en-GB",
+		"de_DE":  "de-DE",
+		"zh_CN":  "zh-CN",
+		" en-US": "en-US",
+		"multi":  "multi",
+	}
+	for in, want := range cases {
+		if got := normalizedDeepgramLanguage(in); got != want {
+			t.Errorf("normalizedDeepgramLanguage(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
+
+// The batch path resolves options as request > provider override; the
+// streaming path used to invert that, which only became observable once a
+// configured language stopped being coerced to "multi".
+func TestDeepgram_DictationStreamRequestLanguageOutranksProviderOverride(t *testing.T) {
+	provider := &DeepgramProvider{}
+	provider.ApplyOptions(DeepgramOptions{Configured: true, LanguageOverride: "de"})
+
+	endpoint, err := provider.deepgramDictationStreamingEndpoint(
+		"nova-3",
+		firstNonEmptyTrimmed("en", provider.LanguageOverride, deepgramCodeSwitchingLanguage()),
+		speechkit.DictationStreamOptions{Language: "en"},
+		speaker.AudioFormat{Encoding: speaker.AudioEncodingLinear16, SampleRateHz: 16000, Channels: 1},
+	)
+	if err != nil {
+		t.Fatalf("endpoint: %v", err)
+	}
+	if !strings.Contains(endpoint, "language=en") {
+		t.Fatalf("endpoint = %q, want the request language to win", endpoint)
+	}
+}
+
+// With no per-request language, the provider setting is what reaches the
+// API — and when neither is set, multilingual code-switching remains the
+// fallback.
+func TestDeepgram_DictationStreamFallsBackToProviderThenMultilingual(t *testing.T) {
+	provider := &DeepgramProvider{}
+	provider.ApplyOptions(DeepgramOptions{Configured: true, LanguageOverride: "de"})
+	format := speaker.AudioFormat{Encoding: speaker.AudioEncodingLinear16, SampleRateHz: 16000, Channels: 1}
+
+	endpoint, err := provider.deepgramDictationStreamingEndpoint(
+		"nova-3",
+		firstNonEmptyTrimmed("", provider.LanguageOverride, deepgramCodeSwitchingLanguage()),
+		speechkit.DictationStreamOptions{},
+		format,
+	)
+	if err != nil {
+		t.Fatalf("endpoint: %v", err)
+	}
+	if !strings.Contains(endpoint, "language=de") {
+		t.Fatalf("endpoint = %q, want the provider override", endpoint)
+	}
+
+	bare := &DeepgramProvider{}
+	bare.ApplyOptions(DeepgramOptions{Configured: true})
+	endpoint, err = bare.deepgramDictationStreamingEndpoint(
+		"nova-3",
+		firstNonEmptyTrimmed("", bare.LanguageOverride, deepgramCodeSwitchingLanguage()),
+		speechkit.DictationStreamOptions{},
+		format,
+	)
+	if err != nil {
+		t.Fatalf("endpoint: %v", err)
+	}
+	if !strings.Contains(endpoint, "language=multi") {
+		t.Fatalf("endpoint = %q, want the multilingual fallback", endpoint)
 	}
 }

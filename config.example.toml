@@ -464,12 +464,12 @@ vad_silence_duration_ms = 700
 # enabled = false
 # api_key_env = "DEEPGRAM_API_KEY"
 # stt_model = "nova-3"
-# stt_language = "multi"             # Deepgram STT is always multilingual in SpeechKit; fixed-language overrides are ignored.
+# stt_language = "multi"             # "multi" = multilingual code-switching (the default when unset). Set a concrete locale ("de", "en-GB") to pin recognition; hyphenated region tags are supported.
 # stt_smart_format = true            # readability formatting; recommended default
 # stt_dictation = false              # spoken punctuation, English-focused
 # stt_filler_words = false
 # stt_numerals = false
-# stt_detect_language = false        # batch Listen only; omit language when enabled
+# stt_detect_language = false        # Not wired: SpeechKit always sends an explicit language (or "multi"), so this is cleared on load.
 # stt_use_vocabulary_keyterms = true # send SpeechKit Words as native Deepgram keyterms/keywords
 # stt_keyterms = ""                  # optional comma/newline separated static terms
 # stt_endpointing_ms = 0             # streaming only; 0 = Deepgram default, 100 is useful for code-switching tests

@@ -348,12 +348,25 @@ func deepgramVocabularyParam(model string) string {
 	return "keywords"
 }
 
+// normalizedDeepgramLanguage canonicalises a SpeechKit locale for Deepgram
+// Listen. Blank and "auto" mean "no explicit choice" and resolve to the
+// multilingual default further up.
+//
+// The region subtag is deliberately preserved: Listen accepts hyphenated
+// BCP-47 codes and treats them as distinct models (verified against the live
+// API — "de-DE", "en-US", "en-GB" and "zh-Hans" all transcribe). Stripping
+// the region, as the realtime agent path has to do for agent.language, would
+// silently discard a regional choice the user made.
+//
+// Only the separator is normalised: "de_DE" is rejected with
+// "No such model/language/tier combination found", and underscored locales
+// do occur in host configurations.
 func normalizedDeepgramLanguage(language string) string {
 	language = strings.TrimSpace(language)
 	if language == "" || strings.EqualFold(language, "auto") {
 		return ""
 	}
-	return language
+	return strings.ReplaceAll(language, "_", "-")
 }
 
 func normalizedDeepgramTerms(terms []string, limit int) []string {

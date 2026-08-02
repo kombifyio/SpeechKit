@@ -562,3 +562,80 @@ func TestHandler_UnsupportedMediaType(t *testing.T) {
 func base64Encode(b []byte) string {
 	return base64.StdEncoding.EncodeToString(b)
 }
+
+// The server default is a reply/TTS locale, not a transcription language.
+// Filling it in before STT made it a request-level override — the highest
+// precedence tier — so every audio assist request was pinned to
+// general.language even though no server setting says so.
+func TestHandler_AudioInput_DoesNotPinSTTToDefaultLocale(t *testing.T) {
+	fp := &fakeProcessor{result: okAssistResult()}
+	ft := &fakeTranscriber{result: &stt.Result{Text: "hello there", Language: "en", Provider: "fake"}}
+	h := mustHandler(t, Options{Processor: fp, Transcriber: ft, DefaultLocale: "de"})
+
+	wav := wrapWAV(synthSine(16000, 250), 16000)
+	body, _ := json.Marshal(map[string]any{
+		"audio_base64": base64Encode(wav),
+		"format":       "wav",
+	})
+	req := httptest.NewRequest(http.MethodPost, "/v1/assist/process", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d body=%s", rec.Code, rec.Body.String())
+	}
+	if got := ft.lastOpts.Language; got != "" {
+		t.Fatalf("STT language = %q; a caller that sent no locale must not be pinned to the server default", got)
+	}
+}
+
+// An explicit request locale must still reach STT untouched.
+func TestHandler_AudioInput_ForwardsRequestedLocaleToSTT(t *testing.T) {
+	fp := &fakeProcessor{result: okAssistResult()}
+	ft := &fakeTranscriber{result: &stt.Result{Text: "hello there", Language: "en", Provider: "fake"}}
+	h := mustHandler(t, Options{Processor: fp, Transcriber: ft, DefaultLocale: "de"})
+
+	wav := wrapWAV(synthSine(16000, 250), 16000)
+	body, _ := json.Marshal(map[string]any{
+		"audio_base64": base64Encode(wav),
+		"format":       "wav",
+		"locale":       "en-GB",
+	})
+	req := httptest.NewRequest(http.MethodPost, "/v1/assist/process", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d body=%s", rec.Code, rec.Body.String())
+	}
+	if got := ft.lastOpts.Language; got != "en-GB" {
+		t.Fatalf("STT language = %q, want en-GB", got)
+	}
+}
+
+// Providers echo routing pseudo-values back on the result — Deepgram returns
+// "multi" for code-switching — and those must not become the reply locale.
+func TestHandler_AudioInput_MultiIsNotAdoptedAsReplyLocale(t *testing.T) {
+	fp := &fakeProcessor{result: okAssistResult()}
+	ft := &fakeTranscriber{result: &stt.Result{Text: "hello there", Language: "multi", Provider: "fake"}}
+	h := mustHandler(t, Options{Processor: fp, Transcriber: ft, DefaultLocale: "de"})
+
+	wav := wrapWAV(synthSine(16000, 250), 16000)
+	body, _ := json.Marshal(map[string]any{
+		"audio_base64": base64Encode(wav),
+		"format":       "wav",
+	})
+	req := httptest.NewRequest(http.MethodPost, "/v1/assist/process", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d body=%s", rec.Code, rec.Body.String())
+	}
+	if got := fp.lastOpts.Locale; got != "de" {
+		t.Fatalf("reply locale = %q, want the server default rather than the routing value", got)
+	}
+}
