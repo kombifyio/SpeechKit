@@ -84,9 +84,10 @@
         "language": "native",
         "detect_language": "derived",
         "prompt_hint": "native",
-        "timestamps": "native",
+        "timestamps": "unsupported",
         "vocabulary_bias": "derived",
         "keyterms": "unsupported",
+        "punctuation": "unsupported",
         "smart_format": "unsupported",
         "endpointing_ms": "unsupported",
         "speaker_diarization": "unsupported"
@@ -170,9 +171,10 @@
         "language": "native",
         "detect_language": "derived",
         "prompt_hint": "native",
-        "timestamps": "native",
+        "timestamps": "unsupported",
         "vocabulary_bias": "derived",
         "keyterms": "unsupported",
+        "punctuation": "unsupported",
         "smart_format": "unsupported",
         "speaker_diarization": "unsupported",
         "endpointing_ms": "unsupported"
@@ -251,9 +253,45 @@
       "profile_ids": ["stt.local.whispercpp"],
       "evidence_url": "https://github.com/ggerganov/whisper.cpp",
       "supports": {
-        "language": "derived",
-        "prompt_hint": "derived",
+        "language": "native",
+        "prompt_hint": "native",
+        "vocabulary_bias": "derived",
         "endpointing_ms": "unsupported"
+      }
+    },
+    {
+      "provider": "ollama",
+      "modality": "stt",
+      "profile_ids": ["stt.ollama.gemma4-e4b-transcribe"],
+      "evidence_url": "https://platform.openai.com/docs/guides/speech-to-text",
+      "supports": {
+        "language": "native",
+        "detect_language": "derived",
+        "prompt_hint": "native",
+        "timestamps": "unsupported",
+        "vocabulary_bias": "derived",
+        "keyterms": "unsupported",
+        "punctuation": "unsupported",
+        "smart_format": "unsupported",
+        "endpointing_ms": "unsupported",
+        "speaker_diarization": "unsupported"
+      }
+    },
+    {
+      "provider": "vps",
+      "modality": "stt",
+      "evidence_url": "https://github.com/ggerganov/whisper.cpp",
+      "supports": {
+        "language": "native",
+        "detect_language": "derived",
+        "prompt_hint": "native",
+        "timestamps": "unsupported",
+        "vocabulary_bias": "derived",
+        "keyterms": "unsupported",
+        "punctuation": "unsupported",
+        "smart_format": "unsupported",
+        "endpointing_ms": "unsupported",
+        "speaker_diarization": "unsupported"
       }
     },
     {

@@ -14,6 +14,10 @@ func DefaultManifests() []ProviderOptionManifest {
 		deepgramSTTManifest(),
 		openAISTTManifest("openai", "OpenAI", []string{"stt.openai.gpt-4o-transcribe", "stt.openai.whisper-1"}, "https://platform.openai.com/docs/guides/speech-to-text"),
 		openAISTTManifest("groq", "Groq", []string{"stt.groq.whisper-large-v3-turbo"}, "https://console.groq.com/docs/speech-to-text"),
+		openAISTTManifest("ollama", "Ollama", []string{"stt.ollama.gemma4-e4b-transcribe"}, "https://platform.openai.com/docs/guides/speech-to-text"),
+		// "vps" is the self-hosted whisper-server adapter's own identifier, which
+		// is what the resolver looks up; it has no catalog profile of its own.
+		openAISTTManifest("vps", "Self-hosted whisper-server", nil, "https://github.com/ggerganov/whisper.cpp"),
 		googleSTTManifest(),
 		assemblyAISTTManifest(),
 		openRouterSTTManifest(),
@@ -68,14 +72,19 @@ func deepgramSTTManifest() ProviderOptionManifest {
 	})
 }
 
+// openAISTTManifest describes the shared OpenAI-multipart transcription adapter.
+// Every provider built on it — OpenAI, Groq, Ollama, the self-hosted
+// whisper-server — posts the same four fields (file, language, model, prompt)
+// and decodes only the text field back, so they share one capability statement.
 func openAISTTManifest(provider, label string, profileIDs []string, evidence string) ProviderOptionManifest {
 	return manifest(provider, label, ModalitySTT, profileIDs, []OptionSupport{
 		native(OptionLanguage, TypeString, "Language", "language", evidence),
 		derived(OptionDetectLanguage, TypeBool, "Detect language", "Omit language so the provider auto-detects when supported.", evidence),
 		native(OptionPromptHint, TypeString, "Prompt hint", "prompt", evidence),
-		native(OptionTimestamps, TypeBool, "Timestamps", "timestamp_granularities", evidence),
+		unsupported(OptionTimestamps, TypeBool, "Timestamps", "The adapter requests no timestamp granularities and keeps only the transcript text."),
 		derived(OptionVocabularyBias, TypeBool, "Use vocabulary bias", "Dictionary terms are rendered into the prompt field.", evidence),
 		unsupported(OptionKeyterms, TypeStringList, "Native keyterms", "OpenAI-compatible STT uses prompt hints, not native keyterms."),
+		unsupported(OptionPunctuation, TypeBool, "Punctuation", "The transcription request carries no punctuation switch; the model decides."),
 		unsupported(OptionSmartFormat, TypeBool, "Smart format", "Formatting is model/provider default for OpenAI-compatible transcription."),
 		unsupported(OptionEndpointingMs, TypeInt, "Endpointing", "Batch transcription has no server endpointing control."),
 		unsupported(OptionSpeakerDiarization, TypeBool, "Speaker diarization", "OpenAI-compatible batch STT does not expose speaker labels in this adapter."),
@@ -135,8 +144,12 @@ func huggingFaceSTTManifest() ProviderOptionManifest {
 
 func localSTTManifest() ProviderOptionManifest {
 	return manifest("local", "Local STT", ModalitySTT, []string{"stt.local.whispercpp"}, []OptionSupport{
-		derived(OptionLanguage, TypeString, "Language", "SpeechKit forwards language to the local provider adapter when supported.", "https://github.com/ggerganov/whisper.cpp"),
-		derived(OptionPromptHint, TypeString, "Prompt hint", "Dictionary context is rendered as a prompt for compatible local providers.", "https://github.com/ggerganov/whisper.cpp"),
+		// The bundled whisper-server speaks the OpenAI multipart shape, so both
+		// values travel as their own request fields rather than being folded
+		// into some other parameter.
+		native(OptionLanguage, TypeString, "Language", "language", "https://github.com/ggerganov/whisper.cpp"),
+		native(OptionPromptHint, TypeString, "Prompt hint", "prompt", "https://github.com/ggerganov/whisper.cpp"),
+		derived(OptionVocabularyBias, TypeBool, "Use vocabulary bias", "Dictionary terms are rendered into the prompt field.", "https://github.com/ggerganov/whisper.cpp"),
 		unsupported(OptionEndpointingMs, TypeInt, "Endpointing", "Local batch transcription uses SpeechKit VAD/recording controls."),
 	})
 }
