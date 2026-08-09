@@ -1,7 +1,7 @@
 {
   "name": "speechkit-release",
   "private": true,
-  "version": "0.52.5",
+  "version": "0.52.9",
   "type": "module",
   "engines": {
     "node": ">=24.0.0"
@@ -19,7 +19,7 @@
     "deadcode": "knip --config knip.json --no-exit-code",
     "deadcode:strict": "knip --config knip.json",
     "release:notes": "node ./scripts/release/render-release-notes.mjs",
-    "release:notes:test": "node --test ./scripts/release/changelog.test.mjs",
+    "release:notes:test": "node --test ./scripts/release/changelog.test.mjs ./scripts/release/release-metadata.test.mjs",
     "release:website-one-shot": "node ./scripts/verify-website-one-shot-prompts.mjs",
     "release:cloudflare-quality-gate": "node ./scripts/cloudflare-quality-gate.mjs",
     "release:lint": "node ./scripts/release/lint-changelog.mjs",

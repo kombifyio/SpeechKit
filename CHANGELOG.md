@@ -11,6 +11,12 @@ IDs, source paths, and other maintainer-only vocabulary.
 
 ## [Unreleased]
 
+### Fixed
+
+- Numeric v0.x releases now publish as normal GitHub releases and advance the
+  canonical `latest` alias, so update checks, website builds, and installer
+  synchronization all resolve the current published version.
+
 ## [0.52.0] - 2026-08-02
 
 Dictation reliability release. Holding the dictation shortcut records one
