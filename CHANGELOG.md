@@ -9,6 +9,15 @@ maintainers. The release linter
 (`npm run release:lint -- --version vX.Y.Z`) refuses internal tracker
 IDs, source paths, and other maintainer-only vocabulary.
 
+## [0.52.11](https://github.com/kombifyio/SpeechKit/compare/v0.52.10...v0.52.11) (2026-08-10)
+
+
+### Fixed
+
+* **release:** accept release-please changelog entries ([#222](https://github.com/kombifyio/SpeechKit/issues/222)) ([7f60d84](https://github.com/kombifyio/SpeechKit/commit/7f60d84857af8c7889800a44e384cc6d7a5eea80))
+* **release:** enforce one normal SpeechKit release path ([#220](https://github.com/kombifyio/SpeechKit/issues/220)) ([0dfdaac](https://github.com/kombifyio/SpeechKit/commit/0dfdaacc417b86912e5b5725ca017e8884af0f4e))
+* **update:** install updates silently instead of opening a doomed wizard ([c27f454](https://github.com/kombifyio/SpeechKit/commit/c27f454a6184188c5ded3a8facc37f1cbf731fcb))
+
 ## [Unreleased]
 
 ## [0.52.10] - 2026-08-10
@@ -4367,4 +4376,3 @@ First public release of SpeechKit as an open-source speech framework.
 - **Android app** with custom keyboard (HeliBoard), voice assistant service, live dashboard stats, and library UI
 - **Android release build** configuration with environment-based signing
 - **OSS governance**: Apache-2.0 license, contribution guidelines, security policy, export boundary enforcement
-
