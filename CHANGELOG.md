@@ -11,11 +11,52 @@ IDs, source paths, and other maintainer-only vocabulary.
 
 ## [Unreleased]
 
+## [0.52.10] - 2026-08-10
+
+Release-history repair. Public releases now require exact changelog-backed
+notes, and stale draft objects left by earlier delivery races have been removed.
+
 ### Fixed
 
-- Numeric v0.x releases now publish as normal GitHub releases and advance the
-  canonical `latest` alias, so update checks, website builds, and installer
-  synchronization all resolve the current published version.
+- Fast pre-1.0 publishing can no longer replace release notes with a delivery
+  ID and source-SHA placeholder. The exact numeric version must exist in this
+  changelog before a public release object is created.
+- The missing public notes for the released v0.51.37 through v0.52.9 delivery
+  points are restored from their exact source revisions.
+
+## [0.52.9] - 2026-08-09
+
+Update discovery repair. Numeric pre-1.0 builds are normal releases and every
+user-facing latest-version surface resolves the same release.
+
+### Fixed
+
+- Numeric v0.x releases publish as normal GitHub releases and advance the
+  canonical `latest` alias.
+- The website, installer mirror, and application update resolver now agree on
+  the newest published release instead of selecting an older prerelease state.
+
+## [0.52.5] - 2026-08-02
+
+Release-quality patch. Publication is race-safe and the dictation fixes from
+v0.52.0 are covered by stronger end-to-end quality checks.
+
+### Added
+
+- Quality gates now cover the gaps that previously allowed dictation shortcut
+  and language regressions to ship.
+
+### Fixed
+
+- Concurrent publisher runs for one numeric version converge on a single
+  GitHub Release instead of leaving duplicate untagged drafts.
+- Tagging and public mirror handoff no longer wait indefinitely for an
+  unavailable source-repository App grant.
+
+### Changed
+
+- The latest Windows installer mirror was refreshed from the verified v0.52.0
+  release assets.
 
 ## [0.52.0] - 2026-08-02
 
@@ -86,6 +127,57 @@ used, and the app can find and offer its own updates.
 
 - The Deepgram language control is now offered in Settings as a real choice.
   Existing installs keep multilingual code-switching unless a language is set.
+
+## [0.51.46] - 2026-08-02
+
+### Fixed
+
+- Published numeric pre-1.0 releases now reach the public download and update
+  surfaces instead of remaining inaccessible after the build completed.
+
+## [0.51.44] - 2026-08-02
+
+### Fixed
+
+- Hold-to-talk release debounce is concurrency-safe, preventing rapid key-state
+  events from ending or restarting a capture incorrectly.
+- The configured speech language is applied consistently across streaming,
+  batch, and server transcription targets.
+
+## [0.51.41] - 2026-08-01
+
+### Fixed
+
+- The numeric pre-1.0 delivery gate is pinned to the passing maturity-aware
+  workflow revision.
+
+## [0.51.40] - 2026-08-01
+
+### Changed
+
+- Optional pre-1.0 secret gates were removed from the public release path.
+- Release quality uses the bounded R2 fixture and the maturity-aware delivery
+  profile for exact-source validation.
+
+## [0.51.37] - 2026-08-01
+
+Automatic-update, Voice UI, and dictation reliability rollup.
+
+### Added
+
+- Automatic update checks and downloads retain an explicit user-confirmed
+  installation path.
+- The first Voice UI package delivers framework-neutral dictation and voice
+  conversation controls.
+
+### Fixed
+
+- Hold-to-talk dictation no longer breaks into fragments and configured STT
+  language reaches the selected provider.
+- Dependency updates clear the high-severity advisories present on the prior
+  release line.
+- Numeric pre-1.0 delivery, public mirror authentication, server-image checks,
+  and asynchronous multi-platform publishers use the shared Delivery v2 path.
 
 ## [0.51.2] - 2026-07-24
 
