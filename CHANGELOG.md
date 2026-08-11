@@ -9,6 +9,45 @@ maintainers. The release linter
 (`npm run release:lint -- --version vX.Y.Z`) refuses internal tracker
 IDs, source paths, and other maintainer-only vocabulary.
 
+## [0.53.0](https://github.com/kombifyio/SpeechKit/compare/v0.52.14...v0.53.0) (2026-08-11)
+
+
+### Added
+
+* **agentbridge:** Call GPT voice tools with explicit call semantics (M3) ([8146567](https://github.com/kombifyio/SpeechKit/commit/8146567a6fe263527fad306ab92d3b3cf83d434c))
+* **agentbridge:** codex app-server JSON-RPC client — steer, interrupt, approvals (M2) ([41d633c](https://github.com/kombifyio/SpeechKit/commit/41d633ca49291f1bc98e8af917e78c8b02ec9648))
+* **agentbridge:** Device-Target integration — tool dispatcher, idle-timer-safe narration, HTTP approval decision route (M4 device piece 1/2) ([5a84d0b](https://github.com/kombifyio/SpeechKit/commit/5a84d0bfb9b7d4c1e8818bd8124f7455e56089d6))
+* **agentbridge:** external coding agent seam + Codex exec client (M1, default off) ([ae29572](https://github.com/kombifyio/SpeechKit/commit/ae29572c53a3fbd5625c7ca775eaae37190cf123))
+* **android:** assistant orb with the kombify AI mark in the overlay ([32e22ec](https://github.com/kombifyio/SpeechKit/commit/32e22ec30b09bd5949bba04967c183bd10e8e0d2))
+* **android:** bring the assistant orb to spec parity (7evz, part 1) ([507307d](https://github.com/kombifyio/SpeechKit/commit/507307d140cd1d31626f346d934045245c680cb7))
+* **android:** drive the assistant orb from real microphone levels ([529f0b1](https://github.com/kombifyio/SpeechKit/commit/529f0b1d3e2cbcacfa22d3a0cfe338a8e607b098))
+* **clients:** close the five voice-agent contract gaps from the UI-Lab dogfooding; Aura Orb chosen as default VA look ([677f13e](https://github.com/kombifyio/SpeechKit/commit/677f13e71ababeaba2578b60a3905ee99f5fae58))
+* **device-target:** render the canonical kit orb in the prompter (t2ng) ([351c04c](https://github.com/kombifyio/SpeechKit/commit/351c04ccf4f985e23e7d871dfcf0fab66e7ce476))
+* **google:** English primary plus the user's language as an alternative ([02a97ff](https://github.com/kombifyio/SpeechKit/commit/02a97ff5647348ed34a51b9fe07d2f64bd6685dd))
+* **prompter:** overlay approval card for the External Coding Agent Bridge (M4 device piece 2/2) ([6ad4702](https://github.com/kombifyio/SpeechKit/commit/6ad4702097f18e9d673cefcaf95721389f82b701))
+* **prompter:** ship the kombify AI mark in the Voice Agent orb (Device-Target) ([9a7ac8b](https://github.com/kombifyio/SpeechKit/commit/9a7ac8bdc4101ee584f91f45e0444be1b31a1f4f))
+* **providers:** record each provider's native multilanguage expression, verified against vendor docs ([cb68345](https://github.com/kombifyio/SpeechKit/commit/cb68345de09826006c3578e8a2fda2b3f2a1c77c))
+* **voice-ui-lab:** brand-mark switcher in the orb centre; fix flaky idle-hangup test and contextcheck lint ([336ada3](https://github.com/kombifyio/SpeechKit/commit/336ada36cc4b8555f4994b5fe0cc63dbfe7c99b3))
+* **voice-ui-lab:** record the branding decision — AI-teal rosette standard, k monogram and no-logo alternatives ([001b851](https://github.com/kombifyio/SpeechKit/commit/001b85187dc18729883d84c26bea9a19364fd269))
+* **voice-ui-lab:** Voice Assistant UI Lab — 3 mockup variants with fake + live voice drivers ([7d71835](https://github.com/kombifyio/SpeechKit/commit/7d71835ed67c91497e62f634ec3e135487ca8d4b))
+* **voice-ui:** promote Aura Orb as speechkit-voice-assistant (b3rv) ([eff5f36](https://github.com/kombifyio/SpeechKit/commit/eff5f366a856f78e42b3f9cc17f1713c303f05b8))
+* **voiceagent:** additive agent_progress host prompt (M4 kernel piece) ([9d96ab7](https://github.com/kombifyio/SpeechKit/commit/9d96ab7fa6b403601c3ef34a9eab267c2b73536d))
+
+
+### Fixed
+
+* **android:** revive the dead system assistant and make multilanguage the set value ([de4e314](https://github.com/kombifyio/SpeechKit/commit/de4e314660ff115a3e3d1e84fefb9cb74743f546))
+* **ci:** clear the remaining main-branch lint and audit debt ([45b34e2](https://github.com/kombifyio/SpeechKit/commit/45b34e2d9bc5c718838a1f0ee1435e9a198533e2))
+* **ci:** sync website asyncapi mirror, clear security-scan findings, absorb audit-bump bundle growth ([b0272bb](https://github.com/kombifyio/SpeechKit/commit/b0272bb19c2f01317b3641a5085cd9b36fb94e76))
+* **clients:** pre-release audit fixes; state-coupled brand marks + immersive 3D rosette in the lab ([b9aa081](https://github.com/kombifyio/SpeechKit/commit/b9aa081187d52209e72fb33ae7f1e44ec224a362))
+* **kernel:** stop pinning German by default, and stop forwarding the sentinel ([3ce7112](https://github.com/kombifyio/SpeechKit/commit/3ce711226f539cf48b051023920c552dd58700fa))
+* **lint:** collapse the language-option helper onto its actual use ([504594c](https://github.com/kombifyio/SpeechKit/commit/504594cdf20b8ec211e2360e503b63ef2d6868c5))
+* **release:** build voice-ui workspace deps in publish workflows; cut 0.53.0 changelog section ([789acce](https://github.com/kombifyio/SpeechKit/commit/789acceb104b162781d4491fcade13faf73ebe0a))
+* **release:** dedupe same-version changelog sections preferring the hand-written entry ([58372e6](https://github.com/kombifyio/SpeechKit/commit/58372e629e5a7925627f87389d5a2b84f5b8ca9f))
+* **security:** clear the remaining OSV findings (nanoid, postcss, undici) ([ad446c7](https://github.com/kombifyio/SpeechKit/commit/ad446c7779d7f74c0fdbd84e6bfb8144d1b493c9))
+* **voice-ui-lab:** keep the k monogram smaller than the rosette ([7eb7368](https://github.com/kombifyio/SpeechKit/commit/7eb7368ebe3c886090a2c2aadc0496a6648c162a))
+* **wakeword:** stop disabled-mode toast spam, make the debounce warning honest ([813711c](https://github.com/kombifyio/SpeechKit/commit/813711c938f338c34ce57b12aeeba212a757e425))
+
 ## [0.52.14](https://github.com/kombifyio/SpeechKit/compare/v0.52.12...v0.52.14) (2026-08-10)
 
 ### Fixed
@@ -33,6 +72,46 @@ IDs, source paths, and other maintainer-only vocabulary.
 * **update:** install updates silently instead of opening a doomed wizard ([c27f454](https://github.com/kombifyio/SpeechKit/commit/c27f454a6184188c5ded3a8facc37f1cbf731fcb))
 
 ## [Unreleased]
+
+## [0.53.0] - 2026-08-10
+
+Voice Assistant UI groundwork release. A browser-based UI lab drives the
+chosen assistant look across watch, keyboard, phone, overlay, and floating
+panel — live against a SpeechKit server — and the public client packages
+close the gaps that live voice sessions surfaced.
+
+### Highlights
+
+- **See your voice assistant before you ship it**: A UI lab renders the
+  assistant in five device frames at once — smartwatch, keyboard bar,
+  desktop overlay, phone, and floating panel — animated by real or scripted
+  voice sessions.
+- **Live voice in the browser**: A new adapter connects the voice UI kit to a
+  SpeechKit server with one call — microphone in, agent audio out, transcripts
+  streaming into the UI.
+- **Barge-in that actually goes quiet**: Interrupting the assistant now drops
+  its queued speech immediately instead of letting stale audio finish.
+- **Pick your realtime voice per session**: Gemini, OpenAI, Deepgram, or
+  AssemblyAI can be selected at session start.
+
+### Added
+
+- Voice Assistant UI Lab: an in-repo design lab renders three assistant
+  mockup variants (Aura Orb — the chosen default look — Glass Waveform, and
+  Ring) in compact and expanded sizes with a transcript toggle, driven either
+  by scripted dialogues or by a live SpeechKit server session with a real
+  microphone. A matching example server profile enables browser access for
+  local testing.
+- Voice UI Kit: official controller adapter `createVoiceAgentUiController()`
+  (subpath `@kombifyio/speechkit-voice-ui/voiceagent-adapter`, optional peer
+  dependency on the voice-agent client) — microphone capture, ticket
+  WebSocket, and playback reduced into the canonical
+  `speechkit.voice_surface.v1` stream the kit renders.
+- Voice-agent client: per-session realtime backend selection in the start
+  frame (also documented in the AsyncAPI spec), playback flushing for
+  barge-in with an audio-level meter tap, a dedicated interruption hook, and
+  a transcript normalizer for providers that stream deltas instead of
+  cumulative text.
 
 ## [0.52.10] - 2026-08-10
 

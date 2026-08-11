@@ -53,6 +53,8 @@ export {
 
 export { SpeechKitElement } from "./core/element.js";
 
+export { SmoothedLevel } from "./core/level.js";
+
 export {
   VOICE_UI_CATALOGS,
   VOICE_UI_LOCALES,
@@ -81,12 +83,21 @@ export {
   sessionStatusToVisualizerState,
   type VoiceVisualizerState
 } from "./elements/voice-visualizer.js";
+export {
+  SpeechKitVoiceAssistantElement,
+  sessionStatusToAuraState,
+  type VoiceAssistantSize,
+  type VoiceAssistantFrame,
+  type VoiceAssistantStatus,
+  type VoiceAuraState
+} from "./elements/voice-assistant.js";
 
 import { SpeechKitVoiceProviderElement } from "./core/context.js";
 import { SpeechKitVoiceButtonElement } from "./elements/voice-button.js";
 import { SpeechKitVoiceConsentElement } from "./elements/voice-consent.js";
 import { SpeechKitVoiceOverlayElement } from "./elements/voice-overlay.js";
 import { SpeechKitVoiceVisualizerElement } from "./elements/voice-visualizer.js";
+import { SpeechKitVoiceAssistantElement } from "./elements/voice-assistant.js";
 
 /** Registers all kit elements (idempotent). */
 export function registerSpeechKitElements(): void {
@@ -95,7 +106,8 @@ export function registerSpeechKitElements(): void {
     [SpeechKitVoiceVisualizerElement.tagName, SpeechKitVoiceVisualizerElement],
     [SpeechKitVoiceConsentElement.tagName, SpeechKitVoiceConsentElement],
     [SpeechKitVoiceButtonElement.tagName, SpeechKitVoiceButtonElement],
-    [SpeechKitVoiceOverlayElement.tagName, SpeechKitVoiceOverlayElement]
+    [SpeechKitVoiceOverlayElement.tagName, SpeechKitVoiceOverlayElement],
+    [SpeechKitVoiceAssistantElement.tagName, SpeechKitVoiceAssistantElement]
   ];
   for (const [tag, ctor] of definitions) {
     if (!customElements.get(tag)) customElements.define(tag, ctor);

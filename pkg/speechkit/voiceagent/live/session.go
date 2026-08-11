@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -131,6 +132,26 @@ func (s *Session) SendToolResponse(response ToolResponse) error {
 		return nil
 	}
 	return s.provider.SendToolResponse(response)
+}
+
+// SendAgentProgress delivers a trusted progress line from a long-running
+// host-side tool as a host prompt. It is a no-op unless the session is
+// listening: a progress line must never interrupt the user speaking or the
+// model answering. Returns true when the prompt was accepted and sent.
+func (s *Session) SendAgentProgress(text string) (bool, error) {
+	if strings.TrimSpace(text) == "" {
+		return false, nil
+	}
+	if s.currentState() != StateListening {
+		return false, nil
+	}
+	if err := s.sendHostPrompt(HostPromptAgentProgress, text); err != nil {
+		if errors.Is(err, errHostPromptRejected) {
+			return false, nil
+		}
+		return false, err
+	}
+	return true, nil
 }
 
 // sendHostPrompt opens a host-observable output generation before sending the

@@ -112,15 +112,40 @@ func logUnsupportedOptions(reports []provideropts.UnsupportedOptionReport) {
 	}
 }
 
+// LanguageMulti is the value SpeechKit carries when no language is pinned.
+//
+// SpeechKit does not narrow speech to one language: a pinned language breaks
+// switching language mid-conversation and speaking different languages with
+// different people in one session, and it is a silent data-loss bug — the same
+// English audio returns a zero-length transcript when pinned to German, with
+// HTTP 200 and no error.
+//
+// It is deliberately NOT forwarded verbatim. Each provider expresses
+// multilanguage in its own dialect: Deepgram takes the literal "multi",
+// AssemblyAI sets language_detection, and the OpenAI-compatible, local and
+// OpenRouter adapters express it by omitting the field so the model
+// auto-detects. Sending "multi" to any of the latter is an invalid value.
+const LanguageMulti = "multi"
+
+// IsMultilanguage reports whether language asks for multilanguage rather than a
+// specific locale. Empty, "auto" and "multi" all mean the same thing: do not
+// pin. The settings UI offers "auto" and "multi" as separate labels, so both
+// have to resolve here or the literal token reaches providers that reject it.
+func IsMultilanguage(language string) bool {
+	trimmed := strings.TrimSpace(language)
+	return trimmed == "" ||
+		strings.EqualFold(trimmed, "auto") ||
+		strings.EqualFold(trimmed, LanguageMulti)
+}
+
 func normalizedRequestLanguage(language string, detectLanguage bool) string {
 	if detectLanguage {
 		return ""
 	}
-	language = strings.TrimSpace(language)
-	if language == "" || strings.EqualFold(language, "auto") {
+	if IsMultilanguage(language) {
 		return ""
 	}
-	return language
+	return strings.TrimSpace(language)
 }
 
 func (r ResolvedTranscribeOptions) APILanguage() string {

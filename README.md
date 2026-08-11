@@ -78,7 +78,7 @@ flowchart LR
   CORE["Shared client + voice contracts"] --> SK["kombify-SpeechKit"]
   HOST["Go host apps<br/>self-hosted servers"] --> SK
   SK --> GW["kombify-Gateway<br/>api.kombify.io"]
-  GW --> COMP["kombify-AI-Mobile<br/>Companion"]
+  GW --> COMP["kombify-Mobile<br/>Companion"]
   GW --> WB["kombify-Workbench"]
 ```
 

@@ -617,3 +617,29 @@ vad_silence_duration_ms = 700
 # primary_profile_id = "tts.google.studio-o-de"
 # fallback_profile_id = "tts.local.kokoro-82m"     # Local fallback when cloud is unavailable
 # mode_source = "local"
+
+# ── External Coding Agent Bridge (desktop-only, default OFF) ─────────────────
+# Voice-driven local coding agents (AI-VOICE-SPEECHKIT-TARGET.md 2026-08-10).
+# First implementation: the official OpenAI Codex CLI via `codex app-server` /
+# `codex exec`. The bridge only DETECTS the CLI's own sign-in (ChatGPT
+# subscription or API key) — it never stores or refreshes credentials itself.
+# Fail-closed: both enable flags are required, the agent may only start inside
+# the project allowlist below, and the sandbox ceiling defaults to read-only.
+# "danger-full-access" is not accepted anywhere.
+#
+# [agent_bridge]
+# enabled = false
+#
+# [agent_bridge.codex]
+# enabled = false
+# binary_path = ""                    # empty = PATH lookup; set to pin an absolute path
+# mode = "auto"                       # auto | app_server | exec
+# sandbox = "read-only"               # global ceiling: read-only | workspace-write
+# approval_timeout_sec = 120          # unanswered approval card => deny
+# narration = "summary"               # off | summary | verbose
+# max_concurrent_turns = 1
+#
+# [[agent_bridge.codex.projects]]     # allowlist: Codex may ONLY start in these dirs
+# alias = "speechkit"                 # spoken-friendly, unique
+# path = 'D:\Github\kombify\kombify-SpeechKit'
+# sandbox = "read-only"               # effective = min(global, project)

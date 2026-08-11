@@ -14,6 +14,7 @@
   "sk.voice.agent.listening": "Listening",
   "sk.voice.agent.speaking": "Speaking",
   "sk.voice.agent.interrupt": "Tap to interrupt",
+  "sk.voice.agent.interrupted": "Interrupted",
   "sk.voice.agent.you": "You",
   "sk.voice.agent.assistant": "Assistant",
   "sk.voice.agent.live": "Live",

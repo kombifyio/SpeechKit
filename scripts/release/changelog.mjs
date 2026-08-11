@@ -112,11 +112,37 @@ export function parseChangelogSections(markdown) {
     sections.push({
       version,
       date: (match[2] ?? match[3])?.trim() ?? '',
+      // `## [X.Y.Z] - date` is the hand-written Keep-a-Changelog form;
+      // `## [X.Y.Z](compare-link) (date)` is release-please bookkeeping.
+      handWritten: Boolean(match[2]),
       body: markdown.slice(sectionStart, sectionEnd).trim(),
     })
   }
 
-  return sections
+  return dedupeSectionsByVersion(sections)
+}
+
+// A release branch (and a freshly merged main) can carry the same version
+// twice: the hand-written public entry plus the release-please generated
+// one. The hand-written entry is the authoritative public note \u2014 keep one
+// section per version, preferring the hand-written form, at the position
+// of the first occurrence.
+function dedupeSectionsByVersion(sections) {
+  const byVersion = new Map()
+  const result = []
+  for (const section of sections) {
+    const existing = byVersion.get(section.version)
+    if (!existing) {
+      byVersion.set(section.version, section)
+      result.push(section)
+      continue
+    }
+    if (!existing.handWritten && section.handWritten) {
+      result[result.indexOf(existing)] = section
+      byVersion.set(section.version, section)
+    }
+  }
+  return result
 }
 
 export function extractLatestReleaseNotes(markdown, options = {}) {

@@ -226,8 +226,12 @@ func TestGoogle_LanguageMapping(t *testing.T) {
 		{"fr", "fr-FR"},
 		{"es", "es-ES"},
 		{"it", "it-IT"},
-		{"auto", ""},
-		{"", ""},
+		// Multilanguage resolves to English as the primary language rather
+		// than to an empty field. RecognitionConfig.languageCode is REQUIRED,
+		// so the old expectation here encoded an invalid request: Google is
+		// the one provider that cannot be told "no language".
+		{"auto", googleEnglishPrimary},
+		{"", googleEnglishPrimary},
 		{"pt-BR", "pt-BR"}, // passthrough for full BCP-47 codes
 	}
 
@@ -249,6 +253,62 @@ func TestGoogle_LanguageMapping(t *testing.T) {
 			}
 			if gotLang != tt.want {
 				t.Errorf("language = %q, want %q", gotLang, tt.want)
+			}
+		})
+	}
+}
+
+// Owner decision 2026-08-11: English is Google's standing primary language and
+// a configured user language rides along as an alternative, because Google
+// cannot express unconstrained multilanguage — v1 requires languageCode and
+// caps alternativeLanguageCodes at three additional BCP-47 tags.
+func TestGoogle_MultilanguageCarriesEnglishPlusUserLanguage(t *testing.T) {
+	tests := []struct {
+		name     string
+		language string
+		wantLang string
+		wantAlts []string
+	}{
+		{"unset falls back to English alone", "", googleEnglishPrimary, nil},
+		{"multi sentinel behaves like unset", LanguageMulti, googleEnglishPrimary, nil},
+		{"explicit pin stays primary, English rides along", "de", "de-DE", []string{googleEnglishPrimary}},
+		{"an English pin needs no alternative", "en", googleEnglishPrimary, nil},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var gotLang string
+			var gotAlts []string
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				var reqBody googleRecognizeRequest
+				json.NewDecoder(r.Body).Decode(&reqBody) //nolint:errcheck // test double
+				gotLang = reqBody.Config.LanguageCode
+				gotAlts = reqBody.Config.AlternativeLanguageCodes
+				json.NewEncoder(w).Encode(googleRecognizeResponse{}) //nolint:errcheck // test double
+			}))
+			defer server.Close()
+
+			p := newTestGoogleProvider(server.URL)
+			if _, err := p.Transcribe(context.Background(), []byte("wav"), TranscribeOpts{Language: tt.language}); err != nil {
+				t.Fatalf("Transcribe: %v", err)
+			}
+			if gotLang == "" {
+				t.Fatal("languageCode is empty, but Google requires it")
+			}
+			if gotLang != tt.wantLang {
+				t.Errorf("languageCode = %q, want %q", gotLang, tt.wantLang)
+			}
+			if len(gotAlts) != len(tt.wantAlts) {
+				t.Fatalf("alternativeLanguageCodes = %v, want %v", gotAlts, tt.wantAlts)
+			}
+			for i := range tt.wantAlts {
+				if gotAlts[i] != tt.wantAlts[i] {
+					t.Errorf("alternativeLanguageCodes[%d] = %q, want %q", i, gotAlts[i], tt.wantAlts[i])
+				}
+			}
+			// Google caps the list at three additional tags.
+			if len(gotAlts) > 3 {
+				t.Errorf("alternativeLanguageCodes has %d entries, Google allows at most 3", len(gotAlts))
 			}
 		})
 	}
@@ -298,8 +358,10 @@ func TestGoogle_Transcribe_DefaultLanguage(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Transcribe: %v", err)
 	}
-	if result.Language != "de" {
-		t.Errorf("default language = %q, want %q", result.Language, "de")
+	// With no language pinned Google is asked in English, and the result
+	// reports what was actually recognised rather than a fabricated "de".
+	if result.Language != googleEnglishPrimary {
+		t.Errorf("default language = %q, want %q", result.Language, googleEnglishPrimary)
 	}
 }
 

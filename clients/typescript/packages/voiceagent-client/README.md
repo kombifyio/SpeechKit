@@ -19,10 +19,15 @@ const session = await openBrowserSession({
   token: auth0AccessToken,
   resolveWsUrl: (t) =>
     `wss://api.kombify.io/v1/speechkit/voiceagent/sessions/${t.session_id}/ws`,
-  start: { locale: "en-US" },
+  // `provider` selects the realtime backend for this session
+  // (gemini | openai | deepgram | assemblyai | cascaded); empty = server default.
+  start: { locale: "en-US", provider: "gemini" },
+  onPlaybackLevel: (level) => setAgentLevel(level), // RMS 0..1 for visualizers
   hooks: {
     onAgentTranscript: (text, done) => render(text, done),
     onAudio: (chunk) => session.playChunk(chunk),
+    // Barge-in: drop queued agent audio so stale speech stops immediately.
+    onInterrupted: () => session.flushPlayback(),
   },
 });
 

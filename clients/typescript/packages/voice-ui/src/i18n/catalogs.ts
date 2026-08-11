@@ -27,6 +27,7 @@ export type VoiceUiMessageId =
   | "sk.voice.agent.listening"
   | "sk.voice.agent.speaking"
   | "sk.voice.agent.interrupt"
+  | "sk.voice.agent.interrupted"
   | "sk.voice.agent.you"
   | "sk.voice.agent.assistant"
   | "sk.voice.agent.live"
@@ -61,6 +62,7 @@ export const en: VoiceUiMessageCatalog = {
   "sk.voice.agent.listening": "Listening",
   "sk.voice.agent.speaking": "Speaking",
   "sk.voice.agent.interrupt": "Tap to interrupt",
+  "sk.voice.agent.interrupted": "Interrupted",
   "sk.voice.agent.you": "You",
   "sk.voice.agent.assistant": "Assistant",
   "sk.voice.agent.live": "Live",
@@ -96,6 +98,7 @@ export const de: VoiceUiMessageCatalog = {
   "sk.voice.agent.listening": "Hört zu",
   "sk.voice.agent.speaking": "Spricht",
   "sk.voice.agent.interrupt": "Tippen zum Unterbrechen",
+  "sk.voice.agent.interrupted": "Unterbrochen",
   "sk.voice.agent.you": "Du",
   "sk.voice.agent.assistant": "Assistent",
   "sk.voice.agent.live": "Live",
@@ -132,6 +135,7 @@ export const es: VoiceUiMessageCatalog = {
   "sk.voice.agent.listening": "Escuchando",
   "sk.voice.agent.speaking": "Hablando",
   "sk.voice.agent.interrupt": "Toca para interrumpir",
+  "sk.voice.agent.interrupted": "Interrumpido",
   "sk.voice.agent.you": "Tú",
   "sk.voice.agent.assistant": "Asistente",
   "sk.voice.agent.live": "En vivo",
@@ -168,6 +172,7 @@ export const zhHans: VoiceUiMessageCatalog = {
   "sk.voice.agent.listening": "正在聆听",
   "sk.voice.agent.speaking": "正在回答",
   "sk.voice.agent.interrupt": "点按以打断",
+  "sk.voice.agent.interrupted": "已打断",
   "sk.voice.agent.you": "你",
   "sk.voice.agent.assistant": "助手",
   "sk.voice.agent.live": "实时",
@@ -203,6 +208,7 @@ export const hi: VoiceUiMessageCatalog = {
   "sk.voice.agent.listening": "सुन रहा है",
   "sk.voice.agent.speaking": "बोल रहा है",
   "sk.voice.agent.interrupt": "बीच में रोकने के लिए टैप करें",
+  "sk.voice.agent.interrupted": "बीच में रोका गया",
   "sk.voice.agent.you": "आप",
   "sk.voice.agent.assistant": "असिस्टेंट",
   "sk.voice.agent.live": "लाइव",
@@ -238,6 +244,7 @@ export const ar: VoiceUiMessageCatalog = {
   "sk.voice.agent.listening": "يستمع",
   "sk.voice.agent.speaking": "يتحدث",
   "sk.voice.agent.interrupt": "انقر للمقاطعة",
+  "sk.voice.agent.interrupted": "تمت المقاطعة",
   "sk.voice.agent.you": "أنت",
   "sk.voice.agent.assistant": "المساعد",
   "sk.voice.agent.live": "مباشر",

@@ -122,6 +122,21 @@ describe("VoiceAgentSession server frame dispatch", () => {
     expect(onEvent).toHaveBeenCalledWith(frame);
   });
 
+  it("routes interrupted frames to onInterrupted", () => {
+    const onInterrupted = vi.fn();
+    const { socket } = openSession({ onInterrupted });
+    const frame = { type: "interrupted", event_type: "interrupted" };
+    socket.emit("message", { data: JSON.stringify(frame) });
+    expect(onInterrupted).toHaveBeenCalledWith(frame);
+  });
+
+  it("sends the per-session provider in the start frame", () => {
+    const socket = new FakeSocket();
+    new VoiceAgentSession(socket, { start: { provider: "deepgram" } });
+    socket.emit("open");
+    expect(socket.sentFrames()[0]).toEqual({ type: "start", provider: "deepgram" });
+  });
+
   it("passes error frames with remediation and request_id through", () => {
     const onError = vi.fn();
     const { socket } = openSession({ onError });

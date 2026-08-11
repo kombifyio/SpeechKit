@@ -76,6 +76,7 @@ type googleRecognitionConfig struct {
 	Encoding                   string                   `json:"encoding"`
 	SampleRateHertz            int                      `json:"sampleRateHertz"`
 	LanguageCode               string                   `json:"languageCode,omitempty"`
+	AlternativeLanguageCodes   []string                 `json:"alternativeLanguageCodes,omitempty"`
 	Model                      string                   `json:"model,omitempty"`
 	EnableAutomaticPunctuation bool                     `json:"enableAutomaticPunctuation,omitempty"`
 	EnableWordTimeOffsets      bool                     `json:"enableWordTimeOffsets,omitempty"`
@@ -121,6 +122,48 @@ type googleWordInfo struct {
 	Word         string `json:"word"`
 	SpeakerTag   int    `json:"speakerTag,omitempty"`
 	SpeakerLabel string `json:"speakerLabel,omitempty"`
+}
+
+// googleEnglishPrimary is the language Google always receives as its primary
+// languageCode. RecognitionConfig.languageCode is REQUIRED, and Google cannot
+// express unconstrained multilanguage — the docs cap automatic recognition at
+// a short candidate list and offer no auto value. Owner decision 2026-08-11:
+// English is the standing default and a configured user language rides along
+// as an alternative, so Google still recognises it.
+const googleEnglishPrimary = "en-US"
+
+// googleLanguageCodes resolves the primary language and its alternatives.
+//
+// Google is the one provider that cannot simply be told "no language". v1
+// requires languageCode and accepts up to three additional BCP-47 tags in
+// alternativeLanguageCodes, with the result reporting whichever was detected.
+// Omitting the field — which is what the multilanguage sentinel used to do
+// here — sent an invalid request.
+func googleLanguageCodes(resolved ResolvedTranscribeOptions) (string, []string) {
+	requested := mapLanguageCode(resolved.APILanguage())
+	if requested == "" {
+		// Multilanguage: English carries the request. A language the user
+		// configured is still honoured, as an alternative rather than as the
+		// primary, so mixed speech resolves to whichever fits better.
+		//
+		// resolved.Language is checked through IsMultilanguage first: unlike
+		// APILanguage it does not suppress the provider default, so without
+		// the guard a leftover default would masquerade as a user choice, and
+		// the sentinel itself would be mapped as if it were a language tag.
+		if !IsMultilanguage(resolved.Language) {
+			if configured := mapLanguageCode(strings.TrimSpace(resolved.Language)); configured != "" &&
+				!strings.EqualFold(configured, googleEnglishPrimary) {
+				return googleEnglishPrimary, []string{configured}
+			}
+		}
+		return googleEnglishPrimary, nil
+	}
+	if strings.EqualFold(requested, googleEnglishPrimary) {
+		return requested, nil
+	}
+	// An explicit pin stays the primary language, with English alongside it —
+	// the product is multilanguage even when the user names a preference.
+	return requested, []string{googleEnglishPrimary}
 }
 
 // mapLanguageCode maps short language codes to BCP-47 codes expected by Google.
@@ -179,10 +222,10 @@ func (p *GoogleSTTProvider) Transcribe(ctx context.Context, audio []byte, opts T
 	}
 
 	resolved := ResolveTranscribeOptions("google", googleProfileID(model), opts, provideropts.Values{
-		provideropts.OptionLanguage:       "de",
+		provideropts.OptionLanguage:       LanguageMulti,
 		provideropts.OptionVocabularyBias: true,
 	}, nil)
-	langCode := mapLanguageCode(resolved.APILanguage())
+	langCode, altLangCodes := googleLanguageCodes(resolved)
 	speakerOpts := resolved.Speaker
 
 	// Google STT v1 rejects a sample-rate mismatch with HTTP 400. Derive the
@@ -197,10 +240,11 @@ func (p *GoogleSTTProvider) Transcribe(ctx context.Context, audio []byte, opts T
 
 	reqBody := googleRecognizeRequest{
 		Config: googleRecognitionConfig{
-			Encoding:        "LINEAR16",
-			SampleRateHertz: sampleRate,
-			LanguageCode:    langCode,
-			Model:           model,
+			Encoding:                 "LINEAR16",
+			SampleRateHertz:          sampleRate,
+			LanguageCode:             langCode,
+			AlternativeLanguageCodes: altLangCodes,
+			Model:                    model,
 		},
 		Audio: googleRecognitionAudio{
 			Content: base64.StdEncoding.EncodeToString(content),
@@ -268,7 +312,18 @@ func (p *GoogleSTTProvider) Transcribe(ctx context.Context, audio []byte, opts T
 		}
 	}
 
-	lang := firstNonEmptyTrimmed(resolved.Language, "de")
+	// Report what Google actually detected. With alternativeLanguageCodes the
+	// response labels each result with the winning language, which is the only
+	// honest answer under multilanguage — the previous fallback reported "de"
+	// for audio that was never German.
+	detected := ""
+	for _, r := range gResp.Results {
+		if code := strings.TrimSpace(r.LanguageCode); code != "" {
+			detected = code
+			break
+		}
+	}
+	lang := firstNonEmptyTrimmed(detected, resolved.APILanguage(), langCode, LanguageMulti)
 	if speakerOpts.WantsDiarization() {
 		diarization = googleDiarizationFromResponse(gResp, p.Name(), model, text, lang)
 	}

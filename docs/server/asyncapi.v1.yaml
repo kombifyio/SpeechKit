@@ -322,6 +322,13 @@ components:
         persona_id: { type: string }
         role_id: { type: string }
         sequence_id: { type: string }
+        provider:
+          type: string
+          description: |
+            Selects the realtime backend for THIS session, e.g. `gemini`,
+            `openai`, `deepgram`, `assemblyai`, `cascaded`. Empty uses the
+            server's configured default. An unknown or unconfigured provider
+            is rejected at start with a `provider_unavailable` error.
         media_transport:
           type: string
           enum: [websocket, livekit]
@@ -343,9 +350,39 @@ components:
           enum: [off, low, medium, high]
         activity_detection:
           $ref: '#/components/schemas/ActivityDetection'
+        speaker:
+          $ref: '#/components/schemas/SpeakerOptions'
         system_prompt_override:
           type: string
           description: Durable instruction layered on top of the role's prompt.
+
+    SpeakerOptions:
+      type: object
+      description: |
+        Speaker diarization / identification for the session. Property names
+        are camelCase (they mirror the server's `speaker.Options`), unlike the
+        snake_case frame fields elsewhere in this document.
+      properties:
+        enabled: { type: boolean }
+        diarization: { type: boolean }
+        identification: { type: boolean }
+        attribution: { type: boolean }
+        providerProfileId: { type: string }
+        model: { type: string }
+        diarizationModel: { type: string }
+        language: { type: string }
+        speakersExpected: { type: integer, format: int32 }
+        minSpeakersExpected: { type: integer, format: int32 }
+        maxSpeakersExpected: { type: integer, format: int32 }
+        speakerType: { type: string }
+        knownValues:
+          type: array
+          items: { type: string }
+        knownSpeakers:
+          type: array
+          items: { type: object }
+        preferStreaming: { type: boolean }
+        allowProviderMapping: { type: boolean }
 
     ActivityDetection:
       type: object

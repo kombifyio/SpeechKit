@@ -2,6 +2,7 @@ package config
 
 import (
 	"fmt"
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/stt"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -236,12 +237,12 @@ func normalizeSpeechDefaults(cfg *Config, speechDefined, speechLanguageDefined, 
 	cfg.General.Language = strings.TrimSpace(cfg.General.Language)
 	switch {
 	case !speechDefined || !speechLanguageDefined:
-		cfg.Speech.Language = firstNonEmptyConfig(cfg.General.Language, cfg.Speech.Language, "de")
+		cfg.Speech.Language = firstNonEmptyConfig(cfg.General.Language, cfg.Speech.Language, stt.LanguageMulti)
 	case !generalLanguageDefined:
-		cfg.General.Language = firstNonEmptyConfig(cfg.Speech.Language, cfg.General.Language, "de")
+		cfg.General.Language = firstNonEmptyConfig(cfg.Speech.Language, cfg.General.Language, stt.LanguageMulti)
 	}
 	if cfg.General.Language == "" {
-		cfg.General.Language = firstNonEmptyConfig(cfg.Speech.Language, "de")
+		cfg.General.Language = firstNonEmptyConfig(cfg.Speech.Language, stt.LanguageMulti)
 	}
 	if cfg.Speech.Language == "" {
 		cfg.Speech.Language = cfg.General.Language

@@ -4,6 +4,7 @@ import {
   type ClientFrame,
   type ErrorFrame,
   type EventFrame,
+  type InterruptedFrame,
   type ServerFrame,
   type SessionTicket,
   type StartFrame,
@@ -36,6 +37,12 @@ export interface SessionHooks {
   onAgentTranscript?(text: string, done: boolean): void;
   onAudio?(chunk: ArrayBuffer): void;
   onToolCall?(call: ToolCallFrame): void;
+  /**
+   * The provider cut agent playback short (barge-in). Hosts should drop
+   * queued agent audio (e.g. `BrowserSession.flushPlayback()`) and treat
+   * the open agent turn as interrupted.
+   */
+  onInterrupted?(frame: InterruptedFrame): void;
   /** Provider event frames without a more specific v1 mapping. */
   onEvent?(frame: EventFrame): void;
   onError?(err: Error | ErrorFrame): void;
@@ -171,6 +178,8 @@ export class VoiceAgentSession {
         this.hooks.onClose?.(frame.reason);
         return;
       case "interrupted":
+        this.hooks.onInterrupted?.(frame);
+        return;
       case "sequence_step":
       case "pong":
         return;

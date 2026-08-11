@@ -1,0 +1,10 @@
+{"type":"thread.started","thread_id":"th_fake123"}
+{"type":"turn.started","thread_id":"th_fake123"}
+{"type":"item.started","item":{"id":"item_1","item_type":"reasoning","text":"Reading the repository layout"}}
+{"type":"item.completed","item":{"id":"item_1","item_type":"reasoning","text":"Understood the task"}}
+{"type":"item.started","item":{"id":"item_2","item_type":"command_execution","command":"go test ./..."}}
+{"type":"item.completed","item":{"id":"item_2","item_type":"command_execution","command":"go test ./...","exit_code":0}}
+{"type":"some.future_event","payload":{"x":1}}
+not json noise line
+{"type":"item.completed","item":{"id":"item_3","item_type":"agent_message","text":"All tests pass; nothing to change."}}
+{"type":"turn.completed","thread_id":"th_fake123","usage":{"input_tokens":10,"output_tokens":5}}

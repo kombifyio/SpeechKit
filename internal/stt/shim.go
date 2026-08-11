@@ -35,6 +35,14 @@ type (
 
 const MinWhisperModelBytes = pkgstt.MinWhisperModelBytes
 
+// LanguageMulti is the value carried when no language is pinned. Never
+// forwarded verbatim — each provider expresses multilanguage in its own
+// dialect. See pkg/speechkit/stt.LanguageMulti.
+const LanguageMulti = pkgstt.LanguageMulti
+
+// IsMultilanguage reports whether a language value means "do not pin".
+var IsMultilanguage = pkgstt.IsMultilanguage
+
 // Functions and constructors (function-value aliases keep signatures in sync
 // with the public package automatically).
 var (

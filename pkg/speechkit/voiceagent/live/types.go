@@ -260,6 +260,11 @@ type HostPromptKind string
 const (
 	HostPromptIdleReminder   HostPromptKind = "idle_reminder"
 	HostPromptIdleDeactivate HostPromptKind = "idle_deactivate"
+	// HostPromptAgentProgress carries progress from a long-running host-side
+	// tool (e.g. the external coding agent bridge) back into the dialogue.
+	// Hosts deliver it only while the session is listening, so it never
+	// collides with user speech or model playback.
+	HostPromptAgentProgress HostPromptKind = "agent_progress"
 )
 
 type HostPromptEventType string

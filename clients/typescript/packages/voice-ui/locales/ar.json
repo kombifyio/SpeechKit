@@ -14,6 +14,7 @@
   "sk.voice.agent.listening": "يستمع",
   "sk.voice.agent.speaking": "يتحدث",
   "sk.voice.agent.interrupt": "انقر للمقاطعة",
+  "sk.voice.agent.interrupted": "تمت المقاطعة",
   "sk.voice.agent.you": "أنت",
   "sk.voice.agent.assistant": "المساعد",
   "sk.voice.agent.live": "مباشر",

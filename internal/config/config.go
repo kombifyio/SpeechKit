@@ -137,4 +137,9 @@ type Config struct {
 	// Read by cmd/speechkit (Device-Target) and any library embedder; the
 	// Server-Target ignores this block in v1.
 	Wakeword WakewordConfig `toml:"wakeword"`
+
+	// AgentBridge configures the External Coding Agent Bridge (desktop-only,
+	// default off, fail-closed; AI-VOICE-SPEECHKIT-TARGET.md 2026-08-10).
+	// The Server-Target ignores this block entirely.
+	AgentBridge AgentBridgeConfig `toml:"agent_bridge"`
 }

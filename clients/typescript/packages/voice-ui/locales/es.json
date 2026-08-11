@@ -14,6 +14,7 @@
   "sk.voice.agent.listening": "Escuchando",
   "sk.voice.agent.speaking": "Hablando",
   "sk.voice.agent.interrupt": "Toca para interrumpir",
+  "sk.voice.agent.interrupted": "Interrumpido",
   "sk.voice.agent.you": "Tú",
   "sk.voice.agent.assistant": "Asistente",
   "sk.voice.agent.live": "En vivo",

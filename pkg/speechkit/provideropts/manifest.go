@@ -2,7 +2,7 @@ package provideropts
 
 const (
 	SchemaProviderOptions = "speechkit.provider_options.v1"
-	ManifestUpdated       = "2026-06-23"
+	ManifestUpdated       = "2026-08-11"
 
 	ModalitySTT        = "stt"
 	ModalityTTS        = "tts"
@@ -56,7 +56,8 @@ func deepgramSTTManifest() ProviderOptionManifest {
 		// selects multilingual code-switching. Leaving it out of the manifest
 		// made the resolver drop every configured language as unsupported, so
 		// the picker in Settings could not influence the request at all.
-		native(OptionLanguage, TypeString, "Language", "language", "https://developers.deepgram.com/docs/multilingual-code-switching"),
+		languageOption("language", "https://developers.deepgram.com/docs/multilingual-code-switching",
+			"Multilanguage: send the literal language=multi. Verified 2026-08-11: code-switching is available on Nova-2, Nova-3 and Flux Multilingual; Flux instead uses model=flux-general-multi with language_hint. Deepgram also recommends endpointing=100 for code-switching in streaming."),
 		unsupported(OptionDetectLanguage, TypeBool, "Detect language", "SpeechKit sends an explicit language (or \"multi\" for code-switching) and never requests Deepgram's detection."),
 		native(OptionPunctuation, TypeBool, "Punctuation", "punctuate", "https://developers.deepgram.com/docs/punctuation"),
 		native(OptionSmartFormat, TypeBool, "Smart format", "smart_format", "https://developers.deepgram.com/docs/smart-format"),
@@ -78,7 +79,8 @@ func deepgramSTTManifest() ProviderOptionManifest {
 // and decodes only the text field back, so they share one capability statement.
 func openAISTTManifest(provider, label string, profileIDs []string, evidence string) ProviderOptionManifest {
 	return manifest(provider, label, ModalitySTT, profileIDs, []OptionSupport{
-		native(OptionLanguage, TypeString, "Language", "language", evidence),
+		languageOption("language", evidence,
+			"Multilanguage: OMIT the field. Verified 2026-08-11 against openai/openai-openapi: language is optional and ISO-639-1, supplied only to \"improve accuracy and latency\". There is no auto or multi token -- sending one would be an invalid language code."),
 		derived(OptionDetectLanguage, TypeBool, "Detect language", "Omit language so the provider auto-detects when supported.", evidence),
 		native(OptionPromptHint, TypeString, "Prompt hint", "prompt", evidence),
 		unsupported(OptionTimestamps, TypeBool, "Timestamps", "The adapter requests no timestamp granularities and keeps only the transcript text."),
@@ -93,7 +95,8 @@ func openAISTTManifest(provider, label string, profileIDs []string, evidence str
 
 func googleSTTManifest() ProviderOptionManifest {
 	return manifest("google", "Google Speech-to-Text", ModalitySTT, []string{"stt.google.latest-long", "stt.google.latest-long-diarization"}, []OptionSupport{
-		native(OptionLanguage, TypeString, "Language", "languageCode", "https://docs.cloud.google.com/speech-to-text/docs/reference/rest/v1/RecognitionConfig"),
+		languageOption("languageCode", "https://docs.cloud.google.com/speech-to-text/docs/multiple-languages",
+			"Multilanguage: NOT open-ended. Verified 2026-08-11: v2 takes a language_codes LIST and \"You can list up to three languages for automatic language recognition\"; there is no auto value, and v1 requires a languageCode. Google therefore cannot express unconstrained multilanguage and needs candidate languages."),
 		unsupported(OptionDetectLanguage, TypeBool, "Detect language", "SpeechKit's v1 REST adapter uses one languageCode; multi-language alternatives are not wired yet."),
 		native(OptionPunctuation, TypeBool, "Automatic punctuation", "enableAutomaticPunctuation", "https://docs.cloud.google.com/speech-to-text/docs/reference/rest/v1/RecognitionConfig"),
 		native(OptionVocabularyBias, TypeBool, "Use vocabulary bias", "speechContexts.phrases", "https://docs.cloud.google.com/speech-to-text/docs/reference/rest/v1/RecognitionConfig"),
@@ -107,7 +110,8 @@ func googleSTTManifest() ProviderOptionManifest {
 
 func assemblyAISTTManifest() ProviderOptionManifest {
 	return manifest("assemblyai", "AssemblyAI", ModalitySTT, []string{"stt.assemblyai.universal", "stt.assemblyai.universal-diarization"}, []OptionSupport{
-		native(OptionLanguage, TypeString, "Language", "language_code", "https://www.assemblyai.com/docs/api-reference/transcripts/submit"),
+		languageOption("language_code", "https://www.assemblyai.com/docs/api-reference/transcripts/submit",
+			"Multilanguage: OMIT language_code. Verified 2026-08-11: \"If you dont specify a language, its detected automatically\", and language_detection \"is applied automatically when you dont specify a language_code\" (default true). True in-file code-switching is separate: language_codes plus language_detection_options.code_switching, and one of the values must be en."),
 		native(OptionDetectLanguage, TypeBool, "Detect language", "language_detection", "https://www.assemblyai.com/docs/api-reference/transcripts/submit"),
 		native(OptionPunctuation, TypeBool, "Punctuation", "punctuate", "https://www.assemblyai.com/docs/api-reference/transcripts/submit"),
 		native(OptionSmartFormat, TypeBool, "Format text", "format_text", "https://www.assemblyai.com/docs/api-reference/transcripts/submit"),
@@ -124,7 +128,8 @@ func assemblyAISTTManifest() ProviderOptionManifest {
 
 func openRouterSTTManifest() ProviderOptionManifest {
 	return manifest("openrouter", "OpenRouter", ModalitySTT, []string{"stt.openrouter.whisper-1"}, []OptionSupport{
-		native(OptionLanguage, TypeString, "Language", "language", "https://openrouter.ai/docs/api/api-reference/transcriptions/create-audio-transcriptions"),
+		languageOption("language", "https://openrouter.ai/docs/api-reference/overview",
+			"Multilanguage: OMIT the field, inferred from OpenAI schema compatibility -- \"OpenRouter normalizes the schema across models and providers\". DERIVED, NOT VENDOR-VERIFIED: as of 2026-08-11 OpenRouter publishes no dedicated audio-transcription reference, so this entry needs a live roundtrip before it counts as verified."),
 		derived(OptionDetectLanguage, TypeBool, "Detect language", "Omit language to let the routed model detect when supported.", "https://openrouter.ai/docs/api/api-reference/transcriptions/create-audio-transcriptions"),
 		unsupported(OptionPromptHint, TypeString, "Prompt hint", "The current OpenRouter adapter uses the JSON transcription endpoint without prompt."),
 		unsupported(OptionKeyterms, TypeStringList, "Native keyterms", "No native keyterm mapping is exposed by the current adapter."),
@@ -147,7 +152,8 @@ func localSTTManifest() ProviderOptionManifest {
 		// The bundled whisper-server speaks the OpenAI multipart shape, so both
 		// values travel as their own request fields rather than being folded
 		// into some other parameter.
-		native(OptionLanguage, TypeString, "Language", "language", "https://github.com/ggerganov/whisper.cpp"),
+		languageOption("language", "https://github.com/ggerganov/whisper.cpp/blob/master/examples/server/README.md",
+			"Multilanguage: send the literal auto. Verified 2026-08-11: the server help reads \"-l LANG, --language LANG [en] spoken language (auto for auto-detect)\" -- the DEFAULT IS ENGLISH, so omitting the field pins English instead of detecting. This is why the sentinel is translated per provider rather than normalized away."),
 		native(OptionPromptHint, TypeString, "Prompt hint", "prompt", "https://github.com/ggerganov/whisper.cpp"),
 		derived(OptionVocabularyBias, TypeBool, "Use vocabulary bias", "Dictionary terms are rendered into the prompt field.", "https://github.com/ggerganov/whisper.cpp"),
 		unsupported(OptionEndpointingMs, TypeInt, "Endpointing", "Local batch transcription uses SpeechKit VAD/recording controls."),
@@ -264,23 +270,34 @@ func manifest(provider, label, modality string, profileIDs []string, options []O
 }
 
 func native(id OptionID, typ OptionType, label, nativeKey, evidence string) OptionSupport {
-	return support(id, typ, label, SupportNative, nativeKey, true, evidence, "")
+	return support(id, typ, label, SupportNative, nativeKey, evidence, "")
+}
+
+// languageOption declares a provider's natively supported language option.
+//
+// It exists because the native key alone does not say how the provider
+// expresses MULTILANGUAGE, and that differs per vendor: Deepgram takes a
+// literal "multi", whisper.cpp needs "auto" because its default is English,
+// and the OpenAI-compatible adapters express it by omitting the field. The
+// notes carry that, verified against vendor documentation 2026-08-11.
+func languageOption(nativeKey, evidence, multilanguageNotes string) OptionSupport {
+	return support(OptionLanguage, TypeString, "Language", SupportNative, nativeKey, evidence, multilanguageNotes)
 }
 
 func derived(id OptionID, typ OptionType, label, notes, evidence string) OptionSupport {
-	return support(id, typ, label, SupportDerived, "", true, evidence, notes)
+	return support(id, typ, label, SupportDerived, "", evidence, notes)
 }
 
 func unsupported(id OptionID, typ OptionType, label, notes string) OptionSupport {
-	return support(id, typ, label, SupportUnsupported, "", true, "", notes)
+	return support(id, typ, label, SupportUnsupported, "", "", notes)
 }
 
-func support(id OptionID, typ OptionType, label string, status SupportStatus, nativeKey string, implemented bool, evidence, notes string) OptionSupport {
+func support(id OptionID, typ OptionType, label string, status SupportStatus, nativeKey, evidence, notes string) OptionSupport {
 	return OptionSupport{
 		ID:          id,
 		Status:      status,
 		NativeKey:   nativeKey,
-		Implemented: implemented,
+		Implemented: true,
 		EvidenceURL: evidence,
 		Notes:       notes,
 		Definition: OptionDefinition{

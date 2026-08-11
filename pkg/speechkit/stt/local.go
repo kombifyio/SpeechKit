@@ -58,6 +58,13 @@ func ValidateModelPath(path string) error {
 }
 
 const (
+	// whisperCppAutoDetectLanguage is whisper.cpp's documented auto-detect
+	// value. Its server help reads
+	// "-l LANG, --language LANG  [en] spoken language ('auto' for auto-detect)",
+	// so the default is English and the field must be sent explicitly to get
+	// language-free transcription.
+	whisperCppAutoDetectLanguage = "auto"
+
 	// Cold-start budgets for whisper-server. The CI install-E2E loads
 	// Whisper Large v3 Turbo (~1.6 GB) on a CPU-only runner; the model
 	// can take 90+ s just to memory-map and ggml-init before the
@@ -365,10 +372,18 @@ func (p *LocalProvider) Transcribe(ctx context.Context, audioData []byte, opts T
 		return nil, fmt.Errorf("write audio data: %w", err)
 	}
 
-	if language := resolved.APILanguage(); language != "" {
-		if err := writer.WriteField("language", language); err != nil {
-			return nil, fmt.Errorf("write language field: %w", err)
-		}
+	// whisper.cpp's server defaults to English, not auto-detect:
+	// "-l LANG, --language LANG  [en] spoken language ('auto' for auto-detect)".
+	// Omitting the field therefore pins English rather than leaving the model
+	// free, so multilanguage has to be sent explicitly as the documented
+	// "auto" value. This is why the multilanguage sentinel is translated per
+	// provider instead of being normalized away everywhere.
+	language := resolved.APILanguage()
+	if language == "" {
+		language = whisperCppAutoDetectLanguage
+	}
+	if err := writer.WriteField("language", language); err != nil {
+		return nil, fmt.Errorf("write language field: %w", err)
 	}
 	if err := writer.WriteField("model", "whisper-1"); err != nil {
 		return nil, fmt.Errorf("write model field: %w", err)

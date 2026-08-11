@@ -29,6 +29,12 @@ export interface BrowserOpenOptions extends SessionOptions {
    * either way.
    */
   resolveWsUrl?: (ticket: SessionTicket) => string;
+  /**
+   * Optional level tap for chunks scheduled via {@link BrowserSession.playChunk}:
+   * called with the RMS (0..1) of each chunk before it is scheduled, and with
+   * 0 once the queue drains or is flushed. Feed this to output visualizers.
+   */
+  onPlaybackLevel?: (level: number) => void;
 }
 
 export interface BrowserSession {
@@ -48,6 +54,13 @@ export interface BrowserSession {
    * `hooks.onAudio` for a default speaker pipeline.
    */
   playChunk(chunk: ArrayBuffer): void;
+  /**
+   * Immediately drops all queued agent audio (stops scheduled sources and
+   * resets the schedule head). Call on barge-in — typically from
+   * `hooks.onInterrupted` — so stale agent speech does not keep playing
+   * over the user.
+   */
+  flushPlayback(): void;
   close(): void;
 }
 
@@ -77,7 +90,7 @@ export async function openBrowserSession(options: BrowserOpenOptions): Promise<B
     ...(options.tools !== undefined ? { tools: options.tools } : {}),
   };
   const session = new VoiceAgentSession(socket, sessionOptions);
-  const playback = createPlayback();
+  const playback = createPlayback(options.onPlaybackLevel);
 
   const handle: BrowserSession = {
     session,
@@ -85,6 +98,7 @@ export async function openBrowserSession(options: BrowserOpenOptions): Promise<B
     ticket,
     attachMicrophone: (stream) => attachMicrophone(session, stream),
     playChunk: (chunk) => playback.play(chunk),
+    flushPlayback: () => playback.flush(),
     close: () => {
       session.close();
       playback.dispose();
@@ -267,12 +281,14 @@ function clampInt16(value: number): number {
 
 interface Playback {
   play(chunk: ArrayBuffer): void;
+  flush(): void;
   dispose(): void;
 }
 
-function createPlayback(): Playback {
+function createPlayback(onLevel?: (level: number) => void): Playback {
   let context: AudioContext | null = null;
   let nextStartTime = 0;
+  const active = new Set<AudioBufferSourceNode>();
 
   function ensureContext(): AudioContext {
     if (!context) {
@@ -288,17 +304,40 @@ function createPlayback(): Playback {
       const samples = new Int16Array(chunk);
       const buffer = ctx.createBuffer(1, samples.length, SERVER_SAMPLE_RATE);
       const channel = buffer.getChannelData(0);
+      let sumSquares = 0;
       for (let i = 0; i < samples.length; i++) {
-        channel[i] = (samples[i] ?? 0) / 0x7fff;
+        const value = (samples[i] ?? 0) / 0x7fff;
+        channel[i] = value;
+        sumSquares += value * value;
       }
+      onLevel?.(Math.min(1, Math.sqrt(sumSquares / Math.max(1, samples.length)) * 3));
       const source = ctx.createBufferSource();
       source.buffer = buffer;
       source.connect(ctx.destination);
+      active.add(source);
+      source.onended = () => {
+        active.delete(source);
+        if (active.size === 0) onLevel?.(0);
+      };
       const startAt = Math.max(ctx.currentTime, nextStartTime);
       source.start(startAt);
       nextStartTime = startAt + buffer.duration;
     },
+    flush() {
+      for (const source of active) {
+        source.onended = null;
+        try {
+          source.stop();
+        } catch {
+          /* already stopped */
+        }
+      }
+      active.clear();
+      if (context) nextStartTime = context.currentTime;
+      onLevel?.(0);
+    },
     dispose() {
+      this.flush();
       if (context) {
         void context.close();
         context = null;

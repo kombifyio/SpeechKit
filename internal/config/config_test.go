@@ -2,6 +2,7 @@ package config
 
 import (
 	"errors"
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/stt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -47,8 +48,11 @@ func TestLoadDefaults(t *testing.T) {
 		t.Fatalf("Load defaults: %v", err)
 	}
 
-	if cfg.General.Language != "de" {
-		t.Errorf("default language = %q, want %q", cfg.General.Language, "de")
+	// Deliberately NOT "de". This assertion used to demand German, which made
+	// the locale default self-healing: anyone who fixed the config got a red
+	// test and reverted. SpeechKit never pins a language by default.
+	if cfg.General.Language != stt.LanguageMulti {
+		t.Errorf("default language = %q, want %q", cfg.General.Language, stt.LanguageMulti)
 	}
 	if cfg.General.Hotkey != "ctrl+win" {
 		t.Errorf("default hotkey = %q, want %q", cfg.General.Hotkey, "ctrl+win")
@@ -1841,8 +1845,8 @@ func TestLoadMalformedTOMLFallsBackToDefaults(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Load should not error on malformed TOML, got: %v", err)
 	}
-	if cfg.General.Language != "de" {
-		t.Errorf("expected default language %q, got %q", "de", cfg.General.Language)
+	if cfg.General.Language != stt.LanguageMulti {
+		t.Errorf("expected default language %q, got %q", stt.LanguageMulti, cfg.General.Language)
 	}
 	if cfg.General.Hotkey != "ctrl+win" {
 		t.Errorf("expected default hotkey %q, got %q", "ctrl+win", cfg.General.Hotkey)

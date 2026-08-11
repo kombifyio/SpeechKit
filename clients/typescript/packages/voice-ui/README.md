@@ -33,7 +33,8 @@ Native surfaces (Compose) implement spec parity from the shipped
 <script type="module">
   // The kit is UI-only: inject a VoiceUiController (sessions/transport/audio
   // stay host-owned). kombify surfaces wrap @kombify/ai-sdk/voice; OSS hosts
-  // adapt @kombifyio/speechkit-client / @kombifyio/speechkit-voiceagent-client.
+  // use the ready-made adapter from ./voiceagent-adapter (see below) instead
+  // of writing their own.
   document.getElementById("voice").controller = myController;
 </script>
 ```
@@ -48,6 +49,26 @@ The kit renders the canonical `speechkit.voice_surface.v1` event stream and
 owns no session FSM, provider keys, tickets, or entitlement authority. See
 `VoiceUiController` in the typed API: `start/stop/cancel/subscribe/getState`
 plus optional `interrupt()` (barge-in) and `subscribeLevel()` (visualizer).
+
+### Ready-made voice-agent adapter
+
+For a SpeechKit server you do not need to implement that interface yourself:
+
+```ts
+import { createVoiceAgentUiController } from "@kombifyio/speechkit-voice-ui/voiceagent-adapter";
+
+const controller = createVoiceAgentUiController({
+  serverUrl: "https://speechkit.example.com",
+  token: sessionToken,
+  start: { provider: "gemini", locale: "en-US" },
+});
+```
+
+It owns microphone capture, the ticket WebSocket, playback with barge-in
+flushing, and input/output level metering, and emits the canonical event
+stream. `@kombifyio/speechkit-voiceagent-client` is an **optional peer
+dependency** required only for this subpath — the main entry stays
+dependency-free.
 
 ## Theming
 

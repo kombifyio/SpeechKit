@@ -1,6 +1,7 @@
 package config
 
 import (
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/stt"
 	"strings"
 
 	customtemplates "github.com/kombifyio/SpeechKit/internal/customize/templates"
@@ -10,7 +11,7 @@ import (
 func defaults() *Config {
 	cfg := &Config{
 		General: GeneralConfig{
-			Language:                       "de",
+			Language:                       stt.LanguageMulti,
 			Hotkey:                         "ctrl+win",
 			DictateHotkey:                  "ctrl+win",
 			AssistHotkey:                   "win+alt",
@@ -104,7 +105,7 @@ func defaults() *Config {
 			TokenEnv:     "HF_TOKEN", //nolint:gosec // not a credential, field name triggers false positive
 		},
 		Speech: SpeechDefaultsConfig{
-			Language:               "de",
+			Language:               stt.LanguageMulti,
 			Punctuation:            true,
 			SmartFormat:            true,
 			VocabularyBias:         true,

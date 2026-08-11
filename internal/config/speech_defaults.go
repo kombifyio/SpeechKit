@@ -1,6 +1,7 @@
 package config
 
 import (
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/stt"
 	"strings"
 
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/provideropts"
@@ -15,7 +16,7 @@ func SpeechDefaultsValues(cfg *Config) provideropts.Values {
 		language = strings.TrimSpace(cfg.General.Language)
 	}
 	values := provideropts.Values{
-		provideropts.OptionLanguage:       firstNonEmptyConfig(language, "de"),
+		provideropts.OptionLanguage:       firstNonEmptyConfig(language, stt.LanguageMulti),
 		provideropts.OptionDetectLanguage: cfg.Speech.DetectLanguage,
 		provideropts.OptionPunctuation:    cfg.Speech.Punctuation,
 		provideropts.OptionSmartFormat:    cfg.Speech.SmartFormat,

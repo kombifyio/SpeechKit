@@ -39,6 +39,65 @@ normative) and replayed by `spec/fixtures/voice-ui-turns.v1.json`:
   primary; autoscroll pinned to live output; user scrolling unpins and shows a
   jump-to-live affordance (re-pin threshold: within 24px of the bottom).
 
+## Voice Assistant element (`speechkit-voice-assistant`)
+
+The default Voice Assistant surface — the "Aura Orb" visual language
+(decision 2026-08-10; promoted from the voice-ui lab, where the Glass
+Waveform and Ring variants remain as future customization presets).
+One element serves every kit frame; native implementations (Compose, LVGL)
+port this section plus the `assistant` block in `tokens.json` (SSOT for
+layers, per-status tones, timings, and level formulas).
+
+Attribute contract (all optional):
+
+| Attribute | Values | Meaning |
+| --- | --- | --- |
+| `size` | `orb` \| `compact` (default) \| `expanded` | `orb` renders the bare orb for hosts that own their chrome (Device-Target prompter, Android overlay, box); `compact` the pill/bar/watch face; `expanded` the hero orb + status pill + teleprompter turn list. |
+| `frame` | `overlay` \| `keyboard` \| `watch` \| `phone` \| `panel` (default) | Host surface. Compact `keyboard` renders the full-width inline bar; compact `watch` the round watch face; other frames the pill. |
+| `transcript` | boolean attribute | Off = animation/status only. Compact shows at most the last sentence of the newest turn; expanded shows the full turn list. Ignored for `size="orb"`. |
+| `mark-src` | URL | Host-provided brand image rendered in the orb centre; absent = pure orb. The kit ships no brand asset — kombify hosts pass the AI-teal rosette (standard) or the k monogram. |
+| `aura-state` | one of the 8 orb states below | Host override for the orb visual. Absent = derived from the session status. |
+| `locale` | BCP 47 | Inherited catalog resolution (`sk.voice.*`). |
+
+Orb visual states — a superset of the session statuses, because host FSMs are
+richer than the surface contract:
+
+| Aura state | Reached from | Active |
+| --- | --- | --- |
+| `inactive` | `idle`, `cancelled` | no |
+| `connecting` | kit-local `connecting` | yes |
+| `listening` | `capturing` | yes |
+| `processing` | `processing` | yes |
+| `speaking` | `speaking` | yes |
+| `recovering` | host override only | yes |
+| `settling` | host override only | yes |
+| `error` | `denied` | no |
+
+The layer stack, per-state colour pairs, timings, and level formulas are
+normative in `src/tokens/tokens.json` → `assistant` (the SSOT the Compose and
+LVGL ports implement): breathing glow, 9 s aurora sweep, counter-rotating 13 s
+inner sweep, level-reactive halo ring (`scale = 0.82 + level*0.3`,
+`opacity = 0.35 + level*0.5`), glassy core, centre spark, brand mark at 34 %.
+Inactive states stop every animation and desaturate the mark to a grey ghost.
+
+Behavior:
+
+- Status = session status plus the kit-local `connecting` (controller attached,
+  no session state yet). Labels come from `sk.voice.state.*` /
+  `sk.voice.agent.connecting`.
+- Levels: controller `subscribeLevel` (input + output channels) smoothed by the
+  shared envelope follower (`SmoothedLevel`); hosts with their own reducer or a
+  richer FSM use the presentational overrides (`turns`, `status`, `auraState`,
+  `level`/`setLevel`) exactly like the overlay's.
+- Orb tap while `speaking` = barge-in (`interrupt()`, emits
+  `speechkit-interrupt`); inert otherwise.
+- The expanded turn list follows §Teleprompter turn rules including autoscroll
+  pinning and jump-to-live; interrupted turns render the
+  `sk.voice.agent.interrupted` flag.
+- Reduced motion per §Motion & accessibility: per-state colours and the
+  resting/active mark treatment remain, all animation and level transforms are
+  disabled.
+
 ## Split button
 
 - Primary segment: `idle`/`cancelled`/`denied` → `start("dictation")`;

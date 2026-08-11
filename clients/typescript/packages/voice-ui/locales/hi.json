@@ -14,6 +14,7 @@
   "sk.voice.agent.listening": "सुन रहा है",
   "sk.voice.agent.speaking": "बोल रहा है",
   "sk.voice.agent.interrupt": "बीच में रोकने के लिए टैप करें",
+  "sk.voice.agent.interrupted": "बीच में रोका गया",
   "sk.voice.agent.you": "आप",
   "sk.voice.agent.assistant": "असिस्टेंट",
   "sk.voice.agent.live": "लाइव",

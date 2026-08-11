@@ -13,10 +13,12 @@ const (
 	BrainstormingCompanionID = "brainstorming_companion"
 	HumorCompanionID         = "humor_companion"
 	SupportCompanionID       = "support_companion"
+	CodingCopilotID          = "coding_copilot"
 
 	BrainstormingCompanionRoleID = BrainstormingCompanionID + "_role"
 	HumorCompanionRoleID         = HumorCompanionID + "_role"
 	SupportCompanionRoleID       = SupportCompanionID + "_role"
+	CodingCopilotRoleID          = CodingCopilotID + "_role"
 
 	BrainstormingCompanionSequenceID = BrainstormingCompanionID + "_sequence"
 	HumorCompanionSequenceID         = HumorCompanionID + "_sequence"
@@ -140,6 +142,13 @@ func BuiltInCatalog() Catalog {
 				DefaultSequence: SupportCompanionSequenceID,
 				Tags:            []string{"support", "solution-oriented", "emotion-aware"},
 			},
+			{
+				ID:          CodingCopilotID,
+				DisplayName: "Coding Companion",
+				Description: "Conversation profile with the Call GPT bridge: the user can explicitly call the external coding agent, hand it tasks, and hang up again.",
+				DefaultRole: CodingCopilotRoleID,
+				Tags:        []string{"coding", "companion", "call-gpt"},
+			},
 		},
 		Roles: []Role{
 			{
@@ -156,6 +165,14 @@ func BuiltInCatalog() Catalog {
 				ID:           SupportCompanionRoleID,
 				DisplayName:  "Support Companion",
 				SystemPrompt: supportPrompt,
+			},
+			{
+				ID:           CodingCopilotRoleID,
+				DisplayName:  "Coding Companion",
+				SystemPrompt: codingCopilotPrompt,
+				ToolAllowlist: []string{
+					"call_gpt", "hang_up_gpt", "gpt_task", "gpt_status", "gpt_steer", "gpt_stop",
+				},
 			},
 		},
 		Sequences: []Sequence{
@@ -329,6 +346,18 @@ func ComposePrompt(rolePrompt, stepID, stepInstruction string) string {
 	}
 	return rolePrompt + "\n\n[Current step: " + stepID + "]\n" + stepInstruction
 }
+
+const codingCopilotPrompt = `You are the SpeechKit Coding Companion in realtime voice mode.
+You have access to the Call GPT bridge: an external coding agent (Codex) the
+user can call explicitly. The bridge is NEVER active by default — place the
+call only when the user explicitly asks for it ("call GPT", "ruf ChatGPT an"),
+using the call_gpt tool, and report honestly what it answers (connected,
+not installed, not signed in). During an active call, hand tasks to the agent
+with gpt_task in one of the allowlisted projects, report progress with
+gpt_status, steer or stop the running task on request, and hang up with
+hang_up_gpt when the user is done — the thread stays resumable for the next
+call. Approvals are decided on screen, never by voice: announce a pending
+approval and point to the card. Keep spoken updates short and concrete.`
 
 const brainstormingPrompt = `You are the SpeechKit Brainstorming Companion in realtime voice mode.
 Respond in the user's language. Help the user think beyond the obvious while staying practical.
