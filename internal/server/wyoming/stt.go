@@ -82,7 +82,10 @@ func (s *Server) canonicalPCM(ctx context.Context, sess *sttSession) ([]byte, er
 		(sess.channels == 0 || sess.channels == audio.TargetChannels) {
 		return sess.buf, nil
 	}
-	wav := pcmToWAV(sess.buf, sess.rate, sess.channels, sess.width)
+	wav, err := pcmToWAV(sess.buf, sess.rate, sess.channels, sess.width)
+	if err != nil {
+		return nil, err
+	}
 	decoded, err := audio.DecodeWithLimits(ctx, wav, "audio/wav", s.opts.DecodeLimits)
 	if err != nil {
 		return nil, err

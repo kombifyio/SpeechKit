@@ -2,6 +2,7 @@ package config
 
 import (
 	"net/url"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -19,6 +20,21 @@ max_request_age_sec = 300
 future_skew_sec = 30
 claim_retention_sec = 3600
 max_claims = 2048
+
+[server.device_agent.box_media]
+enabled = true
+listen_addr = "192.168.10.10:8444"
+certificate_file = "/etc/speechkit/box-media.crt"
+private_key_file = "/etc/speechkit/box-media.key"
+pinned_ca_file = "/etc/speechkit/box-media-ca.crt"
+pinned_ca_sha256 = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+token_env = "SPEECHKIT_BOX_MEDIA_TOKEN"
+device_id = "kitchen-speaker"
+pairing_id = "pairing-kitchen-2026-07"
+room_id = "kitchen"
+transcript = "turn off the kitchen light"
+command_id = "kitchen-light-off"
+locale = "en-US"
 
 [[server.device_agent.devices]]
 device_id = "kitchen-speaker"
@@ -45,6 +61,9 @@ expires_at = "2026-07-31T00:00:00Z"
 	}
 	if bridge.MaxRequestAgeSec != 300 || bridge.FutureSkewSec != 30 || bridge.ClaimRetentionSec != 3600 || bridge.MaxClaims != 2048 {
 		t.Fatalf("decoded claim settings = %+v", bridge.EffectiveClaimSettings())
+	}
+	if media := bridge.BoxMedia; !media.Enabled || media.ListenAddr != "192.168.10.10:8444" || media.TokenEnv != "SPEECHKIT_BOX_MEDIA_TOKEN" || media.CommandID != "kitchen-light-off" {
+		t.Fatalf("decoded Box media config = %+v", media)
 	}
 	if len(bridge.Devices) != 1 {
 		t.Fatalf("decoded devices = %d, want 1", len(bridge.Devices))
@@ -97,6 +116,94 @@ func TestValidateServerProductionAuthLeavesDisabledDeviceAgentInert(t *testing.T
 	cfg.Server.DeviceAgent.Enabled = false
 	if err := ValidateServerProductionAuth(cfg); err != nil {
 		t.Fatalf("disabled bridge should impose no config requirements: %v", err)
+	}
+}
+
+func TestValidateServerProductionAuthRejectsBoxMediaWithoutDeviceAgent(t *testing.T) {
+	cfg := &Config{Server: ServerConfig{ListenAddr: "127.0.0.1:8080", AuthMode: "none"}}
+	cfg.Server.DeviceAgent.BoxMedia.Enabled = true
+	if err := ValidateServerProductionAuth(cfg); err == nil || !strings.Contains(err.Error(), "requires [server.device_agent].enabled=true") {
+		t.Fatalf("Box media without device-agent error = %v", err)
+	}
+}
+
+func TestValidateServerProductionAuthAcceptsValidBoxMediaConfig(t *testing.T) {
+	cfg := validServerDeviceAgentConfig(t)
+	enableValidBoxMediaConfig(t, cfg)
+	// The selected Box binding may retain additional generic Device-Agent
+	// source ranges, but at least one direct RFC1918 IPv4 prefix is mandatory.
+	cfg.Server.DeviceAgent.Devices[0].AllowedClientCIDRs = append(
+		cfg.Server.DeviceAgent.Devices[0].AllowedClientCIDRs,
+		"127.0.0.1/32",
+	)
+	if err := ValidateServerProductionAuth(cfg); err != nil {
+		t.Fatalf("ValidateServerProductionAuth: %v", err)
+	}
+}
+
+func TestValidateServerProductionAuthRejectsIncompleteBoxMediaConfig(t *testing.T) {
+	tests := []struct {
+		name   string
+		mutate func(*testing.T, *Config)
+		want   string
+	}{
+		{"local STT disabled", func(_ *testing.T, cfg *Config) { cfg.Local.Enabled = false }, "[local].enabled=true"},
+		{"relative local model", func(_ *testing.T, cfg *Config) { cfg.Local.ModelPath = "ggml-small.bin" }, "model_path"},
+		{"invalid local port", func(_ *testing.T, cfg *Config) { cfg.Local.Port = 0 }, "[local].port"},
+		{"wildcard listener", func(_ *testing.T, cfg *Config) { cfg.Server.DeviceAgent.BoxMedia.ListenAddr = ":8444" }, "listen_addr"},
+		{"loopback listener", func(_ *testing.T, cfg *Config) { cfg.Server.DeviceAgent.BoxMedia.ListenAddr = "127.0.0.1:8444" }, "RFC1918 IPv4"},
+		{"link-local listener", func(_ *testing.T, cfg *Config) { cfg.Server.DeviceAgent.BoxMedia.ListenAddr = "169.254.10.20:8444" }, "RFC1918 IPv4"},
+		{"CGNAT listener", func(_ *testing.T, cfg *Config) { cfg.Server.DeviceAgent.BoxMedia.ListenAddr = "100.64.10.20:8444" }, "RFC1918 IPv4"},
+		{"IPv6 ULA listener", func(_ *testing.T, cfg *Config) { cfg.Server.DeviceAgent.BoxMedia.ListenAddr = "[fd00::10]:8444" }, "RFC1918 IPv4"},
+		{"IPv6 loopback listener", func(_ *testing.T, cfg *Config) { cfg.Server.DeviceAgent.BoxMedia.ListenAddr = "[::1]:8444" }, "RFC1918 IPv4"},
+		{"public listener", func(_ *testing.T, cfg *Config) { cfg.Server.DeviceAgent.BoxMedia.ListenAddr = "203.0.113.10:8444" }, "RFC1918 IPv4"},
+		{"selected binding loopback only", func(_ *testing.T, cfg *Config) {
+			cfg.Server.DeviceAgent.Devices[0].AllowedClientCIDRs = []string{"127.0.0.1/32"}
+		}, "selected device allowed_client_cidrs"},
+		{"selected binding link-local only", func(_ *testing.T, cfg *Config) {
+			cfg.Server.DeviceAgent.Devices[0].AllowedClientCIDRs = []string{"169.254.10.0/24"}
+		}, "selected device allowed_client_cidrs"},
+		{"selected binding CGNAT only", func(_ *testing.T, cfg *Config) {
+			cfg.Server.DeviceAgent.Devices[0].AllowedClientCIDRs = []string{"100.64.10.0/24"}
+		}, "selected device allowed_client_cidrs"},
+		{"selected binding IPv6 loopback only", func(_ *testing.T, cfg *Config) {
+			cfg.Server.DeviceAgent.Devices[0].AllowedClientCIDRs = []string{"::1/128"}
+		}, "selected device allowed_client_cidrs"},
+		{"selected binding IPv6 ULA only", func(_ *testing.T, cfg *Config) {
+			cfg.Server.DeviceAgent.Devices[0].AllowedClientCIDRs = []string{"fd00::/64"}
+		}, "selected device allowed_client_cidrs"},
+		{"relative certificate", func(_ *testing.T, cfg *Config) { cfg.Server.DeviceAgent.BoxMedia.CertificateFile = "server.crt" }, "certificate_file"},
+		{"reused key path", func(_ *testing.T, cfg *Config) {
+			cfg.Server.DeviceAgent.BoxMedia.PrivateKeyFile = cfg.Server.DeviceAgent.BoxMedia.CertificateFile
+		}, "must be distinct"},
+		{"bad pinned CA digest", func(_ *testing.T, cfg *Config) {
+			cfg.Server.DeviceAgent.BoxMedia.PinnedCASHA256 = strings.Repeat("A", 64)
+		}, "pinned_ca_sha256"},
+		{"unresolved media token", func(_ *testing.T, cfg *Config) { cfg.Server.DeviceAgent.BoxMedia.TokenEnv = "TEST_BOX_MEDIA_MISSING" }, "must resolve"},
+		{"device token env reused", func(_ *testing.T, cfg *Config) {
+			cfg.Server.DeviceAgent.BoxMedia.TokenEnv = cfg.Server.DeviceAgent.Devices[0].TokenEnv
+		}, "credential env"},
+		{"device token value reused", func(t *testing.T, _ *Config) {
+			t.Setenv("TEST_BOX_MEDIA_TOKEN", "device-token-one-0123456789abcdef")
+		}, "device kitchen-speaker credential"},
+		{"unknown device", func(_ *testing.T, cfg *Config) { cfg.Server.DeviceAgent.BoxMedia.DeviceID = "other-device" }, "existing paired device"},
+		{"wrong pairing epoch", func(_ *testing.T, cfg *Config) { cfg.Server.DeviceAgent.BoxMedia.PairingID = "pairing-old" }, "current pairing epoch"},
+		{"unknown command", func(_ *testing.T, cfg *Config) { cfg.Server.DeviceAgent.BoxMedia.CommandID = "other-command" }, "existing G0 rule"},
+		{"different transcript", func(_ *testing.T, cfg *Config) {
+			cfg.Server.DeviceAgent.BoxMedia.Transcript = "turn on the kitchen light"
+		}, "exactly match"},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			cfg := validServerDeviceAgentConfig(t)
+			enableValidBoxMediaConfig(t, cfg)
+			tc.mutate(t, cfg)
+			err := ValidateServerProductionAuth(cfg)
+			if err == nil || !strings.Contains(err.Error(), tc.want) {
+				t.Fatalf("ValidateServerProductionAuth error = %v, want %q", err, tc.want)
+			}
+		})
 	}
 }
 
@@ -328,7 +435,7 @@ func validServerDeviceAgentConfig(t *testing.T) *Config {
 					PairingID:          "pairing-kitchen-2026-07",
 					RoomID:             "kitchen",
 					TokenEnv:           "TEST_DEVICE_AGENT_TOKEN_ONE",
-					AllowedClientCIDRs: []string{"127.0.0.1/32"},
+					AllowedClientCIDRs: []string{"192.168.10.42/32"},
 					LocalRules: []ServerDeviceAgentLocalRuleConfig{{
 						RuleID: "kitchen-light-off", TriggerText: "turn off the kitchen light", Locale: "en-US",
 						Action: "turn_off", EntityID: "light.kitchen",
@@ -355,4 +462,27 @@ func appendSecondDevice(t *testing.T, cfg *Config) {
 			NotBefore: "2026-07-01T00:00:00Z", ExpiresAt: "2026-07-31T00:00:00Z",
 		}},
 	})
+}
+
+func enableValidBoxMediaConfig(t *testing.T, cfg *Config) {
+	t.Helper()
+	root := t.TempDir()
+	t.Setenv("TEST_BOX_MEDIA_TOKEN", "box-media-token-0123456789abcdefghijkl")
+	cfg.Local = LocalConfig{
+		Enabled: true, ModelPath: filepath.Join(root, "ggml-small.bin"), Port: 9000, GPU: "cpu",
+	}
+	cfg.Server.DeviceAgent.BoxMedia = ServerDeviceAgentBoxMediaConfig{
+		Enabled: true, ListenAddr: "192.168.10.10:8444",
+		CertificateFile: filepath.Join(root, "box-media.crt"),
+		PrivateKeyFile:  filepath.Join(root, "box-media.key"),
+		PinnedCAFile:    filepath.Join(root, "box-media-ca.crt"),
+		PinnedCASHA256:  strings.Repeat("a", 64),
+		TokenEnv:        "TEST_BOX_MEDIA_TOKEN",
+		DeviceID:        "kitchen-speaker",
+		PairingID:       "pairing-kitchen-2026-07",
+		RoomID:          "kitchen",
+		Transcript:      "turn off the kitchen light",
+		CommandID:       "kitchen-light-off",
+		Locale:          "en-US",
+	}
 }

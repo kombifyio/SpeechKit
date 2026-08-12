@@ -127,6 +127,7 @@ func wireDeviceAgentBridge(ctx context.Context, cfg *config.Config, app *App) (*
 		return closeOnError(err)
 	}
 	bridge.Mount(app.Mux)
+	app.DeviceAgentBridge = bridge
 	app.DeviceAgentBridgeMounted = true
 	app.Health.SetReady("api.device_agent", StatusOK, "local HA bridge listening")
 	slog.Info("local device-agent bridge enabled",

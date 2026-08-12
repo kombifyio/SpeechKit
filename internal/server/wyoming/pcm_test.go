@@ -10,7 +10,10 @@ func TestPCMToWAVRoundTrip(t *testing.T) {
 	for i := range pcm {
 		pcm[i] = byte(i % 251)
 	}
-	wav := pcmToWAV(pcm, 16000, 1, 2)
+	wav, err := pcmToWAV(pcm, 16000, 1, 2)
+	if err != nil {
+		t.Fatalf("pcmToWAV: %v", err)
+	}
 
 	got, rate, channels, width, err := parseWAV(wav)
 	if err != nil {
@@ -26,7 +29,10 @@ func TestPCMToWAVRoundTrip(t *testing.T) {
 
 func TestParseWAVStereo48k(t *testing.T) {
 	pcm := make([]byte, 4*100) // 100 stereo S16 frames
-	wav := pcmToWAV(pcm, 48000, 2, 2)
+	wav, err := pcmToWAV(pcm, 48000, 2, 2)
+	if err != nil {
+		t.Fatalf("pcmToWAV: %v", err)
+	}
 	got, rate, channels, width, err := parseWAV(wav)
 	if err != nil {
 		t.Fatalf("parseWAV: %v", err)
@@ -36,6 +42,19 @@ func TestParseWAVStereo48k(t *testing.T) {
 	}
 	if len(got) != len(pcm) {
 		t.Errorf("data len = %d, want %d", len(got), len(pcm))
+	}
+}
+
+func TestPCMToWAVRejectsUnrepresentableMetadata(t *testing.T) {
+	if _, err := pcmToWAV([]byte{0, 0}, 16000, 1<<16, 2); err == nil {
+		t.Fatal("expected oversized channel count to be rejected")
+	}
+	// On 64-bit systems this pair would overflow if multiplied before each
+	// untrusted field is bounded. Derive it from int width so the test also
+	// compiles and remains invalid on narrower architectures.
+	overflowingWidth := int(^uint(0)>>2) + 1
+	if _, err := pcmToWAV([]byte{0, 0}, 16000, 4, overflowingWidth); err == nil {
+		t.Fatal("expected multiplication-overflow metadata to be rejected")
 	}
 }
 

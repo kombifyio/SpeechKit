@@ -12,19 +12,26 @@ import (
 	"crypto/x509/pkix"
 	"encoding/hex"
 	"encoding/pem"
+	"errors"
 	"io"
 	"math/big"
 	"net"
 	"net/http"
+	"net/netip"
 	"os"
 	"path/filepath"
+	"sync"
 	"testing"
 	"time"
 )
 
 func TestBoxMediaTLSServerStartsOnlyTLS13WithoutRedirects(t *testing.T) {
 	addr := freeBoxMediaAddr(t)
-	certPath, keyPath, certPEM := writeBoxMediaTestCertificate(t, net.ParseIP("127.0.0.1"), time.Now().Add(-time.Hour), time.Now().Add(time.Hour))
+	host, _, err := net.SplitHostPort(addr)
+	if err != nil {
+		t.Fatalf("parse Box media test address: %v", err)
+	}
+	certPath, keyPath, certPEM := writeBoxMediaTestCertificate(t, net.ParseIP(host), time.Now().Add(-time.Hour), time.Now().Add(time.Hour))
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != BoxMediaTurnPath {
 			w.WriteHeader(http.StatusNotFound)
@@ -37,6 +44,14 @@ func TestBoxMediaTLSServerStartsOnlyTLS13WithoutRedirects(t *testing.T) {
 	}, handler)
 	if err != nil {
 		t.Fatalf("NewBoxMediaTLSServer: %v", err)
+	}
+	chain := server.CertificateChainDER()
+	if len(chain) == 0 || len(chain[0]) == 0 {
+		t.Fatal("loaded TLS certificate chain is empty")
+	}
+	chain[0][0] ^= 0xff
+	if refreshed := server.CertificateChainDER(); len(refreshed) == 0 || refreshed[0][0] == chain[0][0] {
+		t.Fatal("CertificateChainDER did not return a defensive snapshot")
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	runtime, err := server.Start(ctx)
@@ -99,10 +114,205 @@ func TestBoxMediaTLSServerStartsOnlyTLS13WithoutRedirects(t *testing.T) {
 	}
 }
 
+func TestBoxMediaTLSServerShutdownCancelsAndDrainsActiveRequest(t *testing.T) {
+	addr := freeBoxMediaAddr(t)
+	host, _, err := net.SplitHostPort(addr)
+	if err != nil {
+		t.Fatalf("parse Box media test address: %v", err)
+	}
+	certPath, keyPath, certPEM := writeBoxMediaTestCertificate(t, net.ParseIP(host), time.Now().Add(-time.Hour), time.Now().Add(time.Hour))
+	started := make(chan struct{})
+	finished := make(chan struct{})
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		close(started)
+		defer close(finished)
+		<-r.Context().Done()
+		w.WriteHeader(http.StatusServiceUnavailable)
+	})
+	server, err := NewBoxMediaTLSServer(BoxMediaTLSConfig{
+		ListenAddr: addr, CertificateFile: certPath, PrivateKeyFile: keyPath,
+	}, handler)
+	if err != nil {
+		t.Fatalf("NewBoxMediaTLSServer: %v", err)
+	}
+	runtime, err := server.Start(context.Background())
+	if err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+
+	roots := x509.NewCertPool()
+	if !roots.AppendCertsFromPEM(certPEM) {
+		t.Fatal("append test root")
+	}
+	client := &http.Client{Timeout: 5 * time.Second, Transport: &http.Transport{TLSClientConfig: &tls.Config{ //nolint:gosec // test trusts only its ephemeral CA.
+		MinVersion: tls.VersionTLS13,
+		MaxVersion: tls.VersionTLS13,
+		RootCAs:    roots,
+	}}}
+	requestDone := make(chan struct{})
+	go func() {
+		defer close(requestDone)
+		response, requestErr := client.Get("https://" + runtime.Addr().String() + BoxMediaTurnPath)
+		if requestErr == nil {
+			_ = response.Body.Close()
+		}
+	}()
+	select {
+	case <-started:
+	case <-time.After(3 * time.Second):
+		t.Fatal("active Box media request did not reach the handler")
+	}
+
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	if err := runtime.Shutdown(shutdownCtx); err != nil {
+		t.Fatalf("Shutdown: %v", err)
+	}
+	select {
+	case <-finished:
+	default:
+		t.Fatal("Box media handler outlived runtime Shutdown")
+	}
+	select {
+	case <-requestDone:
+	case <-time.After(3 * time.Second):
+		t.Fatal("Box media client request did not finish after runtime Shutdown")
+	}
+	if err := runtime.Shutdown(context.Background()); err != nil {
+		t.Fatalf("repeated Shutdown did not retain the first nil result: %v", err)
+	}
+}
+
+func TestBoxMediaTLSServerForceCloseRetainsFirstShutdownErrorAndDrains(t *testing.T) {
+	addr := freeBoxMediaAddr(t)
+	host, _, err := net.SplitHostPort(addr)
+	if err != nil {
+		t.Fatalf("parse Box media test address: %v", err)
+	}
+	certPath, keyPath, certPEM := writeBoxMediaTestCertificate(t, net.ParseIP(host), time.Now().Add(-time.Hour), time.Now().Add(time.Hour))
+	started := make(chan struct{})
+	finished := make(chan struct{})
+	release := make(chan struct{})
+	var releaseOnce sync.Once
+	releaseHandler := func() { releaseOnce.Do(func() { close(release) }) }
+	handler := http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
+		close(started)
+		defer close(finished)
+		<-release
+	})
+	server, err := NewBoxMediaTLSServer(BoxMediaTLSConfig{
+		ListenAddr: addr, CertificateFile: certPath, PrivateKeyFile: keyPath,
+	}, handler)
+	if err != nil {
+		t.Fatalf("NewBoxMediaTLSServer: %v", err)
+	}
+	runtime, err := server.Start(context.Background())
+	if err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	t.Cleanup(func() {
+		releaseHandler()
+		_ = runtime.Shutdown(context.Background())
+	})
+
+	roots := x509.NewCertPool()
+	if !roots.AppendCertsFromPEM(certPEM) {
+		t.Fatal("append test root")
+	}
+	client := &http.Client{Timeout: 5 * time.Second, Transport: &http.Transport{TLSClientConfig: &tls.Config{ //nolint:gosec // test trusts only its ephemeral CA.
+		MinVersion: tls.VersionTLS13,
+		MaxVersion: tls.VersionTLS13,
+		RootCAs:    roots,
+	}}}
+	requestDone := make(chan struct{})
+	go func() {
+		defer close(requestDone)
+		response, requestErr := client.Get("https://" + runtime.Addr().String() + BoxMediaTurnPath)
+		if requestErr == nil {
+			_ = response.Body.Close()
+		}
+	}()
+	select {
+	case <-started:
+	case <-time.After(3 * time.Second):
+		t.Fatal("active Box media request did not reach the force-close handler")
+	}
+
+	shutdownCtx, cancel := context.WithCancel(context.Background())
+	cancel()
+	shutdownDone := make(chan error, 1)
+	go func() { shutdownDone <- runtime.Shutdown(shutdownCtx) }()
+	select {
+	case err := <-shutdownDone:
+		t.Fatalf("Shutdown returned before the force-closed handler drained: %v", err)
+	case <-time.After(50 * time.Millisecond):
+	}
+	releaseHandler()
+	select {
+	case err := <-shutdownDone:
+		if !errors.Is(err, context.Canceled) {
+			t.Fatalf("Shutdown error=%v, want retained context cancellation", err)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("force-close Shutdown did not finish after handler drain")
+	}
+	select {
+	case <-finished:
+	default:
+		t.Fatal("force-closed handler outlived Shutdown")
+	}
+	select {
+	case <-requestDone:
+	case <-time.After(3 * time.Second):
+		t.Fatal("force-closed client request did not finish")
+	}
+	if err := runtime.Shutdown(context.Background()); !errors.Is(err, context.Canceled) {
+		t.Fatalf("repeated Shutdown error=%v, want retained context cancellation", err)
+	}
+}
+
+func TestBoxMediaRequestLifecycleRejectsAdmissionAfterDrainStarts(t *testing.T) {
+	var lifecycle boxMediaRequestLifecycle
+	if !lifecycle.begin() {
+		t.Fatal("initial request admission was rejected")
+	}
+	lifecycle.stopAccepting()
+	if lifecycle.begin() {
+		t.Fatal("request was admitted after drain started")
+	}
+	waitDone := make(chan struct{})
+	go func() {
+		lifecycle.wait()
+		close(waitDone)
+	}()
+	select {
+	case <-waitDone:
+		t.Fatal("request lifecycle drain returned before the active request exited")
+	case <-time.After(25 * time.Millisecond):
+	}
+	lifecycle.end()
+	select {
+	case <-waitDone:
+	case <-time.After(time.Second):
+		t.Fatal("request lifecycle drain did not finish after the active request exited")
+	}
+}
+
 func TestBoxMediaTLSFiniteTurnE2E(t *testing.T) {
 	addr := freeBoxMediaAddr(t)
-	certPath, keyPath, certPEM := writeBoxMediaTestCertificate(t, net.ParseIP("127.0.0.1"), time.Now().Add(-time.Hour), time.Now().Add(time.Hour))
+	host, _, err := net.SplitHostPort(addr)
+	if err != nil {
+		t.Fatalf("parse Box media test address: %v", err)
+	}
+	certPath, keyPath, certPEM := writeBoxMediaTestCertificate(t, net.ParseIP(host), time.Now().Add(-time.Hour), time.Now().Add(time.Hour))
 	fixture := newBoxMediaFixture(t)
+	_, sourceCIDR, err := net.ParseCIDR(host + "/32")
+	if err != nil {
+		t.Fatalf("parse Box media test source CIDR: %v", err)
+	}
+	binding := fixture.handler.bridge.bindings["speaker-kitchen-001"]
+	binding.allowed = []*net.IPNet{sourceCIDR}
+	fixture.handler.bridge.bindings["speaker-kitchen-001"] = binding
 	server, err := NewBoxMediaTLSServer(BoxMediaTLSConfig{
 		ListenAddr: addr, CertificateFile: certPath, PrivateKeyFile: keyPath,
 	}, fixture.handler)
@@ -165,9 +375,10 @@ func TestBoxMediaTLSFiniteTurnE2E(t *testing.T) {
 }
 
 func TestNewBoxMediaTLSServerFailsClosedOnUnsafeBootstrap(t *testing.T) {
-	validCert, validKey, _ := writeBoxMediaTestCertificate(t, net.ParseIP("127.0.0.1"), time.Now().Add(-time.Hour), time.Now().Add(time.Hour))
-	wrongCert, wrongKey, _ := writeBoxMediaTestCertificate(t, net.ParseIP("127.0.0.2"), time.Now().Add(-time.Hour), time.Now().Add(time.Hour))
-	expiredCert, expiredKey, _ := writeBoxMediaTestCertificate(t, net.ParseIP("127.0.0.1"), time.Now().Add(-2*time.Hour), time.Now().Add(-time.Hour))
+	validAddr := "192.168.10.10:8444"
+	validCert, validKey, _ := writeBoxMediaTestCertificate(t, net.ParseIP("192.168.10.10"), time.Now().Add(-time.Hour), time.Now().Add(time.Hour))
+	wrongCert, wrongKey, _ := writeBoxMediaTestCertificate(t, net.ParseIP("192.168.10.11"), time.Now().Add(-time.Hour), time.Now().Add(time.Hour))
+	expiredCert, expiredKey, _ := writeBoxMediaTestCertificate(t, net.ParseIP("192.168.10.10"), time.Now().Add(-2*time.Hour), time.Now().Add(-time.Hour))
 	handler := http.HandlerFunc(func(http.ResponseWriter, *http.Request) {})
 
 	tests := []struct {
@@ -176,14 +387,19 @@ func TestNewBoxMediaTLSServerFailsClosedOnUnsafeBootstrap(t *testing.T) {
 	}{
 		{name: "wildcard host", config: BoxMediaTLSConfig{ListenAddr: ":8444", CertificateFile: validCert, PrivateKeyFile: validKey}},
 		{name: "unspecified host", config: BoxMediaTLSConfig{ListenAddr: "0.0.0.0:8444", CertificateFile: validCert, PrivateKeyFile: validKey}},
+		{name: "loopback host", config: BoxMediaTLSConfig{ListenAddr: "127.0.0.1:8444", CertificateFile: validCert, PrivateKeyFile: validKey}},
+		{name: "link-local host", config: BoxMediaTLSConfig{ListenAddr: "169.254.10.20:8444", CertificateFile: validCert, PrivateKeyFile: validKey}},
+		{name: "CGNAT host", config: BoxMediaTLSConfig{ListenAddr: "100.64.10.20:8444", CertificateFile: validCert, PrivateKeyFile: validKey}},
+		{name: "IPv6 ULA host", config: BoxMediaTLSConfig{ListenAddr: "[fd00::10]:8444", CertificateFile: validCert, PrivateKeyFile: validKey}},
+		{name: "IPv6 loopback host", config: BoxMediaTLSConfig{ListenAddr: "[::1]:8444", CertificateFile: validCert, PrivateKeyFile: validKey}},
 		{name: "public host", config: BoxMediaTLSConfig{ListenAddr: "203.0.113.9:8444", CertificateFile: validCert, PrivateKeyFile: validKey}},
 		{name: "DNS host", config: BoxMediaTLSConfig{ListenAddr: "speechkit.local:8444", CertificateFile: validCert, PrivateKeyFile: validKey}},
-		{name: "zero port", config: BoxMediaTLSConfig{ListenAddr: "127.0.0.1:0", CertificateFile: validCert, PrivateKeyFile: validKey}},
-		{name: "relative certificate", config: BoxMediaTLSConfig{ListenAddr: "127.0.0.1:8444", CertificateFile: "server.crt", PrivateKeyFile: validKey}},
-		{name: "same cert and key", config: BoxMediaTLSConfig{ListenAddr: "127.0.0.1:8444", CertificateFile: validCert, PrivateKeyFile: validCert}},
-		{name: "missing key", config: BoxMediaTLSConfig{ListenAddr: "127.0.0.1:8444", CertificateFile: validCert, PrivateKeyFile: filepath.Join(t.TempDir(), "missing.key")}},
-		{name: "wrong IP SAN", config: BoxMediaTLSConfig{ListenAddr: "127.0.0.1:8444", CertificateFile: wrongCert, PrivateKeyFile: wrongKey}},
-		{name: "expired certificate", config: BoxMediaTLSConfig{ListenAddr: "127.0.0.1:8444", CertificateFile: expiredCert, PrivateKeyFile: expiredKey}},
+		{name: "zero port", config: BoxMediaTLSConfig{ListenAddr: "192.168.10.10:0", CertificateFile: validCert, PrivateKeyFile: validKey}},
+		{name: "relative certificate", config: BoxMediaTLSConfig{ListenAddr: validAddr, CertificateFile: "server.crt", PrivateKeyFile: validKey}},
+		{name: "same cert and key", config: BoxMediaTLSConfig{ListenAddr: validAddr, CertificateFile: validCert, PrivateKeyFile: validCert}},
+		{name: "missing key", config: BoxMediaTLSConfig{ListenAddr: validAddr, CertificateFile: validCert, PrivateKeyFile: filepath.Join(t.TempDir(), "missing.key")}},
+		{name: "wrong IP SAN", config: BoxMediaTLSConfig{ListenAddr: validAddr, CertificateFile: wrongCert, PrivateKeyFile: wrongKey}},
+		{name: "expired certificate", config: BoxMediaTLSConfig{ListenAddr: validAddr, CertificateFile: expiredCert, PrivateKeyFile: expiredKey}},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -192,22 +408,54 @@ func TestNewBoxMediaTLSServerFailsClosedOnUnsafeBootstrap(t *testing.T) {
 			}
 		})
 	}
-	if _, err := NewBoxMediaTLSServer(BoxMediaTLSConfig{ListenAddr: "127.0.0.1:8444", CertificateFile: validCert, PrivateKeyFile: validKey}, nil); err == nil {
+	if _, err := NewBoxMediaTLSServer(BoxMediaTLSConfig{ListenAddr: validAddr, CertificateFile: validCert, PrivateKeyFile: validKey}, nil); err == nil {
 		t.Fatal("nil handler was accepted")
+	}
+}
+
+func TestValidateBoxMediaListenAddrAcceptsOnlyRFC1918Ranges(t *testing.T) {
+	tests := []string{
+		"10.1.2.3:8444",
+		"172.16.0.1:8444",
+		"172.31.255.254:8444",
+		"192.168.10.20:8444",
+	}
+	for _, listenAddr := range tests {
+		t.Run(listenAddr, func(t *testing.T) {
+			if _, _, err := validateBoxMediaListenAddr(listenAddr); err != nil {
+				t.Fatalf("validateBoxMediaListenAddr(%q): %v", listenAddr, err)
+			}
+		})
 	}
 }
 
 func freeBoxMediaAddr(t *testing.T) string {
 	t.Helper()
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	addresses, err := net.InterfaceAddrs()
 	if err != nil {
-		t.Fatalf("reserve loopback address: %v", err)
+		t.Fatalf("enumerate local addresses: %v", err)
 	}
-	addr := listener.Addr().String()
-	if err := listener.Close(); err != nil {
-		t.Fatalf("release loopback address: %v", err)
+	for _, raw := range addresses {
+		prefix, parseErr := netip.ParsePrefix(raw.String())
+		if parseErr != nil {
+			continue
+		}
+		address := prefix.Addr().Unmap()
+		if !boxMediaRFC1918Address(address) {
+			continue
+		}
+		listener, listenErr := net.Listen("tcp4", net.JoinHostPort(address.String(), "0"))
+		if listenErr != nil {
+			continue
+		}
+		addr := listener.Addr().String()
+		if closeErr := listener.Close(); closeErr != nil {
+			t.Fatalf("release RFC1918 address: %v", closeErr)
+		}
+		return addr
 	}
-	return addr
+	t.Fatal("no bindable RFC1918 IPv4 address is available for the Box media TLS test")
+	return ""
 }
 
 func writeBoxMediaTestCertificate(t *testing.T, ip net.IP, notBefore, notAfter time.Time) (string, string, []byte) {

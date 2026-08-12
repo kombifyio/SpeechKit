@@ -336,6 +336,92 @@ func TestTranscriptionWorkerLogsLowConfidenceWords(t *testing.T) {
 	}
 }
 
+// A provider can answer successfully with a zero-length transcript — Deepgram
+// does exactly that when the pinned language does not match the speech: HTTP
+// 200, no error, no words. The worker used to run the whole commit path on that
+// empty string, so the user's speech disappeared with no log line, no visible
+// state and no history entry. Empty-final is now a named outcome; this test
+// pins all three halves of it, plus the safety property that nothing is
+// delivered.
+func TestTranscriptionWorkerNamesAnEmptyFinalTranscript(t *testing.T) {
+	observer := &recordingObserver{}
+	output := &recordingOutput{}
+	runner := NewTranscriptionRunner(stubTranscriber{
+		transcript: Transcript{
+			Text:     "   ",
+			Provider: "deepgram",
+			Model:    "nova-3",
+			Language: "de",
+			Duration: 100 * time.Millisecond,
+		},
+	}, nil)
+
+	worker, err := NewTranscriptionWorker(TranscriptionWorkerConfig{
+		Timeout:   time.Second,
+		QueueSize: 1,
+		Runner:    runner,
+		Output:    output,
+		Observer:  observer,
+	})
+	if err != nil {
+		t.Fatalf("NewTranscriptionWorker() error = %v", err)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	worker.Start(ctx)
+
+	if err := worker.Submit(TranscriptionJob{
+		Submission: Submission{WAV: []byte("wav"), DurationSecs: 0.2, Language: "de"},
+		Target:     "editor",
+	}); err != nil {
+		t.Fatalf("Submit() error = %v", err)
+	}
+
+	worker.Close()
+	worker.Wait()
+
+	observer.mu.Lock()
+	logs := append([]string(nil), observer.logs...)
+	states := append([]string(nil), observer.states...)
+	committed := append([]string(nil), observer.committed...)
+	observer.mu.Unlock()
+
+	var warned string
+	for _, l := range logs {
+		if strings.HasPrefix(l, "warn:") && strings.Contains(l, EmptyFinalTranscriptMessage) {
+			warned = l
+		}
+	}
+	if warned == "" {
+		t.Fatalf("an empty final transcript must warn, got logs = %#v", logs)
+	}
+	// The log has to carry enough to diagnose the pinned-language case, which
+	// is the whole reason this outcome exists.
+	for _, want := range []string{"deepgram", "nova-3", "de"} {
+		if !strings.Contains(warned, want) {
+			t.Errorf("empty-final warn log must name %q for diagnosis, got %q", want, warned)
+		}
+	}
+
+	var sawVisibleState bool
+	for _, s := range states {
+		if strings.Contains(s, EmptyFinalTranscriptMessage) {
+			sawVisibleState = true
+		}
+	}
+	if !sawVisibleState {
+		t.Fatalf("an empty final transcript must set a visible state, got states = %#v", states)
+	}
+
+	if delivered := output.snapshot(); len(delivered) != 0 {
+		t.Fatalf("an empty transcript must never be delivered, got %#v", delivered)
+	}
+	if len(committed) != 0 {
+		t.Fatalf("an empty transcript must not be announced as committed, got %#v", committed)
+	}
+}
+
 func TestTranscriptionWorkerSkipsLowConfidenceWhenDisabled(t *testing.T) {
 	observer := &recordingObserver{}
 	output := &recordingOutput{}

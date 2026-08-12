@@ -428,14 +428,18 @@ func (h *Handler) processTranscript(ctx context.Context, w http.ResponseWriter, 
 		httpx.WriteError(w, http.StatusBadRequest, "empty_transcript", "transcript or text field must not be empty")
 		return
 	}
+	// Resolve the user's Words/Replacements customization once and use it for
+	// both the post-STT transcript replacement and the Assist-LLM vocabulary
+	// hint. VoiceAgentHint is the generation-oriented, mode-neutral phrasing
+	// ("Prefer these names and product terms …") that the kernel folds into
+	// the context block. Resolving once keeps the two consistent — a second
+	// resolve can observe a different store state mid-request — and avoids
+	// duplicating the store and template work on every Assist call.
 	var customizationActions []speechkit.CustomizationAction
-	transcript, customizationActions = h.applyTranscriptCustomization(ctx, transcript, opts.Locale)
-
-	// Feed the resolved Words/Replacements customization into the Assist
-	// LLM prompt (not just the STT stage). VoiceAgentHint is the
-	// generation-oriented, mode-neutral phrasing ("Prefer these names and
-	// product terms …"); the kernel folds it into the context block.
-	if resolved, err := h.resolveAssistCustomization(ctx, opts.Locale); err == nil {
+	if resolved, err := h.resolveAssistCustomization(ctx, opts.Locale); err != nil {
+		slog.Debug("assist: resolve customization failed", "err", err)
+	} else {
+		transcript, customizationActions = h.applyResolvedTranscriptCustomization(ctx, resolved, transcript, opts.Locale)
 		opts.VocabularyHint = resolved.VoiceAgentHint
 	}
 
@@ -554,12 +558,11 @@ func (h *Handler) applyCustomizationHints(ctx context.Context, opts stt.Transcri
 	return opts, resolved.Replacements
 }
 
-func (h *Handler) applyTranscriptCustomization(ctx context.Context, transcript, locale string) (string, []speechkit.CustomizationAction) {
-	resolved, err := h.resolveAssistCustomization(ctx, locale)
-	if err != nil {
-		slog.Debug("assist: resolve transcript customization failed", "err", err)
-		return transcript, nil
-	}
+// applyResolvedTranscriptCustomization applies the post-STT replacement rules
+// from an already-resolved customization set, recording usage for any matches.
+// Callers resolve once (see processTranscript) so the transcript replacement
+// and the LLM vocabulary hint always come from the same snapshot.
+func (h *Handler) applyResolvedTranscriptCustomization(ctx context.Context, resolved internalcustomize.ResolvedSet, transcript, locale string) (string, []speechkit.CustomizationAction) {
 	if resolved.Applier == nil {
 		return transcript, nil
 	}

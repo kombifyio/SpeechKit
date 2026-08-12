@@ -329,6 +329,35 @@ func TestNewBoxMediaHandlerRequiresLocalSTTAndMatchingSingleRule(t *testing.T) {
 	}
 }
 
+func TestNewBoxMediaHandlerRejectsSelectedBindingWithoutRFC1918Source(t *testing.T) {
+	for name, cidr := range map[string]string{
+		"loopback":      "127.0.0.1/32",
+		"link-local":    "169.254.10.0/24",
+		"CGNAT":         "100.64.10.0/24",
+		"IPv6 loopback": "::1/128",
+		"IPv6 ULA":      "fd00::/64",
+	} {
+		t.Run(name, func(t *testing.T) {
+			bridge := newTestBridge(t, &fakeHA{}, newFakeLedger())
+			binding, err := newDeviceBinding(DeviceBindingOptions{
+				PairingID: "pairing-kitchen-v1", DeviceID: "speaker-kitchen-001", RoomID: "kitchen",
+				Token: testPairingToken, AllowedClientCIDRs: []string{cidr},
+			})
+			if err != nil {
+				t.Fatalf("newDeviceBinding: %v", err)
+			}
+			bridge.bindings[binding.deviceID] = binding
+			_, err = NewBoxMediaHandler(BoxMediaHandlerOptions{
+				Bridge: bridge, LocalSTT: &fakeBoxSTT{local: true},
+				MediaPairingToken: testBoxMediaPairingToken, Rule: boxMediaTestRule(),
+			})
+			if !errors.Is(err, ErrBoxMediaRuleInvalid) {
+				t.Fatalf("NewBoxMediaHandler error=%v, want ErrBoxMediaRuleInvalid", err)
+			}
+		})
+	}
+}
+
 func TestNewBoxMediaHandlerRejectsEveryG0PairingCredential(t *testing.T) {
 	bridge := newTestBridge(t, &fakeHA{}, newFakeLedger())
 	otherToken := "other-device-pairing-0123456789abcdef"

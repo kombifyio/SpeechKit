@@ -596,6 +596,29 @@ vad_silence_duration_ms = 700
 # entity_id = "light.kitchen"
 # not_before = "2026-07-19T00:00:00Z" # Replace with a current approved window.
 # expires_at = "2026-08-18T00:00:00Z"
+#
+# # Optional production lifecycle binding for the finite Box media endpoint.
+# # This opens a SEPARATE TLS 1.3-only listener containing exactly
+# # POST /v1/box-media/turn; it is never mounted on the general server mux.
+# # [local] must be enabled with an absolute Whisper model_path and valid port.
+# # The operator provisions all three certificate files and installs the CA on
+# # the Box out-of-band. pinned_ca_sha256 is SHA-256 over the CA's DER bytes.
+# # token_env must resolve to a separate credential from HA, general-server,
+# # edge, smoke, and every four-route device-agent token.
+# [server.device_agent.box_media]
+# enabled = true
+# listen_addr = "192.168.10.10:8444"
+# certificate_file = "/etc/speechkit/box-media.crt"
+# private_key_file = "/etc/speechkit/box-media.key"
+# pinned_ca_file = "/etc/speechkit/box-media-ca.crt"
+# pinned_ca_sha256 = "REPLACE_WITH_64_LOWERCASE_HEX_DER_SHA256"
+# token_env = "SPEECHKIT_BOX_MEDIA_KITCHEN_TOKEN"
+# device_id = "speaker-kitchen-001"
+# pairing_id = "pairing-kitchen-2026-07"
+# room_id = "kitchen"
+# transcript = "turn off the kitchen light"
+# command_id = "kitchen-light-off"
+# locale = "en-US"
 
 # [model_selection.tts]
 # # Voice-Output model selection — pins which TTS provider Assist and

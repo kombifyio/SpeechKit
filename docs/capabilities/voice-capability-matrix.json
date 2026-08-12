@@ -1,6 +1,6 @@
 {
   "schema": "speechkit.voice_capability_matrix.v2",
-  "updated": "2026-06-23",
+  "updated": "2026-08-12",
   "rows": [
     {
       "mode": "dictation",

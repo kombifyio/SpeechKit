@@ -181,6 +181,9 @@ func (b *Bridge) newBoxMediaRule(raw BoxMediaRuleOptions) (boxMediaRule, error) 
 	if !ok || binding.pairingID != rule.pairingID || binding.roomID != rule.roomID {
 		return boxMediaRule{}, fmt.Errorf("%w: mapping identity does not match a paired device", ErrBoxMediaRuleInvalid)
 	}
+	if !boxMediaBindingHasRFC1918Source(binding) {
+		return boxMediaRule{}, fmt.Errorf("%w: selected device binding requires one RFC1918 IPv4 source prefix", ErrBoxMediaRuleInvalid)
+	}
 	policy, ok := b.policy.rules[rule.commandID]
 	if !ok || policy.deviceID != rule.deviceID || policy.roomID != rule.roomID ||
 		policy.normalizedText != rule.normalizedText || policy.locale != rule.locale {
@@ -190,6 +193,15 @@ func (b *Bridge) newBoxMediaRule(raw BoxMediaRuleOptions) (boxMediaRule, error) 
 	// configuration or STT result.
 	rule.utterance = policy.utterance
 	return rule, nil
+}
+
+func boxMediaBindingHasRFC1918Source(binding deviceBinding) bool {
+	for _, network := range binding.allowed {
+		if network != nil && boxMediaRFC1918CIDR(network.String()) {
+			return true
+		}
+	}
+	return false
 }
 
 func (h *BoxMediaHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {

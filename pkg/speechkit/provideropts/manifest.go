@@ -2,7 +2,7 @@ package provideropts
 
 const (
 	SchemaProviderOptions = "speechkit.provider_options.v1"
-	ManifestUpdated       = "2026-08-11"
+	ManifestUpdated       = "2026-08-12"
 
 	ModalitySTT        = "stt"
 	ModalityTTS        = "tts"
@@ -96,7 +96,7 @@ func openAISTTManifest(provider, label string, profileIDs []string, evidence str
 func googleSTTManifest() ProviderOptionManifest {
 	return manifest("google", "Google Speech-to-Text", ModalitySTT, []string{"stt.google.latest-long", "stt.google.latest-long-diarization"}, []OptionSupport{
 		languageOption("languageCode", "https://docs.cloud.google.com/speech-to-text/docs/multiple-languages",
-			"Multilanguage: NOT open-ended. Verified 2026-08-11: v2 takes a language_codes LIST and \"You can list up to three languages for automatic language recognition\"; there is no auto value, and v1 requires a languageCode. Google therefore cannot express unconstrained multilanguage and needs candidate languages."),
+			"Multilanguage: NOT open-ended. Verified 2026-08-11: v2 takes a language_codes LIST and \"You can list up to three languages for automatic language recognition\"; there is no auto value, and v1 requires a languageCode. Google therefore cannot express unconstrained multilanguage and needs candidate languages. RESOLVED by candidate list rather than by exclusion (adapter googleLanguageCodes): English carries the request as the primary code and a language the user configured rides along in alternativeLanguageCodes, so mixed speech resolves to whichever fits. Omitting the field is not an option here -- it produced an invalid request, which is why the sentinel is translated per provider."),
 		unsupported(OptionDetectLanguage, TypeBool, "Detect language", "SpeechKit's v1 REST adapter uses one languageCode; multi-language alternatives are not wired yet."),
 		native(OptionPunctuation, TypeBool, "Automatic punctuation", "enableAutomaticPunctuation", "https://docs.cloud.google.com/speech-to-text/docs/reference/rest/v1/RecognitionConfig"),
 		native(OptionVocabularyBias, TypeBool, "Use vocabulary bias", "speechContexts.phrases", "https://docs.cloud.google.com/speech-to-text/docs/reference/rest/v1/RecognitionConfig"),
@@ -128,9 +128,9 @@ func assemblyAISTTManifest() ProviderOptionManifest {
 
 func openRouterSTTManifest() ProviderOptionManifest {
 	return manifest("openrouter", "OpenRouter", ModalitySTT, []string{"stt.openrouter.whisper-1"}, []OptionSupport{
-		languageOption("language", "https://openrouter.ai/docs/api-reference/overview",
-			"Multilanguage: OMIT the field, inferred from OpenAI schema compatibility -- \"OpenRouter normalizes the schema across models and providers\". DERIVED, NOT VENDOR-VERIFIED: as of 2026-08-11 OpenRouter publishes no dedicated audio-transcription reference, so this entry needs a live roundtrip before it counts as verified."),
-		derived(OptionDetectLanguage, TypeBool, "Detect language", "Omit language to let the routed model detect when supported.", "https://openrouter.ai/docs/api/api-reference/transcriptions/create-audio-transcriptions"),
+		languageOption("language", "https://openrouter.ai/api/v1/models/openai/whisper-1/endpoints",
+			"Multilanguage: OMIT the field, inferred from OpenAI schema compatibility. STILL DERIVED, NOT VENDOR-VERIFIED. Re-checked 2026-08-12: OpenRouter still publishes no audio-transcription reference (the previously cited docs path now 404s, and the API overview documents only chat/completions and generation). What the API itself confirms: openai/whisper-1 exists with modality audio->transcription, input audio, output transcription, priced at 0.006, described as supporting \"transcription and translation across 50+ languages\". The live roundtrip is blocked, not skipped: the account's credits are exhausted (usage 5.19 of 5 total, so transcription requests return HTTP 402) and OpenRouter offers no free transcription model. Gated by TestOpenRouterLiveMultilanguageRoundtrip, which runs as soon as the balance allows."),
+		derived(OptionDetectLanguage, TypeBool, "Detect language", "Omit language to let the routed model detect when supported.", "https://openrouter.ai/api/v1/models/openai/whisper-1/endpoints"),
 		unsupported(OptionPromptHint, TypeString, "Prompt hint", "The current OpenRouter adapter uses the JSON transcription endpoint without prompt."),
 		unsupported(OptionKeyterms, TypeStringList, "Native keyterms", "No native keyterm mapping is exposed by the current adapter."),
 		unsupported(OptionEndpointingMs, TypeInt, "Endpointing", "Batch transcription has no server endpointing control."),
@@ -139,7 +139,7 @@ func openRouterSTTManifest() ProviderOptionManifest {
 
 func huggingFaceSTTManifest() ProviderOptionManifest {
 	return manifest("huggingface", "Hugging Face", ModalitySTT, []string{"stt.routed.whisper-large-v3"}, []OptionSupport{
-		derived(OptionLanguage, TypeString, "Language", "Language is recorded in SpeechKit metadata; routed HF ASR payload is raw audio.", "https://huggingface.co/docs/inference-providers/tasks/automatic-speech-recognition"),
+		derived(OptionLanguage, TypeString, "Language", "No language parameter exists: the routed HF ASR payload is raw audio, and the response carries no language either. The reported label therefore echoes what was asked for, or the multilanguage sentinel when nothing was pinned -- never an inferred locale. It used to default to \"de\", which mislabelled every unpinned transcript and pulled a German customization dictionary onto speech in any language.", "https://huggingface.co/docs/inference-providers/tasks/automatic-speech-recognition"),
 		unsupported(OptionDetectLanguage, TypeBool, "Detect language", "Model/provider default."),
 		unsupported(OptionPromptHint, TypeString, "Prompt hint", "The current HF routed ASR adapter posts raw audio only."),
 		unsupported(OptionKeyterms, TypeStringList, "Native keyterms", "No native keyterm mapping is exposed by the current adapter."),

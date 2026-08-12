@@ -163,6 +163,27 @@ wakeword_models = true
 # not_before   = "2026-07-19T00:00:00Z" # Replace with a current approved window.
 # expires_at   = "2026-08-18T00:00:00Z" # Maximum authorization window: 31 days.
 #
+# # Dedicated finite Box media lifecycle. The listener is TLS 1.3-only and
+# # contains no general server mux, fifth G0 route, redirect, proxy, or cloud
+# # fallback. [local] must provide the ready host-local Whisper runtime.
+# # Provision certificate/key/CA and the independent token out-of-band; this
+# # config does not generate or distribute credentials. Hash the CA DER bytes,
+# # not its PEM text, for pinned_ca_sha256.
+# [server.device_agent.box_media]
+# enabled             = true
+# listen_addr         = "192.168.10.10:8444"
+# certificate_file    = "/etc/speechkit/box-media.crt"
+# private_key_file    = "/etc/speechkit/box-media.key"
+# pinned_ca_file      = "/etc/speechkit/box-media-ca.crt"
+# pinned_ca_sha256    = "REPLACE_WITH_64_LOWERCASE_HEX_DER_SHA256"
+# token_env           = "SPEECHKIT_BOX_MEDIA_KITCHEN_TOKEN"
+# device_id           = "speaker-kitchen-001"
+# pairing_id          = "pairing-kitchen-2026-07"
+# room_id             = "kitchen"
+# transcript          = "turn off the kitchen light"
+# command_id          = "kitchen-light-off"
+# locale              = "en-US"
+#
 # The bridge exposes only POST /v1/device-agent/{register,events,assist,tts}.
 # It is absent from /api/v1, MCP, Gateway, federation, and general Assist/LLM.
 # The durable ledger commits before HA dispatch. action_executed=yes requires

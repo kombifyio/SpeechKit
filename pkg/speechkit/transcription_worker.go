@@ -14,6 +14,16 @@ import (
 
 const DefaultProcessingMessage = "Recording stopped · Transcribing"
 
+// EmptyFinalTranscriptMessage is shown when a provider returns a successful
+// final transcript containing no text.
+//
+// This is a named outcome rather than a silent drop because it is the visible
+// half of a real data-loss bug: a provider answers HTTP 200 with a zero-length
+// transcript when the pinned language does not match the speech, so the user's
+// words disappear with nothing to alert on. The message names the most likely
+// cause, since that is the one the user can act on.
+const EmptyFinalTranscriptMessage = "No speech recognized · check the configured language"
+
 var (
 	ErrMissingRunner      = errors.New("speechkit: transcription worker requires a runner")
 	ErrMissingTranscriber = errors.New("speechkit: transcription runner requires a transcriber")
@@ -355,6 +365,14 @@ func (w *TranscriptionWorker) HandleDictationStreamEvent(ctx context.Context, ev
 }
 
 func (w *TranscriptionWorker) commitFinalTranscript(ctx context.Context, job TranscriptionJob, transcript Transcript) bool {
+	// An empty final transcript is an outcome, not a non-event. Both the batch
+	// and the streaming path funnel through here, so this is the one place that
+	// has to name it; below this line every branch assumes there is text to
+	// transform, intercept, commit or deliver.
+	if strings.TrimSpace(transcript.Text) == "" {
+		return w.commitEmptyFinalTranscript(job, transcript) //nolint:contextcheck // records the attempt via the same fire-and-forget history write as the normal path, which uses its own 15s timeout context
+	}
+
 	// Surface likely-misrecognized words so a silently-wrong transcript is at
 	// least visible in the log/status feed. Offsets are not reliable after
 	// downstream rewriting, so we report the raw low-confidence terms by text.
@@ -435,6 +453,44 @@ func (w *TranscriptionWorker) commitFinalTranscript(ctx context.Context, job Tra
 		w.persistTranscriptionAsync(job.Submission, transcript) //nolint:contextcheck // fire-and-forget history write; uses its own 15s timeout context
 	}
 	return true
+}
+
+// commitEmptyFinalTranscript records a successful transcription that produced
+// no text: it logs, sets a terminal state the user can see, and persists the
+// attempt so the loss is visible in history rather than only in the moment.
+//
+// It deliberately does not run the transformer, the quick-command interceptor,
+// the commit runner or output delivery. There is nothing to rewrite, no command
+// to match, no note worth saving, and delivering an empty string would paste
+// nothing over whatever the user had selected.
+//
+// Returns true because the segment is finished, not because it succeeded — the
+// same audio would produce the same empty result, so releasing it for a retry
+// would only loop.
+func (w *TranscriptionWorker) commitEmptyFinalTranscript(job TranscriptionJob, transcript Transcript) bool {
+	w.onLog(
+		fmt.Sprintf("%s (provider=%s model=%s language=%s)",
+			EmptyFinalTranscriptMessage,
+			firstNonEmptyField(transcript.Provider, "unknown"),
+			firstNonEmptyField(transcript.Model, "unknown"),
+			firstNonEmptyField(transcript.Language, "unset"),
+		),
+		"warn",
+	)
+	w.onState("done", EmptyFinalTranscriptMessage)
+	if !job.QuickNote {
+		w.persistTranscriptionAsync(job.Submission, transcript) //nolint:contextcheck // fire-and-forget history write; uses its own 15s timeout context
+	}
+	return true
+}
+
+func firstNonEmptyField(values ...string) string {
+	for _, value := range values {
+		if trimmed := strings.TrimSpace(value); trimmed != "" {
+			return trimmed
+		}
+	}
+	return ""
 }
 
 func firstNonNilLedger(ledger *TranscriptSessionLedger) *TranscriptSessionLedger {

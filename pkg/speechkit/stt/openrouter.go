@@ -11,7 +11,6 @@ import (
 	"time"
 
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/netsec"
-	"github.com/kombifyio/SpeechKit/pkg/speechkit/provideropts"
 )
 
 const (
@@ -78,9 +77,7 @@ func (p *OpenRouterSTTProvider) Transcribe(ctx context.Context, audio []byte, op
 	if opts.Model != "" {
 		model = opts.Model
 	}
-	resolved := ResolveTranscribeOptions("openrouter", "stt.openrouter.whisper-1", opts, provideropts.Values{
-		provideropts.OptionLanguage: "de",
-	}, nil)
+	resolved := ResolveTranscribeOptions("openrouter", "stt.openrouter.whisper-1", opts, nil, nil)
 	requestBody := openRouterTranscriptionRequest{
 		InputAudio: openRouterInputAudio{
 			Data:   base64.StdEncoding.EncodeToString(ensureTranscriptionWAV(audio)),
@@ -125,7 +122,11 @@ func (p *OpenRouterSTTProvider) Transcribe(ctx context.Context, audio []byte, op
 		return nil, fmt.Errorf("parse openrouter response: %w", err)
 	}
 
-	lang := firstNonEmptyTrimmed(resolved.Language, "de")
+	// The transcription response carries no language field, so the label can
+	// only echo what was asked for. APILanguage() is empty for a multilanguage
+	// session, and naming a locale there would be an inference — the exact
+	// thing the multilanguage rule forbids.
+	lang := firstNonEmptyTrimmed(resolved.APILanguage(), LanguageMulti)
 
 	return &Result{
 		Text:     result.Text,

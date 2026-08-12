@@ -9,6 +9,31 @@ maintainers. The release linter
 (`npm run release:lint -- --version vX.Y.Z`) refuses internal tracker
 IDs, source paths, and other maintainer-only vocabulary.
 
+## [0.54.0](https://github.com/kombifyio/SpeechKit/compare/v0.53.0...v0.54.0) (2026-08-12)
+
+### Highlights
+
+- **Nothing you say disappears quietly**: When a recording produces no text —
+  usually because the spoken language did not match the configured one —
+  SpeechKit now says so instead of dropping it without a trace.
+- **Your words keep their own language**: Transcripts are no longer labelled
+  German regardless of what was spoken, so custom vocabulary and replacements
+  apply to the language you actually used.
+- **Media on your paired Box**: A paired Kombify Box now plays media through
+  the local device agent, so the audio path stays on your own network.
+
+### Added
+
+* **server:** wire local Box media lifecycle ([#170](https://github.com/kombifyio/SpeechKit/issues/170)) ([ecb20fd](https://github.com/kombifyio/SpeechKit/commit/ecb20fdd94498df067924f8b5ca3c06108b216df))
+
+
+### Fixed
+
+* **lint:** keep the empty-final commit inside the contextcheck exemption ([96af795](https://github.com/kombifyio/SpeechKit/commit/96af79585728b5de454d43ede9b652fe534e896e))
+* **stt:** openrouter had the same invented "de" label, plus manifest truth ([5f6e0b6](https://github.com/kombifyio/SpeechKit/commit/5f6e0b6c65482085d1bfdcaea0109e290ce158d3))
+* **stt:** stop losing speech to empty transcripts and invented locales ([e1b8374](https://github.com/kombifyio/SpeechKit/commit/e1b8374231b9683a7426c5e68b4db9e691d39660))
+* **wyoming:** bound untrusted PCM metadata before building the WAV header ([e6d8826](https://github.com/kombifyio/SpeechKit/commit/e6d88265d34a6de038939a862ca89e844c5969d0))
+
 ## [0.53.0](https://github.com/kombifyio/SpeechKit/compare/v0.52.14...v0.53.0) (2026-08-11)
 
 

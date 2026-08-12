@@ -320,7 +320,7 @@ func validDeviceAgentCoreConfig(t *testing.T, homeAssistantURL string) *config.C
 					PairingID:          "pairing-kitchen-v1",
 					RoomID:             "room-kitchen",
 					TokenEnv:           deviceAgentCoreTestTokenEnv,
-					AllowedClientCIDRs: []string{"127.0.0.0/8"},
+					AllowedClientCIDRs: []string{"127.0.0.0/8", "192.168.10.42/32"},
 					LocalRules: []config.ServerDeviceAgentLocalRuleConfig{{
 						RuleID: "kitchen-light-off", TriggerText: "Küchenlicht aus", Locale: "de-DE",
 						Action: "turn_off", EntityID: "light.kitchen",

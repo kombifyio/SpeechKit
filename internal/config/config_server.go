@@ -146,7 +146,35 @@ type ServerDeviceAgentConfig struct {
 	ClaimRetentionSec int `toml:"claim_retention_sec"`
 	MaxClaims         int `toml:"max_claims"`
 
-	Devices []ServerDeviceAgentDeviceConfig `toml:"devices"`
+	Devices  []ServerDeviceAgentDeviceConfig `toml:"devices"`
+	BoxMedia ServerDeviceAgentBoxMediaConfig `toml:"box_media"`
+}
+
+// ServerDeviceAgentBoxMediaConfig binds one Waveshare/Kombify Box to one
+// existing paired device and one existing G0 command. The media token is
+// independently provisioned through TokenEnv; no Home Assistant, general
+// server, or device-agent credential is copied to the Box.
+//
+// CertificateFile and PrivateKeyFile are the operator-provisioned server key
+// pair. PinnedCAFile is the local CA certificate distributed out-of-band to
+// the Box, and PinnedCASHA256 is the lowercase SHA-256 of its DER certificate.
+// SpeechKit verifies this evidence but never creates or distributes a CA.
+type ServerDeviceAgentBoxMediaConfig struct {
+	Enabled bool `toml:"enabled"`
+
+	ListenAddr      string `toml:"listen_addr"`
+	CertificateFile string `toml:"certificate_file"`
+	PrivateKeyFile  string `toml:"private_key_file"`
+	PinnedCAFile    string `toml:"pinned_ca_file"`
+	PinnedCASHA256  string `toml:"pinned_ca_sha256"`
+	TokenEnv        string `toml:"token_env"`
+
+	DeviceID   string `toml:"device_id"`
+	PairingID  string `toml:"pairing_id"`
+	RoomID     string `toml:"room_id"`
+	Transcript string `toml:"transcript"`
+	CommandID  string `toml:"command_id"`
+	Locale     string `toml:"locale"`
 }
 
 // ServerDeviceAgentDeviceConfig binds one device identity to an independent

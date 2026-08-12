@@ -11,7 +11,6 @@ import (
 	"time"
 
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/netsec"
-	"github.com/kombifyio/SpeechKit/pkg/speechkit/provideropts"
 )
 
 const (
@@ -65,9 +64,7 @@ func (p *HuggingFaceProvider) Transcribe(ctx context.Context, audio []byte, opts
 	if opts.Model != "" {
 		model = opts.Model
 	}
-	resolved := ResolveTranscribeOptions("huggingface", "stt.routed.whisper-large-v3", opts, provideropts.Values{
-		provideropts.OptionLanguage: "de",
-	}, nil)
+	resolved := ResolveTranscribeOptions("huggingface", "stt.routed.whisper-large-v3", opts, nil, nil)
 	endpoint, err := p.hfEndpoint(model)
 	if err != nil {
 		return nil, fmt.Errorf("hf endpoint: %w", err)
@@ -109,7 +106,11 @@ func (p *HuggingFaceProvider) Transcribe(ctx context.Context, audio []byte, opts
 		return nil, fmt.Errorf("parse response: %w", err)
 	}
 
-	lang := firstNonEmptyTrimmed(resolved.Language, "de")
+	// The routed HF ASR payload is raw audio: no language goes out and none
+	// comes back, so the label can only echo what was asked for. APILanguage()
+	// is empty for a multilanguage session, and naming a locale there would be
+	// an inference — the exact thing the multilanguage rule forbids.
+	lang := firstNonEmptyTrimmed(resolved.APILanguage(), LanguageMulti)
 
 	return &Result{
 		Text:     hfResp.Text,

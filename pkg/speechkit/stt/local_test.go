@@ -3,17 +3,176 @@ package stt
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/audio"
 )
+
+func TestLocalRuntimeReportsUnexpectedChildExit(t *testing.T) {
+	cmd := exec.Command(os.Args[0], "-test.run=^TestLocalRuntimeHelperProcess$")
+	cmd.Env = append(os.Environ(), "SPEECHKIT_LOCAL_RUNTIME_HELPER=exit")
+	if err := cmd.Start(); err != nil {
+		t.Fatalf("start helper child: %v", err)
+	}
+	provider := NewLocalProvider(8080, filepath.Join(t.TempDir(), "ggml-test.bin"), "cpu")
+	done := make(chan struct{})
+	provider.processMu.Lock()
+	provider.generation = 1
+	provider.cmd = cmd
+	provider.processDone = done
+	provider.stopRequested = false
+	provider.ready.Store(true)
+	provider.processMu.Unlock()
+	go provider.waitForProcess(context.Background(), cmd, done, 1)
+	t.Cleanup(func() { _ = cmd.Process.Kill() })
+
+	select {
+	case <-provider.RuntimeDone():
+	case <-time.After(3 * time.Second):
+		t.Fatal("helper child exit was not supervised")
+	}
+	if err := provider.RuntimeError(); err == nil || !strings.Contains(err.Error(), "exited unexpectedly") {
+		t.Fatalf("RuntimeError=%v, want unexpected exit", err)
+	}
+	if provider.IsReady() {
+		t.Fatal("LocalProvider remained ready after child exit")
+	}
+}
+
+func TestLocalRuntimeExitAndFinalReadinessAreSerialized(t *testing.T) {
+	t.Run("exit before final readiness", func(t *testing.T) {
+		provider := NewLocalProvider(8080, "unused", "cpu")
+		cmd := &exec.Cmd{}
+		done := make(chan struct{})
+		provider.generation = 1
+		provider.cmd = cmd
+		provider.processDone = done
+		provider.recordProcessExit(context.Background(), cmd, done, 1, errors.New("exit status 1"))
+
+		if err := provider.markProcessReady(1, done); err == nil {
+			t.Fatal("markProcessReady succeeded after process exit")
+		}
+		if provider.IsReady() {
+			t.Fatal("provider became ready after supervised process exit")
+		}
+	})
+
+	t.Run("exit after final readiness", func(t *testing.T) {
+		provider := NewLocalProvider(8080, "unused", "cpu")
+		cmd := &exec.Cmd{}
+		done := make(chan struct{})
+		provider.generation = 1
+		provider.cmd = cmd
+		provider.processDone = done
+		if err := provider.markProcessReady(1, done); err != nil {
+			t.Fatalf("markProcessReady: %v", err)
+		}
+		if !provider.IsReady() {
+			t.Fatal("provider did not become ready while child was active")
+		}
+
+		provider.recordProcessExit(context.Background(), cmd, done, 1, errors.New("exit status 1"))
+		if provider.IsReady() {
+			t.Fatal("provider remained ready after supervised process exit")
+		}
+	})
+
+	t.Run("stop before final readiness", func(t *testing.T) {
+		provider := NewLocalProvider(8080, "unused", "cpu")
+		done := make(chan struct{})
+		provider.generation = 1
+		provider.processDone = done
+		_, _, _, _ = provider.beginProcessStop()
+		if err := provider.markProcessReady(1, done); err == nil {
+			t.Fatal("markProcessReady succeeded after process stop began")
+		}
+		if provider.IsReady() {
+			t.Fatal("provider became ready after process stop began")
+		}
+		provider.finishProcessStop()
+	})
+
+	t.Run("stop after final readiness", func(t *testing.T) {
+		provider := NewLocalProvider(8080, "unused", "cpu")
+		done := make(chan struct{})
+		provider.generation = 1
+		provider.processDone = done
+		if err := provider.markProcessReady(1, done); err != nil {
+			t.Fatalf("markProcessReady: %v", err)
+		}
+		_, _, _, _ = provider.beginProcessStop()
+		if provider.IsReady() {
+			t.Fatal("provider remained ready after process stop began")
+		}
+		provider.finishProcessStop()
+	})
+}
+
+func TestLocalRuntimeLifecycleRejectsConcurrentStartAndStopWindow(t *testing.T) {
+	provider := NewLocalProvider(8080, "unused", "cpu")
+	generation, startDone, err := provider.beginProcessStart()
+	if err != nil {
+		t.Fatalf("beginProcessStart: %v", err)
+	}
+	if _, _, err := provider.beginProcessStart(); err == nil || !strings.Contains(err.Error(), "already starting") {
+		t.Fatalf("concurrent beginProcessStart error=%v, want already starting", err)
+	}
+
+	stopDone := make(chan struct{})
+	go func() {
+		provider.StopServer()
+		close(stopDone)
+	}()
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		provider.processMu.Lock()
+		stopping := provider.stopping
+		stopRequested := provider.stopRequested
+		provider.processMu.Unlock()
+		if stopping && stopRequested {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("StopServer did not enter the startup stop window")
+		}
+		time.Sleep(time.Millisecond)
+	}
+	if err := provider.processStartCanceled(context.Background(), generation); err == nil {
+		t.Fatal("startup remained publishable after StopServer requested a stop")
+	}
+	if _, _, err := provider.beginProcessStart(); err == nil || !strings.Contains(err.Error(), "stopping") {
+		t.Fatalf("beginProcessStart during StopServer error=%v, want stopping", err)
+	}
+
+	provider.finishProcessStart(generation, startDone)
+	select {
+	case <-stopDone:
+	case <-time.After(2 * time.Second):
+		t.Fatal("StopServer did not finish after startup completion")
+	}
+
+	nextGeneration, nextDone, err := provider.beginProcessStart()
+	if err != nil {
+		t.Fatalf("beginProcessStart after StopServer: %v", err)
+	}
+	provider.finishProcessStart(nextGeneration, nextDone)
+}
+
+func TestLocalRuntimeHelperProcess(t *testing.T) {
+	if os.Getenv("SPEECHKIT_LOCAL_RUNTIME_HELPER") != "exit" {
+		return
+	}
+}
 
 func TestLocal_Transcribe_Success(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

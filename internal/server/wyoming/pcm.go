@@ -10,7 +10,7 @@ import (
 // Used for the non-canonical STT path (a satellite that declares a rate other
 // than 16 kHz mono S16LE). rate/channels/width are the source parameters;
 // width is bytes per sample (2 for S16LE).
-func pcmToWAV(pcm []byte, rate, channels, width int) []byte {
+func pcmToWAV(pcm []byte, rate, channels, width int) ([]byte, error) {
 	if rate <= 0 {
 		rate = 16000
 	}
@@ -20,26 +20,46 @@ func pcmToWAV(pcm []byte, rate, channels, width int) []byte {
 	if width <= 0 {
 		width = 2
 	}
-	byteRate := rate * channels * width
-	blockAlign := channels * width
+	const (
+		maxUint16Value = uint64(1<<16 - 1)
+		maxUint32Value = uint64(1<<32 - 1)
+	)
+	rate64 := uint64(rate)         //nolint:gosec // rate is positive after applying the protocol default above.
+	channels64 := uint64(channels) //nolint:gosec // channels is positive after applying the protocol default above.
+	width64 := uint64(width)       //nolint:gosec // width is positive after applying the protocol default above.
+	dataLen64 := uint64(len(pcm))
+	// Bound individual, untrusted metadata values before multiplying them.
+	// Otherwise very large channel/width values could wrap uint64 and bypass
+	// the compound-field checks below.
+	if rate64 > maxUint32Value || channels64 > maxUint16Value ||
+		width64 > maxUint16Value/8 || dataLen64 > maxUint32Value-36 {
+		return nil, fmt.Errorf("wyoming: PCM metadata exceeds WAV header limits")
+	}
+	blockAlign64 := channels64 * width64
+	byteRate64 := rate64 * blockAlign64
+	bitsPerSample64 := width64 * 8
+	if blockAlign64 > maxUint16Value || byteRate64 > maxUint32Value ||
+		bitsPerSample64 > maxUint16Value {
+		return nil, fmt.Errorf("wyoming: PCM metadata exceeds WAV header limits")
+	}
 	dataLen := len(pcm)
 
 	buf := make([]byte, 44+dataLen)
 	copy(buf[0:4], "RIFF")
-	binary.LittleEndian.PutUint32(buf[4:8], uint32(36+dataLen))
+	binary.LittleEndian.PutUint32(buf[4:8], uint32(36+dataLen64)) //nolint:gosec // bounded above.
 	copy(buf[8:12], "WAVE")
 	copy(buf[12:16], "fmt ")
-	binary.LittleEndian.PutUint32(buf[16:20], 16) // PCM fmt chunk size
-	binary.LittleEndian.PutUint16(buf[20:22], 1)  // audio format = PCM
-	binary.LittleEndian.PutUint16(buf[22:24], uint16(channels))
-	binary.LittleEndian.PutUint32(buf[24:28], uint32(rate))
-	binary.LittleEndian.PutUint32(buf[28:32], uint32(byteRate))
-	binary.LittleEndian.PutUint16(buf[32:34], uint16(blockAlign))
-	binary.LittleEndian.PutUint16(buf[34:36], uint16(width*8))
+	binary.LittleEndian.PutUint32(buf[16:20], 16)                      // PCM fmt chunk size
+	binary.LittleEndian.PutUint16(buf[20:22], 1)                       // audio format = PCM
+	binary.LittleEndian.PutUint16(buf[22:24], uint16(channels64))      //nolint:gosec // bounded above.
+	binary.LittleEndian.PutUint32(buf[24:28], uint32(rate64))          //nolint:gosec // bounded above.
+	binary.LittleEndian.PutUint32(buf[28:32], uint32(byteRate64))      //nolint:gosec // bounded above.
+	binary.LittleEndian.PutUint16(buf[32:34], uint16(blockAlign64))    //nolint:gosec // bounded above.
+	binary.LittleEndian.PutUint16(buf[34:36], uint16(bitsPerSample64)) //nolint:gosec // bounded above.
 	copy(buf[36:40], "data")
-	binary.LittleEndian.PutUint32(buf[40:44], uint32(dataLen))
+	binary.LittleEndian.PutUint32(buf[40:44], uint32(dataLen64)) //nolint:gosec // bounded above.
 	copy(buf[44:], pcm)
-	return buf
+	return buf, nil
 }
 
 // parseWAV extracts the PCM data and format from a canonical PCM WAV. It walks

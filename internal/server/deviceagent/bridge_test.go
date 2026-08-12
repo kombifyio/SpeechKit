@@ -442,7 +442,7 @@ func newTestBridgeWithNow(t *testing.T, ha HomeAssistant, ledger ClaimLedger, no
 		ServerInstanceID: "homelab-1",
 		Bindings: []DeviceBindingOptions{{
 			PairingID: "pairing-kitchen-v1", DeviceID: "speaker-kitchen-001", RoomID: "kitchen",
-			Token: testPairingToken, AllowedClientCIDRs: []string{"127.0.0.0/8"},
+			Token: testPairingToken, AllowedClientCIDRs: []string{"127.0.0.0/8", "192.168.10.42/32"},
 		}},
 		HomeAssistant: ha,
 		TTS:           fakeTTS{},

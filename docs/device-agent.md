@@ -164,13 +164,18 @@ credential, or service bearer.
 `NewBoxMediaHandler` and `NewBoxMediaTLSServer` are dependency-injected and
 fail closed before listening when the bridge, proven local-only STT dependency,
 independent media-pairing token, single rule, explicit local IP, certificate,
-key, current validity, or IP SAN is missing. This Phase-A source slice
-deliberately does not generate a production key pair or automatically enable
-the listener from TOML. The
-production server-lifecycle binding and physical Box rollout require an exact
-host-local STT runtime and operator-provisioned pinned CA; until that follow-up
-lands, the endpoint is testable source infrastructure rather than a deployed
-capability.
+key, current validity, or IP SAN is missing. The production server lifecycle is
+an additional explicit opt-in under `[server.device_agent.box_media]`. It starts
+and probes the concrete host-local Whisper runtime, requires one ready
+local-only TTS provider, verifies the configured pinned CA digest and the
+listener certificate chain, and propagates listener failure to the main server
+process. It never mounts this endpoint on the general server mux.
+
+SpeechKit still does not generate production certificates, provision the media
+token, or install the CA on a Box. Those are operator actions. Source and local
+TLS tests do not constitute physical microphone/playback, room, or pinned-CA
+installation evidence; record that evidence separately against the exact
+server and device firmware digests.
 
 The finite request/response state machine is deliberately trigger-neutral.
 Touch-to-Talk can submit a turn in v1, and a later verified MicroWakeWord model
@@ -219,6 +224,21 @@ action = "turn_off"
 entity_id = "light.kitchen"
 not_before = "2026-07-19T00:00:00Z"
 expires_at = "2026-08-18T00:00:00Z"
+
+[server.device_agent.box_media]
+enabled = true
+listen_addr = "192.168.10.10:8444"
+certificate_file = "/etc/speechkit/box-media.crt"
+private_key_file = "/etc/speechkit/box-media.key"
+pinned_ca_file = "/etc/speechkit/box-media-ca.crt"
+pinned_ca_sha256 = "REPLACE_WITH_64_LOWERCASE_HEX_DER_SHA256"
+token_env = "SPEECHKIT_BOX_MEDIA_KITCHEN_TOKEN"
+device_id = "speaker-kitchen-001"
+pairing_id = "pairing-kitchen-2026-07"
+room_id = "kitchen"
+transcript = "turn off the kitchen light"
+command_id = "kitchen-light-off"
+locale = "en-US"
 ```
 
 Replace the sample authorization window with a current operator-approved
@@ -226,6 +246,21 @@ window before enabling the bridge. At least one local TTS provider must also be
 configured and ready. Startup rejects device-agent enablement unless
 `[tts].enabled=true` and `[tts].strategy="local-only"`; cloud-first or cloud-only
 speech would violate the local G0 boundary.
+
+Box media additionally requires `[local].enabled=true`, an absolute
+`[local].model_path`, and a valid local Whisper port. The server resolves
+`token_env` at startup and rejects reuse of Home Assistant, general-server,
+edge-HMAC, smoke, or four-route device credentials. `certificate_file`,
+`private_key_file`, and `pinned_ca_file` must be distinct absolute paths. Compute
+`pinned_ca_sha256` over the CA certificate's DER bytes, for example:
+
+```bash
+openssl x509 -in /etc/speechkit/box-media-ca.crt -outform DER | sha256sum
+```
+
+The configured device, pairing epoch, room, transcript, locale, and command ID
+must exactly select one existing G0 rule. Removing or rotating any of those
+inputs causes the listener to fail closed on the next server start.
 
 ## Device example
 

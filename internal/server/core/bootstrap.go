@@ -29,6 +29,7 @@ import (
 	"github.com/kombifyio/SpeechKit/internal/server/catalog"
 	"github.com/kombifyio/SpeechKit/internal/server/configapi"
 	"github.com/kombifyio/SpeechKit/internal/server/customization"
+	deviceagentserver "github.com/kombifyio/SpeechKit/internal/server/deviceagent"
 	"github.com/kombifyio/SpeechKit/internal/server/dictation"
 	"github.com/kombifyio/SpeechKit/internal/server/httpx"
 	"github.com/kombifyio/SpeechKit/internal/server/middleware"
@@ -88,6 +89,12 @@ type App struct {
 	// been mounted. The global auth carve-out is conditional on this runtime
 	// fact, never on configuration intent alone.
 	DeviceAgentBridgeMounted bool
+	DeviceAgentBridge        *deviceagentserver.Bridge
+
+	// BoxMediaRuntime owns the separate TLS 1.3 listener and any concrete local
+	// STT subprocess that Box wiring started. It never mounts on Mux or extends
+	// the four G0 routes.
+	BoxMediaRuntime *boxMediaServerRuntime
 
 	// PersonaRegistry holds the in-memory persona / role / sequence catalog.
 	// Populated by ensurePersonaRegistry — loaded from TOML seeds at boot;
@@ -158,7 +165,7 @@ func Run(ctx context.Context, cfg *config.Config, opts RunOptions) error {
 	// for whichever modes are enabled. The router is shared across all three
 	// mode packages (dictation uses it directly; assist and voiceagent pull
 	// the STT stage from it in M3/M4).
-	if needsSTT(app.Modes) || wyomingNeedsSTT(cfg) {
+	if needsSTT(app.Modes) || wyomingNeedsSTT(cfg) || cfg.Server.DeviceAgent.BoxMedia.Enabled {
 		sttRouter, providers, notes := buildSTTRouter(cfg)
 		app.STTRouter = sttRouter
 		for _, note := range notes {
@@ -199,7 +206,6 @@ func Run(ctx context.Context, cfg *config.Config, opts RunOptions) error {
 			}
 		}()
 	}
-
 	if app.ModeEnabled(ModeDictation) {
 		if app.STTRouter == nil {
 			app.Health.SetReady("mode.dictation", StatusUnavailable, "STT router not initialized")
@@ -382,6 +388,13 @@ func Run(ctx context.Context, cfg *config.Config, opts RunOptions) error {
 		opts.HandlerHooks(app.Mux, app)
 	}
 
+	// Start the separate Box listener only after every normal server handler
+	// has been built successfully. This avoids exposing the HA-capable local
+	// path during a startup that will later fail for an unrelated mode.
+	if _, err := wireBoxMediaListener(ctx, cfg, app); err != nil {
+		return fmt.Errorf("core.Run: wire local Box media listener: %w", err)
+	}
+
 	// Always-on server component. Mode handlers flip their own entries above.
 	app.Health.SetReady("server", StatusOK, "listening")
 
@@ -450,7 +463,19 @@ func serverSecurityHeaders(cfg *config.Config) middleware.Middleware {
 	})
 }
 
-func serveServer(ctx context.Context, cfg *config.Config, app *App) error {
+func serveServer(ctx context.Context, cfg *config.Config, app *App) (returnErr error) {
+	// serveServer is the single process owner for the HA-capable Box runtime.
+	// Keep a fallback defer so middleware or main-listener startup failures also
+	// drain Box requests before Run closes the shared claim ledger.
+	if app != nil && app.BoxMediaRuntime != nil {
+		defer func() {
+			shutdownCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 20*time.Second)
+			defer cancel()
+			if err := app.BoxMediaRuntime.Shutdown(shutdownCtx); err != nil && returnErr == nil {
+				returnErr = fmt.Errorf("core.Run: Box media shutdown: %w", err)
+			}
+		}()
+	}
 	chain, err := serverMiddlewareChain(ctx, cfg, app)
 	if err != nil {
 		return err
@@ -487,19 +512,50 @@ func serveServer(ctx context.Context, cfg *config.Config, app *App) error {
 		close(serveErr)
 	}()
 
+	var boxMediaErrors <-chan error
+	if app.BoxMediaRuntime != nil {
+		boxMediaErrors = app.BoxMediaRuntime.Errors()
+	}
+	var runtimeErr error
 	select {
 	case <-ctx.Done():
 		slog.Info("shutdown signal received, draining connections")
-	case err := <-serveErr:
+	case err, ok := <-serveErr:
 		if err != nil {
-			return fmt.Errorf("core.Run: serve: %w", err)
+			runtimeErr = fmt.Errorf("core.Run: serve: %w", err)
+		} else if !ok && ctx.Err() == nil {
+			runtimeErr = errors.New("core.Run: main HTTP listener stopped unexpectedly")
+		}
+	case err, ok := <-boxMediaErrors:
+		switch {
+		case err != nil:
+			_, components, _ := app.Health.Snapshot()
+			if entry, exists := components[boxMediaHealthComponent]; !exists || entry.Status != StatusUnavailable {
+				app.Health.SetReady(boxMediaHealthComponent, StatusUnavailable, "runtime dependency failed")
+			}
+			runtimeErr = fmt.Errorf("core.Run: Box media runtime: %w", err)
+		case !ok && ctx.Err() == nil:
+			app.Health.SetReady(boxMediaHealthComponent, StatusUnavailable, "runtime stopped unexpectedly")
+			runtimeErr = errors.New("core.Run: Box media runtime stopped unexpectedly")
 		}
 	}
 
 	shutdownCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 20*time.Second)
 	defer cancel()
+	// Drain the HA-capable Box path before any shared lifecycle or claim-ledger
+	// dependency can be torn down. Box shutdown cancels active request contexts
+	// and does not return until every tracked handler has exited.
+	if app.BoxMediaRuntime != nil {
+		if err := app.BoxMediaRuntime.Shutdown(shutdownCtx); err != nil {
+			slog.Warn("Box media shutdown did not complete cleanly", "err", err)
+			if runtimeErr == nil {
+				runtimeErr = fmt.Errorf("core.Run: Box media shutdown: %w", err)
+			}
+		}
+	}
 	if err := srv.Shutdown(shutdownCtx); err != nil {
 		slog.Warn("HTTP shutdown did not complete cleanly", "err", err)
+		_ = srv.Close()
 	}
 	if app.Lifecycle != nil {
 		if err := app.Lifecycle.Shutdown(shutdownCtx); err != nil {
@@ -515,10 +571,10 @@ func serveServer(ctx context.Context, cfg *config.Config, app *App) error {
 	}
 
 	// Drain any lingering serve error.
-	if err := <-serveErr; err != nil {
-		return fmt.Errorf("core.Run: serve (post-shutdown): %w", err)
+	if err := <-serveErr; err != nil && runtimeErr == nil {
+		runtimeErr = fmt.Errorf("core.Run: serve (post-shutdown): %w", err)
 	}
-	return nil
+	return runtimeErr
 }
 
 func serverMiddlewareChain(ctx context.Context, cfg *config.Config, app *App) (func(http.Handler) http.Handler, error) {

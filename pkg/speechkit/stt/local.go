@@ -23,7 +23,6 @@ import (
 
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/audio"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/netsec"
-	"github.com/kombifyio/SpeechKit/pkg/speechkit/provideropts"
 )
 
 // whisperModelPattern restricts whisper.cpp model filenames to the
@@ -87,16 +86,23 @@ const (
 
 // LocalProvider implements STTProvider for Tier 1: localhost whisper.cpp server.
 type LocalProvider struct {
-	BaseURL    string // e.g. "http://127.0.0.1:8080"
-	Port       int
-	ModelPath  string
-	GPU        string
-	Validation netsec.ValidationOptions
-	cmd        *exec.Cmd
-	ready      atomic.Bool
-	startMu    sync.Mutex
-	startDone  chan struct{} // closed when the current StartServer call completes (nil = never started)
-	client     *http.Client
+	BaseURL       string // e.g. "http://127.0.0.1:8080"
+	Port          int
+	ModelPath     string
+	GPU           string
+	Validation    netsec.ValidationOptions
+	cmd           *exec.Cmd
+	ready         atomic.Bool
+	startDone     chan struct{} // closed when the current StartServer call completes (nil = never started)
+	stopMu        sync.Mutex
+	processMu     sync.Mutex
+	processDone   chan struct{}
+	processErr    error
+	starting      bool
+	stopping      bool
+	stopRequested bool
+	generation    uint64
+	client        *http.Client
 }
 
 func NewLocalProvider(port int, modelPath, gpu string) *LocalProvider {
@@ -116,12 +122,14 @@ func NewLocalProvider(port int, modelPath, gpu string) *LocalProvider {
 
 // StartServer starts the whisper.cpp server subprocess. Blocks until ready or context cancelled.
 func (p *LocalProvider) StartServer(ctx context.Context) error {
-	// Create a fresh startup-done channel; Transcribe callers will wait on it.
-	done := make(chan struct{})
-	p.startMu.Lock()
-	p.startDone = done
-	p.startMu.Unlock()
-	defer close(done)
+	if ctx == nil {
+		return fmt.Errorf("whisper-server process context is required")
+	}
+	generation, startDone, err := p.beginProcessStart()
+	if err != nil {
+		return err
+	}
+	defer p.finishProcessStart(generation, startDone)
 
 	binaryPath, err := findWhisperBinary()
 	if err != nil {
@@ -136,6 +144,9 @@ func (p *LocalProvider) StartServer(ctx context.Context) error {
 	}
 	if err := verifyReadableModelFile(p.ModelPath); err != nil {
 		return fmt.Errorf("model not readable: %s: %w", p.ModelPath, err)
+	}
+	if err := p.processStartCanceled(ctx, generation); err != nil {
+		return err
 	}
 
 	threads := defaultWhisperThreads()
@@ -152,10 +163,10 @@ func (p *LocalProvider) StartServer(ctx context.Context) error {
 		args = append(args, "--no-gpu")
 	}
 
-	p.cmd = exec.CommandContext(ctx, binaryPath, args...) // #nosec G204 -- binaryPath is resolved by findWhisperBinary from bundle/managed locations or explicit dev opt-in.
-	configureHiddenProcess(p.cmd)
-	p.cmd.Stdout = os.Stderr // whisper-server logs to stdout
-	p.cmd.Stderr = os.Stderr
+	cmd := exec.CommandContext(ctx, binaryPath, args...) // #nosec G204 -- binaryPath is resolved by findWhisperBinary from bundle/managed locations or explicit dev opt-in.
+	configureHiddenProcess(cmd)
+	cmd.Stdout = os.Stderr // whisper-server logs to stdout
+	cmd.Stderr = os.Stderr
 
 	// gpu_mode is the *requested* mode; whether inference actually runs on a
 	// GPU depends on how the bundled whisper-server was built (a CPU-only
@@ -163,22 +174,143 @@ func (p *LocalProvider) StartServer(ctx context.Context) error {
 	// audio length). whisper-server's own startup banner on stderr names the
 	// backend it actually initialised — check it when latency looks CPU-bound.
 	slog.Info("starting whisper-server", "binary", binaryPath, "args", args, "threads", threads, "gpu_mode", p.GPU)
-	if err := p.cmd.Start(); err != nil {
+	if err := cmd.Start(); err != nil {
 		return fmt.Errorf("start whisper-server: %w", err)
+	}
+	processDone := make(chan struct{})
+	p.processMu.Lock()
+	if p.generation != generation {
+		p.processMu.Unlock()
+		_ = cmd.Process.Kill()
+		_ = cmd.Wait()
+		return fmt.Errorf("whisper-server startup generation changed unexpectedly")
+	}
+	p.cmd = cmd
+	p.processDone = processDone
+	p.processErr = nil
+	stopAfterPublish := p.stopRequested || ctx.Err() != nil
+	p.processMu.Unlock()
+	go p.waitForProcess(ctx, cmd, processDone, generation)
+	if stopAfterPublish {
+		p.stopStartedProcess(generation, cmd, processDone)
+		return fmt.Errorf("whisper-server startup was stopped")
 	}
 
 	if err := p.waitForReady(ctx); err != nil {
-		p.StopServer()
+		p.stopStartedProcess(generation, cmd, processDone)
 		return fmt.Errorf("whisper-server health probe never returned ready: %w", err)
 	}
 	if err := p.waitForInferenceReady(ctx); err != nil {
-		p.StopServer()
+		p.stopStartedProcess(generation, cmd, processDone)
 		return fmt.Errorf("whisper-server inference probe never returned ready: %w", err)
 	}
 
-	p.ready.Store(true)
+	if err := p.markProcessReady(generation, processDone); err != nil {
+		p.stopStartedProcess(generation, cmd, processDone)
+		return fmt.Errorf("whisper-server stopped before readiness: %w", err)
+	}
 	slog.Info("whisper-server ready", "url", p.BaseURL)
 	return nil
+}
+
+func (p *LocalProvider) beginProcessStart() (uint64, chan struct{}, error) {
+	done := make(chan struct{})
+	p.processMu.Lock()
+	defer p.processMu.Unlock()
+	switch {
+	case p.stopping:
+		return 0, nil, fmt.Errorf("whisper-server is stopping")
+	case p.starting || p.cmd != nil:
+		return 0, nil, fmt.Errorf("whisper-server is already starting or running")
+	}
+	p.generation++
+	p.starting = true
+	p.stopRequested = false
+	p.processDone = nil
+	p.processErr = nil
+	p.startDone = done
+	p.ready.Store(false)
+	return p.generation, done, nil
+}
+
+func (p *LocalProvider) finishProcessStart(generation uint64, done chan struct{}) {
+	p.processMu.Lock()
+	if p.generation == generation {
+		p.starting = false
+	}
+	close(done)
+	p.processMu.Unlock()
+}
+
+func (p *LocalProvider) processStartCanceled(ctx context.Context, generation uint64) error {
+	if err := ctx.Err(); err != nil {
+		return fmt.Errorf("whisper-server startup canceled: %w", err)
+	}
+	p.processMu.Lock()
+	defer p.processMu.Unlock()
+	if p.generation != generation || p.stopRequested || p.stopping {
+		return fmt.Errorf("whisper-server startup was stopped")
+	}
+	return nil
+}
+
+func (p *LocalProvider) markProcessReady(generation uint64, done chan struct{}) error {
+	p.processMu.Lock()
+	defer p.processMu.Unlock()
+	if p.generation != generation || p.processDone != done {
+		return fmt.Errorf("whisper-server startup generation is no longer active")
+	}
+	select {
+	case <-done:
+		if p.processErr != nil {
+			return p.processErr
+		}
+		return fmt.Errorf("whisper-server stopped")
+	default:
+	}
+	if p.stopRequested || p.stopping {
+		return fmt.Errorf("whisper-server startup was stopped")
+	}
+	p.ready.Store(true)
+	return nil
+}
+
+func (p *LocalProvider) waitForProcess(ctx context.Context, cmd *exec.Cmd, done chan struct{}, generation uint64) {
+	waitErr := cmd.Wait()
+	p.recordProcessExit(ctx, cmd, done, generation, waitErr)
+}
+
+func (p *LocalProvider) recordProcessExit(ctx context.Context, cmd *exec.Cmd, done chan struct{}, generation uint64, waitErr error) {
+	p.processMu.Lock()
+	current := p.generation == generation && p.cmd == cmd && p.processDone == done
+	expected := !current || p.stopRequested || ctx.Err() != nil
+	if current {
+		p.ready.Store(false)
+		p.cmd = nil
+		if expected {
+			p.processErr = nil
+		} else if waitErr != nil {
+			p.processErr = fmt.Errorf("whisper-server exited unexpectedly: %w", waitErr)
+		} else {
+			p.processErr = fmt.Errorf("whisper-server exited unexpectedly")
+		}
+	}
+	close(done)
+	p.processMu.Unlock()
+}
+
+func (p *LocalProvider) stopStartedProcess(generation uint64, cmd *exec.Cmd, done <-chan struct{}) {
+	p.processMu.Lock()
+	if p.generation == generation {
+		p.stopRequested = true
+	}
+	p.processMu.Unlock()
+	if cmd != nil && cmd.Process != nil {
+		_ = cmd.Process.Kill()
+	}
+	if done != nil {
+		<-done
+	}
 }
 
 func defaultWhisperThreads() int {
@@ -200,6 +332,9 @@ func defaultWhisperThreads() int {
 func (p *LocalProvider) waitForReady(ctx context.Context) error {
 	healthURL := fmt.Sprintf("%s/health", p.BaseURL)
 	for i := 0; i < whisperHealthRetries; i++ {
+		if err := p.runtimeExitError(); err != nil {
+			return err
+		}
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
@@ -250,6 +385,9 @@ func (p *LocalProvider) waitForInferenceReadyWithClient(ctx context.Context, cli
 	var lastErr error
 
 	for i := 0; i < retries; i++ {
+		if err := p.runtimeExitError(); err != nil {
+			return err
+		}
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
@@ -328,20 +466,83 @@ func buildWarmupWAV() []byte {
 
 // StopServer terminates the whisper-server subprocess.
 func (p *LocalProvider) StopServer() {
+	p.stopMu.Lock()
+	defer p.stopMu.Unlock()
+	cmd, processDone, startDone, starting := p.beginProcessStop()
+	if cmd != nil && cmd.Process != nil {
+		_ = cmd.Process.Kill()
+	}
+	if processDone != nil {
+		<-processDone
+	}
+	if starting && startDone != nil {
+		<-startDone
+	}
+	p.finishProcessStop()
+}
+
+func (p *LocalProvider) beginProcessStop() (*exec.Cmd, <-chan struct{}, <-chan struct{}, bool) {
+	p.processMu.Lock()
+	defer p.processMu.Unlock()
+	p.stopping = true
+	p.stopRequested = true
 	p.ready.Store(false)
-	if p.cmd != nil && p.cmd.Process != nil {
-		_ = p.cmd.Process.Kill()
-		_ = p.cmd.Wait()
-		p.cmd = nil
+	cmd := p.cmd
+	processDone := p.processDone
+	startDone := p.startDone
+	starting := p.starting
+	return cmd, processDone, startDone, starting
+}
+
+func (p *LocalProvider) finishProcessStop() {
+	p.processMu.Lock()
+	p.stopping = false
+	p.processMu.Unlock()
+}
+
+// RuntimeDone closes whenever the owned whisper-server subprocess exits.
+// RuntimeError then reports an unexpected exit and stays nil for an explicit
+// StopServer call or process-context cancellation.
+func (p *LocalProvider) RuntimeDone() <-chan struct{} {
+	if p == nil {
+		return nil
+	}
+	p.processMu.Lock()
+	defer p.processMu.Unlock()
+	return p.processDone
+}
+
+func (p *LocalProvider) RuntimeError() error {
+	if p == nil {
+		return nil
+	}
+	p.processMu.Lock()
+	defer p.processMu.Unlock()
+	return p.processErr
+}
+
+func (p *LocalProvider) runtimeExitError() error {
+	done := p.RuntimeDone()
+	if done == nil {
+		return nil
+	}
+	select {
+	case <-done:
+		if err := p.RuntimeError(); err != nil {
+			return err
+		}
+		return fmt.Errorf("whisper-server stopped")
+	default:
+		return nil
 	}
 }
 
 func (p *LocalProvider) Transcribe(ctx context.Context, audioData []byte, opts TranscribeOpts) (*Result, error) {
 	if !p.ready.Load() {
 		// If startup is in progress, wait for it to complete before failing.
-		p.startMu.Lock()
+		p.processMu.Lock()
 		done := p.startDone
-		p.startMu.Unlock()
+		p.processMu.Unlock()
 		if done != nil {
 			slog.Info("whisper-server: waiting for startup to complete...")
 			select {
@@ -357,9 +558,7 @@ func (p *LocalProvider) Transcribe(ctx context.Context, audioData []byte, opts T
 	}
 
 	endpoint := fmt.Sprintf("%s/v1/audio/transcriptions", p.BaseURL)
-	resolved := ResolveTranscribeOptions("local", "stt.local.whispercpp", opts, provideropts.Values{
-		provideropts.OptionLanguage: "de",
-	}, nil)
+	resolved := ResolveTranscribeOptions("local", "stt.local.whispercpp", opts, nil, nil)
 
 	body := &bytes.Buffer{}
 	writer := multipart.NewWriter(body)
@@ -431,7 +630,11 @@ func (p *LocalProvider) Transcribe(ctx context.Context, audioData []byte, opts T
 		return nil, fmt.Errorf("parse response: %w", err)
 	}
 
-	lang := firstNonEmptyTrimmed(resolved.Language, "de")
+	// whisper.cpp does not report which language it detected, so the label can
+	// only echo what was asked for. APILanguage() is empty for a multilanguage
+	// session, and reporting a locale there would be an inference — the exact
+	// thing the multilanguage rule forbids.
+	lang := firstNonEmptyTrimmed(resolved.APILanguage(), LanguageMulti)
 
 	return &Result{
 		Text:     result.Text,

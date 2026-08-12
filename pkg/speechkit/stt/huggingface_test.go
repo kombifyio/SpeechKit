@@ -191,18 +191,37 @@ func TestHF_Name(t *testing.T) {
 	}
 }
 
-func TestHF_Transcribe_DefaultLanguage(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		json.NewEncoder(w).Encode(map[string]string{"text": "test"})
-	}))
-	defer server.Close()
+// TestHF_Transcribe_ReportedLanguage is a contract test, not a coverage test.
+// It previously asserted that an unpinned session reports "de", which encoded
+// the very defect it looked like a guard against: HF never receives or returns
+// a language, so labelling the result German was pure inference and downstream
+// consumers then applied a German customization dictionary to speech in any
+// language. An unpinned session must report the multilanguage sentinel, and a
+// deliberate pin must survive to the label.
+func TestHF_Transcribe_ReportedLanguage(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		opts TranscribeOpts
+		want string
+	}{
+		{name: "unpinned reports multilanguage", opts: TranscribeOpts{}, want: LanguageMulti},
+		{name: "auto reports multilanguage", opts: TranscribeOpts{Language: "auto"}, want: LanguageMulti},
+		{name: "explicit pin survives", opts: TranscribeOpts{Language: "de"}, want: "de"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				json.NewEncoder(w).Encode(map[string]string{"text": "test"}) //nolint:errcheck // test server write
+			}))
+			defer server.Close()
 
-	p := newTestHFProvider(server.URL)
-	result, err := p.Transcribe(context.Background(), []byte("wav"), TranscribeOpts{})
-	if err != nil {
-		t.Fatalf("Transcribe: %v", err)
-	}
-	if result.Language != "de" {
-		t.Errorf("default language = %q, want 'de'", result.Language)
+			p := newTestHFProvider(server.URL)
+			result, err := p.Transcribe(context.Background(), []byte("wav"), tc.opts)
+			if err != nil {
+				t.Fatalf("Transcribe: %v", err)
+			}
+			if result.Language != tc.want {
+				t.Errorf("reported language = %q, want %q", result.Language, tc.want)
+			}
+		})
 	}
 }

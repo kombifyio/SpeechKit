@@ -192,7 +192,11 @@ func TestServerSTTTurnBuffersToStop(t *testing.T) {
 func TestServerSequentialTurnsOnOneConnection(t *testing.T) {
 	stt := &fakeTranscriber{result: newSTTResult("wie spaet ist es")}
 	pcm := make([]byte, 320)
-	tts := &fakeSynthesizer{result: newTTSResult(pcmToWAV(pcm, 16000, 1, 2))}
+	wav, err := pcmToWAV(pcm, 16000, 1, 2)
+	if err != nil {
+		t.Fatalf("pcmToWAV: %v", err)
+	}
+	tts := &fakeSynthesizer{result: newTTSResult(wav)}
 	rd, bw, cleanup := dialServer(t, Options{
 		Info: Info{ASR: []AsrProgram{{Name: "speechkit"}}, TTS: []TtsProgram{{Name: "speechkit"}}},
 		STT:  stt,
@@ -296,7 +300,10 @@ func TestServerRejectsPeerOutsideAllowedCIDRs(t *testing.T) {
 func TestServerTTSTurnStreamsAudio(t *testing.T) {
 	// Provider returns a canonical 16 kHz mono WAV of 320 bytes of PCM.
 	pcm := make([]byte, 320)
-	wav := pcmToWAV(pcm, 16000, 1, 2)
+	wav, err := pcmToWAV(pcm, 16000, 1, 2)
+	if err != nil {
+		t.Fatalf("pcmToWAV: %v", err)
+	}
 	fake := &fakeSynthesizer{result: &tts.Result{Audio: wav, Format: "wav", SampleRate: 16000}}
 	rd, bw, cleanup := dialServer(t, Options{TTS: fake})
 	defer cleanup()

@@ -61,3 +61,50 @@ func TestDetectLanguageStillWins(t *testing.T) {
 		t.Errorf("normalizedRequestLanguage(\"de\", detect=true) = %q, want \"\"", got)
 	}
 }
+
+// The response direction, which the request-side gates above left open.
+//
+// Providers that cannot report a detected language used to fall back to a
+// hardcoded "de" label while Deepgram and Google fell back to the sentinel.
+// That inconsistency was not cosmetic: consumers pick a customization
+// dictionary from Transcript.Language, so an unpinned huggingface or local
+// session had German vocabulary applied to speech in any language.
+//
+// The rule is the same in both directions. A label is either something the
+// provider actually reported, or the value that was explicitly asked for. It
+// is never a locale nobody chose.
+func TestReportedLanguageNeverInventsALocale(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		detected string
+		asked    string
+		want     string
+	}{
+		{name: "detected language wins", detected: "pt-BR", asked: "", want: "pt-BR"},
+		{name: "detected wins over a pin", detected: "en", asked: "de", want: "en"},
+		{name: "pin survives when nothing detected", detected: "", asked: "de", want: "de"},
+		{name: "unpinned falls back to the sentinel", detected: "", asked: "", want: LanguageMulti},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := firstNonEmptyTrimmed(tc.detected, tc.asked, LanguageMulti); got != tc.want {
+				t.Errorf("reported language = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
+// APILanguage is what the adapters hand to firstNonEmptyTrimmed as the "asked
+// for" value, so it must not leak the sentinel into a label either — reporting
+// the literal "auto" would be as wrong as reporting "de".
+func TestAPILanguageResolvesTheSentinelToEmpty(t *testing.T) {
+	for _, language := range []string{"", "auto", "multi"} {
+		resolved := ResolvedTranscribeOptions{Language: language}
+		if got := resolved.APILanguage(); got != "" {
+			t.Errorf("APILanguage(%q) = %q, want \"\" so the label falls through to the sentinel", language, got)
+		}
+	}
+	resolved := ResolvedTranscribeOptions{Language: "de"}
+	if got := resolved.APILanguage(); got != "de" {
+		t.Errorf("APILanguage(\"de\") = %q, want \"de\"", got)
+	}
+}
