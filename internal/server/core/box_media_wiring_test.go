@@ -215,6 +215,46 @@ func TestBoxMediaSupervisorFailsBlockingReadinessOnLocalHealthLoss(t *testing.T)
 	}
 }
 
+// A probe failure is not evidence of a dead child. The probe runs against the
+// same whisper process that may be busy on a Box turn, so a stall looks exactly
+// like a corpse — and escalating on the first miss took down dictation, assist,
+// voiceagent and the device-agent bridge with it. Below the threshold the
+// feature reports degraded and keeps running; a later good probe restores it.
+func TestBoxMediaSupervisorRidesOutTransientProbeFailures(t *testing.T) {
+	listener := &boxMediaCoreListener{errors: make(chan error)}
+	local := &boxMediaCoreLocalSTT{runtimeDone: make(chan struct{})}
+	local.ready.Store(true)
+	local.transientFailures.Store(int32(boxMediaMaxProbeFailures - 1))
+
+	runtime := &boxMediaServerRuntime{
+		listener: listener, localSTT: local, localSupervisor: local,
+		health: NewHealthRegistry(), healthInterval: time.Millisecond,
+	}
+	runtime.startSupervisor(context.Background())
+
+	// Give the supervisor well over the failing probes plus a recovering one.
+	deadline := time.After(3 * time.Second)
+	recovered := false
+	for !recovered {
+		select {
+		case err := <-runtime.Errors():
+			t.Fatalf("supervisor escalated on a transient stall: %v", err)
+		case <-deadline:
+			_, components, _ := runtime.health.Snapshot()
+			t.Fatalf("Box media never recovered; health=%#v", components[boxMediaHealthComponent])
+		case <-time.After(20 * time.Millisecond):
+			_, components, _ := runtime.health.Snapshot()
+			if components[boxMediaHealthComponent].Status == StatusOK {
+				recovered = true
+			}
+		}
+	}
+
+	if err := runtime.Shutdown(context.Background()); err != nil {
+		t.Fatalf("Shutdown: %v", err)
+	}
+}
+
 func TestWireBoxMediaListenerFailsClosedBeforeListen(t *testing.T) {
 	tests := []struct {
 		name   string
@@ -377,6 +417,9 @@ type boxMediaCoreLocalSTT struct {
 	ready       atomic.Bool
 	starts      atomic.Int32
 	stops       atomic.Int32
+	// transientFailures is how many upcoming Health calls fail before the
+	// stub starts answering normally again.
+	transientFailures atomic.Int32
 }
 
 func (p *boxMediaCoreLocalSTT) Name() string {
@@ -413,7 +456,16 @@ func (p *boxMediaCoreLocalSTT) RuntimeError() error { return p.runtimeErr }
 
 func (p *boxMediaCoreLocalSTT) IsReady() bool { return p.ready.Load() }
 
-func (p *boxMediaCoreLocalSTT) Health(context.Context) error { return p.healthErr }
+func (p *boxMediaCoreLocalSTT) Health(context.Context) error {
+	// transientFailures models a child that stalls for a few probes and then
+	// answers again — the case the supervisor must ride out rather than treat
+	// as death. Zero (the default) keeps the previous fixed behaviour.
+	if n := p.transientFailures.Load(); n > 0 {
+		p.transientFailures.Store(n - 1)
+		return errors.New("transient probe stall")
+	}
+	return p.healthErr
+}
 
 func (p *boxMediaCoreLocalSTT) Transcribe(context.Context, []byte, stt.TranscribeOpts) (*stt.Result, error) {
 	return &stt.Result{Text: "Küchenlicht aus", Provider: p.Name()}, nil

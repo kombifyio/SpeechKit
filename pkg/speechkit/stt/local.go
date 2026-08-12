@@ -702,8 +702,24 @@ func (p *LocalProvider) displayModel() string {
 	return filepath.Base(p.ModelPath)
 }
 
+// hasProcess reports whether a child process is currently published. It is the
+// source of truth for "is there a server to talk to"; ready is only a cache of
+// the last probe against it.
+func (p *LocalProvider) hasProcess() bool {
+	p.processMu.Lock()
+	defer p.processMu.Unlock()
+	return p.cmd != nil
+}
+
 func (p *LocalProvider) Health(ctx context.Context) error {
-	if !p.ready.Load() {
+	// Gate on the process, not on ready. Gating on ready made the flag a
+	// one-way latch: a single transport blip cleared it, and nothing could set
+	// it back, because ready is raised in exactly one place (markProcessReady,
+	// reachable only from a fresh StartServer) while beginProcessStart refuses
+	// to start again as long as the still-alive child is published. The
+	// observable result was that local dictation stayed "not ready" until the
+	// app restarted, even though whisper-server was healthy the whole time.
+	if !p.hasProcess() {
 		return fmt.Errorf("whisper-server not running")
 	}
 
@@ -721,8 +737,14 @@ func (p *LocalProvider) Health(ctx context.Context) error {
 	_ = resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
+		// A server answering 503 is not serving either. Leaving ready set here
+		// advertised a provider that would fail every transcription.
+		p.ready.Store(false)
 		return fmt.Errorf("local health: status %d", resp.StatusCode)
 	}
+	// The probe succeeded against a live child, so the provider is usable
+	// again. This is the recovery edge that was missing.
+	p.ready.Store(true)
 	return nil
 }
 

@@ -9,6 +9,14 @@ maintainers. The release linter
 (`npm run release:lint -- --version vX.Y.Z`) refuses internal tracker
 IDs, source paths, and other maintainer-only vocabulary.
 
+## [0.54.1](https://github.com/kombifyio/SpeechKit/compare/v0.54.0...v0.54.1) (2026-08-12)
+
+
+### Fixed
+
+* **server:** stop one transient probe failure from killing the server ([ba48092](https://github.com/kombifyio/SpeechKit/commit/ba48092ee06633782068af9d057b348f7763db72))
+* **stt:** stop the local whisper ready flag from latching false forever ([754372d](https://github.com/kombifyio/SpeechKit/commit/754372dea4f206b20b7c5ac06953c9619290a05a))
+
 ## [0.54.0](https://github.com/kombifyio/SpeechKit/compare/v0.53.0...v0.54.0) (2026-08-12)
 
 ### Highlights

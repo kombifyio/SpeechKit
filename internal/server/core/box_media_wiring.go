@@ -28,8 +28,19 @@ import (
 const (
 	boxMediaProviderProbeTimeout = 8 * time.Second
 	boxMediaHealthProbeInterval  = 5 * time.Second
-	boxMediaMaxCertificateBytes  = 1 << 20
-	boxMediaHealthComponent      = "api.box_media"
+	// boxMediaMaxProbeFailures is how many CONSECUTIVE probe failures are
+	// tolerated before the feature is declared dead.
+	//
+	// It exists because a probe failure is not evidence of a dead child. The
+	// probe runs every 5s with an 8s budget against the same whisper process
+	// that may be serving a Box turn for up to 60s, so model page-in, a loaded
+	// CPU, or whisper occupying its worker threads on a long clip all look
+	// exactly like a corpse. Escalating on the first miss meant one slow
+	// second took down dictation, assist, voiceagent and the device-agent
+	// bridge along with it.
+	boxMediaMaxProbeFailures    = 3
+	boxMediaMaxCertificateBytes = 1 << 20
+	boxMediaHealthComponent     = "api.box_media"
 )
 
 type boxMediaLocalRuntime interface {
@@ -128,6 +139,7 @@ func (r *boxMediaServerRuntime) startSupervisor(parent context.Context) {
 		}
 		ticker := time.NewTicker(interval)
 		defer ticker.Stop()
+		probeFailures := 0
 
 		fail := func(detail string, err error, localFailed bool) {
 			if r.health != nil {
@@ -173,17 +185,50 @@ func (r *boxMediaServerRuntime) startSupervisor(parent context.Context) {
 				fail("host-local STT runtime stopped", err, true)
 				return
 			case <-ticker.C:
+				// A single miss is tolerated and reported as degraded; only a
+				// run of them is treated as death. The listener and
+				// runtime-stopped branches above stay immediately fatal —
+				// those are proof, not inference.
+				probeErr := error(nil)
+				detail := ""
 				if !r.localSTT.IsReady() {
-					fail("host-local STT runtime is not ready", errors.New("box media host-local STT readiness was lost"), true)
-					return
+					probeErr = errors.New("box media host-local STT readiness was lost")
+					detail = "host-local STT runtime is not ready"
+				} else {
+					probeCtx, cancelProbe := context.WithTimeout(ctx, boxMediaProviderProbeTimeout)
+					err := r.localSTT.Health(probeCtx)
+					cancelProbe()
+					if err != nil {
+						probeErr = fmt.Errorf("probe Box media host-local STT: %w", err)
+						detail = "host-local STT health probe failed"
+					}
 				}
-				probeCtx, cancelProbe := context.WithTimeout(ctx, boxMediaProviderProbeTimeout)
-				err := r.localSTT.Health(probeCtx)
-				cancelProbe()
-				if err != nil {
-					fail("host-local STT health probe failed", fmt.Errorf("probe Box media host-local STT: %w", err), true)
-					return
+
+				if probeErr == nil {
+					if probeFailures > 0 {
+						// Recovered. Without this the component would stay
+						// degraded for the life of the process even though the
+						// child is answering again.
+						probeFailures = 0
+						if r.health != nil {
+							r.health.SetReadyWithOptions(boxMediaHealthComponent, StatusOK,
+								"host-local STT recovered", ComponentOptions{Blocking: true, Kind: "feature"})
+						}
+					}
+					continue
 				}
+
+				probeFailures++
+				if probeFailures < boxMediaMaxProbeFailures {
+					if r.health != nil {
+						r.health.SetReadyWithOptions(boxMediaHealthComponent, StatusDegraded,
+							fmt.Sprintf("%s (%d/%d)", detail, probeFailures, boxMediaMaxProbeFailures),
+							ComponentOptions{Blocking: true, Kind: "feature"})
+					}
+					continue
+				}
+				fail(fmt.Sprintf("%s (%d consecutive)", detail, probeFailures), probeErr, true)
+				return
 			}
 		}
 	}()

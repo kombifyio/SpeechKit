@@ -223,11 +223,89 @@ func TestLocal_Health_OK(t *testing.T) {
 	p := &LocalProvider{
 		BaseURL: server.URL,
 		client:  &http.Client{Timeout: 5 * time.Second},
+		// Health gates on a published process, not on ready — see
+		// TestLocal_HealthRecoversReadyAfterATransientFailure.
+		cmd: &exec.Cmd{},
 	}
 	p.ready.Store(true)
 
 	if err := p.Health(context.Background()); err != nil {
 		t.Errorf("Health: %v", err)
+	}
+}
+
+// Regression: ready used to be a one-way latch. Health gated on ready and
+// cleared it on any transport error, while ready is raised in exactly one
+// place (markProcessReady, reachable only from a fresh StartServer) and
+// beginProcessStart refuses to start again while the still-alive child is
+// published. So a single blip against a perfectly healthy whisper-server made
+// local dictation permanently unavailable until the app restarted, and the
+// retry loop could only log "already starting or running".
+func TestLocal_HealthRecoversReadyAfterATransientFailure(t *testing.T) {
+	var fail atomic.Bool
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if fail.Load() {
+			hj, ok := w.(http.Hijacker)
+			if !ok {
+				w.WriteHeader(http.StatusServiceUnavailable)
+				return
+			}
+			conn, _, err := hj.Hijack()
+			if err == nil {
+				_ = conn.Close() // kill the connection: a transport error, not a status
+			}
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+
+	p := &LocalProvider{
+		BaseURL: server.URL,
+		client:  &http.Client{Timeout: 5 * time.Second},
+		cmd:     &exec.Cmd{},
+	}
+	p.ready.Store(true)
+
+	fail.Store(true)
+	if err := p.Health(context.Background()); err == nil {
+		t.Fatal("expected the transport failure to surface")
+	}
+	if p.IsReady() {
+		t.Fatal("a failed probe must clear ready")
+	}
+
+	// The child was healthy all along. The next probe has to be allowed to run
+	// and has to restore ready, otherwise the provider is dead until restart.
+	fail.Store(false)
+	if err := p.Health(context.Background()); err != nil {
+		t.Fatalf("Health after recovery: %v", err)
+	}
+	if !p.IsReady() {
+		t.Fatal("a successful probe must restore ready")
+	}
+}
+
+// A server answering a non-200 is not serving, so it must not stay advertised
+// as ready. This asymmetry let a 503-ing whisper-server keep accepting work.
+func TestLocal_HealthClearsReadyOnNon200(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusServiceUnavailable)
+	}))
+	defer server.Close()
+
+	p := &LocalProvider{
+		BaseURL: server.URL,
+		client:  &http.Client{Timeout: 5 * time.Second},
+		cmd:     &exec.Cmd{},
+	}
+	p.ready.Store(true)
+
+	if err := p.Health(context.Background()); err == nil {
+		t.Fatal("expected a non-200 to surface as an error")
+	}
+	if p.IsReady() {
+		t.Fatal("a 503 must clear ready")
 	}
 }
 

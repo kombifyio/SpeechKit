@@ -289,9 +289,9 @@ func (s *Session) receiveLoop(ctx context.Context) {
 	scheduleSpeakingSettle := func() {
 		stopSpeakingSettleTimer()
 		speakingSettleTimer = time.AfterFunc(speakingSettleDelay, func() {
-			// Speaking: Audio riss ohne Done ab. Processing: reiner
-			// Text-Turn, dessen Transcript-Ende nur den Timer armiert hat
-			// (siehe handleLiveMessage). Beides faellt zurueck auf Listening.
+			// Speaking means the audio stopped without a Done. Processing
+			// means a text-only turn whose transcript end only armed this
+			// timer (see handleLiveMessage). Both fall back to Listening.
 			if st := s.currentState(); st != StateSpeaking && st != StateProcessing {
 				return
 			}
@@ -360,14 +360,14 @@ func (s *Session) handleLiveMessage(ctx context.Context, msg *LiveMessage, sched
 			s.resetIdleTimer()
 		}
 	} else if msg.OutputTranscriptDone && len(msg.Audio) == 0 {
-		// Transcript-Ende ist KEIN verlaessliches Turn-Ende: Deepgram sendet
-		// den vollstaendigen Assistant-Text (ConversationText), bevor die
-		// TTS-Audio-Chunks fertig gestreamt sind - ein sofortiger Wechsel
-		// nach Listening schnitt die letzten Worte der Antwort ab (live
-		// beobachtet 2026-07-09). Stattdessen als Fallback den Settle-Timer
-		// armieren: folgt Audio, uebernimmt der Speaking-Pfad und Done/
-		// AgentAudioDone beendet den Turn; folgt nichts (reiner Text-Turn),
-		// kehrt der Timer nach settleDelay zu Listening zurueck.
+		// A transcript end is NOT a reliable turn end. Deepgram sends the
+		// complete assistant text (ConversationText) before the TTS audio
+		// chunks have finished streaming, so switching straight to Listening
+		// cut off the last words of the answer — observed live on
+		// 2026-07-09. Arm the settle timer as a fallback instead: if audio
+		// follows, the speaking path takes over and Done/AgentAudioDone ends
+		// the turn; if nothing follows (a text-only turn) the timer returns
+		// to Listening after settleDelay.
 		scheduleSpeakingSettle()
 	}
 	return true
