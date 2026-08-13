@@ -18,6 +18,7 @@ const (
 	ServerSettingsPathEnv  = "SPEECHKIT_SERVER_SETTINGS_PATH"
 	ServerSettingsWriteEnv = "SPEECHKIT_SERVER_SETTINGS_WRITE"
 	ServerOnboardingUIEnv  = "SPEECHKIT_SERVER_ONBOARDING_UI"
+	ServerAssistantUIEnv   = "SPEECHKIT_SERVER_ASSISTANT_UI"
 
 	defaultServerSettingsPath = "/var/lib/speechkit/data/server-settings.json"
 

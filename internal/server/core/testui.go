@@ -23,6 +23,10 @@ func serverPublicPaths() []string {
 
 func serverPublicRoutes() []middleware.PublicRoute {
 	return []middleware.PublicRoute{
+		// The /assistant page and its mark assets are static UI (no data,
+		// no secrets); every API call the page makes stays behind auth.
+		{Path: "/assistant", Methods: []string{http.MethodGet, http.MethodHead}},
+		{PathPrefix: "/assistant/", Methods: []string{http.MethodGet, http.MethodHead}},
 		{Path: "/v1/server/settings", Methods: []string{http.MethodGet, http.MethodHead}},
 		{Path: "/api/v1/server/settings", Methods: []string{http.MethodGet, http.MethodHead}},
 		{Path: "/v1/server/admin/session", Methods: []string{http.MethodPost}},
@@ -231,6 +235,7 @@ func inlineHTMLCSP(html string) string {
 		"default-src 'none'",
 		"style-src " + cspSources(cspBlockHashes(html, "<style>", "</style>")),
 		"script-src " + cspSources(cspBlockHashes(html, "<script>", "</script>")),
+		"img-src 'self'",
 		"connect-src 'self' ws: wss:",
 		"object-src 'none'",
 		"frame-ancestors 'none'",

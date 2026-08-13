@@ -7,9 +7,18 @@ import type {
   SpeechKitVoiceSessionStatus
 } from "../core/voice-surface.js";
 import type { VoiceUiMessageCatalog } from "../i18n/index.js";
+import { AssistantWaveformVisual, type WaveformLayout } from "./assistant-visuals/waveform.js";
 
 export type VoiceAssistantSize = "orb" | "compact" | "expanded";
 export type VoiceAssistantFrame = "overlay" | "keyboard" | "watch" | "phone" | "panel";
+
+/**
+ * Visual variants (decision 2026-08-13): `aura` is the default Voice
+ * Assistant look; `waveform` (the lab's "Glass Waveform") is the supported
+ * customization preset. The variant swaps only the motif in the visual slot;
+ * shells, status, transcript, and interaction are identical.
+ */
+export type VoiceAssistantVariant = "aura" | "waveform";
 
 /** `connecting` is the kit-local optimistic state (spec §Session status). */
 export type VoiceAssistantStatus = SpeechKitVoiceSessionStatus | "connecting";
@@ -205,6 +214,34 @@ const CSS = `
   transform: none;
 }
 
+/* ── Waveform variant (variant="waveform") ───────────────────────
+   The dual-hue level-history motif in the orb's slot; drawing spec
+   in tokens.json → assistant-variants.waveform. */
+.wave-visual {
+  position: relative;
+  flex: none;
+  border: 0;
+  background: transparent;
+  padding: 0;
+  cursor: default;
+  font: inherit;
+  color: inherit;
+}
+.va[data-status="speaking"] .wave-visual { cursor: pointer; }
+.wave-visual:focus-visible { outline: 2px solid var(--sk-accent, oklch(0.65 0.13 210)); outline-offset: 2px; border-radius: 8px; }
+.wave-visual canvas { display: block; width: 100%; height: 100%; }
+.wave-visual[data-layout="radial"] {
+  width: var(--sk-assistant-orb, 30px);
+  height: var(--sk-assistant-orb, 30px);
+  border-radius: 50%;
+}
+.wave-visual[data-layout="linear"] {
+  width: var(--sk-assistant-wave-compact-w, 72px);
+  height: var(--sk-assistant-wave-compact-h, 22px);
+  border-radius: 6px;
+}
+.va[data-frame="keyboard"] .wave-visual[data-layout="linear"] { flex: 1; width: auto; }
+
 /* ── Compact: pill (overlay/phone/panel) / bar (keyboard) ────── */
 .compact-shell {
   display: flex; align-items: center; gap: 10px;
@@ -228,14 +265,14 @@ const CSS = `
 
 /* ── Compact: watch face ─────────────────────────────────────── */
 .watch-shell { margin: auto; display: flex; flex-direction: column; align-items: center; gap: 14px; text-align: center; padding: 12px; max-width: 100%; }
-.watch-shell .orb { --sk-assistant-orb: var(--sk-assistant-orb-watch, 84px); }
+.watch-shell :is(.orb, .wave-visual) { --sk-assistant-orb: var(--sk-assistant-orb-watch, 84px); }
 .watch-line { font-size: 13px; line-height: 1.35; max-height: 3.9em; overflow: hidden; color: var(--sk-text, inherit); }
 .watch-status { font-size: var(--sk-font-size-small, 11px); color: var(--sk-text-muted, color-mix(in srgb, currentColor 55%, transparent)); text-transform: uppercase; letter-spacing: 0.14em; }
 
 /* ── Expanded: hero + turn list ──────────────────────────────── */
 .expanded-shell { display: flex; flex-direction: column; height: 100%; width: 100%; background: var(--sk-surface, color-mix(in srgb, #ffffff 72%, transparent)); backdrop-filter: blur(var(--sk-blur, 16px)); -webkit-backdrop-filter: blur(var(--sk-blur, 16px)); }
 .hero { display: flex; flex-direction: column; align-items: center; gap: 12px; padding: 26px 16px 18px; }
-.hero .orb { --sk-assistant-orb: var(--sk-assistant-orb-hero, 92px); }
+.hero :is(.orb, .wave-visual) { --sk-assistant-orb: var(--sk-assistant-orb-hero, 92px); }
 .status-pill {
   display: inline-flex; align-items: center; gap: 7px;
   padding: 4px 12px; border-radius: var(--sk-radius-pill, 999px);
@@ -283,9 +320,12 @@ const CSS = `
  * `compact` renders the pill (overlay/phone/panel), inline bar (keyboard), or
  * watch face; `expanded` renders the hero orb with status pill and
  * teleprompter turn list. `transcript` toggles text rendering (compact shows
- * at most the last sentence). `mark-src` places a host-provided brand image in
- * the orb centre, state-coupled (resting greys out, activity restores colour,
- * speech level breathes glow/scale) — the kit itself ships no brand asset.
+ * at most the last sentence). `variant` selects the motif in the visual slot:
+ * the Aura orb (default) or the Glass Waveform (`waveform`); everything else
+ * is identical across variants. `mark-src` places a host-provided brand image
+ * in the orb centre, state-coupled (resting greys out, activity restores
+ * colour, speech level breathes glow/scale) — the kit itself ships no brand
+ * asset, and the waveform variant has no mark slot.
  *
  * Controller-driven by default (state via `subscribe`, levels via
  * `subscribeLevel`); hosts with their own reducer or a richer FSM set the
@@ -297,7 +337,15 @@ export class SpeechKitVoiceAssistantElement extends SpeechKitElement {
   static readonly tagName = "speechkit-voice-assistant";
 
   static override get observedAttributes(): string[] {
-    return [...super.observedAttributes, "size", "transcript", "frame", "mark-src", "aura-state"];
+    return [
+      ...super.observedAttributes,
+      "size",
+      "transcript",
+      "frame",
+      "variant",
+      "mark-src",
+      "aura-state"
+    ];
   }
 
   #turns: VoiceAgentTurn[] = [];
@@ -320,6 +368,7 @@ export class SpeechKitVoiceAssistantElement extends SpeechKitElement {
   #turnsWrap: HTMLElement | null = null;
   #jump: HTMLButtonElement | null = null;
   #orbButtons: HTMLButtonElement[] = [];
+  #waveforms: AssistantWaveformVisual[] = [];
   #skeletonKey = "";
   #renderedTurnsRef: unknown = null;
   #renderedTurnCount = -1;
@@ -364,6 +413,14 @@ export class SpeechKitVoiceAssistantElement extends SpeechKitElement {
 
   set frame(value: VoiceAssistantFrame) {
     this.setAttribute("frame", value);
+  }
+
+  get variant(): VoiceAssistantVariant {
+    return this.getAttribute("variant") === "waveform" ? "waveform" : "aura";
+  }
+
+  set variant(value: VoiceAssistantVariant) {
+    this.setAttribute("variant", value);
   }
 
   /** Host-provided brand mark URL; absent renders the pure orb. */
@@ -447,9 +504,28 @@ export class SpeechKitVoiceAssistantElement extends SpeechKitElement {
 
   // ----- level animation loop -----------------------------------------------
 
+  static #reducedMotionQuery: MediaQueryList | null | undefined;
+
+  static #reducedMotion(): boolean {
+    if (SpeechKitVoiceAssistantElement.#reducedMotionQuery === undefined) {
+      SpeechKitVoiceAssistantElement.#reducedMotionQuery =
+        typeof matchMedia === "function" ? matchMedia("(prefers-reduced-motion: reduce)") : null;
+    }
+    return SpeechKitVoiceAssistantElement.#reducedMotionQuery?.matches ?? false;
+  }
+
   #loop = (now: number): void => {
-    const level = Math.max(this.#inputLevel.tick(now), this.#outputLevel.tick(now));
-    this.#wrap?.style.setProperty("--level", level.toFixed(3));
+    const input = this.#inputLevel.tick(now);
+    const output = this.#outputLevel.tick(now);
+    this.#wrap?.style.setProperty("--level", Math.max(input, output).toFixed(3));
+    if (this.#waveforms.length > 0) {
+      const aura = this.auraState;
+      const options = {
+        active: aura !== "inactive" && aura !== "error",
+        reducedMotion: SpeechKitVoiceAssistantElement.#reducedMotion()
+      };
+      for (const wave of this.#waveforms) wave.onFrame(input, output, now, options);
+    }
     this.#rafId = requestAnimationFrame(this.#loop);
   };
 
@@ -544,14 +620,32 @@ export class SpeechKitVoiceAssistantElement extends SpeechKitElement {
     return orb;
   }
 
+  /**
+   * The variant's motif for the visual slot: the Aura orb (default) or the
+   * waveform canvas. `layout` only matters for the waveform — round slots
+   * (bare orb, watch face, hero) draw the radial rim, the compact pill and
+   * keyboard bar draw the linear strip.
+   */
+  #visual(layout: WaveformLayout): HTMLElement {
+    if (this.variant === "waveform") {
+      const wave = new AssistantWaveformVisual(layout);
+      wave.element.addEventListener("click", () => this.#interrupt());
+      this.#orbButtons.push(wave.element);
+      this.#waveforms.push(wave);
+      return wave.element;
+    }
+    return this.#orb();
+  }
+
   #skeleton(): HTMLElement {
     const wrap = document.createElement("div");
     wrap.className = "va";
     wrap.setAttribute("part", "assistant");
     this.#orbButtons = [];
+    this.#waveforms = [];
 
     if (this.size === "orb") {
-      wrap.append(this.#orb());
+      wrap.append(this.#visual("radial"));
       return wrap;
     }
 
@@ -561,7 +655,7 @@ export class SpeechKitVoiceAssistantElement extends SpeechKitElement {
       const hero = document.createElement("div");
       hero.className = "hero";
       hero.setAttribute("part", "hero");
-      hero.append(this.#orb());
+      hero.append(this.#visual("radial"));
       this.#statusPill = document.createElement("span");
       this.#statusPill.className = "status-pill";
       this.#statusPill.setAttribute("part", "status");
@@ -601,7 +695,7 @@ export class SpeechKitVoiceAssistantElement extends SpeechKitElement {
       this.#watchLine = document.createElement("div");
       this.#watchLine.className = "watch-line";
       this.#watchLine.setAttribute("aria-live", "polite");
-      shell.append(this.#orb(), this.#watchStatus, this.#watchLine);
+      shell.append(this.#visual("radial"), this.#watchStatus, this.#watchLine);
       wrap.append(shell);
     } else {
       const shell = document.createElement("div");
@@ -613,7 +707,7 @@ export class SpeechKitVoiceAssistantElement extends SpeechKitElement {
       const dot = document.createElement("span");
       dot.className = "status-dot";
       dot.setAttribute("aria-hidden", "true");
-      shell.append(this.#orb(), this.#compactLine, dot);
+      shell.append(this.#visual("linear"), this.#compactLine, dot);
       wrap.append(shell);
     }
     return wrap;
@@ -668,7 +762,7 @@ export class SpeechKitVoiceAssistantElement extends SpeechKitElement {
 
   protected override render(): void {
     const messages = this.msgs();
-    const key = `${this.size}/${this.frame}/${this.markSrc ?? ""}`;
+    const key = `${this.size}/${this.frame}/${this.variant}/${this.markSrc ?? ""}`;
     if (this.#wrap && this.#skeletonKey !== key) {
       this.#wrap.remove();
       this.#wrap = null;
@@ -689,6 +783,7 @@ export class SpeechKitVoiceAssistantElement extends SpeechKitElement {
     this.#wrap.dataset["status"] = status;
     this.#wrap.dataset["aura"] = this.auraState;
     this.#wrap.dataset["frame"] = this.frame;
+    this.#wrap.dataset["variant"] = this.variant;
 
     const label = this.#statusLabel(status, messages);
     const speaking = status === "speaking";

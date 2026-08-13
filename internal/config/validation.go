@@ -232,6 +232,41 @@ func NormalizeWakewordThreshold(value float64) float64 {
 	return value
 }
 
+// Voice Assistant appearance vocabulary (speechkit.voice_ui.v1): the visual
+// variant and the semantic brand mark of the speechkit-voice-assistant
+// element. The same ids are used by the Device settings UI, the server
+// [server.assistant_ui] block, and the Android appearance setting.
+const (
+	AssistantVariantAura     = "aura"
+	AssistantVariantWaveform = "waveform"
+
+	AssistantMarkRosette = "rosette"
+	AssistantMarkK       = "k"
+	AssistantMarkNone    = "none"
+)
+
+// NormalizeAssistantVariant coerces unknown values to the default Aura orb.
+func NormalizeAssistantVariant(value string) string {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case AssistantVariantWaveform:
+		return AssistantVariantWaveform
+	default:
+		return AssistantVariantAura
+	}
+}
+
+// NormalizeAssistantMark coerces unknown values to the standard rosette mark.
+func NormalizeAssistantMark(value string) string {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case AssistantMarkK:
+		return AssistantMarkK
+	case AssistantMarkNone:
+		return AssistantMarkNone
+	default:
+		return AssistantMarkRosette
+	}
+}
+
 func NormalizeOverlayFeedbackMode(value, fallback string) string {
 	switch strings.ToLower(strings.TrimSpace(value)) {
 	case OverlayFeedbackModeBigProductivity:

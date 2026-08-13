@@ -11,11 +11,41 @@ Native surfaces (Compose) implement spec parity from the shipped
 
 | Element | Purpose |
 | --- | --- |
+| `<speechkit-voice-assistant>` | The standard Voice Assistant surface (Aura Orb). One element serves every frame: `size="orb"` (bare visual for hosts with their own chrome), `compact` (pill / keyboard bar / watch face), `expanded` (hero + status + teleprompter turn list). See below. |
 | `<speechkit-voice-button>` | The standard split button: primary segment starts/stops Dictation; the secondary segment (`agent` attribute; chevron click or long-press) starts the Voice Agent. Without the `voice_agent` capability it renders locked and shows the denial guidance instead of disappearing. |
 | `<speechkit-voice-overlay>` | Compact ephemeral glass voice-agent overlay: teleprompter turn list (drafts dimmed, finals solid), autoscroll + jump-to-live, tap-to-interrupt orb, consent gate, ended/reconnect stage, Escape exit. |
 | `<speechkit-voice-visualizer>` | Orb/pill/dot audio-state indicator (`state`, `level`), honoring `prefers-reduced-motion`. |
 | `<speechkit-voice-consent>` | Fail-closed voice consent gate (`one_shot` / `continuous` scopes). |
 | `<speechkit-voice-provider>` | Context provider distributing one controller to a subtree. |
+
+## Voice Assistant (`<speechkit-voice-assistant>`)
+
+The canonical Voice Assistant UI module. Attach a controller (or use the
+ready-made adapter below), and the element renders the full experience:
+state-coupled orb animation, status labels in 6 locales, live teleprompter
+transcript, and tap-to-interrupt barge-in.
+
+| Attribute | Values | Meaning |
+| --- | --- | --- |
+| `size` | `orb` \| `compact` (default) \| `expanded` | Bare visual / pill–bar–watch face / hero + transcript. |
+| `frame` | `overlay` \| `keyboard` \| `watch` \| `phone` \| `panel` (default) | Host surface; `keyboard` renders the full-width inline bar, `watch` the round face. |
+| `variant` | `aura` (default) \| `waveform` | Visual motif: Aura Orb or the dual-hue Glass Waveform. Everything else is identical across variants. |
+| `transcript` | boolean | Off = animation/status only; compact shows at most the last sentence. |
+| `mark-src` | URL | Host-provided brand image in the orb centre (the kit ships no brand asset; no mark slot in `waveform`). |
+| `aura-state` | 8 orb states | Host FSM override for the orb visual. |
+
+Semantic mark ids (`rosette \| k \| none`) live in the `./marks` subpath:
+
+```ts
+import { resolveMarkSrc, semanticMarkRatio } from "@kombifyio/speechkit-voice-ui/marks";
+
+const src = resolveMarkSrc(settings.assistantMark, { rosette: "/rosette.png", k: "/k.png" });
+element.markSrc = src; // null removes the mark (pure orb)
+```
+
+Native parity ports (Compose, LVGL) implement the `assistant` and
+`assistant-variants` blocks in `tokens.json` plus the spec section — never a
+re-interpretation of the visuals.
 
 ## Quick start (plain HTML)
 

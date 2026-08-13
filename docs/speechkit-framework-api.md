@@ -252,3 +252,50 @@ Since v0.23.1 each readiness item also includes:
 This lets hosts build setup flows without guessing provider-specific requirements or embedding secrets into the framework. Local Built-in Assist and Voice Agent profiles expose GGUF artifacts through the same contract, so external tools can download/select the model before activation. SpeechKit bundles and supervises the llama.cpp OpenAI-compatible server; the GGUF artifact is the model file loaded by that managed runtime.
 
 The artifact model is split into a static catalog plus a status resolver. Static artifact metadata can be read without probing local runtimes; readiness uses bounded runtime checks and skips Ollama network probing by default, while the interactive artifact endpoint can include availability probes for the desktop setup UI.
+
+## Voice UI Kit (`@kombifyio/speechkit-voice-ui`)
+
+SpeechKit ships the Voice Assistant UI as a framework component: the
+`@kombifyio/speechkit-voice-ui` npm package (`speechkit.voice_ui.v1`). It is
+framework-neutral custom elements plus design tokens — no React, Svelte, or
+LiveKit dependency — and it is the single standard UI module every SpeechKit
+surface renders: the Windows client overlay, the server web page, the Android
+Compose port, and any embedder.
+
+The canonical element is `<speechkit-voice-assistant>`:
+
+- `size="orb|compact|expanded"` and `frame="overlay|keyboard|watch|phone|panel"`
+  select the surface shape; one element serves every host.
+- `variant="aura|waveform"` selects the visual motif (Aura Orb default; Glass
+  Waveform preset). The variant swaps only the motif — states, transcript,
+  interaction, and localization are identical.
+- `mark-src` places a host-provided brand image in the orb centre; the
+  published kit is brand-neutral and ships no asset. The semantic mark
+  vocabulary (`rosette|k|none`) and its URL mapping live in the `./marks`
+  subpath so host settings agree on the same ids.
+- The visual language is machine-readable in `tokens.json` (`assistant` and
+  `assistant-variants` blocks) — native ports implement those tokens, never a
+  re-interpretation.
+
+Turnkey integration against any SpeechKit server (self-hosted or hosted):
+
+```ts
+import "@kombifyio/speechkit-voice-ui/define";
+import { createVoiceAgentUiController } from "@kombifyio/speechkit-voice-ui/voiceagent-adapter";
+
+const controller = createVoiceAgentUiController({
+  serverUrl: "https://speechkit.example.com",
+  token: sessionToken,
+  start: { provider: "deepgram" },
+});
+document.querySelector("speechkit-voice-assistant").controller = controller;
+```
+
+The adapter owns microphone capture, the ticket WebSocket, playback with
+barge-in flushing, and level metering; the provider that answers is whatever
+the server's Voice Agent settings select (Deepgram and AssemblyAI are the
+first-class managed providers). The kit itself holds no session FSM, provider
+keys, tickets, or entitlement authority.
+
+Normative details: `clients/typescript/packages/voice-ui/spec/voice-ui.spec.md`
+and the package README.

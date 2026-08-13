@@ -9,6 +9,41 @@ maintainers. The release linter
 (`npm run release:lint -- --version vX.Y.Z`) refuses internal tracker
 IDs, source paths, and other maintainer-only vocabulary.
 
+## [0.55.0](https://github.com/kombifyio/SpeechKit/compare/v0.54.10...v0.55.0) (2026-08-13)
+
+### Highlights
+
+- **One Voice Assistant look everywhere**: the same animated assistant —
+  the Aura orb or the new Waveform style — now renders identically in the
+  desktop app and on your server's web page.
+- **Make it yours**: pick the animation, the centre logo, and whether the
+  live transcript shows by default, straight from Settings with a live
+  preview.
+- **A modern voice overlay**: the desktop Voice Agent window trades its
+  classic titlebar for a translucent glass card that keeps the focus on
+  the conversation.
+- **Talk to your server from any browser**: every SpeechKit server now
+  serves a ready-to-use Voice Assistant page — open it, connect, and
+  start talking.
+
+### Added
+
+* **desktop:** focus the glass overlay on the animation and the dialog ([e3642e3](https://github.com/kombifyio/SpeechKit/commit/e3642e357ef00bc579a43174ff3fac7cdd407ed5))
+* **desktop:** hover-reveal the speaker row and drop the hero detail line ([ad93074](https://github.com/kombifyio/SpeechKit/commit/ad93074e1d0cb96022101249aa8b3fe917d43023))
+* **desktop:** Voice Assistant appearance settings and glass overlay ([601d0be](https://github.com/kombifyio/SpeechKit/commit/601d0be405c09e80f26b14f1b9e7deffdc8b624b))
+* **server:** /assistant — the hosted Voice Assistant web page ([ed0d402](https://github.com/kombifyio/SpeechKit/commit/ed0d402af2d54e06472fa17156f525ccfdf6c3a5))
+* **voice-ui:** waveform variant, semantic marks, and OSS lab guard ([64ede5d](https://github.com/kombifyio/SpeechKit/commit/64ede5d3900267c29c7eff6b6784e464b280b44b))
+
+
+### Fixed
+
+* **delivery:** migrate repository auth contract ([#273](https://github.com/kombifyio/SpeechKit/issues/273)) ([865f99d](https://github.com/kombifyio/SpeechKit/commit/865f99dfa38f6fa01a3616e290ad5e93c88d5b42))
+* **desktop:** open the app when you open the app ([5ae847d](https://github.com/kombifyio/SpeechKit/commit/5ae847d4c39222a8ca1d681f1aae42023a94add2))
+* **desktop:** stop a hung Voice Agent from freezing the app ([287fd11](https://github.com/kombifyio/SpeechKit/commit/287fd119fab49efd7aeae9e25540f78afcf267f1))
+* **release:** keep curated highlights out of Release Please's way ([611d6e5](https://github.com/kombifyio/SpeechKit/commit/611d6e5334cd3840c8d9c6c1b831678989ce1986))
+* **release:** stop the version sync from timing out on a full clone ([be6fda6](https://github.com/kombifyio/SpeechKit/commit/be6fda6831112f8652222e25032bf2742171f647))
+* **release:** verify existing npm package contents ([#272](https://github.com/kombifyio/SpeechKit/issues/272)) ([3edd753](https://github.com/kombifyio/SpeechKit/commit/3edd753f7c3f9a3f5fa1f35334c0ae24ea01151f))
+
 ## [0.54.10](https://github.com/kombifyio/SpeechKit/compare/v0.54.1...v0.54.10) (2026-08-13)
 
 Speech provider and update reliability release. No existing public API was removed.

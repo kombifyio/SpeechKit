@@ -18,6 +18,22 @@ importers:
         specifier: ^3.2.4
         version: 3.2.7(@types/node@22.20.1)(happy-dom@20.11.1)
 
+  apps/assistant-web:
+    dependencies:
+      '@kombifyio/speechkit-voice-ui':
+        specifier: workspace:*
+        version: link:../../packages/voice-ui
+      '@kombifyio/speechkit-voiceagent-client':
+        specifier: workspace:*
+        version: link:../../packages/voiceagent-client
+    devDependencies:
+      esbuild:
+        specifier: ^0.25.0
+        version: 0.25.12
+      typescript:
+        specifier: ^5.9.3
+        version: 5.9.3
+
   packages/client:
     devDependencies:
       '@types/node':

@@ -1,0 +1,66 @@
+<!doctype html>
+<!-- GENERATED FILE — do not edit the embedded copy. Source:
+     clients/typescript/apps/assistant-web (pnpm --filter @kombifyio/speechkit-assistant-web build). -->
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<meta name="color-scheme" content="dark light" />
+<title>SpeechKit Voice Assistant</title>
+<style>
+/*__APP_STYLE__*/
+</style>
+</head>
+<body data-smoke-token="__SPEECHKIT_SMOKE_TOKEN__">
+<main class="shell">
+  <header class="topbar">
+    <div class="topbar-title">
+      <span class="kicker">SpeechKit</span>
+      <h1>Voice Assistant</h1>
+    </div>
+    <div class="topbar-actions">
+      <button type="button" id="appearance-toggle" aria-haspopup="true" aria-expanded="false" title="Appearance">Appearance</button>
+      <button type="button" id="session-toggle" class="primary" disabled>Start</button>
+    </div>
+  </header>
+
+  <section id="appearance-panel" class="appearance-panel" hidden>
+    <div class="field">
+      <span class="field-label">Animation</span>
+      <div class="chip-row" id="variant-chips">
+        <button type="button" data-variant="aura">Aura Orb</button>
+        <button type="button" data-variant="waveform">Waveform</button>
+      </div>
+    </div>
+    <div class="field">
+      <span class="field-label">Logo</span>
+      <div class="chip-row" id="mark-chips">
+        <button type="button" data-mark="rosette">Rosette</button>
+        <button type="button" data-mark="k">k monogram</button>
+        <button type="button" data-mark="none">None</button>
+      </div>
+    </div>
+    <label class="field field-inline">
+      <input type="checkbox" id="transcript-toggle" />
+      <span>Show live transcript</span>
+    </label>
+    <button type="button" id="appearance-reset" class="subtle">Use server defaults</button>
+  </section>
+
+  <section class="assistant-host">
+    <speechkit-voice-assistant id="assistant" size="expanded" frame="panel" transcript></speechkit-voice-assistant>
+  </section>
+
+  <footer class="statusbar">
+    <span id="connection-note">Checking server…</span>
+    <label class="token-row" id="token-row" hidden>
+      <span>Bearer token</span>
+      <input type="password" id="token-input" autocomplete="off" placeholder="paste your server token" />
+    </label>
+  </footer>
+</main>
+<script>
+/*__APP_SCRIPT__*/
+</script>
+</body>
+</html>

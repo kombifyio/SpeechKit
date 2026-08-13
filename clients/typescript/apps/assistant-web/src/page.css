@@ -1,0 +1,120 @@
+/* Page shell around the kit element. The kit's own tokens.css is prepended by
+   the build; these rules only lay out the page and keep contrast independent
+   of any backdrop effects. */
+:root {
+  color-scheme: dark;
+  --page-bg: #0b0f14;
+  --page-panel: rgba(20, 24, 29, 0.72);
+  --page-border: rgba(242, 245, 247, 0.12);
+  --page-text: #f2f5f7;
+  --page-text-muted: rgba(242, 245, 247, 0.6);
+  --page-accent: oklch(0.72 0.12 210);
+}
+* { box-sizing: border-box; }
+html, body { height: 100%; }
+body {
+  margin: 0;
+  font-family: "Segoe UI Variable", "Segoe UI", system-ui, sans-serif;
+  font-size: 14px;
+  color: var(--page-text);
+  background:
+    radial-gradient(ellipse at 20% 0%, rgba(56, 189, 248, 0.08), transparent 45%),
+    radial-gradient(ellipse at 90% 100%, rgba(129, 140, 248, 0.07), transparent 50%),
+    var(--page-bg);
+}
+.shell {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  height: 100dvh;
+  max-width: 720px;
+  margin: 0 auto;
+  padding: 16px;
+}
+.topbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.kicker {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--page-text-muted);
+}
+.topbar h1 { margin: 0; font-size: 18px; }
+.topbar-actions { display: flex; gap: 8px; }
+button {
+  font: inherit;
+  color: var(--page-text);
+  background: var(--page-panel);
+  border: 1px solid var(--page-border);
+  border-radius: 999px;
+  padding: 7px 14px;
+  cursor: pointer;
+}
+button:hover { border-color: rgba(242, 245, 247, 0.3); }
+button.primary {
+  background: color-mix(in srgb, var(--page-accent) 24%, transparent);
+  border-color: color-mix(in srgb, var(--page-accent) 45%, transparent);
+}
+button:disabled { opacity: 0.5; cursor: default; }
+button.subtle { border: 0; background: transparent; color: var(--page-text-muted); padding: 4px 8px; }
+.appearance-panel {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 14px;
+  border: 1px solid var(--page-border);
+  border-radius: 16px;
+  background: var(--page-panel);
+  padding: 10px 14px;
+}
+.field { display: flex; align-items: center; gap: 8px; }
+.field-label, .token-row span {
+  font-size: 11px;
+  color: var(--page-text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+.chip-row { display: flex; gap: 6px; }
+.chip-row button { padding: 4px 10px; font-size: 12px; }
+.chip-row button[data-active="true"] {
+  border-color: color-mix(in srgb, var(--page-accent) 60%, transparent);
+  background: color-mix(in srgb, var(--page-accent) 18%, transparent);
+}
+.field-inline { font-size: 13px; gap: 6px; }
+.assistant-host {
+  flex: 1;
+  min-height: 0;
+  border: 1px solid var(--page-border);
+  border-radius: 20px;
+  background: var(--page-panel);
+  overflow: hidden;
+}
+.assistant-host speechkit-voice-assistant { display: block; height: 100%; }
+.statusbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 12px;
+  color: var(--page-text-muted);
+}
+.token-row { display: flex; align-items: center; gap: 8px; }
+.token-row input {
+  font: inherit;
+  color: var(--page-text);
+  background: var(--page-panel);
+  border: 1px solid var(--page-border);
+  border-radius: 10px;
+  padding: 5px 9px;
+  min-width: 220px;
+}
+@media (prefers-color-scheme: light) {
+  :root {
+    color-scheme: light;
+    --page-bg: #f4f6f8;
+    --page-panel: rgba(255, 255, 255, 0.82);
+    --page-border: rgba(16, 20, 24, 0.12);
+    --page-text: #101418;
+    --page-text-muted: rgba(16, 20, 24, 0.55);
+  }
+}

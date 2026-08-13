@@ -17,6 +17,10 @@
   --sk-assistant-mark-ratio: 34%;
   --sk-assistant-user-dot: #8fa9ff;
   --sk-assistant-agent-dot: #47e3c1;
+  --sk-assistant-wave-input: #34d399;
+  --sk-assistant-wave-output: var(--sk-accent);
+  --sk-assistant-wave-compact-w: 72px;
+  --sk-assistant-wave-compact-h: 22px;
   --sk-aura-inactive-a: 156, 163, 184;
   --sk-aura-inactive-b: 100, 116, 139;
   --sk-aura-connecting-a: 56, 189, 248;

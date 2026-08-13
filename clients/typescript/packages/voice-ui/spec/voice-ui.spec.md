@@ -42,11 +42,13 @@ normative) and replayed by `spec/fixtures/voice-ui-turns.v1.json`:
 ## Voice Assistant element (`speechkit-voice-assistant`)
 
 The default Voice Assistant surface — the "Aura Orb" visual language
-(decision 2026-08-10; promoted from the voice-ui lab, where the Glass
-Waveform and Ring variants remain as future customization presets).
+(decision 2026-08-10, promoted from the voice-ui lab). The Glass Waveform is
+the supported customization preset, promoted as `variant="waveform"`
+(decision 2026-08-13); the Ring variant remains a lab-only exploration.
 One element serves every kit frame; native implementations (Compose, LVGL)
-port this section plus the `assistant` block in `tokens.json` (SSOT for
-layers, per-status tones, timings, and level formulas).
+port this section plus the `assistant` block (and, for variants, the
+`assistant-variants` block) in `tokens.json` (SSOT for layers, per-status
+tones, timings, and level formulas).
 
 Attribute contract (all optional):
 
@@ -55,7 +57,8 @@ Attribute contract (all optional):
 | `size` | `orb` \| `compact` (default) \| `expanded` | `orb` renders the bare orb for hosts that own their chrome (Device-Target prompter, Android overlay, box); `compact` the pill/bar/watch face; `expanded` the hero orb + status pill + teleprompter turn list. |
 | `frame` | `overlay` \| `keyboard` \| `watch` \| `phone` \| `panel` (default) | Host surface. Compact `keyboard` renders the full-width inline bar; compact `watch` the round watch face; other frames the pill. |
 | `transcript` | boolean attribute | Off = animation/status only. Compact shows at most the last sentence of the newest turn; expanded shows the full turn list. Ignored for `size="orb"`. |
-| `mark-src` | URL | Host-provided brand image rendered in the orb centre; absent = pure orb. The kit ships no brand asset — kombify hosts pass the AI-teal rosette (standard) or the k monogram. |
+| `variant` | `aura` (default) \| `waveform` | Motif in the visual slot. `waveform` renders the dual-hue level history (radial rim in round slots, linear strip in the compact pill/keyboard bar) per `tokens.json → assistant-variants.waveform`; shells, status, transcript, and interaction (incl. barge-in tap) are identical across variants. |
+| `mark-src` | URL | Host-provided brand image rendered in the orb centre; absent = pure orb. The kit ships no brand asset — kombify hosts pass the AI-teal rosette (standard) or the k monogram, mapped from the semantic ids in the `./marks` subpath (`rosette \| k \| none`). The waveform variant has no mark slot. |
 | `aura-state` | one of the 8 orb states below | Host override for the orb visual. Absent = derived from the session status. |
 | `locale` | BCP 47 | Inherited catalog resolution (`sk.voice.*`). |
 

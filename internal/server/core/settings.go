@@ -251,6 +251,12 @@ func serverSettingsSnapshot(app *App) map[string]any {
 			"settings_persisted":   settingsPersisted,
 			"restart_required":     restartRequired,
 		},
+		"assistant_ui": map[string]any{
+			"enabled":            envBoolDefault(config.ServerAssistantUIEnv, true),
+			"variant":            config.NormalizeAssistantVariant(cfg.Server.AssistantUI.Variant),
+			"mark":               config.NormalizeAssistantMark(cfg.Server.AssistantUI.Mark),
+			"transcript_default": cfg.Server.AssistantUI.TranscriptDefault,
+		},
 		"auth": map[string]any{
 			"mode":               cfg.Server.AuthMode,
 			"bearer_token_env":   firstNonEmpty(cfg.Server.BearerTokenEnv, "SPEECHKIT_SERVER_TOKEN"),
@@ -357,7 +363,7 @@ func serverSettingsWriteAllowed(r *http.Request, app *App) bool {
 
 func serverSettingsBootstrapSnapshot(full map[string]any) map[string]any {
 	out := map[string]any{}
-	for _, key := range []string{"version", "status", "onboarding", "catalog"} {
+	for _, key := range []string{"version", "status", "onboarding", "catalog", "assistant_ui"} {
 		if value, ok := full[key]; ok {
 			out[key] = value
 		}

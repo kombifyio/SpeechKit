@@ -88,9 +88,19 @@ export {
   sessionStatusToAuraState,
   type VoiceAssistantSize,
   type VoiceAssistantFrame,
+  type VoiceAssistantVariant,
   type VoiceAssistantStatus,
   type VoiceAuraState
 } from "./elements/voice-assistant.js";
+
+export {
+  SEMANTIC_VOICE_MARKS,
+  isSemanticVoiceMark,
+  resolveMarkSrc,
+  semanticMarkRatio,
+  type SemanticVoiceMark,
+  type SemanticMarkAssets
+} from "./marks.js";
 
 import { SpeechKitVoiceProviderElement } from "./core/context.js";
 import { SpeechKitVoiceButtonElement } from "./elements/voice-button.js";

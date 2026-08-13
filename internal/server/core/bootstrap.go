@@ -419,6 +419,7 @@ func newServerApp(cfg *config.Config, opts RunOptions) *App {
 func registerCoreEndpoints(app *App) {
 	registerHealth(app)
 	registerTestUI(app)
+	registerAssistantUI(app)
 	registerServerSettings(app)
 	registerDeploymentStatus(app)
 	registerPprof(app)

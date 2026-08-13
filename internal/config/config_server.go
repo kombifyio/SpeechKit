@@ -100,6 +100,11 @@ type ServerConfig struct {
 	// docs/wakeword-training-data.md.
 	TrainingData ServerTrainingDataConfig `toml:"training_data"`
 
+	// AssistantUI sets the default appearance of the /assistant web page
+	// (the server-hosted Voice Assistant surface). Per-browser overrides
+	// stay client-side; this block is the operator default.
+	AssistantUI ServerAssistantUIConfig `toml:"assistant_ui"`
+
 	// Security configures the HTTP security-header middleware (CSP,
 	// X-Frame-Options, Referrer-Policy, optional HSTS). Headers are on by
 	// default; the zero value yields a strict baseline.
@@ -378,6 +383,16 @@ type ServerToolBridgeConfig struct {
 
 // ServerTrainingDataConfig governs the server-side wake-word
 // activation pipeline. AcceptUploads defaults to false so POST
+// ServerAssistantUIConfig is the operator default appearance for the
+// /assistant web page (speechkit-voice-assistant element). Values share the
+// device vocabulary: variant "aura" | "waveform", mark "rosette" | "k" |
+// "none". Unknown values normalize to the defaults at read time.
+type ServerAssistantUIConfig struct {
+	Variant           string `toml:"variant"`
+	Mark              string `toml:"mark"`
+	TranscriptDefault bool   `toml:"transcript_default"`
+}
+
 // /v1/wakeword/activations returns 503 until an operator explicitly
 // opts in.
 type ServerTrainingDataConfig struct {

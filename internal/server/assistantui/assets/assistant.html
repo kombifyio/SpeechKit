@@ -1,0 +1,943 @@
+<!doctype html>
+<!-- GENERATED FILE — do not edit the embedded copy. Source:
+     clients/typescript/apps/assistant-web (pnpm --filter @kombifyio/speechkit-assistant-web build). -->
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<meta name="color-scheme" content="dark light" />
+<title>SpeechKit Voice Assistant</title>
+<style>
+/* GENERATED FILE — do not edit. Source: tokens.json (scripts/build-tokens.mjs). */
+
+:root {
+  --sk-blur: 16px;
+  --sk-radius: 14px;
+  --sk-radius-pill: 999px;
+  --sk-gap: 8px;
+  --sk-font-size: 13px;
+  --sk-font-size-small: 11px;
+  --sk-motion-fast: 80ms;
+  --sk-motion-slow: 1600ms;
+  --sk-orb-size: 56px;
+  --sk-orb-core-size: 22px;
+  --sk-assistant-orb: 30px;
+  --sk-assistant-orb-watch: 84px;
+  --sk-assistant-orb-hero: 92px;
+  --sk-assistant-mark-ratio: 34%;
+  --sk-assistant-user-dot: #8fa9ff;
+  --sk-assistant-agent-dot: #47e3c1;
+  --sk-assistant-wave-input: #34d399;
+  --sk-assistant-wave-output: var(--sk-accent);
+  --sk-assistant-wave-compact-w: 72px;
+  --sk-assistant-wave-compact-h: 22px;
+  --sk-aura-inactive-a: 156, 163, 184;
+  --sk-aura-inactive-b: 100, 116, 139;
+  --sk-aura-connecting-a: 56, 189, 248;
+  --sk-aura-connecting-b: 129, 140, 248;
+  --sk-aura-listening-a: 52, 211, 153;
+  --sk-aura-listening-b: 56, 189, 248;
+  --sk-aura-processing-a: 251, 191, 36;
+  --sk-aura-processing-b: 244, 114, 182;
+  --sk-aura-speaking-a: 129, 140, 248;
+  --sk-aura-speaking-b: 167, 139, 250;
+  --sk-aura-recovering-a: 34, 211, 238;
+  --sk-aura-recovering-b: 129, 140, 248;
+  --sk-aura-settling-a: 52, 211, 153;
+  --sk-aura-settling-b: 129, 140, 248;
+  --sk-aura-error-a: 248, 113, 113;
+  --sk-aura-error-b: 251, 113, 133;
+  --sk-accent: oklch(0.65 0.13 210);
+  --sk-accent-contrast: #ffffff;
+  --sk-surface: color-mix(in srgb, #ffffff 72%, transparent);
+  --sk-surface-strong: color-mix(in srgb, #ffffff 92%, transparent);
+  --sk-text: #101418;
+  --sk-text-muted: color-mix(in srgb, #101418 55%, transparent);
+  --sk-border: color-mix(in srgb, #101418 12%, transparent);
+  --sk-shadow: 0 12px 40px -12px rgba(16, 20, 24, 0.25);
+  --sk-live: #dc2626;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-sk-theme="light"]) {
+    --sk-accent: oklch(0.72 0.12 210);
+    --sk-accent-contrast: #0b1014;
+    --sk-surface: color-mix(in srgb, #14181d 68%, transparent);
+    --sk-surface-strong: color-mix(in srgb, #14181d 90%, transparent);
+    --sk-text: #f2f5f7;
+    --sk-text-muted: color-mix(in srgb, #f2f5f7 60%, transparent);
+    --sk-border: color-mix(in srgb, #f2f5f7 14%, transparent);
+    --sk-shadow: 0 12px 40px -12px rgba(0, 0, 0, 0.6);
+    --sk-live: #f87171;
+  }
+}
+
+[data-sk-theme="dark"] {
+  --sk-accent: oklch(0.72 0.12 210);
+  --sk-accent-contrast: #0b1014;
+  --sk-surface: color-mix(in srgb, #14181d 68%, transparent);
+  --sk-surface-strong: color-mix(in srgb, #14181d 90%, transparent);
+  --sk-text: #f2f5f7;
+  --sk-text-muted: color-mix(in srgb, #f2f5f7 60%, transparent);
+  --sk-border: color-mix(in srgb, #f2f5f7 14%, transparent);
+  --sk-shadow: 0 12px 40px -12px rgba(0, 0, 0, 0.6);
+  --sk-live: #f87171;
+}
+
+[data-sk-theme="light"] {
+  --sk-accent: oklch(0.65 0.13 210);
+  --sk-accent-contrast: #ffffff;
+  --sk-surface: color-mix(in srgb, #ffffff 72%, transparent);
+  --sk-surface-strong: color-mix(in srgb, #ffffff 92%, transparent);
+  --sk-text: #101418;
+  --sk-text-muted: color-mix(in srgb, #101418 55%, transparent);
+  --sk-border: color-mix(in srgb, #101418 12%, transparent);
+  --sk-shadow: 0 12px 40px -12px rgba(16, 20, 24, 0.25);
+  --sk-live: #dc2626;
+}
+
+/* Page shell around the kit element. The kit's own tokens.css is prepended by
+   the build; these rules only lay out the page and keep contrast independent
+   of any backdrop effects. */
+:root {
+  color-scheme: dark;
+  --page-bg: #0b0f14;
+  --page-panel: rgba(20, 24, 29, 0.72);
+  --page-border: rgba(242, 245, 247, 0.12);
+  --page-text: #f2f5f7;
+  --page-text-muted: rgba(242, 245, 247, 0.6);
+  --page-accent: oklch(0.72 0.12 210);
+}
+* { box-sizing: border-box; }
+html, body { height: 100%; }
+body {
+  margin: 0;
+  font-family: "Segoe UI Variable", "Segoe UI", system-ui, sans-serif;
+  font-size: 14px;
+  color: var(--page-text);
+  background:
+    radial-gradient(ellipse at 20% 0%, rgba(56, 189, 248, 0.08), transparent 45%),
+    radial-gradient(ellipse at 90% 100%, rgba(129, 140, 248, 0.07), transparent 50%),
+    var(--page-bg);
+}
+.shell {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  height: 100dvh;
+  max-width: 720px;
+  margin: 0 auto;
+  padding: 16px;
+}
+.topbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.kicker {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--page-text-muted);
+}
+.topbar h1 { margin: 0; font-size: 18px; }
+.topbar-actions { display: flex; gap: 8px; }
+button {
+  font: inherit;
+  color: var(--page-text);
+  background: var(--page-panel);
+  border: 1px solid var(--page-border);
+  border-radius: 999px;
+  padding: 7px 14px;
+  cursor: pointer;
+}
+button:hover { border-color: rgba(242, 245, 247, 0.3); }
+button.primary {
+  background: color-mix(in srgb, var(--page-accent) 24%, transparent);
+  border-color: color-mix(in srgb, var(--page-accent) 45%, transparent);
+}
+button:disabled { opacity: 0.5; cursor: default; }
+button.subtle { border: 0; background: transparent; color: var(--page-text-muted); padding: 4px 8px; }
+.appearance-panel {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 14px;
+  border: 1px solid var(--page-border);
+  border-radius: 16px;
+  background: var(--page-panel);
+  padding: 10px 14px;
+}
+.field { display: flex; align-items: center; gap: 8px; }
+.field-label, .token-row span {
+  font-size: 11px;
+  color: var(--page-text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+.chip-row { display: flex; gap: 6px; }
+.chip-row button { padding: 4px 10px; font-size: 12px; }
+.chip-row button[data-active="true"] {
+  border-color: color-mix(in srgb, var(--page-accent) 60%, transparent);
+  background: color-mix(in srgb, var(--page-accent) 18%, transparent);
+}
+.field-inline { font-size: 13px; gap: 6px; }
+.assistant-host {
+  flex: 1;
+  min-height: 0;
+  border: 1px solid var(--page-border);
+  border-radius: 20px;
+  background: var(--page-panel);
+  overflow: hidden;
+}
+.assistant-host speechkit-voice-assistant { display: block; height: 100%; }
+.statusbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 12px;
+  color: var(--page-text-muted);
+}
+.token-row { display: flex; align-items: center; gap: 8px; }
+.token-row input {
+  font: inherit;
+  color: var(--page-text);
+  background: var(--page-panel);
+  border: 1px solid var(--page-border);
+  border-radius: 10px;
+  padding: 5px 9px;
+  min-width: 220px;
+}
+@media (prefers-color-scheme: light) {
+  :root {
+    color-scheme: light;
+    --page-bg: #f4f6f8;
+    --page-panel: rgba(255, 255, 255, 0.82);
+    --page-border: rgba(16, 20, 24, 0.12);
+    --page-text: #101418;
+    --page-text-muted: rgba(16, 20, 24, 0.55);
+  }
+}
+</style>
+</head>
+<body data-smoke-token="__SPEECHKIT_SMOKE_TOKEN__">
+<main class="shell">
+  <header class="topbar">
+    <div class="topbar-title">
+      <span class="kicker">SpeechKit</span>
+      <h1>Voice Assistant</h1>
+    </div>
+    <div class="topbar-actions">
+      <button type="button" id="appearance-toggle" aria-haspopup="true" aria-expanded="false" title="Appearance">Appearance</button>
+      <button type="button" id="session-toggle" class="primary" disabled>Start</button>
+    </div>
+  </header>
+
+  <section id="appearance-panel" class="appearance-panel" hidden>
+    <div class="field">
+      <span class="field-label">Animation</span>
+      <div class="chip-row" id="variant-chips">
+        <button type="button" data-variant="aura">Aura Orb</button>
+        <button type="button" data-variant="waveform">Waveform</button>
+      </div>
+    </div>
+    <div class="field">
+      <span class="field-label">Logo</span>
+      <div class="chip-row" id="mark-chips">
+        <button type="button" data-mark="rosette">Rosette</button>
+        <button type="button" data-mark="k">k monogram</button>
+        <button type="button" data-mark="none">None</button>
+      </div>
+    </div>
+    <label class="field field-inline">
+      <input type="checkbox" id="transcript-toggle" />
+      <span>Show live transcript</span>
+    </label>
+    <button type="button" id="appearance-reset" class="subtle">Use server defaults</button>
+  </section>
+
+  <section class="assistant-host">
+    <speechkit-voice-assistant id="assistant" size="expanded" frame="panel" transcript></speechkit-voice-assistant>
+  </section>
+
+  <footer class="statusbar">
+    <span id="connection-note">Checking server…</span>
+    <label class="token-row" id="token-row" hidden>
+      <span>Bearer token</span>
+      <input type="password" id="token-input" autocomplete="off" placeholder="paste your server token" />
+    </label>
+  </footer>
+</main>
+<script>
+"use strict";(()=>{function $(s){return{surface:s.surface,mode:s.mode,session_id:s.session.session_id,status:"idle",transcript_draft:"",transcript_final:"",spoken_response:"",barge_in:!1,events:[]}}function ce(s,e){let t={...s,surface:e.surface,mode:e.mode,session_id:e.session_id??s.session_id,last_event_type:e.type,events:[...s.events,e]};switch(e.type){case"voice.capture_started":return{...t,status:"capturing",reason_code:void 0,denial:void 0,barge_in:!1};case"voice.capture_stopped":return{...t,status:"processing"};case"voice.transcript_draft":return{...t,status:"capturing",transcript_draft:e.text??s.transcript_draft};case"voice.transcript_final":return{...t,status:"processing",transcript_draft:"",transcript_final:e.text??s.transcript_final};case"voice.assist_result":case"voice.agent_turn":return{...t,status:e.speak_text||e.output_text?"speaking":"processing",spoken_response:e.speak_text??e.output_text??s.spoken_response};case"voice.tts_started":return{...t,status:"speaking",spoken_response:e.speak_text??s.spoken_response};case"voice.tts_finished":return{...t,status:"idle"};case"voice.cancelled":return{...t,status:"cancelled",reason_code:e.reason_code};case"voice.barge_in":return{...t,status:"capturing",barge_in:!0,reason_code:e.reason_code};case"voice.denied":return{...t,status:"denied",denial:e.error,reason_code:e.error?.reason_code??e.reason_code}}}function I(s,e){switch(e.type){case"voice.transcript_draft":return le(s,"user",e.text??"");case"voice.transcript_final":return ue(s,"user",e.text??"");case"voice.agent_turn":return e.final===!0?ue(s,"agent",e.output_text??""):le(s,"agent",e.output_text??"");case"voice.barge_in":return ze(s,"agent");default:return s}}function B(s,e){for(let t=s.length-1;t>=0;t-=1){let n=s[t];if(n!==void 0&&n.role===e&&!n.final)return t}return-1}function le(s,e,t){let n=B(s,e),r=n===-1?void 0:s[n];return r===void 0?t?[...s,{role:e,text:t,final:!1,interrupted:!1}]:s:D(s,n,{...r,text:t})}function ue(s,e,t){let n=B(s,e),r=n===-1?void 0:s[n];return r===void 0?t?[...s,{role:e,text:t,final:!0,interrupted:!1}]:s:D(s,n,{...r,text:t||r.text,final:!0})}function ze(s,e){let t=B(s,e),n=t===-1?void 0:s[t];return n===void 0?s:D(s,t,{...n,final:!0,interrupted:!0})}function D(s,e,t){let n=[...s];return n[e]=t,n}var Ve=new Set(["capturing","processing","speaking"]);function _(s){return Ve.has(s)}function P(s){for(let e of Object.getOwnPropertyNames(s)){let t=Object.getOwnPropertyDescriptor(s,e);if(!t||!("value"in t))continue;let n=Object.getPrototypeOf(s),r;for(;n&&n!==HTMLElement.prototype&&(r=Object.getOwnPropertyDescriptor(n,e),!r);)n=Object.getPrototypeOf(n);if(!r?.set)continue;let i=t.value;delete s[e],s[e]=i}}var de="speechkit-voice-controller",W=class extends Event{context;callback;subscribe;constructor(e,t,n){super("context-request",{bubbles:!0,composed:!0}),this.context=e,this.callback=t,n!==void 0&&(this.subscribe=n)}};function pe(s,e){let t;return s.dispatchEvent(new W(de,(n,r)=>{t=r,e(n)},!0)),()=>t?.()}var C=class extends HTMLElement{static tagName="speechkit-voice-provider";#e=null;#s=new Set;#t=e=>{let t=e;if(t.context===de&&t.target!==this){if(e.stopPropagation(),t.subscribe){let n=t.callback;this.#s.add(n),n(this.#e,()=>this.#s.delete(n));return}t.callback(this.#e)}};get controller(){return this.#e}set controller(e){this.#e=e;for(let t of this.#s)t(e)}connectedCallback(){P(this),this.addEventListener("context-request",this.#t)}disconnectedCallback(){this.removeEventListener("context-request",this.#t),this.#s.clear()}};var G=["en","de","es","zh-Hans","hi","ar"],T={"sk.voice.button.dictation.start":"Start voice dictation","sk.voice.button.dictation.stop":"Stop recording","sk.voice.button.cancel":"Cancel voice input","sk.voice.button.agent":"Switch to voice conversation","sk.voice.button.agent_locked":"Voice conversation (locked)","sk.voice.state.idle":"Ready","sk.voice.state.capturing":"Listening","sk.voice.state.processing":"Processing","sk.voice.state.speaking":"Speaking","sk.voice.state.cancelled":"Cancelled","sk.voice.state.denied":"Unavailable","sk.voice.agent.connecting":"Connecting","sk.voice.agent.listening":"Listening","sk.voice.agent.speaking":"Speaking","sk.voice.agent.interrupt":"Tap to interrupt","sk.voice.agent.interrupted":"Interrupted","sk.voice.agent.you":"You","sk.voice.agent.assistant":"Assistant","sk.voice.agent.live":"Live","sk.voice.agent.jumpToLive":"Jump to live","sk.voice.agent.ended":"The voice session has ended.","sk.voice.agent.reconnect":"Reconnect","sk.voice.agent.exit":"Exit voice mode","sk.voice.denied.retry":"Try again","sk.voice.consent.title":"Use voice with kombify hosted processing?","sk.voice.consent.capture":"What is captured: your microphone audio, only while you record.","sk.voice.consent.destination":"Where it goes: kombify hosted voice at api.kombify.io, to transcribe and process your speech.","sk.voice.consent.accept":"Accept and enable voice","sk.voice.consent.decline":"Decline","sk.voice.consent.declined":"Voice input is off: you declined voice capture on this surface.","sk.voice.consent.continuous":"Voice conversation streams your microphone continuously to kombify hosted voice (api.kombify.io) for the entire session \u2014 not only while you press record. Streaming stops when you exit voice mode."},Ie={"sk.voice.button.dictation.start":"Sprachdiktat starten","sk.voice.button.dictation.stop":"Aufnahme beenden","sk.voice.button.cancel":"Spracheingabe abbrechen","sk.voice.button.agent":"Zur Sprachkonversation wechseln","sk.voice.button.agent_locked":"Sprachkonversation (gesperrt)","sk.voice.state.idle":"Bereit","sk.voice.state.capturing":"H\xF6rt zu","sk.voice.state.processing":"Verarbeitet","sk.voice.state.speaking":"Antwortet","sk.voice.state.cancelled":"Abgebrochen","sk.voice.state.denied":"Nicht verf\xFCgbar","sk.voice.agent.connecting":"Verbindet","sk.voice.agent.listening":"H\xF6rt zu","sk.voice.agent.speaking":"Spricht","sk.voice.agent.interrupt":"Tippen zum Unterbrechen","sk.voice.agent.interrupted":"Unterbrochen","sk.voice.agent.you":"Du","sk.voice.agent.assistant":"Assistent","sk.voice.agent.live":"Live","sk.voice.agent.jumpToLive":"Zum Live-Ende springen","sk.voice.agent.ended":"Die Sprachsitzung wurde beendet.","sk.voice.agent.reconnect":"Erneut verbinden","sk.voice.agent.exit":"Sprachmodus beenden","sk.voice.denied.retry":"Erneut versuchen","sk.voice.consent.title":"Sprache mit kombify Hosted-Verarbeitung nutzen?","sk.voice.consent.capture":"Was erfasst wird: dein Mikrofon-Audio, nur w\xE4hrend der Aufnahme.","sk.voice.consent.destination":"Wohin es geht: kombify Hosted Voice unter api.kombify.io, um deine Sprache zu transkribieren und zu verarbeiten.","sk.voice.consent.accept":"Akzeptieren und Sprache aktivieren","sk.voice.consent.decline":"Ablehnen","sk.voice.consent.declined":"Spracheingabe ist aus: du hast die Sprachaufnahme auf dieser Oberfl\xE4che abgelehnt.","sk.voice.consent.continuous":"Die Sprachkonversation streamt dein Mikrofon w\xE4hrend der gesamten Sitzung fortlaufend an kombify Hosted Voice (api.kombify.io) \u2014 nicht nur w\xE4hrend du aufnimmst. Das Streaming endet, sobald du den Sprachmodus verl\xE4sst."},Pe={"sk.voice.button.dictation.start":"Iniciar dictado por voz","sk.voice.button.dictation.stop":"Detener la grabaci\xF3n","sk.voice.button.cancel":"Cancelar la entrada de voz","sk.voice.button.agent":"Cambiar a conversaci\xF3n por voz","sk.voice.button.agent_locked":"Conversaci\xF3n por voz (bloqueada)","sk.voice.state.idle":"Listo","sk.voice.state.capturing":"Escuchando","sk.voice.state.processing":"Procesando","sk.voice.state.speaking":"Hablando","sk.voice.state.cancelled":"Cancelado","sk.voice.state.denied":"No disponible","sk.voice.agent.connecting":"Conectando","sk.voice.agent.listening":"Escuchando","sk.voice.agent.speaking":"Hablando","sk.voice.agent.interrupt":"Toca para interrumpir","sk.voice.agent.interrupted":"Interrumpido","sk.voice.agent.you":"T\xFA","sk.voice.agent.assistant":"Asistente","sk.voice.agent.live":"En vivo","sk.voice.agent.jumpToLive":"Ir al directo","sk.voice.agent.ended":"La sesi\xF3n de voz ha terminado.","sk.voice.agent.reconnect":"Reconectar","sk.voice.agent.exit":"Salir del modo de voz","sk.voice.denied.retry":"Intentar de nuevo","sk.voice.consent.title":"\xBFUsar voz con el procesamiento alojado de kombify?","sk.voice.consent.capture":"Qu\xE9 se captura: el audio de tu micr\xF3fono, solo mientras grabas.","sk.voice.consent.destination":"Ad\xF3nde va: a la voz alojada de kombify en api.kombify.io, para transcribir y procesar tu voz.","sk.voice.consent.accept":"Aceptar y activar la voz","sk.voice.consent.decline":"Rechazar","sk.voice.consent.declined":"La entrada de voz est\xE1 desactivada: rechazaste la captura de voz en esta superficie.","sk.voice.consent.continuous":"La conversaci\xF3n por voz transmite tu micr\xF3fono de forma continua a la voz alojada de kombify (api.kombify.io) durante toda la sesi\xF3n, no solo mientras grabas. La transmisi\xF3n se detiene al salir del modo de voz."},Re={"sk.voice.button.dictation.start":"\u5F00\u59CB\u8BED\u97F3\u542C\u5199","sk.voice.button.dictation.stop":"\u505C\u6B62\u5F55\u97F3","sk.voice.button.cancel":"\u53D6\u6D88\u8BED\u97F3\u8F93\u5165","sk.voice.button.agent":"\u5207\u6362\u5230\u8BED\u97F3\u5BF9\u8BDD","sk.voice.button.agent_locked":"\u8BED\u97F3\u5BF9\u8BDD\uFF08\u5DF2\u9501\u5B9A\uFF09","sk.voice.state.idle":"\u5C31\u7EEA","sk.voice.state.capturing":"\u6B63\u5728\u8046\u542C","sk.voice.state.processing":"\u6B63\u5728\u5904\u7406","sk.voice.state.speaking":"\u6B63\u5728\u56DE\u7B54","sk.voice.state.cancelled":"\u5DF2\u53D6\u6D88","sk.voice.state.denied":"\u4E0D\u53EF\u7528","sk.voice.agent.connecting":"\u6B63\u5728\u8FDE\u63A5","sk.voice.agent.listening":"\u6B63\u5728\u8046\u542C","sk.voice.agent.speaking":"\u6B63\u5728\u56DE\u7B54","sk.voice.agent.interrupt":"\u70B9\u6309\u4EE5\u6253\u65AD","sk.voice.agent.interrupted":"\u5DF2\u6253\u65AD","sk.voice.agent.you":"\u4F60","sk.voice.agent.assistant":"\u52A9\u624B","sk.voice.agent.live":"\u5B9E\u65F6","sk.voice.agent.jumpToLive":"\u8DF3\u8F6C\u5230\u5B9E\u65F6\u4F4D\u7F6E","sk.voice.agent.ended":"\u8BED\u97F3\u4F1A\u8BDD\u5DF2\u7ED3\u675F\u3002","sk.voice.agent.reconnect":"\u91CD\u65B0\u8FDE\u63A5","sk.voice.agent.exit":"\u9000\u51FA\u8BED\u97F3\u6A21\u5F0F","sk.voice.denied.retry":"\u91CD\u8BD5","sk.voice.consent.title":"\u4F7F\u7528 kombify \u6258\u7BA1\u8BED\u97F3\u5904\u7406\uFF1F","sk.voice.consent.capture":"\u91C7\u96C6\u5185\u5BB9\uFF1A\u4EC5\u5728\u5F55\u97F3\u671F\u95F4\u91C7\u96C6\u4F60\u7684\u9EA6\u514B\u98CE\u97F3\u9891\u3002","sk.voice.consent.destination":"\u6570\u636E\u53BB\u5411\uFF1A\u53D1\u9001\u5230 api.kombify.io \u4E0A\u7684 kombify \u6258\u7BA1\u8BED\u97F3\u670D\u52A1\uFF0C\u7528\u4E8E\u8F6C\u5199\u548C\u5904\u7406\u4F60\u7684\u8BED\u97F3\u3002","sk.voice.consent.accept":"\u63A5\u53D7\u5E76\u542F\u7528\u8BED\u97F3","sk.voice.consent.decline":"\u62D2\u7EDD","sk.voice.consent.declined":"\u8BED\u97F3\u8F93\u5165\u5DF2\u5173\u95ED\uFF1A\u4F60\u5728\u6B64\u754C\u9762\u62D2\u7EDD\u4E86\u8BED\u97F3\u91C7\u96C6\u3002","sk.voice.consent.continuous":"\u8BED\u97F3\u5BF9\u8BDD\u4F1A\u5728\u6574\u4E2A\u4F1A\u8BDD\u671F\u95F4\u5C06\u4F60\u7684\u9EA6\u514B\u98CE\u97F3\u9891\u6301\u7EED\u4F20\u8F93\u5230 kombify \u6258\u7BA1\u8BED\u97F3\u670D\u52A1\uFF08api.kombify.io\uFF09\uFF0C\u800C\u4E0D\u4EC5\u662F\u5728\u5F55\u97F3\u65F6\u3002\u9000\u51FA\u8BED\u97F3\u6A21\u5F0F\u540E\u4F20\u8F93\u5373\u505C\u6B62\u3002"},Ue={"sk.voice.button.dictation.start":"\u0935\u0949\u0907\u0938 \u0921\u093F\u0915\u094D\u091F\u0947\u0936\u0928 \u0936\u0941\u0930\u0942 \u0915\u0930\u0947\u0902","sk.voice.button.dictation.stop":"\u0930\u093F\u0915\u0949\u0930\u094D\u0921\u093F\u0902\u0917 \u0930\u094B\u0915\u0947\u0902","sk.voice.button.cancel":"\u0935\u0949\u0907\u0938 \u0907\u0928\u092A\u0941\u091F \u0930\u0926\u094D\u0926 \u0915\u0930\u0947\u0902","sk.voice.button.agent":"\u0935\u0949\u0907\u0938 \u0935\u093E\u0930\u094D\u0924\u093E\u0932\u093E\u092A \u092A\u0930 \u091C\u093E\u090F\u0901","sk.voice.button.agent_locked":"\u0935\u0949\u0907\u0938 \u0935\u093E\u0930\u094D\u0924\u093E\u0932\u093E\u092A (\u0932\u0949\u0915)","sk.voice.state.idle":"\u0924\u0948\u092F\u093E\u0930","sk.voice.state.capturing":"\u0938\u0941\u0928 \u0930\u0939\u093E \u0939\u0948","sk.voice.state.processing":"\u092A\u094D\u0930\u094B\u0938\u0947\u0938 \u0939\u094B \u0930\u0939\u093E \u0939\u0948","sk.voice.state.speaking":"\u092C\u094B\u0932 \u0930\u0939\u093E \u0939\u0948","sk.voice.state.cancelled":"\u0930\u0926\u094D\u0926 \u0915\u093F\u092F\u093E \u0917\u092F\u093E","sk.voice.state.denied":"\u0909\u092A\u0932\u092C\u094D\u0927 \u0928\u0939\u0940\u0902","sk.voice.agent.connecting":"\u0915\u0928\u0947\u0915\u094D\u091F \u0939\u094B \u0930\u0939\u093E \u0939\u0948","sk.voice.agent.listening":"\u0938\u0941\u0928 \u0930\u0939\u093E \u0939\u0948","sk.voice.agent.speaking":"\u092C\u094B\u0932 \u0930\u0939\u093E \u0939\u0948","sk.voice.agent.interrupt":"\u092C\u0940\u091A \u092E\u0947\u0902 \u0930\u094B\u0915\u0928\u0947 \u0915\u0947 \u0932\u093F\u090F \u091F\u0948\u092A \u0915\u0930\u0947\u0902","sk.voice.agent.interrupted":"\u092C\u0940\u091A \u092E\u0947\u0902 \u0930\u094B\u0915\u093E \u0917\u092F\u093E","sk.voice.agent.you":"\u0906\u092A","sk.voice.agent.assistant":"\u0905\u0938\u093F\u0938\u094D\u091F\u0947\u0902\u091F","sk.voice.agent.live":"\u0932\u093E\u0907\u0935","sk.voice.agent.jumpToLive":"\u0932\u093E\u0907\u0935 \u092A\u0930 \u091C\u093E\u090F\u0901","sk.voice.agent.ended":"\u0935\u0949\u0907\u0938 \u0938\u0924\u094D\u0930 \u0938\u092E\u093E\u092A\u094D\u0924 \u0939\u094B \u0917\u092F\u093E \u0939\u0948\u0964","sk.voice.agent.reconnect":"\u092B\u093F\u0930 \u0938\u0947 \u0915\u0928\u0947\u0915\u094D\u091F \u0915\u0930\u0947\u0902","sk.voice.agent.exit":"\u0935\u0949\u0907\u0938 \u092E\u094B\u0921 \u0938\u0947 \u092C\u093E\u0939\u0930 \u0928\u093F\u0915\u0932\u0947\u0902","sk.voice.denied.retry":"\u092B\u093F\u0930 \u0938\u0947 \u0906\u091C\u093C\u092E\u093E\u090F\u0901","sk.voice.consent.title":"kombify \u0939\u094B\u0938\u094D\u091F\u0947\u0921 \u092A\u094D\u0930\u094B\u0938\u0947\u0938\u093F\u0902\u0917 \u0915\u0947 \u0938\u093E\u0925 \u0935\u0949\u0907\u0938 \u0915\u093E \u0909\u092A\u092F\u094B\u0917 \u0915\u0930\u0947\u0902?","sk.voice.consent.capture":"\u0915\u094D\u092F\u093E \u0915\u0948\u092A\u094D\u091A\u0930 \u0939\u094B\u0924\u093E \u0939\u0948: \u0906\u092A\u0915\u0947 \u092E\u093E\u0907\u0915\u094D\u0930\u094B\u092B\u093C\u094B\u0928 \u0915\u093E \u0911\u0921\u093F\u092F\u094B, \u0915\u0947\u0935\u0932 \u0930\u093F\u0915\u0949\u0930\u094D\u0921\u093F\u0902\u0917 \u0915\u0947 \u0926\u094C\u0930\u093E\u0928\u0964","sk.voice.consent.destination":"\u092F\u0939 \u0915\u0939\u093E\u0901 \u091C\u093E\u0924\u093E \u0939\u0948: \u0906\u092A\u0915\u0940 \u0906\u0935\u093E\u091C\u093C \u0915\u094B \u091F\u094D\u0930\u093E\u0902\u0938\u0915\u094D\u0930\u093E\u0907\u092C \u0914\u0930 \u092A\u094D\u0930\u094B\u0938\u0947\u0938 \u0915\u0930\u0928\u0947 \u0915\u0947 \u0932\u093F\u090F api.kombify.io \u092A\u0930 kombify \u0939\u094B\u0938\u094D\u091F\u0947\u0921 \u0935\u0949\u0907\u0938 \u0915\u094B\u0964","sk.voice.consent.accept":"\u0938\u094D\u0935\u0940\u0915\u093E\u0930 \u0915\u0930\u0947\u0902 \u0914\u0930 \u0935\u0949\u0907\u0938 \u091A\u093E\u0932\u0942 \u0915\u0930\u0947\u0902","sk.voice.consent.decline":"\u0905\u0938\u094D\u0935\u0940\u0915\u093E\u0930 \u0915\u0930\u0947\u0902","sk.voice.consent.declined":"\u0935\u0949\u0907\u0938 \u0907\u0928\u092A\u0941\u091F \u092C\u0902\u0926 \u0939\u0948: \u0906\u092A\u0928\u0947 \u0907\u0938 \u0938\u0924\u0939 \u092A\u0930 \u0935\u0949\u0907\u0938 \u0915\u0948\u092A\u094D\u091A\u0930 \u0905\u0938\u094D\u0935\u0940\u0915\u093E\u0930 \u0915\u093F\u092F\u093E \u0939\u0948\u0964","sk.voice.consent.continuous":"\u0935\u0949\u0907\u0938 \u0935\u093E\u0930\u094D\u0924\u093E\u0932\u093E\u092A \u092A\u0942\u0930\u0947 \u0938\u0924\u094D\u0930 \u0915\u0947 \u0926\u094C\u0930\u093E\u0928 \u0906\u092A\u0915\u0947 \u092E\u093E\u0907\u0915\u094D\u0930\u094B\u092B\u093C\u094B\u0928 \u0915\u093E \u0911\u0921\u093F\u092F\u094B \u0932\u0917\u093E\u0924\u093E\u0930 kombify \u0939\u094B\u0938\u094D\u091F\u0947\u0921 \u0935\u0949\u0907\u0938 (api.kombify.io) \u0915\u094B \u0938\u094D\u091F\u094D\u0930\u0940\u092E \u0915\u0930\u0924\u093E \u0939\u0948 \u2014 \u0915\u0947\u0935\u0932 \u0930\u093F\u0915\u0949\u0930\u094D\u0921\u093F\u0902\u0917 \u0915\u0947 \u0926\u094C\u0930\u093E\u0928 \u0928\u0939\u0940\u0902\u0964 \u0935\u0949\u0907\u0938 \u092E\u094B\u0921 \u0938\u0947 \u092C\u093E\u0939\u0930 \u0928\u093F\u0915\u0932\u0924\u0947 \u0939\u0940 \u0938\u094D\u091F\u094D\u0930\u0940\u092E\u093F\u0902\u0917 \u0930\u0941\u0915 \u091C\u093E\u0924\u0940 \u0939\u0948\u0964"},Ke={"sk.voice.button.dictation.start":"\u0628\u062F\u0621 \u0627\u0644\u0625\u0645\u0644\u0627\u0621 \u0627\u0644\u0635\u0648\u062A\u064A","sk.voice.button.dictation.stop":"\u0625\u064A\u0642\u0627\u0641 \u0627\u0644\u062A\u0633\u062C\u064A\u0644","sk.voice.button.cancel":"\u0625\u0644\u063A\u0627\u0621 \u0627\u0644\u0625\u062F\u062E\u0627\u0644 \u0627\u0644\u0635\u0648\u062A\u064A","sk.voice.button.agent":"\u0627\u0644\u062A\u0628\u062F\u064A\u0644 \u0625\u0644\u0649 \u0627\u0644\u0645\u062D\u0627\u062F\u062B\u0629 \u0627\u0644\u0635\u0648\u062A\u064A\u0629","sk.voice.button.agent_locked":"\u0627\u0644\u0645\u062D\u0627\u062F\u062B\u0629 \u0627\u0644\u0635\u0648\u062A\u064A\u0629 (\u0645\u0642\u0641\u0644\u0629)","sk.voice.state.idle":"\u062C\u0627\u0647\u0632","sk.voice.state.capturing":"\u064A\u0633\u062A\u0645\u0639","sk.voice.state.processing":"\u0642\u064A\u062F \u0627\u0644\u0645\u0639\u0627\u0644\u062C\u0629","sk.voice.state.speaking":"\u064A\u062A\u062D\u062F\u062B","sk.voice.state.cancelled":"\u0623\u064F\u0644\u063A\u064A","sk.voice.state.denied":"\u063A\u064A\u0631 \u0645\u062A\u0627\u062D","sk.voice.agent.connecting":"\u062C\u0627\u0631\u064D \u0627\u0644\u0627\u062A\u0635\u0627\u0644","sk.voice.agent.listening":"\u064A\u0633\u062A\u0645\u0639","sk.voice.agent.speaking":"\u064A\u062A\u062D\u062F\u062B","sk.voice.agent.interrupt":"\u0627\u0646\u0642\u0631 \u0644\u0644\u0645\u0642\u0627\u0637\u0639\u0629","sk.voice.agent.interrupted":"\u062A\u0645\u062A \u0627\u0644\u0645\u0642\u0627\u0637\u0639\u0629","sk.voice.agent.you":"\u0623\u0646\u062A","sk.voice.agent.assistant":"\u0627\u0644\u0645\u0633\u0627\u0639\u062F","sk.voice.agent.live":"\u0645\u0628\u0627\u0634\u0631","sk.voice.agent.jumpToLive":"\u0627\u0644\u0627\u0646\u062A\u0642\u0627\u0644 \u0625\u0644\u0649 \u0627\u0644\u0628\u062B \u0627\u0644\u0645\u0628\u0627\u0634\u0631","sk.voice.agent.ended":"\u0627\u0646\u062A\u0647\u062A \u0627\u0644\u062C\u0644\u0633\u0629 \u0627\u0644\u0635\u0648\u062A\u064A\u0629.","sk.voice.agent.reconnect":"\u0625\u0639\u0627\u062F\u0629 \u0627\u0644\u0627\u062A\u0635\u0627\u0644","sk.voice.agent.exit":"\u0627\u0644\u062E\u0631\u0648\u062C \u0645\u0646 \u0627\u0644\u0648\u0636\u0639 \u0627\u0644\u0635\u0648\u062A\u064A","sk.voice.denied.retry":"\u062D\u0627\u0648\u0644 \u0645\u0631\u0629 \u0623\u062E\u0631\u0649","sk.voice.consent.title":"\u0647\u0644 \u062A\u0631\u064A\u062F \u0627\u0633\u062A\u062E\u062F\u0627\u0645 \u0627\u0644\u0635\u0648\u062A \u0645\u0639 \u0627\u0644\u0645\u0639\u0627\u0644\u062C\u0629 \u0627\u0644\u0645\u0633\u062A\u0636\u0627\u0641\u0629 \u0645\u0646 kombify\u061F","sk.voice.consent.capture":"\u0645\u0627 \u064A\u062A\u0645 \u0627\u0644\u062A\u0642\u0627\u0637\u0647: \u0635\u0648\u062A \u0627\u0644\u0645\u064A\u0643\u0631\u0648\u0641\u0648\u0646 \u0644\u062F\u064A\u0643 \u0623\u062B\u0646\u0627\u0621 \u0627\u0644\u062A\u0633\u062C\u064A\u0644 \u0641\u0642\u0637.","sk.voice.consent.destination":"\u0625\u0644\u0649 \u0623\u064A\u0646 \u064A\u0630\u0647\u0628: \u0625\u0644\u0649 \u062E\u062F\u0645\u0629 \u0627\u0644\u0635\u0648\u062A \u0627\u0644\u0645\u0633\u062A\u0636\u0627\u0641\u0629 \u0645\u0646 kombify \u0639\u0644\u0649 api.kombify.io \u0644\u062A\u062D\u0648\u064A\u0644 \u0643\u0644\u0627\u0645\u0643 \u0625\u0644\u0649 \u0646\u0635 \u0648\u0645\u0639\u0627\u0644\u062C\u062A\u0647.","sk.voice.consent.accept":"\u0627\u0644\u0645\u0648\u0627\u0641\u0642\u0629 \u0648\u062A\u0641\u0639\u064A\u0644 \u0627\u0644\u0635\u0648\u062A","sk.voice.consent.decline":"\u0631\u0641\u0636","sk.voice.consent.declined":"\u0627\u0644\u0625\u062F\u062E\u0627\u0644 \u0627\u0644\u0635\u0648\u062A\u064A \u0645\u062A\u0648\u0642\u0641: \u0644\u0642\u062F \u0631\u0641\u0636\u062A \u0627\u0644\u062A\u0642\u0627\u0637 \u0627\u0644\u0635\u0648\u062A \u0639\u0644\u0649 \u0647\u0630\u0647 \u0627\u0644\u0648\u0627\u062C\u0647\u0629.","sk.voice.consent.continuous":"\u062A\u0628\u062B\u0651 \u0627\u0644\u0645\u062D\u0627\u062F\u062B\u0629 \u0627\u0644\u0635\u0648\u062A\u064A\u0629 \u0635\u0648\u062A \u0627\u0644\u0645\u064A\u0643\u0631\u0648\u0641\u0648\u0646 \u0644\u062F\u064A\u0643 \u0628\u0627\u0633\u062A\u0645\u0631\u0627\u0631 \u0625\u0644\u0649 \u062E\u062F\u0645\u0629 \u0627\u0644\u0635\u0648\u062A \u0627\u0644\u0645\u0633\u062A\u0636\u0627\u0641\u0629 \u0645\u0646 kombify \u200F(api.kombify.io) \u0637\u0648\u0627\u0644 \u0627\u0644\u062C\u0644\u0633\u0629 \u0643\u0627\u0645\u0644\u0629 \u2014 \u0648\u0644\u064A\u0633 \u0623\u062B\u0646\u0627\u0621 \u0627\u0644\u062A\u0633\u062C\u064A\u0644 \u0641\u0642\u0637. \u064A\u062A\u0648\u0642\u0641 \u0627\u0644\u0628\u062B \u0639\u0646\u062F \u062E\u0631\u0648\u062C\u0643 \u0645\u0646 \u0627\u0644\u0648\u0636\u0639 \u0627\u0644\u0635\u0648\u062A\u064A."},he={en:T,de:Ie,es:Pe,"zh-Hans":Re,hi:Ue,ar:Ke};function He(s){let e=s?.trim().toLowerCase();if(!e)return"en";let t=G.find(i=>i.toLowerCase()===e);if(t)return t;let n=e.split("-")[0];return n==="zh"?"zh-Hans":G.find(i=>i.toLowerCase()===n)??"en"}function fe(s,e){let t=he[He(s)];return t===T&&!e?T:{...T,...t,...e}}var ve=new Map;function qe(s){return"adoptedStyleSheets"in s&&typeof CSSStyleSheet<"u"&&typeof CSSStyleSheet.prototype.replaceSync=="function"}var b=class extends HTMLElement{static get observedAttributes(){return["locale"]}root;#e=null;#s=!1;#t;#p;#c=!1;#i=!1;#u;state;constructor(e){super(),this.root=this.attachShadow({mode:"open"}),this.#h(e)}#h(e){if(qe(this.root)){let n=ve.get(e);n||(n=new CSSStyleSheet,n.replaceSync(e),ve.set(e,n)),this.root.adoptedStyleSheets=[...this.root.adoptedStyleSheets,n];return}let t=document.createElement("style");t.textContent=e,this.root.append(t)}get controller(){return this.#e}set controller(e){this.#s=!0,this.#f(e)}get messages(){return this.#u}set messages(e){this.#u=e,this.requestUpdate()}#f(e){this.#e!==e&&(this.#t?.(),this.#t=void 0,this.#e=e,e&&this.#i&&this.#a(e),this.onControllerChanged(e),this.requestUpdate())}#a(e){this.#t=e.subscribe(t=>{this.state=t,this.onSessionState(t),this.requestUpdate()})}onControllerChanged(e){}onSessionState(e){}resolvedLocale(){return this.getAttribute("locale")??this.closest("[lang]")?.lang??document.documentElement.lang??void 0}msgs(){return fe(this.resolvedLocale(),this.#u)}emitKitEvent(e,t){this.dispatchEvent(new CustomEvent(e,{detail:t,bubbles:!0,composed:!0}))}requestUpdate(){this.#c||!this.#i||(this.#c=!0,queueMicrotask(()=>{this.#c=!1,this.#i&&this.render()}))}connectedCallback(){P(this),this.#i=!0,!this.#s&&!this.#e?this.#p=pe(this,e=>{this.#s||this.#f(e)}):this.#e&&!this.#t&&this.#a(this.#e),this.render()}disconnectedCallback(){this.#i=!1,this.#t?.(),this.#t=void 0,this.#p?.(),this.#p=void 0}attributeChangedCallback(){this.requestUpdate()}};var L=class{#e=0;#s=0;#t=0;set target(e){this.#s=Math.max(0,Math.min(1,e))}tick(e){let t=this.#t===0?16:Math.min(100,e-this.#t);return this.#t=e,this.#s>this.#e?this.#e+=(this.#s-this.#e)*.55:(this.#e*=Math.exp(-t/1e3*5),this.#e<.002&&(this.#e=0)),this.#e}get value(){return this.#e}};var je=500,Fe=`
+:host {
+  display: inline-flex;
+  font-size: var(--sk-font-size, 13px);
+}
+.split {
+  position: relative;
+  display: inline-flex;
+  align-items: stretch;
+  overflow: visible;
+  border: 1px solid var(--sk-border, color-mix(in srgb, currentColor 12%, transparent));
+  border-radius: var(--sk-radius, 14px);
+  background: var(--sk-surface, color-mix(in srgb, #ffffff 72%, transparent));
+  backdrop-filter: blur(var(--sk-blur, 16px));
+  -webkit-backdrop-filter: blur(var(--sk-blur, 16px));
+  box-shadow: var(--sk-shadow, 0 12px 40px -12px rgba(16, 20, 24, 0.25));
+  color: var(--sk-text, inherit);
+}
+button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  font: inherit;
+  padding: 8px 12px;
+}
+button:focus-visible {
+  outline: 2px solid var(--sk-accent, oklch(0.65 0.13 210));
+  outline-offset: -2px;
+}
+.primary {
+  border-start-start-radius: var(--sk-radius, 14px);
+  border-end-start-radius: var(--sk-radius, 14px);
+}
+:host(:not([agent])) .primary {
+  border-radius: var(--sk-radius, 14px);
+}
+.primary[data-status="capturing"] {
+  color: var(--sk-accent, oklch(0.65 0.13 210));
+}
+.primary[data-status="capturing"] .mic-dot {
+  background: var(--sk-live, #dc2626);
+  animation: sk-btn-breathe 1.2s ease-in-out infinite;
+}
+.mic-dot {
+  width: 8px;
+  height: 8px;
+  flex: 0 0 auto;
+  border-radius: var(--sk-radius-pill, 999px);
+  background: var(--sk-accent, oklch(0.65 0.13 210));
+}
+@keyframes sk-btn-breathe {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.45; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .primary[data-status="capturing"] .mic-dot { animation: none; }
+}
+.agent {
+  border-inline-start: 1px solid var(--sk-border, color-mix(in srgb, currentColor 12%, transparent));
+  border-start-end-radius: var(--sk-radius, 14px);
+  border-end-end-radius: var(--sk-radius, 14px);
+  padding: 8px 10px;
+}
+.agent[data-locked] {
+  color: var(--sk-text-muted, color-mix(in srgb, currentColor 55%, transparent));
+}
+.chevron {
+  display: inline-block;
+  width: 0;
+  height: 0;
+  border-inline-start: 4px solid transparent;
+  border-inline-end: 4px solid transparent;
+  border-top: 5px solid currentColor;
+}
+.lock {
+  font-size: var(--sk-font-size-small, 11px);
+  line-height: 1;
+}
+.denial {
+  position: absolute;
+  inset-inline-end: 0;
+  bottom: calc(100% + 8px);
+  z-index: 1;
+  display: grid;
+  gap: 4px;
+  min-width: 220px;
+  max-width: 300px;
+  border: 1px solid var(--sk-border, color-mix(in srgb, currentColor 12%, transparent));
+  border-radius: var(--sk-radius, 14px);
+  background: var(--sk-surface-strong, color-mix(in srgb, #ffffff 92%, transparent));
+  backdrop-filter: blur(var(--sk-blur, 16px));
+  -webkit-backdrop-filter: blur(var(--sk-blur, 16px));
+  box-shadow: var(--sk-shadow, 0 12px 40px -12px rgba(16, 20, 24, 0.25));
+  padding: 10px 12px;
+  text-align: start;
+}
+.denial strong {
+  font-size: var(--sk-font-size, 13px);
+}
+.denial span {
+  color: var(--sk-text-muted, color-mix(in srgb, currentColor 55%, transparent));
+  font-size: var(--sk-font-size-small, 11px);
+}
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+}
+`,M=class extends b{static tagName="speechkit-voice-button";static get observedAttributes(){return[...super.observedAttributes,"agent","disabled","for"]}#e;#s;#t;#p=0;#c;#i=!1;#u;constructor(){super(Fe);let e=document.createElement("div");e.className="split",e.setAttribute("part","button"),this.#e=document.createElement("button"),this.#e.type="button",this.#e.className="primary",this.#e.setAttribute("part","primary"),this.#e.addEventListener("click",()=>this.#a()),this.#e.addEventListener("pointerdown",t=>this.#v(t)),this.#e.addEventListener("pointerup",()=>this.#d()),this.#e.addEventListener("pointerleave",()=>this.#d()),this.#e.addEventListener("contextmenu",t=>{(this.#c!==void 0||this.#i)&&t.preventDefault()}),this.#s=document.createElement("button"),this.#s.type="button",this.#s.className="agent",this.#s.setAttribute("part","agent"),this.#s.addEventListener("click",()=>this.#n()),this.#t=document.createElement("div"),this.#t.className="denial",this.#t.setAttribute("part","denial"),this.#t.setAttribute("role","alert"),this.#t.hidden=!0,e.append(this.#e,this.#s,this.#t),this.root.append(e)}#h(){return this.state?.status??this.controller?.getState().status??"idle"}#f(){return this.controller?.contract.capabilities.voice_agent??!1}#a(){if(this.#i){this.#i=!1;return}this.#m();let e=this.controller;if(!e)return;let t=this.#h();t==="capturing"?e.stop():t==="processing"?e.cancel():_(t)||e.start("dictation")}#v(e){e.button!==0||!this.hasAttribute("agent")||(this.#d(),this.#c=setTimeout(()=>{this.#c=void 0,this.#i=!0,this.#n()},je))}#d(){this.#c!==void 0&&(clearTimeout(this.#c),this.#c=void 0)}#n(){this.emitKitEvent("speechkit-agent-request");let e=this.controller;if(!this.#f()){e?e.start("voice_agent"):(this.#u=$e(),this.requestUpdate()),this.#r();return}this.#o()||e&&e.start("voice_agent")}#o(){let e=this.getAttribute("for");if(!e)return!1;let t=this.getRootNode().getElementById?.(e);return t&&"show"in t&&typeof t.show=="function"?(t.show(),!0):!1}#r(){queueMicrotask(()=>this.requestUpdate())}#m(){this.#u=void 0,this.#t.hidden||(this.#t.hidden=!0)}onSessionState(e){for(let t=this.#p;t<e.events.length;t+=1){let n=e.events[t];n!==void 0&&(this.emitKitEvent("speechkit-voice-event",n),n.type==="voice.transcript_draft"||n.type==="voice.transcript_final"?this.emitKitEvent("speechkit-transcript",{text:n.text??"",final:n.type==="voice.transcript_final"}):n.type==="voice.denied"&&n.error&&this.emitKitEvent("speechkit-denied",n.error))}this.#p=e.events.length}render(){let e=this.msgs(),t=this.#h(),n=t==="capturing",r=this.hasAttribute("disabled");this.#e.disabled=r,this.#e.dataset.status=t,this.#e.replaceChildren();let i=document.createElement("span");i.className="mic-dot",i.setAttribute("aria-hidden","true"),this.#e.append(i,document.createElement("slot"));let o=n?e["sk.voice.button.dictation.stop"]:e["sk.voice.button.dictation.start"];this.#e.setAttribute("aria-label",o),this.#e.title=o;let a=this.hasAttribute("agent"),l=this.#f();if(this.#s.hidden=!a,a){let u=!l;if(this.#s.replaceChildren(),u){this.#s.dataset.locked="";let d=document.createElement("span");d.className="lock",d.setAttribute("aria-hidden","true"),d.textContent="\u{1F512}",this.#s.append(d),this.#s.setAttribute("aria-label",e["sk.voice.button.agent_locked"]),this.#s.title=e["sk.voice.button.agent_locked"]}else{delete this.#s.dataset.locked;let d=document.createElement("span");d.className="chevron",d.setAttribute("aria-hidden","true");let p=document.createElement("slot");p.name="agent-icon",this.#s.append(p,d),this.#s.setAttribute("aria-label",e["sk.voice.button.agent"]),this.#s.title=e["sk.voice.button.agent"]}}let c=this.#u??(t==="denied"?this.state?.denial:void 0);if(c&&a&&!l){this.#t.replaceChildren();let u=document.createElement("strong");u.textContent=c.user_guidance.title;let d=document.createElement("span");d.textContent=c.user_guidance.body,this.#t.append(u,d);for(let p of c.user_guidance.next_steps){let v=document.createElement("span");v.textContent=`\u2022 ${p}`,this.#t.append(v)}this.#t.hidden=!1}else t!=="denied"&&!this.#u&&(this.#t.hidden=!0)}};function $e(){return{error_code:"voice_agent_unavailable",reason_code:"voice_agent_controller_missing",capability:"speechkit.voiceagent.live",required_features:[],missing_features:[],retryable:!1,remediation:"Assign a VoiceUiController (or wrap in <speechkit-voice-provider>) before enabling the agent segment.",user_guidance:{title:"Voice conversation is not available",body:"This surface has no live voice controller, so no session or audio capture was started.",next_steps:["Use dictation instead.","Contact the host application if voice conversation should be available here."]}}}var Be="speechkit.voice.consent.v1";function Y(s="default",e=Be){function t(){try{return globalThis.localStorage}catch{return}}return{read(n){let r=t();if(!r)return"unset";try{let i=r.getItem(e);if(!i)return"unset";let a=JSON.parse(i)?.[s],l=a?.decision;return l!=="granted"&&l!=="declined"?"unset":l==="declined"?"declined":n==="one_shot"||(Array.isArray(a?.scopes)?a.scopes:[]).includes("continuous")?"granted":"unset"}catch{return"unset"}},write(n,r){let i=t();if(!i)return;let o={};try{let u=JSON.parse(i.getItem(e)??"{}");u&&typeof u=="object"&&!Array.isArray(u)&&(o=u)}catch{}let a=o[s],l=Array.isArray(a?.scopes)?a.scopes.filter(u=>typeof u=="string"):[],c=n==="declined"?[]:[...new Set([...l,"one_shot",...r==="continuous"?["continuous"]:[]])];o[s]={decision:n,decided_at:new Date().toISOString(),scopes:c};try{i.setItem(e,JSON.stringify(o))}catch{}}}}var De=`
+:host {
+  display: grid;
+  gap: var(--sk-gap, 8px);
+  color: var(--sk-text, inherit);
+  font-size: var(--sk-font-size, 13px);
+  text-align: start;
+}
+strong {
+  font-size: calc(var(--sk-font-size, 13px) + 1px);
+}
+p {
+  margin: 0;
+  color: var(--sk-text-muted, color-mix(in srgb, currentColor 55%, transparent));
+  font-size: var(--sk-font-size-small, 11px);
+  line-height: 1.5;
+}
+.actions {
+  display: flex;
+  gap: var(--sk-gap, 8px);
+}
+button {
+  border: 1px solid var(--sk-border, color-mix(in srgb, currentColor 12%, transparent));
+  border-radius: var(--sk-radius, 14px);
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  font: inherit;
+  font-size: var(--sk-font-size, 13px);
+  padding: 6px 12px;
+}
+button:focus-visible {
+  outline: 2px solid var(--sk-accent, oklch(0.65 0.13 210));
+  outline-offset: -2px;
+}
+.accept {
+  border-color: transparent;
+  background: var(--sk-accent, oklch(0.65 0.13 210));
+  color: var(--sk-accent-contrast, #ffffff);
+}
+.declined {
+  color: var(--sk-text-muted, color-mix(in srgb, currentColor 55%, transparent));
+}
+`,E=class extends b{static tagName="speechkit-voice-consent";static get observedAttributes(){return[...super.observedAttributes,"scope","surface"]}#e;get consentAdapter(){return this.#e||(this.#e=Y(this.getAttribute("surface")??"default")),this.#e}set consentAdapter(e){this.#e=e,this.requestUpdate()}get scope(){return this.getAttribute("scope")==="continuous"?"continuous":"one_shot"}get decision(){return this.consentAdapter.read(this.scope)}#s(e){this.consentAdapter.write(e,this.scope),this.emitKitEvent("speechkit-consent-change",{decision:e,scope:this.scope}),this.requestUpdate()}constructor(){super(De)}render(){let e=this.msgs();if(this.root.replaceChildren(...this.root.querySelectorAll("style")),this.decision==="declined"){let c=document.createElement("p");c.className="declined",c.setAttribute("part","declined"),c.textContent=e["sk.voice.consent.declined"];let u=document.createElement("button");u.type="button",u.textContent=e["sk.voice.consent.accept"],u.addEventListener("click",()=>this.#s("granted")),this.root.append(c,u);return}let n=document.createElement("strong");n.setAttribute("part","title"),n.textContent=e["sk.voice.consent.title"];let r=document.createElement("p");r.textContent=e["sk.voice.consent.capture"];let i=document.createElement("p");if(i.textContent=e["sk.voice.consent.destination"],this.root.append(n,r,i),this.scope==="continuous"){let c=document.createElement("p");c.textContent=e["sk.voice.consent.continuous"],this.root.append(c)}let o=document.createElement("div");o.className="actions",o.setAttribute("part","actions");let a=document.createElement("button");a.type="button",a.className="accept",a.setAttribute("part","accept"),a.textContent=e["sk.voice.consent.accept"],a.addEventListener("click",()=>this.#s("granted"));let l=document.createElement("button");l.type="button",l.setAttribute("part","decline"),l.textContent=e["sk.voice.consent.decline"],l.addEventListener("click",()=>this.#s("declined")),o.append(a,l),this.root.append(o)}};var We=["idle","connecting","listening","processing","speaking","error"];function J(s){switch(s){case"capturing":return"listening";case"processing":return"processing";case"speaking":return"speaking";case"denied":return"error";case"idle":case"cancelled":return"idle"}}var Ge=`
+:host {
+  display: inline-grid;
+  place-items: center;
+}
+.halo {
+  display: grid;
+  place-items: center;
+  width: var(--sk-orb-size, 56px);
+  height: var(--sk-orb-size, 56px);
+  border-radius: var(--sk-radius-pill, 999px);
+  background: color-mix(in srgb, var(--sk-accent, oklch(0.65 0.13 210)) 14%, transparent);
+}
+:host([state="speaking"]) .halo {
+  background: color-mix(in srgb, var(--sk-accent, oklch(0.65 0.13 210)) 24%, transparent);
+}
+.core {
+  width: var(--sk-orb-core-size, 22px);
+  height: var(--sk-orb-core-size, 22px);
+  border-radius: var(--sk-radius-pill, 999px);
+  background: var(--sk-accent, oklch(0.65 0.13 210));
+  transform: scale(calc(1 + var(--sk-voice-level, 0) * 0.85));
+  transition: transform var(--sk-motion-fast, 80ms) linear;
+}
+:host([variant="pill"]) .halo {
+  width: calc(var(--sk-orb-size, 56px) * 1.6);
+  height: calc(var(--sk-orb-size, 56px) * 0.55);
+}
+:host([variant="dot"]) .halo {
+  width: calc(var(--sk-orb-size, 56px) * 0.5);
+  height: calc(var(--sk-orb-size, 56px) * 0.5);
+}
+:host([variant="dot"]) .core {
+  width: calc(var(--sk-orb-core-size, 22px) * 0.6);
+  height: calc(var(--sk-orb-core-size, 22px) * 0.6);
+}
+:host([state="connecting"]) .core {
+  animation: sk-breathe 1.2s ease-in-out infinite;
+  opacity: 0.4;
+}
+:host([state="listening"]) .core {
+  animation: sk-breathe var(--sk-motion-slow, 1600ms) ease-in-out infinite;
+}
+:host([state="processing"]) .core {
+  animation: sk-breathe 0.9s ease-in-out infinite;
+  opacity: 0.75;
+}
+:host([state="speaking"]) .core {
+  animation: sk-pulse 0.8s ease-in-out infinite;
+}
+:host([state="error"]) .core {
+  animation: none;
+  opacity: 0.5;
+}
+@keyframes sk-breathe {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.55; }
+}
+@keyframes sk-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--sk-accent, oklch(0.65 0.13 210)) 45%, transparent); }
+  50% { box-shadow: 0 0 0 10px transparent; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .core {
+    animation: none !important;
+    transform: none;
+    transition: none;
+  }
+}
+:host([static]) .core {
+  animation: none !important;
+  transform: none;
+  transition: none;
+}
+`,S=class extends b{static tagName="speechkit-voice-visualizer";static get observedAttributes(){return[...super.observedAttributes,"variant","state","level","static"]}#e;#s;#t;constructor(){super(Ge),this.#s=document.createElement("div"),this.#s.className="halo",this.#s.setAttribute("part","halo"),this.#t=document.createElement("div"),this.#t.className="core",this.#t.setAttribute("part","core"),this.#t.setAttribute("aria-hidden","true"),this.#s.append(this.#t),this.root.append(this.#s)}set level(e){let t=Math.min(1,Math.max(0,e));this.#t.style.setProperty("--sk-voice-level",t.toFixed(3))}onControllerChanged(e){this.#e?.(),this.#e=void 0,e?.subscribeLevel&&(this.#e=e.subscribeLevel(t=>{this.level=t}))}disconnectedCallback(){super.disconnectedCallback(),this.#e?.(),this.#e=void 0}render(){if(this.state){let t=J(this.state.status);this.getAttribute("state")!==t&&this.setAttribute("state",t)}else{let t=this.getAttribute("state");t!==null&&!We.includes(t)&&this.removeAttribute("state")}let e=this.getAttribute("level");if(e!==null){let t=Number.parseFloat(e);Number.isNaN(t)||(this.level=t)}}};var Ye=`
+:host {
+  display: none;
+  color: var(--sk-text, inherit);
+  font-size: var(--sk-font-size, 13px);
+}
+:host([open]) {
+  display: block;
+}
+.overlay {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  max-height: min(60vh, 420px);
+  width: min(92vw, 360px);
+  border: 1px solid var(--sk-border, color-mix(in srgb, currentColor 12%, transparent));
+  border-radius: var(--sk-radius, 14px);
+  background: var(--sk-surface, color-mix(in srgb, #ffffff 72%, transparent));
+  backdrop-filter: blur(var(--sk-blur, 16px));
+  -webkit-backdrop-filter: blur(var(--sk-blur, 16px));
+  box-shadow: var(--sk-shadow, 0 12px 40px -12px rgba(16, 20, 24, 0.25));
+  overflow: hidden;
+}
+:host([placement="center"]) {
+  position: fixed;
+  inset: 0;
+  display: none;
+  place-items: center;
+  background: color-mix(in srgb, #000 20%, transparent);
+  z-index: 2147483000;
+}
+:host([placement="center"][open]) {
+  display: grid;
+}
+.transcript-wrap {
+  position: relative;
+  display: flex;
+  min-height: 120px;
+  flex: 1;
+}
+.transcript {
+  display: flex;
+  min-height: 0;
+  flex: 1;
+  flex-direction: column;
+  gap: 8px;
+  overflow: auto;
+  padding: 16px 14px;
+  mask-image: linear-gradient(to bottom, transparent 0, #000 24px, #000 calc(100% - 24px), transparent 100%);
+  -webkit-mask-image: linear-gradient(to bottom, transparent 0, #000 24px, #000 calc(100% - 24px), transparent 100%);
+}
+.turn {
+  display: grid;
+  gap: 2px;
+  margin: 0;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+.role {
+  color: var(--sk-text-muted, color-mix(in srgb, currentColor 55%, transparent));
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.turn .text {
+  font-weight: 600;
+}
+.turn[data-role="user"] .text {
+  color: var(--sk-text-muted, color-mix(in srgb, currentColor 55%, transparent));
+  font-size: calc(var(--sk-font-size, 13px) - 1px);
+  font-weight: 500;
+}
+.turn[data-draft] .text {
+  opacity: 0.55;
+}
+.turn[data-interrupted] .text::after {
+  content: " \\2026";
+  color: var(--sk-text-muted, color-mix(in srgb, currentColor 55%, transparent));
+}
+.jump {
+  position: absolute;
+  bottom: 8px;
+  inset-inline-start: 50%;
+  transform: translateX(-50%);
+  border: 1px solid var(--sk-border, color-mix(in srgb, currentColor 12%, transparent));
+  border-radius: var(--sk-radius-pill, 999px);
+  background: var(--sk-surface-strong, color-mix(in srgb, #ffffff 92%, transparent));
+  color: inherit;
+  cursor: pointer;
+  font: inherit;
+  font-size: var(--sk-font-size-small, 11px);
+  font-weight: 600;
+  padding: 4px 10px;
+}
+:host(:dir(rtl)) .jump {
+  transform: translateX(50%);
+}
+.stage {
+  display: grid;
+  flex: 0 0 auto;
+  justify-items: center;
+  gap: 6px;
+  border-top: 1px solid var(--sk-border, color-mix(in srgb, currentColor 12%, transparent));
+  padding: 12px 14px 12px;
+}
+.status {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--sk-font-size-small, 11px);
+  font-weight: 700;
+}
+.live-dot {
+  width: 7px;
+  height: 7px;
+  flex: 0 0 auto;
+  border-radius: var(--sk-radius-pill, 999px);
+  background: var(--sk-live, #dc2626);
+  animation: sk-ov-breathe 1.2s ease-in-out infinite;
+}
+@keyframes sk-ov-breathe {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .live-dot { animation: none; }
+}
+.hint {
+  color: var(--sk-text-muted, color-mix(in srgb, currentColor 55%, transparent));
+  font-size: var(--sk-font-size-small, 11px);
+}
+.ended {
+  color: var(--sk-text-muted, color-mix(in srgb, currentColor 55%, transparent));
+  font-size: var(--sk-font-size-small, 11px);
+}
+.denied {
+  display: grid;
+  justify-items: center;
+  gap: 4px;
+  font-size: var(--sk-font-size-small, 11px);
+  text-align: center;
+}
+.denied span {
+  color: var(--sk-text-muted, color-mix(in srgb, currentColor 55%, transparent));
+}
+.actions {
+  display: flex;
+  gap: var(--sk-gap, 8px);
+}
+.actions button {
+  border: 1px solid var(--sk-border, color-mix(in srgb, currentColor 12%, transparent));
+  border-radius: var(--sk-radius, 14px);
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  font: inherit;
+  font-size: var(--sk-font-size-small, 11px);
+  font-weight: 600;
+  padding: 5px 10px;
+}
+.actions .reconnect {
+  border-color: transparent;
+  background: var(--sk-accent, oklch(0.65 0.13 210));
+  color: var(--sk-accent-contrast, #ffffff);
+}
+.orb {
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+  padding: 0;
+}
+.consent-wrap {
+  padding: 16px 14px;
+}
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+}
+button:focus-visible {
+  outline: 2px solid var(--sk-accent, oklch(0.65 0.13 210));
+  outline-offset: -2px;
+}
+`,N=class extends b{static tagName="speechkit-voice-overlay";static get observedAttributes(){return[...super.observedAttributes,"open","placement","modal"]}#e=[];#s;#t;#p;#c;#i=!1;#u=!1;#h=0;#f;#a=!1;#v=null;#d;#n;#o;#r;#m;#l=!0;#g=!1;#k=e=>{e.key==="Escape"&&this.hasAttribute("open")&&(e.stopPropagation(),this.exit())};constructor(){super(Ye);let e=document.createElement("div");e.className="overlay",e.setAttribute("part","overlay"),e.setAttribute("role","dialog"),e.setAttribute("aria-label","Voice");let t=document.createElement("div");t.className="transcript-wrap",this.#n=document.createElement("div"),this.#n.className="transcript",this.#n.setAttribute("part","transcript"),this.#n.setAttribute("aria-live","polite"),this.#n.addEventListener("scroll",()=>this.#b()),this.#o=document.createElement("button"),this.#o.type="button",this.#o.className="jump",this.#o.setAttribute("part","jump-to-live"),this.#o.hidden=!0,this.#o.addEventListener("click",()=>this.#A()),t.append(this.#n,this.#o),this.#r=document.createElement("div"),this.#r.className="stage",this.#r.setAttribute("part","actions"),e.append(t,this.#r),this.root.append(e)}get turns(){return this.#s??this.#e}set turns(e){this.#s=e,this.requestUpdate()}set status(e){this.#t=e,this.requestUpdate()}set denial(e){this.#p=e,this.requestUpdate()}set ended(e){this.#c=e,this.requestUpdate()}set level(e){this.#m&&(this.#m.level=e)}get consentAdapter(){return this.#f||(this.#f=Y(this.controller?.contract.surface??"default")),this.#f}set consentAdapter(e){this.#f=e}show(){this.#v=document.activeElement,this.#i=!1,this.#u=!1,this.consentAdapter.read("continuous")!=="granted"?this.#a=!0:_(this.#y())||this.#E(),this.setAttribute("open",""),this.requestUpdate()}#E(){this.#e=[],this.#h=this.state?.events.length??0,this.controller?.start("voice_agent")}hide(){this.removeAttribute("open"),this.#a=!1;let e=this.#v;this.#v=null,e instanceof HTMLElement&&e.focus()}exit(){this.controller?.stop(),this.emitKitEvent("speechkit-exit"),this.hide()}#S(){this.#i=!1,this.#e=[],this.#h=this.state?.events.length??0,this.emitKitEvent("speechkit-reconnect"),this.controller?.start("voice_agent"),this.requestUpdate()}#w(){this.#y()==="speaking"&&(this.controller?.interrupt?.(),this.emitKitEvent("speechkit-interrupt"))}connectedCallback(){super.connectedCallback(),this.addEventListener("keydown",this.#k)}disconnectedCallback(){super.disconnectedCallback(),this.removeEventListener("keydown",this.#k),this.#d?.(),this.#d=void 0}onControllerChanged(e){this.#d?.(),this.#d=void 0,e?.subscribeLevel&&(this.#d=e.subscribeLevel(t=>{this.level=t}))}onSessionState(e){for(let t=this.#h;t<e.events.length;t+=1){let n=e.events[t];n!==void 0&&(this.#e=I(this.#e,n),this.emitKitEvent("speechkit-voice-event",n))}this.#h=e.events.length,_(e.status)?(this.#u=!0,this.#i=!1):this.#u&&this.hasAttribute("open")&&e.status!=="denied"&&(this.#i=!0)}#b(){if(this.#g){this.#g=!1;return}let e=this.#n.scrollHeight-this.#n.scrollTop-this.#n.clientHeight<24;e!==this.#l&&(this.#l=e,this.#o.hidden=e)}#x(){let e=this.#n.scrollHeight-this.#n.clientHeight;Math.abs(this.#n.scrollTop-e)<1||(this.#g=!0,this.#n.scrollTop=this.#n.scrollHeight)}#A(){this.#l=!0,this.#o.hidden=!0,this.#x()}#y(){return this.#t??this.state?.status??"idle"}#_(){return this.#p??(this.#y()==="denied"?this.state?.denial:void 0)}#C(){return this.#c??this.#i}render(){let e=this.msgs();if(this.#a){this.#M();return}this.#T(e),this.#N(e),this.#l&&this.#x()}#M(){this.#n.replaceChildren(),this.#r.replaceChildren();let e=document.createElement("div");e.className="consent-wrap",e.setAttribute("part","consent");let t=document.createElement(E.tagName);t.setAttribute("scope","continuous");let n=this.getAttribute("locale");n&&t.setAttribute("locale",n),t.consentAdapter=this.consentAdapter,t.addEventListener("speechkit-consent-change",r=>{let i=r.detail;this.#a=!1,i.decision==="granted"?(this.#E(),this.requestUpdate()):this.hide()}),e.append(t),this.#r.replaceChildren(e)}#T(e){let t=this.turns;this.#n.replaceChildren();for(let n of t){let r=document.createElement("p");r.className="turn",r.setAttribute("part",n.role==="user"?"turn turn-user":"turn turn-agent"),r.dataset.role=n.role,n.final||(r.dataset.draft=""),n.interrupted&&(r.dataset.interrupted="");let i=document.createElement("span");i.className="role",i.textContent=n.role==="user"?e["sk.voice.agent.you"]:e["sk.voice.agent.assistant"];let o=document.createElement("span");o.className="text",o.textContent=n.text,r.append(i,o),this.#n.append(r)}this.#o.textContent=e["sk.voice.agent.jumpToLive"],this.#o.hidden=this.#l}#N(e){this.#r.replaceChildren();let t=this.#y(),n=this.#_(),r=this.#C(),i=t==="speaking";if(n){let c=document.createElement("div");c.className="denied",c.setAttribute("part","denied"),c.setAttribute("role","alert");let u=document.createElement("strong");u.textContent=n.user_guidance.title;let d=document.createElement("span");d.textContent=n.user_guidance.body,c.append(u,d),this.#r.append(c)}else if(r){let c=document.createElement("span");c.className="ended",c.setAttribute("role","status"),c.textContent=e["sk.voice.agent.ended"],this.#r.append(c)}else{let c=t==="capturing"?e["sk.voice.agent.listening"]:t==="processing"?e["sk.voice.state.processing"]:i?e["sk.voice.agent.speaking"]:e["sk.voice.agent.connecting"],u=document.createElement("button");u.type="button",u.className="orb",u.setAttribute("part","orb"),u.setAttribute("aria-label",i?e["sk.voice.agent.interrupt"]:c),u.addEventListener("click",()=>this.#w()),this.#m=document.createElement(S.tagName),this.#m.setAttribute("state",this.state||this.#t?J(t):"connecting"),u.append(this.#m),this.#r.append(u);let d=document.createElement("span");if(d.className="status",d.setAttribute("part","status"),d.setAttribute("role","status"),t==="capturing"){let p=document.createElement("span");p.className="live-dot",p.setAttribute("aria-hidden","true");let v=document.createElement("span");v.className="sr-only",v.textContent=e["sk.voice.agent.live"],d.append(p,v)}if(d.append(document.createTextNode(c)),this.#r.append(d),i){let p=document.createElement("span");p.className="hint",p.textContent=e["sk.voice.agent.interrupt"],this.#r.append(p)}}let o=document.createElement("div");if(o.className="actions",r||t==="denied"&&n?.retryable===!0){let c=document.createElement("button");c.type="button",c.className="reconnect",c.setAttribute("part","reconnect"),c.textContent=e["sk.voice.agent.reconnect"],c.addEventListener("click",()=>this.#S()),o.append(c)}let l=document.createElement("button");l.type="button",l.setAttribute("part","exit"),l.textContent=e["sk.voice.agent.exit"],l.addEventListener("click",()=>this.exit()),o.append(l),this.#r.append(o)}};var R=class{element;#e;#s;#t=[];#p=0;#c=0;constructor(e){this.#s=e,this.element=document.createElement("button"),this.element.type="button",this.element.className="wave-visual",this.element.setAttribute("part","orb"),this.element.dataset.layout=e,this.#e=document.createElement("canvas"),this.element.append(this.#e);for(let t=0;t<72;t+=1)this.#t.push({input:0,output:0})}onFrame(e,t,n,r){let i=this.#c===0?16:Math.min(100,n-this.#c);if(this.#c=n,r.active&&!r.reducedMotion)for(this.#p+=i;this.#p>=45;)this.#p-=45,this.#t.push({input:e,output:t}),this.#t.length>72&&this.#t.shift();this.#u(r)}#i(){let e=getComputedStyle(this.element);return{output:e.getPropertyValue("--sk-assistant-wave-output").trim()||"#38bdf8",input:e.getPropertyValue("--sk-assistant-wave-input").trim()||"#34d399"}}#u(e){let t=this.#e,n=t.getBoundingClientRect();if(n.width===0||n.height===0)return;let r=window.devicePixelRatio||1,i=Math.round(n.width*r),o=Math.round(n.height*r);(t.width!==i||t.height!==o)&&(t.width=i,t.height=o);let a=t.getContext("2d");if(!a)return;a.clearRect(0,0,i,o);let l=this.#i(),c=e.reducedMotion?this.#h():this.#t,u=e.active?1:.35;this.#s==="radial"?this.#a(a,i,o,l,c,u,r):this.#f(a,i,o,l,c,u),a.globalAlpha=1}#h(){return this.#t.map(()=>({input:0,output:0}))}#f(e,t,n,r,i,o){let a=i.length,l=t/a,c=Math.max(1.5,l*.55),u=n/2,d=Math.max(1.5,n*.03);for(let p=0;p<a;p+=1){let v=i[p];if(!v)continue;let f=p*l+(l-c)/2,k=v.output*(n*.46),y=v.input*(n*.46);e.fillStyle=r.output,e.globalAlpha=.85*o,e.fillRect(f,u-Math.max(d,k),c,Math.max(d,k)*2),y>d&&(e.fillStyle=r.input,e.globalAlpha=.9*o,e.fillRect(f,u-y,c*.6,y*2))}}#a(e,t,n,r,i,o,a){let l=t/2,c=n/2,u=Math.min(t,n)*.34,d=Math.min(t,n)*.14,p=i.length;e.lineCap="round";for(let v=0;v<p;v+=1){let f=i[v];if(!f)continue;let k=v/p*Math.PI*2-Math.PI/2,y=Math.max(f.output,f.input),m=f.input>f.output,h=Math.max(2,y*d);e.strokeStyle=m?r.input:r.output,e.globalAlpha=(.35+y*.6)*o,e.lineWidth=Math.max(1.5,a*1.5),e.beginPath(),e.moveTo(l+Math.cos(k)*u,c+Math.sin(k)*u),e.lineTo(l+Math.cos(k)*(u+h),c+Math.sin(k)*(u+h)),e.stroke()}}};var O,Je=["inactive","connecting","listening","processing","speaking","recovering","settling","error"];function Xe(s){switch(s){case"connecting":return"connecting";case"capturing":return"listening";case"processing":return"processing";case"speaking":return"speaking";case"denied":return"error";case"idle":case"cancelled":return"inactive"}}function Qe(s){return Je.includes(s)}var Ze=`
+:host {
+  display: block;
+  color: var(--sk-text, inherit);
+  font-size: var(--sk-font-size, 13px);
+  height: 100%;
+}
+:host([size="orb"]) {
+  display: inline-grid;
+  place-items: center;
+  height: auto;
+}
+.va {
+  height: 100%;
+  display: flex;
+  --level: 0;
+  --aura-a: var(--sk-aura-inactive-a, 156, 163, 184);
+  --aura-b: var(--sk-aura-inactive-b, 100, 116, 139);
+  --tone: rgb(var(--aura-a));
+  --tone-soft: rgba(var(--aura-a), 0.22);
+}
+.va[data-aura="connecting"] { --aura-a: var(--sk-aura-connecting-a, 56, 189, 248); --aura-b: var(--sk-aura-connecting-b, 129, 140, 248); }
+.va[data-aura="listening"] { --aura-a: var(--sk-aura-listening-a, 52, 211, 153); --aura-b: var(--sk-aura-listening-b, 56, 189, 248); }
+.va[data-aura="processing"] { --aura-a: var(--sk-aura-processing-a, 251, 191, 36); --aura-b: var(--sk-aura-processing-b, 244, 114, 182); }
+.va[data-aura="speaking"] { --aura-a: var(--sk-aura-speaking-a, 129, 140, 248); --aura-b: var(--sk-aura-speaking-b, 167, 139, 250); }
+.va[data-aura="recovering"] { --aura-a: var(--sk-aura-recovering-a, 34, 211, 238); --aura-b: var(--sk-aura-recovering-b, 129, 140, 248); }
+.va[data-aura="settling"] { --aura-a: var(--sk-aura-settling-a, 52, 211, 153); --aura-b: var(--sk-aura-settling-b, 129, 140, 248); }
+.va[data-aura="error"] { --aura-a: var(--sk-aura-error-a, 248, 113, 113); --aura-b: var(--sk-aura-error-b, 251, 113, 133); }
+
+/* \u2500\u2500 Orb \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+   Layer stack (outward \u2192 inward): breathing glow, aurora sweep,
+   counter-rotating inner sweep, level-reactive halo ring, glassy
+   core, centre spark, brand mark. Identical geometry and timings in
+   the Compose and LVGL ports (tokens.json \u2192 assistant). */
+.orb {
+  position: relative;
+  width: var(--sk-assistant-orb, 30px);
+  height: var(--sk-assistant-orb, 30px);
+  aspect-ratio: 1;
+  flex: none;
+  border: 0;
+  background: transparent;
+  padding: 0;
+  cursor: default;
+  font: inherit;
+  color: inherit;
+}
+.va[data-status="speaking"] .orb { cursor: pointer; }
+.orb:focus-visible { outline: 2px solid var(--sk-accent, oklch(0.65 0.13 210)); outline-offset: 2px; border-radius: 50%; }
+.orb > * { position: absolute; border-radius: 50%; }
+.orb .glow {
+  inset: 0;
+  background: radial-gradient(circle at 50% 50%, rgba(var(--aura-a), 0.38), rgba(var(--aura-a), 0.08) 55%, rgba(var(--aura-a), 0) 72%);
+  animation: sk-aura-breathe 4.5s ease-in-out infinite;
+}
+.orb .sweep {
+  inset: 6%;
+  overflow: hidden;
+  opacity: 0.9;
+  background: conic-gradient(from 0deg, rgba(var(--aura-a), 0) 0deg, rgba(var(--aura-a), 0.55) 90deg, rgba(var(--aura-b), 0) 200deg, rgba(var(--aura-b), 0.45) 300deg, rgba(var(--aura-a), 0) 360deg);
+  filter: blur(6px);
+  animation: sk-aura-spin 9s linear infinite;
+}
+.orb .sweep-inner {
+  inset: 16%;
+  overflow: hidden;
+  opacity: 0.8;
+  background: conic-gradient(from 180deg, rgba(var(--aura-b), 0) 0deg, rgba(var(--aura-b), 0.4) 120deg, rgba(var(--aura-a), 0) 260deg);
+  filter: blur(4px);
+  animation: sk-aura-spin-reverse 13s linear infinite;
+}
+.orb .halo {
+  inset: 10%;
+  border: 1px solid rgba(var(--aura-a), 0.5);
+  box-shadow: 0 0 18px rgba(var(--aura-a), 0.35) inset, 0 0 12px rgba(var(--aura-b), 0.28);
+  transform: scale(calc(0.82 + var(--level) * 0.3));
+  opacity: calc(0.35 + var(--level) * 0.5);
+  transition: transform 120ms ease-out, opacity 200ms ease-out;
+}
+.orb .core {
+  inset: 26%;
+  backdrop-filter: blur(2px);
+  -webkit-backdrop-filter: blur(2px);
+  background: radial-gradient(circle at 38% 32%, rgba(255, 255, 255, 0.3), rgba(255, 255, 255, 0.06) 46%, rgba(255, 255, 255, 0.02) 70%);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  animation: sk-aura-core 3.2s ease-in-out infinite;
+}
+/* Centre spark \u2014 backlight for the brand mark. */
+.orb .spark {
+  left: 50%;
+  top: 50%;
+  width: 12%;
+  height: 12%;
+  transform: translate(-50%, -50%);
+  background: radial-gradient(circle, rgba(var(--aura-a), 0.95), rgba(var(--aura-a), 0.2) 70%, rgba(var(--aura-a), 0) 100%);
+  opacity: 0.85;
+}
+/* Resting states: no motion, thinned effects. */
+.va:is([data-aura="inactive"], [data-aura="error"]) .orb :is(.glow, .sweep, .sweep-inner, .core) { animation: none; }
+.va:is([data-aura="inactive"], [data-aura="error"]) .orb .halo { opacity: 0.18; box-shadow: 0 0 18px rgba(var(--aura-a), 0.12) inset, 0 0 12px rgba(var(--aura-b), 0.08); }
+.va:is([data-aura="inactive"], [data-aura="error"]) .orb .spark { opacity: 0.4; }
+
+@keyframes sk-aura-spin { to { transform: rotate(360deg); } }
+@keyframes sk-aura-spin-reverse { to { transform: rotate(-360deg); } }
+@keyframes sk-aura-breathe {
+  0%, 100% { transform: scale(0.92); opacity: 0.55; }
+  50% { transform: scale(1.06); opacity: 0.9; }
+}
+@keyframes sk-aura-core {
+  0%, 100% { opacity: 0.78; }
+  50% { opacity: 1; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .orb > *, .mark img { animation: none !important; transition: none !important; }
+  .orb .halo, .mark img { transform: none; }
+  .orb .spark { transform: translate(-50%, -50%); }
+}
+
+/* \u2500\u2500 Brand mark (host-provided via mark-src) \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+   Part of the motion system, not a sticker: greyscale ghost while
+   resting, full colour plus level-driven glow and scale when live. */
+.mark {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  pointer-events: none;
+}
+.mark img {
+  width: var(--sk-assistant-mark-ratio, 34%);
+  height: var(--sk-assistant-mark-ratio, 34%);
+  object-fit: contain;
+  filter: saturate(1.15) drop-shadow(0 0 calc(4px + var(--level) * 12px) rgba(var(--aura-a), calc(0.35 + var(--level) * 0.4)));
+  opacity: 1;
+  transform: scale(calc(1 + var(--level) * 0.08));
+  transition: filter 420ms ease, opacity 420ms ease, transform 420ms ease;
+}
+.va:is([data-aura="inactive"], [data-aura="error"]) .mark img {
+  filter: grayscale(1) brightness(0.95);
+  opacity: 0.5;
+  transform: none;
+}
+
+/* \u2500\u2500 Waveform variant (variant="waveform") \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+   The dual-hue level-history motif in the orb's slot; drawing spec
+   in tokens.json \u2192 assistant-variants.waveform. */
+.wave-visual {
+  position: relative;
+  flex: none;
+  border: 0;
+  background: transparent;
+  padding: 0;
+  cursor: default;
+  font: inherit;
+  color: inherit;
+}
+.va[data-status="speaking"] .wave-visual { cursor: pointer; }
+.wave-visual:focus-visible { outline: 2px solid var(--sk-accent, oklch(0.65 0.13 210)); outline-offset: 2px; border-radius: 8px; }
+.wave-visual canvas { display: block; width: 100%; height: 100%; }
+.wave-visual[data-layout="radial"] {
+  width: var(--sk-assistant-orb, 30px);
+  height: var(--sk-assistant-orb, 30px);
+  border-radius: 50%;
+}
+.wave-visual[data-layout="linear"] {
+  width: var(--sk-assistant-wave-compact-w, 72px);
+  height: var(--sk-assistant-wave-compact-h, 22px);
+  border-radius: 6px;
+}
+.va[data-frame="keyboard"] .wave-visual[data-layout="linear"] { flex: 1; width: auto; }
+
+/* \u2500\u2500 Compact: pill (overlay/phone/panel) / bar (keyboard) \u2500\u2500\u2500\u2500\u2500\u2500 */
+.compact-shell {
+  display: flex; align-items: center; gap: 10px;
+  padding: 8px 14px 8px 9px;
+  border-radius: var(--sk-radius-pill, 999px);
+  background: var(--sk-surface, color-mix(in srgb, #ffffff 72%, transparent));
+  border: 1px solid var(--sk-border, color-mix(in srgb, currentColor 12%, transparent));
+  backdrop-filter: blur(var(--sk-blur, 16px));
+  -webkit-backdrop-filter: blur(var(--sk-blur, 16px));
+  box-shadow: var(--sk-shadow, 0 12px 40px -12px rgba(16, 20, 24, 0.25));
+  min-width: 0; max-width: 100%;
+  margin: auto;
+}
+.va[data-frame="keyboard"] .compact-shell { width: 100%; border-radius: var(--sk-radius, 14px); margin: 0; }
+.compact-line { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.compact-line .who { color: var(--sk-text-muted, color-mix(in srgb, currentColor 55%, transparent)); font-size: var(--sk-font-size-small, 11px); margin-right: 6px; text-transform: uppercase; letter-spacing: 0.08em; }
+.status-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--tone); flex: none; }
+.va:is([data-status="capturing"], [data-status="speaking"]) .status-dot { animation: sk-aura-pulse 1.2s ease-in-out infinite; }
+@keyframes sk-aura-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
+@media (prefers-reduced-motion: reduce) { .status-dot { animation: none; } }
+
+/* \u2500\u2500 Compact: watch face \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500 */
+.watch-shell { margin: auto; display: flex; flex-direction: column; align-items: center; gap: 14px; text-align: center; padding: 12px; max-width: 100%; }
+.watch-shell :is(.orb, .wave-visual) { --sk-assistant-orb: var(--sk-assistant-orb-watch, 84px); }
+.watch-line { font-size: 13px; line-height: 1.35; max-height: 3.9em; overflow: hidden; color: var(--sk-text, inherit); }
+.watch-status { font-size: var(--sk-font-size-small, 11px); color: var(--sk-text-muted, color-mix(in srgb, currentColor 55%, transparent)); text-transform: uppercase; letter-spacing: 0.14em; }
+
+/* \u2500\u2500 Expanded: hero + turn list \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500 */
+.expanded-shell { display: flex; flex-direction: column; height: 100%; width: 100%; background: var(--sk-surface, color-mix(in srgb, #ffffff 72%, transparent)); backdrop-filter: blur(var(--sk-blur, 16px)); -webkit-backdrop-filter: blur(var(--sk-blur, 16px)); }
+.hero { display: flex; flex-direction: column; align-items: center; gap: 12px; padding: 26px 16px 18px; }
+.hero :is(.orb, .wave-visual) { --sk-assistant-orb: var(--sk-assistant-orb-hero, 92px); }
+.status-pill {
+  display: inline-flex; align-items: center; gap: 7px;
+  padding: 4px 12px; border-radius: var(--sk-radius-pill, 999px);
+  border: 1px solid var(--sk-border, color-mix(in srgb, currentColor 12%, transparent));
+  background: var(--sk-surface-strong, color-mix(in srgb, #ffffff 92%, transparent));
+  font-size: var(--sk-font-size-small, 11px);
+}
+.turns-wrap { position: relative; display: flex; flex: 1; min-height: 0; }
+.turns { flex: 1; overflow-y: auto; padding: 4px 18px 14px; display: flex; flex-direction: column; gap: 2px; scrollbar-width: thin; }
+.turn { padding: 9px 0; border-top: 1px solid var(--sk-border, color-mix(in srgb, currentColor 12%, transparent)); }
+.turn:first-child { border-top: none; }
+.turn-head { display: flex; align-items: center; gap: 7px; margin-bottom: 3px; }
+.turn-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--sk-assistant-user-dot, #8fa9ff); }
+.turn[data-role="agent"] .turn-dot { background: var(--sk-assistant-agent-dot, #47e3c1); }
+.turn-role { font-size: 10px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--sk-text-muted, color-mix(in srgb, currentColor 55%, transparent)); }
+.turn-flag { font-size: 10px; color: var(--sk-live, #dc2626); border: 1px solid color-mix(in srgb, var(--sk-live, #dc2626) 40%, transparent); border-radius: var(--sk-radius-pill, 999px); padding: 0 6px; }
+.turn-text { margin: 0; line-height: 1.45; overflow-wrap: anywhere; }
+.turn[data-draft] .turn-text { color: var(--sk-text-muted, color-mix(in srgb, currentColor 55%, transparent)); }
+.turn[data-draft] .turn-text::after { content: "\\258d"; color: var(--tone); animation: sk-aura-pulse 1s ease-in-out infinite; }
+.jump {
+  position: absolute;
+  bottom: 8px;
+  inset-inline-start: 50%;
+  transform: translateX(-50%);
+  border: 1px solid var(--sk-border, color-mix(in srgb, currentColor 12%, transparent));
+  border-radius: var(--sk-radius-pill, 999px);
+  background: var(--sk-surface-strong, color-mix(in srgb, #ffffff 92%, transparent));
+  color: inherit;
+  cursor: pointer;
+  font: inherit;
+  font-size: var(--sk-font-size-small, 11px);
+  font-weight: 600;
+  padding: 4px 10px;
+}
+:host(:dir(rtl)) .jump { transform: translateX(50%); }
+.hidden { display: none !important; }
+`,A=class extends b{static tagName="speechkit-voice-assistant";static get observedAttributes(){return[...super.observedAttributes,"size","transcript","frame","variant","mark-src","aura-state"]}#e=[];#s;#t;#p;#c=0;#i=new L;#u=new L;#h;#f=0;#a=null;#v=null;#d=null;#n=null;#o=null;#r=null;#m=null;#l=null;#g=[];#k=[];#E="";#S=null;#w=-1;#b=!0;#x=!1;constructor(){super(Ze)}get size(){let e=this.getAttribute("size");return e==="expanded"||e==="orb"?e:"compact"}set size(e){this.setAttribute("size",e)}get transcriptEnabled(){return this.hasAttribute("transcript")}set transcriptEnabled(e){this.toggleAttribute("transcript",e)}get frame(){let e=this.getAttribute("frame");return e==="overlay"||e==="keyboard"||e==="watch"||e==="phone"?e:"panel"}set frame(e){this.setAttribute("frame",e)}get variant(){return this.getAttribute("variant")==="waveform"?"waveform":"aura"}set variant(e){this.setAttribute("variant",e)}get markSrc(){return this.getAttribute("mark-src")}set markSrc(e){e===null?this.removeAttribute("mark-src"):this.setAttribute("mark-src",e)}get turns(){return this.#s??this.#e}set turns(e){this.#s=e,this.requestUpdate()}set status(e){this.#t=e,this.requestUpdate()}get auraState(){if(this.#p)return this.#p;let e=this.getAttribute("aura-state");return e!==null&&Qe(e)?e:Xe(this.#O())}set auraState(e){this.#p=e,this.requestUpdate()}set level(e){this.#i.target=e}setLevel(e,t="input"){t==="output"?this.#u.target=e:this.#i.target=e}onControllerChanged(e){this.#h?.(),this.#h=void 0,e?.subscribeLevel&&(this.#h=e.subscribeLevel((t,n)=>{n==="output"?this.#u.target=t:this.#i.target=t}))}onSessionState(e){e.events.length<this.#c&&(this.#e=[],this.#c=0);for(let t=this.#c;t<e.events.length;t+=1){let n=e.events[t];n!==void 0&&(this.#e=I(this.#e,n))}this.#c=e.events.length}static#A;static#y(){return O.#A===void 0&&(O.#A=typeof matchMedia=="function"?matchMedia("(prefers-reduced-motion: reduce)"):null),O.#A?.matches??!1}#_=e=>{let t=this.#i.tick(e),n=this.#u.tick(e);if(this.#a?.style.setProperty("--level",Math.max(t,n).toFixed(3)),this.#k.length>0){let r=this.auraState,i={active:r!=="inactive"&&r!=="error",reducedMotion:O.#y()};for(let o of this.#k)o.onFrame(t,n,e,i)}this.#f=requestAnimationFrame(this.#_)};connectedCallback(){super.connectedCallback(),this.#f=requestAnimationFrame(this.#_)}disconnectedCallback(){cancelAnimationFrame(this.#f),this.#h?.(),this.#h=void 0,super.disconnectedCallback()}#C(){this.#O()==="speaking"&&(this.controller?.interrupt?.(),this.emitKitEvent("speechkit-interrupt"))}#M(){if(this.#x){this.#x=!1;return}let e=this.#r;if(!e)return;let t=e.scrollHeight-e.scrollTop-e.clientHeight<24;t!==this.#b&&(this.#b=t,this.#l&&(this.#l.hidden=t))}#T(){let e=this.#r;if(!e)return;let t=e.scrollHeight-e.clientHeight;Math.abs(e.scrollTop-t)<1||(this.#x=!0,e.scrollTop=e.scrollHeight)}#N(){this.#b=!0,this.#l&&(this.#l.hidden=!0),this.#T()}#O(){return this.#t?this.#t:this.state?this.state.status:this.controller?"connecting":"idle"}#z(e,t){return e==="connecting"?t["sk.voice.agent.connecting"]:t[`sk.voice.state.${e}`]}#V(){let e=document.createElement("button");e.type="button",e.className="orb",e.setAttribute("part","orb"),e.addEventListener("click",()=>this.#C());for(let n of["glow","sweep","sweep-inner","halo","core","spark"]){let r=document.createElement("div");r.className=n,e.append(r)}let t=this.markSrc;if(t){let n=document.createElement("div");n.className="mark",n.setAttribute("part","mark");let r=document.createElement("img");r.src=t,r.alt="",r.setAttribute("aria-hidden","true"),n.append(r),e.append(n)}return this.#g.push(e),e}#L(e){if(this.variant==="waveform"){let t=new R(e);return t.element.addEventListener("click",()=>this.#C()),this.#g.push(t.element),this.#k.push(t),t.element}return this.#V()}#I(){let e=document.createElement("div");if(e.className="va",e.setAttribute("part","assistant"),this.#g=[],this.#k=[],this.size==="orb")return e.append(this.#L("radial")),e;if(this.size==="expanded"){let t=document.createElement("div");t.className="expanded-shell";let n=document.createElement("div");n.className="hero",n.setAttribute("part","hero"),n.append(this.#L("radial")),this.#o=document.createElement("span"),this.#o.className="status-pill",this.#o.setAttribute("part","status"),this.#o.setAttribute("role","status");let r=document.createElement("span");r.className="status-dot",r.setAttribute("aria-hidden","true");let i=document.createElement("span");i.className="status-text",this.#o.append(r,i),n.append(this.#o),this.#m=document.createElement("div"),this.#m.className="turns-wrap",this.#r=document.createElement("div"),this.#r.className="turns",this.#r.setAttribute("part","transcript"),this.#r.setAttribute("aria-live","polite"),this.#r.addEventListener("scroll",()=>this.#M()),this.#l=document.createElement("button"),this.#l.type="button",this.#l.className="jump",this.#l.setAttribute("part","jump-to-live"),this.#l.hidden=!0,this.#l.addEventListener("click",()=>this.#N()),this.#m.append(this.#r,this.#l),t.append(n,this.#m),e.append(t)}else if(this.frame==="watch"){let t=document.createElement("div");t.className="watch-shell",this.#n=document.createElement("div"),this.#n.className="watch-status",this.#n.setAttribute("part","status"),this.#n.setAttribute("role","status"),this.#d=document.createElement("div"),this.#d.className="watch-line",this.#d.setAttribute("aria-live","polite"),t.append(this.#L("radial"),this.#n,this.#d),e.append(t)}else{let t=document.createElement("div");t.className="compact-shell",t.setAttribute("part","shell"),this.#v=document.createElement("div"),this.#v.className="compact-line",this.#v.setAttribute("aria-live","polite");let n=document.createElement("span");n.className="status-dot",n.setAttribute("aria-hidden","true"),t.append(this.#L("linear"),this.#v,n),e.append(t)}return e}#P(){let e=this.turns,t=e.length>0?e[e.length-1]:void 0;if(!t||!t.text)return null;let n=t.text.split(/(?<=[.!?…])\s+/).filter(i=>i.length>0),r=n.length>0?n[n.length-1]??t.text:t.text;return{role:t.role,text:r}}#R(e){let t=this.#r;if(t){t.replaceChildren();for(let n of this.turns){let r=document.createElement("article");r.className="turn",r.setAttribute("part",n.role==="user"?"turn turn-user":"turn turn-agent"),r.dataset.role=n.role,n.final||(r.dataset.draft="");let i=document.createElement("header");i.className="turn-head";let o=document.createElement("span");o.className="turn-dot",o.setAttribute("aria-hidden","true");let a=document.createElement("span");if(a.className="turn-role",a.textContent=n.role==="user"?e["sk.voice.agent.you"]:e["sk.voice.agent.assistant"],i.append(o,a),n.interrupted){let c=document.createElement("span");c.className="turn-flag",c.textContent=e["sk.voice.agent.interrupted"],i.append(c)}let l=document.createElement("p");l.className="turn-text",l.textContent=n.text,r.append(i,l),t.append(r)}}}render(){let e=this.msgs(),t=`${this.size}/${this.frame}/${this.variant}/${this.markSrc??""}`;this.#a&&this.#E!==t&&(this.#a.remove(),this.#a=null,this.#v=this.#d=this.#n=null,this.#o=this.#r=this.#m=null,this.#l=null,this.#S=null,this.#w=-1,this.#b=!0),this.#a||(this.#E=t,this.#a=this.#I(),this.root.append(this.#a));let n=this.#O();this.#a.dataset.status=n,this.#a.dataset.aura=this.auraState,this.#a.dataset.frame=this.frame,this.#a.dataset.variant=this.variant;let r=this.#z(n,e),i=n==="speaking";for(let a of this.#g)a.setAttribute("aria-label",i?e["sk.voice.agent.interrupt"]:r);if(this.size==="orb")return;let o=this.#P();if(this.#v)if(this.#v.classList.toggle("hidden",!this.transcriptEnabled),this.#v.replaceChildren(),o&&this.transcriptEnabled){let a=document.createElement("span");a.className="who",a.textContent=o.role==="user"?e["sk.voice.agent.you"]:e["sk.voice.agent.assistant"],this.#v.append(a,document.createTextNode(o.text))}else{let a=document.createElement("span");a.className="who",a.textContent=r,this.#v.append(a)}if(this.#n&&(this.#n.textContent=r),this.#d&&(this.#d.classList.toggle("hidden",!this.transcriptEnabled),this.#d.textContent=this.transcriptEnabled?o?.text??"":""),this.#o){let a=this.#o.querySelector(".status-text");a&&(a.textContent=r)}if(this.#m&&this.#r){this.#m.classList.toggle("hidden",!this.transcriptEnabled);let a=this.turns;(a!==this.#S||a.length!==this.#w)&&(this.#R(e),this.#S=a,this.#w=a.length),this.#l&&(this.#l.textContent=e["sk.voice.agent.jumpToLive"]),this.#b&&this.#T()}}};O=A;var me=["rosette","k","none"];function U(s){return me.includes(s)}function X(s,e){return s==="none"?null:e[s]??null}function Q(s){return s==="k"?"27%":void 0}function ge(){let s=[[C.tagName,C],[S.tagName,S],[E.tagName,E],[M.tagName,M],[N.tagName,N],[A.tagName,A]];for(let[e,t]of s)customElements.get(e)||customElements.define(e,t)}ge();function Z(s,e){return s?e?e.startsWith(s)?e:s.endsWith(e)?s:s+e:s:e}var ke=16e3,ee=24e3,be="ticket.";var K=class{socket;hooks;tools;start;opened=!1;constructor(e,t){this.socket=e,this.hooks=t.hooks??{},this.tools=t.tools??{},this.start=t.start,e.addEventListener("open",()=>{this.opened=!0,this.sendFrame({type:"start",...this.start})}),e.addEventListener("message",n=>void this.handleMessage(n.data)),e.addEventListener("error",n=>{let r=n instanceof Error?n:new Error("ws error");this.hooks.onError?.(r)}),e.addEventListener("close",n=>{this.opened=!1,this.hooks.onClose?.(n.reason||`closed (${n.code})`)})}sendText(e){this.sendFrame({type:"text",text:e})}sendAudioChunk(e){this.socket.send(e)}endAudio(){this.sendFrame({type:"audio_end"})}ping(){this.sendFrame({type:"ping"})}advanceStep(e){this.sendFrame(e!==void 0?{type:"advance_step",reason:e}:{type:"advance_step"})}close(){if(this.opened)try{this.sendFrame({type:"stop"})}catch{}this.socket.close()}sendFrame(e){this.socket.send(JSON.stringify(e))}async handleMessage(e){if(typeof e=="string"){let t;try{t=JSON.parse(e)}catch(n){this.hooks.onError?.(n);return}await this.handleFrame(t);return}if(e instanceof ArrayBuffer){this.hooks.onAudio?.(e);return}if(typeof e=="object"&&e!==null&&"buffer"in e&&ArrayBuffer.isView(e)){let t=e,n=t.buffer.slice(t.byteOffset,t.byteOffset+t.byteLength);this.hooks.onAudio?.(n)}}async handleFrame(e){switch(e.type){case"state":this.hooks.onState?.(e.state);return;case"input_transcript":this.hooks.onUserTranscript?.(e.text,e.done);return;case"output_transcript":this.hooks.onAgentTranscript?.(e.text,e.done);return;case"tool_call":this.hooks.onToolCall?.(e),await this.dispatchTool(e);return;case"event":this.hooks.onEvent?.(e);return;case"error":this.hooks.onError?.(e);return;case"session_end":this.hooks.onClose?.(e.reason);return;case"interrupted":this.hooks.onInterrupted?.(e);return;case"sequence_step":case"pong":return}}async dispatchTool(e){let t=this.tools[e.name];if(!t){this.sendFrame({type:"tool_response",id:e.id,name:e.name,response:{error:`unknown tool: ${e.name}`}});return}let n;try{n=await t(e)??{}}catch(r){n={error:r.message}}this.sendFrame({type:"tool_response",id:e.id,name:e.name,response:n})}};async function xe(s){let e={"Content-Type":"application/json"};s.token&&(e.Authorization=`Bearer ${s.token}`);let t=s.fetch??fetch,n=s.serverUrl.replace(/\/+$/,""),r=await t(`${n}${Se(s.basePath)}/voiceagent/sessions`,{method:"POST",headers:e,body:JSON.stringify(s.body??{})});if(!r.ok)throw new Error(`speechkit: mint session failed: HTTP ${r.status} ${await r.text()}`);return await r.json()}function ye(s,e,t){return e.ws_url?e.ws_url:`${s.replace(/^http/,"ws").replace(/\/+$/,"")}${Se(t)}/voiceagent/sessions/${encodeURIComponent(e.session_id)}/ws`}function Ee(s){return s.ws_subprotocol??`${be}${s.ticket}`}function Se(s){let e=(s??"/v1").trim();return e===""||e==="/"?"":(e.startsWith("/")?e:`/${e}`).replace(/\/+$/,"")}async function we(s){let e=s.presetTicket??await xe({serverUrl:s.serverUrl,...s.token!==void 0?{token:s.token}:{},...s.ticket!==void 0?{body:s.ticket}:{},...s.basePath!==void 0?{basePath:s.basePath}:{}}),t=s.resolveWsUrl?s.resolveWsUrl(e):ye(s.serverUrl,e,s.basePath),n=new WebSocket(t,[Ee(e)]);n.binaryType="arraybuffer";let r={start:s.start,...s.hooks!==void 0?{hooks:s.hooks}:{},...s.tools!==void 0?{tools:s.tools}:{}},i=new K(n,r),o=at(s.onPlaybackLevel);return{session:i,socket:n,ticket:e,attachMicrophone:l=>tt(i,l),playChunk:l=>o.play(l),flushPlayback:()=>o.flush(),close:()=>{i.close(),o.dispose()}}}var et=`
+registerProcessor("speechkit-capture", class extends AudioWorkletProcessor {
+  process(inputs) {
+    const channel = inputs[0] && inputs[0][0];
+    if (channel && channel.length > 0) {
+      const copy = new Float32Array(channel.length);
+      copy.set(channel);
+      this.port.postMessage(copy, [copy.buffer]);
+    }
+    return true;
+  }
+});
+`;function tt(s,e){let t=new AudioContext,n=t.createMediaStreamSource(e),r=t.sampleRate,i=null,o=!1,a=null,l=c=>{if(o)return;let u=i?nt(i,c):new Float32Array(c),{pcm16:d,remaining:p}=rt(u,r,ke);i=p,d.length>0&&s.sendAudioChunk(d)};return(async()=>{let c=await st(t,n,l);if(o){c.dispose();return}a=c.dispose})(),()=>{o=!0,a?.(),a=null,n.disconnect(),t.close(),e.getTracks().forEach(c=>c.stop())}}async function st(s,e,t){let n=s.createGain();if(n.gain.value=0,n.connect(s.destination),typeof AudioWorkletNode=="function"&&s.audioWorklet)try{let i=new Blob([et],{type:"application/javascript"}),o=URL.createObjectURL(i);try{await s.audioWorklet.addModule(o)}finally{URL.revokeObjectURL(o)}let a=new AudioWorkletNode(s,"speechkit-capture",{numberOfInputs:1,numberOfOutputs:1,channelCount:1});return a.port.onmessage=l=>t(l.data),e.connect(a),a.connect(n),{dispose:()=>{a.port.onmessage=null,a.disconnect(),n.disconnect()}}}catch{}let r=s.createScriptProcessor(4096,1,1);return r.onaudioprocess=i=>{t(i.inputBuffer.getChannelData(0))},e.connect(r),r.connect(n),{dispose:()=>{r.onaudioprocess=null,r.disconnect(),n.disconnect()}}}function nt(s,e){let t=new Float32Array(s.length+e.length);return t.set(s,0),t.set(e,s.length),t}function rt(s,e,t){if(e===t)return{pcm16:it(s),remaining:new Float32Array(0)};let n=e/t,r=Math.floor(s.length/n),i=new Int16Array(r);for(let a=0;a<r;a++){let l=a*n,c=Math.floor(l),u=Math.min(c+1,s.length-1),d=l-c,p=(s[c]??0)*(1-d)+(s[u]??0)*d;i[a]=Ae(p*32767)}let o=Math.floor(r*n);return{pcm16:i,remaining:s.slice(o)}}function it(s){let e=new Int16Array(s.length);for(let t=0;t<s.length;t++)e[t]=Ae((s[t]??0)*32767);return e}function Ae(s){return s>32767?32767:s<-32768?-32768:Math.round(s)}function at(s){let e=null,t=0,n=new Set;function r(){return e||(e=new AudioContext({sampleRate:ee}),t=e.currentTime),e}return{play(i){let o=r(),a=new Int16Array(i),l=o.createBuffer(1,a.length,ee),c=l.getChannelData(0),u=0;for(let v=0;v<a.length;v++){let f=(a[v]??0)/32767;c[v]=f,u+=f*f}s?.(Math.min(1,Math.sqrt(u/Math.max(1,a.length))*3));let d=o.createBufferSource();d.buffer=l,d.connect(o.destination),n.add(d),d.onended=()=>{n.delete(d),n.size===0&&s?.(0)};let p=Math.max(o.currentTime,t);d.start(p),t=p+l.duration},flush(){for(let i of n){i.onended=null;try{i.stop()}catch{}}n.clear(),e&&(t=e.currentTime),s?.(0)},dispose(){this.flush(),e&&(e.close(),e=null)}}}function ot(s){return{version:"speechkit.voice_surface.v1",surface:s.surface??"floating_panel",mode:"voice_agent",capture_policy:"push_to_talk",transport:"voiceagent_ws_ticket",capabilities:{dictation:!1,assist:!1,voice_agent:!0,wakeword_local:!1,tts:!0,barge_in:!0,local_pairing:!1},session:{},provider:s.start?.provider!==void 0?{provider_id:s.start.provider}:{}}}function te(s,e,t){return{error_code:s,reason_code:s,capability:"speechkit.voiceagent.live",required_features:[],missing_features:[],retryable:t,user_guidance:{title:"Live voice session failed",body:e,next_steps:t?["Check the server and try again."]:["Check the voice-agent configuration."]}}}function ct(){return navigator.mediaDevices.getUserMedia({audio:{echoCancellation:!0,noiseSuppression:!0,channelCount:1}})}function lt(s,e){if(typeof AudioContext>"u")return()=>{};let t=new AudioContext,n=t.createAnalyser();n.fftSize=1024,t.createMediaStreamSource(s).connect(n);let r=new Float32Array(n.fftSize),i=setInterval(()=>{n.getFloatTimeDomainData(r);let o=0;for(let a=0;a<r.length;a++)o+=(r[a]??0)**2;e(Math.min(1,Math.sqrt(o/r.length)*4))},50);return()=>{clearInterval(i),e(0),t.close()}}function _e(s){let e=ot(s),t=$(e),n=new Set,r=new Set,i=!1,o=!1,a=null,l=null,c=null,u="",d="",p=m=>s.onDiagnostic?.(m),v=(m,h)=>{for(let g of r)g(m,h)};function f(m){if(i)return;let h={surface:e.surface,mode:e.mode,...m};t=ce(t,h);for(let g of n)g(t)}function k(){l?.(),l=null,c?.(),c=null;let m=a;if(a=null,o=!1,m)try{m.flushPlayback(),m.close()}catch{}v(0,"input"),v(0,"output")}async function y(){t=$(e),u="",d="",p("requesting microphone\u2026");let m;try{m=await(s.getAudioStream??ct)()}catch(h){f({type:"voice.denied",error:te("mic_permission_denied",h.message,!0)});return}p(`minting session at ${s.serverUrl}\u2026`);try{a=await we({serverUrl:s.serverUrl,...s.token!==void 0?{token:s.token}:{},...s.basePath!==void 0?{basePath:s.basePath}:{},start:s.start??{},onPlaybackLevel:h=>v(h,"output"),hooks:{onState:h=>p(`agent state: ${h}`),onUserTranscript:(h,g)=>{u=Z(u,h),g?(f({type:"voice.transcript_final",text:u,final:!0}),u=""):f({type:"voice.transcript_draft",text:u})},onAgentTranscript:(h,g)=>{d=Z(d,h),f({type:"voice.agent_turn",output_text:d,final:g}),g&&(d="")},onAudio:h=>a?.playChunk(h),onInterrupted:()=>{a?.flushPlayback(),f({type:"voice.barge_in",reason_code:"user_spoke_during_tts"})},onError:h=>{let g=h instanceof Error?h.message:`${h.code}: ${h.message}`;p(`error: ${g}`),f({type:"voice.denied",error:te("session_error",g,!0)})},onClose:h=>{p(`session closed: ${h}`),o&&(k(),f({type:"voice.tts_finished"}))}}})}catch(h){m.getTracks().forEach(g=>g.stop()),p(`connect failed: ${h.message}`),f({type:"voice.denied",error:te("session_connect_failed",h.message,!0)});return}l=a.attachMicrophone(m),c=lt(m,h=>v(h,"input")),o=!0,p(`session ${a.ticket.session_id} live`),f({type:"voice.capture_started"})}return{contract:e,start(m){if(!(o||i))return y()},stop(){o&&(f({type:"voice.capture_stopped"}),k(),f({type:"voice.tts_finished"}))},cancel(){k(),f({type:"voice.cancelled",reason_code:"user_cancelled"})},interrupt(){a?.flushPlayback(),f({type:"voice.barge_in",reason_code:"user_interrupt_button"})},subscribe(m){return n.add(m),m(t),()=>n.delete(m)},getState(){return t},subscribeLevel(m){return r.add(m),()=>r.delete(m)},dispose(){k(),i=!0,n.clear(),r.clear()}}}var ut={rosette:"/assistant/marks/rosette.png",k:"/assistant/marks/k.png"},oe="speechkit.assistant.appearance",Ne="speechkit.assistant.token",j={variant:"aura",mark:"rosette",transcript:!0};function Oe(s){return s==="aura"||s==="waveform"}function Ce(s,e){if(typeof s!="object"||s===null)return e;let t=s;return{variant:Oe(t.variant)?t.variant:e.variant,mark:typeof t.mark=="string"&&U(t.mark)?t.mark:e.mark,transcript:typeof t.transcript=="boolean"?t.transcript:e.transcript}}function x(s){let e=document.getElementById(s);if(!e)throw new Error(`missing #${s}`);return e}var w=x("assistant"),H=x("session-toggle"),Te=x("appearance-toggle"),Le=x("appearance-panel"),dt=x("appearance-reset"),se=x("transcript-toggle"),pt=x("connection-note"),Me=x("token-row"),q=x("token-input"),ne={...j},F={...j},z=null,re=!1;function ht(){try{let s=localStorage.getItem(oe);return s?JSON.parse(s):null}catch{return null}}function V(s,e){F=s,w.setAttribute("variant",s.variant);let t=X(s.mark,ut);t?w.setAttribute("mark-src",t):w.removeAttribute("mark-src");let n=Q(s.mark);n?w.style.setProperty("--sk-assistant-mark-ratio",n):w.style.removeProperty("--sk-assistant-mark-ratio"),w.toggleAttribute("transcript",s.transcript),se.checked=s.transcript;for(let r of document.querySelectorAll("#variant-chips button"))r.dataset.active=String(r.dataset.variant===s.variant);for(let r of document.querySelectorAll("#mark-chips button"))r.dataset.active=String(r.dataset.mark===s.mark);if(e)try{localStorage.setItem(oe,JSON.stringify(s))}catch{}}function ie(){return document.body.dataset.smokeToken?.trim()??""}function ft(){let s=ie();return s||q.value.trim()}function ae(s){pt.textContent=s}function vt(){z?.dispose(),z=null}function mt(){vt();let s={serverUrl:window.location.origin,surface:"floating_panel",onDiagnostic:n=>ae(n)},e=ft();e&&(s.token=e);let t=_e(s);return z=t,w.controller=t,t.subscribe(n=>{re=n.status!=="idle"&&n.status!=="cancelled"&&n.status!=="denied",H.textContent=re?"Stop":"Start"}),t}H.addEventListener("click",()=>{if(re&&z){z.stop();return}mt().start("voice_agent")});Te.addEventListener("click",()=>{let s=Le.hidden;Le.hidden=!s,Te.setAttribute("aria-expanded",String(s))});for(let s of document.querySelectorAll("#variant-chips button"))s.addEventListener("click",()=>{let e=s.dataset.variant;Oe(e)&&V({...F,variant:e},!0)});for(let s of document.querySelectorAll("#mark-chips button"))s.addEventListener("click",()=>{let e=s.dataset.mark;typeof e=="string"&&U(e)&&V({...F,mark:e},!0)});se.addEventListener("change",()=>{V({...F,transcript:se.checked},!0)});dt.addEventListener("click",()=>{try{localStorage.removeItem(oe)}catch{}V({...ne},!1)});q.addEventListener("change",()=>{try{localStorage.setItem(Ne,q.value.trim())}catch{}});async function gt(){try{q.value=localStorage.getItem(Ne)??""}catch{}try{let s=await fetch("/v1/server/settings",{cache:"no-store"});if(!s.ok)throw new Error(`settings request failed: ${s.status}`);let e=await s.json();ne=Ce(e.assistant_ui??{},{...j,transcript:kt(e.assistant_ui)});let t=e.auth,r=(typeof t?.mode=="string"?t.mode:"")!=="none"&&ie()==="";Me.hidden=!r;let i=typeof e.version=="string"?e.version:"";ae(`Connected to ${window.location.host}${i?` \xB7 ${i}`:""}`),H.disabled=!1}catch{ae("Server settings unavailable \u2014 you can still try starting a session."),Me.hidden=ie()!=="",H.disabled=!1}V(Ce(ht(),ne),!1)}function kt(s){if(typeof s=="object"&&s!==null){let e=s;if(typeof e.transcript_default=="boolean")return e.transcript_default}return j.transcript}gt();})();
+</script>
+</body>
+</html>

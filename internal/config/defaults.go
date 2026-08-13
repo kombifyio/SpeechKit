@@ -75,6 +75,9 @@ func defaults() *Config {
 			Design:                  "default",
 			AssistOverlayMode:       OverlayFeedbackModeSmallFeedback,
 			VoiceAgentOverlayMode:   OverlayFeedbackModeSmallFeedback,
+			AssistantVariant:        AssistantVariantAura,
+			AssistantMark:           AssistantMarkRosette,
+			AssistantTranscript:     true,
 		},
 		Local: LocalConfig{
 			Enabled: true,
@@ -379,6 +382,11 @@ func defaults() *Config {
 				Vocabulary:     true,
 				TTSDirect:      true,
 				WakewordModels: true,
+			},
+			AssistantUI: ServerAssistantUIConfig{
+				Variant:           AssistantVariantAura,
+				Mark:              AssistantMarkRosette,
+				TranscriptDefault: true,
 			},
 		},
 	}

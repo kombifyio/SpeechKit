@@ -1,0 +1,19 @@
+{
+  "name": "@kombifyio/speechkit-assistant-web",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Internal build source for the speechkit-server /assistant web page. The build inlines the voice-ui kit and the voiceagent browser client into one self-contained HTML file embedded by internal/server/assistantui.",
+  "type": "module",
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@kombifyio/speechkit-voice-ui": "workspace:*",
+    "@kombifyio/speechkit-voiceagent-client": "workspace:*"
+  },
+  "devDependencies": {
+    "esbuild": "^0.25.0",
+    "typescript": "^5.9.3"
+  }
+}

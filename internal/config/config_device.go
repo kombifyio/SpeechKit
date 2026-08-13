@@ -157,6 +157,12 @@ type UIConfig struct {
 	Design                  string                         `toml:"design"`
 	AssistOverlayMode       string                         `toml:"assist_overlay_mode"`
 	VoiceAgentOverlayMode   string                         `toml:"voice_agent_overlay_mode"`
+	// Voice Assistant appearance (speechkit-voice-assistant element):
+	// "aura" | "waveform", "rosette" | "k" | "none", and whether the live
+	// transcript renders by default.
+	AssistantVariant    string `toml:"assistant_variant"`
+	AssistantMark       string `toml:"assistant_mark"`
+	AssistantTranscript bool   `toml:"assistant_transcript"`
 }
 
 type OverlayFreePosition struct {
