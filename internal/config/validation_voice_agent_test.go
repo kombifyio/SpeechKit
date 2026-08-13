@@ -49,11 +49,16 @@ func TestNormalizeVoiceAgentPauseTolerance(t *testing.T) {
 }
 
 // TestVoiceAgentDialogDefaults pins the out-of-the-box dialog behaviour: a
-// 60 s hold-to-talk resume window and an 800 ms mic pause tolerance.
+// 10 s hold-to-talk resume window and an 800 ms mic pause tolerance.
+//
+// The resume window was 60 s until 2026-08-13. Releasing the key ends the
+// conversation, so this window exists only to let an immediate re-press skip
+// the provider handshake — a minute of warm session outlives any sense that
+// the dialog is over and kept the overlay feeling alive after it ended.
 func TestVoiceAgentDialogDefaults(t *testing.T) {
 	cfg := defaults()
-	if cfg.VoiceAgent.WarmSessionLingerSec != 60 {
-		t.Fatalf("default WarmSessionLingerSec = %d, want 60", cfg.VoiceAgent.WarmSessionLingerSec)
+	if cfg.VoiceAgent.WarmSessionLingerSec != 10 {
+		t.Fatalf("default WarmSessionLingerSec = %d, want 10", cfg.VoiceAgent.WarmSessionLingerSec)
 	}
 	if cfg.VoiceAgent.PauseToleranceMs != 800 {
 		t.Fatalf("default PauseToleranceMs = %d, want 800", cfg.VoiceAgent.PauseToleranceMs)

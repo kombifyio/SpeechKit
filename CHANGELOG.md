@@ -9,6 +9,37 @@ maintainers. The release linter
 (`npm run release:lint -- --version vX.Y.Z`) refuses internal tracker
 IDs, source paths, and other maintainer-only vocabulary.
 
+## [0.56.0](https://github.com/kombifyio/SpeechKit/compare/v0.55.0...v0.56.0) (2026-08-13)
+
+### Highlights
+
+- **A voice overlay that gets out of the way**: the Voice Agent surface is
+  now one dark, readable panel led by the animation and the conversation —
+  no titlebar, no buttons competing for attention, and controls that appear
+  only when you reach for them.
+- **Let go and the conversation ends**: releasing hold-to-talk closes the
+  dialog for good instead of leaving it open, while a short window still
+  lets an immediate second press carry on where you left off.
+- **Opening SpeechKit opens SpeechKit**: launching from the taskbar or Start
+  menu brings the window up, and clicking the shortcut again returns to the
+  running app instead of doing nothing.
+- **Quick Note where you actually are**: the note action moved to the
+  overlay, reachable from whatever you are working in, and every overlay
+  icon now says what it does when you hover it.
+
+### Added
+
+* **desktop:** move Quick Note to the overlay and label every overlay icon ([df3c892](https://github.com/kombifyio/SpeechKit/commit/df3c8921f93f287dcf43e387a6fd123ced5df535))
+* **desktop:** rebuild the Voice Agent overlay around the conversation ([2358a48](https://github.com/kombifyio/SpeechKit/commit/2358a48b24143f96a104d39b1595f20fbc485f21))
+
+
+### Fixed
+
+* **desktop:** end the conversation when hold-to-talk is released ([a2d6b90](https://github.com/kombifyio/SpeechKit/commit/a2d6b9042439fcc68071a650a4d891b0c2b14040))
+* **desktop:** make the launch-time window open verify itself ([bb3fbcf](https://github.com/kombifyio/SpeechKit/commit/bb3fbcf6d6a0fa94f8b2304a65d75b52309765ec))
+* **desktop:** stop the overlay resizing itself and follow the conversation ([f5a2021](https://github.com/kombifyio/SpeechKit/commit/f5a20214ea31d9abc578cfac55ef49f05167641f))
+* **release:** read the curated highlights from main, not the release branch ([d6f5876](https://github.com/kombifyio/SpeechKit/commit/d6f58769601c58bc1272fe6193375af4daf6cfb2))
+
 ## [0.55.0](https://github.com/kombifyio/SpeechKit/compare/v0.54.10...v0.55.0) (2026-08-13)
 
 ### Highlights

@@ -209,19 +209,23 @@ func defaults() *Config {
 			// preview endpoint has transient issues. Cross-provider fallbacks
 			// can be configured explicitly per deployment via the separate
 			// model_selection section.
-			FallbackModel:                   fallbackGeminiNativeAudioModel,
-			Voice:                           "Kore",
-			AgentProfileID:                  voiceagentprofile.DefaultID,
-			AgentSequenceID:                 "",
-			FrameworkPrompt:                 "",
-			RefinementPrompt:                "",
-			AutoStartOnLaunch:               false,
-			CloseBehavior:                   VoiceAgentCloseBehaviorContinue,
-			BargeIn:                         VoiceAgentBargeInAuto,
-			ReminderAfterIdleSec:            300,
-			DeactivateAfterIdleSec:          900,
-			HoldReleaseGraceSec:             10,
-			WarmSessionLingerSec:            60,
+			FallbackModel:          fallbackGeminiNativeAudioModel,
+			Voice:                  "Kore",
+			AgentProfileID:         voiceagentprofile.DefaultID,
+			AgentSequenceID:        "",
+			FrameworkPrompt:        "",
+			RefinementPrompt:       "",
+			AutoStartOnLaunch:      false,
+			CloseBehavior:          VoiceAgentCloseBehaviorContinue,
+			BargeIn:                VoiceAgentBargeInAuto,
+			ReminderAfterIdleSec:   300,
+			DeactivateAfterIdleSec: 900,
+			HoldReleaseGraceSec:    10,
+			// 10s, not a minute: hold-to-talk ends the conversation on
+			// release, and this window only exists so an immediate re-press
+			// skips the provider handshake. A long warm session outlives the
+			// user's sense that the dialog is over.
+			WarmSessionLingerSec:            10,
 			PauseToleranceMs:                800,
 			PipelineFallback:                false,
 			ShowPrompter:                    true,
