@@ -6,16 +6,19 @@ const (
 	ModelAssemblyAIVoiceAgent             = "assemblyai-voice-agent"
 	ModelDeepgramFluxGeneralEN            = "flux-general-en"
 	ModelDeepgramFluxGeneralMulti         = "flux-general-multi"
-	ModelDeepgramNova3                    = "nova-3"
-	ModelGroqWhisperLargeV3               = "whisper-large-v3"
-	ModelGroqWhisperLargeV3Turbo          = "whisper-large-v3-turbo"
-	ModelGemini35LiveTranslatePreview     = "gemini-3.5-live-translate-preview"
-	ModelGemini31FlashLivePreview         = "gemini-3.1-flash-live-preview"
-	ModelGemini25FlashNativeAudioPreview  = "gemini-2.5-flash-native-audio-preview-12-2025"
-	ModelOpenAIGPT4OTranscribe            = "gpt-4o-transcribe"
-	ModelOpenAIGPT4OMiniTranscribe        = "gpt-4o-mini-transcribe"
-	ModelOpenAIGPT4OTranscribeDiarize     = "gpt-4o-transcribe-diarize"
-	ModelOpenAIRealtime2                  = "gpt-realtime-2"
+	// ModelDeepgramFluxTTSDefaultEN is Deepgram's default Flux TTS voice. Flux
+	// TTS is English-only; Aura-2 remains the multilingual speak leg.
+	ModelDeepgramFluxTTSDefaultEN        = "flux-kit-en"
+	ModelDeepgramNova3                   = "nova-3"
+	ModelGroqWhisperLargeV3              = "whisper-large-v3"
+	ModelGroqWhisperLargeV3Turbo         = "whisper-large-v3-turbo"
+	ModelGemini35LiveTranslatePreview    = "gemini-3.5-live-translate-preview"
+	ModelGemini31FlashLivePreview        = "gemini-3.1-flash-live-preview"
+	ModelGemini25FlashNativeAudioPreview = "gemini-2.5-flash-native-audio-preview-12-2025"
+	ModelOpenAIGPT4OTranscribe           = "gpt-4o-transcribe"
+	ModelOpenAIGPT4OMiniTranscribe       = "gpt-4o-mini-transcribe"
+	ModelOpenAIGPT4OTranscribeDiarize    = "gpt-4o-transcribe-diarize"
+	ModelOpenAIRealtime2                 = "gpt-realtime-2"
 )
 
 type ModelLifecycle string

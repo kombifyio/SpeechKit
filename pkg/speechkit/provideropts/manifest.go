@@ -188,12 +188,16 @@ func googleTTSManifest() ProviderOptionManifest {
 
 func deepgramVoiceAgentManifest() ProviderOptionManifest {
 	return manifest("deepgram", "Deepgram Voice Agent", ModalityVoiceAgent, []string{"realtime.deepgram.voice-agent"}, []OptionSupport{
-		native(OptionLanguage, TypeString, "Language", "agent.language", "https://developers.deepgram.com/docs/voice-agent-settings"),
+		derived(OptionLanguage, TypeString, "Language", "Deepgram deprecated agent.language; Flux takes the session locale through language_hints instead.", "https://developers.deepgram.com/docs/configure-voice-agent"),
 		native(OptionLanguageHints, TypeStringList, "Language hints", "agent.listen.provider.language_hints", "https://developers.deepgram.com/docs/multilingual-voice-agent"),
 		native(OptionKeyterms, TypeStringList, "Listen keyterms", "agent.listen.provider.keyterms", "https://developers.deepgram.com/docs/voice-agent-settings"),
-		native(OptionVoice, TypeString, "Speak model", "agent.speak.provider.model", "https://developers.deepgram.com/docs/voice-agent-settings"),
+		native(OptionVoice, TypeString, "Speak model", "agent.speak.provider.model", "https://developers.deepgram.com/docs/voice-agent-tts-models"),
+		native(OptionSpeed, TypeFloat, "Speak speed", "agent.speak.provider.speed", "https://developers.deepgram.com/docs/voice-agent-tts-models"),
 		native(OptionContextPrompt, TypeString, "Context prompt", "agent.think.prompt", "https://developers.deepgram.com/docs/voice-agent-settings"),
-		derived(OptionTurnDetection, TypeBool, "Turn detection", "Deepgram Voice Agent performs endpointing server-side.", "https://developers.deepgram.com/docs/voice-agent-settings"),
+		// Flux performs endpointing inside the model; the thresholds tune it
+		// rather than switching it on or off.
+		native(OptionTurnDetection, TypeFloat, "Turn detection confidence", "agent.listen.provider.eot_threshold", "https://developers.deepgram.com/docs/configure-voice-agent"),
+		native(OptionEndpointingMs, TypeInt, "End-of-turn timeout", "agent.listen.provider.eot_timeout_ms", "https://developers.deepgram.com/docs/configure-voice-agent"),
 		unsupported(OptionResume, TypeBool, "Session resume", "Deepgram Voice Agent resume is not exposed through the current SpeechKit adapter."),
 		unsupported(OptionPrivacyRedaction, TypeBool, "PII redaction", "Deepgram Voice Agent redaction is not exposed through the current SpeechKit adapter."),
 		unsupported(OptionVoiceFocus, TypeBool, "Voice focus", "Deepgram Voice Agent has no AssemblyAI-style voice_focus switch in SpeechKit."),

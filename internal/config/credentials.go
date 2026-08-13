@@ -200,14 +200,17 @@ func (cfg *Config) DeepgramThinkConfig() DeepgramThinkSettings {
 }
 
 // isDeepgramAudioModelID reports whether a [voice_agent].model value names
-// Deepgram listen/speak audio models (Nova STT, Aura TTS, or a "listen+speak"
-// composite like "nova-3+aura-2") rather than a think-capable LLM.
+// Deepgram listen/speak audio models (Flux STT/TTS, Nova STT, Aura TTS, or a
+// "listen+speak" composite like "flux-general-multi+aura-2") rather than a
+// think-capable LLM.
 func isDeepgramAudioModelID(model string) bool {
 	lower := strings.ToLower(strings.TrimSpace(model))
 	if strings.Contains(lower, "+") {
 		return true
 	}
-	return strings.HasPrefix(lower, "nova") || strings.HasPrefix(lower, "aura")
+	return strings.HasPrefix(lower, "nova") ||
+		strings.HasPrefix(lower, "aura") ||
+		strings.HasPrefix(lower, "flux")
 }
 
 func googleSTTKeyEnvCandidates(cfg *Config) []string {

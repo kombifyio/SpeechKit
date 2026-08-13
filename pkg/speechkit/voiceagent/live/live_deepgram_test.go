@@ -271,18 +271,121 @@ func deepgramListenProviderFromSettings(t *testing.T, settings map[string]any) m
 func TestDeepgramResolveSpeakModel(t *testing.T) {
 	t.Parallel()
 	p := &DeepgramLive{}
-	if got := p.resolveSpeakModel(LiveConfig{Locale: "de-DE"}); got != deepgramSpeakModelDefaultDE {
+	if got := p.resolveSpeakModel("de-DE", "", nil); got != deepgramSpeakModelDefaultDE {
 		t.Errorf("German locale: got %q, want %q", got, deepgramSpeakModelDefaultDE)
 	}
-	if got := p.resolveSpeakModel(LiveConfig{Locale: "en-US"}); got != deepgramSpeakModelDefaultEN {
+	if got := p.resolveSpeakModel("en-US", "", nil); got != deepgramSpeakModelDefaultEN {
 		t.Errorf("English locale: got %q, want %q", got, deepgramSpeakModelDefaultEN)
 	}
-	if got := p.resolveSpeakModel(LiveConfig{Voice: "aura-2-apollo-en"}); got != "aura-2-apollo-en" {
+	if got := p.resolveSpeakModel("", "aura-2-apollo-en", nil); got != "aura-2-apollo-en" {
 		t.Errorf("Voice override: got %q, want aura-2-apollo-en", got)
 	}
 	configured := &DeepgramLive{SpeakModel: "aura-2-zeus-en"}
-	if got := configured.resolveSpeakModel(LiveConfig{Locale: "de"}); got != "aura-2-zeus-en" {
+	if got := configured.resolveSpeakModel("de", "", nil); got != "aura-2-zeus-en" {
 		t.Errorf("configured SpeakModel should win over locale, got %q", got)
+	}
+}
+
+// Flux TTS is English-only, so a Flux voice must survive an English-pinned
+// session and be swapped for the locale's Aura-2 voice on every other session.
+func TestDeepgramResolveSpeakModelFluxLanguageGate(t *testing.T) {
+	t.Parallel()
+	p := &DeepgramLive{SpeakModel: deepgramSpeakModelFluxEN}
+	cases := []struct {
+		name   string
+		locale string
+		hints  []string
+		want   string
+	}{
+		{"english locale", "en-US", []string{"en"}, deepgramSpeakModelFluxEN},
+		{"unset locale", "", nil, deepgramSpeakModelFluxEN},
+		{"german locale", "de-DE", []string{"de"}, deepgramSpeakModelDefaultDE},
+		{"english locale with german hint", "en-US", []string{"en", "de"}, deepgramSpeakModelDefaultEN},
+		{"auto locale", "auto", nil, deepgramSpeakModelDefaultEN},
+	}
+	for _, tc := range cases {
+		if got := p.resolveSpeakModel(tc.locale, "", tc.hints); got != tc.want {
+			t.Errorf("%s: got %q, want %q", tc.name, got, tc.want)
+		}
+	}
+	// An explicit Flux voice is subject to the same gate.
+	if got := (&DeepgramLive{}).resolveSpeakModel("de-DE", "flux-haley-en", nil); got != deepgramSpeakModelDefaultDE {
+		t.Errorf("explicit Flux voice on a German session: got %q, want %q", got, deepgramSpeakModelDefaultDE)
+	}
+	if got := (&DeepgramLive{}).resolveSpeakModel("en-US", "flux-haley-en", nil); got != "flux-haley-en" {
+		t.Errorf("explicit Flux voice on an English session: got %q", got)
+	}
+}
+
+func TestDeepgramBuildSpeak(t *testing.T) {
+	t.Parallel()
+	// Aura keeps the single-provider object form.
+	aura := (&DeepgramLive{}).buildSpeak("de-DE", "", []string{"de"})
+	speak, ok := aura.(map[string]any)
+	if !ok {
+		t.Fatalf("Aura speak should be an object, got %#v", aura)
+	}
+	provider := speak["provider"].(map[string]any)
+	if provider["model"] != deepgramSpeakModelDefaultDE {
+		t.Errorf("Aura speak model = %v", provider["model"])
+	}
+	if _, ok := provider["version"]; ok {
+		t.Error("Aura speak must not carry a version field")
+	}
+
+	// Flux uses the array form with Aura-2 as the fallback entry.
+	flux := (&DeepgramLive{SpeakModel: deepgramSpeakModelFluxEN, SpeakSpeed: 1.13}).
+		buildSpeak("en-US", "", []string{"en"})
+	entries, ok := flux.([]any)
+	if !ok || len(entries) != 2 {
+		t.Fatalf("Flux speak should be a 2-entry array, got %#v", flux)
+	}
+	primary := entries[0].(map[string]any)["provider"].(map[string]any)
+	if primary["model"] != deepgramSpeakModelFluxEN || primary["version"] != "v2" {
+		t.Errorf("Flux primary provider = %#v", primary)
+	}
+	if primary["speed"] != 1.15 {
+		t.Errorf("speed should snap to the nearest Flux step, got %v", primary["speed"])
+	}
+	fallback := entries[1].(map[string]any)["provider"].(map[string]any)
+	if fallback["model"] != deepgramSpeakModelDefaultEN {
+		t.Errorf("Flux fallback provider = %#v", fallback)
+	}
+}
+
+// Flux listen requires version v2 and is the only leg that accepts the
+// end-of-turn thresholds; Nova must never receive either.
+func TestDeepgramBuildSettingsFluxListenTuning(t *testing.T) {
+	t.Parallel()
+	p := &DeepgramLive{EOTThreshold: 0.95, EagerEOTThreshold: 0.4, EOTTimeoutMs: 3000}
+	listen := deepgramListenProviderFromSettings(t, p.buildSettings(LiveConfig{Locale: "en-US"}))
+	if listen["version"] != "v2" {
+		t.Errorf("Flux listen version = %v, want v2", listen["version"])
+	}
+	if listen["eot_threshold"] != deepgramEOTThresholdMax {
+		t.Errorf("out-of-range eot_threshold should clamp, got %v", listen["eot_threshold"])
+	}
+	if listen["eager_eot_threshold"] != 0.4 {
+		t.Errorf("eager_eot_threshold = %v", listen["eager_eot_threshold"])
+	}
+	if listen["eot_timeout_ms"] != 3000 {
+		t.Errorf("eot_timeout_ms = %v", listen["eot_timeout_ms"])
+	}
+
+	nova := deepgramListenProviderFromSettings(t, (&DeepgramLive{ListenModel: "nova-3", EOTThreshold: 0.6}).
+		buildSettings(LiveConfig{Locale: "en-US"}))
+	if _, ok := nova["version"]; ok {
+		t.Error("Nova listen must not carry a version field")
+	}
+	if _, ok := nova["eot_threshold"]; ok {
+		t.Error("Nova listen must not carry Flux turn-detection thresholds")
+	}
+
+	unset := deepgramListenProviderFromSettings(t, (&DeepgramLive{}).buildSettings(LiveConfig{Locale: "en-US"}))
+	for _, key := range []string{"eot_threshold", "eager_eot_threshold", "eot_timeout_ms"} {
+		if _, ok := unset[key]; ok {
+			t.Errorf("unset tuning must be omitted, %s present", key)
+		}
 	}
 }
 
@@ -304,22 +407,5 @@ func TestComposeDeepgramPrompt(t *testing.T) {
 	}
 	if got := composeDeepgramPrompt(LiveConfig{RefinementPrompt: "only this"}); got != "only this" {
 		t.Errorf("refinement-only prompt mismatch: %q", got)
-	}
-}
-
-func TestSplitKeyterms(t *testing.T) {
-	t.Parallel()
-	got := splitKeyterms("kombify, SpeechKit; Deepgram\nNova-3")
-	want := []string{"kombify", "SpeechKit", "Deepgram", "Nova-3"}
-	if len(got) != len(want) {
-		t.Fatalf("got %v, want %v", got, want)
-	}
-	for i := range want {
-		if got[i] != want[i] {
-			t.Errorf("keyterm %d: got %q, want %q", i, got[i], want[i])
-		}
-	}
-	if splitKeyterms("   ") != nil {
-		t.Error("blank hint should yield nil")
 	}
 }

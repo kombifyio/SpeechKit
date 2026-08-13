@@ -187,6 +187,39 @@ GOOS=linux CGO_ENABLED=0 go build ./cmd/speechkit-server ./cmd/speechkit-mcp ./c
 The complete public-clone gate is documented in
 [CONTRIBUTING.md](CONTRIBUTING.md#public-verification).
 
+## Local Gate
+
+The repository gate runs locally before CI or any deploy dispatch. CI does not
+replace it.
+
+```bash
+mise run test:e2e:local          # the canonical bounded exact-source gate
+mise run doctor:container        # confirm a container engine is reachable first
+```
+
+`test:e2e:local` is a real gate, not a wrapper: it runs the bounded
+device-agent → Home Assistant → state-verify → Piper process end-to-end
+(`test:device-agent-ha-local-e2e`) and the headless dictation hold-to-talk
+capture gate (`test:dictation-hold-gate`, which needs no microphone, keyboard
+or Docker).
+
+Any Docker-API engine satisfies the container requirement — Docker Desktop,
+Podman, colima or a remote `DOCKER_HOST`. Docker Desktop is one option, never a
+prerequisite.
+
+Two surfaces need a different path. The Server-Target is `//go:build linux` and
+cannot run natively on a Windows host; run it in a `golang:1.26` container,
+which needs `pkg-config`, `libopus-dev`, `libopusfile-dev` and `libsoxr-dev`
+installed before the audio-dependent packages will build. The Windows
+Device-Target builds through
+`powershell -ExecutionPolicy Bypass -File scripts/build.ps1 -SkipInstaller`;
+a raw `go build ./cmd/speechkit/` bypasses required CGo and ldflags.
+
+Gate contract and evidence rules: workspace `LOCAL-E2E-DEPLOYMENT-STANDARD.md`.
+While the product version is below 1.0.0 the `fast-pre-1.0` profile defers this
+gate to stable promotion and production deploys; fail-closed production receipt
+gates and provider/secret safety invariants stay mandatory regardless.
+
 ## Repository Layout
 
 ```text

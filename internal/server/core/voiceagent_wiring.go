@@ -1030,14 +1030,24 @@ type deepgramProviderFactory struct {
 
 func (f *deepgramProviderFactory) NewProvider() vsserver.LiveProviderAdapter {
 	inner := vskernel.NewDeepgramLive()
-	// Listen (Nova-3) and speak (Aura-2) are fixed Deepgram legs; the think LLM
-	// is configurable. deepgram_think_* config selects provider/model and an
-	// optional bring-your-own endpoint+credential; a non-Gemini
-	// [voice_agent].model is reused as the think model for back-compat. A Gemini
-	// model id is ignored so it can't pin a non-existent Deepgram think model.
+	// All three legs are configurable. deepgram_think_* selects the think
+	// provider/model and an optional bring-your-own endpoint+credential; a
+	// non-Gemini [voice_agent].model is reused as the think model for back-compat
+	// (a Gemini model id is ignored so it can't pin a non-existent Deepgram think
+	// model). deepgram_listen_*/deepgram_speak_* — or the catalog's "listen+speak"
+	// composite — select the audio legs and Flux turn-detection tuning.
 	if f.cfg != nil {
 		think := f.cfg.DeepgramThinkConfig()
 		inner.ConfigureThink(think.Provider, think.Model, think.EndpointURL, think.APIKey)
+		audio := f.cfg.DeepgramAudioConfig()
+		inner.ConfigureAudio(vskernel.DeepgramAudioSettings{
+			ListenModel:       audio.ListenModel,
+			SpeakModel:        audio.SpeakModel,
+			SpeakSpeed:        audio.SpeakSpeed,
+			EOTThreshold:      audio.EOTThreshold,
+			EagerEOTThreshold: audio.EagerEOTThreshold,
+			EOTTimeoutMs:      audio.EOTTimeoutMs,
+		})
 	}
 	return &deepgramLiveBridge{inner: inner}
 }

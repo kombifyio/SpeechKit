@@ -26,8 +26,8 @@ type VoiceAgentConfig struct {
 	FallbackModel string `toml:"fallback_model"` // Fallback real-time model
 	Voice         string `toml:"voice"`          // Voice name for real-time model
 	// Deepgram Voice Agent think-LLM overrides. The think leg reasons over the
-	// transcript; listen (Nova-3) and speak (Aura-2) stay Deepgram. When unset,
-	// the kernel default (Deepgram-managed open_ai/gpt-4o-mini) applies. Setting
+	// transcript; listen and speak stay Deepgram. When unset, the kernel default
+	// (Deepgram-managed open_ai/gpt-4o-mini) applies. Setting
 	// DeepgramThinkEndpointURL + DeepgramThinkAPIKeyEnv switches the think leg to
 	// a bring-your-own LLM deployment, with the credential resolved from the
 	// named env var (env -> Doppler). Read by the Server- and Device-Target
@@ -36,10 +36,27 @@ type VoiceAgentConfig struct {
 	DeepgramThinkModel       string `toml:"deepgram_think_model"`
 	DeepgramThinkEndpointURL string `toml:"deepgram_think_endpoint_url"`
 	DeepgramThinkAPIKeyEnv   string `toml:"deepgram_think_api_key_env"`
-	AgentProfileID           string `toml:"agent_profile_id"`  // Built-in Voice Agent profile ID; "default" preserves current behavior.
-	AgentSequenceID          string `toml:"agent_sequence_id"` // Optional workflow sequence ID; empty uses the selected persona default.
-	FrameworkPrompt          string `toml:"framework_prompt"`  // Durable host/framework instruction that defines the Voice Agent behavior
-	RefinementPrompt         string `toml:"refinement_prompt"` // User-specific refinement appended to the framework prompt
+	// Deepgram Voice Agent listen/speak leg overrides. Empty values fall back to
+	// the "listen+speak" composite in [voice_agent].model and then to the kernel
+	// defaults (Flux listen, Aura-2 speak).
+	//
+	// DeepgramSpeakModel accepts an Aura-2 voice or a Flux TTS voice. Flux TTS is
+	// English-only, so a Flux voice applies only to English-pinned sessions; every
+	// other session falls back to the locale's Aura-2 voice. Aura-2 stays the
+	// default on all paths — a Flux voice here is the opt-in.
+	DeepgramListenModel string  `toml:"deepgram_listen_model"`
+	DeepgramSpeakModel  string  `toml:"deepgram_speak_model"`
+	DeepgramSpeakSpeed  float64 `toml:"deepgram_speak_speed"`
+	// Flux turn-detection tuning; ignored by the Nova listen models. Ranges are
+	// clamped in the kernel: threshold 0.5–0.9, eager threshold 0.3–0.9, timeout
+	// 500–60000 ms. 0 keeps Deepgram's defaults.
+	DeepgramListenEOTThreshold      float64 `toml:"deepgram_listen_eot_threshold"`
+	DeepgramListenEagerEOTThreshold float64 `toml:"deepgram_listen_eager_eot_threshold"`
+	DeepgramListenEOTTimeoutMs      int     `toml:"deepgram_listen_eot_timeout_ms"`
+	AgentProfileID                  string  `toml:"agent_profile_id"`  // Built-in Voice Agent profile ID; "default" preserves current behavior.
+	AgentSequenceID                 string  `toml:"agent_sequence_id"` // Optional workflow sequence ID; empty uses the selected persona default.
+	FrameworkPrompt                 string  `toml:"framework_prompt"`  // Durable host/framework instruction that defines the Voice Agent behavior
+	RefinementPrompt                string  `toml:"refinement_prompt"` // User-specific refinement appended to the framework prompt
 	// AutoStartOnLaunch is legacy: it is kept only so backfillStartupBehavior
 	// can migrate an old [voice_agent].auto_start_on_launch into the
 	// General.AutoStartOnLaunch app-window preference. It no longer starts a

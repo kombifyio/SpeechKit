@@ -434,6 +434,21 @@ vad_end_sensitivity = "low"                # low or high
 vad_prefix_padding_ms = 100
 vad_silence_duration_ms = 700
 
+# Deepgram Voice Agent legs (provider = "deepgram"). Listen and speak are
+# selected here or through the "listen+speak" composite in [voice_agent].model;
+# the think LLM is configured with the deepgram_think_* keys.
+# deepgram_listen_model = "flux-general-multi"   # flux-general-multi (default, 10 languages with mid-call switching), flux-general-en, or nova-3 for the legacy listen leg
+# deepgram_speak_model = "aura-2-thalia-en"      # Aura-2 voice, or a Flux TTS voice such as "flux-kit-en".
+                                                 # Flux TTS is English-only: it applies to English-pinned sessions and any
+                                                 # other session falls back to the locale's Aura-2 voice. Aura-2 is the default.
+# deepgram_speak_speed = 1.0                     # Flux TTS accepts 0.85-1.15 in 0.05 steps; other values snap to the nearest.
+# Flux turn detection runs inside the model, so these replace client-side VAD
+# tuning on this provider. They are ignored by the nova-3 listen leg.
+# deepgram_listen_eot_threshold = 0.7            # End-of-turn confidence, 0.5-0.9. Lower answers sooner and interrupts more.
+# deepgram_listen_eager_eot_threshold = 0.0      # 0.3-0.9 enables a speculative end-of-turn signal so a think LLM can start
+                                                 # early; it is retracted by TurnResumed, so speculative work must be cancellable. 0 = off.
+# deepgram_listen_eot_timeout_ms = 5000          # Silence before a turn is forced closed, 500-60000.
+
 # ──────────────────────────────────────────────
 # Provider Configuration
 # STT, LLM, TTS, and Realtime model assignments per provider.

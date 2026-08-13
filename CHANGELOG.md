@@ -9,6 +9,22 @@ maintainers. The release linter
 (`npm run release:lint -- --version vX.Y.Z`) refuses internal tracker
 IDs, source paths, and other maintainer-only vocabulary.
 
+## [0.54.10](https://github.com/kombifyio/SpeechKit/compare/v0.54.1...v0.54.10) (2026-08-13)
+
+Speech provider and update reliability release. No existing public API was removed.
+
+### Added
+
+- Deepgram Flux v2 is now available across realtime Voice Agent,
+  speech-to-text, and text-to-speech paths.
+
+### Fixed
+
+- Model setup now retries transient Whisper runtime downloads instead of
+  failing the installation immediately.
+- The desktop updater now shows a distinct verification phase instead of
+  appearing to stall at 100%.
+
 ## [0.54.1](https://github.com/kombifyio/SpeechKit/compare/v0.54.0...v0.54.1) (2026-08-12)
 
 

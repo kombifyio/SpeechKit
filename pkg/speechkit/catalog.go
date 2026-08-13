@@ -476,7 +476,7 @@ func DefaultProviderProfiles() []ProviderProfile {
 			ModelID:       ModelDeepgramFluxGeneralMulti + "+aura-2",
 			Lifecycle:     ModelLifecycleGA,
 			Source:        "Deepgram",
-			Description:   "Deepgram Voice Agent API — native audio-to-audio dialogue (Flux listen with turn events, configurable think LLM, Aura-2 speak) over a single WebSocket. Nova-3 remains the general dictation/diarization baseline.",
+			Description:   "Deepgram Voice Agent API — native audio-to-audio dialogue (Flux listen with turn events, configurable think LLM, Aura-2 speak) over a single WebSocket. Flux TTS is selectable for English-pinned sessions. Nova-3 remains the general dictation/diarization baseline.",
 			License:       "proprietary",
 			Capabilities: []Capability{
 				CapabilityAudioInput,
@@ -500,6 +500,7 @@ func DefaultProviderProfiles() []ProviderProfile {
 			Variants: []ModelVariant{
 				{ID: "deepgram.flux-general-multi", Name: "Flux General Multilingual", ModelID: ModelDeepgramFluxGeneralMulti, Recommended: true},
 				{ID: "deepgram.flux-general-en", Name: "Flux General English", ModelID: ModelDeepgramFluxGeneralEN},
+				{ID: "deepgram.flux-general-en-flux-tts", Name: "Flux General English + Flux TTS", ModelID: ModelDeepgramFluxGeneralEN + "+" + ModelDeepgramFluxTTSDefaultEN},
 				{ID: "deepgram.nova-3-legacy-agent-listen", Name: "Nova-3 Listen (legacy)", ModelID: ModelDeepgramNova3},
 			},
 			AllowInference: true,

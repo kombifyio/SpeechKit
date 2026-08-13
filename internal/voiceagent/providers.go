@@ -16,6 +16,9 @@ type (
 	OpenAILive     = live.OpenAILive
 	DeepgramLive   = live.DeepgramLive
 	AssemblyAILive = live.AssemblyAILive
+
+	// DeepgramAudioSettings configures the Deepgram listen/speak legs.
+	DeepgramAudioSettings = live.DeepgramAudioSettings
 )
 
 // DefaultOpenAIRealtimeModel is the public runtime default for OpenAI-backed

@@ -42,7 +42,7 @@
       "mode": "voice_agent",
       "capability": "turn_detection",
       "provider": "Deepgram",
-      "framework_api": "Deepgram Flux /v2/listen turn events",
+      "framework_api": "Deepgram Voice Agent API turn events (Flux listen model)",
       "local_or_cloud": "cloud",
       "streaming_or_batch": "streaming",
       "identification_level": "none",
