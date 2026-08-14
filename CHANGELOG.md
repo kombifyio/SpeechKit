@@ -9,6 +9,41 @@ maintainers. The release linter
 (`npm run release:lint -- --version vX.Y.Z`) refuses internal tracker
 IDs, source paths, and other maintainer-only vocabulary.
 
+## [0.57.0](https://github.com/kombifyio/SpeechKit/compare/v0.56.0...v0.57.0) (2026-08-14)
+
+### Highlights
+
+- **Talk to the assistant on your phone**: the Android app now holds a real
+  spoken conversation — press to talk, hear the answer, watch the transcript
+  build as you speak — instead of promising one for later.
+- **A conversation without leaving the text field**: the SpeechKit keyboard
+  can open the assistant in place, so you can think something through and
+  then go back to typing. Dictation still writes what you say into the
+  field; the conversation stays out of it on purpose.
+- **One assistant, one face**: the animation on Android is now the same one
+  the Windows overlay and the web app draw, from a single shared source, so
+  a change to the visual language reaches every screen at once.
+- **The keyboard setup finds the right keyboard**: enabling and selecting
+  SpeechKit as your keyboard is now detected correctly, so onboarding stops
+  claiming a step is done before it is.
+
+### Added
+
+* **android:** add the realtime Voice Agent client the platform was missing ([ecd04c4](https://github.com/kombifyio/SpeechKit/commit/ecd04c49027b11a7579bf694920888cba162a7c2))
+* **android:** fold Voice Agent sessions into one render state ([8115caa](https://github.com/kombifyio/SpeechKit/commit/8115caa25bf6f87bb264dc06c8d635a60eb31bc7))
+* **android:** hold a conversation from inside the keyboard ([afcd2e0](https://github.com/kombifyio/SpeechKit/commit/afcd2e0fce12faef9227ce354cdbbc17a8aaf12a))
+* **android:** let the assistant speak one visual language throughout ([bce2ed8](https://github.com/kombifyio/SpeechKit/commit/bce2ed8eb98f8855ef75f204eb0964f72535669b))
+* **android:** make the Voice Agent reachable in the app ([359ee48](https://github.com/kombifyio/SpeechKit/commit/359ee48766010b20805927a2d0945b5671299b61))
+* **android:** publish the shared orb so other apps can stop copying it ([60496d4](https://github.com/kombifyio/SpeechKit/commit/60496d4d191cda52db4ae586e10f0b1bf8289bb0))
+
+
+### Fixed
+
+* **android:** detect our own keyboard instead of a stranger's ([288723a](https://github.com/kombifyio/SpeechKit/commit/288723a54e7cce34da31efc2f6c7a8da4cf3cd00))
+* **ci:** let dependency updates past the standards gate too ([f7000f1](https://github.com/kombifyio/SpeechKit/commit/f7000f199b9d482588b03591cb15986f1f9fc297))
+* **delivery:** unblock security updates stuck behind an unavailable token ([6722ad3](https://github.com/kombifyio/SpeechKit/commit/6722ad355f8d877de1d931f35cafd4650fdef1da))
+* **release:** actually merge the installer mirror instead of warning about it ([9db0160](https://github.com/kombifyio/SpeechKit/commit/9db0160f22af8b9b27f9036607552d04c29b6062))
+
 ## [0.56.0](https://github.com/kombifyio/SpeechKit/compare/v0.55.0...v0.56.0) (2026-08-13)
 
 ### Highlights
