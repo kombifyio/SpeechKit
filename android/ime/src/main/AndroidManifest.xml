@@ -1,0 +1,46 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+
+    <!-- Manifest merger lifts these components into the consuming app's
+         manifest (the IME must ship in the app APK; a library manifest is
+         merged, not installed on its own). Class names are fully qualified so
+         the merge is independent of the app's namespace. -->
+    <application>
+
+        <!-- Voice-only IME (B-M2 Stage 1): registers behind any keyboard via
+             voice subtypes; users hop over for a dictation segment and hop
+             back with the switch-keyboard key. -->
+        <service
+            android:name="io.kombify.speechkit.ime.SpeechKitVoiceImeService"
+            android:exported="true"
+            android:label="@string/speechkit_ime_label"
+            android:permission="android.permission.BIND_INPUT_METHOD">
+            <intent-filter>
+                <action android:name="android.view.InputMethod" />
+            </intent-filter>
+            <!-- Deliberately not @xml/method: the HeliBoard module in this
+                 same APK owns that name with its 55 KB subtype list. Two
+                 library modules declaring the same resource silently leaves
+                 one of them, and ours winning crashed the process on startup:
+                 HeliBoard's subtype parser reads imeSubtypeExtraValue off
+                 every entry and interns it, which these two do not carry. -->
+            <meta-data
+                android:name="android.view.im"
+                android:resource="@xml/speechkit_voice_method" />
+        </service>
+
+        <!-- An IME window cannot request runtime permissions itself; this
+             translucent, history-less trampoline does and reports back via
+             MicPermissionEvents. -->
+        <activity
+            android:name="io.kombify.speechkit.ime.MicPermissionTrampolineActivity"
+            android:excludeFromRecents="true"
+            android:exported="false"
+            android:noHistory="true"
+            android:taskAffinity=""
+            android:theme="@style/Theme.SpeechKitIme.Translucent" />
+
+    </application>
+
+</manifest>

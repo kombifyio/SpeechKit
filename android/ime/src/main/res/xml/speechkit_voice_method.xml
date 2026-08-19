@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Voice-only IME declaration (B-M2). Both subtypes are auxiliary: the
+     system treats the voice IME as a temporary hop (like platform voice
+     typing) and switchToPreviousInputMethod() returns to the user's real
+     keyboard instead of making SpeechKit sticky. -->
+<input-method xmlns:android="http://schemas.android.com/apk/res/android"
+    android:supportsSwitchingToNextInputMethod="true">
+    <subtype
+        android:imeSubtypeLocale="de"
+        android:languageTag="de"
+        android:imeSubtypeMode="voice"
+        android:isAuxiliary="true"
+        android:label="@string/speechkit_ime_subtype_de" />
+    <subtype
+        android:imeSubtypeLocale="en"
+        android:languageTag="en"
+        android:imeSubtypeMode="voice"
+        android:isAuxiliary="true"
+        android:label="@string/speechkit_ime_subtype_en" />
+</input-method>

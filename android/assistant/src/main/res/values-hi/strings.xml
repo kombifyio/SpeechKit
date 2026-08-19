@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="speechkit_assistant_idle_prompt">मैं आपकी क्या मदद कर सकता हूँ?</string>
+    <string name="speechkit_assistant_state_listening">सुन रहा है</string>
+    <string name="speechkit_assistant_state_processing">प्रोसेस हो रहा है</string>
+    <string name="speechkit_assistant_action_close">बंद करें</string>
+    <string name="speechkit_assistant_action_retry">फिर से आज़माएँ</string>
+</resources>

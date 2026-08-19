@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="speechkit_assistant_idle_prompt">كيف يمكنني مساعدتك؟</string>
+    <string name="speechkit_assistant_state_listening">يستمع</string>
+    <string name="speechkit_assistant_state_processing">قيد المعالجة</string>
+    <string name="speechkit_assistant_action_close">إغلاق</string>
+    <string name="speechkit_assistant_action_retry">حاول مرة أخرى</string>
+</resources>

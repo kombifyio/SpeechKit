@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="speechkit_ime_label">SpeechKit Spracheingabe</string>
+    <string name="speechkit_ime_subtype_de">Deutsch (Sprache)</string>
+    <string name="speechkit_ime_subtype_en">Englisch (Sprache)</string>
+
+    <string name="speechkit_ime_mic_start">Diktat starten</string>
+    <string name="speechkit_ime_mic_stop">Diktat beenden</string>
+    <string name="speechkit_ime_status_idle">Tippe auf das Mikrofon, um zu diktieren</string>
+    <string name="speechkit_ime_status_connecting">Verbinde…</string>
+    <string name="speechkit_ime_status_listening">Höre zu…</string>
+    <string name="speechkit_ime_status_finishing">Wird abgeschlossen…</string>
+    <string name="speechkit_ime_status_committed">Eingefügt</string>
+    <string name="speechkit_ime_status_blocked">Spracheingabe ist in Passwortfeldern deaktiviert</string>
+    <string name="speechkit_ime_status_needs_permission">Mikrofon-Berechtigung erforderlich</string>
+    <string name="speechkit_ime_recording_indicator">Aufnahme</string>
+    <string name="speechkit_ime_action_retry">Erneut versuchen</string>
+    <string name="speechkit_ime_switch_keyboard">Zurück zur Tastatur</string>
+    <string name="speechkit_ime_language_chip">Diktatsprache</string>
+
+    <string name="speechkit_ime_error_generic">Diktat fehlgeschlagen</string>
+    <string name="speechkit_ime_error_not_configured">Kein Server konfiguriert — öffne die SpeechKit-App</string>
+    <string name="speechkit_ime_error_mic_denied">Mikrofon-Berechtigung verweigert</string>
+    <string name="speechkit_ime_action_voice_agent">Sprachassistent</string>
+</resources>

@@ -1,0 +1,61 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+
+    <!-- allowBackup=false: the app persists server bearer tokens in
+         SharedPreferences; auto-backup would let them ride device migrations
+         in plaintext. Revisit with encrypted storage + extraction rules.
+         usesCleartextTraffic: the documented LAN tier talks plain http/ws to
+         a local speechkit-server (e.g. http://192.168.x.x:8080); with
+         targetSdk 36 cleartext is otherwise blocked at runtime. Tighten to a
+         networkSecurityConfig scoped to private ranges before Play release. -->
+    <application
+        android:name=".app.SpeechKitApplication"
+        android:allowBackup="false"
+        android:usesCleartextTraffic="true"
+        android:icon="@mipmap/ic_launcher"
+        android:label="@string/app_name"
+        android:supportsRtl="true"
+        android:theme="@style/Theme.SpeechKit"
+        tools:replace="android:name,android:label,android:allowBackup">
+
+        <!-- Main Activity -->
+        <activity
+            android:name=".app.ui.MainActivity"
+            android:exported="true"
+            android:theme="@style/Theme.SpeechKit">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+
+        <!-- Voice Assistant -->
+        <service
+            android:name=".assistant.service.SpeechKitAssistant"
+            android:exported="true"
+            android:permission="android.permission.BIND_VOICE_INTERACTION">
+            <intent-filter>
+                <action android:name="android.service.voice.VoiceInteractionService" />
+            </intent-filter>
+            <meta-data
+                android:name="android.voice_interaction"
+                android:resource="@xml/voice_interaction" />
+        </service>
+
+        <!-- Session service class lives in SpeechKitAssistantSession.kt but is
+             named SpeechKitAssistantSessionService; the earlier manifest
+             referenced the file name and could never bind. -->
+        <service
+            android:name=".assistant.service.SpeechKitAssistantSessionService"
+            android:exported="false"
+            android:permission="android.permission.BIND_VOICE_INTERACTION" />
+
+    </application>
+
+</manifest>

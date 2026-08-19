@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="speechkit_assistant_idle_prompt">Wie kann ich helfen?</string>
+    <string name="speechkit_assistant_state_listening">Hört zu</string>
+    <string name="speechkit_assistant_state_processing">Verarbeitet</string>
+    <string name="speechkit_assistant_action_close">Schließen</string>
+    <string name="speechkit_assistant_action_retry">Erneut versuchen</string>
+</resources>

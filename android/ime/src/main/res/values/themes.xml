@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- The permission trampoline shows nothing itself; the system permission
+         dialog draws over a fully transparent activity. -->
+    <style name="Theme.SpeechKitIme.Translucent" parent="android:Theme.Translucent.NoTitleBar" />
+</resources>

@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Default locale: English (LANGUAGE-LOCALIZATION-STANDARD). Wave 2 locales
+  live in values-de/, values-es/, values-b+zh+Hans/, values-hi/, values-ar/.
+
+  The state strings mirror the Voice UI Kit catalogs so the Compose surface
+  and the web element say the same thing:
+    speechkit_assistant_state_listening  -> sk.voice.state.capturing
+    speechkit_assistant_state_processing -> sk.voice.state.processing
+    speechkit_assistant_action_retry     -> sk.voice.denied.retry
+  Source of truth: clients/typescript/packages/voice-ui/locales/*.json.
+  Like those catalogs, the non-English values are machine-drafted and still
+  await human review.
+-->
+<resources>
+    <string name="speechkit_assistant_idle_prompt">How can I help?</string>
+    <string name="speechkit_assistant_state_listening">Listening</string>
+    <string name="speechkit_assistant_state_processing">Processing</string>
+    <string name="speechkit_assistant_action_close">Close</string>
+    <string name="speechkit_assistant_action_retry">Try again</string>
+</resources>

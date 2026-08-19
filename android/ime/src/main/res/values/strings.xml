@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Default locale: English. German lives in values-de/. -->
+<resources>
+    <string name="speechkit_ime_label">SpeechKit Voice Input</string>
+    <string name="speechkit_ime_subtype_de">German (voice)</string>
+    <string name="speechkit_ime_subtype_en">English (voice)</string>
+
+    <string name="speechkit_ime_mic_start">Start dictation</string>
+    <string name="speechkit_ime_mic_stop">Stop dictation</string>
+    <string name="speechkit_ime_status_idle">Tap the microphone to dictate</string>
+    <string name="speechkit_ime_status_connecting">Connecting…</string>
+    <string name="speechkit_ime_status_listening">Listening…</string>
+    <string name="speechkit_ime_status_finishing">Finishing…</string>
+    <string name="speechkit_ime_status_committed">Inserted</string>
+    <string name="speechkit_ime_status_blocked">Voice input is disabled for password fields</string>
+    <string name="speechkit_ime_status_needs_permission">Microphone permission required</string>
+    <string name="speechkit_ime_recording_indicator">Recording</string>
+    <string name="speechkit_ime_action_retry">Retry</string>
+    <string name="speechkit_ime_switch_keyboard">Switch back to keyboard</string>
+    <string name="speechkit_ime_language_chip">Dictation language</string>
+
+    <string name="speechkit_ime_error_generic">Dictation failed</string>
+    <string name="speechkit_ime_error_not_configured">No server configured — open the SpeechKit app</string>
+    <string name="speechkit_ime_error_mic_denied">Microphone permission denied</string>
+    <string name="speechkit_ime_action_voice_agent">Voice assistant</string>
+</resources>

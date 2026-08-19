@@ -9,6 +9,52 @@ maintainers. The release linter
 (`npm run release:lint -- --version vX.Y.Z`) refuses internal tracker
 IDs, source paths, and other maintainer-only vocabulary.
 
+## [0.57.1](https://github.com/kombifyio/SpeechKit/compare/v0.57.0...v0.57.1) (2026-08-19)
+
+### Highlights
+
+- **A keyboard that dictates, built in**: SpeechKit now ships its own
+  Android keyboard instead of borrowing one. Tap the voice key and the
+  dictation panel opens inside the keyboard, right where you were
+  typing — no app switch, no lost cursor.
+- **Configure a mode before you turn it on**: settings for Transcribe,
+  Assist and Voice Agent stay open and editable while the mode is
+  switched off, and turning a mode off no longer throws you out of the
+  page you were working in.
+- **The window says what it is**: the desktop shell carries the real
+  SpeechKit mark and calls itself SpeechKit UI.
+- **The Android source is public**: the complete corresponding source
+  for the shipped keyboard is published alongside the release.
+
+### Added
+
+* **android:** answer the keyboard's voice key with the dictation panel ([4b3cc7c](https://github.com/kombifyio/SpeechKit/commit/4b3cc7cfe2fcb7acd15468af0ff5d8a345fd966c))
+* **android:** dictate from the HeliBoard fork's voice key ([8702c23](https://github.com/kombifyio/SpeechKit/commit/8702c23b5037abab1a36b8b6740b2f48f2127fbc))
+* **android:** fork HeliBoard and wire it in as a submodule ([ec8a6ff](https://github.com/kombifyio/SpeechKit/commit/ec8a6ffe99ca1744a1fa80c2e21f183b276f4cc4))
+* **android:** include the HeliBoard fork in the Gradle build ([468d1ce](https://github.com/kombifyio/SpeechKit/commit/468d1cefd4c9c80edda24fb8bad9f357f4d6978d))
+* **android:** ship the HeliBoard keyboard in the app APK ([f5acf0b](https://github.com/kombifyio/SpeechKit/commit/f5acf0b88ad1ce2baad291db19989c6d41e1a155))
+* **oss:** publish the Android corresponding source ([984404b](https://github.com/kombifyio/SpeechKit/commit/984404b9aaf15dcbbcacc0e46d0c2e39c5dc606b))
+* **ui:** brand the shell as SpeechKit UI and keep mode settings reachable ([e947869](https://github.com/kombifyio/SpeechKit/commit/e947869f79924106fde64e736843ece130186854))
+
+
+### Fixed
+
+* **android:** let the keyboard actually appear ([d0ded81](https://github.com/kombifyio/SpeechKit/commit/d0ded810c473627df6dc003ae13a8df25d150fae))
+* **android:** mount the dictation panel inside the keyboard's input view ([3ca9c81](https://github.com/kombifyio/SpeechKit/commit/3ca9c818d8d7880394d0e68a003b74929f8700f4))
+* **android:** recognise our own keyboard as the system spells it ([2637c2e](https://github.com/kombifyio/SpeechKit/commit/2637c2e7c471a954539773c8cb499013e3f426c7))
+* **android:** stop advertising the Voice Agent as unreleased ([ab7bd7d](https://github.com/kombifyio/SpeechKit/commit/ab7bd7d66eaff41561a617797df7dbfcbe7d7869))
+* **android:** stop the voice IME from squatting HeliBoard's method.xml ([9c2c40f](https://github.com/kombifyio/SpeechKit/commit/9c2c40f8faafa1fcb4f46f6b89b3872c2660f2cd))
+* **ci:** check out the keyboard submodule, and scope the Android gates ([83060ab](https://github.com/kombifyio/SpeechKit/commit/83060ab50395d8bd8db23cdc0a8907c5f676e838))
+* **ci:** check out the submodule wherever the OSS export runs ([23ac30c](https://github.com/kombifyio/SpeechKit/commit/23ac30c5cf316c98b1d34e6a76ea45e09700960e))
+* **oss:** let the export carry the Android corresponding source ([e978fb2](https://github.com/kombifyio/SpeechKit/commit/e978fb21729adb1f1a50202e37223db30e1cbc81))
+* **release:** fail loudly when NSIS never actually installs ([80a4fd4](https://github.com/kombifyio/SpeechKit/commit/80a4fd4ed631638e1da09af51f807fdba6b12d2e))
+* **release:** stop the draft reaper from deleting the in-flight release ([a9e5f94](https://github.com/kombifyio/SpeechKit/commit/a9e5f943757a39be50fc77d231c7758f23daaf56))
+
+
+### Changed
+
+* **release:** cut the next release as 0.57.1 ([1c32fe8](https://github.com/kombifyio/SpeechKit/commit/1c32fe833ca6dbf3968f34437c4932969dd38905))
+
 ## [0.57.0](https://github.com/kombifyio/SpeechKit/compare/v0.56.0...v0.57.0) (2026-08-14)
 
 ### Highlights

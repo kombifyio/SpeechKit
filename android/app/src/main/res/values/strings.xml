@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">kombify SpeechKit</string>
+
+    <!-- Overrides the keyboard fork's own label (values/donottranslate.xml
+         ships "HeliBoard"). App resources win over library resources, so this
+         is what the system input-method picker shows. Distinct from
+         speechkit_ime_label, which names the voice-only IME: this APK
+         registers both, and two entries called the same thing would be
+         indistinguishable in the picker. -->
+    <string name="english_ime_name" translatable="false">SpeechKit Keyboard</string>
+</resources>
