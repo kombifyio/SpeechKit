@@ -84,7 +84,7 @@ publishing {
     repositories {
         maven {
             name = "GitHubPackages"
-            url = uri("https://maven.pkg.github.com/KombiverseLabs/kombify-SpeechKit")
+            url = uri("https://maven.pkg.github.com/kombifyio/SpeechKit")
             credentials {
                 username = providers.gradleProperty("gpr.user")
                     .orElse(providers.environmentVariable("GITHUB_ACTOR")).getOrElse("")

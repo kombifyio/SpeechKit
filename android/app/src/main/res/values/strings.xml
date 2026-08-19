@@ -1,6 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">kombify SpeechKit</string>
+    <!-- A product name, so it reads the same in every locale. Marked
+         explicitly because adding values-de gave this module a second locale,
+         and from that point lint requires every translatable string to have a
+         German counterpart. -->
+    <string name="app_name" translatable="false">kombify SpeechKit</string>
 
     <!-- Overrides the keyboard fork's own label (values/donottranslate.xml
          ships "HeliBoard"). App resources win over library resources, so this
@@ -9,4 +13,14 @@
          registers both, and two entries called the same thing would be
          indistinguishable in the picker. -->
     <string name="english_ime_name" translatable="false">SpeechKit Keyboard</string>
+
+    <!-- SpeechKit's own action row inside the keyboard's input view. -->
+    <string name="speechkit_action_on_device">On-device</string>
+    <string name="speechkit_action_server">SpeechKit server</string>
+    <string name="speechkit_action_agent_deepgram">Agent · Deepgram</string>
+    <string name="speechkit_action_agent_assemblyai">Agent · AssemblyAI</string>
+    <string name="speechkit_action_agent_openai">Agent · GPT</string>
+    <string name="speechkit_action_companion">Companion</string>
+    <string name="speechkit_action_blocked_no_server">Server actions need a paired SpeechKit server</string>
+    <string name="speechkit_action_blocked_no_companion">Companion requires the kombify app</string>
 </resources>

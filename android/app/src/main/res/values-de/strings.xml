@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    German for the strings this module draws itself. Everything else in the
+    keyboard comes from the fork, which ships its own values-de, so a device
+    set to German rendered SpeechKit's action row in English above a fully
+    German panel until this file existed.
+-->
+<resources>
+    <string name="speechkit_action_on_device">Auf dem Gerät</string>
+    <string name="speechkit_action_server">SpeechKit-Server</string>
+    <string name="speechkit_action_agent_deepgram">Assistent · Deepgram</string>
+    <string name="speechkit_action_agent_assemblyai">Assistent · AssemblyAI</string>
+    <string name="speechkit_action_agent_openai">Assistent · GPT</string>
+    <string name="speechkit_action_companion">Companion</string>
+    <string name="speechkit_action_blocked_no_server">Server-Aktionen brauchen einen gekoppelten SpeechKit-Server</string>
+    <string name="speechkit_action_blocked_no_companion">Companion erfordert die kombify-App</string>
+</resources>

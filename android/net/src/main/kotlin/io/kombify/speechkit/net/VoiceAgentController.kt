@@ -19,6 +19,13 @@ data class VoiceAgentUiState(
     val userText: String = "",
     val agentText: String = "",
     val error: String? = null,
+    /**
+     * Stable code behind [error] (see [VoiceAgentErrorCodes]). The message is
+     * server prose in the server's language; the code is what a surface can
+     * turn into its own localized explanation, so a rejected provider does not
+     * look like an outage.
+     */
+    val errorCode: String? = null,
 ) {
     /**
      * The conversation phases a surface has to render. Deliberately the
@@ -97,7 +104,10 @@ class VoiceAgentController(
             // not let the next turn append to it.
             VoiceAgentEvent.Interrupted -> _state.value.copy(agentText = "")
 
-            is VoiceAgentEvent.Failure -> _state.value.copy(error = event.message)
+            is VoiceAgentEvent.Failure -> _state.value.copy(
+                error = event.message,
+                errorCode = event.code,
+            )
 
             is VoiceAgentEvent.Closed -> _state.value.copy(
                 phase = VoiceAgentUiState.Phase.Ended,

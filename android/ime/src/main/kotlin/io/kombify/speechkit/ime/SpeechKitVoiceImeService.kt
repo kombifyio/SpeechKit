@@ -8,6 +8,7 @@ import android.view.inputmethod.EditorInfo
 import android.view.inputmethod.InputMethodManager
 import android.view.inputmethod.InputMethodSubtype
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -85,8 +86,13 @@ class SpeechKitVoiceImeService : InputMethodService() {
                     MicPermissionTrampolineActivity.launch(this@SpeechKitVoiceImeService)
             },
         )
+        // Both controllers hear every answer; each ignores the ones it did not
+        // ask for, so a grant resumes whichever mode the user was in.
         serviceScope.launch {
-            MicPermissionEvents.results.collect { controller.onMicPermissionResult(it) }
+            MicPermissionEvents.results.collect { granted ->
+                controller.onMicPermissionResult(granted)
+                agentController.onMicPermissionResult(granted)
+            }
         }
     }
 
@@ -118,17 +124,31 @@ class SpeechKitVoiceImeService : InputMethodService() {
 
                     if (agentMode) {
                         val agentState by agentController.state.collectAsState()
-                        val pending by agentController.audio.collectAsState()
-                        pending?.let { pcm ->
-                            agentPlayer.play(pcm)
-                            agentController.consumeAudio()
+                        // One collector for the whole agent session rather than
+                        // an effect keyed on the newest frame: the queue is
+                        // ordered and every frame has to be played, while an
+                        // effect could only ever see the frames that survived
+                        // to the next composition. play() moves itself off this
+                        // dispatcher, which is the IME window's main thread.
+                        LaunchedEffect(Unit) {
+                            agentController.audio.collect { pcm -> agentPlayer.play(pcm) }
                         }
                         VoiceAgentPanelUi(
                             state = agentState,
                             holding = holding,
                             onHoldChange = { hold ->
                                 holding = hold
-                                if (hold) agentController.beginTurn() else agentController.endTurn()
+                                if (hold) {
+                                    // Taking the turn is the barge-in: drop the
+                                    // answer still queued and cut what the
+                                    // speaker is already reading out, instead of
+                                    // talking over it.
+                                    agentController.discardPendingAudio()
+                                    agentPlayer.flush()
+                                    agentController.beginTurn()
+                                } else {
+                                    agentController.endTurn()
+                                }
                             },
                             onEnd = {
                                 holding = false

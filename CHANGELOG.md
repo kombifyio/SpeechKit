@@ -9,6 +9,34 @@ maintainers. The release linter
 (`npm run release:lint -- --version vX.Y.Z`) refuses internal tracker
 IDs, source paths, and other maintainer-only vocabulary.
 
+## [0.58.0](https://github.com/kombifyio/SpeechKit/compare/v0.57.1...v0.58.0) (2026-08-19)
+
+### Highlights
+
+- **Every voice mode one tap from the keyboard**: a new row above the
+  keys — dictate on your device or through your SpeechKit server, or talk
+  to Deepgram, AssemblyAI or GPT. Actions needing a server say so rather
+  than failing when pressed.
+- **The microphone is there when you install it**: the voice key used to
+  stay hidden until you enabled a second input method, and the dictation
+  panel opened at the top of the screen instead of over the keys. Both
+  are fixed.
+- **One app, one icon**: installing SpeechKit no longer leaves two
+  launcher icons behind, one of which opened the keyboard's settings
+  rather than the app.
+
+### Added
+
+* **android:** make GPT the third direct Voice Agent button, not Gemini ([19c30d2](https://github.com/kombifyio/SpeechKit/commit/19c30d2b10777bcf46dc8375c5f0995623fcc71a))
+* **android:** put dictation and the Voice Agent on the keyboard itself ([70afa60](https://github.com/kombifyio/SpeechKit/commit/70afa60dab77a42986f4879e8a5c252dd0d91439))
+* **voiceagent:** list gpt-realtime-2.1 and its mini, without promoting them ([390ef31](https://github.com/kombifyio/SpeechKit/commit/390ef3102176f7c8effd5f18219b0c35010f3d87))
+
+
+### Fixed
+
+* **android:** stop the keyboard fork from adding a second launcher icon ([5f0a965](https://github.com/kombifyio/SpeechKit/commit/5f0a96534349ec3e1e55d234e7b06e8c86941b59))
+* **release:** stop the version sync failing when only the highlights differ ([07830b1](https://github.com/kombifyio/SpeechKit/commit/07830b12815ab9061b3a2d3ebd79712e27255600))
+
 ## [0.57.1](https://github.com/kombifyio/SpeechKit/compare/v0.57.0...v0.57.1) (2026-08-19)
 
 ### Highlights

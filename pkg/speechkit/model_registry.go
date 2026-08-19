@@ -19,6 +19,8 @@ const (
 	ModelOpenAIGPT4OMiniTranscribe       = "gpt-4o-mini-transcribe"
 	ModelOpenAIGPT4OTranscribeDiarize    = "gpt-4o-transcribe-diarize"
 	ModelOpenAIRealtime2                 = "gpt-realtime-2"
+	ModelOpenAIRealtime21                = "gpt-realtime-2.1"
+	ModelOpenAIRealtime21Mini            = "gpt-realtime-2.1-mini"
 )
 
 type ModelLifecycle string
@@ -159,6 +161,36 @@ func DefaultModelRegistry() []ProviderModelDescriptor {
 			Lifecycle:   ModelLifecycleGA,
 			Default:     true,
 			Recommended: true,
+			SourceURL:   "https://platform.openai.com/docs/guides/realtime",
+		},
+		// 2.1 and its mini are selectable but neither is Default or
+		// Recommended yet. AI-VOICE-SPEECHKIT-TARGET.md names gpt-realtime-2.1
+		// "the standing OpenAI promotion candidate" and holds the default until
+		// a documented quality/latency/cost evaluation passes; moving Default
+		// here without that evidence is exactly what the rule forbids. Listing
+		// them is not promotion - it is what lets the evaluation address them
+		// by name and what stops a caller from having to guess a model string
+		// the registry never heard of.
+		{
+			Provider:    "openai",
+			ModelID:     ModelOpenAIRealtime21,
+			ProfileID:   "realtime.openai.gpt-realtime-2",
+			Mode:        ModeVoiceAgent,
+			Name:        "GPT Realtime 2.1",
+			Lifecycle:   ModelLifecycleGA,
+			Default:     false,
+			Recommended: false,
+			SourceURL:   "https://platform.openai.com/docs/guides/realtime",
+		},
+		{
+			Provider:    "openai",
+			ModelID:     ModelOpenAIRealtime21Mini,
+			ProfileID:   "realtime.openai.gpt-realtime-2",
+			Mode:        ModeVoiceAgent,
+			Name:        "GPT Realtime 2.1 mini",
+			Lifecycle:   ModelLifecycleGA,
+			Default:     false,
+			Recommended: false,
 			SourceURL:   "https://platform.openai.com/docs/guides/realtime",
 		},
 	}

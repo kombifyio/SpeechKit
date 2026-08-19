@@ -24,6 +24,22 @@
         android:theme="@style/Theme.SpeechKit"
         tools:replace="android:name,android:label,android:allowBackup">
 
+        <!-- The keyboard fork ships its own launcher icon, which is right for
+             a standalone keyboard and wrong here: merged into this app it put
+             a second "kombify SpeechKit" icon in the launcher, opening the
+             keyboard's settings instead of the app. Verified on an emulator -
+             both io.kombify.speechkit/.app.ui.MainActivity and
+             .../helium314.keyboard.settings.SettingsActivity answered
+             MAIN/LAUNCHER. Removed here rather than in the fork so the fork
+             keeps building and running standalone exactly as upstream does;
+             the activity itself stays, reachable from the keyboard's own
+             settings key. -->
+        <activity
+            android:name="helium314.keyboard.settings.SettingsActivity"
+            tools:node="merge">
+            <intent-filter tools:node="removeAll" />
+        </activity>
+
         <!-- Main Activity -->
         <activity
             android:name=".app.ui.MainActivity"

@@ -54,6 +54,21 @@ object VoiceAgentStates {
     const val INACTIVE = "inactive"
 }
 
+/**
+ * Error codes on [VoiceAgentErrorFrame] a client has to tell apart. Only the
+ * ones a surface renders differently belong here — everything else is prose
+ * the user reads as written.
+ */
+object VoiceAgentErrorCodes {
+    /**
+     * The requested realtime backend is unknown to this server, or is
+     * configured without credentials. There is no discovery endpoint listing
+     * what a deployment registered, so a client that offers a provider choice
+     * only learns the answer by asking for one and being refused.
+     */
+    const val PROVIDER_UNAVAILABLE = "provider_unavailable"
+}
+
 /** Reasons the server reports on [VoiceAgentSessionEndFrame]. */
 object VoiceAgentEndReasons {
     const val IDLE = "idle"

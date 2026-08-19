@@ -16,7 +16,11 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import io.kombify.speechkit.ime.ImeVoiceAgentController
+import io.kombify.speechkit.ime.R
+import io.kombify.speechkit.net.VoiceAgentErrorCodes
 import io.kombify.speechkit.net.VoiceAgentUiState
 import io.kombify.speechkit.voiceui.VoiceAuraOrb
 import io.kombify.speechkit.voiceui.VoiceAuraState
@@ -34,6 +38,10 @@ import io.kombify.speechkit.voiceui.VoiceAuraState
  * `:voice-ui-compose` module. The orb used to live inside the assistant
  * application, which no keyboard should depend on, so this panel drew its
  * own indicator instead; extracting the orb removed that split.
+ *
+ * @param provider the realtime backend this conversation was opened on, shown
+ *   next to the phase because the surfaces that offer a choice of backend
+ *   would otherwise leave the user guessing which one is answering.
  */
 @Composable
 fun VoiceAgentPanelUi(
@@ -43,6 +51,7 @@ fun VoiceAgentPanelUi(
     onEnd: () -> Unit,
     onSwitchToDictation: () -> Unit,
     modifier: Modifier = Modifier,
+    provider: String? = null,
 ) {
     Surface(
         modifier = modifier.fillMaxWidth(),
@@ -63,11 +72,15 @@ fun VoiceAgentPanelUi(
             ) {
                 VoiceAuraOrb(state = state.phase.orbState(), sizeDp = 40)
                 Text(
-                    text = state.phase.label(),
+                    text = stringResource(state.phase.label()).let { phase ->
+                        if (provider.isNullOrBlank()) phase else "$phase · $provider"
+                    },
                     style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
-                TextButton(onClick = onSwitchToDictation) { Text("Diktat") }
+                TextButton(onClick = onSwitchToDictation) {
+                    Text(stringResource(R.string.speechkit_ime_agent_action_dictation))
+                }
             }
 
             Column(
@@ -78,15 +91,25 @@ fun VoiceAgentPanelUi(
                 verticalArrangement = Arrangement.spacedBy(6.dp),
             ) {
                 if (state.userText.isNotBlank()) {
-                    Text("Du", style = MaterialTheme.typography.labelSmall)
+                    Text(
+                        text = stringResource(R.string.speechkit_ime_agent_speaker_user),
+                        style = MaterialTheme.typography.labelSmall,
+                    )
                     Text(state.userText, style = MaterialTheme.typography.bodyMedium)
                 }
                 if (state.agentText.isNotBlank()) {
-                    Text("Assistent", style = MaterialTheme.typography.labelSmall)
+                    Text(
+                        text = stringResource(R.string.speechkit_ime_agent_speaker_agent),
+                        style = MaterialTheme.typography.labelSmall,
+                    )
                     Text(state.agentText, style = MaterialTheme.typography.bodyMedium)
                 }
-                state.error?.let {
-                    Text(it, style = MaterialTheme.typography.bodySmall)
+                if (state.error != null || state.errorCode != null) {
+                    Text(
+                        text = agentErrorLabel(state.errorCode, state.error),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.error,
+                    )
                 }
             }
 
@@ -94,10 +117,20 @@ fun VoiceAgentPanelUi(
                 onClick = { onHoldChange(!holding) },
                 modifier = Modifier.fillMaxWidth(),
             ) {
-                Text(if (holding) "Loslassen" else "Halten zum Sprechen")
+                Text(
+                    stringResource(
+                        if (holding) {
+                            R.string.speechkit_ime_agent_release
+                        } else {
+                            R.string.speechkit_ime_agent_hold_to_talk
+                        },
+                    ),
+                )
             }
 
-            TextButton(onClick = onEnd) { Text("Gespräch beenden") }
+            TextButton(onClick = onEnd) {
+                Text(stringResource(R.string.speechkit_ime_agent_action_end))
+            }
         }
     }
 }
@@ -116,11 +149,31 @@ private fun VoiceAgentUiState.Phase.orbState(): VoiceAuraState = when (this) {
     VoiceAgentUiState.Phase.Ended -> VoiceAuraState.SETTLING
 }
 
-private fun VoiceAgentUiState.Phase.label(): String = when (this) {
-    VoiceAgentUiState.Phase.Inactive -> "Bereit"
-    VoiceAgentUiState.Phase.Connecting -> "Verbinde…"
-    VoiceAgentUiState.Phase.Listening -> "Hört zu"
-    VoiceAgentUiState.Phase.Processing -> "Denkt nach…"
-    VoiceAgentUiState.Phase.Speaking -> "Antwortet"
-    VoiceAgentUiState.Phase.Ended -> "Beendet"
+private fun VoiceAgentUiState.Phase.label(): Int = when (this) {
+    VoiceAgentUiState.Phase.Inactive -> R.string.speechkit_ime_agent_phase_inactive
+    VoiceAgentUiState.Phase.Connecting -> R.string.speechkit_ime_agent_phase_connecting
+    VoiceAgentUiState.Phase.Listening -> R.string.speechkit_ime_agent_phase_listening
+    VoiceAgentUiState.Phase.Processing -> R.string.speechkit_ime_agent_phase_processing
+    VoiceAgentUiState.Phase.Speaking -> R.string.speechkit_ime_agent_phase_speaking
+    VoiceAgentUiState.Phase.Ended -> R.string.speechkit_ime_agent_phase_ended
+}
+
+/**
+ * Stable failure codes become localized explanations; anything else falls back
+ * to the server's own prose, which is still better than nothing. A refused
+ * provider is called out by name because no endpoint tells a client which
+ * backends a deployment registered — being turned down is how you find out.
+ */
+@Composable
+private fun agentErrorLabel(code: String?, message: String?): String = when (code) {
+    VoiceAgentErrorCodes.PROVIDER_UNAVAILABLE ->
+        stringResource(R.string.speechkit_ime_agent_error_provider_unavailable)
+
+    ImeVoiceAgentController.ERROR_NO_SERVER ->
+        stringResource(R.string.speechkit_ime_agent_error_no_server)
+
+    ImeVoiceAgentController.ERROR_MIC_DENIED ->
+        stringResource(R.string.speechkit_ime_error_mic_denied)
+
+    else -> message.orEmpty()
 }

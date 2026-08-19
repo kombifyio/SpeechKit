@@ -22,4 +22,19 @@
     <string name="speechkit_ime_error_not_configured">Kein Server konfiguriert — öffne die SpeechKit-App</string>
     <string name="speechkit_ime_error_mic_denied">Mikrofon-Berechtigung verweigert</string>
     <string name="speechkit_ime_action_voice_agent">Sprachassistent</string>
+
+    <string name="speechkit_ime_agent_action_dictation">Diktat</string>
+    <string name="speechkit_ime_agent_action_end">Gespräch beenden</string>
+    <string name="speechkit_ime_agent_hold_to_talk">Halten zum Sprechen</string>
+    <string name="speechkit_ime_agent_release">Loslassen</string>
+    <string name="speechkit_ime_agent_speaker_user">Du</string>
+    <string name="speechkit_ime_agent_speaker_agent">Assistent</string>
+    <string name="speechkit_ime_agent_phase_inactive">Bereit</string>
+    <string name="speechkit_ime_agent_phase_connecting">Verbinde…</string>
+    <string name="speechkit_ime_agent_phase_listening">Hört zu</string>
+    <string name="speechkit_ime_agent_phase_processing">Denkt nach…</string>
+    <string name="speechkit_ime_agent_phase_speaking">Antwortet</string>
+    <string name="speechkit_ime_agent_phase_ended">Beendet</string>
+    <string name="speechkit_ime_agent_error_provider_unavailable">Dieser Sprachanbieter ist auf dem Server nicht konfiguriert</string>
+    <string name="speechkit_ime_agent_error_no_server">Der Sprachassistent braucht einen gekoppelten SpeechKit-Server</string>
 </resources>
