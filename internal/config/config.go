@@ -142,4 +142,23 @@ type Config struct {
 	// default off, fail-closed; AI-VOICE-SPEECHKIT-TARGET.md 2026-08-10).
 	// The Server-Target ignores this block entirely.
 	AgentBridge AgentBridgeConfig `toml:"agent_bridge"`
+
+	// Meeting configures meeting capture and its note write-ups. Desktop-only;
+	// the Server-Target ignores this block.
+	Meeting MeetingConfig `toml:"meeting"`
+}
+
+// MeetingConfig configures meeting capture.
+type MeetingConfig struct {
+	// AutoDetect offers to take notes when a call starts, which SpeechKit
+	// notices by seeing a calling application take the microphone. The check
+	// reads process names and nothing else, stores nothing and sends nothing.
+	AutoDetect bool `toml:"auto_detect"`
+	// AutoDetectApps replaces the built-in list of applications whose
+	// microphone use means a call. Empty uses the built-in list, which covers
+	// the common clients and browsers.
+	AutoDetectApps []string `toml:"auto_detect_apps"`
+	// AutoEnhance writes a meeting up as soon as it ends, rather than waiting
+	// to be asked.
+	AutoEnhance bool `toml:"auto_enhance"`
 }

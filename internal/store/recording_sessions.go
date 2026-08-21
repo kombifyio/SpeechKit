@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"log/slog"
 	"strings"
 	"time"
 )
@@ -69,30 +70,14 @@ func (s *sqlStore) AppendRecordingSessionSegment(ctx context.Context, sessionID 
 	if err := s.ensureRecordingSessionInScope(ctx, sessionID, scopeID); err != nil {
 		return 0, err
 	}
+	allocateIndex := segment.SegmentIndex < 0
 	segment = normalizeRecordingSessionSegment(segment)
-	transcriptionID := nullableInt64(segment.TranscriptionID)
 	var id int64
-	err = s.db.QueryRowContext(ctx, s.dialect.rebind(
-		`INSERT INTO recording_session_segments (
-			session_id, segment_index, transcription_id, provider_item_id, text, is_final, started_ms, ended_ms
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-		ON CONFLICT(session_id, segment_index) DO UPDATE SET
-			transcription_id = excluded.transcription_id,
-			provider_item_id = excluded.provider_item_id,
-			text = excluded.text,
-			is_final = excluded.is_final,
-			started_ms = excluded.started_ms,
-			ended_ms = excluded.ended_ms
-		RETURNING id`),
-		sessionID,
-		segment.SegmentIndex,
-		transcriptionID,
-		segment.ProviderItemID,
-		segment.Text,
-		segment.IsFinal,
-		segment.StartedMs,
-		segment.EndedMs,
-	).Scan(&id)
+	if allocateIndex {
+		id, err = s.appendRecordingSessionSegmentAtNextIndex(ctx, sessionID, segment)
+	} else {
+		id, err = s.upsertRecordingSessionSegment(ctx, sessionID, segment)
+	}
 	if err != nil {
 		return 0, fmt.Errorf("append recording session segment: %w", err)
 	}
@@ -102,6 +87,85 @@ func (s *sqlStore) AppendRecordingSessionSegment(ctx context.Context, sessionID 
 		scopeID,
 	)
 	return id, nil
+}
+
+func (s *sqlStore) upsertRecordingSessionSegment(ctx context.Context, sessionID int64, segment RecordingSessionSegment) (int64, error) {
+	var id int64
+	err := s.db.QueryRowContext(ctx, s.dialect.rebind(
+		`INSERT INTO recording_session_segments (
+			session_id, segment_index, transcription_id, provider_item_id, text, is_final,
+			channel, speaker, started_ms, ended_ms
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		ON CONFLICT(session_id, segment_index) DO UPDATE SET
+			transcription_id = excluded.transcription_id,
+			provider_item_id = excluded.provider_item_id,
+			text = excluded.text,
+			is_final = excluded.is_final,
+			channel = excluded.channel,
+			speaker = excluded.speaker,
+			started_ms = excluded.started_ms,
+			ended_ms = excluded.ended_ms
+		RETURNING id`),
+		sessionID,
+		segment.SegmentIndex,
+		nullableInt64(segment.TranscriptionID),
+		segment.ProviderItemID,
+		segment.Text,
+		segment.IsFinal,
+		segment.Channel,
+		segment.Speaker,
+		segment.StartedMs,
+		segment.EndedMs,
+	).Scan(&id)
+	return id, err
+}
+
+// appendRecordingSessionSegmentAtNextIndex claims the next free index for the
+// session inside the insert itself, so concurrent capture channels writing into
+// the same meeting cannot collide on the (session_id, segment_index) key. A
+// racing pair of inserts can still lose the unique check on Postgres, where
+// writers run in parallel, so the loser simply retries against the new maximum.
+func (s *sqlStore) appendRecordingSessionSegmentAtNextIndex(ctx context.Context, sessionID int64, segment RecordingSessionSegment) (int64, error) {
+	const attempts = 3
+	var lastErr error
+	for attempt := 0; attempt < attempts; attempt++ {
+		var id int64
+		err := s.db.QueryRowContext(ctx, s.dialect.rebind(
+			`INSERT INTO recording_session_segments (
+				session_id, segment_index, transcription_id, provider_item_id, text, is_final,
+				channel, speaker, started_ms, ended_ms
+			)
+			SELECT ?, COALESCE(MAX(segment_index), -1) + 1, ?, ?, ?, ?, ?, ?, ?, ?
+			FROM recording_session_segments WHERE session_id = ?
+			RETURNING id`),
+			sessionID,
+			nullableInt64(segment.TranscriptionID),
+			segment.ProviderItemID,
+			segment.Text,
+			segment.IsFinal,
+			segment.Channel,
+			segment.Speaker,
+			segment.StartedMs,
+			segment.EndedMs,
+			sessionID,
+		).Scan(&id)
+		if err == nil {
+			return id, nil
+		}
+		lastErr = err
+		if !isUniqueConstraintError(err) {
+			return 0, err
+		}
+	}
+	return 0, lastErr
+}
+
+func isUniqueConstraintError(err error) bool {
+	if err == nil {
+		return false
+	}
+	message := strings.ToLower(err.Error())
+	return strings.Contains(message, "unique constraint") || strings.Contains(message, "duplicate key")
 }
 
 func (s *sqlStore) UpdateRecordingSessionSummary(ctx context.Context, id int64, summary string) error {
@@ -259,6 +323,9 @@ func (s *sqlStore) GetRecordingSession(ctx context.Context, id int64) (*Recordin
 	if err != nil {
 		return nil, err
 	}
+	if session.Notes, err = s.GetRecordingSessionNotes(ctx, session.ID); err != nil {
+		return nil, err
+	}
 	return session, nil
 }
 
@@ -282,7 +349,8 @@ const recordingSessionSelectSQL = `SELECT id, external_id, kind, status, capture
 		title, language, provider, model, input_source, processing_mode, summary,
 		started_at, ended_at, capture_started_at, capture_paused_at, capture_stopped_at,
 		summary_updated_at, created_at, updated_at,
-		COALESCE(owner_user_id, ''), COALESCE(owner_org_id, ''), COALESCE(owner_source, '')
+		COALESCE(owner_user_id, ''), COALESCE(owner_org_id, ''), COALESCE(owner_source, ''),
+		retention_pinned
 	FROM recording_sessions`
 
 type recordingSessionRow interface {
@@ -293,6 +361,7 @@ func scanRecordingSession(row recordingSessionRow) (*RecordingSession, error) {
 	var session RecordingSession
 	var endedAt, captureStartedAt, capturePausedAt, captureStoppedAt, summaryUpdatedAt sql.NullTime
 	var kind, status, captureStatus, summaryStatus string
+	var retentionPinned boolValue
 	if err := row.Scan(
 		&session.ID,
 		&session.ExternalID,
@@ -319,6 +388,7 @@ func scanRecordingSession(row recordingSessionRow) (*RecordingSession, error) {
 		&session.OwnerUserID,
 		&session.OwnerOrgID,
 		&session.OwnerSource,
+		&retentionPinned,
 	); err != nil {
 		return nil, err
 	}
@@ -337,6 +407,7 @@ func scanRecordingSession(row recordingSessionRow) (*RecordingSession, error) {
 	if summaryUpdatedAt.Valid {
 		session.SummaryUpdatedAt = summaryUpdatedAt.Time
 	}
+	session.RetentionPinned = bool(retentionPinned)
 	session.Kind = RecordingSessionKind(kind)
 	session.Status = RecordingSessionStatus(status)
 	session.CaptureStatus = normalizeRecordingSessionCaptureStatus(RecordingSessionCaptureStatus(captureStatus))
@@ -354,12 +425,15 @@ func (s *sqlStore) ensureRecordingSessionInScope(ctx context.Context, id, scopeI
 }
 
 func (s *sqlStore) listRecordingSessionSegments(ctx context.Context, sessionID int64) ([]RecordingSessionSegment, error) {
+	// Ordered by capture wall-clock so the microphone and system loopback
+	// channels of a meeting interleave into one readable timeline; the index is
+	// only the tie-breaker for sessions recorded before timestamps existed.
 	rows, err := s.db.QueryContext(ctx, s.dialect.rebind(
 		`SELECT id, session_id, segment_index, COALESCE(transcription_id, 0), provider_item_id, text,
-			is_final, started_ms, ended_ms, created_at
+			is_final, channel, speaker, started_ms, ended_ms, created_at
 		 FROM recording_session_segments
 		 WHERE session_id = ?
-		 ORDER BY segment_index ASC, id ASC`), sessionID)
+		 ORDER BY started_ms ASC, segment_index ASC, id ASC`), sessionID)
 	if err != nil {
 		return nil, err
 	}
@@ -378,6 +452,8 @@ func (s *sqlStore) listRecordingSessionSegments(ctx context.Context, sessionID i
 			&segment.ProviderItemID,
 			&segment.Text,
 			&isFinal,
+			&segment.Channel,
+			&segment.Speaker,
 			&segment.StartedMs,
 			&segment.EndedMs,
 			&segment.CreatedAt,
@@ -475,6 +551,8 @@ func normalizeRecordingSessionSummaryStatus(status RecordingSessionSummaryStatus
 func normalizeRecordingSessionSegment(segment RecordingSessionSegment) RecordingSessionSegment {
 	segment.ProviderItemID = strings.TrimSpace(segment.ProviderItemID)
 	segment.Text = strings.TrimSpace(segment.Text)
+	segment.Channel = strings.TrimSpace(segment.Channel)
+	segment.Speaker = strings.TrimSpace(segment.Speaker)
 	if segment.SegmentIndex < 0 {
 		segment.SegmentIndex = 0
 	}
@@ -499,4 +577,59 @@ func nullableInt64(value int64) any {
 		return nil
 	}
 	return value
+}
+
+// enforceMeetingRetention discards finished meetings past the retention window.
+//
+// Only meetings, and only finished ones: a dictation session is a different
+// thing with its own lifetime, and a meeting still being recorded is not a
+// candidate no matter how long it has run. Pinned meetings are always kept —
+// retention exists so a machine does not accumulate transcripts of every call,
+// not to delete the one meeting someone needed.
+//
+// The children (segments, notes, write-ups) go with the session through the
+// foreign keys, which is why nothing here deletes them one by one.
+func (s *sqlStore) enforceMeetingRetention() {
+	if s.meetingRetentionDays <= 0 {
+		return
+	}
+	cutoff := s.dialect.timeArg(time.Now().Add(-time.Duration(s.meetingRetentionDays) * 24 * time.Hour))
+	result, err := s.db.ExecContext(context.Background(), s.dialect.rebind( //nolint:contextcheck // background goroutine should not be bound to a request context
+		`DELETE FROM recording_sessions
+		 WHERE kind = ? AND status = ? AND retention_pinned = ? AND ended_at IS NOT NULL AND ended_at < ?`),
+		string(RecordingSessionKindMeeting),
+		string(RecordingSessionStatusFinished),
+		false,
+		cutoff,
+	)
+	if err != nil {
+		slog.Warn("store: meeting retention sweep", "err", err)
+		return
+	}
+	if removed, _ := result.RowsAffected(); removed > 0 {
+		slog.Info("store: meetings discarded by retention", "count", removed, "days", s.meetingRetentionDays)
+	}
+}
+
+// SetRecordingSessionPinned keeps one meeting out of the retention sweep.
+func (s *sqlStore) SetRecordingSessionPinned(ctx context.Context, id int64, pinned bool) error {
+	scopeID, err := s.scopeID(ctx)
+	if err != nil {
+		return err
+	}
+	result, err := s.db.ExecContext(ctx, s.dialect.rebind(fmt.Sprintf(
+		`UPDATE recording_sessions SET retention_pinned = ?, updated_at = %s WHERE id = ? AND scope_id = ?`,
+		s.dialect.now())),
+		pinned,
+		id,
+		scopeID,
+	)
+	if err != nil {
+		return fmt.Errorf("pin recording session: %w", err)
+	}
+	rows, _ := result.RowsAffected()
+	if rows == 0 {
+		return sql.ErrNoRows
+	}
+	return nil
 }

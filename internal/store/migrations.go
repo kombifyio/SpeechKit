@@ -66,6 +66,12 @@ func runSQLiteMigrations(ctx context.Context, db *sql.DB) error {
 		sqliteSQLMigration("sqlite:017_customization", sqliteMigration017),
 		sqliteSQLMigration("sqlite:018_recording_sessions", sqliteMigration018),
 		{version: "sqlite:019_recording_session_state", run: runSQLiteRecordingSessionStateMigration},
+		{version: "sqlite:020_recording_session_channels", run: runSQLiteRecordingSessionChannelsMigration},
+		sqliteSQLMigration("sqlite:021_recording_session_notes", sqliteMigration021),
+		sqliteSQLMigration("sqlite:022_recording_session_enhancements", sqliteMigration022),
+		{version: "sqlite:023_meeting_retention", run: func(ctx context.Context, db *sql.DB) error {
+			return ensureSQLiteColumn(ctx, db, "recording_sessions", "retention_pinned", "INTEGER NOT NULL DEFAULT 0")
+		}},
 	}
 	for _, migration := range migrations {
 		if err := applyMigration(ctx, db, "sqlite", migration); err != nil {
@@ -105,6 +111,10 @@ func runPostgresMigrations(ctx context.Context, db *sql.DB) error {
 		postgresSQLMigration("postgres:013_customization", postgresMigration013),
 		postgresSQLMigration("postgres:014_recording_sessions", postgresMigration014),
 		postgresSQLMigration("postgres:015_recording_session_state", postgresMigration015),
+		postgresSQLMigration("postgres:016_recording_session_channels", postgresMigration016),
+		postgresSQLMigration("postgres:017_recording_session_notes", postgresMigration017),
+		postgresSQLMigration("postgres:018_recording_session_enhancements", postgresMigration018),
+		postgresSQLMigration("postgres:019_meeting_retention", postgresMigration019),
 	}
 	for _, migration := range migrations {
 		if err := applyMigration(ctx, db, "postgres", migration); err != nil {
@@ -415,6 +425,29 @@ func runSQLiteRecordingSessionStateMigration(ctx context.Context, db *sql.DB) er
 	_, err := db.ExecContext(ctx, `
 CREATE INDEX IF NOT EXISTS idx_recording_sessions_scope_capture
     ON recording_sessions(scope_id, capture_status, updated_at DESC, id DESC);
+`)
+	return err
+}
+
+// runSQLiteRecordingSessionChannelsMigration adds the capture-channel and
+// speaker columns meeting capture needs to keep the microphone and system
+// loopback streams apart, plus the wall-clock timeline index the meeting views
+// order by.
+func runSQLiteRecordingSessionChannelsMigration(ctx context.Context, db *sql.DB) error {
+	for _, column := range []struct {
+		name       string
+		definition string
+	}{
+		{name: "channel", definition: "TEXT NOT NULL DEFAULT ''"},
+		{name: "speaker", definition: "TEXT NOT NULL DEFAULT ''"},
+	} {
+		if err := ensureSQLiteColumn(ctx, db, "recording_session_segments", column.name, column.definition); err != nil {
+			return err
+		}
+	}
+	_, err := db.ExecContext(ctx, `
+CREATE INDEX IF NOT EXISTS idx_recording_session_segments_timeline
+    ON recording_session_segments(session_id, started_ms, id);
 `)
 	return err
 }

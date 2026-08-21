@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.ui.Alignment
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
@@ -40,6 +41,8 @@ import io.kombify.speechkit.net.VoiceAgentController
 import io.kombify.speechkit.net.VoiceAgentEvent
 import io.kombify.speechkit.net.VoiceAgentStartFrame
 import io.kombify.speechkit.net.VoiceAgentUiState
+import io.kombify.speechkit.voiceui.VoiceAuraOrb
+import io.kombify.speechkit.voiceui.VoiceAuraState
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.isActive
@@ -220,17 +223,35 @@ fun VoiceAgentTestScreen(modifier: Modifier = Modifier) {
         }
 
         Card(modifier = Modifier.fillMaxWidth()) {
-            Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            Column(
+                Modifier.padding(12.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+            ) {
+                VoiceAuraOrb(state = state.phase.orbState(), sizeDp = 96)
                 Text("Status: $status", style = MaterialTheme.typography.bodySmall)
                 Text("Phase: ${state.phase}", style = MaterialTheme.typography.bodySmall)
                 state.error?.let {
                     Text("Fehler: $it", style = MaterialTheme.typography.bodySmall)
                 }
-                Text("Du: ${state.userText}", style = MaterialTheme.typography.bodyMedium)
-                Text("Agent: ${state.agentText}", style = MaterialTheme.typography.bodyMedium)
+                if (state.userText.isNotBlank()) {
+                    Text("Du: ${state.userText}", style = MaterialTheme.typography.bodyMedium)
+                }
+                if (state.agentText.isNotBlank()) {
+                    Text("Agent: ${state.agentText}", style = MaterialTheme.typography.bodyMedium)
+                }
             }
         }
     }
+}
+
+private fun VoiceAgentUiState.Phase.orbState(): VoiceAuraState = when (this) {
+    VoiceAgentUiState.Phase.Inactive -> VoiceAuraState.INACTIVE
+    VoiceAgentUiState.Phase.Connecting -> VoiceAuraState.CONNECTING
+    VoiceAgentUiState.Phase.Listening -> VoiceAuraState.LISTENING
+    VoiceAgentUiState.Phase.Processing -> VoiceAuraState.PROCESSING
+    VoiceAgentUiState.Phase.Speaking -> VoiceAuraState.SPEAKING
+    VoiceAgentUiState.Phase.Ended -> VoiceAuraState.SETTLING
 }
 
 private fun hasMicPermission(context: Context): Boolean =

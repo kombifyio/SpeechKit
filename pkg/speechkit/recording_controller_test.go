@@ -327,6 +327,61 @@ func TestRecordingControllerStartStopSubmitsSegments(t *testing.T) {
 	}
 }
 
+func TestRecordingControllerPlacesCaptureOnSharedTimeline(t *testing.T) {
+	recorder := &fakeRecorder{stopPCM: []byte(strings.Repeat("a", 6400))}
+	submitter := &fakeSubmitter{}
+	controller := NewRecordingController(recorder, submitter, &fakeObserver{}, nil)
+	now := time.Date(2026, 8, 19, 10, 0, 30, 0, time.UTC)
+	controller.now = func() time.Time { return now }
+
+	// A host recording one session from several sources passes the same epoch
+	// to every controller; this one joined the session 30 seconds in.
+	if err := controller.Start(RecordingStartOptions{
+		Language:       "de",
+		CaptureChannel: CaptureChannelSystem,
+		CaptureEpoch:   now.Add(-30 * time.Second),
+	}); err != nil {
+		t.Fatalf("Start() error = %v", err)
+	}
+	if err := controller.Stop(RecordingStopOptions{Label: "Captured"}); err != nil {
+		t.Fatalf("Stop() error = %v", err)
+	}
+
+	if len(submitter.jobs) != 1 {
+		t.Fatalf("jobs = %d, want 1", len(submitter.jobs))
+	}
+	submission := submitter.jobs[0].Submission
+	if submission.CaptureChannel != CaptureChannelSystem {
+		t.Fatalf("CaptureChannel = %q, want %q", submission.CaptureChannel, CaptureChannelSystem)
+	}
+	if submission.CapturedStartMs != 30000 {
+		t.Fatalf("CapturedStartMs = %d, want 30000", submission.CapturedStartMs)
+	}
+	if submission.CapturedEndMs != 30200 {
+		t.Fatalf("CapturedEndMs = %d, want 30200 (0.2s of audio)", submission.CapturedEndMs)
+	}
+}
+
+func TestRecordingControllerWithoutEpochStartsTimelineAtZero(t *testing.T) {
+	recorder := &fakeRecorder{stopPCM: []byte(strings.Repeat("a", 6400))}
+	submitter := &fakeSubmitter{}
+	controller := NewRecordingController(recorder, submitter, &fakeObserver{}, nil)
+
+	if err := controller.Start(RecordingStartOptions{Language: "de"}); err != nil {
+		t.Fatalf("Start() error = %v", err)
+	}
+	if err := controller.Stop(RecordingStopOptions{Label: "Captured"}); err != nil {
+		t.Fatalf("Stop() error = %v", err)
+	}
+
+	if len(submitter.jobs) != 1 {
+		t.Fatalf("jobs = %d, want 1", len(submitter.jobs))
+	}
+	if got := submitter.jobs[0].Submission.CapturedStartMs; got != 0 {
+		t.Fatalf("CapturedStartMs = %d, want 0 for a session timed from its own start", got)
+	}
+}
+
 func TestRecordingControllerStopWithNoSegmentsResetsIdle(t *testing.T) {
 	recorder := &fakeRecorder{stopPCM: []byte(strings.Repeat("a", 6400))}
 	submitter := &fakeSubmitter{}

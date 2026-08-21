@@ -40,6 +40,17 @@ func newAIClient(validation *netsec.ValidationOptions) *http.Client {
 	return netsec.NewSafeHTTPClient(netsec.ClientOptions{Timeout: 180 * time.Second, DialValidation: validation})
 }
 
+// newLocalAIClient is the same hardened client with a far longer ceiling,
+// because the bundled model runs on the CPU and is slow in a way no cloud
+// provider is: measured at single-digit tokens per second, a long answer — a
+// meeting write-up, most of all — takes minutes of generation, and the 180s
+// ceiling cut those requests off mid-answer. The real bound is the caller's
+// context deadline, which every long-running caller sets; this ceiling only
+// stops a wedged local server from being held open forever.
+func newLocalAIClient(validation *netsec.ValidationOptions) *http.Client {
+	return netsec.NewSafeHTTPClient(netsec.ClientOptions{Timeout: 30 * time.Minute, DialValidation: validation})
+}
+
 // registerOpenAIModels registers OpenAI models as custom Genkit models.
 func registerOpenAIModels(g *genkit.Genkit, apiKey string) {
 	client := newAIClient(&AICallValidation)
@@ -107,7 +118,7 @@ func registerOpenRouterModels(g *genkit.Genkit, apiKey string) {
 // registerLocalLLMModels registers SpeechKit-managed local LLM models.
 // The runtime speaks the OpenAI-compatible chat completions API on loopback.
 func registerLocalLLMModels(g *genkit.Genkit, baseURL string, modelNames []string) {
-	client := newAIClient(&localLLMCallValidation)
+	client := newLocalAIClient(&localLLMCallValidation)
 	seen := map[string]bool{}
 	for _, rawName := range modelNames {
 		name := strings.TrimSpace(rawName)

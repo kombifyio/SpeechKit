@@ -4,7 +4,13 @@ import "sync"
 
 // TranscriptSegmentKey uniquely identifies a final transcript unit inside a
 // progressive dictation or meeting session.
+//
+// CaptureChannel is part of the identity because a meeting records several
+// sources at once and each source numbers its own segments from one. Without it
+// the two channels collide on their first segment and one of them is discarded
+// as a duplicate of the other.
 type TranscriptSegmentKey struct {
+	CaptureChannel string
 	SessionID      uint64
 	SegmentID      uint64
 	ProviderItemID string
@@ -76,6 +82,7 @@ func transcriptSegmentKey(submission Submission) TranscriptSegmentKey {
 		return TranscriptSegmentKey{}
 	}
 	return TranscriptSegmentKey{
+		CaptureChannel: submission.CaptureChannel,
 		SessionID:      submission.SessionID,
 		SegmentID:      submission.SegmentID,
 		ProviderItemID: submission.ProviderItemID,
@@ -91,4 +98,7 @@ func applyTranscriptSessionMetadata(transcript *Transcript, submission Submissio
 	transcript.ProviderItemID = submission.ProviderItemID
 	transcript.SegmentFinal = submission.SegmentFinal
 	transcript.RecordingSessionID = submission.RecordingSessionID
+	transcript.CaptureChannel = submission.CaptureChannel
+	transcript.CapturedStartMs = submission.CapturedStartMs
+	transcript.CapturedEndMs = submission.CapturedEndMs
 }

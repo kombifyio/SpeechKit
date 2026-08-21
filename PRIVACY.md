@@ -17,6 +17,24 @@ SpeechKit captures microphone audio when you activate recording via hotkey or bu
 
 Audio is **never** uploaded to kombify servers. When you use cloud STT or TTS providers, audio segments are sent directly to the provider you configured (see Section 3).
 
+### Meeting Recordings
+
+Meetings are the one case where SpeechKit records people other than you, so they
+are handled more strictly than dictation:
+
+- **Meeting audio is never saved**, whatever `save_audio` is set to. A meeting
+  keeps what was said, not the sound of anyone saying it. This is enforced in
+  the capture pipeline rather than by a setting, so it cannot be switched off.
+- A meeting records two separate sources: your microphone and your computer's
+  own audio output, which is what the other participants are heard through. It
+  captures whatever is playing on your machine while a meeting runs.
+- Meeting transcripts and notes are kept until you delete them. Set
+  `store.meeting_retention_days` to discard finished meetings automatically
+  after that many days; individual meetings can be pinned to keep them anyway.
+
+Recording other people may require their knowledge or consent where you live.
+SpeechKit does not judge that for you.
+
 ### Transcriptions
 
 Transcribed text is stored locally in a SQLite database next to the application. Transcriptions include:
@@ -74,7 +92,8 @@ All application data is stored locally:
 |------|--------------------|--------------------|
 | Configuration | `config.toml` next to SpeechKit.exe | SharedPreferences |
 | Transcriptions | `%APPDATA%/SpeechKit/feedback.db` | Room database (app-internal) |
-| Audio files | `%APPDATA%/SpeechKit/audio/` | App-internal storage |
+| Audio files (dictation only) | `%APPDATA%/SpeechKit/audio/` | App-internal storage |
+| Meeting transcripts and notes | `%APPDATA%/SpeechKit/feedback.db` | — |
 | Credentials | Windows Credential Manager | SharedPreferences |
 | Logs | Application log directory | Logcat |
 

@@ -28,6 +28,7 @@ type sqlStore struct {
 	maxStorageMB            int
 	saveAudio               bool
 	audioRetentionDays      int
+	meetingRetentionDays    int
 	transcriptionModelHints map[string]string
 	defaultScope            speechstorage.Scope
 	scopePolicy             speechstorage.ScopePolicy
@@ -113,6 +114,9 @@ func (s *sqlStore) persistAudio(audio AudioAssetInput, prefix string) (string, e
 func (s *sqlStore) scheduleMaintenance() {
 	if s.saveAudio && s.maxStorageMB > 0 {
 		go s.enforceStorageLimit()
+	}
+	if s.meetingRetentionDays > 0 {
+		go s.enforceMeetingRetention()
 	}
 	if s.saveAudio && s.audioRetentionDays > 0 {
 		go s.enforceAudioRetention()

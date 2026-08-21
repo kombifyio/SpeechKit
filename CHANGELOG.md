@@ -9,6 +9,45 @@ maintainers. The release linter
 (`npm run release:lint -- --version vX.Y.Z`) refuses internal tracker
 IDs, source paths, and other maintainer-only vocabulary.
 
+## [0.59.0](https://github.com/kombifyio/SpeechKit/compare/v0.58.0...v0.59.0) (2026-08-21)
+
+### Highlights
+
+- **Meetings that start from what you wrote down**: your notes lead, the transcript fills in the rest, and the write-up cites the words it came from instead of inventing a summary.
+- **The call is recorded as two voices, not a mix**: microphone and system audio stay on separate tracks, so speaker labels come for free and the audio is never kept.
+- **A call starting is enough to offer notes**: SpeechKit notices when a calling app takes the microphone and waits for you to accept before it records anything.
+- **The overlay is the control strip**: choose which actions sit on it, rotate the speech language, start a meeting, and the keyboard says when it needs a server instead of looking finished.
+
+
+
+### Added
+
+* **android:** let the user pick the glyph for each keyboard mode ([812d8aa](https://github.com/kombifyio/SpeechKit/commit/812d8aabfc373e6492290746ddbae6b5cecf4315))
+* **android:** move the keyboard actions into the toolbar as icons ([fa205f9](https://github.com/kombifyio/SpeechKit/commit/fa205f9f9195335b24af6f8fecea4bcace7a2b35))
+* **android:** put the server connection in Settings, where it belongs ([8ad3078](https://github.com/kombifyio/SpeechKit/commit/8ad30788be7428df85cc85ef04d6da2f2a6e8d9f))
+* **meeting:** add a dual-capture hardware smoke ([5879872](https://github.com/kombifyio/SpeechKit/commit/58798721bfc9cbc674c20f7e87935d2e2e958313))
+* **meeting:** add the meeting notepad window ([60c4b05](https://github.com/kombifyio/SpeechKit/commit/60c4b057e770b4291702fb2e06aea2c2faeaf6e1))
+* **meeting:** give recording segments a capture channel and a timeline ([3bf306f](https://github.com/kombifyio/SpeechKit/commit/3bf306fe1c792f51c09ef84aa406a57edcc7301a))
+* **meeting:** make meeting capture a first-class runtime ([dadc69d](https://github.com/kombifyio/SpeechKit/commit/dadc69dd453c31e5f045fcf191822d4f5b367899))
+* **meeting:** never keep meeting audio, and let meetings expire ([19f63b8](https://github.com/kombifyio/SpeechKit/commit/19f63b83fecf0c94dfb81aa24af615e27ef9c64d))
+* **meeting:** notice when a call starts and offer to take notes ([6cfb3a1](https://github.com/kombifyio/SpeechKit/commit/6cfb3a148cdcae1da298199a60044581af745e47))
+* **meeting:** persist the notes a user writes during a meeting ([ff89d81](https://github.com/kombifyio/SpeechKit/commit/ff89d81b2faf200e4ccb7efb8eed5b47ceaed2f3))
+* **meeting:** read a meeting as its write-up in the dashboard ([0fff660](https://github.com/kombifyio/SpeechKit/commit/0fff66062cc200c7a1bf3259485dc8e57babc874))
+* **meeting:** write a meeting up as soon as it ends ([b27f1ef](https://github.com/kombifyio/SpeechKit/commit/b27f1eff3c95b7d381280af90b97d1655f48139e))
+* **meeting:** write meetings up from the transcript and the user's notes ([ec4441c](https://github.com/kombifyio/SpeechKit/commit/ec4441c02ff516a5e83a6d198549a4a3cba4c6d8))
+* overlay actions, language cycle, meeting start, and Android assist answers ([8b1db23](https://github.com/kombifyio/SpeechKit/commit/8b1db2362530611e0943590b3adc9ccc44a91785))
+
+
+### Fixed
+
+* **android:** make Settings reachable whether or not onboarding finished ([60b2949](https://github.com/kombifyio/SpeechKit/commit/60b29496ac37dbe977bd50e5113eb4b0d2641ec9))
+* **deploy:** stop the blueprint advertising the origin as the public URL ([6b14b01](https://github.com/kombifyio/SpeechKit/commit/6b14b01c8522ab06865a82057046430fe452a8db))
+* **meeting:** keep the call out of the notes, and finish what was stopped ([3cfe69b](https://github.com/kombifyio/SpeechKit/commit/3cfe69b3b1352e118ca09d08c611d0749b1a9d6b))
+* **meeting:** let the local model finish writing a meeting up ([b57a6a4](https://github.com/kombifyio/SpeechKit/commit/b57a6a47d4442007308e55d8f0d2efabba867c80))
+* **meeting:** stop one capture channel from discarding the other ([fd63653](https://github.com/kombifyio/SpeechKit/commit/fd63653c95cde8022649fccc198cd17324c8e428))
+* **oss:** export the meeting capture sources so the public tree builds ([ce23108](https://github.com/kombifyio/SpeechKit/commit/ce23108275e343dbe61209e91956e3c4e3b5b8c7))
+* overlay stop state, keyboard server hint, and Windows probe caches ([80e8342](https://github.com/kombifyio/SpeechKit/commit/80e834236188ed59264a76eb47a2c5268730fd7b))
+
 ## [0.58.0](https://github.com/kombifyio/SpeechKit/compare/v0.57.1...v0.58.0) (2026-08-19)
 
 ### Highlights
@@ -3650,15 +3689,8 @@ gate.
   package comments for `pkg/speechkit/{assist,dictation,voiceagent}` and
   the seven previously-undocumented kernel packages
   (`internal/{ai,dictation,models,router,shortcuts,stt,tts}`).
-- `docs/cmd-speechkit/DECOMPOSE-PLAN.md` — self-contained 11-PR
-  decomposition roadmap for `cmd/speechkit/`. Resequenced 2026-05-13 to
-  put structural-leaf packages first and `internal/state` last after
-  discovering that `appState` has 65+ methods spread across 12 files.
-- `docs/audits/2026-05-13/improvement-plan.md` — the in-repo copy of
-  the senior-architect audit plan that drove this release line.
-- `docs/mcp/SPLIT-PLAN.md` — five-PR decomposition roadmap for the
-  700-LOC `cmd/speechkit-mcp/main.go`. Execution is tracked as
-  SK-004.6.6.
+- The historical decomposition and audit plan files from this release line
+  are retained in Git history; current follow-up scope is tracked in Beads.
 - `npm run deadcode:strict` is now a CI step in the Frontend Checks job
   and gates merges on unused-code regressions.
 

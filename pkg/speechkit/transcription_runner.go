@@ -57,6 +57,16 @@ type Transcript struct {
 	// RecordingSessionID links this transcript to a persisted long-running
 	// dictation or meeting session in the host store.
 	RecordingSessionID int64
+	// CaptureChannel names the capture source this transcript came from (see
+	// CaptureChannel*). Sessions that record more than one source at once —
+	// meeting capture runs the microphone and the system loopback in parallel —
+	// use it to keep the two apart. Empty for single-source captures.
+	CaptureChannel string
+	// CapturedStartMs and CapturedEndMs place this transcript on the capture
+	// session's wall-clock timeline, relative to RecordingStartOptions.
+	// CaptureEpoch. Both are zero when the host did not request a timeline.
+	CapturedStartMs int64
+	CapturedEndMs   int64
 	// Words carries per-word acoustic confidence when available (Deepgram,
 	// AssemblyAI). Used to surface likely-misrecognized terms; nil otherwise.
 	Words                []WordConfidence
@@ -134,6 +144,12 @@ type Submission struct {
 	// host observers can attach committed text to a long-running session after
 	// persistence/output succeeds.
 	RecordingSessionID int64
+	// CaptureChannel, CapturedStartMs and CapturedEndMs carry the capture
+	// source and wall-clock placement through to the Transcript. See the
+	// matching Transcript fields.
+	CaptureChannel  string
+	CapturedStartMs int64
+	CapturedEndMs   int64
 	// ProviderItemID carries provider-native turn/item IDs for realtime
 	// streams. Segment-batch jobs leave it empty and rely on SessionID+SegmentID.
 	ProviderItemID string
@@ -223,7 +239,7 @@ func (r *TranscriptionRunner) Commit(ctx context.Context, submission Submission,
 	}
 
 	if r.store != nil {
-		if err := r.store.SaveTranscription(ctx, transcript.Text, transcript.Language, transcript.Provider, transcript.Model, durationMs, latencyMs, submission.WAV); err != nil {
+		if err := r.store.SaveTranscription(ctx, transcript.Text, transcript.Language, transcript.Provider, transcript.Model, durationMs, latencyMs, persistableAudio(submission)); err != nil {
 			return Completion{}, fmt.Errorf("save transcription: %w", err)
 		}
 		completion.TranscriptionPersisted = true
@@ -262,4 +278,33 @@ func mergeStoredQuickNoteText(existing, addition string, paragraph bool) string 
 		return existing + "\n\n" + addition
 	}
 	return existing + " " + addition
+}
+
+// persistableAudio returns the audio a transcript may be stored with.
+//
+// A capture that names a channel comes from a recording with several sources at
+// once, which today means a meeting - and a meeting never keeps its audio. It
+// records other people, often without them being in a position to consent to a
+// recording, so what is kept is what was said, not the sound of them saying it.
+//
+// The rule lives on this path rather than in a host setting because it is not a
+// preference: every persistence route runs through here, so none of them can
+// quietly opt out of it.
+func persistableAudio(submission Submission) []byte {
+	if submission.CaptureChannel != "" {
+		return nil
+	}
+	return submission.WAV
+}
+
+// deliverableAsOutput reports whether a transcript should be typed into the
+// user's focused application.
+//
+// Dictation is text the user is writing, so it goes where they are typing. A
+// recording is not: a capture that names a channel comes from a meeting, and
+// meeting speech belongs in the meeting, not pasted into whatever window
+// happens to have focus - which in practice was the note window, so the other
+// side of the call ended up inside the user's own notes.
+func deliverableAsOutput(submission Submission) bool {
+	return submission.CaptureChannel == ""
 }

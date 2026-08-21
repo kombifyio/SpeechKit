@@ -1,26 +1,6 @@
 package io.kombify.speechkit.app.keyboard
 
-import androidx.annotation.ColorInt
 import androidx.annotation.StringRes
-import androidx.compose.foundation.horizontalScroll
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.material3.AssistChip
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
-import androidx.compose.material3.ColorScheme
-import androidx.compose.material3.Text
-import androidx.compose.material3.darkColorScheme
-import androidx.compose.material3.lightColorScheme
-import androidx.compose.runtime.Composable
-import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.unit.dp
 import io.kombify.speechkit.R
 import io.kombify.speechkit.net.ConnectionProfile
 
@@ -121,160 +101,26 @@ fun keyboardActionRowBlocker(items: List<KeyboardActionItem>): KeyboardActionBlo
     items.mapNotNull { it.blocker }.minOrNull()
 
 /**
- * The strip's own palette, resolved from the keyboard it is stacked on.
+ * The keyboard toolbar key each action answers.
  *
- * The row lives outside `main_keyboard_frame`, so HeliBoard's colouring pass
- * never reaches it, and its colours are user settings rather than theme
- * attributes, so no themed context carries them either. Composed under a bare
- * `MaterialTheme` the row therefore painted itself in the default light
- * palette however dark the keys below it were. [surface] is what the keyboard
- * is actually painted in; [content] follows from it so the labels stay
- * legible on either.
+ * The fork reports the pressed key by its `ToolbarKey` name, which is the only
+ * identity that survives the click path - the listener downstream sees a key
+ * code, and six actions cannot be told apart by one. Keeping the mapping here
+ * rather than in the adapter means the fork's enum and this one drift loudly,
+ * in a test, instead of quietly at runtime.
  */
-data class KeyboardActionRowPalette(
-    @param:ColorInt val surface: Int,
-    @param:ColorInt val content: Int,
-    val dark: Boolean,
-)
-
-/**
- * The palette for a keyboard painted in [keyboardBackground].
- *
- * [keyboardBackground] is null until the keyboard has painted itself at least
- * once — the fork applies its background on the input view's first layout
- * pass, which is after the hook that mounts this row. The system's night mode
- * is the stand-in for that one frame: it is what the default keyboard themes
- * follow, so it is wrong only for a user who pinned a theme against it, and
- * only until the real colour arrives.
- */
-fun keyboardActionRowPalette(
-    @ColorInt keyboardBackground: Int?,
-    nightMode: Boolean,
-): KeyboardActionRowPalette {
-    val surface = keyboardBackground ?: if (nightMode) FALLBACK_DARK else FALLBACK_LIGHT
-    val dark = relativeLuminance(surface) < DARK_SURFACE_LUMINANCE
-    return KeyboardActionRowPalette(
-        surface = surface,
-        content = if (dark) CONTENT_ON_DARK else CONTENT_ON_LIGHT,
-        dark = dark,
-    )
+fun keyboardActionForToolbarKey(name: String): KeyboardAction? = when (name) {
+    "SPEECHKIT_DICTATE_DEVICE" -> KeyboardAction.OnDeviceDictation
+    "SPEECHKIT_DICTATE_SERVER" -> KeyboardAction.ServerDictation
+    "SPEECHKIT_AGENT_DEEPGRAM" -> KeyboardAction.AgentDeepgram
+    "SPEECHKIT_AGENT_ASSEMBLYAI" -> KeyboardAction.AgentAssemblyAi
+    "SPEECHKIT_AGENT_GPT" -> KeyboardAction.AgentOpenAi
+    "SPEECHKIT_COMPANION" -> KeyboardAction.CompanionApp
+    else -> null
 }
 
-/**
- * Draws [content] in the keyboard's colours.
- *
- * The host wraps the row in this instead of a bare `MaterialTheme`, which
- * would hand the chips the default light palette on every keyboard theme.
- */
-@Composable
-fun KeyboardActionRowTheme(
-    palette: KeyboardActionRowPalette,
-    content: @Composable () -> Unit,
-) {
-    MaterialTheme(colorScheme = keyboardActionRowScheme(palette), content = content)
-}
-
-private fun keyboardActionRowScheme(palette: KeyboardActionRowPalette): ColorScheme {
-    val surface = Color(palette.surface)
-    val content = Color(palette.content)
-    return (if (palette.dark) darkColorScheme() else lightColorScheme()).copy(
-        surface = surface,
-        surfaceVariant = surface,
-        background = surface,
-        onSurface = content,
-        onBackground = content,
-        onSurfaceVariant = content.copy(alpha = 0.72f),
-        outline = content.copy(alpha = 0.38f),
-        outlineVariant = content.copy(alpha = 0.24f),
-    )
-}
-
-/**
- * sRGB relative luminance per WCAG. Written out rather than taken from
- * `android.graphics.ColorUtils` so the rule that decides light-on-dark is
- * plain arithmetic that a unit test can pin without a device.
- */
-private fun relativeLuminance(@ColorInt color: Int): Double {
-    fun channel(shift: Int): Double {
-        val v = (color shr shift and 0xFF) / 255.0
-        return if (v <= 0.03928) v / 12.92 else Math.pow((v + 0.055) / 1.055, 2.4)
-    }
-    return 0.2126 * channel(16) + 0.7152 * channel(8) + 0.0722 * channel(0)
-}
-
-/** Below this the keyboard reads as dark and the row needs light content. */
-private const val DARK_SURFACE_LUMINANCE = 0.18
-
-private val FALLBACK_DARK = 0xFF1E1E1E.toInt()
-private val FALLBACK_LIGHT = 0xFFF1F1F1.toInt()
-private val CONTENT_ON_DARK = 0xFFECECEC.toInt()
-private val CONTENT_ON_LIGHT = 0xFF1B1B1B.toInt()
-
-/**
- * The row itself: one thin strip above the keys, always present while the
- * keyboard is up.
- *
- * A blocked action keeps its place and states its reason underneath, because
- * a keyboard offers nowhere to put a tooltip and a chip that simply does
- * nothing reads as a broken key.
- */
-@Composable
-fun KeyboardActionRow(
-    items: List<KeyboardActionItem>,
-    onAction: (KeyboardAction) -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    Surface(
-        modifier = modifier.fillMaxWidth(),
-        color = MaterialTheme.colorScheme.surface,
-        // Flat on purpose: tonal elevation tints the surface towards the
-        // scheme's primary, which would pull the strip off the keyboard colour
-        // this scheme exists to match.
-        tonalElevation = 0.dp,
-    ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 8.dp, vertical = 4.dp),
-            verticalArrangement = Arrangement.spacedBy(2.dp),
-        ) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .horizontalScroll(rememberScrollState()),
-                horizontalArrangement = Arrangement.spacedBy(6.dp),
-            ) {
-                items.forEach { item ->
-                    AssistChip(
-                        onClick = { onAction(item.action) },
-                        enabled = item.enabled,
-                        label = { Text(stringResource(item.action.label())) },
-                    )
-                }
-            }
-            keyboardActionRowBlocker(items)?.let { blocker ->
-                Text(
-                    text = stringResource(blocker.reason()),
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-        }
-    }
-}
-
-@StringRes
-private fun KeyboardAction.label(): Int = when (this) {
-    KeyboardAction.OnDeviceDictation -> R.string.speechkit_action_on_device
-    KeyboardAction.ServerDictation -> R.string.speechkit_action_server
-    KeyboardAction.AgentDeepgram -> R.string.speechkit_action_agent_deepgram
-    KeyboardAction.AgentAssemblyAi -> R.string.speechkit_action_agent_assemblyai
-    KeyboardAction.AgentOpenAi -> R.string.speechkit_action_agent_openai
-    KeyboardAction.CompanionApp -> R.string.speechkit_action_companion
-}
-
-@StringRes
-private fun KeyboardActionBlocker.reason(): Int = when (this) {
+/** The string resource explaining why [KeyboardActionBlocker] refused. */
+fun KeyboardActionBlocker.reasonResource(): Int = when (this) {
     KeyboardActionBlocker.NoServer -> R.string.speechkit_action_blocked_no_server
     KeyboardActionBlocker.NoCompanion -> R.string.speechkit_action_blocked_no_companion
 }

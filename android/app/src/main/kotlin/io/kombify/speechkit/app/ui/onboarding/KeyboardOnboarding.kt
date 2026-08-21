@@ -1,7 +1,9 @@
 package io.kombify.speechkit.app.ui.onboarding
 
+import android.app.role.RoleManager
 import android.content.Context
 import android.content.Intent
+import android.os.Build
 import android.provider.Settings
 import android.view.inputmethod.InputMethodManager
 import androidx.compose.foundation.layout.Arrangement
@@ -136,11 +138,7 @@ fun KeyboardOnboardingWizard(
             isCompleted = liveAssistantSet,
             isActive = currentStep == 2 && liveKeyboardSelected,
             buttonText = "Assistent einrichten",
-            onAction = {
-                context.startActivity(Intent(Settings.ACTION_VOICE_INPUT_SETTINGS).apply {
-                    flags = Intent.FLAG_ACTIVITY_NEW_TASK
-                })
-            },
+            onAction = { requestAssistantRole(context) },
             onNext = { onComplete() },
             isOptional = true,
         )
@@ -153,6 +151,19 @@ fun KeyboardOnboardingWizard(
                 modifier = Modifier.fillMaxWidth(),
             ) {
                 Text("Fertig")
+            }
+        } else {
+            // There is always a way out. Whether the keyboard is selected is
+            // read from the system, and that read can disagree with what the
+            // user just did - an OEM settings screen that reports late, a
+            // selection the framework has not committed yet. Gating the only
+            // exit on that read turns a wrong answer into a trap, so leaving
+            // is offered unconditionally; the steps stay available afterwards.
+            TextButton(
+                onClick = onComplete,
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Text("Später einrichten")
             }
         }
     }
@@ -312,6 +323,12 @@ object KeyboardSetupChecker {
     }
 
     fun isAssistantSet(context: Context): Boolean {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            val roles = context.getSystemService(RoleManager::class.java)
+            if (roles != null && roles.isRoleAvailable(RoleManager.ROLE_ASSISTANT)) {
+                return roles.isRoleHeld(RoleManager.ROLE_ASSISTANT)
+            }
+        }
         return try {
             val assistComponent = Settings.Secure.getString(
                 context.contentResolver,
@@ -322,4 +339,25 @@ object KeyboardSetupChecker {
             false
         }
     }
+}
+
+private fun requestAssistantRole(context: Context) {
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+        val roles = context.getSystemService(RoleManager::class.java)
+        if (roles != null && roles.isRoleAvailable(RoleManager.ROLE_ASSISTANT) &&
+            !roles.isRoleHeld(RoleManager.ROLE_ASSISTANT)
+        ) {
+            context.startActivity(
+                roles.createRequestRoleIntent(RoleManager.ROLE_ASSISTANT).apply {
+                    flags = Intent.FLAG_ACTIVITY_NEW_TASK
+                },
+            )
+            return
+        }
+    }
+    context.startActivity(
+        Intent(Settings.ACTION_VOICE_INPUT_SETTINGS).apply {
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK
+        },
+    )
 }

@@ -1,0 +1,2 @@
+ALTER TABLE recording_sessions
+    ADD COLUMN IF NOT EXISTS retention_pinned BOOLEAN NOT NULL DEFAULT FALSE;

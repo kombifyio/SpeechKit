@@ -3,6 +3,7 @@ package speechkit
 import (
 	"context"
 	"errors"
+	"time"
 
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/speaker"
 )
@@ -59,6 +60,12 @@ type DictationStreamSinkOptions struct {
 	QuickNoteID        int64
 	Language           string
 	RecordingSessionID int64
+	// CaptureChannel names the capture source feeding this stream, and
+	// CaptureEpoch is the wall clock the session's timeline is measured from.
+	// Sinks stamp final events with the elapsed offset so parallel channels of
+	// one meeting can be interleaved. A zero epoch disables the timeline.
+	CaptureChannel string
+	CaptureEpoch   time.Time
 }
 
 // DictationStream is a provider-neutral realtime dictation session.

@@ -34,6 +34,7 @@ android {
 dependencies {
     implementation(project(":core"))
     implementation(project(":domain"))
+    implementation(project(":net"))
     implementation(project(":voice-ui-compose"))
 
     implementation(platform(libs.compose.bom))

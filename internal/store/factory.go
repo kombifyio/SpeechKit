@@ -8,12 +8,16 @@ import (
 
 // StoreConfig holds configuration for store backend selection.
 type StoreConfig struct {
-	Backend                 string `toml:"backend"` // "sqlite" | "postgres" | registered name
-	SQLitePath              string `toml:"sqlite_path"`
-	PostgresDSN             string `toml:"postgres_dsn"`
-	SaveAudio               bool   `toml:"save_audio"`
-	AudioRetentionDays      int    `toml:"audio_retention_days"`
-	MaxAudioStorageMB       int    `toml:"max_audio_storage_mb"`
+	Backend            string `toml:"backend"` // "sqlite" | "postgres" | registered name
+	SQLitePath         string `toml:"sqlite_path"`
+	PostgresDSN        string `toml:"postgres_dsn"`
+	SaveAudio          bool   `toml:"save_audio"`
+	AudioRetentionDays int    `toml:"audio_retention_days"`
+	// MeetingRetentionDays discards finished meetings older than this. Zero
+	// keeps them forever, which is the default: a meeting is work, not a
+	// by-product, so nothing is thrown away unless the user asks for it.
+	MeetingRetentionDays    int `toml:"meeting_retention_days"`
+	MaxAudioStorageMB       int `toml:"max_audio_storage_mb"`
 	TranscriptionModelHints map[string]string
 	DefaultScope            speechstorage.Scope
 	ScopePolicy             speechstorage.ScopePolicy

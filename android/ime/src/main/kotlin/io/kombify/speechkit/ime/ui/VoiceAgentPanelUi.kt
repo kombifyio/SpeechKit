@@ -72,9 +72,7 @@ fun VoiceAgentPanelUi(
             ) {
                 VoiceAuraOrb(state = state.phase.orbState(), sizeDp = 40)
                 Text(
-                    text = stringResource(state.phase.label()).let { phase ->
-                        if (provider.isNullOrBlank()) phase else "$phase · $provider"
-                    },
+                    text = agentStatusLabel(state, provider),
                     style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -104,7 +102,9 @@ fun VoiceAgentPanelUi(
                     )
                     Text(state.agentText, style = MaterialTheme.typography.bodyMedium)
                 }
-                if (state.error != null || state.errorCode != null) {
+                if (state.errorCode != ImeVoiceAgentController.ERROR_NO_SERVER &&
+                    (state.error != null || state.errorCode != null)
+                ) {
                     Text(
                         text = agentErrorLabel(state.errorCode, state.error),
                         style = MaterialTheme.typography.bodySmall,
@@ -147,6 +147,15 @@ private fun VoiceAgentUiState.Phase.orbState(): VoiceAuraState = when (this) {
     VoiceAgentUiState.Phase.Processing -> VoiceAuraState.PROCESSING
     VoiceAgentUiState.Phase.Speaking -> VoiceAuraState.SPEAKING
     VoiceAgentUiState.Phase.Ended -> VoiceAuraState.SETTLING
+}
+
+@Composable
+private fun agentStatusLabel(state: VoiceAgentUiState, provider: String?): String {
+    if (state.errorCode == ImeVoiceAgentController.ERROR_NO_SERVER) {
+        return stringResource(R.string.speechkit_ime_agent_error_no_server)
+    }
+    val phase = stringResource(state.phase.label())
+    return if (provider.isNullOrBlank()) phase else "$phase · $provider"
 }
 
 private fun VoiceAgentUiState.Phase.label(): Int = when (this) {

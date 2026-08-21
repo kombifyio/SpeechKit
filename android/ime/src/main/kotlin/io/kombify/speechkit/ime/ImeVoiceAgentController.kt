@@ -151,7 +151,12 @@ class ImeVoiceAgentController(
         // Keep whatever error the state already carries: a start that failed
         // calls stop() to clean up, and resetting to a fresh state here would
         // swallow the only explanation the panel has to show.
-        _state.value = _state.value.copy(phase = VoiceAgentUiState.Phase.Ended)
+        val phase = if (_state.value.errorCode == ERROR_NO_SERVER) {
+            VoiceAgentUiState.Phase.Inactive
+        } else {
+            VoiceAgentUiState.Phase.Ended
+        }
+        _state.value = _state.value.copy(phase = phase)
     }
 
     /**
@@ -193,13 +198,20 @@ class ImeVoiceAgentController(
                 // keeps the coroutine's cancellation contract, which
                 // runCatching would otherwise swallow.
                 if (error is CancellationException) throw error
+                val noServer = error is IllegalStateException
                 _state.value = _state.value.copy(
-                    phase = VoiceAgentUiState.Phase.Ended,
+                    // Nothing finished: a missing server is a setup gap, not
+                    // the end of a conversation. "Ended" reads as "Beendet".
+                    phase = if (noServer) {
+                        VoiceAgentUiState.Phase.Inactive
+                    } else {
+                        VoiceAgentUiState.Phase.Ended
+                    },
                     error = error.message,
                     // A profile without a server throws before a single frame
                     // moves; with no code the panel could only show the raw
                     // exception text, which reads like a server outage.
-                    errorCode = if (error is IllegalStateException) {
+                    errorCode = if (noServer) {
                         ERROR_NO_SERVER
                     } else {
                         _state.value.errorCode

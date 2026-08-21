@@ -6,6 +6,7 @@ import dagger.Provides
 import dagger.hilt.InstallIn
 import dagger.hilt.android.qualifiers.ApplicationContext
 import dagger.hilt.components.SingletonComponent
+import io.kombify.speechkit.BuildConfig
 import io.kombify.speechkit.net.ConnectionProfile
 import io.kombify.speechkit.net.ConnectionProfileSource
 import io.kombify.speechkit.net.StoredServerProfile
@@ -49,6 +50,27 @@ object KombifyModule {
     fun provideConnectionProfileSource(
         @ApplicationContext context: Context,
     ): ConnectionProfileSource = ConnectionProfileSource {
-        StoredServerProfile.load(context) ?: ConnectionProfile.SystemOnDevice()
+        StoredServerProfile.load(context)
+            ?: shippedDefaultProfile()
+            ?: ConnectionProfile.SystemOnDevice()
+    }
+
+    /**
+     * The connection this build was shipped with, when it was given one.
+     *
+     * A tester build can carry an address - and, for a closed lane, a token -
+     * so a fresh install exercises every mode before anyone has paired
+     * anything. Empty in every build that was not handed those values, which
+     * is every developer build and the whole oss flavor. A stored profile
+     * always wins, so configuring a server in Settings overrides what the
+     * build shipped rather than fighting it.
+     */
+    private fun shippedDefaultProfile(): ConnectionProfile.Server? {
+        val url = BuildConfig.DEFAULT_SERVER_URL.trim()
+        if (url.isEmpty()) return null
+        return ConnectionProfile.Server(
+            url,
+            BuildConfig.DEFAULT_SERVER_TOKEN.trim().ifEmpty { null },
+        )
     }
 }

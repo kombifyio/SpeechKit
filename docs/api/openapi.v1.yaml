@@ -675,11 +675,245 @@ paths:
           $ref: "#/components/responses/NotFound"
         "501":
           $ref: "#/components/responses/NotImplemented"
+  /api/v1/recording-sessions/{sessionId}/enhancements:
+    get:
+      tags: [Data]
+      operationId: listRecordingSessionEnhancements
+      summary: List the written-up notes of a meeting, newest first.
+      security:
+        - ControlPlaneHeader: []
+        - ControlPlaneCookie: []
+      parameters:
+        - name: sessionId
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+            minimum: 1
+      responses:
+        "200":
+          description: The write-ups this meeting has, including runs that failed.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/RecordingSessionEnhancement"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    post:
+      tags: [Data]
+      operationId: startRecordingSessionEnhancement
+      summary: Write this meeting up.
+      description: >-
+        Merges the transcript, the notes the user typed during the meeting and a
+        template into structured notes where each bullet cites the transcript it
+        came from. Writing up outlives the request, so the run is returned and
+        the client polls the list. Running again with another template produces
+        a new write-up rather than replacing the previous one.
+      security:
+        - ControlPlaneHeader: []
+        - ControlPlaneCookie: []
+      parameters:
+        - name: sessionId
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+            minimum: 1
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                templateSlug:
+                  type: string
+                  description: Which template to write up as; empty means the general meeting template.
+      responses:
+        "200":
+          description: The write-up run that was started.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RecordingSessionEnhancement"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+  /api/v1/recording-sessions/{sessionId}/pin:
+    post:
+      tags: [Data]
+      operationId: pinRecordingSession
+      summary: Keep this meeting out of the retention sweep.
+      security:
+        - ControlPlaneHeader: []
+        - ControlPlaneCookie: []
+      parameters:
+        - name: sessionId
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+            minimum: 1
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                pinned:
+                  type: boolean
+                  default: true
+      responses:
+        "200":
+          description: The meeting's new pin state.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: integer
+                    format: int64
+                  retentionPinned:
+                    type: boolean
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /api/v1/recording-sessions/{sessionId}/templates:
+    get:
+      tags: [Data]
+      operationId: listMeetingNoteTemplates
+      summary: List what a meeting can be written up as.
+      security:
+        - ControlPlaneHeader: []
+        - ControlPlaneCookie: []
+      parameters:
+        - name: sessionId
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+            minimum: 1
+      responses:
+        "200":
+          description: The available note templates.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    slug: { type: string }
+                    name: { type: string }
+                    prompt: { type: string }
+                    sections:
+                      type: array
+                      items:
+                        type: object
+                        properties:
+                          slug: { type: string }
+                          title: { type: string }
+                          guidance: { type: string }
+  /api/v1/recording-sessions/{sessionId}/notes:
+    get:
+      tags: [Data]
+      operationId: getRecordingSessionNotes
+      summary: Read the notes the user wrote themselves during this meeting.
+      security:
+        - ControlPlaneHeader: []
+        - ControlPlaneCookie: []
+      parameters:
+        - name: sessionId
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+            minimum: 1
+      responses:
+        "200":
+          description: The meeting's hand-written notes; empty for a meeting nobody typed into.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RecordingSessionNotes"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    put:
+      tags: [Data]
+      operationId: saveRecordingSessionNotes
+      summary: Replace the notes the user wrote themselves during this meeting.
+      description: >-
+        The note pane autosaves while a meeting runs, so this replaces the whole
+        pane rather than appending to it.
+      security:
+        - ControlPlaneHeader: []
+        - ControlPlaneCookie: []
+      parameters:
+        - name: sessionId
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+            minimum: 1
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RecordingSessionNotes"
+      responses:
+        "200":
+          description: The stored notes.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RecordingSessionNotes"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /api/v1/recording-sessions/{sessionId}/state:
+    get:
+      tags: [Data]
+      operationId: getRecordingSessionCaptureState
+      summary: Read what meeting capture is doing right now for this session.
+      description: >-
+        Reports runtime truth rather than the outcome of the last command, so a
+        client can render capture state, per-channel health and pending
+        transcription without inferring them.
+      security:
+        - ControlPlaneHeader: []
+        - ControlPlaneCookie: []
+      parameters:
+        - name: sessionId
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+            minimum: 1
+      responses:
+        "200":
+          description: Current capture state.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RecordingSessionStateResponse"
+        "404":
+          $ref: "#/components/responses/NotFound"
   /api/v1/recording-sessions/{sessionId}/start:
     post:
       tags: [Data]
       operationId: startRecordingSessionCapture
-      summary: Start Dictation capture and bind finalized commits to a recording session.
+      summary: Start meeting capture on the microphone and system-loopback channels.
       security:
         - ControlPlaneHeader: []
         - ControlPlaneCookie: []
@@ -2183,6 +2417,142 @@ components:
         captureStatus:
           type: string
           enum: [idle, recording, paused, stopped]
+        capture:
+          $ref: "#/components/schemas/MeetingCaptureSnapshot"
+    RecordingSessionEnhancement:
+      type: object
+      description: One written-up version of a meeting.
+      required: [id, sessionId, templateSlug, status, structured]
+      properties:
+        id:
+          type: integer
+          format: int64
+        sessionId:
+          type: integer
+          format: int64
+        templateSlug:
+          type: string
+        templateSnapshot:
+          type: string
+          description: The template as it was when this ran, so an old write-up stays explicable.
+        status:
+          type: string
+          enum: [idle, running, ready, failed]
+        error:
+          type: string
+        provider:
+          type: string
+        model:
+          type: string
+        structured:
+          type: boolean
+          description: >-
+            False when the model could not produce citable structure and the
+            notes are prose. Clients surface that rather than implying the
+            bullets can be traced back to the transcript.
+        contentJson:
+          type: string
+          description: >-
+            The structured document: sections of bullets, each carrying the
+            transcript segment ids it came from and, where it came from one of
+            the user's own notes, that note's id.
+        contentMd:
+          type: string
+          description: The document rendered for reading, copying and export.
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+    RecordingSessionNotes:
+      type: object
+      description: >-
+        The notes a user typed during a meeting, kept apart from the transcript
+        and from generated text. Each block carries the point in the meeting it
+        was written at, which is how note enhancement finds the part of the
+        conversation a note was about.
+      properties:
+        sessionId:
+          type: integer
+          format: int64
+        contentMd:
+          type: string
+          description: The note pane as the user last left it.
+        blocks:
+          type: array
+          items:
+            type: object
+            required: [id, text, tsMs]
+            properties:
+              id:
+                type: string
+                description: Stable for the note's lifetime so enhanced bullets can reference it.
+              text:
+                type: string
+              tsMs:
+                type: integer
+                format: int64
+                description: When the note was written, relative to the meeting's start.
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+    MeetingCaptureSnapshot:
+      type: object
+      description: >-
+        What meeting capture is doing right now, reported by the capture runtime
+        itself. A meeting records the microphone and the system loopback as
+        separate channels, so channel health is tracked per channel: a meeting
+        stays live while one of its channels is failed.
+      required: [state, channels]
+      properties:
+        sessionId:
+          type: integer
+          format: int64
+        state:
+          type: string
+          enum: [idle, starting, live, paused, finalizing, ended]
+        startedAt:
+          type: string
+          format: date-time
+          description: Wall clock all channel timestamps of this meeting are measured from.
+        pendingSegments:
+          type: integer
+          description: Segments submitted for transcription that have not been persisted yet.
+        channels:
+          type: array
+          items:
+            type: object
+            required: [channel, state]
+            properties:
+              channel:
+                type: string
+                enum: [mic, system]
+              state:
+                type: string
+                enum: [idle, recording, paused, stalled, error]
+              message:
+                type: string
+    RecordingSessionStateResponse:
+      type: object
+      required: [id, live, captureStatus, segmentCount, capture]
+      properties:
+        id:
+          type: integer
+          format: int64
+        live:
+          type: boolean
+          description: Whether this session is the one currently being recorded.
+        captureStatus:
+          type: string
+          enum: [idle, recording, paused, stopped]
+        segmentCount:
+          type: integer
+        capture:
+          $ref: "#/components/schemas/MeetingCaptureSnapshot"
     RecordingSessionSummaryRequest:
       type: object
       properties:

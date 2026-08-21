@@ -8,6 +8,17 @@ plugins {
     alias(libs.plugins.hilt)
 }
 
+/**
+ * A build-time value from a Gradle property or an environment variable, empty
+ * when neither is set. CI passes these for the tester lane; a developer build
+ * gets nothing and falls back to the on-device tier.
+ */
+fun speechKitBuildValue(property: String, environment: String): String =
+    (providers.gradleProperty(property).orNull ?: System.getenv(environment) ?: "")
+        .trim()
+        .replace("\\", "\\\\")
+        .replace("\"", "\\\"")
+
 android {
     namespace = "io.kombify.speechkit"
     compileSdk = 36
@@ -16,8 +27,8 @@ android {
         applicationId = "io.kombify.speechkit"
         minSdk = 26
         targetSdk = 36
-        versionCode = 5800
-        versionName = "0.58.0"
+        versionCode = 5900
+        versionName = "0.59.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
@@ -40,6 +51,28 @@ android {
         }
         create("kombify") {
             dimension = "distribution"
+
+            // A connection the build can ship so a tester install exercises
+            // every mode without pairing anything first. Both default to
+            // empty: nothing is committed, the oss flavor never sees them,
+            // and a developer build behaves exactly as before.
+            //
+            // Read this for what it is - a token inside an APK is not a
+            // secret. Anyone holding the artifact can read it out, and
+            // android/app/src ships as GPL corresponding source, so a value
+            // hardcoded here would land in the public mirror as well. Pass
+            // one only for a closed tester lane, keep it scoped and
+            // revocable, and never set it for a public release.
+            buildConfigField(
+                "String",
+                "DEFAULT_SERVER_URL",
+                "\"" + speechKitBuildValue("speechkit.defaultServerUrl", "SPEECHKIT_DEFAULT_SERVER_URL") + "\"",
+            )
+            buildConfigField(
+                "String",
+                "DEFAULT_SERVER_TOKEN",
+                "\"" + speechKitBuildValue("speechkit.defaultServerToken", "SPEECHKIT_DEFAULT_SERVER_TOKEN") + "\"",
+            )
         }
     }
 
@@ -74,6 +107,7 @@ dependencies {
     // system if it ships inside an installed application.
     implementation(project(":ime"))
     implementation(project(":net"))
+    implementation(project(":voice-ui-compose"))
     // The HeliBoard keyboard. GPL-3.0: linking it puts this APK under GPL-3.0
     // as a whole, so no proprietary Kombify code may enter here. Companion
     // integration stays IPC-only. See android/HELIBOARD.md.

@@ -78,6 +78,7 @@ func defaults() *Config {
 			AssistantVariant:        AssistantVariantAura,
 			AssistantMark:           AssistantMarkRosette,
 			AssistantTranscript:     true,
+			OverlayActions:          DefaultOverlayActions(),
 		},
 		Local: LocalConfig{
 			Enabled: true,
@@ -109,6 +110,7 @@ func defaults() *Config {
 		},
 		Speech: SpeechDefaultsConfig{
 			Language:               stt.LanguageMulti,
+			MainLanguage:           "de",
 			Punctuation:            true,
 			SmartFormat:            true,
 			VocabularyBias:         true,
@@ -160,6 +162,10 @@ func defaults() *Config {
 		},
 		Telemetry: TelemetryConfig{
 			UpdateCheck: true,
+		},
+		Meeting: MeetingConfig{
+			AutoDetect:  true,
+			AutoEnhance: true,
 		},
 		Feedback: FeedbackConfig{
 			SaveAudio:          true,

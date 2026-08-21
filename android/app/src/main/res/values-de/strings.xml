@@ -6,12 +6,35 @@
     German panel until this file existed.
 -->
 <resources>
-    <string name="speechkit_action_on_device">Auf dem Gerät</string>
-    <string name="speechkit_action_server">SpeechKit-Server</string>
-    <string name="speechkit_action_agent_deepgram">Assistent · Deepgram</string>
-    <string name="speechkit_action_agent_assemblyai">Assistent · AssemblyAI</string>
-    <string name="speechkit_action_agent_openai">Assistent · GPT</string>
-    <string name="speechkit_action_companion">Companion</string>
     <string name="speechkit_action_blocked_no_server">Server-Aktionen brauchen einen gekoppelten SpeechKit-Server</string>
     <string name="speechkit_action_blocked_no_companion">Companion erfordert die kombify-App</string>
+    <string name="settings_connection_title">SpeechKit-Server</string>
+    <string name="settings_connection_state_on_device">Kein Server eingerichtet — alles läuft auf dem Gerät.</string>
+    <string name="settings_connection_state_server">Ein Server ist eingerichtet. Diktat und Sprachassistent nutzen ihn.</string>
+    <string name="settings_connection_url">Serveradresse</string>
+    <string name="settings_connection_token">Zugriffstoken (optional)</string>
+    <string name="settings_connection_save">Speichern</string>
+    <string name="settings_connection_test">Testen</string>
+    <string name="settings_connection_clear">Entfernen</string>
+    <string name="settings_connection_saved">Gespeichert.</string>
+    <string name="settings_connection_testing">Verbinde…</string>
+    <string name="settings_connection_ok">Verbindung funktioniert.</string>
+    <string name="settings_connection_failed">Verbindung fehlgeschlagen: %1$s</string>
+    <string name="settings_connection_cleared">Entfernt. Alles läuft wieder auf dem Gerät.</string>
+    <string name="settings_icons_title">Tastatur-Symbole</string>
+    <string name="settings_icons_subtitle">Wähle das Symbol für jeden Modus. Wirksam, sobald die Tastatur neu geöffnet wird.</string>
+    <string name="settings_icon_default">Standard</string>
+    <string name="settings_icon_wave">Wellenform</string>
+    <string name="settings_icon_bars">Balken</string>
+    <string name="settings_icon_spark">Stern</string>
+    <string name="settings_icon_dot">Punkt</string>
+    <string name="settings_icon_ring">Ring</string>
+    <string name="settings_icon_bolt">Blitz</string>
+    <string name="speechkit_action_icon_device">Diktat auf dem Gerät</string>
+    <string name="speechkit_action_icon_server">Diktat über Server</string>
+    <string name="speechkit_action_icon_deepgram">Sprachassistent · Deepgram</string>
+    <string name="speechkit_action_icon_assemblyai">Sprachassistent · AssemblyAI</string>
+    <string name="speechkit_action_icon_gpt">Sprachassistent · GPT</string>
+    <string name="speechkit_action_icon_companion">Companion</string>
+    <string name="settings_connection_state_shipped">Dieser Build bringt %1$s mit. Eigene Adresse eintragen, um sie zu überschreiben.</string>
 </resources>

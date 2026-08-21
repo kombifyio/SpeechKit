@@ -423,6 +423,146 @@ func TestSaveAndRecent(t *testing.T) {
 	}
 }
 
+func TestRecordingSessionNotesKeepTheirTimestampsAcrossSaves(t *testing.T) {
+	s, err := NewSQLiteStore(StoreConfig{SQLitePath: filepath.Join(t.TempDir(), "notes.db"), MaxAudioStorageMB: 100})
+	if err != nil {
+		t.Fatalf("NewSQLiteStore: %v", err)
+	}
+	defer s.Close()
+
+	ctx := context.Background()
+	sessionID, err := s.SaveRecordingSession(ctx, RecordingSession{
+		Kind:  RecordingSessionKindMeeting,
+		Title: "Notes meeting",
+	})
+	if err != nil {
+		t.Fatalf("SaveRecordingSession: %v", err)
+	}
+
+	empty, err := s.GetRecordingSessionNotes(ctx, sessionID)
+	if err != nil {
+		t.Fatalf("GetRecordingSessionNotes on a fresh meeting: %v", err)
+	}
+	if empty == nil || empty.ContentMD != "" || len(empty.Blocks) != 0 {
+		t.Fatalf("a meeting nobody typed into should have empty notes, got %+v", empty)
+	}
+
+	// The note pane autosaves while the user types, so the second save replaces
+	// the first rather than adding to it.
+	if err := s.SaveRecordingSessionNotes(ctx, sessionID, RecordingSessionNotes{
+		ContentMD: "- pricing",
+		Blocks:    []RecordingSessionNoteBlock{{ID: "a1", Text: "pricing", TsMs: 12000}},
+	}); err != nil {
+		t.Fatalf("SaveRecordingSessionNotes: %v", err)
+	}
+	if err := s.SaveRecordingSessionNotes(ctx, sessionID, RecordingSessionNotes{
+		ContentMD: "- pricing\n- follow up with legal",
+		Blocks: []RecordingSessionNoteBlock{
+			{ID: "a1", Text: "pricing", TsMs: 12000},
+			{ID: "a2", Text: "follow up with legal", TsMs: 45000},
+		},
+	}); err != nil {
+		t.Fatalf("SaveRecordingSessionNotes (update): %v", err)
+	}
+
+	notes, err := s.GetRecordingSessionNotes(ctx, sessionID)
+	if err != nil {
+		t.Fatalf("GetRecordingSessionNotes: %v", err)
+	}
+	if len(notes.Blocks) != 2 {
+		t.Fatalf("blocks = %d, want 2 — the update should replace, not append", len(notes.Blocks))
+	}
+	if notes.Blocks[1].TsMs != 45000 || notes.Blocks[1].ID != "a2" {
+		t.Fatalf("the note lost the moment it was written: %+v", notes.Blocks[1])
+	}
+
+	session, err := s.GetRecordingSession(ctx, sessionID)
+	if err != nil {
+		t.Fatalf("GetRecordingSession: %v", err)
+	}
+	if session.Notes == nil || len(session.Notes.Blocks) != 2 {
+		t.Fatalf("the session detail did not carry the notes: %+v", session.Notes)
+	}
+}
+
+// Retention exists so a machine does not accumulate a transcript of every call
+// it ever heard. It must not take the meeting someone deliberately kept, and it
+// must not touch a meeting still being recorded however long it has run.
+func TestMeetingRetentionKeepsPinnedAndUnfinishedMeetings(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "retention.db")
+	s, err := NewSQLiteStore(StoreConfig{SQLitePath: dbPath, MeetingRetentionDays: 30})
+	if err != nil {
+		t.Fatalf("NewSQLiteStore: %v", err)
+	}
+	defer s.Close()
+
+	ctx := context.Background()
+	old := time.Now().Add(-90 * 24 * time.Hour)
+
+	newMeeting := func(title string) int64 {
+		t.Helper()
+		id, err := s.SaveRecordingSession(ctx, RecordingSession{Kind: RecordingSessionKindMeeting, Title: title})
+		if err != nil {
+			t.Fatalf("SaveRecordingSession(%s): %v", title, err)
+		}
+		return id
+	}
+	finish := func(id int64) {
+		t.Helper()
+		if err := s.FinishRecordingSession(ctx, id, "", old); err != nil {
+			t.Fatalf("FinishRecordingSession: %v", err)
+		}
+	}
+
+	expired := newMeeting("expired")
+	finish(expired)
+	pinned := newMeeting("pinned")
+	finish(pinned)
+	if err := s.SetRecordingSessionPinned(ctx, pinned, true); err != nil {
+		t.Fatalf("SetRecordingSessionPinned: %v", err)
+	}
+	stillRunning := newMeeting("still running")
+	dictation, err := s.SaveRecordingSession(ctx, RecordingSession{Kind: RecordingSessionKindDictation, Title: "dictation"})
+	if err != nil {
+		t.Fatalf("SaveRecordingSession(dictation): %v", err)
+	}
+	finish(dictation)
+
+	s.enforceMeetingRetention()
+
+	if _, err := s.GetRecordingSession(ctx, expired); err == nil {
+		t.Fatal("an expired meeting survived the retention sweep")
+	}
+	for name, id := range map[string]int64{"pinned": pinned, "still running": stillRunning, "dictation": dictation} {
+		if _, err := s.GetRecordingSession(ctx, id); err != nil {
+			t.Fatalf("the %s session was swept away: %v", name, err)
+		}
+	}
+}
+
+func TestMeetingRetentionOffByDefaultKeepsEverything(t *testing.T) {
+	s, err := NewSQLiteStore(StoreConfig{SQLitePath: filepath.Join(t.TempDir(), "keep.db")})
+	if err != nil {
+		t.Fatalf("NewSQLiteStore: %v", err)
+	}
+	defer s.Close()
+
+	ctx := context.Background()
+	id, err := s.SaveRecordingSession(ctx, RecordingSession{Kind: RecordingSessionKindMeeting, Title: "ancient"})
+	if err != nil {
+		t.Fatalf("SaveRecordingSession: %v", err)
+	}
+	if err := s.FinishRecordingSession(ctx, id, "", time.Now().Add(-5*365*24*time.Hour)); err != nil {
+		t.Fatalf("FinishRecordingSession: %v", err)
+	}
+
+	s.enforceMeetingRetention()
+
+	if _, err := s.GetRecordingSession(ctx, id); err != nil {
+		t.Fatalf("a meeting was discarded although retention is off: %v", err)
+	}
+}
+
 func TestRecordingSessionStoreLifecycle(t *testing.T) {
 	dbPath := filepath.Join(t.TempDir(), "recording_sessions.db")
 	s, err := NewSQLiteStore(StoreConfig{SQLitePath: dbPath, MaxAudioStorageMB: 100})

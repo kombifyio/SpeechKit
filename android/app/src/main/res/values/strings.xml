@@ -15,12 +15,35 @@
     <string name="english_ime_name" translatable="false">SpeechKit Keyboard</string>
 
     <!-- SpeechKit's own action row inside the keyboard's input view. -->
-    <string name="speechkit_action_on_device">On-device</string>
-    <string name="speechkit_action_server">SpeechKit server</string>
-    <string name="speechkit_action_agent_deepgram">Agent · Deepgram</string>
-    <string name="speechkit_action_agent_assemblyai">Agent · AssemblyAI</string>
-    <string name="speechkit_action_agent_openai">Agent · GPT</string>
-    <string name="speechkit_action_companion">Companion</string>
     <string name="speechkit_action_blocked_no_server">Server actions need a paired SpeechKit server</string>
     <string name="speechkit_action_blocked_no_companion">Companion requires the kombify app</string>
+    <string name="settings_connection_title">SpeechKit server</string>
+    <string name="settings_connection_state_on_device">No server configured — everything runs on the device.</string>
+    <string name="settings_connection_state_server">A server is configured. Dictation and the voice agent use it.</string>
+    <string name="settings_connection_url">Server address</string>
+    <string name="settings_connection_token">Access token (optional)</string>
+    <string name="settings_connection_save">Save</string>
+    <string name="settings_connection_test">Test</string>
+    <string name="settings_connection_clear">Remove</string>
+    <string name="settings_connection_saved">Saved.</string>
+    <string name="settings_connection_testing">Connecting…</string>
+    <string name="settings_connection_ok">Connection works.</string>
+    <string name="settings_connection_failed">Connection failed: %1$s</string>
+    <string name="settings_connection_cleared">Removed. Everything runs on the device again.</string>
+    <string name="settings_icons_title">Keyboard icons</string>
+    <string name="settings_icons_subtitle">Choose the symbol for each mode. Changes apply the next time the keyboard opens.</string>
+    <string name="settings_icon_default">Default</string>
+    <string name="settings_icon_wave">Waveform</string>
+    <string name="settings_icon_bars">Bars</string>
+    <string name="settings_icon_spark">Spark</string>
+    <string name="settings_icon_dot">Dot</string>
+    <string name="settings_icon_ring">Ring</string>
+    <string name="settings_icon_bolt">Bolt</string>
+    <string name="speechkit_action_icon_device">Dictate on device</string>
+    <string name="speechkit_action_icon_server">Dictate via server</string>
+    <string name="speechkit_action_icon_deepgram">Voice agent · Deepgram</string>
+    <string name="speechkit_action_icon_assemblyai">Voice agent · AssemblyAI</string>
+    <string name="speechkit_action_icon_gpt">Voice agent · GPT</string>
+    <string name="speechkit_action_icon_companion">Companion</string>
+    <string name="settings_connection_state_shipped">This build ships with %1$s. Enter your own address to override it.</string>
 </resources>

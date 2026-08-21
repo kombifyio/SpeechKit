@@ -1,0 +1,317 @@
+package flows
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"log/slog"
+	"strings"
+
+	"github.com/firebase/genkit/go/ai"
+	"github.com/firebase/genkit/go/core"
+	"github.com/firebase/genkit/go/genkit"
+
+	"github.com/kombifyio/SpeechKit/internal/meeting"
+)
+
+// MeetingNotesInput is one meeting to write up.
+type MeetingNotesInput struct {
+	Title    string           `json:"title,omitempty"`
+	Locale   string           `json:"locale,omitempty"`
+	Template meeting.Template `json:"template"`
+	// Anchors are the notes the user typed during the meeting. They say what
+	// mattered to the person who was there; the transcript supplies the context
+	// around them.
+	Anchors []meeting.Anchor `json:"anchors,omitempty"`
+	// Transcript is what was said, already deduplicated and ordered.
+	Transcript []meeting.TranscriptLine `json:"transcript"`
+	// ContextWindowTokens is what the model can hold. Zero means "assume a
+	// large one" and take the single-pass route.
+	ContextWindowTokens int `json:"contextWindowTokens,omitempty"`
+}
+
+// MeetingNotesOutput is the finished write-up, plus how it was produced.
+type MeetingNotesOutput struct {
+	Document meeting.NotesDocument `json:"document"`
+	// Structured is false when no model returned parseable structure and the
+	// notes are prose only. Callers surface that rather than pretending the
+	// bullets carry provenance.
+	Structured bool `json:"structured"`
+	// Passes counts the model calls it took, so a slow local run is explicable.
+	Passes int `json:"passes"`
+}
+
+// DefineMeetingNotesFlow registers the meeting-notes flow.
+//
+// It merges the transcript, the user's own notes and a template into structured
+// notes where every bullet cites the transcript it came from. Models are tried
+// in order; the first that produces usable output wins.
+func DefineMeetingNotesFlow(g *genkit.Genkit, models []ai.Model) *core.Flow[MeetingNotesInput, MeetingNotesOutput, struct{}] {
+	return genkit.DefineFlow(g, "meetingNotes", func(ctx context.Context, input MeetingNotesInput) (MeetingNotesOutput, error) {
+		if len(input.Transcript) == 0 && len(input.Anchors) == 0 {
+			return MeetingNotesOutput{}, fmt.Errorf("meeting notes: nothing was captured to write up")
+		}
+		if len(input.Template.Sections) == 0 {
+			input.Template = meeting.TemplateBySlug(input.Template.Slug)
+		}
+		if len(models) == 0 {
+			return MeetingNotesOutput{}, fmt.Errorf("meeting notes: no models configured")
+		}
+
+		var lastErr error
+		for _, model := range models {
+			output, err := generateMeetingNotes(ctx, g, model, input)
+			if err != nil {
+				lastErr = err
+				slog.Warn("meeting notes: model failed", "err", err)
+				continue
+			}
+			output.Document.TemplateSlug = input.Template.Slug
+			output.Document = output.Document.ApplyAnchors(input.Anchors)
+			if !output.Document.HasContent() {
+				lastErr = fmt.Errorf("model produced no notes")
+				continue
+			}
+			return output, nil
+		}
+		return MeetingNotesOutput{}, fmt.Errorf("meeting notes: all models failed: %w", lastErr)
+	})
+}
+
+func generateMeetingNotes(ctx context.Context, g *genkit.Genkit, model ai.Model, input MeetingNotesInput) (MeetingNotesOutput, error) {
+	// A long meeting will not fit a small local model's context, so it is
+	// summarised in chunks first and the write-up is built from those notes
+	// rather than from the raw transcript.
+	budget := meetingNotesTranscriptBudget(input.ContextWindowTokens)
+	chunks := meeting.ChunkTranscript(input.Transcript, budget)
+	passes := 0
+
+	if len(chunks) > 1 {
+		facts := make([]meeting.TranscriptLine, 0, len(chunks)*4)
+		for index, chunk := range chunks {
+			extracted, err := extractMeetingFacts(ctx, g, model, input, chunk, index+1, len(chunks))
+			passes++
+			if err != nil {
+				return MeetingNotesOutput{}, err
+			}
+			facts = append(facts, extracted...)
+		}
+		input.Transcript = facts
+	}
+
+	document, structured, err := writeMeetingNotes(ctx, g, model, input)
+	passes++
+	if err != nil {
+		return MeetingNotesOutput{}, err
+	}
+	return MeetingNotesOutput{Document: document, Structured: structured, Passes: passes}, nil
+}
+
+// extractMeetingFacts condenses one chunk into the points worth keeping, each
+// still carrying the segment it came from so provenance survives the reduction.
+func extractMeetingFacts(ctx context.Context, g *genkit.Genkit, model ai.Model, input MeetingNotesInput, chunk []meeting.TranscriptLine, part, total int) ([]meeting.TranscriptLine, error) {
+	prompt := fmt.Sprintf(
+		"This is part %d of %d of a meeting transcript. List the points worth keeping: decisions, "+
+			"commitments, questions, and anything a participant argued for or against. Ignore small talk.\n\n"+
+			"Answer as JSON only: {\"facts\":[{\"segmentId\":<id of the line it came from>,\"text\":\"...\"}]}\n\n"+
+			"Transcript:\n%s",
+		part, total, meeting.RenderTranscript(chunk),
+	)
+	resp, err := genkit.Generate(ctx, g,
+		ai.WithModel(model),
+		ai.WithSystem("You condense meeting transcripts. Output only JSON."),
+		ai.WithPrompt(prompt),
+		generationConfigOption(model, 700, 0.2),
+	)
+	if err != nil {
+		return nil, err
+	}
+	var payload struct {
+		Facts []struct {
+			SegmentID int64  `json:"segmentId"`
+			Text      string `json:"text"`
+		} `json:"facts"`
+	}
+	if err := decodeModelJSON(resp.Text(), &payload); err != nil {
+		// A chunk that cannot be parsed is kept as-is rather than dropped: a
+		// missing stretch of a meeting is worse than a verbose one.
+		return chunk, nil
+	}
+	out := make([]meeting.TranscriptLine, 0, len(payload.Facts))
+	for _, fact := range payload.Facts {
+		text := strings.TrimSpace(fact.Text)
+		if text == "" {
+			continue
+		}
+		out = append(out, meeting.TranscriptLine{SegmentID: fact.SegmentID, Text: text})
+	}
+	if len(out) == 0 {
+		return chunk, nil
+	}
+	return out, nil
+}
+
+// writeMeetingNotes produces the finished document. It asks for JSON, and when
+// a model cannot manage that it falls back to prose — notes without provenance
+// beat no notes, and inventing segment ids to fill the gap would be worse than
+// admitting there are none.
+func writeMeetingNotes(ctx context.Context, g *genkit.Genkit, model ai.Model, input MeetingNotesInput) (meeting.NotesDocument, bool, error) {
+	system := buildMeetingNotesSystemPrompt(input.Locale)
+	prompt := buildMeetingNotesPrompt(input)
+
+	resp, err := genkit.Generate(ctx, g,
+		ai.WithModel(model),
+		ai.WithSystem(system),
+		ai.WithPrompt(prompt),
+		generationConfigOption(model, 1800, 0.3),
+	)
+	if err != nil {
+		return meeting.NotesDocument{}, false, err
+	}
+	text := resp.Text()
+
+	var document meeting.NotesDocument
+	if err := decodeModelJSON(text, &document); err == nil && document.HasContent() {
+		return document, true, nil
+	}
+
+	// One repair attempt: models that ignore the format on the first pass often
+	// comply when handed their own output back.
+	repair, repairErr := genkit.Generate(ctx, g,
+		ai.WithModel(model),
+		ai.WithSystem("You convert notes into JSON. Output only JSON, no commentary."),
+		ai.WithPrompt(fmt.Sprintf(
+			"Convert these meeting notes into JSON of the form %s.\n\nNotes:\n%s",
+			meetingNotesSchemaHint, text,
+		)),
+		generationConfigOption(model, 1800, 0),
+	)
+	if repairErr == nil {
+		if err := decodeModelJSON(repair.Text(), &document); err == nil && document.HasContent() {
+			return document, true, nil
+		}
+	}
+
+	if prose := meetingNotesFromProse(input.Template, text); prose.HasContent() {
+		return prose, false, nil
+	}
+	return meeting.NotesDocument{}, false, fmt.Errorf("model returned nothing usable")
+}
+
+const meetingNotesSchemaHint = `{"sections":[{"slug":"...","title":"...","bullets":[{"text":"...","sourceSegmentIds":[1,2],"anchorId":"","owner":"","due":""}]}]}`
+
+func buildMeetingNotesSystemPrompt(locale string) string {
+	language := "English"
+	if strings.HasPrefix(strings.ToLower(strings.TrimSpace(locale)), "de") {
+		language = "German"
+	}
+	return fmt.Sprintf(
+		"You write up meetings from their transcript. Write in %s. "+
+			"Every bullet must be supported by the transcript — cite the line numbers it came from in sourceSegmentIds. "+
+			"Never state something that was not said: leave a section empty rather than filling it. "+
+			"Output only JSON.", language)
+}
+
+func buildMeetingNotesPrompt(input MeetingNotesInput) string {
+	var out strings.Builder
+
+	if title := strings.TrimSpace(input.Title); title != "" {
+		fmt.Fprintf(&out, "Meeting: %s\n\n", title)
+	}
+	fmt.Fprintf(&out, "%s\n\n", strings.TrimSpace(input.Template.Prompt))
+
+	out.WriteString("Write these sections, in this order:\n")
+	for _, section := range input.Template.Sections {
+		fmt.Fprintf(&out, "- %s (slug %q): %s\n", section.Title, section.Slug, section.Guidance)
+	}
+
+	if len(input.Anchors) > 0 {
+		out.WriteString("\nThe person in the meeting typed these notes while it happened. " +
+			"They are what mattered to them, so build the write-up around them: put each one in the section it belongs to, " +
+			"set anchorId to its id, keep its wording, and use the transcript to fill in the context around it.\n")
+		for _, anchor := range input.Anchors {
+			fmt.Fprintf(&out, "- [%s] at %s: %s\n", anchor.ID, meeting.FormatOffset(anchor.TsMs), anchor.Text)
+		}
+	}
+
+	fmt.Fprintf(&out, "\nTranscript:\n%s\n", meeting.RenderTranscript(input.Transcript))
+	fmt.Fprintf(&out, "\nAnswer with JSON of exactly this shape:\n%s\n", meetingNotesSchemaHint)
+	return out.String()
+}
+
+// meetingNotesFromProse salvages a plain-text answer by filing it under the
+// template's first section. The notes are then honest about what they are:
+// text with no line-level provenance.
+func meetingNotesFromProse(template meeting.Template, text string) meeting.NotesDocument {
+	trimmed := strings.TrimSpace(text)
+	if trimmed == "" {
+		return meeting.NotesDocument{}
+	}
+	title := "Notes"
+	slug := "notes"
+	if len(template.Sections) > 0 {
+		title = template.Sections[0].Title
+		slug = template.Sections[0].Slug
+	}
+	bullets := make([]meeting.NotesBullet, 0)
+	for _, line := range strings.Split(trimmed, "\n") {
+		line = strings.TrimSpace(strings.TrimLeft(strings.TrimSpace(line), "-*# "))
+		if line == "" {
+			continue
+		}
+		bullets = append(bullets, meeting.NotesBullet{Text: line})
+	}
+	if len(bullets) == 0 {
+		return meeting.NotesDocument{}
+	}
+	return meeting.NotesDocument{Sections: []meeting.NotesSection{{Slug: slug, Title: title, Bullets: bullets}}}
+}
+
+// decodeModelJSON reads JSON out of a model answer, tolerating the fenced code
+// block and the leading sentence models like to add.
+func decodeModelJSON(text string, target any) error {
+	candidate := strings.TrimSpace(text)
+	if candidate == "" {
+		return fmt.Errorf("empty answer")
+	}
+	if fenced := extractFencedBlock(candidate); fenced != "" {
+		candidate = fenced
+	}
+	if start := strings.IndexAny(candidate, "{["); start > 0 {
+		candidate = candidate[start:]
+	}
+	if end := strings.LastIndexAny(candidate, "}]"); end >= 0 && end < len(candidate)-1 {
+		candidate = candidate[:end+1]
+	}
+	return json.Unmarshal([]byte(candidate), target)
+}
+
+func extractFencedBlock(text string) string {
+	start := strings.Index(text, "```")
+	if start < 0 {
+		return ""
+	}
+	rest := text[start+3:]
+	if newline := strings.IndexByte(rest, '\n'); newline >= 0 {
+		rest = rest[newline+1:]
+	}
+	end := strings.Index(rest, "```")
+	if end < 0 {
+		return ""
+	}
+	return strings.TrimSpace(rest[:end])
+}
+
+// meetingNotesTranscriptBudget is how many transcript tokens one pass may use.
+// The rest of the window has to hold the template, the user's notes and the
+// answer, so the transcript gets a little over half of it.
+func meetingNotesTranscriptBudget(contextWindowTokens int) int {
+	if contextWindowTokens <= 0 {
+		return 0
+	}
+	budget := contextWindowTokens * 55 / 100
+	if budget < 400 {
+		budget = 400
+	}
+	return budget
+}

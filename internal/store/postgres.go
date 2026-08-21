@@ -58,6 +58,18 @@ var postgresMigration014 string
 //go:embed migrations/postgres/015_recording_session_state.sql
 var postgresMigration015 string
 
+//go:embed migrations/postgres/016_recording_session_channels.sql
+var postgresMigration016 string
+
+//go:embed migrations/postgres/017_recording_session_notes.sql
+var postgresMigration017 string
+
+//go:embed migrations/postgres/018_recording_session_enhancements.sql
+var postgresMigration018 string
+
+//go:embed migrations/postgres/019_meeting_retention.sql
+var postgresMigration019 string
+
 // PostgresStore implements Store using PostgreSQL for metadata and the local
 // filesystem for optional raw WAV persistence. All query logic lives in the
 // embedded *sqlStore; this type only owns connection setup and migrations.
@@ -93,6 +105,7 @@ func NewPostgresStore(cfg StoreConfig) (*PostgresStore, error) {
 		maxStorageMB:            cfg.MaxAudioStorageMB,
 		saveAudio:               cfg.SaveAudio,
 		audioRetentionDays:      cfg.AudioRetentionDays,
+		meetingRetentionDays:    cfg.MeetingRetentionDays,
 		transcriptionModelHints: normalizeTranscriptionModelHints(cfg.TranscriptionModelHints),
 		defaultScope:            speechstorage.NormalizeScope(cfg.DefaultScope),
 		scopePolicy:             normalizedScopePolicy(cfg.ScopePolicy),

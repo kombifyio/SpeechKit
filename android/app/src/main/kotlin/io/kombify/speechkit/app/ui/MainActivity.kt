@@ -33,6 +33,20 @@ import io.kombify.speechkit.app.ui.theme.SpeechKitTheme
 import io.kombify.speechkit.app.ui.onboarding.KeyboardOnboardingWizard
 import io.kombify.speechkit.app.ui.onboarding.KeyboardSetupChecker
 import timber.log.Timber
+import androidx.compose.ui.res.stringResource
+import io.kombify.speechkit.R
+import io.kombify.speechkit.net.ConnectionProfile
+import io.kombify.speechkit.net.DictationController
+import io.kombify.speechkit.net.StoredServerProfile
+import kotlinx.coroutines.launch
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.Icon
+import androidx.compose.ui.res.painterResource
+import androidx.compose.foundation.layout.size
+import io.kombify.speechkit.app.keyboard.KeyboardIconChoice
+import io.kombify.speechkit.app.keyboard.KeyboardIconPreferences
+import io.kombify.speechkit.app.build.ShippedDefaults
 
 @AndroidEntryPoint
 class MainActivity : ComponentActivity() {
@@ -87,39 +101,43 @@ private fun SpeechKitApp() {
             )
         },
         bottomBar = {
-            if (onboardingComplete) {
-                NavigationBar {
-                    NavigationBarItem(
-                        selected = selectedTab == 0,
-                        onClick = { selectedTab = 0 },
-                        label = { Text("Home") },
-                        icon = {},
-                    )
-                    NavigationBarItem(
-                        selected = selectedTab == 1,
-                        onClick = { selectedTab = 1 },
-                        label = { Text("Library") },
-                        icon = {},
-                    )
-                    NavigationBarItem(
-                        selected = selectedTab == 2,
-                        onClick = { selectedTab = 2 },
-                        label = { Text("Settings") },
-                        icon = {},
-                    )
-                    NavigationBarItem(
-                        selected = selectedTab == 3,
-                        onClick = { selectedTab = 3 },
-                        label = { Text("Dev") },
-                        icon = {},
-                    )
-                    NavigationBarItem(
-                        selected = selectedTab == 4,
-                        onClick = { selectedTab = 4 },
-                        label = { Text("Voice") },
-                        icon = {},
-                    )
-                }
+            // The bar is never gated on onboarding. Setup can stall for reasons
+            // the app cannot fix from here - a keyboard the system reports as
+            // not selected, a step that needs a trip through system settings -
+            // and a user stuck there still has to be able to reach Settings and
+            // configure a server. Hiding the only way out behind the thing that
+            // is stuck is what made setup a dead end.
+            NavigationBar {
+                NavigationBarItem(
+                    selected = selectedTab == 0,
+                    onClick = { selectedTab = 0 },
+                    label = { Text("Home") },
+                    icon = {},
+                )
+                NavigationBarItem(
+                    selected = selectedTab == 1,
+                    onClick = { selectedTab = 1 },
+                    label = { Text("Library") },
+                    icon = {},
+                )
+                NavigationBarItem(
+                    selected = selectedTab == 2,
+                    onClick = { selectedTab = 2 },
+                    label = { Text("Settings") },
+                    icon = {},
+                )
+                NavigationBarItem(
+                    selected = selectedTab == 3,
+                    onClick = { selectedTab = 3 },
+                    label = { Text("Dev") },
+                    icon = {},
+                )
+                NavigationBarItem(
+                    selected = selectedTab == 4,
+                    onClick = { selectedTab = 4 },
+                    label = { Text("Voice") },
+                    icon = {},
+                )
             }
         },
     ) { padding ->
@@ -128,7 +146,10 @@ private fun SpeechKitApp() {
                 .fillMaxSize()
                 .padding(padding),
         ) {
-            if (!onboardingComplete) {
+            // Onboarding owns the home tab only. Every other tab stays
+            // reachable while it runs, so a stalled setup can still be
+            // worked around from Settings.
+            if (!onboardingComplete && selectedTab == 0) {
                 OnboardingFlow(
                     isKeyboardEnabled = isKeyboardEnabled,
                     onComplete = {
@@ -225,8 +246,24 @@ private fun OnboardingFlow(
             }
             1 -> {
                 // Step 2: Keyboard Setup
-                val isSelected = remember { KeyboardSetupChecker.isKeyboardSelected(context) }
-                val isAssistant = remember { KeyboardSetupChecker.isAssistantSet(context) }
+                // Re-read on every resume, not once. These were remembered on
+                // first composition, so selecting the keyboard in system
+                // settings and coming back left the wizard looking at the state
+                // from before the trip - the step could never complete, and
+                // with the tab bar gated on onboarding that was a dead end.
+                var isSelected by remember { mutableStateOf(KeyboardSetupChecker.isKeyboardSelected(context)) }
+                var isAssistant by remember { mutableStateOf(KeyboardSetupChecker.isAssistantSet(context)) }
+                val stepLifecycle = androidx.compose.ui.platform.LocalLifecycleOwner.current
+                DisposableEffect(stepLifecycle) {
+                    val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
+                        if (event == androidx.lifecycle.Lifecycle.Event.ON_RESUME) {
+                            isSelected = KeyboardSetupChecker.isKeyboardSelected(context)
+                            isAssistant = KeyboardSetupChecker.isAssistantSet(context)
+                        }
+                    }
+                    stepLifecycle.lifecycle.addObserver(observer)
+                    onDispose { stepLifecycle.lifecycle.removeObserver(observer) }
+                }
 
                 KeyboardOnboardingWizard(
                     isKeyboardEnabled = isKeyboardEnabled,
@@ -489,6 +526,10 @@ private fun SettingsTab() {
     ) {
         Text("Einstellungen", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
 
+        ServerConnectionCard()
+
+        KeyboardIconsCard()
+
         // HF Token
         Card(modifier = Modifier.fillMaxWidth()) {
             Column(modifier = Modifier.padding(16.dp)) {
@@ -533,6 +574,206 @@ private fun SettingsTab() {
                 Text("kombify SpeechKit v0.7.0", style = MaterialTheme.typography.bodySmall)
                 Text("AI-powered Voice Keyboard", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 Text("github.com/kombifyio/SpeechKit", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
+            }
+        }
+    }
+}
+
+// --- Server connection ---
+
+/**
+ * Where the SpeechKit server is, and whether one is configured at all.
+ *
+ * This editor existed only inside the dictation test screen, so the single
+ * setting that upgrades every mode from the on-device tier to a server was
+ * reachable only from a developer tab. It writes the same store
+ * [StoredServerProfile] reads, so saving here is what makes the keyboard's
+ * server keys and the voice agent work at all.
+ */
+@Composable
+private fun ServerConnectionCard() {
+    val context = LocalContext.current
+    val prefs = remember {
+        context.getSharedPreferences(StoredServerProfile.PREFS_NAME, Context.MODE_PRIVATE)
+    }
+    val scope = rememberCoroutineScope()
+
+    var url by remember {
+        mutableStateOf(prefs.getString(StoredServerProfile.KEY_SERVER_URL, "") ?: "")
+    }
+    var token by remember {
+        mutableStateOf(prefs.getString(StoredServerProfile.KEY_SERVER_TOKEN, "") ?: "")
+    }
+    var status by remember { mutableStateOf<String?>(null) }
+    var testing by remember { mutableStateOf(false) }
+
+    val saved = remember(url, token) { StoredServerProfile.load(context) }
+
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Text(
+                stringResource(R.string.settings_connection_title),
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.Medium,
+            )
+            val shipped = remember { ShippedDefaults.serverUrl }
+            Text(
+                when {
+                    saved != null -> stringResource(R.string.settings_connection_state_server)
+                    shipped != null -> stringResource(R.string.settings_connection_state_shipped, shipped)
+                    else -> stringResource(R.string.settings_connection_state_on_device)
+                },
+                style = MaterialTheme.typography.bodySmall,
+            )
+            OutlinedTextField(
+                value = url,
+                onValueChange = { url = it },
+                label = { Text(stringResource(R.string.settings_connection_url)) },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth(),
+            )
+            OutlinedTextField(
+                value = token,
+                onValueChange = { token = it },
+                label = { Text(stringResource(R.string.settings_connection_token)) },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth(),
+            )
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Button(
+                    onClick = {
+                        prefs.edit()
+                            .putString(StoredServerProfile.KEY_SERVER_URL, url.trim())
+                            .putString(StoredServerProfile.KEY_SERVER_TOKEN, token.trim())
+                            .apply()
+                        status = context.getString(R.string.settings_connection_saved)
+                    },
+                ) { Text(stringResource(R.string.settings_connection_save)) }
+                OutlinedButton(
+                    enabled = !testing && url.isNotBlank(),
+                    onClick = {
+                        testing = true
+                        status = context.getString(R.string.settings_connection_testing)
+                        scope.launch {
+                            // Opening a real session is the only honest test: a
+                            // reachable host that rejects the token looks exactly
+                            // like a working one until a session is minted.
+                            val result = runCatching {
+                                val session = DictationController(
+                                    profile = ConnectionProfile.Server(
+                                        url.trim(),
+                                        token.trim().ifEmpty { null },
+                                    ),
+                                    context = context,
+                                ).openSession()
+                                runCatching { session.close() }
+                            }
+                            status = result.fold(
+                                onSuccess = { context.getString(R.string.settings_connection_ok) },
+                                onFailure = { failure ->
+                                    context.getString(
+                                        R.string.settings_connection_failed,
+                                        failure.message ?: failure.javaClass.simpleName,
+                                    )
+                                },
+                            )
+                            testing = false
+                        }
+                    },
+                ) { Text(stringResource(R.string.settings_connection_test)) }
+                if (saved != null) {
+                    TextButton(
+                        onClick = {
+                            prefs.edit()
+                                .remove(StoredServerProfile.KEY_SERVER_URL)
+                                .remove(StoredServerProfile.KEY_SERVER_TOKEN)
+                                .apply()
+                            url = ""
+                            token = ""
+                            status = context.getString(R.string.settings_connection_cleared)
+                        },
+                    ) { Text(stringResource(R.string.settings_connection_clear)) }
+                }
+            }
+            status?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
+        }
+    }
+}
+
+// --- Keyboard icons ---
+
+/**
+ * Which glyph each SpeechKit toolbar key is drawn with.
+ *
+ * Only SpeechKit's own symbols are offered. Provider logos were considered and
+ * left out on purpose: the keyboard APK is GPL-3.0 as a whole and third-party
+ * marks inside it are a trademark question, not a design one.
+ */
+@Composable
+private fun KeyboardIconsCard() {
+    val context = LocalContext.current
+    val actions = remember {
+        listOf(
+            "SPEECHKIT_DICTATE_DEVICE" to R.string.speechkit_action_icon_device,
+            "SPEECHKIT_DICTATE_SERVER" to R.string.speechkit_action_icon_server,
+            "SPEECHKIT_AGENT_DEEPGRAM" to R.string.speechkit_action_icon_deepgram,
+            "SPEECHKIT_AGENT_ASSEMBLYAI" to R.string.speechkit_action_icon_assemblyai,
+            "SPEECHKIT_AGENT_GPT" to R.string.speechkit_action_icon_gpt,
+            "SPEECHKIT_COMPANION" to R.string.speechkit_action_icon_companion,
+        )
+    }
+
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Text(
+                stringResource(R.string.settings_icons_title),
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.Medium,
+            )
+            Text(
+                stringResource(R.string.settings_icons_subtitle),
+                style = MaterialTheme.typography.bodySmall,
+            )
+            actions.forEach { (action, label) ->
+                var chosen by remember {
+                    mutableStateOf(KeyboardIconPreferences.choice(context, action))
+                }
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text(stringResource(label), style = MaterialTheme.typography.bodyMedium)
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        KeyboardIconChoice.entries.forEach { option ->
+                            FilterChip(
+                                selected = option == chosen,
+                                onClick = {
+                                    chosen = option
+                                    KeyboardIconPreferences.setChoice(context, action, option)
+                                },
+                                label = {
+                                    if (option.drawable == null) {
+                                        Text(stringResource(option.label))
+                                    } else {
+                                        Icon(
+                                            painter = painterResource(option.drawable),
+                                            contentDescription = stringResource(option.label),
+                                            modifier = Modifier.size(18.dp),
+                                        )
+                                    }
+                                },
+                            )
+                        }
+                    }
+                }
             }
         }
     }

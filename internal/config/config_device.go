@@ -10,6 +10,11 @@ type StoreConfig struct {
 	SaveAudio          bool   `toml:"save_audio"`
 	AudioRetentionDays int    `toml:"audio_retention_days"`
 	MaxAudioStorageMB  int    `toml:"max_audio_storage_mb"`
+	// MeetingRetentionDays discards finished meetings older than this many
+	// days. Zero, the default, keeps them: a meeting is work someone did, not
+	// a by-product, so nothing is thrown away unless it is asked for. Pinned
+	// meetings are kept either way.
+	MeetingRetentionDays int `toml:"meeting_retention_days"`
 }
 
 type GeneralConfig struct {
@@ -73,7 +78,11 @@ type CustomizationConfig struct {
 // SpeechDefaultsConfig holds provider-neutral voice defaults that can be
 // projected into STT, TTS, and Voice Agent provider adapters when supported.
 type SpeechDefaultsConfig struct {
-	Language       string  `toml:"language"`
+	Language string `toml:"language"`
+	// MainLanguage is the user's own locale the overlay language switch
+	// rotates back to after English. Distinct from Language, which is the
+	// current pin (including the multilanguage sentinel).
+	MainLanguage   string  `toml:"main_language"`
 	DetectLanguage bool    `toml:"detect_language"`
 	Punctuation    bool    `toml:"punctuation"`
 	SmartFormat    bool    `toml:"smart_format"`
@@ -163,6 +172,9 @@ type UIConfig struct {
 	AssistantVariant    string `toml:"assistant_variant"`
 	AssistantMark       string `toml:"assistant_mark"`
 	AssistantTranscript bool   `toml:"assistant_transcript"`
+	// OverlayActions is the overlay quick-action strip. Empty means the
+	// shipped default (copy, note, language, meeting).
+	OverlayActions []string `toml:"overlay_actions"`
 }
 
 type OverlayFreePosition struct {

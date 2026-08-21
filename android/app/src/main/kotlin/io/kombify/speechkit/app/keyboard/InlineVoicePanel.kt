@@ -6,6 +6,7 @@ import android.content.pm.PackageManager
 import android.content.res.Configuration
 import android.graphics.Bitmap
 import android.graphics.Canvas
+import android.graphics.drawable.Drawable
 import android.inputmethodservice.InputMethodService
 import android.os.SystemClock
 import android.view.inputmethod.EditorInfo
@@ -138,9 +139,10 @@ class InlineVoicePanel(
     private var windowOwner: ServiceWindowOwner? = null
     private var windowRoot: WeakReference<View>? = null
 
-    private var actionRowView: ComposeView? = null
-    private var actionRowProfile: ConnectionProfile? = null
-    private var actionRowPalette: MutableState<KeyboardActionRowPalette>? = null
+    // The service the keyboard last handed over. The toolbar hook needs it
+    // and runs when no panel is open, so it cannot use [keyboard], which
+    // only exists for the lifetime of a panel.
+    private var currentService: InputMethodService? = null
 
     private var micRequest: PendingActivation? = null
     private var resumeAfterGrant: PendingActivation? = null
@@ -169,39 +171,50 @@ class InlineVoicePanel(
     )
 
     /**
-     * Mounts the action row into the keyboard's input view. Idempotent, so the
-     * fork may call it from every `onStartInputView` without checking.
+     * The input view is up. Only the interrupted-permission resume needs this
+     * now; the keys themselves live in the keyboard's own toolbar.
      */
-    override fun attachActionRow(service: InputMethodService) {
-        // Both halves are contained, and nothing rethrows: this hook runs
-        // inside LatinIME's `onStartInputViewInternal`, where an escaping
-        // throw kills the input method process on field focus and skips
-        // everything the fork does after the call. The mount does its own
-        // cleanup inside; this is the net around the lookups either side of
-        // it, so the hook itself cannot be the thing that fails.
-        runCatching { mountActionRow(service) }
-            .onFailure { Timber.w(it, "Could not attach the action row") }
-        // After the row, so the panel this may reopen is layered over an input
-        // view that is already in its final shape.
+    override fun onInputViewStarted(service: InputMethodService) {
+        currentService = service
+        // Contained and never rethrown: this runs inside LatinIME's
+        // onStartInputViewInternal, where an escaping throw kills the input
+        // method process on field focus and skips everything the fork does
+        // after the call.
         runCatching { resumeMicGrant(service) }
             .onFailure { Timber.w(it, "Could not resume the interrupted voice panel") }
     }
 
-    /** Drops the action row when the input view goes away. */
-    override fun detachActionRow() {
-        val view = actionRowView ?: return
-        actionRowView = null
-        actionRowProfile = null
-        actionRowPalette = null
-        runCatching {
-            (view.parent as? ViewGroup)?.let { container ->
-                // Removing the view disposes its composition; GONE restores
-                // the fork's "no host installed" state, which is what its
-                // window geometry keys on.
-                container.removeView(view)
-                container.visibility = View.GONE
-            }
-        }.onFailure { Timber.w(it, "Could not remove the action row") }
+    /**
+     * Answers one of SpeechKit's toolbar keys.
+     *
+     * Returns null when the action ran, and the reason when it did not: the
+     * keyboard has no room to grey a key out with an explanation, so a refused
+     * key says why through the keyboard's own toast rather than doing nothing
+     * and looking broken.
+     */
+    /**
+     * The glyph the user picked for this key, or null to keep the fork's own.
+     *
+     * Read straight from preferences on every key build rather than cached:
+     * the toolbar is rebuilt when the keyboard is recreated, which is exactly
+     * when a changed setting has to take effect, and a SharedPreferences read
+     * is cheaper than the invalidation that caching would need.
+     */
+    override fun iconFor(action: String): Drawable? {
+        val context = keyboard ?: currentService ?: application
+        val drawable = KeyboardIconPreferences.choice(context, action).drawable ?: return null
+        return runCatching { ContextCompat.getDrawable(context, drawable) }.getOrNull()
+    }
+
+    override fun onToolbarAction(action: String): String? {
+        val service = keyboard ?: currentService ?: return null
+        val chosen = keyboardActionForToolbarKey(action) ?: return null
+        val items = keyboardActionRowItems(profileSource.currentProfile())
+        val blocker = items.firstOrNull { it.action == chosen }?.blocker
+        if (blocker != null) return service.getString(blocker.reasonResource())
+        runCatching { service.perform(chosen) }
+            .onFailure { Timber.w(it, "Toolbar action %s failed", action) }
+        return null
     }
 
     override fun hidePanel() {
@@ -228,135 +241,6 @@ class InlineVoicePanel(
         agentPlayer = null
         keyboard = null
     }
-
-    private fun mountActionRow(service: InputMethodService) {
-        val container = service.actionRowContainer() ?: run {
-            Timber.w("Keyboard input view has no action row container")
-            return
-        }
-        // The profile is read here rather than per composition: the row states
-        // why an action is blocked, and re-resolving mid-frame could make the
-        // label and the button disagree. Comparing it is also what rebuilds
-        // the row after a server is paired — otherwise it would keep claiming
-        // there is none until the keyboard is recreated.
-        val profile = profileSource.currentProfile()
-        val mounted = actionRowView
-        if (mounted != null && mounted.parent === container && actionRowProfile == profile) {
-            return
-        }
-        detachActionRow()
-
-        // Everything below is contained, because this runs inside LatinIME's
-        // onStartInputViewInternal: an escaping throw would take the IME
-        // process down the moment a field takes focus, and would also skip the
-        // rest of that method — the gesture consumer, mInputLogic.startInput
-        // and the main keyboard reload. Losing the row costs one feature;
-        // losing the method leaves a keyboard that cannot type. Compose in a
-        // service window is the exact machinery this seam has been bitten by
-        // before, so it does not get to be the one unguarded direction.
-        runCatching {
-            val owner = windowOwner(service)
-                ?: error("keyboard window has no decor view")
-            val items = keyboardActionRowItems(profile)
-            val palette = mutableStateOf(service.keyboardPalette())
-            val view = ComposeView(service).also { composeView ->
-                owner.attachTo(composeView)
-                composeView.setContent {
-                    KeyboardActionRowTheme(palette.value) {
-                        KeyboardActionRow(items = items, onAction = { service.perform(it) })
-                    }
-                }
-            }
-            container.removeAllViews()
-            container.addView(view)
-            container.visibility = View.VISIBLE
-            owner.onResume()
-            actionRowView = view
-            actionRowProfile = profile
-            actionRowPalette = palette
-            view.repaintOnceKeyboardIsPainted(service)
-        }.onFailure { failure ->
-            Timber.w(failure, "Could not mount the action row")
-            // Nothing half-attached: a ComposeView that threw out of
-            // setContent is still a child of the container, and a container
-            // left VISIBLE around it is measured into the keyboard height by
-            // LatinIME.getSpeechKitActionRowHeight().
-            runCatching {
-                container.removeAllViews()
-                container.visibility = View.GONE
-            }
-            actionRowView = null
-            actionRowProfile = null
-            actionRowPalette = null
-        }
-    }
-
-    /**
-     * Re-reads the keyboard colours once it has actually painted them.
-     *
-     * The fork paints main_keyboard_frame from InputView.onNextLayout, which
-     * runs after the hook that mounts this row, so the first sample is always
-     * taken from a frame that has no background yet. A pre-draw listener is
-     * the first point at which the whole tree has been laid out; it removes
-     * itself, so nothing outlives the view it was registered from.
-     */
-    private fun ComposeView.repaintOnceKeyboardIsPainted(service: InputMethodService) {
-        val row: View = this
-        row.viewTreeObserver.addOnPreDrawListener(
-            object : ViewTreeObserver.OnPreDrawListener {
-                override fun onPreDraw(): Boolean {
-                    runCatching {
-                        row.viewTreeObserver.takeIf { it.isAlive }
-                            ?.removeOnPreDrawListener(this)
-                        actionRowPalette?.value = service.keyboardPalette()
-                    }
-                    return true
-                }
-            },
-        )
-    }
-
-    /**
-     * The colours the row paints itself in, taken from the keyboard below it.
-     *
-     * Sampled off the pixel rather than read out of HeliBoard's settings: the
-     * fork applies its palette as a colour *filter* over a white drawable, so
-     * the drawable's own colour is white on every theme, and the object that
-     * holds the real values is fork internals this module deliberately does
-     * not reach into — the whole patch surface is one bridge file. Rasterising
-     * a detached copy answers the only question the row has, "what is behind
-     * me", for flat colours, gradients and user background images alike, and
-     * never touches the drawable the keyboard is drawing with.
-     */
-    private fun InputMethodService.keyboardPalette(): KeyboardActionRowPalette {
-        val decor = window?.window?.decorView
-        val night = (resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) ==
-            Configuration.UI_MODE_NIGHT_YES
-        return keyboardActionRowPalette(
-            keyboardBackground = decor?.let { keyboardBackgroundColor(it) },
-            nightMode = night,
-        )
-    }
-
-    private fun keyboardBackgroundColor(decor: View): Int? = runCatching {
-        val painted = decor.findViewById<View>(R.id.main_keyboard_frame)?.background
-            ?: return@runCatching null
-        val sample = painted.constantState?.newDrawable(decor.resources)?.mutate()
-            ?: return@runCatching null
-        // The colour lives in the filter, not in the drawable, and a constant
-        // state does not carry a filter — without this the copy reports the
-        // white the fork paints through.
-        sample.colorFilter = painted.colorFilter
-        sample.alpha = painted.alpha
-        sample.setBounds(0, 0, 1, 1)
-        val bitmap = Bitmap.createBitmap(1, 1, Bitmap.Config.ARGB_8888)
-        try {
-            sample.draw(Canvas(bitmap))
-            bitmap.getPixel(0, 0).takeIf { (it ushr 24) != 0 }
-        } finally {
-            bitmap.recycle()
-        }
-    }.getOrNull()
 
     /**
      * The owner every composition in this window resolves its recomposer
@@ -672,14 +556,6 @@ class InlineVoicePanel(
         )
     }
 
-    /**
-     * The action row's container. Resolved through this module's own R because
-     * the id is declared here as well as in the fork's layout — see
-     * `res/values/ids.xml`.
-     */
-    private fun InputMethodService.actionRowContainer(): ViewGroup? =
-        window?.window?.decorView
-            ?.findViewById(io.kombify.speechkit.R.id.speechkit_action_row)
 
     private suspend fun openSession(profile: ConnectionProfile): StreamingSttSession =
         DictationController(

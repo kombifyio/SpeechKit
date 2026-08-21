@@ -49,6 +49,19 @@ data class StreamCapabilities(
 
 /** Response of POST /v1/dictation/transcribe (subset the client consumes). */
 @JsonClass(generateAdapter = true)
+data class AssistProcessRequest(
+    val text: String,
+    val locale: String? = null,
+    val tts: Boolean = false,
+)
+
+@JsonClass(generateAdapter = true)
+data class AssistProcessResponse(
+    val text: String = "",
+    @Json(name = "speak_text") val speakText: String = "",
+)
+
+@JsonClass(generateAdapter = true)
 data class BatchTranscribeResponse(
     val text: String = "",
     val language: String? = null,
@@ -85,6 +98,8 @@ class SpeechKitServerApi(
     private val voiceAgentSessionAdapter =
         moshi.adapter(CreateVoiceAgentSessionResponse::class.java)
     private val batchAdapter = moshi.adapter(BatchTranscribeResponse::class.java)
+    private val assistRequestAdapter = moshi.adapter(AssistProcessRequest::class.java)
+    private val assistResponseAdapter = moshi.adapter(AssistProcessResponse::class.java)
     private val errorAdapter = moshi.adapter(ApiErrorEnvelope::class.java)
 
     /** Mints a streaming session ticket. Requires auth per server config. */
@@ -162,6 +177,27 @@ class SpeechKitServerApi(
                 val body = requireSuccess(response)
                 batchAdapter.fromJson(body)
                     ?: throw SpeechKitApiException(response.code, "invalid_response", "empty transcribe response")
+            }
+        }
+
+    /** One-shot Assist turn: spoken (or typed) text in, answer text out. */
+    suspend fun processAssist(text: String, locale: String? = null): AssistProcessResponse =
+        withContext(Dispatchers.IO) {
+            val payload = AssistProcessRequest(text = text, locale = locale, tts = false)
+            val json = assistRequestAdapter.toJson(payload)
+            val request = authorized(
+                Request.Builder()
+                    .url("${profile.normalizedBaseUrl}/v1/assist/process")
+                    .post(json.toRequestBody(JSON_MEDIA_TYPE)),
+            ).build()
+            client.newCall(request).execute().use { response ->
+                val body = requireSuccess(response)
+                assistResponseAdapter.fromJson(body)
+                    ?: throw SpeechKitApiException(
+                        response.code,
+                        "invalid_response",
+                        "empty assist response",
+                    )
             }
         }
 

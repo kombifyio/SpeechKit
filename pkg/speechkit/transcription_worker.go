@@ -329,6 +329,11 @@ func (w *TranscriptionWorker) HandleDictationStreamEvent(ctx context.Context, ev
 		w.onState("transcribing", transcript.Text)
 		return nil
 	}
+	// Provider-native streams deliver finals as they are recognized, so the
+	// receipt time is the closest wall clock this path has to when the words
+	// were spoken. Word-level timings can sharpen this later.
+	finalizedAt := time.Now()
+	capturedMs := elapsedCaptureMs(opts.CaptureEpoch, finalizedAt)
 	submission := Submission{
 		Language:           opts.Language,
 		QuickNote:          opts.QuickNote,
@@ -338,9 +343,15 @@ func (w *TranscriptionWorker) HandleDictationStreamEvent(ctx context.Context, ev
 		ProviderItemID:     transcript.ProviderItemID,
 		SegmentFinal:       true,
 		RecordingSessionID: opts.RecordingSessionID,
-		QueuedAt:           time.Now(),
+		CaptureChannel:     opts.CaptureChannel,
+		CapturedStartMs:    capturedMs,
+		CapturedEndMs:      capturedMs,
+		QueuedAt:           finalizedAt,
 	}
 	transcript.RecordingSessionID = opts.RecordingSessionID
+	transcript.CaptureChannel = opts.CaptureChannel
+	transcript.CapturedStartMs = capturedMs
+	transcript.CapturedEndMs = capturedMs
 	job := TranscriptionJob{
 		Submission: submission,
 		Target:     opts.Target,
@@ -438,7 +449,7 @@ func (w *TranscriptionWorker) commitFinalTranscript(ctx context.Context, job Tra
 		w.onTranscriptCommitted(transcript, false)
 	}
 
-	if w.output == nil {
+	if w.output == nil || !deliverableAsOutput(job.Submission) {
 		if !job.QuickNote {
 			w.persistTranscriptionAsync(job.Submission, transcript) //nolint:contextcheck // fire-and-forget history write; uses its own 15s timeout context
 		}
@@ -659,6 +670,13 @@ func inheritSegmentDefaults(parent, segment Submission) Submission {
 	if segment.RecordingSessionID == 0 {
 		segment.RecordingSessionID = parent.RecordingSessionID
 	}
+	if segment.CaptureChannel == "" {
+		segment.CaptureChannel = parent.CaptureChannel
+	}
+	if segment.CapturedStartMs == 0 && segment.CapturedEndMs == 0 {
+		segment.CapturedStartMs = parent.CapturedStartMs
+		segment.CapturedEndMs = parent.CapturedEndMs
+	}
 	if segment.DurationSecs <= 0 && len(segment.PCM) > 0 {
 		segment.DurationSecs = PCMDurationSecs(segment.PCM)
 	}
@@ -673,6 +691,9 @@ func combineSegmentTranscripts(parent Submission, segments []Submission, transcr
 		Language:           parent.Language,
 		Duration:           elapsed,
 		RecordingSessionID: parent.RecordingSessionID,
+		CaptureChannel:     parent.CaptureChannel,
+		CapturedStartMs:    parent.CapturedStartMs,
+		CapturedEndMs:      parent.CapturedEndMs,
 	}
 	var text strings.Builder
 	var confidenceSum float64
@@ -766,7 +787,7 @@ func (w *TranscriptionWorker) persistTranscriptionAsync(submission Submission, t
 		defer cancel()
 
 		latencyMs := transcript.Duration.Milliseconds()
-		if err := w.runner.store.SaveTranscription(ctx, transcript.Text, transcript.Language, transcript.Provider, transcript.Model, durationMs, latencyMs, submission.WAV); err != nil {
+		if err := w.runner.store.SaveTranscription(ctx, transcript.Text, transcript.Language, transcript.Provider, transcript.Model, durationMs, latencyMs, persistableAudio(submission)); err != nil {
 			w.onLog(fmt.Sprintf("Transcription history error: %v", err), "warn")
 			return
 		}

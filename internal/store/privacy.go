@@ -43,6 +43,17 @@ func (s *sqlStore) ExportScope(ctx context.Context, scope speechstorage.Scope) (
 	if export.RecordingSessions, err = s.listRecordingSessionsByScopeID(ctx, scopeID); err != nil {
 		return nil, err
 	}
+	// The notes a user typed during a meeting are their own words, so a subject
+	// export that shipped only the transcript would be incomplete.
+	for i := range export.RecordingSessions {
+		notes, err := s.loadRecordingSessionNotes(ctx, export.RecordingSessions[i].ID)
+		if err != nil {
+			return nil, err
+		}
+		if notes != nil && (strings.TrimSpace(notes.ContentMD) != "" || len(notes.Blocks) > 0) {
+			export.RecordingSessions[i].Notes = notes
+		}
+	}
 	if export.DictionaryEntries, err = s.listUserDictionaryEntriesByScopeID(ctx, scopeID); err != nil {
 		return nil, err
 	}
@@ -62,7 +73,7 @@ func (s *sqlStore) ExportScope(ctx context.Context, scope speechstorage.Scope) (
 //  2. Link tables (transcription_audio_assets, quick_note_audio_assets)
 //  3. audio_assets
 //  4. voice_agent_session_turns, voice_agent_session_summary_items
-//  5. recording_session_segments, recording_sessions
+//  5. recording_session_segments, recording_session_notes, recording_sessions
 //  6. voice_agent_sessions
 //  7. transcriptions
 //  8. quick_notes
@@ -108,6 +119,8 @@ func (s *sqlStore) DeleteScope(ctx context.Context, scope speechstorage.Scope) (
 		 WHERE session_id IN (SELECT id FROM voice_agent_sessions WHERE scope_id = ?)`,
 		// 5. Long recording children
 		`DELETE FROM recording_session_segments
+		 WHERE session_id IN (SELECT id FROM recording_sessions WHERE scope_id = ?)`,
+		`DELETE FROM recording_session_notes
 		 WHERE session_id IN (SELECT id FROM recording_sessions WHERE scope_id = ?)`,
 		`DELETE FROM recording_sessions WHERE scope_id = ?`,
 		// 6–9. Owner tables

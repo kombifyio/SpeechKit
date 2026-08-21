@@ -49,6 +49,12 @@ var sqliteMigration017 string
 //go:embed migrations/sqlite/018_recording_sessions.sql
 var sqliteMigration018 string
 
+//go:embed migrations/sqlite/021_recording_session_notes.sql
+var sqliteMigration021 string
+
+//go:embed migrations/sqlite/022_recording_session_enhancements.sql
+var sqliteMigration022 string
+
 // SQLiteStore implements Store using a local SQLite database via
 // modernc.org/sqlite (pure Go, no CGo required). All query logic lives in the
 // embedded *sqlStore; this type only owns connection setup and migrations.
@@ -82,6 +88,7 @@ func NewSQLiteStore(cfg StoreConfig) (*SQLiteStore, error) {
 		maxStorageMB:            cfg.MaxAudioStorageMB,
 		saveAudio:               cfg.SaveAudio,
 		audioRetentionDays:      cfg.AudioRetentionDays,
+		meetingRetentionDays:    cfg.MeetingRetentionDays,
 		transcriptionModelHints: normalizeTranscriptionModelHints(cfg.TranscriptionModelHints),
 		defaultScope:            speechstorage.NormalizeScope(cfg.DefaultScope),
 		scopePolicy:             normalizedScopePolicy(cfg.ScopePolicy),

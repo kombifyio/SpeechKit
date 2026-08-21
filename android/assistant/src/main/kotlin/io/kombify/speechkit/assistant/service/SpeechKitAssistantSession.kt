@@ -11,9 +11,15 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.platform.ComposeView
 import dagger.hilt.android.AndroidEntryPoint
+import android.speech.tts.TextToSpeech
+import io.kombify.speechkit.assistant.intent.ActionResult
 import io.kombify.speechkit.assistant.intent.AssistantIntent
 import io.kombify.speechkit.assistant.intent.IntentRouter
+import io.kombify.speechkit.assistant.intent.IntentType
 import io.kombify.speechkit.assistant.ui.AssistantOverlay
+import io.kombify.speechkit.net.ConnectionProfile
+import io.kombify.speechkit.net.ConnectionProfileSource
+import io.kombify.speechkit.net.SpeechKitServerApi
 import io.kombify.speechkit.audio.AudioFormat
 import io.kombify.speechkit.audio.AudioSession
 import io.kombify.speechkit.audio.MicLevelMeter
@@ -55,8 +61,10 @@ class SpeechKitAssistantSessionService : VoiceInteractionSessionService() {
 
     @Inject lateinit var sttRouter: SttRouter
 
+    @Inject lateinit var profileSource: ConnectionProfileSource
+
     override fun onNewSession(args: Bundle?): VoiceInteractionSession =
-        SpeechKitVoiceSession(this, audioSession, sttRouter)
+        SpeechKitVoiceSession(this, audioSession, sttRouter, profileSource)
 }
 
 /**
@@ -78,11 +86,13 @@ class SpeechKitVoiceSession(
     context: Context,
     private val audioSession: AudioSession,
     private val sttRouter: SttRouter,
+    private val profileSource: ConnectionProfileSource,
 ) : VoiceInteractionSession(context) {
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
     private val intentRouter = IntentRouter()
     private var listeningJob: Job? = null
+    private var tts: TextToSpeech? = null
 
     private val _uiState = MutableStateFlow<AssistantUiState>(AssistantUiState.Idle)
     val uiState: StateFlow<AssistantUiState> = _uiState.asStateFlow()
@@ -116,6 +126,13 @@ class SpeechKitVoiceSession(
 
         windowOwner?.onResume()
         setUiEnabled(true)
+        if (tts == null) {
+            tts = TextToSpeech(context) { status ->
+                if (status != TextToSpeech.SUCCESS) {
+                    Timber.w("System TTS unavailable (status=$status)")
+                }
+            }
+        }
         startListening()
     }
 
@@ -146,6 +163,9 @@ class SpeechKitVoiceSession(
 
     override fun onDestroy() {
         scope.cancel()
+        tts?.stop()
+        tts?.shutdown()
+        tts = null
         windowOwner?.onDestroy()
         windowOwner = null
         super.onDestroy()
@@ -265,7 +285,11 @@ class SpeechKitVoiceSession(
     private suspend fun executeIntent(intent: AssistantIntent) {
         _uiState.value = AssistantUiState.Executing(intent.type.displayName)
 
-        val result = intentRouter.execute(context, intent)
+        val result = if (intent.type == IntentType.GENERAL_QUERY) {
+            answerGeneralQuery(intent)
+        } else {
+            intentRouter.execute(context, intent)
+        }
 
         _uiState.value = if (result.success) {
             AssistantUiState.Result(result.responseText)
@@ -273,9 +297,45 @@ class SpeechKitVoiceSession(
             AssistantUiState.Error(result.errorMessage ?: ACTION_FAILED_MESSAGE)
         }
 
+        val spoken = result.responseText.trim()
+        if (result.success && spoken.isNotEmpty()) {
+            tts?.speak(spoken, TextToSpeech.QUEUE_FLUSH, null, "assist-reply")
+        }
+
         if (result.success && !result.keepOpen) {
             delay(RESULT_LINGER_MILLIS)
             hide()
+        }
+    }
+
+    /**
+     * General questions go through the paired SpeechKit server when one is
+     * configured; otherwise the assistant says so instead of pretending it
+     * answered. System TTS speaks whatever text we show.
+     */
+    private suspend fun answerGeneralQuery(intent: AssistantIntent): ActionResult {
+        val query = intent.parameters["query"] ?: intent.rawText
+        val profile = profileSource.currentProfile()
+        if (profile !is ConnectionProfile.Server) {
+            return ActionResult(
+                success = true,
+                responseText = NO_SERVER_ASSIST_MESSAGE,
+                keepOpen = true,
+            )
+        }
+        return try {
+            val response = SpeechKitServerApi(profile).processAssist(query)
+            val spoken = response.speakText.ifBlank { response.text }
+            ActionResult(
+                success = spoken.isNotBlank(),
+                responseText = spoken.ifBlank { ACTION_FAILED_MESSAGE },
+            )
+        } catch (e: Exception) {
+            Timber.e(e, "Assist process failed")
+            ActionResult(
+                success = false,
+                errorMessage = e.message ?: ACTION_FAILED_MESSAGE,
+            )
         }
     }
 
@@ -303,6 +363,8 @@ class SpeechKitVoiceSession(
         const val NO_SPEECH_MESSAGE = "Keine Sprache erkannt"
         const val ACTION_FAILED_MESSAGE = "Aktion fehlgeschlagen"
         const val GENERIC_ERROR_MESSAGE = "Fehler"
+        const val NO_SERVER_ASSIST_MESSAGE =
+            "Dafür brauche ich einen gekoppelten SpeechKit-Server"
     }
 }
 

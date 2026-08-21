@@ -2,6 +2,7 @@ package io.kombify.speechkit.ime
 
 import io.kombify.speechkit.net.ConnectionProfile
 import io.kombify.speechkit.net.VoiceAgentController
+import io.kombify.speechkit.net.VoiceAgentUiState
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
@@ -150,6 +151,7 @@ class ImeVoiceAgentControllerTest {
         advanceUntilIdle()
 
         assertEquals(ImeVoiceAgentController.ERROR_NO_SERVER, ime.state.value.errorCode)
+        assertEquals(VoiceAgentUiState.Phase.Inactive, ime.state.value.phase)
     }
 
     // Barge-in drops what is queued behind the speaker. Nothing was ever

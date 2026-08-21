@@ -45,6 +45,15 @@ const deadCaptureBackstopFloor = 30 * time.Second
 
 const DefaultMinPCMBytes = 3200
 
+// Capture channels name the audio source behind a recording. A host that
+// records one session from several sources at once — meeting capture takes the
+// microphone and the system loopback in parallel — labels each controller so
+// the resulting transcripts stay attributable.
+const (
+	CaptureChannelMicrophone = "mic"
+	CaptureChannelSystem     = "system"
+)
+
 const (
 	staleCaptureMinDuration = 30 * time.Second
 	staleCaptureGrace       = 5 * time.Second
@@ -118,6 +127,16 @@ type RecordingStartOptions struct {
 	// RecordingSessionID links final transcript commits to a persisted
 	// long-running dictation or meeting session owned by the host.
 	RecordingSessionID int64
+	// CaptureChannel names the audio source this controller records, so a host
+	// running several controllers over one recording session — meeting capture
+	// records the microphone and the system loopback at the same time — can tell
+	// the resulting transcripts apart. See CaptureChannel*.
+	CaptureChannel string
+	// CaptureEpoch is the wall clock that transcript timestamps are measured
+	// from. Hosts recording one session across several controllers pass the same
+	// epoch to all of them so the transcripts interleave on a single timeline.
+	// Zero means "start of this recording".
+	CaptureEpoch time.Time
 	// StreamSegments enables live-ish dictation for this recording session.
 	// Completed pause-bounded segments are queued before Stop(); Stop() then
 	// flushes only pending/remaining tail segments. Leave false for Assist and
@@ -698,6 +717,9 @@ func (c *RecordingController) Stop(opts RecordingStopOptions) error {
 		finals := c.stopNativeDictationStream(nativeStream)
 		if finals > 0 {
 			c.onLog(fmt.Sprintf("Provider-stream dictation finalized with %d committed segment(s)", finals), "info")
+			// Capture has stopped; leave "recording" immediately so the overlay
+			// does not sit on a phantom take while the last finals settle.
+			c.onState("processing", "")
 			return nil
 		}
 		c.onLog("Provider-stream dictation produced no final transcript; falling back to full capture", "warn")
@@ -715,6 +737,7 @@ func (c *RecordingController) Stop(opts RecordingStopOptions) error {
 		if submitted == 0 {
 			if streamedCount > 0 {
 				c.onLog("No remaining dictation tail after streamed segments", "info")
+				c.onState("processing", "")
 				return nil
 			}
 			c.onLog("No speech segments detected, skipped", "error")
@@ -751,10 +774,12 @@ func (c *RecordingController) Stop(opts RecordingStopOptions) error {
 				Language:           current.Language,
 				Prefix:             prefix,
 				RecordingSessionID: current.RecordingSessionID,
+				CaptureChannel:     current.CaptureChannel,
 			})
 		}
 	}
 
+	capturedStartMs := elapsedCaptureMs(captureEpoch(current, startedAt), startedAt)
 	if err := c.submitter.Submit(TranscriptionJob{
 		Submission: Submission{
 			PCM:                pcm,
@@ -764,6 +789,9 @@ func (c *RecordingController) Stop(opts RecordingStopOptions) error {
 			QuickNote:          current.QuickNote,
 			QuickNoteID:        current.QuickNoteID,
 			RecordingSessionID: current.RecordingSessionID,
+			CaptureChannel:     current.CaptureChannel,
+			CapturedStartMs:    capturedStartMs,
+			CapturedEndMs:      capturedStartMs + int64(dur*1000),
 		},
 		Segments: jobSegments,
 		Target:   current.Target,
@@ -832,6 +860,10 @@ func (c *RecordingController) flushPendingStreamSegments(sessionID uint64, curre
 		c.mu.Unlock()
 	}()
 
+	c.mu.Lock()
+	epoch := captureEpoch(current, c.startedAt)
+	c.mu.Unlock()
+
 	submitted := 0
 	for {
 		c.mu.Lock()
@@ -852,7 +884,7 @@ func (c *RecordingController) flushPendingStreamSegments(sessionID uint64, curre
 			continue
 		}
 
-		submission := submissionFromAudioSegment(segment, current)
+		submission := submissionFromAudioSegment(segment, current, epoch, c.clockNow())
 		sessionActive := true
 		c.mu.Lock()
 		if c.sessionID == sessionID {
@@ -901,7 +933,11 @@ func (c *RecordingController) dropFirstPendingStreamSegment(sessionID uint64) {
 	}
 }
 
-func submissionFromAudioSegment(segment AudioSegment, current RecordingStartOptions) Submission {
+// submissionFromAudioSegment converts one pause-bounded segment into a
+// submission. capturedEnd is the wall clock the segment was closed at, which is
+// the best available anchor for a VAD segment: its audio ends there, so the
+// timeline offsets run backwards from it by the segment duration.
+func submissionFromAudioSegment(segment AudioSegment, current RecordingStartOptions, epoch, capturedEnd time.Time) Submission {
 	prefix := ""
 	if segment.Paragraph {
 		prefix = "\n\n"
@@ -909,6 +945,11 @@ func submissionFromAudioSegment(segment AudioSegment, current RecordingStartOpti
 	durationSecs := segment.Duration.Seconds()
 	if durationSecs <= 0 {
 		durationSecs = PCMDurationSecs(segment.PCM)
+	}
+	endMs := elapsedCaptureMs(epoch, capturedEnd)
+	startMs := endMs - int64(durationSecs*1000)
+	if startMs < 0 {
+		startMs = 0
 	}
 	return Submission{
 		PCM:                append([]byte(nil), segment.PCM...),
@@ -918,7 +959,32 @@ func submissionFromAudioSegment(segment AudioSegment, current RecordingStartOpti
 		QuickNote:          current.QuickNote,
 		QuickNoteID:        current.QuickNoteID,
 		RecordingSessionID: current.RecordingSessionID,
+		CaptureChannel:     current.CaptureChannel,
+		CapturedStartMs:    startMs,
+		CapturedEndMs:      endMs,
 	}
+}
+
+// captureEpoch resolves the wall clock a session's transcript timeline is
+// measured from, defaulting to the start of this recording.
+func captureEpoch(current RecordingStartOptions, startedAt time.Time) time.Time {
+	if !current.CaptureEpoch.IsZero() {
+		return current.CaptureEpoch
+	}
+	return startedAt
+}
+
+// elapsedCaptureMs places at on the timeline that starts at epoch. A zero epoch
+// or timestamp means no timeline was requested, which keeps every offset at 0.
+func elapsedCaptureMs(epoch, at time.Time) int64 {
+	if epoch.IsZero() || at.IsZero() {
+		return 0
+	}
+	ms := at.Sub(epoch).Milliseconds()
+	if ms < 0 {
+		return 0
+	}
+	return ms
 }
 
 // Cancel stops the active recorder and discards the captured audio. Hosts use
@@ -1024,6 +1090,10 @@ func (c *RecordingController) startNativeDictationStream(sessionID uint64, opts 
 	if provider == nil {
 		return nil, fmt.Errorf("provider not configured")
 	}
+	// The native stream is opened before the recorder reports its start time,
+	// so "now" is the closest anchor available for a host that did not pass an
+	// explicit epoch. The two are milliseconds apart.
+	streamEpoch := captureEpoch(opts, c.clockNow())
 	if sink == nil {
 		return nil, fmt.Errorf("event sink not configured")
 	}
@@ -1057,6 +1127,8 @@ func (c *RecordingController) startNativeDictationStream(sessionID uint64, opts 
 			QuickNoteID:        opts.QuickNoteID,
 			Language:           opts.Language,
 			RecordingSessionID: opts.RecordingSessionID,
+			CaptureChannel:     opts.CaptureChannel,
+			CaptureEpoch:       streamEpoch,
 		},
 		ctx:          streamCtx,
 		cancel:       cancel,
