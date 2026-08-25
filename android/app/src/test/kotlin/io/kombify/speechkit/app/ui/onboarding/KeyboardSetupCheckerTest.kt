@@ -15,37 +15,38 @@ class KeyboardSetupCheckerTest {
 
     private val ownPackage = "io.kombify.speechkit"
 
-    // Android stores the component in its short form when the manifest
-    // declares the service with a relative name. A substring check against the
-    // fully-qualified class name answers false for this exact string.
     @Test
-    fun `recognises the short component form the system actually stores`() {
+    fun `recognises the HeliBoard keyboard this APK ships`() {
         assertTrue(
             KeyboardSetupChecker.isSpeechKitIme(
                 ownPackage,
-                "io.kombify.speechkit/.ime.SpeechKitVoiceImeService",
+                "io.kombify.speechkit/helium314.keyboard.latin.LatinIME",
             ),
         )
     }
 
-    @Test
-    fun `recognises the fully qualified form too`() {
-        assertTrue(
-            KeyboardSetupChecker.isSpeechKitIme(
-                ownPackage,
-                "io.kombify.speechkit/io.kombify.speechkit.ime.SpeechKitVoiceImeService",
-            ),
-        )
-    }
-
-    // The OSS flavour ships under its own application id; its keyboard is
-    // still its own keyboard.
     @Test
     fun `recognises the oss flavour under its own application id`() {
         assertTrue(
             KeyboardSetupChecker.isSpeechKitIme(
                 "io.kombify.speechkit.oss",
-                "io.kombify.speechkit.oss/.ime.SpeechKitVoiceImeService",
+                "io.kombify.speechkit.oss/helium314.keyboard.latin.LatinIME",
+            ),
+        )
+    }
+
+    @Test
+    fun `does not treat the voice-only IME as the typing keyboard`() {
+        assertFalse(
+            KeyboardSetupChecker.isSpeechKitIme(
+                ownPackage,
+                "io.kombify.speechkit/.ime.SpeechKitVoiceImeService",
+            ),
+        )
+        assertFalse(
+            KeyboardSetupChecker.isSpeechKitIme(
+                ownPackage,
+                "io.kombify.speechkit/io.kombify.speechkit.ime.SpeechKitVoiceImeService",
             ),
         )
     }
@@ -73,5 +74,53 @@ class KeyboardSetupCheckerTest {
         assertFalse(KeyboardSetupChecker.isSpeechKitIme(ownPackage, null))
         assertFalse(KeyboardSetupChecker.isSpeechKitIme(ownPackage, ""))
         assertFalse(KeyboardSetupChecker.isSpeechKitIme(ownPackage, "io.kombify.speechkit"))
+    }
+
+    @Test
+    fun `setup is complete once the typing keyboard is enabled and selected`() {
+        val latin = "io.kombify.speechkit/helium314.keyboard.latin.LatinIME"
+        assertTrue(
+            KeyboardSetupChecker.isSetupComplete(
+                ownPackage,
+                listOf(latin),
+                latin,
+            ),
+        )
+    }
+
+    @Test
+    fun `setup complete does not depend on the system assistant role`() {
+        val latin = "io.kombify.speechkit/helium314.keyboard.latin.LatinIME"
+        // Completeness takes only IME ids. There is no assistant argument: if
+        // setup still required ROLE_ASSISTANT, this call would not compile or
+        // would return false without an extra held-role flag.
+        assertTrue(
+            KeyboardSetupChecker.isSetupComplete(
+                ownPackage,
+                enabledInputMethodIds = listOf(latin),
+                selectedInputMethodId = latin,
+            ),
+        )
+        assertFalse(
+            KeyboardSetupChecker.isSetupComplete(
+                ownPackage,
+                enabledInputMethodIds = listOf(
+                    "io.kombify.speechkit/.ime.SpeechKitVoiceImeService",
+                ),
+                selectedInputMethodId = "io.kombify.speechkit/.ime.SpeechKitVoiceImeService",
+            ),
+        )
+    }
+
+    @Test
+    fun `setup is incomplete when another keyboard is selected`() {
+        val latin = "io.kombify.speechkit/helium314.keyboard.latin.LatinIME"
+        assertFalse(
+            KeyboardSetupChecker.isSetupComplete(
+                ownPackage,
+                listOf(latin),
+                "com.google.android.inputmethod.latin/com.android.inputmethod.latin.LatinIME",
+            ),
+        )
     }
 }

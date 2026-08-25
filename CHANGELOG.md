@@ -9,6 +9,53 @@ maintainers. The release linter
 (`npm run release:lint -- --version vX.Y.Z`) refuses internal tracker
 IDs, source paths, and other maintainer-only vocabulary.
 
+## Unreleased
+
+### Added
+
+* **android:** transcribe or summarize a WhatsApp or Telegram voice note from the keyboard more-page or the share sheet. The paired SpeechKit server transcribes first; summarize then runs Assist on that transcript. If Assist has no model, the transcript still lands on the clipboard.
+* **android:** keyboard setup finishes when SpeechKit Keyboard is enabled and selected. Voice Agent is a key on that keyboard, not a system-assistant role.
+* **android:** dictation no longer asks for a Hugging Face token on first run. On-device recognition is the floor; a token was never used for that path.
+* **android:** Settings can find a homelab SpeechKit on the LAN (`_speechkit._tcp`) and fill the server address. Authentication still happens after you pick the URL.
+* Settings on Windows can find a homelab SpeechKit on the LAN the same way and fill the server URL. The token is still typed.
+* **android:** kombify tester builds dial the hosted SpeechKit server without typing a key. A signed-in kombify Companion replaces that shared tester token with the logged-in user's.
+* **android:** when Companion provisions a Gateway SpeechKit root, the keyboard talks to `/v1/speechkit/...` instead of the origin `/v1/...` paths.
+* **android:** the keyboard no longer waits on Companion during a key press. A signed-in Companion session is fetched in the background and reused until Companion is signed out.
+
+## [0.60.0](https://github.com/kombifyio/SpeechKit/compare/v0.59.1...v0.60.0) (2026-08-25)
+
+### Highlights
+
+- **Find the server on your home network**: a homelab SpeechKit can announce itself so a Box, desktop, or phone finds it without typing an address.
+- **Hosted servers stay silent**: discovery stays off until you turn it on, so a public instance does not advertise itself on someone else's network.
+- **Nothing secret goes on the wire**: devices still sign in after they connect. The announcement only says where to knock.
+
+### Added
+
+* **android:** fetch Companion session in the background ([dbc0987](https://github.com/kombifyio/SpeechKit/commit/dbc09874d9969745b2931c418212cec39e2773c5))
+* **android:** keyboard setup is the typing IME, not the system assistant ([b9efe17](https://github.com/kombifyio/SpeechKit/commit/b9efe17d5efe03e0bf6275828823c6ab1b044233))
+* **android:** kombify testers use hosted SpeechKit without typing keys ([c37b699](https://github.com/kombifyio/SpeechKit/commit/c37b699e1fc49a390e67eeb3f07201f03c26ead6))
+* **android:** LAN finder, drop HF onboarding, match shipped keyboard docs ([9116e6e](https://github.com/kombifyio/SpeechKit/commit/9116e6eadee8a0d13855c0846937cb02577ffa41))
+* **android:** map Companion Gateway roots onto /v1/speechkit paths ([52c84c8](https://github.com/kombifyio/SpeechKit/commit/52c84c8ebd1fcc4efc0878610a63da4cf2f1073f))
+* **android:** one keyboard, a more page, and voice-note transcription ([3430631](https://github.com/kombifyio/SpeechKit/commit/3430631fffd7ac3005fef3553d9b4c2fc102013a))
+* **android:** summarize WhatsApp and Telegram voice notes ([c696c58](https://github.com/kombifyio/SpeechKit/commit/c696c58f0aba5e9113047738db0020c11fb18143))
+* **cli:** find LAN SpeechKit servers with speechkitctl discover ([#299](https://github.com/kombifyio/SpeechKit/issues/299)) ([0742c50](https://github.com/kombifyio/SpeechKit/commit/0742c50e2aa7651ca42076171373d8097e171fd6))
+* **desktop:** find a SpeechKit server on the LAN ([ef79291](https://github.com/kombifyio/SpeechKit/commit/ef79291bfcc0dd8c4ef5b10e21eecb097e07bfdc))
+* **desktop:** show the live overlay language as a code mark ([a861f5e](https://github.com/kombifyio/SpeechKit/commit/a861f5e9980c88b689091c73172cdc2a1780de3a))
+* **desktop:** toggle overlay shortcut functions in Settings ([4848a5e](https://github.com/kombifyio/SpeechKit/commit/4848a5ecbe871f9c6e617b42e8e50c7b55622100))
+* **server:** LAN discovery via mDNS/DNS-SD (_speechkit._tcp, opt-in) ([c3903be](https://github.com/kombifyio/SpeechKit/commit/c3903be58fda83ddbcca43d20c0bb649b5c14c33))
+
+
+### Fixed
+
+* **android:** put SpeechKit on the Gboard suggestion strip ([34b3342](https://github.com/kombifyio/SpeechKit/commit/34b3342ca2874054ee14643b13a1a0cc68c88144))
+* **android:** put the provider buttons back on the keyboard ([6ceede3](https://github.com/kombifyio/SpeechKit/commit/6ceede30b39193d823ce939a201720f844d3645a))
+* **catalog:** export provider-option manifests and add model freshness fields ([d7c4db8](https://github.com/kombifyio/SpeechKit/commit/d7c4db8fd5d4e1e5a5ecdfb97875bf7172ac9b17))
+* **ci:** use SERVER_TOKEN as production smoke authority ([faa846f](https://github.com/kombifyio/SpeechKit/commit/faa846f1b48ccf22e4817ec6029326fcb3e37665))
+* **release:** unblock 0.60.0 version sync and reconcile current release ([#298](https://github.com/kombifyio/SpeechKit/issues/298)) ([a59409e](https://github.com/kombifyio/SpeechKit/commit/a59409e4d5b9ebeb5fccab9821daf8710d8fc2f9))
+* **test:** harden desktop Voice-Agent waits and goleak filters ([1aa35bf](https://github.com/kombifyio/SpeechKit/commit/1aa35bf515a5da7f33f0c306e359ac454f517aca))
+* **tts:** declare Hugging Face and Piper provider-option manifests ([1987d8a](https://github.com/kombifyio/SpeechKit/commit/1987d8a93cc6b71f97378a36ceef4048dab9fff0))
+
 ## [0.59.1](https://github.com/kombifyio/SpeechKit/compare/v0.59.0...v0.59.1) (2026-08-21)
 
 

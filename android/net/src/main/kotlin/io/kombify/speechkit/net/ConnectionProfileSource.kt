@@ -20,6 +20,17 @@ fun interface ConnectionProfileSource {
 }
 
 /**
+ * kombify product order: Companion (logged-in user token) beats a typed
+ * override, which beats the tester build's hosted SpeechKit, which beats
+ * on-device. OSS never calls this — it stays on-device.
+ */
+fun resolveConnectionProfile(
+    companion: ConnectionProfile.Server?,
+    stored: ConnectionProfile.Server?,
+    shipped: ConnectionProfile.Server?,
+): ConnectionProfile = companion ?: stored ?: shipped ?: ConnectionProfile.SystemOnDevice()
+
+/**
  * Read-only view of the server profile the app persists today — the
  * `speechkit_config` shared prefs the dev DictationTestScreen writes. B-M2b
  * persists nothing new; B-M4's SettingsRepository will own these keys.

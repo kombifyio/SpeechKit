@@ -14,8 +14,24 @@
          indistinguishable in the picker. -->
     <string name="english_ime_name" translatable="false">SpeechKit Keyboard</string>
 
-    <!-- SpeechKit's own action row inside the keyboard's input view. -->
+    <!-- Strip agent key: the fork ships "Voice agent: GPT"; this is the
+         always-visible agent button, and the backend is a setting. -->
+    <string name="speechkit_agent_gpt">Voice Agent</string>
     <string name="speechkit_action_blocked_no_server">Server actions need a paired SpeechKit server</string>
+    <string name="settings_agent_title">Voice Agent</string>
+    <string name="settings_agent_subtitle">Which backend the strip’s agent key opens. The others stay in the keyboard’s more-toolbar.</string>
+    <string name="shortcuts_title">More</string>
+    <string name="shortcuts_close">Close</string>
+    <string name="shortcut_transcribe">Transcribe</string>
+    <string name="shortcut_voice_agent">Voice Agent</string>
+    <string name="shortcut_transcribe_audio">Transcribe voice note</string>
+    <string name="shortcut_summarize_audio">Summarize voice note</string>
+    <string name="shortcut_keyboard_settings">Keyboard settings</string>
+    <string name="shortcut_speechkit_settings">SpeechKit settings</string>
+    <string name="transcribe_audio_copied">Transcript copied</string>
+    <string name="transcribe_audio_empty">No transcript. Check the server connection and try a WAV, M4A or OGG file.</string>
+    <string name="summarize_audio_copied">Summary copied</string>
+    <string name="summarize_audio_fallback">No summary. The transcript is on the clipboard; Assist needs a model on the paired server.</string>
     <string name="speechkit_action_blocked_no_companion">Companion requires the kombify app</string>
     <string name="settings_connection_title">SpeechKit server</string>
     <string name="settings_connection_state_on_device">No server configured — everything runs on the device.</string>
@@ -30,6 +46,9 @@
     <string name="settings_connection_ok">Connection works.</string>
     <string name="settings_connection_failed">Connection failed: %1$s</string>
     <string name="settings_connection_cleared">Removed. Everything runs on the device again.</string>
+    <string name="settings_connection_find_lan">Find on LAN</string>
+    <string name="settings_connection_stop_lan">Stop search</string>
+    <string name="settings_connection_finding_lan">Looking for a SpeechKit server on this network…</string>
     <string name="settings_icons_title">Keyboard icons</string>
     <string name="settings_icons_subtitle">Choose the symbol for each mode. Changes apply the next time the keyboard opens.</string>
     <string name="settings_icon_default">Default</string>
@@ -45,5 +64,5 @@
     <string name="speechkit_action_icon_assemblyai">Voice agent · AssemblyAI</string>
     <string name="speechkit_action_icon_gpt">Voice agent · GPT</string>
     <string name="speechkit_action_icon_companion">Companion</string>
-    <string name="settings_connection_state_shipped">This build ships with %1$s. Enter your own address to override it.</string>
+    <string name="settings_connection_state_shipped">This tester build uses the kombify SpeechKit server at %1$s. You do not type a token. If kombify Companion is installed and you are signed in, it replaces the shared tester token with yours.</string>
 </resources>

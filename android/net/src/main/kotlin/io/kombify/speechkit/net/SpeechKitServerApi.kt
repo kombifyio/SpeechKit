@@ -47,11 +47,12 @@ data class StreamCapabilities(
     val emulation: String = "off",
 )
 
-/** Response of POST /v1/dictation/transcribe (subset the client consumes). */
+/** Request of POST /v1/assist/process (subset this client sends). */
 @JsonClass(generateAdapter = true)
 data class AssistProcessRequest(
     val text: String,
     val locale: String? = null,
+    val selection: String? = null,
     val tts: Boolean = false,
 )
 
@@ -107,7 +108,7 @@ class SpeechKitServerApi(
         withContext(Dispatchers.IO) {
             val request = authorized(
                 Request.Builder()
-                    .url("${profile.normalizedBaseUrl}/v1/dictation/stream/sessions")
+                    .url(profile.endpoint("/v1/dictation/stream/sessions"))
                     .post(EMPTY_JSON.toRequestBody(JSON_MEDIA_TYPE)),
             ).build()
             client.newCall(request).execute().use { response ->
@@ -122,7 +123,7 @@ class SpeechKitServerApi(
         withContext(Dispatchers.IO) {
             val request = authorized(
                 Request.Builder()
-                    .url("${profile.normalizedBaseUrl}/v1/voiceagent/sessions")
+                    .url(profile.endpoint("/v1/voiceagent/sessions"))
                     .post(EMPTY_JSON.toRequestBody(JSON_MEDIA_TYPE)),
             ).build()
             client.newCall(request).execute().use { response ->
@@ -141,26 +142,28 @@ class SpeechKitServerApi(
         withContext(Dispatchers.IO) {
             val request = authorized(
                 Request.Builder()
-                    .url("${profile.normalizedBaseUrl}/v1/dictation/stream/sessions/$sessionId")
+                    .url(profile.endpoint("/v1/dictation/stream/sessions/$sessionId"))
                     .delete(),
             ).build()
             client.newCall(request).execute().use { requireSuccess(it) }
         }
 
-    /** Batch transcription fallback: one WAV in, one transcript out. */
+    /** Batch transcription: one audio file in, one transcript out. */
     suspend fun transcribe(
         wav: ByteArray,
         language: String? = null,
         model: String? = null,
         prompt: String? = null,
+        filename: String = "dictation.wav",
+        mediaType: String = "audio/wav",
     ): BatchTranscribeResponse =
         withContext(Dispatchers.IO) {
             val multipart = MultipartBody.Builder()
                 .setType(MultipartBody.FORM)
                 .addFormDataPart(
                     "audio",
-                    "dictation.wav",
-                    wav.toRequestBody(WAV_MEDIA_TYPE),
+                    filename,
+                    wav.toRequestBody(mediaType.toMediaType()),
                 )
                 .apply {
                     language?.takeIf { it.isNotBlank() }?.let { addFormDataPart("language", it) }
@@ -170,7 +173,7 @@ class SpeechKitServerApi(
                 .build()
             val request = authorized(
                 Request.Builder()
-                    .url("${profile.normalizedBaseUrl}/v1/dictation/transcribe")
+                    .url(profile.endpoint("/v1/dictation/transcribe"))
                     .post(multipart),
             ).build()
             client.newCall(request).execute().use { response ->
@@ -181,13 +184,22 @@ class SpeechKitServerApi(
         }
 
     /** One-shot Assist turn: spoken (or typed) text in, answer text out. */
-    suspend fun processAssist(text: String, locale: String? = null): AssistProcessResponse =
+    suspend fun processAssist(
+        text: String,
+        locale: String? = null,
+        selection: String? = null,
+    ): AssistProcessResponse =
         withContext(Dispatchers.IO) {
-            val payload = AssistProcessRequest(text = text, locale = locale, tts = false)
+            val payload = AssistProcessRequest(
+                text = text,
+                locale = locale,
+                selection = selection,
+                tts = false,
+            )
             val json = assistRequestAdapter.toJson(payload)
             val request = authorized(
                 Request.Builder()
-                    .url("${profile.normalizedBaseUrl}/v1/assist/process")
+                    .url(profile.endpoint("/v1/assist/process"))
                     .post(json.toRequestBody(JSON_MEDIA_TYPE)),
             ).build()
             client.newCall(request).execute().use { response ->
@@ -205,7 +217,7 @@ class SpeechKitServerApi(
     suspend fun healthy(): Boolean = withContext(Dispatchers.IO) {
         runCatching {
             val request = Request.Builder()
-                .url("${profile.normalizedBaseUrl}/healthz")
+                .url(profile.endpoint("/healthz"))
                 .get()
                 .build()
             client.newCall(request).execute().use { it.isSuccessful }

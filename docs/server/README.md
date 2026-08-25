@@ -456,6 +456,36 @@ After bootstrap, settings writes through `/v1/server/settings` require an
 admin identity; read-only settings snapshots remain redacted unless the request
 is authenticated.
 
+## LAN discovery (mDNS)
+
+Homelab installs can announce themselves on the local network so LAN devices
+— the Kombify Box, the desktop app, Android — find the server without typing
+an address. Opt-in (default OFF; a public deployment has no business
+multicasting its presence):
+
+```toml
+[server.discovery]
+enabled = true
+# instance_name = "wohnzimmer"          # default: host name
+# advertise_url = "http://192.168.1.20:8080"  # default: public_base_url, then http://<hostname>:<port>
+```
+
+The server then answers DNS-SD queries for `_speechkit._tcp` with a TXT record
+carrying `url=<advertise_url>`, `modes=<enabled modes>`, and `version=`.
+Discovery only removes the need to type an address: authentication
+(`auth_mode`, bearer/OIDC) applies unchanged, and the TXT record never carries
+credentials. Implementation: `internal/server/discovery`. The Android app
+browses the same service type from Settings and fills the server URL; it
+never takes a token from TXT. The Windows Settings Server Target card
+browses the same service type.
+
+Find those servers from a machine on the same LAN:
+
+```bash
+speechkitctl discover
+speechkitctl discover --json
+```
+
 ## Relation to the Framework kernel
 
 Every substantive operation delegates to the shared Framework packages:

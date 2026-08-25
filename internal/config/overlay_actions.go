@@ -7,48 +7,99 @@ import (
 )
 
 const (
+	OverlayActionMic      = "mic"
 	OverlayActionCopy     = "copy"
 	OverlayActionNote     = "note"
 	OverlayActionLanguage = "language"
 	OverlayActionMeeting  = "meeting"
+	// OverlayActionNone persists an empty shortcut strip. A missing
+	// overlay_actions key still means "use the shipped default".
+	OverlayActionNone = "none"
 )
+
+var overlayActionOrder = []string{
+	OverlayActionMic,
+	OverlayActionCopy,
+	OverlayActionNote,
+	OverlayActionLanguage,
+	OverlayActionMeeting,
+}
 
 // DefaultOverlayActions is the overlay strip a fresh install shows.
 func DefaultOverlayActions() []string {
-	return []string{
-		OverlayActionCopy,
-		OverlayActionNote,
-		OverlayActionLanguage,
-		OverlayActionMeeting,
+	return append([]string(nil), overlayActionOrder...)
+}
+
+func knownOverlayAction(id string) bool {
+	switch id {
+	case OverlayActionMic, OverlayActionCopy, OverlayActionNote, OverlayActionLanguage, OverlayActionMeeting:
+		return true
+	default:
+		return false
 	}
 }
 
+func isLegacyDefaultStrip(enabled map[string]struct{}) bool {
+	if len(enabled) != 4 {
+		return false
+	}
+	for _, id := range []string{OverlayActionCopy, OverlayActionNote, OverlayActionLanguage, OverlayActionMeeting} {
+		if _, ok := enabled[id]; !ok {
+			return false
+		}
+	}
+	return true
+}
+
 // NormalizeOverlayActions keeps known action IDs in display order.
-// An empty list means "use the default strip", not "hide everything".
+// A nil list means "use the shipped default". The none sentinel or an
+// explicit empty list means "show no shortcut buttons".
 func NormalizeOverlayActions(actions []string) []string {
-	allowed := map[string]struct{}{
-		OverlayActionCopy:     {},
-		OverlayActionNote:     {},
-		OverlayActionLanguage: {},
-		OverlayActionMeeting:  {},
-	}
-	seen := map[string]struct{}{}
-	out := make([]string, 0, len(DefaultOverlayActions()))
-	for _, raw := range actions {
-		id := strings.ToLower(strings.TrimSpace(raw))
-		if _, ok := allowed[id]; !ok {
-			continue
-		}
-		if _, dup := seen[id]; dup {
-			continue
-		}
-		seen[id] = struct{}{}
-		out = append(out, id)
-	}
-	if len(out) == 0 {
+	if actions == nil {
 		return DefaultOverlayActions()
 	}
+	enabled := make(map[string]struct{}, len(overlayActionOrder))
+	sawNone := false
+	for _, raw := range actions {
+		id := strings.ToLower(strings.TrimSpace(raw))
+		if id == "" {
+			continue
+		}
+		if id == OverlayActionNone {
+			sawNone = true
+			continue
+		}
+		if knownOverlayAction(id) {
+			enabled[id] = struct{}{}
+		}
+	}
+	if len(enabled) == 0 {
+		if sawNone || len(actions) == 0 {
+			return []string{}
+		}
+		return DefaultOverlayActions()
+	}
+	if _, hasMic := enabled[OverlayActionMic]; !hasMic && isLegacyDefaultStrip(enabled) {
+		enabled[OverlayActionMic] = struct{}{}
+	}
+	out := make([]string, 0, len(overlayActionOrder))
+	for _, id := range overlayActionOrder {
+		if _, ok := enabled[id]; ok {
+			out = append(out, id)
+		}
+	}
 	return out
+}
+
+// PersistOverlayActions is the list written to config.toml. An empty
+// runtime strip is stored as the none sentinel so a reload does not
+// fall back to the shipped default.
+func PersistOverlayActions(actions []string) []string {
+	normalized := NormalizeOverlayActions(actions)
+	if len(normalized) == 0 {
+		return []string{OverlayActionNone}
+	}
+	return normalized
 }
 
 // OverlayActionEnabled reports whether id is in the configured strip.

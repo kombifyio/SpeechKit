@@ -14,8 +14,15 @@ import (
 	"github.com/BurntSushi/toml"
 	"github.com/spf13/cobra"
 
+	"github.com/kombifyio/SpeechKit/internal/server/discovery"
 	skclient "github.com/kombifyio/SpeechKit/pkg/speechkit/client"
 )
+
+// lanBrowse is the LAN lookup used by `discover`. Tests replace it so the
+// command can be exercised without multicast.
+var lanBrowse = func(ctx context.Context) []discovery.Record {
+	return discovery.Browse(ctx)
+}
 
 type globalOptions struct {
 	server string
@@ -86,7 +93,39 @@ func newRootCommand(opts *globalOptions, stdout, stderr io.Writer) *cobra.Comman
 	root.AddCommand(newPersonasCommand(opts, stdout))
 	root.AddCommand(newTranscribeCommand(opts, stdout, stderr))
 	root.AddCommand(newInitCommand(opts, stdout, stderr))
+	root.AddCommand(newDiscoverCommand(opts, stdout, stderr))
 	return root
+}
+
+func newDiscoverCommand(opts *globalOptions, stdout, stderr io.Writer) *cobra.Command {
+	timeout := 2 * time.Second
+	cmd := &cobra.Command{
+		Use:   "discover",
+		Short: "Find SpeechKit servers on the local network",
+		Args:  cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			ctx, cancel := context.WithTimeout(cmd.Context(), timeout)
+			defer cancel()
+			servers := lanBrowse(ctx)
+			if opts.json {
+				if servers == nil {
+					servers = []discovery.Record{}
+				}
+				return exitFromCode(writeJSON(stdout, stderr, servers))
+			}
+			if len(servers) == 0 {
+				return writef(stdout, "no SpeechKit servers found on the LAN\n")
+			}
+			for _, rec := range servers {
+				if err := writef(stdout, "%s\t%s\n", rec.InstanceName, rec.URL); err != nil {
+					return err
+				}
+			}
+			return nil
+		},
+	}
+	cmd.Flags().DurationVar(&timeout, "timeout", 2*time.Second, "how long to wait for replies")
+	return cmd
 }
 
 func newStatusCommand(opts *globalOptions, stdout, stderr io.Writer) *cobra.Command {

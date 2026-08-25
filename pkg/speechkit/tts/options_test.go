@@ -46,3 +46,26 @@ func TestResolveSynthesizeOptionsReportsUnsupportedGlobal(t *testing.T) {
 		t.Fatalf("Unsupported ID = %q, want speed", resolved.Effective.Unsupported[0].ID)
 	}
 }
+
+func TestResolveSynthesizeOptionsHuggingFaceAndPiperAreSupported(t *testing.T) {
+	for _, provider := range []string{"huggingface", "piper"} {
+		resolved := ResolveSynthesizeOptions(provider, "", SynthesizeOpts{
+			Locale: "de-DE",
+			Voice:  "test-voice",
+			Options: provideropts.Values{
+				provideropts.OptionSpeed: 1.2,
+			},
+		}, nil, nil)
+		if resolved.Locale != "de-DE" {
+			t.Fatalf("%s locale = %q", provider, resolved.Locale)
+		}
+		if resolved.Voice != "test-voice" {
+			t.Fatalf("%s voice = %q", provider, resolved.Voice)
+		}
+		for _, report := range resolved.Effective.Unsupported {
+			if report.ID == provideropts.OptionLanguage || report.ID == provideropts.OptionVoice {
+				t.Fatalf("%s reported %s unsupported: %#v", provider, report.ID, report)
+			}
+		}
+	}
+}

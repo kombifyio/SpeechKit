@@ -31,6 +31,21 @@ sealed interface ConnectionProfile {
     ) : ConnectionProfile {
         /** Base URL without trailing slashes, ready for path concatenation. */
         val normalizedBaseUrl: String get() = baseUrl.trim().trimEnd('/')
+
+        /**
+         * REST path on this profile. Origin SpeechKit is `/v1/dictation/...`.
+         * A Companion-provisioned Gateway root ends with `/v1/speechkit`, so
+         * the same origin path becomes `/v1/speechkit/dictation/...`.
+         */
+        fun endpoint(originPath: String): String {
+            val base = normalizedBaseUrl
+            val path = originPath.trimStart('/')
+            return if (base.endsWith("/v1/speechkit")) {
+                "$base/${path.removePrefix("v1/")}"
+            } else {
+                "$base/$path"
+            }
+        }
     }
 
     /** Direct provider streaming with user-supplied keys. Lands in B-M6. */

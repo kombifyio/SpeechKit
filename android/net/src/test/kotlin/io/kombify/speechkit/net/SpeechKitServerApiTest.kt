@@ -124,6 +124,31 @@ class SpeechKitServerApiTest {
     }
 
     @Test
+    fun `assist process posts the selection the summarize codeword reads`() {
+        server.enqueue(
+            MockResponse()
+                .setHeader("Content-Type", "application/json")
+                .setBody("""{"text":"Call tomorrow.","speak_text":""}"""),
+        )
+
+        val result = runBlocking {
+            api().processAssist(
+                text = "summarize this",
+                locale = "en",
+                selection = "We should call tomorrow about the invoice.",
+            )
+        }
+
+        assertEquals("Call tomorrow.", result.text)
+        val request = server.takeRequest()
+        assertEquals("/v1/assist/process", request.path)
+        val body = request.body.readUtf8()
+        assertTrue(body.contains("summarize this"))
+        assertTrue(body.contains("We should call tomorrow about the invoice."))
+        assertTrue(body.contains("\"locale\":\"en\""))
+    }
+
+    @Test
     fun `healthy probes healthz`() {
         server.enqueue(MockResponse().setBody("ok"))
         assertTrue(runBlocking { api().healthy() })

@@ -78,6 +78,22 @@ func TestSTTManifestsCoverEveryAdapterProviderID(t *testing.T) {
 	}
 }
 
+func TestTTSManifestsCoverHuggingFaceAndPiper(t *testing.T) {
+	for _, provider := range []string{"huggingface", "piper"} {
+		manifest, ok := FindManifest(provider, ModalityTTS)
+		if !ok {
+			t.Fatalf("missing %s TTS manifest", provider)
+		}
+		support := manifest.SupportByID()
+		if support[OptionVoice].Status == SupportUnsupported {
+			t.Fatalf("%s voice must not be unsupported — Settings would drop voice overrides", provider)
+		}
+		if support[OptionLanguage].Status == SupportUnsupported {
+			t.Fatalf("%s language must not be unsupported — Settings would drop locale overrides", provider)
+		}
+	}
+}
+
 func TestOpenAICompatibleSTTManifestsMatchAdapterFields(t *testing.T) {
 	for _, provider := range []string{"openai", "groq", "ollama", "vps"} {
 		manifest, ok := FindManifest(provider, ModalitySTT)

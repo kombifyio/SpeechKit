@@ -8,9 +8,11 @@ import (
 	"io"
 	"net/http"
 	"regexp"
+	"strings"
 	"time"
 
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/netsec"
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/provideropts"
 )
 
 const (
@@ -98,15 +100,19 @@ func (h *HuggingFace) Synthesize(ctx context.Context, text string, opts Synthesi
 		return nil, fmt.Errorf("huggingface tts: endpoint: %w", err)
 	}
 
+	resolved := ResolveSynthesizeOptions("huggingface", "tts.huggingface.parler-multilingual", opts, provideropts.Values{}, provideropts.Values{})
+
 	reqBody := hfTTSRequest{
 		Inputs: text,
 	}
 
-	// Parler-TTS accepts a voice description via the "generate_kwargs" or
-	// directly as a description parameter. The HF Inference API for
-	// parler-tts expects description in parameters.
-	if opts.Locale != "" && opts.Locale != "auto" {
-		desc := voiceDescriptionForLocale(opts.Locale)
+	// Parler-TTS accepts a voice description via parameters.description.
+	// An explicit voice wins; otherwise a canned locale description is used.
+	desc := strings.TrimSpace(resolved.Voice)
+	if desc == "" && resolved.Locale != "" && resolved.Locale != "auto" {
+		desc = voiceDescriptionForLocale(resolved.Locale)
+	}
+	if desc != "" {
 		reqBody.Parameters = map[string]string{
 			"description": desc,
 		}

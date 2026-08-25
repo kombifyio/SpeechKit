@@ -1,6 +1,6 @@
 {
   "schema": "speechkit.provider_option_matrix.v1",
-  "audited_at": "2026-06-23",
+  "audited_at": "2026-08-25",
   "source_of_truth": "pkg/speechkit/provideropts",
   "option_ids": [
     "language",
@@ -319,6 +319,30 @@
         "voice": "native",
         "speed": "native",
         "audio_format": "native"
+      }
+    },
+    {
+      "provider": "huggingface",
+      "modality": "tts",
+      "profile_ids": ["tts.huggingface.parler-multilingual"],
+      "evidence_url": "https://huggingface.co/docs/api-inference/tasks/text-to-speech",
+      "supports": {
+        "language": "derived",
+        "voice": "native",
+        "speed": "unsupported",
+        "audio_format": "unsupported"
+      }
+    },
+    {
+      "provider": "piper",
+      "modality": "tts",
+      "profile_ids": ["tts.local.piper"],
+      "evidence_url": "https://github.com/rhasspy/piper",
+      "supports": {
+        "voice": "native",
+        "language": "derived",
+        "speed": "unsupported",
+        "audio_format": "unsupported"
       }
     }
   ]

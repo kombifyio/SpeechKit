@@ -195,6 +195,35 @@ paths:
           $ref: "#/components/responses/BadRequest"
         "403":
           $ref: "#/components/responses/Forbidden"
+  /api/v1/server-connection/lan:
+    get:
+      tags: [Server]
+      operationId: listLanServers
+      summary: Browse `_speechkit._tcp` on the LAN and return dial URLs without credentials.
+      responses:
+        "200":
+          description: SpeechKit servers found on the local network.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  servers:
+                    type: array
+                    items:
+                      type: object
+                      required: [instanceName, url]
+                      properties:
+                        instanceName:
+                          type: string
+                        url:
+                          type: string
+                        modes:
+                          type: array
+                          items:
+                            type: string
+                        version:
+                          type: string
   /api/v1/providers/profiles:
     get:
       tags: [Providers]

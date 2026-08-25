@@ -31,6 +31,7 @@ import (
 	"github.com/kombifyio/SpeechKit/internal/server/customization"
 	deviceagentserver "github.com/kombifyio/SpeechKit/internal/server/deviceagent"
 	"github.com/kombifyio/SpeechKit/internal/server/dictation"
+	"github.com/kombifyio/SpeechKit/internal/server/discovery"
 	"github.com/kombifyio/SpeechKit/internal/server/httpx"
 	"github.com/kombifyio/SpeechKit/internal/server/middleware"
 	"github.com/kombifyio/SpeechKit/internal/server/persona"
@@ -504,6 +505,20 @@ func serveServer(ctx context.Context, cfg *config.Config, app *App) (returnErr e
 	}
 
 	slog.Info("HTTP server listening", "addr", ln.Addr().String())
+
+	// LAN-Announcement (opt-in, [server.discovery]): non-fatal — a homelab
+	// without multicast still serves normally, clients just type the URL.
+	var enabledModes []string
+	for mode, on := range app.Modes {
+		if on {
+			enabledModes = append(enabledModes, string(mode))
+		}
+	}
+	announcer, err := discovery.Start(cfg, app.Version, enabledModes)
+	if err != nil {
+		slog.Warn("mDNS discovery unavailable", "err", err)
+	}
+	defer announcer.Shutdown()
 
 	serveErr := make(chan error, 1)
 	go func() {

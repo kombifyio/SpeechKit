@@ -30,6 +30,41 @@ func TestProfilesRejectsUnknownMode(t *testing.T) {
 	}
 }
 
+func TestProviderOptionsExportsDefaultManifests(t *testing.T) {
+	h := New(&config.Config{}, func(string) string { return "ok" }, "test")
+	req := httptest.NewRequest(http.MethodGet, "/v1/catalog/provider-options", nil)
+	rec := httptest.NewRecorder()
+	h.providerOptions(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d body=%s", rec.Code, rec.Body.String())
+	}
+	var body struct {
+		Schema    string `json:"schema"`
+		Manifests []struct {
+			Provider string `json:"provider"`
+			Modality string `json:"modality"`
+		} `json:"manifests"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if body.Schema != "speechkit.provider_options.v1" {
+		t.Fatalf("schema = %q", body.Schema)
+	}
+	if len(body.Manifests) == 0 {
+		t.Fatal("expected manifests")
+	}
+	foundHFTTS := false
+	for _, m := range body.Manifests {
+		if m.Provider == "huggingface" && m.Modality == "tts" {
+			foundHFTTS = true
+		}
+	}
+	if !foundHFTTS {
+		t.Fatal("expected huggingface TTS manifest in catalog export")
+	}
+}
+
 func TestProfilesRejectsEmptyMode(t *testing.T) {
 	h := New(&config.Config{}, func(string) string { return "ok" }, "test")
 

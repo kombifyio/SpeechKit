@@ -1,7 +1,16 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools">
 
+    <queries>
+        <package android:name="io.kombify.ai" />
+    </queries>
+
     <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.CHANGE_WIFI_MULTICAST_STATE" />
+    <uses-permission
+        android:name="android.permission.NEARBY_WIFI_DEVICES"
+        android:usesPermissionFlags="neverForLocation"
+        tools:targetApi="33" />
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
@@ -12,8 +21,11 @@
          in plaintext. Revisit with encrypted storage + extraction rules.
          usesCleartextTraffic: the documented LAN tier talks plain http/ws to
          a local speechkit-server (e.g. http://192.168.x.x:8080); with
-         targetSdk 36 cleartext is otherwise blocked at runtime. Tighten to a
-         networkSecurityConfig scoped to private ranges before Play release. -->
+         targetSdk 36 cleartext is otherwise blocked at runtime. Android's
+         networkSecurityConfig cannot express RFC1918 CIDR, only hostnames, so
+         a "private range" config would break the LAN finder. Keep cleartext
+         until the homelab path uses TLS or a resolvable name; Play submission
+         still needs that, not a fake domain list. -->
     <application
         android:name=".app.SpeechKitApplication"
         android:allowBackup="false"
@@ -23,6 +35,15 @@
         android:supportsRtl="true"
         android:theme="@style/Theme.SpeechKit"
         tools:replace="android:name,android:label,android:allowBackup">
+
+        <!-- The Stage-1 voice-only IME is not a typing keyboard. Leaving it
+             registered put a second SpeechKit entry in the system picker and
+             onboarding kept selecting it. Dictation and the voice agent live
+             inside LatinIME; hop-from-another-keyboard is no longer a product
+             path. -->
+        <service
+            android:name="io.kombify.speechkit.ime.SpeechKitVoiceImeService"
+            tools:node="remove" />
 
         <!-- The keyboard fork ships its own launcher icon, which is right for
              a standalone keyboard and wrong here: merged into this app it put
@@ -50,6 +71,43 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <!-- Share a voice note from WhatsApp/Telegram (or pick a file from
+             the keyboard more-page) and get a transcript. The alias is a
+             second share-sheet entry that summarises via Assist. -->
+        <activity
+            android:name=".app.keyboard.TranscribeAudioActivity"
+            android:exported="true"
+            android:excludeFromRecents="true"
+            android:label="@string/shortcut_transcribe_audio"
+            android:theme="@style/Theme.SpeechKit">
+            <intent-filter>
+                <action android:name="android.intent.action.SEND" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="audio/*" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.SEND" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="application/ogg" />
+            </intent-filter>
+        </activity>
+        <activity-alias
+            android:name=".app.keyboard.SummarizeAudioAlias"
+            android:exported="true"
+            android:targetActivity=".app.keyboard.TranscribeAudioActivity"
+            android:label="@string/shortcut_summarize_audio">
+            <intent-filter>
+                <action android:name="android.intent.action.SEND" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="audio/*" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.SEND" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="application/ogg" />
+            </intent-filter>
+        </activity-alias>
 
         <!-- Voice Assistant -->
         <service

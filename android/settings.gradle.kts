@@ -30,6 +30,7 @@ include(":voice-ui-compose")
 include(":assistant")
 include(":ime")
 include(":net")
+include(":coinstall")
 include(":app")
 include(":test-shared")
 

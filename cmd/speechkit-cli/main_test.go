@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -9,7 +10,31 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/kombifyio/SpeechKit/internal/server/discovery"
 )
+
+func TestDiscoverCommandJSONListsFoundServers(t *testing.T) {
+	orig := lanBrowse
+	t.Cleanup(func() { lanBrowse = orig })
+	lanBrowse = func(context.Context) []discovery.Record {
+		return []discovery.Record{{
+			InstanceName: "wohnzimmer",
+			URL:          "http://192.168.1.20:8080",
+			Modes:        []string{"dictation"},
+			Version:      "0.60.0",
+		}}
+	}
+
+	var stdout, stderr bytes.Buffer
+	code := run([]string{"discover", "--json"}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("exit = %d stderr=%s", code, stderr.String())
+	}
+	if !strings.Contains(stdout.String(), "http://192.168.1.20:8080") {
+		t.Fatalf("stdout = %s, want discovered URL", stdout.String())
+	}
+}
 
 func TestStatusCommandUsesServerAndToken(t *testing.T) {
 	var auth string

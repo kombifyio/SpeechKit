@@ -2,6 +2,7 @@ package io.kombify.speechkit.app.keyboard
 
 import io.kombify.speechkit.net.ConnectionProfile
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
@@ -107,6 +108,16 @@ class KeyboardActionRowTest {
     // The names the server normalises. A typo here becomes a runtime factory
     // failure on the server, not a validation error, so it would only show up
     // as "the agent does not answer".
+    @Test
+    fun `voice agent strip keys open the in-IME panel`() {
+        assertTrue(KeyboardAction.AgentDeepgram.opensVoiceAgentInIme())
+        assertTrue(KeyboardAction.AgentAssemblyAi.opensVoiceAgentInIme())
+        assertTrue(KeyboardAction.AgentOpenAi.opensVoiceAgentInIme())
+        assertFalse(KeyboardAction.OnDeviceDictation.opensVoiceAgentInIme())
+        assertFalse(KeyboardAction.ServerDictation.opensVoiceAgentInIme())
+        assertFalse(KeyboardAction.CompanionApp.opensVoiceAgentInIme())
+    }
+
     @Test
     fun `each agent action carries the provider name it requests`() {
         assertEquals("deepgram", KeyboardAction.AgentDeepgram.agentProvider)

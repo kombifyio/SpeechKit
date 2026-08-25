@@ -256,6 +256,33 @@ paths:
                     items: { $ref: '#/components/schemas/ProviderDefault' }
         '401': { $ref: '#/components/responses/Unauthenticated' }
 
+  /v1/catalog/provider-options:
+    get:
+      operationId: listCatalogProviderOptions
+      summary: List per-provider option manifests
+      description: >
+        Returns the SpeechKit provider-option manifests (native/derived/unsupported
+        options, including multilanguage) so clients can render provider truth
+        instead of a hardcoded language list.
+      tags: [catalog]
+      responses:
+        '200':
+          description: Provider option manifests.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  schema:
+                    type: string
+                  updated:
+                    type: string
+                  manifests:
+                    type: array
+                    items:
+                      type: object
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+
   /v1/catalog/contracts:
     get:
       operationId: listCatalogContracts

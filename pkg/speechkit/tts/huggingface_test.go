@@ -152,6 +152,30 @@ func TestHuggingFace_Synthesize_OmitsParametersForAutoLocale(t *testing.T) {
 	}
 }
 
+func TestHuggingFace_Synthesize_VoiceOverridesLocaleDescription(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		var req hfTTSRequest
+		if err := json.Unmarshal(body, &req); err != nil {
+			t.Fatalf("decode: %v", err)
+		}
+		if got := req.Parameters["description"]; got != "custom voice" {
+			t.Fatalf("description = %q, want custom voice", got)
+		}
+		w.Header().Set("Content-Type", "audio/flac")
+		w.Write([]byte("a"))
+	}))
+	defer server.Close()
+
+	p := newHFTestProvider(t, server.URL)
+	if _, err := p.Synthesize(context.Background(), "hi", SynthesizeOpts{
+		Locale: "de-DE",
+		Voice:  "custom voice",
+	}); err != nil {
+		t.Fatalf("Synthesize: %v", err)
+	}
+}
+
 func TestHuggingFace_Synthesize_EmptyTextRejected(t *testing.T) {
 	p := NewHuggingFace(HuggingFaceOpts{Token: "t"})
 	_, err := p.Synthesize(context.Background(), "", SynthesizeOpts{})

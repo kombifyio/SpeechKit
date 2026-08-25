@@ -113,6 +113,13 @@ type ServerConfig struct {
 	// Debug gates runtime debugging surfaces (pprof). Off by default.
 	Debug ServerDebugConfig `toml:"debug"`
 
+	// Discovery announces this server on the local network via mDNS/DNS-SD
+	// (`_speechkit._tcp`) so LAN devices — the Kombify Box, the desktop app,
+	// Android — can find a homelab instance without typing an address.
+	// Default OFF (fail-closed): a public deployment has no business
+	// multicasting its presence; a homelab operator opts in explicitly.
+	Discovery ServerDiscoveryConfig `toml:"discovery"`
+
 	// OIDC configures JWT validation against an external identity provider,
 	// used when auth_mode is "oidc" or "bearer_or_oidc".
 	OIDC ServerOIDCConfig `toml:"oidc"`
@@ -333,6 +340,21 @@ type ServerSecurityConfig struct {
 type ServerDebugConfig struct {
 	PprofEnabled bool `toml:"pprof_enabled"`
 	PprofPublic  bool `toml:"pprof_public"`
+}
+
+// ServerDiscoveryConfig configures the LAN mDNS/DNS-SD announcement
+// ([server.discovery]). The advertised TXT record carries the URL clients
+// should dial; it never carries credentials — discovery only removes the
+// need to type an address, auth still applies unchanged.
+type ServerDiscoveryConfig struct {
+	Enabled bool `toml:"enabled"`
+	// InstanceName is the human-readable service instance ("<name>._speechkit._tcp").
+	// Empty defaults to the host name.
+	InstanceName string `toml:"instance_name"`
+	// AdvertiseURL is the base URL clients should use, e.g.
+	// "http://192.168.1.20:8080" or "https://speechkit.fritz.box". Empty
+	// falls back to public_base_url, then to http://<hostname>:<listen-port>.
+	AdvertiseURL string `toml:"advertise_url"`
 }
 
 // VoiceAgentLimitsConfig configures Voice Agent session capacity. Zero values

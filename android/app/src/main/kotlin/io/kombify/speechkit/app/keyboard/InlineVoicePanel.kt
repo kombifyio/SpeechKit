@@ -2,22 +2,17 @@ package io.kombify.speechkit.app.keyboard
 
 import android.Manifest
 import android.app.Application
+import android.content.Intent
 import android.content.pm.PackageManager
-import android.content.res.Configuration
-import android.graphics.Bitmap
-import android.graphics.Canvas
 import android.graphics.drawable.Drawable
 import android.inputmethodservice.InputMethodService
 import android.os.SystemClock
 import android.view.inputmethod.EditorInfo
 import android.view.View
-import android.view.ViewGroup
-import android.view.ViewTreeObserver
 import android.view.inputmethod.InputConnection
 import android.widget.FrameLayout
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -27,6 +22,8 @@ import androidx.compose.ui.platform.ComposeView
 import androidx.core.content.ContextCompat
 import helium314.keyboard.latin.R
 import helium314.keyboard.latin.SpeechKitVoiceBridge
+import helium314.keyboard.settings.SettingsActivity
+import io.kombify.speechkit.app.ui.MainActivity
 import io.kombify.speechkit.ime.ImeAgentAudioPlayer
 import io.kombify.speechkit.ime.ImeVoiceAgentController
 import io.kombify.speechkit.ime.MicAudioCapture
@@ -147,9 +144,17 @@ class InlineVoicePanel(
     private var micRequest: PendingActivation? = null
     private var resumeAfterGrant: PendingActivation? = null
 
+    private var showingShortcuts = false
+
     init {
         hostScope.launch {
             MicPermissionEvents.results.collect { granted -> onMicPermissionResult(granted) }
+        }
+        hostScope.launch {
+            TranscribeAudioEvents.transcripts.collect { text ->
+                val connection = currentService?.currentInputConnection ?: return@collect
+                connection.commitText(if (text.endsWith(' ')) text else "$text ", 1)
+            }
         }
     }
 
@@ -171,15 +176,11 @@ class InlineVoicePanel(
     )
 
     /**
-     * The input view is up. Only the interrupted-permission resume needs this
-     * now; the keys themselves live in the keyboard's own toolbar.
+     * The input view is up. Only the interrupted-permission resume needs this;
+     * the voice actions live on the keyboard's own suggestion strip.
      */
     override fun onInputViewStarted(service: InputMethodService) {
         currentService = service
-        // Contained and never rethrown: this runs inside LatinIME's
-        // onStartInputViewInternal, where an escaping throw kills the input
-        // method process on field focus and skips everything the fork does
-        // after the call.
         runCatching { resumeMicGrant(service) }
             .onFailure { Timber.w(it, "Could not resume the interrupted voice panel") }
     }
@@ -208,7 +209,11 @@ class InlineVoicePanel(
 
     override fun onToolbarAction(action: String): String? {
         val service = keyboard ?: currentService ?: return null
-        val chosen = keyboardActionForToolbarKey(action) ?: return null
+        val chosen = if (action == "SPEECHKIT_AGENT_GPT") {
+            KeyboardAgentPreferences.action(service)
+        } else {
+            keyboardActionForToolbarKey(action)
+        } ?: return null
         val items = keyboardActionRowItems(profileSource.currentProfile())
         val blocker = items.firstOrNull { it.action == chosen }?.blocker
         if (blocker != null) return service.getString(blocker.reasonResource())
@@ -217,8 +222,87 @@ class InlineVoicePanel(
         return null
     }
 
+    override fun showShortcuts(service: InputMethodService): Boolean {
+        if (showingShortcuts) {
+            hidePanel()
+            return true
+        }
+        if (controller != null || agentController != null) hidePanel()
+        currentService = service
+        keyboard = service
+        showingShortcuts = true
+        val owner = windowOwner(service) ?: return false
+        val view = ComposeView(service).also { composeView ->
+            owner.attachTo(composeView)
+            composeView.setContent {
+                MaterialTheme {
+                    ShortcutsPage(
+                        onTranscribe = {
+                            val connection = service.currentInputConnection
+                            val editor = service.currentInputEditorInfo
+                            if (connection != null && editor != null) {
+                                open(
+                                    service = service,
+                                    inputConnection = connection,
+                                    editorInfo = editor,
+                                    tier = null,
+                                    agent = false,
+                                    agentProvider = null,
+                                )
+                            }
+                        },
+                        onVoiceAgent = {
+                            val connection = service.currentInputConnection
+                            val editor = service.currentInputEditorInfo
+                            if (connection != null && editor != null) {
+                                val action = KeyboardAgentPreferences.action(service)
+                                open(
+                                    service = service,
+                                    inputConnection = connection,
+                                    editorInfo = editor,
+                                    tier = profileSource.currentProfile(),
+                                    agent = true,
+                                    agentProvider = action.agentProvider,
+                                )
+                            }
+                        },
+                        onTranscribeAudio = {
+                            hidePanel()
+                            TranscribeAudioActivity.launchPicker(service)
+                        },
+                        onSummarizeAudio = {
+                            hidePanel()
+                            TranscribeAudioActivity.launchPicker(service, summarize = true)
+                        },
+                        onKeyboardSettings = {
+                            service.startActivity(
+                                Intent(service, SettingsActivity::class.java)
+                                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+                            )
+                        },
+                        onSpeechKitSettings = {
+                            service.startActivity(
+                                Intent(service, MainActivity::class.java)
+                                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+                            )
+                        },
+                        onClose = ::hidePanel,
+                    )
+                }
+            }
+        }
+        val decor = service.window?.window?.decorView
+        val container = decor?.findViewById<FrameLayout>(R.id.speechkit_voice_panel) ?: return false
+        container.removeAllViews()
+        container.addView(view)
+        container.visibility = View.VISIBLE
+        decor.findViewById<View>(R.id.main_keyboard_frame)?.visibility = View.INVISIBLE
+        owner.onResume()
+        return true
+    }
+
     override fun hidePanel() {
-        val service = keyboard ?: return
+        val service = keyboard ?: currentService ?: return
         controller?.hidePanel()
         agentController?.stop()
         agentPlayer?.release()
@@ -240,6 +324,7 @@ class InlineVoicePanel(
         agentController = null
         agentPlayer = null
         keyboard = null
+        showingShortcuts = false
     }
 
     /**
@@ -350,7 +435,7 @@ class InlineVoicePanel(
             Timber.i("Inline dictation refused for this editor")
             return false
         }
-        if (controller != null) hidePanel()
+        if (controller != null || showingShortcuts) hidePanel()
         // An explicit activation supersedes anything a previous one was still
         // waiting on.
         micRequest = null
@@ -444,16 +529,11 @@ class InlineVoicePanel(
                                     panelAgent.endTurn()
                                 }
                             },
-                            // Leaving the conversation returns to dictation, not
-                            // to the keys: tearing the panel down here would make
-                            // "end the conversation" and "back to typing" the
-                            // same gesture.
+                            // End returns to the keys, the way Gboard leaves
+                            // voice typing. Dictation is a separate strip key.
                             onEnd = {
                                 holding = false
-                                panelAgent.stop()
-                                player.release()
-                                agentMode = false
-                                requestedAgent = false
+                                hidePanel()
                             },
                             onSwitchToDictation = {
                                 holding = false
@@ -532,7 +612,6 @@ class InlineVoicePanel(
     private fun InputMethodService.perform(action: KeyboardAction) {
         val connection = currentInputConnection ?: return
         val editor = currentInputEditorInfo ?: return
-        val provider = action.agentProvider
         val tier = when (action) {
             KeyboardAction.OnDeviceDictation -> ConnectionProfile.SystemOnDevice()
             // The row disables these without a paired server, so the cast is
@@ -551,8 +630,8 @@ class InlineVoicePanel(
             inputConnection = connection,
             editorInfo = editor,
             tier = tier,
-            agent = provider != null,
-            agentProvider = provider,
+            agent = action.opensVoiceAgentInIme(),
+            agentProvider = action.agentProvider,
         )
     }
 

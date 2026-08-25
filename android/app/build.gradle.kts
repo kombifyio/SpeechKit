@@ -27,8 +27,8 @@ android {
         applicationId = "io.kombify.speechkit"
         minSdk = 26
         targetSdk = 36
-        versionCode = 5901
-        versionName = "0.59.1"
+        versionCode = 6000
+        versionName = "0.60.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
@@ -66,7 +66,8 @@ android {
             buildConfigField(
                 "String",
                 "DEFAULT_SERVER_URL",
-                "\"" + speechKitBuildValue("speechkit.defaultServerUrl", "SPEECHKIT_DEFAULT_SERVER_URL") + "\"",
+                "\"" + speechKitBuildValue("speechkit.defaultServerUrl", "SPEECHKIT_DEFAULT_SERVER_URL")
+                    .ifEmpty { "https://speechkit.kombify.io" } + "\"",
             )
             buildConfigField(
                 "String",
@@ -107,6 +108,7 @@ dependencies {
     // system if it ships inside an installed application.
     implementation(project(":ime"))
     implementation(project(":net"))
+    implementation(project(":coinstall"))
     implementation(project(":voice-ui-compose"))
     // The HeliBoard keyboard. GPL-3.0: linking it puts this APK under GPL-3.0
     // as a whole, so no proprietary Kombify code may enter here. Companion

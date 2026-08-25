@@ -2,7 +2,7 @@ package provideropts
 
 const (
 	SchemaProviderOptions = "speechkit.provider_options.v1"
-	ManifestUpdated       = "2026-08-12"
+	ManifestUpdated       = "2026-08-25"
 
 	ModalitySTT        = "stt"
 	ModalityTTS        = "tts"
@@ -26,6 +26,8 @@ func DefaultManifests() []ProviderOptionManifest {
 		deepgramTTSManifest(),
 		openAITTSManifest(),
 		googleTTSManifest(),
+		huggingFaceTTSManifest(),
+		piperTTSManifest(),
 		deepgramVoiceAgentManifest(),
 		assemblyAIVoiceAgentManifest(),
 		geminiVoiceAgentManifest(),
@@ -183,6 +185,27 @@ func googleTTSManifest() ProviderOptionManifest {
 		native(OptionVoice, TypeString, "Voice", "voice.name", "https://cloud.google.com/text-to-speech/docs/reference/rest/v1/text/synthesize"),
 		native(OptionSpeed, TypeFloat, "Speed", "audioConfig.speakingRate", "https://cloud.google.com/text-to-speech/docs/reference/rest/v1/text/synthesize"),
 		native(OptionAudioFormat, TypeString, "Audio format", "audioConfig.audioEncoding", "https://cloud.google.com/text-to-speech/docs/reference/rest/v1/text/synthesize"),
+	})
+}
+
+func huggingFaceTTSManifest() ProviderOptionManifest {
+	return manifest("huggingface", "Hugging Face", ModalityTTS, []string{"tts.huggingface.parler-multilingual"}, []OptionSupport{
+		// Parler-style models take a natural-language voice description; the
+		// adapter maps SpeechKit language to a canned description when voice
+		// is unset, and sends an explicit voice string as parameters.description.
+		derived(OptionLanguage, TypeString, "Language", "Locale selects a canned parameters.description when no explicit voice is set. Adapter-wired 2026-08-25; live roundtrip pending.", "https://huggingface.co/docs/api-inference/tasks/text-to-speech"),
+		native(OptionVoice, TypeString, "Voice description", "description", "https://huggingface.co/docs/api-inference/tasks/text-to-speech"),
+		unsupported(OptionSpeed, TypeFloat, "Speed", "Hugging Face Inference TTS does not expose SpeechKit's generic speed control in this adapter."),
+		unsupported(OptionAudioFormat, TypeString, "Audio format", "The response Content-Type labels the payload; the request does not select encoding."),
+	})
+}
+
+func piperTTSManifest() ProviderOptionManifest {
+	return manifest("piper", "Piper Local TTS", ModalityTTS, []string{"tts.local.piper"}, []OptionSupport{
+		native(OptionVoice, TypeString, "Voice model", "--model", "https://github.com/rhasspy/piper"),
+		derived(OptionLanguage, TypeString, "Language", "Locale selects a default .onnx voice from the configured Piper voice map when voice is unset. Adapter-wired 2026-08-25.", "https://github.com/rhasspy/piper"),
+		unsupported(OptionSpeed, TypeFloat, "Speed", "Piper length-scale is not exposed through the current SpeechKit adapter."),
+		unsupported(OptionAudioFormat, TypeString, "Audio format", "Piper always emits WAV via --output_file -."),
 	})
 }
 

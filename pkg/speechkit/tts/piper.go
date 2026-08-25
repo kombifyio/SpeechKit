@@ -12,6 +12,8 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/provideropts"
 )
 
 // Piper implements Provider via the `piper` command-line binary. The
@@ -125,7 +127,8 @@ func (p *Piper) Synthesize(ctx context.Context, text string, opts SynthesizeOpts
 		return nil, errors.New("piper: empty text")
 	}
 
-	model, err := p.resolveVoice(opts.Voice, opts.Locale)
+	resolved := ResolveSynthesizeOptions("piper", "tts.local.piper", opts, provideropts.Values{}, provideropts.Values{})
+	model, err := p.resolveVoice(resolved.Voice, resolved.Locale)
 	if err != nil {
 		return nil, err
 	}

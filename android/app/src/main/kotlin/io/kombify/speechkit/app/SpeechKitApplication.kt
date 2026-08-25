@@ -7,6 +7,7 @@ import dagger.hilt.components.SingletonComponent
 import helium314.keyboard.latin.App
 import helium314.keyboard.latin.SpeechKitVoiceBridge
 import io.kombify.speechkit.app.keyboard.InlineVoicePanel
+import io.kombify.speechkit.app.keyboard.SpeechKitStripLayout
 import io.kombify.speechkit.net.ConnectionProfileSource
 import dagger.hilt.android.HiltAndroidApp
 import io.kombify.speechkit.BuildConfig
@@ -26,6 +27,7 @@ class SpeechKitApplication : App() {
         if (BuildConfig.DEBUG) {
             Timber.plant(Timber.DebugTree())
         }
+        SpeechKitStripLayout.apply(this)
         // Answer the keyboard's voice key in place. Registered once, for the
         // process lifetime: the panel itself is built per activation and takes
         // the InputMethodService it is given, so it holds no service across

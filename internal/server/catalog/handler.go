@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	framework "github.com/kombifyio/SpeechKit/pkg/speechkit"
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/provideropts"
 
 	"github.com/kombifyio/SpeechKit/internal/config"
 	"github.com/kombifyio/SpeechKit/internal/server/httpx"
@@ -26,6 +27,7 @@ func New(cfg *config.Config, healthStatus func(component string) string, version
 func (h *Handler) Mount(mux *http.ServeMux) {
 	mux.HandleFunc("/v1/catalog/profiles", h.profiles)
 	mux.HandleFunc("/v1/catalog/providers", h.providers)
+	mux.HandleFunc("/v1/catalog/provider-options", h.providerOptions)
 	mux.HandleFunc("/v1/catalog/contracts", h.contracts)
 	mux.HandleFunc("/v1/catalog/readiness", h.readiness)
 	mux.HandleFunc("/v1/catalog/profiles/", h.profileReadiness)
@@ -61,6 +63,21 @@ func (h *Handler) providers(w http.ResponseWriter, r *http.Request) {
 	writeOKJSON(w, map[string]any{
 		"provider_matrix":   framework.DefaultProviderMatrix(),
 		"provider_defaults": framework.DefaultProviderDefaults(),
+	})
+}
+
+// providerOptions exports the per-provider option manifests so Desktop,
+// Android, and other clients render vendor truth (including multilanguage)
+// instead of a hardcoded language list.
+func (h *Handler) providerOptions(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		methodNotAllowed(w, http.MethodGet)
+		return
+	}
+	writeOKJSON(w, map[string]any{
+		"schema":    provideropts.SchemaProviderOptions,
+		"updated":   provideropts.ManifestUpdated,
+		"manifests": provideropts.DefaultManifests(),
 	})
 }
 

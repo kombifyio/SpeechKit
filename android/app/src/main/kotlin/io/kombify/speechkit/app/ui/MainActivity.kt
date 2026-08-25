@@ -3,8 +3,10 @@ package io.kombify.speechkit.app.ui
 import android.Manifest
 import android.content.Context
 import android.content.pm.PackageManager
+import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
@@ -37,6 +39,8 @@ import androidx.compose.ui.res.stringResource
 import io.kombify.speechkit.R
 import io.kombify.speechkit.net.ConnectionProfile
 import io.kombify.speechkit.net.DictationController
+import io.kombify.speechkit.net.LanServer
+import io.kombify.speechkit.net.NsdLanFinder
 import io.kombify.speechkit.net.StoredServerProfile
 import kotlinx.coroutines.launch
 import androidx.compose.foundation.horizontalScroll
@@ -44,6 +48,7 @@ import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.ui.res.painterResource
 import androidx.compose.foundation.layout.size
+import io.kombify.speechkit.app.keyboard.KeyboardAgentPreferences
 import io.kombify.speechkit.app.keyboard.KeyboardIconChoice
 import io.kombify.speechkit.app.keyboard.KeyboardIconPreferences
 import io.kombify.speechkit.app.build.ShippedDefaults
@@ -214,25 +219,21 @@ private fun OnboardingFlow(
                     title = "Assist",
                     description = "Stelle eine Frage per Sprache, erhalte eine KI-Antwort direkt in der Tastatur. Umschreiben, Zusammenfassen, Übersetzen — alles per Sprachbefehl.",
                     icon = "Sparkle",
-                    requirement = "Tastatur aktivieren + HuggingFace Token",
+                    requirement = "Tastatur aktivieren; KI-Antworten brauchen einen gekoppelten Server",
                     isAvailable = true,
                 )
                 ModeCard(
                     title = "Voice Agent",
-                    description = "Persistenter Sprachassistent für längere Konversationen. Audio-zu-Audio in Echtzeit, mit dem Anbieter aus deinem Profil.",
+                    description = "Gespräch in der Tastatur: die Tasten werden durch das Agent-Panel ersetzt. Nicht der System-Assistent.",
                     icon = "Waveform",
-                    // The mode shipped; the card advertised "kommt bald" long
-                    // after the Voice tab could hold a real conversation. The
-                    // provider is no longer named here either — it follows the
-                    // selected profile and is not always Gemini.
-                    requirement = "Im Voice-Tab dieser App",
+                    requirement = "Tastatur aktivieren",
                     isAvailable = true,
                 )
 
                 Spacer(Modifier.height(16.dp))
 
                 Text(
-                    "Für Dictate und Assist wird die SpeechKit-Tastatur benötigt. Der Voice Agent läuft als eigenständiger Assistent in der App.",
+                    "Dictate, Assist und Voice Agent laufen in der SpeechKit-Tastatur. Der System-Assistent ist kein Einrichtungs-Schritt.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -252,13 +253,11 @@ private fun OnboardingFlow(
                 // from before the trip - the step could never complete, and
                 // with the tab bar gated on onboarding that was a dead end.
                 var isSelected by remember { mutableStateOf(KeyboardSetupChecker.isKeyboardSelected(context)) }
-                var isAssistant by remember { mutableStateOf(KeyboardSetupChecker.isAssistantSet(context)) }
                 val stepLifecycle = androidx.compose.ui.platform.LocalLifecycleOwner.current
                 DisposableEffect(stepLifecycle) {
                     val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
                         if (event == androidx.lifecycle.Lifecycle.Event.ON_RESUME) {
                             isSelected = KeyboardSetupChecker.isKeyboardSelected(context)
-                            isAssistant = KeyboardSetupChecker.isAssistantSet(context)
                         }
                     }
                     stepLifecycle.lifecycle.addObserver(observer)
@@ -268,41 +267,9 @@ private fun OnboardingFlow(
                 KeyboardOnboardingWizard(
                     isKeyboardEnabled = isKeyboardEnabled,
                     isKeyboardSelected = isSelected,
-                    isAssistantSet = isAssistant,
-                    onComplete = { step = 2 },
+                    onComplete = onComplete,
                     onBack = { step = 0 },
                 )
-            }
-            2 -> {
-                // Step 3: HF Token Setup
-                TextButton(onClick = { step = 1 }) {
-                    Text("\u2190 Zur\u00fcck")
-                }
-                Text(
-                    "HuggingFace Token einrichten",
-                    style = MaterialTheme.typography.headlineSmall,
-                    fontWeight = FontWeight.Bold,
-                )
-                Text(
-                    "Für Dictate (Spracherkennung) und Assist (KI-Antworten) wird ein kostenloser HuggingFace Token benötigt.",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-
-                Spacer(Modifier.height(8.dp))
-
-                HfTokenInput()
-
-                Spacer(Modifier.height(16.dp))
-
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    OutlinedButton(onClick = onComplete) {
-                        Text("Überspringen")
-                    }
-                    Button(onClick = onComplete) {
-                        Text("Fertig")
-                    }
-                }
             }
         }
     }
@@ -372,40 +339,6 @@ private fun ModeCard(
     }
 }
 
-// --- HF Token Input ---
-
-@Composable
-private fun HfTokenInput() {
-    val context = LocalContext.current
-    val prefs = remember { context.getSharedPreferences("speechkit_config", Context.MODE_PRIVATE) }
-    var token by remember { mutableStateOf(prefs.getString("hf_token", "") ?: "") }
-    var saved by remember { mutableStateOf(false) }
-
-    OutlinedTextField(
-        value = token,
-        onValueChange = { token = it; saved = false },
-        label = { Text("HuggingFace Token") },
-        placeholder = { Text("hf_...") },
-        modifier = Modifier.fillMaxWidth(),
-        singleLine = true,
-    )
-    Spacer(Modifier.height(8.dp))
-    Button(
-        onClick = {
-            prefs.edit().putString("hf_token", token.trim()).apply()
-            saved = true
-        },
-        enabled = token.startsWith("hf_") && token.length > 10,
-    ) {
-        Text(if (saved) "Gespeichert" else "Token speichern")
-    }
-    Text(
-        "Erstelle einen Token auf huggingface.co/settings/tokens (kostenlos, Read-Zugriff reicht).",
-        style = MaterialTheme.typography.bodySmall,
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
-    )
-}
-
 // --- Home Tab (Dashboard) ---
 
 @Composable
@@ -443,7 +376,7 @@ private fun HomeTab(onOpenVoiceAgent: () -> Unit = {}) {
 
         QuickActionRow("Dictate", "Sprache zu Text in jeder App") {}
         QuickActionRow("Assist", "KI-Antwort auf eine Frage") {}
-        QuickActionRow("Voice Agent", "Sprachdialog testen (Voice-Tab)") { onOpenVoiceAgent() }
+        QuickActionRow("Voice Agent", "Auf der Tastatur, nicht als System-Assistent") { onOpenVoiceAgent() }
     }
 }
 
@@ -528,16 +461,9 @@ private fun SettingsTab() {
 
         ServerConnectionCard()
 
-        KeyboardIconsCard()
+        VoiceAgentProviderCard()
 
-        // HF Token
-        Card(modifier = Modifier.fillMaxWidth()) {
-            Column(modifier = Modifier.padding(16.dp)) {
-                Text("HuggingFace Token", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Medium)
-                Spacer(Modifier.height(8.dp))
-                HfTokenInput()
-            }
-        }
+        KeyboardIconsCard()
 
         // Keyboard Setup
         Card(modifier = Modifier.fillMaxWidth()) {
@@ -606,6 +532,34 @@ private fun ServerConnectionCard() {
     }
     var status by remember { mutableStateOf<String?>(null) }
     var testing by remember { mutableStateOf(false) }
+    var finding by remember { mutableStateOf(false) }
+    var lanServers by remember { mutableStateOf<List<LanServer>>(emptyList()) }
+    val finder = remember { NsdLanFinder(context) }
+    DisposableEffect(finder) {
+        onDispose { finder.stop() }
+    }
+    val nearbyPermission = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission(),
+    ) { granted ->
+        if (granted || Build.VERSION.SDK_INT < 33) {
+            finding = true
+            lanServers = emptyList()
+            finder.start { lanServers = it }
+        }
+    }
+
+    fun startLanFind() {
+        if (Build.VERSION.SDK_INT >= 33 &&
+            ContextCompat.checkSelfPermission(context, Manifest.permission.NEARBY_WIFI_DEVICES)
+            != PackageManager.PERMISSION_GRANTED
+        ) {
+            nearbyPermission.launch(Manifest.permission.NEARBY_WIFI_DEVICES)
+            return
+        }
+        finding = true
+        lanServers = emptyList()
+        finder.start { lanServers = it }
+    }
 
     val saved = remember(url, token) { StoredServerProfile.load(context) }
 
@@ -642,6 +596,41 @@ private fun ServerConnectionCard() {
                 singleLine = true,
                 modifier = Modifier.fillMaxWidth(),
             )
+            OutlinedButton(
+                onClick = {
+                    if (finding) {
+                        finder.stop()
+                        finding = false
+                    } else {
+                        startLanFind()
+                    }
+                },
+            ) {
+                Text(
+                    stringResource(
+                        if (finding) R.string.settings_connection_stop_lan
+                        else R.string.settings_connection_find_lan,
+                    ),
+                )
+            }
+            if (finding) {
+                Text(
+                    stringResource(R.string.settings_connection_finding_lan),
+                    style = MaterialTheme.typography.bodySmall,
+                )
+                Row(
+                    modifier = Modifier.horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    lanServers.forEach { server ->
+                        FilterChip(
+                            selected = url == server.url,
+                            onClick = { url = server.url },
+                            label = { Text(server.instanceName) },
+                        )
+                    }
+                }
+            }
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Button(
                     onClick = {
@@ -712,6 +701,42 @@ private fun ServerConnectionCard() {
  * left out on purpose: the keyboard APK is GPL-3.0 as a whole and third-party
  * marks inside it are a trademark question, not a design one.
  */
+@Composable
+private fun VoiceAgentProviderCard() {
+    val context = LocalContext.current
+    var selected by remember { mutableStateOf(KeyboardAgentPreferences.provider(context)) }
+    val options = listOf(
+        KeyboardAgentPreferences.PROVIDER_OPENAI to "GPT",
+        KeyboardAgentPreferences.PROVIDER_DEEPGRAM to "Deepgram",
+        KeyboardAgentPreferences.PROVIDER_ASSEMBLYAI to "AssemblyAI",
+    )
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text(stringResource(R.string.settings_agent_title), style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Medium)
+            Text(
+                stringResource(R.string.settings_agent_subtitle),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Row(
+                modifier = Modifier.horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                options.forEach { (value, label) ->
+                    FilterChip(
+                        selected = selected == value,
+                        onClick = {
+                            selected = value
+                            KeyboardAgentPreferences.setProvider(context, value)
+                        },
+                        label = { Text(label) },
+                    )
+                }
+            }
+        }
+    }
+}
+
 @Composable
 private fun KeyboardIconsCard() {
     val context = LocalContext.current

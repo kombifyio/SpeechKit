@@ -21,16 +21,15 @@ That compatibility runs one way. Apache-2.0 code may be combined into a
 GPL-3.0 work; GPL-3.0 code may not be combined into an Apache-2.0
 distribution. So:
 
-- **The keyboard APK built from this fork is GPL-3.0 as a whole.** It may
-  include SpeechKit's Apache-2.0 modules (`:core`, `:net`, `:ime`,
-  `:voice-ui-compose`).
+- **The shipped `io.kombify.speechkit` APK is GPL-3.0 as a whole.** It
+  links `:heliboard` (included from `android/settings.gradle.kts`) together
+  with SpeechKit's Apache-2.0 modules (`:core`, `:net`, `:ime`,
+  `:voice-ui-compose`, `:assistant`).
 - **It must not include proprietary Kombify code.** Nothing from a private
-  module, no vendored closed component.
-- **The existing `io.kombify.speechkit` app APK stays Apache-2.0.** It must
-  not gain a Gradle dependency on anything under `android/heliboard`. This is
-  why the submodule is deliberately absent from `android/settings.gradle.kts`:
-  a stray `include` is all it would take to change the licence of the shipped
-  app, and that would be silent.
+  module, no vendored closed component. Companion integration stays IPC-only.
+- **The SpeechKit modules themselves stay Apache-2.0.** The GPL applies to
+  the assembled APK because of the HeliBoard link, not to those libraries
+  in isolation.
 
 ## Where the keyboard APK is built, and why
 
@@ -102,13 +101,14 @@ upstream expects to fail.
 ## The seam is the patch surface
 
 The fork does not learn about SpeechKit. It calls
-`io.kombify.speechkit.ime.host.VoiceInputHost` — `showPanel`, `hidePanel`, a
-transcript `Listener`, and the `isDictationBlocked` guard that keeps voice
-input out of password fields. Everything else stays on our side of the line,
-which is what keeps the patch small enough to rebase.
+`helium314.keyboard.latin.SpeechKitVoiceBridge` — `showPanel`, `hidePanel`,
+`showShortcuts`, toolbar actions, and the `isDictationBlocked` guard that
+keeps voice input out of password fields. The `:app` host
+(`InlineVoicePanel`) answers those calls. Everything else stays on our side
+of the line, which is what keeps the patch small enough to rebase.
 
-Target patch surface, ~6 files: the voice-key dispatch, the input-view swap
-slot for inline dictation, a settings hook, and branding.
+Target patch surface: the voice-key dispatch, the suggestion-strip layout,
+the input-view slot for the inline panel, a settings hook, and branding.
 
 ## Rebase cadence
 

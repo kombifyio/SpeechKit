@@ -6,7 +6,22 @@
     German panel until this file existed.
 -->
 <resources>
+    <string name="speechkit_agent_gpt">Sprachassistent</string>
     <string name="speechkit_action_blocked_no_server">Server-Aktionen brauchen einen gekoppelten SpeechKit-Server</string>
+    <string name="settings_agent_title">Sprachassistent</string>
+    <string name="settings_agent_subtitle">Welches Backend die Agent-Taste in der Leiste öffnet. Die anderen bleiben hinter Mehr.</string>
+    <string name="shortcuts_title">Mehr</string>
+    <string name="shortcuts_close">Schließen</string>
+    <string name="shortcut_transcribe">Transkription</string>
+    <string name="shortcut_voice_agent">Sprachassistent</string>
+    <string name="shortcut_transcribe_audio">Sprachnachricht transkribieren</string>
+    <string name="shortcut_summarize_audio">Sprachnachricht zusammenfassen</string>
+    <string name="shortcut_keyboard_settings">Tastatur-Einstellungen</string>
+    <string name="shortcut_speechkit_settings">SpeechKit-Einstellungen</string>
+    <string name="transcribe_audio_copied">Transkript kopiert</string>
+    <string name="transcribe_audio_empty">Kein Transkript. Server prüfen und WAV, M4A oder OGG versuchen.</string>
+    <string name="summarize_audio_copied">Zusammenfassung kopiert</string>
+    <string name="summarize_audio_fallback">Keine Zusammenfassung. Das Transkript liegt in der Zwischenablage; Assist braucht ein Modell auf dem gekoppelten Server.</string>
     <string name="speechkit_action_blocked_no_companion">Companion erfordert die kombify-App</string>
     <string name="settings_connection_title">SpeechKit-Server</string>
     <string name="settings_connection_state_on_device">Kein Server eingerichtet — alles läuft auf dem Gerät.</string>
@@ -21,6 +36,9 @@
     <string name="settings_connection_ok">Verbindung funktioniert.</string>
     <string name="settings_connection_failed">Verbindung fehlgeschlagen: %1$s</string>
     <string name="settings_connection_cleared">Entfernt. Alles läuft wieder auf dem Gerät.</string>
+    <string name="settings_connection_find_lan">Im LAN suchen</string>
+    <string name="settings_connection_stop_lan">Suche beenden</string>
+    <string name="settings_connection_finding_lan">Suche SpeechKit-Server in diesem Netz…</string>
     <string name="settings_icons_title">Tastatur-Symbole</string>
     <string name="settings_icons_subtitle">Wähle das Symbol für jeden Modus. Wirksam, sobald die Tastatur neu geöffnet wird.</string>
     <string name="settings_icon_default">Standard</string>
@@ -36,5 +54,5 @@
     <string name="speechkit_action_icon_assemblyai">Sprachassistent · AssemblyAI</string>
     <string name="speechkit_action_icon_gpt">Sprachassistent · GPT</string>
     <string name="speechkit_action_icon_companion">Companion</string>
-    <string name="settings_connection_state_shipped">Dieser Build bringt %1$s mit. Eigene Adresse eintragen, um sie zu überschreiben.</string>
+    <string name="settings_connection_state_shipped">Dieser Tester-Build nutzt den kombify-SpeechKit-Server unter %1$s. Kein Token tippen. Ist kombify Companion installiert und du angemeldet, ersetzt er den gemeinsamen Tester-Token durch deinen.</string>
 </resources>

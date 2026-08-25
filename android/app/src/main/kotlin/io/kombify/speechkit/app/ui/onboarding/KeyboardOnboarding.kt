@@ -1,9 +1,7 @@
 package io.kombify.speechkit.app.ui.onboarding
 
-import android.app.role.RoleManager
 import android.content.Context
 import android.content.Intent
-import android.os.Build
 import android.provider.Settings
 import android.view.inputmethod.InputMethodManager
 import androidx.compose.foundation.layout.Arrangement
@@ -17,7 +15,6 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -36,18 +33,18 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 
 /**
- * Onboarding wizard for activating the SpeechKit keyboard (HeliBoard fork) and assistant.
+ * Onboarding wizard for activating the SpeechKit typing keyboard.
  *
- * Three steps:
+ * Two steps, and they are the whole setup:
  * 1. Enable the keyboard in system settings (InputMethodService)
- * 2. Select SpeechKit as the active keyboard
- * 3. (Optional) Set as default voice assistant
+ * 2. Select SpeechKit Keyboard as the active input method
+ *
+ * Voice Agent is a key on that keyboard, not a third system-assistant role.
  */
 @Composable
 fun KeyboardOnboardingWizard(
     isKeyboardEnabled: Boolean,
     isKeyboardSelected: Boolean,
-    isAssistantSet: Boolean,
     onComplete: () -> Unit,
     onBack: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
@@ -57,7 +54,9 @@ fun KeyboardOnboardingWizard(
 
     var liveKeyboardEnabled by remember { mutableStateOf(isKeyboardEnabled) }
     var liveKeyboardSelected by remember { mutableStateOf(isKeyboardSelected) }
-    var liveAssistantSet by remember { mutableStateOf(isAssistantSet) }
+    var liveSetupComplete by remember {
+        mutableStateOf(KeyboardSetupChecker.isSetupComplete(isKeyboardEnabled, isKeyboardSelected))
+    }
 
     val lifecycleOwner = LocalLifecycleOwner.current
     androidx.compose.runtime.DisposableEffect(lifecycleOwner) {
@@ -65,9 +64,8 @@ fun KeyboardOnboardingWizard(
             if (event == Lifecycle.Event.ON_RESUME) {
                 liveKeyboardEnabled = KeyboardSetupChecker.isKeyboardEnabled(context)
                 liveKeyboardSelected = KeyboardSetupChecker.isKeyboardSelected(context)
-                liveAssistantSet = KeyboardSetupChecker.isAssistantSet(context)
+                liveSetupComplete = KeyboardSetupChecker.isSetupComplete(context)
                 if (currentStep == 0 && liveKeyboardEnabled) currentStep = 1
-                if (currentStep == 1 && liveKeyboardSelected) currentStep = 2
             }
         }
         lifecycleOwner.lifecycle.addObserver(observer)
@@ -93,7 +91,7 @@ fun KeyboardOnboardingWizard(
         )
 
         Text(
-            text = "Drei kurze Schritte, um SpeechKit als Tastatur und Voice Assistant zu aktivieren.",
+            text = "Zwei Schritte, um SpeechKit Keyboard zu aktivieren. Voice Agent sitzt danach auf der Tastatur, nicht als System-Assistent.",
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
@@ -103,7 +101,7 @@ fun KeyboardOnboardingWizard(
         OnboardingStep(
             stepNumber = 1,
             title = "Tastatur aktivieren",
-            description = "Aktiviere SpeechKit in den Eingabemethoden-Einstellungen.",
+            description = "Aktiviere „SpeechKit Keyboard“, nicht „SpeechKit Spracheingabe“.",
             isCompleted = liveKeyboardEnabled,
             isActive = currentStep == 0,
             buttonText = "Einstellungen öffnen",
@@ -112,13 +110,12 @@ fun KeyboardOnboardingWizard(
                     flags = Intent.FLAG_ACTIVITY_NEW_TASK
                 })
             },
-            onNext = { currentStep = 1 },
         )
 
         OnboardingStep(
             stepNumber = 2,
             title = "Tastatur auswählen",
-            description = "Wähle SpeechKit als aktive Eingabemethode.",
+            description = "Wähle „SpeechKit Keyboard“ als aktive Eingabemethode.",
             isCompleted = liveKeyboardSelected,
             isActive = currentStep == 1 && liveKeyboardEnabled,
             buttonText = "Tastatur wählen",
@@ -126,26 +123,11 @@ fun KeyboardOnboardingWizard(
                 val imm = context.getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager
                 imm.showInputMethodPicker()
             },
-            onNext = { currentStep = 2 },
-        )
-
-        OnboardingStep(
-            stepNumber = 3,
-            // The "(optional)" suffix is drawn by OnboardingStep from
-            // isOptional; spelling it in the title too rendered it twice.
-            title = "Voice Assistant",
-            description = "Setze SpeechKit als Standard-Assistenten für systemweiten Sprachzugriff.",
-            isCompleted = liveAssistantSet,
-            isActive = currentStep == 2 && liveKeyboardSelected,
-            buttonText = "Assistent einrichten",
-            onAction = { requestAssistantRole(context) },
-            onNext = { onComplete() },
-            isOptional = true,
         )
 
         Spacer(modifier = Modifier.weight(1f))
 
-        if (liveKeyboardEnabled && liveKeyboardSelected) {
+        if (liveSetupComplete) {
             Button(
                 onClick = onComplete,
                 modifier = Modifier.fillMaxWidth(),
@@ -178,8 +160,6 @@ private fun OnboardingStep(
     isActive: Boolean,
     buttonText: String,
     onAction: () -> Unit,
-    onNext: () -> Unit,
-    isOptional: Boolean = false,
 ) {
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -207,20 +187,11 @@ private fun OnboardingStep(
                 )
 
                 Column(modifier = Modifier.weight(1f)) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text(
-                            text = title,
-                            style = MaterialTheme.typography.titleSmall,
-                            fontWeight = FontWeight.Medium,
-                        )
-                        if (isOptional) {
-                            Text(
-                                text = " (optional)",
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                        }
-                    }
+                    Text(
+                        text = title,
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.Medium,
+                    )
                     Text(
                         text = description,
                         style = MaterialTheme.typography.bodySmall,
@@ -231,17 +202,8 @@ private fun OnboardingStep(
 
             if (isActive && !isCompleted) {
                 Spacer(modifier = Modifier.height(12.dp))
-                Row(
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    Button(onClick = onAction) {
-                        Text(buttonText)
-                    }
-                    if (isOptional) {
-                        OutlinedButton(onClick = onNext) {
-                            Text("Überspringen")
-                        }
-                    }
+                Button(onClick = onAction) {
+                    Text(buttonText)
                 }
             }
         }
@@ -249,40 +211,32 @@ private fun OnboardingStep(
 }
 
 /**
- * Checks whether SpeechKit's own input method is enabled and in use.
+ * Checks whether SpeechKit's own typing keyboard is enabled and in use.
  *
- * Detects [IME_SERVICE], the voice input method this app ships. It used to
- * look for upstream HeliBoard's `helium314.keyboard.latin.LatinIME`, which is
- * a different application that this app does not install: onboarding reported
- * success for anyone who happened to have HeliBoard installed, and never
- * recognised SpeechKit's own keyboard. The HeliBoard fork that will carry the
- * full key layout is not built yet; when it lands it ships under this
- * application's own id and this check keeps working.
+ * Detects the HeliBoard fork's [LatinIME], which this APK ships under its own
+ * application id. The same APK also registers a voice-only IME
+ * (`SpeechKitVoiceImeService`) for hopping over from a third-party keyboard;
+ * that is not a typing keyboard, and treating it as one sent testers to a
+ * panel with no keys. Standalone HeliBoard (`helium314.keyboard/...`) is still
+ * rejected: it is a different application.
  */
 object KeyboardSetupChecker {
-    private const val IME_CLASS_SUFFIX = ".ime.SpeechKitVoiceImeService"
+    private const val LATIN_IME_CLASS = "helium314.keyboard.latin.LatinIME"
 
     /**
      * Whether [id] — a flattened `package/class` component as the input-method
-     * framework hands it out — is this application's keyboard.
-     *
-     * Substring matching does not work here, and looked like it did. Android
-     * stores the component in its short form, `io.kombify.speechkit/.ime.
-     * SpeechKitVoiceImeService`, because the manifest declares the service with
-     * a relative name; the fully-qualified spelling never occurs as a substring
-     * of it, so a `contains("io.kombify.speechkit.ime.SpeechKitVoiceImeService")`
-     * check answered false with the keyboard enabled AND selected, and
-     * onboarding could never finish. Observed on an emulator, not derived.
+     * framework hands it out — is this application's typing keyboard.
      *
      * Expanding the short form handles both spellings, and comparing the
-     * package to our own keeps the earlier defect fixed: a stranger's keyboard
-     * with a similar class name must not count as ours. The suffix rather than
-     * a constant class name is what lets the `.oss` flavour, whose application
-     * id differs, match too.
+     * package to our own keeps a stranger's keyboard from counting as ours.
+     * The HeliBoard service lives in its own namespace, so the system stores
+     * the fully-qualified class (`io.kombify.speechkit/helium314.keyboard.
+     * latin.LatinIME`); the `.oss` flavour still matches because only the
+     * package is compared, not a hard-coded application id.
      *
      * The parsing is spelled out instead of calling ComponentName so this rule
      * can be covered by a plain unit test; the framework class is only a stub
-     * off-device, which is how the defect stayed invisible in the first place.
+     * off-device, which is how the earlier defect stayed invisible.
      */
     internal fun isSpeechKitIme(ownPackage: String, id: String?): Boolean {
         val flattened = id ?: return false
@@ -291,16 +245,14 @@ object KeyboardSetupChecker {
         if (flattened.substring(0, separator) != ownPackage) return false
         val className = flattened.substring(separator + 1)
         val qualified = if (className.startsWith(".")) ownPackage + className else className
-        return qualified.endsWith(IME_CLASS_SUFFIX)
+        return qualified == LATIN_IME_CLASS
     }
 
-    fun isKeyboardEnabled(context: Context): Boolean {
-        return try {
-            val imm = context.getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager
-            imm.enabledInputMethodList.any { isSpeechKitIme(context.packageName, it.id) }
-        } catch (e: Exception) {
-            false
-        }
+    fun enabledInputMethodIds(context: Context): List<String> = try {
+        val imm = context.getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager
+        imm.enabledInputMethodList.map { it.id }
+    } catch (e: Exception) {
+        emptyList()
     }
 
     /**
@@ -310,54 +262,38 @@ object KeyboardSetupChecker {
      * moment it was switched on in system settings, and its "now pick it"
      * step could never be reached.
      */
-    fun isKeyboardSelected(context: Context): Boolean {
-        return try {
-            val current = Settings.Secure.getString(
-                context.contentResolver,
-                Settings.Secure.DEFAULT_INPUT_METHOD,
-            )
-            isSpeechKitIme(context.packageName, current)
-        } catch (e: Exception) {
-            false
-        }
+    fun selectedInputMethodId(context: Context): String? = try {
+        Settings.Secure.getString(
+            context.contentResolver,
+            Settings.Secure.DEFAULT_INPUT_METHOD,
+        )
+    } catch (e: Exception) {
+        null
     }
 
-    fun isAssistantSet(context: Context): Boolean {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            val roles = context.getSystemService(RoleManager::class.java)
-            if (roles != null && roles.isRoleAvailable(RoleManager.ROLE_ASSISTANT)) {
-                return roles.isRoleHeld(RoleManager.ROLE_ASSISTANT)
-            }
-        }
-        return try {
-            val assistComponent = Settings.Secure.getString(
-                context.contentResolver,
-                "assistant",
-            ) ?: return false
-            assistComponent.contains("speechkit")
-        } catch (e: Exception) {
-            false
-        }
-    }
-}
+    fun isKeyboardEnabled(context: Context): Boolean =
+        enabledInputMethodIds(context).any { isSpeechKitIme(context.packageName, it) }
 
-private fun requestAssistantRole(context: Context) {
-    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-        val roles = context.getSystemService(RoleManager::class.java)
-        if (roles != null && roles.isRoleAvailable(RoleManager.ROLE_ASSISTANT) &&
-            !roles.isRoleHeld(RoleManager.ROLE_ASSISTANT)
-        ) {
-            context.startActivity(
-                roles.createRequestRoleIntent(RoleManager.ROLE_ASSISTANT).apply {
-                    flags = Intent.FLAG_ACTIVITY_NEW_TASK
-                },
-            )
-            return
-        }
-    }
-    context.startActivity(
-        Intent(Settings.ACTION_VOICE_INPUT_SETTINGS).apply {
-            flags = Intent.FLAG_ACTIVITY_NEW_TASK
-        },
+    fun isKeyboardSelected(context: Context): Boolean =
+        isSpeechKitIme(context.packageName, selectedInputMethodId(context))
+
+    /**
+     * Keyboard setup is done when the typing IME is enabled and selected.
+     * The system assistant role is not an input and must not be added here:
+     * Voice Agent is a key on that keyboard, not ROLE_ASSISTANT.
+     */
+    fun isSetupComplete(
+        ownPackage: String,
+        enabledInputMethodIds: Iterable<String>,
+        selectedInputMethodId: String?,
+    ): Boolean = enabledInputMethodIds.any { isSpeechKitIme(ownPackage, it) } &&
+        isSpeechKitIme(ownPackage, selectedInputMethodId)
+
+    fun isSetupComplete(enabled: Boolean, selected: Boolean): Boolean = enabled && selected
+
+    fun isSetupComplete(context: Context): Boolean = isSetupComplete(
+        context.packageName,
+        enabledInputMethodIds(context),
+        selectedInputMethodId(context),
     )
 }

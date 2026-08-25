@@ -1,5 +1,10 @@
 package speechkit
 
+import (
+	"strings"
+	"time"
+)
+
 const (
 	ModelAssemblyAIUniversal35ProRealtime = "universal-3-5-pro"
 	ModelAssemblyAIU3RTPro                = "u3-rt-pro"
@@ -44,6 +49,37 @@ type ProviderModelDescriptor struct {
 	Default     bool           `json:"default,omitempty"`
 	Recommended bool           `json:"recommended,omitempty"`
 	SourceURL   string         `json:"sourceUrl"`
+
+	// Freshness metadata (kombify-SpeechKit-glnc). Dates are RFC3339 calendar
+	// days from vendor documentation. Leave empty until a row is researched;
+	// the staleness gate must stay off until every default/recommended row
+	// carries LastVerifiedAt, otherwise the gate would fail closed on noise.
+	ReleasedAt           string `json:"releasedAt,omitempty"`
+	DeprecatedAt         string `json:"deprecatedAt,omitempty"`
+	SunsetAt             string `json:"sunsetAt,omitempty"`
+	LastVerifiedAt       string `json:"lastVerifiedAt,omitempty"`
+	MultilanguageCapable bool   `json:"multilanguageCapable,omitempty"`
+}
+
+// ModelFreshnessSLA is the maximum age of LastVerifiedAt before a default
+// model row is considered stale. The CI gate that enforces this is not
+// enabled until registry rows are populated from vendor docs.
+const ModelFreshnessSLA = 7 * 24 * time.Hour
+
+// MissingFreshnessReports lists default/recommended registry rows that still
+// lack LastVerifiedAt. Callers that enable the SLA gate should fail when this
+// returns a non-empty list.
+func MissingFreshnessReports(rows []ProviderModelDescriptor) []string {
+	var missing []string
+	for _, row := range rows {
+		if !row.Default && !row.Recommended {
+			continue
+		}
+		if strings.TrimSpace(row.LastVerifiedAt) == "" {
+			missing = append(missing, row.Provider+":"+row.ModelID)
+		}
+	}
+	return missing
 }
 
 func DefaultModelRegistry() []ProviderModelDescriptor {

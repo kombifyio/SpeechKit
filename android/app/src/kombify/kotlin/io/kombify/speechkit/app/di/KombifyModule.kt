@@ -7,9 +7,11 @@ import dagger.hilt.InstallIn
 import dagger.hilt.android.qualifiers.ApplicationContext
 import dagger.hilt.components.SingletonComponent
 import io.kombify.speechkit.BuildConfig
+import io.kombify.speechkit.app.companion.CompanionProvisioner
 import io.kombify.speechkit.net.ConnectionProfile
 import io.kombify.speechkit.net.ConnectionProfileSource
 import io.kombify.speechkit.net.StoredServerProfile
+import io.kombify.speechkit.net.resolveConnectionProfile
 import io.kombify.speechkit.stt.HuggingFaceProvider
 import io.kombify.speechkit.stt.SttRouter
 import javax.inject.Singleton
@@ -39,31 +41,31 @@ object KombifyModule {
     }
 
     /**
-     * B-M2b flavor default: system on-device STT until a speechkit-server is
-     * configured/paired (the dev screen writes the same prefs today; B-M4's
-     * SettingsRepository replaces the prefs read). Resolved on every session
-     * open, so a server configured while the IME service is alive wins
-     * without a rebind.
+     * Companion (logged-in user) → typed Settings override → tester hosted
+     * SpeechKit → on-device. Re-resolved on every session open.
      */
     @Provides
     @Singleton
     fun provideConnectionProfileSource(
         @ApplicationContext context: Context,
-    ): ConnectionProfileSource = ConnectionProfileSource {
-        StoredServerProfile.load(context)
-            ?: shippedDefaultProfile()
-            ?: ConnectionProfile.SystemOnDevice()
+    ): ConnectionProfileSource {
+        val companion = CompanionProvisioner(context)
+        companion.warm()
+        return ConnectionProfileSource {
+            resolveConnectionProfile(
+                companion = companion.currentSession(),
+                stored = StoredServerProfile.load(context),
+                shipped = shippedDefaultProfile(),
+            )
+        }
     }
 
     /**
-     * The connection this build was shipped with, when it was given one.
-     *
-     * A tester build can carry an address - and, for a closed lane, a token -
-     * so a fresh install exercises every mode before anyone has paired
-     * anything. Empty in every build that was not handed those values, which
-     * is every developer build and the whole oss flavor. A stored profile
-     * always wins, so configuring a server in Settings overrides what the
-     * build shipped rather than fighting it.
+     * Hosted SpeechKit this kombify build dials when nobody has typed a
+     * server and Companion has not provisioned a user token. Firebase
+     * tester APKs also bake a shared, revocable bearer; a developer build
+     * without that env var still has the origin so Settings can explain
+     * where traffic would go.
      */
     private fun shippedDefaultProfile(): ConnectionProfile.Server? {
         val url = BuildConfig.DEFAULT_SERVER_URL.trim()

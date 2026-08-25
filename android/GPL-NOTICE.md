@@ -19,7 +19,8 @@ line.
 
 The consequence runs the other way too, and it is permanent: **no proprietary
 Kombify code may be linked into this APK.** Companion integration is IPC-only
-by design, not by convenience.
+via the Apache-2.0 `:coinstall` AIDL (`speechkit.coinstall.v1`), by design,
+not by convenience.
 
 ## Corresponding source
 
