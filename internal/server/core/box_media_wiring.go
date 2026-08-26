@@ -33,7 +33,7 @@ const (
 	//
 	// It exists because a probe failure is not evidence of a dead child. The
 	// probe runs every 5s with an 8s budget against the same whisper process
-	// that may be serving a Box turn for up to 60s, so model page-in, a loaded
+	// that may be serving a Box turn for up to 40s, so model page-in, a loaded
 	// CPU, or whisper occupying its worker threads on a long clip all look
 	// exactly like a corpse. Escalating on the first miss meant one slow
 	// second took down dictation, assist, voiceagent and the device-agent
@@ -111,7 +111,18 @@ func (r *boxMediaServerRuntime) Shutdown(ctx context.Context) error {
 			r.shutdownErr = r.listener.Shutdown(ctx)
 		}
 		if r.ownsLocalSTT && r.localSTT != nil {
-			r.localSTT.StopServer()
+			stopped := make(chan struct{})
+			go func() {
+				r.localSTT.StopServer()
+				close(stopped)
+			}()
+			select {
+			case <-stopped:
+			case <-ctx.Done():
+				if r.shutdownErr == nil {
+					r.shutdownErr = ctx.Err()
+				}
+			}
 		}
 	})
 	return r.shutdownErr
@@ -341,6 +352,11 @@ func wireBoxMediaListener(ctx context.Context, cfg *config.Config, app *App) (*b
 		Rule: deviceagentserver.BoxMediaRuleOptions{
 			DeviceID: media.DeviceID, PairingID: media.PairingID, RoomID: media.RoomID,
 			Transcript: media.Transcript, CommandID: media.CommandID, Locale: media.Locale,
+		},
+		OnIncompleteWrite: func(wrote, want int, _ error) {
+			app.Health.SetReadyWithOptions(boxMediaHealthComponent, StatusDegraded,
+				fmt.Sprintf("turn audio write truncated (%d/%d)", wrote, want),
+				ComponentOptions{Blocking: true, Kind: "feature"})
 		},
 	})
 	if err != nil {

@@ -1,8 +1,13 @@
 // Verify that the root package.json version matches the most recent
-// non-Unreleased entry in CHANGELOG.md, and that the authored product
-// version in .kombify/VERSION agrees with it. Numeric pre-1.0 feedback builds may
+// non-Unreleased entry in CHANGELOG.md, and that the delivery anchor in
+// .kombify/VERSION is well formed. Numeric pre-1.0 feedback builds may
 // opt into a newer derived patch within the same authored minor line; minor
 // changes and every 1.0+ release remain exact.
+//
+// The anchor is checked for SHAPE only. CI-CD-PLATFORM-STANDARD.md §4.2 makes
+// .kombify/VERSION the line anchor rather than a release counter, so requiring
+// it to equal package.json would enforce exactly the coupling the standard
+// forbids and would push this repository back into minting its own versions.
 //
 // Usage:
 //   node scripts/release/lint-version-sync.mjs [--allow-derived-pre-1-patch]
@@ -37,10 +42,12 @@ function readLatestChangelogVersion() {
   return sections[0].version
 }
 
-// .kombify/VERSION is the authored product version the delivery platform
-// reads to decide which release line to mint patches on. Nothing inside this
-// repository consumes it, so drift here is invisible until the platform keeps
-// publishing on a line the changelog has already moved past.
+// .kombify/VERSION is the delivery line anchor. Below 1.0.0 the Delivery
+// Platform reads it and derives the delivered version from the first-parent
+// commit count since the anchor last moved, so the file is meant to sit still
+// while the line advances. Its value is never expected to equal package.json.
+// What does have to hold is its shape: a non-suffix-free or
+// non-MAJOR.MINOR.PATCH anchor is a hard delivery failure (§4.2).
 function readProductVersion() {
   const productPath = resolve(repoRoot, '.kombify', 'VERSION')
   if (!existsSync(productPath)) {
@@ -116,19 +123,22 @@ function run(argv = process.argv.slice(2)) {
     process.exit(1)
   }
 
-  if (productVersion !== undefined && productVersion !== packageVersion) {
+  if (productVersion !== undefined && !parseNumericVersion(productVersion)) {
     process.stderr.write(
       [
-        `Product version drift detected:`,
-        `  package.json version: ${packageVersion}`,
-        `  .kombify/VERSION:     ${productVersion}`,
+        `Malformed delivery anchor:`,
+        `  .kombify/VERSION: ${productVersion}`,
         ``,
-        `The delivery platform mints release patches on the line named in`,
-        `.kombify/VERSION. While it lags, every published build stays on the`,
-        `old line no matter what the changelog says.`,
+        `CI-CD-PLATFORM-STANDARD.md §4.2 requires a suffix-free`,
+        `MAJOR.MINOR.PATCH value here. Anything else is a hard delivery`,
+        `failure: the platform cannot derive a delivered version from it.`,
         ``,
-        `To fix, run \`node scripts/sync-version.mjs\`, which now keeps this`,
-        `file in step with package.json.`,
+        `This check is deliberately shape-only. Below 1.0.0 the anchor names`,
+        `the line, not the release, and the platform derives the delivered`,
+        `patch from the commits since the anchor last moved. An anchor that`,
+        `lags package.json is therefore correct and must not be "fixed" by`,
+        `writing package.json's value into it — that re-anchors the`,
+        `derivation and moves the delivered version backwards.`,
         ``,
       ].join('\n'),
     )

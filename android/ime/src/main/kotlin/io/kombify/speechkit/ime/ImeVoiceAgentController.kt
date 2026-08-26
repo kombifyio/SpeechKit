@@ -1,5 +1,7 @@
 package io.kombify.speechkit.ime
 
+import io.kombify.speechkit.audio.AudioCapture
+import io.kombify.speechkit.log.VoiceLog
 import io.kombify.speechkit.net.VoiceAgentController
 import io.kombify.speechkit.net.VoiceAgentEvent
 import io.kombify.speechkit.net.VoiceAgentStartFrame
@@ -25,11 +27,9 @@ import kotlinx.coroutines.launch
  * untouched. Mixing the two would put the agent's answers into whatever field
  * happened to have focus.
  *
- * The panel renders this with its own visual language rather than the
- * assistant app's orb: `:ime` does not depend on `:assistant`, and adding
- * that dependency to reuse a drawing would couple the keyboard to the
- * assistant application — and would have to be undone once the shared Compose
- * voice-UI artifact lands and gives both surfaces the same orb.
+ * The panel draws the shared `:voice-ui-compose` orb. Session phases map
+ * through `toAuraState()` in this module so `:voice-ui-compose` never depends
+ * on `:net`. `:ime` still must not depend on `:assistant`.
  */
 class ImeVoiceAgentController(
     private val scope: CoroutineScope,
@@ -124,7 +124,12 @@ class ImeVoiceAgentController(
         val live = controller ?: return
         captureJob?.cancel()
         captureJob = scope.launch {
-            audioCapture.frames().collect { frame -> live.sendAudio(frame) }
+            runCatching {
+                audioCapture.frames().collect { frame -> live.sendAudio(frame) }
+            }.onFailure { error ->
+                if (error is CancellationException) throw error
+                VoiceLog.e(VoiceLog.AUDIO, "ime voice agent capture failed", error)
+            }
         }
     }
 
@@ -198,6 +203,7 @@ class ImeVoiceAgentController(
                 // keeps the coroutine's cancellation contract, which
                 // runCatching would otherwise swallow.
                 if (error is CancellationException) throw error
+                VoiceLog.e(VoiceLog.AGENT, "ime conversation failed", error)
                 val noServer = error is IllegalStateException
                 _state.value = _state.value.copy(
                     // Nothing finished: a missing server is a setup gap, not

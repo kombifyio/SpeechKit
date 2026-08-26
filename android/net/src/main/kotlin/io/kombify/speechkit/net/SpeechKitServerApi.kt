@@ -1,8 +1,10 @@
 package io.kombify.speechkit.net
 
+import io.kombify.speechkit.domain.ConnectionProfile
 import com.squareup.moshi.Json
 import com.squareup.moshi.JsonClass
 import com.squareup.moshi.Moshi
+import io.kombify.speechkit.log.VoiceLog
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.MediaType.Companion.toMediaType
@@ -236,9 +238,14 @@ class SpeechKitServerApi(
         val body = response.body?.string().orEmpty()
         if (response.isSuccessful) return body
         val parsed = runCatching { errorAdapter.fromJson(body)?.error }.getOrNull()
+        val code = parsed?.code ?: "http_${response.code}"
+        VoiceLog.w(
+            VoiceLog.NET,
+            "http ${response.code} code=$code host=${profile.normalizedBaseUrl}",
+        )
         throw SpeechKitApiException(
             httpStatus = response.code,
-            code = parsed?.code ?: "http_${response.code}",
+            code = code,
             message = parsed?.message ?: body.take(200).ifEmpty { response.message },
         )
     }

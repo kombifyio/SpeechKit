@@ -244,22 +244,17 @@ func TestBoxMediaTLSServerForceCloseRetainsFirstShutdownErrorAndDrains(t *testin
 	go func() { shutdownDone <- runtime.Shutdown(shutdownCtx) }()
 	select {
 	case err := <-shutdownDone:
-		t.Fatalf("Shutdown returned before the force-closed handler drained: %v", err)
-	case <-time.After(50 * time.Millisecond):
+		if !errors.Is(err, context.Canceled) {
+			t.Fatalf("Shutdown error=%v, want canceled drain budget", err)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("canceled Shutdown stayed blocked on the in-flight handler")
 	}
 	releaseHandler()
 	select {
-	case err := <-shutdownDone:
-		if !errors.Is(err, context.Canceled) {
-			t.Fatalf("Shutdown error=%v, want retained context cancellation", err)
-		}
-	case <-time.After(3 * time.Second):
-		t.Fatal("force-close Shutdown did not finish after handler drain")
-	}
-	select {
 	case <-finished:
-	default:
-		t.Fatal("force-closed handler outlived Shutdown")
+	case <-time.After(3 * time.Second):
+		t.Fatal("force-closed handler did not finish after release")
 	}
 	select {
 	case <-requestDone:
@@ -269,6 +264,19 @@ func TestBoxMediaTLSServerForceCloseRetainsFirstShutdownErrorAndDrains(t *testin
 	if err := runtime.Shutdown(context.Background()); !errors.Is(err, context.Canceled) {
 		t.Fatalf("repeated Shutdown error=%v, want retained context cancellation", err)
 	}
+}
+
+func TestBoxMediaRequestLifecycleWaitHonorsDeadline(t *testing.T) {
+	var lifecycle boxMediaRequestLifecycle
+	if !lifecycle.begin() {
+		t.Fatal("initial request admission was rejected")
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if err := lifecycle.wait(ctx); !errors.Is(err, context.Canceled) {
+		t.Fatalf("wait error=%v, want canceled", err)
+	}
+	lifecycle.end()
 }
 
 func TestBoxMediaRequestLifecycleRejectsAdmissionAfterDrainStarts(t *testing.T) {
@@ -282,7 +290,7 @@ func TestBoxMediaRequestLifecycleRejectsAdmissionAfterDrainStarts(t *testing.T) 
 	}
 	waitDone := make(chan struct{})
 	go func() {
-		lifecycle.wait()
+		_ = lifecycle.wait(context.Background())
 		close(waitDone)
 	}()
 	select {

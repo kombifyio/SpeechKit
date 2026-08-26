@@ -14,12 +14,12 @@
          indistinguishable in the picker. -->
     <string name="english_ime_name" translatable="false">SpeechKit Keyboard</string>
 
-    <!-- Strip agent key: the fork ships "Voice agent: GPT"; this is the
-         always-visible agent button, and the backend is a setting. -->
-    <string name="speechkit_agent_gpt">Voice Agent</string>
+    <!-- Strip agent key: Deepgram is the default backend. GPT stays in More. -->
+    <string name="speechkit_agent_deepgram">Voice Agent</string>
+    <string name="speechkit_agent_gpt">Voice agent · GPT</string>
     <string name="speechkit_action_blocked_no_server">Server actions need a paired SpeechKit server</string>
     <string name="settings_agent_title">Voice Agent</string>
-    <string name="settings_agent_subtitle">Which backend the strip’s agent key opens. The others stay in the keyboard’s more-toolbar.</string>
+    <string name="settings_agent_subtitle">Deepgram is the default for the strip’s agent key. AssemblyAI and GPT stay behind More unless you put one of them on that key.</string>
     <string name="shortcuts_title">More</string>
     <string name="shortcuts_close">Close</string>
     <string name="shortcut_transcribe">Transcribe</string>
@@ -50,19 +50,65 @@
     <string name="settings_connection_stop_lan">Stop search</string>
     <string name="settings_connection_finding_lan">Looking for a SpeechKit server on this network…</string>
     <string name="settings_icons_title">Keyboard icons</string>
-    <string name="settings_icons_subtitle">Choose the symbol for each mode. Changes apply the next time the keyboard opens.</string>
+    <string name="settings_icons_subtitle">Each mode has its own symbols. Changes apply the next time the keyboard opens.</string>
     <string name="settings_icon_default">Default</string>
+    <string name="settings_icon_phone">Phone</string>
+    <string name="settings_icon_chip">Chip</string>
+    <string name="settings_icon_cloud">Cloud</string>
+    <string name="settings_icon_upload">Upload</string>
     <string name="settings_icon_wave">Waveform</string>
+    <string name="settings_icon_live">Live</string>
     <string name="settings_icon_bars">Bars</string>
+    <string name="settings_icon_transcript">Transcript</string>
+    <string name="settings_icon_captions">Captions</string>
     <string name="settings_icon_spark">Spark</string>
+    <string name="settings_icon_chat">Chat</string>
     <string name="settings_icon_dot">Dot</string>
     <string name="settings_icon_ring">Ring</string>
     <string name="settings_icon_bolt">Bolt</string>
+    <string name="settings_icon_nodes">Link</string>
     <string name="speechkit_action_icon_device">Dictate on device</string>
     <string name="speechkit_action_icon_server">Dictate via server</string>
     <string name="speechkit_action_icon_deepgram">Voice agent · Deepgram</string>
     <string name="speechkit_action_icon_assemblyai">Voice agent · AssemblyAI</string>
     <string name="speechkit_action_icon_gpt">Voice agent · GPT</string>
     <string name="speechkit_action_icon_companion">Companion</string>
-    <string name="settings_connection_state_shipped">This tester build uses the kombify SpeechKit server at %1$s. You do not type a token. If kombify Companion is installed and you are signed in, it replaces the shared tester token with yours.</string>
+    <string name="settings_connection_state_shipped">This tester build uses the kombify SpeechKit server at %1$s. You do not type a token. Connect Kombify Cloud only if you want the signed-in Companion user and Gateway limits.</string>
+    <string name="settings_connection_mode_on_device">Mode: on device</string>
+    <string name="settings_connection_mode_origin">Mode: SpeechKit server (tester)</string>
+    <string name="settings_connection_mode_self_host">Mode: your SpeechKit server</string>
+    <string name="settings_connection_mode_cloud">Mode: kombify Cloud</string>
+    <string name="settings_connection_connect_cloud">Connect kombify Cloud</string>
+    <string name="settings_connection_disconnect_cloud">Disconnect Cloud</string>
+    <string name="settings_connection_open_companion">Open kombify Companion</string>
+    <string name="settings_connection_install_companion">Install kombify Companion</string>
+    <string name="settings_connection_cloud_connected">Connected as the signed-in kombify user.</string>
+    <string name="settings_connection_cloud_signed_out">Companion is installed. Sign in there, then connect.</string>
+    <string name="settings_connection_cloud_missing">Companion is not installed. Install it to connect with your kombify account.</string>
+    <string name="settings_connection_cloud_failed">Could not connect to kombify Cloud.</string>
+    <string name="onboarding_welcome">Welcome to SpeechKit</string>
+    <string name="onboarding_intro">SpeechKit has three modes for voice-driven work:</string>
+    <string name="mode_dictate" translatable="false">Dictate</string>
+    <string name="mode_assist" translatable="false">Assist</string>
+    <string name="mode_voice_agent" translatable="false">Voice Agent</string>
+    <string name="onboarding_dictate_body">Speech to text. Dictate into any app from the keyboard. No AI processing — transcription only.</string>
+    <string name="onboarding_dictate_requirement">Enable the keyboard</string>
+    <string name="onboarding_assist_body">Ask a question by voice and get an AI answer. Keyboard Assist (rewrite, summarize, translate) and the system assistant overlay (long-press power) are the same Assist mode on two surfaces.</string>
+    <string name="onboarding_assist_requirement">Enable the keyboard for in-keyboard Assist; the overlay is optional and is not this setup</string>
+    <string name="onboarding_voice_agent_body">A spoken conversation on the keyboard: the keys are replaced by the agent panel. Deepgram is the default strip key; GPT stays in More. This is not the system assistant overlay.</string>
+    <string name="onboarding_voice_agent_requirement">Enable the keyboard; Voice Agent needs a SpeechKit server</string>
+    <string name="onboarding_modes_note">Dictate, Assist, and Voice Agent run from the SpeechKit keyboard. The system assistant overlay is a separate Assist path and is not a keyboard setup step.</string>
+    <string name="onboarding_setup_keyboard">Set up the keyboard</string>
+    <string name="onboarding_coming_soon">Coming soon</string>
+    <string name="keyboard_onboarding_title">Set up SpeechKit</string>
+    <string name="keyboard_onboarding_intro">Two steps to turn on SpeechKit Keyboard. Voice Agent then sits on that keyboard. The system assistant overlay is a separate Assist path and is not part of this setup.</string>
+    <string name="keyboard_onboarding_back">Back</string>
+    <string name="keyboard_onboarding_step1_title">Enable the keyboard</string>
+    <string name="keyboard_onboarding_step1_body">Turn on “SpeechKit Keyboard”, not “SpeechKit voice input”.</string>
+    <string name="keyboard_onboarding_step1_action">Open settings</string>
+    <string name="keyboard_onboarding_step2_title">Select the keyboard</string>
+    <string name="keyboard_onboarding_step2_body">Choose “SpeechKit Keyboard” as the active input method.</string>
+    <string name="keyboard_onboarding_step2_action">Choose keyboard</string>
+    <string name="keyboard_onboarding_done">Done</string>
+    <string name="keyboard_onboarding_later">Set up later</string>
 </resources>

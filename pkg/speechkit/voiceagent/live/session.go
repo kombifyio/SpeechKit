@@ -11,9 +11,19 @@ import (
 	"time"
 )
 
-var errHostPromptRejected = errors.New("voiceagent: host prompt rejected")
+var (
+	errHostPromptRejected = errors.New("voiceagent: host prompt rejected")
+	errStopCloseTimeout   = errors.New("voiceagent: provider close timed out")
+)
 
-const speakingSettleDelay = 900 * time.Millisecond
+const (
+	speakingSettleDelay = 900 * time.Millisecond
+	// DefaultStopCloseTimeout bounds how long Stop waits for provider.Close.
+	// Gemini/Deepgram/AssemblyAI Close has no timeout of its own; holding the
+	// session mutex across an unbounded close wedged every caller, including
+	// the server target and SDK hosts that do not wrap Stop themselves.
+	DefaultStopCloseTimeout = 3 * time.Second
+)
 
 // Session manages a Voice Agent conversation.
 type Session struct {
@@ -194,32 +204,62 @@ func (s *Session) AdvanceWorkflowStep(ctx context.Context, reason string) error 
 	return s.provider.SendText(text)
 }
 
-// Stop deactivates the Voice Agent session.
+// Stop deactivates the Voice Agent session. It waits at most
+// DefaultStopCloseTimeout for provider.Close so a hung websocket handshake
+// cannot wedge the caller.
 func (s *Session) Stop() {
-	s.mu.Lock()
-	defer s.mu.Unlock()
+	s.StopWithTimeout(DefaultStopCloseTimeout)
+}
 
-	if s.currentState() == StateInactive {
+// StopWithTimeout is Stop with an explicit Close bound. A zero or negative
+// timeout waits for Close without a deadline (tests and operators only).
+func (s *Session) StopWithTimeout(timeout time.Duration) {
+	s.mu.Lock()
+	switch s.currentState() {
+	case StateInactive, StateDeactivating:
+		s.mu.Unlock()
 		return
 	}
-
 	s.setState(StateDeactivating)
-
 	if s.idleTimer != nil {
 		s.idleTimer.Stop()
 	}
 	if s.cancelFn != nil {
 		s.cancelFn()
 	}
-	if s.provider != nil {
-		if err := s.provider.Close(); err != nil {
+	provider := s.provider
+	s.workflow = nil
+	s.mu.Unlock()
+
+	if provider != nil {
+		if err := closeProviderBounded(provider, timeout); err != nil {
 			slog.Error("voice agent close error", "err", err)
 		}
 	}
-	s.workflow = nil
 
+	s.mu.Lock()
 	s.setState(StateInactive)
+	s.mu.Unlock()
 	slog.Info("voice agent session stopped")
+}
+
+func closeProviderBounded(provider LiveProvider, timeout time.Duration) error {
+	if provider == nil {
+		return nil
+	}
+	if timeout <= 0 {
+		return provider.Close()
+	}
+	done := make(chan error, 1)
+	go func() {
+		done <- provider.Close()
+	}()
+	select {
+	case err := <-done:
+		return err
+	case <-time.After(timeout):
+		return errStopCloseTimeout
+	}
 }
 
 // State returns the current session state.
@@ -483,6 +523,12 @@ func (s *Session) resetIdleTimer() {
 // Called when the receive loop encounters an unrecoverable error.
 func (s *Session) cleanupOnError() {
 	s.mu.Lock()
+	switch s.currentState() {
+	case StateInactive, StateDeactivating:
+		s.mu.Unlock()
+		return
+	}
+	s.setState(StateDeactivating)
 	if s.idleTimer != nil {
 		s.idleTimer.Stop()
 	}
@@ -490,8 +536,11 @@ func (s *Session) cleanupOnError() {
 		s.cancelFn()
 	}
 	s.workflow = nil
-	if s.provider != nil {
-		if err := s.provider.Close(); err != nil {
+	provider := s.provider
+	s.mu.Unlock()
+
+	if provider != nil {
+		if err := closeProviderBounded(provider, DefaultStopCloseTimeout); err != nil {
 			// The session is already on an error path; we still want the
 			// provider close failure visible in logs for diagnosis (leaked
 			// WebSocket, stuck HTTP pool, etc.) instead of silently
@@ -499,9 +548,10 @@ func (s *Session) cleanupOnError() {
 			slog.Warn("voiceagent: provider close during cleanup returned error", "err", err)
 		}
 	}
-	s.mu.Unlock()
 
+	s.mu.Lock()
 	s.setState(StateInactive)
+	s.mu.Unlock()
 	if s.callbacks.OnSessionEnd != nil {
 		s.callbacks.OnSessionEnd()
 	}

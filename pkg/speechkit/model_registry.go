@@ -50,10 +50,11 @@ type ProviderModelDescriptor struct {
 	Recommended bool           `json:"recommended,omitempty"`
 	SourceURL   string         `json:"sourceUrl"`
 
-	// Freshness metadata (kombify-SpeechKit-glnc). Dates are RFC3339 calendar
-	// days from vendor documentation. Leave empty until a row is researched;
-	// the staleness gate must stay off until every default/recommended row
-	// carries LastVerifiedAt, otherwise the gate would fail closed on noise.
+	// Freshness metadata (kombify-SpeechKit-glnc). Dates are calendar days
+	// (YYYY-MM-DD) from vendor documentation. LastVerifiedAt is the day the
+	// row was last checked against those docs; TestDefaultModelRegistryFreshnessSLA
+	// fails when a default/recommended row is missing it or older than
+	// ModelFreshnessSLA.
 	ReleasedAt           string `json:"releasedAt,omitempty"`
 	DeprecatedAt         string `json:"deprecatedAt,omitempty"`
 	SunsetAt             string `json:"sunsetAt,omitempty"`
@@ -62,13 +63,15 @@ type ProviderModelDescriptor struct {
 }
 
 // ModelFreshnessSLA is the maximum age of LastVerifiedAt before a default
-// model row is considered stale. The CI gate that enforces this is not
-// enabled until registry rows are populated from vendor docs.
+// or recommended model row is considered stale.
 const ModelFreshnessSLA = 7 * 24 * time.Hour
 
+// modelRegistryVerifiedAt is the calendar day the registry rows were last
+// checked against vendor documentation. Bump this after a vendor-doc pass.
+const modelRegistryVerifiedAt = "2026-08-25"
+
 // MissingFreshnessReports lists default/recommended registry rows that still
-// lack LastVerifiedAt. Callers that enable the SLA gate should fail when this
-// returns a non-empty list.
+// lack LastVerifiedAt.
 func MissingFreshnessReports(rows []ProviderModelDescriptor) []string {
 	var missing []string
 	for _, row := range rows {
@@ -82,122 +85,185 @@ func MissingFreshnessReports(rows []ProviderModelDescriptor) []string {
 	return missing
 }
 
+// StaleFreshnessReports lists default/recommended rows whose LastVerifiedAt
+// is missing, unparsable, or older than ModelFreshnessSLA relative to now.
+func StaleFreshnessReports(rows []ProviderModelDescriptor, now time.Time) []string {
+	var stale []string
+	for _, row := range rows {
+		if !row.Default && !row.Recommended {
+			continue
+		}
+		verified, ok := parseFreshnessDay(row.LastVerifiedAt)
+		if !ok || now.Sub(verified) > ModelFreshnessSLA {
+			stale = append(stale, row.Provider+":"+row.ModelID)
+		}
+	}
+	return stale
+}
+
+func parseFreshnessDay(value string) (time.Time, bool) {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return time.Time{}, false
+	}
+	if day, err := time.Parse("2006-01-02", value); err == nil {
+		return day, true
+	}
+	if day, err := time.Parse(time.RFC3339, value); err == nil {
+		return day, true
+	}
+	return time.Time{}, false
+}
+
 func DefaultModelRegistry() []ProviderModelDescriptor {
 	return []ProviderModelDescriptor{
 		{
-			Provider:    "assemblyai",
-			ModelID:     ModelAssemblyAIUniversal35ProRealtime,
-			ProfileID:   "stt.assemblyai.universal",
-			Mode:        ModeDictation,
-			Name:        "Universal-3.5 Pro Realtime",
-			Lifecycle:   ModelLifecyclePreview,
-			Default:     true,
-			Recommended: true,
-			SourceURL:   "https://www.assemblyai.com/docs/streaming/select-the-speech-model",
+			Provider:             "assemblyai",
+			ModelID:              ModelAssemblyAIUniversal35ProRealtime,
+			ProfileID:            "stt.assemblyai.universal",
+			Mode:                 ModeDictation,
+			Name:                 "Universal-3.5 Pro Realtime",
+			Lifecycle:            ModelLifecyclePreview,
+			Default:              true,
+			Recommended:          true,
+			SourceURL:            "https://www.assemblyai.com/docs/streaming/select-the-speech-model",
+			ReleasedAt:           "2026-03-03",
+			LastVerifiedAt:       modelRegistryVerifiedAt,
+			MultilanguageCapable: true,
 		},
 		{
-			Provider:  "assemblyai",
-			ModelID:   ModelAssemblyAIU3RTPro,
-			ProfileID: "stt.assemblyai.universal",
-			Mode:      ModeDictation,
-			Name:      "Universal-3 Pro Streaming",
-			Lifecycle: ModelLifecycleLegacy,
-			SourceURL: "https://www.assemblyai.com/docs/streaming/select-the-speech-model",
+			Provider:             "assemblyai",
+			ModelID:              ModelAssemblyAIU3RTPro,
+			ProfileID:            "stt.assemblyai.universal",
+			Mode:                 ModeDictation,
+			Name:                 "Universal-3 Pro Streaming",
+			Lifecycle:            ModelLifecycleLegacy,
+			SourceURL:            "https://www.assemblyai.com/docs/streaming/select-the-speech-model",
+			ReleasedAt:           "2026-03-03",
+			LastVerifiedAt:       modelRegistryVerifiedAt,
+			MultilanguageCapable: true,
 		},
 		{
-			Provider:    "assemblyai",
-			ModelID:     ModelAssemblyAIVoiceAgent,
-			ProfileID:   "realtime.assemblyai.voice-agent",
-			Mode:        ModeVoiceAgent,
-			Name:        "AssemblyAI Voice Agent API",
-			Lifecycle:   ModelLifecycleGA,
-			Default:     true,
-			Recommended: true,
-			SourceURL:   "https://www.assemblyai.com/docs/voice-agents/voice-agent-api",
+			Provider:             "assemblyai",
+			ModelID:              ModelAssemblyAIVoiceAgent,
+			ProfileID:            "realtime.assemblyai.voice-agent",
+			Mode:                 ModeVoiceAgent,
+			Name:                 "AssemblyAI Voice Agent API",
+			Lifecycle:            ModelLifecycleGA,
+			Default:              true,
+			Recommended:          true,
+			SourceURL:            "https://www.assemblyai.com/docs/voice-agents/voice-agent-api",
+			ReleasedAt:           "2026-04-14",
+			LastVerifiedAt:       modelRegistryVerifiedAt,
+			MultilanguageCapable: true,
 		},
 		{
-			Provider:    "deepgram",
-			ModelID:     ModelDeepgramFluxGeneralMulti,
-			ProfileID:   "realtime.deepgram.voice-agent",
-			Mode:        ModeVoiceAgent,
-			Name:        "Flux General Multilingual",
-			Lifecycle:   ModelLifecycleGA,
-			Default:     true,
-			Recommended: true,
-			SourceURL:   "https://developers.deepgram.com/docs/models-languages-overview",
+			Provider:             "deepgram",
+			ModelID:              ModelDeepgramFluxGeneralMulti,
+			ProfileID:            "realtime.deepgram.voice-agent",
+			Mode:                 ModeVoiceAgent,
+			Name:                 "Flux General Multilingual",
+			Lifecycle:            ModelLifecycleGA,
+			Default:              true,
+			Recommended:          true,
+			SourceURL:            "https://developers.deepgram.com/docs/models-languages-overview",
+			ReleasedAt:           "2026-04-29",
+			LastVerifiedAt:       modelRegistryVerifiedAt,
+			MultilanguageCapable: true,
 		},
 		{
-			Provider:    "deepgram",
-			ModelID:     ModelDeepgramFluxGeneralEN,
-			ProfileID:   "realtime.deepgram.voice-agent",
-			Mode:        ModeVoiceAgent,
-			Name:        "Flux General English",
-			Lifecycle:   ModelLifecycleGA,
-			Recommended: true,
-			SourceURL:   "https://developers.deepgram.com/docs/flux/nova-3-migration",
+			Provider:             "deepgram",
+			ModelID:              ModelDeepgramFluxGeneralEN,
+			ProfileID:            "realtime.deepgram.voice-agent",
+			Mode:                 ModeVoiceAgent,
+			Name:                 "Flux General English",
+			Lifecycle:            ModelLifecycleGA,
+			Recommended:          true,
+			SourceURL:            "https://developers.deepgram.com/docs/flux/nova-3-migration",
+			ReleasedAt:           "2025-10-02",
+			LastVerifiedAt:       modelRegistryVerifiedAt,
+			MultilanguageCapable: false,
 		},
 		{
-			Provider:    "deepgram",
-			ModelID:     ModelDeepgramNova3,
-			ProfileID:   "stt.deepgram.nova-3",
-			Mode:        ModeDictation,
-			Name:        "Nova-3",
-			Lifecycle:   ModelLifecycleGA,
-			Default:     true,
-			Recommended: true,
-			SourceURL:   "https://developers.deepgram.com/docs/models-languages-overview",
+			Provider:             "deepgram",
+			ModelID:              ModelDeepgramNova3,
+			ProfileID:            "stt.deepgram.nova-3",
+			Mode:                 ModeDictation,
+			Name:                 "Nova-3",
+			Lifecycle:            ModelLifecycleGA,
+			Default:              true,
+			Recommended:          true,
+			SourceURL:            "https://developers.deepgram.com/docs/models-languages-overview",
+			ReleasedAt:           "2025-02-12",
+			LastVerifiedAt:       modelRegistryVerifiedAt,
+			MultilanguageCapable: true,
 		},
 		{
-			Provider:    "google",
-			ModelID:     ModelGemini35LiveTranslatePreview,
-			ProfileID:   "realtime.google.gemini-live-translate",
-			Mode:        ModeVoiceAgent,
-			Name:        "Gemini 3.5 Live Translate Preview",
-			Lifecycle:   ModelLifecyclePreview,
-			Recommended: true,
-			SourceURL:   "https://ai.google.dev/gemini-api/docs/live-api/translation",
+			Provider:             "google",
+			ModelID:              ModelGemini35LiveTranslatePreview,
+			ProfileID:            "realtime.google.gemini-live-translate",
+			Mode:                 ModeVoiceAgent,
+			Name:                 "Gemini 3.5 Live Translate Preview",
+			Lifecycle:            ModelLifecyclePreview,
+			Recommended:          true,
+			SourceURL:            "https://ai.google.dev/gemini-api/docs/live-api/translation",
+			ReleasedAt:           "2026-06-09",
+			LastVerifiedAt:       modelRegistryVerifiedAt,
+			MultilanguageCapable: true,
 		},
 		{
-			Provider:    "google",
-			ModelID:     ModelGemini31FlashLivePreview,
-			ProfileID:   "realtime.google.gemini-native-audio",
-			Mode:        ModeVoiceAgent,
-			Name:        "Gemini 3.1 Flash Live Preview",
-			Lifecycle:   ModelLifecyclePreview,
-			Default:     true,
-			Recommended: true,
-			SourceURL:   "https://ai.google.dev/gemini-api/docs/models/gemini-3.1-flash-live-preview",
+			Provider:             "google",
+			ModelID:              ModelGemini31FlashLivePreview,
+			ProfileID:            "realtime.google.gemini-native-audio",
+			Mode:                 ModeVoiceAgent,
+			Name:                 "Gemini 3.1 Flash Live Preview",
+			Lifecycle:            ModelLifecyclePreview,
+			Default:              true,
+			Recommended:          true,
+			SourceURL:            "https://ai.google.dev/gemini-api/docs/models/gemini-3.1-flash-live-preview",
+			ReleasedAt:           "2026-03-26",
+			LastVerifiedAt:       modelRegistryVerifiedAt,
+			MultilanguageCapable: true,
 		},
 		{
-			Provider:  "google",
-			ModelID:   ModelGemini25FlashNativeAudioPreview,
-			ProfileID: "realtime.google.gemini-native-audio",
-			Mode:      ModeVoiceAgent,
-			Name:      "Gemini 2.5 Flash Native Audio Preview",
-			Lifecycle: ModelLifecycleLegacy,
-			SourceURL: "https://ai.google.dev/gemini-api/docs/live-api/capabilities",
+			Provider:             "google",
+			ModelID:              ModelGemini25FlashNativeAudioPreview,
+			ProfileID:            "realtime.google.gemini-native-audio",
+			Mode:                 ModeVoiceAgent,
+			Name:                 "Gemini 2.5 Flash Native Audio Preview",
+			Lifecycle:            ModelLifecycleLegacy,
+			SourceURL:            "https://ai.google.dev/gemini-api/docs/live-api/capabilities",
+			ReleasedAt:           "2025-12-12",
+			LastVerifiedAt:       modelRegistryVerifiedAt,
+			MultilanguageCapable: true,
 		},
 		{
-			Provider:    "openai",
-			ModelID:     ModelOpenAIGPT4OTranscribe,
-			ProfileID:   "stt.openai.gpt-4o-transcribe",
-			Mode:        ModeDictation,
-			Name:        "GPT-4o Transcribe",
-			Lifecycle:   ModelLifecycleGA,
-			Default:     true,
-			Recommended: true,
-			SourceURL:   "https://platform.openai.com/docs/guides/speech-to-text",
+			Provider:             "openai",
+			ModelID:              ModelOpenAIGPT4OTranscribe,
+			ProfileID:            "stt.openai.gpt-4o-transcribe",
+			Mode:                 ModeDictation,
+			Name:                 "GPT-4o Transcribe",
+			Lifecycle:            ModelLifecycleGA,
+			Default:              true,
+			Recommended:          true,
+			SourceURL:            "https://platform.openai.com/docs/guides/speech-to-text",
+			ReleasedAt:           "2025-03-20",
+			LastVerifiedAt:       modelRegistryVerifiedAt,
+			MultilanguageCapable: true,
 		},
 		{
-			Provider:    "openai",
-			ModelID:     ModelOpenAIRealtime2,
-			ProfileID:   "realtime.openai.gpt-realtime-2",
-			Mode:        ModeVoiceAgent,
-			Name:        "GPT Realtime 2",
-			Lifecycle:   ModelLifecycleGA,
-			Default:     true,
-			Recommended: true,
-			SourceURL:   "https://platform.openai.com/docs/guides/realtime",
+			Provider:             "openai",
+			ModelID:              ModelOpenAIRealtime2,
+			ProfileID:            "realtime.openai.gpt-realtime-2",
+			Mode:                 ModeVoiceAgent,
+			Name:                 "GPT Realtime 2",
+			Lifecycle:            ModelLifecycleGA,
+			Default:              true,
+			Recommended:          true,
+			SourceURL:            "https://platform.openai.com/docs/guides/realtime",
+			ReleasedAt:           "2026-05-07",
+			LastVerifiedAt:       modelRegistryVerifiedAt,
+			MultilanguageCapable: true,
 		},
 		// 2.1 and its mini are selectable but neither is Default or
 		// Recommended yet. AI-VOICE-SPEECHKIT-TARGET.md names gpt-realtime-2.1
@@ -208,26 +274,32 @@ func DefaultModelRegistry() []ProviderModelDescriptor {
 		// by name and what stops a caller from having to guess a model string
 		// the registry never heard of.
 		{
-			Provider:    "openai",
-			ModelID:     ModelOpenAIRealtime21,
-			ProfileID:   "realtime.openai.gpt-realtime-2",
-			Mode:        ModeVoiceAgent,
-			Name:        "GPT Realtime 2.1",
-			Lifecycle:   ModelLifecycleGA,
-			Default:     false,
-			Recommended: false,
-			SourceURL:   "https://platform.openai.com/docs/guides/realtime",
+			Provider:             "openai",
+			ModelID:              ModelOpenAIRealtime21,
+			ProfileID:            "realtime.openai.gpt-realtime-2",
+			Mode:                 ModeVoiceAgent,
+			Name:                 "GPT Realtime 2.1",
+			Lifecycle:            ModelLifecycleGA,
+			Default:              false,
+			Recommended:          false,
+			SourceURL:            "https://platform.openai.com/docs/guides/realtime",
+			ReleasedAt:           "2026-07-06",
+			LastVerifiedAt:       modelRegistryVerifiedAt,
+			MultilanguageCapable: true,
 		},
 		{
-			Provider:    "openai",
-			ModelID:     ModelOpenAIRealtime21Mini,
-			ProfileID:   "realtime.openai.gpt-realtime-2",
-			Mode:        ModeVoiceAgent,
-			Name:        "GPT Realtime 2.1 mini",
-			Lifecycle:   ModelLifecycleGA,
-			Default:     false,
-			Recommended: false,
-			SourceURL:   "https://platform.openai.com/docs/guides/realtime",
+			Provider:             "openai",
+			ModelID:              ModelOpenAIRealtime21Mini,
+			ProfileID:            "realtime.openai.gpt-realtime-2",
+			Mode:                 ModeVoiceAgent,
+			Name:                 "GPT Realtime 2.1 mini",
+			Lifecycle:            ModelLifecycleGA,
+			Default:              false,
+			Recommended:          false,
+			SourceURL:            "https://platform.openai.com/docs/guides/realtime",
+			ReleasedAt:           "2026-07-06",
+			LastVerifiedAt:       modelRegistryVerifiedAt,
+			MultilanguageCapable: true,
 		},
 	}
 }

@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"mime"
 	"net/http"
 	"strings"
@@ -35,17 +36,20 @@ const (
 	boxMediaBytesPerSample       = 2
 	boxMediaMinimumDuration      = 300 * time.Millisecond
 	boxMediaMaximumDuration      = 15 * time.Second
-	boxMediaDefaultSTTTimeout    = 60 * time.Second
-	boxMediaDefaultTurnTimeout   = 60 * time.Second
+	boxMediaWriteTimeout         = 2 * time.Minute
+	boxMediaWriteHeadroom        = 20 * time.Second
+	boxMediaDefaultSTTTimeout    = 40 * time.Second
+	boxMediaDefaultTurnTimeout   = 40 * time.Second
 	boxMediaMaximumStageTimeout  = 2 * time.Minute
 	boxMediaMaximumResponseBytes = boxMediaOutputRate * boxMediaBytesPerSample * 30
 )
 
 var (
-	ErrBoxMediaBridgeRequired   = errors.New("box media: device-agent bridge is required")
-	ErrBoxMediaLocalSTTRequired = errors.New("box media: a proven local-only STT transcriber is required")
-	ErrBoxMediaTokenInvalid     = errors.New("box media: an independent pairing token is required")
-	ErrBoxMediaRuleInvalid      = errors.New("box media: the single transcript mapping is invalid")
+	ErrBoxMediaBridgeRequired                = errors.New("box media: device-agent bridge is required")
+	ErrBoxMediaLocalSTTRequired              = errors.New("box media: a proven local-only STT transcriber is required")
+	ErrBoxMediaTokenInvalid                  = errors.New("box media: an independent pairing token is required")
+	ErrBoxMediaRuleInvalid                   = errors.New("box media: the single transcript mapping is invalid")
+	ErrBoxMediaTurnBudgetExceedsWriteTimeout = errors.New("box media: STT and turn budgets leave no write-timeout headroom")
 )
 
 // BoxMediaTranscript is the bounded result returned by the host's local STT
@@ -83,6 +87,7 @@ type BoxMediaHandlerOptions struct {
 	Rule              BoxMediaRuleOptions
 	STTTimeout        time.Duration
 	TurnTimeout       time.Duration
+	OnIncompleteWrite func(wrote, want int, err error)
 }
 
 type boxMediaRule struct {
@@ -99,12 +104,13 @@ type boxMediaRule struct {
 // listener. It is intentionally not mounted by Bridge.Mount, keeping the
 // existing exactly-four speechkit.device_agent.v1 routes unchanged.
 type BoxMediaHandler struct {
-	bridge      *Bridge
-	localSTT    BoxMediaLocalTranscriber
-	mediaToken  string
-	rule        boxMediaRule
-	sttTimeout  time.Duration
-	turnTimeout time.Duration
+	bridge            *Bridge
+	localSTT          BoxMediaLocalTranscriber
+	mediaToken        string
+	rule              boxMediaRule
+	sttTimeout        time.Duration
+	turnTimeout       time.Duration
+	onIncompleteWrite func(wrote, want int, err error)
 }
 
 func NewBoxMediaHandler(opts BoxMediaHandlerOptions) (*BoxMediaHandler, error) {
@@ -130,9 +136,12 @@ func NewBoxMediaHandler(opts BoxMediaHandlerOptions) (*BoxMediaHandler, error) {
 	if err != nil {
 		return nil, fmt.Errorf("box media: invalid turn timeout: %w", err)
 	}
+	if sttTimeout+turnTimeout > boxMediaWriteTimeout-boxMediaWriteHeadroom {
+		return nil, fmt.Errorf("%w: %s+%s", ErrBoxMediaTurnBudgetExceedsWriteTimeout, sttTimeout, turnTimeout)
+	}
 	return &BoxMediaHandler{
 		bridge: opts.Bridge, localSTT: opts.LocalSTT, mediaToken: mediaToken, rule: rule,
-		sttTimeout: sttTimeout, turnTimeout: turnTimeout,
+		sttTimeout: sttTimeout, turnTimeout: turnTimeout, onIncompleteWrite: opts.OnIncompleteWrite,
 	}, nil
 }
 
@@ -341,7 +350,19 @@ func (h *BoxMediaHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set(BoxMediaReplayHeader, fmt.Sprintf("%t", result.Assist.Replayed))
 	w.Header().Set("Cache-Control", "no-store")
 	w.WriteHeader(http.StatusOK)
-	_, _ = w.Write(l16)
+	wrote, writeErr := w.Write(l16)
+	if writeErr != nil || wrote != len(l16) {
+		// Status is already 200; the Box cannot tell a truncated body from
+		// success. Surface the failure to logs and health instead of dropping it.
+		slog.Error("box media turn audio write incomplete",
+			"reason", "box_media_response_truncated",
+			"wrote", wrote,
+			"want", len(l16),
+			"err", writeErr)
+		if h.onIncompleteWrite != nil {
+			h.onIncompleteWrite(wrote, len(l16), writeErr)
+		}
+	}
 }
 
 func bearerToken(raw string) (string, bool) {

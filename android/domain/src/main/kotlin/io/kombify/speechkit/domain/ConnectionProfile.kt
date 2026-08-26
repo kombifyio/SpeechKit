@@ -1,10 +1,11 @@
-package io.kombify.speechkit.net
+package io.kombify.speechkit.domain
 
 /**
- * Where dictation audio goes. Tier order per the Android track:
- * system on-device recognizer (zero-config floor, B-M2b) → own
- * speechkit-server → BYOK provider streaming (B-M6) → local in-app models
- * (B-M7).
+ * Where dictation, Assist, and Voice Agent audio goes. Shared by every Android
+ * host so `:net` can own transport without owning the connection contract.
+ *
+ * Tier order: system on-device recognizer → own speechkit-server → BYOK
+ * (B-M6) → local in-app models (B-M7).
  */
 sealed interface ConnectionProfile {
     /**
@@ -53,4 +54,19 @@ sealed interface ConnectionProfile {
 
     /** Fully on-device recognition. Lands in B-M7. */
     data object Local : ConnectionProfile
+}
+
+fun ConnectionProfile.serverDisplayUrl(): String =
+    (this as? ConnectionProfile.Server)?.baseUrl.orEmpty()
+
+fun ConnectionProfile.serverDisplayToken(): String =
+    (this as? ConnectionProfile.Server)?.bearerToken.orEmpty()
+
+/** Log-safe identity: host and whether a bearer is present, never the secret. */
+fun ConnectionProfile.describe(): String = when (this) {
+    is ConnectionProfile.SystemOnDevice -> "on_device offline=$preferOffline"
+    is ConnectionProfile.Server ->
+        "server url=$normalizedBaseUrl token=${if (bearerToken.isNullOrBlank()) "absent" else "present"}"
+    ConnectionProfile.Byok -> "byok"
+    ConnectionProfile.Local -> "local"
 }

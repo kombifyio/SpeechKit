@@ -1,6 +1,7 @@
 package io.kombify.speechkit.net
 
 import com.squareup.moshi.Moshi
+import io.kombify.speechkit.domain.ConnectionProfile
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout

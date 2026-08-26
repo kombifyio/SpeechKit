@@ -1,6 +1,6 @@
 package io.kombify.speechkit.app.keyboard
 
-import io.kombify.speechkit.net.ConnectionProfile
+import io.kombify.speechkit.domain.ConnectionProfile
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNull
@@ -129,6 +129,26 @@ class KeyboardActionRowTest {
                 KeyboardAction.ServerDictation,
                 KeyboardAction.CompanionApp,
             ).all { it.agentProvider == null },
+        )
+    }
+
+    @Test
+    fun `unset Voice Agent backend is Deepgram not GPT`() {
+        assertEquals(KeyboardAgentPreferences.PROVIDER_DEEPGRAM, KeyboardAgentPreferences.storedOrDefault(null))
+        assertEquals(KeyboardAgentPreferences.PROVIDER_DEEPGRAM, KeyboardAgentPreferences.storedOrDefault(""))
+        assertEquals(KeyboardAgentPreferences.PROVIDER_OPENAI, KeyboardAgentPreferences.storedOrDefault("openai"))
+    }
+
+    @Test
+    fun `the strip agent key follows Settings while GPT in More stays GPT`() {
+        val stripOpensAssembly = keyboardActionForToolbarKey(
+            STRIP_AGENT_TOOLBAR_KEY,
+            KeyboardAction.AgentAssemblyAi,
+        )
+        assertEquals(KeyboardAction.AgentAssemblyAi, stripOpensAssembly)
+        assertEquals(
+            KeyboardAction.AgentOpenAi,
+            keyboardActionForToolbarKey("SPEECHKIT_AGENT_GPT", KeyboardAction.AgentDeepgram),
         )
     }
 }

@@ -10,6 +10,8 @@ import (
 	"sync"
 	"time"
 	"unicode/utf8"
+
+	"go.opentelemetry.io/otel/attribute"
 )
 
 const DefaultProcessingMessage = "Recording stopped · Transcribing"
@@ -381,7 +383,7 @@ func (w *TranscriptionWorker) commitFinalTranscript(ctx context.Context, job Tra
 	// has to name it; below this line every branch assumes there is text to
 	// transform, intercept, commit or deliver.
 	if strings.TrimSpace(transcript.Text) == "" {
-		return w.commitEmptyFinalTranscript(job, transcript) //nolint:contextcheck // records the attempt via the same fire-and-forget history write as the normal path, which uses its own 15s timeout context
+		return w.commitEmptyFinalTranscript(ctx, job, transcript)
 	}
 
 	// Surface likely-misrecognized words so a silently-wrong transcript is at
@@ -478,13 +480,21 @@ func (w *TranscriptionWorker) commitFinalTranscript(ctx context.Context, job Tra
 // Returns true because the segment is finished, not because it succeeded — the
 // same audio would produce the same empty result, so releasing it for a retry
 // would only loop.
-func (w *TranscriptionWorker) commitEmptyFinalTranscript(job TranscriptionJob, transcript Transcript) bool {
+func (w *TranscriptionWorker) commitEmptyFinalTranscript(ctx context.Context, job TranscriptionJob, transcript Transcript) bool {
+	provider := firstNonEmptyField(transcript.Provider, "unknown")
+	model := firstNonEmptyField(transcript.Model, "unknown")
+	language := firstNonEmptyField(transcript.Language, "unset")
+	RecordOutcome(ctx, OutcomeEmptyFinalTranscript, errors.New(EmptyFinalTranscriptMessage),
+		attribute.String("provider", provider),
+		attribute.String("model", model),
+		attribute.String("language", language),
+	)
 	w.onLog(
 		fmt.Sprintf("%s (provider=%s model=%s language=%s)",
 			EmptyFinalTranscriptMessage,
-			firstNonEmptyField(transcript.Provider, "unknown"),
-			firstNonEmptyField(transcript.Model, "unknown"),
-			firstNonEmptyField(transcript.Language, "unset"),
+			provider,
+			model,
+			language,
 		),
 		"warn",
 	)

@@ -102,13 +102,25 @@ export function syncVersion(argv = process.argv.slice(2)) {
     });
   }
 
-  // .kombify/VERSION is the authored product version the delivery platform
-  // reads to decide which release line to mint patches on. Nothing in this
-  // repository references it, so it silently drifted: package.json moved with
-  // every Version Packages merge while VERSION stayed behind, and the
-  // platform kept deriving patches on the stale line. It is not target-gated
-  // — the product version is one value regardless of which client is built.
-  if (fs.existsSync(path.join(repoRoot, ".kombify/VERSION"))) {
+  // CI-CD-PLATFORM-STANDARD.md §4.2: .kombify/VERSION is the line anchor, not
+  // a release counter. Below 1.0.0 the Delivery Platform reads the declared
+  // value and derives the delivered version from the first-parent commit count
+  // since the anchor moved. The anchor standing still while the line advances
+  // is the correct steady state, and a second writer re-anchors the derivation
+  // and throws away every iteration accumulated since the last bump.
+  //
+  // Two kinds of caller reach this write, and they need opposite behaviour:
+  //   - A distribution lane (publish-oss.yml, release-android.yml) stamps the
+  //     already-resolved delivery version into the runner checkout so the build
+  //     files carry it. §4.2 requires that stamp; it is a scratch write inside
+  //     a throwaway checkout and is never committed.
+  //   - A release-authoring caller (release-please.yml) prepares a commit. It
+  //     must not write the anchor, because that is the forbidden second minter.
+  //     Such callers pass --preserve-product-version=true.
+  if (
+    args.get("preserve-product-version") !== "true" &&
+    fs.existsSync(path.join(repoRoot, ".kombify/VERSION"))
+  ) {
     updateText(".kombify/VERSION", [[/^.*$/m, metadata.packageVersion]]);
   }
 

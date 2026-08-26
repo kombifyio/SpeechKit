@@ -65,10 +65,28 @@
         <activity
             android:name=".app.ui.MainActivity"
             android:exported="true"
+            android:launchMode="singleTop"
             android:theme="@style/Theme.SpeechKit">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data
+                    android:scheme="speechkit"
+                    android:host="connect" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data
+                    android:scheme="https"
+                    android:host="speechkit.kombify.io"
+                    android:pathPrefix="/connect" />
             </intent-filter>
         </activity>
 
@@ -129,6 +147,21 @@
             android:name=".assistant.service.SpeechKitAssistantSessionService"
             android:exported="false"
             android:permission="android.permission.BIND_VOICE_INTERACTION" />
+
+        <!-- ROLE_ASSISTANT qualification requires a RecognitionService even
+             though the overlay session captures its own audio. -->
+        <service
+            android:name=".assistant.service.SpeechKitRecognitionService"
+            android:exported="true"
+            android:permission="android.permission.BIND_RECOGNITION_SERVICE">
+            <intent-filter>
+                <action android:name="android.speech.RecognitionService" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+            <meta-data
+                android:name="android.speech"
+                android:resource="@xml/recognition_service" />
+        </service>
 
     </application>
 

@@ -7,11 +7,13 @@ on:
         description: 'Release tag to mirror; use latest for the current public release'
         required: true
         default: latest
+  # Mirrored to kombifyio/SpeechKit. The `workflow_run: ['Release']` trigger
+  # that used to sit here never fired: scripts/public/export-public.sh exports
+  # exactly four workflow templates and Release is not one of them, so no
+  # workflow by that name exists in the mirror. Removed with its private twin's
+  # equivalent trigger; the cron below is the mirror's entry point.
   schedule:
     - cron: '23 6 * * *'
-  workflow_run:
-    workflows: ['Release']
-    types: [completed]
 
 permissions:
   contents: write
@@ -23,7 +25,6 @@ concurrency:
 jobs:
   sync:
     name: Sync Latest Installer
-    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
     runs-on: ${{ vars.GHA_HOSTED_RUNNER || 'ubuntu-24.04' }}
     timeout-minutes: 15
 

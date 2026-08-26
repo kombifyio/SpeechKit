@@ -248,6 +248,7 @@ scripts/                Install and release-note helpers
 | --- | --- |
 | [docs/README.md](docs/README.md) | Documentation index |
 | [docs/architecture/sdk-surface-boundary.md](docs/architecture/sdk-surface-boundary.md) | Public SDK and export boundary |
+| [docs/architecture/android-sdk-surface-boundary.md](docs/architecture/android-sdk-surface-boundary.md) | Android Gradle module cut for hosts |
 | [docs/speechkit-framework-api.md](docs/speechkit-framework-api.md) | Public framework API contracts |
 | [docs/api/openapi.v1.yaml](docs/api/openapi.v1.yaml) | Local control-plane OpenAPI |
 | [docs/server/README.md](docs/server/README.md) | Server target documentation |

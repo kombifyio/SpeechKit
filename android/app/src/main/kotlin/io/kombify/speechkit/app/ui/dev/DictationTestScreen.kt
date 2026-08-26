@@ -1,12 +1,7 @@
 package io.kombify.speechkit.app.ui.dev
 
 import android.Manifest
-import android.annotation.SuppressLint
-import android.content.Context
 import android.content.pm.PackageManager
-import android.media.AudioFormat
-import android.media.AudioRecord
-import android.media.MediaRecorder
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -37,49 +32,54 @@ import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
-import io.kombify.speechkit.net.ConnectionProfile
+import io.kombify.speechkit.audio.MicAudioCapture
+import io.kombify.speechkit.domain.ConnectionProfile
+import io.kombify.speechkit.domain.ConnectionProfileSource
+import io.kombify.speechkit.log.VoiceLog
 import io.kombify.speechkit.net.DictationController
-import io.kombify.speechkit.net.StoredServerProfile
+import io.kombify.speechkit.domain.serverDisplayToken
+import io.kombify.speechkit.domain.serverDisplayUrl
+import io.kombify.speechkit.domain.testSurfaceConnectProfile
 import io.kombify.speechkit.stt.streaming.DictationSegmentOptions
 import io.kombify.speechkit.stt.streaming.StreamingSttSession
 import io.kombify.speechkit.stt.streaming.TranscriptEvent
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
-import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
-import timber.log.Timber
-
-private const val SAMPLE_RATE_HZ = 16_000
-private const val CHUNK_BYTES = 3_200 // 100 ms @ 16 kHz S16 mono
 
 /**
- * B-M1 dev screen: exercises the full server dictation path — session mint →
- * streaming WS (or batch fallback) → live drafts → committed finals — against
- * a configurable speechkit-server. The Voice IME (B-M2) consumes the same
- * [DictationController]; this screen is the manual verification surface.
+ * B-M1 dev screen: exercises the dictation path the keyboard already uses —
+ * [ConnectionProfileSource] → [DictationController] → live drafts → finals.
+ * Settings owns persistence; this screen must not write `speechkit_config` or
+ * a Connect with empty fields turns tester origin / Cloud into a self-host.
  */
 @Composable
-fun DictationTestScreen() {
+fun DictationTestScreen(profileSource: ConnectionProfileSource) {
     val context = LocalContext.current
-    // Same store StoredServerProfile reads: on the kombify flavor a URL saved
-    // here upgrades the IME from the system tier to this server (B-M2b).
-    val prefs = remember {
-        context.getSharedPreferences(StoredServerProfile.PREFS_NAME, Context.MODE_PRIVATE)
-    }
     val scope = rememberCoroutineScope()
+    val lifecycleOwner = androidx.compose.ui.platform.LocalLifecycleOwner.current
 
-    var serverUrl by remember {
-        mutableStateOf(prefs.getString(StoredServerProfile.KEY_SERVER_URL, "") ?: "")
-    }
-    var token by remember {
-        mutableStateOf(prefs.getString(StoredServerProfile.KEY_SERVER_TOKEN, "") ?: "")
+    var resolved by remember { mutableStateOf(profileSource.currentProfile()) }
+    var serverUrl by remember { mutableStateOf(resolved.serverDisplayUrl()) }
+    var token by remember { mutableStateOf(resolved.serverDisplayToken()) }
+    DisposableEffect(lifecycleOwner) {
+        val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
+            if (event == androidx.lifecycle.Lifecycle.Event.ON_RESUME) {
+                resolved = profileSource.currentProfile()
+                if (serverUrl.isBlank()) serverUrl = resolved.serverDisplayUrl()
+                if (token.isBlank()) token = resolved.serverDisplayToken()
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
     var status by remember { mutableStateOf("Nicht verbunden") }
     var draft by remember { mutableStateOf("") }
     var recording by remember { mutableStateOf(false) }
     var session by remember { mutableStateOf<StreamingSttSession?>(null) }
     var recordJob by remember { mutableStateOf<Job?>(null) }
+    val capture = remember { MicAudioCapture() }
     val finals = remember { mutableStateListOf<String>() }
     val log = remember { mutableStateListOf<String>() }
 
@@ -100,17 +100,20 @@ fun DictationTestScreen() {
     fun connect() {
         scope.launch {
             runCatching {
-                prefs.edit()
-                    .putString(StoredServerProfile.KEY_SERVER_URL, serverUrl.trim())
-                    .putString(StoredServerProfile.KEY_SERVER_TOKEN, token.trim())
-                    .apply()
-                status = "Verbinde…"
-                val controller = DictationController(
-                    ConnectionProfile.Server(serverUrl.trim(), token.trim().ifEmpty { null }),
+                val profile = testSurfaceConnectProfile(
+                    profileSource.currentProfile(),
+                    serverUrl,
+                    token,
                 )
+                status = "Verbinde…"
+                val controller = DictationController(profile, context = context)
                 val open = controller.openSession()
                 session = open
-                status = "Verbunden"
+                status = when (profile) {
+                    is ConnectionProfile.Server -> "Verbunden (${profile.normalizedBaseUrl})"
+                    is ConnectionProfile.SystemOnDevice -> "Verbunden (on device)"
+                    else -> "Verbunden"
+                }
                 appendLog("Session offen (${open.javaClass.simpleName})")
                 launch {
                     open.events.collect { event ->
@@ -142,7 +145,7 @@ fun DictationTestScreen() {
             }.onFailure { error ->
                 status = "Fehler: ${error.message}"
                 appendLog("Verbindung fehlgeschlagen: ${error.message}")
-                Timber.w(error, "dictation test connect failed")
+                VoiceLog.w(VoiceLog.DICTATION, "test connect failed", error)
             }
         }
     }
@@ -151,41 +154,19 @@ fun DictationTestScreen() {
         context, Manifest.permission.RECORD_AUDIO,
     ) == PackageManager.PERMISSION_GRANTED
 
-    // Permission is verified by the caller (micPermissionGranted) before the
-    // segment starts; lint cannot see through the boolean.
-    @SuppressLint("MissingPermission")
     fun startRecording(open: StreamingSttSession) {
-        recordJob = scope.launch(Dispatchers.IO) {
+        if (open.capturesOwnAudio) {
+            appendLog("System recognizer owns the microphone")
+            return
+        }
+        recordJob = scope.launch {
             val outcome = runCatching {
-                val minBuffer = AudioRecord.getMinBufferSize(
-                    SAMPLE_RATE_HZ, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT,
-                )
-                val recorder = AudioRecord(
-                    MediaRecorder.AudioSource.VOICE_RECOGNITION,
-                    SAMPLE_RATE_HZ,
-                    AudioFormat.CHANNEL_IN_MONO,
-                    AudioFormat.ENCODING_PCM_16BIT,
-                    maxOf(minBuffer, CHUNK_BYTES),
-                )
-                try {
-                    recorder.startRecording()
-                    val chunk = ByteArray(CHUNK_BYTES)
-                    while (isActive) {
-                        val read = recorder.read(chunk, 0, chunk.size)
-                        when {
-                            read > 0 -> open.sendAudio(chunk.copyOf(read))
-                            read < 0 -> error("AudioRecord.read failed: $read")
-                        }
-                    }
-                } finally {
-                    runCatching { recorder.stop() }
-                    recorder.release()
-                }
+                capture.frames().collect { frame -> open.sendAudio(frame) }
             }
             outcome.onFailure { error ->
                 appendLog("Aufnahmefehler: ${error.message}")
                 recording = false
-                Timber.w(error, "audio capture failed")
+                VoiceLog.w(VoiceLog.AUDIO, "test capture failed", error)
             }
         }
     }
@@ -203,7 +184,7 @@ fun DictationTestScreen() {
             fontWeight = FontWeight.Bold,
         )
         Text(
-            "Testet Session-Mint, Streaming-WebSocket und Batch-Fallback gegen einen speechkit-server.",
+            "Uses the same connection as the keyboard. Leave the fields empty for tester origin, Cloud, or on-device. A typed URL is a one-shot override and is not saved.",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
@@ -227,7 +208,7 @@ fun DictationTestScreen() {
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             Button(
                 onClick = { if (status != "Verbinde…") connect() },
-                enabled = session == null && serverUrl.isNotBlank() && status != "Verbinde…",
+                enabled = session == null && status != "Verbinde…",
             ) { Text("Verbinden") }
             OutlinedButton(
                 onClick = {
@@ -256,8 +237,7 @@ fun DictationTestScreen() {
                     scope.launch {
                         open.startSegment(
                             DictationSegmentOptions(
-                                language = "de",
-                                promptHint = "Kurzes Test-Diktat aus der SpeechKit Android-App.",
+                                promptHint = "Short dictation test from the SpeechKit Android app.",
                             ),
                         )
                         startRecording(open)

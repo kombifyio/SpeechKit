@@ -1,6 +1,7 @@
 package io.kombify.speechkit.ime
 
-import io.kombify.speechkit.net.ConnectionProfile
+import io.kombify.speechkit.audio.AudioCapture
+import io.kombify.speechkit.domain.ConnectionProfile
 import io.kombify.speechkit.net.VoiceAgentController
 import io.kombify.speechkit.net.VoiceAgentUiState
 import kotlinx.coroutines.ExperimentalCoroutinesApi

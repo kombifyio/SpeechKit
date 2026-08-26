@@ -27,10 +27,12 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLifecycleOwner
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
+import io.kombify.speechkit.R
 
 /**
  * Onboarding wizard for activating the SpeechKit typing keyboard.
@@ -39,7 +41,8 @@ import androidx.lifecycle.LifecycleEventObserver
  * 1. Enable the keyboard in system settings (InputMethodService)
  * 2. Select SpeechKit Keyboard as the active input method
  *
- * Voice Agent is a key on that keyboard, not a third system-assistant role.
+ * Voice Agent is a key on that keyboard. The system assistant overlay is a
+ * separate Assist path and is not a third onboarding step.
  */
 @Composable
 fun KeyboardOnboardingWizard(
@@ -80,18 +83,18 @@ fun KeyboardOnboardingWizard(
     ) {
         if (onBack != null) {
             TextButton(onClick = onBack) {
-                Text("\u2190 Zur\u00fcck")
+                Text(stringResource(R.string.keyboard_onboarding_back))
             }
         }
 
         Text(
-            text = "SpeechKit einrichten",
+            text = stringResource(R.string.keyboard_onboarding_title),
             style = MaterialTheme.typography.headlineSmall,
             fontWeight = FontWeight.Bold,
         )
 
         Text(
-            text = "Zwei Schritte, um SpeechKit Keyboard zu aktivieren. Voice Agent sitzt danach auf der Tastatur, nicht als System-Assistent.",
+            text = stringResource(R.string.keyboard_onboarding_intro),
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
@@ -100,11 +103,11 @@ fun KeyboardOnboardingWizard(
 
         OnboardingStep(
             stepNumber = 1,
-            title = "Tastatur aktivieren",
-            description = "Aktiviere „SpeechKit Keyboard“, nicht „SpeechKit Spracheingabe“.",
+            title = stringResource(R.string.keyboard_onboarding_step1_title),
+            description = stringResource(R.string.keyboard_onboarding_step1_body),
             isCompleted = liveKeyboardEnabled,
             isActive = currentStep == 0,
-            buttonText = "Einstellungen öffnen",
+            buttonText = stringResource(R.string.keyboard_onboarding_step1_action),
             onAction = {
                 context.startActivity(Intent(Settings.ACTION_INPUT_METHOD_SETTINGS).apply {
                     flags = Intent.FLAG_ACTIVITY_NEW_TASK
@@ -114,11 +117,11 @@ fun KeyboardOnboardingWizard(
 
         OnboardingStep(
             stepNumber = 2,
-            title = "Tastatur auswählen",
-            description = "Wähle „SpeechKit Keyboard“ als aktive Eingabemethode.",
+            title = stringResource(R.string.keyboard_onboarding_step2_title),
+            description = stringResource(R.string.keyboard_onboarding_step2_body),
             isCompleted = liveKeyboardSelected,
             isActive = currentStep == 1 && liveKeyboardEnabled,
-            buttonText = "Tastatur wählen",
+            buttonText = stringResource(R.string.keyboard_onboarding_step2_action),
             onAction = {
                 val imm = context.getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager
                 imm.showInputMethodPicker()
@@ -132,7 +135,7 @@ fun KeyboardOnboardingWizard(
                 onClick = onComplete,
                 modifier = Modifier.fillMaxWidth(),
             ) {
-                Text("Fertig")
+                Text(stringResource(R.string.keyboard_onboarding_done))
             }
         } else {
             // There is always a way out. Whether the keyboard is selected is
@@ -145,7 +148,7 @@ fun KeyboardOnboardingWizard(
                 onClick = onComplete,
                 modifier = Modifier.fillMaxWidth(),
             ) {
-                Text("Später einrichten")
+                Text(stringResource(R.string.keyboard_onboarding_later))
             }
         }
     }

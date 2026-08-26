@@ -1,7 +1,7 @@
 package io.kombify.speechkit.app.keyboard
 
 import io.kombify.speechkit.R
-import io.kombify.speechkit.net.ConnectionProfile
+import io.kombify.speechkit.domain.ConnectionProfile
 
 /**
  * The voice entry points SpeechKit offers from the keyboard strip.
@@ -56,6 +56,9 @@ fun keyboardActionRowBlocker(items: List<KeyboardActionItem>): KeyboardActionBlo
 /** True for strip/More Voice Agent keys: the IME panel, never ROLE_ASSISTANT. */
 fun KeyboardAction.opensVoiceAgentInIme(): Boolean = agentProvider != null
 
+/** The always-visible strip agent key. Settings chooses which backend it opens. */
+const val STRIP_AGENT_TOOLBAR_KEY: String = "SPEECHKIT_AGENT_DEEPGRAM"
+
 fun keyboardActionForToolbarKey(name: String): KeyboardAction? = when (name) {
     "SPEECHKIT_DICTATE_DEVICE" -> KeyboardAction.OnDeviceDictation
     "SPEECHKIT_DICTATE_SERVER" -> KeyboardAction.ServerDictation
@@ -65,6 +68,14 @@ fun keyboardActionForToolbarKey(name: String): KeyboardAction? = when (name) {
     "SPEECHKIT_COMPANION" -> KeyboardAction.CompanionApp
     else -> null
 }
+
+/**
+ * Strip agent key follows the Settings backend. GPT and AssemblyAI keys in
+ * More stay those providers, so GPT can move to Call GPT without stealing
+ * the default Voice Agent slot.
+ */
+fun keyboardActionForToolbarKey(name: String, stripProvider: KeyboardAction): KeyboardAction? =
+    if (name == STRIP_AGENT_TOOLBAR_KEY) stripProvider else keyboardActionForToolbarKey(name)
 
 fun KeyboardActionBlocker.reasonResource(): Int = when (this) {
     KeyboardActionBlocker.NoServer -> R.string.speechkit_action_blocked_no_server

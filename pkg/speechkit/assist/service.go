@@ -248,6 +248,9 @@ func (s *Service) synthesize(ctx context.Context, result speechkit.AssistResult)
 		text = result.Text
 	}
 	if text == "" || result.Surface == speechkit.AssistSurfaceSilent {
+		if text == "" && result.Surface != speechkit.AssistSurfaceSilent {
+			speechkit.RecordOutcome(ctx, speechkit.OutcomeAssistEmptySpeak, errors.New("assist empty speak"))
+		}
 		return result, nil
 	}
 	audio, err := s.ttsRouter.Synthesize(ctx, text, tts.SynthesizeOpts{Locale: result.Locale})

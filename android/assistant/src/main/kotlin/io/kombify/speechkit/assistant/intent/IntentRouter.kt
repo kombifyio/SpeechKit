@@ -1,7 +1,7 @@
 package io.kombify.speechkit.assistant.intent
 
 import android.content.Context
-import timber.log.Timber
+import io.kombify.speechkit.log.VoiceLog
 
 /**
  * Intent classification and routing for the voice assistant.
@@ -12,15 +12,19 @@ import timber.log.Timber
  * The router maintains conversation context (foreground app, recent intents)
  * to improve classification accuracy.
  */
-class IntentRouter {
+class IntentRouter(
+    generalQuery: ActionExecutor? = null,
+) {
 
     private var foregroundApp: String? = null
     private var webUri: String? = null
     private val actionExecutors = mutableMapOf<IntentType, ActionExecutor>()
 
     init {
-        // Register built-in action executors
         registerDefaults()
+        if (generalQuery != null) {
+            registerExecutor(IntentType.GENERAL_QUERY, generalQuery)
+        }
     }
 
     fun setContext(foregroundApp: String? = null, webUri: String? = null) {
@@ -67,7 +71,7 @@ class IntentRouter {
     suspend fun execute(context: Context, intent: AssistantIntent): ActionResult {
         val executor = actionExecutors[intent.type]
         if (executor == null) {
-            Timber.w("No executor for intent type: ${intent.type}")
+            VoiceLog.w(VoiceLog.ASSIST, "no executor for ${intent.type}")
             return ActionResult(
                 success = false,
                 errorMessage = "Aktion '${intent.type.displayName}' nicht unterstuetzt",
@@ -77,7 +81,7 @@ class IntentRouter {
         return try {
             executor.execute(context, intent)
         } catch (e: Exception) {
-            Timber.e(e, "Intent execution failed: ${intent.type}")
+            VoiceLog.e(VoiceLog.ASSIST, "intent execution failed ${intent.type}", e)
             ActionResult(
                 success = false,
                 errorMessage = e.message ?: "Unbekannter Fehler",
@@ -97,7 +101,6 @@ class IntentRouter {
         registerExecutor(IntentType.SEARCH_WEB, SearchWebExecutor())
         registerExecutor(IntentType.SEND_MESSAGE, SendMessageExecutor())
         registerExecutor(IntentType.MAKE_CALL, MakeCallExecutor())
-        registerExecutor(IntentType.GENERAL_QUERY, GeneralQueryExecutor())
     }
 
     companion object {
@@ -178,7 +181,7 @@ data class ActionResult(
 )
 
 /** Executes a specific intent type. */
-interface ActionExecutor {
+fun interface ActionExecutor {
     suspend fun execute(context: Context, intent: AssistantIntent): ActionResult
 }
 

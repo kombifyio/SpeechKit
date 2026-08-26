@@ -27,8 +27,8 @@ android {
         applicationId = "io.kombify.speechkit"
         minSdk = 26
         targetSdk = 36
-        versionCode = 6000
-        versionName = "0.60.0"
+        versionCode = 6041
+        versionName = "0.60.41"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
@@ -66,8 +66,7 @@ android {
             buildConfigField(
                 "String",
                 "DEFAULT_SERVER_URL",
-                "\"" + speechKitBuildValue("speechkit.defaultServerUrl", "SPEECHKIT_DEFAULT_SERVER_URL")
-                    .ifEmpty { "https://speechkit.kombify.io" } + "\"",
+                "\"" + speechKitBuildValue("speechkit.defaultServerUrl", "SPEECHKIT_DEFAULT_SERVER_URL") + "\"",
             )
             buildConfigField(
                 "String",

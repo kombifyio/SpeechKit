@@ -1,6 +1,6 @@
 package io.kombify.speechkit.app.companion
 
-import io.kombify.speechkit.net.ConnectionProfile
+import io.kombify.speechkit.domain.ConnectionProfile
 
 /**
  * Last Companion session the keyboard may use without waiting on a bind.

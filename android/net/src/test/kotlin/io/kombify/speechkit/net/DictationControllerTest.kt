@@ -1,6 +1,7 @@
 package io.kombify.speechkit.net
 
 import android.content.Context
+import io.kombify.speechkit.domain.ConnectionProfile
 import io.kombify.speechkit.stt.system.SystemSpeechRecognizerSession
 import io.mockk.mockk
 import kotlinx.coroutines.Dispatchers

@@ -9,7 +9,7 @@ import android.provider.Settings
 import io.kombify.speechkit.coinstall.v1.CoinstallContract
 import io.kombify.speechkit.coinstall.v1.ICoinstallService
 import io.kombify.speechkit.coinstall.v1.ProvisionRequest
-import io.kombify.speechkit.net.ConnectionProfile
+import io.kombify.speechkit.domain.ConnectionProfile
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.Executor
 import java.util.concurrent.Executors
@@ -41,6 +41,28 @@ class CompanionProvisioner internal constructor(
         if (!installed()) return null
         if (cache.needsRefresh()) refresh()
         return cache.current()
+    }
+
+    fun isCompanionInstalled(): Boolean = installed()
+
+    /** Drop a leftover user session after Disconnect. The next currentSession() re-binds if Companion is still signed in. */
+    fun forgetSession() {
+        cache.clear()
+    }
+
+    /**
+     * Bind now for an explicit Connect. Updates the cache so the next
+     * session open can already see the user JWT.
+     */
+    fun provisionNow(): CompanionProvision {
+        if (!installed()) return CompanionProvision.Unavailable
+        val outcome = binder()
+        when (outcome) {
+            is CompanionProvision.Session -> cache.offer(outcome.profile)
+            CompanionProvision.Empty -> cache.clear()
+            CompanionProvision.Unavailable -> Unit
+        }
+        return outcome
     }
 
     /** Start a bind so the first dictation can already see a user session. */
@@ -129,7 +151,7 @@ private fun bindCompanion(context: Context): CompanionProvision {
     return outcome.get()
 }
 
-internal sealed interface CompanionProvision {
+sealed interface CompanionProvision {
     data class Session(val profile: ConnectionProfile.Server) : CompanionProvision
     data object Empty : CompanionProvision
     data object Unavailable : CompanionProvision

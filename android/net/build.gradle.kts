@@ -27,6 +27,7 @@ android {
 
 dependencies {
     implementation(project(":core"))
+    implementation(project(":domain"))
 
     implementation(libs.kotlin.stdlib)
     implementation(libs.coroutines.core)

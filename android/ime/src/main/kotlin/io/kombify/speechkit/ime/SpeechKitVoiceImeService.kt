@@ -18,10 +18,13 @@ import androidx.compose.ui.platform.ComposeView
 import android.inputmethodservice.InputMethodService
 import androidx.core.content.ContextCompat
 import dagger.hilt.android.AndroidEntryPoint
+import io.kombify.speechkit.audio.MicAudioCapture
+import io.kombify.speechkit.audio.PcmStreamPlayer
 import io.kombify.speechkit.ime.ui.VoiceAgentPanelUi
 import io.kombify.speechkit.ime.ui.VoicePanelUi
-import io.kombify.speechkit.net.ConnectionProfileSource
+import io.kombify.speechkit.domain.ConnectionProfileSource
 import io.kombify.speechkit.net.DictationController
+import io.kombify.speechkit.net.VoiceAgentAudio
 import io.kombify.speechkit.net.VoiceAgentController
 import io.kombify.speechkit.stt.streaming.StreamingSttSession
 import io.kombify.speechkit.ui.ServiceWindowOwner
@@ -53,7 +56,7 @@ class SpeechKitVoiceImeService : InputMethodService() {
     private lateinit var serviceScope: CoroutineScope
     private lateinit var controller: VoicePanelController
     private lateinit var agentController: ImeVoiceAgentController
-    private val agentPlayer = ImeAgentAudioPlayer()
+    private val agentPlayer = PcmStreamPlayer(VoiceAgentAudio.SERVER_SAMPLE_RATE)
     private var windowOwner: ServiceWindowOwner? = null
 
     override fun onCreate() {

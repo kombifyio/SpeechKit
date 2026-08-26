@@ -80,6 +80,25 @@ object VoiceAgentEndReasons {
 }
 
 /**
+ * PCM rates on this socket, mirroring `CLIENT_SAMPLE_RATE` /
+ * `SERVER_SAMPLE_RATE` in protocol.ts. Both directions are S16 LE mono.
+ *
+ * The two directions are deliberately named apart because they are **not the
+ * same rate**: the client uploads at the capture rate and the server answers
+ * half again as fast. Anything that plays [VoiceAgentEvent.Audio], or measures
+ * how long it stays audible, has to be told [SERVER_SAMPLE_RATE] — reaching
+ * for the capture rate instead stretches the agent's voice to 1.5x its length
+ * and drops it about a fifth in pitch.
+ */
+object VoiceAgentAudio {
+    /** Rate the client must send microphone PCM at: 16 kHz S16 LE mono. */
+    const val CLIENT_SAMPLE_RATE = 16_000
+
+    /** Rate the server sends the agent's answer at: 24 kHz S16 LE mono. */
+    const val SERVER_SAMPLE_RATE = 24_000
+}
+
+/**
  * Mandatory first client frame. Every field is optional: the server falls
  * back to its configured defaults, and an unknown provider is rejected at
  * start with a provider_unavailable error rather than silently substituted.

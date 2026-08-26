@@ -65,6 +65,58 @@ func (p *sessionTestProvider) Close() error {
 	return nil
 }
 
+type hangingCloseProvider struct {
+	*sessionTestProvider
+	entered chan struct{}
+	release chan struct{}
+}
+
+func (p *hangingCloseProvider) Close() error {
+	select {
+	case <-p.entered:
+	default:
+		close(p.entered)
+	}
+	<-p.release
+	return p.sessionTestProvider.Close()
+}
+
+func TestSessionStopReturnsWhenProviderCloseHangs(t *testing.T) {
+	provider := &hangingCloseProvider{
+		sessionTestProvider: newSessionTestProvider(),
+		entered:             make(chan struct{}),
+		release:             make(chan struct{}),
+	}
+	session := NewSession(provider, Callbacks{})
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	if err := session.Start(ctx, LiveConfig{Model: "hang-close"}, IdleConfig{}); err != nil {
+		t.Fatalf("Start() error = %v", err)
+	}
+
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		session.StopWithTimeout(80 * time.Millisecond)
+	}()
+
+	select {
+	case <-provider.entered:
+	case <-time.After(time.Second):
+		t.Fatal("provider Close was never entered")
+	}
+
+	select {
+	case <-done:
+	case <-time.After(500 * time.Millisecond):
+		t.Fatal("Stop stayed blocked on provider Close")
+	}
+	if got := session.CurrentState(); got != StateInactive {
+		t.Fatalf("state = %s, want inactive so the next Start can proceed", got)
+	}
+	close(provider.release)
+}
+
 func (p *reconnectingSessionTestProvider) Reconnect(context.Context) error {
 	p.mu.Lock()
 	defer p.mu.Unlock()

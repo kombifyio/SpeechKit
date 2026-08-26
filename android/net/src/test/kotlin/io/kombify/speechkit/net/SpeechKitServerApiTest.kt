@@ -1,5 +1,6 @@
 package io.kombify.speechkit.net
 
+import io.kombify.speechkit.domain.ConnectionProfile
 import kotlinx.coroutines.runBlocking
 import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer

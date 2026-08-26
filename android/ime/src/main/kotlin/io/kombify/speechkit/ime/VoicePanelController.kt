@@ -2,8 +2,10 @@ package io.kombify.speechkit.ime
 
 import android.view.inputmethod.EditorInfo
 import android.view.inputmethod.InputConnection
+import io.kombify.speechkit.audio.AudioCapture
 import io.kombify.speechkit.ime.host.VoiceInputHost
 import io.kombify.speechkit.ime.host.isDictationBlocked
+import io.kombify.speechkit.log.VoiceLog
 import io.kombify.speechkit.net.SpeechKitApiException
 import io.kombify.speechkit.stt.streaming.DictationSegmentOptions
 import io.kombify.speechkit.stt.streaming.StreamingSttSession
@@ -16,7 +18,6 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
-import timber.log.Timber
 
 /** Panel FSM states. See [VoicePanelController] for the transition map. */
 sealed interface VoicePanelState {
@@ -47,11 +48,6 @@ sealed interface VoicePanelState {
         val message: String,
         val retryable: Boolean = true,
     ) : VoicePanelState
-}
-
-/** Cold audio source: recording starts on collect and stops on cancel. */
-fun interface AudioCapture {
-    fun frames(): Flow<ByteArray>
 }
 
 /** Runtime-permission seam; the real gate launches the trampoline activity. */
@@ -203,7 +199,7 @@ class VoicePanelController(
                 }
                 .getOrElse { error ->
                     if (error is CancellationException) throw error
-                    Timber.w(error, "voice panel: session open failed")
+                    VoiceLog.w(VoiceLog.DICTATION, "voice panel session open failed", error)
                     _state.value = VoicePanelState.Error(
                         code = (error as? SpeechKitApiException)?.code ?: ERROR_CONNECT_FAILED,
                         message = error.message ?: "session open failed",
@@ -233,7 +229,7 @@ class VoicePanelController(
                     audioCapture.frames().collect { pcm -> open.sendAudio(pcm) }
                 }.onFailure { error ->
                     if (error is CancellationException) throw error
-                    Timber.w(error, "voice panel: audio capture failed")
+                    VoiceLog.w(VoiceLog.AUDIO, "voice panel capture failed", error)
                     abandonComposingText()
                     _state.value = VoicePanelState.Error(
                         code = ERROR_AUDIO_CAPTURE,

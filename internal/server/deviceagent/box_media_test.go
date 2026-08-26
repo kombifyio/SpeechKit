@@ -12,6 +12,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/tts"
@@ -282,6 +283,79 @@ func TestBoxMediaTTSRetryUsesCompletedHAClaim(t *testing.T) {
 	if fixture.ha.converseCalls != 1 || fixture.ha.verifyCalls != 1 {
 		t.Fatalf("TTS retry repeated HA: converse=%d verify=%d", fixture.ha.converseCalls, fixture.ha.verifyCalls)
 	}
+}
+
+func TestBoxMediaDefaultStageBudgetLeavesWriteHeadroom(t *testing.T) {
+	if boxMediaDefaultSTTTimeout+boxMediaDefaultTurnTimeout+boxMediaWriteHeadroom > boxMediaWriteTimeout {
+		t.Fatal("default STT+turn budget consumes the HTTP write timeout")
+	}
+}
+
+func TestNewBoxMediaHandlerRejectsStageBudgetThatFillsWriteTimeout(t *testing.T) {
+	bridge := newTestBridge(t, &fakeHA{}, newFakeLedger())
+	_, err := NewBoxMediaHandler(BoxMediaHandlerOptions{
+		Bridge:            bridge,
+		LocalSTT:          &fakeBoxSTT{local: true, text: "turn off the kitchen light", provider: "local-whisper"},
+		MediaPairingToken: testBoxMediaPairingToken,
+		Rule:              boxMediaTestRule(),
+		STTTimeout:        time.Minute,
+		TurnTimeout:       time.Minute,
+	})
+	if !errors.Is(err, ErrBoxMediaTurnBudgetExceedsWriteTimeout) {
+		t.Fatalf("error=%v, want turn-budget rejection", err)
+	}
+}
+
+func TestBoxMediaIncompleteAudioWriteIsReported(t *testing.T) {
+	bridge := newTestBridge(t, &fakeHA{result: &HomeAssistantResult{
+		ConversationID: "ha-box-1", ResponseType: "action_done", Speech: "The kitchen light is off.",
+		SuccessTargets: []HomeAssistantTarget{{Type: "entity", ID: "light.kitchen"}}, ActionExecuted: "unknown",
+	}}, newFakeLedger())
+	bridge.tts = &boxMediaTTS{}
+	var reported bool
+	handler, err := NewBoxMediaHandler(BoxMediaHandlerOptions{
+		Bridge:            bridge,
+		LocalSTT:          &fakeBoxSTT{local: true, text: "turn off the kitchen light", provider: "local-whisper"},
+		MediaPairingToken: testBoxMediaPairingToken,
+		Rule:              boxMediaTestRule(),
+		OnIncompleteWrite: func(wrote, want int, writeErr error) {
+			reported = wrote != want || writeErr != nil
+		},
+	})
+	if err != nil {
+		t.Fatalf("NewBoxMediaHandler: %v", err)
+	}
+	request := boxMediaRequest(t, mustBoxUUIDv7(t), boxL16(16000))
+	writer := &incompleteWriteRecorder{err: errors.New("conn reset")}
+	handler.ServeHTTP(writer, request)
+	if writer.code != http.StatusOK {
+		t.Fatalf("status=%d, headers already committed as success", writer.code)
+	}
+	if !reported {
+		t.Fatal("truncated audio write was dropped without a named failure")
+	}
+}
+
+type incompleteWriteRecorder struct {
+	header http.Header
+	code   int
+	err    error
+}
+
+func (w *incompleteWriteRecorder) Header() http.Header {
+	if w.header == nil {
+		w.header = make(http.Header)
+	}
+	return w.header
+}
+
+func (w *incompleteWriteRecorder) WriteHeader(code int) { w.code = code }
+
+func (w *incompleteWriteRecorder) Write([]byte) (int, error) {
+	if w.code == 0 {
+		w.code = http.StatusOK
+	}
+	return 0, w.err
 }
 
 func TestNewBoxMediaHandlerRequiresLocalSTTAndMatchingSingleRule(t *testing.T) {

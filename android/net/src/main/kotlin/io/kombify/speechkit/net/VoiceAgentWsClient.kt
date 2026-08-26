@@ -1,5 +1,6 @@
 package io.kombify.speechkit.net
 
+import io.kombify.speechkit.log.VoiceLog
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.receiveAsFlow
@@ -29,7 +30,12 @@ sealed interface VoiceAgentEvent {
         val done: Boolean,
     ) : VoiceAgentEvent
 
-    /** Agent audio to play back (raw PCM, server format). */
+    /**
+     * Agent audio to play back: S16 LE mono PCM at
+     * [VoiceAgentAudio.SERVER_SAMPLE_RATE], which is **not** the rate the
+     * microphone captures at. A host that hands these bytes to a player or a
+     * duration calculation states that rate explicitly.
+     */
     data class Audio(val pcm: ByteArray) : VoiceAgentEvent {
         // Value semantics on a ByteArray field need explicit equals/hashCode;
         // the generated ones compare references and would report two
@@ -186,6 +192,11 @@ class VoiceAgentWsClient(
             }
 
             override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
+                VoiceLog.e(
+                    VoiceLog.AGENT,
+                    "ws_failure http=${response?.code ?: "-"}",
+                    t,
+                )
                 events.trySend(
                     VoiceAgentEvent.Failure(
                         code = FAILURE_CODE,

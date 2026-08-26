@@ -32,8 +32,8 @@ import androidx.compose.ui.unit.dp
 import dagger.hilt.android.AndroidEntryPoint
 import io.kombify.speechkit.R
 import io.kombify.speechkit.app.ui.theme.SpeechKitTheme
-import io.kombify.speechkit.net.ConnectionProfile
-import io.kombify.speechkit.net.ConnectionProfileSource
+import io.kombify.speechkit.domain.ConnectionProfile
+import io.kombify.speechkit.domain.ConnectionProfileSource
 import io.kombify.speechkit.net.SpeechKitServerApi
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers

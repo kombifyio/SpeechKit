@@ -2,7 +2,9 @@ package io.kombify.speechkit.app.ui
 
 import android.Manifest
 import android.content.Context
+import android.content.Intent
 import android.content.pm.PackageManager
+import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
@@ -37,12 +39,15 @@ import io.kombify.speechkit.app.ui.onboarding.KeyboardSetupChecker
 import timber.log.Timber
 import androidx.compose.ui.res.stringResource
 import io.kombify.speechkit.R
-import io.kombify.speechkit.net.ConnectionProfile
+import io.kombify.speechkit.domain.ConnectionProfile
+import io.kombify.speechkit.domain.ConnectionProfileSource
 import io.kombify.speechkit.net.DictationController
 import io.kombify.speechkit.net.LanServer
 import io.kombify.speechkit.net.NsdLanFinder
 import io.kombify.speechkit.net.StoredServerProfile
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
@@ -51,20 +56,52 @@ import androidx.compose.foundation.layout.size
 import io.kombify.speechkit.app.keyboard.KeyboardAgentPreferences
 import io.kombify.speechkit.app.keyboard.KeyboardIconChoice
 import io.kombify.speechkit.app.keyboard.KeyboardIconPreferences
+import io.kombify.speechkit.app.keyboard.iconChoicesFor
 import io.kombify.speechkit.app.build.ShippedDefaults
+import io.kombify.speechkit.app.companion.CompanionProvision
+import io.kombify.speechkit.app.companion.CompanionProvisioner
+import io.kombify.speechkit.app.companion.ConnectCloudIntent
+import io.kombify.speechkit.coinstall.v1.CoinstallContract
+import io.kombify.speechkit.domain.ConnectionMode
+import io.kombify.speechkit.domain.fallbackModeAfterDisconnect
+import javax.inject.Inject
 
 @AndroidEntryPoint
 class MainActivity : ComponentActivity() {
+
+    @Inject lateinit var companionProvisioner: CompanionProvisioner
+
+    @Inject lateinit var profileSource: ConnectionProfileSource
 
     private val micPermissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestPermission()
     ) { granted -> Timber.d("RECORD_AUDIO permission: $granted") }
 
+    private var pendingConnectCloud by mutableStateOf(false)
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         requestMicPermissionIfNeeded()
-        setContent { SpeechKitTheme { SpeechKitApp() } }
+        pendingConnectCloud = ConnectCloudIntent.matches(intent)
+        setContent {
+            SpeechKitTheme {
+                SpeechKitApp(
+                    companionProvisioner = companionProvisioner,
+                    profileSource = profileSource,
+                    connectCloudRequested = pendingConnectCloud,
+                    onConnectCloudConsumed = { pendingConnectCloud = false },
+                )
+            }
+        }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        if (ConnectCloudIntent.matches(intent)) {
+            pendingConnectCloud = true
+        }
     }
 
     private fun requestMicPermissionIfNeeded() {
@@ -80,11 +117,19 @@ class MainActivity : ComponentActivity() {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun SpeechKitApp() {
+private fun SpeechKitApp(
+    companionProvisioner: CompanionProvisioner,
+    profileSource: ConnectionProfileSource,
+    connectCloudRequested: Boolean = false,
+    onConnectCloudConsumed: () -> Unit = {},
+) {
     val context = LocalContext.current
     val prefs = remember { context.getSharedPreferences("speechkit_app", Context.MODE_PRIVATE) }
     var onboardingComplete by remember { mutableStateOf(prefs.getBoolean("onboarding_done", false)) }
     var selectedTab by remember { mutableIntStateOf(0) }
+    LaunchedEffect(connectCloudRequested) {
+        if (connectCloudRequested) selectedTab = 2
+    }
 
     // Live-refresh keyboard status on resume from system settings.
     var isKeyboardEnabled by remember { mutableStateOf(KeyboardSetupChecker.isKeyboardEnabled(context)) }
@@ -166,9 +211,17 @@ private fun SpeechKitApp() {
                 when (selectedTab) {
                     0 -> HomeTab(onOpenVoiceAgent = { selectedTab = 4 })
                     1 -> LibraryTab()
-                    2 -> SettingsTab()
-                    3 -> DictationTestScreen()
-                    4 -> VoiceAgentTestScreen()
+                    2 -> SettingsTab(
+                        companionProvisioner = companionProvisioner,
+                        connectCloudRequested = connectCloudRequested,
+                        onConnectSucceeded = {
+                            onConnectCloudConsumed()
+                            if (!onboardingComplete) selectedTab = 0
+                        },
+                        onConnectAbandoned = onConnectCloudConsumed,
+                    )
+                    3 -> DictationTestScreen(profileSource)
+                    4 -> VoiceAgentTestScreen(profileSource)
                 }
             }
         }
@@ -196,12 +249,12 @@ private fun OnboardingFlow(
             0 -> {
                 // Step 1: Welcome + Mode Explanation
                 Text(
-                    "Willkommen bei SpeechKit",
+                    stringResource(R.string.onboarding_welcome),
                     style = MaterialTheme.typography.headlineMedium,
                     fontWeight = FontWeight.Bold,
                 )
                 Text(
-                    "SpeechKit bietet drei Modi für sprachgesteuerte Produktivität:",
+                    stringResource(R.string.onboarding_intro),
                     style = MaterialTheme.typography.bodyLarge,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -209,31 +262,31 @@ private fun OnboardingFlow(
                 Spacer(Modifier.height(8.dp))
 
                 ModeCard(
-                    title = "Dictate",
-                    description = "Sprache zu Text. Diktiere in jeder App direkt per Tastatur. Kein KI-Processing -- pure Transkription.",
+                    title = stringResource(R.string.mode_dictate),
+                    description = stringResource(R.string.onboarding_dictate_body),
                     icon = "Mic",
-                    requirement = "Tastatur aktivieren",
+                    requirement = stringResource(R.string.onboarding_dictate_requirement),
                     isAvailable = true,
                 )
                 ModeCard(
-                    title = "Assist",
-                    description = "Stelle eine Frage per Sprache, erhalte eine KI-Antwort direkt in der Tastatur. Umschreiben, Zusammenfassen, Übersetzen — alles per Sprachbefehl.",
+                    title = stringResource(R.string.mode_assist),
+                    description = stringResource(R.string.onboarding_assist_body),
                     icon = "Sparkle",
-                    requirement = "Tastatur aktivieren; KI-Antworten brauchen einen gekoppelten Server",
+                    requirement = stringResource(R.string.onboarding_assist_requirement),
                     isAvailable = true,
                 )
                 ModeCard(
-                    title = "Voice Agent",
-                    description = "Gespräch in der Tastatur: die Tasten werden durch das Agent-Panel ersetzt. Nicht der System-Assistent.",
+                    title = stringResource(R.string.mode_voice_agent),
+                    description = stringResource(R.string.onboarding_voice_agent_body),
                     icon = "Waveform",
-                    requirement = "Tastatur aktivieren",
+                    requirement = stringResource(R.string.onboarding_voice_agent_requirement),
                     isAvailable = true,
                 )
 
                 Spacer(Modifier.height(16.dp))
 
                 Text(
-                    "Dictate, Assist und Voice Agent laufen in der SpeechKit-Tastatur. Der System-Assistent ist kein Einrichtungs-Schritt.",
+                    stringResource(R.string.onboarding_modes_note),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -242,7 +295,7 @@ private fun OnboardingFlow(
                     onClick = { step = 1 },
                     modifier = Modifier.fillMaxWidth(),
                 ) {
-                    Text("Tastatur einrichten")
+                    Text(stringResource(R.string.onboarding_setup_keyboard))
                 }
             }
             1 -> {
@@ -320,7 +373,7 @@ private fun ModeCard(
                     Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
                     if (!isAvailable) {
                         Text(
-                            "Kommt bald",
+                            stringResource(R.string.onboarding_coming_soon),
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
@@ -449,7 +502,12 @@ private fun LibraryTab() {
 // --- Settings Tab ---
 
 @Composable
-private fun SettingsTab() {
+private fun SettingsTab(
+    companionProvisioner: CompanionProvisioner,
+    connectCloudRequested: Boolean = false,
+    onConnectSucceeded: () -> Unit = {},
+    onConnectAbandoned: () -> Unit = {},
+) {
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -459,7 +517,12 @@ private fun SettingsTab() {
     ) {
         Text("Einstellungen", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
 
-        ServerConnectionCard()
+        ServerConnectionCard(
+            provisioner = companionProvisioner,
+            connectCloudRequested = connectCloudRequested,
+            onConnectSucceeded = onConnectSucceeded,
+            onConnectAbandoned = onConnectAbandoned,
+        )
 
         VoiceAgentProviderCard()
 
@@ -517,12 +580,18 @@ private fun SettingsTab() {
  * server keys and the voice agent work at all.
  */
 @Composable
-private fun ServerConnectionCard() {
+private fun ServerConnectionCard(
+    provisioner: CompanionProvisioner,
+    connectCloudRequested: Boolean = false,
+    onConnectSucceeded: () -> Unit = {},
+    onConnectAbandoned: () -> Unit = {},
+) {
     val context = LocalContext.current
     val prefs = remember {
         context.getSharedPreferences(StoredServerProfile.PREFS_NAME, Context.MODE_PRIVATE)
     }
     val scope = rememberCoroutineScope()
+    var modeTick by remember { mutableIntStateOf(0) }
 
     var url by remember {
         mutableStateOf(prefs.getString(StoredServerProfile.KEY_SERVER_URL, "") ?: "")
@@ -561,7 +630,73 @@ private fun ServerConnectionCard() {
         finder.start { lanServers = it }
     }
 
-    val saved = remember(url, token) { StoredServerProfile.load(context) }
+    val saved = remember(url, token, modeTick) { StoredServerProfile.load(context) }
+    val shippedUrl = remember { ShippedDefaults.serverUrl }
+    val shippedProfile = remember { ShippedDefaults.shippedProfile() }
+    val cloudConnectSupported = remember { ShippedDefaults.cloudConnectSupported }
+    val mode = remember(modeTick, saved, shippedProfile) {
+        StoredServerProfile.resolvedMode(context, saved, shippedProfile)
+    }
+    val cloudSession = remember(modeTick) { provisioner.currentSession() }
+
+    fun persistMode(next: ConnectionMode) {
+        StoredServerProfile.saveMode(context, next)
+        modeTick += 1
+    }
+
+    fun openCompanion() {
+        val launch = context.packageManager.getLaunchIntentForPackage(CoinstallContract.COMPANION_PACKAGE)
+        if (launch != null) {
+            context.startActivity(launch)
+            return
+        }
+        context.startActivity(
+            Intent(
+                Intent.ACTION_VIEW,
+                Uri.parse("market://details?id=${CoinstallContract.COMPANION_PACKAGE}"),
+            ),
+        )
+    }
+
+    fun connectCloud() {
+        scope.launch {
+            val outcome = withContext(Dispatchers.IO) { provisioner.provisionNow() }
+            when (outcome) {
+                is CompanionProvision.Session -> {
+                    persistMode(ConnectionMode.KOMBIFY_CLOUD)
+                    status = context.getString(R.string.settings_connection_cloud_connected)
+                    onConnectSucceeded()
+                }
+                CompanionProvision.Empty -> {
+                    status = context.getString(R.string.settings_connection_cloud_signed_out)
+                    openCompanion()
+                }
+                CompanionProvision.Unavailable -> {
+                    status = if (provisioner.isCompanionInstalled()) {
+                        context.getString(R.string.settings_connection_cloud_failed)
+                    } else {
+                        context.getString(R.string.settings_connection_cloud_missing)
+                    }
+                    if (!provisioner.isCompanionInstalled()) onConnectAbandoned()
+                }
+            }
+        }
+    }
+
+    LaunchedEffect(connectCloudRequested) {
+        if (!connectCloudRequested) return@LaunchedEffect
+        connectCloud()
+    }
+    val connectLifecycle = androidx.compose.ui.platform.LocalLifecycleOwner.current
+    DisposableEffect(connectCloudRequested, connectLifecycle) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME && connectCloudRequested) {
+                connectCloud()
+            }
+        }
+        connectLifecycle.lifecycle.addObserver(observer)
+        onDispose { connectLifecycle.lifecycle.removeObserver(observer) }
+    }
 
     Card(modifier = Modifier.fillMaxWidth()) {
         Column(
@@ -573,15 +708,57 @@ private fun ServerConnectionCard() {
                 style = MaterialTheme.typography.titleSmall,
                 fontWeight = FontWeight.Medium,
             )
-            val shipped = remember { ShippedDefaults.serverUrl }
+            Text(
+                when (mode) {
+                    ConnectionMode.KOMBIFY_CLOUD -> stringResource(R.string.settings_connection_mode_cloud)
+                    ConnectionMode.SELF_HOST -> stringResource(R.string.settings_connection_mode_self_host)
+                    ConnectionMode.SPEECHKIT_ORIGIN -> stringResource(R.string.settings_connection_mode_origin)
+                    ConnectionMode.ON_DEVICE -> stringResource(R.string.settings_connection_mode_on_device)
+                },
+                style = MaterialTheme.typography.bodySmall,
+                fontWeight = FontWeight.Medium,
+            )
             Text(
                 when {
+                    mode == ConnectionMode.KOMBIFY_CLOUD && cloudSession != null ->
+                        stringResource(R.string.settings_connection_cloud_connected)
+                    mode == ConnectionMode.KOMBIFY_CLOUD ->
+                        stringResource(R.string.settings_connection_cloud_signed_out)
                     saved != null -> stringResource(R.string.settings_connection_state_server)
-                    shipped != null -> stringResource(R.string.settings_connection_state_shipped, shipped)
+                    shippedUrl != null && shippedProfile != null ->
+                        stringResource(R.string.settings_connection_state_shipped, shippedUrl)
+                    shippedUrl != null -> stringResource(R.string.settings_connection_state_on_device)
                     else -> stringResource(R.string.settings_connection_state_on_device)
                 },
                 style = MaterialTheme.typography.bodySmall,
             )
+            if (cloudConnectSupported) {
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    if (mode == ConnectionMode.KOMBIFY_CLOUD) {
+                        TextButton(
+                            onClick = {
+                                provisioner.forgetSession()
+                                persistMode(fallbackModeAfterDisconnect(shippedProfile))
+                            },
+                        ) { Text(stringResource(R.string.settings_connection_disconnect_cloud)) }
+                    } else {
+                        Button(onClick = { connectCloud() }) {
+                            Text(stringResource(R.string.settings_connection_connect_cloud))
+                        }
+                    }
+                    TextButton(onClick = { openCompanion() }) {
+                        Text(
+                            stringResource(
+                                if (provisioner.isCompanionInstalled()) {
+                                    R.string.settings_connection_open_companion
+                                } else {
+                                    R.string.settings_connection_install_companion
+                                },
+                            ),
+                        )
+                    }
+                }
+            }
             OutlinedTextField(
                 value = url,
                 onValueChange = { url = it },
@@ -638,6 +815,7 @@ private fun ServerConnectionCard() {
                             .putString(StoredServerProfile.KEY_SERVER_URL, url.trim())
                             .putString(StoredServerProfile.KEY_SERVER_TOKEN, token.trim())
                             .apply()
+                        persistMode(ConnectionMode.SELF_HOST)
                         status = context.getString(R.string.settings_connection_saved)
                     },
                 ) { Text(stringResource(R.string.settings_connection_save)) }
@@ -682,6 +860,7 @@ private fun ServerConnectionCard() {
                                 .apply()
                             url = ""
                             token = ""
+                            persistMode(fallbackModeAfterDisconnect(shippedProfile))
                             status = context.getString(R.string.settings_connection_cleared)
                         },
                     ) { Text(stringResource(R.string.settings_connection_clear)) }
@@ -697,18 +876,18 @@ private fun ServerConnectionCard() {
 /**
  * Which glyph each SpeechKit toolbar key is drawn with.
  *
- * Only SpeechKit's own symbols are offered. Provider logos were considered and
- * left out on purpose: the keyboard APK is GPL-3.0 as a whole and third-party
- * marks inside it are a trademark question, not a design one.
+ * Only SpeechKit's own symbols are offered. Each mode has Default plus a
+ * couple of glyphs that match that mode. Provider logos stay out: the
+ * keyboard APK is GPL-3.0 as a whole.
  */
 @Composable
 private fun VoiceAgentProviderCard() {
     val context = LocalContext.current
     var selected by remember { mutableStateOf(KeyboardAgentPreferences.provider(context)) }
     val options = listOf(
-        KeyboardAgentPreferences.PROVIDER_OPENAI to "GPT",
         KeyboardAgentPreferences.PROVIDER_DEEPGRAM to "Deepgram",
         KeyboardAgentPreferences.PROVIDER_ASSEMBLYAI to "AssemblyAI",
+        KeyboardAgentPreferences.PROVIDER_OPENAI to "GPT",
     )
     Card(modifier = Modifier.fillMaxWidth()) {
         Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -777,7 +956,7 @@ private fun KeyboardIconsCard() {
                             .horizontalScroll(rememberScrollState()),
                         horizontalArrangement = Arrangement.spacedBy(8.dp),
                     ) {
-                        KeyboardIconChoice.entries.forEach { option ->
+                        iconChoicesFor(action, chosen).forEach { option ->
                             FilterChip(
                                 selected = option == chosen,
                                 onClick = {

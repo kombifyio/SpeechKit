@@ -4,8 +4,8 @@ import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
 import dagger.hilt.components.SingletonComponent
-import io.kombify.speechkit.net.ConnectionProfile
-import io.kombify.speechkit.net.ConnectionProfileSource
+import io.kombify.speechkit.domain.ConnectionProfile
+import io.kombify.speechkit.domain.ConnectionProfileSource
 import io.kombify.speechkit.stt.SttRouter
 import javax.inject.Singleton
 

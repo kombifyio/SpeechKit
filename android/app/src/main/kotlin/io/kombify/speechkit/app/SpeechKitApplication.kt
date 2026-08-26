@@ -8,9 +8,10 @@ import helium314.keyboard.latin.App
 import helium314.keyboard.latin.SpeechKitVoiceBridge
 import io.kombify.speechkit.app.keyboard.InlineVoicePanel
 import io.kombify.speechkit.app.keyboard.SpeechKitStripLayout
-import io.kombify.speechkit.net.ConnectionProfileSource
+import io.kombify.speechkit.domain.ConnectionProfileSource
 import dagger.hilt.android.HiltAndroidApp
 import io.kombify.speechkit.BuildConfig
+import io.kombify.speechkit.log.VoiceLog
 import timber.log.Timber
 
 /**
@@ -24,9 +25,27 @@ class SpeechKitApplication : App() {
 
     override fun onCreate() {
         super.onCreate()
+        // On-device diagnosis: `adb logcat -s sk.voice`. VoiceLog always uses
+        // that tag. DebugTree in debug; INFO+ on release so a tester APK still
+        // shows mint/WS/capture failures without debug verbosity.
         if (BuildConfig.DEBUG) {
             Timber.plant(Timber.DebugTree())
+        } else {
+            Timber.plant(object : Timber.Tree() {
+                override fun isLoggable(tag: String?, priority: Int) =
+                    priority >= android.util.Log.INFO
+
+                override fun log(priority: Int, tag: String?, message: String, t: Throwable?) {
+                    val line = if (t != null) {
+                        message + "\n" + android.util.Log.getStackTraceString(t)
+                    } else {
+                        message
+                    }
+                    android.util.Log.println(priority, tag ?: VoiceLog.TAG, line)
+                }
+            })
         }
+        VoiceLog.i(VoiceLog.NET, "app start debug=${BuildConfig.DEBUG}")
         SpeechKitStripLayout.apply(this)
         // Answer the keyboard's voice key in place. Registered once, for the
         // process lifetime: the panel itself is built per activation and takes

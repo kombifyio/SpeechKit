@@ -23,7 +23,6 @@ import io.kombify.speechkit.ime.R
 import io.kombify.speechkit.net.VoiceAgentErrorCodes
 import io.kombify.speechkit.net.VoiceAgentUiState
 import io.kombify.speechkit.voiceui.VoiceAuraOrb
-import io.kombify.speechkit.voiceui.VoiceAuraState
 
 /**
  * Voice Agent surface inside the keyboard window: the conversation takes over
@@ -70,7 +69,7 @@ fun VoiceAgentPanelUi(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                VoiceAuraOrb(state = state.phase.orbState(), sizeDp = 40)
+                VoiceAuraOrb(state = state.phase.toAuraState(), sizeDp = 40)
                 Text(
                     text = agentStatusLabel(state, provider),
                     style = MaterialTheme.typography.labelMedium,
@@ -136,18 +135,10 @@ fun VoiceAgentPanelUi(
 }
 
 /**
- * The conversation phase drawn as an orb state. The session vocabulary and
- * the visual vocabulary stay separate on purpose: a visual change must not
- * force a protocol change.
+ * The conversation phase is mapped onto the orb in [toAuraState]. The session
+ * vocabulary and the visual vocabulary stay separate on purpose: a visual
+ * change must not force a protocol change.
  */
-private fun VoiceAgentUiState.Phase.orbState(): VoiceAuraState = when (this) {
-    VoiceAgentUiState.Phase.Inactive -> VoiceAuraState.INACTIVE
-    VoiceAgentUiState.Phase.Connecting -> VoiceAuraState.CONNECTING
-    VoiceAgentUiState.Phase.Listening -> VoiceAuraState.LISTENING
-    VoiceAgentUiState.Phase.Processing -> VoiceAuraState.PROCESSING
-    VoiceAgentUiState.Phase.Speaking -> VoiceAuraState.SPEAKING
-    VoiceAgentUiState.Phase.Ended -> VoiceAuraState.SETTLING
-}
 
 @Composable
 private fun agentStatusLabel(state: VoiceAgentUiState, provider: String?): String {

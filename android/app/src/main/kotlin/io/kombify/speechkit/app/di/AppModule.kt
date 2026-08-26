@@ -12,6 +12,7 @@ import io.kombify.speechkit.audio.AndroidAudioSession
 import io.kombify.speechkit.audio.AudioSession
 import io.kombify.speechkit.shortcuts.DefaultShortcutResolver
 import io.kombify.speechkit.shortcuts.ShortcutResolver
+import io.kombify.speechkit.app.companion.CompanionProvisioner
 import io.kombify.speechkit.store.RoomStore
 import io.kombify.speechkit.store.Store
 import javax.inject.Singleton
@@ -23,6 +24,11 @@ import javax.inject.Singleton
 @Module
 @InstallIn(SingletonComponent::class)
 object AppModule {
+
+    @Provides
+    @Singleton
+    fun provideCompanionProvisioner(@ApplicationContext context: Context): CompanionProvisioner =
+        CompanionProvisioner(context)
 
     @Provides
     @Singleton

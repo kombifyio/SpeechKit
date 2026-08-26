@@ -12,6 +12,9 @@ Last updated: 2026-06-02 for the provider-neutral Speaker Layer surface.
 Local-Library hosts without depending on `internal/*`, Wails, Windows-only
 adapters, desktop storage, server middleware, or bundled app assets.
 
+The Android twin — which Gradle modules a host may depend on — is
+[android-sdk-surface-boundary.md](android-sdk-surface-boundary.md).
+
 The v0.40 line promoted the embeddable Voice-Companion building blocks that
 were previously only available through product adapters. This hardening branch
 is an explicit breaking cleanup: host applications should import public SDK

@@ -1,14 +1,8 @@
 package io.kombify.speechkit.app.ui.dev
 
 import android.Manifest
-import android.annotation.SuppressLint
 import android.content.Context
 import android.content.pm.PackageManager
-import android.media.AudioAttributes
-import android.media.AudioFormat
-import android.media.AudioRecord
-import android.media.AudioTrack
-import android.media.MediaRecorder
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -35,22 +29,23 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
-import io.kombify.speechkit.net.ConnectionProfile
-import io.kombify.speechkit.net.StoredServerProfile
+import io.kombify.speechkit.audio.MicAudioCapture
+import io.kombify.speechkit.audio.PcmStreamPlayer
+import io.kombify.speechkit.ime.ui.toAuraState
+import io.kombify.speechkit.domain.ConnectionProfile
+import io.kombify.speechkit.domain.ConnectionProfileSource
+import io.kombify.speechkit.log.VoiceLog
+import io.kombify.speechkit.net.VoiceAgentAudio
 import io.kombify.speechkit.net.VoiceAgentController
 import io.kombify.speechkit.net.VoiceAgentEvent
 import io.kombify.speechkit.net.VoiceAgentStartFrame
 import io.kombify.speechkit.net.VoiceAgentUiState
+import io.kombify.speechkit.domain.serverDisplayToken
+import io.kombify.speechkit.domain.serverDisplayUrl
+import io.kombify.speechkit.domain.testSurfaceConnectProfile
 import io.kombify.speechkit.voiceui.VoiceAuraOrb
-import io.kombify.speechkit.voiceui.VoiceAuraState
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
-import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
-import timber.log.Timber
-
-private const val SAMPLE_RATE_HZ = 16_000
-private const val CHUNK_BYTES = 3_200 // 100 ms of 16 kHz S16 mono
 
 /**
  * Developer surface for the realtime Voice Agent: hold to talk, release to
@@ -58,30 +53,40 @@ private const val CHUNK_BYTES = 3_200 // 100 ms of 16 kHz S16 mono
  *
  * This is a test harness, not the product surface. The shipping surfaces are
  * the system assistant overlay and the keyboard panel; both bind to the same
- * [VoiceAgentController], so what works here is what works there. It exists
- * because a conversation cannot be verified from unit tests alone — someone
- * has to hear the answer come back.
+ * [VoiceAgentController] through [ConnectionProfileSource], so what works here
+ * is what works there. Settings owns persistence — Connect here must not write
+ * `speechkit_config`. Capture, playback, and the orb adapter are the same
+ * `:core` / `:ime` pieces those surfaces use.
  */
 @Composable
-fun VoiceAgentTestScreen(modifier: Modifier = Modifier) {
+fun VoiceAgentTestScreen(
+    profileSource: ConnectionProfileSource,
+    modifier: Modifier = Modifier,
+) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
-    // Same store the dictation screen and ConnectionProfileSource use.
-    val prefs = remember {
-        context.getSharedPreferences(StoredServerProfile.PREFS_NAME, Context.MODE_PRIVATE)
-    }
+    val lifecycleOwner = androidx.compose.ui.platform.LocalLifecycleOwner.current
 
-    var serverUrl by remember {
-        mutableStateOf(prefs.getString(StoredServerProfile.KEY_SERVER_URL, "").orEmpty())
-    }
-    var token by remember {
-        mutableStateOf(prefs.getString(StoredServerProfile.KEY_SERVER_TOKEN, "").orEmpty())
+    var resolved by remember { mutableStateOf(profileSource.currentProfile()) }
+    var serverUrl by remember { mutableStateOf(resolved.serverDisplayUrl()) }
+    var token by remember { mutableStateOf(resolved.serverDisplayToken()) }
+    DisposableEffect(lifecycleOwner) {
+        val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
+            if (event == androidx.lifecycle.Lifecycle.Event.ON_RESUME) {
+                resolved = profileSource.currentProfile()
+                if (serverUrl.isBlank()) serverUrl = resolved.serverDisplayUrl()
+                if (token.isBlank()) token = resolved.serverDisplayToken()
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
     var controller by remember { mutableStateOf<VoiceAgentController?>(null) }
     var status by remember { mutableStateOf("Nicht verbunden") }
     var holding by remember { mutableStateOf(false) }
     var recordJob by remember { mutableStateOf<Job?>(null) }
-    val player = remember { AgentAudioPlayer() }
+    val capture = remember { MicAudioCapture() }
+    val player = remember { PcmStreamPlayer(VoiceAgentAudio.SERVER_SAMPLE_RATE) }
 
     val state = controller?.state?.collectAsState()?.value ?: VoiceAgentUiState()
 
@@ -93,51 +98,28 @@ fun VoiceAgentTestScreen(modifier: Modifier = Modifier) {
         }
     }
 
-    @SuppressLint("MissingPermission")
     fun startCapture(live: VoiceAgentController) {
-        recordJob = scope.launch(Dispatchers.IO) {
+        recordJob = scope.launch {
             runCatching {
-                val minBuffer = AudioRecord.getMinBufferSize(
-                    SAMPLE_RATE_HZ,
-                    AudioFormat.CHANNEL_IN_MONO,
-                    AudioFormat.ENCODING_PCM_16BIT,
-                )
-                val recorder = AudioRecord(
-                    MediaRecorder.AudioSource.VOICE_RECOGNITION,
-                    SAMPLE_RATE_HZ,
-                    AudioFormat.CHANNEL_IN_MONO,
-                    AudioFormat.ENCODING_PCM_16BIT,
-                    maxOf(minBuffer, CHUNK_BYTES),
-                )
-                try {
-                    recorder.startRecording()
-                    val chunk = ByteArray(CHUNK_BYTES)
-                    while (isActive) {
-                        val read = recorder.read(chunk, 0, chunk.size)
-                        when {
-                            read > 0 -> live.sendAudio(chunk.copyOf(read))
-                            read < 0 -> error("AudioRecord.read failed: $read")
-                        }
-                    }
-                } finally {
-                    runCatching { recorder.stop() }
-                    recorder.release()
-                }
-            }.onFailure { Timber.w(it, "voice agent capture failed") }
+                capture.frames().collect { live.sendAudio(it) }
+            }.onFailure { VoiceLog.w(VoiceLog.AUDIO, "test voice agent capture failed", it) }
         }
     }
 
     fun connect() {
         scope.launch {
             runCatching {
-                prefs.edit()
-                    .putString(StoredServerProfile.KEY_SERVER_URL, serverUrl.trim())
-                    .putString(StoredServerProfile.KEY_SERVER_TOKEN, token.trim())
-                    .apply()
-                status = "Verbinde…"
-                val live = VoiceAgentController(
-                    ConnectionProfile.Server(serverUrl.trim(), token.trim().ifEmpty { null }),
+                val profile = testSurfaceConnectProfile(
+                    profileSource.currentProfile(),
+                    serverUrl,
+                    token,
                 )
+                if (profile !is ConnectionProfile.Server) {
+                    status = "Voice Agent needs a SpeechKit server (tester origin, Cloud, or self-host)."
+                    return@launch
+                }
+                status = "Verbinde…"
+                val live = VoiceAgentController(profile)
                 val events = live.start(VoiceAgentStartFrame())
                 controller = live
                 status = "Verbunden"
@@ -151,7 +133,7 @@ fun VoiceAgentTestScreen(modifier: Modifier = Modifier) {
                 }
             }.onFailure {
                 status = "Fehler: ${it.message}"
-                Timber.w(it, "voice agent connect failed")
+                VoiceLog.w(VoiceLog.AGENT, "test connect failed", it)
             }
         }
     }
@@ -165,9 +147,7 @@ fun VoiceAgentTestScreen(modifier: Modifier = Modifier) {
     ) {
         Text("Voice Agent (Test)", style = MaterialTheme.typography.titleMedium)
         Text(
-            "Halten zum Sprechen, loslassen für die Antwort. Braucht einen " +
-                "gekoppelten SpeechKit-Server — der Sprachdialog hat keine " +
-                "Gerätevariante.",
+            "Hold to talk, release for the answer. Uses the same connection as the keyboard. Empty fields keep tester origin or Cloud; a typed URL is a one-shot override and is not saved.",
             style = MaterialTheme.typography.bodySmall,
         )
 
@@ -228,7 +208,7 @@ fun VoiceAgentTestScreen(modifier: Modifier = Modifier) {
                 verticalArrangement = Arrangement.spacedBy(8.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
-                VoiceAuraOrb(state = state.phase.orbState(), sizeDp = 96)
+                VoiceAuraOrb(state = state.phase.toAuraState(), sizeDp = 96)
                 Text("Status: $status", style = MaterialTheme.typography.bodySmall)
                 Text("Phase: ${state.phase}", style = MaterialTheme.typography.bodySmall)
                 state.error?.let {
@@ -245,66 +225,6 @@ fun VoiceAgentTestScreen(modifier: Modifier = Modifier) {
     }
 }
 
-private fun VoiceAgentUiState.Phase.orbState(): VoiceAuraState = when (this) {
-    VoiceAgentUiState.Phase.Inactive -> VoiceAuraState.INACTIVE
-    VoiceAgentUiState.Phase.Connecting -> VoiceAuraState.CONNECTING
-    VoiceAgentUiState.Phase.Listening -> VoiceAuraState.LISTENING
-    VoiceAgentUiState.Phase.Processing -> VoiceAuraState.PROCESSING
-    VoiceAgentUiState.Phase.Speaking -> VoiceAuraState.SPEAKING
-    VoiceAgentUiState.Phase.Ended -> VoiceAuraState.SETTLING
-}
-
 private fun hasMicPermission(context: Context): Boolean =
     ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) ==
         PackageManager.PERMISSION_GRANTED
-
-/**
- * Streams the agent's PCM answer to the speaker.
- *
- * Deliberately minimal: the shipping surfaces route playback through the
- * platform audio adapters, and duplicating that here would mean two playback
- * paths to keep honest. This one only has to prove the audio arrives.
- */
-private class AgentAudioPlayer {
-    private var track: AudioTrack? = null
-
-    fun play(pcm: ByteArray) {
-        val active = track ?: create().also { track = it }
-        runCatching { active.write(pcm, 0, pcm.size) }
-            .onFailure { Timber.w(it, "agent audio playback failed") }
-    }
-
-    fun release() {
-        runCatching {
-            track?.stop()
-            track?.release()
-        }
-        track = null
-    }
-
-    private fun create(): AudioTrack {
-        val minBuffer = AudioTrack.getMinBufferSize(
-            SAMPLE_RATE_HZ,
-            AudioFormat.CHANNEL_OUT_MONO,
-            AudioFormat.ENCODING_PCM_16BIT,
-        )
-        return AudioTrack.Builder()
-            .setAudioAttributes(
-                AudioAttributes.Builder()
-                    .setUsage(AudioAttributes.USAGE_ASSISTANT)
-                    .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
-                    .build(),
-            )
-            .setAudioFormat(
-                AudioFormat.Builder()
-                    .setEncoding(AudioFormat.ENCODING_PCM_16BIT)
-                    .setSampleRate(SAMPLE_RATE_HZ)
-                    .setChannelMask(AudioFormat.CHANNEL_OUT_MONO)
-                    .build(),
-            )
-            .setBufferSizeInBytes(maxOf(minBuffer, CHUNK_BYTES * 4))
-            .setTransferMode(AudioTrack.MODE_STREAM)
-            .build()
-            .also { it.play() }
-    }
-}

@@ -24,9 +24,9 @@ import helium314.keyboard.latin.R
 import helium314.keyboard.latin.SpeechKitVoiceBridge
 import helium314.keyboard.settings.SettingsActivity
 import io.kombify.speechkit.app.ui.MainActivity
-import io.kombify.speechkit.ime.ImeAgentAudioPlayer
+import io.kombify.speechkit.audio.MicAudioCapture
+import io.kombify.speechkit.audio.PcmStreamPlayer
 import io.kombify.speechkit.ime.ImeVoiceAgentController
-import io.kombify.speechkit.ime.MicAudioCapture
 import io.kombify.speechkit.ime.MicPermissionEvents
 import io.kombify.speechkit.ime.MicPermissionGate
 import io.kombify.speechkit.ime.MicPermissionTrampolineActivity
@@ -34,9 +34,10 @@ import io.kombify.speechkit.ime.VoicePanelController
 import io.kombify.speechkit.ime.host.isDictationBlocked
 import io.kombify.speechkit.ime.ui.VoiceAgentPanelUi
 import io.kombify.speechkit.ime.ui.VoicePanelUi
-import io.kombify.speechkit.net.ConnectionProfile
-import io.kombify.speechkit.net.ConnectionProfileSource
+import io.kombify.speechkit.domain.ConnectionProfile
+import io.kombify.speechkit.domain.ConnectionProfileSource
 import io.kombify.speechkit.net.DictationController
+import io.kombify.speechkit.net.VoiceAgentAudio
 import io.kombify.speechkit.net.VoiceAgentController
 import io.kombify.speechkit.stt.streaming.StreamingSttSession
 import io.kombify.speechkit.ui.ServiceWindowOwner
@@ -130,7 +131,7 @@ class InlineVoicePanel(
     private var scope: CoroutineScope? = null
     private var controller: VoicePanelController? = null
     private var agentController: ImeVoiceAgentController? = null
-    private var agentPlayer: ImeAgentAudioPlayer? = null
+    private var agentPlayer: PcmStreamPlayer? = null
     private var keyboard: InputMethodService? = null
 
     private var windowOwner: ServiceWindowOwner? = null
@@ -209,11 +210,10 @@ class InlineVoicePanel(
 
     override fun onToolbarAction(action: String): String? {
         val service = keyboard ?: currentService ?: return null
-        val chosen = if (action == "SPEECHKIT_AGENT_GPT") {
-            KeyboardAgentPreferences.action(service)
-        } else {
-            keyboardActionForToolbarKey(action)
-        } ?: return null
+        val chosen = keyboardActionForToolbarKey(
+            action,
+            KeyboardAgentPreferences.action(service),
+        ) ?: return null
         val items = keyboardActionRowItems(profileSource.currentProfile())
         val blocker = items.firstOrNull { it.action == chosen }?.blocker
         if (blocker != null) return service.getString(blocker.reasonResource())
@@ -483,7 +483,7 @@ class InlineVoicePanel(
             audioCapture = MicAudioCapture(),
             micPermission = gate,
         )
-        val player = ImeAgentAudioPlayer()
+        val player = PcmStreamPlayer(VoiceAgentAudio.SERVER_SAMPLE_RATE)
 
         val owner = windowOwner(service) ?: run {
             Timber.w("Keyboard window has no decor view; falling back")

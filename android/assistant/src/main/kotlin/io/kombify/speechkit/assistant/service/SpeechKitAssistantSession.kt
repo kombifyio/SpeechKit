@@ -6,29 +6,23 @@ import android.content.Context
 import android.os.Bundle
 import android.service.voice.VoiceInteractionSession
 import android.service.voice.VoiceInteractionSessionService
+import android.speech.tts.TextToSpeech
 import android.view.View
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.platform.ComposeView
 import dagger.hilt.android.AndroidEntryPoint
-import android.speech.tts.TextToSpeech
-import io.kombify.speechkit.assistant.intent.ActionResult
 import io.kombify.speechkit.assistant.intent.AssistantIntent
+import io.kombify.speechkit.assistant.intent.GeneralQueryExecutor
 import io.kombify.speechkit.assistant.intent.IntentRouter
-import io.kombify.speechkit.assistant.intent.IntentType
 import io.kombify.speechkit.assistant.ui.AssistantOverlay
-import io.kombify.speechkit.net.ConnectionProfile
-import io.kombify.speechkit.net.ConnectionProfileSource
-import io.kombify.speechkit.net.SpeechKitServerApi
-import io.kombify.speechkit.audio.AudioFormat
-import io.kombify.speechkit.audio.AudioSession
-import io.kombify.speechkit.audio.MicLevelMeter
-import io.kombify.speechkit.audio.frameDurationMillis
-import io.kombify.speechkit.audio.toPcm16Samples
-import io.kombify.speechkit.stt.SttRouter
-import io.kombify.speechkit.stt.TranscribeOpts
+import io.kombify.speechkit.audio.MicAudioCapture
+import io.kombify.speechkit.domain.ConnectionProfileSource
+import io.kombify.speechkit.domain.describe
+import io.kombify.speechkit.log.VoiceLog
+import io.kombify.speechkit.net.DictationController
+import io.kombify.speechkit.net.SpeechKitApiException
 import io.kombify.speechkit.ui.ServiceWindowOwner
-import io.kombify.speechkit.vad.LevelVadDetector
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -38,12 +32,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.collect
-import kotlinx.coroutines.flow.onEach
-import kotlinx.coroutines.flow.takeWhile
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withTimeoutOrNull
-import timber.log.Timber
 import javax.inject.Inject
 
 /**
@@ -57,40 +46,32 @@ import javax.inject.Inject
 @AndroidEntryPoint
 class SpeechKitAssistantSessionService : VoiceInteractionSessionService() {
 
-    @Inject lateinit var audioSession: AudioSession
-
-    @Inject lateinit var sttRouter: SttRouter
-
     @Inject lateinit var profileSource: ConnectionProfileSource
 
     override fun onNewSession(args: Bundle?): VoiceInteractionSession =
-        SpeechKitVoiceSession(this, audioSession, sttRouter, profileSource)
+        SpeechKitVoiceSession(this, profileSource)
 }
 
 /**
  * Active voice interaction session.
  *
- * Manages the full lifecycle of a single assistant interaction:
  * 1. Show overlay UI
- * 2. Listen for voice input until the speaker stops
- * 3. Transcribe via [SttRouter]
- * 4. Classify intent via [IntentRouter]
- * 5. Execute action
- * 6. Respond
- * 7. Close or continue conversation
+ * 2. Transcribe via the same [DictationController] the keyboard uses
+ * 3. Classify intent via [IntentRouter]
+ * 4. Execute action
+ * 5. Respond
+ * 6. Close or continue conversation
  *
  * The session receives context about what the user is currently doing
  * (foreground app, screen content) via [onHandleAssist].
  */
 class SpeechKitVoiceSession(
     context: Context,
-    private val audioSession: AudioSession,
-    private val sttRouter: SttRouter,
     private val profileSource: ConnectionProfileSource,
 ) : VoiceInteractionSession(context) {
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
-    private val intentRouter = IntentRouter()
+    private val intentRouter = IntentRouter(GeneralQueryExecutor(profileSource))
     private var listeningJob: Job? = null
     private var tts: TextToSpeech? = null
 
@@ -122,14 +103,14 @@ class SpeechKitVoiceSession(
 
     override fun onShow(args: Bundle?, showFlags: Int) {
         super.onShow(args, showFlags)
-        Timber.d("Assistant session started (flags=$showFlags)")
+        VoiceLog.i(VoiceLog.ASSIST, "session started flags=$showFlags")
 
         windowOwner?.onResume()
         setUiEnabled(true)
         if (tts == null) {
             tts = TextToSpeech(context) { status ->
                 if (status != TextToSpeech.SUCCESS) {
-                    Timber.w("System TTS unavailable (status=$status)")
+                    VoiceLog.w(VoiceLog.ASSIST, "system TTS unavailable status=$status")
                 }
             }
         }
@@ -144,7 +125,7 @@ class SpeechKitVoiceSession(
         val packageName = structure?.activityComponent?.packageName
         val webUri = content?.webUri?.toString()
 
-        Timber.d("Assist context: app=$packageName, uri=$webUri")
+        VoiceLog.i(VoiceLog.ASSIST, "context app=$packageName")
 
         intentRouter.setContext(
             foregroundApp = packageName,
@@ -154,10 +135,9 @@ class SpeechKitVoiceSession(
 
     override fun onHide() {
         listeningJob?.cancel()
-        scope.launch { audioSession.stop() }
         windowOwner?.onPause()
         _uiState.value = AssistantUiState.Idle
-        Timber.d("Assistant session hidden")
+        VoiceLog.i(VoiceLog.ASSIST, "session hidden")
         super.onHide()
     }
 
@@ -175,125 +155,52 @@ class SpeechKitVoiceSession(
         listeningJob?.cancel()
         listeningJob = scope.launch {
             try {
-                Timber.d("Assistant: listening...")
+                val profile = profileSource.currentProfile()
+                VoiceLog.i(VoiceLog.ASSIST, "listen ${profile.describe()}")
                 _uiState.value = AssistantUiState.Listening()
 
-                audioSession.start()
-                val heardSpeech = captureUntilEndpoint()
-                val pcmData = audioSession.stop()
+                val outcome = UtteranceTranscriber(
+                    sessionFactory = {
+                        DictationController(profile, context = context).openSession()
+                    },
+                    audioCapture = MicAudioCapture(),
+                    onLevel = { level ->
+                        _uiState.value = AssistantUiState.Listening(level)
+                    },
+                ).transcribe()
 
-                if (!heardSpeech || pcmData.isEmpty()) {
-                    _uiState.value = AssistantUiState.Error(NO_SPEECH_MESSAGE)
+                if (outcome.reason != UtteranceResult.Reason.HEARD) {
+                    _uiState.value = AssistantUiState.Error(messageFor(outcome))
                     return@launch
                 }
+                _uiState.value = AssistantUiState.Transcribed(outcome.text)
 
-                _uiState.value = AssistantUiState.Processing
-
-                val result = sttRouter.route(
-                    audio = pcmData,
-                    durationSecs = pcmData.size.toDouble() /
-                        (AudioFormat.SAMPLE_RATE * AudioFormat.BYTES_PER_SAMPLE),
-                    // No language is pinned: SpeechKit stays multilanguage so the
-                    // speaker may switch language mid-session. See TranscribeOpts.
-                    opts = TranscribeOpts(),
-                )
-
-                Timber.d("Assistant heard: '${result.text}'")
-                if (result.text.isBlank()) {
-                    // An empty final is a real outcome, not a non-event: it must
-                    // never vanish silently.
-                    Timber.w("Assistant received an empty transcript from ${result.provider}")
-                    _uiState.value = AssistantUiState.Error(NO_SPEECH_MESSAGE)
-                    return@launch
-                }
-                _uiState.value = AssistantUiState.Transcribed(result.text)
-
-                val intent = intentRouter.classify(result.text)
-                Timber.d("Intent: ${intent.type} (confidence=${intent.confidence})")
-
+                val intent = intentRouter.classify(outcome.text)
+                VoiceLog.i(VoiceLog.ASSIST, "intent ${intent.type} confidence=${intent.confidence}")
                 executeIntent(intent)
+            } catch (e: SpeechKitApiException) {
+                VoiceLog.e(
+                    VoiceLog.ASSIST,
+                    "listen mint failed http=${e.httpStatus} code=${e.code}",
+                    e,
+                )
+                _uiState.value = AssistantUiState.Error("Server ${e.httpStatus} (${e.code})")
             } catch (e: Exception) {
-                Timber.e(e, "Assistant listening failed")
+                VoiceLog.e(VoiceLog.ASSIST, "listen failed", e)
                 _uiState.value = AssistantUiState.Error(e.message ?: GENERIC_ERROR_MESSAGE)
             }
         }
     }
 
-    /**
-     * Captures until the speaker stops, and reports whether speech was heard.
-     *
-     * Endpointing runs on [LevelVadDetector] rather than the Silero binding on
-     * purpose: model weights are never bundled into a release, so a
-     * model-backed detector throws on a fresh install — which is exactly the
-     * path the system assistant takes on first use. The level detector needs
-     * no model.
-     *
-     * One collector owns the frame flow. The capture session reads a single
-     * [android.media.AudioRecord], so a second collector would race it for the
-     * microphone; level metering and endpointing therefore share this loop.
-     */
-    private suspend fun captureUntilEndpoint(): Boolean {
-        val meter = MicLevelMeter()
-        val vad = LevelVadDetector()
-        var lastFrameAt = System.nanoTime()
-        var lastPublishAt = 0L
-        var speechMillis = 0L
-        var silenceMillis = 0L
-        var sawSpeech = false
-        var endpointReached = false
-
-        withTimeoutOrNull(MAX_CAPTURE_MILLIS) {
-            audioSession.pcmFrames
-                .onEach { frame ->
-                    val now = System.nanoTime()
-                    val elapsedMillis = (now - lastFrameAt) / 1_000_000
-                    lastFrameAt = now
-
-                    // Every frame advances the envelope so attack and release
-                    // stay accurate, but the overlay is only refreshed at
-                    // LEVEL_PUBLISH_INTERVAL_MS: at 16 kHz a frame arrives
-                    // roughly every 16 ms and recomposing that often buys
-                    // nothing the eye can see. The desktop prompter throttles
-                    // for the same reason.
-                    val level = meter.accept(frame, elapsedMillis)
-                    if ((now - lastPublishAt) / 1_000_000 >= LEVEL_PUBLISH_INTERVAL_MS) {
-                        lastPublishAt = now
-                        _uiState.value = AssistantUiState.Listening(level)
-                    }
-
-                    val frameMillis = frame.frameDurationMillis()
-                    if (vad.processFrame(frame.toPcm16Samples()) >= SPEECH_PROBABILITY) {
-                        speechMillis += frameMillis
-                        silenceMillis = 0
-                        if (speechMillis >= MIN_SPEECH_MILLIS) sawSpeech = true
-                    } else {
-                        silenceMillis += frameMillis
-                        // Only a trailing silence ends the turn. Leading
-                        // silence must not, or the assistant would give up
-                        // before the user starts speaking.
-                        if (sawSpeech && silenceMillis >= MIN_SILENCE_MILLIS) {
-                            endpointReached = true
-                        }
-                    }
-                }
-                .takeWhile { !endpointReached }
-                .collect()
-        }
-        return sawSpeech
-    }
-
     private suspend fun executeIntent(intent: AssistantIntent) {
         _uiState.value = AssistantUiState.Executing(intent.type.displayName)
 
-        val result = if (intent.type == IntentType.GENERAL_QUERY) {
-            answerGeneralQuery(intent)
-        } else {
-            intentRouter.execute(context, intent)
-        }
+        val result = intentRouter.execute(context, intent)
 
         _uiState.value = if (result.success) {
             AssistantUiState.Result(result.responseText)
         } else {
+            VoiceLog.w(VoiceLog.ASSIST, "intent failed ${intent.type}")
             AssistantUiState.Error(result.errorMessage ?: ACTION_FAILED_MESSAGE)
         }
 
@@ -308,63 +215,29 @@ class SpeechKitVoiceSession(
         }
     }
 
-    /**
-     * General questions go through the paired SpeechKit server when one is
-     * configured; otherwise the assistant says so instead of pretending it
-     * answered. System TTS speaks whatever text we show.
-     */
-    private suspend fun answerGeneralQuery(intent: AssistantIntent): ActionResult {
-        val query = intent.parameters["query"] ?: intent.rawText
-        val profile = profileSource.currentProfile()
-        if (profile !is ConnectionProfile.Server) {
-            return ActionResult(
-                success = true,
-                responseText = NO_SERVER_ASSIST_MESSAGE,
-                keepOpen = true,
-            )
-        }
-        return try {
-            val response = SpeechKitServerApi(profile).processAssist(query)
-            val spoken = response.speakText.ifBlank { response.text }
-            ActionResult(
-                success = spoken.isNotBlank(),
-                responseText = spoken.ifBlank { ACTION_FAILED_MESSAGE },
-            )
-        } catch (e: Exception) {
-            Timber.e(e, "Assist process failed")
-            ActionResult(
-                success = false,
-                errorMessage = e.message ?: ACTION_FAILED_MESSAGE,
-            )
-        }
-    }
-
     private companion object {
-        /** ~20 Hz, matching the kit's browser meter interval. */
-        const val LEVEL_PUBLISH_INTERVAL_MS = 50L
-
-        /** Frame-level speech verdict, matching the Silero consumer threshold. */
-        const val SPEECH_PROBABILITY = 0.5f
-
-        /** Trailing silence that ends a turn, mirroring VadConfig's default. */
-        const val MIN_SILENCE_MILLIS = 700L
-
-        /** Speech needed before a turn can be endpointed at all. */
-        const val MIN_SPEECH_MILLIS = 250L
-
-        /** Hard cap so a stuck capture cannot hold the microphone open. */
-        const val MAX_CAPTURE_MILLIS = 30_000L
-
-        /** How long a successful result stays on screen before auto-close. */
         const val RESULT_LINGER_MILLIS = 2_000L
 
         // TODO(i18n): replace with sk.voice.* message IDs once the assistant
         // adopts the shared catalog; locales/*.json is the parity source.
         const val NO_SPEECH_MESSAGE = "Keine Sprache erkannt"
+        const val TIMEOUT_MESSAGE = "Transkript kam nicht rechtzeitig"
+        const val CLOSED_MESSAGE = "Verbindung beendet"
+        const val STREAM_FAILED_MESSAGE = "Spracherkennung fehlgeschlagen"
         const val ACTION_FAILED_MESSAGE = "Aktion fehlgeschlagen"
         const val GENERIC_ERROR_MESSAGE = "Fehler"
-        const val NO_SERVER_ASSIST_MESSAGE =
-            "Dafür brauche ich einen gekoppelten SpeechKit-Server"
+
+        fun messageFor(outcome: UtteranceResult): String = when (outcome.reason) {
+            UtteranceResult.Reason.HEARD -> outcome.text
+            UtteranceResult.Reason.EMPTY_FINAL,
+            UtteranceResult.Reason.NO_SPEECH,
+            -> NO_SPEECH_MESSAGE
+            UtteranceResult.Reason.TIMEOUT -> TIMEOUT_MESSAGE
+            UtteranceResult.Reason.CLOSED -> CLOSED_MESSAGE
+            UtteranceResult.Reason.STREAM_FAILED ->
+                outcome.detail?.takeIf { it.isNotBlank() }?.let { "$STREAM_FAILED_MESSAGE ($it)" }
+                    ?: STREAM_FAILED_MESSAGE
+        }
     }
 }
 

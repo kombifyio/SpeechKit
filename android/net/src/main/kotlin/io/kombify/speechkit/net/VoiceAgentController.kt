@@ -1,5 +1,8 @@
 package io.kombify.speechkit.net
 
+import io.kombify.speechkit.domain.ConnectionProfile
+import io.kombify.speechkit.domain.describe
+import io.kombify.speechkit.log.VoiceLog
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -73,11 +76,15 @@ class VoiceAgentController(
      */
     suspend fun start(options: VoiceAgentStartFrame = VoiceAgentStartFrame()): Flow<VoiceAgentEvent> {
         val server = profile as? ConnectionProfile.Server
-            ?: throw IllegalStateException(
-                "The Voice Agent needs a configured SpeechKit server: the realtime " +
-                    "conversation has no on-device tier. Pair a server first.",
-            )
+            ?: run {
+                VoiceLog.w(VoiceLog.AGENT, "no server ${profile.describe()}")
+                throw IllegalStateException(
+                    "The Voice Agent needs a configured SpeechKit server: the realtime " +
+                        "conversation has no on-device tier. Pair a server first.",
+                )
+            }
 
+        VoiceLog.i(VoiceLog.AGENT, "start ${profile.describe()}")
         _state.value = VoiceAgentUiState(phase = VoiceAgentUiState.Phase.Connecting)
         val mint = SpeechKitServerApi(server, okHttp).createVoiceAgentSession()
         val live = client.connect(mint)
@@ -104,10 +111,13 @@ class VoiceAgentController(
             // not let the next turn append to it.
             VoiceAgentEvent.Interrupted -> _state.value.copy(agentText = "")
 
-            is VoiceAgentEvent.Failure -> _state.value.copy(
-                error = event.message,
-                errorCode = event.code,
-            )
+            is VoiceAgentEvent.Failure -> {
+                VoiceLog.e(VoiceLog.AGENT, "session code=${event.code}")
+                _state.value.copy(
+                    error = event.message,
+                    errorCode = event.code,
+                )
+            }
 
             is VoiceAgentEvent.Closed -> _state.value.copy(
                 phase = VoiceAgentUiState.Phase.Ended,

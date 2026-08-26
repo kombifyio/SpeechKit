@@ -345,34 +345,32 @@ func TestRateLimit_CostWeightedDrainsBucketFaster(t *testing.T) {
 	}
 }
 
-func TestRateLimit_ServiceBearerKeyedOnRemoteAddr(t *testing.T) {
-	// Two distinct service callers from different IPs must not share a
-	// bucket. Burst=2 + cost=1 → each IP gets 2 successes; 3rd rejected.
-	mw := RateLimit(RateLimitOptions{RequestsPerSecond: 0.0001, Burst: 2})
+func TestRateLimit_OriginServiceBearerExemptUserJwtLimited(t *testing.T) {
+	mw := RateLimit(RateLimitOptions{RequestsPerSecond: 0.0001, Burst: 1})
 	h := mw(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) }))
 
-	send := func(ip string) int {
+	send := func(id Identity) int {
 		req := httptest.NewRequest(http.MethodGet, "/v1/x", nil)
-		req.RemoteAddr = ip + ":9999"
-		ctx := context.WithValue(req.Context(), identityCtxKey{}, Identity{UserID: "service", Source: "bearer"})
-		req = req.WithContext(ctx)
+		req.RemoteAddr = "10.0.0.1:9999"
+		req = req.WithContext(context.WithValue(req.Context(), identityCtxKey{}, id))
 		rec := httptest.NewRecorder()
 		h.ServeHTTP(rec, req)
 		return rec.Code
 	}
 
-	if send("10.0.0.1") != http.StatusOK {
-		t.Fatal("expected 1st request from 10.0.0.1 to be OK")
+	service := Identity{UserID: "service", Source: "bearer"}
+	for i := 0; i < 4; i++ {
+		if code := send(service); code != http.StatusOK {
+			t.Fatalf("origin service bearer request %d = %d, want 200", i, code)
+		}
 	}
-	if send("10.0.0.1") != http.StatusOK {
-		t.Fatal("expected 2nd request from 10.0.0.1 to be OK")
+
+	user := Identity{UserID: "auth0|user-1", Source: "edge_hmac"}
+	if code := send(user); code != http.StatusOK {
+		t.Fatalf("first user JWT = %d, want 200", code)
 	}
-	if send("10.0.0.1") != http.StatusTooManyRequests {
-		t.Fatal("expected 3rd from 10.0.0.1 to be rejected")
-	}
-	// A different IP must NOT share the bucket with 10.0.0.1.
-	if send("10.0.0.2") != http.StatusOK {
-		t.Fatal("expected fresh IP 10.0.0.2 to start with its own bucket")
+	if code := send(user); code != http.StatusTooManyRequests {
+		t.Fatalf("second user JWT = %d, want 429", code)
 	}
 }
 

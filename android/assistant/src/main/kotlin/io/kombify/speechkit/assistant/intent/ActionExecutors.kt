@@ -5,7 +5,10 @@ import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.provider.AlarmClock
-import timber.log.Timber
+import io.kombify.speechkit.domain.ConnectionProfile
+import io.kombify.speechkit.domain.ConnectionProfileSource
+import io.kombify.speechkit.log.VoiceLog
+import io.kombify.speechkit.net.SpeechKitServerApi
 
 /**
  * Built-in action executors for common voice assistant intents.
@@ -127,7 +130,7 @@ class QuickNoteExecutor : ActionExecutor {
         val content = intent.parameters["content"] ?: intent.rawText
 
         // Save via Store (would be injected in production)
-        Timber.d("Quick note saved: '$content'")
+        VoiceLog.i(VoiceLog.ASSIST, "quick note saved chars=${content.length}")
 
         return ActionResult(
             success = true,
@@ -211,16 +214,38 @@ class MakeCallExecutor : ActionExecutor {
     }
 }
 
-class GeneralQueryExecutor : ActionExecutor {
+class GeneralQueryExecutor(
+    private val profiles: ConnectionProfileSource,
+) : ActionExecutor {
     override suspend fun execute(context: Context, intent: AssistantIntent): ActionResult {
         val query = intent.parameters["query"] ?: intent.rawText
+        val profile = profiles.currentProfile()
+        if (profile !is ConnectionProfile.Server) {
+            return ActionResult(
+                success = true,
+                responseText = NO_SERVER_ASSIST_MESSAGE,
+                keepOpen = true,
+            )
+        }
+        return try {
+            val response = SpeechKitServerApi(profile).processAssist(query)
+            val spoken = response.speakText.ifBlank { response.text }
+            ActionResult(
+                success = spoken.isNotBlank(),
+                responseText = spoken.ifBlank { ACTION_FAILED_MESSAGE },
+            )
+        } catch (e: Exception) {
+            VoiceLog.e(VoiceLog.ASSIST, "processAssist failed", e)
+            ActionResult(
+                success = false,
+                errorMessage = e.message ?: ACTION_FAILED_MESSAGE,
+            )
+        }
+    }
 
-        // Phase 5: Route to LLM for answer generation
-        // For now, fall back to web search
-        return ActionResult(
-            success = true,
-            responseText = "Ich kann diese Frage noch nicht direkt beantworten. Soll ich im Web danach suchen?",
-            keepOpen = true,
-        )
+    private companion object {
+        const val ACTION_FAILED_MESSAGE = "Aktion fehlgeschlagen"
+        const val NO_SERVER_ASSIST_MESSAGE =
+            "Dafür brauche ich einen gekoppelten SpeechKit-Server"
     }
 }

@@ -71,8 +71,18 @@ func (l *boxMediaRequestLifecycle) stopAccepting() {
 	l.mu.Unlock()
 }
 
-func (l *boxMediaRequestLifecycle) wait() {
-	l.active.Wait()
+func (l *boxMediaRequestLifecycle) wait(ctx context.Context) error {
+	done := make(chan struct{})
+	go func() {
+		l.active.Wait()
+		close(done)
+	}()
+	select {
+	case <-done:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
 }
 
 // CertificateChainDER returns a defensive snapshot of the exact certificate
@@ -229,7 +239,7 @@ func (s *BoxMediaTLSServer) Start(ctx context.Context) (*BoxMediaTLSRuntime, err
 		},
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       30 * time.Second,
-		WriteTimeout:      2 * time.Minute,
+		WriteTimeout:      boxMediaWriteTimeout,
 		IdleTimeout:       10 * time.Second,
 		MaxHeaderBytes:    16 << 10,
 	}
@@ -281,9 +291,17 @@ func (r *BoxMediaTLSRuntime) Shutdown(ctx context.Context) error {
 		if closeErr := r.listener.Close(); closeErr != nil && !errors.Is(closeErr, net.ErrClosed) && r.shutdownErr == nil {
 			r.shutdownErr = closeErr
 		}
-		r.requests.wait()
+		if waitErr := r.requests.wait(ctx); waitErr != nil && r.shutdownErr == nil {
+			r.shutdownErr = waitErr
+		}
 		if r.serveDone != nil {
-			<-r.serveDone
+			select {
+			case <-r.serveDone:
+			case <-ctx.Done():
+				if r.shutdownErr == nil {
+					r.shutdownErr = ctx.Err()
+				}
+			}
 		}
 	})
 	return r.shutdownErr

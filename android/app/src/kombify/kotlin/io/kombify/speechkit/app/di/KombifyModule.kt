@@ -6,12 +6,12 @@ import dagger.Provides
 import dagger.hilt.InstallIn
 import dagger.hilt.android.qualifiers.ApplicationContext
 import dagger.hilt.components.SingletonComponent
-import io.kombify.speechkit.BuildConfig
+import io.kombify.speechkit.app.build.ShippedDefaults
 import io.kombify.speechkit.app.companion.CompanionProvisioner
-import io.kombify.speechkit.net.ConnectionProfile
-import io.kombify.speechkit.net.ConnectionProfileSource
+import io.kombify.speechkit.domain.ConnectionMode
+import io.kombify.speechkit.domain.ConnectionProfileSource
 import io.kombify.speechkit.net.StoredServerProfile
-import io.kombify.speechkit.net.resolveConnectionProfile
+import io.kombify.speechkit.domain.resolveConnectionProfile
 import io.kombify.speechkit.stt.HuggingFaceProvider
 import io.kombify.speechkit.stt.SttRouter
 import javax.inject.Singleton
@@ -41,38 +41,29 @@ object KombifyModule {
     }
 
     /**
-     * Companion (logged-in user) → typed Settings override → tester hosted
-     * SpeechKit → on-device. Re-resolved on every session open.
+     * Persisted connection mode. Companion is applied only after an explicit
+     * Connect. Re-resolved on every session open.
      */
     @Provides
     @Singleton
     fun provideConnectionProfileSource(
         @ApplicationContext context: Context,
+        companion: CompanionProvisioner,
     ): ConnectionProfileSource {
-        val companion = CompanionProvisioner(context)
-        companion.warm()
+        if (StoredServerProfile.loadMode(context) == ConnectionMode.KOMBIFY_CLOUD) {
+            companion.warm()
+        }
         return ConnectionProfileSource {
+            val stored = StoredServerProfile.load(context)
+            val shipped = ShippedDefaults.shippedProfile()
+            val mode = StoredServerProfile.resolvedMode(context, stored, shipped)
             resolveConnectionProfile(
+                mode = mode,
                 companion = companion.currentSession(),
-                stored = StoredServerProfile.load(context),
-                shipped = shippedDefaultProfile(),
+                stored = stored,
+                shipped = shipped,
             )
         }
     }
 
-    /**
-     * Hosted SpeechKit this kombify build dials when nobody has typed a
-     * server and Companion has not provisioned a user token. Firebase
-     * tester APKs also bake a shared, revocable bearer; a developer build
-     * without that env var still has the origin so Settings can explain
-     * where traffic would go.
-     */
-    private fun shippedDefaultProfile(): ConnectionProfile.Server? {
-        val url = BuildConfig.DEFAULT_SERVER_URL.trim()
-        if (url.isEmpty()) return null
-        return ConnectionProfile.Server(
-            url,
-            BuildConfig.DEFAULT_SERVER_TOKEN.trim().ifEmpty { null },
-        )
-    }
 }

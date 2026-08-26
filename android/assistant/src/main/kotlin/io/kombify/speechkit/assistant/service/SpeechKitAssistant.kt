@@ -3,7 +3,7 @@ package io.kombify.speechkit.assistant.service
 import android.os.Bundle
 import android.service.voice.VoiceInteractionService
 import dagger.hilt.android.AndroidEntryPoint
-import timber.log.Timber
+import io.kombify.speechkit.log.VoiceLog
 
 /**
  * System-level voice assistant service.
@@ -24,11 +24,11 @@ class SpeechKitAssistant : VoiceInteractionService() {
 
     override fun onReady() {
         super.onReady()
-        Timber.d("SpeechKit Assistant ready")
+        VoiceLog.i(VoiceLog.ASSIST, "service ready")
     }
 
     override fun onShutdown() {
-        Timber.d("SpeechKit Assistant shutting down")
+        VoiceLog.i(VoiceLog.ASSIST, "service shutdown")
         super.onShutdown()
     }
 }

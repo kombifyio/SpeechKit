@@ -1,5 +1,6 @@
 package io.kombify.speechkit.net
 
+import io.kombify.speechkit.log.VoiceLog
 import io.kombify.speechkit.stt.streaming.DictationSegmentOptions
 import io.kombify.speechkit.stt.streaming.StreamingSttSession
 import io.kombify.speechkit.stt.streaming.TranscriptEvent
@@ -87,6 +88,11 @@ class DictationWsClient(
             }
 
             override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
+                VoiceLog.e(
+                    VoiceLog.DICTATION,
+                    "ws_failure http=${response?.code ?: "-"}",
+                    t,
+                )
                 events.trySend(
                     TranscriptEvent.Failure(
                         code = "ws_failure",

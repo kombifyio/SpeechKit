@@ -108,6 +108,10 @@ func RateLimit(opts RateLimitOptions) Middleware {
 				next.ServeHTTP(w, r)
 				return
 			}
+			if skipRateLimit(IdentityFromContext(r.Context())) {
+				next.ServeHTTP(w, r)
+				return
+			}
 			key := rateLimitKey(r)
 			cost := endpointCost(costs, r.Method, r.URL.Path)
 			if !buckets.allowN(key, cost) {
@@ -213,6 +217,12 @@ func startSweeper(opts RateLimitOptions, buckets *bucketStore) {
 			}
 		}
 	}()
+}
+
+// skipRateLimit exempts the hosted SpeechKit origin service bearer used by
+// Android tester/dev APKs. Gateway JWT identities stay limited.
+func skipRateLimit(id Identity) bool {
+	return id.UserID == "service" && id.Source == "bearer"
 }
 
 func rateLimitKey(r *http.Request) string {

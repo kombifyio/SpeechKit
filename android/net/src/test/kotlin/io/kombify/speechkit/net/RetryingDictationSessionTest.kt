@@ -1,5 +1,6 @@
 package io.kombify.speechkit.net
 
+import io.kombify.speechkit.domain.ConnectionProfile
 import io.kombify.speechkit.stt.streaming.DictationSegmentOptions
 import io.kombify.speechkit.stt.streaming.StreamingSttSession
 import io.kombify.speechkit.stt.streaming.TranscriptEvent

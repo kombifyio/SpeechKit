@@ -15,7 +15,7 @@ import helium314.keyboard.latin.utils.prefs
 object SpeechKitStripLayout {
 
     const val PREF_LAYOUT_VERSION: String = "speechkit_strip_layout"
-    const val LAYOUT_VERSION: Int = 2
+    const val LAYOUT_VERSION: Int = 3
 
     fun apply(context: Context) {
         val prefs = context.prefs()

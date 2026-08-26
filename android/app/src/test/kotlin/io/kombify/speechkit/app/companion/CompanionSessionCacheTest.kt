@@ -1,6 +1,6 @@
 package io.kombify.speechkit.app.companion
 
-import io.kombify.speechkit.net.ConnectionProfile
+import io.kombify.speechkit.domain.ConnectionProfile
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
@@ -66,6 +66,18 @@ class CompanionProvisionerTest {
         outcome.set(CompanionProvision.Unavailable)
         assertEquals(session, provisioner.currentSession())
         assertTrue(calls.get() >= 2)
+    }
+
+    @Test
+    fun explicitConnectStoresTheUserSessionImmediately() {
+        val session = ConnectionProfile.Server("https://api.kombify.io/v1/speechkit", "user-jwt")
+        val provisioner = CompanionProvisioner(
+            installed = { true },
+            binder = { CompanionProvision.Session(session) },
+            executor = direct,
+        )
+        assertEquals(CompanionProvision.Session(session), provisioner.provisionNow())
+        assertEquals(session, provisioner.currentSession())
     }
 
     @Test

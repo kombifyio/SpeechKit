@@ -13,14 +13,12 @@ IDs, source paths, and other maintainer-only vocabulary.
 
 ### Added
 
-* **android:** transcribe or summarize a WhatsApp or Telegram voice note from the keyboard more-page or the share sheet. The paired SpeechKit server transcribes first; summarize then runs Assist on that transcript. If Assist has no model, the transcript still lands on the clipboard.
-* **android:** keyboard setup finishes when SpeechKit Keyboard is enabled and selected. Voice Agent is a key on that keyboard, not a system-assistant role.
-* **android:** dictation no longer asks for a Hugging Face token on first run. On-device recognition is the floor; a token was never used for that path.
-* **android:** Settings can find a homelab SpeechKit on the LAN (`_speechkit._tcp`) and fill the server address. Authentication still happens after you pick the URL.
-* Settings on Windows can find a homelab SpeechKit on the LAN the same way and fill the server URL. The token is still typed.
-* **android:** kombify tester builds dial the hosted SpeechKit server without typing a key. A signed-in kombify Companion replaces that shared tester token with the logged-in user's.
-* **android:** when Companion provisions a Gateway SpeechKit root, the keyboard talks to `/v1/speechkit/...` instead of the origin `/v1/...` paths.
-* **android:** the keyboard no longer waits on Companion during a key press. A signed-in Companion session is fetched in the background and reused until Companion is signed out.
+* **android:** kombify tester builds dial the hosted SpeechKit server without typing a key. Companion replaces that token only after Connect kombify Cloud or `speechkit://connect/kombify`.
+
+### Fixed
+
+* **android:** store release builds no longer include a SpeechKit service token. Testers still get one from Firebase or the local tester install script.
+* **android:** kombify Cloud without a signed-in Companion session stays on the device instead of using the tester server.
 
 ## [0.60.0](https://github.com/kombifyio/SpeechKit/compare/v0.59.1...v0.60.0) (2026-08-25)
 
