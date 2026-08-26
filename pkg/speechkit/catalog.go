@@ -671,6 +671,7 @@ func DefaultProviderProfiles() []ProviderProfile {
 			Name:          "Piper Local TTS (HA-compatible voices)",
 			ProviderKind:  ProviderKindLocalBuiltIn,
 			ExecutionMode: ExecutionModeLocal,
+			Provider:      "piper",
 			ModelID:       "rhasspy/piper",
 			Source:        "Local Built-in",
 			Description:   "Piper offline neural TTS — the canonical Home Assistant Voice engine. MIT-licensed, ~50 MB per voice, broad multilingual voice catalog. Phase-3 runtime via piper subprocess.",

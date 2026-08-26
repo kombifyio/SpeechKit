@@ -11,14 +11,35 @@ IDs, source paths, and other maintainer-only vocabulary.
 
 ## Unreleased
 
+## [0.61.0](https://github.com/kombifyio/SpeechKit/compare/v0.60.0...v0.61.0) (2026-08-26)
+
+### Highlights
+
+- **Connect without losing your working setup**: Android keeps the tester connection until you explicitly switch to Kombify Cloud, so voice features stay available during setup.
+- **See each voice mode at a glance**: Voice Agent starts with Deepgram and each provider key has its own icon, making the active path clear before you speak.
+- **Spoken numbers and fillers come out clean**: saying "1 von 5" or "1.7" writes as digits, and äh/ähm no longer land in the transcript.
+- **Install and restart shows the real version**: a Windows update no longer leaves the previous version number on screen after it installs.
+
 ### Added
 
 * **android:** kombify tester builds dial the hosted SpeechKit server without typing a key. Companion replaces that token only after Connect kombify Cloud or `speechkit://connect/kombify`.
+* **android:** keep the tester origin until an explicit kombify Cloud connect ([850db89](https://github.com/kombifyio/SpeechKit/commit/850db895))
+* **android:** publish the coinstall contract as a consumable library ([5c10dff](https://github.com/kombifyio/SpeechKit/commit/5c10dff7))
+* **android:** name the Android app SpeechKit ([c3d77e2](https://github.com/kombifyio/SpeechKit/commit/c3d77e22))
+* **voiceagent:** ship duplex turn-taking as a finished endpoint ([4dea30f](https://github.com/kombifyio/SpeechKit/commit/4dea30f3))
 
 ### Fixed
 
 * **android:** store release builds no longer include a SpeechKit service token. Testers still get one from Firebase or the local tester install script.
 * **android:** kombify Cloud without a signed-in Companion session stays on the device instead of using the tester server.
+* **android:** default Voice Agent to Deepgram and give each key its own icons ([b4e8878](https://github.com/kombifyio/SpeechKit/commit/b4e88786))
+* **desktop:** dictation writes spoken numbers as digits and strips German filler words, including when the language is set to all languages ([a0ccd81](https://github.com/kombifyio/SpeechKit/commit/a0ccd816))
+* **desktop:** overlay language mark matches the size of the other action icons ([d1a1ef0](https://github.com/kombifyio/SpeechKit/commit/d1a1ef03))
+* **windows:** after Install and restart, the app shows the published version instead of the previous one ([71d7b4e](https://github.com/kombifyio/SpeechKit/commit/71d7b4e1))
+* **voiceagent:** a hung provider close can no longer leave a live session stuck ending ([e5b6200](https://github.com/kombifyio/SpeechKit/commit/e5b62002))
+* **voiceagent:** reject the agent's own voice as barge-in, and leave barge-in off until acoustic echo cancellation is in the path ([b150bad](https://github.com/kombifyio/SpeechKit/commit/b150bad7), [9f2607c](https://github.com/kombifyio/SpeechKit/commit/9f2607c7))
+* **audio:** play the voice-agent reply at 24 kHz, matching the downlink ([d02e35a](https://github.com/kombifyio/SpeechKit/commit/d02e35a0))
+* **box-media:** truncated local audio writes fail instead of silently dropping the rest of a recording ([82e75c4](https://github.com/kombifyio/SpeechKit/commit/82e75c40))
 
 ## [0.60.0](https://github.com/kombifyio/SpeechKit/compare/v0.59.1...v0.60.0) (2026-08-25)
 
