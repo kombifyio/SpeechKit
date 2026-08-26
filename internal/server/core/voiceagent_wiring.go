@@ -41,11 +41,11 @@ const (
 // upgrade rather than a 404 at session creation — operators can then read
 // /readyz to see why).
 func buildVoiceAgentHandler(ctx context.Context, cfg *config.Config, app *App) (*vsserver.Handler, string, error) {
-	defaultProvider := strings.ToLower(strings.TrimSpace(cfg.VoiceAgent.Provider))
-	if defaultProvider == "" {
-		defaultProvider = ProviderGemini
-	}
-	defaultProvider = normalizeVoiceAgentProvider(defaultProvider)
+	// Single source of truth with the catalog readiness surface: GET
+	// /v1/catalog/readiness marks the voice_agent profile Active from the
+	// same derivation, so the profile shown active is the provider that
+	// actually serves a default session (kombify-SpeechKit-5nt5).
+	defaultProvider := config.EffectiveVoiceAgentProvider(cfg)
 
 	// Register a factory for every Voice-Agent-capable provider that builds on
 	// this deployment so a client can switch backend per session via the WS
@@ -834,6 +834,14 @@ func (b *openaiLiveBridge) UpdateInstructions(ctx context.Context, cfg vsserver.
 	return b.inner.UpdateInstructions(ctx, liveCfg)
 }
 
+// CancelResponse forwards the client's tap-to-interrupt to the Realtime
+// `response.cancel` event. Only the OpenAI bridge implements
+// vsserver.LiveResponseCanceller: Gemini Live, Deepgram Voice Agent, and
+// AssemblyAI Voice Agent expose no client-side cancel message (interruption
+// there is speech-driven server-side), so those sessions rely on the
+// adapter's downlink suppression until the current turn ends.
+func (b *openaiLiveBridge) CancelResponse() error { return b.inner.CancelResponse() }
+
 func (b *openaiLiveBridge) SendToolResponse(frame vsserver.ToolResponseFrame) error {
 	return b.inner.SendToolResponse(vskernel.ToolResponse{
 		ID:       frame.ID,
@@ -1004,22 +1012,9 @@ func nonZeroFloat(v, fallback float64) float64 {
 }
 
 func normalizeVoiceAgentProvider(provider string) string {
-	name := strings.ToLower(strings.TrimSpace(provider))
-	name = strings.ReplaceAll(name, "_", "-")
-	switch name {
-	case "google", "gemini", "gemini-live", "google-live", "realtime.google.gemini-native-audio":
-		return ProviderGemini
-	case "deepgram", "deepgram-agent", "deepgram-live", "realtime.deepgram.voice-agent":
-		return ProviderDeepgram
-	case "assemblyai", "assembly-ai", "assemblyai-agent", "assemblyai-live", "realtime.assemblyai.voice-agent":
-		return ProviderAssemblyAI
-	case "openai", "openai-realtime", "openai-live", "realtime.openai.gpt-realtime-2":
-		return ProviderOpenAI
-	case "cascaded", "local-cascaded", "pipeline", "pipeline-fallback", "voice-agent-cascaded", "voice-agent-cascaded-pipeline":
-		return ProviderCascaded
-	default:
-		return name
-	}
+	// Canonical alias table lives in internal/config so the serving wiring,
+	// catalog readiness, and the WebSocket adapter cannot drift.
+	return config.NormalizeVoiceAgentProviderName(provider)
 }
 
 // ── Deepgram Voice Agent provider factory + bridge ───────────────────────────

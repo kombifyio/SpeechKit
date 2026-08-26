@@ -1,7 +1,7 @@
 asyncapi: 3.1.0
 info:
   title: SpeechKit Voice Agent WebSocket API
-  version: 1.0.0
+  version: 1.1.0
   description: |
     Stable v1 WebSocket contract for the SpeechKit Server's Voice Agent mode.
 
@@ -89,6 +89,8 @@ channels:
         $ref: '#/components/messages/AdvanceStepFrame'
       AudioEndFrame:
         $ref: '#/components/messages/AudioEndFrame'
+      CancelFrame:
+        $ref: '#/components/messages/CancelFrame'
       PingFrame:
         $ref: '#/components/messages/PingFrame'
       StopFrame:
@@ -132,12 +134,19 @@ operations:
       the client message types in any order. Binary audio chunks may be
       interleaved freely with JSON control frames only when
       `media_transport` is omitted or set to `websocket`.
+
+      Servers tolerate unknown client frame `type` values: they are logged
+      and ignored (no error frame, no close), so newer clients degrade
+      gracefully against older servers. Clients that depend on a newer frame
+      (e.g. `cancel`) should gate on a positive server signal such as the
+      `provider`/`media_transport` fields on the session_ready State frame.
     messages:
       - $ref: '#/channels/voiceAgentSession/messages/StartFrame'
       - $ref: '#/channels/voiceAgentSession/messages/TextFrame'
       - $ref: '#/channels/voiceAgentSession/messages/ToolResponseFrame'
       - $ref: '#/channels/voiceAgentSession/messages/AdvanceStepFrame'
       - $ref: '#/channels/voiceAgentSession/messages/AudioEndFrame'
+      - $ref: '#/channels/voiceAgentSession/messages/CancelFrame'
       - $ref: '#/channels/voiceAgentSession/messages/PingFrame'
       - $ref: '#/channels/voiceAgentSession/messages/StopFrame'
       - $ref: '#/channels/voiceAgentSession/messages/AudioChunkClient'
@@ -213,6 +222,13 @@ components:
       payload:
         $ref: '#/components/schemas/AudioEndFrame'
 
+    CancelFrame:
+      title: Cancel
+      summary: Stop relaying the current agent reply's downlink audio (tap-to-interrupt).
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/CancelFrame'
+
     PingFrame:
       title: Ping
       summary: Application-level keepalive.
@@ -279,7 +295,9 @@ components:
 
     InterruptedFrame:
       title: Interrupted
-      summary: User interrupted the model (barge-in).
+      summary: >-
+        User interrupted the model — speech barge-in, or the acknowledgement
+        of a client CancelFrame (`provider_metadata.reason = "client_cancel"`).
       contentType: application/json
       payload:
         $ref: '#/components/schemas/InterruptedFrame'
@@ -443,6 +461,27 @@ components:
       properties:
         type: { type: string, const: audio_end }
 
+    CancelFrame:
+      type: object
+      required: [type]
+      description: |
+        Client tap-to-interrupt for the CURRENT agent reply. Added in 1.1.0.
+        Idempotent and payload-free. The server stops relaying the current
+        reply's downlink audio, invokes the provider-native response cancel
+        where the provider protocol has one (OpenAI Realtime
+        `response.cancel`), and always acknowledges with an Interrupted
+        frame (`provider_metadata.reason = "client_cancel"`) so client
+        playback state converges. Gemini Live, Deepgram Voice Agent,
+        AssemblyAI Voice Agent, and the cascaded pipeline have no client-side
+        cancel message: for them the reply may keep generating upstream while
+        the server suppresses its downlink audio until the turn ends; output
+        transcripts of the cancelled reply keep flowing. A cancel while
+        nothing is playing is a no-op that is still acknowledged. Older
+        servers (contract 1.0.x) ignore this frame silently — gate sending
+        on the session_ready `provider`/`media_transport` fields.
+      properties:
+        type: { type: string, const: cancel }
+
     PingFrame:
       type: object
       required: [type]
@@ -512,6 +551,21 @@ components:
         state:
           type: string
           enum: [connecting, listening, processing, speaking, recovering, deactivating, inactive]
+        provider:
+          type: string
+          description: |
+            Present on the session_ready State frame (added in 1.1.0): the
+            resolved provider that actually serves this session after the
+            `start.provider` → edge voice-preference → server-default
+            precedence ran, e.g. `gemini`, `deepgram`, `assemblyai`,
+            `openai`, `cascaded`. Lets clients distinguish native realtime
+            backends from the cascaded pipeline and gate `cancel` support.
+        media_transport:
+          type: string
+          enum: [websocket, livekit]
+          description: |
+            Present on the session_ready State frame (added in 1.1.0): the
+            media transport actually applied to this session.
 
     TranscriptFrame:
       type: object

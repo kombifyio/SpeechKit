@@ -174,6 +174,15 @@ func (h *Handler) modeEnabled(mode framework.Mode) bool {
 }
 
 func (h *Handler) profileSelected(profile framework.ProviderProfile) bool {
+	// Voice Agent sessions are served from cfg.VoiceAgent.Provider (see
+	// core.buildVoiceAgentHandler / config.EffectiveVoiceAgentProvider), not
+	// from ModelSelection.VoiceAgent — so Active must follow the provider
+	// that actually serves a default session. Deriving from ModelSelection
+	// here made the readiness display assert a backend that was not the
+	// serving one (kombify-SpeechKit-5nt5).
+	if framework.NormalizeMode(profile.Mode) == framework.ModeVoiceAgent {
+		return profile.ID == config.EffectiveVoiceAgentProfileID(h.cfg)
+	}
 	selected := h.selectedProfiles(profile.Mode)
 	if len(selected) == 0 {
 		return profile.Default
@@ -194,8 +203,8 @@ func (h *Handler) selectedProfiles(mode framework.Mode) map[string]bool {
 		primary = h.cfg.ModelSelection.Assist.PrimaryProfileID
 		fallback = h.cfg.ModelSelection.Assist.FallbackProfileID
 	case framework.ModeVoiceAgent:
-		primary = h.cfg.ModelSelection.VoiceAgent.PrimaryProfileID
-		fallback = h.cfg.ModelSelection.VoiceAgent.FallbackProfileID
+		// Unreachable: profileSelected answers Voice Agent from the effective
+		// serving provider before consulting ModelSelection.
 	case framework.ModeTTS:
 		primary = h.cfg.ModelSelection.TTS.PrimaryProfileID
 		fallback = h.cfg.ModelSelection.TTS.FallbackProfileID

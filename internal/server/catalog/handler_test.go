@@ -211,6 +211,49 @@ func TestReadinessGoogleSTTAcceptsLegacyProfileID(t *testing.T) {
 	}
 }
 
+// Voice Agent Active must follow the provider that actually serves a default
+// session (cfg.VoiceAgent.Provider), not ModelSelection.VoiceAgent — serving
+// never reads the latter (kombify-SpeechKit-5nt5).
+func TestReadinessVoiceAgentActiveFollowsServingProviderKombifyShape(t *testing.T) {
+	cfg := &config.Config{}
+	// kombify-default deployment shape: kombify defaults flip the provider to
+	// deepgram while the vanilla ModelSelection default still names the
+	// builtin pipeline.
+	cfg.VoiceAgent.Provider = "deepgram"
+	cfg.Providers.Deepgram.Enabled = true
+	cfg.ModelSelection.VoiceAgent.PrimaryProfileID = config.DefaultVoiceAgentPrimaryProfileID
+
+	h := New(cfg, func(string) string { return "ok" }, "test")
+
+	deepgram := getReadiness(t, h, "/v1/catalog/profiles/realtime.deepgram.voice-agent/readiness")
+	if !deepgram.Active {
+		t.Fatalf("deepgram voice-agent profile Active = false, want true (it serves default sessions): %+v", deepgram)
+	}
+	pipeline := getReadiness(t, h, "/v1/catalog/profiles/realtime.builtin.pipeline/readiness")
+	if pipeline.Active {
+		t.Fatalf("builtin pipeline Active = true although deepgram serves default sessions: %+v", pipeline)
+	}
+}
+
+func TestReadinessVoiceAgentActiveFollowsServingProviderVanillaShape(t *testing.T) {
+	cfg := &config.Config{}
+	// Vanilla deployment shape: no provider configured serves Gemini Live,
+	// while ModelSelection.VoiceAgent defaults to the builtin pipeline.
+	cfg.Providers.Google.Enabled = true
+	cfg.ModelSelection.VoiceAgent.PrimaryProfileID = config.DefaultVoiceAgentPrimaryProfileID
+
+	h := New(cfg, func(string) string { return "ok" }, "test")
+
+	gemini := getReadiness(t, h, "/v1/catalog/profiles/realtime.google.gemini-native-audio/readiness")
+	if !gemini.Active {
+		t.Fatalf("gemini voice-agent profile Active = false, want true (empty provider serves Gemini Live): %+v", gemini)
+	}
+	pipeline := getReadiness(t, h, "/v1/catalog/profiles/realtime.builtin.pipeline/readiness")
+	if pipeline.Active {
+		t.Fatalf("builtin pipeline Active = true although gemini serves default sessions: %+v", pipeline)
+	}
+}
+
 func getReadiness(t *testing.T, h *Handler, path string) framework.Readiness {
 	t.Helper()
 	req := httptest.NewRequest(http.MethodGet, path, nil)

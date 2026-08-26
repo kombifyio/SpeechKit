@@ -41,6 +41,12 @@ func TestApplyKombifyDeploymentDefaults_DeepgramKeyFlipsDefaults(t *testing.T) {
 	if cfg.VoiceAgent.Provider != "deepgram" {
 		t.Errorf("VoiceAgent.Provider = %q, want deepgram", cfg.VoiceAgent.Provider)
 	}
+	if got := cfg.ModelSelection.VoiceAgent.PrimaryProfileID; got != kombifyDeepgramVAProfileID {
+		t.Errorf("VoiceAgent primary = %q, want %q (must match the serving provider)", got, kombifyDeepgramVAProfileID)
+	}
+	if got := EffectiveVoiceAgentProfileID(cfg); got != kombifyDeepgramVAProfileID {
+		t.Errorf("effective VA profile = %q, want %q", got, kombifyDeepgramVAProfileID)
+	}
 }
 
 func TestApplyKombifyDeploymentDefaults_NoKeyKeepsLocalFirst(t *testing.T) {

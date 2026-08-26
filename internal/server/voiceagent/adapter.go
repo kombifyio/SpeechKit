@@ -15,6 +15,8 @@ import (
 	"time"
 
 	"github.com/coder/websocket"
+
+	"github.com/kombifyio/SpeechKit/internal/config"
 )
 
 // Adapter bridges a live WebSocket conversation to the Framework kernel's
@@ -62,6 +64,18 @@ type Adapter struct {
 	closed  atomicBool
 	idle    *idleWatchdog
 	flow    *SequenceRunner
+
+	// replyActive tracks whether an agent reply is currently streaming from
+	// the provider (set by writePump on downlink audio/transcript, cleared at
+	// turn boundaries). A client `cancel` arms suppression only while a reply
+	// is actually in flight — a cancel while idle stays a pure ack and must
+	// never mute the NEXT reply.
+	replyActive atomicBool
+	// suppressDownlink drops the CURRENT reply's downlink audio after a
+	// client `cancel`; cleared at the provider's turn boundary (Done or
+	// Interrupted). Transcript frames keep flowing so the client can still
+	// render text for the cancelled reply.
+	suppressDownlink atomicBool
 
 	// bridgeTools is the set of tool names claimed by ToolRouter for this
 	// session, keyed by name. Written once before the pumps start; read-only
@@ -164,10 +178,22 @@ func (a *Adapter) Run(parent context.Context) {
 		}()
 	}
 
+	// Report the backend and transport that actually serve this session on
+	// the session_ready frame (the start.provider → voice-pref → default
+	// precedence already ran above). Clients need this to distinguish e.g.
+	// native Deepgram from the cascaded pipeline and to gate `cancel`
+	// support on servers that ship it (kombify-SpeechKit-aajy).
+	providerName := normalizeProviderName(start.Provider)
+	if providerName == "" && a.Provider != nil {
+		// Pre-injected provider (tests) with no client-requested name.
+		providerName = normalizeProviderName(a.Provider.Name())
+	}
 	a.sendJSON(ctx, StateFrame{
 		Type:             MsgState,
 		EventFrameFields: eventFrameFields(nil, EventSessionReady),
 		State:            "listening",
+		Provider:         providerName,
+		MediaTransport:   transport,
 	})
 	if stepResolver, ok := a.Persona.(StepResolver); ok {
 		a.flow = NewSequenceRunner(start, cfg, stepResolver)
@@ -331,22 +357,9 @@ func (a *Adapter) selectProvider(requested string) (LiveProviderAdapter, string,
 }
 
 func normalizeProviderName(provider string) string {
-	name := strings.ToLower(strings.TrimSpace(provider))
-	name = strings.ReplaceAll(name, "_", "-")
-	switch name {
-	case "google", "gemini", "gemini-live", "google-live", "realtime.google.gemini-native-audio":
-		return "gemini"
-	case "deepgram", "deepgram-agent", "deepgram-live", "realtime.deepgram.voice-agent":
-		return "deepgram"
-	case "assemblyai", "assembly-ai", "assemblyai-agent", "assemblyai-live", "realtime.assemblyai.voice-agent":
-		return "assemblyai"
-	case "openai", "openai-realtime", "openai-live", "realtime.openai.gpt-realtime-2":
-		return "openai"
-	case "cascaded", "local-cascaded", "pipeline", "pipeline-fallback", "voice-agent-cascaded", "voice-agent-cascaded-pipeline":
-		return "cascaded"
-	default:
-		return name
-	}
+	// Canonical alias table lives in internal/config so this adapter, the
+	// core serving wiring, and catalog readiness cannot drift.
+	return config.NormalizeVoiceAgentProviderName(provider)
 }
 
 func (a *Adapter) waitForStart(ctx context.Context) (StartFrame, error) {
@@ -433,6 +446,8 @@ func (a *Adapter) readPump(ctx context.Context, done chan<- struct{}) {
 					slog.Warn("voiceagent: tool response upstream failed", "err", err)
 					a.sendError(ctx, "tool_response_failed", err.Error())
 				}
+			case MsgCancel:
+				a.handleCancel(ctx)
 			case MsgPing:
 				a.sendJSON(ctx, PongFrame{Type: MsgPong})
 			case MsgStop:
@@ -464,6 +479,30 @@ func (a *Adapter) readPump(ctx context.Context, done chan<- struct{}) {
 	}
 }
 
+// handleCancel implements the client `cancel` frame (see MsgCancel):
+// idempotently stop relaying the CURRENT agent reply's downlink audio, ask
+// the provider to abort generation where its protocol supports it, and always
+// ack with an `interrupted` event frame so client playback state converges.
+// A cancel while nothing is streaming is a pure ack — suppression stays
+// unarmed so the next reply is unaffected.
+func (a *Adapter) handleCancel(ctx context.Context) {
+	if a.replyActive.get() {
+		a.suppressDownlink.set(true)
+		if canceller, ok := a.Provider.(LiveResponseCanceller); ok {
+			if err := canceller.CancelResponse(); err != nil {
+				slog.Warn("voiceagent: provider response cancel failed; suppressing downlink until turn end",
+					"session_id", a.Session.ID, "err", err)
+			}
+		}
+	}
+	fields := eventFrameFields(nil, EventInterrupted)
+	fields.ProviderMetadata = map[string]any{"reason": "client_cancel"}
+	a.sendJSON(ctx, InterruptedFrame{
+		Type:             MsgInterrupted,
+		EventFrameFields: fields,
+	})
+}
+
 func (a *Adapter) writePump(ctx context.Context, done chan<- struct{}) {
 	defer func() {
 		select {
@@ -486,14 +525,22 @@ func (a *Adapter) writePump(ctx context.Context, done chan<- struct{}) {
 		// Any provider-emitted message counts as activity for the idle
 		// watchdog so a long-running TTS reply doesn't get cut off.
 		a.idle.Reset()
+		if len(msg.Audio) > 0 || msg.OutputTranscript != "" {
+			a.replyActive.set(true)
+		}
 		if len(msg.Audio) > 0 {
-			if a.mediaBridge != nil {
+			switch {
+			case a.suppressDownlink.get():
+				// Client cancelled the current reply: drop its remaining
+				// downlink audio while the provider drains (or aborts, for
+				// LiveResponseCanceller providers).
+			case a.mediaBridge != nil:
 				if err := a.mediaBridge.SendAudio(msg.Audio); err != nil {
 					slog.Warn("voiceagent: send media bridge audio failed", "err", err)
 					a.sendError(ctx, "audio_downstream_failed", err.Error())
 					return
 				}
-			} else {
+			default:
 				a.sendBinary(ctx, msg.Audio)
 			}
 		}
@@ -546,6 +593,12 @@ func (a *Adapter) writePump(ctx context.Context, done chan<- struct{}) {
 				Type:             MsgInterrupted,
 				EventFrameFields: eventFrameFields(msg, EventInterrupted),
 			})
+		}
+		if msg.Done || msg.Interrupted {
+			// Turn boundary: the (possibly cancelled) reply is over; the next
+			// reply streams normally.
+			a.replyActive.set(false)
+			a.suppressDownlink.set(false)
 		}
 		if msg.GoAway {
 			a.sendJSON(ctx, SessionEndFrame{

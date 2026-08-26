@@ -20,6 +20,17 @@ const (
 	MsgPing         = "ping"
 	MsgStop         = "stop"
 	MsgAdvanceStep  = "advance_step"
+	// MsgCancel is the client's tap-to-interrupt: stop relaying the CURRENT
+	// agent reply's downlink audio. Idempotent, no payload. The server also
+	// invokes the provider-native response cancel where the provider protocol
+	// has one (OpenAI Realtime `response.cancel`); Gemini Live, Deepgram
+	// Voice Agent, AssemblyAI Voice Agent, and the cascaded pipeline expose
+	// no client-side cancel message, so for them the reply keeps generating
+	// upstream and the server suppresses its downlink audio until the turn
+	// ends. Every cancel — including one that arrives while nothing is
+	// playing — is acknowledged with an `interrupted` event frame so client
+	// playback state converges.
+	MsgCancel = "cancel"
 )
 
 const (
@@ -127,6 +138,14 @@ type StateFrame struct {
 	Type string `json:"type"` // "state"
 	EventFrameFields
 	State string `json:"state"`
+	// Provider and MediaTransport are populated on the session_ready frame:
+	// the resolved backend that actually serves THIS session (after the
+	// start.provider → voice-preference → server-default precedence ran) and
+	// the media transport actually applied ("websocket" | "livekit").
+	// Clients gate provider-dependent behavior — e.g. sending `cancel` — on
+	// these fields being present (kombify-SpeechKit-aajy).
+	Provider       string `json:"provider,omitempty"`
+	MediaTransport string `json:"media_transport,omitempty"`
 }
 
 type TranscriptFrame struct {

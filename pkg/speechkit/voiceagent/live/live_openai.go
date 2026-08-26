@@ -194,6 +194,19 @@ func (p *OpenAILive) SendAudioStreamEnd() error {
 	return p.sendJSON(conn, map[string]any{"type": "response.create"})
 }
 
+// CancelResponse cancels the in-progress model response with the Realtime
+// `response.cancel` client event (tap-to-interrupt). The server truncates
+// generation and answers with `response.done`, which Receive maps to a turn
+// end. A cancel that races an already-finished response yields the non-fatal
+// `response_cancel_not_active` error event, which parseEvent swallows.
+func (p *OpenAILive) CancelResponse() error {
+	conn := p.snapshotConn()
+	if conn == nil {
+		return errors.New("openai realtime: not connected")
+	}
+	return p.sendJSON(conn, map[string]any{"type": "response.cancel"})
+}
+
 // SendText injects a text-only user turn and triggers a response.
 func (p *OpenAILive) SendText(text string) error {
 	if strings.TrimSpace(text) == "" {
@@ -692,6 +705,13 @@ func (p *OpenAILive) parseEvent(data []byte) (*LiveMessage, bool, error) {
 			} `json:"error"`
 		}
 		_ = json.Unmarshal(data, &ev)
+		if ev.Error.Code == "response_cancel_not_active" {
+			// A `response.cancel` raced a response that had already finished.
+			// OpenAI keeps the session fully usable after this event, so
+			// treating it as fatal would tear down the whole voice session
+			// for a harmless no-op cancel. Swallow it.
+			return nil, true, nil
+		}
 		return nil, false, fmt.Errorf("openai realtime: server error %s/%s: %s",
 			ev.Error.Type, ev.Error.Code, ev.Error.Message)
 	default:

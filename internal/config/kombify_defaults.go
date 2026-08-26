@@ -16,6 +16,7 @@ const KombifyDeploymentDefaultsEnv = "SPEECHKIT_KOMBIFY_DEFAULTS"
 const (
 	kombifyDeepgramSTTProfileID = "stt.deepgram.nova-3"
 	kombifyDeepgramTTSProfileID = "tts.deepgram.aura-2"
+	kombifyDeepgramVAProfileID  = "realtime.deepgram.voice-agent"
 	kombifyDeepgramSTTModel     = "nova-3"
 	kombifyDeepgramTTSModel     = "aura-2-thalia-en"
 )
@@ -83,6 +84,16 @@ func ApplyKombifyDeploymentDefaults(cfg *Config) []string {
 	if p := strings.ToLower(strings.TrimSpace(cfg.VoiceAgent.Provider)); p == "" || p == "gemini" {
 		cfg.VoiceAgent.Provider = "deepgram"
 		notes = append(notes, "kombify defaults: Voice Agent provider = deepgram")
+	}
+	// Keep the ModelSelection surface consistent with the provider that will
+	// actually serve default sessions: serving reads cfg.VoiceAgent.Provider
+	// only, and catalog readiness marks Active from the same derivation (see
+	// EffectiveVoiceAgentProfileID). Pin only when Deepgram is the effective
+	// provider so an explicit operator override keeps its own selection.
+	if NormalizeVoiceAgentProviderName(cfg.VoiceAgent.Provider) == "deepgram" {
+		if setModePrimaryWithFallback(&cfg.ModelSelection.VoiceAgent, kombifyDeepgramVAProfileID, DefaultVoiceAgentPrimaryProfileID) {
+			notes = append(notes, "kombify defaults: Voice Agent primary = "+kombifyDeepgramVAProfileID)
+		}
 	}
 
 	return notes

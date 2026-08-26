@@ -72,6 +72,16 @@ type LiveToolResponder interface {
 	SendToolResponse(ToolResponseFrame) error
 }
 
+// LiveResponseCanceller is implemented by providers whose realtime protocol
+// has a client-initiated cancel for the in-flight agent response (OpenAI
+// Realtime: `response.cancel`). Gemini Live, Deepgram Voice Agent, and
+// AssemblyAI Voice Agent expose no such client message — interruption there
+// is speech-driven server-side — so their sessions rely on the adapter
+// suppressing downlink audio until the current turn ends (see MsgCancel).
+type LiveResponseCanceller interface {
+	CancelResponse() error
+}
+
 // LiveConfigFrame is the subset of configuration the adapter derives from a
 // StartFrame and the persona/role resolver. Kept as a separate type so the
 // test double doesn't need to depend on the kernel's concrete LiveConfig

@@ -73,6 +73,30 @@ func TestParseEventAudioDelta(t *testing.T) {
 	}
 }
 
+// A `response.cancel` that races an already-finished response makes the
+// server emit an error event with code response_cancel_not_active. The session
+// stays fully usable, so parseEvent must swallow it — treating it as fatal
+// tears down the whole voice session for a harmless no-op cancel.
+func TestParseEventSwallowsResponseCancelNotActive(t *testing.T) {
+	t.Parallel()
+	p := &OpenAILive{}
+	frame := mustMarshal(t, map[string]any{
+		"type": "error",
+		"error": map[string]any{
+			"type":    "invalid_request_error",
+			"code":    "response_cancel_not_active",
+			"message": "Cancellation failed: no active response found",
+		},
+	})
+	msg, swallow, err := p.parseEvent(frame)
+	if err != nil {
+		t.Fatalf("parseEvent: %v, want swallowed no-op cancel error", err)
+	}
+	if !swallow || msg != nil {
+		t.Fatalf("swallow=%v msg=%+v, want swallowed nil message", swallow, msg)
+	}
+}
+
 func TestParseEventOutputAudioDeltaGA(t *testing.T) {
 	t.Parallel()
 	p := &OpenAILive{}
