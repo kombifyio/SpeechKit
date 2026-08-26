@@ -74,6 +74,18 @@ enum class TurnEndReason {
 /** Why a barge-in candidate was refused. */
 enum class BargeInRejection {
     /**
+     * Speech-triggered barge-in is switched off for this session, so nothing
+     * spoken can cut the agent off however convincing it is. See
+     * [SpeechBargeIn].
+     *
+     * Reported rather than swallowed: a device log full of these is the
+     * evidence that people are trying to talk over the agent, which is what
+     * makes the case for turning the feature back on once the capture chain
+     * can be shown to remove the loudspeaker.
+     */
+    Disabled,
+
+    /**
      * The candidate ended before the confirmation window completed — a door,
      * a bang, a single loud frame.
      */
@@ -86,4 +98,17 @@ enum class BargeInRejection {
      * the agent.
      */
     NotSpeech,
+
+    /**
+     * The candidate was speech, but it was *the agent's own* speech arriving
+     * back through the microphone: its envelope tracks the audio the host is
+     * playing right now.
+     *
+     * [NotSpeech] cannot catch this. A loudspeaker reproducing a voice is
+     * amplitude-modulated exactly like a voice, so self-echo passes both the
+     * loudness gate and the speech-likeness test by definition, and no
+     * threshold separates it from a person — only the playback reference
+     * does.
+     */
+    Echo,
 }

@@ -77,6 +77,9 @@ func TestLegacyDeepgramDefaultsDoNotBecomeProviderOverrides(t *testing.T) {
 	if values.Has(provideropts.OptionSmartFormat) {
 		t.Fatalf("smart_format default projected as override: %#v", values.Get(provideropts.OptionSmartFormat))
 	}
+	if values.Has(provideropts.OptionNumerals) {
+		t.Fatalf("numerals default projected as override: %#v", values.Get(provideropts.OptionNumerals))
+	}
 	if values.Has(provideropts.OptionDetectLanguage) {
 		t.Fatalf("detect_language default projected as override: %#v", values.Get(provideropts.OptionDetectLanguage))
 	}

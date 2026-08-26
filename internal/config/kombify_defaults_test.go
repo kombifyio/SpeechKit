@@ -26,8 +26,8 @@ func TestApplyKombifyDeploymentDefaults_DeepgramKeyFlipsDefaults(t *testing.T) {
 	if cfg.Providers.Deepgram.STTModel != "nova-3" {
 		t.Errorf("Deepgram STT model = %q, want nova-3", cfg.Providers.Deepgram.STTModel)
 	}
-	if !cfg.Providers.Deepgram.STTSmartFormat || !cfg.Providers.Deepgram.STTUseVocabularyKeyterms {
-		t.Errorf("Deepgram quality defaults = smart:%v keyterms:%v, want true/true", cfg.Providers.Deepgram.STTSmartFormat, cfg.Providers.Deepgram.STTUseVocabularyKeyterms)
+	if !cfg.Providers.Deepgram.STTSmartFormat || !cfg.Providers.Deepgram.STTNumerals || !cfg.Providers.Deepgram.STTUseVocabularyKeyterms {
+		t.Errorf("Deepgram quality defaults = smart:%v numerals:%v keyterms:%v, want true/true/true", cfg.Providers.Deepgram.STTSmartFormat, cfg.Providers.Deepgram.STTNumerals, cfg.Providers.Deepgram.STTUseVocabularyKeyterms)
 	}
 	if !cfg.TTS.Enabled || !cfg.TTS.Deepgram.Enabled {
 		t.Error("Deepgram Aura TTS should be enabled")

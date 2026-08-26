@@ -118,19 +118,24 @@ func TestServiceApplyRespectsModeFilter(t *testing.T) {
 func TestServiceAppliesNativeStandardPunctuationTemplate(t *testing.T) {
 	service := NewService(ServiceOptions{ActiveTemplateIDs: []string{customtemplates.StandardPunctuationID}})
 	cases := []struct {
-		name string
-		in   string
-		want string
+		name     string
+		language string
+		in       string
+		want     string
 	}{
-		{name: "digit version", in: "3 Punkt 5 Punkt 7", want: "3.5.7"},
-		{name: "spoken digit version", in: "drei Punkt fünf Punkt sieben", want: "3.5.7"},
-		{name: "ordinary sentence", in: "der Punkt ist wichtig", want: "der Punkt ist wichtig"},
+		{name: "digit version", language: "de", in: "3 Punkt 5 Punkt 7", want: "3.5.7"},
+		{name: "spoken digit version", language: "de", in: "drei Punkt fünf Punkt sieben", want: "3.5.7"},
+		{name: "spoken fraction", language: "de", in: "eins von fünf", want: "1 von 5"},
+		{name: "ordinary sentence", language: "de", in: "der Punkt ist wichtig", want: "der Punkt ist wichtig"},
+		{name: "multilingual spoken decimal", language: "multi", in: "eins Punkt sieben", want: "1.7"},
+		{name: "multilingual spoken fraction", language: "multi", in: "1 von fünf", want: "1 von 5"},
+		{name: "german fillers", language: "multi", in: "Äh das ist ähm ein Test", want: "das ist ein Test"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			applied, err := service.Apply(context.Background(), speechcustomize.Context{
 				Mode:     speechcustomize.ModeDictation,
-				Language: "de",
+				Language: tc.language,
 				Stage:    speechcustomize.StagePostSTT,
 			}, tc.in)
 			if err != nil {

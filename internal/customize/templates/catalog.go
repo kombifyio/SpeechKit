@@ -118,7 +118,7 @@ func builtinDefinitions() map[string]templateDefinition {
 				ID:            StandardPunctuationID,
 				Version:       VersionV1,
 				Name:          "Standard punctuation DE/EN",
-				Description:   "Provider-neutral punctuation and numeric separator rules for German and English dictation.",
+				Description:   "Provider-neutral punctuation, numeric separator, spoken-number, and filler-word rules for German and English dictation.",
 				Source:        source(StandardPunctuationID, VersionV1),
 				Languages:     []string{"de", "en"},
 				Modes:         []speechcustomize.Mode{speechcustomize.ModeDictation, speechcustomize.ModeAssist},
@@ -163,14 +163,18 @@ func standardPunctuationPack() speechcustomize.Pack {
 		regexReplacement(templateID, version, "en.clear-slash", "en", `(^|[^\pL\pN_])([A-Za-z0-9]+)\s+slash\s+([A-Za-z0-9]+)([^\pL\pN_]|$)`, `${1}${2}/${3}${4}`, 80, tag),
 		regexReplacement(templateID, version, "en.clear-dash", "en", `(^|[^\pL\pN_])([A-Za-z0-9]+)\s+dash\s+([A-Za-z0-9]+)([^\pL\pN_]|$)`, `${1}${2}-${3}${4}`, 80, tag),
 		regexReplacement(templateID, version, "en.clear-colon", "en", `(^|[^\pL\pN_])([A-Za-z0-9]+)\s+colon\s+([A-Za-z0-9]+)([^\pL\pN_]|$)`, `${1}${2}:${3}${4}`, 80, tag),
+		regexReplacement(templateID, version, "filler.leading", "", `^(?:äh|ähm|aeh|aehm)[,\s]+`, "", 50, tag),
+		regexReplacement(templateID, version, "filler.inline", "", `\s+(?:äh|ähm|aeh|aehm)([^\pL\pN_]|$)`, `${1}`, 50, tag),
 	}
 	replacements = append(replacements, numberWordDotReplacements(templateID, version, "de", []string{"punkt", "dot"}, germanDigits(), tag)...)
 	replacements = append(replacements, numberWordDotReplacements(templateID, version, "en", []string{"point", "dot"}, englishDigits(), tag)...)
+	replacements = append(replacements, numberWordJoinReplacements(templateID, version, "de", "von", " von ", germanDigits(), tag, 100)...)
+	replacements = append(replacements, numberWordJoinReplacements(templateID, version, "en", "of", " of ", englishDigits(), tag, 100)...)
 	return speechcustomize.Pack{
 		SchemaVersion: speechcustomize.PackSchemaVersion,
 		ID:            templateID,
 		Name:          "Standard punctuation DE/EN",
-		Description:   "Native SpeechKit punctuation and numeric separator defaults.",
+		Description:   "Native SpeechKit punctuation, spoken-number, and filler-word defaults.",
 		Replacements:  replacements,
 	}
 }
@@ -231,6 +235,22 @@ func developerPack() speechcustomize.Pack {
 		Words:         words,
 		Replacements:  replacements,
 	}
+}
+
+func numberWordJoinReplacements(templateID, version, language, joinWord, outputJoin string, digits []spokenDigit, tag string, priority int) []speechcustomize.Replacement {
+	joinPattern := regexp.QuoteMeta(joinWord)
+	replacements := make([]speechcustomize.Replacement, 0, len(digits)*len(digits)+len(digits)*2)
+	for _, left := range digits {
+		for _, right := range digits {
+			pattern := fmt.Sprintf(`(^|[^\pL\pN_])%s\s+%s\s+%s([^\pL\pN_]|$)`, regexp.QuoteMeta(left.spoken), joinPattern, regexp.QuoteMeta(right.spoken))
+			replacements = append(replacements, regexReplacement(templateID, version, fmt.Sprintf("%s.word-join.%s.%s.%s", language, joinWord, left.spoken, right.spoken), language, pattern, "${1}"+left.digit+outputJoin+right.digit+"${2}", priority, tag))
+		}
+		pattern := fmt.Sprintf(`(^|[^\pL\pN_])([0-9]+)\s+%s\s+%s([^\pL\pN_]|$)`, joinPattern, regexp.QuoteMeta(left.spoken))
+		replacements = append(replacements, regexReplacement(templateID, version, fmt.Sprintf("%s.numeric-join-word.%s.%s", language, joinWord, left.spoken), language, pattern, "${1}${2}"+outputJoin+left.digit+"${3}", priority, tag))
+		pattern = fmt.Sprintf(`(^|[^\pL\pN_])%s\s+%s\s+([0-9]+)([^\pL\pN_]|$)`, regexp.QuoteMeta(left.spoken), joinPattern)
+		replacements = append(replacements, regexReplacement(templateID, version, fmt.Sprintf("%s.word-join-numeric.%s.%s", language, joinWord, left.spoken), language, pattern, "${1}"+left.digit+outputJoin+"${2}${3}", priority, tag))
+	}
+	return replacements
 }
 
 func numberWordDotReplacements(templateID, version, language string, separators []string, digits []spokenDigit, tag string) []speechcustomize.Replacement {

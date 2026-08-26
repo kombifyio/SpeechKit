@@ -1,5 +1,6 @@
 package io.kombify.speechkit.turn
 
+import io.kombify.speechkit.audio.EchoControl
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
@@ -82,7 +83,7 @@ class TurnEngineTest {
      */
     @Test
     fun `steady noise during playback does not interrupt the agent`() {
-        val engine = TurnEngine()
+        val engine = TurnEngine(speechBargeIn = SpeechBargeIn.Enabled)
         engine.playAgentAudio(millis = 3_000, sampleRateHz = DOWNLINK_SAMPLE_RATE)
         val events = engine.feed((1..12).map { noise(it) })
 
@@ -95,10 +96,136 @@ class TurnEngineTest {
         assertTrue(engine.agentAudible, "the agent should still be speaking")
     }
 
-    /** Speech over the agent is a real turn, and it arrives whole. */
+    /**
+     * The default configuration, and the reason it is the default: whatever
+     * the microphone hears while the agent is audible, no turn opens.
+     *
+     * The fixture is deliberately the easiest possible barge-in — clean, loud,
+     * unmistakably speech-shaped audio, with a playback reference carrying no
+     * envelope at all, so every heuristic below would wave it through. It still
+     * must not open a turn, because with [SpeechBargeIn.Disabled] nothing
+     * spoken can. Telling a person's voice from the agent's own voice coming
+     * back through a loudspeaker is not a decision this engine can make
+     * reliably on a device that does not cancel the loudspeaker, and getting it
+     * wrong in the permissive direction costs the whole feature: a
+     * self-sustaining loop of the agent answering its own fragments.
+     */
+    @Test
+    fun `speech over the agent does not take a turn by default`() {
+        val engine = TurnEngine()
+        engine.playAgentAudio(millis = 3_000, sampleRateHz = DOWNLINK_SAMPLE_RATE)
+
+        val events = engine.feed((101..108).map { speech(it) })
+
+        assertTrue(events.starts().isEmpty(), "the agent was interrupted while it was speaking")
+        assertTrue(
+            events.filterIsInstance<TurnEvent.BargeInRejected>()
+                .any { it.reason == BargeInRejection.Disabled },
+            "the refusal should say the feature is off, not invent an acoustic reason",
+        )
+        assertTrue(engine.agentAudible, "the agent should still be speaking")
+    }
+
+    /**
+     * The agent hearing itself: the loudspeaker reaches the microphone, the
+     * engine takes the answer for a user turn, and the answer cuts itself off.
+     *
+     * Nothing about the level or the shape of that signal distinguishes it
+     * from a person. It is loud, it is sustained, and it is amplitude-modulated
+     * like speech because it *is* speech — so both the gate and
+     * `isSpeechLike` pass it by construction. Only the audio the host is
+     * playing can settle it, which is why the engine keeps that audio rather
+     * than only measuring how long it lasts.
+     */
+    @Test
+    fun `the agent's own voice returning through the microphone does not interrupt it`() {
+        // The device advertises a canceller, so the engine is on the lenient
+        // gate and the leakage clears it.
+        val engine = TurnEngine(echo = EchoControl.PlatformAec, speechBargeIn = SpeechBargeIn.Enabled)
+        val answer = syllables(millis = 3_000, rateHz = DOWNLINK_SAMPLE_RATE)
+        engine.notePlaybackFrame(answer, DOWNLINK_SAMPLE_RATE)
+        // Listening to the first part of an answer that is still playing.
+        val events = engine.feedPcm(leakageOf(answer).firstMillis(1_200))
+
+        assertTrue(events.starts().isEmpty(), "the agent interrupted itself with its own answer")
+        assertTrue(
+            events.filterIsInstance<TurnEvent.BargeInRejected>()
+                .any { it.reason == BargeInRejection.Echo },
+            "the agent's own voice should be refused as echo",
+        )
+        assertTrue(engine.agentAudible, "the agent should still be speaking")
+    }
+
+    /**
+     * The other edge of the same knife. A fix that stops self-interruption by
+     * making the agent uninterruptible is not a fix, so: the same answer
+     * playing, the same leakage in the microphone, and a person talking over
+     * both. The engine has to hear the one signal the loudspeaker cannot
+     * explain.
+     *
+     * The person starts a second into the answer rather than with it, which is
+     * both what people do and the harder case: the window the engine compares
+     * reaches back into audio that *was* pure echo, so a comparison that
+     * simply asks "has this microphone been tracking the speaker" says yes and
+     * refuses a real interruption.
+     */
+    @Test
+    fun `a person talking over the agent and its echo still interrupts it`() {
+        // Unaided, so this clears the *strict* gate as well.
+        val engine = TurnEngine(speechBargeIn = SpeechBargeIn.Enabled)
+        val answer = syllables(millis = 3_000, rateHz = DOWNLINK_SAMPLE_RATE)
+        engine.notePlaybackFrame(answer, DOWNLINK_SAMPLE_RATE)
+
+        val echo = leakageOf(answer).firstMillis(2_000)
+        // A different voice: slower syllables, closer to the microphone, and
+        // arriving a second after the agent started talking.
+        val person = silentFor(1_000) +
+            syllables(millis = 1_000, rateHz = SAMPLE_RATE, periodWindows = 8)
+        val events = engine.feedPcm(mix(echo, person))
+
+        val start = events.starts().firstOrNull()
+        assertTrue(start != null && start.bargeIn, "a person speaking over the agent was ignored")
+    }
+
+    /**
+     * The gate follows what the capture chain reports when it opens, not what
+     * the device advertises before it.
+     *
+     * On Android the canceller attaches to an `AudioRecord` session, so there
+     * is nothing to report until capture starts and a host built earlier can
+     * only guess. Here the guess is `PlatformAec` and the attach fails, which
+     * is the case that has to end at the strict gate: the microphone is
+     * hearing the room unaided.
+     *
+     * The agent plays silence so that only the gate can decide.
+     */
+    @Test
+    fun `a canceller that does not attach selects the strict barge-in gate`() {
+        // Loud enough for a microphone the platform is cleaning up, too quiet
+        // for one that is hearing the loudspeaker unaided.
+        val midBand = syllables(millis = 800, rateHz = SAMPLE_RATE, peak = MID_BAND_PEAK)
+
+        val failed = TurnEngine(echo = EchoControl.PlatformAec, speechBargeIn = SpeechBargeIn.Enabled)
+        failed.playAgentAudio(millis = 3_000, sampleRateHz = DOWNLINK_SAMPLE_RATE)
+        failed.noteEchoControl(EchoControl.None) // the attach failed
+        assertTrue(
+            failed.feedPcm(midBand).starts().isEmpty(),
+            "an unaided microphone cut the agent off at the assisted gate",
+        )
+
+        val attached = TurnEngine(echo = EchoControl.PlatformAec, speechBargeIn = SpeechBargeIn.Enabled)
+        attached.playAgentAudio(millis = 3_000, sampleRateHz = DOWNLINK_SAMPLE_RATE)
+        attached.noteEchoControl(EchoControl.PlatformAec)
+        assertTrue(
+            attached.feedPcm(midBand).starts().isNotEmpty(),
+            "a cleaned-up microphone did not hear a barge-in at this level",
+        )
+    }
+
+    /** With the switch on, speech over the agent is a real turn and arrives whole. */
     @Test
     fun `speech during playback interrupts the agent`() {
-        val engine = TurnEngine()
+        val engine = TurnEngine(speechBargeIn = SpeechBargeIn.Enabled)
         engine.playAgentAudio(millis = 3_000, sampleRateHz = DOWNLINK_SAMPLE_RATE)
         val events = engine.feed((101..106).map { speech(it) })
 
@@ -274,6 +401,98 @@ class TurnEngineTest {
         notePlaybackFrame(ByteArray(bytes), sampleRateHz)
     }
 
+    /** Feeds a continuous stream the way a recorder delivers it: in chunks. */
+    private fun TurnEngine.feedPcm(pcm: ByteArray): List<TurnEvent> {
+        val events = ArrayList<TurnEvent>()
+        var offset = 0
+        while (offset < pcm.size) {
+            val end = minOf(offset + FRAME_BYTES, pcm.size)
+            events += offer(pcm.copyOfRange(offset, end))
+            offset = end
+        }
+        return events
+    }
+
+    /**
+     * Speech-like audio of [millis] at [rateHz]: loud for three of every
+     * [periodWindows] 20 ms windows and near-silent for the rest, so the
+     * envelope swings the way syllables do.
+     *
+     * [periodWindows] is the syllable rate, and it is what makes one voice a
+     * different voice from another. The same rate rendered at the downlink
+     * rate and again at the capture rate is one voice heard twice — which is
+     * what a loudspeaker and a microphone do to the agent's own answer.
+     */
+    private fun syllables(
+        millis: Int,
+        rateHz: Int,
+        peak: Int = SPEECH_PEAK,
+        periodWindows: Int = 5,
+    ): ByteArray {
+        val windowSamples = rateHz * ENVELOPE_WINDOW_MILLIS / 1000
+        val samples = millis * rateHz / 1000
+        val out = ByteArray(samples * 2)
+        for (i in 0 until samples) {
+            val loud = (i / windowSamples) % periodWindows < 3
+            val amplitude = if (loud) peak else SPEECH_TROUGH
+            val value = if (i % 2 == 0) amplitude else -amplitude
+            out[i * 2] = (value and 0xFF).toByte()
+            out[i * 2 + 1] = ((value shr 8) and 0xFF).toByte()
+        }
+        return out
+    }
+
+    /**
+     * What the loudspeaker hands back to the microphone: the same audio the
+     * host played, resampled from the downlink rate to the capture rate and
+     * attenuated — the two things a room does to it that a level test can see.
+     *
+     * Derived from the played bytes rather than regenerated, so the fixture
+     * cannot drift away from the audio it is supposed to be an echo of.
+     *
+     * What it deliberately does not model: the loop delay, room reflections
+     * and the loudspeaker's own response. Those are why this file cannot prove
+     * that echo rejection works in a real room — only that the reference is
+     * consulted at all.
+     */
+    private fun leakageOf(played: ByteArray, attenuation: Double = 0.5): ByteArray {
+        val outSamples = (played.size / 2) * SAMPLE_RATE / DOWNLINK_SAMPLE_RATE
+        val out = ByteArray(outSamples * 2)
+        for (i in 0 until outSamples) {
+            val source = (i * DOWNLINK_SAMPLE_RATE / SAMPLE_RATE) * 2
+            val value = (played.sampleAt(source) * attenuation).toInt().coerceIn(-32_768, 32_767)
+            out[i * 2] = (value and 0xFF).toByte()
+            out[i * 2 + 1] = ((value shr 8) and 0xFF).toByte()
+        }
+        return out
+    }
+
+    /** Sums two capture-rate signals, the way a microphone sums two sources. */
+    private fun mix(first: ByteArray, second: ByteArray): ByteArray {
+        val out = ByteArray(maxOf(first.size, second.size))
+        for (i in out.indices step 2) {
+            val value = (first.sampleAt(i) + second.sampleAt(i)).coerceIn(-32_768, 32_767)
+            out[i] = (value and 0xFF).toByte()
+            out[i + 1] = ((value shr 8) and 0xFF).toByte()
+        }
+        return out
+    }
+
+    /** [millis] of capture-rate digital silence. */
+    private fun silentFor(millis: Int): ByteArray =
+        ByteArray(millis * SAMPLE_RATE / 1000 * BYTES_PER_SAMPLE)
+
+    /** The first [millis] of capture-rate PCM. */
+    private fun ByteArray.firstMillis(millis: Int): ByteArray =
+        copyOf(millis * SAMPLE_RATE / 1000 * BYTES_PER_SAMPLE)
+
+    private fun ByteArray.sampleAt(byteOffset: Int): Int =
+        if (byteOffset + 1 >= size) {
+            0
+        } else {
+            ((this[byteOffset].toInt() and 0xFF) or (this[byteOffset + 1].toInt() shl 8)).toShort().toInt()
+        }
+
     private fun frame(marker: Int, sample: (Int) -> Int): ByteArray {
         val out = ByteArray(FRAME_BYTES)
         for (i in 0 until SAMPLES_PER_FRAME) {
@@ -303,11 +522,20 @@ class TurnEngineTest {
         const val FRAME_BYTES = SAMPLES_PER_FRAME * 2
 
         /** 20 ms, the window the engine measures the envelope over. */
-        const val ENVELOPE_SAMPLES = SAMPLE_RATE * 20 / 1000
+        const val ENVELOPE_WINDOW_MILLIS = 20
+        const val ENVELOPE_SAMPLES = SAMPLE_RATE * ENVELOPE_WINDOW_MILLIS / 1000
 
         /** ~0.060 and ~0.002 of full scale. */
         const val SPEECH_PEAK = 1_966
         const val SPEECH_TROUGH = 66
+
+        /**
+         * Roughly 0.020 of full scale once the duty cycle is accounted for:
+         * over the level VAD's "definitely speech" point, which is the gate a
+         * *claimed* canceller buys, and under the unaided gate. The band where
+         * an honest [EchoControl] report is the whole difference.
+         */
+        const val MID_BAND_PEAK = 850
 
         /** Uniform noise whose RMS is ~0.050 of full scale. */
         const val NOISE_PEAK = 2_838

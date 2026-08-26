@@ -38,6 +38,57 @@ enum class TurnPolicy {
 }
 
 /**
+ * Whether speaking over the agent may cut it off.
+ *
+ * Off by default. Interrupting on *speech* requires telling the user's voice
+ * from the agent's own voice arriving back through the microphone, and on a
+ * device where the loudspeaker is not cancelled out of the capture signal that
+ * distinction has no reliable answer. Getting it wrong in the permissive
+ * direction is not a small error: the agent hears its own sentence, takes it
+ * for an interruption, cuts itself off, answers the fragment and hears *that* —
+ * a self-sustaining loop with no way in for the person holding the phone, which
+ * is what a tester reported from a consuming app.
+ *
+ * So the feature is absent rather than tuned. A threshold that cannot be
+ * calibrated without hardware is not a fix, and shipping a stricter one only
+ * moves the failure. Everything that makes a turn correct once the agent is
+ * quiet — onset detection, pre-roll, endpointing, provider handover — is
+ * unaffected, and the explicit interrupt (host calls
+ * [TurnEngine.notePlaybackStopped] after flushing the player) is untouched: it
+ * is a deliberate act by a person and was never in doubt.
+ *
+ * @see Enabled for what re-enabling costs.
+ */
+enum class SpeechBargeIn {
+    /**
+     * Default. While the agent is audible, no microphone audio opens a turn.
+     * The candidate is still tracked and refused as
+     * [BargeInRejection.Disabled], so a device log still shows how often
+     * someone tried to talk over the agent.
+     */
+    Disabled,
+
+    /**
+     * Speech over the agent may open a turn, subject to the loudness gate, the
+     * speech-likeness test and the playback-reference comparison.
+     *
+     * Do not select this until a device session shows that the capture chain
+     * actually removes the loudspeaker — that is, that [EchoControl.PlatformAec]
+     * is reported *and* the microphone level during an answer stays at the
+     * residual rather than at speech level. Without that evidence the envelope
+     * comparison against the played audio is the only thing standing between an
+     * answer and itself, and it has never been measured against a real room.
+     *
+     * On Android that evidence also requires the *host* to have put the session
+     * into a voice-communication route: `MODE_IN_COMMUNICATION`, playback on
+     * `USAGE_VOICE_COMMUNICATION`, and an output the person can hear. An
+     * `AcousticEchoCanceler` attached to a capture session whose playback is on
+     * the media stream reports itself enabled and subtracts nothing.
+     */
+    Enabled,
+}
+
+/**
  * Turn-taking for a hands-free spoken dialogue: onset detection, pre-roll,
  * endpointing, and barge-in, as one finished endpoint.
  *
@@ -55,8 +106,9 @@ enum class TurnPolicy {
  * the API at all cannot reintroduce the defect:
  *
  * ```kotlin
- * val engine = TurnEngine(echo = capture.echoControl)
+ * val engine = TurnEngine()
  * capture.frames().collect { frame ->
+ *     engine.noteEchoControl(capture.echoControl) // measured, so read per frame
  *     engine.offer(frame).forEach { event ->
  *         when (event) {
  *             is TurnEvent.TurnAudio -> agent.sendAudio(event.pcm)
@@ -90,15 +142,39 @@ enum class TurnPolicy {
  *   downloaded the Silero weights can pass `SileroVadDetector` with no other
  *   change, and the loudness and speech conditions below then become genuinely
  *   independent signals rather than two readings of the same envelope.
+ * @param speechBargeIn whether speaking over the agent may cut it off. Off by
+ *   default; see [SpeechBargeIn].
  */
 class TurnEngine(
-    private val echo: EchoControl = EchoControl.None,
+    echo: EchoControl = EchoControl.None,
     policy: TurnPolicy = TurnPolicy.Adaptive,
     private val vad: VadDetector = LevelVadDetector(),
+    private val speechBargeIn: SpeechBargeIn = SpeechBargeIn.Disabled,
 ) {
+
+    /**
+     * What the capture chain reports *now*, not what it predicted before it
+     * opened.
+     *
+     * A constructor argument alone cannot be honest here: a host is built
+     * before its recorder exists, so at construction time the only answer
+     * available is a device-capability guess. [noteEchoControl] is how the
+     * measured answer arrives once the capture chain knows it.
+     */
+    private var echo: EchoControl = echo
 
     private val meter = MicLevelMeter()
     private val preRoll = PreRoll(PRE_ROLL_BYTES)
+
+    /**
+     * Envelope of the audio the host has recently handed to the loudspeaker,
+     * and of what the microphone recently heard, on one shared 20 ms grid.
+     *
+     * These two are the only thing that can tell the agent's own voice from a
+     * person's. See [echoLike].
+     */
+    private val playbackEnvelope = EnvelopeRing(REFERENCE_WINDOWS)
+    private val captureEnvelope = EnvelopeRing(COMPARE_WINDOWS)
 
     private var providerEndpoints = policy == TurnPolicy.ProviderEndpointed
     private val adaptive = policy == TurnPolicy.Adaptive
@@ -153,6 +229,8 @@ class TurnEngine(
         val duringPlayback = agentAudible
         playbackRemainingMillis = (playbackRemainingMillis - frameMillis).coerceAtLeast(0L)
 
+        captureEnvelope.append(frame, AudioFormat.SAMPLE_RATE)
+
         val level = meter.accept(frame, frameMillis)
         levelSinceEmitMillis += frameMillis
         if (levelSinceEmitMillis >= LEVEL_INTERVAL_MILLIS) {
@@ -200,21 +278,42 @@ class TurnEngine(
             appendEnvelope(samples)
             val needed = if (duringPlayback) BARGE_IN_CONFIRM_MILLIS else ONSET_CONFIRM_MILLIS
             if (candidateMillis >= needed) {
-                // Speech-likeness is required only against the agent's own
-                // voice. Idle, a false onset costs a short empty turn; during
-                // playback it cuts the agent off mid-sentence, so that is the
-                // side that has to be sure.
-                if (duringPlayback && !isSpeechLike()) {
-                    events += TurnEvent.BargeInRejected(BargeInRejection.NotSpeech)
-                    VoiceLog.i(VoiceLog.AGENT, "barge-in rejected reason=not_speech")
-                    resetCandidate()
-                    suppressUntilQuiet = true
-                } else {
-                    events += openTurn(bargeIn = duringPlayback)
+                // Both extra conditions are required only against the agent's
+                // own voice. Idle, a false onset costs a short empty turn;
+                // during playback it cuts the agent off mid-sentence, so that
+                // is the side that has to be sure.
+                val rejection = if (duringPlayback) bargeInRejection() else null
+                when (rejection) {
+                    null -> events += openTurn(bargeIn = duringPlayback)
+
+                    BargeInRejection.NotSpeech -> {
+                        events += TurnEvent.BargeInRejected(rejection)
+                        VoiceLog.i(VoiceLog.AGENT, "barge-in rejected reason=not_speech")
+                        resetCandidate()
+                        suppressUntilQuiet = true
+                    }
+
+                    // Deliberately *not* suppressed until quiet. Both of these
+                    // last for as long as the answer does — echo because the
+                    // loudspeaker keeps running, [BargeInRejection.Disabled] by
+                    // definition — so waiting for the microphone to go quiet
+                    // would carry the refusal past the end of the agent's audio
+                    // and make the *next* turn need a tap. That is the reported
+                    // defect wearing the other mask. Each window is judged on
+                    // its own instead.
+                    else -> {
+                        events += TurnEvent.BargeInRejected(rejection)
+                        VoiceLog.i(VoiceLog.AGENT, "barge-in rejected reason=${rejection.logReason()}")
+                        resetCandidate()
+                    }
                 }
             }
         } else if (candidateMillis > 0) {
-            if (duringPlayback) {
+            // Only meaningful where a barge-in could have been accepted. With
+            // speech barge-in off there is no candidate to be too short for,
+            // and latching `suppressUntilQuiet` off the agent's own echo would
+            // hold the refusal into the silence after it.
+            if (duringPlayback && speechBargeIn == SpeechBargeIn.Enabled) {
                 events += TurnEvent.BargeInRejected(BargeInRejection.TooShort)
                 VoiceLog.i(VoiceLog.AGENT, "barge-in rejected reason=too_short")
                 suppressUntilQuiet = loud
@@ -249,6 +348,30 @@ class TurnEngine(
         require(sampleRateHz > 0) { "playback sample rate must be positive, was $sampleRateHz" }
         if (pcm.isEmpty()) return
         playbackRemainingMillis += pcmDurationMillis(pcm.size, sampleRateHz)
+        // Kept, not just measured: these bytes are the only description of the
+        // agent's voice that exists on this side of the loudspeaker.
+        playbackEnvelope.append(pcm, sampleRateHz)
+    }
+
+    /**
+     * What the capture chain actually did about loudspeaker leakage, as
+     * measured once it opened.
+     *
+     * Separate from the constructor because the honest answer does not exist
+     * yet when a host is built: on Android the echo canceller attaches to an
+     * `AudioRecord` session, and there is no session until capture starts. A
+     * value chosen before that can only be a device-capability guess — and
+     * `AcousticEchoCanceler.isAvailable()` is exactly that guess — while a
+     * wrong guess of [EchoControl.PlatformAec] buys the *lenient* barge-in
+     * gate on a microphone that is hearing the loudspeaker unaided. That is
+     * how an agent comes to cut itself off with its own answer.
+     *
+     * Forward it whenever frames flow; repeats are ignored.
+     */
+    fun noteEchoControl(control: EchoControl) {
+        if (control == echo) return
+        echo = control
+        VoiceLog.i(VoiceLog.AGENT, "echo control now $control gate=${bargeInRmsGate()}")
     }
 
     /**
@@ -267,6 +390,9 @@ class TurnEngine(
     /** The host cut or drained playback: the loudspeaker is silent now. */
     fun notePlaybackStopped() {
         playbackRemainingMillis = 0
+        // The queued audio will never be heard, so it cannot explain anything
+        // the microphone picks up from here on.
+        playbackEnvelope.clear()
     }
 
     /**
@@ -303,6 +429,8 @@ class TurnEngine(
         suppressUntilQuiet = false
         resetCandidate()
         preRoll.clear()
+        playbackEnvelope.clear()
+        captureEnvelope.clear()
         meter.reset()
         vad.reset()
     }
@@ -360,6 +488,129 @@ class TurnEngine(
         // microphone), so the user's own voice — far closer to the microphone
         // than the speaker's reflection — has to clear the top of it.
         EchoControl.None -> UNAIDED_BARGE_IN_RMS_GATE
+    }
+
+    /**
+     * Why this barge-in candidate must be refused, or `null` to let it through.
+     *
+     * [SpeechBargeIn.Disabled] is answered first and answers everything: with
+     * the feature off there is no judgement to make, no heuristic runs, and no
+     * spoken audio can cut the agent off. Below it, order matters only for the
+     * diagnostic: a steady source is reported as such rather than as echo.
+     */
+    private fun bargeInRejection(): BargeInRejection? = when {
+        speechBargeIn == SpeechBargeIn.Disabled -> BargeInRejection.Disabled
+        !isSpeechLike() -> BargeInRejection.NotSpeech
+        echoLike() -> BargeInRejection.Echo
+        else -> null
+    }
+
+    private fun BargeInRejection.logReason(): String = when (this) {
+        BargeInRejection.Disabled -> "disabled"
+        BargeInRejection.Echo -> "echo"
+        BargeInRejection.NotSpeech -> "not_speech"
+        BargeInRejection.TooShort -> "too_short"
+    }
+
+    /**
+     * Whether what the microphone just heard is the loudspeaker reproducing
+     * the agent.
+     *
+     * The level gates cannot answer this and neither can [isSpeechLike]: a
+     * speaker playing a voice *is* loud and *is* amplitude-modulated like a
+     * voice. The one thing that separates the two is that the host knows
+     * exactly what it is playing, so the question becomes "does the microphone
+     * envelope move the way the audio I am playing moves".
+     *
+     * The loop delay is unknown — device output latency, the player's own
+     * buffer and the air path all contribute, and they vary by device and by
+     * volume — so the reference is searched rather than aligned. Every offset
+     * in the retained playback history is tried and the best match wins, which
+     * is why the history is a duration ([REFERENCE_WINDOWS]) rather than a
+     * position derived from [playbackRemainingMillis]: an alignment model that
+     * is wrong about the player's buffering would look at the wrong audio and
+     * quietly never fire.
+     *
+     * Fails open, in three ways, all of which return "not echo":
+     *
+     * - too little history on either side to compare;
+     * - a reference with no envelope movement (digital silence, or a steady
+     *   tone), where a correlation would be meaningless — and where
+     *   [isSpeechLike] has already had its say;
+     * - no offset reaching [ECHO_CORRELATION_MIN].
+     *
+     * **Unreachable while [SpeechBargeIn.Disabled] is in force, which is the
+     * default.** Failing open means an inconclusive comparison accepts the
+     * barge-in, and on a device where the loudspeaker is not cancelled out of
+     * the capture signal that is how an answer comes to interrupt itself.
+     * Inverting it to fail closed was considered and rejected: it trades the
+     * loop for an agent nobody can interrupt, and the threshold that would
+     * separate the two cannot be chosen without measuring what a loudspeaker
+     * leaks into a handset microphone. What is kept here is the machinery, so
+     * that re-enabling is a switch rather than a rewrite.
+     */
+    private fun echoLike(): Boolean {
+        val heard = captureEnvelope.latest(MIN_COMPARE_WINDOWS) ?: return false
+        val played = playbackEnvelope.snapshot()
+        if (played.size <= heard.size) return false
+        if (!varies(heard) || !varies(played)) return false
+
+        var best = 0f
+        var offset = 0
+        while (offset + heard.size <= played.size) {
+            val match = correlation(heard, played, offset)
+            if (match > best) best = match
+            offset += 1
+        }
+        return best >= ECHO_CORRELATION_MIN
+    }
+
+    /**
+     * Whether an envelope moves at all, by the same relative-spread measure
+     * [isSpeechLike] uses. A flat reference carries no timing information, so
+     * correlating against it would produce a number with no meaning.
+     */
+    private fun varies(envelope: FloatArray): Boolean {
+        var sum = 0f
+        for (value in envelope) sum += value
+        val mean = sum / envelope.size
+        if (mean <= 0f) return false
+        var variance = 0f
+        for (value in envelope) {
+            val d = value - mean
+            variance += d * d
+        }
+        return sqrt(variance / envelope.size) / mean >= MODULATION_MIN
+    }
+
+    /**
+     * Pearson correlation of [heard] against the slice of [played] starting at
+     * [offset]. Mean-removed and scale-free, because the coupling gain from
+     * loudspeaker to microphone is unknown and varies with volume, distance
+     * and device: only the *shape* of the two envelopes can be compared.
+     */
+    private fun correlation(heard: FloatArray, played: FloatArray, offset: Int): Float {
+        var heardMean = 0f
+        var playedMean = 0f
+        for (i in heard.indices) {
+            heardMean += heard[i]
+            playedMean += played[offset + i]
+        }
+        heardMean /= heard.size
+        playedMean /= heard.size
+
+        var covariance = 0f
+        var heardVariance = 0f
+        var playedVariance = 0f
+        for (i in heard.indices) {
+            val a = heard[i] - heardMean
+            val b = played[offset + i] - playedMean
+            covariance += a * b
+            heardVariance += a * a
+            playedVariance += b * b
+        }
+        if (heardVariance <= 0f || playedVariance <= 0f) return 0f
+        return covariance / sqrt(heardVariance * playedVariance)
     }
 
     /**
@@ -460,6 +711,77 @@ class TurnEngine(
         }
     }
 
+    /**
+     * Fixed-capacity history of RMS values on a [ENVELOPE_WINDOW_MILLIS] grid.
+     *
+     * A *duration* of sound reduced to its loudness contour, at whatever rate
+     * that sound runs at: capture is 16 kHz and the agent downlink is 24 kHz,
+     * and the whole point is to compare the two, so the window is expressed in
+     * milliseconds and converted to samples per call. Samples that do not fill
+     * a whole window are carried into the next call, so a window is always the
+     * same duration no matter how the host chunks its audio.
+     */
+    private class EnvelopeRing(private val capacity: Int) {
+        private val values = FloatArray(capacity)
+        private var head = 0
+        private var size = 0
+        private var carrySumSquares = 0.0
+        private var carrySamples = 0
+
+        fun append(pcm: ByteArray, sampleRateHz: Int) {
+            val windowSamples = sampleRateHz * ENVELOPE_WINDOW_MILLIS / 1000
+            if (windowSamples <= 0) return
+            val samples = pcm.size / 2
+            for (i in 0 until samples) {
+                val lo = pcm[i * 2].toInt() and 0xFF
+                val hi = pcm[i * 2 + 1].toInt()
+                val sample = ((hi shl 8) or lo).toShort().toDouble()
+                carrySumSquares += sample * sample
+                carrySamples += 1
+                if (carrySamples >= windowSamples) {
+                    push((sqrt(carrySumSquares / carrySamples) / FULL_SCALE).toFloat())
+                    carrySumSquares = 0.0
+                    carrySamples = 0
+                }
+            }
+        }
+
+        /**
+         * The most recent windows, oldest first: as many as are held, capped
+         * at [capacity], or null if fewer than [atLeast] exist yet.
+         *
+         * Adaptive rather than fixed because the first barge-in candidate of a
+         * playback stretch confirms before a full comparison window of
+         * microphone history has accumulated, and refusing to judge that one
+         * would wave through the first — and loudest — self-interruption.
+         */
+        fun latest(atLeast: Int): FloatArray? {
+            if (size < atLeast) return null
+            val out = FloatArray(size)
+            for (i in 0 until size) out[i] = values[(head + i) % capacity]
+            return out
+        }
+
+        /** Everything retained, oldest first. */
+        fun snapshot(): FloatArray {
+            val out = FloatArray(size)
+            for (i in 0 until size) out[i] = values[(head + i) % capacity]
+            return out
+        }
+
+        fun clear() {
+            head = 0
+            size = 0
+            carrySumSquares = 0.0
+            carrySamples = 0
+        }
+
+        private fun push(value: Float) {
+            values[(head + size) % capacity] = value
+            if (size == capacity) head = (head + 1) % capacity else size += 1
+        }
+    }
+
     private companion object {
         const val FULL_SCALE = 32768.0
 
@@ -526,5 +848,56 @@ class TurnEngine(
         const val ENVELOPE_CAPACITY = 64
         const val MIN_ENVELOPE_SAMPLES = 8
         const val MODULATION_MIN = 0.30f
+
+        /**
+         * How much microphone history the echo comparison judges at once.
+         *
+         * Long enough that two unrelated voices are very unlikely to agree
+         * across it at any offset, short enough to stay inside one barge-in
+         * decision. 600 ms is 30 windows, which is also comfortably more than
+         * the [BARGE_IN_CONFIRM_MILLIS] the candidate itself spans.
+         */
+        const val COMPARE_MILLIS = 600
+        const val COMPARE_WINDOWS = COMPARE_MILLIS / ENVELOPE_WINDOW_MILLIS
+
+        /**
+         * Least microphone history the comparison will judge on.
+         *
+         * Under [BARGE_IN_CONFIRM_MILLIS], so the first candidate after
+         * playback starts is judged rather than waved through — that one is
+         * the agent's own opening words, and letting it past is the reported
+         * defect exactly.
+         */
+        const val MIN_COMPARE_MILLIS = 300
+        const val MIN_COMPARE_WINDOWS = MIN_COMPARE_MILLIS / ENVELOPE_WINDOW_MILLIS
+
+        /**
+         * How much playback history the comparison searches.
+         *
+         * This is the loop-delay budget, and it is deliberately generous: it
+         * has to cover the player's own buffering (a streaming PCM player
+         * commonly holds a second of it) on top of device output latency and
+         * the air path. A window too small does not fail loudly — it silently
+         * compares against audio the microphone has not heard yet and never
+         * matches. 3 s of a loudness contour is 150 floats.
+         */
+        const val REFERENCE_MILLIS = 3_000
+        const val REFERENCE_WINDOWS = REFERENCE_MILLIS / ENVELOPE_WINDOW_MILLIS
+
+        /**
+         * How well the microphone must track the loudspeaker to count as the
+         * agent hearing itself.
+         *
+         * Echo is a scaled, delayed copy, so it correlates near 1; a person
+         * talking over the agent adds energy the reference cannot explain and
+         * drops it sharply. Set high because the best of many offsets is taken
+         * and that inflates chance agreement.
+         *
+         * Along with [UNAIDED_BARGE_IN_RMS_GATE] this is a judgement rather
+         * than a derivation: what a loudspeaker actually leaks into a handset
+         * microphone at speakerphone volume is device evidence, and this number
+         * is the one to tune from a recorded session.
+         */
+        const val ECHO_CORRELATION_MIN = 0.80f
     }
 }

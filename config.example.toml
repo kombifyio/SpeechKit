@@ -492,8 +492,8 @@ vad_silence_duration_ms = 700
 # stt_language = "multi"             # "multi" = multilingual code-switching (the default when unset). Set a concrete locale ("de", "en-GB") to pin recognition; hyphenated region tags are supported.
 # stt_smart_format = true            # readability formatting; recommended default
 # stt_dictation = false              # spoken punctuation, English-focused
-# stt_filler_words = false
-# stt_numerals = false
+# stt_filler_words = false           # when false, Deepgram strips uh/um (English only)
+# stt_numerals = true                # spoken numbers to digits; required for German on nova-3 multi (smart_format does punctuation, not DE numerals)
 # stt_detect_language = false        # Not wired: SpeechKit always sends an explicit language (or "multi"), so this is cleared on load.
 # stt_use_vocabulary_keyterms = true # send SpeechKit Words as native Deepgram keyterms/keywords
 # stt_keyterms = ""                  # optional comma/newline separated static terms

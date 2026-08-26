@@ -38,6 +38,7 @@ import io.kombify.speechkit.app.ui.onboarding.KeyboardOnboardingWizard
 import io.kombify.speechkit.app.ui.onboarding.KeyboardSetupChecker
 import timber.log.Timber
 import androidx.compose.ui.res.stringResource
+import io.kombify.speechkit.BuildConfig
 import io.kombify.speechkit.R
 import io.kombify.speechkit.domain.ConnectionProfile
 import io.kombify.speechkit.domain.ConnectionProfileSource
@@ -147,7 +148,7 @@ private fun SpeechKitApp(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("kombify SpeechKit", fontWeight = FontWeight.Bold) },
+                title = { Text(stringResource(R.string.app_name), fontWeight = FontWeight.Bold) },
             )
         },
         bottomBar = {
@@ -560,7 +561,10 @@ private fun SettingsTab(
             Column(modifier = Modifier.padding(16.dp)) {
                 Text("Über", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Medium)
                 Spacer(Modifier.height(4.dp))
-                Text("kombify SpeechKit v0.7.0", style = MaterialTheme.typography.bodySmall)
+                Text(
+                    stringResource(R.string.app_name) + " v" + BuildConfig.VERSION_NAME,
+                    style = MaterialTheme.typography.bodySmall,
+                )
                 Text("AI-powered Voice Keyboard", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 Text("github.com/kombifyio/SpeechKit", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
             }

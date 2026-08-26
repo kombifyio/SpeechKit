@@ -44,21 +44,50 @@ class MicAudioCapture(
 ) : AudioCapture {
 
     /**
-     * What the turn engine should assume about loudspeaker leakage in frames
-     * from this capture.
+     * Set from the attach in [frames], cleared when capture ends. Volatile
+     * because the turn engine reads it from the collector that drains capture
+     * while the recorder thread writes it.
+     */
+    @Volatile
+    private var attachedEchoControl: EchoControl = EchoControl.None
+
+    /**
+     * What the canceller on *this* capture session is actually doing.
      *
-     * A prediction, not a measurement: the device advertises the effect here
-     * and it is attached when the recorder starts. An attach that fails is
-     * logged (`sk.voice audio`) and leaves the engine's guard more permissive
-     * than the room warrants for that session, which is a device-evidence
-     * item rather than something the host can check up front.
+     * A measurement, not a prediction. `AcousticEchoCanceler.isAvailable()` —
+     * which this used to return — is a static device-capability query,
+     * answerable before any recorder exists, and it says nothing about the
+     * session in front of it: the platform documents that an AEC "can be
+     * inserted by default in the capture path according to the
+     * `MediaRecorder.AudioSource` used" and that an application "should call
+     * `getEnabled()` after creating the AEC to check the default activation
+     * state on a particular `AudioRecord` session".
+     *
+     * [EchoControl.None] until an attach has succeeded, and `None` again once
+     * capture closes. Claiming [EchoControl.PlatformAec] on a device that
+     * merely advertises the effect buys the *lenient* barge-in gate on a
+     * microphone that is hearing the loudspeaker unaided, which is how an
+     * agent comes to interrupt itself with its own answer.
+     *
+     * Read it whenever frames flow and forward it to
+     * `io.kombify.speechkit.turn.TurnEngine.noteEchoControl`. Reading it once,
+     * before collecting, only ever returns `None`.
+     *
+     * ## What [EchoControl.PlatformAec] does not promise
+     *
+     * That the effect attached and enabled on this session — not that it is
+     * removing the sound coming out of the loudspeaker. The platform canceller
+     * is specified against "the signal received from the remote party", the
+     * voice-communication downlink, so a host that captures here while playing
+     * the far end back through anything else gives it nothing to subtract: the
+     * effect reports itself enabled and the microphone still hears the
+     * loudspeaker at full volume. A duplex host owes the session the whole
+     * arrangement — `AudioManager.MODE_IN_COMMUNICATION`, playback on
+     * `AudioAttributes.USAGE_VOICE_COMMUNICATION`, and an output device the
+     * person can hear — and this class cannot check that from where it stands.
      */
     val echoControl: EchoControl
-        get() = if (duplex && runCatching { AcousticEchoCanceler.isAvailable() }.getOrDefault(false)) {
-            EchoControl.PlatformAec
-        } else {
-            EchoControl.None
-        }
+        get() = attachedEchoControl
 
     @SuppressLint("MissingPermission")
     override fun frames(): Flow<ByteArray> = flow {
@@ -104,25 +133,44 @@ class MicAudioCapture(
                 }
             }
         } finally {
+            attachedEchoControl = EchoControl.None
             runCatching { canceller?.release() }
             runCatching { recorder.stop() }
             recorder.release()
         }
     }.flowOn(Dispatchers.IO)
 
+    /**
+     * Attaches the platform canceller and records what actually happened.
+     *
+     * Every way this can fall short ends at [EchoControl.None] and says so in
+     * the log, because the turn engine spends that answer: `None` picks the
+     * strict barge-in gate, and a silent failure here is an agent that cuts
+     * itself off on its own voice with nothing on the device to explain why.
+     */
     private fun attachEchoCanceller(sessionId: Int): AcousticEchoCanceler? {
         if (!runCatching { AcousticEchoCanceler.isAvailable() }.getOrDefault(false)) {
-            VoiceLog.w(VoiceLog.AUDIO, "no platform AEC on this device")
+            VoiceLog.w(VoiceLog.AUDIO, "no platform AEC on this device; strict barge-in gate")
             return null
         }
         val canceller = runCatching { AcousticEchoCanceler.create(sessionId) }.getOrNull()
         if (canceller == null) {
-            VoiceLog.w(VoiceLog.AUDIO, "platform AEC create failed")
+            VoiceLog.w(VoiceLog.AUDIO, "platform AEC create failed; strict barge-in gate")
             return null
         }
-        val enabled = runCatching { canceller.setEnabled(true) }.getOrNull()
-        if (enabled != android.media.audiofx.AudioEffect.SUCCESS) {
-            VoiceLog.w(VoiceLog.AUDIO, "platform AEC enable failed code=$enabled")
+        val code = runCatching { canceller.setEnabled(true) }.getOrNull()
+        // Read back rather than trust the call: the platform may have inserted
+        // the effect itself, or refused to enable the one just created.
+        val enabled = runCatching { canceller.enabled }.getOrDefault(false)
+        if (enabled) {
+            attachedEchoControl = EchoControl.PlatformAec
+            VoiceLog.i(VoiceLog.AUDIO, "platform AEC attached and enabled on session $sessionId")
+        } else {
+            VoiceLog.w(
+                VoiceLog.AUDIO,
+                "platform AEC attached but not enabled (setEnabled=$code, " +
+                    "expected ${android.media.audiofx.AudioEffect.SUCCESS}); strict barge-in gate",
+            )
         }
         return canceller
     }

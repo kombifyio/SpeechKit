@@ -70,6 +70,7 @@ func NewDeepgramProvider(apiKey, model string) *DeepgramProvider {
 		DiarizationModel:      "latest",
 		BaseURL:               deepgramBaseURL,
 		SmartFormat:           true,
+		Numerals:              true,
 		UseVocabularyKeyterms: true,
 	}
 	p.client = netsec.NewSafeHTTPClient(netsec.ClientOptions{Timeout: 90 * time.Second, DialValidation: &p.Validation})
@@ -251,6 +252,7 @@ func (p *DeepgramProvider) resolveOptions(model string, opts TranscribeOpts) Res
 		provideropts.OptionLanguage:       deepgramCodeSwitchingLanguage(),
 		provideropts.OptionPunctuation:    true,
 		provideropts.OptionSmartFormat:    true,
+		provideropts.OptionNumerals:       true,
 		provideropts.OptionVocabularyBias: true,
 	}
 	providerOverrides := provideropts.Values{}
@@ -266,8 +268,8 @@ func (p *DeepgramProvider) resolveOptions(model string, opts TranscribeOpts) Res
 	if p.FillerWords {
 		providerOverrides[provideropts.OptionFillerWords] = true
 	}
-	if p.Numerals {
-		providerOverrides[provideropts.OptionNumerals] = true
+	if !p.Numerals {
+		providerOverrides[provideropts.OptionNumerals] = false
 	}
 	if p.DetectLanguage {
 		providerOverrides[provideropts.OptionDetectLanguage] = true

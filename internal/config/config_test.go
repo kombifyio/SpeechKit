@@ -228,6 +228,9 @@ func TestLoadDefaults(t *testing.T) {
 	if !cfg.Providers.Deepgram.STTSmartFormat {
 		t.Error("default Deepgram smart format should be enabled")
 	}
+	if !cfg.Providers.Deepgram.STTNumerals {
+		t.Error("default Deepgram numerals should be enabled")
+	}
 	if !cfg.Providers.Deepgram.STTUseVocabularyKeyterms {
 		t.Error("default Deepgram vocabulary keyterms should be enabled")
 	}

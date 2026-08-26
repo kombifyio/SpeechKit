@@ -8,6 +8,10 @@ package io.kombify.speechkit.audio
  * `io.kombify.speechkit.turn.TurnEngine` picks its own barge-in thresholds
  * from that. Hosts read it off the capture ([MicAudioCapture.echoControl])
  * rather than choosing a value.
+ *
+ * It is only knowable once capture is open — on Android the canceller attaches
+ * to an `AudioRecord` session — so it is read while frames flow and forwarded
+ * with `TurnEngine.noteEchoControl`, never sampled beforehand.
  */
 enum class EchoControl {
     /**

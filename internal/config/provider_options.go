@@ -291,8 +291,8 @@ func legacyDeepgramSTTOverrides(dg DeepgramProviderConfig) provideropts.Values {
 	if dg.STTFillerWords {
 		values[provideropts.OptionFillerWords] = true
 	}
-	if dg.STTNumerals {
-		values[provideropts.OptionNumerals] = true
+	if !dg.STTNumerals {
+		values[provideropts.OptionNumerals] = false
 	}
 	if dg.STTDetectLanguage {
 		values[provideropts.OptionDetectLanguage] = true

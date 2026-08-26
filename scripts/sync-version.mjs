@@ -25,6 +25,16 @@ export function parseArgs(argv) {
   return args;
 }
 
+// The TypeScript client manifests that carry the SpeechKit product line.
+// packages/voice-ui-lab and apps/assistant-web are deliberately absent: both
+// are private:true and neither is a delivered artifact.
+export const CLIENT_MANIFESTS = [
+  "clients/typescript/package.json",
+  "clients/typescript/packages/client/package.json",
+  "clients/typescript/packages/voice-ui/package.json",
+  "clients/typescript/packages/voiceagent-client/package.json",
+];
+
 export function resolveTargets(rawTargets) {
   const requested = new Set(
     (rawTargets ?? "frontend,windows")
@@ -34,10 +44,10 @@ export function resolveTargets(rawTargets) {
   );
 
   if (requested.has("all")) {
-    return new Set(["frontend", "windows", "android"]);
+    return new Set(["frontend", "windows", "android", "clients"]);
   }
 
-  const allowed = new Set(["frontend", "windows", "android"]);
+  const allowed = new Set(["frontend", "windows", "android", "clients"]);
   for (const target of requested) {
     if (!allowed.has(target)) {
       throw new Error(`Unknown sync target: ${target}`);
@@ -151,6 +161,23 @@ export function syncVersion(argv = process.argv.slice(2)) {
       [/!define VERSION ".*"/, `!define VERSION "${metadata.packageVersion}"`],
       [/WriteRegStr HKCU "Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\kombify SpeechKit" "DisplayVersion" ".*"/, 'WriteRegStr HKCU "Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\kombify SpeechKit" "DisplayVersion" "${VERSION}"'],
     ]);
+  }
+
+  // CI-CD-PLATFORM-STANDARD.md §4.2: every distribution lane hands the
+  // resolved version to the build explicitly. The published client packages
+  // are not an independently versioned library monorepo — every artifact on
+  // the registry carries the SpeechKit product line — so the lanes that
+  // publish them, and the OSS export that mirrors their manifests, stamp the
+  // delivery version here instead of trusting the committed default.
+  if (targets.has("clients")) {
+    for (const manifest of CLIENT_MANIFESTS) {
+      if (!fs.existsSync(path.join(repoRoot, manifest))) {
+        continue;
+      }
+      updateJson(manifest, (data) => {
+        data.version = metadata.packageVersion;
+      });
+    }
   }
 
   if (targets.has("android")) {

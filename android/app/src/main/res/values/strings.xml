@@ -4,7 +4,11 @@
          explicitly because adding values-de gave this module a second locale,
          and from that point lint requires every translatable string to have a
          German counterpart. -->
-    <string name="app_name" translatable="false">kombify SpeechKit</string>
+    <!-- Unbranded on purpose: the framework and this app stand on their own,
+         independent of kombify. Repositories, the website and the web app keep
+         their kombify names; only the installed Android app is plain
+         "SpeechKit". -->
+    <string name="app_name" translatable="false">SpeechKit</string>
 
     <!-- Overrides the keyboard fork's own label (values/donottranslate.xml
          ships "HeliBoard"). App resources win over library resources, so this

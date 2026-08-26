@@ -290,6 +290,7 @@ func defaults() *Config {
 				STTModel:                 "nova-3",
 				STTLanguage:              "multi",
 				STTSmartFormat:           true,
+				STTNumerals:              true,
 				STTUseVocabularyKeyterms: true,
 				DiarizationModel:         "latest",
 			},

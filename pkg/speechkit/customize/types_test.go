@@ -2,6 +2,18 @@ package customize
 
 import "testing"
 
+func TestNormalizeLanguageTreatsMultilingualAsUnspecified(t *testing.T) {
+	if got := NormalizeLanguage("multi"); got != "" {
+		t.Fatalf("NormalizeLanguage(multi) = %q, want empty", got)
+	}
+	if got := NormalizeLanguage("auto"); got != "" {
+		t.Fatalf("NormalizeLanguage(auto) = %q, want empty", got)
+	}
+	if got := NormalizeLanguage("de-DE"); got != "de" {
+		t.Fatalf("NormalizeLanguage(de-DE) = %q, want de", got)
+	}
+}
+
 func TestValidateWord(t *testing.T) {
 	if err := ValidateWord(Word{Term: "Kombify"}); err != nil {
 		t.Fatalf("ValidateWord valid = %v", err)

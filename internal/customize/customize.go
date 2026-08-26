@@ -483,7 +483,10 @@ func replacementHasRunnableOutput(replacement speechcustomize.Replacement) bool 
 	switch replacement.Kind {
 	case speechcustomize.KindCommand:
 		return strings.TrimSpace(output.Intent) != "" || strings.TrimSpace(output.Text) != "" || strings.TrimSpace(output.Template) != "" || len(output.Payload) > 0
-	case speechcustomize.KindSubstitution, speechcustomize.KindSynonym, speechcustomize.KindSnippet, speechcustomize.KindTemplate:
+	case speechcustomize.KindSubstitution:
+		// Empty output text deletes the match (filler-word stripping).
+		return true
+	case speechcustomize.KindSynonym, speechcustomize.KindSnippet, speechcustomize.KindTemplate:
 		return strings.TrimSpace(output.Text) != "" || strings.TrimSpace(output.Template) != ""
 	default:
 		return false

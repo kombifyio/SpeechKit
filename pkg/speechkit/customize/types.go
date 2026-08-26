@@ -179,6 +179,16 @@ const PackSchemaVersion = "speechkit.customization.pack.v1"
 
 func NormalizeLanguage(language string) string {
 	language = strings.TrimSpace(strings.ToLower(strings.ReplaceAll(language, "_", "-")))
+	switch language {
+	case "", "auto", "multi":
+		// Multilingual / unspecified: do not pin. Slicing "multi" to "mu"
+		// used to drop every language-scoped replacement in the default
+		// overlay language.
+		return ""
+	}
+	if i := strings.IndexByte(language, '-'); i > 0 {
+		language = language[:i]
+	}
 	if len(language) >= 2 {
 		return language[:2]
 	}
@@ -316,7 +326,7 @@ func ValidateReplacement(replacement Replacement) error {
 	if strings.TrimSpace(replacement.Match.Pattern) == "" {
 		return fmt.Errorf("customize: replacement match pattern is required")
 	}
-	if replacement.Kind == KindSubstitution || replacement.Kind == KindSynonym {
+	if replacement.Kind == KindSynonym {
 		if strings.TrimSpace(replacement.Output.Text) == "" {
 			return fmt.Errorf("customize: replacement output text is required for %s", replacement.Kind)
 		}
