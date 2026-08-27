@@ -374,6 +374,47 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ReplacementsResponse"
+  /api/v1/customization/vocabulary:
+    get:
+      tags: [Customization]
+      operationId: getCustomizationVocabulary
+      summary: List Words with aliases folded in and leftover Replacements.
+      parameters:
+        - $ref: "#/components/parameters/CustomizationLanguage"
+        - $ref: "#/components/parameters/CustomizationScope"
+        - $ref: "#/components/parameters/CustomizationScopeKey"
+        - $ref: "#/components/parameters/CustomizationSource"
+      responses:
+        "200":
+          description: Folded vocabulary.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VocabularyResponse"
+    post:
+      tags: [Customization]
+      operationId: replaceCustomizationVocabulary
+      summary: Replace Words and leftover Replacements in one write. Alias synonyms are materialized from Word.sounds_like.
+      parameters:
+        - $ref: "#/components/parameters/CustomizationScope"
+        - $ref: "#/components/parameters/CustomizationScopeKey"
+        - $ref: "#/components/parameters/CustomizationSource"
+      security:
+        - ControlPlaneHeader: []
+        - ControlPlaneCookie: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/VocabularyReplaceRequest"
+      responses:
+        "200":
+          description: Updated folded vocabulary.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VocabularyResponse"
   /api/v1/customization/lexicons:
     get:
       tags: [Customization]
@@ -2121,6 +2162,30 @@ components:
       type: object
       required: [replacements]
       properties:
+        replacements:
+          type: array
+          items: { $ref: "#/components/schemas/Replacement" }
+    VocabularyResponse:
+      type: object
+      required: [words, replacements]
+      properties:
+        words:
+          type: array
+          items: { $ref: "#/components/schemas/Word" }
+        replacements:
+          type: array
+          items: { $ref: "#/components/schemas/Replacement" }
+    VocabularyReplaceRequest:
+      type: object
+      required: [words]
+      properties:
+        language: { type: string }
+        scope:
+          $ref: "#/components/schemas/CustomizationScopeRef"
+        source: { type: string }
+        words:
+          type: array
+          items: { $ref: "#/components/schemas/Word" }
         replacements:
           type: array
           items: { $ref: "#/components/schemas/Replacement" }

@@ -30,6 +30,35 @@ func (s *sqlStore) ReplaceWordsWithOptions(ctx context.Context, opts Customizati
 	}
 	defer tx.Rollback() //nolint:errcheck // rollback after commit is harmless
 
+	if err := s.replaceWordsTx(ctx, tx, scopeID, language, source, words); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+func (s *sqlStore) ReplaceVocabularyWithOptions(ctx context.Context, opts CustomizationReplaceOpts, words []speechcustomize.Word, extras []speechcustomize.Replacement) error {
+	scopeID, err := s.scopeID(ctx)
+	if err != nil {
+		return fmt.Errorf("%s: resolve scope: %w", s.dialect.name, err)
+	}
+	language := normalizeDictionaryLanguage(opts.Language)
+	source := normalizeCustomizationSource(opts.Source)
+	merged, replacements := speechcustomize.MaterializeVocabulary(words, extras)
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("%s: begin tx: %w", s.dialect.name, err)
+	}
+	defer tx.Rollback() //nolint:errcheck // rollback after commit is harmless
+	if err := s.replaceWordsTx(ctx, tx, scopeID, language, source, merged); err != nil {
+		return err
+	}
+	if err := s.replaceReplacementsTx(ctx, tx, scopeID, language, source, replacements); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+func (s *sqlStore) replaceWordsTx(ctx context.Context, tx *sql.Tx, scopeID int64, language, source string, words []speechcustomize.Word) error {
 	if _, err := tx.ExecContext(ctx,
 		s.dialect.rebind(`DELETE FROM customization_words WHERE scope_id = ? AND language = ? AND source = ?`),
 		scopeID, language, source,
@@ -72,7 +101,7 @@ func (s *sqlStore) ReplaceWordsWithOptions(ctx context.Context, opts Customizati
 			return fmt.Errorf("insert customization word: %w", err)
 		}
 	}
-	return tx.Commit()
+	return nil
 }
 
 func (s *sqlStore) ListWords(ctx context.Context, opts CustomizationListOpts) ([]speechcustomize.Word, error) {
@@ -113,7 +142,10 @@ func (s *sqlStore) ListWords(ctx context.Context, opts CustomizationListOpts) ([
 		word.Tags = unmarshalStringList(tagsRaw)
 		words = append(words, word)
 	}
-	return words, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return speechcustomize.MergeWords(words), nil
 }
 
 func (s *sqlStore) RecordWordUsage(ctx context.Context, term, language string) error {
@@ -153,6 +185,13 @@ func (s *sqlStore) ReplaceReplacementsWithOptions(ctx context.Context, opts Cust
 	}
 	defer tx.Rollback() //nolint:errcheck // rollback after commit is harmless
 
+	if err := s.replaceReplacementsTx(ctx, tx, scopeID, language, source, replacements); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+func (s *sqlStore) replaceReplacementsTx(ctx context.Context, tx *sql.Tx, scopeID int64, language, source string, replacements []speechcustomize.Replacement) error {
 	if _, err := tx.ExecContext(ctx,
 		s.dialect.rebind(`DELETE FROM customization_replacements WHERE scope_id = ? AND language = ? AND source = ?`),
 		scopeID, language, source,
@@ -208,7 +247,7 @@ func (s *sqlStore) ReplaceReplacementsWithOptions(ctx context.Context, opts Cust
 			return fmt.Errorf("insert customization replacement: %w", err)
 		}
 	}
-	return tx.Commit()
+	return nil
 }
 
 func (s *sqlStore) ListReplacements(ctx context.Context, opts CustomizationListOpts) ([]speechcustomize.Replacement, error) {
@@ -266,7 +305,10 @@ func (s *sqlStore) ListReplacements(ctx context.Context, opts CustomizationListO
 		}
 		replacements = append(replacements, replacement)
 	}
-	return replacements, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return speechcustomize.MergeReplacements(replacements), nil
 }
 
 func (s *sqlStore) RecordReplacementUsage(ctx context.Context, id string) error {

@@ -145,7 +145,7 @@ func SynonymReplacement(term, alias, language, source string) Replacement {
 		Language: language,
 		Source:   source,
 		Enabled:  true,
-		Modes:    []Mode{ModeDictation, ModeAssist},
+		Modes:    WordSynonymModes(),
 		Stage:    StagePostSTT,
 		Match: Match{
 			Type:         MatchSpokenAlias,

@@ -97,6 +97,10 @@ type CustomizationSourceStore interface {
 	ReplaceRulesetsWithOptions(ctx context.Context, opts CustomizationReplaceOpts, rulesets []speechcustomize.Ruleset) error
 }
 
+type CustomizationVocabularyStore interface {
+	ReplaceVocabularyWithOptions(ctx context.Context, opts CustomizationReplaceOpts, words []speechcustomize.Word, extras []speechcustomize.Replacement) error
+}
+
 // VoiceAgentSessionStore is an optional extension for backends that persist
 // Voice Agent dialogue summaries.
 type VoiceAgentSessionStore interface {

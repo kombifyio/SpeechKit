@@ -106,6 +106,17 @@ func TestServiceApplySeedsSynonymsFromWordAliases(t *testing.T) {
 	if applied.Text != "Kombify and Kombify" {
 		t.Fatalf("text = %q, want Kombify and Kombify", applied.Text)
 	}
+	applied, err = service.Apply(speechstorage.WithScope(context.Background(), base), speechcustomize.Context{
+		Mode:     speechcustomize.ModeVoiceAgent,
+		Language: "de",
+		Stage:    speechcustomize.StagePostSTT,
+	}, "kombi fire")
+	if err != nil {
+		t.Fatalf("Apply voice agent: %v", err)
+	}
+	if applied.Text != "Kombify" {
+		t.Fatalf("voice agent text = %q, want Kombify", applied.Text)
+	}
 }
 
 func TestServiceApplyRespectsModeFilter(t *testing.T) {

@@ -35,6 +35,7 @@ func New(customizationStore store.CustomizationStore, activeTemplateIDs ...[]str
 func (h *Handler) Mount(mux *http.ServeMux) {
 	mux.HandleFunc("/v1/words", h.words)
 	mux.HandleFunc("/v1/replacements", h.replacements)
+	mux.HandleFunc("/v1/customization/vocabulary", h.vocabulary)
 	mux.HandleFunc("/v1/lexicons", h.lexicons)
 	mux.HandleFunc("/v1/rulesets", h.rulesets)
 	mux.HandleFunc("/v1/customization/pack", h.pack)
@@ -53,6 +54,14 @@ type replacementsRequest struct {
 	Language     string                        `json:"language"`
 	Source       string                        `json:"source"`
 	Scope        speechcustomize.ScopeRef      `json:"scope"`
+	Replacements []speechcustomize.Replacement `json:"replacements"`
+}
+
+type vocabularyRequest struct {
+	Language     string                        `json:"language"`
+	Source       string                        `json:"source"`
+	Scope        speechcustomize.ScopeRef      `json:"scope"`
+	Words        []speechcustomize.Word        `json:"words"`
 	Replacements []speechcustomize.Replacement `json:"replacements"`
 }
 
@@ -111,6 +120,61 @@ func (h *Handler) words(w http.ResponseWriter, r *http.Request) {
 		}
 		words, _ := h.store.ListWords(ctx, store.CustomizationListOpts{Language: body.Language})
 		writeJSON(w, map[string]any{"words": words})
+	default:
+		methodNotAllowed(w)
+	}
+}
+
+func (h *Handler) vocabulary(w http.ResponseWriter, r *http.Request) {
+	if h.store == nil {
+		httpx.WriteError(w, http.StatusServiceUnavailable, "store_unavailable", "customization storage is not configured")
+		return
+	}
+	switch r.Method {
+	case http.MethodGet:
+		ref, ok := requestScopeRef(w, r, speechcustomize.ScopeRef{})
+		if !ok {
+			return
+		}
+		ctx := customizationScopeContext(r.Context(), ref)
+		opts := listOpts(r)
+		words, err := h.store.ListWords(ctx, opts)
+		if err != nil {
+			httpx.WriteError(w, http.StatusInternalServerError, "words_list_failed", err.Error())
+			return
+		}
+		replacements, err := h.store.ListReplacements(ctx, opts)
+		if err != nil {
+			httpx.WriteError(w, http.StatusInternalServerError, "replacements_list_failed", err.Error())
+			return
+		}
+		folded, extras := speechcustomize.FoldVocabulary(words, replacements)
+		writeJSON(w, map[string]any{"words": folded, "replacements": extras})
+	case http.MethodPost:
+		if !requireAdmin(w, r) {
+			return
+		}
+		var body vocabularyRequest
+		if !decodeJSON(w, r, &body) {
+			return
+		}
+		if body.Language == "" {
+			body.Language = r.URL.Query().Get("language")
+		}
+		ref, ok := requestScopeRef(w, r, body.Scope)
+		if !ok {
+			return
+		}
+		ctx := customizationScopeContext(r.Context(), ref)
+		if err := replaceVocabulary(ctx, h.store, store.CustomizationReplaceOpts{Language: body.Language, Source: body.Source}, body.Words, body.Replacements); err != nil {
+			httpx.WriteError(w, http.StatusBadRequest, "vocabulary_write_failed", err.Error())
+			return
+		}
+		opts := store.CustomizationListOpts{Language: body.Language, Source: body.Source, IncludeDisabled: true}
+		words, _ := h.store.ListWords(ctx, opts)
+		replacements, _ := h.store.ListReplacements(ctx, opts)
+		folded, extras := speechcustomize.FoldVocabulary(words, replacements)
+		writeJSON(w, map[string]any{"words": folded, "replacements": extras})
 	default:
 		methodNotAllowed(w)
 	}
@@ -426,6 +490,17 @@ func scopeRequiresKey(kind speechcustomize.ScopeKind) bool {
 	default:
 		return false
 	}
+}
+
+func replaceVocabulary(ctx context.Context, s store.CustomizationStore, opts store.CustomizationReplaceOpts, words []speechcustomize.Word, extras []speechcustomize.Replacement) error {
+	if vocabStore, ok := s.(store.CustomizationVocabularyStore); ok {
+		return vocabStore.ReplaceVocabularyWithOptions(ctx, opts, words, extras)
+	}
+	merged, replacements := speechcustomize.MaterializeVocabulary(words, extras)
+	if err := replaceWords(ctx, s, opts, merged); err != nil {
+		return err
+	}
+	return replaceReplacements(ctx, s, opts, replacements)
 }
 
 func replaceWords(ctx context.Context, s store.CustomizationStore, opts store.CustomizationReplaceOpts, words []speechcustomize.Word) error {

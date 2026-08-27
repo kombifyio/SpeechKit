@@ -530,6 +530,54 @@ paths:
               schema: { $ref: '#/components/schemas/ReplacementsResponse' }
         '403': { $ref: '#/components/responses/AdminRequired' }
 
+  /v1/customization/vocabulary:
+    get:
+      operationId: getVocabulary
+      summary: List folded Words and leftover Replacements
+      tags: [vocabulary]
+      parameters:
+        - name: language
+          in: query
+          required: false
+          schema: { type: string }
+        - name: scope
+          in: query
+          required: false
+          schema: { type: string, enum: [builtin, app, install, org, workspace, user, session] }
+        - name: scope_key
+          in: query
+          required: false
+          schema: { type: string }
+        - name: source
+          in: query
+          required: false
+          schema: { type: string }
+      responses:
+        '200':
+          description: Folded vocabulary.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/VocabularyResponse' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+    post:
+      operationId: replaceVocabulary
+      summary: Replace Words and leftover Replacements in one write
+      description: Requires an admin identity. Alias synonyms are materialized from Word.sounds_like.
+      tags: [vocabulary]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/VocabularyReplaceRequest' }
+      responses:
+        '200':
+          description: Updated folded vocabulary.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/VocabularyResponse' }
+        '403': { $ref: '#/components/responses/AdminRequired' }
+
   /v1/lexicons:
     get:
       operationId: listLexicons
@@ -2105,6 +2153,29 @@ components:
         words:
           type: array
           items: { $ref: '#/components/schemas/Word' }
+
+    VocabularyResponse:
+      type: object
+      properties:
+        words:
+          type: array
+          items: { $ref: '#/components/schemas/Word' }
+        replacements:
+          type: array
+          items: { $ref: '#/components/schemas/Replacement' }
+
+    VocabularyReplaceRequest:
+      type: object
+      properties:
+        language: { type: string }
+        scope: { $ref: '#/components/schemas/CustomizationScopeRef' }
+        source: { type: string }
+        words:
+          type: array
+          items: { $ref: '#/components/schemas/Word' }
+        replacements:
+          type: array
+          items: { $ref: '#/components/schemas/Replacement' }
 
     ReplacementsResponse:
       type: object

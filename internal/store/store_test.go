@@ -1017,6 +1017,58 @@ func TestCustomizationStoreReplaceWordsMergesDuplicateTerms(t *testing.T) {
 	}
 }
 
+func TestCustomizationStoreReplaceVocabularyWritesWordsAndAliasesTogether(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "test.db")
+	s, err := New(StoreConfig{Backend: "sqlite", SQLitePath: dbPath, MaxAudioStorageMB: 100})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	defer s.Close()
+
+	vocabStore := s.(CustomizationVocabularyStore)
+	ctx := context.Background()
+	if err := vocabStore.ReplaceVocabularyWithOptions(ctx, CustomizationReplaceOpts{Language: "de", Source: "settings"}, []speechcustomize.Word{
+		{Term: "Kombify", Language: "de", SoundsLike: []string{"kombi fire"}, Enabled: true, Source: "settings"},
+	}, []speechcustomize.Replacement{
+		{
+			Kind:     speechcustomize.KindSubstitution,
+			Language: "de",
+			Stage:    speechcustomize.StagePostSTT,
+			Match:    speechcustomize.Match{Type: speechcustomize.MatchPhrase, Pattern: "punkt", WordBoundary: true},
+			Output:   speechcustomize.ReplacementOutput{Text: "."},
+			Enabled:  true,
+			Source:   "settings",
+		},
+	}); err != nil {
+		t.Fatalf("ReplaceVocabulary: %v", err)
+	}
+
+	customizationStore := s.(CustomizationStore)
+	words, err := customizationStore.ListWords(ctx, CustomizationListOpts{Language: "de", IncludeDisabled: true})
+	if err != nil {
+		t.Fatalf("ListWords: %v", err)
+	}
+	if len(words) != 1 || words[0].Term != "Kombify" {
+		t.Fatalf("words = %+v", words)
+	}
+	replacements, err := customizationStore.ListReplacements(ctx, CustomizationListOpts{Language: "de", IncludeDisabled: true})
+	if err != nil {
+		t.Fatalf("ListReplacements: %v", err)
+	}
+	hasAlias, hasDot := false, false
+	for _, replacement := range replacements {
+		if replacement.Match.Pattern == "kombi fire" && replacement.Output.Text == "Kombify" {
+			hasAlias = true
+		}
+		if replacement.Match.Pattern == "punkt" && replacement.Output.Text == "." {
+			hasDot = true
+		}
+	}
+	if !hasAlias || !hasDot {
+		t.Fatalf("replacements = %+v", replacements)
+	}
+}
+
 func TestVoiceAgentSessionsSaveAndList(t *testing.T) {
 	s, err := NewSQLiteStore(StoreConfig{
 		SQLitePath: filepath.Join(t.TempDir(), "feedback.db"),

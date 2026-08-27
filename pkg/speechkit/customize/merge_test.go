@@ -86,6 +86,63 @@ func TestSynonymReplacementUsesSpokenAliasIdentity(t *testing.T) {
 	if replacement.ID == "" {
 		t.Fatal("expected stable id")
 	}
+	if !hasMode(replacement.Modes, ModeVoiceAgent) {
+		t.Fatalf("modes = %v, want voice_agent included", replacement.Modes)
+	}
+}
+
+func TestFoldAndMaterializeKeepPunctuationAsExtra(t *testing.T) {
+	words := []Word{{Term: "Kombify", Language: "de", Enabled: true}}
+	replacements := []Replacement{
+		{
+			Kind:     KindSynonym,
+			Language: "de",
+			Stage:    StagePostSTT,
+			Match:    Match{Type: MatchSpokenAlias, Pattern: "kombi fire", WordBoundary: true},
+			Output:   ReplacementOutput{Text: "Kombify"},
+			Enabled:  true,
+		},
+		{
+			Kind:     KindSubstitution,
+			Language: "de",
+			Stage:    StagePostSTT,
+			Match:    Match{Type: MatchPhrase, Pattern: "punkt", WordBoundary: true},
+			Output:   ReplacementOutput{Text: "."},
+			Enabled:  true,
+		},
+	}
+	folded, extras := FoldVocabulary(words, replacements)
+	if len(folded) != 1 || stringsJoin(folded[0].SoundsLike) != "kombi fire" {
+		t.Fatalf("folded = %+v", folded)
+	}
+	if len(extras) != 1 || extras[0].Output.Text != "." {
+		t.Fatalf("extras = %+v", extras)
+	}
+	merged, materialized := MaterializeVocabulary(folded, extras)
+	if len(merged) != 1 {
+		t.Fatalf("merged words = %+v", merged)
+	}
+	seenAlias, seenDot := false, false
+	for _, replacement := range materialized {
+		if replacement.Match.Pattern == "kombi fire" && replacement.Output.Text == "Kombify" {
+			seenAlias = true
+		}
+		if replacement.Match.Pattern == "punkt" && replacement.Output.Text == "." {
+			seenDot = true
+		}
+	}
+	if !seenAlias || !seenDot {
+		t.Fatalf("materialized = %+v", materialized)
+	}
+}
+
+func hasMode(modes []Mode, want Mode) bool {
+	for _, mode := range modes {
+		if mode == want {
+			return true
+		}
+	}
+	return false
 }
 
 func stringsJoin(values []string) string {

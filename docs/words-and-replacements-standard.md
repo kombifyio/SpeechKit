@@ -94,11 +94,11 @@ A `Word` is declarative recognition knowledge. It never rewrites text by itself.
 | `usage_count` | int | Telemetry for future learned weighting. |
 | `created_at`, `updated_at` | time | Audit and sync metadata. |
 
-`sounds_like` is the authoring source for aliases of a Word. Resolve-time
-policy seeds a synonym Replacement for each alias so spoken forms rewrite to
-the canonical term. Settings shows those aliases on the Word, not as a second
-disconnected list. Multiple spoken forms may map to the same Word. Duplicate
-`term + language` rows are merged on write.
+`sounds_like` is the authoring source for aliases of a Word. Settings writes
+Words and leftover Replacements in one vocabulary call; the store materializes
+synonym Replacements from `sounds_like` for Dictation, Assist, and Voice Agent.
+Resolve also seeds those synonyms if they are not stored yet. Duplicate
+`term + language` rows are merged on read and write.
 
 ## Replacement
 

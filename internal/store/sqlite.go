@@ -55,6 +55,9 @@ var sqliteMigration021 string
 //go:embed migrations/sqlite/022_recording_session_enhancements.sql
 var sqliteMigration022 string
 
+//go:embed migrations/sqlite/024_customization_word_identity.sql
+var sqliteMigration024 string
+
 // SQLiteStore implements Store using a local SQLite database via
 // modernc.org/sqlite (pure Go, no CGo required). All query logic lives in the
 // embedded *sqlStore; this type only owns connection setup and migrations.

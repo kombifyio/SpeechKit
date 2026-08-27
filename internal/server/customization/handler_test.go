@@ -71,6 +71,7 @@ func TestReadEndpointsRejectInvalidScopeQuery(t *testing.T) {
 		{name: "lexicons", target: "/v1/lexicons?scope=bogus"},
 		{name: "rulesets", target: "/v1/rulesets?scope=bogus"},
 		{name: "pack", target: "/v1/customization/pack?scope=bogus"},
+		{name: "vocabulary", target: "/v1/customization/vocabulary?scope=bogus"},
 		{name: "strict enum", target: "/v1/replacements?scope=tenant"},
 		{name: "empty scope", target: "/v1/replacements?scope="},
 		{name: "spaced scope", target: "/v1/replacements?scope=%20org%20"},
@@ -91,6 +92,8 @@ func TestReadEndpointsRejectInvalidScopeQuery(t *testing.T) {
 					handler = h.rulesets
 				case "pack":
 					handler = h.pack
+				case "vocabulary":
+					handler = h.vocabulary
 				}
 			}
 
