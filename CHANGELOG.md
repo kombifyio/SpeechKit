@@ -15,6 +15,7 @@ IDs, source paths, and other maintainer-only vocabulary.
 
 * **desktop:** Words and Replacements in Settings are searchable, paged, and deletable. Aliases live on the Word; several spoken forms may rewrite to the same term, and duplicate terms are merged on save.
 * **desktop:** Customization saves Words and leftover Replacements in one call. Aliases rewrite in Dictation, Assist, and Voice Agent.
+* **desktop:** Words and Replacements use one compact row per term, with spoken aliases on the same line.
 
 ## [0.61.0](https://github.com/kombifyio/SpeechKit/compare/v0.60.0...v0.61.0) (2026-08-26)
 
