@@ -17,6 +17,9 @@ func TestApplyAssemblyAILLMDefaultsFillsGatewayWhenEnabled(t *testing.T) {
 	if cfg.Providers.AssemblyAI.LLMGatewayUtilityModel != DefaultAssemblyAILLMGatewayUtilityModel {
 		t.Fatalf("utility model = %q", cfg.Providers.AssemblyAI.LLMGatewayUtilityModel)
 	}
+	if cfg.Providers.AssemblyAI.LLMGatewayAgentModel != DefaultAssemblyAILLMGatewayAgentModel {
+		t.Fatalf("agent model = %q", cfg.Providers.AssemblyAI.LLMGatewayAgentModel)
+	}
 	if !cfg.Providers.AssemblyAI.StreamingLLM {
 		t.Fatal("streaming LLM should be on while AssemblyAI is enabled")
 	}

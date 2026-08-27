@@ -40,6 +40,10 @@ func NewAssemblyAILive() *AssemblyAILive { return &AssemblyAILive{} }
 
 func (p *AssemblyAILive) Name() string { return "assemblyai-agent" }
 
+// EndpointURL reports the WS endpoint for connect-time logging
+// (LiveEndpointReporter). Static URL, no credentials or query parameters.
+func (p *AssemblyAILive) EndpointURL() string { return assemblyAIAgentURL }
+
 func (p *AssemblyAILive) SessionCapabilities() SessionCapabilities {
 	return sessionCapabilitiesForProvider("assemblyai")
 }
@@ -401,6 +405,18 @@ func (p *AssemblyAILive) snapshotSessionID() string {
 	return p.sessionID
 }
 
+// assemblyAISessionUpdate builds the session.update payload.
+//
+// Note on LLM/model selection: the AssemblyAI Voice Agents WS API
+// (agents.assemblyai.com) does NOT accept an inline model/LLM field in the
+// session config — verified against the events reference
+// (https://www.assemblyai.com/docs/voice-agents/voice-agent-api/events-reference,
+// 2026-08-28: session supports agent_id, system_prompt, greeting, input.*,
+// output.*, tools only; the LLM behind the agent is chosen server-side or via
+// a stored agent referenced by agent_id). cfg.Model is therefore intentionally
+// not sent here. The [providers.assemblyai].llm_gateway_* models select LLMs
+// on AssemblyAI's separate OpenAI-compatible LLM Gateway used by the Genkit
+// flows (assist/summary/agent), not by this realtime session.
 func assemblyAISessionUpdate(cfg LiveConfig) map[string]any {
 	resolved := ResolveLiveOptions("assemblyai", "realtime.assemblyai.voice-agent", cfg, nil, nil)
 	input := map[string]any{

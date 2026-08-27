@@ -89,8 +89,32 @@ func (s *Session) Start(ctx context.Context, cfg LiveConfig, idleCfg IdleConfig)
 	s.setState(StateListening)
 	s.idleTimer.Reset()
 
-	slog.Info("voice agent session started", "provider", s.provider.Name(), "model", cfg.Model)
+	slog.Info("voice agent session started",
+		"provider", s.provider.Name(),
+		"model", cfg.Model,
+		"endpoint", providerEndpointForLog(s.provider),
+	)
 	return nil
+}
+
+// LiveEndpointReporter is implemented by providers that can report the
+// endpoint they dial. Connect-time observability only — the reported URL must
+// never carry credentials; providerEndpointForLog additionally strips any
+// query string so tokens passed as query parameters cannot leak into logs.
+type LiveEndpointReporter interface {
+	EndpointURL() string
+}
+
+func providerEndpointForLog(provider LiveProvider) string {
+	reporter, ok := provider.(LiveEndpointReporter)
+	if !ok {
+		return ""
+	}
+	endpoint := reporter.EndpointURL()
+	if idx := strings.IndexByte(endpoint, '?'); idx >= 0 {
+		endpoint = endpoint[:idx]
+	}
+	return endpoint
 }
 
 // SendAudio forwards a PCM audio chunk to the real-time model.

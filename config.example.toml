@@ -517,7 +517,9 @@ vad_silence_duration_ms = 700
 # llm_gateway_base_url = "https://llm-gateway.assemblyai.com/v1"  # EU: https://llm-gateway.eu.assemblyai.com/v1
 # llm_gateway_utility_model = "qwen3.5-4b-32k-fast"  # live cleanup / short utilities
 # llm_gateway_assist_model = "qwen3-32B"             # summaries and longer write-ups
-# llm_gateway_agent_model = ""
+# llm_gateway_agent_model = "gemini-2.5-flash"     # agent flows (tool-capable). NOTE: selects the LLM
+#                                                  # Gateway model for Genkit agent/summary flows only;
+#                                                  # the Voice Agents WS API has no per-session model field.
 # streaming_llm = true                               # native LLM Gateway on each Universal-3.5 Pro turn
 #
 # [providers.cloudflare]

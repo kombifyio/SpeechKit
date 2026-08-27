@@ -4,7 +4,9 @@ import (
 	"context"
 	"strings"
 	"testing"
+	"time"
 
+	"github.com/firebase/genkit/go/ai"
 	"github.com/firebase/genkit/go/genkit"
 )
 
@@ -59,6 +61,42 @@ func TestSummarizeFlow_EmptyText(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "empty text") {
 		t.Errorf("unexpected error: %v", err)
+	}
+}
+
+// A hung first model (e.g. a dead local llama-server) must not consume the
+// whole summary budget: the per-model timeout has to cut it off so a later
+// model still gets real time. Fails against the pre-fix chain, where every
+// attempt shared the caller deadline.
+func TestSummarizeFlow_PerModelTimeoutSkipsHungModel(t *testing.T) {
+	prev := summarizePerModelTimeout
+	summarizePerModelTimeout = 100 * time.Millisecond
+	defer func() { summarizePerModelTimeout = prev }()
+
+	g := genkit.Init(context.Background())
+	supports := &ai.ModelOptions{Supports: &ai.ModelSupports{Multiturn: true, SystemRole: true}}
+	hung := genkit.DefineModel(g, "test/hung", supports,
+		func(ctx context.Context, _ *ai.ModelRequest, _ ai.ModelStreamCallback) (*ai.ModelResponse, error) {
+			<-ctx.Done() // never answers; only the per-attempt deadline releases it
+			return nil, ctx.Err()
+		})
+	healthy := genkit.DefineModel(g, "test/healthy", supports,
+		func(_ context.Context, _ *ai.ModelRequest, _ ai.ModelStreamCallback) (*ai.ModelResponse, error) {
+			return &ai.ModelResponse{Message: &ai.Message{
+				Role:    ai.RoleModel,
+				Content: []*ai.Part{ai.NewTextPart("healthy summary")},
+			}}, nil
+		})
+	flow := DefineSummarizeFlow(g, []ai.Model{hung, healthy})
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	out, err := flow.Run(ctx, SummarizeInput{Text: "some transcript"})
+	if err != nil {
+		t.Fatalf("summarize failed despite a healthy fallback model: %v", err)
+	}
+	if !strings.Contains(out, "healthy summary") {
+		t.Fatalf("summary = %q, want the healthy model's output", out)
 	}
 }
 

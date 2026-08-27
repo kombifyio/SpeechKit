@@ -870,7 +870,11 @@ func (f *assemblyAIProviderFactory) NewProvider() vsserver.LiveProviderAdapter {
 }
 
 // assemblyAILiveBridge adapts the kernel's AssemblyAI Voice Agent provider to
-// the server WebSocket adapter contract.
+// the server WebSocket adapter contract. Note: cfg.Model is forwarded for
+// contract uniformity only — the AssemblyAI Voice Agents WS API session config
+// carries no model/LLM field (agent_id binds a stored server-side agent
+// instead), so the kernel provider intentionally does not send it; see
+// assemblyAISessionUpdate in pkg/speechkit/voiceagent/live.
 type assemblyAILiveBridge struct {
 	inner *vskernel.AssemblyAILive
 }

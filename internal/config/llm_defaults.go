@@ -8,12 +8,17 @@ const (
 	DefaultAssemblyAILLMGatewayBaseURL      = "https://llm-gateway.assemblyai.com/v1"
 	DefaultAssemblyAILLMGatewayUtilityModel = "qwen3.5-4b-32k-fast"
 	DefaultAssemblyAILLMGatewayAssistModel  = "qwen3-32B"
-	DefaultCloudflareAIGatewayUtilityModel  = "@cf/meta/llama-3.2-3b-instruct"
-	DefaultCloudflareAIGatewayAssistModel   = "@cf/meta/llama-3.1-8b-instruct-fast"
-	CloudflareAIGatewayAuthTokenEnv         = "CLOUDFLARE_AI_GATEWAY_AUTH_TOKEN"
-	CloudflareAccountIDEnv                  = "CLOUDFLARE_ACCOUNT_ID"
-	CloudflareAIGatewayIDEnv                = "CLOUDFLARE_AI_GATEWAY_ID"
-	CloudflareAPITokenEnv                   = "CLOUDFLARE_API_TOKEN"
+	// DefaultAssemblyAILLMGatewayAgentModel powers the Genkit agent flows via
+	// the gateway. gemini-2.5-flash is on the gateway's documented model list
+	// and supports tool/function calling, which the agent tier requires
+	// (https://www.assemblyai.com/docs/llm-gateway/available-models).
+	DefaultAssemblyAILLMGatewayAgentModel  = "gemini-2.5-flash"
+	DefaultCloudflareAIGatewayUtilityModel = "@cf/meta/llama-3.2-3b-instruct"
+	DefaultCloudflareAIGatewayAssistModel  = "@cf/meta/llama-3.1-8b-instruct-fast"
+	CloudflareAIGatewayAuthTokenEnv        = "CLOUDFLARE_AI_GATEWAY_AUTH_TOKEN"
+	CloudflareAccountIDEnv                 = "CLOUDFLARE_ACCOUNT_ID"
+	CloudflareAIGatewayIDEnv               = "CLOUDFLARE_AI_GATEWAY_ID"
+	CloudflareAPITokenEnv                  = "CLOUDFLARE_API_TOKEN"
 )
 
 // ApplyAssemblyAILLMDefaults fills Universal-3.5 Pro and LLM Gateway slots
@@ -38,6 +43,9 @@ func ApplyAssemblyAILLMDefaults(cfg *Config) {
 	}
 	if strings.TrimSpace(a.LLMGatewayAssistModel) == "" {
 		a.LLMGatewayAssistModel = DefaultAssemblyAILLMGatewayAssistModel
+	}
+	if strings.TrimSpace(a.LLMGatewayAgentModel) == "" {
+		a.LLMGatewayAgentModel = DefaultAssemblyAILLMGatewayAgentModel
 	}
 	a.StreamingLLM = true
 }

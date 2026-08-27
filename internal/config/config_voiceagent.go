@@ -19,8 +19,11 @@ type VoiceAgentConfig struct {
 	//   "moshi"     — self-hosted Kyutai Moshi Rust server (GPU required, M9b)
 	//
 	// The Server-Target reads this field via cmd/speechkit-server. The Device-
-	// Target runs "gemini", "openai", and "deepgram" in-process; other values
-	// fall back to Gemini Live (or the pipeline fallback when enabled).
+	// Target runs "gemini", "openai", "deepgram", and — since v0.58 —
+	// "assemblyai" in-process; any other value falls back to Gemini Live (or
+	// the pipeline fallback when enabled), and the Device-Target logs and
+	// surfaces that fallback at session preparation instead of silently
+	// running Gemini.
 	Provider      string `toml:"provider"`
 	Model         string `toml:"model"`          // Real-time model ID (e.g. "gemini-3.1-flash-live-preview")
 	FallbackModel string `toml:"fallback_model"` // Fallback real-time model

@@ -138,7 +138,14 @@ type AssemblyAIProviderConfig struct {
 	LLMGatewayBaseURL      string `toml:"llm_gateway_base_url"`
 	LLMGatewayUtilityModel string `toml:"llm_gateway_utility_model"`
 	LLMGatewayAssistModel  string `toml:"llm_gateway_assist_model"`
-	LLMGatewayAgentModel   string `toml:"llm_gateway_agent_model"`
+	// LLMGatewayAgentModel is the gateway model registered for the Genkit
+	// agent flows (tool-capable). It does NOT select the LLM of the AssemblyAI
+	// Voice Agent realtime session: the Voice Agents WS API session config has
+	// no model/LLM field (only agent_id binds a stored server-side agent) —
+	// see assemblyAISessionUpdate in pkg/speechkit/voiceagent/live.
+	// Defaulted while AssemblyAI is enabled so the gateway is always available
+	// to agent/summary flows (DefaultAssemblyAILLMGatewayAgentModel).
+	LLMGatewayAgentModel string `toml:"llm_gateway_agent_model"`
 	// StreamingLLM attaches LLM Gateway to Universal-3.5 Pro realtime turns
 	// (live cleanup / per-turn rewrite). Forced on while AssemblyAI is
 	// enabled so Assist, summaries, and live rewrite never start without a
