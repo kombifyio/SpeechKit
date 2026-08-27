@@ -517,7 +517,18 @@ vad_silence_duration_ms = 700
 # llm_gateway_utility_model = "qwen3.5-4b-32k-fast"  # live cleanup / short utilities
 # llm_gateway_assist_model = "qwen3-32B"             # summaries and longer write-ups
 # llm_gateway_agent_model = ""
-# streaming_llm = false                              # true attaches LLM Gateway to each realtime turn
+# streaming_llm = true                               # native LLM Gateway on each Universal-3.5 Pro turn
+#
+# [providers.cloudflare]
+# enabled = false
+# account_id = ""
+# account_id_env = "CLOUDFLARE_ACCOUNT_ID"
+# api_token_env = "CLOUDFLARE_AI_GATEWAY_AUTH_TOKEN"
+# gateway_id = ""
+# gateway_id_env = "CLOUDFLARE_AI_GATEWAY_ID"
+# utility_model = "@cf/meta/llama-3.2-3b-instruct"
+# assist_model = "@cf/meta/llama-3.1-8b-instruct-fast"
+# agent_model = ""
 
 # [providers.ollama]        # Local Provider: externally managed Ollama, not SpeechKit Built-in
 # enabled = false

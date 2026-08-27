@@ -58,6 +58,28 @@ func TestInit_RegistersAssemblyAILLMGatewayUtilityModel(t *testing.T) {
 	}
 }
 
+func TestInit_RegistersCloudflareAIGatewayUtilityModel(t *testing.T) {
+	rt, err := Init(context.Background(), Config{
+		CloudflareAPIKey:       "test-key",
+		CloudflareAccountID:    "account",
+		CloudflareGatewayID:    "speechkit",
+		CloudflareUtilityModel: "@cf/meta/llama-3.2-3b-instruct",
+		CloudflareAssistModel:  "@cf/meta/llama-3.1-8b-instruct-fast",
+	})
+	if err != nil {
+		t.Fatalf("Init: %v", err)
+	}
+	if len(rt.UtilityModels()) != 1 {
+		t.Fatalf("utility models = %d, want 1", len(rt.UtilityModels()))
+	}
+	if len(rt.AssistModels()) != 1 {
+		t.Fatalf("assist models = %d, want 1", len(rt.AssistModels()))
+	}
+	if _, ok := rt.AllModels()["cloudflare/@cf/meta/llama-3.2-3b-instruct"]; !ok {
+		t.Fatal("expected cloudflare/@cf/meta/llama-3.2-3b-instruct")
+	}
+}
+
 func TestInit_CustomModelRegistration(t *testing.T) {
 	// Init with OpenAI key registers custom models; then LookupModel finds them.
 	rt, err := Init(context.Background(), Config{

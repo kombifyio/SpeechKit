@@ -323,6 +323,7 @@ func ApplyServerModelSettings(cfg *Config, settings ServerModelSettings) []strin
 		cfg.TTS.Enabled = *settings.TTS.Enabled
 		notes = append(notes, "server settings: TTS enabled updated")
 	}
+	EnableAlwaysOnLLM(cfg)
 	return notes
 }
 

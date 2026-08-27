@@ -107,7 +107,7 @@ func NormalizeProviderCredentialTarget(target string) string {
 	}
 	provider := framework.NormalizeProviderID(target)
 	switch provider {
-	case "openai", "groq", "google", "deepgram", "assemblyai", "huggingface", "openrouter":
+	case "openai", "groq", "google", "deepgram", "assemblyai", "huggingface", "openrouter", "cloudflare":
 		return provider
 	default:
 		return provider
@@ -133,6 +133,7 @@ func ProviderCredentialTargets() []string {
 		"assemblyai",
 		"huggingface",
 		"openrouter",
+		"cloudflare",
 	}
 }
 
@@ -172,6 +173,11 @@ func ProviderCredentialEnvName(cfg *Config, target string) string {
 			return strings.TrimSpace(cfg.Providers.OpenRouter.APIKeyEnv)
 		}
 		return OpenRouterAPIKeyEnv
+	case "cloudflare":
+		if cfg != nil && strings.TrimSpace(cfg.Providers.Cloudflare.APITokenEnv) != "" {
+			return strings.TrimSpace(cfg.Providers.Cloudflare.APITokenEnv)
+		}
+		return CloudflareAIGatewayAuthTokenEnv
 	default:
 		return ""
 	}
@@ -199,6 +205,8 @@ func SetProviderCredentialEnvName(cfg *Config, target, envName string) error {
 		cfg.HuggingFace.TokenEnv = envName
 	case "openrouter":
 		cfg.Providers.OpenRouter.APIKeyEnv = envName
+	case "cloudflare":
+		cfg.Providers.Cloudflare.APITokenEnv = envName
 	default:
 		return fmt.Errorf("%w %q", ErrUnsupportedProvider, target)
 	}
@@ -222,6 +230,16 @@ func ResolveProviderCredentialValue(cfg *Config, target string) (string, string,
 	case "assemblyai":
 		key, envName := ResolveAssemblyAIKey(cfg)
 		return strings.TrimSpace(key), strings.TrimSpace(envName), nil
+	case "cloudflare":
+		envName := ProviderCredentialEnvName(cfg, "cloudflare")
+		value := strings.TrimSpace(ResolveSecret(envName))
+		if value == "" {
+			value = strings.TrimSpace(ResolveSecret(CloudflareAPITokenEnv))
+			if value != "" {
+				envName = CloudflareAPITokenEnv
+			}
+		}
+		return value, envName, nil
 	default:
 		envName := ProviderCredentialEnvName(cfg, target)
 		if envName == "" {
@@ -347,6 +365,8 @@ func ProviderEnabled(cfg *Config, provider string, mode framework.Mode) bool {
 		return cfg.Providers.Deepgram.Enabled
 	case "assemblyai":
 		return cfg.Providers.AssemblyAI.Enabled
+	case "cloudflare":
+		return cfg.Providers.Cloudflare.Enabled
 	case "openrouter":
 		return cfg.Providers.OpenRouter.Enabled
 	case "openedai", "selfhosted":
@@ -390,6 +410,14 @@ func SetProviderEnabled(cfg *Config, provider string, enabled bool) error {
 		}
 	case "assemblyai":
 		cfg.Providers.AssemblyAI.Enabled = enabled
+		if enabled {
+			EnableAlwaysOnLLM(cfg)
+		}
+	case "cloudflare":
+		cfg.Providers.Cloudflare.Enabled = enabled
+		if enabled {
+			EnableAlwaysOnLLM(cfg)
+		}
 	default:
 		return fmt.Errorf("%w %q", ErrUnsupportedProvider, provider)
 	}
@@ -494,6 +522,17 @@ var providerRuntimeRegistry = []ProviderRuntime{
 		CredentialRequired: true,
 		SetupURL:           "https://www.assemblyai.com/app/account",
 		SupportedModes:     []framework.Mode{framework.ModeDictation, framework.ModeAssist, framework.ModeVoiceAgent},
+		UserConfigurable:   true,
+	},
+	{
+		Provider:           "cloudflare",
+		DisplayName:        "Cloudflare AI Gateway",
+		ProviderKind:       framework.ProviderKindCloudProvider,
+		IntegrationKind:    ProviderIntegrationCloudGateway,
+		CredentialTarget:   "cloudflare",
+		CredentialRequired: true,
+		SetupURL:           "https://developers.cloudflare.com/ai-gateway/get-started/",
+		SupportedModes:     []framework.Mode{framework.ModeAssist, framework.ModeVoiceAgent},
 		UserConfigurable:   true,
 	},
 	{

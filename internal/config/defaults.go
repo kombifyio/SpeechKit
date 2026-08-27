@@ -302,6 +302,14 @@ func defaults() *Config {
 				LLMGatewayBaseURL:      "https://llm-gateway.assemblyai.com/v1",
 				LLMGatewayUtilityModel: "qwen3.5-4b-32k-fast",
 				LLMGatewayAssistModel:  "qwen3-32B",
+				StreamingLLM:           true,
+			},
+			Cloudflare: CloudflareProviderConfig{
+				APITokenEnv:  CloudflareAIGatewayAuthTokenEnv,
+				AccountIDEnv: CloudflareAccountIDEnv,
+				GatewayIDEnv: CloudflareAIGatewayIDEnv,
+				UtilityModel: DefaultCloudflareAIGatewayUtilityModel,
+				AssistModel:  DefaultCloudflareAIGatewayAssistModel,
 			},
 			Ollama: OllamaProviderConfig{
 				BaseURL:      "http://localhost:11434",

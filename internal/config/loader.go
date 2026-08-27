@@ -46,6 +46,7 @@ func Load(path string) (*Config, error) {
 			NormalizeOutputConfig(cfg)
 			NormalizeCaptureConfig(cfg)
 			NormalizeDeepgramSTTSettings(cfg)
+			EnableAlwaysOnLLM(cfg)
 			normalizeWakewordConfig(cfg)
 			return cfg, nil
 		}
@@ -65,6 +66,7 @@ func Load(path string) (*Config, error) {
 		cfg := defaults()
 		NormalizeCaptureConfig(cfg)
 		NormalizeDeepgramSTTSettings(cfg)
+		EnableAlwaysOnLLM(cfg)
 		normalizeWakewordConfig(cfg)
 		return cfg, nil
 	}
@@ -115,6 +117,7 @@ func Load(path string) (*Config, error) {
 	NormalizeOutputConfig(cfg)
 	NormalizeCaptureConfig(cfg)
 	NormalizeDeepgramSTTSettings(cfg)
+	EnableAlwaysOnLLM(cfg)
 	normalizeWakewordConfig(cfg)
 	// Backfill: Telemetry.UpdateCheck mirrors Update.Enabled when update is disabled.
 	// Phase 0 has only the update-check as telemetry; later phases may diverge.

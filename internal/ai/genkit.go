@@ -57,6 +57,12 @@ type Config struct {
 	AssemblyAIUtilityModel      string
 	AssemblyAIAssistModel       string
 	AssemblyAIAgentModel        string
+	CloudflareAPIKey            string
+	CloudflareAccountID         string
+	CloudflareGatewayID         string
+	CloudflareUtilityModel      string
+	CloudflareAssistModel       string
+	CloudflareAgentModel        string
 	OrderedAssistModels         []OrderedModelSelection
 	OrderedAgentModels          []OrderedModelSelection
 	UseOrderedAssistModels      bool
@@ -173,6 +179,13 @@ func registerConfiguredProviderModels(g *genkit.Genkit, cfg Config) {
 			cfg.AssemblyAIAgentModel,
 		})
 	}
+	if cfg.CloudflareAPIKey != "" && cfg.CloudflareAccountID != "" {
+		registerCloudflareAIGatewayModels(g, cfg.CloudflareAPIKey, cfg.CloudflareAccountID, cfg.CloudflareGatewayID, []string{
+			cfg.CloudflareUtilityModel,
+			cfg.CloudflareAssistModel,
+			cfg.CloudflareAgentModel,
+		})
+	}
 	if cfg.LocalLLMBaseURL != "" {
 		registerLocalLLMModels(g, cfg.LocalLLMBaseURL, localLLMModelNames(cfg))
 	}
@@ -204,6 +217,7 @@ func tierModelSpecs(cfg Config, tier string) []modelSpec {
 			{"ollama", cfg.OllamaUtilityModel, cfg.OllamaBaseURL != "" && cfg.OllamaUtilityModel != ""},
 			{"openrouter", cfg.OpenRouterUtilityModel, cfg.OpenRouterAPIKey != "" && cfg.OpenRouterUtilityModel != ""},
 			{"assemblyai", cfg.AssemblyAIUtilityModel, cfg.AssemblyAIAPIKey != "" && cfg.AssemblyAIUtilityModel != ""},
+			{"cloudflare", cfg.CloudflareUtilityModel, cloudflareModelEnabled(cfg) && cfg.CloudflareUtilityModel != ""},
 		}
 	case "assist":
 		return []modelSpec{
@@ -215,6 +229,7 @@ func tierModelSpecs(cfg Config, tier string) []modelSpec {
 			{"ollama", cfg.OllamaAssistModel, cfg.OllamaBaseURL != "" && cfg.OllamaAssistModel != ""},
 			{"openrouter", cfg.OpenRouterAssistModel, cfg.OpenRouterAPIKey != "" && cfg.OpenRouterAssistModel != ""},
 			{"assemblyai", cfg.AssemblyAIAssistModel, cfg.AssemblyAIAPIKey != "" && cfg.AssemblyAIAssistModel != ""},
+			{"cloudflare", cfg.CloudflareAssistModel, cloudflareModelEnabled(cfg) && cfg.CloudflareAssistModel != ""},
 		}
 	case "agent":
 		return []modelSpec{
@@ -226,10 +241,15 @@ func tierModelSpecs(cfg Config, tier string) []modelSpec {
 			{"ollama", cfg.OllamaAgentModel, cfg.OllamaBaseURL != "" && cfg.OllamaAgentModel != ""},
 			{"openrouter", cfg.OpenRouterAgentModel, cfg.OpenRouterAPIKey != "" && cfg.OpenRouterAgentModel != ""},
 			{"assemblyai", cfg.AssemblyAIAgentModel, cfg.AssemblyAIAPIKey != "" && cfg.AssemblyAIAgentModel != ""},
+			{"cloudflare", cfg.CloudflareAgentModel, cloudflareModelEnabled(cfg) && cfg.CloudflareAgentModel != ""},
 		}
 	default:
 		return nil
 	}
+}
+
+func cloudflareModelEnabled(cfg Config) bool {
+	return cfg.CloudflareAPIKey != "" && cfg.CloudflareAccountID != ""
 }
 
 func resolveOrderedOrLegacyModels(

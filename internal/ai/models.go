@@ -130,6 +130,33 @@ func registerAssemblyAILLMModels(g *genkit.Genkit, apiKey, baseURL string, extra
 	}
 }
 
+func registerCloudflareAIGatewayModels(g *genkit.Genkit, apiKey, accountID, gatewayID string, extra []string) {
+	accountID = strings.TrimSpace(accountID)
+	if accountID == "" || strings.TrimSpace(apiKey) == "" {
+		return
+	}
+	if strings.TrimSpace(gatewayID) == "" {
+		gatewayID = "default"
+	}
+	baseURL := "https://api.cloudflare.com/client/v4/accounts/" + accountID + "/ai/v1"
+	client := newAIClient(&AICallValidation)
+	headers := map[string]string{"cf-aig-gateway-id": gatewayID}
+	names := []string{
+		"@cf/meta/llama-3.2-3b-instruct",
+		"@cf/meta/llama-3.1-8b-instruct-fast",
+	}
+	names = append(names, extra...)
+	seen := map[string]bool{}
+	for _, raw := range names {
+		name := strings.TrimSpace(raw)
+		if name == "" || seen[name] {
+			continue
+		}
+		seen[name] = true
+		registerOpenAICompatibleModelWithHeaders(g, "cloudflare", name, baseURL, apiKey, client, false, AICallValidation, headers)
+	}
+}
+
 // registerOpenRouterModels registers OpenRouter models as custom Genkit models.
 // OpenRouter uses an OpenAI-compatible API with a different base URL.
 func registerOpenRouterModels(g *genkit.Genkit, apiKey string) {
@@ -185,7 +212,7 @@ func registerOpenAICompatibleModelWithValidation(
 			},
 		},
 		func(ctx context.Context, mr *ai.ModelRequest, cb ai.ModelStreamCallback) (*ai.ModelResponse, error) {
-			return callOpenAICompatibleWithValidation(ctx, client, baseURL, authToken, name, mr, validation)
+			return callOpenAICompatibleWithValidation(ctx, client, baseURL, authToken, name, mr, validation, nil)
 		},
 	)
 }
@@ -216,8 +243,32 @@ type oaiResponse struct {
 	} `json:"usage"`
 }
 
+func registerOpenAICompatibleModelWithHeaders(
+	g *genkit.Genkit,
+	provider, name, baseURL, authToken string,
+	client *http.Client,
+	supportsTools bool,
+	validation netsec.ValidationOptions,
+	extraHeaders map[string]string,
+) {
+	genkit.DefineModel(g, provider+"/"+name,
+		&ai.ModelOptions{
+			Label: provider + "/" + name,
+			Supports: &ai.ModelSupports{
+				Multiturn:  true,
+				SystemRole: true,
+				Media:      false,
+				Tools:      supportsTools,
+			},
+		},
+		func(ctx context.Context, mr *ai.ModelRequest, cb ai.ModelStreamCallback) (*ai.ModelResponse, error) {
+			return callOpenAICompatibleWithValidation(ctx, client, baseURL, authToken, name, mr, validation, extraHeaders)
+		},
+	)
+}
+
 func callOpenAICompatible(ctx context.Context, client *http.Client, baseURL, authToken, model string, mr *ai.ModelRequest) (*ai.ModelResponse, error) {
-	return callOpenAICompatibleWithValidation(ctx, client, baseURL, authToken, model, mr, AICallValidation)
+	return callOpenAICompatibleWithValidation(ctx, client, baseURL, authToken, model, mr, AICallValidation, nil)
 }
 
 func callOpenAICompatibleWithValidation(
@@ -228,6 +279,7 @@ func callOpenAICompatibleWithValidation(
 	model string,
 	mr *ai.ModelRequest,
 	validation netsec.ValidationOptions,
+	extraHeaders map[string]string,
 ) (*ai.ModelResponse, error) {
 	var messages []oaiMessage
 	for _, m := range mr.Messages {
@@ -276,6 +328,12 @@ func callOpenAICompatibleWithValidation(
 	if token := strings.TrimSpace(authToken); token != "" {
 		req.Header.Set("Authorization", "Bearer "+token)
 	}
+	for key, value := range extraHeaders {
+		if strings.TrimSpace(key) == "" || strings.TrimSpace(value) == "" {
+			continue
+		}
+		req.Header.Set(key, value)
+	}
 
 	resp, err := client.Do(req)
 	if err != nil {
@@ -297,6 +355,14 @@ func callOpenAICompatibleWithValidation(
 		return nil, fmt.Errorf("parse response: %w", err)
 	}
 
+	if len(oaiResp.Choices) == 0 {
+		var wrapped struct {
+			Result oaiResponse `json:"result"`
+		}
+		if err := json.Unmarshal(body, &wrapped); err == nil {
+			oaiResp = wrapped.Result
+		}
+	}
 	if len(oaiResp.Choices) == 0 {
 		return nil, fmt.Errorf("%s: no choices in response", model)
 	}

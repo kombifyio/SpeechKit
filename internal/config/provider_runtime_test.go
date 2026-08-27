@@ -105,3 +105,19 @@ func TestSetProviderEnabledUsesProviderRuntimeDefaults(t *testing.T) {
 		t.Fatalf("unsupported provider error = %v, want ErrUnsupportedProvider", err)
 	}
 }
+
+func TestSetProviderEnabledAssemblyAIFillsNativeLLM(t *testing.T) {
+	cfg := &Config{}
+	if err := SetProviderEnabled(cfg, "assemblyai", true); err != nil {
+		t.Fatalf("enable assemblyai: %v", err)
+	}
+	if !cfg.Providers.AssemblyAI.Enabled {
+		t.Fatal("assemblyai should be enabled")
+	}
+	if !cfg.Providers.AssemblyAI.StreamingLLM {
+		t.Fatal("assemblyai should keep streaming LLM on")
+	}
+	if cfg.Providers.AssemblyAI.LLMGatewayUtilityModel != DefaultAssemblyAILLMGatewayUtilityModel {
+		t.Fatalf("utility model = %q", cfg.Providers.AssemblyAI.LLMGatewayUtilityModel)
+	}
+}

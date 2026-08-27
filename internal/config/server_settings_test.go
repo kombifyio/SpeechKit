@@ -237,8 +237,11 @@ func TestApplyServerModelSettings_AppliesDirectDictationProviders(t *testing.T) 
 			model:     "universal-3-pro,universal-2",
 			assertFunc: func(t *testing.T, cfg *Config) {
 				t.Helper()
-				if !cfg.Providers.AssemblyAI.Enabled || cfg.Providers.AssemblyAI.STTModels != "universal-3-pro,universal-2" {
+				if !cfg.Providers.AssemblyAI.Enabled || cfg.Providers.AssemblyAI.STTModels != DefaultAssemblyAISTTModels {
 					t.Fatalf("AssemblyAI STT = enabled %v models %q", cfg.Providers.AssemblyAI.Enabled, cfg.Providers.AssemblyAI.STTModels)
+				}
+				if !cfg.Providers.AssemblyAI.StreamingLLM {
+					t.Fatal("AssemblyAI streaming LLM should stay on")
 				}
 			},
 		},

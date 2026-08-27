@@ -55,6 +55,7 @@ type ProvidersConfig struct {
 	AssemblyAI AssemblyAIProviderConfig `toml:"assemblyai"`
 	Ollama     OllamaProviderConfig     `toml:"ollama"`
 	OpenRouter OpenRouterProviderConfig `toml:"openrouter"`
+	Cloudflare CloudflareProviderConfig `toml:"cloudflare"`
 }
 
 type OpenAIProviderConfig struct {
@@ -139,9 +140,23 @@ type AssemblyAIProviderConfig struct {
 	LLMGatewayAssistModel  string `toml:"llm_gateway_assist_model"`
 	LLMGatewayAgentModel   string `toml:"llm_gateway_agent_model"`
 	// StreamingLLM attaches LLM Gateway to Universal-3.5 Pro realtime turns
-	// (live cleanup / per-turn rewrite). Off by default because it adds a
-	// billed LLM call to every formatted turn.
+	// (live cleanup / per-turn rewrite). Forced on while AssemblyAI is
+	// enabled so Assist, summaries, and live rewrite never start without a
+	// native model.
 	StreamingLLM bool `toml:"streaming_llm"`
+}
+
+// CloudflareProviderConfig is the Workers AI / AI Gateway LLM backend.
+type CloudflareProviderConfig struct {
+	Enabled      bool   `toml:"enabled"`
+	AccountID    string `toml:"account_id"`
+	AccountIDEnv string `toml:"account_id_env"`
+	APITokenEnv  string `toml:"api_token_env"`
+	GatewayID    string `toml:"gateway_id"`
+	GatewayIDEnv string `toml:"gateway_id_env"`
+	UtilityModel string `toml:"utility_model"`
+	AssistModel  string `toml:"assist_model"`
+	AgentModel   string `toml:"agent_model"`
 }
 
 type OllamaProviderConfig struct {
