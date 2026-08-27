@@ -23,6 +23,7 @@ import (
 
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/audio"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/netsec"
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/procguard"
 )
 
 // whisperModelPattern restricts whisper.cpp model filenames to the
@@ -176,6 +177,12 @@ func (p *LocalProvider) StartServer(ctx context.Context) error {
 	slog.Info("starting whisper-server", "binary", binaryPath, "args", args, "threads", threads, "gpu_mode", p.GPU)
 	if err := cmd.Start(); err != nil {
 		return fmt.Errorf("start whisper-server: %w", err)
+	}
+	// Hand the child to the OS so it cannot outlive this process when the
+	// host dies without running its cleanup path (crash, taskkill, dev-loop
+	// rebuild). Assignment failing does not make the child unusable.
+	if err := procguard.Adopt(cmd); err != nil {
+		slog.Warn("whisper-server not adopted into the kill-on-exit job", "error", err, "pid", cmd.Process.Pid)
 	}
 	processDone := make(chan struct{})
 	p.processMu.Lock()

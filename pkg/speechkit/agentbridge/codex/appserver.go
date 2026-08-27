@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/agentbridge"
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/procguard"
 )
 
 // Wire method names, pinned against `codex app-server generate-json-schema`
@@ -78,6 +79,12 @@ func startAppServer(ctx context.Context, binary, clientVersion string, logger *s
 	cmd.Stderr = nil
 	if err := cmd.Start(); err != nil {
 		return nil, fmt.Errorf("app-server start: %w", err)
+	}
+	// Hand the child to the OS so it cannot outlive this process when the
+	// host dies without running its cleanup path (crash, taskkill, dev-loop
+	// rebuild). Assignment failing does not make the child unusable.
+	if err := procguard.Adopt(cmd); err != nil {
+		logger.Warn("codex app-server not adopted into the kill-on-exit job", "error", err, "pid", cmd.Process.Pid)
 	}
 
 	s := &appServerSession{
