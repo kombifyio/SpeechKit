@@ -173,7 +173,7 @@ type UIConfig struct {
 	AssistantMark       string `toml:"assistant_mark"`
 	AssistantTranscript bool   `toml:"assistant_transcript"`
 	// OverlayActions is the overlay shortcut-function strip (mic, copy,
-	// note, language, meeting). Omitted means the shipped default. The
+	// note, language, live, model, meeting). Omitted means the shipped default. The
 	// sentinel "none" persists an empty strip.
 	OverlayActions []string `toml:"overlay_actions"`
 }

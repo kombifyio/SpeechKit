@@ -22,7 +22,7 @@ IDs, source paths, and other maintainer-only vocabulary.
 ### Fixed
 
 * **desktop:** Full-capture Dictation uses the selected speech engine instead of always trying Deepgram first.
-* **desktop:** Dictation Settings can switch live streaming on. Auto and Provider live send completed phrases to the focused field while you speak; the overlay shows the in-progress draft.
+* **desktop:** Dictation Settings switches Live and Full capture. Overlay shortcut functions can show the same Live/Full control and the Deepgram/AssemblyAI engine, each on or off like Copy and Language.
 
 ## [0.61.0](https://github.com/kombifyio/SpeechKit/compare/v0.60.0...v0.61.0) (2026-08-26)
 

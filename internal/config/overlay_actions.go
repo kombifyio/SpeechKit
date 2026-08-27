@@ -11,6 +11,8 @@ const (
 	OverlayActionCopy     = "copy"
 	OverlayActionNote     = "note"
 	OverlayActionLanguage = "language"
+	OverlayActionLive     = "live"
+	OverlayActionModel    = "model"
 	OverlayActionMeeting  = "meeting"
 	// OverlayActionNone persists an empty shortcut strip. A missing
 	// overlay_actions key still means "use the shipped default".
@@ -22,6 +24,8 @@ var overlayActionOrder = []string{
 	OverlayActionCopy,
 	OverlayActionNote,
 	OverlayActionLanguage,
+	OverlayActionLive,
+	OverlayActionModel,
 	OverlayActionMeeting,
 }
 
@@ -32,7 +36,7 @@ func DefaultOverlayActions() []string {
 
 func knownOverlayAction(id string) bool {
 	switch id {
-	case OverlayActionMic, OverlayActionCopy, OverlayActionNote, OverlayActionLanguage, OverlayActionMeeting:
+	case OverlayActionMic, OverlayActionCopy, OverlayActionNote, OverlayActionLanguage, OverlayActionLive, OverlayActionModel, OverlayActionMeeting:
 		return true
 	default:
 		return false
@@ -162,4 +166,30 @@ func NextSpeechLanguage(current, main string) string {
 	default:
 		return stt.LanguageMulti
 	}
+}
+
+const (
+	DictateDeepgramProfileID   = "stt.deepgram.nova-3"
+	DictateAssemblyAIProfileID = "stt.assemblyai.universal"
+)
+
+// DictationModeIsLive reports whether processing streams while the user speaks.
+func DictationModeIsLive(mode string) bool {
+	return NormalizeDictationProcessingMode(mode, DictationProcessingModeAuto) != DictationProcessingModeFinalFull
+}
+
+// ToggleDictationProcessingMode flips live (auto) and full-capture.
+func ToggleDictationProcessingMode(mode string) string {
+	if DictationModeIsLive(mode) {
+		return DictationProcessingModeFinalFull
+	}
+	return DictationProcessingModeAuto
+}
+
+// NextDictateSTTProfile cycles Deepgram Nova-3 and AssemblyAI Universal 3.5.
+func NextDictateSTTProfile(current string) (primary, fallback string) {
+	if strings.HasPrefix(strings.ToLower(strings.TrimSpace(current)), "stt.assemblyai.") {
+		return DictateDeepgramProfileID, DictateAssemblyAIProfileID
+	}
+	return DictateAssemblyAIProfileID, DictateDeepgramProfileID
 }

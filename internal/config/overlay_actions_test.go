@@ -43,6 +43,29 @@ func TestNormalizeOverlayActionsLegacyDefaultKeepsMic(t *testing.T) {
 	}
 }
 
+func TestToggleDictationProcessingMode(t *testing.T) {
+	if got := ToggleDictationProcessingMode(DictationProcessingModeAuto); got != DictationProcessingModeFinalFull {
+		t.Fatalf("live → %q, want full", got)
+	}
+	if got := ToggleDictationProcessingMode(DictationProcessingModeFinalFull); got != DictationProcessingModeAuto {
+		t.Fatalf("full → %q, want live", got)
+	}
+	if !DictationModeIsLive(DictationProcessingModeProviderStream) {
+		t.Fatal("provider stream should count as live")
+	}
+}
+
+func TestNextDictateSTTProfileCyclesFlagshipEngines(t *testing.T) {
+	primary, fallback := NextDictateSTTProfile(DictateDeepgramProfileID)
+	if primary != DictateAssemblyAIProfileID || fallback != DictateDeepgramProfileID {
+		t.Fatalf("deepgram → %q / %q", primary, fallback)
+	}
+	primary, fallback = NextDictateSTTProfile(DictateAssemblyAIProfileID)
+	if primary != DictateDeepgramProfileID || fallback != DictateAssemblyAIProfileID {
+		t.Fatalf("assemblyai → %q / %q", primary, fallback)
+	}
+}
+
 func TestPersistOverlayActionsWritesNone(t *testing.T) {
 	got := PersistOverlayActions([]string{OverlayActionNone})
 	if len(got) != 1 || got[0] != OverlayActionNone {
