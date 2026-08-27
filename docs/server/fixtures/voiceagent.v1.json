@@ -1,0 +1,126 @@
+{
+  "contract": "speechkit.voiceagent.v1",
+  "description": "Golden example frames for the realtime Voice Agent WebSocket (GET /v1/voiceagent/sessions/{id}/ws). Producer drift-check: internal/server/voiceagent/protocol_fixture_test.go marshals the Go protocol structs and asserts equality with these frames. Consumers (the TypeScript voiceagent-client and the Android/KMP client) replay the same frames against their codecs. Audio is binary in both directions and is not part of this fixture.",
+  "frames": {
+    "start": {
+      "type": "start",
+      "persona_id": "brainstorm",
+      "sequence_id": "seq-1",
+      "provider": "deepgram",
+      "media_transport": "websocket",
+      "locale": "de-DE",
+      "thinking": "low"
+    },
+    "start_full": {
+      "type": "start",
+      "persona_id": "brainstorm",
+      "role_id": "moderator",
+      "sequence_id": "seq-1",
+      "provider": "gemini",
+      "media_transport": "livekit",
+      "voice": "Aoede",
+      "locale": "de-DE",
+      "model": "gemini-2.5-flash-native-audio",
+      "thinking": "low",
+      "activity_detection": {
+        "automatic": true,
+        "start_sensitivity": "high",
+        "end_sensitivity": "low",
+        "prefix_padding_ms": 120,
+        "silence_duration_ms": 600,
+        "activity_handling": "start_of_activity_interrupts",
+        "turn_coverage": "turn_includes_only_activity"
+      },
+      "speaker": {
+        "enabled": true,
+        "diarization": true,
+        "providerProfileId": "speaker.deepgram.nova-3",
+        "speakersExpected": 2
+      },
+      "system_prompt_override": "Antworte knapp und auf Deutsch."
+    },
+    "text": {
+      "type": "text",
+      "text": "Wie ist das Wetter in Berlin?"
+    },
+    "tool_response": {
+      "type": "tool_response",
+      "id": "t1",
+      "name": "weather",
+      "response": { "city": "Berlin", "temperature_c": 21.5 }
+    },
+    "advance_step": {
+      "type": "advance_step",
+      "step_id": "step-2",
+      "reason": "user_done"
+    },
+    "audio_end": { "type": "audio_end" },
+    "ping": { "type": "ping" },
+    "stop": { "type": "stop" },
+    "cancel": { "type": "cancel" },
+    "state_session_ready": {
+      "type": "state",
+      "event_type": "session_ready",
+      "state": "listening",
+      "provider": "deepgram",
+      "media_transport": "websocket"
+    },
+    "state": { "type": "state", "state": "speaking" },
+    "input_transcript_partial": {
+      "type": "input_transcript",
+      "event_type": "input_partial",
+      "text": "wie ist das",
+      "done": false
+    },
+    "input_transcript_final": {
+      "type": "input_transcript",
+      "event_type": "input_final",
+      "text": "Wie ist das Wetter in Berlin?",
+      "done": true
+    },
+    "input_transcript_speaker": {
+      "type": "input_transcript",
+      "event_type": "input_final",
+      "text": "Wie ist das Wetter in Berlin?",
+      "done": true,
+      "speaker_label": "S1",
+      "person_id": "person-7",
+      "display_name": "Marcel",
+      "speaker_confidence": 0.87
+    },
+    "output_transcript": {
+      "type": "output_transcript",
+      "event_type": "output_text",
+      "text": "In Berlin sind es 21 Grad und sonnig.",
+      "done": true
+    },
+    "tool_call": {
+      "type": "tool_call",
+      "event_type": "tool_call",
+      "id": "t1",
+      "name": "weather",
+      "args": { "city": "Berlin" }
+    },
+    "sequence_step": {
+      "type": "sequence_step",
+      "sequence_id": "seq-1",
+      "step_id": "step-2",
+      "step_index": 2,
+      "status": "entered",
+      "reason": "advance_step"
+    },
+    "event": { "type": "event", "event_type": "turn_end" },
+    "interrupted": { "type": "interrupted", "event_type": "interrupted" },
+    "error": {
+      "type": "error",
+      "code": "provider_unavailable",
+      "message": "provider \"gemini\" is not configured on this server"
+    },
+    "session_end": {
+      "type": "session_end",
+      "event_type": "session_end",
+      "reason": "idle"
+    },
+    "pong": { "type": "pong" }
+  }
+}
