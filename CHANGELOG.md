@@ -19,6 +19,10 @@ IDs, source paths, and other maintainer-only vocabulary.
 * **desktop:** AssemblyAI LLM Gateway is a native SpeechKit LLM backend (same API key as STT). Qwen 3.5 4B Fast handles live turn cleanup; Qwen 3 32B handles summaries. Universal-3.5 Pro realtime can attach the gateway per turn. Settings has Connect kombify Cloud for the hosted origin.
 * **desktop:** Dictation Settings switches Deepgram Nova-3 and AssemblyAI Universal 3.5 in one control. AssemblyAI keeps its native LLM on. kombify Cloud also keeps a small Cloudflare AI Gateway model ready so summaries and Assist do not fail without a configured LLM.
 
+### Fixed
+
+* **desktop:** Full-capture Dictation uses the selected speech engine instead of always trying Deepgram first.
+
 ## [0.61.0](https://github.com/kombifyio/SpeechKit/compare/v0.60.0...v0.61.0) (2026-08-26)
 
 ### Highlights
