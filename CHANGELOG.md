@@ -11,6 +11,10 @@ IDs, source paths, and other maintainer-only vocabulary.
 
 ## Unreleased
 
+### Changed
+
+* **desktop:** Words and Replacements in Settings are searchable, paged, and deletable. Aliases live on the Word; several spoken forms may rewrite to the same term, and duplicate terms are merged on save.
+
 ## [0.61.0](https://github.com/kombifyio/SpeechKit/compare/v0.60.0...v0.61.0) (2026-08-26)
 
 ### Highlights

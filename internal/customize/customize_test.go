@@ -22,6 +22,15 @@ func TestBuildHintsFromWords(t *testing.T) {
 	}
 }
 
+func TestBuildKeytermsIncludesWordAliases(t *testing.T) {
+	got := BuildKeyterms([]speechcustomize.Word{
+		{Term: "Kombify", SoundsLike: []string{"kombi fire", "Kombify"}, Enabled: true},
+	})
+	if len(got) != 2 || got[0] != "Kombify" || got[1] != "kombi fire" {
+		t.Fatalf("BuildKeyterms aliases = %v", got)
+	}
+}
+
 func TestBuildProviderBiasRoutesNativeKeyterms(t *testing.T) {
 	bias := BuildProviderBias([]speechcustomize.Word{
 		{Term: "Kombify", Enabled: true},

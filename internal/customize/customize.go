@@ -224,10 +224,33 @@ func BuildPrompt(words []speechcustomize.Word) string {
 
 func BuildKeyterms(words []speechcustomize.Word) []string {
 	terms := CanonicalTerms(words)
-	if len(terms) == 0 {
+	seen := map[string]struct{}{}
+	out := make([]string, 0, len(terms))
+	for _, term := range terms {
+		key := strings.ToLower(term)
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		seen[key] = struct{}{}
+		out = append(out, term)
+	}
+	for _, word := range words {
+		if !word.Enabled {
+			continue
+		}
+		for _, alias := range speechcustomize.NormalizeAliasList(word.Term, word.SoundsLike) {
+			key := strings.ToLower(alias)
+			if _, ok := seen[key]; ok {
+				continue
+			}
+			seen[key] = struct{}{}
+			out = append(out, alias)
+		}
+	}
+	if len(out) == 0 {
 		return nil
 	}
-	return append([]string(nil), terms...)
+	return out
 }
 
 func BuildVoiceAgentHint(words []speechcustomize.Word) string {

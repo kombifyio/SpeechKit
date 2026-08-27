@@ -52,6 +52,7 @@ func (s *sqlStore) ReplaceWordsWithOptions(ctx context.Context, opts Customizati
 	}
 	defer stmt.Close() //nolint:errcheck // statement close during transaction cleanup is not actionable
 
+	words = speechcustomize.MergeWords(words)
 	for _, word := range words {
 		word.Language = normalizeDictionaryLanguage(firstNonEmpty(word.Language, language))
 		word.Source = normalizeCustomizationSource(firstNonEmpty(word.Source, source))
@@ -178,6 +179,7 @@ func (s *sqlStore) ReplaceReplacementsWithOptions(ctx context.Context, opts Cust
 	}
 	defer stmt.Close() //nolint:errcheck // statement close during transaction cleanup is not actionable
 
+	replacements = speechcustomize.MergeReplacements(replacements)
 	for _, replacement := range replacements {
 		replacement.Language = normalizeDictionaryLanguage(firstNonEmpty(replacement.Language, language))
 		replacement.Source = normalizeCustomizationSource(firstNonEmpty(replacement.Source, source))

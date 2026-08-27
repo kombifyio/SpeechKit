@@ -959,6 +959,64 @@ func TestCustomizationStoreReplaceWordsWithOptionsIsSourceAware(t *testing.T) {
 	}
 }
 
+func TestCustomizationStoreReplaceWordsMergesDuplicateTerms(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "test.db")
+	s, err := New(StoreConfig{Backend: "sqlite", SQLitePath: dbPath, MaxAudioStorageMB: 100})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	defer s.Close()
+
+	customizationStore := s.(CustomizationStore)
+	ctx := context.Background()
+	if err := customizationStore.ReplaceWords(ctx, "de", []speechcustomize.Word{
+		{ID: "legacy_dictionary_word_1", Term: "Kombify", Language: "de", SoundsLike: []string{"kombi fire"}, Source: "settings", Enabled: true},
+		{ID: "legacy_dictionary_word_2", Term: "kombify", Language: "de", SoundsLike: []string{"combi fy"}, Source: "settings", Enabled: true},
+	}); err != nil {
+		t.Fatalf("ReplaceWords: %v", err)
+	}
+	if err := customizationStore.ReplaceReplacements(ctx, "de", []speechcustomize.Replacement{
+		{
+			Kind:     speechcustomize.KindSynonym,
+			Language: "de",
+			Stage:    speechcustomize.StagePostSTT,
+			Match:    speechcustomize.Match{Type: speechcustomize.MatchSpokenAlias, Pattern: "kombi fire", WordBoundary: true},
+			Output:   speechcustomize.ReplacementOutput{Text: "Kombify"},
+			Enabled:  true,
+			Source:   "settings",
+		},
+		{
+			Kind:     speechcustomize.KindSynonym,
+			Language: "de",
+			Stage:    speechcustomize.StagePostSTT,
+			Match:    speechcustomize.Match{Type: speechcustomize.MatchSpokenAlias, Pattern: "combi fy", WordBoundary: true},
+			Output:   speechcustomize.ReplacementOutput{Text: "Kombify"},
+			Enabled:  true,
+			Source:   "settings",
+		},
+	}); err != nil {
+		t.Fatalf("ReplaceReplacements: %v", err)
+	}
+
+	words, err := customizationStore.ListWords(ctx, CustomizationListOpts{Language: "de", IncludeDisabled: true})
+	if err != nil {
+		t.Fatalf("ListWords: %v", err)
+	}
+	if len(words) != 1 || words[0].Term != "Kombify" {
+		t.Fatalf("merged words = %+v", words)
+	}
+	if len(words[0].SoundsLike) != 2 {
+		t.Fatalf("merged aliases = %+v", words[0].SoundsLike)
+	}
+	replacements, err := customizationStore.ListReplacements(ctx, CustomizationListOpts{Language: "de", IncludeDisabled: true})
+	if err != nil {
+		t.Fatalf("ListReplacements: %v", err)
+	}
+	if len(replacements) != 2 {
+		t.Fatalf("shared-output replacements = %+v", replacements)
+	}
+}
+
 func TestVoiceAgentSessionsSaveAndList(t *testing.T) {
 	s, err := NewSQLiteStore(StoreConfig{
 		SQLitePath: filepath.Join(t.TempDir(), "feedback.db"),

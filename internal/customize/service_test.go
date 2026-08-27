@@ -77,6 +77,37 @@ func TestServiceResolveScopePrecedence(t *testing.T) {
 	}
 }
 
+func TestServiceApplySeedsSynonymsFromWordAliases(t *testing.T) {
+	base := speechstorage.Scope{InstallID: speechstorage.LocalInstallID}
+	installScope, ok := StorageScopeForRef(base, speechcustomize.ScopeRef{Kind: speechcustomize.ScopeInstall})
+	if !ok {
+		t.Fatal("install scope unresolved")
+	}
+	store := fakeCustomizationStore{words: map[string][]speechcustomize.Word{
+		installScope.Key(): {
+			{
+				Term:       "Kombify",
+				Language:   "de",
+				SoundsLike: []string{"kombi fire", "combi fy"},
+				Enabled:    true,
+				Source:     "settings",
+			},
+		},
+	}}
+	service := NewService(ServiceOptions{Store: store, ScopeOrder: []speechcustomize.ScopeRef{{Kind: speechcustomize.ScopeInstall}}})
+	applied, err := service.Apply(speechstorage.WithScope(context.Background(), base), speechcustomize.Context{
+		Mode:     speechcustomize.ModeDictation,
+		Language: "de",
+		Stage:    speechcustomize.StagePostSTT,
+	}, "kombi fire and combi fy")
+	if err != nil {
+		t.Fatalf("Apply: %v", err)
+	}
+	if applied.Text != "Kombify and Kombify" {
+		t.Fatalf("text = %q, want Kombify and Kombify", applied.Text)
+	}
+}
+
 func TestServiceApplyRespectsModeFilter(t *testing.T) {
 	base := speechstorage.Scope{InstallID: speechstorage.LocalInstallID}
 	installScope, ok := StorageScopeForRef(base, speechcustomize.ScopeRef{Kind: speechcustomize.ScopeInstall})

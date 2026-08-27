@@ -179,6 +179,7 @@ func (s *Service) resolveUncached(ctx context.Context, request speechcustomize.C
 		}
 		return strings.ToLower(words[i].Term) < strings.ToLower(words[j].Term)
 	})
+	seedSynonymsFromWords(words, replacementsByKey)
 	replacements := values(replacementsByKey)
 	sort.SliceStable(replacements, func(i, j int) bool {
 		if replacements[i].Priority != replacements[j].Priority {
@@ -330,6 +331,24 @@ func serviceCacheKey(ctx context.Context, request speechcustomize.Context) strin
 	}
 	raw, _ := json.Marshal(payload)
 	return string(raw)
+}
+
+func seedSynonymsFromWords(words []speechcustomize.Word, replacementsByKey map[string]speechcustomize.Replacement) {
+	for _, word := range words {
+		if !word.Enabled {
+			continue
+		}
+		for _, alias := range speechcustomize.NormalizeAliasList(word.Term, word.SoundsLike) {
+			derived := speechcustomize.SynonymReplacement(word.Term, alias, word.Language, word.Source)
+			derived.Enabled = true
+			derived.Scope = word.Scope
+			key := replacementResolveKey(derived)
+			if _, exists := replacementsByKey[key]; exists {
+				continue
+			}
+			replacementsByKey[key] = derived
+		}
+	}
 }
 
 func wordResolveKey(word speechcustomize.Word) string {
