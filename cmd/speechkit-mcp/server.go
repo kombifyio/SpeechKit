@@ -56,6 +56,7 @@ func (a *speechkitMCP) addDocs(server *mcp.Server) {
 	mcp.AddTool(server, mcpTool("speechkit_api_overview", "List SpeechKit API endpoints grouped from OpenAPI.", true, false, true), a.apiOverview)
 	mcp.AddTool(server, mcpTool("speechkit_get_openapi_spec", "Return the SpeechKit OpenAPI YAML.", true, false, true), a.getOpenAPISpec)
 	mcp.AddTool(server, mcpTool("speechkit_get_asyncapi_spec", "Return the SpeechKit Voice Agent AsyncAPI YAML.", true, false, true), a.getAsyncAPISpec)
+	mcp.AddTool(server, mcpTool("speechkit_get_dictation_stream_asyncapi_spec", "Return the SpeechKit streaming dictation AsyncAPI YAML.", true, false, true), a.getDictationStreamAsyncAPISpec)
 	mcp.AddTool(server, mcpTool("speechkit_integration_example", "Return an integration snippet by language and mode.", true, false, true), a.integrationExample)
 	mcp.AddTool(server, mcpTool("speechkit_architecture_overview", "Summarize SpeechKit modes and API-first architecture.", true, false, true), a.architectureOverview)
 	mcp.AddTool(server, mcpTool("speechkit_install_plan", "Return a safe, read-only server install plan for agents.", true, false, true), a.installPlan)

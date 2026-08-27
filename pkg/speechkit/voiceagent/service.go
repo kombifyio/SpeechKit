@@ -10,7 +10,7 @@
 // top of this with
 // [github.com/kombifyio/SpeechKit/pkg/speechkit/agentkit].
 //
-// Construct an instance with [New], passing a provider and the strict-
+// Construct an instance with [NewService], passing a provider and the strict-
 // mode policy fields from the host config.
 package voiceagent
 

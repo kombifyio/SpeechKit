@@ -1,3 +1,7 @@
+// Package storage defines the public storage-backend contract: backend
+// capabilities and metadata, install/device/user/tenant scopes with their
+// enforcement policies, and the configuration shape hosts use to construct
+// a backend.
 package storage
 
 import "fmt"

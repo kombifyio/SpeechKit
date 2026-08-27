@@ -255,6 +255,10 @@ func (r *Runtime) Stop(ctx context.Context) error {
 	return r.hooks.Stop(ctx)
 }
 
+// Events returns the runtime's event channel. The channel is buffered with
+// 64 slots; [Runtime.Publish] never blocks and drops events once the buffer
+// is full, so consumers must drain the channel promptly to avoid losing
+// events.
 func (r *Runtime) Events() <-chan Event {
 	return r.events
 }
@@ -285,6 +289,12 @@ func (r *Runtime) UpdateState(update func(*Snapshot)) Snapshot {
 	return r.snapshot.Clone()
 }
 
+// Publish delivers event to the channel returned by [Runtime.Events]. It
+// never blocks: the event channel is buffered with 64 slots, and when the
+// buffer is full (or the runtime is closed, or event.Type is empty) the
+// event is silently dropped. The bool return reports whether the event was
+// actually delivered to the buffer. Slow consumers must drain the events
+// channel promptly, or events will be lost.
 func (r *Runtime) Publish(event Event) bool {
 	if event.Type == "" {
 		return false

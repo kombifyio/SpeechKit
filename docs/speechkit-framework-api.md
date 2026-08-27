@@ -1,6 +1,6 @@
 # SpeechKit Framework API
 
-SpeechKit v0.48 exposes the three product modes as a reusable framework boundary. Host applications can embed `pkg/speechkit` directly, run real providers in-process, call the self-host server, or control the Windows desktop host through the local `/api/v1` control plane. Long dictation and meeting capture build on the same boundary with segmented STT, provider-safe processing defaults, and system-audio meeting transcripts.
+SpeechKit exposes the three product modes as a reusable framework boundary. Host applications can embed `pkg/speechkit` directly, run real providers in-process, call the self-host server, or control the Windows desktop host through the local `/api/v1` control plane. Long dictation and meeting capture build on the same boundary with segmented STT, provider-safe processing defaults, and system-audio meeting transcripts.
 
 ## Mode Contracts
 

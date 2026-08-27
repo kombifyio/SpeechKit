@@ -6,7 +6,7 @@
 // (Dictation < Assist < Voice Agent) and the right surface when the user
 // wants an answer back, not a transcript and not a dialogue.
 //
-// Construct an instance with [New], passing a generator (LLM) and/or a
+// Construct an instance with [NewService], passing a generator (LLM) and/or a
 // tool executor plus the strict-mode policy fields from the host config.
 package assist
 

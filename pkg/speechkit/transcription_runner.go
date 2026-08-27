@@ -16,8 +16,9 @@ type Transcriber interface {
 
 // WordConfidence is a recognized word with the provider's per-word acoustic
 // confidence in [0,1]. It mirrors stt.WordConfidence (the kernel keeps Transcript
-// decoupled from the stt package; the device adapter maps between them). nil
-// when the provider does not expose word-level confidence.
+// decoupled from the stt package; stt.AsTranscriber is the public bridge that
+// maps between them). nil when the provider does not expose word-level
+// confidence.
 type WordConfidence struct {
 	Text       string
 	Confidence float64

@@ -1,3 +1,6 @@
+// Package audio provides the shared PCM audio primitives for the SpeechKit
+// capture format: 16kHz S16 mono constants, WAV framing, duration math, and
+// RMS level estimation.
 package audio
 
 import (

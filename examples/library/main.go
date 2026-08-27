@@ -15,23 +15,30 @@ import (
 
 	"github.com/kombifyio/SpeechKit/pkg/speechkit"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/dictation"
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/stt"
 )
 
-// --- Step 1: Implement the Transcriber interface ---
-// This is where you plug in your STT engine (Whisper, Google, etc.)
+// --- Step 1: Pick an STT provider ---
+// Any stt.STTProvider (the framework ships whisper.cpp, OpenAI, Groq,
+// Deepgram, Google, and more) plugs into the runtime via stt.AsTranscriber —
+// no hand-written adapter needed. This example uses a tiny fake provider so
+// it runs without credentials; swap it for a real one, e.g.
+// stt.NewOpenAICompatibleProvider(...).
 
-type exampleTranscriber struct{}
+type exampleProvider struct{}
 
-func (t *exampleTranscriber) Transcribe(ctx context.Context, audio []byte, durationSecs float64, language string) (speechkit.Transcript, error) {
-	// Replace this with a real STT provider call or a host-side adapter.
-	return speechkit.Transcript{
+func (p *exampleProvider) Transcribe(ctx context.Context, audio []byte, opts stt.TranscribeOpts) (*stt.Result, error) {
+	return &stt.Result{
 		Text:     "[transcribed text would appear here]",
-		Language: language,
-		Duration: time.Duration(durationSecs * float64(time.Second)),
+		Language: opts.Language,
 		Provider: "example",
 		Model:    "example-v1",
 	}, nil
 }
+
+func (p *exampleProvider) Name() string { return "example" }
+
+func (p *exampleProvider) Health(ctx context.Context) error { return nil }
 
 // --- Step 2: Implement the AudioRecorder interface ---
 // Captures audio from the microphone or another source.
@@ -99,7 +106,9 @@ func main() {
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer cancel()
 
-	transcriber := &exampleTranscriber{}
+	// stt.AsTranscriber bridges any STT provider to the runtime's
+	// speechkit.Transcriber interface.
+	transcriber := stt.AsTranscriber(&exampleProvider{})
 	recorder := &exampleRecorder{}
 	observer := &exampleObserver{}
 	output := &exampleOutput{}

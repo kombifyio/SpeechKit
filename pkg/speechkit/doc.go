@@ -4,11 +4,16 @@
 //
 // # Surface
 //
-// The kernel exposes three strict modes:
+// The kernel exposes three strict interaction modes:
 //
 //   - Dictation — speech to text only, no AI rewriting.
 //   - Assist — speech (or text) to a one-shot result, with optional TTS.
 //   - Voice Agent — realtime audio-to-audio dialogue.
+//
+// The [Mode] enum carries two further constants that are capability
+// surfaces, not interaction modes: [ModeTTS] exposes Text-to-Speech as a
+// model-selection axis (its [IntelligenceVoiceOutput] contract is strictly
+// text in, audio out), and [ModeNone] means no mode is selected.
 //
 // Each mode is constructed via a small subpackage so host apps depend only
 // on what they use:

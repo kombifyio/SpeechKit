@@ -6,6 +6,13 @@ import "github.com/kombifyio/SpeechKit/pkg/speechkit/speaker"
 
 // Wire protocol constants and shapes for the Voice Agent WebSocket.
 //
+// These structs are the producer of truth for the Voice Agent wire contract.
+// docs/server/fixtures/voiceagent.v1.json is the interchange artifact all
+// consumers verify against (pinned here by protocol_fixture_test.go, replayed
+// by the TypeScript voiceagent-client and the Android net module);
+// docs/server/asyncapi.v1.yaml documents the channel. Adding a message type
+// without extending the fixture fails the fixture completeness test.
+//
 // Control frames are JSON text messages with a required "type" field.
 // Audio frames are binary messages containing raw PCM 16kHz S16 mono
 // (client → server) or 24kHz S16 mono (server → client, Gemini Live native

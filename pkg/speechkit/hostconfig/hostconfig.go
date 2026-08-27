@@ -11,10 +11,20 @@
 //
 //	settings, policy, err := hostconfig.Load("config.toml")
 //
+// Hosts that load or synthesise configuration themselves construct a public
+// [Config] (directly, or from raw TOML via [Parse]) and hand it to
+// [ModeSettingsFrom] and [PolicyFrom].
+//
 // The conversion is intentionally kernel-clean. It maps the embedder-relevant
 // fields only; the reference desktop app additionally introspects the host
 // secret store to report whether a server bearer token env var is set, which is
 // a device-UI concern and is deliberately left out here.
+//
+// Boundary note: this package is an adapter over the reference app's internal
+// config loader so that [Load] applies exactly the defaults, legacy-field
+// backfills, and normalisations the desktop app applies — one loader, no
+// drifting reimplementation. Every exported signature uses public types only;
+// the internal imports never leak into the API surface.
 package hostconfig
 
 import (
@@ -39,13 +49,17 @@ func Load(path string) (speechkit.ModeSettings, speechkit.RuntimePolicy, error) 
 	if err != nil {
 		return speechkit.ModeSettings{}, speechkit.RuntimePolicy{}, err
 	}
-	return ModeSettingsFrom(cfg), PolicyFrom(cfg), nil
+	public := fromInternal(cfg)
+	return ModeSettingsFrom(public), PolicyFrom(public), nil
 }
 
-// ModeSettingsFrom converts an already-parsed *config.Config into the public
-// ModeSettings shape. Hosts that load config themselves can call this directly.
-// A nil cfg yields the zero ModeSettings.
-func ModeSettingsFrom(cfg *config.Config) speechkit.ModeSettings {
+// ModeSettingsFrom converts a [Config] into the public ModeSettings shape,
+// applying the embedder-relevant normalisation: profile IDs are canonicalised,
+// an empty primary selection falls back to the built-in default profile for
+// that mode, a fallback identical to its primary is dropped, and mode source
+// and auth mode normalise their documented defaults. A nil cfg yields the
+// zero ModeSettings.
+func ModeSettingsFrom(cfg *Config) speechkit.ModeSettings {
 	if cfg == nil {
 		return speechkit.ModeSettings{}
 	}
@@ -98,24 +112,27 @@ func ModeSettingsFrom(cfg *config.Config) speechkit.ModeSettings {
 			},
 			SessionSummary:   cfg.VoiceAgent.EnableSessionSummary,
 			PipelineFallback: cfg.VoiceAgent.PipelineFallback,
-			CloseBehavior:    cfg.VoiceAgent.CloseBehavior,
-			AgentProfileID:   voiceagentprofile.NormalizeID(cfg.VoiceAgent.AgentProfileID),
-			AgentSequenceID:  strings.TrimSpace(cfg.VoiceAgent.AgentSequenceID),
+			CloseBehavior: config.NormalizeVoiceAgentCloseBehavior(
+				cfg.VoiceAgent.CloseBehavior,
+				config.VoiceAgentCloseBehaviorContinue,
+			),
+			AgentProfileID:  voiceagentprofile.NormalizeID(cfg.VoiceAgent.AgentProfileID),
+			AgentSequenceID: strings.TrimSpace(cfg.VoiceAgent.AgentSequenceID),
 		},
 		ServerConnection: serverConnectionFrom(cfg.ServerConnection),
 	}
 }
 
-// PolicyFrom derives a permissive RuntimePolicy from config: it enables the
-// modes turned on in [general] and allows fallbacks only if any mode pins a
-// fallback profile. AllowedProfiles and FixedProfiles are left empty (meaning
-// "all"), so a host can lock the policy down further. A nil cfg yields the zero
-// RuntimePolicy.
+// PolicyFrom derives a permissive RuntimePolicy from a [Config]: it enables
+// the modes turned on in [general] and allows fallbacks only if any mode pins
+// a fallback profile. AllowedProfiles and FixedProfiles are left empty
+// (meaning "all"), so a host can lock the policy down further. A nil cfg
+// yields the zero RuntimePolicy.
 //
 // Note: if config enables no modes at all, EnabledModes is empty, which
 // SpeechKit treats as "all modes enabled". Set an explicit policy if you need a
 // hard mode lockout.
-func PolicyFrom(cfg *config.Config) speechkit.RuntimePolicy {
+func PolicyFrom(cfg *Config) speechkit.RuntimePolicy {
 	if cfg == nil {
 		return speechkit.RuntimePolicy{}
 	}
@@ -141,10 +158,64 @@ func PolicyFrom(cfg *config.Config) speechkit.RuntimePolicy {
 	}
 }
 
+// fromInternal copies the embedder-relevant fields of the reference app's
+// parsed config into the public shape. It is the only place the internal
+// config type is read, so the mapping stays in one file.
+func fromInternal(cfg *config.Config) *Config {
+	if cfg == nil {
+		return nil
+	}
+	return &Config{
+		General: General{
+			DictateEnabled:           cfg.General.DictateEnabled,
+			AssistEnabled:            cfg.General.AssistEnabled,
+			VoiceAgentEnabled:        cfg.General.VoiceAgentEnabled,
+			DictateHotkey:            cfg.General.DictateHotkey,
+			AssistHotkey:             cfg.General.AssistHotkey,
+			VoiceAgentHotkey:         cfg.General.VoiceAgentHotkey,
+			DictateHotkeyBehavior:    cfg.General.DictateHotkeyBehavior,
+			AssistHotkeyBehavior:     cfg.General.AssistHotkeyBehavior,
+			VoiceAgentHotkeyBehavior: cfg.General.VoiceAgentHotkeyBehavior,
+		},
+		ModelSelection: ModelSelection{
+			Dictate:    modeSelectionFrom(cfg.ModelSelection.Dictate),
+			Assist:     modeSelectionFrom(cfg.ModelSelection.Assist),
+			VoiceAgent: modeSelectionFrom(cfg.ModelSelection.VoiceAgent),
+		},
+		Vocabulary: Vocabulary{Dictionary: cfg.Vocabulary.Dictionary},
+		TTS:        TTS{Enabled: cfg.TTS.Enabled},
+		VoiceAgent: VoiceAgent{
+			EnableSessionSummary: cfg.VoiceAgent.EnableSessionSummary,
+			PipelineFallback:     cfg.VoiceAgent.PipelineFallback,
+			CloseBehavior:        cfg.VoiceAgent.CloseBehavior,
+			AgentProfileID:       cfg.VoiceAgent.AgentProfileID,
+			AgentSequenceID:      cfg.VoiceAgent.AgentSequenceID,
+		},
+		ServerConnection: ServerConnection{
+			Enabled:              cfg.ServerConnection.Enabled,
+			URL:                  cfg.ServerConnection.URL,
+			BearerTokenEnv:       cfg.ServerConnection.BearerTokenEnv,
+			AuthMode:             cfg.ServerConnection.AuthMode,
+			BetaInstallIDEnv:     cfg.ServerConnection.BetaInstallIDEnv,
+			BetaInstallSecretEnv: cfg.ServerConnection.BetaInstallSecretEnv,
+			FallbackToLocal:      cfg.ServerConnection.FallbackToLocal,
+			RequestTimeoutSec:    cfg.ServerConnection.RequestTimeoutSec,
+		},
+	}
+}
+
+func modeSelectionFrom(sel config.ModeModelSelection) ModeSelection {
+	return ModeSelection{
+		PrimaryProfileID:  sel.PrimaryProfileID,
+		FallbackProfileID: sel.FallbackProfileID,
+		ModeSource:        sel.ModeSource,
+	}
+}
+
 // normalizeSelection trims and canonicalises both profile IDs and drops the
 // fallback when it is identical to the primary. It mirrors the device app's
 // profiles.NormalizeModeSelection without pulling in the desktop adapter.
-func normalizeSelection(sel config.ModeModelSelection) config.ModeModelSelection {
+func normalizeSelection(sel ModeSelection) ModeSelection {
 	sel.PrimaryProfileID = speechkit.NormalizeProviderProfileID(sel.PrimaryProfileID)
 	sel.FallbackProfileID = speechkit.NormalizeProviderProfileID(sel.FallbackProfileID)
 	if sel.PrimaryProfileID != "" && sel.PrimaryProfileID == sel.FallbackProfileID {
@@ -153,11 +224,11 @@ func normalizeSelection(sel config.ModeModelSelection) config.ModeModelSelection
 	return sel
 }
 
-// serverConnectionFrom maps the [server_connection] config into the public
+// serverConnectionFrom maps the [server_connection] table into the public
 // surface. The bearer token value is never read from config — only the env var
 // name is carried — and the device-only "is the token env var set" booleans and
 // per-target token introspection are intentionally omitted.
-func serverConnectionFrom(cfg config.ServerConnectionConfig) speechkit.ServerConnectionSetting {
+func serverConnectionFrom(cfg ServerConnection) speechkit.ServerConnectionSetting {
 	return speechkit.ServerConnectionSetting{
 		Enabled:              cfg.Enabled,
 		URL:                  cfg.URL,
@@ -168,4 +239,8 @@ func serverConnectionFrom(cfg config.ServerConnectionConfig) speechkit.ServerCon
 		FallbackToLocal:      cfg.FallbackToLocal,
 		RequestTimeoutSec:    cfg.RequestTimeoutSec,
 	}
+}
+
+func normalizeLower(value string) string {
+	return strings.ToLower(strings.TrimSpace(value))
 }

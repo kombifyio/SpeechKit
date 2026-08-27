@@ -4,7 +4,8 @@ Decision date: 2026-05-26. This document records the v0.40 SDK-surface
 boundary so embedders can consume SpeechKit without importing desktop or
 server internals.
 
-Last updated: 2026-06-02 for the provider-neutral Speaker Layer surface.
+Last updated: 2026-08-27 with the full `go list ./pkg/speechkit/...` package
+inventory.
 
 ## Purpose
 
@@ -22,16 +23,47 @@ packages and leave Go `internal` packages to this repository's own binaries.
 
 ## Public Packages
 
+The surface is discovered dynamically with `go list ./pkg/speechkit/...`; this
+table mirrors that inventory.
+
 | Package | Public responsibility |
 |---------|-----------------------|
 | `pkg/speechkit` | Runtime, mode contracts, event bus, provider catalog, readiness, and top-level service contracts. |
+| `pkg/speechkit/agentbridge` | Framework-neutral seam for driving an external coding agent (prompt in, normalized events out). |
+| `pkg/speechkit/agentbridge/codex` | Drives the official OpenAI Codex binary as an agentbridge agent. |
+| `pkg/speechkit/agentbridge/voicetools` | Binds an `agentbridge.Agent` to the Voice Agent's tool surface. |
+| `pkg/speechkit/agentkit` | Go harness for building Voice Agent hosts: tool registry, session memory, lifecycle hooks. |
 | `pkg/speechkit/assist` | Embeddable Assist service with generator, tools, multi-turn session context, codeword routing, and optional TTS routing. |
 | `pkg/speechkit/assist/genkitadapter` | Optional adapter from Genkit-style generators to the public Assist generator contract. |
+| `pkg/speechkit/assist/skills` | Voice-Companion skill catalog (Time, and friends) for Assist hosts. |
+| `pkg/speechkit/assist/toolbridge` | Adapts Assist-mode tools to other tool-calling surfaces. |
+| `pkg/speechkit/audio` | Shared PCM audio primitives: 16kHz S16 mono constants, WAV framing, duration and level math. |
+| `pkg/speechkit/client` | Typed HTTP client for talking to a remote SpeechKit Server. |
+| `pkg/speechkit/companion` | `NewHandsFree(...)` composer for hands-free target routing across Assist, Voice Agent, and UI-assisted Dictation using wake detections, host transcript requests, optional TTS, and EventBus lifecycle. |
+| `pkg/speechkit/customize` | Public Words/Replacements customization contract. |
+| `pkg/speechkit/deviceagent` | Credential-minimal LAN-side SpeechKit device agent. |
+| `pkg/speechkit/dictation` | Embeddable strict Dictation runtime. |
+| `pkg/speechkit/hostconfig` | Turns a SpeechKit TOML configuration file into the public SDK configuration types. |
+| `pkg/speechkit/internal/speakercontract` | Internal test-only speaker conformance helpers; not importable by embedders. |
+| `pkg/speechkit/lifecycle` | Mode start/stop orchestration and refcounted shared resources. |
+| `pkg/speechkit/localization` | Resolves stable SpeechKit message IDs against BCP-47 locales. |
+| `pkg/speechkit/netsec` | Centralized network security primitives shared by public surfaces. |
+| `pkg/speechkit/procguard` | Ties long-lived child processes to the lifetime of the host process. |
+| `pkg/speechkit/provideropts` | Provider-neutral voice option manifest (per-provider native options). |
+| `pkg/speechkit/speaker` | Provider-neutral speaker options, diarization results, speaker words/segments, provider profiles, streaming audio format, and `SpeakerFrame` contracts. |
+| `pkg/speechkit/storage` | Storage-backend contract: capabilities, install/device/user/tenant scopes, and backend configuration. |
+| `pkg/speechkit/stt` | Speech-to-text provider interface and public STT adapters. |
+| `pkg/speechkit/stt/sttcontract` | Reusable conformance suite for STT provider implementations. |
+| `pkg/speechkit/tts` | Provider, ProviderKind, Router, Service, fallback strategy, synthesis options, and result contract. |
+| `pkg/speechkit/tts/ttscontract` | Reusable conformance suite for TTS provider implementations. |
+| `pkg/speechkit/ttsroute` | Single source of truth mapping a Voice-Output selection to a TTS route. |
+| `pkg/speechkit/voiceagent` | Embeddable Voice Agent service (realtime audio-to-audio mode). |
+| `pkg/speechkit/voiceagent/cascaded` | Turn-based STT -> LLM -> TTS voice-agent pipeline fallback. |
+| `pkg/speechkit/voiceagent/live` | Low-level Voice Agent realtime-protocol types and `LiveProvider` implementations. |
+| `pkg/speechkit/voiceagent/live/livecontract` | Reusable conformance checks for `LiveProvider` implementations. |
+| `pkg/speechkit/voiceagent/local` | `voiceagent.Provider` on top of an in-process local pipeline. |
 | `pkg/speechkit/wakeword` | Wake-word phrase catalog, detection events, dispatcher, detector contracts, and AutoEndPolicy. |
 | `pkg/speechkit/wakeword/sherpa` | Sherpa-onnx adapter behind the public wake-word detector contracts, with cgo/no-cgo build behavior. |
-| `pkg/speechkit/tts` | Provider, ProviderKind, Router, Service, fallback strategy, synthesis options, and result contract. |
-| `pkg/speechkit/companion` | `NewHandsFree(...)` composer for hands-free target routing across Assist, Voice Agent, and UI-assisted Dictation using wake detections, host transcript requests, optional TTS, and EventBus lifecycle. |
-| `pkg/speechkit/speaker` | Provider-neutral speaker options, diarization results, speaker words/segments, provider profiles, streaming audio format, and `SpeakerFrame` contracts. |
 
 ## Boundary Rules
 

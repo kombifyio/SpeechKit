@@ -1,10 +1,12 @@
-# SpeechKit v0.48
+# SpeechKit
 
 > Agent entrypoint for SpeechKit Server, Framework API, and MCP integration.
 
 SpeechKit is a Windows-first voice framework with three strict modes:
-Dictation, Assist, and Voice Agent. The v0.48 line adds long-form dictation and
-meeting capture on top of the provider-professionalized Go framework:
+Dictation, Assist, and Voice Agent. (The current release number lives in
+`.kombify/VERSION` and `CHANGELOG.md`.) The v0.48 line added long-form
+dictation and meeting capture on top of the provider-professionalized Go
+framework:
 in-process STT, TTS, Assist, and native Voice Agent packages can run without a
 SpeechKit Server when the host wants local framework integration. Long
 dictation can use stable segmented processing while provider-native streaming

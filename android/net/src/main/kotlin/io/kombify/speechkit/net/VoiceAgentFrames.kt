@@ -1,10 +1,11 @@
 // Wire protocol for the realtime Voice Agent WebSocket
 // (GET /v1/voiceagent/sessions/{id}/ws).
 //
-// Kotlin mirror of the contract published in docs/server/asyncapi.v1.yaml and
-// of the TypeScript SSOT in clients/typescript/packages/voiceagent-client/
-// src/protocol.ts. Field names and semantics are pinned by
-// VoiceAgentFrameCodecTest (consumer drift-check).
+// Kotlin mirror of the Voice Agent wire contract. Source of truth: the Go
+// structs in internal/server/voiceagent/protocol.go (the producer).
+// docs/server/fixtures/voiceagent.v1.json is the interchange artifact all
+// consumers verify against — VoiceAgentFrameCodecTest replays it here
+// (consumer drift-check); docs/server/asyncapi.v1.yaml documents the channel.
 //
 // Control frames are JSON text messages with a required "type" field. Audio
 // is binary in BOTH directions on this surface — unlike the dictation stream,

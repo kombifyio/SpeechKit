@@ -9,8 +9,13 @@ not the entire desktop application.
 - `embed-companion/`: composes wake detections, explicit Hands-Free target routing, Assist requests, optional TTS, and runtime events through the public SDK surface.
 - `embed-tts/`: demonstrates `pkg/speechkit/tts` Provider, Router, Service, and provider-kind routing.
 - `embed-event-bus/`: publishes and consumes the additive wake, skill, companion, Voice-Agent, and TTS events.
+- `assist/in-process/`: fully in-process Assist — wires a real Gemini Generator into `pkg/speechkit/assist.Service` with optional OpenAI TTS output, no SpeechKit server.
 - `voice-agent/game-instructor/`: end-to-end 15-minute Voice Agent embedded in a Go program (persona/role/sequence TOML + WebSocket client). Reference for the single-prompt "build a voice agent into my app" use case.
+- `voice-agent/in-process/`: fully in-process Voice Agent — constructs a `live.LiveProvider` (Gemini Live) and drives a text dialogue with no SpeechKit server in the path.
 - `voice-agent/provider-switching/`: credential-free provider/profile/model selection using the public `pkg/speechkit/voiceagent/live` descriptors, `ProviderIntent`, and config helpers.
+- `agentbridge-codex/`: External Coding Agent Bridge in exec mode — one prompt in, normalized events out, against the real codex CLI or the fakecodex fixture.
+- `kombify-box-satellite/`: Go host for the kombify box following the SpeechKit Hands-Free contract (USB mic -> sherpa-KWS wakeword -> optional Hands-Free/Assist flow -> box speaker).
+- `box-evidence-harness/`: headless fake box driving the exact Voice-Agent WebSocket path the kombify-Box firmware uses, reporting the runtime facts the firmware hardcodes against.
 
 ## Agent prompts
 

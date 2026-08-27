@@ -200,6 +200,10 @@ func (a *speechkitMCP) getAsyncAPISpec(ctx context.Context, req *mcp.CallToolReq
 	return mcputil.TextResult(asyncAPISpec()), nil, nil
 }
 
+func (a *speechkitMCP) getDictationStreamAsyncAPISpec(ctx context.Context, req *mcp.CallToolRequest, _ struct{}) (*mcp.CallToolResult, any, error) {
+	return mcputil.TextResult(dictationStreamAsyncAPISpec()), nil, nil
+}
+
 func (a *speechkitMCP) integrationExample(ctx context.Context, req *mcp.CallToolRequest, in integrationInput) (*mcp.CallToolResult, any, error) {
 	language := strings.ToLower(strings.TrimSpace(in.Language))
 	mode := strings.ToLower(strings.TrimSpace(in.Mode))

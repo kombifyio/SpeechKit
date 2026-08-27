@@ -48,6 +48,14 @@ func asyncAPISpec() string {
 	return string(raw)
 }
 
+func dictationStreamAsyncAPISpec() string {
+	raw, err := speechkitdocs.FS.ReadFile("server/asyncapi.dictation-stream.v1.yaml")
+	if err != nil {
+		panic("embedded SpeechKit dictation-stream AsyncAPI spec unavailable: " + err.Error())
+	}
+	return string(raw)
+}
+
 func loadOpenAPIDocument(ctx context.Context) (*openapi3.T, error) {
 	loader := openapi3.NewLoader()
 	doc, err := loader.LoadFromData([]byte(openAPISpec()))
@@ -135,8 +143,11 @@ func mimeTypeForResource(uri string) string {
 
 func resourcePriority(uri string) float64 {
 	switch uri {
-	case "docs/server/openapi.v1.yaml", "docs/server/asyncapi.v1.yaml":
+	case "docs/server/openapi.v1.yaml", "docs/server/asyncapi.v1.yaml",
+		"docs/server/asyncapi.dictation-stream.v1.yaml":
 		return 1.0
+	case "docs/server/fixtures/dictation-stream.v1.json", "docs/server/fixtures/voiceagent.v1.json":
+		return 0.95
 	case "docs/agent/schemas/speechkit-one-shot-manifest.schema.json", "docs/agent/schemas/speechkit-one-shot-functional-result.schema.json":
 		return 0.95
 	case "docs/architecture/sdk-surface-boundary.md", "docs/speechkit-framework-api.md", "docs/mcp/README.md":
