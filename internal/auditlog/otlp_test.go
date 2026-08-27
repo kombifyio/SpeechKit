@@ -70,18 +70,6 @@ func TestConfigureOTLPBadCertFileReturnsError(t *testing.T) {
 	}
 }
 
-func TestConfigureOTLPBadCAFileReturnsError(t *testing.T) {
-	// Provide a valid cert/key pair by generating them inline is complex;
-	// test the CA-file path independently with a missing file.
-	// We can't easily test this without a real cert, so we verify via a missing
-	// CA file. A bad CA path should return an error.
-	// This requires a cert+key pair that can be loaded, which we skip here
-	// (no easy way to generate in-process without crypto/elliptic boilerplate).
-	// The missing-cert case above covers the load path; the CA path is covered
-	// by unit-level integration test (manual QA step documented in commit).
-	t.Skip("full mTLS path requires PEM fixtures; covered by manual QA / future integration test")
-}
-
 func TestAnyToOTELValue(t *testing.T) {
 	cases := []struct {
 		input any
