@@ -30,6 +30,10 @@ const (
 	DictationProcessingModeProviderStream = "provider_stream"
 	DictationProcessingModeAuto           = "auto"
 
+	DictationLiveCommitImmediate = "immediate"
+	DictationLiveCommitPhrase    = "phrase"
+	DictationLiveCommitPassage   = "passage"
+
 	AudioInputSourceMicrophone     = "microphone"
 	AudioInputSourceSystemLoopback = "system_loopback"
 	AudioInputSourceMicAndSystem   = "mic_and_system"

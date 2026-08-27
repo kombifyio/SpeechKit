@@ -24,6 +24,11 @@ const (
 	assemblyAIFlagshipModel    = "universal-3-5-pro"
 	assemblyAIStreamingModel   = assemblyAIFlagshipModel
 	assemblyAIMaxResponseBytes = 16 << 20
+	// Patient dictation turn detection (AssemblyAI "entity dictation /
+	// complex instructions"): tolerate mid-sentence pauses instead of
+	// splitting a thought after a breath.
+	assemblyAIDictationMinTurnSilenceMs = 200
+	assemblyAIDictationMaxTurnSilenceMs = 2000
 )
 
 type AssemblyAIProvider struct {

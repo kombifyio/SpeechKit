@@ -25,6 +25,7 @@ fast_mode_silence_ms = 1500
 dictate_silence_timeout_sec = 3  # Seconds of silence before toggle dictation auto-stops. 0 disables.
 dictation_intermediate_segment_ms = 6000 # Minimum utterance duration before segment_batch emits a pause-bounded live segment.
 dictation_processing_mode = "auto" # auto | final_full | segment_batch | provider_stream. auto = provider-native live streaming when the selected STT profile supports it (lowest latency), else final_full.
+dictation_live_commit = "passage" # immediate | phrase | passage. Live field inject: passage waits ~2 sentences (or a pause) so Deepgram/AssemblyAI can clean a chunk first. Overlay drafts stay word-level.
 model_download_dir = ""            # Blank = %LOCALAPPDATA%/SpeechKit/models. Set a dedicated folder for local model downloads.
 
 [audio]

@@ -34,6 +34,7 @@ func defaults() *Config {
 			DictateSilenceTimeoutSec:       DefaultDictateSilenceTimeoutSec,
 			DictationIntermediateSegmentMs: DefaultDictationIntermediateSegmentMs,
 			DictationProcessingMode:        DictationProcessingModeAuto,
+			DictationLiveCommit:            DictationLiveCommitPassage,
 		},
 		Audio: AudioConfig{
 			Backend:     "windows-wasapi-malgo",

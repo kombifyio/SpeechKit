@@ -195,6 +195,10 @@ func NormalizeCaptureConfig(cfg *Config) {
 		cfg.General.DictationProcessingMode,
 		DictationProcessingModeAuto,
 	)
+	cfg.General.DictationLiveCommit = NormalizeDictationLiveCommit(
+		cfg.General.DictationLiveCommit,
+		DictationLiveCommitPassage,
+	)
 	cfg.Audio.InputSource = NormalizeAudioInputSource(
 		cfg.Audio.InputSource,
 		AudioInputSourceMicrophone,

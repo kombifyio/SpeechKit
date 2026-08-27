@@ -152,6 +152,10 @@ type RecordingStartOptions struct {
 	// DictationStreamOptions are passed to the native provider stream. SessionID
 	// and Language are filled from the active recording when left empty.
 	DictationStreamOptions DictationStreamOptions
+	// LiveCommitMode groups provider-finals before field injection.
+	// Empty keeps immediate commit (tests and hosts that do not opt in).
+	// Desktop dictation defaults to LiveCommitPassage.
+	LiveCommitMode string
 	// IdleTimeout, when greater than zero AND the underlying collector
 	// implements [IdleObserver], arms a watcher that calls
 	// OnIdleTimeoutCallback once the user has been silent for this long.
@@ -1099,6 +1103,7 @@ func (c *RecordingController) startNativeDictationStream(sessionID uint64, opts 
 	if sink == nil {
 		return nil, fmt.Errorf("event sink not configured")
 	}
+	sink = wrapLiveCommitSink(sink, opts.LiveCommitMode)
 	parent := opts.Context
 	if parent == nil {
 		parent = context.Background()
@@ -1250,6 +1255,11 @@ func (c *RecordingController) stopNativeDictationStream(runtime *dictationStream
 	if !waitForChannel(runtime.receiverDone, 5*time.Second) {
 		c.onLog("Provider-stream receiver did not finish after finalize; cancelling stream", "warn")
 		runtime.cancel()
+	}
+	if flusher, ok := runtime.sink.(LiveCommitFlusher); ok {
+		if err := flusher.FlushLiveCommit(context.Background()); err != nil {
+			c.onLog(fmt.Sprintf("Provider-stream live-commit flush warning: %v", err), "warn")
+		}
 	}
 	runtime.cancel()
 	_ = runtime.stream.Close()

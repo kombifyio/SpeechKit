@@ -268,6 +268,7 @@ func TestDeepgram_StartDictationStream_UsesRealtimeDictationQuery(t *testing.T) 
 		// "multi" must not outrank it.
 		"language=de",
 		"endpointing=250",
+		"utterance_end_ms=1000",
 		"keyterm=SpeechKit",
 		"keyterm=Kombify",
 		"encoding=linear16",
@@ -280,6 +281,88 @@ func TestDeepgram_StartDictationStream_UsesRealtimeDictationQuery(t *testing.T) 
 	}
 	if strings.Contains(gotQuery, "diarize=true") {
 		t.Fatalf("dictation stream must not force diarization: %q", gotQuery)
+	}
+}
+
+func TestDeepgram_StartDictationStream_ConcatenatesUtteranceFinals(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		conn, err := websocket.Accept(w, r, &websocket.AcceptOptions{InsecureSkipVerify: true})
+		if err != nil {
+			t.Fatalf("accept: %v", err)
+		}
+		defer conn.Close(websocket.StatusNormalClosure, "done")
+		write := func(isFinal, speechFinal bool, text string) {
+			resp := deepgramStreamingResponse{
+				Type:        "Results",
+				IsFinal:     isFinal,
+				SpeechFinal: speechFinal,
+				Channel: deepgramChannel{
+					Alternatives: []deepgramAlternative{{Transcript: text}},
+				},
+			}
+			body, _ := json.Marshal(resp)
+			if err := conn.Write(context.Background(), websocket.MessageText, body); err != nil {
+				t.Errorf("write: %v", err)
+			}
+		}
+		write(true, false, "Das ist ein Satz.")
+		write(true, true, "Und weiter.")
+		_, _, _ = conn.Read(context.Background())
+	}))
+	defer server.Close()
+
+	p := newTestDeepgramProvider(server.URL)
+	stream, err := p.StartDictationStream(context.Background(),
+		speechkit.DictationStreamOptions{InterimResults: true},
+		speaker.AudioFormat{Encoding: speaker.AudioEncodingLinear16, SampleRateHz: 16000, Channels: 1},
+	)
+	if err != nil {
+		t.Fatalf("StartDictationStream: %v", err)
+	}
+	defer stream.Close()
+
+	draft, err := stream.Receive(context.Background())
+	if err != nil {
+		t.Fatalf("Receive draft: %v", err)
+	}
+	if draft.IsFinal {
+		t.Fatalf("is_final without speech_final must stay a draft: %+v", draft)
+	}
+	final, err := stream.Receive(context.Background())
+	if err != nil {
+		t.Fatalf("Receive final: %v", err)
+	}
+	if !final.IsFinal {
+		t.Fatalf("speech_final = %+v, want a committed utterance", final)
+	}
+	if !strings.Contains(final.Text, "Satz. Und") {
+		t.Fatalf("utterance = %q, want concatenated slices with a space", final.Text)
+	}
+}
+
+func TestDeepgram_StartDictationStream_DefaultsDictationEndpointing(t *testing.T) {
+	var gotQuery string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotQuery = r.URL.RawQuery
+		conn, err := websocket.Accept(w, r, &websocket.AcceptOptions{InsecureSkipVerify: true})
+		if err != nil {
+			t.Fatalf("accept: %v", err)
+		}
+		defer conn.Close(websocket.StatusNormalClosure, "done")
+	}))
+	defer server.Close()
+
+	p := newTestDeepgramProvider(server.URL)
+	stream, err := p.StartDictationStream(context.Background(),
+		speechkit.DictationStreamOptions{InterimResults: true},
+		speaker.AudioFormat{Encoding: speaker.AudioEncodingLinear16, SampleRateHz: 16000, Channels: 1},
+	)
+	if err != nil {
+		t.Fatalf("StartDictationStream: %v", err)
+	}
+	defer stream.Close()
+	if !strings.Contains(gotQuery, "endpointing=700") {
+		t.Fatalf("query = %q, want dictation endpointing default", gotQuery)
 	}
 }
 

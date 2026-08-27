@@ -87,6 +87,9 @@ func TestLoadDefaults(t *testing.T) {
 	if cfg.General.DictationProcessingMode != DictationProcessingModeAuto {
 		t.Errorf("default dictation processing mode = %q, want %q", cfg.General.DictationProcessingMode, DictationProcessingModeAuto)
 	}
+	if cfg.General.DictationLiveCommit != DictationLiveCommitPassage {
+		t.Errorf("default dictation live commit = %q, want %q", cfg.General.DictationLiveCommit, DictationLiveCommitPassage)
+	}
 	if cfg.Audio.InputSource != AudioInputSourceMicrophone {
 		t.Errorf("default audio input source = %q, want %q", cfg.Audio.InputSource, AudioInputSourceMicrophone)
 	}

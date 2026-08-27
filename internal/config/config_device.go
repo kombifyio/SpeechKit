@@ -41,6 +41,7 @@ type GeneralConfig struct {
 	DictateSilenceTimeoutSec       int    `toml:"dictate_silence_timeout_sec"`       // total silence in seconds before dictate auto-stops; 0 disables
 	DictationIntermediateSegmentMs int    `toml:"dictation_intermediate_segment_ms"` // minimum utterance size before live dictation emits a pause-bounded segment
 	DictationProcessingMode        string `toml:"dictation_processing_mode"`         // auto | final_full | segment_batch | provider_stream
+	DictationLiveCommit            string `toml:"dictation_live_commit"`             // immediate | phrase | passage. passage waits ~2 sentences before field inject.
 	ModelDownloadDir               string `toml:"model_download_dir"`                // Default directory for downloaded local model files
 }
 

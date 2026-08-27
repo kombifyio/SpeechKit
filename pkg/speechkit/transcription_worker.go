@@ -141,6 +141,10 @@ type TranscriptionWorker struct {
 	done      chan struct{}
 	started   bool
 	closed    bool
+
+	liveInjectMu      sync.Mutex
+	liveInjectSession uint64
+	liveInjectTail    string
 }
 
 func NewTranscriptionWorker(cfg TranscriptionWorkerConfig) (*TranscriptionWorker, error) {
@@ -377,6 +381,15 @@ func (w *TranscriptionWorker) HandleDictationStreamEvent(ctx context.Context, ev
 	return nil
 }
 
+func (w *TranscriptionWorker) prefixLiveInject(sessionID uint64, text string) string {
+	w.liveInjectMu.Lock()
+	defer w.liveInjectMu.Unlock()
+	fragment, tail, session := LiveInjectFragment(w.liveInjectSession, w.liveInjectTail, text, sessionID)
+	w.liveInjectSession = session
+	w.liveInjectTail = tail
+	return fragment
+}
+
 func (w *TranscriptionWorker) commitFinalTranscript(ctx context.Context, job TranscriptionJob, transcript Transcript) bool {
 	// An empty final transcript is an outcome, not a non-event. Both the batch
 	// and the streaming path funnel through here, so this is the one place that
@@ -458,7 +471,9 @@ func (w *TranscriptionWorker) commitFinalTranscript(ctx context.Context, job Tra
 		return true
 	}
 	deliverStarted := time.Now()
-	if err := w.output.Deliver(ctx, transcript, job.Target); err != nil {
+	inject := transcript
+	inject.Text = w.prefixLiveInject(transcript.SessionID, transcript.Text)
+	if err := w.output.Deliver(ctx, inject, job.Target); err != nil {
 		w.onLog(fmt.Sprintf("Output error: %v", err), "error")
 	}
 	w.onLog(fmt.Sprintf("STT timing: output_delivery=%dms", time.Since(deliverStarted).Milliseconds()), "info")

@@ -710,6 +710,36 @@ func TestTranscriptionWorkerProviderStreamDraftsDoNotDeliverAndFinalsDeduplicate
 	}
 }
 
+func TestTranscriptionWorkerLiveInjectsKeepSentenceGap(t *testing.T) {
+	output := &recordingOutput{}
+	worker, err := NewTranscriptionWorker(TranscriptionWorkerConfig{
+		Timeout:   time.Second,
+		QueueSize: 1,
+		Runner:    NewTranscriptionRunner(stubTranscriber{}, nil),
+		Output:    output,
+	})
+	if err != nil {
+		t.Fatalf("NewTranscriptionWorker() error = %v", err)
+	}
+	ctx := context.Background()
+	first := DictationStreamEvent{SessionID: 4, SegmentID: 1, ProviderItemID: "a", Text: "Das ist ein Satz.", IsFinal: true}
+	second := DictationStreamEvent{SessionID: 4, SegmentID: 2, ProviderItemID: "b", Text: "Und weiter.", IsFinal: true}
+	if err := worker.HandleDictationStreamEvent(ctx, first, DictationStreamSinkOptions{Target: "editor", Language: "de"}); err != nil {
+		t.Fatalf("first final: %v", err)
+	}
+	if err := worker.HandleDictationStreamEvent(ctx, second, DictationStreamSinkOptions{Target: "editor", Language: "de"}); err != nil {
+		t.Fatalf("second final: %v", err)
+	}
+	delivered := output.snapshot()
+	if len(delivered) != 2 {
+		t.Fatalf("delivered = %d, want 2", len(delivered))
+	}
+	paste := delivered[0].transcript.Text + delivered[1].transcript.Text
+	if !strings.Contains(paste, "Satz. Und") {
+		t.Fatalf("injected paste = %q, want a space between live sentences", paste)
+	}
+}
+
 func TestTranscriptionWorkerAllowsRepeatedTextAcrossDistinctSegments(t *testing.T) {
 	transcriber := &countingTranscriber{
 		transcript: Transcript{

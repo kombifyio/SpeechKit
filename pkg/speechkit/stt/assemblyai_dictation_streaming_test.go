@@ -105,6 +105,9 @@ func TestAssemblyAI_StartDictationStream_QueryAndTurnMapping(t *testing.T) {
 	if got := gotQuery.Get("max_turn_silence"); got != "700" {
 		t.Fatalf("max_turn_silence = %q", got)
 	}
+	if got := gotQuery.Get("min_turn_silence"); got != "200" {
+		t.Fatalf("min_turn_silence = %q", got)
+	}
 	if got := gotQuery.Get("encoding"); got != "pcm_s16le" {
 		t.Fatalf("encoding = %q, want the S16LE the protocol guarantees", got)
 	}
@@ -158,6 +161,38 @@ func TestAssemblyAI_StartDictationStream_QueryAndTurnMapping(t *testing.T) {
 	}
 	if _, err := stream.Receive(ctx); err == nil {
 		t.Fatal("Receive after Termination should end the stream")
+	}
+}
+
+func TestAssemblyAI_StartDictationStream_SanitizesCatalogModelList(t *testing.T) {
+	var gotQuery url.Values
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotQuery = r.URL.Query()
+		conn, err := websocket.Accept(w, r, &websocket.AcceptOptions{InsecureSkipVerify: true})
+		if err != nil {
+			t.Fatalf("accept: %v", err)
+		}
+		defer conn.Close(websocket.StatusNormalClosure, "done") //nolint:errcheck // test cleanup
+	}))
+	defer server.Close()
+
+	p := NewAssemblyAIProvider("assembly-test-key", "")
+	p.StreamingBaseURL = server.URL
+	p.Validation = testValidation
+
+	stream, err := p.StartDictationStream(context.Background(), speechkit.DictationStreamOptions{
+		Model: "universal-3-5-pro,universal-2",
+	}, speaker.AudioFormat{Encoding: speaker.AudioEncodingLinear16, SampleRateHz: 16000, Channels: 1})
+	if err != nil {
+		t.Fatalf("StartDictationStream: %v", err)
+	}
+	defer stream.Close() //nolint:errcheck // test cleanup
+
+	if got := gotQuery.Get("speech_model"); got != "universal-3-5-pro" {
+		t.Fatalf("speech_model = %q, want the first streaming id from the catalog list", got)
+	}
+	if got := gotQuery.Get("max_turn_silence"); got != "2000" {
+		t.Fatalf("max_turn_silence = %q, want patient dictation default", got)
 	}
 }
 

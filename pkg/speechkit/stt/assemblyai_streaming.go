@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -44,7 +45,7 @@ func (p *AssemblyAIProvider) StartSpeakerStream(ctx context.Context, opts speake
 		return nil, fmt.Errorf("assemblyai speaker streaming requires diarization options")
 	}
 	format = format.Normalized()
-	model := firstNonEmptyTrimmed(opts.Model, p.StreamingModel, assemblyAIStreamingModel)
+	model := assemblyAIStreamingSpeechModel(firstNonEmptyTrimmed(opts.Model, p.StreamingModel, assemblyAIStreamingModel))
 	endpoint, err := p.assemblyAIStreamingEndpoint(model, opts, format)
 	if err != nil {
 		return nil, err
@@ -90,7 +91,7 @@ func (p *AssemblyAIProvider) StartDictationStream(ctx context.Context, opts spee
 			"assemblyai dictation streaming requires mono audio (the v3 realtime API has no channel parameter and decodes the socket as a single channel); got %d channels: %w",
 			format.Channels, speechkit.ErrUnsupportedAudioFormat)
 	}
-	model := firstNonEmptyTrimmed(opts.Model, p.StreamingModel, assemblyAIStreamingModel)
+	model := assemblyAIStreamingSpeechModel(firstNonEmptyTrimmed(opts.Model, p.StreamingModel, assemblyAIStreamingModel))
 	endpoint, err := p.assemblyAIDictationStreamingEndpoint(model, opts, format)
 	if err != nil {
 		return nil, err
@@ -107,6 +108,7 @@ func (p *AssemblyAIProvider) StartDictationStream(ctx context.Context, opts spee
 	if err != nil {
 		return nil, fmt.Errorf("assemblyai dictation stream dial: %w", err)
 	}
+	slog.Info("assemblyai dictation stream opened", "speech_model", model)
 	return &assemblyAIDictationStream{
 		conn:      conn,
 		provider:  p.Name(),
@@ -141,9 +143,13 @@ func (p *AssemblyAIProvider) assemblyAIDictationStreamingEndpoint(model string, 
 	if opts.Diarization {
 		q.Set("speaker_labels", "true")
 	}
+	minSilence := assemblyAIDictationMinTurnSilenceMs
+	maxSilence := assemblyAIDictationMaxTurnSilenceMs
 	if opts.EndpointingMs > 0 {
-		q.Set("max_turn_silence", strconv.Itoa(opts.EndpointingMs))
+		maxSilence = opts.EndpointingMs
 	}
+	q.Set("min_turn_silence", strconv.Itoa(minSilence))
+	q.Set("max_turn_silence", strconv.Itoa(maxSilence))
 	if keyterms := assemblyAIStreamingKeyterms(opts.Keyterms); len(keyterms) > 0 {
 		encoded, err := json.Marshal(keyterms)
 		if err != nil {
@@ -216,6 +222,29 @@ func (p *AssemblyAIProvider) assemblyAIStreamingURL() (*url.URL, error) {
 		return nil, fmt.Errorf("assemblyai streaming endpoint: unsupported scheme %q", u.Scheme)
 	}
 	return u, nil
+}
+
+// assemblyAIStreamingSpeechModel picks a single v3 realtime speech_model.
+// Catalog ModelIDs are comma lists ("universal-3-5-pro,universal-2") for the
+// batch fallback chain; the streaming handshake rejects that as one token.
+func assemblyAIStreamingSpeechModel(requested string) string {
+	for _, token := range strings.Split(requested, ",") {
+		token = strings.TrimSpace(token)
+		if token == "" || assemblyAIBatchOnlySpeechModel(token) {
+			continue
+		}
+		return token
+	}
+	return assemblyAIStreamingModel
+}
+
+func assemblyAIBatchOnlySpeechModel(id string) bool {
+	switch strings.ToLower(strings.TrimSpace(id)) {
+	case "universal-2", "universal-1", "best", "nano":
+		return true
+	default:
+		return false
+	}
 }
 
 func assemblyAIStreamingKeyterms(terms []string) []string {

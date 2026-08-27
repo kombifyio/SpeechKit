@@ -19,6 +19,14 @@ import (
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/speaker"
 )
 
+const (
+	// Deepgram's streaming default is 10ms, which finalizes on a breath.
+	// 700ms is their dictation guidance; utterance_end_ms must stay ≥1000
+	// because interim results arrive about once a second.
+	deepgramDictationDefaultEndpointingMs = 700
+	deepgramDictationUtteranceEndMs       = 1000
+)
+
 type deepgramSpeakerStream struct {
 	conn      *websocket.Conn
 	provider  string
@@ -37,6 +45,7 @@ type deepgramDictationStream struct {
 	openedAt  time.Time
 	sequence  atomic.Int64
 	closeOnce atomic.Bool
+	pending   []speechkit.DictationStreamEvent
 }
 
 func (p *DeepgramProvider) StartSpeakerStream(ctx context.Context, opts speaker.Options, format speaker.AudioFormat) (speaker.SpeakerStream, error) {
@@ -200,8 +209,12 @@ func (p *DeepgramProvider) deepgramDictationStreamingEndpoint(model, language st
 	if endpointingMs <= 0 {
 		endpointingMs = p.EndpointingMs
 	}
-	if endpointingMs > 0 {
-		q.Set("endpointing", strconv.Itoa(endpointingMs))
+	if endpointingMs <= 0 {
+		endpointingMs = deepgramDictationDefaultEndpointingMs
+	}
+	q.Set("endpointing", strconv.Itoa(endpointingMs))
+	if opts.InterimResults {
+		q.Set("utterance_end_ms", strconv.Itoa(deepgramDictationUtteranceEndMs))
 	}
 	if language := normalizedDeepgramLanguage(language); language != "" {
 		q.Set("language", language)
@@ -278,6 +291,9 @@ func (s *deepgramDictationStream) Receive(ctx context.Context) (speechkit.Dictat
 		typ, payload, err := s.conn.Read(ctx)
 		if err != nil {
 			if errorsIsWebsocketClose(err) {
+				if ev, ok := s.drainPending(); ok {
+					return ev, nil
+				}
 				return speechkit.DictationStreamEvent{}, io.EOF
 			}
 			return speechkit.DictationStreamEvent{}, err
@@ -289,12 +305,77 @@ func (s *deepgramDictationStream) Receive(ctx context.Context) (speechkit.Dictat
 		if err := json.Unmarshal(payload, &event); err != nil {
 			return speechkit.DictationStreamEvent{}, fmt.Errorf("deepgram dictation stream parse: %w", err)
 		}
-		frame := event.dictationEvent(s.provider, s.model, s.language, s.sessionID, s.sequence.Add(1), time.Since(s.openedAt).Milliseconds())
-		if frame.Text == "" && len(frame.Words) == 0 {
+		switch strings.ToLower(strings.TrimSpace(event.Type)) {
+		case "utteranceend":
+			if ev, ok := s.drainPending(); ok {
+				return ev, nil
+			}
+			continue
+		case "speechstarted", "metadata":
 			continue
 		}
+		frame := event.dictationEvent(s.provider, s.model, s.language, s.sessionID, s.sequence.Add(1), time.Since(s.openedAt).Milliseconds())
+		if frame.Text == "" && len(frame.Words) == 0 {
+			if event.SpeechFinal {
+				if ev, ok := s.drainPending(); ok {
+					return ev, nil
+				}
+			}
+			continue
+		}
+		if event.SpeechFinal {
+			s.pushPending(frame)
+			if ev, ok := s.drainPending(); ok {
+				return ev, nil
+			}
+			continue
+		}
+		if event.IsFinal {
+			s.pushPending(frame)
+			return s.pendingDraft(), nil
+		}
+		frame.IsFinal = false
+		frame.Text = speechkit.JoinTranscriptFragments(append(pendingTexts(s.pending), frame.Text)...)
 		return frame, nil
 	}
+}
+
+func (s *deepgramDictationStream) pushPending(frame speechkit.DictationStreamEvent) {
+	frame.IsFinal = false
+	s.pending = append(s.pending, frame)
+}
+
+func (s *deepgramDictationStream) pendingDraft() speechkit.DictationStreamEvent {
+	if len(s.pending) == 0 {
+		return speechkit.DictationStreamEvent{}
+	}
+	out := s.pending[len(s.pending)-1]
+	out.Text = speechkit.JoinTranscriptFragments(pendingTexts(s.pending)...)
+	out.IsFinal = false
+	var words []speechkit.WordConfidence
+	for _, part := range s.pending {
+		words = append(words, part.Words...)
+	}
+	out.Words = words
+	return out
+}
+
+func (s *deepgramDictationStream) drainPending() (speechkit.DictationStreamEvent, bool) {
+	if len(s.pending) == 0 {
+		return speechkit.DictationStreamEvent{}, false
+	}
+	out := s.pendingDraft()
+	out.IsFinal = true
+	s.pending = nil
+	return out, true
+}
+
+func pendingTexts(parts []speechkit.DictationStreamEvent) []string {
+	out := make([]string, 0, len(parts))
+	for _, part := range parts {
+		out = append(out, part.Text)
+	}
+	return out
 }
 
 func (s *deepgramDictationStream) Close() error {

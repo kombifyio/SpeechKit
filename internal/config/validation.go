@@ -50,6 +50,27 @@ func NormalizeDictationProcessingMode(value, fallback string) string {
 	}
 }
 
+func NormalizeDictationLiveCommit(value, fallback string) string {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case DictationLiveCommitImmediate:
+		return DictationLiveCommitImmediate
+	case DictationLiveCommitPhrase:
+		return DictationLiveCommitPhrase
+	case DictationLiveCommitPassage:
+		return DictationLiveCommitPassage
+	}
+	switch strings.ToLower(strings.TrimSpace(fallback)) {
+	case DictationLiveCommitImmediate:
+		return DictationLiveCommitImmediate
+	case DictationLiveCommitPhrase:
+		return DictationLiveCommitPhrase
+	case DictationLiveCommitPassage:
+		return DictationLiveCommitPassage
+	default:
+		return DictationLiveCommitPassage
+	}
+}
+
 func NormalizeAudioInputSource(value, fallback string) string {
 	switch strings.ToLower(strings.TrimSpace(value)) {
 	case AudioInputSourceMicrophone, "":
