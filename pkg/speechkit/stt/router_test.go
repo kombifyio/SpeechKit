@@ -1,22 +1,16 @@
-package router
+package stt
 
 import (
 	"context"
 	"fmt"
-	"os"
-	"path/filepath"
-	"strings"
 	"testing"
 	"time"
 
-	"github.com/kombifyio/SpeechKit/internal/auditlog"
-	"github.com/kombifyio/SpeechKit/internal/auditlogtest"
-	"github.com/kombifyio/SpeechKit/internal/stt"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/speaker"
 )
 
-// mockProvider implements stt.STTProvider for testing.
+// mockProvider implements STTProvider for testing.
 type mockProvider struct {
 	name     string
 	text     string
@@ -26,13 +20,13 @@ type mockProvider struct {
 	called   int
 }
 
-func (m *mockProvider) Transcribe(ctx context.Context, audio []byte, opts stt.TranscribeOpts) (*stt.Result, error) {
+func (m *mockProvider) Transcribe(ctx context.Context, audio []byte, opts TranscribeOpts) (*Result, error) {
 	m.called++
 	if m.failNext {
 		return nil, fmt.Errorf("mock %s failure", m.name)
 	}
 	time.Sleep(m.latency)
-	return &stt.Result{
+	return &Result{
 		Text:     m.text,
 		Provider: m.name,
 		Language: opts.Language,
@@ -89,7 +83,7 @@ func (mockDictationStream) Receive(context.Context) (speechkit.DictationStreamEv
 }
 func (mockDictationStream) Close() error { return nil }
 
-func newTestRouter(local, vps, hf stt.STTProvider, strategy Strategy) *Router {
+func newTestRouter(local, vps, hf STTProvider, strategy Strategy) *Router {
 	r := &Router{
 		Strategy:             strategy,
 		PreferLocalUnderSecs: 10,
@@ -116,7 +110,7 @@ func TestRouteDynamic_LocalShortAudio(t *testing.T) {
 		StrategyDynamic,
 	)
 
-	result, err := r.Route(context.Background(), []byte("audio"), 5.0, stt.TranscribeOpts{Language: "de"})
+	result, err := r.Route(context.Background(), []byte("audio"), 5.0, TranscribeOpts{Language: "de"})
 	if err != nil {
 		t.Fatalf("Route: %v", err)
 	}
@@ -133,7 +127,7 @@ func TestRouteDynamic_LongAudioUsesCloud(t *testing.T) {
 		StrategyDynamic,
 	)
 
-	result, err := r.Route(context.Background(), []byte("audio"), 15.0, stt.TranscribeOpts{Language: "de"})
+	result, err := r.Route(context.Background(), []byte("audio"), 15.0, TranscribeOpts{Language: "de"})
 	if err != nil {
 		t.Fatalf("Route: %v", err)
 	}
@@ -151,7 +145,7 @@ func TestRouteDynamic_FallbackToLocal(t *testing.T) {
 		StrategyDynamic,
 	)
 
-	result, err := r.Route(context.Background(), []byte("audio"), 15.0, stt.TranscribeOpts{Language: "de"})
+	result, err := r.Route(context.Background(), []byte("audio"), 15.0, TranscribeOpts{Language: "de"})
 	if err != nil {
 		t.Fatalf("Route: %v", err)
 	}
@@ -170,7 +164,7 @@ func TestRouteDynamic_NoInternetUsesLocal(t *testing.T) {
 	r.internetOnline.Store(false)
 	r.internetAt.Store(time.Now().UnixNano())
 
-	result, err := r.Route(context.Background(), []byte("audio"), 15.0, stt.TranscribeOpts{Language: "de"})
+	result, err := r.Route(context.Background(), []byte("audio"), 15.0, TranscribeOpts{Language: "de"})
 	if err != nil {
 		t.Fatalf("Route: %v", err)
 	}
@@ -189,7 +183,7 @@ func TestRouteDynamic_OfflineProbeStillAllowsCloud(t *testing.T) {
 	r.internetOnline.Store(false)
 	r.internetAt.Store(time.Now().UnixNano())
 
-	result, err := r.Route(context.Background(), []byte("audio"), 12.0, stt.TranscribeOpts{Language: "de"})
+	result, err := r.Route(context.Background(), []byte("audio"), 12.0, TranscribeOpts{Language: "de"})
 	if err != nil {
 		t.Fatalf("Route: %v", err)
 	}
@@ -205,7 +199,7 @@ func TestRouteLocalOnly(t *testing.T) {
 		StrategyLocalOnly,
 	)
 
-	result, err := r.Route(context.Background(), []byte("audio"), 5.0, stt.TranscribeOpts{})
+	result, err := r.Route(context.Background(), []byte("audio"), 5.0, TranscribeOpts{})
 	if err != nil {
 		t.Fatalf("Route: %v", err)
 	}
@@ -221,7 +215,7 @@ func TestRouteCloudOnly(t *testing.T) {
 		StrategyCloudOnly,
 	)
 
-	result, err := r.Route(context.Background(), []byte("audio"), 5.0, stt.TranscribeOpts{})
+	result, err := r.Route(context.Background(), []byte("audio"), 5.0, TranscribeOpts{})
 	if err != nil {
 		t.Fatalf("Route: %v", err)
 	}
@@ -239,7 +233,7 @@ func TestPreferCloudMakesSelectedProviderPrimary(t *testing.T) {
 	)
 	r.PreferCloud("groq", &mockProvider{name: "groq", text: "groq result", healthy: true})
 
-	result, err := r.Route(context.Background(), []byte("audio"), 5.0, stt.TranscribeOpts{})
+	result, err := r.Route(context.Background(), []byte("audio"), 5.0, TranscribeOpts{})
 	if err != nil {
 		t.Fatalf("Route: %v", err)
 	}
@@ -251,7 +245,7 @@ func TestPreferCloudMakesSelectedProviderPrimary(t *testing.T) {
 func TestRouteNoProviders(t *testing.T) {
 	r := &Router{Strategy: StrategyDynamic}
 
-	_, err := r.Route(context.Background(), []byte("audio"), 5.0, stt.TranscribeOpts{})
+	_, err := r.Route(context.Background(), []byte("audio"), 5.0, TranscribeOpts{})
 	if err == nil {
 		t.Error("expected error with no providers")
 	}
@@ -352,7 +346,7 @@ func TestRouteParallel_FirstResultWins(t *testing.T) {
 	)
 	r.ParallelCloud = true
 
-	result, err := r.Route(context.Background(), []byte("audio"), 5.0, stt.TranscribeOpts{Language: "de"})
+	result, err := r.Route(context.Background(), []byte("audio"), 5.0, TranscribeOpts{Language: "de"})
 	if err != nil {
 		t.Fatalf("Route parallel: %v", err)
 	}
@@ -370,7 +364,7 @@ func TestRouteVPSPreferredOverHF(t *testing.T) {
 		StrategyCloudOnly,
 	)
 
-	result, err := r.Route(context.Background(), []byte("audio"), 5.0, stt.TranscribeOpts{})
+	result, err := r.Route(context.Background(), []byte("audio"), 5.0, TranscribeOpts{})
 	if err != nil {
 		t.Fatalf("Route: %v", err)
 	}
@@ -387,7 +381,7 @@ func TestRouteVPSFallbackToHF(t *testing.T) {
 		StrategyCloudOnly,
 	)
 
-	result, err := r.Route(context.Background(), []byte("audio"), 5.0, stt.TranscribeOpts{})
+	result, err := r.Route(context.Background(), []byte("audio"), 5.0, TranscribeOpts{})
 	if err != nil {
 		t.Fatalf("Route: %v", err)
 	}
@@ -400,7 +394,7 @@ func TestRouteCloudOnly_FailingHFReturnsError(t *testing.T) {
 	hf := &mockProvider{name: "hf", text: "should fail", healthy: true, failNext: true}
 	r := newTestRouter(nil, nil, hf, StrategyCloudOnly)
 
-	_, err := r.Route(context.Background(), []byte("audio"), 5.0, stt.TranscribeOpts{})
+	_, err := r.Route(context.Background(), []byte("audio"), 5.0, TranscribeOpts{})
 	if err == nil {
 		t.Fatal("expected error for failing hf provider")
 	}
@@ -409,7 +403,7 @@ func TestRouteCloudOnly_FailingHFReturnsError(t *testing.T) {
 func TestRouteLocalOnly_NoLocal(t *testing.T) {
 	r := &Router{Strategy: StrategyLocalOnly}
 
-	_, err := r.Route(context.Background(), []byte("audio"), 5.0, stt.TranscribeOpts{})
+	_, err := r.Route(context.Background(), []byte("audio"), 5.0, TranscribeOpts{})
 	if err == nil {
 		t.Error("expected error with no local provider")
 	}
@@ -435,120 +429,49 @@ func TestAvailableProviders_None(t *testing.T) {
 	}
 }
 
-func TestRouterEmitsProviderSelectedAuditLocalOnly(t *testing.T) {
-	dir := t.TempDir()
-	t.Cleanup(auditlogtest.Reset) // must run before TempDir cleanup (LIFO: registered after TempDir)
-	auditlog.Configure(true, dir, 90, false)
+// Batch-path counterpart to the streaming prioritization: a per-request
+// provider preference (TranscribeOpts.ProviderProfileID) reorders the cloud
+// candidate list without ever hard-failing an unsatisfiable preference.
+func TestRouteCloudOnlyHonorsProviderProfilePreference(t *testing.T) {
+	tests := []struct {
+		name       string
+		preference string
+		want       string
+	}{
+		{name: "empty preference keeps configured order", preference: "", want: "alpha"},
+		{name: "bare provider name moves match to front", preference: "deepgram", want: "deepgram"},
+		{name: "full profile id resolves to its provider", preference: "stt.deepgram.nova-3", want: "deepgram"},
+		{name: "unknown preference falls back to configured order", preference: "stt.unknown.model", want: "alpha"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			r := &Router{Strategy: StrategyCloudOnly}
+			r.AddCloud(&mockProvider{name: "alpha", text: "from alpha", healthy: true})
+			r.AddCloud(&mockProvider{name: "deepgram", text: "from deepgram", healthy: true})
 
-	r := newTestRouter(
-		&mockProvider{name: "local", text: "hello", healthy: true},
-		nil, nil,
-		StrategyLocalOnly,
-	)
-	_, err := r.Route(context.Background(), []byte("audio"), 1.0, stt.TranscribeOpts{})
-	if err != nil {
-		t.Fatalf("Route: %v", err)
-	}
-
-	dateKey := time.Now().UTC().Format("2006-01-02")
-	data, readErr := os.ReadFile(filepath.Join(dir, "audit-"+dateKey+".log"))
-	if readErr != nil {
-		t.Fatalf("read audit log: %v", readErr)
-	}
-	if !strings.Contains(string(data), `"event":"provider.selected"`) {
-		t.Errorf("want provider.selected event in audit log, got:\n%s", data)
-	}
-	if !strings.Contains(string(data), `"provider_name":"local"`) {
-		t.Errorf("want provider_name=local in audit log, got:\n%s", data)
+			res, err := r.Route(context.Background(), []byte("pcm"), 1.0,
+				TranscribeOpts{ProviderProfileID: tt.preference})
+			if err != nil {
+				t.Fatalf("Route: %v", err)
+			}
+			if res.Provider != tt.want {
+				t.Fatalf("provider = %q, want %q (preference %q)", res.Provider, tt.want, tt.preference)
+			}
+		})
 	}
 }
 
-func TestRouterEmitsProviderSelectedAuditCloudOnly(t *testing.T) {
-	dir := t.TempDir()
-	t.Cleanup(auditlogtest.Reset) // must run before TempDir cleanup (LIFO: registered after TempDir)
-	auditlog.Configure(true, dir, 90, false)
+func TestRouteCloudOnlyPreferredProviderFailureFallsBack(t *testing.T) {
+	r := &Router{Strategy: StrategyCloudOnly}
+	r.AddCloud(&mockProvider{name: "alpha", text: "from alpha", healthy: true})
+	r.AddCloud(&mockProvider{name: "deepgram", failNext: true, healthy: true})
 
-	r := newTestRouter(
-		nil, nil,
-		&mockProvider{name: "hf", text: "cloud result", healthy: true},
-		StrategyCloudOnly,
-	)
-	_, err := r.Route(context.Background(), []byte("audio"), 1.0, stt.TranscribeOpts{})
+	res, err := r.Route(context.Background(), []byte("pcm"), 1.0,
+		TranscribeOpts{ProviderProfileID: "deepgram"})
 	if err != nil {
 		t.Fatalf("Route: %v", err)
 	}
-
-	dateKey := time.Now().UTC().Format("2006-01-02")
-	data, readErr := os.ReadFile(filepath.Join(dir, "audit-"+dateKey+".log"))
-	if readErr != nil {
-		t.Fatalf("read audit log: %v", readErr)
-	}
-	if !strings.Contains(string(data), `"event":"provider.selected"`) {
-		t.Errorf("want provider.selected event in audit log, got:\n%s", data)
-	}
-	if !strings.Contains(string(data), `"provider_name":"hf"`) {
-		t.Errorf("want provider_name=hf in audit log, got:\n%s", data)
-	}
-}
-
-func TestRouterEmitsProviderSelectedOnDynamicFallback(t *testing.T) {
-	// Case 4: online + all cloud providers fail + local succeeds.
-	// Verifies that the provider.selected audit event is emitted even when
-	// transcribeDynamic reaches its local-fallback path.
-	dir := t.TempDir()
-	t.Cleanup(auditlogtest.Reset) // LIFO: runs before TempDir cleanup
-	auditlog.Configure(true, dir, 90, false)
-
-	// Long audio (>PreferLocalUnderSecs=10) so Case 2 is skipped and we land
-	// on Case 3 (cloud) first, then fall through to Case 4 (local fallback).
-	r := newTestRouter(
-		&mockProvider{name: "local-fallback", text: "local ok", healthy: true},
-		nil,
-		&mockProvider{name: "cloud-fail", text: "", healthy: false, failNext: true},
-		StrategyDynamic,
-	)
-	// newTestRouter already forces internet=online, so Case 1 is skipped.
-
-	_, err := r.Route(context.Background(), []byte("audio"), 30.0, stt.TranscribeOpts{})
-	if err != nil {
-		t.Fatalf("Route: %v", err)
-	}
-
-	dateKey := time.Now().UTC().Format("2006-01-02")
-	data, readErr := os.ReadFile(filepath.Join(dir, "audit-"+dateKey+".log"))
-	if readErr != nil {
-		t.Fatalf("read audit log: %v", readErr)
-	}
-	if !strings.Contains(string(data), `"event":"provider.selected"`) {
-		t.Errorf("want provider.selected event in audit log for Case 4 fallback, got:\n%s", data)
-	}
-	if !strings.Contains(string(data), `"provider_name":"local-fallback"`) {
-		t.Errorf("want provider_name=local-fallback in audit log for Case 4 fallback, got:\n%s", data)
-	}
-}
-
-func TestRouterDoesNotEmitProviderSelectedOnFailure(t *testing.T) {
-	dir := t.TempDir()
-	t.Cleanup(auditlogtest.Reset) // must run before TempDir cleanup (LIFO: registered after TempDir)
-	auditlog.Configure(true, dir, 90, false)
-
-	r := newTestRouter(
-		nil, nil,
-		&mockProvider{name: "hf", text: "", healthy: false, failNext: true},
-		StrategyCloudOnly,
-	)
-	_, _ = r.Route(context.Background(), []byte("audio"), 1.0, stt.TranscribeOpts{})
-
-	dateKey := time.Now().UTC().Format("2006-01-02")
-	logPath := filepath.Join(dir, "audit-"+dateKey+".log")
-	data, readErr := os.ReadFile(logPath)
-	if os.IsNotExist(readErr) {
-		return // no log file = no events written, which is correct
-	}
-	if readErr != nil {
-		t.Fatalf("read audit log: %v", readErr)
-	}
-	if strings.Contains(string(data), `"event":"provider.selected"`) {
-		t.Errorf("must not emit provider.selected on failure, got:\n%s", data)
+	if res.Provider != "alpha" {
+		t.Fatalf("provider = %q, want fallback alpha after preferred provider failed", res.Provider)
 	}
 }

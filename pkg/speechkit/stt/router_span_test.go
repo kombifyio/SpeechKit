@@ -1,10 +1,9 @@
-package router
+package stt
 
 import (
 	"context"
 	"testing"
 
-	"github.com/kombifyio/SpeechKit/internal/stt"
 	"go.opentelemetry.io/otel"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/sdk/trace/tracetest"
@@ -29,12 +28,12 @@ func TestRouteSpans(t *testing.T) {
 	t.Cleanup(func() { _ = tp.Shutdown(context.Background()) })
 
 	okRouter := newTestRouter(&mockProvider{name: "whispercpp", text: "hi", healthy: true}, nil, nil, StrategyLocalOnly)
-	if _, err := okRouter.Route(context.Background(), []byte("audio"), 1.0, stt.TranscribeOpts{Language: "en"}); err != nil {
+	if _, err := okRouter.Route(context.Background(), []byte("audio"), 1.0, TranscribeOpts{Language: "en"}); err != nil {
 		t.Fatalf("Route (success): %v", err)
 	}
 
 	errRouter := newTestRouter(&mockProvider{name: "local", healthy: true, failNext: true}, nil, nil, StrategyLocalOnly)
-	if _, err := errRouter.Route(context.Background(), []byte("audio"), 1.0, stt.TranscribeOpts{}); err == nil {
+	if _, err := errRouter.Route(context.Background(), []byte("audio"), 1.0, TranscribeOpts{}); err == nil {
 		t.Fatal("Route (error): expected a transcription error")
 	}
 

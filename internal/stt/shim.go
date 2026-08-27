@@ -3,11 +3,32 @@ package stt
 // This file re-exports the STT adapters that now live in the public
 // pkg/speechkit/stt package, so the existing call sites in cmd/speechkit,
 // internal/server, internal/router, internal/serverclient, tools, etc. keep
-// compiling unchanged. The Build factory (registry.go) deliberately stays in
-// this internal shim because it maps the host's internal models.ExecutionMode
-// onto the public constructors. New adapter code goes in pkg/speechkit/stt.
+// compiling unchanged. The Build factory (registry.go) keeps its host-facing
+// BuildSpec typed with the internal models.ExecutionMode and forwards to the
+// public registry in pkg/speechkit/stt. New adapter and assembly code goes in
+// pkg/speechkit/stt.
 
 import pkgstt "github.com/kombifyio/SpeechKit/pkg/speechkit/stt"
+
+// Router assembly (single public assembly path shared by the Device- and
+// Server-Targets; see pkg/speechkit/stt.BuildRouter).
+type (
+	RouterConfig     = pkgstt.RouterConfig
+	EnabledProviders = pkgstt.EnabledProviders
+	LocalOpts        = pkgstt.LocalOpts
+	VPSOpts          = pkgstt.VPSOpts
+	HuggingFaceOpts  = pkgstt.HuggingFaceOpts
+	OpenAIOpts       = pkgstt.OpenAIOpts
+	GroqOpts         = pkgstt.GroqOpts
+	GoogleOpts       = pkgstt.GoogleOpts
+	DeepgramOpts     = pkgstt.DeepgramOpts
+	AssemblyAIOpts   = pkgstt.AssemblyAIOpts
+	OpenRouterOpts   = pkgstt.OpenRouterOpts
+	OllamaOpts       = pkgstt.OllamaOpts
+)
+
+// BuildRouter forwards to the public router assembly SSOT.
+var BuildRouter = pkgstt.BuildRouter
 
 // Core contracts.
 type (

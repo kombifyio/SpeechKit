@@ -1,16 +1,20 @@
 package stt
 
-import (
-	"fmt"
+// The STT provider registry now lives in the public pkg/speechkit/stt package
+// (Build/Register with a speechkit.ExecutionMode-typed BuildSpec). This file
+// keeps the host-facing BuildSpec, which is typed with the host's internal
+// models.ExecutionMode, and forwards to the public registry so existing call
+// sites (cmd/speechkit/model_profiles.go) keep compiling unchanged.
 
+import (
 	"github.com/kombifyio/SpeechKit/internal/models"
 	framework "github.com/kombifyio/SpeechKit/pkg/speechkit"
+	pkgstt "github.com/kombifyio/SpeechKit/pkg/speechkit/stt"
 )
 
 // BuildSpec carries the inputs needed to construct a cloud STT provider for a
-// given ExecutionMode. The host config layer resolves secrets and passes them
-// in; the registry owns the provider's canonical name, endpoint, and
-// constructor — the mapping that was previously duplicated across call sites.
+// given ExecutionMode. It mirrors pkg/speechkit/stt.BuildSpec but keeps the
+// internal models.ExecutionMode type for host callers.
 type BuildSpec struct {
 	ExecutionMode models.ExecutionMode
 	Provider      string
@@ -30,110 +34,19 @@ type BuildSpec struct {
 	GoogleApplicationCredentialsEnv string
 }
 
-// Build constructs the cloud STT provider for spec.ExecutionMode and returns
-// its canonical Name plus the provider. It is the single source of truth for
-// the ExecutionMode → (name, endpoint, constructor) mapping.
-//
-// ExecutionModeLocal is host-managed (whisper.cpp subprocess lifecycle) and is
-// intentionally not handled here.
+// Build forwards to the public pkg/speechkit/stt registry, converting the
+// internal ExecutionMode to the framework enum.
 func Build(spec BuildSpec) (string, STTProvider, error) {
-	providerID := framework.NormalizeProviderID(spec.Provider)
-	if providerID == "" {
-		providerID = providerIDForExecutionMode(spec.ExecutionMode)
-	}
-	descriptor, ok := providerRegistry[providerID]
-	if !ok {
-		return "", nil, fmt.Errorf("stt: unsupported provider %q for execution mode %q", providerID, spec.ExecutionMode)
-	}
-	provider, err := descriptor.Build(spec)
-	if err != nil {
-		return "", nil, err
-	}
-	return descriptor.Name, provider, nil
-}
-
-type providerDescriptor struct {
-	Name  string
-	Build func(BuildSpec) (STTProvider, error)
-}
-
-var providerRegistry = map[string]providerDescriptor{
-	"huggingface": {
-		Name: "huggingface",
-		Build: func(spec BuildSpec) (STTProvider, error) {
-			return NewHuggingFaceProvider(spec.ModelID, spec.Token), nil
-		},
-	},
-	"openai": {
-		Name: "openai",
-		Build: func(spec BuildSpec) (STTProvider, error) {
-			return NewOpenAICompatibleProvider("openai", "https://api.openai.com", spec.APIKey, spec.ModelID), nil
-		},
-	},
-	"groq": {
-		Name: "groq",
-		Build: func(spec BuildSpec) (STTProvider, error) {
-			return NewOpenAICompatibleProvider("groq", "https://api.groq.com/openai", spec.APIKey, spec.ModelID), nil
-		},
-	},
-	"google": {
-		Name: "google",
-		Build: func(spec BuildSpec) (STTProvider, error) {
-			provider := NewGoogleSTTProvider(spec.APIKey, spec.ModelID)
-			provider.SetStreamingCredentialEnvs(spec.GoogleStreamingCredentialsEnv, spec.GoogleApplicationCredentialsEnv)
-			return provider, nil
-		},
-	},
-	"deepgram": {
-		Name: "deepgram",
-		Build: func(spec BuildSpec) (STTProvider, error) {
-			provider := NewDeepgramProvider(spec.APIKey, spec.ModelID)
-			if spec.DiarizationModel != "" {
-				provider.DiarizationModel = spec.DiarizationModel
-			}
-			if hasDeepgramOptions(spec.Deepgram) {
-				provider.ApplyOptions(spec.Deepgram)
-			}
-			return provider, nil
-		},
-	},
-	"assemblyai": {
-		Name: "assemblyai",
-		Build: func(spec BuildSpec) (STTProvider, error) {
-			return NewAssemblyAIProvider(spec.APIKey, spec.ModelID), nil
-		},
-	},
-	"openrouter": {
-		Name: "openrouter",
-		Build: func(spec BuildSpec) (STTProvider, error) {
-			return NewOpenRouterSTTProvider(spec.APIKey, spec.ModelID), nil
-		},
-	},
-	"ollama": {
-		Name: "ollama",
-		Build: func(spec BuildSpec) (STTProvider, error) {
-			baseURL := spec.BaseURL
-			if baseURL == "" {
-				baseURL = "http://localhost:11434"
-			}
-			return NewOllamaSTTProvider(baseURL, spec.ModelID), nil
-		},
-	},
-}
-
-func providerIDForExecutionMode(mode models.ExecutionMode) string {
-	return framework.ProviderIDForExecutionMode(framework.ExecutionMode(mode))
-}
-
-func hasDeepgramOptions(opts DeepgramOptions) bool {
-	return opts.Configured ||
-		opts.SmartFormat ||
-		opts.Dictation ||
-		opts.FillerWords ||
-		opts.Numerals ||
-		opts.DetectLanguage ||
-		opts.UseVocabularyKeyterms ||
-		opts.LanguageOverride != "" ||
-		len(opts.Keyterms) > 0 ||
-		opts.EndpointingMs != 0
+	return pkgstt.Build(pkgstt.BuildSpec{
+		ExecutionMode:                   framework.ExecutionMode(spec.ExecutionMode),
+		Provider:                        spec.Provider,
+		ModelID:                         spec.ModelID,
+		APIKey:                          spec.APIKey,
+		Token:                           spec.Token,
+		BaseURL:                         spec.BaseURL,
+		DiarizationModel:                spec.DiarizationModel,
+		Deepgram:                        spec.Deepgram,
+		GoogleStreamingCredentialsEnv:   spec.GoogleStreamingCredentialsEnv,
+		GoogleApplicationCredentialsEnv: spec.GoogleApplicationCredentialsEnv,
+	})
 }

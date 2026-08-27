@@ -24,34 +24,29 @@ const (
 	sttAggregateComponent = "stt"
 )
 
-// buildSTTRouter constructs the STT router from config. It mirrors the
-// essential parts of cmd/speechkit/app_init.go:buildRouter but is leaner:
-// - no device-target model-profile-selection logic
-// - no Ollama (clients that need it can re-enable in v1.1)
-// - no Genkit wiring here (that belongs in the Assist milestone)
+// buildSTTRouter constructs the STT router from config. It resolves the
+// server's config (credentials via standard precedence, server defaults such
+// as blank-strategy → cloud-only, intentionally no Ollama) into per-provider
+// options and delegates router assembly to the shared stt.BuildRouter SSOT —
+// the same path the Device-Target uses in cmd/speechkit/app_init.go.
 //
-// The returned healthChecks map lets bootstrap register each provider as a
-// health-component after the router is built; keeping the check logic here
-// keeps the bootstrap file focused on lifecycle.
+// The returned namedProvider list lets bootstrap register each configured
+// provider as a health-component after the router is built; keeping the check
+// logic here keeps the bootstrap file focused on lifecycle.
 func buildSTTRouter(cfg *config.Config) (*router.Router, []namedProvider, []string) {
 	// STT adapters are config-free (importable from pkg/speechkit/**); inject
 	// the host secret resolver so Google streaming credentials still resolve
 	// through env + Doppler + token store, not just os.Getenv.
 	stt.SetSecretResolver(config.ResolveSecret)
-	r := &router.Router{
-		Strategy:             router.Strategy(strings.TrimSpace(cfg.Routing.Strategy)),
-		PreferLocalUnderSecs: cfg.Routing.PreferLocalUnderSeconds,
-		ParallelCloud:        cfg.Routing.ParallelCloud,
-		ReplaceOnBetter:      cfg.Routing.ReplaceOnBetter,
-	}
+	strategy := router.Strategy(strings.TrimSpace(cfg.Routing.Strategy))
 	// Default to cloud-only when config leaves the field blank — the server
 	// deployment target typically relies on managed cloud APIs even when a
 	// local whisper.cpp is present.
-	if r.Strategy == "" {
-		r.Strategy = router.StrategyCloudOnly
+	if strategy == "" {
+		strategy = router.StrategyCloudOnly
 	}
 
-	var providers []namedProvider
+	var enabled stt.EnabledProviders
 	var notes []string
 	credential := func(target string) (string, string) {
 		key, source, err := config.ResolveProviderCredentialValue(cfg, target)
@@ -68,9 +63,7 @@ func buildSTTRouter(cfg *config.Config) (*router.Router, []namedProvider, []stri
 	if cfg.HuggingFace.Enabled {
 		token, source := credential("huggingface")
 		if token != "" {
-			p := stt.NewHuggingFaceProvider(cfg.HuggingFace.Model, token)
-			r.AddCloud(p)
-			providers = append(providers, namedProvider{name: "stt.huggingface", provider: p})
+			enabled.HuggingFace = &stt.HuggingFaceOpts{Model: cfg.HuggingFace.Model, Token: token}
 			notes = append(notes, "HuggingFace STT registered (model="+cfg.HuggingFace.Model+", source="+source+")")
 		} else {
 			notes = append(notes, "HuggingFace STT disabled (token missing)")
@@ -80,41 +73,30 @@ func buildSTTRouter(cfg *config.Config) (*router.Router, []namedProvider, []stri
 	// OpenRouter speech-to-text (cloud gateway).
 	if cfg.Providers.OpenRouter.Enabled {
 		if key, source := credential("openrouter"); key != "" {
-			p := stt.NewOpenRouterSTTProvider(key, cfg.Providers.OpenRouter.STTModel)
-			r.AddCloud(p)
-			providers = append(providers, namedProvider{name: "stt.openrouter", provider: p})
-			notes = append(notes, "OpenRouter STT registered (model="+p.Model+")")
+			enabled.OpenRouter = &stt.OpenRouterOpts{APIKey: key, Model: cfg.Providers.OpenRouter.STTModel}
+			notes = append(notes, "OpenRouter STT registered (model="+cfg.Providers.OpenRouter.STTModel+")")
 		} else {
 			notes = append(notes, "OpenRouter STT disabled ("+source+" not set)")
 		}
 	}
 
-	// OpenAI Whisper (cloud).
+	// OpenAI Whisper (cloud). Model defaults to whisper-1 when unset.
 	if cfg.Providers.OpenAI.Enabled {
 		if key, source := credential("openai"); key != "" {
-			model := strings.TrimSpace(cfg.Providers.OpenAI.STTModel)
-			var p *stt.OpenAICompatibleProvider
-			if model == "" {
-				p = stt.NewOpenAISTTProvider(key)
-			} else {
-				p = stt.NewOpenAICompatibleProvider("openai", "https://api.openai.com", key, model)
-			}
-			r.AddCloud(p)
-			providers = append(providers, namedProvider{name: "stt.openai", provider: p})
-			notes = append(notes, "OpenAI STT registered (model="+p.Model+", source="+source+")")
+			model := firstNonEmpty(strings.TrimSpace(cfg.Providers.OpenAI.STTModel), "whisper-1")
+			enabled.OpenAI = &stt.OpenAIOpts{APIKey: key, Model: model}
+			notes = append(notes, "OpenAI STT registered (model="+model+", source="+source+")")
 		} else {
 			notes = append(notes, "OpenAI STT disabled ("+source+" not set)")
 		}
 	}
 
-	// Groq (cloud).
+	// Groq (cloud). Model defaults to whisper-large-v3-turbo when unset.
 	if cfg.Providers.Groq.Enabled {
 		if key, source := credential("groq"); key != "" {
 			model := firstNonEmpty(cfg.Providers.Groq.STTModel, "whisper-large-v3-turbo")
-			p := stt.NewOpenAICompatibleProvider("groq", "https://api.groq.com/openai", key, model)
-			r.AddCloud(p)
-			providers = append(providers, namedProvider{name: "stt.groq", provider: p})
-			notes = append(notes, "Groq STT registered (model="+p.Model+", source="+source+")")
+			enabled.Groq = &stt.GroqOpts{APIKey: key, Model: model}
+			notes = append(notes, "Groq STT registered (model="+model+", source="+source+")")
 		} else {
 			notes = append(notes, "Groq STT disabled ("+source+" not set)")
 		}
@@ -123,12 +105,13 @@ func buildSTTRouter(cfg *config.Config) (*router.Router, []namedProvider, []stri
 	// Deepgram (direct cloud STT + diarization).
 	if cfg.Providers.Deepgram.Enabled {
 		if key, source := credential("deepgram"); key != "" {
-			p := stt.NewDeepgramProvider(key, cfg.Providers.Deepgram.STTModel)
-			p.DiarizationModel = firstNonEmpty(cfg.Providers.Deepgram.DiarizationModel, "latest")
-			p.ApplyOptions(deepgramOptionsFromConfig(cfg))
-			r.AddCloud(p)
-			providers = append(providers, namedProvider{name: "stt.deepgram", provider: p})
-			notes = append(notes, "Deepgram STT registered (model="+p.Model+", source="+source+")")
+			enabled.Deepgram = &stt.DeepgramOpts{
+				APIKey:           key,
+				Model:            cfg.Providers.Deepgram.STTModel,
+				DiarizationModel: firstNonEmpty(cfg.Providers.Deepgram.DiarizationModel, "latest"),
+				Listen:           deepgramOptionsFromConfig(cfg),
+			}
+			notes = append(notes, "Deepgram STT registered (model="+cfg.Providers.Deepgram.STTModel+", source="+source+")")
 		} else {
 			notes = append(notes, "Deepgram STT disabled ("+source+" not set)")
 		}
@@ -137,17 +120,18 @@ func buildSTTRouter(cfg *config.Config) (*router.Router, []namedProvider, []stri
 	// AssemblyAI (direct cloud STT + batch diarization / speaker identification).
 	if cfg.Providers.AssemblyAI.Enabled {
 		if key, source := credential("assemblyai"); key != "" {
-			p := stt.NewAssemblyAIProvider(key, cfg.Providers.AssemblyAI.STTModels)
-			p.StreamingModel = firstNonEmpty(cfg.Providers.AssemblyAI.StreamingModel, p.StreamingModel)
-			p.StreamingBaseURL = firstNonEmpty(cfg.Providers.AssemblyAI.StreamingBaseURL, p.StreamingBaseURL)
-			p.SyncBaseURL = firstNonEmpty(cfg.Providers.AssemblyAI.SyncBaseURL, p.SyncBaseURL)
-			p.DisableSync = cfg.Providers.AssemblyAI.DisableSync
-			if cfg.Providers.AssemblyAI.StreamingLLM {
-				p.EnableStreamingLLM(cfg.Providers.AssemblyAI.LLMGatewayUtilityModel, "", 256)
+			aai := cfg.Providers.AssemblyAI
+			enabled.AssemblyAI = &stt.AssemblyAIOpts{
+				APIKey:            key,
+				Models:            aai.STTModels,
+				StreamingModel:    aai.StreamingModel,
+				StreamingBaseURL:  aai.StreamingBaseURL,
+				SyncBaseURL:       aai.SyncBaseURL,
+				DisableSync:       aai.DisableSync,
+				StreamingLLM:      aai.StreamingLLM,
+				StreamingLLMModel: aai.LLMGatewayUtilityModel,
 			}
-			r.AddCloud(p)
-			providers = append(providers, namedProvider{name: "stt.assemblyai", provider: p})
-			notes = append(notes, "AssemblyAI STT registered (models="+strings.Join(p.Models, ",")+", source="+source+")")
+			notes = append(notes, "AssemblyAI STT registered (models="+aai.STTModels+", source="+source+")")
 		} else {
 			notes = append(notes, "AssemblyAI STT disabled ("+source+" not set)")
 		}
@@ -156,23 +140,23 @@ func buildSTTRouter(cfg *config.Config) (*router.Router, []namedProvider, []stri
 	// Google Cloud STT.
 	if cfg.Providers.Google.Enabled {
 		if key, source := credential("google_stt"); key != "" {
-			p := stt.NewGoogleSTTProvider(key, cfg.Providers.Google.STTModel)
-			p.SetStreamingCredentialEnvs(config.GoogleSTTCredentialsJSONEnvName(cfg), config.GoogleApplicationCredentialsEnvName(cfg))
-			r.AddCloud(p)
-			providers = append(providers, namedProvider{name: "stt.google", provider: p})
+			enabled.Google = &stt.GoogleOpts{
+				APIKey:                    key,
+				Model:                     cfg.Providers.Google.STTModel,
+				CredentialsJSONEnv:        config.GoogleSTTCredentialsJSONEnvName(cfg),
+				ApplicationCredentialsEnv: config.GoogleApplicationCredentialsEnvName(cfg),
+			}
 			notes = append(notes, "Google STT registered (model="+cfg.Providers.Google.STTModel+", source="+source+")")
 		} else {
 			notes = append(notes, "Google STT disabled (set "+config.GoogleSTTAPIKeyEnvName(cfg)+" or "+config.GoogleCloudSTTAPIKeyEnv+")")
 		}
 	}
 
-	// VPS (self-hosted OpenAI-compatible).
+	// VPS (self-hosted OpenAI-compatible). Model defaults to whisper-1.
 	if cfg.VPS.Enabled && strings.TrimSpace(cfg.VPS.URL) != "" {
 		key := config.ResolveSecret(cfg.VPS.APIKeyEnv)
-		p := stt.NewVPSProviderWithModel(cfg.VPS.URL, key, cfg.VPS.Model)
-		r.AddCloud(p)
-		providers = append(providers, namedProvider{name: "stt.vps", provider: p})
-		notes = append(notes, "VPS STT registered (url="+cfg.VPS.URL+", model="+p.Model+")")
+		enabled.VPS = &stt.VPSOpts{URL: cfg.VPS.URL, APIKey: key, Model: cfg.VPS.Model}
+		notes = append(notes, "VPS STT registered (url="+cfg.VPS.URL+", model="+firstNonEmpty(strings.TrimSpace(cfg.VPS.Model), "whisper-1")+")")
 	}
 
 	// Local whisper.cpp. We DO register the provider so the router has a
@@ -180,10 +164,31 @@ func buildSTTRouter(cfg *config.Config) (*router.Router, []namedProvider, []stri
 	// MaybeStartLocalSTT. This keeps the server usable with cloud-only
 	// providers while still surfacing a local option.
 	if cfg.Local.Enabled && strings.TrimSpace(cfg.Local.ModelPath) != "" {
-		p := stt.NewLocalProvider(cfg.Local.Port, cfg.Local.ModelPath, cfg.Local.GPU)
-		r.SetLocal(p)
-		providers = append(providers, namedProvider{name: "stt.local", provider: p})
+		enabled.Local = &stt.LocalOpts{Port: cfg.Local.Port, ModelPath: cfg.Local.ModelPath, GPU: cfg.Local.GPU}
 		notes = append(notes, "Local whisper.cpp configured (not yet started; see readiness probe)")
+	}
+
+	routerCfg := stt.RouterConfig{
+		Strategy:             strategy,
+		PreferLocalUnderSecs: cfg.Routing.PreferLocalUnderSeconds,
+		ParallelCloud:        cfg.Routing.ParallelCloud,
+		ReplaceOnBetter:      cfg.Routing.ReplaceOnBetter,
+	}
+	r, ok, _ := stt.BuildRouter(routerCfg, enabled)
+	if !ok {
+		// Keep returning a configured (empty) router so bootstrap and
+		// handlers always have a routing target.
+		r = &router.Router{
+			Strategy:             routerCfg.Strategy,
+			PreferLocalUnderSecs: routerCfg.PreferLocalUnderSecs,
+			ParallelCloud:        routerCfg.ParallelCloud,
+			ReplaceOnBetter:      routerCfg.ReplaceOnBetter,
+		}
+	}
+
+	var providers []namedProvider
+	for _, p := range r.Providers() {
+		providers = append(providers, namedProvider{name: "stt." + p.Name(), provider: p})
 	}
 
 	return r, providers, notes
