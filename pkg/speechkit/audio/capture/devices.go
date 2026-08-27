@@ -1,4 +1,4 @@
-package audio
+package capture
 
 import "strings"
 

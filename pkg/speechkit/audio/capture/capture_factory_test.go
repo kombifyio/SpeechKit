@@ -1,8 +1,10 @@
-package audio
+package capture
 
 import (
 	"errors"
 	"testing"
+
+	audiopkg "github.com/kombifyio/SpeechKit/pkg/speechkit/audio"
 )
 
 func TestDefaultBackendUsesWindowsCapture(t *testing.T) {
@@ -14,11 +16,11 @@ func TestDefaultBackendUsesWindowsCapture(t *testing.T) {
 func TestNormalizeConfigAppliesAudioDefaults(t *testing.T) {
 	cfg := normalizeConfig(Config{})
 
-	if cfg.SampleRate != SampleRate {
-		t.Fatalf("SampleRate = %d, want %d", cfg.SampleRate, SampleRate)
+	if cfg.SampleRate != audiopkg.SampleRate {
+		t.Fatalf("SampleRate = %d, want %d", cfg.SampleRate, audiopkg.SampleRate)
 	}
-	if cfg.Channels != Channels {
-		t.Fatalf("Channels = %d, want %d", cfg.Channels, Channels)
+	if cfg.Channels != audiopkg.Channels {
+		t.Fatalf("Channels = %d, want %d", cfg.Channels, audiopkg.Channels)
 	}
 	if cfg.FrameSizeMs != 32 {
 		t.Fatalf("FrameSizeMs = %d, want 32", cfg.FrameSizeMs)
@@ -90,7 +92,7 @@ func TestOpenRegisteredBackendReceivesNormalizedConfig(t *testing.T) {
 	if session == nil {
 		t.Fatal("Open() returned nil session")
 	}
-	if got.SampleRate != SampleRate || got.Channels != Channels || got.FrameSizeMs != 32 || got.InputSource != InputSourceMicrophone {
+	if got.SampleRate != audiopkg.SampleRate || got.Channels != audiopkg.Channels || got.FrameSizeMs != 32 || got.InputSource != InputSourceMicrophone {
 		t.Fatalf("normalized config = %+v", got)
 	}
 }

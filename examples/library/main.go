@@ -59,7 +59,9 @@ func (r *exampleRecorder) Stop() ([]byte, error) {
 	r.recording = false
 	fmt.Println("Recording stopped.")
 	// Return captured PCM audio (16kHz, 16-bit, mono).
-	// In production, use malgo or another audio library.
+	// In production, use pkg/speechkit/audio/capture: capture.Open returns a
+	// Session that satisfies AudioRecorder (Windows/WASAPI today; other
+	// builds report capture.ErrBackendUnavailable).
 	if len(r.pcm) == 0 {
 		r.pcm = []byte(strings.Repeat("a", 6400))
 	}

@@ -1,4 +1,4 @@
-package audio
+package capture
 
 import (
 	"testing"
@@ -30,7 +30,7 @@ func BenchmarkFreshAllocPerCallback(b *testing.B) {
 	b.ReportAllocs()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		// Mirrors the existing internal/audio/capturer_windows_cgo.go:107
+		// Mirrors the pre-pool capture_windows_cgo.go
 		// `append([]byte(nil), inputSamples...)` copy-into-fresh pattern.
 		_ = append([]byte(nil), src...)
 	}

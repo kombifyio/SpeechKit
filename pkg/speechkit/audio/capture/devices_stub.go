@@ -1,6 +1,6 @@
 //go:build !windows || !cgo
 
-package audio
+package capture
 
 func init() {
 	captureDeviceLister = func(Config) ([]DeviceInfo, error) {

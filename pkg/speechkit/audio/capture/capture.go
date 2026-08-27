@@ -1,9 +1,11 @@
-package audio
+package capture
 
 import (
 	"errors"
 	"fmt"
 	"sync"
+
+	audiopkg "github.com/kombifyio/SpeechKit/pkg/speechkit/audio"
 )
 
 type Backend string
@@ -86,7 +88,7 @@ type Session interface {
 	SetPCMHandler(func([]byte))
 	// SetPooledPCMHandler installs the pool-aware variant of the PCM
 	// callback. When set (non-nil), the capture backend leases the
-	// per-frame buffer from internal/audio's package-level FramePool
+	// per-frame buffer from this package's package-level FramePool
 	// instead of allocating fresh, and invokes the handler with a
 	// release closure. The handler MUST call release exactly once
 	// before returning OR before retaining any reference to the
@@ -111,7 +113,7 @@ type Session interface {
 // returning, or asynchronously once any retained reference is
 // released. The buffer MUST NOT be read or written after release.
 //
-// See internal/audio.FramePool for the underlying lifecycle. The
+// See [FramePool] for the underlying lifecycle. The
 // optimisation only matters for sustained capture (~33 callbacks/sec
 // per session); short-lived recording paths can stay on the legacy
 // SetPCMHandler API without ceremony.
@@ -119,7 +121,7 @@ type Session interface {
 // Declared as a type alias (not a defined type) so implementations of
 // [Session] structurally satisfy interfaces declared outside this
 // package (e.g. pkg/speechkit's PooledPCMRecorder) without importing
-// internal/audio.
+// this package.
 type PooledPCMHandler = func(buf []byte, release func())
 
 // Capturer is kept as an alias while the app migrates to the session terminology.
@@ -195,10 +197,10 @@ func normalizeConfig(cfg Config) Config {
 		cfg.InputSource = InputSourceMicrophone
 	}
 	if cfg.SampleRate <= 0 {
-		cfg.SampleRate = SampleRate
+		cfg.SampleRate = audiopkg.SampleRate
 	}
 	if cfg.Channels <= 0 {
-		cfg.Channels = Channels
+		cfg.Channels = audiopkg.Channels
 	}
 	if cfg.FrameSizeMs <= 0 {
 		cfg.FrameSizeMs = 32

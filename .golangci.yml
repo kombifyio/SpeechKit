@@ -152,6 +152,10 @@ linters:
         linters:
           - gocritic
           - unconvert
+      - path: pkg/speechkit/audio/capture/.*_windows_cgo\.go
+        linters:
+          - gocritic
+          - unconvert
       - path: internal/vad/
         linters:
           - revive

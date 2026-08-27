@@ -3,8 +3,8 @@ package audio
 // PCM format constants and helpers now live in the public pkg/speechkit/audio
 // package so promoted STT/TTS adapters (under pkg/speechkit/**) can share them
 // without importing internal/. internal/audio re-exports them here so the
-// device-capture code (incl. the //go:build windows && cgo files) and existing
-// callers keep using audio.SampleRate / audio.PCMToWAV unchanged.
+// playback code and existing callers keep using audio.SampleRate /
+// audio.PCMToWAV unchanged.
 
 import audiopkg "github.com/kombifyio/SpeechKit/pkg/speechkit/audio"
 

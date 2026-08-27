@@ -1,6 +1,6 @@
 //go:build windows && cgo
 
-package audio
+package capture
 
 // #include <stdlib.h>
 import "C"
@@ -18,12 +18,12 @@ import (
 
 	"github.com/gen2brain/malgo"
 
-	"github.com/kombifyio/SpeechKit/internal/winapi"
+	audiopkg "github.com/kombifyio/SpeechKit/pkg/speechkit/audio"
 )
 
 const (
 	// Pre-allocate for ~30s of audio to reduce GC pressure during recording.
-	initialBufferSize = SampleRate * BytesPerSample * 30
+	initialBufferSize = audiopkg.SampleRate * audiopkg.BytesPerSample * 30
 
 	// frameDispatchDepth buffers ~2s of 32ms frames between the WASAPI
 	// callback and the drain goroutine. Deep enough to absorb GC pauses
@@ -277,13 +277,13 @@ func (s *MalgoSession) startFrameDispatch() chan []byte {
 func (s *MalgoSession) drainFrames(frames <-chan []byte, done chan<- struct{}) {
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
-	if err := winapi.SetCurrentThreadPriority(winapi.ThreadPriorityAboveNormal); err != nil {
+	if err := setCurrentThreadPriority(threadPriorityAboveNormal); err != nil {
 		slog.Debug("audio drain thread priority raise failed", "err", err)
 	}
 	defer close(done)
 
 	for buf := range frames {
-		level := PCMLevel(buf)
+		level := audiopkg.PCMLevel(buf)
 		s.levelMu.RLock()
 		levelHandler := s.levelHandler
 		s.levelMu.RUnlock()
@@ -299,7 +299,7 @@ func (s *MalgoSession) drainFrames(frames <-chan []byte, done chan<- struct{}) {
 		case pooledHandler != nil:
 			// Pool-aware path: hand the pooled buffer straight to the
 			// consumer with an explicit release (typically 26x less heap
-			// per frame; see internal/audio/framepool_bench_test.go).
+			// per frame; see framepool_bench_test.go).
 			released := false
 			pooledHandler(buf, func() {
 				if released {

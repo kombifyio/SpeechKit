@@ -1,4 +1,4 @@
-package audio
+package capture
 
 import (
 	"sync"
@@ -14,7 +14,7 @@ const DefaultFrameCapacity = 4096
 
 // FramePool returns recyclable byte slices for short-lived PCM frame
 // buffers. The hot path it addresses is the malgo capture callback
-// (internal/audio/capturer_windows_cgo.go) which used to allocate a
+// (capture_windows_cgo.go) which used to allocate a
 // fresh slice per callback (~33×/sec per active capture, ~3300×/sec
 // at 100 concurrent server sessions).
 //
