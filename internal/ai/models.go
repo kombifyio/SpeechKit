@@ -21,8 +21,12 @@ const (
 	groqBaseURL       = "https://api.groq.com/openai/v1"
 	hfBaseURL         = "https://router.huggingface.co/hf-inference/v1"
 	openRouterBaseURL = "https://openrouter.ai/api/v1"
-	chatCompletions   = "chat/completions"
-	maxRespBody       = 1 << 20 // 1 MB
+	// assemblyAILLMGatewayBaseURL is the OpenAI-compatible AssemblyAI LLM
+	// Gateway. Same API key as STT. EU residency uses
+	// https://llm-gateway.eu.assemblyai.com/v1.
+	assemblyAILLMGatewayBaseURL = "https://llm-gateway.assemblyai.com/v1"
+	chatCompletions             = "chat/completions"
+	maxRespBody                 = 1 << 20 // 1 MB
 )
 
 // AICallValidation controls URL validation for OpenAI-compatible LLM calls.
@@ -98,6 +102,31 @@ func registerHFModels(g *genkit.Genkit, token string) {
 
 	for _, name := range models {
 		registerOpenAICompatibleModel(g, "huggingface", name, hfBaseURL, token, client, false)
+	}
+}
+
+// registerAssemblyAILLMModels registers AssemblyAI LLM Gateway models.
+// Chat completions are OpenAI-compatible; Qwen 3.5 4B Fast has no tool calling.
+func registerAssemblyAILLMModels(g *genkit.Genkit, apiKey, baseURL string, extra []string) {
+	if strings.TrimSpace(baseURL) == "" {
+		baseURL = assemblyAILLMGatewayBaseURL
+	}
+	client := newAIClient(&AICallValidation)
+	names := []string{
+		"qwen3.5-4b-32k-fast",
+		"qwen3-32B",
+		"gemini-2.5-flash",
+	}
+	names = append(names, extra...)
+	seen := map[string]bool{}
+	for _, raw := range names {
+		name := strings.TrimSpace(raw)
+		if name == "" || seen[name] {
+			continue
+		}
+		seen[name] = true
+		supportsTools := name != "qwen3.5-4b-32k-fast"
+		registerOpenAICompatibleModel(g, "assemblyai", name, baseURL, apiKey, client, supportsTools)
 	}
 }
 

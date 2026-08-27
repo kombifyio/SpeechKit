@@ -43,11 +43,46 @@ type AssemblyAIProvider struct {
 	SyncModel string
 	// DisableSync forces every transcription through the classic async
 	// upload+poll flow, even for clips the Sync API could serve.
-	DisableSync  bool
+	DisableSync bool
+	// StreamingLLM, when set, attaches AssemblyAI LLM Gateway to Universal-3.5
+	// Pro realtime turns. The formatted transcript still arrives as Turn;
+	// LLMGatewayResponse may rewrite the final text for live cleanup.
+	StreamingLLM *AssemblyAIStreamingLLM
 	Validation   netsec.ValidationOptions
 	PollInterval time.Duration
 	PollTimeout  time.Duration
 	client       *http.Client
+}
+
+// AssemblyAIStreamingLLM is the LLM Gateway payload attached to a realtime
+// dictation WebSocket. Model IDs are LLM Gateway catalog names, not STT names.
+type AssemblyAIStreamingLLM struct {
+	Model     string
+	Prompt    string
+	MaxTokens int
+}
+
+// DefaultAssemblyAITurnCleanupPrompt asks the gateway to tidy a single turn
+// without summarizing. {{turn}} is substituted by AssemblyAI.
+const DefaultAssemblyAITurnCleanupPrompt = "Clean this dictation turn. Fix punctuation and obvious recognition errors. Keep the same language and meaning. Output only the cleaned text.\n\nTranscript: {{turn}}"
+
+// EnableStreamingLLM attaches LLM Gateway cleanup to realtime dictation.
+func (p *AssemblyAIProvider) EnableStreamingLLM(model, prompt string, maxTokens int) {
+	if p == nil {
+		return
+	}
+	model = strings.TrimSpace(model)
+	if model == "" {
+		model = "qwen3.5-4b-32k-fast"
+	}
+	prompt = strings.TrimSpace(prompt)
+	if prompt == "" {
+		prompt = DefaultAssemblyAITurnCleanupPrompt
+	}
+	if maxTokens <= 0 {
+		maxTokens = 256
+	}
+	p.StreamingLLM = &AssemblyAIStreamingLLM{Model: model, Prompt: prompt, MaxTokens: maxTokens}
 }
 
 func NewAssemblyAIProvider(apiKey, models string) *AssemblyAIProvider {

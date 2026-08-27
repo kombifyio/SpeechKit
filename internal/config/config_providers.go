@@ -131,6 +131,17 @@ type AssemblyAIProviderConfig struct {
 	// DisableSync forces every transcription through the classic async
 	// upload+poll flow even for short clips the sync endpoint could serve.
 	DisableSync bool `toml:"disable_sync"`
+	// LLM Gateway is AssemblyAI's OpenAI-compatible chat endpoint. The same
+	// ASSEMBLYAI_API_KEY authenticates STT and LLM. Empty base URL uses the
+	// public US gateway; set llm_gateway.eu.assemblyai.com for EU residency.
+	LLMGatewayBaseURL      string `toml:"llm_gateway_base_url"`
+	LLMGatewayUtilityModel string `toml:"llm_gateway_utility_model"`
+	LLMGatewayAssistModel  string `toml:"llm_gateway_assist_model"`
+	LLMGatewayAgentModel   string `toml:"llm_gateway_agent_model"`
+	// StreamingLLM attaches LLM Gateway to Universal-3.5 Pro realtime turns
+	// (live cleanup / per-turn rewrite). Off by default because it adds a
+	// billed LLM call to every formatted turn.
+	StreamingLLM bool `toml:"streaming_llm"`
 }
 
 type OllamaProviderConfig struct {

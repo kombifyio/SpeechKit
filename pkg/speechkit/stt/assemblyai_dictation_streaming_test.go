@@ -161,6 +161,77 @@ func TestAssemblyAI_StartDictationStream_QueryAndTurnMapping(t *testing.T) {
 	}
 }
 
+func TestAssemblyAI_StartDictationStream_AppliesLLMGatewayCleanup(t *testing.T) {
+	var gotQuery url.Values
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotQuery = r.URL.Query()
+		conn, err := websocket.Accept(w, r, &websocket.AcceptOptions{InsecureSkipVerify: true})
+		if err != nil {
+			t.Fatalf("accept: %v", err)
+		}
+		defer conn.Close(websocket.StatusNormalClosure, "done") //nolint:errcheck // test cleanup
+
+		writeJSON := func(v any) {
+			body, _ := json.Marshal(v)
+			if err := conn.Write(context.Background(), websocket.MessageText, body); err != nil {
+				t.Errorf("server write: %v", err)
+			}
+		}
+		writeJSON(assemblyAIStreamingTurn{
+			Type:            "Turn",
+			Transcript:      "hallo welt",
+			EndOfTurn:       true,
+			TurnIsFormatted: true,
+			TurnOrder:       0,
+		})
+		writeJSON(map[string]any{
+			"type": "LLMGatewayResponse",
+			"data": map[string]any{
+				"choices": []map[string]any{
+					{"message": map[string]any{"content": "Hallo Welt."}},
+				},
+			},
+		})
+		writeJSON(map[string]any{"type": "Termination"})
+	}))
+	defer server.Close()
+
+	p := NewAssemblyAIProvider("assembly-test-key", "")
+	p.StreamingBaseURL = server.URL
+	p.Validation = testValidation
+	p.EnableStreamingLLM("qwen3.5-4b-32k-fast", "", 128)
+
+	stream, err := p.StartDictationStream(context.Background(), speechkit.DictationStreamOptions{
+		Language: "de",
+	}, speaker.AudioFormat{Encoding: speaker.AudioEncodingLinear16, SampleRateHz: 16000, Channels: 1})
+	if err != nil {
+		t.Fatalf("StartDictationStream: %v", err)
+	}
+	defer stream.Close() //nolint:errcheck // test cleanup
+
+	raw := gotQuery.Get("llm_gateway")
+	if raw == "" {
+		t.Fatal("llm_gateway query missing")
+	}
+	var gateway map[string]any
+	if err := json.Unmarshal([]byte(raw), &gateway); err != nil {
+		t.Fatalf("llm_gateway = %q: %v", raw, err)
+	}
+	if gateway["model"] != "qwen3.5-4b-32k-fast" {
+		t.Fatalf("llm_gateway model = %v", gateway["model"])
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	final, err := stream.Receive(ctx)
+	if err != nil {
+		t.Fatalf("Receive: %v", err)
+	}
+	if !final.IsFinal || final.Text != "Hallo Welt." {
+		t.Fatalf("cleaned final = %+v", final)
+	}
+}
+
 // Diarization is native on the v3 realtime API (the same speaker_labels param
 // the speaker-stream path sets on this same endpoint), so the fix is to wire
 // it — not to reject it. Pins both halves: the param goes out, and the labels

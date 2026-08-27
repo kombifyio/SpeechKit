@@ -35,6 +35,29 @@ func TestInit_EmptyConfig(t *testing.T) {
 	}
 }
 
+func TestInit_RegistersAssemblyAILLMGatewayUtilityModel(t *testing.T) {
+	rt, err := Init(context.Background(), Config{
+		AssemblyAIAPIKey:       "test-key",
+		AssemblyAIUtilityModel: "qwen3.5-4b-32k-fast",
+		AssemblyAIAssistModel:  "qwen3-32B",
+	})
+	if err != nil {
+		t.Fatalf("Init: %v", err)
+	}
+	if len(rt.UtilityModels()) != 1 {
+		t.Fatalf("utility models = %d, want 1", len(rt.UtilityModels()))
+	}
+	if len(rt.AssistModels()) != 1 {
+		t.Fatalf("assist models = %d, want 1", len(rt.AssistModels()))
+	}
+	if _, ok := rt.AllModels()["assemblyai/qwen3.5-4b-32k-fast"]; !ok {
+		t.Fatal("expected assemblyai/qwen3.5-4b-32k-fast")
+	}
+	if _, ok := rt.AllModels()["assemblyai/qwen3-32B"]; !ok {
+		t.Fatal("expected assemblyai/qwen3-32B")
+	}
+}
+
 func TestInit_CustomModelRegistration(t *testing.T) {
 	// Init with OpenAI key registers custom models; then LookupModel finds them.
 	rt, err := Init(context.Background(), Config{

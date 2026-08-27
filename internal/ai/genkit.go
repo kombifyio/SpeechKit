@@ -30,32 +30,37 @@ type Config struct {
 	OllamaBaseURL    string
 	LocalLLMBaseURL  string
 
-	GoogleUtilityModel     string
-	GoogleAssistModel      string
-	GoogleAgentModel       string
-	OpenAIUtilityModel     string
-	OpenAIAssistModel      string
-	OpenAIAgentModel       string
-	GroqUtilityModel       string
-	GroqAssistModel        string
-	GroqAgentModel         string
-	HFUtilityModel         string
-	HFAssistModel          string
-	HFAgentModel           string
-	LocalLLMUtilityModel   string
-	LocalLLMAssistModel    string
-	LocalLLMAgentModel     string
-	OllamaUtilityModel     string
-	OllamaAssistModel      string
-	OllamaAgentModel       string
-	OpenRouterAPIKey       string
-	OpenRouterUtilityModel string
-	OpenRouterAssistModel  string
-	OpenRouterAgentModel   string
-	OrderedAssistModels    []OrderedModelSelection
-	OrderedAgentModels     []OrderedModelSelection
-	UseOrderedAssistModels bool
-	UseOrderedAgentModels  bool
+	GoogleUtilityModel          string
+	GoogleAssistModel           string
+	GoogleAgentModel            string
+	OpenAIUtilityModel          string
+	OpenAIAssistModel           string
+	OpenAIAgentModel            string
+	GroqUtilityModel            string
+	GroqAssistModel             string
+	GroqAgentModel              string
+	HFUtilityModel              string
+	HFAssistModel               string
+	HFAgentModel                string
+	LocalLLMUtilityModel        string
+	LocalLLMAssistModel         string
+	LocalLLMAgentModel          string
+	OllamaUtilityModel          string
+	OllamaAssistModel           string
+	OllamaAgentModel            string
+	OpenRouterAPIKey            string
+	OpenRouterUtilityModel      string
+	OpenRouterAssistModel       string
+	OpenRouterAgentModel        string
+	AssemblyAIAPIKey            string
+	AssemblyAILLMGatewayBaseURL string
+	AssemblyAIUtilityModel      string
+	AssemblyAIAssistModel       string
+	AssemblyAIAgentModel        string
+	OrderedAssistModels         []OrderedModelSelection
+	OrderedAgentModels          []OrderedModelSelection
+	UseOrderedAssistModels      bool
+	UseOrderedAgentModels       bool
 }
 
 type OrderedModelSelection struct {
@@ -161,6 +166,13 @@ func registerConfiguredProviderModels(g *genkit.Genkit, cfg Config) {
 	if cfg.OpenRouterAPIKey != "" {
 		registerOpenRouterModels(g, cfg.OpenRouterAPIKey)
 	}
+	if cfg.AssemblyAIAPIKey != "" {
+		registerAssemblyAILLMModels(g, cfg.AssemblyAIAPIKey, cfg.AssemblyAILLMGatewayBaseURL, []string{
+			cfg.AssemblyAIUtilityModel,
+			cfg.AssemblyAIAssistModel,
+			cfg.AssemblyAIAgentModel,
+		})
+	}
 	if cfg.LocalLLMBaseURL != "" {
 		registerLocalLLMModels(g, cfg.LocalLLMBaseURL, localLLMModelNames(cfg))
 	}
@@ -191,6 +203,7 @@ func tierModelSpecs(cfg Config, tier string) []modelSpec {
 			{"local", cfg.LocalLLMUtilityModel, cfg.LocalLLMBaseURL != "" && cfg.LocalLLMUtilityModel != ""},
 			{"ollama", cfg.OllamaUtilityModel, cfg.OllamaBaseURL != "" && cfg.OllamaUtilityModel != ""},
 			{"openrouter", cfg.OpenRouterUtilityModel, cfg.OpenRouterAPIKey != "" && cfg.OpenRouterUtilityModel != ""},
+			{"assemblyai", cfg.AssemblyAIUtilityModel, cfg.AssemblyAIAPIKey != "" && cfg.AssemblyAIUtilityModel != ""},
 		}
 	case "assist":
 		return []modelSpec{
@@ -201,6 +214,7 @@ func tierModelSpecs(cfg Config, tier string) []modelSpec {
 			{"local", cfg.LocalLLMAssistModel, cfg.LocalLLMBaseURL != "" && cfg.LocalLLMAssistModel != ""},
 			{"ollama", cfg.OllamaAssistModel, cfg.OllamaBaseURL != "" && cfg.OllamaAssistModel != ""},
 			{"openrouter", cfg.OpenRouterAssistModel, cfg.OpenRouterAPIKey != "" && cfg.OpenRouterAssistModel != ""},
+			{"assemblyai", cfg.AssemblyAIAssistModel, cfg.AssemblyAIAPIKey != "" && cfg.AssemblyAIAssistModel != ""},
 		}
 	case "agent":
 		return []modelSpec{
@@ -211,6 +225,7 @@ func tierModelSpecs(cfg Config, tier string) []modelSpec {
 			{"local", cfg.LocalLLMAgentModel, cfg.LocalLLMBaseURL != "" && cfg.LocalLLMAgentModel != ""},
 			{"ollama", cfg.OllamaAgentModel, cfg.OllamaBaseURL != "" && cfg.OllamaAgentModel != ""},
 			{"openrouter", cfg.OpenRouterAgentModel, cfg.OpenRouterAPIKey != "" && cfg.OpenRouterAgentModel != ""},
+			{"assemblyai", cfg.AssemblyAIAgentModel, cfg.AssemblyAIAPIKey != "" && cfg.AssemblyAIAgentModel != ""},
 		}
 	default:
 		return nil

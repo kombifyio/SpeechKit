@@ -512,6 +512,12 @@ vad_silence_duration_ms = 700
 # async flow automatically.
 # sync_base_url = "https://sync.assemblyai.com"  # or sync.us / sync.eu for data-zone pinning
 # disable_sync = false                            # true forces the classic async upload+poll flow
+# LLM Gateway uses the same API key (OpenAI-compatible chat completions).
+# llm_gateway_base_url = "https://llm-gateway.assemblyai.com/v1"  # EU: https://llm-gateway.eu.assemblyai.com/v1
+# llm_gateway_utility_model = "qwen3.5-4b-32k-fast"  # live cleanup / short utilities
+# llm_gateway_assist_model = "qwen3-32B"             # summaries and longer write-ups
+# llm_gateway_agent_model = ""
+# streaming_llm = false                              # true attaches LLM Gateway to each realtime turn
 
 # [providers.ollama]        # Local Provider: externally managed Ollama, not SpeechKit Built-in
 # enabled = false

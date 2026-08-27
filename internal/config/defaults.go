@@ -295,10 +295,13 @@ func defaults() *Config {
 				DiarizationModel:         "latest",
 			},
 			AssemblyAI: AssemblyAIProviderConfig{
-				APIKeyEnv:        AssemblyAIAPIKeyEnv, //nolint:gosec // not a credential, field name triggers false positive
-				STTModels:        "universal-3-5-pro,universal-2",
-				StreamingModel:   "universal-3-5-pro",
-				StreamingBaseURL: "wss://streaming.assemblyai.com",
+				APIKeyEnv:              AssemblyAIAPIKeyEnv, //nolint:gosec // not a credential, field name triggers false positive
+				STTModels:              "universal-3-5-pro,universal-2",
+				StreamingModel:         "universal-3-5-pro",
+				StreamingBaseURL:       "wss://streaming.assemblyai.com",
+				LLMGatewayBaseURL:      "https://llm-gateway.assemblyai.com/v1",
+				LLMGatewayUtilityModel: "qwen3.5-4b-32k-fast",
+				LLMGatewayAssistModel:  "qwen3-32B",
 			},
 			Ollama: OllamaProviderConfig{
 				BaseURL:      "http://localhost:11434",

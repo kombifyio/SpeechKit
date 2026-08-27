@@ -115,6 +115,7 @@ func (p *AssemblyAIProvider) StartDictationStream(ctx context.Context, opts spee
 		sessionID: opts.SessionID,
 		interim:   opts.InterimResults,
 		diarize:   opts.Diarization,
+		llm:       p.StreamingLLM != nil && strings.TrimSpace(p.StreamingLLM.Model) != "",
 		openedAt:  time.Now(),
 	}, nil
 }
@@ -153,8 +154,40 @@ func (p *AssemblyAIProvider) assemblyAIDictationStreamingEndpoint(model string, 
 	if hint := strings.TrimSpace(opts.PromptHint); hint != "" {
 		q.Set("agent_context", truncateRunes(hint, assemblyAIStreamingMaxContextChars))
 	}
+	if encoded := assemblyAILLMGatewayQuery(p.StreamingLLM); encoded != "" {
+		q.Set("llm_gateway", encoded)
+	}
 	u.RawQuery = q.Encode()
 	return u.String(), nil
+}
+
+func assemblyAILLMGatewayQuery(cfg *AssemblyAIStreamingLLM) string {
+	if cfg == nil {
+		return ""
+	}
+	model := strings.TrimSpace(cfg.Model)
+	if model == "" {
+		return ""
+	}
+	prompt := strings.TrimSpace(cfg.Prompt)
+	if prompt == "" {
+		prompt = DefaultAssemblyAITurnCleanupPrompt
+	}
+	maxTokens := cfg.MaxTokens
+	if maxTokens <= 0 {
+		maxTokens = 256
+	}
+	payload, err := json.Marshal(map[string]any{
+		"model": model,
+		"messages": []map[string]string{
+			{"role": "user", "content": prompt},
+		},
+		"max_tokens": maxTokens,
+	})
+	if err != nil {
+		return ""
+	}
+	return string(payload)
 }
 
 // assemblyAIStreamingURL resolves the validated v3 WebSocket base URL.
@@ -265,16 +298,18 @@ func (s *assemblyAISpeakerStream) Close() error {
 // assemblyAIDictationStream adapts a Universal-3.5 Pro realtime session to
 // speechkit.DictationStream.
 type assemblyAIDictationStream struct {
-	conn      *websocket.Conn
-	provider  string
-	model     string
-	language  string
-	sessionID uint64
-	interim   bool
-	diarize   bool
-	openedAt  time.Time
-	sequence  atomic.Int64
-	closeOnce atomic.Bool
+	conn         *websocket.Conn
+	provider     string
+	model        string
+	language     string
+	sessionID    uint64
+	interim      bool
+	diarize      bool
+	llm          bool
+	pendingFinal *speechkit.DictationStreamEvent
+	openedAt     time.Time
+	sequence     atomic.Int64
+	closeOnce    atomic.Bool
 }
 
 func (s *assemblyAIDictationStream) SendPCM(ctx context.Context, pcm []byte) error {
@@ -310,21 +345,41 @@ func (s *assemblyAIDictationStream) Receive(ctx context.Context) (speechkit.Dict
 		}
 		switch strings.ToLower(strings.TrimSpace(event.Type)) {
 		case "turn":
+			frame := event.dictationEvent(s.provider, s.model, s.language, s.sessionID, s.sequence.Add(1), s.diarize)
+			if frame.Text == "" && len(frame.Words) == 0 {
+				continue
+			}
+			if !frame.IsFinal && !s.interim {
+				continue
+			}
+			if frame.IsFinal && s.llm {
+				held := frame
+				s.pendingFinal = &held
+				continue
+			}
+			return frame, nil
+		case "llmgatewayresponse":
+			if s.pendingFinal == nil {
+				continue
+			}
+			out := *s.pendingFinal
+			s.pendingFinal = nil
+			if cleaned := assemblyAILLMGatewayContent(event.Data); cleaned != "" {
+				out.Text = cleaned
+			}
+			return out, nil
 		case "termination":
+			if s.pendingFinal != nil {
+				out := *s.pendingFinal
+				s.pendingFinal = nil
+				return out, nil
+			}
 			return speechkit.DictationStreamEvent{}, io.EOF
 		default:
 			// Begin, SpeechStarted, and future event types are not
 			// transcript-bearing.
 			continue
 		}
-		frame := event.dictationEvent(s.provider, s.model, s.language, s.sessionID, s.sequence.Add(1), s.diarize)
-		if frame.Text == "" && len(frame.Words) == 0 {
-			continue
-		}
-		if !frame.IsFinal && !s.interim {
-			continue
-		}
-		return frame, nil
 	}
 }
 
@@ -345,6 +400,27 @@ type assemblyAIStreamingTurn struct {
 	Speaker             string                    `json:"speaker"`
 	SpeakerLabel        string                    `json:"speaker_label"`
 	Words               []assemblyAIStreamingWord `json:"words"`
+	Data                json.RawMessage           `json:"data"`
+}
+
+func assemblyAILLMGatewayContent(raw json.RawMessage) string {
+	if len(raw) == 0 {
+		return ""
+	}
+	var payload struct {
+		Choices []struct {
+			Message struct {
+				Content string `json:"content"`
+			} `json:"message"`
+		} `json:"choices"`
+	}
+	if err := json.Unmarshal(raw, &payload); err != nil {
+		return ""
+	}
+	if len(payload.Choices) == 0 {
+		return ""
+	}
+	return strings.TrimSpace(payload.Choices[0].Message.Content)
 }
 
 // dictationEvent maps a Turn event onto the provider-neutral dictation event.

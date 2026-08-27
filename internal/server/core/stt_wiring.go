@@ -142,6 +142,9 @@ func buildSTTRouter(cfg *config.Config) (*router.Router, []namedProvider, []stri
 			p.StreamingBaseURL = firstNonEmpty(cfg.Providers.AssemblyAI.StreamingBaseURL, p.StreamingBaseURL)
 			p.SyncBaseURL = firstNonEmpty(cfg.Providers.AssemblyAI.SyncBaseURL, p.SyncBaseURL)
 			p.DisableSync = cfg.Providers.AssemblyAI.DisableSync
+			if cfg.Providers.AssemblyAI.StreamingLLM {
+				p.EnableStreamingLLM(cfg.Providers.AssemblyAI.LLMGatewayUtilityModel, "", 256)
+			}
 			r.AddCloud(p)
 			providers = append(providers, namedProvider{name: "stt.assemblyai", provider: p})
 			notes = append(notes, "AssemblyAI STT registered (models="+strings.Join(p.Models, ",")+", source="+source+")")
