@@ -110,6 +110,16 @@ export class VoiceAgentSession {
     this.sendFrame({ type: "ping" });
   }
 
+  /**
+   * Tap-to-interrupt: stops the agent reply that is playing right now.
+   * Idempotent and safe while idle. The server answers with an
+   * `interrupted` frame either way, so drop queued agent audio from
+   * {@link SessionHooks.onInterrupted} rather than from this call.
+   */
+  cancel(): void {
+    this.sendFrame({ type: "cancel" });
+  }
+
   advanceStep(reason?: string): void {
     this.sendFrame(reason !== undefined ? { type: "advance_step", reason } : { type: "advance_step" });
   }

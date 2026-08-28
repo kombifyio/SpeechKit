@@ -197,7 +197,33 @@ type ErrorFrame struct {
 	Type    string `json:"type"` // "error"
 	Code    string `json:"code"`
 	Message string `json:"message"`
+	// Remediation is a short, machine-friendly hint on how to unblock the
+	// refused capability. It is emitted for the codes ErrorRemediation
+	// covers; codes whose message already is the whole story omit it.
+	Remediation string `json:"remediation,omitempty"`
+	// RequestID correlates this frame with the server's request log. It is
+	// the id the RequestID middleware attached to the WebSocket upgrade, so
+	// every error frame of one session carries the same value.
+	RequestID string `json:"request_id,omitempty"`
 }
+
+// errorRemediation maps error codes to the one action that unblocks them.
+// Codes absent from the map carry no remediation: their message already
+// names the whole fix, or no client-side action exists.
+var errorRemediation = map[string]string{
+	"start_required":              "send a start frame as the first message on this socket",
+	"provider_unavailable":        "start with a provider this server configured, or omit provider to use its default",
+	"invalid_media_transport":     "use media_transport \"websocket\" or \"livekit\"",
+	"media_transport_unsupported": "start with a native realtime provider, or use media_transport \"websocket\"",
+	"media_transport_unavailable": "configure the LiveKit media bridge, or use media_transport \"websocket\"",
+	"audio_transport_mismatch":    "send audio through the LiveKit room, not as binary WebSocket frames",
+	"tool_response_unsupported":   "drop tool_response frames for this provider",
+}
+
+// ErrorRemediation returns the remediation hint for a wire error code, or ""
+// when the code has none. Exported so the handler layer stays the only place
+// that decides which codes carry guidance.
+func ErrorRemediation(code string) string { return errorRemediation[code] }
 
 type SessionEndFrame struct {
 	Type string `json:"type"` // "session_end"

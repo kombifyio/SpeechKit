@@ -44,14 +44,16 @@ function frame<T>(name: string): T {
 }
 
 /** Frame types protocol.ts declares on the ClientFrame union. */
-const CLIENT_TYPES = ["start", "text", "tool_response", "advance_step", "audio_end", "ping", "stop"] as const;
-
-/**
- * Client frame types the Go producer defines that protocol.ts does not yet
- * model (tracked drift, see the protocol.go SSOT header): `cancel` is the
- * tap-to-interrupt control frame.
- */
-const CLIENT_TYPES_PENDING_TS = ["cancel"] as const;
+const CLIENT_TYPES = [
+  "start",
+  "text",
+  "tool_response",
+  "advance_step",
+  "audio_end",
+  "ping",
+  "stop",
+  "cancel",
+] as const;
 
 /** Frame types protocol.ts declares on the ServerFrame union. */
 const SERVER_TYPES = [
@@ -73,7 +75,7 @@ describe("voiceagent.v1 fixture", () => {
   });
 
   it("covers every frame type protocol.ts declares (and nothing unknown)", () => {
-    const known = new Set<string>([...CLIENT_TYPES, ...CLIENT_TYPES_PENDING_TS, ...SERVER_TYPES]);
+    const known = new Set<string>([...CLIENT_TYPES, ...SERVER_TYPES]);
     const seen = new Set(Object.values(fixture.frames).map((f) => f.type));
     for (const entry of Object.values(fixture.frames)) {
       expect(known, `unknown frame type ${entry.type}`).toContain(entry.type);
@@ -111,7 +113,7 @@ describe("voiceagent.v1 fixture", () => {
     const advance = frame<AdvanceStepFrame>("advance_step");
     expect(advance.step_id).toBe("step-2");
 
-    for (const name of ["audio_end", "ping", "stop"] as const) {
+    for (const name of ["audio_end", "ping", "stop", "cancel"] as const) {
       const control = frame<ClientFrame>(name);
       expect(control.type).toBe(name);
       expect(Object.keys(control)).toEqual(["type"]);
@@ -122,9 +124,13 @@ describe("voiceagent.v1 fixture", () => {
     const ready = frame<StateFrame>("state_session_ready");
     expect(ready.state).toBe("listening");
     expect(ready.event_type).toBe("session_ready");
+    // The resolved backend is what a host gates provider-dependent UI on.
+    expect(ready.provider).toBe("deepgram");
+    expect(ready.media_transport).toBe("websocket");
 
     const speaking = frame<StateFrame>("state");
     expect(speaking.state).toBe("speaking");
+    expect(speaking.provider).toBeUndefined();
   });
 
   it("transcript frames decode for both directions", () => {
@@ -136,10 +142,12 @@ describe("voiceagent.v1 fixture", () => {
     const final = frame<TranscriptFrame>("input_transcript_final");
     expect(final.done).toBe(true);
 
-    // Speaker-attribution fields are additive server-side extras protocol.ts
-    // does not yet surface; the frame must still narrow as TranscriptFrame.
     const attributed = frame<TranscriptFrame>("input_transcript_speaker");
     expect(attributed.done).toBe(true);
+    expect(attributed.speaker_label).toBe("S1");
+    expect(attributed.person_id).toBe("person-7");
+    expect(attributed.display_name).toBe("Marcel");
+    expect(attributed.speaker_confidence).toBeCloseTo(0.87);
 
     const output = frame<TranscriptFrame>("output_transcript");
     expect(output.type).toBe("output_transcript");
@@ -167,6 +175,8 @@ describe("voiceagent.v1 fixture", () => {
     const error = frame<ErrorFrame>("error");
     expect(error.code).toBe("provider_unavailable");
     expect(error.message).toBeTruthy();
+    expect(error.remediation).toBeTruthy();
+    expect(error.request_id).toBeTruthy();
 
     const end = frame<SessionEndFrame>("session_end");
     expect(end.reason).toBe("idle");

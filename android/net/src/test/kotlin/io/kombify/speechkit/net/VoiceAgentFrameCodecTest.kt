@@ -4,6 +4,7 @@ import com.squareup.moshi.Moshi
 import com.squareup.moshi.Types
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
+import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import java.io.File
@@ -75,6 +76,52 @@ class VoiceAgentFrameCodecTest {
     }
 
     @Test
+    fun `start_full frame encodes activity detection and speaker options`() {
+        assertTreeEquals(
+            "start_full",
+            codec.encodeStart(
+                VoiceAgentStartFrame(
+                    personaId = "brainstorm",
+                    roleId = "moderator",
+                    sequenceId = "seq-1",
+                    provider = "gemini",
+                    mediaTransport = "livekit",
+                    voice = "Aoede",
+                    locale = "de-DE",
+                    model = "gemini-2.5-flash-native-audio",
+                    thinking = "low",
+                    activityDetection = VoiceAgentActivityDetection(
+                        automatic = true,
+                        startSensitivity = "high",
+                        endSensitivity = "low",
+                        prefixPaddingMs = 120,
+                        silenceDurationMs = 600,
+                        activityHandling = "start_of_activity_interrupts",
+                        turnCoverage = "turn_includes_only_activity",
+                    ),
+                    speaker = VoiceAgentSpeakerOptions(
+                        enabled = true,
+                        diarization = true,
+                        providerProfileId = "speaker.deepgram.nova-3",
+                        speakersExpected = 2,
+                    ),
+                    systemPromptOverride = "Antworte knapp und auf Deutsch.",
+                ),
+            ),
+        )
+    }
+
+    @Test
+    fun `advance_step frame encodes to the fixture shape`() {
+        assertTreeEquals(
+            "advance_step",
+            codec.encodeAdvanceStep(
+                VoiceAgentAdvanceStepFrame(stepId = "step-2", reason = "user_done"),
+            ),
+        )
+    }
+
+    @Test
     fun `start frame omits unset options instead of sending null`() {
         val json = codec.encodeStart(VoiceAgentStartFrame(personaId = "brainstorm"))
         // The server falls back to its configured defaults only for absent
@@ -105,7 +152,7 @@ class VoiceAgentFrameCodecTest {
 
     @Test
     fun `control frames encode to the fixture shape`() {
-        for (name in listOf("audio_end", "ping", "stop")) {
+        for (name in listOf("audio_end", "ping", "stop", "cancel")) {
             assertTreeEquals(name, codec.encodeControl(name))
         }
     }
@@ -118,9 +165,14 @@ class VoiceAgentFrameCodecTest {
             as VoiceAgentStateFrame
         assertEquals(VoiceAgentStates.LISTENING, ready.state)
         assertEquals("session_ready", ready.eventType)
+        // The resolved backend is what a surface gates provider-dependent
+        // controls on; dropping it silently is the drift this pins.
+        assertEquals("deepgram", ready.provider)
+        assertEquals("websocket", ready.mediaTransport)
 
         val speaking = codec.decodeServerFrame(frames.getValue("state")) as VoiceAgentStateFrame
         assertEquals(VoiceAgentStates.SPEAKING, speaking.state)
+        assertNull(speaking.provider)
     }
 
     @Test
@@ -137,11 +189,13 @@ class VoiceAgentFrameCodecTest {
         assertTrue(final.done)
         assertEquals("Wie ist das Wetter in Berlin?", final.text)
 
-        // Speaker-attribution fields are additive server-side extras the
-        // Kotlin frame does not yet surface; the frame must still decode.
         val attributed = codec.decodeServerFrame(frames.getValue("input_transcript_speaker"))
             as VoiceAgentTranscriptFrame
         assertTrue(attributed.done)
+        assertEquals("S1", attributed.speakerLabel)
+        assertEquals("person-7", attributed.personId)
+        assertEquals("Marcel", attributed.displayName)
+        assertEquals(0.87, attributed.speakerConfidence)
 
         val output = codec.decodeServerFrame(frames.getValue("output_transcript"))
             as VoiceAgentTranscriptFrame
@@ -184,16 +238,10 @@ class VoiceAgentFrameCodecTest {
         val error = codec.decodeServerFrame(frames.getValue("error")) as VoiceAgentErrorFrame
         assertEquals(VoiceAgentErrorCodes.PROVIDER_UNAVAILABLE, error.code)
         assertTrue(error.message.isNotEmpty())
-    }
-
-    @Test
-    fun `error frame accepts additive remediation fields`() {
-        // Not in the golden fixture: the Go producer does not emit these yet,
-        // but the client models them additively (asyncapi.v1.yaml).
-        val error = codec.decodeServerFrame(
-            """{"type":"error","code":"provider_unavailable","message":"nope","remediation":"configure"}""",
-        ) as VoiceAgentErrorFrame
-        assertEquals("configure", error.remediation)
+        // The producer emits both: remediation names the one unblocking
+        // action, request_id is what a support request quotes.
+        assertTrue(error.remediation?.isNotEmpty() == true)
+        assertTrue(error.requestId?.isNotEmpty() == true)
     }
 
     @Test

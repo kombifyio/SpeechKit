@@ -193,9 +193,11 @@ func TestVoiceAgentProtocol_GoldenFixtures(t *testing.T) {
 		EventFrameFields: EventFrameFields{EventType: EventInterrupted},
 	})
 	assertVoiceAgentWireEqual(t, frames, "error", ErrorFrame{
-		Type:    MsgError,
-		Code:    "provider_unavailable",
-		Message: `provider "gemini" is not configured on this server`,
+		Type:        MsgError,
+		Code:        "provider_unavailable",
+		Message:     `provider "gemini" is not configured on this server`,
+		Remediation: ErrorRemediation("provider_unavailable"),
+		RequestID:   "01J8ZC0R4M7Q2V",
 	})
 	assertVoiceAgentWireEqual(t, frames, "session_end", SessionEndFrame{
 		Type:             MsgSessionEnd,

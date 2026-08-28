@@ -11,6 +11,12 @@ IDs, source paths, and other maintainer-only vocabulary.
 
 ## Unreleased
 
+### Added
+
+* **voiceagent:** tapping to interrupt a spoken answer works from the web and Android clients, not only from the desktop app.
+* **voiceagent:** transcripts carry the speaker's label and name on web and Android when speaker recognition is on.
+* **voiceagent:** the web and Android clients read which speech backend is serving the session, so a surface can show it before the first word.
+
 ### Changed
 
 * **desktop:** Words and Replacements in Settings are searchable, paged, and deletable. Aliases live on the Word; several spoken forms may rewrite to the same term, and duplicate terms are merged on save.
@@ -21,6 +27,7 @@ IDs, source paths, and other maintainer-only vocabulary.
 
 ### Fixed
 
+* **voiceagent:** a refused Voice Agent session says what to change to get in, and every error carries the id support needs to find the request.
 * **desktop:** Full-capture Dictation uses the selected speech engine instead of always trying Deepgram first.
 * **desktop:** Dictation Settings switches Live and Full capture. Overlay shortcut functions can show the same Live/Full control and the Deepgram/AssemblyAI engine, each on or off like Copy and Language.
 

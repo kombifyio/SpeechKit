@@ -17,6 +17,7 @@ import (
 	"github.com/coder/websocket"
 
 	"github.com/kombifyio/SpeechKit/internal/config"
+	"github.com/kombifyio/SpeechKit/internal/server/middleware"
 )
 
 // Adapter bridges a live WebSocket conversation to the Framework kernel's
@@ -950,7 +951,13 @@ func (a *Adapter) sendBinary(ctx context.Context, data []byte) {
 }
 
 func (a *Adapter) sendError(ctx context.Context, code, message string) {
-	a.sendJSON(ctx, ErrorFrame{Type: MsgError, Code: code, Message: message})
+	a.sendJSON(ctx, ErrorFrame{
+		Type:        MsgError,
+		Code:        code,
+		Message:     message,
+		Remediation: ErrorRemediation(code),
+		RequestID:   middleware.RequestIDFromContext(ctx),
+	})
 }
 
 func (a *Adapter) closeSocket(status websocket.StatusCode, reason string) {

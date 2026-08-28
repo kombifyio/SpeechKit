@@ -27,6 +27,13 @@ object VoiceAgentMsg {
     const val PING = "ping"
     const val STOP = "stop"
 
+    /**
+     * Tap-to-interrupt: stops the CURRENT agent reply's downlink audio.
+     * Idempotent and safe while nothing plays; the server acknowledges every
+     * cancel with an [VoiceAgentInterruptedFrame] so playback state converges.
+     */
+    const val CANCEL = "cancel"
+
     // server → client
     const val STATE = "state"
     const val INPUT_TRANSCRIPT = "input_transcript"
@@ -100,6 +107,45 @@ object VoiceAgentAudio {
 }
 
 /**
+ * Turn-taking policy override for one session. Omitted entirely, the server
+ * applies the provider's own defaults.
+ */
+@JsonClass(generateAdapter = true)
+data class VoiceAgentActivityDetection(
+    val automatic: Boolean = false,
+    @Json(name = "start_sensitivity") val startSensitivity: String? = null,
+    @Json(name = "end_sensitivity") val endSensitivity: String? = null,
+    @Json(name = "prefix_padding_ms") val prefixPaddingMs: Int? = null,
+    @Json(name = "silence_duration_ms") val silenceDurationMs: Int? = null,
+    @Json(name = "activity_handling") val activityHandling: String? = null,
+    @Json(name = "turn_coverage") val turnCoverage: String? = null,
+)
+
+/**
+ * Diarization and identification options for one session. Unlike the frame
+ * fields around it these keys are camelCase on the wire, mirroring
+ * `speaker.Options` on the server.
+ */
+@JsonClass(generateAdapter = true)
+data class VoiceAgentSpeakerOptions(
+    val enabled: Boolean? = null,
+    val diarization: Boolean? = null,
+    val identification: Boolean? = null,
+    val attribution: Boolean? = null,
+    val providerProfileId: String? = null,
+    val model: String? = null,
+    val diarizationModel: String? = null,
+    val language: String? = null,
+    val speakersExpected: Int? = null,
+    val minSpeakersExpected: Int? = null,
+    val maxSpeakersExpected: Int? = null,
+    val speakerType: String? = null,
+    val knownValues: List<String>? = null,
+    val preferStreaming: Boolean? = null,
+    val allowProviderMapping: Boolean? = null,
+)
+
+/**
  * Mandatory first client frame. Every field is optional: the server falls
  * back to its configured defaults, and an unknown provider is rejected at
  * start with a provider_unavailable error rather than silently substituted.
@@ -116,7 +162,20 @@ data class VoiceAgentStartFrame(
     val locale: String? = null,
     val model: String? = null,
     val thinking: String? = null,
+    @Json(name = "activity_detection") val activityDetection: VoiceAgentActivityDetection? = null,
+    val speaker: VoiceAgentSpeakerOptions? = null,
     @Json(name = "system_prompt_override") val systemPromptOverride: String? = null,
+) : VoiceAgentClientFrame
+
+/**
+ * Moves the server-side workflow runner from the active sequence step to the
+ * next one. `stepId` is reserved for direct jumps; v1 advances linearly.
+ */
+@JsonClass(generateAdapter = true)
+data class VoiceAgentAdvanceStepFrame(
+    val type: String = VoiceAgentMsg.ADVANCE_STEP,
+    @Json(name = "step_id") val stepId: String? = null,
+    val reason: String? = null,
 ) : VoiceAgentClientFrame
 
 /** Marker for frames the client sends. */
@@ -145,13 +204,34 @@ data class VoiceAgentControlFrame(val type: String) : VoiceAgentClientFrame
 /** Marker for decoded server → client frames. */
 sealed interface VoiceAgentServerFrame
 
+/**
+ * Event metadata every server frame may carry (additive within v1).
+ * `eventTypes` lists the SpeechKit-normalized meanings when one provider
+ * event maps to several; `providerMetadata` exposes the provider-native
+ * details for diagnostics.
+ */
+interface VoiceAgentFrameMeta {
+    val eventType: String?
+    val eventTypes: List<String>?
+    val providerMetadata: Map<String, Any?>?
+}
+
 /** Lifecycle transition; drives the caller's UI state. */
 @JsonClass(generateAdapter = true)
 data class VoiceAgentStateFrame(
     val type: String = VoiceAgentMsg.STATE,
     val state: String = "",
-    @Json(name = "event_type") val eventType: String? = null,
-) : VoiceAgentServerFrame
+    /**
+     * Realtime backend actually serving this session, and the media
+     * transport actually applied. Both arrive on the `session_ready` frame
+     * only; a client gates provider-dependent controls on them.
+     */
+    val provider: String? = null,
+    @Json(name = "media_transport") val mediaTransport: String? = null,
+    @Json(name = "event_type") override val eventType: String? = null,
+    @Json(name = "event_types") override val eventTypes: List<String>? = null,
+    @Json(name = "provider_metadata") override val providerMetadata: Map<String, Any?>? = null,
+) : VoiceAgentServerFrame, VoiceAgentFrameMeta
 
 /**
  * Streaming transcript for either side of the conversation.
@@ -166,8 +246,18 @@ data class VoiceAgentTranscriptFrame(
     val type: String = VoiceAgentMsg.INPUT_TRANSCRIPT,
     val text: String = "",
     val done: Boolean = false,
-    @Json(name = "event_type") val eventType: String? = null,
-) : VoiceAgentServerFrame {
+    /**
+     * Speaker attribution for this text. Present only when the session
+     * started with [VoiceAgentSpeakerOptions] and the provider returned one.
+     */
+    @Json(name = "speaker_label") val speakerLabel: String? = null,
+    @Json(name = "person_id") val personId: String? = null,
+    @Json(name = "display_name") val displayName: String? = null,
+    @Json(name = "speaker_confidence") val speakerConfidence: Double? = null,
+    @Json(name = "event_type") override val eventType: String? = null,
+    @Json(name = "event_types") override val eventTypes: List<String>? = null,
+    @Json(name = "provider_metadata") override val providerMetadata: Map<String, Any?>? = null,
+) : VoiceAgentServerFrame, VoiceAgentFrameMeta {
     /** True for the user's own speech, false for the agent's answer. */
     val isInput: Boolean get() = type == VoiceAgentMsg.INPUT_TRANSCRIPT
 }
@@ -179,7 +269,10 @@ data class VoiceAgentToolCallFrame(
     val id: String = "",
     val name: String = "",
     val args: Map<String, Any?>? = null,
-) : VoiceAgentServerFrame
+    @Json(name = "event_type") override val eventType: String? = null,
+    @Json(name = "event_types") override val eventTypes: List<String>? = null,
+    @Json(name = "provider_metadata") override val providerMetadata: Map<String, Any?>? = null,
+) : VoiceAgentServerFrame, VoiceAgentFrameMeta
 
 /** Progress through a configured agent sequence. */
 @JsonClass(generateAdapter = true)
@@ -196,15 +289,19 @@ data class VoiceAgentSequenceStepFrame(
 @JsonClass(generateAdapter = true)
 data class VoiceAgentEventFrame(
     val type: String = VoiceAgentMsg.EVENT,
-    @Json(name = "event_type") val eventType: String = "",
-) : VoiceAgentServerFrame
+    @Json(name = "event_type") override val eventType: String? = null,
+    @Json(name = "event_types") override val eventTypes: List<String>? = null,
+    @Json(name = "provider_metadata") override val providerMetadata: Map<String, Any?>? = null,
+) : VoiceAgentServerFrame, VoiceAgentFrameMeta
 
 /** Barge-in: the user spoke over the agent and its answer was cut. */
 @JsonClass(generateAdapter = true)
 data class VoiceAgentInterruptedFrame(
     val type: String = VoiceAgentMsg.INTERRUPTED,
-    @Json(name = "event_type") val eventType: String? = null,
-) : VoiceAgentServerFrame
+    @Json(name = "event_type") override val eventType: String? = null,
+    @Json(name = "event_types") override val eventTypes: List<String>? = null,
+    @Json(name = "provider_metadata") override val providerMetadata: Map<String, Any?>? = null,
+) : VoiceAgentServerFrame, VoiceAgentFrameMeta
 
 /** Recoverable error; the socket stays open unless session_end follows. */
 @JsonClass(generateAdapter = true)
@@ -221,7 +318,10 @@ data class VoiceAgentErrorFrame(
 data class VoiceAgentSessionEndFrame(
     val type: String = VoiceAgentMsg.SESSION_END,
     val reason: String = "",
-) : VoiceAgentServerFrame
+    @Json(name = "event_type") override val eventType: String? = null,
+    @Json(name = "event_types") override val eventTypes: List<String>? = null,
+    @Json(name = "provider_metadata") override val providerMetadata: Map<String, Any?>? = null,
+) : VoiceAgentServerFrame, VoiceAgentFrameMeta
 
 /** Answers a client ping. */
 @JsonClass(generateAdapter = true)
@@ -260,6 +360,7 @@ class VoiceAgentCodec(moshi: Moshi = defaultMoshi()) {
     private val startAdapter = moshi.adapter(VoiceAgentStartFrame::class.java)
     private val textAdapter = moshi.adapter(VoiceAgentTextFrame::class.java)
     private val toolResponseAdapter = moshi.adapter(VoiceAgentToolResponseFrame::class.java)
+    private val advanceStepAdapter = moshi.adapter(VoiceAgentAdvanceStepFrame::class.java)
     private val controlAdapter = moshi.adapter(VoiceAgentControlFrame::class.java)
     private val stateAdapter = moshi.adapter(VoiceAgentStateFrame::class.java)
     private val transcriptAdapter = moshi.adapter(VoiceAgentTranscriptFrame::class.java)
@@ -279,6 +380,9 @@ class VoiceAgentCodec(moshi: Moshi = defaultMoshi()) {
 
     fun encodeToolResponse(frame: VoiceAgentToolResponseFrame): String =
         toolResponseAdapter.toJson(frame.copy(type = VoiceAgentMsg.TOOL_RESPONSE))
+
+    fun encodeAdvanceStep(frame: VoiceAgentAdvanceStepFrame): String =
+        advanceStepAdapter.toJson(frame.copy(type = VoiceAgentMsg.ADVANCE_STEP))
 
     fun encodeControl(type: String): String =
         controlAdapter.toJson(VoiceAgentControlFrame(type))

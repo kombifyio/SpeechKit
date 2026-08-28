@@ -89,6 +89,20 @@ interface VoiceAgentSession {
     /** Answers a [VoiceAgentEvent.ToolCall]. */
     suspend fun respondToTool(id: String, name: String, response: Map<String, Any?>)
 
+    /**
+     * Tap-to-interrupt: stops the agent reply that is playing right now. Safe
+     * to call while nothing plays. The server always answers with
+     * [VoiceAgentEvent.Interrupted], so drop queued agent audio when that
+     * event arrives rather than here.
+     */
+    suspend fun cancelReply()
+
+    /**
+     * Moves a running sequence to its next step. Only meaningful for
+     * sessions started with a `sequenceId`.
+     */
+    suspend fun advanceStep(reason: String? = null)
+
     /** Keepalive. Returns false once the socket is closed or closing. */
     suspend fun keepAlive(): Boolean
 
@@ -267,6 +281,14 @@ private class WsVoiceAgentSession(
                 VoiceAgentToolResponseFrame(id = id, name = name, response = response),
             ),
         )
+    }
+
+    override suspend fun cancelReply() {
+        webSocket.send(codec.encodeControl(VoiceAgentMsg.CANCEL))
+    }
+
+    override suspend fun advanceStep(reason: String?) {
+        webSocket.send(codec.encodeAdvanceStep(VoiceAgentAdvanceStepFrame(reason = reason)))
     }
 
     // send() returns false when the socket is closed or shutting down — the

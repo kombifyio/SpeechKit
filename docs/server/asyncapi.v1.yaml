@@ -589,6 +589,21 @@ components:
         done:
           type: boolean
           description: True when the transcript segment is final.
+        speaker_label:
+          type: string
+          description: >
+            Diarization label for the voice this text came from, e.g. `S1`.
+            Present only when the StartFrame carried `speaker` options and the
+            provider returned an attribution.
+        person_id:
+          type: string
+          description: Identified person behind `speaker_label`, when identification ran.
+        display_name:
+          type: string
+          description: Human-readable name for `person_id`.
+        speaker_confidence:
+          type: number
+          description: Confidence in the attribution, 0..1.
 
     ToolCallFrame:
       type: object

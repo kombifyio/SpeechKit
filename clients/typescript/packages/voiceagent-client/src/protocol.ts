@@ -93,8 +93,17 @@ export interface AdvanceStepFrame {
   reason?: string;
 }
 
+/**
+ * Body-less client control frames.
+ *
+ * `cancel` is tap-to-interrupt: it stops the CURRENT agent reply's downlink
+ * audio. It is idempotent and always acknowledged with an `interrupted`
+ * frame, even when nothing was playing, so client playback state converges.
+ * Whether the reply also stops generating upstream is provider-dependent;
+ * the server suppresses its downlink either way.
+ */
 export interface SimpleClientFrame {
-  type: "audio_end" | "ping" | "stop";
+  type: "audio_end" | "ping" | "stop" | "cancel";
 }
 
 export type ClientFrame = StartFrame | TextFrame | ToolResponseFrame | AdvanceStepFrame | SimpleClientFrame;
@@ -138,6 +147,14 @@ export interface ServerFrameMeta {
 export interface StateFrame extends ServerFrameMeta {
   type: "state";
   state: AgentState;
+  /**
+   * Realtime backend actually serving this session. Present on the
+   * `session_ready` frame only, after the server resolved
+   * `start.provider` → voice preference → server default.
+   */
+  provider?: string;
+  /** Media transport actually applied. Present on `session_ready` only. */
+  media_transport?: "websocket" | "livekit";
 }
 
 export interface TranscriptFrame extends ServerFrameMeta {
@@ -151,6 +168,18 @@ export interface TranscriptFrame extends ServerFrameMeta {
    */
   text: string;
   done: boolean;
+  /**
+   * Diarization label for the voice this text came from, e.g. `S1`. Present
+   * only when the session started with speaker options and the provider
+   * returned an attribution.
+   */
+  speaker_label?: string;
+  /** Identified person behind `speaker_label`, when identification ran. */
+  person_id?: string;
+  /** Human-readable name for `person_id`. */
+  display_name?: string;
+  /** Confidence in the attribution, 0..1. */
+  speaker_confidence?: number;
 }
 
 /**

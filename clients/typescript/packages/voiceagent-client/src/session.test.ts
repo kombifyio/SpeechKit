@@ -61,17 +61,19 @@ describe("VoiceAgentSession client framing", () => {
     expect(socket.sentFrames()[0]).toEqual({ type: "start", persona_id: "helper", locale: "en-US" });
   });
 
-  it("frames text, audio_end, ping, and advance_step", () => {
+  it("frames text, audio_end, ping, cancel, and advance_step", () => {
     const { socket, session } = openSession();
     session.sendText("hello");
     session.endAudio();
     session.ping();
+    session.cancel();
     session.advanceStep("done talking");
     session.advanceStep();
     expect(socket.sentFrames().slice(1)).toEqual([
       { type: "text", text: "hello" },
       { type: "audio_end" },
       { type: "ping" },
+      { type: "cancel" },
       { type: "advance_step", reason: "done talking" },
       { type: "advance_step" },
     ]);

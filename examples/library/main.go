@@ -6,6 +6,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"os"
@@ -14,6 +15,7 @@ import (
 	"time"
 
 	"github.com/kombifyio/SpeechKit/pkg/speechkit"
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/audio/capture"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/dictation"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/stt"
 )
@@ -40,35 +42,46 @@ func (p *exampleProvider) Name() string { return "example" }
 
 func (p *exampleProvider) Health(ctx context.Context) error { return nil }
 
-// --- Step 2: Implement the AudioRecorder interface ---
-// Captures audio from the microphone or another source.
+// --- Step 2: Get an AudioRecorder ---
+// capture.Open returns a Session that already satisfies
+// speechkit.AudioRecorder, so a host does not implement the microphone
+// itself. Builds without a capture backend (non-Windows, or Windows without
+// cgo) report capture.ErrBackendUnavailable; this example then falls back to
+// synthetic PCM so it still runs anywhere.
 
-type exampleRecorder struct {
-	recording bool
-	pcm       []byte
+func openRecorder() (speechkit.AudioRecorder, func(), string) {
+	session, err := capture.Open(capture.Config{})
+	switch {
+	case err == nil:
+		return session, func() { _ = session.Close() }, "microphone via pkg/speechkit/audio/capture"
+	case errors.Is(err, capture.ErrBackendUnavailable), errors.Is(err, capture.ErrUnsupportedBackend):
+		return &syntheticRecorder{}, func() {}, "synthetic PCM (no capture backend in this build)"
+	default:
+		slog.Warn("capture unavailable, using synthetic PCM", "err", err)
+		return &syntheticRecorder{}, func() {}, "synthetic PCM (capture failed)"
+	}
 }
 
-func (r *exampleRecorder) Start() error {
-	r.recording = true
+// syntheticRecorder stands in for a microphone where none exists. It shows
+// the whole AudioRecorder contract a custom source has to implement.
+type syntheticRecorder struct {
+	pcm []byte
+}
+
+func (r *syntheticRecorder) Start() error {
 	r.pcm = nil
-	fmt.Println("Recording started...")
 	return nil
 }
 
-func (r *exampleRecorder) Stop() ([]byte, error) {
-	r.recording = false
-	fmt.Println("Recording stopped.")
-	// Return captured PCM audio (16kHz, 16-bit, mono).
-	// In production, use pkg/speechkit/audio/capture: capture.Open returns a
-	// Session that satisfies AudioRecorder (Windows/WASAPI today; other
-	// builds report capture.ErrBackendUnavailable).
+// Stop returns captured PCM: 16 kHz, 16-bit, mono.
+func (r *syntheticRecorder) Stop() ([]byte, error) {
 	if len(r.pcm) == 0 {
 		r.pcm = []byte(strings.Repeat("a", 6400))
 	}
 	return r.pcm, nil
 }
 
-func (r *exampleRecorder) SetPCMHandler(handler func([]byte)) {
+func (r *syntheticRecorder) SetPCMHandler(handler func([]byte)) {
 	// Called with PCM chunks during recording for live processing (e.g. VAD).
 	// Can be a no-op if you don't need real-time audio access.
 }
@@ -111,7 +124,8 @@ func main() {
 	// stt.AsTranscriber bridges any STT provider to the runtime's
 	// speechkit.Transcriber interface.
 	transcriber := stt.AsTranscriber(&exampleProvider{})
-	recorder := &exampleRecorder{}
+	recorder, closeRecorder, source := openRecorder()
+	defer closeRecorder()
 	observer := &exampleObserver{}
 	output := &exampleOutput{}
 
@@ -135,6 +149,7 @@ func main() {
 
 	// Simulate a recording session.
 	fmt.Println("SpeechKit Library Example")
+	fmt.Printf("Audio source: %s\n", source)
 	fmt.Println("Press Ctrl+C to exit.")
 	fmt.Println()
 

@@ -114,7 +114,9 @@
     "error": {
       "type": "error",
       "code": "provider_unavailable",
-      "message": "provider \"gemini\" is not configured on this server"
+      "message": "provider \"gemini\" is not configured on this server",
+      "remediation": "start with a provider this server configured, or omit provider to use its default",
+      "request_id": "01J8ZC0R4M7Q2V"
     },
     "session_end": {
       "type": "session_end",

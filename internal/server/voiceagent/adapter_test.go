@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/coder/websocket"
+	"github.com/kombifyio/SpeechKit/internal/server/middleware"
 	"github.com/kombifyio/SpeechKit/internal/voiceeval"
 )
 
@@ -169,7 +170,10 @@ func startAdapterEnvWithBridge(t *testing.T, idle time.Duration, provider *fakeP
 		done:          make(chan struct{}),
 		idle:          idle,
 	}
-	env.srv = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	// The upgrade runs behind the same RequestID middleware the real server
+	// mounts, so error frames carry the correlation id a support request
+	// would quote.
+	env.srv = httptest.NewServer(middleware.RequestID()(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		conn, err := websocket.Accept(w, r, &websocket.AcceptOptions{
 			InsecureSkipVerify: true,
 		})
@@ -188,7 +192,7 @@ func startAdapterEnvWithBridge(t *testing.T, idle time.Duration, provider *fakeP
 			OnClose:     func() { close(env.done) },
 		}
 		adapter.Run(r.Context())
-	}))
+	})))
 	t.Cleanup(func() {
 		env.srv.Close()
 	})
@@ -1033,6 +1037,12 @@ func TestAdapter_FirstFrameNotStartReturnsError(t *testing.T) {
 	_ = json.Unmarshal(raw, &ef)
 	if ef.Code != "start_required" {
 		t.Fatalf("expected code=start_required, got %q", ef.Code)
+	}
+	if want := ErrorRemediation("start_required"); ef.Remediation != want {
+		t.Fatalf("expected remediation %q, got %q", want, ef.Remediation)
+	}
+	if ef.RequestID == "" {
+		t.Fatal("expected error frame to carry the upgrade request id")
 	}
 }
 

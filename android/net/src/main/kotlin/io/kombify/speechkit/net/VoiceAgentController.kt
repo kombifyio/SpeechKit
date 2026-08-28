@@ -151,6 +151,20 @@ class VoiceAgentController(
         session?.respondToTool(id, name, response)
     }
 
+    /**
+     * Tap-to-interrupt: stops the agent reply that is playing right now. The
+     * server acknowledges with an interrupted event, which drives the phase
+     * back to listening.
+     */
+    suspend fun cancelReply() {
+        session?.cancelReply()
+    }
+
+    /** Moves a running sequence to its next step. */
+    suspend fun advanceStep(reason: String? = null) {
+        session?.advanceStep(reason)
+    }
+
     /** Ends the conversation and releases the socket. */
     suspend fun stop() {
         val live = session ?: return
