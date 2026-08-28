@@ -11,8 +11,21 @@ IDs, source paths, and other maintainer-only vocabulary.
 
 ## Unreleased
 
+## [0.62.0](https://github.com/kombifyio/SpeechKit/compare/v0.61.0...v0.62.0) (2026-08-28)
+
+### Highlights
+
+- **Interrupt the assistant from any client**: tapping to stop a spoken answer now works in the web and Android clients, not only in the desktop app.
+- **A refused voice session explains itself**: the error names the one thing to change and carries the id support needs to find the request.
+- **Build on SpeechKit without writing glue**: any speech provider now plugs straight into the runtime, the microphone comes from the framework, and the embeddable settings loader takes a public config.
+- **Words and Replacements are manageable**: Settings searches, pages and deletes terms, and several spoken forms can rewrite to one word.
+
 ### Added
 
+* **sdk:** any speech provider plugs into the runtime directly instead of each app writing the same adapter.
+* **sdk:** microphone capture ships as part of the framework, so an app embedding SpeechKit no longer implements recording itself.
+* **sdk:** the settings loader takes a public configuration file and no longer requires the desktop app's own config types.
+* **sdk:** the Voice Agent wire contract has a golden example file that the Go server, the web client, and the Android client all verify against, so a rename on one side fails the build instead of producing a session that connects and says nothing.
 * **voiceagent:** tapping to interrupt a spoken answer works from the web and Android clients, not only from the desktop app.
 * **voiceagent:** transcripts carry the speaker's label and name on web and Android when speaker recognition is on.
 * **voiceagent:** the web and Android clients read which speech backend is serving the session, so a surface can show it before the first word.
