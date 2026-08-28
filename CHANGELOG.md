@@ -11,6 +11,14 @@ IDs, source paths, and other maintainer-only vocabulary.
 
 ## Unreleased
 
+## [0.65.0](https://github.com/kombifyio/SpeechKit/compare/v0.64.0...v0.65.0) (2026-08-28)
+
+### Highlights
+
+- **A speech app carries the backend it uses, not all of them**: an application that talks only to Deepgram now compiles 49 external packages instead of 286, and never pulls the Google Cloud stack it does not use.
+- **The names deprecated one release ago are gone**: everything landed exactly where its deprecation note said, so code already on the new import paths needs no change.
+- **Reporting a failure no longer drags in a tracing vendor**: the framework's own attribute type replaces OpenTelemetry's on the public signature.
+
 ### Removed
 
 * **sdk:** the provider names deprecated in v0.64.0 are gone, and the
