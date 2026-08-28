@@ -22,6 +22,7 @@ import (
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/stt"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/voiceagent"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/voiceagent/live"
+	livedeepgram "github.com/kombifyio/SpeechKit/pkg/speechkit/voiceagent/live/deepgram"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/voiceagent/local"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/wakeword"
 )
@@ -154,7 +155,7 @@ func (r *localVoiceAgentRuntime) providerFactory(cfg live.LiveConfig) (live.Live
 		return nil, normalized, err
 	}
 	if url := strings.TrimSpace(r.cfg.VoiceAgent.ThinkEndpointURL); url != "" {
-		if dg, ok := provider.(*live.DeepgramLive); ok {
+		if dg, ok := provider.(*livedeepgram.Provider); ok {
 			dg.ConfigureThink(
 				r.cfg.VoiceAgent.ThinkProvider,
 				r.cfg.VoiceAgent.ThinkModel,

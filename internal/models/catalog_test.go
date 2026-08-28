@@ -117,32 +117,16 @@ func TestAssistProfilesExposeUtilityToolCapability(t *testing.T) {
 	}
 }
 
-func TestDefaultCatalogAdaptsStrictProfilesFromFrameworkCatalog(t *testing.T) {
+// The host catalog is the framework catalog plus host-only support entries.
+// Before the profile types collapsed into one, a field-by-field parity test
+// guarded the converter between them; there is no converter left to guard, so
+// what remains worth asserting is that nothing the framework ships gets lost
+// on the way through.
+func TestDefaultCatalogKeepsEveryFrameworkProfile(t *testing.T) {
 	catalog := DefaultCatalog()
-	frameworkProfiles := speechkit.DefaultProviderProfiles()
-
-	for _, frameworkProfile := range frameworkProfiles {
-		internalProfile, ok := findProfile(catalog, frameworkProfile.ID)
-		if !ok {
-			t.Fatalf("internal catalog missing framework profile %q", frameworkProfile.ID)
-		}
-		if got, want := internalProfile.ModelID, frameworkProfile.ModelID; got != want {
-			t.Fatalf("%s model ID = %q, want %q", frameworkProfile.ID, got, want)
-		}
-		if got, want := string(internalProfile.ProviderKind), string(frameworkProfile.ProviderKind); got != want {
-			t.Fatalf("%s provider kind = %q, want %q", frameworkProfile.ID, got, want)
-		}
-		if got, want := string(internalProfile.ExecutionMode), string(frameworkProfile.ExecutionMode); got != want {
-			t.Fatalf("%s execution mode = %q, want %q", frameworkProfile.ID, got, want)
-		}
-		if got, want := internalProfile.Provider, frameworkProfile.Provider; got != want {
-			t.Fatalf("%s provider = %q, want %q", frameworkProfile.ID, got, want)
-		}
-		if got, want := internalProfile.Lifecycle, string(frameworkProfile.Lifecycle); got != want {
-			t.Fatalf("%s lifecycle = %q, want %q", frameworkProfile.ID, got, want)
-		}
-		if got, want := internalProfile.AuthRequirement, frameworkProfile.AuthRequirement; got != want {
-			t.Fatalf("%s auth requirement = %q, want %q", frameworkProfile.ID, got, want)
+	for _, frameworkProfile := range speechkit.DefaultProviderProfiles() {
+		if _, ok := findProfile(catalog, frameworkProfile.ID); !ok {
+			t.Errorf("host catalog dropped framework profile %q", frameworkProfile.ID)
 		}
 	}
 }

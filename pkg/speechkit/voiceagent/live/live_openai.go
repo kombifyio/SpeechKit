@@ -44,6 +44,9 @@ const (
 // OpenAILive implements LiveProvider against the OpenAI Realtime API
 // (WebSocket). It mirrors GeminiLive's surface so callers don't need to
 // know which backend is active.
+//
+// Deprecated: moved to pkg/speechkit/voiceagent/live/openai.Provider. This name is
+// removed in v0.65.0; import the provider package instead.
 type OpenAILive struct {
 	mu         sync.RWMutex
 	conn       *websocket.Conn
@@ -63,6 +66,9 @@ type OpenAILive struct {
 }
 
 // NewOpenAILive returns a fresh OpenAI Realtime provider.
+//
+// Deprecated: moved to pkg/speechkit/voiceagent/live/openai.New. This name is
+// removed in v0.65.0; import the provider package instead.
 func NewOpenAILive() *OpenAILive {
 	return &OpenAILive{}
 }

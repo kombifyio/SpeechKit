@@ -1,269 +1,104 @@
-// Package models defines the SpeechKit model catalog: provider IDs, model
-// identifiers, modality (STT, TTS, Realtime Voice, Assist, Utility,
-// Embedding, Reranker), execution mode (local/cloud/direct), and the
-// readiness metadata that setup UIs and the readiness endpoint consume.
+// Package models is the desktop host's view of the SpeechKit model catalog.
 //
-// It is the single source of truth for "what providers and models does
-// SpeechKit know about." Routing, key resolution, and pipeline assembly
-// live in their own packages and read from this catalog.
+// The catalog itself is owned by pkg/speechkit: profile shape, provider IDs,
+// modality, execution mode, capabilities, and readiness metadata all live
+// there. This package is a thin alias layer over that source of truth plus
+// the host-only support entries (utility, embedding and TTS models a user
+// never selects as a mode) that the desktop app appends.
 package models
 
 import "github.com/kombifyio/SpeechKit/pkg/speechkit"
 
-type Modality string
-
-const (
-	ModalitySTT           Modality = "stt"
-	ModalityTTS           Modality = "tts"
-	ModalityRealtimeVoice Modality = "realtime_voice"
-	ModalityAssist        Modality = "assist"
-	ModalityUtility       Modality = "utility"
-	ModalityEmbedding     Modality = "embedding"
-	ModalityReranker      Modality = "reranker"
+// Catalog vocabulary. These are aliases, not copies: a value produced by the
+// framework is the same value here, so nothing has to be converted at the
+// boundary.
+type (
+	Modality      = speechkit.Modality
+	ExecutionMode = speechkit.ExecutionMode
+	ProviderKind  = speechkit.ProviderKind
+	Capability    = speechkit.Capability
+	ModelVariant  = speechkit.ModelVariant
+	Profile       = speechkit.ProviderProfile
 )
 
-type ExecutionMode string
-
 const (
-	ExecutionModeLocal          ExecutionMode = "local"
-	ExecutionModeSelfHostedHTTP ExecutionMode = "self_hosted_http"
-	ExecutionModeHFRouted       ExecutionMode = "hf_routed"
-	ExecutionModeHFInference    ExecutionMode = ExecutionModeHFRouted // Legacy alias.
-	ExecutionModeOpenAI         ExecutionMode = "openai_api"
-	ExecutionModeGroq           ExecutionMode = "groq_api"
-	ExecutionModeGoogle         ExecutionMode = "google_api"
-	ExecutionModeDeepgram       ExecutionMode = "deepgram_api"
-	ExecutionModeAssemblyAI     ExecutionMode = "assemblyai_api"
-	ExecutionModeOllama         ExecutionMode = "ollama_local"
-	ExecutionModeOpenRouter     ExecutionMode = "openrouter_api"
+	ModalitySTT           = speechkit.ModalitySTT
+	ModalityTTS           = speechkit.ModalityTTS
+	ModalityRealtimeVoice = speechkit.ModalityRealtimeVoice
+	ModalityAssist        = speechkit.ModalityAssist
+	ModalityUtility       = speechkit.ModalityUtility
+	ModalityEmbedding     = speechkit.ModalityEmbedding
+	ModalityReranker      = speechkit.ModalityReranker
 )
 
-type ProviderKind string
-
 const (
-	ProviderKindLocalBuiltIn   ProviderKind = "local_built_in"
-	ProviderKindLocalProvider  ProviderKind = "local_provider"
-	ProviderKindCloudProvider  ProviderKind = "cloud_provider"
-	ProviderKindDirectProvider ProviderKind = "direct_provider"
+	ExecutionModeLocal          = speechkit.ExecutionModeLocal
+	ExecutionModeSelfHostedHTTP = speechkit.ExecutionModeSelfHostedHTTP
+	ExecutionModeHFRouted       = speechkit.ExecutionModeHFRouted
+	ExecutionModeHFInference    = speechkit.ExecutionModeHFRouted // Legacy alias.
+	ExecutionModeOpenAI         = speechkit.ExecutionModeOpenAI
+	ExecutionModeGroq           = speechkit.ExecutionModeGroq
+	ExecutionModeGoogle         = speechkit.ExecutionModeGoogle
+	ExecutionModeDeepgram       = speechkit.ExecutionModeDeepgram
+	ExecutionModeAssemblyAI     = speechkit.ExecutionModeAssemblyAI
+	ExecutionModeOllama         = speechkit.ExecutionModeOllama
+	ExecutionModeOpenRouter     = speechkit.ExecutionModeOpenRouter
 )
 
-type Capability string
-
 const (
-	CapabilityTranscription         Capability = "transcription"
-	CapabilitySTT                   Capability = "stt"
-	CapabilityAudioInput            Capability = "audio_input"
-	CapabilityLLM                   Capability = "llm"
-	CapabilityTTS                   Capability = "tts"
-	CapabilityRealtimeAudio         Capability = "realtime_audio"
-	CapabilityPipelineFallback      Capability = "pipeline_fallback"
-	CapabilityToolCalling           Capability = "tool_calling"
-	CapabilityDictionaryPrompt      Capability = "dictionary_prompt"
-	CapabilityDictionaryNativeHints Capability = "dictionary_native_hints"
-	CapabilityWordsPrompt           Capability = "words_prompt"
-	CapabilityWordsNativeHints      Capability = "words_native_hints"
-	CapabilityPostSTTReplacements   Capability = "post_stt_replacements"
-	CapabilitySessionSummary        Capability = "session_summary"
-	CapabilityTranscript            Capability = "transcript"
-	CapabilityInterruptions         Capability = "interruptions"
-	CapabilitySessionResume         Capability = "session_resume"
-	CapabilityNativeContextPrompt   Capability = "native_context_prompt"
-	CapabilityNativeKeyterms        Capability = "native_keyterms"
-	CapabilityNativeDictationStream Capability = "native_dictation_stream"
-	CapabilityLanguageHints         Capability = "language_hints"
-	CapabilitySpeakerStreaming      Capability = "speaker_streaming"
-	CapabilityPrivacyRedaction      Capability = "privacy_redaction"
-	CapabilityVoiceFocus            Capability = "voice_focus"
-	CapabilityMedicalDomain         Capability = "medical_domain"
-	CapabilityReasoningEffort       Capability = "reasoning_effort"
-	CapabilityTranslation           Capability = "translation"
-	CapabilityTranscriptionOnly     Capability = "transcription_only"
-	CapabilitySpeakerDiarization    Capability = "speaker_diarization"
-	CapabilitySpeakerIdentification Capability = "speaker_identification"
-	CapabilitySpeakerAttribution    Capability = "speaker_attribution"
-	CapabilitySpeakerEnrollment     Capability = "speaker_enrollment"
+	ProviderKindLocalBuiltIn   = speechkit.ProviderKindLocalBuiltIn
+	ProviderKindLocalProvider  = speechkit.ProviderKindLocalProvider
+	ProviderKindCloudProvider  = speechkit.ProviderKindCloudProvider
+	ProviderKindDirectProvider = speechkit.ProviderKindDirectProvider
 )
 
-type ModelVariant struct {
-	ID          string `json:"id"`
-	Name        string `json:"name"`
-	ModelID     string `json:"modelId"`
-	Description string `json:"description,omitempty"`
-	Recommended bool   `json:"recommended,omitempty"`
-}
-
-type Profile struct {
-	ID               string         `json:"id"`
-	Name             string         `json:"name"`
-	Modality         Modality       `json:"modality"`
-	ProviderKind     ProviderKind   `json:"providerKind,omitempty"`
-	ExecutionMode    ExecutionMode  `json:"executionMode,omitempty"`
-	Provider         string         `json:"provider,omitempty"`
-	ModelID          string         `json:"modelId,omitempty"`
-	Lifecycle        string         `json:"lifecycle,omitempty"`
-	Source           string         `json:"source,omitempty"`
-	Description      string         `json:"description,omitempty"`
-	License          string         `json:"license,omitempty"`
-	Capabilities     []Capability   `json:"capabilities,omitempty"`
-	SupportedLocales []string       `json:"supportedLocales,omitempty"`
-	NativeOptions    []string       `json:"nativeOptions,omitempty"`
-	AuthRequirement  string         `json:"authRequirement,omitempty"`
-	Transport        string         `json:"transport,omitempty"`
-	EvidenceURL      string         `json:"evidenceUrl,omitempty"`
-	AdapterKind      string         `json:"adapterKind,omitempty"`
-	Variants         []ModelVariant `json:"variants,omitempty"`
-	AllowInference   bool           `json:"inferenceAllowed,omitempty"`
-	Default          bool           `json:"default,omitempty"`
-	Recommended      bool           `json:"recommended,omitempty"`
-	Experimental     bool           `json:"experimental,omitempty"`
-}
-
-func (p Profile) HasCapability(capability Capability) bool {
-	for _, candidate := range p.Capabilities {
-		if candidate == capability {
-			return true
-		}
-	}
-	return false
-}
+const (
+	CapabilityTranscription         = speechkit.CapabilityTranscription
+	CapabilitySTT                   = speechkit.CapabilitySTT
+	CapabilityAudioInput            = speechkit.CapabilityAudioInput
+	CapabilityLLM                   = speechkit.CapabilityLLM
+	CapabilityTTS                   = speechkit.CapabilityTTS
+	CapabilityRealtimeAudio         = speechkit.CapabilityRealtimeAudio
+	CapabilityPipelineFallback      = speechkit.CapabilityPipelineFallback
+	CapabilityToolCalling           = speechkit.CapabilityToolCalling
+	CapabilityDictionaryPrompt      = speechkit.CapabilityDictionaryPrompt
+	CapabilityDictionaryNativeHints = speechkit.CapabilityDictionaryNativeHints
+	CapabilityWordsPrompt           = speechkit.CapabilityWordsPrompt
+	CapabilityWordsNativeHints      = speechkit.CapabilityWordsNativeHints
+	CapabilityPostSTTReplacements   = speechkit.CapabilityPostSTTReplacements
+	CapabilitySessionSummary        = speechkit.CapabilitySessionSummary
+	CapabilityTranscript            = speechkit.CapabilityTranscript
+	CapabilityInterruptions         = speechkit.CapabilityInterruptions
+	CapabilitySessionResume         = speechkit.CapabilitySessionResume
+	CapabilityNativeContextPrompt   = speechkit.CapabilityNativeContextPrompt
+	CapabilityNativeKeyterms        = speechkit.CapabilityNativeKeyterms
+	CapabilityNativeDictationStream = speechkit.CapabilityNativeDictationStream
+	CapabilityLanguageHints         = speechkit.CapabilityLanguageHints
+	CapabilitySpeakerStreaming      = speechkit.CapabilitySpeakerStreaming
+	CapabilityPrivacyRedaction      = speechkit.CapabilityPrivacyRedaction
+	CapabilityVoiceFocus            = speechkit.CapabilityVoiceFocus
+	CapabilityMedicalDomain         = speechkit.CapabilityMedicalDomain
+	CapabilityReasoningEffort       = speechkit.CapabilityReasoningEffort
+	CapabilityTranslation           = speechkit.CapabilityTranslation
+	CapabilityTranscriptionOnly     = speechkit.CapabilityTranscriptionOnly
+	CapabilitySpeakerDiarization    = speechkit.CapabilitySpeakerDiarization
+	CapabilitySpeakerIdentification = speechkit.CapabilitySpeakerIdentification
+	CapabilitySpeakerAttribution    = speechkit.CapabilitySpeakerAttribution
+	CapabilitySpeakerEnrollment     = speechkit.CapabilitySpeakerEnrollment
+)
 
 type Catalog struct {
 	Profiles []Profile
 }
 
-// DefaultCatalog adapts the public framework catalog into the desktop host's
-// internal runtime model and appends host-only support profiles. The three
-// strict user modes are owned by pkg/speechkit.
+// DefaultCatalog is the framework catalog plus the host-only support entries,
+// with framework defaults applied to every profile.
 func DefaultCatalog() Catalog {
-	profiles := profilesFromFrameworkCatalog(speechkit.DefaultProviderProfiles())
-	profiles = append(profiles, supportProfiles()...)
+	profiles := append(speechkit.DefaultProviderProfiles(), supportProfiles()...)
 	for i := range profiles {
-		profiles[i] = profileWithRuntimeDefaults(profiles[i])
+		profiles[i] = speechkit.ProviderProfileWithDefaults(profiles[i])
 	}
 	return Catalog{Profiles: profiles}
-}
-
-func profilesFromFrameworkCatalog(frameworkProfiles []speechkit.ProviderProfile) []Profile {
-	profiles := make([]Profile, 0, len(frameworkProfiles))
-	for _, profile := range frameworkProfiles {
-		profiles = append(profiles, profileFromFramework(profile))
-	}
-	return profiles
-}
-
-func profileFromFramework(profile speechkit.ProviderProfile) Profile {
-	profile = speechkit.ProviderProfileWithDefaults(profile)
-	return Profile{
-		ID:               profile.ID,
-		Name:             profile.Name,
-		Modality:         modalityFromFrameworkMode(profile.Mode),
-		ProviderKind:     ProviderKind(profile.ProviderKind),
-		ExecutionMode:    ExecutionMode(profile.ExecutionMode),
-		Provider:         profile.Provider,
-		ModelID:          profile.ModelID,
-		Lifecycle:        string(profile.Lifecycle),
-		Source:           profile.Source,
-		Description:      profile.Description,
-		License:          profile.License,
-		Capabilities:     capabilitiesFromFramework(profile.Capabilities),
-		SupportedLocales: append([]string(nil), profile.SupportedLocales...),
-		NativeOptions:    append([]string(nil), profile.NativeOptions...),
-		AuthRequirement:  profile.AuthRequirement,
-		Transport:        profile.Transport,
-		EvidenceURL:      profile.EvidenceURL,
-		AdapterKind:      profile.AdapterKind,
-		Variants:         variantsFromFramework(profile.Variants),
-		AllowInference:   profile.AllowInference,
-		Default:          profile.Default,
-		Recommended:      profile.Recommended,
-		Experimental:     profile.Experimental,
-	}
-}
-
-func profileWithRuntimeDefaults(profile Profile) Profile {
-	publicProfile := speechkit.ProviderProfileWithDefaults(speechkit.ProviderProfile{
-		ID:              profile.ID,
-		Mode:            frameworkModeFromModality(profile.Modality),
-		ProviderKind:    speechkit.ProviderKind(profile.ProviderKind),
-		ExecutionMode:   speechkit.ExecutionMode(profile.ExecutionMode),
-		Provider:        profile.Provider,
-		Capabilities:    frameworkCapabilitiesFromModels(profile.Capabilities),
-		AuthRequirement: profile.AuthRequirement,
-		Transport:       profile.Transport,
-	})
-	profile.Provider = publicProfile.Provider
-	profile.AuthRequirement = publicProfile.AuthRequirement
-	profile.Transport = publicProfile.Transport
-	return profile
-}
-
-func modalityFromFrameworkMode(mode speechkit.Mode) Modality {
-	switch speechkit.NormalizeMode(mode) {
-	case speechkit.ModeDictation:
-		return ModalitySTT
-	case speechkit.ModeAssist:
-		return ModalityAssist
-	case speechkit.ModeVoiceAgent:
-		return ModalityRealtimeVoice
-	case speechkit.ModeTTS:
-		return ModalityTTS
-	default:
-		return ""
-	}
-}
-
-func frameworkModeFromModality(modality Modality) speechkit.Mode {
-	switch modality {
-	case ModalitySTT:
-		return speechkit.ModeDictation
-	case ModalityAssist:
-		return speechkit.ModeAssist
-	case ModalityRealtimeVoice:
-		return speechkit.ModeVoiceAgent
-	case ModalityTTS:
-		return speechkit.ModeTTS
-	default:
-		return speechkit.ModeNone
-	}
-}
-
-func capabilitiesFromFramework(input []speechkit.Capability) []Capability {
-	if len(input) == 0 {
-		return nil
-	}
-	out := make([]Capability, 0, len(input))
-	for _, capability := range input {
-		out = append(out, Capability(capability))
-	}
-	return out
-}
-
-func frameworkCapabilitiesFromModels(input []Capability) []speechkit.Capability {
-	if len(input) == 0 {
-		return nil
-	}
-	out := make([]speechkit.Capability, 0, len(input))
-	for _, capability := range input {
-		out = append(out, speechkit.Capability(capability))
-	}
-	return out
-}
-
-func variantsFromFramework(input []speechkit.ModelVariant) []ModelVariant {
-	if len(input) == 0 {
-		return nil
-	}
-	out := make([]ModelVariant, 0, len(input))
-	for _, variant := range input {
-		out = append(out, ModelVariant{
-			ID:          variant.ID,
-			Name:        variant.Name,
-			ModelID:     variant.ModelID,
-			Description: variant.Description,
-			Recommended: variant.Recommended,
-		})
-	}
-	return out
 }
 
 func supportProfiles() []Profile {

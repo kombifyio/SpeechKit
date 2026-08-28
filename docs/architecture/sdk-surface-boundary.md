@@ -4,7 +4,7 @@ Decision date: 2026-05-26. This document records the v0.40 SDK-surface
 boundary so embedders can consume SpeechKit without importing desktop or
 server internals.
 
-Last updated: 2026-08-27 with the full `go list ./pkg/speechkit/...` package
+Last updated: 2026-08-28 with the full `go list ./pkg/speechkit/...` package
 inventory.
 
 ## Purpose
@@ -52,14 +52,27 @@ table mirrors that inventory.
 | `pkg/speechkit/provideropts` | Provider-neutral voice option manifest (per-provider native options). |
 | `pkg/speechkit/speaker` | Provider-neutral speaker options, diarization results, speaker words/segments, provider profiles, streaming audio format, and `SpeakerFrame` contracts. |
 | `pkg/speechkit/storage` | Storage-backend contract: capabilities, install/device/user/tenant scopes, and backend configuration. |
-| `pkg/speechkit/stt` | Speech-to-text provider interface and public STT adapters. |
+| `pkg/speechkit/stt` | Speech-to-text contracts: provider interface, transcribe options, result, router, and the `AsTranscriber` bridge. The provider implementations moved to the packages below; the names still exported here are deprecated and removed in v0.65.0. |
+| `pkg/speechkit/stt/allproviders` | Batteries assembly: every shipped provider plus `BuildRouter`, `EnabledProviders`, and the provider registry. Import it when the host offers a provider choice at runtime. |
+| `pkg/speechkit/stt/assemblyai` | AssemblyAI: sync transcription, speaker streaming with attribution, live dictation with optional LLM turn cleanup. |
+| `pkg/speechkit/stt/deepgram` | Deepgram: batch transcription, speaker streaming, live dictation, and the Flux turn stream. |
+| `pkg/speechkit/stt/google` | Google Cloud Speech-to-Text. Importing it pulls the Google Cloud client and gRPC stack. |
+| `pkg/speechkit/stt/huggingface` | HuggingFace Inference API transcription. |
+| `pkg/speechkit/stt/local` | Built-in whisper.cpp subprocess provider plus its model and runtime helpers. |
+| `pkg/speechkit/stt/openaicompat` | One adapter for every OpenAI-compatible audio endpoint: OpenAI, Groq, Ollama. |
+| `pkg/speechkit/stt/openrouter` | OpenRouter transcription. |
 | `pkg/speechkit/stt/sttcontract` | Reusable conformance suite for STT provider implementations. |
+| `pkg/speechkit/stt/vps` | Self-hosted whisper-server: an OpenAI-compatible endpoint the user runs themselves. |
 | `pkg/speechkit/tts` | Provider, ProviderKind, Router, Service, fallback strategy, synthesis options, and result contract. |
 | `pkg/speechkit/tts/ttscontract` | Reusable conformance suite for TTS provider implementations. |
 | `pkg/speechkit/ttsroute` | Single source of truth mapping a Voice-Output selection to a TTS route. |
 | `pkg/speechkit/voiceagent` | Embeddable Voice Agent service (realtime audio-to-audio mode). |
 | `pkg/speechkit/voiceagent/cascaded` | Turn-based STT -> LLM -> TTS voice-agent pipeline fallback. |
-| `pkg/speechkit/voiceagent/live` | Low-level Voice Agent realtime-protocol types and `LiveProvider` implementations. |
+| `pkg/speechkit/voiceagent/live` | Low-level Voice Agent realtime-protocol types, session runtime, and the `LiveProvider` contract. The provider implementations moved to the packages below; the names still exported here are deprecated and removed in v0.65.0. |
+| `pkg/speechkit/voiceagent/live/assemblyai` | AssemblyAI Voice Agent realtime provider. |
+| `pkg/speechkit/voiceagent/live/deepgram` | Deepgram Voice Agent realtime provider. |
+| `pkg/speechkit/voiceagent/live/gemini` | Gemini Live realtime provider. |
+| `pkg/speechkit/voiceagent/live/openai` | OpenAI Realtime provider, including its client-side response cancel. |
 | `pkg/speechkit/voiceagent/live/livecontract` | Reusable conformance checks for `LiveProvider` implementations. |
 | `pkg/speechkit/voiceagent/local` | `voiceagent.Provider` on top of an in-process local pipeline. |
 | `pkg/speechkit/wakeword` | Wake-word phrase catalog, detection events, dispatcher, detector contracts, and AutoEndPolicy. |

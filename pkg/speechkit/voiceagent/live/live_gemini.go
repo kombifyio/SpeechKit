@@ -18,6 +18,9 @@ type geminiLiveSession interface {
 }
 
 // GeminiLive implements LiveProvider using the Google GenAI Live API.
+//
+// Deprecated: moved to pkg/speechkit/voiceagent/live/gemini.Provider. This name is
+// removed in v0.65.0; import the provider package instead.
 type GeminiLive struct {
 	mu         sync.RWMutex
 	client     *genai.Client
@@ -39,6 +42,9 @@ type GeminiLive struct {
 const defaultGeminiLiveModel = "gemini-3.1-flash-live-preview"
 
 // NewGeminiLive creates a Gemini Live provider.
+//
+// Deprecated: moved to pkg/speechkit/voiceagent/live/gemini.New. This name is
+// removed in v0.65.0; import the provider package instead.
 func NewGeminiLive() *GeminiLive {
 	return &GeminiLive{
 		resume: newResumeHandle(),

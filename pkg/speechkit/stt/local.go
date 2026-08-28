@@ -34,6 +34,9 @@ var whisperModelPattern = regexp.MustCompile(`^ggml-[A-Za-z0-9._\-]+\.bin$`)
 // ValidateModelPath verifies that path points at a whisper.cpp ggml model
 // file with a safe filename. It rejects path traversal, non-absolute paths,
 // and filenames that don't match the ggml-*.bin pattern.
+//
+// Deprecated: moved to pkg/speechkit/stt/local.ValidateModelPath. This name is
+// removed in v0.65.0; import the provider package instead.
 func ValidateModelPath(path string) error {
 	if strings.TrimSpace(path) == "" {
 		return fmt.Errorf("whisper: model path is empty")
@@ -86,6 +89,9 @@ const (
 )
 
 // LocalProvider implements STTProvider for Tier 1: localhost whisper.cpp server.
+//
+// Deprecated: moved to pkg/speechkit/stt/local.Provider. This name is removed in
+// v0.65.0; import the provider package instead.
 type LocalProvider struct {
 	BaseURL       string // e.g. "http://127.0.0.1:8080"
 	Port          int
@@ -106,6 +112,11 @@ type LocalProvider struct {
 	client        *http.Client
 }
 
+// NewLocalProvider creates the built-in whisper.cpp provider. The process is
+// not started; lifecycle stays with the host.
+//
+// Deprecated: moved to pkg/speechkit/stt/local.New. This name is removed in
+// v0.65.0; import the provider package instead.
 func NewLocalProvider(port int, modelPath, gpu string) *LocalProvider {
 	p := &LocalProvider{
 		BaseURL:   fmt.Sprintf("http://127.0.0.1:%d", port),
@@ -761,6 +772,9 @@ func (p *LocalProvider) IsReady() bool {
 }
 
 // InstallStatus describes what's present and what's missing for local STT.
+//
+// Deprecated: moved to pkg/speechkit/stt/local.InstallStatus. This name is removed in
+// v0.65.0; import the provider package instead.
 type InstallStatus struct {
 	BinaryFound bool     `json:"binaryFound"`
 	BinaryPath  string   `json:"binaryPath"`
@@ -822,6 +836,9 @@ func verifyReadableModelFile(path string) error {
 
 // FindWhisperBinary exposes the local whisper runtime lookup for callers that
 // need to reflect runtime readiness without starting the subprocess.
+//
+// Deprecated: moved to pkg/speechkit/stt/local.FindWhisperBinary. This name is
+// removed in v0.65.0; import the provider package instead.
 func FindWhisperBinary() (string, error) {
 	return findWhisperBinary()
 }

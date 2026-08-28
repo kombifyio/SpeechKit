@@ -9,7 +9,7 @@ package stt
 import (
 	"github.com/kombifyio/SpeechKit/internal/models"
 	framework "github.com/kombifyio/SpeechKit/pkg/speechkit"
-	pkgstt "github.com/kombifyio/SpeechKit/pkg/speechkit/stt"
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/stt/allproviders"
 )
 
 // BuildSpec carries the inputs needed to construct a cloud STT provider for a
@@ -37,7 +37,7 @@ type BuildSpec struct {
 // Build forwards to the public pkg/speechkit/stt registry, converting the
 // internal ExecutionMode to the framework enum.
 func Build(spec BuildSpec) (string, STTProvider, error) {
-	return pkgstt.Build(pkgstt.BuildSpec{
+	return allproviders.Build(allproviders.BuildSpec{
 		ExecutionMode:                   framework.ExecutionMode(spec.ExecutionMode),
 		Provider:                        spec.Provider,
 		ModelID:                         spec.ModelID,

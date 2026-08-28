@@ -8,27 +8,38 @@ package stt
 // public registry in pkg/speechkit/stt. New adapter and assembly code goes in
 // pkg/speechkit/stt.
 
-import pkgstt "github.com/kombifyio/SpeechKit/pkg/speechkit/stt"
+import (
+	pkgstt "github.com/kombifyio/SpeechKit/pkg/speechkit/stt"
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/stt/allproviders"
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/stt/assemblyai"
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/stt/deepgram"
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/stt/google"
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/stt/huggingface"
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/stt/local"
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/stt/openaicompat"
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/stt/openrouter"
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/stt/vps"
+)
 
 // Router assembly (single public assembly path shared by the Device- and
 // Server-Targets; see pkg/speechkit/stt.BuildRouter).
 type (
-	RouterConfig     = pkgstt.RouterConfig
-	EnabledProviders = pkgstt.EnabledProviders
-	LocalOpts        = pkgstt.LocalOpts
-	VPSOpts          = pkgstt.VPSOpts
-	HuggingFaceOpts  = pkgstt.HuggingFaceOpts
-	OpenAIOpts       = pkgstt.OpenAIOpts
-	GroqOpts         = pkgstt.GroqOpts
-	GoogleOpts       = pkgstt.GoogleOpts
-	DeepgramOpts     = pkgstt.DeepgramOpts
-	AssemblyAIOpts   = pkgstt.AssemblyAIOpts
-	OpenRouterOpts   = pkgstt.OpenRouterOpts
-	OllamaOpts       = pkgstt.OllamaOpts
+	RouterConfig     = allproviders.RouterConfig
+	EnabledProviders = allproviders.EnabledProviders
+	LocalOpts        = allproviders.LocalOpts
+	VPSOpts          = allproviders.VPSOpts
+	HuggingFaceOpts  = allproviders.HuggingFaceOpts
+	OpenAIOpts       = allproviders.OpenAIOpts
+	GroqOpts         = allproviders.GroqOpts
+	GoogleOpts       = allproviders.GoogleOpts
+	DeepgramOpts     = allproviders.DeepgramOpts
+	AssemblyAIOpts   = allproviders.AssemblyAIOpts
+	OpenRouterOpts   = allproviders.OpenRouterOpts
+	OllamaOpts       = allproviders.OllamaOpts
 )
 
 // BuildRouter forwards to the public router assembly SSOT.
-var BuildRouter = pkgstt.BuildRouter
+var BuildRouter = allproviders.BuildRouter
 
 // Core contracts.
 type (
@@ -38,23 +49,23 @@ type (
 	WordConfidence            = pkgstt.WordConfidence
 	ResolvedTranscribeOptions = pkgstt.ResolvedTranscribeOptions
 	CapabilityReporter        = pkgstt.CapabilityReporter
-	InstallStatus             = pkgstt.InstallStatus
+	InstallStatus             = local.InstallStatus
 )
 
 // Concrete provider types.
 type (
-	GoogleSTTProvider        = pkgstt.GoogleSTTProvider
-	DeepgramProvider         = pkgstt.DeepgramProvider
-	DeepgramOptions          = pkgstt.DeepgramOptions
-	AssemblyAIProvider       = pkgstt.AssemblyAIProvider
-	HuggingFaceProvider      = pkgstt.HuggingFaceProvider
-	LocalProvider            = pkgstt.LocalProvider
-	OpenAICompatibleProvider = pkgstt.OpenAICompatibleProvider
-	OpenRouterSTTProvider    = pkgstt.OpenRouterSTTProvider
-	VPSProvider              = pkgstt.VPSProvider
+	GoogleSTTProvider        = google.Provider
+	DeepgramProvider         = deepgram.Provider
+	DeepgramOptions          = deepgram.Options
+	AssemblyAIProvider       = assemblyai.Provider
+	HuggingFaceProvider      = huggingface.Provider
+	LocalProvider            = local.Provider
+	OpenAICompatibleProvider = openaicompat.Provider
+	OpenRouterSTTProvider    = openrouter.Provider
+	VPSProvider              = vps.Provider
 )
 
-const MinWhisperModelBytes = pkgstt.MinWhisperModelBytes
+const MinWhisperModelBytes = local.MinWhisperModelBytes
 
 // LanguageMulti is the value carried when no language is pinned. Never
 // forwarded verbatim — each provider expresses multilanguage in its own
@@ -69,19 +80,19 @@ var IsMultilanguage = pkgstt.IsMultilanguage
 var (
 	ResolveTranscribeOptions    = pkgstt.ResolveTranscribeOptions
 	ParseDeepgramKeyterms       = pkgstt.ParseDeepgramKeyterms
-	ValidateModelPath           = pkgstt.ValidateModelPath
-	FindWhisperBinary           = pkgstt.FindWhisperBinary
+	ValidateModelPath           = local.ValidateModelPath
+	FindWhisperBinary           = local.FindWhisperBinary
 	SetSecretResolver           = pkgstt.SetSecretResolver
-	NewGoogleSTTProvider        = pkgstt.NewGoogleSTTProvider
-	NewDeepgramProvider         = pkgstt.NewDeepgramProvider
-	NewAssemblyAIProvider       = pkgstt.NewAssemblyAIProvider
-	NewHuggingFaceProvider      = pkgstt.NewHuggingFaceProvider
-	NewOpenAISTTProvider        = pkgstt.NewOpenAISTTProvider
-	NewOpenRouterSTTProvider    = pkgstt.NewOpenRouterSTTProvider
-	NewGroqSTTProvider          = pkgstt.NewGroqSTTProvider
-	NewLocalProvider            = pkgstt.NewLocalProvider
-	NewVPSProvider              = pkgstt.NewVPSProvider
-	NewVPSProviderWithModel     = pkgstt.NewVPSProviderWithModel
-	NewOpenAICompatibleProvider = pkgstt.NewOpenAICompatibleProvider
-	NewOllamaSTTProvider        = pkgstt.NewOllamaSTTProvider
+	NewGoogleSTTProvider        = google.New
+	NewDeepgramProvider         = deepgram.New
+	NewAssemblyAIProvider       = assemblyai.New
+	NewHuggingFaceProvider      = huggingface.New
+	NewOpenAISTTProvider        = openaicompat.NewOpenAI
+	NewOpenRouterSTTProvider    = openrouter.New
+	NewGroqSTTProvider          = openaicompat.NewGroq
+	NewLocalProvider            = local.New
+	NewVPSProvider              = vps.New
+	NewVPSProviderWithModel     = vps.NewWithModel
+	NewOpenAICompatibleProvider = openaicompat.New
+	NewOllamaSTTProvider        = openaicompat.NewOllama
 )

@@ -31,6 +31,10 @@ const (
 	assemblyAIDictationMaxTurnSilenceMs = 2000
 )
 
+// AssemblyAIProvider transcribes through AssemblyAI.
+//
+// Deprecated: moved to pkg/speechkit/stt/assemblyai.Provider. This name is removed in
+// v0.65.0; import the provider package instead.
 type AssemblyAIProvider struct {
 	APIKey           string
 	Models           []string
@@ -61,6 +65,9 @@ type AssemblyAIProvider struct {
 
 // AssemblyAIStreamingLLM is the LLM Gateway payload attached to a realtime
 // dictation WebSocket. Model IDs are LLM Gateway catalog names, not STT names.
+//
+// Deprecated: moved to pkg/speechkit/stt/assemblyai.StreamingLLM. This name is removed in
+// v0.65.0; import the provider package instead.
 type AssemblyAIStreamingLLM struct {
 	Model     string
 	Prompt    string
@@ -90,6 +97,11 @@ func (p *AssemblyAIProvider) EnableStreamingLLM(model, prompt string, maxTokens 
 	p.StreamingLLM = &AssemblyAIStreamingLLM{Model: model, Prompt: prompt, MaxTokens: maxTokens}
 }
 
+// NewAssemblyAIProvider creates an AssemblyAI provider. models is the
+// comma-separated model list; empty uses the provider default.
+//
+// Deprecated: moved to pkg/speechkit/stt/assemblyai.New. This name is removed in
+// v0.65.0; import the provider package instead.
 func NewAssemblyAIProvider(apiKey, models string) *AssemblyAIProvider {
 	p := &AssemblyAIProvider{
 		APIKey:           apiKey,

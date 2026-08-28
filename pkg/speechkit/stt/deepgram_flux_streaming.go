@@ -54,6 +54,9 @@ const FluxAudioChunk = 80 * time.Millisecond
 
 // FluxStreamOptions configures a Flux turn stream. The zero value is valid and
 // selects the multilingual model with Deepgram's default turn detection.
+//
+// Deprecated: moved to pkg/speechkit/stt/deepgram.FluxStreamOptions. This name is removed in
+// v0.65.0; import the provider package instead.
 type FluxStreamOptions struct {
 	// Model selects flux-general-en or flux-general-multi. Empty uses the
 	// multilingual model, which is the point of Flux for SpeechKit: it detects
@@ -75,6 +78,9 @@ type FluxStreamOptions struct {
 
 // FluxWord is a single recognized word. Flux reports no speaker label and no
 // separately punctuated form — the turn transcript carries the punctuation.
+//
+// Deprecated: moved to pkg/speechkit/stt/deepgram.FluxWord. This name is removed in
+// v0.65.0; import the provider package instead.
 type FluxWord struct {
 	Text       string  `json:"text"`
 	Confidence float64 `json:"confidence"`
@@ -83,6 +89,9 @@ type FluxWord struct {
 }
 
 // FluxTurn is one decoded TurnInfo event.
+//
+// Deprecated: moved to pkg/speechkit/stt/deepgram.FluxTurn. This name is removed in
+// v0.65.0; import the provider package instead.
 type FluxTurn struct {
 	// Event is one of the Flux lifecycle events above.
 	Event string `json:"event"`
@@ -117,6 +126,9 @@ func (t FluxTurn) IsSpeculative() bool { return t.Event == FluxEventEagerEndOfTu
 
 // FluxTurnStream is a live Flux connection. Callers push PCM with SendPCM and
 // read turn events with Receive until io.EOF.
+//
+// Deprecated: moved to pkg/speechkit/stt/deepgram.FluxTurnStream. This name is removed in
+// v0.65.0; import the provider package instead.
 type FluxTurnStream struct {
 	conn      *websocket.Conn
 	provider  string

@@ -14,6 +14,7 @@ import (
 	"strings"
 
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/stt"
+	sttlocal "github.com/kombifyio/SpeechKit/pkg/speechkit/stt/local"
 )
 
 func speechKitLocalDir() string {
@@ -173,7 +174,7 @@ func isLoopbackBaseURL(value string) bool {
 }
 
 func startLocalSTTIfNeeded(ctx context.Context, provider stt.STTProvider) (func(), error) {
-	local, ok := provider.(*stt.LocalProvider)
+	local, ok := provider.(*sttlocal.Provider)
 	if !ok {
 		return func() {}, nil
 	}

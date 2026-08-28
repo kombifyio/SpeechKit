@@ -23,6 +23,9 @@ const (
 // OpenRouterSTTProvider implements OpenRouter's JSON speech-to-text endpoint.
 // OpenRouter is a cloud gateway, not a direct model provider, and its STT API
 // accepts base64 audio rather than OpenAI's multipart Whisper shape.
+//
+// Deprecated: moved to pkg/speechkit/stt/openrouter.Provider. This name is removed in
+// v0.65.0; import the provider package instead.
 type OpenRouterSTTProvider struct {
 	BaseURL    string
 	APIKey     string
@@ -31,6 +34,11 @@ type OpenRouterSTTProvider struct {
 	client     *http.Client
 }
 
+// NewOpenRouterSTTProvider creates an OpenRouter provider. Model defaults to
+// the provider default if empty.
+//
+// Deprecated: moved to pkg/speechkit/stt/openrouter.New. This name is removed in
+// v0.65.0; import the provider package instead.
 func NewOpenRouterSTTProvider(apiKey, model string) *OpenRouterSTTProvider {
 	if model == "" {
 		model = openRouterDefaultSTT

@@ -58,6 +58,9 @@ const (
 // Defaults target a widely-available option; the wiring layer overrides them
 // from deployment config. Listen defaults to Deepgram Flux for turn-aware
 // conversational STT and speak defaults to a Deepgram Aura-2 voice.
+//
+// Deprecated: moved to pkg/speechkit/voiceagent/live/deepgram.Provider. This name is
+// removed in v0.65.0; import the provider package instead.
 type DeepgramLive struct {
 	// Optional overrides; zero values fall back to the package defaults.
 	ListenModel   string
@@ -97,6 +100,9 @@ type DeepgramLive struct {
 }
 
 // NewDeepgramLive returns a fresh Deepgram Voice Agent provider.
+//
+// Deprecated: moved to pkg/speechkit/voiceagent/live/deepgram.New. This name is
+// removed in v0.65.0; import the provider package instead.
 func NewDeepgramLive() *DeepgramLive { return &DeepgramLive{} }
 
 // ConfigureThink applies the deployment's think-LLM selection to the provider.
@@ -118,6 +124,9 @@ func (p *DeepgramLive) ConfigureThink(provider, model, endpointURL, apiKey strin
 // DeepgramAudioSettings carries the deployment's listen/speak leg selection for
 // ConfigureAudio. Zero values keep the kernel defaults, so a caller can set only
 // the fields its config actually specifies.
+//
+// Deprecated: moved to pkg/speechkit/voiceagent/live/deepgram.AudioSettings. This name is
+// removed in v0.65.0; import the provider package instead.
 type DeepgramAudioSettings struct {
 	// ListenModel names the STT model (e.g. "flux-general-multi", "nova-3").
 	ListenModel string

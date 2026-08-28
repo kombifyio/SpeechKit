@@ -29,6 +29,9 @@ const (
 // BaseURL is user-configurable (for testing or regional endpoints). It is
 // validated against Validation on every request. Default Validation is strict
 // (public https only).
+//
+// Deprecated: moved to pkg/speechkit/stt/google.Provider. This name is removed in
+// v0.65.0; import the provider package instead.
 type GoogleSTTProvider struct {
 	APIKey                    string
 	Model                     string // "latest_long", "latest_short", or another Google STT v1 model tag
@@ -41,6 +44,9 @@ type GoogleSTTProvider struct {
 
 // NewGoogleSTTProvider creates a provider for Google Cloud Speech-to-Text.
 // Model defaults to "latest_long" if empty.
+//
+// Deprecated: moved to pkg/speechkit/stt/google.New. This name is removed in
+// v0.65.0; import the provider package instead.
 func NewGoogleSTTProvider(apiKey, model string) *GoogleSTTProvider {
 	if model == "" {
 		model = "latest_long"

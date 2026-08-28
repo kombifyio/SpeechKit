@@ -176,6 +176,14 @@ func ProviderIDForExecutionMode(mode ExecutionMode) string {
 // credential, and transport fields are derived from the canonical provider id,
 // execution mode, and mode capabilities.
 func ProviderProfileWithDefaults(profile ProviderProfile) ProviderProfile {
+	// Mode and Modality say the same thing from two angles. Callers set
+	// whichever one they think in; this fills the other.
+	if profile.Modality == "" {
+		profile.Modality = ModalityForMode(profile.Mode)
+	}
+	if NormalizeMode(profile.Mode) == ModeNone {
+		profile.Mode = ModeForModality(profile.Modality)
+	}
 	provider := ProviderIDForProfile(profile)
 	if strings.TrimSpace(profile.Provider) == "" {
 		profile.Provider = provider

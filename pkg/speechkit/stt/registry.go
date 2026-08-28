@@ -20,6 +20,9 @@ import (
 // given ExecutionMode. The host config layer resolves secrets and passes them
 // in; the registry owns the provider's canonical name, endpoint, and
 // constructor.
+//
+// Deprecated: moved to pkg/speechkit/stt/allproviders.BuildSpec. This name is
+// removed in v0.65.0; import the provider package instead.
 type BuildSpec struct {
 	ExecutionMode speechkit.ExecutionMode
 	Provider      string
@@ -45,6 +48,9 @@ type BuildSpec struct {
 //
 // ExecutionModeLocal is host-managed (whisper.cpp subprocess lifecycle) and is
 // intentionally not handled here.
+//
+// Deprecated: moved to pkg/speechkit/stt/allproviders.Build. This name is
+// removed in v0.65.0; import the provider package instead.
 func Build(spec BuildSpec) (string, STTProvider, error) {
 	providerID := speechkit.NormalizeProviderID(spec.Provider)
 	if providerID == "" {
@@ -67,6 +73,9 @@ func Build(spec BuildSpec) (string, STTProvider, error) {
 // the Build mapping with custom providers. The id is normalized like
 // spec.Provider in Build. Registering an id that already exists (including
 // the built-ins) returns an error.
+//
+// Deprecated: moved to pkg/speechkit/stt/allproviders.Register. This name is
+// removed in v0.65.0; import the provider package instead.
 func Register(id, name string, build func(BuildSpec) (STTProvider, error)) error {
 	providerID := speechkit.NormalizeProviderID(id)
 	if providerID == "" {
@@ -173,6 +182,9 @@ func hasDeepgramOptions(opts DeepgramOptions) bool {
 
 // RouterConfig carries the routing knobs both hosts resolve from their own
 // config before delegating router assembly to BuildRouter.
+//
+// Deprecated: moved to pkg/speechkit/stt/allproviders.RouterConfig. This name is removed in
+// v0.65.0; import the provider package instead.
 type RouterConfig struct {
 	Strategy             Strategy
 	PreferLocalUnderSecs float64
@@ -273,6 +285,9 @@ type (
 // resolved from its own config (credential stores, env secrets, model
 // defaults). Nil fields are skipped. Extra providers are appended after the
 // named ones as additional cloud candidates.
+//
+// Deprecated: moved to pkg/speechkit/stt/allproviders.EnabledProviders. This name is removed in
+// v0.65.0; import the provider package instead.
 type EnabledProviders struct {
 	Local       *LocalOpts
 	HuggingFace *HuggingFaceOpts
@@ -293,6 +308,9 @@ type EnabledProviders struct {
 // OpenAI, Deepgram, AssemblyAI, Google, then Extra), applies optional
 // model_selection pinning, and returns the router plus human-readable notes.
 // ok is false (router nil) when nothing is enabled.
+//
+// Deprecated: moved to pkg/speechkit/stt/allproviders.BuildRouter. This name is removed in
+// v0.65.0; import the provider package instead.
 func BuildRouter(cfg RouterConfig, enabled EnabledProviders) (router *Router, ok bool, notes []string) {
 	var cloud []STTProvider
 

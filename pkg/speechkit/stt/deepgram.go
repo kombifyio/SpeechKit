@@ -28,6 +28,9 @@ const (
 // DeepgramOptions holds provider-specific Deepgram STT controls. These map to
 // Deepgram Listen query parameters while keeping SpeechKit's public STT router
 // interface provider-neutral.
+//
+// Deprecated: moved to pkg/speechkit/stt/deepgram.Options. This name is removed in
+// v0.65.0; import the provider package instead.
 type DeepgramOptions struct {
 	Configured            bool
 	SmartFormat           bool
@@ -41,6 +44,10 @@ type DeepgramOptions struct {
 	EndpointingMs         int
 }
 
+// DeepgramProvider transcribes through the Deepgram Listen API.
+//
+// Deprecated: moved to pkg/speechkit/stt/deepgram.Provider. This name is removed in
+// v0.65.0; import the provider package instead.
 type DeepgramProvider struct {
 	APIKey                string
 	Model                 string
@@ -59,6 +66,11 @@ type DeepgramProvider struct {
 	client                *http.Client
 }
 
+// NewDeepgramProvider creates a Deepgram provider. Model defaults to the
+// provider default if empty.
+//
+// Deprecated: moved to pkg/speechkit/stt/deepgram.New. This name is removed in
+// v0.65.0; import the provider package instead.
 func NewDeepgramProvider(apiKey, model string) *DeepgramProvider {
 	model = strings.TrimSpace(model)
 	if model == "" {

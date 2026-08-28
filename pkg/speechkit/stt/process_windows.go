@@ -27,6 +27,9 @@ func init() {
 
 // SetSubprocessPriorityLowered toggles whether STT subprocesses are
 // spawned at BELOW_NORMAL priority (default true). No-op on non-Windows.
+//
+// Deprecated: moved to pkg/speechkit/stt/local.SetSubprocessPriorityLowered.
+// This name is removed in v0.65.0; import the provider package instead.
 func SetSubprocessPriorityLowered(lowered bool) {
 	lowerPriority.Store(lowered)
 }

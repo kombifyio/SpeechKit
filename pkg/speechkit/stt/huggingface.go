@@ -28,6 +28,9 @@ var hfModelPattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._\-]*(?:/[A-Za-z
 //
 // BaseURL is user-configurable. It is validated against Validation on every
 // request. Default Validation is strict (public https only).
+//
+// Deprecated: moved to pkg/speechkit/stt/huggingface.Provider. This name is removed in
+// v0.65.0; import the provider package instead.
 type HuggingFaceProvider struct {
 	Model      string
 	Token      string
@@ -36,6 +39,10 @@ type HuggingFaceProvider struct {
 	client     *http.Client
 }
 
+// NewHuggingFaceProvider creates a provider for a HuggingFace-hosted model.
+//
+// Deprecated: moved to pkg/speechkit/stt/huggingface.New. This name is removed in
+// v0.65.0; import the provider package instead.
 func NewHuggingFaceProvider(model, token string) *HuggingFaceProvider {
 	p := &HuggingFaceProvider{
 		Model:   model,

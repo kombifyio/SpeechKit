@@ -34,6 +34,7 @@ import (
 	"time"
 
 	live "github.com/kombifyio/SpeechKit/pkg/speechkit/voiceagent/live"
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/voiceagent/live/gemini"
 )
 
 func main() {
@@ -103,7 +104,7 @@ func run() error {
 		OnSessionEnd: func() { signalTurnDone() },
 	}
 
-	provider := live.NewGeminiLive()
+	provider := gemini.New()
 	session := live.NewSession(provider, callbacks)
 
 	cfg := live.LiveConfig{

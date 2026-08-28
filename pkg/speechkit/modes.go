@@ -99,6 +99,56 @@ const (
 	CapabilitySpeakerEnrollment     Capability = "speaker_enrollment"
 )
 
+// Modality classifies what a catalog entry does, independent of the three
+// user-facing modes. Every profile a user can select maps onto a Mode as
+// well; support entries a host needs but a user never picks — embeddings,
+// rerankers, utility models — only have a Modality.
+type Modality string
+
+const (
+	ModalitySTT           Modality = "stt"
+	ModalityTTS           Modality = "tts"
+	ModalityRealtimeVoice Modality = "realtime_voice"
+	ModalityAssist        Modality = "assist"
+	ModalityUtility       Modality = "utility"
+	ModalityEmbedding     Modality = "embedding"
+	ModalityReranker      Modality = "reranker"
+)
+
+// ModalityForMode returns the modality a user-facing mode runs as, or "" for
+// a mode that has none.
+func ModalityForMode(mode Mode) Modality {
+	switch NormalizeMode(mode) {
+	case ModeDictation:
+		return ModalitySTT
+	case ModeAssist:
+		return ModalityAssist
+	case ModeVoiceAgent:
+		return ModalityRealtimeVoice
+	case ModeTTS:
+		return ModalityTTS
+	default:
+		return ""
+	}
+}
+
+// ModeForModality returns the user-facing mode a modality is selectable in,
+// or ModeNone for support modalities a user never picks directly.
+func ModeForModality(modality Modality) Mode {
+	switch modality {
+	case ModalitySTT:
+		return ModeDictation
+	case ModalityAssist:
+		return ModeAssist
+	case ModalityRealtimeVoice:
+		return ModeVoiceAgent
+	case ModalityTTS:
+		return ModeTTS
+	default:
+		return ModeNone
+	}
+}
+
 // ModelVariant is a concrete model choice inside a provider profile group.
 type ModelVariant struct {
 	ID          string `json:"id"`
@@ -112,8 +162,12 @@ type ModelVariant struct {
 // activate. ProviderKind is the stable user-facing grouping; ExecutionMode is
 // the technical adapter underneath it.
 type ProviderProfile struct {
-	ID               string         `json:"id"`
-	Mode             Mode           `json:"mode"`
+	ID   string `json:"id"`
+	Mode Mode   `json:"mode"`
+	// Modality is what the entry does. ProviderProfileWithDefaults derives it
+	// from Mode when unset, and derives Mode from it for support entries that
+	// carry no mode.
+	Modality         Modality       `json:"modality,omitempty"`
 	Name             string         `json:"name"`
 	ProviderKind     ProviderKind   `json:"providerKind"`
 	ExecutionMode    ExecutionMode  `json:"executionMode,omitempty"`

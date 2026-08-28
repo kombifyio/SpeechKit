@@ -11,6 +11,58 @@ IDs, source paths, and other maintainer-only vocabulary.
 
 ## Unreleased
 
+## [0.64.0](https://github.com/kombifyio/SpeechKit/compare/v0.62.0...v0.64.0) (2026-08-28)
+
+### Highlights
+
+- **Depend on the one speech backend you actually use**: every speech provider and every realtime voice provider now has its own package, so an app that talks to one of them stops compiling the rest.
+- **One model catalog, not two**: the desktop app's private copy of the catalog is gone, and catalog entries now say what they are instead of leaving a host to infer it.
+- **A full release to migrate**: the old names still work through v0.64 and disappear in v0.65, with a migration table for every one of them.
+
+### Added
+
+* **sdk:** catalog entries say what they are with a `modality` field, so a host
+  can tell a speech model from a text or embedding model without inferring it
+  from the mode. The desktop app's own catalog copy is gone; there is one
+  catalog now.
+
+### Deprecated
+
+* **sdk:** every speech provider now has its own Go package, so an app that
+  talks to one backend stops compiling the others' dependencies. The old names
+  in `pkg/speechkit/stt` still work and are marked deprecated; they are removed
+  in v0.65.0. A Deepgram-only app compiles 286 external packages today and
+  drops the Google Cloud and gRPC stack once the old names go away.
+
+  | Old name in `pkg/speechkit/stt` | New home |
+  |---|---|
+  | `GoogleSTTProvider`, `NewGoogleSTTProvider` | `pkg/speechkit/stt/google` — `Provider`, `New` |
+  | `DeepgramProvider`, `DeepgramOptions`, `NewDeepgramProvider`, `Flux*` | `pkg/speechkit/stt/deepgram` — `Provider`, `Options`, `New`, `Flux*` |
+  | `AssemblyAIProvider`, `AssemblyAIStreamingLLM`, `NewAssemblyAIProvider` | `pkg/speechkit/stt/assemblyai` — `Provider`, `StreamingLLM`, `New` |
+  | `HuggingFaceProvider`, `NewHuggingFaceProvider` | `pkg/speechkit/stt/huggingface` — `Provider`, `New` |
+  | `OpenRouterSTTProvider`, `NewOpenRouterSTTProvider` | `pkg/speechkit/stt/openrouter` — `Provider`, `New` |
+  | `OpenAICompatibleProvider`, `NewOpenAICompatibleProvider`, `NewOpenAISTTProvider`, `NewGroqSTTProvider`, `NewOllamaSTTProvider` | `pkg/speechkit/stt/openaicompat` — `Provider`, `New`, `NewOpenAI`, `NewGroq`, `NewOllama` |
+  | `VPSProvider`, `NewVPSProvider`, `NewVPSProviderWithModel` | `pkg/speechkit/stt/vps` — `Provider`, `New`, `NewWithModel` |
+  | `LocalProvider`, `NewLocalProvider`, `InstallStatus`, `MinWhisperModelBytes`, `ValidateModelPath`, `FindWhisperBinary`, `SetSubprocessPriorityLowered` | `pkg/speechkit/stt/local` — same names, `New` for the constructor |
+  | `EnabledProviders`, `RouterConfig`, `BuildRouter`, `BuildSpec`, `Build`, `Register`, `*Opts` | `pkg/speechkit/stt/allproviders` — same names |
+
+  The provider contracts stay where they are: `STTProvider`, `TranscribeOpts`,
+  `Result`, `Router`, and `AsTranscriber` are not moving.
+
+* **sdk:** the realtime Voice Agent providers split the same way. The old
+  names in `pkg/speechkit/voiceagent/live` are deprecated and removed in
+  v0.65.0.
+
+  | Old name in `pkg/speechkit/voiceagent/live` | New home |
+  |---|---|
+  | `GeminiLive`, `NewGeminiLive` | `pkg/speechkit/voiceagent/live/gemini` — `Provider`, `New` |
+  | `OpenAILive`, `NewOpenAILive` | `pkg/speechkit/voiceagent/live/openai` — `Provider`, `New` |
+  | `DeepgramLive`, `DeepgramAudioSettings`, `NewDeepgramLive` | `pkg/speechkit/voiceagent/live/deepgram` — `Provider`, `AudioSettings`, `New` |
+  | `AssemblyAILive`, `NewAssemblyAILive` | `pkg/speechkit/voiceagent/live/assemblyai` — `Provider`, `New` |
+
+  The session runtime, the `LiveProvider` contract, and the protocol types
+  stay in the `live` package.
+
 ## [0.62.0](https://github.com/kombifyio/SpeechKit/compare/v0.61.0...v0.62.0) (2026-08-28)
 
 ### Highlights

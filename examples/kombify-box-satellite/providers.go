@@ -18,6 +18,11 @@ import (
 
 	speechkit "github.com/kombifyio/SpeechKit/pkg/speechkit"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/stt"
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/stt/assemblyai"
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/stt/deepgram"
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/stt/local"
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/stt/openaicompat"
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/stt/vps"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/tts"
 )
 
@@ -29,24 +34,24 @@ func buildSTT(cfg *Config) (stt.STTProvider, error) {
 		if modelPath == "" {
 			return nil, fmt.Errorf("stt local: kein Whisper-Modell gefunden; erwartet %s oder setze [local].model_path", whisperModelHint(cfg))
 		}
-		return stt.NewLocalProvider(cfg.Local.Port, modelPath, cfg.Local.GPU), nil
+		return local.New(cfg.Local.Port, modelPath, cfg.Local.GPU), nil
 	case "openai":
-		return stt.NewOpenAISTTProvider(key), nil
+		return openaicompat.NewOpenAI(key), nil
 	case "groq":
-		return stt.NewGroqSTTProvider(key), nil
+		return openaicompat.NewGroq(key), nil
 	case "deepgram":
 		if !realSecret(key) {
 			return missingSTTKeyProvider{provider: "deepgram", envName: cfg.STT.APIKeyEnv}, nil
 		}
-		return stt.NewDeepgramProvider(key, cfg.STT.Model), nil
+		return deepgram.New(key, cfg.STT.Model), nil
 	case "assemblyai":
-		return stt.NewAssemblyAIProvider(key, cfg.STT.Model), nil
+		return assemblyai.New(key, cfg.STT.Model), nil
 	case "ollama":
-		return stt.NewOllamaSTTProvider(cfg.STT.BaseURL, cfg.STT.Model), nil
+		return openaicompat.NewOllama(cfg.STT.BaseURL, cfg.STT.Model), nil
 	case "vps", "selfhosted", "self-hosted":
-		return stt.NewVPSProviderWithModel(cfg.STT.BaseURL, key, cfg.STT.Model), nil
+		return vps.NewWithModel(cfg.STT.BaseURL, key, cfg.STT.Model), nil
 	case "openai_compatible", "gateway", "":
-		return stt.NewOpenAICompatibleProvider("kombify-gateway", cfg.STT.BaseURL, key, cfg.STT.Model), nil
+		return openaicompat.New("kombify-gateway", cfg.STT.BaseURL, key, cfg.STT.Model), nil
 	default:
 		return nil, fmt.Errorf("stt: unknown provider %q", cfg.STT.Provider)
 	}

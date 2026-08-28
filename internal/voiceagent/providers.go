@@ -8,17 +8,21 @@ package voiceagent
 
 import (
 	live "github.com/kombifyio/SpeechKit/pkg/speechkit/voiceagent/live"
+	liveassemblyai "github.com/kombifyio/SpeechKit/pkg/speechkit/voiceagent/live/assemblyai"
+	livedeepgram "github.com/kombifyio/SpeechKit/pkg/speechkit/voiceagent/live/deepgram"
+	livegemini "github.com/kombifyio/SpeechKit/pkg/speechkit/voiceagent/live/gemini"
+	liveopenai "github.com/kombifyio/SpeechKit/pkg/speechkit/voiceagent/live/openai"
 )
 
 // Concrete realtime providers (formerly internal/voiceagent.{GeminiLive,…}).
 type (
-	GeminiLive     = live.GeminiLive
-	OpenAILive     = live.OpenAILive
-	DeepgramLive   = live.DeepgramLive
-	AssemblyAILive = live.AssemblyAILive
+	GeminiLive     = livegemini.Provider
+	OpenAILive     = liveopenai.Provider
+	DeepgramLive   = livedeepgram.Provider
+	AssemblyAILive = liveassemblyai.Provider
 
 	// DeepgramAudioSettings configures the Deepgram listen/speak legs.
-	DeepgramAudioSettings = live.DeepgramAudioSettings
+	DeepgramAudioSettings = livedeepgram.AudioSettings
 )
 
 // DefaultOpenAIRealtimeModel is the public runtime default for OpenAI-backed
@@ -29,8 +33,8 @@ const DefaultOpenAIRealtimeModel = live.DefaultOpenAIRealtimeModel
 // signature-agnostic: changing a constructor's parameters in the live package
 // does not require editing this file.
 var (
-	NewGeminiLive     = live.NewGeminiLive
-	NewOpenAILive     = live.NewOpenAILive
-	NewDeepgramLive   = live.NewDeepgramLive
-	NewAssemblyAILive = live.NewAssemblyAILive
+	NewGeminiLive     = livegemini.New
+	NewOpenAILive     = liveopenai.New
+	NewDeepgramLive   = livedeepgram.New
+	NewAssemblyAILive = liveassemblyai.New
 )

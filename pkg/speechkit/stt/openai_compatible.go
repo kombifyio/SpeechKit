@@ -25,6 +25,9 @@ const openAICompatMaxResponse = 1 << 20
 // on every request (Transcribe, Health). The default Validation is strict:
 // only public https:// endpoints are accepted. Self-hosted VPS and local
 // whisper-server require relaxing Validation — see NewVPSProvider.
+//
+// Deprecated: moved to pkg/speechkit/stt/openaicompat.Provider. This name is removed in
+// v0.65.0; import the provider package instead.
 type OpenAICompatibleProvider struct {
 	name       string
 	BaseURL    string
@@ -37,6 +40,9 @@ type OpenAICompatibleProvider struct {
 // NewOpenAICompatibleProvider creates a provider for any OpenAI-compatible STT
 // endpoint. Default Validation is strict (public https only). Callers with a
 // non-public endpoint (loopback, RFC1918) must set Validation explicitly.
+//
+// Deprecated: moved to pkg/speechkit/stt/openaicompat.New. This name is removed in
+// v0.65.0; import the provider package instead.
 func NewOpenAICompatibleProvider(name, baseURL, apiKey, model string) *OpenAICompatibleProvider {
 	p := &OpenAICompatibleProvider{
 		name:    name,
@@ -52,10 +58,18 @@ func NewOpenAICompatibleProvider(name, baseURL, apiKey, model string) *OpenAICom
 // NewVPSProvider creates a provider for a self-hosted whisper-server.
 // Allows loopback, private IP ranges and plain http:// because self-hosted
 // deployments frequently run inside a VPN, on a home LAN, or on localhost.
+//
+// Deprecated: moved to pkg/speechkit/stt/vps.New. This name is removed in
+// v0.65.0; import the provider package instead.
 func NewVPSProvider(baseURL, apiKey string) *OpenAICompatibleProvider {
 	return NewVPSProviderWithModel(baseURL, apiKey, "whisper-1")
 }
 
+// NewVPSProviderWithModel creates a self-hosted whisper-server provider
+// pinned to model. An empty model defaults to "whisper-1".
+//
+// Deprecated: moved to pkg/speechkit/stt/vps.NewWithModel. This name is removed in
+// v0.65.0; import the provider package instead.
 func NewVPSProviderWithModel(baseURL, apiKey, model string) *OpenAICompatibleProvider {
 	model = strings.TrimSpace(model)
 	if model == "" {
@@ -78,6 +92,9 @@ func NewVPSProviderWithModel(baseURL, apiKey, model string) *OpenAICompatiblePro
 // NewOllamaSTTProvider creates a provider for Ollama-compatible local
 // transcription endpoints. Ollama runs on loopback by default and can be
 // pointed at a user-managed self-hosted URL.
+//
+// Deprecated: moved to pkg/speechkit/stt/openaicompat.NewOllama. This name is removed in
+// v0.65.0; import the provider package instead.
 func NewOllamaSTTProvider(baseURL, model string) *OpenAICompatibleProvider {
 	baseURL = strings.TrimSpace(baseURL)
 	if baseURL == "" {
@@ -98,11 +115,17 @@ func NewOllamaSTTProvider(baseURL, model string) *OpenAICompatibleProvider {
 }
 
 // NewOpenAISTTProvider creates a provider for the OpenAI Whisper API.
+//
+// Deprecated: moved to pkg/speechkit/stt/openaicompat.NewOpenAI. This name is removed in
+// v0.65.0; import the provider package instead.
 func NewOpenAISTTProvider(apiKey string) *OpenAICompatibleProvider {
 	return NewOpenAICompatibleProvider("openai", "https://api.openai.com", apiKey, "whisper-1")
 }
 
 // NewGroqSTTProvider creates a provider for the Groq Whisper API.
+//
+// Deprecated: moved to pkg/speechkit/stt/openaicompat.NewGroq. This name is removed in
+// v0.65.0; import the provider package instead.
 func NewGroqSTTProvider(apiKey string) *OpenAICompatibleProvider {
 	return NewOpenAICompatibleProvider("groq", "https://api.groq.com/openai", apiKey, "whisper-large-v3-turbo")
 }

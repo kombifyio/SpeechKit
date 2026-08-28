@@ -25,6 +25,9 @@ const (
 // AssemblyAILive implements LiveProvider against AssemblyAI's Voice Agent API.
 // It sends session.update on connect, waits for session.ready before returning,
 // and maps the provider's event vocabulary onto SpeechKit's LiveMessage shape.
+//
+// Deprecated: moved to pkg/speechkit/voiceagent/live/assemblyai.Provider. This name is
+// removed in v0.65.0; import the provider package instead.
 type AssemblyAILive struct {
 	mu        sync.RWMutex
 	conn      *websocket.Conn
@@ -36,6 +39,10 @@ type AssemblyAILive struct {
 	closeErr error
 }
 
+// NewAssemblyAILive returns an unconnected AssemblyAI Voice Agent provider.
+//
+// Deprecated: moved to pkg/speechkit/voiceagent/live/assemblyai.New. This name is
+// removed in v0.65.0; import the provider package instead.
 func NewAssemblyAILive() *AssemblyAILive { return &AssemblyAILive{} }
 
 func (p *AssemblyAILive) Name() string { return "assemblyai-agent" }
