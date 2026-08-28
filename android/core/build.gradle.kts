@@ -1,6 +1,7 @@
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
 plugins {
+    `maven-publish`
     alias(libs.plugins.android.library)
     alias(libs.plugins.kotlin.android)
     alias(libs.plugins.ksp)
@@ -22,9 +23,59 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
 
+    publishing {
+        singleVariant("release") {
+            withSourcesJar()
+        }
+    }
+
     testOptions {
         // JUnit 5 (Jupiter) tests silently do not run without this.
         unitTests.all { it.useJUnitPlatform() }
+    }
+}
+
+// Published because docs/architecture/android-sdk-surface-boundary.md names
+// this module part of the Android embedder boundary. A module a host is told
+// to depend on but cannot resolve is a documented capability that does not
+// exist; vendoring a copy is what that gap produced last time.
+publishing {
+    publications {
+        register<MavenPublication>("release") {
+            groupId = "io.kombify.speechkit"
+            artifactId = "core"
+            version = providers.fileContents(
+                rootProject.layout.projectDirectory.file("../.kombify/VERSION"),
+            ).asText.map { it.trim() }.getOrElse("0.0.0")
+
+            afterEvaluate { from(components["release"]) }
+
+            pom {
+                name.set("SpeechKit Core (Android)")
+                description.set(
+                    "Microphone capture, PCM playback, the speech engine, VAD and the turn engine shared by every SpeechKit voice surface.",
+                )
+                licenses {
+                    license {
+                        name.set("Apache-2.0")
+                        url.set("https://www.apache.org/licenses/LICENSE-2.0")
+                    }
+                }
+            }
+        }
+    }
+
+    repositories {
+        maven {
+            name = "GitHubPackages"
+            url = uri("https://maven.pkg.github.com/kombifyio/SpeechKit")
+            credentials {
+                username = providers.gradleProperty("gpr.user")
+                    .orElse(providers.environmentVariable("GITHUB_ACTOR")).getOrElse("")
+                password = providers.gradleProperty("gpr.token")
+                    .orElse(providers.environmentVariable("GITHUB_TOKEN")).getOrElse("")
+            }
+        }
     }
 }
 

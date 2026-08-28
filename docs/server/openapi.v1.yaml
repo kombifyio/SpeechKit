@@ -368,7 +368,12 @@ paths:
         - name: scope_key
           in: query
           required: false
-          schema: { type: string }
+          description: >
+            Identifies the scope instance. Required whenever `scope` names a
+            keyed scope (`install`, `org`, `workspace`, `user`, `session`);
+            omit it entirely for `builtin` and `app`. An empty value is not
+            the same as omitting it and is rejected.
+          schema: { type: string, minLength: 1 }
         - name: source
           in: query
           required: false
@@ -447,7 +452,12 @@ paths:
         - name: scope_key
           in: query
           required: false
-          schema: { type: string }
+          description: >
+            Identifies the scope instance. Required whenever `scope` names a
+            keyed scope (`install`, `org`, `workspace`, `user`, `session`);
+            omit it entirely for `builtin` and `app`. An empty value is not
+            the same as omitting it and is rejected.
+          schema: { type: string, minLength: 1 }
         - name: source
           in: query
           required: false
@@ -486,7 +496,12 @@ paths:
         - name: scope_key
           in: query
           required: false
-          schema: { type: string }
+          description: >
+            Identifies the scope instance. Required whenever `scope` names a
+            keyed scope (`install`, `org`, `workspace`, `user`, `session`);
+            omit it entirely for `builtin` and `app`. An empty value is not
+            the same as omitting it and is rejected.
+          schema: { type: string, minLength: 1 }
         - name: source
           in: query
           required: false
@@ -512,7 +527,12 @@ paths:
         - name: scope_key
           in: query
           required: false
-          schema: { type: string }
+          description: >
+            Identifies the scope instance. Required whenever `scope` names a
+            keyed scope (`install`, `org`, `workspace`, `user`, `session`);
+            omit it entirely for `builtin` and `app`. An empty value is not
+            the same as omitting it and is rejected.
+          schema: { type: string, minLength: 1 }
         - name: source
           in: query
           required: false
@@ -547,7 +567,12 @@ paths:
         - name: scope_key
           in: query
           required: false
-          schema: { type: string }
+          description: >
+            Identifies the scope instance. Required whenever `scope` names a
+            keyed scope (`install`, `org`, `workspace`, `user`, `session`);
+            omit it entirely for `builtin` and `app`. An empty value is not
+            the same as omitting it and is rejected.
+          schema: { type: string, minLength: 1 }
         - name: source
           in: query
           required: false
@@ -591,7 +616,12 @@ paths:
         - name: scope_key
           in: query
           required: false
-          schema: { type: string }
+          description: >
+            Identifies the scope instance. Required whenever `scope` names a
+            keyed scope (`install`, `org`, `workspace`, `user`, `session`);
+            omit it entirely for `builtin` and `app`. An empty value is not
+            the same as omitting it and is rejected.
+          schema: { type: string, minLength: 1 }
         - name: source
           in: query
           required: false
@@ -616,7 +646,12 @@ paths:
         - name: scope_key
           in: query
           required: false
-          schema: { type: string }
+          description: >
+            Identifies the scope instance. Required whenever `scope` names a
+            keyed scope (`install`, `org`, `workspace`, `user`, `session`);
+            omit it entirely for `builtin` and `app`. An empty value is not
+            the same as omitting it and is rejected.
+          schema: { type: string, minLength: 1 }
         - name: source
           in: query
           required: false
@@ -647,7 +682,12 @@ paths:
         - name: scope_key
           in: query
           required: false
-          schema: { type: string }
+          description: >
+            Identifies the scope instance. Required whenever `scope` names a
+            keyed scope (`install`, `org`, `workspace`, `user`, `session`);
+            omit it entirely for `builtin` and `app`. An empty value is not
+            the same as omitting it and is rejected.
+          schema: { type: string, minLength: 1 }
         - name: source
           in: query
           required: false
@@ -672,7 +712,12 @@ paths:
         - name: scope_key
           in: query
           required: false
-          schema: { type: string }
+          description: >
+            Identifies the scope instance. Required whenever `scope` names a
+            keyed scope (`install`, `org`, `workspace`, `user`, `session`);
+            omit it entirely for `builtin` and `app`. An empty value is not
+            the same as omitting it and is rejected.
+          schema: { type: string, minLength: 1 }
         - name: source
           in: query
           required: false
@@ -703,7 +748,12 @@ paths:
         - name: scope_key
           in: query
           required: false
-          schema: { type: string }
+          description: >
+            Identifies the scope instance. Required whenever `scope` names a
+            keyed scope (`install`, `org`, `workspace`, `user`, `session`);
+            omit it entirely for `builtin` and `app`. An empty value is not
+            the same as omitting it and is rejected.
+          schema: { type: string, minLength: 1 }
       responses:
         '200':
           description: Customization pack.
@@ -724,7 +774,12 @@ paths:
         - name: scope_key
           in: query
           required: false
-          schema: { type: string }
+          description: >
+            Identifies the scope instance. Required whenever `scope` names a
+            keyed scope (`install`, `org`, `workspace`, `user`, `session`);
+            omit it entirely for `builtin` and `app`. An empty value is not
+            the same as omitting it and is rejected.
+          schema: { type: string, minLength: 1 }
         - name: source
           in: query
           required: false
@@ -1529,6 +1584,114 @@ paths:
               schema: { $ref: '#/components/schemas/Error' }
         '500': { $ref: '#/components/responses/PersistFailed' }
 
+  # ── Local device agent (speechkit.device_agent.v1) ────────────────────────
+  # A paired homelab device (a Kombify Box, a satellite speaker) talks to the
+  # local server over these four routes and no others. They carry their own
+  # per-device pairing credential instead of the deployment bearer token,
+  # which is why they are listed as public routes in the auth middleware: the
+  # handler authenticates the device itself and answers 401 when it cannot.
+  #
+  # Every response carries X-SpeechKit-Server-Instance-ID. A device that sees
+  # a different instance id than it registered against must re-register
+  # rather than continue against an unknown server.
+  #
+  # The Box media turn (audio/L16 in, audio/L16 out) is deliberately absent:
+  # it runs on its own dedicated listener, not this API, so documenting it
+  # here would claim a route this server does not serve.
+  /v1/device-agent/register:
+    post:
+      operationId: registerDeviceAgent
+      summary: Register a paired device agent
+      description: >
+        Announces the device and what it can do. The server answers with the
+        pairing it recognises and the bridge capabilities it can actually
+        serve; neither is taken from the device.
+      tags: [device-agent]
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/DeviceAgentRegistration' }
+      responses:
+        '200':
+          description: Registration accepted.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DeviceAgentRegistrationAck' }
+        '401': { $ref: '#/components/responses/DeviceAgentUnauthorized' }
+        '405': { $ref: '#/components/responses/DeviceAgentMethodNotAllowed' }
+
+  /v1/device-agent/events:
+    post:
+      operationId: reportDeviceAgentEvent
+      summary: Report a device-side lifecycle event
+      description: >
+        One event per call. The server records it for operators and evidence;
+        it never drives behaviour from a device-reported event.
+      tags: [device-agent]
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/DeviceAgentEvent' }
+      responses:
+        '200':
+          description: Event recorded.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DeviceAgentEventAck' }
+        '401': { $ref: '#/components/responses/DeviceAgentUnauthorized' }
+        '405': { $ref: '#/components/responses/DeviceAgentMethodNotAllowed' }
+
+  /v1/device-agent/assist:
+    post:
+      operationId: processDeviceAgentAssist
+      summary: Run one Assist turn for a paired device
+      description: >
+        The transcript goes in, the spoken answer and whether an action ran
+        come back. `action_executed` is deliberately three-valued: a device
+        must be able to tell "nothing happened" apart from "cannot say".
+      tags: [device-agent]
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/DeviceAgentAssistRequest' }
+      responses:
+        '200':
+          description: Assist turn resolved.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DeviceAgentAssistResponse' }
+        '401': { $ref: '#/components/responses/DeviceAgentUnauthorized' }
+        '405': { $ref: '#/components/responses/DeviceAgentMethodNotAllowed' }
+
+  /v1/device-agent/tts:
+    post:
+      operationId: synthesizeForDeviceAgent
+      summary: Synthesize the spoken answer for a prior Assist turn
+      description: >
+        Fetches audio for a `request_id` the server already answered, so the
+        device does not carry a TTS provider or its credentials.
+      tags: [device-agent]
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/DeviceAgentTTSRequest' }
+      responses:
+        '200':
+          description: Audio for the requested turn.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DeviceAgentTTSResponse' }
+        '401': { $ref: '#/components/responses/DeviceAgentUnauthorized' }
+        '405': { $ref: '#/components/responses/DeviceAgentMethodNotAllowed' }
+
 # ── Components ──────────────────────────────────────────────────────────────
 components:
   securitySchemes:
@@ -1581,6 +1744,18 @@ components:
       schema: { type: string }
 
   responses:
+    DeviceAgentUnauthorized:
+      description: >
+        The per-device pairing credential is missing, wrong, or the device is
+        not paired with this server.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/DeviceAgentError' }
+    DeviceAgentMethodNotAllowed:
+      description: These endpoints accept POST only.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/DeviceAgentError' }
     Readiness:
       description: Component health snapshot.
       content:
@@ -1672,6 +1847,177 @@ components:
           schema: { $ref: '#/components/schemas/Error' }
 
   schemas:
+    DeviceAgentAudioDevice:
+      type: object
+      required: [id, kind]
+      properties:
+        id: { type: string }
+        name: { type: string }
+        kind: { type: string, enum: [microphone, speaker] }
+        transport: { type: string }
+    DeviceAgentWakeword:
+      type: object
+      required: [enabled, status]
+      properties:
+        enabled: { type: boolean }
+        phrase: { type: string }
+        backend: { type: string }
+        status: { type: string }
+    DeviceAgentDescriptor:
+      type: object
+      required: [agent_id, device_id, room_id, capture_device, output_device, wakeword]
+      properties:
+        agent_id: { type: string }
+        device_id: { type: string }
+        display_name: { type: string }
+        room_id: { type: string }
+        capture_device: { $ref: '#/components/schemas/DeviceAgentAudioDevice' }
+        output_device: { $ref: '#/components/schemas/DeviceAgentAudioDevice' }
+        wakeword: { $ref: '#/components/schemas/DeviceAgentWakeword' }
+    DeviceAgentCapabilities:
+      type: object
+      description: >
+        Device-reported facts only. Pairing state and server-side bridge
+        readiness are deliberately absent: only the server can attest those.
+      required: [dictation, assist, voice_agent, wakeword_local, tts, barge_in]
+      properties:
+        dictation: { type: boolean }
+        assist: { type: boolean }
+        voice_agent: { type: boolean }
+        wakeword_local: { type: boolean }
+        tts: { type: boolean }
+        barge_in: { type: boolean }
+    DeviceAgentHealth:
+      type: object
+      required: [status, capture_ready, output_ready, wake_ready]
+      properties:
+        status: { type: string }
+        capture_ready: { type: boolean }
+        output_ready: { type: boolean }
+        wake_ready: { type: boolean }
+    DeviceAgentRegistration:
+      type: object
+      required: [version, registered_at, device, capabilities, health]
+      properties:
+        version:
+          type: string
+          description: Protocol version; `speechkit.device_agent.v1`.
+        registered_at: { type: string, format: date-time }
+        device: { $ref: '#/components/schemas/DeviceAgentDescriptor' }
+        capabilities: { $ref: '#/components/schemas/DeviceAgentCapabilities' }
+        health: { $ref: '#/components/schemas/DeviceAgentHealth' }
+    DeviceAgentCapabilityState:
+      type: object
+      required: [status]
+      properties:
+        status: { type: string, enum: [ready, unavailable, unverified] }
+        reason_code: { type: string }
+    DeviceAgentRegistrationAck:
+      type: object
+      required: [status, pairing_id, server_instance_id, capabilities]
+      properties:
+        status: { type: string }
+        pairing_id: { type: string }
+        server_instance_id: { type: string }
+        server_time: { type: string }
+        capabilities:
+          type: object
+          required: [home_assistant, tts]
+          properties:
+            home_assistant: { $ref: '#/components/schemas/DeviceAgentCapabilityState' }
+            tts: { $ref: '#/components/schemas/DeviceAgentCapabilityState' }
+    DeviceAgentEvent:
+      type: object
+      required: [type, surface, mode, device_id, room_id, at]
+      properties:
+        type: { type: string }
+        surface: { type: string }
+        mode: { type: string }
+        request_id: { type: string }
+        session_id: { type: string }
+        device_id: { type: string }
+        room_id: { type: string }
+        capture_policy: { type: string }
+        transport: { type: string }
+        text: { type: string }
+        speak_text: { type: string }
+        reason_code: { type: string }
+        at: { type: string, format: date-time }
+        metadata:
+          type: object
+          additionalProperties: { type: string }
+    DeviceAgentEventAck:
+      type: object
+      required: [status]
+      properties:
+        status: { type: string }
+    DeviceAgentAssistRequest:
+      type: object
+      required: [request_id, session_id, command_id, device_id, room_id, text, locale]
+      properties:
+        request_id: { type: string }
+        session_id: { type: string }
+        command_id: { type: string }
+        device_id: { type: string }
+        room_id: { type: string }
+        text: { type: string }
+        locale: { type: string, description: BCP-47 locale. }
+    DeviceAgentAssistResponse:
+      type: object
+      required: [status, request_id, action_executed, replayed, retryable]
+      properties:
+        status: { type: string }
+        request_id: { type: string }
+        conversation_id: { type: string }
+        response_type: { type: string }
+        speech: { type: string }
+        action_executed:
+          type: string
+          enum: [yes, no, unknown]
+          description: >
+            Three-valued on purpose: a device has to tell "nothing happened"
+            apart from "cannot say".
+        replayed:
+          type: boolean
+          description: True when this is a replay of an already-answered request id.
+        error_code: { type: string }
+        reason_code: { type: string }
+        retryable: { type: boolean }
+        user_guidance: { type: string }
+    DeviceAgentTTSRequest:
+      type: object
+      required: [request_id, format]
+      properties:
+        request_id:
+          type: string
+          description: The Assist turn whose spoken answer is wanted.
+        format: { type: string }
+    DeviceAgentTTSResponse:
+      type: object
+      required: [request_id, audio_base64, format, sample_rate, duration_ms, provider]
+      properties:
+        request_id: { type: string }
+        audio_base64: { type: string, format: byte }
+        format: { type: string }
+        sample_rate: { type: integer }
+        duration_ms: { type: integer, format: int64 }
+        provider: { type: string }
+        voice: { type: string }
+    DeviceAgentError:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: object
+          required: [error_code, reason_code, retryable, action_executed, user_guidance]
+          properties:
+            error_code: { type: string }
+            reason_code: { type: string }
+            retryable: { type: boolean }
+            action_executed: { type: string, enum: [yes, no, unknown] }
+            user_guidance:
+              type: string
+              description: What the person in the room should do about it.
     Error:
       type: object
       required: [error]

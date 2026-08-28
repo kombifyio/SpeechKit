@@ -1,0 +1,211 @@
+{
+  "version": "speechkit.voice_surface.v1",
+  "publicOrigin": "https://api.kombify.io",
+  "routes": [
+    "/v1/speechkit/dictation/transcribe",
+    "/v1/speechkit/assist/process",
+    "/v1/speechkit/voiceagent/sessions",
+    "/v1/speechkit/voiceagent/sessions/{id}/ws"
+  ],
+  "modes": ["dictation", "assist", "voice_agent"],
+  "capturePolicies": ["push_to_talk", "explicit_record", "hotkey_local", "wakeword_local", "device_agent"],
+  "transports": ["local_http", "gateway_http", "voiceagent_ws_ticket", "livekit_optional"],
+  "surfaceContracts": [
+    {
+      "surface": "mobile",
+      "mode": "assist",
+      "capture_policy": "explicit_record",
+      "transport": "local_http",
+      "local_instance_id": "local_speechkit_001",
+      "capabilities": {
+        "dictation": true,
+        "assist": true,
+        "voice_agent": true,
+        "wakeword_local": true,
+        "tts": true,
+        "barge_in": true,
+        "local_pairing": true
+      },
+      "session": {
+        "locale": "de-DE",
+        "room_id": "office",
+        "device_id": "android_device_001"
+      },
+      "provider": {
+        "provider_kind": "local",
+        "media_transport": "websocket"
+      }
+    },
+    {
+      "surface": "workbench",
+      "mode": "dictation",
+      "capture_policy": "push_to_talk",
+      "transport": "gateway_http",
+      "capabilities": {
+        "dictation": true,
+        "assist": true,
+        "voice_agent": true,
+        "wakeword_local": false,
+        "tts": true,
+        "barge_in": false,
+        "local_pairing": false
+      },
+      "session": {
+        "locale": "de-DE"
+      },
+      "provider": {
+        "provider_kind": "kombify_managed",
+        "media_transport": "websocket"
+      }
+    },
+    {
+      "surface": "floating_panel",
+      "mode": "assist",
+      "capture_policy": "explicit_record",
+      "transport": "gateway_http",
+      "capabilities": {
+        "dictation": true,
+        "assist": true,
+        "voice_agent": false,
+        "wakeword_local": false,
+        "tts": true,
+        "barge_in": false,
+        "local_pairing": false
+      },
+      "session": {
+        "locale": "de-DE"
+      },
+      "provider": {
+        "provider_kind": "kombify_managed",
+        "media_transport": "websocket"
+      }
+    },
+    {
+      "surface": "device_agent",
+      "mode": "assist",
+      "capture_policy": "device_agent",
+      "transport": "local_http",
+      "local_instance_id": "local_speechkit_001",
+      "capabilities": {
+        "dictation": true,
+        "assist": true,
+        "voice_agent": true,
+        "wakeword_local": true,
+        "tts": true,
+        "barge_in": true,
+        "local_pairing": true
+      },
+      "session": {
+        "locale": "de-DE",
+        "room_id": "kitchen",
+        "device_id": "speaker_kitchen_001"
+      },
+      "provider": {
+        "provider_kind": "local",
+        "media_transport": "websocket"
+      }
+    }
+  ],
+  "events": [
+    {
+      "type": "voice.capture_started",
+      "surface": "workbench",
+      "mode": "dictation",
+      "session_id": "voice_session_001",
+      "capture_policy": "push_to_talk",
+      "transport": "gateway_http"
+    },
+    {
+      "type": "voice.capture_stopped",
+      "surface": "workbench",
+      "mode": "dictation",
+      "session_id": "voice_session_001",
+      "reason_code": "end_of_utterance"
+    },
+    {
+      "type": "voice.transcript_draft",
+      "surface": "workbench",
+      "mode": "dictation",
+      "session_id": "voice_session_001",
+      "text": "Pruefe bitte den letzten Deploy",
+      "final": false
+    },
+    {
+      "type": "voice.transcript_final",
+      "surface": "workbench",
+      "mode": "dictation",
+      "session_id": "voice_session_001",
+      "text": "Pruefe bitte den letzten Deploy.",
+      "final": true
+    },
+    {
+      "type": "voice.assist_result",
+      "surface": "mobile",
+      "mode": "assist",
+      "session_id": "assist_session_001",
+      "text": "Das Licht in der Kueche ist aus.",
+      "speak_text": "Das Licht in der Kueche ist aus."
+    },
+    {
+      "type": "voice.agent_turn",
+      "surface": "mobile",
+      "mode": "voice_agent",
+      "session_id": "agent_session_001",
+      "input_text": "Hilf mir beim Homelab.",
+      "output_text": "Ich pruefe zuerst deine lokalen Services."
+    },
+    {
+      "type": "voice.tts_started",
+      "surface": "device_agent",
+      "mode": "assist",
+      "session_id": "assist_session_001"
+    },
+    {
+      "type": "voice.tts_finished",
+      "surface": "device_agent",
+      "mode": "assist",
+      "session_id": "assist_session_001"
+    },
+    {
+      "type": "voice.cancelled",
+      "surface": "floating_panel",
+      "mode": "assist",
+      "session_id": "assist_session_002",
+      "reason_code": "user_cancelled"
+    },
+    {
+      "type": "voice.barge_in",
+      "surface": "device_agent",
+      "mode": "voice_agent",
+      "session_id": "agent_session_001",
+      "reason_code": "user_spoke_during_tts"
+    },
+    {
+      "type": "voice.denied",
+      "surface": "workbench",
+      "mode": "voice_agent",
+      "session_id": "agent_session_denied_001",
+      "error": {
+        "error_code": "speechkit_entitlement_required",
+        "reason_code": "missing_speechkit_voiceagent_live",
+        "capability": "speechkit.voice_agent.live",
+        "provider_id": "openai-realtime",
+        "required_features": ["speechkit.voiceagent.live"],
+        "missing_features": ["speechkit.voiceagent.live"],
+        "retryable": false,
+        "remediation": "Ask an account admin to enable hosted Voice Agent or pair a local SpeechKit instance.",
+        "user_guidance": {
+          "title": "Voice Agent is not available for this account",
+          "body": "This account is not entitled to hosted realtime SpeechKit sessions.",
+          "next_steps": ["Use local SpeechKit pairing.", "Ask an admin to enable hosted Voice Agent."]
+        },
+        "support_context": {
+          "feature_source": "Stripe/FGA/Flagship entitlement chain",
+          "cost_bearing": true
+        },
+        "request_id": "req_voice_denied_001"
+      },
+      "before_side_effects": ["provider_call", "livekit_token", "session_persistence", "billing_event"]
+    }
+  ]
+}

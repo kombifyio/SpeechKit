@@ -38,6 +38,7 @@ table mirrors that inventory.
 | `pkg/speechkit/assist/skills` | Voice-Companion skill catalog (Time, and friends) for Assist hosts. |
 | `pkg/speechkit/assist/toolbridge` | Adapts Assist-mode tools to other tool-calling surfaces. |
 | `pkg/speechkit/audio` | Shared PCM audio primitives: 16kHz S16 mono constants, WAV framing, duration and level math. |
+| `pkg/speechkit/audio/capture` | Microphone and system-loopback capture. `Session` satisfies `speechkit.AudioRecorder`, so a host does not implement recording itself; `RegisterBackend` is the extension point, and builds without a native backend report `ErrBackendUnavailable`. |
 | `pkg/speechkit/client` | Typed HTTP client for talking to a remote SpeechKit Server. |
 | `pkg/speechkit/companion` | `NewHandsFree(...)` composer for hands-free target routing across Assist, Voice Agent, and UI-assisted Dictation using wake detections, host transcript requests, optional TTS, and EventBus lifecycle. |
 | `pkg/speechkit/customize` | Public Words/Replacements customization contract. |

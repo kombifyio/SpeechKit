@@ -2,10 +2,10 @@
 /**
  * Drift gate for the vendored `speechkit.voice_surface.v1` contract fixture.
  *
- * The kit ships its own copy (public package; the canonical fixture lives in
- * the private desktop frontend). In the private repo this script asserts byte
- * equality against `frontend/app/src/lib/speechkit-voice-surface.v1.json`; in
- * the public mirror (where that tree is absent) it skips cleanly.
+ * The kit ships its own copy so the published package is self-contained. This
+ * script asserts byte equality against the canonical fixture in
+ * `docs/server/contracts/`, which is exported to the public mirror, so the
+ * gate runs in both repositories instead of skipping in one.
  */
 import { existsSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
@@ -19,16 +19,18 @@ const canonical = join(
   "..",
   "..",
   "..",
-  "frontend",
-  "app",
-  "src",
-  "lib",
+  "docs",
+  "server",
+  "contracts",
   "speechkit-voice-surface.v1.json"
 );
 
 if (!existsSync(canonical)) {
-  console.log("contract drift check skipped (canonical fixture not present — public mirror).");
-  process.exit(0);
+  console.error(
+    `canonical contract missing at ${canonical}. It is exported to the public ` +
+      "mirror, so its absence is a broken export, not a reason to skip."
+  );
+  process.exit(1);
 }
 
 // Newline-insensitive: git may materialize CRLF on Windows checkouts.
@@ -37,7 +39,7 @@ const canonicalBytes = readFileSync(canonical, "utf8").replaceAll("\r\n", "\n");
 
 if (vendoredBytes !== canonicalBytes) {
   console.error(
-    "speechkit-voice-surface.v1.json drifted from frontend/app/src/lib/. " +
+    "speechkit-voice-surface.v1.json drifted from docs/server/contracts/. " +
       "Re-copy the canonical fixture into spec/fixtures/ (additive contract changes only)."
   );
   process.exit(1);

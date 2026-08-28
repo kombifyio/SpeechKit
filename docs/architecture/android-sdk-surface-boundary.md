@@ -38,14 +38,44 @@ This file owns the module cut and the dependency rules; CONTRACT maps types.
 
 ## Published artifacts
 
-Two modules are published as Apache-2.0 AARs to GitHub Packages
-(`https://maven.pkg.github.com/kombifyio/SpeechKit`), versioned
+Every module in the public table is published as an Apache-2.0 AAR, versioned
 from `.kombify/VERSION` like every other release artifact:
 
 | Coordinate | Module | Why it is published |
 |---|---|---|
+| `io.kombify.speechkit:domain` | `:domain` | A host resolves which server to talk to with the same algebra the reference app uses |
+| `io.kombify.speechkit:core` | `:core` | One microphone capture, one PCM player, one turn engine — the parts every voice surface needs |
+| `io.kombify.speechkit:net` | `:net` | The dictation and Voice Agent wire clients, so a host does not re-implement the protocol |
 | `io.kombify.speechkit:voice-ui-compose` | `:voice-ui-compose` | One orb for every surface, including hosts outside this repository |
 | `io.kombify.speechkit:coinstall-contract` | `:coinstall` | Both apps must compile the same wire contract without linking each other across the GPL boundary |
+
+### Where a consumer gets them
+
+There are two registries and they are not interchangeable.
+
+**JitPack is the public channel.** It resolves anonymously from the public
+mirror, which is what an outside developer can actually use:
+
+```kotlin
+repositories { maven { url = uri("https://jitpack.io") } }
+
+dependencies {
+    implementation("com.github.kombifyio.SpeechKit:core:<version>")
+}
+```
+
+**GitHub Packages is the internal lane.** Its Maven endpoint requires a token
+even for public artifacts, so an outside developer hits 401 before they see a
+package. Treating it as a public channel is what left `:core`, `:net` and
+`:domain` documented as consumable while being unresolvable, and that gap is
+how kombify-Mobile ended up vendoring a copy in the first place.
+
+`jitpack.yml` builds exactly the modules above. It cannot build `:app`,
+because the HeliBoard fork's GPL sources are not mirrored — the mirror records
+the revision in `android/heliboard.rev` — and `android/settings.gradle.kts`
+drops `:app` when the submodule is absent. That guard is also what lets a
+fresh clone configure the framework modules before running
+`git submodule update --init`.
 
 The artifactId `coinstall-contract` does not match its module name. That is
 deliberate: what a consumer reads in a dependency block should say that this is

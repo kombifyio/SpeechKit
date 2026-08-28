@@ -1,0 +1,23 @@
+# JitPack builds the public mirror's Apache-2.0 Android modules.
+#
+# GitHub Packages needs a token even for public artifacts, so it is not a
+# public distribution channel — an outside developer hits 401 before they see
+# a package. JitPack resolves anonymously from a public repository, which is
+# what "publicly consumable" has to mean.
+#
+# Only the framework modules are built. :app links the HeliBoard fork, whose
+# GPL sources are not mirrored (android/heliboard.rev records the revision),
+# and android/settings.gradle.kts drops :app when that submodule is absent.
+jdk:
+  - openjdk17
+
+before_install:
+  - sdk install java 17.0.13-tem || true
+
+install:
+  - ./android/gradlew -p android --no-daemon
+      :domain:publishToMavenLocal
+      :core:publishToMavenLocal
+      :net:publishToMavenLocal
+      :voice-ui-compose:publishToMavenLocal
+      :coinstall:publishToMavenLocal
