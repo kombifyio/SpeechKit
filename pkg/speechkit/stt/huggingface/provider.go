@@ -1,0 +1,159 @@
+package huggingface
+
+import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"fmt"
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/stt"
+	"io"
+	"net/http"
+	"regexp"
+	"time"
+
+	"github.com/kombifyio/SpeechKit/pkg/speechkit"
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/netsec"
+)
+
+const (
+	hfBaseURL = "https://router.huggingface.co/hf-inference/models"
+)
+
+// hfModelPattern restricts HuggingFace model IDs to safe characters.
+// Model IDs follow the form "owner/name" or bare "name", optionally with
+// dots, dashes, and underscores. Rejects path-traversal or URL-injection
+// attempts (e.g. "..", "?", "#", "@", spaces).
+var hfModelPattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._\-]*(?:/[A-Za-z0-9._\-]+)?$`)
+
+// Provider implements stt.STTProvider for Tier 3: HuggingFace Inference API.
+//
+// BaseURL is user-configurable. It is validated against Validation on every
+// request. Default Validation is strict (public https only).
+type Provider struct {
+	Model      string
+	Token      string
+	BaseURL    string // Override for testing; defaults to hfBaseURL
+	Validation netsec.ValidationOptions
+	client     *http.Client
+}
+
+// New creates a provider for a HuggingFace-hosted model.
+func New(model, token string) *Provider {
+	p := &Provider{
+		Model:   model,
+		Token:   token,
+		BaseURL: hfBaseURL,
+		// Validation zero-value = strict: public https only.
+	}
+	p.client = netsec.NewSafeHTTPClient(netsec.ClientOptions{Timeout: 30 * time.Second, DialValidation: &p.Validation})
+	return p
+}
+
+// hfEndpoint builds a validated HuggingFace inference URL for the given model.
+func (p *Provider) hfEndpoint(model string) (string, error) {
+	if !hfModelPattern.MatchString(model) {
+		return "", fmt.Errorf("hf: invalid model id %q", model)
+	}
+	base := p.BaseURL
+	if base == "" {
+		base = hfBaseURL
+	}
+	return netsec.BuildEndpoint(base, model, p.Validation)
+}
+
+func (p *Provider) Transcribe(ctx context.Context, audio []byte, opts stt.TranscribeOpts) (*stt.Result, error) {
+	model := p.Model
+	if opts.Model != "" {
+		model = opts.Model
+	}
+	resolved := stt.ResolveTranscribeOptions("huggingface", "stt.routed.whisper-large-v3", opts, nil, nil)
+	endpoint, err := p.hfEndpoint(model)
+	if err != nil {
+		return nil, fmt.Errorf("hf endpoint: %w", err)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, "POST", endpoint, bytes.NewReader(audio)) //nolint:gosec // G704: endpoint is HuggingFace API URL from user config (by design)
+	if err != nil {
+		return nil, fmt.Errorf("create request: %w", err)
+	}
+	req.Header.Set("Content-Type", "audio/wav")
+	req.Header.Set("Authorization", "Bearer "+p.Token)
+
+	start := time.Now()
+	resp, err := p.client.Do(req) //nolint:gosec // G704: SSRF by design, endpoint configured by user
+	if err != nil {
+		return nil, fmt.Errorf("hf request: %w", err)
+	}
+	defer resp.Body.Close() //nolint:errcheck // response body close error is not actionable
+	duration := time.Since(start)
+
+	respBody, err := io.ReadAll(io.LimitReader(resp.Body, stt.MaxResponseBytes))
+	if err != nil {
+		return nil, fmt.Errorf("read response: %w", err)
+	}
+
+	switch {
+	case resp.StatusCode == 503:
+		return nil, netsec.ProviderStatusError("hf", resp.StatusCode, respBody)
+	case resp.StatusCode == 429:
+		return nil, netsec.ProviderStatusError("hf", resp.StatusCode, respBody)
+	case resp.StatusCode != http.StatusOK:
+		return nil, netsec.ProviderStatusError("hf", resp.StatusCode, respBody)
+	}
+
+	var hfResp struct {
+		Text string `json:"text"`
+	}
+	if err := json.Unmarshal(respBody, &hfResp); err != nil {
+		return nil, fmt.Errorf("parse response: %w", err)
+	}
+
+	// The routed HF ASR payload is raw audio: no language goes out and none
+	// comes back, so the label can only echo what was asked for. APILanguage()
+	// is empty for a multilanguage session, and naming a locale there would be
+	// an inference — the exact thing the multilanguage rule forbids.
+	lang := stt.FirstNonEmptyTrimmed(resolved.APILanguage(), stt.LanguageMulti)
+
+	return &stt.Result{
+		Text:     hfResp.Text,
+		Language: lang,
+		Duration: duration,
+		Provider: p.Name(),
+		Model:    model,
+	}, nil
+}
+
+func (p *Provider) Name() string {
+	return "huggingface"
+}
+
+func (p *Provider) Health(ctx context.Context) error {
+	endpoint, err := p.hfEndpoint(p.Model)
+	if err != nil {
+		return fmt.Errorf("hf endpoint: %w", err)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, "GET", endpoint, http.NoBody)
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Authorization", "Bearer "+p.Token)
+
+	resp, err := p.client.Do(req) //nolint:gosec // G704: SSRF by design, endpoint configured by user
+	if err != nil {
+		return fmt.Errorf("hf health: %w", err)
+	}
+	defer resp.Body.Close() //nolint:errcheck // response body close error is not actionable
+	body, _ := io.ReadAll(io.LimitReader(resp.Body, stt.MaxResponseBytes))
+
+	if resp.StatusCode == 503 {
+		return fmt.Errorf("hf model loading")
+	}
+	if resp.StatusCode != http.StatusOK {
+		return netsec.ProviderStatusError("hf health", resp.StatusCode, body)
+	}
+	return nil
+}
+
+// Capabilities reports the speech-to-text baseline every provider satisfies.
+func (*Provider) Capabilities() []speechkit.Capability { return stt.BaseCapabilities() }

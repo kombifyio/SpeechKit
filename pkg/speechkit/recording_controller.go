@@ -10,8 +10,6 @@ import (
 	"sync/atomic"
 	"time"
 
-	"go.opentelemetry.io/otel/attribute"
-
 	speechkitaudio "github.com/kombifyio/SpeechKit/pkg/speechkit/audio"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/speaker"
 )
@@ -1166,7 +1164,7 @@ func (r *dictationStreamRuntime) enqueuePCM(pcm []byte, controller *RecordingCon
 		if dropped == 1 || dropped%100 == 0 {
 			controller.onLog(fmt.Sprintf("Provider-stream PCM queue full; dropped %d frame(s)", dropped), "warn")
 			RecordOutcome(r.ctx, OutcomePCMQueueDrop, errors.New("pcm queue full"),
-				attribute.Int64("dropped_frames", dropped),
+				Int64Attr("dropped_frames", dropped),
 			)
 		}
 	}

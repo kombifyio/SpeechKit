@@ -86,14 +86,14 @@ func TestReportedLanguageNeverInventsALocale(t *testing.T) {
 		{name: "unpinned falls back to the sentinel", detected: "", asked: "", want: LanguageMulti},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			if got := firstNonEmptyTrimmed(tc.detected, tc.asked, LanguageMulti); got != tc.want {
+			if got := FirstNonEmptyTrimmed(tc.detected, tc.asked, LanguageMulti); got != tc.want {
 				t.Errorf("reported language = %q, want %q", got, tc.want)
 			}
 		})
 	}
 }
 
-// APILanguage is what the adapters hand to firstNonEmptyTrimmed as the "asked
+// APILanguage is what the adapters hand to FirstNonEmptyTrimmed as the "asked
 // for" value, so it must not leak the sentinel into a label either — reporting
 // the literal "auto" would be as wrong as reporting "de".
 func TestAPILanguageResolvesTheSentinelToEmpty(t *testing.T) {

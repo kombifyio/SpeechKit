@@ -7,7 +7,6 @@ package voiceagent
 // re-export bridge (see types.go for the protocol types and Session runtime).
 
 import (
-	live "github.com/kombifyio/SpeechKit/pkg/speechkit/voiceagent/live"
 	liveassemblyai "github.com/kombifyio/SpeechKit/pkg/speechkit/voiceagent/live/assemblyai"
 	livedeepgram "github.com/kombifyio/SpeechKit/pkg/speechkit/voiceagent/live/deepgram"
 	livegemini "github.com/kombifyio/SpeechKit/pkg/speechkit/voiceagent/live/gemini"
@@ -27,7 +26,7 @@ type (
 
 // DefaultOpenAIRealtimeModel is the public runtime default for OpenAI-backed
 // Voice Agent sessions.
-const DefaultOpenAIRealtimeModel = live.DefaultOpenAIRealtimeModel
+const DefaultOpenAIRealtimeModel = liveopenai.DefaultRealtimeModel
 
 // Provider constructors are exposed as function values so this bridge stays
 // signature-agnostic: changing a constructor's parameters in the live package

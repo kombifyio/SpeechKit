@@ -1,8 +1,12 @@
 package stt
 
-import "encoding/binary"
+import (
+	"encoding/binary"
 
-// pcm16FromWAV extracts raw PCM16 sample data plus the sample rate and channel
+	audiofmt "github.com/kombifyio/SpeechKit/pkg/speechkit/audio"
+)
+
+// PCM16FromWAV extracts raw PCM16 sample data plus the sample rate and channel
 // count from a LINEAR16 RIFF/WAVE byte slice. It returns ok=false when the
 // input is not a 16-bit PCM WAV, in which case callers should treat the bytes
 // as already-raw PCM and fall back to a default rate.
@@ -10,7 +14,7 @@ import "encoding/binary"
 // Providers that must declare the sample rate explicitly (e.g. Google STT v1
 // speech:recognize) rely on this to avoid sending a wrong hard-coded rate,
 // which the provider rejects with HTTP 400 on a mismatch.
-func pcm16FromWAV(audio []byte) (pcm []byte, sampleRate, channels int, ok bool) {
+func PCM16FromWAV(audio []byte) (pcm []byte, sampleRate, channels int, ok bool) {
 	if len(audio) < 12 || string(audio[0:4]) != "RIFF" || string(audio[8:12]) != "WAVE" {
 		return nil, 0, 0, false
 	}
@@ -55,4 +59,26 @@ func pcm16FromWAV(audio []byte) (pcm []byte, sampleRate, channels int, ok bool) 
 		return nil, 0, 0, false
 	}
 	return data, rate, ch, true
+}
+
+// MaxResponseBytes bounds how much of a provider's HTTP response an adapter
+// reads. Transcription responses are text; anything larger is a
+// misconfiguration or a hostile endpoint, not a longer transcript.
+const MaxResponseBytes = 1 << 20
+
+// EnsureTranscriptionWAV wraps raw PCM in a WAV header when it does not
+// already carry one, because every HTTP transcription endpoint expects a
+// container rather than bare samples.
+func EnsureTranscriptionWAV(raw []byte) []byte {
+	if IsWAV(raw) {
+		return raw
+	}
+	return audiofmt.PCMToWAV(raw)
+}
+
+// IsWAV reports whether raw starts with a RIFF/WAVE header.
+func IsWAV(raw []byte) bool {
+	return len(raw) >= 12 &&
+		string(raw[0:4]) == "RIFF" &&
+		string(raw[8:12]) == "WAVE"
 }

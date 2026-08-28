@@ -15,37 +15,12 @@ type CapabilityReporter interface {
 	Capabilities() []speechkit.Capability
 }
 
-// baseSTTCapabilities are reported by every speech-to-text provider. A fresh
+// BaseCapabilities are reported by every speech-to-text provider. A fresh
 // slice is returned each call so callers may append without aliasing.
-func baseSTTCapabilities() []speechkit.Capability {
+func BaseCapabilities() []speechkit.Capability {
 	return []speechkit.Capability{
 		speechkit.CapabilityTranscription,
 		speechkit.CapabilitySTT,
 		speechkit.CapabilityAudioInput,
 	}
-}
-
-func (*OpenAICompatibleProvider) Capabilities() []speechkit.Capability { return baseSTTCapabilities() }
-func (*HuggingFaceProvider) Capabilities() []speechkit.Capability      { return baseSTTCapabilities() }
-func (*LocalProvider) Capabilities() []speechkit.Capability            { return baseSTTCapabilities() }
-func (*OpenRouterSTTProvider) Capabilities() []speechkit.Capability    { return baseSTTCapabilities() }
-
-// Deepgram and Google add batch speaker diarization (live-verified in the
-// speaker layer).
-func (*DeepgramProvider) Capabilities() []speechkit.Capability {
-	return append(baseSTTCapabilities(), speechkit.CapabilitySpeakerDiarization)
-}
-
-func (*GoogleSTTProvider) Capabilities() []speechkit.Capability {
-	return append(baseSTTCapabilities(), speechkit.CapabilitySpeakerDiarization)
-}
-
-// AssemblyAI additionally attributes/identifies speakers against
-// caller-supplied names or roles.
-func (*AssemblyAIProvider) Capabilities() []speechkit.Capability {
-	return append(baseSTTCapabilities(),
-		speechkit.CapabilitySpeakerDiarization,
-		speechkit.CapabilitySpeakerAttribution,
-		speechkit.CapabilitySpeakerIdentification,
-	)
 }

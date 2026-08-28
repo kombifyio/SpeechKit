@@ -28,7 +28,7 @@ func TestInferLiveEventTypesCoversCombinedProviderFrames(t *testing.T) {
 		LiveEventToolCall,
 		LiveEventTurnEnd,
 	} {
-		if !liveEventTypesContain(got, want) {
+		if !EventTypesContain(got, want) {
 			t.Fatalf("InferLiveEventTypes = %v, missing %s", got, want)
 		}
 	}
@@ -51,11 +51,11 @@ func TestInferLiveEventTypesReturnsCopyOfExplicitEvents(t *testing.T) {
 }
 
 func TestNormalizeLiveMessageEventsAddsProviderMetadata(t *testing.T) {
-	msg := normalizeLiveMessageEvents(&LiveMessage{Audio: []byte{1}}, "response.audio.delta")
+	msg := NormalizeMessageEvents(&LiveMessage{Audio: []byte{1}}, "response.audio.delta")
 	if msg.EventType != LiveEventOutputAudio {
 		t.Fatalf("EventType = %q, want %q", msg.EventType, LiveEventOutputAudio)
 	}
-	if !liveEventTypesContain(msg.EventTypes, LiveEventOutputAudio) {
+	if !EventTypesContain(msg.EventTypes, LiveEventOutputAudio) {
 		t.Fatalf("EventTypes = %v, want output audio", msg.EventTypes)
 	}
 	if msg.ProviderMetadata["provider_event"] != "response.audio.delta" {
@@ -64,7 +64,7 @@ func TestNormalizeLiveMessageEventsAddsProviderMetadata(t *testing.T) {
 }
 
 func TestNormalizeLiveMessageEventsPreservesProviderSuppliedMetadataEvent(t *testing.T) {
-	msg := normalizeLiveMessageEvents(&LiveMessage{
+	msg := NormalizeMessageEvents(&LiveMessage{
 		Text: "hello",
 		ProviderMetadata: map[string]any{
 			"provider_event": "native.output.text",

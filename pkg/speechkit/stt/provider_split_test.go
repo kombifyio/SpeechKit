@@ -4,7 +4,6 @@ import (
 	"testing"
 
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/stt"
-	"github.com/kombifyio/SpeechKit/pkg/speechkit/stt/allproviders"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/stt/assemblyai"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/stt/deepgram"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/stt/google"
@@ -15,29 +14,27 @@ import (
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/stt/vps"
 )
 
-// TestProviderSubpackagesBuildTheSameProviders pins the v0.64 migration
-// window: every provider reachable through the new per-provider import path
-// must construct the same provider the deprecated root name constructs, and
-// must report the same identity. A subpackage that forgets to re-export a
-// constructor, or re-exports the wrong one, fails here rather than in a
-// consumer's build after v0.65 removes the old names.
-func TestProviderSubpackagesBuildTheSameProviders(t *testing.T) {
+// TestProviderPackagesSatisfyTheContract pins what the per-provider split
+// promises an embedder: every provider package constructs something the
+// runtime accepts, and reports the provider identity the catalog names. A
+// package that loses its constructor, or renames the provider it reports,
+// fails here instead of in a consumer's build.
+func TestProviderPackagesSatisfyTheContract(t *testing.T) {
 	cases := []struct {
 		path string
+		want string
 		got  stt.STTProvider
-		want stt.STTProvider
 	}{
-		{"stt/google.New", google.New("k", "latest_long"), stt.NewGoogleSTTProvider("k", "latest_long")},                        //nolint:staticcheck // deprecated name is the comparison subject
-		{"stt/deepgram.New", deepgram.New("k", "nova-3"), stt.NewDeepgramProvider("k", "nova-3")},                               //nolint:staticcheck // deprecated name is the comparison subject
-		{"stt/assemblyai.New", assemblyai.New("k", "universal"), stt.NewAssemblyAIProvider("k", "universal")},                   //nolint:staticcheck // deprecated name is the comparison subject
-		{"stt/huggingface.New", huggingface.New("m", "t"), stt.NewHuggingFaceProvider("m", "t")},                                //nolint:staticcheck // deprecated name is the comparison subject
-		{"stt/openrouter.New", openrouter.New("k", "m"), stt.NewOpenRouterSTTProvider("k", "m")},                                //nolint:staticcheck // deprecated name is the comparison subject
-		{"stt/openaicompat.NewOpenAI", openaicompat.NewOpenAI("k"), stt.NewOpenAISTTProvider("k")},                              //nolint:staticcheck // deprecated name is the comparison subject
-		{"stt/openaicompat.NewGroq", openaicompat.NewGroq("k"), stt.NewGroqSTTProvider("k")},                                    //nolint:staticcheck // deprecated name is the comparison subject
-		{"stt/openaicompat.NewOllama", openaicompat.NewOllama("http://h:1", "m"), stt.NewOllamaSTTProvider("http://h:1", "m")},  //nolint:staticcheck // deprecated name is the comparison subject
-		{"stt/vps.New", vps.New("http://h:1", "k"), stt.NewVPSProvider("http://h:1", "k")},                                      //nolint:staticcheck // deprecated name is the comparison subject
-		{"stt/vps.NewWithModel", vps.NewWithModel("http://h:1", "k", "m"), stt.NewVPSProviderWithModel("http://h:1", "k", "m")}, //nolint:staticcheck // deprecated name is the comparison subject
-		{"stt/local.New", local.New(1, "p", ""), stt.NewLocalProvider(1, "p", "")},                                              //nolint:staticcheck // deprecated name is the comparison subject
+		{"stt/google.New", "google", google.New("k", "latest_long")},
+		{"stt/deepgram.New", "deepgram", deepgram.New("k", "nova-3")},
+		{"stt/assemblyai.New", "assemblyai", assemblyai.New("k", "universal")},
+		{"stt/huggingface.New", "huggingface", huggingface.New("m", "t")},
+		{"stt/openrouter.New", "openrouter", openrouter.New("k", "m")},
+		{"stt/openaicompat.NewOpenAI", "openai", openaicompat.NewOpenAI("k")},
+		{"stt/openaicompat.NewGroq", "groq", openaicompat.NewGroq("k")},
+		{"stt/openaicompat.NewOllama", "ollama", openaicompat.NewOllama("http://h:1", "m")},
+		{"stt/vps.New", "vps", vps.New("http://h:1", "k")},
+		{"stt/local.New", "local", local.New(1, "p", "")},
 	}
 
 	for _, tc := range cases {
@@ -45,27 +42,8 @@ func TestProviderSubpackagesBuildTheSameProviders(t *testing.T) {
 			t.Errorf("%s returned nil", tc.path)
 			continue
 		}
-		if got, want := tc.got.Name(), tc.want.Name(); got != want {
-			t.Errorf("%s reports provider %q, root name reports %q", tc.path, got, want)
+		if got := tc.got.Name(); got != tc.want {
+			t.Errorf("%s reports provider %q, want %q", tc.path, got, tc.want)
 		}
-	}
-}
-
-// TestAllProvidersAssemblesTheSameRouter pins the batteries package against
-// the root assembly it forwards to during the migration window.
-func TestAllProvidersAssemblesTheSameRouter(t *testing.T) {
-	enabled := allproviders.EnabledProviders{
-		Deepgram: &allproviders.DeepgramOpts{APIKey: "k", Model: "nova-3"},
-		OpenAI:   &allproviders.OpenAIOpts{APIKey: "k"},
-	}
-	router, ok, notes := allproviders.BuildRouter(allproviders.RouterConfig{Strategy: stt.StrategyCloudOnly}, enabled)
-	if !ok || router == nil {
-		t.Fatal("expected a router for two enabled cloud providers")
-	}
-	if got := len(router.Providers()); got != 2 {
-		t.Fatalf("router carries %d providers, want 2", got)
-	}
-	if len(notes) == 0 {
-		t.Error("expected assembly notes describing the registered providers")
 	}
 }

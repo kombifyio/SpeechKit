@@ -52,7 +52,7 @@ table mirrors that inventory.
 | `pkg/speechkit/provideropts` | Provider-neutral voice option manifest (per-provider native options). |
 | `pkg/speechkit/speaker` | Provider-neutral speaker options, diarization results, speaker words/segments, provider profiles, streaming audio format, and `SpeakerFrame` contracts. |
 | `pkg/speechkit/storage` | Storage-backend contract: capabilities, install/device/user/tenant scopes, and backend configuration. |
-| `pkg/speechkit/stt` | Speech-to-text contracts: provider interface, transcribe options, result, router, and the `AsTranscriber` bridge. The provider implementations moved to the packages below; the names still exported here are deprecated and removed in v0.65.0. |
+| `pkg/speechkit/stt` | Speech-to-text contracts: provider interface, transcribe options, result, router, the `AsTranscriber` bridge, and the helpers the adapters share. It names no provider, so importing it costs 49 external packages. |
 | `pkg/speechkit/stt/allproviders` | Batteries assembly: every shipped provider plus `BuildRouter`, `EnabledProviders`, and the provider registry. Import it when the host offers a provider choice at runtime. |
 | `pkg/speechkit/stt/assemblyai` | AssemblyAI: sync transcription, speaker streaming with attribution, live dictation with optional LLM turn cleanup. |
 | `pkg/speechkit/stt/deepgram` | Deepgram: batch transcription, speaker streaming, live dictation, and the Flux turn stream. |
@@ -68,10 +68,11 @@ table mirrors that inventory.
 | `pkg/speechkit/ttsroute` | Single source of truth mapping a Voice-Output selection to a TTS route. |
 | `pkg/speechkit/voiceagent` | Embeddable Voice Agent service (realtime audio-to-audio mode). |
 | `pkg/speechkit/voiceagent/cascaded` | Turn-based STT -> LLM -> TTS voice-agent pipeline fallback. |
-| `pkg/speechkit/voiceagent/live` | Low-level Voice Agent realtime-protocol types, session runtime, and the `LiveProvider` contract. The provider implementations moved to the packages below; the names still exported here are deprecated and removed in v0.65.0. |
+| `pkg/speechkit/voiceagent/live` | Voice Agent realtime-protocol types, session runtime, and the `LiveProvider` contract. It names no provider, so importing it costs 15 external packages. |
 | `pkg/speechkit/voiceagent/live/assemblyai` | AssemblyAI Voice Agent realtime provider. |
 | `pkg/speechkit/voiceagent/live/deepgram` | Deepgram Voice Agent realtime provider. |
 | `pkg/speechkit/voiceagent/live/gemini` | Gemini Live realtime provider. |
+| `pkg/speechkit/voiceagent/live/allproviders` | Batteries assembly for the realtime providers: resolves a provider id, alias or profile id to a live provider. Import it when the host offers a provider choice at runtime. |
 | `pkg/speechkit/voiceagent/live/openai` | OpenAI Realtime provider, including its client-side response cancel. |
 | `pkg/speechkit/voiceagent/live/livecontract` | Reusable conformance checks for `LiveProvider` implementations. |
 | `pkg/speechkit/voiceagent/local` | `voiceagent.Provider` on top of an in-process local pipeline. |

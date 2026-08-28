@@ -127,14 +127,6 @@ linters:
       - docker
       - docs
     rules:
-      # The v0.64 STT provider subpackages exist only to alias the names
-      # deprecated in pkg/speechkit/stt, so SA1019 on those aliases is the
-      # migration window working as designed. v0.65 deletes the old names and
-      # moves the implementations into these packages.
-      - path: pkg/speechkit/(stt/(google|deepgram|assemblyai|huggingface|openrouter|openaicompat|vps|local|allproviders)|voiceagent/live/(gemini|openai|deepgram|assemblyai))/
-        text: SA1019
-        linters:
-          - staticcheck
       - path: _test\.go
         linters:
           - errcheck

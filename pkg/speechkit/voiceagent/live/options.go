@@ -135,7 +135,7 @@ func splitOptionTerms(raw string) []string {
 	return out
 }
 
-func appendContextPrompt(base, contextPrompt string) string {
+func AppendContextPrompt(base, contextPrompt string) string {
 	base = strings.TrimSpace(base)
 	contextPrompt = strings.TrimSpace(contextPrompt)
 	if contextPrompt == "" {

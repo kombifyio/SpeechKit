@@ -10,8 +10,6 @@ import (
 	"sync"
 	"time"
 	"unicode/utf8"
-
-	"go.opentelemetry.io/otel/attribute"
 )
 
 const DefaultProcessingMessage = "Recording stopped · Transcribing"
@@ -500,9 +498,9 @@ func (w *TranscriptionWorker) commitEmptyFinalTranscript(ctx context.Context, jo
 	model := firstNonEmptyField(transcript.Model, "unknown")
 	language := firstNonEmptyField(transcript.Language, "unset")
 	RecordOutcome(ctx, OutcomeEmptyFinalTranscript, errors.New(EmptyFinalTranscriptMessage),
-		attribute.String("provider", provider),
-		attribute.String("model", model),
-		attribute.String("language", language),
+		StringAttr("provider", provider),
+		StringAttr("model", model),
+		StringAttr("language", language),
 	)
 	w.onLog(
 		fmt.Sprintf("%s (provider=%s model=%s language=%s)",

@@ -48,7 +48,7 @@ func InferLiveEventTypes(msg *LiveMessage) []LiveEventType {
 	return out
 }
 
-func normalizeLiveMessageEvents(msg *LiveMessage, providerEvent string) *LiveMessage {
+func NormalizeMessageEvents(msg *LiveMessage, providerEvent string) *LiveMessage {
 	if msg == nil {
 		return nil
 	}
@@ -82,7 +82,10 @@ func appendLiveEventType(base []LiveEventType, value LiveEventType) []LiveEventT
 	return append(base, value)
 }
 
-func liveEventTypesContain(values []LiveEventType, want LiveEventType) bool {
+// EventTypesContain reports whether want appears in values. Frames carry
+// several normalized meanings when one provider event maps to more than
+// one, so callers ask rather than compare a single field.
+func EventTypesContain(values []LiveEventType, want LiveEventType) bool {
 	for _, value := range values {
 		if value == want {
 			return true

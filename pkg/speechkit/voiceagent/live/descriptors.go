@@ -282,7 +282,7 @@ func nativeLiveOptions(provider string) []provideropts.OptionID {
 	return out
 }
 
-func sessionCapabilitiesForProvider(provider string) SessionCapabilities {
+func SessionCapabilitiesForProvider(provider string) SessionCapabilities {
 	descriptor, ok := FindProviderDescriptor(provider)
 	if !ok {
 		return SessionCapabilities{Provider: NormalizeProviderID(provider)}

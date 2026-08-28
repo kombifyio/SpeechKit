@@ -11,6 +11,44 @@ IDs, source paths, and other maintainer-only vocabulary.
 
 ## Unreleased
 
+### Removed
+
+* **sdk:** the provider names deprecated in v0.64.0 are gone, and the
+  implementations now live in the provider packages. A Deepgram-only
+  application compiles 49 external packages instead of 286, and never sees the
+  Google Cloud or gRPC stack. The realtime side drops the same way: 35 instead
+  of 236.
+
+  Every name moved to the home its v0.64.0 deprecation note gave it, so code
+  already using the new import paths needs no change. `Build`, `Register`,
+  `BuildRouter`, `EnabledProviders` and the per-provider option structs live in
+  `pkg/speechkit/stt/allproviders`; the realtime provider factory lives in
+  `pkg/speechkit/voiceagent/live/allproviders`.
+
+  The contracts did not move: `STTProvider`, `TranscribeOpts`, `Result`,
+  `Router` and `AsTranscriber` are where they were, and so are the session
+  runtime and the `LiveProvider` contract.
+
+### Added
+
+* **sdk:** the helpers a provider needs are part of the public surface now that
+  providers live outside the root package: WAV framing and PCM extraction,
+  the shared secret resolver, the speech capability baseline, speaker-count
+  bounds, the WebSocket close predicate, and the microphone upsampler.
+* **sdk:** recording a framework outcome no longer asks the caller to speak
+  OpenTelemetry. `RecordOutcome` takes SpeechKit's own attribute type, so
+  whether a tracing backend is installed stays SpeechKit's business instead of
+  appearing in an embedder's signatures.
+
+
+## [0.64.0](https://github.com/kombifyio/SpeechKit/compare/v0.62.0...v0.64.0) (2026-08-28)
+
+### Highlights
+
+- **Depend on the one speech backend you actually use**: every speech provider and every realtime voice provider now has its own package, so an app that talks to one of them stops compiling the rest.
+- **One model catalog, not two**: the desktop app's private copy of the catalog is gone, and catalog entries now say what they are instead of leaving a host to infer it.
+- **A full release to migrate**: the old names still work through v0.64 and disappear in v0.65, with a migration table for every one of them.
+
 ### Added
 
 * **sdk:** catalog entries say what they are with a `modality` field, so a host

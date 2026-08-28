@@ -160,3 +160,33 @@ func (r ResolvedTranscribeOptions) APILanguage() string {
 	}
 	return normalizedRequestLanguage(r.Language, r.DetectLanguage)
 }
+
+// FirstNonEmptyTrimmed returns the first value that is not blank after
+// trimming, or "". Provider adapters use it to layer a request override over
+// a provider default over a package default.
+func FirstNonEmptyTrimmed(values ...string) string {
+	for _, value := range values {
+		if trimmed := strings.TrimSpace(value); trimmed != "" {
+			return trimmed
+		}
+	}
+	return ""
+}
+
+// MinSpeakers and MaxSpeakers collapse the three speaker-count knobs into the
+// single lower and upper bound a provider request carries. An exact expected
+// count wins over the range.
+func MinSpeakers(opts speaker.Options) int {
+	if opts.SpeakersExpected > 0 {
+		return opts.SpeakersExpected
+	}
+	return opts.MinSpeakersExpected
+}
+
+// MaxSpeakers is the upper-bound counterpart of MinSpeakers.
+func MaxSpeakers(opts speaker.Options) int {
+	if opts.SpeakersExpected > 0 {
+		return opts.SpeakersExpected
+	}
+	return opts.MaxSpeakersExpected
+}

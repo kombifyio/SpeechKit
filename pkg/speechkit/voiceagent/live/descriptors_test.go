@@ -105,7 +105,7 @@ func TestDefaultProviderDescriptorsResolveThroughFrameworkCatalog(t *testing.T) 
 }
 
 func TestSessionCapabilitiesForProviderUsesDescriptorAndDefensiveCopy(t *testing.T) {
-	caps := sessionCapabilitiesForProvider("gemini")
+	caps := SessionCapabilitiesForProvider("gemini")
 	if caps.Provider != "google" || caps.ProfileID != "realtime.google.gemini-native-audio" || caps.Model == "" {
 		t.Fatalf("session capabilities = %+v, want normalized google descriptor", caps)
 	}
@@ -114,12 +114,12 @@ func TestSessionCapabilitiesForProviderUsesDescriptorAndDefensiveCopy(t *testing
 	}
 
 	caps.Capabilities[0] = LiveCapabilityMedicalDomain
-	again := sessionCapabilitiesForProvider("google")
+	again := SessionCapabilitiesForProvider("google")
 	if len(again.Capabilities) == 0 || again.Capabilities[0] == LiveCapabilityMedicalDomain {
 		t.Fatalf("session capabilities should return a defensive descriptor copy: %+v", again.Capabilities)
 	}
 
-	unknown := sessionCapabilitiesForProvider("custom_provider")
+	unknown := SessionCapabilitiesForProvider("custom_provider")
 	if unknown.Provider != "custom-provider" || unknown.ProfileID != "" || len(unknown.Capabilities) != 0 {
 		t.Fatalf("unknown provider capabilities = %+v, want normalized empty descriptor", unknown)
 	}

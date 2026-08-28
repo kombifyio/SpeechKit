@@ -6,7 +6,6 @@ import (
 	"testing"
 
 	"go.opentelemetry.io/otel"
-	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/sdk/trace/tracetest"
@@ -23,7 +22,7 @@ func TestRecordOutcomeMarksSpanErrorOnFailure(t *testing.T) {
 	})
 
 	ctx, span := tp.Tracer("test").Start(context.Background(), "dictation")
-	RecordOutcome(ctx, OutcomeEmptyFinalTranscript, errors.New("empty"), attribute.String("provider", "deepgram"))
+	RecordOutcome(ctx, OutcomeEmptyFinalTranscript, errors.New("empty"), StringAttr("provider", "deepgram"))
 	span.End()
 
 	spans := exporter.GetSpans()

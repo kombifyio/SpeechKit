@@ -6,7 +6,7 @@ import (
 )
 
 func TestResumeHandleSetGetRoundTrip(t *testing.T) {
-	h := newResumeHandle()
+	h := NewResumeHandle()
 
 	h.Set("abc-123")
 	got := h.Get()
@@ -21,7 +21,7 @@ func TestResumeHandleSetGetRoundTrip(t *testing.T) {
 }
 
 func TestResumeHandleSetEmptyClears(t *testing.T) {
-	h := newResumeHandle()
+	h := NewResumeHandle()
 	h.Set("something")
 	h.Set("")
 	if got := h.Get(); got != "" {
@@ -30,7 +30,7 @@ func TestResumeHandleSetEmptyClears(t *testing.T) {
 }
 
 func TestResumeHandleClear(t *testing.T) {
-	h := newResumeHandle()
+	h := NewResumeHandle()
 	h.Set("something")
 	h.Clear()
 	if got := h.Get(); got != "" {
@@ -39,7 +39,7 @@ func TestResumeHandleClear(t *testing.T) {
 }
 
 func TestResumeHandleOverwrite(t *testing.T) {
-	h := newResumeHandle()
+	h := NewResumeHandle()
 	h.Set("first")
 	h.Set("second")
 	if got := h.Get(); got != "second" {
@@ -50,7 +50,7 @@ func TestResumeHandleOverwrite(t *testing.T) {
 func TestResumeHandleExpires(t *testing.T) {
 	start := time.Unix(1_700_000_000, 0)
 	fake := start
-	h := &resumeHandle{now: func() time.Time { return fake }}
+	h := &ResumeHandle{now: func() time.Time { return fake }}
 
 	h.Set("handle-xyz")
 	if got := h.Get(); got != "handle-xyz" {
@@ -76,7 +76,7 @@ func TestResumeHandleExpires(t *testing.T) {
 }
 
 func TestResumeHandleEmptyWhenUnset(t *testing.T) {
-	h := newResumeHandle()
+	h := NewResumeHandle()
 	if got := h.Get(); got != "" {
 		t.Fatalf("Get on unset handle = %q, want empty", got)
 	}

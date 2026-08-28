@@ -25,6 +25,7 @@ import (
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/agentkit"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/voiceagent"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/voiceagent/live"
+	liveall "github.com/kombifyio/SpeechKit/pkg/speechkit/voiceagent/live/allproviders"
 )
 
 var (
@@ -36,7 +37,7 @@ var (
 const RuntimeKindLocal = "local"
 
 // ProviderFactory builds a live provider for a normalized config. The
-// default is [live.NewProviderForConfig]; tests inject fakes here.
+// default is [liveall.NewProviderForConfig]; tests inject fakes here.
 type ProviderFactory func(live.LiveConfig) (live.LiveProvider, live.LiveConfig, error)
 
 // Options configure the local provider. All fields are optional except
@@ -63,7 +64,7 @@ type Options struct {
 	// by the service are invoked in addition, never instead.
 	Callbacks live.Callbacks
 	// Factory overrides live-provider construction; nil uses
-	// [live.NewProviderForConfig].
+	// [liveall.NewProviderForConfig].
 	Factory ProviderFactory
 }
 
@@ -84,7 +85,7 @@ var _ voiceagent.Provider = (*Provider)(nil)
 
 func New(opts Options) (*Provider, error) {
 	if opts.Factory == nil {
-		opts.Factory = live.NewProviderForConfig
+		opts.Factory = liveall.NewProviderForConfig
 	}
 	if opts.Idle.ReminderAfter <= 0 && opts.Idle.DeactivateAfter <= 0 {
 		opts.Idle = live.DefaultIdleConfig()

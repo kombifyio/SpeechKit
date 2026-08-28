@@ -79,7 +79,7 @@ var IsMultilanguage = pkgstt.IsMultilanguage
 // with the public package automatically).
 var (
 	ResolveTranscribeOptions    = pkgstt.ResolveTranscribeOptions
-	ParseDeepgramKeyterms       = pkgstt.ParseDeepgramKeyterms
+	ParseDeepgramKeyterms       = deepgram.ParseKeyterms
 	ValidateModelPath           = local.ValidateModelPath
 	FindWhisperBinary           = local.FindWhisperBinary
 	SetSecretResolver           = pkgstt.SetSecretResolver

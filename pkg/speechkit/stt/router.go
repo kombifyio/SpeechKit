@@ -280,7 +280,7 @@ func (r *Router) StartSpeakerStream(ctx context.Context, opts speaker.Options, f
 // provider-native realtime dictation. It never changes batch routing; callers
 // choose this path explicitly per recording session.
 func (r *Router) StartDictationStream(ctx context.Context, opts speechkit.DictationStreamOptions, format speaker.AudioFormat) (speechkit.DictationStream, error) {
-	candidates := prioritizeProviderProfile(r.dictationStreamingCandidates(), opts.ProviderProfileID)
+	candidates := PrioritizeProviderProfile(r.dictationStreamingCandidates(), opts.ProviderProfileID)
 	var lastErr error
 	for _, p := range candidates {
 		streamer, ok := p.(speechkit.DictationStreamProvider)
@@ -409,11 +409,14 @@ func (r *Router) dictationStreamingCandidates() []STTProvider {
 }
 
 func prioritizeSpeakerProfile(candidates []STTProvider, profileID string) []STTProvider {
-	return prioritizeProviderProfile(candidates, profileID)
+	return PrioritizeProviderProfile(candidates, profileID)
 }
 
-func prioritizeProviderProfile(candidates []STTProvider, profileID string) []STTProvider {
-	want := providerNameFromProfileID(profileID)
+// PrioritizeProviderProfile moves the providers matching profileID to the
+// front of the candidate list, keeping the rest as fallbacks in their
+// original order.
+func PrioritizeProviderProfile(candidates []STTProvider, profileID string) []STTProvider {
+	want := ProviderNameFromProfileID(profileID)
 	if want == "" || len(candidates) < 2 {
 		return candidates
 	}
@@ -431,7 +434,9 @@ func prioritizeProviderProfile(candidates []STTProvider, profileID string) []STT
 	return out
 }
 
-func providerNameFromProfileID(profileID string) string {
+// ProviderNameFromProfileID extracts the bare provider name from a
+// model_selection profile id, or "" when the id names a specific model.
+func ProviderNameFromProfileID(profileID string) string {
 	provider := speechkit.NormalizeProviderID(profileID)
 	if strings.Contains(provider, ".") {
 		return ""
@@ -493,7 +498,7 @@ func (r *Router) probeInternet(ctx context.Context) bool {
 // configured order instead of failing the request.
 func (r *Router) transcribeCloud(ctx context.Context, audio []byte, opts TranscribeOpts) (*Result, error) {
 	_, cloud := r.snapshot()
-	cloud = prioritizeProviderProfile(cloud, opts.ProviderProfileID)
+	cloud = PrioritizeProviderProfile(cloud, opts.ProviderProfileID)
 
 	for _, p := range cloud {
 		result, err := p.Transcribe(ctx, audio, opts.ForProvider(p.Name()))

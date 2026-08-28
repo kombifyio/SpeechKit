@@ -11,25 +11,25 @@ import (
 // this cap limits the window of misuse if process memory is ever snapshotted.
 const resumeHandleTTL = 15 * time.Minute
 
-// resumeHandle stores a Gemini Live session resumption handle with a time-to-
+// ResumeHandle stores a Gemini Live session resumption handle with a time-to-
 // live and at-rest protection. On Windows the ciphertext is produced by DPAPI
 // (CryptProtectData, user-scope) so a memory dump taken hours later cannot be
 // replayed against the same session. On other platforms the handle is held in
 // memory without encryption (there is no equivalent process-scoped primitive
 // in the Go standard library) but the TTL still applies.
-type resumeHandle struct {
+type ResumeHandle struct {
 	mu        sync.Mutex
 	encrypted []byte
 	setAt     time.Time
 	now       func() time.Time // injectable for tests
 }
 
-func newResumeHandle() *resumeHandle {
-	return &resumeHandle{now: time.Now}
+func NewResumeHandle() *ResumeHandle {
+	return &ResumeHandle{now: time.Now}
 }
 
 // Set replaces the stored handle. An empty input clears it.
-func (h *resumeHandle) Set(raw string) {
+func (h *ResumeHandle) Set(raw string) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	if raw == "" {
@@ -51,7 +51,7 @@ func (h *resumeHandle) Set(raw string) {
 
 // Get returns the cleartext handle if present and not expired. Expired handles
 // are discarded on read. An empty return value means "no handle available".
-func (h *resumeHandle) Get() string {
+func (h *ResumeHandle) Get() string {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	if len(h.encrypted) == 0 {
@@ -73,14 +73,14 @@ func (h *resumeHandle) Get() string {
 }
 
 // Clear wipes any stored handle.
-func (h *resumeHandle) Clear() {
+func (h *ResumeHandle) Clear() {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	h.encrypted = nil
 	h.setAt = time.Time{}
 }
 
-func (h *resumeHandle) clock() time.Time {
+func (h *ResumeHandle) clock() time.Time {
 	if h.now != nil {
 		return h.now()
 	}
