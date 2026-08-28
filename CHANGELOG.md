@@ -11,14 +11,6 @@ IDs, source paths, and other maintainer-only vocabulary.
 
 ## Unreleased
 
-## [0.64.0](https://github.com/kombifyio/SpeechKit/compare/v0.62.0...v0.64.0) (2026-08-28)
-
-### Highlights
-
-- **Depend on the one speech backend you actually use**: every speech provider and every realtime voice provider now has its own package, so an app that talks to one of them stops compiling the rest.
-- **One model catalog, not two**: the desktop app's private copy of the catalog is gone, and catalog entries now say what they are instead of leaving a host to infer it.
-- **A full release to migrate**: the old names still work through v0.64 and disappear in v0.65, with a migration table for every one of them.
-
 ### Added
 
 * **sdk:** catalog entries say what they are with a `modality` field, so a host
