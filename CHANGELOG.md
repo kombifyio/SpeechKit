@@ -11,6 +11,33 @@ IDs, source paths, and other maintainer-only vocabulary.
 
 ## Unreleased
 
+## [0.66.0](https://github.com/kombifyio/SpeechKit/compare/v0.65.0...v0.66.0) (2026-08-28)
+
+### Highlights
+
+- **The Android modules you are told to use can now be resolved**: all five Apache-2.0 modules publish, and JitPack is the public channel because a token-gated registry was never one.
+- **A fresh clone builds the framework without the keyboard fork**: the Android build no longer stops at settings evaluation when the GPL submodule is absent.
+- **The voice contract is where both clients can check it**: the canonical file left a directory the public mirror never sees, so the drift gate now runs there instead of skipping.
+- **A release no longer dies on an empty deploy response**: a null answer from the hosting API reports what came back instead of a type error.
+
+### Added
+
+* **android:** `core`, `net` and `domain` publish as Apache-2.0 AARs alongside `voice-ui-compose` and `coinstall-contract`. The public channel is JitPack, which resolves anonymously; GitHub Packages stays the internal lane because its Maven endpoint needs a token even for public artifacts.
+* **sdk:** a gate compares the documented public package list against the real one and fails on drift in either direction. It found microphone capture undocumented since it was promoted.
+* **server:** the four local device-agent routes are documented in the API description with the request and response shapes they actually carry.
+* **clients:** publishing the TypeScript clients now verifies that an outside developer can install them anonymously, from a clean directory with no credentials.
+
+### Fixed
+
+* **android:** a checkout without the keyboard submodule configures and builds the framework modules instead of failing while Gradle evaluates settings.
+* **release:** an empty deploy response from the hosting API no longer fails a release with a type error; the deploy is resolved from the service, and an unresolvable one reports both API answers.
+* **server:** the API description says which scope values need a scope key, and rejects an empty one rather than accepting it and answering 400.
+
+### Changed
+
+* **docs:** the canonical voice-surface contract moved out of the desktop frontend into the exported server contracts directory, so the drift check runs in the public mirror instead of skipping there.
+
+
 ## [0.65.0](https://github.com/kombifyio/SpeechKit/compare/v0.64.0...v0.65.0) (2026-08-28)
 
 ### Highlights
