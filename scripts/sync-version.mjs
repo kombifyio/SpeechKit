@@ -141,6 +141,15 @@ export function syncVersion(argv = process.argv.slice(2)) {
   }
 
   if (targets.has("windows")) {
+    // Known gap: this stamp does not reach the artifact. Go links the
+    // committed cmd/speechkit/rsrc_windows_*.syso, and nothing regenerates
+    // those from winres.json, so the shipped manifest identity has said
+    // 0.18.x since 2026-04-14 while this file has been bumped every release
+    // since. winres.json also declares no RT_VERSION block at all, which is
+    // why Explorer shows the binary with no version. Wiring go-winres into
+    // the Windows bundle build is the fix and needs a Windows build to
+    // verify. Until then, do not read this line as evidence that a release
+    // artifact carries the version it stamps.
     updateJson("cmd/speechkit/winres.json", (data) => {
       data.RT_MANIFEST["#1"]["0409"].identity.version = metadata.windowsManifestVersion;
     });

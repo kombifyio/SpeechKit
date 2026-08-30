@@ -18,10 +18,24 @@ regexes = ['''sk-1234567890''']
 [[allowlists]]
 description = "OpenAI-compatible adapter parameter names, not literal committed secrets"
 paths = [
-  '''(^|.*/)internal/stt/openai_compatible\.go$''',
-  '''(^|.*/)pkg/speechkit/stt/openai_compatible\.go$''',
+  '''(^|.*/)pkg/speechkit/stt/openaicompat/provider\.go$''',
+  '''(^|.*/)pkg/speechkit/stt/vps/vps\.go$''',
 ]
 regexes = ['''apiKey''']
+
+[[allowlists]]
+description = """
+A blank assignment carries no secret by definition. Deployment guides list the
+variable names an operator has to set and deliberately leave the values empty,
+which the generic-api-key rule reads as a key beside a name. Matched on
+content rather than on a path, because naming the private deployment
+directory here would leak it into the public export.
+"""
+# Matched against the finding itself rather than the line: the rule's match
+# runs past the newline into the next variable name, so a line anchor never
+# closes.
+regexTarget = "match"
+regexes = ['''^[A-Z][A-Z0-9_]*=\s''']
 
 [[allowlists]]
 description = "Historical local Gateway example URL, not a committed secret"
@@ -38,3 +52,24 @@ regexes = [
   '''OPENAI_API_KEY=$''',
   '''url: http://kombify-speechkit-api:8080/v1/speechkit''',
 ]
+
+[[allowlists]]
+description = """
+Agent scratch worktrees. `gitleaks dir` walks the filesystem rather than the
+index, so a linked worktree under .claude/ gets scanned as if it were tracked
+source and reports the same finding twice. Git already excludes the path; this
+keeps the local run of the gate honest instead of failing on a copy of the
+repository.
+"""
+paths = ['''(^|.*/)\.claude/worktrees/.*''']
+
+[[allowlists]]
+description = """
+Generated frontend bundles. `gitleaks dir` walks the filesystem, so once a
+developer has run the frontend build the minified output gets scanned as if it
+were tracked source, and a property named tokenConfigured reads as a key. Git
+does not track the directory; this keeps the local run of the gate honest
+instead of failing on build output.
+"""
+paths = ['''(^|.*/)frontendassets/dist/.*''']
+

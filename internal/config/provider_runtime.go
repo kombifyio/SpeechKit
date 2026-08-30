@@ -536,6 +536,22 @@ var providerRuntimeRegistry = []ProviderRuntime{
 		UserConfigurable:   true,
 	},
 	{
+		// Piper is in the framework catalog as a Local Built-in TTS engine
+		// and had no runtime row, which is what
+		// TestProviderRuntimeRegistryCoversFrameworkMatrix has been failing
+		// on: Settings could not describe a provider the catalog offers.
+		// It needs no credential — the operator supplies a binary and voice
+		// files through [tts.piper] — so it is configurable without being
+		// credentialed.
+		Provider:         "piper",
+		DisplayName:      "Piper Local TTS",
+		ProviderKind:     framework.ProviderKindLocalBuiltIn,
+		IntegrationKind:  ProviderIntegrationLocal,
+		SetupURL:         "https://github.com/rhasspy/piper",
+		SupportedModes:   []framework.Mode{framework.ModeTTS},
+		UserConfigurable: true,
+	},
+	{
 		Provider:         "openedai",
 		DisplayName:      "OpenAI-compatible local",
 		ProviderKind:     framework.ProviderKindLocalProvider,

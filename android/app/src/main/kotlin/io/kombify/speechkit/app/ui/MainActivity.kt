@@ -675,6 +675,9 @@ private fun ServerConnectionCard(
                     status = context.getString(R.string.settings_connection_cloud_signed_out)
                     openCompanion()
                 }
+                CompanionProvision.Rejected -> {
+                    status = context.getString(R.string.settings_connection_cloud_rejected)
+                }
                 CompanionProvision.Unavailable -> {
                     status = if (provisioner.isCompanionInstalled()) {
                         context.getString(R.string.settings_connection_cloud_failed)

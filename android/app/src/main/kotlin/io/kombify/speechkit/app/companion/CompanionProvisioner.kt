@@ -60,7 +60,7 @@ class CompanionProvisioner internal constructor(
         when (outcome) {
             is CompanionProvision.Session -> cache.offer(outcome.profile)
             CompanionProvision.Empty -> cache.clear()
-            CompanionProvision.Unavailable -> Unit
+            CompanionProvision.Rejected, CompanionProvision.Unavailable -> Unit
         }
         return outcome
     }
@@ -77,7 +77,7 @@ class CompanionProvisioner internal constructor(
                 when (val outcome = binder()) {
                     is CompanionProvision.Session -> cache.offer(outcome.profile)
                     CompanionProvision.Empty -> cache.clear()
-                    CompanionProvision.Unavailable -> Unit
+                    CompanionProvision.Rejected, CompanionProvision.Unavailable -> Unit
                 }
             } finally {
                 refreshing.set(false)
@@ -127,7 +127,9 @@ private fun bindCompanion(context: Context): CompanionProvision {
                     },
                 )
             } catch (_: SecurityException) {
-                outcome.set(CompanionProvision.Unavailable)
+                // coinstall_caller_rejected: Companion could not match this
+                // APK's signing certificate against its pinned list.
+                outcome.set(CompanionProvision.Rejected)
             } finally {
                 ready.countDown()
             }
@@ -154,5 +156,13 @@ private fun bindCompanion(context: Context): CompanionProvision {
 sealed interface CompanionProvision {
     data class Session(val profile: ConnectionProfile.Server) : CompanionProvision
     data object Empty : CompanionProvision
+
+    /**
+     * Companion answered, but refused this caller: our signing certificate is
+     * not in its pinned allow-list. This is a configuration mismatch between
+     * the two apps, not something the user can fix by signing in again, so it
+     * is reported separately from a plain Unavailable.
+     */
+    data object Rejected : CompanionProvision
     data object Unavailable : CompanionProvision
 }

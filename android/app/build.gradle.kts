@@ -1,3 +1,5 @@
+import java.io.FileInputStream
+import java.util.Properties
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
 plugins {
@@ -27,9 +29,36 @@ android {
         applicationId = "io.kombify.speechkit"
         minSdk = 26
         targetSdk = 36
-        versionCode = 6601
-        versionName = "0.66.1"
+        versionCode = 6606
+        versionName = "0.66.6"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+    }
+
+    // Release signing identity.
+    //
+    // This exists for speechkit.coinstall.v1: Companion pins the SHA-256 of
+    // the certificate that signs THIS app and refuses any other caller. With
+    // no release signingConfig, assembleRelease produced an unsigned APK and
+    // every tester build fell back to a per-machine debug key, so no stable
+    // fingerprint existed to pin and the cloud handshake could never succeed.
+    //
+    // The keystore is never committed: signing/keystore.properties is
+    // gitignored and supplied locally or by CI. Without it the release build
+    // falls back to debug signing so an ordinary checkout still builds — that
+    // fallback is fine for compiling and wrong for distribution, which is why
+    // the coinstall pin is what actually gates the cloud path.
+    signingConfigs {
+        create("release") {
+            val propsFile = file("signing/keystore.properties")
+            if (propsFile.exists()) {
+                val props = Properties()
+                FileInputStream(propsFile).use { props.load(it) }
+                storeFile = file(props.getProperty("storeFile"))
+                storePassword = props.getProperty("storePassword")
+                keyAlias = props.getProperty("keyAlias")
+                keyPassword = props.getProperty("keyPassword")
+            }
+        }
     }
 
     buildTypes {
@@ -39,6 +68,11 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
+            signingConfig = if (file("signing/keystore.properties").exists()) {
+                signingConfigs.getByName("release")
+            } else {
+                signingConfigs.getByName("debug")
+            }
         }
     }
 

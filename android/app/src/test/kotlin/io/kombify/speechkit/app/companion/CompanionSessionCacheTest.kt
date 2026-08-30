@@ -36,6 +36,38 @@ class CompanionProvisionerTest {
 
     private val direct = Executor { it.run() }
 
+    // Companion pins the SHA-256 of the certificate that signs this app and
+    // throws SecurityException("coinstall_caller_rejected") for anything else.
+    // Folding that into Unavailable is what made the failure unreadable: the
+    // user got a vague "could not connect" and no way to know that the two
+    // installed builds simply do not match.
+    @Test
+    fun aRefusedSignatureIsReportedAsRejectedNotAsUnavailable() {
+        val provisioner = CompanionProvisioner(
+            installed = { true },
+            binder = { CompanionProvision.Rejected },
+            executor = direct,
+        )
+        assertEquals(CompanionProvision.Rejected, provisioner.provisionNow())
+    }
+
+    // A rejection says nothing about the user's session, so a previously
+    // provisioned one must survive it. Only an explicit Empty clears.
+    @Test
+    fun aRejectionDoesNotDiscardAnExistingSession() {
+        val session = ConnectionProfile.Server("https://api.kombify.io/v1/speechkit", "user-jwt")
+        val outcome = AtomicReference<CompanionProvision>(CompanionProvision.Session(session))
+        val provisioner = CompanionProvisioner(
+            installed = { true },
+            binder = { outcome.get() },
+            executor = direct,
+        )
+        provisioner.provisionNow()
+        outcome.set(CompanionProvision.Rejected)
+        provisioner.provisionNow()
+        assertEquals(session, provisioner.currentSession())
+    }
+
     @Test
     fun keyboardReadsTheLastSessionWithoutWaitingOnABind() {
         val session = ConnectionProfile.Server("https://api.kombify.io/v1/speechkit", "user-jwt")
