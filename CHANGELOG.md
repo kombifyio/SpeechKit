@@ -9,7 +9,30 @@ maintainers. The release linter
 (`npm run release:lint -- --version vX.Y.Z`) refuses internal tracker
 IDs, source paths, and other maintainer-only vocabulary.
 
-## Unreleased
+## [Unreleased]
+
+### Added
+
+* **desktop:** signing in to kombify Cloud now works from the Connect button in
+  Server settings. It opens the kombify sign-in page in your browser, shows the
+  code to confirm there, and once you are signed in it points this device at
+  the hosted service for you. Your password never enters the app, and the
+  session is kept in the operating system's credential store.
+* **desktop:** a signed-in device shows which account it is using and can sign
+  out again, which also releases the hosted connection. A server you host
+  yourself keeps its own credentials either way.
+
+### Fixed
+
+* **desktop:** the Connect button no longer reports a ready connection it never
+  established. Previously it recorded the hosted address and claimed a
+  credential was in place without ever obtaining one, so every request was
+  refused while the settings card showed "ready".
+* **android:** when the Companion app turns down the connection because the two
+  installed apps do not match, SpeechKit now says so instead of showing a
+  general failure. Connecting could not succeed in any released pairing before
+  this, which looked like the button doing nothing.
+
 
 ## [0.66.0](https://github.com/kombifyio/SpeechKit/compare/v0.65.0...v0.66.0) (2026-08-28)
 
@@ -556,8 +579,6 @@ Speech provider and update reliability release. No existing public API was remov
 * **release:** accept release-please changelog entries ([#222](https://github.com/kombifyio/SpeechKit/issues/222)) ([7f60d84](https://github.com/kombifyio/SpeechKit/commit/7f60d84857af8c7889800a44e384cc6d7a5eea80))
 * **release:** enforce one normal SpeechKit release path ([#220](https://github.com/kombifyio/SpeechKit/issues/220)) ([0dfdaac](https://github.com/kombifyio/SpeechKit/commit/0dfdaacc417b86912e5b5725ca017e8884af0f4e))
 * **update:** install updates silently instead of opening a doomed wizard ([c27f454](https://github.com/kombifyio/SpeechKit/commit/c27f454a6184188c5ded3a8facc37f1cbf731fcb))
-
-## [Unreleased]
 
 ## [0.53.0] - 2026-08-10
 

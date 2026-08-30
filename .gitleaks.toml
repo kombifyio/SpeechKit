@@ -73,3 +73,13 @@ instead of failing on build output.
 """
 paths = ['''(^|.*/)frontendassets/dist/.*''']
 
+
+[[allowlists]]
+# Local Android release signing material. It is gitignored (android/.gitignore
+# "app/signing/") and verified unreachable by `git check-ignore`, so it can
+# never be committed — but `gitleaks dir` walks the working tree, so a
+# developer or CI runner that materialised the keystore would see the gate go
+# red on a file the gate exists to keep out of git in the first place.
+# Scoped to that one directory, not to *.properties anywhere.
+description = "Gitignored Android signing material that cannot enter the repository"
+paths = ['''(^|.*/)android/app/signing/.*''']
