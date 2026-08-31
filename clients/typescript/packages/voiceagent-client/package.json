@@ -1,6 +1,6 @@
 {
   "name": "@kombifyio/speechkit-voiceagent-client",
-  "version": "0.66.15",
+  "version": "0.66.16",
   "description": "TypeScript WebSocket client for the SpeechKit Voice Agent: ticket sessions, frame protocol, browser microphone capture (16 kHz S16 mono) and 24 kHz playback, Node variant.",
   "license": "Apache-2.0",
   "type": "module",
