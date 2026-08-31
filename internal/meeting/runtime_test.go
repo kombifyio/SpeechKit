@@ -311,3 +311,46 @@ func TestRuntimeDoesNotReportAnEndingForAMeetingThatNeverStarted(t *testing.T) {
 		t.Fatalf("Start() error = %v, want ErrNoChannels", err)
 	}
 }
+
+// Stop can race in from two surfaces at once (dashboard and note window).
+// Exactly one may run the finalization; the loser must be told the meeting is
+// already ending instead of stopping the pipelines a second time and firing
+// the ended hook twice.
+func TestRuntimeConcurrentStopsFinalizeExactlyOnce(t *testing.T) {
+	runtime, _ := newTestRuntime(t, newFakePipeline(ChannelMicrophone))
+	var mu sync.Mutex
+	var ended []int64
+	runtime.SetEndedHook(func(sessionID int64) {
+		mu.Lock()
+		ended = append(ended, sessionID)
+		mu.Unlock()
+	})
+	startTestMeeting(t, runtime)
+
+	results := make(chan error, 2)
+	for range 2 {
+		go func() {
+			_, err := runtime.Stop(context.Background())
+			results <- err
+		}()
+	}
+	succeeded, rejected := 0, 0
+	for range 2 {
+		switch err := <-results; {
+		case err == nil:
+			succeeded++
+		case errors.Is(err, ErrNoMeeting):
+			rejected++
+		default:
+			t.Fatalf("Stop() error = %v, want nil or ErrNoMeeting", err)
+		}
+	}
+	if succeeded != 1 || rejected != 1 {
+		t.Fatalf("stops: %d succeeded, %d rejected; want exactly one of each", succeeded, rejected)
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if len(ended) != 1 || ended[0] != 42 {
+		t.Fatalf("ended hook fired %v, want exactly session 42 once", ended)
+	}
+}

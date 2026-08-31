@@ -200,10 +200,31 @@ func writeMeetingNotes(ctx context.Context, g *genkit.Genkit, model ai.Model, in
 
 const meetingNotesSchemaHint = `{"sections":[{"slug":"...","title":"...","bullets":[{"text":"...","sourceSegmentIds":[1,2],"anchorId":"","owner":"","due":""}]}]}`
 
+// meetingNotesLanguages maps the primary subtag of the locales SpeechKit ships
+// catalogs for to the name the model is instructed with. Anything else falls
+// back to naming the BCP-47 tag itself, which modern models handle better than
+// silently switching to English.
+var meetingNotesLanguages = map[string]string{
+	"en": "English",
+	"de": "German",
+	"es": "Spanish",
+	"zh": "Simplified Chinese",
+	"hi": "Hindi",
+	"ar": "Arabic",
+}
+
 func buildMeetingNotesSystemPrompt(locale string) string {
 	language := "English"
-	if strings.HasPrefix(strings.ToLower(strings.TrimSpace(locale)), "de") {
-		language = "German"
+	if tag := strings.ToLower(strings.TrimSpace(locale)); tag != "" {
+		primary := tag
+		if i := strings.IndexAny(primary, "-_"); i > 0 {
+			primary = primary[:i]
+		}
+		if name, ok := meetingNotesLanguages[primary]; ok {
+			language = name
+		} else {
+			language = fmt.Sprintf("the language with BCP-47 tag %q", strings.TrimSpace(locale))
+		}
 	}
 	return fmt.Sprintf(
 		"You write up meetings from their transcript. Write in %s. "+

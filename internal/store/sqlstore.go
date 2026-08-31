@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/speaker"
@@ -32,6 +33,10 @@ type sqlStore struct {
 	transcriptionModelHints map[string]string
 	defaultScope            speechstorage.Scope
 	scopePolicy             speechstorage.ScopePolicy
+	// maintenanceStop ends the periodic maintenance goroutine on Close;
+	// maintenanceStopOnce guards against a double Close closing it twice.
+	maintenanceStop     chan struct{}
+	maintenanceStopOnce sync.Once
 }
 
 // DB exposes the underlying *sql.DB so adjacent packages can build their own
@@ -41,6 +46,9 @@ type sqlStore struct {
 func (s *sqlStore) DB() *sql.DB { return s.db }
 
 func (s *sqlStore) Close() error {
+	if s.maintenanceStop != nil {
+		s.maintenanceStopOnce.Do(func() { close(s.maintenanceStop) })
+	}
 	if s.db != nil {
 		return s.db.Close()
 	}
@@ -120,6 +128,34 @@ func (s *sqlStore) scheduleMaintenance() {
 	}
 	if s.saveAudio && s.audioRetentionDays > 0 {
 		go s.enforceAudioRetention()
+	}
+	// Retention is a promise about how long data may live, so it cannot run
+	// only at startup: a desktop app that stays open for weeks would never
+	// delete anything. Re-run the enforcement daily until the store closes.
+	if s.meetingRetentionDays > 0 || (s.saveAudio && (s.maxStorageMB > 0 || s.audioRetentionDays > 0)) {
+		s.maintenanceStop = make(chan struct{})
+		go s.runPeriodicMaintenance()
+	}
+}
+
+func (s *sqlStore) runPeriodicMaintenance() {
+	ticker := time.NewTicker(24 * time.Hour)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-s.maintenanceStop:
+			return
+		case <-ticker.C:
+			if s.meetingRetentionDays > 0 {
+				s.enforceMeetingRetention()
+			}
+			if s.saveAudio && s.audioRetentionDays > 0 {
+				s.enforceAudioRetention()
+			}
+			if s.saveAudio && s.maxStorageMB > 0 {
+				s.enforceStorageLimit()
+			}
+		}
 	}
 }
 

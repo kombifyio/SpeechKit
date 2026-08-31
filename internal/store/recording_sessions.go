@@ -283,24 +283,49 @@ func (s *sqlStore) FinishRecordingSession(ctx context.Context, id int64, summary
 	if endedAt.IsZero() {
 		endedAt = time.Now().UTC()
 	}
-	result, err := s.db.ExecContext(ctx, s.dialect.rebind(fmt.Sprintf(
-		`UPDATE recording_sessions
-		 SET status = ?, capture_status = ?, capture_stopped_at = COALESCE(capture_stopped_at, ?),
-		     summary = ?, summary_status = ?, summary_error = '', summary_updated_at = ?,
-		     ended_at = ?, updated_at = %s
-		 WHERE id = ? AND scope_id = ?`, s.dialect.now())),
-		string(RecordingSessionStatusFinished),
-		string(RecordingSessionCaptureStopped),
-		endedAt.UTC(),
-		strings.TrimSpace(summary),
-		string(RecordingSessionSummaryReady),
-		endedAt.UTC(),
-		endedAt.UTC(),
-		id,
-		scopeID,
+	// An empty summary must not erase one that already exists: the finish
+	// hook always passes "" for meetings (notes arrive later via the
+	// enhancement job), and blindly overwriting would wipe a summary the
+	// user already generated. Without a new summary the summary columns are
+	// left untouched.
+	summary = strings.TrimSpace(summary)
+	var (
+		result sql.Result
+		err2   error
 	)
-	if err != nil {
-		return fmt.Errorf("finish recording session: %w", err)
+	if summary == "" {
+		result, err2 = s.db.ExecContext(ctx, s.dialect.rebind(fmt.Sprintf(
+			`UPDATE recording_sessions
+			 SET status = ?, capture_status = ?, capture_stopped_at = COALESCE(capture_stopped_at, ?),
+			     ended_at = ?, updated_at = %s
+			 WHERE id = ? AND scope_id = ?`, s.dialect.now())),
+			string(RecordingSessionStatusFinished),
+			string(RecordingSessionCaptureStopped),
+			endedAt.UTC(),
+			endedAt.UTC(),
+			id,
+			scopeID,
+		)
+	} else {
+		result, err2 = s.db.ExecContext(ctx, s.dialect.rebind(fmt.Sprintf(
+			`UPDATE recording_sessions
+			 SET status = ?, capture_status = ?, capture_stopped_at = COALESCE(capture_stopped_at, ?),
+			     summary = ?, summary_status = ?, summary_error = '', summary_updated_at = ?,
+			     ended_at = ?, updated_at = %s
+			 WHERE id = ? AND scope_id = ?`, s.dialect.now())),
+			string(RecordingSessionStatusFinished),
+			string(RecordingSessionCaptureStopped),
+			endedAt.UTC(),
+			summary,
+			string(RecordingSessionSummaryReady),
+			endedAt.UTC(),
+			endedAt.UTC(),
+			id,
+			scopeID,
+		)
+	}
+	if err2 != nil {
+		return fmt.Errorf("finish recording session: %w", err2)
 	}
 	rows, _ := result.RowsAffected()
 	if rows == 0 {
@@ -468,8 +493,15 @@ func (s *sqlStore) listRecordingSessionSegments(ctx context.Context, sessionID i
 }
 
 func (s *sqlStore) listRecordingSessionsByScopeID(ctx context.Context, scopeID int64, opts ...ListOpts) ([]RecordingSession, error) {
-	query := recordingSessionSelectSQL + ` WHERE scope_id = ? ORDER BY created_at DESC, id DESC`
+	query := recordingSessionSelectSQL + ` WHERE scope_id = ?`
 	args := []any{scopeID}
+	if len(opts) > 0 {
+		if kind := strings.ToLower(strings.TrimSpace(opts[0].Kind)); kind != "" {
+			query += ` AND kind = ?`
+			args = append(args, kind)
+		}
+	}
+	query += ` ORDER BY created_at DESC, id DESC`
 	if len(opts) > 0 {
 		limit := opts[0].Limit
 		if limit > 0 {

@@ -377,19 +377,18 @@ func (r *Runtime) Start(ctx context.Context, opts StartOptions) (Snapshot, error
 // Pause stops capture on every channel but keeps the meeting and its shared
 // timeline open, so Resume continues the same recording rather than a new one.
 func (r *Runtime) Pause() (Snapshot, error) {
-	capture, err := r.requireActive(StateLive)
+	capture, err := r.beginTransition(StatePaused, StateLive)
 	if err != nil {
 		return Snapshot{}, err
 	}
 	r.stopPipelines(capture, ChannelStatePaused)
-	r.setState(capture, StatePaused)
 	r.log("Meeting capture paused", "info")
 	return r.Snapshot(), nil
 }
 
 // Resume restarts capture on the channels that are still healthy.
 func (r *Runtime) Resume() (Snapshot, error) {
-	capture, err := r.requireActive(StatePaused)
+	capture, err := r.beginTransition(StateStarting, StatePaused)
 	if err != nil {
 		return Snapshot{}, err
 	}
@@ -404,6 +403,7 @@ func (r *Runtime) Resume() (Snapshot, error) {
 		resumed++
 	}
 	if resumed == 0 {
+		r.setState(capture, StatePaused)
 		return r.Snapshot(), ErrNoChannels
 	}
 	r.setState(capture, StateLive)
@@ -415,11 +415,10 @@ func (r *Runtime) Resume() (Snapshot, error) {
 // capture devices. The wait is bounded: a provider that never answers delays
 // the meeting's end by DrainTimeout, it does not hang it.
 func (r *Runtime) Stop(ctx context.Context) (Snapshot, error) {
-	capture, err := r.requireActive(StateLive, StatePaused)
+	capture, err := r.beginTransition(StateFinalizing, StateLive, StatePaused)
 	if err != nil {
 		return Snapshot{}, err
 	}
-	r.setState(capture, StateFinalizing)
 	r.stopPipelines(capture, ChannelStateIdle)
 	r.waitForDrain(ctx, capture)
 	r.closeCapture(capture)
@@ -469,21 +468,39 @@ func (r *Runtime) adjustPending(sessionID int64, delta int) {
 	broadcast(subscribers, snapshot)
 }
 
-func (r *Runtime) requireActive(allowed ...State) (*meetingCapture, error) {
+// beginTransition atomically moves the active capture from one of the allowed
+// states into next. The check and the transition share one lock acquisition,
+// so two concurrent commands cannot both pass the same state check: the second
+// caller sees the state the first one already set and gets ErrNoMeeting
+// instead of, say, finalizing a meeting twice.
+func (r *Runtime) beginTransition(next State, allowed ...State) (*meetingCapture, error) {
 	if r == nil {
 		return nil, ErrNoMeeting
 	}
 	r.mu.Lock()
-	defer r.mu.Unlock()
 	if r.active == nil {
+		r.mu.Unlock()
 		return nil, ErrNoMeeting
 	}
+	capture := r.active
+	permitted := false
 	for _, state := range allowed {
-		if r.active.state == state {
-			return r.active, nil
+		if capture.state == state {
+			permitted = true
+			break
 		}
 	}
-	return nil, fmt.Errorf("%w: capture is %s", ErrNoMeeting, r.active.state)
+	if !permitted {
+		current := capture.state
+		r.mu.Unlock()
+		return nil, fmt.Errorf("%w: capture is %s", ErrNoMeeting, current)
+	}
+	capture.state = next
+	snapshot := r.snapshotForLocked(capture)
+	subscribers := r.subscriberList()
+	r.mu.Unlock()
+	broadcast(subscribers, snapshot)
+	return capture, nil
 }
 
 // recordingOptions stamps the host's transcription settings with the identity

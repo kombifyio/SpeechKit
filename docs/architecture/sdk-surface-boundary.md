@@ -82,7 +82,14 @@ table mirrors that inventory.
 
 ## Boundary Rules
 
-1. Public SDK packages must not import `internal/*`.
+1. Public SDK packages must not import `internal/*`. Two documented adapter
+   packages are the exception: `pkg/speechkit/hostconfig` (re-exports the host
+   configuration surface over `internal/config` and
+   `internal/voiceagentprofile`) and `pkg/speechkit/assist/skills` (adapts the
+   public skill contract onto `internal/assist` and `internal/shortcuts`).
+   Both exist to expose an internal implementation through a stable public
+   contract; they may not leak internal types into their exported API, and no
+   further exceptions may be added without updating this document.
 2. Public SDK contracts should use small interfaces and plain Go values so
    desktop/server callers can adapt concrete providers without pulling app
    dependencies into embedders.
@@ -107,7 +114,9 @@ Verified on 2026-05-26 and updated on 2026-05-27 and 2026-06-02:
 - `go test ./pkg/speechkit/...` passes with MinGW cgo enabled.
 - `go test ./examples/embed-companion ./examples/embed-tts ./examples/embed-event-bus` passes.
 - Public export dry-run includes `pkg/speechkit/wakeword`, `pkg/speechkit/companion`, and `pkg/speechkit/tts`.
-- Production SDK packages have no `internal/*` imports.
+- Production SDK packages have no `internal/*` imports, except the two
+  documented adapter packages in Boundary Rule 1 (`pkg/speechkit/hostconfig`,
+  `pkg/speechkit/assist/skills`).
 - Shared parity tests in `internal/sdkparity` exercise the same public/internal
   TTS Router provider-kind behavior and wakeword Dispatcher/AutoEnd behavior;
   the parity harness is test-only and does not change the production SDK

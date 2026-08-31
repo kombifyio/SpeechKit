@@ -563,6 +563,94 @@ func TestMeetingRetentionOffByDefaultKeepsEverything(t *testing.T) {
 	}
 }
 
+// Finishing a meeting passes no summary — the write-up arrives later from the
+// enhancement job. Finish must therefore leave an already-generated summary
+// (and its status) alone instead of overwriting it with "" and stamping the
+// empty result "ready".
+func TestFinishRecordingSessionKeepsExistingSummary(t *testing.T) {
+	s, err := NewSQLiteStore(StoreConfig{SQLitePath: filepath.Join(t.TempDir(), "finish.db")})
+	if err != nil {
+		t.Fatalf("NewSQLiteStore: %v", err)
+	}
+	defer s.Close()
+
+	ctx := context.Background()
+	id, err := s.SaveRecordingSession(ctx, RecordingSession{Kind: RecordingSessionKindMeeting, Title: "standup"})
+	if err != nil {
+		t.Fatalf("SaveRecordingSession: %v", err)
+	}
+	if err := s.UpdateRecordingSessionSummary(ctx, id, "Wichtige Beschlüsse"); err != nil {
+		t.Fatalf("UpdateRecordingSessionSummary: %v", err)
+	}
+
+	if err := s.FinishRecordingSession(ctx, id, "", time.Now()); err != nil {
+		t.Fatalf("FinishRecordingSession: %v", err)
+	}
+	got, err := s.GetRecordingSession(ctx, id)
+	if err != nil {
+		t.Fatalf("GetRecordingSession: %v", err)
+	}
+	if got.Summary != "Wichtige Beschlüsse" {
+		t.Fatalf("finishing without a summary erased the existing one: %q", got.Summary)
+	}
+	if got.SummaryStatus != RecordingSessionSummaryReady {
+		t.Fatalf("summary status = %q, want ready", got.SummaryStatus)
+	}
+
+	// A summary handed to Finish still wins.
+	if err := s.FinishRecordingSession(ctx, id, "Neue Fassung", time.Now()); err != nil {
+		t.Fatalf("FinishRecordingSession with summary: %v", err)
+	}
+	got, err = s.GetRecordingSession(ctx, id)
+	if err != nil {
+		t.Fatalf("GetRecordingSession: %v", err)
+	}
+	if got.Summary != "Neue Fassung" {
+		t.Fatalf("a provided summary did not replace the old one: %q", got.Summary)
+	}
+}
+
+// The meetings dashboard asks for meetings only; the filter must be applied by
+// the store so a library where dictations outnumber meetings does not push the
+// meetings past the row limit.
+func TestListRecordingSessionsFiltersByKind(t *testing.T) {
+	s, err := NewSQLiteStore(StoreConfig{SQLitePath: filepath.Join(t.TempDir(), "kinds.db")})
+	if err != nil {
+		t.Fatalf("NewSQLiteStore: %v", err)
+	}
+	defer s.Close()
+
+	ctx := context.Background()
+	if _, err := s.SaveRecordingSession(ctx, RecordingSession{Kind: RecordingSessionKindDictation, Title: "note 1"}); err != nil {
+		t.Fatalf("SaveRecordingSession: %v", err)
+	}
+	meetingID, err := s.SaveRecordingSession(ctx, RecordingSession{Kind: RecordingSessionKindMeeting, Title: "weekly"})
+	if err != nil {
+		t.Fatalf("SaveRecordingSession: %v", err)
+	}
+	if _, err := s.SaveRecordingSession(ctx, RecordingSession{Kind: RecordingSessionKindDictation, Title: "note 2"}); err != nil {
+		t.Fatalf("SaveRecordingSession: %v", err)
+	}
+
+	// Limit 1 with the kind filter must still surface the meeting even though
+	// a newer dictation exists — that is what the in-memory filter got wrong.
+	meetings, err := s.ListRecordingSessions(ctx, ListOpts{Kind: "meeting", Limit: 1})
+	if err != nil {
+		t.Fatalf("ListRecordingSessions(kind=meeting): %v", err)
+	}
+	if len(meetings) != 1 || meetings[0].ID != meetingID {
+		t.Fatalf("kind filter returned %+v, want just the meeting", meetings)
+	}
+
+	all, err := s.ListRecordingSessions(ctx, ListOpts{})
+	if err != nil {
+		t.Fatalf("ListRecordingSessions: %v", err)
+	}
+	if len(all) != 3 {
+		t.Fatalf("unfiltered list = %d sessions, want 3", len(all))
+	}
+}
+
 func TestRecordingSessionStoreLifecycle(t *testing.T) {
 	dbPath := filepath.Join(t.TempDir(), "recording_sessions.db")
 	s, err := NewSQLiteStore(StoreConfig{SQLitePath: dbPath, MaxAudioStorageMB: 100})

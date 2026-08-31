@@ -356,6 +356,10 @@ type ListOpts struct {
 	OwnerOrgID       string
 	IncludeOwnerless bool
 	IncludeAllOwners bool
+	// Kind filters recording sessions by normalized kind ("meeting",
+	// "dictation"); empty means all kinds. Only list queries over recording
+	// sessions honor it.
+	Kind string
 }
 
 type AudioAsset struct {
