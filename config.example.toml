@@ -1,3 +1,28 @@
+# [privacy] pins how far SpeechKit may reach over the network. It is enforced
+# at the backend boundaries (providers, SpeechKit Server, integrations,
+# telemetry, updates), not just in the UI.
+#   network_scope = "open"           All networks: cloud, local network and
+#                                    on-device services are allowed (default).
+#   network_scope = "local_network"  Local network only: on-device runtimes and
+#                                    services on private/local addresses (e.g.
+#                                    Ollama on another LAN device, SpeechKit
+#                                    Server via a private address). Public
+#                                    cloud endpoints and cloud integrations
+#                                    are blocked.
+#   network_scope = "device_only"    This device only: only models SpeechKit
+#                                    runs itself (whisper.cpp, llama.cpp,
+#                                    Piper, wake word). All network services,
+#                                    including SpeechKit Server, are blocked.
+# Unknown values fail closed to "device_only". Switching to a stricter scope
+# suspends incompatible providers/connections; nothing is deleted, and they
+# resume when the scope is widened again.
+[privacy]
+network_scope = "open"
+# allow_setup_traffic = true lets restricted scopes still fetch model/runtime
+# downloads and app updates from official sources. No audio, transcripts or
+# prompts ever ride on setup traffic.
+allow_setup_traffic = false
+
 [general]
 language = "de"                    # Default transcription language
 dictate_hotkey = "ctrl+win"        # Dictation hotkey (hold-to-talk, speech-to-text only)

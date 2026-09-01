@@ -3,5 +3,19 @@
   "companion.home_assistant.command.empty": "كان أمر المنزل الذكي فارغًا.",
   "companion.home_assistant.command.not_matched": "تعذّر على Home Assistant مطابقة أمر المنزل الذكي هذا مع أي هدف.",
   "companion.home_assistant.command.rejected": "رفض Home Assistant أمر المنزل الذكي هذا.",
-  "companion.home_assistant.unavailable": "Home Assistant غير متاح حاليًا. لم تتم إعادة توجيه أمر المنزل الذكي."
+  "companion.home_assistant.unavailable": "Home Assistant غير متاح حاليًا. لم تتم إعادة توجيه أمر المنزل الذكي.",
+  "sk.privacy.scope.open": "جميع الشبكات",
+  "sk.privacy.scope.local_network": "الشبكة المحلية فقط",
+  "sk.privacy.scope.device_only": "هذا الجهاز فقط",
+  "sk.privacy.disabled.cloud_provider": "نطاق الخصوصية الحالي يحظر مزوّدي الخدمات السحابية.",
+  "sk.privacy.disabled.local_service_in_device_only": "خدمات الشبكة محظورة ما دام نطاق الخصوصية مضبوطًا على هذا الجهاز فقط.",
+  "sk.privacy.disabled.server_in_device_only": "اتصالات خادم SpeechKit محظورة ما دام نطاق الخصوصية مضبوطًا على هذا الجهاز فقط.",
+  "sk.privacy.disabled.server_url_not_local": "عنوان خادم SpeechKit ليس عنوانًا خاصًا في الشبكة المحلية.",
+  "sk.privacy.disabled.agent_bridge": "نطاق الخصوصية الحالي يحظر تكاملات الوكلاء.",
+  "sk.privacy.disabled.home_assistant": "نطاق الخصوصية الحالي يحظر Home Assistant.",
+  "sk.privacy.disabled.edge_beta": "نطاق الخصوصية الحالي يحظر ميزات Edge.",
+  "sk.privacy.disabled.setup_traffic": "نطاق الخصوصية الحالي يوقف التنزيلات والتحديثات مؤقتًا.",
+  "sk.privacy.disabled.telemetry": "نطاق الخصوصية الحالي يعطّل تصدير قياس الاستخدام عن بُعد.",
+  "sk.privacy.disabled.cloud_account": "نطاق الخصوصية الحالي يحظر تسجيل الدخول السحابي.",
+  "sk.privacy.disabled.voice_agent_cloud": "نطاق الخصوصية الحالي يحظر وكلاء الصوت السحابيين."
 }

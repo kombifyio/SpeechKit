@@ -3,5 +3,19 @@
   "companion.home_assistant.command.empty": "El comando de hogar inteligente estaba vacío.",
   "companion.home_assistant.command.not_matched": "Home Assistant no pudo asociar ese comando de hogar inteligente con un destino.",
   "companion.home_assistant.command.rejected": "Home Assistant rechazó ese comando de hogar inteligente.",
-  "companion.home_assistant.unavailable": "Home Assistant no está disponible en este momento. El comando de hogar inteligente no se reenvió."
+  "companion.home_assistant.unavailable": "Home Assistant no está disponible en este momento. El comando de hogar inteligente no se reenvió.",
+  "sk.privacy.scope.open": "Todas las redes",
+  "sk.privacy.scope.local_network": "Solo red local",
+  "sk.privacy.scope.device_only": "Solo este dispositivo",
+  "sk.privacy.disabled.cloud_provider": "Los proveedores en la nube están bloqueados por el ámbito de privacidad actual.",
+  "sk.privacy.disabled.local_service_in_device_only": "Los servicios de red están bloqueados mientras el ámbito de privacidad sea solo este dispositivo.",
+  "sk.privacy.disabled.server_in_device_only": "Las conexiones al servidor de SpeechKit están bloqueadas mientras el ámbito de privacidad sea solo este dispositivo.",
+  "sk.privacy.disabled.server_url_not_local": "La dirección del servidor de SpeechKit no es una dirección privada de la red local.",
+  "sk.privacy.disabled.agent_bridge": "Las integraciones de agentes están bloqueadas por el ámbito de privacidad actual.",
+  "sk.privacy.disabled.home_assistant": "Home Assistant está bloqueado por el ámbito de privacidad actual.",
+  "sk.privacy.disabled.edge_beta": "Las funciones Edge están bloqueadas por el ámbito de privacidad actual.",
+  "sk.privacy.disabled.setup_traffic": "Las descargas y actualizaciones están en pausa por el ámbito de privacidad actual.",
+  "sk.privacy.disabled.telemetry": "La exportación de telemetría está desactivada por el ámbito de privacidad actual.",
+  "sk.privacy.disabled.cloud_account": "El inicio de sesión en la nube está bloqueado por el ámbito de privacidad actual.",
+  "sk.privacy.disabled.voice_agent_cloud": "Los agentes de voz en la nube están bloqueados por el ámbito de privacidad actual."
 }

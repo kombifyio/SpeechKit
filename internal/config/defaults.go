@@ -54,7 +54,11 @@ func defaults() *Config {
 			IncludeWindowContext: true,
 		},
 		ModelSelection: BuiltInPrimaryModelSelectionDefaults(),
-		Output:         defaultOutputConfig(),
+		Privacy: PrivacyConfig{
+			NetworkScope:      NetworkScopeOpen,
+			AllowSetupTraffic: false,
+		},
+		Output: defaultOutputConfig(),
 		ServerConnection: ServerConnectionConfig{
 			Enabled:              false,
 			URL:                  "",

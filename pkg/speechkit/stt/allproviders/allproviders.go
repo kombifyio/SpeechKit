@@ -23,6 +23,7 @@ import (
 	"sync"
 
 	"github.com/kombifyio/SpeechKit/pkg/speechkit"
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/netsec"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/stt"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/stt/assemblyai"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/stt/deepgram"
@@ -222,6 +223,11 @@ type (
 		URL    string
 		APIKey string
 		Model  string
+		// Validation, when non-nil, replaces the provider's default netsec
+		// validation (loopback+private+http). Restricted network scopes pass
+		// a RequireLocal option set so public endpoints are rejected at
+		// request and dial time.
+		Validation *netsec.ValidationOptions
 	}
 
 	HuggingFaceOpts struct {
@@ -284,6 +290,11 @@ type (
 	OllamaOpts struct {
 		BaseURL string
 		Model   string
+		// Validation, when non-nil, replaces the provider's default netsec
+		// validation (loopback+private+http). Restricted network scopes pass
+		// a RequireLocal option set so public endpoints are rejected at
+		// request and dial time.
+		Validation *netsec.ValidationOptions
 	}
 )
 
@@ -324,11 +335,19 @@ func BuildRouter(cfg RouterConfig, enabled EnabledProviders) (router *stt.Router
 	}
 	if o := enabled.VPS; o != nil {
 		p := vps.NewWithModel(o.URL, o.APIKey, o.Model)
+		if o.Validation != nil {
+			// The provider's HTTP client dials through &p.Validation, so
+			// tightening the field also tightens dial-time IP checks.
+			p.Validation = *o.Validation
+		}
 		cloud = append(cloud, p)
 		notes = append(notes, "STT: VPS registered (url="+o.URL+", model="+p.Model+")")
 	}
 	if o := enabled.Ollama; o != nil {
 		p := openaicompat.NewOllama(o.BaseURL, o.Model)
+		if o.Validation != nil {
+			p.Validation = *o.Validation
+		}
 		cloud = append(cloud, p)
 		notes = append(notes, "STT: Ollama registered (model="+p.Model+")")
 	}

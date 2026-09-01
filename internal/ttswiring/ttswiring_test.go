@@ -1,6 +1,7 @@
 package ttswiring
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/kombifyio/SpeechKit/internal/config"
@@ -114,5 +115,36 @@ func TestResolvePreferredProfileIDTrimmed(t *testing.T) {
 	enabled, _ := ResolveEnabledProviders(cfg)
 	if enabled.PreferredProfileID != "tts.google.studio-o" {
 		t.Fatalf("PreferredProfileID = %q, want trimmed", enabled.PreferredProfileID)
+	}
+}
+
+func TestResolveRestrictedScopeSuspendsCloudTTS(t *testing.T) {
+	t.Setenv("TEST_OPENAI_KEY", "sk-test")
+
+	cfg := newCfg()
+	cfg.TTS.OpenAI.Enabled = true
+	cfg.Providers.OpenAI.APIKeyEnv = "TEST_OPENAI_KEY"
+	cfg.Privacy.NetworkScope = config.NetworkScopeDeviceOnly
+
+	enabled, notes := ResolveEnabledProviders(cfg)
+	if enabled.OpenAI != nil {
+		t.Fatal("cloud TTS must be suspended in device_only scope")
+	}
+	if !cfg.TTS.OpenAI.Enabled {
+		t.Fatal("suspension must not rewrite the stored config toggle")
+	}
+	joined := ""
+	for _, n := range notes {
+		joined += n + " "
+	}
+	if !strings.Contains(joined, "suspended") {
+		t.Fatalf("notes should mention suspension, got %v", notes)
+	}
+
+	// Widening the scope resumes the unchanged config.
+	cfg.Privacy.NetworkScope = config.NetworkScopeOpen
+	enabled, _ = ResolveEnabledProviders(cfg)
+	if enabled.OpenAI == nil {
+		t.Fatal("cloud TTS should resume when the scope is widened")
 	}
 }

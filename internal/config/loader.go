@@ -73,6 +73,9 @@ func Load(path string) (*Config, error) {
 	if err := rejectRemovedConfigAliases(meta); err != nil {
 		return nil, err
 	}
+	if err := NormalizePrivacyConfig(cfg); err != nil {
+		return nil, err
+	}
 
 	// Apply registry policy overlay (ADMX/GPO). Must run BEFORE the backfill
 	// chain so that policy values are in place when backfill logic mirrors them
@@ -170,6 +173,9 @@ func Save(path string, cfg *Config) error {
 	NormalizeCaptureConfig(cfg)
 	NormalizeDeepgramSTTSettings(cfg)
 	normalizeWakewordConfig(cfg)
+	if err := NormalizePrivacyConfig(cfg); err != nil {
+		return err
+	}
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return fmt.Errorf("create config dir: %w", err)
 	}

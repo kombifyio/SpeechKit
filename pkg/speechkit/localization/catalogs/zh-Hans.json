@@ -3,5 +3,19 @@
   "companion.home_assistant.command.empty": "智能家居命令为空。",
   "companion.home_assistant.command.not_matched": "Home Assistant 无法将该智能家居命令匹配到目标。",
   "companion.home_assistant.command.rejected": "Home Assistant 拒绝了该智能家居命令。",
-  "companion.home_assistant.unavailable": "Home Assistant 当前不可用。该智能家居命令未被转发。"
+  "companion.home_assistant.unavailable": "Home Assistant 当前不可用。该智能家居命令未被转发。",
+  "sk.privacy.scope.open": "所有网络",
+  "sk.privacy.scope.local_network": "仅限本地网络",
+  "sk.privacy.scope.device_only": "仅限本设备",
+  "sk.privacy.disabled.cloud_provider": "当前隐私范围已阻止云服务提供商。",
+  "sk.privacy.disabled.local_service_in_device_only": "隐私范围设为仅限本设备时,网络服务将被阻止。",
+  "sk.privacy.disabled.server_in_device_only": "隐私范围设为仅限本设备时,SpeechKit 服务器连接将被阻止。",
+  "sk.privacy.disabled.server_url_not_local": "SpeechKit 服务器地址不是本地网络的私有地址。",
+  "sk.privacy.disabled.agent_bridge": "当前隐私范围已阻止代理集成。",
+  "sk.privacy.disabled.home_assistant": "当前隐私范围已阻止 Home Assistant。",
+  "sk.privacy.disabled.edge_beta": "当前隐私范围已阻止 Edge 功能。",
+  "sk.privacy.disabled.setup_traffic": "当前隐私范围已暂停下载和更新。",
+  "sk.privacy.disabled.telemetry": "当前隐私范围已停用遥测导出。",
+  "sk.privacy.disabled.cloud_account": "当前隐私范围已阻止云登录。",
+  "sk.privacy.disabled.voice_agent_cloud": "当前隐私范围已阻止云语音代理。"
 }

@@ -59,6 +59,12 @@ const (
 	// Resource fields mirror EventModeStart with "released" instead of
 	// "requires" — the shared deps the runtime relinquished as it stopped.
 	EventModeStop Event = "mode.stop"
+
+	// EventPrivacyScopeChanged is emitted when the user changes the
+	// [privacy] network_scope through the Settings surface. Resource fields:
+	// "from" and "to" (scope identifiers only — never endpoint URLs, hosts,
+	// or tokens) and "allow_setup_traffic" (bool, value after the change).
+	EventPrivacyScopeChanged Event = "privacy.scope_changed"
 )
 
 // Actor identifies who or what triggered the audited action.

@@ -88,10 +88,27 @@ func NewSafeHTTPClient(opts ClientOptions) *http.Client {
 		}
 	}
 
-	return &http.Client{
+	client := &http.Client{
 		Timeout:   timeout,
 		Transport: &RedactingRoundTripper{Base: inner},
 	}
+	if opts.DialValidation != nil {
+		// Re-validate every redirect hop with the same option set. Dial-time
+		// IP validation already guards each connection, but rejecting the
+		// redirect URL up front keeps http->https downgrades, userinfo
+		// smuggling, and public-host redirects out of the request path.
+		validation := *opts.DialValidation
+		client.CheckRedirect = func(req *http.Request, via []*http.Request) error {
+			if len(via) >= 10 {
+				return fmt.Errorf("netsec: stopped after 10 redirects")
+			}
+			if err := ValidateProviderURL(req.URL.String(), validation); err != nil {
+				return fmt.Errorf("netsec: redirect target rejected: %w", err)
+			}
+			return nil
+		}
+	}
+	return client
 }
 
 func restrictedDialContext(dialer *net.Dialer, validation *ValidationOptions) func(context.Context, string, string) (net.Conn, error) {

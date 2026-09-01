@@ -14,6 +14,7 @@ import (
 
 	"github.com/kombifyio/SpeechKit/internal/config"
 	"github.com/kombifyio/SpeechKit/internal/tts"
+	framework "github.com/kombifyio/SpeechKit/pkg/speechkit"
 )
 
 func firstNonEmpty(values ...string) string {
@@ -51,7 +52,15 @@ func ResolveEnabledProviders(cfg *config.Config) (tts.EnabledProviders, []string
 	var enabled tts.EnabledProviders
 	var notes []string
 
-	if cfg.TTS.OpenAI.Enabled {
+	// Restricted network scopes suspend cloud TTS providers at assembly time;
+	// the (unchanged) config toggles resume when the scope is widened again.
+	// Piper below is a local engine and stays available in every scope.
+	cloudAllowed, _ := cfg.NetworkScope().AllowsProviderKind(framework.ProviderKindCloudProvider)
+	if !cloudAllowed {
+		notes = append(notes, "Privacy: cloud TTS providers suspended (network scope "+string(cfg.NetworkScope())+")")
+	}
+
+	if cloudAllowed && cfg.TTS.OpenAI.Enabled {
 		if apiKey := providerCredential(cfg, "openai"); apiKey != "" {
 			enabled.OpenAI = &tts.OpenAIOpts{
 				APIKey: apiKey,
@@ -61,7 +70,7 @@ func ResolveEnabledProviders(cfg *config.Config) (tts.EnabledProviders, []string
 		}
 	}
 
-	if cfg.TTS.Google.Enabled {
+	if cloudAllowed && cfg.TTS.Google.Enabled {
 		if apiKey := providerCredential(cfg, "google"); apiKey != "" {
 			enabled.Google = &tts.GoogleOpts{
 				APIKey: apiKey,
@@ -71,7 +80,7 @@ func ResolveEnabledProviders(cfg *config.Config) (tts.EnabledProviders, []string
 	}
 
 	// Deepgram Aura reuses the shared DEEPGRAM_API_KEY (no separate credential).
-	if cfg.TTS.Deepgram.Enabled {
+	if cloudAllowed && cfg.TTS.Deepgram.Enabled {
 		if key := providerCredential(cfg, "deepgram"); key != "" {
 			enabled.Deepgram = &tts.DeepgramOpts{
 				APIKey: key,
@@ -80,7 +89,7 @@ func ResolveEnabledProviders(cfg *config.Config) (tts.EnabledProviders, []string
 		}
 	}
 
-	if cfg.TTS.HuggingFace.Enabled {
+	if cloudAllowed && cfg.TTS.HuggingFace.Enabled {
 		if token := providerCredential(cfg, "huggingface"); token != "" {
 			enabled.HuggingFace = &tts.HuggingFaceOpts{
 				Token: token,

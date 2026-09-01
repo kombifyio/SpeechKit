@@ -96,6 +96,11 @@ type Config struct {
 	Shortcuts      ShortcutsConfig      `toml:"shortcuts"`
 	ModelSelection ModelSelectionConfig `toml:"model_selection"`
 
+	// Privacy holds the central network-scope policy ("open",
+	// "local_network", "device_only") enforced at every outbound network
+	// boundary of the Device-Target. See internal/config/privacy.go.
+	Privacy PrivacyConfig `toml:"privacy"`
+
 	// Output tunes how the Device-Target injects transcribed text into the
 	// focused application (injection strategy, per-app paste overrides).
 	// Server- and Local-Target ignore this block.

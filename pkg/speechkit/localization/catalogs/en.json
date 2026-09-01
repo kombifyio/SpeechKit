@@ -3,5 +3,19 @@
   "companion.home_assistant.command.empty": "The smart-home command was empty.",
   "companion.home_assistant.command.not_matched": "Home Assistant could not match that smart-home command to a target.",
   "companion.home_assistant.command.rejected": "Home Assistant rejected that smart-home command.",
-  "companion.home_assistant.unavailable": "Home Assistant is currently unavailable. The smart-home command was not forwarded."
+  "companion.home_assistant.unavailable": "Home Assistant is currently unavailable. The smart-home command was not forwarded.",
+  "sk.privacy.scope.open": "All networks",
+  "sk.privacy.scope.local_network": "Local network only",
+  "sk.privacy.scope.device_only": "This device only",
+  "sk.privacy.disabled.cloud_provider": "Cloud providers are blocked by the current privacy scope.",
+  "sk.privacy.disabled.local_service_in_device_only": "Network services are blocked while the privacy scope is set to this device only.",
+  "sk.privacy.disabled.server_in_device_only": "SpeechKit Server connections are blocked while the privacy scope is set to this device only.",
+  "sk.privacy.disabled.server_url_not_local": "The SpeechKit Server address is not a private local-network address.",
+  "sk.privacy.disabled.agent_bridge": "Agent integrations are blocked by the current privacy scope.",
+  "sk.privacy.disabled.home_assistant": "Home Assistant is blocked by the current privacy scope.",
+  "sk.privacy.disabled.edge_beta": "Edge features are blocked by the current privacy scope.",
+  "sk.privacy.disabled.setup_traffic": "Downloads and updates are paused by the current privacy scope.",
+  "sk.privacy.disabled.telemetry": "Telemetry export is disabled by the current privacy scope.",
+  "sk.privacy.disabled.cloud_account": "Cloud sign-in is blocked by the current privacy scope.",
+  "sk.privacy.disabled.voice_agent_cloud": "Cloud voice agents are blocked by the current privacy scope."
 }

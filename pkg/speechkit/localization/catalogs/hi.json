@@ -3,5 +3,19 @@
   "companion.home_assistant.command.empty": "स्मार्ट होम कमांड खाली था।",
   "companion.home_assistant.command.not_matched": "Home Assistant उस स्मार्ट होम कमांड को किसी लक्ष्य से मिला नहीं सका।",
   "companion.home_assistant.command.rejected": "Home Assistant ने उस स्मार्ट होम कमांड को अस्वीकार कर दिया।",
-  "companion.home_assistant.unavailable": "Home Assistant अभी उपलब्ध नहीं है। स्मार्ट होम कमांड आगे नहीं भेजा गया।"
+  "companion.home_assistant.unavailable": "Home Assistant अभी उपलब्ध नहीं है। स्मार्ट होम कमांड आगे नहीं भेजा गया।",
+  "sk.privacy.scope.open": "सभी नेटवर्क",
+  "sk.privacy.scope.local_network": "केवल स्थानीय नेटवर्क",
+  "sk.privacy.scope.device_only": "केवल यह डिवाइस",
+  "sk.privacy.disabled.cloud_provider": "वर्तमान गोपनीयता दायरे के कारण क्लाउड प्रदाता अवरुद्ध हैं।",
+  "sk.privacy.disabled.local_service_in_device_only": "गोपनीयता दायरा केवल यह डिवाइस पर सेट होने पर नेटवर्क सेवाएँ अवरुद्ध रहती हैं।",
+  "sk.privacy.disabled.server_in_device_only": "गोपनीयता दायरा केवल यह डिवाइस पर सेट होने पर SpeechKit सर्वर कनेक्शन अवरुद्ध रहते हैं।",
+  "sk.privacy.disabled.server_url_not_local": "SpeechKit सर्वर का पता स्थानीय नेटवर्क का निजी पता नहीं है।",
+  "sk.privacy.disabled.agent_bridge": "वर्तमान गोपनीयता दायरे के कारण एजेंट एकीकरण अवरुद्ध हैं।",
+  "sk.privacy.disabled.home_assistant": "वर्तमान गोपनीयता दायरे के कारण Home Assistant अवरुद्ध है।",
+  "sk.privacy.disabled.edge_beta": "वर्तमान गोपनीयता दायरे के कारण Edge सुविधाएँ अवरुद्ध हैं।",
+  "sk.privacy.disabled.setup_traffic": "वर्तमान गोपनीयता दायरे के कारण डाउनलोड और अपडेट रोक दिए गए हैं।",
+  "sk.privacy.disabled.telemetry": "वर्तमान गोपनीयता दायरे के कारण टेलीमेट्री निर्यात अक्षम है।",
+  "sk.privacy.disabled.cloud_account": "वर्तमान गोपनीयता दायरे के कारण क्लाउड साइन-इन अवरुद्ध है।",
+  "sk.privacy.disabled.voice_agent_cloud": "वर्तमान गोपनीयता दायरे के कारण क्लाउड वॉयस एजेंट अवरुद्ध हैं।"
 }

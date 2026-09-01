@@ -338,20 +338,26 @@ type ReadinessArtifact struct {
 
 // Readiness describes whether a provider profile can be used right now.
 type Readiness struct {
-	SchemaVersion    string                 `json:"schemaVersion,omitempty"`
-	ProfileID        string                 `json:"profileId"`
-	Mode             Mode                   `json:"mode"`
-	ProviderKind     ProviderKind           `json:"providerKind"`
-	ExecutionMode    ExecutionMode          `json:"executionMode,omitempty"`
-	ModelID          string                 `json:"modelId,omitempty"`
-	Source           string                 `json:"source,omitempty"`
-	Active           bool                   `json:"active"`
-	Default          bool                   `json:"default"`
-	Configured       bool                   `json:"configured"`
-	CredentialsReady bool                   `json:"credentialsReady"`
-	RuntimeReady     bool                   `json:"runtimeReady"`
-	CapabilityReady  bool                   `json:"capabilityReady"`
-	Ready            bool                   `json:"ready"`
+	SchemaVersion    string        `json:"schemaVersion,omitempty"`
+	ProfileID        string        `json:"profileId"`
+	Mode             Mode          `json:"mode"`
+	ProviderKind     ProviderKind  `json:"providerKind"`
+	ExecutionMode    ExecutionMode `json:"executionMode,omitempty"`
+	ModelID          string        `json:"modelId,omitempty"`
+	Source           string        `json:"source,omitempty"`
+	Active           bool          `json:"active"`
+	Default          bool          `json:"default"`
+	Configured       bool          `json:"configured"`
+	CredentialsReady bool          `json:"credentialsReady"`
+	RuntimeReady     bool          `json:"runtimeReady"`
+	CapabilityReady  bool          `json:"capabilityReady"`
+	Ready            bool          `json:"ready"`
+	// BlockedByScope reports that the active NetworkScope forbids this
+	// profile. When true, DisabledReasonID carries the stable localizable
+	// reason ID and Ready is forced false. Absent/false on targets without
+	// a network scope (e.g. the Server-Target catalog).
+	BlockedByScope   bool                   `json:"blockedByScope,omitempty"`
+	DisabledReasonID string                 `json:"disabledReasonId,omitempty"`
 	Missing          []string               `json:"missing,omitempty"`
 	Requirements     []ReadinessRequirement `json:"requirements,omitempty"`
 	Actions          []ReadinessAction      `json:"actions,omitempty"`

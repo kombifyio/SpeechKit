@@ -22,6 +22,25 @@ const (
 	CompanionHomeAssistantNotMatched    MessageID = "companion.home_assistant.command.not_matched"
 	CompanionHomeAssistantRejected      MessageID = "companion.home_assistant.command.rejected"
 	CompanionHomeAssistantUnavailable   MessageID = "companion.home_assistant.unavailable"
+
+	// Network-scope display names shown wherever a scope is named to the user.
+	PrivacyScopeOpenName         MessageID = "sk.privacy.scope.open"
+	PrivacyScopeLocalNetworkName MessageID = "sk.privacy.scope.local_network"
+	PrivacyScopeDeviceOnlyName   MessageID = "sk.privacy.scope.device_only"
+
+	// Disabled-reason prose for the stable reason IDs attached by the
+	// network-scope policy (see NetworkScopeReason* in pkg/speechkit).
+	PrivacyDisabledCloudProvider   MessageID = "sk.privacy.disabled.cloud_provider"
+	PrivacyDisabledLocalService    MessageID = "sk.privacy.disabled.local_service_in_device_only"
+	PrivacyDisabledServerScope     MessageID = "sk.privacy.disabled.server_in_device_only"
+	PrivacyDisabledServerNotLocal  MessageID = "sk.privacy.disabled.server_url_not_local"
+	PrivacyDisabledAgentBridge     MessageID = "sk.privacy.disabled.agent_bridge"
+	PrivacyDisabledHomeAssistant   MessageID = "sk.privacy.disabled.home_assistant"
+	PrivacyDisabledEdgeBeta        MessageID = "sk.privacy.disabled.edge_beta"
+	PrivacyDisabledSetupTraffic    MessageID = "sk.privacy.disabled.setup_traffic"
+	PrivacyDisabledTelemetry       MessageID = "sk.privacy.disabled.telemetry"
+	PrivacyDisabledCloudAccount    MessageID = "sk.privacy.disabled.cloud_account"
+	PrivacyDisabledVoiceAgentCloud MessageID = "sk.privacy.disabled.voice_agent_cloud"
 )
 
 var messageIDs = []MessageID{
@@ -30,6 +49,20 @@ var messageIDs = []MessageID{
 	CompanionHomeAssistantNotMatched,
 	CompanionHomeAssistantRejected,
 	CompanionHomeAssistantUnavailable,
+	PrivacyScopeOpenName,
+	PrivacyScopeLocalNetworkName,
+	PrivacyScopeDeviceOnlyName,
+	PrivacyDisabledCloudProvider,
+	PrivacyDisabledLocalService,
+	PrivacyDisabledServerScope,
+	PrivacyDisabledServerNotLocal,
+	PrivacyDisabledAgentBridge,
+	PrivacyDisabledHomeAssistant,
+	PrivacyDisabledEdgeBeta,
+	PrivacyDisabledSetupTraffic,
+	PrivacyDisabledTelemetry,
+	PrivacyDisabledCloudAccount,
+	PrivacyDisabledVoiceAgentCloud,
 }
 
 var supportedLocales = []string{"en", "de", "es", "zh-Hans", "hi", "ar"}
