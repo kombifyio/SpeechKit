@@ -171,10 +171,13 @@ type RecordingSessionEnhancementStore interface {
 type RecordingSessionEnhancementStatus string
 
 const (
-	RecordingSessionEnhancementIdle    RecordingSessionEnhancementStatus = "idle"
-	RecordingSessionEnhancementRunning RecordingSessionEnhancementStatus = "running"
-	RecordingSessionEnhancementReady   RecordingSessionEnhancementStatus = "ready"
-	RecordingSessionEnhancementFailed  RecordingSessionEnhancementStatus = "failed"
+	RecordingSessionEnhancementIdle      RecordingSessionEnhancementStatus = "idle"
+	RecordingSessionEnhancementPending   RecordingSessionEnhancementStatus = "pending"
+	RecordingSessionEnhancementRunning   RecordingSessionEnhancementStatus = "running"
+	RecordingSessionEnhancementPartial   RecordingSessionEnhancementStatus = "partial"
+	RecordingSessionEnhancementReady     RecordingSessionEnhancementStatus = "ready"
+	RecordingSessionEnhancementFailed    RecordingSessionEnhancementStatus = "failed"
+	RecordingSessionEnhancementCancelled RecordingSessionEnhancementStatus = "cancelled"
 )
 
 // RecordingSessionEnhancement is one written-up version of a meeting.
@@ -189,6 +192,13 @@ type RecordingSessionEnhancement struct {
 	Error            string                            `json:"error,omitempty"`
 	Provider         string                            `json:"provider,omitempty"`
 	Model            string                            `json:"model,omitempty"`
+	Stage            string                            `json:"stage,omitempty"`
+	Progress         int                               `json:"progress"`
+	Attempt          int                               `json:"attempt"`
+	InputFingerprint string                            `json:"inputFingerprint,omitempty"`
+	ErrorKind        string                            `json:"errorKind,omitempty"`
+	Retryable        bool                              `json:"retryable"`
+	ConsentVersion   int                               `json:"consentVersion,omitempty"`
 	// Structured is false when the model could not produce citable structure
 	// and the notes are prose. Callers surface that rather than implying the
 	// bullets can be traced back to the transcript.
@@ -199,6 +209,42 @@ type RecordingSessionEnhancement struct {
 	ContentMD   string    `json:"contentMd,omitempty"`
 	CreatedAt   time.Time `json:"createdAt"`
 	UpdatedAt   time.Time `json:"updatedAt"`
+}
+
+type MeetingSummaryBatchStatus string
+
+const (
+	MeetingSummaryBatchSealed      MeetingSummaryBatchStatus = "sealed"
+	MeetingSummaryBatchQueued      MeetingSummaryBatchStatus = "queued"
+	MeetingSummaryBatchSummarizing MeetingSummaryBatchStatus = "summarizing"
+	MeetingSummaryBatchReady       MeetingSummaryBatchStatus = "ready"
+	MeetingSummaryBatchDelayed     MeetingSummaryBatchStatus = "delayed"
+	MeetingSummaryBatchFailed      MeetingSummaryBatchStatus = "failed"
+	MeetingSummaryBatchSuperseded  MeetingSummaryBatchStatus = "superseded"
+)
+
+// MeetingSummaryBatch is transcript-derived and follows its meeting's deletion
+// and retention lifecycle through the database foreign key.
+type MeetingSummaryBatch struct {
+	ID                int64                     `json:"id"`
+	SessionID         int64                     `json:"sessionId"`
+	BatchKey          string                    `json:"batchKey"`
+	Level             int                       `json:"level"`
+	StartSegmentID    int64                     `json:"startSegmentId"`
+	EndSegmentID      int64                     `json:"endSegmentId"`
+	SourceFingerprint string                    `json:"sourceFingerprint"`
+	Status            MeetingSummaryBatchStatus `json:"status"`
+	DigestJSON        string                    `json:"digestJson,omitempty"`
+	Provider          string                    `json:"provider,omitempty"`
+	Model             string                    `json:"model,omitempty"`
+	ErrorKind         string                    `json:"errorKind,omitempty"`
+	CreatedAt         time.Time                 `json:"createdAt"`
+	UpdatedAt         time.Time                 `json:"updatedAt"`
+}
+
+type MeetingSummaryBatchStore interface {
+	UpsertMeetingSummaryBatch(ctx context.Context, batch MeetingSummaryBatch) (MeetingSummaryBatch, error)
+	ListMeetingSummaryBatches(ctx context.Context, sessionID int64) ([]MeetingSummaryBatch, error)
 }
 
 // AudioAssetStore is an optional extension for backends that persist

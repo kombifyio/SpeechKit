@@ -8,6 +8,7 @@ import (
 	"github.com/firebase/genkit/go/ai"
 	"github.com/firebase/genkit/go/core"
 	"github.com/firebase/genkit/go/genkit"
+	"github.com/kombifyio/SpeechKit/internal/ai/generation"
 )
 
 // AssistInput is the input for the assist flow.
@@ -16,6 +17,30 @@ type AssistInput struct {
 	Locale    string `json:"locale,omitempty"`    // "de", "en", etc.
 	Selection string `json:"selection,omitempty"` // Text currently selected in the active window
 	Context   string `json:"context,omitempty"`   // Additional context (last transcription, active app, etc.)
+}
+
+func DefineAssistFlowWithGenerator(g *genkit.Genkit, generator generation.Generator) *core.Flow[AssistInput, AssistOutput, struct{}] {
+	return genkit.DefineFlow(g, "assist", func(ctx context.Context, input AssistInput) (AssistOutput, error) {
+		if input.Utterance == "" {
+			return AssistOutput{}, fmt.Errorf("assist: empty utterance")
+		}
+		locale := input.Locale
+		if locale == "" {
+			locale = "en"
+		}
+		result, err := generator.Generate(ctx, generation.Request{
+			Purpose: generation.PurposeAssist, Locale: locale,
+			System: buildAssistSystemPrompt(locale, input), Prompt: input.Utterance,
+			MaxOutputTokens: 1024, Temperature: 0.4,
+		})
+		if err != nil {
+			return AssistOutput{}, fmt.Errorf("assist: %w", err)
+		}
+		if result.Text == "" {
+			return AssistOutput{Action: "silent", Locale: locale}, nil
+		}
+		return AssistOutput{Text: result.Text, SpeakText: result.Text, Action: "respond", Locale: locale}, nil
+	})
 }
 
 // AssistOutput is the Genkit flow output (before TTS synthesis).

@@ -9,6 +9,7 @@ import (
 	"github.com/firebase/genkit/go/ai"
 	"github.com/firebase/genkit/go/core"
 	"github.com/firebase/genkit/go/genkit"
+	"github.com/kombifyio/SpeechKit/internal/ai/generation"
 )
 
 // summarizePerModelTimeout bounds a single model attempt inside the summarize
@@ -43,6 +44,23 @@ type SummarizeInput struct {
 	Text        string `json:"text"`
 	Instruction string `json:"instruction,omitempty"`
 	Locale      string `json:"locale,omitempty"`
+}
+
+func DefineSummarizeFlowWithGenerator(g *genkit.Genkit, generator generation.Generator) *core.Flow[SummarizeInput, string, struct{}] {
+	return genkit.DefineFlow(g, "summarize", func(ctx context.Context, input SummarizeInput) (string, error) {
+		if input.Text == "" {
+			return "", fmt.Errorf("summarize: empty text")
+		}
+		result, err := generator.Generate(ctx, generation.Request{
+			Purpose: generation.PurposeUtility, Locale: input.Locale,
+			System: buildSummarizeSystemPrompt(input.Locale), Prompt: buildSummarizeUserPrompt(input),
+			MaxOutputTokens: 512, Temperature: 0.3,
+		})
+		if err != nil {
+			return "", fmt.Errorf("summarize: %w", err)
+		}
+		return result.Text, nil
+	})
 }
 
 // DefineSummarizeFlow creates and registers the summarize Genkit flow.

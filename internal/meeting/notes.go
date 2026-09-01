@@ -34,8 +34,37 @@ type TemplateSection struct {
 
 // NotesDocument is the enhanced write-up of one meeting.
 type NotesDocument struct {
-	TemplateSlug string         `json:"templateSlug"`
-	Sections     []NotesSection `json:"sections"`
+	TemplateSlug   string         `json:"templateSlug"`
+	Locale         string         `json:"locale,omitempty"`
+	ExecutiveBrief []string       `json:"executiveBrief,omitempty"`
+	Sections       []NotesSection `json:"sections"`
+}
+
+func (d NotesDocument) Finalize(locale string) NotesDocument {
+	d.Locale = strings.TrimSpace(locale)
+	if len(d.ExecutiveBrief) > 5 {
+		d.ExecutiveBrief = d.ExecutiveBrief[:5]
+	}
+	brief := d.ExecutiveBrief[:0]
+	for _, sentence := range d.ExecutiveBrief {
+		if sentence = strings.TrimSpace(sentence); sentence != "" {
+			brief = append(brief, sentence)
+		}
+	}
+	d.ExecutiveBrief = brief
+	if len(d.ExecutiveBrief) == 0 {
+		for _, section := range d.Sections {
+			for _, bullet := range section.Bullets {
+				if text := strings.TrimSpace(bullet.Text); text != "" {
+					d.ExecutiveBrief = append(d.ExecutiveBrief, text)
+					if len(d.ExecutiveBrief) == 5 {
+						return d
+					}
+				}
+			}
+		}
+	}
+	return d
 }
 
 // NotesSection is one heading of the write-up.
@@ -159,7 +188,8 @@ func (d NotesDocument) ApplyAnchors(anchors []Anchor) NotesDocument {
 		}
 		sections[0].Bullets = append(sections[0].Bullets, missing...)
 	}
-	return NotesDocument{TemplateSlug: d.TemplateSlug, Sections: sections}
+	d.Sections = sections
+	return d
 }
 
 // Anchor is one note the user wrote, with the point in the meeting it was

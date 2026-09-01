@@ -8,16 +8,18 @@ import "sync"
 // CaptureChannel is part of the identity because a meeting records several
 // sources at once and each source numbers its own segments from one. Without it
 // the two channels collide on their first segment and one of them is discarded
-// as a duplicate of the other.
+// as a duplicate of the other. RecordingSessionID separates fresh controllers,
+// whose process-local counters restart from one, across durable meetings.
 type TranscriptSegmentKey struct {
-	CaptureChannel string
-	SessionID      uint64
-	SegmentID      uint64
-	ProviderItemID string
+	RecordingSessionID int64
+	CaptureChannel     string
+	SessionID          uint64
+	SegmentID          uint64
+	ProviderItemID     string
 }
 
 func (k TranscriptSegmentKey) IsZero() bool {
-	return k.SessionID == 0 && k.SegmentID == 0 && k.ProviderItemID == ""
+	return k.RecordingSessionID == 0 && k.SessionID == 0 && k.SegmentID == 0 && k.ProviderItemID == ""
 }
 
 // TranscriptSessionLedger suppresses duplicate final commits for progressive
@@ -77,15 +79,37 @@ func (l *TranscriptSessionLedger) Release(key TranscriptSegmentKey) {
 	delete(l.inFlight, key)
 }
 
+// EndRecordingSession releases deduplication state once a durable recording
+// session has ended. Controllers reconstructed while the recording is active
+// still share the ledger; completed meetings cannot grow it without bound.
+func (l *TranscriptSessionLedger) EndRecordingSession(recordingSessionID int64) {
+	if l == nil || recordingSessionID <= 0 {
+		return
+	}
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	for key := range l.inFlight {
+		if key.RecordingSessionID == recordingSessionID {
+			delete(l.inFlight, key)
+		}
+	}
+	for key := range l.committed {
+		if key.RecordingSessionID == recordingSessionID {
+			delete(l.committed, key)
+		}
+	}
+}
+
 func transcriptSegmentKey(submission Submission) TranscriptSegmentKey {
-	if submission.SessionID == 0 && submission.SegmentID == 0 && submission.ProviderItemID == "" {
+	if submission.RecordingSessionID == 0 && submission.SessionID == 0 && submission.SegmentID == 0 && submission.ProviderItemID == "" {
 		return TranscriptSegmentKey{}
 	}
 	return TranscriptSegmentKey{
-		CaptureChannel: submission.CaptureChannel,
-		SessionID:      submission.SessionID,
-		SegmentID:      submission.SegmentID,
-		ProviderItemID: submission.ProviderItemID,
+		RecordingSessionID: submission.RecordingSessionID,
+		CaptureChannel:     submission.CaptureChannel,
+		SessionID:          submission.SessionID,
+		SegmentID:          submission.SegmentID,
+		ProviderItemID:     submission.ProviderItemID,
 	}
 }
 

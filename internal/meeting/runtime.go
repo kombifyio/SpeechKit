@@ -107,6 +107,9 @@ type Snapshot struct {
 	StartedAt       time.Time         `json:"startedAt,omitempty"`
 	Channels        []ChannelSnapshot `json:"channels"`
 	PendingSegments int               `json:"pendingSegments"`
+	// Degraded is true when capture ended with accepted transcript segments
+	// unresolved. PendingSegments reports how much transcript may be missing.
+	Degraded bool `json:"degraded"`
 }
 
 // ChannelSnapshot is the runtime's view of one capture channel.
@@ -139,7 +142,8 @@ type Options struct {
 	DrainTimeout time.Duration
 	// DrainPoll is how often the drain wait re-checks. Tests shorten it.
 	DrainPoll time.Duration
-	// OnEnded fires once a meeting has finished and its transcript has settled.
+	// OnEnded fires once a meeting has finished and its transcript drain has
+	// either settled or been marked degraded.
 	//
 	// It is a direct call rather than a snapshot subscription because finishing
 	// a meeting — recording that it ended, writing it up — must not be
@@ -183,6 +187,7 @@ type meetingCapture struct {
 	channels  map[string]*ChannelSnapshot
 	watchStop context.CancelFunc
 	pending   int
+	degraded  bool
 }
 
 // New creates a meeting runtime.
@@ -423,7 +428,14 @@ func (r *Runtime) Stop(ctx context.Context) (Snapshot, error) {
 	r.waitForDrain(ctx, capture)
 	r.closeCapture(capture)
 	r.setState(capture, StateEnded)
-	r.log("Meeting capture finished", "info")
+	r.mu.Lock()
+	degraded, pending := capture.degraded, capture.pending
+	r.mu.Unlock()
+	if degraded {
+		r.log(fmt.Sprintf("Meeting capture finished with a partial transcript (%d unresolved segment(s))", pending), "warn")
+	} else {
+		r.log("Meeting capture finished", "info")
+	}
 
 	snapshot := r.Snapshot()
 	r.mu.Lock()
@@ -575,14 +587,22 @@ func (r *Runtime) waitForDrain(ctx context.Context, capture *meetingCapture) {
 				reason = "never came back from transcription"
 			}
 			r.log(fmt.Sprintf("Meeting capture: %d segment(s) %s", pending, reason), "warn")
+			r.markDrainDegraded(capture)
 			return
 		}
 		select {
 		case <-ctx.Done():
+			r.markDrainDegraded(capture)
 			return
 		case <-time.After(r.drainPoll):
 		}
 	}
+}
+
+func (r *Runtime) markDrainDegraded(capture *meetingCapture) {
+	r.mu.Lock()
+	capture.degraded = capture.pending > 0
+	r.mu.Unlock()
 }
 
 func (r *Runtime) closeCapture(capture *meetingCapture) {
@@ -732,6 +752,7 @@ func (r *Runtime) snapshotForLocked(capture *meetingCapture) Snapshot {
 		StartedAt:       capture.epoch,
 		Channels:        channels,
 		PendingSegments: capture.pending,
+		Degraded:        capture.degraded,
 	}
 }
 

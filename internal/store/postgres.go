@@ -73,6 +73,12 @@ var postgresMigration019 string
 //go:embed migrations/postgres/020_customization_word_identity.sql
 var postgresMigration020 string
 
+//go:embed migrations/postgres/021_meeting_enhancement_jobs.sql
+var postgresMigration021 string
+
+//go:embed migrations/postgres/022_meeting_summary_batches.sql
+var postgresMigration022 string
+
 // PostgresStore implements Store using PostgreSQL for metadata and the local
 // filesystem for optional raw WAV persistence. All query logic lives in the
 // embedded *sqlStore; this type only owns connection setup and migrations.

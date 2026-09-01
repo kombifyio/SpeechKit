@@ -73,6 +73,8 @@ func runSQLiteMigrations(ctx context.Context, db *sql.DB) error {
 			return ensureSQLiteColumn(ctx, db, "recording_sessions", "retention_pinned", "INTEGER NOT NULL DEFAULT 0")
 		}},
 		sqliteSQLMigration("sqlite:024_customization_word_identity", sqliteMigration024),
+		{version: "sqlite:025_meeting_enhancement_jobs", run: runSQLiteMeetingEnhancementJobsMigration},
+		sqliteSQLMigration("sqlite:026_meeting_summary_batches", sqliteMigration026),
 	}
 	for _, migration := range migrations {
 		if err := applyMigration(ctx, db, "sqlite", migration); err != nil {
@@ -117,6 +119,8 @@ func runPostgresMigrations(ctx context.Context, db *sql.DB) error {
 		postgresSQLMigration("postgres:018_recording_session_enhancements", postgresMigration018),
 		postgresSQLMigration("postgres:019_meeting_retention", postgresMigration019),
 		postgresSQLMigration("postgres:020_customization_word_identity", postgresMigration020),
+		postgresSQLMigration("postgres:021_meeting_enhancement_jobs", postgresMigration021),
+		postgresSQLMigration("postgres:022_meeting_summary_batches", postgresMigration022),
 	}
 	for _, migration := range migrations {
 		if err := applyMigration(ctx, db, "postgres", migration); err != nil {
@@ -248,6 +252,27 @@ func runSQLiteAudioAssetsMigration(ctx context.Context, db *sql.DB) error {
 		return err
 	}
 	return backfillSQLiteAudioAssets(ctx, db)
+}
+
+func runSQLiteMeetingEnhancementJobsMigration(ctx context.Context, db *sql.DB) error {
+	columns := []struct {
+		name       string
+		definition string
+	}{
+		{"stage", "TEXT NOT NULL DEFAULT ''"},
+		{"progress", "INTEGER NOT NULL DEFAULT 0"},
+		{"attempt", "INTEGER NOT NULL DEFAULT 1"},
+		{"input_fingerprint", "TEXT NOT NULL DEFAULT ''"},
+		{"error_kind", "TEXT NOT NULL DEFAULT ''"},
+		{"retryable", "INTEGER NOT NULL DEFAULT 0"},
+		{"consent_version", "INTEGER NOT NULL DEFAULT 0"},
+	}
+	for _, column := range columns {
+		if err := ensureSQLiteColumn(ctx, db, "recording_session_enhancements", column.name, column.definition); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func runPostgresAudioAssetsMigration(ctx context.Context, db *sql.DB) error {

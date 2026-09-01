@@ -9,6 +9,7 @@ import (
 	"github.com/firebase/genkit/go/ai"
 	"github.com/firebase/genkit/go/core"
 	"github.com/firebase/genkit/go/genkit"
+	"github.com/kombifyio/SpeechKit/internal/ai/generation"
 )
 
 // AgentInput is the input for the agent flow.
@@ -18,6 +19,26 @@ type AgentInput struct {
 	Selection         string `json:"selection,omitempty"`
 	LastTranscription string `json:"lastTranscription,omitempty"`
 	SystemPrompt      string `json:"systemPrompt,omitempty"`
+}
+
+func DefineAgentFlowWithGenerator(g *genkit.Genkit, generator generation.Generator) *core.Flow[AgentInput, AgentOutput, struct{}] {
+	return genkit.DefineFlow(g, "agent", func(ctx context.Context, input AgentInput) (AgentOutput, error) {
+		if input.Utterance == "" {
+			return AgentOutput{}, fmt.Errorf("agent: empty utterance")
+		}
+		result, err := generator.Generate(ctx, generation.Request{
+			Purpose: generation.PurposeVoiceAgentThink, Locale: input.Locale,
+			System: buildAgentSystemPrompt(input), Prompt: buildAgentUserPrompt(input),
+			AffinityKey: "voice-agent", MaxOutputTokens: 2048, Temperature: 0.5,
+		})
+		if err != nil {
+			return AgentOutput{}, fmt.Errorf("agent: %w", err)
+		}
+		if result.Text == "" {
+			return AgentOutput{Action: "silent"}, nil
+		}
+		return AgentOutput{Text: result.Text, Action: "paste"}, nil
+	})
 }
 
 // AgentOutput is the output of the agent flow.

@@ -25,8 +25,9 @@ func (s *sqlStore) CreateRecordingSessionEnhancement(ctx context.Context, sessio
 	id, err := s.dialect.insertReturningID(ctx, s.db,
 		`INSERT INTO recording_session_enhancements (
 			session_id, template_slug, template_snapshot, status, error, provider, model,
+			stage, progress, attempt, input_fingerprint, error_kind, retryable, consent_version,
 			structured, content_json, content_md
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		sessionID,
 		enhancement.TemplateSlug,
 		enhancement.TemplateSnapshot,
@@ -34,6 +35,13 @@ func (s *sqlStore) CreateRecordingSessionEnhancement(ctx context.Context, sessio
 		enhancement.Error,
 		enhancement.Provider,
 		enhancement.Model,
+		enhancement.Stage,
+		enhancement.Progress,
+		enhancement.Attempt,
+		enhancement.InputFingerprint,
+		enhancement.ErrorKind,
+		enhancement.Retryable,
+		enhancement.ConsentVersion,
 		enhancement.Structured,
 		enhancement.ContentJSON,
 		enhancement.ContentMD,
@@ -49,13 +57,21 @@ func (s *sqlStore) UpdateRecordingSessionEnhancement(ctx context.Context, id int
 	enhancement = normalizeRecordingSessionEnhancement(enhancement)
 	result, err := s.db.ExecContext(ctx, s.dialect.rebind(
 		`UPDATE recording_session_enhancements
-		 SET status = ?, error = ?, provider = ?, model = ?, structured = ?,
+		 SET status = ?, error = ?, provider = ?, model = ?, stage = ?, progress = ?,
+		     attempt = ?, input_fingerprint = ?, error_kind = ?, retryable = ?, consent_version = ?, structured = ?,
 		     content_json = ?, content_md = ?, updated_at = ?
 		 WHERE id = ?`),
 		string(enhancement.Status),
 		enhancement.Error,
 		enhancement.Provider,
 		enhancement.Model,
+		enhancement.Stage,
+		enhancement.Progress,
+		enhancement.Attempt,
+		enhancement.InputFingerprint,
+		enhancement.ErrorKind,
+		enhancement.Retryable,
+		enhancement.ConsentVersion,
 		enhancement.Structured,
 		enhancement.ContentJSON,
 		enhancement.ContentMD,
@@ -85,6 +101,7 @@ func (s *sqlStore) ListRecordingSessionEnhancements(ctx context.Context, session
 	}
 	rows, err := s.db.QueryContext(ctx, s.dialect.rebind(
 		`SELECT id, session_id, template_slug, template_snapshot, status, error, provider, model,
+			stage, progress, attempt, input_fingerprint, error_kind, retryable, consent_version,
 			structured, content_json, content_md, created_at, updated_at
 		 FROM recording_session_enhancements
 		 WHERE session_id = ?
@@ -99,6 +116,7 @@ func (s *sqlStore) ListRecordingSessionEnhancements(ctx context.Context, session
 		var enhancement RecordingSessionEnhancement
 		var status string
 		var structured boolValue
+		var retryable boolValue
 		if err := rows.Scan(
 			&enhancement.ID,
 			&enhancement.SessionID,
@@ -108,6 +126,13 @@ func (s *sqlStore) ListRecordingSessionEnhancements(ctx context.Context, session
 			&enhancement.Error,
 			&enhancement.Provider,
 			&enhancement.Model,
+			&enhancement.Stage,
+			&enhancement.Progress,
+			&enhancement.Attempt,
+			&enhancement.InputFingerprint,
+			&enhancement.ErrorKind,
+			&retryable,
+			&enhancement.ConsentVersion,
 			&structured,
 			&enhancement.ContentJSON,
 			&enhancement.ContentMD,
@@ -118,6 +143,7 @@ func (s *sqlStore) ListRecordingSessionEnhancements(ctx context.Context, session
 		}
 		enhancement.Status = RecordingSessionEnhancementStatus(status)
 		enhancement.Structured = bool(structured)
+		enhancement.Retryable = bool(retryable)
 		out = append(out, enhancement)
 	}
 	return out, rows.Err()
@@ -128,8 +154,20 @@ func normalizeRecordingSessionEnhancement(enhancement RecordingSessionEnhancemen
 	enhancement.Error = strings.TrimSpace(enhancement.Error)
 	enhancement.Provider = strings.TrimSpace(enhancement.Provider)
 	enhancement.Model = strings.TrimSpace(enhancement.Model)
+	enhancement.Stage = strings.TrimSpace(enhancement.Stage)
+	enhancement.InputFingerprint = strings.TrimSpace(enhancement.InputFingerprint)
+	enhancement.ErrorKind = strings.TrimSpace(enhancement.ErrorKind)
+	if enhancement.Progress < 0 {
+		enhancement.Progress = 0
+	} else if enhancement.Progress > 100 {
+		enhancement.Progress = 100
+	}
+	if enhancement.Attempt <= 0 {
+		enhancement.Attempt = 1
+	}
 	switch enhancement.Status {
-	case RecordingSessionEnhancementRunning, RecordingSessionEnhancementReady, RecordingSessionEnhancementFailed:
+	case RecordingSessionEnhancementPending, RecordingSessionEnhancementRunning, RecordingSessionEnhancementPartial,
+		RecordingSessionEnhancementReady, RecordingSessionEnhancementFailed, RecordingSessionEnhancementCancelled:
 	default:
 		enhancement.Status = RecordingSessionEnhancementIdle
 	}

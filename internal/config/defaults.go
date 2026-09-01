@@ -169,8 +169,15 @@ func defaults() *Config {
 			UpdateCheck: true,
 		},
 		Meeting: MeetingConfig{
-			AutoDetect:  true,
-			AutoEnhance: true,
+			Enabled:            true,
+			AutoDetect:         true,
+			AutoEnhance:        true,
+			CompactOnStart:     true,
+			AlwaysOnTop:        true,
+			GenerationProvider: "local",
+			FallbackPolicy:     "local_only",
+			BatchMinutes:       5,
+			SummaryLanguage:    "auto",
 		},
 		Feedback: FeedbackConfig{
 			SaveAudio:          true,

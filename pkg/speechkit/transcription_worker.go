@@ -270,6 +270,15 @@ func (w *TranscriptionWorker) Wait() {
 	w.persistWG.Wait()
 }
 
+// EndRecordingSession releases deduplication history for a durable recording
+// after its capture lifecycle has ended.
+func (w *TranscriptionWorker) EndRecordingSession(recordingSessionID int64) {
+	if w == nil {
+		return
+	}
+	w.ledger.EndRecordingSession(recordingSessionID)
+}
+
 func (w *TranscriptionWorker) handleJob(ctx context.Context, job TranscriptionJob) {
 	w.onState("processing", DefaultProcessingMessage)
 

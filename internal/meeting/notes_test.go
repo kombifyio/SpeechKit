@@ -5,6 +5,14 @@ import (
 	"testing"
 )
 
+func TestFinalizeLimitsExecutiveBriefToFiveStatements(t *testing.T) {
+	document := NotesDocument{ExecutiveBrief: []string{"One.", "Two.", "Three.", "Four.", "Five.", "Six."}}
+	final := document.Finalize("de")
+	if final.Locale != "de" || len(final.ExecutiveBrief) != 5 {
+		t.Fatalf("finalized review = %+v", final)
+	}
+}
+
 // The user's notes are the one part of the write-up a model must not rewrite.
 // A tidied-up note is no longer what the person in the meeting wrote down.
 func TestApplyAnchorsRestoresTheUsersOwnWording(t *testing.T) {
@@ -62,6 +70,24 @@ func TestApplyAnchorsIgnoresAnInventedAnchorID(t *testing.T) {
 	}
 	if bullets[0].Text != "Something the model made up an id for." {
 		t.Fatalf("the bullet text changed: %q", bullets[0].Text)
+	}
+}
+
+func TestApplyAnchorsPreservesReviewMetadata(t *testing.T) {
+	document := NotesDocument{
+		TemplateSlug:   TemplateDefaultMeeting,
+		Locale:         "de",
+		ExecutiveBrief: []string{"Kurzfassung."},
+		Sections: []NotesSection{{
+			Slug:    "summary",
+			Bullets: []NotesBullet{{Text: "model wording", AnchorID: "a1"}},
+		}},
+	}
+
+	applied := document.ApplyAnchors([]Anchor{{ID: "a1", Text: "original wording"}})
+
+	if applied.Locale != "de" || len(applied.ExecutiveBrief) != 1 || applied.ExecutiveBrief[0] != "Kurzfassung." {
+		t.Fatalf("review metadata was not preserved: %#v", applied)
 	}
 }
 

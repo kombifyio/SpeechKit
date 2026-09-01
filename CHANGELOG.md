@@ -11,8 +11,37 @@ IDs, source paths, and other maintainer-only vocabulary.
 
 ## [Unreleased]
 
+## [0.67.0](https://github.com/kombifyio/SpeechKit/compare/v0.66.0...v0.67.0) (2026-09-01)
+
+### Highlights
+
+- **Meetings stay within reach while recording**: a compact transparent overlay shows capture health, elapsed time and controls, then expands into the full transcript and notes workspace.
+- **Privacy now has boundaries you can select**: choose all networks, the local network only or this device only; incompatible providers and integrations remain visible but cannot be enabled.
+- **Long meetings produce useful reviews**: bounded rolling summaries feed durable Meeting Reviews, five-sentence Executive Briefs and action items in English, German, Spanish, Chinese, Hindi and Arabic.
+- **Cloud assistance stays optional**: GitHub Copilot can help generate Meeting Reviews only after sign-in and a separate transcript-processing grant, while the local path remains available without cloud credentials.
+
 ### Added
 
+* **desktop:** Meeting Mode is available beside Dictation, Assist and Voice Agent
+  in General Settings, with its own settings page for capture, review generation,
+  languages, retention and compact-window behavior.
+* **meetings:** active recordings continuously summarize bounded transcript
+  batches without blocking capture. Finishing a meeting produces a durable
+  Meeting Review, Executive Brief and action-item candidates, with retry,
+  cancellation, progress and provider attribution.
+* **meetings:** reviews support English, German, Spanish, Simplified Chinese,
+  Hindi and Arabic. Follow-up tasks remain local and link back to their source
+  meeting.
+* **privacy:** the new Network Scope setting offers All networks, Local network
+  only and This device only. The backend enforces the selected boundary for
+  speech providers, model downloads, updates, telemetry, server connections and
+  integrations, including redirect and DNS-rebinding checks.
+* **privacy:** switching to a restrictive scope suspends incompatible settings
+  without deleting them. Settings explains why affected choices are disabled
+  and restores them when the scope permits them again.
+* **integrations:** GitHub Copilot is available as an optional desktop generation
+  provider with isolated sessions, no tools or repository context, and a
+  separate revocable transcript-processing grant.
 * **desktop:** signing in to kombify Cloud now works from the Connect button in
   Server settings. It opens the kombify sign-in page in your browser, shows the
   code to confirm there, and once you are signed in it points this device at
@@ -24,6 +53,13 @@ IDs, source paths, and other maintainer-only vocabulary.
 
 ### Fixed
 
+* **meetings:** pause, resume and finish commands now verify the requested
+  recording session, so one meeting cannot change or persist another meeting's
+  state.
+* **meetings:** finishing a meeting no longer replaces an existing review with
+  an empty result, and filtered meeting lists paginate consistently.
+* **desktop:** the installed-version footer no longer shows a hard-coded,
+  outdated changelog description beneath the actual version.
 * **desktop:** the Connect button no longer reports a ready connection it never
   established. Previously it recorded the hosted address and claimed a
   credential was in place without ever obtaining one, so every request was

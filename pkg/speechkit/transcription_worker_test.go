@@ -42,6 +42,42 @@ type countingTranscriber struct {
 	transcript Transcript
 }
 
+type countingPersistence struct {
+	mu       sync.Mutex
+	saves    int
+	audioLen []int
+}
+
+func (s *countingPersistence) SaveQuickNote(context.Context, string, string, string, int64, int64, []byte) (int64, error) {
+	return 0, nil
+}
+
+func (s *countingPersistence) GetQuickNoteText(context.Context, int64) (string, error) {
+	return "", nil
+}
+
+func (s *countingPersistence) UpdateQuickNote(context.Context, int64, string) error {
+	return nil
+}
+
+func (s *countingPersistence) UpdateQuickNoteCapture(context.Context, int64, string, string, int64, int64, []byte) error {
+	return nil
+}
+
+func (s *countingPersistence) SaveTranscription(_ context.Context, _, _, _, _ string, _, _ int64, audio []byte) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.saves++
+	s.audioLen = append(s.audioLen, len(audio))
+	return nil
+}
+
+func (s *countingPersistence) snapshot() (int, []int) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.saves, append([]int(nil), s.audioLen...)
+}
+
 func (s *countingTranscriber) Transcribe(_ context.Context, _ []byte, _ float64, language string) (Transcript, error) {
 	s.mu.Lock()
 	s.calls++
@@ -643,6 +679,59 @@ func TestTranscriptionWorkerSkipsDuplicateSegmentCommit(t *testing.T) {
 	}
 	if !observer.hasLog("Duplicate transcript segment skipped") {
 		t.Fatalf("observer logs = %#v, want duplicate skip log", observer.logs)
+	}
+}
+
+func TestTranscriptionWorkerProcessesSequentialMeetingsWithReusedControllerCounters(t *testing.T) {
+	transcriber := &countingTranscriber{transcript: Transcript{
+		Text:     "meeting words",
+		Provider: "test",
+		Duration: time.Millisecond,
+	}}
+	persistence := &countingPersistence{}
+	worker, err := NewTranscriptionWorker(TranscriptionWorkerConfig{
+		Timeout:   time.Second,
+		QueueSize: 2,
+		Runner:    NewTranscriptionRunner(transcriber, persistence),
+	})
+	if err != nil {
+		t.Fatalf("NewTranscriptionWorker() error = %v", err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	worker.Start(ctx)
+
+	submitMeeting := func(recordingSessionID int64) {
+		t.Helper()
+		err := worker.Submit(TranscriptionJob{Submission: Submission{
+			WAV:                []byte("private meeting audio"),
+			DurationSecs:       0.1,
+			RecordingSessionID: recordingSessionID,
+			CaptureChannel:     CaptureChannelMicrophone,
+			SessionID:          1,
+			SegmentID:          1,
+			SegmentFinal:       true,
+		}})
+		if err != nil {
+			t.Fatalf("Submit(recording session %d) error = %v", recordingSessionID, err)
+		}
+	}
+	submitMeeting(301)
+	submitMeeting(302)
+	worker.Close()
+	worker.Wait()
+
+	if got := transcriber.count(); got != 2 {
+		t.Fatalf("provider calls = %d, want both meetings", got)
+	}
+	saves, audioLengths := persistence.snapshot()
+	if saves != 2 {
+		t.Fatalf("persisted transcripts = %d, want both meetings", saves)
+	}
+	for _, audioLen := range audioLengths {
+		if audioLen != 0 {
+			t.Fatal("meeting audio reached persistence")
+		}
 	}
 }
 

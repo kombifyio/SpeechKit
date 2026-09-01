@@ -19,6 +19,8 @@ import (
 	"github.com/firebase/genkit/go/genkit"
 	"github.com/firebase/genkit/go/plugins/googlegenai"
 	"github.com/firebase/genkit/go/plugins/ollama"
+
+	"github.com/kombifyio/SpeechKit/internal/ai/generation"
 )
 
 // Config holds all provider API keys and model selections for Genkit initialization.
@@ -112,6 +114,52 @@ func (r *Runtime) AllModels() map[string]ai.Model { return r.allModels }
 
 // ModelInfos returns metadata about all registered models for the UI.
 func (r *Runtime) ModelInfos() []ModelInfo { return r.modelInfos }
+
+// Generator exposes the configured model pool through SpeechKit's
+// provider-neutral generation boundary.
+func (r *Runtime) Generator() generation.Generator {
+	if r == nil {
+		return generation.NewGenkit(nil, nil)
+	}
+	bindings := make([]generation.GenkitModel, 0, len(r.modelInfos))
+	for _, info := range r.modelInfos {
+		model := r.allModels[info.ID]
+		if model == nil {
+			continue
+		}
+		bindings = append(bindings, generation.GenkitModel{
+			Model: model,
+			Info: generation.Model{
+				ID:                       info.ID,
+				Provider:                 info.Provider,
+				Name:                     info.Name,
+				Purposes:                 generationPurposes(info.Tier),
+				ContextWindowTokens:      generation.ConservativeContextWindow(info.Provider, info.Name),
+				SupportsStructuredOutput: true,
+				Cloud:                    info.Provider != "local" && info.Provider != "ollama",
+			},
+		})
+	}
+	return generation.NewGenkit(r.G, bindings)
+}
+
+func generationPurposes(tier string) []generation.Purpose {
+	purposes := make([]generation.Purpose, 0, 5)
+	if tier == "all" || strings.Contains(tier, "utility") {
+		purposes = append(purposes,
+			generation.PurposeUtility,
+			generation.PurposeMeetingExtraction,
+			generation.PurposeMeetingSynthesis,
+		)
+	}
+	if tier == "all" || strings.Contains(tier, "assist") {
+		purposes = append(purposes, generation.PurposeAssist)
+	}
+	if tier == "all" || strings.Contains(tier, "agent") {
+		purposes = append(purposes, generation.PurposeVoiceAgentThink)
+	}
+	return purposes
+}
 
 // Init creates a Genkit instance with all configured providers and returns a Runtime.
 func Init(ctx context.Context, cfg Config) (*Runtime, error) {

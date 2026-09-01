@@ -34,6 +34,54 @@ func TestLedgerAdmitsTheSameSegmentNumberOnDifferentCaptureChannels(t *testing.T
 	}
 }
 
+func TestLedgerScopesReusedControllerCountersByRecordingSession(t *testing.T) {
+	ledger := NewTranscriptSessionLedger()
+	firstMeeting := transcriptSegmentKey(Submission{
+		RecordingSessionID: 101,
+		CaptureChannel:     CaptureChannelMicrophone,
+		SessionID:          1,
+		SegmentID:          1,
+	})
+	secondMeeting := transcriptSegmentKey(Submission{
+		RecordingSessionID: 102,
+		CaptureChannel:     CaptureChannelMicrophone,
+		SessionID:          1,
+		SegmentID:          1,
+	})
+
+	if !ledger.Begin(firstMeeting) {
+		t.Fatal("first meeting segment was rejected")
+	}
+	ledger.Commit(firstMeeting)
+	if !ledger.Begin(secondMeeting) {
+		t.Fatal("a fresh meeting collided with the prior meeting's controller-local counters")
+	}
+	ledger.Commit(secondMeeting)
+	if ledger.Begin(secondMeeting) {
+		t.Fatal("a duplicate within the same durable recording session was admitted")
+	}
+}
+
+func TestLedgerRetiresOnlyEndedRecordingSessions(t *testing.T) {
+	ledger := NewTranscriptSessionLedger()
+	ended := TranscriptSegmentKey{RecordingSessionID: 201, SessionID: 1, SegmentID: 1}
+	active := TranscriptSegmentKey{RecordingSessionID: 202, SessionID: 1, SegmentID: 1}
+	if !ledger.Begin(ended) || !ledger.Begin(active) {
+		t.Fatal("initial segments were rejected")
+	}
+	ledger.Commit(ended)
+	ledger.Commit(active)
+
+	ledger.EndRecordingSession(201)
+
+	if !ledger.Begin(ended) {
+		t.Fatal("ended recording-session state was retained")
+	}
+	if ledger.Begin(active) {
+		t.Fatal("retiring an earlier meeting broke deduplication for the active meeting")
+	}
+}
+
 // A meeting records other people. What it keeps is what was said, not the
 // sound of them saying it, and that has to hold regardless of how the host has
 // configured audio storage.

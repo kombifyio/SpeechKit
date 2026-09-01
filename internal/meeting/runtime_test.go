@@ -242,10 +242,13 @@ func TestRuntimeStopGivesUpOnTranscriptionThatNeverLands(t *testing.T) {
 	startTestMeeting(t, runtime)
 	runtime.NoteSegmentSubmitted(42)
 
+	var stopped Snapshot
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
-		if _, err := runtime.Stop(context.Background()); err != nil {
+		var err error
+		stopped, err = runtime.Stop(context.Background())
+		if err != nil {
 			t.Errorf("Stop() error = %v", err)
 		}
 	}()
@@ -254,6 +257,9 @@ func TestRuntimeStopGivesUpOnTranscriptionThatNeverLands(t *testing.T) {
 	case <-done:
 	case <-time.After(5 * time.Second):
 		t.Fatal("Stop() hung on a segment that never committed")
+	}
+	if !stopped.Degraded || stopped.PendingSegments != 1 {
+		t.Fatalf("unresolved accepted segment was not surfaced as degraded capture: %+v", stopped)
 	}
 }
 

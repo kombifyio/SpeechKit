@@ -155,10 +155,12 @@ type Config struct {
 	// Meeting configures meeting capture and its note write-ups. Desktop-only;
 	// the Server-Target ignores this block.
 	Meeting MeetingConfig `toml:"meeting"`
+	Copilot CopilotConfig `toml:"copilot"`
 }
 
 // MeetingConfig configures meeting capture.
 type MeetingConfig struct {
+	Enabled bool `toml:"enabled"`
 	// AutoDetect offers to take notes when a call starts, which SpeechKit
 	// notices by seeing a calling application take the microphone. The check
 	// reads process names and nothing else, stores nothing and sends nothing.
@@ -169,5 +171,35 @@ type MeetingConfig struct {
 	AutoDetectApps []string `toml:"auto_detect_apps"`
 	// AutoEnhance writes a meeting up as soon as it ends, rather than waiting
 	// to be asked.
-	AutoEnhance bool `toml:"auto_enhance"`
+	AutoEnhance                bool     `toml:"auto_enhance"`
+	CompactOnStart             bool     `toml:"compact_on_start"`
+	AlwaysOnTop                bool     `toml:"always_on_top"`
+	GenerationProvider         string   `toml:"generation_provider"`
+	GenerationModel            string   `toml:"generation_model"`
+	FallbackPolicy             string   `toml:"fallback_policy"`
+	BatchMinutes               int      `toml:"batch_minutes"`
+	SummaryLanguage            string   `toml:"summary_language"`
+	AdditionalSummaryLanguages []string `toml:"additional_summary_languages"`
+}
+
+const CopilotTranscriptGrantVersion = 1
+
+// CopilotConfig is desktop-only. Authentication remains in the Copilot CLI's
+// operating-system credential store; SpeechKit persists only user preferences
+// and the explicit cloud-processing grant for generation inputs.
+type CopilotConfig struct {
+	Enabled bool   `toml:"enabled"`
+	Model   string `toml:"model"`
+	CLIPath string `toml:"cli_path"`
+
+	TranscriptGrantProvider  string `toml:"transcript_grant_provider"`
+	TranscriptGrantVersion   int    `toml:"transcript_grant_version"`
+	TranscriptGrantGrantedAt string `toml:"transcript_grant_granted_at"`
+}
+
+func (c CopilotConfig) HasTranscriptGrant() bool {
+	return c.Enabled &&
+		c.TranscriptGrantProvider == "github_copilot" &&
+		c.TranscriptGrantVersion == CopilotTranscriptGrantVersion &&
+		c.TranscriptGrantGrantedAt != ""
 }

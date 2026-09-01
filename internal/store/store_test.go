@@ -657,6 +657,7 @@ func TestRecordingSessionStoreLifecycle(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewSQLiteStore: %v", err)
 	}
+
 	defer s.Close()
 
 	ctx := context.Background()
@@ -748,6 +749,71 @@ func TestRecordingSessionStoreLifecycle(t *testing.T) {
 	}
 	if _, err := s.GetRecordingSession(ctx, sessionID); !errors.Is(err, sql.ErrNoRows) {
 		t.Fatalf("GetRecordingSession after delete err = %v, want sql.ErrNoRows", err)
+	}
+}
+
+func TestFinishRecordingSessionWithoutSummaryPreservesSummaryState(t *testing.T) {
+	s, err := NewSQLiteStore(StoreConfig{SQLitePath: filepath.Join(t.TempDir(), "recording_sessions.db")})
+	if err != nil {
+		t.Fatalf("NewSQLiteStore: %v", err)
+	}
+	defer s.Close()
+
+	ctx := context.Background()
+	sessionID, err := s.SaveRecordingSession(ctx, RecordingSession{
+		Kind:  RecordingSessionKindMeeting,
+		Title: "Planning meeting",
+	})
+	if err != nil {
+		t.Fatalf("SaveRecordingSession: %v", err)
+	}
+	if err := s.UpdateRecordingSessionSummary(ctx, sessionID, "Existing summary"); err != nil {
+		t.Fatalf("UpdateRecordingSessionSummary: %v", err)
+	}
+
+	if err := s.FinishRecordingSession(ctx, sessionID, "", time.Now()); err != nil {
+		t.Fatalf("FinishRecordingSession: %v", err)
+	}
+	got, err := s.GetRecordingSession(ctx, sessionID)
+	if err != nil {
+		t.Fatalf("GetRecordingSession: %v", err)
+	}
+	if got.Summary != "Existing summary" || got.SummaryStatus != RecordingSessionSummaryReady {
+		t.Fatalf("finish without summary changed summary state: %+v", got)
+	}
+}
+
+func TestListRecordingSessionsFiltersBeforeApplyingLimit(t *testing.T) {
+	s, err := NewSQLiteStore(StoreConfig{SQLitePath: filepath.Join(t.TempDir(), "recording_sessions.db")})
+	if err != nil {
+		t.Fatalf("NewSQLiteStore: %v", err)
+	}
+	defer s.Close()
+
+	ctx := context.Background()
+	meetingID, err := s.SaveRecordingSession(ctx, RecordingSession{
+		Kind:  RecordingSessionKindMeeting,
+		Title: "Planning meeting",
+	})
+	if err != nil {
+		t.Fatalf("SaveRecordingSession meeting: %v", err)
+	}
+	if _, err := s.SaveRecordingSession(ctx, RecordingSession{
+		Kind:  RecordingSessionKindDictation,
+		Title: "Newer dictation",
+	}); err != nil {
+		t.Fatalf("SaveRecordingSession dictation: %v", err)
+	}
+
+	got, err := s.ListRecordingSessions(ctx, ListOpts{
+		Limit: 1,
+		Kind:  string(RecordingSessionKindMeeting),
+	})
+	if err != nil {
+		t.Fatalf("ListRecordingSessions: %v", err)
+	}
+	if len(got) != 1 || got[0].ID != meetingID {
+		t.Fatalf("filtered recording sessions = %+v, want meeting %d", got, meetingID)
 	}
 }
 
