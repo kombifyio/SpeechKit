@@ -183,6 +183,24 @@
       "runtime_detail": "openai_realtime_adapter_wired_provider_live_gate_required_before_tag"
     },
     {
+      "mode": "voice_agent",
+      "capability": "native_voice_agent",
+      "provider": "Microsoft Foundry",
+      "framework_api": "Microsoft Foundry Realtime (OpenAI Realtime wire protocol)",
+      "local_or_cloud": "cloud",
+      "streaming_or_batch": "streaming",
+      "identification_level": "transcript_roles",
+      "identity_method": "provider_user_agent_transcripts",
+      "auth_method": "AZURE_AI_API_KEY api-key header",
+      "required_env_vars": ["AZURE_AI_API_KEY"],
+      "profile_id": "realtime.foundry.gpt-realtime-2",
+      "evidence_url": "https://learn.microsoft.com/azure/ai-foundry/openai/realtime-audio-quickstart",
+      "status": "implemented",
+      "implementation_status": "implemented",
+      "runtime_status": "adapter_wired",
+      "runtime_detail": "foundry_reuses_openai_realtime_adapter_provider_live_gate_required_before_tag"
+    },
+    {
       "mode": "dictation",
       "capability": "speaker_diarization",
       "provider": "Google",

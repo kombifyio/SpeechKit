@@ -219,11 +219,13 @@ cross-provider fallback, cascaded fallback, or missing capabilities to users.
 
 Server-Target Voice Agent sessions use the same provider vocabulary on the
 WebSocket `start.provider` field. Accepted values include `gemini`/`google`,
-`deepgram`, `assemblyai`, `openai`, and `cascaded`, plus public realtime profile
-IDs such as `realtime.google.gemini-native-audio`,
+`deepgram`, `assemblyai`, `openai`, `foundry`, and `cascaded`, plus public
+realtime profile IDs such as `realtime.google.gemini-native-audio`,
 `realtime.google.gemini-live-translate`,
-`realtime.deepgram.voice-agent`, `realtime.assemblyai.voice-agent`, and
-`realtime.openai.gpt-realtime-2`.
+`realtime.deepgram.voice-agent`, `realtime.assemblyai.voice-agent`,
+`realtime.openai.gpt-realtime-2`, and `realtime.foundry.gpt-realtime-2`.
+Microsoft Foundry sessions reuse the OpenAI Realtime wire protocol against the
+Foundry `/openai/v1/realtime` endpoint with `AZURE_AI_API_KEY` auth.
 Per-session switching resolves provider-specific API keys and model defaults,
 so an OpenAI session does not inherit a Gemini model and an AssemblyAI session
 does not inherit a Gemini model.

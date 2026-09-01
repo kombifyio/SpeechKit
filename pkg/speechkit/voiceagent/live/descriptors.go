@@ -182,6 +182,27 @@ func DefaultProviderDescriptors() []ProviderDescriptor {
 			Transport:        "websocket",
 			EvidenceURL:      "https://platform.openai.com/docs/guides/realtime",
 		},
+		{
+			Provider:    "foundry",
+			DisplayName: "Microsoft Foundry Realtime",
+			ProfileID:   "realtime.foundry.gpt-realtime-2",
+			Capabilities: []LiveCapabilityFlag{
+				LiveCapabilityRealtimeAudio,
+				LiveCapabilityToolCalling,
+				LiveCapabilityNativeContextPrompt,
+				LiveCapabilityReasoningEffort,
+				LiveCapabilityTranscript,
+				LiveCapabilityInterruptions,
+			},
+			Models:           liveModelsForProvider("foundry"),
+			SupportedLocales: []string{"*"},
+			// Foundry speaks the OpenAI Realtime wire protocol, so it shares
+			// the OpenAI native-option manifest.
+			NativeOptions:   nativeLiveOptions("openai"),
+			AuthRequirement: "api_key",
+			Transport:       "websocket",
+			EvidenceURL:     "https://learn.microsoft.com/azure/ai-foundry/openai/realtime-audio-quickstart",
+		},
 	}
 }
 
@@ -235,6 +256,8 @@ func NormalizeProviderID(providerOrProfile string) string {
 		return "assemblyai"
 	case "openai", "openai-realtime", "openai-live", "realtime.openai.gpt-realtime-2":
 		return "openai"
+	case "foundry", "foundry-realtime", "foundry-live", "foundry-api", "microsoft-foundry", "realtime.foundry.gpt-realtime-2":
+		return "foundry"
 	case "cascaded", "local-cascaded", "pipeline", "pipeline-fallback", "voice-agent-cascaded", "voice_agent.cascaded.pipeline":
 		return "cascaded"
 	default:

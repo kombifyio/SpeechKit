@@ -11,6 +11,7 @@ type EnabledProviders struct {
 	Google      *GoogleOpts
 	Deepgram    *DeepgramOpts
 	HuggingFace *HuggingFaceOpts
+	Foundry     *FoundryOpts
 	Piper       *PiperOpts
 	// PreferredProfileID optionally pins the provider matching this
 	// model_selection profile to the front of the strategy order.
@@ -39,6 +40,14 @@ func BuildRouter(strategy Strategy, enabled EnabledProviders) (router *Router, o
 	if enabled.HuggingFace != nil {
 		providers = append(providers, NewHuggingFace(*enabled.HuggingFace))
 		notes = append(notes, "TTS: HuggingFace registered")
+	}
+	if enabled.Foundry != nil {
+		if strings.TrimSpace(enabled.Foundry.BaseURL) != "" {
+			providers = append(providers, NewFoundry(*enabled.Foundry))
+			notes = append(notes, "TTS: Microsoft Foundry registered (deployment="+enabled.Foundry.Model+", voice="+enabled.Foundry.Voice+")")
+		} else {
+			notes = append(notes, "TTS: Microsoft Foundry skipped (project endpoint missing)")
+		}
 	}
 	if enabled.Piper != nil {
 		piper, err := NewPiper(*enabled.Piper)

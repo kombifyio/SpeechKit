@@ -65,6 +65,11 @@ type Config struct {
 	CloudflareUtilityModel      string
 	CloudflareAssistModel       string
 	CloudflareAgentModel        string
+	FoundryAPIKey               string
+	FoundryBaseURL              string
+	FoundryUtilityModel         string
+	FoundryAssistModel          string
+	FoundryAgentModel           string
 	OrderedAssistModels         []OrderedModelSelection
 	OrderedAgentModels          []OrderedModelSelection
 	UseOrderedAssistModels      bool
@@ -234,6 +239,13 @@ func registerConfiguredProviderModels(g *genkit.Genkit, cfg Config) {
 			cfg.CloudflareAgentModel,
 		})
 	}
+	if cfg.FoundryAPIKey != "" && cfg.FoundryBaseURL != "" {
+		registerFoundryModels(g, cfg.FoundryAPIKey, cfg.FoundryBaseURL, []string{
+			cfg.FoundryUtilityModel,
+			cfg.FoundryAssistModel,
+			cfg.FoundryAgentModel,
+		})
+	}
 	if cfg.LocalLLMBaseURL != "" {
 		registerLocalLLMModels(g, cfg.LocalLLMBaseURL, localLLMModelNames(cfg))
 	}
@@ -266,6 +278,7 @@ func tierModelSpecs(cfg Config, tier string) []modelSpec {
 			{"openrouter", cfg.OpenRouterUtilityModel, cfg.OpenRouterAPIKey != "" && cfg.OpenRouterUtilityModel != ""},
 			{"assemblyai", cfg.AssemblyAIUtilityModel, cfg.AssemblyAIAPIKey != "" && cfg.AssemblyAIUtilityModel != ""},
 			{"cloudflare", cfg.CloudflareUtilityModel, cloudflareModelEnabled(cfg) && cfg.CloudflareUtilityModel != ""},
+			{"foundry", cfg.FoundryUtilityModel, foundryModelEnabled(cfg) && cfg.FoundryUtilityModel != ""},
 		}
 	case "assist":
 		return []modelSpec{
@@ -278,6 +291,7 @@ func tierModelSpecs(cfg Config, tier string) []modelSpec {
 			{"openrouter", cfg.OpenRouterAssistModel, cfg.OpenRouterAPIKey != "" && cfg.OpenRouterAssistModel != ""},
 			{"assemblyai", cfg.AssemblyAIAssistModel, cfg.AssemblyAIAPIKey != "" && cfg.AssemblyAIAssistModel != ""},
 			{"cloudflare", cfg.CloudflareAssistModel, cloudflareModelEnabled(cfg) && cfg.CloudflareAssistModel != ""},
+			{"foundry", cfg.FoundryAssistModel, foundryModelEnabled(cfg) && cfg.FoundryAssistModel != ""},
 		}
 	case "agent":
 		return []modelSpec{
@@ -290,6 +304,7 @@ func tierModelSpecs(cfg Config, tier string) []modelSpec {
 			{"openrouter", cfg.OpenRouterAgentModel, cfg.OpenRouterAPIKey != "" && cfg.OpenRouterAgentModel != ""},
 			{"assemblyai", cfg.AssemblyAIAgentModel, cfg.AssemblyAIAPIKey != "" && cfg.AssemblyAIAgentModel != ""},
 			{"cloudflare", cfg.CloudflareAgentModel, cloudflareModelEnabled(cfg) && cfg.CloudflareAgentModel != ""},
+			{"foundry", cfg.FoundryAgentModel, foundryModelEnabled(cfg) && cfg.FoundryAgentModel != ""},
 		}
 	default:
 		return nil
@@ -298,6 +313,10 @@ func tierModelSpecs(cfg Config, tier string) []modelSpec {
 
 func cloudflareModelEnabled(cfg Config) bool {
 	return cfg.CloudflareAPIKey != "" && cfg.CloudflareAccountID != ""
+}
+
+func foundryModelEnabled(cfg Config) bool {
+	return cfg.FoundryAPIKey != "" && cfg.FoundryBaseURL != ""
 }
 
 func resolveOrderedOrLegacyModels(

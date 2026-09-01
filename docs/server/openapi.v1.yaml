@@ -1219,7 +1219,8 @@ paths:
         Set `media_transport` to `livekit` to keep the WebSocket as the
         control channel while microphone and model audio move through the
         LiveKit room from this response. The default WebSocket audio path
-        supports Gemini, Deepgram, AssemblyAI, OpenAI, and cascaded providers.
+        supports Gemini, Deepgram, AssemblyAI, OpenAI, Microsoft Foundry, and
+        cascaded providers.
         v1 LiveKit media is limited to providers that advertise LiveKit
         support; cascaded providers remain on WebSocket audio until explicit
         transcoding is added. During a

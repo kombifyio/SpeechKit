@@ -43,7 +43,7 @@ info:
 
     | media_transport | Control frames | Client audio | Model audio | Provider support |
     |---|---|---|---|---|
-    | websocket (default) | SpeechKit WS JSON | SpeechKit WS binary PCM | SpeechKit WS binary PCM | Gemini, Deepgram, AssemblyAI, OpenAI, cascaded providers |
+    | websocket (default) | SpeechKit WS JSON | SpeechKit WS binary PCM | SpeechKit WS binary PCM | Gemini, Deepgram, AssemblyAI, OpenAI, Microsoft Foundry, cascaded providers |
     | livekit | SpeechKit WS JSON | LiveKit audio track | LiveKit audio track | Gemini and OpenAI native realtime providers |
 
     Field guarantees follow the same rules as openapi.v1.yaml: additive

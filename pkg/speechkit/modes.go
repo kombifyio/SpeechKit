@@ -59,6 +59,7 @@ const (
 	ExecutionModeAssemblyAI     ExecutionMode = "assemblyai_api"
 	ExecutionModeOllama         ExecutionMode = "ollama_local"
 	ExecutionModeOpenRouter     ExecutionMode = "openrouter_api"
+	ExecutionModeFoundry        ExecutionMode = "foundry_api"
 )
 
 // Capability is a mode capability declared by a provider profile.

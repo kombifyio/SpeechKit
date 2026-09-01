@@ -56,6 +56,36 @@ type ProvidersConfig struct {
 	Ollama     OllamaProviderConfig     `toml:"ollama"`
 	OpenRouter OpenRouterProviderConfig `toml:"openrouter"`
 	Cloudflare CloudflareProviderConfig `toml:"cloudflare"`
+	Foundry    FoundryProviderConfig    `toml:"foundry"`
+}
+
+// FoundryProviderConfig configures Microsoft Foundry (Azure AI Foundry) as a
+// cloud provider. Foundry exposes an OpenAI-compatible v1 inference surface on
+// the account host (https://<account>.services.ai.azure.com/openai/v1/), so
+// STT, LLM, TTS, and Realtime all reuse the OpenAI-compatible request shapes.
+//
+// ProjectEndpoint is what the user copies from the Foundry portal
+// (https://<account>.services.ai.azure.com/api/projects/<project>); the
+// inference base URL is derived from its host. The `model` parameter of every
+// Foundry request is a *deployment name* (not a model id), so each modality
+// carries its own deployment override.
+type FoundryProviderConfig struct {
+	Enabled bool `toml:"enabled"`
+	// ProjectEndpoint is the Foundry project endpoint from the portal, e.g.
+	// https://<account>.services.ai.azure.com/api/projects/<project>.
+	// A bare account endpoint (https://<account>.services.ai.azure.com) or an
+	// Azure OpenAI resource endpoint (https://<resource>.openai.azure.com) is
+	// accepted too — only the host is used for inference.
+	ProjectEndpoint string `toml:"project_endpoint"`
+	APIKeyEnv       string `toml:"api_key_env"`
+	// Deployment names per modality (Foundry `model` parameter).
+	STTDeployment      string `toml:"stt_deployment"`
+	UtilityDeployment  string `toml:"utility_deployment"`
+	AssistDeployment   string `toml:"assist_deployment"`
+	AgentDeployment    string `toml:"agent_deployment"`
+	RealtimeDeployment string `toml:"realtime_deployment"`
+	TTSDeployment      string `toml:"tts_deployment"`
+	TTSVoice           string `toml:"tts_voice"`
 }
 
 type OpenAIProviderConfig struct {

@@ -209,8 +209,15 @@ type LiveConfig struct {
 	// disables the fallback. Typical pairing in 2026: a preview model as
 	// Model + the last GA model as FallbackModel, so transient preview
 	// outages don't take down a Voice Agent deployment.
-	FallbackModel    string
-	APIKey           string
+	FallbackModel string
+	APIKey        string
+	// Endpoint overrides the provider's default WebSocket base URL. Providers
+	// that speak a shared wire protocol from different hosts use it — e.g.
+	// Microsoft Foundry serves the OpenAI Realtime protocol from
+	// wss://<account-host>/openai/v1/realtime. Empty keeps the provider's
+	// built-in default endpoint. The model/deployment query parameter is
+	// appended by the provider; do not include it here.
+	Endpoint         string
 	Voice            string // Voice name
 	FrameworkPrompt  string
 	RefinementPrompt string

@@ -17,6 +17,7 @@ import (
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/voiceagent/live"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/voiceagent/live/assemblyai"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/voiceagent/live/deepgram"
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/voiceagent/live/foundry"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/voiceagent/live/gemini"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/voiceagent/live/openai"
 )
@@ -38,6 +39,7 @@ func DefaultProviderFactories() ProviderFactoryRegistry {
 		"deepgram":   func() live.LiveProvider { return deepgram.New() },
 		"assemblyai": func() live.LiveProvider { return assemblyai.New() },
 		"openai":     func() live.LiveProvider { return openai.New() },
+		"foundry":    func() live.LiveProvider { return foundry.New() },
 	}
 }
 

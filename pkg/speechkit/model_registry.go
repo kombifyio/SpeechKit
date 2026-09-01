@@ -70,6 +70,10 @@ const ModelFreshnessSLA = 7 * 24 * time.Hour
 // checked against vendor documentation. Bump this after a vendor-doc pass.
 const modelRegistryVerifiedAt = "2026-08-25"
 
+// foundryRegistryVerifiedAt is the day the Microsoft Foundry rows were checked
+// against MS Learn model-availability docs (separate vendor-doc pass).
+const foundryRegistryVerifiedAt = "2026-09-01"
+
 // MissingFreshnessReports lists default/recommended registry rows that still
 // lack LastVerifiedAt.
 func MissingFreshnessReports(rows []ProviderModelDescriptor) []string {
@@ -299,6 +303,47 @@ func DefaultModelRegistry() []ProviderModelDescriptor {
 			SourceURL:            "https://platform.openai.com/docs/guides/realtime",
 			ReleasedAt:           "2026-07-06",
 			LastVerifiedAt:       modelRegistryVerifiedAt,
+			MultilanguageCapable: true,
+		},
+		// Microsoft Foundry serves the OpenAI realtime family through the
+		// Azure-hosted v1 surface. ModelID doubles as the default deployment
+		// name; users may override it per Foundry deployment.
+		{
+			Provider:             "foundry",
+			ModelID:              ModelOpenAIRealtime2,
+			ProfileID:            "realtime.foundry.gpt-realtime-2",
+			Mode:                 ModeVoiceAgent,
+			Name:                 "GPT Realtime 2 (Foundry)",
+			Lifecycle:            ModelLifecycleGA,
+			Default:              true,
+			Recommended:          true,
+			SourceURL:            "https://learn.microsoft.com/azure/ai-foundry/openai/concepts/models",
+			ReleasedAt:           "2026-05-07",
+			LastVerifiedAt:       foundryRegistryVerifiedAt,
+			MultilanguageCapable: true,
+		},
+		{
+			Provider:             "foundry",
+			ModelID:              ModelOpenAIRealtime21,
+			ProfileID:            "realtime.foundry.gpt-realtime-2",
+			Mode:                 ModeVoiceAgent,
+			Name:                 "GPT Realtime 2.1 (Foundry)",
+			Lifecycle:            ModelLifecyclePreview,
+			SourceURL:            "https://learn.microsoft.com/azure/ai-foundry/openai/concepts/models",
+			ReleasedAt:           "2026-07-06",
+			LastVerifiedAt:       foundryRegistryVerifiedAt,
+			MultilanguageCapable: true,
+		},
+		{
+			Provider:             "foundry",
+			ModelID:              ModelOpenAIRealtime21Mini,
+			ProfileID:            "realtime.foundry.gpt-realtime-2",
+			Mode:                 ModeVoiceAgent,
+			Name:                 "GPT Realtime 2.1 mini (Foundry)",
+			Lifecycle:            ModelLifecyclePreview,
+			SourceURL:            "https://learn.microsoft.com/azure/ai-foundry/openai/concepts/models",
+			ReleasedAt:           "2026-07-06",
+			LastVerifiedAt:       foundryRegistryVerifiedAt,
 			MultilanguageCapable: true,
 		},
 	}

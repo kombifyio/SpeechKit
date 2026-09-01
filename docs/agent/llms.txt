@@ -11,8 +11,8 @@ in-process STT, TTS, Assist, and native Voice Agent packages can run without a
 SpeechKit Server when the host wants local framework integration. Long
 dictation can use stable segmented processing while provider-native streaming
 stays capability-gated. Current realtime baselines are Gemini 3.1 Flash Live,
-Deepgram Flux Voice Agent, AssemblyAI Voice Agent API, OpenAI Realtime, and
-cascaded fallback hosts. AssemblyAI realtime STT defaults to
+Deepgram Flux Voice Agent, AssemblyAI Voice Agent API, OpenAI Realtime,
+Microsoft Foundry Realtime, and cascaded fallback hosts. AssemblyAI realtime STT defaults to
 `universal-3-5-pro`; `u3-rt-pro` remains a legacy fallback. Words and Replacements
 are the customization primitives, with Native Templates selected through
 `active_template_ids` and provider-native keyterms used where supported.

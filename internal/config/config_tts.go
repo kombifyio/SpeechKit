@@ -13,6 +13,7 @@ type TTSConfig struct {
 	Google      TTSGoogle      `toml:"google"`
 	Deepgram    TTSDeepgram    `toml:"deepgram"`
 	HuggingFace TTSHuggingFace `toml:"huggingface"`
+	Foundry     TTSFoundry     `toml:"foundry"`
 	Local       TTSLocal       `toml:"local"`
 	Piper       TTSPiper       `toml:"piper"`
 }
@@ -40,6 +41,16 @@ type TTSDeepgram struct {
 type TTSHuggingFace struct {
 	Enabled bool   `toml:"enabled"`
 	Model   string `toml:"model"` // e.g. "Qwen/Qwen3-TTS-12Hz-1.7B-Base"
+}
+
+// TTSFoundry configures Microsoft Foundry TTS over the OpenAI-compatible
+// audio/speech surface. It reuses the Foundry API key and project endpoint
+// from [providers.foundry] — no separate credential. Model is the deployment
+// name (defaults to the [providers.foundry] tts_deployment).
+type TTSFoundry struct {
+	Enabled bool   `toml:"enabled"`
+	Model   string `toml:"model"` // deployment name, e.g. "gpt-4o-mini-tts"
+	Voice   string `toml:"voice"` // alloy, echo, fable, onyx, nova, shimmer
 }
 
 type TTSLocal struct {

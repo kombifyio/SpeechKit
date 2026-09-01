@@ -44,9 +44,9 @@ type BuildSpec struct {
 	Provider      string
 	ModelID       string
 
-	APIKey  string // cloud API key (OpenAI/Groq/Google/Deepgram/AssemblyAI/OpenRouter)
+	APIKey  string // cloud API key (OpenAI/Groq/Google/Deepgram/AssemblyAI/OpenRouter/Foundry)
 	Token   string // HuggingFace token
-	BaseURL string // Ollama base URL (optional; defaulted when empty)
+	BaseURL string // Ollama base URL (optional; defaulted when empty) or Foundry OpenAI-compatible base (required)
 
 	// DiarizationModel overrides the Deepgram diarization model (optional).
 	DiarizationModel string
@@ -163,6 +163,20 @@ var providerRegistry = map[string]providerDescriptor{
 		Name: "openrouter",
 		Build: func(spec BuildSpec) (stt.STTProvider, error) {
 			return openrouter.New(spec.APIKey, spec.ModelID), nil
+		},
+	},
+	"foundry": {
+		Name: "foundry",
+		Build: func(spec BuildSpec) (stt.STTProvider, error) {
+			baseURL := strings.TrimSpace(spec.BaseURL)
+			if baseURL == "" {
+				return nil, fmt.Errorf("stt: foundry requires the OpenAI-compatible base URL derived from the project endpoint")
+			}
+			model := strings.TrimSpace(spec.ModelID)
+			if model == "" {
+				model = "gpt-4o-mini-transcribe"
+			}
+			return openaicompat.New("foundry", baseURL, spec.APIKey, model), nil
 		},
 	},
 	"ollama": {
@@ -285,6 +299,16 @@ type (
 		Model  string
 	}
 
+	// FoundryOpts configures the Microsoft Foundry provider. BaseURL is the
+	// OpenAI-compatible base derived from the project endpoint
+	// (https://<host>/openai); Model is the deployment name and defaults to
+	// "gpt-4o-mini-transcribe" when empty.
+	FoundryOpts struct {
+		APIKey  string
+		BaseURL string
+		Model   string
+	}
+
 	// OllamaOpts: BaseURL defaults to "http://localhost:11434" and Model to
 	// the provider default when empty.
 	OllamaOpts struct {
@@ -313,13 +337,14 @@ type EnabledProviders struct {
 	Deepgram    *DeepgramOpts
 	AssemblyAI  *AssemblyAIOpts
 	Google      *GoogleOpts
+	Foundry     *FoundryOpts
 	Extra       []stt.STTProvider
 }
 
 // BuildRouter is the single source of truth for assembling an STT router from
 // a set of enabled providers: it constructs each enabled provider in a stable
 // order (cloud fallback order: HuggingFace, OpenRouter, VPS, Ollama, Groq,
-// OpenAI, Deepgram, AssemblyAI, Google, then Extra), applies optional
+// OpenAI, Deepgram, AssemblyAI, Google, Foundry, then Extra), applies optional
 // model_selection pinning, and returns the router plus human-readable notes.
 // ok is false (router nil) when nothing is enabled.
 func BuildRouter(cfg RouterConfig, enabled EnabledProviders) (router *stt.Router, ok bool, notes []string) {
@@ -401,6 +426,18 @@ func BuildRouter(cfg RouterConfig, enabled EnabledProviders) (router *stt.Router
 		p.SetStreamingCredentialEnvs(o.CredentialsJSONEnv, o.ApplicationCredentialsEnv)
 		cloud = append(cloud, p)
 		notes = append(notes, "STT: Google registered (model="+o.Model+")")
+	}
+	if o := enabled.Foundry; o != nil {
+		if baseURL := strings.TrimSpace(o.BaseURL); baseURL != "" {
+			model := strings.TrimSpace(o.Model)
+			if model == "" {
+				model = "gpt-4o-mini-transcribe"
+			}
+			cloud = append(cloud, openaicompat.New("foundry", baseURL, o.APIKey, model))
+			notes = append(notes, "STT: Microsoft Foundry registered (deployment="+model+")")
+		} else {
+			notes = append(notes, "STT: Microsoft Foundry skipped (project endpoint missing)")
+		}
 	}
 	for _, p := range enabled.Extra {
 		if p == nil {

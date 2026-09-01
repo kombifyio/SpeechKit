@@ -171,6 +171,31 @@ func registerOpenRouterModels(g *genkit.Genkit, apiKey string) {
 	}
 }
 
+// registerFoundryModels registers Microsoft Foundry deployments as custom
+// Genkit models. Foundry's v1 surface is OpenAI-compatible and accepts Bearer
+// auth; baseURL is the inference base derived from the project endpoint
+// (https://<host>/openai/v1) and each model name is a deployment name.
+func registerFoundryModels(g *genkit.Genkit, apiKey, baseURL string, deployments []string) {
+	if strings.TrimSpace(apiKey) == "" || strings.TrimSpace(baseURL) == "" {
+		return
+	}
+	client := newAIClient(&AICallValidation)
+	names := []string{
+		"gpt-5.1",
+		"gpt-5-mini",
+	}
+	names = append(names, deployments...)
+	seen := map[string]bool{}
+	for _, raw := range names {
+		name := strings.TrimSpace(raw)
+		if name == "" || seen[name] {
+			continue
+		}
+		seen[name] = true
+		registerOpenAICompatibleModel(g, "foundry", name, baseURL, apiKey, client, true)
+	}
+}
+
 // registerLocalLLMModels registers SpeechKit-managed local LLM models.
 // The runtime speaks the OpenAI-compatible chat completions API on loopback.
 func registerLocalLLMModels(g *genkit.Genkit, baseURL string, modelNames []string) {

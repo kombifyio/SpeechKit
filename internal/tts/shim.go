@@ -32,6 +32,8 @@ type (
 	DeepgramOpts    = pkgtts.DeepgramOpts
 	HuggingFace     = pkgtts.HuggingFace
 	HuggingFaceOpts = pkgtts.HuggingFaceOpts
+	Foundry         = pkgtts.Foundry
+	FoundryOpts     = pkgtts.FoundryOpts
 	Piper           = pkgtts.Piper
 	PiperOpts       = pkgtts.PiperOpts
 	PiperVoiceInfo  = pkgtts.PiperVoiceInfo
@@ -65,6 +67,7 @@ var (
 	NewGoogle                     = pkgtts.NewGoogle
 	NewDeepgram                   = pkgtts.NewDeepgram
 	NewHuggingFace                = pkgtts.NewHuggingFace
+	NewFoundry                    = pkgtts.NewFoundry
 	NewPiper                      = pkgtts.NewPiper
 	ListPiperVoices               = pkgtts.ListPiperVoices
 )

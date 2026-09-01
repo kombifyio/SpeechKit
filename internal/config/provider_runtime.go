@@ -13,6 +13,9 @@ const (
 	OpenAIAPIKeyEnv     = "OPENAI_API_KEY"
 	GroqAPIKeyEnv       = "GROQ_API_KEY"
 	OpenRouterAPIKeyEnv = "OPENROUTER_API_KEY"
+	// AzureAIAPIKeyEnv is the default env var for the Microsoft Foundry
+	// (Azure AI) API key.
+	AzureAIAPIKeyEnv = "AZURE_AI_API_KEY"
 
 	ProviderIntegrationCloudGateway = "cloud_gateway"
 	ProviderIntegrationDirectAPI    = "direct_api"
@@ -107,7 +110,7 @@ func NormalizeProviderCredentialTarget(target string) string {
 	}
 	provider := framework.NormalizeProviderID(target)
 	switch provider {
-	case "openai", "groq", "google", "deepgram", "assemblyai", "huggingface", "openrouter", "cloudflare":
+	case "openai", "groq", "google", "deepgram", "assemblyai", "huggingface", "openrouter", "cloudflare", "foundry":
 		return provider
 	default:
 		return provider
@@ -134,6 +137,7 @@ func ProviderCredentialTargets() []string {
 		"huggingface",
 		"openrouter",
 		"cloudflare",
+		"foundry",
 	}
 }
 
@@ -178,6 +182,11 @@ func ProviderCredentialEnvName(cfg *Config, target string) string {
 			return strings.TrimSpace(cfg.Providers.Cloudflare.APITokenEnv)
 		}
 		return CloudflareAIGatewayAuthTokenEnv
+	case "foundry":
+		if cfg != nil && strings.TrimSpace(cfg.Providers.Foundry.APIKeyEnv) != "" {
+			return strings.TrimSpace(cfg.Providers.Foundry.APIKeyEnv)
+		}
+		return AzureAIAPIKeyEnv
 	default:
 		return ""
 	}
@@ -207,6 +216,8 @@ func SetProviderCredentialEnvName(cfg *Config, target, envName string) error {
 		cfg.Providers.OpenRouter.APIKeyEnv = envName
 	case "cloudflare":
 		cfg.Providers.Cloudflare.APITokenEnv = envName
+	case "foundry":
+		cfg.Providers.Foundry.APIKeyEnv = envName
 	default:
 		return fmt.Errorf("%w %q", ErrUnsupportedProvider, target)
 	}
@@ -369,6 +380,8 @@ func ProviderEnabled(cfg *Config, provider string, mode framework.Mode) bool {
 		return cfg.Providers.Cloudflare.Enabled
 	case "openrouter":
 		return cfg.Providers.OpenRouter.Enabled
+	case "foundry":
+		return cfg.Providers.Foundry.Enabled
 	case "openedai", "selfhosted":
 		return true
 	default:
@@ -415,6 +428,11 @@ func SetProviderEnabled(cfg *Config, provider string, enabled bool) error {
 		}
 	case "cloudflare":
 		cfg.Providers.Cloudflare.Enabled = enabled
+		if enabled {
+			EnableAlwaysOnLLM(cfg)
+		}
+	case "foundry":
+		cfg.Providers.Foundry.Enabled = enabled
 		if enabled {
 			EnableAlwaysOnLLM(cfg)
 		}
@@ -533,6 +551,17 @@ var providerRuntimeRegistry = []ProviderRuntime{
 		CredentialRequired: true,
 		SetupURL:           "https://developers.cloudflare.com/ai-gateway/get-started/",
 		SupportedModes:     []framework.Mode{framework.ModeAssist, framework.ModeVoiceAgent},
+		UserConfigurable:   true,
+	},
+	{
+		Provider:           "foundry",
+		DisplayName:        "Microsoft Foundry",
+		ProviderKind:       framework.ProviderKindDirectProvider,
+		IntegrationKind:    ProviderIntegrationDirectAPI,
+		CredentialTarget:   "foundry",
+		CredentialRequired: true,
+		SetupURL:           "https://ai.azure.com",
+		SupportedModes:     []framework.Mode{framework.ModeDictation, framework.ModeAssist, framework.ModeVoiceAgent, framework.ModeTTS},
 		UserConfigurable:   true,
 	},
 	{

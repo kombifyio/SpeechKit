@@ -36,6 +36,7 @@ type (
 	AssemblyAIOpts   = allproviders.AssemblyAIOpts
 	OpenRouterOpts   = allproviders.OpenRouterOpts
 	OllamaOpts       = allproviders.OllamaOpts
+	FoundryOpts      = allproviders.FoundryOpts
 )
 
 // BuildRouter forwards to the public router assembly SSOT.

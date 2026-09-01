@@ -43,6 +43,7 @@ const (
 	ExecutionModeAssemblyAI     = speechkit.ExecutionModeAssemblyAI
 	ExecutionModeOllama         = speechkit.ExecutionModeOllama
 	ExecutionModeOpenRouter     = speechkit.ExecutionModeOpenRouter
+	ExecutionModeFoundry        = speechkit.ExecutionModeFoundry
 )
 
 const (
@@ -197,6 +198,20 @@ func supportProfiles() []Profile {
 			Source:         "OpenRouter",
 			Description:    "Gateway-routed utility model for summaries, routing, and short follow-ups.",
 			License:        "llama",
+			Capabilities:   []Capability{CapabilityLLM, CapabilityToolCalling, CapabilitySessionSummary},
+			AdapterKind:    "genkit_llm",
+			AllowInference: true,
+		},
+		{
+			ID:             "utility.foundry.gpt-5-mini",
+			Name:           "GPT-5 mini (Microsoft Foundry)",
+			Modality:       ModalityUtility,
+			ProviderKind:   ProviderKindDirectProvider,
+			ExecutionMode:  ExecutionModeFoundry,
+			ModelID:        "gpt-5-mini",
+			Source:         "Microsoft Foundry",
+			Description:    "Fast Azure-hosted utility model over the Foundry OpenAI-compatible surface. Model id doubles as the default deployment name.",
+			License:        "proprietary",
 			Capabilities:   []Capability{CapabilityLLM, CapabilityToolCalling, CapabilitySessionSummary},
 			AdapterKind:    "genkit_llm",
 			AllowInference: true,

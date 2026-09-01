@@ -337,6 +337,16 @@ func defaults() *Config {
 				AssistModel:  "google/gemini-2.5-flash",
 				AgentModel:   "google/gemini-2.5-flash",
 			},
+			Foundry: FoundryProviderConfig{
+				APIKeyEnv:          AzureAIAPIKeyEnv, //nolint:gosec // not a credential, field name triggers false positive
+				STTDeployment:      DefaultFoundrySTTDeployment,
+				UtilityDeployment:  DefaultFoundryUtilityDeployment,
+				AssistDeployment:   DefaultFoundryAssistDeployment,
+				AgentDeployment:    DefaultFoundryAgentDeployment,
+				RealtimeDeployment: DefaultFoundryRealtimeDeployment,
+				TTSDeployment:      DefaultFoundryTTSDeployment,
+				TTSVoice:           DefaultFoundryTTSVoice,
+			},
 		},
 		HandsFree: HandsFreeConfig{
 			Enabled:                 false,

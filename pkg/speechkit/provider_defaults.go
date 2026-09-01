@@ -127,6 +127,10 @@ func NormalizeProviderID(provider string) string {
 		return "assemblyai"
 	case strings.HasPrefix(value, "stt.groq."), strings.HasPrefix(value, "assist.groq."):
 		return "groq"
+	case strings.HasPrefix(value, "stt.foundry."), strings.HasPrefix(value, "assist.foundry."),
+		strings.HasPrefix(value, "utility.foundry."), strings.HasPrefix(value, "realtime.foundry."),
+		strings.HasPrefix(value, "tts.foundry."):
+		return "foundry"
 	case strings.HasPrefix(value, "tts.openedai."):
 		return "openedai"
 	default:
@@ -166,6 +170,8 @@ func ProviderIDForExecutionMode(mode ExecutionMode) string {
 		return "ollama"
 	case ExecutionModeOpenRouter:
 		return "openrouter"
+	case ExecutionModeFoundry:
+		return "foundry"
 	default:
 		return ""
 	}
@@ -219,7 +225,7 @@ func DefaultProviderAuthRequirement(profile ProviderProfile) string {
 	case ExecutionModeHFRouted:
 		return ProviderAuthToken
 	case ExecutionModeOpenAI, ExecutionModeGroq, ExecutionModeGoogle, ExecutionModeDeepgram,
-		ExecutionModeAssemblyAI, ExecutionModeOpenRouter:
+		ExecutionModeAssemblyAI, ExecutionModeOpenRouter, ExecutionModeFoundry:
 		return ProviderAuthAPIKey
 	default:
 		return ""
@@ -247,7 +253,7 @@ func DefaultProviderTransport(profile ProviderProfile) string {
 	case ExecutionModeOllama, ExecutionModeSelfHostedHTTP:
 		return ProviderTransportHTTP
 	case ExecutionModeHFRouted, ExecutionModeOpenAI, ExecutionModeGroq, ExecutionModeGoogle,
-		ExecutionModeDeepgram, ExecutionModeAssemblyAI, ExecutionModeOpenRouter:
+		ExecutionModeDeepgram, ExecutionModeAssemblyAI, ExecutionModeOpenRouter, ExecutionModeFoundry:
 		return ProviderTransportHTTPS
 	default:
 		return ""

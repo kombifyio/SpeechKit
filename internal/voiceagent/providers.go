@@ -9,6 +9,7 @@ package voiceagent
 import (
 	liveassemblyai "github.com/kombifyio/SpeechKit/pkg/speechkit/voiceagent/live/assemblyai"
 	livedeepgram "github.com/kombifyio/SpeechKit/pkg/speechkit/voiceagent/live/deepgram"
+	livefoundry "github.com/kombifyio/SpeechKit/pkg/speechkit/voiceagent/live/foundry"
 	livegemini "github.com/kombifyio/SpeechKit/pkg/speechkit/voiceagent/live/gemini"
 	liveopenai "github.com/kombifyio/SpeechKit/pkg/speechkit/voiceagent/live/openai"
 )
@@ -17,6 +18,7 @@ import (
 type (
 	GeminiLive     = livegemini.Provider
 	OpenAILive     = liveopenai.Provider
+	FoundryLive    = livefoundry.Provider
 	DeepgramLive   = livedeepgram.Provider
 	AssemblyAILive = liveassemblyai.Provider
 
@@ -28,12 +30,17 @@ type (
 // Voice Agent sessions.
 const DefaultOpenAIRealtimeModel = liveopenai.DefaultRealtimeModel
 
+// DefaultFoundryRealtimeModel is the public runtime default deployment name
+// for Microsoft Foundry-backed Voice Agent sessions.
+const DefaultFoundryRealtimeModel = livefoundry.DefaultRealtimeModel
+
 // Provider constructors are exposed as function values so this bridge stays
 // signature-agnostic: changing a constructor's parameters in the live package
 // does not require editing this file.
 var (
 	NewGeminiLive     = livegemini.New
 	NewOpenAILive     = liveopenai.New
+	NewFoundryLive    = livefoundry.New
 	NewDeepgramLive   = livedeepgram.New
 	NewAssemblyAILive = liveassemblyai.New
 )

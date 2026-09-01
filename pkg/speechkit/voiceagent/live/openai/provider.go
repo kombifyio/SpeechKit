@@ -82,15 +82,16 @@ func (p *Provider) Connect(ctx context.Context, cfg live.LiveConfig) error {
 	}
 	model := resolveOpenAIRealtimeModel(cfg.Model)
 	header := openAIRealtimeHeaders(cfg.APIKey)
+	baseURL := realtimeBaseURL(cfg)
 
-	dialURL := fmt.Sprintf("%s?model=%s", openaiRealtimeBaseURL, model)
+	dialURL := fmt.Sprintf("%s?model=%s", baseURL, model)
 	conn, dialResp, err := websocket.Dial(ctx, dialURL, &websocket.DialOptions{
 		HTTPHeader: header,
 	})
 	if err != nil {
 		// Same-provider fallback: retry with FallbackModel when distinct.
 		if fallback := strings.TrimSpace(cfg.FallbackModel); live.ShouldTryFallback(model, fallback) {
-			fallbackURL := fmt.Sprintf("%s?model=%s", openaiRealtimeBaseURL, fallback)
+			fallbackURL := fmt.Sprintf("%s?model=%s", baseURL, fallback)
 			conn, dialResp, err = websocket.Dial(ctx, fallbackURL, &websocket.DialOptions{
 				HTTPHeader: header,
 			})
@@ -134,6 +135,16 @@ func resolveOpenAIRealtimeModel(model string) string {
 		return trimmed
 	}
 	return defaultOpenAIRealtimeModel
+}
+
+// realtimeBaseURL honours the LiveConfig.Endpoint override so OpenAI-protocol
+// hosts (e.g. Microsoft Foundry's wss://<host>/openai/v1/realtime) can reuse
+// this provider unchanged.
+func realtimeBaseURL(cfg live.LiveConfig) string {
+	if endpoint := strings.TrimSpace(cfg.Endpoint); endpoint != "" {
+		return endpoint
+	}
+	return openaiRealtimeBaseURL
 }
 
 func openAIRealtimeHeaders(apiKey string) http.Header {
