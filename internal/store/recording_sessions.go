@@ -351,6 +351,9 @@ func (s *sqlStore) GetRecordingSession(ctx context.Context, id int64) (*Recordin
 	if session.Notes, err = s.GetRecordingSessionNotes(ctx, session.ID); err != nil {
 		return nil, err
 	}
+	if session.Snapshots, err = s.loadRecordingSessionSnapshots(ctx, session.ID); err != nil {
+		return nil, err
+	}
 	return session, nil
 }
 
@@ -359,6 +362,7 @@ func (s *sqlStore) DeleteRecordingSession(ctx context.Context, id int64) error {
 	if err != nil {
 		return err
 	}
+	snapshotFiles := s.snapshotFilesForSessionDelete(ctx, `rs.id = ? AND rs.scope_id = ?`, id, scopeID)
 	result, err := s.db.ExecContext(ctx, s.dialect.rebind(`DELETE FROM recording_sessions WHERE id = ? AND scope_id = ?`), id, scopeID)
 	if err != nil {
 		return fmt.Errorf("delete recording session: %w", err)
@@ -367,6 +371,7 @@ func (s *sqlStore) DeleteRecordingSession(ctx context.Context, id int64) error {
 	if rows == 0 {
 		return sql.ErrNoRows
 	}
+	removeSnapshotFiles(snapshotFiles)
 	return nil
 }
 
@@ -620,12 +625,21 @@ func nullableInt64(value int64) any {
 // not to delete the one meeting someone needed.
 //
 // The children (segments, notes, write-ups) go with the session through the
-// foreign keys, which is why nothing here deletes them one by one.
+// foreign keys, which is why nothing here deletes them one by one. Snapshot
+// image files live outside the database, so their paths are collected before
+// the rows cascade away and the files are removed afterwards.
 func (s *sqlStore) enforceMeetingRetention() {
 	if s.meetingRetentionDays <= 0 {
 		return
 	}
 	cutoff := s.dialect.timeArg(time.Now().Add(-time.Duration(s.meetingRetentionDays) * 24 * time.Hour))
+	snapshotFiles := s.snapshotFilesForSessionDelete(context.Background(), //nolint:contextcheck // background goroutine should not be bound to a request context
+		`rs.kind = ? AND rs.status = ? AND rs.retention_pinned = ? AND rs.ended_at IS NOT NULL AND rs.ended_at < ?`,
+		string(RecordingSessionKindMeeting),
+		string(RecordingSessionStatusFinished),
+		false,
+		cutoff,
+	)
 	result, err := s.db.ExecContext(context.Background(), s.dialect.rebind( //nolint:contextcheck // background goroutine should not be bound to a request context
 		`DELETE FROM recording_sessions
 		 WHERE kind = ? AND status = ? AND retention_pinned = ? AND ended_at IS NOT NULL AND ended_at < ?`),
@@ -639,6 +653,7 @@ func (s *sqlStore) enforceMeetingRetention() {
 		return
 	}
 	if removed, _ := result.RowsAffected(); removed > 0 {
+		removeSnapshotFiles(snapshotFiles)
 		slog.Info("store: meetings discarded by retention", "count", removed, "days", s.meetingRetentionDays)
 	}
 }

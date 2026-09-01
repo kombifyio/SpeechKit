@@ -276,6 +276,28 @@ func (r *Runtime) SnapshotFor(sessionID int64) (Snapshot, bool) {
 	return r.snapshotLocked(), true
 }
 
+// ElapsedMs returns the session being captured and the current offset on its
+// transcript timeline, in milliseconds. The offset is wall-clock time since
+// the capture epoch — the same time base transcript segments are stamped with
+// — so a screen capture taken now lands next to the words spoken now. Pauses
+// do not stop this clock, because they do not stop the segment clock either.
+// ok is false when nothing is being captured.
+func (r *Runtime) ElapsedMs() (sessionID int64, elapsedMs int64, ok bool) {
+	if r == nil {
+		return 0, 0, false
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.active == nil || r.active.state == StateEnded {
+		return 0, 0, false
+	}
+	ms := r.now().Sub(r.active.epoch).Milliseconds()
+	if ms < 0 {
+		ms = 0
+	}
+	return r.active.sessionID, ms, true
+}
+
 // Subscribe returns a channel of snapshots plus a function that unsubscribes.
 // Sends are non-blocking: a subscriber that stops reading misses intermediate
 // states rather than stalling capture.

@@ -1244,6 +1244,160 @@ paths:
           $ref: "#/components/responses/NotFound"
         "501":
           $ref: "#/components/responses/NotImplemented"
+  /api/v1/recording-sessions/{sessionId}/snapshots:
+    parameters:
+      - name: sessionId
+        in: path
+        required: true
+        schema:
+          type: integer
+          format: int64
+          minimum: 1
+    get:
+      tags: [Data]
+      operationId: listRecordingSessionSnapshots
+      summary: List the screen snapshots captured during a meeting, ordered by timeline offset.
+      responses:
+        "200":
+          description: Screen snapshots of this meeting.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/RecordingSessionSnapshot"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "501":
+          $ref: "#/components/responses/NotImplemented"
+    post:
+      tags: [Data]
+      operationId: captureRecordingSessionSnapshot
+      summary: Capture the monitor under the foreground window right now and stamp it with the live meeting's transcript-timeline offset.
+      security:
+        - ControlPlaneHeader: []
+        - ControlPlaneCookie: []
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RecordingSessionSnapshotRequest"
+      responses:
+        "200":
+          description: Stored screen snapshot.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RecordingSessionSnapshot"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "501":
+          $ref: "#/components/responses/NotImplemented"
+  /api/v1/recording-sessions/{sessionId}/snapshots/{snapshotId}:
+    parameters:
+      - name: sessionId
+        in: path
+        required: true
+        schema:
+          type: integer
+          format: int64
+          minimum: 1
+      - name: snapshotId
+        in: path
+        required: true
+        schema:
+          type: integer
+          format: int64
+          minimum: 1
+    get:
+      tags: [Data]
+      operationId: getRecordingSessionSnapshot
+      summary: Read one screen snapshot's metadata.
+      responses:
+        "200":
+          description: Screen snapshot metadata.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RecordingSessionSnapshot"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "501":
+          $ref: "#/components/responses/NotImplemented"
+    delete:
+      tags: [Data]
+      operationId: deleteRecordingSessionSnapshot
+      summary: Delete one screen snapshot, including its image file.
+      security:
+        - ControlPlaneHeader: []
+        - ControlPlaneCookie: []
+      responses:
+        "200":
+          description: Snapshot deleted.
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "501":
+          $ref: "#/components/responses/NotImplemented"
+  /api/v1/recording-sessions/{sessionId}/snapshots/{snapshotId}/image:
+    parameters:
+      - name: sessionId
+        in: path
+        required: true
+        schema:
+          type: integer
+          format: int64
+          minimum: 1
+      - name: snapshotId
+        in: path
+        required: true
+        schema:
+          type: integer
+          format: int64
+          minimum: 1
+    get:
+      tags: [Data]
+      operationId: getRecordingSessionSnapshotImage
+      summary: Stream the snapshot's image bytes.
+      responses:
+        "200":
+          description: Snapshot image.
+          content:
+            image/png:
+              schema:
+                type: string
+                format: binary
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "501":
+          $ref: "#/components/responses/NotImplemented"
+  /api/v1/meeting/snapshot:
+    post:
+      tags: [Data]
+      operationId: captureLiveMeetingSnapshot
+      summary: Overlay shortcut — capture a screen snapshot into whichever meeting is live right now.
+      security:
+        - ControlPlaneHeader: []
+        - ControlPlaneCookie: []
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RecordingSessionSnapshotRequest"
+      responses:
+        "200":
+          description: Stored screen snapshot.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RecordingSessionSnapshot"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "501":
+          $ref: "#/components/responses/NotImplemented"
   /api/v1/providers/artifacts:
     get:
       tags: [Providers]
@@ -2431,6 +2585,10 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/RecordingSessionSegment"
+        snapshots:
+          type: array
+          items:
+            $ref: "#/components/schemas/RecordingSessionSnapshot"
     RecordingSessionSegment:
       type: object
       required: [id, sessionId, segmentIndex, text, isFinal, startedMs, endedMs, createdAt]
@@ -2461,6 +2619,45 @@ components:
         createdAt:
           type: string
           format: date-time
+    RecordingSessionSnapshot:
+      type: object
+      required: [id, sessionId, capturedMs, mimeType, sizeBytes, width, height, createdAt]
+      properties:
+        id:
+          type: integer
+          format: int64
+        sessionId:
+          type: integer
+          format: int64
+        capturedMs:
+          type: integer
+          format: int64
+          description: Offset on the meeting's transcript timeline (same time base as segment startedMs/endedMs).
+        mimeType:
+          type: string
+        sizeBytes:
+          type: integer
+          format: int64
+        width:
+          type: integer
+        height:
+          type: integer
+        monitor:
+          type: string
+        note:
+          type: string
+        description:
+          type: string
+          description: Optional vision-model description (filled by later enrichment).
+        createdAt:
+          type: string
+          format: date-time
+    RecordingSessionSnapshotRequest:
+      type: object
+      properties:
+        note:
+          type: string
+          description: Optional annotation stored with the snapshot.
     RecordingSessionCreateRequest:
       type: object
       properties:

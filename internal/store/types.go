@@ -158,6 +158,52 @@ type RecordingSessionNoteBlock struct {
 	TsMs int64 `json:"tsMs"`
 }
 
+// RecordingSessionSnapshotStore is an optional extension for backends that
+// persist ad-hoc screen captures taken during a meeting. The store owns the
+// image files: saving writes the bytes under its snapshot directory, deleting
+// a snapshot or its session removes them again.
+type RecordingSessionSnapshotStore interface {
+	SaveRecordingSessionSnapshot(ctx context.Context, sessionID int64, input RecordingSessionSnapshotInput) (*RecordingSessionSnapshot, error)
+	GetRecordingSessionSnapshot(ctx context.Context, id int64) (*RecordingSessionSnapshot, error)
+	ListRecordingSessionSnapshots(ctx context.Context, sessionID int64) ([]RecordingSessionSnapshot, error)
+	DeleteRecordingSessionSnapshot(ctx context.Context, id int64) error
+}
+
+// RecordingSessionSnapshotInput carries a freshly captured screenshot into the
+// store.
+type RecordingSessionSnapshotInput struct {
+	// CapturedMs is the offset on the meeting's transcript timeline:
+	// wall-clock milliseconds since the capture epoch, the same time base
+	// segment StartedMs/EndedMs are stamped with (see Runtime.ElapsedMs).
+	CapturedMs int64
+	// Data is the encoded image; MimeType defaults to image/png.
+	Data     []byte
+	MimeType string
+	Width    int
+	Height   int
+	Monitor  string
+	Note     string
+}
+
+// RecordingSessionSnapshot is one stored screen capture of a meeting.
+type RecordingSessionSnapshot struct {
+	ID         int64 `json:"id"`
+	SessionID  int64 `json:"sessionId"`
+	CapturedMs int64 `json:"capturedMs"`
+	// Path is the absolute local file path; images are served by ID, so the
+	// path stays out of API payloads.
+	Path      string `json:"-"`
+	MimeType  string `json:"mimeType"`
+	SizeBytes int64  `json:"sizeBytes"`
+	Width     int    `json:"width"`
+	Height    int    `json:"height"`
+	Monitor   string `json:"monitor,omitempty"`
+	Note      string `json:"note,omitempty"`
+	// Description is filled by the optional vision enrichment (V2).
+	Description string    `json:"description,omitempty"`
+	CreatedAt   time.Time `json:"createdAt"`
+}
+
 // RecordingSessionEnhancementStore is an optional extension for backends that
 // persist written-up meeting notes. A meeting can have several: writing it up
 // again with a different template produces a new one rather than replacing the
@@ -582,6 +628,9 @@ type RecordingSession struct {
 	// Notes are the user's own notes for this meeting. Only loaded where they
 	// matter — the session detail and subject exports — not in list responses.
 	Notes *RecordingSessionNotes `json:"notes,omitempty"`
+	// Snapshots are the screen captures taken during this meeting. Loaded like
+	// Notes only on the session detail, not in list responses.
+	Snapshots []RecordingSessionSnapshot `json:"snapshots,omitempty"`
 	// RetentionPinned keeps this meeting even once it is past the retention
 	// window.
 	RetentionPinned bool `json:"retentionPinned,omitempty"`

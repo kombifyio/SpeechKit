@@ -61,6 +61,9 @@ var sqliteMigration024 string
 //go:embed migrations/sqlite/026_meeting_summary_batches.sql
 var sqliteMigration026 string
 
+//go:embed migrations/sqlite/027_recording_session_snapshots.sql
+var sqliteMigration027 string
+
 // SQLiteStore implements Store using a local SQLite database via
 // modernc.org/sqlite (pure Go, no CGo required). All query logic lives in the
 // embedded *sqlStore; this type only owns connection setup and migrations.
@@ -91,6 +94,7 @@ func NewSQLiteStore(cfg StoreConfig) (*SQLiteStore, error) {
 		db:                      db,
 		dialect:                 dialectSQLite,
 		audioDir:                filepath.Join(filepath.Dir(dbPath), "audio"),
+		snapshotDir:             filepath.Join(filepath.Dir(dbPath), "snapshots"),
 		maxStorageMB:            cfg.MaxAudioStorageMB,
 		saveAudio:               cfg.SaveAudio,
 		audioRetentionDays:      cfg.AudioRetentionDays,

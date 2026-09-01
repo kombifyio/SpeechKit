@@ -79,6 +79,9 @@ var postgresMigration021 string
 //go:embed migrations/postgres/022_meeting_summary_batches.sql
 var postgresMigration022 string
 
+//go:embed migrations/postgres/023_recording_session_snapshots.sql
+var postgresMigration023 string
+
 // PostgresStore implements Store using PostgreSQL for metadata and the local
 // filesystem for optional raw WAV persistence. All query logic lives in the
 // embedded *sqlStore; this type only owns connection setup and migrations.
@@ -111,6 +114,7 @@ func NewPostgresStore(cfg StoreConfig) (*PostgresStore, error) {
 		db:                      db,
 		dialect:                 dialectPostgres,
 		audioDir:                defaultAudioDir(),
+		snapshotDir:             defaultSnapshotDir(),
 		maxStorageMB:            cfg.MaxAudioStorageMB,
 		saveAudio:               cfg.SaveAudio,
 		audioRetentionDays:      cfg.AudioRetentionDays,
@@ -130,4 +134,8 @@ func NewPostgresStore(cfg StoreConfig) (*PostgresStore, error) {
 
 func defaultAudioDir() string {
 	return filepath.Join(runtimepath.DataDir(), "audio")
+}
+
+func defaultSnapshotDir() string {
+	return filepath.Join(runtimepath.DataDir(), "snapshots")
 }

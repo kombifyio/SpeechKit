@@ -75,6 +75,7 @@ func runSQLiteMigrations(ctx context.Context, db *sql.DB) error {
 		sqliteSQLMigration("sqlite:024_customization_word_identity", sqliteMigration024),
 		{version: "sqlite:025_meeting_enhancement_jobs", run: runSQLiteMeetingEnhancementJobsMigration},
 		sqliteSQLMigration("sqlite:026_meeting_summary_batches", sqliteMigration026),
+		sqliteSQLMigration("sqlite:027_recording_session_snapshots", sqliteMigration027),
 	}
 	for _, migration := range migrations {
 		if err := applyMigration(ctx, db, "sqlite", migration); err != nil {
@@ -121,6 +122,7 @@ func runPostgresMigrations(ctx context.Context, db *sql.DB) error {
 		postgresSQLMigration("postgres:020_customization_word_identity", postgresMigration020),
 		postgresSQLMigration("postgres:021_meeting_enhancement_jobs", postgresMigration021),
 		postgresSQLMigration("postgres:022_meeting_summary_batches", postgresMigration022),
+		postgresSQLMigration("postgres:023_recording_session_snapshots", postgresMigration023),
 	}
 	for _, migration := range migrations {
 		if err := applyMigration(ctx, db, "postgres", migration); err != nil {

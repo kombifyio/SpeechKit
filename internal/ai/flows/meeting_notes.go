@@ -78,7 +78,7 @@ func DefineMeetingNotesFlowWithGenerator(g *genkit.Genkit, generator generation.
 
 		output, err := generateMeetingNotes(ctx, generator, input)
 		if err != nil {
-			slog.Warn("meeting notes: generation failed", "kind", generation.Kind(err))
+			slog.Warn("meeting notes: generation failed", "kind", generation.Kind(err), "err", err)
 			return MeetingNotesOutput{}, fmt.Errorf("meeting notes: generation failed: %w", err)
 		}
 		output.Document.TemplateSlug = input.Template.Slug

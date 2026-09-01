@@ -11,6 +11,38 @@ IDs, source paths, and other maintainer-only vocabulary.
 
 ## [Unreleased]
 
+### Added
+
+* **meetings:** capture ad-hoc screen snapshots during a live meeting with a
+  camera button in the compact overlay and the meeting notepad. Snapshots are
+  stored locally with a meeting-timeline timestamp, appear as markers in the
+  transcript timeline and the meeting detail gallery, and are referenced with
+  their timestamps in generated Meeting Reviews. Everything stays on this
+  device — no image ever leaves the machine.
+* **meetings:** recordings now finish on their own when the call ends. The same
+  microphone signal that detects a starting call notices when the calling
+  application has left the microphone, and stops the recording after a short
+  grace period. Hand-started recordings without a call are never auto-stopped.
+* **meetings:** a notification appears when the Meeting Review is ready — or
+  when it failed — so the result no longer sits unnoticed until the meeting
+  library is opened by chance.
+
+### Changed
+
+* **meetings:** the compact meeting overlay now has an always-visible expand
+  button next to its controls, so switching to the full notes window no longer
+  depends on discovering the hover-revealed window chrome.
+* **meetings:** the meeting note window closes when the meeting finishes,
+  instead of staying open and looking like the recording is still running.
+
+### Fixed
+
+* **meetings:** Meeting Reviews in several languages are now written one after
+  another instead of in parallel. Parallel runs against the bundled local model
+  each ran at half speed and could all miss their deadline together, which made
+  the automatic Meeting Review fail after longer meetings.
+
+
 ## [0.67.0](https://github.com/kombifyio/SpeechKit/compare/v0.66.0...v0.67.0) (2026-09-01)
 
 ### Highlights

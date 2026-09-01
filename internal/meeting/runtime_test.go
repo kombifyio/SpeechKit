@@ -360,3 +360,53 @@ func TestRuntimeConcurrentStopsFinalizeExactlyOnce(t *testing.T) {
 		t.Fatalf("ended hook fired %v, want exactly session 42 once", ended)
 	}
 }
+
+// ElapsedMs is the clock a screen capture is stamped with. It must run on the
+// same time base as transcript segments — wall clock since the capture epoch —
+// and it must keep running through a pause, because the segment clock does too.
+func TestRuntimeElapsedMsMatchesTheTranscriptTimeline(t *testing.T) {
+	pipeline := newFakePipeline(ChannelMicrophone)
+	clock := time.Date(2026, 1, 15, 10, 0, 0, 0, time.UTC)
+	runtime := New(Options{
+		NewPipeline: func(channel string) (Pipeline, error) {
+			if channel != ChannelMicrophone {
+				return nil, errors.New("channel not available on this device")
+			}
+			return pipeline, nil
+		},
+		Now:          func() time.Time { return clock },
+		DrainTimeout: 500 * time.Millisecond,
+		DrainPoll:    5 * time.Millisecond,
+	})
+
+	if _, _, ok := runtime.ElapsedMs(); ok {
+		t.Fatal("ElapsedMs reported a timeline before any meeting started")
+	}
+
+	startTestMeeting(t, runtime)
+	clock = clock.Add(90 * time.Second)
+	sessionID, elapsed, ok := runtime.ElapsedMs()
+	if !ok || sessionID != 42 {
+		t.Fatalf("ElapsedMs() = (%d, %d, %v), want session 42", sessionID, elapsed, ok)
+	}
+	if elapsed != 90_000 {
+		t.Fatalf("elapsed = %d, want 90000", elapsed)
+	}
+
+	// A pause must not stop this clock: segments after resume are stamped with
+	// wall-clock offsets from the original epoch.
+	if _, err := runtime.Pause(); err != nil {
+		t.Fatalf("Pause() error = %v", err)
+	}
+	clock = clock.Add(30 * time.Second)
+	if _, elapsed, _ = runtime.ElapsedMs(); elapsed != 120_000 {
+		t.Fatalf("elapsed during pause = %d, want 120000", elapsed)
+	}
+
+	if _, err := runtime.Stop(context.Background()); err != nil {
+		t.Fatalf("Stop() error = %v", err)
+	}
+	if _, _, ok := runtime.ElapsedMs(); ok {
+		t.Fatal("ElapsedMs reported a timeline after the meeting ended")
+	}
+}

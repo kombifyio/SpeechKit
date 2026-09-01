@@ -26,6 +26,7 @@ type sqlStore struct {
 	db                      *sql.DB
 	dialect                 sqlDialect
 	audioDir                string
+	snapshotDir             string
 	maxStorageMB            int
 	saveAudio               bool
 	audioRetentionDays      int
