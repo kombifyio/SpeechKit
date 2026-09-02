@@ -38,6 +38,15 @@ IDs, source paths, and other maintainer-only vocabulary.
 
 ### Fixed
 
+* **meetings:** meeting transcription now runs on its own pipeline, fully
+  separated from dictation. What is said in a call no longer flashes the
+  dictation overlay, no longer fills the dictation transcript panel or history,
+  and can no longer become the "last transcription" that the copy/insert voice
+  shortcuts reuse. Meeting text lands only in the meeting record.
+* **meetings:** multi-language write-up progress now follows the language that
+  is actually running instead of a later queued job stuck at 0%. The dashboard
+  shows the real preparation, generation and persistence phases rather than a
+  misleading percentage.
 * **meetings:** Meeting Reviews in several languages are now written one after
   another instead of in parallel. Parallel runs against the bundled local model
   each ran at half speed and could all miss their deadline together, which made
