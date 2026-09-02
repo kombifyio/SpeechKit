@@ -17,5 +17,11 @@
   "sk.privacy.disabled.setup_traffic": "Downloads and updates are paused by the current privacy scope.",
   "sk.privacy.disabled.telemetry": "Telemetry export is disabled by the current privacy scope.",
   "sk.privacy.disabled.cloud_account": "Cloud sign-in is blocked by the current privacy scope.",
-  "sk.privacy.disabled.voice_agent_cloud": "Cloud voice agents are blocked by the current privacy scope."
+  "sk.privacy.disabled.voice_agent_cloud": "Cloud voice agents are blocked by the current privacy scope.",
+  "meeting.snapshot.selecting": "Pick a window to capture.",
+  "meeting.snapshot.capturing": "Capturing the window…",
+  "meeting.snapshot.saving": "Saving the screenshot…",
+  "meeting.snapshot.saved": "Screenshot saved to the meeting.",
+  "meeting.snapshot.cancelled": "Screenshot cancelled.",
+  "meeting.snapshot.error": "The screenshot could not be captured."
 }

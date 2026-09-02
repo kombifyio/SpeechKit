@@ -180,6 +180,19 @@ type MeetingConfig struct {
 	BatchMinutes               int      `toml:"batch_minutes"`
 	SummaryLanguage            string   `toml:"summary_language"`
 	AdditionalSummaryLanguages []string `toml:"additional_summary_languages"`
+
+	// Screenshot configures the Meeting Mode screenshot quick action and its
+	// optional global keyboard shortcut. Captures are taken locally and stay
+	// local (recording-session snapshot store): they never enter model prompts
+	// and never leave the machine.
+	//
+	// ScreenshotEnabled toggles the quick action in the meeting UI.
+	// ScreenshotHotkey is a combo string (e.g. "ctrl+alt+s"); empty falls back
+	// to the default and "none" disables the shortcut.
+	// ScreenshotHotkeyEnabled arms the global shortcut while a meeting is live.
+	ScreenshotEnabled       bool   `toml:"screenshot_enabled"`
+	ScreenshotHotkey        string `toml:"screenshot_hotkey"`
+	ScreenshotHotkeyEnabled bool   `toml:"screenshot_hotkey_enabled"`
 }
 
 const CopilotTranscriptGrantVersion = 1

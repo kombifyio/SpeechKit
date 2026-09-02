@@ -41,6 +41,17 @@ const (
 	PrivacyDisabledTelemetry       MessageID = "sk.privacy.disabled.telemetry"
 	PrivacyDisabledCloudAccount    MessageID = "sk.privacy.disabled.cloud_account"
 	PrivacyDisabledVoiceAgentCloud MessageID = "sk.privacy.disabled.voice_agent_cloud"
+
+	// Meeting Mode screenshot status prose. These mirror the stable status
+	// codes emitted by internal/meetingsnapshot so the device UI can surface
+	// selecting/capturing/saving/saved/cancelled/error accessibly and
+	// translated. Captures stay local; none of these strings name a window.
+	MeetingSnapshotSelecting MessageID = "meeting.snapshot.selecting"
+	MeetingSnapshotCapturing MessageID = "meeting.snapshot.capturing"
+	MeetingSnapshotSaving    MessageID = "meeting.snapshot.saving"
+	MeetingSnapshotSaved     MessageID = "meeting.snapshot.saved"
+	MeetingSnapshotCancelled MessageID = "meeting.snapshot.cancelled"
+	MeetingSnapshotError     MessageID = "meeting.snapshot.error"
 )
 
 var messageIDs = []MessageID{
@@ -63,6 +74,12 @@ var messageIDs = []MessageID{
 	PrivacyDisabledTelemetry,
 	PrivacyDisabledCloudAccount,
 	PrivacyDisabledVoiceAgentCloud,
+	MeetingSnapshotSelecting,
+	MeetingSnapshotCapturing,
+	MeetingSnapshotSaving,
+	MeetingSnapshotSaved,
+	MeetingSnapshotCancelled,
+	MeetingSnapshotError,
 }
 
 var supportedLocales = []string{"en", "de", "es", "zh-Hans", "hi", "ar"}

@@ -17,5 +17,11 @@
   "sk.privacy.disabled.setup_traffic": "Downloads und Updates sind durch den aktuellen Privatsphäre-Modus pausiert.",
   "sk.privacy.disabled.telemetry": "Der Telemetrie-Export ist durch den aktuellen Privatsphäre-Modus deaktiviert.",
   "sk.privacy.disabled.cloud_account": "Die Cloud-Anmeldung ist durch den aktuellen Privatsphäre-Modus blockiert.",
-  "sk.privacy.disabled.voice_agent_cloud": "Cloud-Voice-Agents sind durch den aktuellen Privatsphäre-Modus blockiert."
+  "sk.privacy.disabled.voice_agent_cloud": "Cloud-Voice-Agents sind durch den aktuellen Privatsphäre-Modus blockiert.",
+  "meeting.snapshot.selecting": "Fenster zum Erfassen auswählen.",
+  "meeting.snapshot.capturing": "Fenster wird erfasst …",
+  "meeting.snapshot.saving": "Screenshot wird gespeichert …",
+  "meeting.snapshot.saved": "Screenshot im Meeting gespeichert.",
+  "meeting.snapshot.cancelled": "Screenshot abgebrochen.",
+  "meeting.snapshot.error": "Der Screenshot konnte nicht erfasst werden."
 }

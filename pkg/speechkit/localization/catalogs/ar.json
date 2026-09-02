@@ -17,5 +17,11 @@
   "sk.privacy.disabled.setup_traffic": "نطاق الخصوصية الحالي يوقف التنزيلات والتحديثات مؤقتًا.",
   "sk.privacy.disabled.telemetry": "نطاق الخصوصية الحالي يعطّل تصدير قياس الاستخدام عن بُعد.",
   "sk.privacy.disabled.cloud_account": "نطاق الخصوصية الحالي يحظر تسجيل الدخول السحابي.",
-  "sk.privacy.disabled.voice_agent_cloud": "نطاق الخصوصية الحالي يحظر وكلاء الصوت السحابيين."
+  "sk.privacy.disabled.voice_agent_cloud": "نطاق الخصوصية الحالي يحظر وكلاء الصوت السحابيين.",
+  "meeting.snapshot.selecting": "اختر نافذة لالتقاطها.",
+  "meeting.snapshot.capturing": "جارٍ التقاط النافذة…",
+  "meeting.snapshot.saving": "جارٍ حفظ لقطة الشاشة…",
+  "meeting.snapshot.saved": "تم حفظ لقطة الشاشة في الاجتماع.",
+  "meeting.snapshot.cancelled": "تم إلغاء لقطة الشاشة.",
+  "meeting.snapshot.error": "تعذّر التقاط لقطة الشاشة."
 }

@@ -112,6 +112,18 @@ overlay_free_y = 0        # Center point in screen coordinates when overlay_mova
 visualizer = "pill"       # pill or circle
 design = "default"        # default or kombify
 
+# [meeting] configures Meeting Mode capture and note write-ups. Desktop-only;
+# the Server-Target ignores this block. Screenshots are captured locally and
+# stay local (recording-session snapshot store) — they never enter model
+# prompts and never leave the machine.
+[meeting]
+enabled = true
+auto_detect = true               # Offer to take notes when a call app grabs the mic.
+auto_enhance = true              # Write the meeting up as soon as it ends.
+screenshot_enabled = true        # Show the screenshot quick action in the meeting UI.
+screenshot_hotkey = "ctrl+alt+s" # Global shortcut; captures the monitor under the cursor while a meeting is live. "none" disables it.
+screenshot_hotkey_enabled = true # Arm the global screenshot shortcut during meetings.
+
 [local]
 enabled = true
 model = "ggml-small.bin"

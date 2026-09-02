@@ -13,8 +13,9 @@ IDs, source paths, and other maintainer-only vocabulary.
 
 ### Added
 
-* **meetings:** capture ad-hoc screen snapshots during a live meeting with a
-  camera button in the compact overlay and the meeting notepad. Snapshots are
+* **meetings:** capture ad-hoc screen snapshots during a live meeting by
+  selecting the highlighted window, or press the configurable `Ctrl+Alt+S`
+  shortcut to capture the monitor under the cursor immediately. Snapshots are
   stored locally with a meeting-timeline timestamp, appear as markers in the
   transcript timeline and the meeting detail gallery, and are referenced with
   their timestamps in generated Meeting Reviews. Everything stays on this

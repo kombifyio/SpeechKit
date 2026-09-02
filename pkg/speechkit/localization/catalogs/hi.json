@@ -17,5 +17,11 @@
   "sk.privacy.disabled.setup_traffic": "वर्तमान गोपनीयता दायरे के कारण डाउनलोड और अपडेट रोक दिए गए हैं।",
   "sk.privacy.disabled.telemetry": "वर्तमान गोपनीयता दायरे के कारण टेलीमेट्री निर्यात अक्षम है।",
   "sk.privacy.disabled.cloud_account": "वर्तमान गोपनीयता दायरे के कारण क्लाउड साइन-इन अवरुद्ध है।",
-  "sk.privacy.disabled.voice_agent_cloud": "वर्तमान गोपनीयता दायरे के कारण क्लाउड वॉयस एजेंट अवरुद्ध हैं।"
+  "sk.privacy.disabled.voice_agent_cloud": "वर्तमान गोपनीयता दायरे के कारण क्लाउड वॉयस एजेंट अवरुद्ध हैं।",
+  "meeting.snapshot.selecting": "कैप्चर करने के लिए एक विंडो चुनें।",
+  "meeting.snapshot.capturing": "विंडो कैप्चर की जा रही है…",
+  "meeting.snapshot.saving": "स्क्रीनशॉट सहेजा जा रहा है…",
+  "meeting.snapshot.saved": "स्क्रीनशॉट मीटिंग में सहेजा गया।",
+  "meeting.snapshot.cancelled": "स्क्रीनशॉट रद्द किया गया।",
+  "meeting.snapshot.error": "स्क्रीनशॉट कैप्चर नहीं किया जा सका।"
 }

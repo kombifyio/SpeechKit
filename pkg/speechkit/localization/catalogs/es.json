@@ -17,5 +17,11 @@
   "sk.privacy.disabled.setup_traffic": "Las descargas y actualizaciones están en pausa por el ámbito de privacidad actual.",
   "sk.privacy.disabled.telemetry": "La exportación de telemetría está desactivada por el ámbito de privacidad actual.",
   "sk.privacy.disabled.cloud_account": "El inicio de sesión en la nube está bloqueado por el ámbito de privacidad actual.",
-  "sk.privacy.disabled.voice_agent_cloud": "Los agentes de voz en la nube están bloqueados por el ámbito de privacidad actual."
+  "sk.privacy.disabled.voice_agent_cloud": "Los agentes de voz en la nube están bloqueados por el ámbito de privacidad actual.",
+  "meeting.snapshot.selecting": "Elige una ventana para capturar.",
+  "meeting.snapshot.capturing": "Capturando la ventana…",
+  "meeting.snapshot.saving": "Guardando la captura…",
+  "meeting.snapshot.saved": "Captura guardada en la reunión.",
+  "meeting.snapshot.cancelled": "Captura cancelada.",
+  "meeting.snapshot.error": "No se pudo realizar la captura."
 }

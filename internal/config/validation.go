@@ -1,6 +1,127 @@
 package config
 
-import "strings"
+import (
+	"errors"
+	"strings"
+
+	"github.com/kombifyio/SpeechKit/internal/hotkeycombo"
+)
+
+// DefaultMeetingScreenshotHotkey is the shipped global shortcut for the Meeting
+// Mode screenshot quick action. It fires while a meeting is live to capture the
+// monitor under the cursor immediately.
+const DefaultMeetingScreenshotHotkey = "ctrl+alt+s"
+
+// DisabledMeetingScreenshotHotkey is the persisted sentinel for an explicitly
+// disabled shortcut. It must stay distinct from an unset value, which receives
+// the default shortcut on first load.
+const DisabledMeetingScreenshotHotkey = "none"
+
+// NormalizeMeetingScreenshotHotkey canonicalizes the Meeting screenshot
+// shortcut combo. Empty falls back to the default; disable aliases normalize to
+// the persisted "none" sentinel; an unparseable combo falls back to the default
+// rather than silently disabling the feature.
+func NormalizeMeetingScreenshotHotkey(value string) string {
+	v := strings.ToLower(strings.TrimSpace(value))
+	switch v {
+	case "":
+		return DefaultMeetingScreenshotHotkey
+	case "none", "off", "disabled":
+		return DisabledMeetingScreenshotHotkey
+	}
+	if _, err := hotkeycombo.ParseStrict(v); err != nil {
+		return DefaultMeetingScreenshotHotkey
+	}
+	return v
+}
+
+// ErrMeetingScreenshotHotkeyConflict reports that the requested screenshot
+// shortcut collides with a mode hotkey. It is returned (not swallowed) so the
+// settings layer can roll back and surface the conflict.
+var ErrMeetingScreenshotHotkeyConflict = errors.New("meeting screenshot hotkey conflicts with an existing hotkey")
+
+// meetingHotkeyBinding pairs a human-facing name with a configured combo string
+// for conflict reporting.
+type meetingHotkeyBinding struct {
+	name  string
+	combo string
+}
+
+// MeetingScreenshotHotkeyConflict returns the name of the existing hotkey the
+// Meeting screenshot shortcut collides with, or "" when there is no conflict.
+// Comparison is on normalized VK combos, so "ctrl+alt+s" and "Alt+Ctrl+S" are
+// recognized as the same chord regardless of token order. A disabled shortcut
+// never conflicts.
+func MeetingScreenshotHotkeyConflict(cfg *Config) string {
+	if cfg == nil {
+		return ""
+	}
+	screenshot := NormalizeMeetingScreenshotHotkey(cfg.Meeting.ScreenshotHotkey)
+	if screenshot == DisabledMeetingScreenshotHotkey {
+		return ""
+	}
+	target, err := hotkeycombo.ParseStrict(screenshot)
+	if err != nil {
+		return ""
+	}
+	for _, binding := range []meetingHotkeyBinding{
+		{"dictate", cfg.General.DictateHotkey},
+		{"assist", cfg.General.AssistHotkey},
+		{"voice_agent", cfg.General.VoiceAgentHotkey},
+		{"agent", cfg.General.AgentHotkey},
+		{"hotkey", cfg.General.Hotkey},
+	} {
+		if strings.TrimSpace(binding.combo) == "" {
+			continue
+		}
+		other, err := hotkeycombo.ParseStrict(binding.combo)
+		if err != nil {
+			continue
+		}
+		if hotkeyComboEqual(target, other) {
+			return binding.name
+		}
+	}
+	return ""
+}
+
+// ApplyMeetingScreenshotHotkey sets the Meeting screenshot shortcut
+// transactionally: it normalizes next, and only commits when the result does
+// not conflict with a mode hotkey. On conflict it leaves cfg unchanged and
+// returns ErrMeetingScreenshotHotkeyConflict, so a failed settings change rolls
+// back cleanly rather than leaving two hotkeys fighting over the same chord.
+func ApplyMeetingScreenshotHotkey(cfg *Config, next string) (string, error) {
+	if cfg == nil {
+		return "", errors.New("config: nil config")
+	}
+	previous := cfg.Meeting.ScreenshotHotkey
+	normalized := NormalizeMeetingScreenshotHotkey(next)
+	cfg.Meeting.ScreenshotHotkey = normalized
+	if conflict := MeetingScreenshotHotkeyConflict(cfg); conflict != "" {
+		cfg.Meeting.ScreenshotHotkey = previous // roll back
+		return previous, ErrMeetingScreenshotHotkeyConflict
+	}
+	return normalized, nil
+}
+
+// hotkeyComboEqual reports whether two normalized VK combos are the same set of
+// keys, independent of order.
+func hotkeyComboEqual(a, b []uint32) bool {
+	if len(a) != len(b) || len(a) == 0 {
+		return false
+	}
+	seen := make(map[uint32]int, len(a))
+	for _, k := range a {
+		seen[k]++
+	}
+	for _, k := range b {
+		if seen[k] == 0 {
+			return false
+		}
+		seen[k]--
+	}
+	return true
+}
 
 func NormalizeHotkeyBehavior(value, fallback string) string {
 	switch strings.ToLower(strings.TrimSpace(value)) {

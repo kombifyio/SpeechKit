@@ -17,5 +17,11 @@
   "sk.privacy.disabled.setup_traffic": "当前隐私范围已暂停下载和更新。",
   "sk.privacy.disabled.telemetry": "当前隐私范围已停用遥测导出。",
   "sk.privacy.disabled.cloud_account": "当前隐私范围已阻止云登录。",
-  "sk.privacy.disabled.voice_agent_cloud": "当前隐私范围已阻止云语音代理。"
+  "sk.privacy.disabled.voice_agent_cloud": "当前隐私范围已阻止云语音代理。",
+  "meeting.snapshot.selecting": "选择要捕获的窗口。",
+  "meeting.snapshot.capturing": "正在捕获窗口……",
+  "meeting.snapshot.saving": "正在保存截图……",
+  "meeting.snapshot.saved": "截图已保存到会议。",
+  "meeting.snapshot.cancelled": "已取消截图。",
+  "meeting.snapshot.error": "无法捕获截图。"
 }
