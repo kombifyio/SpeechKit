@@ -130,6 +130,12 @@ IDs, source paths, and other maintainer-only vocabulary.
 
 ### Fixed
 
+* **meeting:** the picked-window screenshot picker never appeared and every
+  camera-button click ended in "Screenshot cancelled." — the overlay border
+  windows were created with the module handle in `CreateWindowExW`'s `hMenu`
+  slot, so Windows rejected them with `ERROR_INVALID_MENU_HANDLE`. Picker setup
+  failures (window class, overlays, input hooks) are now reported as errors
+  instead of cancellations, and the log records the path-free failure reason.
 * **meetings:** meeting transcription now runs on its own pipeline, fully
   separated from dictation. What is said in a call no longer flashes the
   dictation overlay, no longer fills the dictation transcript panel or history,
