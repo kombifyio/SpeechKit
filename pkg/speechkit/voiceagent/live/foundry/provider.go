@@ -8,7 +8,7 @@ package foundry
 
 import (
 	"context"
-	"errors"
+	"fmt"
 	"strings"
 
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/voiceagent/live"
@@ -43,7 +43,7 @@ func (p *Provider) SessionCapabilities() live.SessionCapabilities {
 // the embedded OpenAI Realtime implementation.
 func (p *Provider) Connect(ctx context.Context, cfg live.LiveConfig) error {
 	if strings.TrimSpace(cfg.Endpoint) == "" {
-		return errors.New("foundry realtime: Endpoint is required (derive it from the Foundry project endpoint, e.g. wss://<account-host>/openai/v1/realtime)")
+		return fmt.Errorf("foundry realtime: %w (derive it from the Foundry project endpoint, e.g. wss://<account-host>/openai/v1/realtime)", live.ErrMissingEndpoint)
 	}
 	return p.Provider.Connect(ctx, cfg)
 }

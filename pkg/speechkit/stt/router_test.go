@@ -475,3 +475,25 @@ func TestRouteCloudOnlyPreferredProviderFailureFallsBack(t *testing.T) {
 		t.Fatalf("provider = %q, want fallback alpha after preferred provider failed", res.Provider)
 	}
 }
+
+func TestRouterOnProviderSelectedIsPerInstance(t *testing.T) {
+	var seenA, seenB []string
+	a := newTestRouter(&mockProvider{name: "local-a", text: "a", healthy: true}, nil, nil, StrategyLocalOnly)
+	a.OnProviderSelected = func(_ context.Context, name string, _ Strategy) { seenA = append(seenA, name) }
+	b := newTestRouter(&mockProvider{name: "local-b", text: "b", healthy: true}, nil, nil, StrategyLocalOnly)
+	b.OnProviderSelected = func(_ context.Context, name string, _ Strategy) { seenB = append(seenB, name) }
+
+	if _, err := a.Route(context.Background(), []byte("pcm"), 1.0, TranscribeOpts{}); err != nil {
+		t.Fatalf("Route a: %v", err)
+	}
+	if _, err := b.Route(context.Background(), []byte("pcm"), 1.0, TranscribeOpts{}); err != nil {
+		t.Fatalf("Route b: %v", err)
+	}
+
+	if len(seenA) != 1 || seenA[0] != "local-a" {
+		t.Fatalf("observer a saw %v, want only local-a", seenA)
+	}
+	if len(seenB) != 1 || seenB[0] != "local-b" {
+		t.Fatalf("observer b saw %v, want only local-b", seenB)
+	}
+}

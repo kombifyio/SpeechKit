@@ -77,7 +77,7 @@ The Windows desktop app remains the reference host and provider/model test bench
 The current beta line keeps these public SDK packages additive against the existing mode contracts:
 
 - `pkg/speechkit/wakeword` exposes wake-word phrase catalogs, detection events, dispatching, detector contracts, and `AutoEndPolicy`.
-- `pkg/speechkit/wakeword/sherpa` adapts sherpa-onnx wake-word detection behind the public detector contracts. Builds without cgo still compile against the public no-cgo surface.
+- `pkg/speechkit/wakeword/sherpa` adapts sherpa-onnx wake-word detection behind the public detector contracts. Builds without cgo still compile against the public no-cgo surface; `NewDetector` then returns `wakeword.ErrCgoRequired`. The full list of packages with cgo or external-binary requirements is the [Native Requirements table](architecture/sdk-surface-boundary.md#native-requirements).
 - `pkg/speechkit/tts` exposes `Provider`, `ProviderKind`, `Router`, `Service`, `NewService`, synthesis options, and fallback strategy for SDK hosts that need spoken output without importing desktop internals.
 - `pkg/speechkit/companion.NewHandsFree(...)` composes wake detections, target-mode routing, host-provided transcript requests, Assist, Voice Agent activation, optional TTS, and Event-Bus publication for hands-free hosts. Set `Options.TargetMode` to `companion.TargetAssist`, `companion.TargetVoiceAgent`, or `companion.TargetDictationUIAssisted`.
 - `pkg/speechkit/assist.Service` supports multi-turn `SessionKey`, skill context storage, codeword routing, TTS routing, and the optional `pkg/speechkit/assist/genkitadapter`.
@@ -95,6 +95,19 @@ The reference examples compile as Local-Library smoke tests:
 | `examples/embed-companion` | Compose a hands-free Voice-Companion with mock wake/assist/TTS dependencies. |
 | `examples/embed-tts` | Use the TTS service/router surface with a mock provider. |
 | `examples/embed-event-bus` | Subscribe to and publish public runtime events. |
+
+Shorter than the reference examples, each entry-point package also carries
+runnable `Example*` functions (`go test -run Example ./pkg/speechkit/...`) that
+double as the pkg.go.dev quick start:
+
+| Package | Examples |
+|---------|----------|
+| `pkg/speechkit/dictation` | `Example` (full Start/Stop round trip), `Example_policy` (pin one profile via `RuntimePolicy`). |
+| `pkg/speechkit/stt` | `ExampleAsTranscriber` (provider → kernel bridge), `ExampleRouter` (local-only routing with a per-instance observer). |
+| `pkg/speechkit/assist` | `ExampleService_Process` (utility + LLM fallback), `ExampleService_Process_cleanMode` (no-LLM behaviour). |
+| `pkg/speechkit/tts` | `ExampleNewService` (router fallback + default voice), `ExampleNewRouter_localOnly`. |
+| `pkg/speechkit/client` | `ExampleNew` (bearer auth against `speechkit-server`), `ExampleHTTPError`. |
+| `pkg/speechkit/hostconfig` | `Example` (`Load`), `ExampleParse`, `ExampleModeSettingsFrom`. |
 
 The CLI also ships Go-only scaffolds for agent-created companions:
 `go-assist-voice-companion`, `go-voice-agent-companion`, and
@@ -118,16 +131,30 @@ Every main mode exposes the same four provider groups:
 | Cloud Provider | Routed cloud or hosted open-weight provider. |
 | Direct Provider | Direct model-vendor API. |
 
-The SDK owns the reusable catalog through:
+The SDK owns the reusable catalog in `pkg/speechkit/catalog` (import as
+`catalog`); the root `speechkit` package only defines the profile, mode and
+policy contracts the catalog is expressed in:
 
-- `speechkit.DefaultProviderProfiles()`
-- `speechkit.DefaultProviderMatrix()`
-- `speechkit.DefaultProviderDefaults()`
-- `speechkit.ProfilesForMode(mode)`
-- `speechkit.ProviderKindsForMode(mode)`
-- `speechkit.FindProviderDefault(provider, mode)`
-- `speechkit.FindProviderMatrixRow(provider)`
-- `speechkit.ValidateDefaultCatalog()`
+- `catalog.DefaultProviderProfiles()`
+- `catalog.DefaultProviderMatrix()`
+- `catalog.DefaultProviderDefaults()`
+- `catalog.ProfilesForMode(mode)`
+- `catalog.ProviderKindsForMode(mode)`
+- `catalog.FindProviderDefault(provider, mode)`
+- `catalog.FindProviderMatrixRow(provider)`
+- `catalog.ValidateDefaultCatalog()`
+- `catalog.DefaultModelRegistry()` / `catalog.FindModelDescriptor(provider, model)`
+
+Hosts that ship their own provider extend the catalog instead of concatenating
+slices: `catalog.DefaultCatalog().With(profile...)` returns a new `Catalog`
+whose `Profiles()`, `ProfilesForMode()`, `Profile(id)`, `ProviderMatrix()`,
+`ProviderDefaults()` and `Filter(policy)` mirror the free functions above.
+Profiles are normalized with `ProviderProfileWithDefaults`, checked against the
+mode contract (`ErrInvalidProfile`) and must have unique ids
+(`ErrDuplicateProfileID`); the provider id is derived from the
+`<mode>.<provider>.<model>` id shape. The end-to-end walkthrough — SPI,
+conformance suite, catalog profile, routing — is
+[docs/sdk/custom-provider.md](sdk/custom-provider.md).
 
 Provider profiles include stable IDs, provider group, execution mode, model variants, capabilities, and metadata that host applications can use to build their own settings UI.
 
@@ -144,7 +171,7 @@ render setup and readiness flows without hard-coding provider-specific branches
 for OpenAI, Google STT, Deepgram, AssemblyAI, Hugging Face, OpenRouter, Ollama,
 or local runtimes.
 
-`pkg/speechkit` is the framework boundary and the source of truth for the three strict mode profiles. The Windows desktop host adapts those public profiles into its internal runtime catalog and appends host-only support profiles such as TTS, utility, and embedding models. That keeps the backend reusable for other hosts while allowing the Windows module to remain a full reference client.
+`pkg/speechkit` is the framework boundary and the source of truth for the three strict mode profiles: the root package holds the contracts, `pkg/speechkit/catalog` holds the shipped provider data, and `pkg/speechkit/pipeline` holds the capture/transcription engine. The Windows desktop host adapts those public profiles into its internal runtime catalog and appends host-only support profiles such as TTS, utility, and embedding models. That keeps the backend reusable for other hosts while allowing the Windows module to remain a full reference client.
 
 ## Mode Settings
 

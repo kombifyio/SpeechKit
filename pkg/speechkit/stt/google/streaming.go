@@ -48,7 +48,7 @@ func (p *Provider) StartSpeakerStream(ctx context.Context, opts speaker.Options,
 	projectID, projectIDErr := creds.ProjectID(ctx)
 	projectID = strings.TrimSpace(projectID)
 	if projectID == "" {
-		projectID = stt.FirstNonEmptyTrimmed(os.Getenv("GOOGLE_CLOUD_PROJECT"), stt.ResolveSecret("GOOGLE_CLOUD_PROJECT"))
+		projectID = stt.FirstNonEmptyTrimmed(os.Getenv("GOOGLE_CLOUD_PROJECT"), p.SecretResolver.Resolve("GOOGLE_CLOUD_PROJECT"))
 	}
 	if projectID == "" {
 		if projectIDErr != nil {
@@ -216,7 +216,7 @@ func (p *Provider) resolveGoogleStreamingCredentials() (*auth.Credentials, error
 	credentialsJSONEnv := stt.FirstNonEmptyTrimmed(p.STTCredentialsJSONEnv, envGoogleSTTCredentialsJSON)
 	applicationCredentialsEnv := stt.FirstNonEmptyTrimmed(p.ApplicationCredentialsEnv, envGoogleApplicationCreds)
 
-	if raw := stt.FirstNonEmptyTrimmed(os.Getenv(credentialsJSONEnv), stt.ResolveSecret(credentialsJSONEnv)); raw != "" {
+	if raw := stt.FirstNonEmptyTrimmed(os.Getenv(credentialsJSONEnv), p.SecretResolver.Resolve(credentialsJSONEnv)); raw != "" {
 		// DetectDefault validates the credential configuration (the gap that deprecated the older
 		// CredentialsFromJSON/WithCredentialsJSON path); the JSON itself is operator-controlled (Doppler/env).
 		creds, err := credentials.DetectDefault(&credentials.DetectOptions{
@@ -229,7 +229,7 @@ func (p *Provider) resolveGoogleStreamingCredentials() (*auth.Credentials, error
 		return creds, nil
 	}
 
-	if googleStreamingCredentialsPresent(applicationCredentialsEnv, credentialsJSONEnv) {
+	if googleStreamingCredentialsPresent(p.SecretResolver, applicationCredentialsEnv, credentialsJSONEnv) {
 		creds, err := credentials.DetectDefault(&credentials.DetectOptions{
 			Scopes: []string{googleSTTScope},
 		})
@@ -243,7 +243,7 @@ func (p *Provider) resolveGoogleStreamingCredentials() (*auth.Credentials, error
 		credentialsJSONEnv, applicationCredentialsEnv, envGoogleSTTAPIKey)
 }
 
-func googleStreamingCredentialsPresent(applicationCredentialsEnv, credentialsJSONEnv string) bool {
+func googleStreamingCredentialsPresent(resolver stt.SecretResolver, applicationCredentialsEnv, credentialsJSONEnv string) bool {
 	applicationCredentialsEnv = stt.FirstNonEmptyTrimmed(applicationCredentialsEnv, envGoogleApplicationCreds)
 	credentialsJSONEnv = stt.FirstNonEmptyTrimmed(credentialsJSONEnv, envGoogleSTTCredentialsJSON)
 	if value, ok := os.LookupEnv(applicationCredentialsEnv); ok {
@@ -252,10 +252,10 @@ func googleStreamingCredentialsPresent(applicationCredentialsEnv, credentialsJSO
 	if value, ok := os.LookupEnv(credentialsJSONEnv); ok {
 		return strings.TrimSpace(value) != ""
 	}
-	if strings.TrimSpace(stt.ResolveSecret(applicationCredentialsEnv)) != "" {
+	if strings.TrimSpace(resolver.Resolve(applicationCredentialsEnv)) != "" {
 		return true
 	}
-	return strings.TrimSpace(stt.ResolveSecret(credentialsJSONEnv)) != ""
+	return strings.TrimSpace(resolver.Resolve(credentialsJSONEnv)) != ""
 }
 
 // Credential env names a host can present to a user when streaming
@@ -269,8 +269,18 @@ const (
 )
 
 // StreamingCredentialsPresent reports whether service-account or ADC
-// credentials are configured for streaming recognition. Batch transcription
-// only needs an API key and is unaffected.
+// credentials are configured for streaming recognition under the default env
+// names, consulting the process environment and the process-wide secret
+// resolver. Batch transcription only needs an API key and is unaffected.
+// Use (*Provider).StreamingCredentialsPresent to honour a per-instance
+// resolver and custom env names.
 func StreamingCredentialsPresent() bool {
-	return googleStreamingCredentialsPresent("", "")
+	return googleStreamingCredentialsPresent(nil, "", "")
+}
+
+// StreamingCredentialsPresent reports whether this provider can open a
+// streaming session: it checks the provider's configured env names through
+// its SecretResolver.
+func (p *Provider) StreamingCredentialsPresent() bool {
+	return googleStreamingCredentialsPresent(p.SecretResolver, p.ApplicationCredentialsEnv, p.STTCredentialsJSONEnv)
 }

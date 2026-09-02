@@ -38,7 +38,12 @@ type Provider struct {
 	ApplicationCredentialsEnv string
 	BaseURL                   string // Override for testing; defaults to googleSTTBaseURL
 	Validation                netsec.ValidationOptions
-	client                    *http.Client
+	// SecretResolver resolves the streaming credential env names
+	// (STTCredentialsJSONEnv, ApplicationCredentialsEnv, GOOGLE_CLOUD_PROJECT)
+	// when they are not present in the process environment. Nil falls back to
+	// the process-wide stt.SetSecretResolver, then to the environment.
+	SecretResolver stt.SecretResolver
+	client         *http.Client
 }
 
 // New creates a provider for Google Cloud Speech-to-Text.

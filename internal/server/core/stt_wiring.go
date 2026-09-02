@@ -34,10 +34,9 @@ const (
 // provider as a health-component after the router is built; keeping the check
 // logic here keeps the bootstrap file focused on lifecycle.
 func buildSTTRouter(cfg *config.Config) (*router.Router, []namedProvider, []string) {
-	// STT adapters are config-free (importable from pkg/speechkit/**); inject
-	// the host secret resolver so Google streaming credentials still resolve
-	// through env + Doppler + token store, not just os.Getenv.
-	stt.SetSecretResolver(config.ResolveSecret)
+	// STT adapters are config-free (importable from pkg/speechkit/**); hand
+	// the host secret resolver to the assembly so Google streaming credentials
+	// still resolve through env + Doppler + token store, not just os.Getenv.
 	strategy := router.Strategy(strings.TrimSpace(cfg.Routing.Strategy))
 	// Default to cloud-only when config leaves the field blank — the server
 	// deployment target typically relies on managed cloud APIs even when a
@@ -46,7 +45,7 @@ func buildSTTRouter(cfg *config.Config) (*router.Router, []namedProvider, []stri
 		strategy = router.StrategyCloudOnly
 	}
 
-	var enabled stt.EnabledProviders
+	enabled := stt.EnabledProviders{Secrets: config.ResolveSecret}
 	var notes []string
 	credential := func(target string) (string, string) {
 		key, source, err := config.ResolveProviderCredentialValue(cfg, target)
@@ -173,6 +172,7 @@ func buildSTTRouter(cfg *config.Config) (*router.Router, []namedProvider, []stri
 		PreferLocalUnderSecs: cfg.Routing.PreferLocalUnderSeconds,
 		ParallelCloud:        cfg.Routing.ParallelCloud,
 		ReplaceOnBetter:      cfg.Routing.ReplaceOnBetter,
+		OnProviderSelected:   router.AuditObserver,
 	}
 	r, ok, _ := stt.BuildRouter(routerCfg, enabled)
 	if !ok {
@@ -183,6 +183,7 @@ func buildSTTRouter(cfg *config.Config) (*router.Router, []namedProvider, []stri
 			PreferLocalUnderSecs: routerCfg.PreferLocalUnderSecs,
 			ParallelCloud:        routerCfg.ParallelCloud,
 			ReplaceOnBetter:      routerCfg.ReplaceOnBetter,
+			OnProviderSelected:   routerCfg.OnProviderSelected,
 		}
 	}
 

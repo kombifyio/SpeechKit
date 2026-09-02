@@ -78,7 +78,7 @@ func (p *Provider) SessionCapabilities() live.SessionCapabilities {
 // session.updated acknowledgement before returning.
 func (p *Provider) Connect(ctx context.Context, cfg live.LiveConfig) error {
 	if strings.TrimSpace(cfg.APIKey) == "" {
-		return errors.New("openai realtime: APIKey is required")
+		return fmt.Errorf("openai realtime: %w", live.ErrMissingAPIKey)
 	}
 	model := resolveOpenAIRealtimeModel(cfg.Model)
 	header := openAIRealtimeHeaders(cfg.APIKey)
@@ -160,7 +160,7 @@ func (p *Provider) UpdateInstructions(ctx context.Context, cfg live.LiveConfig) 
 	p.mu.Lock()
 	if p.conn == nil {
 		p.mu.Unlock()
-		return errors.New("openai realtime: not connected")
+		return fmt.Errorf("openai realtime: %w", live.ErrNotConnected)
 	}
 	cfgCopy := cfg
 	if cfgCopy.Model == "" && p.lastConfig != nil {
@@ -179,7 +179,7 @@ func (p *Provider) SendAudio(chunk []byte) error {
 	}
 	conn := p.snapshotConn()
 	if conn == nil {
-		return errors.New("openai realtime: not connected")
+		return fmt.Errorf("openai realtime: %w", live.ErrNotConnected)
 	}
 	upsampled := live.UpsampleMicPCM16Mono(chunk)
 	encoded := base64.StdEncoding.EncodeToString(upsampled)
@@ -196,7 +196,7 @@ func (p *Provider) SendAudio(chunk []byte) error {
 func (p *Provider) SendAudioStreamEnd() error {
 	conn := p.snapshotConn()
 	if conn == nil {
-		return errors.New("openai realtime: not connected")
+		return fmt.Errorf("openai realtime: %w", live.ErrNotConnected)
 	}
 	if err := p.sendJSON(conn, map[string]any{"type": "input_audio_buffer.commit"}); err != nil {
 		return err
@@ -212,7 +212,7 @@ func (p *Provider) SendAudioStreamEnd() error {
 func (p *Provider) CancelResponse() error {
 	conn := p.snapshotConn()
 	if conn == nil {
-		return errors.New("openai realtime: not connected")
+		return fmt.Errorf("openai realtime: %w", live.ErrNotConnected)
 	}
 	return p.sendJSON(conn, map[string]any{"type": "response.cancel"})
 }
@@ -224,7 +224,7 @@ func (p *Provider) SendText(text string) error {
 	}
 	conn := p.snapshotConn()
 	if conn == nil {
-		return errors.New("openai realtime: not connected")
+		return fmt.Errorf("openai realtime: %w", live.ErrNotConnected)
 	}
 	if err := p.sendJSON(conn, map[string]any{
 		"type": "conversation.item.create",
@@ -246,7 +246,7 @@ func (p *Provider) SendText(text string) error {
 func (p *Provider) SendToolResponse(response live.ToolResponse) error {
 	conn := p.snapshotConn()
 	if conn == nil {
-		return errors.New("openai realtime: not connected")
+		return fmt.Errorf("openai realtime: %w", live.ErrNotConnected)
 	}
 	output := response.Response
 	if output == nil {
@@ -298,7 +298,7 @@ func (p *Provider) Close() error {
 func (p *Provider) Receive(ctx context.Context) (*live.LiveMessage, error) {
 	conn := p.snapshotConn()
 	if conn == nil {
-		return nil, errors.New("openai realtime: not connected")
+		return nil, fmt.Errorf("openai realtime: %w", live.ErrNotConnected)
 	}
 	for {
 		typ, data, err := conn.Read(ctx)
@@ -367,7 +367,7 @@ func (p *Provider) markSessionReady() {
 func (p *Provider) sendSessionUpdate(ctx context.Context, cfg live.LiveConfig) error {
 	conn := p.snapshotConn()
 	if conn == nil {
-		return errors.New("openai realtime: not connected")
+		return fmt.Errorf("openai realtime: %w", live.ErrNotConnected)
 	}
 
 	resolved := live.ResolveLiveOptions("openai", "realtime.openai.gpt-realtime-2", cfg, nil, nil)

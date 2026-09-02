@@ -1,15 +1,18 @@
-package speechkit
+package speechkit_test
 
 import (
 	"strings"
 	"testing"
+
+	"github.com/kombifyio/SpeechKit/pkg/speechkit"
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/catalog"
 )
 
 func TestRuntimePolicyFiltersFixedDictationProfile(t *testing.T) {
-	profiles := FilterProviderProfiles(DefaultProviderProfiles(), RuntimePolicy{
-		EnabledModes: []Mode{ModeDictation},
-		FixedProfiles: map[Mode]string{
-			ModeDictation: "stt.openai.whisper-1",
+	profiles := speechkit.FilterProviderProfiles(catalog.DefaultProviderProfiles(), speechkit.RuntimePolicy{
+		EnabledModes: []speechkit.Mode{speechkit.ModeDictation},
+		FixedProfiles: map[speechkit.Mode]string{
+			speechkit.ModeDictation: "stt.openai.whisper-1",
 		},
 	})
 
@@ -22,12 +25,12 @@ func TestRuntimePolicyFiltersFixedDictationProfile(t *testing.T) {
 }
 
 func TestRuntimePolicyEmptyEnabledModesMeansAllFrameworkModes(t *testing.T) {
-	profiles := FilterProviderProfiles(DefaultProviderProfiles(), RuntimePolicy{})
-	seen := map[Mode]bool{}
+	profiles := speechkit.FilterProviderProfiles(catalog.DefaultProviderProfiles(), speechkit.RuntimePolicy{})
+	seen := map[speechkit.Mode]bool{}
 	for _, profile := range profiles {
-		seen[NormalizeMode(profile.Mode)] = true
+		seen[speechkit.NormalizeMode(profile.Mode)] = true
 	}
-	for _, mode := range []Mode{ModeDictation, ModeAssist, ModeVoiceAgent, ModeTTS} {
+	for _, mode := range []speechkit.Mode{speechkit.ModeDictation, speechkit.ModeAssist, speechkit.ModeVoiceAgent, speechkit.ModeTTS} {
 		if !seen[mode] {
 			t.Fatalf("empty EnabledModes did not expose %q profiles", mode)
 		}
@@ -35,20 +38,20 @@ func TestRuntimePolicyEmptyEnabledModesMeansAllFrameworkModes(t *testing.T) {
 }
 
 func TestRuntimePolicyHidesDisabledModeProfiles(t *testing.T) {
-	profiles := FilterProviderProfiles(DefaultProviderProfiles(), RuntimePolicy{
-		EnabledModes: []Mode{ModeDictation},
+	profiles := speechkit.FilterProviderProfiles(catalog.DefaultProviderProfiles(), speechkit.RuntimePolicy{
+		EnabledModes: []speechkit.Mode{speechkit.ModeDictation},
 	})
 
 	for _, profile := range profiles {
-		if NormalizeMode(profile.Mode) != ModeDictation {
+		if speechkit.NormalizeMode(profile.Mode) != speechkit.ModeDictation {
 			t.Fatalf("profile %q mode = %q, want dictation only", profile.ID, profile.Mode)
 		}
 	}
 }
 
 func TestRuntimePolicyNormalizesAllowedProfileAliases(t *testing.T) {
-	profiles := FilterProviderProfiles(DefaultProviderProfiles(), RuntimePolicy{
-		EnabledModes:    []Mode{ModeDictation},
+	profiles := speechkit.FilterProviderProfiles(catalog.DefaultProviderProfiles(), speechkit.RuntimePolicy{
+		EnabledModes:    []speechkit.Mode{speechkit.ModeDictation},
 		AllowedProfiles: []string{"stt.google.chirp-3"},
 	})
 
@@ -61,16 +64,16 @@ func TestRuntimePolicyNormalizesAllowedProfileAliases(t *testing.T) {
 }
 
 func TestRuntimePolicyRejectsFallbackWhenDisabled(t *testing.T) {
-	err := ValidateModeSettingsForPolicy(DefaultProviderProfiles(), ModeSettings{
-		Dictation: DictationSetting{
-			ModeSetting: ModeSetting{
+	err := speechkit.ValidateModeSettingsForPolicy(catalog.DefaultProviderProfiles(), speechkit.ModeSettings{
+		Dictation: speechkit.DictationSetting{
+			ModeSetting: speechkit.ModeSetting{
 				Enabled:           true,
 				PrimaryProfileID:  "stt.local.whispercpp",
 				FallbackProfileID: "stt.openai.whisper-1",
 			},
 		},
-	}, RuntimePolicy{
-		EnabledModes:   []Mode{ModeDictation},
+	}, speechkit.RuntimePolicy{
+		EnabledModes:   []speechkit.Mode{speechkit.ModeDictation},
 		AllowFallbacks: false,
 	})
 
@@ -80,16 +83,16 @@ func TestRuntimePolicyRejectsFallbackWhenDisabled(t *testing.T) {
 }
 
 func TestRuntimePolicyAllowsFallbackWhenExplicitlyEnabledAndAllowed(t *testing.T) {
-	err := ValidateModeSettingsForPolicy(DefaultProviderProfiles(), ModeSettings{
-		Dictation: DictationSetting{
-			ModeSetting: ModeSetting{
+	err := speechkit.ValidateModeSettingsForPolicy(catalog.DefaultProviderProfiles(), speechkit.ModeSettings{
+		Dictation: speechkit.DictationSetting{
+			ModeSetting: speechkit.ModeSetting{
 				Enabled:           true,
 				PrimaryProfileID:  "stt.google.chirp-3",
 				FallbackProfileID: "stt.deepgram.nova-3",
 			},
 		},
-	}, RuntimePolicy{
-		EnabledModes: []Mode{ModeDictation},
+	}, speechkit.RuntimePolicy{
+		EnabledModes: []speechkit.Mode{speechkit.ModeDictation},
 		AllowedProfiles: []string{
 			"stt.google.latest-long",
 			"stt.deepgram.nova-3",
@@ -103,15 +106,15 @@ func TestRuntimePolicyAllowsFallbackWhenExplicitlyEnabledAndAllowed(t *testing.T
 }
 
 func TestRuntimePolicyRejectsEnabledDisabledModeSettings(t *testing.T) {
-	err := ValidateModeSettingsForPolicy(DefaultProviderProfiles(), ModeSettings{
-		Assist: AssistSetting{
-			ModeSetting: ModeSetting{
+	err := speechkit.ValidateModeSettingsForPolicy(catalog.DefaultProviderProfiles(), speechkit.ModeSettings{
+		Assist: speechkit.AssistSetting{
+			ModeSetting: speechkit.ModeSetting{
 				Enabled:          true,
 				PrimaryProfileID: "assist.openai.gpt-5.4",
 			},
 		},
-	}, RuntimePolicy{
-		EnabledModes: []Mode{ModeDictation},
+	}, speechkit.RuntimePolicy{
+		EnabledModes: []speechkit.Mode{speechkit.ModeDictation},
 	})
 
 	if err == nil || !strings.Contains(err.Error(), `mode "assist" is disabled`) {
@@ -120,15 +123,15 @@ func TestRuntimePolicyRejectsEnabledDisabledModeSettings(t *testing.T) {
 }
 
 func TestRuntimePolicyAcceptsLegacyGoogleSTTProfileID(t *testing.T) {
-	err := ValidateModeSettingsForPolicy(DefaultProviderProfiles(), ModeSettings{
-		Dictation: DictationSetting{
-			ModeSetting: ModeSetting{
+	err := speechkit.ValidateModeSettingsForPolicy(catalog.DefaultProviderProfiles(), speechkit.ModeSettings{
+		Dictation: speechkit.DictationSetting{
+			ModeSetting: speechkit.ModeSetting{
 				Enabled:          true,
 				PrimaryProfileID: "stt.google.chirp-3",
 			},
 		},
-	}, RuntimePolicy{
-		EnabledModes: []Mode{ModeDictation},
+	}, speechkit.RuntimePolicy{
+		EnabledModes: []speechkit.Mode{speechkit.ModeDictation},
 	})
 
 	if err != nil {
@@ -137,11 +140,11 @@ func TestRuntimePolicyAcceptsLegacyGoogleSTTProfileID(t *testing.T) {
 }
 
 func TestRuntimePolicyRejectsFixedProfileOutsideAllowedSet(t *testing.T) {
-	err := ValidateRuntimePolicy(DefaultProviderProfiles(), RuntimePolicy{
-		EnabledModes:    []Mode{ModeDictation},
+	err := speechkit.ValidateRuntimePolicy(catalog.DefaultProviderProfiles(), speechkit.RuntimePolicy{
+		EnabledModes:    []speechkit.Mode{speechkit.ModeDictation},
 		AllowedProfiles: []string{"stt.deepgram.nova-3"},
-		FixedProfiles: map[Mode]string{
-			ModeDictation: "stt.openai.whisper-1",
+		FixedProfiles: map[speechkit.Mode]string{
+			speechkit.ModeDictation: "stt.openai.whisper-1",
 		},
 	})
 
@@ -151,10 +154,10 @@ func TestRuntimePolicyRejectsFixedProfileOutsideAllowedSet(t *testing.T) {
 }
 
 func TestRuntimePolicyRejectsFixedProfileModeMismatch(t *testing.T) {
-	err := ValidateRuntimePolicy(DefaultProviderProfiles(), RuntimePolicy{
-		EnabledModes: []Mode{ModeDictation, ModeAssist},
-		FixedProfiles: map[Mode]string{
-			ModeDictation: "assist.openai.gpt-5.4",
+	err := speechkit.ValidateRuntimePolicy(catalog.DefaultProviderProfiles(), speechkit.RuntimePolicy{
+		EnabledModes: []speechkit.Mode{speechkit.ModeDictation, speechkit.ModeAssist},
+		FixedProfiles: map[speechkit.Mode]string{
+			speechkit.ModeDictation: "assist.openai.gpt-5.4",
 		},
 	})
 
@@ -164,10 +167,10 @@ func TestRuntimePolicyRejectsFixedProfileModeMismatch(t *testing.T) {
 }
 
 func TestRuntimePolicyRejectsUnknownFixedProfile(t *testing.T) {
-	err := ValidateRuntimePolicy(DefaultProviderProfiles(), RuntimePolicy{
-		EnabledModes: []Mode{ModeDictation},
-		FixedProfiles: map[Mode]string{
-			ModeDictation: "missing.profile",
+	err := speechkit.ValidateRuntimePolicy(catalog.DefaultProviderProfiles(), speechkit.RuntimePolicy{
+		EnabledModes: []speechkit.Mode{speechkit.ModeDictation},
+		FixedProfiles: map[speechkit.Mode]string{
+			speechkit.ModeDictation: "missing.profile",
 		},
 	})
 
@@ -177,18 +180,18 @@ func TestRuntimePolicyRejectsUnknownFixedProfile(t *testing.T) {
 }
 
 func TestRuntimePolicyRejectsProfileThatViolatesModeContract(t *testing.T) {
-	profiles := append(DefaultProviderProfiles(), ProviderProfile{
+	profiles := append(catalog.DefaultProviderProfiles(), speechkit.ProviderProfile{
 		ID:           "stt.bad.llm",
-		Mode:         ModeDictation,
+		Mode:         speechkit.ModeDictation,
 		Name:         "Bad Dictation LLM",
-		ProviderKind: ProviderKindDirectProvider,
-		Capabilities: []Capability{CapabilityTranscription, CapabilityLLM},
+		ProviderKind: speechkit.ProviderKindDirectProvider,
+		Capabilities: []speechkit.Capability{speechkit.CapabilityTranscription, speechkit.CapabilityLLM},
 	})
 
-	err := ValidateRuntimePolicy(profiles, RuntimePolicy{
-		EnabledModes: []Mode{ModeDictation},
-		FixedProfiles: map[Mode]string{
-			ModeDictation: "stt.bad.llm",
+	err := speechkit.ValidateRuntimePolicy(profiles, speechkit.RuntimePolicy{
+		EnabledModes: []speechkit.Mode{speechkit.ModeDictation},
+		FixedProfiles: map[speechkit.Mode]string{
+			speechkit.ModeDictation: "stt.bad.llm",
 		},
 	})
 
@@ -198,37 +201,37 @@ func TestRuntimePolicyRejectsProfileThatViolatesModeContract(t *testing.T) {
 }
 
 func TestRuntimePolicyFilterDropsInvalidProfilesAndPreservesCatalogOrder(t *testing.T) {
-	input := []ProviderProfile{
+	input := []speechkit.ProviderProfile{
 		{
 			ID:             "stt.first",
-			Mode:           ModeDictation,
+			Mode:           speechkit.ModeDictation,
 			Name:           "First",
-			ProviderKind:   ProviderKindDirectProvider,
-			ExecutionMode:  ExecutionModeOpenAI,
-			Capabilities:   []Capability{CapabilityTranscription, CapabilitySTT},
+			ProviderKind:   speechkit.ProviderKindDirectProvider,
+			ExecutionMode:  speechkit.ExecutionModeOpenAI,
+			Capabilities:   []speechkit.Capability{speechkit.CapabilityTranscription, speechkit.CapabilitySTT},
 			AllowInference: true,
 		},
 		{
 			ID:             "stt.invalid.llm",
-			Mode:           ModeDictation,
+			Mode:           speechkit.ModeDictation,
 			Name:           "Invalid",
-			ProviderKind:   ProviderKindDirectProvider,
-			ExecutionMode:  ExecutionModeOpenAI,
-			Capabilities:   []Capability{CapabilityTranscription, CapabilityLLM},
+			ProviderKind:   speechkit.ProviderKindDirectProvider,
+			ExecutionMode:  speechkit.ExecutionModeOpenAI,
+			Capabilities:   []speechkit.Capability{speechkit.CapabilityTranscription, speechkit.CapabilityLLM},
 			AllowInference: true,
 		},
 		{
 			ID:             "stt.second",
-			Mode:           ModeDictation,
+			Mode:           speechkit.ModeDictation,
 			Name:           "Second",
-			ProviderKind:   ProviderKindDirectProvider,
-			ExecutionMode:  ExecutionModeDeepgram,
-			Capabilities:   []Capability{CapabilityTranscription, CapabilitySTT},
+			ProviderKind:   speechkit.ProviderKindDirectProvider,
+			ExecutionMode:  speechkit.ExecutionModeDeepgram,
+			Capabilities:   []speechkit.Capability{speechkit.CapabilityTranscription, speechkit.CapabilitySTT},
 			AllowInference: true,
 		},
 	}
 
-	profiles := FilterProviderProfiles(input, RuntimePolicy{EnabledModes: []Mode{ModeDictation}})
+	profiles := speechkit.FilterProviderProfiles(input, speechkit.RuntimePolicy{EnabledModes: []speechkit.Mode{speechkit.ModeDictation}})
 
 	if len(profiles) != 2 {
 		t.Fatalf("profiles = %d, want 2: %#v", len(profiles), profiles)

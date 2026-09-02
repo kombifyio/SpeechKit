@@ -17,26 +17,37 @@ const createNoWindow = 0x08000000
 // instead of being starved by it.
 const belowNormalPriorityClass = 0x00004000
 
-// lowerPriority is on by default; hosts can opt out via
-// [SetSubprocessPriorityLowered] (config knob).
+// lowerPriority is the process-wide default (on); hosts can opt out via
+// [SetSubprocessPriorityLowered] or per instance via
+// [Provider.LowerSubprocessPriority].
 var lowerPriority atomic.Bool
 
 func init() {
 	lowerPriority.Store(true)
 }
 
-// SetSubprocessPriorityLowered toggles whether STT subprocesses are
-// spawned at BELOW_NORMAL priority (default true). No-op on non-Windows.
+// SetSubprocessPriorityLowered toggles the process-wide default for whether
+// STT subprocesses are spawned at BELOW_NORMAL priority (default true). No-op
+// on non-Windows. Providers with an explicit LowerSubprocessPriority ignore
+// it.
 func SetSubprocessPriorityLowered(lowered bool) {
 	lowerPriority.Store(lowered)
 }
 
-func configureHiddenProcess(cmd *exec.Cmd) {
+// subprocessPriorityLowered resolves the effective setting for a provider.
+func subprocessPriorityLowered(override *bool) bool {
+	if override != nil {
+		return *override
+	}
+	return lowerPriority.Load()
+}
+
+func configureHiddenProcess(cmd *exec.Cmd, lowered bool) {
 	if cmd == nil {
 		return
 	}
 	flags := uint32(createNoWindow)
-	if lowerPriority.Load() {
+	if lowered {
 		flags |= belowNormalPriorityClass
 	}
 	cmd.SysProcAttr = &syscall.SysProcAttr{

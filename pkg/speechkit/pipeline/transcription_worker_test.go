@@ -1,4 +1,4 @@
-package speechkit
+package pipeline
 
 import (
 	"context"
@@ -8,16 +8,18 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/kombifyio/SpeechKit/pkg/speechkit"
 )
 
 type stubTranscriber struct {
-	transcript Transcript
+	transcript speechkit.Transcript
 	err        error
 }
 
-func (s stubTranscriber) Transcribe(_ context.Context, _ []byte, _ float64, _ string) (Transcript, error) {
+func (s stubTranscriber) Transcribe(_ context.Context, _ []byte, _ float64, _ string) (speechkit.Transcript, error) {
 	if s.err != nil {
-		return Transcript{}, s.err
+		return speechkit.Transcript{}, s.err
 	}
 	return s.transcript, nil
 }
@@ -26,10 +28,10 @@ type capturingAudioTranscriber struct {
 	audio      []byte
 	duration   float64
 	language   string
-	transcript Transcript
+	transcript speechkit.Transcript
 }
 
-func (s *capturingAudioTranscriber) Transcribe(_ context.Context, audio []byte, durationSecs float64, language string) (Transcript, error) {
+func (s *capturingAudioTranscriber) Transcribe(_ context.Context, audio []byte, durationSecs float64, language string) (speechkit.Transcript, error) {
 	s.audio = append([]byte(nil), audio...)
 	s.duration = durationSecs
 	s.language = language
@@ -39,7 +41,7 @@ func (s *capturingAudioTranscriber) Transcribe(_ context.Context, audio []byte, 
 type countingTranscriber struct {
 	mu         sync.Mutex
 	calls      int
-	transcript Transcript
+	transcript speechkit.Transcript
 }
 
 type countingPersistence struct {
@@ -78,7 +80,7 @@ func (s *countingPersistence) snapshot() (int, []int) {
 	return s.saves, append([]int(nil), s.audioLen...)
 }
 
-func (s *countingTranscriber) Transcribe(_ context.Context, _ []byte, _ float64, language string) (Transcript, error) {
+func (s *countingTranscriber) Transcribe(_ context.Context, _ []byte, _ float64, language string) (speechkit.Transcript, error) {
 	s.mu.Lock()
 	s.calls++
 	s.mu.Unlock()
@@ -115,7 +117,7 @@ func newParallelSegmentTranscriber(expected int) *parallelSegmentTranscriber {
 	}
 }
 
-func (s *parallelSegmentTranscriber) Transcribe(ctx context.Context, audio []byte, _ float64, language string) (Transcript, error) {
+func (s *parallelSegmentTranscriber) Transcribe(ctx context.Context, audio []byte, _ float64, language string) (speechkit.Transcript, error) {
 	s.mu.Lock()
 	s.active++
 	if s.active > s.maxActive {
@@ -135,14 +137,14 @@ func (s *parallelSegmentTranscriber) Transcribe(ctx context.Context, audio []byt
 	select {
 	case <-s.release:
 	case <-ctx.Done():
-		return Transcript{}, ctx.Err()
+		return speechkit.Transcript{}, ctx.Err()
 	}
 
 	textByAudio := map[string]string{
 		"segment-1": "kombi",
 		"segment-2": "fire",
 	}
-	return Transcript{
+	return speechkit.Transcript{
 		Text:     textByAudio[string(audio)],
 		Language: language,
 		Provider: "test",
@@ -159,13 +161,13 @@ func (s *parallelSegmentTranscriber) maxConcurrency() int {
 
 type replacingTranscriptTransformer struct{}
 
-func (replacingTranscriptTransformer) Transform(_ context.Context, transcript Transcript) (Transcript, error) {
+func (replacingTranscriptTransformer) Transform(_ context.Context, transcript speechkit.Transcript) (speechkit.Transcript, error) {
 	transcript.Text = strings.ReplaceAll(transcript.Text, "kombi fire", "Kombify")
 	return transcript, nil
 }
 
 type deliveredTranscript struct {
-	transcript Transcript
+	transcript speechkit.Transcript
 	target     any
 }
 
@@ -175,7 +177,7 @@ type recordingOutput struct {
 	err       error
 }
 
-func (o *recordingOutput) Deliver(_ context.Context, transcript Transcript, target any) error {
+func (o *recordingOutput) Deliver(_ context.Context, transcript speechkit.Transcript, target any) error {
 	o.mu.Lock()
 	defer o.mu.Unlock()
 	if o.err != nil {
@@ -256,14 +258,14 @@ func (o *recordingObserver) OnLog(message, kind string) {
 	o.logs = append(o.logs, kind+":"+message)
 }
 
-func (o *recordingObserver) OnTranscriptCommitted(transcript Transcript, quickNote bool) {
+func (o *recordingObserver) OnTranscriptCommitted(transcript speechkit.Transcript, quickNote bool) {
 	o.mu.Lock()
 	defer o.mu.Unlock()
 	o.committed = append(o.committed, transcript.Text)
 	o.quickNotes = append(o.quickNotes, quickNote)
 }
 
-func (o *recordingObserver) OnTranscriptDraft(transcript Transcript) {
+func (o *recordingObserver) OnTranscriptDraft(transcript speechkit.Transcript) {
 	o.mu.Lock()
 	defer o.mu.Unlock()
 	o.drafts = append(o.drafts, transcript.Text)
@@ -281,7 +283,7 @@ func (o *recordingObserver) hasLog(message string) bool {
 }
 
 func TestLowConfidenceWords(t *testing.T) {
-	words := []WordConfidence{
+	words := []speechkit.WordConfidence{
 		{Text: "Ich", Confidence: 0.99},
 		{Text: "Ultracord", Confidence: 0.42},
 		{Text: "mit", Confidence: 0.95},
@@ -289,7 +291,7 @@ func TestLowConfidenceWords(t *testing.T) {
 		{Text: "stacket", Confidence: 0.51}, // case-insensitive duplicate of "Stacket"
 	}
 
-	terms, minConf := LowConfidenceWords(words, 0.6)
+	terms, minConf := speechkit.LowConfidenceWords(words, 0.6)
 	if got := strings.Join(terms, ","); got != "Ultracord,Stacket" {
 		t.Fatalf("terms = %q, want \"Ultracord,Stacket\" (distinct, below-threshold only)", got)
 	}
@@ -297,10 +299,10 @@ func TestLowConfidenceWords(t *testing.T) {
 		t.Fatalf("minConfidence = %v, want ~0.42 (floor across all words)", minConf)
 	}
 
-	if terms, gotMin := LowConfidenceWords(words, 0); terms != nil || gotMin != 0 {
+	if terms, gotMin := speechkit.LowConfidenceWords(words, 0); terms != nil || gotMin != 0 {
 		t.Fatalf("threshold<=0 must disable detection, got (%#v, %v)", terms, gotMin)
 	}
-	if terms, _ := LowConfidenceWords(nil, 0.6); terms != nil {
+	if terms, _ := speechkit.LowConfidenceWords(nil, 0.6); terms != nil {
 		t.Fatalf("nil words must yield nil terms, got %#v", terms)
 	}
 }
@@ -314,11 +316,11 @@ func TestTranscriptionWorkerLogsLowConfidenceWords(t *testing.T) {
 	observer := &recordingObserver{}
 	output := &recordingOutput{}
 	runner := NewTranscriptionRunner(stubTranscriber{
-		transcript: Transcript{
+		transcript: speechkit.Transcript{
 			Text:     "Ich nutze Ultracord",
 			Provider: "deepgram",
 			Duration: 100 * time.Millisecond,
-			Words: []WordConfidence{
+			Words: []speechkit.WordConfidence{
 				{Text: "Ich", Confidence: 0.99},
 				{Text: "nutze", Confidence: 0.98},
 				{Text: "Ultracord", Confidence: 0.41},
@@ -342,8 +344,8 @@ func TestTranscriptionWorkerLogsLowConfidenceWords(t *testing.T) {
 	defer cancel()
 	worker.Start(ctx)
 
-	if err := worker.Submit(TranscriptionJob{
-		Submission: Submission{WAV: []byte("wav"), DurationSecs: 0.2, Language: "de"},
+	if err := worker.Submit(speechkit.TranscriptionJob{
+		Submission: speechkit.Submission{WAV: []byte("wav"), DurationSecs: 0.2, Language: "de"},
 		Target:     "editor",
 	}); err != nil {
 		t.Fatalf("Submit() error = %v", err)
@@ -383,7 +385,7 @@ func TestTranscriptionWorkerNamesAnEmptyFinalTranscript(t *testing.T) {
 	observer := &recordingObserver{}
 	output := &recordingOutput{}
 	runner := NewTranscriptionRunner(stubTranscriber{
-		transcript: Transcript{
+		transcript: speechkit.Transcript{
 			Text:     "   ",
 			Provider: "deepgram",
 			Model:    "nova-3",
@@ -407,8 +409,8 @@ func TestTranscriptionWorkerNamesAnEmptyFinalTranscript(t *testing.T) {
 	defer cancel()
 	worker.Start(ctx)
 
-	if err := worker.Submit(TranscriptionJob{
-		Submission: Submission{WAV: []byte("wav"), DurationSecs: 0.2, Language: "de"},
+	if err := worker.Submit(speechkit.TranscriptionJob{
+		Submission: speechkit.Submission{WAV: []byte("wav"), DurationSecs: 0.2, Language: "de"},
 		Target:     "editor",
 	}); err != nil {
 		t.Fatalf("Submit() error = %v", err)
@@ -425,7 +427,7 @@ func TestTranscriptionWorkerNamesAnEmptyFinalTranscript(t *testing.T) {
 
 	var warned string
 	for _, l := range logs {
-		if strings.HasPrefix(l, "warn:") && strings.Contains(l, EmptyFinalTranscriptMessage) {
+		if strings.HasPrefix(l, "warn:") && strings.Contains(l, speechkit.EmptyFinalTranscriptMessage) {
 			warned = l
 		}
 	}
@@ -442,7 +444,7 @@ func TestTranscriptionWorkerNamesAnEmptyFinalTranscript(t *testing.T) {
 
 	var sawVisibleState bool
 	for _, s := range states {
-		if strings.Contains(s, EmptyFinalTranscriptMessage) {
+		if strings.Contains(s, speechkit.EmptyFinalTranscriptMessage) {
 			sawVisibleState = true
 		}
 	}
@@ -462,11 +464,11 @@ func TestTranscriptionWorkerSkipsLowConfidenceWhenDisabled(t *testing.T) {
 	observer := &recordingObserver{}
 	output := &recordingOutput{}
 	runner := NewTranscriptionRunner(stubTranscriber{
-		transcript: Transcript{
+		transcript: speechkit.Transcript{
 			Text:     "Ultracord",
 			Provider: "deepgram",
 			Duration: 50 * time.Millisecond,
-			Words:    []WordConfidence{{Text: "Ultracord", Confidence: 0.10}},
+			Words:    []speechkit.WordConfidence{{Text: "Ultracord", Confidence: 0.10}},
 		},
 	}, nil)
 
@@ -485,8 +487,8 @@ func TestTranscriptionWorkerSkipsLowConfidenceWhenDisabled(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	worker.Start(ctx)
-	if err := worker.Submit(TranscriptionJob{
-		Submission: Submission{WAV: []byte("wav"), DurationSecs: 0.2, Language: "de"},
+	if err := worker.Submit(speechkit.TranscriptionJob{
+		Submission: speechkit.Submission{WAV: []byte("wav"), DurationSecs: 0.2, Language: "de"},
 		Target:     "editor",
 	}); err != nil {
 		t.Fatalf("Submit() error = %v", err)
@@ -507,7 +509,7 @@ func TestTranscriptionWorkerProcessesJobs(t *testing.T) {
 	observer := &recordingObserver{}
 	output := &recordingOutput{}
 	runner := NewTranscriptionRunner(stubTranscriber{
-		transcript: Transcript{
+		transcript: speechkit.Transcript{
 			Text:     "hello world",
 			Provider: "local",
 			Duration: 1500 * time.Millisecond,
@@ -529,8 +531,8 @@ func TestTranscriptionWorkerProcessesJobs(t *testing.T) {
 	defer cancel()
 	worker.Start(ctx)
 
-	if err := worker.Submit(TranscriptionJob{
-		Submission: Submission{
+	if err := worker.Submit(speechkit.TranscriptionJob{
+		Submission: speechkit.Submission{
 			PCM:          []byte(strings.Repeat("a", 6400)),
 			WAV:          []byte("wav"),
 			DurationSecs: 0.2,
@@ -552,7 +554,7 @@ func TestTranscriptionWorkerProcessesJobs(t *testing.T) {
 	if got := observer.quickNotes; len(got) != 1 || !got[0] {
 		t.Fatalf("observer quickNotes = %#v", got)
 	}
-	if got := observer.states; len(got) < 2 || got[0] != "processing:"+DefaultProcessingMessage || got[1] != "done:\n\nhello world" {
+	if got := observer.states; len(got) < 2 || got[0] != "processing:"+speechkit.DefaultProcessingMessage || got[1] != "done:\n\nhello world" {
 		t.Fatalf("observer states = %#v", got)
 	}
 	if len(output.delivered) != 1 {
@@ -566,7 +568,7 @@ func TestTranscriptionWorkerProcessesJobs(t *testing.T) {
 func TestTranscriptionWorkerNormalizesPCMOnlySubmission(t *testing.T) {
 	pcm := []byte(strings.Repeat("a", 6400))
 	transcriber := &capturingAudioTranscriber{
-		transcript: Transcript{
+		transcript: speechkit.Transcript{
 			Text:     "pcm only",
 			Provider: "test",
 			Duration: 50 * time.Millisecond,
@@ -586,8 +588,8 @@ func TestTranscriptionWorkerNormalizesPCMOnlySubmission(t *testing.T) {
 	defer cancel()
 	worker.Start(ctx)
 
-	if err := worker.Submit(TranscriptionJob{
-		Submission: Submission{
+	if err := worker.Submit(speechkit.TranscriptionJob{
+		Submission: speechkit.Submission{
 			PCM:      pcm,
 			Language: "de",
 		},
@@ -604,7 +606,7 @@ func TestTranscriptionWorkerNormalizesPCMOnlySubmission(t *testing.T) {
 	if string(transcriber.audio[:4]) != "RIFF" || string(transcriber.audio[8:12]) != "WAVE" {
 		t.Fatalf("transcriber audio is not a WAV payload")
 	}
-	if got, want := transcriber.duration, PCMDurationSecs(pcm); got != want {
+	if got, want := transcriber.duration, speechkit.PCMDurationSecs(pcm); got != want {
 		t.Fatalf("transcriber duration = %v, want %v", got, want)
 	}
 	if got, want := transcriber.language, "de"; got != want {
@@ -617,7 +619,7 @@ func TestTranscriptionWorkerNormalizesPCMOnlySubmission(t *testing.T) {
 
 func TestTranscriptionWorkerSkipsDuplicateSegmentCommit(t *testing.T) {
 	transcriber := &countingTranscriber{
-		transcript: Transcript{
+		transcript: speechkit.Transcript{
 			Text:     "segment text",
 			Provider: "test",
 			Duration: 25 * time.Millisecond,
@@ -640,8 +642,8 @@ func TestTranscriptionWorkerSkipsDuplicateSegmentCommit(t *testing.T) {
 	defer cancel()
 	worker.Start(ctx)
 
-	job := TranscriptionJob{
-		Submission: Submission{
+	job := speechkit.TranscriptionJob{
+		Submission: speechkit.Submission{
 			PCM:          []byte(strings.Repeat("d", 6400)),
 			WAV:          []byte("wav"),
 			DurationSecs: 0.2,
@@ -683,7 +685,7 @@ func TestTranscriptionWorkerSkipsDuplicateSegmentCommit(t *testing.T) {
 }
 
 func TestTranscriptionWorkerProcessesSequentialMeetingsWithReusedControllerCounters(t *testing.T) {
-	transcriber := &countingTranscriber{transcript: Transcript{
+	transcriber := &countingTranscriber{transcript: speechkit.Transcript{
 		Text:     "meeting words",
 		Provider: "test",
 		Duration: time.Millisecond,
@@ -703,11 +705,11 @@ func TestTranscriptionWorkerProcessesSequentialMeetingsWithReusedControllerCount
 
 	submitMeeting := func(recordingSessionID int64) {
 		t.Helper()
-		err := worker.Submit(TranscriptionJob{Submission: Submission{
+		err := worker.Submit(speechkit.TranscriptionJob{Submission: speechkit.Submission{
 			WAV:                []byte("private meeting audio"),
 			DurationSecs:       0.1,
 			RecordingSessionID: recordingSessionID,
-			CaptureChannel:     CaptureChannelMicrophone,
+			CaptureChannel:     speechkit.CaptureChannelMicrophone,
 			SessionID:          1,
 			SegmentID:          1,
 			SegmentFinal:       true,
@@ -750,7 +752,7 @@ func TestTranscriptionWorkerProviderStreamDraftsDoNotDeliverAndFinalsDeduplicate
 	}
 
 	ctx := context.Background()
-	draft := DictationStreamEvent{
+	draft := speechkit.DictationStreamEvent{
 		SessionID:      99,
 		SegmentID:      3,
 		ProviderItemID: "provider:3",
@@ -758,7 +760,7 @@ func TestTranscriptionWorkerProviderStreamDraftsDoNotDeliverAndFinalsDeduplicate
 		Provider:       "fake",
 		Model:          "stream",
 	}
-	if err := worker.HandleDictationStreamEvent(ctx, draft, DictationStreamSinkOptions{Target: "editor", Language: "de"}); err != nil {
+	if err := worker.HandleDictationStreamEvent(ctx, draft, speechkit.DictationStreamSinkOptions{Target: "editor", Language: "de"}); err != nil {
 		t.Fatalf("HandleDictationStreamEvent(draft) error = %v", err)
 	}
 	if delivered := output.snapshot(); len(delivered) != 0 {
@@ -771,10 +773,10 @@ func TestTranscriptionWorkerProviderStreamDraftsDoNotDeliverAndFinalsDeduplicate
 	final := draft
 	final.Text = "final text"
 	final.IsFinal = true
-	if err := worker.HandleDictationStreamEvent(ctx, final, DictationStreamSinkOptions{Target: "editor", Language: "de"}); err != nil {
+	if err := worker.HandleDictationStreamEvent(ctx, final, speechkit.DictationStreamSinkOptions{Target: "editor", Language: "de"}); err != nil {
 		t.Fatalf("HandleDictationStreamEvent(final) error = %v", err)
 	}
-	if err := worker.HandleDictationStreamEvent(ctx, final, DictationStreamSinkOptions{Target: "editor", Language: "de"}); err != nil {
+	if err := worker.HandleDictationStreamEvent(ctx, final, speechkit.DictationStreamSinkOptions{Target: "editor", Language: "de"}); err != nil {
 		t.Fatalf("HandleDictationStreamEvent(duplicate final) error = %v", err)
 	}
 
@@ -811,12 +813,12 @@ func TestTranscriptionWorkerLiveInjectsKeepSentenceGap(t *testing.T) {
 		t.Fatalf("NewTranscriptionWorker() error = %v", err)
 	}
 	ctx := context.Background()
-	first := DictationStreamEvent{SessionID: 4, SegmentID: 1, ProviderItemID: "a", Text: "Das ist ein Satz.", IsFinal: true}
-	second := DictationStreamEvent{SessionID: 4, SegmentID: 2, ProviderItemID: "b", Text: "Und weiter.", IsFinal: true}
-	if err := worker.HandleDictationStreamEvent(ctx, first, DictationStreamSinkOptions{Target: "editor", Language: "de"}); err != nil {
+	first := speechkit.DictationStreamEvent{SessionID: 4, SegmentID: 1, ProviderItemID: "a", Text: "Das ist ein Satz.", IsFinal: true}
+	second := speechkit.DictationStreamEvent{SessionID: 4, SegmentID: 2, ProviderItemID: "b", Text: "Und weiter.", IsFinal: true}
+	if err := worker.HandleDictationStreamEvent(ctx, first, speechkit.DictationStreamSinkOptions{Target: "editor", Language: "de"}); err != nil {
 		t.Fatalf("first final: %v", err)
 	}
-	if err := worker.HandleDictationStreamEvent(ctx, second, DictationStreamSinkOptions{Target: "editor", Language: "de"}); err != nil {
+	if err := worker.HandleDictationStreamEvent(ctx, second, speechkit.DictationStreamSinkOptions{Target: "editor", Language: "de"}); err != nil {
 		t.Fatalf("second final: %v", err)
 	}
 	delivered := output.snapshot()
@@ -831,7 +833,7 @@ func TestTranscriptionWorkerLiveInjectsKeepSentenceGap(t *testing.T) {
 
 func TestTranscriptionWorkerAllowsRepeatedTextAcrossDistinctSegments(t *testing.T) {
 	transcriber := &countingTranscriber{
-		transcript: Transcript{
+		transcript: speechkit.Transcript{
 			Text:     "same repeated phrase",
 			Provider: "test",
 			Duration: 20 * time.Millisecond,
@@ -852,8 +854,8 @@ func TestTranscriptionWorkerAllowsRepeatedTextAcrossDistinctSegments(t *testing.
 	defer cancel()
 	worker.Start(ctx)
 	for i := uint64(1); i <= 2; i++ {
-		if err := worker.Submit(TranscriptionJob{
-			Submission: Submission{
+		if err := worker.Submit(speechkit.TranscriptionJob{
+			Submission: speechkit.Submission{
 				PCM:          []byte(strings.Repeat("r", 6400)),
 				WAV:          []byte("wav"),
 				DurationSecs: 0.2,
@@ -899,14 +901,14 @@ func TestTranscriptionWorkerTranscribesSegmentsInParallelAndDeliversCombinedTran
 	defer cancel()
 	worker.Start(ctx)
 
-	if err := worker.Submit(TranscriptionJob{
-		Submission: Submission{
+	if err := worker.Submit(speechkit.TranscriptionJob{
+		Submission: speechkit.Submission{
 			PCM:          []byte(strings.Repeat("x", 12800)),
 			WAV:          []byte("full-session"),
 			DurationSecs: 0.4,
 			Language:     "de",
 		},
-		Segments: []Submission{
+		Segments: []speechkit.Submission{
 			{WAV: []byte("segment-1"), DurationSecs: 0.2, Language: "de"},
 			{WAV: []byte("segment-2"), DurationSecs: 0.2, Language: "de"},
 		},
@@ -965,8 +967,8 @@ func TestTranscriptionWorkerHandlesTranscriberErrors(t *testing.T) {
 	defer cancel()
 	worker.Start(ctx)
 
-	if err := worker.Submit(TranscriptionJob{
-		Submission: Submission{
+	if err := worker.Submit(speechkit.TranscriptionJob{
+		Submission: speechkit.Submission{
 			PCM:          []byte(strings.Repeat("a", 6400)),
 			WAV:          []byte("wav"),
 			DurationSecs: 0.2,
@@ -982,7 +984,7 @@ func TestTranscriptionWorkerHandlesTranscriberErrors(t *testing.T) {
 	if len(output.delivered) != 0 {
 		t.Fatalf("delivered outputs = %d, want 0", len(output.delivered))
 	}
-	if got := observer.states; len(got) < 2 || got[0] != "processing:"+DefaultProcessingMessage || got[1] != "idle:" {
+	if got := observer.states; len(got) < 2 || got[0] != "processing:"+speechkit.DefaultProcessingMessage || got[1] != "idle:" {
 		t.Fatalf("observer states = %#v", got)
 	}
 	hasSTTError := false
@@ -1002,7 +1004,7 @@ func TestTranscriptionWorkerDeliversBeforeHistoryPersistence(t *testing.T) {
 	output := &recordingOutput{}
 	commitObserver := &testCommitObserver{}
 	runner := NewTranscriptionRunner(stubTranscriber{
-		transcript: Transcript{
+		transcript: speechkit.Transcript{
 			Text:     "  fast dictation  ",
 			Language: "en",
 			Provider: "local",
@@ -1025,8 +1027,8 @@ func TestTranscriptionWorkerDeliversBeforeHistoryPersistence(t *testing.T) {
 	defer cancel()
 	worker.Start(ctx)
 
-	if err := worker.Submit(TranscriptionJob{
-		Submission: Submission{
+	if err := worker.Submit(speechkit.TranscriptionJob{
+		Submission: speechkit.Submission{
 			WAV:          []byte("wav"),
 			DurationSecs: 0.2,
 			Language:     "en",
@@ -1103,7 +1105,7 @@ func TestTranscriptionWorkerSubmitWhileClosingDoesNotPanic(t *testing.T) {
 		Timeout:   time.Second,
 		QueueSize: 8,
 		Runner: NewTranscriptionRunner(stubTranscriber{
-			transcript: Transcript{Text: "ok", Provider: "local", Duration: 10 * time.Millisecond},
+			transcript: speechkit.Transcript{Text: "ok", Provider: "local", Duration: 10 * time.Millisecond},
 		}, nil),
 	})
 	if err != nil {
@@ -1116,8 +1118,8 @@ func TestTranscriptionWorkerSubmitWhileClosingDoesNotPanic(t *testing.T) {
 
 	var panicCount atomic.Int64
 	var wg sync.WaitGroup
-	job := TranscriptionJob{
-		Submission: Submission{
+	job := speechkit.TranscriptionJob{
+		Submission: speechkit.Submission{
 			PCM:          []byte(strings.Repeat("a", 6400)),
 			WAV:          []byte("wav"),
 			DurationSecs: 0.2,
@@ -1158,7 +1160,7 @@ func TestTranscriptionWorkerSuccessLogRedactsTranscriptText(t *testing.T) {
 		Timeout:   time.Second,
 		QueueSize: 1,
 		Runner: NewTranscriptionRunner(stubTranscriber{
-			transcript: Transcript{
+			transcript: speechkit.Transcript{
 				Text:     "secret customer text",
 				Provider: "local",
 				Duration: 1500 * time.Millisecond,
@@ -1174,8 +1176,8 @@ func TestTranscriptionWorkerSuccessLogRedactsTranscriptText(t *testing.T) {
 	defer cancel()
 	worker.Start(ctx)
 
-	if err := worker.Submit(TranscriptionJob{
-		Submission: Submission{
+	if err := worker.Submit(speechkit.TranscriptionJob{
+		Submission: speechkit.Submission{
 			PCM:          []byte(strings.Repeat("a", 6400)),
 			WAV:          []byte("wav"),
 			DurationSecs: 0.2,
@@ -1201,7 +1203,7 @@ func TestTranscriptionWorkerSuccessLogRedactsTranscriptText(t *testing.T) {
 // (e.g. WebView2/text-field paste) that faults during a transcript hand-off.
 type panicOutput struct{}
 
-func (panicOutput) Deliver(_ context.Context, _ Transcript, _ any) error {
+func (panicOutput) Deliver(_ context.Context, _ speechkit.Transcript, _ any) error {
 	panic("boom in output delivery")
 }
 
@@ -1209,7 +1211,7 @@ func (panicOutput) Deliver(_ context.Context, _ Transcript, _ any) error {
 // faults while transcribing a segment.
 type panicTranscriber struct{}
 
-func (panicTranscriber) Transcribe(_ context.Context, _ []byte, _ float64, _ string) (Transcript, error) {
+func (panicTranscriber) Transcribe(_ context.Context, _ []byte, _ float64, _ string) (speechkit.Transcript, error) {
 	panic("boom in transcriber")
 }
 
@@ -1218,7 +1220,7 @@ func (panicTranscriber) Transcribe(_ context.Context, _ []byte, _ float64, _ str
 // (the desktop host installs no top-level panic handler). The worker must
 // instead log the panic and keep processing the next job.
 func TestTranscriptionWorkerRecoversFromOutputPanic(t *testing.T) {
-	transcriber := &countingTranscriber{transcript: Transcript{Text: "hallo", Provider: "deepgram"}}
+	transcriber := &countingTranscriber{transcript: speechkit.Transcript{Text: "hallo", Provider: "deepgram"}}
 	worker, err := NewTranscriptionWorker(TranscriptionWorkerConfig{
 		Timeout:   time.Second,
 		QueueSize: 4,
@@ -1234,8 +1236,8 @@ func TestTranscriptionWorkerRecoversFromOutputPanic(t *testing.T) {
 	worker.Start(ctx)
 
 	for i := 0; i < 2; i++ {
-		if err := worker.Submit(TranscriptionJob{
-			Submission: Submission{WAV: []byte("wav"), DurationSecs: 0.2, Language: "de"},
+		if err := worker.Submit(speechkit.TranscriptionJob{
+			Submission: speechkit.Submission{WAV: []byte("wav"), DurationSecs: 0.2, Language: "de"},
 			Target:     "editor",
 		}); err != nil {
 			t.Fatalf("Submit() job %d error = %v", i, err)
@@ -1269,9 +1271,9 @@ func TestTranscriptionWorkerRecoversFromSegmentPanic(t *testing.T) {
 	defer cancel()
 	worker.Start(ctx)
 
-	if err := worker.Submit(TranscriptionJob{
-		Submission: Submission{PCM: []byte(strings.Repeat("x", 6400)), WAV: []byte("full"), DurationSecs: 0.4, Language: "de"},
-		Segments: []Submission{
+	if err := worker.Submit(speechkit.TranscriptionJob{
+		Submission: speechkit.Submission{PCM: []byte(strings.Repeat("x", 6400)), WAV: []byte("full"), DurationSecs: 0.4, Language: "de"},
+		Segments: []speechkit.Submission{
 			{WAV: []byte("segment-1"), DurationSecs: 0.2, Language: "de"},
 			{WAV: []byte("segment-2"), DurationSecs: 0.2, Language: "de"},
 		},

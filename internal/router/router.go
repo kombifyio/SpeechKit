@@ -5,8 +5,9 @@
 // the aliases below. New code should import pkg/speechkit/stt directly.
 //
 // The shim also owns the host-side audit wiring: the public router exposes a
-// provider-selected observer instead of importing internal/auditlog, and this
-// package installs the audit-log observer for both targets at init time.
+// per-instance provider-selected observer instead of importing
+// internal/auditlog, and both targets install AuditObserver on the routers
+// they build.
 package router
 
 import (
@@ -28,20 +29,20 @@ const (
 	StrategyCloudOnly = pkgstt.StrategyCloudOnly
 )
 
-// init installs the audit-log observer so every successful routed
-// transcription records a provider.selected audit event, exactly as the
-// pre-promotion internal router did. Errors from AppendEvent are intentionally
-// discarded — audit failures must never abort a user-facing transcription.
-func init() {
-	pkgstt.SetProviderSelectedObserver(func(ctx context.Context, providerName string, strategy Strategy) {
-		_ = auditlog.AppendEvent(ctx, auditlog.Record{
-			Event: auditlog.EventProviderSelected,
-			Resource: map[string]any{
-				"provider_name": providerName,
-				"provider_kind": "stt",
-				"strategy":      string(strategy),
-			},
-			Outcome: auditlog.OutcomeSuccess,
-		})
+// AuditObserver records a provider.selected audit event for every successful
+// routed transcription, exactly as the pre-promotion internal router did.
+// Hosts set it as stt.Router.OnProviderSelected (or
+// allproviders.RouterConfig.OnProviderSelected). Errors from AppendEvent are
+// intentionally discarded — audit failures must never abort a user-facing
+// transcription.
+func AuditObserver(ctx context.Context, providerName string, strategy Strategy) {
+	_ = auditlog.AppendEvent(ctx, auditlog.Record{
+		Event: auditlog.EventProviderSelected,
+		Resource: map[string]any{
+			"provider_name": providerName,
+			"provider_kind": "stt",
+			"strategy":      string(strategy),
+		},
+		Outcome: auditlog.OutcomeSuccess,
 	})
 }

@@ -5,6 +5,8 @@ import (
 	"strings"
 
 	"github.com/BurntSushi/toml"
+
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/hostconfig"
 )
 
 func rejectRemovedConfigAliases(meta toml.MetaData) error {
@@ -14,89 +16,134 @@ func rejectRemovedConfigAliases(meta toml.MetaData) error {
 	return nil
 }
 
+// backfillLegacyModeHotkeys folds the removed [general] hotkey keys into the
+// per-mode fields. The shared semantics live in hostconfig.Normalize so the
+// desktop app and library embedders read the same file identically; only the
+// write-back of the legacy fields themselves stays here, since the public
+// Config no longer carries them.
 func backfillLegacyModeHotkeys(meta toml.MetaData, cfg *Config) {
 	if cfg == nil {
 		return
 	}
-
-	if strings.TrimSpace(cfg.General.DictateHotkey) == "" {
-		cfg.General.DictateHotkey = strings.TrimSpace(cfg.General.Hotkey)
-	}
-	if strings.TrimSpace(cfg.General.DictateHotkey) == "" {
-		cfg.General.DictateHotkey = "ctrl+win"
-	}
-
-	legacyAgentHotkey := strings.TrimSpace(cfg.General.AgentHotkey)
 	legacyAgentMode := strings.TrimSpace(cfg.General.AgentMode)
 	if legacyAgentMode != "voice_agent" {
 		legacyAgentMode = "assist"
 	}
 
-	if !meta.IsDefined("general", "assist_hotkey") && strings.TrimSpace(cfg.General.AssistHotkey) == "" && legacyAgentMode == "assist" {
-		cfg.General.AssistHotkey = legacyAgentHotkey
-	}
-	if !meta.IsDefined("general", "voice_agent_hotkey") && strings.TrimSpace(cfg.General.VoiceAgentHotkey) == "" && legacyAgentMode == "voice_agent" {
-		cfg.General.VoiceAgentHotkey = legacyAgentHotkey
-	}
+	applySharedNormalization(meta, cfg)
 
-	cfg.General.AssistHotkey = strings.TrimSpace(cfg.General.AssistHotkey)
-	cfg.General.VoiceAgentHotkey = strings.TrimSpace(cfg.General.VoiceAgentHotkey)
-	migrateOldBuiltInHotkeyDefaults(cfg)
 	if cfg.General.AgentHotkey == "" {
 		cfg.General.AgentHotkey = cfg.LegacyAgentHotkey()
 	}
 	if cfg.General.AgentMode == "" {
 		cfg.General.AgentMode = legacyAgentMode
 	}
-	if !meta.IsDefined("general", "dictate_enabled") {
-		cfg.General.DictateEnabled = strings.TrimSpace(cfg.General.DictateHotkey) != ""
-	}
-	if !meta.IsDefined("general", "assist_enabled") {
-		cfg.General.AssistEnabled = strings.TrimSpace(cfg.General.AssistHotkey) != ""
-	}
-	if !meta.IsDefined("general", "voice_agent_enabled") {
-		cfg.General.VoiceAgentEnabled = strings.TrimSpace(cfg.General.VoiceAgentHotkey) != ""
-	}
-
-	legacyHotkeyMode := NormalizeHotkeyBehavior(cfg.General.HotkeyMode, HotkeyBehaviorHoldToTalk)
-	legacyHotkeyModeDefined := meta.IsDefined("general", "hotkey_mode")
-	if legacyHotkeyModeDefined && !meta.IsDefined("general", "dictate_hotkey_behavior") {
-		cfg.General.DictateHotkeyBehavior = legacyHotkeyMode
-	}
-	if legacyHotkeyModeDefined && !meta.IsDefined("general", "assist_hotkey_behavior") {
-		cfg.General.AssistHotkeyBehavior = legacyHotkeyMode
-	}
-	if legacyHotkeyModeDefined && !meta.IsDefined("general", "voice_agent_hotkey_behavior") {
-		cfg.General.VoiceAgentHotkeyBehavior = legacyHotkeyMode
-	}
-
-	cfg.General.DictateHotkeyBehavior = NormalizeHotkeyBehavior(cfg.General.DictateHotkeyBehavior, HotkeyBehaviorHoldToTalk)
-	cfg.General.AssistHotkeyBehavior = NormalizeHotkeyBehavior(cfg.General.AssistHotkeyBehavior, HotkeyBehaviorHoldToTalk)
-	cfg.General.VoiceAgentHotkeyBehavior = NormalizeHotkeyBehavior(cfg.General.VoiceAgentHotkeyBehavior, HotkeyBehaviorHoldToTalk)
 	cfg.General.HotkeyMode = NormalizeHotkeyBehavior(cfg.General.HotkeyMode, cfg.General.DictateHotkeyBehavior)
 }
 
-func migrateOldBuiltInHotkeyDefaults(cfg *Config) {
-	if cfg == nil {
-		return
+// applySharedNormalization runs hostconfig.Normalize over the tables the
+// public loader owns and copies the result back into the internal Config.
+func applySharedNormalization(meta toml.MetaData, cfg *Config) {
+	shared := sharedView(cfg)
+	legacy := hostconfig.LegacyGeneral{
+		Hotkey:      cfg.General.Hotkey,
+		AgentHotkey: cfg.General.AgentHotkey,
+		AgentMode:   cfg.General.AgentMode,
+		HotkeyMode:  cfg.General.HotkeyMode,
 	}
-	if !sameCombo(cfg.General.DictateHotkey, "win+alt") ||
-		!sameCombo(cfg.General.AssistHotkey, "ctrl+win") ||
-		!sameCombo(cfg.General.VoiceAgentHotkey, "ctrl+shift") {
-		return
-	}
+	dictateBefore := cfg.General.DictateHotkey
 
-	cfg.General.DictateHotkey = "ctrl+win"
-	cfg.General.AssistHotkey = "win+alt"
-	cfg.General.VoiceAgentHotkey = "ctrl+shift"
+	hostconfig.Normalize(&shared, meta.IsDefined, legacy)
+	applySharedView(cfg, shared)
 
-	if blankOrCombo(cfg.General.Hotkey, "win+alt") {
-		cfg.General.Hotkey = cfg.General.DictateHotkey
+	// The swapped-default migration is the only path that rewrites a set
+	// dictate hotkey, so observing that rewrite identifies it exactly.
+	swapped := sameCombo(dictateBefore, hostconfig.DefaultAssistHotkey) &&
+		sameCombo(cfg.General.DictateHotkey, hostconfig.DefaultDictateHotkey)
+	if swapped {
+		// The public loader moved the pre-v0.30 swapped triple onto the
+		// current defaults; keep the legacy mirrors pointing at the same keys.
+		if blankOrCombo(cfg.General.Hotkey, "win+alt") {
+			cfg.General.Hotkey = cfg.General.DictateHotkey
+		}
+		if blankOrCombo(cfg.General.AgentHotkey, "ctrl+win") &&
+			(cfg.General.AgentMode == "" || cfg.General.AgentMode == "assist") {
+			cfg.General.AgentHotkey = cfg.General.AssistHotkey
+		}
 	}
-	if blankOrCombo(cfg.General.AgentHotkey, "ctrl+win") &&
-		(cfg.General.AgentMode == "" || cfg.General.AgentMode == "assist") {
-		cfg.General.AgentHotkey = cfg.General.AssistHotkey
+}
+
+func sharedView(cfg *Config) hostconfig.Config {
+	return hostconfig.Config{
+		General: hostconfig.General{
+			DictateEnabled:           cfg.General.DictateEnabled,
+			AssistEnabled:            cfg.General.AssistEnabled,
+			VoiceAgentEnabled:        cfg.General.VoiceAgentEnabled,
+			DictateHotkey:            cfg.General.DictateHotkey,
+			AssistHotkey:             cfg.General.AssistHotkey,
+			VoiceAgentHotkey:         cfg.General.VoiceAgentHotkey,
+			DictateHotkeyBehavior:    cfg.General.DictateHotkeyBehavior,
+			AssistHotkeyBehavior:     cfg.General.AssistHotkeyBehavior,
+			VoiceAgentHotkeyBehavior: cfg.General.VoiceAgentHotkeyBehavior,
+		},
+		ModelSelection: hostconfig.ModelSelection{
+			Dictate:    sharedModeSelection(cfg.ModelSelection.Dictate),
+			Assist:     sharedModeSelection(cfg.ModelSelection.Assist),
+			VoiceAgent: sharedModeSelection(cfg.ModelSelection.VoiceAgent),
+		},
+		Vocabulary: hostconfig.Vocabulary{Dictionary: cfg.Vocabulary.Dictionary},
+		TTS:        hostconfig.TTS{Enabled: cfg.TTS.Enabled},
+		VoiceAgent: hostconfig.VoiceAgent{
+			EnableSessionSummary: cfg.VoiceAgent.EnableSessionSummary,
+			PipelineFallback:     cfg.VoiceAgent.PipelineFallback,
+			CloseBehavior:        cfg.VoiceAgent.CloseBehavior,
+			AgentProfileID:       cfg.VoiceAgent.AgentProfileID,
+			AgentSequenceID:      cfg.VoiceAgent.AgentSequenceID,
+		},
+		ServerConnection: hostconfig.ServerConnection{
+			Enabled:              cfg.ServerConnection.Enabled,
+			URL:                  cfg.ServerConnection.URL,
+			BearerTokenEnv:       cfg.ServerConnection.BearerTokenEnv,
+			AuthMode:             cfg.ServerConnection.AuthMode,
+			BetaInstallIDEnv:     cfg.ServerConnection.BetaInstallIDEnv,
+			BetaInstallSecretEnv: cfg.ServerConnection.BetaInstallSecretEnv,
+			FallbackToLocal:      cfg.ServerConnection.FallbackToLocal,
+			RequestTimeoutSec:    cfg.ServerConnection.RequestTimeoutSec,
+		},
 	}
+}
+
+func sharedModeSelection(sel ModeModelSelection) hostconfig.ModeSelection {
+	return hostconfig.ModeSelection{
+		PrimaryProfileID:  sel.PrimaryProfileID,
+		FallbackProfileID: sel.FallbackProfileID,
+		ModeSource:        sel.ModeSource,
+	}
+}
+
+func applySharedView(cfg *Config, shared hostconfig.Config) {
+	cfg.General.DictateEnabled = shared.General.DictateEnabled
+	cfg.General.AssistEnabled = shared.General.AssistEnabled
+	cfg.General.VoiceAgentEnabled = shared.General.VoiceAgentEnabled
+	cfg.General.DictateHotkey = shared.General.DictateHotkey
+	cfg.General.AssistHotkey = shared.General.AssistHotkey
+	cfg.General.VoiceAgentHotkey = shared.General.VoiceAgentHotkey
+	cfg.General.DictateHotkeyBehavior = shared.General.DictateHotkeyBehavior
+	cfg.General.AssistHotkeyBehavior = shared.General.AssistHotkeyBehavior
+	cfg.General.VoiceAgentHotkeyBehavior = shared.General.VoiceAgentHotkeyBehavior
+
+	cfg.ModelSelection.Dictate.ModeSource = shared.ModelSelection.Dictate.ModeSource
+	cfg.ModelSelection.Assist.ModeSource = shared.ModelSelection.Assist.ModeSource
+	cfg.ModelSelection.VoiceAgent.ModeSource = shared.ModelSelection.VoiceAgent.ModeSource
+
+	cfg.VoiceAgent.EnableSessionSummary = shared.VoiceAgent.EnableSessionSummary
+	cfg.VoiceAgent.CloseBehavior = shared.VoiceAgent.CloseBehavior
+	cfg.VoiceAgent.AgentSequenceID = shared.VoiceAgent.AgentSequenceID
+	// AgentProfileID is intentionally not copied back: the desktop app resolves
+	// it against its behaviour catalog (voiceagentprofile.NormalizeID) later in
+	// Load, which the public loader deliberately does not do.
+
+	cfg.ServerConnection.AuthMode = shared.ServerConnection.AuthMode
 }
 
 func sameCombo(value, combo string) bool {
@@ -106,7 +153,6 @@ func sameCombo(value, combo string) bool {
 func blankOrCombo(value, combo string) bool {
 	return strings.TrimSpace(value) == "" || sameCombo(value, combo)
 }
-
 func backfillStartupBehavior(meta toml.MetaData, cfg *Config) {
 	if cfg == nil {
 		return
@@ -137,15 +183,6 @@ func backfillVoiceAgentPromptLayers(cfg *Config) {
 
 	cfg.VoiceAgent.FrameworkPrompt = strings.TrimSpace(cfg.VoiceAgent.FrameworkPrompt)
 	cfg.VoiceAgent.RefinementPrompt = strings.TrimSpace(cfg.VoiceAgent.RefinementPrompt)
-}
-
-func backfillVoiceAgentSessionSummary(meta toml.MetaData, cfg *Config) {
-	if cfg == nil {
-		return
-	}
-	if !meta.IsDefined("voice_agent", "enable_session_summary") {
-		cfg.VoiceAgent.EnableSessionSummary = true
-	}
 }
 
 func backfillLegacyAssistModels(meta toml.MetaData, cfg *Config) {

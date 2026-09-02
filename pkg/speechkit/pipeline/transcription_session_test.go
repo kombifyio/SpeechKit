@@ -1,6 +1,10 @@
-package speechkit
+package pipeline
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/kombifyio/SpeechKit/pkg/speechkit"
+)
 
 // A meeting records several sources at once and each source numbers its own
 // segments from one, so the first segment of the microphone and the first
@@ -9,13 +13,13 @@ import "testing"
 func TestLedgerAdmitsTheSameSegmentNumberOnDifferentCaptureChannels(t *testing.T) {
 	ledger := NewTranscriptSessionLedger()
 
-	mic := transcriptSegmentKey(Submission{
-		CaptureChannel: CaptureChannelMicrophone,
+	mic := transcriptSegmentKey(speechkit.Submission{
+		CaptureChannel: speechkit.CaptureChannelMicrophone,
 		SessionID:      1,
 		SegmentID:      1,
 	})
-	system := transcriptSegmentKey(Submission{
-		CaptureChannel: CaptureChannelSystem,
+	system := transcriptSegmentKey(speechkit.Submission{
+		CaptureChannel: speechkit.CaptureChannelSystem,
 		SessionID:      1,
 		SegmentID:      1,
 	})
@@ -36,15 +40,15 @@ func TestLedgerAdmitsTheSameSegmentNumberOnDifferentCaptureChannels(t *testing.T
 
 func TestLedgerScopesReusedControllerCountersByRecordingSession(t *testing.T) {
 	ledger := NewTranscriptSessionLedger()
-	firstMeeting := transcriptSegmentKey(Submission{
+	firstMeeting := transcriptSegmentKey(speechkit.Submission{
 		RecordingSessionID: 101,
-		CaptureChannel:     CaptureChannelMicrophone,
+		CaptureChannel:     speechkit.CaptureChannelMicrophone,
 		SessionID:          1,
 		SegmentID:          1,
 	})
-	secondMeeting := transcriptSegmentKey(Submission{
+	secondMeeting := transcriptSegmentKey(speechkit.Submission{
 		RecordingSessionID: 102,
-		CaptureChannel:     CaptureChannelMicrophone,
+		CaptureChannel:     speechkit.CaptureChannelMicrophone,
 		SessionID:          1,
 		SegmentID:          1,
 	})
@@ -64,8 +68,8 @@ func TestLedgerScopesReusedControllerCountersByRecordingSession(t *testing.T) {
 
 func TestLedgerRetiresOnlyEndedRecordingSessions(t *testing.T) {
 	ledger := NewTranscriptSessionLedger()
-	ended := TranscriptSegmentKey{RecordingSessionID: 201, SessionID: 1, SegmentID: 1}
-	active := TranscriptSegmentKey{RecordingSessionID: 202, SessionID: 1, SegmentID: 1}
+	ended := speechkit.TranscriptSegmentKey{RecordingSessionID: 201, SessionID: 1, SegmentID: 1}
+	active := speechkit.TranscriptSegmentKey{RecordingSessionID: 202, SessionID: 1, SegmentID: 1}
 	if !ledger.Begin(ended) || !ledger.Begin(active) {
 		t.Fatal("initial segments were rejected")
 	}
@@ -88,13 +92,13 @@ func TestLedgerRetiresOnlyEndedRecordingSessions(t *testing.T) {
 func TestMeetingCaptureNeverPersistsAudio(t *testing.T) {
 	audio := []byte("pretend this is a wav")
 
-	if got := persistableAudio(Submission{WAV: audio}); len(got) == 0 {
+	if got := persistableAudio(speechkit.Submission{WAV: audio}); len(got) == 0 {
 		t.Fatal("ordinary dictation lost its audio")
 	}
-	if got := persistableAudio(Submission{WAV: audio, CaptureChannel: CaptureChannelMicrophone}); got != nil {
+	if got := persistableAudio(speechkit.Submission{WAV: audio, CaptureChannel: speechkit.CaptureChannelMicrophone}); got != nil {
 		t.Fatal("a meeting's microphone audio would have been stored")
 	}
-	if got := persistableAudio(Submission{WAV: audio, CaptureChannel: CaptureChannelSystem}); got != nil {
+	if got := persistableAudio(speechkit.Submission{WAV: audio, CaptureChannel: speechkit.CaptureChannelSystem}); got != nil {
 		t.Fatal("a meeting's system audio would have been stored")
 	}
 }
@@ -104,13 +108,13 @@ func TestMeetingCaptureNeverPersistsAudio(t *testing.T) {
 // was pasted straight into the user's own note pane, which is both surprising
 // and destroys the notes the write-up anchors on.
 func TestMeetingCaptureIsNeverTypedIntoTheFocusedWindow(t *testing.T) {
-	if !deliverableAsOutput(Submission{}) {
+	if !deliverableAsOutput(speechkit.Submission{}) {
 		t.Fatal("ordinary dictation stopped being delivered")
 	}
-	if deliverableAsOutput(Submission{CaptureChannel: CaptureChannelMicrophone}) {
+	if deliverableAsOutput(speechkit.Submission{CaptureChannel: speechkit.CaptureChannelMicrophone}) {
 		t.Fatal("the meeting's own microphone would have been typed into the focused window")
 	}
-	if deliverableAsOutput(Submission{CaptureChannel: CaptureChannelSystem}) {
+	if deliverableAsOutput(speechkit.Submission{CaptureChannel: speechkit.CaptureChannelSystem}) {
 		t.Fatal("the other side of the call would have been typed into the focused window")
 	}
 }

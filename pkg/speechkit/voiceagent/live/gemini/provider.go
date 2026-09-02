@@ -123,7 +123,7 @@ func (g *Provider) SendAudio(chunk []byte) error {
 	session := g.session
 	g.mu.RUnlock()
 	if session == nil {
-		return fmt.Errorf("gemini live: not connected")
+		return fmt.Errorf("gemini live: %w", live.ErrNotConnected)
 	}
 
 	return session.SendRealtimeInput(genai.LiveRealtimeInput{
@@ -139,7 +139,7 @@ func (g *Provider) SendAudioStreamEnd() error {
 	session := g.session
 	g.mu.RUnlock()
 	if session == nil {
-		return fmt.Errorf("gemini live: not connected")
+		return fmt.Errorf("gemini live: %w", live.ErrNotConnected)
 	}
 
 	return session.SendRealtimeInput(genai.LiveRealtimeInput{
@@ -152,7 +152,7 @@ func (g *Provider) Receive(ctx context.Context) (*live.LiveMessage, error) {
 	session := g.session
 	g.mu.RUnlock()
 	if session == nil {
-		return nil, fmt.Errorf("gemini live: not connected")
+		return nil, fmt.Errorf("gemini live: %w", live.ErrNotConnected)
 	}
 
 	// genai.Session.Receive() blocks until a message arrives.
@@ -232,7 +232,7 @@ func (g *Provider) SendText(text string) error {
 	session := g.session
 	g.mu.RUnlock()
 	if session == nil {
-		return fmt.Errorf("gemini live: not connected")
+		return fmt.Errorf("gemini live: %w", live.ErrNotConnected)
 	}
 
 	return session.SendRealtimeInput(genai.LiveRealtimeInput{
@@ -245,7 +245,7 @@ func (g *Provider) SendToolResponse(response live.ToolResponse) error {
 	session := g.session
 	g.mu.RUnlock()
 	if session == nil {
-		return fmt.Errorf("gemini live: not connected")
+		return fmt.Errorf("gemini live: %w", live.ErrNotConnected)
 	}
 
 	return session.SendToolResponse(genai.LiveToolResponseInput{

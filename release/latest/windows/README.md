@@ -8,7 +8,7 @@ Use INSTALLER-MANIFEST.json to find the canonical download_url, size, and
 SHA-256 for mirrored release assets such as SpeechKit-Setup.exe,
 SpeechKit-Portable.zip, and optional enterprise artifacts.
 
-The canonical release assets are still the GitHub Release files for v0.67.5
+The canonical release assets are still the GitHub Release files for v0.67.12
 in kombifyio/SpeechKit. Verify local files with SHA256SUMS.txt or inspect
 INSTALLER-MANIFEST.json for source and hash metadata.
 

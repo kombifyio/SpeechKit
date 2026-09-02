@@ -3,12 +3,12 @@ package models
 import (
 	"testing"
 
-	"github.com/kombifyio/SpeechKit/pkg/speechkit"
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/catalog"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/provideropts"
 )
 
 func TestDefaultCatalogExposesFourProviderKindsPerUserMode(t *testing.T) {
-	catalog := DefaultCatalog()
+	hostCatalog := DefaultCatalog()
 	requiredKinds := []ProviderKind{
 		ProviderKindLocalBuiltIn,
 		ProviderKindLocalProvider,
@@ -23,7 +23,7 @@ func TestDefaultCatalogExposesFourProviderKindsPerUserMode(t *testing.T) {
 
 	for modality, requiredCapabilities := range modeRequirements {
 		byKind := map[ProviderKind][]Profile{}
-		for _, profile := range catalog.Profiles {
+		for _, profile := range hostCatalog.Profiles {
 			if profile.Modality != modality {
 				continue
 			}
@@ -47,10 +47,10 @@ func TestDefaultCatalogExposesFourProviderKindsPerUserMode(t *testing.T) {
 }
 
 func TestDefaultCatalogKeepsMultipleBuiltInDictationVariants(t *testing.T) {
-	catalog := DefaultCatalog()
+	hostCatalog := DefaultCatalog()
 
 	var localBuiltIn Profile
-	for _, profile := range catalog.Profiles {
+	for _, profile := range hostCatalog.Profiles {
 		if profile.Modality == ModalitySTT && profile.ProviderKind == ProviderKindLocalBuiltIn {
 			localBuiltIn = profile
 			break
@@ -79,10 +79,10 @@ func TestDefaultCatalogKeepsMultipleBuiltInDictationVariants(t *testing.T) {
 }
 
 func TestDefaultCatalogRecommendsGemma4ForBuiltInAssist(t *testing.T) {
-	catalog := DefaultCatalog()
+	hostCatalog := DefaultCatalog()
 
 	var localBuiltIn Profile
-	for _, profile := range catalog.Profiles {
+	for _, profile := range hostCatalog.Profiles {
 		if profile.Modality == ModalityAssist && profile.ProviderKind == ProviderKindLocalBuiltIn {
 			localBuiltIn = profile
 			break
@@ -97,8 +97,8 @@ func TestDefaultCatalogRecommendsGemma4ForBuiltInAssist(t *testing.T) {
 	if localBuiltIn.Name != "Gemma 4 E4B (Local Built-in)" {
 		t.Fatalf("local built-in assist profile name = %q, want Gemma 4 E4B (Local Built-in)", localBuiltIn.Name)
 	}
-	if localBuiltIn.ModelID != speechkit.DefaultLocalBuiltInLLMModel {
-		t.Fatalf("local built-in assist model ID = %q, want %q", localBuiltIn.ModelID, speechkit.DefaultLocalBuiltInLLMModel)
+	if localBuiltIn.ModelID != catalog.DefaultLocalBuiltInLLMModel {
+		t.Fatalf("local built-in assist model ID = %q, want %q", localBuiltIn.ModelID, catalog.DefaultLocalBuiltInLLMModel)
 	}
 	if !localBuiltIn.Recommended {
 		t.Fatal("local built-in assist profile should be recommended")
@@ -106,8 +106,8 @@ func TestDefaultCatalogRecommendsGemma4ForBuiltInAssist(t *testing.T) {
 }
 
 func TestAssistProfilesExposeUtilityToolCapability(t *testing.T) {
-	catalog := DefaultCatalog()
-	for _, profile := range catalog.Profiles {
+	hostCatalog := DefaultCatalog()
+	for _, profile := range hostCatalog.Profiles {
 		if profile.Modality != ModalityAssist {
 			continue
 		}
@@ -123,21 +123,21 @@ func TestAssistProfilesExposeUtilityToolCapability(t *testing.T) {
 // what remains worth asserting is that nothing the framework ships gets lost
 // on the way through.
 func TestDefaultCatalogKeepsEveryFrameworkProfile(t *testing.T) {
-	catalog := DefaultCatalog()
-	for _, frameworkProfile := range speechkit.DefaultProviderProfiles() {
-		if _, ok := findProfile(catalog, frameworkProfile.ID); !ok {
+	hostCatalog := DefaultCatalog()
+	for _, frameworkProfile := range catalog.DefaultProviderProfiles() {
+		if _, ok := findProfile(hostCatalog, frameworkProfile.ID); !ok {
 			t.Errorf("host catalog dropped framework profile %q", frameworkProfile.ID)
 		}
 	}
 }
 
 func TestDefaultCatalogProfilesCarryRuntimeMetadata(t *testing.T) {
-	catalog := DefaultCatalog()
-	for _, profile := range catalog.Profiles {
+	hostCatalog := DefaultCatalog()
+	for _, profile := range hostCatalog.Profiles {
 		if profile.Provider == "" {
 			t.Fatalf("%s missing canonical provider", profile.ID)
 		}
-		if got, want := profile.Provider, speechkit.NormalizeProviderID(profile.Provider); got != want {
+		if got, want := profile.Provider, catalog.NormalizeProviderID(profile.Provider); got != want {
 			t.Fatalf("%s provider = %q, want canonical provider id %q", profile.ID, got, want)
 		}
 		if profile.AuthRequirement == "" {
@@ -148,19 +148,19 @@ func TestDefaultCatalogProfilesCarryRuntimeMetadata(t *testing.T) {
 		}
 	}
 
-	utility, ok := findProfile(catalog, "utility.openai.gpt-5.4-mini")
+	utility, ok := findProfile(hostCatalog, "utility.openai.gpt-5.4-mini")
 	if !ok {
 		t.Fatal("OpenAI utility profile missing")
 	}
-	if utility.Provider != "openai" || utility.AuthRequirement != speechkit.ProviderAuthAPIKey || utility.Transport != speechkit.ProviderTransportHTTPS {
+	if utility.Provider != "openai" || utility.AuthRequirement != catalog.ProviderAuthAPIKey || utility.Transport != catalog.ProviderTransportHTTPS {
 		t.Fatalf("OpenAI utility metadata = provider=%q auth=%q transport=%q", utility.Provider, utility.AuthRequirement, utility.Transport)
 	}
 }
 
 func TestDefaultCatalogCoversProviderOptionManifestProfiles(t *testing.T) {
-	catalog := DefaultCatalog()
+	hostCatalog := DefaultCatalog()
 	profiles := map[string]Profile{}
-	for _, profile := range catalog.Profiles {
+	for _, profile := range hostCatalog.Profiles {
 		profiles[profile.ID] = profile
 	}
 
@@ -170,7 +170,7 @@ func TestDefaultCatalogCoversProviderOptionManifestProfiles(t *testing.T) {
 			if !ok {
 				t.Fatalf("%s/%s manifest references missing profile %q", manifest.Provider, manifest.Modality, profileID)
 			}
-			if got, want := profile.Provider, speechkit.NormalizeProviderID(manifest.Provider); got != want {
+			if got, want := profile.Provider, catalog.NormalizeProviderID(manifest.Provider); got != want {
 				t.Fatalf("%s provider = %q, want manifest provider %q", profileID, got, want)
 			}
 			if got, want := profile.Modality, modalityForManifest(manifest.Modality); got != want {
@@ -181,8 +181,8 @@ func TestDefaultCatalogCoversProviderOptionManifestProfiles(t *testing.T) {
 }
 
 func TestDefaultCatalogKeepsRealtimeProviderMetadata(t *testing.T) {
-	catalog := DefaultCatalog()
-	profile, ok := findProfile(catalog, "realtime.assemblyai.voice-agent")
+	hostCatalog := DefaultCatalog()
+	profile, ok := findProfile(hostCatalog, "realtime.assemblyai.voice-agent")
 	if !ok {
 		t.Fatal("AssemblyAI Voice Agent profile missing")
 	}
@@ -210,8 +210,8 @@ func modalityForManifest(modality string) Modality {
 	}
 }
 
-func findProfile(catalog Catalog, profileID string) (Profile, bool) {
-	for _, profile := range catalog.Profiles {
+func findProfile(hostCatalog Catalog, profileID string) (Profile, bool) {
+	for _, profile := range hostCatalog.Profiles {
 		if profile.ID == profileID {
 			return profile, true
 		}

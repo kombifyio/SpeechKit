@@ -14,11 +14,17 @@ import (
 	"strings"
 	"time"
 
+	"github.com/kombifyio/SpeechKit/pkg/speechkit"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/provideropts"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/speaker"
 )
 
 // STTProvider defines the interface for all speech-to-text backends.
+//
+// It is the provider-facing contract (the SPI): implement it to add a backend,
+// hand it to a Router for fallback and routing, and bridge it to the kernel's
+// host-facing speechkit.Transcriber with AsTranscriber. Hosts consume
+// Transcriber; providers implement STTProvider.
 type STTProvider interface {
 	// Transcribe sends audio data to the STT backend and returns the transcription.
 	Transcribe(ctx context.Context, audio []byte, opts TranscribeOpts) (*Result, error)
@@ -80,12 +86,10 @@ func normalizeProviderKey(provider string) string {
 // that do not (Google v1, OpenAI/Groq/HuggingFace Whisper, local whisper.cpp).
 // Confidence here is acoustic (how sure the model is it heard this word), not
 // semantic — a low value flags a likely mis-recognition or dropped word.
-type WordConfidence struct {
-	Text       string
-	Confidence float64
-	StartMs    int64
-	EndMs      int64
-}
+//
+// It is an alias of the kernel type so provider results and Transcripts share
+// one word type; hosts never convert between the two.
+type WordConfidence = speechkit.WordConfidence
 
 // Result holds the output of a transcription.
 type Result struct {

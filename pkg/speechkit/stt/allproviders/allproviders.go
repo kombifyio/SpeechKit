@@ -23,6 +23,7 @@ import (
 	"sync"
 
 	"github.com/kombifyio/SpeechKit/pkg/speechkit"
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/catalog"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/netsec"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/stt"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/stt/assemblyai"
@@ -65,9 +66,9 @@ type BuildSpec struct {
 // ExecutionModeLocal is host-managed (whisper.cpp subprocess lifecycle) and is
 // intentionally not handled here.
 func Build(spec BuildSpec) (string, stt.STTProvider, error) {
-	providerID := speechkit.NormalizeProviderID(spec.Provider)
+	providerID := catalog.NormalizeProviderID(spec.Provider)
 	if providerID == "" {
-		providerID = speechkit.ProviderIDForExecutionMode(spec.ExecutionMode)
+		providerID = catalog.ProviderIDForExecutionMode(spec.ExecutionMode)
 	}
 	registryMu.RLock()
 	descriptor, ok := providerRegistry[providerID]
@@ -87,7 +88,7 @@ func Build(spec BuildSpec) (string, stt.STTProvider, error) {
 // spec.Provider in Build. Registering an id that already exists (including
 // the built-ins) returns an error.
 func Register(id, name string, build func(BuildSpec) (stt.STTProvider, error)) error {
-	providerID := speechkit.NormalizeProviderID(id)
+	providerID := catalog.NormalizeProviderID(id)
 	if providerID == "" {
 		return fmt.Errorf("stt: provider id is required")
 	}
@@ -215,6 +216,10 @@ type RouterConfig struct {
 	// model_selection profile (or bare provider name) to the front of the
 	// strategy order, analogous to tts.EnabledProviders.PreferredProfileID.
 	PreferredProfileID string
+	// OnProviderSelected is installed as the router's per-instance observer
+	// (stt.Router.OnProviderSelected). Hosts wire audit logging here instead
+	// of the deprecated process-wide stt.SetProviderSelectedObserver.
+	OnProviderSelected stt.ProviderSelectedObserver
 }
 
 // Per-provider assembly options. These carry the union of what the Device-
@@ -339,6 +344,10 @@ type EnabledProviders struct {
 	Google      *GoogleOpts
 	Foundry     *FoundryOpts
 	Extra       []stt.STTProvider
+	// Secrets is handed to every constructed provider that resolves
+	// credentials lazily (currently Google streaming). Nil falls back to the
+	// deprecated process-wide stt.SetSecretResolver, then the environment.
+	Secrets stt.SecretResolver
 }
 
 // BuildRouter is the single source of truth for assembling an STT router from
@@ -424,6 +433,7 @@ func BuildRouter(cfg RouterConfig, enabled EnabledProviders) (router *stt.Router
 	if o := enabled.Google; o != nil {
 		p := google.New(o.APIKey, o.Model)
 		p.SetStreamingCredentialEnvs(o.CredentialsJSONEnv, o.ApplicationCredentialsEnv)
+		p.SecretResolver = enabled.Secrets
 		cloud = append(cloud, p)
 		notes = append(notes, "STT: Google registered (model="+o.Model+")")
 	}
@@ -474,6 +484,7 @@ func BuildRouter(cfg RouterConfig, enabled EnabledProviders) (router *stt.Router
 		PreferLocalUnderSecs: cfg.PreferLocalUnderSecs,
 		ParallelCloud:        cfg.ParallelCloud,
 		ReplaceOnBetter:      cfg.ReplaceOnBetter,
+		OnProviderSelected:   cfg.OnProviderSelected,
 	}
 	if localProvider != nil {
 		router.SetLocal(localProvider)

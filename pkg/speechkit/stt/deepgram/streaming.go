@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"github.com/kombifyio/SpeechKit/pkg/speechkit/stt"
 	"io"
 	"net/http"
 	"net/url"
@@ -12,6 +11,9 @@ import (
 	"strings"
 	"sync/atomic"
 	"time"
+
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/pipeline"
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/stt"
 
 	"github.com/coder/websocket"
 
@@ -336,7 +338,7 @@ func (s *deepgramDictationStream) Receive(ctx context.Context) (speechkit.Dictat
 			return s.pendingDraft(), nil
 		}
 		frame.IsFinal = false
-		frame.Text = speechkit.JoinTranscriptFragments(append(pendingTexts(s.pending), frame.Text)...)
+		frame.Text = pipeline.JoinTranscriptFragments(append(pendingTexts(s.pending), frame.Text)...)
 		return frame, nil
 	}
 }
@@ -351,7 +353,7 @@ func (s *deepgramDictationStream) pendingDraft() speechkit.DictationStreamEvent 
 		return speechkit.DictationStreamEvent{}
 	}
 	out := s.pending[len(s.pending)-1]
-	out.Text = speechkit.JoinTranscriptFragments(pendingTexts(s.pending)...)
+	out.Text = pipeline.JoinTranscriptFragments(pendingTexts(s.pending)...)
 	out.IsFinal = false
 	var words []speechkit.WordConfidence
 	for _, part := range s.pending {

@@ -6,8 +6,10 @@
 // want a transcript surface they can route into their own editor, command
 // dispatcher, or downstream processor.
 //
-// Use [NewRuntime] to construct an instance; pass a recorder, a worker,
-// and the [speechkit.RuntimePolicy] from the host config.
+// Use [NewService] (or its original name [NewRuntime]) to construct an
+// instance; pass a recorder, a [speechkit.Transcriber] — typically
+// stt.AsTranscriber wrapped around any stt.STTProvider — and the
+// [speechkit.RuntimePolicy] from the host config.
 package dictation
 
 import (
@@ -18,6 +20,7 @@ import (
 	"time"
 
 	"github.com/kombifyio/SpeechKit/pkg/speechkit"
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/catalog"
 )
 
 var (
@@ -28,15 +31,38 @@ var (
 	ErrAudioTooShort      = errors.New("speechkit dictation: audio too short")
 )
 
+// Options configures a Dictation Runtime. Recorder and Transcriber are
+// required; NewRuntime returns ErrMissingRecorder / ErrMissingTranscriber
+// otherwise. Everything else has a documented default.
 type Options struct {
-	Recorder    speechkit.AudioRecorder
+	// Recorder supplies the PCM audio for one dictation. audio/capture.Session
+	// satisfies it; tests use any in-memory AudioRecorder.
+	Recorder speechkit.AudioRecorder
+	// Transcriber turns the recorded WAV into a Transcript. Wrap an
+	// stt.STTProvider or stt.Router with stt.AsTranscriber.
 	Transcriber speechkit.Transcriber
-	Output      speechkit.TranscriptOutput
-	Store       speechkit.Persistence
-	Policy      speechkit.RuntimePolicy
-	Profiles    []speechkit.ProviderProfile
-	Language    string
-	Target      any
+	// Output receives the final transcript. Nil means the transcript is only
+	// returned from Stop / stored; the runtime does not inject text anywhere.
+	Output speechkit.TranscriptOutput
+	// Store optionally persists every completed dictation.
+	Store speechkit.Persistence
+	// Policy is the host's runtime policy (local-only, allowed providers, ...).
+	// It is validated against Profiles at construction time.
+	Policy speechkit.RuntimePolicy
+	// Profiles is the provider catalog the Policy is checked against. Empty
+	// means catalog.DefaultProviderProfiles().
+	Profiles []speechkit.ProviderProfile
+	// Language is the BCP-47 hint passed to the transcriber; "" means "auto".
+	Language string
+	// Target is an opaque, host-defined value handed unchanged to
+	// Output.Deliver as its target argument. The runtime never inspects it; it
+	// exists so a host can route one Output to several destinations (an editor
+	// handle, a window id, a "clipboard" marker) without a per-target Output.
+	// Nil is valid and means "the Output's default destination".
+	Target any
+	// MinPCMBytes is the shortest recording that is transcribed; shorter
+	// recordings fail Stop with ErrAudioTooShort. <= 0 means
+	// speechkit.DefaultMinPCMBytes.
 	MinPCMBytes int
 }
 
@@ -59,6 +85,17 @@ type Runtime struct {
 
 var _ speechkit.DictationService = (*Runtime)(nil)
 
+// Service is the mode-service name for the Dictation runtime, matching
+// assist.Service, tts.Service and voiceagent.Service so hosts wire the three
+// modes with one vocabulary. Runtime and Service are the same type.
+type Service = Runtime
+
+// NewService constructs a Dictation service; it is NewRuntime under the name
+// the other mode packages use.
+func NewService(opts Options) (*Service, error) {
+	return NewRuntime(opts)
+}
+
 func NewRuntime(opts Options) (*Runtime, error) {
 	if opts.Recorder == nil {
 		return nil, ErrMissingRecorder
@@ -75,7 +112,7 @@ func NewRuntime(opts Options) (*Runtime, error) {
 
 	profiles := opts.Profiles
 	if len(profiles) == 0 {
-		profiles = speechkit.DefaultProviderProfiles()
+		profiles = catalog.DefaultProviderProfiles()
 	}
 	providerProfile, err := validateDictationPolicy(profiles, opts.Policy)
 	if err != nil {

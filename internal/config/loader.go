@@ -112,8 +112,6 @@ func Load(path string) (*Config, error) {
 	backfillLegacyModeHotkeys(meta, cfg)
 	backfillStartupBehavior(meta, cfg)
 	backfillVoiceAgentPromptLayers(cfg)
-	backfillVoiceAgentSessionSummary(meta, cfg)
-	backfillServerConnectionCustomURLAuth(meta, cfg)
 	normalizeSpeechDefaults(cfg, meta.IsDefined("speech"), meta.IsDefined("speech", "language"), meta.IsDefined("general", "language"))
 	NormalizeCustomizationDefaults(cfg)
 	NormalizeHandsFreeConfig(cfg, meta.IsDefined("hands_free"))
@@ -146,20 +144,6 @@ func Load(path string) (*Config, error) {
 		OverlayFeedbackModeSmallFeedback,
 	)
 	return cfg, nil
-}
-
-func backfillServerConnectionCustomURLAuth(meta toml.MetaData, cfg *Config) {
-	if cfg == nil || !meta.IsDefined("server_connection", "url") {
-		return
-	}
-	url := strings.TrimRight(strings.TrimSpace(cfg.ServerConnection.URL), "/")
-	if url == "" {
-		return
-	}
-	if !meta.IsDefined("server_connection", "auth_mode") &&
-		NormalizeServerConnectionAuthMode(cfg.ServerConnection.AuthMode) == ServerConnectionAuthModeAPIKey {
-		cfg.ServerConnection.AuthMode = ServerConnectionAuthModeBearer
-	}
 }
 
 func Save(path string, cfg *Config) error {

@@ -1,18 +1,21 @@
-package speechkit
+package catalog
 
 import (
 	"encoding/json"
+	"os"
 	"testing"
 	"time"
+
+	"github.com/kombifyio/SpeechKit/pkg/speechkit"
 )
 
 func TestProviderModelDescriptorFreshnessFieldsRoundTrip(t *testing.T) {
 	row := ProviderModelDescriptor{
 		Provider:             "deepgram",
 		ModelID:              ModelDeepgramNova3,
-		Mode:                 ModeDictation,
+		Mode:                 speechkit.ModeDictation,
 		Name:                 "Nova-3",
-		Lifecycle:            ModelLifecycleGA,
+		Lifecycle:            speechkit.ModelLifecycleGA,
 		Default:              true,
 		SourceURL:            "https://developers.deepgram.com/docs/models-languages-overview",
 		ReleasedAt:           "2024-01-01",
@@ -32,14 +35,26 @@ func TestProviderModelDescriptorFreshnessFieldsRoundTrip(t *testing.T) {
 	}
 }
 
+// ModelFreshnessGateEnv names the environment variable that turns the
+// wall-clock freshness SLA into a failing test. The scheduled
+// model-freshness-gate workflow sets it; the default `go test ./...` run does
+// not, so the unit suite stays deterministic regardless of the calendar.
+const ModelFreshnessGateEnv = "SPEECHKIT_MODEL_FRESHNESS_GATE"
+
 func TestDefaultModelRegistryFreshnessSLA(t *testing.T) {
 	rows := DefaultModelRegistry()
 	if missing := MissingFreshnessReports(rows); len(missing) > 0 {
 		t.Fatalf("default/recommended rows missing LastVerifiedAt: %v", missing)
 	}
-	if stale := StaleFreshnessReports(rows, time.Now().UTC()); len(stale) > 0 {
-		t.Fatalf("default/recommended rows older than ModelFreshnessSLA: %v", stale)
+	stale := StaleFreshnessReports(rows, time.Now().UTC())
+	if len(stale) == 0 {
+		return
 	}
+	if os.Getenv(ModelFreshnessGateEnv) == "" {
+		t.Logf("default/recommended rows older than ModelFreshnessSLA (set %s=1 to fail): %v", ModelFreshnessGateEnv, stale)
+		return
+	}
+	t.Fatalf("default/recommended rows older than ModelFreshnessSLA: %v", stale)
 }
 
 func TestStaleFreshnessReportsUsesVerifiedDay(t *testing.T) {

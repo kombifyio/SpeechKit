@@ -29,6 +29,7 @@ import (
 	"github.com/kombifyio/SpeechKit/internal/store"
 	"github.com/kombifyio/SpeechKit/internal/stt"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit"
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/catalog"
 	speechcustomize "github.com/kombifyio/SpeechKit/pkg/speechkit/customize"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/speaker"
 	speechstorage "github.com/kombifyio/SpeechKit/pkg/speechkit/storage"
@@ -304,7 +305,7 @@ func (h *Handler) resolveProviderProfile(ctx context.Context, explicit string) (
 	}
 	prefs := middleware.VoicePrefsFromContext(ctx)
 	for _, pref := range []string{prefs.STTPrimary, prefs.STTSecondary} {
-		provider := speechkit.NormalizeProviderID(pref)
+		provider := catalog.NormalizeProviderID(pref)
 		if provider == "" || strings.Contains(provider, ".") {
 			continue
 		}
@@ -329,7 +330,7 @@ func (h *Handler) providerAvailable(provider string) bool {
 }
 
 func dictationProfileExists(profileID string) bool {
-	for _, profile := range speechkit.ProfilesForMode(speechkit.ModeDictation) {
+	for _, profile := range catalog.ProfilesForMode(speechkit.ModeDictation) {
 		if profile.ID == profileID {
 			return true
 		}

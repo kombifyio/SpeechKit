@@ -11,6 +11,7 @@ import (
 
 	"github.com/kombifyio/SpeechKit/internal/voiceagentprofile"
 	framework "github.com/kombifyio/SpeechKit/pkg/speechkit"
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/catalog"
 	"golang.org/x/crypto/bcrypt"
 )
 
@@ -658,7 +659,7 @@ func providerForModeSetting(mode ServerModeSetting) string {
 }
 
 func providerForProfileID(profileID string) string {
-	provider := framework.NormalizeProviderID(profileID)
+	provider := catalog.NormalizeProviderID(profileID)
 	if strings.Contains(provider, ".") {
 		return ""
 	}
@@ -929,7 +930,7 @@ func providerKindForProfileID(profileID string) string {
 	if profileID == "" {
 		return ""
 	}
-	for _, profile := range framework.DefaultProviderProfiles() {
+	for _, profile := range catalog.DefaultProviderProfiles() {
 		if profile.ID == profileID {
 			return string(profile.ProviderKind)
 		}

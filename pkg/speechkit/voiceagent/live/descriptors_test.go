@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	framework "github.com/kombifyio/SpeechKit/pkg/speechkit"
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/catalog"
 )
 
 func TestDefaultProviderDescriptorsExposeV47Providers(t *testing.T) {
@@ -58,7 +59,7 @@ func TestDefaultProviderDescriptorsExposeV47Providers(t *testing.T) {
 
 func TestDefaultProviderDescriptorsResolveThroughFrameworkCatalog(t *testing.T) {
 	profiles := map[string]framework.ProviderProfile{}
-	for _, profile := range framework.DefaultProviderProfiles() {
+	for _, profile := range catalog.DefaultProviderProfiles() {
 		profiles[profile.ID] = profile
 	}
 

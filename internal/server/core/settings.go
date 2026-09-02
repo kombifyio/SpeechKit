@@ -19,6 +19,7 @@ import (
 	"github.com/kombifyio/SpeechKit/internal/server/middleware"
 	"github.com/kombifyio/SpeechKit/internal/voiceagentprofile"
 	framework "github.com/kombifyio/SpeechKit/pkg/speechkit"
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/catalog"
 )
 
 func registerServerSettings(app *App) {
@@ -805,7 +806,7 @@ func serverModeSettingFromProvider(provider string, mode framework.Mode, model s
 			Model:        firstNonEmpty(model, profile.ModelID),
 		}
 	}
-	if profile, ok := framework.FindProviderDefault(provider, mode); ok {
+	if profile, ok := catalog.FindProviderDefault(provider, mode); ok {
 		return config.ServerModeSetting{
 			ProviderKind: string(profile.ProviderKind),
 			ProfileID:    profile.ProfileID,
@@ -816,14 +817,14 @@ func serverModeSettingFromProvider(provider string, mode framework.Mode, model s
 }
 
 func findProviderProfileForModel(provider string, mode framework.Mode, model string) (framework.ProviderProfile, bool) {
-	provider = framework.NormalizeProviderID(provider)
+	provider = catalog.NormalizeProviderID(provider)
 	mode = framework.NormalizeMode(mode)
 	model = strings.TrimSpace(model)
 	if provider == "" || mode == framework.ModeNone || model == "" {
 		return framework.ProviderProfile{}, false
 	}
-	for _, profile := range framework.DefaultProviderProfiles() {
-		if framework.NormalizeProviderID(profile.Provider) != provider {
+	for _, profile := range catalog.DefaultProviderProfiles() {
+		if catalog.NormalizeProviderID(profile.Provider) != provider {
 			continue
 		}
 		if framework.NormalizeMode(profile.Mode) != mode {
@@ -910,7 +911,7 @@ func mergeServerCredentialSetting(base, patch config.ServerProviderCredentialSet
 
 func serverProviderCatalog() map[string]any {
 	modes := map[string][]framework.ProviderProfile{}
-	for _, profile := range framework.DefaultProviderProfiles() {
+	for _, profile := range catalog.DefaultProviderProfiles() {
 		modes[string(profile.Mode)] = append(modes[string(profile.Mode)], profile)
 	}
 	return map[string]any{
@@ -921,8 +922,8 @@ func serverProviderCatalog() map[string]any {
 			framework.ProviderKindDirectProvider,
 		},
 		"modes":             modes,
-		"provider_matrix":   framework.DefaultProviderMatrix(),
-		"provider_defaults": framework.DefaultProviderDefaults(),
+		"provider_matrix":   catalog.DefaultProviderMatrix(),
+		"provider_defaults": catalog.DefaultProviderDefaults(),
 		"assist_tools":      assistToolCatalog(),
 	}
 }

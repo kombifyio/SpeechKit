@@ -10,8 +10,35 @@ Releases, not developed directly in this public source tree.
 
 - Read [README.md](./README.md) for product scope and module boundaries.
 - Read [docs/README.md](./docs/README.md) for framework, server, MCP, and API docs.
-- Keep imports on the public surface: `github.com/kombifyio/SpeechKit/pkg/speechkit/...`.
+- Keep imports on the public surface: `<module path>/pkg/speechkit/...` (see
+  [Repository identities](#repository-identities) for which module path applies).
 - Do not import `internal/*` from downstream applications.
+
+## Repository Identities
+
+One codebase carries three names. Knowing which is which avoids most
+"go get cannot find" and "wrong remote" confusion:
+
+| Identity | Value | Used for |
+|---|---|---|
+| Governed working source | the private working repository (the `kombify-SpeechKit` checkout this file is edited in) | Day-to-day development, CI, Beads planning, release automation. Not the `go get` target. |
+| Public mirror | `kombifyio/SpeechKit` | `go get`, pkg.go.dev, GitHub Releases, `ghcr.io/kombifyio/speechkit-server`, JitPack for the Android AARs, public issues. Produced by an allowlist export (`scripts/public/export-public.*`). |
+| Go module path (`go.mod`) | `github.com/kombifyio/SpeechKit` | Import path only, not a repository location. Whatever `go.mod` says in the tree you are reading is what you import; the public export rewrites the working-source path to `github.com/kombifyio/SpeechKit`, which is what a consumer sees. |
+
+Rules that follow from this:
+
+- Never change the module path in `go.mod`. It is an import path that every
+  consumer, the public export rewrite and the API-diff gate depend on; renaming
+  the repository does not rename the module.
+- Write import statements with the module path of the tree you are in. The
+  export rewrites Go imports, `go.mod`, docs and scripts to the public path in
+  one pass, so a public consumer only ever sees `github.com/kombifyio/SpeechKit`.
+- Link public-facing documentation to the mirror
+  (`https://github.com/kombifyio/SpeechKit`), not to the working repository.
+  Exported docs must stay usable without access to the working source.
+- Android artifacts follow the same split: JitPack builds from the mirror and
+  is the public channel; GitHub Packages on the working repository is the
+  internal lane. See [android/README.md](./android/README.md).
 
 ## Development Setup
 

@@ -185,16 +185,16 @@ func collectMessages(t *testing.T, p *Provider, timeout time.Duration) []*Messag
 func TestConnectRequiresSTT(t *testing.T) {
 	p := NewProvider(Deps{Agent: &fakeAgent{}, TTS: &fakeTTS{}})
 	err := p.Connect(context.Background(), SessionConfig{})
-	if err == nil {
-		t.Fatalf("expected Connect error without STT")
+	if !errors.Is(err, ErrNotConfigured) {
+		t.Fatalf("Connect without STT = %v, want ErrNotConfigured", err)
 	}
 }
 
 func TestConnectRequiresAgent(t *testing.T) {
 	p := NewProvider(Deps{STT: &fakeSTT{}, TTS: &fakeTTS{}})
 	err := p.Connect(context.Background(), SessionConfig{})
-	if err == nil {
-		t.Fatalf("expected Connect error without Agent")
+	if !errors.Is(err, ErrNotConfigured) {
+		t.Fatalf("Connect without Agent = %v, want ErrNotConfigured", err)
 	}
 }
 

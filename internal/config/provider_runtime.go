@@ -7,6 +7,7 @@ import (
 
 	"github.com/kombifyio/SpeechKit/internal/secrets"
 	framework "github.com/kombifyio/SpeechKit/pkg/speechkit"
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/catalog"
 )
 
 const (
@@ -71,7 +72,7 @@ func UserConfigurableProviderRuntimes() []ProviderRuntime {
 }
 
 func ProviderRuntimeFor(provider string) (ProviderRuntime, bool) {
-	provider = framework.NormalizeProviderID(provider)
+	provider = catalog.NormalizeProviderID(provider)
 	for _, runtime := range providerRuntimeRegistry {
 		if runtime.Provider == provider {
 			return cloneProviderRuntime(runtime), true
@@ -108,7 +109,7 @@ func NormalizeProviderCredentialTarget(target string) string {
 	if strings.HasPrefix(value, "stt.google.") {
 		return "google_stt"
 	}
-	provider := framework.NormalizeProviderID(target)
+	provider := catalog.NormalizeProviderID(target)
 	switch provider {
 	case "openai", "groq", "google", "deepgram", "assemblyai", "huggingface", "openrouter", "cloudflare", "foundry":
 		return provider
@@ -261,10 +262,10 @@ func ResolveProviderCredentialValue(cfg *Config, target string) (string, string,
 }
 
 func ProviderCredentialTargetForProfile(profile framework.ProviderProfile) string {
-	if !framework.ProviderProfileRequiresCredential(profile) {
+	if !catalog.ProviderProfileRequiresCredential(profile) {
 		return ""
 	}
-	return framework.ProviderCredentialTarget(profile)
+	return catalog.ProviderCredentialTarget(profile)
 }
 
 func ResolveProviderCredentialValueForProfile(cfg *Config, profile framework.ProviderProfile) (string, string, error) {
@@ -343,14 +344,14 @@ func ProviderCredentialStatusFor(cfg *Config, target string) ProviderCredentialS
 }
 
 func ProviderEnabledForProfile(cfg *Config, profile framework.ProviderProfile) bool {
-	return ProviderEnabled(cfg, framework.ProviderIDForProfile(profile), framework.NormalizeMode(profile.Mode))
+	return ProviderEnabled(cfg, catalog.ProviderIDForProfile(profile), framework.NormalizeMode(profile.Mode))
 }
 
 func ProviderEnabled(cfg *Config, provider string, mode framework.Mode) bool {
 	if cfg == nil {
 		return true
 	}
-	switch framework.NormalizeProviderID(provider) {
+	switch catalog.NormalizeProviderID(provider) {
 	case "local":
 		switch framework.NormalizeMode(mode) {
 		case framework.ModeDictation:
@@ -393,7 +394,7 @@ func SetProviderEnabled(cfg *Config, provider string, enabled bool) error {
 	if cfg == nil {
 		return fmt.Errorf("settings unavailable")
 	}
-	provider = framework.NormalizeProviderID(provider)
+	provider = catalog.NormalizeProviderID(provider)
 	switch provider {
 	case "huggingface":
 		cfg.HuggingFace.Enabled = enabled

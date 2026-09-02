@@ -86,7 +86,7 @@
       "auth_method": "GOOGLE_AI_API_KEY websocket bearer token",
       "required_env_vars": ["GOOGLE_AI_API_KEY"],
       "profile_id": "realtime.google.gemini-live-translate",
-      "evidence_url": "https://ai.google.dev/gemini-api/docs/live-api/translation",
+      "evidence_url": "https://ai.google.dev/gemini-api/docs/models/gemini-3.5-live-translate-preview",
       "status": "experimental",
       "implementation_status": "experimental",
       "runtime_status": "provider_documented",

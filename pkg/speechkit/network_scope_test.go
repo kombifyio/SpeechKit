@@ -1,30 +1,33 @@
-package speechkit
+package speechkit_test
 
 import (
 	"errors"
 	"testing"
+
+	"github.com/kombifyio/SpeechKit/pkg/speechkit"
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/catalog"
 )
 
 func TestParseNetworkScope(t *testing.T) {
 	cases := []struct {
 		raw     string
-		want    NetworkScope
+		want    speechkit.NetworkScope
 		wantErr bool
 	}{
-		{"", NetworkScopeOpen, false},
-		{"open", NetworkScopeOpen, false},
-		{"  Open  ", NetworkScopeOpen, false},
-		{"local_network", NetworkScopeLocalNetwork, false},
-		{"LOCAL_NETWORK", NetworkScopeLocalNetwork, false},
-		{"device_only", NetworkScopeDeviceOnly, false},
+		{"", speechkit.NetworkScopeOpen, false},
+		{"open", speechkit.NetworkScopeOpen, false},
+		{"  Open  ", speechkit.NetworkScopeOpen, false},
+		{"local_network", speechkit.NetworkScopeLocalNetwork, false},
+		{"LOCAL_NETWORK", speechkit.NetworkScopeLocalNetwork, false},
+		{"device_only", speechkit.NetworkScopeDeviceOnly, false},
 		{"lan", "", true},
 		{"offline", "", true},
 		{"local-network", "", true},
 	}
 	for _, tc := range cases {
-		got, err := ParseNetworkScope(tc.raw)
+		got, err := speechkit.ParseNetworkScope(tc.raw)
 		if tc.wantErr {
-			if !errors.Is(err, ErrUnknownNetworkScope) {
+			if !errors.Is(err, speechkit.ErrUnknownNetworkScope) {
 				t.Errorf("ParseNetworkScope(%q) err = %v, want ErrUnknownNetworkScope", tc.raw, err)
 			}
 			continue
@@ -40,10 +43,10 @@ func TestParseNetworkScope(t *testing.T) {
 }
 
 func TestNormalizeNetworkScopeFailsClosed(t *testing.T) {
-	if got := NormalizeNetworkScope("no-such-scope"); got != NetworkScopeDeviceOnly {
+	if got := speechkit.NormalizeNetworkScope("no-such-scope"); got != speechkit.NetworkScopeDeviceOnly {
 		t.Fatalf("NormalizeNetworkScope(unknown) = %q, want device_only", got)
 	}
-	if got := NormalizeNetworkScope(""); got != NetworkScopeOpen {
+	if got := speechkit.NormalizeNetworkScope(""); got != speechkit.NetworkScopeOpen {
 		t.Fatalf("NormalizeNetworkScope(empty) = %q, want open", got)
 	}
 }
@@ -54,39 +57,39 @@ func TestNormalizeNetworkScopeFailsClosed(t *testing.T) {
 // the app manages itself. A new catalog entry without a ProviderKind (or with
 // a new kind) must make an explicit appearance here.
 func TestNetworkScopeClassifiesEntireCatalog(t *testing.T) {
-	profiles := DefaultProviderProfiles()
+	profiles := catalog.DefaultProviderProfiles()
 	if len(profiles) == 0 {
 		t.Fatal("catalog is empty")
 	}
 	for _, p := range profiles {
-		if allowed, reason := NetworkScopeOpen.AllowsProfile(p); !allowed || reason != "" {
+		if allowed, reason := speechkit.NetworkScopeOpen.AllowsProfile(p); !allowed || reason != "" {
 			t.Errorf("open scope blocks %s (%s)", p.ID, reason)
 		}
 
-		lnAllowed, lnReason := NetworkScopeLocalNetwork.AllowsProfile(p)
-		doAllowed, doReason := NetworkScopeDeviceOnly.AllowsProfile(p)
+		lnAllowed, lnReason := speechkit.NetworkScopeLocalNetwork.AllowsProfile(p)
+		doAllowed, doReason := speechkit.NetworkScopeDeviceOnly.AllowsProfile(p)
 
 		switch p.ProviderKind {
-		case ProviderKindLocalBuiltIn:
+		case speechkit.ProviderKindLocalBuiltIn:
 			if !lnAllowed || !doAllowed {
 				t.Errorf("local built-in %s must be allowed everywhere (local_network=%v device_only=%v)", p.ID, lnAllowed, doAllowed)
 			}
-		case ProviderKindLocalProvider:
+		case speechkit.ProviderKindLocalProvider:
 			if !lnAllowed {
 				t.Errorf("local provider %s must be allowed in local_network (%s)", p.ID, lnReason)
 			}
 			if doAllowed {
 				t.Errorf("local provider %s must be blocked in device_only", p.ID)
 			}
-			if doReason != NetworkScopeReasonLocalService {
-				t.Errorf("local provider %s device_only reason = %q, want %q", p.ID, doReason, NetworkScopeReasonLocalService)
+			if doReason != speechkit.NetworkScopeReasonLocalService {
+				t.Errorf("local provider %s device_only reason = %q, want %q", p.ID, doReason, speechkit.NetworkScopeReasonLocalService)
 			}
-		case ProviderKindCloudProvider, ProviderKindDirectProvider:
+		case speechkit.ProviderKindCloudProvider, speechkit.ProviderKindDirectProvider:
 			if lnAllowed || doAllowed {
 				t.Errorf("cloud/direct provider %s must be blocked in restricted scopes (local_network=%v device_only=%v)", p.ID, lnAllowed, doAllowed)
 			}
-			if lnReason != NetworkScopeReasonCloudProvider {
-				t.Errorf("cloud/direct provider %s local_network reason = %q, want %q", p.ID, lnReason, NetworkScopeReasonCloudProvider)
+			if lnReason != speechkit.NetworkScopeReasonCloudProvider {
+				t.Errorf("cloud/direct provider %s local_network reason = %q, want %q", p.ID, lnReason, speechkit.NetworkScopeReasonCloudProvider)
 			}
 		default:
 			t.Errorf("profile %s has unclassified ProviderKind %q — extend NetworkScope.AllowsProviderKind and this test", p.ID, p.ProviderKind)
@@ -96,31 +99,31 @@ func TestNetworkScopeClassifiesEntireCatalog(t *testing.T) {
 
 func TestNetworkScopeEndpointPolicy(t *testing.T) {
 	// open: everything allowed, nothing extra enforced.
-	for _, class := range []EndpointClass{EndpointClassManagedLoopback, EndpointClassLocalService, EndpointClassTelemetry, EndpointClassCloud} {
-		p := NetworkScopeOpen.EndpointPolicyFor(class)
+	for _, class := range []speechkit.EndpointClass{speechkit.EndpointClassManagedLoopback, speechkit.EndpointClassLocalService, speechkit.EndpointClassTelemetry, speechkit.EndpointClassCloud} {
+		p := speechkit.NetworkScopeOpen.EndpointPolicyFor(class)
 		if !p.Allowed || p.Enforce {
 			t.Errorf("open %s: got %+v, want allowed without enforcement", class, p)
 		}
 	}
 
 	// local_network: local classes enforced as local-only; cloud blocked.
-	ln := NetworkScopeLocalNetwork
-	if p := ln.EndpointPolicyFor(EndpointClassLocalService); !p.Allowed || !p.Enforce || !p.Validation.RequireLocal {
+	ln := speechkit.NetworkScopeLocalNetwork
+	if p := ln.EndpointPolicyFor(speechkit.EndpointClassLocalService); !p.Allowed || !p.Enforce || !p.Validation.RequireLocal {
 		t.Errorf("local_network local_service policy = %+v, want enforced RequireLocal", p)
 	}
-	if p := ln.EndpointPolicyFor(EndpointClassCloud); p.Allowed {
+	if p := ln.EndpointPolicyFor(speechkit.EndpointClassCloud); p.Allowed {
 		t.Errorf("local_network cloud must be blocked, got %+v", p)
 	}
-	if p := ln.EndpointPolicyFor(EndpointClassManagedLoopback); !p.Allowed || !p.Enforce || p.Validation.AllowPrivate {
+	if p := ln.EndpointPolicyFor(speechkit.EndpointClassManagedLoopback); !p.Allowed || !p.Enforce || p.Validation.AllowPrivate {
 		t.Errorf("local_network managed_loopback policy = %+v, want loopback-only enforcement", p)
 	}
 
 	// device_only: only managed loopback survives.
-	do := NetworkScopeDeviceOnly
-	if p := do.EndpointPolicyFor(EndpointClassManagedLoopback); !p.Allowed || !p.Enforce || p.Validation.AllowPrivate {
+	do := speechkit.NetworkScopeDeviceOnly
+	if p := do.EndpointPolicyFor(speechkit.EndpointClassManagedLoopback); !p.Allowed || !p.Enforce || p.Validation.AllowPrivate {
 		t.Errorf("device_only managed_loopback policy = %+v, want loopback-only enforcement", p)
 	}
-	for _, class := range []EndpointClass{EndpointClassLocalService, EndpointClassTelemetry, EndpointClassCloud} {
+	for _, class := range []speechkit.EndpointClass{speechkit.EndpointClassLocalService, speechkit.EndpointClassTelemetry, speechkit.EndpointClassCloud} {
 		if p := do.EndpointPolicyFor(class); p.Allowed {
 			t.Errorf("device_only %s must be blocked, got %+v", class, p)
 		}
@@ -130,7 +133,7 @@ func TestNetworkScopeEndpointPolicy(t *testing.T) {
 	}
 
 	// Unknown scope fails closed to device_only behaviour.
-	if p := NetworkScope("bogus").EndpointPolicyFor(EndpointClassLocalService); p.Allowed {
+	if p := speechkit.NetworkScope("bogus").EndpointPolicyFor(speechkit.EndpointClassLocalService); p.Allowed {
 		t.Errorf("unknown scope must fail closed, got %+v", p)
 	}
 }

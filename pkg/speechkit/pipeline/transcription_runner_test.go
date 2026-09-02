@@ -1,9 +1,11 @@
-package speechkit
+package pipeline
 
 import (
 	"context"
 	"testing"
 	"time"
+
+	"github.com/kombifyio/SpeechKit/pkg/speechkit"
 )
 
 type testStore struct {
@@ -16,10 +18,10 @@ type testStore struct {
 }
 
 type testCommitObserver struct {
-	completions []Completion
+	completions []speechkit.Completion
 }
 
-func (o *testCommitObserver) OnCommit(completion Completion) {
+func (o *testCommitObserver) OnCommit(completion speechkit.Completion) {
 	o.completions = append(o.completions, completion)
 }
 
@@ -55,11 +57,11 @@ func TestTranscriptionRunnerPersistsTranscription(t *testing.T) {
 	store := &testStore{}
 	runner := NewTranscriptionRunner(nil, store)
 
-	completion, err := runner.Commit(context.Background(), Submission{
+	completion, err := runner.Commit(context.Background(), speechkit.Submission{
 		WAV:          []byte{1, 2, 3},
 		DurationSecs: 1.2,
 		Language:     "en",
-	}, Transcript{
+	}, speechkit.Transcript{
 		Text:     "  hello world  ",
 		Language: "en",
 		Provider: "local",
@@ -87,13 +89,13 @@ func TestTranscriptionRunnerUpdatesQuickNoteWithParagraphBreak(t *testing.T) {
 	store := &testStore{quickNoteText: "first section"}
 	runner := NewTranscriptionRunner(nil, store)
 
-	completion, err := runner.Commit(context.Background(), Submission{
+	completion, err := runner.Commit(context.Background(), speechkit.Submission{
 		WAV:         []byte{1, 2, 3},
 		Language:    "en",
 		Prefix:      "\n\n",
 		QuickNote:   true,
 		QuickNoteID: 7,
-	}, Transcript{
+	}, speechkit.Transcript{
 		Text:     "second section",
 		Language: "en",
 		Provider: "local",
@@ -114,11 +116,11 @@ func TestTranscriptionRunnerCreatesQuickNoteWithoutID(t *testing.T) {
 	store := &testStore{}
 	runner := NewTranscriptionRunner(nil, store)
 
-	completion, err := runner.Commit(context.Background(), Submission{
+	completion, err := runner.Commit(context.Background(), speechkit.Submission{
 		WAV:       []byte{4, 5, 6},
 		Language:  "en",
 		QuickNote: true,
-	}, Transcript{
+	}, speechkit.Transcript{
 		Text:     "new note",
 		Language: "en",
 		Provider: "hf",
@@ -144,11 +146,11 @@ func TestTranscriptionRunnerCreatesQuickNoteWithoutID(t *testing.T) {
 func TestTranscriptionRunnerWithoutStoreLeavesOutputPathOpen(t *testing.T) {
 	runner := NewTranscriptionRunner(nil, nil)
 
-	completion, err := runner.Commit(context.Background(), Submission{
+	completion, err := runner.Commit(context.Background(), speechkit.Submission{
 		WAV:       []byte{7, 8, 9},
 		Language:  "en",
 		QuickNote: true,
-	}, Transcript{
+	}, speechkit.Transcript{
 		Text:     "clipboard result",
 		Language: "en",
 		Provider: "local",
@@ -170,11 +172,11 @@ func TestTranscriptionRunnerNotifiesObserverAfterPersistedTranscription(t *testi
 	observer := &testCommitObserver{}
 	runner := NewTranscriptionRunner(nil, store).WithObserver(observer)
 
-	completion, err := runner.Commit(context.Background(), Submission{
+	completion, err := runner.Commit(context.Background(), speechkit.Submission{
 		WAV:          []byte{1, 2, 3},
 		DurationSecs: 1.2,
 		Language:     "en",
-	}, Transcript{
+	}, speechkit.Transcript{
 		Text:     "hello world",
 		Language: "en",
 		Provider: "local",
@@ -200,13 +202,13 @@ func TestTranscriptionRunnerNotifiesObserverAfterQuickNoteCommit(t *testing.T) {
 	observer := &testCommitObserver{}
 	runner := NewTranscriptionRunner(nil, store).WithObserver(observer)
 
-	completion, err := runner.Commit(context.Background(), Submission{
+	completion, err := runner.Commit(context.Background(), speechkit.Submission{
 		WAV:         []byte{1, 2, 3},
 		Language:    "en",
 		Prefix:      "\n\n",
 		QuickNote:   true,
 		QuickNoteID: 7,
-	}, Transcript{
+	}, speechkit.Transcript{
 		Text:     "second section",
 		Language: "en",
 		Provider: "local",

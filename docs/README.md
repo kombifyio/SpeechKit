@@ -5,6 +5,8 @@ server, or wiring agent tooling against the public API.
 
 ## Framework
 
+- [SDK in 10 minutes](./sdk/README.md) — `go get` to first transcript, the four contracts every host wires, where to go next.
+- [Custom provider](./sdk/custom-provider.md) — add an STT/TTS/live backend: SPI, conformance suite, catalog profile, routing.
 - [Framework API](./speechkit-framework-api.md) — local-first Go backend API, mode contracts, provider catalog, readiness, and local control API.
 - [SDK surface boundary](./architecture/sdk-surface-boundary.md) — public `pkg/speechkit/...` package boundary for embedders.
 - [Android SDK surface boundary](./architecture/android-sdk-surface-boundary.md) — which `android/` modules a host may depend on.

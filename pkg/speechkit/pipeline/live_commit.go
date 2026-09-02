@@ -1,4 +1,4 @@
-package speechkit
+package pipeline
 
 import (
 	"context"
@@ -7,6 +7,8 @@ import (
 	"time"
 	"unicode"
 	"unicode/utf8"
+
+	"github.com/kombifyio/SpeechKit/pkg/speechkit"
 )
 
 const (
@@ -60,16 +62,16 @@ type LiveCommitFlusher interface {
 }
 
 type liveCommitSink struct {
-	inner  DictationStreamSink
+	inner  speechkit.DictationStreamSink
 	policy LiveCommitPolicy
 
 	mu    sync.Mutex
-	parts []DictationStreamEvent
-	opts  DictationStreamSinkOptions
+	parts []speechkit.DictationStreamEvent
+	opts  speechkit.DictationStreamSinkOptions
 	timer *time.Timer
 }
 
-func wrapLiveCommitSink(inner DictationStreamSink, mode string) DictationStreamSink {
+func wrapLiveCommitSink(inner speechkit.DictationStreamSink, mode string) speechkit.DictationStreamSink {
 	policy := NormalizeLiveCommitPolicy(mode)
 	if inner == nil || !policy.groupsFinals() {
 		return inner
@@ -77,7 +79,7 @@ func wrapLiveCommitSink(inner DictationStreamSink, mode string) DictationStreamS
 	return &liveCommitSink{inner: inner, policy: policy}
 }
 
-func (s *liveCommitSink) HandleDictationStreamEvent(ctx context.Context, event DictationStreamEvent, opts DictationStreamSinkOptions) error {
+func (s *liveCommitSink) HandleDictationStreamEvent(ctx context.Context, event speechkit.DictationStreamEvent, opts speechkit.DictationStreamSinkOptions) error {
 	if s == nil || s.inner == nil {
 		return nil
 	}
@@ -134,13 +136,13 @@ func (s *liveCommitSink) armHoldLocked() {
 	})
 }
 
-func (s *liveCommitSink) takeLocked() (DictationStreamEvent, DictationStreamSinkOptions, bool) {
+func (s *liveCommitSink) takeLocked() (speechkit.DictationStreamEvent, speechkit.DictationStreamSinkOptions, bool) {
 	if s.timer != nil {
 		s.timer.Stop()
 		s.timer = nil
 	}
 	if len(s.parts) == 0 {
-		return DictationStreamEvent{}, DictationStreamSinkOptions{}, false
+		return speechkit.DictationStreamEvent{}, speechkit.DictationStreamSinkOptions{}, false
 	}
 	out := coalesceDictationFinals(s.parts)
 	opts := s.opts
@@ -148,7 +150,7 @@ func (s *liveCommitSink) takeLocked() (DictationStreamEvent, DictationStreamSink
 	return out, opts, true
 }
 
-func liveCommitTexts(parts []DictationStreamEvent) []string {
+func liveCommitTexts(parts []speechkit.DictationStreamEvent) []string {
 	out := make([]string, 0, len(parts))
 	for _, part := range parts {
 		out = append(out, part.Text)
@@ -156,9 +158,9 @@ func liveCommitTexts(parts []DictationStreamEvent) []string {
 	return out
 }
 
-func coalesceDictationFinals(parts []DictationStreamEvent) DictationStreamEvent {
+func coalesceDictationFinals(parts []speechkit.DictationStreamEvent) speechkit.DictationStreamEvent {
 	out := parts[len(parts)-1]
-	var words []WordConfidence
+	var words []speechkit.WordConfidence
 	for _, part := range parts {
 		words = append(words, part.Words...)
 	}

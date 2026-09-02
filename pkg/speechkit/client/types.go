@@ -5,6 +5,7 @@ import (
 	"time"
 
 	framework "github.com/kombifyio/SpeechKit/pkg/speechkit"
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/catalog"
 	speechcustomize "github.com/kombifyio/SpeechKit/pkg/speechkit/customize"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/speaker"
 )
@@ -137,5 +138,5 @@ type RoleResource map[string]any
 type SequenceResource map[string]any
 
 type CatalogReadiness = framework.Readiness
-type ProviderDefault = framework.ProviderDefault
-type ProviderMatrixRow = framework.ProviderMatrixRow
+type ProviderDefault = catalog.ProviderDefault
+type ProviderMatrixRow = catalog.ProviderMatrixRow

@@ -16,6 +16,14 @@ import (
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/tts"
 )
 
+var (
+	// ErrNotConfigured is returned by Connect when a required dependency
+	// (STT or Agent) was not supplied to New.
+	ErrNotConfigured = errors.New("cascaded: dependency not configured")
+	// ErrClosed is returned by Receive once the provider has been closed.
+	ErrClosed = errors.New("cascaded: provider closed")
+)
+
 // Provider is a turn-based STT -> LLM -> TTS voice agent. It implements
 // the small contract documented on this type's methods; adapters in
 // internal/server/voiceagent and internal/voiceagent wrap it into the
@@ -99,10 +107,10 @@ func NewProvider(deps Deps) *Provider {
 // happens.
 func (p *Provider) Connect(ctx context.Context, cfg SessionConfig) error {
 	if p.stt == nil {
-		return errors.New("cascaded: STT router not configured")
+		return fmt.Errorf("cascaded: %w: STT router", ErrNotConfigured)
 	}
 	if p.agent == nil {
-		return errors.New("cascaded: Agent flow not configured (no LLM models available)")
+		return fmt.Errorf("cascaded: %w: Agent flow (no LLM models available)", ErrNotConfigured)
 	}
 	if p.tts == nil {
 		// TTS is optional - without it we still return OutputTranscript
@@ -236,10 +244,10 @@ func (p *Provider) Receive(ctx context.Context) (*Message, error) {
 	case <-ctx.Done():
 		return nil, ctx.Err()
 	case <-p.closedCh:
-		return nil, errors.New("cascaded: provider closed")
+		return nil, ErrClosed
 	case msg, ok := <-p.messages:
 		if !ok {
-			return nil, errors.New("cascaded: message channel closed")
+			return nil, ErrClosed
 		}
 		return msg, nil
 	}

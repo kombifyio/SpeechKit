@@ -13,6 +13,67 @@ IDs, source paths, and other maintainer-only vocabulary.
 
 ### Added
 
+* **sdk:** STT hooks are now per instance instead of process-wide.
+  `stt.Router.OnProviderSelected` replaces the global
+  `stt.SetProviderSelectedObserver`, `stt.SecretResolver` (set via
+  `allproviders.EnabledProviders.Secrets` / `google.Provider.SecretResolver`)
+  replaces `stt.SetSecretResolver`, and `local.Provider.LowerSubprocessPriority`
+  overrides `local.SetSubprocessPriorityLowered`. Two routers or providers in
+  one process no longer share hidden state; the old globals remain as
+  deprecated fallbacks.
+* **sdk:** a Native Requirements table in `docs/architecture/sdk-surface-boundary.md`
+  (linked from the README) lists the few packages that need cgo or an external
+  binary and how each fails closed. `wakeword.NewPipeline` and
+  `wakeword.ErrCgoRequired` now exist in `CGO_ENABLED=0` builds too, so a host
+  compiles against the full wake-word surface everywhere and learns about the
+  missing native engine only at runtime.
+* **sdk:** shared sentinel errors for the voice-agent and assist layers. All
+  `voiceagent/live` providers now wrap `live.ErrNotConnected`,
+  `live.ErrSessionNotReady`, `live.ErrMissingAPIKey`, `live.ErrMissingEndpoint`
+  and `live.ErrNoResumableSession`; `cascaded` exposes `ErrNotConfigured` and
+  `ErrClosed`; `assist` exposes `ErrMissingExecutor`. Hosts can branch with
+  `errors.Is` instead of matching provider-specific message text.
+* **sdk:** runnable `Example*` functions for every entry-point package
+  (`dictation`, `stt`, `assist`, `tts`, `client`; `hostconfig` already had
+  them). Each has a `// Output:` block, so pkg.go.dev shows a verified first
+  call and a drifted public signature fails `go test`.
+* **sdk:** one vocabulary across the mode packages. `dictation.Service` /
+  `dictation.NewService` join `assist`, `tts` and `voiceagent` (the existing
+  `Runtime` / `NewRuntime` names stay valid), `stt.WordConfidence` is now an
+  alias of `speechkit.WordConfidence` so provider results and transcripts share
+  one word type, and `docs/architecture/sdk-surface-boundary.md` documents the
+  naming and contract roles (`Service`/`Options`, provider SPI vs. host
+  contract, `Router`/`Strategy`, `Err*` sentinels).
+* **sdk:** hosts can ship their own providers without forking the catalog.
+  `catalog.DefaultCatalog().With(profile...)` returns an immutable `Catalog`
+  that validates every profile against its mode contract (`catalog.ErrInvalidProfile`),
+  rejects duplicate ids (`catalog.ErrDuplicateProfileID`), derives the provider id from
+  the `<mode>.<provider>.<model>` id shape, and exposes the same
+  `ProfilesForMode` / `ProviderMatrix` / `ProviderDefaults` / `Filter` views
+  the built-ins use. `docs/sdk/custom-provider.md` walks through SPI,
+  conformance suite (`sttcontract`, `ttscontract`, `livecontract`), catalog
+  profile and routing for a new STT backend.
+* **sdk:** `pkg/speechkit/hostconfig` no longer imports any `internal/*`
+  package. It now owns the loader core — `Defaults`, `Normalize` (legacy
+  `[general]` hotkey backfills, mode-source and session-summary defaults,
+  custom-URL auth-mode migration), `LoadConfig`, and the hotkey /
+  close-behavior / auth-mode normalisers with their constants — and the
+  desktop app's `internal/config` delegates to it, so a Companion host and the
+  reference app read one `config.toml` identically. `hostconfig.Load` /
+  `LoadConfig` return an error wrapping `hostconfig.ErrMalformedConfig` on
+  broken TOML instead of silently falling back to defaults; a missing file
+  still yields the defaults. Voice-agent `AgentProfileID` is carried through
+  as configured (trimmed) rather than collapsed to `"default"` — which ids
+  exist is the host's behaviour catalog, not the SDK's.
+* **sdk:** a shorter way in. `docs/sdk/README.md` takes a Go developer from
+  `go get` to a first transcript in one page and maps the next steps
+  (providers, policy, custom provider, Assist / Voice Agent / TTS / Companion);
+  `android/README.md` does the same for the Android modules (which module for
+  which job, JitPack coordinates, build without the GPL fork); `CONTRIBUTING.md`
+  spells out the three repository identities (working repository, public
+  mirror, Go module path) and the rules that follow; and every
+  `dictation.Options` field — including the previously opaque `Target` — is
+  documented where pkg.go.dev shows it.
 * **meetings:** capture ad-hoc screen snapshots during a live meeting by
   selecting the highlighted window, or press the configurable `Ctrl+Alt+S`
   shortcut to capture the monitor under the cursor immediately. Snapshots are
@@ -30,6 +91,37 @@ IDs, source paths, and other maintainer-only vocabulary.
 
 ### Changed
 
+* **sdk:** BREAKING — the root package `speechkit` now holds contracts and
+  value types only; implementations moved one level down. Importing the root
+  no longer pulls in the provider catalog or the capture pipeline. Migration
+  is a mechanical import rewrite:
+  * `speechkit/pipeline` now owns the capture-to-transcript engine:
+    `RecordingController`, `TranscriptionWorker` (+ `TranscriptionWorkerConfig`),
+    `TranscriptionRunner`, `DictationSegmenter` / `NewDictationSegmenter`,
+    `TranscriptSessionLedger`, the `LiveCommit*` policy helpers,
+    `JoinTranscriptFragments`, `CountTerminalSentences`, `LiveInjectFragment`,
+    `NeedsLiveInjectSpace`, `FallbackDictationSegments`, the `DefaultDictation*`
+    tunables, `PooledPCMRecorder`, `ReadySegmentCollector` and the
+    `ErrMissing*` / `ErrWorker*` sentinels.
+  * `speechkit/catalog` now owns the shipped provider and model data:
+    `Catalog`, `DefaultCatalog`, `NewCatalog`, `DefaultProviderProfiles`,
+    `DefaultProviderMatrix`, `DefaultProviderDefaults`, `ProfilesForMode`,
+    `ProviderKindsForMode`, the `Find*` lookups, the `Provider*` and `Model*`
+    id constants, `DefaultModelRegistry`, `FindModelDescriptor`,
+    `ModelFreshnessSLA` and the freshness reports, `ValidateDefaultCatalog`,
+    `DefaultLocalBuiltInLLMModel`, `ErrInvalidProfile` and
+    `ErrDuplicateProfileID`.
+  * Unchanged in the root: every interface (`AudioRecorder`, `Transcriber`,
+    `SegmentCollector`, `TranscriptOutput`, `JobSubmitter`, `Persistence`,
+    observers), every value type (`Submission`, `Transcript`,
+    `TranscriptionJob`, `ProviderProfile`, `ProviderKind`, `ModelLifecycle*`,
+    `CaptureChannel*`), `Runtime`, the event bus and the policy helpers.
+  * New: `TranscriptionJob.EffectiveSegments()` exposes the segments a worker
+    should transcribe (previously unexported).
+  Replace `speechkit.X` with `pipeline.X` or `catalog.X` per the lists above;
+  the compiler flags every remaining call site. The change ships under the
+  `breaking-api-approved` label; `dictation`, `assist`, `tts`, `voiceagent`,
+  `companion` and `client` are unaffected.
 * **meetings:** the compact meeting overlay now has an always-visible expand
   button next to its controls, so switching to the full notes window no longer
   depends on discovering the hover-revealed window chrome.
@@ -51,6 +143,20 @@ IDs, source paths, and other maintainer-only vocabulary.
   another instead of in parallel. Parallel runs against the bundled local model
   each ran at half speed and could all miss their deadline together, which made
   the automatic Meeting Review fail after longer meetings.
+* **catalog:** `NormalizeProviderID` now canonicalises the provider segment of
+  every `<mode>.<provider>.<model>` profile id, so `utility.builtin.*` maps to
+  `local` and `utility.routed.*` / `tts.routed.*` map to `huggingface` like
+  their `stt.`/`assist.` counterparts. Third-party segments still pass through.
+* **catalog:** the model-registry freshness SLA no longer fails the default
+  `go test ./...` run once the calendar moves past seven days. The age check
+  is enforced by the new scheduled `model-freshness-gate` workflow via
+  `SPEECHKIT_MODEL_FRESHNESS_GATE=1`; a missing `LastVerifiedAt` still fails
+  everywhere. Registry rows re-verified against vendor docs on 2026-09-02; the
+  Gemini Live Translate source URL now points at the model page (the old
+  guide URL is gone).
+* **build:** `go build ./...` with `CGO_ENABLED=0` compiles again:
+  `cmd/speechkit-openwakeword` gained a `!cgo` stub `main` that exits with a
+  clear message instead of leaving the package without an entry point.
 
 
 ## [0.67.0](https://github.com/kombifyio/SpeechKit/compare/v0.66.0...v0.67.0) (2026-09-01)

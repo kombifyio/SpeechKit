@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	framework "github.com/kombifyio/SpeechKit/pkg/speechkit"
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/catalog"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/provideropts"
 
 	"github.com/kombifyio/SpeechKit/internal/config"
@@ -38,7 +39,7 @@ func (h *Handler) profiles(w http.ResponseWriter, r *http.Request) {
 		methodNotAllowed(w, http.MethodGet)
 		return
 	}
-	profiles := framework.DefaultProviderProfiles()
+	profiles := catalog.DefaultProviderProfiles()
 	if rawModes, ok := r.URL.Query()["mode"]; ok {
 		if len(rawModes) != 1 || strings.TrimSpace(rawModes[0]) == "" {
 			httpx.WriteError(w, http.StatusBadRequest, "invalid_mode", "mode must be one of dictation, assist, voiceagent, or voice_agent")
@@ -50,7 +51,7 @@ func (h *Handler) profiles(w http.ResponseWriter, r *http.Request) {
 			httpx.WriteError(w, http.StatusBadRequest, "invalid_mode", "mode must be one of dictation, assist, voiceagent, or voice_agent")
 			return
 		}
-		profiles = framework.ProfilesForMode(mode)
+		profiles = catalog.ProfilesForMode(mode)
 	}
 	writeOKJSON(w, map[string]any{"profiles": profiles})
 }
@@ -61,8 +62,8 @@ func (h *Handler) providers(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeOKJSON(w, map[string]any{
-		"provider_matrix":   framework.DefaultProviderMatrix(),
-		"provider_defaults": framework.DefaultProviderDefaults(),
+		"provider_matrix":   catalog.DefaultProviderMatrix(),
+		"provider_defaults": catalog.DefaultProviderDefaults(),
 	})
 }
 
@@ -95,7 +96,7 @@ func (h *Handler) readiness(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	readiness := make([]framework.Readiness, 0)
-	for _, profile := range framework.DefaultProviderProfiles() {
+	for _, profile := range catalog.DefaultProviderProfiles() {
 		readiness = append(readiness, h.profileReadinessSummary(profile))
 	}
 	writeOKJSON(w, map[string]any{"readiness": readiness})
@@ -118,7 +119,7 @@ func (h *Handler) profileReadiness(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	id = framework.NormalizeProviderProfileID(id)
-	for _, profile := range framework.DefaultProviderProfiles() {
+	for _, profile := range catalog.DefaultProviderProfiles() {
 		if profile.ID == id {
 			writeOKJSON(w, h.profileReadinessSummary(profile))
 			return

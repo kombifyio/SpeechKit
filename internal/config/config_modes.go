@@ -3,7 +3,11 @@ package config
 // Per-mode model selection and Server-Connection (device -> remote
 // SpeechKit server) configuration types and helpers.
 
-import "strings"
+import (
+	"strings"
+
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/hostconfig"
+)
 
 type ModelSelectionConfig struct {
 	Dictate    ModeModelSelection `toml:"dictate"`
@@ -23,24 +27,22 @@ type ModelSelectionConfig struct {
 // desktop app runs the mode against the in-process Framework kernel (default,
 // preserves all pre-0.26 behaviour). "server" routes the mode through
 // ServerConnection to a remote speechkit-server.
+// The canonical values live in the public hostconfig package so embedders
+// and the desktop app normalise the same TOML identically.
 const (
-	ModeSourceLocal  = "local"
-	ModeSourceServer = "server"
+	ModeSourceLocal  = hostconfig.ModeSourceLocal
+	ModeSourceServer = hostconfig.ModeSourceServer
 )
 
 const (
-	ServerConnectionAuthModeBearer = "bearer"
-	ServerConnectionAuthModeAPIKey = "api_key"
-	// ServerConnectionAuthModeEdgeBeta sends no shared server credential.
-	// Instead the client identifies this installation to a managed beta edge
-	// broker with per-install headers; the edge owns upstream authentication
-	// and quota enforcement.
-	ServerConnectionAuthModeEdgeBeta = "edge_beta"
+	ServerConnectionAuthModeBearer   = hostconfig.ServerConnectionAuthModeBearer
+	ServerConnectionAuthModeAPIKey   = hostconfig.ServerConnectionAuthModeAPIKey
+	ServerConnectionAuthModeEdgeBeta = hostconfig.ServerConnectionAuthModeEdgeBeta
 )
 
 const (
-	DefaultBetaInstallIDEnv     = "SPEECHKIT_BETA_INSTALL_ID"
-	DefaultBetaInstallSecretEnv = "SPEECHKIT_BETA_INSTALL_SECRET"
+	DefaultBetaInstallIDEnv     = hostconfig.DefaultBetaInstallIDEnv
+	DefaultBetaInstallSecretEnv = hostconfig.DefaultBetaInstallSecretEnv
 )
 
 type ModeModelSelection struct {
@@ -137,12 +139,5 @@ func (sel ModeModelSelection) ResolvedModeSource() string {
 }
 
 func NormalizeServerConnectionAuthMode(mode string) string {
-	switch strings.TrimSpace(strings.ToLower(mode)) {
-	case ServerConnectionAuthModeAPIKey:
-		return ServerConnectionAuthModeAPIKey
-	case ServerConnectionAuthModeEdgeBeta:
-		return ServerConnectionAuthModeEdgeBeta
-	default:
-		return ServerConnectionAuthModeBearer
-	}
+	return hostconfig.NormalizeServerConnectionAuthMode(mode)
 }

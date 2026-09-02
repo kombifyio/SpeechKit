@@ -7,7 +7,10 @@
 // never selects as a mode) that the desktop app appends.
 package models
 
-import "github.com/kombifyio/SpeechKit/pkg/speechkit"
+import (
+	"github.com/kombifyio/SpeechKit/pkg/speechkit"
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/catalog"
+)
 
 // Catalog vocabulary. These are aliases, not copies: a value produced by the
 // framework is the same value here, so nothing has to be converted at the
@@ -95,9 +98,9 @@ type Catalog struct {
 // DefaultCatalog is the framework catalog plus the host-only support entries,
 // with framework defaults applied to every profile.
 func DefaultCatalog() Catalog {
-	profiles := append(speechkit.DefaultProviderProfiles(), supportProfiles()...)
+	profiles := append(catalog.DefaultProviderProfiles(), supportProfiles()...)
 	for i := range profiles {
-		profiles[i] = speechkit.ProviderProfileWithDefaults(profiles[i])
+		profiles[i] = catalog.ProviderProfileWithDefaults(profiles[i])
 	}
 	return Catalog{Profiles: profiles}
 }
@@ -136,7 +139,7 @@ func supportProfiles() []Profile {
 			Modality:       ModalityUtility,
 			ProviderKind:   ProviderKindLocalBuiltIn,
 			ExecutionMode:  ExecutionModeLocal,
-			ModelID:        speechkit.DefaultLocalBuiltInLLMModel,
+			ModelID:        catalog.DefaultLocalBuiltInLLMModel,
 			Source:         "Local Built-in",
 			Description:    "SpeechKit-managed llama.cpp runtime for summaries, routing, and command follow-ups.",
 			License:        "gemma",

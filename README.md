@@ -67,7 +67,11 @@ edge relationships: shared client and voice contracts, and
 Companion and Workbench.
 
 Public dependency and export rules are documented in the
-[SDK surface boundary](docs/architecture/sdk-surface-boundary.md).
+[SDK surface boundary](docs/architecture/sdk-surface-boundary.md). Most of
+`pkg/speechkit` is pure Go; the few packages that need cgo (WASAPI capture,
+sherpa-onnx wake word) or an external binary (whisper-server) are listed in
+its [Native Requirements](docs/architecture/sdk-surface-boundary.md#native-requirements)
+table and fail closed with a sentinel error when the dependency is absent.
 
 ## Repository Context
 
@@ -151,6 +155,11 @@ hand, `pkg/speechkit/hostconfig` turns a config file into the public
 settings, policy, err := hostconfig.Load("config.toml")
 ```
 
+A missing file yields the shipped defaults (local-only, zero cloud keys); a
+broken file returns an error wrapping `hostconfig.ErrMalformedConfig`. The
+package owns the loader semantics and the desktop app delegates to it, so an
+embedder and the reference app read the same `config.toml` identically.
+
 Real providers run in-process — no SpeechKit server required. Two runnable
 references:
 
@@ -172,6 +181,7 @@ go run ./cmd/speechkit-cli status --server "$SPEECHKIT_SERVER_URL" --token "$SPE
 ```
 
 More starting points: [Framework API](docs/speechkit-framework-api.md),
+[Adding a custom provider](docs/sdk/custom-provider.md),
 [Voice Companion](docs/voice-companion.md), and
 [examples/](examples/README.md).
 
@@ -247,8 +257,11 @@ scripts/                Install and release-note helpers
 | Document | Purpose |
 | --- | --- |
 | [docs/README.md](docs/README.md) | Documentation index |
+| [docs/sdk/README.md](docs/sdk/README.md) | SDK in 10 minutes: first transcript and where to go next |
+| [docs/sdk/custom-provider.md](docs/sdk/custom-provider.md) | Add your own STT/TTS/live provider |
 | [docs/architecture/sdk-surface-boundary.md](docs/architecture/sdk-surface-boundary.md) | Public SDK and export boundary |
 | [docs/architecture/android-sdk-surface-boundary.md](docs/architecture/android-sdk-surface-boundary.md) | Android Gradle module cut for hosts |
+| [android/README.md](android/README.md) | Android modules: which to depend on, consume, build |
 | [docs/speechkit-framework-api.md](docs/speechkit-framework-api.md) | Public framework API contracts |
 | [docs/api/openapi.v1.yaml](docs/api/openapi.v1.yaml) | Local control-plane OpenAPI |
 | [docs/server/README.md](docs/server/README.md) | Server target documentation |
@@ -273,8 +286,10 @@ The consumer-facing source repository is `kombifyio/SpeechKit`: the `go get`
 path, Go Reference badge, container image, and release assets all use that
 identity. The public source tree is produced by an allowlist-based export from
 governed working source. Exported code and documentation must remain usable
-without access to that working repository; see
-[CONTRIBUTING.md](CONTRIBUTING.md) and the
+without access to that working repository; the three identities (working
+repository, public mirror, Go module path) and the rules that follow are
+spelled out in [CONTRIBUTING.md](CONTRIBUTING.md#repository-identities); the
+package boundary is in the
 [SDK surface boundary](docs/architecture/sdk-surface-boundary.md).
 
 ## Trust

@@ -4,6 +4,7 @@ import (
 	"strings"
 
 	framework "github.com/kombifyio/SpeechKit/pkg/speechkit"
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/catalog"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/provideropts"
 )
 
@@ -117,7 +118,7 @@ func DefaultProviderDescriptors() []ProviderDescriptor {
 			},
 			AuthRequirement: "api_key",
 			Transport:       "websocket",
-			EvidenceURL:     "https://ai.google.dev/gemini-api/docs/live-api/translation",
+			EvidenceURL:     "https://ai.google.dev/gemini-api/docs/models/gemini-3.5-live-translate-preview",
 		},
 		{
 			Provider:    "deepgram",
@@ -271,7 +272,7 @@ func liveModelsForProvider(provider string) []LiveModelDescriptor {
 
 func liveModelsForProviderProfile(provider, profileID string) []LiveModelDescriptor {
 	var out []LiveModelDescriptor
-	for _, row := range framework.DefaultModelRegistry() {
+	for _, row := range catalog.DefaultModelRegistry() {
 		if row.Provider != provider || row.Mode != framework.ModeVoiceAgent {
 			continue
 		}

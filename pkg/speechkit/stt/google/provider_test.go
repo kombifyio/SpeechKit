@@ -7,6 +7,7 @@ import (
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/stt"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -479,7 +480,33 @@ func TestGoogle_StartSpeakerStreamRequiresV2Credentials(t *testing.T) {
 
 func TestGoogleStreamingCredentialsPresentAcceptsADCEnv(t *testing.T) {
 	t.Setenv("GOOGLE_APPLICATION_CREDENTIALS", "C:/creds/google.json")
-	if !googleStreamingCredentialsPresent("GOOGLE_APPLICATION_CREDENTIALS", "SPEECHKIT_GOOGLE_STT_CREDENTIALS_JSON") {
+	if !googleStreamingCredentialsPresent(nil, "GOOGLE_APPLICATION_CREDENTIALS", "SPEECHKIT_GOOGLE_STT_CREDENTIALS_JSON") {
 		t.Fatal("expected GOOGLE_APPLICATION_CREDENTIALS to enable streaming credential detection")
+	}
+}
+
+func TestGoogleStreamingCredentialsPresentUsesInstanceResolver(t *testing.T) {
+	const (
+		adcEnv  = "SPEECHKIT_TEST_GOOGLE_ADC_UNSET"
+		jsonEnv = "SPEECHKIT_TEST_GOOGLE_JSON_UNSET"
+	)
+	for _, name := range []string{adcEnv, jsonEnv} {
+		if _, ok := os.LookupEnv(name); ok {
+			t.Skipf("%s unexpectedly set in the test environment", name)
+		}
+	}
+
+	secrets := map[string]string{jsonEnv: `{"type":"service_account"}`}
+	p := &Provider{
+		ApplicationCredentialsEnv: adcEnv,
+		STTCredentialsJSONEnv:     jsonEnv,
+		SecretResolver:            func(name string) string { return secrets[name] },
+	}
+	if !p.StreamingCredentialsPresent() {
+		t.Fatal("expected instance resolver to supply streaming credentials")
+	}
+	other := &Provider{ApplicationCredentialsEnv: adcEnv, STTCredentialsJSONEnv: jsonEnv}
+	if other.StreamingCredentialsPresent() {
+		t.Fatal("expected a provider without the resolver to stay isolated from it")
 	}
 }

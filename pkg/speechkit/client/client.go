@@ -15,6 +15,7 @@ import (
 	"time"
 
 	framework "github.com/kombifyio/SpeechKit/pkg/speechkit"
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/catalog"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/speaker"
 )
 
@@ -122,10 +123,10 @@ func (c *Client) CatalogProfiles(ctx context.Context, mode string) ([]framework.
 	return out.Profiles, nil
 }
 
-func (c *Client) CatalogProviders(ctx context.Context) ([]framework.ProviderMatrixRow, []framework.ProviderDefault, error) {
+func (c *Client) CatalogProviders(ctx context.Context) ([]catalog.ProviderMatrixRow, []catalog.ProviderDefault, error) {
 	var out struct {
-		ProviderMatrix   []framework.ProviderMatrixRow `json:"provider_matrix"`
-		ProviderDefaults []framework.ProviderDefault   `json:"provider_defaults"`
+		ProviderMatrix   []catalog.ProviderMatrixRow `json:"provider_matrix"`
+		ProviderDefaults []catalog.ProviderDefault   `json:"provider_defaults"`
 	}
 	if err := c.DoJSON(ctx, http.MethodGet, "/v1/catalog/providers", nil, &out); err != nil {
 		return nil, nil, err

@@ -1,9 +1,10 @@
-package speechkit
+package catalog
 
 import (
 	"sort"
 	"strings"
 
+	"github.com/kombifyio/SpeechKit/pkg/speechkit"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/provideropts"
 )
 
@@ -45,31 +46,31 @@ const (
 )
 
 type ProviderDefault struct {
-	Provider           string              `json:"provider"`
-	DisplayName        string              `json:"displayName"`
-	Mode               Mode                `json:"mode"`
-	ProfileID          string              `json:"profileId"`
-	ModelID            string              `json:"modelId,omitempty"`
-	ProviderKind       ProviderKind        `json:"providerKind"`
-	ExecutionMode      ExecutionMode       `json:"executionMode,omitempty"`
-	Support            ProviderSupportKind `json:"support"`
-	Capabilities       []Capability        `json:"capabilities,omitempty"`
-	NativeOptions      []string            `json:"nativeOptions,omitempty"`
-	AuthRequirement    string              `json:"authRequirement,omitempty"`
-	CredentialRequired bool                `json:"credentialRequired"`
-	CredentialTarget   string              `json:"credentialTarget,omitempty"`
-	Transport          string              `json:"transport,omitempty"`
-	EvidenceURL        string              `json:"evidenceUrl,omitempty"`
-	Default            bool                `json:"default,omitempty"`
-	Recommended        bool                `json:"recommended,omitempty"`
-	Experimental       bool                `json:"experimental,omitempty"`
-	Variants           []ModelVariant      `json:"variants,omitempty"`
+	Provider           string                   `json:"provider"`
+	DisplayName        string                   `json:"displayName"`
+	Mode               speechkit.Mode           `json:"mode"`
+	ProfileID          string                   `json:"profileId"`
+	ModelID            string                   `json:"modelId,omitempty"`
+	ProviderKind       speechkit.ProviderKind   `json:"providerKind"`
+	ExecutionMode      speechkit.ExecutionMode  `json:"executionMode,omitempty"`
+	Support            ProviderSupportKind      `json:"support"`
+	Capabilities       []speechkit.Capability   `json:"capabilities,omitempty"`
+	NativeOptions      []string                 `json:"nativeOptions,omitempty"`
+	AuthRequirement    string                   `json:"authRequirement,omitempty"`
+	CredentialRequired bool                     `json:"credentialRequired"`
+	CredentialTarget   string                   `json:"credentialTarget,omitempty"`
+	Transport          string                   `json:"transport,omitempty"`
+	EvidenceURL        string                   `json:"evidenceUrl,omitempty"`
+	Default            bool                     `json:"default,omitempty"`
+	Recommended        bool                     `json:"recommended,omitempty"`
+	Experimental       bool                     `json:"experimental,omitempty"`
+	Variants           []speechkit.ModelVariant `json:"variants,omitempty"`
 }
 
 type ProviderFeatureSupport struct {
 	Feature       ProviderFeature     `json:"feature"`
 	Support       ProviderSupportKind `json:"support"`
-	Mode          Mode                `json:"mode,omitempty"`
+	Mode          speechkit.Mode      `json:"mode,omitempty"`
 	ProfileID     string              `json:"profileId,omitempty"`
 	ModelID       string              `json:"modelId,omitempty"`
 	NativeOptions []string            `json:"nativeOptions,omitempty"`
@@ -83,62 +84,55 @@ type ProviderMatrixRow struct {
 	Features    []ProviderFeatureSupport `json:"features"`
 }
 
+// NormalizeProviderID maps a provider alias or a "<mode>.<provider>.<model>"
+// profile id to its canonical provider id. Profile ids are reduced to their
+// provider segment first, so every mode (stt, assist, utility, realtime, tts,
+// speaker) shares one alias table; third-party providers pass through as-is.
 func NormalizeProviderID(provider string) string {
 	value := strings.ToLower(strings.TrimSpace(provider))
 	value = strings.ReplaceAll(value, "_", "-")
-	switch {
-	case value == "":
+	if value == "" {
 		return ""
-	case value == "builtin", value == "local-built-in", value == "local":
+	}
+	if segment, ok := providerSegmentFromProfileID(value); ok {
+		value = segment
+	}
+	switch value {
+	case "builtin", "local-built-in", "local":
 		return "local"
-	case value == "hf", value == "hf-routed", value == "hugging-face", value == "huggingface":
+	case "hf", "hf-routed", "routed", "hugging-face", "huggingface":
 		return "huggingface"
-	case value == "open-router", value == "openrouter":
+	case "open-router", "openrouter":
 		return "openrouter"
-	case value == "google-ai", value == "google-cloud", value == "gemini", value == "gemini-live", value == "google":
+	case "google-ai", "google-cloud", "gemini", "gemini-live", "google":
 		return "google"
-	case value == "assembly-ai", value == "assemblyai":
+	case "assembly-ai", "assemblyai":
 		return "assemblyai"
-	case value == "openai-compatible", value == "openedai-speech", value == "openedai":
-		return "openedai"
-	case strings.HasPrefix(value, "stt.local."), strings.HasPrefix(value, "assist.builtin."),
-		strings.HasPrefix(value, "realtime.builtin."), strings.HasPrefix(value, "tts.local."):
-		return "local"
-	case strings.HasPrefix(value, "stt.ollama."), strings.HasPrefix(value, "assist.ollama."),
-		strings.HasPrefix(value, "realtime.ollama."):
-		return "ollama"
-	case strings.HasPrefix(value, "stt.routed."), strings.HasPrefix(value, "assist.routed."),
-		strings.HasPrefix(value, "realtime.hf."), strings.HasPrefix(value, "tts.huggingface."):
-		return "huggingface"
-	case strings.HasPrefix(value, "stt.openrouter."), strings.HasPrefix(value, "assist.openrouter."),
-		strings.HasPrefix(value, "realtime.openrouter."):
-		return "openrouter"
-	case strings.HasPrefix(value, "stt.openai."), strings.HasPrefix(value, "assist.openai."),
-		strings.HasPrefix(value, "realtime.openai."), strings.HasPrefix(value, "tts.openai."):
-		return "openai"
-	case strings.HasPrefix(value, "stt.google."), strings.HasPrefix(value, "assist.google."),
-		strings.HasPrefix(value, "realtime.google."), strings.HasPrefix(value, "tts.google."):
-		return "google"
-	case strings.HasPrefix(value, "stt.deepgram."), strings.HasPrefix(value, "realtime.deepgram."),
-		strings.HasPrefix(value, "tts.deepgram."), strings.HasPrefix(value, "speaker.deepgram."):
-		return "deepgram"
-	case strings.HasPrefix(value, "stt.assemblyai."), strings.HasPrefix(value, "realtime.assemblyai."),
-		strings.HasPrefix(value, "speaker.assemblyai."):
-		return "assemblyai"
-	case strings.HasPrefix(value, "stt.groq."), strings.HasPrefix(value, "assist.groq."):
-		return "groq"
-	case strings.HasPrefix(value, "stt.foundry."), strings.HasPrefix(value, "assist.foundry."),
-		strings.HasPrefix(value, "utility.foundry."), strings.HasPrefix(value, "realtime.foundry."),
-		strings.HasPrefix(value, "tts.foundry."):
-		return "foundry"
-	case strings.HasPrefix(value, "tts.openedai."):
+	case "openai-compatible", "openedai-speech", "openedai":
 		return "openedai"
 	default:
 		return value
 	}
 }
 
-func ProviderIDForProfile(profile ProviderProfile) string {
+var profileIDModePrefixes = []string{"stt.", "assist.", "utility.", "realtime.", "tts.", "speaker."}
+
+func providerSegmentFromProfileID(value string) (string, bool) {
+	for _, prefix := range profileIDModePrefixes {
+		if !strings.HasPrefix(value, prefix) {
+			continue
+		}
+		rest := value[len(prefix):]
+		provider, _, found := strings.Cut(rest, ".")
+		if !found || provider == "" {
+			return "", false
+		}
+		return provider, true
+	}
+	return "", false
+}
+
+func ProviderIDForProfile(profile speechkit.ProviderProfile) string {
 	if provider := NormalizeProviderID(profile.Provider); provider != "" {
 		return provider
 	}
@@ -148,29 +142,29 @@ func ProviderIDForProfile(profile ProviderProfile) string {
 	return ProviderIDForExecutionMode(profile.ExecutionMode)
 }
 
-func ProviderIDForExecutionMode(mode ExecutionMode) string {
+func ProviderIDForExecutionMode(mode speechkit.ExecutionMode) string {
 	switch mode {
-	case ExecutionModeLocal:
+	case speechkit.ExecutionModeLocal:
 		return "local"
-	case ExecutionModeSelfHostedHTTP:
+	case speechkit.ExecutionModeSelfHostedHTTP:
 		return "selfhosted"
-	case ExecutionModeHFRouted:
+	case speechkit.ExecutionModeHFRouted:
 		return "huggingface"
-	case ExecutionModeOpenAI:
+	case speechkit.ExecutionModeOpenAI:
 		return "openai"
-	case ExecutionModeGroq:
+	case speechkit.ExecutionModeGroq:
 		return "groq"
-	case ExecutionModeGoogle:
+	case speechkit.ExecutionModeGoogle:
 		return "google"
-	case ExecutionModeDeepgram:
+	case speechkit.ExecutionModeDeepgram:
 		return "deepgram"
-	case ExecutionModeAssemblyAI:
+	case speechkit.ExecutionModeAssemblyAI:
 		return "assemblyai"
-	case ExecutionModeOllama:
+	case speechkit.ExecutionModeOllama:
 		return "ollama"
-	case ExecutionModeOpenRouter:
+	case speechkit.ExecutionModeOpenRouter:
 		return "openrouter"
-	case ExecutionModeFoundry:
+	case speechkit.ExecutionModeFoundry:
 		return "foundry"
 	default:
 		return ""
@@ -181,14 +175,14 @@ func ProviderIDForExecutionMode(mode ExecutionMode) string {
 // metadata filled in. Explicit profile metadata wins; missing provider,
 // credential, and transport fields are derived from the canonical provider id,
 // execution mode, and mode capabilities.
-func ProviderProfileWithDefaults(profile ProviderProfile) ProviderProfile {
+func ProviderProfileWithDefaults(profile speechkit.ProviderProfile) speechkit.ProviderProfile {
 	// Mode and Modality say the same thing from two angles. Callers set
 	// whichever one they think in; this fills the other.
 	if profile.Modality == "" {
-		profile.Modality = ModalityForMode(profile.Mode)
+		profile.Modality = speechkit.ModalityForMode(profile.Mode)
 	}
-	if NormalizeMode(profile.Mode) == ModeNone {
-		profile.Mode = ModeForModality(profile.Modality)
+	if speechkit.NormalizeMode(profile.Mode) == speechkit.ModeNone {
+		profile.Mode = speechkit.ModeForModality(profile.Modality)
 	}
 	provider := ProviderIDForProfile(profile)
 	if strings.TrimSpace(profile.Provider) == "" {
@@ -208,24 +202,24 @@ func ProviderProfileWithDefaults(profile ProviderProfile) ProviderProfile {
 // DefaultProviderAuthRequirement describes the credential class a host must
 // satisfy before a provider profile can run. It is intentionally semantic:
 // hosts map the value to their own env vars or secret stores.
-func DefaultProviderAuthRequirement(profile ProviderProfile) string {
+func DefaultProviderAuthRequirement(profile speechkit.ProviderProfile) string {
 	if value := strings.TrimSpace(profile.AuthRequirement); value != "" {
 		return value
 	}
 	switch profile.ExecutionMode {
-	case ExecutionModeLocal:
-		if profile.ProviderKind == ProviderKindLocalBuiltIn {
+	case speechkit.ExecutionModeLocal:
+		if profile.ProviderKind == speechkit.ProviderKindLocalBuiltIn {
 			return ProviderAuthHostDependencies
 		}
 		return ProviderAuthNone
-	case ExecutionModeOllama:
+	case speechkit.ExecutionModeOllama:
 		return ProviderAuthNone
-	case ExecutionModeSelfHostedHTTP:
+	case speechkit.ExecutionModeSelfHostedHTTP:
 		return ProviderAuthOptionalAPIKey
-	case ExecutionModeHFRouted:
+	case speechkit.ExecutionModeHFRouted:
 		return ProviderAuthToken
-	case ExecutionModeOpenAI, ExecutionModeGroq, ExecutionModeGoogle, ExecutionModeDeepgram,
-		ExecutionModeAssemblyAI, ExecutionModeOpenRouter, ExecutionModeFoundry:
+	case speechkit.ExecutionModeOpenAI, speechkit.ExecutionModeGroq, speechkit.ExecutionModeGoogle, speechkit.ExecutionModeDeepgram,
+		speechkit.ExecutionModeAssemblyAI, speechkit.ExecutionModeOpenRouter, speechkit.ExecutionModeFoundry:
 		return ProviderAuthAPIKey
 	default:
 		return ""
@@ -235,32 +229,32 @@ func DefaultProviderAuthRequirement(profile ProviderProfile) string {
 // DefaultProviderTransport exposes the dominant runtime transport class for a
 // profile. Native realtime providers use websocket; cascaded voice providers
 // use pipeline; batch/provider APIs use HTTPS/HTTP/local.
-func DefaultProviderTransport(profile ProviderProfile) string {
+func DefaultProviderTransport(profile speechkit.ProviderProfile) string {
 	if value := strings.TrimSpace(profile.Transport); value != "" {
 		return value
 	}
-	if NormalizeMode(profile.Mode) == ModeVoiceAgent {
-		if profile.HasCapability(CapabilityRealtimeAudio) {
+	if speechkit.NormalizeMode(profile.Mode) == speechkit.ModeVoiceAgent {
+		if profile.HasCapability(speechkit.CapabilityRealtimeAudio) {
 			return ProviderTransportWebSocket
 		}
-		if profile.HasCapability(CapabilityPipelineFallback) {
+		if profile.HasCapability(speechkit.CapabilityPipelineFallback) {
 			return ProviderTransportPipeline
 		}
 	}
 	switch profile.ExecutionMode {
-	case ExecutionModeLocal:
+	case speechkit.ExecutionModeLocal:
 		return ProviderTransportLocal
-	case ExecutionModeOllama, ExecutionModeSelfHostedHTTP:
+	case speechkit.ExecutionModeOllama, speechkit.ExecutionModeSelfHostedHTTP:
 		return ProviderTransportHTTP
-	case ExecutionModeHFRouted, ExecutionModeOpenAI, ExecutionModeGroq, ExecutionModeGoogle,
-		ExecutionModeDeepgram, ExecutionModeAssemblyAI, ExecutionModeOpenRouter, ExecutionModeFoundry:
+	case speechkit.ExecutionModeHFRouted, speechkit.ExecutionModeOpenAI, speechkit.ExecutionModeGroq, speechkit.ExecutionModeGoogle,
+		speechkit.ExecutionModeDeepgram, speechkit.ExecutionModeAssemblyAI, speechkit.ExecutionModeOpenRouter, speechkit.ExecutionModeFoundry:
 		return ProviderTransportHTTPS
 	default:
 		return ""
 	}
 }
 
-func ProviderProfileRequiresCredential(profile ProviderProfile) bool {
+func ProviderProfileRequiresCredential(profile speechkit.ProviderProfile) bool {
 	switch DefaultProviderAuthRequirement(profile) {
 	case "", ProviderAuthNone, ProviderAuthHostDependencies, ProviderAuthOptionalAPIKey:
 		return false
@@ -269,20 +263,24 @@ func ProviderProfileRequiresCredential(profile ProviderProfile) bool {
 	}
 }
 
-func ProviderCredentialTarget(profile ProviderProfile) string {
+func ProviderCredentialTarget(profile speechkit.ProviderProfile) string {
 	if !ProviderProfileRequiresCredential(profile) {
 		return ""
 	}
 	provider := ProviderIDForProfile(profile)
-	if provider == "google" && NormalizeMode(profile.Mode) == ModeDictation {
+	if provider == "google" && speechkit.NormalizeMode(profile.Mode) == speechkit.ModeDictation {
 		return "google_stt"
 	}
 	return provider
 }
 
 func DefaultProviderMatrix() []ProviderMatrixRow {
+	return providerMatrixFor(DefaultProviderProfiles())
+}
+
+func providerMatrixFor(profiles []speechkit.ProviderProfile) []ProviderMatrixRow {
 	grouped := map[string][]ProviderDefault{}
-	for _, profile := range DefaultProviderProfiles() {
+	for _, profile := range profiles {
 		provider := ProviderIDForProfile(profile)
 		if provider == "" {
 			continue
@@ -311,9 +309,13 @@ func DefaultProviderMatrix() []ProviderMatrixRow {
 }
 
 func DefaultProviderDefaults() []ProviderDefault {
+	return providerDefaultsFromMatrix(DefaultProviderMatrix())
+}
+
+func providerDefaultsFromMatrix(rows []ProviderMatrixRow) []ProviderDefault {
 	var out []ProviderDefault
-	for _, row := range DefaultProviderMatrix() {
-		for _, mode := range []Mode{ModeDictation, ModeAssist, ModeVoiceAgent, ModeTTS} {
+	for _, row := range rows {
+		for _, mode := range []speechkit.Mode{speechkit.ModeDictation, speechkit.ModeAssist, speechkit.ModeVoiceAgent, speechkit.ModeTTS} {
 			if profile, ok := preferredProviderDefault(row.Profiles, mode); ok {
 				out = append(out, profile)
 			}
@@ -333,9 +335,9 @@ func ProviderDefaultsFor(provider string) []ProviderDefault {
 	return out
 }
 
-func FindProviderDefault(provider string, mode Mode) (ProviderDefault, bool) {
+func FindProviderDefault(provider string, mode speechkit.Mode) (ProviderDefault, bool) {
 	provider = NormalizeProviderID(provider)
-	mode = NormalizeMode(mode)
+	mode = speechkit.NormalizeMode(mode)
 	for _, profile := range DefaultProviderDefaults() {
 		if profile.Provider == provider && profile.Mode == mode {
 			return profile, true
@@ -363,18 +365,18 @@ func (r ProviderMatrixRow) Feature(feature ProviderFeature) (ProviderFeatureSupp
 	return ProviderFeatureSupport{}, false
 }
 
-func providerDefaultFromProfile(provider string, profile ProviderProfile) ProviderDefault {
+func providerDefaultFromProfile(provider string, profile speechkit.ProviderProfile) ProviderDefault {
 	profile = ProviderProfileWithDefaults(profile)
 	return ProviderDefault{
 		Provider:           provider,
 		DisplayName:        providerDisplayName(provider),
-		Mode:               NormalizeMode(profile.Mode),
+		Mode:               speechkit.NormalizeMode(profile.Mode),
 		ProfileID:          profile.ID,
 		ModelID:            profile.ModelID,
 		ProviderKind:       profile.ProviderKind,
 		ExecutionMode:      profile.ExecutionMode,
 		Support:            supportKindForProfile(profile),
-		Capabilities:       append([]Capability(nil), profile.Capabilities...),
+		Capabilities:       append([]speechkit.Capability(nil), profile.Capabilities...),
 		NativeOptions:      nativeOptionsForProfile(provider, profile),
 		AuthRequirement:    profile.AuthRequirement,
 		CredentialRequired: ProviderProfileRequiresCredential(profile),
@@ -384,19 +386,19 @@ func providerDefaultFromProfile(provider string, profile ProviderProfile) Provid
 		Default:            profile.Default,
 		Recommended:        profile.Recommended,
 		Experimental:       profile.Experimental,
-		Variants:           append([]ModelVariant(nil), profile.Variants...),
+		Variants:           append([]speechkit.ModelVariant(nil), profile.Variants...),
 	}
 }
 
-func supportKindForProfile(profile ProviderProfile) ProviderSupportKind {
+func supportKindForProfile(profile speechkit.ProviderProfile) ProviderSupportKind {
 	if profile.Experimental && !profile.AllowInference {
 		return ProviderSupportPlanned
 	}
-	if NormalizeMode(profile.Mode) == ModeVoiceAgent && profile.HasCapability(CapabilityPipelineFallback) {
+	if speechkit.NormalizeMode(profile.Mode) == speechkit.ModeVoiceAgent && profile.HasCapability(speechkit.CapabilityPipelineFallback) {
 		return ProviderSupportCascaded
 	}
 	switch profile.ExecutionMode {
-	case ExecutionModeHFRouted, ExecutionModeOpenRouter:
+	case speechkit.ExecutionModeHFRouted, speechkit.ExecutionModeOpenRouter:
 		return ProviderSupportRouted
 	default:
 		return ProviderSupportNative
@@ -441,50 +443,50 @@ func featureSupportForProfile(profile ProviderDefault, feature ProviderFeature) 
 	}
 	switch feature {
 	case ProviderFeatureDictation:
-		return support, profile.Mode == ModeDictation && providerDefaultHasCapability(profile, CapabilityTranscription)
+		return support, profile.Mode == speechkit.ModeDictation && providerDefaultHasCapability(profile, speechkit.CapabilityTranscription)
 	case ProviderFeatureDictationStreaming:
-		if profile.Mode != ModeDictation || !providerDefaultHasCapability(profile, CapabilityTranscription) {
+		if profile.Mode != speechkit.ModeDictation || !providerDefaultHasCapability(profile, speechkit.CapabilityTranscription) {
 			return ProviderFeatureSupport{}, false
 		}
-		if providerDefaultHasCapability(profile, CapabilityNativeDictationStream) {
+		if providerDefaultHasCapability(profile, speechkit.CapabilityNativeDictationStream) {
 			support.Support = ProviderSupportNative
 		} else {
 			support.Support = ProviderSupportCascaded
 		}
 		return support, true
 	case ProviderFeatureLongTranscription:
-		return support, profile.Mode == ModeDictation && providerDefaultHasCapability(profile, CapabilityTranscription)
+		return support, profile.Mode == speechkit.ModeDictation && providerDefaultHasCapability(profile, speechkit.CapabilityTranscription)
 	case ProviderFeatureSpeakerDiarization:
-		return support, profile.Mode == ModeDictation &&
-			(providerDefaultHasCapability(profile, CapabilitySpeakerDiarization) ||
-				providerDefaultHasCapability(profile, CapabilitySpeakerAttribution) ||
-				providerDefaultHasCapability(profile, CapabilitySpeakerIdentification))
+		return support, profile.Mode == speechkit.ModeDictation &&
+			(providerDefaultHasCapability(profile, speechkit.CapabilitySpeakerDiarization) ||
+				providerDefaultHasCapability(profile, speechkit.CapabilitySpeakerAttribution) ||
+				providerDefaultHasCapability(profile, speechkit.CapabilitySpeakerIdentification))
 	case ProviderFeatureSpeakerIdentification:
-		return support, profile.Mode == ModeDictation &&
-			(providerDefaultHasCapability(profile, CapabilitySpeakerIdentification) ||
-				providerDefaultHasCapability(profile, CapabilitySpeakerAttribution))
+		return support, profile.Mode == speechkit.ModeDictation &&
+			(providerDefaultHasCapability(profile, speechkit.CapabilitySpeakerIdentification) ||
+				providerDefaultHasCapability(profile, speechkit.CapabilitySpeakerAttribution))
 	case ProviderFeatureAssist:
-		return support, profile.Mode == ModeAssist && providerDefaultHasCapability(profile, CapabilityLLM)
+		return support, profile.Mode == speechkit.ModeAssist && providerDefaultHasCapability(profile, speechkit.CapabilityLLM)
 	case ProviderFeatureRealtimeVoice:
-		if profile.Mode != ModeVoiceAgent {
+		if profile.Mode != speechkit.ModeVoiceAgent {
 			return ProviderFeatureSupport{}, false
 		}
-		if providerDefaultHasCapability(profile, CapabilityRealtimeAudio) {
+		if providerDefaultHasCapability(profile, speechkit.CapabilityRealtimeAudio) {
 			return support, true
 		}
-		if providerDefaultHasCapability(profile, CapabilityPipelineFallback) {
+		if providerDefaultHasCapability(profile, speechkit.CapabilityPipelineFallback) {
 			support.Support = ProviderSupportCascaded
 			return support, true
 		}
 		return ProviderFeatureSupport{}, false
 	case ProviderFeatureTTS:
-		return support, profile.Mode == ModeTTS && providerDefaultHasCapability(profile, CapabilityTTS)
+		return support, profile.Mode == speechkit.ModeTTS && providerDefaultHasCapability(profile, speechkit.CapabilityTTS)
 	default:
 		return ProviderFeatureSupport{}, false
 	}
 }
 
-func nativeOptionsForProfile(provider string, profile ProviderProfile) []string {
+func nativeOptionsForProfile(provider string, profile speechkit.ProviderProfile) []string {
 	seen := map[string]bool{}
 	var out []string
 	for _, option := range profile.NativeOptions {
@@ -513,37 +515,37 @@ func nativeOptionsForProfile(provider string, profile ProviderProfile) []string 
 	return out
 }
 
-func modalityForProviderMode(mode Mode) string {
-	switch NormalizeMode(mode) {
-	case ModeDictation:
+func modalityForProviderMode(mode speechkit.Mode) string {
+	switch speechkit.NormalizeMode(mode) {
+	case speechkit.ModeDictation:
 		return provideropts.ModalitySTT
-	case ModeVoiceAgent:
+	case speechkit.ModeVoiceAgent:
 		return provideropts.ModalityVoiceAgent
-	case ModeTTS:
+	case speechkit.ModeTTS:
 		return provideropts.ModalityTTS
 	default:
 		return ""
 	}
 }
 
-func modeForProviderFeature(feature ProviderFeature) Mode {
+func modeForProviderFeature(feature ProviderFeature) speechkit.Mode {
 	switch feature {
 	case ProviderFeatureDictation, ProviderFeatureDictationStreaming, ProviderFeatureLongTranscription,
 		ProviderFeatureSpeakerDiarization, ProviderFeatureSpeakerIdentification:
-		return ModeDictation
+		return speechkit.ModeDictation
 	case ProviderFeatureAssist:
-		return ModeAssist
+		return speechkit.ModeAssist
 	case ProviderFeatureRealtimeVoice:
-		return ModeVoiceAgent
+		return speechkit.ModeVoiceAgent
 	case ProviderFeatureTTS:
-		return ModeTTS
+		return speechkit.ModeTTS
 	default:
-		return ModeNone
+		return speechkit.ModeNone
 	}
 }
 
-func preferredProviderDefault(profiles []ProviderDefault, mode Mode) (ProviderDefault, bool) {
-	mode = NormalizeMode(mode)
+func preferredProviderDefault(profiles []ProviderDefault, mode speechkit.Mode) (ProviderDefault, bool) {
+	mode = speechkit.NormalizeMode(mode)
 	var matches []ProviderDefault
 	for _, profile := range profiles {
 		if profile.Mode == mode {
@@ -578,7 +580,7 @@ func sortProviderDefaults(profiles []ProviderDefault) {
 	})
 }
 
-func providerDefaultHasCapability(profile ProviderDefault, capability Capability) bool {
+func providerDefaultHasCapability(profile ProviderDefault, capability speechkit.Capability) bool {
 	for _, candidate := range profile.Capabilities {
 		if candidate == capability {
 			return true
@@ -639,15 +641,15 @@ func providerOrderIndex(provider string) int {
 	return len(order)
 }
 
-func modeOrderIndex(mode Mode) int {
-	switch NormalizeMode(mode) {
-	case ModeDictation:
+func modeOrderIndex(mode speechkit.Mode) int {
+	switch speechkit.NormalizeMode(mode) {
+	case speechkit.ModeDictation:
 		return 0
-	case ModeAssist:
+	case speechkit.ModeAssist:
 		return 1
-	case ModeVoiceAgent:
+	case speechkit.ModeVoiceAgent:
 		return 2
-	case ModeTTS:
+	case speechkit.ModeTTS:
 		return 3
 	default:
 		return 4

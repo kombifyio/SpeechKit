@@ -1,20 +1,17 @@
 package config
 
+import "github.com/kombifyio/SpeechKit/pkg/speechkit/hostconfig"
+
 const (
 	// HotkeyBehaviorHoldToTalk is the canonical name for the "hold the
 	// shortcut while you speak, release to end" capture model. It replaces
 	// the historical push_to_talk value; NormalizeHotkeyBehavior accepts the
 	// legacy string as an alias so existing config files keep loading.
-	HotkeyBehaviorHoldToTalk = "hold_to_talk"
-	HotkeyBehaviorToggle     = "toggle"
+	HotkeyBehaviorHoldToTalk = hostconfig.HotkeyBehaviorHoldToTalk
+	HotkeyBehaviorToggle     = hostconfig.HotkeyBehaviorToggle
 
-	// legacyHotkeyBehaviorPushToTalk is the pre-rename TOML value of
-	// HotkeyBehaviorHoldToTalk. NormalizeHotkeyBehavior maps it to the new
-	// canonical value so older configs continue to work without a manual edit.
-	legacyHotkeyBehaviorPushToTalk = "push_to_talk"
-
-	VoiceAgentCloseBehaviorContinue = "continue"
-	VoiceAgentCloseBehaviorNewChat  = "new_chat"
+	VoiceAgentCloseBehaviorContinue = hostconfig.VoiceAgentCloseBehaviorContinue
+	VoiceAgentCloseBehaviorNewChat  = hostconfig.VoiceAgentCloseBehaviorNewChat
 
 	// VoiceAgentBargeIn* control whether the microphone stays open while the
 	// agent is speaking so the user can interrupt mid-answer (full duplex).
@@ -54,9 +51,9 @@ const (
 	ManagedDevServerURL = "https://speechkit.kombify.io"
 	ManagedLiveKitURL   = "wss://livekit.kombify.io"
 
-	DefaultDictatePrimaryProfileID    = "stt.local.whispercpp"
-	DefaultAssistPrimaryProfileID     = "assist.builtin.gemma4-e4b"
-	DefaultVoiceAgentPrimaryProfileID = "realtime.builtin.pipeline"
+	DefaultDictatePrimaryProfileID    = hostconfig.DefaultDictatePrimaryProfileID
+	DefaultAssistPrimaryProfileID     = hostconfig.DefaultAssistPrimaryProfileID
+	DefaultVoiceAgentPrimaryProfileID = hostconfig.DefaultVoiceAgentPrimaryProfileID
 	// DefaultTTSPrimaryProfileID is the Voice-Output profile pre-selected for
 	// fresh installs. Google Studio-O (DE) is the v0.37 recommended baseline
 	// because operators that have already configured a GOOGLE_AI_API_KEY (the

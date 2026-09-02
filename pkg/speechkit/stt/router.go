@@ -20,6 +20,7 @@ import (
 	"time"
 
 	"github.com/kombifyio/SpeechKit/pkg/speechkit"
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/catalog"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/speaker"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
@@ -31,26 +32,37 @@ import (
 // installed, otel.Tracer returns a no-op, so spans cost nothing.
 var sttTracer = otel.Tracer("github.com/kombifyio/SpeechKit/pkg/speechkit/stt")
 
-// providerSelectedObserverFn is the callback type installed via
-// SetProviderSelectedObserver.
-type providerSelectedObserverFn = func(ctx context.Context, providerName string, strategy Strategy)
+// ProviderSelectedObserver is invoked after every successful routed
+// transcription with the winning provider's name and the active strategy.
+// Hosts use it to record audit events; the framework itself stays free of
+// host logging dependencies. Observer failures must never abort a
+// user-facing transcription, so the callback has no error return.
+type ProviderSelectedObserver func(ctx context.Context, providerName string, strategy Strategy)
 
-var providerSelectedObserver atomic.Value // providerSelectedObserverFn
+// legacyProviderSelectedObserver backs the deprecated package-level
+// SetProviderSelectedObserver. It is consulted only when the Router has no
+// OnProviderSelected of its own.
+var legacyProviderSelectedObserver atomic.Value // ProviderSelectedObserver
 
-// SetProviderSelectedObserver installs a host callback invoked after every
-// successful routed transcription with the winning provider's name and the
-// active strategy. Hosts use it to record audit events (the reference app
-// wires it to its audit log in internal/router); the framework itself stays
-// free of host logging dependencies. Passing nil removes the observer.
+// SetProviderSelectedObserver installs a process-wide observer used by every
+// Router that has no OnProviderSelected of its own. Passing nil removes it.
+//
+// Deprecated: set Router.OnProviderSelected (or
+// allproviders.RouterConfig.OnProviderSelected) so each router instance
+// reports to its own host. The process-wide setter remains for hosts that
+// still rely on it.
 func SetProviderSelectedObserver(fn func(ctx context.Context, providerName string, strategy Strategy)) {
-	providerSelectedObserver.Store(providerSelectedObserverFn(fn))
+	legacyProviderSelectedObserver.Store(ProviderSelectedObserver(fn))
 }
 
-// emitProviderSelected notifies the host observer on successful
-// transcription. Observer failures must never abort a user-facing
-// transcription, so the callback has no error return.
-func emitProviderSelected(ctx context.Context, providerName string, strategy Strategy) {
-	if fn, _ := providerSelectedObserver.Load().(providerSelectedObserverFn); fn != nil {
+// emitProviderSelected notifies the router's observer, falling back to the
+// deprecated process-wide observer when none is set on the instance.
+func (r *Router) emitProviderSelected(ctx context.Context, providerName string, strategy Strategy) {
+	if r.OnProviderSelected != nil {
+		r.OnProviderSelected(ctx, providerName, strategy)
+		return
+	}
+	if fn, _ := legacyProviderSelectedObserver.Load().(ProviderSelectedObserver); fn != nil {
 		fn(ctx, providerName, strategy)
 	}
 }
@@ -79,6 +91,12 @@ type Router struct {
 	// ConnectivityProbe is the TCP address used to test internet connectivity.
 	// Defaults to "1.1.1.1:443" when empty.
 	ConnectivityProbe string
+
+	// OnProviderSelected, when set, is called after every successful routed
+	// transcription. It scopes audit reporting to this router instance; when
+	// nil the deprecated process-wide observer (SetProviderSelectedObserver)
+	// is used instead.
+	OnProviderSelected ProviderSelectedObserver
 
 	internetOnline atomic.Bool
 	internetAt     atomic.Int64 // UnixNano of last check
@@ -437,7 +455,7 @@ func PrioritizeProviderProfile(candidates []STTProvider, profileID string) []STT
 // ProviderNameFromProfileID extracts the bare provider name from a
 // model_selection profile id, or "" when the id names a specific model.
 func ProviderNameFromProfileID(profileID string) string {
-	provider := speechkit.NormalizeProviderID(profileID)
+	provider := catalog.NormalizeProviderID(profileID)
 	if strings.Contains(provider, ".") {
 		return ""
 	}
@@ -503,7 +521,7 @@ func (r *Router) transcribeCloud(ctx context.Context, audio []byte, opts Transcr
 	for _, p := range cloud {
 		result, err := p.Transcribe(ctx, audio, opts.ForProvider(p.Name()))
 		if err == nil {
-			emitProviderSelected(ctx, p.Name(), r.Strategy)
+			r.emitProviderSelected(ctx, p.Name(), r.Strategy)
 			return result, nil
 		}
 		slog.Warn("provider transcribe failed", "provider", p.Name(), "err", err)
@@ -519,7 +537,7 @@ func (r *Router) transcribeLocal(ctx context.Context, audio []byte, opts Transcr
 	}
 	result, err := local.Transcribe(ctx, audio, opts.ForProvider(local.Name()))
 	if err == nil {
-		emitProviderSelected(ctx, local.Name(), r.Strategy)
+		r.emitProviderSelected(ctx, local.Name(), r.Strategy)
 	}
 	return result, err
 }
@@ -540,7 +558,7 @@ func (r *Router) transcribeParallel(ctx context.Context, audio []byte, opts Tran
 		go func() {
 			result, err := local.Transcribe(ctx, audio, opts.ForProvider(local.Name()))
 			if err == nil {
-				emitProviderSelected(ctx, local.Name(), r.Strategy)
+				r.emitProviderSelected(ctx, local.Name(), r.Strategy)
 			}
 			results <- resultOrError{result, err}
 		}()

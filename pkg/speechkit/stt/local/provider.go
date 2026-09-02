@@ -89,23 +89,27 @@ const (
 
 // Provider implements stt.STTProvider for Tier 1: localhost whisper.cpp server.
 type Provider struct {
-	BaseURL       string // e.g. "http://127.0.0.1:8080"
-	Port          int
-	ModelPath     string
-	GPU           string
-	Validation    netsec.ValidationOptions
-	cmd           *exec.Cmd
-	ready         atomic.Bool
-	startDone     chan struct{} // closed when the current StartServer call completes (nil = never started)
-	stopMu        sync.Mutex
-	processMu     sync.Mutex
-	processDone   chan struct{}
-	processErr    error
-	starting      bool
-	stopping      bool
-	stopRequested bool
-	generation    uint64
-	client        *http.Client
+	BaseURL    string // e.g. "http://127.0.0.1:8080"
+	Port       int
+	ModelPath  string
+	GPU        string
+	Validation netsec.ValidationOptions
+	// LowerSubprocessPriority overrides the process-wide default set via
+	// SetSubprocessPriorityLowered for this provider only. nil keeps the
+	// default (true on Windows). Ignored outside Windows.
+	LowerSubprocessPriority *bool
+	cmd                     *exec.Cmd
+	ready                   atomic.Bool
+	startDone               chan struct{} // closed when the current StartServer call completes (nil = never started)
+	stopMu                  sync.Mutex
+	processMu               sync.Mutex
+	processDone             chan struct{}
+	processErr              error
+	starting                bool
+	stopping                bool
+	stopRequested           bool
+	generation              uint64
+	client                  *http.Client
 }
 
 // New creates the built-in whisper.cpp provider. The process is
@@ -169,7 +173,7 @@ func (p *Provider) StartServer(ctx context.Context) error {
 	}
 
 	cmd := exec.CommandContext(ctx, binaryPath, args...) // #nosec G204 -- binaryPath is resolved by findWhisperBinary from bundle/managed locations or explicit dev opt-in.
-	configureHiddenProcess(cmd)
+	configureHiddenProcess(cmd, subprocessPriorityLowered(p.LowerSubprocessPriority))
 	cmd.Stdout = os.Stderr // whisper-server logs to stdout
 	cmd.Stderr = os.Stderr
 

@@ -20,24 +20,27 @@
 // secret store to report whether a server bearer token env var is set, which is
 // a device-UI concern and is deliberately left out here.
 //
-// Boundary note: this package is an adapter over the reference app's internal
-// config loader so that [Load] applies exactly the defaults, legacy-field
-// backfills, and normalisations the desktop app applies — one loader, no
-// drifting reimplementation. Every exported signature uses public types only;
-// the internal imports never leak into the API surface.
+// Boundary note: this package owns the loader semantics for the tables it
+// reads — [Defaults], the legacy-field backfills and value normalisation in
+// [Normalize]. The reference desktop app's internal config loader delegates to
+// the same functions for those fields, so [Load] and the desktop app agree by
+// construction rather than by a parallel reimplementation. The package imports
+// no internal/* code.
 package hostconfig
 
 import (
 	"strings"
 
-	"github.com/kombifyio/SpeechKit/internal/config"
-	"github.com/kombifyio/SpeechKit/internal/voiceagentprofile"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit"
 )
 
-// Load reads and decodes the SpeechKit TOML config at path — applying the same
-// defaults the reference app applies — and returns the host-facing
-// ModeSettings together with a RuntimePolicy derived from it.
+// Load reads and decodes the SpeechKit TOML config at path over [Defaults],
+// applies [Normalize], and returns the host-facing ModeSettings together with
+// a RuntimePolicy derived from it. A missing file yields the defaults; a
+// malformed file returns an error wrapping [ErrMalformedConfig]. Use
+// [LoadConfig] to keep the intermediate [Config]. Unlike the desktop app,
+// an empty path is not resolved to the app's per-user config location; the
+// host decides where its configuration lives.
 //
 // The returned policy enables exactly the modes turned on in config and allows
 // fallback profiles only when the config actually pins one. It leaves
@@ -45,12 +48,11 @@ import (
 // tighten the policy further before calling
 // [speechkit.ValidateModeSettingsForPolicy].
 func Load(path string) (speechkit.ModeSettings, speechkit.RuntimePolicy, error) {
-	cfg, err := config.Load(path)
+	cfg, err := LoadConfig(path)
 	if err != nil {
 		return speechkit.ModeSettings{}, speechkit.RuntimePolicy{}, err
 	}
-	public := fromInternal(cfg)
-	return ModeSettingsFrom(public), PolicyFrom(public), nil
+	return ModeSettingsFrom(cfg), PolicyFrom(cfg), nil
 }
 
 // ModeSettingsFrom converts a [Config] into the public ModeSettings shape,
@@ -66,15 +68,15 @@ func ModeSettingsFrom(cfg *Config) speechkit.ModeSettings {
 
 	dictate := normalizeSelection(cfg.ModelSelection.Dictate)
 	if dictate.PrimaryProfileID == "" {
-		dictate.PrimaryProfileID = config.DefaultDictatePrimaryProfileID
+		dictate.PrimaryProfileID = DefaultDictatePrimaryProfileID
 	}
 	assist := normalizeSelection(cfg.ModelSelection.Assist)
 	if assist.PrimaryProfileID == "" {
-		assist.PrimaryProfileID = config.DefaultAssistPrimaryProfileID
+		assist.PrimaryProfileID = DefaultAssistPrimaryProfileID
 	}
 	voice := normalizeSelection(cfg.ModelSelection.VoiceAgent)
 	if voice.PrimaryProfileID == "" {
-		voice.PrimaryProfileID = config.DefaultVoiceAgentPrimaryProfileID
+		voice.PrimaryProfileID = DefaultVoiceAgentPrimaryProfileID
 	}
 
 	return speechkit.ModeSettings{
@@ -112,11 +114,14 @@ func ModeSettingsFrom(cfg *Config) speechkit.ModeSettings {
 			},
 			SessionSummary:   cfg.VoiceAgent.EnableSessionSummary,
 			PipelineFallback: cfg.VoiceAgent.PipelineFallback,
-			CloseBehavior: config.NormalizeVoiceAgentCloseBehavior(
+			CloseBehavior: NormalizeVoiceAgentCloseBehavior(
 				cfg.VoiceAgent.CloseBehavior,
-				config.VoiceAgentCloseBehaviorContinue,
+				VoiceAgentCloseBehaviorContinue,
 			),
-			AgentProfileID:  voiceagentprofile.NormalizeID(cfg.VoiceAgent.AgentProfileID),
+			// Carried through as configured (Normalize fills an empty id with
+			// DefaultVoiceAgentProfileID). Which ids exist is the host's
+			// behaviour catalog; a Companion persona is not collapsed here.
+			AgentProfileID:  strings.TrimSpace(cfg.VoiceAgent.AgentProfileID),
 			AgentSequenceID: strings.TrimSpace(cfg.VoiceAgent.AgentSequenceID),
 		},
 		ServerConnection: serverConnectionFrom(cfg.ServerConnection),
@@ -158,60 +163,6 @@ func PolicyFrom(cfg *Config) speechkit.RuntimePolicy {
 	}
 }
 
-// fromInternal copies the embedder-relevant fields of the reference app's
-// parsed config into the public shape. It is the only place the internal
-// config type is read, so the mapping stays in one file.
-func fromInternal(cfg *config.Config) *Config {
-	if cfg == nil {
-		return nil
-	}
-	return &Config{
-		General: General{
-			DictateEnabled:           cfg.General.DictateEnabled,
-			AssistEnabled:            cfg.General.AssistEnabled,
-			VoiceAgentEnabled:        cfg.General.VoiceAgentEnabled,
-			DictateHotkey:            cfg.General.DictateHotkey,
-			AssistHotkey:             cfg.General.AssistHotkey,
-			VoiceAgentHotkey:         cfg.General.VoiceAgentHotkey,
-			DictateHotkeyBehavior:    cfg.General.DictateHotkeyBehavior,
-			AssistHotkeyBehavior:     cfg.General.AssistHotkeyBehavior,
-			VoiceAgentHotkeyBehavior: cfg.General.VoiceAgentHotkeyBehavior,
-		},
-		ModelSelection: ModelSelection{
-			Dictate:    modeSelectionFrom(cfg.ModelSelection.Dictate),
-			Assist:     modeSelectionFrom(cfg.ModelSelection.Assist),
-			VoiceAgent: modeSelectionFrom(cfg.ModelSelection.VoiceAgent),
-		},
-		Vocabulary: Vocabulary{Dictionary: cfg.Vocabulary.Dictionary},
-		TTS:        TTS{Enabled: cfg.TTS.Enabled},
-		VoiceAgent: VoiceAgent{
-			EnableSessionSummary: cfg.VoiceAgent.EnableSessionSummary,
-			PipelineFallback:     cfg.VoiceAgent.PipelineFallback,
-			CloseBehavior:        cfg.VoiceAgent.CloseBehavior,
-			AgentProfileID:       cfg.VoiceAgent.AgentProfileID,
-			AgentSequenceID:      cfg.VoiceAgent.AgentSequenceID,
-		},
-		ServerConnection: ServerConnection{
-			Enabled:              cfg.ServerConnection.Enabled,
-			URL:                  cfg.ServerConnection.URL,
-			BearerTokenEnv:       cfg.ServerConnection.BearerTokenEnv,
-			AuthMode:             cfg.ServerConnection.AuthMode,
-			BetaInstallIDEnv:     cfg.ServerConnection.BetaInstallIDEnv,
-			BetaInstallSecretEnv: cfg.ServerConnection.BetaInstallSecretEnv,
-			FallbackToLocal:      cfg.ServerConnection.FallbackToLocal,
-			RequestTimeoutSec:    cfg.ServerConnection.RequestTimeoutSec,
-		},
-	}
-}
-
-func modeSelectionFrom(sel config.ModeModelSelection) ModeSelection {
-	return ModeSelection{
-		PrimaryProfileID:  sel.PrimaryProfileID,
-		FallbackProfileID: sel.FallbackProfileID,
-		ModeSource:        sel.ModeSource,
-	}
-}
-
 // normalizeSelection trims and canonicalises both profile IDs and drops the
 // fallback when it is identical to the primary. It mirrors the device app's
 // profiles.NormalizeModeSelection without pulling in the desktop adapter.
@@ -233,7 +184,7 @@ func serverConnectionFrom(cfg ServerConnection) speechkit.ServerConnectionSettin
 		Enabled:              cfg.Enabled,
 		URL:                  cfg.URL,
 		BearerTokenEnv:       cfg.BearerTokenEnv,
-		AuthMode:             config.NormalizeServerConnectionAuthMode(cfg.AuthMode),
+		AuthMode:             NormalizeServerConnectionAuthMode(cfg.AuthMode),
 		BetaInstallIDEnv:     cfg.BetaInstallIDEnv,
 		BetaInstallSecretEnv: cfg.BetaInstallSecretEnv,
 		FallbackToLocal:      cfg.FallbackToLocal,

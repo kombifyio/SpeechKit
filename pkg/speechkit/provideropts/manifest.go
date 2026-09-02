@@ -257,7 +257,7 @@ func geminiVoiceAgentManifest() ProviderOptionManifest {
 		native(OptionContextPrompt, TypeString, "Context prompt", "systemInstruction", "https://ai.google.dev/gemini-api/docs/live-guide"),
 		native(OptionReasoningEffort, TypeString, "Reasoning effort", "thinkingConfig.thinkingLevel", "https://ai.google.dev/gemini-api/docs/live-api/capabilities"),
 		native(OptionResume, TypeBool, "Session resume", "sessionResumption", "https://ai.google.dev/gemini-api/docs/live-api/capabilities"),
-		native(OptionTranslation, TypeBool, "Translation", "model", "https://ai.google.dev/gemini-api/docs/live-api/translation"),
+		native(OptionTranslation, TypeBool, "Translation", "model", "https://ai.google.dev/gemini-api/docs/models/gemini-3.5-live-translate-preview"),
 		unsupported(OptionLanguageHints, TypeStringList, "Language hints", "Gemini Live uses prompt/locale guidance rather than native language_hints."),
 		unsupported(OptionPrivacyRedaction, TypeBool, "PII redaction", "Gemini Live PII redaction is not exposed through the current SpeechKit adapter."),
 		unsupported(OptionVoiceFocus, TypeBool, "Voice focus", "Gemini Live has no AssemblyAI-style voice_focus switch."),

@@ -1,6 +1,10 @@
-package speechkit
+package catalog
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/kombifyio/SpeechKit/pkg/speechkit"
+)
 
 func TestDefaultProviderMatrixStandardizesKnownProviders(t *testing.T) {
 	rows := DefaultProviderMatrix()
@@ -54,7 +58,7 @@ func TestDefaultProviderMatrixStandardizesKnownProviders(t *testing.T) {
 			if !profile.CredentialRequired && profile.CredentialTarget != "" {
 				t.Fatalf("profile default %q has credential target %q despite credentialRequired=false", profile.ProfileID, profile.CredentialTarget)
 			}
-			if NormalizeMode(profile.Mode) == ModeNone {
+			if speechkit.NormalizeMode(profile.Mode) == speechkit.ModeNone {
 				t.Fatalf("profile default %q has invalid mode %q", profile.ProfileID, profile.Mode)
 			}
 		}
@@ -86,6 +90,10 @@ func TestProviderIDForProfileCoversEveryCatalogProfile(t *testing.T) {
 		"stt.deepgram.nova-3":                   "deepgram",
 		"speaker.assemblyai.diarization":        "assemblyai",
 		"tts.openedai.kokoro":                   "openedai",
+		"utility.builtin.gemma4-e4b":            "local",
+		"utility.routed.qwen35-9b":              "huggingface",
+		"tts.routed.qwen3-tts-1.7b":             "huggingface",
+		"utility.acme.custom-llm":               "acme",
 	}
 	for input, want := range cases {
 		if got := NormalizeProviderID(input); got != want {
@@ -95,17 +103,17 @@ func TestProviderIDForProfileCoversEveryCatalogProfile(t *testing.T) {
 }
 
 func TestProviderIDForExecutionMode(t *testing.T) {
-	cases := map[ExecutionMode]string{
-		ExecutionModeLocal:          "local",
-		ExecutionModeSelfHostedHTTP: "selfhosted",
-		ExecutionModeHFRouted:       "huggingface",
-		ExecutionModeOpenAI:         "openai",
-		ExecutionModeGroq:           "groq",
-		ExecutionModeGoogle:         "google",
-		ExecutionModeDeepgram:       "deepgram",
-		ExecutionModeAssemblyAI:     "assemblyai",
-		ExecutionModeOllama:         "ollama",
-		ExecutionModeOpenRouter:     "openrouter",
+	cases := map[speechkit.ExecutionMode]string{
+		speechkit.ExecutionModeLocal:          "local",
+		speechkit.ExecutionModeSelfHostedHTTP: "selfhosted",
+		speechkit.ExecutionModeHFRouted:       "huggingface",
+		speechkit.ExecutionModeOpenAI:         "openai",
+		speechkit.ExecutionModeGroq:           "groq",
+		speechkit.ExecutionModeGoogle:         "google",
+		speechkit.ExecutionModeDeepgram:       "deepgram",
+		speechkit.ExecutionModeAssemblyAI:     "assemblyai",
+		speechkit.ExecutionModeOllama:         "ollama",
+		speechkit.ExecutionModeOpenRouter:     "openrouter",
 	}
 	for mode, want := range cases {
 		if got := ProviderIDForExecutionMode(mode); got != want {
@@ -143,7 +151,7 @@ func TestProviderProfileDefaultsFillRuntimeMetadata(t *testing.T) {
 		{"realtime.openai.gpt-realtime-2", ProviderAuthAPIKey, ProviderTransportWebSocket, "openai"},
 		{"tts.openedai.kokoro", ProviderAuthOptionalAPIKey, ProviderTransportHTTP, ""},
 	}
-	profiles := map[string]ProviderProfile{}
+	profiles := map[string]speechkit.ProviderProfile{}
 	for _, profile := range DefaultProviderProfiles() {
 		profiles[profile.ID] = profile
 	}
@@ -162,7 +170,7 @@ func TestProviderProfileDefaultsFillRuntimeMetadata(t *testing.T) {
 }
 
 func TestDefaultProviderDefaultsResolveCatalogProfiles(t *testing.T) {
-	profiles := map[string]ProviderProfile{}
+	profiles := map[string]speechkit.ProviderProfile{}
 	for _, profile := range DefaultProviderProfiles() {
 		profiles[profile.ID] = profile
 	}
@@ -174,8 +182,8 @@ func TestDefaultProviderDefaultsResolveCatalogProfiles(t *testing.T) {
 		if providerDefault.Provider != ProviderIDForProfile(profile) {
 			t.Fatalf("default %q provider = %q, want %q", providerDefault.ProfileID, providerDefault.Provider, ProviderIDForProfile(profile))
 		}
-		if providerDefault.Mode != NormalizeMode(profile.Mode) {
-			t.Fatalf("default %q mode = %q, want %q", providerDefault.ProfileID, providerDefault.Mode, NormalizeMode(profile.Mode))
+		if providerDefault.Mode != speechkit.NormalizeMode(profile.Mode) {
+			t.Fatalf("default %q mode = %q, want %q", providerDefault.ProfileID, providerDefault.Mode, speechkit.NormalizeMode(profile.Mode))
 		}
 		if providerDefault.ModelID != profile.ModelID {
 			t.Fatalf("default %q model = %q, want catalog model %q", providerDefault.ProfileID, providerDefault.ModelID, profile.ModelID)
@@ -203,16 +211,16 @@ func TestDefaultProviderDefaultsSelectsOneProfilePerProviderMode(t *testing.T) {
 
 	cases := []struct {
 		provider string
-		mode     Mode
+		mode     speechkit.Mode
 		wantID   string
 	}{
-		{"local", ModeDictation, "stt.local.whispercpp"},
-		{"local", ModeTTS, "tts.local.kokoro-82m"},
-		{"hf", ModeDictation, "stt.routed.whisper-large-v3"},
-		{"openai", ModeDictation, "stt.openai.gpt-4o-transcribe"},
-		{"openai", ModeTTS, "tts.openai.tts-1-hd"},
-		{"deepgram", ModeDictation, "stt.deepgram.nova-3"},
-		{"assembly-ai", ModeVoiceAgent, "realtime.assemblyai.voice-agent"},
+		{"local", speechkit.ModeDictation, "stt.local.whispercpp"},
+		{"local", speechkit.ModeTTS, "tts.local.kokoro-82m"},
+		{"hf", speechkit.ModeDictation, "stt.routed.whisper-large-v3"},
+		{"openai", speechkit.ModeDictation, "stt.openai.gpt-4o-transcribe"},
+		{"openai", speechkit.ModeTTS, "tts.openai.tts-1-hd"},
+		{"deepgram", speechkit.ModeDictation, "stt.deepgram.nova-3"},
+		{"assembly-ai", speechkit.ModeVoiceAgent, "realtime.assemblyai.voice-agent"},
 	}
 	for _, tc := range cases {
 		profile, ok := FindProviderDefault(tc.provider, tc.mode)
@@ -254,14 +262,14 @@ func TestGoogleProviderMatrixIncludesLiveTranslateWithoutChangingDefault(t *test
 	if translate.ProfileID == "" {
 		t.Fatal("google row should include Gemini Live Translate profile")
 	}
-	if !translate.Experimental || !providerDefaultHasCapability(translate, CapabilityTranslation) {
+	if !translate.Experimental || !providerDefaultHasCapability(translate, speechkit.CapabilityTranslation) {
 		t.Fatalf("translate profile metadata = experimental:%v capabilities:%v", translate.Experimental, translate.Capabilities)
 	}
 	if !stringsContain(translate.NativeOptions, "translation") {
 		t.Fatalf("translate native options = %v, want translation", translate.NativeOptions)
 	}
 
-	defaultProfile, ok := FindProviderDefault("google", ModeVoiceAgent)
+	defaultProfile, ok := FindProviderDefault("google", speechkit.ModeVoiceAgent)
 	if !ok {
 		t.Fatal("google voice agent default missing")
 	}

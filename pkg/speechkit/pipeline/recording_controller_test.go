@@ -1,4 +1,4 @@
-package speechkit
+package pipeline
 
 import (
 	"context"
@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/kombifyio/SpeechKit/pkg/speechkit"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/speaker"
 )
 
@@ -94,11 +95,11 @@ func (r *fakePooledRecorder) SetPooledPCMHandler(handler func(buf []byte, releas
 }
 
 type fakeSubmitter struct {
-	jobs []TranscriptionJob
+	jobs []speechkit.TranscriptionJob
 	err  error
 }
 
-func (s *fakeSubmitter) Submit(job TranscriptionJob) error {
+func (s *fakeSubmitter) Submit(job speechkit.TranscriptionJob) error {
 	if s.err != nil {
 		return s.err
 	}
@@ -109,25 +110,25 @@ func (s *fakeSubmitter) Submit(job TranscriptionJob) error {
 type fakeDictationStreamProvider struct {
 	stream  *fakeDictationStream
 	err     error
-	opts    []DictationStreamOptions
+	opts    []speechkit.DictationStreamOptions
 	formats []speaker.AudioFormat
 }
 
-func (p *fakeDictationStreamProvider) StartDictationStream(_ context.Context, opts DictationStreamOptions, format speaker.AudioFormat) (DictationStream, error) {
+func (p *fakeDictationStreamProvider) StartDictationStream(_ context.Context, opts speechkit.DictationStreamOptions, format speaker.AudioFormat) (speechkit.DictationStream, error) {
 	if p.err != nil {
 		return nil, p.err
 	}
 	p.opts = append(p.opts, opts)
 	p.formats = append(p.formats, format)
 	if p.stream == nil {
-		p.stream = newFakeDictationStream(DictationStreamEvent{})
+		p.stream = newFakeDictationStream(speechkit.DictationStreamEvent{})
 	}
 	return p.stream, nil
 }
 
 type fakeDictationStream struct {
-	finalEvent DictationStreamEvent
-	events     chan DictationStreamEvent
+	finalEvent speechkit.DictationStreamEvent
+	events     chan speechkit.DictationStreamEvent
 	finalOnce  sync.Once
 	closeOnce  sync.Once
 	mu         sync.Mutex
@@ -136,10 +137,10 @@ type fakeDictationStream struct {
 	closed     bool
 }
 
-func newFakeDictationStream(finalEvent DictationStreamEvent) *fakeDictationStream {
+func newFakeDictationStream(finalEvent speechkit.DictationStreamEvent) *fakeDictationStream {
 	return &fakeDictationStream{
 		finalEvent: finalEvent,
-		events:     make(chan DictationStreamEvent, 2),
+		events:     make(chan speechkit.DictationStreamEvent, 2),
 	}
 }
 
@@ -163,15 +164,15 @@ func (s *fakeDictationStream) Finalize(context.Context) error {
 	return nil
 }
 
-func (s *fakeDictationStream) Receive(ctx context.Context) (DictationStreamEvent, error) {
+func (s *fakeDictationStream) Receive(ctx context.Context) (speechkit.DictationStreamEvent, error) {
 	select {
 	case event, ok := <-s.events:
 		if !ok {
-			return DictationStreamEvent{}, io.EOF
+			return speechkit.DictationStreamEvent{}, io.EOF
 		}
 		return event, nil
 	case <-ctx.Done():
-		return DictationStreamEvent{}, ctx.Err()
+		return speechkit.DictationStreamEvent{}, ctx.Err()
 	}
 }
 
@@ -192,11 +193,11 @@ func (s *fakeDictationStream) pcmFrames() int {
 
 type fakeDictationStreamSink struct {
 	mu     sync.Mutex
-	events []DictationStreamEvent
-	opts   []DictationStreamSinkOptions
+	events []speechkit.DictationStreamEvent
+	opts   []speechkit.DictationStreamSinkOptions
 }
 
-func (s *fakeDictationStreamSink) HandleDictationStreamEvent(_ context.Context, event DictationStreamEvent, opts DictationStreamSinkOptions) error {
+func (s *fakeDictationStreamSink) HandleDictationStreamEvent(_ context.Context, event speechkit.DictationStreamEvent, opts speechkit.DictationStreamSinkOptions) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.events = append(s.events, event)
@@ -204,10 +205,10 @@ func (s *fakeDictationStreamSink) HandleDictationStreamEvent(_ context.Context, 
 	return nil
 }
 
-func (s *fakeDictationStreamSink) finalEvents() []DictationStreamEvent {
+func (s *fakeDictationStreamSink) finalEvents() []speechkit.DictationStreamEvent {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	var out []DictationStreamEvent
+	var out []speechkit.DictationStreamEvent
 	for _, event := range s.events {
 		if event.IsFinal {
 			out = append(out, event)
@@ -259,18 +260,18 @@ func (c *fakeCollector) FeedPCM(pcm []byte) error {
 	return c.feedErr
 }
 
-func (c *fakeCollector) CollectStopSegments(_ []byte) ([]AudioSegment, error) {
-	segments := make([]AudioSegment, 0, len(c.segments))
+func (c *fakeCollector) CollectStopSegments(_ []byte) ([]speechkit.AudioSegment, error) {
+	segments := make([]speechkit.AudioSegment, 0, len(c.segments))
 	for _, segment := range c.segments {
-		segments = append(segments, AudioSegment{PCM: segment.pcm, Paragraph: segment.paragraph})
+		segments = append(segments, speechkit.AudioSegment{PCM: segment.pcm, Paragraph: segment.paragraph})
 	}
 	return segments, nil
 }
 
-func (c *fakeCollector) DrainReadySegments() []AudioSegment {
-	segments := make([]AudioSegment, 0, len(c.readySegments))
+func (c *fakeCollector) DrainReadySegments() []speechkit.AudioSegment {
+	segments := make([]speechkit.AudioSegment, 0, len(c.readySegments))
 	for _, segment := range c.readySegments {
-		segments = append(segments, AudioSegment{PCM: segment.pcm, Paragraph: segment.paragraph})
+		segments = append(segments, speechkit.AudioSegment{PCM: segment.pcm, Paragraph: segment.paragraph})
 	}
 	c.readySegments = nil
 	return segments
@@ -288,7 +289,7 @@ func TestRecordingControllerStartStopSubmitsSegments(t *testing.T) {
 	recorder := &fakeRecorder{stopPCM: []byte(strings.Repeat("a", 6400))}
 	submitter := &fakeSubmitter{}
 	observer := &fakeObserver{}
-	controller := NewRecordingController(recorder, submitter, observer, func() SegmentCollector {
+	controller := NewRecordingController(recorder, submitter, observer, func() speechkit.SegmentCollector {
 		return &fakeCollector{segments: []dictationSegment{
 			{pcm: []byte(strings.Repeat("a", 6400)), paragraph: false},
 			{pcm: []byte(strings.Repeat("b", 6400)), paragraph: true},
@@ -296,7 +297,7 @@ func TestRecordingControllerStartStopSubmitsSegments(t *testing.T) {
 	})
 	controller.SetFragmentSegments(true) // asserts the opt-in parallel-segment path
 
-	if err := controller.Start(RecordingStartOptions{
+	if err := controller.Start(speechkit.RecordingStartOptions{
 		Label:       "Recording started",
 		Target:      "target-1",
 		Language:    "en",
@@ -305,7 +306,7 @@ func TestRecordingControllerStartStopSubmitsSegments(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("Start() error = %v", err)
 	}
-	if err := controller.Stop(RecordingStopOptions{Label: "Captured"}); err != nil {
+	if err := controller.Stop(speechkit.RecordingStopOptions{Label: "Captured"}); err != nil {
 		t.Fatalf("Stop() error = %v", err)
 	}
 
@@ -336,14 +337,14 @@ func TestRecordingControllerPlacesCaptureOnSharedTimeline(t *testing.T) {
 
 	// A host recording one session from several sources passes the same epoch
 	// to every controller; this one joined the session 30 seconds in.
-	if err := controller.Start(RecordingStartOptions{
+	if err := controller.Start(speechkit.RecordingStartOptions{
 		Language:       "de",
-		CaptureChannel: CaptureChannelSystem,
+		CaptureChannel: speechkit.CaptureChannelSystem,
 		CaptureEpoch:   now.Add(-30 * time.Second),
 	}); err != nil {
 		t.Fatalf("Start() error = %v", err)
 	}
-	if err := controller.Stop(RecordingStopOptions{Label: "Captured"}); err != nil {
+	if err := controller.Stop(speechkit.RecordingStopOptions{Label: "Captured"}); err != nil {
 		t.Fatalf("Stop() error = %v", err)
 	}
 
@@ -351,8 +352,8 @@ func TestRecordingControllerPlacesCaptureOnSharedTimeline(t *testing.T) {
 		t.Fatalf("jobs = %d, want 1", len(submitter.jobs))
 	}
 	submission := submitter.jobs[0].Submission
-	if submission.CaptureChannel != CaptureChannelSystem {
-		t.Fatalf("CaptureChannel = %q, want %q", submission.CaptureChannel, CaptureChannelSystem)
+	if submission.CaptureChannel != speechkit.CaptureChannelSystem {
+		t.Fatalf("CaptureChannel = %q, want %q", submission.CaptureChannel, speechkit.CaptureChannelSystem)
 	}
 	if submission.CapturedStartMs != 30000 {
 		t.Fatalf("CapturedStartMs = %d, want 30000", submission.CapturedStartMs)
@@ -367,10 +368,10 @@ func TestRecordingControllerWithoutEpochStartsTimelineAtZero(t *testing.T) {
 	submitter := &fakeSubmitter{}
 	controller := NewRecordingController(recorder, submitter, &fakeObserver{}, nil)
 
-	if err := controller.Start(RecordingStartOptions{Language: "de"}); err != nil {
+	if err := controller.Start(speechkit.RecordingStartOptions{Language: "de"}); err != nil {
 		t.Fatalf("Start() error = %v", err)
 	}
-	if err := controller.Stop(RecordingStopOptions{Label: "Captured"}); err != nil {
+	if err := controller.Stop(speechkit.RecordingStopOptions{Label: "Captured"}); err != nil {
 		t.Fatalf("Stop() error = %v", err)
 	}
 
@@ -386,15 +387,15 @@ func TestRecordingControllerStopWithNoSegmentsResetsIdle(t *testing.T) {
 	recorder := &fakeRecorder{stopPCM: []byte(strings.Repeat("a", 6400))}
 	submitter := &fakeSubmitter{}
 	observer := &fakeObserver{}
-	controller := NewRecordingController(recorder, submitter, observer, func() SegmentCollector {
+	controller := NewRecordingController(recorder, submitter, observer, func() speechkit.SegmentCollector {
 		return &fakeCollector{}
 	})
 	controller.SetFragmentSegments(true) // the no-speech skip only applies to the opt-in segment path
 
-	if err := controller.Start(RecordingStartOptions{Language: "en"}); err != nil {
+	if err := controller.Start(speechkit.RecordingStartOptions{Language: "en"}); err != nil {
 		t.Fatalf("Start() error = %v", err)
 	}
-	if err := controller.Stop(RecordingStopOptions{Label: "Captured"}); err != nil {
+	if err := controller.Stop(speechkit.RecordingStopOptions{Label: "Captured"}); err != nil {
 		t.Fatalf("Stop() error = %v", err)
 	}
 
@@ -421,10 +422,10 @@ func TestRecordingControllerSkipsShortNoiseFloorCapture(t *testing.T) {
 	observer := &fakeObserver{}
 	controller := NewRecordingController(recorder, submitter, observer, nil)
 
-	if err := controller.Start(RecordingStartOptions{Language: "en"}); err != nil {
+	if err := controller.Start(speechkit.RecordingStartOptions{Language: "en"}); err != nil {
 		t.Fatalf("Start() error = %v", err)
 	}
-	if err := controller.Stop(RecordingStopOptions{Label: "Captured"}); err != nil {
+	if err := controller.Stop(speechkit.RecordingStopOptions{Label: "Captured"}); err != nil {
 		t.Fatalf("Stop() error = %v", err)
 	}
 
@@ -440,10 +441,10 @@ func TestRecordingControllerSkipsShortNoiseFloorCapture(t *testing.T) {
 
 	// Same duration but audible content must be submitted.
 	recorder.stopPCM = []byte(strings.Repeat("a", 6400))
-	if err := controller.Start(RecordingStartOptions{Language: "en"}); err != nil {
+	if err := controller.Start(speechkit.RecordingStartOptions{Language: "en"}); err != nil {
 		t.Fatalf("Start() (audible) error = %v", err)
 	}
-	if err := controller.Stop(RecordingStopOptions{Label: "Captured"}); err != nil {
+	if err := controller.Stop(speechkit.RecordingStopOptions{Label: "Captured"}); err != nil {
 		t.Fatalf("Stop() (audible) error = %v", err)
 	}
 	if got := len(submitter.jobs); got != 1 {
@@ -464,16 +465,16 @@ func TestRecordingControllerTranscribesFullCaptureByDefault(t *testing.T) {
 	recorder := &fakeRecorder{stopPCM: full}
 	submitter := &fakeSubmitter{}
 	observer := &fakeObserver{}
-	controller := NewRecordingController(recorder, submitter, observer, func() SegmentCollector {
+	controller := NewRecordingController(recorder, submitter, observer, func() speechkit.SegmentCollector {
 		return &fakeCollector{segments: []dictationSegment{
 			{pcm: []byte(strings.Repeat("a", 6400)), paragraph: false},
 		}}
 	})
 
-	if err := controller.Start(RecordingStartOptions{Language: "en"}); err != nil {
+	if err := controller.Start(speechkit.RecordingStartOptions{Language: "en"}); err != nil {
 		t.Fatalf("Start() error = %v", err)
 	}
-	if err := controller.Stop(RecordingStopOptions{Label: "Captured"}); err != nil {
+	if err := controller.Stop(speechkit.RecordingStopOptions{Label: "Captured"}); err != nil {
 		t.Fatalf("Stop() error = %v", err)
 	}
 
@@ -497,11 +498,11 @@ func TestRecordingControllerStreamsReadySegmentsBeforeStop(t *testing.T) {
 	collector := &fakeCollector{readySegments: []dictationSegment{
 		{pcm: readyPCM, paragraph: true},
 	}}
-	controller := NewRecordingController(recorder, submitter, &fakeObserver{}, func() SegmentCollector {
+	controller := NewRecordingController(recorder, submitter, &fakeObserver{}, func() speechkit.SegmentCollector {
 		return collector
 	})
 
-	if err := controller.Start(RecordingStartOptions{
+	if err := controller.Start(speechkit.RecordingStartOptions{
 		Language:       "de",
 		QuickNote:      true,
 		QuickNoteID:    99,
@@ -547,7 +548,7 @@ func TestRecordingControllerStreamsReadySegmentsBeforeStop(t *testing.T) {
 		t.Fatalf("streamed job target = %v, want %v", got, want)
 	}
 
-	if err := controller.Stop(RecordingStopOptions{Label: "Captured"}); err != nil {
+	if err := controller.Stop(speechkit.RecordingStopOptions{Label: "Captured"}); err != nil {
 		t.Fatalf("Stop() error = %v", err)
 	}
 	if len(submitter.jobs) != 1 {
@@ -563,11 +564,11 @@ func TestRecordingControllerDoesNotStreamReadySegmentsWithoutStartOption(t *test
 	collector := &fakeCollector{readySegments: []dictationSegment{
 		{pcm: readyPCM},
 	}}
-	controller := NewRecordingController(recorder, submitter, &fakeObserver{}, func() SegmentCollector {
+	controller := NewRecordingController(recorder, submitter, &fakeObserver{}, func() speechkit.SegmentCollector {
 		return collector
 	})
 
-	if err := controller.Start(RecordingStartOptions{Language: "de"}); err != nil {
+	if err := controller.Start(speechkit.RecordingStartOptions{Language: "de"}); err != nil {
 		t.Fatalf("Start() error = %v", err)
 	}
 	if recorder.pcmHandler == nil {
@@ -578,7 +579,7 @@ func TestRecordingControllerDoesNotStreamReadySegmentsWithoutStartOption(t *test
 	if got := len(submitter.jobs); got != 0 {
 		t.Fatalf("jobs before Stop = %d, want no streamed segment", got)
 	}
-	if err := controller.Stop(RecordingStopOptions{Label: "Captured"}); err != nil {
+	if err := controller.Stop(speechkit.RecordingStopOptions{Label: "Captured"}); err != nil {
 		t.Fatalf("Stop() error = %v", err)
 	}
 	if got := len(submitter.jobs); got != 1 {
@@ -594,11 +595,11 @@ func TestRecordingControllerRetainsReadySegmentWhenQueueFull(t *testing.T) {
 	collector := &fakeCollector{readySegments: []dictationSegment{
 		{pcm: readyPCM},
 	}}
-	controller := NewRecordingController(recorder, submitter, observer, func() SegmentCollector {
+	controller := NewRecordingController(recorder, submitter, observer, func() speechkit.SegmentCollector {
 		return collector
 	})
 
-	if err := controller.Start(RecordingStartOptions{Language: "de", StreamSegments: true}); err != nil {
+	if err := controller.Start(speechkit.RecordingStartOptions{Language: "de", StreamSegments: true}); err != nil {
 		t.Fatalf("Start() error = %v", err)
 	}
 	if recorder.pcmHandler == nil {
@@ -621,7 +622,7 @@ func TestRecordingControllerRetainsReadySegmentWhenQueueFull(t *testing.T) {
 		t.Fatalf("submitted PCM = %q, want retained ready segment", got)
 	}
 
-	if err := controller.Cancel(RecordingCancelOptions{Label: "discard"}); err != nil {
+	if err := controller.Cancel(speechkit.RecordingCancelOptions{Label: "discard"}); err != nil {
 		t.Fatalf("Cancel() error = %v", err)
 	}
 }
@@ -631,16 +632,16 @@ func TestRecordingControllerStreamSegmentsFlushesStopTail(t *testing.T) {
 	tailPCM := []byte(strings.Repeat("b", 6400))
 	recorder := &fakeRecorder{stopPCM: full}
 	submitter := &fakeSubmitter{}
-	controller := NewRecordingController(recorder, submitter, &fakeObserver{}, func() SegmentCollector {
+	controller := NewRecordingController(recorder, submitter, &fakeObserver{}, func() speechkit.SegmentCollector {
 		return &fakeCollector{segments: []dictationSegment{
 			{pcm: tailPCM, paragraph: false},
 		}}
 	})
 
-	if err := controller.Start(RecordingStartOptions{Language: "en", StreamSegments: true}); err != nil {
+	if err := controller.Start(speechkit.RecordingStartOptions{Language: "en", StreamSegments: true}); err != nil {
 		t.Fatalf("Start() error = %v", err)
 	}
-	if err := controller.Stop(RecordingStopOptions{Label: "Captured"}); err != nil {
+	if err := controller.Stop(speechkit.RecordingStopOptions{Label: "Captured"}); err != nil {
 		t.Fatalf("Stop() error = %v", err)
 	}
 
@@ -654,7 +655,7 @@ func TestRecordingControllerStreamSegmentsFlushesStopTail(t *testing.T) {
 	if len(job.Segments) != 0 {
 		t.Fatalf("tail job nested segments = %d, want 0", len(job.Segments))
 	}
-	if got, want := job.DurationSecs, PCMDurationSecs(tailPCM); got != want {
+	if got, want := job.DurationSecs, speechkit.PCMDurationSecs(tailPCM); got != want {
 		t.Fatalf("tail duration = %v, want %v", got, want)
 	}
 	if job.SessionID == 0 || job.SegmentID != 1 || !job.SegmentFinal {
@@ -667,7 +668,7 @@ func TestRecordingControllerProviderStreamCommitsFinalWithoutBatchDuplicate(t *t
 	recorder := &fakeRecorder{stopPCM: full}
 	submitter := &fakeSubmitter{}
 	provider := &fakeDictationStreamProvider{
-		stream: newFakeDictationStream(DictationStreamEvent{
+		stream: newFakeDictationStream(speechkit.DictationStreamEvent{
 			Text:      "native final",
 			IsFinal:   true,
 			Provider:  "fake-stream",
@@ -677,12 +678,12 @@ func TestRecordingControllerProviderStreamCommitsFinalWithoutBatchDuplicate(t *t
 	}
 	sink := &fakeDictationStreamSink{}
 	collector := &fakeCollector{readySegments: []dictationSegment{{pcm: []byte(strings.Repeat("a", 6400))}}}
-	controller := NewRecordingController(recorder, submitter, &fakeObserver{}, func() SegmentCollector {
+	controller := NewRecordingController(recorder, submitter, &fakeObserver{}, func() speechkit.SegmentCollector {
 		return collector
 	})
 	controller.SetDictationStream(provider, sink)
 
-	if err := controller.Start(RecordingStartOptions{
+	if err := controller.Start(speechkit.RecordingStartOptions{
 		Language:       "de",
 		Target:         "editor",
 		StreamSegments: true,
@@ -697,7 +698,7 @@ func TestRecordingControllerProviderStreamCommitsFinalWithoutBatchDuplicate(t *t
 	if got := len(submitter.jobs); got != 0 {
 		t.Fatalf("batch jobs before Stop = %d, want 0 while native stream is active", got)
 	}
-	if err := controller.Stop(RecordingStopOptions{Label: "Captured"}); err != nil {
+	if err := controller.Stop(speechkit.RecordingStopOptions{Label: "Captured"}); err != nil {
 		t.Fatalf("Stop() error = %v", err)
 	}
 
@@ -726,12 +727,12 @@ func TestRecordingControllerProviderStreamStartFailureFallsBackToSegmentBatch(t 
 	provider := &fakeDictationStreamProvider{err: errors.New("dial failed")}
 	sink := &fakeDictationStreamSink{}
 	collector := &fakeCollector{readySegments: []dictationSegment{{pcm: readyPCM}}}
-	controller := NewRecordingController(recorder, submitter, &fakeObserver{}, func() SegmentCollector {
+	controller := NewRecordingController(recorder, submitter, &fakeObserver{}, func() speechkit.SegmentCollector {
 		return collector
 	})
 	controller.SetDictationStream(provider, sink)
 
-	if err := controller.Start(RecordingStartOptions{
+	if err := controller.Start(speechkit.RecordingStartOptions{
 		Language:       "de",
 		StreamSegments: true,
 		ProviderStream: true,
@@ -749,7 +750,7 @@ func TestRecordingControllerProviderStreamStartFailureFallsBackToSegmentBatch(t 
 	if got, want := string(submitter.jobs[0].PCM), string(readyPCM); got != want {
 		t.Fatalf("fallback job PCM = %q, want ready segment", got)
 	}
-	if err := controller.Stop(RecordingStopOptions{Label: "Captured"}); err != nil {
+	if err := controller.Stop(speechkit.RecordingStopOptions{Label: "Captured"}); err != nil {
 		t.Fatalf("Stop() error = %v", err)
 	}
 }
@@ -767,10 +768,10 @@ func TestRecordingControllerSignalsRecordingAfterRecorderStarts(t *testing.T) {
 	}
 	controller := NewRecordingController(recorder, submitter, observer, nil)
 
-	if err := controller.Start(RecordingStartOptions{Language: "de"}); err != nil {
+	if err := controller.Start(speechkit.RecordingStartOptions{Language: "de"}); err != nil {
 		t.Fatalf("Start() error = %v", err)
 	}
-	if err := controller.Stop(RecordingStopOptions{Label: "Captured"}); err != nil {
+	if err := controller.Stop(speechkit.RecordingStopOptions{Label: "Captured"}); err != nil {
 		t.Fatalf("Stop() error = %v", err)
 	}
 
@@ -783,11 +784,11 @@ func TestRecordingControllerStopTailDelayKeepsCaptureOpen(t *testing.T) {
 	recorder := &fakeRecorder{stopPCM: []byte(strings.Repeat("a", 6400))}
 	submitter := &fakeSubmitter{}
 	collector := &fakeCollector{}
-	controller := NewRecordingController(recorder, submitter, &fakeObserver{}, func() SegmentCollector {
+	controller := NewRecordingController(recorder, submitter, &fakeObserver{}, func() speechkit.SegmentCollector {
 		return collector
 	})
 
-	if err := controller.Start(RecordingStartOptions{Language: "de"}); err != nil {
+	if err := controller.Start(speechkit.RecordingStartOptions{Language: "de"}); err != nil {
 		t.Fatalf("Start() error = %v", err)
 	}
 	handler := recorder.pcmHandler
@@ -797,7 +798,7 @@ func TestRecordingControllerStopTailDelayKeepsCaptureOpen(t *testing.T) {
 
 	done := make(chan error, 1)
 	go func() {
-		done <- controller.Stop(RecordingStopOptions{
+		done <- controller.Stop(speechkit.RecordingStopOptions{
 			Label:     "Captured",
 			TailDelay: 40 * time.Millisecond,
 		})
@@ -833,14 +834,14 @@ func TestRecordingControllerCancelStopsRecorderWithoutSubmitting(t *testing.T) {
 	recorder := &fakeRecorder{stopPCM: []byte(strings.Repeat("a", 6400))}
 	submitter := &fakeSubmitter{}
 	observer := &fakeObserver{}
-	controller := NewRecordingController(recorder, submitter, observer, func() SegmentCollector {
+	controller := NewRecordingController(recorder, submitter, observer, func() speechkit.SegmentCollector {
 		return &fakeCollector{}
 	})
 
-	if err := controller.Start(RecordingStartOptions{Language: "en"}); err != nil {
+	if err := controller.Start(speechkit.RecordingStartOptions{Language: "en"}); err != nil {
 		t.Fatalf("Start() error = %v", err)
 	}
-	if err := controller.Cancel(RecordingCancelOptions{Label: "Discarded for mode switch"}); err != nil {
+	if err := controller.Cancel(speechkit.RecordingCancelOptions{Label: "Discarded for mode switch"}); err != nil {
 		t.Fatalf("Cancel() error = %v", err)
 	}
 
@@ -867,11 +868,11 @@ func TestRecordingControllerDiscardsStaleCaptureBuffer(t *testing.T) {
 	now := startedAt
 	controller.now = func() time.Time { return now }
 
-	if err := controller.Start(RecordingStartOptions{Language: "en"}); err != nil {
+	if err := controller.Start(speechkit.RecordingStartOptions{Language: "en"}); err != nil {
 		t.Fatalf("Start() error = %v", err)
 	}
 	now = startedAt.Add(6 * time.Second)
-	if err := controller.Stop(RecordingStopOptions{Label: "Captured"}); err != nil {
+	if err := controller.Stop(speechkit.RecordingStopOptions{Label: "Captured"}); err != nil {
 		t.Fatalf("Stop() error = %v", err)
 	}
 
@@ -892,10 +893,10 @@ func TestRecordingControllerHandlesShortAudio(t *testing.T) {
 	observer := &fakeObserver{}
 	controller := NewRecordingController(recorder, submitter, observer, nil)
 
-	if err := controller.Start(RecordingStartOptions{Language: "en"}); err != nil {
+	if err := controller.Start(speechkit.RecordingStartOptions{Language: "en"}); err != nil {
 		t.Fatalf("Start() error = %v", err)
 	}
-	if err := controller.Stop(RecordingStopOptions{Label: "Captured"}); err != nil {
+	if err := controller.Stop(speechkit.RecordingStopOptions{Label: "Captured"}); err != nil {
 		t.Fatalf("Stop() error = %v", err)
 	}
 
@@ -916,13 +917,13 @@ func TestRecordingControllerIdleWatcherFiresOnSilence(t *testing.T) {
 	// already sees the timeout exceeded.
 	collector.setIdleSince(time.Now().Add(-5 * time.Second))
 
-	controller := NewRecordingController(recorder, submitter, observer, func() SegmentCollector {
+	controller := NewRecordingController(recorder, submitter, observer, func() speechkit.SegmentCollector {
 		return collector
 	})
 	controller.SetIdleWatchInterval(5 * time.Millisecond)
 
 	var fired atomic.Int32
-	if err := controller.Start(RecordingStartOptions{
+	if err := controller.Start(speechkit.RecordingStartOptions{
 		Language:    "en",
 		IdleTimeout: 100 * time.Millisecond,
 		OnIdleTimeoutCallback: func() {
@@ -943,7 +944,7 @@ func TestRecordingControllerIdleWatcherFiresOnSilence(t *testing.T) {
 		t.Fatalf("idle callback fired %d times, want 1", fired.Load())
 	}
 
-	if err := controller.Stop(RecordingStopOptions{Label: "Captured"}); err != nil {
+	if err := controller.Stop(speechkit.RecordingStopOptions{Label: "Captured"}); err != nil {
 		t.Fatalf("Stop() error = %v", err)
 	}
 }
@@ -956,13 +957,13 @@ func TestRecordingControllerIdleWatcherSkipsWhileSpeechActive(t *testing.T) {
 	// Zero IdleSince === "currently speaking" — watcher must not fire.
 	collector.setIdleSince(time.Time{})
 
-	controller := NewRecordingController(recorder, submitter, observer, func() SegmentCollector {
+	controller := NewRecordingController(recorder, submitter, observer, func() speechkit.SegmentCollector {
 		return collector
 	})
 	controller.SetIdleWatchInterval(5 * time.Millisecond)
 
 	var fired atomic.Int32
-	if err := controller.Start(RecordingStartOptions{
+	if err := controller.Start(speechkit.RecordingStartOptions{
 		Language:    "en",
 		IdleTimeout: 50 * time.Millisecond,
 		OnIdleTimeoutCallback: func() {
@@ -979,7 +980,7 @@ func TestRecordingControllerIdleWatcherSkipsWhileSpeechActive(t *testing.T) {
 		t.Fatalf("idle callback fired while speech active (fired=%d)", fired.Load())
 	}
 
-	if err := controller.Stop(RecordingStopOptions{Label: "Captured"}); err != nil {
+	if err := controller.Stop(speechkit.RecordingStopOptions{Label: "Captured"}); err != nil {
 		t.Fatalf("Stop() error = %v", err)
 	}
 }
@@ -991,13 +992,13 @@ func TestRecordingControllerAudioIdleWatcherFiresOnAudioSilence(t *testing.T) {
 	collector := &fakeAudioIdleCollector{}
 	collector.setIdleAudio(5*time.Second, time.Now())
 
-	controller := NewRecordingController(recorder, submitter, observer, func() SegmentCollector {
+	controller := NewRecordingController(recorder, submitter, observer, func() speechkit.SegmentCollector {
 		return collector
 	})
 	controller.SetIdleWatchInterval(5 * time.Millisecond)
 
 	var fired atomic.Int32
-	if err := controller.Start(RecordingStartOptions{
+	if err := controller.Start(speechkit.RecordingStartOptions{
 		Language:    "en",
 		IdleTimeout: 100 * time.Millisecond,
 		OnIdleTimeoutCallback: func() {
@@ -1018,7 +1019,7 @@ func TestRecordingControllerAudioIdleWatcherFiresOnAudioSilence(t *testing.T) {
 		t.Fatalf("idle callback fired %d times, want 1", fired.Load())
 	}
 
-	if err := controller.Stop(RecordingStopOptions{Label: "Captured"}); err != nil {
+	if err := controller.Stop(speechkit.RecordingStopOptions{Label: "Captured"}); err != nil {
 		t.Fatalf("Stop() error = %v", err)
 	}
 }
@@ -1032,13 +1033,13 @@ func TestRecordingControllerAudioIdleWatcherIgnoresWallClockStall(t *testing.T) 
 	// pinned below the timeout while wall-clock time keeps passing.
 	collector.setIdleAudio(10*time.Millisecond, time.Now())
 
-	controller := NewRecordingController(recorder, submitter, observer, func() SegmentCollector {
+	controller := NewRecordingController(recorder, submitter, observer, func() speechkit.SegmentCollector {
 		return collector
 	})
 	controller.SetIdleWatchInterval(5 * time.Millisecond)
 
 	var fired atomic.Int32
-	if err := controller.Start(RecordingStartOptions{
+	if err := controller.Start(speechkit.RecordingStartOptions{
 		Language:    "en",
 		IdleTimeout: 50 * time.Millisecond,
 		OnIdleTimeoutCallback: func() {
@@ -1069,7 +1070,7 @@ func TestRecordingControllerAudioIdleWatcherIgnoresWallClockStall(t *testing.T) 
 		t.Fatalf("idle callback fired %d times after burst, want 1", fired.Load())
 	}
 
-	if err := controller.Stop(RecordingStopOptions{Label: "Captured"}); err != nil {
+	if err := controller.Stop(speechkit.RecordingStopOptions{Label: "Captured"}); err != nil {
 		t.Fatalf("Stop() error = %v", err)
 	}
 }
@@ -1085,7 +1086,7 @@ func TestRecordingControllerAudioIdleWatcherDeadCaptureBackstop(t *testing.T) {
 
 	var clock sync.Mutex
 	current := start
-	controller := NewRecordingController(recorder, submitter, observer, func() SegmentCollector {
+	controller := NewRecordingController(recorder, submitter, observer, func() speechkit.SegmentCollector {
 		return collector
 	})
 	controller.now = func() time.Time {
@@ -1096,7 +1097,7 @@ func TestRecordingControllerAudioIdleWatcherDeadCaptureBackstop(t *testing.T) {
 	controller.SetIdleWatchInterval(5 * time.Millisecond)
 
 	var fired atomic.Int32
-	if err := controller.Start(RecordingStartOptions{
+	if err := controller.Start(speechkit.RecordingStartOptions{
 		Language:    "en",
 		IdleTimeout: 100 * time.Millisecond,
 		OnIdleTimeoutCallback: func() {
@@ -1128,7 +1129,7 @@ func TestRecordingControllerAudioIdleWatcherDeadCaptureBackstop(t *testing.T) {
 		t.Fatalf("dead-capture backstop fired %d times, want 1", fired.Load())
 	}
 
-	if err := controller.Stop(RecordingStopOptions{Label: "Captured"}); err != nil {
+	if err := controller.Stop(speechkit.RecordingStopOptions{Label: "Captured"}); err != nil {
 		t.Fatalf("Stop() error = %v", err)
 	}
 }
@@ -1140,13 +1141,13 @@ func TestRecordingControllerStopClearsIdleWatcher(t *testing.T) {
 	collector := &fakeIdleCollector{}
 	collector.setIdleSince(time.Now().Add(-5 * time.Second))
 
-	controller := NewRecordingController(recorder, submitter, observer, func() SegmentCollector {
+	controller := NewRecordingController(recorder, submitter, observer, func() speechkit.SegmentCollector {
 		return collector
 	})
 	controller.SetIdleWatchInterval(5 * time.Millisecond)
 
 	var fired atomic.Int32
-	if err := controller.Start(RecordingStartOptions{
+	if err := controller.Start(speechkit.RecordingStartOptions{
 		Language:    "en",
 		IdleTimeout: 5 * time.Second, // long enough that Stop wins the race
 		OnIdleTimeoutCallback: func() {
@@ -1157,7 +1158,7 @@ func TestRecordingControllerStopClearsIdleWatcher(t *testing.T) {
 	}
 
 	// Stop immediately — the watcher should not get a chance to fire.
-	if err := controller.Stop(RecordingStopOptions{Label: "Captured"}); err != nil {
+	if err := controller.Stop(speechkit.RecordingStopOptions{Label: "Captured"}); err != nil {
 		t.Fatalf("Stop() error = %v", err)
 	}
 
@@ -1175,10 +1176,10 @@ func TestRecordingControllerPrefersPooledPCMHandler(t *testing.T) {
 	observer := &fakeObserver{}
 	collector := &fakeCollector{}
 
-	controller := NewRecordingController(recorder, submitter, observer, func() SegmentCollector {
+	controller := NewRecordingController(recorder, submitter, observer, func() speechkit.SegmentCollector {
 		return collector
 	})
-	if err := controller.Start(RecordingStartOptions{Language: "en"}); err != nil {
+	if err := controller.Start(speechkit.RecordingStartOptions{Language: "en"}); err != nil {
 		t.Fatalf("Start() error = %v", err)
 	}
 
@@ -1200,7 +1201,7 @@ func TestRecordingControllerPrefersPooledPCMHandler(t *testing.T) {
 		t.Fatalf("collector fedPCM = %#v, want one 4-byte frame", collector.fedPCM)
 	}
 
-	if err := controller.Stop(RecordingStopOptions{Label: "Captured"}); err != nil {
+	if err := controller.Stop(speechkit.RecordingStopOptions{Label: "Captured"}); err != nil {
 		t.Fatalf("Stop() error = %v", err)
 	}
 	if recorder.pooledHandler != nil {
@@ -1214,16 +1215,16 @@ func TestRecordingControllerLegacyRecorderStillUsesPCMHandler(t *testing.T) {
 	observer := &fakeObserver{}
 	collector := &fakeCollector{}
 
-	controller := NewRecordingController(recorder, submitter, observer, func() SegmentCollector {
+	controller := NewRecordingController(recorder, submitter, observer, func() speechkit.SegmentCollector {
 		return collector
 	})
-	if err := controller.Start(RecordingStartOptions{Language: "en"}); err != nil {
+	if err := controller.Start(speechkit.RecordingStartOptions{Language: "en"}); err != nil {
 		t.Fatalf("Start() error = %v", err)
 	}
 	if recorder.pcmHandler == nil {
 		t.Fatal("legacy PCM handler not installed on plain recorder")
 	}
-	if err := controller.Stop(RecordingStopOptions{Label: "Captured"}); err != nil {
+	if err := controller.Stop(speechkit.RecordingStopOptions{Label: "Captured"}); err != nil {
 		t.Fatalf("Stop() error = %v", err)
 	}
 }
@@ -1233,7 +1234,7 @@ func TestRecordingControllerStartErrorResetsState(t *testing.T) {
 	observer := &fakeObserver{}
 	controller := NewRecordingController(recorder, &fakeSubmitter{}, observer, nil)
 
-	err := controller.Start(RecordingStartOptions{Language: "en"})
+	err := controller.Start(speechkit.RecordingStartOptions{Language: "en"})
 	if err == nil {
 		t.Fatal("Start() error = nil, want error")
 	}

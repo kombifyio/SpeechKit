@@ -25,6 +25,9 @@ import (
 var (
 	ErrMissingHandler        = errors.New("speechkit assist: generator or tool executor is required")
 	ErrCleanModeNeedsUtility = errors.New("speechkit assist: clean mode requires a matched deterministic utility")
+	// ErrMissingExecutor is returned when a session has an active skill
+	// context but the service was built without a ToolExecutor.
+	ErrMissingExecutor = errors.New("speechkit assist: no tool executor configured")
 )
 
 type Generator interface {
@@ -168,7 +171,7 @@ func (s *Service) Process(ctx context.Context, req speechkit.AssistRequest) (spe
 	if s.skillContexts != nil && req.SessionKey != "" {
 		if active, ok := s.skillContexts.Get(req.SessionKey); ok {
 			if s.executor == nil {
-				return speechkit.AssistResult{}, fmt.Errorf("speechkit assist: no executor configured for intent %q", active.Intent)
+				return speechkit.AssistResult{}, fmt.Errorf("%w for intent %q", ErrMissingExecutor, active.Intent)
 			}
 			result, err := s.executor.ExecuteTool(ctx, ToolCall{
 				Intent:    active.Intent,
@@ -190,7 +193,7 @@ func (s *Service) Process(ctx context.Context, req speechkit.AssistRequest) (spe
 		}
 		if matched {
 			if s.executor == nil {
-				return speechkit.AssistResult{}, fmt.Errorf("speechkit assist: no executor configured for intent %q", call.Intent)
+				return speechkit.AssistResult{}, fmt.Errorf("%w for intent %q", ErrMissingExecutor, call.Intent)
 			}
 			result, err := s.executor.ExecuteTool(ctx, call)
 			if err != nil {

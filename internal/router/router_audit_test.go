@@ -2,8 +2,8 @@ package router
 
 // These tests cover the host-side audit wiring this shim owns: the public
 // router (pkg/speechkit/stt) emits through the provider-selected observer,
-// and this package's init installs the observer that writes
-// provider.selected audit events. Routing behavior itself is tested in
+// and this package's AuditObserver, wired by hosts into
+// Router.OnProviderSelected, writes provider.selected audit events. Routing behavior itself is tested in
 // pkg/speechkit/stt.
 
 import (
@@ -63,7 +63,7 @@ func TestRouterEmitsProviderSelectedAuditLocalOnly(t *testing.T) {
 	t.Cleanup(auditlogtest.Reset) // must run before TempDir cleanup (LIFO: registered after TempDir)
 	auditlog.Configure(true, dir, 90, false)
 
-	r := &Router{Strategy: StrategyLocalOnly}
+	r := &Router{Strategy: StrategyLocalOnly, OnProviderSelected: AuditObserver}
 	r.SetLocal(&mockProvider{name: "local", text: "hello"})
 	_, err := r.Route(context.Background(), []byte("audio"), 1.0, stt.TranscribeOpts{})
 	if err != nil {
@@ -88,7 +88,7 @@ func TestRouterEmitsProviderSelectedAuditCloudOnly(t *testing.T) {
 	t.Cleanup(auditlogtest.Reset) // must run before TempDir cleanup (LIFO: registered after TempDir)
 	auditlog.Configure(true, dir, 90, false)
 
-	r := &Router{Strategy: StrategyCloudOnly}
+	r := &Router{Strategy: StrategyCloudOnly, OnProviderSelected: AuditObserver}
 	r.AddCloud(&mockProvider{name: "hf", text: "cloud result"})
 	_, err := r.Route(context.Background(), []byte("audio"), 1.0, stt.TranscribeOpts{})
 	if err != nil {
@@ -122,6 +122,7 @@ func TestRouterEmitsProviderSelectedOnDynamicFallback(t *testing.T) {
 		Strategy:             StrategyDynamic,
 		PreferLocalUnderSecs: 10,
 		ConnectivityProbe:    localProbeAddr(t),
+		OnProviderSelected:   AuditObserver,
 	}
 	r.SetLocal(&mockProvider{name: "local-fallback", text: "local ok"})
 	r.AddCloud(&mockProvider{name: "cloud-fail", failNext: true})
@@ -149,7 +150,7 @@ func TestRouterDoesNotEmitProviderSelectedOnFailure(t *testing.T) {
 	t.Cleanup(auditlogtest.Reset) // must run before TempDir cleanup (LIFO: registered after TempDir)
 	auditlog.Configure(true, dir, 90, false)
 
-	r := &Router{Strategy: StrategyCloudOnly}
+	r := &Router{Strategy: StrategyCloudOnly, OnProviderSelected: AuditObserver}
 	r.AddCloud(&mockProvider{name: "hf", failNext: true})
 	_, _ = r.Route(context.Background(), []byte("audio"), 1.0, stt.TranscribeOpts{})
 

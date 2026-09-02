@@ -1,8 +1,10 @@
-package speechkit
+package catalog
 
 import (
 	"strings"
 	"time"
+
+	"github.com/kombifyio/SpeechKit/pkg/speechkit"
 )
 
 const (
@@ -28,33 +30,25 @@ const (
 	ModelOpenAIRealtime21Mini            = "gpt-realtime-2.1-mini"
 )
 
-type ModelLifecycle string
-
-const (
-	ModelLifecycleGA         ModelLifecycle = "ga"
-	ModelLifecyclePreview    ModelLifecycle = "preview"
-	ModelLifecycleLegacy     ModelLifecycle = "legacy"
-	ModelLifecycleDeprecated ModelLifecycle = "deprecated"
-)
-
 // ProviderModelDescriptor is the public source-of-truth row for model IDs that
 // SpeechKit treats as framework defaults or first-class live-provider choices.
 type ProviderModelDescriptor struct {
-	Provider    string         `json:"provider"`
-	ModelID     string         `json:"modelId"`
-	ProfileID   string         `json:"profileId,omitempty"`
-	Mode        Mode           `json:"mode"`
-	Name        string         `json:"name"`
-	Lifecycle   ModelLifecycle `json:"lifecycle"`
-	Default     bool           `json:"default,omitempty"`
-	Recommended bool           `json:"recommended,omitempty"`
-	SourceURL   string         `json:"sourceUrl"`
+	Provider    string                   `json:"provider"`
+	ModelID     string                   `json:"modelId"`
+	ProfileID   string                   `json:"profileId,omitempty"`
+	Mode        speechkit.Mode           `json:"mode"`
+	Name        string                   `json:"name"`
+	Lifecycle   speechkit.ModelLifecycle `json:"lifecycle"`
+	Default     bool                     `json:"default,omitempty"`
+	Recommended bool                     `json:"recommended,omitempty"`
+	SourceURL   string                   `json:"sourceUrl"`
 
 	// Freshness metadata (kombify-SpeechKit-glnc). Dates are calendar days
 	// (YYYY-MM-DD) from vendor documentation. LastVerifiedAt is the day the
-	// row was last checked against those docs; TestDefaultModelRegistryFreshnessSLA
-	// fails when a default/recommended row is missing it or older than
-	// ModelFreshnessSLA.
+	// row was last checked against those docs. TestDefaultModelRegistryFreshnessSLA
+	// always fails when a default/recommended row lacks it; the age check
+	// against ModelFreshnessSLA only fails under SPEECHKIT_MODEL_FRESHNESS_GATE,
+	// which the scheduled model-freshness-gate workflow sets.
 	ReleasedAt           string `json:"releasedAt,omitempty"`
 	DeprecatedAt         string `json:"deprecatedAt,omitempty"`
 	SunsetAt             string `json:"sunsetAt,omitempty"`
@@ -68,7 +62,12 @@ const ModelFreshnessSLA = 7 * 24 * time.Hour
 
 // modelRegistryVerifiedAt is the calendar day the registry rows were last
 // checked against vendor documentation. Bump this after a vendor-doc pass.
-const modelRegistryVerifiedAt = "2026-08-25"
+//
+// 2026-09-02 pass: all default/recommended rows still listed by their vendors,
+// none deprecated. OpenAI now steers new file transcription to gpt-transcribe
+// and voice agents to gpt-realtime-2.1; both remain unpromoted here pending
+// the documented evaluation (see the gpt-realtime-2.1 note below).
+const modelRegistryVerifiedAt = "2026-09-02"
 
 // foundryRegistryVerifiedAt is the day the Microsoft Foundry rows were checked
 // against MS Learn model-availability docs (separate vendor-doc pass).
@@ -125,9 +124,9 @@ func DefaultModelRegistry() []ProviderModelDescriptor {
 			Provider:             "assemblyai",
 			ModelID:              ModelAssemblyAIUniversal35ProRealtime,
 			ProfileID:            "stt.assemblyai.universal",
-			Mode:                 ModeDictation,
+			Mode:                 speechkit.ModeDictation,
 			Name:                 "Universal-3.5 Pro Realtime",
-			Lifecycle:            ModelLifecyclePreview,
+			Lifecycle:            speechkit.ModelLifecyclePreview,
 			Default:              true,
 			Recommended:          true,
 			SourceURL:            "https://www.assemblyai.com/docs/streaming/select-the-speech-model",
@@ -139,9 +138,9 @@ func DefaultModelRegistry() []ProviderModelDescriptor {
 			Provider:             "assemblyai",
 			ModelID:              ModelAssemblyAIU3RTPro,
 			ProfileID:            "stt.assemblyai.universal",
-			Mode:                 ModeDictation,
+			Mode:                 speechkit.ModeDictation,
 			Name:                 "Universal-3 Pro Streaming",
-			Lifecycle:            ModelLifecycleLegacy,
+			Lifecycle:            speechkit.ModelLifecycleLegacy,
 			SourceURL:            "https://www.assemblyai.com/docs/streaming/select-the-speech-model",
 			ReleasedAt:           "2026-03-03",
 			LastVerifiedAt:       modelRegistryVerifiedAt,
@@ -151,9 +150,9 @@ func DefaultModelRegistry() []ProviderModelDescriptor {
 			Provider:             "assemblyai",
 			ModelID:              ModelAssemblyAIVoiceAgent,
 			ProfileID:            "realtime.assemblyai.voice-agent",
-			Mode:                 ModeVoiceAgent,
+			Mode:                 speechkit.ModeVoiceAgent,
 			Name:                 "AssemblyAI Voice Agent API",
-			Lifecycle:            ModelLifecycleGA,
+			Lifecycle:            speechkit.ModelLifecycleGA,
 			Default:              true,
 			Recommended:          true,
 			SourceURL:            "https://www.assemblyai.com/docs/voice-agents/voice-agent-api",
@@ -165,9 +164,9 @@ func DefaultModelRegistry() []ProviderModelDescriptor {
 			Provider:             "deepgram",
 			ModelID:              ModelDeepgramFluxGeneralMulti,
 			ProfileID:            "realtime.deepgram.voice-agent",
-			Mode:                 ModeVoiceAgent,
+			Mode:                 speechkit.ModeVoiceAgent,
 			Name:                 "Flux General Multilingual",
-			Lifecycle:            ModelLifecycleGA,
+			Lifecycle:            speechkit.ModelLifecycleGA,
 			Default:              true,
 			Recommended:          true,
 			SourceURL:            "https://developers.deepgram.com/docs/models-languages-overview",
@@ -179,9 +178,9 @@ func DefaultModelRegistry() []ProviderModelDescriptor {
 			Provider:             "deepgram",
 			ModelID:              ModelDeepgramFluxGeneralEN,
 			ProfileID:            "realtime.deepgram.voice-agent",
-			Mode:                 ModeVoiceAgent,
+			Mode:                 speechkit.ModeVoiceAgent,
 			Name:                 "Flux General English",
-			Lifecycle:            ModelLifecycleGA,
+			Lifecycle:            speechkit.ModelLifecycleGA,
 			Recommended:          true,
 			SourceURL:            "https://developers.deepgram.com/docs/flux/nova-3-migration",
 			ReleasedAt:           "2025-10-02",
@@ -192,9 +191,9 @@ func DefaultModelRegistry() []ProviderModelDescriptor {
 			Provider:             "deepgram",
 			ModelID:              ModelDeepgramNova3,
 			ProfileID:            "stt.deepgram.nova-3",
-			Mode:                 ModeDictation,
+			Mode:                 speechkit.ModeDictation,
 			Name:                 "Nova-3",
-			Lifecycle:            ModelLifecycleGA,
+			Lifecycle:            speechkit.ModelLifecycleGA,
 			Default:              true,
 			Recommended:          true,
 			SourceURL:            "https://developers.deepgram.com/docs/models-languages-overview",
@@ -206,11 +205,11 @@ func DefaultModelRegistry() []ProviderModelDescriptor {
 			Provider:             "google",
 			ModelID:              ModelGemini35LiveTranslatePreview,
 			ProfileID:            "realtime.google.gemini-live-translate",
-			Mode:                 ModeVoiceAgent,
+			Mode:                 speechkit.ModeVoiceAgent,
 			Name:                 "Gemini 3.5 Live Translate Preview",
-			Lifecycle:            ModelLifecyclePreview,
+			Lifecycle:            speechkit.ModelLifecyclePreview,
 			Recommended:          true,
-			SourceURL:            "https://ai.google.dev/gemini-api/docs/live-api/translation",
+			SourceURL:            "https://ai.google.dev/gemini-api/docs/models/gemini-3.5-live-translate-preview",
 			ReleasedAt:           "2026-06-09",
 			LastVerifiedAt:       modelRegistryVerifiedAt,
 			MultilanguageCapable: true,
@@ -219,9 +218,9 @@ func DefaultModelRegistry() []ProviderModelDescriptor {
 			Provider:             "google",
 			ModelID:              ModelGemini31FlashLivePreview,
 			ProfileID:            "realtime.google.gemini-native-audio",
-			Mode:                 ModeVoiceAgent,
+			Mode:                 speechkit.ModeVoiceAgent,
 			Name:                 "Gemini 3.1 Flash Live Preview",
-			Lifecycle:            ModelLifecyclePreview,
+			Lifecycle:            speechkit.ModelLifecyclePreview,
 			Default:              true,
 			Recommended:          true,
 			SourceURL:            "https://ai.google.dev/gemini-api/docs/models/gemini-3.1-flash-live-preview",
@@ -233,9 +232,9 @@ func DefaultModelRegistry() []ProviderModelDescriptor {
 			Provider:             "google",
 			ModelID:              ModelGemini25FlashNativeAudioPreview,
 			ProfileID:            "realtime.google.gemini-native-audio",
-			Mode:                 ModeVoiceAgent,
+			Mode:                 speechkit.ModeVoiceAgent,
 			Name:                 "Gemini 2.5 Flash Native Audio Preview",
-			Lifecycle:            ModelLifecycleLegacy,
+			Lifecycle:            speechkit.ModelLifecycleLegacy,
 			SourceURL:            "https://ai.google.dev/gemini-api/docs/live-api/capabilities",
 			ReleasedAt:           "2025-12-12",
 			LastVerifiedAt:       modelRegistryVerifiedAt,
@@ -245,9 +244,9 @@ func DefaultModelRegistry() []ProviderModelDescriptor {
 			Provider:             "openai",
 			ModelID:              ModelOpenAIGPT4OTranscribe,
 			ProfileID:            "stt.openai.gpt-4o-transcribe",
-			Mode:                 ModeDictation,
+			Mode:                 speechkit.ModeDictation,
 			Name:                 "GPT-4o Transcribe",
-			Lifecycle:            ModelLifecycleGA,
+			Lifecycle:            speechkit.ModelLifecycleGA,
 			Default:              true,
 			Recommended:          true,
 			SourceURL:            "https://platform.openai.com/docs/guides/speech-to-text",
@@ -259,9 +258,9 @@ func DefaultModelRegistry() []ProviderModelDescriptor {
 			Provider:             "openai",
 			ModelID:              ModelOpenAIRealtime2,
 			ProfileID:            "realtime.openai.gpt-realtime-2",
-			Mode:                 ModeVoiceAgent,
+			Mode:                 speechkit.ModeVoiceAgent,
 			Name:                 "GPT Realtime 2",
-			Lifecycle:            ModelLifecycleGA,
+			Lifecycle:            speechkit.ModelLifecycleGA,
 			Default:              true,
 			Recommended:          true,
 			SourceURL:            "https://platform.openai.com/docs/guides/realtime",
@@ -281,9 +280,9 @@ func DefaultModelRegistry() []ProviderModelDescriptor {
 			Provider:             "openai",
 			ModelID:              ModelOpenAIRealtime21,
 			ProfileID:            "realtime.openai.gpt-realtime-2",
-			Mode:                 ModeVoiceAgent,
+			Mode:                 speechkit.ModeVoiceAgent,
 			Name:                 "GPT Realtime 2.1",
-			Lifecycle:            ModelLifecycleGA,
+			Lifecycle:            speechkit.ModelLifecycleGA,
 			Default:              false,
 			Recommended:          false,
 			SourceURL:            "https://platform.openai.com/docs/guides/realtime",
@@ -295,9 +294,9 @@ func DefaultModelRegistry() []ProviderModelDescriptor {
 			Provider:             "openai",
 			ModelID:              ModelOpenAIRealtime21Mini,
 			ProfileID:            "realtime.openai.gpt-realtime-2",
-			Mode:                 ModeVoiceAgent,
+			Mode:                 speechkit.ModeVoiceAgent,
 			Name:                 "GPT Realtime 2.1 mini",
-			Lifecycle:            ModelLifecycleGA,
+			Lifecycle:            speechkit.ModelLifecycleGA,
 			Default:              false,
 			Recommended:          false,
 			SourceURL:            "https://platform.openai.com/docs/guides/realtime",
@@ -312,9 +311,9 @@ func DefaultModelRegistry() []ProviderModelDescriptor {
 			Provider:             "foundry",
 			ModelID:              ModelOpenAIRealtime2,
 			ProfileID:            "realtime.foundry.gpt-realtime-2",
-			Mode:                 ModeVoiceAgent,
+			Mode:                 speechkit.ModeVoiceAgent,
 			Name:                 "GPT Realtime 2 (Foundry)",
-			Lifecycle:            ModelLifecycleGA,
+			Lifecycle:            speechkit.ModelLifecycleGA,
 			Default:              true,
 			Recommended:          true,
 			SourceURL:            "https://learn.microsoft.com/azure/ai-foundry/openai/concepts/models",
@@ -326,9 +325,9 @@ func DefaultModelRegistry() []ProviderModelDescriptor {
 			Provider:             "foundry",
 			ModelID:              ModelOpenAIRealtime21,
 			ProfileID:            "realtime.foundry.gpt-realtime-2",
-			Mode:                 ModeVoiceAgent,
+			Mode:                 speechkit.ModeVoiceAgent,
 			Name:                 "GPT Realtime 2.1 (Foundry)",
-			Lifecycle:            ModelLifecyclePreview,
+			Lifecycle:            speechkit.ModelLifecyclePreview,
 			SourceURL:            "https://learn.microsoft.com/azure/ai-foundry/openai/concepts/models",
 			ReleasedAt:           "2026-07-06",
 			LastVerifiedAt:       foundryRegistryVerifiedAt,
@@ -338,9 +337,9 @@ func DefaultModelRegistry() []ProviderModelDescriptor {
 			Provider:             "foundry",
 			ModelID:              ModelOpenAIRealtime21Mini,
 			ProfileID:            "realtime.foundry.gpt-realtime-2",
-			Mode:                 ModeVoiceAgent,
+			Mode:                 speechkit.ModeVoiceAgent,
 			Name:                 "GPT Realtime 2.1 mini (Foundry)",
-			Lifecycle:            ModelLifecyclePreview,
+			Lifecycle:            speechkit.ModelLifecyclePreview,
 			SourceURL:            "https://learn.microsoft.com/azure/ai-foundry/openai/concepts/models",
 			ReleasedAt:           "2026-07-06",
 			LastVerifiedAt:       foundryRegistryVerifiedAt,

@@ -172,7 +172,7 @@ func (p *Provider) SessionCapabilities() live.SessionCapabilities {
 // SettingsApplied acknowledgement is consumed asynchronously by Receive().
 func (p *Provider) Connect(ctx context.Context, cfg live.LiveConfig) error {
 	if strings.TrimSpace(cfg.APIKey) == "" {
-		return errors.New("deepgram agent: APIKey is required")
+		return fmt.Errorf("deepgram agent: %w", live.ErrMissingAPIKey)
 	}
 
 	header := http.Header{}
@@ -213,7 +213,7 @@ func (p *Provider) SendAudio(chunk []byte) error {
 	}
 	conn := p.snapshotConn()
 	if conn == nil {
-		return errors.New("deepgram agent: not connected")
+		return fmt.Errorf("deepgram agent: %w", live.ErrNotConnected)
 	}
 	return conn.Write(context.Background(), websocket.MessageBinary, chunk)
 }
@@ -231,7 +231,7 @@ func (p *Provider) SendText(text string) error {
 	}
 	conn := p.snapshotConn()
 	if conn == nil {
-		return errors.New("deepgram agent: not connected")
+		return fmt.Errorf("deepgram agent: %w", live.ErrNotConnected)
 	}
 	return p.sendJSON(conn, map[string]any{"type": "InjectUserMessage", "content": text})
 }
@@ -240,7 +240,7 @@ func (p *Provider) SendText(text string) error {
 func (p *Provider) SendToolResponse(response live.ToolResponse) error {
 	conn := p.snapshotConn()
 	if conn == nil {
-		return errors.New("deepgram agent: not connected")
+		return fmt.Errorf("deepgram agent: %w", live.ErrNotConnected)
 	}
 	output := response.Response
 	if output == nil {
@@ -263,7 +263,7 @@ func (p *Provider) SendToolResponse(response live.ToolResponse) error {
 func (p *Provider) UpdateInstructions(ctx context.Context, cfg live.LiveConfig) error {
 	conn := p.snapshotConn()
 	if conn == nil {
-		return errors.New("deepgram agent: not connected")
+		return fmt.Errorf("deepgram agent: %w", live.ErrNotConnected)
 	}
 	prompt := composeDeepgramPrompt(cfg)
 	if prompt == "" {
@@ -311,7 +311,7 @@ func (p *Provider) Close() error {
 func (p *Provider) Receive(ctx context.Context) (*live.LiveMessage, error) {
 	conn := p.snapshotConn()
 	if conn == nil {
-		return nil, errors.New("deepgram agent: not connected")
+		return nil, fmt.Errorf("deepgram agent: %w", live.ErrNotConnected)
 	}
 	for {
 		typ, data, err := conn.Read(ctx)
@@ -365,7 +365,7 @@ func (p *Provider) snapshotConn() *websocket.Conn {
 func (p *Provider) sendSettings(ctx context.Context, cfg live.LiveConfig) error {
 	conn := p.snapshotConn()
 	if conn == nil {
-		return errors.New("deepgram agent: not connected")
+		return fmt.Errorf("deepgram agent: %w", live.ErrNotConnected)
 	}
 
 	writeCtx, cancel := context.WithTimeout(ctx, deepgramAgentWriteTimeout)

@@ -86,21 +86,12 @@ func ToTranscript(r *Result, durationSecs float64) speechkit.Transcript {
 	}
 }
 
-// transcriptWordConfidences bridges the stt per-word confidence type to the
-// kernel's mirror type. nil in, nil out — providers without word-level
-// confidence keep the Transcript field nil.
+// transcriptWordConfidences copies the per-word slice so the Transcript never
+// aliases the provider's buffer. nil in, nil out — providers without
+// word-level confidence keep the Transcript field nil.
 func transcriptWordConfidences(words []WordConfidence) []speechkit.WordConfidence {
 	if len(words) == 0 {
 		return nil
 	}
-	out := make([]speechkit.WordConfidence, 0, len(words))
-	for _, w := range words {
-		out = append(out, speechkit.WordConfidence{
-			Text:       w.Text,
-			Confidence: w.Confidence,
-			StartMs:    w.StartMs,
-			EndMs:      w.EndMs,
-		})
-	}
-	return out
+	return append([]speechkit.WordConfidence(nil), words...)
 }

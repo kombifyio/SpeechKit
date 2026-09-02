@@ -5,11 +5,11 @@ import (
 	"testing"
 
 	"github.com/kombifyio/SpeechKit/internal/secrets"
-	framework "github.com/kombifyio/SpeechKit/pkg/speechkit"
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/catalog"
 )
 
 func TestProviderRuntimeRegistryCoversFrameworkMatrix(t *testing.T) {
-	for _, row := range framework.DefaultProviderMatrix() {
+	for _, row := range catalog.DefaultProviderMatrix() {
 		if _, ok := ProviderRuntimeFor(row.Provider); !ok {
 			t.Fatalf("provider runtime registry missing framework provider %q", row.Provider)
 		}

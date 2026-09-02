@@ -1,4 +1,4 @@
-package speechkit
+package pipeline
 
 import (
 	"context"
@@ -6,6 +6,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/kombifyio/SpeechKit/pkg/speechkit"
 )
 
 func TestJoinTranscriptFragmentsInsertsSentenceGap(t *testing.T) {
@@ -31,15 +33,15 @@ func TestLiveCommitPassageFlushesAfterTwoSentences(t *testing.T) {
 	inner := &recordingDictationSink{}
 	sink := wrapLiveCommitSink(inner, LiveCommitPassage)
 	ctx := context.Background()
-	opts := DictationStreamSinkOptions{Language: "de"}
+	opts := speechkit.DictationStreamSinkOptions{Language: "de"}
 
-	if err := sink.HandleDictationStreamEvent(ctx, DictationStreamEvent{Text: "Erster Satz.", IsFinal: true, SessionID: 1}, opts); err != nil {
+	if err := sink.HandleDictationStreamEvent(ctx, speechkit.DictationStreamEvent{Text: "Erster Satz.", IsFinal: true, SessionID: 1}, opts); err != nil {
 		t.Fatalf("first final: %v", err)
 	}
 	if got := inner.count(); got != 0 {
 		t.Fatalf("passage flushed after one sentence: %d events", got)
 	}
-	if err := sink.HandleDictationStreamEvent(ctx, DictationStreamEvent{Text: "Zweiter Satz.", IsFinal: true, SessionID: 1}, opts); err != nil {
+	if err := sink.HandleDictationStreamEvent(ctx, speechkit.DictationStreamEvent{Text: "Zweiter Satz.", IsFinal: true, SessionID: 1}, opts); err != nil {
 		t.Fatalf("second final: %v", err)
 	}
 	if got := inner.count(); got != 1 {
@@ -59,7 +61,7 @@ func TestLiveCommitHoldFlushesIncompletePassage(t *testing.T) {
 		inner:  inner,
 		policy: LiveCommitPolicy{Mode: LiveCommitPassage, MinSentences: 2, Hold: 20 * time.Millisecond},
 	}
-	if err := sink.HandleDictationStreamEvent(context.Background(), DictationStreamEvent{Text: "Nur ein Satz.", IsFinal: true}, DictationStreamSinkOptions{}); err != nil {
+	if err := sink.HandleDictationStreamEvent(context.Background(), speechkit.DictationStreamEvent{Text: "Nur ein Satz.", IsFinal: true}, speechkit.DictationStreamSinkOptions{}); err != nil {
 		t.Fatalf("final: %v", err)
 	}
 	deadline := time.Now().Add(500 * time.Millisecond)
@@ -73,10 +75,10 @@ func TestLiveCommitHoldFlushesIncompletePassage(t *testing.T) {
 
 type recordingDictationSink struct {
 	mu     sync.Mutex
-	events []DictationStreamEvent
+	events []speechkit.DictationStreamEvent
 }
 
-func (s *recordingDictationSink) HandleDictationStreamEvent(_ context.Context, event DictationStreamEvent, _ DictationStreamSinkOptions) error {
+func (s *recordingDictationSink) HandleDictationStreamEvent(_ context.Context, event speechkit.DictationStreamEvent, _ speechkit.DictationStreamSinkOptions) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.events = append(s.events, event)

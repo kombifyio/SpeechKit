@@ -2,11 +2,6 @@
 
 package wakeword
 
-import "errors"
-
-// ErrCgoRequired is returned by the no-cgo detector stub.
-var ErrCgoRequired = errors.New("wakeword: sherpa-onnx KWS requires cgo build (set CGO_ENABLED=1)")
-
 // DetectorConfig mirrors the cgo build's detector inputs.
 type DetectorConfig struct {
 	Encoder      string
@@ -22,6 +17,9 @@ type DetectorConfig struct {
 
 // Detector is the no-cgo placeholder for the cgo build's Detector.
 type Detector struct{}
+
+// Threshold always reports 0 on the stub.
+func (*Detector) Threshold() float32 { return 0 }
 
 // Close is a no-op on the stub.
 func (*Detector) Close() error { return nil }

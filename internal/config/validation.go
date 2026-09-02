@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/kombifyio/SpeechKit/internal/hotkeycombo"
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/hostconfig"
 )
 
 // DefaultMeetingScreenshotHotkey is the shipped global shortcut for the Meeting
@@ -124,22 +125,7 @@ func hotkeyComboEqual(a, b []uint32) bool {
 }
 
 func NormalizeHotkeyBehavior(value, fallback string) string {
-	switch strings.ToLower(strings.TrimSpace(value)) {
-	case HotkeyBehaviorHoldToTalk, legacyHotkeyBehaviorPushToTalk:
-		// Legacy push_to_talk inputs are normalized to the canonical
-		// hold_to_talk value so subsequent writes use the new name.
-		return HotkeyBehaviorHoldToTalk
-	case HotkeyBehaviorToggle:
-		return HotkeyBehaviorToggle
-	default:
-		if strings.TrimSpace(fallback) == "" {
-			return HotkeyBehaviorHoldToTalk
-		}
-		if strings.EqualFold(strings.TrimSpace(fallback), value) {
-			return HotkeyBehaviorHoldToTalk
-		}
-		return NormalizeHotkeyBehavior(fallback, HotkeyBehaviorHoldToTalk)
-	}
+	return hostconfig.NormalizeHotkeyBehavior(value, fallback)
 }
 
 func NormalizeDictationProcessingMode(value, fallback string) string {
@@ -212,20 +198,7 @@ func NormalizeAudioInputSource(value, fallback string) string {
 }
 
 func NormalizeVoiceAgentCloseBehavior(value, fallback string) string {
-	switch strings.ToLower(strings.TrimSpace(value)) {
-	case VoiceAgentCloseBehaviorContinue:
-		return VoiceAgentCloseBehaviorContinue
-	case VoiceAgentCloseBehaviorNewChat:
-		return VoiceAgentCloseBehaviorNewChat
-	default:
-		if strings.TrimSpace(fallback) == "" {
-			return VoiceAgentCloseBehaviorContinue
-		}
-		if strings.EqualFold(strings.TrimSpace(fallback), value) {
-			return VoiceAgentCloseBehaviorContinue
-		}
-		return NormalizeVoiceAgentCloseBehavior(fallback, VoiceAgentCloseBehaviorContinue)
-	}
+	return hostconfig.NormalizeVoiceAgentCloseBehavior(value, fallback)
 }
 
 // NormalizeVoiceAgentBargeIn coerces config/UI values to the supported

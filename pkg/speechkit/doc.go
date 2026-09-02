@@ -28,12 +28,27 @@
 //
 // # Central types in this package
 //
-// [Runtime] owns shared state and the event channel that host apps read
-// from. [Engine] is the full voice pipeline; [RecordingController] and
-// [TranscriptionWorker] can be composed independently for custom pipelines.
-// [Catalog] exposes the provider/model/mode metadata for setup UIs and
-// readiness checks; [RuntimePolicy] lets the host pin profiles and gate
-// fallbacks.
+// The root package is deliberately limited to contracts and value types: the
+// [Mode], [Capability], [ProviderKind] and [ExecutionMode] enums, the
+// [ProviderProfile] and [ModeSettings] descriptors, [RuntimePolicy], the
+// pipeline contracts ([AudioRecorder], [Transcriber], [SegmentCollector],
+// [TranscriptOutput], [TranscriptionObserver], [JobSubmitter]) and the value
+// types that flow between them ([Submission], [Transcript], [TranscriptionJob],
+// [Completion]). [Runtime] owns shared state and the event channel that host
+// apps read from. Everything in this package can be imported by any other
+// SpeechKit package without creating a cycle, so custom providers, collectors
+// and outputs only need this one import.
+//
+// Implementations live in two sibling packages:
+//
+//   - [github.com/kombifyio/SpeechKit/pkg/speechkit/pipeline] — the
+//     composable capture/transcription engine: RecordingController,
+//     TranscriptionWorker, TranscriptionRunner, DictationSegmenter,
+//     TranscriptSessionLedger and the live-commit policy.
+//   - [github.com/kombifyio/SpeechKit/pkg/speechkit/catalog] — the
+//     built-in provider/model catalog: Catalog, DefaultCatalog,
+//     DefaultProviderProfiles, the provider defaults matrix and the model
+//     registry with its freshness metadata.
 //
 // # Stability
 //
