@@ -11,8 +11,28 @@ IDs, source paths, and other maintainer-only vocabulary.
 
 ## [Unreleased]
 
+## [0.68.0](https://github.com/kombifyio/SpeechKit/compare/v0.67.0...v0.68.0) (2026-09-03)
+
+### Highlights
+
+- **Nothing fails quietly anymore**: dropped Voice Agent speech, overlay placement problems and meeting summaries that stall now show up in the activity log with a reason instead of leaving you guessing.
+- **See what you captured**: after a meeting screenshot the compact pill briefly unfolds a preview of the saved image, so you know the right window was captured.
+- **Meeting Reviews finish on their own**: interrupted write-ups resume after a restart, stuck summary steps are retried, and model answers are cleaned before they reach your notes.
+- **Integrations show their maturity**: Settings marks each integration as Ready, Partial, Planned or Unavailable and greys out what this build cannot run.
+
 ### Added
 
+* **voice-agent:** a framework-neutral turn adapter lets a registered voice
+  agent receive each finalized text turn over the A2A protocol while SpeechKit
+  keeps speech recognition and synthesis in its own pipeline. Hosted
+  connectors can attach short-lived delegation headers per turn; self-hosted
+  endpoints use the same API, and an external endpoint without TLS is refused.
+* **server:** hosted deployments can route a voice session to a registered
+  Companion agent. The session's target and lease come from the gateway, are
+  verified independently, are kept only in memory, and are bound to the
+  authenticated session; the first synthesized answer carries the AI
+  disclosure. The Go SDK and the OpenAPI document expose the provider and
+  target session options.
 * **sdk:** `speechkit.OutputTarget` is the typed contract for the `Target`
   values carried from `RecordingStartOptions`, `dictation.RuntimeOptions`,
   `DictationStreamSinkOptions`, `TranscriptionJob` and `assist.ToolCall` to
