@@ -23,6 +23,12 @@ IDs, source paths, and other maintainer-only vocabulary.
 
 ### Changed
 
+* **settings:** General settings take less scrolling. The three network
+  scopes sit side by side, Startup and the four modes are compact cards, and
+  the Overlay section is a designer: it shows the overlay as your options
+  render it, resting and on hover, and every change — style, position, the
+  quick buttons on the hover strip — appears in the preview at once. Quick
+  buttons are cards with their icon and a one-line description.
 * **meetings:** the Meeting Review toolbar is two rows with one job each. The
   first row has the tabs and a single "Write up" button whose menu holds the
   template and language choices — picking a template no longer starts a
