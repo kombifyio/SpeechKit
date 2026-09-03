@@ -11,6 +11,21 @@ IDs, source paths, and other maintainer-only vocabulary.
 
 ## [Unreleased]
 
+### Fixed
+
+* **meetings:** clicking the compact meeting pill no longer freezes mouse input
+  for the rest of the desktop until a key is pressed. The pill moves from
+  pointer movement instead of handing a quick click to the system's window-move
+  mode; a click without movement stays a click.
+* **meetings:** while the meeting pill is on screen the idle dictation pill
+  hides instead of sitting next to it as a second overlay. A running dictation
+  keeps its own overlay, and the idle pill returns when the meeting window
+  closes.
+* **server:** the release pipeline's post-deploy check reads the detailed
+  readiness endpoint with the server credential, matching the hosted
+  deployment that now keeps that endpoint authenticated; a failed check names
+  its reason again instead of ending silently.
+
 ## [0.68.0](https://github.com/kombifyio/SpeechKit/compare/v0.67.0...v0.68.0) (2026-09-03)
 
 ### Highlights

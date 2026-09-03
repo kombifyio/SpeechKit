@@ -1,6 +1,6 @@
 {
   "name": "@kombifyio/speechkit-client",
-  "version": "0.68.0",
+  "version": "0.68.2",
   "description": "TypeScript REST client for the SpeechKit Server v1 API: dictation transcribe, assist, voice agent sessions, TTS, catalog, transcripts.",
   "license": "Apache-2.0",
   "type": "module",
