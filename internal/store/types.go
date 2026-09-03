@@ -126,6 +126,24 @@ type RecordingSessionStore interface {
 	SetRecordingSessionPinned(ctx context.Context, id int64, pinned bool) error
 }
 
+// RecordingSessionSearchStore is an optional extension: a text search over a
+// scope's recording sessions — title, transcript, the user's notes and the
+// finished write-ups. Every term of the query has to appear somewhere in a
+// session for it to match.
+type RecordingSessionSearchStore interface {
+	SearchRecordingSessions(ctx context.Context, query string, opts ListOpts) ([]RecordingSessionSearchHit, error)
+}
+
+// RecordingSessionSearchHit is one matching session with the first place the
+// query was found, so a list can show why the meeting is in the results.
+type RecordingSessionSearchHit struct {
+	Session RecordingSession `json:"session"`
+	// Source names where the snippet comes from: "title", "transcript",
+	// "notes" or "write-up".
+	Source  string `json:"source"`
+	Snippet string `json:"snippet"`
+}
+
 // RecordingSessionNotesStore is an optional extension for backends that
 // persist the notes a user writes during a meeting. They are kept apart from
 // the transcript and from anything a model generates, because the enhancement

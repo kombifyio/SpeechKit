@@ -13,6 +13,13 @@ IDs, source paths, and other maintainer-only vocabulary.
 
 ### Added
 
+* **meetings:** the meeting list is grouped by when a meeting happened —
+  Today, Yesterday, Earlier this week, Last week, Older — and older groups
+  show one compact line per meeting, so a meeting is found and placed at a
+  glance.
+* **meetings:** a search box above the list finds meetings by title,
+  transcript, your own notes and finished write-ups; every word has to appear,
+  and each result shows where it matched and the surrounding text.
 * **meetings:** notes read as formatted Markdown. The Meeting Review shows a
   write-up either as citable bullets or as Markdown, your own notes render
   formatted with a switch back to the source, and the compact notepad gets a
