@@ -13,6 +13,12 @@ IDs, source paths, and other maintainer-only vocabulary.
 
 ### Fixed
 
+* **meetings:** summaries no longer fail for good when the local model server
+  is not reachable for a moment. After a start or an update SpeechKit waits for
+  the local model before it catches up on pending summaries, a refused
+  connection counts as temporary, and a summary step that hit such a failure is
+  retried on its own with a growing delay instead of waiting for the next
+  restart.
 * **meetings:** clicking the compact meeting pill no longer freezes mouse input
   for the rest of the desktop until a key is pressed. The pill moves from
   pointer movement instead of handing a quick click to the system's window-move

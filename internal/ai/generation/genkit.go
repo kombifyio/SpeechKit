@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
+	"net"
 	"strings"
 	"time"
 
@@ -142,6 +144,15 @@ func classifyGenkitError(model Model, err error) error {
 	kind := ErrorPermanent
 	retryable := false
 	switch {
+	case isConnectionError(err, message):
+		// The model server did not answer: llama-server still loading after a
+		// start or an update, or a remote endpoint dropping the connection.
+		// Nothing about the request is wrong, so the work must stay
+		// retryable. Classified permanent, the startup pass of 2026-09-03
+		// marked every pending meeting summary of three meetings "failed"
+		// within a second of launch, before the local runtime had come up.
+		kind = ErrorTransient
+		retryable = true
 	case strings.Contains(message, "context") && (strings.Contains(message, "limit") || strings.Contains(message, "length") || strings.Contains(message, "exceed")):
 		kind = ErrorContextLimit
 	case strings.Contains(message, "unauthorized"), strings.Contains(message, "authentication"), strings.Contains(message, "api key"):
@@ -154,4 +165,36 @@ func classifyGenkitError(model Model, err error) error {
 		retryable = true
 	}
 	return &Error{Kind: kind, Operation: "generate", Provider: model.Provider, Model: model.Name, Retryable: retryable, Err: err}
+}
+
+// isConnectionError reports transport-level failures — the request never got
+// an answer from the model server. The typed checks cover the Go net stack
+// (dial failures, resets, dropped connections); the text checks cover errors a
+// plugin flattened to a string on the way up.
+func isConnectionError(err error, message string) bool {
+	var netErr net.Error
+	if errors.As(err, &netErr) {
+		return true
+	}
+	var opErr *net.OpError
+	if errors.As(err, &opErr) {
+		return true
+	}
+	if errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) {
+		return true
+	}
+	for _, needle := range []string{
+		"connection refused",
+		"actively refused",
+		"no connection could be made",
+		"connection reset",
+		"dial tcp",
+		"unexpected eof",
+		"broken pipe",
+	} {
+		if strings.Contains(message, needle) {
+			return true
+		}
+	}
+	return false
 }
