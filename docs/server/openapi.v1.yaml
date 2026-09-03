@@ -1233,6 +1233,11 @@ paths:
         `asyncapi.v1.yaml`; pure provider events such as `turn_end` and
         `session_resumable` are emitted as `{"type":"event", ...}` frames.
       tags: [voiceagent]
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateSessionRequest' }
       responses:
         '201':
           description: Session created.
@@ -2999,11 +3004,21 @@ components:
           type: object
           additionalProperties: true
 
+    CreateSessionRequest:
+      type: object
+      properties:
+        ai_session_id:
+          type: string
+          description: Optional durable agent-conversation identifier bound to this voice session.
+
     CreateSessionResponse:
       type: object
       required: [session_id, ws_url, ws_subprotocol, ticket, expires_at]
       properties:
         session_id: { type: string }
+        ai_session_id:
+          type: string
+          description: Durable agent-conversation identifier supplied when the session was minted.
         ws_url:
           type: string
           format: uri

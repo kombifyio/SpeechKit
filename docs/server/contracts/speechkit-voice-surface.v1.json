@@ -29,7 +29,8 @@
       "session": {
         "locale": "de-DE",
         "room_id": "office",
-        "device_id": "android_device_001"
+        "device_id": "android_device_001",
+        "ai_session_id": "ai_session_001"
       },
       "provider": {
         "provider_kind": "local",
@@ -151,6 +152,7 @@
       "surface": "mobile",
       "mode": "voice_agent",
       "session_id": "agent_session_001",
+      "ai_session_id": "ai_session_001",
       "input_text": "Hilf mir beim Homelab.",
       "output_text": "Ich pruefe zuerst deine lokalen Services."
     },

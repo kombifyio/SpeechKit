@@ -191,7 +191,7 @@ func (a *Adapter) Run(parent context.Context) {
 	}
 	a.sendJSON(ctx, StateFrame{
 		Type:             MsgState,
-		EventFrameFields: eventFrameFields(nil, EventSessionReady),
+		EventFrameFields: a.eventFrameFields(nil, EventSessionReady),
 		State:            "listening",
 		Provider:         providerName,
 		MediaTransport:   transport,
@@ -234,7 +234,7 @@ func (a *Adapter) Run(parent context.Context) {
 		)
 		a.sendJSON(ctx, SessionEndFrame{
 			Type:             MsgSessionEnd,
-			EventFrameFields: eventFrameFields(nil, EventSessionEnd),
+			EventFrameFields: a.eventFrameFields(nil, EventSessionEnd),
 			Reason:           "idle",
 		})
 	case <-maxDuration:
@@ -244,7 +244,7 @@ func (a *Adapter) Run(parent context.Context) {
 		)
 		a.sendJSON(ctx, SessionEndFrame{
 			Type:             MsgSessionEnd,
-			EventFrameFields: eventFrameFields(nil, EventSessionEnd),
+			EventFrameFields: a.eventFrameFields(nil, EventSessionEnd),
 			Reason:           "max_duration",
 		})
 	}
@@ -454,7 +454,7 @@ func (a *Adapter) readPump(ctx context.Context, done chan<- struct{}) {
 			case MsgStop:
 				a.sendJSON(ctx, SessionEndFrame{
 					Type:             MsgSessionEnd,
-					EventFrameFields: eventFrameFields(nil, EventSessionEnd),
+					EventFrameFields: a.eventFrameFields(nil, EventSessionEnd),
 					Reason:           "client",
 				})
 				return
@@ -496,7 +496,7 @@ func (a *Adapter) handleCancel(ctx context.Context) {
 			}
 		}
 	}
-	fields := eventFrameFields(nil, EventInterrupted)
+	fields := a.eventFrameFields(nil, EventInterrupted)
 	fields.ProviderMetadata = map[string]any{"reason": "client_cancel"}
 	a.sendJSON(ctx, InterruptedFrame{
 		Type:             MsgInterrupted,
@@ -552,7 +552,7 @@ func (a *Adapter) writePump(ctx context.Context, done chan<- struct{}) {
 			}
 			a.sendJSON(ctx, TranscriptFrame{
 				Type:              MsgInputTranscript,
-				EventFrameFields:  eventFrameFields(msg, eventType),
+				EventFrameFields:  a.eventFrameFields(msg, eventType),
 				Text:              msg.InputTranscript,
 				Done:              msg.InputTranscriptDone,
 				SpeakerLabel:      msg.InputSpeakerLabel,
@@ -567,7 +567,7 @@ func (a *Adapter) writePump(ctx context.Context, done chan<- struct{}) {
 		if msg.OutputTranscript != "" {
 			a.sendJSON(ctx, TranscriptFrame{
 				Type:             MsgOutputTranscript,
-				EventFrameFields: eventFrameFields(msg, EventOutputText),
+				EventFrameFields: a.eventFrameFields(msg, EventOutputText),
 				Text:             msg.OutputTranscript,
 				Done:             msg.OutputTranscriptDone,
 			})
@@ -583,7 +583,7 @@ func (a *Adapter) writePump(ctx context.Context, done chan<- struct{}) {
 			}
 			a.sendJSON(ctx, ToolCallFrame{
 				Type:             MsgToolCall,
-				EventFrameFields: eventFrameFields(msg, EventToolCall),
+				EventFrameFields: a.eventFrameFields(msg, EventToolCall),
 				ID:               call.ID,
 				Name:             call.Name,
 				Args:             call.Args,
@@ -592,7 +592,7 @@ func (a *Adapter) writePump(ctx context.Context, done chan<- struct{}) {
 		if msg.Interrupted {
 			a.sendJSON(ctx, InterruptedFrame{
 				Type:             MsgInterrupted,
-				EventFrameFields: eventFrameFields(msg, EventInterrupted),
+				EventFrameFields: a.eventFrameFields(msg, EventInterrupted),
 			})
 		}
 		if msg.Done || msg.Interrupted {
@@ -604,7 +604,7 @@ func (a *Adapter) writePump(ctx context.Context, done chan<- struct{}) {
 		if msg.GoAway {
 			a.sendJSON(ctx, SessionEndFrame{
 				Type:             MsgSessionEnd,
-				EventFrameFields: eventFrameFields(msg, EventSessionEnd),
+				EventFrameFields: a.eventFrameFields(msg, EventSessionEnd),
 				Reason:           "go_away",
 			})
 			return
@@ -612,7 +612,7 @@ func (a *Adapter) writePump(ctx context.Context, done chan<- struct{}) {
 		if eventType := standaloneEventType(msg); eventType != "" {
 			a.sendJSON(ctx, EventFrame{
 				Type:             MsgEvent,
-				EventFrameFields: eventFrameFields(msg, eventType),
+				EventFrameFields: a.eventFrameFields(msg, eventType),
 			})
 		}
 	}
@@ -630,7 +630,7 @@ func (a *Adapter) mergeBridgeTools(ctx context.Context, cfg *LiveConfigFrame) {
 	defer cancel()
 	defs := a.ToolRouter.Definitions(defsCtx, a.Session, *cfg)
 	if len(defs) == 0 {
-		fields := eventFrameFields(nil, EventToolBridgeUnavailable)
+		fields := a.eventFrameFields(nil, EventToolBridgeUnavailable)
 		fields.ProviderMetadata = map[string]any{"reason": "no_tool_definitions"}
 		a.sendJSON(ctx, EventFrame{Type: MsgEvent, EventFrameFields: fields})
 		return
@@ -653,7 +653,7 @@ func (a *Adapter) mergeBridgeTools(ctx context.Context, cfg *LiveConfigFrame) {
 // SendToolResponse, and acknowledge to the client with a tool_result_ack
 // event frame.
 func (a *Adapter) dispatchBridgeToolCall(ctx context.Context, msg *LiveMessage, call ToolCall) {
-	fields := eventFrameFields(msg, EventToolCall)
+	fields := a.eventFrameFields(msg, EventToolCall)
 	metadata := make(map[string]any, len(fields.ProviderMetadata)+1)
 	for key, value := range fields.ProviderMetadata {
 		metadata[key] = value
@@ -730,7 +730,7 @@ func (a *Adapter) sendBridgeToolResponse(ctx context.Context, call ToolCall, res
 			"session_id", a.Session.ID, "tool", call.Name, "err", err)
 		status = "error"
 	}
-	fields := eventFrameFields(nil, EventToolResultAck)
+	fields := a.eventFrameFields(nil, EventToolResultAck)
 	fields.ProviderMetadata = map[string]any{
 		"id":        call.ID,
 		"name":      call.Name,
@@ -774,6 +774,14 @@ func eventFrameFields(msg *LiveMessage, primary string) EventFrameFields {
 		EventTypes:       types,
 		ProviderMetadata: copyProviderMetadata(msg),
 	}
+}
+
+func (a *Adapter) eventFrameFields(msg *LiveMessage, primary string) EventFrameFields {
+	fields := eventFrameFields(msg, primary)
+	if a.Session != nil {
+		fields.AISessionID = a.Session.AISessionID
+	}
+	return fields
 }
 
 func inferServerEventTypes(msg *LiveMessage) []string {

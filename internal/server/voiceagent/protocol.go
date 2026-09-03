@@ -236,6 +236,7 @@ type PongFrame struct {
 }
 
 type EventFrameFields struct {
+	AISessionID      string         `json:"ai_session_id,omitempty"`
 	EventType        string         `json:"event_type,omitempty"`
 	EventTypes       []string       `json:"event_types,omitempty"`
 	ProviderMetadata map[string]any `json:"provider_metadata,omitempty"`

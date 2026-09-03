@@ -522,6 +522,9 @@ components:
     EventFrameFields:
       type: object
       properties:
+        ai_session_id:
+          type: string
+          description: Durable agent-conversation identifier bound when the voice session was minted.
         event_type:
           $ref: '#/components/schemas/LiveEventType'
         event_types:
@@ -539,6 +542,7 @@ components:
       required: [type, state]
       properties:
         type: { type: string, const: state }
+        ai_session_id: { type: string }
         event_type:
           $ref: '#/components/schemas/LiveEventType'
         event_types:
@@ -574,6 +578,7 @@ components:
         type:
           type: string
           enum: [input_transcript, output_transcript]
+        ai_session_id: { type: string }
         event_type:
           $ref: '#/components/schemas/LiveEventType'
         event_types:
@@ -610,6 +615,7 @@ components:
       required: [type, id, name]
       properties:
         type: { type: string, const: tool_call }
+        ai_session_id: { type: string }
         event_type:
           $ref: '#/components/schemas/LiveEventType'
         event_types:
@@ -645,6 +651,7 @@ components:
       required: [type, event_type]
       properties:
         type: { type: string, const: event }
+        ai_session_id: { type: string }
         event_type:
           $ref: '#/components/schemas/LiveEventType'
         event_types:
@@ -660,6 +667,7 @@ components:
       required: [type]
       properties:
         type: { type: string, const: interrupted }
+        ai_session_id: { type: string }
         event_type:
           $ref: '#/components/schemas/LiveEventType'
         event_types:
@@ -695,6 +703,7 @@ components:
       required: [type, reason]
       properties:
         type: { type: string, const: session_end }
+        ai_session_id: { type: string }
         event_type:
           $ref: '#/components/schemas/LiveEventType'
         event_types:

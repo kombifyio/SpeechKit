@@ -106,7 +106,10 @@ type SessionStats struct {
 // The WebSocket handler and adapter pull additional fields (conn, pumps)
 // onto this struct at handshake time.
 type ManagedSession struct {
-	ID          string
+	ID string
+	// AISessionID binds this voice transport session to the durable agent
+	// conversation that owns its turns. Empty preserves standalone sessions.
+	AISessionID string
 	Owner       Identity
 	CreatedAt   time.Time
 	State       State
@@ -176,6 +179,13 @@ func NewSessionManager(opts Options) (*SessionManager, error) {
 // session record plus a one-time WS upgrade ticket. Fails with a limit error
 // when concurrency caps are exceeded.
 func (m *SessionManager) Create(owner Identity) (*ManagedSession, string, error) {
+	return m.CreateWithAISession(owner, "")
+}
+
+// CreateWithAISession registers a session already bound to its durable agent
+// conversation. Binding inside the manager lock keeps List/Get snapshots from
+// observing an unbound intermediate record.
+func (m *SessionManager) CreateWithAISession(owner Identity, aiSessionID string) (*ManagedSession, string, error) {
 	if strings.TrimSpace(owner.UserID) == "" {
 		return nil, "", errors.New("ws session: owner.UserID must not be empty")
 	}
@@ -196,10 +206,11 @@ func (m *SessionManager) Create(owner Identity) (*ManagedSession, string, error)
 
 	now := m.opts.Clock().UTC()
 	session := &ManagedSession{
-		ID:        uuid.NewString(),
-		Owner:     owner,
-		CreatedAt: now,
-		State:     StatePendingWS,
+		ID:          uuid.NewString(),
+		AISessionID: strings.TrimSpace(aiSessionID),
+		Owner:       owner,
+		CreatedAt:   now,
+		State:       StatePendingWS,
 	}
 	m.sessions[session.ID] = session
 	m.byUser[owner.UserID]++

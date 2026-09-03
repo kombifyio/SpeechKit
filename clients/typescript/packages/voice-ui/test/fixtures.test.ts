@@ -61,4 +61,20 @@ describe("vendored speechkit.voice_surface.v1 fixture", () => {
       expect(isSpeechKitVoiceEventType(event.type)).toBe(true);
     }
   });
+
+  it("binds voice-agent turns to the durable AI conversation", () => {
+    const fixture = JSON.parse(
+      readFileSync(join(fixturesDir, "speechkit-voice-surface.v1.json"), "utf8")
+    ) as {
+      surfaceContracts: Array<{ session?: { ai_session_id?: string } }>;
+      events: Array<{ type: string; ai_session_id?: string }>;
+    };
+    const agentTurn = fixture.events.find((event) => event.type === "voice.agent_turn");
+    expect(agentTurn?.ai_session_id).toBeTruthy();
+    expect(
+      fixture.surfaceContracts.some(
+        (contract) => contract.session?.ai_session_id === agentTurn?.ai_session_id
+      )
+    ).toBe(true);
+  });
 });

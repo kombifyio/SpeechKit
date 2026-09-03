@@ -7,6 +7,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"io"
 	"log/slog"
 	"net/http"
 	"strconv"
@@ -307,11 +308,16 @@ func (h *Handler) Mount(mux *http.ServeMux) {
 
 type createSessionResponse struct {
 	SessionID     string           `json:"session_id"`
+	AISessionID   string           `json:"ai_session_id,omitempty"`
 	WSURL         string           `json:"ws_url"`
 	WSSubprotocol string           `json:"ws_subprotocol,omitempty"`
 	Ticket        string           `json:"ticket"`
 	ExpiresAt     string           `json:"expires_at"`
 	LiveKit       *LiveKitJoinInfo `json:"livekit,omitempty"`
+}
+
+type createSessionRequest struct {
+	AISessionID string `json:"ai_session_id,omitempty"`
 }
 
 type listSessionsResponse struct {
@@ -423,12 +429,22 @@ func (h *Handler) createSession(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteError(w, http.StatusUnauthorized, "unauthenticated", "identity not available on context")
 		return
 	}
-	session, ticket, err := h.manager.Create(Identity{
+	var input createSessionRequest
+	if r.Body != nil {
+		decoder := json.NewDecoder(http.MaxBytesReader(w, r.Body, 16<<10))
+		if err := decoder.Decode(&input); err != nil && !errors.Is(err, io.EOF) {
+			httpx.WriteError(w, http.StatusBadRequest, "invalid_request", "request body must be valid JSON")
+			return
+		}
+	}
+	input.AISessionID = strings.TrimSpace(input.AISessionID)
+
+	session, ticket, err := h.manager.CreateWithAISession(Identity{
 		UserID: id.UserID,
 		OrgID:  id.OrgID,
 		Plan:   id.Plan,
 		Role:   id.Role,
-	})
+	}, input.AISessionID)
 	if err == nil {
 		// Capture the optional per-session tool-bridge credential the edge
 		// forwarded with this request. The middleware only attaches it when
@@ -473,6 +489,7 @@ func (h *Handler) createSession(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusCreated)
 	_ = json.NewEncoder(w).Encode(createSessionResponse{
 		SessionID:     session.ID,
+		AISessionID:   session.AISessionID,
 		WSURL:         wsURL,
 		WSSubprotocol: wsSubprotocol,
 		Ticket:        ticket,

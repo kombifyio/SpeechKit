@@ -64,6 +64,7 @@ export interface SpeechKitVoiceCapabilities {
 
 export interface SpeechKitVoiceSessionContext {
   session_id?: string;
+  ai_session_id?: string;
   persona_id?: string;
   locale?: string;
   room_id?: string;
@@ -120,6 +121,7 @@ export interface SpeechKitVoiceEvent {
   surface: SpeechKitVoiceSurface;
   mode: SpeechKitVoiceMode;
   session_id?: string;
+  ai_session_id?: string;
   capture_policy?: SpeechKitCapturePolicy;
   transport?: SpeechKitTransport;
   text?: string;
@@ -147,6 +149,7 @@ export interface SpeechKitVoiceSessionState {
   // reducer assignments legal under this workspace's exactOptionalPropertyTypes
   // without changing the runtime shape.
   session_id?: string | undefined;
+  ai_session_id?: string | undefined;
   status: SpeechKitVoiceSessionStatus;
   transcript_draft: string;
   transcript_final: string;
@@ -173,6 +176,7 @@ export function createSpeechKitVoiceSessionState(
     surface: contract.surface,
     mode: contract.mode,
     session_id: contract.session.session_id,
+    ai_session_id: contract.session.ai_session_id,
     status: "idle",
     transcript_draft: "",
     transcript_final: "",
@@ -191,6 +195,7 @@ export function reduceSpeechKitVoiceEvent(
     surface: event.surface,
     mode: event.mode,
     session_id: event.session_id ?? state.session_id,
+    ai_session_id: event.ai_session_id ?? state.ai_session_id,
     last_event_type: event.type,
     events: [...state.events, event]
   };

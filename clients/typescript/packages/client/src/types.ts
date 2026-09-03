@@ -129,6 +129,7 @@ export interface ModeContract {
 
 export interface VoiceAgentSessionTicket {
   session_id: string;
+  ai_session_id?: string;
   ticket: string;
   ws_url: string;
   /**

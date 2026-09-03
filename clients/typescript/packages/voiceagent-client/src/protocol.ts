@@ -139,6 +139,7 @@ export type LiveEventType =
  * diagnostics and advanced hosts.
  */
 export interface ServerFrameMeta {
+  ai_session_id?: string;
   event_type?: LiveEventType;
   event_types?: LiveEventType[];
   provider_metadata?: Record<string, unknown>;
@@ -278,6 +279,7 @@ export const TICKET_SUBPROTOCOL_PREFIX = "ticket.";
 
 export interface SessionTicket {
   session_id: string;
+  ai_session_id?: string;
   ticket: string;
   ws_url?: string;
   /**

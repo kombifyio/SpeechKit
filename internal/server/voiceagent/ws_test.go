@@ -65,6 +65,71 @@ func TestCreateSessionUsesAPIPrefixInWebSocketURL(t *testing.T) {
 	}
 }
 
+func TestCreateSessionCarriesAISessionIntoVoiceEvents(t *testing.T) {
+	manager := mustManager(t, Options{})
+	provider := newFakeProvider()
+	handler, err := New(HandlerOptions{
+		Manager:     manager,
+		Provider:    staticProviderFactory{provider: provider},
+		Persona:     &fakeResolver{},
+		IdleTimeout: time.Second,
+	})
+	if err != nil {
+		t.Fatalf("New handler: %v", err)
+	}
+	mux := http.NewServeMux()
+	handler.Mount(mux)
+	wrapped := middleware.Auth(middleware.AuthOptions{Mode: "none"})(mux)
+	server := httptest.NewServer(wrapped)
+	defer server.Close()
+	defer provider.Close() //nolint:errcheck
+
+	requestBody := strings.NewReader(`{"ai_session_id":"ai-thread-42"}`)
+	req, err := http.NewRequest(http.MethodPost, server.URL+"/v1/voiceagent/sessions", requestBody)
+	if err != nil {
+		t.Fatalf("create request: %v", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("create session: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusCreated {
+		t.Fatalf("expected 201, got %d", resp.StatusCode)
+	}
+	var ticket createSessionResponse
+	if err := json.NewDecoder(resp.Body).Decode(&ticket); err != nil {
+		t.Fatalf("decode ticket: %v", err)
+	}
+	if ticket.AISessionID != "ai-thread-42" {
+		t.Fatalf("ai_session_id = %q", ticket.AISessionID)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	wsURL := "ws" + strings.TrimPrefix(server.URL, "http") + "/v1/voiceagent/sessions/" + ticket.SessionID + "/ws"
+	conn, _, err := websocket.Dial(ctx, wsURL, &websocket.DialOptions{Subprotocols: []string{ticket.WSSubprotocol}})
+	if err != nil {
+		t.Fatalf("dial websocket: %v", err)
+	}
+	defer conn.Close(websocket.StatusNormalClosure, "") //nolint:errcheck
+	if err := conn.Write(ctx, websocket.MessageText, []byte(`{"type":"start"}`)); err != nil {
+		t.Fatalf("send start: %v", err)
+	}
+	_, data, err := conn.Read(ctx)
+	if err != nil {
+		t.Fatalf("read session event: %v", err)
+	}
+	var event StateFrame
+	if err := json.Unmarshal(data, &event); err != nil {
+		t.Fatalf("decode session event: %v", err)
+	}
+	if event.AISessionID != "ai-thread-42" {
+		t.Fatalf("event ai_session_id = %q", event.AISessionID)
+	}
+}
+
 func TestCreateSessionUsesConfiguredPublicURLForWebSocketURL(t *testing.T) {
 	manager := mustManager(t, Options{})
 	handler, err := New(HandlerOptions{
