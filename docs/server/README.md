@@ -326,14 +326,23 @@ Built-in auth is configured via `[server].auth_mode`:
 - `edge_hmac` — trusts HMAC-signed headers from an authenticated edge.
 - `none` — local development only. Do not expose a `none` deployment publicly.
 
-`/healthz`, `/readyz`, and `/` are always public so probes and browser smoke
-tests can load without credentials. `/setup` is public only during the
-first-run bootstrap window. Once a server token or completed onboarding state
-exists, `/setup` is an admin UI and requires an authenticated identity with
-`role = "admin"` from either `bearer_role = "admin"` or a trusted edge HMAC
-header `X-Edge-Role: admin`. Browser requests without valid admin credentials
-receive an HTML sign-in-required page; API requests still receive the JSON
-`unauthenticated` envelope. Voice Agent WebSocket upgrades at
+`/healthz` is always public liveness. By default, local and self-hosted installs
+also expose `/`, `/assistant`, `/readyz`, `/readyz/strict`, and the redacted
+settings snapshot without credentials so onboarding and browser smoke tests
+work before a client is configured. Public deployments can keep those handlers
+mounted while requiring normal bearer/edge authentication by setting
+`SPEECHKIT_SERVER_OPERATOR_UI_PUBLIC=false` and
+`SPEECHKIT_SERVER_DETAILED_READINESS_PUBLIC=false`. Disabling either public
+bypass does not disable the corresponding UI or readiness handler.
+
+`/setup` is public only during the first-run bootstrap window and only while
+`SPEECHKIT_SERVER_OPERATOR_UI_PUBLIC` permits the public UI. Once a server
+token or completed onboarding state exists, `/setup` is an admin UI and
+requires an authenticated identity with `role = "admin"` from either
+`bearer_role = "admin"` or a trusted edge HMAC header `X-Edge-Role: admin`.
+Browser requests without valid admin credentials receive an HTML sign-in-required
+page; API requests still receive the JSON `unauthenticated` envelope. Voice
+Agent WebSocket upgrades at
 `/v1/voiceagent/sessions/{id}/ws` and
 `/api/v1/voiceagent/sessions/{id}/ws` — and streaming Dictation upgrades at
 `/v1/dictation/stream/sessions/{id}/ws` and its `/api/v1` twin — bypass
@@ -454,7 +463,10 @@ or change the current server auth mode; the deployment owner must provide
 external auth, a bearer env var, or an explicit local-only `auth_mode = "none"`.
 After bootstrap, settings writes through `/v1/server/settings` require an
 admin identity; read-only settings snapshots remain redacted unless the request
-is authenticated.
+is authenticated. Hosted deployments may additionally set
+`SPEECHKIT_SERVER_SETTINGS_WRITE=false`; those instances are configured through
+their deployment control plane and reject runtime settings changes even for an
+authenticated operator.
 
 ## LAN discovery (mDNS)
 

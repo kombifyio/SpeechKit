@@ -644,8 +644,8 @@ func serverMiddlewareChain(ctx context.Context, cfg *config.Config, app *App) (f
 				return app.AuthState.AdminPasswordHash()
 			},
 			SmokeTokenProvider: app.AuthState.SmokeToken,
-			// Health endpoints are always public so external probes (Render,
-			// Kubernetes) can hit them without credentials.
+			// Liveness is always public. Detailed readiness and browser operator
+			// UI paths can require authentication in hosted deployments.
 			AllowPublicPaths:      publicPaths,
 			AllowPublicRoutes:     publicRoutes,
 			HTMLUnauthorizedPaths: serverAdminUIPaths(),

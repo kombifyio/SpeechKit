@@ -16,10 +16,12 @@ import (
 )
 
 const (
-	ServerSettingsPathEnv  = "SPEECHKIT_SERVER_SETTINGS_PATH"
-	ServerSettingsWriteEnv = "SPEECHKIT_SERVER_SETTINGS_WRITE"
-	ServerOnboardingUIEnv  = "SPEECHKIT_SERVER_ONBOARDING_UI"
-	ServerAssistantUIEnv   = "SPEECHKIT_SERVER_ASSISTANT_UI"
+	ServerSettingsPathEnv            = "SPEECHKIT_SERVER_SETTINGS_PATH"
+	ServerSettingsWriteEnv           = "SPEECHKIT_SERVER_SETTINGS_WRITE"
+	ServerOnboardingUIEnv            = "SPEECHKIT_SERVER_ONBOARDING_UI"
+	ServerAssistantUIEnv             = "SPEECHKIT_SERVER_ASSISTANT_UI"
+	ServerOperatorUIPublicEnv        = "SPEECHKIT_SERVER_OPERATOR_UI_PUBLIC"
+	ServerDetailedReadinessPublicEnv = "SPEECHKIT_SERVER_DETAILED_READINESS_PUBLIC"
 
 	defaultServerSettingsPath = "/var/lib/speechkit/data/server-settings.json"
 

@@ -166,74 +166,73 @@ func TestServerBootstrapPaths_ExposeSetupOnlyDuringBootstrap(t *testing.T) {
 	}
 }
 
-func TestServerPublicRoutes_ExposeOnlyTicketWebSocketRoutes(t *testing.T) {
-	routes := serverPublicRoutes()
-	wants := map[string]bool{
-		"/v1/server/settings":                    false,
-		"/v1/server/admin/session":               false,
-		"/api/v1/server/settings":                false,
-		"/api/v1/server/admin/session":           false,
-		"/v1/voiceagent/sessions/|/ws":           false,
-		"/api/v1/voiceagent/sessions/|/ws":       false,
-		"/v1/dictation/stream/sessions/|/ws":     false,
-		"/api/v1/dictation/stream/sessions/|/ws": false,
-		// Wake-word model hub: intentionally public (devices hold no credential
-		// and the payloads are already-public model metadata / redirects).
-		"/v1/wakeword/models":   false,
-		"/v1/wakeword/models/|": false,
-		"/v1/wakeword/files/|":  false,
+func TestServerTicketUpgradeIsPublicButSessionMintRequiresAuthentication(t *testing.T) {
+	protected := middleware.Auth(middleware.AuthOptions{
+		Mode:                "bearer",
+		BearerTokenProvider: func() string { return "service-token" },
+		AllowPublicPaths:    serverPublicPaths(),
+		AllowPublicRoutes:   serverPublicRoutes(),
+	})(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	}))
+
+	upgrade := httptest.NewRecorder()
+	protected.ServeHTTP(upgrade, httptest.NewRequest(http.MethodGet, "/v1/voiceagent/sessions/ticket-id/ws", nil))
+	if upgrade.Code != http.StatusNoContent {
+		t.Fatalf("ticketed websocket upgrade = %d, want public handoff", upgrade.Code)
 	}
-	for _, route := range routes {
-		key := route.Path
-		if key == "" {
-			key = route.PathPrefix + "|" + route.PathSuffix
+
+	mint := httptest.NewRecorder()
+	protected.ServeHTTP(mint, httptest.NewRequest(http.MethodPost, "/v1/voiceagent/sessions", nil))
+	if mint.Code != http.StatusUnauthorized {
+		t.Fatalf("anonymous session mint = %d, want authentication challenge", mint.Code)
+	}
+}
+
+func TestHostedOperatorSurfaceRequiresAuthentication(t *testing.T) {
+	t.Setenv(config.ServerOperatorUIPublicEnv, "false")
+	t.Setenv(config.ServerDetailedReadinessPublicEnv, "false")
+
+	protected := middleware.Auth(middleware.AuthOptions{
+		Mode:                 "bearer",
+		BearerTokenProvider:  func() string { return "operator-token" },
+		AllowPublicPaths:     serverPublicPaths(),
+		AllowPublicRoutes:    serverPublicRoutes(),
+		AllowBootstrapPaths:  serverBootstrapPaths(),
+		AllowBootstrapRoutes: serverBootstrapAuthRoutes(),
+		BootstrapAllowed: func(*http.Request) bool {
+			return true
+		},
+	})(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	}))
+
+	for _, path := range []string{"/", "/assistant", "/setup", "/readyz", "/readyz/strict", "/v1/server/settings"} {
+		rec := httptest.NewRecorder()
+		protected.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, path, nil))
+		if rec.Code != http.StatusUnauthorized {
+			t.Fatalf("anonymous GET %s = %d, want authentication challenge", path, rec.Code)
 		}
-		if _, ok := wants[key]; !ok {
-			t.Fatalf("unexpected public route %#v", route)
-		}
-		wants[key] = true
-		if route.Path == "/v1/server/settings" || route.Path == "/api/v1/server/settings" {
-			if len(route.Methods) != 2 || route.Methods[0] != http.MethodGet || route.Methods[1] != http.MethodHead {
-				t.Fatalf("public settings route should be read-only GET/HEAD, got %#v", route.Methods)
-			}
-			continue
-		}
-		if route.Path == "/v1/server/admin/session" || route.Path == "/api/v1/server/admin/session" {
-			if len(route.Methods) != 1 || route.Methods[0] != http.MethodPost {
-				t.Fatalf("admin session route should be POST-only, got %#v", route.Methods)
-			}
-			continue
-		}
-		if route.Path == "/v1/wakeword/models" || route.PathPrefix == "/v1/wakeword/models/" || route.PathPrefix == "/v1/wakeword/files/" {
-			if len(route.Methods) != 2 || route.Methods[0] != http.MethodGet || route.Methods[1] != http.MethodHead {
-				t.Fatalf("wakeword route should be read-only GET/HEAD, got %#v", route.Methods)
-			}
-			continue
-		}
-		if route.Path != "" {
-			t.Fatalf("public websocket route should use prefix/suffix matching, got path %q", route.Path)
-		}
-		if len(route.Methods) != 1 || route.Methods[0] != http.MethodGet {
-			t.Fatalf("public websocket route should be GET-only, got %#v", route.Methods)
+
+		req := httptest.NewRequest(http.MethodGet, path, nil)
+		req.Header.Set("Authorization", "Bearer operator-token")
+		authorized := httptest.NewRecorder()
+		protected.ServeHTTP(authorized, req)
+		if authorized.Code != http.StatusNoContent {
+			t.Fatalf("authenticated GET %s = %d, want access", path, authorized.Code)
 		}
 	}
-	for key, found := range wants {
-		if !found {
-			t.Fatalf("missing public websocket route %s in %#v", key, routes)
-		}
+
+	settingsWrite := httptest.NewRecorder()
+	protected.ServeHTTP(settingsWrite, httptest.NewRequest(http.MethodPatch, "/v1/server/settings", nil))
+	if settingsWrite.Code != http.StatusUnauthorized {
+		t.Fatalf("anonymous bootstrap settings write = %d, want authentication challenge", settingsWrite.Code)
 	}
-	for _, forbidden := range []string{
-		"/v1/voiceagent/sessions", "/api/v1/voiceagent/sessions",
-		"/v1/dictation/stream/sessions", "/api/v1/dictation/stream/sessions",
-	} {
-		for _, route := range routes {
-			prefixSuffixMatch := (route.PathPrefix != "" || route.PathSuffix != "") &&
-				strings.HasPrefix(forbidden, route.PathPrefix) &&
-				strings.HasSuffix(forbidden, route.PathSuffix)
-			if route.Path == forbidden || prefixSuffixMatch {
-				t.Fatalf("serverPublicRoutes should not expose %q, got %#v", forbidden, routes)
-			}
-		}
+
+	health := httptest.NewRecorder()
+	protected.ServeHTTP(health, httptest.NewRequest(http.MethodGet, "/healthz", nil))
+	if health.Code != http.StatusNoContent {
+		t.Fatalf("anonymous GET /healthz = %d, want public liveness", health.Code)
 	}
 }
 

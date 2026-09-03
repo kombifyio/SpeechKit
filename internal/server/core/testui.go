@@ -18,19 +18,18 @@ import (
 )
 
 func serverPublicPaths() []string {
-	return []string{"/", "/healthz", "/readyz", "/readyz/strict"}
+	paths := []string{"/healthz"}
+	if envBoolDefault(config.ServerDetailedReadinessPublicEnv, true) {
+		paths = append(paths, "/readyz", "/readyz/strict")
+	}
+	if envBoolDefault(config.ServerOperatorUIPublicEnv, true) && envBoolDefault(config.ServerOnboardingUIEnv, true) {
+		paths = append(paths, "/")
+	}
+	return paths
 }
 
 func serverPublicRoutes() []middleware.PublicRoute {
-	return []middleware.PublicRoute{
-		// The /assistant page and its mark assets are static UI (no data,
-		// no secrets); every API call the page makes stays behind auth.
-		{Path: "/assistant", Methods: []string{http.MethodGet, http.MethodHead}},
-		{PathPrefix: "/assistant/", Methods: []string{http.MethodGet, http.MethodHead}},
-		{Path: "/v1/server/settings", Methods: []string{http.MethodGet, http.MethodHead}},
-		{Path: "/api/v1/server/settings", Methods: []string{http.MethodGet, http.MethodHead}},
-		{Path: "/v1/server/admin/session", Methods: []string{http.MethodPost}},
-		{Path: "/api/v1/server/admin/session", Methods: []string{http.MethodPost}},
+	routes := []middleware.PublicRoute{
 		{
 			PathPrefix: "/v1/voiceagent/sessions/",
 			PathSuffix: "/ws",
@@ -63,9 +62,37 @@ func serverPublicRoutes() []middleware.PublicRoute {
 		{PathPrefix: "/v1/wakeword/models/", Methods: []string{http.MethodGet, http.MethodHead}},
 		{PathPrefix: "/v1/wakeword/files/", Methods: []string{http.MethodGet, http.MethodHead}},
 	}
+	if !envBoolDefault(config.ServerOperatorUIPublicEnv, true) {
+		return routes
+	}
+
+	onboardingEnabled := envBoolDefault(config.ServerOnboardingUIEnv, true)
+	assistantEnabled := envBoolDefault(config.ServerAssistantUIEnv, true)
+	if assistantEnabled {
+		routes = append(routes,
+			middleware.PublicRoute{Path: "/assistant", Methods: []string{http.MethodGet, http.MethodHead}},
+			middleware.PublicRoute{PathPrefix: "/assistant/", Methods: []string{http.MethodGet, http.MethodHead}},
+		)
+	}
+	if onboardingEnabled || assistantEnabled {
+		routes = append(routes,
+			middleware.PublicRoute{Path: "/v1/server/settings", Methods: []string{http.MethodGet, http.MethodHead}},
+			middleware.PublicRoute{Path: "/api/v1/server/settings", Methods: []string{http.MethodGet, http.MethodHead}},
+		)
+	}
+	if onboardingEnabled {
+		routes = append(routes,
+			middleware.PublicRoute{Path: "/v1/server/admin/session", Methods: []string{http.MethodPost}},
+			middleware.PublicRoute{Path: "/api/v1/server/admin/session", Methods: []string{http.MethodPost}},
+		)
+	}
+	return routes
 }
 
 func serverBootstrapPaths() []string {
+	if !envBoolDefault(config.ServerOperatorUIPublicEnv, true) {
+		return nil
+	}
 	return []string{"/setup", "/setup/"}
 }
 
@@ -74,6 +101,9 @@ func serverAdminUIPaths() []string {
 }
 
 func serverBootstrapAuthRoutes() []middleware.PublicRoute {
+	if !envBoolDefault(config.ServerOperatorUIPublicEnv, true) {
+		return nil
+	}
 	return []middleware.PublicRoute{
 		{Path: "/v1/server/settings", Methods: []string{http.MethodGet, http.MethodHead, http.MethodPatch}},
 		{Path: "/api/v1/server/settings", Methods: []string{http.MethodGet, http.MethodHead, http.MethodPatch}},
