@@ -202,6 +202,17 @@ IDs, source paths, and other maintainer-only vocabulary.
 
 ### Fixed
 
+* **meetings:** rolling summaries keep only the JSON the model was asked for.
+  Answers wrapped in a code fence or padded with a sentence no longer pollute
+  the rollups and the Meeting Review, and an empty answer is retried instead
+  of being recorded as a finished summary. Summaries stored earlier are
+  cleaned on the way out.
+* **meetings:** a summary step interrupted by a restart no longer shows
+  "Summarizing" forever. Leftover steps are retried on the next pass, and a
+  rollup whose previous attempt never finished is redone.
+* **meetings:** a Meeting Review that a restart interrupted resumes on its own
+  once the local model is up, instead of waiting for a manual retry; the
+  activity log names the meeting being resumed.
 * **voice-agent:** speech spoken while the agent is still talking is no longer
   lost without a trace. When the microphone mute swallows more than half a
   second of your reply, the activity log says how much was dropped and why,
