@@ -46,7 +46,11 @@ type ToolCall struct {
 	Locale    string
 	Selection string
 	Context   string
-	Target    any
+	// Target is the host destination for insertion or execution, carried
+	// unchanged from the recording that triggered the call. Pass a value
+	// implementing [speechkit.OutputTarget]; untyped values are accepted until
+	// the field becomes OutputTarget in v0.69.0.
+	Target any
 }
 
 type ToolResult struct {

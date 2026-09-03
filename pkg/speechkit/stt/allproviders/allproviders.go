@@ -217,8 +217,7 @@ type RouterConfig struct {
 	// strategy order, analogous to tts.EnabledProviders.PreferredProfileID.
 	PreferredProfileID string
 	// OnProviderSelected is installed as the router's per-instance observer
-	// (stt.Router.OnProviderSelected). Hosts wire audit logging here instead
-	// of the deprecated process-wide stt.SetProviderSelectedObserver.
+	// (stt.Router.OnProviderSelected). Hosts wire audit logging here.
 	OnProviderSelected stt.ProviderSelectedObserver
 }
 
@@ -346,7 +345,7 @@ type EnabledProviders struct {
 	Extra       []stt.STTProvider
 	// Secrets is handed to every constructed provider that resolves
 	// credentials lazily (currently Google streaming). Nil falls back to the
-	// deprecated process-wide stt.SetSecretResolver, then the environment.
+	// process environment.
 	Secrets stt.SecretResolver
 }
 

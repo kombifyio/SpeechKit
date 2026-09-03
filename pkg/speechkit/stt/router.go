@@ -39,31 +39,10 @@ var sttTracer = otel.Tracer("github.com/kombifyio/SpeechKit/pkg/speechkit/stt")
 // user-facing transcription, so the callback has no error return.
 type ProviderSelectedObserver func(ctx context.Context, providerName string, strategy Strategy)
 
-// legacyProviderSelectedObserver backs the deprecated package-level
-// SetProviderSelectedObserver. It is consulted only when the Router has no
-// OnProviderSelected of its own.
-var legacyProviderSelectedObserver atomic.Value // ProviderSelectedObserver
-
-// SetProviderSelectedObserver installs a process-wide observer used by every
-// Router that has no OnProviderSelected of its own. Passing nil removes it.
-//
-// Deprecated: set Router.OnProviderSelected (or
-// allproviders.RouterConfig.OnProviderSelected) so each router instance
-// reports to its own host. The process-wide setter remains for hosts that
-// still rely on it.
-func SetProviderSelectedObserver(fn func(ctx context.Context, providerName string, strategy Strategy)) {
-	legacyProviderSelectedObserver.Store(ProviderSelectedObserver(fn))
-}
-
-// emitProviderSelected notifies the router's observer, falling back to the
-// deprecated process-wide observer when none is set on the instance.
+// emitProviderSelected notifies the router's per-instance observer.
 func (r *Router) emitProviderSelected(ctx context.Context, providerName string, strategy Strategy) {
 	if r.OnProviderSelected != nil {
 		r.OnProviderSelected(ctx, providerName, strategy)
-		return
-	}
-	if fn, _ := legacyProviderSelectedObserver.Load().(ProviderSelectedObserver); fn != nil {
-		fn(ctx, providerName, strategy)
 	}
 }
 
@@ -93,9 +72,7 @@ type Router struct {
 	ConnectivityProbe string
 
 	// OnProviderSelected, when set, is called after every successful routed
-	// transcription. It scopes audit reporting to this router instance; when
-	// nil the deprecated process-wide observer (SetProviderSelectedObserver)
-	// is used instead.
+	// transcription. It scopes audit reporting to this router instance.
 	OnProviderSelected ProviderSelectedObserver
 
 	internetOnline atomic.Bool

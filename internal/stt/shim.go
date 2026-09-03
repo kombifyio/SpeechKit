@@ -83,7 +83,6 @@ var (
 	ParseDeepgramKeyterms       = deepgram.ParseKeyterms
 	ValidateModelPath           = local.ValidateModelPath
 	FindWhisperBinary           = local.FindWhisperBinary
-	SetSecretResolver           = pkgstt.SetSecretResolver
 	NewGoogleSTTProvider        = google.New
 	NewDeepgramProvider         = deepgram.New
 	NewAssemblyAIProvider       = assemblyai.New

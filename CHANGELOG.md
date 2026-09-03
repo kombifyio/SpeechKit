@@ -13,14 +13,31 @@ IDs, source paths, and other maintainer-only vocabulary.
 
 ### Added
 
+* **sdk:** `speechkit.OutputTarget` is the typed contract for the `Target`
+  values carried from `RecordingStartOptions`, `dictation.RuntimeOptions`,
+  `DictationStreamSinkOptions`, `TranscriptionJob` and `assist.ToolCall` to
+  `TranscriptOutput.Deliver` / `TranscriptInterceptor.Intercept`. Hosts
+  implement `TargetKind()` on their own target types or use
+  `speechkit.TargetRef{Kind, ID}`; `speechkit.TargetKind(any)` classifies any
+  value (`"opaque"` for legacy untyped targets). Well-known kinds are
+  `window`, `editor` and `clipboard`; accepted kinds are documented in
+  `docs/speechkit-framework-api.md`. The `Target any` fields keep accepting
+  untyped values for one minor and become `OutputTarget` in v0.69.0.
+* **desktop:** Settings → Integrations now shows how far each integration is
+  implemented. Every card carries a maturity pill (Ready / Partial / Planned /
+  Unavailable) and per-mode tags derived from the provider catalog matrix;
+  modes without a runtime profile render as dashed "planned" tags, and
+  integrations without any implemented mode (or unavailable in this build,
+  e.g. managed Hugging Face) are greyed out with their toggle, setup and
+  credential controls disabled. Cloudflare appears as a planned tile.
 * **sdk:** STT hooks are now per instance instead of process-wide.
   `stt.Router.OnProviderSelected` replaces the global
   `stt.SetProviderSelectedObserver`, `stt.SecretResolver` (set via
   `allproviders.EnabledProviders.Secrets` / `google.Provider.SecretResolver`)
   replaces `stt.SetSecretResolver`, and `local.Provider.LowerSubprocessPriority`
   overrides `local.SetSubprocessPriorityLowered`. Two routers or providers in
-  one process no longer share hidden state; the old globals remain as
-  deprecated fallbacks.
+  one process no longer share hidden state; the old STT globals were removed
+  in the same release (see Removed).
 * **sdk:** a Native Requirements table in `docs/architecture/sdk-surface-boundary.md`
   (linked from the README) lists the few packages that need cgo or an external
   binary and how each fails closed. `wakeword.NewPipeline` and
@@ -91,6 +108,10 @@ IDs, source paths, and other maintainer-only vocabulary.
 
 ### Changed
 
+* **catalog:** The provider runtime registry now matches the catalog matrix:
+  OpenAI advertises Voice Agent (realtime), Deepgram no longer advertises
+  Assist (it has no LLM profile), and `tts.local.piper` is a first-class,
+  non-experimental profile since the Piper runtime ships in the framework.
 * **sdk:** BREAKING — the root package `speechkit` now holds contracts and
   value types only; implementations moved one level down. Importing the root
   no longer pulls in the provider catalog or the capture pipeline. Migration
@@ -128,8 +149,63 @@ IDs, source paths, and other maintainer-only vocabulary.
 * **meetings:** the meeting note window closes when the meeting finishes,
   instead of staying open and looking like the recording is still running.
 
+### Deprecated
+
+* **api:** `POST /api/v1/meeting/snapshot` is deprecated and will be removed in
+  v0.69.0. Every response now carries `Deprecation: true`, a `Sunset` date and
+  a `Link` header with `rel="successor-version"`. Capture screenshots with
+  `POST /api/v1/recording-sessions/{sessionId}/snapshots` (resolve the live
+  meeting via `GET /api/v1/recording-sessions?kind=meeting&limit=1`). The
+  desktop frontend already uses the session-scoped route.
+
+### Removed
+
+* **sdk (breaking, `breaking-api-approved`):** the process-wide STT hooks
+  deprecated for the v0.65 window and the deviceagent v0 compatibility
+  surface are gone (decision `dcda`: the `speechkit.device_agent.v1`
+  protocol is final). Migration table (apidiff `v0.67.0..HEAD`,
+  `pkg/speechkit/stt` and `pkg/speechkit/deviceagent`):
+
+  | Removed symbol | Replacement |
+  | --- | --- |
+  | `stt.SetSecretResolver(fn)` | per-provider `SecretResolver` field (e.g. `google.Provider.SecretResolver`) or `allproviders.EnabledProviders.Secrets` |
+  | `stt.ResolveSecret(name)` | `stt.SecretResolver(nil).Resolve(name)` / `stt.EnvSecretResolver(name)`; hosts keep their own resolver (`internal/config.ResolveSecret` in this repo) |
+  | `stt.SetProviderSelectedObserver(fn)` | `stt.Router.OnProviderSelected` or `allproviders.RouterConfig.OnProviderSelected` |
+  | `deviceagent.ProtocolVersion` (`…v0`) | `deviceagent.CurrentProtocolVersion` (`speechkit.device_agent.v1`) |
+  | `deviceagent.Config.ServerToken` | `Config.PairingToken` |
+  | `deviceagent.Config.HomeAssistantURL/Token/Agent` | none — Home Assistant authority is server-owned (`[assist.home_assistant]` in the server config) |
+  | `deviceagent.Config.HTTPClient` | none — the agent owns its loopback-only, no-redirect transport |
+  | `deviceagent.Capabilities.LocalPairing` | `RegistrationAck.Pairing` (server-attested) |
+  | `deviceagent.Registration.Pairing`, `type deviceagent.Pairing` | `RegistrationAck` pairing and capability state |
+  | `deviceagent.CycleResult.HomeAssistantRaw` | none — raw HA responses never cross the v1 boundary |
+  | `deviceagent.ErrLegacyClientConfig`, `ErrMissingHomeAssistantURL`, `ErrMissingHomeAssistantToken` | no longer reachable; `New` validates v1 fields only |
+
+  `internal/stt.SetSecretResolver` (alias) was removed with it. Nothing in
+  this repository, the examples or the public export used the removed
+  symbols; `Router` without `OnProviderSelected` now simply emits nothing.
+
 ### Fixed
 
+* **local-stt:** the bundled whisper-server no longer fail-fasts with
+  `0xc0000409` on a fresh install when the model lives under a non-ASCII path
+  (for example a Windows profile with an umlaut). SpeechKit now hands the child
+  an ASCII-only `--model` argument and runs it inside the model directory. If
+  local STT still cannot start, the activity log names the exit code with a
+  readable cause and announces whether dictation is offline or falling back to
+  a named cloud provider instead of switching silently.
+* **voice-agent:** activation audit events no longer record provider `unknown`
+  when the live session does not report a name; the identity falls back to the
+  configured `[voice_agent].provider` backend, and server delegation is
+  recorded with the `server` transport.
+* **meeting:** the screenshot hotkey no longer fails silently. Capture errors
+  (protected window, missing capture backend, store failures) now reach the
+  activity log exactly like the notepad camera button, and pressing the hotkey
+  outside a live meeting logs why nothing was captured.
+* **meeting:** the screenshot window picker now gives clear hover feedback.
+  The window under the cursor is framed with a DPI-scaled highlight border
+  and its content is dimmed with a translucent wash, so it is unmistakable
+  which window a click would capture. Previously the frame was a 3 px
+  hairline that was easy to miss on scaled displays.
 * **meeting:** the picked-window screenshot picker never appeared and every
   camera-button click ended in "Screenshot cancelled." — the overlay border
   windows were created with the module handle in `CreateWindowExW`'s `hMenu`

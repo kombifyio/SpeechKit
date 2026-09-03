@@ -65,8 +65,11 @@ type RecordingObserver interface {
 type RecordingStartOptions struct {
 	// Context scopes provider-native streaming sessions. When nil,
 	// context.Background is used.
-	Context     context.Context
-	Label       string
+	Context context.Context
+	Label   string
+	// Target is the host delivery target carried to every transcript this
+	// recording produces. Pass a value implementing [OutputTarget]; untyped
+	// values are accepted until the field becomes OutputTarget in v0.69.0.
 	Target      any
 	Language    string
 	QuickNote   bool

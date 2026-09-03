@@ -58,7 +58,11 @@ type Options struct {
 	// Output.Deliver as its target argument. The runtime never inspects it; it
 	// exists so a host can route one Output to several destinations (an editor
 	// handle, a window id, a "clipboard" marker) without a per-target Output.
-	// Nil is valid and means "the Output's default destination".
+	// Nil is valid and means "the Output's default destination". Pass a value
+	// implementing [speechkit.OutputTarget] (for example
+	// speechkit.TargetRef{Kind: speechkit.TargetKindEditor, ID: "notes"});
+	// untyped values are accepted until the field becomes OutputTarget in
+	// v0.69.0.
 	Target any
 	// MinPCMBytes is the shortest recording that is transcribed; shorter
 	// recordings fail Stop with ErrAudioTooShort. <= 0 means

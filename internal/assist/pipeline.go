@@ -179,7 +179,7 @@ type ProcessOpts struct {
 	Locale    string // "de", "en", etc.
 	Selection string // Currently selected text
 	Context   string // Additional free-form context (speaker labels, host hints, …)
-	Target    any    // Host-specific target for insertion/execution
+	Target    any    // Host-specific target for insertion/execution; see speechkit.OutputTarget
 
 	// ActiveApp and WindowTitle describe the foreground application the
 	// user is in when they trigger Assist. Adapters populate these from

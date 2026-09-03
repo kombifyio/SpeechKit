@@ -159,8 +159,9 @@ func (p *Provider) StartServer(ctx context.Context) error {
 	}
 
 	threads := defaultWhisperThreads()
+	modelArg, workDir := whisperModelArgument(p.ModelPath)
 	args := []string{
-		"--model", p.ModelPath,
+		"--model", modelArg,
 		"--host", "127.0.0.1",
 		"--port", fmt.Sprintf("%d", p.Port),
 		"--threads", strconv.Itoa(threads),
@@ -173,6 +174,7 @@ func (p *Provider) StartServer(ctx context.Context) error {
 	}
 
 	cmd := exec.CommandContext(ctx, binaryPath, args...) // #nosec G204 -- binaryPath is resolved by findWhisperBinary from bundle/managed locations or explicit dev opt-in.
+	cmd.Dir = workDir
 	configureHiddenProcess(cmd, subprocessPriorityLowered(p.LowerSubprocessPriority))
 	cmd.Stdout = os.Stderr // whisper-server logs to stdout
 	cmd.Stderr = os.Stderr
@@ -182,7 +184,10 @@ func (p *Provider) StartServer(ctx context.Context) error {
 	// build silently ignores "auto"/"cuda" and transcription scales with
 	// audio length). whisper-server's own startup banner on stderr names the
 	// backend it actually initialised — check it when latency looks CPU-bound.
-	slog.Info("starting whisper-server", "binary", binaryPath, "args", args, "threads", threads, "gpu_mode", p.GPU)
+	slog.Info("starting whisper-server", "binary", binaryPath, "args", args, "dir", workDir, "threads", threads, "gpu_mode", p.GPU)
+	if modelArg == p.ModelPath && !isASCII(modelArg) {
+		slog.Warn("whisper-server model path contains non-ASCII characters that cannot be passed through argv safely; move the model to an ASCII-only path if startup fails", "model", p.ModelPath)
+	}
 	if err := cmd.Start(); err != nil {
 		return fmt.Errorf("start whisper-server: %w", err)
 	}
@@ -305,7 +310,11 @@ func (p *Provider) recordProcessExit(ctx context.Context, cmd *exec.Cmd, done ch
 		if expected {
 			p.processErr = nil
 		} else if waitErr != nil {
-			p.processErr = fmt.Errorf("whisper-server exited unexpectedly: %w", waitErr)
+			if cause := describeProcessExit(waitErr); cause != "" {
+				p.processErr = fmt.Errorf("whisper-server exited unexpectedly (%s): %w", cause, waitErr)
+			} else {
+				p.processErr = fmt.Errorf("whisper-server exited unexpectedly: %w", waitErr)
+			}
 		} else {
 			p.processErr = fmt.Errorf("whisper-server exited unexpectedly")
 		}

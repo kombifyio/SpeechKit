@@ -1377,7 +1377,14 @@ paths:
     post:
       tags: [Data]
       operationId: captureLiveMeetingSnapshot
+      deprecated: true
       summary: Overlay shortcut — capture a screen snapshot into whichever meeting is live right now.
+      description: |
+        Deprecated since v0.68.0 and scheduled for removal in v0.69.0. Every
+        response carries `Deprecation: true`, a `Sunset` date and a `Link`
+        header with `rel="successor-version"`. Resolve the live meeting via
+        `GET /api/v1/recording-sessions?kind=meeting&limit=1` and capture with
+        `POST /api/v1/recording-sessions/{sessionId}/snapshots` instead.
       security:
         - ControlPlaneHeader: []
         - ControlPlaneCookie: []

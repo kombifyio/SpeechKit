@@ -540,7 +540,7 @@ func TestTranscriptionWorkerProcessesJobs(t *testing.T) {
 			Prefix:       "\n\n",
 			QuickNote:    true,
 		},
-		Target: "editor",
+		Target: speechkit.TargetRef{Kind: speechkit.TargetKindEditor, ID: "notes"},
 	}); err != nil {
 		t.Fatalf("Submit() error = %v", err)
 	}
@@ -562,6 +562,14 @@ func TestTranscriptionWorkerProcessesJobs(t *testing.T) {
 	}
 	if got, want := output.delivered[0].transcript.Text, "\n\nhello world"; got != want {
 		t.Fatalf("delivered transcript = %q, want %q", got, want)
+	}
+	// The typed OutputTarget must reach the host output unchanged so a host can
+	// route by kind without asserting its own concrete type.
+	if got, want := speechkit.TargetKind(output.delivered[0].target), speechkit.TargetKindEditor; got != want {
+		t.Fatalf("delivered target kind = %q, want %q (target=%#v)", got, want, output.delivered[0].target)
+	}
+	if ref, ok := output.delivered[0].target.(speechkit.TargetRef); !ok || ref.ID != "notes" {
+		t.Fatalf("delivered target = %#v, want the submitted TargetRef", output.delivered[0].target)
 	}
 }
 

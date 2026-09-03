@@ -41,7 +41,7 @@ type Provider struct {
 	// SecretResolver resolves the streaming credential env names
 	// (STTCredentialsJSONEnv, ApplicationCredentialsEnv, GOOGLE_CLOUD_PROJECT)
 	// when they are not present in the process environment. Nil falls back to
-	// the process-wide stt.SetSecretResolver, then to the environment.
+	// the process environment.
 	SecretResolver stt.SecretResolver
 	client         *http.Client
 }

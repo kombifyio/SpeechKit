@@ -55,6 +55,9 @@ type DictationStreamSink interface {
 // DictationStreamSinkOptions carries host metadata needed to commit final
 // provider-stream events through the same path as batch transcription.
 type DictationStreamSinkOptions struct {
+	// Target is the host delivery target of the final transcript; see
+	// [OutputTarget]. Untyped values are accepted until the field becomes
+	// OutputTarget in v0.69.0.
 	Target             any
 	QuickNote          bool
 	QuickNoteID        int64

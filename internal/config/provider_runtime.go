@@ -496,7 +496,7 @@ var providerRuntimeRegistry = []ProviderRuntime{
 		CredentialTarget:   "openai",
 		CredentialRequired: true,
 		SetupURL:           "https://platform.openai.com/api-keys",
-		SupportedModes:     []framework.Mode{framework.ModeDictation, framework.ModeAssist, framework.ModeTTS},
+		SupportedModes:     []framework.Mode{framework.ModeDictation, framework.ModeAssist, framework.ModeVoiceAgent, framework.ModeTTS},
 		UserConfigurable:   true,
 	},
 	{
@@ -529,7 +529,7 @@ var providerRuntimeRegistry = []ProviderRuntime{
 		CredentialTarget:   "deepgram",
 		CredentialRequired: true,
 		SetupURL:           "https://console.deepgram.com/",
-		SupportedModes:     []framework.Mode{framework.ModeDictation, framework.ModeAssist, framework.ModeVoiceAgent, framework.ModeTTS},
+		SupportedModes:     []framework.Mode{framework.ModeDictation, framework.ModeVoiceAgent, framework.ModeTTS},
 		UserConfigurable:   true,
 	},
 	{

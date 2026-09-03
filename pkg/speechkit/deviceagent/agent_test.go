@@ -213,61 +213,6 @@ func TestNewFailsClosedForMissingBindingAndPublicServer(t *testing.T) {
 	}
 }
 
-func TestNewRejectsDeprecatedCredentialAndTransportConfiguration(t *testing.T) {
-	base := Config{
-		ServerURL:                "http://127.0.0.1:8080",
-		PairingToken:             testAgentPairingToken,
-		ExpectedServerInstanceID: "homelab-1",
-		ExpectedPairingID:        "pairing-kitchen",
-	}
-	tests := []struct {
-		name   string
-		mutate func(*Config)
-	}{
-		{name: "server token", mutate: func(cfg *Config) { cfg.ServerToken = "legacy-server-token" }},
-		{name: "HA URL", mutate: func(cfg *Config) { cfg.HomeAssistantURL = "http://127.0.0.1:8123" }},
-		{name: "HA token", mutate: func(cfg *Config) { cfg.HomeAssistantToken = "legacy-ha-token" }},
-		{name: "HA agent", mutate: func(cfg *Config) { cfg.HomeAssistantAgent = "conversation.home_assistant" }},
-		{name: "custom HTTP client", mutate: func(cfg *Config) { cfg.HTTPClient = &http.Client{} }},
-	}
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			cfg := base
-			tc.mutate(&cfg)
-			if _, err := New(cfg); !errors.Is(err, ErrLegacyClientConfig) {
-				t.Fatalf("New error = %v, want %v", err, ErrLegacyClientConfig)
-			}
-		})
-	}
-}
-
-func TestDeprecatedAuthorityFieldsNeverEnterTheWireContract(t *testing.T) {
-	registration, err := json.Marshal(Registration{
-		Version: CurrentProtocolVersion,
-		Capabilities: Capabilities{
-			Assist:       true,
-			LocalPairing: true,
-		},
-		Pairing: Pairing{Status: "paired", Method: "legacy-device-assertion"},
-	})
-	if err != nil {
-		t.Fatalf("marshal registration: %v", err)
-	}
-	for _, forbidden := range []string{"local_pairing", "legacy-device-assertion", `"pairing"`} {
-		if strings.Contains(string(registration), forbidden) {
-			t.Fatalf("registration leaked deprecated field %q: %s", forbidden, registration)
-		}
-	}
-
-	result, err := json.Marshal(CycleResult{HomeAssistantRaw: "legacy-secret-bearing-response"})
-	if err != nil {
-		t.Fatalf("marshal cycle result: %v", err)
-	}
-	if strings.Contains(string(result), "legacy-secret-bearing-response") || strings.Contains(string(result), "home_assistant_raw") {
-		t.Fatalf("cycle result leaked deprecated Home Assistant payload: %s", result)
-	}
-}
-
 func TestRegisterRejectsChangedServerIdentity(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set(ServerInstanceHeader, "different-server")

@@ -762,7 +762,7 @@ func DefaultProviderProfiles() []speechkit.ProviderProfile {
 			Provider:      "piper",
 			ModelID:       "rhasspy/piper",
 			Source:        "Local Built-in",
-			Description:   "Piper offline neural TTS — the canonical Home Assistant Voice engine. MIT-licensed, ~50 MB per voice, broad multilingual voice catalog. Phase-3 runtime via piper subprocess.",
+			Description:   "Piper offline neural TTS — the canonical Home Assistant Voice engine. MIT-licensed, ~50 MB per voice, broad multilingual voice catalog. Runs through the SpeechKit piper subprocess adapter; configure binary and voice directory under [tts.piper].",
 			License:       "mit",
 			Capabilities:  []speechkit.Capability{speechkit.CapabilityTTS},
 			AdapterKind:   "piper_local",
@@ -772,8 +772,7 @@ func DefaultProviderProfiles() []speechkit.ProviderProfile {
 				{ID: "piper.en.amy-medium", Name: "Amy (EN, Medium)", ModelID: "en_US-amy-medium.onnx"},
 				{ID: "piper.en.lessac-medium", Name: "Lessac (EN, Medium)", ModelID: "en_US-lessac-medium.onnx"},
 			},
-			AllowInference: false,
-			Experimental:   true,
+			AllowInference: true,
 		},
 		{
 			ID:             "tts.openedai.kokoro",

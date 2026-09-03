@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/kombifyio/SpeechKit/internal/secrets"
+	framework "github.com/kombifyio/SpeechKit/pkg/speechkit"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/catalog"
 )
 
@@ -16,6 +17,40 @@ func TestProviderRuntimeRegistryCoversFrameworkMatrix(t *testing.T) {
 	}
 	if got := len(ProviderRuntimes()); got < 10 {
 		t.Fatalf("provider runtime registry has %d providers, want at least 10", got)
+	}
+}
+
+// Every mode the catalog can serve for a provider must be declared on its
+// runtime row, otherwise Settings hides a working capability (this is how the
+// OpenAI Realtime voice agent went missing from the Integrations card).
+func TestProviderRuntimeRegistryDeclaresEveryCatalogBackedMode(t *testing.T) {
+	featureModes := map[catalog.ProviderFeature]framework.Mode{
+		catalog.ProviderFeatureDictation:     framework.ModeDictation,
+		catalog.ProviderFeatureAssist:        framework.ModeAssist,
+		catalog.ProviderFeatureRealtimeVoice: framework.ModeVoiceAgent,
+		catalog.ProviderFeatureTTS:           framework.ModeTTS,
+	}
+	for _, row := range catalog.DefaultProviderMatrix() {
+		runtime, ok := ProviderRuntimeFor(row.Provider)
+		if !ok {
+			t.Fatalf("provider runtime registry missing framework provider %q", row.Provider)
+		}
+		declared := map[framework.Mode]bool{}
+		for _, mode := range runtime.SupportedModes {
+			declared[framework.NormalizeMode(mode)] = true
+		}
+		for feature, mode := range featureModes {
+			support, ok := row.Feature(feature)
+			if !ok {
+				continue
+			}
+			switch support.Support {
+			case catalog.ProviderSupportNative, catalog.ProviderSupportRouted, catalog.ProviderSupportCascaded:
+				if !declared[mode] {
+					t.Errorf("%s: catalog serves %s (%s) but runtime row does not declare %s", row.Provider, feature, support.Support, mode)
+				}
+			}
+		}
 	}
 }
 

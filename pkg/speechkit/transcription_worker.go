@@ -53,7 +53,11 @@ type TranscriptionDraftObserver interface {
 type TranscriptionJob struct {
 	Submission
 	Segments []Submission
-	Target   any
+	// Target is the host delivery target forwarded unchanged to
+	// [TranscriptOutput.Deliver] and [TranscriptInterceptor.Intercept]. Pass a
+	// value implementing [OutputTarget]; untyped values are accepted until the
+	// field becomes OutputTarget in v0.69.0.
+	Target any
 }
 
 func (j TranscriptionJob) Clone() TranscriptionJob {

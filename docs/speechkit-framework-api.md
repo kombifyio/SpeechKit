@@ -72,6 +72,27 @@ Use `speechkit.RuntimePolicy` to constrain embedded deployments:
 
 The Windows desktop app remains the reference host and provider/model test bench. It can expose all profiles and switch between them, while embedded product integrations can use the same catalog with a narrower policy.
 
+### Output targets
+
+Every recording carries a delivery target from `RecordingStartOptions.Target`
+(or `dictation.RuntimeOptions.Target`, `DictationStreamSinkOptions.Target`,
+`TranscriptionJob.Target`, `assist.ToolCall.Target`) unchanged to
+`TranscriptOutput.Deliver` and `TranscriptInterceptor.Intercept`. The framework
+never inspects it. Hosts describe their targets with `speechkit.OutputTarget`:
+
+| Kind constant | Meaning | Typical host value |
+| --- | --- | --- |
+| `TargetKindWindow` (`"window"`) | inject into a native OS window | Windows host `output.Target{HWND}` |
+| `TargetKindEditor` (`"editor"`) | in-app editor or text buffer | `speechkit.TargetRef{Kind: "editor", ID: "notes"}` |
+| `TargetKindClipboard` (`"clipboard"`) | copy only, do not inject | `speechkit.TargetRef{Kind: "clipboard"}` |
+| `TargetKindNone` (`""`) | the Output's default destination | `nil` |
+
+Hosts may add kinds prefixed with their product name (`"companion.chat"`).
+`speechkit.TargetKind(target)` reports the kind of any value (`"opaque"` for
+legacy untyped targets) so logs and interceptors can branch without asserting
+host types. The `Target any` fields accept untyped values until v0.69.0, when
+they become `speechkit.OutputTarget`.
+
 ## Embeddable Hands-Free, Wake-Word, TTS, and Events
 
 The current beta line keeps these public SDK packages additive against the existing mode contracts:

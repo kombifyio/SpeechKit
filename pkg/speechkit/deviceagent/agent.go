@@ -20,13 +20,10 @@ import (
 )
 
 const (
-	// ProtocolVersion is the legacy v0 constant retained for source
-	// compatibility. New clients and servers must use CurrentProtocolVersion.
-	//
-	// Deprecated: v0 carries no server-owned pairing or authority guarantees.
-	ProtocolVersion = "speechkit.device_agent.v0"
 	// CurrentProtocolVersion is the only version emitted or accepted by the
-	// credential-minimal local bridge.
+	// credential-minimal local bridge. The v0 protocol constant was removed
+	// in v0.68.0; v0 clients never had server-owned pairing or authority
+	// guarantees.
 	CurrentProtocolVersion   = "speechkit.device_agent.v1"
 	defaultLocale            = "de-DE"
 	defaultUserAgent         = "speechkit-device-agent/1.0"
@@ -42,12 +39,7 @@ const (
 )
 
 var (
-	ErrMissingServerURL = errors.New("speechkit deviceagent: server_url is required")
-	// Deprecated compatibility errors. The v1 client never accepts HA
-	// credentials or authority configuration from the device.
-	ErrMissingHomeAssistantURL        = errors.New("speechkit deviceagent: home_assistant_url is required")
-	ErrMissingHomeAssistantToken      = errors.New("speechkit deviceagent: home_assistant_token is required")
-	ErrLegacyClientConfig             = errors.New("speechkit deviceagent: legacy credential or transport configuration is forbidden")
+	ErrMissingServerURL               = errors.New("speechkit deviceagent: server_url is required")
 	ErrMissingPairingToken            = errors.New("speechkit deviceagent: pairing_token is required")
 	ErrPairingTokenTooShort           = errors.New("speechkit deviceagent: pairing_token must contain at least 32 bytes")
 	ErrPairingTokenInvalid            = errors.New("speechkit deviceagent: pairing_token must be a bounded bearer credential")
@@ -65,19 +57,11 @@ var (
 	ErrTTSBridgeUnavailable           = errors.New("speechkit deviceagent: TTS bridge is not ready")
 )
 
+// Config describes a v1 device agent. Authentication is PairingToken only;
+// Home Assistant authority, credentials and the HTTP transport policy are
+// server-owned and cannot be supplied by the device.
 type Config struct {
-	ServerURL string
-	// Deprecated: v1 authenticates only with PairingToken. Setting this field
-	// makes New fail closed.
-	ServerToken string
-	// Deprecated: Home Assistant authority and credentials are server-owned.
-	// Setting any of these fields makes New fail closed.
-	HomeAssistantURL   string
-	HomeAssistantToken string
-	HomeAssistantAgent string
-	// Deprecated: v1 owns its redirect and local-dial policy. Supplying a
-	// custom client makes New fail closed.
-	HTTPClient               *http.Client
+	ServerURL                string
 	PairingToken             string
 	ExpectedServerInstanceID string
 	ExpectedPairingID        string
@@ -121,9 +105,6 @@ type Capabilities struct {
 	WakewordLocal bool `json:"wakeword_local"`
 	TTS           bool `json:"tts"`
 	BargeIn       bool `json:"barge_in"`
-	// Deprecated: pairing readiness is attested by the server response and is
-	// never serialized from the device.
-	LocalPairing bool `json:"-"`
 }
 
 type Health struct {
@@ -133,23 +114,14 @@ type Health struct {
 	WakeReady    bool   `json:"wake_ready"`
 }
 
+// Registration is the device-asserted half of the v1 handshake. Pairing state
+// is never part of it; the server attests pairing in RegistrationAck.
 type Registration struct {
 	Version      string           `json:"version"`
 	RegisteredAt time.Time        `json:"registered_at"`
 	Device       DeviceDescriptor `json:"device"`
 	Capabilities Capabilities     `json:"capabilities"`
 	Health       Health           `json:"health"`
-	// Deprecated: v1 never accepts device-asserted pairing state.
-	Pairing Pairing `json:"-"`
-}
-
-// Pairing is retained only so v0 consumers continue to compile. The v1 wire
-// contract never serializes or trusts this device-owned assertion.
-//
-// Deprecated: use RegistrationAck pairing and capability state.
-type Pairing struct {
-	Status string `json:"status"`
-	Method string `json:"method"`
 }
 
 type CapabilityState struct {
@@ -277,8 +249,6 @@ type CycleResult struct {
 	TTSProvider    string  `json:"tts_provider,omitempty"`
 	Replayed       bool    `json:"replayed"`
 	Events         []Event `json:"events"`
-	// Deprecated: raw Home Assistant responses never cross the v1 boundary.
-	HomeAssistantRaw string `json:"-"`
 }
 
 type Agent struct {
@@ -289,13 +259,6 @@ type Agent struct {
 }
 
 func New(cfg Config) (*Agent, error) {
-	if strings.TrimSpace(cfg.ServerToken) != "" ||
-		strings.TrimSpace(cfg.HomeAssistantURL) != "" ||
-		strings.TrimSpace(cfg.HomeAssistantToken) != "" ||
-		strings.TrimSpace(cfg.HomeAssistantAgent) != "" ||
-		cfg.HTTPClient != nil {
-		return nil, ErrLegacyClientConfig
-	}
 	serverURL, err := parseLocalBaseURL(cfg.ServerURL)
 	if err != nil {
 		return nil, fmt.Errorf("%w: %w", ErrMissingServerURL, err)
