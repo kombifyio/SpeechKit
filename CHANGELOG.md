@@ -30,6 +30,11 @@ IDs, source paths, and other maintainer-only vocabulary.
 
 ### Changed
 
+* **settings:** the kombify Cloud sign-in is an integration card like every
+  other: brand, category, the modes it serves (Dictate, Meeting, Voice Agent),
+  its availability in this build, the privacy-scope lock when cloud services
+  are blocked, an enable switch and an account dialog with the sign-in code,
+  the bound server and sign-out. It sits with the other integrations.
 * **settings:** General settings take less scrolling. The three network
   scopes sit side by side, Startup and the four modes are compact cards, and
   the Overlay section is a designer: it shows the overlay as your options
