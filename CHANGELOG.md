@@ -23,6 +23,11 @@ IDs, source paths, and other maintainer-only vocabulary.
 
 ### Fixed
 
+* **local model:** the bundled model server no longer spends its answer on a
+  hidden thinking trace. With thinking allowed, summary answers were cut off
+  before the JSON was complete, so the same summary step was retried with the
+  same result and Meeting Reviews stayed empty. Meeting digests, Assist and
+  Voice Agent answers now come back whole.
 * **meetings:** a transcript piece longer than the local model can take is
   summarised in parts instead of being left out: the summary steps, the
   meeting write-up and the model-facing transcript all split such a piece at
