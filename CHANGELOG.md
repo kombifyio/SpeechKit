@@ -23,6 +23,11 @@ IDs, source paths, and other maintainer-only vocabulary.
 
 ### Fixed
 
+* **meetings:** a transcript piece longer than the local model can take is
+  summarised in parts instead of being left out: the summary steps, the
+  meeting write-up and the model-facing transcript all split such a piece at
+  sentence boundaries, so a long uninterrupted stretch of a call still reaches
+  your notes.
 * **meetings:** a stretch of speech too long for the local model no longer
   stalls the whole meeting summary. Such a piece is marked as not summarised
   once and the rest of the meeting continues, instead of the same request being

@@ -4,12 +4,47 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"strings"
 )
 
 // ErrDigestNotJSON is returned when a model answer carries no JSON object or
 // array at all — empty output, or prose without a JSON body.
 var ErrDigestNotJSON = errors.New("meeting digest is not JSON")
+
+// MergeDigests combines the digests of one segment's parts into a single
+// digest: list fields (chronology, topics, decisions, …) are concatenated in
+// part order, any other field keeps the value of the first part that set it.
+// Every input must be a JSON object.
+func MergeDigests(digests []string) (string, error) {
+	merged := map[string]any{}
+	for index, digest := range digests {
+		var fields map[string]any
+		if err := json.Unmarshal([]byte(digest), &fields); err != nil {
+			return "", fmt.Errorf("merge digests: part %d: %w", index+1, err)
+		}
+		for key, value := range fields {
+			existing, seen := merged[key]
+			if !seen {
+				merged[key] = value
+				continue
+			}
+			existingList, existingIsList := existing.([]any)
+			list, isList := value.([]any)
+			if existingIsList && isList {
+				merged[key] = append(existingList, list...)
+			}
+		}
+	}
+	if len(merged) == 0 {
+		return "", ErrDigestNotJSON
+	}
+	out, err := json.Marshal(merged)
+	if err != nil {
+		return "", fmt.Errorf("merge digests: %w", err)
+	}
+	return string(out), nil
+}
 
 // NormalizeDigestJSON extracts the JSON document from a model answer and
 // returns it compacted. Local models routinely wrap the requested JSON in a
