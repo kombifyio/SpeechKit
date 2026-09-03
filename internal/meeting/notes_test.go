@@ -3,6 +3,7 @@ package meeting
 import (
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestFinalizeLimitsExecutiveBriefToFiveStatements(t *testing.T) {
@@ -34,6 +35,34 @@ func TestApplyAnchorsRestoresTheUsersOwnWording(t *testing.T) {
 	}
 	if bullets[1].Text != "Timeline was confirmed." {
 		t.Fatalf("a generated bullet was altered: %q", bullets[1].Text)
+	}
+}
+
+// The file a user copies or saves carries what the app shows: the meeting's
+// title, when it was, the brief, then the sections with owners and dates.
+func TestMarkdownDocumentRendersACompleteFile(t *testing.T) {
+	document := NotesDocument{
+		Locale:         "de",
+		ExecutiveBrief: []string{"Budget approved.", " ", "Launch moves to October."},
+		Sections: []NotesSection{
+			{Slug: "decisions", Title: "Entscheidungen", Bullets: []NotesBullet{{Text: "Ship on Friday"}}},
+			{Slug: "actions", Title: "Aufgaben", Bullets: []NotesBullet{{Text: "Send the deck", Owner: "Anna", Due: "2026-10-01"}}},
+			{Slug: "empty", Title: "Risiken"},
+		},
+	}
+	started := time.Date(2026, 9, 3, 14, 0, 0, 0, time.UTC)
+
+	got := document.MarkdownDocument("Weekly sync", started)
+
+	want := "# Weekly sync\n\n_" + started.Local().Format("2006-01-02 15:04") + " · de_\n\n" +
+		"## Executive brief\n\n- Budget approved.\n- Launch moves to October.\n\n" +
+		"## Entscheidungen\n\n- Ship on Friday\n\n" +
+		"## Aufgaben\n\n- Send the deck (Anna, 2026-10-01)\n"
+	if got != want {
+		t.Fatalf("markdown document:\n%s\nwant:\n%s", got, want)
+	}
+	if untitled := (NotesDocument{}).MarkdownDocument("  ", time.Time{}); untitled != "# Meeting notes\n" {
+		t.Fatalf("empty document = %q, want a title only", untitled)
 	}
 }
 

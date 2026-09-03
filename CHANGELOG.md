@@ -11,6 +11,16 @@ IDs, source paths, and other maintainer-only vocabulary.
 
 ## [Unreleased]
 
+### Added
+
+* **meetings:** notes read as formatted Markdown. The Meeting Review shows a
+  write-up either as citable bullets or as Markdown, your own notes render
+  formatted with a switch back to the source, and the compact notepad gets a
+  Preview button while you type.
+* **meetings:** "Copy Markdown" puts the complete write-up — title, date,
+  language, executive brief and every section — on the clipboard, and
+  "Save .md" writes the same file where you choose.
+
 ### Fixed
 
 * **meetings:** a stretch of speech too long for the local model no longer

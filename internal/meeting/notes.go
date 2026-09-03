@@ -3,6 +3,7 @@ package meeting
 import (
 	"fmt"
 	"strings"
+	"time"
 )
 
 // The note enhancement turns three things into one document: the transcript of
@@ -132,6 +133,47 @@ func (d NotesDocument) Markdown() string {
 		}
 	}
 	return strings.TrimSpace(out.String())
+}
+
+// MarkdownDocument renders the write-up as a complete Markdown file for
+// copying and saving: a title, the date and language, the executive brief and
+// then every section. Markdown() stays the body-only form the app stores and
+// shows next to its own brief panel.
+func (d NotesDocument) MarkdownDocument(title string, startedAt time.Time) string {
+	var out strings.Builder
+	heading := strings.TrimSpace(title)
+	if heading == "" {
+		heading = "Meeting notes"
+	}
+	fmt.Fprintf(&out, "# %s\n\n", heading)
+	meta := make([]string, 0, 2)
+	if !startedAt.IsZero() {
+		meta = append(meta, startedAt.Local().Format("2006-01-02 15:04"))
+	}
+	if locale := strings.TrimSpace(d.Locale); locale != "" {
+		meta = append(meta, locale)
+	}
+	if len(meta) > 0 {
+		fmt.Fprintf(&out, "_%s_\n\n", strings.Join(meta, " · "))
+	}
+	brief := make([]string, 0, len(d.ExecutiveBrief))
+	for _, sentence := range d.ExecutiveBrief {
+		if text := strings.TrimSpace(sentence); text != "" {
+			brief = append(brief, text)
+		}
+	}
+	if len(brief) > 0 {
+		out.WriteString("## Executive brief\n\n")
+		for _, text := range brief {
+			out.WriteString("- " + text + "\n")
+		}
+		out.WriteString("\n")
+	}
+	if body := d.Markdown(); body != "" {
+		out.WriteString(body)
+		out.WriteString("\n")
+	}
+	return strings.TrimSpace(out.String()) + "\n"
 }
 
 // ApplyAnchors replaces the text of every anchored bullet with the note the
