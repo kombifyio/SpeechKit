@@ -32,6 +32,12 @@ IDs, source paths, and other maintainer-only vocabulary.
 
 ### Fixed
 
+* **dashboard:** the window opens at a size that fits the screen it appears
+  on. On a laptop screen at 150 % scaling it used to open taller than the
+  screen, so its bottom and the minimise control were out of reach until it
+  was dragged down on every start. The default is smaller, the minimum fits a
+  13-inch laptop, and a window that would still not fit is shrunk to the
+  visible area and centred once; a size you choose is kept.
 * **meetings:** write-ups of long meetings no longer fail with "could not fit a
   bounded meeting batch" on the local model. The final write-up step now leaves
   room for its own answer, condenses the meeting a second time when the summary
