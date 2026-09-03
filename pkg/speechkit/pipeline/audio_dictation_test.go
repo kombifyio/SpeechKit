@@ -141,6 +141,45 @@ func TestDictationSegmenterEmitsLongIntermediateSegmentAndResetsOnStop(t *testin
 	}
 }
 
+// A speaker (or a call's system audio) that never pauses used to produce one
+// segment for the whole stretch — 13 minutes on 2026-09-03. With a cap the
+// segmenter closes the utterance on time and keeps listening.
+func TestDictationSegmenterCapsContinuousSpeechAtMaxUtterance(t *testing.T) {
+	cap := 2 * time.Second
+	// 5.5 s: two capped segments and a 1.5 s tail above the minimum segment.
+	speechFrames := framesForDuration(5500 * time.Millisecond)
+	vad := &fakeVAD{probs: repeatProb(0.9, speechFrames)}
+	segmenter := NewDictationSegmenter(vad, 64*time.Millisecond)
+	if segmenter == nil {
+		t.Fatal("expected segmenter")
+	}
+	segmenter.SetMaxUtterance(cap)
+
+	if err := segmenter.FeedPCM(repeatFrame(speechFrames)); err != nil {
+		t.Fatalf("FeedPCM: %v", err)
+	}
+	segments := segmenter.DrainReadySegments()
+	if len(segments) != 2 {
+		t.Fatalf("segments = %d, want 2 capped segments from 5.5 s of continuous speech", len(segments))
+	}
+	for index, segment := range segments {
+		if segment.Duration < cap || segment.Duration > cap+dictationFrameDuration() {
+			t.Fatalf("segment %d duration = %s, want about %s", index, segment.Duration, cap)
+		}
+		if segment.Final {
+			t.Fatalf("segment %d must not be final: the speaker is still talking", index)
+		}
+	}
+	// The remaining 1.5 s are still active and come out on stop.
+	stop, err := segmenter.CollectStopSegments(repeatFrame(speechFrames))
+	if err != nil {
+		t.Fatalf("CollectStopSegments: %v", err)
+	}
+	if len(stop) == 0 || !stop[len(stop)-1].Final {
+		t.Fatalf("stop segments = %+v, want the tail as a final segment", stop)
+	}
+}
+
 func TestDictationSegmenterDrainReadySegmentsPreventsStopFallbackDuplicate(t *testing.T) {
 	speechFrames := framesForDuration(DefaultDictationMinIntermediateSegment + dictationFrameDuration())
 	probs := append(repeatProb(0.8, speechFrames), repeatProb(0, 4)...)

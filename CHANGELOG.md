@@ -13,6 +13,18 @@ IDs, source paths, and other maintainer-only vocabulary.
 
 ### Fixed
 
+* **meetings:** a stretch of speech too long for the local model no longer
+  stalls the whole meeting summary. Such a piece is marked as not summarised
+  once and the rest of the meeting continues, instead of the same request being
+  sent again thousands of times; the write-up keeps that passage as plain
+  transcript. The model's "input too long" answer is now recognised as such
+  rather than reported as a sign-in problem.
+* **meetings:** meeting audio is transcribed at least every 90 seconds even
+  when nobody pauses, so the notepad follows a continuous call and each
+  summary step stays small enough for the local model. Previously a call
+  without a 1.5-second pause produced one 13-minute transcript piece.
+* **meetings:** summary batches are sized for the context window the bundled
+  local model server actually runs with.
 * **meetings:** summaries no longer fail for good when the local model server
   is not reachable for a moment. After a start or an update SpeechKit waits for
   the local model before it catches up on pending summaries, a refused

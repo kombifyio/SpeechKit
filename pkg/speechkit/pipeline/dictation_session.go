@@ -16,6 +16,13 @@ const (
 	DefaultDictationParagraphPause         = 4 * time.Second
 	DefaultDictationPadding                = 480 * time.Millisecond
 	DefaultDictationOverlap                = 200 * time.Millisecond
+	// DefaultDictationMaxUtterance is the longest stretch of continuous speech
+	// the segmenter lets accumulate before it closes the segment without
+	// waiting for a pause. Zero disables the cap; hosts that stream segments
+	// live (meeting capture) set one, because a call with no 1.5-second pause
+	// otherwise yields one 13-minute transcript piece that no downstream
+	// model window fits and that the notes cannot show until it ends.
+	DefaultDictationMaxUtterance = 0 * time.Second
 
 	dictationFrameSize       = 512
 	dictationFrameBytes      = dictationFrameSize * speechkit.AudioBytesPerSample
@@ -37,6 +44,7 @@ type DictationSegmenter struct {
 	paragraphPause         time.Duration
 	padding                time.Duration
 	overlap                time.Duration
+	maxUtterance           time.Duration
 	pending                []byte
 	preRoll                []byte
 	active                 []byte
@@ -84,6 +92,18 @@ func NewDictationSegmenter(detector speechkit.VoiceActivityDetector, pauseThresh
 		overlap:                DefaultDictationOverlap,
 		idleSince:              now,
 	}
+}
+
+// SetMaxUtterance caps how long continuous speech may run before the
+// segmenter emits it as an intermediate segment even without a pause. <=0
+// disables the cap (the default).
+func (s *DictationSegmenter) SetMaxUtterance(d time.Duration) {
+	if s == nil {
+		return
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.maxUtterance = d
 }
 
 // SetMinIntermediateSegment configures the minimum active utterance duration
@@ -316,6 +336,18 @@ func (s *DictationSegmenter) feedFrame(frame []byte) ([]speechkit.AudioSegment, 
 		s.active = append(s.active, frame...)
 		s.silenceTime = 0
 		s.idleSilenceTime = 0
+		if s.maxUtterance > 0 && dictationDuration(s.active) >= s.maxUtterance {
+			// Continuous speech past the cap: close the segment here and keep
+			// listening. The speaker has not paused, so the segmenter stays in
+			// speech and the next frame starts the following segment.
+			segment := s.buildSegment(s.active, false)
+			s.active = nil
+			s.tailSilence = nil
+			if segment == nil {
+				return nil, nil
+			}
+			return []speechkit.AudioSegment{*segment}, nil
+		}
 		return nil, nil
 	}
 

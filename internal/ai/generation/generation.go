@@ -187,9 +187,17 @@ func EstimateTokens(text string) int {
 	return (runes + 2) / 3
 }
 
+// LocalContextWindowTokens is the context the bundled llama-server is started
+// with (localllm.DefaultContextSize, `--ctx-size 4096`). Budgets derived from
+// the 8192 default sized meeting batches for a window the local server does
+// not have; the server answered 400 and the batch never fit.
+const LocalContextWindowTokens = 4096
+
 func ConservativeContextWindow(provider, model string) int {
 	name := strings.ToLower(provider + "/" + model)
 	switch {
+	case strings.HasPrefix(name, "local/"):
+		return LocalContextWindowTokens
 	case strings.Contains(name, "qwen3.5-4b-32k"),
 		strings.Contains(name, "mixtral-8x7b-32768"),
 		strings.Contains(name, "llama-3.1"),
