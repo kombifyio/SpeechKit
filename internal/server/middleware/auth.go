@@ -559,6 +559,14 @@ func (a authRuntime) serveAuthenticated(next http.Handler, w http.ResponseWriter
 		if prefs := verifiedVoicePrefsFromRequest(r, id, strings.TrimSpace(a.edgeSecretProvider()), time.Now()); !prefs.IsZero() {
 			ctx = context.WithValue(ctx, voicePrefsCtxKey{}, prefs)
 		}
+		binding, present, err := verifiedVoiceAgentBindingFromRequest(r, id, strings.TrimSpace(a.edgeSecretProvider()))
+		if err != nil {
+			writeAuthError(w)
+			return
+		}
+		if present {
+			ctx = context.WithValue(ctx, voiceAgentBindingCtxKey{}, binding)
+		}
 	}
 	next.ServeHTTP(w, r.WithContext(ctx))
 }

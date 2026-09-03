@@ -128,6 +128,17 @@ type LiveConfigFrame struct {
 	// session tools map these onto the kernel's LiveConfig.Tools; providers
 	// without tool support ignore them.
 	Tools []ToolDefinitionFrame
+	// Registered-agent fields are trusted session state captured at mint time,
+	// never values accepted from the WebSocket start frame.
+	AgentTargetID   string
+	AgentEndpoint   string
+	CapabilityLease string
+	VoiceSessionID  string
+	AISessionID     string
+	OwnerUserID     string
+	OwnerOrgID      string
+	OwnerPlan       string
+	OboSubjectToken string
 }
 
 // LiveMessage is the subset of kernel/internal/voiceagent.LiveMessage the
@@ -317,7 +328,9 @@ type createSessionResponse struct {
 }
 
 type createSessionRequest struct {
-	AISessionID string `json:"ai_session_id,omitempty"`
+	AISessionID   string `json:"ai_session_id,omitempty"`
+	Provider      string `json:"provider,omitempty"`
+	TargetAgentID string `json:"target_agent_id,omitempty"`
 }
 
 type listSessionsResponse struct {
@@ -438,6 +451,13 @@ func (h *Handler) createSession(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	input.AISessionID = strings.TrimSpace(input.AISessionID)
+	input.Provider = normalizeProviderName(input.Provider)
+	input.TargetAgentID = strings.TrimSpace(input.TargetAgentID)
+	binding := middleware.VoiceAgentBindingFromContext(r.Context())
+	if binding.TargetAgentID != "" && (input.Provider != "kombify-agent" || input.TargetAgentID != binding.TargetAgentID) {
+		httpx.WriteError(w, http.StatusForbidden, "voice_agent_binding_mismatch", "registered agent request does not match the edge-authorized target")
+		return
+	}
 
 	session, ticket, err := h.manager.CreateWithAISession(Identity{
 		UserID: id.UserID,
@@ -458,6 +478,7 @@ func (h *Handler) createSession(w http.ResponseWriter, r *http.Request) {
 		// so the session record is the only carrier. Used by the adapter as
 		// defaults when the start frame omits provider or persona_id.
 		session.VoicePrefs = wssession.VoicePrefs(middleware.VoicePrefsFromContext(r.Context()))
+		session.VoiceAgentBinding = wssession.VoiceAgentBinding(binding)
 	}
 	if err != nil {
 		switch {

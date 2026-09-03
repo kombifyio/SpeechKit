@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"os"
 	"sort"
 	"strings"
 	"sync"
@@ -23,12 +24,13 @@ import (
 
 // Supported provider strings for cfg.VoiceAgent.Provider.
 const (
-	ProviderGemini     = "gemini"
-	ProviderOpenAI     = "openai"
-	ProviderDeepgram   = "deepgram"
-	ProviderAssemblyAI = "assemblyai"
-	ProviderCascaded   = "cascaded"
-	ProviderMoshi      = "moshi"
+	ProviderGemini       = "gemini"
+	ProviderOpenAI       = "openai"
+	ProviderDeepgram     = "deepgram"
+	ProviderAssemblyAI   = "assemblyai"
+	ProviderCascaded     = "cascaded"
+	ProviderKombifyAgent = "kombify-agent"
+	ProviderMoshi        = "moshi"
 )
 
 // buildVoiceAgentHandler wires the server-target Voice Agent handler,
@@ -55,7 +57,7 @@ func buildVoiceAgentHandler(ctx context.Context, cfg *config.Config, app *App) (
 	// Cascaded (STT router -> LLM -> TTS). Providers whose keys/deps are
 	// missing are skipped and surfaced in the status line rather than failing
 	// the handler.
-	candidates := dedupeProviders(defaultProvider, ProviderDeepgram, ProviderGemini, ProviderOpenAI, ProviderAssemblyAI, ProviderCascaded)
+	candidates := dedupeProviders(defaultProvider, ProviderDeepgram, ProviderGemini, ProviderOpenAI, ProviderAssemblyAI, ProviderCascaded, ProviderKombifyAgent)
 	factories := make(map[string]vsserver.ProviderFactory, len(candidates))
 	statusByProvider := make(map[string]string, len(candidates))
 	for _, p := range candidates {
@@ -350,6 +352,26 @@ func buildProviderFactory(ctx context.Context, cfg *config.Config, app *App, pro
 			cfg:             cfg,
 		}
 		return factory, status, nil
+
+	case ProviderKombifyAgent:
+		ensureSharedAIDeps(ctx, app)
+		if app.STTRouter == nil {
+			return nil, "degraded: kombify-agent provider needs STT router", errors.New("voiceagent: kombify-agent provider requires STT router")
+		}
+		var ttsImpl vsserver.CascadedTTS
+		if app.TTSRouter != nil {
+			ttsImpl = app.TTSRouter
+		}
+		status := "ready (kombify-agent)"
+		if strings.TrimSpace(os.Getenv("KOMBIFY_A2A_DELEGATION_SIGNING_SECRET")) == "" {
+			status = "degraded: kombify-agent A2A delegation signer is not configured"
+		}
+		return &registeredAgentProviderFactory{
+			deps: vsserver.CascadedDeps{
+				STT: app.STTRouter, SpeakerStreamer: app.STTRouter, TTS: ttsImpl,
+				Config: vsserver.CascadedConfig{TTSFormat: firstNonEmpty(cfg.TTS.Format, "mp3"), TTSSpeed: nonZeroFloat(cfg.TTS.Speed, 1.0)},
+			},
+		}, status, nil
 
 	case ProviderMoshi:
 		// M9b implements this; ship a stub factory that produces helpful
@@ -970,6 +992,16 @@ type cascadedProviderFactory struct {
 	agent           vsserver.CascadedAgent
 	tts             vsserver.CascadedTTS
 	cfg             *config.Config
+}
+
+type registeredAgentProviderFactory struct {
+	deps vsserver.CascadedDeps
+}
+
+func (f *registeredAgentProviderFactory) NewProvider() vsserver.LiveProviderAdapter {
+	return vsserver.NewRegisteredAgentProvider(f.deps, func() string {
+		return os.Getenv("KOMBIFY_A2A_DELEGATION_SIGNING_SECRET")
+	})
 }
 
 func (f *cascadedProviderFactory) NewProvider() vsserver.LiveProviderAdapter {

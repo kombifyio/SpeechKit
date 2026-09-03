@@ -148,6 +148,18 @@ func (a *Adapter) Run(parent context.Context) {
 		a.sendError(ctx, "persona_unresolved", err.Error())
 		return
 	}
+	if a.Session != nil {
+		binding := a.Session.VoiceAgentBinding
+		cfg.AgentTargetID = binding.TargetAgentID
+		cfg.AgentEndpoint = binding.Endpoint
+		cfg.CapabilityLease = binding.Lease
+		cfg.VoiceSessionID = a.Session.ID
+		cfg.AISessionID = a.Session.AISessionID
+		cfg.OwnerUserID = a.Session.Owner.UserID
+		cfg.OwnerOrgID = a.Session.Owner.OrgID
+		cfg.OwnerPlan = a.Session.Owner.Plan
+		cfg.OboSubjectToken = a.Session.BridgeCredential
+	}
 	// Merge server-executed tool definitions from the tool bridge into the
 	// provider config before Connect. Bounded and fail-open to tool-less:
 	// a slow or failing bridge never blocks or kills the voice session.
@@ -291,6 +303,9 @@ func (a *Adapter) applyVoicePrefDefaults(start *StartFrame) (personaFromPref boo
 		return false
 	}
 	prefs := a.Session.VoicePrefs
+	if binding := a.Session.VoiceAgentBinding; binding.TargetAgentID != "" && a.Provider == nil {
+		start.Provider = "kombify-agent"
+	}
 	// Provider default only matters when production provider selection runs
 	// (a.Provider == nil); tests that pre-inject a provider keep their frame.
 	if a.Provider == nil && strings.TrimSpace(start.Provider) == "" {

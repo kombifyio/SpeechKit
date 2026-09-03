@@ -32,6 +32,8 @@ func NormalizeVoiceAgentProviderName(provider string) string {
 		return "openai"
 	case "cascaded", "local-cascaded", "pipeline", "pipeline-fallback", "voice-agent-cascaded", "voice-agent-cascaded-pipeline":
 		return "cascaded"
+	case "kombify-agent", "kombify-cloud", "registered-agent":
+		return "kombify-agent"
 	default:
 		return name
 	}

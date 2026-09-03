@@ -16,6 +16,7 @@ import (
 	"github.com/coder/websocket"
 	"github.com/kombifyio/SpeechKit/internal/server/httpx"
 	"github.com/kombifyio/SpeechKit/internal/server/middleware"
+	"github.com/kombifyio/SpeechKit/internal/server/wssession"
 	"github.com/kombifyio/SpeechKit/internal/store"
 )
 
@@ -127,6 +128,54 @@ func TestCreateSessionCarriesAISessionIntoVoiceEvents(t *testing.T) {
 	}
 	if event.AISessionID != "ai-thread-42" {
 		t.Fatalf("event ai_session_id = %q", event.AISessionID)
+	}
+}
+
+func TestCreateSessionCarriesOnlyMatchingAuthorizedAgentBinding(t *testing.T) {
+	manager := mustManager(t, Options{})
+	handler, err := New(HandlerOptions{
+		Manager: manager,
+		Providers: map[string]ProviderFactory{
+			"default":       staticProviderFactory{provider: newFakeProvider()},
+			"kombify-agent": staticProviderFactory{provider: newFakeProvider()},
+		},
+		DefaultProvider: "default",
+		Persona:         &fakeResolver{},
+	})
+	if err != nil {
+		t.Fatalf("New handler: %v", err)
+	}
+	mux := http.NewServeMux()
+	handler.Mount(mux)
+	binding := middleware.VoiceAgentBinding{
+		TargetAgentID: "mobile-companion",
+		Endpoint:      "https://api.kombify.io/a2a/agents/mobile-companion",
+		Lease:         "lease-secret",
+	}
+	serve := func(body string) *httptest.ResponseRecorder {
+		req := httptest.NewRequest(http.MethodPost, "https://speechkit.test/v1/voiceagent/sessions", strings.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		ctx := middleware.InjectIdentityForTest(req.Context(), middleware.Identity{UserID: "owner", OrgID: "org"})
+		ctx = middleware.InjectVoiceAgentBindingForTest(ctx, binding)
+		rec := httptest.NewRecorder()
+		mux.ServeHTTP(rec, req.WithContext(ctx))
+		return rec
+	}
+
+	if rec := serve(`{"provider":"kombify-agent","target_agent_id":"other"}`); rec.Code != http.StatusForbidden {
+		t.Fatalf("mismatched target status = %d body=%s", rec.Code, rec.Body.String())
+	}
+	rec := serve(`{"provider":"kombify-agent","target_agent_id":"mobile-companion","ai_session_id":"thread-1"}`)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("matching target status = %d body=%s", rec.Code, rec.Body.String())
+	}
+	var response createSessionResponse
+	if err := json.NewDecoder(rec.Body).Decode(&response); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	session, err := manager.Get(response.SessionID)
+	if err != nil || session.VoiceAgentBinding != (wssession.VoiceAgentBinding(binding)) {
+		t.Fatalf("authorized binding was not carried in memory: %+v", session)
 	}
 }
 

@@ -845,10 +845,10 @@ func validateServerProviderURL(name, value string) error {
 
 func validateServerVoiceAgentProvider(provider string) error {
 	switch strings.ToLower(strings.TrimSpace(provider)) {
-	case "", "cascaded", "gemini", "google", "openai", "deepgram", "assemblyai", "moshi":
+	case "", "cascaded", "gemini", "google", "openai", "deepgram", "assemblyai", "kombify-agent", "moshi":
 		return nil
 	default:
-		return fmt.Errorf("voice_agent.provider must be cascaded, gemini/google, openai, deepgram, assemblyai, or moshi")
+		return fmt.Errorf("voice_agent.provider must be cascaded, gemini/google, openai, deepgram, assemblyai, kombify-agent, or moshi")
 	}
 }
 

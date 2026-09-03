@@ -65,6 +65,15 @@ type VoicePrefs struct {
 	VAPersona    string
 }
 
+// VoiceAgentBinding carries a Gateway-authorized registered-agent target from
+// session mint to the ticket-authenticated WebSocket. Lease and endpoint are
+// memory-only and are never included in tickets, API responses, or logs.
+type VoiceAgentBinding struct {
+	TargetAgentID string
+	Endpoint      string
+	Lease         string
+}
+
 // Options configures a SessionManager.
 type Options struct {
 	// TicketSecret signs the one-time WS upgrade tickets. Must be at least
@@ -131,6 +140,8 @@ type ManagedSession struct {
 	// provider or persona; explicit start-frame values always win. Non-secret
 	// names only — safe to log, never keys.
 	VoicePrefs VoicePrefs
+
+	VoiceAgentBinding VoiceAgentBinding
 }
 
 // State captures the session's manager-level lifecycle. The Framework kernel

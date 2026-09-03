@@ -96,6 +96,18 @@ func (s *VoiceAgentSession) SessionID() string {
 // CreateVoiceAgentSession mints a session + ticket. Pair the result with
 // DialVoiceAgent to upgrade to the WebSocket.
 func (c *Client) CreateVoiceAgentSession(ctx context.Context) (*VoiceAgentTicket, error) {
+	return c.CreateVoiceAgentSessionWithOptions(ctx, VoiceAgentSessionOptions{})
+}
+
+type VoiceAgentSessionOptions struct {
+	AISessionID   string `json:"ai_session_id,omitempty"`
+	Provider      string `json:"provider,omitempty"`
+	TargetAgentID string `json:"target_agent_id,omitempty"`
+}
+
+// CreateVoiceAgentSessionWithOptions mints a native/BYO session or selects a
+// hosted registered agent when the caller also presents its capability lease.
+func (c *Client) CreateVoiceAgentSessionWithOptions(ctx context.Context, options VoiceAgentSessionOptions) (*VoiceAgentTicket, error) {
 	var raw struct {
 		SessionID     string `json:"session_id"`
 		WSURL         string `json:"ws_url"`
@@ -103,7 +115,7 @@ func (c *Client) CreateVoiceAgentSession(ctx context.Context) (*VoiceAgentTicket
 		Ticket        string `json:"ticket"`
 		ExpiresAt     string `json:"expires_at"`
 	}
-	if err := c.DoJSON(ctx, http.MethodPost, "/v1/voiceagent/sessions", map[string]any{}, &raw); err != nil {
+	if err := c.DoJSON(ctx, http.MethodPost, "/v1/voiceagent/sessions", options, &raw); err != nil {
 		return nil, err
 	}
 	if raw.SessionID == "" || raw.WSURL == "" || raw.WSSubprotocol == "" || raw.Ticket == "" {

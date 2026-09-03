@@ -3010,6 +3010,12 @@ components:
         ai_session_id:
           type: string
           description: Optional durable agent-conversation identifier bound to this voice session.
+        provider:
+          type: string
+          description: Optional provider. Use kombify-agent with target_agent_id for a Gateway-authorized registered agent.
+        target_agent_id:
+          type: string
+          description: Registered agent target authorized by the Gateway capability lease.
 
     CreateSessionResponse:
       type: object
