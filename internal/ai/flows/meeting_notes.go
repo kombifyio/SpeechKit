@@ -96,24 +96,62 @@ func generateMeetingNotes(ctx context.Context, generator generation.Generator, i
 	// summarised in chunks first and the write-up is built from those notes
 	// rather than from the raw transcript.
 	budget := meetingNotesTranscriptBudget(input.ContextWindowTokens)
-	chunks := meeting.ChunkTranscript(input.Transcript, budget)
+	outputTokens := meetingNotesOutputTokens(input.ContextWindowTokens)
+	synthesisBudget := meetingNotesSynthesisBudget(input.ContextWindowTokens, outputTokens)
 	passes := 0
 
-	if len(chunks) > 1 {
+	condense := func(lines []meeting.TranscriptLine, chunkBudget int) ([]meeting.TranscriptLine, error) {
+		chunks := meeting.ChunkTranscript(lines, chunkBudget)
 		facts := make([]meeting.TranscriptLine, 0, len(chunks)*4)
 		for index, chunk := range chunks {
 			extracted, err := extractMeetingFacts(ctx, generator, input, chunk, index+1, len(chunks))
 			passes++
 			if err != nil {
-				return MeetingNotesOutput{}, err
+				return nil, err
 			}
 			facts = append(facts, extracted...)
+		}
+		return facts, nil
+	}
+
+	if len(meeting.ChunkTranscript(input.Transcript, budget)) > 1 {
+		facts, err := condense(input.Transcript, budget)
+		if err != nil {
+			return MeetingNotesOutput{}, err
 		}
 		input.Transcript = facts
 	}
 
-	document, structured, provider, model, err := writeMeetingNotes(ctx, generator, input)
+	// The synthesis prompt has to leave room for its own answer. A meeting
+	// whose rolling digests alone filled the window was sent anyway and the
+	// local server ran out of context mid-answer ("Context size has been
+	// exceeded.", HTTP 500) — every write-up of a long meeting failed. Condense
+	// again, at most twice, until the facts fit beside the answer.
+	for round := 0; round < 2 && synthesisBudget > 0 && meeting.EstimateTokens(input.Transcript) > synthesisBudget && len(input.Transcript) > 1; round++ {
+		facts, err := condense(input.Transcript, synthesisBudget)
+		if err != nil {
+			return MeetingNotesOutput{}, err
+		}
+		input.Transcript = facts
+	}
+
+	document, structured, provider, model, err := writeMeetingNotes(ctx, generator, input, outputTokens)
 	passes++
+	if err != nil && generation.Kind(err) == generation.ErrorContextLimit && len(input.Transcript) > 1 {
+		// The estimate was still short of the model's tokenizer: halve the
+		// input once more and ask for a shorter answer before giving up.
+		reduced := synthesisBudget / 2
+		if reduced < 400 {
+			reduced = 400
+		}
+		facts, condenseErr := condense(input.Transcript, reduced)
+		if condenseErr != nil {
+			return MeetingNotesOutput{}, condenseErr
+		}
+		input.Transcript = facts
+		document, structured, provider, model, err = writeMeetingNotes(ctx, generator, input, outputTokens*3/4)
+		passes++
+	}
 	if err != nil {
 		return MeetingNotesOutput{}, err
 	}
@@ -174,9 +212,12 @@ func extractMeetingFacts(ctx context.Context, generator generation.Generator, in
 // a model cannot manage that it falls back to prose — notes without provenance
 // beat no notes, and inventing segment ids to fill the gap would be worse than
 // admitting there are none.
-func writeMeetingNotes(ctx context.Context, generator generation.Generator, input MeetingNotesInput) (meeting.NotesDocument, bool, string, string, error) {
+func writeMeetingNotes(ctx context.Context, generator generation.Generator, input MeetingNotesInput, outputTokens int) (meeting.NotesDocument, bool, string, string, error) {
 	system := buildMeetingNotesSystemPrompt(input.Locale)
 	prompt := buildMeetingNotesPrompt(input)
+	if outputTokens <= 0 {
+		outputTokens = meetingNotesOutputTokens(0)
+	}
 
 	resp, err := generator.Generate(ctx, generation.Request{
 		Purpose:         generation.PurposeMeetingSynthesis,
@@ -184,7 +225,7 @@ func writeMeetingNotes(ctx context.Context, generator generation.Generator, inpu
 		System:          system,
 		Prompt:          prompt,
 		StructuredHint:  meetingNotesSchemaHint,
-		MaxOutputTokens: 1800,
+		MaxOutputTokens: outputTokens,
 		Temperature:     0.3,
 	})
 	if err != nil {
@@ -208,7 +249,7 @@ func writeMeetingNotes(ctx context.Context, generator generation.Generator, inpu
 			meetingNotesSchemaHint, text,
 		),
 		StructuredHint:  meetingNotesSchemaHint,
-		MaxOutputTokens: 1800,
+		MaxOutputTokens: outputTokens,
 	})
 	if repairErr == nil {
 		if err := decodeModelJSON(repair.Text, &document); err == nil && document.HasContent() {
@@ -356,6 +397,41 @@ func meetingNotesTranscriptBudget(contextWindowTokens int) int {
 		return 0
 	}
 	budget := contextWindowTokens * 55 / 100
+	if budget < 400 {
+		budget = 400
+	}
+	return budget
+}
+
+// meetingNotesOutputTokens is the answer budget of the synthesis: 1800 for
+// roomy models, three tenths of a small window (at least 900) so the answer
+// still fits beside the prompt in the bundled server's 4096.
+func meetingNotesOutputTokens(contextWindowTokens int) int {
+	if contextWindowTokens <= 0 {
+		return 1800
+	}
+	output := contextWindowTokens * 3 / 10
+	if output < 900 {
+		output = 900
+	}
+	if output > 1800 {
+		output = 1800
+	}
+	return output
+}
+
+// meetingNotesPromptReserveTokens covers the system prompt, the template with
+// its section guidance, the schema hint and the user's anchors.
+const meetingNotesPromptReserveTokens = 800
+
+// meetingNotesSynthesisBudget is how many transcript (or fact) tokens the
+// synthesis prompt may carry: the window minus the answer and the fixed prompt
+// parts. Zero means the window is unknown and nothing is condensed for it.
+func meetingNotesSynthesisBudget(contextWindowTokens, outputTokens int) int {
+	if contextWindowTokens <= 0 {
+		return 0
+	}
+	budget := contextWindowTokens - outputTokens - meetingNotesPromptReserveTokens
 	if budget < 400 {
 		budget = 400
 	}

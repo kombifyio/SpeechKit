@@ -21,8 +21,25 @@ IDs, source paths, and other maintainer-only vocabulary.
   language, executive brief and every section — on the clipboard, and
   "Save .md" writes the same file where you choose.
 
+### Changed
+
+* **meetings:** the Meeting Review toolbar is two rows with one job each. The
+  first row has the tabs and a single "Write up" button whose menu holds the
+  template and language choices — picking a template no longer starts a
+  write-up by itself. The second row belongs to the open tab: the language of
+  the write-up you are reading, "Bullets | Markdown", and an "Export" menu with
+  "Copy as Markdown" and "Save as .md…" in place of three separate buttons.
+
 ### Fixed
 
+* **meetings:** write-ups of long meetings no longer fail with "could not fit a
+  bounded meeting batch" on the local model. The final write-up step now leaves
+  room for its own answer, condenses the meeting a second time when the summary
+  material alone would fill the model window, and retries once with a shorter
+  answer if the model still runs out of room. Summary roll-ups get a larger
+  answer budget, so they are no longer cut off before the JSON is complete.
+* **meetings:** closing the "Save .md" dialog without choosing a file no longer
+  shows an error.
 * **local model:** the bundled model server no longer spends its answer on a
   hidden thinking trace. With thinking allowed, summary answers were cut off
   before the JSON was complete, so the same summary step was retried with the

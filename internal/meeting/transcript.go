@@ -104,6 +104,8 @@ func EstimateTokens(lines []TranscriptLine) int {
 }
 
 func estimateLineTokens(line TranscriptLine) int {
-	// Roughly 3.5 characters per token, plus the per-line label overhead.
-	return len(line.Text)*2/7 + 12
+	// Roughly three bytes per token, plus the per-line label overhead. The
+	// earlier 3.5 undercounted German and, worse, the JSON digests the
+	// rolling summaries feed in: those tokenize at closer to 2.5 bytes.
+	return len(line.Text)/3 + 12
 }
