@@ -43,7 +43,9 @@ IDs, source paths, and other maintainer-only vocabulary.
   room for its own answer, condenses the meeting a second time when the summary
   material alone would fill the model window, and retries once with a shorter
   answer if the model still runs out of room. Summary roll-ups get a larger
-  answer budget, so they are no longer cut off before the JSON is complete.
+  answer budget and are asked to merge compactly, and a summary answer the
+  model stopped mid-way keeps its complete part instead of failing the step on
+  every retry.
 * **meetings:** closing the "Save .md" dialog without choosing a file no longer
   shows an error.
 * **local model:** the bundled model server no longer spends its answer on a
