@@ -132,11 +132,20 @@ func buildVoiceAgentHandler(ctx context.Context, cfg *config.Config, app *App) (
 		LiveKit:            buildLiveKitIssuer(cfg, app),
 		ReadLimit:          cfg.Server.WSReadLimitBytes,
 		ToolRouter:         buildVoiceAgentToolRouter(cfg),
+		Usage:              buildVoiceUsageReporter(),
 	})
 	if err != nil {
 		return nil, status, err
 	}
 	return h, status, nil
+}
+
+func buildVoiceUsageReporter() vsserver.UsageReporter {
+	endpoint := strings.TrimSpace(os.Getenv("KOMBIFY_USAGE_ENDPOINT"))
+	if endpoint == "" {
+		return nil
+	}
+	return vsserver.NewHTTPUsageReporter(endpoint)
 }
 
 // buildVoiceAgentToolRouter constructs the generic tool bridge from

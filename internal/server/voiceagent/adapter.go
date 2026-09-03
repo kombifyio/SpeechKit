@@ -60,6 +60,11 @@ type Adapter struct {
 	// OnClose runs after both pumps have returned. Typically removes the
 	// session from the manager.
 	OnClose func()
+	// OnUsage receives the provider-connected duration exactly once. It is
+	// registered only after Connect succeeds, so pending tickets and failed
+	// provider handshakes are never billed.
+	OnUsage func(VoiceUsage)
+	Clock   func() time.Time
 
 	writeMu sync.Mutex
 	closed  atomicBool
@@ -168,6 +173,26 @@ func (a *Adapter) Run(parent context.Context) {
 		a.sendError(ctx, "provider_connect_failed", err.Error())
 		return
 	}
+	connectedAt := a.now()
+	if a.OnUsage != nil {
+		meteredProvider := normalizeProviderName(start.Provider)
+		if meteredProvider == "" && a.Provider != nil {
+			meteredProvider = normalizeProviderName(a.Provider.Name())
+		}
+		sessionID, aiSessionID := "", ""
+		if a.Session != nil {
+			sessionID = a.Session.ID
+			aiSessionID = a.Session.AISessionID
+		}
+		defer func() {
+			a.OnUsage(VoiceUsage{
+				SessionID:   sessionID,
+				AISessionID: aiSessionID,
+				Provider:    meteredProvider,
+				Duration:    a.now().Sub(connectedAt),
+			})
+		}()
+	}
 	defer func() {
 		if err := a.Provider.Close(); err != nil {
 			slog.Debug("voiceagent: provider close", "err", err)
@@ -265,6 +290,13 @@ func (a *Adapter) Run(parent context.Context) {
 	// Wait for in-flight server-side tool executions before the deferred
 	// provider Close runs; ctx is cancelled so they abort promptly.
 	a.toolWG.Wait()
+}
+
+func (a *Adapter) now() time.Time {
+	if a.Clock != nil {
+		return a.Clock()
+	}
+	return time.Now()
 }
 
 // guardPump converts a panic in a spawned session pump into a clean session

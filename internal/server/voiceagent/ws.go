@@ -213,6 +213,7 @@ type HandlerOptions struct {
 	// execution; all provider tool calls pass through to the client as
 	// before.
 	ToolRouter SessionToolRouter
+	Usage      UsageReporter
 }
 
 // Handler exposes both the HTTP session-creation endpoint and the WS
@@ -232,6 +233,7 @@ type Handler struct {
 	readLimit          int64
 	trustedProxies     httpx.TrustedProxies
 	toolRouter         SessionToolRouter
+	usage              UsageReporter
 }
 
 // New constructs a handler. All options except MaxAllowedClockSkew are
@@ -301,6 +303,7 @@ func New(opts HandlerOptions) (*Handler, error) {
 		readLimit:          readLimit,
 		trustedProxies:     trustedProxies,
 		toolRouter:         opts.ToolRouter,
+		usage:              opts.Usage,
 	}, nil
 }
 
@@ -654,6 +657,16 @@ func (h *Handler) upgradeWS(w http.ResponseWriter, r *http.Request, sessionID st
 		IdleTimeout:     h.idleTimeout,
 		MaxDuration:     h.maxSessionDuration,
 		ToolRouter:      h.toolRouter,
+		OnUsage: func(usage VoiceUsage) {
+			if h.usage == nil || strings.TrimSpace(session.BridgeCredential) == "" {
+				return
+			}
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			if err := h.usage.Report(ctx, session.BridgeCredential, usage); err != nil {
+				slog.Warn("voiceagent: usage report failed", "session_id", session.ID, "err", err)
+			}
+		},
 		OnClose: func() {
 			h.manager.Remove(sessionID)
 		},

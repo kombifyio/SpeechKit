@@ -153,6 +153,7 @@ type adapterTestEnv struct {
 	resolver      *fakeResolver
 	bridgeFactory *fakeMediaBridgeFactory
 	done          chan struct{}
+	usage         chan VoiceUsage
 	idle          time.Duration
 }
 
@@ -168,6 +169,7 @@ func startAdapterEnvWithBridge(t *testing.T, idle time.Duration, provider *fakeP
 		resolver:      resolver,
 		bridgeFactory: bridgeFactory,
 		done:          make(chan struct{}),
+		usage:         make(chan VoiceUsage, 1),
 		idle:          idle,
 	}
 	// The upgrade runs behind the same RequestID middleware the real server
@@ -189,6 +191,7 @@ func startAdapterEnvWithBridge(t *testing.T, idle time.Duration, provider *fakeP
 			Persona:     resolver,
 			IdleTimeout: idle,
 			MediaBridge: bridgeFactory,
+			OnUsage:     func(usage VoiceUsage) { env.usage <- usage },
 			OnClose:     func() { close(env.done) },
 		}
 		adapter.Run(r.Context())
