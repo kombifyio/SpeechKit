@@ -420,9 +420,9 @@ func listOpts(r *http.Request) store.CustomizationListOpts {
 }
 
 func requestScopeRef(w http.ResponseWriter, r *http.Request, fallback speechcustomize.ScopeRef) (speechcustomize.ScopeRef, bool) {
-	ref, explicit, ok := scopeRef(r, fallback)
-	if !ok {
-		httpx.WriteError(w, http.StatusBadRequest, "invalid_scope", "scope must be one of builtin, app, install, org, workspace, user, session")
+	ref, explicit, problem := scopeRef(r, fallback)
+	if problem != "" {
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_scope", problem)
 		return speechcustomize.ScopeRef{}, false
 	}
 	ref = speechcustomize.NormalizeScopeRef(ref)
@@ -439,22 +439,43 @@ func requestScopeRef(w http.ResponseWriter, r *http.Request, fallback speechcust
 	return ref, true
 }
 
-func scopeRef(r *http.Request, fallback speechcustomize.ScopeRef) (speechcustomize.ScopeRef, bool, bool) {
-	if values, exists := r.URL.Query()["scope"]; exists {
+const scopeKindProblem = "scope must be one of builtin, app, install, org, workspace, user, session"
+
+// scopeRef reads the scope selection from the query. It returns the resolved
+// ref, whether the caller selected a scope explicitly, and a non-empty problem
+// message when the query violates the published contract. The contract
+// (docs/server/openapi.v1.yaml) says an empty scope_key is not the same as
+// omitting it and that scope_key only means something next to scope; both
+// used to be accepted silently, which the OpenAPI fuzz gate reports as
+// "API accepted schema-violating request".
+func scopeRef(r *http.Request, fallback speechcustomize.ScopeRef) (speechcustomize.ScopeRef, bool, string) {
+	query := r.URL.Query()
+	keyValues, keyPresent := query["scope_key"]
+	key := ""
+	if keyPresent && len(keyValues) > 0 {
+		key = strings.TrimSpace(keyValues[0])
+	}
+	if keyPresent && key == "" {
+		return speechcustomize.ScopeRef{}, true, "scope_key must not be empty; omit it for unkeyed scopes"
+	}
+	if values, exists := query["scope"]; exists {
 		scope := ""
 		if len(values) > 0 {
 			scope = values[0]
 		}
 		kind := speechcustomize.ScopeKind(scope)
 		if !isPublishedScopeKind(kind) {
-			return speechcustomize.ScopeRef{}, true, false
+			return speechcustomize.ScopeRef{}, true, scopeKindProblem
 		}
-		return speechcustomize.ScopeRef{Kind: kind, Key: strings.TrimSpace(r.URL.Query().Get("scope_key"))}, true, true
+		return speechcustomize.ScopeRef{Kind: kind, Key: key}, true, ""
+	}
+	if keyPresent {
+		return speechcustomize.ScopeRef{}, true, "scope_key requires scope"
 	}
 	if fallback.Kind != "" && !isPublishedScopeKind(fallback.Kind) {
-		return speechcustomize.ScopeRef{}, true, false
+		return speechcustomize.ScopeRef{}, true, scopeKindProblem
 	}
-	return fallback, strings.TrimSpace(string(fallback.Kind)) != "" || strings.TrimSpace(fallback.Key) != "", true
+	return fallback, strings.TrimSpace(string(fallback.Kind)) != "" || strings.TrimSpace(fallback.Key) != "", ""
 }
 
 func isPublishedScopeKind(kind speechcustomize.ScopeKind) bool {

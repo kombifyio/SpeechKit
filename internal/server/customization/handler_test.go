@@ -75,6 +75,14 @@ func TestReadEndpointsRejectInvalidScopeQuery(t *testing.T) {
 		{name: "strict enum", target: "/v1/replacements?scope=tenant"},
 		{name: "empty scope", target: "/v1/replacements?scope="},
 		{name: "spaced scope", target: "/v1/replacements?scope=%20org%20"},
+		// The published contract: an empty scope_key is not the same as
+		// omitting it, and scope_key without scope keys nothing. Both were
+		// silently accepted before (OpenAPI fuzz gate finding, 2026-09-03).
+		{name: "empty scope_key", target: "/v1/replacements?scope=app&scope_key="},
+		{name: "blank scope_key", target: "/v1/replacements?scope=app&scope_key=%20"},
+		{name: "scope_key without scope", target: "/v1/replacements?scope_key=team-a"},
+		{name: "empty scope_key without scope", target: "/v1/replacements?scope_key="},
+		{name: "keyed scope without key", target: "/v1/replacements?scope=user"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			store := &fakeCustomizationStore{}
@@ -84,7 +92,9 @@ func TestReadEndpointsRejectInvalidScopeQuery(t *testing.T) {
 				switch tc.name {
 				case "words":
 					handler = h.words
-				case "replacements", "strict enum", "empty scope", "spaced scope":
+				case "replacements", "strict enum", "empty scope", "spaced scope",
+					"empty scope_key", "blank scope_key", "scope_key without scope",
+					"empty scope_key without scope", "keyed scope without key":
 					handler = h.replacements
 				case "lexicons":
 					handler = h.lexicons

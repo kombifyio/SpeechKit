@@ -75,7 +75,7 @@ IDs, source paths, and other maintainer-only vocabulary.
   `[general]` hotkey backfills, mode-source and session-summary defaults,
   custom-URL auth-mode migration), `LoadConfig`, and the hotkey /
   close-behavior / auth-mode normalisers with their constants — and the
-  desktop app's `internal/config` delegates to it, so a Companion host and the
+  desktop app's own configuration loader delegates to it, so a Companion host and the
   reference app read one `config.toml` identically. `hostconfig.Load` /
   `LoadConfig` return an error wrapping `hostconfig.ErrMalformedConfig` on
   broken TOML instead of silently falling back to defaults; a missing file
@@ -169,7 +169,7 @@ IDs, source paths, and other maintainer-only vocabulary.
   | Removed symbol | Replacement |
   | --- | --- |
   | `stt.SetSecretResolver(fn)` | per-provider `SecretResolver` field (e.g. `google.Provider.SecretResolver`) or `allproviders.EnabledProviders.Secrets` |
-  | `stt.ResolveSecret(name)` | `stt.SecretResolver(nil).Resolve(name)` / `stt.EnvSecretResolver(name)`; hosts keep their own resolver (`internal/config.ResolveSecret` in this repo) |
+  | `stt.ResolveSecret(name)` | `stt.SecretResolver(nil).Resolve(name)` / `stt.EnvSecretResolver(name)`; hosts keep their own resolver |
   | `stt.SetProviderSelectedObserver(fn)` | `stt.Router.OnProviderSelected` or `allproviders.RouterConfig.OnProviderSelected` |
   | `deviceagent.ProtocolVersion` (`…v0`) | `deviceagent.CurrentProtocolVersion` (`speechkit.device_agent.v1`) |
   | `deviceagent.Config.ServerToken` | `Config.PairingToken` |
@@ -180,12 +180,41 @@ IDs, source paths, and other maintainer-only vocabulary.
   | `deviceagent.CycleResult.HomeAssistantRaw` | none — raw HA responses never cross the v1 boundary |
   | `deviceagent.ErrLegacyClientConfig`, `ErrMissingHomeAssistantURL`, `ErrMissingHomeAssistantToken` | no longer reachable; `New` validates v1 fields only |
 
-  `internal/stt.SetSecretResolver` (alias) was removed with it. Nothing in
-  this repository, the examples or the public export used the removed
-  symbols; `Router` without `OnProviderSelected` now simply emits nothing.
+  The matching desktop-side alias of the secret-resolver setter was removed
+  with it. Nothing in this repository, the examples or the public export used
+  the removed symbols; `Router` without `OnProviderSelected` now simply emits
+  nothing.
 
 ### Fixed
 
+* **voice-agent:** speech spoken while the agent is still talking is no longer
+  lost without a trace. When the microphone mute swallows more than half a
+  second of your reply, the activity log says how much was dropped and why,
+  and every session records whether it runs half-duplex (speakers) or with
+  barge-in (headset).
+* **voice-agent:** the activity log names the provider, transport and model
+  that serve a session as soon as audio streams, not only when a fallback
+  occurs.
+* **voice-agent:** a Voice Agent running on AssemblyAI gets the AssemblyAI
+  language-model gateway for its session summary even when AssemblyAI is not
+  enabled as a speech provider. A session that ends without a summary now says
+  why: summaries are turned off, or no finished dialog turn existed yet.
+* **voice-agent:** the conversation window no longer shows a revised
+  transcript twice when the speech recognizer rewrites an earlier word; it now
+  applies the same merge rule as the compact overlay.
+* **overlay:** a late answer or system notice arriving on an idle Assist or
+  Voice Agent overlay no longer pins the overlay on "done"; it returns to idle
+  after the usual delay.
+* **overlay:** placement failures are no longer silent. When the active screen
+  cannot be located, its work area is empty, or the resolved position lands on
+  no monitor, a rate-limited warning appears in the activity log (and in the
+  log file when logging is enabled) instead of nothing.
+* **meetings:** a failed save of rolling summary progress is reported in the
+  activity log once per meeting instead of being dropped, so a Meeting Review
+  that lags behind the transcript has a visible cause.
+* **server:** the customization endpoints reject an empty `scope_key` and a
+  `scope_key` without `scope` with a clear error instead of silently ignoring
+  them, as the API description always stated.
 * **local-stt:** the bundled whisper-server no longer fail-fasts with
   `0xc0000409` on a fresh install when the model lives under a non-ASCII path
   (for example a Windows profile with an umlaut). SpeechKit now hands the child
@@ -236,9 +265,9 @@ IDs, source paths, and other maintainer-only vocabulary.
   everywhere. Registry rows re-verified against vendor docs on 2026-09-02; the
   Gemini Live Translate source URL now points at the model page (the old
   guide URL is gone).
-* **build:** `go build ./...` with `CGO_ENABLED=0` compiles again:
-  `cmd/speechkit-openwakeword` gained a `!cgo` stub `main` that exits with a
-  clear message instead of leaving the package without an entry point.
+* **build:** the whole module compiles again without a C toolchain: the
+  openWakeWord helper program gained a fallback entry point that exits with a
+  clear message instead of leaving the build without one.
 
 
 ## [0.67.0](https://github.com/kombifyio/SpeechKit/compare/v0.66.0...v0.67.0) (2026-09-01)

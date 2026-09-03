@@ -91,3 +91,30 @@ func TestKombifyCloudConnected(t *testing.T) {
 		t.Fatal("loopback should not count as kombify Cloud")
 	}
 }
+
+func TestApplyAssemblyAILLMDefaultsFollowsVoiceAgentProvider(t *testing.T) {
+	// A Voice Agent on AssemblyAI needs the LLM gateway for its session
+	// summary even when the AssemblyAI speech provider toggle is off.
+	cfg := &Config{}
+	cfg.VoiceAgent.Provider = "assemblyai-agent"
+
+	if !AssemblyAILLMGatewayWanted(cfg) {
+		t.Fatal("voice agent on assemblyai should want the LLM gateway")
+	}
+	ApplyAssemblyAILLMDefaults(cfg)
+	if cfg.Providers.AssemblyAI.LLMGatewayBaseURL != DefaultAssemblyAILLMGatewayBaseURL {
+		t.Fatalf("gateway base URL = %q, want default", cfg.Providers.AssemblyAI.LLMGatewayBaseURL)
+	}
+	if cfg.Providers.AssemblyAI.LLMGatewayAgentModel != DefaultAssemblyAILLMGatewayAgentModel {
+		t.Fatalf("agent model = %q, want default", cfg.Providers.AssemblyAI.LLMGatewayAgentModel)
+	}
+	if cfg.Providers.AssemblyAI.Enabled {
+		t.Fatal("wanting the gateway must not flip the speech provider on")
+	}
+
+	other := &Config{}
+	other.VoiceAgent.Provider = "deepgram"
+	if AssemblyAILLMGatewayWanted(other) {
+		t.Fatal("a Deepgram voice agent must not pull in the AssemblyAI gateway")
+	}
+}

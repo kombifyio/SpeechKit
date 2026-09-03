@@ -22,10 +22,11 @@ const (
 )
 
 // ApplyAssemblyAILLMDefaults fills Universal-3.5 Pro and LLM Gateway slots
-// whenever AssemblyAI is enabled, and keeps streaming LLM on so Assist /
-// summaries never start without a native model.
+// whenever AssemblyAI is enabled — as the STT provider or as the Voice Agent
+// backend — and keeps streaming LLM on so Assist / summaries never start
+// without a native model.
 func ApplyAssemblyAILLMDefaults(cfg *Config) {
-	if cfg == nil || !cfg.Providers.AssemblyAI.Enabled {
+	if cfg == nil || !AssemblyAILLMGatewayWanted(cfg) {
 		return
 	}
 	a := &cfg.Providers.AssemblyAI
@@ -48,6 +49,18 @@ func ApplyAssemblyAILLMDefaults(cfg *Config) {
 		a.LLMGatewayAgentModel = DefaultAssemblyAILLMGatewayAgentModel
 	}
 	a.StreamingLLM = true
+}
+
+// AssemblyAILLMGatewayWanted reports whether the AssemblyAI LLM gateway should
+// be configured: the provider is enabled for speech, or a Voice Agent session
+// runs on AssemblyAI and needs the gateway for its summary. Field test
+// 2026-08-28 (rb3c): a Voice Agent on AssemblyAI with the STT toggle off ended
+// every session without a summary and without saying why.
+func AssemblyAILLMGatewayWanted(cfg *Config) bool {
+	if cfg == nil {
+		return false
+	}
+	return cfg.Providers.AssemblyAI.Enabled || EffectiveVoiceAgentProvider(cfg) == "assemblyai"
 }
 
 func assemblyAINeedsFlagshipUpgrade(models string) bool {
