@@ -91,6 +91,11 @@ IDs, source paths, and other maintainer-only vocabulary.
   mirror, Go module path) and the rules that follow; and every
   `dictation.Options` field — including the previously opaque `Target` — is
   documented where pkg.go.dev shows it.
+* **meetings:** after a screenshot is saved, the compact meeting pill unfolds
+  a small preview of the captured image for a few seconds and folds it away
+  again, so you can see at a glance whether the right window was captured.
+  The picture is read from the meeting's local snapshot store; nothing leaves
+  the device.
 * **meetings:** capture ad-hoc screen snapshots during a live meeting by
   selecting the highlighted window, or press the configurable `Ctrl+Alt+S`
   shortcut to capture the monitor under the cursor immediately. Snapshots are
