@@ -108,6 +108,16 @@ IDs, source paths, and other maintainer-only vocabulary.
 
 ### Changed
 
+* **desktop:** a locally built SpeechKit now reports the version the next
+  release would carry (for example 0.67.18) instead of the line baseline
+  0.67.0, so a local install compares correctly against published releases.
+  Builds from a feature branch or with uncommitted changes append
+  `-dev.<commit>` so they cannot be mistaken for a release, and the in-app
+  update check offers such a build the matching published release.
+* **localization:** the six message catalogs ship with a review record
+  (`docs/localization/review-evidence.md`). Non-English catalogs are marked as
+  translation proposals until a named reviewer signs them off, and a catalog
+  cannot change without its record changing with it.
 * **catalog:** The provider runtime registry now matches the catalog matrix:
   OpenAI advertises Voice Agent (realtime), Deepgram no longer advertises
   Assist (it has no LLM profile), and `tts.local.piper` is a first-class,

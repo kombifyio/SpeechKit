@@ -84,9 +84,11 @@ var messageIDs = []MessageID{
 
 var supportedLocales = []string{"en", "de", "es", "zh-Hans", "hi", "ar"}
 
-// The non-English catalogs are translation proposals. Their presence does not
-// constitute the human-review or signed Wave 2 localization evidence required
-// by the workspace localization standard.
+// Review state per catalog lives in docs/localization/review-evidence.md
+// (locale, sha256, review_state, reviewer, date). review_evidence_test.go
+// fails when a catalog changes without its evidence row changing with it, so
+// a non-English catalog is never silently presented as human-reviewed; rows
+// marked "proposal" are machine translations awaiting a named reviewer.
 //
 //go:embed catalogs/*.json
 var catalogFiles embed.FS

@@ -46,6 +46,10 @@ Rules that follow from this:
 2. Install Node.js `24+`.
 3. Install Docker if you want to run the self-host server locally.
 4. Optional: install `gitleaks` for local secret scanning.
+5. Optional but recommended: install [lefthook](https://lefthook.dev/installation/)
+   and run `lefthook install` once. The pre-commit hook runs `gofmt -s -l` on
+   staged Go files (plus golangci-lint and eslint); `mise run fmt:check` is the
+   same gofmt sweep over every tracked Go file and finishes in about a second.
 
 ## Repository Layout
 
