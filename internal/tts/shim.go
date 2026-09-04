@@ -34,6 +34,8 @@ type (
 	HuggingFaceOpts = pkgtts.HuggingFaceOpts
 	Foundry         = pkgtts.Foundry
 	FoundryOpts     = pkgtts.FoundryOpts
+	AzureSpeech     = pkgtts.AzureSpeech
+	AzureSpeechOpts = pkgtts.AzureSpeechOpts
 	Piper           = pkgtts.Piper
 	PiperOpts       = pkgtts.PiperOpts
 	PiperVoiceInfo  = pkgtts.PiperVoiceInfo
@@ -68,6 +70,7 @@ var (
 	NewDeepgram                   = pkgtts.NewDeepgram
 	NewHuggingFace                = pkgtts.NewHuggingFace
 	NewFoundry                    = pkgtts.NewFoundry
+	NewAzureSpeech                = pkgtts.NewAzureSpeech
 	NewPiper                      = pkgtts.NewPiper
 	ListPiperVoices               = pkgtts.ListPiperVoices
 )

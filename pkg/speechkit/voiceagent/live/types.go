@@ -211,6 +211,13 @@ type LiveConfig struct {
 	// outages don't take down a Voice Agent deployment.
 	FallbackModel string
 	APIKey        string
+	// BearerToken mints a short-lived bearer token for the connection when
+	// the host authenticates with an identity provider (Microsoft Entra on
+	// Foundry) instead of a static key. Providers that support it call it at
+	// dial time and send "Authorization: Bearer <token>"; when set it wins
+	// over APIKey, and providers that require a credential accept either.
+	// The framework never acquires tokens itself.
+	BearerToken func(ctx context.Context) (string, error)
 	// Endpoint overrides the provider's default WebSocket base URL. Providers
 	// that speak a shared wire protocol from different hosts use it — e.g.
 	// Microsoft Foundry serves the OpenAI Realtime protocol from

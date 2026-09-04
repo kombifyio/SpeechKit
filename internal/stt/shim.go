@@ -24,19 +24,20 @@ import (
 // Router assembly (single public assembly path shared by the Device- and
 // Server-Targets; see pkg/speechkit/stt.BuildRouter).
 type (
-	RouterConfig     = allproviders.RouterConfig
-	EnabledProviders = allproviders.EnabledProviders
-	LocalOpts        = allproviders.LocalOpts
-	VPSOpts          = allproviders.VPSOpts
-	HuggingFaceOpts  = allproviders.HuggingFaceOpts
-	OpenAIOpts       = allproviders.OpenAIOpts
-	GroqOpts         = allproviders.GroqOpts
-	GoogleOpts       = allproviders.GoogleOpts
-	DeepgramOpts     = allproviders.DeepgramOpts
-	AssemblyAIOpts   = allproviders.AssemblyAIOpts
-	OpenRouterOpts   = allproviders.OpenRouterOpts
-	OllamaOpts       = allproviders.OllamaOpts
-	FoundryOpts      = allproviders.FoundryOpts
+	RouterConfig      = allproviders.RouterConfig
+	EnabledProviders  = allproviders.EnabledProviders
+	LocalOpts         = allproviders.LocalOpts
+	VPSOpts           = allproviders.VPSOpts
+	HuggingFaceOpts   = allproviders.HuggingFaceOpts
+	OpenAIOpts        = allproviders.OpenAIOpts
+	GroqOpts          = allproviders.GroqOpts
+	GoogleOpts        = allproviders.GoogleOpts
+	DeepgramOpts      = allproviders.DeepgramOpts
+	AssemblyAIOpts    = allproviders.AssemblyAIOpts
+	OpenRouterOpts    = allproviders.OpenRouterOpts
+	OllamaOpts        = allproviders.OllamaOpts
+	FoundryOpts       = allproviders.FoundryOpts
+	FoundrySpeechOpts = allproviders.FoundrySpeechOpts
 )
 
 // BuildRouter forwards to the public router assembly SSOT.

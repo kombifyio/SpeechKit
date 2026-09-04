@@ -44,6 +44,21 @@ const (
 // (WebSocket). It mirrors GeminiLive's surface so callers don't need to
 // know which backend is active.
 type Provider struct {
+	// DialURL builds the WebSocket URL from the resolved base URL and the
+	// model (or deployment) to address. nil dials the OpenAI Realtime form
+	// base?model=<model>. Providers that serve this wire protocol from
+	// another host with extra query parameters (Foundry Voice Live) set it.
+	DialURL func(baseURL, model string) string
+	// DialHeaders builds the handshake headers for cfg. nil sends
+	// "Authorization: Bearer" carrying the token from cfg.BearerToken when
+	// the host set one, otherwise cfg.APIKey. Providers with a different
+	// credential header set it; ctx bounds token acquisition.
+	DialHeaders func(ctx context.Context, cfg live.LiveConfig) (http.Header, error)
+	// BuildSession builds the session object sent in session.update. model
+	// is the resolved model and instructions the assembled host prompt. nil
+	// builds the GA OpenAI Realtime session shape.
+	BuildSession func(cfg live.LiveConfig, model, instructions string) map[string]any
+
 	mu         sync.RWMutex
 	conn       *websocket.Conn
 	lastConfig *live.LiveConfig
@@ -77,21 +92,24 @@ func (p *Provider) SessionCapabilities() live.SessionCapabilities {
 // instructions/voice/tools as a session.update, and waits for the
 // session.updated acknowledgement before returning.
 func (p *Provider) Connect(ctx context.Context, cfg live.LiveConfig) error {
-	if strings.TrimSpace(cfg.APIKey) == "" {
+	if strings.TrimSpace(cfg.APIKey) == "" && cfg.BearerToken == nil {
 		return fmt.Errorf("openai realtime: %w", live.ErrMissingAPIKey)
 	}
 	model := resolveOpenAIRealtimeModel(cfg.Model)
-	header := openAIRealtimeHeaders(cfg.APIKey)
+	header, err := p.dialHeaders(ctx, cfg)
+	if err != nil {
+		return fmt.Errorf("openai realtime: %w", err)
+	}
 	baseURL := realtimeBaseURL(cfg)
 
-	dialURL := fmt.Sprintf("%s?model=%s", baseURL, model)
+	dialURL := p.dialURL(baseURL, model)
 	conn, dialResp, err := websocket.Dial(ctx, dialURL, &websocket.DialOptions{
 		HTTPHeader: header,
 	})
 	if err != nil {
 		// Same-provider fallback: retry with FallbackModel when distinct.
 		if fallback := strings.TrimSpace(cfg.FallbackModel); live.ShouldTryFallback(model, fallback) {
-			fallbackURL := fmt.Sprintf("%s?model=%s", baseURL, fallback)
+			fallbackURL := p.dialURL(baseURL, fallback)
 			conn, dialResp, err = websocket.Dial(ctx, fallbackURL, &websocket.DialOptions{
 				HTTPHeader: header,
 			})
@@ -151,6 +169,42 @@ func openAIRealtimeHeaders(apiKey string) http.Header {
 	header := http.Header{}
 	header.Set("Authorization", "Bearer "+apiKey)
 	return header
+}
+
+func (p *Provider) dialURL(baseURL, model string) string {
+	if p.DialURL != nil {
+		return p.DialURL(baseURL, model)
+	}
+	return fmt.Sprintf("%s?model=%s", baseURL, model)
+}
+
+// dialHeaders prefers a host-supplied bearer token source over the static
+// API key so OpenAI-protocol hosts with Entra auth (Foundry) work unchanged.
+func (p *Provider) dialHeaders(ctx context.Context, cfg live.LiveConfig) (http.Header, error) {
+	if p.DialHeaders != nil {
+		return p.DialHeaders(ctx, cfg)
+	}
+	if cfg.BearerToken != nil {
+		token, err := cfg.BearerToken(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("bearer token: %w", err)
+		}
+		if strings.TrimSpace(token) == "" {
+			return nil, errors.New("bearer token: empty token")
+		}
+		return openAIRealtimeHeaders(token), nil
+	}
+	return openAIRealtimeHeaders(cfg.APIKey), nil
+}
+
+func (p *Provider) buildSession(cfg live.LiveConfig, model, instructions string) map[string]any {
+	if p.BuildSession != nil {
+		return p.BuildSession(cfg, model, instructions)
+	}
+	cfg.Model = model
+	session := buildOpenAISession(cfg)
+	session["instructions"] = instructions
+	return session
 }
 
 // UpdateInstructions sends a fresh session.update with new instructions/tools.
@@ -381,8 +435,7 @@ func (p *Provider) sendSessionUpdate(ctx context.Context, cfg live.LiveConfig) e
 	}
 	instructions = live.AppendContextPrompt(instructions, resolved.ContextPrompt)
 
-	session := buildOpenAISession(cfg)
-	session["instructions"] = instructions
+	session := p.buildSession(cfg, resolveOpenAIRealtimeModel(cfg.Model), instructions)
 
 	frame := map[string]any{
 		"type":    "session.update",
@@ -404,14 +457,7 @@ func (p *Provider) sendSessionUpdate(ctx context.Context, cfg live.LiveConfig) e
 
 func buildOpenAISession(cfg live.LiveConfig) map[string]any {
 	resolved := live.ResolveLiveOptions("openai", "realtime.openai.gpt-realtime-2", cfg, nil, nil)
-	activity := cfg.Policies.ActivityDetection
-	if resolved.HasEndpointingOverride() && resolved.EndpointingMs > 0 {
-		activity.Automatic = true
-		activity.SilenceDurationMs = endpointingMsToInt32(resolved.EndpointingMs)
-	}
-	if resolved.HasTurnDetectionOverride() && !resolved.TurnDetection {
-		activity.Automatic = false
-	}
+	activity := ResolveActivityDetection(cfg.Policies.ActivityDetection, resolved)
 	turnDetection := buildOpenAITurnDetection(activity)
 	inputAudio := map[string]any{
 		"format": map[string]any{
@@ -450,6 +496,35 @@ func buildOpenAISession(cfg live.LiveConfig) map[string]any {
 		session["reasoning"] = map[string]any{"effort": effort}
 	}
 	return session
+}
+
+// ResolveActivityDetection applies the resolved endpointing and
+// turn-detection option overrides to the kernel's activity policy: an
+// endpointing override turns automatic detection on with that silence
+// duration, and an explicit turn_detection=false turns it off. Providers
+// that share the Realtime turn_detection contract reuse it.
+func ResolveActivityDetection(policy live.ActivityDetectionPolicy, resolved live.ResolvedLiveOptions) live.ActivityDetectionPolicy {
+	if resolved.HasEndpointingOverride() && resolved.EndpointingMs > 0 {
+		policy.Automatic = true
+		policy.SilenceDurationMs = endpointingMsToInt32(resolved.EndpointingMs)
+	}
+	if resolved.HasTurnDetectionOverride() && !resolved.TurnDetection {
+		policy.Automatic = false
+	}
+	return policy
+}
+
+// BuildTurnDetection translates the kernel's activity policy into the
+// Realtime API's server_vad turn_detection object. nil means push-to-talk:
+// the kernel commits the audio buffer itself.
+func BuildTurnDetection(policy live.ActivityDetectionPolicy) map[string]any {
+	return buildOpenAITurnDetection(policy)
+}
+
+// BuildTools translates kernel tool definitions into Realtime session tool
+// entries. Foundry Voice Live shares the function schema and reuses it.
+func BuildTools(defs []live.ToolDefinition) []map[string]any {
+	return buildOpenAITools(defs)
 }
 
 func endpointingMsToInt32(value int) int32 {

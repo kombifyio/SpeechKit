@@ -20,6 +20,7 @@ import (
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/voiceagent/live/foundry"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/voiceagent/live/gemini"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/voiceagent/live/openai"
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/voiceagent/live/voicelive"
 )
 
 var ErrUnknownLiveProvider = errors.New("speechkit live: unknown provider")
@@ -35,11 +36,12 @@ type ProviderFactoryRegistry map[string]ProviderFactory
 // providers. The returned map is a copy and can be safely modified by callers.
 func DefaultProviderFactories() ProviderFactoryRegistry {
 	return ProviderFactoryRegistry{
-		"google":     func() live.LiveProvider { return gemini.New() },
-		"deepgram":   func() live.LiveProvider { return deepgram.New() },
-		"assemblyai": func() live.LiveProvider { return assemblyai.New() },
-		"openai":     func() live.LiveProvider { return openai.New() },
-		"foundry":    func() live.LiveProvider { return foundry.New() },
+		"google":            func() live.LiveProvider { return gemini.New() },
+		"deepgram":          func() live.LiveProvider { return deepgram.New() },
+		"assemblyai":        func() live.LiveProvider { return assemblyai.New() },
+		"openai":            func() live.LiveProvider { return openai.New() },
+		"foundry":           func() live.LiveProvider { return foundry.New() },
+		"foundry-voicelive": func() live.LiveProvider { return voicelive.New() },
 	}
 }
 

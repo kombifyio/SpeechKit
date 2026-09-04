@@ -27,6 +27,7 @@ import (
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/netsec"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/stt"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/stt/assemblyai"
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/stt/azurespeech"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/stt/deepgram"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/stt/google"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/stt/huggingface"
@@ -57,6 +58,20 @@ type BuildSpec struct {
 	// Google provider so realtime transcription can authenticate.
 	GoogleStreamingCredentialsEnv   string
 	GoogleApplicationCredentialsEnv string
+
+	// FoundrySpeech, when set, builds the Foundry provider on the resource's
+	// Azure Speech surface (MAI-Transcribe) instead of the OpenAI-compatible
+	// route; BaseURL is ignored and FoundrySpeech.Host/APIKey/Model are used.
+	FoundrySpeech *FoundrySpeechOpts
+}
+
+func firstNonEmptyString(values ...string) string {
+	for _, v := range values {
+		if s := strings.TrimSpace(v); s != "" {
+			return s
+		}
+	}
+	return ""
 }
 
 // Build constructs the cloud STT provider for spec and returns its canonical
@@ -169,6 +184,23 @@ var providerRegistry = map[string]providerDescriptor{
 	"foundry": {
 		Name: "foundry",
 		Build: func(spec BuildSpec) (stt.STTProvider, error) {
+			if o := spec.FoundrySpeech; o != nil {
+				host := strings.TrimSpace(o.Host)
+				if host == "" {
+					return nil, fmt.Errorf("stt: foundry (azure speech) requires the Speech host derived from the project endpoint")
+				}
+				apiKey := o.APIKey
+				if apiKey == "" {
+					apiKey = spec.APIKey
+				}
+				return azurespeech.New(azurespeech.Options{
+					Host:        host,
+					APIKey:      apiKey,
+					Model:       firstNonEmptyString(o.Model, spec.ModelID),
+					Style:       o.Style,
+					Diarization: o.Diarization,
+				}), nil
+			}
 			baseURL := strings.TrimSpace(spec.BaseURL)
 			if baseURL == "" {
 				return nil, fmt.Errorf("stt: foundry requires the OpenAI-compatible base URL derived from the project endpoint")
@@ -313,6 +345,20 @@ type (
 		Model   string
 	}
 
+	// FoundrySpeechOpts configures the Microsoft Foundry provider on the
+	// resource's Azure Speech surface (MAI-Transcribe fast transcription).
+	// Host is the Speech custom domain derived from the project endpoint
+	// (myresource.cognitiveservices.azure.com); Model defaults to
+	// "MAI-Transcribe-2". The provider reports the shared "foundry" id, so a
+	// host enables either FoundryOpts or FoundrySpeechOpts, not both.
+	FoundrySpeechOpts struct {
+		APIKey      string
+		Host        string
+		Model       string
+		Style       string // "clean" (default) or "verbatim"
+		Diarization bool
+	}
+
 	// OllamaOpts: BaseURL defaults to "http://localhost:11434" and Model to
 	// the provider default when empty.
 	OllamaOpts struct {
@@ -342,7 +388,10 @@ type EnabledProviders struct {
 	AssemblyAI  *AssemblyAIOpts
 	Google      *GoogleOpts
 	Foundry     *FoundryOpts
-	Extra       []stt.STTProvider
+	// FoundrySpeech routes Foundry dictation to Azure Speech (MAI-Transcribe)
+	// instead of the OpenAI-compatible transcription route.
+	FoundrySpeech *FoundrySpeechOpts
+	Extra         []stt.STTProvider
 	// Secrets is handed to every constructed provider that resolves
 	// credentials lazily (currently Google streaming). Nil falls back to the
 	// process environment.
@@ -446,6 +495,21 @@ func BuildRouter(cfg RouterConfig, enabled EnabledProviders) (router *stt.Router
 			notes = append(notes, "STT: Microsoft Foundry registered (deployment="+model+")")
 		} else {
 			notes = append(notes, "STT: Microsoft Foundry skipped (project endpoint missing)")
+		}
+	}
+	if o := enabled.FoundrySpeech; o != nil {
+		if host := strings.TrimSpace(o.Host); host != "" {
+			p := azurespeech.New(azurespeech.Options{
+				Host:        host,
+				APIKey:      o.APIKey,
+				Model:       o.Model,
+				Style:       o.Style,
+				Diarization: o.Diarization,
+			})
+			cloud = append(cloud, p)
+			notes = append(notes, "STT: Microsoft Foundry registered (Azure Speech model="+p.Model+")")
+		} else {
+			notes = append(notes, "STT: Microsoft Foundry skipped (Speech host missing)")
 		}
 	}
 	for _, p := range enabled.Extra {

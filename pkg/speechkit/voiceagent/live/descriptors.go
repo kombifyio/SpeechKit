@@ -204,6 +204,31 @@ func DefaultProviderDescriptors() []ProviderDescriptor {
 			Transport:       "websocket",
 			EvidenceURL:     "https://learn.microsoft.com/azure/ai-foundry/openai/realtime-audio-quickstart",
 		},
+		{
+			// Voice Live is a separate adapter on the same Foundry resource: a
+			// hosted brain model plus Azure Speech in and out (MAI-Transcribe,
+			// MAI-Voice-2) and server-side semantic turn detection. It is
+			// listed apart from the OpenAI-Realtime-on-Foundry descriptor so
+			// each one only advertises models its wire protocol can dial.
+			Provider:    "foundry-voicelive",
+			DisplayName: "Microsoft Foundry Voice Live",
+			ProfileID:   "realtime.foundry.voice-live",
+			Capabilities: []LiveCapabilityFlag{
+				LiveCapabilityRealtimeAudio,
+				LiveCapabilityToolCalling,
+				LiveCapabilityNativeContextPrompt,
+				LiveCapabilityTranscript,
+				LiveCapabilityInterruptions,
+			},
+			Models:           liveModelsForProvider("foundry-voicelive"),
+			SupportedLocales: []string{"*"},
+			// Voice Live accepts the OpenAI session vocabulary for prompts and
+			// turn detection; the Azure-only fields are provider settings.
+			NativeOptions:   nativeLiveOptions("openai"),
+			AuthRequirement: "api_key",
+			Transport:       "websocket",
+			EvidenceURL:     "https://learn.microsoft.com/azure/ai-services/speech-service/voice-live",
+		},
 	}
 }
 
@@ -257,6 +282,8 @@ func NormalizeProviderID(providerOrProfile string) string {
 		return "assemblyai"
 	case "openai", "openai-realtime", "openai-live", "realtime.openai.gpt-realtime-2":
 		return "openai"
+	case "foundry-voicelive", "foundry-voice-live", "voicelive", "voice-live", "realtime.foundry.voice-live":
+		return "foundry-voicelive"
 	case "foundry", "foundry-realtime", "foundry-live", "foundry-api", "microsoft-foundry", "realtime.foundry.gpt-realtime-2":
 		return "foundry"
 	case "cascaded", "local-cascaded", "pipeline", "pipeline-fallback", "voice-agent-cascaded", "voice_agent.cascaded.pipeline":

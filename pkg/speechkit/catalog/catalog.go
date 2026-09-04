@@ -143,6 +143,33 @@ func DefaultProviderProfiles() []speechkit.ProviderProfile {
 			Recommended:    true,
 		},
 		{
+			// MAI-Transcribe is served by the Azure Speech surface of the same
+			// Foundry resource (fast transcription with enhancedMode), not by
+			// a deployment. The model id is sent verbatim; no deployment
+			// exists to rename.
+			ID:            "stt.foundry.mai-transcribe-2",
+			Mode:          speechkit.ModeDictation,
+			Name:          "MAI-Transcribe-2 (Microsoft Foundry)",
+			ProviderKind:  speechkit.ProviderKindDirectProvider,
+			ExecutionMode: speechkit.ExecutionModeFoundry,
+			Provider:      "foundry",
+			ModelID:       "MAI-Transcribe-2",
+			Lifecycle:     speechkit.ModelLifecyclePreview,
+			Source:        "Microsoft Foundry",
+			Description:   "Microsoft's own speech recognition model through Azure Speech fast transcription on the Foundry resource: 60 languages with automatic language detection, speaker diarization, clean or verbatim transcripts and phrase biasing from Words & Replacements. Public preview.",
+			License:       "proprietary",
+			Capabilities:  []speechkit.Capability{speechkit.CapabilityTranscription, speechkit.CapabilitySTT, speechkit.CapabilityAudioInput, speechkit.CapabilityDictionaryPrompt},
+			AdapterKind:   "stt_router",
+			EvidenceURL:   "https://learn.microsoft.com/azure/ai-services/speech-service/mai-transcribe",
+			Variants: []speechkit.ModelVariant{
+				{ID: "foundry.mai-transcribe-2", Name: "MAI-Transcribe-2 (Preview)", ModelID: "MAI-Transcribe-2", Recommended: true},
+				{ID: "foundry.mai-transcribe-1.5", Name: "MAI-Transcribe-1.5 (Preview)", ModelID: "MAI-Transcribe-1.5", Description: "Previous generation; fewer languages."},
+			},
+			AllowInference: true,
+			Recommended:    true,
+			Experimental:   true,
+		},
+		{
 			ID:             "stt.google.latest-long",
 			Mode:           speechkit.ModeDictation,
 			Name:           "Latest Long (Google STT)",
@@ -334,6 +361,9 @@ func DefaultProviderProfiles() []speechkit.ProviderProfile {
 				{ID: "foundry.gpt-5.2", Name: "GPT-5.2", ModelID: "gpt-5.2"},
 				{ID: "foundry.gpt-5-mini", Name: "GPT-5 mini", ModelID: "gpt-5-mini"},
 				{ID: "foundry.gpt-5-nano", Name: "GPT-5 nano", ModelID: "gpt-5-nano"},
+				// Microsoft-publisher deployment; served on /mai/v1 rather than
+				// /openai/v1, text only, and quota starts at zero until requested.
+				{ID: "foundry.mai-thinking-1", Name: "MAI-Thinking-1 (Preview)", ModelID: "MAI-Thinking-1", Description: "Microsoft's reasoning model (256k context, 64k output). Needs a MAI-Thinking-1 deployment plus a quota request in the Foundry project; text only."},
 			},
 			AllowInference: true,
 			Recommended:    true,
@@ -661,6 +691,48 @@ func DefaultProviderProfiles() []speechkit.ProviderProfile {
 			AllowInference: true,
 			Recommended:    true,
 		},
+		{
+			// Voice Live is Microsoft's managed voice agent on the same Foundry
+			// resource: the brain is any of the models the service hosts (no
+			// deployment needed), speech in comes from MAI-Transcribe, speech
+			// out from a MAI-Voice-2 voice, with Azure semantic VAD, noise
+			// suppression and echo cancellation on the server. The model id is
+			// the brain; voice and transcription live in the Foundry settings.
+			ID:            "realtime.foundry.voice-live",
+			Mode:          speechkit.ModeVoiceAgent,
+			Name:          "Microsoft Foundry Voice Live",
+			ProviderKind:  speechkit.ProviderKindDirectProvider,
+			ExecutionMode: speechkit.ExecutionModeFoundry,
+			Provider:      "foundry-voicelive",
+			ModelID:       "gpt-realtime-2",
+			Lifecycle:     speechkit.ModelLifecycleGA,
+			Source:        "Microsoft Foundry",
+			Description:   "Microsoft-native realtime voice agent: Voice Live pairs a hosted brain model with MAI-Voice-2 speech output and MAI-Transcribe-2 input transcription, plus server-side semantic turn detection and noise suppression. The MAI voice and transcription models are public preview.",
+			License:       "proprietary",
+			Capabilities: []speechkit.Capability{
+				speechkit.CapabilityAudioInput,
+				speechkit.CapabilityRealtimeAudio,
+				speechkit.CapabilityToolCalling,
+				speechkit.CapabilityNativeContextPrompt,
+				speechkit.CapabilityTranscript,
+				speechkit.CapabilityInterruptions,
+				speechkit.CapabilitySessionSummary,
+			},
+			SupportedLocales: []string{"*"},
+			NativeOptions:    []string{"context_prompt", "turn_detection"},
+			AuthRequirement:  "api_key",
+			Transport:        "websocket",
+			EvidenceURL:      "https://learn.microsoft.com/azure/ai-services/speech-service/voice-live",
+			AdapterKind:      "foundry_voicelive",
+			Variants: []speechkit.ModelVariant{
+				{ID: "foundry.voicelive.gpt-realtime-2", Name: "GPT Realtime 2 brain", ModelID: "gpt-realtime-2", Recommended: true},
+				{ID: "foundry.voicelive.gpt-realtime-mini", Name: "GPT Realtime mini brain", ModelID: "gpt-realtime-mini", Description: "Lower cost realtime brain."},
+				{ID: "foundry.voicelive.gpt-5-mini", Name: "GPT-5 mini brain", ModelID: "gpt-5-mini", Description: "Text brain; Voice Live adds speech in and out."},
+				{ID: "foundry.voicelive.phi4-mm-realtime", Name: "Phi-4 multimodal realtime brain", ModelID: "phi4-mm-realtime", Description: "Small Microsoft model for low-latency agents."},
+			},
+			AllowInference: true,
+			Recommended:    true,
+		},
 		// ─── TTS (Voice Output) profile catalog ─────────────────────────────
 		// Added in v0.37 alongside the hands-free Voice-Companion flow so
 		// hosts pin a stable TTS voice per deployment ("Thalia speaks via
@@ -892,6 +964,37 @@ func DefaultProviderProfiles() []speechkit.ProviderProfile {
 			},
 			AllowInference: true,
 			Recommended:    true,
+		},
+		{
+			// MAI-Voice-2 voices are Azure Speech voices on the same Foundry
+			// resource (SSML on the Cognitive Services host), not audio/speech
+			// deployments. Variant ids follow the "<family>|<voice>" shape of
+			// the other TTS profiles; the voice is a Speech short name.
+			ID:            "tts.foundry.mai-voice-2",
+			Mode:          speechkit.ModeTTS,
+			Name:          "MAI-Voice-2 (Microsoft Foundry)",
+			ProviderKind:  speechkit.ProviderKindDirectProvider,
+			ExecutionMode: speechkit.ExecutionModeFoundry,
+			Provider:      "foundry",
+			ModelID:       "MAI-Voice-2",
+			Lifecycle:     speechkit.ModelLifecyclePreview,
+			Source:        "Microsoft Foundry",
+			Description:   "Microsoft's expressive text to speech through Azure Speech on the Foundry resource. MAI-Voice-2 is the high-fidelity voice family, MAI-Voice-2-Flash the low-latency one for agents; both offer 18 locales and emotion styles. Public preview.",
+			License:       "proprietary",
+			Capabilities:  []speechkit.Capability{speechkit.CapabilityTTS},
+			AdapterKind:   "foundry_tts",
+			EvidenceURL:   "https://learn.microsoft.com/azure/ai-services/speech-service/mai-voices",
+			Variants: []speechkit.ModelVariant{
+				{ID: "foundry.mai-voice-2.de-mia", Name: "Mia, German (MAI-Voice-2)", ModelID: "MAI-Voice-2|de-DE-Mia:MAI-Voice-2", Recommended: true},
+				{ID: "foundry.mai-voice-2.de-klaus", Name: "Klaus, German (MAI-Voice-2)", ModelID: "MAI-Voice-2|de-DE-Klaus:MAI-Voice-2"},
+				{ID: "foundry.mai-voice-2.en-harper", Name: "Harper, English US (MAI-Voice-2)", ModelID: "MAI-Voice-2|en-US-Harper:MAI-Voice-2"},
+				{ID: "foundry.mai-voice-2.en-ethan", Name: "Ethan, English US (MAI-Voice-2)", ModelID: "MAI-Voice-2|en-US-Ethan:MAI-Voice-2"},
+				{ID: "foundry.mai-voice-2-flash.de-mia", Name: "Mia, German (MAI-Voice-2-Flash)", ModelID: "MAI-Voice-2-Flash|de-DE-Mia:MAI-Voice-2-Flash", Description: "Low-latency variant for Voice Agent read-back."},
+				{ID: "foundry.mai-voice-2-flash.en-ethan", Name: "Ethan, English US (MAI-Voice-2-Flash)", ModelID: "MAI-Voice-2-Flash|en-US-Ethan:MAI-Voice-2-Flash", Description: "Low-latency variant for Voice Agent read-back."},
+			},
+			AllowInference: true,
+			Recommended:    true,
+			Experimental:   true,
 		},
 	}
 	for i := range profiles {

@@ -78,7 +78,34 @@ type FoundryProviderConfig struct {
 	// accepted too — only the host is used for inference.
 	ProjectEndpoint string `toml:"project_endpoint"`
 	APIKeyEnv       string `toml:"api_key_env"`
-	// Deployment names per modality (Foundry `model` parameter).
+	// AuthMode selects the credential the adapters send: "api_key" (the
+	// resource key from APIKeyEnv) or "entra" (a short-lived token minted by
+	// the signed-in Microsoft identity). Sign-in flips it to "entra"; the key
+	// path stays selectable because some resources allow both.
+	AuthMode string `toml:"auth_mode"`
+	// EntraCredential picks how the token is obtained in "entra" mode:
+	// "auto" (an Azure CLI session first, then the browser flow when a client
+	// id exists), "azure_cli", "browser" or "device_code".
+	EntraCredential string `toml:"entra_credential"`
+	// EntraTenantID is the sign-in authority ("" = organizations, "common", or
+	// a tenant id); it is also passed to `az login --tenant`.
+	EntraTenantID string `toml:"entra_tenant_id"`
+	// EntraClientID is a bring-your-own public-client app registration for the
+	// browser and device-code flows. Empty falls back to the client id the
+	// product build injects; the open-source build has none, so those two
+	// flows report themselves unavailable and the Azure CLI path remains.
+	EntraClientID string `toml:"entra_client_id"`
+	// AzureCLIPath overrides Azure CLI detection with an explicit az.cmd path.
+	AzureCLIPath string `toml:"azure_cli_path"`
+	// AzureCLIProfile is "shared" (reuse the user's own az session, default)
+	// or "isolated" (a SpeechKit-private AZURE_CONFIG_DIR so signing in never
+	// changes the user's active az account or subscription).
+	AzureCLIProfile string `toml:"azure_cli_profile"`
+	// Deployment names per modality (Foundry `model` parameter). MAI speech
+	// models are not deployments: an STT deployment starting with
+	// "MAI-Transcribe" or a TTS deployment starting with "MAI-Voice" routes
+	// the request to the resource's Azure Speech surface instead of the
+	// OpenAI-compatible route (see STTEngine / TTSEngine).
 	STTDeployment      string `toml:"stt_deployment"`
 	UtilityDeployment  string `toml:"utility_deployment"`
 	AssistDeployment   string `toml:"assist_deployment"`
@@ -86,6 +113,20 @@ type FoundryProviderConfig struct {
 	RealtimeDeployment string `toml:"realtime_deployment"`
 	TTSDeployment      string `toml:"tts_deployment"`
 	TTSVoice           string `toml:"tts_voice"`
+	// STTStyle ("clean" or "verbatim") and STTDiarization apply to the
+	// MAI-Transcribe fast-transcription path only.
+	STTStyle       string `toml:"stt_style"`
+	STTDiarization bool   `toml:"stt_diarization"`
+	// TTSStyle is an optional mstts:express-as style for MAI voices.
+	TTSStyle string `toml:"tts_style"`
+	// Voice Live (Microsoft's managed realtime voice agent) settings: the
+	// brain model, the Azure Speech voice and the input transcription model.
+	// The Voice Live path is selected with [voice_agent] provider =
+	// "foundry-voicelive"; the OpenAI-Realtime-on-Foundry path keeps using
+	// RealtimeDeployment.
+	VoiceLiveModel         string `toml:"voicelive_model"`
+	VoiceLiveVoice         string `toml:"voicelive_voice"`
+	VoiceLiveTranscription string `toml:"voicelive_transcription"`
 }
 
 type OpenAIProviderConfig struct {

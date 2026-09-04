@@ -12,7 +12,12 @@ type EnabledProviders struct {
 	Deepgram    *DeepgramOpts
 	HuggingFace *HuggingFaceOpts
 	Foundry     *FoundryOpts
-	Piper       *PiperOpts
+	// FoundrySpeech routes Foundry speech output to the resource's Azure
+	// Speech surface (MAI-Voice) instead of the OpenAI-compatible route. Both
+	// adapters report the shared "foundry" provider id, so a host enables one
+	// of Foundry / FoundrySpeech, not both.
+	FoundrySpeech *AzureSpeechOpts
+	Piper         *PiperOpts
 	// PreferredProfileID optionally pins the provider matching this
 	// model_selection profile to the front of the strategy order.
 	PreferredProfileID string
@@ -47,6 +52,14 @@ func BuildRouter(strategy Strategy, enabled EnabledProviders) (router *Router, o
 			notes = append(notes, "TTS: Microsoft Foundry registered (deployment="+enabled.Foundry.Model+", voice="+enabled.Foundry.Voice+")")
 		} else {
 			notes = append(notes, "TTS: Microsoft Foundry skipped (project endpoint missing)")
+		}
+	}
+	if enabled.FoundrySpeech != nil {
+		if strings.TrimSpace(enabled.FoundrySpeech.Host) != "" {
+			providers = append(providers, NewAzureSpeech(*enabled.FoundrySpeech))
+			notes = append(notes, "TTS: Microsoft Foundry registered (Azure Speech voice="+enabled.FoundrySpeech.Voice+")")
+		} else {
+			notes = append(notes, "TTS: Microsoft Foundry skipped (Speech host missing)")
 		}
 	}
 	if enabled.Piper != nil {

@@ -12,6 +12,7 @@ import (
 	livefoundry "github.com/kombifyio/SpeechKit/pkg/speechkit/voiceagent/live/foundry"
 	livegemini "github.com/kombifyio/SpeechKit/pkg/speechkit/voiceagent/live/gemini"
 	liveopenai "github.com/kombifyio/SpeechKit/pkg/speechkit/voiceagent/live/openai"
+	livevoicelive "github.com/kombifyio/SpeechKit/pkg/speechkit/voiceagent/live/voicelive"
 )
 
 // Concrete realtime providers (formerly internal/voiceagent.{GeminiLive,…}).
@@ -19,6 +20,7 @@ type (
 	GeminiLive     = livegemini.Provider
 	OpenAILive     = liveopenai.Provider
 	FoundryLive    = livefoundry.Provider
+	VoiceLive      = livevoicelive.Provider
 	DeepgramLive   = livedeepgram.Provider
 	AssemblyAILive = liveassemblyai.Provider
 
@@ -41,6 +43,7 @@ var (
 	NewGeminiLive     = livegemini.New
 	NewOpenAILive     = liveopenai.New
 	NewFoundryLive    = livefoundry.New
+	NewVoiceLive      = livevoicelive.New
 	NewDeepgramLive   = livedeepgram.New
 	NewAssemblyAILive = liveassemblyai.New
 )

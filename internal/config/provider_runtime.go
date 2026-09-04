@@ -113,6 +113,10 @@ func NormalizeProviderCredentialTarget(target string) string {
 	switch provider {
 	case "openai", "groq", "google", "deepgram", "assemblyai", "huggingface", "openrouter", "cloudflare", "foundry":
 		return provider
+	case "foundry-voicelive", "foundry-realtime", "microsoft-foundry":
+		// Every Foundry surface (OpenAI-compatible, Voice Live, Azure Speech)
+		// authenticates with the one resource key from [providers.foundry].
+		return "foundry"
 	default:
 		return provider
 	}
@@ -381,7 +385,7 @@ func ProviderEnabled(cfg *Config, provider string, mode framework.Mode) bool {
 		return cfg.Providers.Cloudflare.Enabled
 	case "openrouter":
 		return cfg.Providers.OpenRouter.Enabled
-	case "foundry":
+	case "foundry", "foundry-voicelive":
 		return cfg.Providers.Foundry.Enabled
 	case "openedai", "selfhosted":
 		return true
@@ -432,7 +436,7 @@ func SetProviderEnabled(cfg *Config, provider string, enabled bool) error {
 		if enabled {
 			EnableAlwaysOnLLM(cfg)
 		}
-	case "foundry":
+	case "foundry", "foundry-voicelive":
 		cfg.Providers.Foundry.Enabled = enabled
 		if enabled {
 			EnableAlwaysOnLLM(cfg)
@@ -564,6 +568,20 @@ var providerRuntimeRegistry = []ProviderRuntime{
 		SetupURL:           "https://ai.azure.com",
 		SupportedModes:     []framework.Mode{framework.ModeDictation, framework.ModeAssist, framework.ModeVoiceAgent, framework.ModeTTS},
 		UserConfigurable:   true,
+	},
+	{
+		// Voice Live is a second realtime surface of the same Foundry
+		// resource: it shares the [providers.foundry] credential, endpoint
+		// and enable flag, so it is not user-configurable on its own.
+		Provider:           "foundry-voicelive",
+		DisplayName:        "Microsoft Foundry Voice Live",
+		ProviderKind:       framework.ProviderKindDirectProvider,
+		IntegrationKind:    ProviderIntegrationDirectAPI,
+		CredentialTarget:   "foundry",
+		CredentialRequired: true,
+		SetupURL:           "https://ai.azure.com",
+		SupportedModes:     []framework.Mode{framework.ModeVoiceAgent},
+		UserConfigurable:   false,
 	},
 	{
 		// Piper is in the framework catalog as a Local Built-in TTS engine

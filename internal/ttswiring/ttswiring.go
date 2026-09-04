@@ -99,18 +99,35 @@ func ResolveEnabledProviders(cfg *config.Config) (tts.EnabledProviders, []string
 	}
 
 	// Foundry TTS reuses the shared AZURE_AI_API_KEY and project endpoint from
-	// [providers.foundry] (no separate credential).
+	// [providers.foundry] (no separate credential). MAI-Voice deployments are
+	// served by the resource's Azure Speech surface; everything else goes
+	// through the OpenAI-compatible /audio/speech route.
 	if cloudAllowed && cfg.TTS.Foundry.Enabled {
 		if apiKey := providerCredential(cfg, "foundry"); apiKey != "" {
-			baseURL, err := config.FoundryOpenAIBase(cfg.Providers.Foundry.ProjectEndpoint)
-			if err != nil {
-				notes = append(notes, "TTS: Microsoft Foundry enabled but project endpoint is invalid: "+err.Error())
+			foundry := cfg.Providers.Foundry
+			if foundry.TTSEngine() == config.FoundryEngineSpeech {
+				host, err := config.FoundrySpeechHost(foundry.ProjectEndpoint)
+				if err != nil {
+					notes = append(notes, "TTS: Microsoft Foundry enabled but project endpoint is invalid: "+err.Error())
+				} else {
+					enabled.FoundrySpeech = &tts.AzureSpeechOpts{
+						Host:   host,
+						APIKey: apiKey,
+						Voice:  firstNonEmpty(cfg.TTS.Foundry.Voice, foundry.ResolvedTTSVoice()),
+						Style:  strings.TrimSpace(foundry.TTSStyle),
+					}
+				}
 			} else {
-				enabled.Foundry = &tts.FoundryOpts{
-					APIKey:  apiKey,
-					BaseURL: baseURL,
-					Model:   firstNonEmpty(cfg.TTS.Foundry.Model, cfg.Providers.Foundry.ResolvedTTSDeployment()),
-					Voice:   firstNonEmpty(cfg.TTS.Foundry.Voice, cfg.Providers.Foundry.TTSVoice, cfg.TTS.Voice, config.DefaultFoundryTTSVoice),
+				baseURL, err := config.FoundryOpenAIBase(foundry.ProjectEndpoint)
+				if err != nil {
+					notes = append(notes, "TTS: Microsoft Foundry enabled but project endpoint is invalid: "+err.Error())
+				} else {
+					enabled.Foundry = &tts.FoundryOpts{
+						APIKey:  apiKey,
+						BaseURL: baseURL,
+						Model:   firstNonEmpty(cfg.TTS.Foundry.Model, foundry.ResolvedTTSDeployment()),
+						Voice:   firstNonEmpty(cfg.TTS.Foundry.Voice, foundry.TTSVoice, cfg.TTS.Voice, config.DefaultFoundryTTSVoice),
+					}
 				}
 			}
 		}

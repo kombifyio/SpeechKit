@@ -223,9 +223,14 @@ WebSocket `start.provider` field. Accepted values include `gemini`/`google`,
 realtime profile IDs such as `realtime.google.gemini-native-audio`,
 `realtime.google.gemini-live-translate`,
 `realtime.deepgram.voice-agent`, `realtime.assemblyai.voice-agent`,
-`realtime.openai.gpt-realtime-2`, and `realtime.foundry.gpt-realtime-2`.
+`realtime.openai.gpt-realtime-2`, `realtime.foundry.gpt-realtime-2`, and
+`realtime.foundry.voice-live` (provider id `foundry-voicelive`).
 Microsoft Foundry sessions reuse the OpenAI Realtime wire protocol against the
-Foundry `/openai/v1/realtime` endpoint with `AZURE_AI_API_KEY` auth.
+Foundry `/openai/v1/realtime` endpoint; Voice Live sessions dial the Foundry
+`/voice-live/realtime` endpoint and add MAI-Voice-2 output, MAI-Transcribe-2
+input transcription and Azure semantic turn detection. Both authenticate with
+`AZURE_AI_API_KEY` or an Entra bearer token from the signed-in Microsoft
+account.
 Per-session switching resolves provider-specific API keys and model defaults,
 so an OpenAI session does not inherit a Gemini model and an AssemblyAI session
 does not inherit a Gemini model.

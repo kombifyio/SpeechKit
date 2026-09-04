@@ -609,6 +609,14 @@ func providerDisplayName(provider string) string {
 		return "AssemblyAI"
 	case "groq":
 		return "Groq"
+	case "foundry":
+		return "Microsoft Foundry"
+	case "foundry-voicelive":
+		return "Microsoft Foundry Voice Live"
+	case "cloudflare":
+		return "Cloudflare"
+	case "piper":
+		return "Piper"
 	case "openedai":
 		return "OpenAI-compatible local"
 	case "selfhosted":
@@ -628,7 +636,11 @@ func providerOrderIndex(provider string) int {
 		"google",
 		"deepgram",
 		"assemblyai",
+		"foundry",
+		"foundry-voicelive",
 		"groq",
+		"cloudflare",
+		"piper",
 		"openedai",
 		"selfhosted",
 	}

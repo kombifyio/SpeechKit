@@ -32,6 +32,8 @@ type BuildSpec struct {
 	// Google provider so realtime transcription can authenticate.
 	GoogleStreamingCredentialsEnv   string
 	GoogleApplicationCredentialsEnv string
+	// FoundrySpeech routes the Foundry provider to Azure Speech (MAI-Transcribe).
+	FoundrySpeech *FoundrySpeechOpts
 }
 
 // Build forwards to the public pkg/speechkit/stt registry, converting the
@@ -48,5 +50,6 @@ func Build(spec BuildSpec) (string, STTProvider, error) {
 		Deepgram:                        spec.Deepgram,
 		GoogleStreamingCredentialsEnv:   spec.GoogleStreamingCredentialsEnv,
 		GoogleApplicationCredentialsEnv: spec.GoogleApplicationCredentialsEnv,
+		FoundrySpeech:                   spec.FoundrySpeech,
 	})
 }
