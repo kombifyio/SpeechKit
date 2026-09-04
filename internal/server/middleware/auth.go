@@ -34,8 +34,9 @@ type Identity struct {
 type identityCtxKey struct{}
 
 // EdgeOboSubjectTokenHeader is the default request header a fronting proxy
-// uses to hand the server an opaque per-session credential (e.g. an RFC 8693
-// subject token for on-behalf-of exchange downstream). The header is honoured
+// uses to hand the server an opaque, short-lived per-session credential (for
+// hosted Companion sessions this is the Gateway-minted AI OBO result, never
+// the caller's raw login JWT). The header is honoured
 // ONLY on requests whose identity was established via edge-HMAC — a bearer,
 // admin, smoke, or anonymous caller can present the header but it is ignored,
 // so a client can never smuggle a credential past the edge. The value is

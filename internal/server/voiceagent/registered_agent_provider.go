@@ -101,6 +101,7 @@ func registeredAgentHeaders(cfg LiveConfigFrame, secret string) a2a.HeaderProvid
 		_, _ = mac.Write([]byte("v1\nprimary\n" + timestamp + "\n" + encoded))
 		return http.Header{
 			"Authorization":                      {"Bearer " + cfg.OboSubjectToken},
+			"X-Kombify-Capability-Lease":         {cfg.CapabilityLease},
 			"X-Kombify-A2a-Delegation-Context":   {encoded},
 			"X-Kombify-A2a-Delegation-Key-Id":    {"primary"},
 			"X-Kombify-A2a-Delegation-Timestamp": {timestamp},

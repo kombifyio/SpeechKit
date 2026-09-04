@@ -12,15 +12,15 @@ import (
 
 func TestVerifiedVoiceAgentBindingRequiresCompleteValidEdgeDecision(t *testing.T) {
 	id := Identity{UserID: "auth0|owner", OrgID: "org_test"}
-	endpoint := "https://api.kombify.io/a2a/agents/mobile-companion"
+	endpoint := "https://api.kombify.io/a2a/agents/kombify-ai"
 	request := httptest.NewRequest("POST", "/v1/voiceagent/sessions", nil)
-	request.Header.Set(VoiceAgentTargetHeader, "mobile-companion")
+	request.Header.Set(VoiceAgentTargetHeader, "kombify-ai")
 	request.Header.Set(VoiceAgentEndpointHeader, endpoint)
 	request.Header.Set(VoiceAgentLeaseHeader, "lease-token")
-	request.Header.Set(VoiceAgentHMACHeader, bindingHMAC("edge-secret", id, "mobile-companion", endpoint, "lease-token"))
+	request.Header.Set(VoiceAgentHMACHeader, bindingHMAC("edge-secret", id, "kombify-ai", endpoint, "lease-token"))
 
 	binding, present, err := verifiedVoiceAgentBindingFromRequest(request, id, "edge-secret")
-	if err != nil || !present || binding.TargetAgentID != "mobile-companion" || binding.Lease != "lease-token" {
+	if err != nil || !present || binding.TargetAgentID != "kombify-ai" || binding.Lease != "lease-token" {
 		t.Fatalf("valid binding rejected: binding=%+v present=%v err=%v", binding, present, err)
 	}
 

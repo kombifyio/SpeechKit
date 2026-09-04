@@ -124,8 +124,8 @@ type ManagedSession struct {
 	State       State
 	HasWSClient bool // true once the client has upgraded
 
-	// BridgeCredential is the opaque per-session credential the fronting
-	// proxy forwarded at session creation (see middleware
+	// BridgeCredential is the opaque, short-lived delegated credential the
+	// fronting proxy minted and forwarded at session creation (see middleware
 	// EdgeOboSubjectTokenFromContext). The Voice Agent surface sets it at
 	// upgrade time to authorize that session's calls to the external tool
 	// bridge; the streaming-Dictation surface leaves it empty. MEMORY-ONLY

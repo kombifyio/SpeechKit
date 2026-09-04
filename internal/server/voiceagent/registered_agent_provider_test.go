@@ -29,10 +29,10 @@ func TestRegisteredAgentHeadersBindTurnAndDisclosureIsSpokenOnce(t *testing.T) {
 	defer server.Close()
 	agent, err := a2a.New(a2a.Config{
 		Endpoint:      server.URL,
-		TargetAgentID: "mobile-companion",
+		TargetAgentID: "kombify-ai",
 		SessionID:     "thread-1",
 		Headers: registeredAgentHeaders(LiveConfigFrame{
-			AgentTargetID: "mobile-companion", AgentEndpoint: server.URL, CapabilityLease: lease,
+			AgentTargetID: "kombify-ai", AgentEndpoint: server.URL, CapabilityLease: lease,
 			OwnerUserID: "owner", OwnerOrgID: "org", OwnerPlan: "pro", OboSubjectToken: "subject-token",
 		}, "signing-secret"),
 	})
@@ -52,7 +52,10 @@ func TestRegisteredAgentHeadersBindTurnAndDisclosureIsSpokenOnce(t *testing.T) {
 		t.Fatalf("disclosure must occur once: %q err=%v", second.Text, err)
 	}
 	if received.Get("Authorization") != "Bearer subject-token" {
-		t.Fatal("delegated subject token missing")
+		t.Fatal("delegated AI session credential missing")
+	}
+	if received.Get("X-Kombify-Capability-Lease") != lease {
+		t.Fatal("registered-agent capability lease missing")
 	}
 	encoded := received.Get("X-Kombify-A2a-Delegation-Context")
 	timestamp := received.Get("X-Kombify-A2a-Delegation-Timestamp")

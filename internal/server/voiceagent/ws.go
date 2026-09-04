@@ -138,6 +138,8 @@ type LiveConfigFrame struct {
 	OwnerUserID     string
 	OwnerOrgID      string
 	OwnerPlan       string
+	// OboSubjectToken is the short-lived delegated AI session credential
+	// captured at mint time. It is never the owner's raw login JWT.
 	OboSubjectToken string
 }
 

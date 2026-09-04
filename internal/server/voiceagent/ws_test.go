@@ -148,8 +148,8 @@ func TestCreateSessionCarriesOnlyMatchingAuthorizedAgentBinding(t *testing.T) {
 	mux := http.NewServeMux()
 	handler.Mount(mux)
 	binding := middleware.VoiceAgentBinding{
-		TargetAgentID: "mobile-companion",
-		Endpoint:      "https://api.kombify.io/a2a/agents/mobile-companion",
+		TargetAgentID: "kombify-ai",
+		Endpoint:      "https://api.kombify.io/a2a/agents/kombify-ai",
 		Lease:         "lease-secret",
 	}
 	serve := func(body string) *httptest.ResponseRecorder {
@@ -165,7 +165,7 @@ func TestCreateSessionCarriesOnlyMatchingAuthorizedAgentBinding(t *testing.T) {
 	if rec := serve(`{"provider":"kombify-agent","target_agent_id":"other"}`); rec.Code != http.StatusForbidden {
 		t.Fatalf("mismatched target status = %d body=%s", rec.Code, rec.Body.String())
 	}
-	rec := serve(`{"provider":"kombify-agent","target_agent_id":"mobile-companion","ai_session_id":"thread-1"}`)
+	rec := serve(`{"provider":"kombify-agent","target_agent_id":"kombify-ai","ai_session_id":"thread-1"}`)
 	if rec.Code != http.StatusCreated {
 		t.Fatalf("matching target status = %d body=%s", rec.Code, rec.Body.String())
 	}
