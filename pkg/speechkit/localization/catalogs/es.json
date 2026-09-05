@@ -23,5 +23,9 @@
   "meeting.snapshot.saving": "Guardando la captura…",
   "meeting.snapshot.saved": "Captura guardada en la reunión.",
   "meeting.snapshot.cancelled": "Captura cancelada.",
-  "meeting.snapshot.error": "No se pudo realizar la captura."
+  "meeting.snapshot.error": "No se pudo realizar la captura.",
+  "sk.privacy.retention.retain": "Conservar las grabaciones",
+  "sk.privacy.retention.ephemeral": "Conservar solo el resumen",
+  "sk.privacy.disabled.retention_ephemeral": "Esto no se conserva: la configuración de retención descarta las grabaciones cuando termina la reunión.",
+  "sk.privacy.disabled.provider_retains": "A este proveedor no se le puede pedir que descarte la solicitud, por lo que la configuración de retención actual lo bloquea."
 }

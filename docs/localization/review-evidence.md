@@ -32,12 +32,12 @@ changing with it.
 
 | locale | catalog | sha256 | review_state | reviewer | reviewed_on | notes |
 | --- | --- | --- | --- | --- | --- | --- |
-| en | catalogs/en.json | ccbc76cc2413d824e6d8f5f9c8064be27f58388e7608222500a19f4a67c175f0 | human-reviewed | Marcel K | 2026-09-03 | Source locale; every message ID authored and read in full. |
-| de | catalogs/de.json | d36c34707f5ac3dce88617a61c4cae5fce1721015f29bbed22c62cb08814f904 | proposal | - | - | Machine translation proposal; native-speaker review outstanding (localization audit child bead). |
-| es | catalogs/es.json | 91a94dd45369fba318d7e1d5dda7825dae481ea3b07eaad26e4979a85f03560b | proposal | - | - | Machine translation proposal; native-speaker review outstanding (localization audit child bead). |
-| zh-Hans | catalogs/zh-Hans.json | da4525b2bad0058367f0759fa38a65d8175f55e8faa67bdb3547761c554cd82a | proposal | - | - | Machine translation proposal; native-speaker review outstanding (localization audit child bead). |
-| hi | catalogs/hi.json | d53ed96c69709332c6daa057e4b089281ac95ba1fea4f36d2e0e4414110c83dd | proposal | - | - | Machine translation proposal; native-speaker review outstanding (localization audit child bead). |
-| ar | catalogs/ar.json | 6506b52b64d845fe44c9714ef46a4650ab9074736c3ce861801a04dfa11c7ebc | proposal | - | - | Machine translation proposal; native-speaker review outstanding (localization audit child bead). |
+| en | catalogs/en.json | d76071a9a955eea4c1e21aefc26388c66884b3465a491861185a68aa7836475f | proposal | - | - | catalog changed 2026-09-04; re-review required |
+| de | catalogs/de.json | 29d0351c5ba0674099b5f7235f28460ea7071582b96369e8d12acfa3c6aa558c | proposal | - | - | catalog changed 2026-09-04; re-review required |
+| es | catalogs/es.json | 51e4a53814167ae8c7186e92cd0bc0acb2f13a3ddbab4653065e6cec6beed55d | proposal | - | - | catalog changed 2026-09-04; re-review required |
+| zh-Hans | catalogs/zh-Hans.json | a08ca4672614629b62bc44f7f77fdbb733147ba60623df659d9b1cacd6b78646 | proposal | - | - | catalog changed 2026-09-04; re-review required |
+| hi | catalogs/hi.json | 0fe15d4560231bee96c224a4915aa70de3130c4c507e94d9330d1a70b5eedc2a | proposal | - | - | catalog changed 2026-09-04; re-review required |
+| ar | catalogs/ar.json | 08f4b517c1d6af6d0512df4b898bbe4390d0e994d00a4a3f7b444ce4dd7ad497 | proposal | - | - | catalog changed 2026-09-04; re-review required |
 
 ## Coverage beyond the catalogs
 

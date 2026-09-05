@@ -23,5 +23,9 @@
   "meeting.snapshot.saving": "正在保存截图……",
   "meeting.snapshot.saved": "截图已保存到会议。",
   "meeting.snapshot.cancelled": "已取消截图。",
-  "meeting.snapshot.error": "无法捕获截图。"
+  "meeting.snapshot.error": "无法捕获截图。",
+  "sk.privacy.retention.retain": "保留录音",
+  "sk.privacy.retention.ephemeral": "仅保留纪要",
+  "sk.privacy.disabled.retention_ephemeral": "此项不会保留：会议结束时，保留设置会丢弃录音。",
+  "sk.privacy.disabled.provider_retains": "无法要求该提供方丢弃请求，因此当前保留设置将其阻止。"
 }

@@ -23,5 +23,9 @@
   "meeting.snapshot.saving": "स्क्रीनशॉट सहेजा जा रहा है…",
   "meeting.snapshot.saved": "स्क्रीनशॉट मीटिंग में सहेजा गया।",
   "meeting.snapshot.cancelled": "स्क्रीनशॉट रद्द किया गया।",
-  "meeting.snapshot.error": "स्क्रीनशॉट कैप्चर नहीं किया जा सका।"
+  "meeting.snapshot.error": "स्क्रीनशॉट कैप्चर नहीं किया जा सका।",
+  "sk.privacy.retention.retain": "रिकॉर्डिंग रखें",
+  "sk.privacy.retention.ephemeral": "केवल सारांश रखें",
+  "sk.privacy.disabled.retention_ephemeral": "यह नहीं रखा जाता: मीटिंग समाप्त होने पर प्रतिधारण सेटिंग रिकॉर्डिंग हटा देती है।",
+  "sk.privacy.disabled.provider_retains": "इस प्रदाता को अनुरोध हटाने के लिए नहीं कहा जा सकता, इसलिए वर्तमान प्रतिधारण सेटिंग इसे रोकती है।"
 }

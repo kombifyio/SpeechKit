@@ -18,6 +18,12 @@ const (
 	NetworkScopeDeviceOnly   = string(framework.NetworkScopeDeviceOnly)
 )
 
+// Canonical retention scope values, mirrored from pkg/speechkit for TOML/docs.
+const (
+	RetentionScopeRetain    = string(framework.RetentionScopeRetain)
+	RetentionScopeEphemeral = string(framework.RetentionScopeEphemeral)
+)
+
 // PrivacyConfig is the [privacy] TOML section.
 type PrivacyConfig struct {
 	// NetworkScope is "open" (default), "local_network", or "device_only".
@@ -32,6 +38,12 @@ type PrivacyConfig struct {
 	// Default false: restricted scopes are fully quiet unless the user
 	// explicitly consents.
 	AllowSetupTraffic bool `toml:"allow_setup_traffic"`
+
+	// RetentionScope is "retain" (default) or "ephemeral". It is orthogonal to
+	// NetworkScope: one says where the process may reach, the other what
+	// survives the work. Missing/empty means retain (backwards compatible);
+	// unknown values make config loading fail rather than being guessed.
+	RetentionScope string `toml:"retention_scope"`
 }
 
 // NetworkScope resolves the effective scope for enforcement points. Invalid
@@ -56,6 +68,17 @@ func (c *Config) SetupTrafficAllowed() bool {
 	return c.Privacy.AllowSetupTraffic
 }
 
+// RetentionScope resolves the effective retention scope for enforcement
+// points. Invalid stored values fail closed to ephemeral — they should never
+// survive Load/Save, but a runtime mutation must not quietly start keeping
+// recordings.
+func (c *Config) RetentionScope() framework.RetentionScope {
+	if c == nil {
+		return framework.RetentionScopeRetain
+	}
+	return framework.NormalizeRetentionScope(c.Privacy.RetentionScope)
+}
+
 // NormalizePrivacyConfig canonicalizes the [privacy] section and returns an
 // error for unknown scope values. Load and Save both call it, so a config
 // file with a typo'd scope is rejected instead of being reinterpreted.
@@ -68,5 +91,10 @@ func NormalizePrivacyConfig(cfg *Config) error {
 		return fmt.Errorf("[privacy] network_scope: %w", err)
 	}
 	cfg.Privacy.NetworkScope = string(scope)
+	retention, err := framework.ParseRetentionScope(cfg.Privacy.RetentionScope)
+	if err != nil {
+		return fmt.Errorf("[privacy] retention_scope: %w", err)
+	}
+	cfg.Privacy.RetentionScope = string(retention)
 	return nil
 }

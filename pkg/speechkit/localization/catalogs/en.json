@@ -23,5 +23,9 @@
   "meeting.snapshot.saving": "Saving the screenshot…",
   "meeting.snapshot.saved": "Screenshot saved to the meeting.",
   "meeting.snapshot.cancelled": "Screenshot cancelled.",
-  "meeting.snapshot.error": "The screenshot could not be captured."
+  "meeting.snapshot.error": "The screenshot could not be captured.",
+  "sk.privacy.retention.retain": "Keep recordings",
+  "sk.privacy.retention.ephemeral": "Keep nothing but the write-up",
+  "sk.privacy.disabled.retention_ephemeral": "This is not kept: the retention setting discards recordings when the meeting ends.",
+  "sk.privacy.disabled.provider_retains": "This provider cannot be told to discard the request, so it is blocked by the current retention setting."
 }

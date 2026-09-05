@@ -42,6 +42,15 @@ const (
 	PrivacyDisabledCloudAccount    MessageID = "sk.privacy.disabled.cloud_account"
 	PrivacyDisabledVoiceAgentCloud MessageID = "sk.privacy.disabled.voice_agent_cloud"
 
+	// Retention-scope display names and disabled reasons (see RetentionScope
+	// and RetentionScopeReason* in pkg/speechkit). The retention axis is
+	// orthogonal to the network scope: it says what outlives the work, not
+	// where the process may reach.
+	PrivacyRetentionRetainName      MessageID = "sk.privacy.retention.retain"
+	PrivacyRetentionEphemeralName   MessageID = "sk.privacy.retention.ephemeral"
+	PrivacyDisabledRetentionEphemer MessageID = "sk.privacy.disabled.retention_ephemeral"
+	PrivacyDisabledProviderRetains  MessageID = "sk.privacy.disabled.provider_retains"
+
 	// Meeting Mode screenshot status prose. These mirror the stable status
 	// codes emitted by internal/meetingsnapshot so the device UI can surface
 	// selecting/capturing/saving/saved/cancelled/error accessibly and
@@ -74,6 +83,10 @@ var messageIDs = []MessageID{
 	PrivacyDisabledTelemetry,
 	PrivacyDisabledCloudAccount,
 	PrivacyDisabledVoiceAgentCloud,
+	PrivacyRetentionRetainName,
+	PrivacyRetentionEphemeralName,
+	PrivacyDisabledRetentionEphemer,
+	PrivacyDisabledProviderRetains,
 	MeetingSnapshotSelecting,
 	MeetingSnapshotCapturing,
 	MeetingSnapshotSaving,

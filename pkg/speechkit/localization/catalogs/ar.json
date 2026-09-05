@@ -23,5 +23,9 @@
   "meeting.snapshot.saving": "جارٍ حفظ لقطة الشاشة…",
   "meeting.snapshot.saved": "تم حفظ لقطة الشاشة في الاجتماع.",
   "meeting.snapshot.cancelled": "تم إلغاء لقطة الشاشة.",
-  "meeting.snapshot.error": "تعذّر التقاط لقطة الشاشة."
+  "meeting.snapshot.error": "تعذّر التقاط لقطة الشاشة.",
+  "sk.privacy.retention.retain": "الاحتفاظ بالتسجيلات",
+  "sk.privacy.retention.ephemeral": "الاحتفاظ بالملخص فقط",
+  "sk.privacy.disabled.retention_ephemeral": "لا يتم الاحتفاظ بهذا: يتجاهل إعداد الاحتفاظ التسجيلات عند انتهاء الاجتماع.",
+  "sk.privacy.disabled.provider_retains": "لا يمكن إبلاغ هذا المزوّد بتجاهل الطلب، لذا يحظره إعداد الاحتفاظ الحالي."
 }

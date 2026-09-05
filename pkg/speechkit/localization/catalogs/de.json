@@ -23,5 +23,9 @@
   "meeting.snapshot.saving": "Screenshot wird gespeichert …",
   "meeting.snapshot.saved": "Screenshot im Meeting gespeichert.",
   "meeting.snapshot.cancelled": "Screenshot abgebrochen.",
-  "meeting.snapshot.error": "Der Screenshot konnte nicht erfasst werden."
+  "meeting.snapshot.error": "Der Screenshot konnte nicht erfasst werden.",
+  "sk.privacy.retention.retain": "Aufnahmen behalten",
+  "sk.privacy.retention.ephemeral": "Nur die Zusammenfassung behalten",
+  "sk.privacy.disabled.retention_ephemeral": "Wird nicht behalten: Die Aufbewahrungseinstellung verwirft Aufnahmen, sobald das Meeting endet.",
+  "sk.privacy.disabled.provider_retains": "Diesem Anbieter lässt sich nicht mitteilen, die Anfrage zu verwerfen. Die aktuelle Aufbewahrungseinstellung blockiert ihn deshalb."
 }
