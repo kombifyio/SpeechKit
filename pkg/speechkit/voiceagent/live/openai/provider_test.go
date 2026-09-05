@@ -518,3 +518,23 @@ func mustMarshal(t *testing.T, v any) []byte {
 	}
 	return body
 }
+
+func TestServerVADEnabledFromLastConfig(t *testing.T) {
+	auto := live.LiveConfig{Policies: live.LivePolicies{ActivityDetection: live.ActivityDetectionPolicy{Automatic: true}}}
+	ptt := live.LiveConfig{Policies: live.LivePolicies{ActivityDetection: live.ActivityDetectionPolicy{Automatic: false}}}
+
+	p := &Provider{}
+	if p.serverVADEnabled() {
+		t.Fatal("serverVADEnabled must be false when no session config is set")
+	}
+
+	p.lastConfig = &auto
+	if !p.serverVADEnabled() {
+		t.Fatal("serverVADEnabled must be true when automatic activity detection is on")
+	}
+
+	p.lastConfig = &ptt
+	if p.serverVADEnabled() {
+		t.Fatal("serverVADEnabled must be false in push-to-talk (automatic detection off)")
+	}
+}

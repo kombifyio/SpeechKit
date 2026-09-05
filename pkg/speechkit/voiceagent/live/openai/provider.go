@@ -244,18 +244,41 @@ func (p *Provider) SendAudio(chunk []byte) error {
 }
 
 // SendAudioStreamEnd flushes the input audio buffer and triggers a model
-// response. With server VAD enabled OpenAI commits the buffer automatically
-// at end-of-speech; this explicit commit covers push-to-talk style turns
-// where the kernel decides when the user stopped speaking.
+// response. With server VAD enabled OpenAI commits the buffer and creates the
+// response automatically at end-of-speech (turn_detection.create_response),
+// so an explicit commit here races that automatic commit and, once the buffer
+// has already been drained, fails the whole session with
+// input_audio_buffer_commit_empty. That is exactly what a server-VAD client
+// that also signals audio_end (e.g. kombify-Box toggle-talk) triggered. Only
+// push-to-talk (server VAD disabled) needs the manual commit + response.create.
 func (p *Provider) SendAudioStreamEnd() error {
 	conn := p.snapshotConn()
 	if conn == nil {
 		return fmt.Errorf("openai realtime: %w", live.ErrNotConnected)
 	}
+	if p.serverVADEnabled() {
+		return nil
+	}
 	if err := p.sendJSON(conn, map[string]any{"type": "input_audio_buffer.commit"}); err != nil {
 		return err
 	}
 	return p.sendJSON(conn, map[string]any{"type": "response.create"})
+}
+
+// serverVADEnabled reports whether the active session runs OpenAI server-side
+// VAD (turn_detection). It mirrors the turn-detection decision made in
+// buildOpenAISession from the last connected config, so SendAudioStreamEnd can
+// avoid an explicit commit that server VAD already performs.
+func (p *Provider) serverVADEnabled() bool {
+	p.mu.RLock()
+	cfg := p.lastConfig
+	p.mu.RUnlock()
+	if cfg == nil {
+		return false
+	}
+	resolved := live.ResolveLiveOptions("openai", "realtime.openai.gpt-realtime-2", *cfg, nil, nil)
+	activity := ResolveActivityDetection(cfg.Policies.ActivityDetection, resolved)
+	return buildOpenAITurnDetection(activity) != nil
 }
 
 // CancelResponse cancels the in-progress model response with the Realtime
