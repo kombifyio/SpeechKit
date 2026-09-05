@@ -23,6 +23,8 @@ tags:
   - name: Providers
   - name: Data
   - name: Customization
+  - name: Settings
+  - name: Integrations
 paths:
   /api/v1/modes:
     get:
@@ -688,6 +690,46 @@ paths:
           $ref: "#/components/responses/BadRequest"
         "501":
           $ref: "#/components/responses/NotImplemented"
+  /api/v1/recording-sessions/search:
+    get:
+      tags: [Data]
+      operationId: searchRecordingSessions
+      summary: Find meetings by what was said, typed or written up.
+      description: >-
+        Every term of the query has to appear somewhere in a session — its
+        title, transcript, the user's own notes or a finished write-up. Each hit
+        names the first place the query matched so a list can show why the
+        meeting is in the results. Segments are omitted from the returned
+        sessions.
+      parameters:
+        - name: q
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: kind
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [dictation, meeting]
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+      responses:
+        "200":
+          description: Matching sessions with a snippet each.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/RecordingSessionSearchHit"
+        "501":
+          $ref: "#/components/responses/NotImplemented"
   /api/v1/recording-sessions/{sessionId}:
     get:
       tags: [Data]
@@ -780,8 +822,10 @@ paths:
         Merges the transcript, the notes the user typed during the meeting and a
         template into structured notes where each bullet cites the transcript it
         came from. Writing up outlives the request, so the run is returned and
-        the client polls the list. Running again with another template produces
-        a new write-up rather than replacing the previous one.
+        the client polls the list. Running again with another template or
+        language produces a new write-up rather than replacing the previous one.
+        With `action: cancel` the request stops a running write-up instead of
+        starting one.
       security:
         - ControlPlaneHeader: []
         - ControlPlaneCookie: []
@@ -803,17 +847,136 @@ paths:
                 templateSlug:
                   type: string
                   description: Which template to write up as; empty means the general meeting template.
+                language:
+                  type: string
+                  description: >-
+                    BCP-47 tag of the language to write up in. Empty resolves the
+                    configured summary language against the meeting's language.
+                action:
+                  type: string
+                  enum: [cancel]
+                  description: Cancel the write-up named by `enhancementId` instead of starting one.
+                enhancementId:
+                  type: integer
+                  format: int64
+                  description: "The write-up to cancel; required with `action: cancel`."
       responses:
         "200":
-          description: The write-up run that was started.
+          description: >-
+            The write-up run that was started, or `{id, cancelled: true}` for a
+            cancel request.
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/RecordingSessionEnhancement"
+                oneOf:
+                  - $ref: "#/components/schemas/RecordingSessionEnhancement"
+                  - type: object
+                    required: [id, cancelled]
+                    properties:
+                      id:
+                        type: integer
+                        format: int64
+                      cancelled:
+                        type: boolean
         "404":
           $ref: "#/components/responses/NotFound"
+        "409":
+          description: The write-up named for cancellation is not running.
+        "501":
+          $ref: "#/components/responses/NotImplemented"
         "503":
           $ref: "#/components/responses/ServiceUnavailable"
+  /api/v1/recording-sessions/{sessionId}/enhancements/{enhancementId}/markdown:
+    get:
+      tags: [Data]
+      operationId: getRecordingSessionEnhancementMarkdown
+      summary: Download one ready write-up as a Markdown file.
+      description: >-
+        Renders the write-up as a complete Markdown document under the meeting's
+        title. A write-up is only addressable through its own meeting.
+      security:
+        - ControlPlaneHeader: []
+        - ControlPlaneCookie: []
+      parameters:
+        - name: sessionId
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+            minimum: 1
+        - name: enhancementId
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+            minimum: 1
+      responses:
+        "200":
+          description: The write-up as `text/markdown` with a `Content-Disposition` file name.
+          content:
+            text/markdown:
+              schema:
+                type: string
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          description: The write-up is not ready yet.
+        "501":
+          $ref: "#/components/responses/NotImplemented"
+  /api/v1/recording-sessions/{sessionId}/enhancements/{enhancementId}/export:
+    post:
+      tags: [Data]
+      operationId: exportRecordingSessionEnhancementMarkdown
+      summary: Save one ready write-up as a Markdown file where the user chooses.
+      description: >-
+        The desktop shows its own save dialog and writes the file there. The
+        path never comes from the client, so the local API cannot be used to
+        write files to arbitrary places. Closing the dialog is not an error.
+      security:
+        - ControlPlaneHeader: []
+        - ControlPlaneCookie: []
+      parameters:
+        - name: sessionId
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+            minimum: 1
+        - name: enhancementId
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+            minimum: 1
+      responses:
+        "200":
+          description: Where the file was written, or that the user cancelled.
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - type: object
+                    required: [path, bytes]
+                    properties:
+                      path:
+                        type: string
+                      bytes:
+                        type: integer
+                  - type: object
+                    required: [cancelled]
+                    properties:
+                      cancelled:
+                        type: boolean
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          description: The write-up is not ready yet.
+        "501":
+          $ref: "#/components/responses/NotImplemented"
   /api/v1/recording-sessions/{sessionId}/pin:
     post:
       tags: [Data]
@@ -1244,6 +1407,40 @@ paths:
           $ref: "#/components/responses/NotFound"
         "501":
           $ref: "#/components/responses/NotImplemented"
+  /api/v1/recording-sessions/{sessionId}/summary-batches:
+    get:
+      tags: [Data]
+      operationId: listMeetingSummaryBatches
+      summary: List the rolling digests a meeting has been summarized into so far.
+      description: >-
+        While a meeting runs, its transcript is digested in batches and the
+        batches are rolled up into higher levels. Level 0 rows cover a segment
+        range each; higher levels merge lower ones. The final write-up starts
+        from these digests rather than from the raw transcript.
+      security:
+        - ControlPlaneHeader: []
+        - ControlPlaneCookie: []
+      parameters:
+        - name: sessionId
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+            minimum: 1
+      responses:
+        "200":
+          description: The meeting's digest batches.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/MeetingSummaryBatch"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "501":
+          $ref: "#/components/responses/NotImplemented"
   /api/v1/recording-sessions/{sessionId}/snapshots:
     parameters:
       - name: sessionId
@@ -1405,6 +1602,127 @@ paths:
           $ref: "#/components/responses/Conflict"
         "501":
           $ref: "#/components/responses/NotImplemented"
+  /api/v1/settings/meeting:
+    get:
+      tags: [Settings]
+      operationId: getMeetingSettings
+      summary: Read Meeting Mode settings.
+      responses:
+        "200":
+          description: The current Meeting Mode settings plus local write-up model readiness.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MeetingSettings"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+    patch:
+      tags: [Settings]
+      operationId: patchMeetingSettings
+      summary: Change Meeting Mode settings.
+      description: >-
+        Applies the patch transactionally: an invalid value restores the previous
+        settings and answers 400; a screenshot shortcut that collides with
+        another hotkey answers 409; Meeting Mode cannot be disabled while a
+        meeting is being recorded. Changing the write-up provider, model or
+        fallback policy reloads the generation runtime before the response.
+      security:
+        - ControlPlaneHeader: []
+        - ControlPlaneCookie: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MeetingSettingsPatch"
+      responses:
+        "200":
+          description: The settings after the patch.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MeetingSettings"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+  /api/v1/integrations/copilot:
+    get:
+      tags: [Integrations]
+      operationId: getCopilotIntegration
+      summary: Read the GitHub Copilot write-up integration.
+      description: >-
+        Asks the bundled Copilot runtime for its live status, so the answer can
+        take a few seconds. SpeechKit never holds a GitHub token; sign-in lives
+        in the Copilot CLI's own credential store.
+      responses:
+        "200":
+          description: Integration settings, grant state and runtime availability.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CopilotIntegration"
+    patch:
+      tags: [Integrations]
+      operationId: patchCopilotIntegration
+      summary: Enable the integration, pick a model, or grant transcript processing.
+      description: >-
+        Granting records a versioned consent that meeting transcripts may be
+        sent to GitHub Copilot for write-ups. Withdrawing the grant also cancels
+        running write-ups.
+      security:
+        - ControlPlaneHeader: []
+        - ControlPlaneCookie: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CopilotIntegrationPatch"
+      responses:
+        "200":
+          description: The integration after the patch.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CopilotIntegration"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+  /api/v1/integrations/copilot/login:
+    post:
+      tags: [Integrations]
+      operationId: startCopilotLogin
+      summary: Open the GitHub sign-in in a terminal window.
+      description: >-
+        Starts `gh auth login --web` in a terminal and returns at once; the
+        outcome is not reported back. Clients re-read the integration status
+        once the user is done.
+      security:
+        - ControlPlaneHeader: []
+        - ControlPlaneCookie: []
+      responses:
+        "202":
+          description: The sign-in was started.
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+  /api/v1/integrations/copilot/revoke:
+    post:
+      tags: [Integrations]
+      operationId: revokeCopilotGrant
+      summary: Withdraw the transcript-processing grant and disable the integration.
+      description: Running write-ups on Copilot are cancelled, not just future ones.
+      security:
+        - ControlPlaneHeader: []
+        - ControlPlaneCookie: []
+      responses:
+        "200":
+          description: The integration after revocation.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CopilotIntegration"
   /api/v1/providers/artifacts:
     get:
       tags: [Providers]
@@ -2735,13 +3053,35 @@ components:
           description: The template as it was when this ran, so an old write-up stays explicable.
         status:
           type: string
-          enum: [idle, running, ready, failed]
+          enum: [idle, pending, running, partial, ready, failed, cancelled]
         error:
           type: string
+        errorKind:
+          type: string
+          description: Classification of the failure (transient, quota, consent, ...), empty when it succeeded.
+        retryable:
+          type: boolean
+          description: True when a failed run can be retried without changing anything.
         provider:
           type: string
         model:
           type: string
+        stage:
+          type: string
+          description: What the run is doing right now (finalizing batches, generating, persisting).
+        progress:
+          type: integer
+          minimum: 0
+          maximum: 100
+        attempt:
+          type: integer
+          description: How many times this write-up has been attempted.
+        inputFingerprint:
+          type: string
+          description: Hash of the transcript and notes this run saw, so a re-run can tell whether the input changed.
+        consentVersion:
+          type: integer
+          description: The version of the transcript-processing grant a cloud provider ran under.
         structured:
           type: boolean
           description: >-
@@ -2763,6 +3103,190 @@ components:
         updatedAt:
           type: string
           format: date-time
+    RecordingSessionSearchHit:
+      type: object
+      description: One matching session with the first place the query was found.
+      required: [session, source, snippet]
+      properties:
+        session:
+          $ref: "#/components/schemas/RecordingSession"
+        source:
+          type: string
+          enum: [title, transcript, notes, write-up]
+          description: Where the snippet comes from.
+        snippet:
+          type: string
+    MeetingSummaryBatch:
+      type: object
+      description: >-
+        One rolling digest of a meeting. Transcript-derived, so it follows the
+        meeting's deletion and retention lifecycle.
+      required: [id, sessionId, batchKey, level, startSegmentId, endSegmentId, sourceFingerprint, status, createdAt, updatedAt]
+      properties:
+        id:
+          type: integer
+          format: int64
+        sessionId:
+          type: integer
+          format: int64
+        batchKey:
+          type: string
+        level:
+          type: integer
+          description: 0 for a batch over a segment range; higher levels merge lower ones.
+        startSegmentId:
+          type: integer
+          format: int64
+        endSegmentId:
+          type: integer
+          format: int64
+        sourceFingerprint:
+          type: string
+        status:
+          type: string
+          enum: [sealed, queued, summarizing, ready, delayed, failed, superseded]
+        digestJson:
+          type: string
+          description: The structured digest; present once the batch is ready.
+        provider:
+          type: string
+        model:
+          type: string
+        errorKind:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+    MeetingSettings:
+      type: object
+      description: Meeting Mode settings as stored, plus the local write-up model's readiness.
+      required: [enabled, autoDetect, autoEnhance, compactOnStart, alwaysOnTop, generationProvider, generationModel, fallbackPolicy, batchMinutes, summaryLanguage, additionalSummaryLanguages, screenshotEnabled, screenshotHotkey, screenshotHotkeyEnabled, localModelReady]
+      properties:
+        enabled:
+          type: boolean
+        autoDetect:
+          type: boolean
+          description: Offer to take notes when a calling application takes the microphone.
+        autoEnhance:
+          type: boolean
+          description: Write a meeting up automatically once it ends.
+        compactOnStart:
+          type: boolean
+          description: Open the note window as the compact pill.
+        alwaysOnTop:
+          type: boolean
+        generationProvider:
+          type: string
+          enum: [local, github_copilot]
+        generationModel:
+          type: string
+        fallbackPolicy:
+          type: string
+          enum: [local_only, allow_local_fallback]
+        batchMinutes:
+          type: integer
+          minimum: 1
+          maximum: 30
+          description: How often the running transcript is digested into a rolling summary batch.
+        summaryLanguage:
+          type: string
+          description: BCP-47 tag of the primary write-up language, or `auto` to follow the meeting.
+        additionalSummaryLanguages:
+          type: array
+          items:
+            type: string
+          description: Further BCP-47 tags; each produces its own write-up.
+        screenshotEnabled:
+          type: boolean
+        screenshotHotkey:
+          type: string
+        screenshotHotkeyEnabled:
+          type: boolean
+        localModelReady:
+          type: boolean
+        localModelId:
+          type: string
+        localModelName:
+          type: string
+        localModelSizeLabel:
+          type: string
+    MeetingSettingsPatch:
+      type: object
+      description: Every field is optional; absent fields keep their value.
+      properties:
+        enabled:
+          type: boolean
+        autoDetect:
+          type: boolean
+        autoEnhance:
+          type: boolean
+        compactOnStart:
+          type: boolean
+        alwaysOnTop:
+          type: boolean
+        generationProvider:
+          type: string
+          enum: [local, github_copilot]
+        generationModel:
+          type: string
+        fallbackPolicy:
+          type: string
+          enum: [local_only, allow_local_fallback]
+        batchMinutes:
+          type: integer
+          minimum: 1
+          maximum: 30
+        summaryLanguage:
+          type: string
+        additionalSummaryLanguages:
+          type: array
+          items:
+            type: string
+        screenshotEnabled:
+          type: boolean
+        screenshotHotkey:
+          type: string
+        screenshotHotkeyEnabled:
+          type: boolean
+    CopilotIntegration:
+      type: object
+      required: [enabled, model, granted, available, authenticated, models]
+      properties:
+        enabled:
+          type: boolean
+        model:
+          type: string
+        granted:
+          type: boolean
+          description: Whether the current version of the transcript-processing grant is recorded.
+        available:
+          type: boolean
+          description: Whether the bundled Copilot runtime answered.
+        authenticated:
+          type: boolean
+        login:
+          type: string
+          description: The signed-in GitHub login when authenticated.
+        message:
+          type: string
+          description: Runtime status text for the settings card.
+        models:
+          type: array
+          items:
+            type: string
+    CopilotIntegrationPatch:
+      type: object
+      properties:
+        enabled:
+          type: boolean
+        model:
+          type: string
+        grantTranscriptProcessing:
+          type: boolean
+          description: True records the grant; false withdraws it and cancels running write-ups.
     RecordingSessionNotes:
       type: object
       description: >-

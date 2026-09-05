@@ -255,15 +255,32 @@ which wraps `sk-e2e --strict-ready --require-functional` and requires
 | `/api/v1/voice-sessions` | `GET` | List stored Voice Agent session summaries without transcript or turn payloads. |
 | `/api/v1/voice-sessions/{id}` | `GET` | Read one Voice Agent session with transcript, turns, and full summary detail. |
 | `/api/v1/recording-sessions` | `GET`, `POST` | List or create long-running Dictation and Meeting recording sessions. |
+| `/api/v1/recording-sessions/search` | `GET` | Find meetings by title, transcript, the user's own notes or a finished write-up; each hit names where it matched. |
 | `/api/v1/recording-sessions/{id}` | `GET`, `DELETE` | Read or delete one recording session with ordered segment detail. |
-| `/api/v1/recording-sessions/{id}/start` | `POST` | Start Dictation capture and bind finalized commits to the recording session. |
-| `/api/v1/recording-sessions/{id}/pause` | `POST` | Pause bound Dictation capture while keeping the recording session active. |
-| `/api/v1/recording-sessions/{id}/resume` | `POST` | Resume bound Dictation capture for a paused recording session. |
-| `/api/v1/recording-sessions/{id}/stop` | `POST` | Stop Dictation capture without finishing the recording-session record. |
+| `/api/v1/recording-sessions/{id}/start` | `POST` | Start meeting capture (microphone plus system loopback as two channels) for this session. |
+| `/api/v1/recording-sessions/{id}/pause` | `POST` | Pause the meeting capture that is bound to this session. |
+| `/api/v1/recording-sessions/{id}/resume` | `POST` | Resume paused meeting capture for this session. |
+| `/api/v1/recording-sessions/{id}/stop` | `POST` | Stop meeting capture, drain in-flight transcription and finish the session. |
+| `/api/v1/recording-sessions/{id}/state` | `GET` | Read what capture is doing right now: live flag, per-channel health, pending transcription. |
 | `/api/v1/recording-sessions/{id}/segments` | `POST` | Append or replace one draft or finalized transcript segment by segment index. |
 | `/api/v1/recording-sessions/{id}/finish` | `POST` | Mark the session finished and persist a supplied or derived summary. |
 | `/api/v1/recording-sessions/{id}/summary` | `GET`, `POST` | Read or attach a recording-session summary. |
 | `/api/v1/recording-sessions/{id}/summary-job` | `POST` | Start a non-blocking provider-capable summary job over ordered final segments. |
+| `/api/v1/recording-sessions/{id}/summary-batches` | `GET` | List the rolling digests a running or finished meeting has been summarized into. |
+| `/api/v1/recording-sessions/{id}/notes` | `GET`, `PUT` | Read or replace the notes the user typed during the meeting. |
+| `/api/v1/recording-sessions/{id}/enhancements` | `GET`, `POST` | List the meeting's write-ups, start one for a template and language, or cancel a running one. |
+| `/api/v1/recording-sessions/{id}/enhancements/{enhancementId}/markdown` | `GET` | Download one ready write-up as a Markdown file. |
+| `/api/v1/recording-sessions/{id}/enhancements/{enhancementId}/export` | `POST` | Save one ready write-up through the desktop's own save dialog. |
+| `/api/v1/recording-sessions/{id}/templates` | `GET` | List what a meeting can be written up as. |
+| `/api/v1/recording-sessions/{id}/pin` | `POST` | Keep a meeting out of the retention sweep, or release it. |
+| `/api/v1/recording-sessions/{id}/snapshots` | `GET`, `POST` | List the meeting's screen snapshots or capture one into the live meeting. |
+| `/api/v1/recording-sessions/{id}/snapshots/{snapshotId}` | `GET`, `DELETE` | Read or delete one snapshot's metadata. |
+| `/api/v1/recording-sessions/{id}/snapshots/{snapshotId}/image` | `GET` | Serve the snapshot image by id; the file path never leaves the host. |
+| `/api/v1/meeting/snapshot` | `POST` | Deprecated overlay shortcut with `Deprecation`/`Sunset` headers; use the recording-session snapshot route. |
+| `/api/v1/settings/meeting` | `GET`, `PATCH` | Read or change Meeting Mode settings: detection, write-up provider and languages, screenshot shortcut. |
+| `/api/v1/integrations/copilot` | `GET`, `PATCH` | Read or change the GitHub Copilot write-up integration and its transcript-processing grant. |
+| `/api/v1/integrations/copilot/login` | `POST` | Open the GitHub sign-in in a terminal; the client re-reads the status afterwards. |
+| `/api/v1/integrations/copilot/revoke` | `POST` | Withdraw the transcript-processing grant and cancel running write-ups. |
 
 Accepted mode aliases include `dictation`, `dictate`, `transcribe`, `assist`, `voice_agent`, `voiceAgent`, and `voice-agent`.
 
