@@ -410,10 +410,15 @@ func ValidWakewordLabel(s string) bool {
 }
 
 // DeleteResult is returned by DeleteScope. The caller is responsible for
-// unlinking AudioFilePaths from disk; the store only removes DB rows.
+// unlinking AudioFilePaths and SnapshotFilePaths from disk; the store only
+// removes DB rows.
 type DeleteResult struct {
 	RowsDeleted    int      `json:"rows_deleted"`
 	AudioFilePaths []string `json:"audio_file_paths"`
+	// SnapshotFilePaths are the meeting screen captures stored under the
+	// scope. They are pictures of the user's desktop, so an erasure that
+	// dropped only the rows would leave the most sensitive artifact on disk.
+	SnapshotFilePaths []string `json:"snapshot_file_paths"`
 }
 
 // ScopePrivacyStore is an optional extension for backends that implement

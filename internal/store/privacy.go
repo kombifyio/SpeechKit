@@ -69,20 +69,26 @@ func (s *sqlStore) ExportScope(ctx context.Context, scope speechstorage.Scope) (
 // (GDPR Art. 17).
 //
 // Deletion order respects foreign-key constraints:
-//  1. Collect audio file paths (before rows are gone)
+//  1. Collect audio and snapshot file paths (before rows are gone)
 //  2. Link tables (transcription_audio_assets, quick_note_audio_assets)
 //  3. audio_assets
 //  4. voice_agent_session_turns, voice_agent_session_summary_items
-//  5. recording_session_segments, recording_session_notes, recording_sessions
+//  5. recording session children: segments, notes, snapshots, write-ups,
+//     summary batches, then recording_sessions
 //  6. voice_agent_sessions
 //  7. transcriptions
 //  8. quick_notes
-//  9. user_dictionary_entries
+//  9. user_dictionary_entries, customization_{words,replacements,lexicons,rulesets}
 //  10. store_stats row (reset to zero counts)
 //
-// NOTE: Audio files on disk are NOT deleted here; only DB rows are removed.
-// The caller receives AudioFilePaths in the returned DeleteResult and is
-// responsible for unlinking them.
+// The recording-session children are deleted explicitly rather than left to
+// the ON DELETE CASCADE. The cascade is the backstop; naming the tables here
+// keeps erasure complete even on a backend or connection where it is not
+// enforced, and makes the row count report what was actually removed.
+//
+// NOTE: Files on disk are NOT deleted here; only DB rows are removed. The
+// caller receives AudioFilePaths and SnapshotFilePaths in the returned
+// DeleteResult and is responsible for unlinking them.
 func (s *sqlStore) DeleteScope(ctx context.Context, scope speechstorage.Scope) (DeleteResult, error) {
 	scope = speechstorage.NormalizeScope(scope)
 	scopeID, err := s.scopeIDForScope(ctx, scope)
@@ -96,10 +102,14 @@ func (s *sqlStore) DeleteScope(ctx context.Context, scope speechstorage.Scope) (
 	}
 	defer tx.Rollback() //nolint:errcheck // rollback after commit is harmless
 
-	// 1. Capture audio paths BEFORE deletion so the rows still exist to query.
+	// 1. Capture file paths BEFORE deletion so the rows still exist to query.
 	audioPaths, err := s.collectAudioPathsForScopeInTx(ctx, tx, scopeID)
 	if err != nil {
 		return DeleteResult{}, fmt.Errorf("collect audio paths: %w", err)
+	}
+	snapshotPaths, err := s.collectSnapshotPathsForScopeInTx(ctx, tx, scopeID)
+	if err != nil {
+		return DeleteResult{}, fmt.Errorf("collect snapshot paths: %w", err)
 	}
 
 	total := 0
@@ -117,10 +127,19 @@ func (s *sqlStore) DeleteScope(ctx context.Context, scope speechstorage.Scope) (
 		 WHERE session_id IN (SELECT id FROM voice_agent_sessions WHERE scope_id = ?)`,
 		`DELETE FROM voice_agent_session_summary_items
 		 WHERE session_id IN (SELECT id FROM voice_agent_sessions WHERE scope_id = ?)`,
-		// 5. Long recording children
+		// 5. Long recording children. Named explicitly rather than left to the
+		// cascade: a meeting's transcript, the user's own notes, the model's
+		// write-ups and the digests derived from all of it are the payload of
+		// an erasure request, not an implementation detail.
 		`DELETE FROM recording_session_segments
 		 WHERE session_id IN (SELECT id FROM recording_sessions WHERE scope_id = ?)`,
 		`DELETE FROM recording_session_notes
+		 WHERE session_id IN (SELECT id FROM recording_sessions WHERE scope_id = ?)`,
+		`DELETE FROM recording_session_snapshots
+		 WHERE session_id IN (SELECT id FROM recording_sessions WHERE scope_id = ?)`,
+		`DELETE FROM recording_session_enhancements
+		 WHERE session_id IN (SELECT id FROM recording_sessions WHERE scope_id = ?)`,
+		`DELETE FROM meeting_summary_batches
 		 WHERE session_id IN (SELECT id FROM recording_sessions WHERE scope_id = ?)`,
 		`DELETE FROM recording_sessions WHERE scope_id = ?`,
 		// 6–9. Owner tables
@@ -128,6 +147,12 @@ func (s *sqlStore) DeleteScope(ctx context.Context, scope speechstorage.Scope) (
 		`DELETE FROM transcriptions WHERE scope_id = ?`,
 		`DELETE FROM quick_notes WHERE scope_id = ?`,
 		`DELETE FROM user_dictionary_entries WHERE scope_id = ?`,
+		// Words and Replacements are user-authored content, so they belong to
+		// the subject as much as a transcript does.
+		`DELETE FROM customization_words WHERE scope_id = ?`,
+		`DELETE FROM customization_replacements WHERE scope_id = ?`,
+		`DELETE FROM customization_lexicons WHERE scope_id = ?`,
+		`DELETE FROM customization_rulesets WHERE scope_id = ?`,
 	}
 
 	for _, q := range deletes {
@@ -159,9 +184,38 @@ func (s *sqlStore) DeleteScope(ctx context.Context, scope speechstorage.Scope) (
 		return DeleteResult{}, err
 	}
 	return DeleteResult{
-		RowsDeleted:    total,
-		AudioFilePaths: audioPaths,
+		RowsDeleted:       total,
+		AudioFilePaths:    audioPaths,
+		SnapshotFilePaths: snapshotPaths,
 	}, nil
+}
+
+// collectSnapshotPathsForScopeInTx returns the distinct non-empty image paths
+// of every meeting screen capture in the scope. Must be called before the rows
+// are deleted, in the same transaction, so the read sees them.
+func (s *sqlStore) collectSnapshotPathsForScopeInTx(ctx context.Context, tx *sql.Tx, scopeID int64) ([]string, error) {
+	rows, err := tx.QueryContext(ctx, s.dialect.rebind(
+		`SELECT rss.path FROM recording_session_snapshots rss
+		 JOIN recording_sessions rs ON rs.id = rss.session_id
+		 WHERE rs.scope_id = ? AND rss.path != ''
+		 GROUP BY rss.path
+		 ORDER BY rss.path ASC`), scopeID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close() //nolint:errcheck // deferred rows close, error not actionable
+
+	var paths []string
+	for rows.Next() {
+		var p string
+		if err := rows.Scan(&p); err != nil {
+			return nil, err
+		}
+		if strings.TrimSpace(p) != "" {
+			paths = append(paths, p)
+		}
+	}
+	return paths, rows.Err()
 }
 
 // collectAudioPathsForScopeInTx returns the distinct non-empty file paths from

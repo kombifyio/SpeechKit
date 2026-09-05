@@ -113,17 +113,38 @@ func NewSQLiteStore(cfg StoreConfig) (*SQLiteStore, error) {
 }
 
 func sqlOpenAndMigrateSQLite(dbPath string) (*sql.DB, error) {
-	db, err := sql.Open("sqlite", dbPath+"?_pragma=journal_mode(WAL)&_pragma=busy_timeout(5000)")
+	// foreign_keys belongs in the DSN, not in a PRAGMA statement. SQLite scopes
+	// the setting to a connection and database/sql keeps a pool, so a PRAGMA
+	// executed once reached whichever connection served it and every later
+	// connection ran with SQLite's default of OFF. Deleting a recording session
+	// over such a connection left its segments, notes, write-ups, digests and
+	// snapshot rows behind instead of cascading — including after a subject
+	// erasure request.
+	db, err := sql.Open("sqlite", dbPath+"?_pragma=journal_mode(WAL)&_pragma=busy_timeout(5000)&_pragma=foreign_keys(1)")
 	if err != nil {
 		return nil, fmt.Errorf("open db: %w", err)
 	}
-	if _, err := db.ExecContext(context.Background(), `PRAGMA foreign_keys = ON`); err != nil {
+	if err := verifySQLiteForeignKeys(context.Background(), db); err != nil {
 		_ = db.Close()
-		return nil, fmt.Errorf("enable sqlite foreign keys: %w", err)
+		return nil, err
 	}
 	if err := runSQLiteMigrations(context.Background(), db); err != nil {
 		_ = db.Close()
 		return nil, err
 	}
 	return db, nil
+}
+
+// verifySQLiteForeignKeys fails startup when the driver did not apply the DSN
+// pragma. Cascading deletes are how meeting children and subject erasure stay
+// complete, so a silent downgrade to SQLite's OFF default must not be shipped.
+func verifySQLiteForeignKeys(ctx context.Context, db *sql.DB) error {
+	var enabled int
+	if err := db.QueryRowContext(ctx, `PRAGMA foreign_keys`).Scan(&enabled); err != nil {
+		return fmt.Errorf("read sqlite foreign_keys pragma: %w", err)
+	}
+	if enabled != 1 {
+		return fmt.Errorf("sqlite foreign_keys = %d, want 1", enabled)
+	}
+	return nil
 }
