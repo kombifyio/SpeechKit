@@ -13,6 +13,7 @@ import (
 	"github.com/firebase/genkit/go/ai"
 	"github.com/firebase/genkit/go/genkit"
 
+	"github.com/kombifyio/SpeechKit/pkg/speechkit"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/netsec"
 )
 
@@ -67,6 +68,16 @@ func registerOpenAIModels(g *genkit.Genkit, apiKey string) {
 	}
 
 	for _, name := range models {
+		// The GPT-5 family on OpenAI has the same request rules as on Foundry:
+		// max_completion_tokens only, default temperature only.
+		if reasoningModelFamily(name) {
+			registerOpenAICompatibleModelWithOptions(g, "openai", name, openAIBaseURL, client, true, AICallValidation, oaiCallOptions{
+				AuthToken:              apiKey,
+				UseMaxCompletionTokens: true,
+				OmitTemperature:        true,
+			})
+			continue
+		}
 		registerOpenAICompatibleModel(g, "openai", name, openAIBaseURL, apiKey, client, true)
 	}
 }
@@ -171,28 +182,73 @@ func registerOpenRouterModels(g *genkit.Genkit, apiKey string) {
 	}
 }
 
-// registerFoundryModels registers Microsoft Foundry deployments as custom
-// Genkit models. Foundry's v1 surface is OpenAI-compatible and accepts Bearer
-// auth; baseURL is the inference base derived from the project endpoint
-// (https://<host>/openai/v1) and each model name is a deployment name.
-func registerFoundryModels(g *genkit.Genkit, apiKey, baseURL string, deployments []string) {
-	if strings.TrimSpace(apiKey) == "" || strings.TrimSpace(baseURL) == "" {
+// foundryRegistration is what registerFoundryModels needs from the host: one
+// credential (the resource key or a token source), the two inference bases
+// and the deployment names the tiers point at.
+type foundryRegistration struct {
+	APIKey      string
+	BearerToken speechkit.BearerTokenFunc
+	// BaseURL is https://<host>/openai/v1 for OpenAI-publisher deployments.
+	BaseURL string
+	// MAIBaseURL is https://<host>/mai/v1 for Microsoft-publisher
+	// deployments (MAI-Thinking-1). Empty means those cannot be served.
+	MAIBaseURL  string
+	Deployments []string
+}
+
+// isFoundryMAIDeployment mirrors config.IsMAIThinkingModel without importing
+// the config package: Microsoft-publisher chat deployments are served on
+// /mai/v1 and take max_completion_tokens instead of max_tokens.
+func isFoundryMAIDeployment(name string) bool {
+	return strings.HasPrefix(strings.ToLower(strings.TrimSpace(name)), "mai-thinking")
+}
+
+// foundryModelTarget picks the base URL and request shape for one deployment.
+// ok is false when the deployment cannot be served with the given bases.
+func foundryModelTarget(reg foundryRegistration, name string) (baseURL string, opts oaiCallOptions, ok bool) {
+	// Every current Azure OpenAI chat deployment accepts max_completion_tokens
+	// (verified for gpt-4o, gpt-4.1 and gpt-5.6), while the GPT-5 family
+	// rejects max_tokens outright, so the newer spelling is used throughout.
+	opts = oaiCallOptions{
+		AuthToken:              reg.APIKey,
+		BearerToken:            reg.BearerToken,
+		UseMaxCompletionTokens: true,
+		OmitTemperature:        reasoningModelFamily(name),
+	}
+	if isFoundryMAIDeployment(name) {
+		if strings.TrimSpace(reg.MAIBaseURL) == "" {
+			return "", opts, false
+		}
+		return reg.MAIBaseURL, opts, true
+	}
+	if strings.TrimSpace(reg.BaseURL) == "" {
+		return "", opts, false
+	}
+	return reg.BaseURL, opts, true
+}
+
+// registerFoundryModels registers the configured Microsoft Foundry deployments
+// as custom Genkit models. OpenAI-publisher deployments speak the
+// OpenAI-compatible v1 surface; Microsoft-publisher ones (MAI-Thinking-1)
+// live on /mai/v1 with the same chat-completions shape. Both accept the
+// resource key or an Entra bearer token.
+func registerFoundryModels(g *genkit.Genkit, reg foundryRegistration) {
+	if strings.TrimSpace(reg.APIKey) == "" && reg.BearerToken == nil {
 		return
 	}
 	client := newAIClient(&AICallValidation)
-	names := []string{
-		"gpt-5.1",
-		"gpt-5-mini",
-	}
-	names = append(names, deployments...)
 	seen := map[string]bool{}
-	for _, raw := range names {
+	for _, raw := range reg.Deployments {
 		name := strings.TrimSpace(raw)
 		if name == "" || seen[name] {
 			continue
 		}
 		seen[name] = true
-		registerOpenAICompatibleModel(g, "foundry", name, baseURL, apiKey, client, true)
+		baseURL, opts, ok := foundryModelTarget(reg, name)
+		if !ok {
+			continue
+		}
+		registerOpenAICompatibleModelWithOptions(g, "foundry", name, baseURL, client, true, AICallValidation, opts)
 	}
 }
 
@@ -250,10 +306,65 @@ type oaiMessage struct {
 }
 
 type oaiRequest struct {
-	Model       string       `json:"model"`
-	Messages    []oaiMessage `json:"messages"`
-	MaxTokens   int          `json:"max_tokens,omitempty"`
-	Temperature *float64     `json:"temperature,omitempty"`
+	Model    string       `json:"model"`
+	Messages []oaiMessage `json:"messages"`
+	// MaxTokens is the classic cap; MaxCompletionTokens is what reasoning
+	// models such as MAI-Thinking-1 require instead (they reject max_tokens).
+	MaxTokens           int      `json:"max_tokens,omitempty"`
+	MaxCompletionTokens int      `json:"max_completion_tokens,omitempty"`
+	Temperature         *float64 `json:"temperature,omitempty"`
+}
+
+// oaiCallOptions varies one OpenAI-compatible call beyond its base URL and
+// model: which credential to send and how to spell the output cap.
+type oaiCallOptions struct {
+	// AuthToken is the static credential sent as "Authorization: Bearer".
+	AuthToken string
+	// BearerToken, when set, wins over AuthToken and is minted per call.
+	BearerToken speechkit.BearerTokenFunc
+	// UseMaxCompletionTokens sends max_completion_tokens instead of max_tokens.
+	UseMaxCompletionTokens bool
+	// OmitTemperature drops the temperature: reasoning models (GPT-5 family,
+	// o-series, MAI-Thinking) accept only their default and reject the
+	// request otherwise (verified live on Foundry, 2026-09-05).
+	OmitTemperature bool
+	ExtraHeaders    map[string]string
+}
+
+// reasoningModelFamily reports whether a deployment or model name belongs to
+// a family that rejects max_tokens and non-default temperature.
+func reasoningModelFamily(name string) bool {
+	lower := strings.ToLower(strings.TrimSpace(name))
+	for _, prefix := range []string{"gpt-5", "o1", "o3", "o4", "mai-thinking"} {
+		if strings.HasPrefix(lower, prefix) {
+			return true
+		}
+	}
+	return false
+}
+
+func registerOpenAICompatibleModelWithOptions(
+	g *genkit.Genkit,
+	provider, name, baseURL string,
+	client *http.Client,
+	supportsTools bool,
+	validation netsec.ValidationOptions,
+	opts oaiCallOptions,
+) {
+	genkit.DefineModel(g, provider+"/"+name,
+		&ai.ModelOptions{
+			Label: provider + "/" + name,
+			Supports: &ai.ModelSupports{
+				Multiturn:  true,
+				SystemRole: true,
+				Media:      false,
+				Tools:      supportsTools,
+			},
+		},
+		func(ctx context.Context, mr *ai.ModelRequest, cb ai.ModelStreamCallback) (*ai.ModelResponse, error) {
+			return callOpenAICompatibleWithOptions(ctx, client, baseURL, name, mr, validation, opts)
+		},
+	)
 }
 
 type oaiResponse struct {
@@ -306,6 +417,22 @@ func callOpenAICompatibleWithValidation(
 	validation netsec.ValidationOptions,
 	extraHeaders map[string]string,
 ) (*ai.ModelResponse, error) {
+	return callOpenAICompatibleWithOptions(ctx, client, baseURL, model, mr, validation, oaiCallOptions{
+		AuthToken:    authToken,
+		ExtraHeaders: extraHeaders,
+	})
+}
+
+func callOpenAICompatibleWithOptions(
+	ctx context.Context,
+	client *http.Client,
+	baseURL string,
+	model string,
+	mr *ai.ModelRequest,
+	validation netsec.ValidationOptions,
+	opts oaiCallOptions,
+) (*ai.ModelResponse, error) {
+	extraHeaders := opts.ExtraHeaders
 	var messages []oaiMessage
 	for _, m := range mr.Messages {
 		role := string(m.Role)
@@ -328,9 +455,13 @@ func callOpenAICompatibleWithValidation(
 
 	if cfg, ok := mr.Config.(*ai.GenerationCommonConfig); ok && cfg != nil {
 		if cfg.MaxOutputTokens > 0 {
-			reqBody.MaxTokens = cfg.MaxOutputTokens
+			if opts.UseMaxCompletionTokens {
+				reqBody.MaxCompletionTokens = cfg.MaxOutputTokens
+			} else {
+				reqBody.MaxTokens = cfg.MaxOutputTokens
+			}
 		}
-		if cfg.Temperature > 0 {
+		if cfg.Temperature > 0 && !opts.OmitTemperature {
 			t := cfg.Temperature
 			reqBody.Temperature = &t
 		}
@@ -350,6 +481,14 @@ func callOpenAICompatibleWithValidation(
 		return nil, fmt.Errorf("create request: %w", err)
 	}
 	req.Header.Set("Content-Type", "application/json")
+	authToken := opts.AuthToken
+	if opts.BearerToken != nil {
+		minted, err := opts.BearerToken(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("%s: bearer token: %w", model, err)
+		}
+		authToken = minted
+	}
 	if token := strings.TrimSpace(authToken); token != "" {
 		req.Header.Set("Authorization", "Bearer "+token)
 	}

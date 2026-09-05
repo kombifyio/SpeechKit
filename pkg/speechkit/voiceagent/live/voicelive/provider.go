@@ -31,8 +31,10 @@ const (
 	// DefaultModel is the default brain model. Voice Live addresses models
 	// by name in the query string, not by deployment.
 	DefaultModel = "gpt-realtime-2"
-	// DefaultAPIVersion is the GA Voice Live API version.
-	DefaultAPIVersion = "2025-10-01"
+	// DefaultAPIVersion is the Voice Live API version the how-to guide
+	// documents (2026-04-10); the handshake was verified live against it and
+	// against the previous 2025-10-01 on 2026-09-05. APIVersion overrides it.
+	DefaultAPIVersion = "2026-04-10"
 	// DefaultTranscriptionModel transcribes user speech for the kernel's
 	// input transcripts.
 	DefaultTranscriptionModel = "mai-transcribe-2"

@@ -63,6 +63,10 @@ type BuildSpec struct {
 	// Azure Speech surface (MAI-Transcribe) instead of the OpenAI-compatible
 	// route; BaseURL is ignored and FoundrySpeech.Host/APIKey/Model are used.
 	FoundrySpeech *FoundrySpeechOpts
+	// BearerToken, when set, replaces APIKey for providers that accept an
+	// identity-provider token (Microsoft Foundry with an Entra sign-in). It
+	// is called per request; the framework never mints tokens itself.
+	BearerToken speechkit.BearerTokenFunc
 }
 
 func firstNonEmptyString(values ...string) string {
@@ -193,9 +197,14 @@ var providerRegistry = map[string]providerDescriptor{
 				if apiKey == "" {
 					apiKey = spec.APIKey
 				}
+				token := o.BearerToken
+				if token == nil {
+					token = spec.BearerToken
+				}
 				return azurespeech.New(azurespeech.Options{
 					Host:        host,
 					APIKey:      apiKey,
+					BearerToken: token,
 					Model:       firstNonEmptyString(o.Model, spec.ModelID),
 					Style:       o.Style,
 					Diarization: o.Diarization,
@@ -207,9 +216,11 @@ var providerRegistry = map[string]providerDescriptor{
 			}
 			model := strings.TrimSpace(spec.ModelID)
 			if model == "" {
-				model = "gpt-4o-mini-transcribe"
+				model = "gpt-transcribe"
 			}
-			return openaicompat.New("foundry", baseURL, spec.APIKey, model), nil
+			p := openaicompat.New("foundry", baseURL, spec.APIKey, model)
+			p.BearerToken = spec.BearerToken
+			return p, nil
 		},
 	},
 	"ollama": {
@@ -338,11 +349,13 @@ type (
 	// FoundryOpts configures the Microsoft Foundry provider. BaseURL is the
 	// OpenAI-compatible base derived from the project endpoint
 	// (https://<host>/openai); Model is the deployment name and defaults to
-	// "gpt-4o-mini-transcribe" when empty.
+	// "gpt-transcribe" when empty.
 	FoundryOpts struct {
-		APIKey  string
-		BaseURL string
-		Model   string
+		APIKey string
+		// BearerToken, when set, wins over APIKey (Entra sign-in on Foundry).
+		BearerToken speechkit.BearerTokenFunc
+		BaseURL     string
+		Model       string
 	}
 
 	// FoundrySpeechOpts configures the Microsoft Foundry provider on the
@@ -352,7 +365,9 @@ type (
 	// "MAI-Transcribe-2". The provider reports the shared "foundry" id, so a
 	// host enables either FoundryOpts or FoundrySpeechOpts, not both.
 	FoundrySpeechOpts struct {
-		APIKey      string
+		APIKey string
+		// BearerToken, when set, wins over APIKey (Entra sign-in on Foundry).
+		BearerToken speechkit.BearerTokenFunc
 		Host        string
 		Model       string
 		Style       string // "clean" (default) or "verbatim"
@@ -489,9 +504,11 @@ func BuildRouter(cfg RouterConfig, enabled EnabledProviders) (router *stt.Router
 		if baseURL := strings.TrimSpace(o.BaseURL); baseURL != "" {
 			model := strings.TrimSpace(o.Model)
 			if model == "" {
-				model = "gpt-4o-mini-transcribe"
+				model = "gpt-transcribe"
 			}
-			cloud = append(cloud, openaicompat.New("foundry", baseURL, o.APIKey, model))
+			p := openaicompat.New("foundry", baseURL, o.APIKey, model)
+			p.BearerToken = o.BearerToken
+			cloud = append(cloud, p)
 			notes = append(notes, "STT: Microsoft Foundry registered (deployment="+model+")")
 		} else {
 			notes = append(notes, "STT: Microsoft Foundry skipped (project endpoint missing)")
@@ -502,6 +519,7 @@ func BuildRouter(cfg RouterConfig, enabled EnabledProviders) (router *stt.Router
 			p := azurespeech.New(azurespeech.Options{
 				Host:        host,
 				APIKey:      o.APIKey,
+				BearerToken: o.BearerToken,
 				Model:       o.Model,
 				Style:       o.Style,
 				Diarization: o.Diarization,

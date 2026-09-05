@@ -120,27 +120,29 @@ func DefaultProviderProfiles() []speechkit.ProviderProfile {
 			AllowInference: true,
 		},
 		{
-			ID:            "stt.foundry.gpt-4o-mini-transcribe",
+			// The current OpenAI file-transcription model on Foundry (the
+			// model list marks the gpt-4o transcribe family as preview and
+			// gpt-transcribe as the offline model for /audio/transcriptions).
+			// It needs a deployment of that name; the MAI profile below needs
+			// none and is the recommended default.
+			ID:            "stt.foundry.gpt-transcribe",
 			Mode:          speechkit.ModeDictation,
-			Name:          "GPT-4o mini Transcribe (Microsoft Foundry)",
+			Name:          "GPT Transcribe (Microsoft Foundry)",
 			ProviderKind:  speechkit.ProviderKindDirectProvider,
 			ExecutionMode: speechkit.ExecutionModeFoundry,
 			Provider:      "foundry",
-			ModelID:       "gpt-4o-mini-transcribe",
+			ModelID:       "gpt-transcribe",
 			Lifecycle:     speechkit.ModelLifecycleGA,
 			Source:        "Microsoft Foundry",
 			Description:   "Azure-hosted transcription through the Microsoft Foundry OpenAI-compatible v1 surface. The model id is the default deployment name — override it with your own deployment name in the Foundry integration settings.",
 			License:       "proprietary",
 			Capabilities:  []speechkit.Capability{speechkit.CapabilityTranscription, speechkit.CapabilitySTT, speechkit.CapabilityAudioInput, speechkit.CapabilityDictionaryPrompt},
 			AdapterKind:   "stt_router",
-			EvidenceURL:   "https://learn.microsoft.com/azure/ai-foundry/openai/reference",
+			EvidenceURL:   "https://learn.microsoft.com/azure/ai-foundry/openai/concepts/models",
 			Variants: []speechkit.ModelVariant{
-				{ID: "foundry.gpt-4o-mini-transcribe", Name: "GPT-4o mini Transcribe", ModelID: "gpt-4o-mini-transcribe", Recommended: true},
-				{ID: "foundry.gpt-4o-transcribe", Name: "GPT-4o Transcribe", ModelID: "gpt-4o-transcribe"},
-				{ID: "foundry.whisper", Name: "Whisper", ModelID: "whisper", Description: "Azure OpenAI whisper deployment for legacy setups."},
+				{ID: "foundry.gpt-transcribe", Name: "GPT Transcribe", ModelID: "gpt-transcribe", Recommended: true},
 			},
 			AllowInference: true,
-			Recommended:    true,
 		},
 		{
 			// MAI-Transcribe is served by the Azure Speech surface of the same
@@ -163,7 +165,6 @@ func DefaultProviderProfiles() []speechkit.ProviderProfile {
 			EvidenceURL:   "https://learn.microsoft.com/azure/ai-services/speech-service/mai-transcribe",
 			Variants: []speechkit.ModelVariant{
 				{ID: "foundry.mai-transcribe-2", Name: "MAI-Transcribe-2 (Preview)", ModelID: "MAI-Transcribe-2", Recommended: true},
-				{ID: "foundry.mai-transcribe-1.5", Name: "MAI-Transcribe-1.5 (Preview)", ModelID: "MAI-Transcribe-1.5", Description: "Previous generation; fewer languages."},
 			},
 			AllowInference: true,
 			Recommended:    true,
@@ -343,13 +344,18 @@ func DefaultProviderProfiles() []speechkit.ProviderProfile {
 			Recommended:    true,
 		},
 		{
-			ID:            "assist.foundry.gpt-5.1",
+			// GPT-5.6 ships on Foundry as three purpose-built variants
+			// (verified 2026-09-05): Terra balanced, Luna fast and cheap with
+			// a 1M context, Sol the reasoning flagship. Configs that still
+			// name the previous id "assist.foundry.gpt-5.1" resolve here via
+			// NormalizeProviderProfileID.
+			ID:            "assist.foundry.gpt-5.6",
 			Mode:          speechkit.ModeAssist,
-			Name:          "GPT-5.1 (Microsoft Foundry)",
+			Name:          "GPT-5.6 (Microsoft Foundry)",
 			ProviderKind:  speechkit.ProviderKindDirectProvider,
 			ExecutionMode: speechkit.ExecutionModeFoundry,
 			Provider:      "foundry",
-			ModelID:       "gpt-5.1",
+			ModelID:       "gpt-5.6-terra",
 			Source:        "Microsoft Foundry",
 			Description:   "Azure-hosted frontier LLM for Assist and meeting summaries via the Microsoft Foundry OpenAI-compatible v1 surface. The model id is the default deployment name — override it with your own deployment name in the Foundry integration settings.",
 			License:       "proprietary",
@@ -357,10 +363,9 @@ func DefaultProviderProfiles() []speechkit.ProviderProfile {
 			AdapterKind:   "genkit_llm",
 			EvidenceURL:   "https://learn.microsoft.com/azure/ai-foundry/openai/reference",
 			Variants: []speechkit.ModelVariant{
-				{ID: "foundry.gpt-5.1", Name: "GPT-5.1", ModelID: "gpt-5.1", Recommended: true},
-				{ID: "foundry.gpt-5.2", Name: "GPT-5.2", ModelID: "gpt-5.2"},
-				{ID: "foundry.gpt-5-mini", Name: "GPT-5 mini", ModelID: "gpt-5-mini"},
-				{ID: "foundry.gpt-5-nano", Name: "GPT-5 nano", ModelID: "gpt-5-nano"},
+				{ID: "foundry.gpt-5.6-terra", Name: "GPT-5.6 Terra", ModelID: "gpt-5.6-terra", Recommended: true, Description: "Balanced everyday model; GPT-5.5-class quality at lower cost."},
+				{ID: "foundry.gpt-5.6-sol", Name: "GPT-5.6 Sol", ModelID: "gpt-5.6-sol", Description: "Reasoning flagship for extended, agentic and code-heavy work."},
+				{ID: "foundry.gpt-5.6-luna", Name: "GPT-5.6 Luna", ModelID: "gpt-5.6-luna", Description: "Fastest and cheapest of the family; 1M-token context."},
 				// Microsoft-publisher deployment; served on /mai/v1 rather than
 				// /openai/v1, text only, and quota starts at zero until requested.
 				{ID: "foundry.mai-thinking-1", Name: "MAI-Thinking-1 (Preview)", ModelID: "MAI-Thinking-1", Description: "Microsoft's reasoning model (256k context, 64k output). Needs a MAI-Thinking-1 deployment plus a quota request in the Foundry project; text only."},
@@ -727,7 +732,7 @@ func DefaultProviderProfiles() []speechkit.ProviderProfile {
 			Variants: []speechkit.ModelVariant{
 				{ID: "foundry.voicelive.gpt-realtime-2", Name: "GPT Realtime 2 brain", ModelID: "gpt-realtime-2", Recommended: true},
 				{ID: "foundry.voicelive.gpt-realtime-mini", Name: "GPT Realtime mini brain", ModelID: "gpt-realtime-mini", Description: "Lower cost realtime brain."},
-				{ID: "foundry.voicelive.gpt-5-mini", Name: "GPT-5 mini brain", ModelID: "gpt-5-mini", Description: "Text brain; Voice Live adds speech in and out."},
+				{ID: "foundry.voicelive.gpt-5.4", Name: "GPT-5.4 brain", ModelID: "gpt-5.4", Description: "Newest text brain the Voice Live service hosts itself; speech in and out come from the service."},
 				{ID: "foundry.voicelive.phi4-mm-realtime", Name: "Phi-4 multimodal realtime brain", ModelID: "phi4-mm-realtime", Description: "Small Microsoft model for low-latency agents."},
 			},
 			AllowInference: true,
@@ -938,29 +943,6 @@ func DefaultProviderProfiles() []speechkit.ProviderProfile {
 				{ID: "openai.tts1hd.shimmer", Name: "Shimmer (HD)", ModelID: "tts-1-hd|shimmer"},
 				{ID: "openai.tts1hd.alloy", Name: "Alloy (HD)", ModelID: "tts-1-hd|alloy"},
 				{ID: "openai.tts1.nova", Name: "Nova (Standard)", ModelID: "tts-1|nova"},
-			},
-			AllowInference: true,
-			Recommended:    true,
-		},
-		{
-			ID:            "tts.foundry.gpt-4o-mini-tts",
-			Mode:          speechkit.ModeTTS,
-			Name:          "GPT-4o mini TTS (Microsoft Foundry)",
-			ProviderKind:  speechkit.ProviderKindDirectProvider,
-			ExecutionMode: speechkit.ExecutionModeFoundry,
-			Provider:      "foundry",
-			ModelID:       "gpt-4o-mini-tts",
-			Source:        "Microsoft Foundry",
-			Description:   "Azure-hosted steerable TTS through the Microsoft Foundry OpenAI-compatible audio/speech endpoint. The model id is the default deployment name — override deployment and voice in the Foundry integration settings.",
-			License:       "proprietary",
-			Capabilities:  []speechkit.Capability{speechkit.CapabilityTTS},
-			AdapterKind:   "foundry_tts",
-			EvidenceURL:   "https://learn.microsoft.com/azure/ai-foundry/openai/reference",
-			Variants: []speechkit.ModelVariant{
-				{ID: "foundry.gpt-4o-mini-tts.alloy", Name: "Alloy (GPT-4o mini TTS)", ModelID: "gpt-4o-mini-tts|alloy", Recommended: true},
-				{ID: "foundry.gpt-4o-mini-tts.nova", Name: "Nova (GPT-4o mini TTS)", ModelID: "gpt-4o-mini-tts|nova"},
-				{ID: "foundry.tts.alloy", Name: "Alloy (TTS Standard)", ModelID: "tts|alloy"},
-				{ID: "foundry.tts-hd.nova", Name: "Nova (TTS HD)", ModelID: "tts-hd|nova"},
 			},
 			AllowInference: true,
 			Recommended:    true,

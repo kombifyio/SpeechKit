@@ -1,6 +1,7 @@
 package ttswiring
 
 import (
+	"context"
 	"strings"
 	"testing"
 
@@ -146,5 +147,39 @@ func TestResolveRestrictedScopeSuspendsCloudTTS(t *testing.T) {
 	enabled, _ = ResolveEnabledProviders(cfg)
 	if enabled.OpenAI == nil {
 		t.Fatal("cloud TTS should resume when the scope is widened")
+	}
+}
+
+// A Microsoft sign-in has no resource key; the token source alone must
+// register Foundry TTS, on whichever engine the voice selects.
+func TestResolveFoundryEntraWithoutKey(t *testing.T) {
+	cfg := newCfg()
+	cfg.TTS.Foundry.Enabled = true
+	cfg.Providers.Foundry.Enabled = true
+	cfg.Providers.Foundry.ProjectEndpoint = "https://example.services.ai.azure.com/api/projects/demo"
+	cfg.Providers.Foundry.APIKeyEnv = "TEST_UNSET_FOUNDRY_KEY"
+	cfg.Providers.Foundry.AuthMode = config.FoundryAuthModeEntra
+	cfg.Providers.Foundry.TTSDeployment = "my-openai-tts"
+	token := func(ctx context.Context) (string, error) { return "t", nil }
+
+	enabled, _ := ResolveEnabledProvidersWithAuth(cfg, Auth{FoundryBearerToken: token})
+	if enabled.Foundry == nil || enabled.Foundry.BearerToken == nil {
+		t.Fatalf("OpenAI-route Foundry TTS not registered with a token source: %+v", enabled.Foundry)
+	}
+
+	cfg.Providers.Foundry.TTSDeployment = "MAI-Voice-2"
+	enabled, _ = ResolveEnabledProvidersWithAuth(cfg, Auth{FoundryBearerToken: token})
+	if enabled.FoundrySpeech == nil || enabled.FoundrySpeech.BearerToken == nil {
+		t.Fatalf("Speech-route Foundry TTS not registered with a token source: %+v", enabled.FoundrySpeech)
+	}
+
+	// Key mode ignores a stray token source and, without a key, registers nothing.
+	cfg.Providers.Foundry.AuthMode = config.FoundryAuthModeAPIKey
+	enabled, notes := ResolveEnabledProvidersWithAuth(cfg, Auth{FoundryBearerToken: token})
+	if enabled.Foundry != nil || enabled.FoundrySpeech != nil {
+		t.Fatal("key mode without a key must not register Foundry TTS")
+	}
+	if !strings.Contains(strings.Join(notes, "\n"), "no API key or Microsoft sign-in") {
+		t.Fatalf("expected a note about the missing credential, got %v", notes)
 	}
 }

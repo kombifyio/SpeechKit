@@ -34,6 +34,9 @@ type BuildSpec struct {
 	GoogleApplicationCredentialsEnv string
 	// FoundrySpeech routes the Foundry provider to Azure Speech (MAI-Transcribe).
 	FoundrySpeech *FoundrySpeechOpts
+	// BearerToken replaces APIKey for Foundry when a Microsoft sign-in is
+	// the credential (forwarded to the public BuildSpec).
+	BearerToken framework.BearerTokenFunc
 }
 
 // Build forwards to the public pkg/speechkit/stt registry, converting the
@@ -51,5 +54,6 @@ func Build(spec BuildSpec) (string, STTProvider, error) {
 		GoogleStreamingCredentialsEnv:   spec.GoogleStreamingCredentialsEnv,
 		GoogleApplicationCredentialsEnv: spec.GoogleApplicationCredentialsEnv,
 		FoundrySpeech:                   spec.FoundrySpeech,
+		BearerToken:                     spec.BearerToken,
 	})
 }

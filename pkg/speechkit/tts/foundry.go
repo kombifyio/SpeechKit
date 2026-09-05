@@ -7,8 +7,10 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 	"time"
 
+	"github.com/kombifyio/SpeechKit/pkg/speechkit"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/netsec"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/provideropts"
 )
@@ -27,20 +29,24 @@ const (
 // Foundry's v1 surface accepts Bearer auth, so the API key rides the standard
 // Authorization header. Validation is strict by default (public https only).
 type Foundry struct {
-	apiKey     string
-	model      string
-	voice      string
-	BaseURL    string
-	Validation netsec.ValidationOptions
-	client     *http.Client
+	apiKey      string
+	bearerToken speechkit.BearerTokenFunc
+	model       string
+	voice       string
+	BaseURL     string
+	Validation  netsec.ValidationOptions
+	client      *http.Client
 }
 
 // FoundryOpts configures the Microsoft Foundry TTS provider.
 type FoundryOpts struct {
-	APIKey  string
-	BaseURL string // OpenAI-compatible base, e.g. https://<host>/openai (required)
-	Model   string // deployment name; defaults to "gpt-4o-mini-tts"
-	Voice   string // alloy, echo, fable, onyx, nova, shimmer; defaults to "alloy"
+	APIKey string
+	// BearerToken, when set, wins over APIKey: it is called per request and
+	// the token rides "Authorization: Bearer". Hosts set it for Entra sign-in.
+	BearerToken speechkit.BearerTokenFunc
+	BaseURL     string // OpenAI-compatible base, e.g. https://<host>/openai (required)
+	Model       string // deployment name; defaults to "gpt-4o-mini-tts"
+	Voice       string // alloy, echo, fable, onyx, nova, shimmer; defaults to "alloy"
 }
 
 // NewFoundry creates a Microsoft Foundry TTS provider.
@@ -54,10 +60,11 @@ func NewFoundry(opts FoundryOpts) *Foundry {
 		voice = foundryDefaultVoice
 	}
 	p := &Foundry{
-		apiKey:  opts.APIKey,
-		model:   model,
-		voice:   voice,
-		BaseURL: opts.BaseURL,
+		apiKey:      opts.APIKey,
+		bearerToken: opts.BearerToken,
+		model:       model,
+		voice:       voice,
+		BaseURL:     opts.BaseURL,
 		// Validation zero-value = strict: public https only.
 	}
 	p.client = netsec.NewSafeHTTPClient(netsec.ClientOptions{Timeout: 30 * time.Second, DialValidation: &p.Validation})
@@ -132,7 +139,9 @@ func (f *Foundry) Synthesize(ctx context.Context, text string, opts SynthesizeOp
 	if err != nil {
 		return nil, fmt.Errorf("foundry tts: create request: %w", err)
 	}
-	req.Header.Set("Authorization", "Bearer "+f.apiKey)
+	if err := f.authorize(ctx, req); err != nil {
+		return nil, err
+	}
 	req.Header.Set("Content-Type", "application/json")
 
 	resp, err := f.client.Do(req)
@@ -171,9 +180,24 @@ func (f *Foundry) CloseIdleConnections() {
 	}
 }
 
+// authorize attaches the credential: a freshly minted bearer token when a
+// token source is configured, otherwise the static resource key.
+func (f *Foundry) authorize(ctx context.Context, req *http.Request) error {
+	if f.bearerToken != nil {
+		token, err := f.bearerToken(ctx)
+		if err != nil {
+			return fmt.Errorf("foundry tts: bearer token: %w", err)
+		}
+		req.Header.Set("Authorization", "Bearer "+strings.TrimSpace(token))
+		return nil
+	}
+	req.Header.Set("Authorization", "Bearer "+f.apiKey)
+	return nil
+}
+
 func (f *Foundry) Health(ctx context.Context) error {
-	if f.apiKey == "" {
-		return fmt.Errorf("foundry tts: no API key configured")
+	if f.apiKey == "" && f.bearerToken == nil {
+		return fmt.Errorf("foundry tts: no API key or Microsoft sign-in configured")
 	}
 	if f.BaseURL == "" {
 		return fmt.Errorf("foundry tts: no endpoint configured")

@@ -44,6 +44,15 @@ func SafeProviderErrorReason(status int, body []byte) string {
 		return "unsupported model"
 	case strings.Contains(lower, "model not found"):
 		return "model not found"
+	case strings.Contains(lower, "deploymentnotfound") ||
+		strings.Contains(lower, "deployment not found") ||
+		strings.Contains(lower, "no deployment"):
+		// Azure OpenAI / Microsoft Foundry: the deployment name in `model`
+		// does not exist in the project. Naming it saves the user from
+		// reading a generic 404 as an outage.
+		return "deployment not found (check the deployment name in the Foundry project)"
+	case status == http.StatusNotFound:
+		return "provider endpoint or model not found"
 	case status == http.StatusServiceUnavailable ||
 		strings.Contains(lower, "model loading") ||
 		strings.Contains(lower, "loading"):

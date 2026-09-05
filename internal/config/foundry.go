@@ -8,8 +8,8 @@ package config
 // that single value:
 //
 //	https://<host>/openai/v1/chat/completions          OpenAI-publisher deployments
-//	https://<host>/openai/v1/audio/transcriptions      gpt-4o-*-transcribe deployments
-//	https://<host>/openai/v1/audio/speech              gpt-4o-mini-tts deployments
+//	https://<host>/openai/v1/audio/transcriptions      gpt-transcribe deployments
+//	https://<host>/openai/v1/audio/speech              OpenAI TTS deployments
 //	https://<host>/mai/v1/chat/completions             Microsoft-publisher deployments (MAI-Thinking-1)
 //	wss://<host>/openai/v1/realtime?model=<deployment> OpenAI Realtime protocol
 //	wss://<host>/voice-live/realtime                   Voice Live (managed voice agent)
@@ -29,14 +29,32 @@ import (
 // Default Foundry deployment names per modality. Foundry's `model` request
 // parameter is the *deployment name*; these defaults match the model-named
 // deployments the portal suggests, and users can override each one.
+//
+// Speech in and out default to the Microsoft models the resource serves
+// without a deployment (MAI-Transcribe-2 and MAI-Voice-2-Flash, both public
+// preview, verified live 2026-09-05). The OpenAI-route alternatives are
+// gpt-transcribe (the current file transcription model per the Foundry
+// model list) and an OpenAI TTS deployment, both addressed by deployment
+// name.
+//
+// The LLM tiers follow the GPT-5.6 family Microsoft ships on Foundry
+// (verified 2026-09-05): Terra is the balanced everyday model, Luna the
+// fast, low-cost one with the 1M context, Sol the reasoning flagship. Assist
+// and Agent default to Terra; the Utility tier (title extraction, cleanups)
+// takes Luna.
 const (
-	DefaultFoundrySTTDeployment      = "gpt-4o-mini-transcribe"
-	DefaultFoundryUtilityDeployment  = "gpt-5-mini"
-	DefaultFoundryAssistDeployment   = "gpt-5.1"
-	DefaultFoundryAgentDeployment    = "gpt-5.1"
+	DefaultFoundrySTTDeployment      = FoundryMAITranscribeModel
+	DefaultFoundryUtilityDeployment  = "gpt-5.6-luna"
+	DefaultFoundryAssistDeployment   = "gpt-5.6-terra"
+	DefaultFoundryAgentDeployment    = "gpt-5.6-terra"
 	DefaultFoundryRealtimeDeployment = "gpt-realtime-2"
-	DefaultFoundryTTSDeployment      = "gpt-4o-mini-tts"
-	DefaultFoundryTTSVoice           = "alloy"
+	DefaultFoundryTTSDeployment      = FoundryMAIVoiceFlashModel
+	// DefaultFoundryTTSVoice applies to OpenAI TTS deployments only; MAI
+	// voices use Speech short names (see DefaultFoundryMAIVoice).
+	DefaultFoundryTTSVoice = "alloy"
+	// DefaultFoundryOpenAITranscribeDeployment is the OpenAI-route
+	// transcription model for callers that leave the deployment empty.
+	DefaultFoundryOpenAITranscribeDeployment = "gpt-transcribe"
 )
 
 // MAI speech defaults. These are not deployments: the Speech surface of the
@@ -284,7 +302,7 @@ func (c FoundryProviderConfig) ResolvedSTTDeployment() string {
 }
 
 // STTEngine reports which surface serves dictation: "speech" for
-// MAI-Transcribe models, "openai" for gpt-4o-*-transcribe deployments.
+// MAI-Transcribe models, "openai" for gpt-transcribe style deployments.
 func (c FoundryProviderConfig) STTEngine() string {
 	if IsMAITranscribeModel(c.ResolvedSTTDeployment()) {
 		return FoundryEngineSpeech
@@ -326,7 +344,7 @@ func (c FoundryProviderConfig) ResolvedTTSDeployment() string {
 }
 
 // TTSEngine reports which surface serves speech output: "speech" for
-// MAI-Voice models, "openai" for gpt-4o-mini-tts style deployments.
+// MAI-Voice models, "openai" for OpenAI TTS deployments.
 func (c FoundryProviderConfig) TTSEngine() string {
 	if IsMAIVoiceModel(c.ResolvedTTSDeployment()) || IsMAIVoiceModel(c.TTSVoice) {
 		return FoundryEngineSpeech

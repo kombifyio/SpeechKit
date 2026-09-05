@@ -57,13 +57,19 @@ func TestFoundryEndpointRejectsInsecure(t *testing.T) {
 
 func TestFoundryEngines(t *testing.T) {
 	var cfg FoundryProviderConfig
-	if got := cfg.STTEngine(); got != FoundryEngineOpenAI {
+	// Empty deployments mean the Microsoft speech models, which the
+	// resource serves without a deployment.
+	if got := cfg.STTEngine(); got != FoundryEngineSpeech {
 		t.Fatalf("default STT engine = %q", got)
 	}
-	if got := cfg.TTSEngine(); got != FoundryEngineOpenAI {
+	if got := cfg.TTSEngine(); got != FoundryEngineSpeech {
 		t.Fatalf("default TTS engine = %q", got)
 	}
 
+	cfg.STTDeployment = "gpt-transcribe"
+	if got := cfg.STTEngine(); got != FoundryEngineOpenAI {
+		t.Fatalf("OpenAI-route STT engine = %q", got)
+	}
 	cfg.STTDeployment = "mai-transcribe-2"
 	if got := cfg.STTEngine(); got != FoundryEngineSpeech {
 		t.Fatalf("MAI STT engine = %q", got)
@@ -82,8 +88,11 @@ func TestFoundryEngines(t *testing.T) {
 		t.Fatalf("explicit voice = %q", got)
 	}
 
-	cfg.TTSDeployment = "gpt-4o-mini-tts"
+	cfg.TTSDeployment = "my-openai-tts"
 	cfg.TTSVoice = ""
+	if got := cfg.TTSEngine(); got != FoundryEngineOpenAI {
+		t.Fatalf("OpenAI-route TTS engine = %q", got)
+	}
 	if got := cfg.ResolvedTTSVoice(); got != DefaultFoundryTTSVoice {
 		t.Fatalf("openai default voice = %q", got)
 	}
@@ -134,5 +143,22 @@ func TestIsMAIModelHelpers(t *testing.T) {
 	}
 	if !IsMAIThinkingModel("MAI-Thinking-1") || IsMAIThinkingModel("gpt-5.1") {
 		t.Fatal("IsMAIThinkingModel")
+	}
+}
+
+func TestFoundryLLMDefaultsFollowTheGPT56Family(t *testing.T) {
+	var cfg FoundryProviderConfig
+	if got := cfg.ResolvedAssistDeployment(); got != "gpt-5.6-terra" {
+		t.Fatalf("assist default = %q, want gpt-5.6-terra", got)
+	}
+	if got := cfg.ResolvedAgentDeployment(); got != "gpt-5.6-terra" {
+		t.Fatalf("agent default = %q, want gpt-5.6-terra", got)
+	}
+	if got := cfg.ResolvedUtilityDeployment(); got != "gpt-5.6-luna" {
+		t.Fatalf("utility default = %q, want gpt-5.6-luna", got)
+	}
+	cfg.AssistDeployment = " gpt-5.6-sol "
+	if got := cfg.ResolvedAssistDeployment(); got != "gpt-5.6-sol" {
+		t.Fatalf("override not honoured: %q", got)
 	}
 }

@@ -31,11 +31,10 @@ const (
 	// Microsoft MAI speech models (Azure Speech on a Foundry resource) and the
 	// brains Voice Live hosts without a deployment.
 	ModelFoundryMAITranscribe2        = "MAI-Transcribe-2"
-	ModelFoundryMAITranscribe15       = "MAI-Transcribe-1.5"
 	ModelFoundryMAIVoice2             = "MAI-Voice-2"
 	ModelFoundryMAIVoice2Flash        = "MAI-Voice-2-Flash"
 	ModelFoundryVoiceLiveRealtimeMini = "gpt-realtime-mini"
-	ModelFoundryVoiceLiveGPT5Mini     = "gpt-5-mini"
+	ModelFoundryVoiceLiveGPT54        = "gpt-5.4"
 	ModelFoundryVoiceLivePhi4MM       = "phi4-mm-realtime"
 )
 
@@ -84,7 +83,7 @@ const modelRegistryVerifiedAt = "2026-09-02"
 // 2026-09-04 pass: the OpenAI realtime rows are unchanged; the MAI rows were
 // verified live against a Foundry resource (Speech voices list, fast
 // transcription enhancedMode, Voice Live session.update allow-lists).
-const foundryRegistryVerifiedAt = "2026-09-04"
+const foundryRegistryVerifiedAt = "2026-09-05"
 
 // MissingFreshnessReports lists default/recommended registry rows that still
 // lack LastVerifiedAt.
@@ -373,18 +372,6 @@ func DefaultModelRegistry() []ProviderModelDescriptor {
 			LastVerifiedAt:       foundryRegistryVerifiedAt,
 			MultilanguageCapable: true,
 		},
-		{
-			Provider:             "foundry",
-			ModelID:              ModelFoundryMAITranscribe15,
-			ProfileID:            "stt.foundry.mai-transcribe-2",
-			Mode:                 speechkit.ModeDictation,
-			Name:                 "MAI-Transcribe-1.5 (Foundry)",
-			Lifecycle:            speechkit.ModelLifecyclePreview,
-			SourceURL:            "https://learn.microsoft.com/azure/ai-services/speech-service/mai-transcribe",
-			ReleasedAt:           "2026-07-23",
-			LastVerifiedAt:       foundryRegistryVerifiedAt,
-			MultilanguageCapable: true,
-		},
 		// Voice Live brains. The provider id is the Voice Live adapter, not the
 		// OpenAI-Realtime-on-Foundry adapter, so the two descriptors list only
 		// the models their wire protocol can actually dial.
@@ -416,13 +403,13 @@ func DefaultModelRegistry() []ProviderModelDescriptor {
 		},
 		{
 			Provider:             "foundry-voicelive",
-			ModelID:              ModelFoundryVoiceLiveGPT5Mini,
+			ModelID:              ModelFoundryVoiceLiveGPT54,
 			ProfileID:            "realtime.foundry.voice-live",
 			Mode:                 speechkit.ModeVoiceAgent,
-			Name:                 "GPT-5 mini (Voice Live)",
+			Name:                 "GPT-5.4 (Voice Live)",
 			Lifecycle:            speechkit.ModelLifecycleGA,
 			SourceURL:            "https://learn.microsoft.com/azure/ai-services/speech-service/voice-live",
-			ReleasedAt:           "2025-11-18",
+			ReleasedAt:           "2026-03-05",
 			LastVerifiedAt:       foundryRegistryVerifiedAt,
 			MultilanguageCapable: true,
 		},

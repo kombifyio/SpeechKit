@@ -49,6 +49,20 @@ func providerCredential(cfg *config.Config, target string) string {
 // are equivalent to passing the empty string; they are spelled out here only so
 // the returned notes carry the effective voice/model.
 func ResolveEnabledProviders(cfg *config.Config) (tts.EnabledProviders, []string) {
+	return ResolveEnabledProvidersWithAuth(cfg, Auth{})
+}
+
+// Auth carries credentials a host mints at runtime rather than reads from
+// the secret store. The Foundry token source replaces the resource key when
+// [providers.foundry] auth_mode is "entra"; a nil source keeps the key path.
+type Auth struct {
+	FoundryBearerToken framework.BearerTokenFunc
+}
+
+// ResolveEnabledProvidersWithAuth is ResolveEnabledProviders with host-minted
+// credentials. The Device-Target passes its Microsoft sign-in token source;
+// the Server-Target has none yet and uses the plain variant.
+func ResolveEnabledProvidersWithAuth(cfg *config.Config, auth Auth) (tts.EnabledProviders, []string) {
 	var enabled tts.EnabledProviders
 	var notes []string
 
@@ -103,7 +117,12 @@ func ResolveEnabledProviders(cfg *config.Config) (tts.EnabledProviders, []string
 	// served by the resource's Azure Speech surface; everything else goes
 	// through the OpenAI-compatible /audio/speech route.
 	if cloudAllowed && cfg.TTS.Foundry.Enabled {
-		if apiKey := providerCredential(cfg, "foundry"); apiKey != "" {
+		apiKey := providerCredential(cfg, "foundry")
+		token := auth.FoundryBearerToken
+		if !cfg.Providers.Foundry.UsesEntra() {
+			token = nil
+		}
+		if apiKey != "" || token != nil {
 			foundry := cfg.Providers.Foundry
 			if foundry.TTSEngine() == config.FoundryEngineSpeech {
 				host, err := config.FoundrySpeechHost(foundry.ProjectEndpoint)
@@ -111,10 +130,11 @@ func ResolveEnabledProviders(cfg *config.Config) (tts.EnabledProviders, []string
 					notes = append(notes, "TTS: Microsoft Foundry enabled but project endpoint is invalid: "+err.Error())
 				} else {
 					enabled.FoundrySpeech = &tts.AzureSpeechOpts{
-						Host:   host,
-						APIKey: apiKey,
-						Voice:  firstNonEmpty(cfg.TTS.Foundry.Voice, foundry.ResolvedTTSVoice()),
-						Style:  strings.TrimSpace(foundry.TTSStyle),
+						Host:        host,
+						APIKey:      apiKey,
+						BearerToken: token,
+						Voice:       firstNonEmpty(cfg.TTS.Foundry.Voice, foundry.ResolvedTTSVoice()),
+						Style:       strings.TrimSpace(foundry.TTSStyle),
 					}
 				}
 			} else {
@@ -123,13 +143,16 @@ func ResolveEnabledProviders(cfg *config.Config) (tts.EnabledProviders, []string
 					notes = append(notes, "TTS: Microsoft Foundry enabled but project endpoint is invalid: "+err.Error())
 				} else {
 					enabled.Foundry = &tts.FoundryOpts{
-						APIKey:  apiKey,
-						BaseURL: baseURL,
-						Model:   firstNonEmpty(cfg.TTS.Foundry.Model, foundry.ResolvedTTSDeployment()),
-						Voice:   firstNonEmpty(cfg.TTS.Foundry.Voice, foundry.TTSVoice, cfg.TTS.Voice, config.DefaultFoundryTTSVoice),
+						APIKey:      apiKey,
+						BearerToken: token,
+						BaseURL:     baseURL,
+						Model:       firstNonEmpty(cfg.TTS.Foundry.Model, foundry.ResolvedTTSDeployment()),
+						Voice:       firstNonEmpty(cfg.TTS.Foundry.Voice, foundry.TTSVoice, cfg.TTS.Voice, config.DefaultFoundryTTSVoice),
 					}
 				}
 			}
+		} else {
+			notes = append(notes, "TTS: Microsoft Foundry enabled but no API key or Microsoft sign-in configured")
 		}
 	}
 

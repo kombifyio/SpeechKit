@@ -27,12 +27,32 @@ const openAICompatMaxResponse = 1 << 20
 // only public https:// endpoints are accepted. Self-hosted VPS and local
 // whisper-server require relaxing Validation — see pkg/speechkit/stt/vps.
 type Provider struct {
-	name       string
-	BaseURL    string
-	APIKey     string
-	Model      string
-	Validation netsec.ValidationOptions
-	client     *http.Client
+	name    string
+	BaseURL string
+	APIKey  string
+	// BearerToken, when set, wins over APIKey: it is called per request and
+	// the token rides "Authorization: Bearer". Hosts set it when the endpoint
+	// authenticates with an identity provider (Microsoft Entra on Foundry)
+	// instead of a static key.
+	BearerToken speechkit.BearerTokenFunc
+	Model       string
+	Validation  netsec.ValidationOptions
+	client      *http.Client
+}
+
+// authorize attaches the credential: a freshly minted bearer token when a
+// token source is configured, otherwise the static API key.
+func (p *Provider) authorize(ctx context.Context, req *http.Request) error {
+	if p.BearerToken != nil {
+		token, err := p.BearerToken(ctx)
+		if err != nil {
+			return fmt.Errorf("%s: bearer token: %w", p.name, err)
+		}
+		req.Header.Set("Authorization", "Bearer "+strings.TrimSpace(token))
+		return nil
+	}
+	req.Header.Set("Authorization", "Bearer "+p.APIKey)
+	return nil
 }
 
 // New creates a provider for any OpenAI-compatible STT
@@ -130,7 +150,9 @@ func (p *Provider) Transcribe(ctx context.Context, audio []byte, opts stt.Transc
 		return nil, fmt.Errorf("create request: %w", err)
 	}
 	req.Header.Set("Content-Type", writer.FormDataContentType())
-	req.Header.Set("Authorization", "Bearer "+p.APIKey)
+	if err := p.authorize(ctx, req); err != nil {
+		return nil, err
+	}
 
 	start := time.Now()
 	resp, err := p.client.Do(req)
@@ -184,7 +206,9 @@ func (p *Provider) Health(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	req.Header.Set("Authorization", "Bearer "+p.APIKey)
+	if err := p.authorize(ctx, req); err != nil {
+		return err
+	}
 
 	resp, err := p.client.Do(req)
 	if err != nil {
@@ -206,7 +230,9 @@ func (p *Provider) Health(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	req.Header.Set("Authorization", "Bearer "+p.APIKey)
+	if err := p.authorize(ctx, req); err != nil {
+		return err
+	}
 
 	resp, err = p.client.Do(req)
 	if err != nil {

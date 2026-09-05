@@ -201,6 +201,16 @@ func NormalizeProviderProfileID(profileID string) string {
 		return "stt.google.latest-long"
 	case "stt.google.chirp-3-diarization":
 		return "stt.google.latest-long-diarization"
+	case "assist.foundry.gpt-5.1":
+		// The Foundry assist profile moved to the GPT-5.6 family; configs
+		// written before that keep resolving to the same profile.
+		return "assist.foundry.gpt-5.6"
+	case "stt.foundry.gpt-4o-mini-transcribe":
+		// The GPT-4o transcription profile was retired in favour of the
+		// Microsoft speech model the resource serves without a deployment.
+		return "stt.foundry.mai-transcribe-2"
+	case "tts.foundry.gpt-4o-mini-tts":
+		return "tts.foundry.mai-voice-2"
 	default:
 		return profileID
 	}

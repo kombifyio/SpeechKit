@@ -13,6 +13,29 @@ IDs, source paths, and other maintainer-only vocabulary.
 
 ### Added
 
+* **Microsoft Foundry:** the integration card has a Connect dialog with three
+  ways in — project endpoint plus API key, the Azure CLI account on your
+  machine (SpeechKit finds it, offers to install it and reuses its sign-in),
+  or your organisation's own Microsoft app registration. A Test lists the
+  deployments and MAI voices your project really has, and the Advanced
+  pickers offer those names and flag one that is not deployed.
+* **Microsoft Foundry:** only current models remain on offer. Dictation
+  defaults to MAI-Transcribe-2 and speech output to MAI-Voice-2-Flash, both
+  served by the resource without a deployment; the text models moved to the
+  GPT-5.6 family (Terra for Assist and Agent, Luna for quick utility tasks,
+  Sol as the reasoning option) and MAI-Thinking-1 works as an Assist model.
+  The GPT-4o transcription and speech entries are gone; a setting that still
+  named them now resolves to the MAI models.
+
+### Fixed
+
+* **Microsoft Foundry:** choosing MAI-Transcribe-2 as the dictation model now
+  really dictates through it. Before, any later settings change silently
+  switched dictation back to the OpenAI-compatible route with a deployment
+  the project did not have, every request failed with 404 and the fallback
+  provider took over. A missing deployment is now reported as such instead
+  of as a generic rejection.
+
 * **meetings:** the meeting list is grouped by when a meeting happened —
   Today, Yesterday, Earlier this week, Last week, Older — and older groups
   show one compact line per meeting, so a meeting is found and placed at a

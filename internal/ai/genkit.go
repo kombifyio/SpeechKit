@@ -21,6 +21,7 @@ import (
 	"github.com/firebase/genkit/go/plugins/ollama"
 
 	"github.com/kombifyio/SpeechKit/internal/ai/generation"
+	"github.com/kombifyio/SpeechKit/pkg/speechkit"
 )
 
 // Config holds all provider API keys and model selections for Genkit initialization.
@@ -66,14 +67,22 @@ type Config struct {
 	CloudflareAssistModel       string
 	CloudflareAgentModel        string
 	FoundryAPIKey               string
-	FoundryBaseURL              string
-	FoundryUtilityModel         string
-	FoundryAssistModel          string
-	FoundryAgentModel           string
-	OrderedAssistModels         []OrderedModelSelection
-	OrderedAgentModels          []OrderedModelSelection
-	UseOrderedAssistModels      bool
-	UseOrderedAgentModels       bool
+	// FoundryBearerToken mints a token per request when the Foundry resource
+	// is used with a Microsoft sign-in instead of the resource key. Either
+	// the key or the token source enables the Foundry models.
+	FoundryBearerToken speechkit.BearerTokenFunc
+	// FoundryBaseURL is the OpenAI-compatible base (https://<host>/openai/v1);
+	// FoundryMAIBaseURL serves Microsoft-publisher deployments such as
+	// MAI-Thinking-1 (https://<host>/mai/v1). Empty skips those deployments.
+	FoundryBaseURL         string
+	FoundryMAIBaseURL      string
+	FoundryUtilityModel    string
+	FoundryAssistModel     string
+	FoundryAgentModel      string
+	OrderedAssistModels    []OrderedModelSelection
+	OrderedAgentModels     []OrderedModelSelection
+	UseOrderedAssistModels bool
+	UseOrderedAgentModels  bool
 }
 
 type OrderedModelSelection struct {
@@ -239,11 +248,17 @@ func registerConfiguredProviderModels(g *genkit.Genkit, cfg Config) {
 			cfg.CloudflareAgentModel,
 		})
 	}
-	if cfg.FoundryAPIKey != "" && cfg.FoundryBaseURL != "" {
-		registerFoundryModels(g, cfg.FoundryAPIKey, cfg.FoundryBaseURL, []string{
-			cfg.FoundryUtilityModel,
-			cfg.FoundryAssistModel,
-			cfg.FoundryAgentModel,
+	if foundryModelEnabled(cfg) {
+		registerFoundryModels(g, foundryRegistration{
+			APIKey:      cfg.FoundryAPIKey,
+			BearerToken: cfg.FoundryBearerToken,
+			BaseURL:     cfg.FoundryBaseURL,
+			MAIBaseURL:  cfg.FoundryMAIBaseURL,
+			Deployments: []string{
+				cfg.FoundryUtilityModel,
+				cfg.FoundryAssistModel,
+				cfg.FoundryAgentModel,
+			},
 		})
 	}
 	if cfg.LocalLLMBaseURL != "" {
@@ -316,7 +331,7 @@ func cloudflareModelEnabled(cfg Config) bool {
 }
 
 func foundryModelEnabled(cfg Config) bool {
-	return cfg.FoundryAPIKey != "" && cfg.FoundryBaseURL != ""
+	return (cfg.FoundryAPIKey != "" || cfg.FoundryBearerToken != nil) && cfg.FoundryBaseURL != ""
 }
 
 func resolveOrderedOrLegacyModels(
