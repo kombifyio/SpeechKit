@@ -27,7 +27,7 @@ require (
 	github.com/modelcontextprotocol/go-sdk v1.6.1
 	github.com/pion/webrtc/v4 v4.2.14
 	github.com/spf13/cobra v1.10.2
-	github.com/wailsapp/wails/v3 v3.0.0-alpha.74
+	github.com/wailsapp/wails/v3 v3.0.0-alpha.86
 	github.com/yalue/onnxruntime_go v1.31.0
 	go.bug.st/serial v1.7.1
 	go.opentelemetry.io/otel v1.44.0
@@ -134,7 +134,7 @@ require (
 	github.com/livekit/mageutil v0.0.0-20250511045019-0f1ff63f7731 // indirect
 	github.com/livekit/mediatransportutil v0.0.0-20260605212259-862d4a7bcb1e // indirect
 	github.com/livekit/psrpc v0.7.2 // indirect
-	github.com/lmittmann/tint v1.1.2 // indirect
+	github.com/lmittmann/tint v1.1.3 // indirect
 	github.com/mackerelio/go-osstat v0.2.7 // indirect
 	github.com/magefile/mage v1.17.2 // indirect
 	github.com/mailru/easyjson v0.9.0 // indirect
@@ -182,7 +182,7 @@ require (
 	github.com/skeema/knownhosts v1.3.2 // indirect
 	github.com/spf13/pflag v1.0.10 // indirect
 	github.com/twitchtv/twirp v8.1.3+incompatible // indirect
-	github.com/wailsapp/go-webview2 v1.0.23 // indirect
+	github.com/wailsapp/wails/webview2 v1.0.25 // indirect
 	github.com/wk8/go-ordered-map/v2 v2.1.8 // indirect
 	github.com/wlynxg/anet v0.0.5 // indirect
 	github.com/xanzy/ssh-agent v0.3.3 // indirect
