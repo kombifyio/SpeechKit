@@ -26,9 +26,14 @@ type ResolvedTranscribeOptions struct {
 	Timestamps            bool
 	EndpointingMs         int
 	PrivacyRedaction      bool
-	VoiceFocus            bool
-	MedicalDomain         bool
-	Effective             provideropts.EffectiveOptions
+	// NoStore asks the provider not to retain this request beyond answering
+	// it. Only providers whose manifest declares the option natively act on
+	// it; the rest report it as unsupported so a retention policy can refuse
+	// them instead of assuming.
+	NoStore       bool
+	VoiceFocus    bool
+	MedicalDomain bool
+	Effective     provideropts.EffectiveOptions
 }
 
 func ResolveTranscribeOptions(provider, profileID string, opts TranscribeOpts, providerDefaults, providerOverrides provideropts.Values) ResolvedTranscribeOptions {
@@ -87,6 +92,7 @@ func ResolveTranscribeOptions(provider, profileID string, opts TranscribeOpts, p
 		Timestamps:            effective.Bool(provideropts.OptionTimestamps),
 		EndpointingMs:         effective.Int(provideropts.OptionEndpointingMs),
 		PrivacyRedaction:      effective.Bool(provideropts.OptionPrivacyRedaction),
+		NoStore:               effective.Bool(provideropts.OptionNoStore),
 		VoiceFocus:            effective.Bool(provideropts.OptionVoiceFocus),
 		MedicalDomain:         effective.Bool(provideropts.OptionMedicalDomain),
 		Effective:             effective,

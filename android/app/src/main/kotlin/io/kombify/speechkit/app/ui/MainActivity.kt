@@ -62,6 +62,7 @@ import io.kombify.speechkit.app.build.ShippedDefaults
 import io.kombify.speechkit.app.companion.CompanionProvision
 import io.kombify.speechkit.app.companion.CompanionProvisioner
 import io.kombify.speechkit.app.companion.ConnectCloudIntent
+import io.kombify.speechkit.app.companion.cloudConnectUi
 import io.kombify.speechkit.coinstall.v1.CoinstallContract
 import io.kombify.speechkit.domain.ConnectionMode
 import io.kombify.speechkit.domain.fallbackModeAfterDisconnect
@@ -177,18 +178,20 @@ private fun SpeechKitApp(
                     label = { Text("Settings") },
                     icon = {},
                 )
-                NavigationBarItem(
-                    selected = selectedTab == 3,
-                    onClick = { selectedTab = 3 },
-                    label = { Text("Dev") },
-                    icon = {},
-                )
-                NavigationBarItem(
-                    selected = selectedTab == 4,
-                    onClick = { selectedTab = 4 },
-                    label = { Text("Voice") },
-                    icon = {},
-                )
+                if (ShippedDefaults.showLabTabs) {
+                    NavigationBarItem(
+                        selected = selectedTab == 3,
+                        onClick = { selectedTab = 3 },
+                        label = { Text("Dev") },
+                        icon = {},
+                    )
+                    NavigationBarItem(
+                        selected = selectedTab == 4,
+                        onClick = { selectedTab = 4 },
+                        label = { Text("Voice") },
+                        icon = {},
+                    )
+                }
             }
         },
     ) { padding ->
@@ -604,6 +607,8 @@ private fun ServerConnectionCard(
         mutableStateOf(prefs.getString(StoredServerProfile.KEY_SERVER_TOKEN, "") ?: "")
     }
     var status by remember { mutableStateOf<String?>(null) }
+    var connecting by remember { mutableStateOf(false) }
+    var showSelfHost by remember { mutableStateOf(!ShippedDefaults.cloudConnectSupported) }
     var testing by remember { mutableStateOf(false) }
     var finding by remember { mutableStateOf(false) }
     var lanServers by remember { mutableStateOf<List<LanServer>>(emptyList()) }
@@ -663,30 +668,24 @@ private fun ServerConnectionCard(
     }
 
     fun connectCloud() {
+        if (connecting) return
+        connecting = true
+        status = context.getString(R.string.settings_connection_testing)
         scope.launch {
-            val outcome = withContext(Dispatchers.IO) { provisioner.provisionNow() }
-            when (outcome) {
-                is CompanionProvision.Session -> {
-                    persistMode(ConnectionMode.KOMBIFY_CLOUD)
-                    status = context.getString(R.string.settings_connection_cloud_connected)
-                    onConnectSucceeded()
-                }
-                CompanionProvision.Empty -> {
-                    status = context.getString(R.string.settings_connection_cloud_signed_out)
-                    openCompanion()
-                }
-                CompanionProvision.Rejected -> {
-                    status = context.getString(R.string.settings_connection_cloud_rejected)
-                }
-                CompanionProvision.Unavailable -> {
-                    status = if (provisioner.isCompanionInstalled()) {
-                        context.getString(R.string.settings_connection_cloud_failed)
-                    } else {
-                        context.getString(R.string.settings_connection_cloud_missing)
-                    }
-                    if (!provisioner.isCompanionInstalled()) onConnectAbandoned()
-                }
+            val outcome = runCatching {
+                withContext(Dispatchers.IO) { provisioner.provisionNow() }
+            }.getOrDefault(CompanionProvision.Unavailable)
+            if (outcome is CompanionProvision.Session) {
+                persistMode(ConnectionMode.KOMBIFY_CLOUD)
+                onConnectSucceeded()
             }
+            val ui = cloudConnectUi(outcome, provisioner.isCompanionInstalled())
+            status = context.getString(ui.messageRes)
+            if (ui.openCompanion) {
+                openCompanion()
+                onConnectAbandoned()
+            }
+            connecting = false
         }
     }
 
@@ -740,20 +739,33 @@ private fun ServerConnectionCard(
                 style = MaterialTheme.typography.bodySmall,
             )
             if (cloudConnectSupported) {
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
                     if (mode == ConnectionMode.KOMBIFY_CLOUD) {
                         TextButton(
                             onClick = {
                                 provisioner.forgetSession()
                                 persistMode(fallbackModeAfterDisconnect(shippedProfile))
                             },
+                            modifier = Modifier.fillMaxWidth(),
                         ) { Text(stringResource(R.string.settings_connection_disconnect_cloud)) }
                     } else {
-                        Button(onClick = { connectCloud() }) {
-                            Text(stringResource(R.string.settings_connection_connect_cloud))
+                        Button(
+                            onClick = { connectCloud() },
+                            enabled = !connecting,
+                            modifier = Modifier.fillMaxWidth(),
+                        ) {
+                            Text(
+                                stringResource(
+                                    if (connecting) R.string.settings_connection_testing
+                                    else R.string.settings_connection_connect_cloud,
+                                ),
+                            )
                         }
                     }
-                    TextButton(onClick = { openCompanion() }) {
+                    TextButton(
+                        onClick = { openCompanion() },
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
                         Text(
                             stringResource(
                                 if (provisioner.isCompanionInstalled()) {
@@ -764,8 +776,18 @@ private fun ServerConnectionCard(
                             ),
                         )
                     }
+                    status?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
                 }
             }
+            TextButton(onClick = { showSelfHost = !showSelfHost }) {
+                Text(
+                    stringResource(
+                        if (showSelfHost) R.string.settings_connection_self_host_hide
+                        else R.string.settings_connection_self_host_show,
+                    ),
+                )
+            }
+            if (showSelfHost) {
             OutlinedTextField(
                 value = url,
                 onValueChange = { url = it },
@@ -873,7 +895,10 @@ private fun ServerConnectionCard(
                     ) { Text(stringResource(R.string.settings_connection_clear)) }
                 }
             }
-            status?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
+            if (!cloudConnectSupported) {
+                status?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
+            }
+            }
         }
     }
 }

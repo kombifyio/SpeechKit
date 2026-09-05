@@ -202,6 +202,7 @@ func (p *Provider) deepgramFluxEndpoint(model string, opts FluxStreamOptions, fo
 	if v, ok := clampFluxRange(float64(opts.EOTTimeoutMs), FluxEOTTimeoutMinMs, FluxEOTTimeoutMaxMs); ok {
 		q.Set("eot_timeout_ms", strconv.Itoa(int(v)))
 	}
+	applyDeepgramNoStore(q, p.NoStore)
 	u.RawQuery = q.Encode()
 	return u.String(), nil
 }

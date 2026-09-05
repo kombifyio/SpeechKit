@@ -21,6 +21,9 @@ object ShippedDefaults {
 
     val cloudConnectSupported: Boolean get() = true
 
+    /** Dev/Voice lab tabs are not a tester surface. */
+    val showLabTabs: Boolean get() = false
+
     /** Hosted tester origin only when the baked bearer is present. */
     fun shippedProfile(): ConnectionProfile.Server? {
         val url = serverUrl ?: return null

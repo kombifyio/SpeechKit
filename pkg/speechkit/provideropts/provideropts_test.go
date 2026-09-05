@@ -216,3 +216,48 @@ func TestProviderOptionMatrixMatchesDefaultManifests(t *testing.T) {
 func matrixRowKey(provider, modality string) string {
 	return provider + "/" + modality
 }
+
+// Every provider must state where it stands on retention. A missing entry
+// would let a retention policy silently assume the safe answer for a vendor
+// that keeps the audio.
+func TestEveryManifestDeclaresANoStorePosition(t *testing.T) {
+	for _, manifest := range DefaultManifests() {
+		var found *OptionSupport
+		for index := range manifest.Options {
+			if manifest.Options[index].ID == OptionNoStore {
+				found = &manifest.Options[index]
+				break
+			}
+		}
+		if found == nil {
+			t.Fatalf("%s/%s declares no position on %s", manifest.Provider, manifest.Modality, OptionNoStore)
+		}
+		if found.Notes == "" && found.EvidenceURL == "" {
+			t.Errorf("%s/%s claims %q for no-store without evidence or a note",
+				manifest.Provider, manifest.Modality, found.Status)
+		}
+		if found.Status == SupportNative && found.NativeKey == "" {
+			t.Errorf("%s/%s claims native no-store without naming the request field",
+				manifest.Provider, manifest.Modality)
+		}
+	}
+}
+
+// The one provider with a per-request flag today must keep it, so a regression
+// in the evidence table is visible rather than silent.
+func TestDeepgramDeclaresNativeNoStore(t *testing.T) {
+	manifest, ok := FindManifest("deepgram", ModalitySTT)
+	if !ok {
+		t.Fatal("deepgram STT manifest missing")
+	}
+	for _, option := range manifest.Options {
+		if option.ID != OptionNoStore {
+			continue
+		}
+		if option.Status != SupportNative || option.NativeKey != "mip_opt_out" {
+			t.Fatalf("deepgram no-store = %q/%q, want native/mip_opt_out", option.Status, option.NativeKey)
+		}
+		return
+	}
+	t.Fatal("deepgram STT manifest has no no-store entry")
+}

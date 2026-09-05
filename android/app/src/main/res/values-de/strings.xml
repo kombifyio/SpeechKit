@@ -78,6 +78,8 @@
     <string name="settings_connection_cloud_missing">Companion ist nicht installiert. Installiere ihn, um mit deinem kombify-Konto zu verbinden.</string>
     <string name="settings_connection_cloud_failed">kombify Cloud konnte nicht verbunden werden.</string>
     <string name="settings_connection_cloud_rejected">Companion hat diesen SpeechKit-Build abgelehnt: Sein Signaturzertifikat steht nicht auf Companions Freigabeliste. Installiere zusammenpassende Builds beider Apps.</string>
+    <string name="settings_connection_self_host_show">Eigener SpeechKit-Server</string>
+    <string name="settings_connection_self_host_hide">Eigenen Server ausblenden</string>
     <string name="onboarding_welcome">Willkommen bei SpeechKit</string>
     <string name="onboarding_intro">SpeechKit bietet drei Modi für sprachgesteuerte Arbeit:</string>
     <string name="onboarding_dictate_body">Sprache zu Text. Diktiere in jeder App direkt per Tastatur. Kein KI-Processing — reine Transkription.</string>

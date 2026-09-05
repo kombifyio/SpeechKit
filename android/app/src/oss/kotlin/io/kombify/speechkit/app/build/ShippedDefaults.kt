@@ -12,5 +12,7 @@ object ShippedDefaults {
     val serverToken: String? get() = null
     val cloudConnectSupported: Boolean get() = false
 
+    val showLabTabs: Boolean get() = true
+
     fun shippedProfile(): ConnectionProfile.Server? = null
 }

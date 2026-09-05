@@ -57,9 +57,14 @@ type Provider struct {
 	DetectLanguage        bool
 	LanguageOverride      string
 	UseVocabularyKeyterms bool
-	Keyterms              []string
-	EndpointingMs         int
-	client                *http.Client
+	// NoStore opts every request out of Deepgram's Model Improvement
+	// Partnership Program, so audio and transcript are kept only for as long
+	// as answering takes. Set by the host from its retention policy; the batch
+	// path also honours the per-request option.
+	NoStore       bool
+	Keyterms      []string
+	EndpointingMs int
+	client        *http.Client
 }
 
 // New creates a Deepgram provider. Model defaults to the
@@ -239,6 +244,7 @@ func (p *Provider) deepgramListenEndpoint(model string, resolved stt.ResolvedTra
 		q.Set("numerals", "true")
 	}
 	q.Set("language", deepgramResolvedLanguage(resolved))
+	applyDeepgramNoStore(q, resolved.NoStore || p.NoStore)
 	p.applyVocabularyBias(q, model, resolved.Keyterms, resolved.UseVocabularyKeyterms)
 	if resolved.Speaker.WantsDiarization() {
 		q.Set("utterances", "true")
@@ -320,6 +326,17 @@ func deepgramLanguageSource(resolved stt.ResolvedTranscribeOptions) string {
 		return string(provideropts.SourceProviderDefault)
 	}
 	return string(option.Source)
+}
+
+// applyDeepgramNoStore opts the request out of Deepgram's Model Improvement
+// Partnership Program, which is what keeps the audio and transcript from being
+// retained past the request and used for training. Deepgram charges a
+// participation discount rather than a penalty for opting out, so the choice is
+// the caller's policy, not a capability question.
+func applyDeepgramNoStore(q url.Values, noStore bool) {
+	if noStore {
+		q.Set("mip_opt_out", "true")
+	}
 }
 
 func (p *Provider) applyVocabularyBias(q url.Values, model string, requestTerms []string, useVocabulary bool) {

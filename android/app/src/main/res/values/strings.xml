@@ -91,6 +91,8 @@
     <string name="settings_connection_cloud_missing">Companion is not installed. Install it to connect with your kombify account.</string>
     <string name="settings_connection_cloud_failed">Could not connect to kombify Cloud.</string>
     <string name="settings_connection_cloud_rejected">Companion refused this SpeechKit build: its signing certificate is not in Companion\'s allow-list. Install matching builds of both apps.</string>
+    <string name="settings_connection_self_host_show">Your own SpeechKit server</string>
+    <string name="settings_connection_self_host_hide">Hide your own server</string>
     <string name="onboarding_welcome">Welcome to SpeechKit</string>
     <string name="onboarding_intro">SpeechKit has three modes for voice-driven work:</string>
     <string name="mode_dictate" translatable="false">Dictate</string>

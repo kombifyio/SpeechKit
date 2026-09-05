@@ -162,6 +162,7 @@ func (p *Provider) deepgramStreamingEndpoint(model, language string, format spea
 		q.Set("language", language)
 	}
 	p.applyVocabularyBias(q, model, nil, p.UseVocabularyKeyterms)
+	applyDeepgramNoStore(q, p.NoStore)
 	u.RawQuery = q.Encode()
 	return u.String(), nil
 }
@@ -223,6 +224,7 @@ func (p *Provider) deepgramDictationStreamingEndpoint(model, language string, op
 		q.Set("language", language)
 	}
 	p.applyVocabularyBias(q, model, opts.Keyterms, p.UseVocabularyKeyterms)
+	applyDeepgramNoStore(q, p.NoStore)
 	u.RawQuery = q.Encode()
 	return u.String(), nil
 }

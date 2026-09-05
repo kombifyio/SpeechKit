@@ -285,6 +285,9 @@ func openAIVoiceAgentManifest() ProviderOptionManifest {
 }
 
 func manifest(provider, label, modality string, profileIDs []string, options []OptionSupport) ProviderOptionManifest {
+	all := make([]OptionSupport, 0, len(options)+1)
+	all = append(all, options...)
+	all = append(all, noStoreSupport(provider, modality))
 	return ProviderOptionManifest{
 		Schema:     SchemaProviderOptions,
 		Updated:    ManifestUpdated,
@@ -292,7 +295,65 @@ func manifest(provider, label, modality string, profileIDs []string, options []O
 		Label:      label,
 		Modality:   modality,
 		ProfileIDs: profileIDs,
-		Options:    options,
+		Options:    all,
+	}
+}
+
+// noStoreSupport states how a provider surface can be kept from retaining
+// request content, verified against vendor documentation on 2026-09-04.
+//
+// It is keyed by provider and modality because the answer is a property of the
+// concrete API, not of the vendor: Google Cloud Speech-to-Text and Gemini Live
+// are different products under different terms, and a flag SpeechKit sends on
+// one surface says nothing about a surface where it does not send it.
+//
+// The three shapes that exist:
+//
+//   - native: a per-request flag SpeechKit actually sends.
+//   - provider_default: the surface does not retain request content in its
+//     default configuration, so there is nothing to send. A runtime on the
+//     user's own machine is the trivial case.
+//   - unsupported: the posture is an account or project setting, is not
+//     verified, or is available but not yet wired on this surface. A retention
+//     policy must read this as "cannot assert" and refuse the provider rather
+//     than assume the safe answer.
+func noStoreSupport(provider, modality string) OptionSupport {
+	const (
+		label       = "Exclude from training and retention"
+		deepgramMIP = "https://developers.deepgram.com/docs/the-deepgram-model-improvement-partnership-program"
+	)
+	switch provider {
+	case "local", "vps", "ollama", "piper":
+		return providerDefault(OptionNoStore, TypeBool, label,
+			"Runs on this device or on a host the user operates, so no request content reaches a vendor.", "")
+	case "deepgram":
+		if modality == ModalitySTT {
+			return native(OptionNoStore, TypeBool, label, "mip_opt_out", deepgramMIP)
+		}
+		// The opt-out is documented for every Deepgram API request, but
+		// SpeechKit sends it only on the Listen surfaces so far. Claiming it
+		// here would describe an intention rather than a request.
+		return support(OptionNoStore, TypeBool, label, SupportUnsupported, "", deepgramMIP,
+			"Deepgram documents mip_opt_out for all API requests, but SpeechKit does not send it on this surface yet.")
+	case "google":
+		if modality == ModalitySTT {
+			return providerDefault(OptionNoStore, TypeBool, label,
+				"Cloud Speech-to-Text logs no audio or transcripts unless the project opts in to data logging, which is a project setting rather than a request field.",
+				"https://docs.cloud.google.com/speech-to-text/docs/v1/data-logging")
+		}
+		return unsupported(OptionNoStore, TypeBool, label,
+			"Gemini Live and Cloud Text-to-Speech carry their own terms; no no-store position is verified for this surface.")
+	case "openai":
+		return accountLevel(OptionNoStore, TypeBool, label,
+			"Zero Data Retention is granted per account and is not a field on the request. /v1/audio/transcriptions is ZDR-eligible; without the grant, abuse-monitoring logs are kept for up to 30 days. The store parameter exists on /v1/responses and /v1/chat/completions, not on these surfaces.",
+			"https://developers.openai.com/api/docs/guides/your-data")
+	case "assemblyai":
+		return accountLevel(OptionNoStore, TypeBool, label,
+			"Transcripts are kept until DELETE /v2/transcript/{id} is called, and the model-improvement opt-out is an account setting. SpeechKit could emulate no-store by deleting each transcript after reading it; that is not implemented, so the capability is not claimed.",
+			"https://www.assemblyai.com/docs/faq/can-i-delete-the-transcripts-i-have-created-using-the-api")
+	default:
+		return unsupported(OptionNoStore, TypeBool, label,
+			"No per-request no-store flag is verified for this provider.")
 	}
 }
 
@@ -317,6 +378,20 @@ func derived(id OptionID, typ OptionType, label, notes, evidence string) OptionS
 
 func unsupported(id OptionID, typ OptionType, label, notes string) OptionSupport {
 	return support(id, typ, label, SupportUnsupported, "", "", notes)
+}
+
+// providerDefault declares an option the provider already satisfies without
+// being asked, so SpeechKit sends nothing and the guarantee still holds.
+func providerDefault(id OptionID, typ OptionType, label, notes, evidence string) OptionSupport {
+	return support(id, typ, label, SupportProviderDefault, "", evidence, notes)
+}
+
+// accountLevel declares an option that exists at the vendor but only as an
+// account or project setting, so a request cannot assert it. It is
+// deliberately reported as unsupported: a policy that must guarantee no-store
+// has to refuse the provider rather than trust an unverifiable setting.
+func accountLevel(id OptionID, typ OptionType, label, notes, evidence string) OptionSupport {
+	return support(id, typ, label, SupportUnsupported, "", evidence, notes)
 }
 
 func support(id OptionID, typ OptionType, label string, status SupportStatus, nativeKey, evidence, notes string) OptionSupport {

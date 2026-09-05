@@ -38,6 +38,13 @@ const (
 	OptionTranslation        OptionID = "translation"
 	OptionTranscriptionOnly  OptionID = "transcription_only"
 	OptionResume             OptionID = "resume"
+	// OptionNoStore asks the provider not to retain the request content
+	// beyond the time it takes to answer, and not to train on it. What that
+	// costs differs per vendor: a query parameter for some, an account or
+	// project setting for others, and nothing at all for a local runtime.
+	// The manifest says which, so a retention policy can refuse a provider
+	// that cannot assert it rather than promising something untrue.
+	OptionNoStore OptionID = "no_store"
 )
 
 type OptionType string
