@@ -238,12 +238,19 @@ func (s *blockingPersistence) SaveTranscription(ctx context.Context, _, _, _, _ 
 }
 
 type recordingObserver struct {
-	mu         sync.Mutex
-	states     []string
-	logs       []string
-	drafts     []string
-	committed  []string
-	quickNotes []bool
+	mu           sync.Mutex
+	states       []string
+	logs         []string
+	drafts       []string
+	committed    []string
+	quickNotes   []bool
+	finalization speechkit.TranscriptionFinalization
+}
+
+func (o *recordingObserver) OnTranscriptionFinalized(_ speechkit.Transcript, f speechkit.TranscriptionFinalization, _ any) {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	o.finalization = f
 }
 
 func (o *recordingObserver) OnState(status, text string) {
@@ -308,10 +315,8 @@ func TestLowConfidenceWords(t *testing.T) {
 }
 
 // TestTranscriptionWorkerLogsLowConfidenceWords is the regression guard for the
-// "words vanish silently" complaint: when the provider reports per-word
-// confidence, the worker must surface the below-threshold terms in the
-// status/log feed so a mis-recognized word is visible, while high-confidence
-// words stay unflagged.
+// "words vanish silently" complaint: flag low confidence without recording
+// sensitive recognized terms in the log.
 func TestTranscriptionWorkerLogsLowConfidenceWords(t *testing.T) {
 	observer := &recordingObserver{}
 	output := &recordingOutput{}
@@ -357,7 +362,7 @@ func TestTranscriptionWorkerLogsLowConfidenceWords(t *testing.T) {
 	var found string
 	observer.mu.Lock()
 	for _, l := range observer.logs {
-		if strings.HasPrefix(l, "warn:") && strings.Contains(l, "Low-confidence words") {
+		if strings.HasPrefix(l, "warn:") {
 			found = l
 		}
 	}
@@ -366,11 +371,8 @@ func TestTranscriptionWorkerLogsLowConfidenceWords(t *testing.T) {
 	if found == "" {
 		t.Fatalf("expected a low-confidence warn log, got logs = %#v", observer.logs)
 	}
-	if !strings.Contains(found, "Ultracord") {
-		t.Fatalf("low-confidence log must name the uncertain word, got %q", found)
-	}
-	if strings.Contains(found, "nutze") {
-		t.Fatalf("high-confidence words must not be flagged, got %q", found)
+	if strings.Contains(found, "Ultracord") || strings.Contains(found, "nutze") {
+		t.Fatal("confidence warning leaked recognized words")
 	}
 }
 
@@ -458,6 +460,10 @@ func TestTranscriptionWorkerNamesAnEmptyFinalTranscript(t *testing.T) {
 	if len(committed) != 0 {
 		t.Fatalf("an empty transcript must not be announced as committed, got %#v", committed)
 	}
+	if observer.finalization.Recognition != speechkit.RecognitionEmpty ||
+		observer.finalization.Output != speechkit.OutputNotRequested {
+		t.Fatal("empty recognition was reported as output")
+	}
 }
 
 func TestTranscriptionWorkerSkipsLowConfidenceWhenDisabled(t *testing.T) {
@@ -499,7 +505,7 @@ func TestTranscriptionWorkerSkipsLowConfidenceWhenDisabled(t *testing.T) {
 	observer.mu.Lock()
 	defer observer.mu.Unlock()
 	for _, l := range observer.logs {
-		if strings.Contains(l, "Low-confidence words") {
+		if strings.HasPrefix(l, "warn:") {
 			t.Fatalf("threshold disabled, must not emit low-confidence log, got %q", l)
 		}
 	}
@@ -992,12 +998,14 @@ func TestTranscriptionWorkerHandlesTranscriberErrors(t *testing.T) {
 	if len(output.delivered) != 0 {
 		t.Fatalf("delivered outputs = %d, want 0", len(output.delivered))
 	}
-	if got := observer.states; len(got) < 2 || got[0] != "processing:"+speechkit.DefaultProcessingMessage || got[1] != "idle:" {
-		t.Fatalf("observer states = %#v", got)
+	if observer.finalization.Recognition != speechkit.RecognitionFailed ||
+		observer.finalization.Output != speechkit.OutputNotRequested ||
+		observer.finalization.Persistence != speechkit.PersistenceNotRequested {
+		t.Fatal("recognition failure was reported as completed output or history")
 	}
 	hasSTTError := false
 	for _, log := range observer.logs {
-		if strings.HasPrefix(log, "error:STT error: boom") {
+		if strings.HasPrefix(log, "error:") {
 			hasSTTError = true
 			break
 		}

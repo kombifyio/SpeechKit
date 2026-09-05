@@ -32,12 +32,12 @@ changing with it.
 
 | locale | catalog | sha256 | review_state | reviewer | reviewed_on | notes |
 | --- | --- | --- | --- | --- | --- | --- |
-| en | catalogs/en.json | d76071a9a955eea4c1e21aefc26388c66884b3465a491861185a68aa7836475f | proposal | - | - | catalog changed 2026-09-04; re-review required |
-| de | catalogs/de.json | 29d0351c5ba0674099b5f7235f28460ea7071582b96369e8d12acfa3c6aa558c | proposal | - | - | catalog changed 2026-09-04; re-review required |
-| es | catalogs/es.json | 51e4a53814167ae8c7186e92cd0bc0acb2f13a3ddbab4653065e6cec6beed55d | proposal | - | - | catalog changed 2026-09-04; re-review required |
-| zh-Hans | catalogs/zh-Hans.json | a08ca4672614629b62bc44f7f77fdbb733147ba60623df659d9b1cacd6b78646 | proposal | - | - | catalog changed 2026-09-04; re-review required |
-| hi | catalogs/hi.json | 0fe15d4560231bee96c224a4915aa70de3130c4c507e94d9330d1a70b5eedc2a | proposal | - | - | catalog changed 2026-09-04; re-review required |
-| ar | catalogs/ar.json | 08f4b517c1d6af6d0512df4b898bbe4390d0e994d00a4a3f7b444ce4dd7ad497 | proposal | - | - | catalog changed 2026-09-04; re-review required |
+| en | catalogs/en.json | 3b3b2ce0eedc3c568b3829e5603cb1dd5cdcc9efa125165c14a0a6dd8e15bfb5 | proposal | - | - | catalog changed 2026-09-04; re-review required |
+| de | catalogs/de.json | 16048c0dc1e1a57ee6a4fe43798d31af75186dddcd03de2143e9c89fb4abd1a7 | proposal | - | - | catalog changed 2026-09-04; re-review required |
+| es | catalogs/es.json | 6d82339a1463f3391d484aa894df5bc6d2e5817ddb92a3f97edb898d671435a4 | proposal | - | - | catalog changed 2026-09-04; re-review required |
+| zh-Hans | catalogs/zh-Hans.json | 0625a0fa500fd634683a8f5b242a7f58cb210818cb9fb6f015249d38014cd508 | proposal | - | - | catalog changed 2026-09-04; re-review required |
+| hi | catalogs/hi.json | 9cb3e52956f131bde8db70166e8c0d28d0315da934fca9b4e428134469d2e5bc | proposal | - | - | catalog changed 2026-09-04; re-review required |
+| ar | catalogs/ar.json | 6b0ff0f9692f3a64062a9c65ee2dcb4200dc72cb4f0381991a42871275d494a8 | proposal | - | - | catalog changed 2026-09-04; re-review required |
 
 ## Coverage beyond the catalogs
 

@@ -4,12 +4,14 @@ These examples show the public framework surface that OSS consumers can import.
 They are intentionally component-level examples: copy the packages you need,
 not the entire desktop application.
 
-- `library/`: embeds the dictation recording and transcription pipeline with host-provided adapters.
+- `local-dictation/`: real local whisper.cpp dictation from an explicit microphone recording or a WAV file, with owned model-process cleanup and no cloud keys.
+- `library/`: demonstrates dictation wiring with a fake provider and optional synthetic audio; it does not recognize speech.
 - `provider-catalog/`: reads the current mode contracts and provider catalog used by host applications.
 - `embed-companion/`: composes wake detections, explicit Hands-Free target routing, Assist requests, optional TTS, and runtime events through the public SDK surface.
 - `embed-tts/`: demonstrates `pkg/speechkit/tts` Provider, Router, Service, and provider-kind routing.
 - `embed-event-bus/`: publishes and consumes the additive wake, skill, companion, Voice-Agent, and TTS events.
 - `assist/in-process/`: fully in-process Assist — wires a real Gemini Generator into `pkg/speechkit/assist.Service` with optional OpenAI TTS output, no SpeechKit server.
+- `meeting/synthetic-host/`: embeds the public `pkg/speechkit/meeting` runtime with an in-memory synthetic transcript adapter; no mic, STT provider, or cloud call.
 - `voice-agent/game-instructor/`: end-to-end 15-minute Voice Agent embedded in a Go program (persona/role/sequence TOML + WebSocket client). Reference for the single-prompt "build a voice agent into my app" use case.
 - `voice-agent/in-process/`: fully in-process Voice Agent — constructs a `live.LiveProvider` (Gemini Live) and drives a text dialogue with no SpeechKit server in the path.
 - `voice-agent/provider-switching/`: credential-free provider/profile/model selection using the public `pkg/speechkit/voiceagent/live` descriptors, `ProviderIntent`, and config helpers.
@@ -44,6 +46,7 @@ go run ./examples/provider-catalog
 go run ./examples/embed-companion
 go run ./examples/embed-tts
 go run ./examples/embed-event-bus
+go run ./examples/meeting/synthetic-host
 go run ./examples/voice-agent/provider-switching -provider assemblyai
 go run ./examples/voice-agent/provider-switching -provider auto -preferred openai,assemblyai -require-native-keyterms
 ```

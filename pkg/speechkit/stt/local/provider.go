@@ -123,6 +123,7 @@ func New(port int, modelPath, gpu string) *Provider {
 		Validation: netsec.ValidationOptions{
 			AllowLoopback: true,
 			AllowHTTP:     true,
+			RequireLocal:  true,
 		},
 	}
 	p.client = netsec.NewSafeHTTPClient(netsec.ClientOptions{Timeout: 30 * time.Second, DialValidation: &p.Validation})
@@ -689,7 +690,7 @@ func transcribeHTTPClient(base *http.Client, timeout time.Duration, validation *
 	}
 	if base == nil {
 		if validation == nil {
-			localValidation := netsec.ValidationOptions{AllowLoopback: true, AllowHTTP: true}
+			localValidation := netsec.ValidationOptions{AllowLoopback: true, AllowHTTP: true, RequireLocal: true}
 			validation = &localValidation
 		}
 		return netsec.NewSafeHTTPClient(netsec.ClientOptions{Timeout: timeout + 5*time.Second, DialValidation: validation})

@@ -1,8 +1,8 @@
 // The capture layer (backend registry, capture Session, device
 // enumeration, frame pool) moved to the public
 // pkg/speechkit/audio/capture package. This shim re-exports that surface
-// so the existing device-app call sites (cmd/speechkit, internal/meeting,
-// internal/wakeword, cmd/sk-*-smoke) keep compiling unchanged. New
+// so the existing device-app call sites (cmd/speechkit, internal/wakeword,
+// cmd/sk-*-smoke) keep compiling unchanged. New
 // capture code goes in pkg/speechkit/audio/capture; playback
 // (player.go, stream_player.go) stays private in this package.
 package audio

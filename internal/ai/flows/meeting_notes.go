@@ -12,7 +12,7 @@ import (
 	"github.com/firebase/genkit/go/genkit"
 
 	"github.com/kombifyio/SpeechKit/internal/ai/generation"
-	"github.com/kombifyio/SpeechKit/internal/meeting"
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/meeting"
 )
 
 // MeetingNotesInput is one meeting to write up.

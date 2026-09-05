@@ -46,6 +46,8 @@ type Options struct {
 	Output speechkit.TranscriptOutput
 	// Store optionally persists every completed dictation.
 	Store speechkit.Persistence
+	// Observer can retain recognized text before output or slow history I/O.
+	Observer speechkit.TranscriptionFinalizationObserver
 	// Policy is the host's runtime policy (local-only, allowed providers, ...).
 	// It is validated against Profiles at construction time.
 	Policy speechkit.RuntimePolicy
@@ -77,6 +79,7 @@ type Runtime struct {
 	transcriber     speechkit.Transcriber
 	output          speechkit.TranscriptOutput
 	store           speechkit.Persistence
+	observer        speechkit.TranscriptionFinalizationObserver
 	language        string
 	target          any
 	minPCMBytes     int
@@ -128,6 +131,7 @@ func NewRuntime(opts Options) (*Runtime, error) {
 		transcriber:     opts.Transcriber,
 		output:          opts.Output,
 		store:           opts.Store,
+		observer:        opts.Observer,
 		language:        opts.Language,
 		target:          opts.Target,
 		minPCMBytes:     opts.MinPCMBytes,
@@ -182,10 +186,6 @@ func (r *Runtime) Stop(ctx context.Context) (speechkit.DictationRun, error) {
 
 	pcm, err := r.recorder.Stop()
 	completedAt := time.Now().UTC()
-	if err != nil {
-		return speechkit.DictationRun{}, err
-	}
-
 	durationSecs := speechkit.PCMDurationSecs(pcm)
 	run := speechkit.DictationRun{
 		StartedAt:        startedAt,
@@ -194,7 +194,14 @@ func (r *Runtime) Stop(ctx context.Context) (speechkit.DictationRun, error) {
 		AudioDurationMs:  int64(durationSecs * 1000),
 		ProcessingTimeMs: completedAt.Sub(startedAt).Milliseconds(),
 	}
+	if err != nil {
+		run.Finalization = speechkit.NewTranscriptionFinalization(run.Transcript, err, false, false)
+		r.notifyFinalization(run)
+		return run, err
+	}
 	if len(pcm) < r.minPCMBytes {
+		run.Finalization = speechkit.NewTranscriptionFinalization(run.Transcript, ErrAudioTooShort, false, false)
+		r.notifyFinalization(run)
 		return run, ErrAudioTooShort
 	}
 
@@ -202,6 +209,8 @@ func (r *Runtime) Stop(ctx context.Context) (speechkit.DictationRun, error) {
 	wav := speechkit.PCMToWAV(pcm)
 	transcript, err := r.transcriber.Transcribe(ctx, wav, durationSecs, r.language)
 	if err != nil {
+		run.Finalization = speechkit.NewTranscriptionFinalization(run.Transcript, err, false, false)
+		r.notifyFinalization(run)
 		return run, err
 	}
 	if transcript.Duration == 0 {
@@ -212,19 +221,35 @@ func (r *Runtime) Stop(ctx context.Context) (speechkit.DictationRun, error) {
 	}
 	run.Transcript = transcript
 	run.ProcessingTimeMs = time.Since(transcribeStarted).Milliseconds()
+	run.Finalization = speechkit.NewTranscriptionFinalization(transcript, nil, r.output != nil, r.store != nil)
+	r.notifyFinalization(run)
 
-	if r.output != nil {
-		if err := r.output.Deliver(ctx, transcript, r.target); err != nil {
-			return run, err
-		}
+	var outputErr, persistenceErr error
+	if run.Finalization.Output == speechkit.OutputRequested {
+		outputErr = r.output.Deliver(ctx, transcript, r.target)
+		run.Finalization = run.Finalization.WithOutputResult(outputErr)
+		r.notifyFinalization(run)
 	}
 	if r.store != nil {
-		if err := r.store.SaveTranscription(ctx, transcript.Text, transcript.Language, transcript.Provider, transcript.Model, run.AudioDurationMs, run.ProcessingTimeMs, wav); err != nil {
-			return run, fmt.Errorf("save transcription: %w", err)
+		// Delivery failure must not discard successfully recognized text.
+		// Preserve scope/retention values even when output consumed its deadline.
+		storeCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 15*time.Second)
+		defer cancel()
+		persistenceErr = r.store.SaveTranscription(storeCtx, transcript.Text, transcript.Language, transcript.Provider, transcript.Model, run.AudioDurationMs, run.ProcessingTimeMs, wav)
+		run.Finalization = run.Finalization.WithPersistenceResult(persistenceErr)
+		r.notifyFinalization(run)
+		if persistenceErr != nil {
+			persistenceErr = fmt.Errorf("save transcription: %w", persistenceErr)
 		}
 	}
 
-	return run, nil
+	return run, errors.Join(outputErr, persistenceErr)
+}
+
+func (r *Runtime) notifyFinalization(run speechkit.DictationRun) {
+	if r.observer != nil {
+		r.observer.OnTranscriptionFinalized(run.Transcript, run.Finalization, r.target)
+	}
 }
 
 func validateDictationPolicy(profiles []speechkit.ProviderProfile, policy speechkit.RuntimePolicy) (string, error) {

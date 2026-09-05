@@ -3,7 +3,7 @@ package flows
 import (
 	"testing"
 
-	"github.com/kombifyio/SpeechKit/internal/meeting"
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/meeting"
 )
 
 // Models return JSON wrapped in whatever they feel like: a code fence, a

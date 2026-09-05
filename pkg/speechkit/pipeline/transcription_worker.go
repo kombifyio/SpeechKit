@@ -237,8 +237,10 @@ func (w *TranscriptionWorker) handleJob(ctx context.Context, job speechkit.Trans
 
 	transcript, err := w.transcribeJob(ctx, job, segments)
 	if err != nil {
-		w.onLog(fmt.Sprintf("STT error: %v", err), "error")
-		w.onState("idle", "")
+		finalization := speechkit.NewTranscriptionFinalization(transcript, err, false, false)
+		w.onFinalization(job, transcript, finalization)
+		w.onLog("Transcription failed", "error")
+		w.onState("idle", "Transcription failed")
 		return
 	}
 	applyTranscriptSessionMetadata(&transcript, job.Submission)
@@ -326,13 +328,11 @@ func (w *TranscriptionWorker) commitFinalTranscript(ctx context.Context, job spe
 		return w.commitEmptyFinalTranscript(ctx, job, transcript)
 	}
 
-	// Surface likely-misrecognized words so a silently-wrong transcript is at
-	// least visible in the log/status feed. Offsets are not reliable after
-	// downstream rewriting, so we report the raw low-confidence terms by text.
+	// Surface confidence without writing recognized words to the log.
 	if terms, minConf := speechkit.LowConfidenceWords(transcript.Words, w.lowConfidenceThreshold); len(terms) > 0 {
 		w.onLog(
-			fmt.Sprintf("Low-confidence words (min %.2f, threshold %.2f): %s — add recurring terms to Vocabulary to fix",
-				minConf, w.lowConfidenceThreshold, strings.Join(terms, ", ")),
+			fmt.Sprintf("Low-confidence recognition (min %.2f, threshold %.2f) — review the transcript",
+				minConf, w.lowConfidenceThreshold),
 			"warn",
 		)
 	}
@@ -340,20 +340,19 @@ func (w *TranscriptionWorker) commitFinalTranscript(ctx context.Context, job spe
 	if w.transformer != nil {
 		transformed, transformErr := w.transformer.Transform(ctx, transcript)
 		if transformErr != nil {
-			w.onLog(fmt.Sprintf("Transcript transform error: %v", transformErr), "error")
-			w.onState("idle", "")
-			return false
+			return w.finishWithoutOutput(ctx, job, transcript, transformErr)
 		}
 		transcript = transformed
 		applyTranscriptSessionMetadata(&transcript, job.Submission)
+	}
+	if strings.TrimSpace(transcript.Text) == "" {
+		return w.commitEmptyFinalTranscript(ctx, job, transcript)
 	}
 
 	if w.interceptor != nil {
 		handled, interceptErr := w.interceptor.Intercept(ctx, transcript, job.Target)
 		if interceptErr != nil {
-			w.onLog(fmt.Sprintf("Quick command error: %v", interceptErr), "error")
-			w.onState("idle", "")
-			return false
+			return w.finishWithoutOutput(ctx, job, transcript, interceptErr)
 		}
 		if handled {
 			w.onLog("Quick command handled", "success")
@@ -387,27 +386,57 @@ func (w *TranscriptionWorker) commitFinalTranscript(ctx context.Context, job spe
 	} else {
 		transcript.Text = normalizeTranscriptText(transcript.Text, job.Prefix)
 		w.logTranscriptReady(transcript, "transcript ready")
-		w.onState("done", transcript.Text)
-		w.onTranscriptCommitted(transcript, false)
 	}
 
-	if w.output == nil || !deliverableAsOutput(job.Submission) {
-		if !job.QuickNote {
-			w.persistTranscriptionAsync(job.Submission, transcript) //nolint:contextcheck // fire-and-forget history write; uses its own 15s timeout context
+	finalization := speechkit.NewTranscriptionFinalization(transcript, nil,
+		w.output != nil && deliverableAsOutput(job.Submission), w.runner.store != nil)
+	w.onFinalization(job, transcript, finalization)
+	if finalization.Output == speechkit.OutputRequested {
+		deliverStarted := time.Now()
+		inject := transcript
+		inject.Text = w.prefixLiveInject(transcript.SessionID, transcript.Text)
+		err := w.output.Deliver(ctx, inject, job.Target)
+		finalization = finalization.WithOutputResult(err)
+		w.onFinalization(job, transcript, finalization)
+		if err != nil {
+			w.onLog("Text available; output was not confirmed", "warn")
 		}
-		return true
+		w.onLog(fmt.Sprintf("STT timing: output_delivery=%dms", time.Since(deliverStarted).Milliseconds()), "info")
 	}
-	deliverStarted := time.Now()
-	inject := transcript
-	inject.Text = w.prefixLiveInject(transcript.SessionID, transcript.Text)
-	if err := w.output.Deliver(ctx, inject, job.Target); err != nil {
-		w.onLog(fmt.Sprintf("Output error: %v", err), "error")
-	}
-	w.onLog(fmt.Sprintf("STT timing: output_delivery=%dms", time.Since(deliverStarted).Milliseconds()), "info")
 	if !job.QuickNote {
-		w.persistTranscriptionAsync(job.Submission, transcript) //nolint:contextcheck // fire-and-forget history write; uses its own 15s timeout context
+		w.onTranscriptCommitted(transcript, false)
+		w.onState(finalizationState(finalization, transcript.Text))
+		w.persistTranscriptionAsync(ctx, job, transcript, finalization)
 	}
 	return true
+}
+
+// Keep recognized text recoverable even when post-recognition processing fails.
+func (w *TranscriptionWorker) finishWithoutOutput(ctx context.Context, job speechkit.TranscriptionJob, transcript speechkit.Transcript, err error) bool {
+	if job.QuickNote || job.CaptureChannel != "" {
+		w.onLog("Transcript processing failed", "error")
+		w.onState("idle", "")
+		return false
+	}
+	f := speechkit.NewTranscriptionFinalization(transcript, nil, false, w.runner.store != nil)
+	f = f.WithOutputResult(err)
+	w.onFinalization(job, transcript, f)
+	w.onLog("Text available; final processing failed", "warn")
+	w.onState(finalizationState(f, transcript.Text))
+	w.onTranscriptCommitted(transcript, false)
+	w.persistTranscriptionAsync(ctx, job, transcript, f)
+	return true
+}
+
+func finalizationState(f speechkit.TranscriptionFinalization, text string) (string, string) {
+	switch f.Output {
+	case speechkit.OutputBlocked:
+		return "idle", "Text available, not inserted"
+	case speechkit.OutputFailed:
+		return "idle", "Text available; insertion unconfirmed"
+	default:
+		return "done", text
+	}
 }
 
 // commitEmptyFinalTranscript records a successful transcription that produced
@@ -423,6 +452,8 @@ func (w *TranscriptionWorker) commitFinalTranscript(ctx context.Context, job spe
 // same audio would produce the same empty result, so releasing it for a retry
 // would only loop.
 func (w *TranscriptionWorker) commitEmptyFinalTranscript(ctx context.Context, job speechkit.TranscriptionJob, transcript speechkit.Transcript) bool {
+	finalization := speechkit.NewTranscriptionFinalization(transcript, nil, false, w.runner.store != nil)
+	w.onFinalization(job, transcript, finalization)
 	provider := firstNonEmptyField(transcript.Provider, "unknown")
 	model := firstNonEmptyField(transcript.Model, "unknown")
 	language := firstNonEmptyField(transcript.Language, "unset")
@@ -440,9 +471,13 @@ func (w *TranscriptionWorker) commitEmptyFinalTranscript(ctx context.Context, jo
 		),
 		"warn",
 	)
-	w.onState("done", speechkit.EmptyFinalTranscriptMessage)
+	if job.QuickNote || job.CaptureChannel != "" {
+		w.onState("done", speechkit.EmptyFinalTranscriptMessage)
+	} else {
+		w.onState("idle", speechkit.EmptyFinalTranscriptMessage)
+	}
 	if !job.QuickNote {
-		w.persistTranscriptionAsync(job.Submission, transcript) //nolint:contextcheck // fire-and-forget history write; uses its own 15s timeout context
+		w.persistTranscriptionAsync(ctx, job, transcript, finalization)
 	}
 	return true
 }
@@ -720,10 +755,11 @@ func timingLogValue(value string) string {
 	return value
 }
 
-func (w *TranscriptionWorker) persistTranscriptionAsync(submission speechkit.Submission, transcript speechkit.Transcript) {
+func (w *TranscriptionWorker) persistTranscriptionAsync(parent context.Context, job speechkit.TranscriptionJob, transcript speechkit.Transcript, finalization speechkit.TranscriptionFinalization) {
 	if w.runner == nil {
 		return
 	}
+	submission := job.Submission
 	durationMs := int64(submission.DurationSecs * 1000)
 	if w.runner.store == nil {
 		w.runner.notifyCommit(speechkit.Completion{Transcript: transcript, AudioDurationMs: durationMs})
@@ -735,14 +771,16 @@ func (w *TranscriptionWorker) persistTranscriptionAsync(submission speechkit.Sub
 		defer w.persistWG.Done()
 		defer w.recoverWorkerGoroutine("persistTranscription")
 
-		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+		ctx, cancel := context.WithTimeout(context.WithoutCancel(parent), 15*time.Second)
 		defer cancel()
 
 		latencyMs := transcript.Duration.Milliseconds()
 		if err := w.runner.store.SaveTranscription(ctx, transcript.Text, transcript.Language, transcript.Provider, transcript.Model, durationMs, latencyMs, persistableAudio(submission)); err != nil {
-			w.onLog(fmt.Sprintf("Transcription history error: %v", err), "warn")
+			w.onFinalization(job, transcript, finalization.WithPersistenceResult(err))
+			w.onLog("Transcription history could not be saved", "warn")
 			return
 		}
+		w.onFinalization(job, transcript, finalization.WithPersistenceResult(nil))
 
 		w.runner.notifyCommit(speechkit.Completion{
 			Transcript:             transcript,
@@ -787,6 +825,15 @@ func (w *TranscriptionWorker) onLog(message, kind string) {
 func (w *TranscriptionWorker) onTranscriptCommitted(transcript speechkit.Transcript, quickNote bool) {
 	if w.observer != nil {
 		w.observer.OnTranscriptCommitted(transcript, quickNote)
+	}
+}
+
+func (w *TranscriptionWorker) onFinalization(job speechkit.TranscriptionJob, transcript speechkit.Transcript, finalization speechkit.TranscriptionFinalization) {
+	if job.QuickNote || job.CaptureChannel != "" {
+		return
+	}
+	if observer, ok := w.observer.(speechkit.TranscriptionFinalizationObserver); ok {
+		observer.OnTranscriptionFinalized(transcript, finalization, job.Target)
 	}
 }
 

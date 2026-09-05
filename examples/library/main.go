@@ -1,7 +1,7 @@
-// Example: Using SpeechKit as a Go library for speech-to-text.
+// Example: wiring SpeechKit with a fake provider, not real speech recognition.
 //
 // This demonstrates how to use the SpeechKit framework without the
-// desktop UI — just the transcription pipeline as a Go library.
+// desktop UI. For actual local speech recognition, use examples/local-dictation.
 package main
 
 import (
@@ -25,7 +25,7 @@ import (
 // Deepgram, Google, and more) plugs into the runtime via stt.AsTranscriber —
 // no hand-written adapter needed. This example uses a tiny fake provider so
 // it runs without credentials; swap it for a real one, e.g.
-// stt.NewOpenAICompatibleProvider(...).
+// openaicompat.NewOpenAI(...) from pkg/speechkit/stt/openaicompat.
 
 type exampleProvider struct{}
 

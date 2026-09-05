@@ -103,6 +103,13 @@ Hands-Free is not a fourth mode. It is an activation and voice-output layer over
 the three modes: wake activation, microphone capture, auto-end policy, and
 optional speaker output.
 
+Meeting is not a fourth mode either. It is a separate recording service that
+captures the microphone and the system loopback as two channels, shares only
+the STT transcriber with Dictation, and writes the meeting up into a Meeting
+Review. Its public shape is `pkg/speechkit/meeting` plus one REST and SSE
+contract served by the desktop and the server; see
+[Meeting Mode architecture](docs/architecture/meeting-mode.md).
+
 Words and Replacements are the first-class customization axis over the same
 three modes. Words teach SpeechKit terms to recognize; Replacements define
 deterministic text, command, snippet, synonym, and template transformations.

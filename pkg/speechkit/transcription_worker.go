@@ -18,6 +18,8 @@ const EmptyFinalTranscriptMessage = "No speech recognized · check the configure
 
 // TranscriptOutput delivers a completed [Transcript] to the host application
 // (e.g. clipboard injection or text-field paste).
+// A nil error acknowledges submission, not application receipt. Return an error
+// wrapping ErrOutputBlocked when no text was sent because the target was unsafe.
 type TranscriptOutput interface {
 	Deliver(ctx context.Context, transcript Transcript, target any) error
 }
@@ -37,6 +39,9 @@ type TranscriptTransformer interface {
 
 // TranscriptionObserver receives real-time status and log updates from a
 // [TranscriptionWorker] during processing.
+// Observers may additionally implement TranscriptionFinalizationObserver.
+// OnTranscriptCommitted is the legacy recognized-text notification; it does
+// not acknowledge persistence or application receipt.
 type TranscriptionObserver interface {
 	OnState(status, text string)
 	OnLog(message, kind string)

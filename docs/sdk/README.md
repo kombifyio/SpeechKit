@@ -1,14 +1,21 @@
 # SpeechKit SDK in 10 Minutes
 
-The shortest path from `go get` to text on screen, and the map you need after
-that. Everything here is public API under `pkg/speechkit/...`; nothing needs a
-SpeechKit server, a cloud key, or cgo.
+Start with a real local transcript, then use this map to build your own host.
+Everything here uses public API under `pkg/speechkit/...`. No SpeechKit server
+or cloud key is required. Local inference needs an installed whisper.cpp
+runtime and model; WAV input needs no cgo, while built-in microphone capture
+needs Windows and cgo.
 
 ## 1. Install
 
 ```bash
 go get github.com/kombifyio/SpeechKit
 ```
+
+This installs the Go library, **not** whisper.cpp or model files. For the
+executable starter, use a SpeechKit checkout containing
+[`examples/local-dictation`](../../examples/local-dictation/README.md) and
+follow its runtime prerequisites.
 
 The module path is an import path, not a repository location — see
 [Repository identities](../../CONTRIBUTING.md#repository-identities) if you
@@ -35,59 +42,39 @@ data in `speechkit/catalog`. You do not import either for a first host.
 
 ## 3. Dictation end to end
 
-```go
-package main
+The [local starter](../../examples/local-dictation/README.md) contains the
+complete runnable program: a file-backed recorder, optional Windows microphone
+capture, an owned local model process and cancellation cleanup.
 
-import (
-	"context"
-	"fmt"
-	"log"
+From the SpeechKit checkout, with your runtime and model already installed:
 
-	"github.com/kombifyio/SpeechKit/pkg/speechkit"
-	"github.com/kombifyio/SpeechKit/pkg/speechkit/dictation"
-	"github.com/kombifyio/SpeechKit/pkg/speechkit/stt"
-	"github.com/kombifyio/SpeechKit/pkg/speechkit/stt/local"
-)
-
-type printOutput struct{}
-
-func (printOutput) Deliver(_ context.Context, t speechkit.Transcript, target any) error {
-	fmt.Printf("%v <- %s\n", target, t.Text)
-	return nil
-}
-
-func main() {
-	// Local-first: whisper.cpp on this machine, no cloud key. Swap for
-	// stt.NewOpenAI(key), stt.NewGroq(key), or any stt.STTProvider you write.
-	provider := local.New(8178, "models/ggml-base.bin", "auto")
-
-	svc, err := dictation.NewService(dictation.Options{
-		Recorder:    yourRecorder(), // speechkit.AudioRecorder
-		Transcriber: stt.AsTranscriber(provider),
-		Output:      printOutput{},
-		Language:    "de",
-		Target:      "editor", // opaque; handed to Deliver unchanged
-	})
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	ctx := context.Background()
-	if err := svc.Start(ctx); err != nil {
-		log.Fatal(err)
-	}
-	// ... user speaks ...
-	run, err := svc.Stop(ctx)
-	if err != nil {
-		log.Fatal(err)
-	}
-	fmt.Println(run.Transcript.Text, run.AudioDurationMs, "ms")
-}
+```powershell
+$env:PATH = "C:\whisper\bin;$env:PATH"
+$env:SPEECHKIT_ALLOW_WHISPER_PATH = "1"
+$env:CGO_ENABLED = "0"
+go run .\examples\local-dictation -model C:\whisper\models\ggml-base.bin -wav C:\audio\sentence.wav -language de
 ```
 
-`examples/library` is this program with a runnable fake provider and a
-microphone fallback; `go run ./examples/library` works on any OS with no
-credentials.
+The input must be 16 kHz, mono PCM16 WAV. For a live sentence on Windows,
+enable cgo with the documented native toolchain and replace `-wav ...` with
+`-record-for 5s`. The microphone is never opened implicitly. Missing
+prerequisites and empty transcripts are errors, not successful fake results.
+
+The starter resolves the model path, starts and warms `local.New(...)` using
+`StartServer(hostContext)`, and defers `StopServer()`. The constructor alone
+does **not** start inference. A separate request context limits transcription
+without canceling the model process while it is still needed.
+
+Inside that lifecycle, `dictation.NewService` receives the recorder and
+`stt.AsTranscriber(provider)`. `Start` begins the input; `Stop` returns a
+`speechkit.DictationRun`. The starter prints its transcript to stdout and
+keeps diagnostics on stderr. It configures neither cloud fallback nor
+history/clipboard output. To deliver to your own editor, add a
+`speechkit.TranscriptOutput`; the service forwards its opaque target unchanged.
+
+[`examples/library`](../../examples/library/main.go) is a separate
+**fake-provider composition demo**, not a real recognition path. It can use
+synthetic audio when native capture is unavailable.
 
 Errors are sentinels: `dictation.ErrMissingRecorder`, `ErrAudioTooShort`,
 `ErrNotRecording`, `capture.ErrBackendUnavailable`, `live.Err*`,

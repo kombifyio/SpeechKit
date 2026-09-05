@@ -1,7 +1,7 @@
 // Package meeting owns the runtime behind Meeting 2.0 capture.
 //
 // A meeting is recorded from two sources at once: the microphone carries the
-// local speaker and the Windows system loopback carries everyone else on the
+// local speaker and a host-provided system channel carries everyone else on the
 // call. The two are deliberately never mixed into one stream — mixing would
 // need clock-drift compensation and echo cancellation, while two independent
 // pipelines give the same result plus a free speaker split, and interleave on a
@@ -20,8 +20,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/kombifyio/SpeechKit/internal/audio"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit"
+	capturepkg "github.com/kombifyio/SpeechKit/pkg/speechkit/audio/capture"
 )
 
 // Channels a meeting records from.
@@ -77,7 +77,7 @@ type Pipeline interface {
 	Stop(opts speechkit.RecordingStopOptions) error
 	// Events surfaces capture-device trouble (stalls, unplugs, driver errors)
 	// so the runtime can mark this channel degraded without killing the other.
-	Events() <-chan audio.Event
+	Events() <-chan capturepkg.Event
 	Close() error
 }
 
@@ -673,16 +673,16 @@ func (r *Runtime) watchPipeline(ctx context.Context, capture *meetingCapture, pi
 				return
 			}
 			switch event.Type {
-			case audio.EventStalled:
+			case capturepkg.EventStalled:
 				r.markChannelIfRecording(capture, channel, ChannelStateStalled, event.Message)
-			case audio.EventError:
+			case capturepkg.EventError:
 				message := event.Message
 				if message == "" && event.Err != nil {
 					message = event.Err.Error()
 				}
 				r.markChannel(capture, channel, ChannelStateFailed, message)
 				r.log(fmt.Sprintf("Meeting capture: %s channel error: %s", channel, message), "error")
-			case audio.EventStarted:
+			case capturepkg.EventStarted:
 				r.markChannelIfRecording(capture, channel, ChannelStateRecording, "")
 			}
 		}

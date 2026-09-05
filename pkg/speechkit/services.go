@@ -13,6 +13,7 @@ import (
 type DictationRun struct {
 	ID               string                     `json:"id,omitempty"`
 	Transcript       Transcript                 `json:"transcript"`
+	Finalization     TranscriptionFinalization  `json:"finalization"`
 	StartedAt        time.Time                  `json:"startedAt,omitempty"`
 	CompletedAt      time.Time                  `json:"completedAt,omitempty"`
 	ProviderProfile  string                     `json:"providerProfile,omitempty"`

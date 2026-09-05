@@ -49,6 +49,7 @@ table mirrors that inventory.
 | `pkg/speechkit/internal/speakercontract` | Internal test-only speaker conformance helpers; not importable by embedders. |
 | `pkg/speechkit/lifecycle` | Mode start/stop orchestration and refcounted shared resources. |
 | `pkg/speechkit/localization` | Resolves stable SpeechKit message IDs against BCP-47 locales. |
+| `pkg/speechkit/meeting` | Embeddable Meeting Mode runtime and note/digest primitives: dual-channel capture lifecycle, per-channel health snapshots, transcript rendering/chunking, echo suppression, built-in note templates, anchor preservation, and call/end watcher policy. Hosts supply capture pipelines, persistence, generation, Wails windows, hotkeys, and server routes. |
 | `pkg/speechkit/netsec` | Centralized network security primitives shared by public surfaces. |
 | `pkg/speechkit/pipeline` | Composable capture-to-transcript engine: `RecordingController`, `TranscriptionWorker`, `TranscriptionRunner`, `DictationSegmenter`, `TranscriptSessionLedger`, live-commit policy. Implements the root-package contracts; `dictation` composes it. |
 | `pkg/speechkit/procguard` | Ties long-lived child processes to the lifetime of the host process. |
@@ -193,7 +194,7 @@ Verified on 2026-05-26 and updated on 2026-05-27 and 2026-06-02:
   `hostconfig`) ships runnable `Example*` functions in `example_test.go` with
   `// Output:` blocks, so pkg.go.dev shows a verified first call and a drifted
   public signature fails `go test` instead of rotting in prose.
-- Public export dry-run includes `pkg/speechkit/wakeword`, `pkg/speechkit/companion`, and `pkg/speechkit/tts`.
+- The curated public export includes `pkg/speechkit/wakeword`, `pkg/speechkit/companion`, `pkg/speechkit/meeting`, and `pkg/speechkit/tts`.
 - Production SDK packages have no `internal/*` imports, except the single
   documented adapter package in Boundary Rule 1 (`pkg/speechkit/assist/skills`);
   `TestPublicSDKDoesNotImportInternalPackages` (`pkg/speechkit/sdk_boundary_test.go`)

@@ -17,6 +17,8 @@ import (
 type MessageID string
 
 const (
+	DesktopCaptureBusy MessageID = "desktop.capture.busy"
+
 	CompanionHomeAssistantNotConfigured MessageID = "companion.home_assistant.not_configured"
 	CompanionHomeAssistantCommandEmpty  MessageID = "companion.home_assistant.command.empty"
 	CompanionHomeAssistantNotMatched    MessageID = "companion.home_assistant.command.not_matched"
@@ -64,6 +66,59 @@ const (
 )
 
 var messageIDs = []MessageID{
+	"desktop.setup.check_title",
+	"desktop.setup.files_ready",
+	"desktop.setup.files_downloading",
+	"desktop.setup.files_missing",
+	"desktop.setup.runtime_ready",
+	"desktop.setup.runtime_pending",
+	"desktop.setup.mic_available",
+	"desktop.setup.mic_verified",
+	"desktop.setup.mic_missing",
+	"desktop.setup.mic_default",
+	"desktop.setup.devices_failed",
+	"desktop.setup.device_failed",
+	"desktop.setup.devices_retry",
+	"desktop.setup.readiness_failed",
+	"desktop.setup.refresh",
+	"desktop.setup.cancel",
+	"desktop.setup.probe_start",
+	"desktop.setup.probe_speaking",
+	"desktop.setup.probe_privacy",
+	"desktop.setup.probe_untested",
+	"desktop.setup.probe_success",
+	"desktop.setup.probe_busy",
+	"desktop.setup.probe_unready",
+	"desktop.setup.probe_cancelled",
+	"desktop.setup.probe_timeout",
+	"desktop.setup.probe_capture_failed",
+	"desktop.setup.probe_empty",
+	"desktop.setup.probe_failed",
+	"desktop.setup.probe_method",
+	"desktop.setup.transcript",
+	"desktop.setup.save_failed",
+	"desktop.setup.review_title",
+	"desktop.setup.finish_hint",
+	"desktop.setup.back_local",
+	"desktop.setup.save_open",
+	"desktop.setup.download_finished",
+	"desktop.route.title",
+	"desktop.route.device",
+	"desktop.route.device_hint",
+	"desktop.route.server_hint",
+	"desktop.route.server_configured",
+	"desktop.route.primary",
+	"desktop.route.fallback",
+	"desktop.route.no_fallback",
+	"desktop.route.unknown",
+	"desktop.route.ready",
+	"desktop.route.not_ready",
+	"desktop.route.unavailable",
+	"desktop.route.refresh",
+	"desktop.route.distinct",
+	"desktop.route.scope",
+	"desktop.route.server_fallback",
+	DesktopCaptureBusy,
 	CompanionHomeAssistantNotConfigured,
 	CompanionHomeAssistantCommandEmpty,
 	CompanionHomeAssistantNotMatched,

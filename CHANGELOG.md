@@ -33,16 +33,18 @@ IDs, source paths, and other maintainer-only vocabulary.
 * **Microsoft Foundry:** the Connect test says when the resource offers no
   MAI voices — Microsoft serves them only in some regions — instead of
   letting the MAI speech defaults fail later with a generic error.
-
-### Fixed
-
-* **Microsoft Foundry:** choosing MAI-Transcribe-2 as the dictation model now
-  really dictates through it. Before, any later settings change silently
-  switched dictation back to the OpenAI-compatible route with a deployment
-  the project did not have, every request failed with 404 and the fallback
-  provider took over. A missing deployment is now reported as such instead
-  of as a generic rejection.
-
+* **Go SDK:** a runnable local dictation starter recognizes a WAV file or an
+  explicitly recorded microphone sentence without cloud keys, handles its
+  model process lifecycle, and reports missing native requirements clearly.
+* **Windows:** local setup now distinguishes downloaded model files, a running
+  model and a verified microphone. An optional five-second dictation test shows
+  the actual local Whisper transcript without saving audio, adding history or
+  pasting text. Failed saves stay visible and retryable; opening the app does not
+  claim that every mode is ready or tested. Invalid test responses also remain
+  visible as failures.
+* **Windows:** pressing another mode's shortcut keeps the current recording
+  and draft intact and explains that the recording must be finished or
+  explicitly cancelled before switching modes.
 * **meetings:** the meeting list is grouped by when a meeting happened —
   Today, Yesterday, Earlier this week, Last week, Older — and older groups
   show one compact line per meeting, so a meeting is found and placed at a
@@ -77,9 +79,30 @@ IDs, source paths, and other maintainer-only vocabulary.
   write-up by itself. The second row belongs to the open tab: the language of
   the write-up you are reading, "Bullets | Markdown", and an "Export" menu with
   "Copy as Markdown" and "Save as .md…" in place of three separate buttons.
+* **Windows:** model settings show one catalog-backed device or server route
+  per mode, with readiness, privacy scope and explicit fallback choices,
+  instead of a separate fixed cloud-provider switch. Device orchestration is
+  no longer labelled offline.
 
 ### Fixed
 
+* **Microsoft Foundry:** choosing MAI-Transcribe-2 as the dictation model now
+  really dictates through it. Before, any later settings change silently
+  switched dictation back to the OpenAI-compatible route with a deployment
+  the project did not have, every request failed with 404 and the fallback
+  provider took over. A missing deployment is now reported as such instead
+  of as a generic rejection.
+* **dictation:** recognized text remains available when insertion is blocked or
+  fails. Full-dictation recovery offers copy and an explicit retry to the
+  original window, without recognizing the audio again. Missing or unfocusable
+  target windows no longer receive a blind paste, and slow or failed history
+  storage no longer hides the output result. A new capture cannot interrupt a
+  recovery action, and a temporary busy response no longer disables retry
+  permanently.
+* **dictation:** command-like replacements remain literal text in Dictation;
+  utility and codeword execution stays in Assist, including during recovery.
+* **library:** a failed transcription-history load shows an error and retry
+  instead of claiming that no transcriptions exist.
 * **dashboard:** the window opens at a size that fits the screen it appears
   on. On a laptop screen at 150 % scaling it used to open taller than the
   screen, so its bottom and the minimise control were out of reach until it

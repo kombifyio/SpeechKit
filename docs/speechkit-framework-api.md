@@ -20,6 +20,13 @@ Speaker diarization, speaker identification, and speaker attribution are also
 capability layers over the same three modes, not new modes. Hosts opt in with
 speaker options where a selected STT or streaming provider supports them.
 
+Meeting Mode is a reusable long-running recording workflow over the Dictation
+STT boundary, not an Assist or Voice Agent workflow. The public
+`pkg/speechkit/meeting` runtime owns the dual-channel capture state machine,
+per-channel health, transcript timeline helpers, note templates, and anchor
+preservation. Hosts still own concrete capture devices, persistence, generation,
+Wails/windows, hotkeys, and HTTP/SSE adapters.
+
 Words and Replacements are the framework customization layer over the same
 modes. A Word is recognition knowledge that biases STT and Voice Agent
 perception. A Replacement is a deterministic transformation that can normalize
@@ -59,6 +66,7 @@ full mode runtime:
 | Hands-Free composition | `pkg/speechkit/companion` |
 | Speaker diarization/attribution contracts | `pkg/speechkit/speaker` |
 | Customization contracts | `pkg/speechkit/customize`, with runtime implementation in `internal/customize` and the semantic standard in `docs/words-and-replacements-standard.md` |
+| Meeting capture runtime and note primitives | `pkg/speechkit/meeting` |
 | Server-connected mode calls | `pkg/speechkit/client` |
 | Embedded Voice Agent tools/session harness | `pkg/speechkit/agentkit`, `pkg/speechkit/voiceagent/live` |
 
@@ -92,6 +100,59 @@ Hosts may add kinds prefixed with their product name (`"companion.chat"`).
 legacy untyped targets) so logs and interceptors can branch without asserting
 host types. The `Target any` fields accept untyped values until v0.69.0, when
 they become `speechkit.OutputTarget`.
+
+### Dictation completion and recovery
+
+`DictationRun.Finalization` and the optional
+`speechkit.TranscriptionFinalizationObserver` share the same additive result:
+
+| Field | Meaning |
+| --- | --- |
+| `id` | Process-local attempt ID, unchanged by history updates. Not a durable history ID. |
+| `recognition` | `recognized`, `empty`, or `failed`. Only recognized text can be output. |
+| `output` | `not_requested`, `requested`, `submitted`, `blocked`, or `failed`. |
+| `persistence` | `not_requested`, `pending`, `saved`, or `failed`, independent of output. |
+
+`submitted` acknowledges the output adapter, **not receipt by the target
+application**. Windows `SendInput` cannot prove insertion. Adapters wrap
+`speechkit.ErrOutputBlocked` only when they refuse before submitting text;
+other failures may include partial output. Never automatically retry either.
+
+The Dictation service notifies recognition before output, attempts history even
+after output failure, and returns the transcript plus joined output/history
+errors from `Stop`. Its optional observer makes the text available before slow
+history I/O; `Stop` still waits for its bounded history attempt. The desktop
+continues using `pipeline.TranscriptionWorker`, not the batch service. The
+worker exposes the output result before asynchronous history finishes, then
+updates persistence under the same ID. Observers must be concurrency-safe,
+prompt, and treat updates as state changes, not extra delivery commands.
+Legacy `OnTranscriptCommitted` signals recognized text, not storage or receipt.
+Empty/failed recognition and blocked/failed output use a non-success legacy
+state; recognized text remains available through the completion observer.
+Quick Notes and meeting capture keep their existing independent contracts.
+
+Windows full-dictation recovery retains only the last result in memory. Copy
+and explicit retry use that attempt's text and original target, without STT,
+Assist actions, or automatic re-paste. Stale IDs and overlapping/already-submitted
+retries are rejected. Missing, invalid, or unfocusable original windows block
+injection; generic failures are shown as unconfirmed, potentially partial.
+Recovery holds an exclusive desktop-operation reservation through output and
+state update. Capture startup, completion projection and normal output share
+the same admission boundary, so another capture cannot supersede an unfinished
+authorized retry. The internal `appState.reserveIdleDesktopOperation()` seam
+also lets an explicit local probe reserve capture and transcription as one
+operation; callers must defer its release through cleanup.
+An HTTP 409 recovery response with `{"outcome":"not_submitted"}` confirms that
+request sent no text. Only this response followed by a fresh same-attempt,
+idle/available snapshot can restore explicit retry eligibility. Untyped
+conflicts, network errors and generic failures retain the uncertain-attempt
+guard; no state update automatically retries output.
+History failure does not destroy that in-memory copy. It is not crash recovery:
+restarting or completing another full dictation replaces it.
+
+Persistence remains subject to the host store's retention/deletion policy.
+`saved` does not promise permanent retention or audio storage. No recovery
+files, new raw-audio storage, transcript logs, or retention override are added.
 
 ## Embeddable Hands-Free, Wake-Word, TTS, and Events
 

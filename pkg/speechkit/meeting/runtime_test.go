@@ -7,13 +7,13 @@ import (
 	"testing"
 	"time"
 
-	"github.com/kombifyio/SpeechKit/internal/audio"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit"
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/audio/capture"
 )
 
 type fakePipeline struct {
 	channel  string
-	events   chan audio.Event
+	events   chan capture.Event
 	startErr error
 	stopErr  error
 
@@ -25,7 +25,7 @@ type fakePipeline struct {
 }
 
 func newFakePipeline(channel string) *fakePipeline {
-	return &fakePipeline{channel: channel, events: make(chan audio.Event, 4)}
+	return &fakePipeline{channel: channel, events: make(chan capture.Event, 4)}
 }
 
 func (p *fakePipeline) Channel() string { return p.channel }
@@ -49,7 +49,7 @@ func (p *fakePipeline) Stop(speechkit.RecordingStopOptions) error {
 	return p.stopErr
 }
 
-func (p *fakePipeline) Events() <-chan audio.Event { return p.events }
+func (p *fakePipeline) Events() <-chan capture.Event { return p.events }
 
 func (p *fakePipeline) Close() error {
 	p.mu.Lock()
@@ -149,7 +149,7 @@ func TestRuntimeKeepsRecordingWhenOneChannelDies(t *testing.T) {
 	runtime, pipelines := newTestRuntime(t, newFakePipeline(ChannelMicrophone), newFakePipeline(ChannelSystem))
 	startTestMeeting(t, runtime)
 
-	pipelines[ChannelSystem].events <- audio.Event{Type: audio.EventError, Message: "output device removed"}
+	pipelines[ChannelSystem].events <- capture.Event{Type: capture.EventError, Message: "output device removed"}
 
 	deadline := time.Now().Add(2 * time.Second)
 	for {
