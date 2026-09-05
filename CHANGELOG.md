@@ -26,6 +26,13 @@ IDs, source paths, and other maintainer-only vocabulary.
   Sol as the reasoning option) and MAI-Thinking-1 works as an Assist model.
   The GPT-4o transcription and speech entries are gone; a setting that still
   named them now resolves to the MAI models.
+* **Microsoft Foundry:** the card shows what one connection serves in two
+  groups, Voice (Dictation, Speech, Voice Agent) and Models (Assist, Utility,
+  Agent), so a single endpoint and sign-in cover both; the Advanced dialog
+  keeps a tab per mode.
+* **Microsoft Foundry:** the Connect test says when the resource offers no
+  MAI voices — Microsoft serves them only in some regions — instead of
+  letting the MAI speech defaults fail later with a generic error.
 
 ### Fixed
 
