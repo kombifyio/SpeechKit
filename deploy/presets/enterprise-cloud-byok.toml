@@ -44,9 +44,10 @@ provider = "gemini"
 
 # Both privacy axes are set explicitly. This profile reaches Google Cloud, so
 # network_scope stays open; recordings are kept on the device by default.
-# Set retention_scope = "ephemeral" only with a provider surface that asserts
-# no-store, otherwise the switch refuses the provider
-# (docs/privacy/retention-scope.md).
+# Keep retention_scope = "retain": "ephemeral" is only a policy value today.
+# It does not sweep recordings or automatically refuse providers that retain
+# content; the store and provider consumers are not wired. Provider manifests
+# alone are not proof of no-store enforcement.
 [privacy]
 network_scope = "open"
 allow_setup_traffic = false

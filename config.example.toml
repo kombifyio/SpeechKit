@@ -22,24 +22,19 @@ network_scope = "open"
 # downloads and app updates from official sources. No audio, transcripts or
 # prompts ever ride on setup traffic.
 allow_setup_traffic = false
-# retention_scope decides what outlives the work that produced it. It is a
-# separate question from network_scope: an install with no network at all still
-# keeps every transcript, meeting and screenshot forever unless this says
-# otherwise.
+# retention_scope is a separate policy axis from network_scope. The config
+# value and policy predicates exist, but store cleanup and provider admission
+# do not consume them yet. "ephemeral" is NOT an enforced zero-retention mode:
+# it does not sweep recordings or automatically block providers that retain
+# content. Keep "retain"; use existing retention settings and explicit erasure.
 #   retention_scope = "retain"     Recordings are durable and disappear only
 #                                  through the retention settings below, a
 #                                  deletion, or an erasure request (default).
-#   retention_scope = "ephemeral"  Nothing outlives the meeting or session that
-#                                  produced it. Transcript, your notes, the
-#                                  rolling digests and screen captures are
-#                                  written while the work runs (so a crash
-#                                  loses nothing and the summary engine can
-#                                  read them) and are swept when it ends. The
-#                                  generated write-up stays. Providers that
-#                                  cannot be told to discard the request are
-#                                  blocked, so the promise also holds off the
-#                                  device.
-# Unknown values fail closed to "ephemeral".
+#   retention_scope = "ephemeral"  Policy target only: sweep raw material at
+#                                  session end, keep the generated write-up,
+#                                  and require provider no-store. Not wired.
+# Unknown strings are rejected on Device-Target config load/save. The policy
+# normalizer defaults invalid input to "ephemeral"; that is not enforcement.
 retention_scope = "retain"
 
 [general]
