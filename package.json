@@ -1,7 +1,7 @@
 {
   "name": "speechkit-release",
   "private": true,
-  "version": "0.68.43",
+  "version": "0.68.54",
   "type": "module",
   "engines": {
     "node": ">=24.0.0"

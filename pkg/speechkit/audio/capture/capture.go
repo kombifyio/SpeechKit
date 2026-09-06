@@ -54,6 +54,10 @@ type Event struct {
 	Backend Backend
 	Message string
 	Err     error
+	// Requested is set on an EventStopped that the session's own Stop caused.
+	// Only a stop nobody asked for — unplugged device, exclusive-mode grab,
+	// format change — is an interruption a host should report.
+	Requested bool
 }
 
 type Config struct {

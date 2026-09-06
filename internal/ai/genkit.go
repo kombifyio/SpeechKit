@@ -12,6 +12,7 @@ package ai
 import (
 	"context"
 	"log/slog"
+	"net/http"
 	"strings"
 
 	"github.com/firebase/genkit/go/ai"
@@ -32,6 +33,11 @@ type Config struct {
 	HuggingFaceToken string
 	OllamaBaseURL    string
 	LocalLLMBaseURL  string
+	// LocalLLMTransport wraps the HTTP transport that carries requests to the
+	// bundled local model server. The desktop host uses it to wake a server it
+	// paused to free memory and to notice when the server was last used. Nil
+	// leaves the transport as built.
+	LocalLLMTransport func(next http.RoundTripper) http.RoundTripper
 
 	GoogleUtilityModel          string
 	GoogleAssistModel           string
@@ -262,7 +268,7 @@ func registerConfiguredProviderModels(g *genkit.Genkit, cfg Config) {
 		})
 	}
 	if cfg.LocalLLMBaseURL != "" {
-		registerLocalLLMModels(g, cfg.LocalLLMBaseURL, localLLMModelNames(cfg))
+		registerLocalLLMModels(g, cfg.LocalLLMBaseURL, localLLMModelNames(cfg), cfg.LocalLLMTransport)
 	}
 }
 

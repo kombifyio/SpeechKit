@@ -67,6 +67,19 @@ IDs, source paths, and other maintainer-only vocabulary.
 
 ### Changed
 
+* **desktop:** the app needs far less processor time while it waits. Windows
+  that are not on screen — the dashboard after you close it, the overlay
+  panels of the design you are not using, the hidden Voice Agent and meeting
+  windows — no longer poll or animate in the background, and the visible
+  overlay only refreshes at full speed while a mode is running; while idle it
+  is told about changes instead, and its level bars only animate while there
+  is something to animate. On a laptop this was more than half a processor
+  core spent on nothing.
+* **local model:** the bundled model server pauses after 15 minutes without a
+  request and releases its memory, around 850 MB for the default model. The
+  next Assist, meeting write-up or Voice Agent request wakes it, which takes a
+  few seconds once. `idle_stop_minutes` in the `[local_llm]` section changes
+  the wait; 0 keeps the server running for the whole session.
 * **settings:** the kombify Cloud sign-in is an integration card like every
   other: brand, category, the modes it serves (Dictate, Meeting, Voice Agent),
   its availability in this build, the privacy-scope lock when cloud services
@@ -91,6 +104,13 @@ IDs, source paths, and other maintainer-only vocabulary.
 
 ### Fixed
 
+* **overlay:** a locked desktop or a moment without a foreground window no
+  longer counts as a placement failure. The overlay stays on the screen under
+  the mouse pointer, or on the primary screen, instead of raising "could not
+  be placed on the active screen" every five minutes for hours.
+* **dictation:** ending a recording no longer logs "Audio device stopped while
+  a recording was active" as an error. Only a stop nobody asked for — an
+  unplugged microphone, another app taking the device — is reported.
 * **privacy:** a subject-rights export now covers the whole meeting. The
   screen captures, the write-ups and the rolling digests travel with the
   transcript and notes, and the ZIP bundles the capture images next to the

@@ -21,6 +21,10 @@ type LocalLLMConfig struct {
 	UtilityModel string `toml:"utility_model"`
 	AssistModel  string `toml:"assist_model"`
 	AgentModel   string `toml:"agent_model"`
+	// IdleStopMinutes pauses the bundled model server after this many minutes
+	// without a request so its memory is released; the next request wakes it.
+	// 0 keeps the server running for the whole session.
+	IdleStopMinutes int `toml:"idle_stop_minutes"`
 }
 
 type VPSConfig struct {

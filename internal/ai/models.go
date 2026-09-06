@@ -254,8 +254,15 @@ func registerFoundryModels(g *genkit.Genkit, reg foundryRegistration) {
 
 // registerLocalLLMModels registers SpeechKit-managed local LLM models.
 // The runtime speaks the OpenAI-compatible chat completions API on loopback.
-func registerLocalLLMModels(g *genkit.Genkit, baseURL string, modelNames []string) {
+func registerLocalLLMModels(g *genkit.Genkit, baseURL string, modelNames []string, wrapTransport func(http.RoundTripper) http.RoundTripper) {
 	client := newLocalAIClient(&localLLMCallValidation)
+	if wrapTransport != nil {
+		next := client.Transport
+		if next == nil {
+			next = http.DefaultTransport
+		}
+		client.Transport = wrapTransport(next)
+	}
 	seen := map[string]bool{}
 	for _, rawName := range modelNames {
 		name := strings.TrimSpace(rawName)

@@ -160,6 +160,7 @@ gpu = "auto"                         # auto, cuda, vulkan, cpu
 utility_model = "gemma4:e4b"
 assist_model = "gemma4:e4b"
 agent_model = "gemma4:e4b"
+idle_stop_minutes = 15               # Pause the local model server after this many idle minutes to free its memory; the next request wakes it. 0 keeps it running
 
 [vps]
 enabled = false

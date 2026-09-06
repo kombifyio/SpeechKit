@@ -61,9 +61,12 @@ type MalgoSession struct {
 	pcmHandler       func([]byte)
 	pooledPCMHandler PooledPCMHandler
 	running          atomic.Bool
-	events           chan Event
-	eventsMu         sync.RWMutex
-	eventsClosed     bool
+	// stopRequested is raised by Stop before the device is stopped, so the
+	// device's stop callback can tell a requested stop from an interruption.
+	stopRequested atomic.Bool
+	events        chan Event
+	eventsMu      sync.RWMutex
+	eventsClosed  bool
 
 	// Frame dispatch: the WASAPI callback only copies each frame into a
 	// pooled buffer and enqueues it; level computation and PCM handlers
@@ -126,6 +129,7 @@ func (s *MalgoSession) Start() error {
 	s.mu.Lock()
 	s.buffer.Reset()
 	s.mu.Unlock()
+	s.stopRequested.Store(false)
 
 	startAt := time.Now()
 	deviceType := malgo.Capture
@@ -455,10 +459,16 @@ func (s *MalgoSession) openAndStartDevice(deviceType malgo.DeviceType, deviceID 
 	callbacks := malgo.DeviceCallbacks{
 		Data: onRecvFrames,
 		Stop: func() {
+			requested := s.stopRequested.Load()
+			message := "malgo device stopped"
+			if requested {
+				message = "malgo device stopped (requested)"
+			}
 			s.emit(Event{
-				Type:    EventStopped,
-				Backend: BackendWindowsWASAPIMalgo,
-				Message: "malgo device stopped",
+				Type:      EventStopped,
+				Backend:   BackendWindowsWASAPIMalgo,
+				Message:   message,
+				Requested: requested,
 			})
 		},
 	}
@@ -490,6 +500,7 @@ func (s *MalgoSession) Stop() ([]byte, error) {
 
 	var stopErr error
 	if s.device != nil {
+		s.stopRequested.Store(true)
 		stopErr = s.device.Stop()
 		s.device.Uninit()
 		s.device = nil

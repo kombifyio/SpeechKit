@@ -43,6 +43,10 @@ const (
 	DefaultDictationIntermediateSegmentMs = 6000
 	DefaultDictateSilenceTimeoutSec       = 3
 
+	// DefaultLocalLLMIdleStopMinutes pauses the bundled model server after a
+	// quarter hour without a request; see LocalLLMConfig.IdleStopMinutes.
+	DefaultLocalLLMIdleStopMinutes = 15
+
 	// ManagedDevServerURL and ManagedLiveKitURL are referenced by the
 	// pre-rewrite internal/config/credentials.go ServerConnection
 	// onboarding path. They are scheduled for removal together with that
