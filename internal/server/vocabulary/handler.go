@@ -72,7 +72,12 @@ func (h *Handler) dictionary(w http.ResponseWriter, r *http.Request) {
 }
 
 func validateScopeQuery(w http.ResponseWriter, r *http.Request) bool {
-	values, exists := r.URL.Query()["scope"]
+	query := r.URL.Query()
+	if query.Has("scope_key") && query.Get("scope_key") == "" {
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_scope", "scope_key must not be empty; omit it for unkeyed scopes")
+		return false
+	}
+	values, exists := query["scope"]
 	if !exists {
 		return true
 	}

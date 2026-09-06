@@ -20,7 +20,6 @@ type fakeDictStore struct {
 	entries     []store.UserDictionaryEntry
 	listErr     error
 	replaceErr  error
-	listCalls   int
 	lastLang    string
 	lastEntries []store.UserDictionaryEntry
 	replaced    bool
@@ -38,7 +37,6 @@ func (f *fakeDictStore) ReplaceUserDictionaryEntries(_ context.Context, language
 }
 
 func (f *fakeDictStore) ListUserDictionaryEntries(_ context.Context, _ string) ([]store.UserDictionaryEntry, error) {
-	f.listCalls++
 	if f.listErr != nil {
 		return nil, f.listErr
 	}
@@ -66,17 +64,22 @@ func TestDictionary_GET_ListsEntries(t *testing.T) {
 		{Spoken: "kombify", Canonical: "kombify", Language: "en", Enabled: true},
 	}}
 	h := New(fs)
-
-	rec := httptest.NewRecorder()
-	h.dictionary(rec, httptest.NewRequest(http.MethodGet, "/v1/vocabulary/dictionary?language=en", nil))
-
-	if rec.Code != http.StatusOK {
-		t.Fatalf("status = %d, want 200; body=%s", rec.Code, rec.Body.String())
+	mux := http.NewServeMux()
+	h.Mount(mux)
+	server := httptest.NewServer(mux)
+	defer server.Close()
+	response, err := server.Client().Get(server.URL + "/v1/vocabulary/dictionary?language=en")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer response.Body.Close()
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want 200", response.StatusCode)
 	}
 	var body struct {
 		Entries []store.UserDictionaryEntry `json:"entries"`
 	}
-	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+	if err := json.NewDecoder(response.Body).Decode(&body); err != nil {
 		t.Fatalf("decode: %v", err)
 	}
 	if len(body.Entries) != 1 || body.Entries[0].Canonical != "kombify" {
@@ -93,20 +96,35 @@ func TestDictionary_GET_StoreError(t *testing.T) {
 	}
 }
 
-func TestDictionary_GET_RejectsInvalidScope(t *testing.T) {
-	for _, scope := range []string{"bogus", "tenant", "", "%20org%20"} {
-		t.Run(scope, func(t *testing.T) {
-			fs := &fakeDictStore{}
-			h := New(fs)
-			rec := httptest.NewRecorder()
-
-			h.dictionary(rec, httptest.NewRequest(http.MethodGet, "/v1/vocabulary/dictionary?scope="+scope, nil))
-
-			if rec.Code != http.StatusBadRequest {
-				t.Fatalf("status = %d, want 400; body=%s", rec.Code, rec.Body.String())
+func TestDictionary_GET_RejectsInvalidScopeQuery(t *testing.T) {
+	mux := http.NewServeMux()
+	New(&fakeDictStore{}).Mount(mux)
+	server := httptest.NewServer(mux)
+	defer server.Close()
+	for _, query := range []string{
+		"scope=bogus", "scope=tenant", "scope=", "scope=%20org%20",
+		// Regression: the published scope_key minLength rejects an empty value.
+		"scope=app&scope_key=",
+	} {
+		t.Run(query, func(t *testing.T) {
+			response, err := server.Client().Get(server.URL + "/v1/vocabulary/dictionary?" + query)
+			if err != nil {
+				t.Fatal(err)
 			}
-			if fs.listCalls != 0 {
-				t.Fatalf("store was called %d times for invalid scope", fs.listCalls)
+			defer response.Body.Close()
+			if response.StatusCode != http.StatusBadRequest {
+				t.Fatalf("status = %d, want 400", response.StatusCode)
+			}
+			var body struct {
+				Error struct {
+					Code string `json:"code"`
+				} `json:"error"`
+			}
+			if err := json.NewDecoder(response.Body).Decode(&body); err != nil {
+				t.Fatal(err)
+			}
+			if body.Error.Code != "invalid_scope" {
+				t.Fatalf("error code = %q, want invalid_scope", body.Error.Code)
 			}
 		})
 	}
