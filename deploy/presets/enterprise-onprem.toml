@@ -38,3 +38,13 @@ provider = "local-cascaded"
 # Customer fills in. Model file SHA-256 is verified at load per the threat model.
 
 # All [providers.*] sections intentionally absent — local-only mode.
+
+# Both privacy axes are set explicitly. Air-gap is zero egress with unbounded
+# local retention; it is not zero data retention. Switch retention_scope to
+# "ephemeral" when nothing may outlive the meeting or session that produced
+# it (docs/privacy/retention-scope.md). allow_setup_traffic stays false: an
+# internal mirror, not the public update channel, feeds this install.
+[privacy]
+network_scope = "device_only"
+allow_setup_traffic = false
+retention_scope = "retain"

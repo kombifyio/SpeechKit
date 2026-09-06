@@ -13,6 +13,11 @@ IDs, source paths, and other maintainer-only vocabulary.
 
 ### Added
 
+* **privacy:** the retention scope has its own guide next to the network
+  scope, explaining what "zero retention" keeps and sweeps, why an air-gapped
+  install is not the same thing, and how the two scopes combine. The
+  enterprise presets now set both scopes explicitly instead of leaving
+  retention implied.
 * **Microsoft Foundry:** the integration card has a Connect dialog with three
   ways in — project endpoint plus API key, the Azure CLI account on your
   machine (SpeechKit finds it, offers to install it and reuses its sign-in),

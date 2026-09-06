@@ -41,3 +41,13 @@ provider = "gemini"
 
 # Other providers (openai, groq, huggingface, vps) intentionally absent —
 # customer enables them explicitly if needed.
+
+# Both privacy axes are set explicitly. This profile reaches Google Cloud, so
+# network_scope stays open; recordings are kept on the device by default.
+# Set retention_scope = "ephemeral" only with a provider surface that asserts
+# no-store, otherwise the switch refuses the provider
+# (docs/privacy/retention-scope.md).
+[privacy]
+network_scope = "open"
+allow_setup_traffic = false
+retention_scope = "retain"
