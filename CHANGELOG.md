@@ -11,6 +11,15 @@ IDs, source paths, and other maintainer-only vocabulary.
 
 ## [Unreleased]
 
+## [0.69.0](https://github.com/kombifyio/SpeechKit/compare/v0.68.0...v0.69.0) (2026-09-06)
+
+### Highlights
+
+- **Microsoft Foundry, connected three ways**: Sign in with Microsoft, reuse the Azure CLI you already have, or paste endpoint and key. One connection serves dictation, speech, Assist and the Voice Agent with Microsoft's own MAI models.
+- **Dictation that never loses your words**: When pasting is blocked, the text stays available with copy and a retry to the original window, and pressing another mode's shortcut keeps the recording you are in instead of cancelling it.
+- **A lighter app while it waits**: Hidden windows stop polling, the overlay only refreshes while a mode runs, and the bundled model server sleeps after fifteen idle minutes and frees its memory.
+- **Meetings you can find and export**: The list groups meetings by day, search covers transcript, notes and write-ups, notes render as Markdown, and one click copies or saves the complete write-up.
+
 ### Added
 
 * **privacy:** the retention scope has its own guide next to the network
