@@ -81,6 +81,7 @@ sample_rate = 16000
 channels = 1
 frame_size_ms = 32
 latency_hint = "interactive"
+keep_device_warm = true         # Keep the microphone device opened between recordings so a recording starts at once; false opens it per recording
 
 # [output] tunes how the Device-Target injects transcribed text into the
 # focused application. "auto" picks a per-app paste shortcut from built-in

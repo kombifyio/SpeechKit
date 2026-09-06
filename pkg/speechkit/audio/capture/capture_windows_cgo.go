@@ -86,6 +86,26 @@ type MalgoSession struct {
 	resolveMu        sync.Mutex
 	resolvedHex      string
 	resolvedHexValid bool
+
+	// device is the initialised malgo device: running while a recording is
+	// on, and — with cfg.KeepDeviceWarm — kept initialised but stopped
+	// between recordings so the next Start skips WASAPI activation.
+	// deviceKey names the endpoint and type it was opened for. Guarded by
+	// deviceMu; the warm-up goroutine and Start both touch it.
+	deviceMu  sync.Mutex
+	deviceKey string
+	// frameSink is the channel the device callback feeds, swapped by
+	// startFrameDispatch and cleared by stopFrameDispatch, so one
+	// long-lived device serves many recordings.
+	frameSink atomic.Pointer[chan []byte]
+}
+
+// deviceKey identifies what a malgo device was opened for.
+func deviceKey(deviceType malgo.DeviceType, deviceID malgo.DeviceID, haveDeviceID bool) string {
+	if !haveDeviceID {
+		return fmt.Sprintf("%d|default", deviceType)
+	}
+	return fmt.Sprintf("%d|%x", deviceType, deviceID)
 }
 
 var _ Session = (*MalgoSession)(nil)
@@ -115,10 +135,71 @@ func newMalgoSession(cfg Config) (Session, error) {
 		events: make(chan Event, 8),
 	}
 	s.buffer.Grow(initialBufferSize)
-	if cfg.InputSource != InputSourceSystemLoopback && strings.TrimSpace(cfg.DeviceID) != "" {
-		go s.warmResolvedCaptureDevice()
+	if cfg.InputSource != InputSourceSystemLoopback && (cfg.KeepDeviceWarm || strings.TrimSpace(cfg.DeviceID) != "") {
+		go s.warmUp()
 	}
 	return s, nil
+}
+
+// warmUp runs off the hotkey path right after construction: it resolves the
+// configured capture device and, with KeepDeviceWarm, opens it so even the
+// first recording after launch starts without WASAPI activation.
+func (s *MalgoSession) warmUp() {
+	if strings.TrimSpace(s.cfg.DeviceID) != "" {
+		s.warmResolvedCaptureDevice()
+	}
+	if !s.cfg.KeepDeviceWarm {
+		return
+	}
+	deviceID, haveDeviceID, _, err := s.resolveInputDeviceID(malgo.Capture)
+	if err != nil {
+		slog.Debug("capture device pre-open skipped: resolve failed", "err", err)
+		return
+	}
+	openStart := time.Now()
+	if _, reused, err := s.acquireDevice(malgo.Capture, deviceID, haveDeviceID, false); err != nil {
+		slog.Debug("capture device pre-open failed", "err", err)
+	} else if !reused {
+		slog.Debug("capture device pre-opened", "open_ms", time.Since(openStart).Milliseconds())
+	}
+}
+
+// acquireDevice returns the initialised device for the endpoint, reusing
+// the one kept warm since the last recording when it was opened for the
+// same endpoint. With replace set, a warm device for another endpoint is
+// closed and replaced; without it (the warm-up goroutine) an existing
+// device is left alone whatever it was opened for, because it may be
+// recording right now.
+func (s *MalgoSession) acquireDevice(deviceType malgo.DeviceType, deviceID malgo.DeviceID, haveDeviceID bool, replace bool) (*malgo.Device, bool, error) {
+	key := deviceKey(deviceType, deviceID, haveDeviceID)
+	s.deviceMu.Lock()
+	defer s.deviceMu.Unlock()
+	if s.device != nil {
+		if s.deviceKey == key || !replace {
+			return s.device, true, nil
+		}
+		s.device.Uninit()
+		s.device = nil
+		s.deviceKey = ""
+	}
+	device, err := s.initDevice(deviceType, deviceID, haveDeviceID)
+	if err != nil {
+		return nil, false, err
+	}
+	s.device = device
+	s.deviceKey = key
+	return device, false, nil
+}
+
+// releaseDevice closes the initialised device, warm or not.
+func (s *MalgoSession) releaseDevice() {
+	s.deviceMu.Lock()
+	defer s.deviceMu.Unlock()
+	if s.device != nil {
+		s.device.Uninit()
+		s.device = nil
+		s.deviceKey = ""
+	}
 }
 
 func (s *MalgoSession) Start() error {
@@ -148,10 +229,10 @@ func (s *MalgoSession) Start() error {
 	resolveDur := time.Since(resolveStart)
 
 	// Arm the frame dispatcher before the device can invoke callbacks.
-	frames := s.startFrameDispatch()
+	s.startFrameDispatch()
 
 	openStart := time.Now()
-	device, err := s.openAndStartDevice(deviceType, deviceID, haveDeviceID, frames)
+	device, reused, err := s.acquireDevice(deviceType, deviceID, haveDeviceID, true)
 	if err != nil && fromCache {
 		// The cached endpoint id may be stale (device unplugged or Windows
 		// re-enumerated it). Fall back to one fresh enumeration and retry
@@ -161,7 +242,7 @@ func (s *MalgoSession) Start() error {
 			"err", err)
 		deviceID, haveDeviceID, _, err = s.resolveInputDeviceID(deviceType)
 		if err == nil {
-			device, err = s.openAndStartDevice(deviceType, deviceID, haveDeviceID, frames)
+			device, reused, err = s.acquireDevice(deviceType, deviceID, haveDeviceID, true)
 		}
 	}
 	if err != nil {
@@ -170,14 +251,37 @@ func (s *MalgoSession) Start() error {
 	}
 	openDur := time.Since(openStart)
 
-	s.device = device
+	runStart := time.Now()
+	if err := device.Start(); err != nil && reused {
+		// A device kept warm can go stale (endpoint removed, format changed):
+		// open a fresh one once before giving up.
+		slog.Warn("warm capture device failed to start; reopening", "err", err)
+		s.releaseDevice()
+		device, reused, err = s.acquireDevice(deviceType, deviceID, haveDeviceID, true)
+		if err == nil {
+			err = device.Start()
+		}
+	} else if err != nil {
+		s.releaseDevice()
+		s.stopFrameDispatch()
+		return err
+	}
+	if err != nil {
+		s.releaseDevice()
+		s.stopFrameDispatch()
+		return err
+	}
+	runDur := time.Since(runStart)
+
 	s.running.Store(true)
 
 	totalDur := time.Since(startAt)
 	timingArgs := []any{
 		"resolve_ms", resolveDur.Milliseconds(),
 		"open_ms", openDur.Milliseconds(),
+		"start_ms", runDur.Milliseconds(),
 		"total_ms", totalDur.Milliseconds(),
+		"device_warm", reused,
 		"device_id_cached", fromCache,
 		"specific_device", haveDeviceID,
 	}
@@ -266,6 +370,7 @@ func (s *MalgoSession) startFrameDispatch() chan []byte {
 	s.drainDone = drainDone
 	s.watchdogDone = watchdogDone
 	s.dispatchMu.Unlock()
+	s.frameSink.Store(&frames)
 	s.overruns.Store(0)
 	s.lastFrameNano.Store(time.Now().UnixNano())
 
@@ -390,6 +495,9 @@ func (s *MalgoSession) enqueueFrame(frames chan<- []byte, inputSamples []byte) {
 // callbacks; waits (bounded) for queued frames to finish draining so
 // the segmenter has seen everything the callback enqueued.
 func (s *MalgoSession) stopFrameDispatch() {
+	// Detach the sink first so a callback that still runs cannot reach a
+	// channel about to close.
+	s.frameSink.Store(nil)
 	s.dispatchMu.Lock()
 	frames := s.frames
 	drainDone := s.drainDone
@@ -416,7 +524,9 @@ func (s *MalgoSession) stopFrameDispatch() {
 	}
 }
 
-func (s *MalgoSession) openAndStartDevice(deviceType malgo.DeviceType, deviceID malgo.DeviceID, haveDeviceID bool, frames chan<- []byte) (*malgo.Device, error) {
+// initDevice opens the malgo device without starting it. The callbacks read
+// the current frame sink per call, so the device outlives any one recording.
+func (s *MalgoSession) initDevice(deviceType malgo.DeviceType, deviceID malgo.DeviceID, haveDeviceID bool) (*malgo.Device, error) {
 	deviceConfig := malgo.DefaultDeviceConfig(deviceType)
 	deviceConfig.Capture.Format = malgo.FormatS16
 	deviceConfig.Capture.Channels = uint32(s.cfg.Channels)
@@ -453,7 +563,9 @@ func (s *MalgoSession) openAndStartDevice(deviceType malgo.DeviceType, deviceID 
 		if len(inputSamples) == 0 {
 			return
 		}
-		s.enqueueFrame(frames, inputSamples)
+		if sink := s.frameSink.Load(); sink != nil {
+			s.enqueueFrame(*sink, inputSamples)
+		}
 	}
 
 	callbacks := malgo.DeviceCallbacks{
@@ -483,11 +595,6 @@ func (s *MalgoSession) openAndStartDevice(deviceType malgo.DeviceType, deviceID 
 		defer releaseDeviceID()
 	}
 
-	if err := device.Start(); err != nil {
-		device.Uninit()
-		return nil, err
-	}
-
 	return device, nil
 }
 
@@ -499,11 +606,15 @@ func (s *MalgoSession) Stop() ([]byte, error) {
 	s.running.Store(false)
 
 	var stopErr error
-	if s.device != nil {
+	s.deviceMu.Lock()
+	device := s.device
+	s.deviceMu.Unlock()
+	if device != nil {
 		s.stopRequested.Store(true)
-		stopErr = s.device.Stop()
-		s.device.Uninit()
-		s.device = nil
+		stopErr = device.Stop()
+		if !s.cfg.KeepDeviceWarm {
+			s.releaseDevice()
+		}
 	}
 
 	// The device no longer delivers callbacks; flush the dispatcher so
@@ -555,6 +666,8 @@ func (s *MalgoSession) Close() error {
 	if s.running.Load() {
 		_, closeErr = s.Stop()
 	}
+	// A device kept warm must go before its context.
+	s.releaseDevice()
 	if s.ctx != nil {
 		if err := s.ctx.Uninit(); err != nil && closeErr == nil {
 			closeErr = err

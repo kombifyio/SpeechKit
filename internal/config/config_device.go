@@ -55,6 +55,11 @@ type AudioConfig struct {
 	Channels       int    `toml:"channels"`
 	FrameSizeMs    int    `toml:"frame_size_ms"`
 	LatencyHint    string `toml:"latency_hint"`
+	// KeepDeviceWarm keeps the microphone device opened between recordings so
+	// a recording starts as soon as the hotkey is pressed; opening a WASAPI
+	// device otherwise costs most of a second. An opened device without a
+	// running stream uses no CPU and does not count as microphone use.
+	KeepDeviceWarm bool `toml:"keep_device_warm"`
 }
 
 // VADConfig tunes the level-based dictation voice-activity detector (the

@@ -80,6 +80,14 @@ type Config struct {
 	// (malgo's own default). Ignored by backends without native thread
 	// control.
 	CaptureThreadPriority string
+	// KeepDeviceWarm keeps the capture device initialised between
+	// recordings and opens it ahead of the first one, so Start only has to
+	// start a stream that already exists. Opening a WASAPI capture device
+	// was measured at about 800 ms per recording (2026-09-05), which is
+	// the delay between the hotkey and the first captured word. An
+	// initialised device that is not started holds no stream and uses no
+	// CPU. Ignored by backends that open nothing.
+	KeepDeviceWarm bool
 }
 
 // Session records microphone PCM and exposes both level and live-audio callbacks.

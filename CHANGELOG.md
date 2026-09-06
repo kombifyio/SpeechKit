@@ -75,6 +75,13 @@ IDs, source paths, and other maintainer-only vocabulary.
   is told about changes instead, and its level bars only animate while there
   is something to animate. On a laptop this was more than half a processor
   core spent on nothing.
+* **dictation:** a recording starts as soon as you press the shortcut. The
+  microphone device is opened once and kept opened between recordings, and
+  it is opened ahead of the first recording after launch; before, opening it
+  cost most of a second on every recording, which is where the first word
+  could go missing. An opened device without a running stream uses no CPU
+  and does not count as microphone use. `keep_device_warm = false` in the
+  `[audio]` section restores opening per recording.
 * **local model:** the bundled model server pauses after 15 minutes without a
   request and releases its memory, around 850 MB for the default model. The
   next Assist, meeting write-up or Voice Agent request wakes it, which takes a
@@ -111,6 +118,9 @@ IDs, source paths, and other maintainer-only vocabulary.
 * **dictation:** ending a recording no longer logs "Audio device stopped while
   a recording was active" as an error. Only a stop nobody asked for — an
   unplugged microphone, another app taking the device — is reported.
+* **overlay:** the idle pill appears right after launch again. It could stay
+  hidden until the first recording when its window was shown a moment before
+  the window itself existed.
 * **privacy:** a subject-rights export now covers the whole meeting. The
   screen captures, the write-ups and the rolling digests travel with the
   transcript and notes, and the ZIP bundles the capture images next to the
