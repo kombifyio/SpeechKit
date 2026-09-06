@@ -61,6 +61,12 @@ func (s *sqlStore) ListMeetingSummaryBatches(ctx context.Context, sessionID int6
 	if err := s.ensureRecordingSessionInScope(ctx, sessionID, scopeID); err != nil {
 		return nil, err
 	}
+	return s.loadMeetingSummaryBatches(ctx, sessionID)
+}
+
+// loadMeetingSummaryBatches reads the digests of a session the caller has
+// already established access to.
+func (s *sqlStore) loadMeetingSummaryBatches(ctx context.Context, sessionID int64) ([]MeetingSummaryBatch, error) {
 	rows, err := s.db.QueryContext(ctx, s.dialect.rebind(`
 		SELECT id, session_id, batch_key, level, start_segment_id, end_segment_id,
 		       source_fingerprint, status, digest_json, provider, model, error_kind,

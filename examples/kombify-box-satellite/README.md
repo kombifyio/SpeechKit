@@ -1,67 +1,67 @@
 # kombify-companion
 
-Go-Host fuer die kombify box nach SpeechKit-Hands-Free-Vertrag.
-Der aktuelle Standardpfad ist lokal auf der Host-Maschine und bewusst noch
-ohne speechkit-server:
-Box-USB-Mikro -> sherpa-KWS-Wakeword -> optional SpeechKit
-Hands-Free/Assist-Flow -> Box-Speaker.
+Go host for the kombify box following the SpeechKit hands-free contract.
+The current default path runs locally on the host machine and deliberately
+still without speechkit-server:
+Box USB microphone -> sherpa KWS wake word -> optional SpeechKit
+hands-free/Assist flow -> Box speaker.
 
-Der Voice-Agent-Modus (`[mode].target = "voice_agent"`) hat zwei Transporte:
+The Voice Agent mode (`[mode].target = "voice_agent"`) has two transports:
 
-- **`[voice_agent].transport = "local"` (Default)**: die Box spricht direkt
-  mit dem Realtime-Provider (Deepgram Voice Agent, Gemini Live, AssemblyAI,
-  OpenAI) — kein speechkit-server noetig. Tools (`home_assistant` via
-  toolbridge) laufen client-seitig; `think_endpoint_url`/`think_model`/
-  `think_api_key_env` schalten das kombify AI Gateway als BYO-Brain des
-  Deepgram-Agenten. Provider-Key kommt aus `DEEPGRAM_API_KEY` bzw.
+- **`[voice_agent].transport = "local"` (default)**: the Box talks directly
+  to the realtime provider (Deepgram Voice Agent, Gemini Live, AssemblyAI,
+  OpenAI); no speechkit-server needed. Tools (`home_assistant` via
+  toolbridge) run client-side; `think_endpoint_url`/`think_model`/
+  `think_api_key_env` switch the kombify AI Gateway in as the BYO brain of
+  the Deepgram agent. The provider key comes from `DEEPGRAM_API_KEY` or
   `ASSEMBLYAI_API_KEY`/`GOOGLE_AI_API_KEY`/`OPENAI_API_KEY`.
-  Idle-Teardown default 90 s Reminder / 3 min Deactivate (Kostenkontrolle,
-  Deepgram bepreist Verbindungszeit).
-- **`transport = "server"`**: Mic-PCM 16 kHz S16LE -> speechkit-server
-  Voice-Agent-WebSocket -> 24 kHz PCM zurueck auf den Box-Speaker.
+  Idle teardown defaults to a 90 s reminder / 3 min deactivate (cost control;
+  Deepgram bills connection time).
+- **`transport = "server"`**: mic PCM 16 kHz S16LE -> speechkit-server
+  Voice Agent WebSocket -> 24 kHz PCM back to the Box speaker.
 
-Fuer reine Geraete-/Wakeword-Tests nutzt `[mode].target = "wake_only"` nur
-Mikrofon, lokalen KWS und den Box-Status, ohne STT/Assist/TTS aufzurufen.
+For pure device/wake-word tests, `[mode].target = "wake_only"` uses only the
+microphone, the local KWS and the Box status, without calling STT/Assist/TTS.
 
 ## Setup
 
 ```powershell
-powershell -File tools\get-model.ps1       # sherpa KWS-Modell (einmalig)
+powershell -File tools\get-model.ps1       # sherpa KWS model (once)
 powershell -File tools\make-keywords.ps1   # keywords.txt + keywords.jarvis.txt
 powershell -ExecutionPolicy Bypass -File examples\kombify-box-satellite\run-companion.ps1
 ```
 
-Hinweise:
-- cgo noetig (sherpa-onnx). Auf Windows ein MinGW-Toolchain verwenden.
-- Zur **Laufzeit** muessen die sherpa-onnx-DLLs (`sherpa-onnx-c-api.dll`,
-  `onnxruntime.dll`, ...) auf dem `PATH` liegen. Sie liegen im Go-Modul-Cache
-  unter `sherpa-onnx-go-windows@<ver>\lib\x86_64-pc-windows-gnu\`; diesen
-  Ordner vor dem Start auf den `PATH` legen (sonst `0xc0000135` /
+Notes:
+- cgo is required (sherpa-onnx). On Windows use a MinGW toolchain.
+- At **runtime** the sherpa-onnx DLLs (`sherpa-onnx-c-api.dll`,
+  `onnxruntime.dll`, ...) must be on the `PATH`. They live in the Go module
+  cache under `sherpa-onnx-go-windows@<ver>\lib\x86_64-pc-windows-gnu\`; put
+  that folder on the `PATH` before starting (otherwise `0xc0000135` /
   "DLL not found").
-- `config.toml` wird beim Start erwartet (Pfad optional als erstes Argument).
-- Die Ring-UI der Box wird direkt vom Companion getrieben: der
-  `companion.Options.OnStage`-Hook schreibt `KBX <state>`-Zeilen auf den
-  CDC-Statusport (boxlink.go, Autodetect ueber USB VID/PID 303A:8000;
-  Override via `[box].status_port` oder `KOMBIFY_BOX_STATUS_PORT`, `"off"`
-  deaktiviert). run-companion.ps1 staged nur noch Env/DLLs.
-- Geraete werden per Namens-Substring gewaehlt (`[box]` in config.toml);
-  Standard "kombify box" matcht das USB-Geraet der Firmware.
-- Secrets werden ueber die normale SpeechKit-Secret-Konvention aufgeloest:
-  Umgebungsvariable zuerst (Deepgram immer `DEEPGRAM_API_KEY`), optional
-  Doppler-CLI-Fallback via `DOPPLER_PROJECT`/`DOPPLER_CONFIG`.
-  Der Companion setzt `SPEECHKIT_DISABLE_PORTABLE=1`,
-  damit er trotz Beispiel-`config.toml` den globalen SpeechKit-Store nutzt.
-- `[speechkit_server]` zeigt per Default auf `https://speechkit.kombify.io`.
-  Das wird erst genutzt, wenn `[mode].target = "voice_agent"` gesetzt ist.
-  `[voice_agent].provider = "deepgram"` waehlt Deepgram auf dem Server aus;
-  der Deepgram-Key gehoert auf den speechkit-server, nicht in diesen Companion.
+- `config.toml` is expected at start (path optional as the first argument).
+- The Box ring UI is driven directly by the companion: the
+  `companion.Options.OnStage` hook writes `KBX <state>` lines to the CDC
+  status port (boxlink.go, auto-detected through USB VID/PID 303A:8000;
+  override via `[box].status_port` or `KOMBIFY_BOX_STATUS_PORT`, `"off"`
+  disables it). run-companion.ps1 only stages env/DLLs now.
+- Devices are chosen by name substring (`[box]` in config.toml); the default
+  "kombify box" matches the firmware's USB device.
+- Secrets are resolved through the normal SpeechKit secret convention:
+  environment variable first (Deepgram always `DEEPGRAM_API_KEY`), optional
+  Doppler CLI fallback via `DOPPLER_PROJECT`/`DOPPLER_CONFIG`.
+  The companion sets `SPEECHKIT_DISABLE_PORTABLE=1` so that it uses the
+  global SpeechKit store despite the example `config.toml`.
+- `[speechkit_server]` points to `https://speechkit.kombify.io` by default.
+  It is only used once `[mode].target = "voice_agent"` is set.
+  `[voice_agent].provider = "deepgram"` selects Deepgram on the server; the
+  Deepgram key belongs on the speechkit-server, not in this companion.
 - Short feedback signals are synthesized by the Companion. Assist and the
   server Voice Agent use the wake cue before capture; the local realtime HA
   path deliberately uses only the Ring UI so self-generated audio cannot enter
   the authority capture. The two-stage understood cue follows only after the
   capture is closed. No SD card is required.
-- STT kann lokal oder direkt ueber Deepgram laufen. Fuer Deepgram im lokalen
-  `config.toml` setzen:
+- STT can run locally or directly through Deepgram. For Deepgram, set in the
+  local `config.toml`:
 
   ```toml
   [stt]
@@ -71,34 +71,33 @@ Hinweise:
   language    = "de"
   ```
 
-  Danach muss `DEEPGRAM_API_KEY` entweder im Environment, im lokalen
-  SpeechKit-Secret-Store oder ueber die konfigurierte Doppler-Quelle
-  verfuegbar sein; der Companion startet dann keinen lokalen
-  `whisper-server.exe`.
-- Der lokale STT-Alternativpfad nutzt `whisper-server.exe` aus
+  `DEEPGRAM_API_KEY` must then be available in the environment, in the local
+  SpeechKit secret store or through the configured Doppler source; the
+  companion then starts no local `whisper-server.exe`.
+- The local STT alternative uses `whisper-server.exe` from
   `%LOCALAPPDATA%\SpeechKit`.
-- Assist/TTS laufen im aktuellen Box-Profil lokal-first: lokaler
-  OpenAI-kompatibler LLM-Endpunkt auf `http://127.0.0.1:8082/v1` und optional
-  Piper-TTS.
-- Das lokale Whisper-Modell wird automatisch unter
-  `%LOCALAPPDATA%\SpeechKit\models\ggml-small.bin` gesucht. Alternativ
-  `[local].model_path` setzen.
-- Piper wird automatisch unter `%LOCALAPPDATA%\SpeechKit\piper...` gesucht;
-  Stimmen liegen standardmaessig in
-  `%LOCALAPPDATA%\SpeechKit\piper-voices`.
-- Ist die lokale LLM-Runtime noch nicht gestartet, laufen lokale Skills
-  weiter; offene Fragen liefern einen Setup-Hinweis statt eines Gateway-Fehlers.
-- Der lokale Standard nutzt `keywords.jarvis.txt` fuer "hey jarvis"/"jarvis".
-  Die Datei wurde mit `tools/encode-keywords` aus dem aktuellen GigaSpeech
-  KWS-`tokens.txt` erzeugt, damit kein Python-Tokenizer noetig ist.
-- Inline-`Keywords` im Wakeword-Detektor werden vom Framework automatisch
-  BPE-tokenisiert (`wakeword.EncodeKeywords`); eine explizite `keywords_file`
-  wird beim Start validiert (Rohtext -> klarer Fehler statt stillem Nie-Match).
+- Assist/TTS run local-first in the current Box profile: a local
+  OpenAI-compatible LLM endpoint on `http://127.0.0.1:8082/v1` and optional
+  Piper TTS.
+- The local Whisper model is looked up automatically under
+  `%LOCALAPPDATA%\SpeechKit\models\ggml-small.bin`. Alternatively set
+  `[local].model_path`.
+- Piper is looked up automatically under `%LOCALAPPDATA%\SpeechKit\piper...`;
+  voices live in `%LOCALAPPDATA%\SpeechKit\piper-voices` by default.
+- If the local LLM runtime has not started yet, local skills keep working;
+  open questions return a setup hint instead of a gateway error.
+- The local default uses `keywords.jarvis.txt` for "hey jarvis"/"jarvis".
+  The file was generated with `tools/encode-keywords` from the current
+  GigaSpeech KWS `tokens.txt`, so no Python tokenizer is needed.
+- Inline `Keywords` in the wake-word detector are BPE-tokenized automatically
+  by the framework (`wakeword.EncodeKeywords`); an explicit `keywords_file`
+  is validated at start (raw text -> a clear error instead of a silent
+  never-match).
 
-## Wakeword-Smoke-Test
+## Wake-word smoke test
 
-Das kleine Testtool prueft eine 16-kHz-Mono-PCM16-WAV gegen exakt denselben
-SpeechKit/Sherpa-Pipeline-Code wie der Companion:
+The small test tool checks a 16 kHz mono PCM16 WAV against exactly the same
+SpeechKit/sherpa pipeline code the companion uses:
 
 ```powershell
 go build -o examples\kombify-box-satellite\kws-smoke.exe ./examples/kombify-box-satellite/tools/kws-smoke
@@ -109,10 +108,11 @@ examples\kombify-box-satellite\kws-smoke.exe `
   --phrase "hey jarvis"
 ```
 
-Erwartung: mindestens eine `DETECTED`-Zeile. Wenn der Smoke-Test feuert, aber
-der Live-Test nicht, liegt es am realen Mikrofon-Audio, Abstand/Aussprache oder
-am Tuning von `[wakeword].threshold` und `[wakeword].input_gain`. `input_gain`
-verstaerkt nur den Wakeword-Detector-Pfad; die eigentliche Aufnahme bleibt roh.
+Expectation: at least one `DETECTED` line. If the smoke test fires but the
+live test does not, the cause is the real microphone audio, distance or
+pronunciation, or the tuning of `[wakeword].threshold` and
+`[wakeword].input_gain`. `input_gain` amplifies only the wake-word detector
+path; the actual recording stays raw.
 
 ## Smart-Home: Home Assistant
 
@@ -200,26 +200,26 @@ reminder. The next wake starts a fresh session. Providers without final output
 transcription fail closed for the realtime HA surface even when the host input
 seal is valid.
 
-> **Migration (v0.49, angewandt):** `skills.go` delegiert die deterministischen
-> Skills (Zeit, Datum, Mathe, Wetter, Timer, Erinnerung, Wikipedia, Temperatur)
-> jetzt an das oeffentliche Katalog-Paket `pkg/speechkit/assist/skills`
-> (`companionskills.New(...)`); box-lokal bleiben nur `help`/`status`. Timer und
-> Erinnerung feuern echt ueber den eingebauten Scheduler (`OnAlarm` → `audio.Ding()`),
+> **Migration (v0.49, applied):** `skills.go` now delegates the deterministic
+> skills (time, date, math, weather, timer, reminder, Wikipedia, temperature)
+> to the public catalog package `pkg/speechkit/assist/skills`
+> (`companionskills.New(...)`); only `help`/`status` stay Box-local. Timer and
+> reminder fire for real through the built-in scheduler (`OnAlarm` → `audio.Ding()`),
 > `router.Close()` cleans them up during shutdown. `hass.go` adapts the same hardened
 > public Home Assistant boundary for the realtime tool; it no longer contains a
 > separate HTTP implementation or a no-match-to-model fallback.
 >
-> Verifiziert per lokalem cgo-Build+Test (`CGO_ENABLED=1 CC="zig cc" go
+> Verified with a local cgo build and test (`CGO_ENABLED=1 CC="zig cc" go
 > build/vet/test ./examples/kombify-box-satellite/`). CI
-> (`.github/workflows/example-box-satellite.yml`) baut+vettet das Beispiel
-> (Windows/mingw); `go test` laeuft dort nicht, weil das Binary sherpa-onnx +
-> onnxruntime als Shared Libraries linkt (Runtime-DLLs = Device-Target-Sache).
+> (`.github/workflows/example-box-satellite.yml`) builds and vets the example
+> (Windows/mingw); `go test` does not run there because the binary links
+> sherpa-onnx + onnxruntime as shared libraries (runtime DLLs are a device-target matter).
 
-## Wakeword-Robustheit
-- Wake-Erkennung pausiert waehrend Ding + Aufnahme + TTS-Wiedergabe
-  (`Pipeline.Pause()/Resume()`), verhindert Selbst-Trigger.
-- Der schnelle lokale Test nutzt "hey jarvis", weil die Phrase phonemisch
-  distincter ist als das Ein-Wort-Wakeword "kombify" und sofort mit dem
-  vorhandenen KWS-Modell tokenisiert werden kann.
-- Ein-Wort-Wakewords haben mehr False-Accepts als "hey ..."-Phrasen;
-  `[wakeword].threshold` und `min_consecutive_frames` in config.toml tunen.
+## Wake-word robustness
+- Wake detection pauses during ding + recording + TTS playback
+  (`Pipeline.Pause()/Resume()`), which prevents self-triggering.
+- The quick local test uses "hey jarvis" because the phrase is phonemically
+  more distinct than the single-word wake word "kombify" and can be tokenized
+  at once with the existing KWS model.
+- Single-word wake words have more false accepts than "hey ..." phrases; tune
+  `[wakeword].threshold` and `min_consecutive_frames` in config.toml.

@@ -1,10 +1,10 @@
 //go:build windows && cgo
 
-// boxlink schreibt Companion-Statuszeilen ("KBX <state>") direkt auf den
-// CDC-ACM-Port der kombify box und ersetzt damit die fruehere
-// run-companion.ps1-Regex-Bridge. Die Firmware (firmware/main/box_status.c im
-// kombify-box-Repo) parst zeilenweise Text: idle|wake|listening|thinking|
-// speaking|done|error, optional mit "KBX "-Praefix.
+// boxlink writes companion status lines ("KBX <state>") directly to the
+// CDC-ACM port of the kombify box and thereby replaces the earlier
+// run-companion.ps1 regex bridge. The firmware (firmware/main/box_status.c in
+// the kombify-box repo) parses line-wise text: idle|wake|listening|thinking|
+// speaking|done|error, optionally with a "KBX " prefix.
 package main
 
 import (
@@ -20,27 +20,27 @@ import (
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/companion"
 )
 
-// Der USB-Composite der Box (UAC + CDC) meldet sich mit Espressifs VID und
-// der in firmware/sdkconfig.defaults gesetzten PID.
+// The Box's USB composite device (UAC + CDC) reports Espressif's VID and the
+// PID set in firmware/sdkconfig.defaults.
 const (
 	boxUSBVID = "303A"
 	boxUSBPID = "8000"
 )
 
-// BoxLink haelt den seriellen Statuskanal zur Box. Ein nil-*BoxLink ist
-// gueltig und macht alle Methoden zu No-ops, damit der Companion ohne
-// angeschlossene Box (oder mit status_port = "off") unveraendert laeuft.
+// BoxLink holds the serial status channel to the Box. A nil *BoxLink is
+// valid and turns every method into a no-op, so the companion runs unchanged
+// without a connected Box (or with status_port = "off").
 type BoxLink struct {
 	mu     sync.Mutex
 	port   serial.Port
 	name   string
-	hint   string // expliziter Port-Wunsch fuer Reconnects ("" = Autodetect)
+	hint   string // explicit port wish for reconnects ("" = autodetect)
 	closed bool
 }
 
-// OpenBoxLink oeffnet den CDC-Statusport. portHint waehlt einen expliziten
-// COM-Port ("COM7"); leer = KOMBIFY_BOX_STATUS_PORT-Env oder Autodetect ueber
-// USB VID/PID; "off" = deaktiviert (nil, nil).
+// OpenBoxLink opens the CDC status port. portHint selects an explicit COM
+// port ("COM7"); empty = the KOMBIFY_BOX_STATUS_PORT env or autodetect via
+// USB VID/PID; "off" = disabled (nil, nil).
 func OpenBoxLink(portHint string) (*BoxLink, error) {
 	portHint = strings.TrimSpace(portHint)
 	if portHint == "" {
@@ -66,11 +66,11 @@ func OpenBoxLink(portHint string) (*BoxLink, error) {
 	return b, nil
 }
 
-// startReader liest den CDC-Log-Mirror der Box (durch DTR aktiv) und spiegelt
-// relevante Zeilen ins Companion-Log: WLAN-Status, Touch-Events, Fehler.
-// Die 1-Hz-Mic-Diagnose und sonstiges Boot-Rauschen werden verworfen.
-// KBX_BOX_LOG_ALL=1 loggt ungefiltert. Endet still beim ersten Read-Fehler;
-// der Reconnect in SendLine startet einen neuen Reader.
+// startReader reads the Box's CDC log mirror (active through DTR) and mirrors
+// relevant lines into the companion log: Wi-Fi status, touch events, errors.
+// The 1 Hz mic diagnostics and other boot noise are discarded.
+// KBX_BOX_LOG_ALL=1 logs unfiltered. Ends silently on the first read error;
+// the reconnect in SendLine starts a new reader.
 func (b *BoxLink) startReader(port serial.Port) {
 	logAll := os.Getenv("KBX_BOX_LOG_ALL") == "1"
 	go func() {
@@ -110,7 +110,7 @@ func boxLogRelevant(s string) bool {
 			return true
 		}
 	}
-	// ESP-IDF-Fehler-/Warn-Level (E/W + Klammer-Timestamp), z. B. "E (1234) ..."
+	// ESP-IDF error/warning level (E/W + bracketed timestamp), e.g. "E (1234) ..."
 	return strings.HasPrefix(s, "E (") || strings.HasPrefix(s, "W (")
 }
 
@@ -119,8 +119,8 @@ func openBoxPort(name string) (serial.Port, error) {
 	if err != nil {
 		return nil, err
 	}
-	// DTR signalisiert der Firmware einen verbundenen Host
-	// (tud_cdc_connected) und schaltet den CDC-Log-Mirror frei.
+	// DTR signals a connected host to the firmware (tud_cdc_connected) and
+	// unlocks the CDC log mirror.
 	_ = port.SetDTR(true)
 	return port, nil
 }
@@ -135,10 +135,10 @@ func detectBoxPort() (string, error) {
 			return p.Name, nil
 		}
 	}
-	return "", fmt.Errorf("boxlink: kein CDC-Port mit VID %s / PID %s gefunden (Box angeschlossen? status_port setzen?)", boxUSBVID, boxUSBPID)
+	return "", fmt.Errorf("boxlink: no CDC port with VID %s / PID %s found (is the Box connected? set status_port?)", boxUSBVID, boxUSBPID)
 }
 
-// SetStage uebersetzt eine companion.Stage in die v1-Statuszeile der Firmware.
+// SetStage translates a companion.Stage into the firmware's v1 status line.
 func (b *BoxLink) SetStage(stage companion.Stage) {
 	state := stageToBoxState(stage)
 	if state == "" {
@@ -149,8 +149,8 @@ func (b *BoxLink) SetStage(stage companion.Stage) {
 	}
 }
 
-// SendLine schreibt eine newline-terminierte Rohzeile (v2-Escape-Hatch, z. B.
-// kuenftig "KBX vu 42").
+// SendLine writes a newline-terminated raw line (v2 escape hatch, e.g. a
+// future "KBX vu 42").
 func (b *BoxLink) SendLine(line string) error {
 	if b == nil {
 		return nil
@@ -164,8 +164,8 @@ func (b *BoxLink) SendLine(line string) error {
 		if _, err := b.port.Write([]byte(line + "\n")); err == nil {
 			return nil
 		}
-		// Gestallter oder re-enumerierter CDC-Port (z. B. Box-Reboot,
-		// USB-Suspend): Handle wegwerfen und einmal neu verbinden.
+		// Stalled or re-enumerated CDC port (e.g. Box reboot, USB suspend):
+		// drop the handle and reconnect once.
 		_ = b.port.Close()
 		b.port = nil
 	}
@@ -178,8 +178,8 @@ func (b *BoxLink) SendLine(line string) error {
 	return nil
 }
 
-// reopenLocked verbindet den Statusport neu (Autodetect, falls kein
-// expliziter Port konfiguriert ist). Caller haelt b.mu.
+// reopenLocked reconnects the status port (autodetect when no explicit port
+// is configured). The caller holds b.mu.
 func (b *BoxLink) reopenLocked() error {
 	name := b.hint
 	if name == "" {
@@ -195,7 +195,7 @@ func (b *BoxLink) reopenLocked() error {
 	}
 	b.port, b.name = port, name
 	b.startReader(port)
-	log.Printf("[boxlink] Status-UI neu verbunden: %s", name)
+	log.Printf("[boxlink] status UI reconnected: %s", name)
 	return nil
 }
 
@@ -214,8 +214,8 @@ func (b *BoxLink) Close() error {
 	return err
 }
 
-// stageToBoxState mappt die Companion-Stages 1:1 auf das Vokabular von
-// box_status.c. Unbekannte Stages werden verworfen statt geraten.
+// stageToBoxState maps the companion stages 1:1 onto the vocabulary of
+// box_status.c. Unknown stages are dropped rather than guessed.
 func stageToBoxState(stage companion.Stage) string {
 	switch stage {
 	case companion.StageWake:

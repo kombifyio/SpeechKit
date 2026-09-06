@@ -2,18 +2,17 @@
 
 // kombify box companion
 //
-// Testaufbau fuer die kombify-SpeechKit-Integration: die Waveshare
-// ESP32-S3-Touch-LCD-1.85 ("kombify box") haengt als USB-Audiogeraet am PC,
-// dieser Host lauscht lokal auf ein Wakeword (default: "hey jarvis";
-// sherpa-onnx KWS ueber
-// pkg/speechkit/wakeword), nimmt die Aeusserung auf, transkribiert sie
-// (pkg/speechkit/stt), laesst sie vom kombify AI Gateway beantworten
-// (assist.Generator) und spricht die Antwort ueber die Box (pkg/speechkit/tts).
+// Test setup for the kombify-SpeechKit integration: the Waveshare
+// ESP32-S3-Touch-LCD-1.85 ("kombify box") hangs off the PC as a USB audio
+// device, this host listens locally for a wake word (default: "hey jarvis";
+// sherpa-onnx KWS through pkg/speechkit/wakeword), records the utterance,
+// transcribes it (pkg/speechkit/stt), has the kombify AI Gateway answer it
+// (assist.Generator) and speaks the answer through the Box (pkg/speechkit/tts).
 //
-// Die Runtime nutzt die oeffentlichen SpeechKit-Pakete (companion, wakeword,
-// assist, stt, tts). Nur die Credential-Aufloesung kommt aus der normalen
-// SpeechKit-App-Konfiguration, damit DPAPI/Doppler-Secrets nicht dupliziert
-// werden muessen.
+// The runtime uses the public SpeechKit packages (companion, wakeword,
+// assist, stt, tts). Only the credential resolution comes from the normal
+// SpeechKit app configuration, so DPAPI/Doppler secrets need not be
+// duplicated.
 package main
 
 import (
@@ -64,30 +63,30 @@ func main() {
 		log.Fatal(err)
 	}
 
-	// --- CDC status link (Ring-UI der Box), optional ---
+	// --- CDC status link (the Box's ring UI), optional ---
 	boxLink, err := OpenBoxLink(cfg.Box.StatusPort)
 	if err != nil {
-		log.Printf("[boxlink] %v — Companion laeuft ohne Status-UI weiter", err)
+		log.Printf("[boxlink] %v — companion keeps running without the status UI", err)
 	} else if boxLink != nil {
 		defer boxLink.Close()
 		defer boxLink.SetStage(companion.StageIdle)
-		log.Printf("[boxlink] Status-UI verbunden")
-		// Touch-Diagnose einmalig abfragen — bewusst VOR dem WLAN-
-		// Provisioning, dessen Log-Burst den CDC-Mirror fluten kann
-		// (usb_log.c droppt unter Last ganze Zeilen). Die Antwort kommt
-		// best-effort ueber den Mirror als "[box] ... kbx_touch: status:";
-		// fehlt sie, mit scripts\kbx-cmd.ps1 -Command "touch?" nachfragen.
+		log.Printf("[boxlink] status UI connected")
+		// Query the touch diagnostics once, deliberately BEFORE the Wi-Fi
+		// provisioning whose log burst can flood the CDC mirror (usb_log.c
+		// drops whole lines under load). The answer arrives best-effort
+		// through the mirror as "[box] ... kbx_touch: status:"; if it is
+		// missing, ask again with scripts\kbx-cmd.ps1 -Command "touch?".
 		if err := boxLink.SendLine("KBX touch?"); err != nil {
-			log.Printf("[boxlink] touch-diagnose: %v", err)
+			log.Printf("[boxlink] touch diagnostics: %v", err)
 		}
-		// WLAN-Provisioning der Box (Track B5): KOMBIFY_BOX_WIFI im
-		// Format "ssid|pass" wird einmalig als CDC-Kommando gesendet;
-		// die Firmware persistiert die Credentials in NVS.
+		// Wi-Fi provisioning of the Box (track B5): KOMBIFY_BOX_WIFI in the
+		// format "ssid|pass" is sent once as a CDC command; the firmware
+		// persists the credentials in NVS.
 		if creds := resolveCompanionSecret("KOMBIFY_BOX_WIFI"); creds != "" {
 			if err := boxLink.SendLine("KBX wifi " + creds); err != nil {
 				log.Printf("[boxlink] wifi provisioning: %v", err)
 			} else {
-				log.Printf("[boxlink] WLAN-Credentials an die Box gesendet")
+				log.Printf("[boxlink] Wi-Fi credentials sent to the Box")
 			}
 		}
 	}
@@ -139,16 +138,16 @@ func main() {
 		// --- providers ---
 		if !cfg.sttReady() {
 			if cfg.localSTTProvider() {
-				log.Printf("[config] warning: lokales STT ist nicht bereit; Whisper-Modell fehlt. Erwartet: %s", whisperModelHint(cfg))
+				log.Printf("[config] warning: local STT is not ready; the Whisper model is missing. Expected: %s", whisperModelHint(cfg))
 			} else if cfg.directCloudSTTProvider() {
-				log.Printf("[config] warning: STT %q ist nicht bereit; setze %s fuer direkte Transkription", cfg.STT.Provider, cfg.STT.APIKeyEnv)
+				log.Printf("[config] warning: STT %q is not ready; set %s for direct transcription", cfg.STT.Provider, cfg.STT.APIKeyEnv)
 			} else {
 				log.Printf("[config] warning: STT gateway is not fully configured; set KOMBIFY_GATEWAY_BASE_URL and KOMBIFY_GATEWAY_TOKEN before real spoken turns can be transcribed")
 			}
 		}
 		if !cfg.assistReady() {
 			if cfg.localAssistProvider() {
-				log.Printf("[config] warning: lokale LLM-Runtime ist nicht erreichbar; lokale Skills laufen, offene Fragen liefern einen Setup-Hinweis")
+				log.Printf("[config] warning: the local LLM runtime is not reachable; local skills keep running, open-ended questions return a setup hint")
 			} else {
 				log.Printf("[config] warning: LLM gateway is not fully configured; local skills can run after STT, open-ended questions will return a setup hint")
 			}
@@ -170,7 +169,7 @@ func main() {
 			}
 		} else {
 			if cfg.localTTSProvider() {
-				log.Printf("[config] warning: lokales Piper-TTS ist nicht bereit; Antworten werden geloggt, aber nicht gesprochen. Erwartet piper(.exe) und Stimmen in %s", cfg.TTS.Piper.VoiceDir)
+				log.Printf("[config] warning: local Piper TTS is not ready; answers are logged but not spoken. Expected piper(.exe) and voices in %s", cfg.TTS.Piper.VoiceDir)
 			} else {
 				log.Printf("[config] warning: TTS gateway is not fully configured; answers will be logged but not spoken until TTS is configured")
 			}
@@ -184,9 +183,9 @@ func main() {
 			Matcher:   skills,
 			Executor:  skills,
 		}
-		log.Printf("companion skills aktiv: help/status + framework catalog (time/date/math/weather/timer/reminder/wikipedia/temperature)")
+		log.Printf("companion skills active: help/status + framework catalog (time/date/math/weather/timer/reminder/wikipedia/temperature)")
 		if skills.homeAssistantConfigured() {
-			log.Printf("home_assistant bridge aktiv (%s)", cfg.HomeAssistant.BaseURL)
+			log.Printf("home_assistant bridge active (%s)", cfg.HomeAssistant.BaseURL)
 		}
 		assistService, err := assist.NewService(assistOpts)
 		if err != nil {
@@ -202,15 +201,15 @@ func main() {
 			TargetMode: companion.TargetAssist,
 			Assist:     assistService,
 			TTS:        ttsService,
-			// WakeRequest: host-eigene Aufnahme + STT. ok=false beendet den
-			// Turn still (zu kurz, leer, STT-Fehler — Fehler landen im Log
-			// und als EventErrorRaised auf dem Bus).
+			// WakeRequest: host-owned recording + STT. ok=false ends the turn
+			// silently (too short, empty, STT error; errors land in the log
+			// and as EventErrorRaised on the bus).
 			WakeRequest: func(reqCtx context.Context, ev wakeword.DetectionEvent) (speechkit.AssistRequest, bool) {
 				log.Printf("[wake] %q (keyword=%s)", ev.Phrase, ev.Keyword)
 				audio.Ding()
 				pcm := recordUtterance(reqCtx, cfg, audio)
 				if len(pcm) < 16000 { // < 0.5 s
-					log.Printf("[capture] zu kurz/leer - ignoriert")
+					log.Printf("[capture] too short/empty - ignored")
 					return speechkit.AssistRequest{}, false
 				}
 				log.Printf("[capture] accepted %d bytes - processing", len(pcm))
@@ -232,7 +231,7 @@ func main() {
 					SessionKey: "kbx:" + boxSessionSerial(),
 				}, true
 			},
-			// OnResult: synthetisierte Antwort auf dem Box-Speaker abspielen.
+			// OnResult: play the synthesized answer on the Box speaker.
 			OnResult: func(_ context.Context, result speechkit.AssistResult) {
 				if result.ShortcutID != "" {
 					log.Printf("[skill] %s action=%s text=%q", result.ShortcutID, result.Action, result.Text)
@@ -243,10 +242,10 @@ func main() {
 					playResult(audio, result.Audio.Bytes(), result.Format)
 				}
 			},
-			// OnStage: Ring-UI der Box ueber den CDC-Link treiben und den Turn
-			// hoerbar machen — Fehlerton bei StageError, Endton ("verarbeitet,
-			// Antwort kommt") direkt vor der Wiedergabe. Wake-Ding und
-			// Accepted-Cue feuern bereits in WakeRequest.
+			// OnStage: drive the Box's ring UI through the CDC link and make the
+			// turn audible: an error tone on StageError, an end tone
+			// ("processed, answer coming") right before playback. The wake
+			// ding and the accepted cue already fire in WakeRequest.
 			OnStage: func(s companion.Stage) {
 				log.Printf("[stage] %s", s)
 				boxLink.SetStage(s)
@@ -274,7 +273,7 @@ func main() {
 	}
 
 	detections := make(chan wakeword.DetectionEvent, 4)
-	var pipeline *wakeword.Pipeline // nil beim openwakeword-Backend (Sidecar captured selbst)
+	var pipeline *wakeword.Pipeline // nil with the openwakeword backend (the sidecar captures itself)
 
 	switch cfg.wakewordBackend() {
 	case "openwakeword":
@@ -288,7 +287,7 @@ func main() {
 			log.Fatalf("wakeword: %v", err)
 		}
 		defer oww.Close()
-		log.Printf("kombify box companion bereit - Wakeword %q (openwakeword, %s, threshold=%.2f) -> %s",
+		log.Printf("kombify box companion ready - wake word %q (openwakeword, %s, threshold=%.2f) -> %s",
 			cfg.Wakeword.Phrase, cfg.owwPhraseModelFile(), cfg.owwThreshold(), targetMode)
 
 	case "sherpa_kws":
@@ -305,7 +304,7 @@ func main() {
 			NumThreads:   2,
 		})
 		if err != nil {
-			log.Fatalf("wakeword: %v (Modell fehlt? -> tools/get-model.ps1)", err)
+			log.Fatalf("wakeword: %v (model missing? -> tools/get-model.ps1)", err)
 		}
 		defer detector.Close()
 
@@ -357,7 +356,7 @@ func main() {
 		if cfg.Wakeword.KeywordsFile != "" {
 			source = cfg.Wakeword.KeywordsFile
 		}
-		log.Printf("kombify box companion bereit - Wakeword %q (%s, %s, threshold=%.2f, min_frames=%d, input_gain=%.1fx) -> %s",
+		log.Printf("kombify box companion ready - wake word %q (%s, %s, threshold=%.2f, min_frames=%d, input_gain=%.1fx) -> %s",
 			cfg.Wakeword.Phrase, cfg.wakewordBackend(), source, cfg.Wakeword.Threshold, cfg.Wakeword.MinFrames, cfg.Wakeword.InputGain, targetMode)
 
 	default:
@@ -381,9 +380,9 @@ func main() {
 		case ev := <-detections:
 			// Suppress detection during ding + capture + TTS playback so the
 			// box's own output cannot self-trigger the wakeword. Resume()
-			// re-enables and resets the debounce/stream state; beim
-			// openwakeword-Sidecar (pipeline == nil) uebernimmt das Draining
-			// unten dieselbe Aufgabe.
+			// re-enables and resets the debounce/stream state; with the
+			// openwakeword sidecar (pipeline == nil) the draining below takes
+			// over the same job.
 			if pipeline != nil {
 				pipeline.Pause()
 			}
@@ -399,8 +398,8 @@ func main() {
 			if pipeline != nil {
 				pipeline.Resume()
 			}
-			// Waehrend des Turns aufgelaufene Detections (Selbst-Trigger durch
-			// eigene TTS-Ausgabe) verwerfen statt sie als neue Turns abzuarbeiten.
+			// Drop detections that piled up during the turn (self-triggering by
+			// the box's own TTS output) instead of processing them as new turns.
 			for drained := false; !drained; {
 				select {
 				case <-detections:
@@ -440,9 +439,9 @@ func playWakeTestWAV(audio *AudioIO, path string) {
 	}
 }
 
-// boxSessionSerial liefert die Session-Key-Kennung der Box. Heute ist die
-// USB-Seriennummer firmwareseitig konstant "KBX-0001"; sobald die Firmware
-// "KBX IDENT?" beantwortet (CDC v2), liest der Companion sie von dort.
+// boxSessionSerial returns the Box's session-key identifier. Today the USB
+// serial number is the firmware constant "KBX-0001"; once the firmware
+// answers "KBX IDENT?" (CDC v2), the companion reads it from there.
 func boxSessionSerial() string {
 	return "KBX-0001"
 }
@@ -663,7 +662,7 @@ func playResult(audio *AudioIO, data []byte, format string) {
 	case normalized == "pcm" || normalized == "raw":
 		_ = audio.PlayPCM(data, 24000, 1)
 	default:
-		log.Printf("[tts] unbekanntes Format %q", format)
+		log.Printf("[tts] unknown format %q", format)
 	}
 }
 

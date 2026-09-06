@@ -86,6 +86,10 @@ IDs, source paths, and other maintainer-only vocabulary.
 
 ### Fixed
 
+* **privacy:** a subject-rights export now covers the whole meeting. The
+  screen captures, the write-ups and the rolling digests travel with the
+  transcript and notes, and the ZIP bundles the capture images next to the
+  audio, so the export answers as widely as an erasure removes.
 * **Microsoft Foundry:** choosing MAI-Transcribe-2 as the dictation model now
   really dictates through it. Before, any later settings change silently
   switched dictation back to the OpenAI-compatible route with a deployment

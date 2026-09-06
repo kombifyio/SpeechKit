@@ -452,6 +452,10 @@ type ScopeExport struct {
 	RecordingSessions  []RecordingSession    `json:"recording_sessions,omitempty"`
 	DictionaryEntries  []UserDictionaryEntry `json:"dictionary_entries,omitempty"`
 	AudioAssetPaths    []string              `json:"audio_asset_paths"`
+	// SnapshotFilePaths are the on-disk image files of the exported meetings'
+	// screen captures, listed like AudioAssetPaths so the caller can bundle
+	// them; the JSON never embeds the pixels.
+	SnapshotFilePaths []string `json:"snapshot_file_paths"`
 }
 
 // SemanticCapabilityProvider is an optional extension for stores that can
@@ -654,6 +658,12 @@ type RecordingSession struct {
 	// Snapshots are the screen captures taken during this meeting. Loaded like
 	// Notes only on the session detail, not in list responses.
 	Snapshots []RecordingSessionSnapshot `json:"snapshots,omitempty"`
+	// WriteUps are the model's written-up versions of this meeting and
+	// SummaryBatches the rolling digests derived from its transcript. Both are
+	// loaded only for subject exports, where everything derived from the
+	// user's words belongs in the answer.
+	WriteUps       []RecordingSessionEnhancement `json:"writeUps,omitempty"`
+	SummaryBatches []MeetingSummaryBatch         `json:"summaryBatches,omitempty"`
 	// RetentionPinned keeps this meeting even once it is past the retention
 	// window.
 	RetentionPinned bool `json:"retentionPinned,omitempty"`

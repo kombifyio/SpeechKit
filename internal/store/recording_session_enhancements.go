@@ -99,6 +99,12 @@ func (s *sqlStore) ListRecordingSessionEnhancements(ctx context.Context, session
 	if err := s.ensureRecordingSessionInScope(ctx, sessionID, scopeID); err != nil {
 		return nil, err
 	}
+	return s.loadRecordingSessionEnhancements(ctx, sessionID)
+}
+
+// loadRecordingSessionEnhancements reads the write-ups of a session the caller
+// has already established access to.
+func (s *sqlStore) loadRecordingSessionEnhancements(ctx context.Context, sessionID int64) ([]RecordingSessionEnhancement, error) {
 	rows, err := s.db.QueryContext(ctx, s.dialect.rebind(
 		`SELECT id, session_id, template_slug, template_snapshot, status, error, provider, model,
 			stage, progress, attempt, input_fingerprint, error_kind, retryable, consent_version,

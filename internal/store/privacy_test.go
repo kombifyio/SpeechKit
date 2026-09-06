@@ -83,6 +83,45 @@ func TestExportScopeReturnsAllScopedRows(t *testing.T) {
 	}
 }
 
+// An Art. 15 export has to be as wide as an Art. 17 erasure: the screen
+// captures, the model's write-ups and the rolling digests of a meeting are
+// derived from the user's words and used to be missing from the export while
+// DeleteScope already removed them.
+func TestExportScopeIncludesMeetingDerivedRecordsAndSnapshotPaths(t *testing.T) {
+	s := newSQLiteStoreForPrivacyTest(t)
+	ctx := context.Background()
+	alice := speechstorage.Scope{InstallID: "test-install", UserID: "alice"}
+	bob := speechstorage.Scope{InstallID: "test-install", UserID: "bob"}
+	_, alicePath := seedMeetingForPrivacyTest(t, s, alice, "alice meeting")
+	_, bobPath := seedMeetingForPrivacyTest(t, s, bob, "bob meeting")
+
+	export, err := s.ExportScope(ctx, alice)
+	if err != nil {
+		t.Fatalf("ExportScope: %v", err)
+	}
+	if len(export.RecordingSessions) != 1 {
+		t.Fatalf("RecordingSessions = %d, want 1", len(export.RecordingSessions))
+	}
+	session := export.RecordingSessions[0]
+	if len(session.Snapshots) != 1 || session.Snapshots[0].Path != alicePath {
+		t.Errorf("Snapshots = %+v, want the one capture at %q", session.Snapshots, alicePath)
+	}
+	if len(session.WriteUps) != 1 || session.WriteUps[0].ContentMD != "# Write-up" {
+		t.Errorf("WriteUps = %+v, want the one write-up", session.WriteUps)
+	}
+	if len(session.SummaryBatches) != 1 || session.SummaryBatches[0].DigestJSON != `{"topics":["shipping"]}` {
+		t.Errorf("SummaryBatches = %+v, want the one digest", session.SummaryBatches)
+	}
+	if len(export.SnapshotFilePaths) != 1 || export.SnapshotFilePaths[0] != alicePath {
+		t.Errorf("SnapshotFilePaths = %v, want exactly %q", export.SnapshotFilePaths, alicePath)
+	}
+	for _, path := range export.SnapshotFilePaths {
+		if path == bobPath {
+			t.Errorf("export leaks the other scope's snapshot %q", path)
+		}
+	}
+}
+
 func TestScopePrivacyStoreContractAcrossBackends(t *testing.T) {
 	eachBackend(t, func(t *testing.T, s Store) {
 		privacy, ok := s.(ScopePrivacyStore)

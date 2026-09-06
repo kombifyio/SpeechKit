@@ -1,10 +1,10 @@
 //go:build windows && cgo
 
-// Lokaler Voice-Agent-Transport: die Box spricht direkt mit dem Realtime-
-// Provider (Deepgram Voice Agent, Gemini Live, ...) — kein speechkit-server
-// noetig. Function Calls (home_assistant) werden client-seitig ueber die
-// toolbridge ausgefuehrt; das kombify AI Gateway kann per BYO-Think als
-// Brain des Deepgram-Agenten dienen ([voice_agent].think_endpoint_url).
+// Local Voice Agent transport: the Box talks directly to the realtime
+// provider (Deepgram Voice Agent, Gemini Live, ...); no speechkit-server is
+// needed. Function calls (home_assistant) run client-side through the
+// toolbridge; the kombify AI Gateway can serve as the brain of the Deepgram
+// agent through BYO think ([voice_agent].think_endpoint_url).
 package main
 
 import (
@@ -34,8 +34,8 @@ type localVoiceAgentRuntime struct {
 	provider *local.Provider
 
 	mu       sync.Mutex
-	startMu  sync.Mutex // serialisiert NUR den Session-Aufbau (nie unter r.mu nehmen)
-	playMu   sync.Mutex // serialisiert Antwort-Playback (Turn vs. Idle-Reminder)
+	startMu  sync.Mutex // serializes ONLY the session setup (never take under r.mu)
+	playMu   sync.Mutex // serializes answer playback (turn versus idle reminder)
 	started  bool
 	turnDone chan struct{}
 
@@ -65,7 +65,7 @@ func newLocalVoiceAgentRuntime(cfg *Config, audio *AudioIO, boxLink *BoxLink, au
 	r.authority = newHATurnGate(ha, cfg.VoiceAgent.Locale)
 
 	idle := live.DefaultIdleConfig()
-	// $4.50/h Deepgram-Verbindungszeit: Idle-Teardown ist Kostenkontrolle.
+	// $4.50/h of Deepgram connection time: the idle teardown is cost control.
 	idle.ReminderAfter = 90 * time.Second
 	idle.DeactivateAfter = 3 * time.Minute
 	if cfg.VoiceAgent.IdleReminderSec > 0 {
@@ -131,8 +131,8 @@ func newLocalVoiceAgentRuntime(cfg *Config, audio *AudioIO, boxLink *BoxLink, au
 			},
 			OnHostPrompt: r.onHostPrompt,
 			OnInterrupted: func() {
-				// Volles Barge-in (Playback-Flush) kommt mit dem
-				// PlaybackStream-Umbau; bis dahin nur sichtbar machen.
+				// Full barge-in (playback flush) comes with the PlaybackStream
+				// rework; until then only make it visible.
 				log.Printf("[voice_agent] interrupted (barge-in)")
 			},
 			OnError: func(err error) { log.Printf("[voice_agent] %v", err) },
@@ -146,9 +146,9 @@ func newLocalVoiceAgentRuntime(cfg *Config, audio *AudioIO, boxLink *BoxLink, au
 	return r, nil
 }
 
-// providerFactory ergaenzt die Standard-Factory um das BYO-Think-Wiring:
-// zeigt [voice_agent].think_endpoint_url auf das kombify AI Gateway, wird
-// der Deepgram-Agent mit dem Gateway als Brain konfiguriert.
+// providerFactory extends the default factory with the BYO-think wiring: when
+// [voice_agent].think_endpoint_url points at the kombify AI Gateway, the
+// Deepgram agent is configured with the gateway as its brain.
 func (r *localVoiceAgentRuntime) providerFactory(cfg live.LiveConfig) (live.LiveProvider, live.LiveConfig, error) {
 	provider, normalized, err := live.NewProviderForConfig(cfg)
 	if err != nil {
@@ -164,7 +164,7 @@ func (r *localVoiceAgentRuntime) providerFactory(cfg live.LiveConfig) (live.Live
 			)
 			log.Printf("[voice_agent] BYO think: %s (%s)", url, r.cfg.VoiceAgent.ThinkModel)
 		} else {
-			log.Printf("[voice_agent] warning: think_endpoint_url gesetzt, aber Provider %q unterstuetzt kein BYO-Think", cfg.Provider)
+			log.Printf("[voice_agent] warning: think_endpoint_url is set, but provider %q does not support BYO think", cfg.Provider)
 		}
 	}
 	return provider, normalized, nil
@@ -338,9 +338,9 @@ func sendBufferedInput(pcm []byte, send func([]byte) error) error {
 	return nil
 }
 
-// playPendingResponse spielt Agent-Audio ab, das ausserhalb eines aktiven
-// Turns entstanden ist (z. B. der Idle-Reminder "Hast du noch Aufgaben?").
-// Vorher wurde es kommentarlos verworfen - der Agent sprach ins Leere.
+// playPendingResponse plays agent audio that arose outside an active turn
+// (e.g. the idle reminder "Anything else I can do?"). It used to be dropped
+// without comment, so the agent spoke into the void.
 func (r *localVoiceAgentRuntime) playPendingResponse(generation uint64) {
 	r.playMu.Lock()
 	defer r.playMu.Unlock()
@@ -353,7 +353,7 @@ func (r *localVoiceAgentRuntime) playPendingResponse(generation uint64) {
 		return
 	}
 	r.boxLink.SetStage(companion.StageSpeaking)
-	log.Printf("[voice_agent] playing %d bytes @24k mono (ausserhalb eines Turns)", len(response))
+	log.Printf("[voice_agent] playing %d bytes @24k mono (outside a turn)", len(response))
 	err := r.audio.PlayPCM(normalizeResponseGain(response), 24000, 1)
 	if err != nil {
 		log.Printf("[voice_agent] playback: %v", err)
@@ -397,12 +397,11 @@ func (r *localVoiceAgentRuntime) beginCaptureTurn() uint64 {
 }
 
 func (r *localVoiceAgentRuntime) ensureStarted(ctx context.Context) error {
-	// r.mu darf hier NICHT ueber StartVoiceAgent gehalten werden: die
-	// Live-Callbacks (OnStateChange -> onState -> r.mu) feuern schon
-	// waehrend des Connects aus der Receive-Loop, auf deren Fortschritt
-	// Start wartet -> zirkulaerer Deadlock (live beobachtet 2026-07-09:
-	// state=listening geloggt, Start kehrte nie zurueck). startMu
-	// serialisiert konkurrierende Aufbau-Versuche stattdessen.
+	// r.mu must NOT be held across StartVoiceAgent here: the live callbacks
+	// (OnStateChange -> onState -> r.mu) already fire during the connect from
+	// the receive loop whose progress Start waits for -> circular deadlock
+	// (observed live 2026-07-09: state=listening logged, Start never
+	// returned). startMu serializes concurrent setup attempts instead.
 	r.startMu.Lock()
 	defer r.startMu.Unlock()
 
@@ -420,13 +419,13 @@ func (r *localVoiceAgentRuntime) ensureStarted(ctx context.Context) error {
 	r.mu.Lock()
 	r.started = true
 	r.mu.Unlock()
-	log.Printf("[voice_agent] lokale Session gestartet (provider=%s)", r.cfg.VoiceAgent.Provider)
+	log.Printf("[voice_agent] local session started (provider=%s)", r.cfg.VoiceAgent.Provider)
 	return nil
 }
 
-// onState erkennt das Turn-Ende: speaking/processing -> listening heisst,
-// die Antwort ist vollstaendig gestreamt. Idle-Deactivate meldet sich als
-// Uebergang nach inactive — die naechste Wake-Erkennung startet neu.
+// onState detects the end of a turn: speaking/processing -> listening means
+// the answer has been streamed completely. Idle deactivation shows up as a
+// transition to inactive; the next wake detection starts afresh.
 func (r *localVoiceAgentRuntime) onState(state live.State) {
 	switch state {
 	case live.StateListening:
@@ -488,9 +487,9 @@ func (r *localVoiceAgentRuntime) clearTurnDone(ch chan struct{}) {
 	r.mu.Unlock()
 }
 
-// signalTurnDone meldet das Turn-Ende an einen wartenden Turn und sagt dem
-// Aufrufer, ob ueberhaupt einer wartete (false = Agent sprach ausserhalb
-// eines Turns, der Aufrufer muss sich selbst um die Antwort kuemmern).
+// signalTurnDone reports the end of a turn to a waiting turn and tells the
+// caller whether one was waiting at all (false = the agent spoke outside a
+// turn, so the caller has to handle the answer itself).
 func (r *localVoiceAgentRuntime) signalTurnDone() bool {
 	r.mu.Lock()
 	ch := r.turnDone

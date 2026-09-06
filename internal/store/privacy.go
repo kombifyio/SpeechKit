@@ -19,8 +19,9 @@ var (
 //
 // Implementation notes:
 //   - Fetches all rows for the scope without pagination (no LIMIT imposed).
-//   - Audio file paths are collected from audio_assets so the caller can
-//     stream raw bytes alongside the exported JSON if needed.
+//   - Audio file paths are collected from audio_assets and snapshot file paths
+//     from the meetings' screen captures so the caller can stream raw bytes
+//     alongside the exported JSON if needed.
 //   - Read-only; never modifies data.
 func (s *sqlStore) ExportScope(ctx context.Context, scope speechstorage.Scope) (*ScopeExport, error) {
 	scope = speechstorage.NormalizeScope(scope)
@@ -29,7 +30,7 @@ func (s *sqlStore) ExportScope(ctx context.Context, scope speechstorage.Scope) (
 		return nil, err
 	}
 
-	export := &ScopeExport{Scope: scope}
+	export := &ScopeExport{Scope: scope, SnapshotFilePaths: []string{}}
 
 	if export.Transcriptions, err = s.listTranscriptionsByScopeID(ctx, scopeID); err != nil {
 		return nil, err
@@ -44,14 +45,36 @@ func (s *sqlStore) ExportScope(ctx context.Context, scope speechstorage.Scope) (
 		return nil, err
 	}
 	// The notes a user typed during a meeting are their own words, so a subject
-	// export that shipped only the transcript would be incomplete.
+	// export that shipped only the transcript would be incomplete. The same
+	// holds for what was derived from those words: the screen captures, the
+	// model's write-ups and the rolling digests. An Art. 15 answer has to be
+	// as wide as an Art. 17 erasure, so this mirrors DeleteScope's coverage.
 	for i := range export.RecordingSessions {
-		notes, err := s.loadRecordingSessionNotes(ctx, export.RecordingSessions[i].ID)
+		session := &export.RecordingSessions[i]
+		notes, err := s.loadRecordingSessionNotes(ctx, session.ID)
 		if err != nil {
 			return nil, err
 		}
 		if notes != nil && (strings.TrimSpace(notes.ContentMD) != "" || len(notes.Blocks) > 0) {
-			export.RecordingSessions[i].Notes = notes
+			session.Notes = notes
+		}
+		snapshots, err := s.loadRecordingSessionSnapshots(ctx, session.ID)
+		if err != nil {
+			return nil, err
+		}
+		if len(snapshots) > 0 {
+			session.Snapshots = snapshots
+			for _, snapshot := range snapshots {
+				if path := strings.TrimSpace(snapshot.Path); path != "" {
+					export.SnapshotFilePaths = append(export.SnapshotFilePaths, path)
+				}
+			}
+		}
+		if session.WriteUps, err = s.loadRecordingSessionEnhancements(ctx, session.ID); err != nil {
+			return nil, err
+		}
+		if session.SummaryBatches, err = s.loadMeetingSummaryBatches(ctx, session.ID); err != nil {
+			return nil, err
 		}
 	}
 	if export.DictionaryEntries, err = s.listUserDictionaryEntriesByScopeID(ctx, scopeID); err != nil {

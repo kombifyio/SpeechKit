@@ -54,53 +54,8 @@ func TestDeleteScopeErasesMeetingChildrenAndSnapshotFiles(t *testing.T) {
 	alice := speechstorage.Scope{InstallID: "test-install", UserID: "alice"}
 	bob := speechstorage.Scope{InstallID: "test-install", UserID: "bob"}
 
-	seed := func(scope speechstorage.Scope, title string) (int64, string) {
-		t.Helper()
-		sessionID, err := s.SaveRecordingSession(scopeCtx(scope), RecordingSession{
-			Kind: RecordingSessionKindMeeting, Title: title, Language: "en",
-		})
-		if err != nil {
-			t.Fatalf("SaveRecordingSession(%s): %v", title, err)
-		}
-		segmentID, err := s.AppendRecordingSessionSegment(scopeCtx(scope), sessionID, RecordingSessionSegment{
-			SegmentIndex: 0, Text: "we agreed to ship on Friday", IsFinal: true,
-		})
-		if err != nil {
-			t.Fatalf("AppendRecordingSessionSegment(%s): %v", title, err)
-		}
-		if err := s.SaveRecordingSessionNotes(scopeCtx(scope), sessionID, RecordingSessionNotes{
-			SessionID: sessionID, ContentMD: "my own note",
-		}); err != nil {
-			t.Fatalf("SaveRecordingSessionNotes(%s): %v", title, err)
-		}
-		if _, err := s.CreateRecordingSessionEnhancement(scopeCtx(scope), sessionID, RecordingSessionEnhancement{
-			SessionID: sessionID, TemplateSlug: "default_meeting",
-			Status: RecordingSessionEnhancementReady, ContentMD: "# Write-up",
-		}); err != nil {
-			t.Fatalf("CreateRecordingSessionEnhancement(%s): %v", title, err)
-		}
-		if _, err := s.UpsertMeetingSummaryBatch(scopeCtx(scope), MeetingSummaryBatch{
-			SessionID: sessionID, BatchKey: title + "-batch", Level: 0,
-			StartSegmentID: segmentID, EndSegmentID: segmentID,
-			SourceFingerprint: "fp", Status: MeetingSummaryBatchReady,
-			DigestJSON: `{"topics":["shipping"]}`,
-		}); err != nil {
-			t.Fatalf("UpsertMeetingSummaryBatch(%s): %v", title, err)
-		}
-		snapshot, err := s.SaveRecordingSessionSnapshot(scopeCtx(scope), sessionID, RecordingSessionSnapshotInput{
-			CapturedMs: 1000, Data: []byte("not really a png"), MimeType: "image/png",
-		})
-		if err != nil {
-			t.Fatalf("SaveRecordingSessionSnapshot(%s): %v", title, err)
-		}
-		if _, err := os.Stat(snapshot.Path); err != nil {
-			t.Fatalf("snapshot file was not written for %s: %v", title, err)
-		}
-		return sessionID, snapshot.Path
-	}
-
-	aliceSession, alicePath := seed(alice, "alice meeting")
-	bobSession, bobPath := seed(bob, "bob meeting")
+	aliceSession, alicePath := seedMeetingForPrivacyTest(t, s, alice, "alice meeting")
+	bobSession, bobPath := seedMeetingForPrivacyTest(t, s, bob, "bob meeting")
 
 	result, err := s.DeleteScope(ctx, alice)
 	if err != nil {
@@ -182,4 +137,53 @@ func TestDeleteScopeErasesCustomizationRows(t *testing.T) {
 	if count != 0 {
 		t.Fatalf("customization_words still holds %d rows after erasure", count)
 	}
+}
+
+// seedMeetingForPrivacyTest stores one meeting with everything an erasure or
+// an export has to cover: a transcript segment, the user's notes, a write-up,
+// a summary batch and a screen capture on disk. It returns the session ID and
+// the snapshot file path.
+func seedMeetingForPrivacyTest(t *testing.T, s *SQLiteStore, scope speechstorage.Scope, title string) (int64, string) {
+	t.Helper()
+	sessionID, err := s.SaveRecordingSession(scopeCtx(scope), RecordingSession{
+		Kind: RecordingSessionKindMeeting, Title: title, Language: "en",
+	})
+	if err != nil {
+		t.Fatalf("SaveRecordingSession(%s): %v", title, err)
+	}
+	segmentID, err := s.AppendRecordingSessionSegment(scopeCtx(scope), sessionID, RecordingSessionSegment{
+		SegmentIndex: 0, Text: "we agreed to ship on Friday", IsFinal: true,
+	})
+	if err != nil {
+		t.Fatalf("AppendRecordingSessionSegment(%s): %v", title, err)
+	}
+	if err := s.SaveRecordingSessionNotes(scopeCtx(scope), sessionID, RecordingSessionNotes{
+		SessionID: sessionID, ContentMD: "my own note",
+	}); err != nil {
+		t.Fatalf("SaveRecordingSessionNotes(%s): %v", title, err)
+	}
+	if _, err := s.CreateRecordingSessionEnhancement(scopeCtx(scope), sessionID, RecordingSessionEnhancement{
+		SessionID: sessionID, TemplateSlug: "default_meeting",
+		Status: RecordingSessionEnhancementReady, ContentMD: "# Write-up",
+	}); err != nil {
+		t.Fatalf("CreateRecordingSessionEnhancement(%s): %v", title, err)
+	}
+	if _, err := s.UpsertMeetingSummaryBatch(scopeCtx(scope), MeetingSummaryBatch{
+		SessionID: sessionID, BatchKey: title + "-batch", Level: 0,
+		StartSegmentID: segmentID, EndSegmentID: segmentID,
+		SourceFingerprint: "fp", Status: MeetingSummaryBatchReady,
+		DigestJSON: `{"topics":["shipping"]}`,
+	}); err != nil {
+		t.Fatalf("UpsertMeetingSummaryBatch(%s): %v", title, err)
+	}
+	snapshot, err := s.SaveRecordingSessionSnapshot(scopeCtx(scope), sessionID, RecordingSessionSnapshotInput{
+		CapturedMs: 1000, Data: []byte("not really a png"), MimeType: "image/png",
+	})
+	if err != nil {
+		t.Fatalf("SaveRecordingSessionSnapshot(%s): %v", title, err)
+	}
+	if _, err := os.Stat(snapshot.Path); err != nil {
+		t.Fatalf("snapshot file was not written for %s: %v", title, err)
+	}
+	return sessionID, snapshot.Path
 }
