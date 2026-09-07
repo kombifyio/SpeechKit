@@ -10,6 +10,7 @@ var (
 	osExecutable  = os.Executable
 	statPath      = os.Stat
 	userConfigDir = os.UserConfigDir
+	userHomeDir   = os.UserHomeDir
 )
 
 func ExecutableDir() string {
@@ -20,6 +21,10 @@ func ExecutableDir() string {
 	return filepath.Dir(exePath)
 }
 
+// IsPortable reports whether the binary runs from a portable bundle: a
+// config or whisper runtime sits next to the executable and nothing marks
+// the location as a managed install (uninstaller, Program Files, a macOS app
+// bundle, a development checkout).
 func IsPortable() bool {
 	if portableDisabled() {
 		return false
@@ -29,6 +34,9 @@ func IsPortable() bool {
 		return false
 	}
 	if looksLikeDevWorkspace(exeDir) {
+		return false
+	}
+	if !platformAllowsPortable(exeDir) {
 		return false
 	}
 	if isUnderProgramFiles(exeDir) {
@@ -59,6 +67,9 @@ func portableDisabled() bool {
 	}
 }
 
+// DataDir is the roaming per-user directory for config, feedback and
+// secrets. Portable bundles keep it next to the executable; installed
+// builds use the platform's per-user location (paths_<os>.go).
 func DataDir() string {
 	if IsPortable() {
 		exeDir := ExecutableDir()
@@ -66,22 +77,16 @@ func DataDir() string {
 			return filepath.Join(exeDir, "data")
 		}
 	}
-	appData := strings.TrimSpace(os.Getenv("APPDATA"))
-	if appData == "" {
-		appData = "."
-	}
-	return filepath.Join(appData, "SpeechKit")
+	return platformDataDir()
 }
 
+// LocalDataDir is the machine-local per-user directory for large,
+// non-roaming data such as downloaded models and runtimes.
 func LocalDataDir() string {
 	if IsPortable() {
 		return DataDir()
 	}
-	localAppData := strings.TrimSpace(os.Getenv("LOCALAPPDATA"))
-	if localAppData == "" {
-		return DataDir()
-	}
-	return filepath.Join(localAppData, "SpeechKit")
+	return platformLocalDataDir()
 }
 
 func ModelsDir() string {
@@ -102,6 +107,33 @@ func SecretsDir() string {
 	if IsPortable() {
 		return filepath.Join(DataDir(), "secrets")
 	}
+	return platformSecretsDir()
+}
+
+// envDataDir is the %APPDATA%-based roaming directory the Windows install
+// uses; other Unix targets share it so a server container that sets the
+// same variables behaves as before.
+func envDataDir() string {
+	appData := strings.TrimSpace(os.Getenv("APPDATA"))
+	if appData == "" {
+		appData = "."
+	}
+	return filepath.Join(appData, "SpeechKit")
+}
+
+// envLocalDataDir is the %LOCALAPPDATA%-based local directory, falling
+// back to DataDir when the variable is unset.
+func envLocalDataDir() string {
+	localAppData := strings.TrimSpace(os.Getenv("LOCALAPPDATA"))
+	if localAppData == "" {
+		return DataDir()
+	}
+	return filepath.Join(localAppData, "SpeechKit")
+}
+
+// configDirSecretsDir keeps secrets under os.UserConfigDir, falling back to
+// DataDir when the platform cannot report one.
+func configDirSecretsDir() string {
 	configDir, err := userConfigDir()
 	if err != nil || strings.TrimSpace(configDir) == "" {
 		return filepath.Join(DataDir(), "secrets")

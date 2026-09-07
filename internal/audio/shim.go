@@ -26,9 +26,10 @@ type (
 )
 
 const (
-	BackendAuto                = capture.BackendAuto
-	BackendWindowsWASAPIMalgo  = capture.BackendWindowsWASAPIMalgo
-	BackendWindowsWASAPINative = capture.BackendWindowsWASAPINative
+	BackendAuto                 = capture.BackendAuto
+	BackendWindowsWASAPIMalgo   = capture.BackendWindowsWASAPIMalgo
+	BackendWindowsWASAPINative  = capture.BackendWindowsWASAPINative
+	BackendDarwinCoreAudioMalgo = capture.BackendDarwinCoreAudioMalgo
 
 	InputSourceMicrophone     = capture.InputSourceMicrophone
 	InputSourceSystemLoopback = capture.InputSourceSystemLoopback

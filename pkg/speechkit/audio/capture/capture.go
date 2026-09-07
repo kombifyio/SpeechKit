@@ -14,6 +14,11 @@ const (
 	BackendAuto                Backend = "auto"
 	BackendWindowsWASAPIMalgo  Backend = "windows-wasapi-malgo"
 	BackendWindowsWASAPINative Backend = "windows-wasapi-native"
+	// BackendDarwinCoreAudioMalgo is the macOS capture backend: the same
+	// malgo session as BackendWindowsWASAPIMalgo, opened on CoreAudio.
+	// System loopback is not available on it until the process-tap slice
+	// (kombify-SpeechKit-mcos.16).
+	BackendDarwinCoreAudioMalgo Backend = "darwin-coreaudio-malgo"
 )
 
 type InputSource string
@@ -221,8 +226,4 @@ func normalizeConfig(cfg Config) Config {
 		cfg.CaptureThreadPriority = "realtime"
 	}
 	return cfg
-}
-
-func defaultBackend() Backend {
-	return BackendWindowsWASAPIMalgo
 }

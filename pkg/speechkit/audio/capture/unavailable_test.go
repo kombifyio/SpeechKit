@@ -1,4 +1,4 @@
-//go:build !windows || !cgo
+//go:build !((windows || darwin) && cgo)
 
 package capture_test
 
@@ -9,7 +9,7 @@ import (
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/audio/capture"
 )
 
-// The documented no-cgo contract: builds without the Windows cgo backend
+// The documented no-cgo contract: builds without a cgo malgo backend
 // still compile, and constructing a capturer reports the unavailable
 // sentinel instead of panicking.
 func TestOpenWithoutNativeBackendReturnsUnavailable(t *testing.T) {

@@ -1,9 +1,9 @@
-//go:build !windows
+//go:build !windows && !darwin
 
 package local
 
-// whisperBinaryNames returns the executable names searched on
-// Linux/macOS. Both the bare and .exe variants are accepted so a
+// whisperBinaryNames returns the executable names searched on Linux and
+// the other Unix targets. Both the bare and .exe variants are accepted so a
 // developer using a Windows-built bundle on a Unix host can still
 // find the runtime.
 func whisperBinaryNames() []string {

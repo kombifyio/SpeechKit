@@ -7,12 +7,6 @@ import (
 	audiopkg "github.com/kombifyio/SpeechKit/pkg/speechkit/audio"
 )
 
-func TestDefaultBackendUsesWindowsCapture(t *testing.T) {
-	if got := defaultBackend(); got != BackendWindowsWASAPIMalgo {
-		t.Fatalf("defaultBackend() = %q, want %q", got, BackendWindowsWASAPIMalgo)
-	}
-}
-
 func TestNormalizeConfigAppliesAudioDefaults(t *testing.T) {
 	cfg := normalizeConfig(Config{})
 

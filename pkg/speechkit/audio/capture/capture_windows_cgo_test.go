@@ -5,14 +5,60 @@ package capture
 import (
 	"errors"
 	"testing"
+
+	"github.com/gen2brain/malgo"
 )
 
-func TestMalgoSessionRejectsMicAndSystemUntilMixerExists(t *testing.T) {
-	session, err := newMalgoSession(Config{InputSource: InputSourceMicAndSystem})
-	if session != nil {
-		t.Fatal("newMalgoSession returned a session for mic_and_system, want nil")
+func TestWindowsMalgoSeamIsWASAPIWithLoopback(t *testing.T) {
+	if got := platformMalgoBackend(); got != BackendWindowsWASAPIMalgo {
+		t.Fatalf("platformMalgoBackend() = %q, want %q", got, BackendWindowsWASAPIMalgo)
 	}
-	if !errors.Is(err, ErrUnsupportedSource) {
-		t.Fatalf("newMalgoSession error = %v, want ErrUnsupportedSource", err)
+	if !platformSupportsLoopback() {
+		t.Fatal("platformSupportsLoopback() = false on windows, want true")
+	}
+	backends := platformMalgoContextBackends()
+	if len(backends) != 1 || backends[0] != malgo.BackendWasapi {
+		t.Fatalf("platformMalgoContextBackends() = %v, want [BackendWasapi]", backends)
+	}
+}
+
+func TestEnsureLoopbackOutputDeviceAvailableRejectsMissingRenderDevice(t *testing.T) {
+	original := outputDeviceLister
+	t.Cleanup(func() { outputDeviceLister = original })
+	outputDeviceLister = func(Config) ([]DeviceInfo, error) {
+		return nil, nil
+	}
+
+	err := ensureLoopbackOutputDeviceAvailable(Config{InputSource: InputSourceSystemLoopback})
+	if !errors.Is(err, ErrOutputDeviceUnavailable) {
+		t.Fatalf("ensureLoopbackOutputDeviceAvailable() error = %v, want ErrOutputDeviceUnavailable", err)
+	}
+}
+
+func TestEnsureLoopbackOutputDeviceAvailableRejectsMissingConfiguredDevice(t *testing.T) {
+	original := outputDeviceLister
+	t.Cleanup(func() { outputDeviceLister = original })
+	outputDeviceLister = func(Config) ([]DeviceInfo, error) {
+		return []DeviceInfo{{ID: "speaker-1", Name: "Speaker 1", IsDefault: true}}, nil
+	}
+
+	err := ensureLoopbackOutputDeviceAvailable(Config{
+		InputSource:    InputSourceSystemLoopback,
+		OutputDeviceID: "missing-speaker",
+	})
+	if !errors.Is(err, ErrOutputDeviceUnavailable) {
+		t.Fatalf("ensureLoopbackOutputDeviceAvailable() error = %v, want ErrOutputDeviceUnavailable", err)
+	}
+}
+
+func TestEnsureLoopbackOutputDeviceAvailableAcceptsDefaultRenderDevice(t *testing.T) {
+	original := outputDeviceLister
+	t.Cleanup(func() { outputDeviceLister = original })
+	outputDeviceLister = func(Config) ([]DeviceInfo, error) {
+		return []DeviceInfo{{ID: "speaker-1", Name: "Speaker 1", IsDefault: true}}, nil
+	}
+
+	if err := ensureLoopbackOutputDeviceAvailable(Config{InputSource: InputSourceSystemLoopback}); err != nil {
+		t.Fatalf("ensureLoopbackOutputDeviceAvailable() error = %v", err)
 	}
 }

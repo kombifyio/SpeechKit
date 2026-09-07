@@ -1,4 +1,4 @@
-//go:build windows && cgo
+//go:build (windows || darwin) && cgo
 
 package capture
 
@@ -54,8 +54,8 @@ func listDevicesFromContext(cfg Config, deviceType malgo.DeviceType) ([]DeviceIn
 
 func malgoBackendsForConfig(cfg Config) ([]malgo.Backend, error) {
 	switch cfg.Backend {
-	case "", BackendAuto, BackendWindowsWASAPIMalgo:
-		return []malgo.Backend{malgo.BackendWasapi}, nil
+	case "", BackendAuto, platformMalgoBackend():
+		return platformMalgoContextBackends(), nil
 	default:
 		return nil, fmt.Errorf("%w: backend %q does not support device enumeration", ErrUnsupportedBackend, cfg.Backend)
 	}
@@ -119,24 +119,6 @@ func resolveOutputDeviceID(cfg Config) (malgo.DeviceID, bool, error) {
 	}
 
 	return deviceIDFromHexString(selected)
-}
-
-func ensureLoopbackOutputDeviceAvailable(cfg Config) error {
-	devices, err := ListOutputDevices(Config{Backend: cfg.Backend})
-	if err != nil {
-		return err
-	}
-	if len(devices) == 0 {
-		return fmt.Errorf("%w: system loopback requires at least one active Windows playback/render device", ErrOutputDeviceUnavailable)
-	}
-	requested := strings.TrimSpace(cfg.OutputDeviceID)
-	if requested == "" {
-		return nil
-	}
-	if selected := selectOutputDeviceID(requested, devices); selected == "" {
-		return fmt.Errorf("%w: configured system loopback output device %q is not available", ErrOutputDeviceUnavailable, requested)
-	}
-	return nil
 }
 
 func deviceIDFromHexString(value string) (malgo.DeviceID, bool, error) {
