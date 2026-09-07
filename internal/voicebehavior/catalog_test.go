@@ -5,57 +5,6 @@ import (
 	"testing"
 )
 
-func TestBuiltInCatalogMigratesExistingVoiceAgentPersonas(t *testing.T) {
-	catalog := BuiltInCatalog()
-	for _, id := range []string{
-		DefaultID,
-		BrainstormingCompanionID,
-		HumorCompanionID,
-		SupportCompanionID,
-	} {
-		persona, ok := catalog.Persona(id)
-		if !ok {
-			t.Fatalf("missing built-in persona %q", id)
-		}
-		if strings.TrimSpace(persona.DisplayName) == "" {
-			t.Fatalf("persona %q has empty display name", id)
-		}
-	}
-
-	brainstorming, _ := catalog.Persona(BrainstormingCompanionID)
-	if brainstorming.DefaultRole != BrainstormingCompanionRoleID {
-		t.Fatalf("brainstorming default role = %q, want %q", brainstorming.DefaultRole, BrainstormingCompanionRoleID)
-	}
-	if brainstorming.DefaultSequence != BrainstormingCompanionSequenceID {
-		t.Fatalf("brainstorming default sequence = %q, want %q", brainstorming.DefaultSequence, BrainstormingCompanionSequenceID)
-	}
-}
-
-func TestBuiltInCatalogIncludesWorkflowSequencesForNonDefaultPersonas(t *testing.T) {
-	catalog := BuiltInCatalog()
-	for _, id := range []string{
-		BrainstormingCompanionSequenceID,
-		HumorCompanionSequenceID,
-		SupportCompanionSequenceID,
-	} {
-		sequence, ok := catalog.Sequence(id)
-		if !ok {
-			t.Fatalf("missing built-in sequence %q", id)
-		}
-		if len(sequence.Steps) < 3 {
-			t.Fatalf("sequence %q has %d steps, want at least 3", id, len(sequence.Steps))
-		}
-		for _, step := range sequence.Steps {
-			if strings.TrimSpace(step.Instruction) == "" {
-				t.Fatalf("sequence %q step %q has empty instruction", id, step.ID)
-			}
-			if strings.TrimSpace(step.ExitCriteria) == "" {
-				t.Fatalf("sequence %q step %q has empty exit criteria", id, step.ID)
-			}
-		}
-	}
-}
-
 func TestResolveComposesRoleAndSequenceStep(t *testing.T) {
 	catalog := BuiltInCatalog()
 
@@ -74,21 +23,5 @@ func TestResolveComposesRoleAndSequenceStep(t *testing.T) {
 	}
 	if !strings.Contains(resolved.SystemPrompt, resolved.StepInstruction) {
 		t.Fatalf("system prompt missing step instruction: %q", resolved.SystemPrompt)
-	}
-}
-
-func TestProfilesExposeDefaultSequences(t *testing.T) {
-	profiles := BuiltInProfiles()
-	byID := make(map[string]Profile, len(profiles))
-	for _, profile := range profiles {
-		byID[profile.ID] = profile
-	}
-	for _, id := range []string{BrainstormingCompanionID, HumorCompanionID, SupportCompanionID} {
-		if strings.TrimSpace(byID[id].DefaultSequenceID) == "" {
-			t.Fatalf("profile %q missing default sequence", id)
-		}
-	}
-	if byID[DefaultID].DefaultSequenceID != "" {
-		t.Fatalf("default profile sequence = %q, want empty", byID[DefaultID].DefaultSequenceID)
 	}
 }

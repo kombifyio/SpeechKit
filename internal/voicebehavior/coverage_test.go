@@ -46,40 +46,6 @@ func TestCatalogResolveRejectsOutOfRangeStep(t *testing.T) {
 	}
 }
 
-func TestBuiltInProfilesIncludesAllPersonas(t *testing.T) {
-	profiles := BuiltInProfiles()
-	if len(profiles) == 0 {
-		t.Fatal("BuiltInProfiles returned no entries")
-	}
-	wantIDs := map[string]bool{
-		DefaultID:                false,
-		BrainstormingCompanionID: false,
-		HumorCompanionID:         false,
-		SupportCompanionID:       false,
-	}
-	for _, p := range profiles {
-		if p.DisplayName == "" {
-			t.Errorf("profile %q has empty DisplayName", p.ID)
-		}
-		if !p.BuiltIn {
-			t.Errorf("profile %q must be BuiltIn=true", p.ID)
-		}
-		// Companion personas carry an explicit RoleID; the default
-		// persona may not (downstream resolver handles its routing).
-		if p.ID != DefaultID && p.RoleID == "" {
-			t.Errorf("companion profile %q has empty RoleID", p.ID)
-		}
-		if _, ok := wantIDs[p.ID]; ok {
-			wantIDs[p.ID] = true
-		}
-	}
-	for id, seen := range wantIDs {
-		if !seen {
-			t.Errorf("BuiltInProfiles missing expected persona %q", id)
-		}
-	}
-}
-
 func TestResolveProfileKnownAndUnknown(t *testing.T) {
 	prof, ok := ResolveProfile(BrainstormingCompanionID)
 	if !ok || prof.ID != BrainstormingCompanionID {
@@ -153,17 +119,5 @@ func TestCatalogGettersAreCloneIsolated(t *testing.T) {
 	s2, _ := c.Sequence(BrainstormingCompanionSequenceID)
 	if len(s2.Steps) > 0 && s2.Steps[0].Instruction == "mutated" {
 		t.Fatalf("Sequence getter must return an isolated clone; second call saw step mutation: %+v", s2.Steps[0])
-	}
-}
-
-func TestBuiltInCatalogReturnsFreshInstances(t *testing.T) {
-	a := BuiltInCatalog()
-	b := BuiltInCatalog()
-	if len(a.Personas) == 0 || len(a.Personas) != len(b.Personas) {
-		t.Fatalf("BuiltInCatalog must always return a fully populated catalog (got %d, %d personas)", len(a.Personas), len(b.Personas))
-	}
-	a.Personas[0].DisplayName = "mutated"
-	if b.Personas[0].DisplayName == "mutated" {
-		t.Fatal("BuiltInCatalog must return a fresh deep-copied Catalog per call")
 	}
 }

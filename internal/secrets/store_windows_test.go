@@ -35,21 +35,22 @@ func TestWindowsFileStoreRoundTripsWithInjectedProtection(t *testing.T) {
 		t.Fatalf("read stored secret: %v", err)
 	}
 	if !bytes.HasPrefix(raw, []byte("protected:")) {
-		t.Fatalf("stored secret was not protected: %q", raw)
+		t.Fatal("stored secret was not protected")
 	}
 
 	value, ok, err := store.Load("api-key")
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
-	if !ok || value != "secret-value" {
-		t.Fatalf("Load = (%q, %v), want trimmed secret", value, ok)
+	if !ok {
+		t.Fatal("Load did not return a stored secret")
 	}
+	assertTestSecret(t, "loaded secret", value, "secret-value")
 	if err := store.Delete("api-key"); err != nil {
 		t.Fatalf("Delete: %v", err)
 	}
 	if value, ok, err := store.Load("api-key"); err != nil || ok || value != "" {
-		t.Fatalf("Load after delete = (%q, %v, %v)", value, ok, err)
+		t.Fatalf("Load after delete retained secret (present=%v, err=%v)", ok, err)
 	}
 }
 
@@ -112,9 +113,7 @@ func TestWindowsDPAPIHelpersRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unprotect: %v", err)
 	}
-	if string(plain) != "secret-value" {
-		t.Fatalf("plain = %q", plain)
-	}
+	assertTestSecret(t, "decrypted secret", string(plain), "secret-value")
 }
 
 func TestWindowsConfigureDopplerCommandHidesWindow(t *testing.T) {

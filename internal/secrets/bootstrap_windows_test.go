@@ -39,9 +39,7 @@ func TestMigrateInstallTokenBootstrapStoresInstallTokenAndClearsBootstrap(t *tes
 	if err != nil {
 		t.Fatalf("resolve token: %v", err)
 	}
-	if token != "install-token" {
-		t.Fatalf("token = %q", token)
-	}
+	assertTestSecret(t, "migrated install token", token, "install-token")
 	if status.ActiveSource != TokenSourceInstall {
 		t.Fatalf("active source = %q", status.ActiveSource)
 	}

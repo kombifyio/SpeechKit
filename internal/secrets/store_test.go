@@ -2,6 +2,13 @@ package secrets
 
 import "testing"
 
+func assertTestSecret(t *testing.T, label, got, want string) {
+	t.Helper()
+	if got != want {
+		t.Fatalf("%s did not match the inert test fixture", label)
+	}
+}
+
 func TestResolveHuggingFaceTokenPrefersUserToken(t *testing.T) {
 	restore := UseMemoryStoreForTests()
 	defer restore()
@@ -17,9 +24,7 @@ func TestResolveHuggingFaceTokenPrefersUserToken(t *testing.T) {
 	if err != nil {
 		t.Fatalf("resolve token: %v", err)
 	}
-	if token != "user-token" {
-		t.Fatalf("token = %q", token)
-	}
+	assertTestSecret(t, "user token", token, "user-token")
 	if status.ActiveSource != TokenSourceUser {
 		t.Fatalf("active source = %q", status.ActiveSource)
 	}
@@ -43,9 +48,7 @@ func TestResolveHuggingFaceTokenFallsBackToInstallToken(t *testing.T) {
 	if err != nil {
 		t.Fatalf("resolve token: %v", err)
 	}
-	if token != "install-token" {
-		t.Fatalf("token = %q", token)
-	}
+	assertTestSecret(t, "install token", token, "install-token")
 	if status.ActiveSource != TokenSourceInstall {
 		t.Fatalf("active source = %q", status.ActiveSource)
 	}
@@ -65,9 +68,7 @@ func TestResolveHuggingFaceTokenFallsBackToEnvResolver(t *testing.T) {
 	if err != nil {
 		t.Fatalf("resolve token: %v", err)
 	}
-	if token != "env-token" {
-		t.Fatalf("token = %q", token)
-	}
+	assertTestSecret(t, "environment token", token, "env-token")
 	if status.ActiveSource != TokenSourceEnv {
 		t.Fatalf("active source = %q", status.ActiveSource)
 	}
@@ -97,9 +98,7 @@ func TestClearUserHuggingFaceTokenFallsBackToInstallToken(t *testing.T) {
 	if err != nil {
 		t.Fatalf("resolve token: %v", err)
 	}
-	if token != "install-token" {
-		t.Fatalf("token = %q", token)
-	}
+	assertTestSecret(t, "fallback install token", token, "install-token")
 	if status.ActiveSource != TokenSourceInstall {
 		t.Fatalf("active source = %q", status.ActiveSource)
 	}
@@ -120,9 +119,7 @@ func TestResolveNamedSecretPrefersStoredSecret(t *testing.T) {
 	if err != nil {
 		t.Fatalf("resolve named secret: %v", err)
 	}
-	if token != "stored-token" {
-		t.Fatalf("token = %q, want stored-token", token)
-	}
+	assertTestSecret(t, "stored named secret", token, "stored-token")
 	if status.ActiveSource != TokenSourceUser || !status.HasUserToken {
 		t.Fatalf("status = %+v, want stored user source", status)
 	}
@@ -143,9 +140,7 @@ func TestClearNamedSecretFallsBackToEnvResolver(t *testing.T) {
 	if err != nil {
 		t.Fatalf("resolve named secret: %v", err)
 	}
-	if token != "env-token" {
-		t.Fatalf("token = %q, want env-token", token)
-	}
+	assertTestSecret(t, "environment named secret", token, "env-token")
 	if status.ActiveSource != TokenSourceEnv || status.HasUserToken {
 		t.Fatalf("status = %+v, want env source without stored token", status)
 	}

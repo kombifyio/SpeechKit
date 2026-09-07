@@ -38,9 +38,7 @@ func TestResolveNamedSecretPrefersStoredSecretOverEnv(t *testing.T) {
 	if err != nil {
 		t.Fatalf("resolve named secret: %v", err)
 	}
-	if value != "stored-token" {
-		t.Fatalf("value = %q", value)
-	}
+	assertTestSecret(t, "stored named secret", value, "stored-token")
 	if status.ActiveSource != TokenSourceUser || !status.HasUserToken {
 		t.Fatalf("status = %+v", status)
 	}
@@ -61,9 +59,7 @@ func TestResolveNamedSecretFallsBackToEnvAfterClear(t *testing.T) {
 	if err != nil {
 		t.Fatalf("resolve named secret: %v", err)
 	}
-	if value != "env-token" {
-		t.Fatalf("value = %q", value)
-	}
+	assertTestSecret(t, "environment named secret", value, "env-token")
 	if status.ActiveSource != TokenSourceEnv || status.HasUserToken {
 		t.Fatalf("status = %+v", status)
 	}
@@ -104,9 +100,7 @@ func TestHuggingFaceStatusTreatsWhitespaceStoredTokensAsAbsent(t *testing.T) {
 	if err != nil {
 		t.Fatalf("resolve huggingface token: %v", err)
 	}
-	if value != "env-token" {
-		t.Fatalf("value = %q", value)
-	}
+	assertTestSecret(t, "environment token", value, "env-token")
 	if status.HasUserToken || status.HasInstallToken || status.ActiveSource != TokenSourceEnv {
 		t.Fatalf("status = %+v", status)
 	}

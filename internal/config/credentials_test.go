@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/kombifyio/SpeechKit/internal/secrets"
 )
 
 func TestResolveGoogleSTTKeyDoesNotUseDefaultGoogleAIKey(t *testing.T) {
@@ -21,7 +23,7 @@ func TestResolveGoogleSTTKeyDoesNotUseDefaultGoogleAIKey(t *testing.T) {
 
 	key, source := ResolveGoogleSTTKey(cfg)
 	if key != "" || source != "" {
-		t.Fatalf("ResolveGoogleSTTKey() = (%q, %q), want empty when only GOOGLE_AI_API_KEY is set", key, source)
+		t.Fatal("Google STT resolver accepted the unrelated Gemini credential")
 	}
 }
 
@@ -37,7 +39,7 @@ func TestResolveGoogleSTTKeyPrefersDedicatedKey(t *testing.T) {
 
 	key, source := ResolveGoogleSTTKey(cfg)
 	if key != "speech-key" || source != GoogleSTTDefaultAPIKeyEnv {
-		t.Fatalf("ResolveGoogleSTTKey() = (%q, %q), want dedicated key source", key, source)
+		t.Fatal("Google STT resolver did not prefer the dedicated credential source")
 	}
 }
 
@@ -53,7 +55,7 @@ func TestResolveGoogleSTTKeyAllowsCustomNonGeminiAPIKeyEnv(t *testing.T) {
 
 	key, source := ResolveGoogleSTTKey(cfg)
 	if key != "custom-speech-key" || source != "CUSTOM_GOOGLE_SPEECH_KEY" {
-		t.Fatalf("ResolveGoogleSTTKey() = (%q, %q), want custom speech key source", key, source)
+		t.Fatal("Google STT resolver did not use the configured custom credential source")
 	}
 }
 
@@ -67,17 +69,37 @@ func TestResolveDeepgramKeyUsesConfiguredEnv(t *testing.T) {
 
 	key, source := ResolveDeepgramKey(cfg)
 	if key != "deepgram-key" || source != "CUSTOM_DEEPGRAM_KEY" {
-		t.Fatalf("ResolveDeepgramKey() = (%q, %q)", key, source)
+		t.Fatal("Deepgram resolver did not use the configured credential source")
 	}
 }
 
 func TestResolveAssemblyAIKeyUsesDefaultEnv(t *testing.T) {
 	disableDopplerForCredentialTest(t)
-	t.Setenv(AssemblyAIAPIKeyEnv, "assembly-key")
 
-	key, source := ResolveAssemblyAIKey(&Config{})
-	if key != "assembly-key" || source != AssemblyAIAPIKeyEnv {
-		t.Fatalf("ResolveAssemblyAIKey() = (%q, %q)", key, source)
+	for _, tc := range []struct {
+		name  string
+		value string
+		want  string
+	}{
+		{name: "empty", value: "", want: ""},
+		{name: "set", value: "assembly-fixture-a", want: "assembly-fixture-a"},
+		{name: "changed", value: "assembly-fixture-b", want: "assembly-fixture-b"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Setenv(AssemblyAIAPIKeyEnv, tc.value)
+
+			key, source := ResolveAssemblyAIKey(&Config{})
+			if tc.want == "" {
+				if key != "" {
+					t.Fatal("AssemblyAI resolver returned a credential for an empty host variable")
+				}
+			} else {
+				assertCredentialFixture(t, "AssemblyAI resolver", key, tc.want)
+			}
+			if source != AssemblyAIAPIKeyEnv {
+				t.Fatal("AssemblyAI resolver did not report the default credential source")
+			}
+		})
 	}
 }
 
@@ -86,7 +108,7 @@ func TestResolveDeepgramThinkKey(t *testing.T) {
 
 	// No env name configured -> managed mode, no key, no error.
 	if key, source := ResolveDeepgramThinkKey(&Config{}); key != "" || source != "" {
-		t.Fatalf("ResolveDeepgramThinkKey(managed) = (%q, %q), want empty", key, source)
+		t.Fatal("managed Deepgram think mode unexpectedly resolved a credential")
 	}
 
 	// Configured env name resolves the key and reports its source.
@@ -94,7 +116,7 @@ func TestResolveDeepgramThinkKey(t *testing.T) {
 	cfg := &Config{}
 	cfg.VoiceAgent.DeepgramThinkAPIKeyEnv = "CUSTOM_THINK_KEY"
 	if key, source := ResolveDeepgramThinkKey(cfg); key != "think-byo-key" || source != "CUSTOM_THINK_KEY" {
-		t.Fatalf("ResolveDeepgramThinkKey(byo) = (%q, %q)", key, source)
+		t.Fatal("BYO Deepgram think mode did not use the configured credential source")
 	}
 }
 
@@ -137,7 +159,7 @@ func TestDeepgramThinkConfig(t *testing.T) {
 	cfg.VoiceAgent.DeepgramThinkAPIKeyEnv = "CUSTOM_THINK_KEY"
 	got := cfg.DeepgramThinkConfig()
 	if got.Provider != "open_ai" || got.Model != "gpt-4o" || got.EndpointURL != "https://llm.example/v1" || got.APIKey != "think-byo-key" {
-		t.Fatalf("explicit think config mismatch: %#v", got)
+		t.Fatal("explicit Deepgram think configuration did not preserve its routing and credential settings")
 	}
 }
 
@@ -161,6 +183,8 @@ func TestGoogleSTTCredentialEnvNamesUseDefaultsAndOverrides(t *testing.T) {
 
 func disableDopplerForCredentialTest(t *testing.T) {
 	t.Helper()
+	secretsRestore := secrets.UseMemoryStoreForTests()
+	t.Cleanup(secretsRestore)
 	previousLookPath := dopplerLookPath
 	dopplerLookPath = func(string) (string, error) {
 		return "", errors.New("doppler disabled for test: " + exec.ErrNotFound.Error())
@@ -168,6 +192,13 @@ func disableDopplerForCredentialTest(t *testing.T) {
 	t.Cleanup(func() {
 		dopplerLookPath = previousLookPath
 	})
+}
+
+func assertCredentialFixture(t *testing.T, label, got, want string) {
+	t.Helper()
+	if got != want {
+		t.Fatalf("%s did not match the inert test fixture", label)
+	}
 }
 
 func TestApplyManagedDevServerDefaultsDoesNotSeedTargets(t *testing.T) {

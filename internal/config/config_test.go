@@ -965,20 +965,16 @@ max_audio_storage_mb = 1024
 }
 
 func TestResolveSecret_EnvVar(t *testing.T) {
+	secretsRestore := secrets.UseMemoryStoreForTests()
+	t.Cleanup(secretsRestore)
 	t.Setenv("TEST_SECRET_KEY", "test-value-123")
 	val := ResolveSecret("TEST_SECRET_KEY")
-	if val != "test-value-123" {
-		t.Errorf("ResolveSecret = %q, want %q", val, "test-value-123")
-	}
-}
-
-func TestResolveSecret_Missing(t *testing.T) {
-	val := ResolveSecret("NONEXISTENT_KEY_THAT_SHOULD_NOT_EXIST_12345")
-	// Might return empty or a Doppler value; just ensure no panic
-	_ = val
+	assertCredentialFixture(t, "environment secret", val, "test-value-123")
 }
 
 func TestResolveSecret_DopplerFallback(t *testing.T) {
+	secretsRestore := secrets.UseMemoryStoreForTests()
+	t.Cleanup(secretsRestore)
 	t.Cleanup(resetDopplerHooksForTests)
 	t.Setenv("DOPPLER_PROJECT", "test-project")
 	t.Setenv("DOPPLER_CONFIG", "stage")
@@ -1002,10 +998,7 @@ func TestResolveSecret_DopplerFallback(t *testing.T) {
 	}
 
 	value := ResolveSecret("TEST_DOPPLER_SECRET")
-
-	if value != "secret-from-doppler" {
-		t.Fatalf("ResolveSecret = %q", value)
-	}
+	assertCredentialFixture(t, "Doppler secret", value, "secret-from-doppler")
 }
 
 func TestFindDopplerExecutableUsesEnvOverride(t *testing.T) {
