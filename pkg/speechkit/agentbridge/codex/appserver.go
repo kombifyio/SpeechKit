@@ -68,6 +68,8 @@ func startAppServer(ctx context.Context, binary, clientVersion string, logger *s
 	// lifecycle is owned by session.Close/kill, not ctx cancellation.
 	cmd := exec.Command(binary, "app-server") //nolint:noctx // detached long-lived child, closed via session lifecycle
 	configureSysProcAttr(cmd)
+	// Must run before Start; see procguard.Prepare.
+	procguard.Prepare(cmd)
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
 		return nil, fmt.Errorf("app-server stdin: %w", err)

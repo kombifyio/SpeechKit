@@ -177,6 +177,10 @@ func (p *Provider) StartServer(ctx context.Context) error {
 	cmd := exec.CommandContext(ctx, binaryPath, args...) // #nosec G204 -- binaryPath is resolved by findWhisperBinary from bundle/managed locations or explicit dev opt-in.
 	cmd.Dir = workDir
 	configureHiddenProcess(cmd, subprocessPriorityLowered(p.LowerSubprocessPriority))
+	// Must run before Start: on POSIX hosts this is what puts the child in
+	// its own process group, and after the child has exec'd the parent can
+	// no longer move it (see procguard.Prepare).
+	procguard.Prepare(cmd)
 	cmd.Stdout = os.Stderr // whisper-server logs to stdout
 	cmd.Stderr = os.Stderr
 

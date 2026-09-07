@@ -88,3 +88,30 @@ func Adopt(cmd *exec.Cmd) error {
 	}
 	return nil
 }
+
+// Prepare has nothing to do on Windows.
+//
+// The kill-on-close job is what ties a child to this process, and a child
+// joins it after it has started (Adopt). Nothing about the command has to be
+// arranged beforehand, so this is a real no-op rather than a gap.
+func Prepare(*exec.Cmd) {}
+
+// Shutdown has nothing to do on Windows.
+//
+// Closing the last handle to the job terminates every process in it, and the
+// only handle is the one ensureJob keeps for the lifetime of this process. It
+// therefore closes exactly when this process exits, by any route — including
+// the crash and taskkill paths a Go-side shutdown could never reach. Doing
+// the work here as well would only make an orderly exit kill the children a
+// few milliseconds earlier.
+func Shutdown() {}
+
+// Sweep finds nothing on Windows, and that is the truth rather than a stub:
+// every child this build starts is in the kill-on-close job, so none of them
+// can outlive the process that started it and be left for a later run to
+// find.
+//
+// The root is accepted and ignored so the host can call this unconditionally.
+func Sweep(string) (int, error) {
+	return 0, nil
+}
