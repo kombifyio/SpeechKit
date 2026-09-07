@@ -1648,6 +1648,59 @@ paths:
           $ref: "#/components/responses/Conflict"
         "503":
           $ref: "#/components/responses/ServiceUnavailable"
+  /api/v1/permissions:
+    get:
+      tags: [Settings]
+      operationId: getPlatformPermissions
+      summary: Read the operating-system privacy permissions SpeechKit needs.
+      description: >-
+        macOS keys every TCC grant to the code-signing hash, and SpeechKit's
+        macOS builds are ad-hoc signed, so an update revokes Accessibility,
+        Input Monitoring and Microphone together while the app keeps running.
+        Clients poll this route and recover without a restart. `managed` is
+        true only on macOS; every other host reports every permission as
+        granted with `canPrompt` false, so a client hides the whole surface on
+        that single field. The query never prompts.
+      responses:
+        "200":
+          description: The current permission state.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PermissionsSnapshot"
+  /api/v1/permissions/request:
+    post:
+      tags: [Settings]
+      operationId: requestPlatformPermission
+      summary: Raise the system prompt for one permission, or open its System Settings pane.
+      description: >-
+        `prompt` raises the macOS dialog; `open-settings` opens System Settings
+        at the pane that owns the switch. The microphone prompt waits for the
+        user, so the request is bounded to a few seconds and answers as soon as
+        the dialog is on screen — the caller polls
+        `GET /api/v1/permissions` for the verdict. An unknown id or action is a
+        400; a host where `managed` is false answers 409 rather than reporting
+        a silent success.
+      security:
+        - ControlPlaneHeader: []
+        - ControlPlaneCookie: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PermissionRequest"
+      responses:
+        "200":
+          description: The request reached the operating system, with the state as it stands now.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PermissionRequestResult"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "409":
+          $ref: "#/components/responses/Conflict"
   /api/v1/integrations/copilot:
     get:
       tags: [Integrations]
@@ -3415,6 +3468,67 @@ components:
         status:
           type: string
           enum: [accepted]
+    Permission:
+      type: object
+      required: [id, label, status, required, canPrompt, reason, detail]
+      properties:
+        id:
+          type: string
+          enum: [accessibility, inputMonitoring, microphone]
+        label:
+          type: string
+        status:
+          type: string
+          enum: [granted, denied, not-determined, restricted, unknown]
+        required:
+          type: boolean
+        canPrompt:
+          type: boolean
+          description: Whether action "prompt" can still put a system dialog on screen.
+        reason:
+          type: string
+          description: One sentence about what is missing; empty when granted.
+        detail:
+          type: string
+          description: What the permission buys. Always present.
+    PermissionsSnapshot:
+      type: object
+      required: [schemaVersion, platform, managed, secureInputActive, permissions]
+      properties:
+        schemaVersion:
+          type: integer
+        platform:
+          type: string
+          description: runtime.GOOS of the desktop host.
+        managed:
+          type: boolean
+          description: True only where the operating system gates these permissions.
+        secureInputActive:
+          type: boolean
+          description: A password field holds the keyboard, so no synthetic keystroke is delivered. No grant lifts it.
+        permissions:
+          type: array
+          items:
+            $ref: "#/components/schemas/Permission"
+    PermissionRequest:
+      type: object
+      required: [id, action]
+      properties:
+        id:
+          type: string
+          enum: [accessibility, inputMonitoring, microphone]
+        action:
+          type: string
+          enum: [prompt, open-settings]
+    PermissionRequestResult:
+      type: object
+      required: [prompted, snapshot]
+      properties:
+        prompted:
+          type: boolean
+          description: The operating system accepted the request. It says nothing about the answer.
+        snapshot:
+          $ref: "#/components/schemas/PermissionsSnapshot"
     ActivatedProfile:
       type: object
       required: [profileId, mode, model]

@@ -29,8 +29,8 @@ android {
         applicationId = "io.kombify.speechkit"
         minSdk = 26
         targetSdk = 36
-        versionCode = 6917
-        versionName = "0.69.17"
+        versionCode = 6918
+        versionName = "0.69.18"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
