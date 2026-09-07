@@ -44,10 +44,10 @@ export function resolveTargets(rawTargets) {
   );
 
   if (requested.has("all")) {
-    return new Set(["frontend", "windows", "android", "clients"]);
+    return new Set(["frontend", "windows", "macos", "android", "clients"]);
   }
 
-  const allowed = new Set(["frontend", "windows", "android", "clients"]);
+  const allowed = new Set(["frontend", "windows", "macos", "android", "clients"]);
   for (const target of requested) {
     if (!allowed.has(target)) {
       throw new Error(`Unknown sync target: ${target}`);
@@ -161,6 +161,39 @@ export function syncVersion(argv = process.argv.slice(2)) {
       [/!define VERSION ".*"/, `!define VERSION "${metadata.packageVersion}"`],
       [/WriteRegStr HKCU "Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\kombify SpeechKit" "DisplayVersion" ".*"/, 'WriteRegStr HKCU "Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\kombify SpeechKit" "DisplayVersion" "${VERSION}"'],
     ]);
+  }
+
+  if (targets.has("macos")) {
+    // scripts/macos/Info.plist.template is the committed identity of
+    // SpeechKit.app, the way cmd/speechkit/winres.json is on Windows. Unlike
+    // winres.json this stamp does reach the artifact: scripts/build-macos.sh
+    // copies the template into the bundle. It then overwrites these same two
+    // keys with the version Delivery v2 resolves for that build, because below
+    // 1.0.0 the delivered patch is the anchor plus the first-parent commit
+    // count and is not knowable at commit time. So this write is what keeps
+    // the committed template honest, and the build is what keeps the shipped
+    // bundle exact.
+    //
+    // releaseVersion, not packageVersion: macOS reads a non-numeric component
+    // of CFBundleShortVersionString as 0, which would make an update look
+    // older than the build it replaces. A pre-release suffix travels in
+    // KombifyDeliveryVersion, which only the build writes.
+    if (fs.existsSync(path.join(repoRoot, "scripts/macos/Info.plist.template"))) {
+      updateText("scripts/macos/Info.plist.template", [
+        [
+          /(<key>CFBundleShortVersionString<\/key>\s*<string>)[^<]*(<\/string>)/,
+          `$1${metadata.releaseVersion}$2`,
+        ],
+        [
+          /(<key>CFBundleVersion<\/key>\s*<string>)[^<]*(<\/string>)/,
+          `$1${metadata.releaseVersion}$2`,
+        ],
+        [
+          /(<key>KombifyDeliveryVersion<\/key>\s*<string>)[^<]*(<\/string>)/,
+          `$1${metadata.releaseVersion}$2`,
+        ],
+      ]);
+    }
   }
 
   // CI-CD-PLATFORM-STANDARD.md §4.2: every distribution lane hands the

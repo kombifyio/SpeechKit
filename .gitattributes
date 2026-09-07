@@ -5,3 +5,4 @@
 *.mjs text eol=lf
 gradlew text eol=lf
 *.bat text eol=crlf
+Info.plist.template text eol=lf

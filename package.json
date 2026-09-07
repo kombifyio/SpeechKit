@@ -1,7 +1,7 @@
 {
   "name": "speechkit-release",
   "private": true,
-  "version": "0.69.20",
+  "version": "0.69.21",
   "type": "module",
   "engines": {
     "node": ">=24.0.0"
@@ -34,8 +34,9 @@
     "security:secrets": "powershell -NoProfile -ExecutionPolicy Bypass -File ./scripts/security/scan-tracked-secrets.ps1",
     "version:sync": "node ./scripts/sync-version.mjs",
     "version:sync:windows": "node ./scripts/sync-version.mjs --targets=frontend,windows",
+    "version:sync:macos": "node ./scripts/sync-version.mjs --targets=macos",
     "version:sync:android": "node ./scripts/sync-version.mjs --targets=android",
-    "version:sync:all": "node ./scripts/sync-version.mjs --targets=frontend,windows,android",
+    "version:sync:all": "node ./scripts/sync-version.mjs --targets=frontend,windows,macos,android",
     "website:dev": "npm --prefix Website run dev",
     "website:install": "npm --prefix Website ci",
     "website:build": "npm --prefix Website run build",
