@@ -21,6 +21,7 @@ require (
 	github.com/hashicorp/mdns v1.0.7
 	github.com/jackc/pgx/v5 v5.10.0
 	github.com/k2-fsa/sherpa-onnx-go v1.13.4
+	github.com/keybase/go-keychain v0.0.1
 	github.com/livekit/media-sdk v0.0.0-20260605212526-4c11a51d3c97
 	github.com/livekit/protocol v1.49.0
 	github.com/livekit/server-sdk-go/v2 v2.17.0
@@ -124,7 +125,6 @@ require (
 	github.com/k2-fsa/sherpa-onnx-go-macos v1.13.4 // indirect
 	github.com/k2-fsa/sherpa-onnx-go-windows v1.13.4 // indirect
 	github.com/kevinburke/ssh_config v1.4.0 // indirect
-	github.com/keybase/go-keychain v0.0.1 // indirect
 	github.com/klauspost/compress v1.18.7 // indirect
 	github.com/klauspost/cpuid/v2 v2.3.0 // indirect
 	github.com/kylelemons/godebug v1.1.0 // indirect

@@ -52,3 +52,21 @@ func TestEnsureLoopbackOutputDeviceAvailableFailsClosedOnDarwin(t *testing.T) {
 		t.Fatalf("ensureLoopbackOutputDeviceAvailable() error = %v, want ErrUnsupportedSource", err)
 	}
 }
+
+// TestListCaptureDevicesOnDarwinIsErrorFree is the headless-runner contract
+// from kombify-SpeechKit-mcos.5: a macos-14 runner has no audio input device
+// and grants no microphone permission, and enumeration must still answer with
+// an empty list instead of an error. The desktop calls this on every settings
+// open, so an error here would surface as a broken device picker.
+func TestListCaptureDevicesOnDarwinIsErrorFree(t *testing.T) {
+	devices, err := ListCaptureDevices(Config{})
+	if err != nil {
+		t.Fatalf("ListCaptureDevices: %v", err)
+	}
+	for _, device := range devices {
+		if strings.TrimSpace(device.Name) == "" {
+			t.Fatalf("device %q has an empty name", device.ID)
+		}
+	}
+	t.Logf("CoreAudio reported %d capture device(s)", len(devices))
+}

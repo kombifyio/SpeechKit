@@ -3,15 +3,8 @@
 package secrets
 
 import (
-	"crypto/sha256"
-	"encoding/hex"
-	"os"
-	"path/filepath"
-	"regexp"
-	"strings"
 	"unsafe"
 
-	"github.com/kombifyio/SpeechKit/internal/runtimepath"
 	"golang.org/x/sys/windows"
 )
 
@@ -28,67 +21,14 @@ type dataBlob struct {
 	pbData *byte
 }
 
+// newDefaultStore wraps the shared file store (filestore.go) in DPAPI: the
+// blobs are sealed to the current Windows user account, so no key material
+// ever lands on disk.
 func newDefaultStore() secretBackend {
 	return &fileStore{
 		protect:   protectWithDPAPI,
 		unprotect: unprotectWithDPAPI,
 	}
-}
-
-type fileStore struct {
-	protect   func([]byte) ([]byte, error)
-	unprotect func([]byte) ([]byte, error)
-}
-
-func (s *fileStore) Load(name string) (string, bool, error) {
-	path := secretFilePath(name)
-	data, err := os.ReadFile(path) // #nosec G304 -- secretFilePath maps names to a scoped secrets-dir filename.
-	if err != nil {
-		if os.IsNotExist(err) {
-			return "", false, nil
-		}
-		return "", false, err
-	}
-	plain, err := s.unprotect(data)
-	if err != nil {
-		return "", false, err
-	}
-	return strings.TrimSpace(string(plain)), true, nil
-}
-
-func (s *fileStore) Store(name, value string) error {
-	path := secretFilePath(name)
-	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
-		return err
-	}
-	protected, err := s.protect([]byte(value))
-	if err != nil {
-		return err
-	}
-	return os.WriteFile(path, protected, 0o600)
-}
-
-func (s *fileStore) Delete(name string) error {
-	path := secretFilePath(name)
-	if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
-		return err
-	}
-	return nil
-}
-
-func secretFilePath(name string) string {
-	return filepath.Join(runtimepath.SecretsDir(), secretFileName(name))
-}
-
-var safeSecretFileNamePattern = regexp.MustCompile(`^[A-Za-z0-9._-]+$`)
-
-func secretFileName(name string) string {
-	name = strings.TrimSpace(name)
-	if safeSecretFileNamePattern.MatchString(name) {
-		return name + ".bin"
-	}
-	sum := sha256.Sum256([]byte(name))
-	return "secret-" + hex.EncodeToString(sum[:]) + ".bin"
 }
 
 func protectWithDPAPI(data []byte) ([]byte, error) {
