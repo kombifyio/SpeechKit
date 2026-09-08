@@ -68,7 +68,9 @@ dictation_live_commit = "passage" # immediate | phrase | passage. Live field inj
 model_download_dir = ""            # Blank = %LOCALAPPDATA%/SpeechKit/models. Set a dedicated folder for local model downloads.
 
 [audio]
-backend = "windows-wasapi-malgo"
+backend = "auto"                 # Resolves per platform: WASAPI on Windows, CoreAudio on macOS.
+                                 # Naming a platform backend here is what made a fresh macOS
+                                 # install refuse to start; "auto" is the portable default.
 input_source = "microphone"     # microphone | system_loopback | mic_and_system. mic_and_system requires the future mixer path.
 device_id = ""                  # Blank = default microphone.
 output_device_id = ""           # Blank = default speaker; used by system_loopback.

@@ -1,8 +1,10 @@
 package config
 
 import (
-	"github.com/kombifyio/SpeechKit/pkg/speechkit/stt"
 	"strings"
+
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/audio/capture"
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/stt"
 
 	customtemplates "github.com/kombifyio/SpeechKit/internal/customize/templates"
 	"github.com/kombifyio/SpeechKit/internal/voiceagentprofile"
@@ -37,7 +39,13 @@ func defaults() *Config {
 			DictationLiveCommit:            DictationLiveCommitPassage,
 		},
 		Audio: AudioConfig{
-			Backend:        "windows-wasapi-malgo",
+			// "auto" and not a named backend: the capture package resolves it
+			// per platform (WASAPI on Windows, CoreAudio on macOS), and this
+			// default is what a first run seeds into config.toml. Naming the
+			// Windows backend here made a fresh macOS install refuse to start
+			// with "unsupported audio backend: windows-wasapi-malgo" — and,
+			// because logging is default-off, refuse silently.
+			Backend:        string(capture.BackendAuto),
 			InputSource:    AudioInputSourceMicrophone,
 			SampleRate:     16000,
 			Channels:       1,

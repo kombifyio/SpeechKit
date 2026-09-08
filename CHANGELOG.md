@@ -39,6 +39,20 @@ IDs, source paths, and other maintainer-only vocabulary.
 
 ### Fixed
 
+* **macOS:** a fresh install could not start at all. The first run wrote a
+  configuration naming a Windows audio backend, the app refused to open a
+  microphone with it, and — because logging is off by default — it exited
+  without saying anything: no message, no log, no crash report. The audio
+  backend now resolves per platform, and continuous integration launches the
+  built macOS app on every change so a first run that cannot start is caught
+  before a release carries it. Windows is unaffected; it resolves to the same
+  backend it always used.
+* **macOS:** the app's global-hotkey listener is installed but receives no key
+  events, so the Dictation, Assist and Voice Agent hotkeys do not respond. This
+  is not fixed yet. It is listed here because the macOS build is a beta and the
+  behaviour is now known rather than suspected: hold-to-talk on macOS does not
+  work in this build, and the menu-bar item is the way in until it does.
+
 * **overlay:** the hover strip and the radial menu no longer replace their
   controls with "Input submitted; app receipt unconfirmed" after a dictation
   that simply worked, and no longer keep doing so on every hover until the
