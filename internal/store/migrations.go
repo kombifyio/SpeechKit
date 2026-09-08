@@ -76,6 +76,13 @@ func runSQLiteMigrations(ctx context.Context, db *sql.DB) error {
 		{version: "sqlite:025_meeting_enhancement_jobs", run: runSQLiteMeetingEnhancementJobsMigration},
 		sqliteSQLMigration("sqlite:026_meeting_summary_batches", sqliteMigration026),
 		sqliteSQLMigration("sqlite:027_recording_session_snapshots", sqliteMigration027),
+		{version: "sqlite:028_transcription_pinned", run: func(ctx context.Context, db *sql.DB) error {
+			if err := ensureSQLiteColumn(ctx, db, "transcriptions", "pinned", "INTEGER NOT NULL DEFAULT 0"); err != nil {
+				return err
+			}
+			_, err := db.ExecContext(ctx, sqliteMigration028)
+			return err
+		}},
 	}
 	for _, migration := range migrations {
 		if err := applyMigration(ctx, db, "sqlite", migration); err != nil {
@@ -123,6 +130,7 @@ func runPostgresMigrations(ctx context.Context, db *sql.DB) error {
 		postgresSQLMigration("postgres:021_meeting_enhancement_jobs", postgresMigration021),
 		postgresSQLMigration("postgres:022_meeting_summary_batches", postgresMigration022),
 		postgresSQLMigration("postgres:023_recording_session_snapshots", postgresMigration023),
+		postgresSQLMigration("postgres:024_transcription_pinned", postgresMigration024),
 	}
 	for _, migration := range migrations {
 		if err := applyMigration(ctx, db, "postgres", migration); err != nil {
@@ -155,6 +163,7 @@ func ensureSQLiteLegacyColumnsForCurrentMigrations(ctx context.Context, db *sql.
 			"owner_org_id":  "TEXT NOT NULL DEFAULT ''",
 			"owner_source":  "TEXT NOT NULL DEFAULT ''",
 			"speaker_json":  "TEXT NOT NULL DEFAULT ''",
+			"pinned":        "INTEGER NOT NULL DEFAULT 0",
 		},
 		"quick_notes": {
 			"language_base": "TEXT NOT NULL DEFAULT ''",

@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -481,6 +482,74 @@ func TestContractListPaginationOrdering(t *testing.T) {
 		}
 		if list[1].Text != "second" {
 			t.Errorf("[1].Text = %q, want %q", list[1].Text, "second")
+		}
+	})
+}
+
+// TestContractPinnedTranscriptionSurvivesTheRollingHistory covers what the
+// Library depends on: a pinned transcript sorts ahead of newer ones, so the
+// line someone chose to keep stays on the first page however far back the
+// stream has moved, and unpinning puts it back where it belongs.
+func TestContractPinnedTranscriptionSurvivesTheRollingHistory(t *testing.T) {
+	eachBackend(t, func(t *testing.T, s Store) {
+		ctx := context.Background()
+		pinner, ok := s.(TranscriptionPinStore)
+		if !ok {
+			t.Skip("backend does not implement TranscriptionPinStore")
+		}
+		for i := 1; i <= 6; i++ {
+			if err := s.SaveTranscription(ctx, fmt.Sprintf("line %d", i), "en", "p", "m", 0, 0, nil); err != nil {
+				t.Fatalf("SaveTranscription %d: %v", i, err)
+			}
+		}
+		all, err := s.ListTranscriptions(ctx, ListOpts{Limit: 6})
+		if err != nil {
+			t.Fatalf("ListTranscriptions: %v", err)
+		}
+		oldest := all[len(all)-1]
+		if oldest.Text != "line 1" {
+			t.Fatalf("oldest = %q, want %q", oldest.Text, "line 1")
+		}
+		if oldest.Pinned {
+			t.Fatal("a fresh transcript must not be pinned")
+		}
+
+		if err := pinner.PinTranscription(ctx, oldest.ID, true); err != nil {
+			t.Fatalf("PinTranscription: %v", err)
+		}
+		page, err := s.ListTranscriptions(ctx, ListOpts{Limit: 2})
+		if err != nil {
+			t.Fatalf("ListTranscriptions after pin: %v", err)
+		}
+		if page[0].ID != oldest.ID || !page[0].Pinned {
+			t.Fatalf("first row = %+v, want the pinned %d", page[0], oldest.ID)
+		}
+		if page[1].Text != "line 6" {
+			t.Errorf("second row = %q, want the newest %q", page[1].Text, "line 6")
+		}
+
+		// A window past the pinned row still reads the stream in order.
+		rest, err := s.ListTranscriptions(ctx, ListOpts{Limit: 2, Offset: 1})
+		if err != nil {
+			t.Fatalf("ListTranscriptions offset: %v", err)
+		}
+		if rest[0].Text != "line 6" || rest[1].Text != "line 5" {
+			t.Errorf("offset page = %q,%q, want line 6,line 5", rest[0].Text, rest[1].Text)
+		}
+
+		if err := pinner.PinTranscription(ctx, oldest.ID, false); err != nil {
+			t.Fatalf("unpin: %v", err)
+		}
+		unpinned, err := s.ListTranscriptions(ctx, ListOpts{Limit: 1})
+		if err != nil {
+			t.Fatalf("ListTranscriptions after unpin: %v", err)
+		}
+		if unpinned[0].ID == oldest.ID {
+			t.Error("unpinned transcript stayed at the top")
+		}
+
+		if err := pinner.PinTranscription(ctx, oldest.ID+9999, true); err == nil {
+			t.Error("pinning a transcript that does not exist should fail")
 		}
 	})
 }

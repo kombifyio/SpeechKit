@@ -224,10 +224,12 @@ func (s *sqlStore) SaveTranscriptionWithAudioAndSpeakers(ctx context.Context, te
 }
 
 // transcriptionSelectSQL is the shared projection + audio-asset join used by
-// GetTranscription and ListTranscriptions.
+// GetTranscription and ListTranscriptions. The one verb takes the dialect's
+// false literal for the pinned fallback, so pass it through fmt.Sprintf.
 const transcriptionSelectSQL = `SELECT t.id, t.text, t.language, t.provider, COALESCE(t.model, ''), COALESCE(t.duration_ms, 0), COALESCE(t.latency_ms, 0),
 		COALESCE(a.path, ''), COALESCE(a.storage_kind, ''), COALESCE(a.mime_type, ''), COALESCE(a.size_bytes, 0), COALESCE(a.duration_ms, 0),
-		t.created_at, COALESCE(t.owner_user_id, ''), COALESCE(t.owner_org_id, ''), COALESCE(t.owner_source, ''), COALESCE(t.speaker_json, '')
+		t.created_at, COALESCE(t.owner_user_id, ''), COALESCE(t.owner_org_id, ''), COALESCE(t.owner_source, ''), COALESCE(t.speaker_json, ''),
+		COALESCE(t.pinned, %s)
 	 FROM transcriptions t
 	 LEFT JOIN audio_assets a ON a.id = (
 		SELECT link.audio_asset_id
@@ -243,11 +245,13 @@ func (s *sqlStore) scanTranscription(sc interface{ Scan(...any) error }) (Transc
 	var audioStorageKind, audioMimeType string
 	var audioSizeBytes, audioDurationMs int64
 	var speakerJSON string
+	var pinned boolValue
 	if err := sc.Scan(&t.ID, &t.Text, &t.Language, &t.Provider, &t.Model, &t.DurationMs, &t.LatencyMs,
 		&t.AudioPath, &audioStorageKind, &audioMimeType, &audioSizeBytes, &audioDurationMs, &t.CreatedAt,
-		&t.OwnerUserID, &t.OwnerOrgID, &t.OwnerSource, &speakerJSON); err != nil {
+		&t.OwnerUserID, &t.OwnerOrgID, &t.OwnerSource, &speakerJSON, &pinned); err != nil {
 		return Transcription{}, err
 	}
+	t.Pinned = bool(pinned)
 	if strings.TrimSpace(t.Model) == "" {
 		t.Model = s.transcriptionModelHint(t.Provider)
 	}
@@ -285,7 +289,8 @@ func (s *sqlStore) GetTranscription(ctx context.Context, id int64) (*Transcripti
 	if err != nil {
 		return nil, err
 	}
-	row := s.db.QueryRowContext(ctx, s.dialect.rebind(transcriptionSelectSQL+` WHERE t.id = ? AND t.scope_id = ?`), id, scopeID)
+	query := fmt.Sprintf(transcriptionSelectSQL, s.dialect.boolLit(false)) + ` WHERE t.id = ? AND t.scope_id = ?`
+	row := s.db.QueryRowContext(ctx, s.dialect.rebind(query), id, scopeID)
 	t, err := s.scanTranscription(row)
 	if err != nil {
 		return nil, err
@@ -300,7 +305,7 @@ func (s *sqlStore) ListTranscriptions(ctx context.Context, opts ListOpts) ([]Tra
 	}
 	limit, offset := normalizedListPagination(opts)
 
-	query := transcriptionSelectSQL
+	query := fmt.Sprintf(transcriptionSelectSQL, s.dialect.boolLit(false))
 	args := []any{scopeID}
 	clauses := []string{"t.scope_id = ?"}
 	clauses, args = appendNormalizedLanguageFilter(clauses, args, opts.Language)
@@ -312,7 +317,7 @@ func (s *sqlStore) ListTranscriptions(ctx context.Context, opts ListOpts) ([]Tra
 	if len(clauses) > 0 {
 		query += " WHERE " + strings.Join(clauses, " AND ") // #nosec G202 -- clauses are fixed internal snippets; values are parameterized.
 	}
-	query += " ORDER BY t.created_at DESC, t.id DESC LIMIT ? OFFSET ?"
+	query += " ORDER BY t.pinned DESC, t.created_at DESC, t.id DESC LIMIT ? OFFSET ?"
 	args = append(args, limit, offset)
 
 	rows, err := s.db.QueryContext(ctx, s.dialect.rebind(query), args...)
@@ -330,6 +335,25 @@ func (s *sqlStore) ListTranscriptions(ctx context.Context, opts ListOpts) ([]Tra
 		results = append(results, t)
 	}
 	return results, rows.Err()
+}
+
+// PinTranscription marks a dictation transcript as kept. Pinned transcripts
+// sort ahead of the rolling history so the Library keeps them in reach no
+// matter how far back the stream has moved.
+func (s *sqlStore) PinTranscription(ctx context.Context, id int64, pinned bool) error {
+	scopeID, err := s.scopeID(ctx)
+	if err != nil {
+		return fmt.Errorf("%s: resolve scope: %w", s.dialect.name, err)
+	}
+	result, err := s.db.ExecContext(ctx, s.dialect.rebind(`UPDATE transcriptions SET pinned = ? WHERE id = ? AND scope_id = ?`), pinned, id, scopeID)
+	if err != nil {
+		return fmt.Errorf("pin transcription: %w", err)
+	}
+	rows, _ := result.RowsAffected()
+	if rows == 0 {
+		return fmt.Errorf("transcription %d not found", id)
+	}
+	return nil
 }
 
 func (s *sqlStore) TranscriptionCount(ctx context.Context) (int, error) {

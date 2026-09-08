@@ -11,6 +11,32 @@ IDs, source paths, and other maintainer-only vocabulary.
 
 ## [Unreleased]
 
+### Added
+
+* **library:** the Library now gives each mode its own tab — Transcriptions,
+  Quick Notes and Voice Sessions — instead of three columns sharing one screen,
+  and each tab loads further back through your history a page at a time rather
+  than stopping at the newest twenty entries. Any row expands in place so you
+  can read and select the whole text, every row copies, and a transcription can
+  now be pinned the way a quick note already could, so a line worth keeping
+  stays at the top however far back the history has moved. A search box filters
+  what is currently loaded.
+* **integrations:** integration cards can show real brand logos, served from a
+  logo CDN, when the build is configured with a public client id. Without one —
+  and under the "Local network only" and "This device only" privacy scopes,
+  where no request may leave the machine — every card keeps its bundled logo and
+  nothing is fetched.
+
+### Changed
+
+* **settings:** Mode Settings now sits above Audio Settings in the sidebar, so
+  you choose what SpeechKit does before adjusting how it sounds.
+* **settings:** the kombify Cloud card no longer overflows. Its explanation of
+  why a build cannot sign in, and the list of modes it serves, moved into the
+  account dialog; the card keeps a single-line status and shows Connect only
+  when it can actually reach the sign-in page. If your browser did not open, the
+  dialog can now reopen the sign-in page instead of leaving you to copy the URL.
+
 ### Fixed
 
 * **overlay:** the hover strip and the radial menu no longer replace their

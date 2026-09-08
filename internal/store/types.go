@@ -50,6 +50,13 @@ type Store interface {
 	Close() error
 }
 
+// TranscriptionPinStore is an optional extension for stores that can mark a
+// transcription as kept. It stays out of Store so a backend that only records
+// dictation history is not forced to grow a curation surface.
+type TranscriptionPinStore interface {
+	PinTranscription(ctx context.Context, id int64, pinned bool) error
+}
+
 // UserDictionaryStore is an optional extension for stores that persist
 // user-specific dictation terms outside config.toml.
 type UserDictionaryStore interface {
@@ -531,6 +538,7 @@ type Transcription struct {
 	OwnerOrgID  string                     `json:"ownerOrgId,omitempty"`
 	OwnerSource string                     `json:"ownerSource,omitempty"`
 	Speakers    *speaker.DiarizationResult `json:"speakers,omitempty"`
+	Pinned      bool                       `json:"pinned"`
 }
 
 type UserDictionaryEntry struct {
