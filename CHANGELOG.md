@@ -11,6 +11,15 @@ IDs, source paths, and other maintainer-only vocabulary.
 
 ## [Unreleased]
 
+### Fixed
+
+* **overlay:** the hover strip and the radial menu no longer replace their
+  controls with "Input submitted; app receipt unconfirmed" after a dictation
+  that simply worked, and no longer keep doing so on every hover until the
+  next dictation. The notice now appears only when text needs rescuing:
+  it was not inserted, may have been inserted partially, or could not be
+  saved to the history. It stays while you retry and closes when dismissed.
+
 ## [0.69.0](https://github.com/kombifyio/SpeechKit/compare/v0.68.0...v0.69.0) (2026-09-06)
 
 ### Highlights

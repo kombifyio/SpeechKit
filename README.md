@@ -28,8 +28,9 @@ This repository owns:
   kernel behind HTTP and WebSocket APIs plus its OpenAPI/AsyncAPI contracts.
 - The agent-facing surfaces: the `speechkit-mcp` MCP server and the
   `speechkit-cli` command-line tool.
-- The Windows Wails device client in `cmd/speechkit`, a reference
-  implementation of a device target — not a separate product.
+- The Wails desktop device client in `cmd/speechkit`, a reference
+  implementation of a device target — not a separate product. Windows is the
+  supported client; macOS is a Dictation-only beta.
 - The shared voice surface contract consumed by Kombify Companion, Workbench,
   and embeds.
 
@@ -51,13 +52,13 @@ traffic goes through `https://api.kombify.io`.
 | Concern | Choice |
 | --- | --- |
 | Language / runtime | Go 1.26+ (kernel, server, CLI, MCP); Node.js 22+ for the client frontend |
-| Device client | Wails v3 (Windows 10/11 x64, WASAPI capture and playback) |
+| Device client | Wails v3 (Windows 10/11 x64, WASAPI capture and playback; macOS 14+ arm64 beta, CoreAudio capture) |
 | Server target | Linux container, `net/http` + WebSocket, OpenAPI and AsyncAPI contracts |
 | Package managers | Go modules, npm, `mise` for the task surface |
 | Authentication | Bearer tokens or edge-auth for the server target; Auth0 JWT at `api.kombify.io` for the Kombify-hosted deployment |
 | Data | SQLite by default (pure-Go driver); optional PostgreSQL 17; Render Managed Postgres for the hosted server target |
 | Voice providers | whisper.cpp, Piper, OpenAI, Google, Groq, Deepgram, AssemblyAI, Hugging Face, OpenRouter, Ollama |
-| Delivery | GitHub Releases (Windows installer and portable), `ghcr.io/kombifyio/speechkit-server` container |
+| Delivery | GitHub Releases (Windows installer and portable, ad-hoc signed macOS arm64 bundle), `ghcr.io/kombifyio/speechkit-server` container |
 
 SpeechKit imports no Kombify Go modules — it has no dependency on
 `kombify-go-common` and does not call `/v1/ai/*`. That self-containment is a
@@ -127,12 +128,23 @@ Provider support and auth status are tracked in the
 | Local-first Go kernel | `pkg/speechkit` | You embed voice into your own Go product, internal tool, prototype, or automation host. |
 | Self-host server | `cmd/speechkit-server` | You need a durable Linux process for your own clients, teams, browsers, or centrally managed provider configuration. |
 | Agent tools | `cmd/speechkit-mcp`, `cmd/speechkit-cli` | An agent or operator should inspect the framework, generate starters, validate payloads, or operate a self-hosted server. |
-| Windows device client | `cmd/speechkit` | You want a ready-to-run desktop reference host for local use, provider testing, or server-connected workflows. |
+| Desktop device client | `cmd/speechkit` | You want a ready-to-run desktop reference host for local use, provider testing, or server-connected workflows. |
 
-Desktop device support is Windows 10/11 x64 only today. Linux is supported as a
-server runtime, not as a desktop capture client; macOS and Linux desktop
-packages are not currently supported. Default device hotkeys are `Ctrl+Win`
-(Dictation), `Win+Alt` (Assist), and `Ctrl+Shift` (Voice Agent).
+Windows 10/11 x64 is the supported desktop client. macOS 14+ on Apple Silicon
+is a beta: an ad-hoc signed `SpeechKit.app` bundle that does Dictation —
+microphone capture, global hotkeys, text injection, a menu-bar item, the
+bundled local `whisper-server` and the cloud STT providers. Meeting system
+audio, screen snapshots, wake word, and the local LLM are not ported to macOS:
+each refuses with a typed error and its UI is hidden. Voice Agent and Assist
+are not verified there yet. Because the bundle carries no Developer ID, the
+download needs one documented `xattr` step before it opens and macOS asks for
+Microphone and Accessibility again after every update;
+`UNSIGNED-MACOS-RELEASE.txt` ships beside it and explains both.
+
+Linux is a server runtime, not a desktop capture client. Default device hotkeys
+are `Ctrl+Win` (Dictation), `Win+Alt` (Assist), and `Ctrl+Shift` (Voice Agent);
+the stored values are the same on macOS, where they read as Command, Option,
+and Control.
 
 Public Windows builds are published on
 [GitHub Releases](https://github.com/kombifyio/SpeechKit/releases). A fresh
@@ -241,7 +253,7 @@ gates and provider/secret safety invariants stay mandatory regardless.
 
 ```text
 pkg/speechkit/          Public Go kernel and SDK surface
-cmd/speechkit/          Windows device client (reference implementation)
+cmd/speechkit/          Desktop device client, Windows and macOS (reference implementation)
 cmd/speechkit-server/   Self-host server entry point
 cmd/speechkit-mcp/      MCP server for agent docs, validation, and management
 cmd/speechkit-cli/      CLI diagnostics, scaffolding, and quick actions
@@ -301,8 +313,10 @@ package boundary is in the
 
 ## Trust
 
-Public releases include checksums and an unsigned Windows notice while the
-no-cost unsigned release path is active. Download only from the official
+Public releases include checksums and an unsigned-artifact notice while the
+no-cost unsigned release path is active: `UNSIGNED-WINDOWS-RELEASE.txt` for the
+Windows assets, and `UNSIGNED-MACOS-RELEASE.txt` for the macOS bundle, which is
+ad-hoc signed rather than notarized. Download only from the official
 [kombifyio/SpeechKit releases](https://github.com/kombifyio/SpeechKit/releases).
 
 ## License
