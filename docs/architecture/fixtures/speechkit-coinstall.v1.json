@@ -1,0 +1,62 @@
+{
+  "version": "speechkit.coinstall.v1",
+  "transport": "aidl_bound_service",
+  "contractArtifact": {
+    "license": "Apache-2.0",
+    "package": "io.kombify.speechkit.coinstall.v1",
+    "rationale": "The SpeechKit APK is GPL-3.0 (HeliBoard fork) and the Companion is proprietary, so neither app may link the other's code. Both compile the same AIDL sources from this third artifact."
+  },
+  "roles": {
+    "callee": "kombify Companion (io.kombify.ai)",
+    "caller": "SpeechKit keyboard/assistant APK"
+  },
+  "service": {
+    "interface": "ICoinstallService",
+    "action": "io.kombify.speechkit.coinstall.v1.BIND",
+    "startedOnDemand": true,
+    "foregroundService": false,
+    "networkPort": null,
+    "methods": [
+      { "name": "getContractVersion", "returns": "int", "streaming": false },
+      { "name": "getCapabilityStatus", "returns": "CapabilityStatus", "streaming": false },
+      { "name": "provision", "returns": "ProvisionResult", "streaming": false, "idempotentPerDevice": true },
+      { "name": "startTurn", "returns": "void", "streaming": true, "callback": "ICoinstallCallback" },
+      { "name": "cancelTurn", "returns": "void", "streaming": false, "safeAfterCompletion": true }
+    ]
+  },
+  "callback": {
+    "interface": "ICoinstallCallback",
+    "oneway": true,
+    "methods": ["onPartial", "onComplete", "onError"],
+    "terminalCallbacks": ["onComplete", "onError"],
+    "exactlyOneTerminalPerTurn": true
+  },
+  "security": {
+    "callerIdentity": "Binder.getCallingUid",
+    "packageResolution": "PackageManager.getPackagesForUid",
+    "signingCertificatePinning": "PackageManager.hasSigningCertificate",
+    "trustCallerSuppliedPackageName": false,
+    "rejectionIsTypedError": true,
+    "pinsAreConfiguration": true
+  },
+  "scope": {
+    "included": ["provisioning", "one_ai_turn", "capability_status"],
+    "excluded": ["notification_access", "agent_invocation", "approvals"],
+    "extensionPolicy": "Adding an excluded capability is a version bump, never a silent extension."
+  },
+  "otherMechanisms": {
+    "contentProvider": {
+      "purpose": "cheap status and capability reads without binding",
+      "mirrors": "getCapabilityStatus"
+    },
+    "intent": {
+      "purpose": "visible navigation only",
+      "mustNotCarry": ["ai_turn", "provisioning"]
+    }
+  },
+  "supersedes": {
+    "design": "PROVISION intent + ASK_AI intent + capability ContentProviders",
+    "reason": "An intent cannot carry a streaming answer turn, which the one-AI-one-context routing decision requires: the Companion produces the answer and SpeechKit's own overlay speaks it.",
+    "source": "docs/roadmap/android-keyboard-track.md"
+  }
+}
