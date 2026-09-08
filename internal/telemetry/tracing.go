@@ -69,6 +69,9 @@ func ConfigureTracing(ctx context.Context, opts TracingOptions) (func(context.Co
 		// ParentBased so a sampled inbound trace keeps its children sampled.
 		sampler = sdktrace.ParentBased(sdktrace.TraceIDRatioBased(opts.SampleRate))
 	}
+	// A ratio is right for ordinary traffic and wrong for a lost dictation.
+	// See KeepLostOutcomes in outcome.go.
+	sampler = KeepLostOutcomes(sampler)
 
 	var attrs []attribute.KeyValue
 	if s := strings.TrimSpace(opts.ServiceName); s != "" {
