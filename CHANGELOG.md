@@ -19,6 +19,15 @@ IDs, source paths, and other maintainer-only vocabulary.
   next dictation. The notice now appears only when text needs rescuing:
   it was not inserted, may have been inserted partially, or could not be
   saved to the history. It stays while you retry and closes when dismissed.
+* **dictation:** pasting into a window that had moved its focus to one of
+  its own dialogs or popups no longer fails with "not inserted"; the window
+  counts as in front as long as the dialog belongs to it. A maximized target
+  is no longer shrunk to its windowed size while dictation brings it back to
+  the front, a window that was closed while you spoke is reported as gone
+  instead of being fought over, and a recording started right after a click
+  on the overlay pill says so rather than pasting into the pill. The "not
+  inserted" notice now names the reason: the window closed, it was not in
+  front, or the overlay had focus.
 
 ## [0.69.0](https://github.com/kombifyio/SpeechKit/compare/v0.68.0...v0.69.0) (2026-09-06)
 

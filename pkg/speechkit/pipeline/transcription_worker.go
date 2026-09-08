@@ -399,7 +399,7 @@ func (w *TranscriptionWorker) commitFinalTranscript(ctx context.Context, job spe
 		finalization = finalization.WithOutputResult(err)
 		w.onFinalization(job, transcript, finalization)
 		if err != nil {
-			w.onLog("Text available; output was not confirmed", "warn")
+			w.onLog(outputNotConfirmedMessage(err), "warn")
 		}
 		w.onLog(fmt.Sprintf("STT timing: output_delivery=%dms", time.Since(deliverStarted).Milliseconds()), "info")
 	}
@@ -844,4 +844,17 @@ func (w *TranscriptionWorker) onTranscriptDraft(transcript speechkit.Transcript)
 	if observer, ok := w.observer.(speechkit.TranscriptionDraftObserver); ok {
 		observer.OnTranscriptDraft(transcript)
 	}
+}
+
+// outputNotConfirmedMessage is the warn line for a delivery that returned an
+// error. When the adapter names why it refused (speechkit.OutputBlockReason),
+// the phrase is appended so the notice says which of "window closed", "not
+// in front" or "overlay had focus" it was; the error itself is never logged,
+// because adapter errors may carry text.
+func outputNotConfirmedMessage(err error) string {
+	const base = "Text available; output was not confirmed"
+	if reason := speechkit.OutputBlockReasonOf(err); reason != "" {
+		return base + ": " + reason
+	}
+	return base
 }

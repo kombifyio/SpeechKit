@@ -117,6 +117,10 @@ they become `speechkit.OutputTarget`.
 application**. Windows `SendInput` cannot prove insertion. Adapters wrap
 `speechkit.ErrOutputBlocked` only when they refuse before submitting text;
 other failures may include partial output. Never automatically retry either.
+An adapter that can say why it refused also implements
+`speechkit.OutputBlockReason`; `speechkit.OutputBlockReasonOf(err)` returns
+that phrase, which is safe to show next to the "not inserted" notice and never
+carries transcript text, window titles or clipboard content.
 
 The Dictation service notifies recognition before output, attempts history even
 after output failure, and returns the transcript plus joined output/history

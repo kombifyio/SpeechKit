@@ -11,6 +11,25 @@ import (
 // automatically.
 var ErrOutputBlocked = errors.New("speechkit: output blocked")
 
+// OutputBlockReason is implemented by ErrOutputBlocked wrappers that can say
+// why no text was sent, as a short phrase that is safe to show and to log: it
+// never carries transcript text, window titles or clipboard content. Hosts
+// surface it next to the "output was not confirmed" notice so a user can tell
+// a window that closed from a window that was not in front.
+type OutputBlockReason interface {
+	OutputBlockReason() string
+}
+
+// OutputBlockReasonOf returns the phrase carried by err, or "" when err is
+// nil or names no reason.
+func OutputBlockReasonOf(err error) string {
+	var reason OutputBlockReason
+	if errors.As(err, &reason) {
+		return reason.OutputBlockReason()
+	}
+	return ""
+}
+
 type RecognitionState string
 type OutputState string
 type PersistenceState string
